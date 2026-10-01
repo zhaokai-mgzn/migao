@@ -65,6 +65,12 @@ PREFIX_TO_WORKFLOW = {
     #: （2026-10-01 现取：近期连一次 success run 都没有 ⇒ 采不到「跑判据 N」这类样本）
     #: ⇒ **未**纳入 READING_REQUIRED_WORKFLOWS，只按结论判；取证到样本后升格。
     #: 今天是 inert 的（`judge()` 会以「已完成 run < 3」判无法判定），故此刻不构成假关风险。
+    #: 🔴 **2026-10-01 补**（issue #5929 的部署值守面）：本腿自己的绿 = 「main HEAD 的部署状态
+    #: 已收敛（已部署 / 部署在途 / 宽限期内）」⇒ **正是它报的那件事恢复了** ⇒ 可回收。
+    #: ⚠️ 它**自己也会关单**（部署成功后自动 `gh issue close`，见 `deploy-reconcile.yml` 的值守面步）
+    #: —— 两条路互为兜底：本脚本更保守（24h + 连续 3 次绿 + 机器人作者），值守面更快。
+    #: 未登记即红 = `unregistered_issue_opening_legs()`（新腿只要带 `gh issue create` 就必须二选一）。
+    "[deploy-watchdog]": "deploy-reconcile.yml",
 }
 
 #: 会自动开单、但**有意不回收**的腿：前缀 → (workflow, 理由)。

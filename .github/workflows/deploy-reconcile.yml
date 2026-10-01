@@ -54,6 +54,38 @@
 # 断路器按 `headSha == H` 查不到记录 ⇒ 会把含 C 的 HEAD 再部署一次。
 # ⚠️ 本单（#5814）**不扩**这一条：「回滚点被覆盖」的风险另由 #4808 治。
 #
+# ── v6（issue #5929：「合并了但没上线」没有值守面）───────────────────────────────
+# 病（现取读数，不是推断）：本对账判出「没部署」之后只做两件事 —— ① 补一次 dispatch
+# ② 在 step summary 里写一行 ⇒ **没有人会被叫醒**。实测 2026-10-01：
+# `deploy-frontend.yml` 的 push 触发在 10:18 之后再没跑过，22:41 线上仍停在 `bef78e7`，
+# 而 main HEAD 已是 `1fbdfb0`（中间 `871db0c7f` 改了 `frontend/admin-web/**` 却没上线）
+# —— 全仓只有本腿的 `::notice::` 说了一句。
+# 🔴 **有意不照字面判据实现**（issue 正文写作「`sha-<head7>` 镜像仍不存在 ⇒ 判红」）：
+#    `#5814` 的 C′ 把构建搬到**服务器侧** ⇒ CI **不再推 ACR**（见 `deploy-frontend.yml` 的
+#    `Assert server-side build (no ACR push)` 步 + `deploy/scripts/swas-deploy-ci.sh` 的服务器侧
+#    `docker build`）⇒ 那条判据**恒为真**，照字面实现就是**每个 tick 都报警**
+#    （噪声判据是缺陷 —— 正是 issue 验收判据 2 要防的）。
+# ⇒ 「已部署」取**三条信号**（与三条部署腿自己的 C′ 判据**同一份**，判定本体只在对账步里）：
+#    ① 镜像存在（保留：将来若恢复推 ACR 自动复活）② 同 sha 的部署 run 结论 = success
+#    ③ 自上次成功部署起该服务代码路径无改动（漂移判据 = 该 commit 的代码状态已在线上）。
+# ⇒ 判定 = **距 main HEAD 合入超过 N 秒**，且该腿在**本轮对账开始时**既没有上述「已部署」信号、
+#    也没有**在途 run**（queued / in_progress）⇒ 判红（`::error::` + 非零退出 + step summary）
+#    **并自己开/更 P1 值班 issue**；部署成功后同一逻辑**自动关闭**它（清零不靠人记得）。
+#    ⚠️ 「本轮才补 dispatch」也**计入**告警面：它是「对账开始时确实没上线」的读数 ——
+#    正常节奏下够不着（合并后 ≤20min 就有一次对账，而 N=45min），够得着就说明补出去的
+#    部署一直没落地（#4827 的同族形态）。
+#    ⚠️ 判不了（状态文件缺失 / 目标 workflow 不在 main 上）⇒ **fail-closed 判红**（退出码 3）。
+# N 的出处（可复算，读数**现取**自 `deploy/scripts/swas-deploy-ci.sh` 的那句预算）：
+#    冷构建上界 **2400s** + 余量 **300s** = **2700s**（45min）。
+#    原文（该脚本里那句「默认抬到 4500s（= 远端锁等待上限 1800s + 冷构建上界 2400s + 余量 300s）」）
+#    的**远端锁等待上限 1800s 有意不计入**：那一项是「排队等另一条部署腿的远端 flock」，
+#    而排队中的 run 由对账步的 `inflight` 判据覆盖（在途 ⇒ 不报警）⇒ 把它加进 N 只会让
+#    「合并了但没上线」被推迟 30min 才被人看见。
+#    判据会**现取这两个读数**并断言 `N ≥ 2400 + 300`（改小 N / 删掉读数锚 ⇒ 红）。
+# ⚠️ **不新增 schedule**（铁律 10）：沿用既有 `*/20` 对账与既有事件（值守面与对账同一个 job）；
+#    `pull_request` 事件不判定（PR 面没有 main HEAD 的部署对象，main 侧有 schedule 兜）。
+# ⚠️ 本腿**不翻 required**（§2.2 的两条前置）：报告型 + 判红开值班单，不拦任何 PR。
+#
 # 与原 deploy 工作流关系：本补偿是兜底；deploy-*.yml 的 push+paths 主触发（已失效）
 # 与 schedule 对账保留不动。
 name: Deploy Reconcile (PR 对账补偿)
@@ -69,6 +101,9 @@ on:
 permissions:
   contents: read
   actions: write  # 需要 GITHUB_TOKEN 触发 workflow_dispatch
+  # 值守面出口（issue #5929）：判红时开/更 P1 值班 issue、部署成功后**自动关闭**它。
+  # 显式声明而不是靠推断（缺它 = 钩子自己崩溃、红而不留痕，issue #3834 的教训）。
+  issues: write
 
 jobs:
   reconcile:
@@ -130,16 +165,11 @@ jobs:
           HEAD7="${HEAD_SHA::7}"
           SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
           MISSING=0; NODRIFT=0; SKIPPED=0; UNKNOWN=0; NOTARGET=0
-          {
-            echo "## Deploy Reconcile 判定（issue #4827）"
-            echo ""
-            echo "- 事件：\`${GITHUB_EVENT_NAME}\` · 对账基准（main HEAD）：\`${HEAD7}\`"
-            echo ""
-            echo "| 服务 | 判定依据 | 动作 |"
-            echo "|---|---|---|"
-          } >> "$SUMMARY"
-          echo "🧭 对账基准：main HEAD=${HEAD7}（事件 ${GITHUB_EVENT_NAME}）"
-
+          # 值守面状态记录（issue #5929）：⚠️ 本步正文长度是硬约束（≈13.3K 越线 ⇒ 整份文件 invalid）
+          # 阈值/二分复算/守卫 = tests/unit_ci_workflows/test_deploy_watchdog.py（`RUN_BODY_LIMIT`）
+          WATCHDOG_STATE="${WATCHDOG_STATE:-.deploy-watchdog-state.tsv}"
+          : > "$WATCHDOG_STATE" 2>/dev/null || echo "::warning::值守面状态文件不可写——本轮按「判不了」（fail-closed）处理，不影响对账"
+          watchdog_note() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$WATCHDOG_STATE" 2>/dev/null || echo "::warning::值守面状态写入失败（$1=$2）"; return 0; }
           # 单服务对账。$1=服务名 $2=deploy workflow $3=该服务的代码路径
           # $4=额外 pathspec（空格分隔）：`:(exclude)X` = 排除项，其余 = **附加包含项**（可空）
           reconcile_one() {
@@ -158,6 +188,7 @@ jobs:
               echo "::warning::${svc}：目标 workflow ${wf} 不在 main 上（多为「新增腿的那个 PR」）——本轮不对账"
               echo "| ${svc} | ⚠️ \`${wf}\` 尚未在 main 上（新增腿的那个 PR；gh 会 404） | **不补**（合并后自然接上） |" >> "$SUMMARY"
               NOTARGET=$((NOTARGET + 1))
+              watchdog_note "$svc" notarget "目标 workflow ${wf} 不在 main 上"
               return 0
             fi
             # ── 取「同 sha 的最新一条 run」（承重读数，B 的两条判据都用它）──────────────
@@ -183,6 +214,7 @@ jobs:
               echo "   理由：重复 dispatch 是纯 churn（`concurrency: cancel-in-progress: false` 会让它白等），"
               echo "   且会与本腿的 cron 互相放大（issue #5814）。等那个 run 出终态后下一轮会自然复核。"
               echo "| ${svc} | ⏸️ 同 commit 的 run 仍在跑/排队（\`status=${last_status}\`） | **不补部署**（避免重复 dispatch churn） |" >> "$SUMMARY"
+              watchdog_note "$svc" inflight "同 commit 的 run 未跑完（status=${last_status}）"
               SKIPPED=$((SKIPPED + 1))
               return 0
             fi
@@ -211,6 +243,7 @@ jobs:
               echo "   旧断路器只认 failure ⇒ 每 20min 再补一次 ⇒ 又一个 run 挂 40min）。"
               echo "   人工确认（看该 run 的日志）后复跑：gh workflow run ${wf} --ref main"
               echo "| ${svc} | ⛔ 断路器：\`${HEAD7}\` 的部署落在不可恢复终态（\`conclusion=${last_conclusion}\`） | **不补部署**（人工确认后 \`gh workflow run ${wf} --ref main\`） |" >> "$SUMMARY"
+              watchdog_note "$svc" terminal "部署落在不可恢复终态（conclusion=${last_conclusion}）"
               SKIPPED=$((SKIPPED + 1))
               return 0
             fi
@@ -223,6 +256,7 @@ jobs:
             if docker manifest inspect "$image" >/dev/null 2>&1; then
               echo "✅ ${svc} 镜像 ${image} 已存在——main HEAD ${HEAD7} 已构建，无漂移"
               echo "| ${svc} | ✅ 镜像已存在：\`${image}\` | **不补部署** |" >> "$SUMMARY"
+              watchdog_note "$svc" deployed "镜像已存在：${image}"
               NODRIFT=$((NODRIFT + 1))
               return 0
             fi
@@ -245,6 +279,7 @@ jobs:
               #    C′ 的说明只加在**「动作」列**里 ⇒ 既有判据一字不动，summary 仍自解释。
               echo "| ${svc} | ✅ 无漂移：自 \`${p:0:7}\`（上次成功部署）起 \`${svc_path}\` 无代码改动 | **不补部署**（issue #5814 C′：判据 ① 对 ACR 恒不成立，判据 ② 为有效判据） |" >> "$SUMMARY"
               NODRIFT=$((NODRIFT + 1))
+              watchdog_note "$svc" deployed "无漂移：自 ${p:0:7}（上次成功部署）起 ${svc_path} 无代码改动"
               return 0
             fi
             # ── 兜底 dispatch：HEAD 无镜像，且自基准起该服务有代码改动（或判据不可用）
@@ -266,6 +301,7 @@ jobs:
             echo "⚠️ ${svc} 镜像 ${image} 缺失且 HEAD 的代码状态未部署——${reason} ⇒ dispatch 补部署"
             gh workflow run "$wf" --ref main --repo "$GITHUB_REPOSITORY"
             echo "| ${svc} | ⚠️ 镜像缺失 + ${reason} | **已 dispatch 补部署**（\`${wf}\`） |" >> "$SUMMARY"
+            watchdog_note "$svc" dispatched "本轮才补 dispatch（对账开始时该 commit 尚无可用部署）"
             MISSING=$((MISSING + 1))
             return 0
           }
@@ -359,6 +395,184 @@ jobs:
           else
             echo "::notice::Deploy Reconcile 判定完成：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED}（基准 main HEAD=${HEAD7}）"
           fi
+
+      # ── 值守面（issue #5929：合并了但没上线 ⇒ 判红 + 自己开单）────────────────────
+      # 判定本体（哪条腿算「已部署」）在**上一步**（对账步落的 `.deploy-watchdog-state.tsv`）；
+      # 本步只做「合并进 main 超过 N 秒仍未部署」这一件事 —— 判定只此一份，**不重算**镜像/漂移。
+      # 读不到 / 判不了 ⇒ **fail-closed 判红**（退出码 3），绝不静默 success（「没跑」≠「通过」）。
+      # 告警面三件齐全（`tests/unit_ci_workflows/test_mechanism_jobs_alerting.py` 的既有口径）：
+      # `::error::` 注解 + `$GITHUB_STEP_SUMMARY` 落笔 + **非零退出**；出口 = 开/更 P1 值班 issue。
+      # 幂等：同一 main HEAD 反复判红**不重复刷屏**（20min 一轮的评论风暴本身就是缺陷），
+      # 但单子保持开着、标签在位；HEAD 变了 ⇒ 追加一条新证据。
+      # 清零：部署成功（`deployed`）或每轮判定为「已部署 / 在途」⇒ **自动关闭**该单（不靠人记得）。
+      - name: 值守面（超时未部署 ⇒ 判红 + 开/清值守 issue）
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          # N = 2700s（45min）= 冷构建上界 2400s + 余量 300s（读数现取自
+          # `deploy/scripts/swas-deploy-ci.sh` 那句「默认抬到 4500s（= 远端锁等待上限 1800s +
+          # 冷构建上界 2400s + 余量 300s）」）。**远端锁等待上限 1800s 有意不计入**：那是
+          # 「排队等另一条部署腿的远端 flock」，而排队中的 run 由 `inflight` 判据覆盖。
+          # 判据 tests/unit_ci_workflows/test_deploy_watchdog.py 会**现取**这两个读数并断言
+          # `N ≥ 2400 + 300`（改小 N / 删掉读数锚 ⇒ 红）。
+          WATCHDOG_GRACE_SECONDS: "2700"
+        run: |
+          set -uo pipefail
+          # ⚠️ 刻意**不用** `set -e`：本步要**自己**决定退出码（0 = 已部署/在途 / 1 = 超时未部署 /
+          #    3 = 判不了），**任一非 0 都判红**；中途任何失败都不许被吞成 success（fail-closed）。
+          # ⚠️ 变量一律 `${X:-}` 兜底：本仓有过「`set -u` + 未定义变量 ⇒ 整条部署腿被挡」的事故
+          #    （`Assert server-side build` 步），不许在这里复现。
+          STATE="${WATCHDOG_STATE:-.deploy-watchdog-state.tsv}"
+          N="${WATCHDOG_GRACE_SECONDS:-2700}"
+          SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
+          # 参与值守的腿 ⇄ 具名豁免腿。**双向登记**（三处必须逐项相等）=
+          # `reconcile_one` 调用 / 本行两个列表 / tests/unit_ci_workflows/deploy_watchdog_ledger.json
+          # —— 新加一条 deploy 腿却忘了接值守 ⇒ 判据当场红（铁律 8 的类级元守卫）。
+          WATCHED_LEGS="admin-api ai-agent-service admin-web worker-h5 bmini-h5-hosting"
+          EXEMPT_LEGS="c-end-h5"
+
+          if [ "${EVENT_NAME:-}" = "pull_request" ]; then
+            echo "ℹ️ 值守面不适用：事件=${EVENT_NAME}（PR 面没有 main HEAD 的部署对象；main 侧由 schedule 兜）"
+            echo "| — | ℹ️ 事件 \`${EVENT_NAME}\` | **不判定**（PR 面无 main HEAD 的部署对象） |" >> "$SUMMARY"
+            exit 0
+          fi
+
+          HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+          HEAD7="${HEAD_SHA:0:7}"
+          HEAD_TS="$(git log -1 --format=%ct HEAD 2>/dev/null || true)"
+          NOW="$(date -u +%s)"
+          case "${HEAD_TS:-}" in
+            '' | *[!0-9]*) AGE="" ;;
+            *) AGE=$(( NOW - HEAD_TS )) ;;
+          esac
+          echo "🧭 值守面判定：main HEAD=${HEAD7:-未知} · 合并至今=${AGE:-未知}s · N=${N}s · 豁免腿=${EXEMPT_LEGS}"
+          {
+            echo ""
+            echo "## 值守面（issue #5929：合并了但没上线）"
+            echo ""
+            echo "- 判定基准：main HEAD \`${HEAD7:-未知}\` · 合并至今 \`${AGE:-未知}\`s · 宽限期 \`N=${N}\`s"
+            echo "- 豁免腿（发布由人手动 —— 用户裁定 B；本对账的 dispatch 不会发布）：\`${EXEMPT_LEGS}\`"
+            echo ""
+            echo "| 腿 | 对账状态（现取） | 值守面判定 |"
+            echo "|---|---|---|"
+          } >> "$SUMMARY"
+
+          OVERDUE=""; JUDGED=0; SUSPECT=0; NA=0
+          for svc in $WATCHED_LEGS; do
+            # 状态**现取**自对账步落的状态文件：判定本体只此一份（不在这里重算镜像/漂移/断路器）
+            state="$(awk -F'\t' -v s="$svc" '$1 == s { print $2; exit }' "$STATE" 2>/dev/null || true)"
+            why="$(awk -F'\t' -v s="$svc" '$1 == s { print $3; exit }' "$STATE" 2>/dev/null || true)"
+            case "${state:-}" in
+              deployed | inflight)
+                JUDGED=$((JUDGED + 1))
+                echo "✅ ${svc}：${state}（${why:-无依据}）"
+                echo "| ${svc} | \`${state}\` | ✅ 不报（已部署 / 部署在途） |" >> "$SUMMARY"
+                ;;
+              terminal | dispatched)
+                # `terminal` = 断路器：该 commit 不会再自动重试；`dispatched` = 对账开始时确实
+                # 没有任何可用部署（本轮才补出去）⇒ 两者都计入告警面（超期即报）。
+                SUSPECT=$((SUSPECT + 1))
+                OVERDUE="${OVERDUE} ${svc}"
+                echo "🔴 ${svc}：${state}（${why:-无依据}）—— 本轮对账开始时该 commit 尚无可用的部署"
+                echo "| ${svc} | \`${state}\` | 🔴 计入告警面（${why:-无依据}） |" >> "$SUMMARY"
+                ;;
+              *)
+                # 读不到状态（文件缺失 / 写失败）或 `notarget`（目标 workflow 不在 main 上）
+                NA=$((NA + 1))
+                echo "::error::值守面判不了 ${svc}：对账状态=${state:-缺失}（fail-closed 判红，不许静默 success）"
+                echo "| ${svc} | \`${state:-缺失}\` | 🔴 **判不了**（fail-closed） |" >> "$SUMMARY"
+                ;;
+            esac
+          done
+
+          RC=0; VERDICT=""
+          if [ "$NA" -gt 0 ]; then
+            RC=3; VERDICT="判定不可用（${NA} 条腿读不到对账状态：多为对账步失败，或目标 workflow 不在 main 上）"
+          elif [ -z "$AGE" ]; then
+            RC=3; VERDICT="判定不可用（取不到 main HEAD 的提交时间）"
+          elif [ "$AGE" -le "$N" ]; then
+            VERDICT="宽限期内（合并 ${AGE}s ≤ N=${N}s）"
+          elif [ -n "$OVERDUE" ]; then
+            RC=1; VERDICT="超时未部署（合并 ${AGE}s > N=${N}s）"
+          else
+            VERDICT="全部腿已部署或部署在途"
+          fi
+          echo "🧭 值守面结论：${VERDICT} · 已判定=${JUDGED} · 计入告警=${SUSPECT} · 判不了=${NA} · RC=${RC}"
+          {
+            echo ""
+            echo "**结论**：${VERDICT} · 已判定=${JUDGED} · 计入告警=${SUSPECT} · 判不了=${NA} · RC=${RC}"
+            echo ""
+            echo "> N=${N}s 的出处（现取复算）：冷构建上界 **2400s** + 余量 **300s** = 2700s（45min），"
+            echo "> 原文 = \`deploy/scripts/swas-deploy-ci.sh\` 的「默认抬到 4500s（= 远端锁等待上限 1800s"
+            echo "> + 冷构建上界 2400s + 余量 300s）」；**远端锁等待 1800s 有意不计入**（排队中的 run 由"
+            echo "> \`inflight\` 判据覆盖，在途不报警）。"
+            echo "> 复算：\`grep -n '冷构建上界' deploy/scripts/swas-deploy-ci.sh\`。"
+          } >> "$SUMMARY"
+
+          TITLE="[deploy-watchdog] main HEAD 超时未部署（合并后仍未上线）"
+          EXIST="$(gh issue list --state open --search "${TITLE} in:title" --json number --jq '.[0].number // empty' 2>/dev/null || true)"
+          if [ "$RC" != "0" ]; then
+            echo "::error::值守面判红：${VERDICT} · main HEAD=${HEAD7:-未知} · 腿=${OVERDUE:-无}（明细见本 run 的 step summary）"
+            BODY="$(mktemp)"
+            {
+              echo "值守面判红（issue #5929 的 ① 值守面：**合并了但没上线**）。"
+              echo ""
+              echo "run: ${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-}/actions/runs/${GITHUB_RUN_ID:-}"
+              echo ""
+              echo "- 判定基准：main HEAD \`${HEAD7:-未知}\`（合并至今 \`${AGE:-未知}\`s，宽限期 N=\`${N}\`s）"
+              echo "- 结论：**${VERDICT}**"
+              echo "- 计入告警面的腿：\`${OVERDUE:-无}\`"
+              echo ""
+              echo "### 这一类是什么（别读成「某个 PR 没写好」）"
+              echo ""
+              echo "- 它判的是**状态**：main 上最新的那个 commit 该上线却没上线（超过 N 分钟），而"
+              echo "  \`deploy-reconcile.yml\` 的自动补部署**没能收敛**（该 commit 的部署落在不可恢复"
+              echo "  终态 / 补出去的 run 一直没落地 / 目标 workflow 不在 main 上）。"
+              echo "- 判据本体 = 对账步落的每条腿状态：\`deployed\`（镜像在 / 同 sha 结论 success / 无漂移）"
+              echo "  与 \`inflight\`（同 sha 的 run 还没跑完）**不报**；\`terminal\` / \`dispatched\` 超期即报；"
+              echo "  读不到 ⇒ fail-closed 判红。"
+              echo "- ⚠️ 「镜像不在 ACR」**不是**判据：\`#5814\` 的 C′ 之后 CI 不推 ACR（服务器侧构建）"
+              echo "  ⇒ 那条判据恒为真，照它实现就是每轮都报警（噪声判据是缺陷）。"
+              echo ""
+              echo "### 清零判据（怎么算好，**不用人记得关**）"
+              echo ""
+              echo "- 该 commit 的部署成功（同 sha 的 run 结论 = success，或代码状态已上线、无漂移）"
+              echo "  ⇒ 下一轮 \`*/20\` 对账的值守面**自动关闭本单**并在单上留一条清零说明。"
+              echo "- 本机复算：\`gh run list --workflow deploy-frontend.yml --branch main -L 5\` 看同 sha 的结论；"
+              echo "  \`git log --oneline -1 <上次成功部署的 sha>..origin/main -- frontend/admin-web\` 看有没有漂移。"
+              echo "- 人工出口（**不会**自动重试坏 commit）：\`gh workflow run <deploy-*.yml> --ref main\`，"
+              echo "  或在该 run 页面 Re-run；确属代码问题 ⇒ 先修或回滚。"
+              echo ""
+              echo "### 本轮每条腿的状态"
+              echo ""
+              echo '```'
+              sed -n '/^## 值守面/,$p' "$SUMMARY" 2>/dev/null || echo "(见本 run 的 step summary)"
+              echo '```'
+            } > "$BODY"
+            if [ -n "$EXIST" ]; then
+              PREV="$(gh issue view "$EXIST" --json body --jq '.body' 2>/dev/null || true)"
+              case "${PREV:-}" in
+                *"${HEAD7:-__none__}"*)
+                  echo "ℹ️ 值守单 #${EXIST} 已含 ${HEAD7:-未知} 的证据 ⇒ 本轮不重复评论（防 20min 一轮刷屏）；单子仍开着"
+                  ;;
+                *)
+                  gh issue comment "$EXIST" --body-file "$BODY" || echo "::warning::无法在值守单 #${EXIST} 追加本轮证据（限流/权限）"
+                  ;;
+              esac
+              gh issue edit "$EXIST" --add-label priority/P1 || echo "::warning::无法给值守单 #${EXIST} 打 priority/P1（限流/权限）"
+            else
+              gh issue create --title "$TITLE" --body-file "$BODY" --label priority/P1 \
+                || echo "::warning::无法创建 P1 值守 issue（限流/权限）——请人工按本 run 的 step summary 建单"
+            fi
+            rm -f "$BODY"
+          elif [ -n "$EXIST" ]; then
+            # 清零判据：部署成功后**自动**关闭告警单（不依赖人记得 —— issue #5929 的验收判据 4）
+            gh issue comment "$EXIST" --body "值守面清零：${VERDICT}（main HEAD=${HEAD7:-未知}）。本单由 deploy-reconcile.yml 的值守面自动关闭。" \
+              || echo "::warning::无法在值守单 #${EXIST} 追加清零说明（限流/权限）"
+            gh issue close "$EXIST" --reason completed || echo "::warning::无法关闭值守单 #${EXIST}（限流/权限）"
+          fi
+          exit "$RC"
 
       # ── 存活读数（issue #5326 判据 1 / 4）────────────────────────────────────────
       # 「我没做事」与「我没跑」必须长得不一样：本步 `if: always()` 且是 job 的**最后一步**

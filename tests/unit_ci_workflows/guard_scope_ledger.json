@@ -51,6 +51,11 @@
       "kind": "mentions",
       "issue": "#5001",
       "reason": "部署触发面 / 对账面守卫（MC-023）：只在**红证注入串**里出现 `deploy/swas/*.sh`（证明「两处一起窄化成 `*.sh` 形态」必红 —— `*` 不跨 `/` ⇒ 不覆盖 nginx.conf），**不扫描 shell 语料**（它读的是 `deploy/swas/deploy.sh` 的全文与 workflow 的 paths）⇒ 按 mentions 入册。shell 语料的全仓射程守卫 = tests/unit_ci_workflows/test_scripts_bash32_var_brace.py。"
+    },
+    "tests/unit_ci_workflows/test_deploy_watchdog.py": {
+      "kind": "mentions",
+      "issue": "#5929",
+      "reason": "本包只**点名** `*.sh`：它守的是「单 step `run` 正文长度」这条 GitHub 侧硬约束（实测 13,303 有效 / 13,399 invalid），守卫失败文案给的出口是「把实现体外置成 `.github/scripts/*.sh` 再 `source`」⇒ 只提到 shell 语料、**不扫描**它的内容；shell 语料射程守卫 = tests/unit_ci_workflows/test_scripts_bash32_var_brace.py"
     }
   }
 }

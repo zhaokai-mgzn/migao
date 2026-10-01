@@ -2822,7 +2822,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（53 case）
+## 杂项域（54 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3562,6 +3562,20 @@
 跳过: [backend-contract] 静态结构 + 真 fixture 行为守卫（只读仓内文件；真 git 仓库 / 真 worktree 一律造在 tmp_path，**不碰任何真实工作区**；零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_dev_worktree_symlink_safety.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-01 新增（issue #5930：2026-10-01 22:18 现场事故 —— 主工作区 `tests/node_modules` 被清成空目录，用户裁定「开单 + 固化」）。落码 = ① `scripts/dev-worktree.sh` 新增 `unlink_symlinks_before_remove`（只删链接本身、不跟随不递归；每条**具名**打「路径 → 目标」，指向仓库外/本仓库工作区的另加 ⚠️ 点名）并把它接在 `cmd_rm` 的 `git worktree remove` **之前**（顺序即安全顺序）；② `add` 输出与 `docs/wiki/Development.md` 新增同源规范句 + `### worktree 依赖准备` 节；③ 判据 tests/unit_ci_workflows/test_dev_worktree_symlink_safety.py（判据族 8 类 + 2 条行为面/自证补充，`pytest -q` 现取 = 13 passed：控制流元守卫 / 真 fixture 行为 + PATH 垫片见证 / 可见提示两形态（含注入红证）/ 注入红证（删掉解链那一步）/ 反向对照 / 危险面钉住 / 类级教法扫描 + 豁免台账 / 同源（静态 `add` 输出与文档逐字同一句）/ `add` 真跑行为面 / 消费点解析 / 判别力自证）+ 台账 tests/unit_ci_workflows/worktree_dep_symlink_ledger.json（现取 1 条豁免，上界冻结在判据里、只许缩短）+ 接线登记 tests/unit_ci_workflows/wiring_claims_ledger.json。⚠️ **对 issue 原文的假设做了核对（铁律 11「转述即未核实」）**：issue 把主因写成「`git worktree remove --force` 跟着软链删了目标」—— 真 fixture 实测 **git 2.54.0 不复现**（目标 2 个文件逐字节完好）；**实测复现的是另一候选因**：软链所在目录跑一次 `npm ci` ⇒ 目标目录仍在、内容全空（**3 → 0**），与现场「空目录」形态逐字同形 ⇒ 两条并列，后者解释现场形态。⚠️ 改前读数 = 8 failed / 3 passed（见证读数 `LINK_PRESENT_AT_REMOVE=yes`），改后 = 11 passed（见证读数 `no`）。⚠️ 存量命中 2 条：病灶引用 1 条**登记豁免**、acceptance 复跑 recipe 1 条**就地标注为禁止**（原命令行逐字保留在注释里）。⚠️ 未做（照单登记）：不改 `add` 的依赖安装策略本身（是否自动 `npm ci` 属另一议题）、不追溯修复其他会话已建的软链。⚠️ 未固化：别的删除动作（`npm ci` / 人手 `rm -rf`）不在机械射程内。取号 **MC-054**（**让号往返，记实**）：现取 main 最大 = MC-053；`next_case_id.py MC` 建议的 **MC-049** 是一处**历史空档**（`MC-050` 的 merge_log 逐字记着它曾被在飞分支 `ci/5814-migrate-pr-legs` 占用，而该 PR #5818 已 CLOSED）⇒ 按「空档号 ≠ 可用号」取「当前最大号 + 1」= MC-054。**落地前现取在飞包，发现同批并行的 issue #5929 包（PR #5931）也取了 MC-054**（两个包各自 max+1 ⇒ 撞号；取号工具的判据只看**已合并**状态、**拦不住在飞**）⇒ 本包先按「后到者让号」顺延为 MC-055，并在 PR #5931 留 durable 说明；**集成侧随后协调 #5931 改判为它让号**（现取 `origin/fix/5929-deploy-watchdog` 的 `.github/cases/misc.yml` = MC-051/052/053 + **MC-055**，MC-054 空出）⇒ **本包回到 MC-054**，两个包各占一号、无撞号。 ｜ tags: ci, dev-tooling, worktree, symlink, red-proof, ledger
+
+### MC-055. 合并了但没上线必须有值守面（issue #5929）：main HEAD 合入超过 N 秒仍未部署 ⇒ 判红并自己开单、部署成功后自动关闭；C′ 之后「镜像不在 ACR」不得当判据（噪声判据是缺陷）；判不了必须 fail-closed 🔵
+```
+你: 当 main 上最新的那个 commit 该上线却没上线（超过 N 分钟）时，必须有人被叫醒 —— 不许只剩一行 `::notice::`（2026-10-01 实测：`deploy-frontend.yml` 的 push 触发 10:18 后再没跑过，22:41 线上仍停在 `bef78e7`，而 main HEAD 已是 `1fbdfb0`）
+期望: **值守面在**（`.github/workflows/deploy-reconcile.yml` 的 step `值守面（超时未部署 ⇒ 判红 + 开/清值守 issue）`，`if: always()`，夹在对账步与存活读数步之间）：main HEAD 合入超过 N 秒、且该腿在本轮对账开始时既没有「已部署」信号也没有**在途 run** ⇒ `::error::` + **非零退出** + step summary，**并自己开/更 P1 值班 issue**；部署成功（同 sha 的 run 结论 success / 镜像在 / 无漂移）⇒ **自动关闭**该单（清零不靠人记得）。
+期望: **N 的出处可复算**（不许是凭空数字）：N=2700s = 冷构建上界 2400s + 余量 300s（读数现取 `deploy/scripts/swas-deploy-ci.sh` 的 3000/4500s 预算那句）；**远端锁等待上限 1800s 有意不计入**（排队中的 run 由 `inflight` 判据覆盖）。判据现取这两个读数并断言 `N ≥ 2400 + 300`（改小 N / 删读数锚 ⇒ 红）。
+期望: **类级元守卫（未登记即红）**：`reconcile_one` 的**每一条腿**必须登记在 `tests/unit_ci_workflows/deploy_watchdog_ledger.json`（`watchdog` 或**具名豁免** + 理由 + 仓内锚），三处（对账调用 / 值守面 `WATCHED_LEGS`+`EXEMPT_LEGS` / 台账）**逐项相等**；豁免条数只许缩短。新加一条 deploy 腿却忘了接值守 ⇒ 当场红。
+数据: **病（现取读数）**：对账判出「没部署」之后只做两件事 —— ① 补一次 dispatch ② summary 写一行 ⇒ **没有人会被叫醒**。实测 2026-10-01：`deploy-frontend.yml` 的 push 触发在 10:18 之后再没跑过，22:41 线上仍停在 `bef78e7`，而 main HEAD 已是 `1fbdfb0`（中间 `871db0c7f` 改了 `frontend/admin-web/**` 却没上线）—— 全仓只有 reconcile 的 `::notice::` 说了一句。
+数据: **有意不照 issue 正文的字面判据**（「`sha-<head7>` 镜像仍不存在 ⇒ 判红」）：`#5814` 的 C′ 把构建搬到服务器侧 ⇒ CI **不再推 ACR** ⇒ 那条判据**恒为真**，照字面实现 = 每个 tick 都报警（噪声判据是缺陷）。⇒ 判据 = 对账步落的**每条腿状态**（`deployed` / `inflight` 不报；`terminal` / `dispatched` 超期即报；读不到 ⇒ fail-closed 退出码 3）。
+数据: **执行式红证（16 条，桩 `gh`/`docker` + 真 git 仓库）**：超期未部署 ⇒ 红 + 具名（main HEAD + 哪条腿）+ 开单（含 `priority/P1`）；**反向对照**：镜像存在 ⇒ **不报警、不开单**（噪声判据是缺陷）；在途 run ⇒ 不报；宽限期内 ⇒ 不报；判不了 ⇒ 退出码 **3**（不得当 0 读）且照样开单；部署成功 ⇒ 自动 `gh issue close`；同一 HEAD 反复判红 ⇒ **不重复刷屏**（幂等）但单子仍开着。
+数据: **判别力自证 + 对照读数**：六种坏形态（腿没进两个列表 / 台账条目被删 / 台账与值守面口径相反 / 豁免没写理由 / 豁免锚在 workflow 里找不到 / 豁免条数上涨）在**内存语料**上各自判红；**只往正文加注释 ⇒ 不红**（守卫不许被自己的文案喂红）。**修前红**：把本判据文件拿到 `origin/main` 的 workflow 上跑 ⇒ **14 failed / 2 passed**（复算见 PR body）。
+跳过: [backend-contract] 部署值守面的静态/执行式结构判据（只读仓内文件 + 桩 gh/docker + 真 git 仓库；零网络、零真 ACR、不写共享 /tmp、不烧 token）由 tests/unit_ci_workflows/test_deploy_watchdog.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-01 新增（issue #5929，用户 2026-10-01 裁定只做 ① 值守面 —— 不做 ② 给 reconcile 加 `workflow_run` 触发、不做 ③ 兜底加密）：病 = 「合并了但没上线」没有任何值守面，只有 reconcile 的一行 `::notice::`。落码 = ① `.github/workflows/deploy-reconcile.yml`：对账步逐腿落状态（`deployed`/`inflight`/`dispatched`/`terminal`/`notarget`，判定本体只此一份）+ 新增 step「值守面」做「合并后超过 N 秒仍未部署 ⇒ 判红 + 开/更 P1 值班 issue + 部署成功后自动关闭」+ `permissions: issues: write`（**不新增 schedule**，铁律 10；`pull_request` 事件不判定）；② 判据 tests/unit_ci_workflows/test_deploy_watchdog.py（16 条：静态面 + 执行式行为 + 判别力自证）；③ 类级台账 tests/unit_ci_workflows/deploy_watchdog_ledger.json（六条腿逐条登记，`c-end-h5` 具名豁免：发布由人手动，用户裁定 B）。⚠️ **未固化项如实登记**：workflow 级接线锚（YAML）不在 `wiring_claims_ledger.json` 射程内 ⇒ 接线面由执行式判据承担（作者的一次动作）；「dispatch 出去但 GitHub 从未生成 run（连 queued 都没有）⇒ 在途判据看不见」这一角由 `dispatched` 计入告警面 + 超期兜住，但「补 dispatch 自身失败」的形态仍靠对账步的 `set -e` 判红。取号 **MC-055**（**让号一次，记实**）：起草时 main 最大 = MC-053，脚本给的**空档 MC-049** 经核对是**在飞占用**（MC-050 的 `merge_log` 逐字记「在飞 ci/5814-migrate-pr-legs 占 MC-049」）⇒ 按「当前最大号 +1」取 MC-054；**推送后 CI 实测**：同批并行包 PR #5932 也占了 MC-054（`fix/5930-worktree-unlink`）⇒ 两个 PR 的 merge ref 里出现**重号** ⇒ `Case Contract (truths_ref)` 与 `ci workflow helper unit tests` **双双判红**（取号判据只看已合并状态，拦不住在飞撞号 —— 本仓第 N 次实证）⇒ 按「后合入者让号」顺延为 **MC-055**。 ｜ tags: ci, deploy, watchdog, ledger
 
 ## 商家入驻域（5 case）
 
@@ -8483,8 +8497,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：594（活跃 126，跳过 468）
-- tier 分布：smoke 12 / normal 549 / adversarial 31
+- 用例总数：595（活跃 126，跳过 469）
+- tier 分布：smoke 12 / normal 550 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8499,7 +8513,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：53
+- 杂项域：54
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：54
@@ -8579,6 +8593,7 @@
 - MC-052: 技能加载面只放「执行时需要」的东西（issue #5853）：沿革必须外置到同目录 CHANGELOG.md，回流 SKILL.md 即红；**换了措辞的「旧落点」口径副本同样红**；外置 ≠ 删除（沿革文件缺失 / 被清空 / 指针丢失也要有东西具名报出）
 - MC-053: 批次账写入点唯一 + 余量口径唯一 + 来源族列形状互斥（issue #5865）：新写入点未登记即红、DB 约束被摘即红、Java 常量与 DB 取值漂移即红
 - MC-054: worktree 删除不许穿过软链 + 禁止「跨工作区 node_modules 软链」成为约定（issue #5930）：解链调用必须**可执行且先于** `git worktree remove`、外部目标逐字节完好、仓内不许把这个姿势教成步骤
+- MC-055: 合并了但没上线必须有值守面（issue #5929）：main HEAD 合入超过 N 秒仍未部署 ⇒ 判红并自己开单、部署成功后自动关闭；C′ 之后「镜像不在 ACR」不得当判据（噪声判据是缺陷）；判不了必须 fail-closed
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
