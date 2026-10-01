@@ -9,7 +9,7 @@ import type { Role, Permission } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
 // #3002 权限分配与真实菜单一致：复用侧边栏菜单配置做单一来源，
 // 弹窗分组/名称 = 侧边栏菜单分组/菜单项，避免展示旧口径权限目录
-import { menuGroups } from '@/config/menu'
+import { menuGroups, standaloneTopItems } from '@/config/menu'
 
 export default function RolesPage() {
   // 岗位列表
@@ -71,6 +71,16 @@ export default function RolesPage() {
   }, [loadRoles, loadPermissions])
 
   // ── #3002 菜单化权限树：分组/名称来自真实侧边栏菜单（menuGroups 单源）──
+  // 🔴 #5895：侧边栏是**三个梯队** —— `standaloneTopItems`（一级项）→ `menuGroups`（分组）
+  // → `standaloneItems`（尾部项）；权限树必须**同样全接**。#5778 把「商品列表」升为一级项
+  // （`standaloneTopItems`：名 =「商品管理」、码 = `product:list`）时只跟了侧边栏与 ⌘K，
+  // 本页仍在只遍历 `menuGroups` ⇒ 该项在「权限分配」里**整项消失**（勾都勾不到）。
+  // 类级判据（新增梯队未接线即红）：tests/unit/pages/roles.test.tsx 的「菜单梯队全部已并入权限树」。
+
+  // 一级项 → 可勾选菜单项（渲染在**所有分组之前**，与侧边栏同序；无分组头，侧边栏里它也不是分组）
+  const topMenuItems = standaloneTopItems
+    .filter(item => item.permissionCode)
+    .map(item => ({ code: item.permissionCode!, label: item.name }))
 
   // 菜单组 → 可勾选菜单项（仅带 permissionCode 的菜单项可授予；工作台/通知中心全员可见无码）
   const menuSections = useMemo(
@@ -101,6 +111,9 @@ export default function RolesPage() {
   const menuCodeSet = useMemo(() => {
     const set = new Set<string>()
     menuGroups.forEach(g => g.children.forEach(item => item.permissionCode && set.add(item.permissionCode)))
+    // #5895：一级项也是**菜单节点**（「商品管理」= `product:list`）⇒ 同样进白名单，
+    // 否则它会掉进「操作权限」节（同名两处、口径混淆）
+    standaloneTopItems.forEach(item => item.permissionCode && set.add(item.permissionCode))
     return set
   }, [])
   const extraPermissions = useMemo(
@@ -130,6 +143,20 @@ export default function RolesPage() {
       })
     },
     [codeIds]
+  )
+
+  // 菜单项行（权限树里**所有**菜单节点共用同一份渲染：一级项 / 组内项）—— 勾选即授予该权限码
+  const renderCodeItem = (code: string, label: string) => (
+    <label key={`${code}-${label}`} className="flex items-center gap-2 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={isCodeGranted(code)}
+        onChange={() => toggleCode(code)}
+        className="w-4 h-4 text-primary-600 rounded border-neutral-300 focus:ring-primary-500"
+      />
+      <span className="text-sm text-neutral-600">{label}</span>
+      <span className="text-xs text-neutral-400" title={code}>{code}</span>
+    </label>
   )
 
   // 菜单组全选/取消全选（组内权限码去重后一并授予/移除）
@@ -352,6 +379,13 @@ export default function RolesPage() {
               <p className="text-sm text-neutral-400">暂无权限数据</p>
             ) : (
               <div className="border border-neutral-200 rounded-lg max-h-[300px] overflow-y-auto" data-testid="perm-menu-sections">
+                {/* #5895 一级项（`standaloneTopItems`，如「商品管理」）：与侧边栏同序 ——
+                    渲染在**所有分组之前**、无分组头（侧边栏里它也不是分组） */}
+                {topMenuItems.length > 0 && (
+                  <div className="border-b border-neutral-100 px-4 py-2 flex flex-wrap gap-x-6 gap-y-2" data-testid="perm-standalone-top">
+                    {topMenuItems.map(item => renderCodeItem(item.code, item.label))}
+                  </div>
+                )}
                 {/* #3002 菜单化权限树：分组/名称与真实侧边栏菜单一致（menuGroups 单源） */}
                 {menuSections.map(section => {
                   const codes = [...new Set(section.items.map(i => i.code))]
@@ -377,21 +411,7 @@ export default function RolesPage() {
                       </div>
                       {/* 菜单项（= 侧边栏菜单项名，勾选即授予对应权限码） */}
                       <div className="px-4 py-2 flex flex-wrap gap-x-6 gap-y-2">
-                        {section.items.map(item => (
-                          <label
-                            key={`${section.name}-${item.label}`}
-                            className="flex items-center gap-2 cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isCodeGranted(item.code)}
-                              onChange={() => toggleCode(item.code)}
-                              className="w-4 h-4 text-primary-600 rounded border-neutral-300 focus:ring-primary-500"
-                            />
-                            <span className="text-sm text-neutral-600">{item.label}</span>
-                            <span className="text-xs text-neutral-400" title={item.code}>{item.code}</span>
-                          </label>
-                        ))}
+                        {section.items.map(item => renderCodeItem(item.code, item.label))}
                       </div>
                     </div>
                   )
