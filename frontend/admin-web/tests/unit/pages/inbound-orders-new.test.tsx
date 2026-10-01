@@ -143,9 +143,11 @@ describe('建单页版式：整页（不是弹窗），与 /orders/new、/produc
     render(<NewInboundOrderPage />)
 
     const dateField = screen.getByTestId('inbound-date-field')
-    // 日期控件还在，且仍是原生 date 输入
-    const dateInput = dateField.querySelector('input[type="date"]') as HTMLInputElement
-    expect(dateInput).not.toBeNull()
+    // 日期控件还在，且仍是原生 date 输入（钉「恰好 1 个」，不是 not.toBeNull —— 后者是弱断言）
+    const dateInputs = dateField.querySelectorAll('input[type="date"]')
+    expect(dateInputs.length).toBe(1)
+    const dateInput = dateInputs[0] as HTMLInputElement
+    expect(dateInput.type).toBe('date')
 
     const grid = dateField.parentElement as HTMLElement
     expect(grid).toHaveClass('md:grid-cols-2')
