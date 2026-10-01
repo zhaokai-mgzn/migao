@@ -1183,7 +1183,7 @@
       "same_family": "`FM-R8`（**工具存在 ≠ 产物可达** —— 派单模板给的命令在接收方那里不成立；那条治路径与半径，本条治口径与前置）+ `FM-R3`（想当然判据语义 ⇒ 引用前先读比较符）+ `FM-R1`（读数的三件套里「口径」那一件）+ `FM-R13`（派单里的断言会过期）",
       "evidence": [
         "scripts/sync-main.sh::请在非 main 分支上运行本脚本",
-        ".agent-presets/migao/skills/migao-dev-flow/SKILL.md::gh run list --branch main --event push --limit 200",
+        ".agent-presets/migao/skills/migao-dev-flow/CHANGELOG.md::gh run list --branch main --event push --limit 200",
         ".agent-presets/migao/skills/migao-dev-flow/SKILL.md::FM-R8"
       ],
       "refs": [
