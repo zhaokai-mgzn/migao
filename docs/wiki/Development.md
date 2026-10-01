@@ -159,6 +159,35 @@ Commit: `feat(frontend): 描述` / `fix(backend): 描述` / `test:` / `refactor:
    ```
    删除前先确认分支内容已通过 PR 合入 main（squash 合并后 hash 不同，`git cherry` 仍会显示 `+`，以 PR 状态与文件内容为准）。
 
+### worktree 依赖准备（2026-10-01 固化，issue #5930）
+
+> 🔴 **依赖一律在本工作区内安装（npm ci）；禁止把 node_modules 软链到主工作区或其他工作区**
+
+每个 worktree 都是独立目录，依赖请**在本工作区内**装（这也是 `./scripts/dev-worktree.sh add` 建完工作区时
+打印的那一段 —— **本页与脚本同源**，不各写一份）：
+
+```bash
+cd <worktree> && npm ci                       # 根依赖
+cd <worktree>/frontend/mini-app && npm ci     # 子包依赖（有该子包时）
+```
+
+**为什么这条是硬的（2026-10-01 22:18 现场事故，issue #5930）**：主工作区 `tests/node_modules`
+被清成**空目录**。成因是**一个类** ——「跨工作区共享 `node_modules` 的软链」×「任何会删/重建
+`node_modules` 的动作」。本包实测复现：worktree 的 `tests/node_modules` 是指向主工作区的软链时，
+在它所在目录跑一次 `npm ci`（第一步就是删 `node_modules`）⇒ **目标目录仍在、内容全空**（fixture 3 → 0 个文件）。
+这类破坏**在仓库外发生、git 里看不见**（软链不入库）⇒ **没有任何判据会因此变红**，是典型的静默失效。
+
+- **正确姿势** = 上面那两条命令（每个 worktree 自装）；不要用软链「省一次安装」——
+  省下的几分钟会以「另一个工作区的依赖被清空」的形式还回来，而且**当场没有任何东西会报**。
+- **`rm` 侧的安全网**：`./scripts/dev-worktree.sh rm`（以及 `rm --delete-branch`）在
+  `git worktree remove` **之前**先把 worktree 内的符号链接逐一解链，并**具名打印**每条
+  「路径 → 目标」；指向**仓库外 / 本仓库工作区**的形态另加 ⚠️ 点名（后者正是本事故的成因）。
+  ⇒ 删除动作**不可能**穿过软链（顺序即安全顺序）。**有意不 fail-closed**：解链之后破坏动作已经结构安全，
+  而拒绝只会逼人改用 `rm -rf <worktree>`（那一条**不解链**，反而把暴露面重新打开）。
+- **判据**：`tests/unit_ci_workflows/test_dev_worktree_symlink_safety.py`（用例 MC-054）——
+  控制流判据（解链调用必须先于删除、且不许只写在注释里）+ 真 fixture 上的 PATH 垫片见证
+  「删除那一刻还有没有软链」+ 外部目标逐字节完好 + 类级教法扫描（仓内不许把这个姿势教成步骤）。
+
 ## 本地验证防恶化（2026-09-06 固化，issue #2957）
 
 **背景**：`verify-all.sh quick` 宣称 3-5 分钟，曾实际恶化到 **58 分钟跑不完**（单用例真实连阿里云 RDS 挂起数十秒 × 数百用例），而 CI 因无 `.env` 一直正常（1-3 分钟）——本地/CI 差异是环境问题信号，不是业务代码问题。

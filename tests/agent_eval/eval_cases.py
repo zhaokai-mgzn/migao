@@ -4799,6 +4799,24 @@ _CASE_MC_053 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-054 [NORMAL] worktree 删除不许穿过软链 + 禁止「跨工作区 node_modules 软链」成为约定（issue #5930）：解链调用必须**可执行且先于** `git worktree remove`、外部目标逐字节完好、仓内不许把这个姿势教成步骤（源: cases/misc.yml）──
+_CASE_MC_054 = EvalCase(
+    id='MC-054',
+    legacy_id='',
+    title='worktree 删除不许穿过软链 + 禁止「跨工作区 node_modules 软链」成为约定（issue #5930）：解链调用必须**可执行且先于** `git worktree remove`、外部目标逐字节完好、仓内不许把这个姿势教成步骤',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人在 worktree 里把依赖软链到主工作区（`node_modules` → 主仓库同名目录）时，任何「删/重建 node_modules」的动作都不许把**仓库外**的目标打穿；`dev-worktree.sh rm` 必须先解链再删，且仓库里不许再有任何脚本/文档把这个姿势教成步骤 —— 任一条被破坏都要有东西具名报出'],
+    expectations=['direct_reply'],
+    data_checks=['**病（2026-10-01 22:18 现场事故，本机实测）**：主工作区 `tests/node_modules` 变成**空目录**（`frontend/admin-web/node_modules` 幸存）。这类破坏**在仓库外发生、git 里看不见**（软链不入库）⇒ 静默失效，没有任何判据会因此变红。共同根因是**一个类**：跨工作区共享 `node_modules` 的软链 × 任何删/重建 `node_modules` 的动作', '**归因取证（对 issue 原文的假设做了核对，铁律 11）**：issue 原文把主因写成「`git worktree remove --force` 的删除路径**跟着软链**把目标删了」—— 本包在**真 fixture**（真 git 仓库 + 真 worktree + 指向外部目录的 `node_modules` 软链）上实测 **git 2.54.0 不复现**：删除前后目标 **2 个文件逐字节完好**（`git worktree remove` 对软链走 `lstat`+`unlink`，不跟随）。另一候选因**实测复现且与现场读数逐字同形**：在软链所在目录跑一次 `npm ci`（第一步就是删 `node_modules`）⇒ 目标目录仍在、**内容全空**（fixture **3 → 0** 个文件）。⇒ 两条并列，但「空目录」这个现场形态由后者解释', '**判据 1（控制流元守卫）**：`scripts/dev-worktree.sh` 的 `cmd_rm` 里，对解链函数（`unlink_symlinks_before_remove`）的调用必须**可执行**（`#` 开头的注释行不算）且**排在** `git … worktree remove` **之前**。判据 = tests/unit_ci_workflows/test_dev_worktree_symlink_safety.py 的 `test_unlink_call_precedes_worktree_remove_and_is_not_a_comment`', '**判据 2（行为，真 fixture + 真 git）**：造「worktree 含指向外部目录的 `node_modules` 软链」形态 ⇒ 跑 `dev-worktree.sh rm` ⇒ ① 外部目标**逐字节完好**；② PATH 上的 `git` 垫片见证「真正执行 `worktree remove` 的那一刻，worktree 里**还有没有软链**」= **`no`**（= 解链确实先于删除）；③ worktree 正常消失；④ 解链**具名可见**地打在输出里（路径 → 目标）。判据 = 同文件 `test_rm_unlinks_before_removing_and_keeps_the_external_target_intact`', '**判据 2 的红证（注入，改前/改后双向对照）**：把解链调用那一行删掉（**先自证变异生效**）⇒ 见证器读到 **`LINK_PRESENT_AT_REMOVE=yes`**（= 删除动作暴露在**活链**上）；修后同 fixture 读 **`no`**。判据 = 同文件 `test_injected_missing_unlink_leaves_the_link_live_at_removal_time`。**实测读数**：改前（未实现）该判据与判据 2 双双判红、见证读数 = `yes`；改后 = `no`', '**判据 3（反向对照，防「为安全把 rm 弄坏」）**：**不带软链**的 worktree 仍能正常移除（rc=0、目录消失、见证读数 `no`），且 `rm --delete-branch` 语义不变（分支真被删、主干保护一字未动）。判据 = 同文件 `test_worktree_without_links_still_removes_normally`', '**判据 4（危险面钉住，防判据 2 变空断言）**：仍**活着**的跨工作区软链一旦遇上**解引用式删除**（POSIX：操作数带尾斜杠）⇒ 目标被清空（`after == {}`）。判据 = 同文件 `test_dereferencing_removal_on_a_live_cross_workspace_link_empties_the_target`', '**判据 5（类级元守卫：教法扫描）**：仓内**任何** tracked 文本文件里，行首 `ln` + `-s` 族旗标 + 该行含 `node_modules` 的**配方形态**都必须已登记豁免；**未登记即红**、**陈旧登记即红**、**条数超冻结上界即红**（上界现取 = **1**，写死在判据里 ⇒ 台账自己改不大，只许缩短）。判据 = 同文件 `test_no_script_or_doc_teaches_cross_workspace_node_modules_symlink` + `test_teaching_scan_has_teeth_on_injected_corpora`', '**判据 5 的存量处置（现取 = 2 条命中，收口为 1 条豁免 + 1 条就地标注）**：① `tests/unit_ci_workflows/test_ui_smoke_worktree_deps.py` 的**病灶引用**（它是 issue #5241 的证据锚，改写会削弱证据链）⇒ **登记豁免**（台账 `tests/unit_ci_workflows/worktree_dep_symlink_ledger.json`，写清理由）；② `acceptance/2026-09-18/4307-4308-routing/REPORT.md` 的「复跑 recipe」是**真的步骤**⇒ **就地标注为禁止**（原命令行**逐字保留在注释里**，不改写历史读数），标注后不再是配方行', '**判据 6（同源：不许两处各写一份）**：`dev-worktree.sh add` 的**输出**与 `docs/wiki/Development.md` 的 `### worktree 依赖准备` 节必须带**同一句**逐字规范（现取 = 「依赖一律在本工作区内安装（npm ci）；禁止把 node_modules 软链到主工作区或其他工作区」）；任一侧缺失 ⇒ 具名判红。判据 = 同文件 `test_add_output_and_development_doc_share_one_canonical_rule`', '**判据 7（判别力自证）**：控制流判据在三种坏形态上各自判红（删掉调用 / 挪到删除之后 / 改成注释），未注入**不红**；教法扫描在「未登记 / 陈旧登记 / 超上界」上判红，在「都空」「真语料 + 现台账」上**不红**；本判据文件自身 `recipe_hits == []`（守卫不许被自己的语料喂红）。判据 = 同文件 `test_injected_control_flow_bad_shapes_are_all_red` / `test_teaching_scan_has_teeth_on_injected_corpora` / `test_helper_declares_no_recipe_shape_itself`', '**fail-closed 与否的裁定（issue 要求写理由）**：`rm` **不** fail-closed（解链后照常删除，只打具名可见提示）。① 解链之后破坏动作已经**结构安全**（无论 remover 是 git / rm / npm / find，都没有可穿越的软链面）⇒ 拒绝只增摩擦不增安全；② worktree 里出现软链是**常态**（`.env`、编辑器目录…）⇒ 拒绝会逼人改用 `rm -rf <worktree>`，而**那一条不解链**、正是事故形态的入口；③ 信号由可见提示承担（每条软链具名打「路径 → 目标」，指向仓库外/本仓库工作区的另加 ⚠️ 点名）。真正 fail-closed 的是**非破坏面**：判据 1（控制流）与判据 5/6（教法与同源）', '**边界（如实登记，§19.1）**：射程只到 `dev-worktree.sh rm` 这一条删除路径 —— 别的会删/重建 `node_modules` 的动作（`npm ci` / `npm install` / 人手 `rm -rf`）**不在机械射程内**，它们由判据 5/6 的「不许教这个姿势」+ 文档正确姿势来防，**不是**被拦；见证器只认 `git -C <repo> worktree remove <path>` 这一种调用形态（换写法会 fail-closed 判红，刻意如此）；教法扫描只认「行首 `ln` + `-s` 族旗标 + 含 `node_modules`」一种配方形态（`os.symlink` / `cp -s` / `mklink` / 变量拼接不在射程，漏报方向）；判不了仓外文件系统里**已经建好**的存量软链（本单明确不做追溯修复，拦的是下一次）；判据 4 用的解引用式删除是 POSIX 的 `rm -rf <链接>/`，**不是** `npm ci` 本身（CI 的 helper 腿不装前端依赖），现场那一个的读数写在 `merge_log` 与本条的上文里、可离线复算'],
+    skip_reason='[backend-contract] 静态结构 + 真 fixture 行为守卫（只读仓内文件；真 git 仓库 / 真 worktree 一律造在 tmp_path，**不碰任何真实工作区**；零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_dev_worktree_symlink_safety.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'dev-tooling', 'worktree', 'symlink', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -11400,6 +11418,7 @@ ALL_CASES = (
     _CASE_MC_051,
     _CASE_MC_052,
     _CASE_MC_053,
+    _CASE_MC_054,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
