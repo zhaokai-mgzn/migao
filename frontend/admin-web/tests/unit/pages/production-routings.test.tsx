@@ -38,6 +38,12 @@
 //       而**键**（`data-testid` / 提交的 `tiers` 键 / `label` 初值）仍是英文键；
 //    ③ 就绪度补第 4 步「算料配置」（`source='stored'` ⇒ done / `'default'` ⇒ todo /
 //       **读面未回来 ⇒ 中性 unknown**，不把「没加载」误报成「没配」）。
+//    ④ **2026-10-01 改判（issue #5858 / #5859 / #5860，用户截图走查）**：就绪度由四步改判为**五步**
+//       （补第 ⑤ 步「裁高配置」）+ 每一步的计数与它所指的区块**同源** + 每步一个**可点**的去处
+//       （`readiness-goto-<key>`）+ 算料 / 裁高读面**首屏就发**（判据面 = 本文件的 **⑨c 组**）；
+//       「什么时候」由四档收敛为**三档**（工艺档只删商家新建入口，存量 craft 条件与后端契约一字不动）
+//       —— 判据面 = ⑱-① 里「工艺档不存在」的反向护栏；抽屉那一行（徽标 / 分组 · 单位 / 铅笔）
+//       改判为带标签 + 人话（判据面 = ⑨c-⑧）。**判据一格不放宽**，只改「被测对象已经变了」的那些格。
 // ⑮ **特殊选项单价可改**（issue #4567 追加，用户原文「特殊选项有单价，但数据不全，新增工序也无法
 //    增加特殊选项配置单价」）：`option` 行的「单价（元/套）」列给**行内编辑**（铅笔 → 输入 → 保存/
 //    取消，照「工序库明细」改计件单价的既有交互）⇒ `PUT /route-rules/{id}/customer-unit-price`
@@ -850,6 +856,11 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     mockCreateOptionRule.mockReset().mockResolvedValue(ok({ id: 31 }))
     mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
     mockUpdateCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'stored', config: ENGINE_DEFAULT_CALC_CONFIG }))
+    // issue #5858：裁高配置的**就绪信号**在首屏就发（就绪度第 ⑤ 步）⇒ 每个用例都要有默认替身
+    //（不给 ⇒ `res` 取不到 `data` ⇒ 页面按「读取失败」渲染，第 ⑤ 步恒 unknown = 假红）
+    mockGetCuttingHeightConfig
+      .mockReset()
+      .mockResolvedValue(ok({ source: 'default', config: { items: [], rounding: { mode: 'none', digits: 2 } } }))
     vi.mocked(toast.success).mockClear()
     vi.mocked(toast.error).mockClear()
   })
@@ -1210,6 +1221,135 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(step).toHaveAttribute('data-state', 'unknown')
     expect(step).toHaveTextContent('读取中')
     expect(step).not.toHaveTextContent('待完成')
+  })
+
+  // ══════════════════ ⑨c 就绪度向导重构成「五步体检表」（issue #5858）══════════════════
+  //
+  // 用户 2026-10-01 附线上截图逐字：「**这个页面的向导式已经和实际功能不匹配了，重构这个向导**」。
+  // 五步 = ① 工序与单价 → ② 工艺路线 → ③ 默认路线 → ④ 算料配置 → ⑤ **裁高配置**（改前没有第 ⑤ 步）；
+  // 每一步的计数与它所指的区块**同源**、判据覆盖该区块的真实缺口、并给一个**可点**的去处。
+
+  it('⑨c-① 第 ① 步的计数与它所指的那张表**同源**（不再与表头并存两个数字）', async () => {
+    await renderOperations()
+
+    const step = screen.getByTestId('readiness-step-operations')
+    const tableTotal = screen.getByTestId('operation-price-matrix-total').textContent
+    // 红证：把 label 改回 `工序库 ${catalog.total} 道`（工序库行数 = 4）⇒ 与表头道数不同 ⇒ 本断言红
+    expect(step).toHaveTextContent(`工序与单价 ${tableTotal} 道`)
+    expect(step).not.toHaveTextContent('工序库 4 道')
+  })
+
+  it('⑨c-② 第 ① 步判据含「未定价」：有未定价 ⇒ todo + 说清后果（不再与同屏「未定价 N 项」并存「已完成」）', async () => {
+    // 让**收敛后**那一行未定价（`精裁` 的收敛格 = `布帘`：部位字典序 → id 升序）
+    mockGetOperationPositions.setDefault(
+      POSITIONS.map((p) => (p.id === 'pos-精裁-布帘' ? { ...p, unit_price: null } : p)),
+    )
+    await renderOperations()
+
+    const step = screen.getByTestId('readiness-step-operations')
+    expect(screen.getByTestId('matrix-unpriced-count')).toHaveTextContent(/未定价 [1-9]/)
+    // 红证：判据改回「只看表里有没有工序」⇒ 这里显示 done ⇒ 本断言红
+    expect(step).toHaveAttribute('data-state', 'todo')
+    expect(step).toHaveTextContent('还没定价')
+    expect(step).toHaveTextContent('未定价 ≠ ¥0.00')
+  })
+
+  it('⑨c-② 反向护栏：无未定价 ∧ 无孤儿 ⇒ 第 ① 步 done（不误报）', async () => {
+    // 工序库收成**被矩阵引用的那一行**（`op-v54-04`）⇒ 零孤儿；价一律非 null ⇒ 零未定价
+    mockGetOperationsCatalog.mockResolvedValue(
+      ok({
+        total: 1,
+        groups: [
+          {
+            group: '后道',
+            operations: [
+              { id: 'op-v54-04', name: '外帘装袋', group: '后道', position: '外帘', scope: 'set', unit: '套', unit_price: 0.4, is_must_finish: true, is_start_marker: false },
+            ],
+          },
+        ],
+      }),
+    )
+    mockGetOperationPositions.setDefault(POSITIONS.map((p) => ({ ...p, unit_price: p.unit_price ?? 1 })))
+    await renderOperations()
+
+    expect(screen.getByTestId('readiness-step-operations')).toHaveAttribute('data-state', 'done')
+  })
+
+  it('⑨c-③ 第 ⑤ 步「裁高配置」在向导里（改前四步向导**不知道它存在**）：source=stored ⇒ done', async () => {
+    mockGetCuttingHeightConfig
+      .mockReset()
+      .mockResolvedValue(ok({ source: 'stored', config: { items: [], rounding: { mode: 'none', digits: 2 } } }))
+    await renderOperations()
+
+    // 红证：删掉第 ⑤ 步 ⇒ getByTestId 抛错（= 改前形态）
+    const step = await screen.findByTestId('readiness-step-cut-config')
+    expect(step).toHaveAttribute('data-state', 'done')
+    expect(step).toHaveTextContent('裁高配置 已保存')
+  })
+
+  it('⑨c-④ 第 ⑤ 步「裁高配置」：source=default ⇒ todo + 说清「现在是系统默认值」（不谎报已配）', async () => {
+    await renderOperations()
+
+    const step = await screen.findByTestId('readiness-step-cut-config')
+    expect(step).toHaveAttribute('data-state', 'todo')
+    expect(step).toHaveTextContent('裁高配置 系统默认')
+    expect(step).toHaveTextContent('系统默认值')
+  })
+
+  it('⑨c-⑤ 每步的「去处理」**把人带到那儿**（不是只调了个函数）：算料 / 裁高 / 工艺路线', async () => {
+    await renderOperations()
+
+    await userEvent.click(screen.getByTestId('readiness-goto-calc'))
+    expect(await screen.findByTestId('craft-calc-config-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('process-config-tab-calc')).toHaveAttribute('data-state', 'active')
+
+    await userEvent.click(screen.getByTestId('readiness-goto-cut'))
+    expect(await screen.findByTestId('cutting-height-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('process-config-tab-cut')).toHaveAttribute('data-state', 'active')
+
+    await userEvent.click(screen.getByTestId('readiness-goto-routings'))
+    expect(await screen.findByTestId('routings-list')).toBeInTheDocument()
+    expect(screen.getByTestId('process-config-tab-process')).toHaveAttribute('data-state', 'active')
+  })
+
+  it('⑨c-⑥ 首屏就发算料 / 裁高读面（用户裁定）：第 ④ 步不必先点 tab 才有真值', async () => {
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+
+    // 红证：把 `loadCalcConfig` / `loadCutReadiness` 改回懒加载（切到本 tab 才发）⇒ 本断言红
+    await waitFor(() => expect(mockGetCraftCalcConfig).toHaveBeenCalled())
+    await waitFor(() => expect(mockGetCuttingHeightConfig).toHaveBeenCalled())
+    // 首屏（**没点任何 tab**）第 ④ 步就已经拿到真值：mock 回 source='default' ⇒ todo（不是「读取中」）
+    await waitFor(() =>
+      expect(screen.getByTestId('readiness-step-calc-config')).toHaveAttribute('data-state', 'todo'),
+    )
+    expect(screen.getByTestId('readiness-step-calc-config')).toHaveTextContent('算料配置 系统默认')
+  })
+
+  it('⑨c-⑦ 孤儿工序 ⇒ 第 ① 步 todo + 补套卡**真的渲染**（改前指路指向一张不存在的卡）', async () => {
+    // 默认夹具：工序库 4 道，只有 `op-v54-04` 被矩阵引用 ⇒ 3 道孤儿。
+    // 两条基础路线**齐**（否则卡标题落在「缺基础路线」那一支，测不到本条的孤儿分支）。
+    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITH_BASE))
+    await renderOperations()
+
+    expect(screen.getByTestId('matrix-orphan-hint')).toHaveTextContent('有 3 道工序还没有价目行')
+    const step = screen.getByTestId('readiness-step-operations')
+    expect(step).toHaveAttribute('data-state', 'todo')
+    expect(step).toHaveTextContent('没有任何价目行')
+    // 红证：把渲染条件改回 `!operationsReady || missingBaseRoutes.length > 0` ⇒ 卡不渲染 ⇒ 本断言红
+    expect(screen.getByTestId('seed-templates')).toHaveTextContent('有工序没有价目行 · 补套行业模板')
+  })
+
+  it('⑨c-⑧ 抽屉那一行说清三件事（issue #5860）：分组 / 单位带标签 + 报工口径人话 + 文字按钮', async () => {
+    await openManage('三边')
+
+    const drawer = screen.getByTestId('operations-manage-drawer')
+    // 改前是两个裸词 `车位 · 米`（用户原话「这里的文案让人看不明白」）
+    expect(drawer).toHaveTextContent(/分组「.+」 · 单位「.+」/)
+    const note = screen.getAllByTestId(/^variant-meta-note-/)[0]
+    expect(note).toHaveTextContent(/工人在「.+」报工、按「.+」计数/)
+    // 那个没有文字的铅笔 ⇒ 文字按钮
+    expect(screen.getAllByTestId(/^variant-meta-edit-/)[0]).toHaveTextContent('改分组 / 单位')
   })
 
   // ══════════════════ ⑨d 算料口径与术语说明（issue #4975） ══════════════════
@@ -2152,21 +2292,27 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   // 缺了入口 ⇒ 商家新增工艺/加工项后**无法**让它在订单里插/删工序 ⇒ 该订单**静默少工序**。
   // #4650 阶段 1：入口从独立规则表**搬到工序抽屉**，且只问**两件事**（什么时候 / 做还是不做）。
 
-  it('⑱-① 「添加条件」入口 ⇒ 建**工艺**触发条件，body 带 trigger_kind/action/operation', async () => {
+  it('⑱-① 「添加条件」入口 ⇒ 默认档 = **特殊选项**（工艺档已退场，issue #5859），body 带 trigger_kind/action/operation', async () => {
     await openConditions('三边')
 
     await userEvent.click(screen.getByTestId('operation-condition-add'))
     await waitFor(() => expect(screen.getByTestId('operation-condition-form')).toBeInTheDocument())
-    // 默认「什么时候」= 工艺；取值**从工艺列表取**（下拉，不是手输）
-    expect(screen.getByTestId('condition-kind-craft')).toHaveAttribute('aria-checked', 'true')
-    await userEvent.selectOptions(screen.getByTestId('condition-value'), '罗马帘')
+    // 🔴 反向护栏（issue #5859）：**工艺档不得再出现在「什么时候」里** —— 商家不再能新建 craft 条件
+    //（红证：把 `{ key: 'craft', label: '工艺' }` 加回 chip 列表 ⇒ 下面两条断言红）
+    expect(screen.queryByTestId('condition-kind-craft')).toBeNull()
+    expect(
+      within(screen.getByRole('radiogroup', { name: '什么时候' })).queryByRole('radio', { name: '工艺' }),
+    ).toBeNull()
+    // 默认档 = **特殊选项**（删掉工艺后列表里的第一项）；取值从既有选项名里选（下拉，不是手输）
+    expect(screen.getByTestId('condition-kind-option')).toHaveAttribute('aria-checked', 'true')
+    await userEvent.selectOptions(screen.getByTestId('condition-value'), '拼2次')
     await userEvent.selectOptions(screen.getByTestId('condition-anchor'), '精裁')
     await userEvent.click(screen.getByTestId('condition-add-submit'))
 
     await waitFor(() =>
       expect(mockCreateOptionRule).toHaveBeenCalledWith({
-        trigger_kind: 'craft',
-        trigger_value: '罗马帘',
+        trigger_kind: 'option',
+        trigger_value: '拼2次',
         action: 'insert',
         operation: '三边',
         after_operation: '精裁',
@@ -2199,9 +2345,9 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await openConditions('韩褶')
     await userEvent.click(screen.getByTestId('operation-condition-add'))
 
-    // 默认「工艺」⇒ 选项 = 活跃工艺词表
+    // 默认「特殊选项」⇒ 选项 = 既有选项名（**不手输**）
     expect(screen.getByTestId('condition-value').tagName).toBe('SELECT')
-    expect(within(screen.getByTestId('condition-value')).getByRole('option', { name: '罗马帘' })).toBeInTheDocument()
+    expect(within(screen.getByTestId('condition-value')).getByRole('option', { name: '拼2次' })).toBeInTheDocument()
 
     await userEvent.click(screen.getByTestId('condition-kind-processing_item'))
     expect(screen.getByTestId('condition-value').tagName).toBe('SELECT')
@@ -2209,10 +2355,10 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     // 切换 ⇒ 已选取值被清空（不把上一档的值带过去）
     expect(screen.getByTestId('condition-value')).toHaveValue('')
 
-    // 特殊选项档的取值 = 既有选项名（**不手输**；新建选项走「新增 → 特殊选项」）
-    await userEvent.click(screen.getByTestId('condition-kind-option'))
+    // 第 4 档「部位」（#4962 加回）⇒ 取值 = 后端给的部位闭词表
+    await userEvent.click(screen.getByTestId('condition-kind-position'))
     expect(screen.getByTestId('condition-value').tagName).toBe('SELECT')
-    expect(within(screen.getByTestId('condition-value')).getByRole('option', { name: '拼2次' })).toBeInTheDocument()
+    expect(within(screen.getByTestId('condition-value')).getByRole('option', { name: '布帘' })).toBeInTheDocument()
   })
 
   it('⑱-④ 「做还是不做」切到「不做」⇒ 「插在哪道工序之后」整块消失（不做没有位置）', async () => {
@@ -2237,14 +2383,14 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   it('⑱-⑥ 后端 422 ⇒ 理由**逐条**就地展示，且**不刷新**、不改页面数据', async () => {
     mockCreateOptionRule
       .mockReset()
-      .mockRejectedValueOnce(guardError(['工艺词表里没有活跃的「罗马帘」', '对客单价只属于特殊选项']))
+      .mockRejectedValueOnce(guardError(['特殊选项里没有活跃的「拼2次」', '对客单价只属于特殊选项']))
     await openConditions('三边')
     await userEvent.click(screen.getByTestId('operation-condition-add'))
-    await userEvent.selectOptions(screen.getByTestId('condition-value'), '罗马帘')
+    await userEvent.selectOptions(screen.getByTestId('condition-value'), '拼2次')
     await userEvent.click(screen.getByTestId('condition-add-submit'))
 
     const reasons = await screen.findByTestId('condition-add-reasons')
-    expect(reasons).toHaveTextContent('工艺词表里没有活跃的「罗马帘」')
+    expect(reasons).toHaveTextContent('特殊选项里没有活跃的「拼2次」')
     expect(reasons).toHaveTextContent('对客单价只属于特殊选项')
     // 失败 ⇒ **不**刷新（静默写回 = 商家以为加上了、订单侧其实没生效）
     expect(mockGetRouteRules).toHaveBeenCalledTimes(1)
@@ -2272,8 +2418,9 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await userEvent.click(screen.getByTestId('operation-condition-add'))
     await waitFor(() => expect(screen.getByTestId('operation-condition-form')).toBeInTheDocument())
 
-    // 先在默认档（工艺）选一个值：切档必须把它清掉（不把上一档的值带过去）
-    await userEvent.selectOptions(screen.getByTestId('condition-value'), '韩褶')
+    // 先在**默认档**（特殊选项；issue #5859 起工艺档已退场）选一个值：切档必须把它清掉
+    //（不把上一档的值带过去）
+    await userEvent.selectOptions(screen.getByTestId('condition-value'), '拼2次')
 
     // 第 4 个按钮**在「什么时候」这个 radiogroup 里**（与既有三档同构：role=radio / aria-checked）
     const positionKind = screen.getByRole('radio', { name: '部位' })
@@ -2315,13 +2462,14 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   it('⑱′-② 反向护栏：其它档**不带** `position` 键（留空 = 不限部位，不拿 `null` 冒充「没填」）', async () => {
     await openConditions('三边')
     await userEvent.click(screen.getByTestId('operation-condition-add'))
-    await userEvent.selectOptions(screen.getByTestId('condition-value'), '罗马帘')
+    // 默认档 = 特殊选项（issue #5859 起工艺档已退场）—— 本条判的是「非部位档都不带 position 键」
+    await userEvent.selectOptions(screen.getByTestId('condition-value'), '拼2次')
     await userEvent.click(screen.getByTestId('condition-add-submit'))
 
     await waitFor(() =>
       expect(mockCreateOptionRule).toHaveBeenCalledWith({
-        trigger_kind: 'craft',
-        trigger_value: '罗马帘',
+        trigger_kind: 'option',
+        trigger_value: '拼2次',
         action: 'insert',
         operation: '三边',
         after_operation: '精裁',
@@ -3039,10 +3187,10 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await openManage('三边')
     await userEvent.click(screen.getByTestId('operation-condition-add'))
 
-    // ① 「什么时候」= 种类（默认工艺）+ 取值（**从词表选，不手输** ⇒ SELECT）
-    expect(screen.getByTestId('condition-kind-craft')).toHaveAttribute('aria-checked', 'true')
+    // ① 「什么时候」= 种类（默认**特殊选项**，工艺档已退场 issue #5859）+ 取值（**从既有选项名选，不手输** ⇒ SELECT）
+    expect(screen.getByTestId('condition-kind-option')).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByTestId('condition-value').tagName).toBe('SELECT')
-    await userEvent.selectOptions(screen.getByTestId('condition-value'), '罗马帘')
+    await userEvent.selectOptions(screen.getByTestId('condition-value'), '拼2次')
     // ② 「做还是不做」
     await userEvent.selectOptions(screen.getByTestId('condition-action'), 'insert')
     // ③ 插在哪道之后（可选项 + 默认值）
@@ -3051,8 +3199,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
     await waitFor(() =>
       expect(mockCreateOptionRule).toHaveBeenCalledWith({
-        trigger_kind: 'craft',
-        trigger_value: '罗马帘',
+        trigger_kind: 'option',
+        trigger_value: '拼2次',
         action: 'insert',
         operation: '三边',
         after_operation: '精裁',
@@ -3170,15 +3318,17 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
  * ④ 切 tab 不丢草稿（state 挂在本组件上）。
  */
 describe('算料配置 tab（issue #4528）', () => {
-  it('切到算料配置 tab ⇒ GET 一次 + 渲染引擎默认值 + 标注「当前使用系统默认值」', async () => {
+  it('切到算料配置 tab ⇒ 渲染引擎默认值 + 标注「当前使用系统默认值」（读面**首屏**就发，issue #5858 改判）', async () => {
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    // 懒加载：没切过去之前**不**发请求
-    expect(mockGetCraftCalcConfig).not.toHaveBeenCalled()
+    // 🔴 issue #5858 **改判**（用户裁定「首屏就读取算料 + 裁高」）：不再是懒加载 ——
+    // 就绪度第 ④ 步要在一屏之内给出真值。红证：把 `loadCalcConfig` 改回「`tab === 'calc'` 才发」⇒ 本断言红。
+    await waitFor(() => expect(mockGetCraftCalcConfig).toHaveBeenCalled())
 
     await userEvent.click(screen.getByTestId('process-config-tab-calc'))
 
     await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+    // 切 tab **不重复**发（已有数据）—— 首屏那一次就是全部
     expect(mockGetCraftCalcConfig).toHaveBeenCalledTimes(1)
     expect(screen.getByTestId('craft-calc-config-source')).toHaveTextContent('当前使用系统默认值')
     // 默认值来自**后端**（逐值渲染，前端不持有）
@@ -3850,7 +4000,35 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(screen.getByTestId('seed-template-apply-curtain')).toBeInTheDocument()
   })
 
-  it('§6-① 反向护栏：两条基础路线**齐**且工序库非空 ⇒ 补套入口**不显示**（不是常驻噪音）', async () => {
+  it('§6-① 反向护栏：两条基础路线**齐** ∧ 工序库非空 ∧ **零孤儿** ⇒ 补套入口**不显示**（不是常驻噪音）', async () => {
+    // ⚠️ issue #5858 起「可补齐的缺失项」**多了第三类：孤儿工序**（库里有、没有任何价目行）
+    // ⇒ 这条反向护栏必须把前提写全：本组夹具（`LAYER_CELLS` + `CATALOG`）本来就带孤儿
+    //（工序库 4 行 vs 被引用的 `lop-*`），那种数据下**卡本来就该显示**。
+    // 这里把工序库收成**恰好被矩阵引用的那些 id** ⇒ 真「什么都不缺」。
+    const referenced = [
+      ...new Set(LAYER_CELLS.map((c) => c.variant_operation_id).filter((v): v is string => !!v)),
+    ]
+    mockGetOperationsCatalog.mockResolvedValue(
+      ok({
+        total: referenced.length,
+        groups: [
+          {
+            group: '全部',
+            operations: referenced.map((id) => ({
+              id,
+              name: id,
+              group: '全部',
+              position: '布帘',
+              scope: 'position',
+              unit: '件',
+              unit_price: 1,
+              is_must_finish: false,
+              is_start_marker: false,
+            })),
+          },
+        ],
+      }),
+    )
     mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITH_BASE))
     await renderOperations()
 

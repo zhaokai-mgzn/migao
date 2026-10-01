@@ -196,7 +196,7 @@ const layersOf = (cells: any[]) => {
     await openVariant('罗马帘')
 
     const badge = within(screen.getByTestId('variant-row-103')).getByTestId('variant-source-103')
-    expect(badge).toHaveTextContent('初始价·待确认')
+    expect(badge).toHaveTextContent('单价：初始价（待确认）')
   })
 
   it("source='实证' 的行**不**渲染「待确认」徽标（双向断言，防永远显示）", async () => {
