@@ -125,4 +125,91 @@ class ProductRollAllocationTest {
         assertThat(a.rollCount()).isEqualTo(3);
         assertThat(a.cutMeters()).isEqualByComparingTo("20");
     }
+
+    // ================== #5846（用户 2026-10-01 裁定）：显式优先 + 缺的那半**回落** ==================
+    //
+    // 裁定逐条：effectiveLength = 显式 rollLengthM ?? 商品 roll_length_m；
+    //           rollCount = 显式 rollCount ?? floor(quantity / effectiveLength)。
+    // 🔴 回落点**只有** `resolve` 一处（类级元守卫 OrderRollAllocationAuthorityTest 钉住其调用点唯一）。
+    // ⚠️ 用户同日**二次裁定取消「成对」契约** ⇒ 只给一个也是合法输入（下面每条都是一种半给）。
+
+    @Test
+    @DisplayName("#5846 只给卷数 + 商品配了卷长 ⇒ 卷数采用显式、卷长回落商品值")
+    void resolve_explicitCountWithProductLengthFallback() {
+        ProductRollAllocation.Allocation a =
+                ProductRollAllocation.resolve(2, null, bd("100"), bd("58.5"));
+
+        assertThat(a.rollCount()).as("显式卷数优先（派生的 floor(100/58.5)=1 不得覆盖）").isEqualTo(2);
+        assertThat(a.rollLengthM()).isEqualByComparingTo("58.5");
+        assertThat(a.cutMeters()).as("散剪 = 100 − 2×58.5 = −17（负差额由人决定，算法照算）")
+                .isEqualByComparingTo("-17");
+    }
+
+    @Test
+    @DisplayName("#5846 只给卷数 + 卷长两边都没有 ⇒ 卷数照落、卷长为 NULL（新合法态，不猜）")
+    void resolve_explicitCountOnlyKeepsLengthNull() {
+        ProductRollAllocation.Allocation a =
+                ProductRollAllocation.resolve(2, null, bd("100"), null);
+
+        assertThat(a.allocated()).as("「客户要 2 卷」是真实意图 ⇒ 不是「未分配」").isTrue();
+        assertThat(a.rollCount()).isEqualTo(2);
+        assertThat(a.rollLengthM()).as("两边都没有 ⇒ NULL（**不许**猜一个默认卷长）").isNull();
+        assertThat(a.cutMeters()).as("卷长未知 ⇒ 散剪算不出来 ⇒ NULL（不编）").isNull();
+    }
+
+    @Test
+    @DisplayName("#5846 只给每卷米数 ⇒ 用它派生卷数（显式长度优先于商品长度）")
+    void resolve_explicitLengthOnlyDerivesCount() {
+        // 商品 60 会派生出 1 卷；显式 30 派生出 2 卷 ⇒ 该组数有判别性
+        ProductRollAllocation.Allocation a =
+                ProductRollAllocation.resolve(null, bd("30"), bd("60"), bd("60"));
+
+        assertThat(a.rollCount()).isEqualTo(2);
+        assertThat(a.rollLengthM()).isEqualByComparingTo("30");
+        assertThat(a.cutMeters()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    @DisplayName("#5846 两边都没卷长 且 没给卷数 ⇒ 不分配（**不猜默认值**，既有红线不变）")
+    void resolve_noLengthAnywhereAndNoExplicitCountIsNotAllocated() {
+        for (BigDecimal productLength : new BigDecimal[] {null, bd("0"), bd("-1")}) {
+            ProductRollAllocation.Allocation a =
+                    ProductRollAllocation.resolve(null, null, bd("100"), productLength);
+            assertThat(a.allocated())
+                    .as("商品卷长=%s ⇒ 未分配（不许用「默认 60 米」之类兜底常量）", productLength)
+                    .isFalse();
+            assertThat(a.rollCount()).isNull();
+            assertThat(a.rollLengthM()).isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("#5846 显式 0 卷 ⇒ 真实结论（全散剪），与「未分配」两回事")
+    void resolve_explicitZeroRollsIsARealConclusion() {
+        ProductRollAllocation.Allocation a =
+                ProductRollAllocation.resolve(0, null, bd("100"), bd("60"));
+
+        assertThat(a.allocated()).isTrue();
+        assertThat(a.rollCount()).isEqualTo(0);
+        assertThat(a.rollLengthM()).isEqualByComparingTo("60");
+        assertThat(a.cutMeters()).isEqualByComparingTo("100");
+    }
+
+    @Test
+    @DisplayName("#5846 两个都不给 ⇒ 与 `allocate(quantity, 商品卷长)` 逐值相同（改造前的行为一字不改）")
+    void resolve_withNoExplicitInputsEqualsLegacyDerivation() {
+        for (BigDecimal productLength : new BigDecimal[] {bd("60"), bd("58.5"), null, bd("0")}) {
+            ProductRollAllocation.Allocation viaResolve =
+                    ProductRollAllocation.resolve(null, null, bd("100"), productLength);
+            ProductRollAllocation.Allocation legacy =
+                    ProductRollAllocation.allocate(bd("100"), productLength);
+            assertThat(viaResolve.rollCount()).isEqualTo(legacy.rollCount());
+            assertThat(viaResolve.allocated()).isEqualTo(legacy.allocated());
+            if (legacy.rollLengthM() == null) {
+                assertThat(viaResolve.rollLengthM()).isNull();
+            } else {
+                assertThat(viaResolve.rollLengthM()).isEqualByComparingTo(legacy.rollLengthM());
+            }
+        }
+    }
 }

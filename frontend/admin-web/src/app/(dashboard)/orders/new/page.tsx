@@ -1397,8 +1397,8 @@ function positiveOrNull(value: number | null): number | null {
  * 用户口径：「下单页**默认带出**商品 `products.roll_length_m`」。商品未配 / 非正值 ⇒ `null`
  * （**不落 0、不猜**：「不知道」不许伪装成「0 米一卷」—— 与 `ProductRollAllocation` 同一条红线）。
  *
- * ⚠️ 它只是**输入框的默认值**，不是「派生分配」：用户不改就随显式那一对提交（前提是他填了卷数）；
- * 卷数留空时**两个键都不进 payload** ⇒ 服务端仍按货号卷长自行派生。
+ * ⚠️ 它只是**输入框的默认值**（用户没动过它 ⇒ 不进 payload，服务端照旧按货号卷长派生）；
+ * 用户把它改成别的值 ⇒ 才作为**显式**每卷米数下发。
  */
 function defaultRollLengthOf(product: ProductDetail | null | undefined): number | null {
   const v = Number(product?.rollLengthM)
@@ -1408,15 +1408,26 @@ function defaultRollLengthOf(product: ProductDetail | null | undefined): number 
 /**
  * 行状态 → 建单 payload 的整卷售卖两个键（issue #5846）。
  *
- * 🔴 **成对，或都不给**（与 `OrderService.parseExplicitRollCount` 同一份契约）：
- * - 卷数填了（含 `0`——「全散剪」是真实结论）⇒ 两个键一起进；
- * - 卷数留空 / 每卷米数缺失 ⇒ **一个键都不进**（服务端走派生）。
+ * 🔴 **两个键各自独立**（用户 2026-10-01 **二次裁定取消「成对」契约**）：给哪个发哪个，
+ * 缺的那一半由服务端**回落**（显式 ?? 货号卷长），回落不到 ⇒ 保持 NULL（不猜）。
  *
- * 半对输入由 `validate()` 拦住并说明（不在这里静默补一个值 —— 那是编造）。
+ * - 卷数填了（含 `0` —— 「全散剪」是真实结论）⇒ 发 `rollCount`；
+ * - 每卷米数**被用户改过**（≠ 商品卷长）或**卷数填了且该格有值** ⇒ 发 `rollLengthM`；
+ *   仍是商品默认值（没动过）⇒ **不发**（让服务端按货号卷长派生，与改造前的请求体一致）。
  */
 function rollFieldsOf(line: OrderLineItem): { rollCount?: number; rollLengthM?: number } {
-  if (typeof line.rollCount !== 'number' || typeof line.rollLengthM !== 'number') return {}
-  return { rollCount: line.rollCount, rollLengthM: line.rollLengthM }
+  const fields: { rollCount?: number; rollLengthM?: number } = {}
+  const rollsFilled = typeof line.rollCount === 'number'
+  if (rollsFilled) {
+    fields.rollCount = line.rollCount as number
+  }
+  if (typeof line.rollLengthM === 'number') {
+    const touched = line.rollLengthM !== defaultRollLengthOf(line.product)
+    if (rollsFilled || touched) {
+      fields.rollLengthM = line.rollLengthM
+    }
+  }
+  return fields
 }
 
 function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
@@ -2946,27 +2957,19 @@ export default function NewOrderPage() {
       if (line.unitPrice == null || line.unitPrice <= 0) {
         e[`${prefix}_unitPrice`] = '单价须大于 0'
       }
-      // 整卷售卖（issue #5846）：边界在**发出去之前**拦住并说清（服务端另有一道 422 兜底）。
-      // 三条口径与 `OrderService.parseExplicitRollCount` 逐字同源：
+      // 整卷售卖（issue #5846）：这里**只**做边界校验 —— 用户 2026-10-01 二次裁定
+      // **取消「成对」契约** ⇒「只给卷数」「只给每卷米数」都是合法输入（缺的那半由服务端回落）。
+      // 两条与 `OrderService.parseExplicitRollCount` / `assertExplicitRollLengthUsable` 逐字同源：
       // 卷数 < 0 / 非整数 / 每卷米数 ≤ 0 ⇒ 显式拒绝（**不静默取整、不静默补值**）。
       if (typeof line.rollCount === 'number') {
         if (!Number.isInteger(line.rollCount)) {
           e[`${prefix}_rollCount`] = '卷数必须是整数'
         } else if (line.rollCount < 0) {
           e[`${prefix}_rollCount`] = '卷数不能为负数'
-        } else if (!(typeof line.rollLengthM === 'number' && line.rollLengthM > 0)) {
-          e[`${prefix}_rollLengthM`] = '每卷米数必须大于 0'
         }
-      } else if (
-        typeof line.rollLengthM === 'number' &&
-        line.rollLengthM !== defaultRollLengthOf(line.product)
-      ) {
-        // 卷数留空却**改了**每卷米数：那一格不会被提交（派生只认货号卷长）⇒ 必须说清，
-        // 否则用户以为「我改的实际米数生效了」＝ 静默把输入吞掉。
-        // ⚠️ 判据是「**改过**」（≠ 商品卷长）而不是「有值」：默认带出的值不算用户输入。
-        e[`${prefix}_rollLengthM`] =
-          '卷数留空时每卷米数不参与分配：请填卷数（按「卷数 × 每卷米数」售卖），'
-          + `或把每卷米数改回商品卷长（${defaultRollLengthOf(line.product) ?? '未配置'} 米）由系统自动分配`
+      }
+      if (typeof line.rollLengthM === 'number' && line.rollLengthM <= 0) {
+        e[`${prefix}_rollLengthM`] = '每卷米数必须大于 0'
       }
       // ⚠️ issue #4874：原「带纱帘 ⇒ 纱帘单价必填」的校验已随 `布帘+纱帘` 档**整体删除**
       // （帘体不再有该档；独立纱帘组那一行的单价由既有的「单价须大于 0」兜住）。
@@ -4140,8 +4143,9 @@ function FabricRow({
         </div>
         {/* ===== 整卷售卖：卷数 + 每卷实际米数（issue #5846）=====
             复用既有列 `order_items.roll_count` / `roll_length_m`（不加迁移）。
-            🔴 两格是**一对**：只填卷数 ⇒ 两个键一起进 payload（显式分配，服务端采用）；
-            **卷数留空** ⇒ 两个键都不进（服务端按货号卷长派生，请求体与改造前逐字节相同）。
+            🔴 **两格各自独立**（用户 2026-10-01 二次裁定**取消「成对」契约**）：给哪个发哪个，
+            缺的那一半由服务端**回落**（显式 ?? 货号卷长），回落不到 ⇒ 保持 NULL（不猜）。
+            「卷数填了但每卷米数留空」也是合法的（服务端回落货号卷长）。
             ⚠️ 不给 `decimals={0}`：那会把 2.5 **静默改成 3**（`NumberInput` 失焦归一化）；
             卷数非整数由下面的校验**显式拒绝**，人看得见自己填的是什么。 */}
         <div>
@@ -4184,7 +4188,7 @@ function FabricRow({
       )}
       <p className="mt-1.5 text-xs text-neutral-400">
         布料按米计价：没有加工费，也不生成加工单
-        {!rollsFilled && '；卷数留空 ⇒ 由系统按货号卷长自动分配整卷 / 散剪'}
+        {!rollsFilled && '；未填卷数 ⇒ 由系统按每卷米数（默认取货号卷长）自动分配整卷 / 散剪'}
       </p>
     </div>
   )

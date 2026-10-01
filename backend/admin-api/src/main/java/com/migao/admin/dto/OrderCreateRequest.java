@@ -205,17 +205,28 @@ public class OrderCreateRequest {
         /**
          * 整卷数（V111）：优先整卷发货时发出的整卷数。
          *
-         * <p>🔄 <b>2026-10-01（issue #5846）口径改判：<u>显式 &gt; 派生</u></b>。用户裁定 A
-         * （原话：「订单中售卖整卷布料时，应该有卷数和实际米数两字段」）之前，本字段
-         * <b>由服务端按货号 {@code products.roll_length_m} 计算，调用方传了也会被覆盖</b>；
-         * 现在：<b>客户端成对给出</b>（本字段 + {@link #rollLengthM}）⇒ <b>采用客户端值</b>；
-         * <b>两个都不给</b> ⇒ 仍由 {@code ProductRollAllocation} 派生（与改判前逐字节相同）。
-         * 只给一个 ⇒ 422（见 {@code OrderService.applyRollAllocation}）。</p>
+         * <p>🔄 <b>2026-10-01（issue #5846）口径改判：<u>显式 &gt; 派生 + 缺的那半回落</u></b>。
+         * 用户裁定 A（原话：「订单中售卖整卷布料时，应该有卷数和实际米数两字段」）之前，本字段
+         * <b>由服务端按货号 {@code products.roll_length_m} 计算，调用方传了也会被覆盖</b>；现在：</p>
+         * <ul>
+         *   <li>给了本字段 ⇒ <b>采用</b>（不再被派生覆盖）；</li>
+         *   <li>没给 ⇒ {@code floor(quantity / effectiveLength)}，其中
+         *       {@code effectiveLength = 显式 rollLengthM ?? 商品 roll_length_m}
+         *       —— 卷长两边都没有 ⇒ 本字段保持 {@code null}（未分配，<b>不猜</b>）。</li>
+         * </ul>
          *
-         * <p>🔴 <b>不变式（改判后仍一字不动）</b>：一次分配<b>只有一个权威来源</b>
-         * （<b>显式 XOR 派生</b>）—— 不允许「显式卷数 + 货号卷长」这类<b>混用</b>，
-         * 那正是「同一单两个整卷数」的来源。类级元守卫见
-         * {@code OrderRollAllocationAuthorityTest}（写入点唯一 / 派生入口唯一）。</p>
+         * <p>🔴 <b>「成对」不是前提</b>（用户 2026-10-01 二次裁定<b>取消成对契约</b>）：
+         * 只给卷数（哪怕卷长两边都没配）、只给每卷米数、两个都给 —— 三种都合法，
+         * 缺的那一半走回落。见 {@code OrderService.applyRollAllocation} 与
+         * {@code ProductRollAllocation.resolve}（回落点唯一）。</p>
+         *
+         * <p>🔴 <b>不变式（改判后仍一字不动）</b>：一次分配里<b>同一个字段只有一个权威来源</b>
+         * （<b>显式 XOR 派生</b>）—— 不允许「同一单两个整卷数」。类级元守卫见
+         * {@code OrderRollAllocationAuthorityTest}（写入点唯一 / 回落点唯一 / 派生入口唯一）。</p>
+         *
+         * <p>🔻 <b>新的合法态</b>：显式给了本字段、而卷长两边都没有 ⇒ {@code roll_count = 本值}、
+         * {@code roll_length_m = null} —— 「客户要 N 卷」是<b>真实意图</b>（不是未分配，
+         * 也不是「一卷 0 米」）。</p>
          *
          * <p>{@code 0} 是<b>真实结论</b>（全散剪），与「没给」（{@code null} = 走派生）两回事
          * ⇒ 本字段必须是可空对象类型（不允许写成 primitive {@code int}）。
@@ -232,8 +243,10 @@ public class OrderCreateRequest {
          * 下单页默认带出商品 {@code products.roll_length_m}，也允许改成**这一批的实际米数**
          * （行业卷长是区间值，「一卷 60 米<i>左右</i>」⇒ 实际米数 ≠ 卷数 × 卷长是常态）。
          *
-         * <p>与 {@link #rollCount} <b>成对</b>：成对给出 ⇒ 显式采用（订单是快照不是视图 ⇒
-         * 货号后来改卷长不改变历史单的口径）；两个都不给 ⇒ 服务端按商品当前值派生并写入快照。</p>
+         * <p>它是 {@code effectiveLength} 的<b>显式来源</b>（优先于商品值）：给了 ⇒ 采用并作为快照落库
+         * （订单是快照不是视图 ⇒ 货号后来改卷长不改变历史单的口径）；没给 ⇒ <b>回落</b>商品当前值；
+         * 两边都没有 ⇒ {@code roll_length_m} 保持 {@code null}（<b>不猜</b>）。
+         * <b>只给本字段、不给卷数</b>也是合法的：服务端据此派生卷数（{@code floor(quantity / 本值)}）。</p>
          */
         @DecimalMin(value = "0", inclusive = false, message = "每卷米数必须大于 0")
         private BigDecimal rollLengthM;

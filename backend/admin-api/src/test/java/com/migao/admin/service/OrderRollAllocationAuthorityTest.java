@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 就再也分不开（而 0 卷 = 全散剪是**真实结论**、NULL = 未分配，两者两义）——
  * 这同样不会让功能断言变红（静默退化，不是报错）。</p>
  *
- * <p><b>四条判据</b>（每条都有「怎么改会红」的机械触发点）：</p>
+ * <p><b>五条判据</b>（每条都有「怎么改会红」的机械触发点）：</p>
  * <ol>
  *   <li><b>写入点登记表</b>：{@code src/main/java} 里凡出现「卷数 / 卷长」赋值的文件必须逐条登记
  *       （写明<b>写的是哪张表</b>）；新增未登记 ⇒ 红（{@code roll_count} 的第二权威就是这么进来的）；
@@ -44,8 +44,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>订单行写入点唯一</b>：给 <b>{@code OrderItem} 实体</b>写这两列的调用
  *       **必须全部落在** {@code OrderService.applyRollAllocation} 方法体内 ——
  *       在同类里另起一个写分配的方法 ⇒ 红。</li>
- *   <li><b>派生入口唯一</b>：{@code ProductRollAllocation.allocate(} 的调用点只有
- *       {@code OrderService.java} 一处、且只一次 —— 再开一条派生路径 ⇒ 红。</li>
+ *   <li><b>回落点唯一</b>（issue #5846，用户 2026-10-01 取消成对契约后的新语义）：
+ *       {@code ProductRollAllocation.resolve(} 的调用点只有 {@code OrderService.java} 一处 ——
+ *       「显式 ?? 商品」的回落**只有这一处**，另起一个回落实现 ⇒ 红。</li>
+ *   <li><b>派生入口不许被绕过</b>：{@code ProductRollAllocation.allocate(} <b>不得</b>被本类之外的
+ *       主源码直接调用（外部一律走 {@code resolve}）—— 绕过回落点自己派生 ⇒ 红。</li>
  *   <li><b>「未给」≠「0 卷」结构可分</b>：请求 DTO 的两个字段必须是**可空对象类型**
  *       （非 primitive），且新建实例读出 {@code null} —— 改成 {@code int} ⇒ 红（编译期先炸，
  *       改完测试后本判据仍会红）。</li>
@@ -58,20 +61,22 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>按接收者的声明类型分类</b>：{@code setRollCount(} / {@code setRollLengthM(} 是**跨对象同名**的
  *       方法名（订单行实体、读面 DTO、别的实体都可能各有一份）⇒ 只按方法名扫会把**别的对象**的赋值
  *       算成订单行写入。本类按「该接收者在本文件里是否声明为 {@code OrderItem}」分类。
- *       ⚠️ **实测（别把它说成已生效的救火）**：本仓 {@code OrderService} 里这两个 setter 的 4 处命中
+ *       ⚠️ **实测（别把它说成已生效的救火）**：本仓 {@code OrderService} 里这两个 setter 的命中
  *       **恰好全是** {@code item.}（读面走 {@code BeanUtils.copyProperties}，不显式调 setter）
  *       ⇒ 分类这一层是**防将来**，不是本次已救过火。</li>
  * </ul>
  *
- * <p><b>为什么这些是元守卫而不是实例判据</b>：实例判据（{@link OrderServiceTest} 的 #5846 段）
- * 只证明「今天这条路径分得对」；本类证明的是「这条路**只有一条**」——
- * 将来第二个人从别处写 {@code roll_count}，红的是这里。</p>
+ * <p><b>为什么这些是元守卫而不是实例判据</b>：实例判据（{@link OrderServiceTest} 的 #5846 段
+ * 与 {@link ProductRollAllocationTest} 的 resolve 段）只证明「今天这条路径分得对」；
+ * 本类证明的是「这条路**只有一条**」—— 将来第二个人从别处写 {@code roll_count}、
+ * 或另起一个回落/派生入口，红的是这里。</p>
  *
  * <p><b>边界（照实登记）</b>：判据 1/2 认的是「形如 {@code <接收者>.setRollCount(…)} 的**直接调用**」
  * —— 反射 / MyBatis 的 `UpdateWrapper.set("roll_count", …)` / 另起一个不叫 setRollCount 的
- * setter 都在面外（前者仓内零使用，后者由 code review 兜）。</p>
+ * setter 都在面外（前者仓内零使用，后者由 code review 兜）；判据 3/4 认的是**带类名前缀**的
+ * 调用形态（{@code ProductRollAllocation.resolve(}）—— 静态导入后裸调 {@code resolve(…)} 不在面内。</p>
  */
-@DisplayName("#5846 整卷分配权威（类级元守卫）：写入点唯一 · 派生入口唯一 · 「未给」≠「0 卷」")
+@DisplayName("#5846 整卷分配权威（类级元守卫）：写入点唯一 · 回落点唯一 · 派生入口不被绕过 · 「未给」≠「0 卷」")
 class OrderRollAllocationAuthorityTest {
 
     /** 主源码根（surefire 的 cwd = {@code backend/admin-api}，与既有契约判据同口径）。 */
@@ -90,7 +95,9 @@ class OrderRollAllocationAuthorityTest {
 
     /** `<接收者>.setRollCount(` / `<接收者>.setRollLengthM(`（group 1 = 接收者，group 2 = 列名）。 */
     private static final Pattern WRITE_CALL = Pattern.compile("(\\w+)\\.set(RollCount|RollLengthM)\\(");
-    /** `order_items` 的派生算法入口。 */
+    /** `order_items` 的**回落点**（显式 ?? 商品 + 派生）—— 唯一入口。 */
+    private static final Pattern RESOLVE_CALL = Pattern.compile("ProductRollAllocation\\.resolve\\(");
+    /** 纯派生算法入口（**不得**被回落点之外的主源码直接调用）。 */
     private static final Pattern DERIVE_CALL = Pattern.compile("ProductRollAllocation\\.allocate\\(");
     /** 接收者是不是一个 `OrderItem`（看本文件里有没有这个声明）——用于排除**读面 DTO** 的同名 setter。 */
     private static final String ORDER_ITEM_DECLARATION = "\\bOrderItem\\s+%s\\b";
@@ -237,11 +244,11 @@ class OrderRollAllocationAuthorityTest {
     }
 
     @Test
-    @DisplayName("判据 3·派生入口唯一：ProductRollAllocation.allocate( 只被 OrderService 调用一次")
-    void derivationHasASingleCallSite() throws IOException {
+    @DisplayName("判据 3·回落点唯一：ProductRollAllocation.resolve( 只被 OrderService 调用一次")
+    void fallbackHasASingleCallSite() throws IOException {
         Map<String, Integer> callers = new TreeMap<>();
         mainSources().forEach((file, text) -> {
-            Matcher m = DERIVE_CALL.matcher(withoutComments(text));
+            Matcher m = RESOLVE_CALL.matcher(withoutComments(text));
             int count = 0;
             while (m.find()) {
                 count++;
@@ -252,9 +259,29 @@ class OrderRollAllocationAuthorityTest {
         });
 
         assertThat(callers.keySet())
-                .as("派生分配只允许有一个入口（再开一条 = 两套卷数口径）")
+                .as("「显式 ?? 商品」的回落只允许有一个入口（另起一个回落实现 = 两套口径）")
                 .containsExactly(ORDER_AUTHORITY_FILE);
         assertThat(callers.get(ORDER_AUTHORITY_FILE)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("判据 4·派生入口不许被绕过：主源码里没有 `ProductRollAllocation.allocate(` 的外部调用")
+    void derivationIsNeverCalledDirectlyOutsideTheAllocator() throws IOException {
+        Map<String, Integer> bypass = new TreeMap<>();
+        mainSources().forEach((file, text) -> {
+            Matcher m = DERIVE_CALL.matcher(withoutComments(text));
+            int count = 0;
+            while (m.find()) {
+                count++;
+            }
+            if (count > 0) {
+                bypass.put(file, count);
+            }
+        });
+
+        assertThat(bypass)
+                .as("派生必须经 resolve（回落点）；绕过它直接 allocate ⇒ 卷数的权威来源就有两条了")
+                .isEmpty();
     }
 
     @Test

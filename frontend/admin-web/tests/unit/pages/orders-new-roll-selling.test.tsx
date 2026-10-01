@@ -10,18 +10,20 @@
  *
  * 判据（逐条对应 issue 的验收判据）：
  * ① 填「卷数 2 / 每卷 58.5」⇒ 提交 payload 带 `rollCount=2` `rollLengthM=58.5`；
- * ② **留空 ⇒ 请求不带这两个键**（由服务端 `ProductRollAllocation` 派生，
+ * ② **两格都没动** ⇒ 请求**不带这两个键**（由服务端 `ProductRollAllocation` 派生，
  *    与改造前的请求体**逐字节相同**）；
  * ③ 每卷米数**默认带出商品卷长**（商品配了 58.5 ⇒ 框里就是 58.5）；
  * ④ 负差额（整卷合计 > 行米数）⇒ **显式标红提示** + `quantity` **未被自动改写**
  *    （payload 的 quantity 与用户输入逐值相同）；
  * ⑤ 非法值（卷数 < 0 / 卷数非整数 / 每卷米数 ≤ 0）⇒ **阻止提交**并给出可行动文案
  *    （服务端另有一道 422，见 `OrderServiceTest` 的 #5846 段）；
- * ⑤b 卷数留空但改过每卷米数 ⇒ **阻止提交**并说明（否则那一格是被**静默丢掉**的输入）。
+ * ⑤d/⑤e **2026-10-01 二次裁定（取消「成对」契约）**：只给一个也是合法输入 ——
+ *    只给每卷米数 ⇒ payload 只带 `rollLengthM`；只给卷数 ⇒ payload 只带 `rollCount`
+ *    （缺的那半由服务端**回落**：显式 ?? 货号卷长，回落不到保持 NULL）。
  *
  * 红证（删实现那行 ⇒ 必红）：删 `handleSubmit` 里的两个键 ⇒ 判据 ① 红；
  * 无条件带上两个键 ⇒ 判据 ② 红；删默认带出 ⇒ 判据 ③ 红；删差额块 ⇒ 判据 ④ 红；
- * 删 `validate()` 里这三条 ⇒ 判据 ⑤/⑤b 红。
+ * 删 `validate()` 里那两条边界 ⇒ 判据 ⑤ 红；把 `rollFieldsOf` 写回「成对」形态 ⇒ 判据 ⑤d/⑤e 红。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -238,20 +240,40 @@ describe('下单页整卷售卖录入（#5846）', () => {
     expect(mockCreateOrder).not.toHaveBeenCalled()
   })
 
-  it('判据 5d：卷数留空但**改过**每卷米数 ⇒ 阻止提交并说明（那一格不许被静默丢掉）', async () => {
+  it('判据 5c′：卷数留空、每卷米数 0 ⇒ 同样拦住（列不合法就拦，与填没填卷数无关）', async () => {
     await setupFabricLine()
-    setLine({ qty: '100', price: '100', rollLength: '60' }) // 改过：商品卷长是 58.5
-    // 前提自证：改的确实是**框里的值**（否则下面的红字断言是空断言）
-    expect(inputByLabel('每卷米数')).toHaveValue('60')
-    expect(inputByLabel('卷数')).toHaveValue('')
+    setLine({ qty: '100', price: '100', rollLength: '0' })
+    fireEvent.change(inputByLabel('卷数'), { target: { value: '' } })
 
     await submit()
 
-    // ⚠️ 断言用**整句**（`/卷数留空/` 会同时命中下面那行灰字说明 ⇒ `findByText` 判「多个匹配」
-    //    并一直重试到超时，红证里读不出判据 —— 实测踩到）
-    expect(
-      await screen.findByText(/卷数留空时每卷米数不参与分配/)
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/每卷米数必须大于 0/)).toBeInTheDocument()
     expect(mockCreateOrder).not.toHaveBeenCalled()
+  })
+
+  // ===== 2026-10-01 用户**二次裁定：取消「成对」契约** ⇒ 下面两条是**改判**（不是删除） =====
+  it('判据 5d（改判）：卷数留空但**改过**每卷米数 ⇒ **允许提交**，payload 只带 rollLengthM（服务端据此派生卷数）', async () => {
+    await setupFabricLine()
+    setLine({ qty: '100', price: '100', rollLength: '30' }) // 改过：商品卷长是 58.5
+    // 前提自证：改的确实是**框里的值**（否则下面的 payload 断言是空断言）
+    expect(inputByLabel('每卷米数')).toHaveValue('30')
+    expect(inputByLabel('卷数')).toHaveValue('')
+
+    const item = await submittedItem()
+
+    expect(item.rollLengthM).toBe(30)
+    expect('rollCount' in item).toBe(false) // 缺的那半由服务端派生（floor(数量 / 30)）
+  })
+
+  it('判据 5e（改判新增）：卷数填了、每卷米数**留空** ⇒ payload 只带 rollCount（卷长回落货号值）', async () => {
+    await setupFabricLine()
+    setLine({ qty: '100', price: '100', rolls: '2' })
+    fireEvent.change(inputByLabel('每卷米数'), { target: { value: '' } })
+    expect(inputByLabel('每卷米数')).toHaveValue('')
+
+    const item = await submittedItem()
+
+    expect(item.rollCount).toBe(2)
+    expect('rollLengthM' in item).toBe(false) // 缺的那半由服务端回落货号卷长
   })
 })

@@ -2775,26 +2775,57 @@ class OrderServiceTest {
         assertThat(saved.getRollLengthM()).isEqualByComparingTo("58.5");
     }
 
-    @Test
-    @DisplayName("#5846 半对（只给卷数）⇒ 422 显式拒绝，绝不「显式卷数 + 货号卷长」混用")
-    void createOrder_explicitRollCountWithoutLength_isRejected() {
-        stubCreateOrderPersistence();
+    // ===== 2026-10-01 用户**二次裁定：取消「成对」契约** =====
+    // 下面两条由原来的「半对 ⇒ 422」**改判**为合法态（改判 ≠ 删除判据）：
+    // 缺的那一半走回落（显式 ?? 商品），回落不到 ⇒ 保持 NULL（不猜）。
 
-        assertThatThrownBy(() -> orderService.createOrder(explicitRollRequest("2", null, "100"), 1L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("成对");
-        verify(orderItemMapper, never()).insert(any(OrderItem.class));
+    @Test
+    @DisplayName("#5846 改判：只给卷数、卷长两边都没有 ⇒ **采用**，roll_length_m 落 NULL（新合法态）")
+    void createOrder_explicitRollCountWithoutAnyRollLength_isAdoptedWithNullLength() {
+        stubCreateOrderPersistence();
+        stubProductWithRollLength(null); // 货号未配 + 客户端没给 ⇒ 两边都没有
+
+        orderService.createOrder(explicitRollRequest("2", null, "100"), 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        OrderItem saved = captor.getValue();
+        assertThat(saved.getRollCount())
+                .as("「客户要 2 卷」是真实意图 —— 不是「未分配」，也不许落 0").isEqualTo(2);
+        assertThat(saved.getRollLengthM())
+                .as("卷长两边都没有 ⇒ NULL（不猜默认值；也不是「一卷 0 米」）").isNull();
     }
 
     @Test
-    @DisplayName("#5846 半对（只给每卷米数）⇒ 同样 422（不静默回落到派生）")
-    void createOrder_explicitRollLengthWithoutCount_isRejected() {
+    @DisplayName("#5846 改判：只给卷数 + 货号配了卷长 ⇒ 卷长**回落**货号值")
+    void createOrder_explicitRollCountOnly_fallsBackToProductRollLength() {
         stubCreateOrderPersistence();
+        stubProductWithRollLength("60.00");
 
-        assertThatThrownBy(() -> orderService.createOrder(explicitRollRequest(null, "58.5", "100"), 1L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("成对");
-        verify(orderItemMapper, never()).insert(any(OrderItem.class));
+        orderService.createOrder(explicitRollRequest("2", null, "100"), 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        OrderItem saved = captor.getValue();
+        assertThat(saved.getRollCount()).isEqualTo(2);
+        assertThat(saved.getRollLengthM()).as("缺的那半回落货号卷长").isEqualByComparingTo("60");
+    }
+
+    @Test
+    @DisplayName("#5846 改判：只给每卷米数 ⇒ 用它派生卷数（**显式长度优先于货号卷长**）")
+    void createOrder_explicitRollLengthOnly_derivesRollCountFromExplicitLength() {
+        stubCreateOrderPersistence();
+        stubProductWithRollLength("60.00"); // 货号 60 ⇒ 若错用它派生会得 1 卷
+
+        // 数量 60 / 显式每卷 30 ⇒ **显式长度**派生 2 卷；错用货号 60 会得 1 卷（判别性）
+        orderService.createOrder(explicitRollRequest(null, "30", "60"), 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        OrderItem saved = captor.getValue();
+        assertThat(saved.getRollCount())
+                .as("派生必须用**显式**每卷米数（不是货号卷长）").isEqualTo(2);
+        assertThat(saved.getRollLengthM()).isEqualByComparingTo("30");
     }
 
     @Test
