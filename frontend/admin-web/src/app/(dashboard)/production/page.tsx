@@ -11,6 +11,7 @@ import {
   processingOrderStatusChipFor,
 } from '@/lib/processing-order'
 import { processingOrderApi, productionApi } from '@/lib/api'
+import { usePermission } from '@/lib/permission'
 import type { PieceworkSummary, ProcessingOrder, ProductionProgress } from '@/types'
 
 /**
@@ -35,6 +36,9 @@ import type { PieceworkSummary, ProcessingOrder, ProductionProgress } from '@/ty
  * （processingOrderApi.list）的两份渲染 ⇒ 合并为单一入口，本页即加工单唯一入口。
  * 原加工单列表页的能力**一条不丢**地并入本页：关键词/状态筛选、重置、商品与数量快照摘要、
  * 「查看」跳订单详情、筛选空态；其请求时序保护（issue #4303）随搜索能力一并迁入（`reqSeq`）。
+ * issue #5913：那个入口**正名为「订单详情」**（「查看」在本行没有确定宾语），且按 `/orders` 的
+ * 守卫码 `order:list` 显隐 —— 持 `production:view` 而不持 `order:list` 的岗位（默认岗位
+ * product_manager 即此形态）点进去会被路由守卫拦成 403；引导文案同时上移为**页面级一次**。
  * 旧路径 /processing-orders 保留为重定向（旧深链不 404）；子路由
  * /processing-orders/{id}/production（生产明细）**不变**。
  * #4305 的入口收敛不回归：本页**不渲染**发加工/开始加工/加工完成/取消四个按钮。
@@ -78,6 +82,11 @@ function renderItemsSummary(po: ProcessingOrder): string[] {
 
 export default function ProductionBoardPage() {
   const router = useRouter()
+  // issue #5913：「订单详情」入口的守卫码与 `/orders` 的前端路由守卫同码（layout.tsx 的
+  // ROUTE_PERMISSION_MAP）。**持 `production:view` 的岗位不一定持 `order:list`**（默认岗位
+  // product_manager 就是这一形态）⇒ 不做显隐就是「按钮看得见、点进去 403」。
+  const { has } = usePermission()
+  const canViewOrder = has('order:list')
   const [rows, setRows] = useState<BoardRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -248,6 +257,14 @@ export default function ProductionBoardPage() {
         </div>
       </div>
 
+      {/* 状态流转入口收敛到订单详情页（issue #4305：用户裁定「从订单作为发加工的唯一入口」）。
+          issue #5913：这是**页面级**说明 —— 改前它渲染在**每一行**的操作格里（重复 N 遍，还把
+          8 列中最挤的那一列进一步撑宽）。 */}
+      <p className="text-xs text-neutral-400" data-testid="production-status-hint">
+        状态流转请在订单详情操作
+        {canViewOrder ? '' : '（当前账号无订单查看权限，请联系管理员）'}
+      </p>
+
       <div className="rounded-lg border border-neutral-200 bg-white overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -352,10 +369,15 @@ export default function ProductionBoardPage() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <div className="flex flex-wrap items-center gap-2">
-                        {/* 查看 → 订单详情（订单详情已含加工单块：快照 + 状态流转 + 打印） */}
-                        <Button variant="secondary" size="sm" onClick={() => router.push(`/orders/${po.orderId}`)}>
-                          查看
-                        </Button>
+                        {/* 订单详情（订单详情已含加工单块：快照 + 状态流转 + 打印）。
+                            issue #5913：文案由「查看」正名为「订单详情」—— 本行主键是**加工单**，
+                            「查看」没有确定宾语（与「生产明细」互换也不违和）；并按 `/orders` 的
+                            守卫码 `order:list` 显隐（无该码 ⇒ 不渲染，避免"点进去 403"）。 */}
+                        {canViewOrder && (
+                          <Button variant="secondary" size="sm" onClick={() => router.push(`/orders/${po.orderId}`)}>
+                            订单详情
+                          </Button>
+                        )}
                         <Button
                           variant="secondary"
                           size="sm"
@@ -363,8 +385,6 @@ export default function ProductionBoardPage() {
                         >
                           生产明细
                         </Button>
-                        {/* 状态流转入口收敛到订单详情页（issue #4305：用户裁定「从订单作为发加工的唯一入口」） */}
-                        <span className="text-xs text-neutral-400">状态流转请在订单详情操作</span>
                       </div>
                     </td>
                   </tr>

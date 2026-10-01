@@ -20,6 +20,7 @@ import { toast } from 'sonner'
 import { afterSalesApi } from '@/lib/api'
 import { Button, Card, Loading, Modal, Badge } from '@/components/ui'
 import { useRouteId } from '@/lib/use-route-id'
+import { usePermission } from '@/lib/permission'
 import type { AfterSalesTicket, AfterSalesStatus } from '@/types'
 import {
   AfterSalesStatusLabels,
@@ -80,6 +81,12 @@ const statusTimelineColor: Record<AfterSalesStatus, string> = {
 export default function AfterSalesDetailPage() {
   const router = useRouter()
   const ticketId = useRouteId('id')
+  // issue #5913（由类级元守卫 `tests/unit/cross-domain-nav-permission-guard.test.ts` 抓出的
+  // **同族第二处**）：本页守卫码是 `after_sales:view`，而「订单号」跳的 `/orders/{id}` 守卫码是
+  // `order:list`。默认岗位里两者总同时持有（客服/运营），但岗位权限页可以只给前者
+  // ⇒ 那就是一个「看得见、点进去 403」的入口。⇒ 无 `order:list` 时订单号**照显、只是不再是入口**。
+  const { has } = usePermission()
+  const canViewOrder = has('order:list')
 
   const [ticket, setTicket] = useState<AfterSalesTicket | null>(null)
   const [loading, setLoading] = useState(true)
@@ -350,13 +357,17 @@ export default function AfterSalesDetailPage() {
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-neutral-500">订单号</span>
-                  <button
-                    onClick={() => router.push(`/orders/${ticket.orderId}`)}
-                    className="font-mono text-primary-600 hover:text-primary-700 flex items-center gap-1"
-                  >
-                    {ticket.orderNo || ticket.orderId}
-                    <ExternalLink className="w-3 h-3" />
-                  </button>
+                  {canViewOrder ? (
+                    <button
+                      onClick={() => router.push(`/orders/${ticket.orderId}`)}
+                      className="font-mono text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                    >
+                      {ticket.orderNo || ticket.orderId}
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
+                  ) : (
+                    <span className="font-mono text-neutral-700">{ticket.orderNo || ticket.orderId}</span>
+                  )}
                 </div>
               </div>
             </div>

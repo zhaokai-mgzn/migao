@@ -5028,7 +5028,7 @@
 数据: success=true
 数据: issue（发加工，可填加工方/交期）→ 加工单 issued **且联动订单 confirmed→producing**（issue #4305：这是订单进入「生产中」的**唯一时点**，落库失败时回退订单状态）；start → in_processing；complete → completed
 数据: complete 后订单保持 producing（不自动 shipped，发货需物流单号）
-数据: 入口收敛（issue #4305，用户裁定「从订单作为发加工的唯一入口」；**2026-09-19 issue #4357 改判落点**）：加工单侧**唯一入口 = 生产看板 /production**（原「加工单」列表页 /processing-orders 已并入该页并改为重定向）—— 该页**不渲染** 发加工/开始加工/加工完成/取消 四个动作入口，只留 查看 / 生产明细 + 「状态流转请在订单详情操作」提示；状态流转唯一入口 = 订单详情页加工单块。证据：admin-web tests/unit/pages/production-board.test.tsx（「入口收敛不回归」：四个按钮 queryByRole 均为 null + 引导文案可见）+ tests/e2e/specs/orders/processing-orders.spec.ts（五种状态逐行负向断言）
+数据: 入口收敛（issue #4305，用户裁定「从订单作为发加工的唯一入口」；**2026-09-19 issue #4357 改判落点**）：加工单侧**唯一入口 = 生产看板 /production**（原「加工单」列表页 /processing-orders 已并入该页并改为重定向）—— 该页**不渲染** 发加工/开始加工/加工完成/取消 四个动作入口，只留 订单详情（**2026-10-01 issue #5913 改判文案与显隐**：原名「查看」，「查看」在本行没有确定宾语；且按 `/orders` 的守卫码 `order:list` 显隐 —— 持 `production:view` 而不持它者点进去是 403）/ 生产明细 + **页面级一条**「状态流转请在订单详情操作」提示（改前是每行一份）；状态流转唯一入口 = 订单详情页加工单块。证据：admin-web tests/unit/pages/production-board.test.tsx（「入口收敛不回归」：四个按钮 queryByRole 均为 null + 引导文案可见）+ tests/e2e/specs/orders/processing-orders.spec.ts（五种状态逐行负向断言）
 数据: 端点层证据（machine-scored）：PATCH /api/admin/processing-orders/{id} action=issue → 200 + $.success=true + $.data.status=issued（ProcessingOrderControllerTest.updateIssue —— 该测试是**唯一**把状态机主链落到 HTTP 层的证据；本条的 `success=true` 计分断言据此成立，不是凭空写的关键词）
 跳过: [backend-contract] 由 ProcessingOrderServiceTest（状态机主链与订单联动）+ ProcessingOrderControllerTest（PATCH 端点：200 + success=true + status=issued）验证
 ```
@@ -5459,15 +5459,15 @@
 ```
 你: 打开侧边栏：订单管理组只有订单列表/售后工单；加工单在产进度去生产管理组的生产看板看（⚠️ 本句记的是 **#5271 前**的 IA —— #5271 起该组名为「交易管理」且含订单列表/售后工单/客户列表/财务对账四项；组归属与项数以本用例 `data_checks` 为准，本句只作历史留痕）
 数据: 侧边栏 IA（**核心/长期判据，红证在这条**；🔴 **2026-09-23 改判（issue #5271 菜单重设计）**）：① **交易管理组**（`trade-center`，组名由「订单管理」改判为「交易管理」）**不含**「加工单」，且为**四项** —— 订单列表 `/orders` / 售后工单 `/after-sales` / 客户列表 `/customers` / 财务对账 `/finance`（旧 IA 的「订单管理组两项 + 客户管理组两项」随 #5271 并成一条动线，`customer-center` 组**不再存在**）；② **生产管理组**（`production-center`）为**四项** —— 生产看板 `/production`、智能派单 `/production/pool`、工艺配置 `/production/routings`、计件工资 `/production/piecework`（**四项权限码统一 `processing:manage`**（🔴 **2026-09-25 改判（issue #5291）**：生产看板 / 工艺配置 / 计件工资 改用**读码 `production:view`**，**智能派单仍是 `processing:manage`**（同组不同权 = 「看得见这一页」与「改得动生产数据」分开）；只持 `processing:manage` 者看不到前三项）），**不含**入库单（**2026-09-21 改判（issue #4440）**写的是「生产看板 / 工艺配置 / 计件工资 / 入库单（`inbound:view`）」—— 该四项组成随 #5271 拆组**已作废**）；③ #5271 **新组「仓储与物料」**（`inventory-center`）三项 —— 入库单 `/inbound-orders`（`inbound:view`）、余料台账 `/production/remnants`、省料看板 `/production/saving-board`（后两项 `processing:manage`）；④ 顶层组 key 序列 == `workspace / smart-customer-service / product-center / trade-center / production-center / inventory-center / org-center` + 独立项 `notifications`（通知中心），**21 项一项不少不减**；⑤ 全站不再存在指向 `/processing-orders` 的菜单项。**红证（锚点按 #5271 后的测试形态）**：`production-board.test.tsx`「「加工单」不再是独立菜单项」得**交易组现有四项**、生产组现有四项、仓储与物料组三项（`within(tradeGroup).queryByText('加工单')` 为 null）+ `expect(hrefs).not.toContain('/processing-orders')`（实现前实测：旧订单管理组仍渲染该项 ⇒ 非 null；`expected [ … '/processing-orders' … ] not to contain '/processing-orders'`）。**判据一格不放宽**：由 3 条扩到 5 条 —— 新增 ③ 仓储组三项逐项点名与 ④ 顶层组 key 序列 / 21 项总数。
-数据: 合并 ≠ 丢能力（**合并口径的判据**）：`/production` 必须吸收原列表页的**全部**既有能力 —— 关键词搜索（按加工单号/订单号）、状态筛选、重置、刷新、商品与数量快照摘要、「查看」跳订单详情；且断言必须落到**结果可见**（筛选后被筛掉的行从 DOM 消失、命中的行留下），不得只断言 API 被调用。红证（实现前实测，本机 vitest 6 条红）：合并能力①~⑥ 得 `getByPlaceholderText('请输入加工单号或订单号')` 找不到元素（看板当时无查询区）/ 行内无「查看」按钮 / 无商品摘要列
+数据: 合并 ≠ 丢能力（**合并口径的判据**）：`/production` 必须吸收原列表页的**全部**既有能力 —— 关键词搜索（按加工单号/订单号）、状态筛选、重置、刷新、商品与数量快照摘要、「订单详情」跳订单详情；且断言必须落到**结果可见**（筛选后被筛掉的行从 DOM 消失、命中的行留下），不得只断言 API 被调用。红证（实现前实测，本机 vitest 6 条红）：合并能力①~⑥ 得 `getByPlaceholderText('请输入加工单号或订单号')` 找不到元素（看板当时无查询区）/ 行内无「查看」按钮 / 无商品摘要列。🔴 **2026-10-01 改判（issue #5913）**：该入口文案由「查看」正名为**「订单详情」**（行主键是**加工单**，「查看」在本行没有确定宾语），且**按目标页守卫码 `order:list` 显隐** —— 持 `production:view` 而不持 `order:list` 的岗位（默认岗位 product_manager 即此形态）点进去会被 `layout.tsx` 的路由守卫拦成「无权访问该页面」；**能力一条不减**：谓词换成 `has('order:list')`，跳转目标与断言强度不变（双向判据见 UI-026）。
 数据: 旧入口收敛（**不 404**）：`/processing-orders` 不再渲染列表页，改为重定向到 `/production`（旧书签/外部深链可用）；子路由 `/processing-orders/{id}/production`（生产明细）**不随菜单移除**，仍由看板行内「生产明细」进入。红证（实现前实测，本机 vitest）：`processing-orders-list.test.tsx` 得 `expected "redirect" to be called with [ "/production" ]`（当时该页仍渲染列表、从不重定向）。证据：同文件 + `tests/e2e/specs/orders/processing-orders.spec.ts`「旧入口 /processing-orders 重定向到 /production」
-数据: 入口收敛不回归（issue #4305）：合并后的唯一入口**仍不渲染** 发加工/开始加工/加工完成/取消加工单 四个按钮，且仍显示「状态流转请在订单详情操作」。红证（实现前实测）：看板当时无该引导文案 ⇒ 该条红；#4305 的负向断言在本条**一条不放宽**。证据：`production-board.test.tsx`「入口收敛不回归」+ e2e「唯一入口不再提供状态流转入口」（五种状态逐行负向断言）
+数据: 入口收敛不回归（issue #4305）：合并后的唯一入口**仍不渲染** 发加工/开始加工/加工完成/取消加工单 四个按钮，且仍显示「状态流转请在订单详情操作」。红证（实现前实测）：看板当时无该引导文案 ⇒ 该条红；#4305 的负向断言在本条**一条不放宽**。证据：`production-board.test.tsx`「入口收敛不回归」+ e2e「唯一入口不再提供状态流转入口」（五种状态逐行负向断言）。🔴 **2026-10-01 改判（issue #5913）**：文案**仍在**（判据不放宽），但落点由「每行一份」改为**页面级一次**（`data-testid="production-status-hint"`，全页恰 1 条且不在 `<table>` 内）；无 `order:list` 时同一句标明「需订单查看权限」——不把人指向去不了的地方。
 数据: 时序保护随能力迁移（issue #4303 的长期判据 = 加载竞态）：搜索/筛选/刷新搬到看板后，**请求序号保护必须一起搬** —— 旧的在飞列表响应晚到不得把看板覆盖回旧数据，`loading` 只由最新一次请求收尾。红证（实现前实测）：`production-board.test.tsx`「PG-024 时序保护」得 `getByPlaceholderText(...)` 找不到元素（看板无搜索 ⇒ 竞态无从触发）；留在被合并掉的页面里 = 保护随页面一起消失。
 数据: 面包屑与侧边栏一致（§15.2）：`/production` 系列此前**没有任何面包屑条目** ⇒ 落进兜底分支显示「工作台 > 经营看板」；本单补 生产管理×{生产看板, 智能派单, 工艺配置, 计件工资}（**2026-09-23 补记（issue #5271）**：该组面包屑现为**四条**，组名与组 key `production-center` 与侧边栏逐字一致）（**2026-09-21 改判，issue #4440**：改前写「{生产看板, 工序库, 工艺路线, 计件工资}」—— 「工序库」+「工艺路线」已由 issue #4416 合并为「工艺配置」`/production/routings` ⇒ 面包屑表内对应条目现为「生产管理 > 工艺配置」，且 `Header.test.tsx` 反向断言旧菜单名「工序库」**不出现在面包屑里**），且 `/processing-orders/{id}/production` 由「订单管理 > 加工单」改判为「生产管理 > 生产明细」。✅ **2026-09-23 收口（issue #5271）**：原「如实登记（未做项，issue #4440 实测）」写「「入库单」`/inbound-orders` **不在面包屑表**内 ⇒ 落进兜底分支、当前**不是**「生产管理 > 入库单」；本改判**不**把它写成已有（不粉饰，另单可收）」—— 该未做项**已关闭、判据相应升级**：`Header.tsx` 现有条目 = 「**仓储与物料 > 入库单**」（拆组后入库单既不在生产管理组，首项也就不再是「生产管理」；同理 `/production/remnants`、`/production/saving-board` 两条首项亦为「仓储与物料」）。红证（实现前实测，本机 vitest 4 条红）：Header 的 /production、/production/operations、/production/piecework 三条得找不到「生产管理」（当时走兜底面包屑）—— ⚠️ 这句是**历史记录**（当时真实路径形态），`/production/operations` 现已是重定向、面包屑表内不再有该条，照实保留不追改；/processing-orders/{id}/production 得找不到「生产明细」
 数据: 权限护栏随入口走（**不得砍既有护栏**）：`/production` 此前**无**前端路由权限守卫，而它承接的原 `/processing-orders` 有 `processing:manage` ⇒ 合并后守卫必须跟着入口走（layout.tsx ROUTE_PERMISSION_MAP 新增 `/production`，前缀覆盖三个子页），否则等于砍掉既有第二道防线。🔴 **2026-09-25 改判（issue #5291）**：`/production`、`/processing-orders`、`/processing` 三个前缀的守卫改用**读码 `production:view`**；**智能派单 `/production/pool`、余料台账 `/production/remnants`、省料看板 `/production/saving-board` 仍是 `processing:manage`** 且必须排在 `/production` 之前（前缀匹配先命中 ⇒ 否则会把这三页一起收权）。证据：`frontend/admin-web/src/app/(dashboard)/layout.tsx` 的 ROUTE_PERMISSION_MAP（后端 @RequirePermission 仍是唯一硬拦面）
 跳过: [backend-contract] 前端 IA / 页面结构 / 交互流（admin-web），由 vitest 单测（production-board / processing-orders-list / Header）+ Playwright E2E 旅程（tests/e2e/specs/orders/processing-orders.spec.ts）覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 PG-024 惯例）
 ```
-溯源: 2026-09-19 新增（issue #4357，P2）。用户提问「加工单菜单是否放入到加工管理更合适」→ 裁定「是，且合并而非只搬家」，组名保持「生产管理」。红证（实现前实测，本机 vitest：3 文件 13 failed / 44 passed，失败逐条列在 data_checks 内）。实现：menu.ts 移除 trade-center 的 processing-orders 项（生产管理组**不新增项** —— 加工单与生产看板合并为同一入口）；/production 吸收列表页全部能力（关键词/状态筛选、重置、刷新、商品与数量列、查看按钮、筛选空态）+ 请求序号保护（issue #4303 迁移）；/processing-orders 改重定向；Header.tsx 补生产管理组四条面包屑并改判 processing-orders 面包屑；layout.tsx 补 /production 权限守卫。**不做（如实登记）**：① 不移动 /processing-orders/{id}/production 路由（#4345 刚稳定该路径的 e2e，避免同批双重改动；副作用 = 该子页侧边栏无高亮项，另单）；② 不改后端菜单树（MenuController/AuthService 与前端 menu.ts 的漂移、且前端根本不消费服务端菜单，另单）；③ 不涉及 agent 行为 ⇒ 按 #4262 不派发真实 LLM 评测。 ｜ 2026-09-21（issue #4440 用例库同步，配套 PR #5068）：**两处散文改判**（侧边栏 IA 的 ② 生产管理组节点表；面包屑的 生产管理×{…} 集合）—— 二者此前仍写 issue #4416 合并前的「工序库 + 工艺路线」，与 main 上的 `config/menu.ts` / `Header.tsx` **实测不符**；另**如实登记**入库单面包屑缺失（未做项）。**判据一格不放宽**：红证、能力迁移、时序保护、权限护栏四条与 `user_inputs` / `skip_reason` 一字未动。 ｜ 2026-09-23（issue #5271 用例库同步）：**三处散文改判**（侧边栏 IA 的 ①②③④ 组名/归属/项数 + 顶层组 key 序列；面包屑的 生产管理×{…} 集合补上「智能派单」；入库单面包屑「未做项」随 #5271 **关闭并升级为已有判据**「仓储与物料 > 入库单」），并给注释块的病根段标注「组名是 #5271 前的旧 IA」—— 旧文案「订单管理组只有订单列表/售后工单」「生产管理组四项含入库单」与 `config/menu.ts` / `MenuController` / `AuthService`（三源均已按 #5271 重排）**实测不符**，正是本仓最忌的「用例库与现实脱节」。**判据只增不减**：3 条扩到 5 条（新增仓储与物料组三项点名、顶层组 key 序列 + 21 项总数）。 ｜ tags: processing-order, production, menu, ia, admin_web
+溯源: 2026-09-19 新增（issue #4357，P2）。用户提问「加工单菜单是否放入到加工管理更合适」→ 裁定「是，且合并而非只搬家」，组名保持「生产管理」。红证（实现前实测，本机 vitest：3 文件 13 failed / 44 passed，失败逐条列在 data_checks 内）。实现：menu.ts 移除 trade-center 的 processing-orders 项（生产管理组**不新增项** —— 加工单与生产看板合并为同一入口）；/production 吸收列表页全部能力（关键词/状态筛选、重置、刷新、商品与数量列、查看按钮、筛选空态）+ 请求序号保护（issue #4303 迁移）；/processing-orders 改重定向；Header.tsx 补生产管理组四条面包屑并改判 processing-orders 面包屑；layout.tsx 补 /production 权限守卫。**不做（如实登记）**：① 不移动 /processing-orders/{id}/production 路由（#4345 刚稳定该路径的 e2e，避免同批双重改动；副作用 = 该子页侧边栏无高亮项，另单）；② 不改后端菜单树（MenuController/AuthService 与前端 menu.ts 的漂移、且前端根本不消费服务端菜单，另单）；③ 不涉及 agent 行为 ⇒ 按 #4262 不派发真实 LLM 评测。 ｜ 2026-09-21（issue #4440 用例库同步，配套 PR #5068）：**两处散文改判**（侧边栏 IA 的 ② 生产管理组节点表；面包屑的 生产管理×{…} 集合）—— 二者此前仍写 issue #4416 合并前的「工序库 + 工艺路线」，与 main 上的 `config/menu.ts` / `Header.tsx` **实测不符**；另**如实登记**入库单面包屑缺失（未做项）。**判据一格不放宽**：红证、能力迁移、时序保护、权限护栏四条与 `user_inputs` / `skip_reason` 一字未动。 ｜ 2026-09-23（issue #5271 用例库同步）：**三处散文改判**（侧边栏 IA 的 ①②③④ 组名/归属/项数 + 顶层组 key 序列；面包屑的 生产管理×{…} 集合补上「智能派单」；入库单面包屑「未做项」随 #5271 **关闭并升级为已有判据**「仓储与物料 > 入库单」），并给注释块的病根段标注「组名是 #5271 前的旧 IA」—— 旧文案「订单管理组只有订单列表/售后工单」「生产管理组四项含入库单」与 `config/menu.ts` / `MenuController` / `AuthService`（三源均已按 #5271 重排）**实测不符**，正是本仓最忌的「用例库与现实脱节」。**判据只增不减**：3 条扩到 5 条（新增仓储与物料组三项点名、顶层组 key 序列 + 21 项总数）。 ｜ 2026-10-01（issue #5913 用例库同步）：**两处散文改判** —— 「合并 ≠ 丢能力」的入口名（「查看」→「订单详情」）与「入口收敛不回归」的文案落点（行内 → 页面级一次），二者与 main 上的 `production/page.tsx` 实测不符；改判同时新增**显隐谓词**（按目标页守卫码 `order:list`），判据一格不放宽（跳转目标、四个按钮的负向断言、文案原文全未动），并把**类级元守卫**（UI-026）与**同族第二处**（售后工单详情「订单号」）登记进用例库。 ｜ tags: processing-order, production, menu, ia, admin_web
 
 ### PG-036. 生产种子模板：受控行业 code 归一 + 模板目录 + 幂等套用 + 开租自动套用（other 不套用且显式说明） 🔵
 ```
@@ -7336,7 +7336,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（75 case）
+## 前端 UI 域（76 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -8389,6 +8389,19 @@
 真值: batch-ledger.stocktake-by-physical-count, frontend-fix.vitest, frontend-fix.tsc
 溯源: 2026-10-01 新增（issue #5865）：盘点的**入口此前在后台 web 面为零**（全量 grep `adjustment|adjustStock` = 0 命中，只有 Agent 面 SKU 粒度的一条路）。本单把最小录入式挂进商品详情的批次面板（既有位置，不新造菜单 / 权限码）：实盘录入 + 差异预览 + 一次提交 ⇒ 提交后批次面板三个读面一起刷新。取号 UI-077（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 UI-076**，同步 main 时该号已被并行包占用 ⇒ 按「后合入者让号」顺延为 **UI-077**）。 ｜ tags: ui, product, batch, stocktake, admin-web
 
+### UI-026. 跨权限域跳转入口按目标域守卫码显隐（生产看板「订单详情」+ 售后工单「订单号」） 🔵
+```
+你: 生产看板里点「查看」跳转到订单详情，这设计合理吗（用户 2026-10-01 走查；裁定改法 A：正名 + 按权限显隐 + 提示上移）
+数据: 判据 1·**入口文案有确定宾语**：生产看板行内入口 = 「订单详情」（「查看」在本行没有确定宾语 —— 与同行的「生产明细」互换也不违和，即命名失败的直接判据）；点击仍跳 `/orders/{orderId}`。执行点 = frontend/admin-web/tests/unit/pages/production-board.test.tsx 的「合并能力⑥订单详情」
+数据: 判据 2·**可见却 403 的红线（双向对照）**：持 `order:list` ⇒ 渲染该入口；**不持** ⇒ **不渲染**（默认岗位 product_manager 即持 production:view、不持 order:list 的形态）。⚠️ 反向用例必须同时清空 `roles` —— `usePermission()` 把 `roles:['admin']` 判为全权限（isAdmin），只改 permissions 会让红线**恒真**。执行点 = 同文件「无 order:list ⇒ 不渲染」+「持 order:list ⇒ 照常渲染」
+数据: 判据 3·**引导文案是页面级的**：「状态流转请在订单详情操作」全页**恰 1 条**且**不在 `<table>` 内**（改前 = 每行一份，挤在 8 列中最挤的「操作」格里）；无 `order:list` 时同一句标明「需订单查看权限」（不把人指向去不了的地方）。执行点 = 同文件「引导文案是页面级的」+「无 order:list 时引导文案标明需订单查看权限」
+数据: 判据 4·**类级元守卫（未登记即红）**：`src/app` 下 `(dashboard)` 路由组内的**跨权限域**字面量 `router.push/replace`，源文件必须出现目标守卫码（`has('<码>')`）；守卫码表**现取** `layout.tsx` 的 ROUTE_PERMISSION_MAP（不硬编码）。豁免台账当前为空且只许缩短。执行点 = frontend/admin-web/tests/unit/cross-domain-nav-permission-guard.test.ts 的「每个跨权限域跳转入口都按目标域守卫码显隐」
+数据: 同族第二处（**链内修**，铁律 12(b) ①）：售后工单详情页（守卫 `after_sales:view`）的「订单号」入口跳 `/orders/{id}`（`order:list`）—— 默认岗位里两者总同时持有（客服/运营），但岗位权限页可以只给前者 ⇒ 同一形态；改为无 `order:list` 时**订单号照显、不再是入口**。执行点 = frontend/admin-web/tests/unit/pages/after-sales-detail.test.tsx 的两条用例
+数据: 🔴 红证（改前实测，本机 vitest：2 文件 **6 failed / 25 passed**）：① 类级守卫具名抓到 `(dashboard)/production/page.tsx · /production → /orders/（目标守卫码 order:list，源页 production:view）`；②「合并能力⑥订单详情」找不到名为「订单详情」的按钮；③ 引导文案用例得**每行一条**（≠1）；④ 同族第二处 `(dashboard)/after-sales/[id]/AfterSalesDetail.tsx · /after-sales/[id] → /orders/` 由**类级守卫自己**抓出（不是人找的）。复算方式：进入 frontend/admin-web 目录后以 vitest 跑下面两个文件（全路径见 traces.tests）—— frontend/admin-web/tests/unit/cross-domain-nav-permission-guard.test.ts 与 frontend/admin-web/tests/unit/pages/production-board.test.tsx
+跳过: [backend-contract] 纯前端入口显隐与文案（admin-web），由 vitest 单测执行（含对源码的静态扫描），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-01 新增（issue #5913，P2）：用户走查截图「点查看跳订单详情，这设计合理吗」→ 裁定改法 A。实现：生产看板操作列入口正名「订单详情」+ 按 `/orders` 的守卫码 `order:list` 显隐 + 引导文案上移为页面级一次；售后工单详情「订单号」入口同批按 `order:list` 显隐（**类级守卫抓出的同族第二处**，链内修）；新增类级元守卫 `cross-domain-nav-permission-guard.test.ts`（豁免台账为空，含判别力自证与普查面非空判据）。**不做**：不改 #4305 的「状态流转唯一入口 = 订单详情」，不新造「加工单详情」路由。 ｜ tags: ui, rbac, admin_web, navigation
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -8418,8 +8431,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：590（活跃 126，跳过 464）
-- tier 分布：smoke 12 / normal 545 / adversarial 31
+- 用例总数：591（活跃 126，跳过 465）
+- tier 分布：smoke 12 / normal 546 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8444,7 +8457,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：75
+- 前端 UI 域：76
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -8612,4 +8625,5 @@
 - UI-072: 超时工单：口径收敛一处（简报/看板/列表筛选同源）+ 看板卡下钻 `?overdue=1` 在列表页**真的筛**且可撤销
 - UI-073: 订单列表状态筛选支持逗号分隔多值：前端「待发货」= `confirmed,producing`（与看板卡计数取齐）
 - UI-075: 订单列表查询区在窄屏既不横向溢出（issue #5841）也不把筛选框压到不可读（issue #5850）：行必须可换行（flex-wrap）、每个字段格必须有 min-w-[…]；同行控件不得 flex-1 + 固定 min-w
+- UI-026: 跨权限域跳转入口按目标域守卫码显隐（生产看板「订单详情」+ 售后工单「订单号」）
 

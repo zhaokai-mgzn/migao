@@ -2758,3 +2758,46 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # UI-026（issue #5913，P2）：**跨权限域**的页内跳转入口必须按**目标域**守卫码显隐。
+  # 病（真实缺陷，用户 2026-10-01 走查截图）：生产看板 /production（守卫 `production:view`）
+  # 操作列的「查看」跳 /orders/{id}（守卫 `order:list`），而默认岗位 `product_manager`
+  # 持前者、**不持**后者 ⇒ 按钮照渲染、点进去被 `layout.tsx` 的路由守卫拦成
+  # 「无权访问该页面」。**可见却 403** 是一类，不是一处（同族第二处 = 售后工单详情的「订单号」）。
+  # 判据是**机械的**（扫源码里的字面量跳转 × 现取布局守卫表），新增入口漏了即红。
+  # ==========================================================================
+  - id: UI-026
+    legacy_id: ""
+    title: "跨权限域跳转入口按目标域守卫码显隐（生产看板「订单详情」+ 售后工单「订单号」）"
+    domains:
+      - ui
+      - frontend
+      - rbac
+    tier: normal
+    tags:
+      - ui
+      - rbac
+      - admin_web
+      - navigation
+    truths_ref: []
+    user_inputs:
+      - "生产看板里点「查看」跳转到订单详情，这设计合理吗（用户 2026-10-01 走查；裁定改法 A：正名 + 按权限显隐 + 提示上移）"
+    expectations: []
+    data_checks:
+      - "判据 1·**入口文案有确定宾语**：生产看板行内入口 = 「订单详情」（「查看」在本行没有确定宾语 —— 与同行的「生产明细」互换也不违和，即命名失败的直接判据）；点击仍跳 `/orders/{orderId}`。执行点 = frontend/admin-web/tests/unit/pages/production-board.test.tsx 的「合并能力⑥订单详情」"
+      - "判据 2·**可见却 403 的红线（双向对照）**：持 `order:list` ⇒ 渲染该入口；**不持** ⇒ **不渲染**（默认岗位 product_manager 即持 production:view、不持 order:list 的形态）。⚠️ 反向用例必须同时清空 `roles` —— `usePermission()` 把 `roles:['admin']` 判为全权限（isAdmin），只改 permissions 会让红线**恒真**。执行点 = 同文件「无 order:list ⇒ 不渲染」+「持 order:list ⇒ 照常渲染」"
+      - "判据 3·**引导文案是页面级的**：「状态流转请在订单详情操作」全页**恰 1 条**且**不在 `<table>` 内**（改前 = 每行一份，挤在 8 列中最挤的「操作」格里）；无 `order:list` 时同一句标明「需订单查看权限」（不把人指向去不了的地方）。执行点 = 同文件「引导文案是页面级的」+「无 order:list 时引导文案标明需订单查看权限」"
+      - "判据 4·**类级元守卫（未登记即红）**：`src/app` 下 `(dashboard)` 路由组内的**跨权限域**字面量 `router.push/replace`，源文件必须出现目标守卫码（`has('<码>')`）；守卫码表**现取** `layout.tsx` 的 ROUTE_PERMISSION_MAP（不硬编码）。豁免台账当前为空且只许缩短。执行点 = frontend/admin-web/tests/unit/cross-domain-nav-permission-guard.test.ts 的「每个跨权限域跳转入口都按目标域守卫码显隐」"
+      - "同族第二处（**链内修**，铁律 12(b) ①）：售后工单详情页（守卫 `after_sales:view`）的「订单号」入口跳 `/orders/{id}`（`order:list`）—— 默认岗位里两者总同时持有（客服/运营），但岗位权限页可以只给前者 ⇒ 同一形态；改为无 `order:list` 时**订单号照显、不再是入口**。执行点 = frontend/admin-web/tests/unit/pages/after-sales-detail.test.tsx 的两条用例"
+      - "🔴 红证（改前实测，本机 vitest：2 文件 **6 failed / 25 passed**）：① 类级守卫具名抓到 `(dashboard)/production/page.tsx · /production → /orders/（目标守卫码 order:list，源页 production:view）`；②「合并能力⑥订单详情」找不到名为「订单详情」的按钮；③ 引导文案用例得**每行一条**（≠1）；④ 同族第二处 `(dashboard)/after-sales/[id]/AfterSalesDetail.tsx · /after-sales/[id] → /orders/` 由**类级守卫自己**抓出（不是人找的）。复算方式：进入 frontend/admin-web 目录后以 vitest 跑下面两个文件（全路径见 traces.tests）—— frontend/admin-web/tests/unit/cross-domain-nav-permission-guard.test.ts 与 frontend/admin-web/tests/unit/pages/production-board.test.tsx"
+    skip_reason: "[backend-contract] 纯前端入口显隐与文案（admin-web），由 vitest 单测执行（含对源码的静态扫描），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-01 新增（issue #5913，P2）：用户走查截图「点查看跳订单详情，这设计合理吗」→ 裁定改法 A。实现：生产看板操作列入口正名「订单详情」+ 按 `/orders` 的守卫码 `order:list` 显隐 + 引导文案上移为页面级一次；售后工单详情「订单号」入口同批按 `order:list` 显隐（**类级守卫抓出的同族第二处**，链内修）；新增类级元守卫 `cross-domain-nav-permission-guard.test.ts`（豁免台账为空，含判别力自证与普查面非空判据）。**不做**：不改 #4305 的「状态流转唯一入口 = 订单详情」，不新造「加工单详情」路由。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/cross-domain-nav-permission-guard.test.ts"
+        - "frontend/admin-web/tests/unit/pages/production-board.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/after-sales-detail.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

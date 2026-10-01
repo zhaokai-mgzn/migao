@@ -413,17 +413,22 @@ test.describe('生产看板 /production（加工单唯一入口）', () => {
       'JG-20260605-0005',
     ]) {
       const row = rowBy(page, no)
-      await expect(row.getByRole('button', { name: '查看' })).toBeVisible()
+      // issue #5913：入口文案由「查看」正名为「订单详情」（行主键是加工单，「查看」没有确定宾语）
+      await expect(row.getByRole('button', { name: '订单详情' })).toBeVisible()
       await expect(row.getByRole('button', { name: '生产明细' })).toBeVisible()
       for (const label of ['发加工', '开始加工', '加工完成', '取消加工单']) {
         await expect(row.getByRole('button', { name: label })).not.toBeVisible()
       }
-      await expect(row.getByText('状态流转请在订单详情操作')).toBeVisible()
+      // issue #5913：引导文案**不在行内**（改前每行一份）—— 页面级一次，见本用例末尾
+      await expect(row.getByText('状态流转请在订单详情操作')).not.toBeVisible()
     }
+    // 页面级引导文案仍在（#4305 的判据一条不放宽），且全页只有一条
+    await expect(page.getByTestId('production-status-hint')).toBeVisible()
+    await expect(page.getByText('状态流转请在订单详情操作')).toHaveCount(1)
   })
 
-  test('查看按钮跳转对应订单详情（订单详情已含加工单块）', async ({ page }) => {
-    await rowBy(page, 'JG-20260601-0001').getByRole('button', { name: '查看' }).click()
+  test('订单详情按钮跳转对应订单详情（订单详情已含加工单块）', async ({ page }) => {
+    await rowBy(page, 'JG-20260601-0001').getByRole('button', { name: '订单详情' }).click()
     await page.waitForURL(/\/orders\/o001/, { timeout: 15_000 })
     expect(page.url()).toContain('/orders/o001')
   })
