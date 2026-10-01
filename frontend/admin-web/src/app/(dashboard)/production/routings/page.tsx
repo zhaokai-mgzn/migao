@@ -17,7 +17,7 @@ import {
 import { toast } from 'sonner'
 import { Button, Modal, NumberInput } from '@/components/ui'
 import { isErrorToastShown, toastRequestError } from '@/lib/api-error'
-import { productionApi } from '@/lib/api'
+import { cuttingHeightApi, productionApi } from '@/lib/api'
 import { craftCalcConfigGuardReasons, optionPriceGuardReasons, routingAdminGuardReasons, routingGuardReasons } from '@/lib/production-guard-reasons'
 import { CALC_PARAM_COPY, CALC_SCALAR_KEYS, glossaryAnchorOf, type CalcScalarKey } from '@/lib/craft-calc-glossary'
 import { InlineMarkdown } from '@/lib/inline-markdown'
@@ -85,6 +85,23 @@ import type {
  * 收顾客的那笔钱**不在这里** —— 基础工序在「加工项组合费用」，特殊选项在**工序抽屉的「适用条件」**里
  * （`production_route_rules.customer_unit_price`，元/套）。两本账**互不换算** ⇒ 这一屏
  * **不得**出现「加工费」「对客价」字样，也**不引入任何计件系数概念**。
+ *
+ * ## 顶部「配置就绪度」= **五步体检表**（issue #5858；2026-10-01 用户附截图逐字「这个页面的向导式
+ * 已经和实际功能不匹配了，重构这个向导」）
+ *
+ * | 步 | 名字 | 判据（与它所指的区块**同源**） | 去处 |
+ * |---|---|---|---|
+ * | ① | 工序与单价 | 表里有工序 ∧ **无未定价** ∧ **无孤儿工序**（`unpricedCount` / `orphanOps`） | tab 工序管理 · `operation-price-matrix` |
+ * | ② | 工艺路线 | 两条基础路线齐 ∧ 无空壳（#4677） | tab 工序管理 · `routings-list` |
+ * | ③ | 默认路线 | 恰一条默认（兜底终点） | tab 工序管理 · `routings-list` |
+ * | ④ | 算料配置 | `source='stored'` ⇒ done / `'default'` ⇒ todo / 读失败 ⇒ unknown + 「读取失败」 | tab 算料配置 |
+ * | ⑤ | 裁高配置 | 同上（#5161 的第 5 个配置域；改前四步向导**不知道它存在**） | tab 裁高配置 |
+ *
+ * 三条纪律：① **计数与所在区块同源**（第 ① 步用 `operationsRows`，与表头 `operation-price-matrix-total`
+ * 是**同一个数** —— 改前用工序库行数，同一屏会同时出现「工序库 40 道 · 已完成」与「29 道工序」）；
+ * ② **每步一个可点的 `readiness-goto-<key>`**（切 tab + 滚到锚点）—— 改前只有「下方…」「切到…tab」
+ * 这类在别的 tab 上**指不着**的文案；③ 算料 / 裁高读面**首屏就发**（用户裁定），不必先点 tab 才知道
+ * 配没配；读失败**不谎报**「已配」。
  *
  * ## 与旧形态的关键差异（P2b #4459 / P2c #4500 之后）
  *
@@ -235,7 +252,10 @@ const inputCls =
 const SOURCE_META: Record<ProductionSource, { label: string; className: string }> = {
   实证: { label: '实证', className: 'bg-emerald-50 text-emerald-700' },
   推算: { label: '推算', className: 'bg-neutral-100 text-neutral-500' },
-  占位待确认: { label: '初始价·待确认', className: 'bg-amber-50 text-amber-700' },
+  /* issue #5860：徽标**挂在工序名后面**，而它说的是**单价**的来源 ⇒ 必须带主语
+     （改前 `初始价·待确认` 被商家读成「这道工序待确认」，用户原话「这里的文案让人看不明白」）。
+     真值来源 = `production_operations.source`；`实证` / `推算` 两档对商家没有动作可做，保持原词。 */
+  占位待确认: { label: '单价：初始价（待确认）', className: 'bg-amber-50 text-amber-700' },
 }
 
 /**
@@ -491,29 +511,42 @@ function SourceBadge({
   return <span data-testid={testId} className={className}>{meta.label}</span>
 }
 
-/** 就绪度一步（把「工序 → 路线 → 默认路线 → 算料」的先后关系变成看得见的步骤） */
+type ReadinessState = 'done' | 'todo' | 'unknown'
+
+/**
+ * 就绪度一步（把「工序与单价 → 工艺路线 → 默认路线 → 算料 / 裁高」的先后依赖变成看得见的步骤）。
+ *
+ * ⚠️ `action` = **可点的去处**（issue #5858）：改前每一步只有一句 hint，写的是「下方…」「切到…tab」——
+ * 路线列表在另一个 tab 时「下方」根本不是它；算料 / 裁高在别的 tab 时**没有任何可点的动作**
+ * （用户原话「这个页面的向导式已经和实际功能不匹配了」）。
+ */
 function ReadinessStep({
   testId,
   index,
   label,
   state,
+  statusText,
   hint,
+  action,
 }: {
   testId: string
   index: number
   label: string
-  state: 'done' | 'todo' | 'unknown'
+  state: ReadinessState
+  /** 覆盖状态词（如读面失败）—— 缺省按 state 取「已完成 / 待完成 / 读取中」 */
+  statusText?: string
   hint?: string
+  action?: { testId: string; onClick: () => void }
 }) {
   const done = state === 'done'
-  /** 未知（如算料配置**还没加载完** / 加载失败）= **中性**呈现：把「没加载」显示成「没配」是误报 */
+  /** 未知（读面**还没回来** / 读失败）= **中性**呈现：把「没加载」显示成「没配」是误报 */
   const unknown = state === 'unknown'
   return (
     <div
       data-testid={testId}
       data-state={state}
       className={cn(
-        'rounded border px-3 py-2',
+        'flex flex-col rounded border px-3 py-2',
         done
           ? 'border-emerald-200 bg-emerald-50/60'
           : unknown
@@ -521,7 +554,7 @@ function ReadinessStep({
             : 'border-amber-200 bg-amber-50/60',
       )}
     >
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
         <span
           className={cn(
             'font-medium',
@@ -531,10 +564,29 @@ function ReadinessStep({
           {index}. {label}
         </span>
         <span className={cn('text-xs', done ? 'text-emerald-700' : unknown ? 'text-neutral-500' : 'text-amber-800')}>
-          {done ? '已完成' : unknown ? '读取中' : '待完成'}
+          {statusText ?? (done ? '已完成' : unknown ? '读取中' : '待完成')}
         </span>
       </div>
-      {!done && !unknown && hint && <p className="mt-1 text-xs text-amber-800">{hint}</p>}
+      {!done && hint && (
+        <p className={cn('mt-1 text-xs', unknown ? 'text-neutral-500' : 'text-amber-800')}>{hint}</p>
+      )}
+      {action && (
+        <button
+          type="button"
+          data-testid={action.testId}
+          onClick={action.onClick}
+          className={cn(
+            'mt-2 self-start rounded border px-2 py-0.5 text-xs transition-colors',
+            done
+              ? 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
+              : unknown
+                ? 'border-neutral-300 text-neutral-600 hover:bg-neutral-100'
+                : 'border-amber-300 text-amber-900 hover:bg-amber-50',
+          )}
+        >
+          {done ? '去查看' : '去处理'}
+        </button>
+      )}
     </div>
   )
 }
@@ -834,6 +886,10 @@ function ProcessConfigContent() {
   /** 保存被拒的**逐条**理由（按格就地展示，不吞成一句「保存失败」） */
   const [cellReasons, setCellReasons] = useState<{ key: string; items: string[] } | null>(null)
 
+  /** 裁高配置的 `source`（`null` = 还没读回来；`stored` = 本租户存过；`default` = 缺行用系统默认） */
+  const [cutSource, setCutSource] = useState<string | null>(null)
+  const [cutError, setCutError] = useState('')
+
   // ── 「管理▸」抽屉（该工序的设置维护面：分组 / 单位 / 停用 / 删除）──
   const [manageOp, setManageOp] = useState<string | null>(null)
   /**
@@ -891,7 +947,7 @@ function ProcessConfigContent() {
     trigger_value: string
     action: 'insert' | 'remove'
     after_operation: string
-  }>({ trigger_kind: 'craft', trigger_value: '', action: 'insert', after_operation: '' })
+  }>({ trigger_kind: 'option', trigger_value: '', action: 'insert', after_operation: '' })
   /** 添加条件的**就地**理由（本地预检 ∪ 后端 `error.details[].message` 逐条） */
   const [conditionReasons, setConditionReasons] = useState<string[]>([])
 
@@ -1056,10 +1112,34 @@ function ProcessConfigContent() {
     }
   }, [])
 
-  // 懒加载：切到本 tab 才发请求（其余 tab 的加载面不受影响）
+  /**
+   * **首屏**就读（issue #5858 用户裁定）：就绪度第 ④ 步要在一屏之内回答「算料配没配」——
+   * 改前是懒加载（`tab === 'calc'` 才发请求）⇒ 首屏恒为 `unknown`「读取中」，
+   * 而向导恰恰要用户**不用点进去**就知道该不该点进去。代价 = 首屏多一次轻量 GET。
+   */
   useEffect(() => {
-    if (tab === 'calc' && calcConfig === null && calcError === '') void loadCalcConfig()
-  }, [tab, calcConfig, calcError, loadCalcConfig])
+    if (calcConfig === null && calcError === '') void loadCalcConfig()
+  }, [calcConfig, calcError, loadCalcConfig])
+
+  /**
+   * 裁高配置的**就绪信号**（只需要 `source`）：向导第 ⑤ 步用（issue #5858）。
+   * ⚠️ 写面仍由 {@link CuttingHeightConfigPanel} 自己管（它切到 tab 时自读一次）
+   * —— 这里只回答「配没配」，**不复制**面板的配置状态，也不替它写。
+   */
+  const loadCutReadiness = useCallback(async () => {
+    try {
+      const res = await cuttingHeightApi.get()
+      setCutSource(res.data?.data?.source ?? '')
+      setCutError('')
+    } catch {
+      setCutSource(null)
+      setCutError('裁高配置加载失败，请稍后重试')
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadCutReadiness()
+  }, [loadCutReadiness])
 
   /**
    * 保存（`PUT` = **全量替换**）。
@@ -1519,6 +1599,94 @@ function ProcessConfigContent() {
   const routingsReady = missingBaseRoutes.length === 0 && emptyShells.length === 0
   const defaults = useMemo(() => routeList.filter((r) => r.is_default), [routeList])
 
+  /**
+   * 第 ① 步「工序与单价」——**计数与判据都与它所指的那张表同源**（同一份 `operationsRows`，
+   * 即表头 `operation-price-matrix-total`）。issue #5858：改前这一步用 `catalog.total`（**工序库行数**）
+   * ⇒ 与同屏表头是**两个数**（用户截图实证：「工序库 40 道 · 已完成」与「29 道工序」+
+   * 「有 11 道工序还没有价目行」同屏并存 —— 向导说「已完成」，同一屏的表却说「11 道没法定价」）。
+   *
+   * 三态：读面失败 ⇒ `unknown`（**不静默降级成「0 道工序」**，沿用既有纪律）；否则
+   * 「表里有工序 ∧ **无未定价** ∧ **无孤儿工序**」才算 `done` —— 后两条是**真缺口**：
+   * 未定价 ⇒ 报工按未定价处理（工人白干）；孤儿 ⇒ 库里有工序却没有任何价目行
+   * （**表里看不到、也没法定价**）。用户裁定（2026-10-01）＝ 这两条必须进判据。
+   */
+  const total = catalog?.total ?? 0
+  const opsStepState: ReadinessState =
+    catalogError !== '' || matrixError !== ''
+      ? 'unknown'
+      : operationsReady && operationsRows.length > 0 && unpricedCount === 0 && orphanOps.length === 0
+        ? 'done'
+        : 'todo'
+  const opsStepStatus = catalogError !== '' || matrixError !== '' ? '读取失败' : undefined
+  const opsStepHint =
+    catalogError !== ''
+      ? '工序库没读出来（≠ 没配）：点右上「刷新」重试。'
+      : matrixError !== ''
+        ? '价目表没读出来（≠ 没定价）：点右上「刷新」重试。'
+        : !operationsReady
+          ? '工序库是空的：点「去处理」用「补套行业模板」一次补齐（已存在的条目自动跳过），或点右上「新增工序」逐道建。'
+          : operationsRows.length === 0
+            ? '表里还没有可定价的工序：点「去处理」用「补套行业模板」一次补齐，或点右上「新增工序」逐道建。'
+          : unpricedCount > 0
+            ? `有 ${unpricedCount} 道工序还没定价：未定价 ≠ ¥0.00 —— 报工按未定价处理（等于白干），点「去处理」逐道补价。`
+            : orphanOps.length > 0
+              ? `工序库里共 ${total} 道，其中 ${orphanOps.length} 道没有任何价目行（下表看不到、也没法定价）：点「去处理」用「补套行业模板」补齐。`
+              : ''
+
+  /**
+   * 第 ④ / ⑤ 步（算料 / 裁高）：读面在**首屏**就发起（issue #5858 用户裁定 —— 改前算料是懒加载，
+   * 首屏恒为 `unknown`「读取中」，而向导恰恰要做「不用点进去就知道该不该点进去」这件事）。
+   * 三态与既有纪律同口径：读失败 ⇒ `unknown` + 如实说「读取失败」（**不谎报「已配」**）；
+   * `source='stored'` ⇒ `done`；`source='default'` ⇒ `todo`（缺行用系统默认，界面必须显式说出来）。
+   */
+  const calcStepState: ReadinessState =
+    calcError !== '' || calcConfig === null ? 'unknown' : calcConfig.source === 'stored' ? 'done' : 'todo'
+  const calcStepStatus = calcError !== '' ? '读取失败' : calcConfig === null ? '读取中' : undefined
+  const calcStepHint = calcError !== ''
+    ? '算料配置没读出来（≠ 没配）：点「去处理」重试。'
+    : calcConfig === null
+      ? ''
+      : calcConfig.source === 'stored'
+        ? ''
+        : '现在用的是系统默认值：「每折吃布 / 余量 / 档位倍数」直接决定用料米数（改它 = 改钱），点「去处理」按你家口径核一遍。'
+
+  const cutStepState: ReadinessState =
+    cutError !== '' || cutSource === null ? 'unknown' : cutSource === 'stored' ? 'done' : 'todo'
+  const cutStepStatus = cutError !== '' ? '读取失败' : cutSource === null ? '读取中' : undefined
+  const cutStepHint = cutError !== ''
+    ? '裁高配置没读出来（≠ 没配）：点「去处理」重试。'
+    : cutSource === null
+      ? ''
+      : cutSource === 'stored'
+        ? ''
+        : '现在用的是系统默认值：裁剪高度 = 成品高 + 命中的增量项（如定型 / 打孔）—— 点「去处理」按你家口径核一遍。'
+
+  /**
+   * 每一步的**去处**（tab + 区块锚点）：hint 里的「下方…」「切到…tab」改成**可点的按钮**
+   * （issue #5858 ④）—— 指路只有在**指得着**的时候才算指路。
+   */
+  const READINESS_TARGETS: Record<string, { tab: 'process' | 'calc' | 'cut'; anchor: string }> = {
+    operations: { tab: 'process', anchor: 'operation-price-matrix' },
+    routings: { tab: 'process', anchor: 'routings-list' },
+    'default-route': { tab: 'process', anchor: 'routings-list' },
+    calc: { tab: 'calc', anchor: 'craft-calc-config-panel' },
+    cut: { tab: 'cut', anchor: 'cutting-height-panel' },
+  }
+  /** 待滚动到的锚点：`setTab` 要**下一帧**才渲染出目标区块 ⇒ 用 effect 在渲染后滚（jsdom 无此 API，可选调用） */
+  const [pendingAnchor, setPendingAnchor] = useState('')
+  const gotoReadinessStep = (key: string) => {
+    const target = READINESS_TARGETS[key]
+    if (!target) return
+    setTab(target.tab)
+    setPendingAnchor(target.anchor)
+  }
+  useEffect(() => {
+    if (!pendingAnchor) return
+    const el = document.querySelector(`[data-testid="${pendingAnchor}"]`)
+    ;(el as HTMLElement | null)?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+    setPendingAnchor('')
+  }, [pendingAnchor, tab])
+
   // ────────────────────────── 适用条件（挂在工序身上；issue #4650 阶段 1） ──────────────────────────
 
   /**
@@ -1554,13 +1722,13 @@ function ProcessConfigContent() {
     missingBaseRoutes.length > 0
       ? `缺 ${missingBaseRoutes.length} 条基础路线：${missingBaseRoutes.join(' / ')} —— ` +
         '这两条是窗帘单与布料单各自的主线，缺了对应形态的订单就没有工序可走。' +
-        '用下方「补套行业模板」补齐（已存在的条目自动跳过）。'
+        '用「补套行业模板」补齐（已存在的条目自动跳过）。'
       : emptyShells.length > 0
         ? `有 ${emptyShells.length} 条「空壳」路线（主线为空）：该路线命中后一道工序都没有，请点「编辑主线」把工序排进去。`
         : ''
   const defaultRouteHint =
     defaults.length === 0
-      ? '没有默认路线：匹配不到专属路线的订单，一张加工单也生成不了。请在下方路线列表点「设为默认」选一条。'
+      ? '没有默认路线：匹配不到专属路线的订单，一张加工单也生成不了。点「去处理」在路线列表里「设为默认」选一条。'
       : ''
 
   // ────────────────────────── 主线编辑 ──────────────────────────
@@ -1914,10 +2082,12 @@ function ProcessConfigContent() {
     }
   }
 
-  /** 展开「添加条件」表单：每次回到默认（工艺 / 做 / 锚点取默认值），并清掉上一次的失败理由 */
+  /** 展开「添加条件」表单：每次回到默认（特殊选项 / 做 / 锚点取默认值），并清掉上一次的失败理由。
+   *  ⚠️ 默认档由「工艺」改成「特殊选项」（issue #5859）：工艺档已从商家写面退场，
+   *  默认必须落在**列表里还剩的第一档**（否则一开表单就是一个不存在的档）。 */
   const openConditionForm = () => {
     setConditionDraft({
-      trigger_kind: 'craft',
+      trigger_kind: 'option',
       trigger_value: '',
       action: 'insert',
       after_operation: manageOp ? anchorDefaultFor(manageOp) : '',
@@ -2191,15 +2361,14 @@ function ProcessConfigContent() {
     }
   }
 
-  const total = catalog?.total ?? 0
-
   return (
     <div className="p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-neutral-900">工艺配置</h1>
           <p className="mt-0.5 text-sm text-neutral-500">
-            工序（各自多少钱）→ 工艺路线（订单按哪条主线走）。路线是计件工资与完工判定的唯一输入
+            工序与计件单价 → 工艺路线（订单按哪条主线走）→ 算料 / 裁高口径。
+            路线是计件工资与完工判定的唯一输入
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -2245,25 +2414,28 @@ function ProcessConfigContent() {
 
       {!loading && !error && (
         <>
-          {/* ── 就绪度（四步）：① 工序库 → ② 工艺路线 → ③ 默认路线 → ④ 算料配置 ── */}
+          {/* ── 就绪度（**五步**，与实际界面一一对应；issue #5858）：
+              ① 工序与单价 → ② 工艺路线 → ③ 默认路线（兜底）→ ④ 算料配置 → ⑤ 裁高配置。
+              每一步的**计数与它所指的区块同源**、状态覆盖该区块的真实缺口，并给一个可点的
+              「去处理」（切 tab + 滚到区块）—— 改前只有 4 步、且 hint 里的「下方…」「切到…tab」
+              在别的 tab 上就是假指路（用户原话「这个页面的向导式已经和实际功能不匹配了」）。 ── */}
           <div className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="process-readiness">
             <div className="mb-3 flex flex-wrap items-baseline gap-2">
               <h2 className="text-base font-medium text-neutral-900">配置就绪度</h2>
               <span className="text-sm text-neutral-500">
-                按顺序配：先有工序，才能排路线；路线里要有一条默认的兜底；最后按你家口径核一遍算料
+                按顺序配：先有工序与单价，才能排路线；路线里要有一条默认的兜底；最后按你家口径核一遍算料与裁高
               </span>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <ReadinessStep
                 testId="readiness-step-operations"
                 index={1}
-                label={catalogError ? '工序库 读取失败' : `工序库 ${total} 道`}
-                state={operationsReady ? 'done' : 'todo'}
-                hint={
-                  catalogError
-                    ? '工序库没读出来（≠ 没配）：点右上「刷新」重试。'
-                    : '下一步：用下方「行业模板」补套，或点右上「新增」逐道建（工序 / 特殊选项）。'
-                }
+                /* 计数 = 与表头 `operation-price-matrix-total` **同一份数据**（改前用工序库行数 ⇒ 同屏两个数） */
+                label={`工序与单价 ${operationsRows.length} 道`}
+                state={opsStepState}
+                statusText={opsStepStatus}
+                hint={opsStepHint}
+                action={{ testId: 'readiness-goto-operations', onClick: () => gotoReadinessStep('operations') }}
               />
               <ReadinessStep
                 testId="readiness-step-routings"
@@ -2278,6 +2450,7 @@ function ProcessConfigContent() {
                 }
                 state={routingsReady ? 'done' : 'todo'}
                 hint={routingsHint}
+                action={{ testId: 'readiness-goto-routings', onClick: () => gotoReadinessStep('routings') }}
               />
               <ReadinessStep
                 testId="readiness-step-default-route"
@@ -2285,19 +2458,30 @@ function ProcessConfigContent() {
                 label={`默认路线 ${defaults.length} 条`}
                 state={defaults.length === 1 ? 'done' : 'todo'}
                 hint={defaultRouteHint}
+                action={{ testId: 'readiness-goto-default-route', onClick: () => gotoReadinessStep('default-route') }}
               />
-              {/* 第 4 步（issue #4567 用户走查③）：算料配置 —— `calcConfig` 是**懒加载**（切到
-                  「算料配置」tab 才发请求，见 `loadCalcConfig` 的 useEffect）⇒ 本页首屏它通常还是
-                  `null`，此时判 `unknown`（**中性**「读取中」），**不得**显示成 `todo`
-                  （把「没加载」误报成「没配」）；加载失败同样不谎报 done。 */}
+              {/* 第 4 步（issue #4567 用户走查③）：算料配置 —— 读面**首屏**就发（issue #5858），
+                  读到之前是 `unknown`（**中性**「读取中」），**不得**显示成 `todo`
+                  （把「没加载」误报成「没配」）；读失败同样不谎报 done（`statusText` = 读取失败）。 */}
               <ReadinessStep
                 testId="readiness-step-calc-config"
                 index={4}
                 label={calcConfig?.source === 'stored' ? '算料配置 已保存' : '算料配置 系统默认'}
-                state={
-                  calcConfig?.source === 'stored' ? 'done' : calcError !== '' || calcConfig === null ? 'unknown' : 'todo'
-                }
-                hint={calcConfig?.source === 'stored' ? '' : '下一步：切到「算料配置」tab 按你家口径改每折吃布 / 余量 / 档位倍数。'}
+                state={calcStepState}
+                statusText={calcStepStatus}
+                hint={calcStepHint}
+                action={{ testId: 'readiness-goto-calc', onClick: () => gotoReadinessStep('calc') }}
+              />
+              {/* 第 5 步（issue #5858）：**裁高配置** —— #5161/#5777 新增的第 5 个配置域，
+                  改前的四步向导**完全不知道它存在**（tab 里已经有了，向导里没有）。 */}
+              <ReadinessStep
+                testId="readiness-step-cut-config"
+                index={5}
+                label={cutSource === 'stored' ? '裁高配置 已保存' : '裁高配置 系统默认'}
+                state={cutStepState}
+                statusText={cutStepStatus}
+                hint={cutStepHint}
+                action={{ testId: 'readiness-goto-cut', onClick: () => gotoReadinessStep('cut') }}
               />
             </div>
           </div>
@@ -2307,12 +2491,23 @@ function ProcessConfigContent() {
               的租户看不到这个入口（「补套」是幂等的：已存在的条目自动跳过）⇒ 入口改成
               「**工序库为空 ∨ 两条基础路线不齐**」（缺失即显示，幂等）。
               ⚠️ **不并上「有空壳路线」**：空壳路线不是种子能补的（那是商家自建路线的半成品，
-              补套不会碰它）⇒ 把它算进来会给出一个点了也没用的入口。 */}
-          {(!operationsReady || missingBaseRoutes.length > 0) && (
+              补套不会碰它）⇒ 把它算进来会给出一个点了也没用的入口。
+              ⚠️ **2026-10-01 补上第三类「可补齐的缺失项」**（issue #5858；设计 §6 修法 A 原文即
+              「至少覆盖：缺基础路线 / **缺基线工序** / **缺部位价目行**」，后两类此前没接线）：
+              有**孤儿工序**（库里有、没有任何价目行）时也显示 —— 否则 `matrix-orphan-hint` 与就绪度
+              第 ① 步都会指向一张**根本没渲染**的卡（用户截图形态：工序库 40 道 ∧ 基础路线齐
+              ∧ 11 道孤儿 ⇒ 卡不显示、提示却说「用下方『补套行业模板』补齐」）。
+              判据（后端 `ProductionSeedTemplateService.planPositions`）：按 `(逻辑名 × 部位)` 先查后插、
+              并只对本租户工序库的逻辑名过滤 ⇒ 补套**确实**能补出缺失的价目行（第二次套用零 insert）。 */}
+          {(!operationsReady || missingBaseRoutes.length > 0 || orphanOps.length > 0) && (
             <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-5" data-testid="seed-templates">
               <div className="mb-3 flex flex-wrap items-baseline gap-2">
                 <h2 className="text-base font-medium text-neutral-900">
-                  {operationsReady ? '缺基础路线 · 补套行业模板' : '工序库为空 · 补套行业模板'}
+                  {!operationsReady
+                    ? '工序库为空 · 补套行业模板'
+                    : missingBaseRoutes.length > 0
+                      ? '缺基础路线 · 补套行业模板'
+                      : '有工序没有价目行 · 补套行业模板'}
                 </h2>
                 <span className="text-sm text-neutral-600">
                   开租时系统会按行业自动套用；这里是套用失败或老租户的补救入口（已存在的条目自动跳过）
@@ -3131,7 +3326,14 @@ function ProcessConfigContent() {
             {/* ══════════════ tab「裁高配置」：裁剪高度口径（母单 #5161） ══════════════
                 本 tab 只回答一个问题：「这一刀该多高」——`裁剪高度 = 成品高 + 命中增量项`。
                 命中口径由**服务端**判（`POST …/preview`）；本版**不算不写机器**（下发归上游设计单）。 */}
-            {tab === 'cut' && <CuttingHeightConfigPanel />}
+            {/* ══════════════ tab「裁高配置」：裁剪高度口径（母单 #5161） ══════════════
+                ⚠️ 外层包一个带 `data-testid` 的容器：就绪度第 ⑤ 步的「去处理」要滚到它
+                （issue #5858）—— 面板本身是自足的，这里**不改**它的内部结构。 */}
+            {tab === 'cut' && (
+              <div data-testid="cutting-height-panel">
+                <CuttingHeightConfigPanel />
+              </div>
+            )}
           </div>
         </>
       )}
@@ -3449,8 +3651,10 @@ function ProcessConfigContent() {
                       </>
                     ) : (
                       <>
+                        {/* issue #5860：改前这里是两个**裸词** `车位 · 米` —— 用户原话「这里的文案让人
+                            看不明白」。两个词各带标签（分组 / 单位），值一律**真值渲染**。 */}
                         <span className="text-neutral-600">
-                          {v.group ?? '—'} · {v.unit ?? '—'}
+                          分组「{v.group ?? '—'}」 · 单位「{v.unit ?? '—'}」
                         </span>
                         <button
                           type="button"
@@ -3460,13 +3664,28 @@ function ProcessConfigContent() {
                             setEditingVariantId(v.id)
                             setVariantDraft({ group_name: v.group ?? '', unit: v.unit ?? '' })
                           }}
-                          className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                          className="inline-flex items-center gap-1 rounded border border-neutral-200 px-1.5 py-0.5 text-xs text-neutral-600 hover:bg-neutral-50 hover:text-neutral-800"
                         >
-                          <Pencil className="w-3.5 h-3.5" />
+                          <Pencil className="w-3 h-3" />
+                          改分组 / 单位
                         </button>
                       </>
                     )}
                   </div>
+
+                  {/* issue #5860：这三个概念（分组 / 单位 / 单价来源）改前只有裸词与一个没有文字的铅笔
+                      ⇒ 用户「看不明白」。这里各给一句**人话**：分组/单位 = 报工口径（工人在哪报、按什么计数）；
+                      **只有真缺价的行**才说「初始价」（`实证` / `推算` 的行不得被说成「待确认」）。 */}
+                  <p className="mt-1 text-xs text-neutral-500" data-testid={`variant-meta-note-${v.id}`}>
+                    {v.group && v.unit ? (
+                      <>工人在「{v.group}」报工、按「{v.unit}」计数（报工工资 = 数量 × 计件单价）。</>
+                    ) : (
+                      <>分组与单位决定报工口径（工人在哪个组报工、按什么计数）—— 这条还没配全，点「改分组 / 单位」补上。</>
+                    )}
+                    {v.source === '占位待确认' && (
+                      <> 单价还是套模板时的<strong>初始价</strong>：确认后改成实际工价（改价只影响新报工，历史报工按当时价）。</>
+                    )}
+                  </p>
 
                   {/* issue #4947：逐行的「停用 / 删除」原本在这一行 —— 与抽屉 footer 那一对**逐字重复**
                       （同一屏两个「删除」就是用户报的形态）⇒ 整对退场，写面只剩 footer 那一处；
@@ -3501,8 +3720,8 @@ function ProcessConfigContent() {
             </div>
 
             <p className="mt-1 text-xs text-neutral-400">
-              条件里的名字<strong>逐字取自</strong>订单里的工艺 / 特殊选项 / 加工项（错一个字就不会命中）。
-              特殊选项按<strong>套</strong>收费（元/套）；工艺与加工项不按套计价。
+              条件里的名字<strong>逐字取自</strong>订单里的特殊选项 / 加工项 / 部位（错一个字就不会命中）。
+              特殊选项按<strong>套</strong>收费（元/套）；加工项与部位不按套计价。
             </p>
 
             {rulesError ? (
@@ -3571,8 +3790,12 @@ function ProcessConfigContent() {
                 <div>
                   <span className="mb-1 block text-xs text-neutral-600">什么时候</span>
                   <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="什么时候">
+                    {/* 🔴 **「工艺」档已退场**（issue #5859；用户 2026-10-01 逐字「移除工艺的选项」，
+                        截图箭头指向这一档）：商家**不再能新建** craft 条件 —— 存量 craft 条件照样
+                        渲染与删除（`TRIGGER_KIND_LABEL.craft` 与 `ruleOptions.crafts` 一字未删），
+                        后端契约 / DB / `POST /route-rules` 的 `trigger_kind='craft'` **一字不动**
+                        （同 #4960 / #4961 先例：只删商家写面，不删数据与契约）。 */}
                     {([
-                      { key: 'craft', label: '工艺' },
                       { key: 'option', label: '特殊选项' },
                       { key: 'processing_item', label: '加工项' },
                       // #4962 加回的部位维：取值 = 部位闭词表（`ruleOptions.positions`，后端给出）
@@ -3606,21 +3829,17 @@ function ProcessConfigContent() {
                     onChange={(e) => setConditionDraft((d) => ({ ...d, trigger_value: e.target.value }))}
                   >
                     <option value="">
-                      {conditionDraft.trigger_kind === 'craft'
-                        ? '从工艺列表里选…'
-                        : conditionDraft.trigger_kind === 'processing_item'
-                          ? '从加工项列表里选…'
-                          : conditionDraft.trigger_kind === 'position'
-                            ? '从部位列表里选…'
-                            : '从特殊选项列表里选…'}
-                    </option>
-                    {(conditionDraft.trigger_kind === 'craft'
-                      ? ruleOptions.crafts
-                      : conditionDraft.trigger_kind === 'processing_item'
-                        ? ruleOptions.processing_items
+                      {conditionDraft.trigger_kind === 'processing_item'
+                        ? '从加工项列表里选…'
                         : conditionDraft.trigger_kind === 'position'
-                          ? ruleOptions.positions
-                          : optionNames
+                          ? '从部位列表里选…'
+                          : '从特殊选项列表里选…'}
+                    </option>
+                    {(conditionDraft.trigger_kind === 'processing_item'
+                      ? ruleOptions.processing_items
+                      : conditionDraft.trigger_kind === 'position'
+                        ? ruleOptions.positions
+                        : optionNames
                     ).map((name) => (
                       <option key={name} value={name}>
                         {name}
