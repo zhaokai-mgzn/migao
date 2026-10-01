@@ -2957,9 +2957,11 @@
 数据: 守卫与创建逻辑同属一个 github-script step，避免 failure 时重复 issue 堆积
 数据: **迁移指纹账本只追加**（issue #4235 判据 2；issue #5291 的 `V129__backfill_domain_read_permissions.sql` 是最近一次消费方）：新增迁移必须在 `tests/unit_ci_workflows/migration_fingerprints.json` **只追加一条**，**已登记条目的字节漂移一律判红**（判据本体 = `tests/unit_ci_workflows/test_migration_immutability.py`，**不新写第二份**；重生成入口 = 该脚本的 `--write-ledger`，它带前置断言：任何其它条目漂移即拒绝写出）
 数据: **生成物新鲜度（零 diff 自证）**：`.github/cases/*.yml` 或 `.github/templates/*.yml` 改后必须跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md` 重渲染；**同参数再跑一次必须零 diff**（生成物是派生物，手改生成物一律判红）
+数据: **重活锁 `--wait`（issue #5863，2026-10-01）**：`machine-heavy-lock.sh acquire --wait <秒>` 是「排队等待」的合规入口（脚本内部轮询，间隔 **2~5 秒随机抖动**，到上限即止并**具名**拒绝）；`verify-all.sh` 用 `MIGAO_HEAVY_WAIT=<秒>` 显式开启，**未设置时拒绝语义一字不改**（拿不到锁仍立即出声拒绝）。判据 = `tests/unit_ci_workflows/test_machine_heavy_lock.py::TestWaitOption`（**真跑脚本**：空闲时不得变慢 / 被占则等到释放并出声「排队等待…后取得」/ 超时具名且不偷锁 / `--wait 0` 与不传等价 / 参数错误 rc=2 / 退避落在 [2,5] 且**非常数** / **变异红证**：把「可等待」那行拿掉 ⇒ 判据当场红）
+数据: **重活锁**的**射程**（issue #5863，2026-10-01 改判）：`verify-all.sh` 的 `heavy_lock_wanted` 覆盖**所有会跑全量测试的档**（`quick` / `full` / `frontend` / `backend` / `agent` / `redproof` / `gate`），**未知 / 空档位不拿**。病史 = 原判据断言「只有 `gate` 拿锁」（理由「其余档不是同一台机器上的重活」）**与事实不符** —— `full` 按脚本自己的档位说明就是三模块全量 ~10-15 分钟，`redproof` 机具实跑单机具 2~30 分钟；实测 `gate` 持锁期间 `load average` 16.71 / 28.71 / 20.14（8 核）而单份档最多打满 ~8 核 ⇒ 锁外确有重活。判据 = `tests/unit_ci_workflows/test_machine_heavy_lock.py::TestVerifyAllWiring::test_every_tier_that_runs_tests_takes_the_lock`（正向七档全 WANT + 反向空/未知档 NONE）
 跳过: [backend-contract] CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_issue_dedup_guard.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-09-02 新增：CI 自动失败报告去重守卫（issue #2746） ｜ tags: ci, issue-dedup, nightly
+溯源: 2026-09-02 新增：CI 自动失败报告去重守卫（issue #2746）。2026-10-01 追补（issue #5863）：本用例同时承载「机器级重活锁」的判据面 —— 新增 `TestWaitOption`（`--wait` 排队等待 + 抖动退避 + 变异红证）；背景 = 默认 `acquire` **不排队**，客户端各自自旋时用固定长间隔重试的一方被系统性饿死（实测：30s 间隔 × 56 次探测 / 约 34 分钟一次未中，而释放瞬间总被重试更勤的一方接走）。 ｜ tags: ci, issue-dedup, nightly
 
 ### MC-013. 记忆提取 C 端受控词表 + PII 变体过滤 + agent_type 分流 🔵
 ```
@@ -3663,7 +3665,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（53 case）
+## 订单域（54 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -4660,6 +4662,21 @@
 ```
 真值: order.pending-content-edit
 溯源: 2026-10-01 新增（issue #5842；用户当次会话逐字，见 user_inputs）。🔴 本条同批**改判**了 issue #3352（2026-09-12 决策『选项 C 源头约束』）留下的 tripwire backend/admin-api/src/test/java/com/migao/admin/controller/OrderItemImmutabilityTest.java：它当年逐字写着『加工项仅在创建订单时可写，创建后**无任何修改通道**；若将来要引入编辑入口，必须同时启用「发货守卫覆盖校验」（选项 B），届时本测试会失败，提醒作者同步评估守卫』（**这段是决策交接条件，不是用户输入轮次** ⇒ 不占 user_inputs）⇒ 本单就是那个『将来』，改判形态 = 「编辑通道存在 ⇒ 守卫必须存在」（**不是删掉、不是放松**，原两条 Agent 侧判据一字未改）。守卫落点 = backend/admin-api/src/main/java/com/migao/admin/service/OrderShipGuard.java 的 hasProcessingDrift / assertProcessingCompletedBeforeShip。⚠️ **未固化（照实登记）**：① 加工单快照**为空或不可解析**时漂移判定为「无法判定 ⇒ 不拦货」（存量/异常形态：宁可漏判，不把『读不懂』当『漂移』）—— 该分支只打 warn 日志，**没有**判据钉住这条日志；② 编辑通道与加工单生成之间的**并发窗口**（另一会话同时生成加工单）没有判据（单测是串行 mock，真库并发不在面内）；③ 前端只覆盖『请求体不带金额字段』与『入口只在 pending 出现』，**不覆盖**真实浏览器里的表单可用性（Playwright 多模态验收见 PR body 的登记）。 ｜ tags: order, admin-web, edit-pending, ship-guard, tripwire
+
+### OR-054. 管理端「新增订单」提交准入（issue #5840，2026-10-01 用户逐字报障「未输入加工费组合价格但是提交成功了，缺少了必要的校验」）：加工费组合**未定价且组合键非空** ⇒ **硬阻断**（服务端按 0 计 = 错单）；**缺选配/工艺缺失 / 用料米数≠推算 ⇒ 只提示不阻断**；客户信息三项 + **物流两项**必填；**折叠态下必须能说出「哪儿缺」** 🔵
+```
+你: 用户 2026-10-01 同一次会话（同一件事的报障 + 追问后的逐条选定，**不是两轮对话**）—— 报障原文：「新增订单时，未输入加工费组合价格但是提交成功了，缺少了必要的校验，你审计下新增订单的前后端参数校验，涉及到关键信息，比如金额，工艺，物流等信息未填入时，或者推算的用料米数和实际填入的不匹配上，都要提示用户，另外要注意区域折叠状态下如何让用户知道具体是哪儿的信息缺失」；追问后逐条选定：① 物流两项「也必填」；② 工艺缺失（未勾任何加工项）⇒「允许提交，只显著提示」；③ 用料米数不匹配 ⇒「不阻断，只做显著提示」；④ 客户信息「都是必填」
+数据: 判据 1·**未定价（组合键非空）⇒ 不发请求**：判据 = 提交后 `orderApi.createOrder` **零调用** + 吸底条汇总点名具体组合（只报「有几行」不够 —— 商家得知道给哪一档定价）+ 费用明细面板**自动展开**（它默认收起）。执行点 = frontend/admin-web/tests/unit/pages/orders-new-submit-gate.test.tsx（`未定价且组合键非空 ⇒ 不发请求；汇总点名组合；费用明细自动展开（红证）`）。红证（改前实测）：删掉 `validate()` 里的 `unpricedWithKey` 分支 ⇒ 该用例红（请求照发）。
+数据: 判据 2·**缺选配（组合键为空）⇒ 放行**：`fee_source=unpriced` 且 `composition` 为空时提交必须成功 —— 与裁定「工艺缺失只提示」同口径，闸门不得过严。执行点同上（`未勾任何加工项（组合键为空）⇒ 不阻断，只提示`）。红证：把闸门写成「凡 unpriced 一律阻断」⇒ 该用例红。
+数据: 判据 3·**物流两项必填 + 折叠区自动展开**：缺物流时提交被拦、`logistics-section`（默认收起的 `<details>`）自动 `open`；补齐后放行。执行点同上（`缺物流两项 ⇒ 阻断 + 物流折叠区自动展开；补齐后放行`）。红证：删掉 `e.logisticsType`／`e.logisticsCompany` 两行 ⇒ 该用例红。
+数据: 判据 4·**汇总逐条可点且真能定位**：点「常用物流」那一条 ⇒ 物流 `<details>` 重新展开（不是「按钮被点过」）。执行点同上（`错误汇总逐条可点 ⇒ 点「常用物流」那条能把物流折叠区展开`）。
+数据: 判据 5·**组卡收起时提交失败 ⇒ 自动展开**：折叠态下不再「只弹 toast、屏幕上什么都没有」。执行点同上（`组卡收起时提交失败 ⇒ 自动展开`）。红证：去掉 `ProductGroupBlock` 里依赖 `errorFocus.tick` 的 effect ⇒ 该用例红（`wizard-step-1` 始终不在文档里）。
+数据: 判据 6·**用料来源在收起态可见**：手填用料米数 ⇒ 组头摘要出现「用料手填」（展开态的三处告知照旧）。执行点同上（`手填用料米数 ⇒ 组头摘要标「手填」`）。
+数据: 判据 7·**后端表单路径必填（B 端半边）**：缺 `customerAddress` / `logisticsType` / `logisticsCompany` ⇒ 422 `VALIDATION_ERROR` 且**不调 service**；空白串同样拒（`StringUtils.hasText` 口径，不是「非 null 即可」）；三字段齐备 ⇒ 200 且 service 恰好被调一次（防过严）。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/OrderCreateRequiredFieldsTest.java。红证：删掉 `OrderController.createOrder` 里的 `requireFormOnlyFields(request)` 调用 ⇒ 前三条用例红。🔴 **判据落点本身是本单的一课（实测，2026-10-01）**：这三项的必填**不能**写成共用 DTO `OrderCreateRequest` 上的 `@NotBlank` —— 那张 DTO 同时承载 agent 下单（C 端自助不采集地址/物流），而 `OrderDtoContractTest` 钉着「工具侧合法载荷必须零违规」⇒ 加在 DTO 上实测判红 2 条契约判据 + `OrderControllerTest` 5 + `AgentOrderControllerTest` 3 + `AgentOrderCreateBoundaryTest` 4 = 14 条。表单路径专属准入判在 Controller。
+跳过: [backend-contract] 本用例是**管理端建单准入**的确定性判据（前端 vitest 判 DOM / 请求是否发出、后端 JUnit 判 422 与不落库；**无 LLM 环节 ⇒ 不进 agent-eval 冒烟**）：计分通道 = `traces.tests`，与库内其余同标记用例一致
+```
+真值: order.admin-new-order-submit-gate
+溯源: 2026-10-01 新增（issue #5840；用户当次会话逐字报障 + 追问后逐条裁定，见 user_inputs）。背景（审计取证）：`validate()` 里**没有**任何未定价分支，而页面自己的告警文案写着「请为下列加工项组合定价后再下单」⇒ 承诺了一道不存在的闸门，加工费按 0 落库；后端 `OrderService.createOrder` 对未定价只 `log.warn` 后照常建单。同批补齐：客户地址（后端零注解）、物流两项、以及**折叠态可达性**（`line_*_autoFeatures` 此前是**死键** —— `validate()` 写了、全页无渲染点 ⇒ 商家永远看不到）。**本用例不复制任何口径**：真值登记在 `.github/templates/order.yml` 的 `order.admin-new-order-submit-gate`。⚠️ **未固化（照实登记）**：① 「用料米数 ≠ 系统推算」的**显著提示**只做到「收起态可见用料手填」这一步，`plan.meters ≠ calc.fabric_meters` 那条 `craft-plan-meters-mismatch` 仍是**展开态**才可见；② 前端判据用 jsdom，**不覆盖**真实浏览器里的滚动定位与 `scrollIntoView` 效果；③ 本页「Playwright 页面多模态验收」本轮未跑（本机无可用无头浏览器），重启条件 = 有浏览器环境时补一轮截图判定。 ｜ tags: order, admin-web, validation, processing-fee, logistics
 
 ## 加工项域（19 case）
 
@@ -8390,8 +8407,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：589（活跃 126，跳过 463）
-- tier 分布：smoke 12 / normal 544 / adversarial 31
+- 用例总数：590（活跃 126，跳过 464）
+- tier 分布：smoke 12 / normal 545 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8409,7 +8426,7 @@
 - 杂项域：52
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：53
+- 订单域：54
 - 加工项域：19
 - 加工单域：56
 - 商品域：106
