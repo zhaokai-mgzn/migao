@@ -1,4 +1,4 @@
-# case_ids: MC-055, MC-056
+# case_ids: MC-055, MC-057
 """`deploy-reconcile.yml` 值守面（issue #5929）：**合并了但没上线**必须有人被叫醒。
 
 ## 病（现取读数，不是推断）

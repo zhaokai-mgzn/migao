@@ -1,4 +1,4 @@
-# case_ids: MC-056
+# case_ids: MC-057
 """`on_main()` 的三态判据（issue #5935）：**「目标 workflow 在不在 main 上」必须问对对象**。
 
 ## 病（现取读数，不是推断）

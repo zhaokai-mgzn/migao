@@ -2822,7 +2822,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（55 case）
+## 杂项域（56 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3575,9 +3575,21 @@
 数据: **判别力自证 + 对照读数**：六种坏形态（腿没进两个列表 / 台账条目被删 / 台账与值守面口径相反 / 豁免没写理由 / 豁免锚在 workflow 里找不到 / 豁免条数上涨）在**内存语料**上各自判红；**只往正文加注释 ⇒ 不红**（守卫不许被自己的文案喂红）。**修前红**：把本判据文件拿到 `origin/main` 的 workflow 上跑 ⇒ **14 failed / 2 passed**（复算见 PR body）。
 跳过: [backend-contract] 部署值守面的静态/执行式结构判据（只读仓内文件 + 桩 gh/docker + 真 git 仓库；零网络、零真 ACR、不写共享 /tmp、不烧 token）由 tests/unit_ci_workflows/test_deploy_watchdog.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-01 新增（issue #5929，用户 2026-10-01 裁定只做 ① 值守面 —— 当时不做 ② 给 reconcile 加 `workflow_run` 触发、不做 ③ 兜底加密。🔴 **② 已于 2026-10-02 由用户逐字改判为「允许加 workflow_run：部署跑完就对账/清零」**，用途**限定**为**部署完成事件驱动的对账/清零**（不是检测加速）；落地见 **MC-056**（issue #5935），反自激判据同批。① 的判定骨架与 ③ 的不做，均维持原裁定）：病 = 「合并了但没上线」没有任何值守面，只有 reconcile 的一行 `::notice::`。落码 = ① `.github/workflows/deploy-reconcile.yml`：对账步逐腿落状态（`deployed`/`inflight`/`dispatched`/`terminal`/`notarget`，判定本体只此一份）+ 新增 step「值守面」做「合并后超过 N 秒仍未部署 ⇒ 判红 + 开/更 P1 值班 issue + 部署成功后自动关闭」+ `permissions: issues: write`（**不新增 schedule**，铁律 10；`pull_request` 事件不判定）；② 判据 tests/unit_ci_workflows/test_deploy_watchdog.py（16 条：静态面 + 执行式行为 + 判别力自证）；③ 类级台账 tests/unit_ci_workflows/deploy_watchdog_ledger.json（六条腿逐条登记，`c-end-h5` 具名豁免：发布由人手动，用户裁定 B）。⚠️ **未固化项如实登记**：workflow 级接线锚（YAML）不在 `wiring_claims_ledger.json` 射程内 ⇒ 接线面由执行式判据承担（作者的一次动作）；「dispatch 出去但 GitHub 从未生成 run（连 queued 都没有）⇒ 在途判据看不见」这一角由 `dispatched` 计入告警面 + 超期兜住，但「补 dispatch 自身失败」的形态仍靠对账步的 `set -e` 判红。取号 **MC-055**（**让号一次，记实**）：起草时 main 最大 = MC-053，脚本给的**空档 MC-049** 经核对是**在飞占用**（MC-050 的 `merge_log` 逐字记「在飞 ci/5814-migrate-pr-legs 占 MC-049」）⇒ 按「当前最大号 +1」取 MC-054；**推送后 CI 实测**：同批并行包 PR #5932 也占了 MC-054（`fix/5930-worktree-unlink`）⇒ 两个 PR 的 merge ref 里出现**重号** ⇒ `Case Contract (truths_ref)` 与 `ci workflow helper unit tests` **双双判红**（取号判据只看已合并状态，拦不住在飞撞号 —— 本仓第 N 次实证）⇒ 按「后合入者让号」顺延为 **MC-055**。 ｜ tags: ci, deploy, watchdog, ledger
+溯源: 2026-10-01 新增（issue #5929，用户 2026-10-01 裁定只做 ① 值守面 —— 当时不做 ② 给 reconcile 加 `workflow_run` 触发、不做 ③ 兜底加密。🔴 **② 已于 2026-10-02 由用户逐字改判为「允许加 workflow_run：部署跑完就对账/清零」**，用途**限定**为**部署完成事件驱动的对账/清零**（不是检测加速）；落地见 **MC-057**（issue #5935），反自激判据同批。① 的判定骨架与 ③ 的不做，均维持原裁定）：病 = 「合并了但没上线」没有任何值守面，只有 reconcile 的一行 `::notice::`。落码 = ① `.github/workflows/deploy-reconcile.yml`：对账步逐腿落状态（`deployed`/`inflight`/`dispatched`/`terminal`/`notarget`，判定本体只此一份）+ 新增 step「值守面」做「合并后超过 N 秒仍未部署 ⇒ 判红 + 开/更 P1 值班 issue + 部署成功后自动关闭」+ `permissions: issues: write`（**不新增 schedule**，铁律 10；`pull_request` 事件不判定）；② 判据 tests/unit_ci_workflows/test_deploy_watchdog.py（16 条：静态面 + 执行式行为 + 判别力自证）；③ 类级台账 tests/unit_ci_workflows/deploy_watchdog_ledger.json（六条腿逐条登记，`c-end-h5` 具名豁免：发布由人手动，用户裁定 B）。⚠️ **未固化项如实登记**：workflow 级接线锚（YAML）不在 `wiring_claims_ledger.json` 射程内 ⇒ 接线面由执行式判据承担（作者的一次动作）；「dispatch 出去但 GitHub 从未生成 run（连 queued 都没有）⇒ 在途判据看不见」这一角由 `dispatched` 计入告警面 + 超期兜住，但「补 dispatch 自身失败」的形态仍靠对账步的 `set -e` 判红。取号 **MC-055**（**让号一次，记实**）：起草时 main 最大 = MC-053，脚本给的**空档 MC-049** 经核对是**在飞占用**（MC-050 的 `merge_log` 逐字记「在飞 ci/5814-migrate-pr-legs 占 MC-049」）⇒ 按「当前最大号 +1」取 MC-054；**推送后 CI 实测**：同批并行包 PR #5932 也占了 MC-054（`fix/5930-worktree-unlink`）⇒ 两个 PR 的 merge ref 里出现**重号** ⇒ `Case Contract (truths_ref)` 与 `ci workflow helper unit tests` **双双判红**（取号判据只看已合并状态，拦不住在飞撞号 —— 本仓第 N 次实证）⇒ 按「后合入者让号」顺延为 **MC-055**。 ｜ tags: ci, deploy, watchdog, ledger
 
-### MC-056. 部署对账的「落状态」本身必须有判据 + 三态三分 + 事件驱动清零（issue #5935）：`gh workflow view --ref` 那条前置判据 100% 失败 ⇒ 六条腿全被误记 `notarget`；未落状态的腿必须具名判红、`notarget` 与机制故障不得混桶、部署完成事件必须能触发清零且不得自激 🔵
+### MC-056. CI 面记号与台账必须**双向**绑定（`FM-E24`/`FM-E25` 同批）：文档里具名而台账未登记 ⇒ 红；「CI 迟迟不来先看 `mergeable`」的判别动作必须留在加载面（文本锚，删掉即红） 🔵
+```
+你: 研发模式里写下的每一条 CI / 台账反复出错点都必须有承载体：① 文档里具名的 `FM-EN` 记号在台账 `ci_findings` 里**未登记**、或那条册外登记变陈旧；② 「CI 迟迟不来先跑 `gh pr view <N> --json mergeable`」这条判别动作从**加载面**（`migao-dev-flow` §2.2）里被删掉或改写 —— 两种形态都必须有东西变红
+期望: direct_reply
+数据: **坑 A（`FM-E24`）：单个 step 的 `run` 正文超长 ⇒ 整份 workflow 判 invalid，该腿静默永不跑**。实测阈值（11 个变体二分）= **≤13,303 字符有效 / ≥13,399 invalid**（GitHub 侧**未文档化**约束；与文件总大小、行数无关）。现象 = `push` 面只留一条 **0 个 job** 的 `push/failure` run（`name` 回落成文件路径、页面提示 workflow file issue），`pull_request` 面**根本不建 run**，而**本地 PyYAML 解析 + 仓库全部守卫全绿**（完全静默）。判据（PR #5931 已落码，本单只登记）= `tests/unit_ci_workflows/test_deploy_watchdog.py::test_run_body_stays_under_the_github_limit`（逐 workflow 逐 step 现取 `run` 正文长度，上限 `RUN_BODY_LIMIT = 13250` = 低于已知有效读数 13,303 留 53 字符差）+ 反空跑锚点 + 对照读数。**存量风险现取（2026-10-02，`origin/main` 3fa84ab89；复算 = `python3 -m pytest tests/unit_ci_workflows/test_deploy_watchdog.py -q -k run_body`）= 全仓 238 条 run 正文，最长 **13,125**（`.github/workflows/deploy-reconcile.yml` 的 step `Reconcile deploys`，距上限仅 **125 字符**）、次长 **10,975**（`.github/workflows/automerge.yml`）。订正一处转述：12,524 是 PR #5931 **合并前**的读数（#5931 自己把它抬到 13,125）⇒ 余量不是 ~2.3K。出口 = 把实现体外置成 `.github/scripts/*.sh` 再 `source`。
+数据: **坑 B（`FM-E25`）：「CI 迟迟不来」先看 PR 是否与 main 冲突**。`mergeable=CONFLICTING` ⇒ GitHub **建不出 merge ref** ⇒ **`pull_request` 类工作流根本不触发**，PR 页面上只剩 `pull_request_target` 的辅助腿（本仓现取 4 条：`Auto Merge` / `Close Linked Issues on Merge` / `Stale 清理` / `verify-trigger`，它们不需要 merge ref ⇒ 照跑）= 看着像在排队，**实际一个 required job 都不会来**（无红、无 pending、无任何东西会报）。实测出处 = 2026-10-01 PR #5922（开成 draft 后 **3 次 push 都没有 `PR Check` run**；`gh pr view 5922 --json mergeable` 读 `CONFLICTING`/`DIRTY`；`./scripts/sync-main.sh --rebase` 解冲突后 push ⇒ `PR Check` / `AI Agent Service Unit Tests` / `Mini-App CI` / `Bmini-App CI` **立即全部排队**）。顺带登记：draft 起手 + native auto-merge 的组合下 **`ready` 不是 `pull_request` 工作流的触发面**（`ready_for_review` 只在 `.github/workflows/automerge.yml` 的 `types` 里）⇒ 解冲突后要 **push**（`synchronize`）才会触发。复核边界（照实登记）：#5922 现已 MERGED ⇒ `mergeable` 现读 `UNKNOWN`（GitHub 只对 open PR 计算）⇒ 那条读数不能事后复算，可复算的是机制（触发面）与口诀本身。
+数据: **判据两条**：① `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::unregistered_ci_marks_problems`（**判据 23**，CI 面**缺失的那一个方向**：文档具名而台账未登记 ⇒ 红；册外的走**只许缩短**的 `CI_MARKS_WITHOUT_ENTRY_FROZEN`（现取 1 条 = MC-028 那句「缺号」点名的那个号，由台账 `not_solidified` 的 `NS-1` 承接；冻结表陈旧同样红）② `::conflict_diagnosis_problems`（**判据 24**，**文本锚**：§2.2 的加载面必须逐字留着 `gh pr view` / `--json mergeable` / `CONFLICTING` / `FM-E25` —— 删掉即红）。两条各带注入式红证 + 对照读数（已登记与册外的记号都不红 · 只加无关注释不红）+ fail-closed（取不到记号 / 取不到节 ⇒ 红）。
+数据: **判据 24 为什么只是文本锚（照实登记边界）**：GitHub 侧的 merge-ref 可建性**不是仓内内容** ⇒ 没有可复算的机械判据（同 `FM-E15` 的 `CASE_ID_ALLOCATION_BOUNDARY` 形态：删掉即红）。它**只**证明「这条判别动作还在 agent 每次都看得到的那一面」，**不证明** GitHub 的行为。本包的修前红 = 两条判据先写出来、文档一行未加 ⇒ 判据 7 报 `FM-E24`/`FM-E25` 未具名，判据 23 报台账里的号在文档里找不到（具名读数见 PR body）。
+跳过: [backend-contract] CI / 研发模式的静态结构判据（零 LLM、秒级、只读仓内文件 + 真 workflow YAML）由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的判据 23/24 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（用户 2026-10-02 逐字裁定「写」：把两条**实测到的 CI 踩坑**写进研发模式）。取号 **MC-056**：`python3 scripts/next_case_id.py MC` 给的是**历史空档 MC-049**，经核对 —— 该号确实写在**已 CLOSED 的 PR #5818 分支** `ci/5814-migrate-pr-legs` 的 `.github/cases/misc.yml` 里（且该远端分支**仍然存在**、可取回）⇒ 沿用 MC-055 的「让号」先例，按**当前最大号 +1** 取 MC-056（main 现取 001-048、050-055；此刻 0 个 open PR）。同批：台账 `FM-E24`/`FM-E25` + CI-CD 两行 + 判据 23/24 + 技能 §2.2 判别动作 + §19 索引行 + 技能 1.100.0。 ｜ tags: ci, workflow, ledger, red-proof
+
+### MC-057. 部署对账的「落状态」本身必须有判据 + 三态三分 + 事件驱动清零（issue #5935）：`gh workflow view --ref` 那条前置判据 100% 失败 ⇒ 六条腿全被误记 `notarget`；未落状态的腿必须具名判红、`notarget` 与机制故障不得混桶、部署完成事件必须能触发清零且不得自激 🔵
 ```
 你: 当对账步**没为某条腿落状态**、或落下的状态**是错的**（例如把「在 main 上」判成「不在 main 上」）、或把「读不到状态」与「确认未部署」压成同一种告警、或部署成功这个事件不能触发清零时，都必须有东西**具名**报出；而只改注释时不得报红
 期望: direct_reply
@@ -3594,18 +3606,6 @@
 跳过: [backend-contract] 部署对账值守面的静态/执行式结构判据（只读仓内文件 + 桩 gh/docker + 真 git 仓库；零网络、零真 ACR、不写共享 /tmp、不烧 token）由 tests/unit_ci_workflows/test_deploy_watchdog.py 与 tests/unit_ci_workflows/test_deploy_reconcile_state.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #5935：PR #5931 的值守面**第一次真跑**（run 36911070357）就 fail-closed 误报）。**根因（实测复现，推翻 issue 正文的归因）**：`gh workflow view "$wf" --ref main` 100% 失败（gh 要求 `--ref` 必搭 `--yaml`；本机 0.063s、run 日志每条 ≈58ms）⇒ 六条腿全被误记 `notarget`、`seen=6 acted=0` 三桶全 0。落码 = ① `scripts/deploy_reconcile_state.sh`（新，外置状态机：腿清单唯一来源 = `reconcile_one` 调用 · `unrecorded` 种子 · 整行替换 · `on_main()` 三态 · `watchdog_missing_gate` 具名判红）② `.github/workflows/deploy-reconcile.yml`：判据换 `on_main`、逐腿状态机外置、`on.workflow_run`（六条 deploy 腿 `completed`，`branches: [main]`）、值守面四桶分级 + 机制故障单（`type/bug`，不开业务单）、存活读数带具名清单 ③ 判据 tests/unit_ci_workflows/test_deploy_watchdog.py（+13 条）+ tests/unit_ci_workflows/test_deploy_reconcile_state.py（新，on_main 三态正/负例锚）④ 台账 deploy_watchdog_ledger.json 补 `clearing_event` + `event_trigger_contract`。⚠️ **红证（改前/改后双向对照）**：把新增判据拿到 **pre-fix** 的 workflow 上跑 ⇒ **7 failed / 4 passed**（4 条通过的是**防放宽**的对照读数，不是修好的部分）；改后 **45 passed**。⚠️ 取号 **MC-056**（**空档号≠可用号**：`next_case_id.py MC` 建议 MC-049，而 MC-050 的 merge_log 逐字记着它被在飞分支占用 ⇒ 按「当前最大号 +1」取 056）。⚠️ 本包**顺手改准**了 test_deploy_watchdog.py 文件头那条过期注释（原写「main 上已是 12,524」，是 #5931 落地**前**的起草读数；现取改前 = 13,125）。⚠️ 未做（照单登记）：不改值守面的只读性质（不重试部署、不回滚、不写仓库）；不新增 schedule 频率；不碰 push 触发面。⚠️ 未固化：`wiring_claims_ledger.json` 的接线锚左端要求 `.py` ⇒ workflow YAML 接线面仍由**执行式判据**承担（作者的一次动作，不是常驻机制）。 ｜ tags: ci, deploy, watchdog, ledger, red-proof, event-driven
-
-### MC-056. CI 面记号与台账必须**双向**绑定（`FM-E24`/`FM-E25` 同批）：文档里具名而台账未登记 ⇒ 红；「CI 迟迟不来先看 `mergeable`」的判别动作必须留在加载面（文本锚，删掉即红） 🔵
-```
-你: 研发模式里写下的每一条 CI / 台账反复出错点都必须有承载体：① 文档里具名的 `FM-EN` 记号在台账 `ci_findings` 里**未登记**、或那条册外登记变陈旧；② 「CI 迟迟不来先跑 `gh pr view <N> --json mergeable`」这条判别动作从**加载面**（`migao-dev-flow` §2.2）里被删掉或改写 —— 两种形态都必须有东西变红
-期望: direct_reply
-数据: **坑 A（`FM-E24`）：单个 step 的 `run` 正文超长 ⇒ 整份 workflow 判 invalid，该腿静默永不跑**。实测阈值（11 个变体二分）= **≤13,303 字符有效 / ≥13,399 invalid**（GitHub 侧**未文档化**约束；与文件总大小、行数无关）。现象 = `push` 面只留一条 **0 个 job** 的 `push/failure` run（`name` 回落成文件路径、页面提示 workflow file issue），`pull_request` 面**根本不建 run**，而**本地 PyYAML 解析 + 仓库全部守卫全绿**（完全静默）。判据（PR #5931 已落码，本单只登记）= `tests/unit_ci_workflows/test_deploy_watchdog.py::test_run_body_stays_under_the_github_limit`（逐 workflow 逐 step 现取 `run` 正文长度，上限 `RUN_BODY_LIMIT = 13250` = 低于已知有效读数 13,303 留 53 字符差）+ 反空跑锚点 + 对照读数。**存量风险现取（2026-10-02，`origin/main` 3fa84ab89；复算 = `python3 -m pytest tests/unit_ci_workflows/test_deploy_watchdog.py -q -k run_body`）= 全仓 238 条 run 正文，最长 **13,125**（`.github/workflows/deploy-reconcile.yml` 的 step `Reconcile deploys`，距上限仅 **125 字符**）、次长 **10,975**（`.github/workflows/automerge.yml`）。订正一处转述：12,524 是 PR #5931 **合并前**的读数（#5931 自己把它抬到 13,125）⇒ 余量不是 ~2.3K。出口 = 把实现体外置成 `.github/scripts/*.sh` 再 `source`。
-数据: **坑 B（`FM-E25`）：「CI 迟迟不来」先看 PR 是否与 main 冲突**。`mergeable=CONFLICTING` ⇒ GitHub **建不出 merge ref** ⇒ **`pull_request` 类工作流根本不触发**，PR 页面上只剩 `pull_request_target` 的辅助腿（本仓现取 4 条：`Auto Merge` / `Close Linked Issues on Merge` / `Stale 清理` / `verify-trigger`，它们不需要 merge ref ⇒ 照跑）= 看着像在排队，**实际一个 required job 都不会来**（无红、无 pending、无任何东西会报）。实测出处 = 2026-10-01 PR #5922（开成 draft 后 **3 次 push 都没有 `PR Check` run**；`gh pr view 5922 --json mergeable` 读 `CONFLICTING`/`DIRTY`；`./scripts/sync-main.sh --rebase` 解冲突后 push ⇒ `PR Check` / `AI Agent Service Unit Tests` / `Mini-App CI` / `Bmini-App CI` **立即全部排队**）。顺带登记：draft 起手 + native auto-merge 的组合下 **`ready` 不是 `pull_request` 工作流的触发面**（`ready_for_review` 只在 `.github/workflows/automerge.yml` 的 `types` 里）⇒ 解冲突后要 **push**（`synchronize`）才会触发。复核边界（照实登记）：#5922 现已 MERGED ⇒ `mergeable` 现读 `UNKNOWN`（GitHub 只对 open PR 计算）⇒ 那条读数不能事后复算，可复算的是机制（触发面）与口诀本身。
-数据: **判据两条**：① `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::unregistered_ci_marks_problems`（**判据 23**，CI 面**缺失的那一个方向**：文档具名而台账未登记 ⇒ 红；册外的走**只许缩短**的 `CI_MARKS_WITHOUT_ENTRY_FROZEN`（现取 1 条 = MC-028 那句「缺号」点名的那个号，由台账 `not_solidified` 的 `NS-1` 承接；冻结表陈旧同样红）② `::conflict_diagnosis_problems`（**判据 24**，**文本锚**：§2.2 的加载面必须逐字留着 `gh pr view` / `--json mergeable` / `CONFLICTING` / `FM-E25` —— 删掉即红）。两条各带注入式红证 + 对照读数（已登记与册外的记号都不红 · 只加无关注释不红）+ fail-closed（取不到记号 / 取不到节 ⇒ 红）。
-数据: **判据 24 为什么只是文本锚（照实登记边界）**：GitHub 侧的 merge-ref 可建性**不是仓内内容** ⇒ 没有可复算的机械判据（同 `FM-E15` 的 `CASE_ID_ALLOCATION_BOUNDARY` 形态：删掉即红）。它**只**证明「这条判别动作还在 agent 每次都看得到的那一面」，**不证明** GitHub 的行为。本包的修前红 = 两条判据先写出来、文档一行未加 ⇒ 判据 7 报 `FM-E24`/`FM-E25` 未具名，判据 23 报台账里的号在文档里找不到（具名读数见 PR body）。
-跳过: [backend-contract] CI / 研发模式的静态结构判据（零 LLM、秒级、只读仓内文件 + 真 workflow YAML）由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的判据 23/24 验证，非 LLM 行为，不进入 agent-eval 冒烟
-```
-溯源: 2026-10-02 新增（用户 2026-10-02 逐字裁定「写」：把两条**实测到的 CI 踩坑**写进研发模式）。取号 **MC-056**：`python3 scripts/next_case_id.py MC` 给的是**历史空档 MC-049**，经核对 —— 该号确实写在**已 CLOSED 的 PR #5818 分支** `ci/5814-migrate-pr-legs` 的 `.github/cases/misc.yml` 里（且该远端分支**仍然存在**、可取回）⇒ 沿用 MC-055 的「让号」先例，按**当前最大号 +1** 取 MC-056（main 现取 001-048、050-055；此刻 0 个 open PR）。同批：台账 `FM-E24`/`FM-E25` + CI-CD 两行 + 判据 23/24 + 技能 §2.2 判别动作 + §19 索引行 + 技能 1.100.0。 ｜ tags: ci, workflow, ledger, red-proof
 
 ## 商家入驻域（5 case）
 
@@ -8527,8 +8527,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：596（活跃 126，跳过 470）
-- tier 分布：smoke 12 / normal 551 / adversarial 31
+- 用例总数：597（活跃 126，跳过 471）
+- tier 分布：smoke 12 / normal 552 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8543,7 +8543,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：55
+- 杂项域：56
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：54
@@ -8625,6 +8625,7 @@
 - MC-054: worktree 删除不许穿过软链 + 禁止「跨工作区 node_modules 软链」成为约定（issue #5930）：解链调用必须**可执行且先于** `git worktree remove`、外部目标逐字节完好、仓内不许把这个姿势教成步骤
 - MC-055: 合并了但没上线必须有值守面（issue #5929）：main HEAD 合入超过 N 秒仍未部署 ⇒ 判红并自己开单、部署成功后自动关闭；C′ 之后「镜像不在 ACR」不得当判据（噪声判据是缺陷）；判不了必须 fail-closed
 - MC-056: CI 面记号与台账必须**双向**绑定（`FM-E24`/`FM-E25` 同批）：文档里具名而台账未登记 ⇒ 红；「CI 迟迟不来先看 `mergeable`」的判别动作必须留在加载面（文本锚，删掉即红）
+- MC-057: 部署对账的「落状态」本身必须有判据 + 三态三分 + 事件驱动清零（issue #5935）：`gh workflow view --ref` 那条前置判据 100% 失败 ⇒ 六条腿全被误记 `notarget`；未落状态的腿必须具名判红、`notarget` 与机制故障不得混桶、部署完成事件必须能触发清零且不得自激
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
