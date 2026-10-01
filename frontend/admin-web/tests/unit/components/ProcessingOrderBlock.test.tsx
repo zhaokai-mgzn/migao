@@ -441,7 +441,7 @@ const orderItems = [
     subtotal: 267.3,
     processingInfo: {
       saleForm: '成品帘',
-      skuId: 11,
+      skuId: '2097126615461462018',
       skuCode: 'SKU-11',
       colorName: '米白',
       processingItems: [{ name: '打孔' }],
@@ -457,7 +457,7 @@ const orderItems = [
     subtotal: 148.5,
     processingInfo: {
       saleForm: '成品帘',
-      skuId: 12,
+      skuId: '2098712345678901234',
       skuCode: 'SKU-12',
       colorName: '浅灰',
       processingItems: [{ name: '打孔' }],
@@ -491,10 +491,12 @@ const candidatesPayload = (over: Record<string, unknown> = {}) => ({
   },
 })
 
-/** item-a（skuId=11）有候选、item-b（skuId=12）无候选 —— 混排：弹框里一行可选、一行不可选 */
-const mixedCandidates = (params: { skuId?: number }) =>
+/** item-a（skuId=`2097126615461462018`）有候选、item-b（skuId=`2098712345678901234`）无候选 —— 混排：弹框里一行可选、一行不可选
+ * 🔴 issue #5904：id 用**真实量级的雪花号字符串**（≈2.1e18）—— 玩具 id（`11`）测不出 `Number()` 截断。
+ */
+const mixedCandidates = (params: { skuId?: string }) =>
   Promise.resolve(
-    params.skuId === 11
+    params.skuId === '2097126615461462018'
       ? candidatesPayload({
           suggestedBatchNo: 'PC-20260901-0001',
           candidates: [
@@ -525,7 +527,7 @@ describe('ProcessingOrderBlock 派工指定批次（issue #5145 阶段 1）', ()
 
     await waitFor(() => expect(mockedGenerate).toHaveBeenCalled())
     // 候选确实按「行商品 + 行 SKU + 行米数」取过（不是跳过候选直接生成）
-    expect(mockedCandidates).toHaveBeenCalledWith({ productId: 'prod-1', skuId: 11, meters: 2.7 })
+    expect(mockedCandidates).toHaveBeenCalledWith({ productId: 'prod-1', skuId: '2097126615461462018', meters: 2.7 })
     // 单参调用 ⇒ 请求体只有 orderIds（不指派 ⇒ 与今天逐字相同）
     expect(mockedGenerate.mock.calls[0]).toHaveLength(1)
     expect(mockedGenerate).toHaveBeenCalledWith(['order-001'])
@@ -614,7 +616,7 @@ describe('ProcessingOrderBlock 派工指定批次（issue #5145 阶段 1）', ()
 
     // 无 SKU 标识的行不查候选（无从核对批次归属）
     expect(mockedCandidates).toHaveBeenCalledTimes(1)
-    expect(mockedCandidates).toHaveBeenCalledWith({ productId: 'prod-1', skuId: 12, meters: 1.5 })
+    expect(mockedCandidates).toHaveBeenCalledWith({ productId: 'prod-1', skuId: '2098712345678901234', meters: 1.5 })
   })
 })
 

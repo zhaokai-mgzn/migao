@@ -32,7 +32,9 @@ import { checkStockQuantity, formatStockQuantity } from '@/lib/stock-quantity'
 /** 入库明细行（含 SKU 的展示快照，提交时只取 productId/skuId/quantity/unitCost/dyeLot/legacyBatchNo/rollLengthM） */
 interface DraftLine {
   productId: string
-  skuId: number
+  // 🔴 issue #5904：SKU id 是**雪花号字符串**（实测 ≈2.1e18，远超 JS 安全整数 9.007e15）——
+  // 全程**原样透传**，不许 `Number()`（一转换就吞末位 ⇒ 服务端查不到该 SKU ⇒ 建单必失败）
+  skuId: string
   label: string
   stock: number
   quantity: string
@@ -106,15 +108,15 @@ export default function NewInboundOrderPage() {
     const product = pickedProduct
     if (!product) return
     setDraftLines((prev) => {
-      const exists = prev.some((l) => l.skuId === Number(sku.id))
+      const exists = prev.some((l) => l.skuId === sku.id)
       if (exists) {
-        return prev.filter((l) => l.skuId !== Number(sku.id))
+        return prev.filter((l) => l.skuId !== sku.id)
       }
       return [
         ...prev,
         {
           productId: product.id,
-          skuId: Number(sku.id),
+          skuId: sku.id,
           label: `${product.name} / ${sku.colorName || '默认色'} / ${sku.doorWidth || '默认门幅'}`,
           stock: sku.stock ?? 0,
           quantity: '1',
@@ -127,7 +129,7 @@ export default function NewInboundOrderPage() {
     })
   }
 
-  const patchLine = (skuId: number, patch: Partial<DraftLine>) => {
+  const patchLine = (skuId: string, patch: Partial<DraftLine>) => {
     setDraftLines((prev) => prev.map((l) => (l.skuId === skuId ? { ...l, ...patch } : l)))
   }
 
@@ -335,7 +337,7 @@ export default function NewInboundOrderPage() {
                   )}
                   {pickedProduct &&
                     productSkus.map((sku) => {
-                      const checked = draftLines.some((l) => l.skuId === Number(sku.id))
+                      const checked = draftLines.some((l) => l.skuId === sku.id)
                       return (
                         <label
                           key={sku.id}

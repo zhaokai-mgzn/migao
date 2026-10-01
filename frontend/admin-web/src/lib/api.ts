@@ -910,7 +910,8 @@ export const batchStockApi = {
     request.get<ApiResponse<BatchReconcile>>('/api/admin/batch-stock/reconcile', { params }),
 
   // 派工候选 + 建议值（meters = 本行米数，用于算 enough 与建议值）
-  candidates: (params: { productId?: string; skuId?: number; meters?: number }) =>
+  // 🔴 issue #5904：`skuId` 是**雪花号字符串**（≈2.1e18 > 2^53）—— 传数字会把末位吞掉 ⇒ 查不到该 SKU
+  candidates: (params: { productId?: string; skuId?: string; meters?: number }) =>
     request.get<ApiResponse<BatchCandidates>>('/api/admin/batch-stock/candidates', { params }),
 
   // 按批次库存盘点（V143 / issue #5865，最小录入式）：实盘为准，差异落批次分录 + SKU 库存同事务对齐。

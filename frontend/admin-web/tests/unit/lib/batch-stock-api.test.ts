@@ -63,10 +63,11 @@ describe('batchStockApi 只读端点（PR-054）', () => {
   })
 
   it('候选端点按（商品 + SKU + 行米数）取，路径与参数名与后端一致', async () => {
-    await batchStockApi.candidates({ productId: 'prod-1', skuId: 11, meters: 2.7 })
+    // #5904：skuId 走**雪花号字符串**（≈2.1e18）—— 用真实量级，玩具 id 测不出精度问题
+    await batchStockApi.candidates({ productId: 'prod-1', skuId: '2097126615461462018', meters: 2.7 })
 
     expect(mockGet).toHaveBeenCalledWith('/api/admin/batch-stock/candidates', {
-      params: { productId: 'prod-1', skuId: 11, meters: 2.7 },
+      params: { productId: 'prod-1', skuId: '2097126615461462018', meters: 2.7 },
     })
   })
 
