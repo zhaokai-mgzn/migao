@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Building2, Bot, Bell, Save, Newspaper, SlidersHorizontal, Smartphone, HardHat } from 'lucide-react'
+import { Building2, Bot, Bell, Newspaper, SlidersHorizontal, Smartphone, HardHat } from 'lucide-react'
 import Image from 'next/image'
 import { QRCodeSVG } from 'qrcode.react'
 import { useSearchParams } from 'next/navigation'
@@ -52,12 +52,13 @@ export default function SettingsPage() {
     // 企业编码（issue #5485）：员工登录用「用户名@企业编码」，改它会影响全员登录，故单独提示
     code: '',
   })
-  const [savingSettings, setSavingSettings] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
   // Logo 预览加载失败标记：URL 失效/过期时回退到占位图标
   const [logoPreviewError, setLogoPreviewError] = useState(false)
   const [loadingSettings, setLoadingSettings] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // #5899：已落库基线 —— 字段失焦时用它判「到底改没改」：没改就不发请求（点进点出不写库）
+  const savedSnapshot = useRef({ companyName: '', code: '', logo: '', botName: '', greetingTemplate: '' })
 
   // ============ AI 客服设置 ============
   const defaultAiConfig: AiConfig = {
@@ -66,7 +67,6 @@ export default function SettingsPage() {
   }
   const [aiConfig, setAiConfig] = useState<AiConfig>(defaultAiConfig)
   const [loadingAiConfig, setLoadingAiConfig] = useState(false)
-  const [savingAiConfig, setSavingAiConfig] = useState(false)
 
   // ============ 智能每日经营简报（issue #3468）============
   const [briefingConfig, setBriefingConfig] = useState<BriefingConfig>({
@@ -108,6 +108,10 @@ export default function SettingsPage() {
         })
         // Logo 变化时重置预览失败标记
         setLogoPreviewError(false)
+        // #5899：记下已落库值（字段失焦判「改没改」的基线）
+        savedSnapshot.current.companyName = res.data.data.companyName || ''
+        savedSnapshot.current.code = res.data.data.code || ''
+        savedSnapshot.current.logo = res.data.data.logo || ''
       }
     } catch (error) {
       toast.error('加载设置失败')
@@ -123,6 +127,9 @@ export default function SettingsPage() {
       const res = await settingsApi.getAiConfig()
       if (res.data.data) {
         setAiConfig({ ...defaultAiConfig, ...res.data.data })
+        // #5899：同上的已落库基线（AI 客服名称 / 欢迎语）
+        savedSnapshot.current.botName = res.data.data.botName || ''
+        savedSnapshot.current.greetingTemplate = res.data.data.greetingTemplate || ''
       }
     } catch (e) {
       toast.error('加载 AI 客服设置失败')
@@ -162,9 +169,11 @@ export default function SettingsPage() {
     setUploadingLogo(true)
     try {
       const res = await uploadApi.uploadImage(file)
-      setSettings((prev) => ({ ...prev, logo: res.data.data.url }))
+      const logoUrl = res.data.data.url
+      setSettings((prev) => ({ ...prev, logo: logoUrl }))
       setLogoPreviewError(false)
-      toast.success('Logo 上传成功，记得点击「保存」生效')
+      // #5899：Logo 不再有「保存」按钮 —— 上传成功即落库（失败由 persistSettings 回退并提示）
+      await persistSettings({ logo: logoUrl }, 'Logo 已更新')
     } catch {
       toast.error('Logo 上传失败')
     } finally {
@@ -173,29 +182,57 @@ export default function SettingsPage() {
     }
   }
 
-  const handleSaveSettings = async () => {
-    if (!settings.companyName.trim()) {
-      toast.error('请输入公司名称')
-      return
-    }
-    setSavingSettings(true)
+  // #5899：企业基础信息**取消底部「保存」按钮** —— 用户 2026-10-01：「保存按钮放置的太底端了，
+  // 用户容易忽略」。改为**字段失焦即落库**（口径与本页既有的即时保存同源：#3119 通知开关 /
+  // #3468 简报开关与生成时刻）：成功 toast，失败 toast + 回退到已落库值。
+  const persistSettings = async (patch: Partial<SystemSettings>, successText: string) => {
     try {
-      await settingsApi.updateSettings(settings)
+      await settingsApi.updateSettings(patch)
       // #3099: 保存后立即刷新用户信息（企业名/Logo 在 /api/auth/me 内层 user.tenantName/tenantLogo），
-      // 否则侧边栏/右上角需刷新页面才同步 —— 此前 toast 宣称「侧边栏将同步展示」但实际不刷新
+      // 否则侧边栏/右上角需刷新页面才同步
       try {
         await useAuthStore.getState().fetchUserInfo()
       } catch {
         // 刷新失败不阻塞保存成功的提示（下次进入应用/刷新页面仍会同步）
       }
-      toast.success('企业信息已保存，侧边栏将同步展示')
+      toast.success(successText)
+      return true
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || '保存失败')
       // #5485：企业编码保存失败（格式/占用/保留字 ⇒ 422）时把输入框拉回已保存的值 ——
       // 别让一个「没生效的编码」留在框里，看起来像是已经改好了
       await loadSettings()
-    } finally {
-      setSavingSettings(false)
+      return false
+    }
+  }
+
+  // 公司名称（失焦即存；空值不提交，回退到已落库值）
+  const commitCompanyName = async () => {
+    const name = settings.companyName.trim()
+    if (!name) {
+      toast.error('请输入公司名称')
+      await loadSettings()
+      return
+    }
+    if (name === savedSnapshot.current.companyName) return
+    if (await persistSettings({ companyName: name }, '公司名称已保存')) {
+      savedSnapshot.current.companyName = name
+      setSettings((prev) => ({ ...prev, companyName: name }))
+    }
+  }
+
+  // 企业编码（失焦即存；它是**全员登录凭据的后半段** ⇒ 服务端校验理由原样展示并回退）
+  const commitCode = async () => {
+    const code = (settings.code || '').trim()
+    if (!code) {
+      toast.error('请输入企业编码')
+      await loadSettings()
+      return
+    }
+    if (code === savedSnapshot.current.code) return
+    if (await persistSettings({ code }, '企业编码已保存')) {
+      savedSnapshot.current.code = code
+      setSettings((prev) => ({ ...prev, code }))
     }
   }
 
@@ -227,19 +264,23 @@ export default function SettingsPage() {
     }
   }
 
-  const handleSaveAiConfig = async () => {
-    if (!aiConfig.botName.trim()) {
+  // AI 客服名称 / 欢迎语（#5899：失焦即存，取消底部「保存」按钮）
+  const commitAiConfig = async (field: 'botName' | 'greetingTemplate') => {
+    const value = field === 'botName' ? aiConfig.botName.trim() : aiConfig.greetingTemplate
+    if (field === 'botName' && !value) {
       toast.error('请输入 AI 客服名称')
+      await loadAiConfig()
       return
     }
-    setSavingAiConfig(true)
+    if (value === savedSnapshot.current[field]) return
     try {
-      await settingsApi.updateAiConfig(aiConfig)
-      toast.success('AI 客服设置已保存，顾客侧将按新配置生效')
+      await settingsApi.updateAiConfig({ ...aiConfig, [field]: value })
+      savedSnapshot.current[field] = value
+      setAiConfig((prev) => ({ ...prev, [field]: value }))
+      toast.success(field === 'botName' ? 'AI 客服名称已保存' : '欢迎语已保存，顾客侧将按新配置生效')
     } catch (e) {
       toast.error('保存失败')
-    } finally {
-      setSavingAiConfig(false)
+      await loadAiConfig()
     }
   }
 
@@ -276,7 +317,9 @@ export default function SettingsPage() {
           {/* 基本设置（企业信息） */}
           {activeTab === 'basic' && (
             <div className="bg-white border border-neutral-200 rounded-lg p-6 max-w-lg">
-              <h2 className="text-lg font-semibold text-neutral-900 mb-6">基本设置</h2>
+              <h2 className="text-lg font-semibold text-neutral-900 mb-1">基本设置</h2>
+              {/* #5899：把「没有保存按钮」这件事**说出来** —— 否则商家会去找按钮 */}
+              <p className="text-xs text-neutral-400 mb-6">修改后自动保存，无需手动提交</p>
               {loadingSettings ? (
                 <div className="text-sm text-neutral-500 py-8 text-center">加载中...</div>
               ) : (
@@ -287,9 +330,11 @@ export default function SettingsPage() {
                     </label>
                     <input
                       type="text"
+                      aria-label="公司名称"
                       className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                       value={settings.companyName}
                       onChange={(e) => setSettings({ ...settings, companyName: e.target.value })}
+                      onBlur={commitCompanyName}
                     />
                     <p className="text-xs text-neutral-400 mt-1">将展示在后台侧边栏与米宝的企业身份中</p>
                   </div>
@@ -305,13 +350,14 @@ export default function SettingsPage() {
                       placeholder="如 migao"
                       value={settings.code || ''}
                       onChange={(e) => setSettings({ ...settings, code: e.target.value })}
+                      onBlur={commitCode}
                     />
                     <p className="text-xs text-neutral-400 mt-1">
                       员工用它登录：<span className="text-neutral-500">用户名@企业编码</span>（例如 zhangsan@{settings.code || 'migao'}）。
                       全平台唯一，只能用 2~32 位小写字母、数字、连字符与下划线；格式或占用不合规时会提示原因。
                     </p>
                     <p className="text-xs text-amber-600 mt-1">
-                      修改后员工需改用新编码登录（原「用户名@旧编码」立即失效），请先通知员工再保存。
+                      修改后员工需改用新编码登录（原「用户名@旧编码」立即失效）—— 改完立即生效，请先通知员工再改。
                     </p>
                   </div>
 
@@ -340,9 +386,11 @@ export default function SettingsPage() {
                             <Button
                               variant="secondary"
                               size="sm"
-                              onClick={() => {
+                              onClick={async () => {
                                 setSettings((prev) => ({ ...prev, logo: '' }))
                                 setLogoPreviewError(false)
+                                // #5899：移除也即时落库（不再需要点底部「保存」）
+                                await persistSettings({ logo: '' }, 'Logo 已移除')
                               }}
                             >
                               移除 Logo
@@ -351,7 +399,7 @@ export default function SettingsPage() {
                         </div>
                         <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleLogoUpload} />
                         <p className="text-xs text-neutral-400 mt-1.5">
-                          未设置时展示米高默认 Logo；上传/移除后需点击「保存」生效，将展示在后台侧边栏企业名旁
+                          未设置时展示米高默认 Logo；上传或移除后自动保存，将展示在后台侧边栏企业名旁
                         </p>
                       </div>
                     </div>
@@ -491,13 +539,6 @@ export default function SettingsPage() {
                       </div>
                     )}
                   </div>
-
-                  <div className="pt-4">
-                    <Button onClick={handleSaveSettings} loading={savingSettings}>
-                      <Save className="w-4 h-4 mr-1.5" />
-                      保存
-                    </Button>
-                  </div>
                 </div>
               )}
             </div>
@@ -515,6 +556,8 @@ export default function SettingsPage() {
                   <p className="text-sm text-neutral-500 mt-0.5">
                     配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语
                   </p>
+                  {/* #5899：同「基本设置」—— 没有保存按钮，改动即时生效 */}
+                  <p className="text-xs text-neutral-400 mt-1">修改后自动保存，无需手动提交</p>
                 </div>
               </div>
               {loadingAiConfig ? (
@@ -531,6 +574,7 @@ export default function SettingsPage() {
                       placeholder="小布"
                       value={aiConfig.botName}
                       onChange={(e) => setAiConfig({ ...aiConfig, botName: e.target.value })}
+                      onBlur={() => void commitAiConfig('botName')}
                     />
                     <p className="text-xs text-neutral-500 mt-1.5">顾客在对话中看到的 AI 客服助手名称（默认：小布）</p>
                   </div>
@@ -543,15 +587,9 @@ export default function SettingsPage() {
                       placeholder="您好，我是小布，有什么可以帮您？"
                       value={aiConfig.greetingTemplate}
                       onChange={(e) => setAiConfig({ ...aiConfig, greetingTemplate: e.target.value })}
+                      onBlur={() => void commitAiConfig('greetingTemplate')}
                     />
                     <p className="text-xs text-neutral-500 mt-1.5">顾客发起对话时看到的第一条消息，支持变量 {'{customer_name}'}</p>
-                  </div>
-
-                  <div className="pt-4">
-                    <Button onClick={handleSaveAiConfig} loading={savingAiConfig}>
-                      <Save className="w-4 h-4 mr-1.5" />
-                      保存
-                    </Button>
                   </div>
                 </div>
               )}

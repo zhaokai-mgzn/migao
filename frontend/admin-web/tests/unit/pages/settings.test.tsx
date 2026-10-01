@@ -231,8 +231,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       ).toBeInTheDocument()
     })
 
-    it('AI 客服名称为空时保存报错且不调用 updateAiConfig', async () => {
-      const user = userEvent.setup()
+    it('#5899: AI 客服名称为空 → 失焦不提交、报错并回退（无保存按钮可点）', async () => {
       mockGetAiConfig.mockResolvedValue({
         data: { data: { botName: '  ', greetingTemplate: '' } },
       })
@@ -240,14 +239,17 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /AI 客服设置/ })).toBeInTheDocument()
       })
-      await switchToTab(user, 'AI 客服设置')
-      const saveBtn = await screen.findByRole('button', { name: '保存' })
-      await user.click(saveBtn)
+      await screen.findByRole('button', { name: /AI 客服设置/ })
+      fireEvent.click(screen.getByRole('button', { name: /AI 客服设置/ }))
+      // #5899：保存按钮已移除（改动即时生效）
+      expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
+      const input = screen.getByPlaceholderText('小布')
+      fireEvent.blur(input)
       expect(toast.error).toHaveBeenCalledWith('请输入 AI 客服名称')
       expect(mockUpdateAiConfig).not.toHaveBeenCalled()
     })
 
-    it('AI 客服设置 tab 点「保存」→ 调用 updateAiConfig 并提示生效', async () => {
+    it('#5899: AI 客服名称失焦即保存（无保存按钮），提示口径随之为「已保存」', async () => {
       const user = userEvent.setup()
       mockUpdateAiConfig.mockResolvedValue({ data: {} })
       render(<SettingsPage />)
@@ -258,13 +260,13 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       const input = await screen.findByDisplayValue('小布')
       await user.clear(input)
       await user.type(input, '米高助手')
-      await user.click(screen.getByRole('button', { name: '保存' }))
+      fireEvent.blur(input)
       await waitFor(() => {
         expect(mockUpdateAiConfig).toHaveBeenCalledWith(
           expect.objectContaining({ botName: '米高助手' }),
         )
       })
-      expect(toast.success).toHaveBeenCalledWith('AI 客服设置已保存，顾客侧将按新配置生效')
+      expect(toast.success).toHaveBeenCalledWith('AI 客服名称已保存')
     })
 
     it('AI 客服设置加载失败 → toast 提示', async () => {
@@ -334,24 +336,50 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       })
     })
 
-    it('保存按钮应该存在（基本设置 tab 默认激活，#3119 统一命名）', async () => {
+    it('#5899: 基本设置 tab **不再有「保存」按钮**（改完即存；底部按钮在长卡片里容易被忽略）', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument()
+        expect(screen.getByLabelText('公司名称')).toBeInTheDocument()
+      })
+      expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
+      // 把「不用点保存」这件事**说出来** —— 否则商家会去找按钮
+      expect(screen.getByText(/修改后自动保存/)).toBeInTheDocument()
+    })
+
+    it('#5899: 公司名称 / 企业编码 失焦即保存（有改动才发请求）', async () => {
+      mockUpdateSettings.mockResolvedValue({ data: { data: {} } })
+      render(<SettingsPage />)
+      const name = await screen.findByLabelText('公司名称')
+      fireEvent.change(name, { target: { value: '米高布艺' } })
+      fireEvent.blur(name)
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalledWith(expect.objectContaining({ companyName: '米高布艺' }))
+      })
+      const code = screen.getByPlaceholderText('如 migao')
+      fireEvent.change(code, { target: { value: 'migao_home' } })
+      fireEvent.blur(code)
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalledWith(expect.objectContaining({ code: 'migao_home' }))
       })
     })
 
-    it('保存企业信息成功后应刷新用户信息，侧边栏/右上角即时同步（#3099）', async () => {
-      const user = userEvent.setup()
+    it('#5899: 值没变时失焦**不发请求**（点进点出不写库）', async () => {
+      render(<SettingsPage />)
+      const name = await screen.findByLabelText('公司名称')
+      fireEvent.blur(name)
+      const code = screen.getByPlaceholderText('如 migao')
+      fireEvent.blur(code)
+      expect(mockUpdateSettings).not.toHaveBeenCalled()
+    })
+
+    it('#3099/#5899: 字段失焦保存成功后应刷新用户信息，侧边栏/右上角即时同步', async () => {
       mockUpdateSettings.mockResolvedValue({ data: { data: {} } })
       render(<SettingsPage />)
+      const name = await screen.findByLabelText('公司名称')
+      fireEvent.change(name, { target: { value: '新的企业名' } })
+      fireEvent.blur(name)
       await waitFor(() => {
-        // #3119: 与全站表单惯例一致，保存按钮统一命名「保存」（原「保存设置/保存企业信息」）
-        expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument()
-      })
-      await user.click(screen.getByRole('button', { name: '保存' }))
-      await waitFor(() => {
-        expect(mockUpdateSettings).toHaveBeenCalled()
+        expect(mockUpdateSettings).toHaveBeenCalledWith(expect.objectContaining({ companyName: '新的企业名' }))
       })
       // 保存成功后必须拉取最新用户信息（含企业名/Logo），否则侧边栏不刷新（#3099 修复）
       await waitFor(() => {
@@ -375,13 +403,12 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       expect(screen.getByText(/修改后员工需改用新编码登录/)).toBeInTheDocument()
     })
 
-    it('#5485: 保存企业信息时把 code 一并提交（不新开端点）', async () => {
-      const user = userEvent.setup()
+    it('#5485/#5899: 企业编码失焦即提交（不新开端点；无保存按钮）', async () => {
       mockUpdateSettings.mockResolvedValue({ data: { data: {} } })
       render(<SettingsPage />)
       const codeInput = await screen.findByPlaceholderText('如 migao')
       fireEvent.change(codeInput, { target: { value: 'migao_home' } })
-      await user.click(screen.getByRole('button', { name: '保存' }))
+      fireEvent.blur(codeInput)
 
       await waitFor(() => {
         expect(mockUpdateSettings).toHaveBeenCalled()
@@ -391,7 +418,6 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
     })
 
     it('#5485: 编码不合规/被占用（422）→ 展示**服务端** message，并把输入框拉回已保存的值', async () => {
-      const user = userEvent.setup()
       mockUpdateSettings.mockRejectedValue({
         response: {
           status: 422,
@@ -401,7 +427,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       render(<SettingsPage />)
       const codeInput = await screen.findByPlaceholderText('如 migao')
       fireEvent.change(codeInput, { target: { value: 'admin' } })
-      await user.click(screen.getByRole('button', { name: '保存' }))
+      fireEvent.blur(codeInput)
 
       await waitFor(() => {
         expect(toast.error).toHaveBeenCalledWith('企业编码已被占用，请换一个')
@@ -599,6 +625,9 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       mockUploadImage.mockResolvedValue({
         data: { data: { url: logoUrl, id: 'f2' } },
       })
+      // #5899：上传成功即落库 ⇒ 本用例必须让保存这步成功
+      //（vi.clearAllMocks 不清实现，前序用例的 mockRejectedValue 会漏到这里）
+      mockUpdateSettings.mockResolvedValue({ data: { data: {} } })
 
       render(<SettingsPage />)
 
@@ -621,6 +650,8 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
         expect(logoImg).toBeInTheDocument()
         expect(logoImg).toHaveAttribute('src', logoUrl)
       })
+      // #5899：Logo 上传成功**即落库**（不再需要再点一次「保存」才生效）
+      expect(mockUpdateSettings).toHaveBeenCalledWith(expect.objectContaining({ logo: logoUrl }))
     })
 
     it('未设置 Logo 时展示占位图标（不渲染 img）', async () => {
@@ -636,6 +667,8 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
 
     it('已设置 Logo 时可点击「移除 Logo」回到未设置状态（保存后落库为 NULL）', async () => {
       const user = userEvent.setup()
+      // #5899：移除即落库 ⇒ 让保存这步成功（同上：clearAllMocks 不清前序的实现）
+      mockUpdateSettings.mockResolvedValue({ data: { data: {} } })
       mockGetSettings.mockResolvedValue({
         data: { data: { companyName: '测试企业', logo: 'https://oss.example.com/logo.png', notificationEnabled: false } },
       })
@@ -652,6 +685,8 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
         expect(document.querySelector('[data-testid="icon-building2"]')).toBeInTheDocument()
       })
       expect(screen.queryByAltText('Logo')).not.toBeInTheDocument()
+      // #5899：移除**即时落库**（改前要再点一次底部「保存」才生效）
+      expect(mockUpdateSettings).toHaveBeenCalledWith(expect.objectContaining({ logo: '' }))
     })
 
     it('Logo 加载失败时预览回退到占位图标', async () => {
@@ -730,6 +765,46 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
         expect(toast.error).toHaveBeenCalledWith('保存失败')
       })
     })
+  })
+
+  // ══ #5899 类级元守卫：设置页的**可编辑字段**必须「变更即保存」 ══
+  // 缺陷的类 = 「页面上有个输入框，改完没提交」。改前它靠卡片**最底部**一个「保存」按钮兜着 ——
+  // 长卡片里商家滚到一半就离开，改动静默丢失（用户 2026-10-01 原话：「保存按钮放置的太底端了，
+  // 用户容易忽略」）。本守卫**枚举**当前 tab 里的每个文本框/文本域：改一下、失焦 ⇒ 必须打一次
+  // 保存请求。将来往设置页加字段而忘了接「变更即保存」⇒ 当场红。
+  it('#5899 类级守卫：基本设置 / AI 客服设置 里每个可编辑字段都变更即保存（漏接线即红）', async () => {
+    const user = userEvent.setup()
+    mockUpdateSettings.mockResolvedValue({ data: { data: {} } })
+    mockUpdateAiConfig.mockResolvedValue({ data: {} })
+    render(<SettingsPage />)
+    await screen.findByLabelText('公司名称')
+
+    const textFields = () =>
+      Array.from(document.querySelectorAll('input[type="text"], textarea')) as (HTMLInputElement | HTMLTextAreaElement)[]
+
+    // 基本设置 tab：公司名称 + 企业编码
+    expect(textFields().length).toBeGreaterThan(0)
+    for (const [index, el] of textFields().entries()) {
+      mockUpdateSettings.mockClear()
+      fireEvent.change(el, { target: { value: `guard-${index}` } })
+      fireEvent.blur(el)
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalled()
+      })
+    }
+
+    // AI 客服设置 tab：AI 客服名称 + 欢迎语
+    await switchToTab(user, 'AI 客服设置')
+    await screen.findByDisplayValue('小布')
+    expect(textFields().length).toBeGreaterThan(0)
+    for (const [index, el] of textFields().entries()) {
+      mockUpdateAiConfig.mockClear()
+      fireEvent.change(el, { target: { value: `guard-ai-${index}` } })
+      fireEvent.blur(el)
+      await waitFor(() => {
+        expect(mockUpdateAiConfig).toHaveBeenCalled()
+      })
+    }
   })
 })
 
