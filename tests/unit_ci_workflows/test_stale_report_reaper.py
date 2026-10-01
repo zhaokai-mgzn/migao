@@ -392,3 +392,76 @@ def test_shadow_guard_has_discriminating_power():
     assert REAPER.shadowed_prefixes(shadow) == [("[X] 冒烟", "[X]")], REAPER.shadowed_prefixes(shadow)
     ordered = {"[X] 冒烟": "b.yml", "[X] 对抗": "c.yml"}
     assert REAPER.shadowed_prefixes(ordered) == [], REAPER.shadowed_prefixes(ordered)
+
+
+# ── 触发面 ⇄ 登记表必须同源（2026-10-01 合并后自证发现）────────────────────────────────────
+#
+# 病（实测，不是推断）：`push: main` 这个唤醒源**会被吞** —— 2026-10-01 16:07 CST 现取
+# `gh run list --limit 40 --json event`：**0 个 push 事件**，而同一窗口内 main 落了 5 个提交
+# （auto-merge 用 `GITHUB_TOKEN` 合并 ⇒ push run 不触发 workflow，#5814 的读数）。
+# ⇒ reaper 的实际唤醒面只剩 `workflow_run`，而它**只列 4 条腿**：新登记的 6 条腿转绿时
+# **没有任何东西唤醒 reaper** ⇒ 「登记了却不会跑」= 半个交付（本仓口径：一条注册了但从未跑过的腿 ≠ 交付）。
+
+REAPER_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "stale-report-reaper.yml"
+
+
+def _load_yaml(path: Path) -> dict:
+    import yaml
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def _workflow_names() -> dict[str, str]:
+    """`文件名 → workflow 的 name:`（`workflow_run` 认的是**名字**，不是文件名）。"""
+    return {p.name: str(_load_yaml(p).get("name", "")) for p in sorted(WORKFLOWS_DIR.glob("*.yml"))}
+
+
+def _on_block(doc: dict) -> dict:
+    """取 `on:` 段 —— ⚠️ PyYAML 按 YAML 1.1 把裸 `on` 解析成**布尔 `True`**，两种键都要认。"""
+    return doc.get("on") or doc.get(True) or {}
+
+
+def _trigger_names() -> set[str]:
+    return set(_on_block(_load_yaml(REAPER_WORKFLOW))["workflow_run"]["workflows"])
+
+
+def _uncovered_legs(reapable: set[str], names: dict[str, str], triggers: set[str]) -> list[str]:
+    """可回收表里、却不在触发面里的腿（纯函数 ⇒ 可内存注入做判别力自证）。"""
+    return sorted(names.get(f, f) for f in sorted(reapable) if names.get(f) not in triggers)
+
+
+def _dangling_triggers(triggers: set[str], names: dict[str, str]) -> list[str]:
+    """触发面里解析不到任何 workflow 的名字（改名 ⇒ 静默脱钩）。"""
+    known = {v for v in names.values() if v}
+    return sorted(t for t in triggers if t not in known)
+
+
+def test_every_reapable_leg_drives_the_reaper():
+    """**未覆盖即红**：可回收表里的每条腿，都必须在 reaper 自己的 `workflow_run` 触发面里。
+
+    红证形态：把某条腿从触发面删掉（或在表里新增一条腿却不补触发面）⇒ 本判据具名判红。
+    """
+    missing = _uncovered_legs(set(REAPER.PREFIX_TO_WORKFLOW.values()), _workflow_names(), _trigger_names())
+    assert not missing, (
+        "以下腿在「可回收」表里、却不在 reaper 的 `workflow_run` 触发面 ⇒ **它转绿时没有任何东西唤醒收口**"
+        f"（而 `push: main` 实测会被吞，不能当可靠唤醒源）：{missing}")
+
+    # 反向对账：触发面里也不许出现**没登记**的腿（多一条 = 白唤醒 + 两张表分家）。
+    handled = set(REAPER.PREFIX_TO_WORKFLOW.values()) | {wf for wf, _ in REAPER.NON_REAPABLE_PREFIXES.values()}
+    resolvable = {_workflow_names().get(f, f) for f in handled}
+    extra = sorted(t for t in _trigger_names() if t not in resolvable)
+    assert not extra, f"触发面里有**没登记**的腿（白唤醒 / 两张表分家）：{extra}"
+
+
+def test_workflow_run_upstream_names_are_resolvable():
+    """触发面里的每个名字都要能解析到某个 workflow 的 `name:`（改名 = 静默脱钩，必须当场红）。"""
+    dangling = _dangling_triggers(_trigger_names(), _workflow_names())
+    assert not dangling, f"触发面里的名字解析不到任何 workflow（改名了？）：{dangling}"
+
+
+def test_trigger_face_guard_has_discriminating_power():
+    """判别力自证（内存注入）：① 少一条 ⇒ 具名判红；② 补齐 ⇒ 不报；③ 名字写错（全角括号）⇒ 脱钩判红。"""
+    names = {"a.yml": "A (甲)", "b.yml": "B (乙)"}
+    assert _uncovered_legs({"a.yml", "b.yml"}, names, {"A (甲)"}) == ["B (乙)"]
+    assert _uncovered_legs({"a.yml", "b.yml"}, names, {"A (甲)", "B (乙)"}) == []
+    assert _dangling_triggers({"A (甲)", "B（乙）"}, names) == ["B（乙）"]
+    assert _dangling_triggers({"A (甲)", "B (乙)"}, names) == []

@@ -14,6 +14,22 @@ on:
       - "Nightly Verification (p1 smoke + fixture e2e)"
       - "Drift Audit (真相源契约)"
       - "Xiaobu Acceptance (小布 C 端验收)"
+      # 🔴 存量漏配（2026-10-01 由判据当场逮到）：`[post-merge]` 早已在可回收表里，
+      #    但**从来不在唤醒面** ⇒ 这条腿的报告只能靠 push（会被吞）偶然撞上。
+      - "Post-Merge Verify (main 侧守护腿)"
+      # 🔴 2026-10-01 补齐（issue #5814 收口复核）：下面 6 条腿的**报告前缀已在上游登记**，
+      #    但唤醒面漏了它们 ⇒ 「登记了却不会跑」。触发面与 `PREFIX_TO_WORKFLOW` 必须**同源**：
+      #    判据 = tests/unit_ci_workflows/test_stale_report_reaper.py 的
+      #    `test_every_reapable_leg_drives_the_reaper`（未覆盖即红）+
+      #    `test_workflow_run_upstream_names_are_resolvable`（改名 ⇒ 静默脱钩 ⇒ 红）。
+      #    为什么非补不可：`push: main` 这个唤醒源**会被吞**（2026-10-01 16:07 CST 现取：最近 40 个
+      #    run 里 0 个 push 事件，而同一窗口 main 落了 5 个提交）⇒ 只靠它，收口可能**永远不发生**。
+      - "Main Freshness Guard（main 侧生成物新鲜度）"
+      - "Red Proof Live Sweep (红证实跑巡检)"
+      - "Fixture Re-record"
+      - "Agent Eval (米宝能力评测)"
+      - "Agent Eval Adversarial (米宝对抗评测)"
+      - "E2E Real (AI Agent 能力测试)"
     types: [completed]
   # ② main 上有新合并时也扫一遍（覆盖「报告还开着、而它报的那条腿早已绿」的存量）
   push:
