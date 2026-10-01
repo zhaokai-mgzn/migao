@@ -7,6 +7,7 @@ package com.migao.admin.controller;
 
 import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.dto.BatchStocktakeRequest;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.BatchStocktakeService;
 import com.migao.admin.service.StockBatchConsumptionService;
 import org.junit.jupiter.api.AfterEach;
@@ -129,6 +130,43 @@ class StockBatchControllerTest extends BaseControllerTest {
             assertThat(sent.getBatchId()).isEqualTo(7L);
             assertThat(sent.getActualMeters()).isEqualByComparingTo("58.5");
         });
+    }
+
+    @Test
+    @DisplayName("PR-119 POST /stocktake —— fail-closed 四条：4xx（状态码逐个核：422/400/422/422）")
+    void stocktakeFailClosed() throws Exception {
+        String body = "{\"productId\":\"prod-1\",\"runId\":\"PD-1\","
+                + "\"lines\":[{\"batchId\":7,\"actualMeters\":58.5}]}";
+
+        // ① runId 缺 ⇒ 422（BusinessException.validationError 的既有口径）
+        when(batchStocktakeService.stocktake(eq(TEST_TENANT_ID), eq("prod-1"), eq(""), any()))
+                .thenThrow(BusinessException.validationError("盘点运行标识 runId 不能为空"));
+        mockMvc.perform(post(BASE + "/stocktake").contentType(MediaType.APPLICATION_JSON)
+                        .content(body.replace("\"PD-1\"", "\"\"")))
+                .andExpect(status().isUnprocessableEntity());   // 与 javadoc 的「422」逐条对齐
+
+        // ② 实盘为负 ⇒ **400**（显式码 + suggestion）
+        when(batchStocktakeService.stocktake(eq(TEST_TENANT_ID), eq("prod-1"), eq("PD-1"), any()))
+                .thenThrow(new BusinessException("STOCKTAKE_ACTUAL_NEGATIVE",
+                        "批次 7 的实盘米数不能为负：-1", 400, "实盘米数最小是 0"));
+        mockMvc.perform(post(BASE + "/stocktake").contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        // ③ 超 1 位小数 ⇒ 422（准入判据）
+        when(batchStocktakeService.stocktake(eq(TEST_TENANT_ID), eq("prod-1"), eq("PD-1"), any()))
+                .thenThrow(BusinessException.validationError(
+                        "实盘米数 actualMeters 最多支持 1 位小数（库存按 0.1 米粒度记账）"));
+        mockMvc.perform(post(BASE + "/stocktake").contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnprocessableEntity());   // requireOneDecimal ⇒ validationError ⇒ 422
+
+        // ④ 盘亏让 SKU 库存变负 ⇒ 422 INSUFFICIENT_STOCK
+        when(batchStocktakeService.stocktake(eq(TEST_TENANT_ID), eq("prod-1"), eq("PD-1"), any()))
+                .thenThrow(new BusinessException("INSUFFICIENT_STOCK", "盘亏会让 SKU 的库存变负", 422));
+        mockMvc.perform(post(BASE + "/stocktake").contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnprocessableEntity());
     }
 
     @Test

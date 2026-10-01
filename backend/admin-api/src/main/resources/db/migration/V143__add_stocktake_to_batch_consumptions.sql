@@ -40,17 +40,28 @@
 -- `ADD COLUMN IF NOT EXISTS` / `DROP CONSTRAINT IF EXISTS` + `ADD CONSTRAINT` /
 -- `CREATE UNIQUE INDEX IF NOT EXISTS` / `ALTER COLUMN … DROP NOT NULL`（本身幂等）⇒ 第二遍净效果相同。
 --
--- ## 回滚（半有损）
--- ```sql
+-- ## 回滚（**可执行**，不是散文）
+--
+-- 下面每一条以 `-- -- ` 开头 = **真的 SQL**（真库判据 `BatchStocktakeRealDbTest` 的
+-- `rollbackPathIsExecutableAndRestoresTheContract` 会把这些行抽出来**逐句实跑**：任一句报错 ⇒ 判据红）。
+-- 顺序即安全顺序、**不可交换**：
+-- ① 先摘掉本迁移新加的约束与索引 →
+-- ② **删掉盘点行**（它们是唯一可能带 NULL 单据列的行；不删就没法把两列恢复成 NOT NULL
+--    —— 这一步原先只写在散文里，实测 `SET NOT NULL` 直接 **23502**，回滚路径根本走不通）→
+-- ③ 恢复两个 NOT NULL → ④ 把 reason 取值集合收回两值（**先 DROP 再 ADD**：直接 ADD 会 **42710**）。
+--
+-- ⚠️ **有损**（如实登记）：`stocktake_run_id` 的取值**与盘点行本身**都回不来 ⇒ 余量会**跳回盘点前的读数**
+-- ——那是「实物被盘过」这个事实在账上被抹掉。存量环境若已盘过点，回滚后需**人工重盘**
+-- （没有自动补偿路径）；要保留盘点事实就不要回滚，改往前修。
+--
 -- -- ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_source_shape;
 -- -- DROP INDEX IF EXISTS uk_batch_consumption_stocktake;
+-- -- DELETE FROM stock_batch_consumptions WHERE reason = 'stocktake';
 -- -- ALTER TABLE stock_batch_consumptions DROP COLUMN IF EXISTS stocktake_run_id;
--- -- ALTER TABLE stock_batch_consumptions ADD CONSTRAINT ck_batch_consumption_reason
--- --     CHECK (reason IN ('processing_order', 'processing_order_cancelled'));
--- ```
--- **半有损**：`stocktake_run_id` 的取值回不来（列被丢弃）；且盘点行的 `processing_order_no` /
--- `order_item_id` 为 NULL ⇒ 回滚后它们仍能存在（NOT NULL 恢复会让 `ALTER` 失败，须先处置这些行）。
--- 已落账的盘点分录**不回滚**（它是历史事实：实物被盘过就是被盘过）。
+-- -- ALTER TABLE stock_batch_consumptions ALTER COLUMN processing_order_no SET NOT NULL;
+-- -- ALTER TABLE stock_batch_consumptions ALTER COLUMN order_item_id SET NOT NULL;
+-- -- ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_reason;
+-- -- ALTER TABLE stock_batch_consumptions ADD CONSTRAINT ck_batch_consumption_reason CHECK (reason IN ('processing_order', 'processing_order_cancelled'));
 
 BEGIN;
 

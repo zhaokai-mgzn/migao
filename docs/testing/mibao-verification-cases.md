@@ -3539,7 +3539,7 @@
 数据: **边界（如实登记）**：判据只认仓内文本形态 `<mapper 标识符>.insert(`（标识符由 `StockBatchConsumptionMapper <名>` 的声明取得）与 `getMapper(StockBatchConsumptionMapper.class).insert(`；用反射 / 裸 SQL / `JdbcTemplate` 写台账的代码不在射程内（本仓没有这种写法，出现时也不会有东西提醒）；它判不了「盘点的业务口径对不对」（那是 PR-119 的真库/mock 判据）
 跳过: [backend-contract] 静态结构守卫（只读仓内文件，零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_batch_stocktake_write_point.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-01 新增（issue #5865 判据 8「类级元守卫：批次调整的写入点唯一」；照 `OrderRollAllocationAuthorityTest` 的先例）：本单给批次台账加了第三个来源（`stocktake`）⇒ 同批落类级元守卫，把「写入点唯一 / 余量口径唯一 / 来源族列形状互斥」钉成未登记即红。取号 MC-053（现取 main + 全部在飞分支的 `- id:` 差集：本单原取 MC-053，同步 main 时发现该号已被 #5853 的包占用 ⇒ 按「后合入者让号」顺延）。 ｜ tags: ci, guard, inventory, ledger
+溯源: 2026-10-01 新增（issue #5865 判据 8「类级元守卫：批次调整的写入点唯一」；照 `OrderRollAllocationAuthorityTest` 的先例）：本单给批次台账加了第三个来源（`stocktake`）⇒ 同批落类级元守卫，把「写入点唯一 / 余量口径唯一 / 来源族列形状互斥」钉成未登记即红。取号 MC-053（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 MC-052**，同步 main 时该号已被 #5853 的包占用 ⇒ 按「后合入者让号」顺延为 **MC-053**）。 ｜ tags: ci, guard, inventory, ledger
 
 ## 商家入驻域（5 case）
 
@@ -7134,11 +7134,13 @@
 数据: 🔴 红线⑦**盘点后 `/reconcile` 的批次部分不得增大**：`diff = Σ批次余量 − product_skus.stock` 由两条腿各自聚合（批次分录腿与销售台账腿），盘点让两边按**同一个 Σdelta** 变 ⇒ 差额恒等。真库判据用「盘前差额 −40（批次 60 / SKU 100）」做夹具（判别力：只动一条腿的实现会得到 −41.5）。判据 = `BatchStocktakeRealDbTest#journalKeepsQuantityAndRealignsBothLedgers` 的 `[#5865 红线⑦] 盘前 diff = -40，盘后 diff = -40` 读数
 数据: **端到端可见**（判据 9）= `UI-077`：商品详情批次面板按货号列出批次与当前余量 + 实盘输入 + **差异预览（± 与合计）** + 提交后列表刷新为新余量
 数据: **类级元守卫**（判据 8）= `MC-053` / `tests/unit_ci_workflows/test_batch_stocktake_write_point.py`：批次台账写入点唯一（未登记即红）；余量派生（Σdelta 读口）只许在台账服务与其 mapper 里
+数据: 🔴 判据 D-2（独立复核后收口）：**盘点行进不了「生产消耗」的三条计量腿** —— `sumDeltaBySku`（对账的派工扣减净额腿）/ `sumSavingByPeriodCohortMaterial`（省料看板）/ `sumOutputAreaByPeriod`（产出面积）三处汇总一律按 `reason IN ('processing_order','processing_order_cancelled')` **显式包含**（新来源默认不进计量腿，要进必须显式登记）。改前真库实测（零派工零订单、只插一条盘点行）：三条腿读出 `delta=-1.5/formula=1.5`、省料看板多一张「unknown 来源」组卡（line_count=1）、产出面积多一行 —— 一次盘亏被读成「这个月消耗了 1.5 米布」（本仓自认最大的失败模式：**归因错**）。判据 = `BatchStocktakeRealDbTest#stocktakeRowsStayOutOfConsumptionMetrics`（加盘点行前后三条腿读数**逐值相同**，并反向断言余量派生**必须**含盘点差异）；**红证（实测）**：摘掉三处过滤 ⇒ 读数由 `sku:-2.0/2.0|saving:2.0/2.0/1|area:0/1` 变成 `sku:-3.0/3.0|saving:3.0/3.0/2|area:0/2` ⇒ 判据红。`reconcile` 的 `diff` 不受影响（两腿同增同减）故不改。
+数据: 🔴 判据 D-1（独立复核后收口）：**V143 的回滚段必须真能跑** —— 迁移文件里每一条 `-- -- ` 开头的行 = 一句真 SQL（共 8 句），判据逐句实跑。改前实测：第 ④ 句 42710（缺前置 `DROP CONSTRAINT IF EXISTS`）、两句 `SET NOT NULL` **根本没写** ⇒ 按净效果回滚后原先被形状约束挡住的非法行能落库（`00000`）⇒ 「两族可区分」这条合约被永久拆掉。判据 = `BatchStocktakeRealDbTest#rollbackPathIsExecutableAndRestoresTheContract`（8 句全 rc=0；回滚后非法行重新被拒 `23502` —— 形状约束没了由 NOT NULL 顶上；**负对照**：跳过两句 `SET NOT NULL` ⇒ 同一行 `00000`）；两条读数都在测试输出里。
 前置: 本用例是 [backend-contract] 账务面用例：前置（租户 / 商品 / SKU 库存 / 批次行）由判据自建 —— `BatchStocktakeRealDbTest` 在 `@BeforeAll` 起一次性真 PG 集群并跑真 `schema.sql` 建终态后插入夹具；`BatchStocktakeServiceTest` 用桩 mapper 造「入库量 60 + Σdelta」的派生余量。前置不成立时判据直接红（真库缺 PG 由 `PgCluster` fail-closed，不走 skip）；agent-eval 栈不跑它
 跳过: [backend-contract] 盘点写面是确定性的账务判据（真库 + mock + 结构守卫三层，无 LLM 环节、无米宝工具面）由 admin-api 单测与 pytest 结构守卫覆盖，不进入 agent-eval 冒烟
 ```
 真值: batch-ledger.stocktake-by-physical-count, batch-ledger.remaining-derived, batch-ledger.reconcile
-溯源: 2026-10-01 新增（issue #5865，用户裁定档位 A 最小录入式 + 实盘为准）：此前盘点的写面只有 Agent 面 SKU 粒度的一条路（改 `product_skus.stock` + 写销售台账、**完全不落批次**）⇒ 盘完后「Σ批次余量 ≠ SKU 库存」恒成立而**没有配平路径**；本单补按批次的写面：实盘录入 → 差异预览 → 一次事务落批次分录 + SKU 库存。取号 PR-119（现取 main + 全部在飞分支的 `- id:` 差集：本单原取 PR-119，同步 main 时发现该号已被并行包占用 ⇒ 按「后合入者让号」顺延）。 ｜ tags: inventory, batch, stocktake, backend-contract
+溯源: 2026-10-01 新增（issue #5865，用户裁定档位 A 最小录入式 + 实盘为准）：此前盘点的写面只有 Agent 面 SKU 粒度的一条路（改 `product_skus.stock` + 写销售台账、**完全不落批次**）⇒ 盘完后「Σ批次余量 ≠ SKU 库存」恒成立而**没有配平路径**；本单补按批次的写面：实盘录入 → 差异预览 → 一次事务落批次分录 + SKU 库存。取号 PR-119（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 PR-118**，同步 main 时该号已被并行包占用 ⇒ 按「后合入者让号」顺延为 **PR-119**）。 ｜ tags: inventory, batch, stocktake, backend-contract
 
 ## 工具注册器域（1 case）
 
@@ -8376,7 +8378,7 @@
 跳过: [backend-contract] 纯前端录入与预览（写面口径由 PR-119 的真库判据守；本用例只判「看得见、拦得住、提交后刷新」）由 vitest（jsdom）执行，不进入 agent-eval 冒烟
 ```
 真值: batch-ledger.stocktake-by-physical-count, frontend-fix.vitest, frontend-fix.tsc
-溯源: 2026-10-01 新增（issue #5865）：盘点的**入口此前在后台 web 面为零**（全量 grep `adjustment|adjustStock` = 0 命中，只有 Agent 面 SKU 粒度的一条路）。本单把最小录入式挂进商品详情的批次面板（既有位置，不新造菜单 / 权限码）：实盘录入 + 差异预览 + 一次提交 ⇒ 提交后批次面板三个读面一起刷新。取号 UI-077（现取 main + 全部在飞分支的 `- id:` 差集：本单原取 UI-077，同步 main 时发现该号已被并行包占用 ⇒ 按「后合入者让号」顺延）。 ｜ tags: ui, product, batch, stocktake, admin-web
+溯源: 2026-10-01 新增（issue #5865）：盘点的**入口此前在后台 web 面为零**（全量 grep `adjustment|adjustStock` = 0 命中，只有 Agent 面 SKU 粒度的一条路）。本单把最小录入式挂进商品详情的批次面板（既有位置，不新造菜单 / 权限码）：实盘录入 + 差异预览 + 一次提交 ⇒ 提交后批次面板三个读面一起刷新。取号 UI-077（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 UI-076**，同步 main 时该号已被并行包占用 ⇒ 按「后合入者让号」顺延为 **UI-077**）。 ｜ tags: ui, product, batch, stocktake, admin-web
 
 ## 跨切面工具域（2 case）
 

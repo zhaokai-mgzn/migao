@@ -2744,7 +2744,7 @@ cases:
       - "🔴 红证（改前实测）：本单落地前 `frontend/admin-web/tests/unit/components/BatchStocktakeForm.test.tsx` 整个文件不存在（`data-testid=\"batch-stocktake\"` / `stocktake-input-*` / `stocktake-diff-*` / `stocktake-total` / `stocktake-submit` 在页面上一个都没有）；把「提交成功后 `runIdRef` 换新」删掉 ⇒ 判据 5 红；把 `onApplied` 回调删掉 ⇒ 判据 6 红（列表停在旧余量 60）"
     skip_reason: "[backend-contract] 纯前端录入与预览（写面口径由 PR-119 的真库判据守；本用例只判「看得见、拦得住、提交后刷新」）由 vitest（jsdom）执行，不进入 agent-eval 冒烟"
     precondition: "本用例是 [backend-contract] 纯前端用例：前置（`batchStockApi` 的 batches/distribution/reconcile/stocktake 四个响应）由单测自建 —— frontend/admin-web/tests/unit/components/BatchStocktakeForm.test.tsx 直接 `vi.mock('@/lib/api')` 注入批次夹具（余量 60、货号 SKU-11）并逐条桩掉响应；前置不成立时单测直接红（找不到 `data-testid`），不依赖共享夹具；agent-eval 栈不跑它"
-    merge_log: "2026-10-01 新增（issue #5865）：盘点的**入口此前在后台 web 面为零**（全量 grep `adjustment|adjustStock` = 0 命中，只有 Agent 面 SKU 粒度的一条路）。本单把最小录入式挂进商品详情的批次面板（既有位置，不新造菜单 / 权限码）：实盘录入 + 差异预览 + 一次提交 ⇒ 提交后批次面板三个读面一起刷新。取号 UI-077（现取 main + 全部在飞分支的 `- id:` 差集：本单原取 UI-077，同步 main 时发现该号已被并行包占用 ⇒ 按「后合入者让号」顺延）。"
+    merge_log: "2026-10-01 新增（issue #5865）：盘点的**入口此前在后台 web 面为零**（全量 grep `adjustment|adjustStock` = 0 命中，只有 Agent 面 SKU 粒度的一条路）。本单把最小录入式挂进商品详情的批次面板（既有位置，不新造菜单 / 权限码）：实盘录入 + 差异预览 + 一次提交 ⇒ 提交后批次面板三个读面一起刷新。取号 UI-077（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 UI-076**，同步 main 时该号已被并行包占用 ⇒ 按「后合入者让号」顺延为 **UI-077**）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/BatchStocktakeForm.test.tsx"

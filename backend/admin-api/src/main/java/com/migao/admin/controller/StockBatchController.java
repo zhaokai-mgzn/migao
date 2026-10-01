@@ -63,8 +63,15 @@ public class StockBatchController {
      * 回执逐行给「盘前 / 实盘 / 差异 / 盘后 + status（applied|unchanged|replayed）」，
      * 前端据此做**差异预览的复核读数**（预览本身在提交前由页面按余量算，提交后以此为准）。</p>
      *
-     * <p>四条 fail-closed：{@code runId} 缺 ⇒ 400（幂等键由调用方给）；实盘为负 / 超 1 位小数 ⇒ 400；
-     * 批次不属于该货号 ⇒ 400；盘亏会让 SKU 库存变负 ⇒ 422。四条都发生在**任何写入之前**。</p>
+     * <p>四条 fail-closed（**状态码逐个核过**，2026-10-01 独立复核订正——原 javadoc 一律写 400，
+     * 实测前三条是 422）：{@code runId} 缺 / 空明细 / 批次不属于该货号 ⇒ **422**
+     * （{@code BusinessException.validationError} 的既有口径，同全仓其它入参校验）；
+     * 实盘米数为负 ⇒ **400**（显式码 {@code STOCKTAKE_ACTUAL_NEGATIVE} + 可行动 suggestion）；
+     * 超 1 位小数 ⇒ **422**（{@code StockQuantity.requireOneDecimal} 的准入口径）；
+     * 盘亏会让 SKU 库存变负 ⇒ **422** {@code INSUFFICIENT_STOCK}。四条都发生在**任何写入之前**。</p>
+     *
+     * <p>HTTP 层判据 = {@code StockBatchControllerTest} 的四条 `is4xxClientError()` 用例
+     * （原先只有 200 路径 ⇒ 注释写错没有任何东西会红）。</p>
      */
     @RequirePermission("product:create")
     @PostMapping("/stocktake")

@@ -1928,7 +1928,7 @@ cases:
       - "**判据 5（判别力自证，随判据常驻）**：六种坏形态在**内存语料**上各自判红（第二个写入点 / 登记表清空 / 零命中 / 第二处 Σdelta 聚合 / 形状约束被删 / Java 常量与 DB 取值漂移 / 活迁移未登记指纹账本），另有一条**对照读数** —— 把 `consumptionMapper.insert(...)` 只写进**注释** ⇒ **不红**（注释不是写入点；判据不许被自己的文案喂红）。判据 = 同文件 `test_injected_bad_corpora_are_named`"
       - "**边界（如实登记）**：判据只认仓内文本形态 `<mapper 标识符>.insert(`（标识符由 `StockBatchConsumptionMapper <名>` 的声明取得）与 `getMapper(StockBatchConsumptionMapper.class).insert(`；用反射 / 裸 SQL / `JdbcTemplate` 写台账的代码不在射程内（本仓没有这种写法，出现时也不会有东西提醒）；它判不了「盘点的业务口径对不对」（那是 PR-119 的真库/mock 判据）"
     skip_reason: "[backend-contract] 静态结构守卫（只读仓内文件，零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_batch_stocktake_write_point.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-01 新增（issue #5865 判据 8「类级元守卫：批次调整的写入点唯一」；照 `OrderRollAllocationAuthorityTest` 的先例）：本单给批次台账加了第三个来源（`stocktake`）⇒ 同批落类级元守卫，把「写入点唯一 / 余量口径唯一 / 来源族列形状互斥」钉成未登记即红。取号 MC-053（现取 main + 全部在飞分支的 `- id:` 差集：本单原取 MC-053，同步 main 时发现该号已被 #5853 的包占用 ⇒ 按「后合入者让号」顺延）。"
+    merge_log: "2026-10-01 新增（issue #5865 判据 8「类级元守卫：批次调整的写入点唯一」；照 `OrderRollAllocationAuthorityTest` 的先例）：本单给批次台账加了第三个来源（`stocktake`）⇒ 同批落类级元守卫，把「写入点唯一 / 余量口径唯一 / 来源族列形状互斥」钉成未登记即红。取号 MC-053（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 MC-052**，同步 main 时该号已被 #5853 的包占用 ⇒ 按「后合入者让号」顺延为 **MC-053**）。"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_batch_stocktake_write_point.py"

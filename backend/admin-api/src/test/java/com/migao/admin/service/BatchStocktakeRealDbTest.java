@@ -88,6 +88,10 @@ class BatchStocktakeRealDbTest {
     private static final Long TX_SKU_ID = 58654L;
     private static final String TX_SKU = "SKU-5865-T";
     private static final String OTHER_PRODUCT = "acc-5865-other";
+    /** D-2 专用物料面：只给「三条计量腿」判据用（与其他判据的货号隔开 ⇒ 读数确定） */
+    private static final String METRIC_PRODUCT = "acc-5865-metric";
+    private static final Long METRIC_SKU_ID = 58655L;
+    private static final String METRIC_SKU = "SKU-5865-M";
 
     private static final String DOOR_WIDTH = "2.8米";
 
@@ -118,6 +122,8 @@ class BatchStocktakeRealDbTest {
             st.execute(product(TX_PRODUCT, "布艺遮光帘-事务"));
             st.execute(sku(TX_SKU_ID, TX_PRODUCT, TX_SKU, "120"));
             st.execute(product(OTHER_PRODUCT, "布艺遮光帘-别的货号"));
+            st.execute(product(METRIC_PRODUCT, "布艺遮光帘-计量腿"));
+            st.execute(sku(METRIC_SKU_ID, METRIC_PRODUCT, METRIC_SKU, "60"));
         }
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
@@ -426,6 +432,187 @@ class BatchStocktakeRealDbTest {
         assertThat(sqlStateOf(badShape)).isEqualTo("23514");
     }
 
+    // ══════════════════════════════════ 判据：读面隔离（D-2，2026-10-01 独立复核）
+
+    /**
+     * 🔴 <b>盘点行进不了「生产消耗」的三条计量腿</b>（独立复核的真库实测形态）：
+     * {@code StockBatchConsumptionMapper} 的三处汇总原先**不按 reason 过滤** ⇒ 一条盘亏 −1.5 米
+     * 被读成「这个月消耗了 1.5 米布」：趋势图凭空多一根柱、省料看板多一张「来源未知」组卡、
+     * 对账的「派工扣减净额」腿被算进盘点量（本仓自认最大的失败模式：**归因错**）。
+     *
+     * <p>判据形态 = <b>加盘点行前后，三条腿的读数逐值不变</b>（而不是「等于某个数」——
+     * 那会把无关的夹具数据也钉进来）。同时反向断言 {@code sumDeltaByBatchIds}（余量派生）
+     * **必须**把盘点差异算进去 —— 过滤加宽到余量腿就会让「页面余量」与「盘过的实物」对不上。</p>
+     */
+    @Test
+    @DisplayName("🔴 判据 D-2：盘点行不进消耗/省料/产出三条计量腿，但必须进余量派生")
+    void stocktakeRowsStayOutOfConsumptionMetrics() throws Exception {
+        long batchId = newBatch(METRIC_PRODUCT, METRIC_SKU_ID, METRIC_SKU, "PC-5865-M1", "60");
+        // 一条「派工族」参照行：它必须留在三条腿里（否则「过滤」可能被写成「全滤掉」而判据照样绿）
+        cleanUp("INSERT INTO stock_batch_consumptions (tenant_id, batch_id, batch_no, product_id,"
+                + " sku_id, sku_code, delta, before_qty, after_qty, formula_meters, planned_meters,"
+                + " reason, processing_order_no, order_item_id, operator)"
+                + " VALUES (" + TENANT_ID + ", " + batchId + ", 'PC-5865-M1', '" + METRIC_PRODUCT
+                + "', " + METRIC_SKU_ID + ", '" + METRIC_SKU + "', -2, 60, 58, 2, 2,"
+                + " 'processing_order', 'JG-5865-M1', 'acc-5865-m1-item', 'system')");
+
+        String metricsBefore = metricReadings();
+        // 只插一条盘点行（零派工零订单），走**生产路径**（服务）而不是裸 SQL
+        BatchStockViews.StocktakeResult result = service.stocktake(TENANT_ID, METRIC_PRODUCT,
+                "PD-5865-M1", List.of(line(batchId, "57")));
+        assertThat(result.totalDelta()).isEqualByComparingTo("-1");
+        String metricsAfter = metricReadings();
+
+        System.out.println("[#5865 D-2] 盘前计量读数 = " + metricsBefore);
+        System.out.println("[#5865 D-2] 盘后计量读数 = " + metricsAfter);
+        assertThat(metricsAfter).as("盘点行不得进消耗/省料/产出三条腿（归因错 = 本仓最大的失败模式）")
+                .isEqualTo(metricsBefore);
+        // 反向：余量派生**必须**含盘点差异（该批次 57 = 60 − 2 − 1）。
+        // 按**批次**核而不是按货号求和：同货号下别的判据也会建批次 ⇒ 求和会被串扰（本包实测踩过）。
+        assertThat(remainingOfBatch(METRIC_PRODUCT, batchId)).isEqualByComparingTo("57");
+    }
+
+    private static String metricReadings() {
+        StockBatchConsumptionMapper mapper = session.getMapper(StockBatchConsumptionMapper.class);
+        StringBuilder sb = new StringBuilder();
+        for (StockBatchConsumptionMapper.SkuDeltaSum s : mapper.sumDeltaBySku(TENANT_ID)) {
+            if (METRIC_SKU_ID.equals(s.getSkuId())) {
+                sb.append("sku:").append(s.getDeltaSum()).append('/').append(s.getFormulaSum());
+            }
+        }
+        for (StockBatchConsumptionMapper.SavingSum s
+                : mapper.sumSavingByPeriodCohortMaterial(TENANT_ID, "Asia/Shanghai", "YYYY-MM")) {
+            if (METRIC_PRODUCT.equals(s.getProductId())) {
+                sb.append("|saving:").append(s.getFormulaSum()).append('/').append(s.getPlannedSum())
+                        .append('/').append(s.getLineCount());
+            }
+        }
+        for (StockBatchConsumptionMapper.AreaSum a
+                : mapper.sumOutputAreaByPeriod(TENANT_ID, "Asia/Shanghai", "YYYY-MM")) {
+            sb.append("|area:").append(a.getAreaM2()).append('/').append(a.getOutputLines());
+        }
+        return sb.toString();
+    }
+
+    // ══════════════════════════════════ 判据：回滚路径可执行（D-1，2026-10-01 独立复核）
+
+    /**
+     * 🔴 <b>V143 的回滚段必须**真能跑**</b>（独立复核实测：原版回滚段 4 句里第 ④ 句 42710、
+     * `SET NOT NULL` 两步**根本没写**，按净效果回滚后原先被形状约束挡住的非法行**能落库**
+     * ⇒ 「两族可区分」这条合约被永久拆掉 —— 那是「文档说能回滚、实际不能」）。
+     *
+     * <p>判据 = 把迁移文件里每一条 `-- -- ` 开头的行抽出来**逐句实跑**（在**回滚事务**里，
+     * 零残留），然后断言回滚后非法行**重新变成 23514**；另带一条**对照读数**（回滚前同一行是 00000
+     * ⇒ 证明拦住它的确实是那两条新约束，而不是 SQL 写错）。</p>
+     */
+    @Test
+    @DisplayName("🔴 判据 D-1：V143 回滚段逐句可执行；回滚后非法行重新被拒；**跳过 SET NOT NULL 就会被放行**（负对照）")
+    void rollbackPathIsExecutableAndRestoresTheContract() throws Exception {
+        List<String> rollback = rollbackStatements();
+        System.out.println("[#5865 D-1] 回滚段共 " + rollback.size() + " 句：" + rollback);
+        assertThat(rollback.size()).as("回滚段不得为空（空集会让本判据恒真）").isGreaterThanOrEqualTo(6);
+
+        // 非法行 = 「扣料行缺加工单号与订单明细行」⇒ 违反 ck_batch_consumption_source_shape
+        // （批次用**真**批次：batch_id=0 会先撞 FK 23503，那证不了形状约束）
+        long illegalBatch = newBatch(METRIC_PRODUCT, METRIC_SKU_ID, METRIC_SKU, "PC-5865-RB1", "10");
+        String illegal = "INSERT INTO stock_batch_consumptions (tenant_id, batch_id, batch_no,"
+                + " product_id, sku_id, sku_code, delta, before_qty, after_qty, formula_meters,"
+                + " planned_meters, reason, operator) VALUES (" + TENANT_ID + ", " + illegalBatch
+                + ", 'PC-5865-RB1', '" + METRIC_PRODUCT + "', " + METRIC_SKU_ID + ", '" + METRIC_SKU
+                + "', -1, 10, 9, 1, 1, 'processing_order', 'system')";
+        // 对照 ①：**回滚前**这一行必须被形状约束拒掉（23514）——否则下面那个读数不是它的功劳
+        assertThat(sqlStateOf(illegal)).as("回滚前形状约束必须在位").isEqualTo("23514");
+
+        // ① 完整回滚段：逐句 rc=0，且回滚后非法行**仍被拒**（这次由 NOT NULL 兜住）
+        String afterFull = txTemplate.execute(status -> {
+            Connection conn = DataSourceUtils.getConnection(dataSource);
+            // 🔴 不能对 Spring 托管连接用 try-with-resources：关掉它 = 事务回滚失败
+            //（实测 `JDBC rollback failed: This connection has been closed`）
+            int rc = runStatements(conn, rollback);
+            String state = probe(conn, illegal);
+            System.out.println("[#5865 D-1] 完整回滚后非法行 SQLSTATE = " + state + "（执行 " + rc + " 句）");
+            status.setRollbackOnly();
+            return state;
+        });
+        assertThat(afterFull).as("回滚后非法行必须仍被拒（任何 23xxx 都算：形状约束没了，NOT NULL 顶上）")
+                .startsWith("23");
+
+        // ② 负对照：**跳过两句 SET NOT NULL**（= 修前那份散文式回滚段的净效果）
+        //    ⇒ 非法行当场能落库（00000）⇒ 证明那两句是**有载荷的**、不是装饰
+        List<String> withoutNotNull = rollback.stream()
+                .filter(sql -> !sql.contains("SET NOT NULL")).toList();
+        String afterPartial = txTemplate.execute(status -> {
+            Connection conn = DataSourceUtils.getConnection(dataSource);
+            runStatements(conn, withoutNotNull);
+            String state = probe(conn, illegal);
+            System.out.println("[#5865 D-1] 跳过 SET NOT NULL 后非法行 SQLSTATE = " + state
+                    + "（执行 " + withoutNotNull.size() + " 句）");
+            status.setRollbackOnly();
+            return state;
+        });
+        assertThat(afterPartial).as("缺了 SET NOT NULL 的回滚段会把「两族可区分」的合约拆掉（复核的原始发现）")
+                .isEqualTo("00000");
+
+        // 零残留：两个回滚事务都结束了 ⇒ 闸门与列都在
+        assertThat(sqlStateOf(illegal)).as("回滚事务不得留痕").isEqualTo("23514");
+        assertThat(count("SELECT count(*) FROM information_schema.columns WHERE table_name ="
+                + " 'stock_batch_consumptions' AND column_name = 'stocktake_run_id'")).isEqualTo(1);
+    }
+
+    /** 逐句执行（**不回滚**，由调用方的事务决定去向）；返回成功句数，任一句失败即具名抛出。 */
+    private static int runStatements(Connection conn, List<String> statements) {
+        int rc = 0;
+        for (String sql : statements) {
+            try (Statement st = conn.createStatement()) {
+                st.execute(sql);
+                rc++;
+            } catch (SQLException e) {
+                throw new IllegalStateException("回滚段第 " + (rc + 1) + " 句失败：" + e.getMessage()
+                        + " ⇒ 文档说能回滚、实际不能", e);
+            }
+        }
+        return rc;
+    }
+
+    /** 在**保存点**里探一条 SQL 的 SQLSTATE（失败不中止外层事务；成功 = 00000）。 */
+    private static String probe(Connection conn, String sql) {
+        try (Statement st = conn.createStatement()) {
+            st.execute("SAVEPOINT acc5865_probe");
+            String state;
+            try {
+                st.execute(sql);
+                state = "00000";
+            } catch (SQLException e) {
+                state = e.getSQLState();
+            }
+            st.execute("ROLLBACK TO SAVEPOINT acc5865_probe");
+            return state;
+        } catch (SQLException e) {
+            throw new IllegalStateException("探针失败：" + e.getMessage(), e);
+        }
+    }
+
+    /** 从迁移文件里抽回滚段（每条以 `-- -- ` 开头的行 = 一句真 SQL）。 */
+    private static List<String> rollbackStatements() throws IOException {
+        Path root = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
+        while (root != null && !Files.exists(root.resolve(
+                "backend/admin-api/src/main/resources/db/migration/V143__"
+                        + "add_stocktake_to_batch_consumptions.sql"))) {
+            root = root.getParent();
+        }
+        assertThat(root).as("必须能定位 V143 迁移文件（回滚段从文件里抽，不在这里抄第二份）").isNotNull();
+        Path file = root.resolve("backend/admin-api/src/main/resources/db/migration/V143__"
+                + "add_stocktake_to_batch_consumptions.sql");
+        List<String> out = new ArrayList<>();
+        for (String line : Files.readAllLines(file)) {
+            String trimmed = line.strip();
+            if (trimmed.startsWith("-- -- ")) {
+                out.add(trimmed.substring("-- -- ".length()).strip());
+            }
+        }
+        return out;
+    }
+
     // ══════════════════════════════════ 夹具与读数
 
     private static BatchStocktakeRequest.Line line(long batchId, String meters) {
@@ -534,6 +721,16 @@ class BatchStocktakeRealDbTest {
         } catch (SQLException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /** 单个批次的派生余量（**按批次**核，避免同货号别的批次串扰）。 */
+    private static BigDecimal remainingOfBatch(String productId, long batchId) {
+        for (BatchStockViews.BatchRemaining r : batchService.remaining(TENANT_ID, productId, null, false)) {
+            if (r.batchId() == batchId) {
+                return r.remainingMeters();
+            }
+        }
+        throw new IllegalStateException("批次 " + batchId + " 不在余量读面里");
     }
 
     private static BigDecimal remainingOf(String productId) {
