@@ -16,6 +16,11 @@ import type { BatchRemaining, BatchStocktakeResult } from '@/types'
  * - **零差异不发请求**：实盘 == 余量 ⇒ 按钮禁用（后端也保证零写入）；
  * - **不静默取整**：只接受 0.1 米粒度、非负；输错就在行内说明并**拦住提交**，不四舍五入、不截断。
  *
+ * 说明文案里**不写 markdown 强调标记**（`**` 会被原样渲染到界面上）：本组件按
+ * `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的口径**删标记**而不是接
+ * `@/lib/inline-markdown` —— 这一段的重点是「差异怎么算、提交后会发生什么」，用段落与数字表达已经够清楚，
+ * 不必为强调多引一层渲染组件。
+ *
  * `runId` 是幂等键：本组件在挂载时生成一次，**提交成功后换新值**（下一笔 = 新的一次盘点），
  * 提交失败则复用同一个值（重试不双记）。
  */
