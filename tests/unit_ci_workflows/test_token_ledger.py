@@ -48,6 +48,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -80,6 +81,26 @@ def _step(ts: int, *, i: int, c: int, o: int, r: int = 0, total: int | None = No
     return json.dumps({"type": "assistant/message", "time": ts, "data": {"turn": 1, "step": 1, "usage": usage}})
 
 
+def _session_header(depth: int) -> str:
+    """DSH 会话日志**首行**的逐字形态（出处 = 本机真日志 `session-c24d616d-72ab-4fc1-808b-0028b306ca60`，2026-10-01 取证）。
+
+    ⚠️ **口径：`delegationDepth` 在顶层**（与 `type/version/id/createdAt/cwd/isSeeded/agentPreset` 同级），
+    **不在 `data` 里**。本夹具曾经"自己发明"成 `data.delegationDepth` ⇒ 判据与实现**共用同一个错误假设**
+    ⇒ **本地绿、真机 100% 归因成「未知」**（#5927，合并后当场发现）。
+    ⇒ 纪律：**合成语料逐字取自真对象，不许凭印象编形态**（同 §25「读数与它声称的对象」）。
+    """
+    return json.dumps({
+        "type": "session",
+        "version": 3,
+        "id": "session-c24d616d-72ab-4fc1-808b-0028b306ca60",
+        "createdAt": 1789383813968,
+        "cwd": "/Users/guangzhen.zk/ai native",
+        "isSeeded": False,
+        "delegationDepth": depth,
+        "agentPreset": "migao",
+    })
+
+
 def _write(root: Path, cwd: str, lines: list[str], name: str = "s1") -> Path:
     """在 `<root>/--<key>--/<name>/session.v3.jsonl` 落一份语料，返回文件路径。
 
@@ -105,7 +126,7 @@ def test_totals_are_exact(tmp_path: Path, capsys) -> None:
     """3 步：上下文 100k/200k/400k ⇒ 计费 = input+cache+output；均值 = Σcontext/3。"""
     root = tmp_path / "sessions"
     _write(root, "/tmp/fake", [
-        '{"type":"session","data":{"delegationDepth":0}}',
+        _session_header(0),
         '{"type":"session/title","data":{"title":"合成会话"}}',
         _step(1_000_000, i=10_000, c=90_000, o=500),          # 上下文 100_000
         _step(1_030_000, i=20_000, c=180_000, o=600),         # 上下文 200_000
@@ -194,11 +215,11 @@ def test_depth_attribution_is_by_delegation_depth(tmp_path: Path, capsys) -> Non
     """depth 0 = 主会话；depth 1 = 子代理 ⇒ 份额按计费 token 各自归集。"""
     root = tmp_path / "sessions"
     _write(root, "/tmp/fake", [
-        '{"type":"session","data":{"delegationDepth":0}}',
+        _session_header(0),
         _step(1_000_000, i=0, c=100_000, o=0),
     ], name="main")
     _write(root, "/tmp/fake", [
-        '{"type":"session","data":{"delegationDepth":1}}',
+        _session_header(1),
         _step(1_000_000, i=0, c=300_000, o=0),
     ], name="child")
     _, out, _ = _run(capsys, root, "/tmp/fake")
@@ -380,3 +401,37 @@ def test_zstd_module_path_uses_a_multiframe_capable_reader(script: str) -> None:
     attrs = {node.attr for node in ast.walk(funcs[0]) if isinstance(node, ast.Attribute)}
     assert "stream_reader" in attrs                       # 跨帧读法在场
     assert "decompress" not in attrs                      # 只解单帧的 API 不得出现
+
+
+# ── 判据 11：**真语料核对**（#5927 的类级出口：合成夹具不许自己发明形态）──────
+def _smallest_real_session_log() -> Path | None:
+    """本机 DSH 会话根下**最小**的一份真日志（没有 ⇒ None）。
+
+    取最小而非最大：判据只需覆盖**首行的记录形态**，用最大那份 = 白解码 86M 字符。
+    """
+    root = Path(os.environ.get("DSH_SESSIONS_ROOT", "~/.dsh/sessions")).expanduser()
+    if not root.is_dir():
+        return None
+    candidates = [p for p in root.glob("*/*/session*.jsonl*") if p.is_file() and p.stat().st_size > 0]
+    return min(candidates, key=lambda p: p.stat().st_size) if candidates else None
+
+
+def test_real_session_log_shape_is_read() -> None:
+    """**拿真日志核对形态**：`delegationDepth` 必须从真记录里读得出来（本机可跑；CI 显式 skip）。
+
+    这条判据才是 #5927 的类级出口：上一版用**我自己发明的** `data.delegationDepth` 做夹具
+    ⇒ 判据与实现**共用同一个错误假设** ⇒ 两边一起绿、真机 100% 归因成「未知」。
+    **合成语料必须逐字取自真对象**；本判据把这个纪律变成一台会红的机器。
+    """
+    log = _smallest_real_session_log()
+    if log is None:
+        pytest.skip("本机没有 DSH 会话日志 ⇒ 真语料形态核对在本环境不可判定（故意 skip，不是通过）")
+    text, reason = mod.read_session_text(log)
+    assert text, f"读不出真日志 {log}：原因 {reason}"
+    header = text.splitlines()[0]
+    assert '"type":"session"' in header, f"真日志首行不是会话头：{header[:120]}"
+    depth = mod.parse_session(header)["depth"]
+    assert isinstance(depth, int), (
+        f"真日志首行的 `delegationDepth` 没被读出来（实际 {depth!r}，形态漂移？）"
+        f"—— 取证：zstd -dc {log} | head -1"
+    )
