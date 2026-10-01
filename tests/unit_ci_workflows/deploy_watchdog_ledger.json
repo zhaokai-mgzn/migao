@@ -1,0 +1,46 @@
+{
+  "schema": "deploy-watchdog-coverage-ledger/v1",
+  "what": "「**每条 deploy / 发布腿都必须有『超时未部署 ⇒ 出声』的值守面**」的登记册（issue #5929；铁律 8 的类级元守卫）。真值源 = `.github/workflows/deploy-reconcile.yml` 里该腿那条 `reconcile_one` 调用；本台账与它、以及值守面 step 里的 `WATCHED_LEGS` / `EXEMPT_LEGS` **三处双向相等**——新加一条腿却忘了接值守 ⇒ 未登记即红。",
+  "judged_by": "tests/unit_ci_workflows/test_deploy_watchdog.py",
+  "frozen_max_exempt": 1,
+  "_frozen_max_note": "豁免只许缩短：2026-10-01 首次锚定为 1（`c-end-h5` 一条）。新增豁免必须先改这个数并在 PR body 里论证「它的对账 dispatch 为什么不会部署」；把某条豁免腿补上值守 ⇒ 条目会更少，不需要改这个数。",
+  "entries": [
+    {
+      "svc": "admin-api",
+      "wf": "deploy-admin-api.yml",
+      "watchdog": true,
+      "why": "镜像腿。C′（#5814，服务器侧构建）之后 CI **不推 ACR** ⇒ 「镜像存在」这一臂恒不成立 ⇒ 有效判据 = 同 sha 的部署 run 结论 success（与 `deploy-admin-api.yml` 自己的 C′ 判据同一份）+ 漂移判据（自上次成功部署起 backend/admin-api 无改动）。"
+    },
+    {
+      "svc": "ai-agent-service",
+      "wf": "deploy-ai-agent-service.yml",
+      "watchdog": true,
+      "why": "同 admin-api（镜像腿；C′ 后以「同 sha 结论 success / 无漂移」为有效判据）。"
+    },
+    {
+      "svc": "admin-web",
+      "wf": "deploy-frontend.yml",
+      "watchdog": true,
+      "why": "同 admin-api。本腿就是 issue #5929 的现场：2026-10-01 `871db0c7f`（改 frontend/admin-web/**）合并后 push 触发被吞、上线停在 `bef78e7`，而全仓只有 reconcile 的 `::notice::` 说了一句。"
+    },
+    {
+      "svc": "worker-h5",
+      "wf": "worker-h5-publish.yml",
+      "watchdog": true,
+      "why": "静态落地面腿（无镜像，判据 ① 对它恒不成立）。它的对账 dispatch 会**真的发布**（`worker-h5-publish.yml` 的 `workflow_dispatch` 面没有人工闸）⇒ 与镜像腿同口径：超期未发布也要有人被叫醒。"
+    },
+    {
+      "svc": "bmini-h5-hosting",
+      "wf": "bmini-h5-publish.yml",
+      "watchdog": true,
+      "why": "第二条静态落地面腿（`frontend/bmini-app/**` → 静态根 `b/`）。同 worker-h5：dispatch 即发布（无人工闸）⇒ 一并值守。"
+    },
+    {
+      "svc": "c-end-h5",
+      "wf": "c-end-h5-publish.yml",
+      "watchdog": false,
+      "exempt_why": "**具名豁免**：本腿的发布步骤只在 `workflow_dispatch` **且** `inputs.publish == 'true'` 时执行（用户 2026-09-27 裁定 B：首次发布由人手动触发）⇒ 对账 dispatch 出去的 run 走「Manual gate」判红且**不会发布**。也就是说「未发布」是本腿的**设计态**、不是缺陷 ⇒ 把它计入告警面 = 每轮都开单的噪声判据（缺陷）。它的新鲜度另有值守：`.github/workflows/h5-freshness-guard.yml`（判红 + 自动重判），本值守面**不重复报警**。若将来给它接上自动发布，本条目必须删掉（豁免只许缩短）。",
+      "anchor": "本腿的方向是安全的（#4184 用户裁定 B：首次发布由人手动触发）"
+    }
+  ]
+}

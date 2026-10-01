@@ -732,8 +732,17 @@ def test_reconcile_keeps_its_safety_gates():
     doc = yaml.safe_load((WORKFLOWS_DIR / RECONCILE).read_text(encoding="utf-8"))
     job = doc["jobs"]["reconcile"]
     assert job.get("timeout-minutes"), f"{RECONCILE} 的 reconcile job 丢了 `timeout-minutes`"
-    assert doc.get("permissions") == {"contents": "read", "actions": "write"}, (
+    # 权限集合**逐项钉死**（改它必须同批改这里并说明用途）：
+    #   · `actions: write` = 用 GITHUB_TOKEN 触发 `workflow_dispatch`（补部署本体）；
+    #   · `issues: write`  = issue #5929 的**值守面出口**（判红开/更 P1 值班单、部署成功后自动关单）。
+    #     ⚠️ 它必须是**被用到的**权限，不是顺手放开：无开单/关单动作却留着它 ⇒ 下面那条判红。
+    assert doc.get("permissions") == {"contents": "read", "actions": "write", "issues": "write"}, (
         f"{RECONCILE} 的 permissions 被改动"
+    )
+    whole = (WORKFLOWS_DIR / RECONCILE).read_text(encoding="utf-8")
+    assert "gh issue create" in whole and "gh issue close" in whole, (
+        f"{RECONCILE} 放宽了 `issues: write` 却看不到开单 / 关单动作 ⇒ 权限与用途脱钩"
+        "（不许留装饰性权限；用途 = 判红开单 + 部署成功后自动清零）"
     )
     assert "continue-on-error" not in job, f"{RECONCILE} 出现 `continue-on-error`（削弱门禁）"
 

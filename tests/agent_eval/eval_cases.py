@@ -4817,6 +4817,24 @@ _CASE_MC_054 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-055 [NORMAL] 合并了但没上线必须有值守面（issue #5929）：main HEAD 合入超过 N 秒仍未部署 ⇒ 判红并自己开单、部署成功后自动关闭；C′ 之后「镜像不在 ACR」不得当判据（噪声判据是缺陷）；判不了必须 fail-closed（源: cases/misc.yml）──
+_CASE_MC_055 = EvalCase(
+    id='MC-055',
+    legacy_id='',
+    title='合并了但没上线必须有值守面（issue #5929）：main HEAD 合入超过 N 秒仍未部署 ⇒ 判红并自己开单、部署成功后自动关闭；C′ 之后「镜像不在 ACR」不得当判据（噪声判据是缺陷）；判不了必须 fail-closed',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 main 上最新的那个 commit 该上线却没上线（超过 N 分钟）时，必须有人被叫醒 —— 不许只剩一行 `::notice::`（2026-10-01 实测：`deploy-frontend.yml` 的 push 触发 10:18 后再没跑过，22:41 线上仍停在 `bef78e7`，而 main HEAD 已是 `1fbdfb0`）'],
+    expectations=['**值守面在**（`.github/workflows/deploy-reconcile.yml` 的 step `值守面（超时未部署 ⇒ 判红 + 开/清值守 issue）`，`if: always()`，夹在对账步与存活读数步之间）：main HEAD 合入超过 N 秒、且该腿在本轮对账开始时既没有「已部署」信号也没有**在途 run** ⇒ `::error::` + **非零退出** + step summary，**并自己开/更 P1 值班 issue**；部署成功（同 sha 的 run 结论 success / 镜像在 / 无漂移）⇒ **自动关闭**该单（清零不靠人记得）。', '**N 的出处可复算**（不许是凭空数字）：N=2700s = 冷构建上界 2400s + 余量 300s（读数现取 `deploy/scripts/swas-deploy-ci.sh` 的 3000/4500s 预算那句）；**远端锁等待上限 1800s 有意不计入**（排队中的 run 由 `inflight` 判据覆盖）。判据现取这两个读数并断言 `N ≥ 2400 + 300`（改小 N / 删读数锚 ⇒ 红）。', '**类级元守卫（未登记即红）**：`reconcile_one` 的**每一条腿**必须登记在 `tests/unit_ci_workflows/deploy_watchdog_ledger.json`（`watchdog` 或**具名豁免** + 理由 + 仓内锚），三处（对账调用 / 值守面 `WATCHED_LEGS`+`EXEMPT_LEGS` / 台账）**逐项相等**；豁免条数只许缩短。新加一条 deploy 腿却忘了接值守 ⇒ 当场红。'],
+    data_checks=['**病（现取读数）**：对账判出「没部署」之后只做两件事 —— ① 补一次 dispatch ② summary 写一行 ⇒ **没有人会被叫醒**。实测 2026-10-01：`deploy-frontend.yml` 的 push 触发在 10:18 之后再没跑过，22:41 线上仍停在 `bef78e7`，而 main HEAD 已是 `1fbdfb0`（中间 `871db0c7f` 改了 `frontend/admin-web/**` 却没上线）—— 全仓只有 reconcile 的 `::notice::` 说了一句。', '**有意不照 issue 正文的字面判据**（「`sha-<head7>` 镜像仍不存在 ⇒ 判红」）：`#5814` 的 C′ 把构建搬到服务器侧 ⇒ CI **不再推 ACR** ⇒ 那条判据**恒为真**，照字面实现 = 每个 tick 都报警（噪声判据是缺陷）。⇒ 判据 = 对账步落的**每条腿状态**（`deployed` / `inflight` 不报；`terminal` / `dispatched` 超期即报；读不到 ⇒ fail-closed 退出码 3）。', '**执行式红证（16 条，桩 `gh`/`docker` + 真 git 仓库）**：超期未部署 ⇒ 红 + 具名（main HEAD + 哪条腿）+ 开单（含 `priority/P1`）；**反向对照**：镜像存在 ⇒ **不报警、不开单**（噪声判据是缺陷）；在途 run ⇒ 不报；宽限期内 ⇒ 不报；判不了 ⇒ 退出码 **3**（不得当 0 读）且照样开单；部署成功 ⇒ 自动 `gh issue close`；同一 HEAD 反复判红 ⇒ **不重复刷屏**（幂等）但单子仍开着。', '**判别力自证 + 对照读数**：六种坏形态（腿没进两个列表 / 台账条目被删 / 台账与值守面口径相反 / 豁免没写理由 / 豁免锚在 workflow 里找不到 / 豁免条数上涨）在**内存语料**上各自判红；**只往正文加注释 ⇒ 不红**（守卫不许被自己的文案喂红）。**修前红**：把本判据文件拿到 `origin/main` 的 workflow 上跑 ⇒ **14 failed / 2 passed**（复算见 PR body）。'],
+    skip_reason='[backend-contract] 部署值守面的静态/执行式结构判据（只读仓内文件 + 桩 gh/docker + 真 git 仓库；零网络、零真 ACR、不写共享 /tmp、不烧 token）由 tests/unit_ci_workflows/test_deploy_watchdog.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'watchdog', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -11419,6 +11437,7 @@ ALL_CASES = (
     _CASE_MC_052,
     _CASE_MC_053,
     _CASE_MC_054,
+    _CASE_MC_055,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
