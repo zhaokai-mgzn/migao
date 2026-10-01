@@ -56,6 +56,9 @@
 //        ② `backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java` 的 `buildMenusByPermissions`
 //      判据：`tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`（#5271 起比对**全树**：
 //      组 key + 组名 + 组顺序，以及导航型节点名）。
+//   🔴 **改了一级项的位置 ⇒ 三源同批**：本文件的 `STANDALONE_TOP_AFTER_GROUP_KEY` +
+//      `MenuController.MENU_TREE` 的顶层节点顺序 + `AuthService` 顶层 `menus.add` 的文档位置
+//      （#5877；只改一处 ⇒ 三源同构守卫的「顶层布局序列」判红）。
 //   🔴 **改了组名或菜单名 ⇒ 必须同批改 `frontend/admin-web/src/components/layout/Header.tsx` 的
 //      `ROUTE_BREADCRUMB_MAP`**（面包屑末项必须逐字 == 菜单名）。
 //      判据：`frontend/admin-web/tests/unit/lib/menu-breadcrumb-coverage.test.tsx`（PG-038）。
@@ -253,17 +256,43 @@ export const menuGroups: MenuGroup[] = [
 
 // 一级独立菜单项（无子级，**直接跳转**）
 //
-// ## 两个位置，语义不同（本轮 2026-09-29 定型）
+// ## 两个位置，语义不同
 //
-//   · `standaloneTopItems` —— **顶部一级项**，渲染在**所有分组之前**：
-//     「商品管理」。用户 2026-09-29 裁定「商品列表改成商品管理，直接作为一级菜单使用」——
-//     它是**唯一成员**的组会退化成一个没有分组的名字（点开只为看一项），故**不做单成员组**，
-//     改为一级项平铺。**它是「分组」之外的第一梯队**：与分组同级、一眼可见、无需展开。
+//   · `standaloneTopItems` —— **一级项**（「商品管理」）：用户 2026-09-29 裁定「商品列表改成商品管理，
+//     直接作为一级菜单使用」—— 它是**唯一成员**的组会退化成一个没有分组的名字（点开只为看一项），
+//     故**不做单成员组**，改为一级项平铺：**保留为一级菜单**、一屏直达、不折叠、无需展开。
+//     🔴 **渲染位**（用户 2026-10-01 二次裁定）：排在 `STANDALONE_TOP_AFTER_GROUP_KEY`
+//     那个组**之后**（= 「工作台」组之后、下一个组之前）—— 用户原话「商品管理的菜单不应该作为第一行」。
+//     席位组**不可见**时（权限把它整组过滤掉 / 常量写错）⇒ 回落到**所有分组之前**：
+//     一级项**绝不允许跟着消失**（最坏退回旧位置，也不能没有入口）。
+//     口径的**唯一实现** = `frontend/admin-web/src/lib/menu-nav.ts` 的 `splitGroupsAtTopItemSlot`
+//     （`Sidebar.tsx` 与 `flattenMenu` 都调它，不各写一份 slice）。
 //   · `standaloneItems` —— **尾部项**，渲染在**所有分组之后**：
 //     「通知中心」（全员可见，与顶栏铃铛一致，无需权限码）。
 //
 // 🔴 两个数组**都是导航**：进 ⌘K 索引（`flattenMenu` 的 `top` + `bottom`）、进三源同构守卫、
 //    进面包屑覆盖判据（PG-038 按菜单项 `path` 穷举，本文件是它的输入面）。
+// 🔴 **一级项不进「常用」**（#5877，用户 2026-10-01 裁定）：它已一屏可见、且**不再有星标** ⇒
+//     可收藏面只含组内项 + 尾部独立项（否则同一屏会出现两条一模一样的入口）；
+//     用户 localStorage 里残留的 `products` key 按既有「无效 key 静默丢弃」口径处理。
+//     判据：`frontend/admin-web/tests/unit/lib/menu-pinned.test.ts`。
+
+/**
+ * 一级项（`standaloneTopItems`）的**插入位**：渲染在**这个组之后**（用户 2026-10-01 裁定）。
+ *
+ * ## 为什么是一个常量，以及为什么三源必须**同批**表达同一位置
+ *
+ * 「商品管理排在哪」这件事在**三处**各有表达，缺一处就是「岗位权限页勾得动、侧边栏看不到」的同族坑：
+ *   ① **前端渲染位** —— 本常量（`Sidebar.tsx` 经 `splitGroupsAtTopItemSlot` 使用）；
+ *   ② `MenuController.MENU_TREE` 的**顶层节点顺序**（`GET /api/admin/menus`，员工管理页的权限树）；
+ *   ③ `AuthService.buildMenusByPermissions` 里顶层 `menus.add(...)` 的**文档位置**（登录下发的菜单）。
+ *
+ * 判据 = `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的**顶层布局序列**比对
+ * （#5877 起含**位置**：只改本常量而不改服务端 ⇒ 当场判红）。
+ * ⚠️ 取值必须是 `menuGroups` 里**真实存在**的组 key —— 写错 ⇒ 前端回落（一级项回到最前）
+ *    而服务端不动 ⇒ 判据红（这是**有意**的：静默漂移比直接红更难查）。
+ */
+export const STANDALONE_TOP_AFTER_GROUP_KEY = 'workspace'
 export const standaloneTopItems: MenuItem[] = [
   // 商品管理（本轮 2026-09-29 用户裁定：**由「商品与加工项」组升为一级菜单项**，原话
   // 「商品列表改成商品管理，直接作为一级菜单使用」）。

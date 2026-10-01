@@ -1,7 +1,7 @@
 // case_ids: PR-010
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 // ===== Override next/navigation mock with mutable searchParams (issue #660) =====
@@ -61,7 +61,7 @@ vi.mock('next/link', () => ({
 
 // Mock ProductTable
 vi.mock('@/components/products/ProductTable', () => ({
-  default: ({ products, loading, total, page, pageSize, onPageChange, onDelete }: any) => (
+  default: ({ products, loading, total, page, pageSize, onPageChange, onDelete, onSelectChange }: any) => (
     <div data-testid="product-table">
       {loading && <div data-testid="table-loading">加载中...</div>}
       {!loading && products.length === 0 && <div data-testid="table-empty">暂无数据</div>}
@@ -71,6 +71,11 @@ vi.mock('@/components/products/ProductTable', () => ({
           <button onClick={() => onDelete(p)} data-testid={`delete-${p.id}`}>删除</button>
         </div>
       ))}
+      {/* #5877：勾选入口（页面级判据要能造出「已选 N 项」两态） */}
+      <button data-testid="select-first" onClick={() => onSelectChange(products.length ? [products[0].id] : [])}>
+        选中第一行
+      </button>
+      <button data-testid="clear-selection" onClick={() => onSelectChange([])}>清空选择</button>
       <div data-testid="table-info">共 {total} 条, 第 {page} 页</div>
     </div>
   ),
@@ -134,8 +139,11 @@ describe('ProductsPage', () => {
   })
 
   it('should render page title', async () => {
+    // #5877（用户 2026-10-01 裁定）：正文标题由「商品列表」改为**「商品管理」**
+    // —— 与侧边栏菜单名 / 顶栏面包屑同名（此前一页三名：侧边栏+顶栏「商品管理」、正文「商品列表」）。
     render(<ProductsPage />)
-    expect(screen.getByText('商品列表')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('商品管理')
+    expect(screen.queryByText('商品列表')).not.toBeInTheDocument()
   })
 
   it('should render add product button', () => {
@@ -171,8 +179,54 @@ describe('ProductsPage', () => {
   it('should show search/filter section when products exist', async () => {
     render(<ProductsPage />)
     await waitFor(() => {
-      expect(screen.getByText('商品ID')).toBeInTheDocument()
+      const searchArea = screen.getByTestId('search-area')
+      expect(within(searchArea).getByText('商品标题')).toBeInTheDocument()
+      expect(within(searchArea).getByText('商品货号')).toBeInTheDocument()
+      expect(within(searchArea).getByText('状态')).toBeInTheDocument()
     })
+  })
+
+  it('🔴 「商品ID」筛选整条移除（#5877 用户追加裁定）：搜索区与全页都不再出现它', async () => {
+    render(<ProductsPage />)
+    await waitFor(() => expect(screen.getByTestId('search-area')).toBeInTheDocument())
+    // 搜索区里不再有该筛选项（不是隐藏：label 与 input 都不在 DOM 里）
+    const searchArea = screen.getByTestId('search-area')
+    expect(within(searchArea).queryByText('商品ID')).toBeNull()
+    expect(screen.queryByPlaceholderText('请输入商品ID')).toBeNull()
+    // 全页 0 处（列表侧那一列也已删）—— 两个面**同时**归零才是「整条移除」
+    expect(screen.queryAllByText('商品ID')).toHaveLength(0)
+    // 判据不能靠「搜索区整个没了」蒙对：同区其余筛选项照旧
+    expect(within(searchArea).getByText('商品标题')).toBeInTheDocument()
+    expect(within(searchArea).getByText('商品货号')).toBeInTheDocument()
+  })
+
+  it('商品货号的 placeholder 是「请输入商品货号」（#5877：修掉从商品ID复制粘贴的残留）', () => {
+    render(<ProductsPage />)
+    expect(screen.getByPlaceholderText('请输入商品货号')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('请输入商品标题')).toBeInTheDocument()
+  })
+
+  it('🔴 未选中任何行 ⇒ 不渲染「批量下架 / 批量上架」（选中后才出现）', async () => {
+    render(<ProductsPage />)
+    await waitFor(() => expect(screen.getByTestId('product-1')).toBeInTheDocument())
+    // 常态：两枚按钮**不在 DOM 里**（改前是两枚常驻 disabled 按钮 = 纯视觉噪音）
+    expect(screen.queryByText('批量下架')).not.toBeInTheDocument()
+    expect(screen.queryByText('批量上架')).not.toBeInTheDocument()
+    expect(screen.queryByText(/已选/)).not.toBeInTheDocument()
+    // 常驻按钮仍在（判据不能靠「按钮都没了」蒙对）
+    expect(screen.getByText('批量导出')).toBeInTheDocument()
+
+    // 正向对照：选中一行 ⇒ 两枚批次按钮出现，且「已选 1 项」提示在
+    await user.click(screen.getByTestId('select-first'))
+    await waitFor(() => expect(screen.getByText('批量下架')).toBeInTheDocument())
+    expect(screen.getByText('批量上架')).toBeInTheDocument()
+    expect(screen.getByText(/已选/)).toBeInTheDocument()
+    expect(screen.getByTestId('product-1')).toBeInTheDocument()
+
+    // 反向再对照：清空选择 ⇒ 又消失（不是「出现过就一直在」）
+    await user.click(screen.getByTestId('clear-selection'))
+    await waitFor(() => expect(screen.queryByText('批量下架')).not.toBeInTheDocument())
+    expect(screen.queryByText('批量上架')).not.toBeInTheDocument()
   })
 
   it.skip('should show empty state when no products and no filters', async () => {
@@ -481,9 +535,10 @@ describe('导出文件名 = 本地日（issue #4783 红证）', () => {
 
     expect(filename).toMatch(/^products_\d{4}-\d{2}-\d{2}\.xlsx$/)
     expect(filename).toBe('products_2026-10-05.xlsx')
-    // 本单只改日期口径：导出请求参数（= 导出内容的口径）必须与改动前逐字一致
+    // 本单只改日期口径：导出请求参数（= 导出内容的口径）必须与改动前逐字一致。
+    // ⚠️ #5877（用户 2026-10-01 追加裁定）：`productId` 筛选**整条移除** ⇒ 它的键也随之下线
+    //（此前是「传 undefined」；现在连键都不再出现 —— 这是本单唯一有意改动的导出入参形态）。
     expect(mockExportProducts).toHaveBeenCalledWith({
-      productId: undefined,
       name: undefined,
       skuCode: undefined,
       status: undefined,

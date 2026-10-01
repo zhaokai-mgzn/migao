@@ -379,7 +379,8 @@ def sidebar_nodes() -> frozenset:
 
 
 def _standalone_top_labels(src: str) -> list[str]:
-    """`menu.ts` 的 `standaloneTopItems` → 一级项名（渲染在**所有分组之前**）。
+    """`menu.ts` 的 `standaloneTopItems` → 一级项名（#5877 起渲染在
+    `STANDALONE_TOP_AFTER_GROUP_KEY` 那个组**之后**；席位组不可见时回落到所有分组之前）。
 
     与 `menu._parse_standalone` 同一解析形态（同一种对象字面量），但**取不同的数组**：
     裸串 `export const standaloneItems` 是 `standaloneTopItems` 的**子串** ⇒ 必须锚行首区分。

@@ -164,13 +164,20 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("#5778 新 IA：顶层一级项（商品管理）不在任何组内，且排在组之前")
+    @DisplayName("#5877 新 IA：顶层一级项（商品管理）不在任何组内，且排在**「工作台」组之后**")
     void topLevelStandaloneItemMirrorsFrontend() throws Exception {
         JsonNode tree = fetchTree();
         var tops = topLevelStandaloneItems(tree);
         assertEquals(1, tops.size(), "顶层一级项应恰有 1 个（商品管理）—— 实得 = " + labels(tree));
         assertEquals("商品管理", tops.get(0).path("label").asText(),
-                "顶层第 1 项必须是**一级项**「商品管理」（前端 `standaloneTopItems` 渲染在所有分组之前）");
+                "顶层一级项必须是「商品管理」—— 实得 = " + labels(tree));
+        // 🔴 #5877（用户 2026-10-01 裁定「商品管理的菜单不应该作为第一行」）：
+        // 顶层**位次**：第 0 项 = 「工作台」组，第 1 项 = 一级项「商品管理」（三源同批表达同一位置）。
+        // 判据 = 三源同构守卫的顶层布局序列（tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py）。
+        assertEquals("workspace", tree.get(0).path("code").asText(),
+                "顶层第 0 项必须是「工作台」组 —— 实得 = " + codes(tree));
+        assertEquals("product:list", tree.get(1).path("code").asText(),
+                "顶层第 1 项必须是一级项「商品管理」（紧跟「工作台」组之后）—— 实得 = " + codes(tree));
         assertEquals("product:list", tops.get(0).path("code").asText());
         assertEquals(0, tops.get(0).path("children").size(),
                 "一级项不得有子节点（它不是组）—— 有子节点说明它被写成了组");

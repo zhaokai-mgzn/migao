@@ -79,11 +79,11 @@ const GROUP_NAMES: Record<string, string> = {
   'inventory-center': '仓储与物料',
   'org-center': '组织管理',
 }
-/** 21 项（顶部一级项 → 分组项 → 独立项）的渲染顺序（#5778） */
+/** 21 项（head 组 → 一级项 → tail 组 → 独立项）的渲染顺序（#5778；#5877 改插入位） */
 const ALL_MENU_KEYS = [
-  'products',
   'dashboard',
   'briefing',
+  'products',
   'human-sessions',
   'customers',
   'knowledge',
@@ -124,7 +124,8 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
 
   it('① /dashboard：只有「工作台」aria-expanded=true，其余 5 组全 false', async () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toEqual(['products', 'dashboard', 'briefing', 'notifications']))
+    // #5877：一级项「商品管理」渲染在「工作台」组**之后**（该组默认展开 ⇒ 先出它的两项）
+    await waitFor(() => expect(menuKeys()).toEqual(['dashboard', 'briefing', 'products', 'notifications']))
     expect(expandedState()).toEqual({
       workspace: 'true',
       'customer-service': 'false',
@@ -141,7 +142,8 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     mockPathname = '/orders'
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
     await waitFor(() =>
-      // #5778：交易管理组只剩「订单列表 + 财务对账」；一级项「商品管理」恒渲染（在分组之前）
+      // #5778：交易管理组只剩「订单列表 + 财务对账」；#5877：一级项「商品管理」恒渲染，
+      // 且因「工作台」组此刻收起（无子项渲染）而排在最前
       expect(menuKeys()).toEqual(['products', 'orders', 'finance', 'notifications']),
     )
     expect(toggle('trade-center').getAttribute('aria-expanded')).toBe('true')
@@ -155,14 +157,14 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
 
   it('① 组标题可点：点开一个收起组 ⇒ 该组项出现且 aria-expanded 变 true；再点 ⇒ 收起', async () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toEqual(['products', 'dashboard', 'briefing', 'notifications']))
+    await waitFor(() => expect(menuKeys()).toEqual(['dashboard', 'briefing', 'products', 'notifications']))
 
     fireEvent.click(toggle('inventory-center'))
     expect(toggle('inventory-center').getAttribute('aria-expanded')).toBe('true')
     expect(menuKeys()).toEqual([
-      'products',
       'dashboard',
       'briefing',
+      'products',
       'inbound-orders',
       'production-remnants',
       'production-saving-board',
@@ -171,7 +173,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
 
     fireEvent.click(toggle('inventory-center'))
     expect(toggle('inventory-center').getAttribute('aria-expanded')).toBe('false')
-    expect(menuKeys()).toEqual(['products', 'dashboard', 'briefing', 'notifications'])
+    expect(menuKeys()).toEqual(['dashboard', 'briefing', 'products', 'notifications'])
   })
 
   it('① 组 key 与组名逐一对齐（6 组；「常用」未钉任何项 ⇒ 不渲染，故 `data-group-key` = 6）', async () => {
@@ -202,9 +204,9 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(toggle('workspace').getAttribute('aria-expanded')).toBe('true')
     expect(toggle('inventory-center').getAttribute('aria-expanded')).toBe('true')
     expect(menuKeys()).toEqual([
-      'products',   // #5778：一级项恒渲染（在分组之前）
-      'dashboard',
+      'dashboard',  // #5877：一级项插在「工作台」组之后 ⇒ 该组的两项先出
       'briefing',
+      'products',   // 一级项恒渲染（在「工作台」组之后、其余组之前）
       'production-board',
       'production-pool',
       'processing',
@@ -370,6 +372,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     fireEvent.click(screen.getByTestId('sidebar-search-trigger'))
     // 点击后侧边栏结构照常（没有 onClick 也不抛）
     expect(screen.getByTestId('sidebar-search-trigger').textContent).toContain('搜索菜单')
-    expect(menuKeys()).toEqual(['products', 'dashboard', 'notifications'])
+    // #5877：一级项插在「工作台」组之后（本用例 /dashboard ⇒ 该组展开且简报开关关 ⇒ 只有经营看板）
+    expect(menuKeys()).toEqual(['dashboard', 'products', 'notifications'])
   })
 })

@@ -1259,14 +1259,6 @@ public class AuthService {
         // 判据：tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py。
         // 🔴 issue #5217 裁决：**图标是前端专属**（服务端不下发 icon）—— `menuItem` 只有 key/name/path。
 
-        // 商品管理（本轮 2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：
-        // **顶层一级项**（不是组）—— 与前端 `menu.ts` 的 `standaloneTopItems` 逐值同构。
-        // 🔴 位置 = **整份菜单的最前面**（前端把它渲染在**所有分组之前**）—— 三源同构守卫按
-        // 「组层顺序」比对，本项若落在组之间就会让组层与前端不一致（判红）。
-        if (isAll || permissions.contains("product:list")) {
-            menus.add(menuItem("products", "商品管理", "/products"));
-        }
-
         // 工作台（#5271：由「独立项」改为**组**，含 经营看板 + 每日简报 两项）
         List<UserInfoResponse.MenuItem> workspaceChildren = new java.util.ArrayList<>();
         // 经营看板（issue #5699 **P4**）：子菜单粒度 = 节点码 ≡ 该页第一屏读码 `dashboard:view`
@@ -1285,8 +1277,15 @@ public class AuthService {
             menus.add(menuGroup("workspace", "工作台", workspaceChildren));
         }
 
-        // 商品管理（本轮 2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：
-        // 见本方法**开头**的顶层 `menus.add(...)`（位置 = 所有分组之前）。
+        // 商品管理（2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：
+        // **顶层一级项**（不是组）—— 与前端 `menu.ts` 的 `standaloneTopItems` 逐值同构。
+        // 🔴 位置（用户 2026-10-01 二次裁定「商品管理的菜单不应该作为第一行」）=
+        // **紧跟「工作台」组之后**，即下面 `if (!workspaceChildren.isEmpty())` 那个 block 之后 ——
+        // 与前端 `menu.ts` 的 `STANDALONE_TOP_AFTER_GROUP_KEY`、`MenuController` 的顶层节点顺序
+        // **三处同批表达同一位置**；三源同构守卫按**顶层布局序列**（含位置）比对，挪错一处即判红。
+        if (isAll || permissions.contains("product:list")) {
+            menus.add(menuItem("products", "商品管理", "/products"));
+        }
 
         // 客户服务分组（本轮 2026-09-29 用户裁定**新建**）：原「智能客服」组（在线接待 / 知识库）
         // + 客户侧两项（客户列表 / 售后工单）**合并为一个组**（「都属于服务客户的功能」）。

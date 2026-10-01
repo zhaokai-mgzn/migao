@@ -3,6 +3,7 @@
  * ProductTable 组件测试
  * 覆盖：#646 移除 in_warehouse — 状态徽章映射无仓库中、操作按钮正确
  *       #1200 库存飘红阈值
+ *       #5877 移除「商品ID」列 — 表头不再有该列，且 colSpan（列数）随之收敛
  */
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
@@ -58,6 +59,38 @@ describe('ProductTable (#646 — 移除 in_warehouse)', () => {
   it('应渲染商品名称', () => {
     render(<ProductTable {...defaultProps} />)
     expect(screen.getByText('北欧简约遮光窗帘')).toBeTruthy()
+  })
+
+  describe('#5877 — 「商品ID」列已移除（用户裁定：不要展示在列表）', () => {
+    it('🔴 表头不含「商品ID」（精确到 thead；搜索区那个筛选项不受影响）', () => {
+      const { container } = render(<ProductTable {...defaultProps} />)
+      const thead = container.querySelector('thead')!
+      expect(thead.textContent).not.toContain('商品ID')
+      // 判据不能靠「表头整个没了」蒙对：其余列照旧
+      expect(thead.textContent).toContain('商品标题')
+      expect(thead.textContent).toContain('商品货号')
+    })
+
+    it('🔴 行内不再渲染商品 id 文本（title 属性不算展示）', () => {
+      render(<ProductTable {...defaultProps} />)
+      expect(screen.queryByText('p001')).toBeNull()
+    })
+
+    it('🔴 列数 = 10，且加载态/空态的 colSpan 随之收敛（列数变了 colSpan 没跟上 = 表格错位）', () => {
+      const loading = render(<ProductTable {...defaultProps} loading products={[]} />)
+      expect(loading.container.querySelectorAll('thead th')).toHaveLength(10)
+      expect(loading.container.querySelector('tbody td')!.getAttribute('colspan')).toBe('10')
+      loading.unmount()
+
+      const empty = render(<ProductTable {...defaultProps} products={[]} />)
+      expect(empty.container.querySelectorAll('thead th')).toHaveLength(10)
+      expect(empty.container.querySelector('tbody td')!.getAttribute('colspan')).toBe('10')
+      empty.unmount()
+
+      const rows = render(<ProductTable {...defaultProps} />)
+      expect(rows.container.querySelectorAll('thead th')).toHaveLength(10)
+      expect(rows.container.querySelectorAll('tbody tr td')).toHaveLength(10)
+    })
   })
 
   it('应渲染商品货号', () => {

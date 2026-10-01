@@ -49,9 +49,11 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   { match: (p) => p.startsWith('/agent-workspace'), crumbs: [{ label: '客户服务' }, { label: '客服工作台' }] },
   { match: (p) => p.startsWith('/knowledge'), crumbs: [{ label: '客户服务' }, { label: '知识库' }] },
 
-  // 商品管理（本轮 2026-09-29 用户裁定：由「商品与加工项」组**升为一级菜单项**，
-  // 菜单名 = 「商品管理」）⇒ 首项 = 「商品管理」（无父组，与侧边栏一级项同名）。
-  { match: (p) => p.startsWith('/products'), crumbs: [{ label: '商品管理' }, { label: '商品管理' }] },
+  // 商品管理（2026-09-29 用户裁定：由「商品与加工项」组**升为一级菜单项**，菜单名 = 「商品管理」）。
+  // 🔴 #5877（用户 2026-10-01 裁定）：一级项**没有父组** ⇒ 面包屑是**单级**（与「通知中心」同口径）——
+  // 原实现给的是 `[商品管理, 商品管理]`（两个**同名**项，纯噪声）。
+  // ⚠️ 面包屑取「有无父组」，与渲染位（`menu.ts` 的 `STANDALONE_TOP_AFTER_GROUP_KEY`）无关。
+  { match: (p) => p.startsWith('/products'), crumbs: [{ label: '商品管理' }] },
   { match: (p) => p.startsWith('/categories'), crumbs: [{ label: '商品管理' }, { label: '商品分类管理' }] },
   // 顺序敏感：/processing-orders 必须先于 /processing（find 按数组序取首个命中）
   // issue #4357：加工单并入生产管理组 ⇒ 本目录下只剩「生产明细」子路由（列表页已重定向）

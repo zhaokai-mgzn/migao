@@ -47,8 +47,9 @@ const SIDEBAR_MENU: Record<string, string> = {
   // 智能客服
   '/agent-workspace/human-sessions': '在线接待',
   '/knowledge': '知识库',
-  // 商品与加工项
-  '/products': '商品列表',
+  // 商品管理（#5877：一级项 —— 菜单名「商品管理」，渲染在「工作台」组之后；
+  // 页面正文标题也同步改成「商品管理」）# noqa: E501
+  '/products': '商品管理',
   // issue #4490：「加工项管理」+「加工费管理」合并为单一入口 /production/processing（商品与加工项组）；
   // issue #4542：菜单名 =「加工项管理」（与服务端同名，页面仍是两个 tab）
   '/production/processing': '加工项管理',

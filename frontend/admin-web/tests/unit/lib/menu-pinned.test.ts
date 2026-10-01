@@ -14,6 +14,9 @@
  *      —— 空标题比没有标题更糟（用户会以为功能坏了）；
  *   ③ **上限与脏数据**：最多 `PINNED_MAX` 项；超出**拒绝**（原样返回，不静默顶掉别人的位置）；
  *      持久化值形状不对（非数组 / 非字符串 / 空串 / 重复）⇒ 一律按「读到什么算什么」清洗。
+ *   ④ 🔴 **一级项不进「常用」**（#5877，用户 2026-10-01 裁定）：一级项已是一屏直达、且**没有星标**，
+ *      再让它进「常用」只会在同一屏出现两条一模一样的入口 ⇒ 可收藏面**只含组内项 + 尾部独立项**；
+ *      用户 localStorage 里残留的 `products` key **静默丢弃**（沿用既有「无效 key 静默丢弃」口径）。
  *
  * ## 边界（如实登记）
  *
@@ -154,73 +157,88 @@ describe('「常用（收藏）」：权限与有效性过滤（🔴 不得成�
   it('🔴 钉过但**当前无权**的项 ⇒ 从「常用」消失（权限优先于偏好）', () => {
     const pinned = ['orders', 'customers', 'knowledge']
     // 只持 order:list：customers / knowledge 无权 ⇒ 只剩 orders
-    const items = resolvePinnedItems(menuGroups, standaloneTopItems, standaloneItems, pinned, {
+    const items = resolvePinnedItems(menuGroups, standaloneItems, pinned, {
       permissions: ['order:list'],
       roles: [],
     })
     expect(items.map((i) => i.key)).toEqual(['orders'])
     // 反向自证：全权时三项都在（否则上一条可能是「函数恒回空」的假绿）
     expect(
-      resolvePinnedItems(menuGroups, standaloneTopItems, standaloneItems, pinned, ADMIN).map((i) => i.key),
+      resolvePinnedItems(menuGroups, standaloneItems, pinned, ADMIN).map((i) => i.key),
     ).toEqual(['orders', 'customers', 'knowledge'])
   })
 
   it('🔴 企业开关关掉「每日简报」⇒ 即使钉过也**不出现**（与侧边栏同一口径）', () => {
     const pinned = ['briefing']
     expect(
-      resolvePinnedItems(menuGroups, standaloneTopItems, standaloneItems, pinned, {
+      resolvePinnedItems(menuGroups, standaloneItems, pinned, {
         permissions: ['*'],
         roles: ['admin'],
         briefingEnabled: false,
       }),
     ).toEqual([])
     expect(
-      resolvePinnedItems(menuGroups, standaloneTopItems, standaloneItems, pinned, ADMIN).map((i) => i.key),
+      resolvePinnedItems(menuGroups, standaloneItems, pinned, ADMIN).map((i) => i.key),
     ).toEqual(['briefing'])
   })
 
   it('菜单项被删/改名（key 不存在）⇒ **静默丢弃**，不抛错、不留死引用', () => {
     const pinned = ['orders', 'processing-renamed-away', '', 'pinned']
-    const items = resolvePinnedItems(menuGroups, standaloneTopItems, standaloneItems, pinned, ADMIN)
+    const items = resolvePinnedItems(menuGroups, standaloneItems, pinned, ADMIN)
     expect(items.map((i) => i.key)).toEqual(['orders'])
     // 「常用」合成组自己的 key 也不得被当成菜单项（合成 key 不是菜单源）
     expect(items.map((i) => i.key)).not.toContain(PINNED_GROUP_KEY)
   })
 
   it('保留**用户钉的顺序**（不是菜单自身顺序）：先钉 finance 再钉 orders ⇒ 常用区就是 finance 在前', () => {
-    const items = resolvePinnedItems(menuGroups, standaloneTopItems, standaloneItems, ['finance', 'orders'], ADMIN)
+    const items = resolvePinnedItems(menuGroups, standaloneItems, ['finance', 'orders'], ADMIN)
     expect(items.map((i) => i.key)).toEqual(['finance', 'orders'])
     // 反例自证：菜单自身顺序是 orders 在前 ⇒ 上面的结果**不可能**是「照抄菜单顺序」
     const menuOrder = visibleAll().map((i) => i.key)
     expect(menuOrder.indexOf('orders')).toBeLessThan(menuOrder.indexOf('finance'))
   })
 
-  it('一级项也可钉（`products` 属 standaloneTopItems，且**不**在任何组内）', () => {
-    const items = resolvePinnedItems(menuGroups, standaloneTopItems, standaloneItems, ['products'], ADMIN)
-    expect(items.map((i) => i.key)).toEqual(['products'])
-    expect(items[0].name).toBe('商品管理')
+  it('🔴 一级项**不进「常用」**（#5877）：钉过 `products` 也解析为空 ⇒ 不出现重复入口', () => {
+    // 前提（面非空自证）：products 确实是一级项、且**不在**任何组内
+    expect(standaloneTopItems.map((i) => i.key)).toContain('products')
     expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).not.toContain('products')
+    // 一级项没星标、也不进「常用」⇒ 解析为空（**不是**「找不到就静默跳过」的假绿：见下一行对照）
+    expect(resolvePinnedItems(menuGroups, standaloneItems, ['products'], ADMIN)).toEqual([])
+    expect(pinnedGroup(menuGroups, standaloneItems, ['products'], ADMIN)).toBeNull()
+    // 对照：同一次调用里，组内项照旧解析得出来（说明函数本身没坏）
+    expect(resolvePinnedItems(menuGroups, standaloneItems, ['orders'], ADMIN).map((i) => i.key)).toEqual(['orders'])
+    // 对照：尾部独立项（通知中心）**仍可**收藏（它仍是普通项、带星标）
+    expect(resolvePinnedItems(menuGroups, standaloneItems, ['notifications'], ADMIN).map((i) => i.key)).toEqual(
+      ['notifications'],
+    )
+  })
+
+  it('🔴 localStorage 里残留的 `products`（旧版本用户数据）⇒ 静默丢弃，不抛错、不留死链', () => {
+    window.localStorage.setItem('migao.sidebar.pinned.v1', JSON.stringify(['products', 'orders']))
+    expect(() => loadPinned()).not.toThrow()
+    expect(loadPinned()).toEqual(['products', 'orders'])
+    expect(resolvePinnedItems(menuGroups, standaloneItems, loadPinned(), ADMIN).map((i) => i.key)).toEqual(['orders'])
   })
 })
 
 describe('「常用（收藏）」：合成分组（pinnedGroup）', () => {
   it('清单为空 ⇒ 返回 null（整区不渲染）', () => {
-    expect(pinnedGroup(menuGroups, standaloneTopItems, standaloneItems, [], ADMIN)).toBeNull()
+    expect(pinnedGroup(menuGroups, standaloneItems, [], ADMIN)).toBeNull()
   })
 
   it('🔴 钉住的项**一项都不可见** ⇒ 返回 null（不渲染空标题）', () => {
     const pinned = ['orders', 'finance']
     expect(
-      pinnedGroup(menuGroups, standaloneTopItems, standaloneItems, pinned, { permissions: [], roles: [] }),
+      pinnedGroup(menuGroups, standaloneItems, pinned, { permissions: [], roles: [] }),
     ).toBeNull()
     // 反向自证：有权限时同一份清单返回**精确内容**（不是「非 null」这种弱断言）
     expect(
-      pinnedGroup(menuGroups, standaloneTopItems, standaloneItems, pinned, ADMIN)!.items.map((i) => i.key),
+      pinnedGroup(menuGroups, standaloneItems, pinned, ADMIN)!.items.map((i) => i.key),
     ).toEqual(['orders', 'finance'])
   })
 
   it('返回的合成组：key/名固定为「常用」、`items` 只含可见项且保持用户的钉序', () => {
-    const g = pinnedGroup(menuGroups, standaloneTopItems, standaloneItems, ['customers', 'orders'], ADMIN)
+    const g = pinnedGroup(menuGroups, standaloneItems, ['customers', 'orders'], ADMIN)
     expect(g!.key).toBe(PINNED_GROUP_KEY)
     expect(g!.name).toBe('常用')
     expect(g!.items.map((i) => i.key)).toEqual(['customers', 'orders'])

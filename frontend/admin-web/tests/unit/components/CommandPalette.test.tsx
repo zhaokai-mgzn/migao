@@ -34,11 +34,11 @@ vi.mock('@/lib/api', () => ({
 
 import CommandPalette from '@/components/layout/CommandPalette'
 
-/** 新 IA 全量 21 项（#5778：一级项在前 → 分组项 → 独立项，== `flattenMenu` 顺序） */
+/** 新 IA 全量 21 项（#5877：head 组 → 一级项 → tail 组 → 独立项，== `flattenMenu` 顺序） */
 const ALL_KEYS = [
-  'products',
   'dashboard',
   'briefing',
+  'products',
   'human-sessions',
   'customers',
   'knowledge',

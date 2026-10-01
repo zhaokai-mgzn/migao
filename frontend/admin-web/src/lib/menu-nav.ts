@@ -12,7 +12,7 @@
 //   · 高亮 = **最长前缀胜出**（`/dashboard` 同时命中 `/` 与 `/dashboard`）；
 //   · 空组剔除（组内一项不剩 ⇒ 整组不渲染）。
 
-import type { MenuGroup, MenuItem } from '@/config/menu'
+import { STANDALONE_TOP_AFTER_GROUP_KEY, type MenuGroup, type MenuItem } from '@/config/menu'
 
 export interface MenuFilterOptions {
   permissions: string[]
@@ -58,6 +58,10 @@ export function visibleMenuGroups(groups: MenuGroup[], opts: MenuFilterOptions):
 //     该项自动从「常用」消失**，结构上不可能出现「收藏了一个不该看的东西」；
 //   · ❌ 它**不重排**任何菜单项：钉住的项在它原本的组里**照旧出现**（「常用」是**快捷方式**，
 //     不是「搬家」）—— 这样「在域内找它」与「一键直达」两条动线都在，且被钉页面仍是域内高亮项。
+//   · 🔴 **一级项（`standaloneTopItems`）不在可收藏面里**（#5877，用户 2026-10-01 裁定）：
+//     它已是一屏直达、且**不再有星标按钮** ⇒ 再让它进「常用」只会在同一屏出现两条**一模一样**的入口。
+//     存量用户 localStorage 里残留的 `products` key 走同一条「无效 key 静默丢弃」路径
+//     （不需要单独的清理逻辑：它压根不在解析面上 ⇒ 解析结果为空 ⇒ 整区不渲染）。
 //
 // ## 两道护栏（消除脏数据）
 //
@@ -143,17 +147,19 @@ export function isPinned(pinned: string[], key: string): boolean {
  *
  * 🔴 两条过滤**必须**都在：① key 已在菜单里不存在（改名/删除）⇒ 丢；② 存在但**当前无权**
  * （或企业开关关掉了「每日简报」）⇒ 丢。漏掉 ② 就是「收藏可以绕过菜单权限」的漏洞。
+ *
+ * ⚠️ **可收藏面 = 组内项 ∪ 尾部独立项**（**不含**一级项 `standaloneTopItems`，见文件头）：
+ * 一级项没有星标、且一屏可见 ⇒ 进「常用」就是重复入口。这里**故意不接** `standaloneTopItems` 参数：
+ * 参数一旦存在，调用方迟早会把它传进来（参数即接口）。
  */
 export function resolvePinnedItems(
   groups: MenuGroup[],
-  standaloneTop: MenuItem[],
   standaloneBottom: MenuItem[],
   pinned: string[],
   opts: MenuFilterOptions,
 ): MenuItem[] {
   const visibleAll = [
     ...groups.flatMap((g) => filterMenuItems(g.children, opts)),
-    ...filterMenuItems(standaloneTop, opts),
     ...filterMenuItems(standaloneBottom, opts),
   ]
   const byKey = new Map(visibleAll.map((i) => [i.key, i]))
@@ -170,12 +176,11 @@ export function resolvePinnedItems(
  */
 export function pinnedGroup(
   groups: MenuGroup[],
-  standaloneTop: MenuItem[],
   standaloneBottom: MenuItem[],
   pinned: string[],
   opts: MenuFilterOptions,
 ): { key: string; name: string; items: MenuItem[] } | null {
-  const items = resolvePinnedItems(groups, standaloneTop, standaloneBottom, pinned, opts)
+  const items = resolvePinnedItems(groups, standaloneBottom, pinned, opts)
   return items.length > 0 ? { key: PINNED_GROUP_KEY, name: PINNED_GROUP_NAME, items } : null
 }
 
@@ -254,25 +259,51 @@ export interface FlatMenuItem extends MenuItem {
 }
 
 /**
- * 拍平（命令面板 ⌘K 用）：**顶部一级项 → 分组项（按组顺序）→ 尾部独立项**。
+ * 把（已权限过滤的）分组按「一级项插入位」切成两段（#5877，用户 2026-10-01 裁定）。
+ *
+ * 返回 `{ head, tail }`：`head` 含 `slotKey` 那个组（**含**）及其之前的所有组，`tail` 是其余组；
+ * `slotKey` 不在可见分组里（被权限过滤掉 / 传 null / key 写错）⇒ `{ head: [], tail: groups }`
+ * —— 即**回落到「一级项渲染在所有分组之前」**。
+ *
+ * 🔴 为什么**必须**有回落：席位组被权限过滤掉时，一级项**绝不允许跟着消失**
+ *（最坏退回旧位置，也不能没有入口）—— 一级项是**一级菜单**，不是某个组的附属品。
+ * 🔴 这是该口径的**唯一实现**：`Sidebar.tsx` 与 `flattenMenu` 都调它（不各写一份 slice，
+ * 否则「侧边栏渲染顺序」与「⌘K 索引顺序」迟早漂移）。
+ */
+export function splitGroupsAtTopItemSlot(
+  groups: MenuGroup[],
+  slotKey: string | null,
+): { head: MenuGroup[]; tail: MenuGroup[] } {
+  const i = slotKey ? groups.findIndex((g) => g.key === slotKey) : -1
+  return i < 0
+    ? { head: [], tail: groups }
+    : { head: groups.slice(0, i + 1), tail: groups.slice(i + 1) }
+}
+
+/**
+ * 拍平（命令面板 ⌘K 用）：**head 组 → 一级项 → tail 组 → 尾部独立项**。
  *
  * 顺序 == 侧边栏渲染顺序 ⇒ ⌘K 空查询时的「全量索引」与侧边栏逐项对齐（不同源会让用户
  * 在面板里看到的顺序与菜单对不上）。
  *
- * 两级独立项（本轮 2026-09-29 引入）：`standaloneTop` = 渲染在**分组之前**的一级项
- * （如「商品管理」）；`standaloneBottom` = 渲染在**分组之后**的独立项（如「通知中心」）。
+ * 两级独立项：`standaloneTop` = 一级项（如「商品管理」，#5877 起插在
+ * `STANDALONE_TOP_AFTER_GROUP_KEY` 那个组**之后**；该组不可见 ⇒ 回落到最前）；
+ * `standaloneBottom` = 尾部独立项（如「通知中心」，渲染在所有分组之后）。
  * 两者都**不是**分组，`groupKey`/`groupName` 留空（面板上不显示「组名」标签）。
+ *
+ * ⚠️ `topSlotKey` 的默认值取自 `@/config/menu` 的**同一个常量**（三源表达同一位置，不许各写一份）。
  */
 export function flattenMenu(
   groups: MenuGroup[],
   standaloneTop: MenuItem[] = [],
   standaloneBottom: MenuItem[] = [],
+  topSlotKey: string | null = STANDALONE_TOP_AFTER_GROUP_KEY,
 ): FlatMenuItem[] {
-  const fromGroups = groups.flatMap((g) =>
-    g.children.map((c) => ({ ...c, groupKey: g.key, groupName: g.name })),
-  )
+  const { head, tail } = splitGroupsAtTopItemSlot(groups, topSlotKey)
+  const fromGroups = (gs: MenuGroup[]) =>
+    gs.flatMap((g) => g.children.map((c) => ({ ...c, groupKey: g.key, groupName: g.name })))
   const flat = (items: MenuItem[]) => items.map((c) => ({ ...c, groupKey: '', groupName: '' }))
-  return [...flat(standaloneTop), ...fromGroups, ...flat(standaloneBottom)]
+  return [...fromGroups(head), ...flat(standaloneTop), ...fromGroups(tail), ...flat(standaloneBottom)]
 }
 
 /**
