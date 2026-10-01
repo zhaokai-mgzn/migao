@@ -13,7 +13,7 @@ export interface TodayOverviewBarProps {
   orderChange: number | null | null
   /** 销售额环比（百分比，正=较昨日上涨）；`null` = 无上期可比 */
   salesChange: number | null | null
-  /** 含加工待发货订单数 */
+  /** 含加工待发货数 */
   processingCount: number
   /** 待发货订单数 */
   pendingCount: number

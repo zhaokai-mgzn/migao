@@ -309,7 +309,7 @@ test.describe('仪表盘页面', () => {
       await page.route('**/api/admin/dashboard/pending-shipment-count', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: 15 }) })
       })
-      // 含加工待发货订单数
+      // 含加工待发货数
       await page.route('**/api/admin/dashboard/processing-shipment-count', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: 8 }) })
       })
@@ -327,8 +327,8 @@ test.describe('仪表盘页面', () => {
       await expect(link).toBeVisible()
     })
 
-    test('"含加工待发货订单"卡片链接 → /orders?category=含加工订单&status=待发货', async ({ page }) => {
-      const link = page.getByRole('link', { name: /含加工待发货订单/ })
+    test('"含加工待发货"卡片链接 → /orders?category=含加工订单&status=待发货', async ({ page }) => {
+      const link = page.getByRole('link', { name: /含加工待发货/ })
       await expect(link).toBeVisible()
     })
 
@@ -337,8 +337,8 @@ test.describe('仪表盘页面', () => {
       await expect(link).toBeVisible()
     })
 
-    test('点击"含加工待发货订单"卡片 → 跳转到订单页', async ({ page }) => {
-      await page.getByRole('link', { name: /含加工待发货订单/ }).click()
+    test('点击"含加工待发货"卡片 → 跳转到订单页', async ({ page }) => {
+      await page.getByRole('link', { name: /含加工待发货/ }).click()
       await page.waitForURL(/\/orders/, { timeout: 10_000 })
       expect(page.url()).toContain('category=')
       expect(page.url()).toContain('status=')

@@ -199,13 +199,30 @@ const PENDING_COLORS: Record<string, { tile: string; icon: string }> = {
   green:  { tile: 'bg-emerald-50',  icon: 'text-emerald-600' },
 }
 
+/**
+ * 待处理任务卡（经营看板「待处理」区）。
+ *
+ * ## issue #5881：卡片要比同行高出一截 —— 两条**结构性**修法
+ *
+ * 病根：容器是 `grid`，而 **grid 项是外层 `<Link>`** —— 它默认被 `align-items: stretch`
+ * 拉成等高，**但卡片本体不跟着长**（根节点没有 `h-full`）⇒ 卡片高度 = 自身内容高度，
+ * 于是标题换了两行的第 3 张自己长出来、其余四张短一截（用户 2026-10-01 截图即此现象）。
+ *
+ *   · `h-full` —— 把外层 grid 项的等高**传导到卡片本体**。这是**类级**修复：
+ *     以后**任何**标题变长，都只会让整排一起变高，不会再出现"某一张突兀"。
+ *   · 标题 `truncate` + `title` —— 标题恒为**单行**，不允许靠换行把卡片撑高；
+ *     真被截断时 hover 仍读得到全名（信息不丢）。
+ *
+ * 判据：`frontend/admin-web/tests/unit/pages/dashboard.test.tsx` 的 #5881 用例
+ * （形态判据 + 标题 ≤ 6 字的类级上限；像素读数由真浏览器截图复核，见 `migao-dev-flow` §15.7）。
+ */
 function PendingCard({ title, count, icon, color }: { title: string; count: number; icon: React.ReactNode; color: string }) {
   const c = PENDING_COLORS[color] || PENDING_COLORS.blue
   return (
-    <div className="group flex items-center gap-3.5 rounded-xl border border-neutral-200 bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-card-hover">
+    <div data-testid="pending-card" className="group flex h-full items-center gap-3.5 rounded-xl border border-neutral-200 bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-card-hover">
       <span className={cn('p-2.5 rounded-lg transition-transform group-hover:scale-105', c.tile)}>{icon}</span>
       <div className="flex-1 min-w-0">
-        <p className="text-xs text-neutral-500">{title}</p>
+        <p data-testid="pending-card-title" className="truncate text-xs text-neutral-500" title={title}>{title}</p>
         <p className="tnum text-2xl font-bold leading-tight text-neutral-900">{fmtNum(count)}</p>
       </div>
       <ArrowRight className="w-4 h-4 text-neutral-300 transition-all group-hover:translate-x-0.5 group-hover:text-primary-500" />
@@ -478,7 +495,10 @@ export default function DashboardPage() {
               （`resolveStatusParam` 直接匹配 `pending_payment`），不依赖中文标签映射。 */}
           <Link href="/orders?status=pending_payment"><PendingCard title="待支付订单" count={pendingPayment} icon={<DollarSign className="w-4 h-4 text-amber-600" />} color="amber" /></Link>
           <Link href="/orders?status=待发货"><PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-primary-600" />} color="blue" /></Link>
-          <Link href="/orders?category=含加工订单&status=待发货"><PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-accent-600" />} color="purple" /></Link>
+          {/* issue #5881：文案「含加工待发货订单」（8 字）是同行最长的一项，恰好卡在换行临界点上
+              ⇒ 把该卡撑高、与其余四张不一致。缩为「含加工待发货」（6 字，语义不变），
+              同排不再换行；`<Link>` 的查询参数 `category=含加工订单` 是**端点契约**，一字不动。 */}
+          <Link href="/orders?category=含加工订单&status=待发货"><PendingCard title="含加工待发货" count={processingShipment} icon={<Settings className="w-4 h-4 text-accent-600" />} color="purple" /></Link>
           {/* issue #5792：超时工单卡 —— 下钻 `?overdue=1` 与计数**同源**
               （`AfterSalesTicketMapper.applyOverdue`）：列表页会真的筛（已实装可见指示 + 可清除），
               不会出现「卡说 3 条、点进去一屏」。 */}
