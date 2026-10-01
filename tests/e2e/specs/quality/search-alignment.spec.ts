@@ -96,7 +96,17 @@ test.describe('搜索功能无损 — 回归验证', () => {
     await page.goto('/orders')
     await page.waitForTimeout(2000)
 
-    const searchInput = page.locator(`${SEARCH_SELECTOR} input`).first()
+    // 🔴 issue #5893：**不要**再取「搜索区里的第一个 `input`」——
+    // `#5883` 把「下单时间」排到搜索区**第一格**之后，`.first()` 命中的是 `<input type="date">`，
+    // 而 `fill('test')` 对 date 输入框会直接抛 `Error: locator.fill: Error: Malformed value`
+    //（实测日志：`locator resolved to <input type="date" placeholder="开始日期" …>` ⇒ `fill("test")`）
+    // ⇒ 这条 gate 自 #5883 起**每个 PR 都红**（而它不在 required 集合 ⇒ 红着照样合，没人报）。
+    //
+    // 本用例的**意图**是「往搜索区里打一行字 ⇒ 表格仍返回数据」，与字段顺序、与具体哪个字段**无关**
+    // ⇒ 显式取**文本**输入框（无 `type` 属性、或显式 `type="text"` 的都算），不再依赖「第一个 input 恰好是文本框」这个隐式假设。
+    const searchInput = page
+      .locator(`${SEARCH_SELECTOR} input:not([type]), ${SEARCH_SELECTOR} input[type="text"]`)
+      .first()
     if (await searchInput.isVisible()) {
       await searchInput.fill('test')
       await searchInput.press('Enter')
