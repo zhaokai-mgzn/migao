@@ -53,7 +53,10 @@ const EMPTY_SEARCH: SearchState = {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <label className="text-sm text-neutral-600 whitespace-nowrap shrink-0 text-right min-w-[4.5em]">
+    // issue #5880：宽度改成**固定值**（`w-[4.5em]` 而非 `min-w-[4.5em]`）—— `min-w` 只是下限，
+    // 宽度仍随内容变 ⇒ 各格 label 实际宽度不同、行间起点参差；固定宽 + `text-right` 后，
+    // 配合单一 grid 的轨道，**每一列的控件左边界都对齐**。4.5em = 最长 label「下单时间」（4 个中文字）够用。
+    <label className="text-sm text-neutral-600 whitespace-nowrap shrink-0 text-right w-[4.5em]">
       {children}
     </label>
   )
@@ -64,7 +67,7 @@ function FieldInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cn(
-        'flex-1 min-w-0 h-9 px-3 rounded border border-neutral-300 bg-white text-sm',
+        'flex-1 min-w-0 w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm',
         'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
         'placeholder:text-neutral-400',
         props.className
@@ -413,129 +416,127 @@ export default function OrdersPage() {
         </button>
       </div>
 
-      {/* 查询区域 */}
-      <div className="bg-white rounded-lg border border-neutral-200 p-5" data-testid="search-area">
-        {/* 🔴 2026-10-01（issue #5850）：**不可换行的单行 grid ⇒ `flex-wrap`**。
-            改前是 `minmax(0,…)` 的 grid（#5841 修的溢出）—— 溢出没了，但窄屏只能把格**压扁**：
-            1440 下第二行 4 条轨道只剩 736px ⇒ 货号/标题输入框各 **约 73px**（看得到 5 个字）、
-            下单时间格 276px 要装两个日期框 + 「至」⇒ 每个日期框 **约 80px，只显示得出「2026」**。
-            `flex-wrap` + 每格 `min-w-[…]` 的语义才是对的：**放得下就一行、放不下就换行**，
-            永不把控件压到不可读。宽度足够（≥1536）时与改前逐像素同类（仍是一行）。 */}
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-4 mb-4">
-          {/* 订单ID */}
-          <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-            <FieldLabel>订单ID</FieldLabel>
-            <FieldInput
-              placeholder="请输入订单ID"
-              value={orderId}
-              onChange={(e) => setOrderId(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            />
-          </div>
-          {/* 收货人 */}
-          <div className="flex items-center gap-2 flex-1 min-w-[220px]">
-            <FieldLabel>收货人</FieldLabel>
-            <FieldInput
-              placeholder="请输入收货人姓名或手机号"
-              value={receiver}
-              onChange={(e) => setReceiver(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            />
-          </div>
-          {/* 制单人（issue #5835）：文本框模糊匹配（与同区其它输入一致，回车即搜） */}
-          <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-            <FieldLabel>制单人</FieldLabel>
-            <FieldInput
-              placeholder="请输入制单人姓名"
-              value={creator}
-              onChange={(e) => setCreator(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            />
-          </div>
-        </div>
-
-        {/* 查询区第二行（issue #5841 修溢出 ⇒ issue #5850 修「压窄」）：
-            #5841 把 `repeat(4,1fr)` 换成 `minmax(0,…)`，**溢出**没了但窄屏改成**压扁** ——
-            1440 视口下 4 条轨道只剩 736px（商品货号/标题各 ~73px、两个日期框各 ~80px）。
-            ⇒ 本行同样改 `flex-wrap` + 每格 `min-w-[…]`：1280~1512 自动**换行**（两行）而不是压扁，
-            ≥1536 仍是一行。日期格给足 `min-w-[300px]` + `flex-[1.5]`（两个日期框 + 「至」比别的格更需要宽度）；
-            四个筛选格的最小宽之和 > 1440 下的可用宽 ⇒ 自动换行，而不是把每格压到 74px。 */}
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
-          {/* 下单时间 */}
-          <div className="flex items-center gap-2 flex-[1.5] min-w-[300px]">
-            <FieldLabel>下单时间</FieldLabel>
+      {/* 查询区域（issue #5880：**纯版式重构、零行为变更**）——
+          **单一响应式 grid**：列由轨道定义 ⇒ 行与行**天然对齐**。改前是**两行各自一个 flex 容器**
+          （`flex-1` vs `flex-[1.5]` + 各格**不同的** `min-w-[…]`）⇒ 换行点与格宽都随视口漂移、列不对齐。
+          列梯 1 / 2 / 4（<768 一列、≥768 两列、≥1536 四列）：大轨道数只放在 ≥1536 —— #5850 的病根就是
+          窄屏轨道太多、只能把控件**压扁**。每格 `min-w-0`：宽度由**轨道**给，不再靠 `min-w-[…]` 撑（#5841 的溢出）。
+          排布：第 1 行 = 下单时间（跨 2 轨）· 订单ID · 收货人；第 2 行 = 制单人 · 商品货号 · 商品标题 · 是否加工；
+          第 3 行 = 按钮行（`col-span-full` 独占一行 + `justify-end` 右对齐）—— 主操作不再埋在第 2 行末尾。 */}
+      <div
+        className="bg-white rounded-lg border border-neutral-200 p-5 grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-x-6 gap-y-4"
+        data-testid="search-area"
+      >
+        {/* 下单时间（跨 2 轨）：起 / 至 / 止 都在**同一个**容器里 —— 一个整体控件组，而不是三个散落的控件 */}
+        <div className="md:col-span-2 flex items-center gap-2 min-w-0">
+          <FieldLabel>下单时间</FieldLabel>
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               placeholder="开始日期"
-              className="flex-1 min-w-0 h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="flex-1 min-w-0 w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
-            <span className="text-neutral-400 text-sm">至</span>
+            <span className="shrink-0 text-neutral-400 text-sm">至</span>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
               placeholder="结束日期"
-              className="flex-1 min-w-0 h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="flex-1 min-w-0 w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
           </div>
-          {/* 商品货号 */}
-          <div className="flex items-center gap-2 flex-1 min-w-[240px]">
-            <FieldLabel>商品货号</FieldLabel>
-            <FieldInput
-              placeholder="请输入商品货号"
-              value={productCode}
-              onChange={(e) => setProductCode(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            />
-          </div>
-          {/* 商品标题 */}
-          <div className="flex items-center gap-2 flex-1 min-w-[240px]">
-            <FieldLabel>商品标题</FieldLabel>
-            <FieldInput
-              placeholder="请输入商品标题"
-              value={productTitle}
-              onChange={(e) => setProductTitle(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            />
-          </div>
-          {/* 是否加工 */}
-          <div className="flex items-center gap-2 flex-1 min-w-[180px]">
-            <FieldLabel>是否加工</FieldLabel>
-            <select
-              value={hasProcessing}
-              onChange={(e) => setHasProcessing(e.target.value as '' | 'true' | 'false')}
-              className="flex-1 min-w-0 h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-            >
-              <option value="">全部</option>
-              <option value="true">是</option>
-              <option value="false">否</option>
-            </select>
-          </div>
-          {/* 按钮：`shrink-0`（不被压）+ `ml-auto`（换行后仍靠右） */}
-          <div className="flex items-center gap-2 justify-end shrink-0 ml-auto">
-            <button
-              type="button"
-              onClick={handleSearch}
-              disabled={loading}
-              className="h-9 px-5 rounded bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 active:bg-primary-800 disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
-            >
-              <Search className="w-4 h-4" />
-              查询
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={loading}
-              className="h-9 px-5 rounded bg-white text-neutral-700 text-sm font-medium border border-neutral-300 hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50 transition-colors inline-flex items-center gap-1"
-            >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M3 12a9 9 0 1 0 3-6.7L3 8" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M3 3v5h5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              重置
-            </button>
+        </div>
+        {/* 订单ID */}
+        <div className="flex items-center gap-2 min-w-0">
+          <FieldLabel>订单ID</FieldLabel>
+          <FieldInput
+            placeholder="请输入订单ID"
+            value={orderId}
+            onChange={(e) => setOrderId(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          />
+        </div>
+        {/* 收货人 */}
+        <div className="flex items-center gap-2 min-w-0">
+          <FieldLabel>收货人</FieldLabel>
+          <FieldInput
+            placeholder="请输入收货人姓名或手机号"
+            value={receiver}
+            onChange={(e) => setReceiver(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          />
+        </div>
+        {/* 制单人（issue #5835）：文本框模糊匹配（与同区其它输入一致，回车即搜） */}
+        <div className="flex items-center gap-2 min-w-0">
+          <FieldLabel>制单人</FieldLabel>
+          <FieldInput
+            placeholder="请输入制单人姓名"
+            value={creator}
+            onChange={(e) => setCreator(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          />
+        </div>
+        {/* 商品货号 */}
+        <div className="flex items-center gap-2 min-w-0">
+          <FieldLabel>商品货号</FieldLabel>
+          <FieldInput
+            placeholder="请输入商品货号"
+            value={productCode}
+            onChange={(e) => setProductCode(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          />
+        </div>
+        {/* 商品标题 */}
+        <div className="flex items-center gap-2 min-w-0">
+          <FieldLabel>商品标题</FieldLabel>
+          <FieldInput
+            placeholder="请输入商品标题"
+            value={productTitle}
+            onChange={(e) => setProductTitle(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          />
+        </div>
+        {/* 是否加工 */}
+        <div className="flex items-center gap-2 min-w-0">
+          <FieldLabel>是否加工</FieldLabel>
+          <select
+            value={hasProcessing}
+            onChange={(e) => setHasProcessing(e.target.value as '' | 'true' | 'false')}
+            className="flex-1 min-w-0 w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+          >
+            <option value="">全部</option>
+            <option value="true">是</option>
+            <option value="false">否</option>
+          </select>
+        </div>
+        {/* 按钮行：`col-span-full` ⇒ 任何列数下都**独占一行**；`justify-end` ⇒ 右对齐（主操作在右）。
+            「刷新」是**列表动作**，「查询 / 重置」是**筛选动作** ⇒ 二者之间加一条细分隔分层。
+            按钮的**相对顺序与文案一字未改**（查询 → 重置 → 刷新），刷新按钮上的 `aria-label` 保持原值。 */}
+        <div className="col-span-full flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={handleSearch}
+            disabled={loading}
+            className="h-9 px-5 rounded bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 active:bg-primary-800 disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
+          >
+            <Search className="w-4 h-4" />
+            查询
+          </button>
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={loading}
+            className="h-9 px-5 rounded bg-white text-neutral-700 text-sm font-medium border border-neutral-300 hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50 transition-colors inline-flex items-center gap-1"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 12a9 9 0 1 0 3-6.7L3 8" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M3 3v5h5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            重置
+          </button>
+          <span className="flex items-center border-l border-neutral-200 pl-3 ml-1">
             <button
               type="button"
               onClick={() => loadOrders()}
@@ -547,7 +548,7 @@ export default function OrdersPage() {
               <RefreshCw className="w-4 h-4" />
               刷新
             </button>
-          </div>
+          </span>
         </div>
       </div>
 
