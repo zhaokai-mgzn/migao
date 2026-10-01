@@ -11,10 +11,12 @@
 //   ② 建单：勾 SKU ⇒ 一行 = 一个批次 ⇒ 提交 payload **逐字段**不变（PR-037）；
 //   ③ 数值语义：数量「大于 0 且最多 1 位小数」（PR-046 / PR-048 / UI-055）；
 //   ④ 期初建账单条录入：来源=opening ⇒ 旧系统批次号列 + 0.5 米尾料可提交（PR-062）；
-//   ⑤ 批次号「看得见」：明细列在草稿态恒为「过账后生成」（**草稿不发号**，生成时机不变，UI-074）。
+//   ⑤ 批次号「看得见」：明细列在草稿态恒为「过账后生成」（**草稿不发号**，生成时机不变，UI-074）；
+//   ⑥ 「单据信息」版式收口（issue #5912）：入库日期 = **标准尺寸**的原生 date 控件且**默认当天**（本地日）、
+//      备注 = **多行文本域** —— 这条**取代** #5871「日期跨 2 列」的口径（跨列正是控件被拉伸的成因）。
 //
 // ⚠️ 建单契约**本次一字未改**：payload 字段与改造前逐字相同 —— 它由下面第 ② 条逐字段钉住。
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 const mockCreate = vi.fn()
@@ -86,6 +88,16 @@ beforeEach(() => {
   })
 })
 
+// 时区 / 时钟类用例的还原（同 products.test.tsx 的 #4783 红证写法）：不还原会污染同进程的其它用例
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.useRealTimers()
+})
+
+/** 与页面 `localToday` 同源派生（只用本地 getter）—— 期望值不写死字符串 */
+const localDayOf = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
 /** 建单页走法：选商品 → 勾 SKU → 返回三格（数量 / 单价 / 卷长） */
 async function openWithLine() {
   fireEvent.change(screen.getByPlaceholderText('商品名称 / 货号'), { target: { value: '遮光' } })
@@ -127,23 +139,56 @@ describe('建单页版式：整页（不是弹窗），与 /orders/new、/produc
     expect(mockPush).toHaveBeenCalledWith('/inbound-orders')
   })
 
-  it('「入库日期」占满整行（奇数个字段的最后一个满行；改前右半留空 —— issue #5871）', async () => {
+  it('入库日期是**标准尺寸**的原生 date 控件：不再跨列、也不再吃满整格（改前是 md:col-span-2 + w-full）', async () => {
     render(<NewInboundOrderPage />)
 
     const dateField = screen.getByTestId('inbound-date-field')
     // 日期控件还在，且仍是原生 date 输入
-    expect(dateField.querySelectorAll('input[type="date"]').length).toBe(1)
+    const dateInput = dateField.querySelector('input[type="date"]') as HTMLInputElement
+    expect(dateInput).not.toBeNull()
 
     const grid = dateField.parentElement as HTMLElement
     expect(grid).toHaveClass('md:grid-cols-2')
 
-    // 🔴 本单的靶心：**恰好 1 个**字段跨 2 列，且它就是日期字段。
-    //    改前：0 个跨列 ⇒ 第 3 行右半留空（用户看到的"怪异"之一）；
-    //    若有人顺手把别的字段也拉宽 ⇒ 数量 > 1 ⇒ 红（防静默扩大改动）。
+    // 🔴 靶心①：**没有任何字段跨列** —— 跨列正是「控件被拉伸到整行宽」的成因。
+    //    改前（#5871 的口径）：日期字段恰好跨 2 列 ⇒ 数量 1；
+    //    若有人顺手把别的字段也拉宽 ⇒ 数量 > 0 ⇒ 红（防静默扩大改动）。
     const spanning = Array.from(grid.children).filter((el) => el.className.includes('md:col-span-2'))
-    expect(spanning.length).toBe(1)
-    expect(spanning[0]).toBe(dateField)
+    expect(spanning.length).toBe(0)
     expect(grid.children.length).toBe(5)
+  })
+
+  it('入库日期**默认当天** = **本地日**（写 `toISOString().slice(0, 10)` 的实现在这里必红）', async () => {
+    // 判别力前置（与同仓 products.test.tsx 的 #4783 红证同款、同因）：CI runner 是 **UTC**
+    // ⇒ 不钉进程时区时「本地日 == UTC 日」，旧实现也会绿（那是空断言，不是判据）。
+    // `vi.stubEnv('TZ', …)` 在 Node 上会真的改掉进程时区（stub 后本地 getter 走 UTC+8）。
+    vi.stubEnv('TZ', 'Asia/Shanghai')
+    // 时刻用**显式 +08:00 偏移**（绝对时刻，与机器时区无关）= CST 2026-10-02 01:00，
+    // 其 UTC 表示 = 2026-10-01T17:00Z ⇒ 落在缺陷窗口（CST 00:00~08:00）**正中**。
+    const instant = new Date('2026-10-02T01:00:00+08:00')
+    vi.setSystemTime(instant)
+
+    render(<NewInboundOrderPage />)
+    const dateInput = screen
+      .getByTestId('inbound-date-field')
+      .querySelector('input[type="date"]') as HTMLInputElement
+
+    const localDay = localDayOf(instant)
+    // 判别力自断言：此刻 UTC 日 ≠ 本地日（否则本用例没有判别力）
+    expect(instant.toISOString().slice(0, 10)).toBe('2026-10-01')
+    expect(localDay).toBe('2026-10-02')
+    // 改前（空值）此断言实测红：expected '2026-10-02' / received ''
+    expect(dateInput.value).toBe(localDay)
+  })
+
+  it('备注是**多行文本域**（textarea / rows≥3 / 整行宽）—— 改前是单行 input', async () => {
+    render(<NewInboundOrderPage />)
+
+    // label 与控件真关联（`htmlFor` + `id`）⇒ 这里能用 getByLabelText 取到它
+    const remark = screen.getByLabelText('备注')
+    expect(remark.tagName).toBe('TEXTAREA')
+    expect(Number((remark as HTMLTextAreaElement).rows)).toBeGreaterThanOrEqual(3)
+    expect(remark.className).toMatch(/(^|\s)w-full(\s|$)/)
   })
 })
 
@@ -196,6 +241,28 @@ describe('建单：一行 = 一个批次，payload 逐字段（PR-037）', () =>
     expect(sent).toBe('2097126615461462018')
     // 反面钉法：Number() 之后的值（末位被吞）**不得**出现在提交体里
     expect(sent).not.toBe(String(Number('2097126615461462018')))
+  })
+
+  it('🔴 建单契约字段一字未改：payload 键集合不变，`inboundDate` 提交**控件里的值**（含默认当天）', async () => {
+    mockCreate.mockResolvedValue({ data: { data: createdOrder } })
+    render(<NewInboundOrderPage />)
+
+    const { qty } = await openWithLine()
+    fireEvent.change(qty, { target: { value: '3' } })
+    fireEvent.change(
+      screen.getByTestId('inbound-date-field').querySelector('input[type="date"]') as HTMLInputElement,
+      { target: { value: '2026-09-30' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
+    const payload = mockCreate.mock.calls[0][0]
+    // 顶层键集合 —— 版式改动**不得**顺手增删字段（改前逐字就是这 7 个）
+    expect(Object.keys(payload).sort()).toEqual([
+      'inboundDate', 'items', 'remark', 'source', 'supplier', 'supplierDocNo', 'warehouse',
+    ])
+    // 用户改过日期 ⇒ 提交改后的值（默认当天只影响初始值，不锁死用户输入）
+    expect(payload.inboundDate).toBe('2026-09-30')
   })
 
   it('一行都没有 ⇒ 拦住（不调建单接口）', async () => {
