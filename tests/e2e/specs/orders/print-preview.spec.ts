@@ -176,7 +176,38 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
       if (!png) return { ok: false as const, types: items.flatMap((i) => i.types) }
       const blob = await png.getType('image/png')
       const bitmap = await createImageBitmap(blob)
-      return { ok: true as const, size: blob.size, width: bitmap.width, height: bitmap.height }
+      // 🔴 内容必须**铺满整张纸**：预览里纸框被 scale 缩放适配屏幕，若截图把那个 transform
+      // 一起内联进去，画面会缩在左上角、四周留白 —— 而画布尺寸断言**看不出来**。
+      // 这条按非白像素的包围盒判（真尺寸截图的边框/文字应当铺满整幅）。
+      const canvas = document.createElement('canvas')
+      canvas.width = bitmap.width
+      canvas.height = bitmap.height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(bitmap, 0, 0)
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      let minX = canvas.width
+      let minY = canvas.height
+      let maxX = -1
+      let maxY = -1
+      for (let y = 0; y < canvas.height; y += 2) {
+        for (let x = 0; x < canvas.width; x += 2) {
+          const i = (y * canvas.width + x) * 4
+          const ink = data[i] < 235 || data[i + 1] < 235 || data[i + 2] < 235
+          if (!ink) continue
+          if (x < minX) minX = x
+          if (y < minY) minY = y
+          if (x > maxX) maxX = x
+          if (y > maxY) maxY = y
+        }
+      }
+      return {
+        ok: true as const,
+        size: blob.size,
+        width: bitmap.width,
+        height: bitmap.height,
+        inkWidthRatio: (maxX - minX) / canvas.width,
+        inkHeightRatio: (maxY - minY) / canvas.height,
+      }
     })
 
     expect(shot.ok, `剪贴板里没有 image/png：${JSON.stringify(shot)}`).toBe(true)
@@ -186,6 +217,9 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     expect(shot.width).toBeGreaterThan(2400)
     expect(shot.width / shot.height).toBeGreaterThan(1.6)
     expect(shot.width / shot.height).toBeLessThan(1.85)
+    // 铺满整张纸（纸框的边框就在边缘 ⇒ 覆盖率应当接近满幅；缩在左上角的截图会掉到 ~0.8 以下）
+    expect(shot.inkWidthRatio).toBeGreaterThan(0.9)
+    expect(shot.inkHeightRatio).toBeGreaterThan(0.9)
   })
 })
 

@@ -104,6 +104,11 @@ export async function captureNodeToPngBlob(node: HTMLElement, options: CaptureOp
 
   const clone = node.cloneNode(true) as HTMLElement
   inlineComputedStyles(node, clone)
+  // 🔴 脱掉节点自身的 `transform`：预览里纸框被 `scale(k)` 缩放适配屏幕，而截图要的是
+  // **真尺寸**画面 —— 内联进去会把内容缩在左上角、四周留白（画布尺寸断言看不出来，
+  // 只有像素覆盖率能抓，见 e2e 的「④ 复制截图」）。
+  clone.style.transform = 'none'
+  clone.style.transformOrigin = 'top left'
   const skippedImages = await inlineImages(node, clone)
 
   // 字体没就绪就截图 ⇒ 截图里会用回退字体（纸面与截图不一致）

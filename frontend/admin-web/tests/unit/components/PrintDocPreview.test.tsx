@@ -70,8 +70,8 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
     // 129.4mm ≈ 488.9px（#5914 实测的 7 行明细读数）；容器高 128mm
     stage.appendChild(stubSheet(129.4 * MM_TO_PX, 128 * MM_TO_PX))
     const check = measureSheets(stage, 128)
-    expect(check).not.toBeNull()
-    expect(check!.contentMm).toBeCloseTo(129.4, 1)
+    if (check === null) throw new Error('纸面自检没有给出读数（没有量到 data-print-sheet）')
+    expect(check.contentMm).toBeCloseTo(129.4, 1)
     expect(check!.limitMm).toBe(128)
     expect(check!.overflowMm).toBeCloseTo(1.4, 1)
   })

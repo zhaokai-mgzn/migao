@@ -365,7 +365,7 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     const pageStyleEl = Array.from(document.querySelectorAll('.shipment-print-area style')).find((el) =>
       (el.textContent || '').includes('@page')
     ) as HTMLStyleElement
-    expect(pageStyleEl).toBeDefined()
+    if (!pageStyleEl) throw new Error('找不到含 @page 的 style 块（issue #5914：纸型是独立的条件 style）')
     const pageRule = Array.from(pageStyleEl.sheet!.cssRules).find((r) => r.cssText.includes('@page'))
 
     // ⚠️ jsdom 30（cssstyle）起，CSSOM **不再保留 `@page` 的未知描述符** —— `size` 会从 `cssText` 里消失：

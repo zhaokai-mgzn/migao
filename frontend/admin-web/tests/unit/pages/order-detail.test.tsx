@@ -84,6 +84,18 @@ vi.mock('@/components/orders', async (importOriginal) => {
   // 修改订单（issue #5842）：本文件只验**入口**（哪个状态显示按钮、点开是否挂载弹窗）；
   // 弹窗自身的判据（改明细 / 加工项 / 金额服务端重算）在
   // tests/unit/components/EditOrderContentModal.test.tsx。
+  // 打印前的纸面自检层（issue #5914）：本文件只验「入口 → 预览 → 打印」这条接线，
+  // 纸面自检与截图的判据在 tests/unit/components/PrintDocPreview.test.tsx 与
+  // e2e/specs/orders/print-preview.spec.ts ⇒ 这里替身成「可点的壳」。
+  PrintDocPreview: ({ target, onPrint, children }: any) =>
+    target ? (
+      <div data-testid="print-preview">
+        <button data-testid="print-preview-print" onClick={onPrint}>
+          打印
+        </button>
+        {children}
+      </div>
+    ) : null,
   EditOrderContentModal: ({ open }: any) =>
     open ? <div data-testid="edit-order-content-modal">EditOrderContentModal</div> : null,
   }

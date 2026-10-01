@@ -367,17 +367,29 @@ def test_c6_injected_regressions_are_red():
     """C6：往副本里注入四类回归，判据必须**各自**判红；并用内容指纹自证注入生效。"""
     matrix = _matrix()
 
-    # ── 注入 A（C2）：把矩阵里的 A4 纸型改成 A3 ⇒ 自写 A4 字面量的单据必须判红 ──
+    # ── 注入 A（C2）：把单据调用的介质 id 改成矩阵里**不存在**的（写法 A 的判别面）──
     rel, media_id = "frontend/admin-web/src/components/orders/QuotationDoc.tsx", "a4"
     code = _strip_comments(_read(rel))
     assert _doc_page_problems(rel, media_id, code, matrix) == [], (
         f"`{rel}` 原文件本应干净（C2 已单独判）—— 这里先红说明判据或预期已变"
     )
+    bad_id = code.replace("printPageRule('a4')", "printPageRule('a5')", 1)
+    assert _fingerprint(bad_id) != _fingerprint(code), "注入 A 未生效（内容指纹相同）"
+    assert _doc_page_problems(rel, media_id, bad_id, matrix), (
+        "介质 id 写成矩阵外的值却**没判红** ⇒ C2 是空判据"
+    )
+
+    # ── 注入 A2（C2 的**写法 B** 分支）：合成样本，保证「字面量必须与矩阵逐字一致」这条分支
+    #    不会因为树里暂时没人用写法 B 就退化成空判据（issue #5914：五份单据已全部走写法 A）──
+    literal_doc = "const css = `@page { size: A4; margin: 12mm; }`"
+    assert _doc_page_problems("(合成样本)", media_id, literal_doc, matrix) == []
     drifted = {**matrix, "a4": {**matrix["a4"], "pageSize": "A3"}}
     assert _fingerprint(json.dumps(drifted, sort_keys=True)) != _fingerprint(
         json.dumps(matrix, sort_keys=True)
     ), "注入后介质矩阵指纹未变（**禁 mtime/size**）"
-    assert _doc_page_problems(rel, media_id, code, drifted), "纸型漂移后判据**没判红** ⇒ C2 是空判据"
+    assert _doc_page_problems("(合成样本)", media_id, literal_doc, drifted), (
+        "纸型漂移后判据**没判红** ⇒ C2 的写法 B 分支是空判据"
+    )
 
     # ── 注入 B（C2）：单据不再声明任何纸型（删掉 @page 与 printPageRule 调用）──
     no_page = _PAGE_LITERAL_RE.sub("", _PAGE_RULE_CALL_RE.sub("", code))
