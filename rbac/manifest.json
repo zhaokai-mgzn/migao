@@ -820,8 +820,7 @@
           "GET /api/admin/production/operations-catalog",
           "GET /api/admin/production/route-rule-options",
           "GET /api/admin/production/route-rules",
-          "GET /api/admin/production/routings",
-          "GET /api/admin/production/seed-templates"
+          "GET /api/admin/production/routings"
         ]
       },
       "visibility_rule": "all"

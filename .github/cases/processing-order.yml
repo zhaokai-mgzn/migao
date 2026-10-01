@@ -1667,7 +1667,6 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/config/IndustryCodesTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedTemplateServiceTest.java"
-        - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductionSeedTemplateControllerTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/SettingsControllerTest.java"
         - "tests/unit_ci_workflows/test_production_catalog_seed.py"
       ci:
