@@ -980,7 +980,7 @@ cases:
       - "每条 `kind` ∈ {criterion, action, ledger}，且对应字段**可解析**：`criterion`/`evidence` 形态 = `<仓库相对路径>::<符号>`（文件在 + 符号逐字出现）；kind 缺失或取值非法 ⇒ 报『**这一条只写了劝告**』"
       - "每条至少一条机器可核 `evidence`（解析不到 = 这条固化不可复核 ⇒ 红）；`refs` 里的 `#NNNN` 是叙述性引用，判据**不联网核**"
       - "覆盖面登记（§25.6 边界子节）**必须存在且非空**，且必须含 `**判别动作行（现取）**：` 行 —— 该行列出的 id 集合**等于** `kind=action` 的 id 集合（涨跌都红：新增一条只靠人执行的条目而不登记 ⇒ 红；把某条升级成判据后不移出这一行 ⇒ 红）"
-      - "CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 22 条（`FM-E1`~`FM-E23`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）"
+      - "CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 24 条（`FM-E1`~`FM-E25`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**（判据 7）；**反向也必须成立 —— 文档里具名的记号必须在台账 `ci_findings` 里登记**（判据 23：册外的按**只许缩短**的 `CI_MARKS_WITHOUT_ENTRY_FROZEN` 登记（现取 1 条 —— 就是本行前面那句「缺号」点名的那个号，由台账 `not_solidified` 的 `NS-1` 承接），该表陈旧同样红）；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）"
       - "**未守护台账只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的上限（上限写在判据文件里 ⇒ 台账改不动它）；`not_solidified`（本单未固化项）同口径，每条须有 `reason` + `restart_when`"
       - "**抢号判据 ①**：`.github/cases/**` 的用例号**全局唯一**（重号 = 两个并行包各自取现取最大号 +1 ⇒ 重号**红在后合的那个 PR** 上）"
       - "**抢号判据 ②**：活的 `backend/admin-api/src/main/resources/db/migration/` 里版本号**唯一**（射程只到活目录：`migration-archive/` 的存量重号**只许缩短**地登记在判据常量里，套到归档上会是存量假红）"
@@ -2014,4 +2014,35 @@ cases:
         - "tests/unit_ci_workflows/test_deploy_watchdog.py"
       ci:
         - pr-check.yml
+      verifies: []
+
+  - id: MC-056
+    legacy_id: ""
+    title: "CI 面记号与台账必须**双向**绑定（`FM-E24`/`FM-E25` 同批）：文档里具名而台账未登记 ⇒ 红；「CI 迟迟不来先看 `mergeable`」的判别动作必须留在加载面（文本锚，删掉即红）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - workflow
+      - ledger
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "研发模式里写下的每一条 CI / 台账反复出错点都必须有承载体：① 文档里具名的 `FM-EN` 记号在台账 `ci_findings` 里**未登记**、或那条册外登记变陈旧；② 「CI 迟迟不来先跑 `gh pr view <N> --json mergeable`」这条判别动作从**加载面**（`migao-dev-flow` §2.2）里被删掉或改写 —— 两种形态都必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**坑 A（`FM-E24`）：单个 step 的 `run` 正文超长 ⇒ 整份 workflow 判 invalid，该腿静默永不跑**。实测阈值（11 个变体二分）= **≤13,303 字符有效 / ≥13,399 invalid**（GitHub 侧**未文档化**约束；与文件总大小、行数无关）。现象 = `push` 面只留一条 **0 个 job** 的 `push/failure` run（`name` 回落成文件路径、页面提示 workflow file issue），`pull_request` 面**根本不建 run**，而**本地 PyYAML 解析 + 仓库全部守卫全绿**（完全静默）。判据（PR #5931 已落码，本单只登记）= `tests/unit_ci_workflows/test_deploy_watchdog.py::test_run_body_stays_under_the_github_limit`（逐 workflow 逐 step 现取 `run` 正文长度，上限 `RUN_BODY_LIMIT = 13250` = 低于已知有效读数 13,303 留 53 字符差）+ 反空跑锚点 + 对照读数。**存量风险现取（2026-10-02，`origin/main` 3fa84ab89；复算 = `python3 -m pytest tests/unit_ci_workflows/test_deploy_watchdog.py -q -k run_body`）= 全仓 238 条 run 正文，最长 **13,125**（`.github/workflows/deploy-reconcile.yml` 的 step `Reconcile deploys`，距上限仅 **125 字符**）、次长 **10,975**（`.github/workflows/automerge.yml`）。订正一处转述：12,524 是 PR #5931 **合并前**的读数（#5931 自己把它抬到 13,125）⇒ 余量不是 ~2.3K。出口 = 把实现体外置成 `.github/scripts/*.sh` 再 `source`。"
+      - "**坑 B（`FM-E25`）：「CI 迟迟不来」先看 PR 是否与 main 冲突**。`mergeable=CONFLICTING` ⇒ GitHub **建不出 merge ref** ⇒ **`pull_request` 类工作流根本不触发**，PR 页面上只剩 `pull_request_target` 的辅助腿（本仓现取 4 条：`Auto Merge` / `Close Linked Issues on Merge` / `Stale 清理` / `verify-trigger`，它们不需要 merge ref ⇒ 照跑）= 看着像在排队，**实际一个 required job 都不会来**（无红、无 pending、无任何东西会报）。实测出处 = 2026-10-01 PR #5922（开成 draft 后 **3 次 push 都没有 `PR Check` run**；`gh pr view 5922 --json mergeable` 读 `CONFLICTING`/`DIRTY`；`./scripts/sync-main.sh --rebase` 解冲突后 push ⇒ `PR Check` / `AI Agent Service Unit Tests` / `Mini-App CI` / `Bmini-App CI` **立即全部排队**）。顺带登记：draft 起手 + native auto-merge 的组合下 **`ready` 不是 `pull_request` 工作流的触发面**（`ready_for_review` 只在 `.github/workflows/automerge.yml` 的 `types` 里）⇒ 解冲突后要 **push**（`synchronize`）才会触发。复核边界（照实登记）：#5922 现已 MERGED ⇒ `mergeable` 现读 `UNKNOWN`（GitHub 只对 open PR 计算）⇒ 那条读数不能事后复算，可复算的是机制（触发面）与口诀本身。"
+      - "**判据两条**：① `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::unregistered_ci_marks_problems`（**判据 23**，CI 面**缺失的那一个方向**：文档具名而台账未登记 ⇒ 红；册外的走**只许缩短**的 `CI_MARKS_WITHOUT_ENTRY_FROZEN`（现取 1 条 = MC-028 那句「缺号」点名的那个号，由台账 `not_solidified` 的 `NS-1` 承接；冻结表陈旧同样红）② `::conflict_diagnosis_problems`（**判据 24**，**文本锚**：§2.2 的加载面必须逐字留着 `gh pr view` / `--json mergeable` / `CONFLICTING` / `FM-E25` —— 删掉即红）。两条各带注入式红证 + 对照读数（已登记与册外的记号都不红 · 只加无关注释不红）+ fail-closed（取不到记号 / 取不到节 ⇒ 红）。"
+      - "**判据 24 为什么只是文本锚（照实登记边界）**：GitHub 侧的 merge-ref 可建性**不是仓内内容** ⇒ 没有可复算的机械判据（同 `FM-E15` 的 `CASE_ID_ALLOCATION_BOUNDARY` 形态：删掉即红）。它**只**证明「这条判别动作还在 agent 每次都看得到的那一面」，**不证明** GitHub 的行为。本包的修前红 = 两条判据先写出来、文档一行未加 ⇒ 判据 7 报 `FM-E24`/`FM-E25` 未具名，判据 23 报台账里的号在文档里找不到（具名读数见 PR body）。"
+    skip_reason: "[backend-contract] CI / 研发模式的静态结构判据（零 LLM、秒级、只读仓内文件 + 真 workflow YAML）由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的判据 23/24 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-02 新增（用户 2026-10-02 逐字裁定「写」：把两条**实测到的 CI 踩坑**写进研发模式）。取号 **MC-056**：`python3 scripts/next_case_id.py MC` 给的是**历史空档 MC-049**，经核对 —— 该号确实写在**已 CLOSED 的 PR #5818 分支** `ci/5814-migrate-pr-legs` 的 `.github/cases/misc.yml` 里（且该远端分支**仍然存在**、可取回）⇒ 沿用 MC-055 的「让号」先例，按**当前最大号 +1** 取 MC-056（main 现取 001-048、050-055；此刻 0 个 open PR）。同批：台账 `FM-E24`/`FM-E25` + CI-CD 两行 + 判据 23/24 + 技能 §2.2 判别动作 + §19 索引行 + 技能 1.100.0。"
+    traces:
+      ci:
+        - pr-check.yml
+      tests:
+        - tests/unit_ci_workflows/test_dev_mode_failure_modes.py
       verifies: []

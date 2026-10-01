@@ -889,6 +889,44 @@
         "#5757",
         "#5761"
       ]
+    },
+    {
+      "id": "FM-E24",
+      "state": "guarded",
+      "symptom": "**单个 step 的 `run` 正文超长 ⇒ GitHub 把*整份* workflow 文件判 invalid ⇒ 该腿静默永不跑**（GitHub 侧**未文档化**约束）：`push` 面每次只留一条 **0 个 job** 的 `push/failure` run（`name` 回落成文件路径、页面提示 workflow file issue），而 `pull_request` 面**根本不建 run**；**本地 PyYAML 解析 + 仓库全部守卫全绿** = 完全静默。实测阈值（11 个变体二分，与文件总大小、行数**无关**）：**≤13,303 字符有效 / ≥13,399 invalid**。存量风险现取（2026-10-02，`origin/main` 3fa84ab89）：全仓 238 条 run 正文，最长 = `.github/workflows/deploy-reconcile.yml` 的 step `Reconcile deploys` **13,125**（距上限仅 **125 字符**），次长 = `.github/workflows/automerge.yml` 的 `Classify bot PR … and arm on` **10,975** ⇒ 再各加一点就静默停摆。🔴 **订正一处转述**：`deploy-reconcile.yml` 的 12,524 是 PR #5931 **合并前**的读数（#5931 自己把它抬到 13,125）⇒ 余量不是 ~2.3K 而是 **125 字符**。出处 = issue #5929 / PR #5931（值守面首版正文 13,820 越线 ⇒ 该腿不跑；修正后 13,125）。",
+      "guards": "判据 = `tests/unit_ci_workflows/test_deploy_watchdog.py::test_run_body_stays_under_the_github_limit`（**逐 workflow 逐 step 现取** `run` 正文长度，上限 `RUN_BODY_LIMIT = 13250` = 低于已知有效读数 13,303 留 53 字符差；另有反空跑锚点「取到 >30 条」与对照读数「最长 >4000」，防判据扫错对象）。**复算**：`python3 -m pytest tests/unit_ci_workflows/test_deploy_watchdog.py -q -k run_body`。**出口（可行动）**：真要往那条正文里加东西 ⇒ **先把实现体外置**（`.github/scripts/*.sh` 再 `source`），**不要**靠「再加一点点应该没事」。⚠️ 判据只在**本仓**的 workflow 上成立：别的仓库没有这条判据 ⇒ 见 CI-CD 该行的覆盖面登记。",
+      "criteria": [
+        "tests/unit_ci_workflows/test_deploy_watchdog.py::test_run_body_stays_under_the_github_limit"
+      ],
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E24",
+        "tests/unit_ci_workflows/test_deploy_watchdog.py::RUN_BODY_LIMIT",
+        ".github/workflows/deploy-reconcile.yml::Reconcile deploys"
+      ],
+      "same_family": "`FM-E17`（触发面失效 ⇒ 该腿静默不跑）· `FM-E20`（判据没错，错在它读的那份东西已过期）",
+      "refs": [
+        "#5929",
+        "#5931"
+      ]
+    },
+    {
+      "id": "FM-E25",
+      "state": "guarded",
+      "symptom": "**「CI 迟迟不来」被读成「在排队」**：PR 与 main `mergeable=CONFLICTING` 时 GitHub **建不出 merge ref** ⇒ **`pull_request` 类工作流根本不触发**，PR 页面上只剩 `pull_request_target` 的辅助腿（**本仓现取 4 条**：`Auto Merge` / `Close Linked Issues on Merge` / `Stale 清理` / `verify-trigger` —— 它们**不需要 merge ref** 所以照跑）⇒ 看着像在排队，**实际一个 required job 都不会来**（无红、无 pending、没有任何东西会报）。实测出处 = 2026-10-01 PR #5922：开成 draft 后 **3 次 push 都没有 `PR Check` run**；`gh pr view 5922 --json mergeable` 显示 `CONFLICTING`/`DIRTY`；用 `./scripts/sync-main.sh --rebase` 解冲突后 push ⇒ `PR Check` / `AI Agent Service Unit Tests` / `Mini-App CI` / `Bmini-App CI` **立即全部排队**。🔴 **本次复核边界（照实登记）**：#5922 现已 MERGED ⇒ `mergeable` 现读 **`UNKNOWN`**（GitHub 只对 open PR 计算）⇒ **那条读数不能事后复算**；可复算的是**机制**（触发面）与**口诀**本身。**顺带登记**：draft 起手 + native auto-merge 的组合下，**`ready` 不是 `pull_request` 工作流的触发面**（`ready_for_review` 只在 `.github/workflows/automerge.yml` 的 `types` 里）⇒ 解冲突后必须 **push**（`synchronize`）才会触发。",
+      "guards": "**判据 = 加载面文本锚（删掉即红）**：`tests/unit_ci_workflows/test_dev_mode_failure_modes.py::conflict_diagnosis_problems` + `::TestConflictDiagnosisAnchor`（在 `migao-dev-flow` §2.2 那一节里逐字要求 `gh pr view` / `--json mergeable` / `CONFLICTING` / `FM-E25` 四个锚；配两条注入红证（删那一行 / 整节标题被改）+ 对照读数（只加一条注释 ⇒ 不红）+ fail-closed（取不到节 ⇒ 红））。**判别动作（一次就能做、可复制）**：`gh pr view <N> --json mergeable` —— 读 `CONFLICTING` ⇒ **先解冲突再 push**（`./scripts/sync-main.sh --rebase`），不要等 CI。🔴 **射程（如实登记，§19.1）**：它证明的是「这条判别动作还在 **agent 每次都看得到的那一面**」，**不证明** GitHub 侧的 merge-ref 行为（那不是仓内内容 ⇒ 无机械判据可加；同 `FM-E15` 的 `CASE_ID_ALLOCATION_BOUNDARY` 形态）。",
+      "criteria": [
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::conflict_diagnosis_problems",
+        "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::TestConflictDiagnosisAnchor"
+      ],
+      "evidence": [
+        "docs/wiki/CI-CD.md::FM-E25",
+        ".agent-presets/migao/skills/migao-dev-flow/SKILL.md::### 2.2 红线（踩过的高频坑，禁止违反）"
+      ],
+      "same_family": "`FM-E17`（触发面失效 ⇒ 静默不跑）· `FM-E2`（静默搁浅）· `FM-E15`（文本锚删掉即红）",
+      "refs": [
+        "#5922",
+        "#5707"
+      ]
     }
   ],
   "relay_entries": [
