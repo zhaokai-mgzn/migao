@@ -228,13 +228,21 @@ def test_missing_workspace_exits_3_with_candidates(tmp_path: Path, capsys) -> No
 
 
 def test_unreadable_file_is_reported_not_silently_skipped(tmp_path: Path, capsys) -> None:
-    """zstd 帧但无解压器可用的形态：显式原因，不进「已扫描」，更不静默跳过。"""
+    """读不出来的会话文件必须**具名计数上报**；唯一文件读不出来 ⇒ 不可判定（不是「0 消耗」）。
+
+    ⚠️ 断言只咬**环境无关**的三件事（退出码 / 上报前缀 / 文件具名）——
+    失败**原因**随环境而变：CI 无 `zstandard` 也无 `zstd`（「既无模块也无 CLI」），本机则是
+    「解压得到空内容」（损坏帧）。这条教训是实测来的：本判据最初断言了后者 ⇒ **本地绿、CI 红**
+    （§23 的「CI 才是权威」，本 PR 现场复现）。原因无关的那一半由下面 skipif 的那条承担。
+    """
     root = tmp_path / "sessions"
     target = _write(root, "/tmp/fake", [_step(1_000_000, i=1, c=1, o=1)])
-    target.write_bytes(mod.ZSTD_MAGIC + b"\x00" * 32)     # 伪造 zstd 帧 ⇒ 解压必失败
-    code, _, err = _run(capsys, root, "/tmp/fake")
-    assert code == mod.EXIT_UNDECIDABLE                   # 唯一文件读不出来 ⇒ 不可判定，不是「0 消耗」
-    assert "解压得到空内容" in err                          # 损坏帧 ⇒ 有具名原因（stream_reader 不抛错，只回空串）
+    target.write_bytes(mod.ZSTD_MAGIC + b"\x00" * 32)     # 伪造 zstd 帧 ⇒ 一定读不出来
+    code, out, err = _run(capsys, root, "/tmp/fake")
+    assert code == mod.EXIT_UNDECIDABLE                   # 唯一文件读不出来 ⇒ 不可判定
+    assert "读不出来（已计入 errors，未静默丢弃）" in err     # 计数上报前缀（两条失败路径都走它）
+    assert target.name in err                             # 具名：哪一份文件
+    assert "会话 token 账" not in out                      # 不得退化成一份「正常报告」
 
 
 # ── 判据 8：报告型语义 + 只读 ───────────────────────────────────────────────
@@ -344,6 +352,25 @@ def test_multiframe_log_is_not_truncated_to_first_frame(tmp_path: Path, capsys) 
     assert code == mod.EXIT_OK
     assert "模型往返（步）      2" in out
     assert "计费 token 合计     20,030" in out
+
+
+@pytest.mark.skipif(
+    not _zstd_available(),
+    reason="无 zstandard / zstd ⇒ 「损坏帧」这条失败路径在本环境**不可达**（故意 skip，不是通过）",
+)
+def test_truncated_frame_is_not_silently_read_as_empty(tmp_path: Path, capsys) -> None:
+    """损坏 / 截断的帧：`stream_reader` **不抛错、只回空串** ⇒ 必须显式报「解压得到空内容」。
+
+    这是本 PR 的**第二条红证**（第一条见上：多帧截断）。红证：把 `read_session_text` 里的
+    空内容检查删掉 ⇒ 空串被当成「扫过一份、解析出 0 步」而**没有任何具名原因** ⇒ 本判据红。
+    """
+    root = tmp_path / "sessions"
+    target = _write(root, "/tmp/fake", [_step(1_000_000, i=1, c=1, o=1)])
+    target.write_bytes(mod.ZSTD_MAGIC + b"\x00" * 32)
+    code, _, err = _run(capsys, root, "/tmp/fake")
+    assert code == mod.EXIT_UNDECIDABLE
+    assert "解压得到空内容" in err
+    assert target.name in err
 
 
 @pytest.mark.parametrize("script", ["scripts/token_ledger.py", "scripts/roundtrip_report.py"])
