@@ -673,6 +673,10 @@ async function submitAndGetItemInfo(): Promise<{
   fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), {
     target: { value: '杭州市' },
   })
+  // 物流两项（issue #5840 起**必填**）：本 helper 代表「一份填完整的表单」—— 补上它们，
+  // 否则提交会被新闸门拦下（那是闸门在起作用，不是这些用例坏了）。
+  fireEvent.change(screen.getByTestId('order-logistics-type'), { target: { value: 'express' } })
+  fireEvent.change(screen.getByTestId('order-logistics-company'), { target: { value: '顺丰' } })
   // 加工费计价闸门（#4450）：未就绪时提交会被拦 ⇒ 先等计价落地（真实商家也是看到金额才提交）
   await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
   fireEvent.click(screen.getByText('提交订单'))
@@ -1319,6 +1323,10 @@ describe('#4976 包 2b：判定移到服务端', () => {
       fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), {
         target: { value: '杭州市' },
       })
+      // 物流两项（issue #5840 起**必填**）：本 helper 代表「一份填完整的表单」—— 补上它们，
+      // 否则提交会被新闸门拦下（那是闸门在起作用，不是这些用例坏了）。
+      fireEvent.change(screen.getByTestId('order-logistics-type'), { target: { value: 'express' } })
+      fireEvent.change(screen.getByTestId('order-logistics-company'), { target: { value: '顺丰' } })
       await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
       fireEvent.click(screen.getByText('提交订单'))
       // 注入：去掉闸门 ⇒ 会发出创建请求（组合键少一项 ⇒ 取价错）⇒ 红

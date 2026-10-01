@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin, Zap } from 'lucide-react'
@@ -1721,6 +1721,67 @@ export default function NewOrderPage() {
 
   // 表单错误
   const [errors, setErrors] = useState<Record<string, string>>({})
+  /**
+   * **「哪儿缺了」的定向入口**（issue #5840）。
+   *
+   * 为什么需要它：本页有 5 类折叠区（商品组整卡 / 组内两步手风琴 / 推导细节 / 物流 / 费用明细），
+   * 而提交失败**只弹一句 toast** ⇒ 商家在折叠态下根本找不到是哪儿缺（用户 2026-10-01 点名的那半）。
+   * 它携带出错键 + 一个**每次定位都自增**的 `tick`（只看 key 的话，同一处连按两次第二次不触发）。
+   */
+  const [errorFocus, setErrorFocus] = useState<{ key: string; tick: number }>({ key: '', tick: 0 })
+  /** 「常用物流」折叠区：两个物流字段出错的项在里边 ⇒ 提交失败时**自动展开** */
+  const logisticsRef = useRef<HTMLDetailsElement>(null)
+
+  /**
+   * 报错项的**展示顺序**（issue #5840）—— 按商家在页面上的动线排，不按验证时的插键顺序：
+   * 商品明细 → 收货信息 → 物流 → 加工费。汇总条与「先跳到哪一条」共用这一份口径。
+   */
+  const errorKeyRank = (key: string): number => {
+    const order: Array<[string, boolean]> = [
+      ['line_', true],
+      ['customer', true],
+      ['logistics', true],
+      ['processingFee', false],
+      ['feePreview', false],
+    ]
+    const hit = order.findIndex(([prefix, isPrefix]) =>
+      isPrefix ? key.startsWith(prefix) : key === prefix
+    )
+    return hit === -1 ? order.length : hit
+  }
+  const sortErrorKeys = (keys: string[]): string[] =>
+    keys
+      .map((key, idx) => ({ key, idx }))
+      .sort((a, b) => errorKeyRank(a.key) - errorKeyRank(b.key) || a.idx - b.idx)
+      .map(({ key }) => key)
+
+  /**
+   * 提交失败后要摆到台面上的清单（issue #5840）：**吸底条常显**，逐条可点 ⇒ 点了就到现场。
+   */
+  const errorEntries = useMemo(
+    () =>
+      sortErrorKeys(Object.keys(errors)).map((key) => ({ key, message: errors[key] })),
+    // `sortErrorKeys` / `errorKeyRank` 是纯函数（不进依赖）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [errors]
+  )
+
+  /**
+   * **把某个报错项带到现场**（issue #5840）：展开它所在的折叠区 + 滚动 + 聚焦。
+   * 行内错误（`line_<id>_*`）交给 `ProductGroupBlock` 自己按同一个 `tick` 展开
+   * —— 只有它持有整卡 `open` 与该步 `openStep`。
+   */
+  const focusError = useCallback((key: string) => {
+    setErrorFocus((prev) => ({ key, tick: prev.tick + 1 }))
+    if (key === 'logisticsType' || key === 'logisticsCompany') {
+      if (logisticsRef.current) logisticsRef.current.open = true
+      logisticsRef.current?.scrollIntoView?.({ block: 'center' })
+      return
+    }
+    if (key === 'processingFee' || key === 'feePreview') {
+      setFeeDetailOpen(true)
+    }
+  }, [])
 
   // ===== 加工项目录（店铺级，独立于商品）=====
   // issue #4371：加工项与商品解耦 —— 目录只加载一次，商品选择不再过滤/触发加工项请求
@@ -2758,7 +2819,7 @@ export default function NewOrderPage() {
   })()
 
   // ===== 校验 =====
-  const validate = (): boolean => {
+  const validate = (): Record<string, string> => {
     const e: Record<string, string> = {}
 
     if (lineItems.length === 0) {
@@ -2774,6 +2835,23 @@ export default function NewOrderPage() {
       } else if (!feePreview || feePreviewPending) {
         e.feePreview = '加工费计价中，请稍候再提交'
       }
+    }
+
+    // **加工费组合未定价闸门**（issue #5840，用户 2026-10-01 报障）：
+    // 「未输入加工费组合价格但是提交成功了，缺少了必要的校验」—— 此前未定价只有一条**告警**
+    // （`unpriced-fee-alert`），文案却写着「请为下列加工项组合定价后再下单」⇒ 承诺了一道不存在的闸门。
+    // 口径（用户同批裁定）：
+    //   · **组合键非空**（商家确实选了加工项，只是这一档没配价）⇒ **阻断** —— 钱算不出来，
+    //     不允许落一张「加工费按 0 计」的错单；
+    //   · **组合键为空**（根本没勾加工项 = 缺选配信息）⇒ **不阻断**，只提示
+    //     （与「工艺缺失 ⇒ 允许提交，只显著提示」同一条裁定，见 `UNPRICED_NO_COMPOSITION`）。
+    const unpricedWithKey = unpricedGroups.filter((g) => g.composition.trim() !== '')
+    if (unpricedWithKey.length > 0) {
+      const rows = unpricedWithKey.reduce((n, g) => n + g.count, 0)
+      e.processingFee =
+        `有 ${rows} 行加工费未定价（组合那半按 0 计）⇒ 请先定价再下单：` +
+        unpricedWithKey.map((g) => g.label).join('、') +
+        '。可就地改单价，或去「加工费组合」定价'
     }
 
     lineItems.forEach((line, idx) => {
@@ -2824,15 +2902,31 @@ export default function NewOrderPage() {
     if (!customerPhone.trim()) e.customerPhone = '请输入手机号'
     else if (!/^1[3-9]\d{9}$/.test(customerPhone.trim())) e.customerPhone = '手机号格式不正确'
     if (!customerAddress.trim()) e.customerAddress = '请输入收货地址'
+    // **物流两项必填**（issue #5840；用户 2026-10-01 逐字：「物流信息改成客户信息，不能只校验物流，
+    // 客户信息都是必填」+ 就本题选定「两个物流字段也必填」）。
+    // 🔴 这是对 issue #4872 既有口径（「未传 ⇒ 不写，不猜」）的**有意覆盖**：字段语义仍是
+    // 「未指定 ≠ 快递」（缺省值不变、不编造），改的是**准入** —— 建单必须显式给出这两项。
+    if (!logisticsType) e.logisticsType = '请选择常用物流/快递'
+    if (!logisticsCompany.trim()) e.logisticsCompany = '请填写常用物流公司'
 
     setErrors(e)
-    return Object.keys(e).length === 0
+    return e
   }
 
   // ===== 提交 =====
   const handleSubmit = async () => {
-    if (!validate()) {
+    const found = validate()
+    if (Object.keys(found).length > 0) {
       toast.error('请完善订单信息')
+      // 「哪儿缺了」必须看得见（issue #5840）：① 出错的折叠区**自动展开**
+      // （费用明细 / 物流 details 在这里；商品组卡与向导步骤由各自的 effect 按同一个 tick 展开）
+      // ② 吸底条出现**逐条可点**的汇总（见 `submit-error-summary`）
+      if (found.processingFee || found.feePreview) setFeeDetailOpen(true)
+      if (found.logisticsType || found.logisticsCompany) {
+        if (logisticsRef.current) logisticsRef.current.open = true
+      }
+      const firstKey = sortErrorKeys(Object.keys(found))[0] ?? ''
+      setErrorFocus((prev) => ({ key: firstKey, tick: prev.tick + 1 }))
       return
     }
 
@@ -2989,6 +3083,7 @@ export default function NewOrderPage() {
                     group={group}
                     canRemove={productGroups.length > 1}
                     errors={errors}
+                    errorFocus={errorFocus}
                     onPickProduct={() => openProductModalFor(group.lines[0].id)}
                     onSelectColor={(colorId) => handleSelectColorForGroup(group.id, colorId)}
                     onSelectSku={(sku) => handleSelectSkuForGroup(group.id, sku)}
@@ -3008,6 +3103,7 @@ export default function NewOrderPage() {
                         key={line.id}
                         line={line}
                         errors={errors}
+                        errorFocus={errorFocus}
                         processingLoading={processingCatalogLoading}
                         onChangeQty={(q) => handleLineQtyChange(line, q)}
                         onRestoreFormula={() => restoreFormulaMeters(line)}
@@ -3156,10 +3252,11 @@ export default function NewOrderPage() {
                   ⚠️ 原先那条**只读**提示 `picked-logistics-hint` 已删除（不留两份口径）。 */}
               <details
                 data-testid="logistics-section"
+                ref={logisticsRef}
                 className="mt-4 rounded border border-neutral-200 bg-neutral-50/40 px-3 py-2"
               >
                 <summary className="cursor-pointer text-xs text-neutral-500 hover:text-neutral-700">
-                  常用物流（可选 · 选客户时自动带出）
+                  常用物流（必填 · 选客户时自动带出）
                 </summary>
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -3184,6 +3281,9 @@ export default function NewOrderPage() {
                       </option>
                     ))}
                   </select>
+                  {errors.logisticsType && (
+                    <p className="mt-1 text-sm text-red-600">{errors.logisticsType}</p>
+                  )}
                 </div>
                 <div>
                   <label
@@ -3207,6 +3307,9 @@ export default function NewOrderPage() {
                       <option key={c} value={c} />
                     ))}
                   </datalist>
+                  {errors.logisticsCompany && (
+                    <p className="mt-1 text-sm text-red-600">{errors.logisticsCompany}</p>
+                  )}
                 </div>
                 </div>
               </details>
@@ -3333,6 +3436,33 @@ export default function NewOrderPage() {
                 </Button>
               </div>
             </div>
+            {/* **「哪儿缺了」汇总**（issue #5840）：常显在吸底条上（不在任何折叠区里 ——
+                否则又变成「只有点开才看得见」）。逐条可点 ⇒ 自动展开对应折叠区并滚过去。 */}
+            {errorEntries.length > 0 && (
+              <div
+                data-testid="submit-error-summary"
+                className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2"
+              >
+                <p className="text-xs font-medium text-red-700">
+                  还差 {errorEntries.length} 项（点一条可直接定位）：
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {errorEntries.map(({ key, message }) => (
+                    <li key={key}>
+                      <button
+                        type="button"
+                        data-testid="submit-error-item"
+                        data-error-key={key}
+                        onClick={() => focusError(key)}
+                        className="text-left text-xs text-red-700 underline underline-offset-2 hover:text-red-900"
+                      >
+                        {message}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {feeDetailOpen && (
               <div
                 data-testid="fee-detail-panel"
@@ -3790,6 +3920,8 @@ export default function NewOrderPage() {
 interface LineItemBlockProps {
   line: OrderLineItem
   errors: Record<string, string>
+  /** **「哪儿缺了」的定向信号**（issue #5840）：见 {@link ProductGroupBlockProps.errorFocus} */
+  errorFocus: { key: string; tick: number }
   processingLoading: boolean
   onChangeQty: (q: number) => void
   /** 「恢复按公式计算」（issue #4434）：切回算料预填（手改后不会被静默改回，只能显式恢复） */
@@ -3932,6 +4064,11 @@ interface ProductGroupBlockProps {
   group: ProductGroup
   canRemove: boolean
   errors: Record<string, string>
+  /**
+   * **「哪儿缺了」的定向信号**（issue #5840）：`tick` 每次提交失败 / 点汇总条目都自增
+   * ⇒ 本组件据此把**整卡与出错的那一步自动展开**（`key` = 要定位到哪一个报错项）。
+   */
+  errorFocus: { key: string; tick: number }
   /** 选择商品（组级）：选完写回**组内所有部位行** */
   onPickProduct: () => void
   /** 颜色（组级）：同一块布的颜色，组内同步 */
@@ -4127,6 +4264,7 @@ function ProductGroupBlock({
   group,
   canRemove,
   errors,
+  errorFocus,
   onPickProduct,
   onSelectColor,
   onSelectSku,
@@ -4161,6 +4299,33 @@ function ProductGroupBlock({
   const errWidth = errors[`line_${first.id}_width`]
   const errHeight = errors[`line_${first.id}_height`]
   const sizeAutoBadges = sizeAutoBadgesOf(first)
+
+  /**
+   * 本组的**错误计数**（issue #5840）—— 出现在组头与①步骤标题上 ⇒ **整卡或该步收起时也看得见**
+   * 「这儿缺 N 项」，不必先展开再逐格找。计数口径 = 该组各行在 `errors` 里的键。
+   */
+  const groupErrorCount = group.lines.reduce(
+    (n, l) => n + Object.keys(errors).filter((k) => k.startsWith(`line_${l.id}_`)).length,
+    0
+  )
+  const containerRef = useRef<HTMLDivElement>(null)
+  /** 本次定位是不是冲本组来的 —— 只有它滚屏，避免一次提交让多张卡同时滚 */
+  const ownsFocusKey = group.lines.some((l) => errorFocus.key.startsWith(`line_${l.id}_`))
+  /**
+   * **提交失败 / 点了汇总里某一条 ⇒ 整卡自动展开**（issue #5840）。
+   *
+   * 不展开的后果（本单要消灭的形态）：整卡收起时，卡里的宽高 / 数量 / 单价 / 自动识别报错
+   * **一个字都看不见**，页面上只弹一句 toast ⇒ 商家只能反复点提交。
+   * （步骤①自身的展开在 `LineItemBlock` 里 —— 只有它持有 `openStep`。）
+   *
+   * ⚠️ 依赖 `tick` 而不是 `key`：同一处连按两次也要重新展开（只跟 key 的话第二次不触发）。
+   */
+  useEffect(() => {
+    if (errorFocus.tick === 0 || groupErrorCount === 0) return
+    setOpen(true)
+    if (ownsFocusKey) containerRef.current?.scrollIntoView?.({ block: 'center' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [errorFocus.tick])
 
   /**
    * **门幅 / 规格**节点（issue #4877 裁定 C 未变：多门幅时按门幅规则自动选最省的 ⇒ 商家常态**零点击**）。
@@ -4268,6 +4433,10 @@ function ProductGroupBlock({
   const collapsedSummary = [
     first.width && first.height ? `${first.width} × ${first.height} m` : null,
     first.quantity ? `${first.quantity} 米` : null,
+    // **用料来源在收起态也必须看得见**（issue #5840；用户 2026-10-01：「推算的用料米数和实际填入的
+    // 不匹配上，都要提示用户」）—— 手填值意味着「数量 ≠ 系统推导值」，而它既是商品金额的分母，
+    // 又是加工费米数。展开态里已有三处告知，这里补的正是**收起态**那一半。
+    first.metersSource === LINE_METERS_SOURCE_MANUAL ? '用料手填' : null,
   ]
     .filter(Boolean)
     .join(' · ')
@@ -4299,7 +4468,7 @@ function ProductGroupBlock({
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white">
+    <div ref={containerRef} className="rounded-xl border border-neutral-200 bg-white">
       {/* 组头 = **商品基础属性**（一组一份）+ **整卡折叠开关**（issue #4679）：
           点组头整行 ⇒ 收起/展开卡片体。「删除」是开关的**兄弟节点**（不在 `<button>` 内）
           ⇒ 点删除只删、不被折叠吞掉；收起后它仍可用（不随卡片体卸载）。 */}
@@ -4326,6 +4495,16 @@ function ProductGroupBlock({
           <span className="text-xs text-neutral-400 shrink-0">
             {group.saleForm === SALE_FORM_FABRIC ? '布料' : group.curtainBody}
           </span>
+          {/* **整卡收起时也看得见「这儿缺 N 项」**（issue #5840）——
+              否则商家只知道"提交失败"，不知道是哪张卡 */}
+          {groupErrorCount > 0 && (
+            <span
+              data-testid="group-error-badge"
+              className="shrink-0 rounded bg-red-50 px-1.5 text-xs font-medium text-red-600"
+            >
+              缺 {groupErrorCount} 项
+            </span>
+          )}
         </CollapsibleHeader>
         {canRemove && (
           <button
@@ -4600,6 +4779,7 @@ function ProductGroupBlock({
 function LineItemBlock({
   line,
   errors,
+  errorFocus,
   processingLoading,
   onChangeQty,
   onRestoreFormula,
@@ -4624,6 +4804,21 @@ function LineItemBlock({
    * —— 原「③ 其他」已并入 ② 的第二块「特殊选项」，见 `OrderExtraOptions` 的渲染点）。
    */
   const [openStep, setOpenStep] = useState(1)
+  /**
+   * 本行的**错误计数**（issue #5840）—— 挂在①步骤标题的 `badges` 上 ⇒ **该步收起时也看得见**
+   * 「这儿缺 N 项」。行级报错当前全部住在①（商品 / 颜色 / 规格 / 宽高 / 数量 / 单价 / 自动识别）。
+   */
+  const lineErrorCount = Object.keys(errors).filter((k) => k.startsWith(`line_${line.id}_`)).length
+  /**
+   * 提交失败 / 点了汇总里某一条 ⇒ **①自动展开**（issue #5840）。
+   * 手风琴一次只开一步：若商家正开在②，①里的报错原本是看不见的。
+   * ⚠️ 依赖 `tick`（不是 key）：同一处连按两次也要重新展开。
+   */
+  useEffect(() => {
+    if (errorFocus.tick === 0 || lineErrorCount === 0) return
+    setOpenStep(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [errorFocus.tick])
   // ⚠️ 2026-09-29（用户裁定「移除这种设计，当前编辑态就是允许用户直接更改的」）：
   // 「用料米数 / 单价」的**只读展示 + 点「改」**编辑态**已整体删除** —— 两个框常态就是可编辑输入框
   // （`metersEditOpen` / `priceEditOpen` 连同两个按钮一起退场）。
@@ -5255,6 +5450,18 @@ function LineItemBlock({
             <WizardStep
               step={1}
               title="用料与规格"
+              badges={
+                // **该步收起时也看得见**（issue #5840）：手风琴一次只开一步，开在②时①里的
+                // 宽高 / 数量 / 单价报错原本一个字都看不见。
+                lineErrorCount > 0 ? (
+                  <span
+                    data-testid="wizard-step-error-badge"
+                    className="shrink-0 rounded bg-red-50 px-1.5 text-xs font-medium text-red-600"
+                  >
+                    缺 {lineErrorCount} 项
+                  </span>
+                ) : undefined
+              }
               summary={`${summarySize} · ${line.quantity} 米 · ${formatAmount(Number(line.unitPrice) || 0)}/米 · ${summarySpec || '按行业默认'}`}
               aside={derivationAside}
               {...stepProps(1)}

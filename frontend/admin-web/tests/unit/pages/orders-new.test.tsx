@@ -380,6 +380,10 @@ describe('NewOrderPage', () => {
     fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
     fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), { target: { value: '13800138000' } })
     fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), { target: { value: '杭州市' } })
+    // 物流两项（issue #5840 起**必填**）：本 helper 代表「一份填完整的表单」—— 补上它们，
+    // 否则提交会被新闸门拦下（那是闸门在起作用，不是这些用例坏了）。
+    fireEvent.change(screen.getByTestId('order-logistics-type'), { target: { value: 'express' } })
+    fireEvent.change(screen.getByTestId('order-logistics-company'), { target: { value: '顺丰' } })
     // 加工费计价闸门（issue #4450）：**页面总额必须就是服务端将算出的总额**，未就绪时提交会被拦
     // ⇒ 提交前等计价落地（真实商家也是看到金额才提交）。判据本身在 orders-new-fee-preview.test.tsx。
     await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
@@ -2196,12 +2200,23 @@ describe('NewOrderPage', () => {
       expect(logisticsType()).toHaveValue('')
       expect(logisticsCompany()).toHaveValue('')
 
+      // 🔴 2026-10-01 改判（issue #5840）：物流两项**变成必填**（用户逐字裁定「两个物流字段也必填」）
+      // ⇒ 「不编造默认值」这半**照旧**（上面两行：客户档案没录就还是空的，不会自动填「快递」/「顺丰」），
+      // 但「缺值就不写在 payload 里」这半**不再成立** —— 缺值现在**提交不了**，页面会给闸门提示。
+      // 判定与展示都要验：先证「空着提交被拦」，再证「商家显式选了才落库、且逐字就是他选的」。
       await fillCustomerAndSubmit()
+      await waitFor(() => expect(screen.getByTestId('submit-error-summary')).toBeInTheDocument())
+      expect(mockCreateOrder).not.toHaveBeenCalled()
+      expect(screen.getByTestId('submit-error-summary').textContent).toContain('常用物流')
+
+      fireEvent.change(logisticsType(), { target: { value: 'express' } })
+      fireEvent.change(logisticsCompany(), { target: { value: '顺丰' } })
+      fireEvent.click(screen.getByText('提交订单'))
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
       const payload = mockCreateOrder.mock.calls[0][0]
-      // 「未指定」与「快递」是两个真值 ⇒ 缺值**不写**（不是写死 express）
-      expect(payload.logisticsType).toBeUndefined()
-      expect(payload.logisticsCompany).toBeUndefined()
+      // 落库值 = 商家**显式**选的那两个（不是系统替他编的默认值）
+      expect(payload.logisticsType).toBe('express')
+      expect(payload.logisticsCompany).toBe('顺丰')
     })
   })
 })

@@ -181,6 +181,10 @@ const submit = async () => {
   fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
   fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), { target: { value: '13800138000' } })
   fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), { target: { value: '杭州市' } })
+  // 物流两项（issue #5840 起**必填**）：本 helper 代表「一份填完整的表单」—— 补上它们，
+  // 否则提交会被新闸门拦下（那是闸门在起作用，不是这些用例坏了）。
+  fireEvent.change(screen.getByTestId('order-logistics-type'), { target: { value: 'express' } })
+  fireEvent.change(screen.getByTestId('order-logistics-company'), { target: { value: '顺丰' } })
   await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
   fireEvent.click(screen.getByText('提交订单'))
 }
