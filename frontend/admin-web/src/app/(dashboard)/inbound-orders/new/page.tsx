@@ -54,6 +54,22 @@ const SOURCE_OPTIONS: { value: 'purchase' | 'opening'; label: string }[] = [
 /** 明细行输入框：与 `Input` 同族（h-9 / rounded-lg / 同一 focus ring），只是窄一档放进表格 */
 const CELL_INPUT = 'h-9 px-2 text-sm'
 
+/**
+ * **本地当天** `YYYY-MM-DD`（`<input type="date">` 的取值口径，issue #5912）。
+ *
+ * ⚠️ 不得写成 `new Date().toISOString().slice(0, 10)`：那是 **UTC 日**，在 UTC+8 的每天
+ * 00:00~08:00（CST）会**倒退一天**（同族实证：issue #4783 / #4772；正确参照物 = 同仓
+ * `orders/page.tsx` 与 `finance/page.tsx` 的私有 `formatDate`）。
+ * 未抽公共函数的原因同 `products/page.tsx` 的 `formatLocalDate`：仓内没有本地日期工具，
+ * 且这几个页面的用途各不相同 —— 为一处使用抽公共模块属过度建设，故就地最小实现。
+ */
+function localToday(): string {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+
 export default function NewInboundOrderPage() {
   const router = useRouter()
 
@@ -67,7 +83,7 @@ export default function NewInboundOrderPage() {
     supplier: '',
     supplierDocNo: '',
     warehouse: '',
-    inboundDate: '',
+    inboundDate: localToday(), // 默认当天（后端在 `null` 时也取当天 —— 前端把同一语义**显式**摆给商家看）
     remark: '',
     source: 'purchase' as 'purchase' | 'opening',
   })
@@ -248,24 +264,40 @@ export default function NewInboundOrderPage() {
                 value={form.warehouse}
                 onChange={(e) => setForm({ ...form, warehouse: e.target.value })}
               />
-              {/* 奇数个字段的**最后一个满行**（家族先例：`/orders/new` 收货信息的「收货地址」）——
-                  issue #5871：改前第 3 行右半留空。
-                  ⚠️ **跨度只能加在包裹层**：`Input` 把 `className` 透传到 `<input>` 上，而栅格的
-                  子项是它外层那个 `w-full` div ⇒ 把 `md:col-span-2` 传给 `Input` 等于没加（不报错、也不生效）。 */}
-              <div className="md:col-span-2" data-testid="inbound-date-field">
+              {/* 入库日期：**标准尺寸**的原生 date 控件（issue #5912）—— 改前它跨 2 列（#5871 为了消掉
+                  末行右半的空白），于是输入框被栅格**拉伸到整行宽**，日历图标孤零零挂在最右侧。
+                  用户 2026-10-01 裁定以「控件标准尺寸」为准 ⇒ 解除跨列，宽度由控件自己给死。
+                  ⚠️ 宽度必须加在 `Input` 的 `className` 上（它把 className 透传到 `<input>`，同一次
+                  `cn()` 里 `w-full` 会被 twMerge 顶掉）；加在包裹层上**不生效**，那是栅格子项、不是输入框。
+                  ℹ️ 2 列 + 5 个字段 ⇒ 末行右半必然为空（计数事实）；空白现在挨着**本来就窄**的日期控件，
+                  读起来是正常收尾，而不是「缺一个字段」。 */}
+              <div data-testid="inbound-date-field">
                 <Input
                   label="入库日期"
                   type="date"
                   value={form.inboundDate}
                   onChange={(e) => setForm({ ...form, inboundDate: e.target.value })}
+                  className="w-44"
                 />
               </div>
             </div>
+            {/* 备注：**多行文本域**（issue #5912）—— 改前是单行 `Input`（备注天然是多行文本）。
+                类名与共享 `Input` 同族（同圆角 / 同 focus ring），并补 `htmlFor` + `id` 让 label
+                真关联到控件（`Input` 的 label 没有 htmlFor，是新写的这一处不必继承的缺口）。 */}
             <div className="mt-4">
-              <Input
-                label="备注"
+              <label
+                htmlFor="inbound-remark"
+                className="block text-sm font-medium text-neutral-700 mb-1.5"
+              >
+                备注
+              </label>
+              <textarea
+                id="inbound-remark"
+                rows={3}
                 value={form.remark}
                 onChange={(e) => setForm({ ...form, remark: e.target.value })}
+                placeholder="可填写收货注意、质检情况、随货单据等（选填）"
+                className="w-full px-3 py-2 rounded-lg border border-neutral-300 bg-white text-sm leading-relaxed resize-none placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
               />
             </div>
             <p className="mt-4 text-xs text-neutral-500 bg-neutral-50 border border-neutral-200 rounded-lg p-3 leading-relaxed">
