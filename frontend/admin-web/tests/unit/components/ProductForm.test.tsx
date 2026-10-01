@@ -296,7 +296,13 @@ describe('售卖方式与卷长：商品基础属性（PR-042 / PR-043）', () =
     expect(within(baseSection).getByTestId('pf-selling-methods')).toBeTruthy()
     expect(within(baseSection).getByTestId('pf-roll-length')).toBeTruthy()
     expect(within(baseSection).getByText('售卖方式')).toBeTruthy()
-    expect(within(baseSection).getByText('1 卷 = 多少米')).toBeTruthy()
+    // issue #5919：字段正名为**标称**口径（商品表单与商品详情页**同源**文案）。
+    // 改前此处是 '1 卷 = 多少米'（无「标称」、无副说明）⇒ 这两条断言即本单的红证方向。
+    expect(within(baseSection).getByText('1 卷 = 多少米（标称）')).toBeTruthy()
+    expect(
+      within(baseSection).getByTestId('roll-length-hint').textContent,
+      '副说明必须说清「实际卷长以入库单/订单行为准」',
+    ).toContain('实际卷长以入库单')
     // 售卖方式是多选（散剪 / 整卷），沿用既有标签
     expect(within(baseSection).getByText('散剪')).toBeTruthy()
     expect(within(baseSection).getByText('整卷')).toBeTruthy()

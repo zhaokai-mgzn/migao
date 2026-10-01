@@ -254,11 +254,15 @@ describe('ProductDetailPage', () => {
     })
   })
 
-  it('PR-043: 未配置卷长时显示「未配置」（不编数字）', async () => {
+  it('PR-043 / PR-044 判据 5: 卷长走**标称**口径（与商品表单同源）+ 副说明在详情页可见；未配置显示「未配置」', async () => {
     render(<ProductDetailPage />)
     await waitFor(() => {
-      expect(screen.getByText('1 卷 = 多少米')).toBeInTheDocument()
+      // issue #5919：改前这里是 '1 卷 = 多少米'（无「标称」、详情页也没有副说明）
+      expect(screen.getByText('1 卷 = 多少米（标称）')).toBeInTheDocument()
       expect(screen.getByText('未配置')).toBeInTheDocument()
+      const hint = screen.getByTestId('roll-length-hint').textContent || ''
+      expect(hint).toContain('实际卷长以入库单')
+      expect(hint).toContain('订单行为准')
     })
   })
 })

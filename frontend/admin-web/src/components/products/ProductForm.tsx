@@ -14,6 +14,7 @@ import CategoryDialog from './CategoryDialog'
 import { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
 import { InterpretedBadge } from '@/components/image-recognize/InterpretedBadge'
 import { categoryApi } from '@/lib/api'
+import { ROLL_LENGTH_FORM_NOTE, ROLL_LENGTH_HINT, ROLL_LENGTH_LABEL } from '@/lib/product-roll-length'
 import { validateProductForm, derivePrice } from '@/lib/product-utils'
 import { toChineseSpecKeys, SPEC_EN_TO_CN } from '@/lib/attribute-keys'
 import type {
@@ -50,6 +51,15 @@ interface ProductFormProps {
    * 同样**不参与提交**（不新增/不改任何载荷字段）。
    */
   interpretedFields?: string[]
+  /**
+   * 标题卡片**标题行右侧**的动作槽（issue #5918）—— 页面级动作（如「拍照 / 上传识别」）由调用方
+   * 注入，落点固定在标题卡片内、「重置」之前（识别在前）。
+   *
+   * 🔴 为什么不让页面自己渲染：改前正是页面把它渲染成一个**游离在卡片之外**的独立容器
+   * （页面底色上、`pt-4` 的一段空白里），而建单页的**同一个组件**在「商品信息」卡标题行里
+   * ⇒ 同一个入口两种版式。槽位把「落点」交给卡片决定，页面只负责内容与回调。
+   */
+  titleActions?: React.ReactNode
 }
 
 // 字段在 DOM 中的可滚动锚点 ID
@@ -127,6 +137,7 @@ export default function ProductForm({
   submitText,
   recognizedFields,
   interpretedFields,
+  titleActions,
 }: ProductFormProps) {
   const router = useRouter()
   const [submitting, setSubmitting] = useState<ProductStatus | null>(null)
@@ -468,18 +479,25 @@ export default function ProductForm({
   return (
     <div ref={formRef} className="max-w-6xl mx-auto pb-28">
       {/* ============ 顶部标题栏 ============ */}
-      <div className="flex items-center justify-between px-6 py-4 mb-4 bg-white border border-neutral-200 rounded-lg">
+      <div
+        data-testid="pf-title-card"
+        className="flex items-center justify-between px-6 py-4 mb-4 bg-white border border-neutral-200 rounded-lg"
+      >
         <h2 className="text-lg font-semibold text-neutral-900">
           {isEdit ? '编辑商品' : '新增商品'}
         </h2>
-        <button
-          type="button"
-          onClick={handleReset}
-          className="inline-flex items-center gap-1.5 px-3 h-8 text-sm text-neutral-600 hover:text-primary-600 hover:bg-neutral-50 rounded transition-colors"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          重置
-        </button>
+        {/* 标题行右侧 = 页面级动作：识别入口（由页面经 `titleActions` 注入，issue #5918）+ 重置 */}
+        <div data-testid="pf-title-actions" className="flex items-center gap-2">
+          {titleActions}
+          <button
+            type="button"
+            onClick={handleReset}
+            className="inline-flex items-center gap-1.5 px-3 h-8 text-sm text-neutral-600 hover:text-primary-600 hover:bg-neutral-50 rounded transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            重置
+          </button>
+        </div>
       </div>
 
       {/* #2908: 表单级校验失败汇总提示（提交校验不通过时醒目可见） */}
@@ -647,8 +665,8 @@ export default function ProductForm({
             </div>
           </FieldRow>
 
-          {/* 1 卷 = 多少米（商品货号级基础参数） */}
-          <FieldRow label="1 卷 = 多少米" alignTop>
+          {/* 卷长（商品货号级基础参数）：文案与商品详情页**同源**，见 lib/product-roll-length.ts */}
+          <FieldRow label={ROLL_LENGTH_LABEL} alignTop>
             <div id={ANCHORS.rollLengthM} data-testid="pf-roll-length">
               <div className="relative w-44">
                 {/* issue #5218 #4：旧形态 `type="number"` + `Number(e.target.value)` 往返 ⇒
@@ -664,9 +682,8 @@ export default function ProductForm({
                   米
                 </span>
               </div>
-              <p className="mt-1.5 text-xs text-neutral-500">
-                商品货号级的基础参数：1 卷布有多少米。留空表示未配置 ——
-                未配置时订单不会推算整卷发货（例如买 100 米、1 卷 60 米 ⇒ 1 整卷 + 散剪 40 米）
+              <p className="mt-1.5 text-xs text-neutral-500" data-testid="roll-length-hint">
+                {ROLL_LENGTH_HINT}。{ROLL_LENGTH_FORM_NOTE}
               </p>
               {errors.rollLengthM && (
                 <p className="text-sm text-red-600 mt-2">{errors.rollLengthM}</p>
@@ -946,7 +963,7 @@ function FieldRow({
   return (
     <div className={`flex gap-4 ${alignTop ? 'items-start' : 'items-center'}`}>
       <label
-        className={`shrink-0 w-28 text-sm text-neutral-700 text-right ${
+        className={`shrink-0 w-28 text-sm text-neutral-700 text-right text-balance ${
           alignTop ? 'pt-2' : ''
         }`}
       >
