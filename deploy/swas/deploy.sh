@@ -21,7 +21,8 @@
 #
 # ⚠️ **构建在 flock 之内**（本脚本第 1 段就拿了锁并持有到 EXIT）⇒ 旧文档 §二.2 记的
 #    「main 合并同刻触发 3 个 deploy ⇒ 单机并发 docker build ⇒ 容器互踩」被**同一把锁**串行化：
-#    后到的 run 要么等到锁、要么等 600s 超时退出（与既有部署等待语义**一致**，未新增第二把锁）。
+#    后到的 run 要么等到锁、要么等 `LOCK_WAIT_SECONDS`（1800s）超时退出（与既有部署等待语义**一致**，
+#    未新增第二把锁；等待上限的取值依据见下方 `LOCK_WAIT_SECONDS` 的注释，issue #5896）。
 # ⚠️ 不侵入既有路径：`BUILD_SERVICE` 为空（默认）⇒ 本段**完全不执行**，行为与改动前逐字相同。
 # ══════════════════════════════════════════════════════════════════════════════
 #
@@ -33,12 +34,29 @@
 set -euo pipefail
 
 LOCK=/tmp/migao-deploy.lock
+# LOCK_WAIT_SECONDS：等待**兄弟部署**结束的上界（秒）—— 把三条部署腿串行化的是**同一把锁**，
+# 而 CI 侧的 `concurrency` 组是按**服务**分的（`deploy-frontend` / `deploy-admin-api` /
+# `deploy-ai-agent-service`）⇒ **跨服务不互斥**：同一次 push 同时改 admin-api 与 admin-web 时，
+# 两条腿**同刻起跑**抢这把锁（issue #5896，2026-10-01 云测试环境一直停在旧版本的真因）。
+# 取值依据（**真机实测**，非推断）：先到的那条腿跑了 **~28 分钟**（07:32:48Z → 08:00:22Z）
+# ⇒ 旧的 600s 等待上限对后到者**必然不够**（当天两次如实复现 `deploy-frontend` failure，读数是
+# 「等待部署锁超时」，不是构建/健康检查失败）。
+# ⇒ 1800s（30min）= 覆盖实测最慢单次部署 + 余量。同期抬高的三处预算必须一致：
+#   `deploy/scripts/swas-deploy-ci.sh` 的 `C_BUILD_DEPLOY_TIMEOUT_SECONDS`（= 锁等待 1800
+#   + 冷构**上界** 2400 + 余量 300 = 4500）与三条 workflow 的 job `timeout-minutes`（90min > 该预算）。
+# 判据 = tests/unit_ci_workflows/test_swas_deploy_ci_hardening.py（等待下限 / 等得起 / 文案不误诊）。
+LOCK_WAIT_SECONDS=${SWAS_LOCK_WAIT_SECONDS:-1800}
 exec 9>"$LOCK"
 if ! flock -n 9; then
-  echo "== 检测到另一个部署正在进行，等待其完成（最多 10 分钟）=="
-  if ! flock -w 600 9; then
-    echo "❌ 等待部署锁超时（10 分钟）：可能有卡死的部署进程持有 $LOCK"
-    echo "   排查：fuser -v $LOCK 找到占用 PID，确认后 kill；确认无进程后再删锁文件重试"
+  echo "== 检测到另一个部署正在进行，等待其完成（最多 $((LOCK_WAIT_SECONDS / 60)) 分钟）=="
+  if ! flock -w "$LOCK_WAIT_SECONDS" 9; then
+    echo "❌ 等待部署锁超时（$((LOCK_WAIT_SECONDS / 60)) 分钟）：$LOCK 仍被另一个部署持有 —— 那是**并发部署在排队**"
+    echo "   真因是**排队**，不是「有进程挂住」：单次部署实测可达 ~28 分钟（比等待上限的旧值 600s 长得多）。"
+    echo "   这把锁也不会被遗留：flock(2) 的锁挂在「打开文件描述」上 ⇒ 进程以**任何方式**终止（含 SIGKILL）"
+    echo "   内核都会关闭 fd 并释放锁（见 docs/wiki/CI-CD.md 的「远端 flock 与超时强杀的关系」）。"
+    echo "   ⇒ 处置：**不要**手工清 $LOCK 后重试（它不会被遗留 ⇒ 清了也不会变快），也**不要** kill 占用者"
+    echo "     （它多半正在**正常**部署，kill 只会留下半截环境）。等它跑完，下次部署会正常拿到锁。"
+    echo "   次要核对（只想知道占用者是谁时）：fuser -v $LOCK"
     exit 1
   fi
 fi

@@ -187,10 +187,12 @@ bad = workflow_structure_violations(mutant)              # 判据吃的是**当�
 
 ```
 push main / push tag v*（路径过滤）→ CI **只跑测试**（C′ 起**不再构建、不再推 ACR**；tag 规则仍是 sha-<7> 或 vX.Y.Z）
-  → aliyun swas-open RunCommand（实例 b23c69e5..., 超时 3600s；**C′ 下轮询预算 3000s**）
+  → aliyun swas-open RunCommand（实例 b23c69e5..., 超时 3600s；**C′ 下轮询预算 4500s
+     = 远端锁等待上限 1800s + 冷构建**上界** 2400s + 余量 300s**，见下「远端 flock」节）
   → 服务器执行 /opt/migao-deploy/deploy.sh <SERVICE_KEY> <IMAGE_TAG>（先自愈式同步最新 deploy.sh）：
-     0. flock（既有那把锁；🔴 **C′ 的 `docker build` 就在锁内** —— 否则单机并发构建会互踩，见
-        [swas-migration-lessons §二.2](../deployment/swas-migration-lessons.md)）
+     0. flock（既有那把锁，等待上限 `LOCK_WAIT_SECONDS=1800s`；🔴 **C′ 的 `docker build` 就在锁内**
+        —— 否则单机并发构建会互踩，见 [swas-migration-lessons §二.2](../deployment/swas-migration-lessons.md)。
+        三条腿共用**同一把锁**而 CI `concurrency` 组按服务分 ⇒ 跨服务会**排队**，一次实测 ~28min）
      1. **C′：就地 `docker build` 该服务镜像**（上界 `BUILD_TIMEOUT_SECS=2400s`，`rc=124` 显式点名判红；
         apt 源可经 `APT_MIRROR` 覆盖、默认 `deb.debian.org` 保持 CI 行为不变；
         admin-web 的 `NEXT_PUBLIC_*` 取服务器 `/opt/migao-deploy/.env.build`（可选）或**内置默认值**）
@@ -268,7 +270,7 @@ gh workflow run deploy-admin-api.yml -f image_tag=<上一个可用 tag>
 | 机制 | 位置 | 行为 |
 |---|---|---|
 | 部署阶段**硬超时** | `deploy/scripts/swas-deploy-ci.sh`（`SWAS_DEPLOY_TIMEOUT_SECONDS`，默认 900s / 次尝试） | 超时即 `exit 1`（不再无限轮询把 run 钉在 `in_progress`）；每次 aliyun CLI 调用另有 60s 上界（`SWAS_CLI_TIMEOUT_SECONDS`） |
-| **job 级**硬超时 | 三个 deploy workflow 的 `build-and-deploy`（`timeout-minutes: 45`） | 脚本整体卡死时由 GitHub 终止 run ⇒ run 进终态 ⇒ **锁一定释放** |
+| **job 级**硬超时 | 三个 deploy workflow 的 `build-and-deploy`（`timeout-minutes: 90`） | 脚本整体卡死时由 GitHub 终止 run ⇒ run 进终态 ⇒ **锁一定释放**。90min **大于** C′ 的「发起+轮询」预算 4500s（= 锁等待 1800s + 冷构建**上界** 2400s + 余量 300s）⇒ 不会先被 GitHub 打死成 `cancelled`（那会让断路器不跳闸 ⇒ cron 自放大） |
 | 失败**不留坏状态** | `swas-deploy-ci.sh` | 失败**自动重试 1 次** → 仍失败**回滚到 `.last-good-tag`（上一个可用镜像）** → 回滚也不行 ⇒ `::error::` 显式告警 |
 | 严格蓝绿（**内层**兜底） | `deploy/swas/deploy.sh`（#4785） | 新容器先起 → 健康检查通过 → **才**切流量；不通过 ⇒ **旧容器一动不动**（**失败窗口 = 0**）⇒ 坏镜像**永远碰不到**旧容器（外层回滚仍保留，见下） |
 | 对账**断路器** | `deploy-reconcile.yml` | 同一 `head_sha` 的**最新一条** run 只有结论落在**允许名单**（`success` / `skipped` / `neutral` / 空）才继续补部署；**其余一切结论**（`failure` / `cancelled` / `timed_out` / `startup_failure` / `action_required` / `stale` / 将来新增的）一律跳闸（防反复重试坏 commit、覆盖手工回滚）；同 sha 的 run **还在跑/排队** ⇒ 也跳过（重复 dispatch 是纯 churn）。**fail-open**：查询失败 / 无同 sha 记录 ⇒ 照旧补部署；跳闸时**显式**打印人工出口 `gh workflow run <wf> --ref main` |
@@ -334,7 +336,7 @@ ssh <swas> 'docker ps --format "{{.Names}}\t{{.Status}}" | grep admin-api'  # �
 ### 不许往回走（issue #4852）：排队的旧 run 不得把服务回退
 
 **事故形态**（2026-09-20 生产 CI 实测）：三条部署腿共用**同一把** server 侧 `flock`
-（`deploy/swas/deploy.sh`，窗口 600s）⇒ run 按**创建时刻**排队，而 `main` 在排队期间前进
+（`deploy/swas/deploy.sh`，等待窗口 `LOCK_WAIT_SECONDS=1800s`）⇒ run 按**创建时刻**排队，而 `main` 在排队期间前进
 ⇒ **为旧 commit 创建的 run 会在更新的 run 成功之后才执行**；旧判据是「该 TAG 的镜像在不在本地」
 ⇒ 旧 tag 的镜像当时都在本地 ⇒ 服务被重建为旧 tag，而 **run 结论 success + 健康检查三个全 200 +
 `✅ SWAS 部署成功（tag=旧tag）`** ⇒ **三重绿、零告警**，线上长期跑旧代码。
@@ -404,8 +406,23 @@ workflow 现在**解码后**打印，并把**完整**输出写进该 job 的 **S
 并有 `trap 'flock -u 9' EXIT`。**`flock(2)` 的锁挂在「打开文件描述」上**：进程以**任何方式**终止
 （含 `SIGKILL`）时内核都会关闭 fd 并释放锁 ⇒ **不会留下陈旧锁**（trap 只是显式解锁的锦上添花）。
 ⚠️ 但要注意：**CI 侧的硬超时不会终止远端进程** —— `RunCommand --timeout 3600` 仍在跑，
-锁仍被它持有（下一个部署最多等 600s 后失败退出）。这就是**超时路径不做自动回滚**的原因
+锁仍被它持有（下一个部署最多等 `LOCK_WAIT_SECONDS` = 1800s 后失败退出）。这就是**超时路径不做自动回滚**的原因
 （此刻回滚只会与它抢锁）；超时走"显式告警 + 本手册"。
+
+🔴 **等待窗口为什么是 1800s（issue #5896，2026-10-01 实测）**：三条 SWAS 部署腿
+（`deploy-frontend` / `deploy-admin-api` / `deploy-ai-agent-service`）**共用**这把远端锁，而它们各自的
+CI `concurrency` 组是**按服务**分的（`deploy-*`）⇒ **跨服务不互斥**。同一次 push 同时改
+`backend/admin-api/**` 与 `frontend/admin-web/**` 时两条腿**同刻起跑抢一把锁**，先到者实测跑了
+**~28 分钟**（07:32:48Z → 08:00:22Z）⇒ 旧的 600s 等待上限对后到者**必然不够**：当天两次
+`deploy-frontend` failure（06:15Z / 07:32Z）的报错都是「等待部署锁超时」，而**不是**构建/健康检查失败。
+⇒ 后到者现在最多等 1800s（30min）；同期抬高的三处预算必须一致：
+`C_BUILD_DEPLOY_TIMEOUT_SECONDS`（4500s = 1800 + 冷构建**上界** 2400 + 余量 300；用上界而非实测 1782s，
+因为实测只是样本、上界才是脚本声明并被判据钉住的值）与 job `timeout-minutes: 90`。
+
+⚠️ **超时文案必须如实归因（同批修正）**：旧文案写「可能有**卡死的部署进程**持有」并提示「确认无进程后再**删锁文件**重试」
+—— 这两条都与事实相反（锁不可能被遗留；真因是兄弟部署在**正常**排队，只是比旧上限长），
+集成侧曾按它去找「卡死进程」、**排查方向被带偏**。现在的文案说「并发部署在**排队**」，
+`fuser -v` 只作**次要**核对手段，并明确写出「不要清 `$LOCK` 后重试、也不要 kill 占用者」。
 
 ## 验收流水线
 

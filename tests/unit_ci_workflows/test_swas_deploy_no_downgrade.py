@@ -5,8 +5,8 @@
 
 ## 事故机理（**生产 CI 实测**，非推断）
 
-三条部署腿共用**同一把 server 侧 flock**（`deploy/swas/deploy.sh`，窗口 600s）⇒ run 按**创建时刻**
-排队，而 main 在排队期间前进 ⇒ **为旧 commit 创建的 run 会在更新的 run 成功之后才执行**：
+三条部署腿共用**同一把 server 侧 flock**（`deploy/swas/deploy.sh`，等待窗口 `LOCK_WAIT_SECONDS`，
+2026-10-01 起为 1800s，见 issue #5896）⇒ run 按**创建时刻**排队，而 main 在排队期间前进 ⇒ **为旧 commit 创建的 run 会在更新的 run 成功之后才执行**：
 
 | run | head | 创建 | 远端执行 | 实际部署 |
 |---|---|---|---|---|
@@ -418,7 +418,9 @@ def judge_effective_tags(text: str) -> list:
 def judge_rails_intact(text: str) -> list:
     """⑥ 既有护栏锚点逐条仍在（删任一条 ⇒ 判红）。"""
     v = []
-    for token in ('exec 9>"$LOCK"', "flock -n 9", "flock -w 600 9", "trap 'flock -u 9' EXIT"):
+    # ⚠️ 等待上限 2026-10-01 由 `flock -w 600 9` 改为具名常量（issue #5896：600s < 实测一次并发部署
+    #    ~28min）。护栏的**性质**未变（这条锚点仍逐字要求「等待获取锁」那一行在位），只跟着实现改锚点。
+    for token in ('exec 9>"$LOCK"', "flock -n 9", 'flock -w "$LOCK_WAIT_SECONDS" 9', "trap 'flock -u 9' EXIT"):
         if token not in text:
             v.append(f"flock 串行护栏被改动：找不到 `{token}`")
     if text.count("wait_healthy() {") != 1:
@@ -596,6 +598,10 @@ def test_workflows_are_valid_yaml_and_permissions_unchanged():
         #    `cancelled`（**不是** failure）⇒ 断路器不跳闸 ⇒ cron 自放大（本单要消灭的形态）。
         #    ⚠️ 这不是「抬上限交差」（本仓 #5365 口径：上限是**值班判据**、不是成绩单）：
         #    抬它**有实测支撑**（三层预算同号 `1671 < 2400 < 3000 < 75min`），且**仍然有界**。
+        # 🔴 **2026-10-01 复核（issue #5896）**：预算里还必须**含远端锁等待**（三条腿共用同一把
+        #    远端 flock，而 CI `concurrency` 按服务分 ⇒ 跨服务排队，实测一次 ~28min）⇒ 三层刷新为
+        #    `1671 < 2400 < 4500 < 90min`（4500 = 锁等待 1800 + 冷构建**上界** 2400 + 余量 300；
+        #    ⚠️ 用**上界**而不是实测 1782s —— 实测是样本，上界才是脚本声明并被判据钉住的值）。
         mins = int(job["timeout-minutes"])
         assert 0 < mins <= 120, (
             f"{name}: 硬超时兜底（#4767 ①）被改成 {mins}min —— 必须是 (0,120] 内的**有界**值"

@@ -242,7 +242,7 @@ def judge_no_regression_of_4785_and_4767(text: str) -> list:
         ("docker compose exec -T nginx nginx -s reload || docker compose restart nginx", "#4785 的 nginx 优雅重载"),
         ("wait_healthy() {", "#4785 的唯一健康检查判据"),
         ("HC_RETRIES=${HC_RETRIES:-10}", "#4785 的健康检查重试预算"),
-        ("flock -w 600 9", "整脚本 flock"),
+        ('flock -w "$LOCK_WAIT_SECONDS" 9', "整脚本 flock（等待上限 = 具名常量，issue #5896）"),
         ("旧容器保持不动", "#4785 的失败路径提示语"),
         ("交给 CI 侧 #4767 的「失败即回滚」", "#4767 的回滚兜底接线"),
         ("docker image prune -f", "#4767 之前的 dangling 兜底清理（保留策略之外仍需清 dangling）"),

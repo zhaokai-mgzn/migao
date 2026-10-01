@@ -195,7 +195,9 @@ def judge_fail_keeps_old_container(text: str) -> list:
 def judge_lock_intact(text: str) -> list:
     """④ flock 必须仍是**整脚本**作用域，且新增段落在锁内（不许把蓝绿挪到锁外）。"""
     v = []
-    for token in ('exec 9>"$LOCK"', "flock -n 9", "flock -w 600 9", "trap 'flock -u 9' EXIT"):
+    # ⚠️ 等待上限 2026-10-01 由 `flock -w 600 9` 改为具名常量（issue #5896：600s < 实测一次并发部署
+    #    ~28min）。护栏的**性质**未变（这条锚点仍逐字要求「等待获取锁」那一行在位），只跟着实现改锚点。
+    for token in ('exec 9>"$LOCK"', "flock -n 9", 'flock -w "$LOCK_WAIT_SECONDS" 9', "trap 'flock -u 9' EXIT"):
         if token not in text:
             v.append(f"flock 相关行被改动：找不到 `{token}`")
     i_lock = text.find("flock -n 9")
