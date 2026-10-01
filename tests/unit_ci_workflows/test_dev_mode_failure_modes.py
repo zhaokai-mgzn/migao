@@ -1,4 +1,4 @@
-# case_ids: MC-028, MC-038
+# case_ids: MC-028, MC-038, MC-056
 """**容易犯的问题必须固化进研发模式**：技能里的每一条纪律都要有「判别动作 / 判据 / 台账」三选一。
 
 ## 病根（不是「文档写得不够好」，而是**散文拦不住任何东西**）
@@ -97,6 +97,20 @@
   （要覆盖得**逐条进策展表**，不是放宽正则）；本单实测的那处病灶（§26.2 写「七条」而现取 8 条）
   正是靠**人工复核**发现的，判据 21 保证的是它**不会再静默腐烂**，不是「结构上不可能出现」。
 - 本判据**不改任何门禁的通过条件、不新增豁免**。
+
+**本单新增两条（判据 23/24）= 「CI 面」（`docs/wiki/CI-CD.md` 的 `FM-E*`）的另一个方向与判别动作的加载面**：
+
+- **判据 23 = CI 面记号 ⇄ 台账的另一个方向（原实现只判 `ledger → doc`）**：判据 7 的循环是
+  `for f in findings: if fid not in ci_ids` —— **只**保证「台账里有的，文档里具名」；而 CI-CD 那一节
+  自己逐字写着「记号与 `ci_findings` **双向绑定**」⇒ **本单实测：只往文档里写一个 `FM-E98`、台账不登记
+  时零反应**。`unregistered_ci_marks_problems()` 把缺失的方向补上：文档里具名的记号必须已登记，或在
+  **只许缩短**的 `CI_MARKS_WITHOUT_ENTRY_FROZEN`（现取 = `FM-E6`：转述未获 durable 证据 ⇒ 不入册，
+  由台账 `not_solidified` 的 `NS-1` 承接）里；冻结表陈旧（那条号已登记 / 已从文档消失）同样红。
+- **判据 24 = 「CI 迟迟不来」的判别动作必须留在加载面（`FM-E25`）**：`conflict_diagnosis_problems()`
+  在 `migao-dev-flow` §2.2 那一节里逐字要求 `gh pr view` / `--json mergeable` / `CONFLICTING` / `FM-E25`
+  四个锚 ⇒ **删掉 / 改写即红**。🔴 **它是文本锚、不是行为判据**：GitHub 侧的 merge-ref 可建性不是仓内内容
+  ⇒ 没有可复算的机械判据（与 `FM-E15` 的 `CASE_ID_ALLOCATION_BOUNDARY` 同形态）。它只证明「纪律还在
+  **每个会话都加载得到**的那一面」，**不证明** GitHub 的行为 —— 边界逐字写在 CI-CD 的 `FM-E25` 行里。
 """
 from __future__ import annotations
 
@@ -1278,7 +1292,11 @@ def test_live_index_reading_guard_has_discriminating_power() -> None:
 
     nums = family_numbers(ledger, "E")
     # ① **端点**退回旧值（本单实际修的那处：端点的号 ≠ 条数）
-    stale = skill_text.replace(f"FM-E{nums[-1]}", f"FM-E{nums[-1] - 3}", 1)
+    #    ⚠️ 变异必须**打在那一行上**（`row`）：全文**首个** `FM-E<max>` 不一定在 §19 索引行里
+    #    —— `FM-E25` 同批也写在 §2.2 的判别动作文本里（`FM-E25` 的加载面锚）⇒ 按全文
+    #    `replace(…, 1)` 会打偏，判据反而**变绿**（本单实测到的形态：变异没打到对象上）。
+    stale = skill_text.replace(
+        row, row.replace(f"FM-E{nums[-1]}", f"FM-E{nums[-1] - 3}", 1), 1)
     assert stale != skill_text, "内存构造的变异体与原文本逐字相同（变异没生效）"
     got = live_index_reading_problems(skill_text=stale, ledger=ledger)
     assert any("范围端点陈旧" in p for p in got), got
@@ -1731,3 +1749,137 @@ class TestPipeRcGuard:
             docs[rel] = {"jobs": {"j": {"steps": [{"run": "echo 无管道"}]}}}
         got = pipe_rc_problems(docs)
         assert got and any("陈旧" in p for p in got), got
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 23（本单新增，`FM-E24`/`FM-E25` 同批）：CI 面（`ci_findings`）**缺失的那一个方向** ——
+# `docs/wiki/CI-CD.md` 里具名写了 `FM-EN` 而台账**未登记** ⇒ 红
+# ══════════════════════════════════════════════════════════════════════════════
+# 病灶（本单实测，先写成断言再补实现）：上面判据 7 的循环是
+# `for f in findings: if fid not in ci_ids` —— **只**保证「台账里有的，文档里具名」；
+# 而 CI-CD 那一节自己逐字写着「记号与 `ci_findings` **双向绑定**」⇒ 另一半**没有任何东西在判**：
+# 实测「只往文档里写一个 `FM-E98`、台账不登记」时，全套判据**零反应**（本单当场跑出来的读数）。
+CI_MARKS_WITHOUT_ENTRY_FROZEN = ("FM-E6",)
+
+
+def unregistered_ci_marks_problems(cicd_text: str, ledger: dict) -> list[str]:
+    """判据 23：文档里具名的 `FM-EN` 必须**已登记**或在**只许缩短**的冻结表里。**纯函数**。"""
+    doc_marks = ids_in(cicd_text, CI_ID_RE)
+    if not doc_marks:
+        return [f"`{CICD_REL}` 里取不到任何 `FM-EN` 记号 ⇒ 判据无从判定"
+                f"（记号被清空 / 正则漂移 ⇒ 红：**未跑 ≠ 通过**）"]
+    registered = {e.get("id") for e in ledger.get("ci_findings", [])}
+    frozen = set(CI_MARKS_WITHOUT_ENTRY_FROZEN)
+    bad = [
+        f"{m}：`{CICD_REL}` 里具名写了，台账 `ci_findings` 里**未登记** ⇒ 未登记即红"
+        f"（出口：登记进台账；确要留在册外 ⇒ 写进 `CI_MARKS_WITHOUT_ENTRY_FROZEN` 并写明理由）"
+        for m in sorted(doc_marks - registered - frozen)
+    ]
+    # 冻结表**只许缩短**：里头的记号若已登记、或已从文档里消失 ⇒ 陈旧 ⇒ 红
+    for m in sorted(frozen):
+        if m in registered:
+            bad.append(f"{m}：已在 `ci_findings` 里登记，却仍留在 `CI_MARKS_WITHOUT_ENTRY_FROZEN` ⇒ 陈旧")
+        elif m not in doc_marks:
+            bad.append(f"{m}：已不在 `{CICD_REL}` 里出现，却仍留在 `CI_MARKS_WITHOUT_ENTRY_FROZEN` ⇒ 陈旧")
+    return bad
+
+
+class TestCiFaceMarkRegistrationIsBidirectional:
+    """判据 23 的五条：基线 / 注入红证 / 对照读数 / 只许缩短 / fail-closed。"""
+
+    def test_every_doc_mark_is_registered_or_frozen(self):
+        """基线：`doc → ledger` 方向成立（`ledger → doc` 那一半是判据 7）。"""
+        _, cicd_text, ledger = _live()
+        problems = unregistered_ci_marks_problems(cicd_text, ledger)
+        assert problems == [], "\n".join(problems)
+
+    def test_unregistered_doc_mark_turns_it_red(self):
+        """**红证**：只往文档里加一个记号（台账不动）⇒ 非空 —— 这正是判据 7 盖不到的方向。"""
+        _, cicd_text, ledger = _live()
+        got = unregistered_ci_marks_problems(
+            cicd_text + "\n| **FM-E98** | 未登记 | — | 只在文档里写 |\n", ledger)
+        assert any("FM-E98" in p and "未登记即红" in p for p in got), got
+
+    def test_registered_and_frozen_marks_are_not_red(self):
+        """**对照读数**：已登记的记号 / 冻结的 `FM-E6` 都不红（判据不许误伤存量）。"""
+        _, cicd_text, ledger = _live()
+        registered = sorted(e["id"] for e in ledger["ci_findings"])[0]
+        assert unregistered_ci_marks_problems(cicd_text + f"\n引用 `{registered}` 的读数\n", ledger) == []
+        assert unregistered_ci_marks_problems(
+            cicd_text + f"\n引用 `{CI_MARKS_WITHOUT_ENTRY_FROZEN[0]}` 的读数\n", ledger) == []
+
+    def test_stale_frozen_mark_turns_it_red(self):
+        """**红证（只许缩短）**：冻结表里的记号一旦也登记进台账 ⇒ 陈旧 ⇒ 非空。"""
+        _, cicd_text, ledger = _live()
+        grown = json.loads(json.dumps(ledger))
+        grown["ci_findings"].append({
+            "id": CI_MARKS_WITHOUT_ENTRY_FROZEN[0], "state": "guarded",
+            "criteria": [], "symptom": "x", "guards": "y", "evidence": [],
+        })
+        got = unregistered_ci_marks_problems(cicd_text, grown)
+        assert any("陈旧" in p for p in got), got
+
+    def test_empty_doc_is_fail_closed(self):
+        """**fail-closed**：文档里一个记号都取不到 ⇒ 非空（不许「没东西可判 ⇒ 绿」）。"""
+        _, _, ledger = _live()
+        assert unregistered_ci_marks_problems("这里一个记号都没有\n", ledger) != []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 24（本单新增，`FM-E25`）：**「CI 迟迟不来」的判别动作必须留在加载面**
+# ══════════════════════════════════════════════════════════════════════════════
+# 承载体 = `migao-dev-flow` §2.2（**每个会话都加载**的那一面）。为什么是**文本锚**：
+# GitHub 侧的 merge-ref 可建性**不是仓内内容** ⇒ 没有可复算的机械判据（同 `FM-E15` 的
+# `CASE_ID_ALLOCATION_BOUNDARY` 形态：**删掉即红**）。这条锚**只**证明「纪律还在加载面上」，
+# **不证明** GitHub 的行为 —— 边界逐字写在 CI-CD 的 `FM-E25` 行里。
+REDLINE_SECTION_HEADING = "### 2.2 红线（踩过的高频坑，禁止违反）"
+#: 判别动作的**逐字锚**（删掉任一 ⇒ 红）。最后一个把研发模式与 CI 面记号钉在一起。
+CONFLICT_DIAGNOSIS_ANCHORS_FROZEN = ("gh pr view", "--json mergeable", "CONFLICTING", "FM-E25")
+
+
+def conflict_diagnosis_problems(skill_text: str) -> list[str]:
+    """判据 24：§2.2 里必须逐字留着「CI 不来先看 `mergeable`」的判别动作与它的记号。**纯函数**。"""
+    sec = section_text(skill_text, REDLINE_SECTION_HEADING)
+    if sec is None:
+        return [f"技能里找不到节标题：{REDLINE_SECTION_HEADING!r} ⇒ 判别动作的落点被删（红）"]
+    if not sec.strip():
+        return [f"技能节 {REDLINE_SECTION_HEADING!r} 是空的 ⇒ 红线节被清空（红）"]
+    return [
+        f"§2.2 里缺少逐字锚 `{a}` ⇒ 「CI 迟迟不来先看 `mergeable`」的判别动作不在加载面上"
+        f"（`FM-E25`：删掉 / 改写 / 换个说法都红）"
+        for a in CONFLICT_DIAGNOSIS_ANCHORS_FROZEN if a not in sec
+    ]
+
+
+class TestConflictDiagnosisAnchor:
+    """判据 24 的四条：基线 / 删掉即红 / 整节被删即红 / 只加注释不红（对照）。"""
+
+    def test_the_diagnosis_is_on_the_loaded_surface(self):
+        skill_text, _, _ = _live()
+        problems = conflict_diagnosis_problems(skill_text)
+        assert problems == [], "\n".join(problems)
+
+    def test_removing_the_diagnosis_turns_it_red(self):
+        """**红证**：把带 `FM-E25` 的那一行从 §2.2 里删掉 ⇒ 具名报出缺哪个锚。"""
+        skill_text, _, _ = _live()
+        line = next((l for l in (section_text(skill_text, REDLINE_SECTION_HEADING) or "").split("\n")
+                     if "FM-E25" in l), None)
+        if line is None:      # fail-closed（**不用** `assert … is not None`：那是弱断言形态，growth gate 拦）
+            raise AssertionError("§2.2 里找不到带 `FM-E25` 的那一行（红证无从构造 ⇒ fail-closed）")
+        got = conflict_diagnosis_problems(skill_text.replace(line, "", 1))
+        assert any("FM-E25" in p for p in got), got
+
+    def test_deleted_section_turns_it_red(self):
+        """**红证**：整节被删 / 标题被改 ⇒ 红（fail-closed，不许静默跳过）。"""
+        skill_text, _, _ = _live()
+        mutated = skill_text.replace(REDLINE_SECTION_HEADING, "### 2.2 （标题被删）", 1)
+        assert mutated != skill_text, "内存构造的变异体与原文本逐字相同（变异没生效）"
+        assert conflict_diagnosis_problems(mutated) != []
+
+    def test_comment_only_addition_is_not_red(self):
+        """**对照读数**：只往 §2.2 里加一条注释 ⇒ 不红（守卫不许被自己的行文喂红）。"""
+        skill_text, _, _ = _live()
+        sec = section_text(skill_text, REDLINE_SECTION_HEADING) or ""
+        line = next(l for l in sec.split("\n") if "FM-E25" in l)
+        assert conflict_diagnosis_problems(
+            skill_text.replace(line, line + "\n<!-- 只加一条注释：不改锚 -->", 1)) == []
