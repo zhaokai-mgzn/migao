@@ -3701,7 +3701,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（54 case）
+## 订单域（55 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -4717,6 +4717,21 @@
 ```
 真值: order.admin-new-order-submit-gate
 溯源: 2026-10-01 新增（issue #5840；用户当次会话逐字报障 + 追问后逐条裁定，见 user_inputs）。背景（审计取证）：`validate()` 里**没有**任何未定价分支，而页面自己的告警文案写着「请为下列加工项组合定价后再下单」⇒ 承诺了一道不存在的闸门，加工费按 0 落库；后端 `OrderService.createOrder` 对未定价只 `log.warn` 后照常建单。同批补齐：客户地址（后端零注解）、物流两项、以及**折叠态可达性**（`line_*_autoFeatures` 此前是**死键** —— `validate()` 写了、全页无渲染点 ⇒ 商家永远看不到）。**本用例不复制任何口径**：真值登记在 `.github/templates/order.yml` 的 `order.admin-new-order-submit-gate`。⚠️ **未固化（照实登记）**：① 「用料米数 ≠ 系统推算」的**显著提示**只做到「收起态可见用料手填」这一步，`plan.meters ≠ calc.fabric_meters` 那条 `craft-plan-meters-mismatch` 仍是**展开态**才可见；② 前端判据用 jsdom，**不覆盖**真实浏览器里的滚动定位与 `scrollIntoView` 效果；③ 本页「Playwright 页面多模态验收」本轮未跑（本机无可用无头浏览器），重启条件 = 有浏览器环境时补一轮截图判定。 ｜ tags: order, admin-web, validation, processing-fee, logistics
+
+### OR-056. 发货单列表读面 GET /api/admin/shipments：租户级流水读面 + 权限码复用 order:list（零授权 delta）+ 只读 + 实发汇总与按单读面同源（issue #5939） 🔵
+```
+你: 用户 2026-10-02 原话：「我让你开发过发货单的，但是在大菜单上没见到这个单据」；同日逐条裁定：形态 = **A（新建「发货单」列表页 + 菜单项）**、归属 = **仓储与物料组**（与「入库单」对称）
+期望: direct_reply
+数据: 判据 1·**面存在且路径自成一域**：GET /api/admin/shipments（脱离订单子资源 —— 发货单是**流水型单据**，按单号/订单号/客户检索才是它的正经入口）。执行点 = backend/admin-api/src/test/java/com/migao/admin/shipment/AdminShipmentListReadTest.java 的 listFaceExistsOnItsOwnPath。红证：删掉端点 ⇒ 该判据具名报出「发货单列表页没有读端点」。
+数据: 判据 2·🔴 **权限码 = order:list（复用既有码，不新造 shipment:view）**：与同域读面 GET /api/admin/orders/{id}/shipments、订单详情**逐字同码** ⇒ 零授权 delta；新造码今天没有任何岗位持有 ⇒ 菜单节点对**所有人**不可见（#4203 同族坑）。执行点 = 同文件 listFaceCarriesTheExistingOrderListCode + tests/unit_ci_workflows/test_agent_permission_parity.py 判据 12（节点码 ≡ 该页第一屏读端点码，锚点 MENU_READ_ENDPOINT_ANCHORS['/shipments']）。红证：去掉 @RequirePermission ⇒ 两条判据同时红（判据 8 未注解端点必须登记）。
+数据: 判据 3·**只读**：该路径上只有 GET 一个动词（发货写面全归 issue #5648 的 /api/worker/shipment/**）。执行点 = AdminShipmentListReadTest.listFaceIsReadOnly。
+数据: 判据 4·🔴 **实发汇总与按单读面同源**：shippedTotals 的三个键（set_count / roll_count / by_unit）由 OrderShipmentService 的**同一份** totals() 给出，且「空值不参与求和」（null ≠ 0）。执行点 = AdminShipmentListReadTest.shippedTotalsComeFromTheSameProjection + shipmentWithoutItemsStillHasTotalsShape。红证：另算一套（例如把 null 当 0）⇒ 该判据红。
+数据: 判据 5·🔴 **租户隔离 + 软删不计 + 上限**（手写 SQL 的三条不会被类型系统挡住的约束）：真库判据 backend/admin-api/src/test/java/com/migao/admin/service/ShipmentListQueryRealDbTest.java（跨租户查不到 + 反向自证对方租户自己读得到 / 软删明细不计进 itemCount / 客户名取自 orders 的连接 / 未发货按打包时间参与排序 / LIMIT 生效）+ 文本契约 backend/admin-api/src/test/java/com/migao/admin/mapper/OrderShipmentQueryMapperTest.java（tenant_id 外层与聚合子查询都有、deleted = 0、LIMIT、ILIKE 三列、别名 ⇄ DTO 双向相等）。红证：去掉 s.tenant_id ⇒ 真库判据红；聚合子查询去掉 deleted = 0 ⇒ 软删判据红。
+数据: 判据 6·**既有面零回归**：按单读面（AdminOrderShipmentReadTest 7 条）与工人面（WorkerShipmentControllerTest / OrderShipmentServiceTest）一字不改；本单只加**第三面读面**，共用同一份汇总实现。
+跳过: [backend-contract] 纯后端读面（无 LLM 环节，不进 agent-eval 冒烟）：由 admin-api 单测（AdminShipmentListReadTest / OrderShipmentQueryMapperTest / ShipmentListQueryRealDbTest）执行
+```
+真值: order.shipment-actual-quantity-owner, order.shipment-read-faces
+溯源: 2026-10-02 新增（issue #5939）：补上发货单的**列表读面** —— 此前只有按单读面（OR-051），想知道「这个月发过哪些货」必须先知道是哪张订单。权限码取**既有** order:list（不新造）；实发汇总复用 totals()（不建第二份投影）；租户/软删/上限三条由真库 + SQL 文本双判据把守。 ｜ tags: order, shipment, admin-api, read-surface, tenant-isolation, menu
 
 ## 加工项域（19 case）
 
@@ -7386,7 +7401,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（77 case）
+## 前端 UI 域（78 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -7740,7 +7755,7 @@
 数据: 「角色权限」页整站改名「岗位权限」（页面标题/新增按钮/编辑弹窗/删除确认/空态，侧边栏入口与 Header 面包屑同步），URL /roles 不变
 数据: 侧边栏七大组（#5271 按业务动线重排）：工作台(经营看板+每日简报) / 智能客服(在线接待+知识库) / 商品与加工项(商品列表+加工项管理) / 交易管理(订单列表+售后工单+客户列表+财务对账) / 生产管理(生产看板+智能派单+工艺配置+计件工资) / 仓储与物料(入库单+余料台账+省料看板) / 组织管理(员工管理+岗位权限+企业基础信息) / 通知中心（独立）；**菜单项一项不少不减（21 项）**，只改分组归属与组名（原「客户管理」组并入交易管理组、原生产管理组的物料三项拆入新组「仓储与物料」）；权限过滤不回归（组内无可见子项则整组隐藏）
 数据: 侧边栏交互（#5271）：分组默认**只展开当前路由所在组**（组标题显示项数徽标，收起不等于丢项）；路由变化 ⇒ 自动展开新所在组；折叠态仍按组渲染锚点（组图标 + title=组名，分组信息不丢）；小屏为抽屉式浮层（遮罩点击关闭、内容区不占宽度），桌面端常驻可折叠
-数据: 🔴 **2026-09-29 改判（issue #5778，用户逐条裁定）**：上面的七组清单**已作废**，现为 **6 组 + 2 一级项**：工作台(经营看板+每日简报) / **客户服务**(在线接待+客户列表+知识库+售后工单) / 交易管理(订单列表+财务对账) / 生产管理(生产看板+智能派单+**加工项管理**+工艺配置+计件工资) / 仓储与物料(入库单+余料台账+省料看板) / 组织管理(员工管理+岗位权限+企业基础信息)；**一级项** = 分组之前的「商品管理」(`/products`，原「商品与加工项」组撤销后升为一级项) 与分组之后的「通知中心」。仍 **21 项一项不少不减**；权限码 / 路径 / 门控一字未动（合并只改分组归属）。新增「常用（收藏）」= 用户自钉 4~6 项 pin 在侧边栏最顶部（权限被收回则该项自动消失）。**本改判不削弱任何既有断言**：更新后的判据与红证在 UI-066 / UI-067，旧 IA 的反向钉子（「客户管理」组与 `customer-center` 不得长回来）逐条保留并新增 `product-center` / `smart-customer-service` 两条。
+数据: 🔴 **2026-09-29 改判（issue #5778，用户逐条裁定）**：上面的七组清单**已作废**，现为 **6 组 + 2 一级项**：工作台(经营看板+每日简报) / **客户服务**(在线接待+客户列表+知识库+售后工单) / 交易管理(订单列表+财务对账) / 生产管理(生产看板+智能派单+**加工项管理**+工艺配置+计件工资) / 仓储与物料(入库单+余料台账+省料看板) / 组织管理(员工管理+岗位权限+企业基础信息)；**一级项** = 分组之前的「商品管理」(`/products`，原「商品与加工项」组撤销后升为一级项) 与分组之后的「通知中心」。仍 **22 项一项不少不减**（🔴 2026-10-02 issue #5939 起 +「发货单」：仓储与物料组内、与「入库单」对称，权限码取**既有** `order:list` ⇒ 零授权 delta）；权限码 / 路径 / 门控一字未动（合并只改分组归属）。新增「常用（收藏）」= 用户自钉 4~6 项 pin 在侧边栏最顶部（权限被收回则该项自动消失）。**本改判不削弱任何既有断言**：更新后的判据与红证在 UI-066 / UI-067，旧 IA 的反向钉子（「客户管理」组与 `customer-center` 不得长回来）逐条保留并新增 `product-center` / `smart-customer-service` 两条。
 数据: 菜单搜索 / 命令面板（#5271）：⌘K（Ctrl+K）打开、侧边栏顶部入口亦可打开；空查询列出**当前用户有权访问**的全部菜单项；命中面 = 菜单名 ∪ 组名 ∪ 拼音首字母别名（如 ddlb→订单列表）；↑/↓ 选择、Enter 跳转、Esc/点遮罩关闭；无权限的项**不得**出现在结果里（搜索不是绕过权限的口子）
 数据: 创建/编辑员工：岗位改为下拉选择（岗位=角色体系，来自 /api/admin/roles/all），选岗位自动把该岗位默认权限（role_permissions codes）预填进权限树；仍可手动增删；编辑切岗位则重置为新岗位默认
 数据: 员工权限快照式（#2969）：提交时携带 position+permissions（permissions=最终勾选），不携带 role 字段（#2907 契约），后端按岗位名解析角色
@@ -8158,7 +8173,7 @@
 你: 用户逐字：「左侧菜单栏有部分子菜单的图标完全一样，能否做到每个菜单不同图标」
 期望: direct_reply
 数据: 🔴 判据·**数据层两两不同**（`menu-icons.test.ts` 判据④）：28 个节点（7 组头 + 20 组内项 + 1 独立项）的图标名去重后数量 == 节点数；面非空自证（节点数 == 28 且点名 8 个已知节点）。修复前实测 4 组同图：`BarChart3` 经营看板/省料看板、`ShieldCheck` 售后工单/岗位权限、`Calculator` 财务对账/计件工资、`Building2` 组织管理/企业基础信息。
-数据: 🔴 判据·**渲染面两两不同**（`Sidebar.test.tsx`）：展开全部组后，21 项（20 组内项 + 通知中心）的**渲染结果**里图标互不重复（从 tests/setup.ts 的 lucide 夹具 `data-testid="icon-<kebab>"` 反读，不是读配置）—— §15.1「结果可见」。⚠️ 本判据需先 `mockBriefingEnabled = true` + `waitFor` 等「每日简报」到位（它是异步拉配置决定可见性的，实测踩过一次）。
+数据: 🔴 判据·**渲染面两两不同**（`Sidebar.test.tsx`）：展开全部组后，22 项（21 组内项 + 通知中心）的**渲染结果**里图标互不重复（从 tests/setup.ts 的 lucide 夹具 `data-testid="icon-<kebab>"` 反读，不是读配置）—— §15.1「结果可见」。⚠️ 本判据需先 `mockBriefingEnabled = true` + `waitFor` 等「每日简报」到位（它是异步拉配置决定可见性的，实测踩过一次）。
 数据: 🔴 红证（单点变异）：把「省料看板」的图标改回 `BarChart3` ⇒ **数据层与渲染面两条判据同时具名变红**（`BarChart3 → 经营看板、省料看板`），还原 sha256 逐字节一致。
 数据: **三处同批**（漏一处即红/即抛）：`config/menu.ts` 的 icon 名 + `config/menu-icons.ts` 的 import 与 `menuIconMap` + `tests/setup.ts` 的 lucide 白名单（未登记的新图标会让任何渲染 Sidebar 的用例当场抛 `No "X" export is defined on the "lucide-react" mock`）。既有三条注册表判据（正向不漏 / 反向无死映射 / 注入式红证）逐条不回归。
 数据: **只换图标**：路由 / 菜单 key / 权限码 / 菜单名一律未动（`frontend-fix.no-api-change`）；图标仍是**前端专属**（MC-019 裁决：服务端不下发 icon）。
@@ -8278,7 +8293,7 @@
 真值: frontend-fix.vitest, order.shipment-actual-quantity-owner, order.shipment-read-faces
 溯源: 2026-09-27 新增（issue #5651 收口）：销售单数量列从「订单行投影」接到「实发明细」（后端读面由 OR-051 同批补上）。四态口径由 lib/sales-shipment.ts 单点判定，纸面只渲染结果；缺值一律显式（「未发」/「—」/「不适用」），永不印 0。**同批修正**：SalesDoc 的 formatAmount 缺值不再输出 0.00 而输出显式占位（同族：缺数据显示成 0）。 ｜ tags: ui, order, print, sales-doc, shipment, actual-quantity
 
-### UI-066. 商家后台大菜单重排：6 组 + 一级项「商品管理」+ 尾部「通知中心」= 21 项一项不少不减（加工项归生产管理 / 客户侧独立成组；#5877 起一级项排在「工作台」组之后） 🔵
+### UI-066. 商家后台大菜单重排：6 组 + 一级项「商品管理」+ 尾部「通知中心」= 22 项一项不少不减（🔴 2026-10-02 issue #5939 起 **+「发货单」**：仓储与物料组内、与「入库单」对称；加工项归生产管理 / 客户侧独立成组；#5877 起一级项排在「工作台」组之后） 🔵
 ```
 你: 用户裁定汇总（**同一份声明的两条日期**，不是两轮对话）：2026-09-29「加工项应该属于生产管理」「客户管理也不属于交易管理」「（售后）和客户管理应该属于一类？都属于服务客户的功能」「智能客服和客户管理是否应该合并到一个大菜单下？你考量下」「商品列表改成商品管理，直接作为一级菜单使用」；2026-10-01（issue #5877）「商品管理的菜单不应该作为第一行」（位置=「工作台」组之后，仍保留为一级项）「商品管理页面本体也要改」「列表中的商品ID移除，不要展示在列表」「搜索区的商品ID筛选也一并移除」
 期望: direct_reply
@@ -8293,7 +8308,7 @@
 跳过: [backend-contract] 纯前端信息架构 + 三处菜单源同构（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（前端）与 pytest（tests/unit_ci_workflows 的三源同构守卫）执行
 ```
 真值: frontend-fix.vitest
-溯源: 2026-09-29 新增（issue #5778）：用户逐条裁定菜单重排。**判据一格不放宽** —— 旧 IA 的钉子（`customer-center` 不再存在、旧组名不得长回来、21 项一项不少不减）逐条保留并新增 `product-center` / `smart-customer-service` 两条反向钉子；RBAC 的两个动作码节点台账按「只许缩短」口径同批收缩。2026-10-01 改判（issue #5877）：一级项由「所有分组**之前**」改为「**工作台**组之后」（用户「商品管理的菜单不应该作为第一行」），判据 4/5/8 同步改口径并新增「顶层布局序列」三源判据（注入 ⑦~⑩）；席位组不可见时的**回落**口径同日写明。 ｜ tags: ui, menu, ia, navigation, rbac
+溯源: 2026-09-29 新增（issue #5778）：用户逐条裁定菜单重排。**判据一格不放宽** —— 旧 IA 的钉子（`customer-center` 不再存在、旧组名不得长回来、21 项一项不少不减）逐条保留并新增 `product-center` / `smart-customer-service` 两条反向钉子；RBAC 的两个动作码节点台账按「只许缩短」口径同批收缩。2026-10-01 改判（issue #5877）：一级项由「所有分组**之前**」改为「**工作台**组之后」（用户「商品管理的菜单不应该作为第一行」），判据 4/5/8 同步改口径并新增「顶层布局序列」三源判据（注入 ⑦~⑩）；席位组不可见时的**回落**口径同日写明。2026-10-02 追加（issue #5939）：菜单项由 21 → **22 项**（+「发货单」`/shipments`），本用例的「一项不少不减」计数随之改判；新节点的三源同构与页面判据另立 **UI-078**（不在本用例重复表达）。 ｜ tags: ui, menu, ia, navigation, rbac
 
 ### UI-067. 侧边栏「常用（收藏）」：用户自选钉 4~6 项 pin 在顶部（权限优先于偏好 / 无效 key 静默丢弃 / 满额拒绝 / 本机持久化） 🔵
 ```
@@ -8468,6 +8483,22 @@
 ```
 溯源: 2026-10-01 新增（issue #5913，P2）：用户走查截图「点查看跳订单详情，这设计合理吗」→ 裁定改法 A。实现：生产看板操作列入口正名「订单详情」+ 按 `/orders` 的守卫码 `order:list` 显隐 + 引导文案上移为页面级一次；售后工单详情「订单号」入口同批按 `order:list` 显隐（**类级守卫抓出的同族第二处**，链内修）；新增类级元守卫 `cross-domain-nav-permission-guard.test.ts`（豁免台账为空，含判别力自证与普查面非空判据）。**不做**：不改 #4305 的「状态流转唯一入口 = 订单详情」，不新造「加工单详情」路由。 ｜ tags: ui, rbac, admin_web, navigation
 
+### UI-078. 「发货单」进大菜单（仓储与物料组，与「入库单」对称）：/shipments 列表页（全量发货单 + 关键词筛选 + 补打走纸面自检层）+ 三源同构 + **单据入口台账**类级守卫（未登记即红） 🔵
+```
+你: 用户 2026-10-02 原话：「我让你开发过发货单的，但是在大菜单上没见到这个单据」；同日逐条裁定：形态 = **A（新建「发货单」列表页 + 菜单项）**、归属 = **仓储与物料组（与「入库单」对称）**
+期望: direct_reply
+数据: 判据 1·🔴 **节点三源同构且落在「仓储与物料」组**：`frontend/admin-web/src/config/menu.ts`（`path: '/shipments'` / `permissionCode: 'order:list'` / `icon: 'Truck'`）/ `MenuController.MENU_TREE`（`new MenuNode(「order:list」, 「发货单」)` 且挂在 inventory-center 组）/ `AuthService.buildMenusByPermissions`（`menuItem(「shipments」, 「发货单」, 「/shipments」)` 且落在 `order:list` 自己的 if 里）三处逐字一致。执行点 = frontend/admin-web/tests/unit/lib/shipments-menu-isomorphic.test.ts（4 条，含「不得挂进交易管理组」的负控）+ tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py（全树 + 顶层布局序列）。红证：三处任删一处 ⇒ 各自判红且具名（本地实测：节点归属判定曾把节点自己的 `key` 当成组名 ⇒ 该判据当场红，已修）。
+数据: 判据 2·**权限码复用既有 `order:list`（零授权 delta）**：节点码 = 页面守卫码（`(dashboard)/layout.tsx` 的 ROUTE_PERMISSION_MAP）= 该页第一屏读端点码（`GET /api/admin/shipments`）。执行点 = tests/unit_ci_workflows/test_agent_permission_parity.py 判据 12（锚点 `MENU_READ_ENDPOINT_ANCHORS['/shipments']` ⇒ garments 页面源码里的 `shipmentApi.list`）+ 判据 11（`ROUTE_MENU_ANCHORS['/shipments']`）。红证：新造一个 `shipment:view` ⇒ 页面码与节点码脱钩、判据红（且该码今天没有岗位持有 ⇒ 菜单对所有人不可见 = #4203 同族坑）。
+数据: 判据 3·**面包屑与侧边栏一致（§15.2）**：`/shipments` ⇒ `仓储与物料 > 发货单`（末项逐字 == 菜单名）。执行点 = frontend/admin-web/tests/unit/lib/menu-breadcrumb-coverage.test.tsx（PG-038 按菜单项 path 穷举）。红证：删掉 Header 的该条目 ⇒ 该用例红。
+数据: 判据 4·**列表页看得见、缺值显式**：发货单号 / 订单号 / 客户 / 来源 / 发货人 / 发货时间 / 实发七列；未发货 ⇒「未发货」（不填当前时间）、发货人未采集 ⇒「-」、无明细 ⇒「无实发明细」（不是 0、不是空白）；`roll_count = 0` **不显示**（0 = 这一维不适用）。执行点 = frontend/admin-web/tests/unit/pages/shipments.test.tsx 的 ①②③。红证：把缺值渲染成 0 / 空串 ⇒ 对应断言红。
+数据: 判据 5·**补打走唯一打印入口**：点「补打」⇒ 取订单 → 打开**纸面自检层**（`PrintDocPreview`，真尺寸 A4 发货单，aria-label「发货单打印预览」）；取不到订单 ⇒ 不打开预览层（不弹一张缺数据的纸）。执行点 = 同文件 ⑥；`window.print()` 全仓唯一入口由 tests/unit_ci_workflows/test_print_single_doc_on_paper.py 把守（本页不新增第二处）。红证：绕开 usePrintDoc 直接 window.print() ⇒ 该守卫红。
+数据: 判据 6·🔴 **类级元守卫：单据入口台账（未登记即红）**：真值源 = `frontend/admin-web/src/lib/print-doc.ts` 的 `PRINT_TARGETS`（全仓唯一可打印单据清单），每个单据必须在 `tests/unit_ci_workflows/document_entry_ledger.json` 里**显式声明入口形态**（`menu:<菜单路径>` / `embedded:<承载页的菜单路径>`），且声明必须真实可达；台账清空**不能**消红。执行点 = tests/unit_ci_workflows/test_document_entry_ledger.py（12 条，含七种坏形态的注入式红证 + 「只加注释不红」的对照读数）。红证（本缺陷的原始形态）：把 menu.ts 的 `/shipments` 路径摘掉而台账仍声明 `menu:/shipments` ⇒ `test_removing_the_menu_item_goes_red` 当场红。
+数据: 判据 7·**既有菜单判据零放宽**：21 项 → **22 项**的计数改判落在既有用例/用例库（Sidebar / SidebarRedesign / CommandPalette / menu-nav / menu-icons / UI-066 / UI-021），只改计数与新增 key，**不删任何断言**。执行点 = frontend/admin-web/tests/unit/lib/menu-nav.test.ts 等（本地实测：改前 19 条红、改后全绿）。
+跳过: [backend-contract] 纯前端 IA + 页面行为（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（前端三份）+ pytest（tests/unit_ci_workflows 的台账/同构/权限判据）执行
+```
+真值: frontend-fix.vitest, order.shipment-read-faces
+溯源: 2026-10-02 新增（issue #5939）：用户报障「我让你开发过发货单的，但是在大菜单上没见到这个单据」—— 核对 `git log -S "发货单" -- frontend/admin-web/src/config/menu.ts` 与对 MenuController.java 的同命令**均为空** ⇒ 发货单从未进过菜单（纸面 #3768 / 数据面 #5648 都做完了，但它只挂在订单详情里）。本单：菜单三源同批加节点（仓储与物料组、入库单之后）+ 新建 `/shipments` 列表页（含补打）+ 后端租户级列表读面（见 OR-056）+ **单据入口台账**类级守卫（下次再有单据做完没人问「用户从哪进得来」时会判红）。 ｜ tags: ui, menu, ia, navigation, shipment, rbac
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -8497,8 +8528,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：595（活跃 126，跳过 469）
-- tier 分布：smoke 12 / normal 550 / adversarial 31
+- 用例总数：597（活跃 126，跳过 471）
+- tier 分布：smoke 12 / normal 552 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8516,14 +8547,14 @@
 - 杂项域：54
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：54
+- 订单域：55
 - 加工项域：19
 - 加工单域：56
 - 商品域：107
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：77
+- 前端 UI 域：78
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

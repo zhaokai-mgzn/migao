@@ -1390,6 +1390,12 @@ public class AuthService {
         if (isAll || permissions.contains("inbound:view")) {
             inventoryChildren.add(menuItem("inbound-orders", "入库单", "/inbound-orders"));
         }
+        // 发货单（issue #5939）：与按单读面（GET /api/admin/orders/{id}/shipments）**逐字同码**
+        // `order:list` ⇒ 零授权 delta（能看订单的人就能看发货单）；新造码会让菜单对所有人不可见
+        // （#4203 同族坑），故**必须**落在自己的 if 里、且码与 MenuController / menu.ts 三处一致。
+        if (isAll || permissions.contains("order:list")) {
+            inventoryChildren.add(menuItem("shipments", "发货单", "/shipments"));
+        }
         // 余料台账（issue #5191）：权限码沿用 processing:manage —— 与 RemnantController 的类级
         // @RequirePermission 同码（门禁不放宽也不收紧）。
         if (isAll || permissions.contains("processing:manage")) {

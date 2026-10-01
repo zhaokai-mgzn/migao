@@ -40,6 +40,7 @@ import {
   LifeBuoy,
   Settings,
   TrendingDown,
+  Truck,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -72,6 +73,8 @@ export const menuIconMap: Record<string, LucideIcon> = {
   LifeBuoy,
   Settings,
   TrendingDown,
+  // 发货单（issue #5939）：与「入库单」的 PackageOpen 对称的出口图标
+  Truck,
 }
 
 /**

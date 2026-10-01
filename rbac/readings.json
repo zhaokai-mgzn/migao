@@ -298,6 +298,7 @@
       "计件工资": "production:view",
       "仓储与物料": null,
       "入库单": "inbound:view",
+      "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
       "组织管理": null,
@@ -324,6 +325,7 @@
       "工艺配置": "production:view",
       "计件工资": "production:view",
       "入库单": "inbound:view",
+      "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
       "员工管理": "employee:list",
@@ -347,6 +349,7 @@
       "工艺配置": "production:view",
       "计件工资": "production:view",
       "入库单": "inbound:view",
+      "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
       "员工管理": "employee:list",
@@ -471,6 +474,12 @@
       "code": "inbound:view"
     },
     {
+      "key": "shipments",
+      "name": "发货单",
+      "path": "/shipments",
+      "code": "order:list"
+    },
+    {
       "key": "production-remnants",
       "name": "余料台账",
       "path": "/production/remnants",
@@ -571,6 +580,10 @@
     [
       "/finance",
       "finance:view"
+    ],
+    [
+      "/shipments",
+      "order:list"
     ],
     [
       "/employees",
@@ -872,6 +885,18 @@
         "system:manage": [
           "GET /api/admin/settings",
           "GET /api/admin/tenant/ai-config"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "shipments",
+      "name": "发货单",
+      "path": "/shipments",
+      "gate": "order:list",
+      "units": {
+        "order:list": [
+          "GET /api/admin/shipments"
         ]
       },
       "visibility_rule": "all"

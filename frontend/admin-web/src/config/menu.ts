@@ -229,6 +229,14 @@ export const menuGroups: MenuGroup[] = [
       // ⚠️ 权限码独立（inbound:view）—— 塞进 processing:manage 的判定里会让
       // 「有 inbound:view、没有 processing:manage」的人看不到菜单（#4203 点名的同族坑）。
       { key: 'inbound-orders', name: '入库单', icon: 'PackageOpen', path: '/inbound-orders', permissionCode: 'inbound:view', keywords: ['rkd', 'ruku', 'caigou'] },
+      // 发货单（issue #5939，用户 2026-10-02 裁定）：**与「入库单」对称**的出口单据 ——
+      // 用户原话「我让你开发过发货单的，但是在大菜单上没见到这个单据」。
+      // 在此之前发货单只有**按单**入口（订单详情 →「发货」/「打印发货单」），全量发货单无处可查。
+      // 🔴 权限码 = `order:list`（**既有**码，不新造）：与「订单列表」节点、页面守卫、以及该页第一屏
+      // 读端点 `GET /api/admin/shipments` 的 @RequirePermission 四处逐字同码 ⇒ **零授权 delta**
+      //（能看订单的人就能看发货单）。反例：新造 `shipment:view` ⇒ 今天没有任何岗位持有该码 ⇒
+      // 菜单节点对**所有人**不可见（#4203 同族坑：「有权限码但没人持有 = 零菜单入口」）。
+      { key: 'shipments', name: '发货单', icon: 'Truck', path: '/shipments', permissionCode: 'order:list', keywords: ['fhd', 'fahuo', 'shipment', 'chuku', '出库', '发货'] },
       // 余料台账（issue #5146 建页 / issue #5191 进侧边栏）：L2 批次余量的台账面。
       // 权限码沿用 processing:manage —— 与 `RemnantController` 的类级 `@RequirePermission("processing:manage")`
       // 逐字同码（**不放宽也不收紧**既有门禁；新开权限码反而会让既有 operator 岗位凭空多一处授权缺口）。

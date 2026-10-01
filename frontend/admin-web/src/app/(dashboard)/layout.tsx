@@ -38,6 +38,9 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/production', code: 'production:view' },
   { prefix: '/customers', code: 'customer:view' },
   { prefix: '/finance', code: 'finance:view' },
+  // 发货单（issue #5939）：页面守卫码 = 菜单节点码 = 该页第一屏读端点码（GET /api/admin/shipments）
+  // = `order:list` —— 取**既有**码，与 /orders 同一把尺子（#5699 判据 12 的口径）。
+  { prefix: '/shipments', code: 'order:list' },
   { prefix: '/employees', code: 'employee:list' },
   { prefix: '/settings', code: 'system:manage' },
   // issue #5246：知识库页同理 —— 页面本身的守卫用读码 knowledge:view
