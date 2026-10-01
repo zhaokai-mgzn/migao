@@ -43,7 +43,7 @@
 
 - **可见面**：侧边栏节点码 = 该页第一屏读码（本守卫的三条不变量管的就是它）；
 - **可做面**：写动作仍由**写码**把守（`POST /pool/dispatch` = `processing:update`、
-  `PUT /operation-positions/{id}` = `processing:manage`、`POST /production/seed-templates/{id}/apply` 继承类级
+  `PUT /operation-positions/{id}` = `processing:manage`、`DELETE /operations/{id}` 继承类级
   `processing:manage` …）。**P4 一个写端点的码都没改**（见下条的自证读数）。
 
 ⇒ 推论（**必须知道，否则会误判**）：一个岗位**可以**「看得见页面、读得到数据、点写按钮 403」——
@@ -282,16 +282,16 @@ P4_AUTHORIZATION_CENSUS: dict[str, dict[str, object]] = {
         "gate_after": "production:view",
         "direction": "零 delta（同义码统一）",
         "reason": (
-            "该页第一屏 6 个读端点跨两个码（配置族 4 个 `processing:manage` / 2 个 `production:view`）。"
-            "P4 把配置族收敛到页面码 `production:view`。**D2**：理由支撑该页 **6** 个端点，"
-            "实际变动 **4** 个端点的生效码 ⇒ M == N。**零 delta**：两个码的持有岗位集合在种子 / 回退两来源里"
+            "该页第一屏 5 个读端点跨两个码（配置族 3 个 `processing:manage` / 2 个 `production:view`）。"
+            "P4 把配置族收敛到页面码 `production:view`。⚠️ **2026-10-01 起该页第一屏由 6 个读端点收敛为 5 个**"
+            "（issue #5874 删掉 `GET /production/seed-templates` 及其页面消费者）。**D2**：理由支撑该页 **5** 个端点，"
+            "实际变动 **3** 个端点的生效码 ⇒ M == N。**零 delta**：两个码的持有岗位集合在种子 / 回退两来源里"
             "逐值相同（判据当场复算 `who_gains` / `who_loses` 必须都为空）。"
         ),
         "units_changed": (
             ("GET /api/admin/production/operation-positions", "processing:manage", "production:view"),
             ("GET /api/admin/production/route-rules", "processing:manage", "production:view"),
             ("GET /api/admin/production/route-rule-options", "processing:manage", "production:view"),
-            ("GET /api/admin/production/seed-templates", "processing:manage", "production:view"),
         ),
         "menu_nodes": (),
     },
@@ -768,11 +768,13 @@ def test_p4_census_only_touches_read_endpoints():
         f"写侧台账条数漂移（现取 {len(live)} / 上限 {WRITE_UNDER_READ_CODE_CAP}）⇒ "
         "要么有人改了写端点的码（本阶段射程外、须人裁），要么漏登记"
     )
-    # 读侧：P4 记录在案的变动**恰好 7 条**（6 个方法级覆盖 + 1 个类级码改挂的列表读端点）。
+    # 读侧：P4 记录在案的变动**恰好 6 条**（5 个方法级覆盖 + 1 个类级码改挂的列表读端点）。
+    # ⚠️ **2026-10-01 由 7 收敛为 6**：issue #5874 删掉 `GET /production/seed-templates`
+    # （商家面补套入口与后端端点同批退场）⇒ D1 表少一行，这个机器影子同步收窄（**只许缩短**）。
     # 这个数是本阶段 D1 表的机器影子：多一条（把写端点记进来）或少一条（漏记读端点）都红。
     changed = sum(len(entry["units_changed"]) for entry in P4_AUTHORIZATION_CENSUS.values())
-    assert changed == 7, (
-        f"P4 的读端点变动应为 7 条，实际 {changed} ⇒ 同步 census（本数与 §一 D1 表逐条对应）"
+    assert changed == 6, (
+        f"P4 的读端点变动应为 6 条，实际 {changed} ⇒ 同步 census（本数与 §一 D1 表逐条对应）"
     )
 
 

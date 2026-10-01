@@ -4,7 +4,6 @@ package com.migao.admin.service;
 
 import com.migao.admin.config.IndustryCodes;
 import com.migao.admin.config.TenantContext;
-import com.migao.admin.dto.ProductionSeedTemplateInfo;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionCraft;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
@@ -130,43 +129,6 @@ class ProductionSeedTemplateServiceTest {
     void tearDown() {
         TenantContext.clear();
     }
-
-    // ══════════════════════ 目录 ══════════════════════
-
-    @Nested
-    @DisplayName("listTemplates — 模板目录")
-    class ListTemplates {
-
-        @Test
-        @DisplayName("返回 curtain 模板（读真实模板文件）：35 工序 / 9 路线 / 16 选项映射")
-        void listTemplates_returnsCurtainTemplate() {
-            List<ProductionSeedTemplateInfo> templates = service.listTemplates();
-
-            assertThat(templates).isNotEmpty();
-            ProductionSeedTemplateInfo curtain = templates.stream()
-                    .filter(t -> "curtain".equals(t.getTemplateId()))
-                    .findFirst().orElse(null);
-            assertThat(curtain).as("应包含 curtain 布艺模板").isNotNull();
-            assertThat(curtain.getIndustry()).isEqualTo(IndustryCodes.CURTAIN);
-            assertThat(curtain.getName()).contains("布艺");
-            assertThat(curtain.getVersion()).isEqualTo(1);
-            assertThat(curtain.getOperationCount()).isEqualTo(41);
-            assertThat(curtain.getRoutingCount()).isEqualTo(9);
-            assertThat(curtain.getOptionCount()).isEqualTo(16);
-        }
-
-        @Test
-        @DisplayName("目录项 industry 恒属受控词表（模板键 = 受控 code，不是自由文本）")
-        void listTemplates_industryIsControlledCode() {
-            for (ProductionSeedTemplateInfo info : service.listTemplates()) {
-                assertThat(IndustryCodes.VOCABULARY)
-                        .as("模板 industry 必须是受控 code，否则按 industry 查模板会静默落空")
-                        .contains(info.getIndustry());
-            }
-        }
-    }
-
-    // ══════════════════════ 套用：正向 ══════════════════════
 
     @Nested
     @DisplayName("applyTemplate — 一键套用")

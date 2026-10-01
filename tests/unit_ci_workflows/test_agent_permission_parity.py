@@ -1880,7 +1880,7 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     "/production/routings": MenuReadAnchor("工艺配置", "production/routings/page.tsx", (
         "productionApi.getRoutings", "productionApi.getOperationsCatalog",
         "productionApi.getRouteRules", "productionApi.getRouteRuleOptions",
-        "productionApi.getOperationPositions", "productionApi.getSeedTemplates")),
+        "productionApi.getOperationPositions")),
     "/production/piecework": MenuReadAnchor("计件工资", "production/piecework/page.tsx",
                                             ("productionApi.getPieceworkSummary",)),
     "/inbound-orders": MenuReadAnchor("入库单", "inbound-orders/page.tsx", ("inboundOrderApi.list",)),

@@ -32,7 +32,6 @@ import type {
   OperationPosition,
   OperationPositionUpdateParams,
   OperationsCatalog,
-  ProductionSeedTemplate,
   ProductionSource,
   ProductionOperationUpdateParams,
   RouteRule,
@@ -103,6 +102,26 @@ import type {
  * 这类在别的 tab 上**指不着**的文案；③ 算料 / 裁高读面**首屏就发**（用户裁定），不必先点 tab 才知道
  * 配没配；读失败**不谎报**「已配」。
  *
+ * ## 2026-10-01 两处收口（issue #5874 / #5875）
+ *
+ * **① 「补套行业模板」商家面入口整体退场**（#5874，用户逐字「我建议移除这个功能」⇒ 追问后选
+ * 「商家面入口 + 后端端点一起退场，但新租户入驻时要根据模板自动开租套用」）：
+ * 本页不再读 `GET /seed-templates`、不再发 `POST /seed-templates/{id}/apply`
+ * （后端 `ProductionSeedTemplateController` 同批删除）⇒ 卡片、`一键套用` 按钮、二次确认弹窗、
+ * `templates` 状态与两个 api 方法**全部删除**。**开租自动套用保留**
+ * （`RegistrationService` → `ProductionSeedTemplateService.applyTemplate`）——
+ * 新租户开箱即有工序与路线；种子异常时补救动作**落回运营**（人工重跑）。
+ * ⚠️ 连带：就绪度里的指路文案不再指向该入口（缺基础路线 ⇒ 联系运营 / 手工新建路线）。
+ *
+ * **② 无价目行的库行「进表」**（#5875，用户附截图「界面上就只展示了 29 道，是不是页面功能 bug，
+ * 根本没有 41 道展示」⇒ 选 A）：
+ * 表 = **价目行 ∪ 无价目行的库行**（`matrixRows ∪ orphanRows`）⇒ 「工序库里有、价目行没有」的工序
+ * **有行**（单价格 `data-state=no_row` + 「无价目行」），行尾照旧有 `管理▸`（抽屉里可停用 / 删除，
+ * 复用既有写面、**不新增端点**）；`matrix-orphan-hint` 黄标**退场**（信息进表，不留第二载体）。
+ * ⚠️ 三条纪律：同一逻辑名**只出一行**；**已有价目行的逻辑名不补行**（那只是未被使用的库行）；
+ * `no_row` **不得**与「未定价」（`unpriced`）混用（同仓纪律「未定价 ≠ ¥0.00」）。
+ * ⚠️ **定价仍不可达**（后端没有「建价目行」写面）⇒ 出路 = 停用 / 删除后用「新增工序」重建。
+ *
  * ## 与旧形态的关键差异（P2b #4459 / P2c #4500 之后）
  *
  * 1. **路线 = 一条具名主线**（`{id, name, is_default, mainline}`）—— 改名**只改 `name`**
@@ -146,7 +165,6 @@ import type {
  *   PUT    /api/admin/production/route-rules/{id}/customer-unit-price （#4567 特殊选项对客单价）
  *   GET    /api/admin/production/operations-catalog       POST /production/operations
  *   PUT    /api/admin/production/operations/{id}          （改分组 / 单位 / status；#4960/#4961 起本页不再发 scope / is_must_finish）
- *   GET|POST /api/admin/production/seed-templates[/{id}/apply]
  *   —— 写端点权限 processing:manage（以拦截器/后端为准，本页不做显隐分叉）。
  *
  * 真值源：docs/curtain-production-rules.md §2 工序库 / §3 工艺路线；
@@ -638,6 +656,7 @@ interface StepView {
 function OperationPriceCell({
   operation,
   cell,
+  noPriceRow,
   editing,
   draft,
   busy,
@@ -649,6 +668,8 @@ function OperationPriceCell({
 }: {
   operation: string
   cell?: OperationPosition | null
+  /** issue #5875：这一行在工序库里有、但**没有任何价目行** ⇒ 没有可写的 `id`，**不可定价** */
+  noPriceRow?: boolean
   editing: boolean
   draft: string
   busy: boolean
@@ -658,6 +679,19 @@ function OperationPriceCell({
   onSave: () => void
   onCancel: () => void
 }) {
+  // 「无价目行」是**独立状态**（≠「未定价」）：只如实说明，**不摆一个点了会失败的改价入口**
+  if (noPriceRow) {
+    return (
+      <span
+        data-testid={`operation-price-${operation}`}
+        data-state="no_row"
+        title={`「${operation}」在工序库里有，但没有任何价目行（也就没法定价）。点行尾「管理▸」可停用或删除它；需要它干活请删除后用右上「新增工序」重建（新建工序会自动带上价目行）。`}
+        className="text-neutral-500"
+      >
+        无价目行
+      </span>
+    )
+  }
   const state = cellState(cell)
   const hasPrice = state === 'priced'
   return (
@@ -819,8 +853,16 @@ const cellState = (cell?: OperationPosition | null): 'unpriced' | 'priced' => {
  */
 interface MatrixRow {
   operation: string
-  cell: OperationPosition
+  /**
+   * 该行的价目行；`null` = **工序库里有、价目行没有**（issue #5875 的「无价目行」行）——
+   * 这类行没有可写的 `id` ⇒ **不可定价**（出路见 `OperationPriceCell` 的 `noPriceRow` 分支）。
+   * ⚠️ 别把它当「未定价」：`cellState(null)` 虽然也回 `unpriced`，但两者语义不同
+   * （「未定价」= 有行、`unit_price` 为空；「无价目行」= 连行都没有 —— 同仓纪律「未定价 ≠ ¥0.00」）。
+   */
+  cell: OperationPosition | null
   cells: Map<string, OperationPosition>
+  /** 无价目行时，元数据（分组 / 单位）只能从**工序库那一行**取（读面已把 `name` 归一为逻辑名） */
+  library?: CatalogOperation | null
 }
 
 /**
@@ -846,7 +888,6 @@ function ProcessConfigContent() {
   const [catalog, setCatalog] = useState<OperationsCatalog | null>(null)
   const [catalogError, setCatalogError] = useState('')
   const [routings, setRoutings] = useState<RoutingsResponse | null>(null)
-  const [templates, setTemplates] = useState<ProductionSeedTemplate[]>([])
   const [matrix, setMatrix] = useState<OperationPosition[]>([])
   const [matrixError, setMatrixError] = useState('')
   // ⚠️ issue #4886 用户裁定（附线上截图）后，原来的「【打包发货】独立区块」**整块删除** ⇒
@@ -1016,19 +1057,16 @@ function ProcessConfigContent() {
   })
   /** 新增特殊选项的**就地**理由（本地预检 ∪ 后端 `error.details[].message` 逐条） */
   const [newOptionReasons, setNewOptionReasons] = useState<string[]>([])
-  const [confirmTemplate, setConfirmTemplate] = useState<ProductionSeedTemplate | null>(null)
-  const [applying, setApplying] = useState('')
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
-    // 五条只读端点互不依赖：任一条失败不得把整页吞掉（页面不白屏，失败处给可读提示）
-    const [routingsRes, catalogRes, templateRes, positionsRes, rulesRes, ruleOptionsRes] =
+    // 四条只读端点互不依赖：任一条失败不得把整页吞掉（页面不白屏，失败处给可读提示）
+    const [routingsRes, catalogRes, positionsRes, rulesRes, ruleOptionsRes] =
       await Promise.allSettled([
       productionApi.getRoutings(),
       productionApi.getOperationsCatalog(),
-      productionApi.getSeedTemplates(),
       // ① 矩阵格（含 `id` ⇒ 抽屉写面寻址；`GET /operation-positions` 与分区读面的 `operations`
       //    段**同形**，本页只用它拿格 —— 分区与一列价由下面那条端点给，**不重算**）
       productionApi.getOperationPositions(),
@@ -1048,7 +1086,6 @@ function ProcessConfigContent() {
       setCatalog(null)
       setCatalogError('工序库加载失败，请稍后重试')
     }
-    setTemplates(templateRes.status === 'fulfilled' ? templateRes.value.data?.data ?? [] : [])
     if (positionsRes.status === 'fulfilled') {
       // 价目行 = **全部**行（含 `scope='set'` 的交付环节行）—— 改价按行的 `id` 寻址，而两层分区
       // 读面的 `delivery` 段是**聚合行**（无 `id`）⇒ 写面必须靠这里。
@@ -1287,7 +1324,36 @@ function ProcessConfigContent() {
    * 独立区块只是同一批工序的**第二个视图** ⇒ 删掉它**不减少任何定价入口**，
    * 而且消灭了「同一个概念两个载体」这条漂移面（同 #4650 阶段 1 的删法）。
    */
-  const operationsRows = matrixRows
+  /**
+   * **无价目行的库行**（issue #5875）：`orphanOps` 按**逻辑名去重**后的那一份 ——
+   * 表是「一道逻辑工序一行」⇒ 同一逻辑名的多行库行**只出一行**（抽屉按逻辑名寻址，会给出候选数）。
+   */
+  const orphanRows = useMemo<MatrixRow[]>(() => {
+    // ⚠️ 两道去重都必须做：① **同名只出一行**（表 = 一道逻辑工序一行）；② **已有价目行的逻辑名
+    // 不再补一行** —— 库里那种「同一逻辑名的另一条库行没被价目行引用」只是**未被使用的库行**，
+    // 它对应的工序在表里**本来就有行**（能定价）⇒ 补第二行会把同一道工序显示两遍。
+    const priced = new Set(matrixRows.map((r) => r.operation))
+    const seen = new Set<string>()
+    const rows: MatrixRow[] = []
+    orphanOps.forEach((op) => {
+      const name = op.name
+      if (!name || seen.has(name) || priced.has(name)) return
+      seen.add(name)
+      rows.push({ operation: name, cell: null, cells: new Map(), library: op })
+    })
+    return rows
+  }, [orphanOps, matrixRows])
+
+  /**
+   * ⚠️ **表的行 = 价目行 ∪ 无价目行的库行**（issue #5875）。
+   *
+   * 改前只渲染价目行 ⇒「工序库里有、价目行没有」的那些**在界面上根本看不到**（只有一枚黄标报数，
+   * 而抽屉入口挂在表行上）⇒ 商家既看不到、也删不掉。用户 2026-10-01 截图实证：
+   * 就绪度写「工序库里共 41 道，其中 12 道没有任何价目行」，而表里只有 29 行。
+   * 现在它们**作为行出现**（单价格 `data-state="no_row"` 显示「无价目行」），行尾照旧有「管理▸」
+   * ⇒ 可停用 / 删除（复用既有写面，**不新增端点**）；就绪度第 ① 步的计数与本表**同一个来源**。
+   */
+  const operationsRows = useMemo(() => [...matrixRows, ...orphanRows], [matrixRows, orphanRows])
 
   /** 一行里出现过的元数据值（去重、保序、剔除空值）—— 「不许静默取第一个」的公共值口径 */
   const distinctMeta = (
@@ -1303,6 +1369,21 @@ function ProcessConfigContent() {
   }
 
   /**
+   * 行的元数据取值域：**价目行优先**；无价目行的行（issue #5875）回落到**工序库那一行**
+   * —— 分组 / 单位本来就是同一行工序的元数据（库口径与价目口径在真数据里同源）。
+   */
+  const metaValues = (
+    row: MatrixRow,
+    pick: (c: OperationPosition) => string | null | undefined,
+    libPick: (o: CatalogOperation) => string | null | undefined,
+  ): string[] => {
+    const vals = distinctMeta(row, pick)
+    if (vals.length > 0 || !row.library) return vals
+    const v = libPick(row.library)
+    return v ? [v] : []
+  }
+
+  /**
    * 第一层**按车间分组**（issue #4677 = 设计 §4.1 元素②）：分组名取行尾元数据的 `group`
    * （各格不一致时**逐个列出**，同 {@link metaText} 口径 —— 不静默取第一个），
    * 顺序按 {@link WORKSHOP_LABEL}（裁剪 → 车位 → 后整 → 质检 → 其他），认不出的组**照原样追加在后**。
@@ -1310,7 +1391,7 @@ function ProcessConfigContent() {
   const workshopGroups = useMemo(() => {
     const byGroup = new Map<string, MatrixRow[]>()
     operationsRows.forEach((row) => {
-      const groups = distinctMeta(row, (c) => c.group)
+      const groups = metaValues(row, (c) => c.group, (o) => o.group)
       const key = groups.length > 0 ? groups.join(' / ') : ''
       byGroup.set(key, [...(byGroup.get(key) ?? []), row])
     })
@@ -1610,11 +1691,10 @@ function ProcessConfigContent() {
    * 未定价 ⇒ 报工按未定价处理（工人白干）；孤儿 ⇒ 库里有工序却没有任何价目行
    * （**表里看不到、也没法定价**）。用户裁定（2026-10-01）＝ 这两条必须进判据。
    */
-  const total = catalog?.total ?? 0
   const opsStepState: ReadinessState =
     catalogError !== '' || matrixError !== ''
       ? 'unknown'
-      : operationsReady && operationsRows.length > 0 && unpricedCount === 0 && orphanOps.length === 0
+      : operationsReady && operationsRows.length > 0 && unpricedCount === 0 && orphanRows.length === 0
         ? 'done'
         : 'todo'
   const opsStepStatus = catalogError !== '' || matrixError !== '' ? '读取失败' : undefined
@@ -1624,13 +1704,13 @@ function ProcessConfigContent() {
       : matrixError !== ''
         ? '价目表没读出来（≠ 没定价）：点右上「刷新」重试。'
         : !operationsReady
-          ? '工序库是空的：点「去处理」用「补套行业模板」一次补齐（已存在的条目自动跳过），或点右上「新增工序」逐道建。'
+          ? '工序库是空的：点右上「新增工序」逐道建（新建一道会自动带上它的价目行）。'
           : operationsRows.length === 0
-            ? '表里还没有可定价的工序：点「去处理」用「补套行业模板」一次补齐，或点右上「新增工序」逐道建。'
+            ? '表里还没有工序：点右上「新增工序」建一道，再回这里定价。'
           : unpricedCount > 0
             ? `有 ${unpricedCount} 道工序还没定价：未定价 ≠ ¥0.00 —— 报工按未定价处理（等于白干），点「去处理」逐道补价。`
-            : orphanOps.length > 0
-              ? `工序库里共 ${total} 道，其中 ${orphanOps.length} 道没有任何价目行（下表看不到、也没法定价）：点「去处理」用「补套行业模板」补齐。`
+            : orphanRows.length > 0
+              ? `有 ${orphanRows.length} 道工序没有价目行（已在表里以「无价目行」标出）：点「去处理」逐道处理 —— 停用或删除后重建（删除不影响历史报工）。`
               : ''
 
   /**
@@ -1722,7 +1802,7 @@ function ProcessConfigContent() {
     missingBaseRoutes.length > 0
       ? `缺 ${missingBaseRoutes.length} 条基础路线：${missingBaseRoutes.join(' / ')} —— ` +
         '这两条是窗帘单与布料单各自的主线，缺了对应形态的订单就没有工序可走。' +
-        '用「补套行业模板」补齐（已存在的条目自动跳过）。'
+        '这两条是**开租时自动生成**的种子路线（这里是异常形态）—— 请联系我们核实补齐；也可先用右上「新建路线」手工建一条顶上。'
       : emptyShells.length > 0
         ? `有 ${emptyShells.length} 条「空壳」路线（主线为空）：该路线命中后一道工序都没有，请点「编辑主线」把工序排进去。`
         : ''
@@ -2333,33 +2413,6 @@ function ProcessConfigContent() {
     setRulePriceReasons([])
   }
 
-  /**
-   * 一键补套行业模板（**空态补救**，不是主路径）。
-   * 结果 toast 必须报**服务端返回的真实数字**（新增/跳过）—— 缺结果体时显式报错，不假装成功。
-   */
-  const applyTemplate = async () => {
-    const template = confirmTemplate
-    if (!template) return
-    setApplying(template.templateId)
-    try {
-      const res = await productionApi.applySeedTemplate(template.templateId)
-      const result = res.data?.data
-      if (!result) {
-        toast.error('套用结果缺失，请刷新页面核对工序库')
-      } else {
-        toast.success(
-          `已套用「${template.name}」：新增 ${result.created_operations} 道工序、` +
-            `${result.created_routings} 条工艺路线、跳过 ${result.skipped} 条（初始价请在列表中确认后修改）`,
-        )
-      }
-      setConfirmTemplate(null)
-      await load()
-    } catch (e) {
-      toastRequestError(e, '套用行业模板失败')
-    } finally {
-      setApplying('')
-    }
-  }
 
   return (
     <div className="p-6 space-y-4">
@@ -2486,71 +2539,7 @@ function ProcessConfigContent() {
             </div>
           </div>
 
-          {/* ── 行业模板（**缺失即显示**，issue #4677 = 设计 §6 修法 A；源自 #4670 ①）──
-              改前判据 = `!operationsReady`（**只在工序库为空时**显示）⇒ 工序库非空但**缺基础路线**
-              的租户看不到这个入口（「补套」是幂等的：已存在的条目自动跳过）⇒ 入口改成
-              「**工序库为空 ∨ 两条基础路线不齐**」（缺失即显示，幂等）。
-              ⚠️ **不并上「有空壳路线」**：空壳路线不是种子能补的（那是商家自建路线的半成品，
-              补套不会碰它）⇒ 把它算进来会给出一个点了也没用的入口。
-              ⚠️ **2026-10-01 补上第三类「可补齐的缺失项」**（issue #5858；设计 §6 修法 A 原文即
-              「至少覆盖：缺基础路线 / **缺基线工序** / **缺部位价目行**」，后两类此前没接线）：
-              有**孤儿工序**（库里有、没有任何价目行）时也显示 —— 否则 `matrix-orphan-hint` 与就绪度
-              第 ① 步都会指向一张**根本没渲染**的卡（用户截图形态：工序库 40 道 ∧ 基础路线齐
-              ∧ 11 道孤儿 ⇒ 卡不显示、提示却说「用下方『补套行业模板』补齐」）。
-              判据（后端 `ProductionSeedTemplateService.planPositions`）：按 `(逻辑名 × 部位)` 先查后插、
-              并只对本租户工序库的逻辑名过滤 ⇒ 补套**确实**能补出缺失的价目行（第二次套用零 insert）。 */}
-          {(!operationsReady || missingBaseRoutes.length > 0 || orphanOps.length > 0) && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-5" data-testid="seed-templates">
-              <div className="mb-3 flex flex-wrap items-baseline gap-2">
-                <h2 className="text-base font-medium text-neutral-900">
-                  {!operationsReady
-                    ? '工序库为空 · 补套行业模板'
-                    : missingBaseRoutes.length > 0
-                      ? '缺基础路线 · 补套行业模板'
-                      : '有工序没有价目行 · 补套行业模板'}
-                </h2>
-                <span className="text-sm text-neutral-600">
-                  开租时系统会按行业自动套用；这里是套用失败或老租户的补救入口（已存在的条目自动跳过）
-                </span>
-              </div>
-              {templates.length === 0 ? (
-                <p className="py-4 text-sm text-neutral-500" data-testid="seed-templates-empty">
-                  暂无可用模板
-                </p>
-              ) : (
-                <div className="divide-y divide-amber-200">
-                  {templates.map((t) => (
-                    <div
-                      key={t.templateId}
-                      className="flex items-start justify-between gap-3 py-3"
-                      data-testid={`seed-template-${t.templateId}`}
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-neutral-900">{t.name}</span>
-                          <span className="rounded bg-white px-1.5 py-0.5 text-[11px] text-neutral-500">
-                            v{t.version}
-                          </span>
-                        </div>
-                        {t.description && <p className="mt-1 text-sm text-neutral-600">{t.description}</p>}
-                      </div>
-                      <Button
-                        size="sm"
-                        data-testid={`seed-template-apply-${t.templateId}`}
-                        disabled={applying === t.templateId}
-                        onClick={() => setConfirmTemplate(t)}
-                        title="把该行业的预置工序与工艺路线复制到您的工序库（已存在条目自动跳过）"
-                      >
-                        {applying === t.templateId ? '套用中…' : '一键套用'}
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── 两个 tab：工序管理 / 算料配置 ──
+                    {/* ── 两个 tab：工序管理 / 算料配置 ──
               issue #4886 用户裁定：原「工艺项」与「工艺路线」**合并为一屏**（路线就放在原【打包发货】的位置），
               选项卡从三项收敛为两项；合并仍是**一个菜单入口、一个页面**，tab 切换**不丢状态**。 */}
           <div className="flex items-center gap-1 border-b border-neutral-200" role="tablist" data-testid="process-config-tabs">
@@ -2608,18 +2597,6 @@ function ProcessConfigContent() {
                       >
                         未定价 {unpricedCount} 项
                       </span>
-                      {/* 孤儿提示（issue #4614；issue #4886 起**只读**）：工序库里有、但没有任何价目行
-                          ⇒ 下表看不到它、也没法定价。旧的「接入」弹窗已随旧配置面退场 ⇒
-                          这里**不摆死路按钮**，只如实报数（出路见 title）。 */}
-                      {orphanOps.length > 0 && (
-                        <span
-                          data-testid="matrix-orphan-hint"
-                          className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700"
-                          title="这些工序在工序库里有、但没有任何价目行 —— 下表看不到它们，也没法定价。点右上「刷新」重试；若仍缺失，用下方「补套行业模板」补齐，或用「新增工序」重建。"
-                        >
-                          有 {orphanOps.length} 道工序还没有价目行（下表看不到）
-                        </span>
-                      )}
                       <input
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
@@ -2693,8 +2670,8 @@ function ProcessConfigContent() {
                              </tr>
                              {openWorkshops[g.group || '__ungrouped__'] !== false &&
                                g.rows.map((row) => {
-                                 const groups = distinctMeta(row, (c) => c.group)
-                                 const units = distinctMeta(row, (c) => c.unit)
+                                 const groups = metaValues(row, (c) => c.group, (o) => o.group)
+                                 const units = metaValues(row, (c) => c.unit, (o) => o.unit)
                                  const inconsistent = metaInconsistent(groups) || metaInconsistent(units)
                                  const key = cellKeyOf(row.operation)
                                  return (
@@ -2715,17 +2692,18 @@ function ProcessConfigContent() {
                                        <OperationPriceCell
                                          operation={row.operation}
                                          cell={row.cell}
+                                         noPriceRow={!row.cell}
                                          editing={cellEditing === key}
                                          draft={cellDraft}
                                          busy={cellBusy}
                                          reasons={cellEditing === key && cellReasons?.key === key ? cellReasons.items : []}
                                          onStartEdit={() => {
                                            setCellEditing(key)
-                                           setCellDraft(row.cell.unit_price == null ? '' : String(row.cell.unit_price))
+                                           setCellDraft(row.cell && row.cell.unit_price != null ? String(row.cell.unit_price) : '')
                                            setCellReasons(null)
                                          }}
                                          onDraftChange={setCellDraft}
-                                         onSave={() => saveCellPrice(row.cell)}
+                                         onSave={() => row.cell && saveCellPrice(row.cell)}
                                          onCancel={cancelCellEdit}
                                        />
                                      </td>
@@ -4262,19 +4240,6 @@ function ProcessConfigContent() {
       </Modal>
 
 
-      {/* 一键套用确认（批量写入工序/路线，防误触；照知识库页范式） */}
-      <Modal open={!!confirmTemplate} onClose={() => setConfirmTemplate(null)} title="套用行业模板" footer={null}>
-        <p className="text-sm">
-          将把「{confirmTemplate?.name}」的预置工序与工艺路线复制到您的工序库；已存在的条目将自动跳过。
-          套用出的单价是<strong>初始价（占位值）</strong>，请逐条确认后按实际工价修改 —— 改价只影响新报工，历史报工按当时价。
-        </p>
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setConfirmTemplate(null)}>取消</Button>
-          <Button data-testid="seed-template-apply-confirm" onClick={applyTemplate} disabled={!!applying}>
-            {applying ? '套用中…' : '确定套用'}
-          </Button>
-        </div>
-      </Modal>
     </div>
   )
 }

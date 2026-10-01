@@ -99,8 +99,6 @@ import type {
   RouteOperationCreateResult,
   OperationPositionsAttachResult,
   RouteSignalsResponse,
-  ProductionSeedTemplate,
-  ProductionSeedApplyResult,
   ProductStatus,
   AfterSalesTicket,
   AfterSalesListParams,
@@ -1028,16 +1026,9 @@ export const productionApi = {
   getRoutings: () =>
     request.get<ApiResponse<RoutingsResponse>>('/api/admin/production/routings'),
 
-  // ── 行业生产模板目录 + 一键套用（issue #4361 冻结契约；前端半边 #4363）──
-  // 存量非 1 号租户工序库/路线库为空（V54/V56/V58/V59 只种 tenant_id=1）⇒ 这是其补救路径。
-  // 套用幂等：已存在的工序/路线自动跳过（响应给出 created_operations / created_routings / skipped）。
-  getSeedTemplates: () =>
-    request.get<ApiResponse<ProductionSeedTemplate[]>>('/api/admin/production/seed-templates'),
-
-  applySeedTemplate: (templateId: string) =>
-    request.post<ApiResponse<ProductionSeedApplyResult>>(
-      `/api/admin/production/seed-templates/${templateId}/apply`,
-    ),
+  // 行业模板的**商家面入口已整体退场**（issue #5874；2026-10-01 用户裁定）：本客户端不再有
+  // `getSeedTemplates` / `applySeedTemplate`，后端两个端点同批删除。
+  // **开租时的自动套用保留**（`RegistrationService` → `ProductionSeedTemplateService.applyTemplate`）。
 
   // 工序库写：改单价 / 必完开关等（权限 processing:manage）
   // issue #4614 范围补口：body 可带 `positions` ⇒ **存量孤儿接入**（只补缺失的矩阵行，

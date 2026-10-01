@@ -24,8 +24,6 @@ import userEvent from '@testing-library/user-event'
 const mockGetOperationsCatalog = vi.fn()
 const mockGetRoutings = vi.fn()
 const mockUpdateOperation = vi.fn()
-const mockGetSeedTemplates = vi.fn()
-const mockApplySeedTemplate = vi.fn()
 // issue #4416：工序库并入「工艺配置」单页 ⇒ 该页还会拉缺口/信号两条只读端点
 const mockGetRoutingGaps = vi.fn()
 const mockGetRouteSignals = vi.fn()
@@ -48,8 +46,6 @@ vi.mock('@/lib/api', () => ({
     getOperationsCatalog: (...args: unknown[]) => mockGetOperationsCatalog(...args),
     getRoutings: (...args: unknown[]) => mockGetRoutings(...args),
     updateOperation: (...args: unknown[]) => mockUpdateOperation(...args),
-    getSeedTemplates: (...args: unknown[]) => mockGetSeedTemplates(...args),
-    applySeedTemplate: (...args: unknown[]) => mockApplySeedTemplate(...args),
     getRoutingGaps: (...args: unknown[]) => mockGetRoutingGaps(...args),
     getRouteSignals: (...args: unknown[]) => mockGetRouteSignals(...args),
     getOperationPositions: (...args: unknown[]) => mockGetOperationPositions(...args),
@@ -111,8 +107,6 @@ describe('工序「作用域」写面退场（issue #4960；原 #4384 A1 / #4588
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
     mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS))
     mockUpdateOperation.mockReset().mockResolvedValue(ok({ id: 'op-v54-24' }))
-    mockGetSeedTemplates.mockReset().mockResolvedValue(ok([]))
-    mockApplySeedTemplate.mockReset()
     mockGetRoutingGaps.mockReset().mockResolvedValue(ok({ unrouted_operations: [], signal_keys_without_route: [] }))
     mockGetRouteSignals.mockReset().mockResolvedValue(ok({ total: 0, signals: [] }))
     mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
