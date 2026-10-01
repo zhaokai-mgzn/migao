@@ -415,7 +415,9 @@ export default function OrdersPage() {
 
       {/* 查询区域 */}
       <div className="bg-white rounded-lg border border-neutral-200 p-5" data-testid="search-area">
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.5fr] gap-x-6 gap-y-4 mb-4">
+        {/* 查询区第一行：`1fr` = `minmax(auto,1fr)`（轨道最小尺寸 = 内容最小宽度，不可收缩）
+            ⇒ 一律写成 `minmax(0,…)`，行内放得下时逐像素等价、放不下时收缩而不是溢到卡片外（issue #5841） */}
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)] gap-x-6 gap-y-4 mb-4">
           {/* 订单ID */}
           <div className="flex items-center gap-2">
             <FieldLabel>订单ID</FieldLabel>
@@ -448,7 +450,13 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-[repeat(4,1fr)_auto] gap-x-6 gap-y-4 items-center">
+        {/* 查询区第二行（issue #5841）：改前 `md:grid-cols-[repeat(4,1fr)_auto]` —— 四条 `1fr` 轨道
+            的最小尺寸 = 各格 min-content（实测 380/251/251/141 + 按钮 228 + 间隙 = 1347px），
+            而卡片内容宽只有「视口 − 380」⇒ 1440 视口下溢出 287px、「查询/重置/刷新」被挤出卡片。
+            修法：① 轨道写成 `minmax(0,…)`（可收缩）② 日期输入去掉 `min-w-[130px]`（控件也要能缩）。
+            断点取 `xl`（1280）而不是 `md`（768）：768~1279 的可用宽度（1024 视口 = 644px）物理上
+            装不下 4 个筛选 + 3 个按钮（最小 680px），`md` 时实测被压到 26px/格。 */}
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-x-6 gap-y-4 items-center">
           {/* 下单时间 */}
           <div className="flex items-center gap-2">
             <FieldLabel>下单时间</FieldLabel>
@@ -457,7 +465,7 @@ export default function OrdersPage() {
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               placeholder="开始日期"
-              className="flex-1 min-w-[130px] h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="flex-1 min-w-0 h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
             <span className="text-neutral-400 text-sm">至</span>
             <input
@@ -465,7 +473,7 @@ export default function OrdersPage() {
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
               placeholder="结束日期"
-              className="flex-1 min-w-[130px] h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="flex-1 min-w-0 h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
           </div>
           {/* 商品货号 */}
