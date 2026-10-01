@@ -713,10 +713,16 @@ echo "变更集：$(printf '%s\n' "$CHANGE_SET" | grep -c .) 个文件（origin/
 # ⚠️ 不改变本脚本既有的三态语义（✅ / ❌ / ⏭️）：准入在最外层，拿不到锁时**非零退出 + 出声**，
 #    不是静默跳过、也不是记成通过（本仓口径：「没跑」必须长得像「没跑」）。
 heavy_lock_wanted() {
-  case "$MODE" in
-    quick|full|frontend|backend|agent|redproof|gate) return 0 ;;
-    *) return 1 ;;
-  esac
+  # ⚠️ **刻意不用 `case "$MODE" in`**（2026-10-01 实测，issue #5863）：本脚本有**多个判据**靠
+  #    **文本定位**「顶层 `case "$MODE" in`」，函数里再写一个**同名** case 会让它们认错对象：
+  #      · `test_verify_all_quick_scope.py::_mode_block` 取**第一个**匹配 ⇒ 报「顶层 case 里找不到 `quick)` 分支」
+  #      · `test_machine_heavy_lock.py::test_acquire_happens_before_any_heavy_dispatch` ⇒ 报「接线顺序错」
+  #    用 `for` 列档位既避开这个陷阱，语义也更直白（判据读的是本函数的**现取行为**，与写法无关）。
+  local tier
+  for tier in quick full frontend backend agent redproof gate; do
+    [ "$MODE" = "$tier" ] && return 0
+  done
+  return 1
 }
 macquire() {
   heavy_lock_wanted || return 0
