@@ -433,7 +433,7 @@ cmd_add() {
   [ -d "$REPO_ROOT/frontend/mini-app" ] && echo "      cd frontend/mini-app && npm ci"
   echo "   ⚠️  build 产物（dist/）不入库，worktree 之间互不影响。"
   echo "   🔴 依赖一律在本工作区内安装（npm ci）；禁止把 node_modules 软链到主工作区或其他工作区"
-  echo "      软链（${'$'}{path}/tests/node_modules → 主仓库同名目录）会在「删/重建 node_modules」的动作下**打穿目标**："
+  echo "      软链（${path}/tests/node_modules → 主仓库同名目录）会在「删/重建 node_modules」的动作下**打穿目标**："
   echo "      2026-10-01 实测一次 worktree 内的 npm ci 就把主工作区 tests/node_modules 清成空目录（issue #5930）。"
   echo "      正确姿势见 docs/wiki/Development.md 的「worktree 依赖准备」节（与本提示**同源**，不另写一份）。"
   echo "   ⚠️  本工作区已把 .agent-presets/** 对齐 origin/main（**本分支自己改过预设 ⇒ 跳过刷新**："

@@ -16,7 +16,7 @@
 ⇒ 共同根因 = **「跨工作区共享 `node_modules` 的软链」×「任何会删/重建 `node_modules` 的动作」**。
 这类破坏**在仓库外发生、git 里看不见**（软链不入库）⇒ **静默**，没有任何判据会报。
 
-## 本文件判的七条（每条都带注入式红证；红证**只在 `tmp_path` 自造 fixture 上跑**，不碰真工作区）
+## 本文件判的八条（每条都带注入式红证；红证**只在 `tmp_path` 自造 fixture 上跑**，不碰真工作区）
 
 | # | 判据 | 红证（注入） |
 |---|---|---|
@@ -27,6 +27,7 @@
 | 5 | **类级元守卫（教法扫描）**：仓内没有任何**脚本/文档**把「软链到主工作区 node_modules」教成步骤 | 内存语料里加一行配方 ⇒ 判红；豁免台账**只许缩短**、**条数现取**、陈旧登记即红 |
 | 6 | **同源**：`add` 输出与 `docs/wiki/Development.md` 必须带**同一句**规范（不许两处各写一份） | 任一侧删掉该句 ⇒ 判红 |
 | 7 | **判别力自证**：判据函数在内存构造的坏形态上各自判红、在对照形态上**不红** | 六种坏形态 + 两条对照 |
+| 8 | **可见提示（issue 要求 ①）**：两种危险形态各自**具名**点出 —— 指向**本仓库工作区** / 指向**工作区之外**，且提示里带「路径 → 目标」 | 提示词里少任一种 ⚠️ 形态 ⇒ 判红 |
 
 ## 「fail-closed 与否」的裁定（issue 原文要求给出理由）
 
@@ -252,7 +253,8 @@ def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
 
 
-def build_fixture(base: Path, *, with_link: bool, script_text: str | None = None) -> dict:
+def build_fixture(base: Path, *, with_link: bool, script_text: str | None = None,
+                  external_target: bool = False) -> dict:
     """造一个**真的**仓库 + 一个**真的** worktree（脚本用被测脚本的副本，字节相同）。
 
     `script_text=None` ⇒ 用仓库里的现役脚本；否则写入给定源码（**注入变体**的唯一入口）。
@@ -273,7 +275,8 @@ def build_fixture(base: Path, *, with_link: bool, script_text: str | None = None
     _git(repo, "add", "README.md")
     _git(repo, "commit", "-qm", "init")
 
-    target = repo / "tests" / "node_modules"          # 「主工作区」侧的依赖
+    # 「主工作区」侧的依赖；`external_target=True` ⇒ 把它放到**仓库之外**（两种 ⚠️ 形态各自取证）
+    target = (base / "outside" / "node_modules") if external_target else (repo / "tests" / "node_modules")
     (target / "pkg").mkdir(parents=True)
     (target / "pkg" / "a.js").write_text("PAYLOAD\n", encoding="utf-8")
     (target / "pkg" / "b.js").write_text("PAYLOAD2\n", encoding="utf-8")
@@ -369,6 +372,34 @@ def test_rm_unlinks_before_removing_and_keeps_the_external_target_intact(tmp_pat
     )
 
 
+def test_visible_warning_distinguishes_outside_repo_from_cross_workspace(tmp_path: Path) -> None:
+    """判据 8（issue 要求 ①「对软链指向本仓库之外/主工作区给出**可见提示**」）：
+
+    两种形态必须各自被**具名**点出来（而不是只打一行「发现软链」）：
+    指向**本仓库工作区** = 跨工作区共享依赖的典型形态（本事故成因）；指向**仓库之外** = 删除动作若穿过它，
+    打到的是**仓库外的数据**。两条都必须在输出里逐字出现，且各自带上「路径 → 目标」。
+    """
+    inside = build_fixture(tmp_path / "inside", with_link=True)
+    proc_in, _ = run_rm(inside, tmp_path / "inside")
+    assert proc_in.returncode == 0, f"rm 非零退出：{proc_in.stderr!r}"
+    assert "指向**本仓库工作区**" in proc_in.stdout, (
+        f"指向本仓库工作区的软链没有被具名点出来：{proc_in.stdout!r}"
+    )
+    assert f"{inside['wt']}/tests/node_modules → {inside['target']}" in proc_in.stdout, (
+        f"提示里没有「路径 → 目标」：{proc_in.stdout!r}"
+    )
+
+    outside = build_fixture(tmp_path / "outside-fixture", with_link=True, external_target=True)
+    proc_out, _ = run_rm(outside, tmp_path / "outside-fixture")
+    assert proc_out.returncode == 0, f"rm 非零退出：{proc_out.stderr!r}"
+    assert "指向**工作区之外**" in proc_out.stdout, (
+        f"指向仓库之外的软链没有被具名点出来：{proc_out.stdout!r}"
+    )
+    assert f"{outside['wt']}/tests/node_modules → {outside['target']}" in proc_out.stdout, (
+        f"提示里没有「路径 → 目标」：{proc_out.stdout!r}"
+    )
+
+
 def test_injected_missing_unlink_leaves_the_link_live_at_removal_time(tmp_path: Path) -> None:
     """判据 2 的红证：删掉解链那一步 ⇒ 见证器读到 `yes`（= 删除动作暴露在活链上）。"""
     src = SCRIPT.read_text(encoding="utf-8")
@@ -460,6 +491,41 @@ def test_add_output_and_development_doc_share_one_canonical_rule() -> None:
     missing_add = script_text.replace(f'  echo "   🔴 {CANON_RULE}"', "", 1)
     assert missing_add != script_text, "注入没生效（add 输出侧）⇒ 会变成空断言"
     assert same_source_problems(missing_add, doc_text) != []
+
+
+def test_add_output_reaches_the_operator_with_the_discouragement(tmp_path: Path) -> None:
+    """判据 6 的**行为面**（§28.2「判据本体绿 ≠ 接线在」）：`add` 的输出必须真的打出来。
+
+    为什么不能只做字符串搜索：本包第一版把 `echo` 里的占位符写坏成 `${'$'}{path}` ——
+    **`bash -n` 抓不到**（bad substitution 是运行期错误），字符串搜索也抓不到（那句规范在，
+    只是它**后面的**一段炸了）⇒ `add` 会在建完工作区之后**中途非零退出**，而操作者看不到后半段提示。
+    这条判据真跑一次 `add`（真 git 仓库、真 worktree，全在 `tmp_path` 里）。
+    """
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    (repo / "scripts" / "dev-worktree.sh").write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+    (repo / "README.md").write_text("init\n", encoding="utf-8")
+    _git(repo, "init", "-q")
+    _git(repo, "symbolic-ref", "HEAD", "refs/heads/main")
+    _git(repo, "config", "user.email", "t@example.invalid")
+    _git(repo, "config", "user.name", "t")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-qm", "init")
+    _git(repo, "branch", "feat-demo")
+
+    env = dict(os.environ, MIGAO_WT_BASE=str(tmp_path / "wt-base"))
+    proc = subprocess.run(
+        ["bash", str(repo / "scripts" / "dev-worktree.sh"), "add", "feat-demo"],
+        capture_output=True, text=True, env=env, timeout=180, cwd=str(repo),
+    )
+    assert proc.returncode == 0, (
+        f"`add` 非零退出（输出半截 = 操作者看不到提示）：stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    )
+    assert "bad substitution" not in proc.stderr, f"脚本里有运行期语法错误：{proc.stderr!r}"
+    out = proc.stdout
+    assert CANON_RULE in out, f"`add` 的输出里没有那句规范：{out!r}"
+    assert "worktree 依赖准备" in out, f"`add` 的输出没把正确姿势指向文档同名节：{out!r}"
+    assert "工作区就绪" in out, f"`add` 的输出没有走到最后（半截输出）：{out!r}"
 
 
 def test_the_guarded_consumption_point_resolves() -> None:
