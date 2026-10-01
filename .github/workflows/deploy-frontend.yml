@@ -218,10 +218,15 @@ jobs:
             fi
           fi
 
-      - uses: actions/setup-node@v7
+      # Node ≥22.22.2（同 pr-check.yml 的 admin-web 腿）：本腿的 `Unit tests`（`npx vitest run`）
+      # 用 jsdom 30（`engines.node = ^22.22.2 || ^24.15.0 || >=26.0.0`），其 undici 8.11.0 在 Node 20 上
+      # 于模块装载期崩（`node:worker_threads.markAsUncloneable` 不存在）⇒ 单测整段跑不起来。
+      # 生产镜像仍是 node:20-alpine（jsdom 只被 vitest 加载，`next build` 不碰它）。
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
         if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/admin-web/package-lock.json
 
