@@ -201,8 +201,14 @@ def make_stubs(tmp_path: Path) -> Path:
     return bin_dir
 
 
-def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",)) -> dict:
-    """`C1(代码) → C2(代码，部署被吞；只改 `drift_paths`) → D1(docs) → D2(docs, HEAD)`。"""
+def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",),
+                 absent_workflows: tuple = ()) -> dict:
+    """`C1(代码) → C2(代码，部署被吞；只改 `drift_paths`) → D1(docs) → D2(docs, HEAD)`。
+
+    `absent_workflows` = 模拟「**还没合并到 default branch** 的 workflow」（新增腿的那个 PR 的形态）：
+    这些 workflow **从一开始就不写进仓库** ⇒ 它们真的不在 HEAD 的树里（issue #5935 换用
+    `git cat-file -e HEAD:<path>` 之后，「在不在 main 上」问的就是这棵树）。
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
@@ -215,6 +221,15 @@ def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",)) -> dic
     for rel in ("backend/admin-api/a.py", "backend/ai-agent-service/a.py", "frontend/admin-web/a.ts",
                 "frontend/worker-h5/a.mjs", "frontend/bmini-app/a.ts", "frontend/mini-app/a.ts"):
         touch(rel)
+    # 六条腿的 workflow 与状态机脚本**同批**放进测试仓库（issue #5935）：
+    # 对账步的前置判据 = `on_main`（`git cat-file -e HEAD:.github/workflows/<wf>`，见
+    # scripts/deploy_reconcile_state.sh）⇒ 不放就是「六条腿全不在 main 上」，
+    # 后面每个场景都跑不到判定本体（断言全过 = **假绿**）。
+    for wf in sorted(set(DEPLOY_WF.values()) - set(absent_workflows)):
+        touch(f".github/workflows/{wf}")
+    for sh in sorted((REPO_ROOT / "scripts").glob("*.sh")):
+        touch(f"scripts/{sh.name}")
+        (repo / "scripts" / sh.name).write_text(sh.read_text(encoding="utf-8"), encoding="utf-8")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "code C1")
     c1 = git(repo, "rev-parse", "HEAD")
@@ -614,7 +629,8 @@ def test_new_leg_whose_workflow_is_not_on_main_is_skipped_loudly(tmp_path):
     ⇒ 判据三面：① 该腿**不 dispatch**；② **出声**（`::warning::` + summary 明写原因与去向）；
     ③ 其它四条腿照常补部署、整步 rc=0（一个刚落地的腿不许让对账机制本身停摆）。
     """
-    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
+    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS,
+                      absent_workflows=("bmini-h5-publish.yml",))
     others = sorted(w for w in DEPLOY_WF.values() if w != "bmini-h5-publish.yml")
     # 基准 = C1（代码提交 C2 之前）⇒ 自上次成功部署起五条腿**都有**漂移，缺了前置判据就会去 dispatch
     proc, summary, dispatches = run_reconcile(
@@ -627,17 +643,26 @@ def test_new_leg_whose_workflow_is_not_on_main_is_skipped_loudly(tmp_path):
         f"必须出声（warning + 原因）→ {proc.stdout}"
     )
     assert "不在 main=1" in summary and "尚未在 main 上" in summary, f"{summary!r}"
+    # issue #5935：这条腿必须留下**它自己的**状态（`notarget` = 主动弃权）—— 与「状态机没记它」
+    # （`unrecorded` ⇒ 末道闸判红）**必须是两个值**，否则「新增腿的那个 PR」每轮判红（#5668 的契约）。
+    # ⚠️ 本 harness **不设** `WATCHDOG_STATE` ⇒ 走外置脚本的默认值（仓库根下的相对路径）
+    state = (tmp_path / "repo" / ".deploy-watchdog-state.tsv").read_text(encoding="utf-8")
+    rows = dict(ln.split("\t")[:2] for ln in state.splitlines() if ln.strip())
+    assert rows.get("bmini-h5-hosting") == "notarget", f"弃权的腿必须落 `notarget` → {rows}"
+    assert "unrecorded" not in state, f"没有腿该留在 `unrecorded`（那会让末道闸判红）→ {state}"
 
 
 def test_not_on_main_criterion_has_discriminating_power(tmp_path):
     """🔴 红证：去掉那条前置判据 ⇒ 同一输入下 `gh workflow run` **真的 404、整步非零退出**
     （复现 #5668 首轮 CI 的真实形态，不是纸面推断）。"""
-    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
+    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS,
+                      absent_workflows=("bmini-h5-publish.yml",))
     text = reconcile_script()
     broken = text.replace(
-        'if ! gh workflow view "$wf" --ref main >/dev/null 2>&1; then', "if false; then"
+        'on_main "$wf" || { _g=$?; if [ "$_g" = 1 ]; then NOTARGET=$((NOTARGET + 1)); on_main_absent "$svc" "$wf"; fi; return 0; }',
+        ":",
     )
-    assert broken != text, "变异注入未生效（找不到「workflow 是否在 main 上」的前置判据）"
+    assert broken != text, "变异注入未生效（找不到「workflow 是否在 main 上」的前置判据 `on_main`）"
     proc, _summary, _dispatches = run_reconcile(
         tmp_path, fx["repo"], runs_all(fx["C1"], "success"),
         absent_workflows=("bmini-h5-publish.yml",), head7=fx["head7"], script_text=broken,

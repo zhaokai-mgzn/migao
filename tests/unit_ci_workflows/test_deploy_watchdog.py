@@ -1,4 +1,4 @@
-# case_ids: MC-055
+# case_ids: MC-055, MC-056
 """`deploy-reconcile.yml` 值守面（issue #5929）：**合并了但没上线**必须有人被叫醒。
 
 ## 病（现取读数，不是推断）
@@ -313,6 +313,17 @@ def make_repo(tmp_path: Path, *, head_age_secs: int, drift: bool) -> dict:
     for rel in ("backend/admin-api/a.py", "backend/ai-agent-service/a.py", "frontend/admin-web/a.ts",
                 "frontend/worker-h5/a.mjs", "frontend/bmini-app/a.ts", "frontend/mini-app/a.ts"):
         touch(rel)
+    # 六条腿的 workflow **真的**放进测试仓库（issue #5935）：对账步的前置判据问的是
+    # 「main HEAD 这棵树里有没有这个 workflow」（`git cat-file -e HEAD:<path>`，见
+    # scripts/deploy_reconcile_state.sh 的 `on_main`）。不放 ⇒ 六条腿全判「不在 main 上」，
+    # 后面所有场景都跑不到判定本体（**假绿**：断言全过而那一段根本没执行）。
+    touch(".github/workflows/.keep")
+    for wf in sorted(set(DEPLOY_WF.values())):
+        touch(f".github/workflows/{wf}")
+    # 外置的状态机脚本（issue #5935）必须与 workflow 同批进测试仓库（cc 真实检出的形态）
+    for sh in sorted((REPO_ROOT / "scripts").glob("*.sh")):
+        (repo / "scripts").mkdir(exist_ok=True)
+        (repo / "scripts" / sh.name).write_text(sh.read_text(encoding="utf-8"), encoding="utf-8")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "code C1", env=date_env)
     c1 = git(repo, "rev-parse", "HEAD")
@@ -380,6 +391,10 @@ class Exec:
 
     def watchdog(self, *, body: str | None = None) -> subprocess.CompletedProcess:
         return self._run(WATCHDOG_STEP, body=body)
+
+    def reconcile_with_body(self, body: str) -> subprocess.CompletedProcess:
+        """跑**变异版**对账正文（红证用；`watchdog(body=...)` 只覆盖值守步）。"""
+        return self._run(RECONCILE_STEP, body=body)
 
     # ── 读数 ──
     @property
@@ -520,10 +535,16 @@ def test_grace_seconds_is_recomputed_from_repo_readings():
 
 
 def test_no_new_schedule_was_added():
-    """铁律 10：本单**不新增 schedule**（沿用既有 `*/20` 对账与既有事件）。"""
+    """铁律 10：**不新增 `schedule`**（沿用既有 `*/20` 对账）。
+
+    ⚠️ 触发面**允许**的增量只有一条：`workflow_run`（判据 4，issue #5935 —— 用户 2026-10-02 逐字裁定
+    「允许加 workflow_run：部署跑完就对账/清零」）。其余任何新增/改动一律红 —— 本条**只是**把
+    那条已获批的增量登记进来，**不是**把「触发面随便改」放宽。"""
     on = _doc()[True] if True in _doc() else _doc().get("on")
     assert on["schedule"] == [{"cron": "*/20 * * * *"}], f"schedule 被改动了 → {on.get('schedule')!r}"
-    assert set(on) == {"pull_request", "schedule", "workflow_dispatch"}, f"触发面被改动了 → {sorted(on)}"
+    assert set(on) == {"pull_request", "schedule", "workflow_dispatch", "workflow_run"}, (
+        f"触发面被改动了（允许的集合 = 既有三条 + 已获批的 `workflow_run`）→ {sorted(on)}"
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -606,7 +627,9 @@ def test_unjudgeable_state_is_red_fail_closed(tmp_path):
     assert wd.returncode == 3, (
         f"判不了必须是退出码 3（不是 0）—— 「读不到」与「已部署」必须长得不一样 → rc={wd.returncode}"
     )
-    assert "判定不可用" in wd.stdout + wd.stderr + ex.summary_text, "必须明说「判定不可用」"
+    assert "机制故障" in wd.stdout + wd.stderr + ex.summary_text, (
+        "必须明说这是**机制故障**（判据 3：与「确认未部署」两种东西）"
+    )
     assert ex.issues and ex.issues[0]["state"] == "open", "判不了同样要开单（红而不留痕 = #3834 的形态）"
 
 
@@ -650,7 +673,7 @@ def test_alarm_surface_is_exactly_the_watched_legs(tmp_path):
     assert ex.reconcile().returncode == 0
     wd = ex.watchdog()
     blob = wd.stdout + ex.summary_text
-    assert "计入告警=5" in blob and "判不了=0" in blob, f"告警面口径不对 →\n{blob}"
+    assert "计入告警=5" in blob and "机制故障=0" in blob, f"告警面口径不对 →\n{blob}"
     assert "豁免腿" in blob and "c-end-h5" in blob, "豁免必须有具名说明（不是静默漏掉）"
 
 
@@ -731,6 +754,274 @@ def test_comment_only_change_is_not_red(tmp_path, monkeypatch):
     assert {x["svc"] for x in ledger["entries"]} == legs
 
 
+
+# ══════════════════════════════════════════════════════════════════════════
+# 五、issue #5935：**「落状态」本身有判据 + 分级 + 事件驱动清零 + 防自激**
+# ══════════════════════════════════════════════════════════════════════════
+# 现场（run `36911070357`，2026-10-01T19:00:20Z，main HEAD `3fa84ab`）：对账步 rc=0、六条腿**各落了一条**
+# 状态，但**落的是错的**（全 `notarget`）⇒ 值守面报「5 条腿读不到对账状态」、`seen=6 acted=0` 且三桶全 0。
+# 真因 = 那条前置判据写作 `gh workflow view "$wf" --ref main`，而 gh 要求 `--ref` **必须**搭 `--yaml`
+# ⇒ **100% 失败**（本机实测：stderr `--yaml required when specifying --ref`、退出 1、0.063s；
+# run 日志里六条腿各报一次、每条 ≈58ms）⇒ 六条腿**全部**被误记成「不在 main 上」。
+# ⇒ 下面这批判据钉两件事：① **问对了对象**（`on_main` 的三态，正例锚 + 负例锚都要有）
+#    ② **落了错的状态也必须有人报**（机制自证：`unrecorded` 种子位没被替换 ⇒ 本步自己判红并具名）。
+
+STATE_SCRIPT = REPO_ROOT / "scripts" / "deploy_reconcile_state.sh"
+
+
+def _state_rows(ex: "Exec") -> list:
+    """读对账步落下的状态台账（每条腿一行，`腿\\t状态\\t依据`）。"""
+    p = Path(ex.state)
+    if not p.exists():
+        return []
+    return [ln.split("\t") for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip() != ""]
+
+
+def _legs_in_workflow() -> set:
+    return {m.group(1) for m in RECONCILE_CALL.finditer(WORKFLOW.read_text(encoding="utf-8"))}
+
+
+# ── 判据 1：每条腿恰好一行状态；未落的腿**具名**判红（机制自证，不靠下游兜）──────────────
+
+def test_every_leg_gets_exactly_one_state_row_with_a_seeded_placeholder(tmp_path):
+    """**判据 1 的一半**：六条腿各**恰好一行**，且**先落 `unrecorded` 种子**
+    （种子位没被替换 = 本轮从未记过这条腿 ⇒ 可判、可具名）。"""
+    fx = make_repo(tmp_path, head_age_secs=60, drift=True)
+    ex = Exec(tmp_path, fx, TERMINAL_RUNS(fx["head"]))
+    assert ex.reconcile().returncode == 0, "前置条件：对账步必须成功"
+    rows = _state_rows(ex)
+    legs = [r[0] for r in rows]
+    assert set(legs) == _legs_in_workflow(), f"台账必须覆盖全部腿且无多余 → {sorted(legs)}"
+    assert len(legs) == len(set(legs)), f"**每条腿恰好一行**（整行替换，不是追加）→ {sorted(legs)}"
+    assert _legs_in_workflow() == set(DEPLOY_WF), "反空跑锚点：`reconcile_one` 的腿集与 DEPLOY_WF 不一致"
+    # 种子是 `unrecorded`（调用方 watchdog_note 之后才不是）—— 从**外置脚本**的正文现取该字面量
+    src = STATE_SCRIPT.read_text(encoding="utf-8")
+    assert "unrecorded" in src, "种子状态值必须是 `unrecorded`（判据 2 的具名口径依赖它）"
+
+
+def test_reconcile_step_is_red_and_named_when_a_leg_is_left_unrecorded(tmp_path):
+    """**判据 1 的另一半（机制自证，会红）**：造一条**没落状态**的腿 ⇒ **对账步自己**判红
+    （不是让下游 fail-closed 兜），且**具名到腿**。
+
+    造法：对账步**每条腿都会**（a）被种下 `unrecorded`（b）走判定并调 `watchdog_note` 覆盖它
+    —— 所以「预置一个假腿名」没用（正文开头会把状态文件**重建**）。真正让一条腿**从未被记过**的
+    形态 = 它在**走到任何 `watchdog_note` 之前就返回**：把它的 workflow 从 HEAD 的树里删掉，
+    `on_main` 就会……**不**，那走的是 `notarget`（有状态）。⇒ 用**机制层**的形态：让该腿的
+    `reconcile_one` 调用**不存在**（= 新加了一条腿却忘了接状态机）——
+    本判据直接**构造**那个状态文件形态（其余腿已记、一条未记），再让**末道闸**去读它。
+    ✅ 判据的射程如实登记：它证明的是「末道闸会具名判红」，**不是**「种子位在真实崩溃下一定会被留下」
+    （后者由 `test_every_leg_gets_exactly_one_state_row_with_a_seeded_placeholder` 的种子面覆盖）。
+    """
+    fx = make_repo(tmp_path, head_age_secs=60, drift=True)
+    state = tmp_path / "watchdog-state.tsv"
+    state.write_text("admin-api\tdeployed\t手工预置\nghost-leg\tunrecorded\t本轮未落状态\n",
+                     encoding="utf-8")
+    ex = Exec(tmp_path, fx, TERMINAL_RUNS(fx["head"]), state=str(state))
+    # 注入点必须在**对账循环之后**：循环里每条腿都会调 `watchdog_note` 覆盖种子（提前注入会被覆盖）；
+    # 循环后、末道闸前注入 ⇒ 正好是「有腿的种子位没被替换」的形态（例如新加了一条腿却忘了接状态机）。
+    body = step_body(RECONCILE_STEP)
+    inject = ('printf %s\\n "admin-api\\tdeployed\\t手工预置" "ghost-leg\\tunrecorded\\t本轮未落状态"'
+              ' > "$WATCHDOG_STATE"')
+    broken = body.replace("watchdog_missing_gate || exit $?", inject + "\n          watchdog_missing_gate || exit $?", 1)
+    assert broken != body, "变异注入未生效（找不到末道闸 `watchdog_missing_gate`）"
+    rc = ex.reconcile_with_body(broken)
+    assert rc.returncode == 3, (
+        f"有腿没落状态 ⇒ **对账步自己**必须判红（退出码 3，不是 0）→ rc={rc.returncode}\n{rc.stdout}\n{rc.stderr}"
+    )
+    blob = rc.stdout + rc.stderr + ex.summary_text
+    assert "ghost-leg" in blob, f"判红必须**具名到腿**（不许只说「有腿缺状态」）→\n{blob}"
+    assert "::error::" in rc.stdout + rc.stderr, "判红必须给 ::error:: 注解（红而不留痕 = #3834 的形态）"
+    assert "机制故障" in blob, f"缺状态属**机制故障**类（判据 3）→\n{blob}"
+
+
+# ── 判据 2：`seen=N acted=0` 且原因桶全 0 ⇒ 必须归因（不留「说不出为什么」）──────────────
+
+def test_liveness_why_accounts_for_every_leg_when_acted_is_zero(tmp_path):
+    """**判据 2**：零动作（`acted=0`）时 `why` 必须把每一条腿都**落进一个可读的桶**——
+    六条腿全 `terminal`（断路器）时 `dispatch=0`，`why` 仍须给得出 `不在main=` / `未落状态=` 两个读数
+    （run `36911070357` 的形态恰恰是**三桶全 0 且说不出为什么**）。"""
+    fx = make_repo(tmp_path, head_age_secs=2700 + 600, drift=True)
+    ex = Exec(tmp_path, fx, TERMINAL_RUNS(fx["head"]))
+    assert ex.reconcile().returncode == 0
+    body = step_body(RECONCILE_STEP)
+    assert "mechanism_liveness_declare" in body, "对账步必须发存活读数（issue #5326 判据 1）"
+    assert "watchdog_missing" in body, (
+        "存活读数的 `why` 必须带上「未落状态的腿**具名**清单」（判据 2：归因，不是只报计数）"
+    )
+    src = STATE_SCRIPT.read_text(encoding="utf-8")
+    assert "MISS" in src and "unrecorded" in src, "外置脚本必须提供具名清单（`MISS`）的现取实现"
+
+
+# ── 判据 3：分级 —— `读不到状态` 与 `确认未部署` **不得**压成同一种告警 ──────────────────
+
+def test_mechanism_failure_gets_its_own_bucket_and_does_not_open_a_business_issue(tmp_path):
+    """**判据 3（注入式红证）**：造一条**缺状态**的腿 ⇒ 走「机制故障」分支，
+    **不**开 `[deploy-watchdog]` 那种业务单，但仍**出声**（::error:: + 非零退出 + 单上可归因）。"""
+    fx = make_repo(tmp_path, head_age_secs=2700 + 600, drift=True)
+    state = tmp_path / "watchdog-state.tsv"
+    state.write_text(
+        "".join(f"{svc}\tdeployed\t手工预置\n" for svc in DEPLOY_WF if svc != "admin-web")
+        + "admin-web\tunrecorded\t本轮未落状态\n", encoding="utf-8")
+    ex = Exec(tmp_path, fx, TERMINAL_RUNS(fx["head"]), state=str(state))
+    wd = ex.watchdog()          # 刻意**不跑**对账步 ⇒ 状态保持注入形态
+    assert wd.returncode == 3, f"机制故障必须判红 → rc={wd.returncode}\n{wd.stdout}\n{wd.stderr}"
+    blob = wd.stdout + wd.stderr + ex.summary_text
+    assert "机制故障" in blob and "admin-web" in blob, f"必须具名到腿且标明是机制故障 →\n{blob}"
+    assert "::error::" in wd.stdout + wd.stderr, "必须给 ::error::（红而不留痕 = #3834 的形态）"
+    created = [i for i in ex.issues if i["state"] == "open"]
+    assert created, f"机制故障也要留痕（不能只打一行日志）→ calls={ex.gh_calls}"
+    titles = [i["title"] for i in created]
+    assert not any(t.startswith("[deploy-watchdog] main HEAD 超时未部署") for t in titles), (
+        f"机制故障**不得**开成「确认未部署」那种业务单（判据 3）→ {titles}"
+    )
+    assert any("机制故障" in t for t in titles), f"应当开的是机制故障单 → {titles}"
+    assert "priority/P1" not in created[0]["labels"], (
+        f"机制故障单不得打业务告警标签 priority/P1 → {created[0]['labels']}"
+    )
+
+
+def test_leg_not_on_main_is_not_collapsed_into_mechanism_failure(tmp_path):
+    """**判据 3 的反向对照**：`notarget`（目标 workflow 还没在 main 上 —— **新增腿的那个 PR** 的形态）
+    是「还没轮到它」，**不得**与「确认未部署」或「机制故障」压成同一个桶。"""
+    fx = make_repo(tmp_path, head_age_secs=2700 + 600, drift=True)
+    state = tmp_path / "watchdog-state.tsv"
+    state.write_text(
+        "".join(f"{svc}\tdeployed\t手工预置\n" for svc in DEPLOY_WF if svc != "admin-web")
+        + "admin-web\tnotarget\t目标 workflow deploy-frontend.yml 不在 main 上\n", encoding="utf-8")
+    ex = Exec(tmp_path, fx, TERMINAL_RUNS(fx["head"]), state=str(state))
+    wd = ex.watchdog()
+    blob = wd.stdout + wd.stderr + ex.summary_text
+    assert "机制故障=0" in blob, f"`notarget` **不得**计进机制故障桶（判据 3：三态三分）→\n{blob}"
+    assert "机制故障「" not in blob and "::error::值守面机制故障" not in blob, (
+        f"`notarget` 不得被判成机制故障 →\n{blob}"
+    )
+    assert "尚未轮到这个腿" in blob and "尚未轮到=1" in blob, f"`notarget` 必须有自己的可读口径 →\n{blob}"
+
+
+def test_deployed_legs_stay_out_of_both_alert_buckets(tmp_path):
+    """**判据 3 的正向对照**：`deployed` / `inflight` 既不进业务告警、也不进机制故障。
+
+    ⚠️ 前置条件必须给足「已部署」信号（同 sha 结论 success）：**只给空 run 列表**的话六条腿落的是
+    `dispatched`（= 本轮才补 dispatch，属**真阳性**）⇒ 报警是**对的**，拿它当正例是判据自己写错了。
+    """
+    fx = make_repo(tmp_path, head_age_secs=2700 + 600, drift=True)
+    ex = Exec(tmp_path, fx, {wf: runs(fx["head"], "success") for wf in DEPLOY_WF.values()})
+    assert ex.reconcile().returncode == 0
+    wd = ex.watchdog()
+    blob = wd.stdout + ex.summary_text
+    assert wd.returncode == 0, f"全部已部署/在途时不得报警 →\n{wd.stdout}\n{wd.stderr}"
+    assert "机制故障=0" in blob and "计入告警=0" in blob, f"三桶计数必须各自可见 →\n{blob}"
+    assert not ex.issues, f"不得开任何单 → {ex.issues}"
+
+
+# ── 判据 4：清零不依赖「下一轮 cron」—— 部署完成这一**事件**要能触发 ─────────────────────
+
+def test_workflow_run_is_wired_as_the_deploy_completion_event():
+    """**判据 4（接线）**：`workflow_run` 必须监听**全部** deploy 腿的 `completed`，
+    并限定 `branches: [main]`（否则 PR 分支的部署完成也会触发，判出来的 HEAD 还不是 main 的）。"""
+    on = _doc()[True] if True in _doc() else _doc().get("on")
+    assert "workflow_run" in on, (
+        "判据 4：部署成功这个**事件**必须能触发清零（实测 19:00Z 之后 ~12h 没有 reconcile run）"
+    )
+    assert on["schedule"] == [{"cron": "*/20 * * * *"}], f"既有 cron 不得动 → {on['schedule']!r}"
+    wr = on["workflow_run"]
+    assert wr["types"] == ["completed"], f"只关心终态 → {wr['types']!r}"
+    assert wr["branches"] == ["main"], f"只关心 main 上的部署 → {wr['branches']!r}"
+    assert set(wr["workflows"]) == set(DEPLOY_WF.values()), (
+        f"**全部** deploy 腿都要监听（漏一条 ⇒ 那条腿部署成功后清零仍要等下一轮 cron）："
+        f"缺 {sorted(set(DEPLOY_WF.values()) - set(wr['workflows']))} / "
+        f"多 {sorted(set(wr['workflows']) - set(DEPLOY_WF.values()))}"
+    )
+    # 上游名必须命中仓内某个 workflow 的 `name:`（改名 ⇒ 该兜底面**静默脱钩**，永不触发）
+    for fn in wr["workflows"]:
+        f = REPO_ROOT / ".github" / "workflows" / fn
+        assert f.exists(), f"`workflow_run.workflows` 里的 {fn} 不存在 ⇒ 静默脱钩"
+
+
+def test_workflow_run_and_schedule_share_one_judgement_body():
+    """**判据 4（解耦）**：事件只决定「**什么时候**跑」，不决定「**怎么判**」——
+    `workflow_run` 与 `schedule` 必须走**同一套**判定（只有 `pull_request` 不判定）。"""
+    body = step_body(WATCHDOG_STEP)
+    assert '= "pull_request"' in body, "必须显式分流 `pull_request`（PR 面没有 main HEAD 的部署对象）"
+    assert "${{ github.event_name }}" not in body and 'EVENT_NAME' in body, (
+        "事件名必须经 step env 传入（判定本体不读事件名 ⇒ 新事件自动同口径）"
+    )
+    assert body.count("if [") >= 1 and "退出 0" not in body, "反空跑锚点：分流逻辑必须在位"
+    env = step_env(WATCHDOG_STEP)
+    assert env.get("EVENT_NAME") == "${{ github.event_name }}", f"事件名接线不对 → {env!r}"
+
+
+def test_reconciliation_step_body_stays_within_the_github_limit():
+    """本包**改的是那条全仓最长的正文**（`Reconcile deploys`）：超限 ⇒ **整份 workflow invalid**
+    ⇒ 该腿**完全不跑**（`push` 只留一条 0 job 的 failure run）。⇒ 逐条现取并把最长的那个点名。"""
+    bodies = run_bodies()
+    over = [b for b in bodies if b[0] > RUN_BODY_LIMIT]
+    assert not over, "超限的 step 正文：" + "".join(
+        f"\n  · {n} 字符：{wf} :: {job} :: {name}" for n, wf, job, name in sorted(over, reverse=True))
+    longest = max(bodies)
+    assert longest[0] > 4000, f"对照读数：最长 run 正文只有 {longest[0]} 字符（判据可能扫错对象）"
+
+
+# ── 防自激（派单硬要求）：部署刚成功 ⇒ 不得再 dispatch ────────────────────────────────────
+
+def test_no_self_excitation_when_deploy_just_succeeded(tmp_path):
+    """**防自激（会红的对照）**：`workflow_run` 让「部署完成 → 对账」成链 ⇒ 必须证明它**收敛**：
+    部署刚刚成功（同 sha 结论 success，无漂移）⇒ 对账**不得**再 dispatch（否则事件自激成环）。
+
+    注意本判据的射程（**如实登记**）：它证明的是「同 sha 判据在位 ⇒ 该场景不重复派」，
+    **不是**「任何时序下都不可能成环」—— 环的另一半（断路器对 failure/cancelled 的跳闸）由
+    `test_breaker_terminal_state_is_red` 与 `test_terminal_state_does_not_redispatch` 承担。
+    """
+    fx = make_repo(tmp_path, head_age_secs=120, drift=False)
+    success = {wf: runs(fx["head"], "success") for wf in DEPLOY_WF.values()}
+    ex = Exec(tmp_path, fx, success)
+    rc = ex.reconcile()
+    assert rc.returncode == 0, f"前置条件：对账步必须成功 → {rc.stderr}"
+    dispatched = [c for c in ex.gh_calls if c.startswith("workflow run")]
+    assert not dispatched, (
+        f"部署刚刚成功（同 sha 结论 success）⇒ **不得**再 dispatch（`workflow_run` 自激成环）→ {dispatched}"
+    )
+    assert "dispatch=0" in ex.summary_text, f"读数必须自证零动作 → {ex.summary_text}"
+
+
+def test_terminal_state_does_not_redispatch(tmp_path):
+    """**防自激的另一半**：部署落在不可恢复终态（failure / cancelled …）⇒ 断路器跳闸、**不再** dispatch
+    —— 没有它，「部署失败完成 → 对账 → 再补一次 → 再失败」就是**无限环**（事件触发把环的转速拉满）。"""
+    fx = make_repo(tmp_path, head_age_secs=2700 + 600, drift=True)
+    ex = Exec(tmp_path, fx, {wf: runs(fx["head"], "cancelled") for wf in DEPLOY_WF.values()})
+    rc = ex.reconcile()
+    assert rc.returncode == 0, f"前置条件：对账步必须成功 → {rc.stderr}"
+    dispatched = [c for c in ex.gh_calls if c.startswith("workflow run")]
+    assert not dispatched, f"断路器跳闸后**不得**再 dispatch → {dispatched}"
+    assert "断路器跳过=6" in ex.summary_text, f"前置条件：六条腿都必须被断路器挡住 → {ex.summary_text}"
+
+
+# ── 类级元守卫：`workflow_run` 的上游清单未登记即红 ──────────────────────────────────────
+
+def test_watchdog_ledger_records_the_event_trigger_contract():
+    """**类级元守卫（未登记即红）**：台账必须把「事件触发面」也登记成一个**可核对**的契约 ——
+    `workflow_run` 的每条上游都必须同时是**已登记的对账腿**（新加一条 deploy 腿却忘了让它的
+    `completed` 触发清零 ⇒ 当场红，而不是等「部署成功了单还挂着」）。"""
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+    on = _doc()[True] if True in _doc() else _doc().get("on")
+    wr = on.get("workflow_run") or {}
+    ups = set(wr.get("workflows") or [])
+    assert ups, "反空跑锚点：`workflow_run.workflows` 为空（判据已过期）"
+    legs = {e["wf"] for e in ledger["entries"]}
+    assert ups == legs, (
+        f"`workflow_run` 的上游与台账登记的腿必须**双向相等**（漏登记 ⇒ 事件清零对那条腿静默失效）："
+        f"只在上游 {sorted(ups - legs)} / 只在台账 {sorted(legs - ups)}"
+    )
+    for e in ledger["entries"]:
+        assert e.get("clearing_event") is True, (
+            f"{e['svc']}: 每条腿都必须声明「部署完成事件会触发清零」（`clearing_event: true`）——"
+            "判据 4 的承载体，漏了就没有东西会因此变红"
+        )
+    contract = ledger.get("event_trigger_contract") or {}
+    assert "workflow_run" in contract.get("source", ""), (
+        f"台账必须写明事件触发面的来源（现取命令），否则读者无法复核 → {contract!r}"
+    )
+
 # ══════════════════════════════════════════════════════════════════════════
 # 四、**新发现的硬约束**：单个 step 的 `run` 正文长度上限（超限 ⇒ 整份 workflow 判 invalid）
 # ══════════════════════════════════════════════════════════════════════════
@@ -739,14 +1030,14 @@ def test_comment_only_change_is_not_red(tmp_path, monkeypatch):
 #   · 与整份文件大小无关（同批「+9KB 新 step」的探针有效）、与行数无关（22 行有效 / 21 行无效）。
 # 形态极隐蔽：本地 PyYAML 与仓库守卫**全绿**，GitHub 侧表现为「该 workflow 根本不建 run」
 # （push 只留一条 0 job 的 failure run，`name` 回落成文件路径）。
-# ⇒ 阈值取 **13,250**（**低于**已知有效读数 13,303，留 53 字符差）；`Reconcile deploys` 在**本包合并前**的
-#   main 上是 **12,524**，本包往它里面加的状态记录块**刻意压到最短**（~430 字符）⇒ 现取 **13,125**。
-#   🔴 **现取订正（2026-10-02，`origin/main` 3fa84ab89；本行原先只写到「12,9xx」≈ 估算）**：
-#   全仓 **238** 条 `run` 正文 —— 最长 = 上面那条 **13,125**（距本上限只剩 **125 字符**，**不是** ~2.3K），
-#   次长 = `.github/workflows/automerge.yml` 的 `Classify bot PR … and arm on` **10,975**。
+# ⇒ 阈值取 **13,250**（**低于**已知有效读数 13,303，留 53 字符差）。
+#   🔴 **现取读数（2026-10-02）**：`Reconcile deploys` —— **改前**（`origin/main` 3fa84ab89）= **13,125**
+#   （距本上限只剩 **125 字符**，**不是** ~2.3K；订正「12,524」那一处转述：它是 PR #5931 **合并前**的
+#   起草读数）；**本包（issue #5935）外置状态机之后** = **12,847**（仍全仓最长）。
+#   全仓 **238** 条 `run` 正文，次长 = `.github/workflows/automerge.yml` 的 `Classify bot PR … and arm on` **10,975**。
 #   复算 = `python3 -m pytest tests/unit_ci_workflows/test_deploy_watchdog.py -q -k run_body`（或直接调 `run_bodies()`）。
-#   ⚠️ 出口：真要往这条正文里加东西 ⇒ **先把实现体外置**（`source .github/scripts/*.sh`），
-#   不要靠「再加一点点应该没事」（这正是本包踩到的形态）。
+#   ⚠️ 出口：真要往这条正文里加东西 ⇒ **先把实现体外置**（`source scripts/deploy_reconcile_state.sh` ——
+#   #5935 就是这么做的），不要靠「再加一点点应该没事」（这正是 #5929 踩到的形态）。
 RUN_BODY_LIMIT = 13250
 
 
