@@ -711,10 +711,24 @@ heavy_lock_wanted() {
 macquire() {
   heavy_lock_wanted || return 0
   local rc=0
-  "$ROOT/scripts/machine-heavy-lock.sh" acquire "verify-all.sh $MODE" || rc=$?
+  # `MIGAO_HEAVY_WAIT=<秒>`：**显式**选择「排队等待」（由锁脚本内部轮询，2~5s 抖动 + 到点即止）。
+  # ⚠️ **未设置时行为一字不改**：拿不到锁仍**立即**拒绝 + 出声 —— 那是既有机制与可见性（见 §27），
+  #    本开关只是给「我愿意排队」的调用方一个合规入口（2026-10-01 issue #5863：默认语义不排队，
+  #    客户端各自自旋时，用固定长间隔重试的那一方会被系统性饿死）。
+  if [ -n "${MIGAO_HEAVY_WAIT:-}" ]; then
+    "$ROOT/scripts/machine-heavy-lock.sh" acquire "verify-all.sh $MODE" --wait "${MIGAO_HEAVY_WAIT}" || rc=$?
+  else
+    "$ROOT/scripts/machine-heavy-lock.sh" acquire "verify-all.sh $MODE" || rc=$?
+  fi
   if [ "${rc}" -ne 0 ]; then
     echo "❌ 机器级重活准入被拒（exit ${rc}）—— 本次**没有跑**任何检查（这不是「通过」）"
     echo "   现场读取：$ROOT/scripts/machine-heavy-lock.sh status"
+    # ⚠️ 这一行**刻意**写成 `[ … ] && echo …` 而不是嵌套 `if`：判据
+    #    `test_machine_heavy_lock.py::TestVerifyAllWiring::test_guard_body_really_exits_nonzero`
+    #    用**非贪婪**正则取「rc 非零 ⇒ 拒绝」块的 body（匹配到**第一个** `fi`）⇒ 分支里再嵌
+    #    一层 `if … fi` 会让 body 提前结束、`return "${rc}"` 落到块外 ⇒ 判红（**判据是对的**：
+    #    它要保证拒绝分支里真的把退出码返回出去；这里顺着它写，而不是放宽它）。
+    [ -n "${MIGAO_HEAVY_WAIT:-}" ] && echo "   （已按 MIGAO_HEAVY_WAIT=${MIGAO_HEAVY_WAIT} 排队等待至上限，仍未取得）"
     return "${rc}"
   fi
   # EXIT trap：异常退出（Ctrl-C / 被杀 / 中途 return）也必须释放；release 自己幂等。
