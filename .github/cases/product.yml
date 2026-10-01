@@ -4423,3 +4423,46 @@ cases:
         - pr-check.yml
         - bmini-h5-publish.yml
       verifies: []
+
+  - id: PR-118
+    legacy_id: ""
+    title: "按批次库存盘点（最小录入式）：实盘录入 + 差异落批次分录 + SKU 库存同事务对齐（issue #5865）"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - batch
+      - stocktake
+      - backend-contract
+    truths_ref:
+      - batch-ledger.stocktake-by-physical-count
+      - batch-ledger.remaining-derived
+      - batch-ledger.reconcile
+    user_inputs:
+      - "入库单的单批次剩余库存米数是否有设计这个字段？要支持用户按批次做库存盘点（用户 2026-10-01 会话逐字；档位裁定 = A 最小录入式，盘盈盘亏口径裁定 = 实盘为准、差异写台账调整）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 红线①**不原地改** `stock_batches.quantity`：盘点的差异落 `stock_batch_consumptions` 的一条 `reason='stocktake'` 分录，派生余量自动跟上。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/BatchStocktakeRealDbTest.java` 的 `journalKeepsQuantityAndRealignsBothLedgers`（**全表** `quantity` 原串快照盘前盘后逐值相同，不是只看这一行）+ `BatchStocktakeServiceTest.java` 的 `neverTouchesBatchRow`（`StockBatchMapper` 零写调用）"
+      - "🔴 红线②**批次分录与 SKU 库存同一事务**：`BatchStocktakeService#stocktake` 是本单唯一写入口，`@Transactional(rollbackFor = Exception.class)`；判据 = `BatchStocktakeRealDbTest#secondBatchFailureLeavesNothingBehind` —— 用 BEFORE INSERT 触发器让**第 2 个批次写入途中**失败 ⇒ 第 1 个也不落、`product_skus.stock` 一字不动；**并带无事务对照读数**（同一注入在无事务边界时残留 1 行 ⇒ 证明注入真的生效，回滚才是它没留下的原因）"
+      - "🔴 红线③**来源可与「加工单扣料」区分**：盘点行 `reason='stocktake'` + `stocktake_run_id`，三个扣料专属列（`processing_order_no` / `order_no` / `order_item_id`）一律留空；DB 约束 `ck_batch_consumption_source_shape` 把两族列形状钉成互斥（盘点行带加工单号 ⇒ 23514；扣料行缺加工单号 ⇒ 同样 23514）。判据 = `BatchStocktakeRealDbTest#sourceShapeAndIdempotencyAreEnforcedByTheDatabase`（含**注入式红证**：回滚事务里摘掉约束 / 索引 ⇒ 同一行坏数据当场能落库，SQLSTATE 00000/00000 ⇒ 拦住它的确实是这两个 DB 对象）+ 类级守卫 `tests/unit_ci_workflows/test_batch_stocktake_write_point.py`"
+      - "🔴 红线④**禁止负余量**：实盘米数 `-1` ⇒ 400（`ERR_STOCKTAKE_NEGATIVE`，文案给可行动出口）；盘亏会让 `product_skus.stock` 变负 ⇒ 422 `INSUFFICIENT_STOCK`。两条都发生在**任何写入之前**（预校验 + 先算后写）。判据 = `BatchStocktakeServiceTest#rejectsNegativeAndOverPrecisionAndWritesNothing` / `#refusesWhenSkuStockWouldGoNegative`"
+      - "🔴 红线⑤**幂等**：`delta = 0`（实盘 == 当刻余量）⇒ **零写入**（分录 / 台账 / SKU 库存三处都不动）；同一 `runId` 重放 ⇒ 该批次跳过（读半边 `stocktakeRecordedBatchIds` + 写半边部分唯一索引），跨请求不双记。判据 = `BatchStocktakeRealDbTest#zeroDeltaWritesNothing` / `#replayWithSameRunIdDoesNotDoubleBook`（三张表行数与 SKU 库存逐值不变）+ `BatchStocktakeServiceTest#zeroDeltaWritesNothing` / `#replayWithSameRunIdWritesNothing`"
+      - "🔴 红线⑥**不静默取整**：实盘米数沿用 `StockQuantity.requireOneDecimal` —— `2.755` ⇒ 400（文案「最多支持 1 位小数…服务端不做静默取整」），且零写入。判据 = `BatchStocktakeServiceTest#rejectsNegativeAndOverPrecisionAndWritesNothing` + `BatchStocktakeRealDbTest#invalidAmountIsRejectedWithoutAnyWrite`"
+      - "🔴 红线⑦**盘点后 `/reconcile` 的批次部分不得增大**：`diff = Σ批次余量 − product_skus.stock` 由两条腿各自聚合（批次分录腿与销售台账腿），盘点让两边按**同一个 Σdelta** 变 ⇒ 差额恒等。真库判据用「盘前差额 −40（批次 60 / SKU 100）」做夹具（判别力：只动一条腿的实现会得到 −41.5）。判据 = `BatchStocktakeRealDbTest#journalKeepsQuantityAndRealignsBothLedgers` 的 `[#5865 红线⑦] 盘前 diff = -40，盘后 diff = -40` 读数"
+      - "**端到端可见**（判据 9）= `UI-076`：商品详情批次面板按货号列出批次与当前余量 + 实盘输入 + **差异预览（± 与合计）** + 提交后列表刷新为新余量"
+      - "**类级元守卫**（判据 8）= `MC-052` / `tests/unit_ci_workflows/test_batch_stocktake_write_point.py`：批次台账写入点唯一（未登记即红）；余量派生（Σdelta 读口）只许在台账服务与其 mapper 里"
+    skip_reason: "[backend-contract] 盘点写面是确定性的账务判据（真库 + mock + 结构守卫三层，无 LLM 环节、无米宝工具面）由 admin-api 单测与 pytest 结构守卫覆盖，不进入 agent-eval 冒烟"
+    precondition: "本用例是 [backend-contract] 账务面用例：前置（租户 / 商品 / SKU 库存 / 批次行）由判据自建 —— `BatchStocktakeRealDbTest` 在 `@BeforeAll` 起一次性真 PG 集群并跑真 `schema.sql` 建终态后插入夹具；`BatchStocktakeServiceTest` 用桩 mapper 造「入库量 60 + Σdelta」的派生余量。前置不成立时判据直接红（真库缺 PG 由 `PgCluster` fail-closed，不走 skip）；agent-eval 栈不跑它"
+    merge_log: "2026-10-01 新增（issue #5865，用户裁定档位 A 最小录入式 + 实盘为准）：此前盘点的写面只有 Agent 面 SKU 粒度的一条路（改 `product_skus.stock` + 写销售台账、**完全不落批次**）⇒ 盘完后「Σ批次余量 ≠ SKU 库存」恒成立而**没有配平路径**；本单补按批次的写面：实盘录入 → 差异预览 → 一次事务落批次分录 + SKU 库存。取号 PR-118（现取 main + 全部在飞分支的 `- id:` 差集：main 最大 = PR-117）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/BatchStocktakeServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/BatchStocktakeRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/StockBatchControllerTest.java"
+        - "tests/unit_ci_workflows/test_batch_stocktake_write_point.py"
+      ci:
+        - pr-check.yml
+      verifies: []

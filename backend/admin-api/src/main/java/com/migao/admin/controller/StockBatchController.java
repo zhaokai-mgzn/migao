@@ -3,14 +3,19 @@ package com.migao.admin.controller;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.BatchStockViews;
+import com.migao.admin.dto.BatchStocktakeRequest;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.SavingMetricViews;
 import com.migao.admin.entity.StockBatchConsumption;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.service.BatchStocktakeService;
 import com.migao.admin.service.StockBatchConsumptionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -29,12 +34,13 @@ import java.util.List;
  * ④ 派工候选 + 建议值（生成加工单界面用）；⑤ 消耗台账分页（按批次 / 加工单 / 订单都能查回来）；
  * ⑥ 省料度量看板 + ⑦ 省料趋势（issue #5159，见下方两条端点各自的 javadoc）。</p>
  *
- * <p>本轮**只做只读端点**，不做写端点：批次账的写入方是库存变更的既有实现点
- * （{@code StockBatchConsumptionService} 的 plan/apply/reverse，由加工单生成与作废驱动），
- * 不经过本控制器 —— 同 {@code StockLedgerController} 的口径。</p>
+ * <p><b>写端点只有 1 个</b>（V143 / issue #5865）：{@code POST /stocktake} 按批次盘点。
+ * 它**不自己写库**：差异经 {@code StockBatchConsumptionService#applyStocktake} 落批次分录，
+ * 再经 {@code StockLedgerService#record} 落销售台账，两段在 {@code BatchStocktakeService#stocktake}
+ * 的**同一个事务**里（批次账其余写入仍是库存变更的既有实现点：加工单生成 / 作废驱动）。</p>
  *
- * <p>权限复用商品域 {@code product:list}（批次/库存属于商品管理的读权限，不新造权限点 ——
- * 新权限点需要配角色/种子数据，本 issue 不含权限模型变更）。</p>
+ * <p>权限复用商品域：读面 {@code product:list}、盘点写面 {@code product:create}
+ * （批次/库存属于商品管理，不新造权限点 —— 新权限点需要配角色/种子数据，本 issue 不含权限模型变更）。</p>
  */
 @Slf4j
 @RestController
@@ -43,6 +49,37 @@ import java.util.List;
 public class StockBatchController {
 
     private final StockBatchConsumptionService stockBatchConsumptionService;
+
+    private final BatchStocktakeService batchStocktakeService;
+
+    /**
+     * **按批次库存盘点**（最小录入式，V143 / issue #5865）：实盘为准，差异落批次分录 + SKU 库存同事务对齐。
+     *
+     * <p>POST /api/admin/batch-stock/stocktake
+     * <pre>
+     * {"productId":"prod-1","runId":"PD-20261001-0001",
+     *  "lines":[{"batchId":7,"actualMeters":58.5},{"batchId":8,"actualMeters":8}]}
+     * </pre>
+     * 回执逐行给「盘前 / 实盘 / 差异 / 盘后 + status（applied|unchanged|replayed）」，
+     * 前端据此做**差异预览的复核读数**（预览本身在提交前由页面按余量算，提交后以此为准）。</p>
+     *
+     * <p>四条 fail-closed：{@code runId} 缺 ⇒ 400（幂等键由调用方给）；实盘为负 / 超 1 位小数 ⇒ 400；
+     * 批次不属于该货号 ⇒ 400；盘亏会让 SKU 库存变负 ⇒ 422。四条都发生在**任何写入之前**。</p>
+     */
+    @RequirePermission("product:create")
+    @PostMapping("/stocktake")
+    public ApiResponse<BatchStockViews.StocktakeResult> stocktake(
+            @RequestBody BatchStocktakeRequest request) {
+        Long tenantId = TenantContext.getTenantId();
+        if (request == null) {
+            throw BusinessException.validationError("盘点请求体不能为空");
+        }
+        log.info("按批次盘点: tenant={}, product={}, runId={}, lines={}", tenantId,
+                request.getProductId(), request.getRunId(),
+                request.getLines() == null ? 0 : request.getLines().size());
+        return ApiResponse.success(batchStocktakeService.stocktake(tenantId, request.getProductId(),
+                request.getRunId(), request.getLines()));
+    }
 
     /**
      * 批次余量列表（派生）。

@@ -82,6 +82,12 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "BatchAssignmentRuleRealDbTest.java": "direct",
     _SVC + "BatchConsumptionCuttingPlanRealDbTest.java": "direct",
     _SVC + "BatchConsumptionLedgerRealDbTest.java": "direct",
+    # issue #5865：按批次盘点的**真库**判据 —— 四条只真 PG 能证的事：
+    # ① `stock_batches.quantity` 盘点前后**逐值相同**（红线「不原地改批次行」是**读数**，不是「没调 updateById」）；
+    # ② 第 2 个批次**写入途中**失败 ⇒ 第 1 个也不落（注入式触发器 + 无事务对照读数）；
+    # ③ 来源族列形状互斥与盘点幂等闸是 **DB 对象**（回滚事务里摘掉 ⇒ 同一行坏数据当场能落库）；
+    # ④ `reconcile` 差额由两条腿各自聚合 ⇒ 只有真库能证「盘点后差额不增大」。
+    _SVC + "BatchStocktakeRealDbTest.java": "direct",
     # issue #4945 处 1：算料租户配置的**真栈半边**（真 PG + 真 `craft_calc_configs` 行 + 真 mapper +
     # 真 `toConfigMap()` + 真 `CraftCalcClient` 出参逐值）。为什么必须真库：这条判据的三跳
     # （谓词/列名/软删过滤能否读回行 · JSONB 能否解成引擎吃的 config · config 是否真的进了请求体）

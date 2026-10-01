@@ -1,4 +1,4 @@
-// case_ids: PR-055, PR-066
+// case_ids: PR-055, PR-066, PR-118
 // 批次账只读端点（V116，issue #5145 阶段 1）：GET /api/admin/batch-stock/{batches,distribution,
 // reconcile,candidates,consumptions} —— 租户上下文透传、过滤参数原样下传、响应形状、
 // 权限点（product:list，复用商品读权限，不新造权限点）。
@@ -6,6 +6,8 @@
 package com.migao.admin.controller;
 
 import com.migao.admin.dto.BatchStockViews;
+import com.migao.admin.dto.BatchStocktakeRequest;
+import com.migao.admin.service.BatchStocktakeService;
 import com.migao.admin.service.StockBatchConsumptionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +18,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
@@ -29,6 +32,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -38,7 +42,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>四条判据：① **租户上下文**必须逐调用下传（跨租户读 = 数据泄漏，不是分页问题）；
  * ② 过滤参数原样下传（`productId` / `skuId` / `onlyAvailable` / `meters`）；
  * ③ 响应形状与 DTO 字段名一致（前端 `batchStockApi` 直接消费，改名即破契约）；
- * ④ 只读端点**不得**出现在写路径上（本控制器没有写端点 —— 批次账的写入方是加工单生成/作废）。</p>
+ * ④ 读面之外**只有一个写端点**（V143 / issue #5865 的 `POST /stocktake` 按批次盘点），
+ * 且它不自己写库：服务层把批次分录与 SKU 库存放在同一个事务里（见 `BatchStocktakeService`）。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("StockBatchController 批次账查询")
@@ -50,6 +55,9 @@ class StockBatchControllerTest extends BaseControllerTest {
 
     @Mock
     private StockBatchConsumptionService stockBatchConsumptionService;
+
+    @Mock
+    private BatchStocktakeService batchStocktakeService;
 
     @InjectMocks
     private StockBatchController stockBatchController;
@@ -82,6 +90,45 @@ class StockBatchControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data[0].consumedMeters").value(2.7))
                 .andExpect(jsonPath("$.data[0].remainingMeters").value(57.3));
         verify(stockBatchConsumptionService).remaining(TEST_TENANT_ID, "prod-1", 12L, true);
+    }
+
+    @Test
+    @DisplayName("PR-118 POST /stocktake —— 200：租户上下文 + 请求体逐值下传，回执按行回盘前/实盘/差异/盘后")
+    void stocktakeOk() throws Exception {
+        BatchStocktakeRequest request = new BatchStocktakeRequest();
+        request.setProductId("prod-1");
+        request.setRunId("PD-20261001-0001");
+        BatchStocktakeRequest.Line line = new BatchStocktakeRequest.Line();
+        line.setBatchId(7L);
+        line.setActualMeters(new BigDecimal("58.5"));
+        request.setLines(List.of(line));
+        when(batchStocktakeService.stocktake(eq(TEST_TENANT_ID), eq("prod-1"), eq("PD-20261001-0001"),
+                any())).thenReturn(new BatchStockViews.StocktakeResult("PD-20261001-0001", "prod-1",
+                1, 0, 0, new BigDecimal("-1.5"), List.of(new BatchStockViews.StocktakeLineResult(
+                7L, "PC-20260901-0001", 12L, "SKU-A", new BigDecimal("60"), new BigDecimal("58.5"),
+                new BigDecimal("-1.5"), new BigDecimal("58.5"), BatchStockViews.STOCKTAKE_APPLIED))));
+
+        mockMvc.perform(post(BASE + "/stocktake")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"productId\":\"prod-1\",\"runId\":\"PD-20261001-0001\","
+                                + "\"lines\":[{\"batchId\":7,\"actualMeters\":58.5}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.changedCount").value(1))
+                .andExpect(jsonPath("$.data.totalDelta").value(-1.5))
+                .andExpect(jsonPath("$.data.lines[0].beforeMeters").value(60))
+                .andExpect(jsonPath("$.data.lines[0].actualMeters").value(58.5))
+                .andExpect(jsonPath("$.data.lines[0].delta").value(-1.5))
+                .andExpect(jsonPath("$.data.lines[0].afterMeters").value(58.5))
+                .andExpect(jsonPath("$.data.lines[0].status").value("applied"));
+
+        ArgumentCaptor<List<BatchStocktakeRequest.Line>> captor = ArgumentCaptor.forClass(List.class);
+        verify(batchStocktakeService).stocktake(eq(TEST_TENANT_ID), eq("prod-1"),
+                eq("PD-20261001-0001"), captor.capture());
+        assertThat(captor.getValue()).singleElement().satisfies(sent -> {
+            assertThat(sent.getBatchId()).isEqualTo(7L);
+            assertThat(sent.getActualMeters()).isEqualByComparingTo("58.5");
+        });
     }
 
     @Test

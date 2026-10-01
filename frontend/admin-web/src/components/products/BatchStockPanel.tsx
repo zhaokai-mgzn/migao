@@ -4,12 +4,17 @@ import { useCallback, useEffect, useState } from 'react'
 import { batchStockApi } from '@/lib/api'
 import { formatStockQuantity } from '@/lib/stock-quantity'
 import type { BatchDistribution, BatchReconcile, BatchRemaining } from '@/types'
+import BatchStocktakeForm from '@/components/products/BatchStocktakeForm'
 
 /**
- * 批次账读面（V116 / issue #5145 阶段 1）——**只读**，挂在商品详情的库存区。
+ * 批次账读面（V116 / issue #5145 阶段 1）——挂在商品详情的库存区。
  *
  * 三个读面：① 批次余量（**派生** = 入库量 − 已派工消耗）；② 剩余量分布（恒四档）；
  * ③ 对账（`product_skus.stock` vs Σ批次余量）。
+ *
+ * 本组件自身**只读**；写面（按批次盘点，V143 / issue #5865）由 {@link BatchStocktakeForm} 承载，
+ * 挂在批次余量表下方：盘点提交成功 ⇒ 本组件重新拉三个读面 ⇒ 「差异已落账」当场看得见
+ * （不是「提交成功但列表还是旧值」）。
  *
  * 口径单一真值 = 后端 `BatchStockViews` 的 javadoc；本组件只渲染、不重算：
  * - 余量**不是**另立一份库存数，而是「这批还有多少」的派生值；
@@ -97,6 +102,9 @@ export default function BatchStockPanel({ productId, skuId }: Props) {
           </div>
         )}
       </div>
+
+      {/* ①-b 按批次盘点（V143 / issue #5865）：实盘录入 + 差异预览 + 一次提交 ⇒ 提交后刷新上面三个读面 */}
+      <BatchStocktakeForm productId={productId} batches={batches} onApplied={() => { void load() }} />
 
       {/* ② 剩余量分布（恒四档） */}
       {distribution && (

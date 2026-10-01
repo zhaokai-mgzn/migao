@@ -372,6 +372,100 @@ public class StockBatchConsumptionService {
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════
+    // 写面 ③ 按批次盘点（V143，issue #5865）—— 批次账的**盘点写入点**（全仓唯一，见类注释）
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    /** 变更来源：按批次库存盘点（转发 {@link StockBatchConsumption#REASON_STOCKTAKE}，调用方不必依赖实体类） */
+    public static final String REASON_STOCKTAKE = StockBatchConsumption.REASON_STOCKTAKE;
+
+    /**
+     * 一条**已算好**的盘点差异（delta = 实盘 − 当刻派生余量）。
+     *
+     * <p>{@code batch} 直接带读面那一行（{@link BatchStockViews.BatchRemaining}）：盘前余量、
+     * 批次号、SKU 与均价都在里面 —— 落账 ✅ 不需要第二份「当前余量是多少」的实现
+     * （余量的唯一口径是 {@link #remaining}，本记录只是把它传下来）。</p>
+     */
+    public record StocktakeAdjustment(BatchStockViews.BatchRemaining batch, BigDecimal delta) {
+    }
+
+    /**
+     * 该盘点运行（run id）**已经落过账**的批次 id 集合 —— 幂等判据的**读**半边。
+     *
+     * <p>幂等的**写**半边在 DB：部分唯一索引 {@code uk_batch_consumption_stocktake}
+     * （{@code (tenant_id, stocktake_run_id, batch_id) WHERE stocktake_run_id IS NOT NULL AND deleted = 0}）。
+     * 两半边都要：读半边让重放**平静地**返回「已记过」，写半边让并发重放**撞唯一键**而不是记两笔
+     * （同 {@code uk_batch_consumption_line} 的纪律：先查后写有 TOCTOU，唯一索引才是原子闸）。</p>
+     */
+    public Set<Long> stocktakeRecordedBatchIds(Long tenantId, String runId) {
+        Set<Long> ids = new LinkedHashSet<>();
+        if (!StringUtils.hasText(runId)) {
+            return ids;
+        }
+        for (StockBatchConsumption row : consumptionMapper.selectList(
+                new LambdaQueryWrapper<StockBatchConsumption>()
+                        .eq(StockBatchConsumption::getTenantId, tenantId)
+                        .eq(StockBatchConsumption::getStocktakeRunId, runId)
+                        .eq(StockBatchConsumption::getDeleted, 0)
+                        .select(StockBatchConsumption::getBatchId))) {
+            if (row.getBatchId() != null) {
+                ids.add(row.getBatchId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * 盘点差异落账（**只插入**，逐批次一行）。
+     *
+     * <p>三点与派工扣减**刻意不同**，每点都有理由：</p>
+     * <ol>
+     *   <li>{@code reason = 'stocktake'} + {@code stocktake_run_id} = run id ⇒ 来源可与「加工单扣料」
+     *       区分（DB 侧还有 {@code ck_batch_consumption_source_shape} 把两族的列形状钉成互斥）；</li>
+     *   <li>{@code processing_order_no} / {@code order_no} / {@code order_item_id} 全部**留空** ——
+     *       盘点没有加工单、没有订单行；填个占位串会让「按加工单查回来」查出盘点行（那是**假账**）；</li>
+     *   <li>{@code formula_meters = planned_meters = -delta} —— 沿用「扣减行为正、回补行为负」的符号约定，
+     *       于是 DB 约束 {@code ck_batch_consumption_plan_meters} 照常成立，而
+     *       {@link StockBatchConsumption#getSavedMeters()} 恒为 0（盘点**不产生**省料，不许冒功）。</li>
+     * </ol>
+     *
+     * @return 落账行数
+     */
+    public int applyStocktake(Long tenantId, String runId, List<StocktakeAdjustment> adjustments) {
+        if (adjustments == null || adjustments.isEmpty()) {
+            return 0;
+        }
+        for (StocktakeAdjustment a : adjustments) {
+            BatchStockViews.BatchRemaining b = a.batch();
+            BigDecimal delta = a.delta();
+            consumptionMapper.insert(StockBatchConsumption.builder()
+                    .tenantId(tenantId)
+                    .batchId(b.batchId())
+                    .batchNo(b.batchNo())
+                    .productId(b.productId())
+                    .skuId(b.skuId())
+                    .skuCode(b.skuCode())
+                    .delta(delta)
+                    // 盘前 = 当刻**派生**余量（入库量 + Σdelta），盘后 = 盘前 + delta = 实盘米数
+                    .beforeQty(b.remainingMeters())
+                    .afterQty(b.remainingMeters().add(delta))
+                    .formulaMeters(delta.negate())
+                    .plannedMeters(delta.negate())
+                    .unitCost(b.unitCost())
+                    .reason(REASON_STOCKTAKE)
+                    .stocktakeRunId(runId)
+                    .operator(StockLedgerService.resolveOperator())
+                    .note(String.format("批次盘点：批次 %s 盘前 %s 米 → 实盘 %s 米", b.batchNo(),
+                            plain(b.remainingMeters()), plain(b.remainingMeters().add(delta))))
+                    .createdAt(OffsetDateTime.now())
+                    .build());
+        }
+        log.info("批次盘点落账: tenant={}, runId={}, lines={}, delta={}", tenantId, runId,
+                adjustments.size(), plain(StockQuantity.sum(
+                        adjustments.stream().map(StocktakeAdjustment::delta).toList())));
+        return adjustments.size();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
     // 写面 ② reverse —— 作废回补（同事务、幂等、可重跑）
     // ══════════════════════════════════════════════════════════════════════════════════
 
