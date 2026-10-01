@@ -155,10 +155,12 @@ const submitOrder = async () => {
   fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), {
     target: { value: '杭州市' },
   })
-  // 物流两项（issue #5840 起**必填**）：本 helper 代表「一份填完整的表单」—— 补上它们，
-  // 否则提交会被新闸门拦下（那是闸门在起作用，不是这些用例坏了）。
-  fireEvent.change(screen.getByTestId('order-logistics-type'), { target: { value: 'express' } })
-  fireEvent.change(screen.getByTestId('order-logistics-company'), { target: { value: '顺丰' } })
+  // 物流两项（issue #5840 起**必填**）：只在**未带出**时补默认 —— 选客户已带出值时**不覆盖**
+  // （否则会盖掉「客户档案带出的常用物流」那几条判据要验的值）；「缺物流被拦」有自己的用例。
+  const lt = screen.getByTestId('order-logistics-type') as HTMLSelectElement
+  if (!lt.value) fireEvent.change(lt, { target: { value: 'express' } })
+  const lc = screen.getByTestId('order-logistics-company') as HTMLInputElement
+  if (!lc.value) fireEvent.change(lc, { target: { value: '顺丰' } })
   await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
   fireEvent.click(screen.getByText('提交订单'))
 }

@@ -10,9 +10,12 @@ import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -73,6 +76,7 @@ public class OrderController {
     @RequirePermission("order:create")  // issue #5246 追加单：建单与改单是两种授权粒度
     @PostMapping
     public ApiResponse<OrderDetailResponse> createOrder(@Valid @RequestBody OrderCreateRequest request) {
+        requireFormOnlyFields(request);
         log.info("创建订单: customerName={}", request.getCustomerName());
         Long tenantId = TenantContext.getTenantId();
         OrderDetailResponse order = orderService.createOrder(request, tenantId);
