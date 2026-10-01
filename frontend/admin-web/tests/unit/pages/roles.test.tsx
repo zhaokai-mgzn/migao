@@ -91,6 +91,8 @@ const PERMISSION_CATALOG = [
 ]
 
 import RolesPage from '@/app/(dashboard)/roles/page'
+// #5895：菜单梯队的**真值源**（判据直接遍历它，而不是抄一份清单 —— 抄的那份会漂移）
+import * as menuConfig from '@/config/menu'
 
 describe('RolesPage', () => {
   beforeEach(() => {
@@ -162,10 +164,12 @@ describe('RolesPage', () => {
     expect(tree.getByText('组织管理')).toBeInTheDocument()
     // 旧组名不再出现：issue #5271 / #5778 三处改判（商品与加工项**撤销**；智能客服 → 客户服务；
     // 订单管理 + 客户管理 → 交易管理）。
-    // ⚠️ 「商品管理」在本容器里出现**一次**：#5778 起它是**菜单项名**（一级项）。
-    //（「操作权限」节的同名权限项渲染在另一容器里，不在本判据的取值面内）
+    // 🔴 #5895 纠错：旧断言 `tree.getAllByText('商品管理')).toHaveLength(1)` 是**假绿** ——
+    // 它命中的是「操作权限」节里的旧大类码 `product:manage`（DB 名也叫「商品管理」，就渲染在本容器内），
+    // 而**菜单项「商品管理」当时根本没渲染**（#5778 把它升为 `standaloneTopItems` 一级项时本页没跟）。
+    // 真实判据 = 本文件 #5895 三条（一级项块 `perm-standalone-top` 的位置/名称/码 + 勾选落库）。
     expect(tree.queryByText('商品与加工项')).not.toBeInTheDocument()
-    expect(tree.getAllByText('商品管理')).toHaveLength(1)
+    expect(within(tree.getByTestId('perm-standalone-top')).getByText('商品管理')).toBeInTheDocument()
     expect(tree.queryByText('智能客服')).not.toBeInTheDocument()
     expect(tree.queryByText('订单管理')).not.toBeInTheDocument()
     expect(tree.queryByText('客户管理')).not.toBeInTheDocument()
@@ -179,7 +183,7 @@ describe('RolesPage', () => {
     //（否则「勾得动 / 看不到」会漂移：它现在确实决定一个菜单项与 5 个读端点的可见性）。
     expect(tree.getByText('每日简报')).toBeInTheDocument()
     expect(tree.getByText('经营看板')).toBeInTheDocument()
-    // #5778：「商品列表」改名「商品管理」（上方已按「出现两次」断言：菜单项 + 操作权限项）
+    // #5778：「商品列表」改名「商品管理」（菜单项判据见本文件 #5895 三条：`perm-standalone-top`）
     // issue #4490：「加工项管理」+「加工费管理」合并为单一入口；#4542 起菜单名 =「加工项管理」
     // （权限树与真实侧边栏同源）
     expect(tree.getByText('加工项管理')).toBeInTheDocument()
@@ -284,5 +288,73 @@ describe('RolesPage', () => {
     })
     // #3081: agent:quickreply 权限已随快捷回复功能下线，不再授予
     expect(mockCreateRole.mock.calls[0][0].permissionIds).not.toContain('p-agent-quickreply')
+  })
+
+  // ══ #5895：一级项（`standaloneTopItems`）必须并入权限树 ══
+  // 缺陷的**类** = 「侧边栏的菜单梯队（或梯队里新增的带码项）在权限树里漏接」——
+  // #5778 引入一级项 `standaloneTopItems`（「商品管理」）时，侧边栏与 ⌘K 都跟了，
+  // 只有本弹窗仍只遍历 `menuGroups` ⇒ 该菜单在「权限分配」里**整项消失**（勾都勾不到）。
+
+  // 登记表：菜单梯队 → 它在权限树里的专属容器（null = 散在整树里/无带码项）。
+  // 🔴 新增一个菜单梯队必须在此登记并接线，否则下面第一条判据当场红（未登记即红）。
+  const MENU_TIERS: Record<string, string | null> = {
+    menuGroups: null,
+    standaloneTopItems: 'perm-standalone-top',
+    standaloneItems: null, // 尾部项「通知中心」：全员可见、**无码** ⇒ 不可授予
+  }
+
+  it('类级守卫：config/menu 的菜单梯队全部已并入权限树（新增梯队未接线即红）', () => {
+    const tierArrays = Object.entries(menuConfig)
+      .filter(([, v]) => Array.isArray(v))
+      .map(([k]) => k)
+      .sort()
+    expect(tierArrays).toEqual(Object.keys(MENU_TIERS).sort())
+  })
+
+  it('类级守卫：三梯队里每个带码菜单节点都能在权限树里勾到（漏接即红）', async () => {
+    render(<RolesPage />)
+    fireEvent.click(await screen.findByText('新增岗位'))
+    const container = await screen.findByTestId('perm-menu-sections')
+    // 菜单行 = 「菜单名 + 权限码」的 label；「操作权限」节渲染的是「权限名(action)」、不含码
+    // ⇒ 同名条目（如旧大类码 product:manage 也叫「商品管理」）**不会**把漏接的菜单项伪装成已接线。
+    const rows = Array.from(container.querySelectorAll('label')).map(l => l.textContent || '')
+    const coded = [
+      ...menuConfig.menuGroups.flatMap(g => g.children),
+      ...menuConfig.standaloneTopItems,
+      ...menuConfig.standaloneItems,
+    ].filter(item => item.permissionCode)
+    expect(coded.length).toBeGreaterThan(0) // 反空跑：没有可判的对象时本判据不算通过
+    for (const item of coded) {
+      const hit = rows.some(text => text.includes(item.name) && text.includes(item.permissionCode!))
+      expect(hit, `菜单节点「${item.name}」(${item.permissionCode}) 未出现在权限树 —— 梯队接线漏了`).toBe(true)
+    }
+  })
+
+  it('#5895 一级项「商品管理」渲染在权限树**所有分组之前**（standaloneTopItems / product:list）', async () => {
+    render(<RolesPage />)
+    fireEvent.click(await screen.findByText('新增岗位'))
+    const container = await screen.findByTestId('perm-menu-sections')
+    const top = within(container).getByTestId('perm-standalone-top')
+    expect(within(top).getByText('商品管理')).toBeInTheDocument()
+    expect(within(top).getByText('product:list')).toBeInTheDocument()
+    // 位置与侧边栏同序：一级项 → 分组 → 尾部项 ⇒ 一级项块是权限树的**第一个**子块
+    expect(container.firstElementChild).toBe(top)
+  })
+
+  it('#5895 勾选一级项「商品管理」→ 创建岗位时 permissionIds 含 product:list 的权限ID（勾得动）', async () => {
+    mockGetRoles.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+    render(<RolesPage />)
+    fireEvent.click(await screen.findByText('新增岗位'))
+    const top = within(await screen.findByTestId('perm-menu-sections')).getByTestId('perm-standalone-top')
+    fireEvent.click(within(top).getByText('商品管理').closest('label')!.querySelector('input')!)
+    const textboxes = screen.getAllByRole('textbox')
+    fireEvent.change(textboxes[0], { target: { value: '商品运营' } })
+    fireEvent.change(textboxes[1], { target: { value: 'product_operator' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建' }))
+    await waitFor(() => {
+      expect(mockCreateRole).toHaveBeenCalledWith(expect.objectContaining({
+        permissionIds: expect.arrayContaining(['p-product-list']),
+      }))
+    })
   })
 })

@@ -106,9 +106,16 @@ test.describe('岗位权限管理页面（#2969 由角色权限改名）', () =>
     await expect(page.roleModal.getByText('权限分配', { exact: true })).toBeVisible()
     const tree = await page.permissionTree.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null)
     expect(tree).not.toBeNull()
-    // 菜单组名 = 侧边栏菜单组（issue #5271 新 IA：智能客服 / 商品与加工项 / 交易管理 / 生产管理 / 仓储与物料 / 组织管理）
-    await expect(page.permissionTree.getByText('智能客服', { exact: true })).toBeVisible()
-    await expect(page.permissionTree.getByText('商品与加工项', { exact: true })).toBeVisible()
+    // 菜单组名 = 侧边栏菜单组（#5778 现 IA：工作台 / 客户服务 / 交易管理 / 生产管理 / 仓储与物料 / 组织管理）
+    // 🔴 #5895：**一级项「商品管理」**（`standaloneTopItems`）渲染在**所有分组之前**、不在任何分组里 ——
+    // 它此前整项缺席权限树（本 spec 的旧断言停在 #5271 的组名「智能客服 / 商品与加工项」上，
+    // 而 admin e2e 不在 pr-check 的跑测面 ⇒ 档期漂移没人发现；此处一并改判 + 补一级项判据）
+    const topTier = page.permissionTree.getByTestId('perm-standalone-top')
+    await expect(topTier.getByText('商品管理', { exact: true })).toBeVisible()
+    await expect(topTier.getByText('product:list', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('工作台', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('客户服务', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('商品与加工项', { exact: true })).toHaveCount(0)
     // issue #5271：原「订单管理」+「客户管理」两组**并为一组**「交易管理」（客户列表 / 财务对账并入）
     await expect(page.permissionTree.getByText('交易管理', { exact: true })).toBeVisible()
     await expect(page.permissionTree.getByText('仓储与物料', { exact: true })).toBeVisible()
@@ -133,14 +140,15 @@ test.describe('岗位权限管理页面（#2969 由角色权限改名）', () =>
   test('权限分配支持菜单组全选/取消全选（#3002）', async () => {
     await page.createBtn.click()
     await page.permissionTree.waitFor({ state: 'visible', timeout: 5_000 })
-    // 智能客服组：在线接待 + 知识库（#3081 AI 客服配置已移除；#3094 米宝 · 在线对话 入口已移除）
+    // 客户服务组：在线接待 + 客户列表 + 知识库 + 售后工单（#5778 由「智能客服」组改名并吸收客户侧两项；
+    // #3081 AI 客服配置已移除；#3094 米宝 · 在线对话 入口已移除）
     const agentItems = page.permissionTree.locator('label').filter({ hasText: /在线接待|知识库/ }).locator('input[type="checkbox"]')
     await expect(agentItems).toHaveCount(2)
     // 点击组头（行）→ 组内全部授予
-    await page.permissionTree.getByText('智能客服', { exact: true }).click()
+    await page.permissionTree.getByText('客户服务', { exact: true }).click()
     await expect(agentItems).toBeChecked()
     // 再次点击组头 → 全部撤销
-    await page.permissionTree.getByText('智能客服', { exact: true }).click()
+    await page.permissionTree.getByText('客户服务', { exact: true }).click()
     await expect(agentItems).not.toBeChecked()
   })
 
