@@ -20,7 +20,9 @@
 #   3. 前置拒绝（仅 merge 模式）：本分支与 origin/main **都**改过受管用例面
 #      （`.github/cases/**` / `.github/case-trust-baseline.json`）⇒ **拒绝 merge**，
 #      打印理由与 `--rebase` 命令（见下「为什么」）
-#   4. merge/rebase origin/main（冲突时中止并提示）
+#   4. merge/rebase origin/main。冲突时**只有**「未合并文件集合恰好 == {CHANGELOG.md}」才尝试
+#      自动解（保留两侧条目 + 空行分隔 + 去标记，见下「CHANGELOG.md 冲突自动解」）；
+#      任何别的形态、或解完没过三条内容级验证 ⇒ **还原成冲突态** + 打印提示 + 退出 1
 #   5. 合并后内容级校验：origin/main 在受管用例面上新增的**每一行**（用例条目 `- id:`、
 #      销账字段块 `must_succeed` / `namespaces` / `precondition` …）必须仍在合并结果里；
 #      缺任何一行 ⇒ 非零退出 + 指名文件与缺失内容
@@ -44,6 +46,21 @@
 #   已知边界（如实登记）：第 5 步的判据是**单向**的（只断言「main 侧新增内容仍在」），
 #   因此「本分支侧删掉了 merge-base 里已有的内容」它不覆盖 —— 那一形态由第 3 步拦。
 #
+# CHANGELOG.md 冲突自动解（铁律 10：一晚做过 ≥3 次的动作串 ⇒ 必须收敛成**一条命令**）：
+#   一晚 4 次、每次逐字相同的动作串 = `sync-main.sh --rebase` 停下 → 冲突文件恰好只有
+#   CHANGELOG.md → 保留两侧条目、去掉 `<<<<<<<` / `=======` / `>>>>>>>` → 复核「一条不丢、
+#   无重复」→ `git add` → `rebase --continue` → 重跑 sync-main。现折叠进本脚本的冲突路径
+#   （**不是**新加一条命令 —— 那只是把重复挪个地方）。
+#   · 射程**不许扩大**：只有「未合并文件集合 == {CHANGELOG.md}」才尝试；其余形态交人工。
+#   · 三条内容级验证（**写盘之前**跑完；不过 ⇒ python 非零退出，工作树一个字节都没动）：
+#     A 无残留冲突标记（`<<<<<<<` / `=======` / `>>>>>>>`，含 diff3 的 `|||||||`）
+#     B `### ` 标题集合 == 索引 `:2:` ∪ `:3:`（一条不丢）+ 不得比两侧更多地重复某一条
+#     C `:2:` / `:3:` 的每一行都在解后文本里**按原序**出现（除冲突块插入点外逐字保留）
+#   · 失败即还原 + 非零退出（冲突态备份逐字节回写），交人工按老办法处理 —— **绝不静默丢内容**。
+#   · 已知边界（如实登记）：C 是**保守判据** —— 某侧在冲突区**之外**合法删过一行时它会判红
+#     （假红 ⇒ 退回人工路径，不产错内容）；`--continue` 必须带 `GIT_EDITOR=true`，否则非交互
+#     环境下 git 直接报「Terminal is dumb, but EDITOR unset」而失败（本机实测）。
+#
 # 环境变量：
 #   RENDER_CASES_ARGS=...  # 可选，覆盖渲染器参数（默认指向仓库内单一源）
 #
@@ -57,6 +74,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # 受管用例面：这些路径上的内容被静默回退会改变 case-trust 账（issue #4984）
 CASE_SURFACE=(".github/cases" ".github/case-trust-baseline.json")
+
+# CHANGELOG 冲突自动解的射程**硬编码**成这一个文件：多一个文件都不接管（见文件头）
+CHANGELOG_FILE="CHANGELOG.md"
 
 MODE="merge"
 AUTO_COMMIT=1
@@ -143,6 +163,168 @@ PY
   fi
 }
 
+# ── CHANGELOG.md 冲突自动解（射程硬编码 = 只认这一个文件）────────────────────
+# 只在「未合并文件集合恰好 == {CHANGELOG.md}」时尝试；其余形态 `return 1`
+# （调用方按原样打印提示并 exit 1）。解法与三条判据在**同一个 python 进程**里
+# ⇒ 不存在「判据读的是另一份东西」的漂移面。
+autoresolve_changelog_conflict() {
+  local unmerged="" backup=""
+  unmerged="$(git diff --name-only --diff-filter=U)"
+  if [ "${unmerged}" != "${CHANGELOG_FILE}" ]; then
+    echo "ℹ️ 未合并文件不是「恰好 ${CHANGELOG_FILE}」（现取：$(echo "${unmerged}" | tr '\n' ' ')）⇒ 不自动解（交人工）" >&2
+    return 1
+  fi
+  # 冲突态备份（逐字节）：验证不过 / 写入或 add 失败时用它还原
+  backup="$(mktemp "${TMPDIR:-/tmp}/sync-main-changelog-conflict.XXXXXX")" || return 1
+  if ! cp "${CHANGELOG_FILE}" "${backup}"; then
+    rm -f "${backup}"
+    return 1
+  fi
+  if ! python3 - "${CHANGELOG_FILE}" <<'PY'
+import re
+import subprocess
+import sys
+from collections import Counter
+
+FILE = sys.argv[1]
+MARKER = re.compile(r"^(<{7}|={7}|>{7}|\|{7})")
+
+
+def die(msg):
+    sys.stderr.write(msg + "\n")
+    sys.exit(1)
+
+
+def side(n):
+    """索引第 n 侧（rebase 下 `:2:`=origin/main、`:3:`=本分支提交；merge 下方向相反 ——
+    本判据只取并集与「逐侧保留」，故与方向无关）。取不到 ⇒ 无法验证 ⇒ 停手。"""
+    proc = subprocess.run(["git", "show", ":%d:%s" % (n, FILE)], capture_output=True,
+                          text=True, encoding="utf-8", errors="replace")
+    if proc.returncode != 0:
+        die("⛔ 取不到索引第 %d 侧（git show :%d:%s）：%s" % (n, n, FILE, proc.stderr.strip()))
+    return proc.stdout.split("\n")
+
+
+def heads(lines):
+    return [ln.rstrip("\r") for ln in lines if ln.startswith("### ")]
+
+
+def first_unmatched(needle, hay):
+    """`needle` 是否**按原序**逐行出现在 `hay` 里；→ 第一个对不上的元素（None = 全部命中）。"""
+    j = 0
+    for item in needle:
+        while j < len(hay) and hay[j] != item:
+            j += 1
+        if j == len(hay):
+            return item
+        j += 1
+    return None
+
+
+with open(FILE, encoding="utf-8", newline="") as fh:
+    work = fh.read().split("\n")
+if not any(ln.rstrip("\r").startswith("<<<<<<<") for ln in work):
+    die("⛔ %s 里没有冲突块（`<<<<<<<` 零命中）⇒ 不自动解" % FILE)
+ours, theirs = side(2), side(3)
+
+# ── 解法：每个冲突块保留**两侧**（标记里的原序、块之间空行分隔），其余行原样 ──
+out, idx, hunks = [], 0, 0
+while idx < len(work):
+    if not work[idx].rstrip("\r").startswith("<<<<<<<"):
+        out.append(work[idx])
+        idx += 1
+        continue
+    hunks += 1
+    idx += 1
+    sides = {"ours": [], "base": [], "theirs": []}
+    cur, closed = "ours", False
+    while idx < len(work):
+        tag = work[idx].rstrip("\r")
+        if tag.startswith("|||||||") and cur == "ours":
+            cur = "base"
+        elif tag == "=======" and cur != "theirs":
+            cur = "theirs"
+        elif tag.startswith(">>>>>>>"):
+            closed = True
+            idx += 1
+            break
+        else:
+            sides[cur].append(work[idx])
+        idx += 1
+    if not closed:
+        die("⛔ 第 %d 个冲突块没有结束标记（`>>>>>>>` 缺失）⇒ 结构不合预期，不自动解" % hunks)
+    kept = [s for s in (sides["ours"], sides["theirs"]) if s]
+    if len(kept) == 2 and kept[0][-1].strip():
+        kept.insert(1, [""])
+    for block in kept:
+        out.extend(block)
+
+# ── 三条内容级验证（全部在**写盘之前**）──────────────────────────────────────
+problems = []
+for ln in out:                                                      # A 无残留标记
+    if MARKER.match(ln.rstrip("\r")):
+        problems.append("残留冲突标记：%r" % ln)
+cnt, c_ours, c_theirs = Counter(heads(out)), Counter(heads(ours)), Counter(heads(theirs))
+want = set(c_ours) | set(c_theirs)
+lost = sorted(want - set(cnt))                                      # B 并集一条不丢
+extra = sorted(set(cnt) - want)
+amplified = sorted(h for h in cnt if cnt[h] > max(c_ours.get(h, 0), c_theirs.get(h, 0)))
+if lost:
+    problems.append("丢了 %d 条 `### ` 条目：%s" % (len(lost), " ｜ ".join(lost)))
+if extra:
+    problems.append("多出 %d 条两侧都没有的 `### ` 条目：%s" % (len(extra), " ｜ ".join(extra)))
+if amplified:
+    problems.append("这些 `### ` 条目比两侧更多地重复（并集解不得放大重复）：%s" % " ｜ ".join(amplified))
+for label, lines in ((":2:", ours), (":3:", theirs)):               # C 两侧原版按原序保留
+    bad = first_unmatched(lines, out)
+    if bad is not None:
+        problems.append("索引第 %s 侧原版的这一行在解后文本里对不上（丢了或次序被打乱）：%r"
+                        % (label, bad))
+if problems:
+    sys.stderr.write("⛔ %s 冲突自动解**未通过**内容级验证（%d 条）—— 不写盘、保持冲突态：\n"
+                     % (FILE, len(problems)))
+    for item in problems:
+        sys.stderr.write("   · %s\n" % item)
+    sys.exit(1)
+
+merged = "\n".join(out)
+with open(FILE, "w", encoding="utf-8", newline="") as fh:
+    fh.write(merged)
+with open(FILE, encoding="utf-8", newline="") as fh:                # 写后回读自证（防半截写）
+    if fh.read() != merged:
+        die("⛔ 写入后回读与验证过的内容不一致 ⇒ 不认这次解（请人工处理）")
+print("ℹ️ 自动解 %d 个冲突块：`### ` 索引 :2:=%d / :3:=%d / 并集=%d / 结果=%d"
+      % (hunks, len(c_ours), len(c_theirs), len(want), len(cnt)))
+PY
+  then
+    # 还原（此刻索引未动 ⇒ 逐字节就是冲突态）。还原**也要自证**：失败就不许删备份、
+    # 也不许报告「已还原」（否则会把「备份已删 + 状态未知」这种最坏形态留在原地）。
+    if cp "${backup}" "${CHANGELOG_FILE}"; then
+      rm -f "${backup}"
+      echo "⛔ 自动解未过内容级验证 ⇒ 已还原成冲突态（工作树与索引同停下时逐字节一致）" >&2
+    else
+      echo "⛔ 自动解未过内容级验证，且还原失败 ⇒ 冲突态备份留在 ${backup}，请手工恢复" >&2
+    fi
+    return 1
+  fi
+  if ! git add "${CHANGELOG_FILE}"; then
+    if cp "${backup}" "${CHANGELOG_FILE}"; then
+      rm -f "${backup}"
+      echo "❌ git add ${CHANGELOG_FILE} 失败 ⇒ 已还原成冲突态" >&2
+    else
+      echo "❌ git add ${CHANGELOG_FILE} 失败，且还原失败 ⇒ 冲突态备份留在 ${backup}" >&2
+    fi
+    return 1
+  fi
+  rm -f "${backup}"
+  if ! GIT_EDITOR=true git "${MODE}" --continue; then
+    echo "❌ ${CHANGELOG_FILE} 已自动解并 stage，但 git ${MODE} --continue 失败 —— 请手工重跑该命令" >&2
+    return 1
+  fi
+  echo "✅ ${CHANGELOG_FILE} 冲突已自动解（两侧条目都在 / 无残留标记 / 已过三条内容级验证）并继续 ${MODE}"
+  return 0
+}
+
 echo "── 1/6 前置检查 ──"
 BRANCH="$(git branch --show-current)"
 if [ -z "$BRANCH" ] || [ "$BRANCH" = "main" ]; then
@@ -187,10 +369,19 @@ else
 fi
 
 echo "── 4/6 ${MODE} origin/main ──"
+CONFLICT=0
 if [ "$MODE" = "rebase" ]; then
-  git rebase origin/main || { echo "❌ rebase 冲突，请解决后重跑本脚本" >&2; exit 1; }
+  git rebase origin/main || CONFLICT=1
 else
-  git merge origin/main --no-edit || { echo "❌ merge 冲突，请解决后重跑本脚本" >&2; exit 1; }
+  git merge origin/main --no-edit || CONFLICT=1
+fi
+if [ "${CONFLICT}" -eq 1 ]; then
+  # 射程恰好 {CHANGELOG.md} 且解完过了三条内容级验证 ⇒ 自动解并继续；
+  # 其余一律走下面这条与自动解引入前**逐字一致**的提示
+  autoresolve_changelog_conflict || {
+    echo "❌ ${MODE} 冲突，请解决后重跑本脚本" >&2
+    exit 1
+  }
 fi
 
 echo "── 5/6 合并后内容级校验（受管用例面）──"
