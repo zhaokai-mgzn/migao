@@ -2672,7 +2672,7 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
-  - id: UI-075
+  - id: UI-076
     legacy_id: ""
     title: "订单详情页费用构成可见：商品合计 + 加工费 + 其它构成 = 订单金额（issue #5843）"
     domains:
@@ -2701,7 +2701,7 @@ cases:
       - "判据 5·**布料单不出现空行 / `¥0.00` 行**：无加工费、无未定价、无差额的订单整块不渲染（`data-testid=order-fee-breakdown` 不存在）—— 没有加工是正常，不是缺失。"
       - "判据 6·**类级元守卫（单源）**：`frontend/admin-web/tests/unit/order-fee-composition-guard.test.ts` 扫全 `src/**` 的「逐行累加加工费」形态：命中而不在**只许缩短**的 `ALLOWED_SITES`（4 条冻结快照：共享层 / 明细行合计区 / 纸质发货单 / 新增订单页试算面）里 ⇒ 红；白名单里每一条必须仍是**真在累加**的活文件（豁免不许比代码活得久）；订单详情页**不得出现**加工费字段名（必须走 `frontend/admin-web/src/lib/order-fee-display.ts`）。"
     skip_reason: "[backend-contract] 纯前端展示（后端字段与契约一字未改：`processingFee` / `processingFeeDetail` 早已由 `OrderDetailResponse.OrderItemResponse` 下发；无 LLM 环节，不进 agent-eval 冒烟）"
-    merge_log: "2026-10-01 新增（issue #5843）：订单详情页补「费用构成」区（`components/orders/OrderFeeBreakdown.tsx` + `lib/order-fee-display.ts::buildOrderFeeComposition`），把「商品合计 + 加工费 + 其它构成 = 订单金额」摆成页面上读得出来的等式；行级加工费展示（算式 / 未定价 / 人工改价）由 `OrderItemList.tsx` **上移到共享层**（同源复用，不写第二套）。取号 UI-075（ui.yml 当时最大 = UI-074）。"
+    merge_log: "2026-10-01 新增（issue #5843）：订单详情页补「费用构成」区（`components/orders/OrderFeeBreakdown.tsx` + `lib/order-fee-display.ts::buildOrderFeeComposition`），把「商品合计 + 加工费 + 其它构成 = 订单金额」摆成页面上读得出来的等式；行级加工费展示（算式 / 未定价 / 人工改价）由 `OrderItemList.tsx` **上移到共享层**（同源复用，不写第二套）。取号 UI-076（本单原取 UI-075，与并发包 #5841 的用例撞号 ⇒ 按「未合并的一侧顺延」改号；ui.yml 当时最大 = UI-074）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"

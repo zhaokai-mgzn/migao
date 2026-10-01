@@ -1,4 +1,4 @@
-// case_ids: UI-075
+// case_ids: UI-076
 // @vitest-environment jsdom
 /**
  * 订单详情页「费用构成」组件（issue #5843）—— 组件级判据（页面级判据见

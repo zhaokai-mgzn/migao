@@ -7261,7 +7261,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（73 case）
+## 前端 UI 域（74 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -8275,6 +8275,22 @@
 ```
 溯源: 2026-10-01 新增（issue #5841）：修订单列表查询区第二行横向溢出（「查询/重置/刷新」被挤出卡片）。归因经实测修订 —— 不是「四条 1fr 轨道被撑到同宽」，而是每条 1fr 轨道的最小尺寸等于本格 min-content、四者之和超出卡片可用宽度。修法 = 查询区两行 grid 的 fr 轨道全部改 `minmax(0,…)` + 两个日期输入 `min-w-[130px]`→`min-w-0` + 第二行 5 列断点 md→xl（768~1279 装不下 4 筛选 + 3 按钮，实测会被压到 26px/格）。 ｜ tags: ui, orders, layout, overflow
 
+### UI-076. 订单详情页费用构成可见：商品合计 + 加工费 + 其它构成 = 订单金额（issue #5843） 🔵
+```
+你: 「商品合计 ¥245.14 与订单金额 ¥368.74 之间那笔 ¥123.60 加工费在页面上任何位置都不出现」（2026-10-01 报障截图），并问「是否要和新增订单页对齐」⇒ 集成侧裁定：对齐**展示口径**、不复制实现（详情页 = 落库快照，新增订单页 = 试算预览）
+期望: direct_reply
+数据: 判据 1·🔴 **那笔钱必须在页面上出现**：含加工费的订单渲染「加工费」行，其值 = 落库 Σ `items[].processingFee`（报障单 = 245.14 商品 + **123.60** 加工 = 368.74 订单金额）。改前实测读数（本判据的红证）：整页金额读数 = ["¥368.74","¥23.80","¥245.14","¥245.14","¥368.74","¥0.00","¥368.74"] —— **¥123.60 一个渲染点都没有**。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx::「复现读数：这笔 ¥123.60 必须在页面上出现」。
+数据: 判据 2·**等式在页面上看得见**：`data-testid=fee-breakdown-equation` 的文本同时含 商品合计 / 加工费 / 订单金额 三个数（`¥245.14（商品合计） + ¥123.60（加工费） = ¥368.74（订单金额）`），且页面上读到的 `商品合计 + 加工费 = 订单金额` 逐值闭合（差额非 0 ⇒ `data-testid=fee-breakdown-other` 的「其它构成」解释行把它报出来）。红证 = 去掉接线 ⇒ `fee-breakdown-goods` 找不到。
+数据: 判据 3·**只展示落库快照、不重算**：`unit_price` 9.99 与米数 10.3（重算 = 102.90）而落库 `processingFee` = 123.60 时，页面显示 123.60 且**不出现** `¥102.90`（详情页是落库快照面，试算口径只属于新增订单页；`fee_source=manual` 另标「人工改价」）。
+数据: 判据 4·**未定价不渲染 `¥0.00`**：`fee_source=unpriced` 的行显式标「未定价」并**点名组合**（口径 = `unpricedCombinationLabel`：`items.join(' + ')` → composition → 「没有可匹配的组合（缺选配信息）」），未定价区文本**不含** `¥0.00`，也不渲染「加工费 ¥0.00」行（那与「本来就不收」长得一样 = 静默改钱的外观）。
+数据: 判据 5·**布料单不出现空行 / `¥0.00` 行**：无加工费、无未定价、无差额的订单整块不渲染（`data-testid=order-fee-breakdown` 不存在）—— 没有加工是正常，不是缺失。
+数据: 判据 6·**类级元守卫（单源）**：`frontend/admin-web/tests/unit/order-fee-composition-guard.test.ts` 扫全 `src/**` 的「逐行累加加工费」形态：命中而不在**只许缩短**的 `ALLOWED_SITES`（4 条冻结快照：共享层 / 明细行合计区 / 纸质发货单 / 新增订单页试算面）里 ⇒ 红；白名单里每一条必须仍是**真在累加**的活文件（豁免不许比代码活得久）；订单详情页**不得出现**加工费字段名（必须走 `frontend/admin-web/src/lib/order-fee-display.ts`）。
+前置: 本用例是 [backend-contract] 纯前端展示用例：前置（订单行 + 落库的 processingFee / processingFeeDetail）全部由单测自建 —— frontend/admin-web/tests/unit/pages/order-detail.test.tsx mock `@/lib/api` 的 `orderApi.getOrder`（mock 数据即用户报障那一单的落库形状），frontend/admin-web/tests/unit/lib/order-fee-display.test.ts 直接构造行数据 —— 不依赖共享夹具与真实服务 ⇒ 前置不成立时判据直接红；agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端展示（后端字段与契约一字未改：`processingFee` / `processingFeeDetail` 早已由 `OrderDetailResponse.OrderItemResponse` 下发；无 LLM 环节，不进 agent-eval 冒烟）
+```
+真值: order.fee-composition-visible, frontend-fix.no-api-change
+溯源: 2026-10-01 新增（issue #5843）：订单详情页补「费用构成」区（`components/orders/OrderFeeBreakdown.tsx` + `lib/order-fee-display.ts::buildOrderFeeComposition`），把「商品合计 + 加工费 + 其它构成 = 订单金额」摆成页面上读得出来的等式；行级加工费展示（算式 / 未定价 / 人工改价）由 `OrderItemList.tsx` **上移到共享层**（同源复用，不写第二套）。取号 UI-076（本单原取 UI-075，与并发包 #5841 的用例撞号 ⇒ 按「未合并的一侧顺延」改号；ui.yml 当时最大 = UI-074）。 ｜ tags: ui, order, fee, display
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -8304,8 +8320,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：583（活跃 126，跳过 457）
-- tier 分布：smoke 12 / normal 538 / adversarial 31
+- 用例总数：585（活跃 126，跳过 459）
+- tier 分布：smoke 12 / normal 540 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8330,7 +8346,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：73
+- 前端 UI 域：74
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
