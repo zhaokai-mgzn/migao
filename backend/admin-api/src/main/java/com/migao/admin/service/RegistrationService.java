@@ -461,10 +461,9 @@ public class RegistrationService {
      *       {@code @Transactional} 里。种子套用失败若上抛，会把**已建好的租户、默认角色权限、
      *       管理员用户**一起回滚 ⇒ 客户拿不到账号、申请单仍停在 pending ⇒ 比「工序库为空」严重得多
      *       （后者只是建不了单，且有补救路径）。「开租可用」优先于「种子齐全」。</li>
-     *   <li><b>为什么不是静默吞掉</b>：捕获后打 {@code error} 日志（点名 tenantId + industry +
-     *       异常），且套用是**幂等**的 ⇒ 运营/商家可随时经
-     *       {@code POST /api/admin/production/seed-templates/curtain/apply} 补套，
-     *       重试不会产生第二份。</li>
+     *   <li><b>为什么不是静默吞掉</b>：捕获后打 {@code error} 日志（点名 tenantId + industry + 异常）——
+     *       这条日志是「租户工序库为空」与「有人知道为什么」之间的唯一联系。
+     *       ⚠️ 商家面的「补套」入口已整体退场（issue #5874）⇒ 补救动作**落回运营**（人工重跑开租套用）。</li>
      *   <li><b>{@code other} 行业不是异常</b>：{@code applyTemplate} 会返回
      *       {@code applied=false} + 原因并自己记 warn，本方法照常放行（这是正常业务分支）。</li>
      * </ul>
@@ -481,8 +480,7 @@ public class RegistrationService {
         } catch (RuntimeException e) {
             // 显式降级：开租成功但种子未套用（可补套）。**不要**把异常吞掉不说 ——
             // 这条 error 日志是「库里工序为空」与「有人知道为什么」之间的唯一联系。
-            log.error("开租套用生产种子模板失败（租户已建、可经 "
-                            + "POST /api/admin/production/seed-templates/curtain/apply 补套）: "
+            log.error("开租套用生产种子模板失败（租户已建、工序库为空 ⇒ 需运营人工重跑套用）: "
                             + "tenantId={}, industry={}",
                     tenant.getId(), tenant.getIndustry(), e);
         }

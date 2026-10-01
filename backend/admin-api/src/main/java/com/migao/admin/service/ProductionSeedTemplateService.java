@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.config.IndustryCodes;
-import com.migao.admin.dto.ProductionSeedTemplateInfo;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
 import com.migao.admin.entity.ProductionCraft;
@@ -309,26 +308,9 @@ public class ProductionSeedTemplateService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // ══════════════════════ 目录 ══════════════════════
-
-    /** 平台预置模板目录（{@code GET /api/admin/production/seed-templates}）。 */
-    public List<ProductionSeedTemplateInfo> listTemplates() {
-        List<ProductionSeedTemplateInfo> result = new ArrayList<>();
-        JsonNode index = readJson(INDEX_FILE);
-        for (JsonNode t : index.path("templates")) {
-            JsonNode seed = loadTemplateFile(t.path("file").asText());
-            result.add(ProductionSeedTemplateInfo.builder()
-                    .templateId(t.path("templateId").asText())
-                    .industry(t.path("industry").asText())
-                    .name(t.path("name").asText())
-                    .version(t.path("version").asInt(1))
-                    .description(t.path("description").asText())
-                    .operationCount(seed.path("operations").size())
-                    .routingCount(seed.path("routings").size())
-                    .optionCount(seed.path("option_routings").size())
-                    .build());
-        }
-        return result;
-    }
+    // ⚠️ 平台预置模板目录的**读面已整体退场**（issue #5874；2026-10-01 用户裁定）：
+    // 商家面不再有「补套行业模板」入口，`GET /seed-templates` 与它的 `listTemplates()` 一并删除。
+    // **保留**：开租时的自动套用（{@link #applyTemplate}，RegistrationService 调用）。
 
     // ══════════════════════ 套用 ══════════════════════
 

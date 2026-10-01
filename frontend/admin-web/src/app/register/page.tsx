@@ -381,7 +381,7 @@ export default function RegisterPage() {
                 </select>
                 {companyForm.industry === 'other' && (
                   <p className="mt-1.5 text-xs text-neutral-500" data-testid="register-industry-other-hint">
-                    其他行业暂不自动套用行业模板：开通后可到「工序库 → 一键套用行业模板」或手工维护工序与工艺路线。
+                    其他行业暂不自动套用行业模板：开通后请到「工艺配置 → 工序管理」手工维护工序与工艺路线（新增一道工序会自动带上它的价目行）。
                   </p>
                 )}
               </div>

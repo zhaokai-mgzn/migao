@@ -1172,25 +1172,6 @@ export interface RoutingsResponse {
   routings?: Routing[]
 }
 
-// ── 行业生产模板目录（issue #4361 冻结契约；前端只消费，写面权限码与后端一致）──
-
-/** GET /api/admin/production/seed-templates 的一项 */
-export interface ProductionSeedTemplate {
-  templateId: string
-  /** 行业 code（受控词表，见 lib/industry.ts） */
-  industry: string
-  name: string
-  version: number
-  description?: string
-}
-
-/** POST /api/admin/production/seed-templates/{templateId}/apply 的响应（套用幂等：已存在即跳过） */
-export interface ProductionSeedApplyResult {
-  created_operations: number
-  created_routings: number
-  skipped: number
-}
-
 // ── 工艺路线商家可配（issue #4307 前端半边；契约所有者 = 后端 4308）──
 // 端点与字段名以 issue #4308 的冻结清单为准，前端不得自行发明（新增字段一律登记在这里）。
 

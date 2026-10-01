@@ -401,7 +401,7 @@ class RegistrationServiceTest extends BaseServiceTest {
         /**
          * 开租播种的**失败降级**语义（issue #4430 / B2）：种子套用抛异常时
          * **开租仍成功、异常不外抛**（{@code RegistrationService.applyProductionSeedTemplate}
-         * 的 javadoc 明写：「开租可用」优先于「种子齐全」，可经 seed-templates/curtain/apply 补套）。
+         * 的 javadoc 明写：「开租可用」优先于「种子齐全」，补救动作落回运营人工重跑套用）。
          *
          * <p>反向红线：若把 {@code catch} 去掉（改成上抛），本断言必红 —— 那会把已建好的租户、
          * 默认角色权限、管理员用户一起回滚，客户拿不到账号、申请单仍停在 pending。</p>

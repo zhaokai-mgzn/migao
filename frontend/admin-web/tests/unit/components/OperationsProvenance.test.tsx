@@ -19,8 +19,6 @@ import userEvent from '@testing-library/user-event'
 const mockGetOperationsCatalog = vi.fn()
 const mockGetRoutings = vi.fn()
 const mockUpdateOperation = vi.fn()
-const mockGetSeedTemplates = vi.fn()
-const mockApplySeedTemplate = vi.fn()
 // issue #4416：工序库并入「工艺配置」单页 ⇒ 该页还会拉缺口/信号两条只读端点
 const mockGetRoutingGaps = vi.fn()
 const mockGetRouteSignals = vi.fn()
@@ -41,8 +39,6 @@ vi.mock('@/lib/api', () => ({
     getOperationsCatalog: (...args: unknown[]) => mockGetOperationsCatalog(...args),
     getRoutings: (...args: unknown[]) => mockGetRoutings(...args),
     updateOperation: (...args: unknown[]) => mockUpdateOperation(...args),
-    getSeedTemplates: (...args: unknown[]) => mockGetSeedTemplates(...args),
-    applySeedTemplate: (...args: unknown[]) => mockApplySeedTemplate(...args),
     getRoutingGaps: (...args: unknown[]) => mockGetRoutingGaps(...args),
     getRouteSignals: (...args: unknown[]) => mockGetRouteSignals(...args),
     getOperationPositions: (...args: unknown[]) => mockGetOperationPositions(...args),
@@ -91,14 +87,6 @@ const ROUTINGS = {
   ],
 }
 
-/** 行业模板目录（契约：#4361 GET /api/admin/production/seed-templates） */
-const TEMPLATES = [
-  { templateId: 'curtain', industry: 'curtain', name: '布艺 / 窗帘 生产模板', version: 1, description: '窗帘行业预置工序与工艺路线（初始价，待客户确认）' },
-]
-
-/** 套用结果（契约：POST /api/admin/production/seed-templates/{templateId}/apply） */
-const APPLY_RESULT = { created_operations: 30, created_routings: 9, skipped: 4 }
-
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
 /** 打开某逻辑工序的「管理▸」抽屉（变体明细面 —— 原「工序库明细」折叠区的落点） */
@@ -109,13 +97,11 @@ const openVariant = async (operation: string) => {
   await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
 }
 
-describe('工序 provenance 徽标 + 一键套用行业模板（issue #4363；#4588 收进抽屉）', () => {
+describe('工序 provenance 徽标（issue #4363；#4588 收进抽屉）', () => {
   beforeEach(() => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
     mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS))
     mockUpdateOperation.mockReset().mockResolvedValue(ok({ id: 103, name: '罗马帘-成型', unit_price: 3 }))
-    mockGetSeedTemplates.mockReset().mockResolvedValue(ok(TEMPLATES))
-    mockApplySeedTemplate.mockReset().mockResolvedValue(ok(APPLY_RESULT))
     mockGetRoutingGaps.mockReset().mockResolvedValue(ok({ unrouted_operations: [], signal_keys_without_route: [] }))
     mockGetRouteSignals.mockReset().mockResolvedValue(ok({ total: 0, signals: [] }))
 
@@ -243,79 +229,4 @@ const layersOf = (cells: any[]) => {
     expect(within(screen.getByTestId('routing-12')).queryByTestId('routing-default-12')).toBeNull()
   })
 
-  // ⚠️ issue #4416：行业模板卡**仅在工序库为空时**渲染（开租时 RegistrationService 已自动套用，
-  // 常驻卡片会让商家误以为必须手点）⇒ 这一组用例必须先把工序库置空。
-  it('行业模板列表渲染真实数据（名称 + 版本 + 说明）', async () => {
-    mockGetOperationsCatalog.mockResolvedValue(ok({ total: 0, groups: [] }))
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('seed-template-curtain')).toBeInTheDocument())
-
-    const row = screen.getByTestId('seed-template-curtain')
-    expect(row).toHaveTextContent('布艺 / 窗帘 生产模板')
-    expect(row).toHaveTextContent('v1')
-    expect(row).toHaveTextContent('初始价，待客户确认')
-  })
-
-  it('一键套用：先确认（未确认不得调端点）→ 调 apply → toast 显示 mock 返回的真实数字', async () => {
-    mockGetOperationsCatalog.mockResolvedValue(ok({ total: 0, groups: [] }))
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('seed-template-curtain')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('seed-template-apply-curtain'))
-    // 防误触：确认弹窗先出现，此时**尚未**调用 apply 端点
-    expect(screen.getByTestId('seed-template-apply-confirm')).toBeInTheDocument()
-    expect(mockApplySeedTemplate).not.toHaveBeenCalled()
-
-    await userEvent.click(screen.getByTestId('seed-template-apply-confirm'))
-    await waitFor(() => expect(mockApplySeedTemplate).toHaveBeenCalledWith('curtain'))
-
-    // 数字必须来自 mock 响应（30 道工序 / 9 条路线 / 跳过 4 条），不是写死的占位文案
-    const message = vi.mocked(toast.success).mock.calls.at(-1)?.[0] as string
-    expect(message).toContain('30')
-    expect(message).toContain('9')
-    expect(message).toContain('4')
-    expect(message).toContain('跳过')
-  })
-
-  it('套用后重新拉取工序目录（结果可见，不静默）', async () => {
-    mockGetOperationsCatalog.mockResolvedValue(ok({ total: 0, groups: [] }))
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('seed-template-curtain')).toBeInTheDocument())
-    expect(mockGetOperationsCatalog).toHaveBeenCalledTimes(1)
-
-    await userEvent.click(screen.getByTestId('seed-template-apply-curtain'))
-    await userEvent.click(screen.getByTestId('seed-template-apply-confirm'))
-
-    await waitFor(() => expect(mockGetOperationsCatalog).toHaveBeenCalledTimes(2))
-  })
-
-  it('工序库非空 ⇒ **不渲染**行业模板卡（开租已自动套用，不该让用户手动点）', async () => {
-    // ⚠️ issue #4677（设计 §6 修法 A）**改判**：入口判据从「工序库为空」变成「**缺失即显示**」
-    // （工序库为空 ∨ 两条基础路线不齐）⇒ 这条用例的前提必须是**两条基础路线齐**
-    // （否则它测的就不是「工序库非空」这件事，而是「缺布料路线」）。
-    // 判据本身**不放宽**：什么都不缺 ⇒ 不给一个点了也没用的入口。
-    mockGetRoutings.mockReset().mockResolvedValue(
-      ok({
-        total: 2,
-        routings: [
-          ...ROUTINGS.routings,
-          { id: 13, name: '布料工序路线', is_default: false, positions: ['布料'], mainline: ['裁剪', '打包'], status: 'active' },
-        ],
-      }),
-    )
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('matrix-row-精裁')).toBeInTheDocument())
-    expect(screen.queryByTestId('seed-templates')).not.toBeInTheDocument()
-  })
-
-  it('工序库为空 ⇒ 仍显式给出「补套行业模板」这条补救路径（存量租户）', async () => {
-    mockGetOperationsCatalog.mockResolvedValue(ok({ total: 0, groups: [] }))
-    mockGetRoutings.mockResolvedValue(ok({ total: 0, routings: [] }))
-    render(<ProcessConfigPage />)
-
-    // 卡片（含标题里的「补套行业模板」）+ 就绪度第 1 步的指路文案
-    await waitFor(() => expect(screen.getByTestId('seed-templates')).toBeInTheDocument())
-    expect(screen.getByTestId('seed-templates')).toHaveTextContent('补套行业模板')
-    expect(screen.getByTestId('readiness-step-operations')).toHaveTextContent('行业模板')
-  })
 })
