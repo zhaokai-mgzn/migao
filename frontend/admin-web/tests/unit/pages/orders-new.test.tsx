@@ -376,10 +376,24 @@ describe('NewOrderPage', () => {
     )
   }
 
-  const fillCustomerAndSubmit = async () => {
+  /**
+   * 填收货信息 → 等两个异步闸门落地 → 点提交。
+   *
+   * `logistics: false`（issue #5840）= **保持物流两项为空**，用于验「缺物流 ⇒ 提交被拦」；
+   * 缺省 `true` 时也只在**未带出**的情况下补默认值（选客户已带出 ⇒ 不覆盖）。
+   */
+  const fillCustomerAndSubmit = async ({ logistics = true }: { logistics?: boolean } = {}) => {
     fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
     fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), { target: { value: '13800138000' } })
     fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), { target: { value: '杭州市' } })
+    // 物流两项（issue #5840 起**必填**）：只在**未带出**时补默认 —— 选客户已带出值时**不覆盖**
+    // （否则会盖掉「客户档案带出的常用物流」那几条判据要验的值）；「缺物流被拦」有自己的用例。
+    if (logistics) {
+      const lt = screen.getByTestId('order-logistics-type') as HTMLSelectElement
+      if (!lt.value) fireEvent.change(lt, { target: { value: 'express' } })
+      const lc = screen.getByTestId('order-logistics-company') as HTMLInputElement
+      if (!lc.value) fireEvent.change(lc, { target: { value: '顺丰' } })
+    }
     // 加工费计价闸门（issue #4450）：**页面总额必须就是服务端将算出的总额**，未就绪时提交会被拦
     // ⇒ 提交前等计价落地（真实商家也是看到金额才提交）。判据本身在 orders-new-fee-preview.test.tsx。
     await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
@@ -1169,9 +1183,11 @@ describe('NewOrderPage', () => {
       await fillCustomerAndSubmit()
 
       await waitFor(() => {
-        expect(screen.getByText('第 1 个商品未填宽（米）')).toBeInTheDocument()
+        // #5840 起报错同时出现在**行内**与**吸底汇总条** ⇒ 用 findAllByText 断言「至少可见一处」
+// （原 getByText 的唯一性断言在新 UI 下不再成立，断言语义不变：错必须看得见）
+        expect(screen.getAllByText('第 1 个商品未填宽（米）').length).toBeGreaterThan(0)
       })
-      expect(screen.getByText('第 1 个商品未填高（米）')).toBeInTheDocument()
+      expect(screen.getAllByText('第 1 个商品未填高（米）').length).toBeGreaterThan(0)
       expect(mockCreateOrder).not.toHaveBeenCalled()
     })
 
@@ -2196,12 +2212,23 @@ describe('NewOrderPage', () => {
       expect(logisticsType()).toHaveValue('')
       expect(logisticsCompany()).toHaveValue('')
 
-      await fillCustomerAndSubmit()
+      // 🔴 2026-10-01 改判（issue #5840）：物流两项**变成必填**（用户逐字裁定「两个物流字段也必填」）
+      // ⇒ 「不编造默认值」这半**照旧**（上面两行：客户档案没录就还是空的，不会自动填「快递」/「顺丰」），
+      // 但「缺值就不写在 payload 里」这半**不再成立** —— 缺值现在**提交不了**，页面会给闸门提示。
+      // 判定与展示都要验：先证「空着提交被拦」，再证「商家显式选了才落库、且逐字就是他选的」。
+      await fillCustomerAndSubmit({ logistics: false })
+      await waitFor(() => expect(screen.getByTestId('submit-error-summary')).toBeInTheDocument())
+      expect(mockCreateOrder).not.toHaveBeenCalled()
+      expect(screen.getByTestId('submit-error-summary').textContent).toContain('常用物流')
+
+      fireEvent.change(logisticsType(), { target: { value: 'express' } })
+      fireEvent.change(logisticsCompany(), { target: { value: '顺丰' } })
+      fireEvent.click(screen.getByText('提交订单'))
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
       const payload = mockCreateOrder.mock.calls[0][0]
-      // 「未指定」与「快递」是两个真值 ⇒ 缺值**不写**（不是写死 express）
-      expect(payload.logisticsType).toBeUndefined()
-      expect(payload.logisticsCompany).toBeUndefined()
+      // 落库值 = 商家**显式**选的那两个（不是系统替他编的默认值）
+      expect(payload.logisticsType).toBe('express')
+      expect(payload.logisticsCompany).toBe('顺丰')
     })
   })
 })

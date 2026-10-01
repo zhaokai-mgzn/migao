@@ -41,6 +41,8 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 import time
 from pathlib import Path
 
@@ -432,16 +434,31 @@ class TestVerifyAllWiring:
         assert acquire_at >= 0, (
             "verify-all.sh 没有接机器级准入锁（macquire）—— 全量套件又可以在同一台机器上并发跑了"
         )
-        case_at = text.find('case "$MODE" in')
+        # ⚠️ **行首锚定**取**顶层** `case "$MODE" in`（2026-10-01，issue #5863）：
+        #    原先用 `text.find('case "$MODE" in')`（无锚）取**第一个**匹配 —— 而 `heavy_lock_wanted`
+        #    的射程判定若也写成 `case`（它定义在 `macquire` **之前**），本判据就会取到**函数内**那一个
+        #    ⇒ 误报「接线顺序错」（实测报错：`assert 12612 > 12721`）。
+        #    判据的**意图一字未改**（macquire 必须在档位分发之前）；这里只是把「取哪一处 case」从
+        #    **未声明的唯一性假设**换成**显式的行首锚定** —— 这是**收紧**，不是放宽。
+        m_case = re.search(r'^case "\$MODE" in', text, re.M)
+        assert m_case, 'verify-all.sh 里找不到**顶层** `case "$MODE" in`（档位分发点）—— 不可判定，不得当通过'
+        case_at = m_case.start()
         assert case_at > acquire_at, (
             "`macquire` 出现在顶层 `case \"$MODE\" in` **之后** —— 重活已经开始跑了才拿锁（接线顺序错）"
         )
 
-    def test_only_the_full_suite_tier_takes_the_lock(self):
-        """**只有会拉起全量套件的那一档拿锁** —— 其余档不拿（否则并行开发被无谓串行，另一种浪费）。
+    def test_every_tier_that_runs_tests_takes_the_lock(self):
+        """**跑全量测试的档都必须拿锁**（2026-10-01 改判，issue #5863）—— 它们争的是同一台机器的 CPU。
 
-        ⚠️ 这条判的反方向坏形态：`heavy_lock_wanted` 恒真 ⇒ `quick/full/…` 也抢机器级锁 ⇒
-        两个会话连「改一行 + 跑快档」都要排队。恒假那一侧由 `test_lock_is_held_while_the_heavy_leg_runs…` 兜。
+        **病史（本判据原先钉的是错的口径）**：它曾断言「只有 `gate` 拿锁」，理由写的是「其余档不是
+        同一台机器上的重活」。而事实相反：`full` 档按 `verify-all.sh` 自己的档位说明就是**三模块全量
+        单测（~10-15 分钟）**，`quick` 三模块全量，`frontend`/`backend`/`agent` 单模块全量，
+        `redproof` 的机具实跑**单机具 2~30 分钟**。实测（同日）：`gate` 持锁期间
+        `load average` **16.71 / 28.71 / 20.14**（8 核），而单份档内部并行最多打满 ~8 核
+        （同日早先采样 9.01）⇒ **锁外确有重活在同跑**，准入形同虚设。
+
+        ⚠️ **反方向坏形态仍然要防**（不是「越宽越好」）：**未知 / 空档位不得拿锁** ——
+        否则把「没打算跑测试」的调用也串行化。两侧都钉。
         """
         fn = _extract_fn("heavy_lock_wanted")
         body = (
@@ -450,14 +467,21 @@ class TestVerifyAllWiring:
             '  MODE="$m"\n'
             '  if heavy_lock_wanted; then echo "$m=WANT"; else echo "$m=NONE"; fi\n'
             "done\n"
+            'MODE=""\n'
+            'if heavy_lock_wanted; then echo "empty=WANT"; else echo "empty=NONE"; fi\n'
+            'MODE="unknown-tier"\n'
+            'if heavy_lock_wanted; then echo "unknown=WANT"; else echo "unknown=NONE"; fi\n'
         )
         r = subprocess.run(["bash", "-c", body], capture_output=True, text=True, cwd=str(REPO))
         got = dict(ln.split("=") for ln in r.stdout.split("\n") if "=" in ln)
-        assert got.get("gate") == "WANT", f"gate 档（全量套件的唯一入口）**必须**拿锁：{got}\n{r.stderr}"
-        others = {k: v for k, v in got.items() if k != "gate"}
-        assert all(v == "NONE" for v in others.values()), (
-            f"以下档位也拿锁了 —— 它们不是「同一台机器上的重活」：{others}"
-        )
+        for tier in ("quick", "full", "frontend", "backend", "agent", "redproof", "gate"):
+            assert got.get(tier) == "WANT", (
+                f"{tier} 档会跑全量测试（与 gate 争同一批 CPU）⇒ **必须**拿锁：{got}\n{r.stderr}"
+            )
+        for bad in ("empty", "unknown"):
+            assert got.get(bad) == "NONE", (
+                f"{bad} 档不该拿锁 —— 否则把未初始化 / 未知档位也串行化（另一种浪费）：{got}"
+            )
 
     def test_lock_is_held_while_the_heavy_leg_runs_and_released_on_exit(self, tmp_path):
         """**行为判据**（真进程，走 verify-all.sh 里**真实的**那两个函数）：重活期间锁必须持着。
@@ -618,6 +642,113 @@ class TestPurePredicates:
         assert got == ["IN", "NO"], (
             f"射程必须是**路径前缀**判定（工作根之下的命中、之外的不命中）：实得 {got}\n{r.stderr}"
         )
+
+
+# ── ③.5 `--wait`：排队等待（issue #5863，2026-10-01） ────────────────────────
+
+class TestWaitOption:
+    """`acquire` 的**默认语义是立即拒绝**（`held` ⇒ `return 1`），它**不排队** ⇒ 「谁重试得勤谁拿到」。
+
+    现场（2026-10-01 11:04~11:38 +08，本仓实测）：一个以 **30s 固定间隔**重试的客户端探测
+    **56 次 / 约 34 分钟一次未中**；同期锁被 3 个持有者轮转（pid 48499 / 29770 / 75210）；
+    60s 采样显示**释放瞬间总被当场接走**。⇒ 缺口不是「锁坏了」（三态 / 陈旧回收 / 孤儿回收都正常），
+    而是**没有等待语义**。本节的判据都是**真跑脚本**，不是文本检查。
+    """
+
+    def test_wait_returns_immediately_when_lock_is_free(self, clean_lock):
+        """空闲时 `--wait N` **不得**变慢 —— 等待必须是「被占时才排队」，不是无条件 sleep。"""
+        t0 = time.monotonic()
+        r = _run_lock(["acquire", "waiter-free", "--wait", "30"], lock_file=clean_lock)
+        elapsed = time.monotonic() - t0
+        assert r.returncode == 0, f"空闲时 --wait 必须立即成功：rc={r.returncode}\n{r.stdout}"
+        assert elapsed < 5, f"空闲时不该等待（实测 {elapsed:.1f}s）"
+
+    def test_wait_queues_until_the_holder_releases(self, clean_lock):
+        """🔴 **牙齿**：锁被占住 ⇒ `--wait` 必须**等到释放**并成功（这正是缺的那个语义）。"""
+        _write_lock(clean_lock, name="holder", pid=str(os.getppid()))
+
+        def _release_later():
+            time.sleep(2.0)
+            clean_lock.unlink(missing_ok=True)
+
+        th = threading.Thread(target=_release_later, daemon=True)
+        th.start()
+        r = _run_lock(["acquire", "waiter", "--wait", "40"], lock_file=clean_lock)
+        th.join(timeout=5)
+        assert r.returncode == 0, f"--wait 必须在锁释放后取得：rc={r.returncode}\n{r.stdout}\n{r.stderr}"
+        # ⚠️ 输出里是 `**排队等待**后取得`（markdown 加粗是**字面字符**，不是渲染）⇒ 用正则容忍两侧星号，
+        #    别写死无星号的子串（本判据第一版就是这么假红的）。
+        assert re.search(r"排队等待\*{0,2}后取得", r.stdout), (
+            f"拿锁后必须**出声**说明等过（否则读数不可归因）：\n{r.stdout}"
+        )
+        assert "waiter" in clean_lock.read_text(encoding="utf-8")
+
+    def test_wait_times_out_and_names_the_holder(self, clean_lock):
+        """超时 ⇒ 非零退出 + **具名**（可行动），且**不得**偷锁。"""
+        _write_lock(clean_lock, name="stubborn", pid=str(os.getppid()))
+        t0 = time.monotonic()
+        r = _run_lock(["acquire", "late", "--wait", "2"], lock_file=clean_lock)
+        elapsed = time.monotonic() - t0
+        assert r.returncode == 1, f"超时必须非零退出：rc={r.returncode}\n{r.stdout}"
+        assert elapsed < 25, f"超时上限必须真的生效（实测 {elapsed:.1f}s / 上限 2s）"
+        for needle in ("stubborn", "等待已到上限", "没有跑"):
+            assert needle in r.stdout, f"超时报文缺 {needle!r}：\n{r.stdout}"
+        assert "stubborn" in clean_lock.read_text(encoding="utf-8"), "超时**不得**改写别人的锁"
+
+    def test_wait_zero_is_identical_to_immediate_refusal(self, clean_lock):
+        """`--wait 0` 与不传 `--wait` **等价**（默认语义没被改动的机械证据）。"""
+        _write_lock(clean_lock, name="holder", pid=str(os.getppid()))
+        a = _run_lock(["acquire", "x", "--wait", "0"], lock_file=clean_lock)
+        b = _run_lock(["acquire", "x"], lock_file=clean_lock)
+        assert (a.returncode, b.returncode) == (1, 1), f"两者都必须立即拒绝：{(a.returncode, b.returncode)}"
+        assert "等待已到上限" not in a.stdout, "--wait 0 不该走超时路径（它就是「只试一次」）"
+        assert "holder" in clean_lock.read_text(encoding="utf-8")
+
+    def test_wait_rejects_malformed_seconds(self, clean_lock):
+        """用法错误 ⇒ rc=2（**不得**退化成等待或静默按 0 处理）。"""
+        for args in (["acquire", "x", "--wait"], ["acquire", "x", "--wait", "abc"], ["acquire", "x", "--wait", "-1"]):
+            r = _run_lock(args, lock_file=clean_lock)
+            assert r.returncode == 2, f"{args} 应判用法错误（rc=2）：rc={r.returncode}\n{r.stdout}"
+
+    def test_backoff_is_bounded_and_not_constant(self):
+        """抖动：落在 `[WAIT_MIN_SECONDS, WAIT_MAX_SECONDS]` 且**非常数**（防多个等待者同刻惊群）。"""
+        body = (
+            'source "' + str(SCRIPT) + '"\n'
+            'for i in $(seq 1 24); do echo "$(_wait_backoff_seconds)"; done'
+        )
+        r = subprocess.run(
+            ["bash", "-c", body], capture_output=True, text=True,
+            env={**os.environ, "MIGAO_HEAVY_LIB": "1"}, cwd=str(REPO),
+        )
+        vals = [int(x) for x in r.stdout.split() if x.strip().isdigit()]
+        assert len(vals) == 24, f"取不到退避值：{r.stdout!r} / {r.stderr!r}"
+        assert all(2 <= v <= 5 for v in vals), f"退避必须落在 [2,5]（防惊群 + 防饿死）：{vals}"
+        assert len(set(vals)) > 1, f"退避必须是**抖动**而不是常数：{vals}"
+
+    def test_discriminating_power_on_injected_variant(self, tmp_path, clean_lock):
+        """🔴 **变异红证**：把「可等待」那行拿掉 ⇒ `test_wait_queues_until_the_holder_releases`
+        的断言对象（rc=0 / 「排队等待后取得」）必须**当场不成立** —— 证明判据不是空断言。"""
+        src = SCRIPT.read_text(encoding="utf-8")
+        old = '    [ "${wait_seconds}" -gt 0 ] || return 1'
+        assert src.count(old) == 1, "变异锚点未命中（脚本结构变了 ⇒ 请同步更新本红证）"
+        mutated = tmp_path / "machine-heavy-lock-mutated.sh"
+        mutated.write_text(src.replace(old, '    return 1  # 变异：永不等待', 1), encoding="utf-8")
+        _write_lock(clean_lock, name="holder", pid=str(os.getppid()))
+
+        def _release_later():
+            time.sleep(2.0)
+            clean_lock.unlink(missing_ok=True)
+
+        th = threading.Thread(target=_release_later, daemon=True)
+        th.start()
+        r = subprocess.run(
+            ["bash", str(mutated), "acquire", "waiter", "--wait", "40"],
+            capture_output=True, text=True, cwd=str(REPO),
+            env={**os.environ, "MIGAO_HEAVY_LOCK_FILE": str(clean_lock)},
+        )
+        th.join(timeout=5)
+        assert r.returncode == 1, f"变异体（永不等待）**必须**判红：rc={r.returncode}\n{r.stdout}"
+        assert not re.search(r"排队等待\*{0,2}后取得", r.stdout), "变异体不得出现「排队等待…后取得」"
 
 
 class TestStaticContract:

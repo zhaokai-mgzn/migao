@@ -170,6 +170,12 @@ const submit = async () => {
   fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
   fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), { target: { value: '13800138000' } })
   fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), { target: { value: '杭州市' } })
+  // 物流两项（issue #5840 起**必填**）：只在**未带出**时补默认 —— 选客户已带出值时**不覆盖**
+  // （否则会盖掉「客户档案带出的常用物流」那几条判据要验的值）；「缺物流被拦」有自己的用例。
+  const lt = screen.getByTestId('order-logistics-type') as HTMLSelectElement
+  if (!lt.value) fireEvent.change(lt, { target: { value: 'express' } })
+  const lc = screen.getByTestId('order-logistics-company') as HTMLInputElement
+  if (!lc.value) fireEvent.change(lc, { target: { value: '顺丰' } })
   await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
   fireEvent.click(screen.getByText('提交订单'))
 }
@@ -289,9 +295,38 @@ describe('下单页加工费计价预览接线（#4450）', () => {
   // ══════════════════════════════════════════════════════════════════════════
 
   it('#4874 未定价行出现「改单价」输入 ⇒ 改价后 **feePreview 请求体**带 processingFeeOverride', async () => {
-    mockFeePreview.mockResolvedValue(
-      feeUnpriced([{ composition: '布帘+韩褶', items: ['布帘', '韩褶'] }])
-    )
+    // 🔴 2026-10-01（issue #5840）：桩必须**跟着改价变** —— 真实服务端在收到正数
+    // `processingFeeOverride` 后把该行记成 `manual`（#4872 口径）。原桩是**静态** `unpriced`
+    // ⇒ 改价后仍回 unpriced ⇒ 命中新闸门「未定价（组合键非空）硬阻断」而提交不了；
+    // 而本用例要验的正是「改价 ⇒ 随建单提交」，所以静态桩已不再反映真实服务端。
+    mockFeePreview.mockImplementation((payload: any) => {
+      const info = payload?.items?.[0]?.processingInfo ?? {}
+      const override = Number(info.processingFeeOverride)
+      const meters = Number(info.processingMeters) || 0
+      if (override > 0) {
+        return Promise.resolve({
+          data: {
+            data: {
+              items: [
+                {
+                  processingFee: override * meters,
+                  processingFeeDetail: {
+                    composition: '布帘+韩褶',
+                    items: ['布帘', '韩褶'],
+                    unit_price: override,
+                    meters,
+                    fee_source: 'manual',
+                    amount: override * meters,
+                  },
+                },
+              ],
+              processingFeeTotal: override * meters,
+            },
+          },
+        })
+      }
+      return Promise.resolve(feeUnpriced([{ composition: '布帘+韩褶', items: ['布帘', '韩褶'] }]))
+    })
     await setupLine()
 
     // 加工项区块里**列出具体组合名**（`items.join(' + ')`，与「加工费组合」页逐字同源）

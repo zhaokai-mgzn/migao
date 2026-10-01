@@ -262,8 +262,9 @@ class OrderControllerTest extends BaseControllerTest {
             when(orderService.createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID)))
                     .thenReturn(buildOrder(ORDER_ID, "pending"));
 
+            // 收货地址 + 物流两项（issue #5840 表单路径必填）——本用例验的是租户透传 ⇒ 给完整表单
             String body = """
-                    {"customerName":"张三","customerPhone":"13800138000","items":[{"productId":"prod-001","productName":"窗帘","quantity":1,"unitPrice":100,"subtotal":100}]}
+                    {"customerName":"张三","customerPhone":"13800138000","customerAddress":"北京市朝阳区","logisticsType":"express","logisticsCompany":"顺丰","items":[{"productId":"prod-001","productName":"窗帘","quantity":1,"unitPrice":100,"subtotal":100}]}
                     """;
 
             mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(body));
@@ -304,8 +305,12 @@ class OrderControllerTest extends BaseControllerTest {
     class QuantityLowerBound {
 
         private String bodyWithQuantity(String quantity, String subtotal) {
+            // 收货地址 + 物流两项（issue #5840 起**表单路径必填**，判在
+            // `OrderController.createOrder::requireFormOnlyFields`）：本 helper 代表「一份填完整的表单」
+            // ⇒ 随之一并补齐，否则会被闸门 422 挡在数量校验之前
+            // （那是闸门在起作用，不是这些用例坏了）。
             return String.format("""
-                    {"customerName":"张三","customerPhone":"13800138000","items":[{"productId":"prod-001","productName":"窗帘","quantity":%s,"unitPrice":100,"subtotal":%s}]}
+                    {"customerName":"张三","customerPhone":"13800138000","customerAddress":"北京市朝阳区","logisticsType":"express","logisticsCompany":"顺丰","items":[{"productId":"prod-001","productName":"窗帘","quantity":%s,"unitPrice":100,"subtotal":%s}]}
                     """, quantity, subtotal);
         }
 

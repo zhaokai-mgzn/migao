@@ -673,6 +673,12 @@ async function submitAndGetItemInfo(): Promise<{
   fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), {
     target: { value: '杭州市' },
   })
+  // 物流两项（issue #5840 起**必填**）：只在**未带出**时补默认 —— 选客户已带出值时**不覆盖**
+  // （否则会盖掉「客户档案带出的常用物流」那几条判据要验的值）；「缺物流被拦」有自己的用例。
+  const lt = screen.getByTestId('order-logistics-type') as HTMLSelectElement
+  if (!lt.value) fireEvent.change(lt, { target: { value: 'express' } })
+  const lc = screen.getByTestId('order-logistics-company') as HTMLInputElement
+  if (!lc.value) fireEvent.change(lc, { target: { value: '顺丰' } })
   // 加工费计价闸门（#4450）：未就绪时提交会被拦 ⇒ 先等计价落地（真实商家也是看到金额才提交）
   await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
   fireEvent.click(screen.getByText('提交订单'))
@@ -1319,6 +1325,12 @@ describe('#4976 包 2b：判定移到服务端', () => {
       fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), {
         target: { value: '杭州市' },
       })
+      // 物流两项（issue #5840 起**必填**）：只在**未带出**时补默认 —— 选客户已带出值时**不覆盖**
+      // （否则会盖掉「客户档案带出的常用物流」那几条判据要验的值）；「缺物流被拦」有自己的用例。
+      const lt = screen.getByTestId('order-logistics-type') as HTMLSelectElement
+      if (!lt.value) fireEvent.change(lt, { target: { value: 'express' } })
+      const lc = screen.getByTestId('order-logistics-company') as HTMLInputElement
+      if (!lc.value) fireEvent.change(lc, { target: { value: '顺丰' } })
       await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
       fireEvent.click(screen.getByText('提交订单'))
       // 注入：去掉闸门 ⇒ 会发出创建请求（组合键少一项 ⇒ 取价错）⇒ 红
