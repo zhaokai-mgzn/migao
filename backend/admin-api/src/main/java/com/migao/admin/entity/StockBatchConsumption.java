@@ -42,6 +42,17 @@ public class StockBatchConsumption {
     /** 变更来源：加工单作废回补（{@code StockBatchConsumptionService.reverse}） */
     public static final String REASON_PROCESSING_ORDER_CANCELLED = "processing_order_cancelled";
 
+    /**
+     * 变更来源：**按批次库存盘点**（V143 / issue #5865）—— 实盘为准，差异落一条调整分录。
+     *
+     * <p>与 {@link #REASON_PROCESSING_ORDER} 的区别不是文案而是**结构**：盘点行没有加工单、
+     * 没有订单明细行，只有 {@link #stocktakeRunId}（幂等键）。DB 侧由
+     * {@code ck_batch_consumption_source_shape} 把这两族的列形状钉成互斥
+     * （盘点行带 {@code processing_order_no} ⇒ 23514；扣料行缺它 ⇒ 同样 23514）
+     * —— 「这批为什么少了 1.5 米」因此不靠约定，靠约束。</p>
+     */
+    public static final String REASON_STOCKTAKE = "stocktake";
+
     @TableId(type = IdType.AUTO)
     private Long id;
 
@@ -96,8 +107,16 @@ public class StockBatchConsumption {
      */
     private BigDecimal unitCost;
 
-    /** 见 {@link #REASON_PROCESSING_ORDER} / {@link #REASON_PROCESSING_ORDER_CANCELLED} */
+    /** 见 {@link #REASON_PROCESSING_ORDER} / {@link #REASON_PROCESSING_ORDER_CANCELLED} / {@link #REASON_STOCKTAKE} */
     private String reason;
+
+    /**
+     * 盘点**运行级**幂等键（V143 / issue #5865；形态照 {@code inbound_orders.import_run_id} 的先例）：
+     * 同一次盘点提交的重复请求（网络重试 / 用户连点）用同一个 run id ⇒ 部分唯一索引
+     * {@code uk_batch_consumption_stocktake (tenant_id, stocktake_run_id, batch_id)} 让第二遍**撞唯一键**
+     * 而不是记第二笔。{@code NULL} = 不是盘点行（派工扣减 / 作废回补），不参与去重。
+     */
+    private String stocktakeRunId;
 
     /** 加工单号 JG-yyyyMMdd-NNNN（扣减与回补同号 ⇒ 可按整单对账） */
     private String processingOrderNo;

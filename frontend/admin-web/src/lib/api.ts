@@ -61,6 +61,8 @@ import type {
   BatchDistribution,
   BatchReconcile,
   BatchCandidates,
+  BatchStocktakeRequest,
+  BatchStocktakeResult,
   ProductionOperations,
   PieceworkSummary,
   StuckPointsReport,
@@ -912,6 +914,12 @@ export const batchStockApi = {
   // 派工候选 + 建议值（meters = 本行米数，用于算 enough 与建议值）
   candidates: (params: { productId?: string; skuId?: number; meters?: number }) =>
     request.get<ApiResponse<BatchCandidates>>('/api/admin/batch-stock/candidates', { params }),
+
+  // 按批次库存盘点（V143 / issue #5865，最小录入式）：实盘为准，差异落批次分录 + SKU 库存同事务对齐。
+  // runId = 幂等键（同一次提交的重复请求必须复用同一个值 ⇒ 网络重试不双记）。
+  // 零差异（实盘 == 余量）时后端**零写入**，回执逐行说明 status（applied/unchanged/replayed）。
+  stocktake: (payload: BatchStocktakeRequest) =>
+    request.post<ApiResponse<BatchStocktakeResult>>('/api/admin/batch-stock/stocktake', payload),
 }
 
 /**

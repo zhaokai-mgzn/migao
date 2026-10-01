@@ -3209,6 +3209,49 @@ export interface BatchRemaining {
   remainingMeters: string
 }
 
+// ── 按批次库存盘点（V143 / issue #5865，最小录入式）──────────────────────────────
+// 提交形态 = 按货号整批提交（一次提交 = 一个货号 = 一个事务）；runId 是**幂等键**
+// （同一次提交的重复请求必须复用同一个值，否则网络重试会记第二笔 —— 后端有部分唯一索引兜底）。
+
+/** 盘点提交的一行（实盘米数：0.1 米粒度，负数/超精度 ⇒ 后端 400） */
+export interface BatchStocktakeLine {
+  batchId: number
+  actualMeters: number
+}
+
+export interface BatchStocktakeRequest {
+  productId: string
+  /** 幂等键（由页面生成，一次提交一个；成功后换新值 ⇒ 下一笔是新的一次盘点） */
+  runId: string
+  lines: BatchStocktakeLine[]
+}
+
+/** 盘点回执的一行：盘前 / 实盘 / 差异 / 盘后四个数一起回，页面不自己减 */
+export interface BatchStocktakeLineResult {
+  batchId: number
+  batchNo: string
+  skuId?: number
+  skuCode?: string
+  beforeMeters: string
+  actualMeters: string
+  /** 正 = 盘盈、负 = 盘亏、0 = 零写入 */
+  delta: string
+  afterMeters: string
+  /** `applied`（已落账）/ `unchanged`（实盘 == 余量 ⇒ 零写入）/ `replayed`（同一 run 重放 ⇒ 跳过） */
+  status: 'applied' | 'unchanged' | 'replayed'
+}
+
+/** 盘点回执（`totalDelta` = 该货号本次 `product_skus.stock` 的变化量） */
+export interface BatchStocktakeResult {
+  runId: string
+  productId: string
+  changedCount: number
+  unchangedCount: number
+  replayedCount: number
+  totalDelta: string
+  lines: BatchStocktakeLineResult[]
+}
+
 /** 剩余量分布一档（`key` 机器可判、`label` 给人看） */
 export interface BatchDistributionBucket {
   key: 'le_0_2' | 'b0_2_0_5' | 'b0_5_1' | 'gt_1'

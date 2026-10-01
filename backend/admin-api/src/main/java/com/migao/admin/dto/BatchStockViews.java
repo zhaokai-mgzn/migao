@@ -141,4 +141,52 @@ public final class BatchStockViews {
     public record Candidates(String suggestionRule, String suggestedBatchNo, BigDecimal requiredMeters,
                              List<Candidate> candidates) {
     }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
+    // 按批次库存盘点（V143，issue #5865）—— 最小录入式的**回执**（不是盘点单实体）
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    /** 该行**真的落账了**（批次分录 + SKU 库存都按本次实盘对齐） */
+    public static final String STOCKTAKE_APPLIED = "applied";
+    /** 该行**实盘 == 当刻余量**（delta = 0）⇒ 零写入（不落分录、不落台账 —— 红线 ⑤） */
+    public static final String STOCKTAKE_UNCHANGED = "unchanged";
+    /** 该行**本次运行已经记过账**（同一 run id 重放）⇒ 跳过，不双记（红线 ⑤） */
+    public static final String STOCKTAKE_REPLAYED = "replayed";
+
+    /**
+     * 盘点结果的一行（**盘前/实盘/差异/盘后四个数一起回**）。
+     *
+     * <p>四个数都在这里，读的人不必自己减（也不会减错方向）：
+     * {@code beforeMeters} = 当刻**派生**余量（入库量 + Σdelta）；
+     * {@code delta} = 实盘 − 盘前（正 = 盘盈、负 = 盘亏）；
+     * {@code afterMeters} = 盘前 + delta（落账后该批次余量的读数 = 实盘）。</p>
+     */
+    public record StocktakeLineResult(
+            Long batchId,
+            String batchNo,
+            Long skuId,
+            String skuCode,
+            BigDecimal beforeMeters,
+            BigDecimal actualMeters,
+            BigDecimal delta,
+            BigDecimal afterMeters,
+            /** 见 {@link #STOCKTAKE_APPLIED} / {@link #STOCKTAKE_UNCHANGED} / {@link #STOCKTAKE_REPLAYED} */
+            String status) {
+    }
+
+    /**
+     * 盘点回执。
+     *
+     * <p>{@code totalDelta} = Σ本次真正落账的差异 = 该货号本次 {@code product_skus.stock} 的变化量
+     * （两者**恒等**：SKU 库存的调整量就是各批次差异之和 —— 红线 ②「同一个事务」的判据面）。</p>
+     */
+    public record StocktakeResult(
+            String runId,
+            String productId,
+            int changedCount,
+            int unchangedCount,
+            int replayedCount,
+            BigDecimal totalDelta,
+            List<StocktakeLineResult> lines) {
+    }
 }

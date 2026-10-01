@@ -2822,7 +2822,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（51 case）
+## 杂项域（52 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3525,6 +3525,21 @@
 跳过: [backend-contract] 技能加载面的静态/结构判据（只读仓内两个文件，零网络、零时钟、不跑被引用的测试、不烧 token）由 tests/unit_ci_workflows/test_skill_load_surface.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-01 新增（issue #5853：用户就「优化 API 用量」三条通用建议（合并调用 / 精简 prompt / 按复杂度选模型）问「能否应用到米高研发模式」，并选定**技能分层**）：研发模式的加载成本集中在 migao-dev-flow —— 加载它 = 把整份 SKILL.md 放进上下文，而正文 `## 版本沿革` 节 = 1122 条目行 / 96,269 字符，沿革是纯历史记录、执行流程时零需要。本次把 dev-flow 与 migao-acceptance 两个技能的沿革**逐字**外置到同目录 CHANGELOG.md（SKILL.md 只留指针），**加载面** 328,954 → 231,203 字符（**-29.7%**）、acceptance 26,306 → 21,065（-19.9%）；三处「沿革写进正文」的口径副本同批改；类级守卫 = tests/unit_ci_workflows/test_skill_load_surface.py（回流即红 / 外置≠删除 / 指针在位 / 旧落点口径 / 内存红证 + 加载面定义对照）。⚠️ 判据在真实语料上当场抓到 1 条存量散落沿革（v1.91.0 写在 §27 尾部），同批并入。⚠️ **独立验收 agent 又抓到第 4 处副本**（description 里「已迁至正文」——换了动词故漏网，且在加载面内）⇒ 同 PR 修复 + 判据升级为扫「真加载面」并新增判据 6。⚠️ 未实装：不设体积上限（设了会挡住正常的纪律新增）、正文里支撑纪律的实证叙述不动、判不了「沿革内容是否完整」、判据 6 仍是字面形态判据（不重叠措辞在射程外）。取号 MC-052（现取 main + 全部在飞分支的 `- id:` 差集：main 最大 = MC-051）。 ｜ tags: ci, context-budget, skill-load-surface, red-proof
+
+### MC-053. 批次账写入点唯一 + 余量口径唯一 + 来源族列形状互斥（issue #5865）：新写入点未登记即红、DB 约束被摘即红、Java 常量与 DB 取值漂移即红 🔵
+```
+你: 当批次台账（`stock_batch_consumptions`）多出一个来源（本单新增 `reason='stocktake'`）时，必须同时保证：写入点仍然唯一、余量派生（Σdelta）仍只有一份口径、盘点行与扣料行在**列形状上互斥** —— 任一条被破坏都要有东西具名报出
+期望: direct_reply
+数据: **病（本单自己会踩的形态）**：给批次台账加第三个来源时，最省事的写法是在新服务里直接 `consumptionMapper.insert(...)`（写入点分叉 ⇒ 幂等闸 / 来源列形状 / 盘前盘后链全部绕过），或者让盘点行填上 `processing_order_no`（读面分不清「加工单扣料」与「盘点调整」= 假账）。两种写法**都不会让任何实例判据变红**：新路径自带测试、照样绿
+数据: **判据 1（写入点唯一，未登记即红）**：全仓 `backend/admin-api/src/main/java/**/*.java` 里「写批次台账」的文件必须正好等于冻结登记 `BATCH_LEDGER_WRITE_POINTS`（现取 = `StockBatchConsumptionService.java` 一处）；多出来的文件**点名报出**并给出出口（并回台账服务，或登记 + 在 PR 说明幂等闸/列形状/链怎么保证）。判据 = tests/unit_ci_workflows/test_batch_stocktake_write_point.py 的 `test_batch_ledger_has_exactly_one_write_point`
+数据: **判据 2（余量口径唯一）**：`sumDeltaByBatchIds(` / `sumDeltaBySku(`（Σdelta 的读口 = 「这批还剩多少」的唯一派生入口）只许出现在 `StockBatchConsumptionService.java` 与 `StockBatchConsumptionMapper.java`；第三处 = 第二份余量口径 ⇒ 红。判据 = 同文件 `test_batch_remaining_is_derived_in_one_place`
+数据: **判据 3（来源族形状互斥是 DB 对象，三面都要有）**：`schema.sql` 必须含 `ck_batch_consumption_source_shape` 且其谓词同时包含「盘点行带 `stocktake_run_id`」「盘点行不带加工单号」「扣料行必须带加工单号」；`schema.sql` 与**活迁移**都必须含部分唯一索引 `uk_batch_consumption_stocktake`（谓词 `stocktake_run_id IS NOT NULL`）与 `reason` 取值集合里的 `'stocktake'`；Java 常量 `REASON_STOCKTAKE` 的取值必须与 DB 侧**逐字相同**（漂移 ⇒ DB 当场拒掉应用写出来的行）；引入该来源的活迁移必须在 `migration_fingerprints.json` 里登记。判据 = 同文件 `test_source_families_are_disjoint_in_the_database`
+数据: **判据 4（fail-closed）**：登记表为空 ⇒ 红；扫描**零命中**（一个写入点都找不到）⇒ 红（判据自己失效必须自曝，不许静默绿）；登记的文件已不再写台账 ⇒ 红（陈旧登记只许缩短）。判据 = 同文件 `write_point_problems` 的三条分支
+数据: **判据 5（判别力自证，随判据常驻）**：六种坏形态在**内存语料**上各自判红（第二个写入点 / 登记表清空 / 零命中 / 第二处 Σdelta 聚合 / 形状约束被删 / Java 常量与 DB 取值漂移 / 活迁移未登记指纹账本），另有一条**对照读数** —— 把 `consumptionMapper.insert(...)` 只写进**注释** ⇒ **不红**（注释不是写入点；判据不许被自己的文案喂红）。判据 = 同文件 `test_injected_bad_corpora_are_named`
+数据: **边界（如实登记）**：判据只认仓内文本形态 `<mapper 标识符>.insert(`（标识符由 `StockBatchConsumptionMapper <名>` 的声明取得）与 `getMapper(StockBatchConsumptionMapper.class).insert(`；用反射 / 裸 SQL / `JdbcTemplate` 写台账的代码不在射程内（本仓没有这种写法，出现时也不会有东西提醒）；它判不了「盘点的业务口径对不对」（那是 PR-119 的真库/mock 判据）
+跳过: [backend-contract] 静态结构守卫（只读仓内文件，零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_batch_stocktake_write_point.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-01 新增（issue #5865 判据 8「类级元守卫：批次调整的写入点唯一」；照 `OrderRollAllocationAuthorityTest` 的先例）：本单给批次台账加了第三个来源（`stocktake`）⇒ 同批落类级元守卫，把「写入点唯一 / 余量口径唯一 / 来源族列形状互斥」钉成未登记即红。取号 MC-053（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 MC-052**，同步 main 时该号已被 #5853 的包占用 ⇒ 按「后合入者让号」顺延为 **MC-053**）。 ｜ tags: ci, guard, inventory, ledger
 
 ## 商家入驻域（5 case）
 
@@ -5708,7 +5723,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 processing_order_set_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 processing_order_set_query/uncovered，同 PR 删除该条目）。取号 PG-064：库内 PG-001~PG-063 已占用（PG-044/045/046/047/059 为历史空号），PG-064 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: processing_order, set, scan_loop, mibao, readonly, llm_behavior
 
-## 商品域（105 case）
+## 商品域（106 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -7110,6 +7125,27 @@
 真值: inbound-label-flow.short-code-and-public-entry
 溯源: 2026-09-27 新增（issue #5052 §7.1 的 nginx 面）：P2 把端点与 permitAll 都落了，但边缘没登记 ⇒ 印出去的码会被 `location /` 的 SPA fallback 吃掉（静默串端，与 #5668 的 `/b/` 同类）。本单照 `/s/` 的形态加 `location /i/`（`proxy_pass` 不带 URI 后缀 + Host / X-Real-IP / X-Forwarded-For 覆盖），并按限流判据 3「新增代理面必须连同限流预算一起复核」把 `/i/` 纳进 `$worker_entry_key` 的 map（同一档，不开豁免），另补类级守卫：公开前缀在 nginx 的归属未登记即红。 ｜ tags: inventory, inbound, label, nginx, backend-contract
 
+### PR-119. 按批次库存盘点（最小录入式）：实盘录入 + 差异落批次分录 + SKU 库存同事务对齐（issue #5865） 🔵
+```
+你: 入库单的单批次剩余库存米数是否有设计这个字段？要支持用户按批次做库存盘点（用户 2026-10-01 会话逐字；档位裁定 = A 最小录入式，盘盈盘亏口径裁定 = 实盘为准、差异写台账调整）
+期望: direct_reply
+数据: 🔴 红线①**不原地改** `stock_batches.quantity`：盘点的差异落 `stock_batch_consumptions` 的一条 `reason='stocktake'` 分录，派生余量自动跟上。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/BatchStocktakeRealDbTest.java` 的 `journalKeepsQuantityAndRealignsBothLedgers`（**全表** `quantity` 原串快照盘前盘后逐值相同，不是只看这一行）+ `BatchStocktakeServiceTest.java` 的 `neverTouchesBatchRow`（`StockBatchMapper` 零写调用）
+数据: 🔴 红线②**批次分录与 SKU 库存同一事务**：`BatchStocktakeService#stocktake` 是本单唯一写入口，`@Transactional(rollbackFor = Exception.class)`；判据 = `BatchStocktakeRealDbTest#secondBatchFailureLeavesNothingBehind` —— 用 BEFORE INSERT 触发器让**第 2 个批次写入途中**失败 ⇒ 第 1 个也不落、`product_skus.stock` 一字不动；**并带无事务对照读数**（同一注入在无事务边界时残留 1 行 ⇒ 证明注入真的生效，回滚才是它没留下的原因）
+数据: 🔴 红线③**来源可与「加工单扣料」区分**：盘点行 `reason='stocktake'` + `stocktake_run_id`，三个扣料专属列（`processing_order_no` / `order_no` / `order_item_id`）一律留空；DB 约束 `ck_batch_consumption_source_shape` 把两族列形状钉成互斥（盘点行带加工单号 ⇒ 23514；扣料行缺加工单号 ⇒ 同样 23514）。判据 = `BatchStocktakeRealDbTest#sourceShapeAndIdempotencyAreEnforcedByTheDatabase`（含**注入式红证**：回滚事务里摘掉约束 / 索引 ⇒ 同一行坏数据当场能落库，SQLSTATE 00000/00000 ⇒ 拦住它的确实是这两个 DB 对象）+ 类级守卫 `tests/unit_ci_workflows/test_batch_stocktake_write_point.py`
+数据: 🔴 红线④**禁止负余量**：实盘米数 `-1` ⇒ 400（`ERR_STOCKTAKE_NEGATIVE`，文案给可行动出口）；盘亏会让 `product_skus.stock` 变负 ⇒ 422 `INSUFFICIENT_STOCK`。两条都发生在**任何写入之前**（预校验 + 先算后写）。判据 = `BatchStocktakeServiceTest#rejectsNegativeAndOverPrecisionAndWritesNothing` / `#refusesWhenSkuStockWouldGoNegative`
+数据: 🔴 红线⑤**幂等**：`delta = 0`（实盘 == 当刻余量）⇒ **零写入**（分录 / 台账 / SKU 库存三处都不动）；同一 `runId` 重放 ⇒ 该批次跳过（读半边 `stocktakeRecordedBatchIds` + 写半边部分唯一索引），跨请求不双记。判据 = `BatchStocktakeRealDbTest#zeroDeltaWritesNothing` / `#replayWithSameRunIdDoesNotDoubleBook`（三张表行数与 SKU 库存逐值不变）+ `BatchStocktakeServiceTest#zeroDeltaWritesNothing` / `#replayWithSameRunIdWritesNothing`
+数据: 🔴 红线⑥**不静默取整**：实盘米数沿用 `StockQuantity.requireOneDecimal` —— `2.755` ⇒ 400（文案「最多支持 1 位小数…服务端不做静默取整」），且零写入。判据 = `BatchStocktakeServiceTest#rejectsNegativeAndOverPrecisionAndWritesNothing` + `BatchStocktakeRealDbTest#invalidAmountIsRejectedWithoutAnyWrite`
+数据: 🔴 红线⑦**盘点后 `/reconcile` 的批次部分不得增大**：`diff = Σ批次余量 − product_skus.stock` 由两条腿各自聚合（批次分录腿与销售台账腿），盘点让两边按**同一个 Σdelta** 变 ⇒ 差额恒等。真库判据用「盘前差额 −40（批次 60 / SKU 100）」做夹具（判别力：只动一条腿的实现会得到 −41.5）。判据 = `BatchStocktakeRealDbTest#journalKeepsQuantityAndRealignsBothLedgers` 的 `[#5865 红线⑦] 盘前 diff = -40，盘后 diff = -40` 读数
+数据: **端到端可见**（判据 9）= `UI-077`：商品详情批次面板按货号列出批次与当前余量 + 实盘输入 + **差异预览（± 与合计）** + 提交后列表刷新为新余量
+数据: **类级元守卫**（判据 8）= `MC-053` / `tests/unit_ci_workflows/test_batch_stocktake_write_point.py`：批次台账写入点唯一（未登记即红）；余量派生（Σdelta 读口）只许在台账服务与其 mapper 里
+数据: 🔴 判据 D-2（独立复核后收口）：**盘点行进不了「生产消耗」的三条计量腿** —— `sumDeltaBySku`（对账的派工扣减净额腿）/ `sumSavingByPeriodCohortMaterial`（省料看板）/ `sumOutputAreaByPeriod`（产出面积）三处汇总一律按 `reason IN ('processing_order','processing_order_cancelled')` **显式包含**（新来源默认不进计量腿，要进必须显式登记）。改前真库实测（零派工零订单、只插一条盘点行）：三条腿读出 `delta=-1.5/formula=1.5`、省料看板多一张「unknown 来源」组卡（line_count=1）、产出面积多一行 —— 一次盘亏被读成「这个月消耗了 1.5 米布」（本仓自认最大的失败模式：**归因错**）。判据 = `BatchStocktakeRealDbTest#stocktakeRowsStayOutOfConsumptionMetrics`（加盘点行前后三条腿读数**逐值相同**，并反向断言余量派生**必须**含盘点差异）；**红证（实测）**：摘掉三处过滤 ⇒ 读数由 `sku:-2.0/2.0|saving:2.0/2.0/1|area:0/1` 变成 `sku:-3.0/3.0|saving:3.0/3.0/2|area:0/2` ⇒ 判据红。`reconcile` 的 `diff` 不受影响（两腿同增同减）故不改。
+数据: 🔴 判据 D-1（独立复核后收口）：**V143 的回滚段必须真能跑** —— 迁移文件里每一条 `-- -- ` 开头的行 = 一句真 SQL（共 8 句），判据逐句实跑。改前实测：第 ④ 句 42710（缺前置 `DROP CONSTRAINT IF EXISTS`）、两句 `SET NOT NULL` **根本没写** ⇒ 按净效果回滚后原先被形状约束挡住的非法行能落库（`00000`）⇒ 「两族可区分」这条合约被永久拆掉。判据 = `BatchStocktakeRealDbTest#rollbackPathIsExecutableAndRestoresTheContract`（8 句全 rc=0；回滚后非法行重新被拒 `23502` —— 形状约束没了由 NOT NULL 顶上；**负对照**：跳过两句 `SET NOT NULL` ⇒ 同一行 `00000`）；两条读数都在测试输出里。
+前置: 本用例是 [backend-contract] 账务面用例：前置（租户 / 商品 / SKU 库存 / 批次行）由判据自建 —— `BatchStocktakeRealDbTest` 在 `@BeforeAll` 起一次性真 PG 集群并跑真 `schema.sql` 建终态后插入夹具；`BatchStocktakeServiceTest` 用桩 mapper 造「入库量 60 + Σdelta」的派生余量。前置不成立时判据直接红（真库缺 PG 由 `PgCluster` fail-closed，不走 skip）；agent-eval 栈不跑它
+跳过: [backend-contract] 盘点写面是确定性的账务判据（真库 + mock + 结构守卫三层，无 LLM 环节、无米宝工具面）由 admin-api 单测与 pytest 结构守卫覆盖，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.stocktake-by-physical-count, batch-ledger.remaining-derived, batch-ledger.reconcile
+溯源: 2026-10-01 新增（issue #5865，用户裁定档位 A 最小录入式 + 实盘为准）：此前盘点的写面只有 Agent 面 SKU 粒度的一条路（改 `product_skus.stock` + 写销售台账、**完全不落批次**）⇒ 盘完后「Σ批次余量 ≠ SKU 库存」恒成立而**没有配平路径**；本单补按批次的写面：实盘录入 → 差异预览 → 一次事务落批次分录 + SKU 库存。取号 PR-119（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 PR-118**，同步 main 时该号已被并行包占用 ⇒ 按「后合入者让号」顺延为 **PR-119**）。 ｜ tags: inventory, batch, stocktake, backend-contract
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -7300,7 +7336,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（74 case）
+## 前端 UI 域（75 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -8334,6 +8370,24 @@
 真值: order.fee-composition-visible, frontend-fix.no-api-change
 溯源: 2026-10-01 新增（issue #5843）：订单详情页补「费用构成」区（`components/orders/OrderFeeBreakdown.tsx` + `lib/order-fee-display.ts::buildOrderFeeComposition`），把「商品合计 + 加工费 + 其它构成 = 订单金额」摆成页面上读得出来的等式；行级加工费展示（算式 / 未定价 / 人工改价）由 `OrderItemList.tsx` **上移到共享层**（同源复用，不写第二套）。取号 UI-076（本单原取 UI-075，与并发包 #5841 的用例撞号 ⇒ 按「未合并的一侧顺延」改号；ui.yml 当时最大 = UI-074）。 ｜ tags: ui, order, fee, display
 
+### UI-077. 商品详情批次面板「按批次盘点」：按货号列批次与余量 + 实盘录入 + 差异预览（± 与合计）+ 提交后列表刷新为新余量（issue #5865） 🔵
+```
+你: 要支持用户按批次做库存盘点（用户 2026-10-01 会话逐字；档位裁定 A 最小录入式：按货号列出批次与当前余量 → 填实盘米数 → 差异预览（±）→ 提交）
+你: 盘点是仓储日常动作：录完要能当场看见差异，提交完要能看见新余量
+期望: direct_reply
+数据: 判据 1·**差异预览就是账号面**：逐行显示 `差异 = 实盘 − 余量`（正 = 盘盈带 `+`、负 = 盘亏）与页脚**合计差异**（余量 60 → 实盘 58.5 ⇒ 行内 `-1.5`、合计 `-1.5`；实盘 62 ⇒ `+2`）。执行点 = frontend/admin-web/tests/unit/components/BatchStocktakeForm.test.tsx 的「UI-077 差异预览」
+数据: 判据 2·**不静默取整**：`2.755` / `-1` ⇒ 行内说明（「只能填 ≥0 且最多 1 位小数（0.1 米粒度，服务端不取整）」）+ **提交按钮禁用** + **零请求**（前端不许把非法值四舍五入后发出去，也不许发一笔注定 400 的请求）。执行点 = 同文件「UI-077 不静默取整」
+数据: 判据 3·**零差异零请求**：实盘 == 余量 ⇒ 差异 `0`、按钮禁用、不发请求（后端另有「零写入」判据，前端不许先发一笔空请求）。执行点 = 同文件「UI-077 零差异零请求」
+数据: 判据 4·**提交载荷**：`{productId, runId, lines:[{batchId, actualMeters}]}`，只带**真的变了差异**的行（余量 60 的两行里只填一行 ⇒ `lines` 恰 1 条）；`runId` 形态 `PD-…`。执行点 = 同文件「UI-077 提交载荷」
+数据: 判据 5·**幂等键语义**：提交**成功** ⇒ 换新 `runId`（下一笔 = 新的一次盘点）；提交**失败** ⇒ 复用同一个 `runId`（网络重试不双记）且后端 4xx 原文照实显示。执行点 = 同文件「UI-077 幂等键语义」
+数据: 🔴 判据 6·**结果可见**（`migao-dev-flow` §15.1：禁止停在「函数被调用」）：提交成功后宿主的批次余量表**重新取数并渲染新余量**（60 → 58.5），不是「提交成功但列表还是旧值」。执行点 = 同文件「UI-077 结果可见」
+数据: 🔴 红证（改前实测）：本单落地前 `frontend/admin-web/tests/unit/components/BatchStocktakeForm.test.tsx` 整个文件不存在（`data-testid="batch-stocktake"` / `stocktake-input-*` / `stocktake-diff-*` / `stocktake-total` / `stocktake-submit` 在页面上一个都没有）；把「提交成功后 `runIdRef` 换新」删掉 ⇒ 判据 5 红；把 `onApplied` 回调删掉 ⇒ 判据 6 红（列表停在旧余量 60）
+前置: 本用例是 [backend-contract] 纯前端用例：前置（`batchStockApi` 的 batches/distribution/reconcile/stocktake 四个响应）由单测自建 —— frontend/admin-web/tests/unit/components/BatchStocktakeForm.test.tsx 直接 `vi.mock('@/lib/api')` 注入批次夹具（余量 60、货号 SKU-11）并逐条桩掉响应；前置不成立时单测直接红（找不到 `data-testid`），不依赖共享夹具；agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端录入与预览（写面口径由 PR-119 的真库判据守；本用例只判「看得见、拦得住、提交后刷新」）由 vitest（jsdom）执行，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.stocktake-by-physical-count, frontend-fix.vitest, frontend-fix.tsc
+溯源: 2026-10-01 新增（issue #5865）：盘点的**入口此前在后台 web 面为零**（全量 grep `adjustment|adjustStock` = 0 命中，只有 Agent 面 SKU 粒度的一条路）。本单把最小录入式挂进商品详情的批次面板（既有位置，不新造菜单 / 权限码）：实盘录入 + 差异预览 + 一次提交 ⇒ 提交后批次面板三个读面一起刷新。取号 UI-077（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 UI-076**，同步 main 时该号已被并行包占用 ⇒ 按「后合入者让号」顺延为 **UI-077**）。 ｜ tags: ui, product, batch, stocktake, admin-web
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -8363,8 +8417,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：587（活跃 126，跳过 461）
-- tier 分布：smoke 12 / normal 542 / adversarial 31
+- 用例总数：590（活跃 126，跳过 464）
+- tier 分布：smoke 12 / normal 545 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8379,17 +8433,17 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：51
+- 杂项域：52
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：54
 - 加工项域：19
 - 加工单域：56
-- 商品域：105
+- 商品域：106
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：74
+- 前端 UI 域：75
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -8457,6 +8511,7 @@
 - MC-050: 本腿执行形态的登记与漂移守卫（issue #5814）：CI 与本地腿的并行度必须都等于台账声明的那一个值；跑整套时判据库存不得低于冻结基线、skip 读数不得偏离；只改其一或改台账不复算都必须有东西具名报出
 - MC-051: 「判据本体绿 ≠ 接线在」的规范承载体（issue #5814）：凡测接线的判据必须显式声明被守的接线锚并登记台账；未登记 / 台账未兑现 / 接线锚被删或改名 / 台账清空，都必须有东西具名报出
 - MC-052: 技能加载面只放「执行时需要」的东西（issue #5853）：沿革必须外置到同目录 CHANGELOG.md，回流 SKILL.md 即红；**换了措辞的「旧落点」口径副本同样红**；外置 ≠ 删除（沿革文件缺失 / 被清空 / 指针丢失也要有东西具名报出）
+- MC-053: 批次账写入点唯一 + 余量口径唯一 + 来源族列形状互斥（issue #5865）：新写入点未登记即红、DB 约束被摘即红、Java 常量与 DB 取值漂移即红
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

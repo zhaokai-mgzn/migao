@@ -1818,19 +1818,59 @@ CREATE TABLE IF NOT EXISTS stock_batch_consumptions (
     formula_meters NUMERIC(12,1) NOT NULL,           -- 行业公式口径（= 改前的扣减口径，与销售账同源同函数）
     planned_meters NUMERIC(12,1) NOT NULL,           -- 排料口径（= 改后的扣减口径，恒等于 -delta）
     unit_cost NUMERIC(12,4),                         -- **当时**该批次均价快照（NULL = 历史行未知，不回填不猜）
-    reason VARCHAR(32) NOT NULL,                     -- processing_order / processing_order_cancelled
-    processing_order_no VARCHAR(32) NOT NULL,
+    -- V143（issue #5865）：两个「单据列」自本迁移起**可空** —— 不是为了放宽扣料行
+    -- （`ck_batch_consumption_source_shape` 仍要求它们非空），而是为了盘点行能诚实留空。
+    -- 盘点运行级幂等键（`stocktake_run_id`）**放在本表最后一列**（见文末），与迁移的追加位一致。
+    reason VARCHAR(32) NOT NULL,                     -- processing_order / processing_order_cancelled / stocktake（V143）
+    processing_order_no VARCHAR(32),
     order_no VARCHAR(32),
-    order_item_id VARCHAR(36) NOT NULL,              -- = order_items.id（ASSIGN_UUID 主键，VARCHAR(36)）
+    order_item_id VARCHAR(36),                       -- = order_items.id（ASSIGN_UUID 主键，VARCHAR(36)）
     operator VARCHAR(64) NOT NULL,
     note VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    deleted INT NOT NULL DEFAULT 0
+    deleted INT NOT NULL DEFAULT 0,
+    -- V143（issue #5865）：盘点运行级幂等键（NULL = 不是盘点行）。
+    -- 🔴 **列位置刻意放在最后**：迁移路径的 `ALTER TABLE … ADD COLUMN` 会把新列**追加在表尾**
+    -- ⇒ 只有在这里也放最后，bootstrap 新库与存量库的**列序**才逐位相同（列序不同虽无功能影响，
+    -- 但会让「两份终态」在结构比对里看起来不一致 —— 独立复核用真库 diff 抓过这一点）。
+    stocktake_run_id VARCHAR(64)
 );
+-- ⚠️ 上面两个「单据列」（processing_order_no / order_item_id）自 V143 起**可空** —— 不是为了放宽
+-- 扣料行（`ck_batch_consumption_source_shape` 仍要求它们非空），而是为了盘点行能诚实留空。
 -- 幂等闸：同一加工单的同一明细行 × 同一批次 × 同一 reason 只允许一行
 CREATE UNIQUE INDEX IF NOT EXISTS uk_batch_consumption_line
     ON stock_batch_consumptions (tenant_id, processing_order_no, batch_id, order_item_id, reason)
     WHERE deleted = 0;
+-- V143（issue #5865）幂等闸 ②：盘点**同一 run × 批次**至多一行（网络重试 / 连点不得双记）。
+-- 谓词 `stocktake_run_id IS NOT NULL` ⇒ 不带运行标识的扣料行一行都不受影响。
+CREATE UNIQUE INDEX IF NOT EXISTS uk_batch_consumption_stocktake
+    ON stock_batch_consumptions (tenant_id, stocktake_run_id, batch_id)
+    WHERE stocktake_run_id IS NOT NULL AND deleted = 0;
+-- V143（issue #5865）来源取值集合 + **两族列形状互斥**：盘点行不得携带加工单/订单列，
+-- 扣料与回补行必须携带。「这批为什么少了 1.5 米」因此不靠约定 —— 违反即 23514。
+ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_reason;
+ALTER TABLE stock_batch_consumptions
+    ADD CONSTRAINT ck_batch_consumption_reason
+    CHECK (reason IN ('processing_order', 'processing_order_cancelled', 'stocktake'));
+ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_source_shape;
+ALTER TABLE stock_batch_consumptions
+    ADD CONSTRAINT ck_batch_consumption_source_shape
+    CHECK (
+        (reason = 'stocktake'
+            AND stocktake_run_id IS NOT NULL
+            AND processing_order_no IS NULL
+            AND order_item_id IS NULL
+            AND order_no IS NULL)
+        OR (reason <> 'stocktake'
+            AND stocktake_run_id IS NULL
+            AND processing_order_no IS NOT NULL
+            AND order_item_id IS NOT NULL)
+    );
+-- 两条注释与迁移**逐字同句**（V143）：原先只在迁移里写，独立复核用真库 diff 抓到 bootstrap 侧缺这两句。
+COMMENT ON COLUMN stock_batch_consumptions.stocktake_run_id IS
+    '盘点**运行级**幂等键（V143，issue #5865）：一次盘点提交的标识（由调用方给，同一次提交的重复请求复用同一个值）。同一 (tenant_id, stocktake_run_id, batch_id) 至多一行（部分唯一索引 uk_batch_consumption_stocktake）⇒ 网络重试不会双记。NULL = 不是盘点行（派工扣减 / 作废回补），不参与去重';
+COMMENT ON CONSTRAINT ck_batch_consumption_source_shape ON stock_batch_consumptions IS
+    '来源形状互斥（V143，issue #5865）：盘点行（reason=stocktake）必须带 stocktake_run_id 且**不得**携带加工单/订单列；扣料与回补行反之。「这批为什么少了 1.5 米」因此不靠约定 —— 两族在**列形状**上就分得开';
 -- V119（issue #5158）不变式：排料口径**只多不少**且两列**同号**
 -- （扣减行都正 / 回补行都负 —— 少了后半句，(+6, −3) 这种符号打架的行也能落库）。
 -- ⚠️ V121（issue #5182）修正：前半句必须是**绝对值**口径 —— 回补行两列都负，

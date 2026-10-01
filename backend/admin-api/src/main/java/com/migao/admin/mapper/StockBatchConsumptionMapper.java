@@ -21,7 +21,32 @@ import java.util.List;
 public interface StockBatchConsumptionMapper extends BaseMapper<StockBatchConsumption> {
 
     /**
+     * **计量腿只认「派工族」的 reason**（V143 / issue #5865）—— 这是**显式包含**（白名单），
+     * 不是 `reason &lt;&gt; 'stocktake'`（黑名单）：
+     *
+     * <p>🔴 <b>为什么必须是白名单</b>：三处计量汇总（{@code sumDeltaBySku} 的「派工扣减净额」腿、
+     * {@code sumSavingByPeriodCohortMaterial} 的省料看板、{@code sumOutputAreaByPeriod} 的产出面积）
+     * 回答的都是「**生产消耗**」。它们**不按 reason 过滤**时，一条盘点调整（{@code delta = −1.5}）
+     * 会被读成「这个月消耗了 1.5 米布」：趋势图凭空多一根柱、省料看板多一张「来源未知」组卡、
+     * 对账的派工腿被算进盘点量 —— 这正是本仓自认最大的失败模式（**归因错**），而它此前只在
+     * DB 的列形状上被挡住、读面一无所知（真库实测，2026-10-01 独立复核）。</p>
+     *
+     * <p>黑名单（{@code &lt;&gt; 'stocktake'}）的问题在「**未来新增来源时的默认行为**」：新来源会
+     * **静默**进计量腿，而白名单让它**默认不进**、必须由作者显式登记 —— 计量口径的变更本该是
+     * 一次显式决定（同 {@code ck_batch_consumption_source_shape} 的纪律）。</p>
+     *
+     * <p>取值集合与 {@code StockBatchConsumption.REASON_PROCESSING_ORDER} /
+     * {@code REASON_PROCESSING_ORDER_CANCELLED} 是同一份事实（Java 常量是唯一真值源；
+     * 这里写成字面量是因为注解值必须是编译期常量）。</p>
+     */
+    String DISPATCH_REASONS_SQL = "'processing_order', 'processing_order_cancelled'";
+
+    /**
      * 逐批次汇总消耗（Σdelta；负数 = 净扣减）。
+     *
+     * <p>🔴 <b>本查询**不**按 reason 过滤</b>（与上面三个计量腿相反）：余量 =
+     * {@code stock_batches.quantity + Σdelta}，**盘点调整也必须算进余量**（盘亏 1.5 米就是这卷布
+     * 真的少了 1.5 米）。过滤掉它会让「页面上的余量」与「盘点过的实物」对不上。</p>
      *
      * <p>余量 = {@code stock_batches.quantity + Σdelta} ⇒ 这里只回**一个数**，余量公式不在 SQL 里再写一份
      * （两处公式必然漂移；漂移的表现是「列表里的余量」与「对账读面的余量」不一致）。</p>
@@ -52,6 +77,7 @@ public interface StockBatchConsumptionMapper extends BaseMapper<StockBatchConsum
             + "COALESCE(SUM(formula_meters), 0) AS formula_sum "
             + "FROM stock_batch_consumptions "
             + "WHERE tenant_id = #{tenantId} AND deleted = 0 AND sku_id IS NOT NULL "
+            + "AND reason IN (" + DISPATCH_REASONS_SQL + ") "
             + "GROUP BY sku_id")
     List<SkuDeltaSum> sumDeltaBySku(@Param("tenantId") Long tenantId);
 
@@ -87,6 +113,7 @@ public interface StockBatchConsumptionMapper extends BaseMapper<StockBatchConsum
             + "LEFT JOIN stock_batches b ON b.id = c.batch_id "
             + "LEFT JOIN inbound_orders o ON o.id = b.inbound_order_id "
             + "WHERE c.tenant_id = #{tenantId} AND c.deleted = 0 "
+            + "AND c.reason IN (" + DISPATCH_REASONS_SQL + ") "
             + "GROUP BY 1, 2, 3, 4 "
             + "ORDER BY 1, 2, 3, 4")
     List<SavingSum> sumSavingByPeriodCohortMaterial(@Param("tenantId") Long tenantId,
@@ -135,6 +162,7 @@ public interface StockBatchConsumptionMapper extends BaseMapper<StockBatchConsum
             + "        FROM stock_batch_consumptions c "
             + "        LEFT JOIN order_items i ON i.id = c.order_item_id "
             + "       WHERE c.tenant_id = #{tenantId} AND c.deleted = 0 AND c.planned_meters > 0 "
+            + "         AND c.reason IN (" + DISPATCH_REASONS_SQL + ") "
             + "       GROUP BY 1, 2) t "
             + "GROUP BY t.period "
             + "ORDER BY t.period")
