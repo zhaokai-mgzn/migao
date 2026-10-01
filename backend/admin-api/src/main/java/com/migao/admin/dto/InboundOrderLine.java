@@ -46,4 +46,13 @@ public class InboundOrderLine {
 
     /** 明细总数量（聚合） */
     private Integer totalQuantity;
+
+    /**
+     * 该单**已生成**的批次号（聚合，逗号分隔；issue #5844）。
+     *
+     * <p>批次号在**过账时逐行**生成（一行 = 一个批次）⇒ 列表只能是聚合展示。
+     * 草稿**未过账**时为 {@code null}（草稿不发号：批次号 = 「真的收货了」的标识）；
+     * 已作废的单也为 {@code null}（永远不会过账）—— **不得**把 null 读成「没有批次」。</p>
+     */
+    private String batchNos;
 }

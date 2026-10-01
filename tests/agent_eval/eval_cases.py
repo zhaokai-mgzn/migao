@@ -7957,16 +7957,16 @@ _CASE_PR_036 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PR-037 [NORMAL] 入库单页面：列表/建单/过账动线可达，数量越界（0）与超精度提交前即被挡住（源: cases/product.yml）──
+# ── PR-037 [NORMAL] 入库单页面：列表/建单/过账动线可达（建单 = 独立整页 /inbound-orders/new），数量越界（0）与超精度提交前即被挡住（源: cases/product.yml）──
 _CASE_PR_037 = EvalCase(
     id='PR-037',
     legacy_id='',
-    title='入库单页面：列表/建单/过账动线可达，数量越界（0）与超精度提交前即被挡住',
+    title='入库单页面：列表/建单/过账动线可达（建单 = 独立整页 /inbound-orders/new），数量越界（0）与超精度提交前即被挡住',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=['商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）'],
     expectations=['direct_reply'],
-    data_checks=['页面渲染列表（单号/状态/行数·总数量）；建单弹窗按「一行 = 一个批次」提交明细（含数量/单价/缸号）；数量 **0** 与超 1 位小数在**提交前**被挡（不调建单接口）—— 下限自 issue #5153 起为「大于 0 米」，**0.5 米可通过**（见 PR-062）；草稿显示「过账后生成」且有过账按钮，过账后显示批次号且过账/作废入口消失'],
+    data_checks=['页面渲染列表（单号/状态/行数·总数量/**批次号列**）；建单入口**导航到独立整页** `/inbound-orders/new`（issue #5844：不再是弹窗），整页按「一行 = 一个批次」提交明细（含数量/单价/缸号/卷长），明细有「批次号」列且草稿态为「过账后生成」（草稿不发号）；数量 **0** 与超 1 位小数在**提交前**被挡（不调建单接口）—— 下限自 issue #5153 起为「大于 0 米」，**0.5 米可通过**（见 PR-062）；列表批次号列：已过账显示真值、草稿「过账后生成」、作废「-」、多批次「首个 等 N 个」；详情草稿显示「过账后生成」且有过账按钮，过账后显示批次号且过账/作废入口消失；详情明细有「卷长(米)」列（1 卷 = 多少米，原值直读 —— `58.55` 就是 `58.55`，**不得**套用库存米数的 0.1 米粒度格式化器渲染成 `58.6`；未填 ⇒ `-`，不写 0）'],
     skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟',
     tags=['inventory', 'inbound', 'backend-contract'],
     persona='',
@@ -8371,16 +8371,16 @@ _CASE_PR_061 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PR-062 [NORMAL] 建账入口（admin-web）：单条录入（来源=期初建账 + 旧系统批次号）+ Excel 批量（模板/逐行报告/可重跑）+ 0.5 米可提交（源: cases/product.yml）──
+# ── PR-062 [NORMAL] 建账入口（admin-web）：单条录入在独立整页 /inbound-orders/new（来源=期初建账 + 旧系统批次号）+ Excel 批量（模板/逐行报告/可重跑）+ 0.5 米可提交（源: cases/product.yml）──
 _CASE_PR_062 = EvalCase(
     id='PR-062',
     legacy_id='',
-    title='建账入口（admin-web）：单条录入（来源=期初建账 + 旧系统批次号）+ Excel 批量（模板/逐行报告/可重跑）+ 0.5 米可提交',
+    title='建账入口（admin-web）：单条录入在独立整页 /inbound-orders/new（来源=期初建账 + 旧系统批次号）+ Excel 批量（模板/逐行报告/可重跑）+ 0.5 米可提交',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=['商家/仓库在商品入库页做批次建账（非 LLM 行为，由 admin-web vitest 覆盖）'],
     expectations=['direct_reply'],
-    data_checks=["判据 1·**单条录入动线**：建单弹窗的「单据来源」缺省 = 采购收货（此时**没有**旧系统批次号列）；切到「期初建账」⇒ 明细表出现「旧系统批次号」列，提交的 payload 为 `source: 'opening'` + `items[].legacyBatchNo`（采购收货则提交 `source: 'purchase'` + `legacyBatchNo: null` —— 填了后端会拒）。红证：改前 `InboundOrderCreateParams` 无 `source` 字段、页面无来源选择器 ⇒ 本判据红。", '判据 2·**0.5 米的实物尾料能提交**（GAP-12 的前端一半）：数量 `0.5` 通过提交前校验并按**原值** 0.5 提交（改前 `checkStockQuantity` 判 `n < 1` ⇒ 提交前就被挡、根本不调建单接口 —— 那正是「尾料进不来」的前端形态）；同时 `0` / 负数 / `2.755`（超 1 位小数）仍被挡（**放宽下限不等于取消下限，也不等于放宽精度**）。', '判据 3·**Excel 批量入口**：页头「期初建账导入」⇒ 弹窗里「下载模板」调 `openingTemplate`（blob 下载）；选文件 + 幂等键（导入标识在打开弹窗时生成、页面提示「重跑同一份文件不要改它」）⇒ 请求层收到**原文件对象**与**同一个标识**；没选文件就点导入 ⇒ 拦住且不调接口。', '判据 4·**逐行校验报告**：报告逐行渲染「行号 / 货号 / 剩余米数 / 缸号 / 旧系统批次号 / 结果」；通过行显示「通过」，不通过行显示**服务端原文原因**（含行号与位数，如「第 3 行剩余米数 最多支持 1 位小数…」）；`failCount > 0` ⇒ 提示「未建账」且**不刷新列表**（一行都没写）；`created=false 且无失败行`（幂等命中）⇒ 提示「已经建过账」而**不是**失败 —— 三种结局（建了 / 没建 / 早已建过）在界面上分得开。'],
+    data_checks=["判据 1·**单条录入动线**：建单页（独立整页 `/inbound-orders/new`；issue #5844 起不再是弹窗）的「单据来源」缺省 = 采购收货（此时**没有**旧系统批次号列）；切到「期初建账」⇒ 明细表出现「旧系统批次号」列，提交的 payload 为 `source: 'opening'` + `items[].legacyBatchNo`（采购收货则提交 `source: 'purchase'` + `legacyBatchNo: null` —— 填了后端会拒）。红证：改前 `InboundOrderCreateParams` 无 `source` 字段、页面无来源选择器 ⇒ 本判据红。", '判据 2·**0.5 米的实物尾料能提交**（GAP-12 的前端一半）：数量 `0.5` 通过提交前校验并按**原值** 0.5 提交（改前 `checkStockQuantity` 判 `n < 1` ⇒ 提交前就被挡、根本不调建单接口 —— 那正是「尾料进不来」的前端形态）；同时 `0` / 负数 / `2.755`（超 1 位小数）仍被挡（**放宽下限不等于取消下限，也不等于放宽精度**）。', '判据 3·**Excel 批量入口**：页头「期初建账导入」⇒ 弹窗里「下载模板」调 `openingTemplate`（blob 下载）；选文件 + 幂等键（导入标识在打开弹窗时生成、页面提示「重跑同一份文件不要改它」）⇒ 请求层收到**原文件对象**与**同一个标识**；没选文件就点导入 ⇒ 拦住且不调接口。', '判据 4·**逐行校验报告**：报告逐行渲染「行号 / 货号 / 剩余米数 / 缸号 / 旧系统批次号 / 结果」；通过行显示「通过」，不通过行显示**服务端原文原因**（含行号与位数，如「第 3 行剩余米数 最多支持 1 位小数…」）；`failCount > 0` ⇒ 提示「未建账」且**不刷新列表**（一行都没写）；`created=false 且无失败行`（幂等命中）⇒ 提示「已经建过账」而**不是**失败 —— 三种结局（建了 / 没建 / 早已建过）在界面上分得开。'],
     skip_reason='[backend-contract] 纯前端单元测试（admin-web vitest：inbound-orders 页建账入口 + 逐行报告 + stock-quantity 纯函数），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['inventory', 'inbound', 'opening-register', 'ui', 'backend-contract'],
     persona='',
@@ -10889,6 +10889,25 @@ _CASE_UI_073 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-074 [NORMAL] 新增入库单从弹窗改为独立整页（版式对齐新增订单/新增商品）+ 入库单批次号可见化（issue #5844）（源: cases/ui.yml）──
+_CASE_UI_074 = EvalCase(
+    id='UI-074',
+    legacy_id='',
+    title='新增入库单从弹窗改为独立整页（版式对齐新增订单/新增商品）+ 入库单批次号可见化（issue #5844）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['仓储与物料 → 入库单：「新增入库单的布局很怪异，应该和订单，商品设计风格对齐」（2026-10-01，附建单弹窗截图）', '「并且缺乏入库批次号？批次号要根据统一规则自动生成」⇒ 用户二选一裁定：只做「看得见」，**不改生成时机**'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·**建单是一等页面，不是弹窗**：`/inbound-orders/new` 独立路由存在；列表页「新建入库单」是 `router.push('/inbound-orders/new')` 导航，且点击后页面里**没有** `role=dialog`、**没有**「保存为草稿」按钮（改前是一个 960px `Modal`，商品结果被页脚截断、搜索框双边框、入库日期独占半行）。执行点 = frontend/admin-web/tests/unit/pages/inbound-orders.test.tsx 与 inbound-orders-new.test.tsx。", "判据 2·**版式件与商品/订单同族**：整页 = 页头（返回 + h1 + 一句口径）+ 两张分区卡片（h2「单据信息」「入库明细」）+ 吸底汇总条 `data-testid=inbound-create-summary-bar`（`sticky bottom-0`，同 /orders/new 的 fee-summary-bar）；控件一律用共享 `Input/Select`（h-9 / rounded-lg / 同一 focus ring），不再有裸 `border-neutral-300` 手写输入框。红证 = 把建单搬回 `Modal` ⇒ 判据 1 的 `queryByRole('dialog')` 当场红。", '判据 3·🔴 **建单契约一字未改**（版式改动不得顺手改契约）：提交 payload 逐字段与改造前相同（`source` / `items[]` 的 productId,skuId,quantity,unitCost,dyeLot,legacyBatchNo,rollLengthM），数量仍是「大于 0 且最多 1 位小数」。红证 = payload 少一个键 / 多一层包装 ⇒ 逐字段断言红。', '判据 4·**批次号「看得见」而生成时机不变**：建单明细表有「批次号」列且草稿态恒为「过账后生成」（**不得**出现 `PC-yyyyMMdd-NNNN` 这类前端编造的号段）；列表页有「批次号」列 —— 已过账显示服务端真值、草稿「过账后生成」、**作废显示「-」**（作废单永远不会过账，不谎报成「过账后生成」）、多批次聚合成「首个 等 N 个」。执行点 = inbound-orders-new.test.tsx + inbound-orders.test.tsx（`data-testid=inbound-batch-nos`）。', "判据 5·**列表批次号来自服务端聚合，不是前端拼的**：`InboundOrderQueryMapper.selectOrderLines` 用 `string_agg(batch_no, ',' ORDER BY batch_no)` 聚合明细批次号（一行 = 一个批次 ⇒ 列表只能聚合），草稿/作废为 `null`。", '判据 6·**新路由不破坏导航高亮**：`/inbound-orders/new` 必须仍解析到「入库单」菜单项（侧边栏 + 面包屑共用 resolveActivePath）。执行点 = frontend/admin-web/tests/unit/lib/menu-nav.test.ts。'],
+    skip_reason='[backend-contract] 纯前端版式 + 一个聚合列（Java 侧只加 `batchNos` 读字段，无 LLM 环节，不进 agent-eval 冒烟）',
+    tags=['ui', 'layout', 'inbound', 'batch'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端页面/版式用例：前置（入库单列表行、商品搜索结果、SKU 明细行）全部由单测自建或打桩（frontend/admin-web/tests/unit/pages/inbound-orders-new.test.tsx 与 frontend/admin-web/tests/unit/pages/inbound-orders.test.tsx mock `@/lib/api`）；后端那一条聚合判据由真 PG 判据自建 schema + 租户 + 单据（backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderListBatchNosRealDbTest.java）—— 不依赖共享夹具与真实服务 ⇒ 前置不成立时判据直接红；agent-eval 栈不跑它',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -11505,6 +11524,7 @@ ALL_CASES = (
     _CASE_UI_071,
     _CASE_UI_072,
     _CASE_UI_073,
+    _CASE_UI_074,
     _CASE_UT_001,
     _CASE_UT_002,
 )

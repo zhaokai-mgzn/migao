@@ -1,20 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, RotateCcw, Search, Send, Ban, PackageOpen, Layers, Upload, Download } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Plus, RotateCcw, Search, Send, Ban, PackageOpen, Upload, Download } from 'lucide-react'
 import { toast } from 'sonner'
-import { inboundOrderApi, productApi } from '@/lib/api'
+import { inboundOrderApi } from '@/lib/api'
 import { Modal, Button, Input, Select } from '@/components/ui'
-import type {
-  InboundOrder,
-  InboundOrderLine,
-  InboundOrderStatus,
-  OpeningImportReport,
-  Product,
-  ProductSku,
-} from '@/types'
+import type { InboundOrder, InboundOrderLine, InboundOrderStatus, OpeningImportReport } from '@/types'
 import { cn } from '@/lib/utils'
-import { checkStockQuantity, formatStockQuantity } from '@/lib/stock-quantity'
+import { formatStockQuantity } from '@/lib/stock-quantity'
 
 // ============================================================
 // 入库单（V111，issue #5034）—— 商品布料入库
@@ -29,9 +23,14 @@ import { checkStockQuantity, formatStockQuantity } from '@/lib/stock-quantity'
 //   见 lib/stock-quantity.ts。下限由「≥1 米」放宽（issue #5153 / GAP-12）—— 用户逐字说
 //   「当前企业剩余了**大量的 0.5 米左右**的批次布料」，改前那些实物批次**连登记都进不来**。
 //
-// 建账入口（V118 / issue #5153）：① 「新建入库单」里把来源选成「期初建账」即可单条录入
-//   （可填旧系统批次号）；② 页头「期初建账导入」= Excel 批量（模板 + 逐行校验报告 + 可重跑，
-//   幂等键 `importRunId` 必填 —— 重跑同一标识不会重复建账、不会重复加库存）。
+// 建账入口（V118 / issue #5153）：① 独立整页 `/inbound-orders/new`（issue #5844）里把来源选成
+//   「期初建账」即可单条录入（可填旧系统批次号）；② 页头「期初建账导入」= Excel 批量（模板 +
+//   逐行校验报告 + 可重跑，幂等键 `importRunId` 必填 —— 重跑同一标识不会重复建账、不会重复加库存）。
+//
+// 建单入口（issue #5844，用户 2026-10-01 裁定）：**独立整页** `/inbound-orders/new`
+//   —— 与 `/orders/new`、`/products/new` 同构；本页**不再有建单弹窗**（版式件与全站不同族）。
+// 批次号可见化（issue #5844，**只做可见、不改生成时机**）：列表列「批次号」= 该单过账后
+//   **逐行**生成的 `PC-yyyyMMdd-NNNN` 聚合（草稿未过账 ⇒ 「过账后生成」，作废 ⇒ 「-」）。
 
 const STATUS_OPTIONS: { value: InboundOrderStatus | ''; label: string }[] = [
   { value: '', label: '全部状态' },
@@ -52,27 +51,23 @@ const STATUS_CLASS: Record<InboundOrderStatus, string> = {
   cancelled: 'bg-red-50 text-red-600 border-red-200',
 }
 
-/** 单据来源（V117；`opening` = 期初建账/批次初始化） */
-const SOURCE_OPTIONS: { value: 'purchase' | 'opening'; label: string }[] = [
-  { value: 'purchase', label: '采购收货（正常入库）' },
-  { value: 'opening', label: '期初建账（按实物登记在库批次）' },
-]
-
 /**
- * 建单弹窗里的一行（含 SKU 的展示快照，提交时只取
- * productId/skuId/quantity/unitCost/dyeLot/legacyBatchNo/rollLengthM）
+ * 列表的「批次号」单元格（issue #5844，**只做可见**）。
+ *
+ * 一个入库单过账后**逐行**生成批次号（一行 = 一个批次）⇒ 列表里只能是**聚合**展示：
+ * 单个直接显示；多个显示「首个 等 N 个」（完整清单在详情弹窗里逐行可查）。
+ * 草稿**未过账**（批次号 = 「真的收货了」的标识，草稿不发号）⇒ 「过账后生成」；
+ * 已作废的单永远不会过账 ⇒ 「-」（不谎报成「过账后生成」）。
  */
-interface DraftLine {
-  productId: string
-  skuId: number
-  label: string
-  stock: number
-  quantity: string
-  unitCost: string
-  dyeLot: string
-  /** 旧系统批次号（只录入期建账时才提交；系统批次号由服务端生成，两者不得互相冒充） */
-  legacyBatchNo: string
-  rollLengthM: string
+function batchCell(row: InboundOrderLine): string {
+  const nos = (row.batchNos || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (nos.length === 0) {
+    return row.status === 'draft' ? '过账后生成' : '-'
+  }
+  return nos.length === 1 ? nos[0] : `${nos[0]} 等 ${nos.length} 个`
 }
 
 /** 每次「开始一次批量导入」的运行标识（幂等键）：重跑同一份文件时**不要改**它 */
@@ -82,28 +77,11 @@ function newImportRunId(): string {
 }
 
 export default function InboundOrdersPage() {
+  const router = useRouter()
   const [keyword, setKeyword] = useState('')
   const [status, setStatus] = useState<InboundOrderStatus | ''>('')
   const [rows, setRows] = useState<InboundOrderLine[]>([])
   const [loading, setLoading] = useState(false)
-
-  // 建单弹窗
-  const [createOpen, setCreateOpen] = useState(false)
-  const [productKeyword, setProductKeyword] = useState('')
-  const [productOptions, setProductOptions] = useState<Product[]>([])
-  const [pickedProduct, setPickedProduct] = useState<Product | null>(null)
-  const [productSkus, setProductSkus] = useState<ProductSku[]>([])
-  const [skuLoading, setSkuLoading] = useState(false)
-  const [draftLines, setDraftLines] = useState<DraftLine[]>([])
-  const [form, setForm] = useState({
-    supplier: '',
-    supplierDocNo: '',
-    warehouse: '',
-    inboundDate: '',
-    remark: '',
-    source: 'purchase' as 'purchase' | 'opening',
-  })
-  const [submitting, setSubmitting] = useState(false)
 
   // 期初建账批量导入弹窗（V118 / issue #5153）
   const [importOpen, setImportOpen] = useState(false)
@@ -133,148 +111,6 @@ export default function InboundOrdersPage() {
   useEffect(() => {
     void load()
   }, [load])
-
-  // ---- 建单：商品搜索（防抖） ----
-  useEffect(() => {
-    if (!createOpen) return
-    const t = setTimeout(async () => {
-      try {
-        const res = await productApi.getProducts({
-          keyword: productKeyword || undefined,
-          page: 1,
-          size: 20,
-        })
-        setProductOptions(res.data.data?.items ?? [])
-      } catch {
-        setProductOptions([])
-      }
-    }, 300)
-    return () => clearTimeout(t)
-  }, [productKeyword, createOpen])
-
-  const pickProduct = async (p: Product) => {
-    setPickedProduct(p)
-    setSkuLoading(true)
-    try {
-      const res = await productApi.getProduct(p.id)
-      setProductSkus(res.data.data?.skus ?? [])
-    } catch {
-      setProductSkus([])
-    } finally {
-      setSkuLoading(false)
-    }
-  }
-
-  const resetCreate = () => {
-    setProductKeyword('')
-    setProductOptions([])
-    setPickedProduct(null)
-    setProductSkus([])
-    setDraftLines([])
-    setForm({
-      supplier: '',
-      supplierDocNo: '',
-      warehouse: '',
-      inboundDate: '',
-      remark: '',
-      source: 'purchase',
-    })
-  }
-
-  /** 勾选 SKU ⇒ 加入/移出草稿行（保留已填的数量/单价/缸号/旧系统批次号） */
-  const toggleSku = (sku: ProductSku) => {
-    if (!pickedProduct) return
-    setDraftLines((prev) => {
-      const exists = prev.some((l) => l.skuId === Number(sku.id))
-      if (exists) {
-        return prev.filter((l) => l.skuId !== Number(sku.id))
-      }
-      return [
-        ...prev,
-        {
-          productId: pickedProduct.id,
-          skuId: Number(sku.id),
-          label: `${pickedProduct.name} / ${sku.colorName || '默认色'} / ${sku.doorWidth || '默认门幅'}`,
-          stock: sku.stock ?? 0,
-          quantity: '1',
-          unitCost: '',
-          dyeLot: '',
-          legacyBatchNo: '',
-          rollLengthM: '',
-        },
-      ]
-    })
-  }
-
-  const patchLine = (skuId: number, patch: Partial<DraftLine>) => {
-    setDraftLines((prev) => prev.map((l) => (l.skuId === skuId ? { ...l, ...patch } : l)))
-  }
-
-  const draftTotal = useMemo(
-    () =>
-      draftLines.reduce((sum, l) => {
-        const q = Number(l.quantity)
-        const c = Number(l.unitCost)
-        if (!Number.isFinite(q) || !Number.isFinite(c) || l.unitCost === '') return sum
-        return sum + q * c
-      }, 0),
-    [draftLines],
-  )
-
-  const submitCreate = async () => {
-    if (draftLines.length === 0) {
-      toast.error('请至少勾选一个 SKU 作为入库明细')
-      return
-    }
-    // 数量必须**大于 0** 且**最多 1 位小数**（0.1 米粒度）—— 与后端同一判据。
-    // 下限由「≥1 米」放宽（issue #5153）：0.5 米的尾料是**实物事实**，挡在门外 = 系统说谎。
-    // 超 1 位小数**显式拒绝**，绝不静默取整/截断（账面库存要照米数对得上）。
-    for (const l of draftLines) {
-      const reason = checkStockQuantity(l.quantity)
-      if (reason) {
-        toast.error(`「${l.label}」的${reason}`)
-        return
-      }
-      if (l.unitCost !== '' && !(Number(l.unitCost) > 0)) {
-        toast.error(`「${l.label}」的入库单价必须大于 0（不记单价请留空）`)
-        return
-      }
-    }
-    setSubmitting(true)
-    try {
-      await inboundOrderApi.create({
-        supplier: form.supplier || null,
-        supplierDocNo: form.supplierDocNo || null,
-        warehouse: form.warehouse || null,
-        inboundDate: form.inboundDate || null,
-        remark: form.remark || null,
-        // 来源（V117 既有件）：期初建账与正常采购在库里可区分 —— 基线冻结点靠它
-        source: form.source,
-        items: draftLines.map((l) => ({
-          productId: l.productId,
-          skuId: l.skuId,
-          quantity: Number(l.quantity),
-          unitCost: l.unitCost === '' ? null : Number(l.unitCost),
-          dyeLot: l.dyeLot || null,
-          // 旧系统批次号**只在期初建账时提交**（采购入库填了后端会拒 —— 两列两义，不得互相冒充）
-          legacyBatchNo: form.source === 'opening' ? l.legacyBatchNo || null : null,
-          rollLengthM: l.rollLengthM === '' ? null : Number(l.rollLengthM),
-        })),
-      })
-      toast.success(
-        form.source === 'opening'
-          ? '期初建账单已建（草稿，未动库存）—— 核对无误后请过账：过账即冻结基线'
-          : '入库单已建（草稿，未动库存）—— 核对无误后请过账',
-      )
-      setCreateOpen(false)
-      resetCreate()
-      await load()
-    } catch {
-      // 拦截器已提示
-    } finally {
-      setSubmitting(false)
-    }
-  }
 
   const openDetail = async (id: string) => {
     try {
@@ -389,7 +225,7 @@ export default function InboundOrdersPage() {
             <Upload className="w-4 h-4 mr-1.5" />
             期初建账导入
           </Button>
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button onClick={() => router.push('/inbound-orders/new')}>
             <Plus className="w-4 h-4 mr-1.5" />
             新建入库单
           </Button>
@@ -436,6 +272,7 @@ export default function InboundOrdersPage() {
               <th className="text-left px-4 py-2.5 font-medium">供应商</th>
               <th className="text-left px-4 py-2.5 font-medium">仓库</th>
               <th className="text-right px-4 py-2.5 font-medium">行数 / 总数量</th>
+              <th className="text-left px-4 py-2.5 font-medium">批次号</th>
               <th className="text-right px-4 py-2.5 font-medium">金额</th>
               <th className="text-left px-4 py-2.5 font-medium">状态</th>
               <th className="text-right px-4 py-2.5 font-medium">操作</th>
@@ -450,6 +287,12 @@ export default function InboundOrdersPage() {
                 <td className="px-4 py-2.5 text-neutral-600">{row.warehouse || '-'}</td>
                 <td className="px-4 py-2.5 text-right text-neutral-600">
                   {row.itemCount} / {formatStockQuantity(row.totalQuantity)}
+                </td>
+                <td
+                  data-testid="inbound-batch-nos"
+                  className="px-4 py-2.5 font-mono text-xs text-neutral-600"
+                >
+                  {batchCell(row)}
                 </td>
                 <td className="px-4 py-2.5 text-right text-neutral-900">
                   {row.totalAmount != null ? `¥${Number(row.totalAmount).toFixed(2)}` : '-'}
@@ -473,7 +316,7 @@ export default function InboundOrdersPage() {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-neutral-400">
+                <td colSpan={9} className="px-4 py-10 text-center text-neutral-400">
                   {loading ? '加载中…' : '暂无入库单'}
                 </td>
               </tr>
@@ -481,245 +324,6 @@ export default function InboundOrdersPage() {
           </tbody>
         </table>
       </div>
-
-      {/* 建单弹窗 */}
-      <Modal
-        open={createOpen}
-        onClose={() => {
-          setCreateOpen(false)
-          resetCreate()
-        }}
-        title="新建入库单"
-        width={960}
-        footer={
-          <div className="flex items-center justify-between w-full">
-            <span className="text-sm text-neutral-600">
-              合计金额：<span className="font-medium text-neutral-900">¥{draftTotal.toFixed(2)}</span>
-            </span>
-            <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setCreateOpen(false)
-                  resetCreate()
-                }}
-              >
-                取消
-              </Button>
-              <Button onClick={() => void submitCreate()} loading={submitting}>
-                保存为草稿
-              </Button>
-            </div>
-          </div>
-        }
-      >
-        <div className="space-y-4">
-          <p className="text-xs text-neutral-500 bg-neutral-50 border border-neutral-200 rounded p-2">
-            保存为草稿<strong>不会改动库存</strong>；批次号在<strong>过账</strong>时由系统自动生成，
-            库存与成本也在过账时一次性写入（可核对后再过账）。
-          </p>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Select
-              label="单据来源"
-              aria-label="单据来源"
-              value={form.source}
-              onChange={(e) =>
-                setForm({ ...form, source: e.target.value as 'purchase' | 'opening' })
-              }
-              options={SOURCE_OPTIONS}
-            />
-            <Input
-              label="供应商"
-              value={form.supplier}
-              onChange={(e) => setForm({ ...form, supplier: e.target.value })}
-              placeholder="如：柯桥××布行"
-            />
-            <Input
-              label="供应商送货单号"
-              value={form.supplierDocNo}
-              onChange={(e) => setForm({ ...form, supplierDocNo: e.target.value })}
-            />
-            <Input
-              label="仓库 / 仓位"
-              value={form.warehouse}
-              onChange={(e) => setForm({ ...form, warehouse: e.target.value })}
-            />
-            <Input
-              label="入库日期"
-              type="date"
-              value={form.inboundDate}
-              onChange={(e) => setForm({ ...form, inboundDate: e.target.value })}
-            />
-          </div>
-          <Input
-            label="备注"
-            value={form.remark}
-            onChange={(e) => setForm({ ...form, remark: e.target.value })}
-          />
-
-          <div className="border-t border-neutral-200 pt-4">
-            <div className="flex items-center gap-3">
-              <Input
-                label="搜索商品"
-                value={productKeyword}
-                onChange={(e) => setProductKeyword(e.target.value)}
-                placeholder="商品名称 / 货号"
-              />
-            </div>
-            <div className="mt-2 max-h-40 overflow-auto border border-neutral-200 rounded">
-              {productOptions.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => void pickProduct(p)}
-                  className={cn(
-                    'w-full text-left px-3 py-2 text-sm border-b border-neutral-100 last:border-0 hover:bg-neutral-50',
-                    pickedProduct?.id === p.id && 'bg-primary-50',
-                  )}
-                >
-                  {p.name}
-                  {p.skuCode ? <span className="text-neutral-400 ml-2">({p.skuCode})</span> : null}
-                </button>
-              ))}
-              {productOptions.length === 0 && (
-                <div className="px-3 py-4 text-sm text-neutral-400 text-center">输入关键词搜索商品</div>
-              )}
-            </div>
-          </div>
-
-          {pickedProduct && (
-            <div className="border-t border-neutral-200 pt-4">
-              <div className="text-sm font-medium text-neutral-700 mb-2 flex items-center gap-1.5">
-                <Layers className="w-4 h-4" />
-                选择入库 SKU（勾选即加入明细，一行 = 一个批次）
-              </div>
-              <div className="max-h-40 overflow-auto border border-neutral-200 rounded">
-                {productSkus.map((sku) => {
-                  const checked = draftLines.some((l) => l.skuId === Number(sku.id))
-                  return (
-                    <label
-                      key={sku.id}
-                      className="flex items-center gap-3 px-3 py-2 text-sm border-b border-neutral-100 last:border-0 hover:bg-neutral-50 cursor-pointer"
-                    >
-                      <input type="checkbox" checked={checked} onChange={() => toggleSku(sku)} />
-                      <span className="flex-1">
-                        {sku.colorName || '默认色'} / {sku.doorWidth || '默认门幅'}
-                      </span>
-                      <span className="text-neutral-500">
-                        当前库存 {formatStockQuantity(sku.stock ?? 0)}
-                      </span>
-                    </label>
-                  )
-                })}
-                {!skuLoading && productSkus.length === 0 && (
-                  <div className="px-3 py-4 text-sm text-neutral-400 text-center">
-                    该商品还没有 SKU，请先在商品详情维护 SKU
-                  </div>
-                )}
-                {skuLoading && (
-                  <div className="px-3 py-4 text-sm text-neutral-400 text-center">加载中…</div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {draftLines.length > 0 && (
-            <div className="border-t border-neutral-200 pt-4">
-              <div className="text-sm font-medium text-neutral-700 mb-2">入库明细</div>
-              <table className="w-full text-sm">
-                <thead className="bg-neutral-50 text-neutral-600">
-                  <tr>
-                    <th className="text-left px-2 py-2 font-medium">SKU</th>
-                    <th className="text-right px-2 py-2 font-medium w-24">数量*</th>
-                    <th className="text-right px-2 py-2 font-medium w-28">单价(元)</th>
-                    <th className="text-left px-2 py-2 font-medium w-32">缸号</th>
-                    {form.source === 'opening' && (
-                      <th className="text-left px-2 py-2 font-medium w-36">旧系统批次号</th>
-                    )}
-                    <th className="text-right px-2 py-2 font-medium w-24">卷长(米)</th>
-                    <th className="w-10" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {draftLines.map((l) => (
-                    <tr key={l.skuId} className="border-t border-neutral-100">
-                      <td className="px-2 py-1.5 text-neutral-700">{l.label}</td>
-                      <td className="px-2 py-1.5">
-                        <input
-                          type="number"
-                          min={0.1}
-                          step={0.1}
-                          aria-label={`${l.label} 数量`}
-                          value={l.quantity}
-                          onChange={(e) => patchLine(l.skuId, { quantity: e.target.value })}
-                          className="w-full h-8 px-2 border border-neutral-300 rounded text-right"
-                        />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          aria-label={`${l.label} 单价`}
-                          value={l.unitCost}
-                          onChange={(e) => patchLine(l.skuId, { unitCost: e.target.value })}
-                          className="w-full h-8 px-2 border border-neutral-300 rounded text-right"
-                        />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <input
-                          aria-label={`${l.label} 缸号`}
-                          value={l.dyeLot}
-                          onChange={(e) => patchLine(l.skuId, { dyeLot: e.target.value })}
-                          className="w-full h-8 px-2 border border-neutral-300 rounded"
-                        />
-                      </td>
-                      {form.source === 'opening' && (
-                        <td className="px-2 py-1.5">
-                          <input
-                            aria-label={`${l.label} 旧系统批次号`}
-                            placeholder="旧系统的批次号"
-                            value={l.legacyBatchNo}
-                            onChange={(e) => patchLine(l.skuId, { legacyBatchNo: e.target.value })}
-                            className="w-full h-8 px-2 border border-neutral-300 rounded"
-                          />
-                        </td>
-                      )}
-                      <td className="px-2 py-1.5">
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          aria-label={`${l.label} 卷长`}
-                          value={l.rollLengthM}
-                          onChange={(e) => patchLine(l.skuId, { rollLengthM: e.target.value })}
-                          className="w-full h-8 px-2 border border-neutral-300 rounded text-right"
-                        />
-                      </td>
-                      <td className="px-2 py-1.5 text-right">
-                        <button
-                          type="button"
-                          aria-label={`移除 ${l.label}`}
-                          onClick={() => toggleSku({ id: String(l.skuId) } as ProductSku)}
-                          className="text-neutral-400 hover:text-red-600"
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="text-xs text-neutral-400 mt-2">
-                数量按 0.1 米粒度、大于 0 即可（0.5 米的尾料能登记；0 与 2.755 会被拒绝；
-                超 1 位小数不会四舍五入）；单价留空 = 只加数量、不算成本（均价保持原值）；
-                缸号与旧系统批次号都是外部事实，与系统生成的批次号是三件不同的事。
-              </p>
-            </div>
-          )}
-        </div>
-      </Modal>
 
       {/* 期初建账导入弹窗（V118 / issue #5153） */}
       <Modal
@@ -915,6 +519,7 @@ export default function InboundOrdersPage() {
                   <th className="text-right px-3 py-2 font-medium">金额</th>
                   <th className="text-left px-3 py-2 font-medium">批次号</th>
                   <th className="text-left px-3 py-2 font-medium">缸号</th>
+                  <th className="text-right px-3 py-2 font-medium">卷长(米)</th>
                   <th className="text-left px-3 py-2 font-medium">旧系统批次号</th>
                 </tr>
               </thead>
@@ -933,12 +538,19 @@ export default function InboundOrdersPage() {
                     </td>
                     <td className="px-3 py-2 font-mono text-neutral-900">{it.batchNo || '过账后生成'}</td>
                     <td className="px-3 py-2 text-neutral-600">{it.dyeLot || '-'}</td>
+                    {/* 卷长「1 卷 = 多少米」：**原值直读**（`NUMERIC(8,2)`）。
+                        ⚠️ 刻意**不用** `formatStockQuantity` —— 那是**库存米数**的 0.1 米粒度格式化器，
+                        拿它渲染卷长会把 58.55 静默变成 58.6（两个不同的量各有自己的精度）。
+                        未填 ⇒ 「-」（不写 0：0 米一卷不是「没填」的意思）。 */}
+                    <td className="px-3 py-2 text-right text-neutral-600">
+                      {it.rollLengthM != null ? String(it.rollLengthM) : '-'}
+                    </td>
                     <td className="px-3 py-2 font-mono text-neutral-600">{it.legacyBatchNo || '-'}</td>
                   </tr>
                 ))}
                 {(!detail.items || detail.items.length === 0) && (
                   <tr>
-                    <td colSpan={7} className="px-3 py-6 text-center text-neutral-400">
+                    <td colSpan={8} className="px-3 py-6 text-center text-neutral-400">
                       无明细
                     </td>
                   </tr>
