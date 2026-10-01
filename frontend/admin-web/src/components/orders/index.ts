@@ -13,6 +13,8 @@ export { default as OrderStatusBadge } from './OrderStatusBadge'
 export { default as OrderTimeline } from './OrderTimeline'
 export { default as OrderProgressSteps } from './OrderProgressSteps'
 export { default as OrderItemList } from './OrderItemList'
+// 订单详情页「费用构成」（issue #5843）：商品合计 + 加工费 + 其它构成 = 订单金额
+export { default as OrderFeeBreakdown } from './OrderFeeBreakdown'
 export { default as LogisticsInfo } from './LogisticsInfo'
 export { default as LogisticsForm } from './LogisticsForm'
 export { default as CloseOrderModal } from './CloseOrderModal'

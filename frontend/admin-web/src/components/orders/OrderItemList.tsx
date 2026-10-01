@@ -30,6 +30,14 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { craftSpecRows, isCraftSpecKey, type CraftSpecRow } from '@/lib/craft-display'
 import { lineSubtotal } from '@/lib/order-amount'
+// 加工费的行级展示（读 detail / 编算式 / 判未定价）**issue #5843 起住在共享层** ——
+// 订单详情页的「费用构成」区消费的是**同一份**实现（同一个数不许有两种显示）。
+import {
+  feeFormula,
+  isUnpriced,
+  readFeeDetail,
+  type ProcessingFeeDetail,
+} from '@/lib/order-fee-display'
 import type { OrderItem } from '@/types'
 
 interface OrderItemListProps {
@@ -72,22 +80,12 @@ export const CALC_OUTPUT_LABELS = new Set([
 /**
  * 加工费构成（后端 #4406 落库 → 本组件**只展示**，不重算）。
  *
- * 键名是 **snake_case**（设计文档 §4.5：算料/计价输出键与 `CALC_INFO_KEYS` 同口径）。
- * `fee_source` 三态：`matched` 命中组合 / `unpriced` 未定价 / `manual` 人工改价。
+ * ⚠️ 实现（`ProcessingFeeDetail` / `readFeeDetail` / `feeFormula` / `isUnpriced`）已按
+ * **issue #5843** 上移到 `frontend/admin-web/src/lib/order-fee-display.ts`：详情页补「费用构成」区时
+ * 若各写一份，就会出现第二套口径。这里只做**兼容再导出**（既有 import 路径不变）。
  */
-export interface ProcessingFeeDetail {
-  /** 参与计价的选配特征集合（组合键） */
-  composition?: string
-  unit_price?: number
-  meters?: number
-  meters_source?: string
-  fee_source?: string
-  amount?: number
-  /** 特殊选项合计（元/套 那半，issue #4525；未定价组合下也照常计入，issue #4594） */
-  special_options_total?: number
-  /** 未定价时的可行动提示（后端给） */
-  hint?: string
-}
+export { feeFormula, isUnpriced, readFeeDetail }
+export type { ProcessingFeeDetail }
 
 /** 取有限数值（容忍 JSON 里以字符串承载的数字）；其余 ⇒ `null` */
 function numericOrNull(value: unknown): number | null {
@@ -97,44 +95,6 @@ function numericOrNull(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null
   }
   return null
-}
-
-/** 从 `processingInfo` 取加工费构成；缺席 / 形态不对 ⇒ `null`（存量单：接线前生成，无该键） */
-export function readFeeDetail(info: unknown): ProcessingFeeDetail | null {
-  if (info === null || typeof info !== 'object' || Array.isArray(info)) return null
-  const raw = (info as Record<string, unknown>).processingFeeDetail
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
-  return raw as ProcessingFeeDetail
-}
-
-/**
- * 加工费算式（用户口径：「**窗帘米数 × 组合加工费 = 具体费用**」）。
- *
- * **缺单价或米数 ⇒ 不编算式**（返回 `null`）：宁可只显示金额，
- * 也不给商家一个对不上的算式（那比不显示更糟 —— 商家会照着它去核账）。
- */
-export function feeFormula(detail: ProcessingFeeDetail | null): string | null {
-  if (!detail) return null
-  const meters = numericOrNull(detail.meters)
-  const unit = numericOrNull(detail.unit_price)
-  if (meters === null || unit === null) return null
-  const amount = numericOrNull(detail.amount)
-  const left = `${meters} 米 × ${formatAmount(unit)}/米`
-  return amount === null ? left : `${left} = ${formatAmount(amount)}`
-}
-
-/**
- * 未定价（`fee_source=unpriced`）。
- *
- * 为什么单独判它：未定价时**组合那半**按 0 计（`amount` = 0），而 `¥0.00` 与
- * 「这一行本来就不收加工费」**长得一模一样** ⇒ 必须显式标「未定价」，否则就是静默改钱的外观。
- *
- * ⚠️ 它只表示**组合那半**未定价（用户裁定 2026-09-19 / issue #4594）：已定价的特殊选项
- * **照常计入行金额** ⇒ 本判据**不蕴含**「行金额 = 0」，行金额一律看 `item.processingFee`
- * （后端 `lineAmount()` = 组合那半 + Σ 选项价）。
- */
-export function isUnpriced(detail: ProcessingFeeDetail | null): boolean {
-  return detail?.fee_source === 'unpriced'
 }
 
 /**
