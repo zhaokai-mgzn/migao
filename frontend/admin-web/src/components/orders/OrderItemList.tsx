@@ -104,17 +104,27 @@ function numericOrNull(value: unknown): number | null {
  * ⇒ 散剪米数 = 行米数 − 整卷数 × 卷长（`order_items` 的 `quantity` / `roll_count` /
  * `roll_length_m` 三者都是后端给的真值，本函数**只做展示、不重算金额**）。
  *
- * 两条硬约束（与 §4.9「缺值不渲染」同族）：
- * 1. `rollCount` / `rollLengthM` **任一为空 ⇒ 返回 `null`**（未配置卷长时**不编数字**，
- *    也**不**显示「未配置」这类占位 —— 那会让商家以为系统已经算过分配）；
- * 2. 散剪为 0（正好整卷）⇒ 只显示「整卷 N」。
+ * 三条硬约束（与 §4.9「缺值不渲染」同族）：
+ * 1. **卷数有值、卷长没记** ⇒ 渲染「**整卷 N 卷（未记每卷米数）**」—— 陈述**已知事实**并标注未知，
+ *    **不推散剪、不补 0 米**（🔻 2026-10-01 用户复核改判：这是「不编数字」的**正确形态**，
+ *    不是放宽红线。`roll_count=2 / roll_length_m=NULL` 是服务端的新**合法态** ——
+ *    「客户要 2 卷」是真实意图，让它不可见 = 用户输入被吞掉的一半）；
+ * 2. **只有长度没有卷数**（`rollCount` 为空）、或**两列都为空** ⇒ 返回 `null`（长度单独出现
+ *    不构成「要几卷」的意图，**别硬编**；也不显示「未配置」这类占位 —— 那会让商家以为系统算过了）；
+ * 3. 散剪为 0（正好整卷）⇒ 只显示「整卷 N」。
  *
- * @returns 展示文案；无法推算时 `null`
+ * @returns 展示文案；无法陈述时 `null`
  */
 export function rollAllocationText(item: OrderItem): string | null {
   const rollCount = numericOrNull(item.rollCount)
   const rollLengthM = numericOrNull(item.rollLengthM)
-  if (rollCount === null || rollLengthM === null) return null
+
+  // 🔻 新合法态（issue #5846 二次裁定）：卷数有值、卷长没记 ⇒ 只陈述卷数，绝不编米数
+  if (rollLengthM === null) {
+    if (rollCount === null || rollCount < 0) return null
+    return `整卷 ${rollCount} 卷（未记每卷米数）`
+  }
+  if (rollCount === null) return null
   if (rollCount < 0 || rollLengthM <= 0) return null
 
   const quantity = numericOrNull(item.quantity)
@@ -134,6 +144,72 @@ export function rollAllocationText(item: OrderItem): string | null {
   return remaining > 0
     ? `整卷 ${rollCount} + 散剪 ${remaining} 米`
     : `整卷 ${rollCount}`
+}
+
+/**
+ * **负差额**告警（issue #5846）：整卷合计（卷数 × 每卷实际米数）**大于**行米数时，
+ * 两侧对不上 —— 由**人**决定改哪一个，系统**不自动改写** `quantity`。
+ *
+ * <p>为什么必须有它（而不是继续「什么都不显示」）：用户 2026-10-01 裁定 A 让订单行可以
+ * **显式**录「卷数 + 每卷实际米数」（行业卷长是区间值 ⇒ 实际米数 ≠ 卷数 × 卷长是常态）
+ * ⇒ 负差额从「服务端不可能产出」变成「人录得出来的真实状态」。
+ * {@link rollAllocationText} 对它的处置一字不变（**不把不一致渲染成「整卷 N + 散剪 -17 米」**），
+ * 但**静默什么都不说**等于把商家自己录的数吞掉 ⇒ 单独给一条显式提示。</p>
+ *
+ * @returns 告警文案；非负差额 / 缺值 / 非法值 ⇒ `null`（不虚报）
+ */
+export function rollAllocationWarning(item: OrderItem): string | null {
+  const rollCount = numericOrNull(item.rollCount)
+  const rollLengthM = numericOrNull(item.rollLengthM)
+  if (rollCount === null || rollLengthM === null) return null
+  if (rollCount < 0 || rollLengthM <= 0) return null
+  const quantity = numericOrNull(item.quantity)
+  if (quantity === null) return null
+
+  // 浮点噪声（58.5 × 2 之类）→ 保留 2 位后去掉尾零（与 `rollAllocationText` 同口径）
+  const rollsTotal = Math.round(rollCount * rollLengthM * 100) / 100
+  const remaining = Math.round((quantity - rollsTotal) * 100) / 100
+  if (remaining >= 0) return null
+
+  return `整卷合计 ${rollsTotal} 米 ＞ 行米数 ${quantity} 米（差 ${Math.round(-remaining * 100) / 100} 米）`
+    + ` —— 请人工核对改哪一个，系统不会自动改米数`
+}
+
+/**
+ * 订单行的**整卷 / 散剪**展示（issue #5846 起接线到订单详情页）。
+ *
+ * 为什么抽成组件：「整卷 N + 散剪 M 米」这段在此之前只存在于 `OrderItemList` 自己的行里，
+ * 而**订单详情页不渲染该组件** ⇒ 功能是**没接线的死代码**（用户 2026-10-01 报的缺口）。
+ * 两处（明细组件 / 详情页表格）用**同一个组件**渲染 ⇒ 文案与口径只有一份，
+ * 不会出现「列表页说整卷 1、详情页说整卷 2」的漂移。
+ *
+ * @param withPrefix 是否带「优先整卷发货：」前缀（详情页表格格子窄，用 `false`）
+ */
+export function RollAllocationNote({
+  item,
+  withPrefix = true,
+}: {
+  item: OrderItem
+  withPrefix?: boolean
+}) {
+  const text = rollAllocationText(item)
+  const warning = rollAllocationWarning(item)
+  if (!text && !warning) return null
+  return (
+    <>
+      {text && (
+        <div data-testid="roll-allocation" className="mt-1 text-xs text-neutral-500">
+          {withPrefix ? '优先整卷发货：' : ''}
+          {text}
+        </div>
+      )}
+      {warning && (
+        <div data-testid="roll-allocation-warning" className="mt-1 text-xs text-amber-600">
+          {warning}
+        </div>
+      )}
+    </>
+  )
 }
 
 /** 一组 label/value 网格（缺值行已由 `craftSpecRows` 丢弃 ⇒ 空组不渲染） */
@@ -232,8 +308,6 @@ function ItemRow({ item }: { item: OrderItem }) {
     ? sellingMethodLabel[rawSellingMethod] || rawSellingMethod
     : undefined
   const doorWidth = typeof info.doorWidth === 'string' ? info.doorWidth : undefined
-  // 优先整卷发货的分配（`rollCount` / `rollLengthM` 未配置 ⇒ `null` ⇒ 不渲染任何文案）
-  const rollAllocation = rollAllocationText(item)
 
   const processingFee = item.processingFee || 0
   // 加工费构成（#4406）：只展示服务端已算好的数，**不重算**
@@ -278,15 +352,9 @@ function ItemRow({ item }: { item: OrderItem }) {
         </div>
 
         {/* 优先整卷发货的分配（用户裁定）：买 100 米 / 1 卷 60 米 ⇒ 整卷 1 + 散剪 40 米。
-            未配置卷长（两字段任一为空）⇒ 整行不出现 —— 不编数字。 */}
-        {rollAllocation && (
-          <div
-            data-testid="roll-allocation"
-            className="mt-1 text-xs text-neutral-500"
-          >
-            优先整卷发货：{rollAllocation}
-          </div>
-        )}
+            未配置卷长（两字段任一为空）⇒ 整行不出现 —— 不编数字。
+            #5846 起抽成 `RollAllocationNote`（订单详情页用**同一份**渲染，见该组件注释）。 */}
+        <RollAllocationNote item={item} />
 
         {/* 工艺规格 + 算料口径：分两组（§5.9.3 输入 / 输出）—— 无任何工艺键时整块不出现 */}
         {specRows.length > 0 && (

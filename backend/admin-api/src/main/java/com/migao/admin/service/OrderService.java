@@ -1162,23 +1162,37 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 售卖方式偏好校验 + 「优先整卷发货」分配落列（V111，用户裁定 2026-09-21）。
      *
      * <p><b>为什么分配在服务端算</b>：整卷数是 {@code quantity} 与货号卷长的函数，只能有一个
-     * 权威实现 —— 若允许调用方各算一套，「同一张单两个整卷数」无法对账。故请求里带来的
-     * {@code rollCount} / {@code rollLengthM} **一律被覆盖**（不接受客户端自算值）。</p>
+     * 权威实现 —— 若允许调用方各算一套，「同一张单两个整卷数」无法对账。</p>
+     *
+     * <p>🔄 <b>2026-10-01（issue #5846）有意改判：<u>显式 &gt; 派生 + 缺的那半回落</u></b>。
+     * 用户裁定 A（原话：「订单中售卖整卷布料时，应该有卷数和实际米数两字段」）：
+     * 订单行可显式给出 {@code rollCount} / {@code rollLengthM}，<b>缺的那一半回落</b> ——
+     * {@code effectiveLength = 显式 rollLengthM ?? 商品 roll_length_m}；
+     * {@code rollCount = 显式 rollCount ?? floor(quantity / effectiveLength)}。
+     * 用户同日<b>二次裁定：取消「成对」契约</b>（只给一个也是合法输入，缺的那半走回落）。</p>
+     *
+     * <p>🔴 <b>不变式（改判后仍一字不动）</b>：一次分配里<b>同一个字段只有一个权威来源</b>
+     * （显式 XOR 派生）—— 不允许「同一单两个整卷数」。回落点<b>只有</b>
+     * {@link ProductRollAllocation#resolve} 一处（本方法是它唯一的调用点，见类级元守卫
+     * {@code OrderRollAllocationAuthorityTest}）。</p>
      *
      * <p><b>分配闸门 = 货号有没有配卷长，与售卖方式无关</b>（用户原话的例子就是按米买布）：
      * 「客户买 100 米布，一卷=60 米 ⇒ 发 1 整卷 60 + 散剪 40 米」里顾客**没有**说「我要整卷」。
      * ⇒ 把闸门写成「只有明说整卷才算」会让用户裁定举的例子在新单路径上**根本不生效**
-     * （独立对抗式复核实测抓到）。「优先整卷发货」是**发货方式**偏好，不是「整卷售卖单」专属。</p>
+     * （独立对抗式复核实测抓到）。「优先整卷发货」是**发货方式**偏好，不是「整卷售卖单」专属。
+     * 显式分支同理：它**不改变**闸门（用户显式给了就是要，也不需要先声明售卖方式）。</p>
      *
      * <p><b>三条不猜的红线</b>：</p>
      * <ol>
      *   <li>未指定售卖方式 ⇒ 该列保持 NULL（不默认整卷、也不默认散剪）
      *       —— 但它**不阻止**分配（见上）；</li>
-     *   <li>货号未配卷长（{@code products.roll_length_m} 为空/非正）⇒
+     *   <li>货号未配卷长（{@code products.roll_length_m} 为空/非正）<b>且用户没给卷长</b>、<b>也没给卷数</b> ⇒
      *       {@code rollCount} / {@code rollLengthM} 保持 NULL，<b>不落 0</b>
-     *       —— 「不知道」不许伪装成「0 整卷」（见 {@link ProductRollAllocation}）；</li>
-     *   <li>货号不存在（历史/外部商品）⇒ 同上，且不因此拒绝整单（订单行的售卖方式是偏好，
-     *       不是 SKU 身份，与库存路径的 fail-closed 判据不同层）。</li>
+     *       —— 「不知道」不许伪装成「0 整卷」（见 {@link ProductRollAllocation}）；
+     *       🔻 <b>例外（新合法态）</b>：显式给了卷数而卷长两边都没有 ⇒ {@code rollCount = 显式值}、
+     *       {@code rollLengthM = NULL}（「客户要 N 卷」是真实意图，不是未分配）；</li>
+     *   <li>货号不存在（历史/外部商品）⇒ 同上（不因此拒绝整单），但**显式给的值照落**
+     *       —— 显式值不依赖商品查表（见 {@link #parseExplicitRollCount}）。</li>
      * </ol>
      *
      * <p><b>越界售卖方式必须显式拒绝</b>：该货号 {@code products.selling_methods} 不支持顾客
@@ -1190,45 +1204,107 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 否则「agent 明确说了要整卷」这条链路上分配恒为空。</p>
      */
     private void applyRollAllocation(OrderCreateRequest.OrderItemRequest itemRequest, OrderItem item) {
-        if (itemRequest.getProductId() == null) {
-            return; // 没有商品 ⇒ 既无售卖方式口径也无卷长口径（不猜）
-        }
-        Product product = productMapper.selectById(itemRequest.getProductId());
+        // ⓪ 显式值只做**边界**校验（不再要求「成对」—— 用户 2026-10-01 裁定取消成对契约）
+        Integer explicitRollCount = parseExplicitRollCount(itemRequest);
+        assertExplicitRollLengthUsable(itemRequest.getRollLengthM());
+
+        // 商品查表：`productId` 缺 ⇒ 不查（也无售卖方式口径）；查不到 ⇒ 视为「没有货号卷长可回落」
+        Product product = itemRequest.getProductId() == null
+                ? null
+                : productMapper.selectById(itemRequest.getProductId());
 
         // ① 售卖方式偏好：未指定 ⇒ 该列保持 NULL（不默认整卷、也不默认散剪）
-        String sellingMethod = SkuNotation.normalizeSellingMethod(itemRequest.getSellingMethod());
-        if (sellingMethod == null) {
-            sellingMethod = SkuNotation.normalizeSellingMethod(
-                    readProcessingInfoSellingMethod(itemRequest.getProcessingInfo()));
-        }
-        if (sellingMethod != null) {
-            item.setSellingMethod(sellingMethod);
-            if (product != null) {
-                assertSellingMethodSupported(itemRequest, product, sellingMethod);
+        //    ⚠️ 只在**有 productId** 时处理（「没有商品 ⇒ 既无售卖方式口径也无卷长口径」的旧口径不变）；
+        //    商品存在与否都照落列，只是「支持性校验」需要商品（见 `assertSellingMethodSupported` 的调用条件）。
+        if (itemRequest.getProductId() != null) {
+            String sellingMethod = SkuNotation.normalizeSellingMethod(itemRequest.getSellingMethod());
+            if (sellingMethod == null) {
+                sellingMethod = SkuNotation.normalizeSellingMethod(
+                        readProcessingInfoSellingMethod(itemRequest.getProcessingInfo()));
+            }
+            if (sellingMethod != null) {
+                item.setSellingMethod(sellingMethod);
+                if (product != null) {
+                    assertSellingMethodSupported(itemRequest, product, sellingMethod);
+                }
             }
         }
 
-        // ② 整卷分配：**只看货号有没有配卷长**（不看售卖方式）
-        // 用户裁定原话：「在订单中再体现客户要求**优先整卷发货**，例子：客户买 100 米布，
-        // 一卷=60 米，那就发 1 整卷 60 + 散剪出的 40 米」—— 那个例子里顾客**没有**说「我要整卷」，
-        // 他只是买了 100 米布 ⇒ 若把闸门写成「只有明说整卷才算」，用户裁定举的例子在新单路径上
-        // **根本不生效**（独立对抗式复核实测抓到）。故：`bulk_cut`（按米买布）同样算分配 ——
-        // 「优先整卷发货」本来就是**发货方式**偏好，不是「整卷售卖单」专属。
-        if (product == null) {
-            log.warn("applyRollAllocation: 商品不存在，跳过整卷分配（不猜卷长）, productId={}, orderId={}",
-                    itemRequest.getProductId(), item.getOrderId());
-            return; // 不因此拒绝整单
-        }
-        ProductRollAllocation.Allocation allocation =
-                ProductRollAllocation.allocate(itemRequest.getQuantity(), product.getRollLengthM());
+        // ② 一次分配的**唯一权威来源**：显式优先 + 缺的那半**回落**；回落点唯一 =
+        //    `ProductRollAllocation.resolve`（本方法是它唯一的调用点，见类级元守卫）。
+        //    ⚠️ 回落**不到**（卷长两边都没有 且 没有显式卷数）⇒ 不写分配（两列保持 NULL，不落 0、不猜）。
+        //    分配闸门仍**只看卷长**（不看售卖方式）：用户裁定原话「客户买 100 米布，一卷=60 米 ⇒
+        //    发 1 整卷 60 + 散剪 40 米」里顾客**没有**说「我要整卷」—— 把闸门写成「只有明说整卷才算」
+        //    会让该例子在新单路径上**根本不生效**（独立对抗式复核实测抓到）。
+        ProductRollAllocation.Allocation allocation = ProductRollAllocation.resolve(
+                explicitRollCount,
+                itemRequest.getRollLengthM(),
+                itemRequest.getQuantity(),
+                product == null ? null : product.getRollLengthM());
         if (!allocation.allocated()) {
-            // ③ 货号未配卷长（或数量非法）⇒ 分配两列保持 NULL（不落 0）
-            log.info("applyRollAllocation: 货号未配卷长，按「不推算」处理, productId={}, orderId={}",
-                    itemRequest.getProductId(), item.getOrderId());
+            if (itemRequest.getProductId() != null && product == null) {
+                log.warn("applyRollAllocation: 商品不存在，无货号卷长可回落（不猜卷长）, productId={}, orderId={}",
+                        itemRequest.getProductId(), item.getOrderId());
+            } else {
+                log.info("applyRollAllocation: 卷长未知（货号未配且未显式给）且未显式给卷数 ⇒ 不写分配, productId={}, orderId={}",
+                        itemRequest.getProductId(), item.getOrderId());
+            }
             return;
         }
         item.setRollCount(allocation.rollCount());
         item.setRollLengthM(allocation.rollLengthM());
+    }
+
+    /**
+     * 解析<b>显式</b>卷数（issue #5846）—— 返回卷数；{@code null} = 客户端<b>没给</b>。
+     *
+     * <p><b>用户 2026-10-01 裁定：取消「成对」契约</b> —— 只给卷数、只给每卷米数、两个都给，
+     * 三种都是合法输入；缺的那一半由
+     * {@link ProductRollAllocation#resolve(Integer, BigDecimal, BigDecimal, BigDecimal)} <b>回落</b>
+     * （显式 &gt; 商品；回落不到 ⇒ 保持 NULL，不猜）。所以本方法**不再**对「成对」做任何校验。</p>
+     *
+     * <p><b>保留下来的只有边界（一条都不许放宽，每条都有断言）</b>：</p>
+     * <ul>
+     *   <li>卷数 &lt; 0 ⇒ 422（不落负值、不静默取整）；</li>
+     *   <li>卷数非整数 ⇒ 422 —— 🔴 Jackson 默认 {@code ACCEPT_FLOAT_AS_INT=true}，请求 DTO 若把
+     *       该字段声明成 {@code Integer}，{@code 2.5} 会被<b>静默截断成 2 卷</b>；
+     *       现在原样落到这里由 {@code intValueExact()} 拒绝。</li>
+     * </ul>
+     *
+     * @return 卷数（含合法的 {@code 0}——「全散剪」是真实结论）；未显式给 ⇒ {@code null}
+     */
+    private Integer parseExplicitRollCount(OrderCreateRequest.OrderItemRequest itemRequest) {
+        BigDecimal rolls = itemRequest.getRollCount();
+        if (rolls == null) {
+            return null; // 没给卷数 ⇒ 由 resolve 派生（与改判前逐字节相同）
+        }
+        if (rolls.signum() < 0) {
+            throw BusinessException.validationError(
+                    "卷数不能为负数（收到 " + rolls.toPlainString() + "）");
+        }
+        try {
+            return rolls.intValueExact();
+        } catch (ArithmeticException notAnInt) {
+            // 区分「非整数」与「超出 int 范围」——两者都是显式拒绝，但文案要能行动
+            boolean integral = rolls.stripTrailingZeros().scale() <= 0;
+            throw BusinessException.validationError(integral
+                    ? "卷数超出可取值范围（收到 " + rolls.toPlainString() + "）"
+                    : "卷数必须是整数（收到 " + rolls.toPlainString() + "）—— 系统不会替你取整，请确认后重填。");
+        }
+    }
+
+    /**
+     * 显式「每卷米数」的边界（issue #5846）：给了就必须 &gt; 0。
+     *
+     * <p>{@code null} = 没给（合法 —— 走回落）；{@code 0} / 负值不是「没配」而是错的输入 ⇒ 422。
+     * DTO 上也有 {@code @DecimalMin(inclusive = false)}（控制器 {@code @Valid} ⇒ 400），
+     * 这里再兜一道：**服务层被直接调用时也不许落一个荒谬的卷长**。</p>
+     */
+    private void assertExplicitRollLengthUsable(BigDecimal explicitRollLengthM) {
+        if (explicitRollLengthM != null && explicitRollLengthM.signum() <= 0) {
+            throw BusinessException.validationError(
+                    "每卷米数必须大于 0（收到 " + explicitRollLengthM.toPlainString() + "）");
+        }
     }
 
     /**

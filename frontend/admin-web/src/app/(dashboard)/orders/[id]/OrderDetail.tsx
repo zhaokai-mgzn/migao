@@ -19,6 +19,9 @@ import OrderFeeBreakdown from '@/components/orders/OrderFeeBreakdown'
 import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { craftSpecRows } from '@/lib/craft-display'
+// 整卷售卖的分配文案（issue #5846）：**同一份**渲染实现（含负差额告警）——
+// 该函数/组件此前只在明细组件里、**没有任何页面渲染它**（功能是没接线的死代码）。
+import { RollAllocationNote } from '@/components/orders/OrderItemList'
 // 发货读面（issue #5651）：销售单的数量列消费**实发**，判定在 lib 里
 import type { OrderShipmentRead } from '@/lib/sales-shipment'
 import { cn } from '@/lib/utils'
@@ -843,6 +846,10 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                     if (pi?.doorWidth) parts.push(`门幅${pi.doorWidth}`)
                     return parts.join(' / ') || '-'
                   })()}
+                  {/* 整卷售卖（issue #5846）：订单行显示「整卷 N + 散剪 M 米」——
+                      渲染实现与明细组件共用一份（`RollAllocationNote`），负差额在这里也看得见。
+                      `roll_count` / `roll_length_m` 任一为空 ⇒ 整块不出现（不编数字）。 */}
+                  <RollAllocationNote item={row} withPrefix={false} />
                   {/* 工艺规格（issue #4355 / 设计文档 §4.9 ②）：直读 processing_info，缺值行已丢弃 */}
                   <CraftSpecList source={row.processingInfo} />
                   {/* **部位备注**（issue #5685）：商家写的「这个数字怎么来的」（算料依据的人工说明）。
