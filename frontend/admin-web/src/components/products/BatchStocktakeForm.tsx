@@ -111,7 +111,7 @@ export default function BatchStocktakeForm({ productId, batches, onApplied }: Pr
         <h3 className="text-sm font-semibold text-neutral-700">按批次盘点（实盘录入）</h3>
         <p className="mt-1 text-xs text-neutral-500">
           录「这一批现在实际还剩多少米」⇒ 差异 = 实盘 − 余量（正 = 盘盈、负 = 盘亏）。
-          提交后：差异落一条**盘点分录**（入库量不动），SKU 库存按合计差异对齐 —— 两本账一起变，
+          提交后：差异落一条盘点分录（入库量不动），SKU 库存按合计差异对齐 —— 两本账一起变，
           「这批为什么少了 1.5 米」在批次台账里查得到。实盘与余量相同 ⇒ 不写任何东西。
         </p>
       </div>
