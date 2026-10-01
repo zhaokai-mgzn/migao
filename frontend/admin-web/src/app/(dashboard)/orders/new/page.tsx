@@ -4179,7 +4179,7 @@ function FabricRow({
       {rollShort && rollDiff !== null && (
         <p data-testid="roll-diff-warning" className="mt-1 text-xs text-red-600">
           整卷合计 {rollsTotal} 米 ＞ 行米数 {line.quantity} 米（差 {Math.round(-rollDiff * 100) / 100} 米）
-          —— 请确认改「数量」还是改「卷数 / 每卷米数」；系统**不会**自动改数量
+          —— 请确认改「数量」还是改「卷数 / 每卷米数」；系统不会自动改数量
         </p>
       )}
       <p className="mt-1.5 text-xs text-neutral-400">
