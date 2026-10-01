@@ -184,13 +184,21 @@ test.describe('商品列表页面', () => {
 
   // ========== 搜索 (1-10) ==========
 
-  test('按商品ID搜索', async ({ page }) => {
-    await page.fill('input[placeholder="请输入商品ID"]', 'p001')
-    await page.getByRole('button', { name: '查询' }).click()
-    await page.waitForTimeout(500)
+  // ⚠️ 原「按商品ID搜索」用例已**删除**（#5877 用户 2026-10-01 追加裁定：商品ID 列与筛选**整条移除**）
+  // —— 能力不存在了 ⇒ 不是「改断言」，而是没有这条用例。
 
-    await expect(page.getByText('p001')).toBeVisible()
-    await expect(page.getByText('p002')).not.toBeVisible()
+  test('列表与搜索区都不再有「商品ID」（#5877：列 + 筛选整条移除）', async ({ page }) => {
+    const thead = page.locator('thead')
+    await expect(thead).toContainText('商品标题')
+    await expect(thead).toContainText('商品货号')
+    await expect(thead).not.toContainText('商品ID')
+    // 行内不再渲染 id 文本
+    await expect(page.getByText('p001')).toHaveCount(0)
+    // 搜索区那一格也**不在 DOM 里**（整条移除，不是隐藏）
+    await expect(page.locator('input[placeholder="请输入商品ID"]')).toHaveCount(0)
+    // 判据不能靠「搜索区整个没了」蒙对：同区其余筛选项照旧
+    await expect(page.locator('input[placeholder="请输入商品标题"]')).toBeVisible()
+    await expect(page.locator('input[placeholder="请输入商品货号"]')).toBeVisible()
   })
 
   test('按商品标题搜索', async ({ page }) => {
@@ -203,11 +211,10 @@ test.describe('商品列表页面', () => {
   })
 
   test('按商品货号搜索', async ({ page }) => {
-    // 商品货号输入框的 placeholder 是 "请输入商品ID"（源码如此）
-    // 使用 label 定位：商品货号 label 对应的 input
-    const skuInputs = page.locator('input[placeholder="请输入商品ID"]')
-    // 第一个是商品ID，第二个是商品货号
-    await skuInputs.nth(1).fill('CL-WH')
+    // #5877：商品货号输入框的 placeholder 已修正为「请输入商品货号」（原为从商品ID复制粘贴的
+    // 「请输入商品ID」）⇒ 两格**各自按自己的 placeholder 精确定位**，不再靠「同名 placeholder 取第 2 个」
+    //（那是**把一个缺陷当成真理**：placeholder 一改，那种定位就静默指到别的输入框）。
+    await page.locator('input[placeholder="请输入商品货号"]').fill('CL-WH')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
@@ -219,9 +226,10 @@ test.describe('商品列表页面', () => {
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
-    await expect(page.getByText('p001')).toBeVisible()
-    await expect(page.getByText('p002')).toBeVisible()
-    await expect(page.getByText('p003')).not.toBeVisible() // off_sale（已下架）
+    // 🔴 #5877：断言改用**商品名**（商品ID 列已移除）
+    await expect(page.getByText('北欧简约遮光窗帘 灰色系列')).toBeVisible()
+    await expect(page.getByText('法式蕾丝纱帘 白色浪漫')).toBeVisible()
+    await expect(page.getByText('日式棉麻窗帘 原木色')).not.toBeVisible() // off_sale（已下架）
   })
 
   test('按创建日期范围搜索 — 应筛选出日期范围内的商品', async ({ page }) => {
@@ -232,16 +240,16 @@ test.describe('商品列表页面', () => {
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
-    // 日期范围内的商品应出现
-    await expect(page.getByText('p002')).toBeVisible()
+    // 日期范围内的商品应出现（🔴 #5877：改用商品名断言）
+    await expect(page.getByText('法式蕾丝纱帘 白色浪漫')).toBeVisible()
     // 日期范围外的商品不应出现
-    await expect(page.getByText('p004')).not.toBeVisible()
+    await expect(page.getByText('儿童房卡通窗帘 星空系列')).not.toBeVisible()
   })
 
   test('重置按钮清空所有搜索条件', async ({ page }) => {
-    // 填入搜索条件
-    await page.fill('input[placeholder="请输入商品ID"]', 'p001')
+    // 填入搜索条件（#5877：商品ID 筛选已移除 ⇒ 用 商品标题 + 商品货号 + 状态 三种条件覆盖「全部清空」）
     await page.fill('input[placeholder="请输入商品标题"]', '遮光')
+    await page.fill('input[placeholder="请输入商品货号"]', 'CL-GY')
     await page.locator('select').first().selectOption('on_sale')
 
     // 点击重置
@@ -249,8 +257,8 @@ test.describe('商品列表页面', () => {
     await page.waitForTimeout(500)
 
     // 搜索条件应被清空
-    await expect(page.locator('input[placeholder="请输入商品ID"]').first()).toHaveValue('')
     await expect(page.locator('input[placeholder="请输入商品标题"]')).toHaveValue('')
+    await expect(page.locator('input[placeholder="请输入商品货号"]')).toHaveValue('')
     await expect(page.locator('select').first()).toHaveValue('')
   })
 
@@ -493,17 +501,25 @@ test.describe('商品列表页面', () => {
 
   // ========== 批量操作 (19-23) ==========
 
-  test('批量上架按钮默认禁用', async ({ page }) => {
-    const btn = page.getByRole('button', { name: '批量上架' })
-    await expect(btn).toBeDisabled()
+  test('批量上架/下架按钮在**未选中任何行**时根本不渲染（#5877）', async ({ page }) => {
+    // #5877：改前是两枚常驻 `disabled` 按钮（纯视觉噪音）⇒ 现在未选中时**不在 DOM 里**
+    await expect(page.getByRole('button', { name: '批量上架' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '批量下架' })).toHaveCount(0)
+    // 常驻按钮仍在（判据不能靠「按钮都没了」蒙对）
+    await expect(page.getByRole('button', { name: '批量导出' })).toBeVisible()
+    // 选中一行 ⇒ 两枚按钮出现（不是「永远不渲染」）
+    await page.locator('tbody input[type="checkbox"]').first().click()
+    await expect(page.getByRole('button', { name: '批量上架' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '批量下架' })).toBeVisible()
   })
 
   test('批量上架操作', async ({ page }) => {
     // 选中一行
     await page.locator('tbody input[type="checkbox"]').first().click()
 
+    // #5877：按钮在选中后才出现 ⇒ 这里直接可见即用（不再有 disabled→enabled 的过渡）
     const btn = page.getByRole('button', { name: '批量上架' })
-    await expect(btn).toBeEnabled()
+    await expect(btn).toBeVisible()
     await btn.click()
 
     // 应弹出确认弹窗
@@ -575,7 +591,8 @@ test.describe('商品列表页面', () => {
   })
 
   test('上架按钮（已下架商品）', async ({ page }) => {
-    // p003 是 off_sale 状态，有"上架"按钮
+    // p003（日式棉麻窗帘 原木色）是 off_sale 状态，有"上架"按钮
+    //（#5877：注释里不再用「商品ID」指代行 —— 该列已移除）
     await expect(page.locator('tbody button').filter({ hasText: /^上架$/ }).first()).toBeVisible({ timeout: 5000 });
     await page.locator('tbody button').filter({ hasText: /^上架$/ }).first().click()
 

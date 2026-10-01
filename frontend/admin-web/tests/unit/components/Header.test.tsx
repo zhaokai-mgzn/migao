@@ -92,15 +92,18 @@ describe('Header', () => {
     expect(screen.getByText('经营看板')).toBeInTheDocument()
   })
 
-  // 🔴 #5778：菜单项「商品列表」改名「商品管理」并升为**一级项**（无父组）⇒ 面包屑为
-  // 「商品管理 > 商品管理」（首项 = 一级项身份，末项 == 菜单名，§15.2）。
-  it('/products 路径应显示"商品管理 > 商品管理"面包屑（一级项）', async () => {
+  // 🔴 #5877（用户 2026-10-01 裁定）：一级项**没有父组** ⇒ 面包屑是**单级**「商品管理」
+  //（与「通知中心」同口径）—— 原来的「商品管理 / 商品管理」是两个同名项，纯噪声。
+  it('/products 路径应显示**单级**「商品管理」面包屑（一级项无父组）', async () => {
     mockPathname = '/products'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getAllByText('商品管理')).toHaveLength(2)
+    expect(screen.getAllByText('商品管理')).toHaveLength(1)
     expect(screen.queryByText('商品与加工项')).not.toBeInTheDocument()
+    // 单级 = 整个面包屑容器里没有分隔符（不是「碰巧只剩一项」）
+    const nav = document.querySelector('nav')!
+    expect(nav.textContent).toBe('商品管理')
   })
 
   // issue #5271：原「订单管理」组与原「客户管理」组的客户列表/财务对账**并为一组**「交易管理」
@@ -150,12 +153,13 @@ describe('Header', () => {
 
   // ─── 子路径匹配 ───
 
-  it('/products/123 子路径应匹配"商品管理 > 商品管理"（前缀命中）', async () => {
+  it('/products/123 子路径应匹配单级「商品管理」（前缀命中）', async () => {
     mockPathname = '/products/123'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getAllByText('商品管理')).toHaveLength(2)
+    expect(screen.getAllByText('商品管理')).toHaveLength(1)
+    expect(document.querySelector('nav')!.textContent).toBe('商品管理')
   })
 
   it('/agent-workspace 子路径优先匹配（/agent-workspace/sessions）', async () => {
@@ -397,7 +401,9 @@ describe('Header', () => {
   // ─── 面包屑分隔符 ───
 
   it('多级面包屑应显示 / 分隔符', async () => {
-    mockPathname = '/products'
+    // ⚠️ #5877：本用例原来用 `/products`（当时是两级同名面包屑）；该路径现为**单级**
+    //（一级项无父组）⇒ 改用真正的多级路径「交易管理 / 订单列表」，用例强度不变。
+    mockPathname = '/orders'
     await act(async () => {
       render(<Header />)
     })

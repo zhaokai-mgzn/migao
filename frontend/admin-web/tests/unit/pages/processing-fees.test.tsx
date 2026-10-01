@@ -298,7 +298,8 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
     // issue #4490：「加工费管理」(/production/processing-fees) 与「加工项管理」(/processing)
     // 合并为单一入口；#4542 起菜单名 =「加工项管理」。
     // 🔴 #5778（用户裁定「加工项应该属于生产管理」）：该项**由「商品与加工项」组移入「生产管理」组**，
-    // 原 `product-center` 组整体撤销（商品列表升为**一级项**）—— 合并本身一字未动。
+    // 原 `product-center` 组整体撤销（商品列表升为**一级项**，现名「商品管理」；#5877 起排在
+    // 「工作台」组之后）—— 合并本身一字未动。
     const production = menuGroups.find((g) => g.key === 'production-center')
     expect(production).toBeDefined()
     expect(production!.name).toBe('生产管理')
@@ -307,7 +308,7 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
     expect(entry!.name).toBe('加工项管理')
     // issue #5291：加工项管理 = 生产域**读**码 production:view（加工项 CRUD 仍 processing:manage）。
     expect(entry!.permissionCode).toBe('production:view')
-    // 原「商品与加工项」组已撤销 ⇒ 不得再存在（商品列表现为独立一级项）
+    // 原「商品与加工项」组已撤销 ⇒ 不得再存在（商品管理表现为独立一级项，不属任何组）
     expect(menuGroups.find((g) => g.key === 'product-center')).toBeUndefined()
     expect(production!.children.map((c) => c.path)).not.toContain('/processing')
     // 生产管理组归并结果必须仍在（合并只收敛入口，不重排既有项）

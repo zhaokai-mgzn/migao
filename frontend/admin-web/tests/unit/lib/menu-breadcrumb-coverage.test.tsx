@@ -16,13 +16,22 @@
  *
  * ## 判据（对**每一个**带 `path` 的菜单项，渲染**真实的** `<Header />`）
  *
- *   ① 面包屑**不止一项**（兜底分支只有一项「工作台」⇒ 一项即漏改）；
+ *   ① 面包屑**至少一项**（0 项 = 什么都没渲染）；
  *   ② **末项 label == 该菜单项的 `name`**（把 §15.2 变成**可执行**的定义）。
+ *
+ * 🔴 为什么 ① 从 `>= 2` 改成 `>= 1`（#5877，2026-10-01）：一级项「商品管理」与尾部独立项
+ * 「通知中心」**本来就没有父组** ⇒ 面包屑就是**单级**（`Header.tsx` 给「通知中心」的一直是单级）。
+ * 原口径 `>= 2` 与它自相矛盾 —— 只因两者**没进检出面**（本文件旧实现只从 `menuGroups` 展开）才没红。
+ * ⚠️ 改成 `>= 1` **不是放水**：**「落兜底分支」的判别力由 ② 承担** —— 兜底分支返回的是
+ * `[{ label: '工作台', href: '/dashboard' }]`，其末项是「工作台」，**永远不等于**菜单名
+ * （没有哪个菜单项叫「工作台」）⇒ 漏改照样红。
  *
  * ## 红证（实测，非推理）
  *
  * 删掉 `Header.tsx` 里 `/inbound-orders` 那一行 ⇒ 本文件对应那条**判红**；
  * 还原后全绿。断言强度**只增不减**：它比「逐条手写路径」宽（自动覆盖**将来**新增的菜单项）。
+ * #5877 起另加一条**自动化红证**（`把 /products 摘掉 ⇒ 必须红`，见文件末尾）：因为
+ * `ROUTE_BREADCRUMB_MAP` 是模块私有的、无法在运行时注入，那条用**同源文本**做单点变异。
  *
  * ## 边界（如实登记）
  *
@@ -50,19 +59,49 @@ vi.mock('next/navigation', () => ({
 }))
 
 import Header from '@/components/layout/Header'
-import { menuGroups } from '@/config/menu'
+import { menuGroups, standaloneTopItems, standaloneItems } from '@/config/menu'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
-/** 侧边栏里**每一个带 `path` 的菜单项**（= 用户点得到的页面） */
-const PAGES: { path: string; name: string }[] = (menuGroups as any[]).flatMap((g) =>
-  ((g.children ?? []) as any[])
-    .filter((c) => !!c.path)
-    .map((c) => ({ path: c.path as string, name: c.name as string })),
-)
+type Page = { path: string; name: string }
+const withPath = (items: any[]): Page[] =>
+  (items ?? []).filter((c) => !!c.path).map((c) => ({ path: c.path as string, name: c.name as string }))
+
+/**
+ * 侧边栏里**每一个带 `path` 的菜单项**（= 用户点得到的页面）。
+ *
+ * 🔴 #5877：检出面必须覆盖**全部三处菜单数组** —— `menuGroups`（组内项）**+**
+ * `standaloneTopItems`（一级项，如商品管理）**+** `standaloneItems`（尾部独立项，如通知中心）。
+ * 只从 `menuGroups` 展开时，两个 standalone 数组里的项**根本不在检出面里**
+ * （= 它们的面包屑怎么错都不会红，实测正是「/products 单级」这条一直没人发现的原因）。
+ */
+const PAGES: Page[] = [
+  ...(menuGroups as any[]).flatMap((g) => withPath(g.children)),
+  ...withPath(standaloneTopItems),
+  ...withPath(standaloneItems),
+]
 
 describe('侧边栏菜单 ↔ 面包屑覆盖（issue #5071 / §15.2）', () => {
   it('检出面非空 —— 否则下面每条都在空集上恒真（判据退化）', () => {
-    // 实测 17 条（2026-09-21）。写 15 而不是 17：允许菜单增删，但**不允许解析失灵 ⇒ 0 条**。
+    // 实测 21 条（2026-09-21 是 17 条：当时只从 menuGroups 展开，两个 standalone 数组漏在外面；
+    // #5877 补齐后 = 19 组内项 + 1 一级项 + 1 尾部独立项）。写 15 是留增删余量，
+    // 但**不允许解析失灵 ⇒ 0 条**。
     expect(PAGES.length).toBeGreaterThanOrEqual(15)
+  })
+
+  it('🔴 检出面覆盖三处数组的**并集**（menu.ts 里任何带 path 的菜单项都不得漏）', () => {
+    const inGroups = (menuGroups as any[]).flatMap((g) => withPath(g.children))
+    const expected = new Set([
+      ...inGroups.map((p) => p.path),
+      ...withPath(standaloneTopItems).map((p) => p.path),
+      ...withPath(standaloneItems).map((p) => p.path),
+    ])
+    expect(new Set(PAGES.map((p) => p.path))).toEqual(expected)
+    // 两个 standalone 数组**确实**在检出面里（各自点名一项，防止将来又被漏掉）
+    expect(PAGES.map((p) => p.path)).toContain('/products')       // 一级项
+    expect(PAGES.map((p) => p.path)).toContain('/notifications')  // 尾部独立项
+    // 反恒真：并集本身不是空的、也不等于「只有组内项」
+    expect(expected.size).toBeGreaterThan(inGroups.length)
   })
 
   it.each(PAGES)('$path ⇒ 面包屑末项 == 侧边栏菜单名「$name」', ({ path, name }) => {
@@ -76,16 +115,56 @@ describe('侧边栏菜单 ↔ 面包屑覆盖（issue #5071 / §15.2）', () => 
       .map((s) => s.trim())
       .filter(Boolean)
 
+    // #5877：**至少一项**（一级项 / 尾部独立项就是单级面包屑）——「落兜底分支」由下一条末项断言拦
+    //（兜底 = `[{ label: '工作台' }]`，末项「工作台」≠ 任何菜单名）。
     expect(
       crumbs.length,
-      `${path} 的面包屑只有 ${crumbs.length} 项（${JSON.stringify(crumbs)}）⇒ 落兜底分支，` +
-        `§15.2「面包屑与侧边栏菜单名一致」不成立`,
-    ).toBeGreaterThanOrEqual(2)
+      `${path} 的面包屑一项都没有（${JSON.stringify(crumbs)}）`,
+    ).toBeGreaterThanOrEqual(1)
     expect(
       crumbs[crumbs.length - 1],
       `${path} 的面包屑末项与侧边栏菜单名不一致（应为「${name}」）`,
     ).toBe(name)
 
     cleanup()
+  })
+})
+
+/** `Header.tsx` 的源码（红证用：`ROUTE_BREADCRUMB_MAP` 是模块私有的，无法在运行时注入） */
+const HEADER_SRC = readFileSync(
+  join(__dirname, '../../../src/components/layout/Header.tsx'),
+  'utf8',
+)
+
+/**
+ * 面包屑表覆盖的路径（两种形态都要认，否则解析失灵会把 `/dashboard` 误报成「未覆盖」）：
+ *   · `p.startsWith('/x')` —— 前缀型；
+ *   · `p === '/x'` —— 精确型（`/` 与 `/dashboard` 那条就是这种写法）。
+ */
+function breadcrumbPrefixes(src: string): string[] {
+  return [
+    ...[...src.matchAll(/match:\s*\(p\)\s*=>\s*p\.startsWith\('([^']+)'\)/g)].map((m) => m[1]),
+    ...[...src.matchAll(/p === '([^']+)'/g)].map((m) => m[1]),
+  ]
+}
+
+/** 检出面里**没有被任何前缀覆盖**的路径（空 = 全覆盖） */
+function uncoveredPages(pages: Page[], prefixes: string[]): string[] {
+  return pages
+    .filter((p) => !prefixes.some((pre) => p.path === pre || p.path.startsWith(pre + '/')))
+    .map((p) => p.path)
+}
+
+describe('红证：把一条面包屑从匹配表里摘掉 ⇒ 覆盖判据必须红（#5877）', () => {
+  it('真源码：检出面**全部**被匹配表覆盖（正面读数，与上面的渲染判据同源）', () => {
+    expect(uncoveredPages(PAGES, breadcrumbPrefixes(HEADER_SRC))).toEqual([])
+    // 反恒真：前缀确实被解析出来了（解析失灵 ⇒ 上面那条会「空集上恒真」）
+    expect(breadcrumbPrefixes(HEADER_SRC).length).toBeGreaterThanOrEqual(15)
+  })
+
+  it('🔴 注入：把 `/products` 那条从匹配表摘掉 ⇒ `/products` 必须出现在未覆盖集里', () => {
+    const injected = HEADER_SRC.replace("p.startsWith('/products')", "p.startsWith('/products-disabled')")
+    expect(injected).not.toBe(HEADER_SRC)   // 注入必须生效（锚点失配 ⇒ 本判据当场红，而不是假绿）
+    expect(uncoveredPages(PAGES, breadcrumbPrefixes(injected))).toEqual(['/products'])
   })
 })

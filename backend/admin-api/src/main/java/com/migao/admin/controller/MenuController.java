@@ -66,8 +66,11 @@ public class MenuController {
         // issue #5246（已合入 main）：知识库节点码 = **读**码 `knowledge:view`（原 `knowledge:manage`）——
         // #5271 重排本树时必须保留该码（漏带 = 静默回退别人刚修的授权口径）。
         MenuNode cs2 = new MenuNode("knowledge:view", "知识库");
-        // 商品管理（本轮 2026-09-29 用户裁定）：节点名由「商品列表」改为**「商品管理」**，
-        // 并**升为顶层一级节点**（见下方 `List.of(...)` 的第一项）—— 码不变（`product:list`）。
+        // 商品管理（2026-09-29 用户裁定）：节点名由「商品列表」改为**「商品管理」**，
+        // 并**升为顶层一级节点**（位置 = 下方 `List.of(...)` 里**「工作台」组之后**的那个顶层节点，
+        // 用户 2026-10-01 二次裁定「商品管理的菜单不应该作为第一行」）—— 码不变（`product:list`）。
+        // 🔴 位置在**三处同批表达**：本树的顶层节点顺序 / 前端 `menu.ts` 的
+        // `STANDALONE_TOP_AFTER_GROUP_KEY` / `AuthService` 顶层 `menus.add` 的文档位置。
         // ⚠️ 本节点**不再属于任何组**：原 `product-center`「商品与加工项」组已撤销
         // （加工项管理移入生产管理组、商品列表升为一级项 ⇒ 组内已空）。
         // 🔴 两个动作码节点（`p2` / `p3`）**仍保留**（它们不是菜单项，是权限目录里的动作码），
@@ -79,7 +82,7 @@ public class MenuController {
         // 🔴 本轮**删除**了两个动作码节点声明（原 `p2` = `product:create`「新增商品」、
         // `p3` = `product:category`「商品分类管理」）：它们原挂在已撤销的 `product-center` 组下，
         // 组撤销后**不属于任何位置**（既不是组内动作、也不是一级项）⇒ 留着就是**死声明**
-        //（`_parse_controller_top_items` 会把它们读成「未声明的顶层一级项」而判红）。
+        //（`_parse_controller_layout` 会把它们读成「顶层未登记节点」而判红）。
         // = 删的是**权限树上的两个勾选项**，**不是权限码**：`product:create` / `product:category`
         // 仍在权限目录里、仍可被角色授予（判据：`test_rbac_derived_pages.py` 的 `ACTION_NODE_CODES`
         // 台账同批删除这两条，见该文件的「只许缩短」口径）。
@@ -125,11 +128,12 @@ public class MenuController {
 
         return List.of(
             new MenuNode("workspace", "工作台", List.of(d1, d2)),
-            // 商品管理（本轮 2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：
-            // 它与 **menu.ts 的 `standaloneTopItems`** 对应 —— 前端把它渲染在**分组之前**的一级项，
+            // 商品管理（2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：
+            // 它与 **menu.ts 的 `standaloneTopItems`** 对应 —— 前端把它渲染成 `menu.ts` 的
+            // `STANDALONE_TOP_AFTER_GROUP_KEY` 那个组**之后**的一级项（用户 2026-10-01 裁定），
             // 本树同样把它放成**顶层节点**（不是组）。⚠️ 位置 = **紧跟在「工作台」组之后**，
-            // 与前端渲染顺序一致（判据取「导航型节点**名**的组归属 + 组层」两段，
-            // 顶层一级项不在任何组内 ⇒ 必须与「组」分开表达）。
+            // 与前端渲染顺序、`AuthService` 的 add 顺序**逐项一致**
+            //（判据 = 三源同构守卫的**顶层布局序列**比对，含位置）。
             new MenuNode("product:list", "商品管理"),
             // 客户服务（本轮新建）：原「智能客服」组 + 客户侧两项（客户列表 / 售后工单）合并。
             // 🔴 **组内顺序 = `menu.ts` 的 `customer-service` 组顺序**（在线接待 / 客户列表 / 知识库 /

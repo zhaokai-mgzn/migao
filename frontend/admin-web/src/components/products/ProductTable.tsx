@@ -115,23 +115,11 @@ export default function ProductTable({
         />
       ),
     },
-    {
-      key: 'id',
-      title: '商品ID',
-      width: '100px',
-      render: (record) => {
-        const id = record.id || ''
-        const shortId = id.length > 8 ? `${id.slice(0, 8)}...` : id
-        return (
-          <span
-            className="text-neutral-700 font-mono text-sm"
-            title={id}
-          >
-            {shortId}
-          </span>
-        )
-      },
-    },
+    // 🔴 #5877（用户 2026-10-01 裁定「列表中的商品ID移除，不要展示在列表」）：
+    // 「商品ID」列**整列删除**（表头 + 行内 `<td>` 由 `Table` 按 `columns` 渲染 ⇒ 一并消失）。
+    // ⚠️ 列数由 11 → 10：`Table` 的加载态/空态 `colSpan={columns.length}` 是**动态**的 ⇒ 自动跟上
+    //（判据 = ProductTable.test.tsx 的「列数 = 10 + colSpan = 10」）。
+    // ⚠️ 搜索区里的「商品ID」**筛选项保留**（用户只要求列表不展示）。
     {
       key: 'name',
       title: '商品标题',

@@ -26,10 +26,17 @@ import {
   resolveActiveGroupKey,
   initialExpandedGroups,
   flattenMenu,
+  splitGroupsAtTopItemSlot,
   searchMenu,
   type MenuFilterOptions,
 } from '@/lib/menu-nav'
-import { menuGroups, standaloneTopItems, standaloneItems, type MenuItem } from '@/config/menu'
+import {
+  menuGroups,
+  standaloneTopItems,
+  standaloneItems,
+  STANDALONE_TOP_AFTER_GROUP_KEY,
+  type MenuItem,
+} from '@/config/menu'
 
 /** 新 IA（issue #5778）：**6 组 / 19 个组内项 + 1 个顶部一级项 + 1 个尾部独立项 = 21 项** */
 const EXPECTED_GROUPS: { key: string; name: string; keys: string[] }[] = [
@@ -52,13 +59,20 @@ const EXPECTED_GROUPS: { key: string; name: string; keys: string[] }[] = [
   },
   { key: 'org-center', name: '组织管理', keys: ['employees', 'roles', 'settings'] },
 ]
-/** 顶部一级项（渲染在**分组之前**）：#5778 起「商品管理」不再占一个单成员组 */
+/**
+ * 一级项（**不占组**）：#5778 起「商品管理」不再占一个单成员组；
+ * #5877（用户 2026-10-01 裁定）起渲染在 `STANDALONE_TOP_AFTER_GROUP_KEY` 那个**组之后**
+ * （该组不可见时回落到所有分组之前 —— 见 `splitGroupsAtTopItemSlot` 的专条判据）。
+ */
 const EXPECTED_STANDALONE_TOP = ['products']
 const EXPECTED_STANDALONE = ['notifications']
-/** 渲染顺序：顶部一级项 → 分组项 → 尾部独立项（== `flattenMenu` 的顺序） */
+/** 一级项的**插入位**（本表是独立写死的期望值，不是从实现反推的） */
+const SLOT_KEY = STANDALONE_TOP_AFTER_GROUP_KEY
+/** 渲染顺序：head 组（含 slot 组）→ 一级项 → tail 组 → 尾部独立项（== `flattenMenu` 的顺序） */
 const ALL_KEYS = [
+  ...EXPECTED_GROUPS.filter((g) => g.key === SLOT_KEY).flatMap((g) => g.keys),
   ...EXPECTED_STANDALONE_TOP,
-  ...EXPECTED_GROUPS.flatMap((g) => g.keys),
+  ...EXPECTED_GROUPS.filter((g) => g.key !== SLOT_KEY).flatMap((g) => g.keys),
   ...EXPECTED_STANDALONE,
 ]
 
@@ -103,7 +117,10 @@ describe('新 IA 事实（issue #5778：6 组 + 一级项 + 独立项 = 21 项�
     expect(visibleKeys(ADMIN)).toEqual(ALL_KEYS)
   })
 
-  it('顶部一级项 =「商品管理」（渲染在分组**之前**，不计入任何组）；尾部独立项仍是「通知中心」', () => {
+  it('一级项 =「商品管理」（#5877：渲染在「工作台」组之后、不计入任何组）；尾部独立项仍是「通知中心」', () => {
+    // 🔴 席位本身是**用户裁定**（2026-10-01）⇒ 写死在期望表里，改常量即红
+    expect(STANDALONE_TOP_AFTER_GROUP_KEY).toBe('workspace')
+    expect(EXPECTED_GROUPS.map((g) => g.key)).toContain(STANDALONE_TOP_AFTER_GROUP_KEY)
     expect(standaloneTopItems.map((i) => i.key)).toEqual(EXPECTED_STANDALONE_TOP)
     expect(standaloneTopItems.map((i) => i.name)).toEqual(['商品管理'])
     expect(standaloneTopItems.map((i) => i.path)).toEqual(['/products'])
@@ -116,12 +133,17 @@ describe('新 IA 事实（issue #5778：6 组 + 一级项 + 独立项 = 21 项�
     expect(menuGroups.map((g) => g.key)).not.toContain('pinned')
   })
 
-  it('flattenMenu 顺序 = 顶部一级项 → 分组 → 尾部独立项（与侧边栏渲染顺序同源）', () => {
+  it('flattenMenu 顺序 = head 组 → 一级项 → tail 组 → 尾部独立项（与侧边栏渲染顺序同源）', () => {
     const flat = allItems().map((i) => i.key)
-    expect(flat[0]).toBe('products')
+    // #5877：一级项**不再**在最前 —— 它排在「工作台」组之后、「客户服务」组之前
+    expect(flat[0]).toBe('dashboard')
+    expect(flat.indexOf('products')).toBeGreaterThan(flat.indexOf('briefing'))
+    expect(flat.indexOf('products')).toBeLessThan(flat.indexOf('human-sessions'))
     expect(flat[flat.length - 1]).toBe('notifications')
-    // 一级项与独立项都不带组标签；分组项带
-    expect(allItems()[0].groupName).toBe('')
+    // 一级项与尾部独立项都不带组标签；分组项带
+    // ⚠️ #5877：`allItems()[0]` 现在是「工作台」组的**组内项**（一级项已不再排在最前）
+    expect(allItems()[0].groupName).toBe('工作台')
+    expect(allItems().find((i) => i.key === 'products')!.groupName).toBe('')
     expect(allItems()[allItems().length - 1].groupName).toBe('')
     expect(allItems().find((i) => i.key === 'orders')!.groupName).toBe('交易管理')
   })
@@ -352,18 +374,73 @@ describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前�
   })
 })
 
-describe('flattenMenu：顶部一级项 → 分组项 → 尾部独立项（命令面板的索引面）', () => {
+describe('flattenMenu：head 组 → 一级项 → tail 组 → 尾部独立项（命令面板的索引面）', () => {
   const flat = flattenMenu(menuGroups, standaloneTopItems, standaloneItems)
 
   it('顺序 = 21 项全部，且与组结构逐项对齐', () => {
     expect(flat.map((i) => i.key)).toEqual(ALL_KEYS)
     expect(flat).toHaveLength(21)
     const expected = EXPECTED_GROUPS.flatMap((g) => g.keys.map((k) => ({ key: k, groupKey: g.key, groupName: g.name })))
+    // #5877：一级项插在「工作台」组（head）与其余组（tail）之间；不属于任何组 ⇒ 组标签为空
+    const headLen = EXPECTED_GROUPS.filter((g) => g.key === SLOT_KEY).flatMap((g) => g.keys).length
     expect(flat.map((i) => ({ key: i.key, groupKey: i.groupKey, groupName: i.groupName }))).toEqual([
-      // #5778：顶部一级项在最前（不属于任何组 ⇒ 组标签为空）
+      ...expected.slice(0, headLen),
       { key: 'products', groupKey: '', groupName: '' },
-      ...expected,
+      ...expected.slice(headLen),
       { key: 'notifications', groupKey: '', groupName: '' },
+    ])
+  })
+})
+
+describe('splitGroupsAtTopItemSlot：一级项的插入位（#5877）', () => {
+  it('slot 组在可见分组里 ⇒ head 含 slot 组（含）及其之前，tail 为其余组', () => {
+    const { head, tail } = splitGroupsAtTopItemSlot(menuGroups, 'workspace')
+    expect(head.map((g) => g.key)).toEqual(['workspace'])
+    expect(tail.map((g) => g.key)).toEqual(
+      EXPECTED_GROUPS.filter((g) => g.key !== 'workspace').map((g) => g.key),
+    )
+    // 两段拼起来恰好是全量（无重复、无丢失）
+    expect([...head, ...tail].map((g) => g.key)).toEqual(EXPECTED_GROUPS.map((g) => g.key))
+  })
+
+  it('slot 取中间组 ⇒ head 含它及之前的所有组（不是「只含它一个」）', () => {
+    const { head, tail } = splitGroupsAtTopItemSlot(menuGroups, 'trade-center')
+    expect(head.map((g) => g.key)).toEqual(['workspace', 'customer-service', 'trade-center'])
+    expect(tail.map((g) => g.key)).toEqual(['production-center', 'inventory-center', 'org-center'])
+  })
+
+  it('🔴 slot 组**不在可见分组里**（权限过滤掉）⇒ head 为空、tail 全量 = 回落到「所有分组之前」', () => {
+    // 这是硬要求：一级项**绝不允许跟着 slot 组一起消失**（最坏退回旧位置，也不能没有入口）
+    const visible = visibleMenuGroups(menuGroups, { permissions: ['order:list'], roles: [] })
+    expect(visible.map((g) => g.key)).toEqual(['trade-center'])   // 反恒真：slot 组确实被滤掉了
+    const { head, tail } = splitGroupsAtTopItemSlot(visible, 'workspace')
+    expect(head).toEqual([])
+    expect(tail.map((g) => g.key)).toEqual(['trade-center'])
+  })
+
+  it('slotKey 为 null（缺省/未配置）⇒ 同上：head 为空、tail 全量', () => {
+    const { head, tail } = splitGroupsAtTopItemSlot(menuGroups, null)
+    expect(head).toEqual([])
+    expect(tail.map((g) => g.key)).toEqual(EXPECTED_GROUPS.map((g) => g.key))
+  })
+
+  it('空输入 ⇒ 两段都是空表（不抛错、不凭空造组）', () => {
+    expect(splitGroupsAtTopItemSlot([], 'workspace')).toEqual({ head: [], tail: [] })
+  })
+
+  it('纯函数：不修改输入数组（tail 是切片，不是原数组）', () => {
+    const before = menuGroups.map((g) => g.key)
+    const { tail } = splitGroupsAtTopItemSlot(menuGroups, 'workspace')
+    expect(menuGroups.map((g) => g.key)).toEqual(before)
+    expect(tail).not.toBe(menuGroups)
+  })
+
+  it('🔴 回落口径与 flattenMenu 同源：slot 组不可见时，一级项仍渲染在**所有分组之前**（而不是消失）', () => {
+    // 本权限集可见的组 = 交易管理（order:list）+ 仓储与物料（省料看板要 product:list）
+    const groups = visibleMenuGroups(menuGroups, { permissions: ['order:list', 'product:list'], roles: [] })
+    expect(groups.map((g) => g.key)).toEqual(['trade-center', 'inventory-center'])
+    expect(flattenMenu(groups, standaloneTopItems, standaloneItems).map((i) => i.key)).toEqual([
+      'products', 'orders', 'production-saving-board', 'notifications',
     ])
   })
 })

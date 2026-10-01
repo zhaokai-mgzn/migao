@@ -572,12 +572,13 @@ class AuthServiceTest {
     void currentUserMenusMirrorFrontendIaForAllPermissions() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("*");
 
-        // #5778：顶层第一项 = **一级项**「商品管理」（不属于任何组，与前端 `standaloneTopItems` 同构）
+        // 🔴 #5877（用户 2026-10-01 裁定「商品管理的菜单不应该作为第一行」）：
+        // 顶层下发顺序 = 工作台组 → 一级项「商品管理」 → 客户服务组 …（与前端渲染顺序逐项一致）
         assertThat(keysOf(menus)).containsExactly(
-                "products", "workspace", "customer-service", "trade-center",
+                "workspace", "products", "customer-service", "trade-center",
                 "production-center", "inventory-center", "org-center", "notifications");
         assertThat(namesOf(menus)).containsExactly(
-                "商品管理", "工作台", "客户服务", "交易管理",
+                "工作台", "商品管理", "客户服务", "交易管理",
                 "生产管理", "仓储与物料", "组织管理", "通知中心");
 
         // 工作台（#5271 由「独立项」改为组）

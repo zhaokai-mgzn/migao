@@ -332,9 +332,9 @@
       "新增员工": "employee:create"
     },
     "auth": {
-      "商品管理": "product:list",
       "经营看板": "dashboard:view",
       "每日简报": "dashboard:view",
+      "商品管理": "product:list",
       "在线接待": "agent:session",
       "客户列表": "customer:view",
       "知识库": "knowledge:view",

@@ -92,6 +92,8 @@ const productGroup = () => menuGroups.find((g) => g.key === 'product-center')
 // ────────────────────────── ① 菜单结构（侧边栏 IA） ──────────────────────────
 
 describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**组；`product-center` 组撤销、商品列表升为一级项）', () => {
+  // ⚠️ #5877：该一级项现名**「商品管理」**，且渲染在**「工作台」组之后**（原为所有分组之前）——
+  // 本文件的判据只看**归属**（它不在任何组里），故不需改断言；此处更正表述以免与新位置自相矛盾。
   it('加工项管理由「生产管理」组承载（位次 = 智能派单之后、工艺配置之前）→ /production/processing', () => {
     const entry = productionGroup()?.children.find((c) => c.key === 'processing')
     expect(entry).toBeDefined()
@@ -99,7 +101,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     expect(entry!.path).toBe('/production/processing')
     // issue #5291：加工项管理 = 生产域**读**码 production:view（写面仍 processing:manage）。
     expect(entry!.permissionCode).toBe('production:view')
-    // #5778：原「商品与加工项」组已撤销（商品列表升为**一级项**）⇒ 该项现属生产管理组
+    // #5778：原「商品与加工项」组已撤销（商品列表升为**一级项**，现名「商品管理」）⇒ 该项现属生产管理组
     expect(productGroup()).toBeUndefined()
     expect(productionGroup()!.children.map((c) => c.key)).toEqual([
       'production-board', 'production-pool', 'processing', 'production-process', 'production-piecework',

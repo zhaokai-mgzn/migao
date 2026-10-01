@@ -68,7 +68,6 @@ export default function ProductsPage() {
   const searchParams = useSearchParams()
 
   // ===== 搜索表单（受控）=====
-  const [productId, setProductId] = useState(searchParams.get('productId') || '')
   const [name, setName] = useState(searchParams.get('name') || '')
   const [skuCode, setSkuCode] = useState(searchParams.get('skuCode') || '')
   const [status, setStatus] = useState<'' | ProductStatus>(
@@ -112,7 +111,6 @@ export default function ProductsPage() {
   const syncUrl = useCallback(
     (overrides: Record<string, string | number | undefined> = {}) => {
       const merged: Record<string, string | number | undefined> = {
-        productId,
         name,
         skuCode,
         status,
@@ -134,7 +132,7 @@ export default function ProductsPage() {
       if (lowStockOnly) url.set('low_stock', 'true')
       router.replace(`/products?${url.toString()}`, { scroll: false })
     },
-    [productId, name, skuCode, status, createdFrom, createdTo, page, pageSize, sortField, sortOrder, lowStockOnly, router]
+    [name, skuCode, status, createdFrom, createdTo, page, pageSize, sortField, sortOrder, lowStockOnly, router]
   )
 
   // ===== 防抖 syncUrl：输入框 onChange 用 300ms debounce 避免每次按键都请求 (#660) =====
@@ -163,7 +161,6 @@ export default function ProductsPage() {
       const res = await productApi.getProducts({
         page,
         size: pageSize,
-        productId: searchParams.get('productId') || undefined,
         name: searchParams.get('name') || undefined,
         skuCode: searchParams.get('skuCode') || undefined,
         status: (searchParams.get('status') as ProductStatus) || undefined,
@@ -196,7 +193,6 @@ export default function ProductsPage() {
   }
 
   const handleReset = () => {
-    setProductId('')
     setName('')
     setSkuCode('')
     setStatus('')
@@ -313,7 +309,6 @@ export default function ProductsPage() {
   const handleExport = async () => {    const toastId = toast.loading('正在导出，请稍候...')
     try {
       const res = await productApi.exportProducts({
-        productId: productId || undefined,
         name: name || undefined,
         skuCode: skuCode || undefined,
         status: (status as ProductStatus) || undefined,
@@ -454,28 +449,22 @@ export default function ProductsPage() {
 
   return (
     <div className="p-6 space-y-4">
-      {/* 页面标题 */}
+      {/* 页面标题（#5877：与侧边栏菜单名 / 顶栏面包屑同名 —— 此前一页三名：侧边栏+顶栏「商品管理」、
+          正文「商品列表」；用户 2026-10-01 裁定「商品管理页面本体也要改」） */}
       <div>
-        <h1 className="text-xl font-semibold text-neutral-900">商品列表</h1>
+        <h1 className="text-xl font-semibold text-neutral-900">商品管理</h1>
       </div>
 
       {/* 搜索区 */}
       <div className="bg-white rounded-lg border border-neutral-200 p-5" data-testid="search-area">
-        {/* 第一行：商品ID / 商品标题 / 商品货号 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-4">
-          <FormField label="商品ID">
-            <input
-              type="text"
-              value={productId}
-              onChange={(e) => {
-                setProductId(e.target.value)
-                debouncedSyncUrl({ productId: e.target.value || undefined, page: 1 })
-              }}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="请输入商品ID"
-              className="w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-            />
-          </FormField>
+        {/* 第一行：商品标题 / 商品货号
+            🔴 #5877（用户 2026-10-01 追加裁定）：**「商品ID」筛选整条移除** —— 不是隐藏。
+            · 连带清理：state / `syncUrl.merged` / `handleExport` 入参 / `loadProducts` 请求参数 /
+              `handleReset` / `syncUrl` 的 useCallback 依赖数组，**一处不留**；
+            · URL 里的 `?productId=` **不再被消费**（已 grep 确认无深链依赖：看板只传 `low_stock`）；
+            · `productApi.getProducts` 的入参类型与后端能力**不动**（只停用前端入口 —— 最少改动）。
+            · 留 2 列（原 3 列）＝ 剩下的两个筛选各占一半，不再是「两格 + 一个空位」。 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
           <FormField label="商品标题">
             <input
               type="text"
@@ -498,7 +487,8 @@ export default function ProductsPage() {
                 debouncedSyncUrl({ skuCode: e.target.value || undefined, page: 1 })
               }}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="请输入商品ID"
+              // #5877：本格是**商品货号**，placeholder 此前是「请输入商品ID」（从上一格复制粘贴的残留）
+              placeholder="请输入商品货号"
               className="w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
           </FormField>
@@ -550,7 +540,10 @@ export default function ProductsPage() {
                 />
               </div>
               <span className="text-neutral-400 text-sm">至</span>
+              {/* #5877：结束格补上与起始格**同款**的日历图标 + `pl-8` —— 此前只有起始格有图标，
+                  左右不对称（同一个「创建时间」区间，两格长得不一样）。 */}
               <div className="relative flex-1">
+                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
                 <input
                   type="date"
                   value={createdTo}
@@ -559,7 +552,7 @@ export default function ProductsPage() {
                     syncUrl({ createdTo: e.target.value || undefined, page: 1 })
                   }}
                   placeholder="结束日期"
-                  className="w-full h-9 pl-3 pr-3 rounded border border-neutral-300 bg-white text-sm text-neutral-700 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  className="w-full h-9 pl-8 pr-3 rounded border border-neutral-300 bg-white text-sm text-neutral-700 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 />
               </div>
             </div>
@@ -580,20 +573,19 @@ export default function ProductsPage() {
       {/* 工具栏 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            disabled={!hasSelection}
-            onClick={() => setBatchAction('off_shelf')}
-          >
-            批量下架
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={!hasSelection}
-            onClick={() => setBatchAction('on_shelf')}
-          >
-            批量上架
-          </Button>
+          {/* #5877：未选中任何行 ⇒ **不渲染**这两枚按钮（改前是两枚常驻 `disabled` 按钮 =
+              纯视觉噪音：既点不动、又占住工具栏最显眼的两个位置）。
+              选中后与下方「已选 N 项」提示一起出现 —— 按钮的可用性不再需要靠 disabled 表达。 */}
+          {hasSelection && (
+            <>
+              <Button variant="secondary" onClick={() => setBatchAction('off_shelf')}>
+                批量下架
+              </Button>
+              <Button variant="secondary" onClick={() => setBatchAction('on_shelf')}>
+                批量上架
+              </Button>
+            </>
+          )}
           <Button variant="secondary" onClick={handleExport}>
             批量导出
           </Button>
