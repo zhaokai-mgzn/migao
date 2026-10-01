@@ -10908,6 +10908,24 @@ _CASE_UI_074 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端页面/版式用例：前置（入库单列表行、商品搜索结果、SKU 明细行）全部由单测自建或打桩（frontend/admin-web/tests/unit/pages/inbound-orders-new.test.tsx 与 frontend/admin-web/tests/unit/pages/inbound-orders.test.tsx mock `@/lib/api`）；后端那一条聚合判据由真 PG 判据自建 schema + 租户 + 单据（backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderListBatchNosRealDbTest.java）—— 不依赖共享夹具与真实服务 ⇒ 前置不成立时判据直接红；agent-eval 栈不跑它',
 )
 
+# ── UI-075 [NORMAL] 订单列表查询区不产生横向溢出：fr 轨道一律 minmax(0,…)，同行控件必须可收缩（源: cases/ui.yml）──
+_CASE_UI_075 = EvalCase(
+    id='UI-075',
+    legacy_id='',
+    title='订单列表查询区不产生横向溢出：fr 轨道一律 minmax(0,…)，同行控件必须可收缩',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-01 报障（附截图）：「是否加工」下拉贴到卡片右边界，同行的「查询 / 重置」按钮被挤出卡片外'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **轨道必须可收缩**：查询区任何 `grid-cols-…` 的 `fr` 轨道都要写成 `minmax(0, …)`。CSS 里 `1fr` = `minmax(auto,1fr)` ⇒ 轨道最小尺寸 = 该格内容的 min-content、**不可收缩**。实测归因（真实 Chrome + 真实 Tailwind 编译产物）：改前第二行 `md:grid-cols-[repeat(4,1fr)_auto]` 各格 min-content = 下单时间 380 / 商品货号 251 / 商品标题 251 / 是否加工 141 + 按钮列 228 + 间隙 96 = **1347px**，而 1440 窗口下卡片内容宽只有 1060 ⇒ 溢出 287px。⚠️ 实测这四条 `1fr` 轨道**并非等宽**（380/251/251/141，各自等于本格 min-content）—— 「四条轨道全被撑到同宽」只是各格最小尺寸恰好相同时的特例，不是本缺陷的机制。执行点 = frontend/admin-web/tests/unit/pages/orders-query-area-overflow.test.tsx 的判据 ①。', '判据 2·**同行控件也要能缩**：查询区表单控件不得同时带 `flex-1` 与固定长度 `min-w-[<N>px|rem|em]`（改前两个日期输入是 `min-w-[130px]`）—— 轨道可缩而控件不可缩时，控件会顶穿所在格、同样溢到卡片外。执行点 = 同文件判据 ②。', '判据 3·**fail-closed**：查询区 grid（≥2 条）与表单控件（≥8 个）必须存在，删光即红 —— 否则判据 ①② 会在空集上假绿。执行点 = 同文件判据 ③。', '判据 4·**像素读数**（真实浏览器复核，读数表见 PR body）：改前在 375/414/768/900/1024/1200/1279/1280/1366/1440/1512 窗口下页面横向溢出 +48/+9/+649/+517/+633/+457/+378/+377/+291/+217/+145px，「查询/重置/刷新」右边界最多出卡片 **719px**；改后 12 个宽度（375~1920）**溢出 0 / 按钮出界 0**。', '判据 5·**注入式红证**（均已实跑）：把第二行改回 `md:grid-cols-[repeat(4,1fr)_auto]` ⇒ 判据 ① 红并打印类名；把第一行改回 `md:grid-cols-[1fr_1fr_1.5fr]` ⇒ 判据 ① 红（同类缺陷的第二处实例：实测 768~1100 窗口下第一行自身溢出 41~173px）；给日期输入加回 `min-w-[130px]` ⇒ 判据 ② 红。'],
+    skip_reason='[backend-contract] 纯前端布局（无 LLM 环节，不进 agent-eval）；jsdom 无布局引擎（`getBoundingClientRect` 恒 0）⇒ 单测钉类名形态，像素读数走真实浏览器',
+    tags=['ui', 'orders', 'layout', 'overflow'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -11525,6 +11543,7 @@ ALL_CASES = (
     _CASE_UI_072,
     _CASE_UI_073,
     _CASE_UI_074,
+    _CASE_UI_075,
     _CASE_UT_001,
     _CASE_UT_002,
 )
