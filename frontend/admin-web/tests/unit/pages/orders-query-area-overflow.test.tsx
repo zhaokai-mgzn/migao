@@ -1,34 +1,37 @@
 // case_ids: UI-075
 //
-// UI-075（issue #5841）：订单列表**查询区**不得出现横向溢出（第二行的「查询/重置/刷新」被挤出卡片）。
+// UI-075：订单列表**查询区**在窄屏既不得**横向溢出**（issue #5841），也不得把控件**压到不可读**（issue #5850）。
 //
 // ## 为什么是「类级形态判据」而不是像素判据
 // jsdom **没有布局引擎** —— `getBoundingClientRect()` 恒返回 0、`scrollWidth` 恒等于 0，
-// 在这里量「溢出多少 px」只会得到一份永远为 0 的假读数（= 空断言）。所以本文件钉的是
-// **产生溢出的那个类名形态**，而像素读数由真实浏览器复核（见 PR body 的读数表）。
+// 在这里量「溢出多少 px / 控件多宽」只会得到一份永远为 0 的假读数（= 空断言）。所以本文件钉的是
+// **产生这两种病的那个类名形态**，像素读数由真实浏览器复核（见 PR body 的读数表）。
 //
-// ## 被钉住的坏形态（实测归因，issue #5841）
-// 查询区第二行用 `grid md:grid-cols-[repeat(4,1fr)_auto]`。CSS 里 `1fr` = `minmax(auto, 1fr)`，
-// **轨道最小尺寸 = 该格内容的 min-content，不可收缩**；实测各格 min-content =
-// 下单时间 380px（label 4.5em + 2×`min-w-[130px]` 日期输入 + 「至」+ 间隙）·商品货号 251px·
-// 商品标题 251px·是否加工 141px·按钮列 228px ⇒ grid 内容合计 **1347px**，
-// 而卡片内容宽只有「视口 - 380」（1440 时 = 1060）⇒ 溢出 287px、按钮被顶出卡片。
-// （注：四条 `1fr` 轨道**并非**等宽 —— 实测 380/251/251/141，各自等于本格 min-content；
-//   等宽只是「各格最小尺寸恰好相同」时的特例，不是本缺陷的机制。）
+// ## 被钉住的两代坏形态（都是实测归因）
+// **A. 溢出（#5841）**：第二行原用 `grid md:grid-cols-[repeat(4,1fr)_auto]`。CSS 里 `1fr` = `minmax(auto,1fr)`，
+// **轨道最小尺寸 = 该格内容的 min-content，不可收缩**；实测各格 min-content = 下单时间 380px
+// （label 4.5em + 2×`min-w-[130px]` 日期输入 + 「至」+ 间隙）·商品货号 251·商品标题 251·是否加工 141
+// + 按钮列 228 ⇒ 内容合计 **1347px** > 卡片内容宽（1440 时 = 1060）⇒ 溢出 287px、按钮被顶出卡片。
+// （注：四条 `1fr` 轨道**并非**等宽 —— 实测 380/251/251/141，各自等于本格 min-content；等宽只是特例。）
 //
-// ⇒ 两条**形态**判据（命中即红）：
-//   ① 查询区任何 `grid-cols-…` 的 `fr` 轨道必须写成 `minmax(0, …)`（可收缩）；
-//      裸 `1fr` / `repeat(n,1fr)` ⇒ 红。
-//   ② 查询区的表单控件（input/select/textarea）不得同时带 `flex-1` 与**固定长度**的
-//      `min-w-[<N>px|rem|em]` ⇒ 红（控件缩不下去，会把所在轨道顶到内容最小宽度，同样溢到卡片外）。
-//      实测先例 = 两个日期输入的 `min-w-[130px]`。
+// **B. 压窄（#5850）**：#5841 把轨道改成可收缩的 `minmax(0,…)` ⇒ 溢出没了，但**改成了压扁** ——
+// 1440 下 4 条轨道只剩 736px：商品货号/商品标题输入框各 **约 73px**（看得到 5 个字）、
+// 下单时间格 276px 要装两个日期框 + 「至」⇒ 每个日期框 **约 80px，只显示得出「2026」**。
+// 而 1440 恰是最常见的笔记本宽度 ⇒ 病根是**「不可换行的单行布局」**这个形态本身：
+// grid 的单行轨道只会把格压小，不会换行；`flex-1` 的格若没有 `min-w-[…]`，也一样会被压到 0。
 //
-// ## 回归时会怎么红（不是空断言：判据 ④ 用小样本反证检测器有效）
-//   · 把第二行类名改回 `md:grid-cols-[repeat(4,1fr)_auto]` ⇒ 判据 ① 红并打印该类名；
-//   · 把第一行改回 `md:grid-cols-[1fr_1fr_1.5fr]` ⇒ 判据 ① 红（**同类缺陷的第二处实例**：
-//     实测 768~1100 视口下第一行自己就溢出 41~173px，doc 级横向滚动条由它贡献）；
-//   · 给任一输入框加回 `min-w-[130px]` ⇒ 判据 ② 红并打印该元素；
-//   · 删光查询区 grid / 控件 ⇒ 判据 ③ 红（fail-closed，避免判据 ①② 在空集上假绿）。
+// ## ⇒ 本文件钉住的四条形态判据（命中即红）
+//   ① **每一行都必须可换行**：查询区的行容器必须带 `flex-wrap`（`grid-cols-*` 的单行布局不可换行 ⇒ 红）；
+//   ② **每个字段格必须有固定 `min-w-[…]`**（`flex-1` 且无最小宽 ⇒ 会被压到 0 ⇒ 红）；
+//   ③ 控件本身不得同时带 `flex-1` 与**固定长度**的 `min-w-[<N>px|rem|em]`（缩不下去、撑爆所在格 ⇒ 红）；
+//   ④ 若查询区**又出现** `grid-cols-…` 行，其 `fr` 轨道必须写成 `minmax(0,…)`（防 A 类回潮）。
+//
+// ## 回归时会怎么红（不是空断言：判据 ⑥ 用小样本反证三个检测器都有效）
+//   · 把任一行改回 `grid grid-cols-1 xl:grid-cols-[…]` ⇒ 判据 ① 红并打印该行类名；
+//   · 去掉某个字段格的 `min-w-[…]` ⇒ 判据 ② 红并打印该格；
+//   · 给任一输入框加回 `min-w-[130px]` ⇒ 判据 ③ 红并打印该元素；
+//   · 把某条轨道写回裸 `1fr` ⇒ 判据 ④ 红；
+//   · 删光查询区的行 / 字段格 / 控件 ⇒ 判据 ⑤ 红（fail-closed，避免 ①②③④ 在空集上假绿）。
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
@@ -55,7 +58,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), loading: v
 
 import OrdersPage from '@/app/(dashboard)/orders/page'
 
-// ── 判据实现（纯函数；判据 ④ 直接喂坏样本，反证「检测器非空转」）──────────────
+// ── 判据实现（纯函数；判据 ⑥ 直接喂坏样本，反证「检测器非空转」）──────────────
 
 /** 把 arbitrary 值里的 track 列表拆开，并把 `repeat(n, X)` 展开成 n 条 `X`。 */
 function expandTracks(value: string): string[] {
@@ -91,7 +94,7 @@ function isNonShrinkableFr(track: string): boolean {
   return /fr$/i.test(t)
 }
 
-/** 判据 ①：`grid-cols-…` 里的不可收缩 `fr` 轨道。 */
+/** 判据 ④：`grid-cols-…` 里的不可收缩 `fr` 轨道（A 类坏形态的检测器）。 */
 export function bareFrTracks(className: string): string[] {
   const bad: string[] = []
   for (const token of String(className ?? '').split(/\s+/)) {
@@ -107,7 +110,24 @@ export function bareFrTracks(className: string): string[] {
   return bad
 }
 
-/** 判据 ②：控件同时带 `flex-1` 与固定长度 `min-w-[…]` ⇒ 缩不下去。 */
+/** 判据 ①：一行容器是否**不可换行**（`grid-cols-…` 单行布局；`flex` 但缺 `flex-wrap` 同样不可换行）。 */
+export function nonWrappingRowProblems(className: string): string[] {
+  const cls = String(className ?? '')
+  const tokens = cls.split(/\s+/)
+  const hasGridCols = tokens.some((t) => /^(?:[a-z0-9-]+:)*grid-cols-/.test(t))
+  const isFlex = tokens.some((t) => /^(?:[a-z0-9-]+:)*flex$/.test(t))
+  const hasWrap = tokens.some((t) => /^(?:[a-z0-9-]+:)*flex-wrap$/.test(t))
+  if (hasGridCols) return [`用了不可换行的 grid 行（grid 的单行轨道只会把格压小，不会换行）`]
+  if (isFlex && !hasWrap) return [`flex 行缺 flex-wrap（窄屏只能压扁，不会换行）`]
+  return []
+}
+
+/** 判据 ②：字段格有没有**固定长度**的 `min-w-[…]`（没有 ⇒ `flex-1` 会把它压到 0）。 */
+export function hasFixedMinWidth(className: string): boolean {
+  return /(?:^|\s)(?:[a-z0-9-]+:)*min-w-\[[0-9.]+(?:px|rem|em)\]/.test(String(className ?? ''))
+}
+
+/** 判据 ③：控件同时带 `flex-1` 与固定长度 `min-w-[…]` ⇒ 缩不下去。 */
 export function fixedMinWidthControls(el: Element): string[] {
   const cls = typeof el.className === 'string' ? el.className : ''
   if (!/(?:^|\s)(?:[a-z0-9-]+:)*flex-1(?:\s|$)/.test(cls)) return []
@@ -122,7 +142,17 @@ function queryArea(): HTMLElement {
   return el as HTMLElement
 }
 
-function queryGrids(): Element[] {
+/** 查询区的每一**行**容器 = 查询区的直接子元素（页面就是两行） */
+function queryRows(): Element[] {
+  return [...queryArea().children]
+}
+
+/** 行里的**字段格** = 该行直接子元素中「含表单控件」的那些（按钮格不含控件 ⇒ 不在此列） */
+function fieldCells(root: Element): Element[] {
+  return [...root.children].filter((el) => el.querySelector('input, select, textarea') !== null)
+}
+
+function rowsWithGrid(): Element[] {
   return [...queryArea().querySelectorAll('[class*="grid-cols-"]')]
 }
 
@@ -130,21 +160,35 @@ function queryControls(): Element[] {
   return [...queryArea().querySelectorAll('input, select, textarea')]
 }
 
-describe('订单列表查询区 · 不产生横向溢出（issue #5841）', () => {
+describe('订单列表查询区 · 窄屏不溢出、也不压窄（issue #5841 / #5850）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetOrders.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
   })
 
-  it('① 查询区每条 grid 的 fr 轨道都可收缩（minmax(0,…)），不得有裸 1fr', async () => {
+  it('① 查询区每一行都必须可换行（flex-wrap），不得用不可换行的单行 grid', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
 
-    const bad = queryGrids().flatMap((g) => bareFrTracks(g.className))
-    expect(bad).toEqual([]) // 命中即红：打印出具体类名，可直接定位到那一行
+    const bad = queryRows().flatMap((row) =>
+      nonWrappingRowProblems(row.className).map((why) => `${why} —— class="${row.className}"`)
+    )
+    expect(bad).toEqual([])
   })
 
-  it('② 查询区表单控件不得同时带 flex-1 与固定 min-w-[…]（缩不下去 = 撑爆轨道）', async () => {
+  it('② 每个字段格必须有固定 min-w-[…]（否则 flex-1 会把它压到不可读 / 压到 0）', async () => {
+    render(<OrdersPage />)
+    await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+
+    const cells = queryRows().flatMap((row) => fieldCells(row))
+    expect(cells.length).toBeGreaterThanOrEqual(6) // fail-closed：字段格找不到 ⇒ 判据会在空集上假绿
+    const bad = cells
+      .filter((el) => !hasFixedMinWidth(el.className))
+      .map((el) => `字段格 ${el.className || '(无类名)'} 缺 min-w-[…]`)
+    expect(bad).toEqual([])
+  })
+
+  it('③ 查询区表单控件不得同时带 flex-1 与固定 min-w-[…]（缩不下去 = 撑爆所在格）', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
 
@@ -154,37 +198,46 @@ describe('订单列表查询区 · 不产生横向溢出（issue #5841）', () =
     expect(bad).toEqual([])
   })
 
-  it('③ fail-closed：查询区 grid / 控件确实存在（删光即红，防止 ①② 在空集上假绿）', async () => {
+  it('④ 防 A 类回潮：查询区若又出现 grid 行，其 fr 轨道必须是 minmax(0,…)', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
 
-    expect(queryGrids().length).toBeGreaterThanOrEqual(2)
+    const bad = rowsWithGrid().flatMap((g) => bareFrTracks(g.className))
+    expect(bad).toEqual([])
+  })
+
+  it('⑤ fail-closed：行 / 字段格 / 控件确实存在（删光即红，防止 ①~④ 在空集上假绿）', async () => {
+    render(<OrdersPage />)
+    await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+
+    expect(queryRows().length).toBeGreaterThanOrEqual(2) // 第一行 3 格 + 第二行 4 格 + 按钮格
+    expect(queryRows().flatMap((r) => fieldCells(r)).length).toBeGreaterThanOrEqual(6)
     // 查询区应有 8 个控件：订单ID / 收货人 / 制单人 / 起止日期 ×2 / 商品货号 / 商品标题 / 是否加工
     expect(queryControls().length).toBeGreaterThanOrEqual(8)
   })
 
-  it('④ 反空跑：检测器对坏形态必报、对好形态不报（否则 ①② 是空断言）', () => {
-    // 坏形态 = 本次缺陷的两处实例（改前 HEAD 逐字）
+  it('⑥ 反空跑：三个检测器对坏形态必报、对好形态不报（否则 ①②③④ 是空断言）', () => {
+    // ── 坏形态（两代缺陷的真实类名）──
+    expect(nonWrappingRowProblems(
+      'grid grid-cols-1 xl:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_auto] gap-x-6'
+    )).toHaveLength(1)
+    expect(nonWrappingRowProblems('flex items-center gap-x-6')).toHaveLength(1) // 缺 flex-wrap
+    expect(hasFixedMinWidth('flex items-center gap-2 flex-1')).toBe(false)
+    expect(hasFixedMinWidth('flex items-center gap-2 flex-1 min-w-[180px]')).toBe(true)
     expect(bareFrTracks('grid grid-cols-1 md:grid-cols-[repeat(4,1fr)_auto] gap-x-6')).toHaveLength(4)
     expect(bareFrTracks('grid grid-cols-1 md:grid-cols-[1fr_1fr_1.5fr] gap-x-6')).toHaveLength(3)
-    expect(bareFrTracks('grid grid-cols-1 md:grid-cols-[minmax(auto,1fr)_auto]')).toHaveLength(1)
-    // 好形态 = 本次修法（不报）
-    expect(bareFrTracks('grid grid-cols-1 xl:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]')).toEqual([])
-    expect(bareFrTracks('grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)]')).toEqual([])
-    // `grid-cols-1` = repeat(1, minmax(0,1fr)) ⇒ 不报；非 grid 类名也不报
-    expect(bareFrTracks('grid grid-cols-1 gap-4')).toEqual([])
-    expect(bareFrTracks('flex flex-1 min-w-[130px]')).toEqual([])
+
+    // ── 好形态（本次修法）──
+    expect(nonWrappingRowProblems('flex flex-wrap items-center gap-x-6 gap-y-4')).toEqual([])
+    expect(bareFrTracks('grid grid-cols-1 xl:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_auto]')).toEqual([])
+    expect(bareFrTracks('grid grid-cols-1 gap-4')).toEqual([]) // grid-cols-1 = minmax(0,1fr)
+    expect(bareFrTracks('flex flex-1 min-w-[130px]')).toEqual([]) // 非 grid 类名不报
 
     const badInput = document.createElement('input')
     badInput.className = 'flex-1 min-w-[130px] h-9 border'
-    expect(fixedMinWidthProblems(badInput)).toEqual(['min-w-[130px]'])
+    expect(fixedMinWidthControls(badInput)).toEqual(['min-w-[130px]'])
     const goodInput = document.createElement('input')
     goodInput.className = 'flex-1 min-w-0 h-9 border'
-    expect(fixedMinWidthProblems(goodInput)).toEqual([])
+    expect(fixedMinWidthControls(goodInput)).toEqual([])
   })
 })
-
-/** 判据 ④ 用的别名（与 `fixedMinWidthControls` 同一实现，避免两套判定）。 */
-function fixedMinWidthProblems(el: Element): string[] {
-  return fixedMinWidthControls(el)
-}

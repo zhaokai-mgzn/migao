@@ -415,11 +415,15 @@ export default function OrdersPage() {
 
       {/* 查询区域 */}
       <div className="bg-white rounded-lg border border-neutral-200 p-5" data-testid="search-area">
-        {/* 查询区第一行：`1fr` = `minmax(auto,1fr)`（轨道最小尺寸 = 内容最小宽度，不可收缩）
-            ⇒ 一律写成 `minmax(0,…)`，行内放得下时逐像素等价、放不下时收缩而不是溢到卡片外（issue #5841） */}
-        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)] gap-x-6 gap-y-4 mb-4">
+        {/* 🔴 2026-10-01（issue #5850）：**不可换行的单行 grid ⇒ `flex-wrap`**。
+            改前是 `minmax(0,…)` 的 grid（#5841 修的溢出）—— 溢出没了，但窄屏只能把格**压扁**：
+            1440 下第二行 4 条轨道只剩 736px ⇒ 货号/标题输入框各 **约 73px**（看得到 5 个字）、
+            下单时间格 276px 要装两个日期框 + 「至」⇒ 每个日期框 **约 80px，只显示得出「2026」**。
+            `flex-wrap` + 每格 `min-w-[…]` 的语义才是对的：**放得下就一行、放不下就换行**，
+            永不把控件压到不可读。宽度足够（≥1536）时与改前逐像素同类（仍是一行）。 */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-4 mb-4">
           {/* 订单ID */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-[200px]">
             <FieldLabel>订单ID</FieldLabel>
             <FieldInput
               placeholder="请输入订单ID"
@@ -429,7 +433,7 @@ export default function OrdersPage() {
             />
           </div>
           {/* 收货人 */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-[220px]">
             <FieldLabel>收货人</FieldLabel>
             <FieldInput
               placeholder="请输入收货人姓名或手机号"
@@ -439,7 +443,7 @@ export default function OrdersPage() {
             />
           </div>
           {/* 制单人（issue #5835）：文本框模糊匹配（与同区其它输入一致，回车即搜） */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-[200px]">
             <FieldLabel>制单人</FieldLabel>
             <FieldInput
               placeholder="请输入制单人姓名"
@@ -450,15 +454,15 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* 查询区第二行（issue #5841）：改前 `md:grid-cols-[repeat(4,1fr)_auto]` —— 四条 `1fr` 轨道
-            的最小尺寸 = 各格 min-content（实测 380/251/251/141 + 按钮 228 + 间隙 = 1347px），
-            而卡片内容宽只有「视口 − 380」⇒ 1440 视口下溢出 287px、「查询/重置/刷新」被挤出卡片。
-            修法：① 轨道写成 `minmax(0,…)`（可收缩）② 日期输入去掉 `min-w-[130px]`（控件也要能缩）。
-            断点取 `xl`（1280）而不是 `md`（768）：768~1279 的可用宽度（1024 视口 = 644px）物理上
-            装不下 4 个筛选 + 3 个按钮（最小 680px），`md` 时实测被压到 26px/格。 */}
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-x-6 gap-y-4 items-center">
+        {/* 查询区第二行（issue #5841 修溢出 ⇒ issue #5850 修「压窄」）：
+            #5841 把 `repeat(4,1fr)` 换成 `minmax(0,…)`，**溢出**没了但窄屏改成**压扁** ——
+            1440 视口下 4 条轨道只剩 736px（商品货号/标题各 ~73px、两个日期框各 ~80px）。
+            ⇒ 本行同样改 `flex-wrap` + 每格 `min-w-[…]`：1280~1512 自动**换行**（两行）而不是压扁，
+            ≥1536 仍是一行。日期格给足 `min-w-[300px]` + `flex-[1.5]`（两个日期框 + 「至」比别的格更需要宽度）；
+            四个筛选格的最小宽之和 > 1440 下的可用宽 ⇒ 自动换行，而不是把每格压到 74px。 */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
           {/* 下单时间 */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-[1.5] min-w-[300px]">
             <FieldLabel>下单时间</FieldLabel>
             <input
               type="date"
@@ -477,7 +481,7 @@ export default function OrdersPage() {
             />
           </div>
           {/* 商品货号 */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-[240px]">
             <FieldLabel>商品货号</FieldLabel>
             <FieldInput
               placeholder="请输入商品货号"
@@ -487,7 +491,7 @@ export default function OrdersPage() {
             />
           </div>
           {/* 商品标题 */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-[240px]">
             <FieldLabel>商品标题</FieldLabel>
             <FieldInput
               placeholder="请输入商品标题"
@@ -497,7 +501,7 @@ export default function OrdersPage() {
             />
           </div>
           {/* 是否加工 */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-[180px]">
             <FieldLabel>是否加工</FieldLabel>
             <select
               value={hasProcessing}
@@ -509,8 +513,8 @@ export default function OrdersPage() {
               <option value="false">否</option>
             </select>
           </div>
-          {/* 按钮 */}
-          <div className="flex items-center gap-2 justify-end">
+          {/* 按钮：`shrink-0`（不被压）+ `ml-auto`（换行后仍靠右） */}
+          <div className="flex items-center gap-2 justify-end shrink-0 ml-auto">
             <button
               type="button"
               onClick={handleSearch}
