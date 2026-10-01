@@ -45,7 +45,42 @@ PREFIX_TO_WORKFLOW = {
     "[Xiaobu]": "xiaobu-acceptance.yml",
     #: ⚠️ 这一条是**窗口驱动**的腿（见 READING_REQUIRED_WORKFLOWS）：它的绿可能是"零动作/短路径"的绿
     "[post-merge]": "post-merge-verify.yml",
+    #: 🔴 以下三条是 **2026-10-01 补的**（issue #5814 收口复核：它们**会自动开单却从未登记** ⇒ 腿转绿后
+    #: 报告**永远挂着**；实测 #5866 —— main 侧生成物新鲜度腿自 05:45Z 起连续 success，而该单仍 open，
+    #: 本脚本每轮只打印「前缀未登记」）。登记表是手工维护的，漏登记**不会红** ⇒ 类级元守卫 =
+    #: `unregistered_issue_opening_legs()`，判据 = tests/unit_ci_workflows/test_stale_report_reaper.py。
+    "[main-freshness]": "main-freshness-guard.yml",
+    #: ⚠️ 读数口径与 `[post-merge]` **不同字面量**（`真跑 N 条`）⇒ 同批进了 READING_REQUIRED_WORKFLOWS
+    "[red-proof]": "redproof-sweep.yml",
+    #: ⚠️ 这条腿的开单载体是 `actions/github-script` 的 `issues.create(`（不是 `gh issue create`）
+    "[Fixture]": "fixture-record.yml",
+    #: 🔴 **一个根前缀、两条腿**（`[Agent Eval]` 下有冒烟 / 对抗两条）⇒ 必须登记**更具体的子前缀**：
+    #: 映射到任一条都可能拿另一条的绿去关单（假关）。前缀匹配是 `startswith` + **表序**，
+    #: 故这里逐字取标题里两条腿各自的措辞；`[Agent Eval]` 这个根前缀**故意不登记**
+    #: （登记了就会把两条腿一起吞掉）—— 影子前缀由 `shadowed_prefixes()` 守着。
+    "[Agent Eval] 米宝冒烟评测失败": "agent-eval.yml",
+    "[Agent Eval] 米宝对抗评测失败": "agent-eval-adversarial.yml",
+    "[E2E Real]": "e2e-real.yml",
+    #: ⚠️ 边界（照实登记）：`[Agent Eval]×2` / `[E2E Real]` / `[Fixture]` 这四条腿的**读数口径未取证**
+    #: （2026-10-01 现取：近期连一次 success run 都没有 ⇒ 采不到「跑判据 N」这类样本）
+    #: ⇒ **未**纳入 READING_REQUIRED_WORKFLOWS，只按结论判；取证到样本后升格。
+    #: 今天是 inert 的（`judge()` 会以「已完成 run < 3」判无法判定），故此刻不构成假关风险。
 }
+
+#: 会自动开单、但**有意不回收**的腿：前缀 → (workflow, 理由)。
+#: 与 `PREFIX_TO_WORKFLOW` 的分界是**语义**、不是懒得登记：那边的腿，其自身 run 的绿**就是**「它报的那件事
+#: 已恢复」的证据；而**看门人型**的腿报的是**别人**不出声 ⇒ 拿它自己的绿自动关单 = 把活故障当陈旧报告关掉。
+NON_REAPABLE_PREFIXES: dict[str, tuple[str, str]] = {
+    "[liveness]": (
+        "mechanism-liveness.yml",
+        "看门人型：报的是**别的**机制不再出声 ⇒ 本腿自己的绿**不是**「被报机制已恢复」的证据"
+        "（恢复信号来自被报机制自己的心跳读数，由该单的值班流程人判）⇒ 自动关单会把活故障当陈旧报告关掉",
+    ),
+}
+
+#: 「会自动开单」的**现取**形态（两种载体：shell 的 `gh issue create` / github-script 的 `issues.create(`）。
+#: ⚠️ `issues.createComment(` **不算**（只评论不建单）—— 故一律带括号字面量区隔，不用宽泛子串。
+ISSUE_OPENING_PATTERNS = ("gh issue create", "issues.create(")
 #: 人工"钉住"的标签：带了就永不自动关
 PIN_LABELS = ("block/need-human", "ai-draft", "hold/auto-fail")
 
@@ -82,7 +117,8 @@ def _parse(ts: str | None) -> datetime | None:
 
 
 #: **只在"窗口驱动"的腿上**要求的更强判据（见 `run_has_readings`）
-READING_REQUIRED_WORKFLOWS = frozenset({"post-merge-verify.yml"})
+READING_REQUIRED_WORKFLOWS = frozenset({"post-merge-verify.yml", "redproof-sweep.yml",
+                                        "main-freshness-guard.yml"})
 
 #: 允许被**自动关单**的作者（CI / 机器人）。**人写的单永不自动关**，哪怕标题前缀对得上。
 BOT_AUTHORS = frozenset({"app/github-actions", "github-actions[bot]"})
@@ -111,10 +147,33 @@ def run_has_readings(run_id: int) -> bool | None:
     proc = _run([gh_bin(), "run", "view", str(run_id), "--log"], timeout=180)
     if proc.returncode != 0:
         return None
-    hits = re.findall(r"跑判据\s*(\d+)", proc.stdout or "")
-    if not hits:
-        return None                     # 没有读数行 ⇒ **不得当"判过"**（fail-closed）
-    return any(int(x) > 0 for x in hits)
+    hits = re.findall(r"(?:跑判据|真跑)\s*(\d+)", proc.stdout or "")   # 两种腿的读数**字面量不同**
+    if hits:
+        return any(int(x) > 0 for x in hits)
+    # ③ **共享发射器**读数（全仓唯一发射器 `.github/scripts/mechanism_liveness.sh`）：
+    #    `::notice::MECHANISM-LIVENESS mech=<id> run=<id> rc=<0|1|3> seen=<n> acted=<n> why=…`
+    #    `seen>0` = 本轮**真的看了东西**（如 main-freshness-guard 的 seen=2 = 比对了 2 个产物）；
+    #    `seen=0` ⇒ 零动作 ⇒ **不得**当"判过了"。
+    seen = re.findall(r"MECHANISM-LIVENESS\b[^\n]*?\bseen=(\d+)", proc.stdout or "")
+    if seen:
+        return any(int(x) > 0 for x in seen)
+    return None                     # 没有任何读数行 ⇒ **不得当"判过"**（fail-closed）
+
+
+def shadowed_prefixes(table: dict[str, str] | None = None) -> list[tuple[str, str]]:
+    """**影子前缀**（未登记即红）：`(被吃掉的更具体前缀, 吃掉它的更短前缀)`。
+
+    为什么（2026-10-01 本单引入）：一个根前缀下**两条腿**时必须登记更具体的子前缀，而匹配是
+    `startswith` + **表序** ⇒ 一旦有人把更短的那个登记在**前面**，更具体的条目永远匹配不到
+    （静默失效），而**更短的那个会横跨两条腿** ⇒ 拿错腿的绿去关单（假关活故障）。
+    """
+    items = list((table if table is not None else PREFIX_TO_WORKFLOW).items())
+    out: list[tuple[str, str]] = []
+    for i, (longer, _) in enumerate(items):
+        for shorter, _ in items[:i]:
+            if longer != shorter and longer.startswith(shorter):
+                out.append((longer, shorter))
+    return out
 
 
 def workflow_for(title: str) -> str | None:
@@ -122,6 +181,46 @@ def workflow_for(title: str) -> str | None:
         if title.startswith(prefix):
             return wf
     return None
+
+
+def non_reapable_for(title: str) -> tuple[str, str, str] | None:
+    """标题命中「有意不回收」的前缀 ⇒ (前缀, workflow, 理由)；否则 None。"""
+    for prefix, (wf, why) in NON_REAPABLE_PREFIXES.items():
+        if title.startswith(prefix):
+            return prefix, wf, why
+    return None
+
+
+def _without_yaml_comments(text: str) -> str:
+    """去掉整行 YAML 注释后再扫。
+
+    ⚠️ 为什么必须去：**注释里提一句 `gh issue create`** 就会被读成开单腿 —— 本仓反复踩过的
+    「守卫被自己的文案喂红 / 判据扫到自己」形态（#5832 的两次自伤同族）。
+    """
+    return "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
+
+
+def issue_opening_workflows(workflows: dict[str, str]) -> set[str]:
+    """**现取**：这些 workflow 会自动开单（正文逐字含开单形态，注释不计）。"""
+    return {name for name, text in workflows.items()
+            if any(p in _without_yaml_comments(text) for p in ISSUE_OPENING_PATTERNS)}
+
+
+def unregistered_issue_opening_legs(workflows: dict[str, str], *,
+                                    reapable: set[str] | None = None,
+                                    exempt: set[str] | None = None) -> dict[str, str]:
+    """**未登记即红**：会自动开单、却既不在「可回收」表也不在「有意不回收」表的腿 ⇒ `{workflow: 处置}`。
+
+    为什么必须有这一条（2026-10-01 现取，issue #5814 收口复核）：两张表都是**手维护**的，而新腿会
+    自动出现 ⇒ 漏登记**不会红**，只会静默退化成「这张单**永远不会被回收**」（实测 #5866 就是这个形态：
+    腿连续 success 而单子仍 open，唯一痕迹是运行日志里一行「前缀未登记」）。
+    `reapable` / `exempt` 仅供判据做**内存注入**（判别力自证），默认取两张真表。
+    """
+    known = set(PREFIX_TO_WORKFLOW.values()) if reapable is None else set(reapable)
+    known |= ({wf for wf, _ in NON_REAPABLE_PREFIXES.values()} if exempt is None else set(exempt))
+    return {wf: "新腿 ⇒ 二选一：加进 PREFIX_TO_WORKFLOW（腿绿即回收），"
+                "或加进 NON_REAPABLE_PREFIXES（有意不回收，必须写清理由）"
+            for wf in sorted(issue_opening_workflows(workflows) - known)}
 
 
 def judge(issue: dict, runs: list[dict], *,
@@ -208,7 +307,12 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"── 候选（标题前缀已登记）：{len(targets)} 条；未登记前缀跳过：{len(skipped_unmapped)} 条")
     for i in skipped_unmapped:
-        print(f"  ⏭️  #{i.get('number')} 前缀未登记 ⇒ 不自动关：{str(i.get('title'))[:60]}")
+        title = str(i.get("title", ""))
+        nr = non_reapable_for(title)
+        if nr:
+            print(f"  🔒 #{i.get('number')} 前缀 `{nr[0]}`（{nr[1]}）**有意不回收**：{nr[2]}")
+        else:
+            print(f"  ⏭️  #{i.get('number')} 前缀未登记 ⇒ 不自动关：{title[:60]}")
 
     now = datetime.now(timezone.utc)
     unknown, closable, acted, actions = 0, [], 0, []
