@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, OR-055, UI-024, UI-040, UI-053
+// case_ids: OR-001, OR-002, OR-003, OR-055, UI-024, UI-040, UI-053, UI-076
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -519,5 +519,190 @@ describe('OrderDetailPage', () => {
       expect(screen.getByText('商品信息')).toBeInTheDocument()
     })
     expect(screen.queryByTestId('edit-order-content')).not.toBeInTheDocument()
+  })
+  // ===== 费用构成可见（issue #5843）：商品合计 + 加工费 + 其它构成 = 订单金额 =====
+  //
+  // 用户 2026-10-01 报障读数：某单「商品合计 ¥245.14」与「订单金额 ¥368.74」之间那笔
+  // **¥123.60 加工费在页面上任何位置都不出现**（差额 = 10.3 米 × ¥12.00/米）。
+  // 本组钉的是**页面读得出来的等式**（不是「接口里有这个字段」）：
+  //   ① 含加工费 ⇒ 出现加工费行，其值 = 落库 Σ `items[].processingFee`（**不重算**）；
+  //   ② 等式闭合：页面上读到的 商品合计 + 加工费 + 其它构成 = 订单金额；
+  //   ③ 布料单（本来就没有加工费）⇒ 不出现加工费行、不出现 `¥0.00` 行；
+  //   ④ 未定价行 ⇒ 显式「未定价」+ 点名组合，**不渲染 `¥0.00`**。
+  describe('费用构成可见（issue #5843）', () => {
+    /** 用户报障那一单：单价 ¥23.80 × 10.3 米 = 245.14；10.3 米 × ¥12.00/米 = 123.60；订单金额 368.74 */
+    const reportedItem = {
+      id: 'item-1',
+      productId: 'prod-1',
+      productName: '全遮光雪尼尔',
+      sku: 'SKU-1',
+      unitPrice: 23.8,
+      quantity: 10.3,
+      amount: 245.14,
+      subtotal: 245.14,
+      processingFee: 123.6,
+      processingInfo: {
+        colorName: '米白',
+        processingFeeDetail: {
+          composition: '韩褶 + 定型',
+          unit_price: 12,
+          meters: 10.3,
+          fee_source: 'matched',
+          amount: 123.6,
+        },
+      },
+    }
+    const reportedOrder = {
+      ...mockOrder,
+      totalAmount: 368.74,
+      actualAmount: 368.74,
+      items: [reportedItem],
+    }
+
+    /** 页面上的金额读数（`¥1,234.56` → `1234.56`）—— 判据读的是**页面**，不是 props */
+    const amountOf = (testId: string): number => {
+      const text = screen.getByTestId(testId).textContent ?? ''
+      const matched = text.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)
+      if (!matched) throw new Error(`「${testId}」里没有金额读数：${JSON.stringify(text)}`)
+      return Number(matched[0])
+    }
+
+    it('复现读数：这笔 ¥123.60 必须在页面上出现（改前整页金额读数里没有它）', async () => {
+      mockGetOrder.mockResolvedValue({ data: { data: reportedOrder } })
+      const { container } = render(<OrderDetailPage />)
+      await screen.findByTestId('order-fee-breakdown')
+      // 改前实测：整页金额读数只有 [¥245.14（金额列）, ¥245.14（商品合计列）, ¥368.74（订单金额）]
+      // —— 差额 123.60 **一个渲染点都没有**（这就是「账对不上」）。
+      const amounts = (container.textContent ?? '').replace(/,/g, '').match(/¥\d+\.\d{2}/g) ?? []
+      expect(amounts, `页面上的金额读数 = ${JSON.stringify(amounts)}`).toContain('¥123.60')
+    })
+
+    it('等式闭合：页面上读到的 商品合计 + 加工费 = 订单金额', async () => {
+      mockGetOrder.mockResolvedValue({ data: { data: reportedOrder } })
+      render(<OrderDetailPage />)
+      await screen.findByTestId('order-fee-breakdown')
+
+      const goods = amountOf('fee-breakdown-goods')
+      const fee = amountOf('fee-breakdown-processing')
+      const orderTotal = amountOf('fee-breakdown-order-total')
+
+      expect(goods).toBeCloseTo(245.14, 2)
+      expect(fee).toBeCloseTo(123.6, 2) // = 落库 Σ items[].processingFee
+      expect(orderTotal).toBeCloseTo(368.74, 2)
+      expect(goods + fee).toBeCloseTo(orderTotal, 2)
+
+      // 「看得见」= 等式本身在页面上有一行（不是只能自己心算）
+      const equation = screen.getByTestId('fee-breakdown-equation').textContent ?? ''
+      expect(equation).toContain('¥245.14')
+      expect(equation).toContain('¥123.60')
+      expect(equation).toContain('¥368.74')
+    })
+
+    it('行级算式：米数 × 单价/米 = 金额（与 OrderItemList 同一份算式实现）', async () => {
+      mockGetOrder.mockResolvedValue({ data: { data: reportedOrder } })
+      render(<OrderDetailPage />)
+      await screen.findByTestId('fee-breakdown-line')
+      expect(screen.getByTestId('fee-breakdown-line')).toHaveTextContent(
+        '10.3 米 × ¥12.00/米 = ¥123.60'
+      )
+    })
+
+    it('只展示落库快照、不重算：单价/米数与行金额不一致时以落库值为准', async () => {
+      // 若详情页自己乘（9.99 × 10.3 = 102.90）⇒ 与订单金额对不上；落库值是 123.60 ⇒ 必须显示 123.60
+      mockGetOrder.mockResolvedValue({
+        data: {
+          data: {
+            ...reportedOrder,
+            items: [
+              {
+                ...reportedItem,
+                processingInfo: {
+                  processingFeeDetail: {
+                    composition: '韩褶 + 定型',
+                    unit_price: 9.99,
+                    meters: 10.3,
+                    fee_source: 'manual',
+                    amount: 123.6,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      })
+      render(<OrderDetailPage />)
+      await screen.findByTestId('fee-breakdown-processing')
+      expect(amountOf('fee-breakdown-processing')).toBeCloseTo(123.6, 2)
+      expect(screen.queryByText('¥102.90')).toBeNull()
+      // 人工改价必须显式可见（与 OrderItemList 同一标记）
+      expect(screen.getByTestId('order-fee-breakdown')).toHaveTextContent('人工改价')
+    })
+
+    it('布料单（无加工费）：不出现加工费行、不出现 ¥0.00 行', async () => {
+      mockGetOrder.mockResolvedValue({
+        data: {
+          data: {
+            ...mockOrder,
+            totalAmount: 1990,
+            actualAmount: 1990,
+            items: [{ ...mockOrder.items[0], subtotal: 1990, amount: 1990, processingInfo: null }],
+          },
+        },
+      })
+      render(<OrderDetailPage />)
+      await screen.findByText('订单金额') // 页面已加载（不是「还没渲染完」的假绿）
+      expect(screen.queryByTestId('order-fee-breakdown')).toBeNull()
+      expect(screen.queryByTestId('fee-breakdown-processing')).toBeNull()
+    })
+
+    it('未定价行：显式「未定价」+ 点名组合，不渲染 ¥0.00', async () => {
+      mockGetOrder.mockResolvedValue({
+        data: {
+          data: {
+            ...reportedOrder,
+            totalAmount: 245.14,
+            actualAmount: 245.14,
+            items: [
+              {
+                ...reportedItem,
+                processingFee: 0,
+                processingInfo: {
+                  processingFeeDetail: {
+                    composition: '韩褶 + 定型',
+                    items: ['韩褶', '定型'],
+                    fee_source: 'unpriced',
+                    amount: 0,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      })
+      render(<OrderDetailPage />)
+      const note = await screen.findByTestId('fee-breakdown-unpriced')
+      expect(note).toHaveTextContent('未定价')
+      expect(note).toHaveTextContent('韩褶 + 定型') // 点名组合（口径 = 新增订单页 unpricedCombinationLabel）
+      expect(note).not.toHaveTextContent('¥0.00')
+      // 未定价那半按 0 计 ⇒ 不出现「加工费 ¥0.00」（与「本来就不收」长得一样）
+      expect(screen.queryByTestId('fee-breakdown-processing')).toBeNull()
+    })
+
+    it('差额非 0：显式「其它构成」解释行，等式仍然在页面上闭合', async () => {
+      mockGetOrder.mockResolvedValue({
+        data: {
+          // 商品 245.14 + 加工 123.60 = 368.74，而订单金额是 373.74 ⇒ 差额 5.00 必须有解释行
+          data: { ...reportedOrder, totalAmount: 373.74, actualAmount: 373.74 },
+        },
+      })
+      render(<OrderDetailPage />)
+      await screen.findByTestId('fee-breakdown-other')
+      const goods = amountOf('fee-breakdown-goods')
+      const fee = amountOf('fee-breakdown-processing')
+      const other = amountOf('fee-breakdown-other')
+      const orderTotal = amountOf('fee-breakdown-order-total')
+      expect(other).toBeCloseTo(5, 2)
+      expect(goods + fee + other).toBeCloseTo(orderTotal, 2)
+    })
   })
 })

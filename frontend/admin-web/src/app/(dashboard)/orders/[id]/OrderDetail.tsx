@@ -10,6 +10,12 @@ import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
 import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, ProcessingDoc, SalesDoc, OrderUrgencyPanel, EditOrderContentModal, type PrintTarget } from '@/components/orders'
+// 费用构成（issue #5843）：详情页原先只算商品金额，与页脚订单级总额（**含**加工费）对不上
+// ⇒ 补「商品合计 + 加工费 + 其它构成 = 订单金额」这一块。判定与渲染都在
+// `components/orders/OrderFeeBreakdown.tsx` + `lib/order-fee-display.ts`（本页只接线、不自算）。
+// ⚠️ 直连组件路径（不走 `@/components/orders` 桶）：订单详情页单测把桶整体替身，
+// 直连才能让**真组件**参与渲染（否则「等式可见」这类判据测的是替身 = 空断言）。
+import OrderFeeBreakdown from '@/components/orders/OrderFeeBreakdown'
 import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { craftSpecRows } from '@/lib/craft-display'
@@ -332,6 +338,14 @@ export default function OrderDetailPage() {
         }
       >
         <ProductTable groups={productGroups} />
+
+        {/* 费用构成（issue #5843）：商品合计 + 加工费 + 其它构成 = 订单金额 —— 商家照着它对账。
+            `goodsTotal` 取「商品合计」列之和（**同一份**行金额口径），加工费那一侧走共享层。 */}
+        <OrderFeeBreakdown
+          items={order.items ?? []}
+          goodsTotal={productGroups.reduce((sum, group) => sum + group.groupTotal, 0)}
+          orderTotal={order.totalAmount}
+        />
 
         {/* 加工项表（加工项 | 单价 | 数量 | 金额 | 加工合计）已随 #4882 整表退场：
             加工项不再有单价/计价方式，逐项金额列即无真值可言 ⇒ 不再渲染。

@@ -1,4 +1,4 @@
-// case_ids: OR-039
+// case_ids: OR-039, UI-076
 /**
  * 费用明细**同一真值**（issue #4526 包 B · 设计文档 §4.3 / §9 判据 5）。
  *
@@ -17,7 +17,11 @@
  * 红证（实现前）：`@/lib/order-fee-display` 不存在 ⇒ import 即红。
  */
 import { describe, it, expect } from 'vitest'
-import { buildFeeDetailDisplay } from '@/lib/order-fee-display'
+import {
+  buildFeeDetailDisplay,
+  buildOrderFeeComposition,
+  unpricedCombinationLabel,
+} from '@/lib/order-fee-display'
 
 describe('特殊选项行（R2：选了特殊选项 ⇒ 进费用明细）', () => {
   it('逐项 `名称 / 单价/套 × 套数`，且行金额之和 = special_options_total', () => {
@@ -220,5 +224,164 @@ describe('拼色加价（#4855：拼色款另加 2.4 元/米）', () => {
     expect(display.baseAmount).toBe(341)
     expect(display.baseAmount + display.specialOptionsTotal + display.mixedColorSurcharge)
       .toBeCloseTo(428.84, 2)
+  })
+})
+
+/**
+ * 订单级**费用构成**（issue #5843）：详情页原先「商品合计 / 金额」两列只算商品金额，
+ * 而页脚「订单金额」是订单级总额（含加工费）⇒ 中间那笔加工费**一个渲染点都没有**，
+ * 商家看到两个数对不上（用户 2026-10-01 报障：245.14 与 368.74 之间差 123.60）。
+ *
+ * 本组钉的是**构成**这一层（页面渲染由 tests/unit/pages/order-detail.test.tsx 判）：
+ *   `商品合计 + 加工费 + 其它构成 === 订单金额`（差额非 0 ⇒ 显式「其它构成」解释行）
+ * 三条硬口径：只读落库数不重算 · 未定价不渲染 `¥0.00` · 布料单不出现空行。
+ */
+describe('订单级费用构成（issue #5843）', () => {
+  /** 用户报障那一单的落库形状（字段名与 `OrderItemResponse` 同源） */
+  const reportedItem = {
+    id: 'item-1',
+    productName: '全遮光雪尼尔',
+    quantity: 10.3,
+    unitPrice: 23.8,
+    amount: 245.14,
+    subtotal: 245.14,
+    processingFee: 123.6,
+    processingInfo: {
+      processingFeeDetail: {
+        composition: '韩褶 + 定型',
+        unit_price: 12,
+        meters: 10.3,
+        fee_source: 'matched',
+        amount: 123.6,
+      },
+    },
+  }
+
+  it('报障单读数：加工费合计 = Σ items[].processingFee，且 商品合计 + 加工费 = 订单金额', () => {
+    const composition = buildOrderFeeComposition([reportedItem], {
+      goodsTotal: 245.14,
+      orderTotal: 368.74,
+    })
+
+    expect(composition.processingFeeTotal).toBeCloseTo(123.6, 2)
+    expect(composition.goodsTotal + composition.processingFeeTotal).toBeCloseTo(368.74, 2)
+    expect(composition.remainder).toBeCloseTo(0, 2)
+    expect(composition.showProcessingFee).toBe(true)
+    expect(composition.showRemainder).toBe(false)
+    expect(composition.visible).toBe(true)
+  })
+
+  it('行级算式沿用 OrderItemList 的实现（米数 × 单价/米 = 金额），缺值不编', () => {
+    const composition = buildOrderFeeComposition([reportedItem], {
+      goodsTotal: 245.14,
+      orderTotal: 368.74,
+    })
+
+    expect(composition.lines).toHaveLength(1)
+    expect(composition.lines[0].label).toBe('全遮光雪尼尔')
+    expect(composition.lines[0].amount).toBeCloseTo(123.6, 2)
+    expect(composition.lines[0].expr).toBe('10.3 米 × ¥12.00/米 = ¥123.60')
+    expect(composition.lines[0].unpriced).toBe(false)
+
+    // 缺单价 / 米数 ⇒ `expr` 为 null（宁可只显示金额，也不给对不上的算式）
+    const noFormula = buildOrderFeeComposition(
+      [{ ...reportedItem, processingInfo: { processingFeeDetail: { fee_source: 'matched', amount: 123.6 } } }],
+      { goodsTotal: 245.14, orderTotal: 368.74 }
+    )
+    expect(noFormula.lines[0].expr).toBeNull()
+    expect(noFormula.lines[0].amount).toBeCloseTo(123.6, 2)
+  })
+
+  it('只认落库值：单价 × 米数与行金额不一致时不重算（详情页 = 落库快照）', () => {
+    const composition = buildOrderFeeComposition(
+      [
+        {
+          ...reportedItem,
+          processingInfo: {
+            processingFeeDetail: {
+              unit_price: 9.99,
+              meters: 10.3,
+              fee_source: 'manual',
+              amount: 123.6,
+            },
+          },
+        },
+      ],
+      { goodsTotal: 245.14, orderTotal: 368.74 }
+    )
+
+    expect(composition.processingFeeTotal).toBeCloseTo(123.6, 2) // 不是 9.99 × 10.3 = 102.90
+    expect(composition.lines[0].manual).toBe(true)
+  })
+
+  it('布料单（无加工费 / 无未定价 / 无差额）⇒ 整块不渲染（没有加工是正常，不是缺失）', () => {
+    const composition = buildOrderFeeComposition(
+      [{ id: 'i1', productName: '素色亚麻', processingFee: 0 }],
+      { goodsTotal: 1990, orderTotal: 1990 }
+    )
+
+    expect(composition.processingFeeTotal).toBe(0)
+    expect(composition.lines).toEqual([])
+    expect(composition.showProcessingFee).toBe(false)
+    expect(composition.showRemainder).toBe(false)
+    expect(composition.visible).toBe(false)
+  })
+
+  it('未定价行 ⇒ 本行标出 + 点名组合，金额按 0 计（不是「本来就不收」）', () => {
+    const composition = buildOrderFeeComposition(
+      [
+        {
+          ...reportedItem,
+          processingFee: 0,
+          processingInfo: {
+            processingFeeDetail: {
+              composition: '韩褶 + 定型',
+              items: ['韩褶', '定型'],
+              fee_source: 'unpriced',
+              amount: 0,
+            },
+          },
+        },
+      ],
+      { goodsTotal: 245.14, orderTotal: 245.14 }
+    )
+
+    expect(composition.unpricedCount).toBe(1)
+    expect(composition.unpricedLabels).toEqual(['韩褶 + 定型'])
+    expect(composition.lines[0].unpriced).toBe(true)
+    expect(composition.lines[0].unpricedLabel).toBe('韩褶 + 定型')
+    // 未定价 ⇒ 没有实收加工费 ⇒ 不渲染「加工费 ¥0.00」那一行，但整块**必须**可见（否则就是静默改钱的外观）
+    expect(composition.showProcessingFee).toBe(false)
+    expect(composition.visible).toBe(true)
+  })
+
+  it('未定价组合名口径 = 新增订单页 unpricedCombinationLabel（items → composition → 缺选配信息）', () => {
+    expect(unpricedCombinationLabel({ items: ['韩褶', '定型'], composition: 'hanzhe+dingxing' })).toBe(
+      '韩褶 + 定型'
+    )
+    expect(unpricedCombinationLabel({ composition: 'hanzhe+dingxing' })).toBe('hanzhe+dingxing')
+    expect(unpricedCombinationLabel({ items: [], composition: '  ' })).toBe(
+      '没有可匹配的组合（缺选配信息）'
+    )
+  })
+
+  it('差额非 0 ⇒ 显式「其它构成」解释行（等式仍闭合）', () => {
+    const composition = buildOrderFeeComposition([reportedItem], {
+      goodsTotal: 245.14,
+      orderTotal: 373.74,
+    })
+
+    expect(composition.remainder).toBeCloseTo(5, 2)
+    expect(composition.showRemainder).toBe(true)
+    expect(
+      composition.goodsTotal + composition.processingFeeTotal + composition.remainder
+    ).toBeCloseTo(373.74, 2)
+  })
+
+  it('订单金额未知（接口没给）⇒ 不编差额、不渲染解释行', () => {
+    const composition = buildOrderFeeComposition([reportedItem], { goodsTotal: 245.14, orderTotal: null })
+
+    expect(composition.orderTotal).toBeNull()
+    expect(composition.showRemainder).toBe(false)
   })
 })
