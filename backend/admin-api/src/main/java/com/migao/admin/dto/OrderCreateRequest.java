@@ -205,17 +205,37 @@ public class OrderCreateRequest {
         /**
          * 整卷数（V111）：优先整卷发货时发出的整卷数。
          *
-         * <p>⚠️ <b>由服务端按该货号的 {@code products.roll_length_m} 计算</b>
-         * （{@code ProductRollAllocation}），调用方**传了也会被覆盖** —— 卷长与数量的函数
-         * 只有一个权威实现，不允许客户端各算一套（那会让「同一单两个整卷数」）。
-         * 货号未配卷长时**不落该值**（NULL，不猜）。</p>
+         * <p>🔄 <b>2026-10-01（issue #5846）口径改判：<u>显式 &gt; 派生</u></b>。用户裁定 A
+         * （原话：「订单中售卖整卷布料时，应该有卷数和实际米数两字段」）之前，本字段
+         * <b>由服务端按货号 {@code products.roll_length_m} 计算，调用方传了也会被覆盖</b>；
+         * 现在：<b>客户端成对给出</b>（本字段 + {@link #rollLengthM}）⇒ <b>采用客户端值</b>；
+         * <b>两个都不给</b> ⇒ 仍由 {@code ProductRollAllocation} 派生（与改判前逐字节相同）。
+         * 只给一个 ⇒ 422（见 {@code OrderService.applyRollAllocation}）。</p>
+         *
+         * <p>🔴 <b>不变式（改判后仍一字不动）</b>：一次分配<b>只有一个权威来源</b>
+         * （<b>显式 XOR 派生</b>）—— 不允许「显式卷数 + 货号卷长」这类<b>混用</b>，
+         * 那正是「同一单两个整卷数」的来源。类级元守卫见
+         * {@code OrderRollAllocationAuthorityTest}（写入点唯一 / 派生入口唯一）。</p>
+         *
+         * <p>{@code 0} 是<b>真实结论</b>（全散剪），与「没给」（{@code null} = 走派生）两回事
+         * ⇒ 本字段必须是可空对象类型（不允许写成 primitive {@code int}）。
+         * 声明为 {@link BigDecimal}（而不是 {@code Integer}）是为了能<b>拒绝</b> {@code 2.5}：
+         * Jackson 默认 {@code ACCEPT_FLOAT_AS_INT=true}，声明成 {@code Integer} 会把
+         * {@code 2.5} <b>静默截断成 2 卷</b>；现在它原样落到服务端并由
+         * {@code intValueExact()} 显式 422。</p>
          */
-        private Integer rollCount;
+        @DecimalMin(value = "0", message = "卷数不能为负数")
+        private BigDecimal rollCount;
 
         /**
-         * 下单时该货号的「1 卷 = 多少米」快照（V111）：同样由服务端按商品当前值写入，
-         * 订单是快照不是视图 ⇒ 货号后来改卷长不改变历史单的分配口径。
+         * <b>每卷实际米数</b>（V111 的「1 卷 = 多少米」快照；issue #5846 起可<b>由客户端显式录入</b>）：
+         * 下单页默认带出商品 {@code products.roll_length_m}，也允许改成**这一批的实际米数**
+         * （行业卷长是区间值，「一卷 60 米<i>左右</i>」⇒ 实际米数 ≠ 卷数 × 卷长是常态）。
+         *
+         * <p>与 {@link #rollCount} <b>成对</b>：成对给出 ⇒ 显式采用（订单是快照不是视图 ⇒
+         * 货号后来改卷长不改变历史单的口径）；两个都不给 ⇒ 服务端按商品当前值派生并写入快照。</p>
          */
+        @DecimalMin(value = "0", inclusive = false, message = "每卷米数必须大于 0")
         private BigDecimal rollLengthM;
 
         /**

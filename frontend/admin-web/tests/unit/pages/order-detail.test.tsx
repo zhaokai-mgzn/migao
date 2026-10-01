@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, OR-055, UI-024, UI-040, UI-053, UI-076
+// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, UI-024, UI-040, UI-053, UI-076
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -705,4 +705,40 @@ describe('OrderDetailPage', () => {
       expect(goods + fee + other).toBeCloseTo(orderTotal, 2)
     })
   })
+
+  // ===== #5846：整卷售卖 —— 订单行**看得见**「整卷 N + 散剪 M 米」 =====
+  //
+  // 用户 2026-10-01 报的缺口：渲染分配文案的 `rollAllocationText` 只存在于 `OrderItemList`，
+  // 而**没有任何页面渲染它**（导出 + 单测都有，就是没接线）⇒ 商家在订单详情看不到卷数。
+  // 本单把它接到详情页的商品明细行上（与明细组件**同一份** `RollAllocationNote`）。
+  it('#5846: 订单行带 rollCount / rollLengthM ⇒ 详情页渲染「整卷 1 + 散剪 40 米」', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: {
+        data: {
+          ...mockOrder,
+          items: [{ ...mockOrder.items[0], quantity: 100, rollCount: 1, rollLengthM: 60 }],
+        },
+      },
+    })
+    render(<OrderDetailPage />)
+
+    const el = await screen.findByTestId('roll-allocation')
+    expect(el.textContent).toContain('整卷 1 + 散剪 40 米')
+  })
+
+  it('#5846: rollCount / rollLengthM 任一为空 ⇒ 详情页**不编数字**（既有「缺值不渲染」口径不变）', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: {
+        data: {
+          ...mockOrder,
+          items: [{ ...mockOrder.items[0], quantity: 100, rollCount: null, rollLengthM: null }],
+        },
+      },
+    })
+    render(<OrderDetailPage />)
+
+    await screen.findByText('测试窗帘布')
+    expect(screen.queryByTestId('roll-allocation')).toBeNull()
+  })
+
 })

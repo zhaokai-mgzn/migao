@@ -2,7 +2,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import { render, screen, within, fireEvent } from '@testing-library/react'
-import OrderItemList from '@/components/orders/OrderItemList'
+import OrderItemList, { rollAllocationWarning } from '@/components/orders/OrderItemList'
 import type { OrderItem } from '@/types'
 
 const makeItem = (overrides: Partial<OrderItem> = {}): OrderItem => ({
@@ -634,6 +634,53 @@ describe('OrderItemList', () => {
       const el = screen.getByTestId('roll-allocation')
       expect(el.textContent).toContain('整卷 1')
       expect(el.textContent).not.toContain('散剪')
+    })
+
+    // ===== #5846：显式录入（卷数 + 每卷实际米数）带来的**负差额** —— 不渲染成正常分配，但也不许吞掉 =====
+    //
+    // 用户 2026-10-01 裁定 A：订单行可**显式**录「卷数 + 每卷实际米数」（行业卷长是区间值，
+    // 实际米数 ≠ 卷数 × 卷长是常态）⇒ 「整卷合计 > 行米数」成为**真实可能**的状态。
+    // 此时：① 既有红线一字不变 —— 不把不一致渲染成「整卷 N + 散剪 M 米」（散剪 -17 米是胡说）；
+    // ② 但**必须显式提示**（静默不渲染 = 商家看不到自己录了什么、更看不到两侧对不上）。
+    it('#5846: 负差额（2 卷 × 58.5 = 117 > 行米数 100）⇒ 不编「散剪 -17 米」，但**显式标出**差额', () => {
+      render(
+        <OrderItemList
+          items={[makeItem({ quantity: 100, rollCount: 2, rollLengthM: 58.5 })]}
+        />
+      )
+      // ① 不把它渲染成一个正常的整卷/散剪分配
+      expect(screen.queryByTestId('roll-allocation')).toBeNull()
+      // ② 差额必须看得见（两个数都在），且不许出现 NaN/undefined 这类编出来的值
+      const warn = screen.getByTestId('roll-allocation-warning')
+      expect(warn.textContent).toContain('117')
+      expect(warn.textContent).toContain('100')
+      expect(warn.textContent).not.toContain('NaN')
+      expect(warn.textContent).not.toContain('undefined')
+    })
+
+    it('#5846: 正差额（2 卷 × 58.5 = 117 ≤ 120 米）⇒ 正常渲染「整卷 2 + 散剪 3 米」且无告警', () => {
+      render(
+        <OrderItemList
+          items={[makeItem({ quantity: 120, rollCount: 2, rollLengthM: 58.5 })]}
+        />
+      )
+      expect(screen.getByTestId('roll-allocation').textContent).toContain('整卷 2 + 散剪 3 米')
+      expect(screen.queryByTestId('roll-allocation-warning')).toBeNull()
+    })
+
+    it('#5846: rollAllocationWarning 对正常分配 / 缺值一律返回 null（不虚报异常）', () => {
+      expect(
+        rollAllocationWarning(makeItem({ quantity: 120, rollCount: 2, rollLengthM: 58.5 }))
+      ).toBeNull()
+      expect(
+        rollAllocationWarning(makeItem({ quantity: 100, rollCount: null, rollLengthM: 60 }))
+      ).toBeNull()
+      expect(
+        rollAllocationWarning(makeItem({ quantity: 100, rollCount: 2, rollLengthM: null }))
+      ).toBeNull()
+      expect(
+        rollAllocationWarning(makeItem({ quantity: 100, rollCount: 2, rollLengthM: 58.5 }))
+      ).toContain('117')
     })
 
     // 售卖方式口径（PR-042）：**订单行字段优先**，历史单回落 processingInfo

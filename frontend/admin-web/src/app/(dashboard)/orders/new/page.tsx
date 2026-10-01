@@ -183,6 +183,20 @@ interface OrderLineItem {
   quantity: number
   unitPrice: number
   /**
+   * **卷数**（整卷售卖，issue #5846，用户 2026-10-01 裁定 A）—— `null` = **留空**
+   * ⇒ 这一对键都不进 payload，由服务端按货号卷长派生（与改造前的请求体逐字节相同）。
+   *
+   * ⚠️ 与 `product` 的关系：它**不是**从商品派生的显示值，是**用户录入的输入**
+   * ⇒ 换商品时清回 `null`（旧商品的卷数不属于新商品），而 {@link rollLengthM} 会重新带出新商品的卷长。
+   */
+  rollCount: number | null
+  /**
+   * **每卷实际米数**（`order_items.roll_length_m` 的快照，issue #5846）——
+   * 选商品时**默认带出** `products.roll_length_m`（未配 ⇒ `null`），可改成这一批的实际米数
+   * （行业卷长是区间值：「一卷 60 米*左右*」）。
+   */
+  rollLengthM: number | null
+  /**
    * 成品宽 / 高（米，**部位级**）—— issue #4420，用户 2026-09-19 裁定「宽高必填」。
    *
    * ⚠️ 归属层级：`position-instance-routing-model.md` §5.9.2 已裁定宽高是**部位级**
@@ -1377,6 +1391,34 @@ function positiveOrNull(value: number | null): number | null {
  * - `className` 逐字沿用各站点原有字面量（`check-ui-regression.sh` 比对 neutral token）。
  */
 
+/**
+ * 商品卷长 → 行上的「每卷米数」默认值（issue #5846，用户裁定 A）。
+ *
+ * 用户口径：「下单页**默认带出**商品 `products.roll_length_m`」。商品未配 / 非正值 ⇒ `null`
+ * （**不落 0、不猜**：「不知道」不许伪装成「0 米一卷」—— 与 `ProductRollAllocation` 同一条红线）。
+ *
+ * ⚠️ 它只是**输入框的默认值**，不是「派生分配」：用户不改就随显式那一对提交（前提是他填了卷数）；
+ * 卷数留空时**两个键都不进 payload** ⇒ 服务端仍按货号卷长自行派生。
+ */
+function defaultRollLengthOf(product: ProductDetail | null | undefined): number | null {
+  const v = Number(product?.rollLengthM)
+  return Number.isFinite(v) && v > 0 ? v : null
+}
+
+/**
+ * 行状态 → 建单 payload 的整卷售卖两个键（issue #5846）。
+ *
+ * 🔴 **成对，或都不给**（与 `OrderService.parseExplicitRollCount` 同一份契约）：
+ * - 卷数填了（含 `0`——「全散剪」是真实结论）⇒ 两个键一起进；
+ * - 卷数留空 / 每卷米数缺失 ⇒ **一个键都不进**（服务端走派生）。
+ *
+ * 半对输入由 `validate()` 拦住并说明（不在这里静默补一个值 —— 那是编造）。
+ */
+function rollFieldsOf(line: OrderLineItem): { rollCount?: number; rollLengthM?: number } {
+  if (typeof line.rollCount !== 'number' || typeof line.rollLengthM !== 'number') return {}
+  return { rollCount: line.rollCount, rollLengthM: line.rollLengthM }
+}
+
 function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
   return {
     id: genId(),
@@ -1391,6 +1433,10 @@ function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
     curtainBody: CURTAIN_BODY_CLOTH,
     quantity: 1,
     unitPrice: 0,
+    // 整卷售卖（issue #5846）：缺省 = **未填**（`null`，不是 0）——
+    // 「0 卷」（全散剪）是一个要人**显式**录的结论，不能拿默认值冒充
+    rollCount: null,
+    rollLengthM: null,
     width: null,
     height: null,
     processingItems: [],
@@ -1826,6 +1872,8 @@ export default function NewOrderPage() {
           product: detail,
           processingItems: processingCatalog,
           skuAutoSelected: patch.selectedSku !== null,
+          // 整卷售卖（issue #5846）：识别建出来的行同样默认带出商品卷长
+          rollLengthM: defaultRollLengthOf(detail),
           ...patch,
         },
       ])
@@ -2267,6 +2315,10 @@ export default function NewOrderPage() {
         productLoading: next.productLoading,
         unitPrice: next.unitPrice,
         processingItems: next.processingItems,
+        // 整卷售卖（issue #5846）：换商品 ⇒ 卷数**清空**（旧商品的卷数不属于新商品），
+        // 每卷米数**重新带出**新商品的卷长（默认值，用户可在行上改）
+        rollCount: null,
+        rollLengthM: defaultRollLengthOf(next.product),
         // 换商品 = 清空勾选 ⇒ 按帘体补**推荐组合**的默认勾选（定型 #4566 + 韩褶，2026-09-28）
         selectedProcessing: withRecommendedItemDefaults(next),
       }
@@ -2894,6 +2946,28 @@ export default function NewOrderPage() {
       if (line.unitPrice == null || line.unitPrice <= 0) {
         e[`${prefix}_unitPrice`] = '单价须大于 0'
       }
+      // 整卷售卖（issue #5846）：边界在**发出去之前**拦住并说清（服务端另有一道 422 兜底）。
+      // 三条口径与 `OrderService.parseExplicitRollCount` 逐字同源：
+      // 卷数 < 0 / 非整数 / 每卷米数 ≤ 0 ⇒ 显式拒绝（**不静默取整、不静默补值**）。
+      if (typeof line.rollCount === 'number') {
+        if (!Number.isInteger(line.rollCount)) {
+          e[`${prefix}_rollCount`] = '卷数必须是整数'
+        } else if (line.rollCount < 0) {
+          e[`${prefix}_rollCount`] = '卷数不能为负数'
+        } else if (!(typeof line.rollLengthM === 'number' && line.rollLengthM > 0)) {
+          e[`${prefix}_rollLengthM`] = '每卷米数必须大于 0'
+        }
+      } else if (
+        typeof line.rollLengthM === 'number' &&
+        line.rollLengthM !== defaultRollLengthOf(line.product)
+      ) {
+        // 卷数留空却**改了**每卷米数：那一格不会被提交（派生只认货号卷长）⇒ 必须说清，
+        // 否则用户以为「我改的实际米数生效了」＝ 静默把输入吞掉。
+        // ⚠️ 判据是「**改过**」（≠ 商品卷长）而不是「有值」：默认带出的值不算用户输入。
+        e[`${prefix}_rollLengthM`] =
+          '卷数留空时每卷米数不参与分配：请填卷数（按「卷数 × 每卷米数」售卖），'
+          + `或把每卷米数改回商品卷长（${defaultRollLengthOf(line.product) ?? '未配置'} 米）由系统自动分配`
+      }
       // ⚠️ issue #4874：原「带纱帘 ⇒ 纱帘单价必填」的校验已随 `布帘+纱帘` 档**整体删除**
       // （帘体不再有该档；独立纱帘组那一行的单价由既有的「单价须大于 0」兜住）。
     })
@@ -2949,6 +3023,10 @@ export default function NewOrderPage() {
           productName: line.product!.name,
           quantity: Number(line.quantity),
           unitPrice: Number(line.unitPrice),
+          // 整卷售卖（issue #5846）：**成对**进 payload，且**只在卷数填了**时进 ——
+          // 卷数留空 ⇒ 两个键都不出现（服务端按货号卷长派生，请求体与改造前**逐字节相同**）。
+          // ⚠️ 半对（只有卷数）在这里就**不发**：服务端会 422，但那是兜底；能拦住就别发一份必被拒的单。
+          ...rollFieldsOf(line),
           // 宽 / 高（issue #4420）：`order_items.width/height` 是**部位级**原生列，
           // 后端 DTO 已带 `@DecimalMin(0)`（#4089 A17）。此前这页一个都不写 ⇒
           // 订单详情 / 加工单 / 任务卡的宽高渲染永远拿不到值（#4403 的根因）。
@@ -3098,6 +3176,10 @@ export default function NewOrderPage() {
                       if (target) handleLineQtyChange(target, q)
                     }}
                     onChangePrice={(lineId, p) => updateLineItem(lineId, { unitPrice: p })}
+                    // 整卷售卖（issue #5846）：**逐行**落行状态（组级商品属性，但这三个数是行级的 ——
+                    // 一组的多个部位行各发各的卷，写组级会把卷数复制到每一行 ⇒ 双计）
+                    onChangeRollCount={(lineId, n) => updateLineItem(lineId, { rollCount: n })}
+                    onChangeRollLength={(lineId, n) => updateLineItem(lineId, { rollLengthM: n })}
                     renderPosition={(line, slots) => (
                       <LineItemBlock
                         key={line.id}
@@ -3994,6 +4076,8 @@ function FabricRow({
   specPicker,
   onChangeQty,
   onChangePrice,
+  onChangeRollCount,
+  onChangeRollLength,
 }: {
   line: OrderLineItem
   errors: Record<string, string>
@@ -4004,11 +4088,28 @@ function FabricRow({
   specPicker?: React.ReactNode
   onChangeQty: (q: number) => void
   onChangePrice: (p: number) => void
+  /** **卷数**（issue #5846）：`null` = 留空 ⇒ 该键不进 payload（服务端按货号卷长派生） */
+  onChangeRollCount: (n: number | null) => void
+  /** **每卷实际米数**（issue #5846）：默认带出商品 `products.roll_length_m` */
+  onChangeRollLength: (n: number | null) => void
 }) {
   const errQty = errors[`line_${line.id}_quantity`]
   const errPrice = errors[`line_${line.id}_unitPrice`]
+  const errRollCount = errors[`line_${line.id}_rollCount`]
+  const errRollLength = errors[`line_${line.id}_rollLengthM`]
   const inputClass =
     'w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15'
+
+  // ===== 整卷售卖（issue #5846，用户 2026-10-01 裁定 A）=====
+  // 「整卷合计 = 卷数 × 每卷实际米数」与行米数的差额**实时显示**；整卷合计 > 行米数（负差额）
+  // ⇒ **显式标红**，由人决定改哪一个 —— 页面**不自动改写** `quantity`（静默改数是红线）。
+  const rollsFilled = typeof line.rollCount === 'number'
+  const rollsTotal =
+    rollsFilled && typeof line.rollLengthM === 'number'
+      ? Math.round(line.rollCount! * line.rollLengthM * 100) / 100
+      : null
+  const rollDiff = rollsTotal === null ? null : Math.round((Number(line.quantity) - rollsTotal) * 100) / 100
+  const rollShort = rollDiff !== null && rollDiff < 0
   return (
     <div className="rounded-lg border border-neutral-200 p-3">
       <div className={'grid gap-4 ' + (specPicker ? 'sm:grid-cols-3' : 'grid-cols-2')}>
@@ -4037,9 +4138,53 @@ function FabricRow({
           />
           {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
         </div>
+        {/* ===== 整卷售卖：卷数 + 每卷实际米数（issue #5846）=====
+            复用既有列 `order_items.roll_count` / `roll_length_m`（不加迁移）。
+            🔴 两格是**一对**：只填卷数 ⇒ 两个键一起进 payload（显式分配，服务端采用）；
+            **卷数留空** ⇒ 两个键都不进（服务端按货号卷长派生，请求体与改造前逐字节相同）。
+            ⚠️ 不给 `decimals={0}`：那会把 2.5 **静默改成 3**（`NumberInput` 失焦归一化）；
+            卷数非整数由下面的校验**显式拒绝**，人看得见自己填的是什么。 */}
+        <div>
+          <Label>卷数</Label>
+          <NumberInput
+            value={line.rollCount}
+            onChange={onChangeRollCount}
+            placeholder="留空 = 按米自动分配"
+            aria-label="卷数"
+            className={inputClass}
+          />
+          {errRollCount && <p className="mt-1 text-sm text-red-600">{errRollCount}</p>}
+        </div>
+        <div>
+          <Label>每卷米数</Label>
+          <NumberInput
+            value={line.rollLengthM}
+            onChange={onChangeRollLength}
+            placeholder="每卷实际米数"
+            aria-label="每卷米数"
+            className={inputClass}
+          />
+          {errRollLength && <p className="mt-1 text-sm text-red-600">{errRollLength}</p>}
+        </div>
       </div>
+      {rollsTotal !== null && rollDiff !== null && (
+        <p
+          data-testid="roll-diff"
+          className="mt-2 text-xs text-neutral-500 tabular-nums"
+        >
+          整卷合计 {line.rollCount} × {line.rollLengthM} = {rollsTotal} 米；行米数 {line.quantity} 米；
+          差额 {rollDiff} 米
+        </p>
+      )}
+      {rollShort && rollDiff !== null && (
+        <p data-testid="roll-diff-warning" className="mt-1 text-xs text-red-600">
+          整卷合计 {rollsTotal} 米 ＞ 行米数 {line.quantity} 米（差 {Math.round(-rollDiff * 100) / 100} 米）
+          —— 请确认改「数量」还是改「卷数 / 每卷米数」；系统**不会**自动改数量
+        </p>
+      )}
       <p className="mt-1.5 text-xs text-neutral-400">
         布料按米计价：没有加工费，也不生成加工单
+        {!rollsFilled && '；卷数留空 ⇒ 由系统按货号卷长自动分配整卷 / 散剪'}
       </p>
     </div>
   )
@@ -4101,6 +4246,12 @@ interface ProductGroupBlockProps {
   /** 布料行（无部位）的 米数 / 单价 回调（issue #4493） */
   onChangeQty: (lineId: string, qty: number) => void
   onChangePrice: (lineId: string, price: number) => void
+  /**
+   * **整卷售卖**（issue #5846，用户裁定 A）：布料行的 卷数 / 每卷实际米数。
+   * `null` = 留空（卷数留空 ⇒ 两个键都不进 payload，服务端按货号卷长派生）。
+   */
+  onChangeRollCount: (lineId: string, rollCount: number | null) => void
+  onChangeRollLength: (lineId: string, rollLengthM: number | null) => void
 }
 
 
@@ -4276,6 +4427,8 @@ function ProductGroupBlock({
   renderPosition,
   onChangeQty,
   onChangePrice,
+  onChangeRollCount,
+  onChangeRollLength,
 }: ProductGroupBlockProps) {
   /**
    * **整卡折叠态**（issue #4679，用户原话「这里加个可折叠的交互」）—— 组头整行是开关。
@@ -4759,6 +4912,8 @@ function ProductGroupBlock({
             specPicker={specPicker}
             onChangeQty={(q) => onChangeQty(group.lines[0].id, q)}
             onChangePrice={(v) => onChangePrice(group.lines[0].id, v)}
+            onChangeRollCount={(n) => onChangeRollCount(group.lines[0].id, n)}
+            onChangeRollLength={(n) => onChangeRollLength(group.lines[0].id, n)}
           />
         ) : (
           /* 一套帘（issue #4521）：一个商品组 = 一套帘 ⇒ 只渲染**一份** ①~④。
