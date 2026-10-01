@@ -89,7 +89,9 @@ CI 只下发源码与驱动参数，`docker build` 的产物就地使用、不�
 - 规避：服务器脚本用 `flock` 串行化（已内置在 `deploy.sh`）。
 - **2026-09-30 补充（C′ 下的处置）**：C′（§1）**重新引入了单机 `docker build`** ⇒ 本条的风险面回来了。
   处置 = **构建放在既有那把锁之内**：`deploy.sh` 第 1 段 `exec 9>"$LOCK"` 拿锁、`trap 'flock -u 9' EXIT` 释放，
-  C′ 的 `docker build`（`BUILD_SERVICE` 段）就在这两者之间 ⇒ 后到的 run 要么等锁、要么等 600s 超时退出
+  C′ 的 `docker build`（`BUILD_SERVICE` 段）就在这两者之间 ⇒ 后到的 run 要么等锁、要么等
+  `LOCK_WAIT_SECONDS` 超时退出（2026-10-01 / issue #5896 起为 **1800s**：三条腿共用同一把锁而 CI
+  `concurrency` 按服务分 ⇒ 跨服务**排队**，实测一次 ~28min，旧的 600s 对后到者必然不够）
   （与既有部署等待语义一致，**未新增第二把锁**；同一把锁在 `deploy.sh` 内**不得重复获取**，会自锁）。
   判据 = `tests/unit_ci_workflows/test_swas_server_side_build.py` 的 `test_build_happens_inside_the_existing_flock`
   （含「锁获取只允许一处」的机械断言）。

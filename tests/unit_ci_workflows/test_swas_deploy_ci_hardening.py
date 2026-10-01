@@ -213,14 +213,15 @@ def test_deploy_job_has_timeout_minutes(wf):
     )
     # ⚠️ 上界（60min）于 2026-09-30 随 issue #5814 的 C′ 放宽到 120min —— **只放宽、不取消**：
     #    C′ 之后**构建搬到服务器侧**，而构建墙钟算在「发起 + 轮询」预算之内
-    #    （`swas-deploy-ci.sh` 的 C_BUILD_DEPLOY_TIMEOUT_SECONDS 默认 3000s = 50min；
-    #     依据 = 冷构建实测 1782s + 部署余量）⇒ job 上界**必须大于它**，否则 run 会先被 GitHub
-    #    打死，而打死报的是 `cancelled`（**不是** failure）⇒ `deploy-reconcile` 断路器不跳闸 ⇒ cron 自放大。
+    #    （`swas-deploy-ci.sh` 的 C_BUILD_DEPLOY_TIMEOUT_SECONDS 默认 4500s = 75min；
+    #     依据 = 远端锁等待上限 1800s + **冷构建上界 2400s** + 余量 300s，见 issue #5814 / #5896）⇒ job 上界
+    #     **必须大于它**，否则 run 会先被 GitHub 打死，而打死报的是 `cancelled`（**不是** failure）
+    #     ⇒ `deploy-reconcile` 断路器不跳闸 ⇒ cron 自放大。
     #    新上界仍**有界**（120min）⇒ 依然兜得住「永久 in_progress ⇒ 占住 concurrency 组」这一事故形态。
     mins = int(job["timeout-minutes"])
     assert 0 < mins <= 120, (
         f"{wf} 的 timeout-minutes={mins} 超出 (0,120] —— 既要兜住「永久 in_progress」，"
-        "也不能误杀 C′ 下的冷构建（实测 1782s；预算 3000s）"
+        "也不能误杀 C′ 下的冷构建（上界 2400s；预算 4500s）"
     )
     # 与 C′ 预算的**一致性**（三层上界同号：构建上界 < 轮询预算 < job 上界）
     ci = read_script()
@@ -1088,3 +1089,222 @@ def test_reconcile_observability_criterion_has_discriminating_power():
     assert broken != real, "注入未生效（判据自证）"
     with pytest.raises(AssertionError):
         check_reconcile_decision_is_observable(broken)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 七、远端 flock 的**等待上限**与**超时文案**（issue #5896）
+# ══════════════════════════════════════════════════════════════════════════
+#
+# ## 事故（**实测**，云测试环境一直是旧版本）
+#
+# 2026-10-01 当天两次 `deploy-frontend` **失败**（06:15Z / 07:32Z），报错**逐字相同**：
+#     `❌ 等待部署锁超时（10 分钟）：可能有卡死的部署进程持有 /tmp/migao-deploy.lock`
+#
+# **真因不是「有进程卡死」，而是并发部署排队**：三条 SWAS 部署腿
+# （`deploy-frontend` / `deploy-admin-api` / `deploy-ai-agent-service`）**共用远端
+# `/tmp/migao-deploy.lock`**，而它们的 CI `concurrency` 组是**按服务**分的（`deploy-*`）
+# ⇒ **跨服务不互斥**。同一次 push 同时改 `backend/admin-api/**` 与 `frontend/admin-web/**` 时
+# 两条腿**同刻起跑抢一把锁**，先到者实测跑了 **~28 分钟**（07:32:48Z → 08:00:22Z）
+# ⇒ 后到者的旧等待上限 `flock -w 600`（10 分钟）**必然白等失败**。锁机制本身没错（串行化是对的），
+# 错的是**等待时长**，以及那条把真因说成「卡死进程」的文案（集成侧按它去找卡死进程，方向被带偏）。
+#
+# ## 本节点锁什么
+#
+# ① **等待上限必须覆盖一次真实部署**：`deploy/swas/deploy.sh` 的具名常量 `LOCK_WAIT_SECONDS`
+#    必须 ≥ 1800s（30min）**且等得起** —— `LOCK_WAIT_SECONDS + 冷构建**上界** 2400s < C′ 轮询预算`
+#    （⚠️ 用**上界**而不是实测 1782s：实测只是一个样本，上界才是脚本声明并被判据钉住的值），
+#    且小于三条腿各自的 job `timeout-minutes × 60`（否则等待会把 run 先交给 GitHub 打死）。
+# ② **超时文案不得误诊**：该处文案不得出现「卡死 / 陈旧锁 / 删锁文件」这类与事实相反的处置
+#    —— `flock(2)` 的锁挂在「打开文件描述」上，进程以**任何方式**终止（含 `SIGKILL`）内核都会
+#    关闭 fd 并释放锁 ⇒ **本锁不可能被遗留**（见 `docs/wiki/CI-CD.md` 的「远端 flock 与超时强杀的关系」）。
+# ③ **判别力自证**：①② 各喂一个**内存坏样本**（等待改回 600 / 文案改回「卡死」）⇒ 必须各自判红；
+#    好样本（真文本）不红。判据本体是纯函数（读文本、不写盘、不联网、不碰共享 `/tmp`）。
+
+DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
+
+#: 锁等待上限的**下限**（秒）：一次并发部署真机实测 ~28min（1680s）⇒ 取 1800s（30min）并留余量。
+LOCK_WAIT_MIN_SECONDS = 1800
+#: ⚠️ 判据**不用**冷构建实测值（1782s）做不等式（2026-10-01 主会话裁定）：实测是**样本**，
+#: 被脚本声明、并被判据钉住的是 `BUILD_TIMEOUT_SECS`（deploy/swas/deploy.sh 的构建**上界** 2400s）
+#: ⇒ 预算要覆盖的是**可能的最坏墙钟**。实测读数只作背景，不参与任何断言。
+#: 与事实相反的处置话术（会把排查引向「卡死进程 / 陈旧锁 / 删锁文件」）。
+MISDIAGNOSIS_TOKENS = ("卡死", "陈旧锁", "删锁文件")
+
+#: 改前的误诊文案（issue #5896 的**红证锚点**：注入回这段 ⇒ 判据②必须红）。
+OLD_MISDIAGNOSING_MESSAGE = (
+    '  echo "❌ 等待部署锁超时（10 分钟）：可能有卡死的部署进程持有 $LOCK"\n'
+    '  echo "   排查：fuser -v $LOCK 找到占用 PID，确认后 kill；确认无进程后再删锁文件重试"'
+)
+
+
+def read_deploy_sh() -> str:
+    assert DEPLOY_SH.is_file(), f"反空跑锚点：目标脚本不存在 → {DEPLOY_SH}"
+    return DEPLOY_SH.read_text(encoding="utf-8")
+
+
+def lock_block(text: str) -> str:
+    """取「拿锁 → 等待 → 超时文案」那一段（`LOCK=` 起，到 `trap 'flock -u 9' EXIT`）。
+
+    取不到 ⇒ 显式失败（不是"通过"）：`flock` 串行护栏被删/被搬是另一族判据的事，
+    这里至少不能让本判据**空跑**。
+    """
+    m = re.search(r"^LOCK=.*?^trap 'flock -u 9' EXIT$", text, re.M | re.S)
+    assert m, (
+        "反空跑锚点：找不到 flock 段（`LOCK=` … `trap 'flock -u 9' EXIT`）—— 判据已过期或护栏被删"
+    )
+    return m.group(0)
+
+
+def lock_wait_seconds(deploy_text: str) -> int:
+    """读具名常量 `LOCK_WAIT_SECONDS`（判据不硬编码等待值；读的就是脚本用的那个数）。"""
+    m = re.search(r"^LOCK_WAIT_SECONDS=\$\{SWAS_LOCK_WAIT_SECONDS:-(\d+)\}$", deploy_text, re.M)
+    assert m, (
+        "找不到具名常量 `LOCK_WAIT_SECONDS=${SWAS_LOCK_WAIT_SECONDS:-<秒>}` —— "
+        "等待上限必须可读（判据读它，人也要一眼看到它的来历）"
+    )
+    return int(m.group(1))
+
+
+def job_timeout_minutes(wf: str) -> int:
+    path = WORKFLOWS_DIR / wf
+    assert path.is_file(), f"反空跑锚点：workflow 不存在 → {path}"
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return int(doc["jobs"]["build-and-deploy"]["timeout-minutes"])
+
+
+def cold_build_bound(deploy_text: str) -> int:
+    """读构建**上界**常量 `BUILD_TIMEOUT_SECS`（不读实测样本 —— 判据用的是脚本真会被杀的那个值）。"""
+    m = re.search(r"^BUILD_TIMEOUT_SECS=\$\{BUILD_TIMEOUT_SECS:-(\d+)\}$", deploy_text, re.M)
+    assert m, (
+        "找不到构建上界常量 `BUILD_TIMEOUT_SECS=${BUILD_TIMEOUT_SECS:-<秒>}`（判据已过期）—— "
+        '它必须与 `timeout "$BUILD_TIMEOUT_SECS" docker build` 同源'
+    )
+    return int(m.group(1))
+
+
+def lock_wait_problems(deploy_text: str, ci_text: str, job_minutes: dict) -> list[str]:
+    """① 等待上限必须**覆盖一次真实部署**且**等得起**（纯函数，便于喂坏样本）。空清单 = 绿。"""
+    out: list[str] = []
+    wait = lock_wait_seconds(deploy_text)
+    if wait < LOCK_WAIT_MIN_SECONDS:
+        out.append(
+            f"锁等待上限 {wait}s < 下限 {LOCK_WAIT_MIN_SECONDS}s —— 一次并发部署真机实测 ~28min（1680s）"
+            "⇒ 后到者必然白等失败（2026-10-01 两次如实复现的 deploy-frontend failure）"
+        )
+    if 'flock -w "$LOCK_WAIT_SECONDS" 9' not in deploy_text:
+        out.append(
+            '`flock -w "$LOCK_WAIT_SECONDS" 9` 不在脚本里 —— 常量与实际等待必须**同源**，'
+            "否则读到的常量可以是装饰（等待仍被写死成别的值）"
+        )
+    m = re.search(
+        r"^C_BUILD_DEPLOY_TIMEOUT_SECONDS=\$\{SWAS_C_BUILD_DEPLOY_TIMEOUT_SECONDS:-(\d+)\}$", ci_text, re.M
+    )
+    if not m:
+        out.append("找不到 C′ 的「发起+轮询」预算常量 `C_BUILD_DEPLOY_TIMEOUT_SECONDS`（判据已过期）")
+    else:
+        budget = int(m.group(1))
+        bound = cold_build_bound(deploy_text)
+        if wait + bound >= budget:
+            out.append(
+                f"锁等待 {wait}s + 冷构建**上界** {bound}s = {wait + bound}s ≥ C′ 轮询预算 {budget}s ⇒ "
+                "**等不起**：等待 + 构建就可能把这次调用推过预算（硬超时路径不做自动回滚）⇒ "
+                "三处预算必须一起抬"
+            )
+    for wf, mins in sorted(job_minutes.items()):
+        if wait >= mins * 60:
+            out.append(
+                f"{wf}: 锁等待 {wait}s ≥ job `timeout-minutes: {mins}`（= {mins * 60}s）⇒ "
+                "等待会先把 run 交给 GitHub 打死（结论 `cancelled`，**不是** failure ⇒ 断路器不跳闸）"
+            )
+    return out
+
+
+def misdiagnosis_problems(block: str) -> list[str]:
+    """② 超时文案不得把真因说成「卡死 / 陈旧锁 / 删锁文件」（纯函数，便于喂坏样本）。"""
+    out = [f"超时文案出现与事实相反的处置话术：{tok!r}" for tok in MISDIAGNOSIS_TOKENS if tok in block]
+    if "排队" not in block:
+        out.append("超时文案没有如实归因到真因「并发部署排队」")
+    if "fuser" not in block:
+        out.append("超时文案没有保留 `fuser -v` 这条**次要**核对手段")
+    return out
+
+
+def test_lock_wait_covers_a_real_concurrent_deploy():
+    """① 锁等待上限必须覆盖一次真实并发部署（issue #5896），且三层预算**等得起**。"""
+    problems = lock_wait_problems(
+        read_deploy_sh(), read_script(), {wf: job_timeout_minutes(wf) for wf in DEPLOY_WORKFLOWS}
+    )
+    assert problems == [], "锁等待上限判红：\n- " + "\n- ".join(problems)
+
+
+def test_lock_timeout_message_does_not_misdiagnose():
+    """② 超时文案必须如实归因（并发部署排队），不得教人去找「卡死进程」或删锁文件。"""
+    problems = misdiagnosis_problems(lock_block(read_deploy_sh()))
+    assert problems == [], "超时文案判红：\n- " + "\n- ".join(problems)
+
+
+def test_lock_criteria_have_discriminating_power():
+    """③ 判别力自证：①② 各喂内存坏样本 ⇒ **各自判红**；好样本（真文本）不红。
+
+    不会红的断言 = 空断言。这里证明两条判据真的抓得住「改回去」的形态。
+    """
+    deploy_real, ci_real = read_deploy_sh(), read_script()
+    jobs = {wf: job_timeout_minutes(wf) for wf in DEPLOY_WORKFLOWS}
+    block_real = lock_block(deploy_real)
+
+    # 好样本先绿（前提；否则下面的"判红"无从区分）
+    assert lock_wait_problems(deploy_real, ci_real, jobs) == [], "真文本被判红 ⇒ 判据①的前提不成立"
+    assert misdiagnosis_problems(block_real) == [], "真文本被判红 ⇒ 判据②的前提不成立"
+
+    # ① 坏样本 a：等待上限改回改前的 600s
+    back_to_600 = deploy_real.replace(
+        "LOCK_WAIT_SECONDS=${SWAS_LOCK_WAIT_SECONDS:-1800}", "LOCK_WAIT_SECONDS=${SWAS_LOCK_WAIT_SECONDS:-600}"
+    )
+    assert back_to_600 != deploy_real, "注入未生效（判据自证）"
+    assert lock_wait_problems(back_to_600, ci_real, jobs), "等待改回 600s 没判红（空断言）"
+
+    # ① 坏样本 b：C′ 预算改回 3900s（上一版：按实测 1782 推导）⇒ 1800 + 上界 2400 > 3900 必须判红
+    back_to_3900 = ci_real.replace(
+        "C_BUILD_DEPLOY_TIMEOUT_SECONDS=${SWAS_C_BUILD_DEPLOY_TIMEOUT_SECONDS:-4500}",
+        "C_BUILD_DEPLOY_TIMEOUT_SECONDS=${SWAS_C_BUILD_DEPLOY_TIMEOUT_SECONDS:-3900}",
+    )
+    assert back_to_3900 != ci_real, "注入未生效（判据自证）"
+    assert lock_wait_problems(deploy_real, back_to_3900, jobs), (
+        "预算改回 3900s（按**实测样本**推导的那一版）没判红 ⇒ 按**上界**判「等得起」这一半没有判别力"
+    )
+
+    # ① 坏样本 b2：C′ 预算改回不含锁等待的 3000s
+    back_to_3000 = ci_real.replace(
+        "C_BUILD_DEPLOY_TIMEOUT_SECONDS=${SWAS_C_BUILD_DEPLOY_TIMEOUT_SECONDS:-4500}",
+        "C_BUILD_DEPLOY_TIMEOUT_SECONDS=${SWAS_C_BUILD_DEPLOY_TIMEOUT_SECONDS:-3000}",
+    )
+    assert back_to_3000 != ci_real, "注入未生效（判据自证）"
+    assert lock_wait_problems(deploy_real, back_to_3000, jobs), (
+        "预算改回 3000s 没判红 ⇒「等得起」这一半没有判别力"
+    )
+
+    # ① 坏样本 b3：构建**上界**被抬到 3000s（1800 + 3000 > 4500）⇒ 判据必须**现读**上界；
+    #    若判据把数字抄死（或用实测样本），这条注入就抓不住（= 空断言）
+    bigger_bound = deploy_real.replace(
+        "BUILD_TIMEOUT_SECS=${BUILD_TIMEOUT_SECS:-2400}", "BUILD_TIMEOUT_SECS=${BUILD_TIMEOUT_SECS:-3000}"
+    )
+    assert bigger_bound != deploy_real, "注入未生效（判据自证）"
+    assert lock_wait_problems(bigger_bound, ci_real, jobs), (
+        "构建上界抬到 3000s 后 1800+3000 > 4500 ⇒ 必须判红（判据要现读上界，不许抄死数字）"
+    )
+
+    # ① 坏样本 c：常量成了装饰（实际等待被写死成别的值）—— 判据不许被"读常量"骗过
+    hardcoded_wait = deploy_real.replace('flock -w "$LOCK_WAIT_SECONDS" 9', "flock -w 600 9")
+    assert hardcoded_wait != deploy_real, "注入未生效（判据自证）"
+    assert lock_wait_problems(hardcoded_wait, ci_real, jobs), (
+        "实际等待被写死成 600s 而常量仍是 1800 ⇒ 判据被骗过（空断言）"
+    )
+
+    # ② 坏样本：把整段如实文案换回改前的误诊文案（「卡死进程」+「删锁文件重试」）
+    stripped = "".join(
+        line for line in block_real.splitlines(keepends=True) if not line.lstrip().startswith("echo ")
+    )
+    assert stripped != block_real, "注入未生效（判据自证）：真文案里没有 echo 行？"
+    misdiagnosed = stripped.replace("    exit 1", OLD_MISDIAGNOSING_MESSAGE + "\n    exit 1")
+    assert misdiagnosed != stripped and "exit 1" in stripped, "注入未生效（判据自证）"
+    assert misdiagnosis_problems(misdiagnosed), "文案改回「卡死 / 删锁文件」没判红（空断言）"

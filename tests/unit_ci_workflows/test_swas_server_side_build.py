@@ -500,8 +500,13 @@ def test_time_budgets_are_coherent_for_cold_builds():
 
 
 def test_time_budget_red_proofs():
-    """红证：把任一层改回改前形态 ⇒ 必须红（三层各自能单独判红）。"""
-    build_bound, deploy_budget, cold = 2400, 3000, 1782
+    """红证：把任一层改回改前形态 ⇒ 必须红（三层各自能单独判红）。
+
+    ⚠️ 2026-10-01（issue #5896）后真值刷新为 `2400 < 4500 < 90min` —— 预算里**含远端锁等待 1800s
+    + 冷构建上界 2400s + 余量 300s**（三条腿共用同一把远端锁 ⇒ 跨服务排队，实测一次 ~28min）
+    ⇒ 只改这三条里的一条必须判红。
+    """
+    build_bound, deploy_budget, cold = 2400, 4500, 1782
 
     def problems(bb, db, job_s):
         out = []
@@ -513,10 +518,14 @@ def test_time_budget_red_proofs():
             out.append("job 上界 <= 轮询预算")
         return out
 
-    assert problems(build_bound, deploy_budget, 75 * 60) == [], "前提：真值先绿"
-    assert problems(2400, 900, 75 * 60), "把轮询预算改回 900s 没判红（正是改前的假失败形态）"
-    assert problems(2400, 3000, 45 * 60), "把 job 上界改回 45min 没判红（正是 cancelled 自放大的形态）"
-    assert problems(600, 3000, 75 * 60), "把构建上界压到 600s 没判红（容不下冷构建）"
+    assert problems(build_bound, deploy_budget, 90 * 60) == [], "前提：真值先绿"
+    assert problems(2400, 900, 90 * 60), "把轮询预算改回 900s 没判红（正是改前的假失败形态）"
+    assert problems(2400, 4500, 45 * 60), "把 job 上界改回 45min 没判红（正是 cancelled 自放大的形态）"
+    assert problems(600, 4500, 90 * 60), "把构建上界压到 600s 没判红（容不下冷构建）"
+    # ⚠️ 「预算必须含**锁等待**（1800）**且覆盖冷构建上界**（2400）」这一半（issue #5896）**不在本函数
+    #    的射程内** —— 它只判 `构建上界 < 轮询预算 < job 上界` 这个**序关系**（拿样本 1782s 或上界 2400s
+    #    去比预算，都需要读**另一个文件**的常量，那是 `test_swas_deploy_ci_hardening.py` 的
+    #    `test_lock_wait_covers_a_real_concurrent_deploy` 的职责）⇒ 不在这里假装判过。
 
 
 #: admin-web 构建期变量的**默认值**（= 改前 CI 上 `secrets.X || <默认>` 的**有效值**，
@@ -599,7 +608,7 @@ def test_admin_web_defaults_red_proofs():
 #
 # 为什么单靠逐字断言不够（issue #5814 的集成侧追问）：`BUILD_TIMEOUT_SECS=2400` 写在那儿、
 # 甚至 `echo` 出来，都不代表命令**真被 `timeout` 包住**。而上界一旦是装饰，卡住的构建会一直占着
-# `deploy-<svc>` 的并发锁到 job 的 75min —— 「挂住的 run 攥锁」正是本单要消灭的形态之一。
+# `deploy-<svc>` 的并发锁到 job 的 90min —— 「挂住的 run 攥锁」正是本单要消灭的形态之一。
 # ⇒ 这里从**真脚本**抠出那条语句**真跑**（桩 docker + 桩 timeout），断言：
 #    ① 桩 `timeout` 收到的 argv = `<上界> docker build …`（上界**作用在构建命令上**）；
 #    ② 挂住的构建被上界杀掉 ⇒ rc=124，且脚本**点名**「服务器侧构建超时」；
@@ -693,7 +702,7 @@ def test_build_call_is_actually_wrapped_by_the_explicit_bound(tmp_path):
 
 
 def test_hung_build_is_killed_by_the_bound_and_named(tmp_path):
-    """🔴 挂住的构建被上界**杀掉** ⇒ rc=124 且点名「服务器侧构建超时」（不是静默占锁到 75min）。"""
+    """🔴 挂住的构建被上界**杀掉** ⇒ rc=124 且点名「服务器侧构建超时」（不是静默占锁到 90min）。"""
     proc, out, tlog = _run_build_block(tmp_path, sleep_for=30, timeout_secs=2)
     assert proc.returncode == 124, (
         f"挂住的构建必须以上界码 124 退出（实得 {proc.returncode}）⇒ 否则它不会判失败、"

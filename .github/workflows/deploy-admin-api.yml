@@ -62,12 +62,14 @@ jobs:
     runs-on: ubuntu-latest
     # 硬超时兜底（issue #4767 ①）：脚本被卡死时由 GitHub 终止 run ⇒ run 进**终态** ⇒
     # `deploy-admin-api` 的 concurrency 组释放。事故里挂住的 run 占锁 20+ 分钟 ⇒ 后续 main 的部署全被挡住。
-    # 75min 的来历（issue #5814 C′）：构建已搬到**服务器侧**，其墙钟算在「发起+轮询」预算之内
-    # （`swas-deploy-ci.sh` 的 SWAS_DEPLOY_TIMEOUT_SECONDS，C′ 下默认 3000s = 50min，
-    #   = 构建上界 2400s + 部署余量 600s）⇒ job 上界必须**大于**它，否则 run 会先被 GitHub 打死，
-    # 而打死报的是 `cancelled`（**不是** failure）⇒ 断路器不跳闸 ⇒ cron 自放大（本单要消灭的形态）。
-    # 冷构建实测 1782s（29.7min）⇒ 75min 给足余量，且仍能兜住真正卡死的 run（lock 一定会释放）。
-    timeout-minutes: 75
+    # 90min 的来历（issue #5814 C′ + #5896）：构建已搬到**服务器侧**，其墙钟算在「发起+轮询」预算之内
+    # （`swas-deploy-ci.sh` 的 SWAS_DEPLOY_TIMEOUT_SECONDS，C′ 下默认 4500s = 75min
+    #   = **远端锁等待上限 1800s** + **冷构建上界 2400s** + 余量 300s）⇒ job 上界必须**大于**它，
+    # 否则 run 会先被 GitHub 打死，而打死报的是 `cancelled`（**不是** failure）⇒ 断路器不跳闸
+    # ⇒ cron 自放大（本单要消灭的形态）。
+    # 实测：冷构建 1782s（29.7min）、并发部署排队 ~28min ⇒ 90min 给足余量，
+    # 且仍能兜住真正卡住的 run（lock 一定会释放）。
+    timeout-minutes: 90
     # 部署对账输出（issue #2947）：schedule 触发时若镜像已存在则 skip=true（本轮未部署）
     outputs:
       deployed: ${{ steps.sync.outputs.skip }}

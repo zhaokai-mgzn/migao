@@ -28,7 +28,7 @@
 #   · 「先起新容器 → 健康检查通过 → 再切流量」的**蓝绿**形态需要改 `deploy/swas/deploy.sh`（本单未授权），
 #     本单实现的是 issue 明示可接受的替代式 —— **失败即回滚到上一个可用镜像**；
 #   · **硬超时不做自动回滚**：远端 RunCommand 的 `--timeout 3600` ⇒ 超时那一刻远端**可能仍在跑**，
-#     此刻回滚会与它抢 deploy.sh 的 flock（等待 600s 后才失败）⇒ 改为显式告警 + 恢复手册。
+#     此刻回滚会与它抢 deploy.sh 的 flock（等待 LOCK_WAIT_SECONDS = 1800s 后才失败）⇒ 改为显式告警 + 恢复手册。
 #
 # ── 2026-09-21 部署链加固之二（issue #4852，排队的旧 run 静默回退生产）──
 # 闸门本体在远端 `deploy/swas/deploy.sh`（「target tag 是当前在跑 tag 的祖先 ⇒ 跳过该服务 + 告警」，
@@ -86,9 +86,17 @@ esac
 # ⚠️ **C′ 下这个预算必须显著变大**（issue #5814）：构建就发生在远端这次 RunCommand 调用**之内**
 #    （冷构建实测 **1782s = 29.7min**），而默认 900s 会在构建还没跑完时就判「硬超时」⇒
 #    表现成「CI 报硬超时、远端其实还在构建」的**假失败**（而且它会走 recovery_manual，不做回滚）。
-#    ⇒ SERVICE_KEY 非空时默认抬到 3000s（= 构建上界 2400s + 部署余量 600s）。
+#    ⇒ SERVICE_KEY 非空时默认抬到 4500s（= **远端锁等待上限 1800s** + **冷构建上界 2400s** + 余量 300s）。
+#    🔴 为什么用**上界 2400s**而不是实测 1782s（2026-10-01 主会话裁定）：1782s 只是**一个样本**，
+#    被脚本声明、并被判据钉住的是 `BUILD_TIMEOUT_SECS=2400`（deploy/swas/deploy.sh）⇒ 预算要覆盖
+#    **可能的最坏墙钟**，不是历史观测值。用样本做不等式 ⇒ 冷构建真发生时撞预算 ⇒ run 被 CI
+#    硬超时打死（结论不是 failure）⇒ 断路器不跳闸 ⇒ cron 自放大 —— 那正是最不该出现的失败形态。
+#    ⚠️ 为什么必须**含锁等待**（issue #5896）：三条部署腿共用远端 `/tmp/migao-deploy.lock`，而 CI 侧
+#    `concurrency` 组按服务分 ⇒ **跨服务不互斥** ⇒ 后到的那条腿要在**这次 RunCommand 之内**先排队
+#    （实测一次并发部署 ~28min）再开始构建 ⇒ 预算若不含等待，等待本身就会把调用推过预算 ⇒
+#    表现成「CI 报硬超时、远端其实还在正常部署」的**假失败**（走 recovery_manual，不做回滚）。
 #    显式给 SWAS_DEPLOY_TIMEOUT_SECONDS 时仍以显式值为准（不偷偷覆盖人的意图）。
-C_BUILD_DEPLOY_TIMEOUT_SECONDS=${SWAS_C_BUILD_DEPLOY_TIMEOUT_SECONDS:-3000}
+C_BUILD_DEPLOY_TIMEOUT_SECONDS=${SWAS_C_BUILD_DEPLOY_TIMEOUT_SECONDS:-4500}
 DEPLOY_TIMEOUT_SECONDS=${SWAS_DEPLOY_TIMEOUT_SECONDS:-900}
 # ⚠️ **保持上面那一行在行首**：既有判据
 #    （tests/unit_ci_workflows/test_swas_deploy_ci_hardening.py 的墙钟锚点）按 `^DEPLOY_TIMEOUT_SECONDS=…`
@@ -515,7 +523,7 @@ deploy_attempt() {
     if [ "$(remaining_seconds)" -le 0 ]; then
       echo "❌ 硬超时：本次「发起 SWAS 调用 + 轮询结果」已超过 ${DEPLOY_TIMEOUT_SECONDS}s（已轮询 $i 次）"
       echo "   远端 RunCommand 的 timeout=3600s ⇒ 它**可能仍在跑**；此处**不做自动回滚**"
-      echo "   （此刻回滚会与它抢 deploy.sh 的 flock —— 那把锁要等 600s 才会失败退出）。"
+      echo "   （此刻回滚会与它抢 deploy.sh 的 flock —— 那把锁要等 LOCK_WAIT_SECONDS = 1800s 才会失败退出）。"
       DEPLOY_RC=2
       return 0
     fi
