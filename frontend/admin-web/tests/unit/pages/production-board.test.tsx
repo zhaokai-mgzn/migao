@@ -46,11 +46,25 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 
-// 侧边栏测试：模拟已登录的管理员（全权限）
+// 登录态（issue #5913）：**必须按 zustand 选择器返回** —— 看板新增的「订单详情」入口按 `order:list`
+// 显隐（`usePermission()` → `useAuthStore(s => s.user)`），而原 mock 无视入参、恒返回整份 state
+// ⇒ 选择器拿到的 `user` 是 undefined ⇒ `has()` 恒 false ⇒ 该入口在**所有**用例里都不渲染
+// （显隐判据退化成「永远不显示」= 恒真断言）。权限可按用例改写，默认仍为管理员（全权限）。
+const authMock = vi.hoisted(() => ({
+  state: {
+    user: {
+      id: '1',
+      username: 'admin',
+      name: '管理员',
+      permissions: ['*'] as string[],
+      roles: ['admin'] as string[],
+    },
+  },
+}))
 vi.mock('@/store/auth', () => ({
-  useAuthStore: () => ({
-    user: { id: '1', username: 'admin', name: '管理员', permissions: ['*'], roles: ['admin'] },
-  }),
+  // Sidebar 用无参形态（`useAuthStore()` 取整份 state），usePermission 用选择器形态 —— 两种都要支持
+  useAuthStore: (selector?: (state: unknown) => unknown) =>
+    typeof selector === 'function' ? selector(authMock.state) : authMock.state,
 }))
 
 vi.mock('next/link', () => ({
@@ -251,6 +265,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
 
 describe('生产看板页 /production（加工单唯一入口，PG-038）', () => {
   beforeEach(() => {
+    authMock.state.user.permissions = ['*'] // 默认全权限；「无 order:list」的红线用例自行改写
     mockPush.mockReset()
     mockList.mockReset().mockResolvedValue(ok(ORDERS))
     mockGetOrderOperations.mockReset().mockImplementation((orderId: string) =>
@@ -380,15 +395,65 @@ describe('生产看板页 /production（加工单唯一入口，PG-038）', () =
     expect(screen.getByTestId('production-row-po-2')).toHaveTextContent('纱帘（纯白）× 2米')
   })
 
-  it('合并能力⑥查看：跳对应订单详情（订单详情已含加工单块，issue #4305）', async () => {
+  it('合并能力⑥订单详情：跳对应订单详情（订单详情已含加工单块，issue #4305）', async () => {
     render(<ProductionBoardPage />)
     await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
 
     const user = userEvent.setup()
     const row = screen.getByTestId('production-row-po-1')
-    await user.click(within(row).getByRole('button', { name: '查看' }))
+    // issue #5913：文案由「查看」改判为「订单详情」—— 本行主键是**加工单**，
+    // 「查看」在这一行没有确定宾语（与同行的「生产明细」互换也不违和 = 命名失败的判据）。
+    await user.click(within(row).getByRole('button', { name: '订单详情' }))
 
     expect(mockPush).toHaveBeenCalledWith('/orders/order-uuid-1')
+  })
+
+  // ── issue #5913：入口可见性 = **目标页的守卫码**（可见却 403 是缺陷，不是「少点一次」）──
+
+  it('无 order:list ⇒ **不渲染**「订单详情」入口（生产岗点进 403 的红线）', async () => {
+    // 默认岗位 product_manager：持 `production:view`（进得了本页）、**不持** `order:list`
+    // ⇒ 改前该入口照渲染，点进 /orders/{id} 被路由守卫拦成「无权访问该页面」。
+    // ⚠️ roles 必须一起清空：`usePermission()` 把 `roles: ['admin']` 判为全权限（isAdmin），
+    // 只改 permissions 会让这条判据**恒真**（红线永远"通过"）。
+    authMock.state.user.permissions = ['production:view']
+    authMock.state.user.roles = []
+    render(<ProductionBoardPage />)
+    await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
+
+    const row = screen.getByTestId('production-row-po-1')
+    expect(within(row).queryByRole('button', { name: '订单详情' })).toBeNull()
+    // 「生产明细」与本源页同码（production:view）⇒ 不受影响，一条能力都不丢
+    expect(within(row).getByRole('button', { name: '生产明细' })).toBeInTheDocument()
+  })
+
+  it('持 order:list ⇒ 入口照常渲染（显隐判据不是恒假）', async () => {
+    authMock.state.user.permissions = ['production:view', 'order:list']
+    authMock.state.user.roles = []
+    render(<ProductionBoardPage />)
+    await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
+
+    expect(
+      within(screen.getByTestId('production-row-po-1')).getByRole('button', { name: '订单详情' }),
+    ).toBeInTheDocument()
+  })
+
+  it('引导文案是**页面级**的：全页只渲染一次且不在表格里（issue #5913）', async () => {
+    render(<ProductionBoardPage />)
+    await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
+
+    // 改前 = 每行一份（2 行数据 ⇒ 2 条），并挤在 8 列中最后的「操作」格里
+    expect(screen.getAllByText(/状态流转请在订单详情操作/)).toHaveLength(1)
+    expect(within(screen.getByRole('table')).queryByText(/状态流转请在订单详情操作/)).toBeNull()
+  })
+
+  it('无 order:list 时引导文案标明需订单查看权限（不把人指向去不了的地方）', async () => {
+    authMock.state.user.permissions = ['production:view']
+    authMock.state.user.roles = []
+    render(<ProductionBoardPage />)
+    await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
+
+    expect(screen.getByTestId('production-status-hint')).toHaveTextContent('状态流转请在订单详情操作')
+    expect(screen.getByTestId('production-status-hint')).toHaveTextContent('无订单查看权限')
   })
 
   it('生产明细：跳 /processing-orders/{加工单号}/production（子路由未随菜单移除）', async () => {
@@ -409,7 +474,8 @@ describe('生产看板页 /production（加工单唯一入口，PG-038）', () =
     for (const label of ['发加工', '开始加工', '加工完成', '取消加工单']) {
       expect(screen.queryByRole('button', { name: label })).toBeNull()
     }
-    expect(tableText()).toContain('状态流转请在订单详情操作')
+    // issue #5913：引导文案仍在（#4305 的判据一条不放宽），但落点由「每行一份」改为**页面级一次**
+    expect(screen.getByTestId('production-status-hint')).toHaveTextContent('状态流转请在订单详情操作')
   })
 
   it('PG-024 时序保护：旧的在飞列表响应晚 resolve，不得把看板覆盖回旧数据', async () => {

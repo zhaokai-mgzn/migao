@@ -20,6 +20,35 @@ vi.mock('@/lib/use-route-id', () => ({
   useRouteId: () => 'ticket-001',
 }))
 
+// 权限态（issue #5913）：本页「订单号」入口按**目标页**守卫码 `order:list` 显隐
+// （源页守卫是 `after_sales:view`，两者不蕴含）。默认无权限，用例内按需改写。
+const authMock = vi.hoisted(() => ({
+  state: {
+    user: { id: '1', username: 'u', name: 'u', permissions: [] as string[], roles: [] as string[] },
+  },
+}))
+vi.mock('@/store/auth', () => ({
+  useAuthStore: (selector?: (state: unknown) => unknown) =>
+    typeof selector === 'function' ? selector(authMock.state) : authMock.state,
+}))
+
+// 「订单号」入口的跳转目标（全局 setup 的 next/navigation mock 每次返回新 vi.fn()，断言不到实参）
+const mockPush = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: mockPush,
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    refresh: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+  usePathname: () => '/after-sales/ticket-001',
+  useSearchParams: () => new URLSearchParams(),
+  useParams: () => ({ id: 'ticket-001' }),
+  redirect: vi.fn(),
+}))
+
 // Mock next/link
 vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
@@ -130,6 +159,8 @@ const processingTicket = { ...mockTicket, status: 'processing' as const }
 describe('AfterSalesDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    authMock.state.user.permissions = [] // 默认无订单查看权限；用例内按需改写
+    mockPush.mockReset()
     // clearAllMocks 不重置实现：显式 mockReset，避免上一用例的 mockResolvedValue 泄漏
     mockGetTicket.mockReset()
     mockUpdateTicketStatus.mockReset()
@@ -149,6 +180,30 @@ describe('AfterSalesDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByText('工单详情')).toBeInTheDocument()
     })
+  })
+
+  // ── issue #5913：关联订单入口 = **目标页**守卫码（类级元守卫抓出的同族第二处）──
+
+  it('无 order:list ⇒ 订单号照显，但不是入口（点进去 403 的红线）', async () => {
+    authMock.state.user.permissions = ['after_sales:view']
+    render(<AfterSalesDetailPage />)
+    await waitFor(() => expect(screen.getByText('工单详情')).toBeInTheDocument())
+
+    // 信息不丢：订单号仍然看得见
+    expect(screen.getByText('MG202606001')).toBeInTheDocument()
+    // 入口不渲染：没有 order:list 时点进去是「无权访问该页面」
+    expect(screen.queryByRole('button', { name: /MG202606001/ })).toBeNull()
+  })
+
+  it('持 order:list ⇒ 订单号是入口，点击跳对应订单详情', async () => {
+    authMock.state.user.permissions = ['after_sales:view', 'order:list']
+    const user = userEvent.setup()
+    render(<AfterSalesDetailPage />)
+    await waitFor(() => expect(screen.getByText('工单详情')).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: /MG202606001/ }))
+
+    expect(mockPush).toHaveBeenCalledWith('/orders/order-001')
   })
 
   it('should display ticket number', async () => {
