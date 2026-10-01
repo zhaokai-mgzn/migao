@@ -248,6 +248,57 @@ def test_identity_guard_does_not_run_in_ci():
     )
 
 
+# ── ②b 静态：身份判据**每次运行只判一次**（issue #5885）──
+#
+# 回归（PR #5129 引入，2026-10-01 实测）：Playwright 的 **worker 进程会再次加载本配置**，
+# 而那时 `webServer` 已经起来、`<project>/.next/dev/lock` 已被**它自己**持有 ⇒ 守卫的
+# dev-lock 分支把「本次运行**自己**起的 dev server」判成外来服务 ⇒ 在配置加载期抛错，
+# **本地任何 E2E 都跑不起来**（实测 `1 failed / 1 did not run`，栈顶 `playwright.config.ts`），
+# 而整块包在 `if (!process.env.CI)` 里 ⇒ **CI 永远不红**（main 侧没有守护）。
+#
+# 口径：守卫只该在**主进程那一次**（早于 webServer 启动）判定；判过之后置标记，
+# worker 作为子进程继承该标记后直接跳过。**判据没有被删**：手工起的 dev server
+# 仍在主进程那一次被判红（dev-lock 分支先于端口分支，照旧生效）。
+
+GUARD_ONCE_MARKER = "MIGAO_E2E_IDENTITY_DONE"
+
+
+def guard_once_problems(text: str) -> list[str]:
+    """「身份判据每次运行只判一次」的**纯函数**检测器（返回问题清单，空 = 通过）。"""
+    problems: list[str] = []
+    if GUARD_ONCE_MARKER not in text:
+        return [
+            f"配置里没有「本次运行已判定过」的标记 `{GUARD_ONCE_MARKER}` —— worker 会重复判定，"
+            "把 Playwright 自己起的 dev server 判成外来服务（issue #5885）"
+        ]
+    if not re.search(rf"if\s*\([^)]*{GUARD_ONCE_MARKER}[^)]*\)", text):
+        problems.append(
+            f"`{GUARD_ONCE_MARKER}` 没有出现在守卫的 `if` 闸门条件里 ⇒ 拦不住 worker 的重复判定"
+        )
+    if not re.search(rf"process\.env\.{GUARD_ONCE_MARKER}\s*=", text):
+        problems.append(
+            f"`{GUARD_ONCE_MARKER}` 只被读、从未被置上 ⇒ 闸门恒假（守卫彻底不跑）—— "
+            "「只判一次」必须由「判过之后置标记」实现，不能靠闸门恒假"
+        )
+    return problems
+
+
+def test_identity_guard_runs_once_per_playwright_run():
+    problems = guard_once_problems(CONFIG.read_text(encoding="utf-8"))
+    assert problems == [], (
+        "身份判据必须**每次运行只判一次**（issue #5885：worker 再次加载配置时会看到"
+        "Playwright 自己起的 dev server）：\n  " + "\n  ".join(problems)
+    )
+
+
+def test_guard_once_criterion_rejects_repeated_guard_text():
+    """判别力自证：把标记整块摘掉（= PR #5129 的修复前形态）⇒ 检测器**必须**判红。"""
+    mutated = CONFIG.read_text(encoding="utf-8").replace(GUARD_ONCE_MARKER, "__REMOVED__")
+    assert guard_once_problems(mutated), (
+        "把『只判一次』的标记整块摘掉后检测器没有判红 ⇒ 它是空断言（不会红的判据 = 没有）"
+    )
+
+
 # ── ③ 红证：同一条判据对「修复前」文本必须拒绝（锚点 = 不可变引用，见 PRE_FIX_WEBSERVER_SNIPPET）──
 
 def test_criterion_rejects_pre_fix_config_text():

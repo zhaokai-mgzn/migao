@@ -37,7 +37,16 @@ const IDENTITY_GUARD = path.resolve(__dirname, 'admin_web_devserver_identity.py'
 // 端口被**别的检出**占用，或**本检出已有一个活着的 dev server** —— Next 16 按目录单例，换端口也
 // 起不来，issue #5121）/ 3 = 未判定（无 lsof）⇒ 只告警不阻塞（硬拦面是下面的 reuseExistingServer:
 // false，任何已存在的监听者都会被它拒绝复用）。CI：整块不执行 ⇒ CI 侧零新增行为。
-if (!process.env.CI) {
+//
+// 🔴 issue #5885（PR #5129 的回归）：上面「配置加载期 ⇒ 早于 webServer 启动」这个前提
+// **只对主进程成立** —— Playwright 的 **worker 进程会再次加载本配置**，而那时 `webServer`
+// 已经起来、`<project>/.next/dev/lock` 已被**它自己**持有 ⇒ 守卫的 dev-lock 分支把
+// 「本次运行**自己**起的 dev server」判成外来服务 ⇒ 在配置加载期抛错，**本地任何 E2E 都
+// 跑不起来**（实测 `1 failed / 1 did not run`），而整块包在 `if (!process.env.CI)` 里
+// ⇒ **CI 永远不红**。修法：守卫只判**一次**（主进程、早于 webServer），判过之后置标记，
+// worker 作为子进程继承该标记后直接跳过。**判据一条没删** —— 手工起的 dev server
+// 仍在主进程那一次被判红（dev-lock 分支先于端口分支，照旧生效）。
+if (!process.env.CI && !process.env.MIGAO_E2E_IDENTITY_DONE) {
   const identity = spawnSync('python3', [IDENTITY_GUARD, 'check', '--project', ADMIN_WEB_DIR, '--port', String(ADMIN_WEB_PORT)], {
     encoding: 'utf8',
   })
@@ -45,6 +54,9 @@ if (!process.env.CI) {
   if (identity.stderr) process.stderr.write(identity.stderr)
   // spawn 失败（如本机没有 python3）等同「未判定」：不阻塞本地 E2E，硬拦面仍在 reuseExistingServer。
   const undecidable = identity.status === 3 || identity.error !== undefined
+  // 只在「没有判红」的那两条路径上置标记 —— 判红会走下面的 throw，本进程树到不了 worker。
+  // 标记经环境变量传给子进程（worker 是主进程的子进程，spawn 时继承）。
+  if (identity.status === 0 || undecidable) process.env.MIGAO_E2E_IDENTITY_DONE = '1'
   if (identity.status !== 0 && !undecidable) {
     throw new Error(
       `[admin-web-e2e] 本地起服务前的「服务身份」前置断言未通过（exit ${identity.status}）：` +
