@@ -18,8 +18,6 @@ const mockDetail = vi.fn()
 const mockCreate = vi.fn()
 const mockPost = vi.fn()
 const mockCancel = vi.fn()
-const mockGetProducts = vi.fn()
-const mockGetProduct = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   inboundOrderApi: {
@@ -28,10 +26,6 @@ vi.mock('@/lib/api', () => ({
     create: (...a: unknown[]) => mockCreate(...a),
     post: (...a: unknown[]) => mockPost(...a),
     cancel: (...a: unknown[]) => mockCancel(...a),
-  },
-  productApi: {
-    getProducts: (...a: unknown[]) => mockGetProducts(...a),
-    getProduct: (...a: unknown[]) => mockGetProduct(...a),
   },
 }))
 
@@ -113,20 +107,6 @@ const postedDetail = {
 beforeEach(() => {
   vi.clearAllMocks()
   mockList.mockResolvedValue({ data: { data: [draftRow, postedRow] } })
-  mockGetProducts.mockResolvedValue({
-    data: { data: { items: [{ id: 'prod-1', name: '遮光窗帘布', skuCode: 'HUOHAO-01' }] } },
-  })
-  mockGetProduct.mockResolvedValue({
-    data: {
-      data: {
-        id: 'prod-1',
-        name: '遮光窗帘布',
-        skus: [
-          { id: '11', colorName: '米白', doorWidth: '2.8', sellingMethod: 'bulk_cut', price: 30, stock: 5 },
-        ],
-      },
-    },
-  })
 })
 
 describe('入库单页面（PR-037 / issue #5034）', () => {

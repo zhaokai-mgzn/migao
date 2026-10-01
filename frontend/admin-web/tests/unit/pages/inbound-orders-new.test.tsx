@@ -197,7 +197,9 @@ describe('入库数量：1 位小数（PR-046，issue #5063）', () => {
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     // 原值提交：不得被取整成 61、也不得被截断成 60。
-    expect(mockCreate.mock.calls[0][0].items[0]).toEqual({
+    // ⚠️ 断言挂在**整个 items 数组**上（不是 `items[0]`）—— 数组长度也是判据的一部分
+    //    （迁移前如此，迁移不许降级）。
+    expect(mockCreate.mock.calls[0][0].items).toEqual([{
       productId: 'prod-1',
       skuId: 11,
       quantity: 60.5,
@@ -205,7 +207,7 @@ describe('入库数量：1 位小数（PR-046，issue #5063）', () => {
       dyeLot: null,
       legacyBatchNo: null,
       rollLengthM: null,
-    })
+    }])
     const { toast } = await import('sonner')
     expect(toast.error).not.toHaveBeenCalled()
   })
@@ -271,9 +273,15 @@ describe('期初建账单条录入（PR-062，V118 / issue #5153）', () => {
     mockCreate.mockResolvedValue({ data: { data: createdOrder } })
     render(<NewInboundOrderPage />)
 
-    fireEvent.change(screen.getByLabelText('单据来源'), { target: { value: 'opening' } })
+    // ① 先按**采购收货**（缺省来源）加一行 ⇒ **没有**「旧系统批次号」列
+    //    （那一列对采购入库没有意义：旧系统批次号与系统批次号两列两义，填了后端会拒）
     const { qty } = await openWithLine()
+    expect(screen.queryByLabelText(/旧系统批次号/)).toBeNull()
+
+    // ② 切到「期初建账」⇒ 明细表多出该列（可填）
+    fireEvent.change(screen.getByLabelText('单据来源'), { target: { value: 'opening' } })
     expect(screen.getByText('旧系统批次号')).toBeInTheDocument()
+    expect(await screen.findByLabelText(/旧系统批次号/)).toBeInTheDocument()
 
     fireEvent.change(qty, { target: { value: '0.5' } })
     fireEvent.change(screen.getByLabelText(/旧系统批次号/), { target: { value: 'OLD-2024-0001' } })
@@ -282,10 +290,21 @@ describe('期初建账单条录入（PR-062，V118 / issue #5153）', () => {
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     const payload = mockCreate.mock.calls[0][0]
     expect(payload.source).toBe('opening')
-    expect(payload.items[0]).toMatchObject({
-      quantity: 0.5,
-      legacyBatchNo: 'OLD-2024-0001',
-    })
+    // 🔴 **七字段逐值 + 数组长度**（`toEqual`，不是 `toMatchObject`）——迁移**不许降级**：
+    //    只钉两个字段会漏掉「少一个键」「多一行」「unitCost/dyeLot/rollLengthM 写错」这类回归。
+    expect(payload.items).toEqual([
+      {
+        productId: 'prod-1',
+        skuId: 11,
+        quantity: 0.5,
+        unitCost: null,
+        dyeLot: null,
+        legacyBatchNo: 'OLD-2024-0001',
+        rollLengthM: null,
+      },
+    ])
+    const { toast } = await import('sonner')
+    expect(toast.error).not.toHaveBeenCalled()
   })
 })
 
