@@ -4799,9 +4799,9 @@ _CASE_MC_053 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-054 [NORMAL] worktree 删除不许穿过软链 + 禁止「跨工作区 node_modules 软链」成为约定（issue #5930）：解链调用必须**可执行且先于** `git worktree remove`、外部目标逐字节完好、仓内不许把这个姿势教成步骤（源: cases/misc.yml）──
-_CASE_MC_054 = EvalCase(
-    id='MC-054',
+# ── MC-055 [NORMAL] worktree 删除不许穿过软链 + 禁止「跨工作区 node_modules 软链」成为约定（issue #5930）：解链调用必须**可执行且先于** `git worktree remove`、外部目标逐字节完好、仓内不许把这个姿势教成步骤（源: cases/misc.yml）──
+_CASE_MC_055 = EvalCase(
+    id='MC-055',
     legacy_id='',
     title='worktree 删除不许穿过软链 + 禁止「跨工作区 node_modules 软链」成为约定（issue #5930）：解链调用必须**可执行且先于** `git worktree remove`、外部目标逐字节完好、仓内不许把这个姿势教成步骤',
     skill=Skill.GENERAL,
@@ -11418,7 +11418,7 @@ ALL_CASES = (
     _CASE_MC_051,
     _CASE_MC_052,
     _CASE_MC_053,
-    _CASE_MC_054,
+    _CASE_MC_055,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

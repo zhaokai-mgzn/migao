@@ -1,4 +1,4 @@
-# case_ids: MC-054
+# case_ids: MC-055
 """`dev-worktree.sh rm` 绝不让删除动作穿过软链 + 禁止「跨工作区 node_modules 软链」成为约定（issue #5930）。
 
 ## 病灶（2026-10-01 22:18 现场事故，本机实测）
