@@ -466,3 +466,48 @@ def test_section_11_no_longer_offers_the_polling_escape_hatch():
     assert "或轮询 `gh pr checks" not in section  # 旧的许可式措辞：--watch 与轮询并列
     assert "禁止 `sleep N` 轮询" in section  # 替代它的禁令必须在场
     assert "--watch" in section
+
+
+# ── 多帧 zstd（issue #5920 同批修复的真缺陷）────────────────────────────────
+def _zstd_available() -> bool:
+    """本机能否造多帧 zstd 语料（CI 只装 pytest ⇒ 下面那条会 skip；skip 长得像 skip）。"""
+    if shutil.which("zstd"):
+        return True
+    try:
+        import zstandard  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _frame(text: str) -> bytes:
+    """把一段文本压成**一帧**（优先模块，退 CLI）—— 只为造多帧语料。"""
+    data = text.encode("utf-8")
+    try:
+        import zstandard  # type: ignore
+
+        return zstandard.ZstdCompressor().compress(data)
+    except ImportError:
+        proc = subprocess.run(["zstd", "-c", "-q"], input=data, capture_output=True)
+        assert proc.returncode == 0, proc.stderr
+        return proc.stdout
+
+
+@pytest.mark.skipif(
+    not _zstd_available(),
+    reason="无 zstandard / zstd ⇒ 「多帧文件真能读全」在本环境**不可判定**（故意 skip，不是通过）",
+)
+def test_multiframe_log_is_not_truncated_to_first_frame(tmp_path):
+    """DSH 会话日志是**逐条追加**写成的 zstd **多帧**文件（本机实测单份 15,841 帧）。
+
+    `ZstdDecompressor().decompress()` **只解第一帧** ⇒ 装了 `zstandard` 的机器上，本工具对
+    **每一份**真实会话都报「不可判定 / 0 步」（实测：24.5MB 的日志只得到 206 字符）⇒ 形同不可用。
+    红证：模块分支改回 `decompress(raw, max_output_size=…)` ⇒ 本判据红（`steps` 变 0）。
+    （形态面的类级守卫在 `tests/unit_ci_workflows/test_token_ledger.py`，CI 无解压器时也在跑。）
+    """
+    target = tmp_path / "session.v3.jsonl.zstd"
+    target.write_bytes(_frame(_assistant(0, 1) + "\n") + _frame(_assistant(1000, 2) + "\n"))
+    text, reason = mod.read_session_text(target)
+    assert reason is None
+    assert text.count("assistant/message") == 2
+    assert mod.analyze(text)["steps"] == 2
