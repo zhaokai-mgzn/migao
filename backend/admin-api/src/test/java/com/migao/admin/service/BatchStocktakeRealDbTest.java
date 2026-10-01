@@ -14,6 +14,7 @@ import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
 import com.migao.admin.mapper.StockLedgerMapper;
+import com.migao.admin.time.BusinessClock;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
 import org.apache.ibatis.mapping.Environment;
@@ -481,14 +482,14 @@ class BatchStocktakeRealDbTest {
             }
         }
         for (StockBatchConsumptionMapper.SavingSum s
-                : mapper.sumSavingByPeriodCohortMaterial(TENANT_ID, "Asia/Shanghai", "YYYY-MM")) {
+                : mapper.sumSavingByPeriodCohortMaterial(TENANT_ID, BusinessClock.BUSINESS_ZONE.getId(), "YYYY-MM")) {
             if (METRIC_PRODUCT.equals(s.getProductId())) {
                 sb.append("|saving:").append(s.getFormulaSum()).append('/').append(s.getPlannedSum())
                         .append('/').append(s.getLineCount());
             }
         }
         for (StockBatchConsumptionMapper.AreaSum a
-                : mapper.sumOutputAreaByPeriod(TENANT_ID, "Asia/Shanghai", "YYYY-MM")) {
+                : mapper.sumOutputAreaByPeriod(TENANT_ID, BusinessClock.BUSINESS_ZONE.getId(), "YYYY-MM")) {
             sb.append("|area:").append(a.getAreaM2()).append('/').append(a.getOutputLines());
         }
         return sb.toString();
