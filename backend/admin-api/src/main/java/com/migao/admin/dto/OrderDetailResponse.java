@@ -131,6 +131,17 @@ public class OrderDetailResponse {
     private LocalDate requiredDeliveryDate;
 
     /**
+     * **制单人姓名**（列快照 `orders.created_by_name`，issue #5835 引入；issue #5914 起**详情面也下发**）。
+     *
+     * <p>{@code null} = **未采集**（存量单 / 内部服务占位 / 匿名 / C 端自助下单）—— 与「客户没填」
+     * 是两件事，纸面用 {@code —} 占位、**不编数**（加工单「制单人」栏读它）。</p>
+     *
+     * <p>⚠️ **不是** {@code userId}（那是「下单用户 ID / C 端数据隔离依据」）。取值与实体同名字段，
+     * 由 {@code BeanUtils.copyProperties(order, response)} 带出 —— 不另立第二份口径。</p>
+     */
+    private String createdByName;
+
+    /**
      * 订单明细列表
      */
     private List<OrderItemResponse> items;

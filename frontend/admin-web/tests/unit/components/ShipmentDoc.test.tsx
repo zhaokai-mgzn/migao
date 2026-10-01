@@ -250,9 +250,12 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
   })
 
   it('内置打印契约：A4 页面尺寸 + body 级隔离选择器（防"打印出一整页后台外壳"）', () => {
-    render(<ShipmentDoc order={buildOrder()} />)
+    // `@page` 只在本次打印目标为本单据时发表（issue #5914）⇒ 判「内置打印契约」要带上目标位
+    render(<ShipmentDoc order={buildOrder()} printTarget="shipment" />)
 
-    const style = document.querySelector('.shipment-print-area style')?.textContent || ''
+    const style = Array.from(document.querySelectorAll('.shipment-print-area style'))
+      .map((el) => el.textContent || '')
+      .join('\n')
     expect(style).toContain('shipment-print-area')
     expect(style).toContain('@page')
     expect(style).toContain('size: A4')
@@ -308,7 +311,10 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
       </div>
     )
     return {
-      styleEl: document.querySelector('.shipment-print-area style') as HTMLStyleElement,
+      // 单据现在发**两块** style（条件 `@page` + 主体 CSS，issue #5914）⇒ 取含 `@media print` 那块
+      styleEl: Array.from(document.querySelectorAll('.shipment-print-area style')).find((el) =>
+        (el.textContent || '').includes('@media print')
+      ) as HTMLStyleElement,
       doc: document.querySelector('.shipment-print-area') as HTMLElement,
       shell: container as HTMLElement,
       confirmBtn: screen.getByRole('button', { name: '确认发货' }),
@@ -353,8 +359,14 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
   })
 
   it('A4 纸面尺寸写在 @page 块里（@page 进 CSSOM；size 描述符按产物原文断言）', () => {
-    const { styleEl } = mountDocWithShell()
-    const pageRule = Array.from(styleEl.sheet!.cssRules).find((r) => r.cssText.includes('@page'))
+    mountDocWithShell()
+    // issue #5914：`@page` 现在是**独立的条件 style**（只在本次目标是本单据时进文档）
+    // ⇒ 取含 `@page` 的那一块（主体 CSS 里已经没有它了）
+    const pageStyleEl = Array.from(document.querySelectorAll('.shipment-print-area style')).find((el) =>
+      (el.textContent || '').includes('@page')
+    ) as HTMLStyleElement
+    if (!pageStyleEl) throw new Error('找不到含 @page 的 style 块（issue #5914：纸型是独立的条件 style）')
+    const pageRule = Array.from(pageStyleEl.sheet!.cssRules).find((r) => r.cssText.includes('@page'))
 
     // ⚠️ jsdom 30（cssstyle）起，CSSOM **不再保留 `@page` 的未知描述符** —— `size` 会从 `cssText` 里消失：
     //    实测 jsdom 26.1.0 ⇒ `@page {size: A4; margin: 12mm;}`；jsdom 30.1.1 ⇒ `@page { margin: 12mm; }`
@@ -362,7 +374,7 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     //    **不可能**成立；而真机打印生效的正是那份原始 CSS 文本（`ProcessingDoc.test.tsx` 一直这么断）。
     //    两条合起来仍是原意图：① `@page` 真被解析成规则 ② 产物里确实带 `size: A4`（删掉即红）。
     expect(pageRule).toBeDefined()
-    expect(styleEl.textContent).toContain('size: A4')
+    expect(pageStyleEl.textContent).toContain('size: A4')
   })
 
   // ===== 单据挂在页面级，不得放进 Modal（issue #3818 收尾）=====
@@ -378,8 +390,20 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
   it.each(CALL_SITES)('%s：发货单挂在页面级（不在 <Modal> 内）且只挂一份', (rel) => {
     const src = readFileSync(join(process.cwd(), rel), 'utf-8')
 
-    // 每页只挂一份（.shipment-print-area 是全局选择器，挂两份会打印两套单据）
-    expect(src.match(/<ShipmentDoc/g) || []).toHaveLength(1)
+    // 每页**常驻**挂载只许一份（.shipment-print-area 是全局选择器，常驻挂两份会打印两套单据）。
+    // issue #5914 起允许第二种渲染点：**预览层里的副本** —— 它必须同时满足
+    // ① 处在 `previewTarget === 'shipment'` 条件里（预览关着就不挂）② 带 `inline`
+    //    （原地渲染、不 portal；不带 data-print-target ⇒ 打印媒体下不上纸）。
+    const sites = Array.from(src.matchAll(/<ShipmentDoc/g)).map((m) => m.index ?? 0)
+    const isPreviewCopy = (at: number): boolean =>
+      /\binline\b/.test(src.slice(at, at + 240)) &&
+      /previewTarget === 'shipment'/.test(src.slice(Math.max(0, at - 400), at))
+    const permanent = sites.filter((at) => !isPreviewCopy(at))
+    expect(permanent).toHaveLength(1)
+    for (const at of sites) {
+      if (permanent.includes(at)) continue
+      expect(isPreviewCopy(at)).toBe(true)
+    }
 
     // 不在 <Modal>…</Modal> 之间（Modal 面板 max-h-full + 内部 overflow-y-auto，
     // 打印只会打出可视一屏、多页明细被裁）

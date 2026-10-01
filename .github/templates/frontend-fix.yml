@@ -29,6 +29,7 @@ business_truths:
   - [frontend-fix.position-permission-rename] 岗位权限体系（#2969）：「角色权限」整站改名「岗位权限」（岗位权限页标题/新增岗位按钮/编辑岗位弹窗/岗位名称/岗位编码/删除确认/空态；侧边栏入口「岗位权限」与 Header 面包屑「组织管理 > 岗位权限」同步），URL /roles 与后端接口 /api/admin/roles* 不变（仅文案改名，不做路由迁移）
   - [frontend-fix.sidebar-seven-groups] 侧边栏菜单**七大组**（#2969 建立；**#5271 按业务动线重排**）：工作台(经营看板+每日简报) / 智能客服(在线接待+知识库) / **商品与加工项**(商品列表+加工项管理) / **交易管理**(订单列表+售后工单+客户列表+财务对账) / 生产管理(生产看板+池看板+工艺配置+计件工资) / **仓储与物料**(入库单+余料台账+省料看板) / 组织管理(员工管理+岗位权限+企业基础信息) / 通知中心（独立、全员可见）；**菜单项一项不少不减（21 项）**，只改分组归属与组名（原「客户管理」组并入交易管理、原生产管理组的物料三项拆入仓储与物料）。**#5271 起的交互口径**：分组默认只展开「当前路由所在组」、路由变化自动展开所在组、折叠态按组渲染锚点（分组不丢）、⌘K 命令面板可搜全部**有权访问**的项、小屏为抽屉式浮层、桌面端常驻；权限过滤不回归（组内全部子项无权限时整组隐藏）
   - [frontend-fix.employee-position-default-permissions] 员工弹窗岗位下拉（#2969）：岗位=角色体系，岗位选项来自 GET /api/admin/roles/all（role.name），选岗位自动把该岗位默认权限（role.permissions 的 code 列表）预填进权限树（TreeCheckbox），仍可手动增删自定义；编辑员工时切换岗位则权限树重置为新岗位默认、不改岗位保留员工现有权限快照；提交 payload 含 position+permissions、不含 role 字段（#2907 契约）
+  - [frontend-fix.print-single-doc-on-paper] 打印**一次只放一份单据上纸**：`window.print()` 只在唯一入口（frontend/admin-web/src/lib/print-doc.ts）调用，且必须在打印目标（data-print-target）提交进 DOM **之后**（同 tick 调用 ⇒ 首次打印空白纸）；每份单据的 `@page` 只在「本次目标是本单据」时进文档（同页多条 @page 时**最后声明的那条赢** ⇒ 纸型会被兄弟单据顶掉、打废纸），非目标单据在打印媒体下 `display: none`（不占版面）；纸面读的订单字段必须在详情 DTO（OrderDetailResponse）里真的下发
 
 primary_specs:
   - tests/e2e/specs/

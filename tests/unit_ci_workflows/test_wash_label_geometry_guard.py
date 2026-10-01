@@ -48,6 +48,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -58,6 +59,22 @@ LABEL_SRC = "frontend/admin-web/src/components/production/TaskCardPrint.tsx"
 
 #: `@page { size: Wmm Hmm; … }`
 _PAGE_RE = re.compile(r"@page\s*\{\s*size:\s*([0-9.]+)mm\s+([0-9.]+)mm")
+#: 写法 A（issue #5914）：`printPageRule('<介质id>')` —— 纸型由介质矩阵生成，尺寸从矩阵取
+_PAGE_RULE_CALL_RE = re.compile(r"printPageRule\(\s*'([a-z0-9-]+)'\s*\)")
+MEDIA_MATRIX = REPO_ROOT / "frontend/admin-web" / "src" / "lib" / "print-media.json"
+
+
+def _page_mm_from_matrix(media_id: str) -> tuple[float, float]:
+    """从介质矩阵取该介质的纸型 mm（`pageSize` 形如 `50mm 60mm`）；未登记 ⇒ 抛错（不静默）。"""
+    data = json.loads(MEDIA_MATRIX.read_text(encoding="utf-8"))
+    for spec in data.get("media", []):
+        if str(spec.get("id")) != media_id:
+            continue
+        parts = str(spec.get("pageSize", "")).split()
+        if len(parts) != 2 or not all(part.endswith("mm") for part in parts):
+            raise AssertionError(f"介质 `{media_id}` 的 pageSize 不是 `Wmm Hmm`：{spec.get('pageSize')!r}")
+        return float(parts[0][:-2]), float(parts[1][:-2])
+    raise AssertionError(f"介质 `{media_id}` 不在 {MEDIA_MATRIX.name} 里 ⇒ 判据无从判定（不静默）")
 #: `.task-card-label { width: Wmm; height: Hmm; … }`
 _LABEL_RE = re.compile(r"\.task-card-label\s*\{\s*width:\s*([0-9.]+)mm;\s*height:\s*([0-9.]+)mm")
 #: 标签本体的 padding（`padding: 1.2mm;`）
@@ -88,9 +105,19 @@ def _fingerprint(text: str) -> str:
 
 
 def _css_block(src: str) -> str:
-    """组件里那段活 CSS（`<style>{` 模板串内部）—— G1/G4/G5/G6 的取值来源。"""
-    hit = _STYLE_RE.search(src)
-    return hit.group("css") if hit else ""
+    """组件里那段活 CSS（`<style>{` 模板串内部）—— G1/G4/G5/G6 的取值来源。
+
+    🔴 单据现在会发**多块** `<style>`（issue #5914：条件化的 `@page` 单独一块 + 主体 CSS 一块）
+    ⇒ 取**含 `.task-card-label` 的那一块**（都没有就退回最长的一块），**不许**盲取第一块
+    —— 盲取会把「条件纸型」那块当成版式本体 ⇒ 判据恒抛（假红）。
+    """
+    blocks = [hit.group("css") for hit in _STYLE_RE.finditer(src)]
+    if not blocks:
+        return ""
+    for block in blocks:
+        if ".task-card-label" in block:
+            return block
+    return max(blocks, key=len)
 
 
 def _header(src: str) -> str:
@@ -99,16 +126,31 @@ def _header(src: str) -> str:
     return hit.group("body") if hit else ""
 
 
-def _geometry(css: str) -> tuple[float, float, float, float]:
-    """→ `(page_w, page_h, label_w, label_h)`；任一缺失 ⇒ 抛 `AssertionError`（不静默）。"""
+def _geometry(src: str, css: str) -> tuple[float, float, float, float]:
+    """→ `(page_w, page_h, label_w, label_h)`；任一缺失 ⇒ 抛 `AssertionError`（不静默）。
+
+    纸型支持两种写法（issue #5914 起单据一律用写法 A）：
+    A `printPageRule('<介质id>')` —— 尺寸取自介质矩阵；
+    B 自写 `@page { size: Wmm Hmm; … }` —— 与容器字面比对。
+    """
     page = _PAGE_RE.search(css)
+    if page:
+        page_w, page_h = float(page.group(1)), float(page.group(2))
+    else:
+        call = _PAGE_RULE_CALL_RE.search(src)
+        if call is None:
+            raise AssertionError(
+                "洗水码几何解析失败：既没有 `@page { size: … }` 字面量、也没有 "
+                "`printPageRule('<介质id>')` 调用 —— 判据按这两种写法解析，改写法必须同步本守卫（**不得**静默跳过）"
+            )
+        page_w, page_h = _page_mm_from_matrix(call.group(1))
     label = _LABEL_RE.search(css)
-    if not page or not label:
+    if not label:
         raise AssertionError(
-            "洗水码几何解析失败：`@page { size: … }` 或 `.task-card-label { width…; height… }` 缺失/改形 —— "
+            "洗水码几何解析失败：`.task-card-label { width…; height… }` 缺失/改形 —— "
             "判据按字面量解析，改写法必须同步本守卫（**不得**静默跳过）"
         )
-    return float(page.group(1)), float(page.group(2)), float(label.group(1)), float(label.group(2))
+    return page_w, page_h, float(label.group(1)), float(label.group(2))
 
 
 def _declared(header: str, keyword: str) -> float | None:
@@ -126,7 +168,7 @@ def _problems(src: str) -> list[str]:
     if not header:
         return ["找不到文件头 JSDoc（预算注释所在处）—— 判据无从取值（**不得**静默通过）"]
 
-    page_w, page_h, label_w, label_h = _geometry(css)
+    page_w, page_h, label_w, label_h = _geometry(src, css)
 
     # G1：@page 与容器几何字面一致
     if (page_w, page_h) != (label_w, label_h):
@@ -207,7 +249,8 @@ def test_g1_g6_wash_label_geometry_and_budget_comment_are_consistent():
 
 def test_g0_anti_noop_geometry_is_parsed_and_nonempty():
     """反空跑锚点：几何**真解析出来了**且是有限正数 —— 否则上面那条是空判据（§「空跑」）。"""
-    page_w, page_h, label_w, label_h = _geometry(_css_block(_read(LABEL_SRC)))
+    src = _read(LABEL_SRC)
+    page_w, page_h, label_w, label_h = _geometry(src, _css_block(src))
     assert page_w > 0 and page_h > 0 and label_w > 0 and label_h > 0, (
         f"几何解析出非正数：page={page_w}×{page_h} label={label_w}×{label_h}"
     )
@@ -220,11 +263,12 @@ def test_g7_injected_geometry_drift_is_red():
     src = _read(LABEL_SRC)
     assert _problems(src) == [], "原文件本应干净（G1~G6 已单独判）—— 这里先红说明判据或预期已变"
 
-    # 注入 A：只把 `@page` 的宽度改回 30mm（容器不动）⇒ G1 必红
+    # 注入 A：把介质换成**另一张纸**（30×40）而容器不动 ⇒ G1 必红
     css = _css_block(src)
-    page_w = float(_PAGE_RE.search(css).group(1))
-    injected_a = src.replace(f"size: {page_w:g}mm", "size: 30mm", 1)
-    assert injected_a != src, f"找不到注入点 `size: {page_w:g}mm` ⇒ 本红证会**空跑**"
+    page_w, _page_h, _label_w, _label_h = _geometry(src, css)
+    assert "printPageRule('label-50x60')" in src, "找不到写法 A 的注入点 ⇒ 本红证会**空跑**"
+    injected_a = src.replace("printPageRule('label-50x60')", "printPageRule('label-30x40')", 1)
+    assert injected_a != src, "找不到注入点 `printPageRule('label-50x60')` ⇒ 本红证会**空跑**"
     assert _fingerprint(injected_a) != _fingerprint(src), "注入后内容指纹未变（**禁 mtime/size**）"
     assert _problems(injected_a), "只改 `@page` 宽度后判据**没判红** ⇒ G1 是空判据"
 

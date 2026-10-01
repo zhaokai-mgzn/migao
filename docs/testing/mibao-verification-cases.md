@@ -7350,7 +7350,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（76 case）
+## 前端 UI 域（77 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -8193,6 +8193,22 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-26 新增（issue #5651）：把「打印介质矩阵」从注释里的共识落成机器可判的分层 —— 三介质在册、@page 与矩阵同源、未声明介质即红、三联纸待实测登记不许留白、同一单据只许一份字段映射（介质是参数不是副本）。 ｜ tags: ui, print, media-matrix, guard
 
+### UI-027. 打印链路「一次只放一份单据上纸」：window.print() 收敛到唯一入口且在目标提交后调用（首次打印不再是空白纸）+ @page 只在本次目标时发表（纸型不被兄弟单据顶掉）+ 打印前纸面自检预览 + 截图复制（issue #5914） 🔵
+```
+你: 用户 2026-10-01 逐字：「打印功能是否应该先预览然后再打印，你觉得是否有必要，不过截图有必要，点击截图后把单据模板信息直接截图下来并复制」；同轮裁定范围 = 修 P1（首次打印空白 / 四单纸型互串）+ 预览 + 截图复制一起做，加工单「制单人 / 批号」按印真值修
+期望: direct_reply
+数据: 判据 1·🔴 **print 被调用时目标已在 DOM**（旧写法同 tick `setState` + `window.print()` ⇒ 首次打印空白纸）：真实浏览器在 `beforeprint` 抓 `[data-print-target]`，点「打印销售单」后必须恰好是 `sales`（旧实现实测 = NONE）。执行点 = tests/e2e/specs/orders/print-preview.spec.ts 的「① 点『打印』时目标已置位」+ frontend/admin-web/tests/unit/lib/print-doc.test.tsx 的「① print 被调用时目标已在 DOM」。
+数据: 判据 2·**唯一入口**：`window.print()` 在 `frontend/admin-web/src/**` 里**恰好**出现在 lib/print-doc.ts（第二处裸调用 ⇒ 必红）。执行点 = tests/unit_ci_workflows/test_print_single_doc_on_paper.py 的 test_c1_window_print_has_exactly_one_entry（红证 = test_c5 的注入 A）。
+数据: 判据 3·🔴 **同页四份单据只放一份上纸**：文档里 `@page` 规则**恰好一条**且等于本次目标那张纸（销售单 ⇒ 241mm 140mm）；非目标单据在打印媒体下 `display: none`（不占版面 ⇒ 不出空白页）。执行点 = tests/e2e/specs/orders/print-preview.spec.ts 的「② 同页四份单据只放一份上纸」+ tests/unit_ci_workflows/test_print_single_doc_on_paper.py 的 test_c2_c3（红证 = 注入 B/B2）。
+数据: 判据 4·**纸面自检可见**（销售单单联 128mm）：明细 8 行（实测内容 ≈136.5mm）⇒ 预览必须报「超出」并给可行动出口；5 行 ⇒ 报「装得下」（判据不是恒报警）。执行点 = 同 spec 的「③ 纸面自检：装得下 / 装不下」+ frontend/admin-web/tests/unit/components/PrintDocPreview.test.tsx 的 measureSheets 三条几何用例。
+数据: 判据 5·🔴 **截图复制产出真尺寸 PNG**：点「复制截图」⇒ 剪贴板拿到 image/png，尺寸 ≈ 纸型 × 3 倍（241mm ≈ 911px ⇒ ≈2733px，宽高比 1.72±0.15）；剪贴板不可用 ⇒ 下载 PNG + 明示提示（不许静默失败）。执行点 = 同 spec 的「④ 复制截图」（真实 Chrome + clipboard 权限 + createImageBitmap 读尺寸）。
+数据: 判据 6·🔴 **纸面读的字段必须真的下发**（本单修的正是这一类）：订单详情面四份单据里每个 `order.<字段>` 都要在 backend/admin-api/src/main/java/com/migao/admin/dto/OrderDetailResponse.java 里有声明；删掉 `createdByName` ⇒ 必红。执行点 = tests/unit_ci_workflows/test_print_single_doc_on_paper.py 的 test_c4（红证 = test_c5 的注入 C，豁免台账为空且只许缩短）。
+数据: 判据 7·**加工单纸面印真值**：制单人 = `order.createdByName`、批号 = 快照行 `batchNo`（按 `itemId` 对齐）；缺值印 `—`，**纸面不再出现「未采集」**（那是「系统没有这个字段」的说法）。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「🔴 ④ 制单人 / 批号 印服务端真值」+「🔴 ④ 红证：批号挂不到订单行 ⇒ 不猜」。
+跳过: [backend-contract] 纯前端打印链路 + 一条 DTO 字段透出（无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/e2e/specs/orders/print-preview.spec.ts、frontend/admin-web/tests/unit/{lib/print-doc,components/PrintDocPreview,components/ProcessingDoc}.test.tsx 与 tests/unit_ci_workflows/test_print_single_doc_on_paper.py 执行
+```
+真值: frontend-fix.print-single-doc-on-paper, frontend-fix.vitest, frontend-fix.e2e, frontend-fix.layout
+溯源: 2026-10-01 新增（issue #5914）：把「打印前先看见纸面」与「一次只放一份单据上纸」落成机器可判的口径 —— print 唯一入口 + 目标提交后才开印、@page 条件化到本次目标、纸面自检（溢出/页数）、截图复制写剪贴板、纸面字段必须在详情 DTO 里真的下发。编号由 `scripts/next_case_id.py` 分配：先取 UI-026，但该号已被并发包 #5913 占用（§26.3 ⑫ 的撞号形态）⇒ rebase 后改判为 **UI-027**（main:001-026,028-077 ⇒ 最小空闲号）。**只增不减**：既有 UI-061/062/063/065 的打印判据一条不放宽（本单另加 C1/C4 两条类级元守卫）。 ｜ tags: ui, print, single-doc, guard
+
 ### UI-064. 商家后台「企业设置」页手机端入口二维码 —— 地址单一配置、内容逐字等于该值、未配置不画假码（issue #5668） 🔵
 ```
 你: 用户逐字：「你在商家后端合适的位置搞个二维码，方便用户扫码使用」＋同日裁定「二维码放『系统设置 / 企业设置』页」
@@ -8445,8 +8461,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：592（活跃 126，跳过 466）
-- tier 分布：smoke 12 / normal 547 / adversarial 31
+- 用例总数：593（活跃 126，跳过 467）
+- tier 分布：smoke 12 / normal 548 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8471,7 +8487,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：76
+- 前端 UI 域：77
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

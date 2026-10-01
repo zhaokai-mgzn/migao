@@ -8,7 +8,7 @@ import { toastRequestError } from '@/lib/api-error'
 import { orderApi, processingOrderApi, customerApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading } from '@/components/ui'
-import { ShipmentDoc } from '@/components/orders'
+import { PrintDocPreview, ShipmentDoc, PRINT_TARGET_SPECS, usePrintDoc } from '@/components/orders'
 import { useAuthStore } from '@/store/auth'
 import type { Order, OrderItem } from '@/types'
 import { cn } from '@/lib/utils'
@@ -233,9 +233,10 @@ export default function ShipOrder() {
     }
   }
 
-  const handlePrint = () => {
-    window.print()
-  }
+  // 🔴 走共享打印入口（issue #5914）：先开**纸面自检层**，层里的「打印」才真正开印
+  // 本页只有发货单一份 ⇒ 缺省目标就是它（不点按钮直接 Ctrl+P 也印得出来，与改前行为一致）
+  const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc('shipment')
+  const handlePrint = () => openPreview('shipment')
 
   const handleCancel = () => {
     if (order) router.push(`/orders/${order.id}`)
@@ -497,7 +498,19 @@ export default function ShipOrder() {
         本页屏幕布局已有商品/收货信息，再显示一份会重复；发货前打印时物流栏留空供手写，
         发货后如需带运单号/发货人的单据，到订单详情页「打印发货单」补打。
       */}
-      <ShipmentDoc order={order} shipperName={shipperName} />
+      <ShipmentDoc order={order} shipperName={shipperName} printTarget={printTarget} />
+
+      {/* 打印前的**纸面自检层**（issue #5914）：真尺寸纸框 + 端口/页数自检 + 「打印 / 复制截图」。
+          🔴 预览实例**不传 printTarget** ⇒ 打印媒体下仍是 display:none（否则一次会出两份）。 */}
+      <PrintDocPreview
+        target={previewTarget}
+        title={PRINT_TARGET_SPECS.shipment.title}
+        media={PRINT_TARGET_SPECS.shipment.media}
+        onPrint={() => requestPrint('shipment')}
+        onClose={closePreview}
+      >
+        {previewTarget === 'shipment' && <ShipmentDoc order={order} shipperName={shipperName} inline />}
+      </PrintDocPreview>
     </div>
   )
 }

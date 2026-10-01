@@ -160,8 +160,13 @@ test.describe('发货单 — 真实浏览器打印旅程（UI-040）', () => {
 
     await page.emulateMedia({ media: 'print' })
     await page.waitForTimeout(600) // 同上：等 transition-all 结束，避免拍到过渡中间态
-    const doc = page.locator('.shipment-print-area')
+    // ⚠️ 选择器精确到「**上纸那一份**」（issue #5914）：点「打印发货单」会打开纸面自检层，
+    // 层里还有一份**不带 data-print-target 的预览副本**（屏幕态显形、打印态不上纸），
+    // 裸 `.shipment-print-area` 会命中 2 个 ⇒ strict mode 红。
+    const doc = page.locator('.shipment-print-area[data-print-target="shipment"]')
     await expect(doc).toBeVisible()
+    // 预览副本**不上纸**（否则同一份单据会出两张）
+    await expect(page.locator('.print-preview-doc .shipment-print-area')).toBeHidden()
     await expect(page.locator('aside')).toBeHidden()
     await expect(doc).toContainText('李四')
     await expect(doc).toContainText('顺丰速运')

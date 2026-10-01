@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { craftSpecRows } from '@/lib/craft-display'
 import { lineSubtotal } from '@/lib/order-amount'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
+import { printBodyFontPt, printPageRule } from '@/lib/print-media'
 import { resolveImageUrl } from '@/lib/utils'
 // 「算料输出」行的标签（原始输入 vs 算料输出的分组口径）—— 从既有那份 import，
 // 不复制一份会漂移的副本（见文件头第 5 条）
@@ -32,7 +33,7 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *    （旧方案 `visibility:hidden` 隐藏的元素仍占高度，底层页面高于一页 A4 时第 2 页空白，
  *    issue #3896）。注意 `.quotation-print-area` 必须是 portal 容器本身的 class，不能再包一层。
  *    🔴 **同页多单据的两条硬约束**（issue #4965，CI `Demo path specs` 实测红后修正 —— 别退回旧写法）：
- *    订单详情页**同时挂着**发货单（`ShipmentDoc`）与本报价单，两者都是 `document.body` 的**直接子级**
+ *    订单详情页**同时挂着**发货单（`ShipmentDoc`）与本报价单，两者都是 `document.body` 的「直接子级」
  *    （§范式 2 的物理前提）。旧写法（各自 `body > *:not(.<自己>-print-area)` + 无限定
  *    `visibility: visible`）在这种同页共存下**两条都错**，且错误方向相反：
  *    ① **互相 `display:none`**：`body > *:not(.quotation-print-area)` 会把**兄弟单据**
@@ -77,6 +78,12 @@ interface QuotationDocProps {
    * （`ShipmentDoc`）重新藏掉（issue #4965 实测回归，见文件头第 2 条）。
    */
   printTarget?: PrintTarget | null
+  /**
+   * **原地渲染**（`true`）而不是 portal 到 `document.body`（issue #5914）—— 只有**打印预览层**
+   * 用它：预览要把**同一份单据**摆进真尺寸纸框里，portal 会让它跑到框外（且屏幕态仍是 `display:none`）。
+   * 缺省 `false` = 既有行为（portal 到 body，屏幕上隐藏、仅打印呈现）。
+   */
+  inline?: boolean
   className?: string
 }
 
@@ -112,6 +119,7 @@ export default function QuotationDoc({
   order,
   paymentQrcodes,
   printTarget,
+  inline,
   className,
 }: QuotationDocProps) {
   // 打印只发生在客户端；SSR/首帧无 document，portal 前先等 mounted（未挂载返回 null）
@@ -145,21 +153,26 @@ export default function QuotationDoc({
   const remark = textOrNull(order.remark)
   const hasDiscount = typeof order.discountAmount === 'number'
 
-  return createPortal(
+  const doc = (
     <div
       className={className ? `quotation-print-area print-doc ${className}` : 'quotation-print-area print-doc'}
+      data-print-sheet
       {...(printTarget === 'quotation' ? { 'data-print-target': 'quotation' } : {})}
     >
+      {/* 🔴 纸型规则**只在本次打印目标为本单据时**进文档（issue #5914 的 P1-2）：
+          `@page` 是**文档级**规则 —— 同页多份单据并存时**最后声明的那条赢**。实测（真实 Chromium）：
+          订单详情页点「打印发货单」会按销售单的三联纸（241×140）出纸 ⇒ 打废纸。 */}
+      {printTarget === 'quotation' && <style>{printPageRule('a4')}</style>}
       <style>{`
         .quotation-print-area { display: none; }
-        @page { size: A4; margin: 12mm; }
         @media print {
           body > *:not(.print-doc) { display: none !important; }
-          .quotation-print-area {
+          /* 🔴 只有「本次目标」上纸（issue #5914）；正文字号取介质矩阵（9pt = 12px，与原值同尺寸） */
+          .quotation-print-area[data-print-target='quotation'] {
             display: block;
             position: static;
             width: 100%;
-            font-size: 12px;
+            font-size: ${printBodyFontPt('a4')}pt;
           }
           /* 防御：页面其他组件（如 ProcessingOrderBlock）残留的
              "body * { visibility: hidden }" 打印隔离会连同本单据一起藏掉
@@ -257,9 +270,11 @@ export default function QuotationDoc({
           </div>
         )}
       </div>
-    </div>,
-    document.body
+    </div>
   )
+
+  // 🔴 预览层里**不 portal**（issue #5914）：同一份单据要摆进真尺寸纸框，portal 会跑到框外
+  return inline ? doc : createPortal(doc, document.body)
 }
 
 // ========== 每套（= 每个商品行）一段 ==========

@@ -18,6 +18,11 @@ import type {
 } from '@/types'
 
 interface Props {
+  /**
+   * 点「打印」时交给调用方（= 页面级共享打印入口，issue #5914）。**不传 ⇒ 不渲染该按钮** ——
+   * 本组件不再自带打印实现（旧实现是全局副作用源，见按钮处注释）。
+   */
+  onPrintProcessing?: () => void
   orderId: string
   orderStatus: string
   /** 订单是否含加工项（由父组件从明细判断） */
@@ -147,7 +152,14 @@ function toPlainText(po: ProcessingOrder): string {
   return lines.join('\n')
 }
 
-export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessing, items, onStatusChange }: Props) {
+export default function ProcessingOrderBlock({
+  orderId,
+  orderStatus,
+  hasProcessing,
+  items,
+  onStatusChange,
+  onPrintProcessing,
+}: Props) {
   const [po, setPo] = useState<ProcessingOrder | null>(null)
   const [notFound, setNotFound] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -332,21 +344,19 @@ export default function ProcessingOrderBlock({ orderId, orderStatus, hasProcessi
 
   return (
     <div className="mt-6">
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          .po-print-area, .po-print-area * { visibility: visible; }
-          .po-print-area { position: absolute; left: 0; top: 0; width: 100%; }
-          .po-no-print { display: none !important; }
-        }
-      `}</style>
 
       <div className="flex items-center justify-between po-no-print">
         <h3 className="text-base font-semibold text-neutral-900">加工单</h3>
         {po && (
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={handleCopy}>复制全部</Button>
-            <Button variant="secondary" size="sm" onClick={() => window.print()}>打印</Button>
+            {/* 打印 = 走**共享打印入口**（issue #5914）：与本页「打印加工单」是同一份 A4 制式。
+                旧写法（`@media print { body * { visibility: hidden } }` + 打印屏幕区块）已被删除 ——
+                它是**全局副作用源**（隐藏元素仍占版面 ⇒ 空白页，issue #3896 / #3912 的遗留项），
+                且与门户式单据共页时会把整个外壳 `display:none` 掉（#4983 登记的既有缺陷）。 */}
+            {onPrintProcessing && (
+              <Button variant="secondary" size="sm" onClick={onPrintProcessing}>打印</Button>
+            )}
           </div>
         )}
       </div>

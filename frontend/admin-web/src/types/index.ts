@@ -664,6 +664,16 @@ export interface ProcessingOrderItem {
   productName?: string
   sku?: string
   colorName?: string
+  /**
+   * 该快照行对应的**订单商品行 id**（= `order_items.id`）：后端 `buildSnapshot` **无条件**落它。
+   * 洗水码与加工单纸面靠它与 `order.items` 对齐（对不上 ⇒ **不猜**，该行不印这些值）。
+   */
+  itemId?: string
+  /**
+   * **面料批号**（加工单快照键 `batchNo`）：派工指派批次时由 `stampAssignedBatches` 写入。
+   * `undefined` = 该行**未指派批次**（≠「本系统没有这个字段」，issue #5914）⇒ 纸面印 `—`。
+   */
+  batchNo?: string
   sellingMethod?: string
   doorWidth?: string
   width?: number

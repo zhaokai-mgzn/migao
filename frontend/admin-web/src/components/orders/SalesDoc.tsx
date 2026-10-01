@@ -119,6 +119,12 @@ interface SalesDocProps {
   paymentQrcodes?: PaymentQrcodeMap
   /** 本次打印的目标（`'sales'` = 打印本销售单）—— 不加限定会把同页兄弟单据藏掉 */
   printTarget?: PrintTarget | null
+  /**
+   * **原地渲染**（`true`）而不是 portal 到 `document.body`（issue #5914）—— 只有**打印预览层**
+   * 用它：预览要把**同一份单据**摆进真尺寸纸框里，portal 会让它跑到框外（且屏幕态仍是 `display:none`）。
+   * 缺省 `false` = 既有行为（portal 到 body，屏幕上隐藏、仅打印呈现）。
+   */
+  inline?: boolean
   className?: string
 }
 
@@ -185,6 +191,7 @@ export default function SalesDoc({
   media = 'continuous-241x140',
   paymentQrcodes,
   printTarget,
+  inline,
   className,
 }: SalesDocProps) {
   // 打印只发生在客户端；SSR/首帧无 document，portal 前先等 mounted
@@ -214,18 +221,23 @@ export default function SalesDoc({
   const date = formatDate(order.createdAt)
   const hasDiscount = typeof order.discountAmount === 'number'
 
-  return createPortal(
+  const doc = (
     <div
       className={cn('sales-print-area print-doc text-neutral-900', className)}
       {...(printTarget === 'sales' ? { 'data-print-target': 'sales' } : {})}
       data-print-media={media}
     >
+      {/* 🔴 纸型规则**只在本次打印目标为本单据时**进文档（issue #5914 的 P1-2）：
+          `@page` 是**文档级**规则 —— 同页多份单据并存时**最后声明的那条赢**。实测（真实 Chromium）：
+          订单详情页点「打印发货单」会按销售单的三联纸（241×140）出纸 ⇒ 打废纸。 */}
+      {printTarget === 'sales' && <style>{printPageRule(media)}</style>}
       <style>{`
         .sales-print-area { display: none; }
-        ${printPageRule(media)}
         @media print {
           body > *:not(.print-doc) { display: none !important; }
-          .sales-print-area {
+          /* 🔴 只有「本次目标」上纸：非目标单据留在 display:none ⇒ 不占版面（不出空白页）、
+             也不参与纸型竞争（issue #5914）。 */
+          .sales-print-area[data-print-target='sales'] {
             display: block;
             position: static;
             width: 100%;
@@ -249,6 +261,7 @@ export default function SalesDoc({
       {/* 🔴 **一份** .sales-sheet —— 三联纸的复写由纸承担，软件不渲染三遍（issue #5651） */}
       <div
         className="sales-sheet"
+        data-print-sheet
         data-testid="sales-sheet"
         style={sheetHeightMm !== null ? { height: `${sheetHeightMm}mm`, overflow: 'hidden' } : undefined}
       >
@@ -402,9 +415,11 @@ export default function SalesDoc({
           )}
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
   )
+
+  // 🔴 预览层里**不 portal**（issue #5914）：同一份单据要摆进真尺寸纸框，portal 会跑到框外
+  return inline ? doc : createPortal(doc, document.body)
 }
 
 // ========== 打印友好的表格原子（纯边框、无底色，避免打印丢背景） ==========
