@@ -5998,6 +5998,24 @@ _CASE_OR_053 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-055 [NORMAL] 未付款（待付款）订单允许修改内容（issue #5842，用户 2026-10-01 逐字）：只有 pending 可改（其余 422 + 中文文案，判定走 OrderStatusTransitions）；范围 = 收货信息 + 商品明细（商品/数量/单价/宽高）+ 加工项 + **金额服务端重算**；入口 = admin-web 详情页「修改订单」；同批落 #3352 选项 B（加工单快照漂移的发货守卫）并把 tripwire PG-014 改判为「编辑通道存在 ⇒ 守卫必须存在」（源: cases/order.yml）──
+_CASE_OR_055 = EvalCase(
+    id='OR-055',
+    legacy_id='',
+    title='未付款（待付款）订单允许修改内容（issue #5842，用户 2026-10-01 逐字）：只有 pending 可改（其余 422 + 中文文案，判定走 OrderStatusTransitions）；范围 = 收货信息 + 商品明细（商品/数量/单价/宽高）+ 加工项 + **金额服务端重算**；入口 = admin-web 详情页「修改订单」；同批落 #3352 选项 B（加工单快照漂移的发货守卫）并把 tripwire PG-014 改判为「编辑通道存在 ⇒ 守卫必须存在」',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-01 逐字：「买家未付款的订单要允许修改，现在缺失了」；（issue 内裁定）范围 = 全改（收货信息 + 商品明细（商品 / 数量 / 单价）+ 加工项 + 金额重算）；入口 = admin-web 订单详情页加「编辑」入口（商家改）'],
+    expectations=[],
+    data_checks=['判据 1·**只有 pending 可改，其余 422 且不写任何数据**：confirmed / producing / packed / shipped / completed / cancelled ⇒ BusinessException httpStatus=422 且文案含「只有「待付款」的订单可以修改内容」；orderMapper.updateById / orderItemMapper.insert / orderItemMapper.delete **零调用**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderContentEditTest.java（nonPendingOrderIsRejectedWith422AndWritesNothing）。红证：删掉 OrderStatusTransitions.assertContentEditable(order.getStatus()) 这一句 ⇒ 判据 1 红（已收款单也能被改）。', '判据 2·**金额一律服务端重算**：应收 = Σ(单价 × 数量) + Σ 行加工费（Fee#lineAmount()）；编辑请求体**没有** subtotal / totalAmount 字段（OrderContentUpdateRequest 刻意不设），落库 subtotal 取服务端算值。执行点 = OrderContentEditTest（amountIsRecalculatedOnServerSide）+ frontend/admin-web/tests/unit/components/EditOrderContentModal.test.tsx（请求 payload 的 items[0] 不含 subtotal、payload 不含 totalAmount）。红证：总价改成读请求里的金额 / 前端把 subtotal 塞回 payload ⇒ 判据 2 红。', '判据 3·**应收 − 优惠 ≈ 实收（容差 0.01）**：不一致 ⇒ 422「实收金额与应收不一致」且不落库（与 OrderService.createOrder 同口径同文案）。执行点 = OrderContentEditTest（amountMismatchIsRejected）。', '判据 4·**库存前置校验按新明细重跑，且不回滚库存**：新明细数量 > 当前库存 ⇒ 422 文案含「库存不足」与动作标签「修改订单」，且不落库；pending 单尚未扣库存（扣减在确认支付）⇒ 编辑时 productSkuMapper 零写入、StockLedgerService 零交互。执行点 = OrderContentEditTest（stockIsRevalidatedAgainstNewItems / editDoesNotRollbackStock）。红证：删掉 validateStockSufficientForItems(draftItems(items), 修改订单) ⇒ 判据 4 红。', '判据 5·**有活跃加工单 ⇒ 拒绝编辑**（内容已固化进 processing_orders.items_snapshot）：422 且文案带加工单号。执行点 = OrderContentEditTest（editRejectedWhenProcessingOrderExists）。', '判据 6·**审计留痕带前后差异**：audit_logs 写入 action=update_content / resourceType=order / resourceId=订单 id，且 details={before, after}（before/after 各含收货三件套、三个金额、逐行商品名/数量/单价/宽高/加工项名）。执行点 = OrderContentEditTest（auditLogCarriesBeforeAndAfter）。', '判据 7·**选项 B 的实例判据（快照漂移守卫）**：OrderShipGuard.hasProcessingDrift 四态 —— 同一行加工项签字（名×数量）相同 ⇒ 无漂移；快照里的行在订单里没了 / 同一行签字变了 / 订单**多出带加工项的行** ⇒ 漂移；订单多出**不带加工项**的新行（配件行，buildSnapshot 本来就不收录）**不算**漂移（否则假拦货）。执行点 = OrderContentEditTest（matchingSnapshotIsNotDrift / noProcessingOrderMeansNoDrift）。', '判据 8·**守卫接线（不是只有符号）**：漂移单走**真的**发货路径 OrderService.updateOrderStatus(id, shipped) 时被拦下（文案含「与加工单快照不一致」）—— 守卫挂在三条发货路（商家状态接口 / 发货页 shipOrderIfApplicable / 工人 OrderShipmentService）**唯一共用**的 assertProcessingCompletedBeforeShip 上。执行点 = OrderContentEditTest（shipPathEnforcesDriftGuard）。红证：把漂移校验从 assertProcessingCompletedBeforeShip 里删掉 ⇒ 判据 8 红。', '判据 9·**tripwire PG-014 的改判形态**：① 编辑通道存在（OrderController 上有路径含 content 的写端点）—— 通道被撤掉即红（提醒同步重估这一对）；② 通道存在 ⇒ OrderShipGuard 必须暴露 hasProcessingDrift 与 assertProcessingCompletedBeforeShip —— 守卫被删/改名而通道仍在 ⇒ 红。原判据的两条（AgentOrderController 无明细/内容写端点、AgentOrderUpdateRequest 字段集冻结）**一字未改**保留。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/OrderItemImmutabilityTest.java。红证：删掉 OrderShipGuard.hasProcessingDrift ⇒ 判据 ② 红。', '判据 10·**前端入口只在待付款出现**：pending 显示「修改订单」按钮，点击后挂载修改弹窗（点击前不存在）；confirmed 订单**不**显示该入口（界面不给死路 —— 后端只有 pending 可改）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx。红证：把按钮移出 status === pending_payment 分支 ⇒ 判据 10 红。'],
+    skip_reason='[backend-contract] 本用例是**管理端未付款订单内容编辑**的确定性判据（前端 vitest 判入口与请求体、后端 JUnit 判状态闸门 / 金额重算 / 库存重跑 / 审计 / 发货守卫；**无 LLM 环节 ⇒ 不进 agent-eval 冒烟**）：计分通道 = traces.tests，与库内其余同标记用例一致 —— 标记名是历史遗留的窄名，它判的是「不进 agent-eval、判据在 traces.tests」这件事',
+    tags=['order', 'admin-web', 'edit-pending', 'ship-guard', 'tripwire'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -11258,6 +11276,7 @@ ALL_CASES = (
     _CASE_OR_051,
     _CASE_OR_052,
     _CASE_OR_053,
+    _CASE_OR_055,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

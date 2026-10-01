@@ -60,7 +60,45 @@ public final class OrderStatusTransitions {
             "cancelled", "已取消"
     );
 
+    /**
+     * **内容可编辑**的状态集合（issue #5842；用户 2026-10-01 裁定「未付款订单允许修改」）。
+     *
+     * <p>为什么放在本类（状态机）而不是 {@code OrderService}：它是**状态判定**，
+     * 与流转表是同一个事实的两个面 —— 各写一份就会出现「状态机能流转、编辑通道却不认」这类
+     * 静默不一致（{@link #STATUS_TRANSITIONS} 之所以是唯一实现点，理由同）。</p>
+     *
+     * <p><b>取值为什么恰好是 {@code pending}</b>（不是"按惯例"）：`pending` 是**唯一尚未扣库存**
+     * 的状态 —— 扣减发生在确认支付（{@code OrderService.confirmPayment} → {@code confirmed}），
+     * 而 {@code confirmed} 及其在流转图上的**全部后继**（producing / packed / shipped / completed /
+     * cancelled）都已带库存副作用（取消 / 退货要回滚库存就是证据）。这个等价关系不是散文：
+     * 它由 {@code OrderContentEditableTransitionsTest} 按**流转图可达闭包**逐值推导
+     * （{@code 状态全集 − reachable(confirmed)} == {@link #CONTENT_EDITABLE_STATUSES}）
+     * ⇒ 将来状态机加新态时，是"忘了评估可编辑性"这件事**变红**，而不是静默放行。</p>
+     */
+    public static final Set<String> CONTENT_EDITABLE_STATUSES = Set.of("pending");
+
     private OrderStatusTransitions() {
+    }
+
+    /** 该状态下订单内容是否可编辑（未知名一律返回 false —— 不放过）。 */
+    public static boolean isContentEditable(String status) {
+        return status != null && CONTENT_EDITABLE_STATUSES.contains(status);
+    }
+
+    /**
+     * 断言该状态下允许改内容；否则抛 **422** + 中文文案（沿用 {@link #ORDER_STATUS_LABELS}）。
+     *
+     * <p>文案里同时给出「当前状态」与「可编辑状态」，商家读到能直接知道下一步做什么
+     * （先收款还是先修改），不是一句「操作不允许」。</p>
+     */
+    public static void assertContentEditable(String status) {
+        if (isContentEditable(status)) {
+            return;
+        }
+        throw BusinessException.validationError(String.format(
+                "订单当前状态为「%s」，只有「%s」的订单可以修改内容；"
+                        + "已收款及之后的状态如需更正，请先取消订单后重新下单",
+                label(status), label("pending")));
     }
 
     /** 状态值是否是状态机认识的状态（未知值一律拒绝，不做默认回落）。 */

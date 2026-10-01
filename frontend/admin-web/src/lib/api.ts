@@ -153,6 +153,7 @@ import type {
   RemnantSpecsView,
   RemnantMatchView,
 } from '@/types'
+import type { OrderContentUpdateParams } from '@/types'
 import { FrontendToBackendStatus } from '@/types'
 
 // 认证 API
@@ -731,6 +732,15 @@ export const orderApi = {
   // 后端 PUT /api/admin/orders/{id}/refund，body: { refund_reason, refund_amount }（refund_amount 缺省=全额）
   refundOrder: (id: string, data?: RefundOrderParams) =>
     request.put<ApiResponse<void>>(`/api/admin/orders/${id}/refund`, buildRefundPayload(data)),
+
+  /**
+   * **修改待付款订单内容**（issue #5842）：收货信息 + 商品明细（商品/数量/单价/宽高）+ 加工项。
+   *
+   * `PUT /api/admin/orders/{id}/content`；**金额由服务端重算**（请求体里没有小计/总额字段，
+   * 见 `OrderContentUpdateParams`）。只有「待付款」的订单可改，其余状态后端返回 422 + 中文文案。
+   */
+  updateOrderContent: (id: string, data: OrderContentUpdateParams) =>
+    request.put<ApiResponse<Order>>(`/api/admin/orders/${id}/content`, data),
 
   addRemark: (id: string, content: string) =>
     request.post<ApiResponse<void>>(`/api/admin/orders/${id}/remark`, { content }),

@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, UI-024, UI-040, UI-053
+// case_ids: OR-001, OR-002, OR-003, OR-055, UI-024, UI-040, UI-053
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -75,6 +75,11 @@ vi.mock('@/components/orders', () => ({
         </button>
       </div>
     ) : null,
+  // 修改订单（issue #5842）：本文件只验**入口**（哪个状态显示按钮、点开是否挂载弹窗）；
+  // 弹窗自身的判据（改明细 / 加工项 / 金额服务端重算）在
+  // tests/unit/components/EditOrderContentModal.test.tsx。
+  EditOrderContentModal: ({ open }: any) =>
+    open ? <div data-testid="edit-order-content-modal">EditOrderContentModal</div> : null,
 }))
 
 import OrderDetailPage from '@/app/(dashboard)/orders/[id]/OrderDetail'
@@ -480,5 +485,39 @@ describe('OrderDetailPage', () => {
       expect(mockConfirmPayment).toHaveBeenCalled()
     })
     expect(toast.error).toHaveBeenCalledWith('确认付款失败')
+  })
+
+  // ===== 修改订单入口（issue #5842：买家未付款 = 待付款，商家可改内容） =====
+
+  it('待付款订单：显示「修改订单」入口，点击后挂载修改弹窗', async () => {
+    const user = userEvent.setup()
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'pending', refundAmount: 0 } },
+    })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('待买家付款')).toBeInTheDocument()
+    })
+
+    const entry = screen.getByTestId('edit-order-content')
+    expect(entry).toHaveTextContent('修改订单')
+    // 入口挂载 ≠ 弹窗打开（两件事分开判：点击前弹窗不存在）
+    expect(screen.queryByTestId('edit-order-content-modal')).not.toBeInTheDocument()
+
+    await user.click(entry)
+    await waitFor(() => {
+      expect(screen.getByTestId('edit-order-content-modal')).toBeInTheDocument()
+    })
+  })
+
+  it('非待付款订单（已确认待发货）：**不**显示「修改订单」入口（后端只有 pending 可改，界面不给死路）', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'confirmed', paidAt: '2026-06-20T10:30:00Z' } },
+    })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('商品信息')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('edit-order-content')).not.toBeInTheDocument()
   })
 })

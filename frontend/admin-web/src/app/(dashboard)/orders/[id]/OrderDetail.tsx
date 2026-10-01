@@ -9,7 +9,7 @@ import dayjs from 'dayjs'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
-import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, ProcessingDoc, SalesDoc, OrderUrgencyPanel, type PrintTarget } from '@/components/orders'
+import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, ProcessingDoc, SalesDoc, OrderUrgencyPanel, EditOrderContentModal, type PrintTarget } from '@/components/orders'
 import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { craftSpecRows } from '@/lib/craft-display'
@@ -102,6 +102,12 @@ export default function OrderDetailPage() {
   const [confirmReceiveOpen, setConfirmReceiveOpen] = useState(false)
   const [receiveSubmitting, setReceiveSubmitting] = useState(false)
   const [showEditLogistics, setShowEditLogistics] = useState(false)
+
+  /**
+   * 修改订单内容（issue #5842）：**仅「待付款」**显示入口（与后端
+   * `OrderStatusTransitions.assertContentEditable` 同一口径 —— 只有 pending 可改，其余 422）。
+   */
+  const [editContentOpen, setEditContentOpen] = useState(false)
 
   // 退款
   const [refundModalOpen, setRefundModalOpen] = useState(false)
@@ -288,6 +294,7 @@ export default function OrderDetailPage() {
         processingOrder={processingOrder}
         countdown={countdown}
         onClose={() => setCloseModalOpen(true)}
+        onEditContent={() => setEditContentOpen(true)}
         onShip={() => router.push(`/orders/${order.id}/ship`)}
         onConfirmPayment={() => setConfirmPaymentOpen(true)}
         onConfirmReceive={() => setConfirmReceiveOpen(true)}
@@ -392,6 +399,19 @@ export default function OrderDetailPage() {
         </SectionCard>
       )}
 
+      {/* 修改订单内容（issue #5842）：仅「待付款」显示入口（后端也只有 pending 可改） */}
+      {editContentOpen && order && (
+        <EditOrderContentModal
+          open={editContentOpen}
+          order={order}
+          onClose={() => setEditContentOpen(false)}
+          onSaved={() => {
+            setEditContentOpen(false)
+            loadOrder()
+          }}
+        />
+      )}
+
       {/* 关闭订单弹窗 */}
       <CloseOrderModal
         open={closeModalOpen}
@@ -494,6 +514,8 @@ interface StatusSectionProps {
   processingOrder: ProcessingOrder | null
   countdown: { h: number; m: number; s: number; expired: boolean }
   onClose: () => void
+  /** 修改订单内容（issue #5842）—— **只在「待付款」分支渲染入口**（见 StatusSection 的 pending 段） */
+  onEditContent: () => void
   onShip: () => void
   onConfirmPayment: () => void
   onConfirmReceive: () => void
@@ -514,6 +536,7 @@ function StatusSection({
   processingOrder,
   countdown,
   onClose,
+  onEditContent,
   onShip,
   onConfirmPayment,
   onConfirmReceive,
@@ -564,6 +587,12 @@ function StatusSection({
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
+            {/* 修改订单（issue #5842）：买家未付款（待付款）时的内容编辑入口 ——
+                收货信息 / 商品明细 / 加工项；金额保存时由服务端重算。
+                只在 pending_payment 分支出现：其余状态后端一律 422，界面不给死路。 */}
+            <Button variant="secondary" data-testid="edit-order-content" onClick={onEditContent} className="gap-1.5">
+              修改订单
+            </Button>
             <Button variant="secondary" onClick={onClose} className="gap-1.5">
               关闭订单
             </Button>

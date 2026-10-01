@@ -80,6 +80,29 @@ public class OrderController {
     }
 
     /**
+     * **修改待付款订单内容**（issue #5842；用户 2026-10-01 裁定「买家未付款的订单要允许修改」）。
+     *
+     * <pre>PUT /api/admin/orders/{id}/content</pre>
+     *
+     * <p>改三面：收货信息（姓名/电话/地址）+ 商品明细（商品/数量/单价/宽高）+ 加工项；
+     * 金额**服务端重算**（请求体里根本没有小计/总额字段 —— 见 {@link OrderContentUpdateRequest}）。</p>
+     *
+     * <p>🔴 <b>只有 {@code pending}（待付款）可改，其余状态 422 + 中文文案</b>
+     * （判定 = {@code OrderStatusTransitions.assertContentEditable}，状态机唯一实现点）。
+     * 权限码复用既有写码 {@code order:update}（与 status / payment / cancel / remark 同码，
+     * 不新造权限）；{@code order:create} 是**建单**粒度，改单属于"改"。</p>
+     */
+    @RequirePermission("order:update")
+    @PutMapping("/{id:[0-9a-fA-F-]+}/content")
+    public ApiResponse<OrderDetailResponse> updateOrderContent(
+            @PathVariable String id,
+            @Valid @RequestBody OrderContentUpdateRequest request) {
+        log.info("修改订单内容: id={}, customerName={}, items={}",
+                id, request.getCustomerName(), request.getItems() != null ? request.getItems().size() : 0);
+        return ApiResponse.success(orderService.updatePendingOrderContent(id, request));
+    }
+
+    /**
      * 获取订单统计
      *
      * GET /api/admin/orders/statistics

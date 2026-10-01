@@ -3630,7 +3630,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（52 case）
+## 订单域（53 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -4609,6 +4609,24 @@
 ```
 真值: order.creator-snapshot
 溯源: 2026-09-30 新增（issue #5835；用户当次会话逐字，见 user_inputs）—— 🔴 **本条是「新业务需求直接开单」改判后的第一张按新口径开的单**（铁律 12 于同日改判：新业务需求 ⇒ 直接开 issue）。背景（现取实测）：制单人此前**全系统未采集**（`Order` 实体无该列；加工单打印早已把它登记为缺口并按 `PROCESSING_DOC_NOT_COLLECTED_FIELDS` 印「未采集」，见 docs/design/print-media-matrix.md）。**本用例不复制任何口径**：真值登记在 `order.creator-snapshot`；`created_by_name` 是**快照**（改名 / 删号后历史不失真），`user_id` 语义（C 端隔离）**一字未动**。⚠️ **未固化（照实登记）**：① 「**订单详情不加**该字段」是用户裁定的**反向面**，当前**没有**机械判据钉住（详情页若将来误加，只有人看得到）—— 缺口登记在此，重启条件 = 下次改详情页字段时顺手补一条反向断言；② 前端判据只覆盖「请求带 `creator`」，**不覆盖**真实数据库上的 LIKE 语义（由后端判据 5 的 SQL 段断言承担）。 ｜ tags: order, admin-web, creator, list-filter
+
+### OR-055. 未付款（待付款）订单允许修改内容（issue #5842，用户 2026-10-01 逐字）：只有 pending 可改（其余 422 + 中文文案，判定走 OrderStatusTransitions）；范围 = 收货信息 + 商品明细（商品/数量/单价/宽高）+ 加工项 + **金额服务端重算**；入口 = admin-web 详情页「修改订单」；同批落 #3352 选项 B（加工单快照漂移的发货守卫）并把 tripwire PG-014 改判为「编辑通道存在 ⇒ 守卫必须存在」 🔵
+```
+你: 用户 2026-10-01 逐字：「买家未付款的订单要允许修改，现在缺失了」；（issue 内裁定）范围 = 全改（收货信息 + 商品明细（商品 / 数量 / 单价）+ 加工项 + 金额重算）；入口 = admin-web 订单详情页加「编辑」入口（商家改）
+数据: 判据 1·**只有 pending 可改，其余 422 且不写任何数据**：confirmed / producing / packed / shipped / completed / cancelled ⇒ BusinessException httpStatus=422 且文案含「只有「待付款」的订单可以修改内容」；orderMapper.updateById / orderItemMapper.insert / orderItemMapper.delete **零调用**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderContentEditTest.java（nonPendingOrderIsRejectedWith422AndWritesNothing）。红证：删掉 OrderStatusTransitions.assertContentEditable(order.getStatus()) 这一句 ⇒ 判据 1 红（已收款单也能被改）。
+数据: 判据 2·**金额一律服务端重算**：应收 = Σ(单价 × 数量) + Σ 行加工费（Fee#lineAmount()）；编辑请求体**没有** subtotal / totalAmount 字段（OrderContentUpdateRequest 刻意不设），落库 subtotal 取服务端算值。执行点 = OrderContentEditTest（amountIsRecalculatedOnServerSide）+ frontend/admin-web/tests/unit/components/EditOrderContentModal.test.tsx（请求 payload 的 items[0] 不含 subtotal、payload 不含 totalAmount）。红证：总价改成读请求里的金额 / 前端把 subtotal 塞回 payload ⇒ 判据 2 红。
+数据: 判据 3·**应收 − 优惠 ≈ 实收（容差 0.01）**：不一致 ⇒ 422「实收金额与应收不一致」且不落库（与 OrderService.createOrder 同口径同文案）。执行点 = OrderContentEditTest（amountMismatchIsRejected）。
+数据: 判据 4·**库存前置校验按新明细重跑，且不回滚库存**：新明细数量 > 当前库存 ⇒ 422 文案含「库存不足」与动作标签「修改订单」，且不落库；pending 单尚未扣库存（扣减在确认支付）⇒ 编辑时 productSkuMapper 零写入、StockLedgerService 零交互。执行点 = OrderContentEditTest（stockIsRevalidatedAgainstNewItems / editDoesNotRollbackStock）。红证：删掉 validateStockSufficientForItems(draftItems(items), 修改订单) ⇒ 判据 4 红。
+数据: 判据 5·**有活跃加工单 ⇒ 拒绝编辑**（内容已固化进 processing_orders.items_snapshot）：422 且文案带加工单号。执行点 = OrderContentEditTest（editRejectedWhenProcessingOrderExists）。
+数据: 判据 6·**审计留痕带前后差异**：audit_logs 写入 action=update_content / resourceType=order / resourceId=订单 id，且 details={before, after}（before/after 各含收货三件套、三个金额、逐行商品名/数量/单价/宽高/加工项名）。执行点 = OrderContentEditTest（auditLogCarriesBeforeAndAfter）。
+数据: 判据 7·**选项 B 的实例判据（快照漂移守卫）**：OrderShipGuard.hasProcessingDrift 四态 —— 同一行加工项签字（名×数量）相同 ⇒ 无漂移；快照里的行在订单里没了 / 同一行签字变了 / 订单**多出带加工项的行** ⇒ 漂移；订单多出**不带加工项**的新行（配件行，buildSnapshot 本来就不收录）**不算**漂移（否则假拦货）。执行点 = OrderContentEditTest（matchingSnapshotIsNotDrift / noProcessingOrderMeansNoDrift）。
+数据: 判据 8·**守卫接线（不是只有符号）**：漂移单走**真的**发货路径 OrderService.updateOrderStatus(id, shipped) 时被拦下（文案含「与加工单快照不一致」）—— 守卫挂在三条发货路（商家状态接口 / 发货页 shipOrderIfApplicable / 工人 OrderShipmentService）**唯一共用**的 assertProcessingCompletedBeforeShip 上。执行点 = OrderContentEditTest（shipPathEnforcesDriftGuard）。红证：把漂移校验从 assertProcessingCompletedBeforeShip 里删掉 ⇒ 判据 8 红。
+数据: 判据 9·**tripwire PG-014 的改判形态**：① 编辑通道存在（OrderController 上有路径含 content 的写端点）—— 通道被撤掉即红（提醒同步重估这一对）；② 通道存在 ⇒ OrderShipGuard 必须暴露 hasProcessingDrift 与 assertProcessingCompletedBeforeShip —— 守卫被删/改名而通道仍在 ⇒ 红。原判据的两条（AgentOrderController 无明细/内容写端点、AgentOrderUpdateRequest 字段集冻结）**一字未改**保留。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/OrderItemImmutabilityTest.java。红证：删掉 OrderShipGuard.hasProcessingDrift ⇒ 判据 ② 红。
+数据: 判据 10·**前端入口只在待付款出现**：pending 显示「修改订单」按钮，点击后挂载修改弹窗（点击前不存在）；confirmed 订单**不**显示该入口（界面不给死路 —— 后端只有 pending 可改）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx。红证：把按钮移出 status === pending_payment 分支 ⇒ 判据 10 红。
+跳过: [backend-contract] 本用例是**管理端未付款订单内容编辑**的确定性判据（前端 vitest 判入口与请求体、后端 JUnit 判状态闸门 / 金额重算 / 库存重跑 / 审计 / 发货守卫；**无 LLM 环节 ⇒ 不进 agent-eval 冒烟**）：计分通道 = traces.tests，与库内其余同标记用例一致 —— 标记名是历史遗留的窄名，它判的是「不进 agent-eval、判据在 traces.tests」这件事
+```
+真值: order.pending-content-edit
+溯源: 2026-10-01 新增（issue #5842；用户当次会话逐字，见 user_inputs）。🔴 本条同批**改判**了 issue #3352（2026-09-12 决策『选项 C 源头约束』）留下的 tripwire backend/admin-api/src/test/java/com/migao/admin/controller/OrderItemImmutabilityTest.java：它当年逐字写着『加工项仅在创建订单时可写，创建后**无任何修改通道**；若将来要引入编辑入口，必须同时启用「发货守卫覆盖校验」（选项 B），届时本测试会失败，提醒作者同步评估守卫』（**这段是决策交接条件，不是用户输入轮次** ⇒ 不占 user_inputs）⇒ 本单就是那个『将来』，改判形态 = 「编辑通道存在 ⇒ 守卫必须存在」（**不是删掉、不是放松**，原两条 Agent 侧判据一字未改）。守卫落点 = backend/admin-api/src/main/java/com/migao/admin/service/OrderShipGuard.java 的 hasProcessingDrift / assertProcessingCompletedBeforeShip。⚠️ **未固化（照实登记）**：① 加工单快照**为空或不可解析**时漂移判定为「无法判定 ⇒ 不拦货」（存量/异常形态：宁可漏判，不把『读不懂』当『漂移』）—— 该分支只打 warn 日志，**没有**判据钉住这条日志；② 编辑通道与加工单生成之间的**并发窗口**（另一会话同时生成加工单）没有判据（单测是串行 mock，真库并发不在面内）；③ 前端只覆盖『请求体不带金额字段』与『入口只在 pending 出现』，**不覆盖**真实浏览器里的表单可用性（Playwright 多模态验收见 PR body 的登记）。 ｜ tags: order, admin-web, edit-pending, ship-guard, tripwire
 
 ## 加工项域（19 case）
 
@@ -8269,8 +8287,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：582（活跃 126，跳过 456）
-- tier 分布：smoke 12 / normal 537 / adversarial 31
+- 用例总数：583（活跃 126，跳过 457）
+- tier 分布：smoke 12 / normal 538 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8288,7 +8306,7 @@
 - 杂项域：50
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：52
+- 订单域：53
 - 加工项域：19
 - 加工单域：56
 - 商品域：105

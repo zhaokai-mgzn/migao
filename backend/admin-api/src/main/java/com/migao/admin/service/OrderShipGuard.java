@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.dto.OrderDetailResponse;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
+import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
@@ -13,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -79,6 +81,11 @@ public final class OrderShipGuard {
      * 有加工项订单必须走 producing（生成加工单）→ 加工完成 → shipped，防止加工环节被绕过。
      *
      * <p>本体 = {@link #isProcessingReadyForShip}（**不是**第二份判定；本方法只是它的抛异常外壳）。</p>
+     *
+     * <p><b>issue #5842 追加第二道判据（#3352 决策 2026-09-12 的「选项 B」）</b>：
+     * 本方法是**三条发货路**（商家 {@code PUT /orders/{id}/status}、发货页
+     * {@code shipOrderIfApplicable}、工人 {@code OrderShipmentService}）唯一共用的入口 ⇒
+     * 漂移校验挂在这里，三条路一次覆盖（挂在某一条路上就是"另外两条能绕过"）。</p>
      */
     public static void assertProcessingCompletedBeforeShip(OrderItemMapper orderItemMapper,
                                                            ProcessingOrderMapper processingOrderMapper,
@@ -88,6 +95,122 @@ public final class OrderShipGuard {
             throw BusinessException.validationError(
                     "订单含加工项，须先完成加工单后再发货（可在订单详情或让米宝生成/更新加工单）");
         }
+        // ── 选项 B：快照漂移覆盖校验（issue #5842）────────────────────────────────
+        // 决策 C（#3352）当年以「加工项仅创建时可写」把漂移堵在源头；#5842 按用户裁定开了
+        // **待付款内容编辑**通道 ⇒ 源头约束不再独当一面，必须有第二道（决策 B）。
+        // 为什么仍要它（编辑通道已限制在 pending、而加工单在 producing 才生成）：
+        // ① 编辑与生成是**两条独立写路径**，靠"状态不同时出现"这种时序假设守钱面，
+        //    是**没有判据的假设**（并发窗口 / 将来放宽可编辑状态 / 存量脏数据都能打破它）；
+        // ② 漂移的真实后果是「订单上多了加工项，车间没做，货照发」—— 涉钱且不可逆。
+        if (hasProcessingDrift(orderItemMapper, processingOrderMapper, objectMapper, order)) {
+            throw BusinessException.validationError(
+                    "订单明细与加工单快照不一致（加工单生成后订单加工项被改动）⇒ "
+                            + "请先作废并重新生成加工单，确认车间做的是改后的活，再发货");
+        }
+    }
+
+    /**
+     * **快照漂移**判据（选项 B 的判定本体，issue #5842）—— 加工单生成后订单加工项是否被改动。
+     *
+     * <p>比较两侧都以「订单明细行 id（{@code order_items.id}）」为键：</p>
+     * <ul>
+     *   <li><b>快照侧</b>：活跃加工单的 {@code items_snapshot}（{@code ProcessingOrderService.buildSnapshot}
+     *       生成时的固化真相）逐行取 {@code itemId → [加工项名×数量]}；</li>
+     *   <li><b>订单侧</b>：当前 {@code order_items} 逐行取同一形状。</li>
+     * </ul>
+     * <p>三种漂移形态都判：① 快照里的行在订单里**没了**（明细被删）；
+     * ② 同一行的加工项集合变了（增/删/改名/改数量）；
+     * ③ 订单里**多出**了带加工项的行（= 「新增的加工项没人做却仍可发货」，正是决策 C 要堵的那件事）。</p>
+     *
+     * <p>⚠️ <b>「第 ③ 种」为什么只数**带加工项**的新行</b>：{@code buildSnapshot} **本来就不收录**
+     * 无加工项的非卖布行（配件/赠品行，见其 {@code procs.isEmpty() && !布料} 分支）⇒ 把"订单里多一行"
+     * 一律算漂移，会把**合法**的配件行判成漂移（假拦货）。同理，快照为空（未收录任何行）时
+     * **无法判定**（存量/异常形态）⇒ 不据此拦货 —— 宁可漏判也不把"读不懂"当成"漂移"
+     * （该边界逐条登记在 PR 的未固化项里）。</p>
+     */
+    public static boolean hasProcessingDrift(OrderItemMapper orderItemMapper,
+                                             ProcessingOrderMapper processingOrderMapper,
+                                             ObjectMapper objectMapper,
+                                             Order order) {
+        ProcessingOrder active = processingOrderMapper.selectActiveByOrderId(order.getId(), order.getTenantId());
+        if (active == null) {
+            return false; // 还没有加工单 ⇒ 没有快照可比（发货拦不拦由上面那道判据管）
+        }
+        Map<String, List<String>> snapshot = snapshotProcessingSignatures(objectMapper, active.getItemsSnapshot());
+        if (snapshot.isEmpty()) {
+            log.warn("加工单快照为空或不可解析，跳过漂移校验（无法判定，不据此拦货）: orderId={}, processingOrderNo={}",
+                    order.getId(), active.getProcessingOrderNo());
+            return false;
+        }
+        Map<String, List<String>> current = new LinkedHashMap<>();
+        for (OrderItem item : loadOrderItems(orderItemMapper, order.getId(), order.getTenantId())) {
+            current.put(item.getId(), processingSignatures(extractProcessingItems(objectMapper, item.getProcessingInfo())));
+        }
+        for (Map.Entry<String, List<String>> row : snapshot.entrySet()) {
+            List<String> now = current.get(row.getKey());
+            if (now == null || !now.equals(row.getValue())) {
+                return true; // ① 快照行没了 / ② 同一行加工项变了
+            }
+        }
+        // ③ 订单侧多出的、**带加工项**的行（无加工项的新行不入快照，不算漂移）
+        for (Map.Entry<String, List<String>> row : current.entrySet()) {
+            if (!row.getValue().isEmpty() && !snapshot.containsKey(row.getKey())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 加工单快照 → {@code itemId → [加工项签字]}（键序排序保证可比较，与「同一份数据两次比较恒等」同族）。
+     *
+     * <p>{@code itemsSnapshot} 可能以 JSON **字符串**形态出现（自定义 {@code @Select} 不经
+     * {@code JacksonTypeHandler}）⇒ 先归一化，避免「读不懂 ⇒ 判无漂移」的静默失效
+     * （同 {@link #extractProcessingItems} 的兼容口径）。</p>
+     */
+    @SuppressWarnings("unchecked")
+    static Map<String, List<String>> snapshotProcessingSignatures(ObjectMapper objectMapper, Object snapshot) {
+        Object normalized = snapshot;
+        if (normalized instanceof String s && !s.isBlank()) {
+            try {
+                normalized = objectMapper.readValue(s, List.class);
+            } catch (Exception e) {
+                log.warn("加工单快照 JSON 字符串解析失败: {}", e.getMessage());
+                return Map.of();
+            }
+        }
+        if (!(normalized instanceof List)) {
+            return Map.of();
+        }
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        for (Object element : (List<Object>) normalized) {
+            if (!(element instanceof Map)) {
+                continue;
+            }
+            Map<String, Object> row = (Map<String, Object>) element;
+            Object itemId = row.get("itemId");
+            if (itemId == null) {
+                continue;
+            }
+            result.put(String.valueOf(itemId),
+                    processingSignatures(extractProcessingItems(objectMapper, row)));
+        }
+        return result;
+    }
+
+    /**
+     * 行内加工项签字（`名字×数量` 排序后成列）：比较的是**车间会做哪些活**，
+     * 不比较展示字段（单价/规格那些改了不影响车间做没做，`#4882` 起加工项本就不含销售价）。
+     */
+    static List<String> processingSignatures(List<OrderDetailResponse.ProcessingItemBrief> items) {
+        List<String> signatures = new ArrayList<>();
+        for (OrderDetailResponse.ProcessingItemBrief item : items) {
+            String name = item.getName() == null ? "" : item.getName().trim();
+            BigDecimal quantity = item.getQuantity();
+            signatures.add(name + "×" + (quantity == null ? "" : quantity.stripTrailingZeros().toPlainString()));
+        }
+        Collections.sort(signatures);
+        return signatures;
     }
 
     /**
