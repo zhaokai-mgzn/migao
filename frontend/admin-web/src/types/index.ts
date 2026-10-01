@@ -3090,7 +3090,8 @@ export interface InboundBatch {
 /** 建单明细行输入 */
 export interface InboundOrderItemInput {
   productId: string
-  skuId: number
+  /** 🔴 issue #5904：SKU id 是**雪花号字符串**（≈2.1e18 > 2^53）—— 原样透传，不许 Number() */
+  skuId: string
   quantity: number
   unitCost?: number | null
   dyeLot?: string | null

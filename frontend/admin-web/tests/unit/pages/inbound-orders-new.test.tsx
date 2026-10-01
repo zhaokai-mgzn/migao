@@ -79,7 +79,7 @@ beforeEach(() => {
         id: 'prod-1',
         name: '遮光窗帘布',
         skus: [
-          { id: '11', colorName: '米白', doorWidth: '2.8', sellingMethod: 'bulk_cut', price: 30, stock: 5 },
+          { id: '2097126615461462018', colorName: '米白', doorWidth: '2.8', sellingMethod: 'bulk_cut', price: 30, stock: 5 },
         ],
       },
     },
@@ -165,7 +165,7 @@ describe('建单：一行 = 一个批次，payload 逐字段（PR-037）', () =>
     expect(payload.items).toEqual([
       {
         productId: 'prod-1',
-        skuId: 11,
+        skuId: '2097126615461462018',
         quantity: 30,
         unitCost: 12.5,
         dyeLot: 'G-2026-0912',
@@ -175,6 +175,27 @@ describe('建单：一行 = 一个批次，payload 逐字段（PR-037）', () =>
     ])
     // 建完回列表（新单在列表里是草稿，过账在详情弹窗里做）
     expect(mockPush).toHaveBeenCalledWith('/inbound-orders')
+  })
+
+  // ══ #5904 靶心：id 是**雪花号**（> 2^53），必须原样字符串提交 ══
+  // 线上实测（2026-10-01）：真实 skuId `2097126615461462018`（2699-01 米白色 / 3.2 米）经
+  // `Number()` 变成 `2097126615461462000`（末位被吞）⇒ 服务端查不到该 SKU ⇒ 保存恒失败：
+  // 「商品明细第 1 项的 SKU 不属于该商品（或不存在），请重新选择」。
+  // 本判据用**真实量级**的 id，玩具 id（如 `11`）永远测不出这个洞 —— 这正是它当初溜过去的原因。
+  it('#5904: SKU id 是雪花号字符串 ⇒ 提交体里逐字原样（不得被 Number() 截断）', async () => {
+    mockCreate.mockResolvedValue({ data: { data: createdOrder } })
+    render(<NewInboundOrderPage />)
+
+    const { qty } = await openWithLine()
+    fireEvent.change(qty, { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
+    const sent = mockCreate.mock.calls[0][0].items[0].skuId
+    expect(typeof sent).toBe('string')
+    expect(sent).toBe('2097126615461462018')
+    // 反面钉法：Number() 之后的值（末位被吞）**不得**出现在提交体里
+    expect(sent).not.toBe(String(Number('2097126615461462018')))
   })
 
   it('一行都没有 ⇒ 拦住（不调建单接口）', async () => {
@@ -220,7 +241,7 @@ describe('入库数量：1 位小数（PR-046，issue #5063）', () => {
     //    （迁移前如此，迁移不许降级）。
     expect(mockCreate.mock.calls[0][0].items).toEqual([{
       productId: 'prod-1',
-      skuId: 11,
+      skuId: '2097126615461462018',
       quantity: 60.5,
       unitCost: null,
       dyeLot: null,
@@ -314,7 +335,7 @@ describe('期初建账单条录入（PR-062，V118 / issue #5153）', () => {
     expect(payload.items).toEqual([
       {
         productId: 'prod-1',
-        skuId: 11,
+        skuId: '2097126615461462018',
         quantity: 0.5,
         unitCost: null,
         dyeLot: null,

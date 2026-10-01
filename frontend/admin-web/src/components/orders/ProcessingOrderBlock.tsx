@@ -55,7 +55,8 @@ interface AssignSource {
   /** = `order_items.id` = 加工单快照行的 `itemId`（后端据此认行） */
   itemId: string
   productId: string
-  skuId?: number
+  /** SKU id（**雪花号字符串**，issue #5904：原样透传，不许 Number()） */
+  skuId?: string
   label: string
   /** 行米数（后端按「向上进位到 0.1」判余量是否够） */
   meters: number
@@ -82,13 +83,16 @@ function assignSourcesOf(items: OrderItem[]): AssignSource[] {
     const procs = Array.isArray(info.processingItems) ? info.processingItems : []
     if (procs.length === 0 && info.saleForm !== '布料') continue
     const meters = Number(it.quantity)
-    const skuId = Number(info.skuId)
+    // 🔴 issue #5904：`info.skuId` 是**雪花号字符串**（≈2.1e18 > 2^53）—— `Number()` 会吞掉末位，
+    // 拿一个"看起来像"的 id 去查候选批次 ⇒ 查不到（或串到不存在的 SKU）。这里只判「是不是正整数串」。
+    const rawSkuId = typeof info.skuId === 'string' || typeof info.skuId === 'number' ? String(info.skuId) : ''
+    const skuId = /^\d+$/.test(rawSkuId) && !/^0+$/.test(rawSkuId) ? rawSkuId : undefined
     if (!it.id || !it.productId || !Number.isFinite(meters) || meters <= 0) continue
     const color = info.colorName ?? it.color
     rows.push({
       itemId: it.id,
       productId: it.productId,
-      skuId: Number.isInteger(skuId) && skuId > 0 ? skuId : undefined,
+      skuId,
       label: `${it.productName ?? ''}${color ? `（${color}）` : ''}`,
       meters,
     })
