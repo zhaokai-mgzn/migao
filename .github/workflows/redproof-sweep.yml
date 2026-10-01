@@ -86,10 +86,11 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Setup Node 20（web 面：admin-web 的 vitest 判据）
+      # ≥22.22.2：web 面判据跑 admin-web 的 vitest（jsdom 30 的 engines 下限），Node 20 上起不来。
+      - name: Setup Node 22（web 面：admin-web 的 vitest 判据）
         uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: frontend/admin-web/package-lock.json
 

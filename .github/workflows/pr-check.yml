@@ -294,11 +294,21 @@ jobs:
             echo "⏭️ 无 admin-web 变更 —— typecheck/lint/build/单测**未跑**（「没跑」不是「通过」）"
           fi
 
-      - name: Set up Node.js 20
+      # 🔴 Node 必须是 **≥22.22.2**（不能是 20）：本腿的 `npx vitest run` 跑在 jsdom 30 上，
+      # 而 jsdom 30.1.1 声明 `engines.node = ^22.22.2 || ^24.15.0 || >=26.0.0`，
+      # 它带入的 undici 8.11.0 又要求 `>=22.19.0`。Node 20 上的实际形态（PR #5617 实证，2026-09-28）：
+      # undici 的 `lib/web/cache/cachestorage.js` 在**模块装载期**调 `webidl.util.markAsUncloneable`
+      # （实为 `node:worker_threads.markAsUncloneable`，Node 22 才有；Node 20.20.2 上是 `undefined`）
+      # ⇒ **每个**测试文件都在环境装载期崩：`Test Files 238 (238) / Tests no tests / Errors 238`。
+      # 只抬**测试腿**，不动生产：jsdom 是 devDependency、`next build` 不加载它，
+      # Dockerfile 的 node:20-alpine 与 `@types/node ^20` 保持原样（无 engine-strict ⇒ `npm ci` 只告警）。
+      # ⚠️ 改这个步骤名要同改 `tests/unit_ci_workflows/declaration_gate_registry.json` 的
+      #    `pr-check-admin-web-tests.gated_steps`（`test_gate_coverage_and_same_source.py` 按步骤名逐字校验）。
+      - name: Set up Node.js 22
         if: steps.detect_aw.outputs.run_web == 'true'
         uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: frontend/admin-web/package-lock.json
 
