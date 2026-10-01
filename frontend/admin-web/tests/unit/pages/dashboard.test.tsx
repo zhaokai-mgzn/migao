@@ -255,7 +255,9 @@ describe('DashboardPage', () => {
     await waitFor(() => {
       expect(screen.getByText('待处理')).toBeInTheDocument()
       expect(screen.getByText('待发货订单')).toBeInTheDocument()
-      expect(screen.getByText('含加工待发货订单')).toBeInTheDocument()
+      // issue #5881：文案由「含加工待发货订单」缩为「含加工待发货」（8 字 → 6 字），
+      // 让 5 张卡在同排里都不换行 —— 详见下方 #5881 版式判据的推导。
+      expect(screen.getByText('含加工待发货')).toBeInTheDocument()
       expect(screen.getByText('待补库存商品')).toBeInTheDocument()
     })
   })
@@ -290,9 +292,49 @@ describe('DashboardPage', () => {
       }
       // fmtNum 不会改小数字（< 1000 直接返回原值），所以 '8' / '3' / '2'
       expect(findCount('待发货订单')).toContain('8')
-      expect(findCount('含加工待发货订单')).toContain('3')
+      expect(findCount('含加工待发货')).toContain('3')
       expect(findCount('待补库存商品')).toContain('2')
     })
+  })
+
+  // ── 待处理卡片版式（issue #5881）──
+  //
+  // 现象（用户 2026-10-01 截图）：第 3 张卡比同行四张**高出一截**，突兀不一致。
+  // 根因（代码级）：容器是 `grid`，而 **grid 项是外层 `<Link>`**（默认 stretch ⇒ **外框**等高），
+  // 卡片本体 `PendingCard` 却没有 `h-full` ⇒ **卡片高度 = 自身内容高度**，
+  // 标题换了两行的第 3 张自己长出来，其余四张短一截。
+  //
+  // 为什么判**形态**而不是高度：jsdom 没有布局引擎（`getBoundingClientRect()` / `offsetHeight` 恒 0），
+  // 在这里断言高度只会得到一份永远为 0 的假读数（= 空断言）⇒ 钉住「产生该现象的三条形态」，
+  // 像素读数交由真浏览器截图复核（`migao-dev-flow` §15.7）。
+  //
+  // 红证（修复前实测：下面三条**全红**）：标题「含加工待发货订单」= 8 字（> 上限 6）；
+  // 卡片根节点无 `h-full`；标题无 `truncate`。
+  it('#5881 待处理卡片：卡片等高（h-full）+ 标题单行截断 + 标题 ≤ 6 字', async () => {
+    const { container } = render(<DashboardPage />)
+    await waitFor(() => expect(screen.getByText('待处理')).toBeInTheDocument())
+
+    const cards = Array.from(container.querySelectorAll('[data-testid="pending-card"]'))
+    // fail-closed：卡片数变了 ⇒ 下面的循环可能在空集 / 子集上假绿
+    expect(cards.length, '待处理卡片数与判据假设不符 ⇒ 请同步本判据').toBe(5)
+
+    for (const card of cards) {
+      const titleEl = card.querySelector('[data-testid="pending-card-title"]') as HTMLElement
+      expect(titleEl, '卡片缺标题节点（选择器漂移 ⇒ 本判据会空跑）').toBeTruthy()
+      const text = titleEl.textContent || ''
+      // ① 等高：外层 grid 项的等高必须**传导到卡片本体**，否则标题换行的那张会自己长出来
+      expect(card.className, `卡片「${text}」缺 h-full ⇒ 标题换行时会比同行高出一截`).toContain('h-full')
+      // ② 单行：不允许靠换行撑高；超长截断 + `title` 保证 hover 仍读得到全名
+      expect(titleEl.className, `卡片「${text}」标题未单行截断（缺 truncate）`).toContain('truncate')
+      expect(titleEl.getAttribute('title'), `卡片「${text}」标题缺 title ⇒ 截断后读不到全名`).toBe(text)
+      // ③ 长度上限（**类级**固化）：1440 视口下 5 卡每张约 200px，图标块 40 + 间隙 / 箭头 /
+      //    内边距 ≈ 116px ⇒ 留给标题约 84px ≈ 7 个 12px 汉字；留 1 字余量 ⇒ 上限 6。
+      //    这条让**下一个长标签**在这里当场红，而不是等看板上再长出一截。
+      expect(
+        text.length,
+        `卡片「${text}」标题 ${text.length} 字 > 上限 6 ⇒ 会把该卡撑高换行（改短或调版式，别只加断言）`,
+      ).toBeLessThanOrEqual(6)
+    }
   })
 
   // ── 趋势图 ──
@@ -837,7 +879,7 @@ describe('DashboardPage', () => {
     const pendingIcon = pendingCard.querySelector('[data-testid="icon-package"]')!
     expect(pendingIcon.getAttribute('class')).toContain('text-primary-600')
     // 含加工待发货图标 → accent-600（原 purple-600）
-    const processCard = screen.getByText('含加工待发货订单').closest('a')!
+    const processCard = screen.getByText('含加工待发货').closest('a')!
     const processIcon = processCard.querySelector('[data-testid="icon-settings"]')!
     expect(processIcon.getAttribute('class')).toContain('text-accent-600')
     // 今日订单数图标 → primary-600（原 blue-600）

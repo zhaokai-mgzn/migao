@@ -33,7 +33,7 @@
 | 区块 | 展示项 | 取值 | 后端实现 | 来源表 | 口径 |
 |---|---|---|---|---|---|
 | 待处理 | 待发货订单 | `stats.pendingShipOrders` | `DashboardController::getStats` → `OrderMapper::selectDashboardOrderStats`（`pending_ship`） | `orders` | `COUNT(*) FILTER (status IN ('confirmed','producing') AND deleted=0)`；⚠️ 卡片文案只写「待发货」，下钻链接只过滤 `status=待发货`（= `confirmed`）⇒ **计数口径比下钻口径宽**（`producing` 的中文标签是「生产中」） |
-| 待处理 | 含加工待发货订单 | `stats.processingPendingOrders` | `OrderItemMapper::selectProcessingPendingOrdersCount` | `order_items` ⋈ `orders` | `COUNT(DISTINCT oi.order_id)`，`o.status IN ('confirmed','producing')` ∧ `oi.processing_info IS NOT NULL` |
+| 待处理 | 含加工待发货 | `stats.processingPendingOrders` | `OrderItemMapper::selectProcessingPendingOrdersCount` | `order_items` ⋈ `orders` | `COUNT(DISTINCT oi.order_id)`，`o.status IN ('confirmed','producing')` ∧ `oi.processing_info IS NOT NULL` |
 | 待处理 | 待补库存商品 | `stats.lowStockItems` | `ProductService::getLowStockSkuCount(tenantId, 100)` → `ProductMapper::countLowStockSkus` | `product_skus` ⋈ `products` | `on_sale` ∧ `stock BETWEEN 0 AND 100`，按 **SKU**（颜色规格）计数，阈值 `100` 硬编码在调用处 |
 | 经营数据 | 今日订单数 + 环比 | `stats.todayOrders` / `todayOrdersChange` | `selectDashboardOrderStats`（`today_orders` / `yesterday_orders`） | `orders` | 业务日 `Asia/Shanghai` 半开区间；环比 `(今−昨)/昨×100`，**分母 0 ⇒ 0**（不区分「无昨日」） |
 | 经营数据 | 今日销售额 + 环比 + 迷你柱 | `stats.todaySales` / `todaySalesChange` + `order-trend` | 同上 + `DashboardController::getOrderTrend` | `orders` | `SUM(total_amount)`；🔴 **无状态过滤**（含 `pending` 未付款与 `cancelled` 已取消） |
@@ -90,7 +90,7 @@
 | 区块 | 下钻目标 |
 |---|---|
 | 待发货订单 | `/orders?status=待发货` |
-| 含加工待发货订单 | `/orders?category=含加工订单&status=待发货` |
+| 含加工待发货 | `/orders?category=含加工订单&status=待发货` |
 | 待补库存商品 | `/products?low_stock=true` |
 | 订单趋势 / 销售额空态 | `/orders/new` |
 | 近期订单「查看全部」/ 行 | `/orders` / `/orders/{id}` |
