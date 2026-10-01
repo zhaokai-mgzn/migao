@@ -228,19 +228,29 @@ def test_missing_workspace_exits_3_with_candidates(tmp_path: Path, capsys) -> No
 
 
 def test_unreadable_file_is_reported_not_silently_skipped(tmp_path: Path, capsys) -> None:
-    """读不出来的会话文件必须**具名计数上报**；唯一文件读不出来 ⇒ 不可判定（不是「0 消耗」）。
+    """损坏 / 读不出来的会话文件必须**具名计数上报**；唯一文件读不出来 ⇒ 不可判定（不是「0 消耗」）。
 
-    ⚠️ 断言只咬**环境无关**的三件事（退出码 / 上报前缀 / 文件具名）——
-    失败**原因**随环境而变：CI 无 `zstandard` 也无 `zstd`（「既无模块也无 CLI」），本机则是
-    「解压得到空内容」（损坏帧）。这条教训是实测来的：本判据最初断言了后者 ⇒ **本地绿、CI 红**
-    （§23 的「CI 才是权威」，本 PR 现场复现）。原因无关的那一半由下面 skipif 的那条承担。
+    ⚠️ **三种环境形态的失败原因各不相同，判据只咬三者共有的契约**（读失败 + 具名 + 计入 errors）：
+
+    | 环境 | 走的路径 | 原因文案 |
+    |---|---|---|
+    | 本机（有 `zstandard`） | 模块 `stream_reader` | 「解压得到空内容」（该 API **不抛错、只回空串**）|
+    | GitHub runner（有 `zstd` CLI） | `zstd -dc` | 「`zstd -dc` 退出 N：… Read error (39) : premature end」|
+    | CI 单测 job（两者皆无） | 无解压器 | 「既无 `zstandard` 模块也无 `zstd` CLI」|
+
+    ⇒ **咬具体文案 = 本地绿、CI 红**：本 PR 现场踩了**两次**（第二次是 GitHub runner 有 `zstd` CLI 那条路径，
+    本地用 `PYTHONPATH` 屏蔽 `zstandard` 即可复现）。
+
+    红证（本机形态下可判）：让 `read_session_text` 对损坏帧返回 `("", None)`（= 去掉「空内容」检查）
+    ⇒ `main` 把它算成「扫过一份、0 步」，`err` 里不再有「读不出来」⇒ 本判据红。
+    ⚠️ 覆盖随环境而变（CI 走 CLI 时该分支不可达）——**这是如实登记的边界，不是「已覆盖」**。
     """
     root = tmp_path / "sessions"
     target = _write(root, "/tmp/fake", [_step(1_000_000, i=1, c=1, o=1)])
     target.write_bytes(mod.ZSTD_MAGIC + b"\x00" * 32)     # 伪造 zstd 帧 ⇒ 一定读不出来
     code, out, err = _run(capsys, root, "/tmp/fake")
     assert code == mod.EXIT_UNDECIDABLE                   # 唯一文件读不出来 ⇒ 不可判定
-    assert "读不出来（已计入 errors，未静默丢弃）" in err     # 计数上报前缀（两条失败路径都走它）
+    assert "读不出来（已计入 errors，未静默丢弃）" in err     # 契约：读失败必须被**计数上报**（三条路径都走它）
     assert target.name in err                             # 具名：哪一份文件
     assert "会话 token 账" not in out                      # 不得退化成一份「正常报告」
 
@@ -352,25 +362,6 @@ def test_multiframe_log_is_not_truncated_to_first_frame(tmp_path: Path, capsys) 
     assert code == mod.EXIT_OK
     assert "模型往返（步）      2" in out
     assert "计费 token 合计     20,030" in out
-
-
-@pytest.mark.skipif(
-    not _zstd_available(),
-    reason="无 zstandard / zstd ⇒ 「损坏帧」这条失败路径在本环境**不可达**（故意 skip，不是通过）",
-)
-def test_truncated_frame_is_not_silently_read_as_empty(tmp_path: Path, capsys) -> None:
-    """损坏 / 截断的帧：`stream_reader` **不抛错、只回空串** ⇒ 必须显式报「解压得到空内容」。
-
-    这是本 PR 的**第二条红证**（第一条见上：多帧截断）。红证：把 `read_session_text` 里的
-    空内容检查删掉 ⇒ 空串被当成「扫过一份、解析出 0 步」而**没有任何具名原因** ⇒ 本判据红。
-    """
-    root = tmp_path / "sessions"
-    target = _write(root, "/tmp/fake", [_step(1_000_000, i=1, c=1, o=1)])
-    target.write_bytes(mod.ZSTD_MAGIC + b"\x00" * 32)
-    code, _, err = _run(capsys, root, "/tmp/fake")
-    assert code == mod.EXIT_UNDECIDABLE
-    assert "解压得到空内容" in err
-    assert target.name in err
 
 
 @pytest.mark.parametrize("script", ["scripts/token_ledger.py", "scripts/roundtrip_report.py"])
