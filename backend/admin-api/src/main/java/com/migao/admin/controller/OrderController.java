@@ -10,9 +10,12 @@ import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -73,10 +76,50 @@ public class OrderController {
     @RequirePermission("order:create")  // issue #5246 追加单：建单与改单是两种授权粒度
     @PostMapping
     public ApiResponse<OrderDetailResponse> createOrder(@Valid @RequestBody OrderCreateRequest request) {
+        requireFormOnlyFields(request);
         log.info("创建订单: customerName={}", request.getCustomerName());
         Long tenantId = TenantContext.getTenantId();
         OrderDetailResponse order = orderService.createOrder(request, tenantId);
         return ApiResponse.success(order);
+    }
+
+    /**
+     * **表单路径专属**的必填闸门（issue #5840）。
+     *
+     * <p>用户 2026-10-01 逐字：「物流信息改成客户信息，不能只校验物流，**客户信息都是必填**」，
+     * 并就本题选定「两个物流字段也必填」。收敛前这三项在服务端**零校验**
+     * （{@code customerAddress} / {@code logisticsType} / {@code logisticsCompany} 都没有注解）
+     * ⇒ 绕过前端直调本端点即可落一张没有收货地址、没有物流信息的单 —— 而地址是发货的唯一依据。</p>
+     *
+     * <p>🔴 <b>为什么判在这里，而不是 {@link OrderCreateRequest} 上的 {@code @NotBlank}</b>（实测踩过）：
+     * 那张 DTO 是**表单与 agent 共用的 wire 契约**，而 {@code OrderDtoContractTest} 钉着
+     * 「**工具侧合法载荷在服务端必须零违规**」。C 端小布/米宝的自助下单**不采集**地址与物流
+     * （{@code order_create} 工具 schema 的 required 只有 name/phone/items）⇒ 把 {@code @NotBlank}
+     * 加到共用 DTO 上，会让「合法 agent 载荷」当场变成非法（实测：该契约的 2 条判据 +
+     * {@code OrderControllerTest} 5 条 + {@code AgentOrderControllerTest} 3 条 +
+     * {@code AgentOrderCreateBoundaryTest} 4 条，共 14 条判红）。
+     * ⇒ 这是**表单路径专属**的准入，Controller 才是它该在的层。</p>
+     *
+     * <p>前端 {@code orders/new/page.tsx} 的同名校验只是**即时反馈**；权威在这里
+     * （直调 API 同样被拦）。逐条理由走既有信封字段 {@code error.details}（issue #4308）。</p>
+     */
+    private void requireFormOnlyFields(OrderCreateRequest request) {
+        List<ApiResponse.ErrorDetail> missing = new ArrayList<>();
+        if (!StringUtils.hasText(request.getCustomerAddress())) {
+            missing.add(new ApiResponse.ErrorDetail("customerAddress", "客户地址不能为空"));
+        }
+        if (!StringUtils.hasText(request.getLogisticsType())) {
+            missing.add(new ApiResponse.ErrorDetail("logisticsType", "常用物流/快递不能为空"));
+        }
+        if (!StringUtils.hasText(request.getLogisticsCompany())) {
+            missing.add(new ApiResponse.ErrorDetail("logisticsCompany", "常用物流公司不能为空"));
+        }
+        if (!missing.isEmpty()) {
+            throw BusinessException.validationError(
+                    missing.get(0).getMessage(),
+                    missing,
+                    "请补齐收货信息（收货地址 / 常用物流 / 常用物流公司）后重试");
+        }
     }
 
     /**

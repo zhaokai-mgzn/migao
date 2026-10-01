@@ -99,6 +99,10 @@ class OrderIntegrationTest {
         request.setCustomerName("张三");
         request.setCustomerPhone("13800138000");
         request.setCustomerAddress("北京市朝阳区");
+        // 物流两项（issue #5840 起**表单路径必填**）：本 builder 代表「一份完整的合法请求」
+        // ⇒ 随 @NotBlank 一起补齐，否则 testCreateOrder 会被 422 拦下（那是闸门在起作用，不是它坏了）。
+        request.setLogisticsType("express");
+        request.setLogisticsCompany("顺丰");
         request.setRemark("测试订单");
 
         OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();

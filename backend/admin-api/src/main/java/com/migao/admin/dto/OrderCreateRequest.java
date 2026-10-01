@@ -34,7 +34,21 @@ public class OrderCreateRequest {
     private String customerPhone;
 
     /**
-     * 客户地址
+     * 客户地址（**表单路径必填**，issue #5840 —— 判在 {@code OrderController.createOrder} 的
+     * {@code requireFormOnlyFields}）。
+     *
+     * <p>用户 2026-10-01 逐字：「物流信息改成客户信息，不能只校验物流，**客户信息都是必填**」。
+     * 收敛前它**没有任何注解**（姓名 / 手机号有）⇒ 绕过表单直调 API 即可落一张没有收货地址的单
+     * —— 而地址是发货的唯一依据（订单详情 / 发货页 / 物流面单都读它）。</p>
+     *
+     * <p>🔴 <b>为什么必填判在 Controller 而不是本 DTO 的 {@code @NotBlank}</b>（实测踩过）：
+     * agent 路径（{@code createOrderForAgent}）是<b>手工 new 本类</b>再调 service，而
+     * {@code OrderDtoContractTest}（「校验双写消除」）钉着一条契约 ——
+     * <b>「工具侧合法载荷在服务端必须零违规」</b>。C 端小布/米宝的自助下单<b>不采集</b>地址与物流
+     * （{@code order_create} 工具 schema 的 required 只有 name/phone/items）⇒ 在本 DTO 上加
+     * {@code @NotBlank} 会让「合法 agent 载荷」当场变成非法（判据实跑：{@code legalAgentPayloadHasNoViolations}
+     * 与 {@code legalWirePayloadFromToolDeserializesAndValidates} 双双判红，外加 12 条既有建单用例）。
+     * ⇒ 这是**表单路径专属**的准入，落在 Controller 才是它该在的层。</p>
      */
     private String customerAddress;
 
@@ -42,9 +56,12 @@ public class OrderCreateRequest {
      * 收货——物流类型（issue #4872）：{@code express} 快递 / {@code logistics} 物流专线
      * （与 {@code order_logistics.logistics_type} V47 / #3984 同词表）。
      *
-     * <p><b>未传 ⇒ 服务端不写该列</b>（落列默认 {@code 'express'}）—— **不猜**调用方的意图。
-     * 发货页优先读订单这两个字段，缺省回落客户档案
-     * （{@code customer_profiles.default_logistics_type} / {@code default_logistics_company}）。</p>
+     * <p><b>未经 #5840 之前</b>：未传 ⇒ 服务端不写该列（落列默认 {@code 'express'}）—— 不猜调用方意图。
+     * 「未指定」与「快递」仍是两个真值（缺省值一字未改、也不编造）。</p>
+     *
+     * <p>🔴 <b>#5840 起：表单路径必填</b>（用户 2026-10-01 就本题选定「两个物流字段也必填」）——
+     * 覆盖 #4872 的「可选」口径，改的是<b>准入</b>而不是字段语义。判在 Controller，理由同
+     * {@link #customerAddress}（agent 路径不采集它 ⇒ 本 DTO 必须继续接受工具侧载荷）。</p>
      *
      * <p>⚠️ 单侧字段（wire 契约）：ai-agent 的 {@code order_create} 工具 schema 目前不采集它
      * ⇒ agent 路径不填、走列默认；登记见 {@code OrderDtoContractTest} 的
@@ -55,6 +72,8 @@ public class OrderCreateRequest {
     /**
      * 收货——物流/快递公司（issue #4872）：如「顺丰」「四季安」。
      * <b>未传 ⇒ 不写</b>（列可空），不填默认值、不猜。
+     *
+     * <p>🔴 <b>#5840 起：表单路径必填</b>（同 {@link #logisticsType}，用户裁定「两个物流字段也必填」）。</p>
      */
     private String logisticsCompany;
 
