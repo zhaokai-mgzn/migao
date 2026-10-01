@@ -5,11 +5,12 @@
 
 | 事实 | 现取读数（2026-10-01，可复算） |
 |---|---|
-| 加载一个技能 = 把**整份** `SKILL.md` 放进上下文 | skill 加载器只读 frontmatter 的 `name` + `description`；**正文整份**进上下文 |
-| 改动前 `migao-dev-flow/SKILL.md` | **329,631 字符**，其中沿革 = **98,219 字符 = 29.8%**（主体 = 正文 `## 版本沿革` 节，1123 行 / 96,269 字符；**另有 1 条散落在 §27 尾部**） |
+| 加载一个技能 = 把**整份** `SKILL.md` 放进上下文 | 加载器只取 frontmatter 的 `name` + `description`，调用时 `content = parsed.body.trim()`（整份正文）|
+| 改动前 `migao-dev-flow/SKILL.md` | **329,631 字符**，其中沿革 = **98,219 字符 = 29.8%**（主体 = 正文 `## 版本沿革` 节，1122 条目行 / 96,269 字符；**另有 1 条散落在 §27 尾部**） |
 | 沿革是什么 | **纯历史记录**（v1.1 → v1.94.0 的逐版变更说明）—— **执行流程时零需要** |
 | 后果 | **每次加载技能都付一次历史账**；而「沿革该放哪」过去**没有任何判据** ⇒ 它还会长回去 |
 | 🔴 **本判据写好后当场跑真实语料** | **命中 1 条**：`- v1.91.0（…）` 整条沿革**散落在 `SKILL.md` §27 尾部**（沿革节里 v1.92.0 与 v1.90.0 之间缺的正是它）⇒ 它抓的**不是假想形态**；同 PR 已把该条并入 `CHANGELOG.md` |
+| 🔴 **独立验收 agent（只读复算）又抓到第 4 处** | `SKILL.md` 的 frontmatter **`description`** 仍写着「变更沿革已**迁至正文**「版本沿革」节」——**换了措辞**（「迁至」而非「写进」）⇒ 逃过了按字面替换的口径同步；而 `description` **正是每次会话注入的技能目录文案**（比正文更早、更贵）。**判据 6 就是为这一族加的** |
 
 沿革之所以曾经在正文里，是 frontmatter `description` YAML 纯标量陷阱的绕行（v1.21 实证：2666 字符解析只剩 192）——
 **绕行方向对，落点错**：不该从 frontmatter 挪进加载面，应该**挪出加载面**。
@@ -20,16 +21,22 @@
 | # | 判据 | 变红的形态 |
 |---|---|---|
 | 1 | 语料非空（fail-closed） | 找不到任何 `skills/*/SKILL.md` ⇒ 红（「没东西可判」不是通过） |
-| 2 | 🔴 **加载面不得含沿革**（牙齿） | `SKILL.md` 出现沿革**节标题**（`## 版本沿革（…`）或沿革**条目行**（`- vN.N.N（…`）⇒ 红 |
-| 3 | **外置 ≠ 删除** | 登记的技能缺同目录 `CHANGELOG.md`、或它不含任何 `- vN` 条目 ⇒ 红（沿革是「某条纪律为什么存在」的出处） |
-| 4 | **指针在位** | 登记的技能 `SKILL.md` 里没有指向 `CHANGELOG.md` 的指针行 ⇒ 红（读者会以为沿革不存在） |
-| 5 | **判别力自证**（内存构造） | 含节/条目 ⇒ 红；只含指针 ⇒ 不红；只提「沿革」二字 ⇒ 不红（对照：改叙述不该红） |
+| 2 | 🔴 **加载面不得含沿革**（牙齿） | 加载面出现沿革**节标题**（`## 版本沿革（…`）或沿革**条目行**（`- vN.N.N（…`）⇒ 红 |
+| 3 | **外置 ≠ 删除** | 登记的技能缺同目录 `CHANGELOG.md`、或它不含任何 `- vN` 条目 ⇒ 红 |
+| 4 | **指针在位** | 登记的技能 `SKILL.md` 里没有指向 `CHANGELOG.md` 的指针行 ⇒ 红 |
+| 5 | **判别力自证**（内存构造） | 含节/条目 ⇒ 红；只含指针 ⇒ 不红；只提「沿革」二字 ⇒ 不红 |
+| 6 | 🔴 **加载面不得含「旧落点」口径**（**换了措辞也算**） | 加载面出现「沿革 …（写进 / 迁至 / 移至 / 放进 / 放入 / 放在）… 正文」⇒ 红（第 4 处副本正是这个形态：措辞一换，按字面替换的同步就漏） |
+
+**「加载面」的准确定义**（由 `load_surface_text()` 实现）：真正进上下文的两部分 = frontmatter 的 `name` / `description` 值 **＋** 正文；
+**不含** frontmatter 里的 YAML 注释 —— 注释不进上下文 ⇒ 允许在那里留「此前写…」的历史说明，判据不误伤（判据 5 的第 ⑧⑨ 例就是这组对照）。
 
 ## 不判（如实登记边界，§19.1）
 
 - **不设体积上限**：设了会挡住**正常的纪律新增**（加载面本来就该随纪律增长）；
 - **正文里支撑纪律的实证叙述不动**：它们是**纪律的判据来源**，不是可外置的叙述（与沿革不同族）；
 - **判不了**「沿革内容是否完整 / 该不该有条目 / 写得好不好」——那是人的事；
+- **判据 6 是「字面形态」判据**：换一套完全不重叠的措辞（英文 / 「历史记在正文里」）仍在射程外 ——
+  射程随**新形态出现**而扩；**别把「判据绿」读成「口径已同步」**（这正是本轮独立验收给出的教训）；
 - **本节不改任何门禁的通过条件、不新增豁免。**
 """
 
@@ -39,6 +46,7 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILLS_ROOT = REPO_ROOT / ".agent-presets" / "migao" / "skills"
@@ -52,15 +60,38 @@ LOG_SECTION_RE = re.compile(r"^##[ \t]*版本沿革[ \t]*[（(]", re.M)
 LOG_ENTRY_RE = re.compile(r"^-[ \t]*v\d+\.\d+(?:\.\d+)?[ \t]*[（(]", re.M)
 #: 指针行（外置后的合法形态）：`## 版本沿革 → 见同目录 \`CHANGELOG.md\``。
 POINTER_RE = re.compile(r"^##[ \t]*版本沿革[^\n]*CHANGELOG\.md", re.M)
+#: **旧落点**口径：沿革**写回正文**。刻意收动词族（写进/迁至/移至/放进/放入/放在）——
+#: 独立验收抓到的第 4 处副本用的就是另一个动词（「迁至」），按单一字面同步必然漏。
+LEGACY_HOME_RE = re.compile(r"沿革[^\n。；]{0,24}(?:写进|迁至|移至|放进|放入|放在)[^\n。；]{0,12}正文")
 
 SKILL_FILES = sorted(SKILLS_ROOT.glob("*/SKILL.md"))
 
 
+def load_surface_text(skill_md_text: str) -> str:
+    """**真正进上下文**的那部分：frontmatter 的 `name` / `description` 值 + 正文（**不含 YAML 注释**）。
+
+    为什么不直接拿整份文件扫：frontmatter 里**刻意**留着「此前写『写进正文 …』」的历史说明（YAML 注释），
+    它**不进上下文** ⇒ 扫整份文件会**误伤**它（假红），却**漏掉** `description` 里换措辞的副本（假绿）——
+    后者正是本轮独立验收抓到的形态。
+    """
+    if not skill_md_text.startswith("---\n"):
+        return skill_md_text
+    _, raw, body = skill_md_text.split("---\n", 2)
+    data = yaml.safe_load(raw) or {}
+    head = "\n".join(str(data.get(key, "")) for key in ("name", "description"))
+    return f"{head}\n{body}"
+
+
 def load_surface_problems(text: str) -> list[str]:
-    """纯函数（红证直接调它，**不碰真实文件**）：加载面里**不该有**的形态。"""
+    """纯函数（红证直接调它，**不碰真实文件**）：加载面里**不该有**的沿革形态。"""
     return [f"沿革节标题：{m.group(0).strip()}" for m in LOG_SECTION_RE.finditer(text)] + [
         f"沿革条目行：{m.group(0).strip()}" for m in LOG_ENTRY_RE.finditer(text)
     ]
+
+
+def legacy_home_problems(text: str) -> list[str]:
+    """纯函数：加载面里**不该有**的「旧落点」口径（沿革写回正文）。"""
+    return [f"旧落点口径：{m.group(0).strip()}" for m in LEGACY_HOME_RE.finditer(text)]
 
 
 def test_corpus_nonempty() -> None:
@@ -71,13 +102,29 @@ def test_corpus_nonempty() -> None:
 @pytest.mark.parametrize("skill_md", SKILL_FILES, ids=lambda p: p.parent.name)
 def test_load_surface_has_no_version_log(skill_md: Path) -> None:
     """判据 2（牙齿）：加载面不得含沿革 —— **回流即红**。"""
-    problems = load_surface_problems(skill_md.read_text(encoding="utf-8"))
+    problems = load_surface_problems(load_surface_text(skill_md.read_text(encoding="utf-8")))
     assert not problems, (
         f"{skill_md.relative_to(REPO_ROOT)} 的**加载面**里出现了沿革"
         "（加载本技能 = 为它付一次上下文；沿革执行流程时零需要）：\n  "
         + "\n  ".join(problems)
         + "\n出口（可行动）：把沿革写进**同目录** `CHANGELOG.md`（倒序，最新在上），本文件只留指针一行 —— "
         "形态见 migao-dev-flow v1.95.0 / issue #5853。"
+    )
+
+
+@pytest.mark.parametrize("skill_md", SKILL_FILES, ids=lambda p: p.parent.name)
+def test_load_surface_has_no_legacy_home_wording(skill_md: Path) -> None:
+    """判据 6：**换了措辞的「旧落点」副本**同样判红（独立验收抓到的第 4 处副本形态）。
+
+    为什么单列一条：判据 2 只认两种字面形态，而口径副本会**换动词**（「迁至」vs「写进」）——
+    按字面替换的同步必然漏一个，且漏的那个常常就在 `description`（每次会话都注入）。
+    """
+    problems = legacy_home_problems(load_surface_text(skill_md.read_text(encoding="utf-8")))
+    assert not problems, (
+        f"{skill_md.relative_to(REPO_ROOT)} 的**加载面**里还写着「沿革 … 写回正文」的旧落点口径"
+        "（沿革 v1.95.0 起已移出加载面）：\n  "
+        + "\n  ".join(problems)
+        + "\n出口（可行动）：改成指向**同目录** `CHANGELOG.md`；历史说明请写进 YAML 注释（注释不进上下文，不算加载面）。"
     )
 
 
@@ -102,7 +149,11 @@ def test_externalized_log_exists_and_pointer_in_place(name: str) -> None:
 
 
 def test_discriminating_power_in_memory() -> None:
-    """判据 5：判别力自证（**内存构造**，不读真实文件 —— 摘掉牙齿的改法必须当场变红）。"""
+    """判据 5：判别力自证（**内存构造**，不读真实文件 —— 摘掉牙齿的改法必须当场变红）。
+
+    ⚠️ 本函数**只证明判据函数有判别力**，证明不了「它接在真文件上」——
+    接线证据见 PR #5854：`git archive` 出真实目录树、注入后具名判红、未注入的同一棵树判绿（双向对照）。
+    """
     # ① 含沿革节（真节，带版本范围）⇒ 红
     assert load_surface_problems("## 版本沿革（v1.1 → v1.94.0）\n- v1.94.0（2026-09-30 某变更）：…\n")
     # ② 只含沿革条目、无节标题 ⇒ 同样红（**半搬半留**是最可能的回流形态）
@@ -111,12 +162,30 @@ def test_discriminating_power_in_memory() -> None:
     assert not load_surface_problems("## 版本沿革 → 见同目录 `CHANGELOG.md`\n\n> 约定：不回流本文件。\n")
     # ④ 对照：正文里提「沿革」二字 / 改叙述 ⇒ **不红**（否则判据会误伤正常行文）
     assert not load_surface_problems("⚠️ 口径沿革（**别照抄中间态**）：2026-09-18 后是「3 条 → 1 条」。\n")
+    # ⑤⑥ 旧落点口径的**两个动词变体**都红（判据 6 的牙齿）
+    assert legacy_home_problems("**变更沿革已迁至正文「版本沿革」节**（frontmatter 只放简短摘要）。")
+    assert legacy_home_problems("变更沿革写进正文 `## 版本沿革` 节。")
+    # ⑦ 新口径 ⇒ 不红（对照）
+    assert not legacy_home_problems("**变更沿革在同目录 `CHANGELOG.md`**（v1.95.0 起移出加载面）。")
+    # ⑧⑨ **加载面定义**的判别力：同样的文字，在 YAML 注释里不红、进了 description 就红
+    commented = "---\nname: x\n# 此前写「变更沿革写进正文 `## 版本沿革` 节」\ndescription: 摘要\n---\n正文\n"
+    assert not legacy_home_problems(load_surface_text(commented)), "YAML 注释不进上下文 ⇒ 不该红（假红对照）"
+    in_desc = "---\nname: x\ndescription: 变更沿革写进正文 `## 版本沿革` 节\n---\n正文\n"
+    assert legacy_home_problems(load_surface_text(in_desc)), "同样的文字进了 description ⇒ 必须红（假绿对照）"
 
 
 def test_readings_printed(capsys: pytest.CaptureFixture[str]) -> None:
-    """读数**现取**打印（§23 G8：只报与负载无关的工作量，不报挂钟）。"""
+    """读数**现取**打印（§23 G8：只报与负载无关的工作量，不报挂钟）。
+
+    「加载面」= `load_surface_text()` 的长度（这才是每次加载真正进上下文的字符数）；
+    整份文件的字符数会**高估**（含 YAML 注释）。
+    """
     for skill_md in SKILL_FILES:
         changelog = skill_md.parent / "CHANGELOG.md"
-        loaded = len(skill_md.read_text(encoding="utf-8"))
+        surface = len(load_surface_text(skill_md.read_text(encoding="utf-8")))
+        file_chars = len(skill_md.read_text(encoding="utf-8"))
         archived = len(changelog.read_text(encoding="utf-8")) if changelog.is_file() else 0
-        print(f"📊 {skill_md.parent.name}：加载面 {loaded:,} 字符 · 沿革（不在加载面）{archived:,} 字符")
+        print(
+            f"📊 {skill_md.parent.name}：**加载面** {surface:,} 字符（文件 {file_chars:,}）· "
+            f"沿革（不在加载面）{archived:,} 字符"
+        )
