@@ -8234,6 +8234,7 @@
 数据: 判据 4·**批次号「看得见」而生成时机不变**：建单明细表有「批次号」列且草稿态恒为「过账后生成」（**不得**出现 `PC-yyyyMMdd-NNNN` 这类前端编造的号段）；列表页有「批次号」列 —— 已过账显示服务端真值、草稿「过账后生成」、**作废显示「-」**（作废单永远不会过账，不谎报成「过账后生成」）、多批次聚合成「首个 等 N 个」。执行点 = inbound-orders-new.test.tsx + inbound-orders.test.tsx（`data-testid=inbound-batch-nos`）。
 数据: 判据 5·**列表批次号来自服务端聚合，不是前端拼的**：`InboundOrderQueryMapper.selectOrderLines` 用 `string_agg(batch_no, ',' ORDER BY batch_no)` 聚合明细批次号（一行 = 一个批次 ⇒ 列表只能聚合），草稿/作废为 `null`。
 数据: 判据 6·**新路由不破坏导航高亮**：`/inbound-orders/new` 必须仍解析到「入库单」菜单项（侧边栏 + 面包屑共用 resolveActivePath）。执行点 = frontend/admin-web/tests/unit/lib/menu-nav.test.ts。
+前置: 本用例是 [backend-contract] 纯前端页面/版式用例：前置（入库单列表行、商品搜索结果、SKU 明细行）全部由单测自建或打桩（frontend/admin-web/tests/unit/pages/inbound-orders-new.test.tsx 与 frontend/admin-web/tests/unit/pages/inbound-orders.test.tsx mock `@/lib/api`）；后端那一条聚合判据由真 PG 判据自建 schema + 租户 + 单据（backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderListBatchNosRealDbTest.java）—— 不依赖共享夹具与真实服务 ⇒ 前置不成立时判据直接红；agent-eval 栈不跑它
 跳过: [backend-contract] 纯前端版式 + 一个聚合列（Java 侧只加 `batchNos` 读字段，无 LLM 环节，不进 agent-eval 冒烟）
 ```
 真值: frontend-fix.layout, frontend-fix.no-api-change
