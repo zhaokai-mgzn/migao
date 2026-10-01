@@ -3856,16 +3856,9 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
-<<<<<<< HEAD
   - id: OR-055
     legacy_id: ""
     title: "未付款（待付款）订单允许修改内容（issue #5842，用户 2026-10-01 逐字）：只有 pending 可改（其余 422 + 中文文案，判定走 OrderStatusTransitions）；范围 = 收货信息 + 商品明细（商品/数量/单价/宽高）+ 加工项 + **金额服务端重算**；入口 = admin-web 详情页「修改订单」；同批落 #3352 选项 B（加工单快照漂移的发货守卫）并把 tripwire PG-014 改判为「编辑通道存在 ⇒ 守卫必须存在」"
-=======
-
-  - id: OR-054
-    legacy_id: ""
-    title: "管理端「新增订单」提交准入（issue #5840，2026-10-01 用户逐字报障「未输入加工费组合价格但是提交成功了，缺少了必要的校验」）：加工费组合**未定价且组合键非空** ⇒ **硬阻断**（服务端按 0 计 = 错单）；**缺选配/工艺缺失 / 用料米数≠推算 ⇒ 只提示不阻断**；客户信息三项 + **物流两项**必填；**折叠态下必须能说出「哪儿缺」**"
->>>>>>> a296aec27 (fix(orders): #5840 下单页补齐提交校验（未定价阻断 / 客户+物流必填 / 报错自动展开到出错那一块）)
     domains:
       - order
       - ui
@@ -3874,7 +3867,6 @@ cases:
     tags:
       - order
       - admin-web
-<<<<<<< HEAD
       - edit-pending
       - ship-guard
       - tripwire
@@ -3902,7 +3894,21 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderItemImmutabilityTest.java"
         - "frontend/admin-web/tests/unit/components/EditOrderContentModal.test.tsx"
         - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
-=======
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: OR-054
+    legacy_id: ""
+    title: "管理端「新增订单」提交准入（issue #5840，2026-10-01 用户逐字报障「未输入加工费组合价格但是提交成功了，缺少了必要的校验」）：加工费组合**未定价且组合键非空** ⇒ **硬阻断**（服务端按 0 计 = 错单）；**缺选配/工艺缺失 / 用料米数≠推算 ⇒ 只提示不阻断**；客户信息三项 + **物流两项**必填；**折叠态下必须能说出「哪儿缺」**"
+    domains:
+      - order
+      - ui
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - admin-web
       - validation
       - processing-fee
       - logistics
@@ -3925,7 +3931,6 @@ cases:
       tests:
         - "frontend/admin-web/tests/unit/pages/orders-new-submit-gate.test.tsx"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderCreateRequiredFieldsTest.java"
->>>>>>> a296aec27 (fix(orders): #5840 下单页补齐提交校验（未定价阻断 / 客户+物流必填 / 报错自动展开到出错那一块）)
       ci:
         - pr-check.yml
       verifies: []
