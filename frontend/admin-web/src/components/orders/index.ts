@@ -27,3 +27,5 @@ export { default as QuotationDoc } from './QuotationDoc'
 // 介质矩阵见 `lib/print-media.json`（介质是参数，不是各写一份的副本）
 export { default as ProcessingDoc } from './ProcessingDoc'
 export { default as SalesDoc } from './SalesDoc'
+// 修改订单（**待付款**内容编辑，issue #5842）：收货信息 / 商品明细 / 加工项 + 金额服务端重算
+export { default as EditOrderContentModal } from './EditOrderContentModal'

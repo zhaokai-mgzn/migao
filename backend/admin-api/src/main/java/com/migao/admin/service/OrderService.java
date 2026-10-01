@@ -127,6 +127,20 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private StockBatchConsumptionService stockBatchConsumptionService;
 
     /**
+     * 审计留痕（issue #5842）：订单**内容编辑**的前后差异落 {@code audit_logs}。
+     *
+     * <p>字段注入而非构造参数：本类构造签名被测试与其它装配点显式引用，
+     * 加参数会改动既有测试装配 —— 同 {@link #stockBatchConsumptionService} 的先例与理由
+     * （{@code OrderShipGuard} 的类注释也记着同一件事：给它加一个构造依赖会波及
+     * 全部 {@code new OrderService(...)} / {@code @InjectMocks} 的既有单测）。</p>
+     *
+     * <p>{@code required} 不置 false：留痕是**必须发生**的事（不是可选的优化触发）——
+     * 装配不上应当在启动期就失败，而不是在商家改单时静默丢掉审计。</p>
+     */
+    @Autowired
+    private AuditLogService auditLogService;
+
+    /**
      * 订单号序列号（线程安全）
      */
     private static final AtomicInteger ORDER_SEQ = new AtomicInteger(0);
@@ -478,19 +492,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // 不判的后果：负数量 → `unitPrice × 负数` 算出**负金额**落库；库存前置校验
         // （下方 validateStockSufficientForRequest）判据「需求量 ≤ 库存」对**负需求恒真**
         // → **超卖防线被绕过**；0 < 数量 < 1 → 库存/销量零扣减（本条 issue #3682）。
-        for (int i = 0; i < request.getItems().size(); i++) {
-            OrderCreateRequest.OrderItemRequest itemRequest = request.getItems().get(i);
-            if (itemRequest.getQuantity() == null
-                    || itemRequest.getQuantity().compareTo(BigDecimal.ONE) < 0) {
-                throw BusinessException.validationError(
-                        String.format("商品明细第 %d 项的数量不能小于 1", i + 1));
-            }
-            if (itemRequest.getUnitPrice() == null
-                    || itemRequest.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0) {
-                throw BusinessException.validationError(
-                        String.format("商品明细第 %d 项的单价必须大于 0", i + 1));
-            }
-        }
+        assertItemAmountsValid(request.getItems());
 
         // 计算总金额（后端独立计算：unitPrice * quantity + 加工费，不依赖前端 subtotal 防止不一致）
         // ── 加工费取价（issue #4406，用户裁定 2026-09-19）──
@@ -498,26 +500,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // **未命中 ⇒ 0 + fee_source=unpriced + 可行动提示，绝不回落 Σ 加工项、绝不套默认价**
         // （#4308「静默回落」同族纪律：静默 = 算错钱且无人知道）。
         // 逐行结果按**下标**与 request.items 对齐（此刻明细行还没 id）。
-        List<ProcessingFeeCalculator.Fee> itemFees = processingFeeCalculator.feesFor(
-                request.getItems().stream()
-                        .map(OrderCreateRequest.OrderItemRequest::getProcessingInfo)
-                        .collect(Collectors.toList()),
-                tenantId);
-        BigDecimal totalAmount = BigDecimal.ZERO;
-        for (int i = 0; i < request.getItems().size(); i++) {
-            OrderCreateRequest.OrderItemRequest itemRequest = request.getItems().get(i);
-            // 商品金额 = 单价 × 数量
-            BigDecimal itemAmount = BigDecimal.ZERO;
-            if (itemRequest.getUnitPrice() != null && itemRequest.getQuantity() != null) {
-                itemAmount = itemRequest.getUnitPrice().multiply(itemRequest.getQuantity());
-            }
-            totalAmount = totalAmount.add(itemAmount).add(itemFees.get(i).lineAmount());
-            if (ProcessingFeeCalculator.FEE_SOURCE_UNPRICED.equals(itemFees.get(i).feeSource())) {
-                // 未定价 / 缺米数 ⇒ **不静默**：订单照样成立（金额 0），但日志留下可排查证据。
-                log.warn("加工费未定价（本行按 0 计）: tenantId={}, itemIndex={}, composition={}, hint={}",
-                        tenantId, i, itemFees.get(i).compositionKey(), itemFees.get(i).hint());
-            }
-        }
+        List<ProcessingFeeCalculator.Fee> itemFees = priceItems(request.getItems(), tenantId);
+        BigDecimal totalAmount = computeItemsTotal(request.getItems(), itemFees);
 
         // ── 建单同步回加工费组合配置（issue #4872）──
         // 用户原话「当订单创建成功后，同步新增加工费组合&单价到加工费配置中」。
@@ -525,13 +509,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // 按 `compositionKey` **同源口径**（取价结果原样带来的 key/items，不另拼一套）upsert
         // 组合价 + 追加版本台账。幂等三态见 ProcessingFeeCombinationCommandService#upsertFromOrderOverride。
         // 🔴 无 manual 行 ⇒ **零调用**（正常建单路径不多一次写库、不改任何既有金额）。
-        for (ProcessingFeeCalculator.Fee fee : itemFees) {
-            if (!ProcessingFeeCalculator.FEE_SOURCE_MANUAL.equals(fee.feeSource())) {
-                continue;
-            }
-            processingFeeCombinationCommandService.upsertFromOrderOverride(
-                    fee.compositionKey(), fee.items(), fee.unitPrice(), tenantId);
-        }
+        syncProcessingFeeCombinations(itemFees, tenantId);
 
         // 优惠金额（默认 0）；若提供了实收款，校验 应收 - 优惠 ≈ 实收（容差 0.01）
         BigDecimal discountAmount = request.getDiscountAmount() != null ? request.getDiscountAmount() : BigDecimal.ZERO;
@@ -608,8 +586,119 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         orderMapper.insert(order);
 
         // 保存订单明细
-        for (int i = 0; i < request.getItems().size(); i++) {
-            OrderCreateRequest.OrderItemRequest itemRequest = request.getItems().get(i);
+        persistOrderItems(order, request.getItems(), itemFees, tenantId);
+
+        log.info("创建订单成功: id={}, orderNo={}, totalAmount={}", order.getId(), order.getOrderNo(), totalAmount);
+
+        // 首次下单自动创建客户档案（失败不影响订单创建）
+        try {
+            customerService.createFromOrder(tenantId, request.getCustomerName(),
+                    request.getCustomerPhone(), request.getCustomerAddress());
+        } catch (Exception e) {
+            log.warn("订单创建后自动建档客户失败，忽略: orderId={}, phone={}, error={}",
+                    order.getId(), request.getCustomerPhone(), e.getMessage());
+        }
+
+        // 站内信：新订单创建成功，通知订单归属用户（无归属用户则跳过）
+        notifyOrderCreated(tenantId, order, totalAmount);
+
+        return getOrderById(order.getId());
+    }
+
+    // ══════════════════ 待付款订单内容编辑（issue #5842）与共用写面部件 ══════════════════
+
+    /**
+     * 明细金额闸门（数量 ≥ 1、单价 > 0）—— 建单与改单**同一份**（issue #5842 抽出）。
+     *
+     * <p>为什么必须在 Service 层显式判定（而不是只靠 DTO 注解）：① Agent 路径是**手工 new** DTO
+     * 再调用（程序化构造的 Bean 不经过 Bean Validation）；② 数量直接驱动库存/销量与金额
+     * ⇒ 判在唯一共享入口才无死角。</p>
+     */
+    private void assertItemAmountsValid(List<OrderCreateRequest.OrderItemRequest> items) {
+        for (int i = 0; i < items.size(); i++) {
+            OrderCreateRequest.OrderItemRequest itemRequest = items.get(i);
+            if (itemRequest.getQuantity() == null
+                    || itemRequest.getQuantity().compareTo(BigDecimal.ONE) < 0) {
+                throw BusinessException.validationError(
+                        String.format("商品明细第 %d 项的数量不能小于 1", i + 1));
+            }
+            if (itemRequest.getUnitPrice() == null
+                    || itemRequest.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                throw BusinessException.validationError(
+                        String.format("商品明细第 %d 项的单价必须大于 0", i + 1));
+            }
+        }
+    }
+
+    /**
+     * 逐行加工费取价（**唯一取价点**，建单与改单共用；issue #4406 / #5842）。
+     *
+     * <p>未定价 / 缺米数 ⇒ **不静默**：金额照样成立（该半按 0 计），但日志留下可排查证据。</p>
+     */
+    private List<ProcessingFeeCalculator.Fee> priceItems(List<OrderCreateRequest.OrderItemRequest> items,
+                                                         Long tenantId) {
+        List<ProcessingFeeCalculator.Fee> itemFees = processingFeeCalculator.feesFor(
+                items.stream()
+                        .map(OrderCreateRequest.OrderItemRequest::getProcessingInfo)
+                        .collect(Collectors.toList()),
+                tenantId);
+        for (int i = 0; i < items.size(); i++) {
+            if (ProcessingFeeCalculator.FEE_SOURCE_UNPRICED.equals(itemFees.get(i).feeSource())) {
+                log.warn("加工费未定价（本行按 0 计）: tenantId={}, itemIndex={}, composition={}, hint={}",
+                        tenantId, i, itemFees.get(i).compositionKey(), itemFees.get(i).hint());
+            }
+        }
+        return itemFees;
+    }
+
+    /**
+     * 订单总额 = Σ(单价 × 数量) + Σ 行加工费（**服务端独立计算**，不信客户端任何金额字段）。
+     *
+     * <p>与 issue #4406 的口径一致：行加工费 = {@code Fee#lineAmount()}
+     * （组合那半 + Σ 特殊选项 + 拼色加价）—— 不另拼第二份算式。</p>
+     */
+    private BigDecimal computeItemsTotal(List<OrderCreateRequest.OrderItemRequest> items,
+                                         List<ProcessingFeeCalculator.Fee> itemFees) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (int i = 0; i < items.size(); i++) {
+            OrderCreateRequest.OrderItemRequest itemRequest = items.get(i);
+            BigDecimal itemAmount = BigDecimal.ZERO;
+            if (itemRequest.getUnitPrice() != null && itemRequest.getQuantity() != null) {
+                itemAmount = itemRequest.getUnitPrice().multiply(itemRequest.getQuantity());
+            }
+            total = total.add(itemAmount).add(itemFees.get(i).lineAmount());
+        }
+        return total;
+    }
+
+    /**
+     * 建单同步回加工费组合配置（issue #4872）：只对 {@code fee_source=manual} 的行按
+     * {@code compositionKey} **同源口径** upsert 组合价 + 追加版本台账。无 manual 行 ⇒ **零调用**。
+     *
+     * <p>改单（#5842）同样走它：商家在未定价行上就地改价这件事，与「这次是新单还是改单」无关；
+     * 两条路各接一次就会分叉成「改单改的价不进组合台账」。</p>
+     */
+    private void syncProcessingFeeCombinations(List<ProcessingFeeCalculator.Fee> itemFees, Long tenantId) {
+        for (ProcessingFeeCalculator.Fee fee : itemFees) {
+            if (!ProcessingFeeCalculator.FEE_SOURCE_MANUAL.equals(fee.feeSource())) {
+                continue;
+            }
+            processingFeeCombinationCommandService.upsertFromOrderOverride(
+                    fee.compositionKey(), fee.items(), fee.unitPrice(), tenantId);
+        }
+    }
+
+    /**
+     * 明细落库（商品金额 + 加工项 + 工艺规格列 + 整卷分配）—— 建单与改单**同一份**（issue #5842 抽出）。
+     *
+     * <p>抽出的理由不是"好看"：改单若自己再写一遍这个循环，加工费 detail 的挂载 / V63 行要素物化 /
+     * V111 整卷分配这三件事都会出现**第二份**，而它们分叉的方向是「改单后加工费构成丢失」
+     * 「改单后整卷分配不再重算」——都是静默的（没有任何东西会变红）。</p>
+     */
+    private void persistOrderItems(Order order, List<OrderCreateRequest.OrderItemRequest> items,
+                                   List<ProcessingFeeCalculator.Fee> itemFees, Long tenantId) {
+        for (int i = 0; i < items.size(); i++) {
+            OrderCreateRequest.OrderItemRequest itemRequest = items.get(i);
             // ── 加工费可审计构成落库（issue #4406）──
             // 为什么落 `processing_info.processingFeeDetail` 而不是新列：加工费是**行级一个数 +
             // 构成**，构成（组合/命中规则/单价/来源/米数/来源/三态）与 processing_info 同生命周期
@@ -646,22 +735,200 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             item.setSubtotal(resolveItemSubtotal(itemRequest));
             orderItemMapper.insert(item);
         }
+    }
 
-        log.info("创建订单成功: id={}, orderNo={}, totalAmount={}", order.getId(), order.getOrderNo(), totalAmount);
+    /**
+     * 编辑请求的明细 → 建单行类型（**共用下游所有写面部件**的前提）。
+     *
+     * <p>为什么不给编辑另造一套行类型：加工项取价 / 行要素物化 / 整卷分配 / 库存校验全部以
+     * {@code OrderCreateRequest.OrderItemRequest} 为输入 —— 另造一套就要把这些部件复制一遍
+     * （issue #5842 的口径是「加工项写侧与建单**同源**」）。</p>
+     *
+     * <p>{@code subtotal} 在此**由服务端算出**（编辑 DTO 没有该字段）⇒
+     * {@code resolveItemSubtotal} 拿到的一定是服务端值，客户端无从影响。</p>
+     */
+    private List<OrderCreateRequest.OrderItemRequest> toCreateItems(List<OrderContentUpdateRequest.Item> items) {
+        List<OrderCreateRequest.OrderItemRequest> result = new ArrayList<>(items.size());
+        for (OrderContentUpdateRequest.Item source : items) {
+            OrderCreateRequest.OrderItemRequest target = new OrderCreateRequest.OrderItemRequest();
+            target.setProductId(source.getProductId());
+            target.setProductName(source.getProductName());
+            target.setQuantity(source.getQuantity());
+            target.setUnitPrice(source.getUnitPrice());
+            target.setWidth(source.getWidth());
+            target.setHeight(source.getHeight());
+            target.setProcessingInfo(source.getProcessingInfo());
+            target.setSellingMethod(source.getSellingMethod());
+            if (source.getUnitPrice() != null && source.getQuantity() != null) {
+                target.setSubtotal(source.getUnitPrice().multiply(source.getQuantity()));
+            }
+            result.add(target);
+        }
+        return result;
+    }
 
-        // 首次下单自动创建客户档案（失败不影响订单创建）
-        try {
-            customerService.createFromOrder(tenantId, request.getCustomerName(),
-                    request.getCustomerPhone(), request.getCustomerAddress());
-        } catch (Exception e) {
-            log.warn("订单创建后自动建档客户失败，忽略: orderId={}, phone={}, error={}",
-                    order.getId(), request.getCustomerPhone(), e.getMessage());
+    /**
+     * 编辑请求的明细 → 库存校验用的**草稿明细**（不落库；与建单的 {@code validateStockSufficientForRequest}
+     * 同一形状 —— 只带 SKU 匹配需要的三样：productId / productName / quantity / processingInfo）。
+     */
+    private List<OrderItem> draftItems(List<OrderCreateRequest.OrderItemRequest> items) {
+        List<OrderItem> draftItems = new ArrayList<>(items.size());
+        for (OrderCreateRequest.OrderItemRequest itemRequest : items) {
+            OrderItem draft = new OrderItem();
+            draft.setProductId(itemRequest.getProductId());
+            draft.setProductName(itemRequest.getProductName());
+            draft.setQuantity(itemRequest.getQuantity());
+            draft.setProcessingInfo(itemRequest.getProcessingInfo());
+            draftItems.add(draft);
+        }
+        return draftItems;
+    }
+
+    /**
+     * 订单内容快照（**审计留痕**的前后差异载体，issue #5842）。
+     *
+     * <p>只记「人可复核、且改动会影响下游」的字段：收货三件套 / 三个金额 / 逐行
+     * 商品名 + 数量 + 单价 + 宽高 + **加工项名**。刻意不整对象序列化 —— 审计读面是给人看的，
+     * 倒进整个实体只会让真正的差异被淹没。</p>
+     */
+    private Map<String, Object> contentSnapshot(Order order, List<OrderItem> items) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("customerName", order.getCustomerName());
+        snapshot.put("customerPhone", order.getCustomerPhone());
+        snapshot.put("customerAddress", order.getCustomerAddress());
+        snapshot.put("totalAmount", order.getTotalAmount());
+        snapshot.put("discountAmount", order.getDiscountAmount());
+        snapshot.put("actualAmount", order.getActualAmount());
+        List<Map<String, Object>> lines = new ArrayList<>();
+        for (OrderItem item : items) {
+            Map<String, Object> line = new LinkedHashMap<>();
+            line.put("productName", item.getProductName());
+            line.put("quantity", item.getQuantity());
+            line.put("unitPrice", item.getUnitPrice());
+            line.put("width", item.getWidth());
+            line.put("height", item.getHeight());
+            line.put("processingItems", OrderShipGuard.extractProcessingItems(objectMapper, item.getProcessingInfo())
+                    .stream().map(OrderDetailResponse.ProcessingItemBrief::getName).collect(Collectors.toList()));
+            lines.add(line);
+        }
+        snapshot.put("items", lines);
+        return snapshot;
+    }
+
+    /**
+     * **待付款订单内容编辑**（issue #5842；用户 2026-10-01 裁定「范围 = 全改」）。
+     *
+     * <p>可改三面：收货信息 / 商品明细（商品·数量·单价·宽高）/ 加工项；金额**一律服务端重算**。</p>
+     *
+     * <h3>六道判据（缺一条都会静默出错）</h3>
+     * <ol>
+     *   <li><b>状态闸门</b>：只有 {@code pending} 可改，其余 **422** —— 判定走
+     *       {@link OrderStatusTransitions#assertContentEditable}（状态机唯一实现点）；</li>
+     *   <li><b>已有加工单 ⇒ 拒绝</b>：内容已固化进加工单快照，改订单会让快照漂移。
+     *       （发货侧还有第二道 —— {@link OrderShipGuard#hasProcessingDrift} —— 两处都留，
+     *       因为"编辑与生成不会同时发生"是一个**没有判据的时序假设**。）</li>
+     *   <li><b>金额重算</b>：{@code totalAmount} 由服务端按新明细 + 新加工项重算
+     *       （{@link #computeItemsTotal}），随后照建单同口径校验
+     *       「应收 − 优惠 ≈ 实收（容差 0.01）」；</li>
+     *   <li><b>库存前置校验按新明细重跑</b>（{@code validateStockSufficientForItems}，与确认支付同一套
+     *       SKU 匹配）：{@code pending} 单**尚未扣库存**（扣减发生在确认支付）⇒
+     *       <b>不回滚库存</b>，但必须保证「改完仍买得起」；</li>
+     *   <li><b>明细整体替换</b>：旧行软删（{@code @TableLogic}）+ 新行落库，落库走与建单**同一份**
+     *       {@link #persistOrderItems}；</li>
+     *   <li><b>审计留痕</b>：前后快照（{@link #contentSnapshot}）写 {@code audit_logs}
+     *       （{@code action=update_content} / {@code resourceType=order}）。</li>
+     * </ol>
+     *
+     * <p>⚠️ <b>不回滚库存这件事的前提**在本方法内被显式保证**</b>：状态闸门只放 {@code pending}，
+     * 而扣减只发生在 {@code pending → confirmed}（{@link #confirmPayment}）⇒ 走到这里时该单一定没扣过。
+     * 若将来放宽可编辑状态，回滚/重算库存必须同批补上（本注释就是那件事的坐标）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public OrderDetailResponse updatePendingOrderContent(String id, OrderContentUpdateRequest request) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        Long tenantId = order.getTenantId();
+        // ① 状态闸门（唯一实现点 = OrderStatusTransitions；其余状态一律 422 + 中文文案）
+        OrderStatusTransitions.assertContentEditable(order.getStatus());
+        // ② 已生成活跃加工单 ⇒ 内容已固化进快照，拒绝（发货侧另有漂移守卫兜底）
+        ProcessingOrder active = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
+        if (active != null) {
+            throw BusinessException.validationError(String.format(
+                    "订单已生成加工单（%s），内容不能再修改；如需改内容请先作废该加工单",
+                    active.getProcessingOrderNo()));
         }
 
-        // 站内信：新订单创建成功，通知订单归属用户（无归属用户则跳过）
-        notifyOrderCreated(tenantId, order, totalAmount);
+        // ③ 新明细：服务端闸门 → 加工费取价 → 总额重算（**不信客户端任何金额**）
+        List<OrderCreateRequest.OrderItemRequest> items = toCreateItems(request.getItems());
+        assertItemAmountsValid(items);
+        List<ProcessingFeeCalculator.Fee> itemFees = priceItems(items, tenantId);
+        BigDecimal totalAmount = computeItemsTotal(items, itemFees);
+        syncProcessingFeeCombinations(itemFees, tenantId);
 
+        // ④ 优惠 / 实收：未传 ⇒ **沿用原值**（不清零、不猜）；随后照建单同口径校验
+        BigDecimal discountAmount = request.getDiscountAmount() != null
+                ? request.getDiscountAmount()
+                : (order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO);
+        if (discountAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw BusinessException.validationError("优惠金额不能为负数");
+        }
+        BigDecimal actualAmount = request.getActualAmount() != null
+                ? request.getActualAmount()
+                : (order.getActualAmount() != null
+                        ? order.getActualAmount()
+                        : totalAmount.subtract(discountAmount));
+        BigDecimal expected = totalAmount.subtract(discountAmount);
+        if (expected.subtract(actualAmount).abs().compareTo(new BigDecimal("0.01")) > 0) {
+            throw BusinessException.validationError(String.format(
+                    "实收金额与应收不一致：应收 %s - 优惠 %s = %s，实收 %s（容差 0.01）",
+                    totalAmount, discountAmount, expected, actualAmount));
+        }
+
+        // ⑤ 前置库存校验**按新明细重跑**（与建单/确认支付共用 validateStockSufficientForItems）。
+        //    `pending` 未扣库存 ⇒ 无需回滚，但"改完还买得起"必须现在成立。
+        validateStockSufficientForItems(draftItems(items), "修改订单");
+
+        // ⑥ 审计留痕：改动前快照（下一行起 order 对象就被就地改写了）
+        Map<String, Object> before = contentSnapshot(order, loadOrderItems(order.getId(), tenantId));
+
+        // ⑦ 落库：收货信息 + 三金额
+        order.setCustomerName(request.getCustomerName());
+        order.setCustomerPhone(request.getCustomerPhone());
+        order.setCustomerAddress(request.getCustomerAddress());
+        order.setTotalAmount(totalAmount);
+        order.setDiscountAmount(discountAmount);
+        order.setActualAmount(actualAmount);
+        orderMapper.updateById(order);
+
+        // ⑧ 明细整体替换：旧行**软删**（@TableLogic）后按新明细落库（与建单同一份 persistOrderItems）
+        orderItemMapper.delete(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, order.getId()));
+        persistOrderItems(order, items, itemFees, tenantId);
+
+        recordContentEditAudit(order, before,
+                contentSnapshot(orderMapper.selectById(order.getId()), loadOrderItems(order.getId(), tenantId)));
+        log.info("订单内容已修改: id={}, orderNo={}, totalAmount={}, 明细 {} 行",
+                order.getId(), order.getOrderNo(), totalAmount, items.size());
         return getOrderById(order.getId());
+    }
+
+    /**
+     * 内容编辑的审计留痕（issue #5842）：{@code action=update_content} / {@code resourceType=order}
+     * + **前后差异**。操作者取不到（无认证 / 服务占位身份）⇒ 两个身份字段留空，
+     * 但**留痕本身照写**（审计的意义是"改过"，不是"谁改的"都有答案 —— 后者留空可见）。
+     */
+    private void recordContentEditAudit(Order order, Map<String, Object> before, Map<String, Object> after) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("before", before);
+        details.put("after", after);
+        Long tenantId = order.getTenantId();
+        UserService.CurrentOperator operator = userService.resolveCurrentOperator();
+        auditLogService.recordLog(tenantId,
+                operator != null ? operator.userId() : null,
+                operator != null ? operator.displayName() : null,
+                "update_content", "order", null,
+                order.getId(), order.getOrderNo(), details, null, null);
     }
 
     /**

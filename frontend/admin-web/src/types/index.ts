@@ -1904,6 +1904,40 @@ export interface OrderUrgencyParams {
   requiredDeliveryDate?: string | null
 }
 
+/**
+ * **待付款订单内容编辑**入参（issue #5842）—— `PUT /api/admin/orders/{id}/content`。
+ *
+ * 用户 2026-10-01 裁定「买家未付款的订单要允许修改」，范围 = 收货信息 + 商品明细（商品/数量/单价）
+ * + 加工项 + 金额重算；入口 = 订单详情页的「修改订单」。
+ *
+ * 🔴 **这里没有 `subtotal` / `totalAmount`**（与建单的 `OrderFormData` 不同）：金额一律由服务端
+ * 按新明细 + 新加工项重算，客户端的金额不参与落库与校验 —— 不给字段比"收了再忽略"更不容易被误用。
+ *
+ * 未传 `discountAmount` / `actualAmount` ⇒ 服务端**沿用订单原值**（不清零）；随后照常校验
+ * 「应收 − 优惠 ≈ 实收（容差 0.01）」⇒ 改了明细就要显式给出新的实收（本页表单默认带出原值）。
+ */
+export interface OrderContentUpdateParams {
+  customerName: string
+  customerPhone: string
+  customerAddress?: string
+  discountAmount?: number
+  actualAmount?: number
+  items: OrderContentUpdateItem[]
+}
+
+/** 内容编辑的明细行（字段集 = 建单行里**可编辑**的那些；`subtotal` 刻意缺席，见上） */
+export interface OrderContentUpdateItem {
+  productId?: string
+  productName: string
+  quantity: number
+  unitPrice: number
+  width?: number
+  height?: number
+  processingInfo?: Record<string, unknown>
+  /** 本行售卖方式偏好：`bulk_cut` 散剪 / `full_roll` 整卷；缺省 = 未指定（不猜） */
+  sellingMethod?: string
+}
+
 // 订单明细表单
 export interface OrderItemFormData {
   productId?: string
