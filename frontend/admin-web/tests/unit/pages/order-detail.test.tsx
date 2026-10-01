@@ -726,7 +726,24 @@ describe('OrderDetailPage', () => {
     expect(el.textContent).toContain('整卷 1 + 散剪 40 米')
   })
 
-  it('#5846: rollCount / rollLengthM 任一为空 ⇒ 详情页**不编数字**（既有「缺值不渲染」口径不变）', async () => {
+  it('#5846 改判: 卷数有值、每卷米数没记 ⇒ 详情页渲染「整卷 2 卷（未记每卷米数）」（意图可见、不编米数）', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: {
+        data: {
+          ...mockOrder,
+          items: [{ ...mockOrder.items[0], quantity: 100, rollCount: 2, rollLengthM: null }],
+        },
+      },
+    })
+    render(<OrderDetailPage />)
+
+    const el = await screen.findByTestId('roll-allocation')
+    expect(el.textContent).toContain('整卷 2 卷（未记每卷米数）')
+    expect(el.textContent).not.toMatch(/散剪/)
+    expect(el.textContent).not.toMatch(/\d+\s*米/)
+  })
+
+  it('#5846: **两列都为空** ⇒ 详情页不渲染（既有「缺值不渲染」口径不变；只有长度没有卷数同样不渲染）', async () => {
     mockGetOrder.mockResolvedValue({
       data: {
         data: {

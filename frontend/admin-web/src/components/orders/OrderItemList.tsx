@@ -104,17 +104,27 @@ function numericOrNull(value: unknown): number | null {
  * ⇒ 散剪米数 = 行米数 − 整卷数 × 卷长（`order_items` 的 `quantity` / `roll_count` /
  * `roll_length_m` 三者都是后端给的真值，本函数**只做展示、不重算金额**）。
  *
- * 两条硬约束（与 §4.9「缺值不渲染」同族）：
- * 1. `rollCount` / `rollLengthM` **任一为空 ⇒ 返回 `null`**（未配置卷长时**不编数字**，
- *    也**不**显示「未配置」这类占位 —— 那会让商家以为系统已经算过分配）；
- * 2. 散剪为 0（正好整卷）⇒ 只显示「整卷 N」。
+ * 三条硬约束（与 §4.9「缺值不渲染」同族）：
+ * 1. **卷数有值、卷长没记** ⇒ 渲染「**整卷 N 卷（未记每卷米数）**」—— 陈述**已知事实**并标注未知，
+ *    **不推散剪、不补 0 米**（🔻 2026-10-01 用户复核改判：这是「不编数字」的**正确形态**，
+ *    不是放宽红线。`roll_count=2 / roll_length_m=NULL` 是服务端的新**合法态** ——
+ *    「客户要 2 卷」是真实意图，让它不可见 = 用户输入被吞掉的一半）；
+ * 2. **只有长度没有卷数**（`rollCount` 为空）、或**两列都为空** ⇒ 返回 `null`（长度单独出现
+ *    不构成「要几卷」的意图，**别硬编**；也不显示「未配置」这类占位 —— 那会让商家以为系统算过了）；
+ * 3. 散剪为 0（正好整卷）⇒ 只显示「整卷 N」。
  *
- * @returns 展示文案；无法推算时 `null`
+ * @returns 展示文案；无法陈述时 `null`
  */
 export function rollAllocationText(item: OrderItem): string | null {
   const rollCount = numericOrNull(item.rollCount)
   const rollLengthM = numericOrNull(item.rollLengthM)
-  if (rollCount === null || rollLengthM === null) return null
+
+  // 🔻 新合法态（issue #5846 二次裁定）：卷数有值、卷长没记 ⇒ 只陈述卷数，绝不编米数
+  if (rollLengthM === null) {
+    if (rollCount === null || rollCount < 0) return null
+    return `整卷 ${rollCount} 卷（未记每卷米数）`
+  }
+  if (rollCount === null) return null
   if (rollCount < 0 || rollLengthM <= 0) return null
 
   const quantity = numericOrNull(item.quantity)

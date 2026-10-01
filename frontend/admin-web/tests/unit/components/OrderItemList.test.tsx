@@ -606,14 +606,32 @@ describe('OrderItemList', () => {
       expect(screen.queryByText(/整卷/)).toBeNull()
     })
 
-    it('PR-044: rollLengthM=null（未配置卷长）⇒ 同样不渲染分配文案（不编数字）', () => {
+    // 🔻 2026-10-01 用户复核**改判**（issue #5846 二次裁定的连带）：
+    // 「卷数有值、卷长没记」不再是「什么都不显示」—— 那会把用户录的**真实意图**吞掉；
+    // 正确形态 = **陈述已知事实 + 标注未知**（不推散剪、不补 0 米）。红线本身（不编数字）不动。
+    it('#5846 改判: rollLengthM=null 且 rollCount 有值 ⇒ 渲染「整卷 1 卷（未记每卷米数）」', () => {
       render(
         <OrderItemList
           items={[makeItem({ quantity: 100, rollCount: 1, rollLengthM: null })]}
         />
       )
+      const el = screen.getByTestId('roll-allocation')
+      // ① 文案**逐字**为约定形态
+      expect(el.textContent).toContain('整卷 1 卷（未记每卷米数）')
+      // ② **不得**出现散剪米数、**不得**出现任何「N 米」「0 米」（不编数字）
+      expect(el.textContent).not.toMatch(/散剪/)
+      expect(el.textContent).not.toContain('0 米')
+      expect(el.textContent).not.toMatch(/\d+\s*米/)
+    })
+
+    it('#5846 改判: 两列都为空 ⇒ 仍然**不渲染**（既有口径一字不动）', () => {
+      render(
+        <OrderItemList
+          items={[makeItem({ quantity: 100, rollCount: null, rollLengthM: null })]}
+        />
+      )
       expect(screen.queryByTestId('roll-allocation')).toBeNull()
-      expect(screen.queryByText(/散剪/)).toBeNull()
+      expect(screen.queryByText(/整卷/)).toBeNull()
     })
 
     it('PR-044: rollCount=0（全部散剪）⇒ 「散剪 40 米」', () => {
