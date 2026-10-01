@@ -28,7 +28,7 @@ import { cn, formatFullDateTime } from '@/lib/utils'
  *    `.shipment-print-area, .shipment-print-area * { visibility: visible; }` ——
  *    它只影响单据自身可见性，不占版面高度，与 display:none 隔离不冲突。
  *    🔴 **同页多单据的两条硬约束**（issue #4965，CI `Demo path specs` 实测红后修正 —— 别退回旧写法）：
- *    订单详情页同时挂着报价单（`QuotationDoc`），两者都是 `document.body` 的**直接子级**。旧写法在
+ *    订单详情页同时挂着报价单（`QuotationDoc`），两者都是 `document.body` 的「直接子级」。旧写法在
  *    这种共存下**两条都错**：① 隔离选择器 `body > *:not(.shipment-print-area)` 会把**兄弟单据**
  *    也选进来 ⇒ `display:none !important` 把对方整份藏掉；② 两份无限定 `visibility: visible`
  *    **同特异性**、后渲染者胜 ⇒ 后挂的报价单把本单据藏成 invisible（实测 `toBeVisible()` 红）。
@@ -120,7 +120,7 @@ export default function ShipmentDoc({
         .shipment-print-area { display: none; }
         @media print {
           body > *:not(.print-doc) { display: none !important; }
-          /* 🔴 只有**本次目标**上纸（issue #5914）；正文字号取介质矩阵（9pt = 12px，与原值同尺寸） */
+          /* 🔴 只有「本次目标」上纸（issue #5914）；正文字号取介质矩阵（9pt = 12px，与原值同尺寸） */
           .shipment-print-area[data-print-target='shipment'] {
             display: block;
             position: static;

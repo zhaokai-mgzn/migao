@@ -235,7 +235,7 @@ export default function SalesDoc({
         .sales-print-area { display: none; }
         @media print {
           body > *:not(.print-doc) { display: none !important; }
-          /* 🔴 只有**本次目标**上纸：非目标单据留在 display:none ⇒ 不占版面（不出空白页）、
+          /* 🔴 只有「本次目标」上纸：非目标单据留在 display:none ⇒ 不占版面（不出空白页）、
              也不参与纸型竞争（issue #5914）。 */
           .sales-print-area[data-print-target='sales'] {
             display: block;

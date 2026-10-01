@@ -179,7 +179,7 @@ export default function ProcessingDoc({
         .processing-print-area { display: none; }
         @media print {
           body > *:not(.print-doc) { display: none !important; }
-          /* 🔴 只有**本次目标**上纸（issue #5914）—— 非目标单据不占版面、不抢纸型。 */
+          /* 🔴 只有「本次目标」上纸（issue #5914）—— 非目标单据不占版面、不抢纸型。 */
           .processing-print-area[data-print-target='processing'] {
             display: block;
             position: static;

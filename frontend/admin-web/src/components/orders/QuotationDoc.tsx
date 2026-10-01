@@ -33,7 +33,7 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *    （旧方案 `visibility:hidden` 隐藏的元素仍占高度，底层页面高于一页 A4 时第 2 页空白，
  *    issue #3896）。注意 `.quotation-print-area` 必须是 portal 容器本身的 class，不能再包一层。
  *    🔴 **同页多单据的两条硬约束**（issue #4965，CI `Demo path specs` 实测红后修正 —— 别退回旧写法）：
- *    订单详情页**同时挂着**发货单（`ShipmentDoc`）与本报价单，两者都是 `document.body` 的**直接子级**
+ *    订单详情页**同时挂着**发货单（`ShipmentDoc`）与本报价单，两者都是 `document.body` 的「直接子级」
  *    （§范式 2 的物理前提）。旧写法（各自 `body > *:not(.<自己>-print-area)` + 无限定
  *    `visibility: visible`）在这种同页共存下**两条都错**，且错误方向相反：
  *    ① **互相 `display:none`**：`body > *:not(.quotation-print-area)` 会把**兄弟单据**
@@ -167,7 +167,7 @@ export default function QuotationDoc({
         .quotation-print-area { display: none; }
         @media print {
           body > *:not(.print-doc) { display: none !important; }
-          /* 🔴 只有**本次目标**上纸（issue #5914）；正文字号取介质矩阵（9pt = 12px，与原值同尺寸） */
+          /* 🔴 只有「本次目标」上纸（issue #5914）；正文字号取介质矩阵（9pt = 12px，与原值同尺寸） */
           .quotation-print-area[data-print-target='quotation'] {
             display: block;
             position: static;

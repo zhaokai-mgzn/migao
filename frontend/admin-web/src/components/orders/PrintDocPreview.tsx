@@ -187,9 +187,9 @@ export default function PrintDocPreview({
       aria-label={`${title}打印预览`}
     >
       <style>{`
-        /* 🔴 预览实例的显形规则**只在屏幕上**生效：打印媒体下它必须保持 display:none，
+        /* 🔴 预览实例的显形规则「只在屏幕上」生效：打印媒体下它必须保持 display:none，
            否则同一份单据会同时以「真单据 + 预览副本」两张上纸。
-           单据容器（*-print-area）是 .print-preview-doc 的**直接子级**（预览实例 inline 渲染、
+           单据容器（*-print-area）是 .print-preview-doc 的「直接子级」（预览实例 inline 渲染、
            不 portal），故按子级选择器覆盖它的屏幕态 display:none。 */
         @media screen {
           .print-preview-doc > * {

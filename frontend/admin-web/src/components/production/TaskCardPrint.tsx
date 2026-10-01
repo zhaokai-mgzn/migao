@@ -177,7 +177,7 @@ export default function TaskCardPrint({
         .task-card-label:last-child { break-after: auto; page-break-after: auto; }
         @media print {
           body > *:not(.print-doc) { display: none !important; }
-          /* 🔴 只有**本次目标**上纸（issue #5914）：否则打印会同时吐出别的单据的版面 */
+          /* 🔴 只有「本次目标」上纸（issue #5914）：否则打印会同时吐出别的单据的版面 */
           .task-card-print-area[data-print-target='labels'] {
             display: block;
             position: static;
