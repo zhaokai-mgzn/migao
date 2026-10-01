@@ -176,6 +176,17 @@
   config:
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
+      # Fold EARLIER than the 0.8 default (measured 2026-10-01, issue #5920).
+      # Session cost ≈ Σ per-step context, and 97.8% of billed tokens are history
+      # re-sends (cache-hit reads). The default lets the prompt grow to
+      # `0.8 x 1M = 800k` before anything folds — observed `maxCtx` 791k–804k.
+      # Counterfactual replay over the full corpus (`scripts/token_ledger.py --all`):
+      # cap 400k saves 10.6% / 300k saves 19.8% / 200k saves 35.5% of prompt volume.
+      # Ratios (not absolute tokens) so a 131k-window model scales down by itself
+      # (~39k) instead of tripping the retain < threshold load-time check.
+      config:
+        thresholdRatio: 0.3
+        retainRatio: 0.08
 
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'

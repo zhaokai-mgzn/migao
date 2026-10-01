@@ -97,11 +97,21 @@ def read_session_text(path: Path) -> tuple[str | None, str | None]:
     if not raw.startswith(ZSTD_MAGIC):
         return raw.decode("utf-8", errors="replace"), None
     try:  # 优先纯 python（无外部进程）；本机未装 zstandard，故必须保留 CLI 退路。
+        import io
+
         import zstandard  # type: ignore
 
-        return zstandard.ZstdDecompressor().decompress(raw, max_output_size=1 << 30).decode(
-            "utf-8", errors="replace"
-        ), None
+        # ⚠️ 必须用 **stream_reader**：DSH 的会话日志是**逐条追加**写成的 zstd **多帧**文件
+        # （实测单份 15,841 帧），而 `ZstdDecompressor().decompress()` **只解第一帧**
+        # （实测：24.5MB 的日志只得到 206 字符 ⇒ 步数恒为 0 ⇒ 装了 zstandard 的机器上，
+        #  本工具对**每一份**会话都报「不可判定 / 0 步」——形同不可用）。stream_reader 跨帧，
+        # 读数与 `zstd -dc` 逐字节一致（实测 86,240,141 字符）。判据见
+        # `tests/unit_ci_workflows/test_roundtrip_report.py::test_multiframe_log_is_not_truncated_to_first_frame`。
+        with zstandard.ZstdDecompressor().stream_reader(io.BytesIO(raw)) as reader:
+            text = reader.read().decode("utf-8", errors="replace")
+        if not text.strip():  # 损坏 / 截断的帧：stream_reader **不抛错**、只回空串 ⇒ 必须显式报原因
+            return None, f"解压得到空内容（zstd 帧损坏或截断？原始 {len(raw)} 字节）"
+        return text, None
     except ImportError:
         pass
     except Exception as exc:  # 解压失败也要有原因，不能静默
