@@ -27,7 +27,7 @@
 | 5 | **类级元守卫（教法扫描）**：仓内没有任何**脚本/文档**把「软链到主工作区 node_modules」教成步骤 | 内存语料里加一行配方 ⇒ 判红；豁免台账**只许缩短**、**条数现取**、陈旧登记即红 |
 | 6 | **同源**：`add` 输出与 `docs/wiki/Development.md` 必须带**同一句**规范（不许两处各写一份） | 任一侧删掉该句 ⇒ 判红 |
 | 7 | **判别力自证**：判据函数在内存构造的坏形态上各自判红、在对照形态上**不红** | 六种坏形态 + 两条对照 |
-| 8 | **可见提示（issue 要求 ①）**：两种危险形态各自**具名**点出 —— 指向**本仓库工作区** / 指向**工作区之外**，且提示里带「路径 → 目标」 | 提示词里少任一种 ⚠️ 形态 ⇒ 判红 |
+| 8 | **可见提示（issue 要求 ①）**：两种危险形态各自**具名**点出 —— 指向**本仓库工作区** / 指向**工作区之外**，且提示里带「路径 → 目标」 | 把「工作区之外」那句 ⚠️ 文案从脚本里**抽掉**（注入变体真跑 `rm`）⇒ 判据 8 当场判红 |
 
 ## 「fail-closed 与否」的裁定（issue 原文要求给出理由）
 
@@ -372,8 +372,18 @@ def test_rm_unlinks_before_removing_and_keeps_the_external_target_intact(tmp_pat
     )
 
 
+def visible_warning_problems(stdout: str, wt: Path, target: Path, marker: str) -> list[str]:
+    """判据 8 的判定本体（纯函数 ⇒ 可在**注入变体**上证明它有判别力）。"""
+    problems: list[str] = []
+    if marker not in stdout:
+        problems.append(f"没有**具名**点出该形态（期望 {marker!r}）")
+    if f"{wt}/tests/node_modules → {target}" not in stdout:
+        problems.append("提示里没有「路径 → 目标」")
+    return problems
+
+
 def test_visible_warning_distinguishes_outside_repo_from_cross_workspace(tmp_path: Path) -> None:
-    """判据 8（issue 要求 ①「对软链指向本仓库之外/主工作区给出**可见提示**」）：
+    """判据 8（issue 要求 ①「对软链指向本仓库之外/主工作区给出**可见提示**」）+ **注入红证**：
 
     两种形态必须各自被**具名**点出来（而不是只打一行「发现软链」）：
     指向**本仓库工作区** = 跨工作区共享依赖的典型形态（本事故成因）；指向**仓库之外** = 删除动作若穿过它，
@@ -382,22 +392,28 @@ def test_visible_warning_distinguishes_outside_repo_from_cross_workspace(tmp_pat
     inside = build_fixture(tmp_path / "inside", with_link=True)
     proc_in, _ = run_rm(inside, tmp_path / "inside")
     assert proc_in.returncode == 0, f"rm 非零退出：{proc_in.stderr!r}"
-    assert "指向**本仓库工作区**" in proc_in.stdout, (
-        f"指向本仓库工作区的软链没有被具名点出来：{proc_in.stdout!r}"
-    )
-    assert f"{inside['wt']}/tests/node_modules → {inside['target']}" in proc_in.stdout, (
-        f"提示里没有「路径 → 目标」：{proc_in.stdout!r}"
-    )
+    assert visible_warning_problems(
+        proc_in.stdout, inside["wt"], inside["target"], "指向**本仓库工作区**"
+    ) == [], f"指向本仓库工作区的软链没有被具名点出来：{proc_in.stdout!r}"
 
     outside = build_fixture(tmp_path / "outside-fixture", with_link=True, external_target=True)
     proc_out, _ = run_rm(outside, tmp_path / "outside-fixture")
     assert proc_out.returncode == 0, f"rm 非零退出：{proc_out.stderr!r}"
-    assert "指向**工作区之外**" in proc_out.stdout, (
-        f"指向仓库之外的软链没有被具名点出来：{proc_out.stdout!r}"
-    )
-    assert f"{outside['wt']}/tests/node_modules → {outside['target']}" in proc_out.stdout, (
-        f"提示里没有「路径 → 目标」：{proc_out.stdout!r}"
-    )
+    assert visible_warning_problems(
+        proc_out.stdout, outside["wt"], outside["target"], "指向**工作区之外**"
+    ) == [], f"指向仓库之外的软链没有被具名点出来：{proc_out.stdout!r}"
+
+    # 注入：把那句 ⚠️ 文案从脚本里抽掉 ⇒ 判据必须判红（自证不是恒真断言）
+    src = SCRIPT.read_text(encoding="utf-8")
+    marker_text = "指向**工作区之外** —— 删除动作若穿过它，打到的是仓库外的数据"
+    assert src.count(marker_text) == 1, f"注入无从构造（fail-closed）：count={src.count(marker_text)}"
+    injected = src.replace(marker_text, "指向外部", 1)
+    assert injected != src, "变异没生效 ⇒ 下面这条会变成空断言"
+    fx = build_fixture(tmp_path / "inj", with_link=True, external_target=True, script_text=injected)
+    proc_inj, _ = run_rm(fx, tmp_path / "inj")
+    assert visible_warning_problems(
+        proc_inj.stdout, fx["wt"], fx["target"], "指向**工作区之外**"
+    ) != [], "注入后判据仍判绿 ⇒ 判据 8 是空断言"
 
 
 def test_injected_missing_unlink_leaves_the_link_live_at_removal_time(tmp_path: Path) -> None:
