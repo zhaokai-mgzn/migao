@@ -319,7 +319,7 @@ describe('NewOrderPage', () => {
    * 本文件各判据的锚点随之改成**新结构的等价锚点**。
    */
   const openWizardStep = (title: string, idx = 0) => {
-    const btns = screen.getAllByRole('button', { name: new RegExp(`^\\d+ ${title}`) })
+    const btns = screen.getAllByRole('button', { name: new RegExp(`^\\d+\\s*${title}`) })
     const btn = btns[idx]
     if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
   }
@@ -1291,11 +1291,11 @@ describe('NewOrderPage', () => {
       // 「特殊选项 / 部位备注」并入 ②）；净尺寸常显在组级 ⇒ 旧「尺寸与数量」段仍不存在。
       // ⇒ 等价强度的新断言（钉住新版面）：两段各一份、没有第 3/4 段、旧段名不再有对应按钮
       expect(screen.getAllByTestId(/^wizard-step-/)).toHaveLength(2)
-      expect(screen.getAllByRole('button', { name: /^1 用料与规格/ })).toHaveLength(1)
-      expect(screen.getAllByRole('button', { name: /^2 加工项/ })).toHaveLength(1)
-      expect(screen.queryByRole('button', { name: /^\d+ 其他/ })).toBeNull()
+      expect(screen.getAllByRole('button', { name: /^1\s*用料与规格/ })).toHaveLength(1)
+      expect(screen.getAllByRole('button', { name: /^2\s*加工项/ })).toHaveLength(1)
+      expect(screen.queryByRole('button', { name: /^\d+\s*其他/ })).toBeNull()
       expect(screen.queryByTestId('wizard-step-3')).toBeNull()
-      expect(screen.queryByRole('button', { name: /^4 / })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^4\s*/ })).toBeNull()
       expect(screen.queryByRole('button', { name: /尺寸与数量/ })).toBeNull()
       // 行头（「部位 N」+ 行内「删除」）整体移除：删除只保留在**组头**一处
       expect(screen.queryByText(/^部位 \d+$/)).toBeNull()
@@ -1383,9 +1383,9 @@ describe('NewOrderPage', () => {
       expect(screen.queryByRole('radiogroup', { name: '帘体' })).toBeNull()
       // ⚠️ 2026-09-28 布局重排：步骤 1 改名「用料与规格（系统推导）」、新增步骤 3「其他」
       // ⇒ 三步**全不出现**（布料行没有加工 ⇒ 整组手风琴不渲染）
-      expect(screen.queryByRole('button', { name: /^1 用料与规格/ })).toBeNull()
-      expect(screen.queryByRole('button', { name: /^2 加工项/ })).toBeNull()
-      expect(screen.queryByRole('button', { name: /^3 其他/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^1\s*用料与规格/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^2\s*加工项/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^3\s*其他/ })).toBeNull()
     })
 
     it('判据 11（#4598）：帘行米数输入框 label = 「用料米数」（它就是加工费米数）；布料行仍是「数量」', async () => {
@@ -1644,7 +1644,7 @@ describe('NewOrderPage', () => {
     const searchBox = () => screen.getByTestId('processing-search')
     /** 收起区块 2 ⇒ 摘要（`已选 N 项 · 工艺：X`）可见 */
     const collapseProcessing = () =>
-      fireEvent.click(screen.getAllByRole('button', { name: /^2 加工项/ })[0])
+      fireEvent.click(screen.getAllByRole('button', { name: /^2\s*加工项/ })[0])
 
     it('判据 1a：多分类 ⇒ 渲染分类选择器（每个分类一个 chip，带 data-testid）', async () => {
       await setup()
@@ -1831,7 +1831,7 @@ describe('NewOrderPage', () => {
      * `Unable to find an element with the role "button"`。
      */
     const headerToggle = (index: number, name: string) =>
-      screen.getByRole('button', { name: new RegExp(`^${index} ${name}`) })
+      screen.getByRole('button', { name: new RegExp(`^${index}\\s*${name}`) })
     /**
      * 卡片体存在判据 = 体内**向导步骤**开关的数量（整卡收起 ⇒ 体内一切都不渲染）。
      * ⚠️ 2026-09-28 布局重排：步骤 1 由「尺寸与数量 · 工艺规格」改名「用料与规格（系统推导）」
@@ -1839,7 +1839,7 @@ describe('NewOrderPage', () => {
      * 用 `^\\d+ ${title}`（不是 `^1 `）⇒ 对任意组序都成立。
      */
     const bodyStepCount = (title: string) =>
-      screen.queryAllByRole('button', { name: new RegExp(`^\\d+ ${title}`) }).length
+      screen.queryAllByRole('button', { name: new RegExp(`^\\d+\\s*${title}`) }).length
     const deleteButtons = () => screen.getAllByRole('button', { name: /删除/ })
 
     const mockTwoProducts = () => {
@@ -2049,18 +2049,18 @@ describe('NewOrderPage', () => {
       // ⚠️ 2026-09-29 改判（用户逐字：「其他的这块选择区域归属到加工项区域中，不要单独搞个折叠块了，
       // 用户打开加工项区域时一同打开，另外不要命名叫『其他』，改成**特殊选项**」）：
       // 手风琴由 2026-09-28 的**三步**回到**两步**（1 用料与规格（系统推导）/ 2 加工项）。
-      // 红证：把 ③「其他」的折叠壳装回来 ⇒ 第一条长度断言 + `queryByRole(/^\d+ 其他/)` 必红。
+      // 红证：把 ③「其他」的折叠壳装回来 ⇒ 第一条长度断言 + `queryByRole(/^\d+\s*其他/)` 必红。
       expect(screen.getAllByTestId(/^wizard-step-/)).toHaveLength(2)
-      expect(screen.getByRole('button', { name: /^1 用料与规格/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^1\s*用料与规格/ })).toBeInTheDocument()
       // 🔴 2026-09-30 第六批改判（用户逐字「移除红框中的文字」，红框 = 标题里的「（系统推导）」后缀）：
       // 步骤 1 就叫「用料与规格」——**反向断言**：整页不得再有带「（系统推导）」后缀的标题按钮
       // （防回潮；红证：把后缀加回 `title=` ⇒ 本行红）。
       expect(screen.queryByRole('button', { name: /（系统推导）/ })).toBeNull()
-      expect(screen.getByRole('button', { name: /^2 加工项/ })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: /^\d+ 其他/ })).toBeNull()
+      expect(screen.getByRole('button', { name: /^2\s*加工项/ })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^\d+\s*其他/ })).toBeNull()
       // 反向断言：旧的 3 / 4 段序号锚点都不再存在
       expect(screen.queryByTestId('wizard-step-3')).toBeNull()
-      expect(screen.queryByRole('button', { name: /^4 / })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^4\s*/ })).toBeNull()
       // 原四段的**内容**都还在（只是换了归属 + 位置）：尺寸 / 用料与规格 / 加工项 / 特殊选项
       // ① 净尺寸**常显在组级**（不再属于任何手风琴步骤 —— 旧「尺寸与数量」段已不存在）
       expect(screen.getByLabelText('窗宽 (米)')).toBeInTheDocument()

@@ -352,12 +352,17 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     expect(getComputedStyle(doc).position).toBe('static')
   })
 
-  it('A4 纸面尺寸写在 @page 块里（jsdom 里以 CSSOM 断言，不靠字符串匹配）', () => {
+  it('A4 纸面尺寸写在 @page 块里（@page 进 CSSOM；size 描述符按产物原文断言）', () => {
     const { styleEl } = mountDocWithShell()
     const pageRule = Array.from(styleEl.sheet!.cssRules).find((r) => r.cssText.includes('@page'))
 
+    // ⚠️ jsdom 30（cssstyle）起，CSSOM **不再保留 `@page` 的未知描述符** —— `size` 会从 `cssText` 里消失：
+    //    实测 jsdom 26.1.0 ⇒ `@page {size: A4; margin: 12mm;}`；jsdom 30.1.1 ⇒ `@page { margin: 12mm; }`
+    //    （两版下**原始 CSS 文本一致**）。`size` 不在 jsdom CSSOM 的模型里 ⇒ 断 `cssText` 在 jsdom 30 下
+    //    **不可能**成立；而真机打印生效的正是那份原始 CSS 文本（`ProcessingDoc.test.tsx` 一直这么断）。
+    //    两条合起来仍是原意图：① `@page` 真被解析成规则 ② 产物里确实带 `size: A4`（删掉即红）。
     expect(pageRule).toBeDefined()
-    expect(pageRule!.cssText).toContain('size: A4')
+    expect(styleEl.textContent).toContain('size: A4')
   })
 
   // ===== 单据挂在页面级，不得放进 Modal（issue #3818 收尾）=====

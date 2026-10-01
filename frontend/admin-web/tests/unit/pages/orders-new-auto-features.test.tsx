@@ -294,7 +294,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 import NewOrderPage from '@/app/(dashboard)/orders/new/page'
 
 const openStep = (title: string) => {
-  const btn = screen.getAllByRole('button', { name: new RegExp(`^\\d+ ${title}`) })[0]
+  const btn = screen.getAllByRole('button', { name: new RegExp(`^\\d+\\s*${title}`) })[0]
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
 }
 
@@ -313,7 +313,7 @@ const openSizing = () => {
   expect(screen.getAllByLabelText('窗宽 (米)').length).toBeGreaterThan(0)
   expect(screen.getAllByLabelText('窗高 (米)').length).toBeGreaterThan(0)
   // 🔴 2026-09-30 第六批：步骤 1 标题去掉「（系统推导）」后缀（用户逐字「移除红框中的文字」）
-  const btn = screen.getAllByRole('button', { name: /^1 用料与规格/ })[0]
+  const btn = screen.getAllByRole('button', { name: /^1\s*用料与规格/ })[0]
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
 }
 
@@ -323,7 +323,7 @@ const openSizing = () => {
  * 只查 `screen.queryByTestId` 无法区分「不在这区」与「这区没展开」（会变成空断言）。
  */
 const stepSection = (title: string) => {
-  const btn = screen.getAllByRole('button', { name: new RegExp(`^\\d+ ${title}`) })[0]
+  const btn = screen.getAllByRole('button', { name: new RegExp(`^\\d+\\s*${title}`) })[0]
   return btn.closest('div') as HTMLElement
 }
 
@@ -1096,7 +1096,7 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     expect(screen.getByTestId('processing-recommended-reject')).toHaveTextContent('全不采纳')
     // 计数口径（有意变更）：预选项**计入**「已选 N 项」且摘要带上工艺名。
     // 摘要只在**收起**态可见（`CollapsibleHeader` 打开时换成了内容）⇒ 收起本步再读。
-    fireEvent.click(screen.getAllByRole('button', { name: /^2 加工项/ })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /^2\s*加工项/ })[0])
     const summary = within(stepSection('加工项')).getByText(/已选 2 项/)
     // 🔴 2026-09-30 第五批改判：摘要**逐项列出**勾选的加工项名（用户原话
     // 「这里勾选上的和显示的不一致」—— 只写「已选 2 项 · 工艺：韩褶」让他对不上号）

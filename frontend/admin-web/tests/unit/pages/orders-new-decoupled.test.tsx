@@ -108,7 +108,7 @@ const shopCatalog = [
 
 /** 展开向导③「加工项」步骤（issue #4511 手风琴；#4489 判据 3：默认收起） */
 const expandProcessing = () => {
-  const btns = screen.getAllByRole('button', { name: /^\d+ 加工项/ })
+  const btns = screen.getAllByRole('button', { name: /^\d+\s*加工项/ })
   if (btns.length && btns[0].getAttribute('aria-expanded') === 'false') fireEvent.click(btns[0])
 }
 
@@ -153,7 +153,7 @@ describe('NewOrderPage — 商品↔加工项解耦（#4371）', () => {
     await screen.findByText('帘体')
     // 商品 payload 无 supportsProcessing/hasProcessing，旧实现会把选择器整块隐藏
     // issue #4489 判据 3：加工选项**默认折叠** ⇒ 断言折叠头（不再是一段静态文案）
-    expect(screen.getByRole('button', { name: /^\d+ 加工项/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^\d+\s*加工项/ })).toBeInTheDocument()
     expandProcessing()
     // 目录里的加工项渲染为可选行
     expect(await screen.findByText('打孔加工')).toBeInTheDocument()
