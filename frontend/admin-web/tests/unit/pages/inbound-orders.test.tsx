@@ -229,6 +229,37 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
     )
   })
 
+  it('详情明细有「卷长(米)」列：原值直读（58.55 就是 58.55）、未填 ⇒ "-"（不写 0）', async () => {
+    // 🔴 两个断言各自有判别力：
+    //   ① `58.55` ⇒ **不得**被渲染成 `58.6` —— 卷长是 `NUMERIC(8,2)`，而 `formatStockQuantity`
+    //      是**库存米数**的 0.1 米粒度格式化器；拿它渲染卷长 = 静默改数（两个量各有自己的精度）。
+    //   ② 未填 ⇒ `-`，**不是** `0`（「0 米一卷」与「没填卷长」不是一回事）。
+    mockDetail.mockResolvedValueOnce({
+      data: {
+        data: {
+          ...draftDetail,
+          items: [
+            { ...draftDetail.items[0], id: 100, skuCode: 'SKU-ROLL', rollLengthM: 58.55 },
+            { ...draftDetail.items[0], id: 101, skuCode: 'SKU-NOROLL', rollLengthM: null },
+          ],
+        },
+      },
+    })
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+
+    fireEvent.click(
+      within(screen.getByText('RK-20260923-0001').closest('tr')!).getByRole('button', { name: '详情' }),
+    )
+
+    const detailTable = (await screen.findByText('卷长(米)')).closest('table') as HTMLTableElement
+    const rowOf = (sku: string) =>
+      within(within(detailTable).getByText(sku, { exact: false }).closest('tr') as HTMLElement)
+    // 列序：0 货号/颜色/门幅 · 1 数量 · 2 单价 · 3 金额 · 4 批次号 · 5 缸号 · 6 卷长 · 7 旧系统批次号
+    expect(rowOf('SKU-ROLL').getAllByRole('cell')[6].textContent).toBe('58.55')
+    expect(rowOf('SKU-NOROLL').getAllByRole('cell')[6].textContent).toBe('-')
+  })
+
   it('已过账的单：详情里没有过账/作废入口（库存已进台账，冲销须另开单据）', async () => {
     mockDetail.mockResolvedValueOnce({ data: { data: postedDetail } })
     render(<InboundOrdersPage />)
