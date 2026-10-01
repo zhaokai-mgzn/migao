@@ -119,7 +119,10 @@ export default function ProductTable({
     // 「商品ID」列**整列删除**（表头 + 行内 `<td>` 由 `Table` 按 `columns` 渲染 ⇒ 一并消失）。
     // ⚠️ 列数由 11 → 10：`Table` 的加载态/空态 `colSpan={columns.length}` 是**动态**的 ⇒ 自动跟上
     //（判据 = ProductTable.test.tsx 的「列数 = 10 + colSpan = 10」）。
-    // ⚠️ 搜索区里的「商品ID」**筛选项保留**（用户只要求列表不展示）。
+    // ⚠️ 搜索区里的「商品ID」筛选**同日被追加裁定整条移除**（用户 2026-10-01 追加原话
+    //    「搜索区的商品ID筛选也要移除」，issue #5877）—— 本行此前写的「筛选项保留」是**追加裁定之前**
+    //    的口径，已作废。两处口径必须一致，对应注释见
+    //    `frontend/admin-web/src/app/(dashboard)/products/page.tsx` 的 #5877 说明。
     {
       key: 'name',
       title: '商品标题',
