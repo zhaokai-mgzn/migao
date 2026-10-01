@@ -126,6 +126,25 @@ describe('建单页版式：整页（不是弹窗），与 /orders/new、/produc
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(mockPush).toHaveBeenCalledWith('/inbound-orders')
   })
+
+  it('「入库日期」占满整行（奇数个字段的最后一个满行；改前右半留空 —— issue #5871）', async () => {
+    render(<NewInboundOrderPage />)
+
+    const dateField = screen.getByTestId('inbound-date-field')
+    // 日期控件还在，且仍是原生 date 输入
+    expect(dateField.querySelectorAll('input[type="date"]').length).toBe(1)
+
+    const grid = dateField.parentElement as HTMLElement
+    expect(grid).toHaveClass('md:grid-cols-2')
+
+    // 🔴 本单的靶心：**恰好 1 个**字段跨 2 列，且它就是日期字段。
+    //    改前：0 个跨列 ⇒ 第 3 行右半留空（用户看到的"怪异"之一）；
+    //    若有人顺手把别的字段也拉宽 ⇒ 数量 > 1 ⇒ 红（防静默扩大改动）。
+    const spanning = Array.from(grid.children).filter((el) => el.className.includes('md:col-span-2'))
+    expect(spanning.length).toBe(1)
+    expect(spanning[0]).toBe(dateField)
+    expect(grid.children.length).toBe(5)
+  })
 })
 
 describe('建单：一行 = 一个批次，payload 逐字段（PR-037）', () => {

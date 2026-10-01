@@ -246,12 +246,18 @@ export default function NewInboundOrderPage() {
                 value={form.warehouse}
                 onChange={(e) => setForm({ ...form, warehouse: e.target.value })}
               />
-              <Input
-                label="入库日期"
-                type="date"
-                value={form.inboundDate}
-                onChange={(e) => setForm({ ...form, inboundDate: e.target.value })}
-              />
+              {/* 奇数个字段的**最后一个满行**（家族先例：`/orders/new` 收货信息的「收货地址」）——
+                  issue #5871：改前第 3 行右半留空。
+                  ⚠️ **跨度只能加在包裹层**：`Input` 把 `className` 透传到 `<input>` 上，而栅格的
+                  子项是它外层那个 `w-full` div ⇒ 把 `md:col-span-2` 传给 `Input` 等于没加（不报错、也不生效）。 */}
+              <div className="md:col-span-2" data-testid="inbound-date-field">
+                <Input
+                  label="入库日期"
+                  type="date"
+                  value={form.inboundDate}
+                  onChange={(e) => setForm({ ...form, inboundDate: e.target.value })}
+                />
+              </div>
             </div>
             <div className="mt-4">
               <Input
