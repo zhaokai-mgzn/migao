@@ -434,16 +434,31 @@ class TestVerifyAllWiring:
         assert acquire_at >= 0, (
             "verify-all.sh 没有接机器级准入锁（macquire）—— 全量套件又可以在同一台机器上并发跑了"
         )
-        case_at = text.find('case "$MODE" in')
+        # ⚠️ **行首锚定**取**顶层** `case "$MODE" in`（2026-10-01，issue #5863）：
+        #    原先用 `text.find('case "$MODE" in')`（无锚）取**第一个**匹配 —— 而 `heavy_lock_wanted`
+        #    的射程判定若也写成 `case`（它定义在 `macquire` **之前**），本判据就会取到**函数内**那一个
+        #    ⇒ 误报「接线顺序错」（实测报错：`assert 12612 > 12721`）。
+        #    判据的**意图一字未改**（macquire 必须在档位分发之前）；这里只是把「取哪一处 case」从
+        #    **未声明的唯一性假设**换成**显式的行首锚定** —— 这是**收紧**，不是放宽。
+        m_case = re.search(r'^case "\$MODE" in', text, re.M)
+        assert m_case, 'verify-all.sh 里找不到**顶层** `case "$MODE" in`（档位分发点）—— 不可判定，不得当通过'
+        case_at = m_case.start()
         assert case_at > acquire_at, (
             "`macquire` 出现在顶层 `case \"$MODE\" in` **之后** —— 重活已经开始跑了才拿锁（接线顺序错）"
         )
 
-    def test_only_the_full_suite_tier_takes_the_lock(self):
-        """**只有会拉起全量套件的那一档拿锁** —— 其余档不拿（否则并行开发被无谓串行，另一种浪费）。
+    def test_every_tier_that_runs_tests_takes_the_lock(self):
+        """**跑全量测试的档都必须拿锁**（2026-10-01 改判，issue #5863）—— 它们争的是同一台机器的 CPU。
 
-        ⚠️ 这条判的反方向坏形态：`heavy_lock_wanted` 恒真 ⇒ `quick/full/…` 也抢机器级锁 ⇒
-        两个会话连「改一行 + 跑快档」都要排队。恒假那一侧由 `test_lock_is_held_while_the_heavy_leg_runs…` 兜。
+        **病史（本判据原先钉的是错的口径）**：它曾断言「只有 `gate` 拿锁」，理由写的是「其余档不是
+        同一台机器上的重活」。而事实相反：`full` 档按 `verify-all.sh` 自己的档位说明就是**三模块全量
+        单测（~10-15 分钟）**，`quick` 三模块全量，`frontend`/`backend`/`agent` 单模块全量，
+        `redproof` 的机具实跑**单机具 2~30 分钟**。实测（同日）：`gate` 持锁期间
+        `load average` **16.71 / 28.71 / 20.14**（8 核），而单份档内部并行最多打满 ~8 核
+        （同日早先采样 9.01）⇒ **锁外确有重活在同跑**，准入形同虚设。
+
+        ⚠️ **反方向坏形态仍然要防**（不是「越宽越好」）：**未知 / 空档位不得拿锁** ——
+        否则把「没打算跑测试」的调用也串行化。两侧都钉。
         """
         fn = _extract_fn("heavy_lock_wanted")
         body = (
@@ -452,14 +467,21 @@ class TestVerifyAllWiring:
             '  MODE="$m"\n'
             '  if heavy_lock_wanted; then echo "$m=WANT"; else echo "$m=NONE"; fi\n'
             "done\n"
+            'MODE=""\n'
+            'if heavy_lock_wanted; then echo "empty=WANT"; else echo "empty=NONE"; fi\n'
+            'MODE="unknown-tier"\n'
+            'if heavy_lock_wanted; then echo "unknown=WANT"; else echo "unknown=NONE"; fi\n'
         )
         r = subprocess.run(["bash", "-c", body], capture_output=True, text=True, cwd=str(REPO))
         got = dict(ln.split("=") for ln in r.stdout.split("\n") if "=" in ln)
-        assert got.get("gate") == "WANT", f"gate 档（全量套件的唯一入口）**必须**拿锁：{got}\n{r.stderr}"
-        others = {k: v for k, v in got.items() if k != "gate"}
-        assert all(v == "NONE" for v in others.values()), (
-            f"以下档位也拿锁了 —— 它们不是「同一台机器上的重活」：{others}"
-        )
+        for tier in ("quick", "full", "frontend", "backend", "agent", "redproof", "gate"):
+            assert got.get(tier) == "WANT", (
+                f"{tier} 档会跑全量测试（与 gate 争同一批 CPU）⇒ **必须**拿锁：{got}\n{r.stderr}"
+            )
+        for bad in ("empty", "unknown"):
+            assert got.get(bad) == "NONE", (
+                f"{bad} 档不该拿锁 —— 否则把未初始化 / 未知档位也串行化（另一种浪费）：{got}"
+            )
 
     def test_lock_is_held_while_the_heavy_leg_runs_and_released_on_exit(self, tmp_path):
         """**行为判据**（真进程，走 verify-all.sh 里**真实的**那两个函数）：重活期间锁必须持着。

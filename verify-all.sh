@@ -699,14 +699,24 @@ echo "变更集：$(printf '%s\n' "$CHANGE_SET" | grep -c .) 个文件（origin/
 # （PPID=1）烧了 28 分钟；`load average` 一度 45.44。3 份里 2 份是 agent 会话造成的 ⇒ 类级病 =
 # **同一台机器上的重活没有并发准入**（与 runner 无关）。
 #
-# ⚠️ 只包**会拉起全量套件**的那一档（`gate` 档的 `ci workflow helper 判据集` 腿）。
-#    其余档（quick / full / frontend / backend / agent / redproof）**不拿锁** —— 它们不是
-#    「同一台机器上的重活」，给它们加锁只会让并行开发无谓串行（那是另一种浪费）。
+# 🔻 **射程（v1.96.0 改判，issue #5863）**：**所有会跑全量测试的档都拿锁**
+#    （`quick` / `full` / `frontend` / `backend` / `agent` / `redproof` / `gate`）。
+#    原实现只包 `gate`，理由写的是「其余档不是同一台机器上的重活」—— **那个前提与事实不符**：
+#      · `full`  = 三模块**全量**单测（本脚本自己的档位说明：~10-15 分钟）
+#      · `quick` = 三模块全量（~3-5 分钟）；`frontend`/`backend`/`agent` = 单模块**全量**
+#      · `redproof` = 红证机具**实跑**，其档内注释逐字写着「单机具实测 2~30 分钟」
+#    实测（2026-10-01）：`gate` 持锁期间 `load average` **16.71 / 28.71 / 20.14**（8 核），
+#    而单份档的内部并行最多打满 ~8 核（同日早先采样 9.01）⇒ **锁外确有重活在同跑**，
+#    准入形同虚设（这比「等待不公平」更根本：前者是排队问题，后者是漏检）。
+#    ⚠️ 未知 / 空档位**不拿锁**（避免把「未初始化 MODE」也串行化）—— 判据的正反两侧都钉着。
 #
 # ⚠️ 不改变本脚本既有的三态语义（✅ / ❌ / ⏭️）：准入在最外层，拿不到锁时**非零退出 + 出声**，
 #    不是静默跳过、也不是记成通过（本仓口径：「没跑」必须长得像「没跑」）。
 heavy_lock_wanted() {
-  [ "$MODE" = "gate" ]
+  case "$MODE" in
+    quick|full|frontend|backend|agent|redproof|gate) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 macquire() {
   heavy_lock_wanted || return 0
