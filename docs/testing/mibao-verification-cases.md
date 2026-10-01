@@ -8193,7 +8193,7 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-26 新增（issue #5651）：把「打印介质矩阵」从注释里的共识落成机器可判的分层 —— 三介质在册、@page 与矩阵同源、未声明介质即红、三联纸待实测登记不许留白、同一单据只许一份字段映射（介质是参数不是副本）。 ｜ tags: ui, print, media-matrix, guard
 
-### UI-026. 打印链路「一次只放一份单据上纸」：window.print() 收敛到唯一入口且在目标提交后调用（首次打印不再是空白纸）+ @page 只在本次目标时发表（纸型不被兄弟单据顶掉）+ 打印前纸面自检预览 + 截图复制（issue #5914） 🔵
+### UI-027. 打印链路「一次只放一份单据上纸」：window.print() 收敛到唯一入口且在目标提交后调用（首次打印不再是空白纸）+ @page 只在本次目标时发表（纸型不被兄弟单据顶掉）+ 打印前纸面自检预览 + 截图复制（issue #5914） 🔵
 ```
 你: 用户 2026-10-01 逐字：「打印功能是否应该先预览然后再打印，你觉得是否有必要，不过截图有必要，点击截图后把单据模板信息直接截图下来并复制」；同轮裁定范围 = 修 P1（首次打印空白 / 四单纸型互串）+ 预览 + 截图复制一起做，加工单「制单人 / 批号」按印真值修
 期望: direct_reply
@@ -8207,7 +8207,7 @@
 跳过: [backend-contract] 纯前端打印链路 + 一条 DTO 字段透出（无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/e2e/specs/orders/print-preview.spec.ts、frontend/admin-web/tests/unit/{lib/print-doc,components/PrintDocPreview,components/ProcessingDoc}.test.tsx 与 tests/unit_ci_workflows/test_print_single_doc_on_paper.py 执行
 ```
 真值: frontend-fix.print-single-doc-on-paper, frontend-fix.vitest, frontend-fix.e2e, frontend-fix.layout
-溯源: 2026-10-01 新增（issue #5914）：把「打印前先看见纸面」与「一次只放一份单据上纸」落成机器可判的口径 —— print 唯一入口 + 目标提交后才开印、@page 条件化到本次目标、纸面自检（溢出/页数）、截图复制写剪贴板、纸面字段必须在详情 DTO 里真的下发。编号取 UI-026 = scripts/next_case_id.py 分配的历史空档（原 UI-026 已随 #4371 的用例重编号退场）。**只增不减**：既有 UI-061/062/063/065 的打印判据一条不放宽（本单另加 C1/C4 两条类级元守卫）。 ｜ tags: ui, print, single-doc, guard
+溯源: 2026-10-01 新增（issue #5914）：把「打印前先看见纸面」与「一次只放一份单据上纸」落成机器可判的口径 —— print 唯一入口 + 目标提交后才开印、@page 条件化到本次目标、纸面自检（溢出/页数）、截图复制写剪贴板、纸面字段必须在详情 DTO 里真的下发。编号由 `scripts/next_case_id.py` 分配：先取 UI-026，但该号已被并发包 #5913 占用（§26.3 ⑫ 的撞号形态）⇒ rebase 后改判为 **UI-027**（main:001-026,028-077 ⇒ 最小空闲号）。**只增不减**：既有 UI-061/062/063/065 的打印判据一条不放宽（本单另加 C1/C4 两条类级元守卫）。 ｜ tags: ui, print, single-doc, guard
 
 ### UI-064. 商家后台「企业设置」页手机端入口二维码 —— 地址单一配置、内容逐字等于该值、未配置不画假码（issue #5668） 🔵
 ```

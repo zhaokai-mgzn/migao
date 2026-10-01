@@ -57,8 +57,13 @@ export interface PrintDocController {
   closePreview: () => void
 }
 
-export function usePrintDoc(): PrintDocController {
-  const [printTarget, setPrintTarget] = useState<PrintTarget | null>(null)
+/**
+ * @param singleDocTarget 本页**只有一份**可打印单据时的缺省目标（发货页 = 发货单、加工单生产页 = 洗水码）。
+ *   置了它，用户不点按钮直接 Ctrl+P 也打得出东西（与 #5914 之前的页面行为一致）；
+ *   订单详情页**不传** —— 那里同页四份单据，缺省任何一份都会顶掉别人的纸型。
+ */
+export function usePrintDoc(singleDocTarget?: PrintTarget): PrintDocController {
+  const [printTarget, setPrintTarget] = useState<PrintTarget | null>(singleDocTarget ?? null)
   const [previewTarget, setPreviewTarget] = useState<PrintTarget | null>(null)
   // 用**递增计数**而不是布尔：连点两次「打印」同一份单据时，effect 也必须再跑一次
   const [printNonce, setPrintNonce] = useState(0)

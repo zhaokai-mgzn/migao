@@ -1,4 +1,4 @@
-// case_ids: UI-026
+// case_ids: UI-027
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'

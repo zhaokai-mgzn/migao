@@ -10818,9 +10818,9 @@ _CASE_UI_063 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── UI-026 [NORMAL] 打印链路「一次只放一份单据上纸」：window.print() 收敛到唯一入口且在目标提交后调用（首次打印不再是空白纸）+ @page 只在本次目标时发表（纸型不被兄弟单据顶掉）+ 打印前纸面自检预览 + 截图复制（issue #5914）（源: cases/ui.yml）──
-_CASE_UI_026 = EvalCase(
-    id='UI-026',
+# ── UI-027 [NORMAL] 打印链路「一次只放一份单据上纸」：window.print() 收敛到唯一入口且在目标提交后调用（首次打印不再是空白纸）+ @page 只在本次目标时发表（纸型不被兄弟单据顶掉）+ 打印前纸面自检预览 + 截图复制（issue #5914）（源: cases/ui.yml）──
+_CASE_UI_027 = EvalCase(
+    id='UI-027',
     legacy_id='',
     title='打印链路「一次只放一份单据上纸」：window.print() 收敛到唯一入口且在目标提交后调用（首次打印不再是空白纸）+ @page 只在本次目标时发表（纸型不被兄弟单据顶掉）+ 打印前纸面自检预览 + 截图复制（issue #5914）',
     skill=Skill.GENERAL,
@@ -11721,7 +11721,7 @@ ALL_CASES = (
     _CASE_UI_061,
     _CASE_UI_062,
     _CASE_UI_063,
-    _CASE_UI_026,
+    _CASE_UI_027,
     _CASE_UI_064,
     _CASE_UI_065,
     _CASE_UI_066,

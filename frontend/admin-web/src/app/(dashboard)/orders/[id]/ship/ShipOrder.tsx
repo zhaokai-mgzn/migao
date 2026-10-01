@@ -234,7 +234,8 @@ export default function ShipOrder() {
   }
 
   // 🔴 走共享打印入口（issue #5914）：先开**纸面自检层**，层里的「打印」才真正开印
-  const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc()
+  // 本页只有发货单一份 ⇒ 缺省目标就是它（不点按钮直接 Ctrl+P 也印得出来，与改前行为一致）
+  const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc('shipment')
   const handlePrint = () => openPreview('shipment')
 
   const handleCancel = () => {

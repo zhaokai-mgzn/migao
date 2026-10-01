@@ -222,7 +222,8 @@ export default function ProcessingOrderProductionPage() {
   }
 
   // 🔴 走共享打印入口（issue #5914）：`window.print()` 只在 target 提交之后调用
-  const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc()
+  // 本页只有洗水码一份 ⇒ 缺省目标就是它（Ctrl+P 与改前行为一致）
+  const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc('labels')
 
   /**
    * **真正**打印任务卡：先上报打印计数（fire-and-forget，失败不得阻断打印），再开印。
