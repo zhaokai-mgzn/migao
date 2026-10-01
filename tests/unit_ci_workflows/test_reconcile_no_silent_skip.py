@@ -62,6 +62,8 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-reconcile.yml"
 RECONCILE_STEP = "Reconcile deploys"
+# 外置的状态机脚本（issue #5935）：对账步 `source` 它 ⇒ harness 的执行式仓库里必须有同一份
+STATE_SCRIPT = REPO_ROOT / "scripts" / "deploy_reconcile_state.sh"
 
 ACR_REGISTRY = "acr.example.com"
 ACR_NAMESPACE = "ns"
@@ -227,9 +229,9 @@ def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",),
     # 后面每个场景都跑不到判定本体（断言全过 = **假绿**）。
     for wf in sorted(set(DEPLOY_WF.values()) - set(absent_workflows)):
         touch(f".github/workflows/{wf}")
-    for sh in sorted((REPO_ROOT / "scripts").glob("*.sh")):
-        touch(f"scripts/{sh.name}")
-        (repo / "scripts" / sh.name).write_text(sh.read_text(encoding="utf-8"), encoding="utf-8")
+    (repo / "scripts").mkdir(exist_ok=True)
+    (repo / "scripts" / STATE_SCRIPT.name).write_text(STATE_SCRIPT.read_text(encoding="utf-8"),
+                                                      encoding="utf-8")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "code C1")
     c1 = git(repo, "rev-parse", "HEAD")

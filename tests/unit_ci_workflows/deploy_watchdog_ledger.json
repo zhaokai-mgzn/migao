@@ -50,7 +50,7 @@
     }
   ],
   "event_trigger_contract": {
-    "source": "`.github/workflows/deploy-reconcile.yml` 的 `on.workflow_run.workflows`（现取：`python3 -c \"import yaml;print(yaml.safe_load(open('.github/workflows/deploy-reconcile.yml'))[True]['workflow_run']['workflows'])\"`）",
+    "source": "`.github/workflows/deploy-reconcile.yml` 的 `on.workflow_run.workflows`；⚠️ 写的是各腿 workflow 的 **`name:`**（**不是文件名** —— 写文件名会被 GitHub 当成解析不到的名字而**静默脱钩**，既有守卫 `tests/unit_ci_workflows/test_publish_leg_fallback_surface.py` 会具名报出）。现取：`grep -m1 '^name:' .github/workflows/<腿的 workflow>`",
     "why": "判据 4（issue #5935）：实测 19:00Z 之后 ~12h 没有任何 reconcile run（GitHub 节流 `*/20`）⇒ 靠「下一轮 tick」关单在实测里没成立；部署**完成这个事件**必须能触发对账/清零。用户 2026-10-02 逐字裁定允许新增该触发面（用途限定为事件驱动的对账/清零）。",
     "guard": "tests/unit_ci_workflows/test_deploy_watchdog.py::test_watchdog_ledger_records_the_event_trigger_contract（上游清单 ⇄ 本台账的 `wf` 双向相等；漏登记 ⇒ 红）",
     "anti_self_excitation": "tests/unit_ci_workflows/test_deploy_watchdog.py::test_no_self_excitation_when_deploy_just_succeeded + ::test_terminal_state_does_not_redispatch（部署刚成功 / 落在不可恢复终态 ⇒ 都不得再 dispatch）"

@@ -101,9 +101,13 @@ on:
   # ⚠️ 用途**限定**为「部署完成事件驱动的对账/清零」，**不是**检测加速；判据 1 的既有断路器与
   # 「同 sha 有在途 run 就不重复派」一字未动（防自激：判据 test_deploy_watchdog.py 的执行式对照）。
   # ⚠️ 新增触发面经用户 2026-10-02 逐字裁定允许（改写 MC-055 里「不做 ②」的登记，同 PR）。
+  # ⚠️ `workflows:` 要写各腿 workflow 的 **`name:`**（不是文件名）—— 写文件名/拼错 ⇒ 该兜底面
+  # **静默脱钩**（本 workflow 永不触发），而本地一切守卫都不会因此变红（既有守卫
+  # `test_publish_leg_fallback_surface.py` 会具名报出，本 PR 已按它改正）。
   workflow_run:
-    workflows: [deploy-admin-api.yml, deploy-ai-agent-service.yml, deploy-frontend.yml,
-                worker-h5-publish.yml, bmini-h5-publish.yml, c-end-h5-publish.yml]
+    workflows: ["Build and Deploy admin-api", "Build and Deploy ai-agent-service",
+                "Build and Deploy frontend (admin-web)", "Publish worker-h5 (app.migaozn.com/w/)",
+                "Publish bmini h5 (app.migaozn.com/b/)", "Publish C-end H5 (app.migaozn.com 根)"]
     types: [completed]
     branches: [main]
   workflow_dispatch:

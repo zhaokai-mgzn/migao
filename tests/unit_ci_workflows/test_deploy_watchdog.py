@@ -320,9 +320,12 @@ def make_repo(tmp_path: Path, *, head_age_secs: int, drift: bool) -> dict:
     touch(".github/workflows/.keep")
     for wf in sorted(set(DEPLOY_WF.values())):
         touch(f".github/workflows/{wf}")
-    # 外置的状态机脚本（issue #5935）必须与 workflow 同批进测试仓库（cc 真实检出的形态）
-    for sh in sorted((REPO_ROOT / "scripts").glob("*.sh")):
-        (repo / "scripts").mkdir(exist_ok=True)
+    # 外置的状态机脚本（issue #5935）必须与 workflow 同批进测试仓库（= 真实检出的形态：
+    # 对账步 `source scripts/deploy_reconcile_state.sh`）。⚠️ 只拷**这一份**（单文件），
+    # **不**去枚举 `scripts/**` 语料 —— 枚举语料就要按 issue #5284 的元守卫声明并冻结射程，
+    # 而本模块要的只是「这一份文件在场」，不为语料面背书。
+    (repo / "scripts").mkdir(exist_ok=True)
+    for sh in [STATE_SCRIPT]:
         (repo / "scripts" / sh.name).write_text(sh.read_text(encoding="utf-8"), encoding="utf-8")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "code C1", env=date_env)
@@ -769,6 +772,7 @@ def test_comment_only_change_is_not_red(tmp_path, monkeypatch):
 STATE_SCRIPT = REPO_ROOT / "scripts" / "deploy_reconcile_state.sh"
 
 
+
 def _state_rows(ex: "Exec") -> list:
     """读对账步落下的状态台账（每条腿一行，`腿\\t状态\\t依据`）。"""
     p = Path(ex.state)
@@ -927,15 +931,19 @@ def test_workflow_run_is_wired_as_the_deploy_completion_event():
     wr = on["workflow_run"]
     assert wr["types"] == ["completed"], f"只关心终态 → {wr['types']!r}"
     assert wr["branches"] == ["main"], f"只关心 main 上的部署 → {wr['branches']!r}"
-    assert set(wr["workflows"]) == set(DEPLOY_WF.values()), (
-        f"**全部** deploy 腿都要监听（漏一条 ⇒ 那条腿部署成功后清零仍要等下一轮 cron）："
-        f"缺 {sorted(set(DEPLOY_WF.values()) - set(wr['workflows']))} / "
-        f"多 {sorted(set(wr['workflows']) - set(DEPLOY_WF.values()))}"
+    # ⚠️ `workflows:` 写的是各腿 workflow 的 **`name:`**（不是文件名）—— 逐个现取核对：
+    # 写文件名 / 拼错 ⇒ 该兜底面**静默脱钩**（本 workflow 永不触发，清零永远等下一轮 cron）。
+    names = {}
+    for fn in sorted(set(DEPLOY_WF.values())):
+        text = (REPO_ROOT / ".github" / "workflows" / fn).read_text(encoding="utf-8")
+        m = re.search(r"^name:\s*(.+)$", text, re.M)
+        assert m, f"{fn} 没有顶层 `name:`"
+        names[m.group(1).strip()] = fn
+    assert set(wr["workflows"]) == set(names), (
+        f"`workflow_run.workflows` 必须逐条命中已登记腿的 `name:`："
+        f"写不中的 {sorted(set(wr['workflows']) - set(names))} / 没被监听的腿 "
+        f"{sorted(set(names) - set(wr['workflows']))}"
     )
-    # 上游名必须命中仓内某个 workflow 的 `name:`（改名 ⇒ 该兜底面**静默脱钩**，永不触发）
-    for fn in wr["workflows"]:
-        f = REPO_ROOT / ".github" / "workflows" / fn
-        assert f.exists(), f"`workflow_run.workflows` 里的 {fn} 不存在 ⇒ 静默脱钩"
 
 
 def test_workflow_run_and_schedule_share_one_judgement_body():
@@ -1007,9 +1015,17 @@ def test_watchdog_ledger_records_the_event_trigger_contract():
     wr = on.get("workflow_run") or {}
     ups = set(wr.get("workflows") or [])
     assert ups, "反空跑锚点：`workflow_run.workflows` 为空（判据已过期）"
-    legs = {e["wf"] for e in ledger["entries"]}
+    # 上游是 `name:`，台账登记的是文件名 ⇒ 用「现取的 name: ⇄ 文件名」映射把两者对上（双向）
+    name_to_file = {}
+    for e in ledger["entries"]:
+        f = REPO_ROOT / ".github" / "workflows" / e["wf"]
+        m = re.search(r"^name:\s*(.+)$", f.read_text(encoding="utf-8"), re.M)
+        assert m, f"{e['wf']} 没有顶层 `name:`"
+        name_to_file[m.group(1).strip()] = e["wf"]
+    legs = set(name_to_file)
     assert ups == legs, (
-        f"`workflow_run` 的上游与台账登记的腿必须**双向相等**（漏登记 ⇒ 事件清零对那条腿静默失效）："
+        f"`workflow_run` 的上游（各腿 `name:`）与台账登记的腿必须**双向相等**"
+        f"（漏登记 ⇒ 事件清零对那条腿静默失效）："
         f"只在上游 {sorted(ups - legs)} / 只在台账 {sorted(legs - ups)}"
     )
     for e in ledger["entries"]:
@@ -1038,6 +1054,8 @@ def test_watchdog_ledger_records_the_event_trigger_contract():
 #   复算 = `python3 -m pytest tests/unit_ci_workflows/test_deploy_watchdog.py -q -k run_body`（或直接调 `run_bodies()`）。
 #   ⚠️ 出口：真要往这条正文里加东西 ⇒ **先把实现体外置**（`source scripts/deploy_reconcile_state.sh` ——
 #   #5935 就是这么做的），不要靠「再加一点点应该没事」（这正是 #5929 踩到的形态）。
+#   ⚠️ 本段**只点名** shell 语料（说明「出口是外置成脚本」），**不扫描**它 ⇒ 按 `kind=mentions`
+#   登记在 `guard_scope_ledger.json`（issue #5284 的元守卫：引用语料即须入册）。
 RUN_BODY_LIMIT = 13250
 
 
