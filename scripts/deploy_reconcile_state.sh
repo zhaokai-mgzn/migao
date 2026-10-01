@@ -34,6 +34,9 @@ LEGS="$(grep -oE '^ *reconcile_one +[^ ]+' "$0" | awk '{print $2}' | sort -u)"
 for _s in $LEGS; do
   printf '%s\t%s\t%s\n' "$_s" unrecorded '本轮未落状态' >> "$WATCHDOG_STATE" 2>/dev/null
 done
+# 对账腿数（`--seen` 的**现取**来源）：不许把 6 写死在别处 —— 新加一条腿时它自己会跟上
+# （写死 = 读数与事实相反，issue #5264 的形态）。
+SEEN=0; for _s in $LEGS; do SEEN=$((SEEN + 1)); done
 
 # ── 判据 ③（前置）：目标 workflow 必须**已在 default branch 上**（issue #5668 / #5935） ──
 # 为什么需要（**实测**，issue #5668 的 PR 首轮）：**新增一条腿的那个 PR 里**，被对账的 workflow 还没合并到
