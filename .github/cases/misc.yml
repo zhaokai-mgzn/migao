@@ -1859,3 +1859,38 @@ cases:
       tests:
         - tests/unit_ci_workflows/test_wiring_claims_registry.py
       verifies: []
+  - id: MC-052
+    legacy_id: ""
+    title: "技能加载面只放「执行时需要」的东西（issue #5853）：沿革必须外置到同目录 CHANGELOG.md，回流 SKILL.md 即红；外置 ≠ 删除（沿革文件缺失 / 被清空 / 指针丢失也要有东西具名报出）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - context-budget
+      - skill-load-surface
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**静态/结构事实**（SKILL.md 的加载面文本 ⇄ 同目录 CHANGELOG.md 的存在与非空），
+    # 由 tests/unit_ci_workflows/test_skill_load_surface.py 验证，非 LLM 行为，不进入 agent-eval 冒烟。
+    user_inputs:
+      - "当技能的变更沿革（纯历史记录、执行流程时零需要）写在 SKILL.md 正文里时，加载该技能就要为它付一次上下文；沿革必须外置到同目录 CHANGELOG.md、SKILL.md 只留指针；回流、缺沿革文件、沿革被清空、缺指针 —— 都必须有东西具名报出；而只改叙述不得报红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**病（现取读数，2026-10-01）**：加载一个技能 = 把**整份** SKILL.md 放进上下文（加载器只读 frontmatter 的 name + description）；`migao-dev-flow/SKILL.md` 改动前 **329,631 字符**，其中沿革 **98,219 字符 = 29.8%**，而沿革执行流程时零需要 ⇒ **每次加载都付一次历史账**；且「沿革该放哪」过去**没有任何判据**"
+      - "**存量实证（判据写好后当场跑真实语料）**：命中 1 条 —— `- v1.91.0（…）` 整条沿革**散落在 §27 尾部**（v1.92.0 与 v1.90.0 之间缺的正是它）⇒ 该判据抓的不是假想形态；同 PR 已把它并入 CHANGELOG.md"
+      - "**判据 1（语料非空，fail-closed）**：找不到任何 `skills/*/SKILL.md` ⇒ 红（「没东西可判」不是通过）"
+      - "**判据 2（牙齿：回流即红）**：任何 `skills/*/SKILL.md` 出现沿革**节标题**（`## 版本沿革（…`）或沿革**条目行**（`- vN.N.N（…`）⇒ 具名报出该文件与命中行，出口 = 写进同目录 CHANGELOG.md"
+      - "**判据 3（外置 ≠ 删除）**：登记的技能缺同目录 `CHANGELOG.md`、或该文件不含任何 `- vN.N` 条目 ⇒ 红（沿革是「这条纪律为什么存在」的唯一出处）"
+      - "**判据 4（指针在位）**：登记的技能 SKILL.md 里没有指向 CHANGELOG.md 的指针行 ⇒ 红（读者 / agent 会以为沿革不存在）"
+      - "**判据 5（判别力自证，全部内存构造）**：含节标题 ⇒ 红；只含条目（半搬半留形态）⇒ 红；只含指针 ⇒ **不红**；正文提「沿革」二字（如 §19 的口径沿革）⇒ **不红**（对照）"
+    skip_reason: "[backend-contract] 技能加载面的静态/结构判据（只读仓内两个文件，零网络、零时钟、不跑被引用的测试、不烧 token）由 tests/unit_ci_workflows/test_skill_load_surface.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-01 新增（issue #5853：用户就「优化 API 用量」三条通用建议（合并调用 / 精简 prompt / 按复杂度选模型）问「能否应用到米高研发模式」，并选定**技能分层**）：研发模式的加载成本集中在 migao-dev-flow —— 加载它 = 把整份 SKILL.md 放进上下文，而正文 `## 版本沿革` 节 = 1123 行 / 96,269 字符 = 29.2%，沿革是纯历史记录、执行流程时零需要。本次把 dev-flow 与 migao-acceptance 两个技能的沿革**逐字**外置到同目录 CHANGELOG.md（SKILL.md 只留指针），加载面 329,631 → 231,949 字符（**-29.6%**）；三处「沿革写进正文」的口径副本同批改；类级守卫 = tests/unit_ci_workflows/test_skill_load_surface.py（回流即红 / 外置≠删除 / 指针在位 / 内存红证四例）。⚠️ 判据在真实语料上当场抓到 1 条存量散落沿革（v1.91.0 写在 §27 尾部），同批并入。⚠️ 未实装：不设体积上限（设了会挡住正常的纪律新增）、正文里支撑纪律的实证叙述不动、判不了「沿革内容是否完整」。取号 MC-052（现取 main + 全部在飞分支的 `- id:` 差集：main 最大 = MC-051）。"
+    traces:
+      ci:
+        - pr-check.yml
+      tests:
+        - tests/unit_ci_workflows/test_skill_load_surface.py
+      verifies: []

@@ -4763,6 +4763,24 @@ _CASE_MC_051 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-052 [NORMAL] 技能加载面只放「执行时需要」的东西（issue #5853）：沿革必须外置到同目录 CHANGELOG.md，回流 SKILL.md 即红；外置 ≠ 删除（沿革文件缺失 / 被清空 / 指针丢失也要有东西具名报出）（源: cases/misc.yml）──
+_CASE_MC_052 = EvalCase(
+    id='MC-052',
+    legacy_id='',
+    title='技能加载面只放「执行时需要」的东西（issue #5853）：沿革必须外置到同目录 CHANGELOG.md，回流 SKILL.md 即红；外置 ≠ 删除（沿革文件缺失 / 被清空 / 指针丢失也要有东西具名报出）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当技能的变更沿革（纯历史记录、执行流程时零需要）写在 SKILL.md 正文里时，加载该技能就要为它付一次上下文；沿革必须外置到同目录 CHANGELOG.md、SKILL.md 只留指针；回流、缺沿革文件、沿革被清空、缺指针 —— 都必须有东西具名报出；而只改叙述不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（现取读数，2026-10-01）**：加载一个技能 = 把**整份** SKILL.md 放进上下文（加载器只读 frontmatter 的 name + description）；`migao-dev-flow/SKILL.md` 改动前 **329,631 字符**，其中沿革 **98,219 字符 = 29.8%**，而沿革执行流程时零需要 ⇒ **每次加载都付一次历史账**；且「沿革该放哪」过去**没有任何判据**', '**存量实证（判据写好后当场跑真实语料）**：命中 1 条 —— `- v1.91.0（…）` 整条沿革**散落在 §27 尾部**（v1.92.0 与 v1.90.0 之间缺的正是它）⇒ 该判据抓的不是假想形态；同 PR 已把它并入 CHANGELOG.md', '**判据 1（语料非空，fail-closed）**：找不到任何 `skills/*/SKILL.md` ⇒ 红（「没东西可判」不是通过）', '**判据 2（牙齿：回流即红）**：任何 `skills/*/SKILL.md` 出现沿革**节标题**（`## 版本沿革（…`）或沿革**条目行**（`- vN.N.N（…`）⇒ 具名报出该文件与命中行，出口 = 写进同目录 CHANGELOG.md', '**判据 3（外置 ≠ 删除）**：登记的技能缺同目录 `CHANGELOG.md`、或该文件不含任何 `- vN.N` 条目 ⇒ 红（沿革是「这条纪律为什么存在」的唯一出处）', '**判据 4（指针在位）**：登记的技能 SKILL.md 里没有指向 CHANGELOG.md 的指针行 ⇒ 红（读者 / agent 会以为沿革不存在）', '**判据 5（判别力自证，全部内存构造）**：含节标题 ⇒ 红；只含条目（半搬半留形态）⇒ 红；只含指针 ⇒ **不红**；正文提「沿革」二字（如 §19 的口径沿革）⇒ **不红**（对照）'],
+    skip_reason='[backend-contract] 技能加载面的静态/结构判据（只读仓内两个文件，零网络、零时钟、不跑被引用的测试、不烧 token）由 tests/unit_ci_workflows/test_skill_load_surface.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'context-budget', 'skill-load-surface', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -11197,6 +11215,7 @@ ALL_CASES = (
     _CASE_MC_042,
     _CASE_MC_050,
     _CASE_MC_051,
+    _CASE_MC_052,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
