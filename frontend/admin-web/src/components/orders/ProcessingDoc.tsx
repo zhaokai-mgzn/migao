@@ -8,7 +8,7 @@ import { craftSpecRows } from '@/lib/craft-display'
 import { printBodyFontPt, printPageRule } from '@/lib/print-media'
 import { cn } from '@/lib/utils'
 import type { PrintTarget } from './index'
-import type { Order, OrderItem, ProcessingOrder } from '@/types'
+import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/types'
 
 /**
  * 加工单（可打印纸质文档 · **A4**，issue #5651）—— 照客户现行实物制式（去 PII 后登记在
@@ -65,6 +65,12 @@ interface ProcessingDocProps {
    * `data-print-target` —— 否则会把同页的发货单 / 报价单 / 销售单重新藏掉（#4965 实测回归）。
    */
   printTarget?: PrintTarget | null
+  /**
+   * **原地渲染**（`true`）而不是 portal 到 `document.body`（issue #5914）—— 只有**打印预览层**
+   * 用它：预览要把**同一份单据**摆进真尺寸纸框里，portal 会让它跑到框外（且屏幕态仍是 `display:none`）。
+   * 缺省 `false` = 既有行为（portal 到 body，屏幕上隐藏、仅打印呈现）。
+   */
+  inline?: boolean
   className?: string
 }
 
@@ -88,8 +94,33 @@ export const PROCESSING_DOC_COLUMNS = [
 export const MISSING = '—'
 /** 本系统**未采集**的字段标记（与「客户没填」区分开） */
 export const NOT_COLLECTED = '未采集'
-/** 本系统未采集、但客户实证制式里有的字段（纸面显式标注，**不编数**） */
-export const PROCESSING_DOC_NOT_COLLECTED_FIELDS = ['制单人', '批号'] as const
+/**
+ * 本系统**未采集**、但客户实证制式里有的字段（纸面显式标注，**不编数**）。
+ *
+ * 🔴 **现在是空的**（2026-10-01，issue #5914）：原先登记的「制单人 / 批号」两条**已经落地**，
+ * 纸面必须印**真值** —— 继续标「未采集」= 把「系统有」说成「系统没有」（纸面在说假话）：
+ * - 制单人：`orders.created_by_name`（V142 / issue #5835 起建单时写入）⇒ 读 `order.createdByName`；
+ * - 批号：加工单快照键 `batchNo`（`stampAssignedBatches` 指派批次时写入）⇒ 读快照行的 `batchNo`。
+ *
+ * 两者**缺值**时纸面印 `—`（= 客户没填 / 未指派），与「我们没有这个字段」是两件事。
+ * 将来新增真缺口**登记进本清单**（纸面标「未采集」）。
+ */
+export const PROCESSING_DOC_NOT_COLLECTED_FIELDS: readonly string[] = []
+
+/**
+ * 快照行 id 的读取口（与洗水码**同一口径**）：后端 `buildSnapshot` 无条件落 `itemId`
+ * （= `order_items.id`），用它把**快照行**与订单商品行对齐；对不上 ⇒ 该行不猜（印 `—`）。
+ */
+type SnapshotRow = ProcessingOrderItem & { itemId?: string }
+
+function snapshotIndex(processingOrder?: ProcessingOrder | null): Map<string, ProcessingOrderItem> {
+  const index = new Map<string, ProcessingOrderItem>()
+  for (const row of processingOrder?.items ?? []) {
+    const id = (row as SnapshotRow).itemId
+    if (id) index.set(id, row)
+  }
+  return index
+}
 
 /** 纸面取文本：非空串 / 有限数 ⇒ 原样；其余 ⇒ `fallback`（缺省 `—`，绝不静默留空） */
 export function paperText(value: unknown, fallback: string = MISSING): string {
@@ -109,6 +140,7 @@ export default function ProcessingDoc({
   processingOrder,
   qrValue,
   printTarget,
+  inline,
   className,
 }: ProcessingDocProps) {
   // 打印只发生在客户端；SSR/首帧无 document，portal 前先等 mounted
@@ -118,6 +150,10 @@ export default function ProcessingDoc({
   if (!mounted) return null
 
   const items = order.items || []
+  // 制单人 = 服务端真值（`orders.created_by_name`）；缺值 = 存量单 / 匿名下单（**不是**「没这个字段」）
+  const creator = paperText(order.createdByName)
+  // 批号 = 加工单**快照**行的 `batchNo`（按 `itemId` 与商品行对齐；对不上 ⇒ 该行不猜）
+  const snapshots = snapshotIndex(processingOrder)
   const docNo = paperText(processingOrder?.processingOrderNo ?? order.orderNo)
   // 交付日期：加工单的交期优先，缺则回落到订单的「要求到货日」（#5177）—— 都是服务端字段
   const delivery = formatDate(processingOrder?.expectedDeliveryDate ?? order.requiredDeliveryDate)
@@ -128,18 +164,23 @@ export default function ProcessingDoc({
     .filter((value) => value !== '')
     .join(' · ')
 
-  return createPortal(
+  const doc = (
     <div
       className={cn('processing-print-area print-doc text-neutral-900', className)}
+      data-print-sheet
       data-print-media="a4"
       {...(printTarget === 'processing' ? { 'data-print-target': 'processing' } : {})}
     >
+      {/* 🔴 纸型规则**只在本次打印目标为本单据时**进文档（issue #5914 的 P1-2）：
+          `@page` 是**文档级**规则 —— 同页多份单据并存时**最后声明的那条赢**。实测（真实 Chromium）：
+          订单详情页点「打印发货单」会按销售单的三联纸（241×140）出纸 ⇒ 打废纸。 */}
+      {printTarget === 'processing' && <style>{printPageRule('a4')}</style>}
       <style>{`
         .processing-print-area { display: none; }
-        ${printPageRule('a4')}
         @media print {
           body > *:not(.print-doc) { display: none !important; }
-          .processing-print-area {
+          /* 🔴 只有**本次目标**上纸（issue #5914）—— 非目标单据不占版面、不抢纸型。 */
+          .processing-print-area[data-print-target='processing'] {
             display: block;
             position: static;
             width: 100%;
@@ -176,11 +217,7 @@ export default function ProcessingDoc({
               </tr>
               <tr>
                 <DocCell label="交付日期" value={delivery} />
-                <DocCell
-                  label="制单人"
-                  value={paperText(null, NOT_COLLECTED)}
-                  testId="processing-doc-creator"
-                />
+                <DocCell label="制单人" value={creator} testId="processing-doc-creator" />
               </tr>
               <tr>
                 <DocCell label="货运" value={freight} colSpan={3} />
@@ -217,23 +254,45 @@ export default function ProcessingDoc({
         </div>
       ) : (
         items.map((item: OrderItem, idx: number) => (
-          <SetBlock key={item.id || idx} item={item} index={idx} total={items.length} />
+          <SetBlock
+            key={item.id || idx}
+            item={item}
+            snapshot={item.id ? snapshots.get(item.id) : undefined}
+            index={idx}
+            total={items.length}
+          />
         ))
       )}
 
-      {/* 缺口脚注：把「我们没有这个字段」写在纸面上，免得被读成「客户没填」 */}
-      <div className="mt-2 text-[7pt] text-neutral-600" data-testid="processing-doc-gap-note">
-        说明：{PROCESSING_DOC_NOT_COLLECTED_FIELDS.join(' / ')} 本系统未采集（纸面标「
-        {NOT_COLLECTED}」占位，不编数）。
-      </div>
-    </div>,
-    document.body
+      {/* 缺口脚注：把「我们没有这个字段」写在纸面上，免得被读成「客户没填」。
+          🔴 清单为空（= 已无缺口）时**整块不出现** —— 一句「没有缺口」的脚注只是在占纸面。 */}
+      {PROCESSING_DOC_NOT_COLLECTED_FIELDS.length > 0 && (
+        <div className="mt-2 text-[7pt] text-neutral-600" data-testid="processing-doc-gap-note">
+          说明：{PROCESSING_DOC_NOT_COLLECTED_FIELDS.join(' / ')} 本系统未采集（纸面标「
+          {NOT_COLLECTED}」占位，不编数）。
+        </div>
+      )}
+    </div>
   )
+
+  // 🔴 预览层里**不 portal**（issue #5914）：同一份单据要摆进真尺寸纸框，portal 会跑到框外
+  return inline ? doc : createPortal(doc, document.body)
 }
 
 // ========== 每套（= 每个商品行）一段 ==========
 
-function SetBlock({ item, index, total }: { item: OrderItem; index: number; total: number }) {
+function SetBlock({
+  item,
+  snapshot,
+  index,
+  total,
+}: {
+  item: OrderItem
+  /** 该商品行对应的加工单**快照行**（批号从这里读；对不上 ⇒ `undefined`，不猜） */
+  snapshot?: ProcessingOrderItem
+  index: number
+  total: number
+}) {
   const info = (item.processingInfo ?? {}) as Record<string, unknown>
   const part = paperText(info.curtainType, '')
   // 部位信息 = craftSpecRows 的同一份真值（§4.9）；排除「部位」行（它已有自己的列，
@@ -286,9 +345,9 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
             <DocTd>{componentRole}</DocTd>
             <DocTd>{code || MISSING}</DocTd>
             <DocTd align="right">{meters}</DocTd>
-            {/* 🔴 批号：`ProcessingOrderItem`（加工单快照明细）**没有**该列 ⇒ 显式标「未采集」，
-                绝不编一个批号、也不留空（见文件头第 2 条） */}
-            <DocTd testId="processing-doc-batch">{NOT_COLLECTED}</DocTd>
+            {/* 批号 = 快照行的 `batchNo`（指派批次时写入）。缺值印 `—`（= 未指派），
+                与「我们没有这个字段」是两件事（issue #5914；登记见 PROCESSING_DOC_NOT_COLLECTED_FIELDS） */}
+            <DocTd testId="processing-doc-batch">{paperText(snapshot?.batchNo)}</DocTd>
           </tr>
           {remark !== '' && (
             <tr>

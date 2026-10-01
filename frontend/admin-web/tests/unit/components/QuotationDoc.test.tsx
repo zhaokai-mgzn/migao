@@ -85,6 +85,15 @@ function buildOrder(overrides: Partial<Order> = {}): Order {
 }
 
 const doc = () => document.querySelector('.quotation-print-area') as HTMLElement
+
+/**
+ * 单据现在发**两块** `<style>`（条件化的 `@page` + 主体 CSS，issue #5914）
+ * ⇒ 要判打印主体就得取**含 `@media print` 的那一块**（`querySelector` 会拿到第一块）。
+ */
+const printStyleEl = (el: Element | null | undefined): HTMLStyleElement =>
+  Array.from(el?.querySelectorAll('style') ?? []).find((s) =>
+    (s.textContent || '').includes('@media print')
+  ) as HTMLStyleElement
 /** 单据内文本（限定在单据子树内查询，避免与测试外壳/页面其它节点歧义） */
 const docText = () => doc()?.textContent || ''
 
@@ -401,8 +410,12 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
     })
 
     it('内置打印契约：A4 + @media print + body 级隔离选择器 + visibility 防御', () => {
-      render(<QuotationDoc order={buildOrder()} />)
-      const style = doc()?.querySelector('style')?.textContent || ''
+      // 🔴 `@page` **只在本次打印目标为本单据时**发表（issue #5914）：它是文档级规则，
+      //    同页多份并存时最后声明的那条赢（实测点「打印发货单」会按销售单的三联纸出纸）
+      render(<QuotationDoc order={buildOrder()} printTarget="quotation" />)
+      const style = Array.from(doc()?.querySelectorAll('style') ?? [])
+        .map((el) => el.textContent || '')
+        .join('\n')
       expect(style).toContain('@page')
       expect(style).toContain('size: A4')
       expect(style).toContain('@media print')
@@ -417,6 +430,13 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       // —— 形态见下一条：必须限定本次打印目标
       expect(style).toMatch(/\.quotation-print-area\[data-print-target='quotation'\]/)
       expect(style).toMatch(/visibility:\s*visible/)
+      cleanup()
+      // 反向：**不是**本次目标 ⇒ 一个 `@page` 都不许发（否则会顶掉兄弟单据的纸型）
+      render(<QuotationDoc order={buildOrder()} />)
+      const idle = Array.from(doc()?.querySelectorAll('style') ?? [])
+        .map((el) => el.textContent || '')
+        .join('\n')
+      expect(idle).not.toContain('@page')
     })
 
     // 🔴 回归守卫（issue #4965 实测：CI `Demo path specs` 因这条判据缺失而红）：
@@ -427,7 +447,9 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       render(<QuotationDoc order={buildOrder()} printTarget="quotation" />)
       const el = doc()
       expect(el.getAttribute('data-print-target')).toBe('quotation')
-      const styleEl = el.querySelector('style') as HTMLStyleElement
+      const styleEl = Array.from(el.querySelectorAll('style')).find((s) =>
+        (s.textContent || '').includes('@media print')
+      ) as HTMLStyleElement
       const css = styleEl.textContent || ''
       expect(css).toMatch(
         /\.quotation-print-area\[data-print-target='quotation'\],\s*\.quotation-print-area\[data-print-target='quotation'\] \*/
@@ -468,7 +490,7 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
           <QuotationDoc order={buildOrder()} printTarget="quotation" />
         </>
       )
-      const styleEl = doc()?.querySelector('style') as HTMLStyleElement
+      const styleEl = printStyleEl(doc())
       const printBlock = Array.from(styleEl.sheet!.cssRules).find(
         (r): r is CSSMediaRule => (r as CSSMediaRule).media?.mediaText?.includes('print') === true
       )

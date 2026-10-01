@@ -9,7 +9,8 @@ import dayjs from 'dayjs'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
-import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, ProcessingDoc, SalesDoc, OrderUrgencyPanel, EditOrderContentModal, type PrintTarget } from '@/components/orders'
+import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, ProcessingDoc, SalesDoc, OrderUrgencyPanel, EditOrderContentModal, PrintDocPreview } from '@/components/orders'
+import { PRINT_TARGET_SPECS, usePrintDoc } from '@/lib/print-doc'
 // 费用构成（issue #5843）：详情页原先只算商品金额，与页脚订单级总额（**含**加工费）对不上
 // ⇒ 补「商品合计 + 加工费 + 其它构成 = 订单金额」这一块。判定与渲染都在
 // `components/orders/OrderFeeBreakdown.tsx` + `lib/order-fee-display.ts`（本页只接线、不自算）。
@@ -131,11 +132,9 @@ export default function OrderDetailPage() {
    * ⇒ 后渲染者胜，会把先渲染那份重新藏掉（CI `Demo path specs` 实测红）。故由页面统一置位：
    * 点哪个按钮就只让那份单据显形（另一份的 `visibility` 防御不生效）。
    */
-  const [printTarget, setPrintTarget] = useState<PrintTarget | null>(null)
-  const printDoc = (target: PrintTarget) => {
-    setPrintTarget(target)
-    window.print()
-  }
+  // 🔴 打印**只能**走这一个入口（issue #5914）：`window.print()` 已收敛进 `usePrintDoc()`
+  // 的 effect —— 在 target 提交进 DOM **之后**才开印（同 tick 调 print = 首次打印空白纸）。
+  const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc()
 
   // 加载订单
   const loadOrder = useCallback(async () => {
@@ -309,10 +308,10 @@ export default function OrderDetailPage() {
         onConfirmReceive={() => setConfirmReceiveOpen(true)}
         onEditLogistics={() => setShowEditLogistics(true)}
         onRefund={() => setRefundModalOpen(true)}
-        onPrintShipment={() => printDoc('shipment')}
-        onPrintQuotation={() => printDoc('quotation')}
-        onPrintProcessing={() => printDoc('processing')}
-        onPrintSales={() => printDoc('sales')}
+        onPrintShipment={() => openPreview('shipment')}
+        onPrintQuotation={() => openPreview('quotation')}
+        onPrintProcessing={() => openPreview('processing')}
+        onPrintSales={() => openPreview('sales')}
       />
 
       {/* 基础信息 */}
@@ -373,6 +372,7 @@ export default function OrderDetailPage() {
         hasProcessing={(order.processingItems?.length ?? 0) > 0}
         items={order.items ?? []}
         onStatusChange={setProcessingOrder}
+        onPrintProcessing={() => openPreview('processing')}
       />
 
       {/* 纸质发货单（issue #3768）：屏幕上隐藏，仅打印呈现；已发货/已完成可在此补打 */}
@@ -395,6 +395,31 @@ export default function OrderDetailPage() {
       {/* 纸质销售单（**三联纸 241mm × 140mm**，issue #5651）：随货给客户的那张；
           扫码支付走与报价单**同一份**收款码读取口（`lib/use-payment-qrcodes.ts`）。 */}
       <SalesDoc order={order} shipments={shipments} printTarget={printTarget} />
+
+      {/* 打印前的**纸面自检层**（issue #5914）：真尺寸纸框 + 溢出/页数自检 + 「打印 / 复制截图」。
+          🔴 预览实例**不传 printTarget** ⇒ 打印媒体下仍是 display:none（否则一次会出两份）。 */}
+      <PrintDocPreview
+        target={previewTarget}
+        title={previewTarget ? PRINT_TARGET_SPECS[previewTarget].title : ''}
+        media={previewTarget ? PRINT_TARGET_SPECS[previewTarget].media : 'a4'}
+        onPrint={() => previewTarget && requestPrint(previewTarget)}
+        onClose={closePreview}
+      >
+        {/* `inline` = 原地渲染进真尺寸纸框（不 portal 到 body，issue #5914） */}
+        {previewTarget === 'shipment' && (
+          <ShipmentDoc order={order} logistics={order.logistics} inline />
+        )}
+        {previewTarget === 'quotation' && <QuotationDoc order={order} inline />}
+        {previewTarget === 'processing' && (
+          <ProcessingDoc
+            order={order}
+            processingOrder={processingOrder}
+            qrValue={processingOrder?.processingOrderNo ?? null}
+            inline
+          />
+        )}
+        {previewTarget === 'sales' && <SalesDoc order={order} shipments={shipments} inline />}
+      </PrintDocPreview>
 
       {/* 收货信息 */}
       <SectionCard title="收货信息">

@@ -48,6 +48,8 @@
 | ① 内容 / 字段映射 | 这张单据**印什么**（列清单 + 取值口径） | 各 `*Doc.tsx`，每张**只有一份** | `test_print_media_matrix_guard.py` C5（列清单全仓**恰好一个文件**命中） |
 | ② 介质 | 印在**什么纸**上（尺寸 / 边距 / 技术 / 复写 / 字号） | `lib/print-media.json` + `.ts` | 同上 C2（单据 `@page` 与矩阵同源）、C4（待实测登记） |
 | ③ 打印隔离 | 一次只放**一份**单据上纸 | `body > *:not(.print-doc)`（#4983） | `test_print_doc_convention_guard.py` |
+| ④ 打印入口 / 纸型唯一 | `window.print()` 只在 `lib/print-doc.ts`（且**目标提交后**才调用）；`@page` 只在「本次目标是本单据」时发表 | `lib/print-doc.ts` + 各 `*Doc.tsx` 的条件 `<style>` | `test_print_single_doc_on_paper.py`（C1 / C2 / C3） |
+| ⑤ 打印前自检 + 截图 | 真尺寸纸框 + 溢出/页数 + 本次纸型；「打印」「复制截图」两个出口 | `components/orders/PrintDocPreview.tsx` + `lib/print-capture.ts` | `PrintDocPreview.test.tsx` + `tests/e2e/specs/orders/print-preview.spec.ts` |
 
 🔴 **介质是参数，不是复制粘贴出来的页面**：同一份字段映射可以落不同介质 ⇒
 `SalesDoc` 把介质做成 **prop**（缺省三联纸，可切 A4）。判据两条：
@@ -73,7 +75,7 @@
 | # | 待实测项 | 现在的通用值 | 实测后要改的地方 |
 |---|---|---|---|
 | 1 | 走纸长度 / 单联可用高度（撕线位置决定） | 页长 140mm（用户裁定「241mm × 140mm 两等分」） | `print-media.json` 的 `pageSize` + `pendingMeasurements` |
-| 2 | 左 / 右边距（走纸孔带吃掉的可打印宽度） | 12mm | 同上 `pageMargin` |
+| 2 | 左 / 右边距（走纸孔带吃掉的可打印宽度） | 12mm | 同上 `pageMargin`。⚠️ **先核可打印宽度**：常见 24 针窄行机（80 列）最大打印宽度约 **203.2mm**，而 `241 − 12×2 = 217mm` 版心**大于**它 ⇒ 右侧可能被裁或被驱动缩放。现场量出实际可打印宽度后回填（若确为 203.2mm，左右边距应取 ≈19mm，并重算销售单的行高预算） |
 | 3 | 上 / 下边距（撕线到首行、末行的留白） | 6mm | 同上 `pageMargin` |
 | 4 | 每行行高（针打行距，与字号绑定） | 未定（随字号） | `print-media.json` + `SalesDoc` 的行高预算 |
 | 5 | 最小可用字号 | **9pt（通用下限，不是实测值）** | 同上 `minFontPt` |
@@ -121,7 +123,11 @@
 
 1. **先回答「介质是哪一种」** —— 在 `print-media.json` 里选（不够用才加新介质，加则同时补
    `PRINT_MEDIA_IDS` 与待实测登记）；
-2. 单据里用 `printPageRule('<介质id>')` 生成 `@page`（**不许**自写 `@page size`）；
+2. 单据里用 `printPageRule('<介质id>')` 生成 `@page`（**不许**自写 `@page size`），并且**必须条件化**：
+   `{printTarget === '<目标位>' && <style>{printPageRule('<介质id>')}</style>}` —— `@page` 是**文档级**规则，
+   同页多份单据并存时**最后声明的那条赢**（实测点「打印发货单」曾按销售单的三联纸出纸 = 打废纸，issue #5914）；
+   打印态的 `display: block` 规则同样要按 `[data-print-target='<目标位>']` 限定（否则非目标单据仍占版面 ⇒ 空白页）；
+   纸面容器还要标 `data-print-sheet`（预览层的溢出/页数自检靠它量内容高度）；
 3. 容器带 `-print-area` + 共享标记类 `print-doc`，隔离选择器**恰好** `body > *:not(.print-doc)`，
    `visibility` 防御**限定本单据的 `data-print-target`**（#4983 / #4965）；
 4. 在 `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 `PRINT_DOCS` 登记
@@ -130,7 +136,23 @@
 6. 测试要带**红证**（把实现改坏 ⇒ 判据必红）；缺值/缺码/长名的处置见 §4 与
    `SalesDoc.test.tsx` / `ProcessingDoc.test.tsx` 的判据。
 
-## 8. 边界（本设计**不做**的事）
+## 8. 打印前自检与截图（issue #5914）
+
+浏览器自带的打印预览**答不了**三件事，所以打印前多一层「纸面自检」（Preview / `PrintDocPreview.tsx`）：
+
+1. **内容会不会被裁** —— 销售单固定单联 128mm（`overflow: hidden`），实测明细 **>6 行**即溢出，
+   被裁掉的恰好是「本单应收 / 账户余额 / 收款码」；自检量 `[data-print-sheet]` 的 `scrollHeight`
+   报「超出 N mm」；
+2. **本次是哪张纸** —— 非标纸型（241×140 / 50×60）在驱动里没登记自定义纸型时会有落差，自检把
+   纸型与版心（mm）明写在标题行；
+3. **这次到底打哪一份** —— 同页四份单据时，自检层只摆**本次那一份**。
+
+两个出口：**打印**（走 `usePrintDoc().requestPrint()`，目标提交后才 `window.print()`）与
+**复制截图**（`lib/print-capture.ts`：计算样式内联 → `SVG foreignObject` → canvas → PNG → 剪贴板；
+剪贴板不可用 ⇒ 下载 PNG + 明示提示）。截图与打印**共用同一份单据组件** —— 不产生第二份字段映射
+（守卫 C5 仍成立），预览实例用 `inline` 渲染且**不带** `data-print-target`，故打印媒体下不上纸。
+
+## 9. 边界（本设计**不做**的事）
 
 - ❌ 不改标签类（50×30 / 30×60 / 水洗码）的既有版式 —— 归 #4946 / #5052 / #5646；
 - ❌ 不引入新的打印服务 / 中间件（浏览器打印 + 现场驱动配置是既定口径）；

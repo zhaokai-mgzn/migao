@@ -20,6 +20,8 @@ import { operationDisplayName } from '@/lib/operation-display'
 import ProductionProgressTable from '@/components/production/ProductionProgressTable'
 import PieceworkTable from '@/components/production/PieceworkTable'
 import CutPlanTable from '@/components/production/CutPlanTable'
+import PrintDocPreview from '@/components/orders/PrintDocPreview'
+import { PRINT_TARGET_SPECS, usePrintDoc } from '@/lib/print-doc'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
 import type {
   PieceworkSummary,
@@ -219,13 +221,22 @@ export default function ProcessingOrderProductionPage() {
     }
   }
 
-  /** 打印任务卡：先上报打印计数（fire-and-forget，失败不得阻断打印），再打印。 */
-  const handlePrint = () => {
+  // 🔴 走共享打印入口（issue #5914）：`window.print()` 只在 target 提交之后调用
+  const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc()
+
+  /**
+   * **真正**打印任务卡：先上报打印计数（fire-and-forget，失败不得阻断打印），再开印。
+   * ⚠️ 计数挪到「预览层里点打印」那一刻 —— 只看了预览没打纸的时候**不该**记账。
+   */
+  const printTaskCards = () => {
     if (po?.orderId) {
       productionApi.recordPrint(po.orderId).catch(() => {})
     }
-    window.print()
+    requestPrint('labels')
   }
+
+  /** 点「打印任务卡」：先看纸面自检（标签纸型没配好 = 整卷打废） */
+  const handlePrint = () => openPreview('labels')
 
   /**
    * 撤销二维码（issue #4240，真值源 §1「token 化、可撤销」）：二次确认后置空 token
@@ -733,7 +744,31 @@ export default function ProcessingOrderProductionPage() {
             qrPlaceholderHint={qrPlaceholderHint}
             // 工艺摘要（issue #4355）真值来源 = 加工单快照明细，按 order_item_id 逐张对齐
             items={po.items}
+            printTarget={printTarget}
           />
+
+          {/* 打印前的**纸面自检层**（issue #5914）：标签 50×60mm 的纸型没配好 = 整卷打废，
+              所以洗水码也走「先看纸面再打」。预览实例**不传 printTarget** ⇒ 不上纸。 */}
+          <PrintDocPreview
+            target={previewTarget}
+            title={PRINT_TARGET_SPECS.labels.title}
+            media={PRINT_TARGET_SPECS.labels.media}
+            onPrint={printTaskCards}
+            onClose={closePreview}
+          >
+            {previewTarget === 'labels' && (
+              <TaskCardPrint
+                processingOrderNo={po.processingOrderNo}
+                orderNo={po.orderNo}
+                customerName={po.customerName}
+                expectedDeliveryDate={po.expectedDeliveryDate}
+                positions={operations?.positions}
+                qrPlaceholderHint={qrPlaceholderHint}
+                items={po.items}
+                inline
+              />
+            )}
+          </PrintDocPreview>
 
           {/* 生成二维码（测试用，issue #4726）：A 档 = 加工单号纯文本码（只读、零写请求） */}
           <Modal

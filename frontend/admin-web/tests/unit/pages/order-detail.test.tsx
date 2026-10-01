@@ -49,7 +49,13 @@ vi.mock('dayjs', () => ({
 }))
 
 // Mock child components
-vi.mock('@/components/orders', () => ({
+// 🔴 用**真实导出兜底 + 逐项替身**：`@/components/orders` 的替身少一个导出 ⇒ 渲染期直接抛
+// （issue #5914 实测：漏掉 `PrintDocPreview` ⇒ 本文件整片 5s 超时红）。下面只替身"内容型"组件，
+// 其余（如 `PrintDocPreview` / `usePrintDoc` / `PRINT_TARGET_SPECS`）走真货。
+vi.mock('@/components/orders', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/orders')>()
+  return {
+    ...actual,
   OrderProgressSteps: () => <div data-testid="order-progress">OrderProgressSteps</div>,
   ProcessingOrderBlock: () => <div data-testid="po-block">ProcessingOrderBlock</div>,
   // 订单加急 / 到货日改单控件（issue #5177）：本文件验的是详情页既有区块与操作区，
@@ -80,7 +86,8 @@ vi.mock('@/components/orders', () => ({
   // tests/unit/components/EditOrderContentModal.test.tsx。
   EditOrderContentModal: ({ open }: any) =>
     open ? <div data-testid="edit-order-content-modal">EditOrderContentModal</div> : null,
-}))
+  }
+})
 
 import OrderDetailPage from '@/app/(dashboard)/orders/[id]/OrderDetail'
 
@@ -308,8 +315,13 @@ describe('OrderDetailPage', () => {
       })
       render(<OrderDetailPage />)
 
+      const user = userEvent.setup()
       const btn = await screen.findByRole('button', { name: /打印发货单/ })
-      await userEvent.setup().click(btn)
+      await user.click(btn)
+
+      // 🔴 点「打印发货单」= 打开**纸面自检层**（issue #5914）：纸是耗材，没点「打印」前**不该**出纸
+      expect(printSpy).not.toHaveBeenCalled()
+      await user.click(await screen.findByTestId('print-preview-print'))
 
       expect(printSpy).toHaveBeenCalledTimes(1)
     } finally {
@@ -351,8 +363,13 @@ describe('OrderDetailPage', () => {
       })
       render(<OrderDetailPage />)
 
+      const user = userEvent.setup()
       const btn = await screen.findByRole('button', { name: /打印报价单/ })
-      await userEvent.setup().click(btn)
+      await user.click(btn)
+
+      // 同上：报价单走的是**同一个**预览 → 打印两步（issue #5914）
+      expect(printSpy).not.toHaveBeenCalled()
+      await user.click(await screen.findByTestId('print-preview-print'))
 
       expect(printSpy).toHaveBeenCalledTimes(1)
     } finally {

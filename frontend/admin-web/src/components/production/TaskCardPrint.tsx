@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { QRCodeSVG } from 'qrcode.react'
+import { printPageRule } from '@/lib/print-media'
 import { cn } from '@/lib/utils'
+import type { PrintTarget } from '@/lib/print-doc'
 // 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）—— 纸面**只取它的值**，
 // 不另写一份推导（否则就是第二份口径，漂移的那一份不会变红）。
 import { craftSpecRows, type CraftSpecRow } from '@/lib/craft-display'
@@ -87,6 +89,17 @@ interface TaskCardPrintProps {
   qrPlaceholderHint?: string
   /** 该部位对应的加工单快照明细（色号/用料/加工方式/备注/算料公式的取值来源） */
   items?: ProcessingOrderItem[]
+  /**
+   * 本次打印的目标（`'labels'` = 打印本单据）。**必须由调用方置位**：标签的显形规则按
+   * `[data-print-target='labels']` 限定 ⇒ 不置位就**不上纸**（issue #5914 的「一次只放一份」）。
+   */
+  printTarget?: PrintTarget | null
+  /**
+   * **原地渲染**（`true`）而不是 portal 到 `document.body`（issue #5914）—— 只有**打印预览层**
+   * 用它：预览要把**同一份单据**摆进真尺寸纸框里，portal 会让它跑到框外（且屏幕态仍是 `display:none`）。
+   * 缺省 `false` = 既有行为（portal 到 body，屏幕上隐藏、仅打印呈现）。
+   */
+  inline?: boolean
   className?: string
 }
 
@@ -124,6 +137,8 @@ export default function TaskCardPrint({
   positions,
   qrPlaceholderHint,
   items,
+  printTarget,
+  inline,
   className,
 }: TaskCardPrintProps) {
   // 打印只发生在客户端；SSR/首帧无 document，portal 前先等 mounted
@@ -144,11 +159,16 @@ export default function TaskCardPrint({
   // 套序/套数走**与进度表同一份**实现
   const setViews = groupBySet(list)
 
-  return createPortal(
-    <div className={cn('task-card-print-area print-doc text-neutral-900', className)}>
+  const doc = (
+    <div
+      className={cn('task-card-print-area print-doc text-neutral-900', className)}
+      {...(printTarget === 'labels' ? { 'data-print-target': 'labels' } : {})}
+    >
+      {/* 🔴 纸型规则**只在本次打印目标为本单据时**进文档（issue #5914 的 P1-2）：
+          `@page` 是**文档级**规则 —— 同页多份单据并存时**最后声明的那条赢**。 */}
+      {printTarget === 'labels' && <style>{printPageRule('label-50x60')}</style>}
       <style>{`
         .task-card-print-area { display: none; }
-        @page { size: 50mm 60mm; margin: 0; }
         /* 洗水码本体：固定 50mm × 60mm（竖版），超出一律裁掉（纸面只有这么大） */
         .task-card-label { width: 50mm; height: 60mm; overflow: hidden; box-sizing: border-box;
           padding: 1.2mm; font-size: 6pt; line-height: 1.2; display: flex; flex-direction: column;
@@ -157,7 +177,8 @@ export default function TaskCardPrint({
         .task-card-label:last-child { break-after: auto; page-break-after: auto; }
         @media print {
           body > *:not(.print-doc) { display: none !important; }
-          .task-card-print-area {
+          /* 🔴 只有**本次目标**上纸（issue #5914）：否则打印会同时吐出别的单据的版面 */
+          .task-card-print-area[data-print-target='labels'] {
             display: block;
             position: static;
             width: auto;
@@ -210,6 +231,7 @@ export default function TaskCardPrint({
           <div
             key={position?.order_item_id ?? `label-${index}`}
             className="task-card-label"
+            data-print-sheet
             data-testid={`task-card-label-${index}`}
           >
             {/* ① 加工单号 —— **主标识**：绝不折行、绝不省略（折行会把纸面底部内容挤出纸外，issue #4949） */}
@@ -322,7 +344,9 @@ export default function TaskCardPrint({
           </div>
         )
       })}
-    </div>,
-    document.body,
+    </div>
   )
+
+  // 🔴 预览层里**不 portal**（issue #5914）：同一份单据要摆进真尺寸纸框，portal 会跑到框外
+  return inline ? doc : createPortal(doc, document.body)
 }

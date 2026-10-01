@@ -10818,6 +10818,24 @@ _CASE_UI_063 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-026 [NORMAL] 打印链路「一次只放一份单据上纸」：window.print() 收敛到唯一入口且在目标提交后调用（首次打印不再是空白纸）+ @page 只在本次目标时发表（纸型不被兄弟单据顶掉）+ 打印前纸面自检预览 + 截图复制（issue #5914）（源: cases/ui.yml）──
+_CASE_UI_026 = EvalCase(
+    id='UI-026',
+    legacy_id='',
+    title='打印链路「一次只放一份单据上纸」：window.print() 收敛到唯一入口且在目标提交后调用（首次打印不再是空白纸）+ @page 只在本次目标时发表（纸型不被兄弟单据顶掉）+ 打印前纸面自检预览 + 截图复制（issue #5914）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-01 逐字：「打印功能是否应该先预览然后再打印，你觉得是否有必要，不过截图有必要，点击截图后把单据模板信息直接截图下来并复制」；同轮裁定范围 = 修 P1（首次打印空白 / 四单纸型互串）+ 预览 + 截图复制一起做，加工单「制单人 / 批号」按印真值修'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **print 被调用时目标已在 DOM**（旧写法同 tick `setState` + `window.print()` ⇒ 首次打印空白纸）：真实浏览器在 `beforeprint` 抓 `[data-print-target]`，点「打印销售单」后必须恰好是 `sales`（旧实现实测 = NONE）。执行点 = tests/e2e/specs/orders/print-preview.spec.ts 的「① 点『打印』时目标已置位」+ frontend/admin-web/tests/unit/lib/print-doc.test.tsx 的「① print 被调用时目标已在 DOM」。', '判据 2·**唯一入口**：`window.print()` 在 `frontend/admin-web/src/**` 里**恰好**出现在 lib/print-doc.ts（第二处裸调用 ⇒ 必红）。执行点 = tests/unit_ci_workflows/test_print_single_doc_on_paper.py 的 test_c1_window_print_has_exactly_one_entry（红证 = test_c5 的注入 A）。', '判据 3·🔴 **同页四份单据只放一份上纸**：文档里 `@page` 规则**恰好一条**且等于本次目标那张纸（销售单 ⇒ 241mm 140mm）；非目标单据在打印媒体下 `display: none`（不占版面 ⇒ 不出空白页）。执行点 = tests/e2e/specs/orders/print-preview.spec.ts 的「② 同页四份单据只放一份上纸」+ tests/unit_ci_workflows/test_print_single_doc_on_paper.py 的 test_c2_c3（红证 = 注入 B/B2）。', '判据 4·**纸面自检可见**（销售单单联 128mm）：明细 8 行（实测内容 ≈136.5mm）⇒ 预览必须报「超出」并给可行动出口；5 行 ⇒ 报「装得下」（判据不是恒报警）。执行点 = 同 spec 的「③ 纸面自检：装得下 / 装不下」+ frontend/admin-web/tests/unit/components/PrintDocPreview.test.tsx 的 measureSheets 三条几何用例。', '判据 5·🔴 **截图复制产出真尺寸 PNG**：点「复制截图」⇒ 剪贴板拿到 image/png，尺寸 ≈ 纸型 × 3 倍（241mm ≈ 911px ⇒ ≈2733px，宽高比 1.72±0.15）；剪贴板不可用 ⇒ 下载 PNG + 明示提示（不许静默失败）。执行点 = 同 spec 的「④ 复制截图」（真实 Chrome + clipboard 权限 + createImageBitmap 读尺寸）。', '判据 6·🔴 **纸面读的字段必须真的下发**（本单修的正是这一类）：订单详情面四份单据里每个 `order.<字段>` 都要在 backend/admin-api/src/main/java/com/migao/admin/dto/OrderDetailResponse.java 里有声明；删掉 `createdByName` ⇒ 必红。执行点 = tests/unit_ci_workflows/test_print_single_doc_on_paper.py 的 test_c4（红证 = test_c5 的注入 C，豁免台账为空且只许缩短）。', '判据 7·**加工单纸面印真值**：制单人 = `order.createdByName`、批号 = 快照行 `batchNo`（按 `itemId` 对齐）；缺值印 `—`，**纸面不再出现「未采集」**（那是「系统没有这个字段」的说法）。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「🔴 ④ 制单人 / 批号 印服务端真值」+「🔴 ④ 红证：批号挂不到订单行 ⇒ 不猜」。'],
+    skip_reason='[backend-contract] 纯前端打印链路 + 一条 DTO 字段透出（无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/e2e/specs/orders/print-preview.spec.ts、frontend/admin-web/tests/unit/{lib/print-doc,components/PrintDocPreview,components/ProcessingDoc}.test.tsx 与 tests/unit_ci_workflows/test_print_single_doc_on_paper.py 执行',
+    tags=['ui', 'print', 'single-doc', 'guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UI-064 [NORMAL] 商家后台「企业设置」页手机端入口二维码 —— 地址单一配置、内容逐字等于该值、未配置不画假码（issue #5668）（源: cases/ui.yml）──
 _CASE_UI_064 = EvalCase(
     id='UI-064',
@@ -11703,6 +11721,7 @@ ALL_CASES = (
     _CASE_UI_061,
     _CASE_UI_062,
     _CASE_UI_063,
+    _CASE_UI_026,
     _CASE_UI_064,
     _CASE_UI_065,
     _CASE_UI_066,

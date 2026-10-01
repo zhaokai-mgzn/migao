@@ -35,6 +35,12 @@ export interface PrintMediaSpec {
   pageSize: string
   /** `@page` 边距（CSS 值） */
   pageMargin: string
+  /**
+   * **纸的整幅尺寸（mm）** —— 机器可读的「这张纸多大」：打印前的纸面自检（预览纸框 / 溢出与页数）
+   * 读它。`pageSize` 是 CSS 值（可能是 `A4` 这种命名纸型，解析不出 mm），故 mm 口径单独放这里。
+   * 🔴 与 `pageSize` 必须指同一张纸（改一处不改另一处 ⇒ 判据 `test_print_media_matrix_guard.py` 的目视面）。
+   */
+  pageBoxMm: { widthMm: number; heightMm: number }
   /** **连续走纸**（针式）：靠走纸孔定位，浏览器不许按内容分页（错位 = 跨联） */
   continuousFeed: boolean
   /** **压感复写份数**（纸承担；软件**只渲染一页**） */
@@ -121,15 +127,45 @@ function millimetres(value: string): number | null {
   return hit ? Number(hit[1]) : null
 }
 
+/** 纸的**整幅尺寸（mm）**（真值源 = 矩阵的 `pageBoxMm`，命名纸型如 `A4` 也在这里落到 mm） */
+export function printPageBoxMm(media: PrintMediaId): { widthMm: number; heightMm: number } {
+  const spec = printMediaSpec(media)
+  const box = spec.pageBoxMm
+  if (!box || !Number.isFinite(box.widthMm) || !Number.isFinite(box.heightMm)) {
+    throw new Error(`介质 ${media} 缺 pageBoxMm（纸的整幅 mm 尺寸）—— 纸面自检无从判定，不猜`)
+  }
+  return { widthMm: box.widthMm, heightMm: box.heightMm }
+}
+
 /**
- * 连续纸的**单联可用高度（mm）** = 页长 − 上下边距 —— 内容超高就会打到**下一联**
- * （连续纸跨联 = 纸面与账目对不上的一种形态）。非连续介质 / 尺寸不是 mm ⇒ `null`。
+ * `@page` 边距（mm）：CSS 简写 `上下 左右`；单值 = 四边同值。非 mm ⇒ 抛错（不猜）。
+ * ⚠️ 三联纸的边距是**待实测**通用参数（见矩阵 `pendingMeasurements`）。
+ */
+export function printPageMarginMm(media: PrintMediaId): { xMm: number; yMm: number } {
+  const spec = printMediaSpec(media)
+  const parts = spec.pageMargin.trim().split(/\s+/).map(millimetres)
+  const [first] = parts
+  const second = parts.length > 1 ? parts[1] : parts[0]
+  if (first === null || first === undefined || second === null || second === undefined) {
+    throw new Error(`介质 ${media} 的 pageMargin=\`${spec.pageMargin}\` 解析不出 mm —— 不猜`)
+  }
+  return { xMm: second, yMm: first }
+}
+
+/**
+ * 单张纸的**可用版面（mm）** = 纸 − 页边距。
+ * 连续纸（针式）超出可用高度就会打到**下一联**（连续纸跨联 = 纸面与账目对不上的一种形态）。
+ */
+export function printUsableBoxMm(media: PrintMediaId): { widthMm: number; heightMm: number } {
+  const box = printPageBoxMm(media)
+  const margin = printPageMarginMm(media)
+  return { widthMm: box.widthMm - margin.xMm * 2, heightMm: box.heightMm - margin.yMm * 2 }
+}
+
+/**
+ * 连续纸的**单联可用高度（mm）** = 页长 − 上下边距（= {@link printUsableBoxMm} 的高度）。
  * ⚠️ 页长与边距都是**待实测**通用参数（见矩阵 `pendingMeasurements`）。
  */
-export function printUsableHeightMm(media: PrintMediaId): number | null {
-  const spec = printMediaSpec(media)
-  const [, pageHeight] = spec.pageSize.split(/\s+/).map(millimetres)
-  const [marginY] = spec.pageMargin.split(/\s+/).map(millimetres)
-  if (pageHeight === null || pageHeight === undefined || marginY === null) return null
-  return pageHeight - marginY * 2
+export function printUsableHeightMm(media: PrintMediaId): number {
+  return printUsableBoxMm(media).heightMm
 }

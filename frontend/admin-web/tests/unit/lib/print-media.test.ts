@@ -9,7 +9,10 @@ import {
   isContinuousFeed,
   printBodyFontPt,
   printMediaSpec,
+  printPageBoxMm,
+  printPageMarginMm,
   printPageRule,
+  printUsableBoxMm,
   printUsableHeightMm,
   type PrintMediaSpec,
 } from '@/lib/print-media'
@@ -125,9 +128,14 @@ describe('打印介质矩阵（issue #5651）', () => {
 
   it('④ 单联可用高度 = 页长 − 上下边距（连续纸「不许跨联」的版面预算）', () => {
     expect(printUsableHeightMm('continuous-241x140')).toBe(128)
-    // 非连续 / 非 mm 尺寸 ⇒ null（**不猜**，不许把它当 A4 算）
-    expect(printUsableHeightMm('a4')).toBeNull()
-    expect(printUsableHeightMm('label-50x60')).toBe(60)
+    // 纸的整幅 mm 尺寸 = 矩阵的 `pageBoxMm`（`pageSize` 是 CSS 值，`A4` 解析不出 mm）
+    expect(printPageBoxMm('a4')).toEqual({ widthMm: 210, heightMm: 297 })
+    expect(printPageBoxMm('continuous-241x140')).toEqual({ widthMm: 241, heightMm: 140 })
+    expect(printPageBoxMm('label-50x60')).toEqual({ widthMm: 50, heightMm: 60 })
+    expect(printUsableHeightMm('a4')).toBe(273) // 297 − 12×2（命名纸型不再返回 null）
+    expect(printUsableHeightMm('label-50x60')).toBe(60) // 标签无边距
+    expect(printPageMarginMm('continuous-241x140')).toEqual({ xMm: 12, yMm: 6 })
+    expect(printUsableBoxMm('continuous-241x140')).toEqual({ widthMm: 217, heightMm: 128 })
     expect(isContinuousFeed('continuous-241x140')).toBe(true)
     expect(isContinuousFeed('a4')).toBe(false)
     // 针打**不复用** A4 的字号预算（A4 的 6pt 量级在针打上会糊）

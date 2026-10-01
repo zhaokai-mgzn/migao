@@ -107,7 +107,10 @@ function buildRead(
 }
 
 const doc = (): HTMLElement | null => document.querySelector('.sales-print-area')
-const css = (): string => doc()?.querySelector('style')?.textContent || ''
+const css = (): string =>
+  Array.from(doc()?.querySelectorAll('style') ?? [])
+    .map((el) => el.textContent || '')
+    .join('\n')
 const text = (testId: string): string =>
   document.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? ''
 const sheet = (): HTMLElement | null => document.querySelector('[data-testid="sales-sheet"]')
@@ -121,7 +124,7 @@ function rowCells(): string[][] {
 
 describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', () => {
   it('① 介质：@page 241mm × 140mm（两等分）+ 只渲染一页 + 单联高度固定不跨联', () => {
-    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} printTarget="sales" />)
     expect(css()).toContain('@page { size: 241mm 140mm; margin: 6mm 12mm; }')
     expect(css()).toContain(printPageRule('continuous-241x140'))
     expect(doc()?.getAttribute('data-print-media')).toBe('continuous-241x140')
@@ -143,7 +146,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
   })
 
   it('② 介质是**参数**不是副本：切 A4 后 @page 变、而逐格取值**逐字不变**', () => {
-    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} printTarget="sales" />)
     const tri = rowCells()
     const triHeader = Array.from(document.querySelectorAll('.sales-doc-table thead th')).map(
       (th) => th.textContent?.trim()
@@ -151,7 +154,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     const triDue = text('sales-total-due')
     const triTotal = text('sales-total')
     cleanup()
-    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} media="a4" paymentQrcodes={{}} />)
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} media="a4" paymentQrcodes={{}} printTarget="sales" />)
     // 版面参数随介质变
     expect(css()).toContain('@page { size: A4; margin: 12mm; }')
     expect(doc()?.getAttribute('data-print-media')).toBe('a4')
@@ -298,6 +301,9 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
   it('⑦ 未置位打印目标 ⇒ 不加 data-print-target（点别的单据时本单不参与显形）', () => {
     render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     expect(doc()?.getAttribute('data-print-target')).toBeNull()
+    // 🔴 且**不发表自己的纸型**（issue #5914 的 P1-2：`@page` 是文档级规则，同页多份并存时
+    //    最后声明的那条赢 ⇒ 非目标单据发表纸型 = 把兄弟单据的纸型顶掉，实测打废纸）
+    expect(css()).not.toContain('@page')
     cleanup()
     render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} printTarget="sales" />)
     expect(doc()?.getAttribute('data-print-target')).toBe('sales')

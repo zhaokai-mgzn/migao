@@ -257,6 +257,10 @@ describe('ShipOrder', () => {
 
       await user.click(await screen.findByRole('button', { name: /打印发货单/ }))
 
+      // 🔴 点按钮 = 打开**纸面自检层**（issue #5914）；层里点「打印」才真的开印
+      expect(printSpy).not.toHaveBeenCalled()
+      await user.click(await screen.findByTestId('print-preview-print'))
+
       expect(printSpy).toHaveBeenCalledTimes(1)
     } finally {
       printSpy.mockRestore()

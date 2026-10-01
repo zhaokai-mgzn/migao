@@ -12,11 +12,12 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import ProcessingDoc, {
+  MISSING,
   NOT_COLLECTED,
   PROCESSING_DOC_COLUMNS,
   PROCESSING_DOC_NOT_COLLECTED_FIELDS,
 } from '@/components/orders/ProcessingDoc'
-import type { Order, OrderItem, ProcessingOrder } from '@/types'
+import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/types'
 
 /**
  * 加工单（**A4 可打印纸质文档**，issue #5651）—— 照客户现行实物制式（issue #5651 实证表 #3）。
@@ -89,7 +90,10 @@ const buildProcessingOrder = (overrides: Partial<ProcessingOrder> = {}): Process
 })
 
 const doc = (): HTMLElement | null => document.querySelector('.processing-print-area')
-const css = (): string => doc()?.querySelector('style')?.textContent || ''
+const css = (): string =>
+  Array.from(doc()?.querySelectorAll('style') ?? [])
+    .map((el) => el.textContent || '')
+    .join('\n')
 /** 表头标签（第一行第一列那一格）的文本集合 */
 const cellText = (testId: string): string =>
   document.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? ''
@@ -163,7 +167,7 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
   })
 
   it('③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复', () => {
-    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} printTarget="processing" />)
     expect(css()).toContain('@page { size: A4; margin: 12mm; }')
     expect(doc()?.getAttribute('data-print-media')).toBe('a4')
     expect(css()).toMatch(/\.processing-set\s*\{[^}]*break-inside:\s*avoid/)
@@ -215,18 +219,42 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect((cells2[idx2 + 1]?.textContent || '').trim()).not.toBe('')
   })
 
-  it('🔴 ④ 本系统**未采集**的字段（制单人 / 批号）必须显式标注，不许留空也不许编值', () => {
+  it('🔴 ④ 制单人 / 批号 印**服务端真值**；缺值印 `—`（≠「本系统未采集」，issue #5914）', () => {
+    // 制单人 = `orders.created_by_name`（V142 / #5835 起建单时写入，详情接口下发）
+    // 批号 = 加工单**快照**行的 `batchNo`（按 `itemId` 与商品行对齐）
+    render(
+      <ProcessingDoc
+        order={buildOrder({ createdByName: '王五' })}
+        processingOrder={buildProcessingOrder({
+          items: [{ itemId: 'item-1', batchNo: 'B20260901' } as ProcessingOrderItem],
+        })}
+      />
+    )
+    expect(cellText('processing-doc-creator')).toBe('王五')
+    expect(cellText('processing-doc-batch')).toBe('B20260901')
+    // 🔴 纸面**不许**再出现「未采集」：那是「系统没有这个字段」的说法，而这两个字段都在
+    expect(doc()?.textContent).not.toContain(NOT_COLLECTED)
+    expect(document.querySelector('[data-testid="processing-doc-gap-note"]')).toBeNull()
+    // 缺口清单为空 = 已无真缺口（清单只许缩短/登记真缺口）
+    expect(PROCESSING_DOC_NOT_COLLECTED_FIELDS).toHaveLength(0)
+    cleanup()
+    // 缺值 ⇒ 显式占位 `—`（客户没填 / 未指派批次），**不是**「未采集」、也绝不编值
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
-    // 制单人：Order DTO 无该列 ⇒ 「未采集」
-    expect(cellText('processing-doc-creator')).toBe(NOT_COLLECTED)
-    // 批号：ProcessingOrderItem 无 batchNo 列 ⇒ 「未采集」（绝不编一个批号）
-    expect(cellText('processing-doc-batch')).toBe(NOT_COLLECTED)
-    // 并把「这是缺口、不是客户没填」写在纸面上
-    const note = cellText('processing-doc-gap-note')
-    for (const field of PROCESSING_DOC_NOT_COLLECTED_FIELDS) {
-      expect(note).toContain(field)
-    }
-    expect(note).toContain(NOT_COLLECTED)
+    expect(cellText('processing-doc-creator')).toBe(MISSING)
+    expect(cellText('processing-doc-batch')).toBe(MISSING)
+  })
+
+  it('🔴 ④ 红证：批号挂不到订单行（快照行 itemId 对不上）⇒ 不猜，印 `—`', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder()}
+        processingOrder={buildProcessingOrder({
+          items: [{ itemId: 'another-item', batchNo: 'B20260901' } as ProcessingOrderItem],
+        })}
+      />
+    )
+    // 对不上就不许把别人那行的批号印到这一行（猜 = 账实不符）
+    expect(cellText('processing-doc-batch')).toBe(MISSING)
   })
 
   it('🔴 ⑤ QR：给了值 ⇒ 出码；**不给 ⇒ 出占位框、不画假码**', () => {

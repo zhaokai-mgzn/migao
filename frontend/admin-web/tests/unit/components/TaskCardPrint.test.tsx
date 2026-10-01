@@ -136,6 +136,7 @@ const printCard = (overrides: Partial<ComponentProps<typeof TaskCardPrint>> = {}
       expectedDeliveryDate={DELIVERY}
       positions={positions}
       items={items}
+      printTarget="labels"
       {...overrides}
     />,
   )
@@ -262,7 +263,9 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     expect(area).not.toBeNull()
     expect(area.parentElement).toBe(document.body)
 
-    const css = area.querySelector('style')?.textContent ?? ''
+    const css = Array.from(area.querySelectorAll('style'))
+      .map((el) => el.textContent || '')
+      .join('\n')
     // 🔴 几何整版改判（issue #5646）：纸宽 30mm → **50mm**。旧值 30mm 一律不得残留（留一条即假绿）
     expect(css).toContain('@page { size: 50mm 60mm; margin: 0; }')
     expect(css).not.toContain('30mm 60mm')

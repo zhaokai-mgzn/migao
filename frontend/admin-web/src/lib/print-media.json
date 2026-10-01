@@ -5,7 +5,9 @@
     "介质**不是**复制粘贴出来的第二份页面（红证：同一单据复制一份字段映射 ⇒ 守卫必红）。",
     "本文件是介质的**单一真值源**（机器可读）：TS 侧 `print-media.ts` 由它取值；",
     "守卫 `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 把每份受管单据的 `@page` 逐字钉到本表。",
-    "🔴 单据里**不许**另写 `@page size`：那是第二份真值，改一处另一处会静默漂移（纸面尺寸错 = 打废纸）。"
+    "🔴 单据里**不许**另写 `@page size`：那是第二份真值，改一处另一处会静默漂移（纸面尺寸错 = 打废纸）。",
+    "`pageBoxMm` = 纸的**整幅尺寸（mm）**：`pageSize` 是 CSS 值（可能是 `A4` 这类命名纸型，解析不出 mm），",
+    "而打印前的**纸面自检**（预览纸框 / 溢出与页数判定）必须拿到 mm ⇒ 机器可读的那一份放这里，调用方读 `printPageBoxMm()`。"
   ],
   "_pending_rule": [
     "真机参数拿不到时**只许**用通用参数 + 在这里显式登记为待实测：`measurement != 'measured'` 的介质",
@@ -19,6 +21,7 @@
       "technology": "laser-inkjet",
       "pageSize": "A4",
       "pageMargin": "12mm",
+      "pageBoxMm": { "widthMm": 210, "heightMm": 297 },
       "continuousFeed": false,
       "carbonCopies": 1,
       "minFontPt": 9,
@@ -32,6 +35,7 @@
       "technology": "thermal-transfer",
       "pageSize": "50mm 60mm",
       "pageMargin": "0",
+      "pageBoxMm": { "widthMm": 50, "heightMm": 60 },
       "continuousFeed": false,
       "carbonCopies": 1,
       "minFontPt": 6,
@@ -45,6 +49,7 @@
       "technology": "thermal-transfer",
       "pageSize": "30mm 40mm",
       "pageMargin": "0",
+      "pageBoxMm": { "widthMm": 30, "heightMm": 40 },
       "continuousFeed": false,
       "carbonCopies": 1,
       "minFontPt": 5,
@@ -72,6 +77,7 @@
       "technology": "dot-matrix",
       "pageSize": "241mm 140mm",
       "pageMargin": "6mm 12mm",
+      "pageBoxMm": { "widthMm": 241, "heightMm": 140 },
       "continuousFeed": true,
       "carbonCopies": 3,
       "minFontPt": 9,

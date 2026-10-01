@@ -1,11 +1,15 @@
 /**
- * 本次打印的目标（issue #4965 / #5651）。
+ * 本次打印的目标（issue #4965 / #5651 → 2026-10-01 收敛到 `lib/print-doc.ts`，issue #5914）。
  *
- * 🔴 **每新增一份纸质单据都必须在这里加一个 target**：订单详情页**同页挂着多份**单据，
- * 它们的 `visibility: visible` 打印防御**同特异性**，后渲染者胜 ⇒ 不加限定会把兄弟单据
- * 重新藏成 invisible（补打纸面空白，#4965 实测）。调用方「点谁置谁」。
+ * 🔴 **每新增一份纸质单据都必须登记 target**，唯一真值 = `lib/print-doc.ts` 的 `PRINT_TARGETS`
+ * （`PRINT_TARGET_SPECS` 同时给它标题与介质 id）。口径（#5914 起）：
+ * **一次只允许一份单据上纸** —— 各单据的 `@page` 与打印态 `display` 都按 target 限定
+ * （同页多份并存时 `@page` 是**文档级**规则、最后声明的那条赢 ⇒ 纸型会被兄弟单据覆盖）。
  */
-export type PrintTarget = 'shipment' | 'quotation' | 'processing' | 'sales'
+export type { PrintTarget } from '@/lib/print-doc'
+export { PRINT_TARGETS, PRINT_TARGET_SPECS, usePrintDoc } from '@/lib/print-doc'
+// 打印前的**纸面自检层**（真尺寸纸框 + 溢出/页数自检 + 「打印 / 复制截图」，issue #5914）
+export { default as PrintDocPreview } from './PrintDocPreview'
 
 export { default as OrderTable } from './OrderTable'
 export { default as RemarkPopover } from './RemarkPopover'

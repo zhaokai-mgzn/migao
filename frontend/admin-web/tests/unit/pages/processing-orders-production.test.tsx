@@ -399,7 +399,7 @@ describe('加工单生产明细页', () => {
     expect(within(group).getByText('布帘')).toBeInTheDocument()
   })
 
-  it('「打印任务卡」按钮调用 window.print（任务卡含二维码）', async () => {
+  it('「打印任务卡」按钮打开纸面自检层，层里点「打印」才 window.print（任务卡含二维码）', async () => {
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
     render(<ProductionDetailPage />)
 
@@ -413,6 +413,10 @@ describe('加工单生产明细页', () => {
     await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('production-print-button'))
+
+    // 🔴 标签纸型没配好 = 整卷打废（issue #5914）⇒ 先看纸面自检；没点「打印」之前不该出纸
+    expect(printSpy).not.toHaveBeenCalled()
+    await userEvent.click(await screen.findByTestId('print-preview-print'))
 
     // issue #4717：断言的对象本身就必须是**被等待的可观察条件**（#4414 口径 ——
     // 「把同步断言并进同一个 waitFor，等的是『调用发生』这件事本身」）。
@@ -433,6 +437,10 @@ describe('加工单生产明细页', () => {
 
     await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('production-print-button'))
+
+    // 🔴 只看了预览 ⇒ **还没记账**（记账挪到真的开印那一刻：没出纸就没纸可留痕）
+    expect(mockRecordPrint).not.toHaveBeenCalled()
+    await userEvent.click(await screen.findByTestId('print-preview-print'))
 
     // 先调计数端点（不 await 结果），再打印。
     // 这里的**同步**断言是**因果成立**的（#4717 同族自查）：`handlePrint` 里
