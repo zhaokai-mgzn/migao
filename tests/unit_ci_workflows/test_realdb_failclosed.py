@@ -104,6 +104,11 @@ REALDB_FILES: dict[str, str] = {
     # 逐字相同**（都是"调了一次 mapper"）—— 丢更新只有 N 个连接真并发打同一行才现形；
     # 部分唯一索引 / CHECK / 表达式索引更是 mock 里**不存在**的 DB 对象。
     _SVC + "InboundLabelPrintCountRealDbTest.java": "direct",
+    # issue #5844：入库单列表的**批次号聚合**（`string_agg(batch_no, ',' ORDER BY batch_no)`）——
+    # 聚合、排序、NULL 跳过全是 **SQL 语义**：「聚合写错」与「聚合根本没写」在 mock 面的读数
+    # **逐字相同**（都是"调了一次 mapper"）；而 `deleted = 0` 谓词与 `COUNT(*)` 同处一个子查询，
+    # 「软删行混进批次号、而行数仍然对」这种自相矛盾的读数也只有真库才现形（同 #5052 家族）。
+    _SVC + "InboundOrderListBatchNosRealDbTest.java": "direct",
     _SVC + "OrderNoSkuIdentityRealDbTest.java": "direct",
     _SVC + "OrderUrgencyRealDbTest.java": "direct",
     _SVC + "PooledDispatchRealDbTest.java": "direct",
