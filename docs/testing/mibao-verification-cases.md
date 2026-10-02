@@ -4790,7 +4790,7 @@
 真值: order.shipment-actual-quantity-owner, order.shipment-read-faces
 溯源: 2026-10-02 新增（issue #5939）：补上发货单的**列表读面** —— 此前只有按单读面（OR-051），想知道「这个月发过哪些货」必须先知道是哪张订单。权限码取**既有** order:list（不新造）；实发汇总复用 totals()（不建第二份投影）；租户/软删/上限三条由真库 + SQL 文本双判据把守。 ｜ tags: order, shipment, admin-api, read-surface, tenant-isolation, menu
 
-## 加工项域（19 case）
+## 加工项域（25 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -5026,6 +5026,91 @@
 ```
 真值: fabric-calc.craft-calc-config, ai-chat.tool-classes
 溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 craft_calc_config_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 craft_calc_config_query/uncovered，同 PR 删除该条目）。取号 PP-015：库内 PP-001~PP-014（PP-002/003/004/005 为历史空号，不复用已发布的号段习惯）—— PP-015 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: craft_calc, config, mibao, readonly, llm_behavior
+
+### PP-016. 工艺路线缺口查询（只读）—— 米宝调 craft_config_query(action=routing_gaps) 并逐条转述缺口（覆盖 #4923 零覆盖端点） 🔵
+```
+你: 工艺路线现在有没有缺口？哪些工序还没进路线？
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: craft_config_query(action=routing_gaps)
+数据: success=true
+数据: 调用参数 action=routing_gaps（缺口面；工序库目录是 operation_catalog_query 的 operations，两者不得混用）
+数据: （散文、不计分）缺口逐条来自服务端：`unrouted_operations` / `unrouted_operation_total` / `pending_confirmation_total` / `signal_keys_without_route` 只能原样转述 `GET /api/admin/production/routing-gaps` 的返回，不得自行推断「哪道工序该进哪条路线」，也不得编造服务端没返回的数量
+数据: （散文、不计分）「有意挂起 ≠ 系统漏了」：`pending_confirmation=true` 的工序（等客户输入）必须如实说明**是有意挂起**，不得报成系统缺口；必要时可用 `note` 字段的口径解释
+数据: （散文、不计分）只读边界：本工具 read_only=true，无任何写 action ⇒ 不得声称已把工序加进路线 / 已新建路线，只能引导商家去后台「工艺配置」页处理
+必须成功: craft_config_query
+```
+真值: processing-manage.craft-config-routing-gaps, ai-chat.tool-classes
+溯源: 2026-10-02 新增（issue #4923）：工艺配置读面 6 个零覆盖读端点中的 routing_gaps 首次获得 LLM 行为面覆盖。取号 PP-016：库内 PP-001~PP-015（PP-002/003/004/005 为历史空号，不复用已发布的号段）—— PP-016~PP-021 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: craft_config, production, routing_gaps, readonly, llm_behavior
+
+### PP-017. 路线信号映射查询（只读）—— 米宝调 craft_config_query(action=route_signals) 并说明它是存量单兜底表（覆盖 #4923 零覆盖端点） 🔵
+```
+你: 现在有哪些路线信号映射？部位和工艺是怎么对应的？
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: craft_config_query(action=route_signals)
+数据: success=true
+数据: 调用参数 action=route_signals（信号映射面）
+数据: （散文、不计分）逐条来自服务端：`signals[]` 的 signal / curtain_type / craft / priority / status 只能原样转述 `GET /api/admin/production/route-signals` 的返回，不得编造映射行、不得自行发明新键
+数据: （散文、不计分）语义边界：该表自 issue #4452 起是**存量单兜底**（写面已退役，新单的部位改走 componentRole、工艺改走加工项的 craft_hint）⇒ 不得把它说成「新增映射的入口」，也不得声称已新增/已修改（本工具只读）
+必须成功: craft_config_query
+```
+真值: processing-manage.craft-config-route-signals, ai-chat.tool-classes
+溯源: 2026-10-02 新增（issue #4923）：六个零覆盖读端点中的 route_signals 首次获得 LLM 行为面覆盖。 ｜ tags: craft_config, production, route_signals, readonly, llm_behavior
+
+### PP-018. 路线来源异常订单清单（只读）—— 米宝调 craft_config_query(action=routing_anomalies) 并逐条给可行动建议（覆盖 #4923 零覆盖端点） 🔵
+```
+你: 有没有哪张加工单的部位或工艺是系统猜的？路线来源异常的订单有哪些？
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: craft_config_query(action=routing_anomalies)
+数据: success=true
+数据: 调用参数 action=routing_anomalies（异常订单清单面）
+数据: （散文、不计分）逐条来自服务端：`orders[]` 的 processing_order_no / route_key / route_requested_key / route_source / suggestion 只能原样转述 `GET /api/admin/production/orders/routing-anomalies` 的返回；route_source ∈ {default, partial} 的语义（default = 部位与工艺都没填、partial = 只填了一维）必须如实区分，不得含混
+数据: （散文、不计分）只读边界：不得声称已替商家补上部位/工艺或已重新生成加工单，只能按服务端 suggestion 引导商家去下单侧补信息
+必须成功: craft_config_query
+```
+真值: processing-manage.craft-config-routing-anomalies, ai-chat.tool-classes
+溯源: 2026-10-02 新增（issue #4923）：六个零覆盖读端点中的 routing_anomalies 首次获得 LLM 行为面覆盖。 ｜ tags: craft_config, production, routing_anomalies, readonly, llm_behavior
+
+### PP-019. 加工费组合定价表查询（只读）—— 米宝调 craft_config_query(action=fee_combinations) 并逐条转述组合与元/米单价（覆盖 #4923 零覆盖端点） 🔵
+```
+你: 我们店现在的加工费组合是怎么定价的？有哪些组合、多少钱一米？
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: craft_config_query(action=fee_combinations)
+数据: success=true
+数据: 调用参数 action=fee_combinations（组合定价表面）
+数据: （散文、不计分）逐条来自服务端：`combinations[]` 的 items / composition_key / unit_price / unit / status 只能原样转述 `GET /api/admin/production/processing-fee-combinations` 的返回；**不得用行业常识或代码默认常量编一个价**，也不得把 `unit_price` 与加工项自己的单价混为一谈
+数据: （散文、不计分）只读边界：改价 / 新建 / 停用组合都不在能力内（工具 read_only=true）⇒ 只能引导后台「加工项管理 → 加工费组合」页，不得声称已改价
+必须成功: craft_config_query
+```
+真值: processing-manage.craft-config-fee-combinations, ai-chat.tool-classes
+溯源: 2026-10-02 新增（issue #4923）：六个零覆盖读端点中的 fee_combinations 首次获得 LLM 行为面覆盖。 ｜ tags: craft_config, production, fee_combinations, readonly, llm_behavior
+
+### PP-020. 加工费缺口查询（只读）—— 米宝调 craft_config_query(action=fee_gaps) 并说明「缺价就是缺价、不发明默认价」（覆盖 #4923 零覆盖端点） 🔵
+```
+你: 有哪几个加工费组合是订单里用过、但我们还没定价的？
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: craft_config_query(action=fee_gaps)
+数据: success=true
+数据: 调用参数 action=fee_gaps（缺口面；`fee_combinations` 是已定价表面，两者不得混用）
+数据: （散文、不计分）逐条来自服务端：`unpriced_combinations[]` 的 composition_key / items / order_count / note 与 `unpriced_combination_total` / `scanned_order_items` / `scanned_truncated` 只能原样转述 `GET /api/admin/production/processing-fee-gaps` 的返回；**不得替缺口发明一个默认价或给一个「大概多少钱」的估算**
+数据: （散文、不计分）截断要显式：`scanned_truncated=true` 时必须说明「只扫了最近的一批订单」，不得把扫到的当全量；只读边界：不得声称已补价
+必须成功: craft_config_query
+```
+真值: processing-manage.craft-config-fee-gaps, ai-chat.tool-classes
+溯源: 2026-10-02 新增（issue #4923）：六个零覆盖读端点中的 fee_gaps 首次获得 LLM 行为面覆盖。 ｜ tags: craft_config, production, fee_gaps, readonly, llm_behavior
+
+### PP-021. 生产卡点查询（只读，A 模式）—— 米宝调 craft_config_query(action=stuck_points) 并带上阈值来源解释「卡在哪」（覆盖 #4923 零覆盖端点） 🔵
+```
+你: 车间现在卡在哪？哪些工序还没开工一直等着？
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: craft_config_query(action=stuck_points)
+数据: success=true
+数据: 调用参数 action=stuck_points（卡点面；不带 processing_order_id = 看本租户全部活跃加工单）
+数据: （散文、不计分）逐条来自服务端：`mode` / `threshold_hours` / `threshold_source` / `states` / `stuck_total` / `stuck[]` 的 set_no / position / operation / predecessor / stalled_hours 只能原样转述 `GET /api/admin/production/stuck-points` 的返回；「卡了多久」取前道 `done_at`（服务端已算好 `stalled_hours`），**不得自己按 updated_at 或当下时间心算**
+数据: （散文、不计分）A 模式口径：本片只查「**没开工**」那一种卡点（mode=A）⇒ 不得把「开了没完」也说成卡点；阈值要说清从哪来（`threshold_source`），不得把默认阈值说成商家自己配的
+必须成功: craft_config_query
+```
+真值: processing-manage.craft-config-stuck-points, ai-chat.tool-classes
+溯源: 2026-10-02 新增（issue #4923）：六个零覆盖读端点中的 stuck_points 首次获得 LLM 行为面覆盖。 ｜ tags: craft_config, production, stuck_points, readonly, llm_behavior
 
 ### PG-044. 加工项目录名与加工费组合键统一为「韩褶」（V139）：改名 + 组合键重算 + 不改价 + 历史不改 + 撞键 fail-closed 🔵
 ```
@@ -8646,8 +8731,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：604（活跃 127，跳过 477）
-- tier 分布：smoke 12 / normal 559 / adversarial 31
+- 用例总数：610（活跃 133，跳过 477）
+- tier 分布：smoke 12 / normal 565 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：19
@@ -8666,7 +8751,7 @@
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
-- 加工项域：19
+- 加工项域：25
 - 加工单域：56
 - 商品域：108
 - 工具注册器域：1

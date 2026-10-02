@@ -391,7 +391,7 @@ class TestOutputVerifyActionScope:
         for name in ("after_sales_manage", "customer_manage", "employee_manage", "role_manage",
                      "session_manage", "inventory_manage", "finance_api", "dashboard_stats",
                      "order_query", "inbound_order_query", "operation_catalog_query",
-                     "processing_order_set_query"):
+                     "processing_order_set_query", "craft_config_query"):
             assert name in multi, f"{name} 未被识别为多 action 工具（检测器漏了）"
         # 单 action 工具不得误判（防过度收紧：curtain_calc 只有算料一个入口；
         # category_manage 已由 #5247 收窄为 {tree} 单 action —— 这是**新增**的反例面）

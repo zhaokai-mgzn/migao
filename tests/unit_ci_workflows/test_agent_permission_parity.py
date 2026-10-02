@@ -31,6 +31,11 @@
    （陈旧条目也红）。
 2. **工具码 ≡ 它调用的每个已注解端点的生效码**（集合相等；未注解端点必须登记在
    `UNANNOTATED_ENDPOINTS` 里 —— 沉默放行正是本单要治的失效模式）。
+   ⚠️ **跨码工具有具名出口**（issue #4923 新增，与判据 5 的 `READ_WRITE_EXCEPTIONS` 同族）：
+   等式成立的前提是「一把工具的所有端点**同码**」；工具同时消费跨码端点时该等式结构性不可能成立
+   ⇒ 走 `CODE_DIVERGENCE_EXCEPTIONS` **具名登记**（`code`/`diverges`/`live`/`why`/`where` +
+   条数上限现取）。**未登记的分歧照旧红**，登记项本身也参与对账（陈旧 ⇒ 红）。
+   判别力自证见 `test_divergence_ledger_is_load_bearing`（三形态注入 + 还原必绿）。
 3. **工具码 ≡ 其对应菜单节点的码**（读工具必须持节点码；写工具允许持该页的写码，登记在
    `PAGE_WRITE_CODES`），且**菜单源在交集上同构**（同一节点名不得两处不同码），
    并**双向**钉住第四处菜单源已删（issue #5236）：被删符号不得长回来，且它缺席时解析器不得静默恒绿。
@@ -779,6 +784,10 @@ TOOL_MENU_NODE: dict[str, str] = {
     "briefing_query": "每日简报",                # dashboard:view
     "craft_calc_config_query": "工艺配置",       # processing:manage（生产域无专属读码）
     "processing_order_set_query": "生产看板",    # processing:manage（套件读面 = 加工单读面同码，#5246 收尾）
+    # 工艺配置读面聚合（issue #4923）：6 个读端点；工具声明生产域**读**码 `production:view`
+    # （与「工艺配置」节点同码）。⚠️ 端点侧生效码仍分三档（order:list / processing:manage /
+    # production:view）⇒ 判据 2 的「工具码 ≡ 端点码」现为**具名缺口**，见 `CODE_DIVERGENCE_EXCEPTIONS`。
+    "craft_config_query": "工艺配置",
 }
 
 #: 该菜单**页**允许的写码（判据 3 的「写工具可持页内写码」口径）：
@@ -847,6 +856,63 @@ READ_WRITE_EXCEPTIONS: dict[str, str] = {}
 #: 设计口径（migao-dev-flow §23 G1「豁免台账只许缩短、条数现取、命中数涨跌都红」）：
 #: 例外表是**燃尽靶子**而不是垃圾场 —— 新增一条必须在同一 diff 里抬高本上限并写明理由（评审可见）。
 READ_WRITE_EXCEPTIONS_CEILING = 0
+
+#: **「工具码 ≠ 端点生效码」的具名登记**（判据 2 的**有意保留**出口；issue #4923 新增）。
+#:
+#: 判据 2 的原口径是 `set(工具声明码) == set(端点生效码)` —— 它成立的前提是「一把工具的所有端点
+#: **同码**」。当一个工具同时消费**跨码端点**时，该等式**结构性不可能成立**（除非工具持多个码 =
+#: 把写码塞进只读工具的声明面，那是判据 5 要治的粒度债）⇒ 必须有**具名出口**，否则只剩两条坏路：
+#: ① 静默放宽等式（判据失去判别力）；② 为了凑等式去改端点授权面（授权变更，且会改掉岗位集合）。
+#:
+#: 形态与 `READ_WRITE_EXCEPTIONS` / `MENU_READ_PARITY_RESIDUALS` 同族（本仓既有的「有意保留 +
+#: 具名 + 归因」口径，见 `frontend/admin-web/src/config/menu.ts` 的 #5699 P4 段：**零 delta 的才
+#: 收敛；会改变岗位集合的 ⇒ 具名登记、有意保留**）：
+#:   · **未登记的分歧 ⇒ 判据 2 红**（沉默分歧照旧不许）；
+#:   · **陈旧登记 ⇒ 判据 2 红**（分歧消失/形态变了而条目还在 ⇒ 逼后来者销账，台账**只许缩短**）；
+#:   · **条数上限当场现取**（下面一行）—— 加条目必须在同一 diff 里改它（评审可见）。
+#:
+#: 每条字段（缺任一 ⇒ 判据 2 红）：
+#:   `code`（工具声明的码）· `diverges`（与声明码不同的端点路径，定界）· `live`（那些端点**现取**的
+#:   生效码，逐值冻结 ⇒ 端点侧一改就红）· `why`（为什么现在不动）· `where`（去向）。
+CODE_DIVERGENCE_EXCEPTIONS: dict[str, dict[str, object]] = {
+    "craft_config_query": {
+        "code": "production:view",
+        "diverges": [
+            "/api/admin/production/routing-gaps",
+            "/api/admin/production/route-signals",
+            "/api/admin/production/orders/routing-anomalies",
+            "/api/admin/production/stuck-points",
+        ],
+        "live": {
+            "/api/admin/production/routing-gaps": "order:list",
+            "/api/admin/production/route-signals": "order:list",
+            "/api/admin/production/orders/routing-anomalies": "processing:manage",
+            "/api/admin/production/stuck-points": "order:list",
+        },
+        "why": (
+            "issue #4923：本工具（只读，声明生产域**读**码 `production:view`）消费 6 个读端点，"
+            "其中 4 个的**生效码**不是读码 —— `routing-gaps`/`route-signals`/`stuck-points` 落"
+            "`ProductionController` 的**类级** `order:list`（无方法级注解），"
+            "`orders/routing-anomalies` 挂方法级**写码** `processing:manage`。"
+            "收敛到 `production:view` 会**收窄** {customer_service, finance, sales}（他们持 "
+            "`order:list`、不持生产读码）；`stuck-points` 另有跨页硬理由："
+            "`frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx` "
+            "（端点口径 `order:list`）也在调它 ⇒ 收敛会让客服/销售/财务在该页 403（页面残缺）。"
+            "**零 delta 的只有 `orders/routing-anomalies`**（`processing:manage` 与 "
+            "`production:view` 的持有岗位集合逐值相同 = {operator, product_manager}）"
+            "—— 但它是一个 GET 挂写码的**既有**粒度缺陷，收敛仍属授权面改动，本单不动。"
+        ),
+        "where": (
+            "**本单不改任何权限面**（`ProductionController` 零改动）⇒ 工具声明的读码 ≠ 4 个端点的"
+            "既有码，是**接受的缺口**。重启条件 = 生产域读码收敛单落地（届时按语义改判本条目："
+            "零 delta 的 `orders/routing-anomalies` 先收敛，`order:list` 那三个要么同批收敛、"
+            "要么按 #5699 P4 的口径继续具名保留）；收口后本条目必须**删除**（陈旧即红）。"
+        ),
+    },
+}
+
+#: `CODE_DIVERGENCE_EXCEPTIONS` 的**条数上限**（**现取** ⇒ 加条目必须在同一 diff 里改这一行）。
+CODE_DIVERGENCE_EXCEPTIONS_CEILING = 1
 
 #: **在飞端点**的显式登记（判据 1/2 的补集；issue #5314）。
 #:
@@ -967,6 +1033,22 @@ REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
                "`finance:create`/`agent:session:manage`），剩下这两处要么新增生产域写码/上传域码"
                "（产品裁定），要么改前端调用口径 —— 超出本单授权",
         "where": "`UNANNOTATED_ENDPOINTS` 只管「无码」；本项是「有码但码粒度错」，逐条记在这里；去向：#5236",
+    },
+    "craft_config_query 的端点跨码（Agent 可达）": {
+        "what": "issue #4923：只读工具 `craft_config_query`（声明生产域**读**码 `production:view`）"
+                "消费 6 个读端点，其中 4 个的**生效码**不是读码 —— `routing-gaps` / `route-signals` /"
+                " `stuck-points` 落 `ProductionController` 的**类级** `order:list`（无方法级注解）、"
+                "`orders/routing-anomalies` 挂方法级**写码** `processing:manage`",
+        "why": "收敛到 `production:view` 会**收窄** {customer_service, finance, sales}（持 `order:list`、"
+               "不持生产读码）；`stuck-points` 另有跨页硬理由：加工单生产明细页"
+               "（`frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx`，"
+               "端点口径 `order:list`）也在调它 ⇒ 收敛会让客服/销售/财务在该页 403。"
+               "**零 delta 的只有 `orders/routing-anomalies`**（`processing:manage` 与 `production:view` "
+               "的持有岗位集合逐值相同）—— 但它是 GET 挂写码的**既有**粒度缺陷，收敛仍属授权面改动",
+        "where": "本条与判据 2 的具名出口**成对**：现取读数与「为什么现在不动」逐条冻结在 "
+                 "`CODE_DIVERGENCE_EXCEPTIONS['craft_config_query']`（判据 2 消费它，陈旧/未登记都红）。"
+                 "**本单不改权限面**；重启条件 = 生产域读码收敛单落地（届时零 delta 的先收敛，"
+                 "`order:list` 那三个要么同批收敛、要么按 #5699 P4 口径继续具名保留）；去向：#4923",
     },
     "第四处菜单源（已于 #5236 删除）": {
         "what": "`UserController.generateMenus` 曾是**第四处**菜单源（5 节点遗留树：经营看板/商品管理/加工项管理/"
@@ -1134,11 +1216,23 @@ def problems_endpoint_parity(w: World) -> list[str]:
         codes = set(t.required_permissions)
         effective = {p for _, _, p in t.endpoints if p}
         if codes != effective:
-            out.append(
-                f"{t.name}（{t.file}）：required_permissions={sorted(codes)} ≠ "
-                f"其端点生效码 {sorted(effective)}"
-                f"（端点：{sorted({f'{v} {p} → {c}' for v, p, c in t.endpoints})}）"
+            # 跨码工具的**具名**出口（issue #4923）：登记了才放行，其余一律照旧红；
+            # 登记项本身也参与对账（陈旧 / 现取不符 / 缺字段 ⇒ 红）—— 见 `_divergence_ledger_problems`。
+            entry = CODE_DIVERGENCE_EXCEPTIONS.get(t.name)
+            registered = bool(entry) and codes == {entry.get("code")} and all(
+                _divergence_entry_problems(t, entry)
             )
+            if not registered:
+                out.append(
+                    f"{t.name}（{t.file}）：required_permissions={sorted(codes)} ≠ "
+                    f"其端点生效码 {sorted(effective)}"
+                    f"（端点：{sorted({f'{v} {p} → {c}' for v, p, c in t.endpoints})}）"
+                    "\n      ⇒ 若这是**有意保留**（端点跨码、收敛会改岗位集合）⇒ 在 "
+                    "`CODE_DIVERGENCE_EXCEPTIONS` 具名登记（含 code / diverges / live / why / where）；"
+                    "否则按「工具码 ≡ 端点码」修工具或端点"
+                )
+            else:
+                out.extend(_divergence_entry_problems(t, entry))
         for verb, path, perm in t.endpoints:
             if perm is not None:
                 continue
@@ -1148,7 +1242,60 @@ def problems_endpoint_parity(w: World) -> list[str]:
                     f"{t.name} 调用了**未登记**的未注解端点 `{key}` —— "
                     "沉默放行正是本单要治的失效模式（登记进 UNANNOTATED_ENDPOINTS 并写明理由）"
                 )
+    out.extend(_divergence_ledger_problems(w))
     return out
+
+
+def _divergence_ledger_problems(w: World) -> list[str]:
+    """`CODE_DIVERGENCE_EXCEPTIONS` 自身的对账（判据 2 的台账面；issue #4923）。
+
+    两件事**都不是**「额外加严」而是「让台账成台账」：
+      ① **未登记的分歧** —— 逐值现取，凡是「工具码 ≠ 端点生效码」且没登记的 ⇒ 红
+         （把「沉默的分歧」变成「必须显式决定」）；
+      ② **台账只许缩短** —— 条数**现取**（`> CEILING` 即红）、**陈旧条目**红
+         （现取分歧集合与登记集合不一致、工具不存在、声明码不是台里那一个 ⇒ 都红）。
+    缺字段（why/where 等）在 `_divergence_entry_problems` 里逐条报。
+    """
+    out: list[str] = []
+    if len(CODE_DIVERGENCE_EXCEPTIONS) > CODE_DIVERGENCE_EXCEPTIONS_CEILING:
+        out.append(
+            f"`CODE_DIVERGENCE_EXCEPTIONS` **又长回来了**：条数现取 = "
+            f"{len(CODE_DIVERGENCE_EXCEPTIONS)} > 上限 {CODE_DIVERGENCE_EXCEPTIONS_CEILING}"
+            "（加一条例外必须在同一 diff 里显式改上限那一行 —— 评审可见）"
+        )
+    for name, entry in sorted(CODE_DIVERGENCE_EXCEPTIONS.items()):
+        declared_fields = ("code", "diverges", "live", "why", "where")
+        empty = [f for f in declared_fields if not entry.get(f)]
+        if empty:
+            out.append(
+                f"`CODE_DIVERGENCE_EXCEPTIONS['{name}']` 缺字段 {empty}"
+                "（理由/去向缺一即红 —— 例外表不是垃圾桶）"
+            )
+    return out
+
+
+def _divergence_entry_problems(t: ToolDecl, entry: dict) -> list[str]:
+    """单条登记 vs 现取读数（返回空 = 该条登记兑现、可放行）。"""
+    if not isinstance(entry.get("code"), str) or not isinstance(entry.get("diverges"), list):
+        return [f"`CODE_DIVERGENCE_EXCEPTIONS['{t.name}']` 的 code/diverges 形态非法"]
+    live = {
+        path: perm for verb, path, perm in t.endpoints if perm != entry["code"]
+    }
+    problems = []
+    if sorted(live) != sorted(entry["diverges"]):
+        problems.append(
+            f"`CODE_DIVERGENCE_EXCEPTIONS['{t.name}'].diverges` 与**现取**分歧端点不一致："
+            f"现取 = {sorted(live)} / 登记 = {sorted(entry['diverges'])}"
+            "（分歧消失或形态变了 ⇒ 条目变陈旧，必须改判或删除）"
+        )
+    recorded_live = entry.get("live") or {}
+    if dict(recorded_live) != live:
+        problems.append(
+            f"`CODE_DIVERGENCE_EXCEPTIONS['{t.name}'].live` 与**现取**生效码不一致："
+            f"现取 = {dict(sorted(live.items()))} / 登记 = {dict(sorted(recorded_live.items()))}"
+            "（端点侧授权面被改了 ⇒ 重新裁定这条保留还是销账）"
+        )
+    return problems
 
 
 def _matches_registered(key: str, table: dict[str, str]) -> bool:
@@ -3883,6 +4030,74 @@ def test_every_judgement_can_go_red() -> None:
         assert sources[key] != base_sources[key], f"{label}：注入没生效（锚点失配）—— 同步本判据"
         mutated = build_world(sources)
         assert judgement(mutated), f"{label}：判据没有变红 ⇒ 它是空断言"
+
+
+def test_divergence_ledger_is_load_bearing() -> None:
+    """`CODE_DIVERGENCE_EXCEPTIONS`（判据 2 的具名出口，issue #4923）**必须承重**。
+
+    病根（本单实测）：判据 2 的原口径 `set(工具码) == set(端点生效码)` 对**跨码工具结构性不可能成立**
+    ——若只往台账里加条目而判据不读它，加条目就只是**注释**（绿了但没跑，`migao-acceptance` 点名的
+    「空跑」形态）。本判据把台账的三种失效形态各自判红，且**直连 `problems_endpoint_parity` 本体**
+    （不重写第二份判定）：
+
+      ① **对照**：真实树 ⇒ 判据 2 绿（登记兑现）；
+      ② **未登记的分歧**：把真工具的声明码改成**不在分歧集合里**的第三个码
+         ⇒ 即使名字在台账里也**必须红**（否则台账成了「按名字 blanket 豁免」）；
+      ③ **陈旧登记**：名字在台账里、但现取分歧集合与 `diverges` 不一致 ⇒ 红（台账只许缩短）；
+      ④ **条数上限现取**：上限被改小 ⇒ 红（加条目必须显式改上限那一行）。
+    """
+    from dataclasses import replace as _replace
+
+    base_sources = _source_map()
+    w = build_world(base_sources)
+    assert not problems_endpoint_parity(w), "① 前提：真实树上判据 2 全绿（登记兑现）"
+    assert sorted(CODE_DIVERGENCE_EXCEPTIONS) == ["craft_config_query"], (
+        "本判据的注入锚只覆盖 `craft_config_query`；台账加了第二条 ⇒ 同批补注入（不许留空）"
+    )
+
+    # ② 「声明码恰好是台里那一个」是**载荷条件**：加一个第三个码 ⇒ 名字在台账里也照样红
+    tools = list(w.tools)
+    idx = next(i for i, t in enumerate(tools) if t.name == "craft_config_query")
+    tools[idx] = _replace(tools[idx], required_permissions=("production:view", "dashboard:view"))
+    hits = problems_endpoint_parity(_replace(w, tools=tuple(tools)))
+    assert any(
+        "required_permissions=['dashboard:view', 'production:view']" in h
+        and "CODE_DIVERGENCE_EXCEPTIONS" in h
+        for h in hits
+    ), f"② 失败：声明码不是台里那一个（多了第三个码）时判据 2 没红 ⇒ 台账是 blanket 豁免（hits={hits}）"
+
+    # ③ 陈旧登记：现取分歧集合与 diverges 不一致 ⇒ 红
+    live_ledger = {k: dict(v) for k, v in CODE_DIVERGENCE_EXCEPTIONS.items()}
+    stale = {k: dict(v) for k, v in live_ledger.items()}
+    stale["craft_config_query"]["diverges"] = list(stale["craft_config_query"]["diverges"])[:3]
+    _swap_ledger(CODE_DIVERGENCE_EXCEPTIONS, stale)
+    try:
+        hits = problems_endpoint_parity(build_world(base_sources))
+    finally:
+        _swap_ledger(CODE_DIVERGENCE_EXCEPTIONS, live_ledger)
+    assert any("与**现取**分歧端点不一致" in h for h in hits), (
+        f"③ 失败：分歧记录变陈旧后判据 2 没红 ⇒ 条目不会老化（hits={hits}）"
+    )
+    # 还原后必须重新变绿（防「注入把台账改坏了」被误当成判据红了）
+    assert not problems_endpoint_parity(build_world(base_sources)), "③ 还原后判据 2 必须回绿"
+
+    # ④ 上限现取：上限低于条数 ⇒ 红（「只许缩短」的台账面）
+    global CODE_DIVERGENCE_EXCEPTIONS_CEILING
+    original_ceiling = CODE_DIVERGENCE_EXCEPTIONS_CEILING
+    CODE_DIVERGENCE_EXCEPTIONS_CEILING = 0
+    try:
+        hits = problems_endpoint_parity(build_world(base_sources))
+    finally:
+        CODE_DIVERGENCE_EXCEPTIONS_CEILING = original_ceiling
+    assert any("又长回来了" in h for h in hits), (
+        f"④ 失败：上限被改小后判据 2 没红 ⇒ 条数台账是空断言（hits={hits}）"
+    )
+
+
+def _swap_ledger(target: dict, values: dict) -> None:
+    """原地替换台账内容（判据在 helper 里直接读模块级字典 ⇒ 注入必须打在**同一个对象**上）。"""
+    target.clear()
+    target.update(values)
 
 
 def test_exception_ledger_only_shrinks(monkeypatch) -> None:

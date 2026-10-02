@@ -149,6 +149,9 @@ class TestMibaoToolsetTruth:
             # 覆盖体检把「零覆盖」误当成「没有这个能力」，故在此显式登记。
             "stock_ledger_query", "inbound_order_query", "operation_catalog_query",
             "craft_calc_config_query", "briefing_query", "processing_order_set_query",
+            # #4923 新接入的只读面（工艺配置缺口/异常/卡点/加工费组合 6 个读端点）：
+            # 解析漏文件/漏常量会让覆盖体检把「零覆盖」误当成「没有这个能力」，故显式登记。
+            "craft_config_query",
         }
         missing = must_have - real
         assert not missing, f"B 端工具集缺 {sorted(missing)}（skill 源码解析不完整）"

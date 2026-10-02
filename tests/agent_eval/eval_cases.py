@@ -7486,6 +7486,120 @@ _CASE_PP_015 = EvalCase(
     must_succeed=[{'tool': 'craft_calc_config_query'}],
 )
 
+# ── PP-016 [NORMAL] 工艺路线缺口查询（只读）—— 米宝调 craft_config_query(action=routing_gaps) 并逐条转述缺口（覆盖 #4923 零覆盖端点）（源: cases/processing.yml）──
+_CASE_PP_016 = EvalCase(
+    id='PP-016',
+    legacy_id='',
+    title='工艺路线缺口查询（只读）—— 米宝调 craft_config_query(action=routing_gaps) 并逐条转述缺口（覆盖 #4923 零覆盖端点）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工艺路线现在有没有缺口？哪些工序还没进路线？'],
+    expectations=['craft_config_query(action=routing_gaps)'],
+    data_checks=['success=true', '调用参数 action=routing_gaps（缺口面；工序库目录是 operation_catalog_query 的 operations，两者不得混用）', '（散文、不计分）缺口逐条来自服务端：`unrouted_operations` / `unrouted_operation_total` / `pending_confirmation_total` / `signal_keys_without_route` 只能原样转述 `GET /api/admin/production/routing-gaps` 的返回，不得自行推断「哪道工序该进哪条路线」，也不得编造服务端没返回的数量', '（散文、不计分）「有意挂起 ≠ 系统漏了」：`pending_confirmation=true` 的工序（等客户输入）必须如实说明**是有意挂起**，不得报成系统缺口；必要时可用 `note` 字段的口径解释', '（散文、不计分）只读边界：本工具 read_only=true，无任何写 action ⇒ 不得声称已把工序加进路线 / 已新建路线，只能引导商家去后台「工艺配置」页处理'],
+    skip_reason='',
+    tags=['craft_config', 'production', 'routing_gaps', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_config_query', 'args': {'action': 'routing_gaps'}}],
+)
+
+# ── PP-017 [NORMAL] 路线信号映射查询（只读）—— 米宝调 craft_config_query(action=route_signals) 并说明它是存量单兜底表（覆盖 #4923 零覆盖端点）（源: cases/processing.yml）──
+_CASE_PP_017 = EvalCase(
+    id='PP-017',
+    legacy_id='',
+    title='路线信号映射查询（只读）—— 米宝调 craft_config_query(action=route_signals) 并说明它是存量单兜底表（覆盖 #4923 零覆盖端点）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['现在有哪些路线信号映射？部位和工艺是怎么对应的？'],
+    expectations=['craft_config_query(action=route_signals)'],
+    data_checks=['success=true', '调用参数 action=route_signals（信号映射面）', '（散文、不计分）逐条来自服务端：`signals[]` 的 signal / curtain_type / craft / priority / status 只能原样转述 `GET /api/admin/production/route-signals` 的返回，不得编造映射行、不得自行发明新键', '（散文、不计分）语义边界：该表自 issue #4452 起是**存量单兜底**（写面已退役，新单的部位改走 componentRole、工艺改走加工项的 craft_hint）⇒ 不得把它说成「新增映射的入口」，也不得声称已新增/已修改（本工具只读）'],
+    skip_reason='',
+    tags=['craft_config', 'production', 'route_signals', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_config_query', 'args': {'action': 'route_signals'}}],
+)
+
+# ── PP-018 [NORMAL] 路线来源异常订单清单（只读）—— 米宝调 craft_config_query(action=routing_anomalies) 并逐条给可行动建议（覆盖 #4923 零覆盖端点）（源: cases/processing.yml）──
+_CASE_PP_018 = EvalCase(
+    id='PP-018',
+    legacy_id='',
+    title='路线来源异常订单清单（只读）—— 米宝调 craft_config_query(action=routing_anomalies) 并逐条给可行动建议（覆盖 #4923 零覆盖端点）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['有没有哪张加工单的部位或工艺是系统猜的？路线来源异常的订单有哪些？'],
+    expectations=['craft_config_query(action=routing_anomalies)'],
+    data_checks=['success=true', '调用参数 action=routing_anomalies（异常订单清单面）', '（散文、不计分）逐条来自服务端：`orders[]` 的 processing_order_no / route_key / route_requested_key / route_source / suggestion 只能原样转述 `GET /api/admin/production/orders/routing-anomalies` 的返回；route_source ∈ {default, partial} 的语义（default = 部位与工艺都没填、partial = 只填了一维）必须如实区分，不得含混', '（散文、不计分）只读边界：不得声称已替商家补上部位/工艺或已重新生成加工单，只能按服务端 suggestion 引导商家去下单侧补信息'],
+    skip_reason='',
+    tags=['craft_config', 'production', 'routing_anomalies', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_config_query', 'args': {'action': 'routing_anomalies'}}],
+)
+
+# ── PP-019 [NORMAL] 加工费组合定价表查询（只读）—— 米宝调 craft_config_query(action=fee_combinations) 并逐条转述组合与元/米单价（覆盖 #4923 零覆盖端点）（源: cases/processing.yml）──
+_CASE_PP_019 = EvalCase(
+    id='PP-019',
+    legacy_id='',
+    title='加工费组合定价表查询（只读）—— 米宝调 craft_config_query(action=fee_combinations) 并逐条转述组合与元/米单价（覆盖 #4923 零覆盖端点）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我们店现在的加工费组合是怎么定价的？有哪些组合、多少钱一米？'],
+    expectations=['craft_config_query(action=fee_combinations)'],
+    data_checks=['success=true', '调用参数 action=fee_combinations（组合定价表面）', '（散文、不计分）逐条来自服务端：`combinations[]` 的 items / composition_key / unit_price / unit / status 只能原样转述 `GET /api/admin/production/processing-fee-combinations` 的返回；**不得用行业常识或代码默认常量编一个价**，也不得把 `unit_price` 与加工项自己的单价混为一谈', '（散文、不计分）只读边界：改价 / 新建 / 停用组合都不在能力内（工具 read_only=true）⇒ 只能引导后台「加工项管理 → 加工费组合」页，不得声称已改价'],
+    skip_reason='',
+    tags=['craft_config', 'production', 'fee_combinations', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_config_query', 'args': {'action': 'fee_combinations'}}],
+)
+
+# ── PP-020 [NORMAL] 加工费缺口查询（只读）—— 米宝调 craft_config_query(action=fee_gaps) 并说明「缺价就是缺价、不发明默认价」（覆盖 #4923 零覆盖端点）（源: cases/processing.yml）──
+_CASE_PP_020 = EvalCase(
+    id='PP-020',
+    legacy_id='',
+    title='加工费缺口查询（只读）—— 米宝调 craft_config_query(action=fee_gaps) 并说明「缺价就是缺价、不发明默认价」（覆盖 #4923 零覆盖端点）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['有哪几个加工费组合是订单里用过、但我们还没定价的？'],
+    expectations=['craft_config_query(action=fee_gaps)'],
+    data_checks=['success=true', '调用参数 action=fee_gaps（缺口面；`fee_combinations` 是已定价表面，两者不得混用）', '（散文、不计分）逐条来自服务端：`unpriced_combinations[]` 的 composition_key / items / order_count / note 与 `unpriced_combination_total` / `scanned_order_items` / `scanned_truncated` 只能原样转述 `GET /api/admin/production/processing-fee-gaps` 的返回；**不得替缺口发明一个默认价或给一个「大概多少钱」的估算**', '（散文、不计分）截断要显式：`scanned_truncated=true` 时必须说明「只扫了最近的一批订单」，不得把扫到的当全量；只读边界：不得声称已补价'],
+    skip_reason='',
+    tags=['craft_config', 'production', 'fee_gaps', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_config_query', 'args': {'action': 'fee_gaps'}}],
+)
+
+# ── PP-021 [NORMAL] 生产卡点查询（只读，A 模式）—— 米宝调 craft_config_query(action=stuck_points) 并带上阈值来源解释「卡在哪」（覆盖 #4923 零覆盖端点）（源: cases/processing.yml）──
+_CASE_PP_021 = EvalCase(
+    id='PP-021',
+    legacy_id='',
+    title='生产卡点查询（只读，A 模式）—— 米宝调 craft_config_query(action=stuck_points) 并带上阈值来源解释「卡在哪」（覆盖 #4923 零覆盖端点）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['车间现在卡在哪？哪些工序还没开工一直等着？'],
+    expectations=['craft_config_query(action=stuck_points)'],
+    data_checks=['success=true', '调用参数 action=stuck_points（卡点面；不带 processing_order_id = 看本租户全部活跃加工单）', '（散文、不计分）逐条来自服务端：`mode` / `threshold_hours` / `threshold_source` / `states` / `stuck_total` / `stuck[]` 的 set_no / position / operation / predecessor / stalled_hours 只能原样转述 `GET /api/admin/production/stuck-points` 的返回；「卡了多久」取前道 `done_at`（服务端已算好 `stalled_hours`），**不得自己按 updated_at 或当下时间心算**', '（散文、不计分）A 模式口径：本片只查「**没开工**」那一种卡点（mode=A）⇒ 不得把「开了没完」也说成卡点；阈值要说清从哪来（`threshold_source`），不得把默认阈值说成商家自己配的'],
+    skip_reason='',
+    tags=['craft_config', 'production', 'stuck_points', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_config_query', 'args': {'action': 'stuck_points'}}],
+)
+
 # ── PG-044 [NORMAL] 加工项目录名与加工费组合键统一为「韩褶」（V139）：改名 + 组合键重算 + 不改价 + 历史不改 + 撞键 fail-closed（源: cases/processing.yml）──
 _CASE_PG_044 = EvalCase(
     id='PG-044',
@@ -11745,6 +11859,12 @@ ALL_CASES = (
     _CASE_PG_042,
     _CASE_PG_043,
     _CASE_PP_015,
+    _CASE_PP_016,
+    _CASE_PP_017,
+    _CASE_PP_018,
+    _CASE_PP_019,
+    _CASE_PP_020,
+    _CASE_PP_021,
     _CASE_PG_044,
     _CASE_PG_045,
     _CASE_PG_046,
