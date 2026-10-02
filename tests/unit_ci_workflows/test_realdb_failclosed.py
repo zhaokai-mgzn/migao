@@ -72,6 +72,10 @@ _MAP = "backend/admin-api/src/test/java/com/migao/admin/mapper/"
 #                         issue #5146）—— 夹具内部收口，故这三个类**不直接**出现 `PgCluster`，
 #                         这就是本表要**显式登记**的例外（不登记 = 判据②会把它判红）。
 REALDB_FILES: dict[str, str] = {
+    # issue #5939：发货单**列表**读面（GET /api/admin/shipments）的真库判据 —— 只真 PG 能证的四条：
+    # 跨租户不可见（+ 反向自证对方租户自己读得到）/ 软删明细不计进 itemCount / 客户名取自 orders 连接 /
+    # 未发货按 packed_at 参与排序，以及 LIMIT 生效。
+    _SVC + "ShipmentListQueryRealDbTest.java": "direct",
     # issue #5388：改价审计读面（JSONB 真值 / 脱敏期历史行 / 工具筛选 / 窗口 / 租户）
     _SVC + "AuditLogPriceChangeRealDbTest.java": "direct",
     # issue #5327：批量批次（agent_batches / agent_batch_items）的跨租户隔离判据 ——

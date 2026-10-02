@@ -171,14 +171,17 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
   it('④ 负控：没有 processing:manage ⇒ 该入口**不出现**（开菜单不得顺手放宽门禁）', async () => {
     mockPermissions = ['order:list']
     const { container } = render(<Sidebar collapsed={false} onToggle={() => {}} />)
-    // 自证渲染面非空：先展开「交易管理」（order:list 下唯一可见的分组），菜单渲染失败时
-    // queryByRole 恒 null = 空断言
+    // 自证渲染面非空：先展开「交易管理」，菜单渲染失败时 queryByRole 恒 null = 空断言
     fireEvent.click(screen.getByTestId('sidebar-group-toggle-trade-center'))
     expect(within(container).getByRole('link', { name: '订单列表' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: NAME })).toBeNull()
-    // 更强的负控：整组都不在（组内 3 项全被过滤 ⇒ 空组剔除）—— 不是「渲染了但看不见」
-    expect(screen.queryByText('仓储与物料')).toBeNull()
-    expect(screen.queryByTestId('sidebar-group-toggle-inventory-center')).toBeNull()
+    // 🔴 issue #5939 改判（**收窄，不放宽**）：`order:list` 现在会带出**同一组**的「发货单」
+    // ⇒ 「仓储与物料」组不再整组消失。更强的形态随之改成：**组在、组内恰是发货单一项**，
+    // 而「余料台账」仍不在 —— 判据要证的事一件没少（不得靠别的码混进来）。
+    fireEvent.click(screen.getByTestId('sidebar-group-toggle-inventory-center'))
+    const inventoryGroup = screen.getByText('仓储与物料').closest('[data-group-key]') as HTMLElement
+    expect(within(inventoryGroup).getAllByRole('link').map((a) => a.textContent)).toEqual(['发货单'])
+    expect(within(inventoryGroup).queryByRole('link', { name: NAME })).toBeNull()
     cleanup()
   })
 

@@ -38,7 +38,7 @@ import {
   type MenuItem,
 } from '@/config/menu'
 
-/** 新 IA（issue #5778）：**6 组 / 19 个组内项 + 1 个顶部一级项 + 1 个尾部独立项 = 21 项** */
+/** 新 IA（issue #5778；#5939 +「发货单」）：**6 组 / 20 个组内项 + 1 个顶部一级项 + 1 个尾部独立项 = 22 项** */
 const EXPECTED_GROUPS: { key: string; name: string; keys: string[] }[] = [
   { key: 'workspace', name: '工作台', keys: ['dashboard', 'briefing'] },
   {
@@ -55,7 +55,7 @@ const EXPECTED_GROUPS: { key: string; name: string; keys: string[] }[] = [
   {
     key: 'inventory-center',
     name: '仓储与物料',
-    keys: ['inbound-orders', 'production-remnants', 'production-saving-board'],
+    keys: ['inbound-orders', 'shipments', 'production-remnants', 'production-saving-board'],
   },
   { key: 'org-center', name: '组织管理', keys: ['employees', 'roles', 'settings'] },
 ]
@@ -109,11 +109,11 @@ describe('新 IA 事实（issue #5778：6 组 + 一级项 + 独立项 = 21 项�
     expect(menuGroups.map((g) => g.name)).not.toContain('智能客服')
   })
 
-  it('每组组内项 key 序列逐值相等（顺序敏感），且总数恒为 21', () => {
+  it('每组组内项 key 序列逐值相等（顺序敏感），且总数恒为 22', () => {
     expect(
       menuGroups.map((g) => ({ key: g.key, keys: g.children.map((c) => c.key) })),
     ).toEqual(EXPECTED_GROUPS.map((g) => ({ key: g.key, keys: g.keys })))
-    expect(ALL_KEYS).toHaveLength(21)
+    expect(ALL_KEYS).toHaveLength(22)
     expect(visibleKeys(ADMIN)).toEqual(ALL_KEYS)
   })
 
@@ -180,7 +180,7 @@ describe('isItemVisible：三条件（adminOnly ∧ briefingToggle ∧ permissio
     const withAdminOnly = menuGroups.flatMap((g) => g.children).filter((c) => c.adminOnly)
     expect(withAdminOnly).toEqual([])
     // 面非空自检：上面的空数组不是因为解析失灵
-    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(19)
+    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(20)
   })
 
   it.each([
@@ -210,15 +210,19 @@ describe('filterMenuItems / visibleMenuGroups：过滤保持顺序 + 空组剔�
   })
 
   it('空组**整组**剔除（组内一项不剩 ⇒ 组名也不渲染）', () => {
-    // 只有 order:list ⇒ 只剩「交易管理」（仅订单列表）
+    // 只有 order:list ⇒ 只剩「交易管理」（仅订单列表）+「仓储与物料」（#5939 起**发货单也用该码**
+    // —— 它与订单列表是同一批人在用，故同码不同页；这正是「取既有码、零授权 delta」的可见后果）。
     // 🔴 issue #5699（P4）：经营看板节点码 = `dashboard:view` ⇒ 无该码时「工作台」**整组消失**
     //（此前它无码 ⇒ 全员可见，与页面/路由守卫的码不一致）。
     const groups = visibleMenuGroups(menuGroups, { permissions: ['order:list'] })
-    expect(groups.map((g) => g.key)).toEqual(['trade-center'])
+    expect(groups.map((g) => g.key)).toEqual(['trade-center', 'inventory-center'])
     expect(
       groups.map((g) => ({ key: g.key, keys: g.children.map((c) => c.key) })),
-    ).toEqual([{ key: 'trade-center', keys: ['orders'] }])
-    // 反恒真：确实被削过（6 组 → 1 组，5 个空组整组消失）
+    ).toEqual([
+      { key: 'trade-center', keys: ['orders'] },
+      { key: 'inventory-center', keys: ['shipments'] },
+    ])
+    // 反恒真：确实被削过（6 组 → 2 组，4 个空组整组消失）
     expect(menuGroups).toHaveLength(6)
   })
 
@@ -321,8 +325,8 @@ describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前�
         return [item.path, g.key] as const
       }),
     )
-    expect(cases).toHaveLength(19)
-    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(19)
+    expect(cases).toHaveLength(20)
+    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(20)
     for (const [path, groupKey] of cases) {
       expect(`${path} ⇒ ${resolveActiveGroupKey(menuGroups, path)}`).toBe(`${path} ⇒ ${groupKey}`)
     }
@@ -377,9 +381,9 @@ describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前�
 describe('flattenMenu：head 组 → 一级项 → tail 组 → 尾部独立项（命令面板的索引面）', () => {
   const flat = flattenMenu(menuGroups, standaloneTopItems, standaloneItems)
 
-  it('顺序 = 21 项全部，且与组结构逐项对齐', () => {
+  it('顺序 = 22 项全部，且与组结构逐项对齐', () => {
     expect(flat.map((i) => i.key)).toEqual(ALL_KEYS)
-    expect(flat).toHaveLength(21)
+    expect(flat).toHaveLength(22)
     const expected = EXPECTED_GROUPS.flatMap((g) => g.keys.map((k) => ({ key: k, groupKey: g.key, groupName: g.name })))
     // #5877：一级项插在「工作台」组（head）与其余组（tail）之间；不属于任何组 ⇒ 组标签为空
     const headLen = EXPECTED_GROUPS.filter((g) => g.key === SLOT_KEY).flatMap((g) => g.keys).length
@@ -412,10 +416,11 @@ describe('splitGroupsAtTopItemSlot：一级项的插入位（#5877）', () => {
   it('🔴 slot 组**不在可见分组里**（权限过滤掉）⇒ head 为空、tail 全量 = 回落到「所有分组之前」', () => {
     // 这是硬要求：一级项**绝不允许跟着 slot 组一起消失**（最坏退回旧位置，也不能没有入口）
     const visible = visibleMenuGroups(menuGroups, { permissions: ['order:list'], roles: [] })
-    expect(visible.map((g) => g.key)).toEqual(['trade-center'])   // 反恒真：slot 组确实被滤掉了
+    // 反恒真：slot 组确实被滤掉了（#5939 起 order:list 还会带出「仓储与物料」组的发货单）
+    expect(visible.map((g) => g.key)).toEqual(['trade-center', 'inventory-center'])
     const { head, tail } = splitGroupsAtTopItemSlot(visible, 'workspace')
     expect(head).toEqual([])
-    expect(tail.map((g) => g.key)).toEqual(['trade-center'])
+    expect(tail.map((g) => g.key)).toEqual(['trade-center', 'inventory-center'])
   })
 
   it('slotKey 为 null（缺省/未配置）⇒ 同上：head 为空、tail 全量', () => {
@@ -436,11 +441,11 @@ describe('splitGroupsAtTopItemSlot：一级项的插入位（#5877）', () => {
   })
 
   it('🔴 回落口径与 flattenMenu 同源：slot 组不可见时，一级项仍渲染在**所有分组之前**（而不是消失）', () => {
-    // 本权限集可见的组 = 交易管理（order:list）+ 仓储与物料（省料看板要 product:list）
+    // 本权限集可见的组 = 交易管理（order:list）+ 仓储与物料（发货单 order:list / 省料看板 product:list）
     const groups = visibleMenuGroups(menuGroups, { permissions: ['order:list', 'product:list'], roles: [] })
     expect(groups.map((g) => g.key)).toEqual(['trade-center', 'inventory-center'])
     expect(flattenMenu(groups, standaloneTopItems, standaloneItems).map((i) => i.key)).toEqual([
-      'products', 'orders', 'production-saving-board', 'notifications',
+      'products', 'orders', 'shipments', 'production-saving-board', 'notifications',
     ])
   })
 })
@@ -448,8 +453,8 @@ describe('splitGroupsAtTopItemSlot：一级项的插入位（#5877）', () => {
 describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序档位）', () => {
   const items = allItems()
 
-  it('面非空自检：可搜索面 = 21 项', () => {
-    expect(items).toHaveLength(21)
+  it('面非空自检：可搜索面 = 22 项', () => {
+    expect(items).toHaveLength(22)
   })
 
   it('空查询 / 纯空白 ⇒ 空数组（面板的「空查询列全量」由调用方实现，不是本函数）', () => {
@@ -466,7 +471,7 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
     ['拼音首字母 keywords（rank 2）', 'yltz', ['production-remnants']],
     ['拼音首字母 keywords（rank 2）', 'sckb', ['production-board']],
     ['大小写不敏感', 'DINGDAN', ['orders']],
-    ['组名命中（rank 3）', '仓储', ['inbound-orders', 'production-remnants', 'production-saving-board']],
+    ['组名命中（rank 3）', '仓储', ['inbound-orders', 'shipments', 'production-remnants', 'production-saving-board']],
     ['keywords 里的中文别名（rank 2）', '加工费', ['processing']],
     ['无命中 ⇒ []', '不存在的菜单', []],
   ])('%s：`%s`', (_name, query, expected) => {
@@ -497,8 +502,9 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
 
   it('命中面**只**来自传入的项：无权限项不在输入面 ⇒ 搜不到（搜索不是绕过权限的口子）', () => {
     const restricted = allItems({ permissions: ['order:list'], roles: [] })
-    // 🔴 issue #5699（P4）：经营看板节点码 = `dashboard:view` ⇒ 受限面 = 交易管理的订单列表 + 独立项
-    expect(restricted.map((i) => i.key)).toEqual(['orders', 'notifications'])
+    // 🔴 issue #5699（P4）：经营看板节点码 = `dashboard:view` ⇒ 受限面 = 交易管理的订单列表
+    // + **仓储与物料的发货单**（#5939：与订单列表同码 `order:list`，同一批人在用）+ 独立项
+    expect(restricted.map((i) => i.key)).toEqual(['orders', 'shipments', 'notifications'])
     // `splb`（商品列表的拼音）在全量面里命中，在受限面里必须为空
     expect(searchMenu(items, 'splb').map((i) => i.key)).toEqual(['products'])
     expect(searchMenu(restricted, 'splb')).toEqual([])
@@ -516,7 +522,7 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
 describe('权限过滤的端到端口径（可见项 key 集合，逐条精确断言）', () => {
   it.each([
     [
-      '超管 `*` + admin 角色 + 简报开关开 ⇒ 21 项全可见',
+      '超管 `*` + admin 角色 + 简报开关开 ⇒ 22 项全可见',
       { permissions: ['*'], roles: ['admin'], briefingEnabled: true },
       ALL_KEYS,
     ],

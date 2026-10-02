@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
+import com.migao.admin.dto.ShipmentListRow;
+import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.OrderShipment;
 import com.migao.admin.entity.OrderShipmentItem;
 import com.migao.admin.exception.BusinessException;
@@ -12,6 +15,7 @@ import com.migao.admin.mapper.OrderLogisticsMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.OrderShipmentItemMapper;
 import com.migao.admin.mapper.OrderShipmentMapper;
+import com.migao.admin.mapper.OrderShipmentQueryMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.worker.WorkerIdentity;
 import lombok.RequiredArgsConstructor;
@@ -80,6 +84,12 @@ public class OrderShipmentService {
     /** 撤销打包理由上限（与 {@code orders.close_reason} 同量级）。 */
     private static final int MAX_UNPACK_REASON = 500;
 
+    /**
+     * 发货单**列表**上限（issue #5939）—— 与入库单列表同量级（那里是 {@code LIST_LIMIT = 200}）。
+     * 流水型单据不做深分页，但**绝不无界返回**。
+     */
+    public static final int LIST_LIMIT = 200;
+
     private static final DateTimeFormatter SHIPMENT_NO_TS = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final OrderMapper orderMapper;
@@ -91,6 +101,8 @@ public class OrderShipmentService {
     private final ClientRequestIdService clientRequestIdService;
     private final ImageRecognitionClient imageRecognitionClient;
     private final ObjectMapper objectMapper;
+    /** 发货单**列表**聚合读面（issue #5939）。⚠️ 声明在最后：Lombok 生成的位置参数构造器按字段序。 */
+    private final OrderShipmentQueryMapper orderShipmentQueryMapper;
 
     // ══════════════════════════════════════════════════════════════════════════════
     // 拍照识别（**不落库**，与 #5321 的页面快通道同一份内核）
@@ -399,6 +411,45 @@ public class OrderShipmentService {
         result.put("shipments", shipmentViews);
         result.put("shipped_totals", totals(allItems));
         return result;
+    }
+
+    /**
+     * 发货单**列表**读面（issue #5939）：本租户的发货单，近的在前，带客户名与实发汇总。
+     *
+     * <h3>为什么它不是「第二个真值」</h3>
+     * <p>它与 {@link #readShipment} 共用**同一份**实发汇总实现（{@link #totals}）⇒ 列表上看到的
+     * 「实发」与订单详情/工人端看到的逐字同源。列表只多做一件事：把明细**按发货单分组**后逐单汇总。</p>
+     *
+     * <h3>边界</h3>
+     * <ul>
+     *   <li><b>租户</b>：{@code tenantId} 一路传到 SQL（跨租户读 = 查不到）；</li>
+     *   <li><b>上限</b>：{@link #LIST_LIMIT} 张；空列表 ⇒ <b>不再查明细</b>（不做无谓查询）；</li>
+     *   <li><b>关键词</b>：空白一律当「不过滤」（传 null）—— 「搜空串」会返回空列表，那是另一回事。</li>
+     * </ul>
+     */
+    public List<ShipmentListRow> listShipments(String keyword, Long tenantId) {
+        List<ShipmentListRow> rows = orderShipmentQueryMapper.selectListRows(
+                tenantId, trimToNull(keyword), LIST_LIMIT);
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<String> shipmentIds = rows.stream().map(ShipmentListRow::getId).toList();
+        List<OrderShipmentItem> items = orderShipmentItemMapper.selectByShipmentIds(shipmentIds, tenantId);
+        Map<String, List<OrderShipmentItem>> byShipment = new LinkedHashMap<>();
+        if (items != null) {
+            for (OrderShipmentItem it : items) {
+                byShipment.computeIfAbsent(it.getShipmentId(), key -> new ArrayList<>()).add(it);
+            }
+        }
+        for (ShipmentListRow row : rows) {
+            row.setShippedTotals(totals(byShipment.getOrDefault(row.getId(), List.of())));
+        }
+        return rows;
+    }
+
+    /** 空白 ⇒ null（「没填」与「搜空串」是两件事，不能混成一个）。 */
+    private static String trimToNull(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 
     /**

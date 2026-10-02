@@ -114,6 +114,12 @@ public class MenuController {
         // 余料台账（issue #5191）/ 省料看板（issue #5159）沿用 processing:manage ——
         // 与 RemnantController 的类级 @RequirePermission 同码（门禁不放宽也不收紧）。
         MenuNode i1 = new MenuNode("inbound:view", "入库单");
+        // 发货单（issue #5939）：**取既有码 order:list**（与「订单列表」节点、以及该页第一屏读端点
+        // GET /api/admin/shipments 的 @RequirePermission 逐字同码）—— 不新造 `shipment:view`：
+        // 新码今天没有任何岗位持有 ⇒ 节点对所有人不可见（#4203 同族坑）。
+        // ⚠️ 与「订单列表」节点**同码不同项**是**有意**的（同族先例：`dashboard:view` 同时挂
+        // 「经营看板」与「每日简报」）：码 = 「谁看得见」，两页本来就是同一批人在用。
+        MenuNode i2 = new MenuNode("order:list", "发货单");
         MenuNode prRemnants = new MenuNode("processing:manage", "余料台账");
         MenuNode prSaving = new MenuNode("product:list", "省料看板");   // #5699 P4：= 该页读码
         // 旧 label「员工列表」→「员工管理」（#5271；code 不变 employee:list）
@@ -144,7 +150,7 @@ public class MenuController {
             // 生产管理（本轮收进「加工项管理」= p4，位于「智能派单」之后、「工艺配置」之前，
             // 与 menu.ts 的组内顺序逐字一致）
             new MenuNode("production-center", "生产管理", List.of(pr1, prPool, p4, pr2, pr3)),
-            new MenuNode("inventory-center", "仓储与物料", List.of(i1, prRemnants, prSaving)),
+            new MenuNode("inventory-center", "仓储与物料", List.of(i1, i2, prRemnants, prSaving)),
             new MenuNode("org-center", "组织管理", List.of(e1, r1, s1, e2))
         );
     }

@@ -12,6 +12,7 @@ import com.migao.admin.mapper.OrderLogisticsMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.OrderShipmentItemMapper;
 import com.migao.admin.mapper.OrderShipmentMapper;
+import com.migao.admin.mapper.OrderShipmentQueryMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.ClientRequestIdService;
@@ -90,11 +91,14 @@ class AdminOrderShipmentReadTest {
     @Mock private ProcessingOrderMapper processingOrderMapper;
     @Mock private ClientRequestIdService clientRequestIdService;
     @Mock private ImageRecognitionClient imageRecognitionClient;
+    /** issue #5939：发货单列表读面（本类不测它，但构造器按字段序要求它在场）。 */
+    @Mock private OrderShipmentQueryMapper orderShipmentQueryMapper;
 
     private OrderShipmentService service() {
         return new OrderShipmentService(orderMapper, orderItemMapper, orderLogisticsMapper,
                 orderShipmentMapper, orderShipmentItemMapper, processingOrderMapper,
-                clientRequestIdService, imageRecognitionClient, new ObjectMapper());
+                clientRequestIdService, imageRecognitionClient, new ObjectMapper(),
+                orderShipmentQueryMapper);
     }
 
     private Order order(long tenantId) {

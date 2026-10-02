@@ -609,9 +609,9 @@ class AuthServiceTest {
 
         var inventory = groupByKey(menus, "inventory-center");
         assertThat(keysOf(inventory.getChildren())).containsExactly(
-                "inbound-orders", "production-remnants", "production-saving-board");
+                "inbound-orders", "shipments", "production-remnants", "production-saving-board");
         assertThat(pathsOf(inventory.getChildren())).containsExactly(
-                "/inbound-orders", "/production/remnants", "/production/saving-board");
+                "/inbound-orders", "/shipments", "/production/remnants", "/production/saving-board");
 
         var org = groupByKey(menus, "org-center");
         assertThat(keysOf(org.getChildren())).containsExactly("employees", "roles", "settings");
@@ -685,16 +685,20 @@ class AuthServiceTest {
     void currentUserMenusHideGroupsWithoutPermission() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("order:list");
 
-        // 顶层只有「交易管理 + 通知中心」—— #5699 P4 起经营看板也按 dashboard:view 门控
+        // 顶层只有「交易管理 + 仓储与物料 + 通知中心」—— #5699 P4 起经营看板也按 dashboard:view 门控
         // ⇒ 无该码时工作台组**整组**不出现（不再有「组内只剩经营看板」这一形态）。
-        assertThat(keysOf(menus)).containsExactly("trade-center", "notifications");
+        // 🔴 #5939：「仓储与物料」在**该权限下可见**了 —— 因为「发货单」取的就是 order:list（与订单列表
+        // 同一批人在用）。这不是放宽门禁：该组里**只有**发货单一项，余料台账/省料看板仍各要自己的码
+        // （见下方「同组不等于同权」专条）。
+        assertThat(keysOf(menus)).containsExactly("trade-center", "inventory-center", "notifications");
+        assertThat(keysOf(groupByKey(menus, "inventory-center").getChildren())).containsExactly("shipments");
         assertThat(allNames(menus)).doesNotContain("经营看板", "每日简报");
         // 负控（整组不出现，不得漏权限门控）
         assertThat(allNames(menus)).doesNotContain(
-                "每日简报", "生产管理", "智能客服", "商品与加工项", "仓储与物料", "组织管理");
+                "每日简报", "生产管理", "智能客服", "商品与加工项", "组织管理");
         assertThat(keysOf(menus)).doesNotContain(
                 "production-center", "smart-customer-service", "product-center",
-                "inventory-center", "org-center", "customer-center");
+                "org-center", "customer-center");
     }
     @Test
     @DisplayName("仓储与物料组：入库单落在**独立的** inbound:view 判定里（不得塞进 processing:manage）")

@@ -3023,6 +3023,45 @@ export interface InboundOrderLine {
   batchNos?: string | null
 }
 
+/** 发货单实发汇总（issue #5939）—— 与按单读面 `shipped_totals` **同一份口径**（`totals()`） */
+export interface ShipmentShippedTotals {
+  /** 实发套数（只对**显式填过**的行求和；未填 ⇒ 0，语义是「这一维不适用」） */
+  set_count?: number
+  /** 实发卷数（同上） */
+  roll_count?: number
+  /** 按单位累计的实发数量（米 / 套 / 件 …；单位不同**不相加**） */
+  by_unit?: Record<string, number>
+}
+
+/**
+ * 发货单列表行（issue #5939）—— 大菜单「仓储与物料 ▸ 发货单」的第一屏读面
+ * （`GET /api/admin/shipments`）。
+ *
+ * 🔴 与**按单**读面 `OrderShipmentRead` 的关系：那份答「这一单发了多少」，本份答
+ * 「这个租户发过哪些货」；两者的「实发」都由 `order_shipment_items` + 同一份汇总口径给出
+ * （**不在这条链上另算一套**）。
+ */
+export interface ShipmentListRow {
+  id: string
+  /** 发货单号（人可读；与订单号是两个号，页面两列都给） */
+  shipmentNo: string
+  orderId: string
+  orderNo?: string | null
+  customerName?: string | null
+  /** worker_photo（工人拍照）/ worker（工人手工）/ admin（商家侧） */
+  source: string
+  packedAt?: string | null
+  /** 还没发货 ⇒ null（页面显示「未发货」，不伪装成时间） */
+  shippedAt?: string | null
+  /** 发货人（纸面「经手人」同一真值）；未采集 ⇒ null ⇒ 页面显示「-」 */
+  shippedByWorkerName?: string | null
+  trackingNo?: string | null
+  logisticsCompany?: string | null
+  /** 实发明细行数（聚合；软删行不计） */
+  itemCount: number
+  shippedTotals?: ShipmentShippedTotals | null
+}
+
 /** 入库单明细行（**一行 = 一个批次**） */
 export interface InboundOrderItem {
   id: number

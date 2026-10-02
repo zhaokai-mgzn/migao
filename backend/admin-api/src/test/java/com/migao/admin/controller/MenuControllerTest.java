@@ -70,7 +70,7 @@ class MenuControllerTest {
             "在线接待", "客户列表", "知识库", "售后工单",
             "订单列表", "财务对账",
             "生产看板", "智能派单", "加工项管理", "工艺配置", "计件工资",
-            "入库单", "余料台账", "省料看板",
+            "入库单", "发货单", "余料台账", "省料看板",
             "员工管理", "岗位权限", "企业基础信息");
 
     /** 动作码节点（非菜单项）2 个，**统一追加在组尾**：order:detail / employee:create。
@@ -256,15 +256,16 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("仓储与物料组（#5271 新组）：入库单(inbound:view) + 余料台账 + 省料看板")
+    @DisplayName("仓储与物料组（#5271 新组；#5939 加「发货单」）：入库单(inbound:view) + 发货单(order:list) + 余料台账 + 省料看板")
     void inventoryCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode inventory = group(fetchTree(), "inventory-center");
         assertEquals("仓储与物料", inventory.path("label").asText());
-        assertEquals(List.of("入库单", "余料台账", "省料看板"), labels(inventory.path("children")));
+        assertEquals(List.of("入库单", "发货单", "余料台账", "省料看板"), labels(inventory.path("children")));
         // 入库单是**仓储**动作、权限码独立为 inbound:view —— 并进 processing:manage 会让
         // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 点名的同族坑）。
         // issue #5699（P4）：省料看板节点码 = 该页第一屏读码 product:list（StockBatchController）。
-        assertEquals(List.of("inbound:view", "processing:manage", "product:list"),
+        // issue #5939：「发货单」取**既有** order:list（与订单列表同码、与页面/端点同码）⇒ 零授权 delta。
+        assertEquals(List.of("inbound:view", "order:list", "processing:manage", "product:list"),
                 codes(inventory.path("children")));
     }
 
@@ -323,11 +324,12 @@ class MenuControllerTest {
             assertEquals(1, all.stream().filter(action::equals).count(),
                     "动作码节点「" + action + "」缺失或重复（实得全表 = " + all + "）");
         }
-        // 组内节点总数 = 20 个**组内**菜单项（21 项 − 顶层一级项「商品管理」）+ 2 动作码节点 = 22。
+        // 组内节点总数 = 21 个**组内**菜单项（22 项 − 顶层一级项「商品管理」）+ 2 动作码节点 = 23。
+        // （#5939：菜单项 21 → 22，组内项 20 → 21 ⇒ 本表同批 +「发货单」。）
         // ⚠️ 顶层一级项是**叶子**（不在任何组内）⇒ 不被 `allChildren` 收录，它的存在由
         // `topLevelStandaloneItemMirrorsFrontend` 单独断言（避免两处都算它 ⇒ 重复计数）。
         assertEquals(MENU_ITEM_LABELS.size() - 1 + ACTION_NODE_LABELS.size(), all.size(),
-                "组内节点总数 = 20 组内菜单项 + 2 动作码节点（实得全表 = " + all + "）");
+                "组内节点总数 = 21 组内菜单项 + 2 动作码节点（实得全表 = " + all + "）");
     }
 
     @Test

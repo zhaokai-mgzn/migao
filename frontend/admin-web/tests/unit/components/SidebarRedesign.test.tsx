@@ -79,7 +79,7 @@ const GROUP_NAMES: Record<string, string> = {
   'inventory-center': '仓储与物料',
   'org-center': '组织管理',
 }
-/** 21 项（head 组 → 一级项 → tail 组 → 独立项）的渲染顺序（#5778；#5877 改插入位） */
+/** 22 项（head 组 → 一级项 → tail 组 → 独立项）的渲染顺序（#5778；#5877 改插入位；#5939 加「发货单」） */
 const ALL_MENU_KEYS = [
   'dashboard',
   'briefing',
@@ -96,6 +96,7 @@ const ALL_MENU_KEYS = [
   'production-process',
   'production-piecework',
   'inbound-orders',
+  'shipments',
   'production-remnants',
   'production-saving-board',
   'employees',
@@ -166,6 +167,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
       'briefing',
       'products',
       'inbound-orders',
+      'shipments',
       'production-remnants',
       'production-saving-board',
       'notifications',
@@ -213,6 +215,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
       'production-process',
       'production-piecework',
       'inbound-orders',
+      'shipments',
       'production-remnants',
       'production-saving-board',
       'notifications',
@@ -250,7 +253,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
   it('③ 折叠态：6 个 `sidebar-group-anchor-<key>` 都在，`title` == 组名', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
     await waitFor(() =>
-      expect(menuKeys()).toHaveLength(21),
+      expect(menuKeys()).toHaveLength(22),
     )
     for (const key of GROUP_KEYS) {
       const anchor = screen.getByTestId(`sidebar-group-anchor-${key}`)
@@ -264,7 +267,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
 
   it('③ 折叠态：**组名文本**与**菜单名文本**都不渲染（原判据仍须成立）', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(21))
+    await waitFor(() => expect(menuKeys()).toHaveLength(22))
     for (const name of Object.values(GROUP_NAMES)) {
       expect(screen.queryByText(name)).toBeNull()
     }
@@ -277,22 +280,22 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(within(groupEl('trade-center')).getAllByRole('link')).toHaveLength(2)
   })
 
-  it('③ 折叠态：**所有组**的项都渲染（图标栏），项 key 序列 == 21 项全量', async () => {
+  it('③ 折叠态：**所有组**的项都渲染（图标栏），项 key 序列 == 22 项全量', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(21))
+    await waitFor(() => expect(menuKeys()).toHaveLength(22))
     expect(menuKeys()).toEqual(ALL_MENU_KEYS)
     // 每组项数与其组内项数一致（分组信息没丢）
     expect(within(groupEl('workspace')).getAllByRole('link')).toHaveLength(2)
     // #5778：生产管理组收进「加工项管理」⇒ 5 项
     expect(within(groupEl('production-center')).getAllByRole('link')).toHaveLength(5)
-    expect(within(groupEl('inventory-center')).getAllByRole('link')).toHaveLength(3)
+    expect(within(groupEl('inventory-center')).getAllByRole('link')).toHaveLength(4)
     expect(within(groupEl('org-center')).getAllByRole('link')).toHaveLength(3)
   })
 
   it('③ 折叠态高亮仍生效：/production/pool ⇒ 该项带 `bg-primary-600`，且只有它一个', async () => {
     mockPathname = '/production/pool'
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(21))
+    await waitFor(() => expect(menuKeys()).toHaveLength(22))
     const active = document.querySelector('[data-menu-key="production-pool"]') as HTMLElement
     expect(active.className).toContain('bg-primary-600')
     expect(

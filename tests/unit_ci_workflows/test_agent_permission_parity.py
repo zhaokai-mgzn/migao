@@ -1746,6 +1746,9 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/knowledge": "知识库",
     "/roles": "岗位权限",
     "/briefing": "每日简报",
+    # 发货单（issue #5939）：新菜单节点 ⇒ 路由守卫（`(dashboard)/layout.tsx` 的 ROUTE_PERMISSION_MAP）
+    # 与节点必须成对登记（判据 11 ③：未登记即红）。
+    "/shipments": "发货单",
 }
 
 #: 没有可钉菜单节点的路由前缀（逐条带理由；**新增路由不登记即红** —— 见判据 11 ③ 末段）。
@@ -1884,6 +1887,9 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     "/production/piecework": MenuReadAnchor("计件工资", "production/piecework/page.tsx",
                                             ("productionApi.getPieceworkSummary",)),
     "/inbound-orders": MenuReadAnchor("入库单", "inbound-orders/page.tsx", ("inboundOrderApi.list",)),
+    # 发货单（issue #5939）：菜单节点码 `order:list` = 本页第一屏读端点码（GET /api/admin/shipments）
+    # —— 取**既有**码（不新造 shipment:view），与「订单列表」同一把尺子。
+    "/shipments": MenuReadAnchor("发货单", "shipments/page.tsx", ("shipmentApi.list",)),
     "/production/remnants": MenuReadAnchor("余料台账", "production/remnants/page.tsx",
                                            ("remnantApi.ledger",)),
     "/production/saving-board": MenuReadAnchor("省料看板", "production/saving-board/page.tsx",

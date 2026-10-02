@@ -100,6 +100,23 @@ class OrderShipmentItemMapperTest {
     }
 
     @Test
+    @DisplayName("🔴 批量读（列表页用）：一次 IN 查多张发货单的明细，仍逐字带 tenant_id + deleted = 0")
+    void batchReadByShipmentIdsIsTenantScopedAndUsesIn() throws Exception {
+        Set<String> cols = columnsOf("order_shipment_items");
+        Method m = OrderShipmentItemMapper.class.getMethod(
+                "selectByShipmentIds", java.util.Collection.class, Long.class);
+        String sql = m.getAnnotation(Select.class).value()[0];
+        assertThat(sql).contains("shipment_id IN");
+        assertThat(sql).contains("<foreach");
+        assertThat(sql).contains("tenant_id = #{tenantId}");
+        assertThat(sql).contains("deleted = 0");
+        assertThat(cols).contains("shipment_id", "tenant_id", "deleted");
+        // 与逐单读同源：同一个 autoResultMap 绑定（JSONB 字段不会退化成字符串）
+        assertThat(m.getAnnotation(ResultMap.class).value()[0])
+                .isEqualTo("mybatis-plus_OrderShipmentItem");
+    }
+
+    @Test
     @DisplayName("实体挂在 order_shipment_items 上，且 tenant_id 在映射里（多租户插件会注入该列谓词）")
     void entityIsTenantScoped() throws Exception {
         assertThat(OrderShipmentItem.class.getAnnotation(
