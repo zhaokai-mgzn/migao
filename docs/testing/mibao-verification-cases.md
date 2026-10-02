@@ -2876,7 +2876,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（67 case）
+## 杂项域（68 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3831,6 +3831,21 @@
 跳过: [backend-contract] 纯静态文本 ⇄ 清单对账（只读仓内三个文件；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_rbac_role_list_doc_consistency.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #6036 的 F7 类级固化）。落码 = ① 判据 tests/unit_ci_workflows/test_rbac_role_list_doc_consistency.py（10 条：2 条正向 + 7 条注入式红证 + 基线绿 + 只改注释不红的对照；纯静态、零外部依赖）② `docs/wiki/RBAC.md` 的清单声明行改写为「逐值为 `<code>` × N」形态 + 显式写明真值源 = `rbac/manifest.json` 的 `roles.seed`（声明行是**副本**，不是真值）。**红证（注入式，同一命令）**：修前（把声明行改回「五岗」）= `test_doc_seed_role_list_matches_manifest` / `test_doc_seed_roles_are_the_manifest_seed_exactly` **2 failed**（报出「文档写「5 岗」而真值源 `roles.seed` 有 7 个岗位码」「文档清单**漏了**真值源里的岗位码：['knowledge_editor', 'product_manager']」）；修后 = **10 passed**。⚠️ **初稿的两次实测回退（照实登记）**：① 曾在 V137 迁移里加对账锚 —— 触发 `test_migration_immutability.py::test_registered_migrations_are_byte_identical`（已登记迁移内容指纹被改）与 `test_rbac_migration_convergence.py::test_p5_p6_invariants_are_green_on_the_current_tree`（与当场渲染不一致）⇒ **回退**，V137 的真值链条交由那两条既有门禁；② 生成物 `tests/agent_eval/eval_cases.py` / `docs/testing/mibao-verification-cases.md` 已重渲染。**取号 MC-068**：按现行机制先查 `.github/cases/claims/`（现取 `6033-MC-067.json`）与 main 已用号（现取最大 MC-067，已由 #6033 占用）⇒ 取 068 并同 PR 加 claim 文件 `.github/cases/claims/<PR号>-MC-068.json`。 ｜ tags: rbac, docs-drift, single-source, fail-closed, red-proof
+
+### MC-069. B 端真实评测 3 缺陷的类级固化：批次取值白名单 ⊆ DB 约束（缺陷 A）+ 路由目的地恒在图上（缺陷 C） 🔵
+```
+你: 当有人 ① 在 AgentBatchService 里加一个新的具名批量类型（batch_type / field 取值）却忘了同步 DB 约束、或只同步了迁移没同步建库脚本（或反过来），或 ② 把某个 skill 从某 agent 的 skill_names 解绑而它的 route_key 仍留在意图映射表里（或在图上没有 handoff_offer 的 agent 上返回该目的地）时，必须有判据**具名**报出少了哪个取值 / 哪个目的地不存在于该 agent 的图上；而只改无关注释时、以及绑定得上的 route_key，都不得被误判红
+期望: direct_reply
+数据: **病（issue #6044 缺陷 A，2026-10-02 B 端真实评测实测）**：代码已能写 `batch_type='inventory_stock'`（#5950），而 V127 的 `ck_agent_batch_type` 只有两个值 ⇒ 真库上 `POST /api/admin/agent/batches` 100% 撞 23514 ⇒ 500（`AgentBatchService.create`）。同型第二处：`ck_agent_batch_item_field` 只有 `basePrice`/`status`，缺 `stock`（明细行照样写不进去）。⇒ 本单缺的正是「代码写入的取值集合 ⊆ DB 约束允许的取值集合」这条判据。
+数据: **判据 1（值域 ⊆ 白名单）**：`AgentBatchService` 的 `TYPE_*` 常量字面量 ⊆ `ck_agent_batch_type` 允许值；`TYPE_FIELD` 引用的 `FIELD_*` 常量字面量 ⊆ `ck_agent_batch_item_field` 允许值（**别名要解析**：`FIELD_*` 的定义体是 `AgentWriteValues.FIELD_*`）。执行点 = tests/unit_ci_workflows/test_agent_batch_type_domain.py 的 `test_code_batch_domains_are_allowed_by_the_db_constraints`。
+数据: **判据 2（两条终态一致）**：迁移链按版本号重放（DROP 置空 / ADD 重取 `CHECK (<列> IN …)`）得到的终态白名单 == `db/init/schema.sql`（基线）的终态；任一侧少一个值 ⇒ 红。执行点 = 同文件同判据函数（`migration_replay` ⇄ `schema_constraints` 的差集）。
+数据: **判据 3（fail-closed）**：两个来源解析为空 / 变量解析不出字面量 / 约束在两处都不存在 ⇒ 一律判红，不得读成「没问题」。执行点 = 同文件 `domain_problems` 的 fail-closed 分支 + 判别力自证的 ⑤⑥ 两条。
+数据: **判据 4（缺陷 C：路由目的地恒在图上）**：`_get_intent_to_route(agent)` 的每个值、以及 `route_by_intent(state)` 在边界输入（未绑定的 `pending_interact_skill` / `action=handoff_offer` 在米宝上 / notification 意图）下的返回值，必须 ∈ 该 agent 的 `skill_route_map` 的 key ∪ value；另有「`_route_map` 的 value 必须是真的图节点」这条自证坐标。执行点 = backend/ai-agent-service/tests/test_route_destination_binding.py 的 `test_every_mapped_destination_is_a_node` / `test_known_intents_land_on_a_node` / `test_any_pending_skill_lands_on_a_node` / `test_handoff_offer_only_where_the_node_exists` / `test_route_map_values_are_real_nodes`。
+数据: **判别力自证（注入式红证）**：① 约束里去掉 `inventory_stock` ⇒ `test_code_batch_domains_are_allowed_by_the_db_constraints` 红并具名「代码写入的取值 ['inventory_stock'] 不在 schema.sql 的 ck_agent_batch_type 的白名单里」（实测 1 failed / 2 passed）；② 摘掉 `pending_skill` 目的地闸 ⇒ `test_any_pending_skill_lands_on_a_node` 红并报出 `route_by_intent 返回 'settings'`（= 2026-10-02 实测崩溃形态，1 failed / 27 passed）；③ 摘掉 `handoff_offer` 目的地闸 ⇒ `test_handoff_offer_only_where_the_node_exists` 红（1 failed / 27 passed）；④ 对照：不注入 ⇒ 全绿、只改注释 ⇒ 不红。执行点 = 两文件各自的 `test_injected_bad_corpora_are_named` / 上列参数化用例。
+数据: 🔴 **覆盖边界（显式登记）**：① 批次取值判据只认落码形态（`public static final String X = <字面量>;` 与 `Map.of(TYPE_a, FIELD_b, …)` 两种落码形态）；拼接 / 枚举 / 反射 / 配置文件派生的取值不在射程。② 只对账 `schema.sql`（基线）与**活**迁移链；归档链有意不看（V127 已冻结在指纹账本里，其值由 V146 显式重建）。③ 路由判据只覆盖已登记的 `mibao` / `xiaobu`；`pending_interact_skill` 里图上没有的名字只在**本轮**改判到 fallback，会话状态面的清零不属射程。④ 真库面（索引/事务/端点）由 `AgentBatchMigrationTest` / `AgentBatchServiceTest` 承担。⑤ 不查 GitHub / 不联网 / 不起真库 / 不烧 token。⑥ 本判据不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 纯静态文本对账 + 纯内存图对象判定（零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_agent_batch_type_domain.py 与 backend/ai-agent-service/tests/test_route_destination_binding.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #6044：B 端真实 LLM 评测抓到的 3 个真缺陷的类级固化）。落码 = ① 缺陷 A：`V146__add_inventory_stock_to_agent_batch_type.sql`（两条白名单 DROP + ADD 纳入 `inventory_stock` / `stock`，含终态对账与可执行回滚）+ `db/init/schema.sql` 同步 + 值域判据 tests/unit_ci_workflows/test_agent_batch_type_domain.py（3 条：值域 ⊆ 白名单 / 两条终态一致 / fail-closed，含 8 条内存红证）② 缺陷 C：`app/graph/nodes.py` 的 `_get_intent_to_route`（按 agent **绑定面**过滤，未绑定 route_key 改判 fallback）+ `route_by_intent`（`pending_interact_skill` / `handoff_offer` 目的地闸）+ 判据 backend/ai-agent-service/tests/test_route_destination_binding.py（28 条参数化用例）③ 缺陷 B 的行为判据另立 backend/ai-agent-service/tests/test_tools_dashboard_stats_counts.py（14 条，本用例的 `traces.tests` 只登记前两条静态面）。**取号 MC-069**：`python3 scripts/next_case_id.py MC` 现取（候选 = main ∪ 全部 open PR 分支 ∪ 本工作区）报 `main:001-048,050-068 · PR #6043:049 ⇒ 取 MC-069`，同 PR 加 claim 文件 `.github/cases/claims/<PR号>-MC-069.json`。 ｜ tags: single-source, fail-closed, red-proof, db-contract, routing
 
 ## 商家入驻域（5 case）
 
@@ -8957,8 +8972,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：625（活跃 133，跳过 492）
-- tier 分布：smoke 12 / normal 580 / adversarial 31
+- 用例总数：626（活跃 133，跳过 493）
+- tier 分布：smoke 12 / normal 581 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -8973,7 +8988,7 @@
 - 财务对账域：4
 - 人事域：12
 - 知识问答域：7
-- 杂项域：67
+- 杂项域：68
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -9070,6 +9085,7 @@
 - MC-066: 用例 id 取号登记台账（claim）：并行开发下不再撞号（撞了在 CI 里被具名抓住，而不是变成 misc.yml 的困惑冲突）（issue #6017）
 - MC-067: §15.7 页面多模态验收承载体（issue #6009）：登录步先切「管理员登录」再填手机号 + 登录页形态指纹 fail-closed + 唯一入口与「取不到证据怎么判」三态（纯静态判据）
 - MC-068: RBAC 文档岗位清单 ⇄ 真值源逐值对账（issue #6036 的 F7 固化）：docs/wiki/RBAC.md 的「新租户种子岗位」清单必须逐值等于 rbac/manifest.json 的 roles.seed（纯静态判据）
+- MC-069: B 端真实评测 3 缺陷的类级固化：批次取值白名单 ⊆ DB 约束（缺陷 A）+ 路由目的地恒在图上（缺陷 C）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

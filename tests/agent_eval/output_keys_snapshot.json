@@ -391,15 +391,21 @@
     },
     "pending_shipment_count": {
      "dynamic": true,
-     "keys": []
+     "keys": [
+      "count"
+     ]
     },
     "pending_tasks": {
      "dynamic": true,
-     "keys": []
+     "keys": [
+      "count"
+     ]
     },
     "processing_shipment_count": {
      "dynamic": true,
-     "keys": []
+     "keys": [
+      "count"
+     ]
     },
     "product_ranking": {
      "dynamic": true,
@@ -420,6 +426,7 @@
    "dynamic": true,
    "file": "backend/ai-agent-service/app/tools/dashboard_stats.py",
    "keys": [
+    "count",
     "distribution",
     "items",
     "list",
@@ -437,7 +444,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "06ee8ae315fe968b32e51635353a445e35453a19cab21bec8a6e43fc24a8a3f0"
+   "source_sha256": "c9bb08ace53b04597de9644c7192238724a01232d82ad6ab5972de59cc166275"
   },
   "employee_manage": {
    "actions": {
