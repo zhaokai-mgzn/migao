@@ -5160,6 +5160,7 @@ _CASE_MC_069 = EvalCase(
 )
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 # ── MC-049 [NORMAL] 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）（源: cases/misc.yml）──
 _CASE_MC_049 = EvalCase(
     id='MC-049',
@@ -5176,6 +5177,11 @@ _CASE_MC_049 = EvalCase(
 # ── MC-070 [NORMAL] nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）（源: cases/misc.yml）──
 _CASE_MC_070 = EvalCase(
     id='MC-070',
+=======
+# ── MC-071 [NORMAL] nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）（源: cases/misc.yml）──
+_CASE_MC_071 = EvalCase(
+    id='MC-071',
+>>>>>>> 4bef53a33 (chore(cases): #6062 让号 MC-070 → MC-071（并行 PR #6030 已占 MC-070，按「后合入者让号」）+ claim 改名 + 生成物重渲染)
     legacy_id='',
     title='nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）',
     skill=Skill.GENERAL,
@@ -12067,10 +12073,14 @@ ALL_CASES = (
     _CASE_MC_068,
     _CASE_MC_069,
 <<<<<<< HEAD
+<<<<<<< HEAD
     _CASE_MC_049,
 =======
     _CASE_MC_070,
 >>>>>>> 8e6de947e (fix(ai-agent): #6062 nav_guide 意图登记覆盖缺口 —— 常见说法入册 + 三条类级判据（节点可问 / 无空登记 / 镜像同步）)
+=======
+    _CASE_MC_071,
+>>>>>>> 4bef53a33 (chore(cases): #6062 让号 MC-070 → MC-071（并行 PR #6030 已占 MC-070，按「后合入者让号」）+ claim 改名 + 生成物重渲染)
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

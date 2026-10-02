@@ -2588,14 +2588,14 @@ cases:
     domains:
       - misc
 
-  # MC-070（issue #6062）：米宝**导航指引（nav_guide）意图登记覆盖不足** + 类级固化。
+  # MC-071（issue #6062）：米宝**导航指引（nav_guide）意图登记覆盖不足** + 类级固化。
   # 病（实测 2026-10-02 B 端真实 LLM 评测 `normal` 档 tool health）：`nav_guide!nav_not_registered ×1`，
   # 用户输入「怎么给员工开账号」（同一说法也在既有用例 HR-009 的 user_inputs 里）⇒ 登记面没有这条
   # 常见说法 ⇒ agent 只能含糊其辞（fail-closed 是对的，但对用户没用）。
   # ⇒ 修法是**把登记面补全**（不是改 prompt 让它猜），并把「同类缺口进不来」做成三条类级判据。
   # ==========================================================================
 
-  - id: MC-070
+  - id: MC-071
     legacy_id: ""
     title: "nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）"
     domains:
@@ -2655,7 +2655,7 @@ cases:
       - "**覆盖测绘（现取读数，零成本可复算）**：MENU_TREE 22 节点 ⇄ NAV_FEATURES 22 条登记（1:1）；「无任何说法能命中的节点」= 0；「空登记（死条目）」= 0；每条说法都能解出自己。复算命令 = 加载 backend/ai-agent-service/app/context/menu_navigator.py 后逐节点/逐说法跑 `resolve_feature`"
       - "🔴 **未覆盖与风险（照实登记）**：① 说法**只做确定性子串命中**（无同义 / 拼音 / 纠错）⇒ 口语与登记说法的用词差异大时仍会**如实回「未登记」**（例如「员工账号怎么开通」「给员工开通账号」今天仍不命中 —— 见 PR body 的「未覆盖」节）；② `menu.ts` 的 `keywords`（拼音 / 常见叫法）**不是**本判据的强制对账面（它自己写着「只影响搜得到，不影响渲染与权限」）⇒ 拼音类关键词**有意不抬**进说法表，靠括注承载口语；③ 本判据只判**结构面**（登记面覆盖、可解析、镜像一致）与**确定性的解析结果**，**不判** LLM 是否真的引用了 citation / 真的没编步骤（那是 MC-065 的行为面）"
     skip_reason: "[backend-contract] 登记面与菜单单一源的结构对账（源码静态事实 + 零依赖纯函数 + 内存注入红证），零 LLM、秒级、不连网不连库；承载体 = tests/unit_ci_workflows/test_menu_navigator.py 与 backend/ai-agent-service/tests/test_nav_guide.py，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-02 新增（issue #6062）：实测起点 = 2026-10-02 B 端真实 LLM 评测 `normal` 档 tool health 里的 `nav_guide!nav_not_registered ×1`（用户输入「怎么给员工开账号」；同一说法也在既有用例 HR-009 的 user_inputs 里）。**归因**：不是 agent 不听话，是**登记面覆盖不足**（常见说法没进登记表）⇒ 修法是补登记面，不是改 prompt 让模型猜。落码 = ① 登记面 backend/ai-agent-service/app/context/menu_navigator.py：每个节点登记**两个可搜索键**（菜单名 + 常见说法，后者从 menu.ts 既有 keywords / .github/cases/** 的 user_inputs / 实测失败样例里摘），括注承载「菜单名与口语的落差」与「**无独立导航目标的**操作」（「员工管理（员工开账号）」⇒ 指向最近的可指页面，**不编菜单路径**），并清掉旧表里 22 条 `…页` / `…列表` 装饰性变体（它们是被更长说法遮蔽的空登记形态）② 导入期自检新增两条 fail-closed（节点无说法 / 说法被别的功能遮蔽）③ 判据 tests/unit_ci_workflows/test_menu_navigator.py 新增判据 7/8/9 + 3 条注入式红证（含内存桩臂与真模块注入臂）+ 一条只改注释的对照读数 ④ 行为判据 backend/ai-agent-service/tests/test_nav_guide.py 新增实测样例的真跑断言。取号 MC-070（现取 main 最大 = MC-069，且 .github/cases/claims/ 现只有 6038-MC-068 / 6046-MC-069 两条累积 claim ⇒ 按「当前最大号 + 1」取 MC-070；同 PR 加 claim 文件 .github/cases/claims/<PR号>-MC-070.json）。⚠️ 与并行改 .github/cases/misc.yml 的包（如 PR #6043）⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。"
+    merge_log: "2026-10-02 新增（issue #6062）：实测起点 = 2026-10-02 B 端真实 LLM 评测 `normal` 档 tool health 里的 `nav_guide!nav_not_registered ×1`（用户输入「怎么给员工开账号」；同一说法也在既有用例 HR-009 的 user_inputs 里）。**归因**：不是 agent 不听话，是**登记面覆盖不足**（常见说法没进登记表）⇒ 修法是补登记面，不是改 prompt 让模型猜。落码 = ① 登记面 backend/ai-agent-service/app/context/menu_navigator.py：每个节点登记**两个可搜索键**（菜单名 + 常见说法，后者从 menu.ts 既有 keywords / .github/cases/** 的 user_inputs / 实测失败样例里摘），括注承载「菜单名与口语的落差」与「**无独立导航目标的**操作」（「员工管理（员工开账号）」⇒ 指向最近的可指页面，**不编菜单路径**），并清掉旧表里 22 条 `…页` / `…列表` 装饰性变体（它们是被更长说法遮蔽的空登记形态）② 导入期自检新增两条 fail-closed（节点无说法 / 说法被别的功能遮蔽）③ 判据 tests/unit_ci_workflows/test_menu_navigator.py 新增判据 7/8/9 + 3 条注入式红证（含内存桩臂与真模块注入臂）+ 一条只改注释的对照读数 ④ 行为判据 backend/ai-agent-service/tests/test_nav_guide.py 新增实测样例的真跑断言。取号 **MC-071**（**让号记实**：起草时现取 main 最大 = MC-069（.github/cases/claims/ 当时只有 6038-MC-068 / 6046-MC-069 两条累积 claim）⇒ 按「当前最大号 + 1」取 MC-070，而同 PR 加 claim 文件 .github/cases/claims/<PR号>-MC-070.json；**随后集成侧把并行 PR #6030（P2 主动新手引导）的用例号让到了同一个 MC-070** 并加了 claims/6030-MC-070.json —— 正是取号台账的已知边界（**看不到在飞分支**），由判据 2「两个 claim 同 id ⇒ 具名报两个 PR + 后合入者让号」兜住。#6030 ready + auto（先合入）而本 PR 当时仍是 draft ⇒ **按『后合入者让号』，让号的是本 PR**：MC-070 → **MC-071**（只改号，标题/内容/判据一字不动）。⚠️ 这就是机制存在的意义：**在 CI 报红之前主动让号**，省一轮无用全量。⚠️ 与并行改 .github/cases/misc.yml 的包（如 PR #6043）⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。"
     traces:
       tests:
         - tests/unit_ci_workflows/test_menu_navigator.py

@@ -1046,7 +1046,7 @@ class TestEveryJudgementCanGoRed:
 
         problems = problems_nodes_without_hit_alias(_Stub)
         with capsys.disabled():
-            print(f"[MC-070][红证7] 无说法的节点 ⇒ problems={len(problems)} :: {problems[:1]}")
+            print(f"[MC-071][红证7] 无说法的节点 ⇒ problems={len(problems)} :: {problems[:1]}")
         assert any("新页面" in p for p in problems), f"无说法的节点没被具名报出：{problems}"
         assert problems_nodes_without_hit_alias(nav) == [], "对照：真模块必须绿"
 
@@ -1107,7 +1107,7 @@ class TestEveryJudgementCanGoRed:
 
         problems = problems_shadowed_aliases(_Shadowed)
         with capsys.disabled():
-            print(f"[MC-070][红证8] 内存桩：被遮蔽的说法 ⇒ problems={len(problems)} :: {problems[:1]}")
+            print(f"[MC-071][红证8] 内存桩：被遮蔽的说法 ⇒ problems={len(problems)} :: {problems[:1]}")
         assert any("发货单列表" in p and "shipments#发货单" in p for p in problems), (
             f"被遮蔽的说法没被报出：{problems}"
         )
@@ -1127,7 +1127,7 @@ class TestEveryJudgementCanGoRed:
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
             caught = exc
         with capsys.disabled():
-            print(f"[MC-070][红证8] 上游自检 ⇒ {type(caught).__name__}: {str(caught)[:110]}")
+            print(f"[MC-071][红证8] 上游自检 ⇒ {type(caught).__name__}: {str(caught)[:110]}")
         assert caught is not None and "发货单" in str(caught), (
             f"被遮蔽的说法**没有**被导入期自检具名拦下（caught={caught!r}）⇒ fail-closed 失效"
         )
@@ -1151,7 +1151,7 @@ class TestEveryJudgementCanGoRed:
 
         problems = problems_feature_map_sync(_Stub, menu_ts_nodes)
         with capsys.disabled():
-            print(f"[MC-070][红证9] 镜像漂移 ⇒ problems={len(problems)} :: {problems[:1]}")
+            print(f"[MC-071][红证9] 镜像漂移 ⇒ problems={len(problems)} :: {problems[:1]}")
         assert any("经营看板" in p for p in problems), f"未登记的菜单项没被报出：{problems}"
         assert problems_feature_map_sync(nav, menu_ts_nodes) == [], "对照：真模块必须绿"
 
@@ -1168,7 +1168,7 @@ class TestEveryJudgementCanGoRed:
 
         renamed = problems_feature_map_sync(_Renamed, menu_ts_nodes)
         with capsys.disabled():
-            print(f"[MC-070][红证9] 说法与菜单名不一致 ⇒ problems={len(renamed)} :: {renamed[:1]}")
+            print(f"[MC-071][红证9] 说法与菜单名不一致 ⇒ problems={len(renamed)} :: {renamed[:1]}")
         assert any("逐字等于" in p for p in renamed), f"改名的漂移没被报出：{renamed}"
 
         # ③ 真模块注入：删掉一条登记项 ⇒ 导入期自检抛（那个菜单节点没人登记 = 问不到）
@@ -1186,7 +1186,7 @@ class TestEveryJudgementCanGoRed:
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
             caught = exc
         with capsys.disabled():
-            print(f"[MC-070][红证9] 删登记项 ⇒ 上游自检 {type(caught).__name__}: {str(caught)[:110]}")
+            print(f"[MC-071][红证9] 删登记项 ⇒ 上游自检 {type(caught).__name__}: {str(caught)[:110]}")
         assert caught is not None and "通知中心" in str(caught), (
             f"删掉登记项后没有被具名拦下（caught={caught!r}）⇒ fail-closed 失效"
         )
@@ -1205,7 +1205,7 @@ class TestEveryJudgementCanGoRed:
         )
         problems = problems_default_deny(nav)
         with capsys.disabled():
-            print(f"[MC-070][红证3b] 过期样本 ⇒ problems={len(problems)} :: {problems[:1]}")
+            print(f"[MC-071][红证3b] 过期样本 ⇒ problems={len(problems)} :: {problems[:1]}")
         assert any("样本过期" in p and "订单" in p for p in problems), (
             f"过期样本没被具名报出：{problems}"
         )
