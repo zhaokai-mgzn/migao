@@ -239,10 +239,10 @@ class TestPersonaBoundaryIsHard:
         assert not leaks, "persona 硬边界被只读共享打破：\n  " + "\n  ".join(leaks)
 
     def test_witness_b_end_only_readonly_tools_never_reach_c_end_domains(self):
-        """见证（现算，不抄清单）：B 端专属**只读**工具 **23** 把，C 端域一个都不许有。
+        """见证（现算，不抄清单）：B 端专属**只读**工具 **25** 把，C 端域一个都不许有。
 
-        这 23 把是 #4125 里"为什么不能全局并只读"的**唯一量化依据**：
-        全局并只读 ⇒ C 端当场多出这 23 个越权查询面。
+        这 25 把是 #4125 里"为什么不能全局并只读"的**唯一量化依据**：
+        全局并只读 ⇒ C 端当场多出这 25 个越权查询面。
 
         🔴 **2026-09-21 改判（本 PR rebase 到当时 main 后实测，非放宽）**：
         ① 原写 5 把且含 `processing_item_query` —— 该工具**现已是两端共有**
@@ -283,6 +283,22 @@ class TestPersonaBoundaryIsHard:
         它绑在 B 端 `product` / `order` 两个 skill 上，**小布（C 端）一个都不绑**
         ⇒ 按本见证的既有口径（`(mibao 可达 - xiaobu 可达) ∩ read_only`）自然进场。
         口径一字未改；「C 端零改动」由此**量化**：C 端域里出现本工具 ⇒ 本用例红。
+
+        🔴 **2026-10-02 改判（issue #4923 进场，实测；工艺配置 6 个零覆盖读端点）**：24 → **25**，
+        进场的是 `craft_config_query`（工艺配置读面聚合：路线缺口 / 信号映射 / 路线来源异常 /
+        加工费组合 / 加工费缺口 / 卡点，**6 个 action 全是 GET**）。
+        它按本见证的既有口径（`(mibao 可达 - xiaobu 可达) ∩ read_only`）自然进场，三条逐条成立：
+        ① `read_only = True`（无任何写 action，与同族只读工具一致）；
+        ② 只绑 B 端 `product` skill（`app/graph/skills/product_skill.py` 的 `PRODUCT_TOOLS`），
+           **小布（C 端）一个 skill 都不绑**；
+        ③ 声明生产域**读**码 `production:view`（C 端 JWT 无权限码 ⇒ 即便可达也会被工具层拒绝）。
+        口径一字未改；「C 端零改动」同样由此**量化**：C 端任一域的 `set_tool_scope` 里出现
+        `craft_config_query` ⇒ 本用例红。
+
+        ⚠️ **顺带订正（同源陈旧读数）**：本 docstring 原写「**23** 把」（上一段 2026-09-25 改判段落
+        里的「实测值 23」），而集合当时实为 **24** 条（#5368 包 2 的 `image_recognize` 进场后
+        散文没跟上）—— 本次一并订正为**实测值 25**。集合相等断言本身不受影响（它比的是现算集合），
+        订正的是**散文读数**（陈旧散文 = 下一个改判者的错误前提）。
         """
         by_persona = _tools_by_persona()
         assert {"mibao", "xiaobu"} <= set(by_persona), (
@@ -305,10 +321,12 @@ class TestPersonaBoundaryIsHard:
             "notification_manage", "settings_manage",
             # ── #5368 包 2 进场（Agent 深通道：图 → 同页填充计划；纯本地只读）──────
             "image_recognize",
+            # ── #4923 进场（工艺配置 6 个零覆盖读端点；只读聚合，绑 B 端 product）──
+            "craft_config_query",
         }, (
-            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（24 把）不等，口径漂移"
+            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（25 把）不等，口径漂移"
             "（进场/退场都必须在本见证里显式改判，见 docstring 的 2026-09-21 / 2026-09-23 /"
-            "2026-09-24 / 2026-09-25 / 2026-09-24(#5368) 五次改判说明）")
+            "2026-09-24 / 2026-09-25 / 2026-09-24(#5368) / 2026-10-02(#4923) 六次改判说明）")
         for cfg in get_skill_registry().get_all():
             if "xiaobu" not in (cfg.system_prompts or {}):
                 continue

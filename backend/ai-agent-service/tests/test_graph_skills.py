@@ -159,6 +159,8 @@ class TestSkillToolSubsets:
             "stock_ledger_query",         # 库存台账查询
             "briefing_query",             # 经营日报
             "craft_calc_config_query",    # 算料配置查询
+            "craft_config_query",         # 工艺配置读面聚合（issue #4923：缺口/异常/卡点/加工费组合，
+                                          # 6 个 action 全只读；无专属意图 ⇒ 兜底必须绑，同上惯例）
             "processing_order_query",     # 加工单查询（写侧加工单工具已解绑）
         }
         assert set(GENERAL_TOOLS) == expected

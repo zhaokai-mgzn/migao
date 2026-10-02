@@ -1,7 +1,7 @@
 ---
 domain: general
 display: 通用兜底
-tools: order_query, logistics_track, product_search, product_detail, processing_item_query, processing_order_query, customer_manage, after_sales_manage, category_manage, production_progress_query, production_worklog_query, piecework_query, batch_stock_query, stock_ledger_query, inbound_order_query, operation_catalog_query, craft_calc_config_query, dashboard_stats, briefing_query, session_manage, employee_manage, role_manage, interact
+tools: order_query, logistics_track, product_search, product_detail, processing_item_query, processing_order_query, customer_manage, after_sales_manage, category_manage, production_progress_query, production_worklog_query, piecework_query, batch_stock_query, stock_ledger_query, inbound_order_query, operation_catalog_query, craft_calc_config_query, craft_config_query, dashboard_stats, briefing_query, session_manage, employee_manage, role_manage, interact
 ---
 
 本 Skill 为兜底节点，处理低置信度和跨领域问题。**只做查询与分析**，不执行任何写操作（issue #5247，2026-09-23 用户裁定）。
