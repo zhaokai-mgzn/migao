@@ -1983,22 +1983,23 @@ _CASE_CH_020 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── CH-021 [NORMAL] 图片消息端到端 - 真实发图后 AI 走 vision 链路（澄清/识别不报错）（源: cases/chat.yml）──
+# ── CH-021 [NORMAL] 图片消息端到端 - 真实发图后 AI 走 vision 链路（不崩溃、不推诿）（源: cases/chat.yml）──
 _CASE_CH_021 = EvalCase(
     id='CH-021',
     legacy_id='',
-    title='图片消息端到端 - 真实发图后 AI 走 vision 链路（澄清/识别不报错）',
+    title='图片消息端到端 - 真实发图后 AI 走 vision 链路（不崩溃、不推诿）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=[{'text': '看看这个面料', 'images': ['https://picsum.photos/seed/curtain-fabric/800/600']}],
-    expectations=['interact or product_search or direct_reply'],
-    data_checks=['带图消息 body 含 images（local_runner send_message 透传，issue #2794）', 'AI 不报『图片分析失败/无法处理』类错误；图片走 vision 链路（理解或澄清）', '意图明确才执行；意图不明可澄清（候选卡或追问），不硬猜'],
+    user_inputs=[{'text': '看看这个面料', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png']}],
+    expectations=[],
+    data_checks=['发图轮 `success=true`（runner 计分断言：该轮不得出现 `event: error`）—— 本用例唯一的正向计分读数', '带图消息 body 含 images（local_runner send_message 透传，issue #2794；透传实现由 tests/agent_eval/selftest_images.py 自测）', 'AI 不报『图片分析失败/无法处理』类错误；图片走 vision 链路（理解或澄清）', '意图明确才执行；意图不明可澄清（候选卡或追问），不硬猜'],
     skip_reason='真实 vision LLM 行为（成本/波动），tier normal 不进 PR smoke；由手动 agent-eval normal/图片用例专用 CI 触发',
     tags=['clarification', 'multimodal', 'image'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    forbidden_text=['图片分析失败', '无法识别图片', '图片无法处理'],
 )
 
 # ── CH-022 [NORMAL] 连续模糊意图 - 澄清轮上限后给具体示例兜底（不无限追问）（源: cases/chat.yml）──
@@ -2027,8 +2028,8 @@ _CASE_CH_023 = EvalCase(
     title='图片澄清候选 grounded 商户库 - 商品类候选先检索真实商品（不编造）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
-    user_inputs=[{'text': '帮我看看这个布料有没有卖的', 'images': ['https://picsum.photos/seed/curtain-fabric-g/800/600']}],
-    expectations=['product_search or interact or direct_reply'],
+    user_inputs=[{'text': '帮我看看这个布料有没有卖的', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png']}],
+    expectations=[],
     data_checks=['VISION_CLARIFY_GUIDE 含 grounded 引导：商品类候选先按图片特征（颜色/面料/风格）调 product_search 检索', '澄清候选引用命中的真实商品（名称+价格），如『店里的雪尼尔遮光窗帘 ¥88/米』', '检索无命中 → 如实说『店里暂时没搜到一样的』，不凭空编造商品名/价格', '关键词提取纯函数（clarify_grounded.extract_search_keywords）由 pytest 单测覆盖'],
     skip_reason='[backend-contract] 图片消息由 pytest 覆盖（TestVisionGroundedGuide + test_clarify_grounded），agent-eval runner 无稳定发图环境，不进入 agent-eval 冒烟',
     tags=['clarification', 'multimodal', 'image', 'grounded'],
@@ -2407,6 +2408,28 @@ _CASE_CH_043 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'curtain_calc'}],
+)
+
+# ── CH-044 [NORMAL] B 端发图建品 - 米宝调 image_recognize 生成同页填充计划（图片 URL 逐字取自上下文，不落库）（源: cases/chat.yml）──
+_CASE_CH_044 = EvalCase(
+    id='CH-044',
+    legacy_id='',
+    title='B 端发图建品 - 米宝调 image_recognize 生成同页填充计划（图片 URL 逐字取自上下文，不落库）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[{'text': '照这张图帮我建个商品。', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png']}],
+    expectations=['image_recognize'],
+    data_checks=['识别结果进**同页填充计划**（`page_fill` 计划），**不落库、不提交** —— 提交永远是商家在页面上点按钮；机械判据 = backend/ai-agent-service/tests/test_tools_image_recognize.py 的 TestNoWriteBoundary（静态扫描识别内核不 import 写入缝）', '回复说明「哪几格已填、哪几格留空及原因」；取值不在店铺目录里 ⇒ 给候选 + 解释、**不填**（不猜）', '⚠️ 本用例**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）：只登记用例，等 #5966 那次 B 端集中跑批时验证'],
+    skip_reason='',
+    tags=['multimodal', 'image', 'vision', 'image_recognize', 'mibao', 'capability'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['图片分析失败', '无法识别图片', '图片无法处理'],
+    required_args=[{'tool': 'image_recognize', 'fields': ['target_type', 'images']}],
+    must_succeed=[{'tool': 'image_recognize'}],
+    precondition='本用例依赖的图片资产 https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png 可被抓取（本机可达是必要不充分条件；vision 供应商侧能否抓取不在本仓可观测范围）。前置不成立时失败表现为「图片分析暂时无法完成」（命中 forbidden_text 或 must_succeed 失败），与它真正要守的「米宝发出 image_recognize 调用」**同名不同因** —— 此时该用例的红**不可归因于 agent**。',
 )
 
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
@@ -11990,6 +12013,7 @@ ALL_CASES = (
     _CASE_CH_041,
     _CASE_CH_042,
     _CASE_CH_043,
+    _CASE_CH_044,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

@@ -11,6 +11,12 @@
 > 已复核确认的代码事实见 §九（人工逐文件复核，修正调研期子代理偏差），
 > 修复与实施状态以 `docs/design/agent-clarification-impl-log.md`（或对应 PR）为准。
 
+> 🔴 **现状复核（2026-10-03，issue #6090）**：本文 **§三「现状盘点」/ §四「缺口清单」写于 2026-09-03**，
+> 此后 B 端图片链路有 **3 次结构性变化**（B 端米宝只读化 #5247、识别内核 + 两个入口 #5321/#5368、
+> 订单侧字段结构化 #5349）⇒ **照旧文本读会得出错误结论**（例如「图片意图澄清整段在代码与 prompt 里
+> 不存在」**今天已不成立**）。**先读 §十五 的回填表**，再看 §三 / §四；§十~§十四 的实施进度仍然有效。
+> **最后核实日期：2026-10-03**（核实方式 = 在 `origin/main` 上按符号逐条复核）。
+
 ---
 
 ## 一、结论速览（TL;DR）
@@ -350,3 +356,46 @@
 | 行为用例 | ✅ | CH-023（图片澄清候选 grounded）+ 渲染 161 条 + truth check | gate ✅ |
 | 三把工具 | ✅ | — | gate / UI / contract 全绿 |
 | G10 全量版（图向量/OCR 底座） | ⏳ 后续 | 依赖向量检索/OCR 基础设施投入 | — |
+
+---
+
+## 十五、2026-10-03 现状复核回填（issue #6090）
+
+> **为什么有这一节**：本文 §三 / §四 写于 **2026-09-03**，而 B 端图片链路在 9 月下旬发生了结构性的变化 ——
+> 旧文本里「唯一内建求证点 = B 端建商品属性」「vision 结果从不写入 entities」「图片意图澄清整段不存在」
+> 这些结论**今天都不成立或只对一半成立**。按 `AGENTS.md` 铁律 11（转述即未核实 / 声明存在 ≠ 可达），
+> 过期文档被当现状读是一项**会让人做错决策**的缺陷 ⇒ 本节只做**回填**（变了什么 + 现在去哪看），
+> **不改写历史结论**；§九~§十四 的实施进度记录仍然有效。
+> **最后核实日期：2026-10-03** —— 核实方式 = 在 `origin/main` 上按**符号名**逐条复核
+> （`git show origin/main:<path>` / `git grep <符号> origin/main`），不读工作树、不记行号。
+
+### 15.1 变了什么（2026-09-03 → 2026-10-03）
+
+| # | 变化 | 现在的形态（去哪看） | 对本文旧结论的影响 |
+|---|---|---|---|
+| 1 | **B 端米宝只读化**（issue #5247，用户 2026-09-23 裁定） | 写能力从**全部** B 端 skill 解绑；随后只补回 **A 档可逆写**（改价：`product_update` / `sku_update` / `product_batch_update`，issue #5303 / #5314） | §3.2 与 G7 描述的「B 端图片建品 → 确认 → 落库」这条路径**不再是 agent 能力**；图 → 落库改由**页面 + 人点提交**承接。能力边界如实的说明见 issue #5318 的改判（`app/graph/skills/base_skill.py` 的图片域能力守卫） |
+| 2 | **识别内核 + 一个内核两个入口**（issue #5321 包 1，PR #5343） | `backend/ai-agent-service/app/vision/`：`recognizer.py`（图 → 结构化字段 + 逐字段 `[图片识别]` 标注 + 置信度闸 / 形状硬闸）、`targets.py`、`pipeline.py`（URL 校验 / CDN 重写 / 文本提示的**单一事实源**）。入口 = **页面快通道** `POST /api/internal/vision/recognize`（`app/api/internal.py`）+ 对话深通道 | §3.2 的「vision 输出无结构化契约」（G8）**只对对话路径成立**了：页面路径已有字段表契约（含「不确定宁可不填 + 给理由」） |
+| 3 | **Agent 深通道**（issue #5368 包 2，PR #5408） | `app/tools/image_recognize.py`（工具，READONLY）+ `app/vision/deep_channel.py`（纯函数：填哪几格 / 歧义候选 + 为什么最接近 / 领域解读）。来源两类**可区分**：`[图片识别]`（= `recognizer.FIELD_MARKER`）vs `[米宝解读]`（`deep_channel.SOURCE_INTERPRETED`）。三条铁律 = 一个内核 / 不确定宁可不填 / **不落库不落盘** | §3.1 表格里的 A8「唯一的识别后求证范式」**已不是唯一**；「图 → 同页填充、商家不跳转、提交仍是人的动作」是深通道的正解 |
+| 4 | **订单侧识别字段结构化**（issue #5349） | 帘宽 / 帘高接上算料推导链；形状硬闸（`2.8×2.4` 这种没写明宽高方向的写法**不猜顺序**，一格都不填）；**门幅唯一来源 = 所选 SKU**（issue #5345 / 用例 OR-048） | §6 Phase 2 的「候选 grounded」之外，订单侧另有**字段级**确定性通道（与对话澄清互补，不替代） |
+| 5 | **澄清引导注入点搬家** | `VISION_CLARIFY_GUIDE` 仍在 `app/graph/skills/base_skill.py`（常量），但**注入点**移到了 `app/graph/skills/execution/prepare_turn.py`（`if is_multimodal:` 分支）—— 所有 skill、两 persona 共用同一段注入 | 读本文提到「base_skill 注入」时按新符号找：注入逻辑在 `prepare_turn`，常量在 `base_skill` |
+| 6 | **B 端 `interact` 已绑定**（issue #2777 的 G6 修复） | `app/graph/skills/general_agent.py` 的 `GENERAL_TOOLS` 含 `interact`（注释明写「低置信 / 图片澄清候选 choice」；**B 端不发写确认卡**） | §3.1 的 A6 与 G6 **已闭环**：「prompt 要 interact 但工具没绑 ⇒ 静默退化文本」不再成立 |
+| 7 | **图片用例库补齐** | C 端正向面 = **CH-034**（三条互补断言：`want_text` 图片内容词 / `must_succeed` + `required_args` / `forbidden_text`）；B 端 = **CH-044**（发图 → 米宝调 `image_recognize` → 同页填表；断言 = 工具调用 + `must_succeed` + 参数契约 + 不推诿）；smoke = **CH-026**；`interact` / `product_search` 的恒真式期望已收缩（CH-021 / CH-023）。`image_recognize` 曾是 `.github/eval-coverage-baseline.yml` 的**阻塞条目**，2026-10-03（issue #6090）随 CH-044 销账 | G11「澄清质量无评测」**部分闭环**：图片链路的确定性 + 行为用例都有了；**澄清 KPI 回流（采纳率 / 打扰税）仍未做** |
+
+### 15.2 缺口清单（§四）的现状改判
+
+| Gap | 2026-10-03 现状 |
+|---|---|
+| G2 / G3 / G4 / G5 / G6 / G7 | **已闭环**（见 §十~§十四；G3 的「该不该澄清」判定点 = `app/graph/clarify_guard.py`） |
+| G1（图零意图感知：路由 / 分类只吃文本） | **仍存在**，且有补偿：`app/graph/nodes.py` 的 `_last_human_has_image` + `route_by_intent` 对带图消息**强制走 general（vision mode）**；且所有 skill 经 `prepare_turn` 拿到同一段 vision 能力块 + `VISION_CLARIFY_GUIDE`。**补它的代价** = 每轮多一次 vision 调用（延迟 + 成本），而目前**没有实测证据**说明带图会被路由错 ⇒ **有意不做**，等真实例（有实例再开单） |
+| G8（vision 输出无结构化契约） | **对话路径仍是开放描述**；**页面路径已结构化**（`app/vision/recognizer.py` + `targets.py`）⇒ 只剩对话侧，且「不落库」是刻意设计（判据 `test_tools_image_recognize.py::TestNoWriteBoundary`） |
+| G9（跨轮澄清上下文缺失） | 部分：vision 分析跨轮缓存 + **弱分析守卫**（`base_skill.py` 的 `_is_degraded_vision_analysis`，防一次弱结果毒化整个会话）；**新图覆盖旧图**仍在 |
+| G10（vision 结果不进实体槽） | 已由 issue #2821 部分闭环（vision 候选实体写上下文槽，用例见 `.github/cases/ontology.yml`）；**图向量 / 以图搜图 / OCR 底座仍无** ⇒ **有意不做**：无需求证据 + 重基建，与「最少代码」阶梯冲突；关键词级 grounded（`app/graph/clarify_grounded.py`）+ 页面结构化识别已覆盖已知刚需 |
+| G11（澄清质量无评测） | 图片链路用例已补（CH-034 / CH-044 / CH-026，见 15.1 第 7 条）；**澄清 KPI 回流仍未做** |
+| G12（低学历文案障碍层） | 部分：`VISION_CLARIFY_GUIDE` 的 2-4 候选 + 大白话；`clarify_guard.CLARIFY_FORCE_EXAMPLE_TEXT` 的示例兜底（含继续受理的下一步）；**无难度分级** |
+
+### 15.3 一句话现状（复核结论）
+
+**「收任意图（≤3 张 / jpg·png·gif·webp / ≤5MB）+ 看图 + 意图不明给候选澄清」这条通用链路是通的、默认开启**
+（`app/config.py` 的 `VISION_ENABLED=True` / `VISION_MODEL="deepseek-flash"`，路由见 `app/llm/router.py`）；
+**「图参与意图分类 / 路由」与「看图直接写库」不是通用能力** —— 前者没做（无证据，有意不做），
+后者在 B 端是**刻意关掉的**（#5247；改由页面快通道 + 人点提交承接）。
