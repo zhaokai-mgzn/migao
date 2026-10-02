@@ -12,11 +12,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.SQLException;
 import java.sql.SQLTransientConnectionException;
 import java.util.ArrayList;
@@ -27,6 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -158,6 +163,40 @@ public class MigrationRunner implements CommandLineRunner {
     /** 退避封顶（防指数退避把启动拖长）。 */
     private static final long MAX_BACKOFF_MS = 10_000L;
 
+    /** `migao.migration.live-dir` 取此值 ⇒ **不做**陈旧产物检测（运行时确实没有源码树）。 */
+    static final String DISABLE_STALE_ARTIFACT_CHECK = "none";
+
+
+
+    /**
+     * 判「classpath 上这条迁移是不是陈旧产物」时，**参照面从哪里来**（issue #5981）。
+     *
+     * <p>病灶：`target/classes/db/migration/` 里的陈旧产物被 classpath 扫到 ⇒ 已**退休**（移进
+     * `db/migration-archive/`）的迁移被**重新执行**，启动日志报 5 条 SQL 失败
+     * （`column ... does not exist` / `relation ... does not exist` / 唯一键冲突），
+     * 看着像产品故障，并污染同一 JVM 的后续请求。</p>
+     *
+     * <p>默认留空 ⇒ 参照面**从 {@link #migrationPattern} 自己推**（判据改 `migrationPattern` 时
+     * 参照面跟着走，不会各说各话）：`classpath:db/migration/*.sql` ⇒ 仓库里的 `db/migration/`；
+     * `file:…/*.sql` ⇒ 那个目录。取 {@link #DISABLE_STALE_ARTIFACT_CHECK} 可显式关掉检测。</p>
+     *
+     * <p>⚠️ 容器里**只有打包好的 jar**（`backend/admin-api/Dockerfile`：builder 里
+     * `COPY src ./src` + `mvn package`，runtime 只 `COPY --from=builder /app/target/*.jar`）⇒
+     * 源码树目录**不存在** ⇒ 检测**整段跳过**（见 {@link #assertNoStaleMigrations}），不误判。</p>
+     */
+    @Value("${migao.migration.live-dir:}")
+    private String liveMigrationDir = "";
+
+    /**
+     * 陈旧产物命中时的处置（issue #5981）：`fail`（默认）⇒ **拒绝启动**；
+     * 其它值 ⇒ 只打 ERROR 并继续（旧行为，留给需要"先起来看看"的现场）。
+     */
+    // ⚠️ 默认值写在**字段声明**上（不是只写在 `@Value` 的 `:fail` 里）：纯单测不走 Spring 注入、
+    // 只保留声明处默认值 —— 写在注解里会让"默认 fail-fast"在单测里退化成 null（实测：判据红成
+    // "Expecting code to raise a throwable"，即默认值没生效）。
+    @Value("${migao.migration.stale-artifact-mode:}")
+    private String staleArtifactMode = "fail";
+
     public MigrationRunner(ObjectProvider<JdbcTemplate> jdbcProvider, ResourcePatternResolver resolver) {
         this.jdbcProvider = jdbcProvider;
         this.resolver = resolver;
@@ -175,6 +214,13 @@ public class MigrationRunner implements CommandLineRunner {
             try {
                 migrate(jdbc);
                 return;
+            } catch (MigrationStaleArtifactException e) {
+                // ⚠️ **必须有这一条**（本 PR 第一版漏了它，判据当场红）：下面的 `catch (Exception e)`
+                // 对非连接类失败是「记 ERROR 然后 return」（#3615 对**内容类**迁移失败的刻意权衡）⇒
+                // 陈旧产物的异常会被它吸收，`run()` 照常返回、应用照常启动 —— fail-fast 形同虚设。
+                // #5981 要的恰恰是「这条分支不得静默继续启动」。
+                log.error("❌ 迁移失败（陈旧构建产物）—— 拒绝以「产物与源码不一致」的状态启动", e);
+                throw e;
             } catch (MigrationBootstrapFailureException e) {
                 // fail-closed（issue #4284）：bootstrap 步骤（建台账表 / 判空库 / 记账）失败 ⇒ 本轮
                 // **一条迁移都不会执行**，而应用照常起来就是「schema 未知却报健康」（#4241 修复前同形）。
@@ -230,6 +276,10 @@ public class MigrationRunner implements CommandLineRunner {
         Arrays.sort(resources, Comparator.comparing(Resource::getFilename,
                 Comparator.nullsLast(MIGRATION_ORDER)));
         List<String> applied = getAppliedMigrations(jdbc);
+        // issue #5981：**先**判「classpath 上有没有源码树与台账都不认的迁移」—— stale 产物不是
+        // 「一条坏迁移」，是「构建产物与源码不一致」的部署事故，跳过它并不会自愈（下一次起栈照旧）；
+        // 且这一刻**零执行**，所以不会污染后续请求。⇒ 默认 fail-fast，点名文件 + 给处置命令。
+        assertNoStaleMigrations(resources, applied);
 
         for (Resource r : resources) {
             String filename = r.getFilename();
@@ -276,6 +326,138 @@ public class MigrationRunner implements CommandLineRunner {
         this.lastFailedBenignCount = (int) benignCount;
         this.lastFailedRealCount = failed.size() - (int) benignCount;
         this.lastSkippedByLedger = applied.size();
+    }
+
+    /**
+     * 陈旧构建产物守卫（issue #5981）：classpath 上的每个迁移文件都必须在**源码树**里存在。
+     *
+     * <p>为什么它够用（不需要读归档目录）：正常构建（`mvn clean package`）下
+     * `target/classes/db/migration/` 是 `src/main/resources/db/migration/` 的**逐文件副本** ⇒
+     * 集合相等。而 #5981 的形态是**构建产物比源码树多**（退休迁移的陈旧产物留在 `target/classes`）
+     * ⇒ 差值非空。反方向（源码树有、产物没有）说明漏拷，同样不该发生。</p>
+     *
+     * <p>三种结局：① 源码树解析不到（容器里只有 jar）⇒ **整段跳过**，历史行为逐字不变；
+     * ② 命中非空 ⇒ 打 ERROR **点名文件 + 给处置命令**，并按 {@link #staleArtifactMode} 处置
+     * （默认 fail ⇒ 抛 {@link MigrationStaleArtifactException}，拒绝以「产物与源码不一致」的状态启动）；
+     * ③ 命中为空 ⇒ 静默通过（正常路径零噪声）。</p>
+     *
+     * <p>**命中的定义**（三条同时成立，缺一都不算陈旧产物）：文件名**不在源码树** ∧ **不在台账**
+     * ∧ **不在** {@code KNOWN_BENIGN_LEGACY} 登记册。后两条是**刻意**的边界：台账已记账 ⇒ 后面本来
+     * 就会跳过它；在登记册里 ⇒ 归 #3714/#4991 的降级通道（否则等于新造一个「例外清单以外一律拒启动」
+     * 的机制，把已裁定的发行语义改了）。</p>
+     *
+     * <p>⚠️ 这不是 #3615/#3270 裁定的例外：那条裁定管的是「**源码树里**的一条迁移内容失败」——
+     * 一条坏迁移不得冻结整个 schema。陈旧产物**不在源码树里**，它跑起来是**部署事故**，
+     * 跳过它不会自愈（下一次起栈照旧），故不能共用「跳过并继续」。</p>
+     */
+    private void assertNoStaleMigrations(Resource[] resources, List<String> applied) throws Exception {
+        Path dir = resolveStaleArtifactDir();
+        if (dir == null) {
+            return;  // 无源码树可比 ⇒ 检测整段跳过（容器 / 显式关闭），不误判
+        }
+        Set<String> sourceTree = new TreeSet<>();
+        try (var paths = Files.walk(dir)) {
+            paths.filter(Files::isRegularFile)
+                    .map(p -> p.getFileName().toString())
+                    .filter(n -> n.endsWith(".sql"))
+                    .forEach(sourceTree::add);
+        }
+        // 只有「台账外 ∧ 源码树外 ∧ 不在已诊断存量登记册」才是**部署事故**：
+        //   · 台账已有该键 ⇒ 后面按台账跳过（不会重跑，与陈旧与否无关）；
+        //   · 在 KNOWN_BENIGN_LEGACY 里 ⇒ 归 #3714/#4991 的降级通道管（否则等于新建一个
+        //     「例外清单以外一律拒启动」的机制，把已裁定的发行语义改了）。
+        List<String> stale = new ArrayList<>();
+        for (Resource r : resources) {
+            String filename = r.getFilename();
+            if (filename == null || !filename.endsWith(".sql")) continue;
+            if (sourceTree.contains(filename)) continue;
+            if (applied.contains(filename)) continue;
+            if (KNOWN_BENIGN_LEGACY.containsKey(filename)) continue;
+            stale.add(filename);
+        }
+        if (stale.isEmpty()) {
+            return;
+        }
+        String message = "拒绝启动：classpath 上的这些迁移既不在源码树（" + dir + "）、也不在台账里 —— "
+                + "它们是**陈旧构建产物**（已退休迁移的残留），重跑会报一堆 SQL 失败"
+                + "（column/relation does not exist、唯一键冲突）并污染本次启动的 DB 状态。"
+                + "处置：清掉构建产物后重跑（cd backend/admin-api && ./mvnw clean）；"
+                + "若它们确属已诊断的存量非幂等，应登记进 KNOWN_BENIGN_LEGACY（而不是留在产物里）；"
+                + "仅需继续启动可设 migao.migration.stale-artifact-mode=log。"
+                + " 命中: " + stale;
+        log.error("❌ 迁移失败（陈旧构建产物）—— 拒绝以「产物与源码不一致」的状态启动。{}", message);
+        if (!"fail".equalsIgnoreCase(staleArtifactMode)) {
+            log.error("⚠️ migao.migration.stale-artifact-mode={} ⇒ 按配置继续启动（默认 fail 会拒绝启动）",
+                    staleArtifactMode);
+            return;
+        }
+        throw new MigrationStaleArtifactException(message);
+    }
+
+    /**
+     * 解析「判陈旧产物时的源码树参照面」（issue #5981）：{@link #liveMigrationDir} 显式覆盖
+     * （取 {@link #DISABLE_STALE_ARTIFACT_CHECK} = 关闭）→ 否则从 {@link #migrationPattern} 推。
+     *
+     * <p>只返回**真实存在**的目录；解析不到返回 {@code null}（调用方整段跳过检测 ——
+     * 绝不猜、也绝不因为"没有源码树"而拒启动：容器里只有 jar 就是这个情形）。</p>
+     */
+    private Path resolveStaleArtifactDir() {
+        if (DISABLE_STALE_ARTIFACT_CHECK.equalsIgnoreCase(
+                liveMigrationDir == null ? "" : liveMigrationDir.trim())) {
+            return null;  // 显式关闭（运行时确实没有源码树的现场；也供判据确定性地关掉它）
+        }
+        // 反射/非 Spring 上下文里配置可能为 null ⇒ 退回生产默认值，绝不 NPE
+        String pattern = migrationPattern == null ? "classpath:db/migration/*.sql" : migrationPattern;
+        String location = pattern.endsWith("/*.sql")
+                ? pattern.substring(0, pattern.length() - "/*.sql".length())
+                : pattern;
+        if (location.startsWith("classpath:")) {
+            // classpath 资源 = classpath 根下那份目录；进程工作目录是仓库根 / 模块根时都命中
+            String relative = location.substring("classpath:".length());
+            for (String candidate : List.of("backend/admin-api/src/main/resources/" + relative,
+                    "src/main/resources/" + relative)) {
+                Path path = Paths.get(candidate);
+                if (Files.isDirectory(path)) {
+                    return path;
+                }
+            }
+            return null;  // 容器里只有 jar ⇒ 整段跳过（历史行为逐字不变）
+        }
+        if (location.startsWith("file:")) {
+            // `file:` URI 形式：末段目录名（spring 会把首段当 authority；按文件名回找）
+            String tail = location.substring("file:".length());
+            int slash = tail.lastIndexOf('/');
+            String dirName = slash < 0 ? tail : tail.substring(slash + 1);
+            if (dirName.isEmpty()) {
+                return null;
+            }
+            for (String candidate : List.of("backend/admin-api/src/main/resources/db/" + dirName,
+                    "src/main/resources/db/" + dirName,
+                    "backend/admin-api/src/test/resources/db/" + dirName,
+                    "src/test/resources/db/" + dirName)) {
+                Path path = Paths.get(candidate);
+                if (Files.isDirectory(path)) {
+                    return path;
+                }
+            }
+            return null;  // 临时目录等不可达位置 ⇒ 跳过
+        }
+        Path dir = Paths.get(location);
+        return Files.isDirectory(dir) ? dir : null;
+    }
+
+    /**
+     * **陈旧构建产物**（classpath 有、源码树没有）—— **拒绝启动**（issue #5981）。
+     *
+     * <p>与 {@link MigrationBootstrapFailureException} / {@link MigrationConnectionFailureException}
+     * 同口径：抛异常 ⇒ Spring 记 {@code Application run failed} ⇒ 进程非 0 退出 ⇒
+     * 编排层可见。区别只在前置条件不同（这里是「产物与源码不一致」，不是 DB 连不上、
+     * 也不是台账建不出来）。</p>
+     */
+    static class MigrationStaleArtifactException extends IllegalStateException {
+        MigrationStaleArtifactException(String message) {
+            super(message);
+        }
     }
 
     /**
