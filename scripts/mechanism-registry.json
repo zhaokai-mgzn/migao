@@ -98,19 +98,13 @@
       "name": "台账兜底对账（补 approve / arm auto-merge）",
       "workflow": ".github/workflows/flaky-ledger-reconcile.yml",
       "job": "reconcile",
-      "expected_observable": "**期望**：每轮一条 MECHANISM-LIVENESS 读数，含 `acted=<approve 数 + arm 数>`，零动作时 `why` 写明为什么零 action_required。",
-      "criterion": "同 automerge（run 归属 + 结论）。**当前未固化**（见 unfixed）。",
-      "consumer": "值班（mechanism-liveness 定时腿 ⇒ P1 值班 issue）",
-      "reading": "unfixed",
-      "unfixed": [
-        {
-          "what": "存活读数步",
-          "reason": "本包（issue #5326）的**文件所有权**不含该 workflow —— 并发包 issue #5301 正在改同一个文件（`flaky-ledger-reconcile.yml` + `.github/scripts/flaky_ledger.py`），同时改会互相覆盖。⇒ 本包**不碰**该文件，读数步留给持有该文件的包补。**这不是「无法产出读数」**：它已被证明可产出（该文件现有 5 条 `::notice::`），只差按本语法落一行。",
-          "issue": "#5326",
-          "consumer": "值班（mechanism-liveness 定时腿会在它仍缺失时**持续报红** ⇒ 不会静默腐烂）；handoff：持有该文件的包（#5301）合入后补读数步，并在本登记的 `reading` 改回 `instrumented`"
-        }
-      ],
-      "reading_site": "emitter"
+      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数（job 最后一步 `if: always() && !cancelled()`；**恰好一行 `emit flaky-ledger-reconcile`**）。`why` 里现取报出 #5960 ③ 的连续真红判定（`verdict_rc=<0|1|3>`）与判定本体自证结果；计数与本轮做了什么见 job summary（`--check --json` 的现取报告）。",
+      "criterion": "同 automerge（run 归属 + 结论）。另：读数 `rc` **不得**与 run 结论矛盾 —— 本步以 `--outcome \"${{ job.status }}\" --rc` 发射 ⇒ 自洽（#5264 的形态）。",
+      "consumer": "值班（mechanism-liveness 定时腿 ⇒ P1 值班 issue）。**另有一条独立的值守通道**：该腿自己**连续真红 N 次** ⇒ 同一 job 的最后一步机械开/续值守单（issue #5960 ③，判据本体 = `scripts/flaky_ledger_reconcile_health.py::streak_of_reds`；清零判据 = 连续红被任何非真红结论打断 ⇒ 同一脚本自动关单，复用同一张单不新开）。两条通道**分工不重叠**：看门人裁「跑了却没出声」，本通道裁「连续判红」。",
+      "reading": "instrumented",
+      "unfixed": [],
+      "reading_site": "emitter",
+      "reading_site_reason": "读数步**同时**是 #5960 ③ 的健康值守步（`if: always() && !cancelled()` 才保证「机制自己判红时值守面照跑」，见 `.github/workflows/flaky-ledger-reconcile.yml` 该步注释）；`mechanism-liveness` 的判据 1 要求读数步是 job 的**最后一步**且独立一步 ⇒ 二者**只能是同一步**，故**不另加**第二个读数步。"
     },
     {
       "id": "flaky-triage",
@@ -218,9 +212,9 @@
   "exempt": [],
   "reading_sites": "`emitter` = 调共享发射器（常规）；`inline` = 内联**同一语法**（唯一合法场景：本 job **不得 checkout** ⇒ 取不到发射器文件）—— 内联必须带 `reading_site_reason`，且由 tests/unit_ci_workflows/test_mechanism_liveness.py 的`test_inline_emission_is_grammar_equivalent_to_the_emitter` **真跑内联文本**并逐字段比对。",
   "unfixed_budget": {
-    "max_mechanisms": 1,
-    "max_items": 6,
-    "frozen_at": "PR #5326 首版（燃尽锚点现取见 `python3 scripts/mechanism_liveness.py --check`）",
+    "max_mechanisms": 0,
+    "max_items": 5,
+    "frozen_at": "PR #5326 首版（燃尽锚点现取见 `python3 scripts/mechanism_liveness.py --check`）；**PR #5960 ③ 下调**：`max_mechanisms` 1 → **0**（最后一条 `reading: unfixed` 的机制 `flaky-ledger-reconcile` 已补上读数步）、`max_items` 6 → **5**（它那条 `unfixed` 条目销账）—— 按 G2「修好一处 ⇒ 同 PR 下调本预算」。⚠️ **清零后判据 5 的口子仍在**：`unfixed-*` 检测由 `test_mechanism_liveness.py::test_unfixed_gate_still_detects_new_debt`（注入式负控）钉住，不再依赖「存量非零」。",
     "rule": "**只许缩短**（G2）：现取的「未固化机制数 / 未固化子项数」**不得超过**本预算；修好一处 ⇒ 同 PR 下调本预算（涨跌都要在 diff 里看得见）。⇒ 想靠「多登记几条未固化」蒙过判据 5 的口子被封死（那只把债务搬进台账）。"
   }
 }

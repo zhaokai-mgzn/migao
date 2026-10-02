@@ -125,10 +125,18 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      actions: write        # 同上（job 级只列不改，workflow 级权限面一字未动）
+      contents: read
+      pull-requests: write
+      issues: write         # #5960 ③：连续失败 ⇒ 本 job 的**最后一步**自己开/续/清值守单
     env:
       LEDGER_BRANCH: chore/flaky-ledger
       # 「陈旧」阈值：台账已推上分支、却这么久还落不到 main ⇒ 兜底真没生效（不是异步窗口）。
       STALE_MINUTES: '15'
+      # #5960 ③ 的阈值：连续真红 N 次 ⇒ 出声。取法与依据见 `scripts/flaky_ledger_reconcile_health.py`
+      # 的模块 docstring；**现取读数**（`--check --json` 的 `streak_max`）才是判据，本数字只是缺省。
+      RECONCILE_HEALTH_THRESHOLD: '4'
     steps:
       - name: Checkout（对账基线 = main；判据读 main 上的台账副本）
         uses: actions/checkout@v7
@@ -392,3 +400,68 @@ jobs:
             3) echo "::error::无法判定台账分支的失败 run（rerun-failed 退 3）⇒ **未跑 ≠ 通过**，不得当成「没有失败」"; exit 1 ;;
             *) echo "::error::台账失败 job 兜底重跑失败（rc=${RC}）⇒ 台账分支的确定性失败仍**无人救**（fail-closed，不静默）"; exit 1 ;;
           esac
+
+      # ─── #5960 ③：**这条腿自己的健康值守** ────────────────────────────────
+      # 病（**实测**，2026-10-02，读数逐字）：本 workflow **不在 required 集合** ⇒ 它判红
+      #   **不拦任何合并**，**也没有任何东西会因此报警** —— 「记录 flake 的那条腿自己坏了，
+      #   没人知道」（issue #5960 ③）。`mechanism-liveness.yml` 的 `watchdog` 腿裁的是
+      #   「**跑了却没出声**」，`drift_audit.py::check_heartbeat()` 裁的是「**调度存在**」——
+      #   两条都**不**裁「它连续判红」⇒ 这正是本步骤补的那一格。
+      # 判据（**连续 N 次**，不是「偶发一次」）：见 `scripts/flaky_ledger_reconcile_health.py`
+      #   （纯函数 `classify()` / `streak_of_reds()`；`--self-test` 13 条夹具含注回坏形态的必红用例）。
+      #   · `action_required` **零 job** = 审批门控（台账分支 PR 的 robot 推送会进审批队列），
+      #     **不是坏了**——实测：run 36952665492 / 36947111932 的 `/jobs` `total_count` = **0**，
+      #     而真失败 run 36956153995 / 36947893768 = **1**。不区分 ⇒ 台账分支每开一次 PR 就伪造
+      #     一段「连续红」= 本单要治的告警疲劳（反例见纯函数夹具「审批门控不算红」）。
+      #   · 阈值 N=4 的依据是**现取**噪声上限（`--check --json` 的 `streak_max`）；2026-10-02 现取
+      #     同一窗口的历史最长连续真红 = **3** ⇒ 4 在其上，且红**不断累积**才是「机制真坏」的特征。
+      # 出声是**机械的**：本步骤自己 `gh issue create/comment/close`（**不**只写 job summary 等人看）。
+      # 清零判据（**机械**，不留白）：连续红被**任何**非真红结论打断（`success` / 审批门控的
+      #   `action_required` / 取消 / 跳过）⇒ 同一脚本 `gh issue close` 销账；红再次累积 ⇒ **复用同一单**。
+      # ⚠️ **不改机制结论**：判红只写单，**不** `exit 1`（机制自己的红由它自己的步骤判）。
+      # ⚠️ **`if: always()`**（**恰好** `always()`，不带 `&& !cancelled()`）：① 上游任一步判红时本步
+      #    **照跑**（否则「机制坏了」时值守面自己也不跑 —— 那正是本单要治的形态）；② 取消是**非终态**，
+      #    取消的 run 本仓口径下**不是结果**，故取消轮**不发读数**正是合法形态（免责，不是失效）；
+      #    ③ `mechanism_liveness.py` 的判据 1 逐字要求读数步 `if:` **等于** `always()`
+      #    （`reading-notalways:<id>`），多写一个 `!cancelled()` 会让存活看门人判红。
+      # ⚠️ 本步**恰好是 job 的最后一步**且**恰好含一行 `emit flaky-ledger-reconcile`** —— 它就是
+      #    `mechanism-liveness.yml` 的**存活读数**面（原 `scripts/mechanism-registry.json` 里
+      #    `flaky-ledger-reconcile` 记的 `reading: unfixed` + handoff「留给持有该文件的包补」，
+      #    本 PR 一并销账并把 `unfixed_budget` 下调到 0）。判据 1 要求「读数步是 job 的**最后一步**」
+      #    且**独立一步**（注解有 per-step 上限）⇒ **不能再在后面加第二个读数步**，故本步兼任两者；
+      #    `streak=`/`gated=` 是真计数，**不是**编造的 `unknown`。
+      - name: 自身健康 + 存活读数（#5960 ③：连续失败自己开单 / 清零）
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 存活读数的 rc **必须**绑定到本轮 **job 结论**（`mechanism_liveness.py` 的元守卫逐字要求
+          # `env.OUTCOME == "${{ job.status }}"`）：这样 run 结论与读数 `rc` **自洽**，
+          # 不会伪造 `watchdog-contradiction`（#5264 的形态）。机制自己的红 = `rc=1`（事实如此）。
+          OUTCOME: ${{ job.status }}
+        run: |
+          set -uo pipefail
+          # 离线夹具自证：判定本体若退化（把「连续红」判成通过、把「无法判定」降级成通过）⇒ 这里非零
+          # ⇒ 后续读数为 `rc=1`（**不得**用一个退化的判定本体去开 / 清单）。
+          SELF=0
+          python3 scripts/flaky_ledger_reconcile_health.py --self-test || SELF=$?
+          RC=0
+          python3 scripts/flaky_ledger_reconcile_health.py --check --live --repo "$GITHUB_REPOSITORY" \
+            --run-id "$GITHUB_RUN_ID" --window 30 --threshold "${RECONCILE_HEALTH_THRESHOLD:-4}" \
+            --json /tmp/reconcile-health.json --issue | tee -a "$GITHUB_STEP_SUMMARY" || RC=$?
+          case "$RC" in
+            0) echo "::notice::🩺 Flaky Ledger Reconcile 自身健康：连续真红未达阈值（**一次偶发红不算坏了**）" ;;
+            1) echo "::warning::🩺 Flaky Ledger Reconcile **连续真红已达阈值** ⇒ 已机械开/续值守单（见上方 run 列表与复算命令）" ;;
+            3) echo "::warning::🩺 无法判定 Flaky Ledger Reconcile 的健康（三态 `3`）⇒ **未跑 ≠ 通过**，不得当「健康」读" ;;
+            *) echo "::warning::🩺 健康判据异常退出（rc=${RC}）⇒ 不得当「健康」读" ;;
+          esac
+          # 存活读数（`mechanism_liveness.yml` 的 watchdog 腿按同一语法解析；本步即那一步，见上）。
+          # ⚠️ 用 **`--outcome "$OUTCOME"`**（由 `env.OUTCOME` 绑定 `${{ job.status }}`）：夹具自证失败
+          #   时 `rc=1`，**正是 job 的结论** ⇒ 读数与事实自洽（元守卫 `_outcome_binding_problems()` 逐字要求）。
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit flaky-ledger-reconcile \
+              --outcome "$OUTCOME" --seen "${SELF:-unknown}" --acted "0" \
+              --why "#5960 ③ 自身健康值守：连续真红阈值判定 verdict_rc=${RC}（run 列表与复算命令见上）"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=flaky-ledger-reconcile）：发射器不在检出里 ⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi
+          exit 0

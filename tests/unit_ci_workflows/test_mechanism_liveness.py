@@ -47,6 +47,7 @@ r"""「机制静默失效」这一**类别**的判据（issue #5326）。
 from __future__ import annotations
 
 import importlib.util
+import copy
 import json
 import re
 import os
@@ -628,7 +629,15 @@ def test_zero_action_and_not_run_have_different_shapes(tmp_path):
 
 
 def test_unfixed_and_zero_action_are_counted_apart():
-    """**判据 5 的燃尽锚点**：instrumented / unfixed **现取计数**（不写死数字）。"""
+    """**判据 5 的燃尽锚点**：instrumented / unfixed **现取计数**（不写死数字）。
+
+    ⚠️ 本判据**曾经**断言 `unfixed_items > 0`，理由逐字是「该断言一旦变红请先确认是哪种：
+    要么全部固化（好），要么判据 5 的登记口子被绕过」。**2026-10-02（issue #5960 ③）出现了
+    「全部固化」那一支**：最后一条 `reading: unfixed` 的机制（`flaky-ledger-reconcile`）被补上
+    读数步 ⇒ 未固化面清零 ⇒ 旧断言会**因为好消息而判红**（把「债务还清」读成「判据坏了」）。
+    ⇒ 改成**不依赖存量非零**的两条：① `instrumented` 面非空；② 口子本身由
+    `test_unfixed_gate_still_detects_new_debt`（注入式负控）钉住 —— 那才是原来那句断言的**真意图**。
+    """
     registry = _registry_data()
     instrumented = [e["id"] for e in registry["mechanisms"] if e.get("reading") == "instrumented"]
     unfixed = [e["id"] for e in registry["mechanisms"] if e.get("reading") != "instrumented"]
@@ -636,9 +645,37 @@ def test_unfixed_and_zero_action_are_counted_apart():
     print(f"[燃尽锚点] 机制={len(registry['mechanisms'])} / instrumented={len(instrumented)} "
           f"/ unfixed 机制={len(unfixed)}（{unfixed}）/ 未固化子项={unfixed_items}")
     assert instrumented, "instrumented 为 0 ⇒ 读出面为空"
-    assert unfixed_items > 0, (
-        "未固化子项为 0 ⇒ 要么全部固化（好），要么**判据 5 的登记口子被绕过**（没人登记缺口）——本单实测非 0，"
-        "该断言一旦变红请先确认是哪种"
+
+
+def test_unfixed_gate_still_detects_new_debt():
+    """**判据 5 的负控（注入式）**：往真登记册的内存副本里塞一条新的 `reading: unfixed` 机制
+    ⇒ `check_registration()` **必须**报出 `unfixed-*` finding。
+
+    为什么必须有这一条（2026-10-02，issue #5960 ③）：上面那条断言原先用「现取 > 0」代替
+    「判据还活着」，于是**债务清零当日它自己变红**，而它的失败信息会把排查引向「判据坏了」。
+    负控把同一件事做成**注入式**：**存量是否为 0 都不影响**这条判据的效力。
+    """
+    registry = copy.deepcopy(_registry_data())
+    registry["mechanisms"].append({
+        "id": "injected-uninstrumented-mech",
+        "name": "注入的未固化机制（负控；不进仓）",
+        "workflow": ".github/workflows/flaky-ledger-reconcile.yml",
+        "job": "reconcile",
+        "expected_observable": "注入用，无",
+        "criterion": "注入用，无",
+        "consumer": "注入用，无",
+        "reading": "unfixed",
+        "unfixed": [{"what": "存活读数步", "reason": "注入负控", "issue": "#5960", "consumer": "注入用"}],
+        "reading_site": "emitter",
+    })
+    report, _ = ML.check_registration(REPO_ROOT, registry)
+    keys = {f.key for f in report.findings}
+    assert "unfixed-blank:injected-uninstrumented-mech" not in keys, (
+        f"注入项**带着**未固化条目，不该报 blank；实测 {sorted(keys)}"
+    )
+    assert any(k.startswith("unfixed-") for k in keys), (
+        f"注入一条 `reading: unfixed` 的新机制却没有任何 `unfixed-*` finding ⇒ 判据 5 的口子已被绕过"
+        f"（存量是否为 0 都不该影响这一条）；实测 {sorted(keys)}"
     )
 
 
@@ -661,11 +698,19 @@ def test_unfixed_entries_are_registered_with_reason_and_consumer():
 
 
 def test_red_proof_blank_unfixed_entry_is_red(tmp_path):
-    """**注入式红证（判据 5）**：把某机制的未固化条目**清空** ⇒ **必红**（`unfixed-blank:<id>`）。"""
+    """**注入式红证（判据 5）**：把某机制的未固化条目**清空** ⇒ **必红**（`unfixed-blank:<id>`）。
+
+    ⚠️ **2026-10-02（issue #5960 ③）起登记册里已没有 `reading: unfixed` 的存量条目**
+    （最后一条被补上读数步 ⇒ 未固化面清零）。旧写法 `next(e for e in … if reading != "instrumented")`
+    在清零当日会 **`StopIteration`**（红在「好消息」上）⇒ 改成**自己注入**一个待清空的受害者
+    （把一条 `instrumented` 机制的 `reading` 翻成 `unfixed` 并清空 `unfixed`）——
+    注入式红证**不依赖存量**，这是它本来就该有的形态。
+    """
     repo = _mini_repo(tmp_path)
     path = repo / "scripts" / "mechanism-registry.json"
     data = json.loads(path.read_text(encoding="utf-8"))
-    victim = next(e for e in data["mechanisms"] if e.get("reading") != "instrumented")
+    victim = next(e for e in data["mechanisms"] if e.get("reading") == "instrumented")
+    victim["reading"] = "unfixed"
     victim["unfixed"] = []
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     report, _ = ML.check_registration(repo, ML.load_registry(repo))
