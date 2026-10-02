@@ -23,6 +23,8 @@ import hashlib
 import json
 import os
 import pickle
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -450,7 +452,232 @@ def collection_floor_problems(session, ledger: dict | None = None) -> list[str]:
     return []
 
 
+# ══════════════════════════════════════════════════════════════════════════════════════
+# **直连整目录** `pytest tests/unit_ci_workflows` 也拿机器级锁（issue #6019）
+# ══════════════════════════════════════════════════════════════════════════════════════
+# ## 病灶（2026-10-02 现场读数，不是推断）
+#
+# `scripts/machine-heavy-lock.sh` 的射程此前**只包 `verify-all.sh` 的档**；`heavy_entry_ledger.json`
+# 的 `coverage_boundary` 与 `docs/wiki/Development.md` 的「机器级重活并发准入」节都逐字把这写成
+# **盖不到的**缺口。当天实测：机器上**同时有 3 个**直连整目录 `pytest tests/unit_ci_workflows`
+# （含 `--collect-only`）与持锁者抢 8 核，`load average` 一度 **21.6 / 43.6 / 61.3**；同日 7 个
+# `gate` 同跑、最高排队 **已等 2354s / 上限 2400s**。用户裁定：**把这个口子收进锁**。
+#
+# ## 为什么落在 conftest（而不是再加一层入口纪律）
+#
+# 「绕过入口」的形态**没有入口可包** —— 纪律盖不住它（实测就是纪律登记着、事故照样发生）。
+# 套件自己的 conftest 是**唯一**在「任何人直连整目录」时都必然被加载的东西 ⇒ 准入点放这里。
+#
+# ## 四条取值（每条都有判据，见 test_suite_self_lock.py）
+#
+# | # | 判定 | 理由 |
+# |---|---|---|
+# | ① | **只在目标覆盖整个目录时**拿锁（显式目录路径 / `::` 之前的目录部分 / pytest 关键字） | 跑子集（单文件 / `-k` 收窄）是研发日常且很轻 —— 拿锁会把日常动作串行化 |
+# | ② | `MIGAO_HEAVY_LOCK_HELD=1` ⇒ **绝不 acquire** | 祖先（如 `verify-all.sh`）已持锁；再 acquire = 自己跟自己的进程抢同一把锁 = **死锁** |
+# | ③ | `CI` 为真 ⇒ 不 acquire | 托管 runner 上跑的是同一套命令，但**不占本机资源**（本机锁的射程就是本机 CPU） |
+# | ④ | xdist worker（`hasattr(config, "workerinput")`）⇒ 不 acquire | 只在控制器 / 单进程里拿一次，否则 N 个 worker 互相抢 |
+#
+# ## 拿不到锁 ⇒ fail-closed（与 `verify-all.sh` 同口径：**没跑**必须长得像**没跑**）
+#
+# `pytest.exit.Exception(..., returncode=1)`：非零退出 + 报文含**锁文件路径 / 持有者名字·pid·worktree /
+# 怎么办**（`./scripts/machine-heavy-lock.sh status`）。默认**不排队**（与 `acquire` 默认语义一致）；
+# `MIGAO_HEAVY_WAIT=<秒>` 存在时按它排队（与 `verify-all.sh` 的 `macquire` 同形）。
+# 拿锁发生在 `pytest_collection` 钩子里 ⇒ 在**任何收集之前**，输出里不会出现正常收集汇总。
+#
+# ## 释放面
+#
+# `pytest_sessionfinish`（正常 / 异常退出都到）+ 只释放**自己**持有的那份（`machine-heavy-lock.sh release`
+# 自己按 pid 比对，非持有者 release 会非零退出且不删锁）。
+LOCK_SCRIPT = REPO_ROOT / "scripts" / "machine-heavy-lock.sh"
+SUITE_DIR = "tests/unit_ci_workflows"
+#: pytest 位置参数的**形态**兜底：`tests/unit_ci_workflows` 前后各留一个空格（下一个匹配到才停）。
+_SUITE_ARG_RE = re.compile(r"(?:^|\s)" + re.escape(SUITE_DIR) + r"(?=\s|$)")
+
+
+def _target_is_the_whole_suite(arg: str, scope: dict[str, bool] | None = None) -> bool:
+    """单个 pytest **位置参数**是否指向**整个** `tests/unit_ci_workflows` 目录。
+
+    判定是**结构性**的：`<任意前缀>/unit_ci_workflows` ⇒ 那个目录**必须真的在**
+    （`Path.is_dir()`）且里面**至少有一个** `test_*.py`；`::` 之后的节点 id 不算（`…::TestFoo` 仍是整目录）。
+    `scope=None` ⇒ 现场取（判据可注入 `{"files": …, "dir_children": …}` 假 scope 造坏形态）。
+    """
+    if scope is None:
+        if not _suite_dir().is_dir():
+            return False
+        scope = {
+            "files": {p.name for p in _suite_dir().glob("test_*.py")},
+            "dir_children": {p.name for p in _suite_dir().iterdir()},
+        }
+    if not scope.get("files"):
+        return False                        # 目录里没有判据文件 ⇒ 不是「整个套件」，别拿锁
+    missing = set(scope["files"]) - set(scope.get("dir_children") or ())
+    if scope.get("dir_children") and missing:
+        return False                        # 目录里少了已登记的判据文件 ⇒ 「整套」不成立（fail-closed）
+    text = str(arg).strip().strip("\"'").replace("\\", "/").rstrip("/")
+    if not text:
+        return False
+    head = text.split("::", 1)[0]                       # `tests/unit_ci_workflows::TestFoo` 也是整目录
+    parts = [p for p in head.split("/") if p not in ("", ".")]
+    if parts and parts[-1] == "unit_ci_workflows":
+        parts = parts[:-1]
+        return not parts or "/".join(parts) == SUITE_DIR.rsplit("/", 1)[0]
+    return bool(_SUITE_ARG_RE.search(" " + text + " "))
+
+
+#: **确定吃一个取值**的选项；其余 `-x` 形态（`--collect-only` / `-q` / `--tb=short` …）
+#: **不吃**取值。口径比「除白名单外都吃一个」更**窄**：后者会把 `--collect-only` 后面的
+#: `tests/unit_ci_workflows` **当成它的取值剥掉** ⇒ 整目录运行反而判成「没有目标」⇒ 不拿锁。
+_VALUE_OPTIONS = {
+    "-k", "-m", "-p", "-n", "-c", "-o", "-r", "-W", "--deselect", "--ignore", "--ignore-glob",
+    "--rootdir", "--basetemp", "--junitxml", "--import-mode", "--maxfail", "--timeout",
+}
+
+
+def _option_values(argv) -> set:
+    """`argv` 里**属于选项取值**的 token（`-p no:cacheprovider` 的 `no:cacheprovider`、`-n 4` 的 `4` …）。
+
+    为什么必须剥：pytest 的 `config.invocation_params.args` 是**原始 argv**（选项与取值混在一起，
+    无结构化解析）⇒ 不剥就把 `no:cacheprovider` / `4` 当成**位置参数**，
+    `_covers_whole_suite_dir` 的 `all()` 当场判成「子集运行」⇒ 该拿锁时不拿（假绿方向）。
+    """
+    values: set = set()
+    for i, tok in enumerate(argv):
+        tok = str(tok)
+        if not tok.startswith("-") or tok == "-" or "=" in tok or i + 1 >= len(argv):
+            continue
+        if tok in _VALUE_OPTIONS:
+            values.add(str(argv[i + 1]))
+    return values
+
+
+def _positional_targets(argv) -> list[str]:
+    """pytest 位置参数 = argv 里既不是选项、也不是选项取值的 token。"""
+    values = _option_values(argv)
+    return [str(a) for a in argv
+            if not str(a).startswith("-") and a not in values]
+
+
+#: 「以**关键字**收窄」的选项（`-k expr` / `-m marker`）：目录仍是整目录，但**跑的判据是子集**
+#: —— 研发日常（`pytest tests/unit_ci_workflows -k 某个测试`）很轻，拿锁会把日常动作串行化。
+#: ⚠️ 这是**有意的收窄**（照 §19.1 登记在边界里）：这类运行偶发地可能仍拉起较重的一批，
+#: 但「拿锁面只在**未收窄**的整目录」是本单与用户裁定的口径。
+_KEYWORD_OPTIONS = ("-k", "-m")
+
+
+def _covers_whole_suite_dir(args, scope: dict[str, bool] | None = None) -> bool:
+    """除 pytest 选项与选项取值外，**每个**位置参数都必须指向整个目录，且**未被关键字收窄**。"""
+    argv = [str(a) for a in args]
+    if any(a == opt or a.startswith(opt + "=") for a in argv for opt in _KEYWORD_OPTIONS):
+        return False                        # `-k` / `-m` 收窄 ⇒ 这一轮跑的是子集
+    targets = _positional_targets(argv)
+    if not targets:
+        return False
+    return all(_target_is_the_whole_suite(a, scope) for a in targets)
+
+
+def _suite_dir() -> Path:
+    return REPO_ROOT / SUITE_DIR
+
+
+def suite_self_lock_wanted(args, *, config=None, env=None) -> bool:
+    """**纯函数**（issue #6019）：本轮 pytest 是否该由**套件自己**拿机器级锁。
+
+    `args` = pytest 的位置参数；`config` = pytest config（只读 `workerinput`，缺省视为单进程）；
+    `env` = 环境（缺省 `os.environ`）。判据在 `test_suite_self_lock.py::TestPurePredicate` 逐条注入。
+    """
+    env = os.environ if env is None else env
+    if env.get("MIGAO_HEAVY_LOCK_HELD") == "1":
+        return False                    # ② 祖先已持锁 ⇒ 再 acquire 就是死锁
+    if _env_truthy(env.get("CI")):
+        return False                    # ③ 托管 runner：不占本机资源
+    if config is not None and hasattr(config, "workerinput"):
+        return False                    # ④ xdist worker：只在控制器 / 单进程里拿一次
+    return _covers_whole_suite_dir(args)
+
+
+def _env_truthy(value) -> bool:
+    """`CI` 的「为真」判定（与 shell 口径一致：非空且不是 `0` / `false` / `no`）。"""
+    text = str(value or "").strip().lower()
+    return text not in ("", "0", "false", "no", "off")
+
+
+def acquire_suite_lock(env=None) -> tuple[bool, str]:
+    """拿套件自己的机器级锁。返回 `(是否拿到, 失败时的人类可读报文)`。
+
+    ⚠️ 只**报告**，不在这里判红：拿不到时由 `pytest_collection` 钩子 `pytest.exit`（fail-closed），
+    这样「拿不到 ⇒ 非零退出」这条路对任何调用者都成立，且判据可以直接调本函数看读数。
+    """
+    env = os.environ if env is None else env
+    lock_file = env.get("MIGAO_HEAVY_LOCK_FILE") or "<$HOME/.migao-heavy.lock>"
+    cmd = [str(LOCK_SCRIPT), "acquire", "pytest unit_ci_workflows（直连整目录）"]
+    if env.get("MIGAO_HEAVY_WAIT"):
+        cmd += ["--wait", str(env["MIGAO_HEAVY_WAIT"])]
+    try:
+        run = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT), env=env)
+    except OSError as exc:
+        return False, (
+            f"机器级准入锁不可用（issue #6019）：无法执行 {LOCK_SCRIPT}（{exc!r}）。\n"
+            "本次**没有跑**任何判据（这不是通过）—— 先修锁脚本，或显式带着自己的锁再进来。"
+        )
+    if run.returncode == 0:
+        return True, run.stdout
+    return False, (
+        "⛔ 直连整目录 `pytest` 的**机器级重活准入被拒**（issue #6019）—— 本次**没有跑**任何判据"
+        "（这不是通过、也不是跳过）：\n"
+        f"   锁文件 : {lock_file}\n"
+        f"   {run.stdout.strip()}\n"
+        "   怎么办 : ./scripts/machine-heavy-lock.sh status（看谁在跑 / 已跑多久）\n"
+        "            要么等它跑完；要么排队的调用显式给 MIGAO_HEAVY_WAIT=<秒>；"
+        "要么内部腿显式给 MIGAO_HEAVY_LOCK_HELD=1（= 祖先已持锁，绝不能再 acquire）。\n"
+        "   （只跑子集是研发日常且很轻 ⇒ 不拿锁：直接 `pytest tests/unit_ci_workflows/<单文件>`。）"
+    )
+
+
+def release_suite_lock(env=None) -> None:
+    """释放**自己**持有的那份（非法持有者由锁脚本自己拒绝，本函数不让异常逃出去）。"""
+    try:
+        subprocess.run([str(LOCK_SCRIPT), "release"], capture_output=True, text=True,
+                       cwd=str(REPO_ROOT), env=os.environ if env is None else env)
+    except OSError:
+        pass
+
+
+def pytest_collection(session):  # noqa: ARG001 —— 只需 session.config；钩子体在 collection 之前
+    """套件自带准入：**直连整目录**时先拿机器级锁，拿不到 ⇒ `pytest.exit` 非零（issue #6019）。
+
+    ⚠️ 钩子签名只收 `session`（pytest 8 的 hookspec 是 `firstresult=True`）；**返回值必须是 `None`**
+    —— `firstresult=True` 下**非 None** 的返回值会**停掉**那个实现 `perform_collect` 的默认插件 ⇒
+    **一条判据都收集不到**（实测：本函数初版 `return True` ⇒ `no tests collected`，整条腿变成空跑）。
+    拿不到锁时抛 `Exit` 已足够：异常本来就让后续实现不执行，而**收集发生在这一步之内**
+    （`--collect-only` 是收集**参数**，不是在 `pytest_collection` **之后**才生效的阶段）⇒
+    这条路同样被拦在收集之前。
+    """
+    config = session.config
+    try:
+        args = list(config.invocation_params.args)
+    except Exception:  # noqa: BLE001 —— 取不到参数 = 「不可判定」，按**最宽**面判（fail-closed）
+        args = [SUITE_DIR]
+    if not suite_self_lock_wanted(args, config=config, env=os.environ):
+        return None
+    ok, detail = acquire_suite_lock(os.environ)
+    if not ok:
+        raise pytest.exit.Exception(detail, returncode=1)
+    return None
+
+
 def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
+    """会话收口：① 释放本套件**自己**拿的机器级锁（issue #6019）② 收集面判在整轮读数上
+    （fail-closed，不依赖某条测试是否被跑到，issue #5814）。
+
+    ⚠️ 两者必须在**同一个**钩子函数里：同一模块定义两个同名 `pytest_sessionfinish`，后者会把
+    前者**整个覆盖掉**（实测：本包首轮实现就是这么写的 ⇒ `helper-leg-shape` 的收口整个丢了，
+    而判据照样绿 —— 同 issue #5829 的形态）。
+    """
+    release_suite_lock(os.environ)
+    _helper_leg_shape_sessionfinish(session)
+
+
+def _helper_leg_shape_sessionfinish(session):
     """会话收口：把**收集面**判在整轮读数上（fail-closed，不依赖某条测试是否被跑到）。
 
     ⚠️ **为什么判定要写在测试体外、又要有一条测试体内的同款**（2026-09-30 实测）：

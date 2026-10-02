@@ -325,6 +325,17 @@ pytest -q --durations=20    # 单用例 >2s 即可疑
   更不是记成 ✅ —— 「没跑」必须长得像「没跑」）。三态语义（✅/❌/⏭️）一字未改。
 - **值守面**：`acquire` 的**拒绝行为** + `status` 读数。**没有常驻守护进程 / launchd agent** ——
   **拒绝本身就是机制**（不是「提醒你记得去看」）。
+- 🔻 **「直连整目录」那一路也已收进锁**（2026-10-02，issue #6019）：**套件自带 acquire/release** ——
+  `tests/unit_ci_workflows/conftest.py` 在 `pytest_collection` 钩子里拿锁（**任何收集之前**）、
+  在 `pytest_sessionfinish` 里释放；**拿不到 ⇒ `pytest.exit` 非零 + 出声**（含锁文件路径 / 持有者 /
+  `./scripts/machine-heavy-lock.sh status`），默认不排队、`MIGAO_HEAVY_WAIT` 存在时排队。
+  触发面**只在整目录**（位置参数覆盖整个 `tests/unit_ci_workflows`，含 `--collect-only`）；
+  跑子集（单文件 / `-k` / `-m` 收窄）**不拿**（研发日常，很轻）。三类**有意豁免**（各有判据）：
+  `MIGAO_HEAVY_LOCK_HELD=1`（祖先已持锁 ⇒ 再 acquire 就是死锁）/ `CI` 为真（托管 runner 不占本机）/
+  xdist worker（只在控制器拿一次）。`verify-all.sh` 拿锁成功后 `export MIGAO_HEAVY_LOCK_HELD=1`
+  （嵌套的 ci-helper 腿不要二次 acquire）。台账登记为 `surface=suite-internal` 载体
+  （它在 `tests/unit_ci_workflows/**`，**不在**语料普查面内 ⇒ 由
+  `test_heavy_suite_entry_ledger.py` 的 suite-internal 判据**单独**裁）。
 
 ## 批次统一验证：本机全量「每批一次」（2026-10-02 固化，issue #6012）
 
@@ -357,7 +368,9 @@ pytest -q --durations=20    # 单用例 >2s 即可疑
 **判据**：`tests/unit_ci_workflows/test_machine_heavy_lock.py`（三态语义 / 孤儿回收 / **不误杀** /
 `verify-all.sh` 接线与顺序 / 静态契约）+ `tests/unit_ci_workflows/test_heavy_suite_entry_ledger.py`
 （**类级元守卫**：会拉起全量套件的入口必须已登记且接了锁，**未登记即红**；台账 =
-`tests/unit_ci_workflows/heavy_entry_ledger.json`）。
+`tests/unit_ci_workflows/heavy_entry_ledger.json`；`surface=suite-internal` 那一条由
+`TestSuiteInternalEntries` 单独裁）+ `tests/unit_ci_workflows/test_suite_self_lock.py`
+（**直连整目录**自己拿锁：接线真跑 / 拦在收集之前 / 纯函数触发面与三类豁免 / fail-closed / 释放面）。
 
 ## 测试分层
 

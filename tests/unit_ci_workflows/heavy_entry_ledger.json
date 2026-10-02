@@ -4,7 +4,7 @@
   "_what": "全量套件（tests/unit_ci_workflows）的**入口台账**：现取到的每个「会拉起整目录 pytest」的载体都必须在这里登记，并声明它有没有接机器级准入锁（`lock=required` 必须同时有 acquire 与 release / EXIT trap）。未登记即红 —— 将来有人再加一个全量入口却忘了接锁，会当场红，而不是等下一次把开发机打瘫。",
   "_judged_by": "tests/unit_ci_workflows/test_heavy_suite_entry_ledger.py",
   "_invariants": [
-    "台账 entries 的 path 集合必须**逐项等于**语料普查现取到的载体集合（双向：漏登记 ⇒ 红；幽灵条目 ⇒ 红）",
+    "`surface=corpus` 条目的 path 集合必须**逐项等于**语料普查现取到的载体集合（双向：漏登记 ⇒ 红；幽灵条目 ⇒ 红）；`surface=suite-internal` 条目**不在语料面内**（它在 `tests/unit_ci_workflows/**`，语料普查按设计跳过该前缀）⇒ 由**单独**的判据裁（文件真实存在 / 同时有 acquire 与 release / 有 why/note），**不**参与双向相等 —— 这就是「容纳新类别」的形态：原有不变量**一字未放宽**（issue #6019）",
     "`lock=required` 条目的 invocation 片段必须**逐字**出现在载体文件里（防「给不存在的保护盖章」）",
     "`lock=required` 条目必须**同时**有 acquire 与 release（EXIT trap 形态也算释放面）：只有 acquire ⇒ 一次异常退出就死锁；只有 release ⇒ 没拿过锁",
     "`lock=exempt` 条目必须写明理由（`reason` 非空且 ≥10 字）—— 不许静默豁免",
@@ -13,6 +13,7 @@
   "entries": [
     {
       "path": "verify-all.sh",
+      "surface": "corpus",
       "carrier": "local-dispatch",
       "lock": "required",
       "invocation": "pytest tests/unit_ci_workflows",
@@ -23,11 +24,22 @@
     },
     {
       "path": ".github/workflows/pr-check.yml",
+      "surface": "corpus",
       "carrier": "ci-job",
       "lock": "exempt",
       "invocation": "pytest tests/unit_ci_workflows",
       "job": "ci workflow helper unit tests",
       "reason": "在 GitHub **托管** runner 上跑（`runs-on: ubuntu-latest`），不占本机资源 ⇒ 不需要本机锁。本条目登记它只为「现取集合 ⇄ 台账」双向相等，以及被别的判据引用时有个锚点。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/conftest.py",
+      "surface": "suite-internal",
+      "carrier": "suite-internal",
+      "lock": "required",
+      "invocation": "machine-heavy-lock.sh",
+      "acquire_site": "pytest_collection 钩子（任何收集之前）",
+      "release_site": "pytest_sessionfinish 钩子（正常 / 异常退出都到）",
+      "note": "issue #6019：**绕过入口直连整目录** `pytest tests/unit_ci_workflows`（含 `--collect-only`）时，套件**自己**拿机器级锁。为什么这种形态要有独立一类：它**没有入口可包**（绕过入口 = 没有可接线的入口），纪律盖不住（实测就是纪律登记着、事故照样发生 3 份并发 / load 21.6-61.3）⇒ 准入点只能放套件自己的 conftest。本条目是 **suite-internal 载体** ⇒ 不在语料普查面内（`tests/unit_ci_workflows/**` 按设计被跳过）⇒ 由 test_heavy_suite_entry_ledger.py 的 suite-internal 判据**单独**裁（文件存在 / acquire 与 release 都在 / 有 why），**不**放宽语料面的双向相等。"
     }
   ],
   "coverage_boundary": [
@@ -35,6 +47,7 @@
     "用**别的运行器**（vitest / jest / playwright / node --test）拉起同一批 Python 判据的形态不在面内。",
     "语料 = `git ls-files` 里 `.sh/.py/.yml/.yaml` 且不在 `tests/unit_ci_workflows/**` / `docs/**` / `acceptance/**` / `.agents/**` / `.github/cases/**` 下的文件；台账自己的工具面（两个 .json + 本判据）也排除（引用 ≠ 调用）。",
     "**散文里的整行引用**被排除：命中行以 `` ` `` / `（` / `(` / `\"` / `'` 开头 ⇒ 不算调用（例：`scripts/post_merge_verify.py` 的模块 docstring 提到那条命令，而它实际只跑**选中的子集**）。这一取舍的代价 = 「行以散文标点开头、后半句真是调用」的形态会漏（假绿方向）。",
-    "本判据**不保证**接入的锁真的生效（= `test_machine_heavy_lock.py` 的事），也**不保证**没有人绕过 `verify-all.sh` 直接 `pytest tests/unit_ci_workflows` —— 那一路没有锁，只在研发模式纪律（`.agent-presets/migao`）与 PR body 的「未固化/边界」里登记。"
+    "本判据**不保证**接入的锁真的生效（= `test_machine_heavy_lock.py` 的事）。",
+    "🔻 **直连整目录**那一路**已收进锁**（issue #6019 ⇒ 本条的旧读数「盖不到」作废）：载体 = `tests/unit_ci_workflows/conftest.py`（`surface=suite-internal`），触发面 = 本轮 pytest 的位置参数**覆盖整个目录**（含 `--collect-only`）；跑子集（单文件 / `-k` 收窄到子集）**不拿锁**（研发日常，很轻）。**仍不在面内**的形态：① 目标由 `$(…)` / 变量拼接算出来（假绿方向）② 用别的运行器拉起同一批判据 ③ `CI` / `MIGAO_HEAVY_LOCK_HELD=1` / xdist worker —— **有意豁免**，各自有判据。"
   ]
 }

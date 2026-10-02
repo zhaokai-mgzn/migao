@@ -749,6 +749,10 @@ macquire() {
   fi
   # EXIT trap：异常退出（Ctrl-C / 被杀 / 中途 return）也必须释放；release 自己幂等。
   trap '"$ROOT/scripts/machine-heavy-lock.sh" release >/dev/null 2>&1 || true' EXIT
+  # 🔻 嵌套腿**不要二次 acquire**（issue #6019）：本 shell 已持锁 ⇒ 导出一个标记，
+  #    让 `tests/unit_ci_workflows/conftest.py` 的套件自带准入**直接跳过**（否则自己跟自己抢锁 = 死锁）。
+  #    ⚠️ 只在本 shell 进程内生效（`export` 而非写进配置）：锁一释放，标记随之消失。
+  export MIGAO_HEAVY_LOCK_HELD=1
   return 0
 }
 # ⚠️ 必须在**任何重活派发之前**（`case "$MODE" in` 之前）—— 接线挪到 `report`/`gate_check` 之后
