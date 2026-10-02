@@ -95,6 +95,13 @@ FALLBACK_LEDGER = REPO_ROOT / "tests" / "unit_ci_workflows" / "publish_leg_fallb
 WORKFLOW_DISPLAY_NAME = "Publish C-end H5 (app.migaozn.com 根)"
 JOB = "publish"
 PUBLISH_SCRIPT = "deploy/scripts/c-end-h5-publish-ci.sh"
+# 🔴 第三层（#6095）：把 CI 构建出来的 dist 推成不可变 sha 的那条腿（孤儿单提交 → h5-dist）
+DIST_PUSH_SCRIPT = "deploy/scripts/c-end-h5-dist-push.sh"
+DIST_BRANCH = "h5-dist"
+# 发布步的**产物 ref** 唯一合法来源 = dist 推送步的 step output（禁漂移 ref）
+DIST_OUTPUT_REF = "steps.dist.outputs.sha"
+# `git commit-tree` 的**不可替代形态**：不给 `-p` ⇒ 无父 ⇒ 孤儿（每次 force-push 只 1 个提交）
+DIST_COMMIT_FORM = "git commit-tree \"$TREE\""
 VERIFY_SERVED = "deploy/scripts/c-end-h5-verify-served.sh"
 MINI_APP_GLOB = "frontend/mini-app/**"
 STATIC_ROOT = "/opt/migao-deploy/h5"
@@ -103,7 +110,8 @@ RESERVED = ("w", "b")
 STRAY_GLOBS = ("deploy/**",)
 
 # 发布链路自身的两个文件**永远不许**进 `on.push.paths`（见 ledger 的 `never_in_trigger`）
-CHAIN_FORBIDDEN_IN_TRIGGER = (".github/workflows/c-end-h5-publish.yml", PUBLISH_SCRIPT)
+CHAIN_FORBIDDEN_IN_TRIGGER = (".github/workflows/c-end-h5-publish.yml", PUBLISH_SCRIPT,
+                             DIST_PUSH_SCRIPT)
 
 # 模式判定步（**唯一**决定「会不会发布」的地方）：它必须逐字包含这两条判据
 MODE_STEP = "Resolve mode"
@@ -201,7 +209,120 @@ def _unsanctioned_destructive_lines(text: str) -> list:
 
 # ── 结构层：发布腿（纯函数 + 注入式红证）────────────────────────────────────
 
-def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src=None) -> list:
+def _repo_live_lines(rel: str, src: str | None = None) -> list:
+    """取某个链路脚本的可执行行（去空行 / 去整行注释）—— 与 `_live_lines` 同口径。
+
+    `src` 可注入（脚本层红证要把**变异后**的文本喂进同一条判据；不给时读磁盘）。
+    """
+    if src is None:
+        p = REPO_ROOT / rel
+        if not p.is_file():
+            return []
+        src = p.read_text(encoding="utf-8")
+    return [raw for raw in src.splitlines() if raw.strip() and not raw.lstrip().startswith("#")]
+
+
+def _dist_delivery_problems(wf, wf_src=None, dist_src=None) -> list:
+    """🔴 **dist 送达通路**（issue #6095 第三层）的接线判据。
+
+    病（run 37078030820 / sha `d4babbf17`）：`Build H5` 的产物 `frontend/mini-app/dist/**`
+    **不在 git 里**（`git ls-tree -r origin/main --name-only frontend/mini-app/dist` = 0 个文件），
+    而远端唯一的取回通道是「按不可变 sha 从 codeload 取 tarball」⇒ 远端**必然**
+    `❌ 发布源里没有 index.html`。判据四件事：
+      ① 链路**存在**：`deploy/scripts/c-end-h5-dist-push.sh` 在仓里、且它有独立判据文件；
+      ② 链路**被接线**：workflow 里 `build:h5` 之后有 step 真跑它，且发布步逐字消费它的 step output；
+      ③ 取回 ref **是不可变 sha**：脚本产出 40 位十六进制 commit 对象名（`git commit-tree` 无父），
+         且**不出现**任何取回分支名的形态（`codeload…/refs/heads/…` / `h5-dist` 当取回 ref）；
+      ④ 断言**不许被摘掉**：`identity` 判据仍在（`[ "$REMOTE_INDEX_SHA" = "$LOCAL_SHA" ]`）。
+    """
+    problems: list = []
+    if dist_src is None:
+        if not (REPO_ROOT / DIST_PUSH_SCRIPT).is_file():
+            problems.append(
+                f"🔴 缺 `{DIST_PUSH_SCRIPT}` —— CI 构建的 dist 到不了服务器"
+                "（远端只会拿到源码 tarball，里面没有 dist/index.html）"
+            )
+        else:
+            dist_src = (REPO_ROOT / DIST_PUSH_SCRIPT).read_text(encoding="utf-8")
+    if wf_src is None:
+        wf_src = _read(WORKFLOW_PATH)
+    steps = _steps(wf)
+    push_steps = [s for s in steps if DIST_PUSH_SCRIPT in _run_text(s)]
+    build_steps = [s for s in steps if "npm run build:h5" in _run_text(s)]
+    if len(push_steps) != 1:
+        problems.append(
+            f"🔴 workflow 里必须有且只有 1 个跑 `{DIST_PUSH_SCRIPT}` 的 step（把 CI 构建的 dist 送出去），"
+            f"实际 {len(push_steps)} —— 摘掉它 ⇒ 远端取回的还是源码 tarball ⇒ 发布**永远**失败"
+            "（run 37078030820 的形态）"
+        )
+    if push_steps and build_steps and steps.index(push_steps[0]) < steps.index(build_steps[0]):
+        problems.append(
+            f"step `{push_steps[0].get('name')}` 排在 `npm run build:h5` **之前** ⇒ 推出去的是上一次的产物"
+            "（发布内容单一源被破坏）"
+        )
+    if push_steps and PUBLISH_IF not in _if_text(push_steps[0]):
+        problems.append(
+            f"🔴 step `{push_steps[0].get('name')}` 的 `if` 缺 `{PUBLISH_IF}` ⇒ 非发布模式下也会把 dist 推出去"
+        )
+    # 接线点：发布步拿到的必须是 **dist 推送步的 step output**（不可变 sha），不是 `$GITHUB_SHA`
+    if not push_steps or len(push_steps) == 1:
+        publish_steps = [s for s in steps if PUBLISH_SCRIPT in _run_text(s)]
+        for step in publish_steps:
+            run = _run_text(step)
+            if DIST_OUTPUT_REF not in run:
+                problems.append(
+                    f"🔴 step `{step.get('name')}` 没有消费 `{DIST_OUTPUT_REF}`"
+                    "（发布腿按不可变 sha 取回产物）—— 摘掉它 ⇒ 取回的又是源码 tarball"
+                )
+            if "${{ github.sha }}" in run:
+                problems.append(
+                    f"🔴 step `{step.get('name')}` 的 run 里出现 `${{{{ github.sha }}}}`（源码 commit）"
+                    "—— 它的 tarball 里**没有** dist/，正是 run 37078030820 的失败形态"
+                )
+    # 权限面：推分支需要 `contents: write`（workflow 级；不放大到其它面）
+    if (wf.get("permissions") or {}).get("contents") != "write":
+        problems.append(
+            "🔴 workflow 缺 `permissions: contents: write` ⇒ 推 dist 分支会被拒（而失败发生在推送那一刻，"
+            "离根因很远）"
+        )
+    # 形态判据（**可执行行**，注释里讲课不算）：
+    #   · 取回 ref 不许是分支名；
+    #   · **孤儿**不许被改成有父（`commit-tree … -p <parent>` ⇒ 分支历史每次发布都涨一份 MB 级产物）
+    live = _repo_live_lines(DIST_PUSH_SCRIPT, dist_src)
+    for raw in live:
+        if "commit-tree" in raw and " -p " in raw:
+            problems.append(
+                f"🔴 `{DIST_PUSH_SCRIPT}` 的可执行行给 `commit-tree` 加了父提交（`-p`）：`{raw.strip()}`"
+                " —— 那样每次发布都会往分支历史里加一份 MB 级产物（孤儿单提交是**不胀历史**的机械载体）"
+            )
+    body = _dist_ref_shape_problems("\n".join(live))
+    problems.extend(f"🔴 `{DIST_PUSH_SCRIPT}` 的{hit}" for hit in body)
+    return problems
+
+
+def _dist_ref_shape_problems(live_text: str) -> list:
+    """取回 ref 的**形态**判据（**单一实现**：常驻判据与注入式红证跑的是同一条规则）。
+
+    坏形态 = 「按分支名取回」（`codeload…/refs/heads/…` 或 `tar.gz/$BRANCH`）—— 分支名会漂，
+    取回的产物就不一定是「本次 CI 构建的那份」。
+    """
+    hits = []
+    for raw in live_text.splitlines():
+        drifting = (
+            re.search(r'codeload\.github\.com/\S*refs/heads/', raw)
+            or "tar.gz/$BRANCH" in raw
+            or re.search(r'tar\.gz/\$\{?[A-Za-z_]*BRANCH', raw)
+        )
+        if drifting:
+            hits.append(
+                f"可执行行里出现「按**分支名**取回」的形态：`{raw.strip()}`"
+                " —— 取回 ref 必须是不可变 sha（分支名会漂）"
+            )
+    return hits
+
+
+def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src=None,
+                       dist_src=None) -> list:
     """⚠️ `wf_src` 必须可注入：否则「workflow 里内联第二份发布逻辑」这类**文本层**变异会去读磁盘原文
     ⇒ 变异永远看不见（实测：该变异漏判过一次）。"""
     if wf_src is None:
@@ -244,7 +365,10 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
         )
     for forbidden in CHAIN_FORBIDDEN_IN_TRIGGER:
         if forbidden in paths:
-            problems.append(f"🔴 on.push.paths 含发布链路自身 {forbidden} ⇒ 改链路即触发发布腿")
+            problems.append(
+                f"🔴 on.push.paths 含发布链路自身 {forbidden} ⇒ 改链路即触发发布腿"
+                f"（且 `{DIST_PUSH_SCRIPT}` 这类链路面文件被明文禁止靠加进触发面消账）"
+            )
     for glob in STRAY_GLOBS:
         if glob in paths:
             problems.append(f"🔴 on.push.paths 含 {glob!r}（本 PR 的变更集落在 deploy/** ⇒ 会命中）")
@@ -421,9 +545,20 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
             if token not in ci_live:
                 problems.append(f"CI 脚本缺命令内容的字节数前置断言 `{token}`（超限必须在**本机**判红）")
         # 取回通道 = **既有已证明可用**的那一条，且**按不可变 sha**（不许取 main 的最新 ⇒ 会漂移）
-        if "codeload.github.com/zhaokai-mgzn/migao/tar.gz/$SHA" not in ci_live:
+        # ⚠️ 扫描面 = **组装段**（`REMOTE_FETCH=` 那一行 + `COMMAND_CONTENT=` 赋值块）——
+        #    「按分支取回」这条判据的对象是**引导本体**；整脚本扫描会被别处（例如讲解本纪律的
+        #    注释 / 别段代码）误伤，判据就开始吃自己项目的文案（实测：注释变异对照假红）。
+        m = re.search(
+            r"^REMOTE_FETCH=.*?^COMMAND_CONTENT=.*?^\$REMOTE_FETCH --apply\"",
+            ci_src, re.M | re.S,
+        )
+        bootstrap = m.group(0) if m else ci_live
+        # ⚠️ 用正则而不是逐字串：`tar.gz/$SHA` 在 shell 里可能被拆成拼接形态
+        #    （`tar.gz/'"$SHA"'`，即单引号 + 双引号拼接）⇒ 逐字比对会把**合法**写法判红。
+        #    判的是「URL 尾巴上跟的是 `$SHA` 这个变量」这件事本身。
+        if not re.search(r'tar\.gz/["\']{0,2}\$SHA', bootstrap):
             problems.append("引导必须按**不可变 sha** 从 codeload 取回远端执行体（`tar.gz/$SHA`）")
-        if "refs/heads/" in ci_live:
+        if "refs/heads/" in bootstrap:
             problems.append("引导里出现按分支取（`refs/heads/…`）—— 取回通道必须按不可变 sha，否则与 CI 构建漂移")
         if "raw.githubusercontent.com" in ci_live:
             problems.append("引导用了 raw.githubusercontent.com —— 杭州机房实测超时，必须走 codeload")
@@ -479,6 +614,9 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
             problems.append("远端脚本的「清单被保留前缀污染 ⇒ die」这一步不见了（红线二结构层失效）")
         for line in _unsanctioned_destructive_lines(remote_src):
             problems.append(f"远端脚本里有未限定目标的破坏性语句（红线）：{line}")
+
+    # —— 🔴 dist 送达通路（issue #6095 第三层）：CI 构建的产物必须**真的**到得了远端 ——
+    problems.extend(_dist_delivery_problems(wf, wf_src, dist_src))
 
     return problems
 
@@ -662,6 +800,219 @@ class TestCommandContentLimit:
         )
 
 
+class TestDistDeliveryWiring:
+    """🔴 **CI 构建的 dist 到不到得了服务器**（issue #6095 第三层）—— 逐条可单独变红。
+
+    病（run 37078030820 / sha `d4babbf17`）：`Build H5` 的产物不在 git 里（`dist/` 被 `.gitignore`），
+    而远端只按不可变 sha 取 tarball ⇒ **必然** `❌ 发布源里没有 index.html`。
+    本类钉四件事：① 链路存在且被接线 ② 取回 ref 是不可变 sha（禁漂移 ref）
+    ③ 注入式红证（摘掉推送步 / 把 ref 改成 `refs/heads/main` ⇒ 必红） ④ 端到端桩演练
+    （真推一次 → 远端按那个 sha 取回 → 真有 index.html）。
+    """
+
+    def test_real_workflow_wires_the_dist_push(self):
+        """① 真语料：链路存在 + 被真 workflow 接线（跑的是**真** YAML，不是夹具）。"""
+        wf = _load_workflow()
+        assert _dist_delivery_problems(wf) == [], (
+            "dist 送达通路的接线判据不通过：\n  - " + "\n  - ".join(_dist_delivery_problems(wf))
+        )
+        # 反向自证：判据在**假夹具**上也要绿 ⇒ 上面那条绿不是「判据恒绿」造成的
+        assert _dist_delivery_problems(_wf_with_dist_push_step()) == []
+
+    def test_publish_step_consumes_the_immutable_dist_sha(self):
+        """② 取回 ref = **不可变 sha**（dist 推送步的 step output），**不是** `$GITHUB_SHA`。"""
+        wf = _load_workflow()
+        steps = _steps(wf)
+        publish = [s for s in steps if PUBLISH_SCRIPT in _run_text(s)]
+        assert len(publish) == 1, f"发布步不是恰好 1 个：{len(publish)}"
+        run = _run_text(publish[0])
+        assert DIST_OUTPUT_REF in run, f"发布步没有消费 `{DIST_OUTPUT_REF}`：\n{run}"
+        assert "${{ github.sha }}" not in run, (
+            "发布步用的是 `${{ github.sha }}`（源码 commit）—— 它的 tarball 里没有 dist/（run 37078030820）"
+        )
+        push = [s for s in steps if DIST_PUSH_SCRIPT in _run_text(s)]
+        assert len(push) == 1 and str(push[0].get("id") or "") == "dist", (
+            f"dist 推送步必须恰好 1 个且 `id: dist`（下游 if / step output 靠它引用），"
+            f"实际 {len(push)} 个 / id={push[0].get('id') if push else None!r}"
+        )
+        # 发布步必须**排在**推送步之后（否则 step output 恒为空 ⇒ 发布腿取不到产物）
+        assert steps.index(publish[0]) > steps.index(push[0]), "发布步排在 dist 推送步之前（step output 恒空）"
+
+    def test_dist_push_script_pushes_an_orphan_commit_and_reports_the_sha(self):
+        """③ 推送脚本的**形态**：孤儿单提交（无 `-p`）+ 输出 40 位 sha + 不出现分支取回形态。"""
+        live = _repo_live_lines(DIST_PUSH_SCRIPT)
+        assert live, f"读不到 `{DIST_PUSH_SCRIPT}` 的可执行行"
+        joined = "\n".join(live)
+        assert DIST_COMMIT_FORM in joined, (
+            f"缺少 `{DIST_COMMIT_FORM}` —— 若改成普通 `git commit`，产出的是**有父**的提交 ⇒ 每次发布往分支历史加一份 MB 级产物"
+        )
+        assert "refs/heads/$BRANCH" in joined, "推送目标必须是 `refs/heads/$BRANCH`（专用分支）"
+        assert "H5_DIST_SHA=$SHA" in joined, "脚本必须把 sha 打到 stdout（workflow 靠它取 step output）"
+        assert "ls-remote" in joined, "推送后没有再读一次远端（无法自证产物真的到达远端）"
+        for raw in live:
+            assert "refs/heads/main" not in raw, f"可执行行里出现 main 分支：`{raw.strip()}`"
+            assert "codeload.github.com" not in raw, (
+                "推送脚本不该出现 codeload 取回形态（取回在发布腿那一侧，且必须按不可变 sha）"
+            )
+
+    def test_publish_script_refuses_a_drifting_ref(self, tmp_path):
+        """③′ 发布腿**只接受 40 位十六进制**（`refs/heads/main` / 分支名连格式都过不去）。"""
+        dst = _ci_stub(tmp_path)
+        env = {
+            "H5_PRINT_COMMAND_CONTENT": "1",
+            "H5_REMOTE_SCRIPT_PATH": str(_tiny_remote(tmp_path)),
+            "GITHUB_SHA": CI_SHA,
+        }
+        for drifting in ("refs/heads/main", "h5-dist"):
+            got = subprocess.run(
+                ["bash", str(dst), CI_INSTANCE, CI_REGION, "", "", drifting],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, **env}, timeout=120,
+            )
+            assert got.returncode != 0, f"漂移 ref '{drifting}' 竟被接受：\n{got.stdout}"
+            assert "DIST_SHA" in got.stderr, f"判红报文没有点名 DIST_SHA：\n{got.stderr}"
+
+    def test_identity_assertion_still_present_after_the_change(self):
+        """④ 单一源的承重断言**还在**（发布内容 = 本次构建 ⇒ 不许被这层改动摘掉）。"""
+        ci_src = _read(CI_SCRIPT) or ""
+        assert '[ "$REMOTE_INDEX_SHA" = "$LOCAL_SHA" ]' in ci_src, "identity 断言不见了（发布内容单一源被破坏）"
+        assert 'LOCAL_INDEX="$DIST_DIR/index.html"' in ci_src, "身份基准不再是 CI 构建的 dist/index.html"
+        assert "export H5_SRC_SUBPATH=$DIST_SUBPATH" in ci_src, (
+            "命令内容没有把远端取回子路径指到 `frontend/mini-app/dist`（远端仍会在 frontend/mini-app 下找 index.html）"
+        )
+
+    def test_injected_red_proofs_for_the_new_wiring(self):
+        """③ **注入式红证**（§28.1 出口①）：摘掉推送步 / 把 ref 换成漂移 ref ⇒ 判据必红。"""
+        # 红证 A：摘掉 dist 推送步（发布步还在 ⇒ step output 恒空）
+        no_push = _wf_with_dist_push_step()
+        no_push["jobs"][JOB]["steps"] = [
+            s for s in no_push["jobs"][JOB]["steps"] if DIST_PUSH_SCRIPT not in _run_text(s)
+        ]
+        problems = _dist_delivery_problems(no_push)
+        assert problems, "摘掉 dist 推送步竟然没判红（判据是空断言）"
+        assert any(DIST_PUSH_SCRIPT in p for p in problems), f"判红没有点名推送步：{problems}"
+
+        # 红证 B：发布步不再消费 step output（退回 `$GITHUB_SHA`）
+        back_to_source = _wf_with_dist_push_step()
+        for s in back_to_source["jobs"][JOB]["steps"]:
+            if PUBLISH_SCRIPT in _run_text(s):
+                s["run"] = f'bash {PUBLISH_SCRIPT} "$I" "$R" "$AK" "$SK" "${{{{ github.sha }}}}"'
+        problems = _dist_delivery_problems(back_to_source)
+        assert any(DIST_OUTPUT_REF in p for p in problems), f"发布步退回源码 sha 竟没判红：{problems}"
+        assert any("github.sha" in p for p in problems), f"没有点名 `github.sha` 这个坏形态：{problems}"
+
+        # 红证 C：把取回 ref 改成漂移 ref（`refs/heads/main`）—— **可执行行**注入，判据必红
+        live = "\n".join(_repo_live_lines(DIST_PUSH_SCRIPT))
+        assert "refs/heads/$BRANCH" in live
+        drifting = live.replace(
+            'git push --force "$GIT_REMOTE" "$SHA:$PUSH_REF"',
+            'curl -fsSL "https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main" -o "$TMP_DIR/x.tgz"',
+        )
+        drifting += "\n" + 'URL="https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main"'
+        drifting += "\n" + 'URL2="https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/$BRANCH"'
+        assert drifting != live, "变异注入未生效（找不到推送锚点）"
+        # 复用**同一份**形态判据（把变异后的可执行文本喂进去）—— 不重写第二份规则
+        problems = _dist_ref_shape_problems(drifting)
+        assert problems, "把取回 ref 改成 `refs/heads/main` 竟没判红（形态判据是空断言）"
+        assert any("refs/heads" in x for x in problems), f"判红没有点名漂移形态：{problems}"
+        # 反向对照：未注入 ⇒ 不报（判据不是因为别的原因恒红）
+        assert _dist_ref_shape_problems(live) == []
+
+
+def test_dist_pipeline_end_to_end_stub_drill(tmp_path):
+    """🔴 **端到端桩演练**（不联网、不碰真机器）：真推一次 → 按那个 sha 取回 → 真有 index.html。
+
+    这是「判据绿 ≠ 接线在」（§28.2）的**行为面**那一半：判据只能看形态，而这里真跑了
+    `git commit-tree` + `git push` + `git archive`（= 远端 `tar` 解包那一步的等价物），
+    证明「CI 构建产物经 git 到达一处能被取回的地方」这条链在**对象层**是通的。
+    ⚠️ 边界：`git archive` **不是** GitHub codeload（不验 codeload 对孤儿提交的可用性），
+    真发布也没跑（生产触发权在人手里）—— 两条都在 PR body 的「未固化 / 边界」里照实登记。
+    """
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
+
+    dist = tmp_path / "checkout" / "frontend" / "mini-app" / "dist"
+    (dist / "js").mkdir(parents=True)
+    (dist / "index.html").write_text(
+        '<!doctype html><title>桩产物</title><script defer src="/js/app.js"></script>', encoding="utf-8"
+    )
+    (dist / "js" / "app.js").write_text("// stub built by the drill\n", encoding="utf-8")
+
+    work = {"cwd": str(tmp_path / "checkout")}
+    subprocess.run(["git", "init", "-q"], check=True, capture_output=True, **work)
+    for k, v in (("user.email", "drill@example.com"), ("user.name", "drill")):
+        subprocess.run(["git", "config", k, v], check=True, capture_output=True, **work)
+
+    env = dict(os.environ)
+    env["H5_DIST_GIT_REMOTE"] = str(origin)
+    env["GITHUB_SHA"] = CI_SHA
+    proc = subprocess.run(
+        # 与 CI 调用形态一致：工作目录 = 检出根，参数 = **仓内相对路径**
+        # （远端解包后按 `frontend/mini-app/dist` 找 index.html ⇒ 树里的路径必须正好是它）
+        ["bash", str(REPO_ROOT / DIST_PUSH_SCRIPT), "frontend/mini-app/dist", DIST_BRANCH],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env=env, timeout=180, **work,
+    )
+    assert proc.returncode == 0, f"推送桩演练失败：\n{proc.stdout}\n{proc.stderr}"
+    m = re.search(r"^H5_DIST_SHA=([0-9a-f]{40})$", proc.stdout, re.M)
+    assert m, f"脚本没有输出 40 位 sha：\n{proc.stdout}"
+    sha = m.group(1)
+
+    # ① 远端那个分支上**就是这个** sha（自证：产物真的到达远端）
+    got = subprocess.run(["git", "ls-remote", str(origin), f"refs/heads/{DIST_BRANCH}"],
+                         capture_output=True, text=True, encoding="utf-8")
+    assert got.stdout.split()[0] == sha, f"远端分支不是这个 sha：{got.stdout!r}"
+
+    # ② 它是**孤儿**：远端对象图里 `sha` 恰好 1 个提交、且**没有父**（不胀历史的机械判据）
+    await_repo = tmp_path / "verify"
+    subprocess.run(["git", "clone", "-q", "--bare", str(origin), str(await_repo)], check=True, capture_output=True)
+    count = subprocess.run(["git", "rev-list", "--count", sha], capture_output=True, text=True,
+                           encoding="utf-8", cwd=str(await_repo)).stdout.strip()
+    assert count == "1", f"该 sha 的历史长度是 {count}（不是孤儿单提交 ⇒ 会胀历史）"
+    parents = subprocess.run(["git", "rev-list", "--parents", "-1", sha], capture_output=True, text=True,
+                             encoding="utf-8", cwd=str(await_repo)).stdout.split()
+    assert len(parents) == 1, f"提交有父：{parents}"
+
+    # ③ 按那个 sha 取回（= 远端 `curl tar.gz/<sha>` + `tar xzf` 的等价物）⇒ dist/index.html 真在里面
+    archive = subprocess.run(["git", "archive", "--format=tar", sha], capture_output=True, cwd=str(await_repo))
+    assert archive.returncode == 0, archive.stderr
+    unpack = tmp_path / "unpack"
+    unpack.mkdir()
+    tar = subprocess.run(["tar", "xf", "-", "-C", str(unpack)], input=archive.stdout, capture_output=True)
+    assert tar.returncode == 0, tar.stderr
+    src = unpack / "frontend" / "mini-app" / "dist"
+    assert (src / "index.html").is_file(), (
+        f"按 sha 取回后找不到 frontend/mini-app/dist/index.html（远端那句 `发布源里没有 index.html` 会复发）："
+        f"{sorted(str(p.relative_to(unpack)) for p in unpack.rglob('*'))}"
+    )
+    assert (src / "js" / "app.js").read_text(encoding="utf-8") == "// stub built by the drill\n"
+
+
+def _wf_with_dist_push_step() -> dict:
+    """只给**接线判据**用的假 workflow 夹具（不发任何东西、不读云、不联网）。
+
+    除了「dist 推送步 ↔ 发布步」这一对，其余形状与真 workflow 一致（`id: mode` / 两个 if /
+    step output）。判据面 `_dist_delivery_problems` 只读 pending 的接线，**不评价**别的语义
+    ⇒ 这样注入「摘掉推送步」才是**干净**的红证（不会被无关判据一起红掉）。
+    """
+    return {
+        "name": WORKFLOW_DISPLAY_NAME,
+        "permissions": {"contents": "write"},
+        "jobs": {
+            JOB: {
+                "steps": [
+                    {"name": "Resolve mode（publish vs notify）", "id": "mode", "run": 'echo "mode=publish" >> "$GITHUB_OUTPUT"'},
+                    {"name": "Build H5 (publicPath='/', API 同源)", "if": PUBLISH_IF, "run": "npm run build:h5"},
+                    {"name": f"Prepare dist ref ({DIST_BRANCH})", "id": "dist", "if": PUBLISH_IF,
+                     "run": f"bash {DIST_PUSH_SCRIPT}"},
+                    {"name": "Publish c-end h5 to SWAS", "if": PUBLISH_IF,
+                     "run": f'bash {PUBLISH_SCRIPT} "$I" "$R" "$AK" "$SK" "${{{{ {DIST_OUTPUT_REF} }}}}"'},
+                ]
+            }
+        },
+    }
+
+
 def _load_workflow() -> dict:
     text = _read(WORKFLOW_PATH)
     if text is None:
@@ -762,6 +1113,21 @@ class TestRedProofs:
                 if VERIFY_SERVED in _run_text(step):
                     step["continue-on-error"] = True
 
+        def drop_dist_push_step(mut):
+            """摘掉「把 CI 构建的 dist 推出去」那步（#6095 第三层）。"""
+            mut["jobs"][JOB]["steps"] = [
+                s for s in _steps(mut) if DIST_PUSH_SCRIPT not in _run_text(s)
+            ]
+
+        def publish_uses_source_sha(mut):
+            """发布步退回 `$GITHUB_SHA`（源码 commit —— 它的 tarball 里没有 dist/）。"""
+            for s in _steps(mut):
+                if PUBLISH_SCRIPT in _run_text(s):
+                    s["run"] = (
+                        f'bash {PUBLISH_SCRIPT} "${{{{ env.SWAS_INSTANCE_ID }}}}" '
+                        f'"${{{{ env.SWAS_REGION }}}}" "$AK" "$SK" "${{{{ github.sha }}}}"'
+                    )
+
         def inline_remote_logic(mut):
             """把远端脚本的活儿内联进 workflow（= 出现第二份发布实现）。"""
             for step in _steps(mut):
@@ -793,6 +1159,8 @@ class TestRedProofs:
             "删掉落地面断言步": drop_verify_step,
             "落地面断言 continue-on-error": silence_verify,
             "workflow 里内联第二份发布逻辑": inline_remote_logic,
+            "摘掉 dist 推送步（CI 产物到不了服务器）": drop_dist_push_step,
+            "发布步退回源码 sha（$GITHUB_SHA）": publish_uses_source_sha,
             "改 workflow name（新鲜度 workflow_run 失联）": rename_workflow,
         }
 
@@ -834,6 +1202,18 @@ class TestRedProofs:
         drop_reserved_check = remote_src.replace('is_reserved "$name" && die', 'true')
         assert drop_reserved_check != remote_src, "变异注入未生效（找不到保留前缀的 fail-closed 行）"
 
+        dist_push_src = _read(REPO_ROOT / DIST_PUSH_SCRIPT) or ""
+        assert dist_push_src, f"读不到 {DIST_PUSH_SCRIPT} ⇒ 无法做第三层的脚本层红证"
+        # 红证：取回 ref 改成**会漂**的分支名（`refs/heads/main`）
+        drifting_ref = dist_push_src.replace(
+            "git push --force \"$GIT_REMOTE\" \"$SHA:$PUSH_REF\"",
+            'FETCH_URL="https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main"',
+        ) + "\n" + 'FETCH_URL2="https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/$BRANCH"' 
+        assert drifting_ref != dist_push_src, "变异注入未生效（找不到推送锚点）"
+        # 红证：把孤儿单提交换成**普通提交**（有父 ⇒ 每次发布都往分支历史加一份 MB 级产物）
+        non_orphan = dist_push_src.replace(DIST_COMMIT_FORM, 'git commit-tree "$TREE" -p "$SHA"')
+        assert non_orphan != dist_push_src, "变异注入未生效（找不到 commit-tree 锚点）"
+
         samples = {
             "CI：去掉「线上哈希 == 本次构建」断言": (ci_src, no_identity),
             "CI：去掉保留子树自证断言": (ci_src, no_protected),
@@ -846,6 +1226,12 @@ class TestRedProofs:
         for name, (src, mutant) in samples.items():
             kwargs = {"ci_src": mutant} if src is ci_src else {"remote_src": mutant}
             if len(_workflow_problems(_load_workflow(), **kwargs)) == 0:
+                undetected.append(name)
+        # 第三层：dist 推送脚本的两种坏形态（`dist_src` 槽 = 该脚本面）
+        for name, mutant in (("dist 推送：取回 ref 改成 refs/heads/main", drifting_ref),
+                             ("dist 推送：孤儿单提交换成普通提交", non_orphan)):
+            assert mutant != dist_push_src, f"{name} 的变异没生效"
+            if len(_workflow_problems(_load_workflow(), dist_src=mutant)) == 0:
                 undetected.append(name)
         assert undetected == [], f"这些脚本变异**没有被判红**（= 空断言）：{undetected}"
 

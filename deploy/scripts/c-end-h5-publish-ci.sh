@@ -2,10 +2,21 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # CI → SWAS：把 `frontend/mini-app` 的 h5 构建产物发布到 `app.migaozn.com` 的**静态根本身**（issue #4184）
 #
-# 用法: c-end-h5-publish-ci.sh <INSTANCE_ID> <REGION> [ACCESS_KEY_ID] [ACCESS_KEY_SECRET] [COMMIT_SHA]
+# 用法: c-end-h5-publish-ci.sh <INSTANCE_ID> <REGION> [ACCESS_KEY_ID] [ACCESS_KEY_SECRET] [DIST_SHA]
 #   · AK/SK 省略 ⇒ 走本机 `aliyun` 既有配置（**人工排障 / 本地复跑**用；CI 必须显式传入）
-#   · COMMIT_SHA 省略 ⇒ 取 `$GITHUB_SHA`（远端按该 sha 从 codeload 取源码 —— **不可变引用**，
-#     与「按 refs/heads/main 取」不同：后者在连续合并时会与 CI 命中的 commit 漂移）
+#   · DIST_SHA（第 5 个参数）**不是**源码 commit，而是 `h5-dist` 分支上**那个只含本次构建产物
+#     `frontend/mini-app/dist/**` 的孤儿单提交**的 sha（由 `deploy/scripts/c-end-h5-dist-push.sh`
+#     产出、workflow 经 step output 传下来）—— 远端按它从 codeload 取回 tarball ⇒ **不可变引用**
+#     （40 位十六进制，格式断言在下面；`refs/heads/main` 这类会漂的 ref 连格式都过不去）。
+#     省略时回落到 `$H5_DIST_SHA` / `$GITHUB_SHA`（人工排障）。
+#   · `H5_PUBLISHED_COMMIT`（可选环境变量）= 产出这份 dist 的**源码 commit**，透传给远端写进
+#     托管清单的 `published_commit`（「线上这份产物出自哪个源码提交」的审计口径）。
+#
+# 🔴 **远端取的是「CI 构建的那份 dist」**（issue #6095 第三层）：`frontend/mini-app/dist/` 是
+#    **构建产物**（`git ls-tree -r origin/main --name-only frontend/mini-app/dist` = 0 个文件，
+#    `.gitignore` 有 `dist/`）⇒ **源码 tarball 里永远没有它** ⇒ 发布腿此前必然
+#    `❌ 发布源里没有 index.html`（run 37078030820 实测）。所以远端取回的**不是源码 tarball**，
+#    而是 `h5-dist` 上那份**只含 dist 的孤儿单提交**的 tarball（`H5_SRC_SUBPATH=frontend/mini-app/dist`）。
 #
 # 通道：与 `deploy/scripts/swas-h5-publish-ci.sh`（工人端 `w/`）**同一把钥匙、同一条云 API**
 # （SWAS RunCommand）—— **不引入任何新 secret**。
@@ -34,7 +45,7 @@
 set -euo pipefail
 
 [ $# -ge 2 ] || {
-  echo "用法: c-end-h5-publish-ci.sh <INSTANCE_ID> <REGION> [ACCESS_KEY_ID] [ACCESS_KEY_SECRET] [COMMIT_SHA]" >&2
+  echo "用法: c-end-h5-publish-ci.sh <INSTANCE_ID> <REGION> [ACCESS_KEY_ID] [ACCESS_KEY_SECRET] [DIST_SHA]" >&2
   exit 2
 }
 
@@ -42,7 +53,7 @@ INSTANCE_ID=$1
 REGION=$2
 AK=${3:-}
 SK=${4:-}
-SHA=${5:-${GITHUB_SHA:-}}
+SHA=${5:-${H5_DIST_SHA:-${GITHUB_SHA:-}}}
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # `H5_REMOTE_SCRIPT_PATH` = **判据注入夹具用**（生产不带它 ⇒ 走下面「远端执行体缺失 ⇒ 判红」那条断言）。
@@ -50,6 +61,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REMOTE_SCRIPT=${H5_REMOTE_SCRIPT_PATH:-"$ROOT/deploy/swas/c-end-h5-publish-remote.sh"}
 DIST_DIR="$ROOT/frontend/mini-app/dist"
 LOCAL_INDEX="$DIST_DIR/index.html"
+# 远端取回**产物**用的子路径（不是源码目录 `frontend/mini-app`）：`h5-dist` 的孤儿提交里
+# 只有 `frontend/mini-app/dist/**` ⇒ 远端解包后要在这里找 index.html（issue #6095 第三层）。
+DIST_SUBPATH="frontend/mini-app/dist"
+# 产出这份 dist 的源码 commit（codeload tarball 里没有 `dist/` ⇒ 远端无法自己推导，只能 CI 侧透传；
+# 空值就是空串 —— 不许「猜一个」）。
+PUBLISHED_COMMIT=${H5_PUBLISHED_COMMIT:-}
 
 STATIC_ROOT=${H5_STATIC_ROOT-/opt/migao-deploy/h5}
 MANIFEST=${H5_MANIFEST-.migao-c-end-h5-manifest.json}
@@ -160,15 +177,22 @@ PY
 [ -d "$DIST_DIR/js" ] || die "frontend/mini-app/dist/ 缺 js/（不是 build:h5 的产物？）"
 [ -n "$INSTANCE_ID" ] || die "缺少 SWAS 实例 ID"
 [ -n "$REGION" ] || die "缺少地域"
-[ -n "$SHA" ] || die "缺少 COMMIT_SHA（也没拿到 \${GITHUB_SHA}）"
+[ -n "$SHA" ] || die "缺少 DIST_SHA（dist 后缀）—— 也没拿到 \${H5_DIST_SHA} / \${GITHUB_SHA}"
 
 # 字符集白名单（**注入防线**：这几个值会被拼进远端命令内容）。
 # ⚠️ 判据写**否定类**（`*[!允许集]*`）而不是「正向类 + `*`」—— 后者只要串首是 `/`、串尾落在允许集内
 #    就会匹配成功（`/tmp/er;rm -rf/` 也能过）⇒ 那是**假校验**，比不校验更坏。
 case "$SHA" in
-  *[!0-9a-fA-F]*) die "COMMIT_SHA 非法：'$SHA'（只接受十六进制；本脚本把它拼进远端命令，故先做字符集校验）" ;;
+  *[!0-9a-fA-F]*) die "DIST_SHA 非法：'$SHA'（只接受十六进制 sha；本脚本把它拼进远端命令，故先做字符集校验）" ;;
 esac
-[ "${#SHA}" -ge 7 ] || die "COMMIT_SHA 太短：'$SHA'"
+# 🔴 **必须是一个 commit 对象名**（40 位十六进制），不是分支 / 标签 / ref 名 —— 这是
+# 「不可变 sha」的机械载体（issue #6095 第三层硬约束）：`refs/heads/main` / `h5-dist` 这类
+# **会漂**的引用在字符集上就过不去（`r` `e` `f` `s` `h` `-` 都不是十六进制字符）。
+# 远端取回用的就是这个值 ⇒ 「远端取的那份」与「CI 推的那份」由 workflow 的 step output 对齐。
+[ "${#SHA}" -eq 40 ] || die "DIST_SHA 必须是 40 位十六进制 commit sha（不可变引用），实际 '${SHA}'（长度 ${#SHA}）——
+   · CI 侧应传 workflow 里 dist 推送步的 step output（见 .github/workflows/c-end-h5-publish.yml）；
+   · **不许**传分支 / 标签 / ref 名（`refs/heads/*`、`h5-dist`、`main` …）—— 那些会漂，
+     会让「远端取回的产物」与「本次 CI 构建的产物」不再是同一个对象。"
 case "$STATIC_ROOT" in
   /*) : ;;
   *) die "H5_STATIC_ROOT 必须是绝对路径：'$STATIC_ROOT'" ;;
@@ -192,7 +216,9 @@ say "# C 端小布 h5 静态落位（issue #4184）"
 say ""
 say "- 目标：\`$EXPECTED_TARGET\`（= nginx 的 \`root\` **本身**；只收敛托管清单里的顶层条目）"
 say "- 产物：\`frontend/mini-app/dist/\`（CI 跑 \`npm run build:h5\`，publicPath 已是 \`/\`）"
-say "- 源：\`https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/$SHA\`（不可变 commit）"
+say "- 发布源：\`https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/$SHA\`（= \`h5-dist\` 上**只含本次构建产物**的孤儿单提交；**不可变 sha**，不是分支名）
+  远端在 \`$DIST_SUBPATH/\` 下取 index.html（源码 tarball 里没有 dist —— 那是本层要治的形态）
+  ${PUBLISHED_COMMIT:+产出这份 dist 的源码 commit：\`$PUBLISHED_COMMIT\`}"
 say "- 本地 \`dist/index.html\` 哈希：\`$LOCAL_SHA\`"
 
 # ── 组装远端命令 = **极小的引导**（远端执行体**不进命令内容**）──────────────────
@@ -234,6 +260,8 @@ COMMAND_CONTENT_LIMIT_SOURCE="SWAS Open RunCommand：CommandContent 与自定义
 
 COMMAND_CONTENT="export H5_STATIC_ROOT=$STATIC_ROOT
 export H5_PUBLISH_SHA=$SHA
+export H5_SRC_SUBPATH=$DIST_SUBPATH
+export H5_PUBLISHED_COMMIT=$PUBLISHED_COMMIT
 export H5_MANIFEST=$MANIFEST
 export H5_RESERVED_PREFIXES=\"$RESERVED_PREFIXES\"
 export H5_TAKEOVER_FIRST_PUBLISH=1
