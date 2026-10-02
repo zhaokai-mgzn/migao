@@ -59,7 +59,12 @@ LEDGER_REL = "tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json"
 #: 射程声明（**冻结**）：语料 = `.github/cases/**` 下的这些后缀（`README.md` 也在内 —— 它同样人读）。
 CASEBOOK_ROOT = ".github/cases"
 CASEBOOK_SUFFIXES = (".yml", ".md")
-CASEBOOK_EXCLUDE_DIRS: tuple[str, ...] = ()
+#: 射程排除目录（**只许具名增补 + 写明理由**）：`claims/` 是 #6017 的**取号台账**
+#: （`.github/cases/claims/<PR号>-<CASE_ID>.json`），由它自己的守门判据
+#: `tests/unit_ci_workflows/test_case_id_claims.py` 管；它**不是 casebook 语料**（无 `FM-` 记号可判）。
+#: ⚠️ #6009 实证：不排除就会撞本文件的「声明 == 实际」射程元判据 —— 而这条冲突在**第一个 claim 用户**
+#: 之前不可见（#6017 落地时 `.github/cases/claims/` 是空目录）。
+CASEBOOK_EXCLUDE_DIRS: tuple[str, ...] = ("claims",)
 
 #: 三种**结构化**形态（声明即射程：要加形态，先改这里 + 补未覆盖面登记）。
 #: ⚠️ 三条都只认**带记号 / 带键绑定 / 带 `~` 范围**的读数 —— 自然语言计数刻意不在面内（见 docstring）。
