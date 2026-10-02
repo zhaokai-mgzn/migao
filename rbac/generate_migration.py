@@ -34,6 +34,7 @@ python3 rbac/generate_migration.py --check    # 只读：产物 vs 当场渲染�
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -132,6 +133,26 @@ def _comment_rows(pairs) -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+#: 🔴 **已发布迁移的冻结清单快照**（issue #5979 / #5988 引入）。
+#:
+#: `V136` **已经跑在所有环境上** ⇒ 它受两条**同等强制**的约束，且二者在「清单前进」时冲突：
+#:   ① `Danger Scan (破坏性变更检测)`：**已发布迁移不可重写**（重渲染 = 改已应用的迁移 ⇒ blocker）；
+#:   ② 本生成器的新鲜度判据：产物必须 == 当场渲染（否则判红 ⇒ 落 main 后每个 PR 都会红）。
+#: ⇒ 消解方式 = **把 V136 的渲染输入钉在它发布时刻的清单上** —— 它从此是**历史事实的产物**，
+#: 不再随 `rbac/manifest.json` 前进而变形。**清单之后新增的授权由新迁移（V145）承担**，
+#: 收敛不变量（`convergence_problems`：链累计 == 清单声明）仍用**活清单**判 ⇒ 两条约束同时成立。
+#: （未来的已发布生成物同理：新增一份快照文件名，不改既有快照 —— 快照一旦写出即历史。）
+FROZEN_MANIFEST_V136 = REPO_ROOT / "rbac" / "manifest-published-at-V136.json"
+
+
+def load_frozen_manifest_v136() -> dict:
+    """读 V136 的冻结清单快照（缺文件 ⇒ 抛错，fail-closed，不静默回落到活清单）。"""
+    assert FROZEN_MANIFEST_V136.is_file(), (
+        f"V136 的冻结清单快照不存在：{FROZEN_MANIFEST_V136}（路径漂移 ⇒ 红，不得静默回落）"
+    )
+    return json.loads(FROZEN_MANIFEST_V136.read_text(encoding="utf-8"))
+
+
 def p5_missing(manifest: dict, root: Path | None = None) -> dict[str, list[str]]:
     """P5 的**差集**（清单声明 − **V136 之前**的迁移链累计），只取 P5 射程内的五个岗位。"""
     derive = load_derive()
@@ -146,6 +167,12 @@ def p5_missing(manifest: dict, root: Path | None = None) -> dict[str, list[str]]
 
 
 def render_p5(manifest: dict, root: Path | None = None) -> str:
+    """渲染 `V136`（**已发布 ⇒ 输入钉在发布时刻的清单快照上**，见 `FROZEN_MANIFEST_V136`）。
+
+    `manifest` 入参**有意不使用**（保留形参只为与 `ARTIFACTS` 的 `{rel: renderer}` 同形）。
+    改活清单**不会**改动本产物 —— 这正是「已发布迁移不可重写」与「生成物必须新鲜」的消解点。
+    """
+    manifest = load_frozen_manifest_v136()
     missing = p5_missing(manifest, root)
     pairs = [(role, code) for role, codes in sorted(missing.items()) for code in codes]
     assert pairs, "P5 的差集为空 ⇒ 这份迁移没有内容可渲染（清单与链已收敛时应当删掉本产物，而不是渲染空文件）"
