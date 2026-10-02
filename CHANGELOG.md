@@ -1,5 +1,14 @@
 ## [Unreleased]
 
+### 修复米宝工作台登录后恒空白：/api/auth/me 的 capabilities 未并入前端 store（2026-10-03，issue #6081）
+
+- **现象**：任何用户登录 / 刷新页面后打开米宝工作台（/chat）都是整页空白——#3099 修复 `/api/auth/me`
+  包装解包时只并了 `roles` / `permissions` / `menus`，漏了同在顶层的 `capabilities`（mibaoChat/aiService，
+  #5642 服务端单一真值），⇒ `user.capabilities` 恒 undefined ⇒ 米宝门禁 `MibaoAccessGate` 恒 return null。
+- **影响面**：不止米宝页——经营看板的 aiService 能力位消费点（AI 指标卡）同样恒不渲染；所有租户所有角色。
+- **现在**：`fetchUserInfo` 把 `payload.capabilities` 一并并入 user（优先顶层、回退内层），红→绿判据 =
+  `frontend/admin-web/tests/unit/store/auth.test.ts`「应把 /api/auth/me 顶层的 capabilities 并入 user」。
+
 ### 批量库存调整真正可用 + 米宝看板「待发货 / 加工中待发货」计数可查 + 问「通知设置」不再中断对话（2026-10-02，issue #6044）
 
 - **批量库存调整以前必然失败（接口 500）**：`agent_batches` / `agent_batch_items` 的 `CHECK` 白名单
