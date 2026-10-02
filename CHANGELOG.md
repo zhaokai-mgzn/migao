@@ -1,5 +1,25 @@
 ## [Unreleased]
 
+### 工艺配置页「停用工序」按钮真正生效（以前 100% 失效）（2026-10-03，issue #6103）
+
+- **现象**：工序管理页 → 行尾「管理▸」抽屉 → 点「停用」⇒ toast 与抽屉红字都是
+  「status 仅支持 active/disabled」，而库里那一行的 `status` 仍是 `active`（按钮 100% 失效，
+  客服在租户 20 上用真实浏览器 + 真实接口实测复现）。
+- **病根（三处叠加）**：UI 写面逐字发 `{status:'inactive'}` —— 那是「**加工项**」域的
+  `ProcessingItemStatus = 'active' | 'inactive'`，**抄错了域**；工序域后端
+  （`ProductionOperationCommandService.STATUSES`）只收 `active|disabled` ⇒ **422**。
+  第三处放大了它：写面类型 `ProductionOperationUpdateParams.status` 是**裸 `string`**
+  ⇒ `tsc` 与 UI 回退检查都看不见这个错值。
+- **现在**：「停用」发 `{status:'disabled'}`，后端受理、库里那一行真的停用。
+  **后端词表一字未动**（它与路线域一致，放宽它等于制造新的分裂）。
+- **不让同类再进来**：① 工序状态写成**联合类型** `ProductionOperationStatus = 'active' | 'disabled'`
+  （同类错值在编译期就红）；② 类级元守卫
+  `tests/unit_ci_workflows/test_operation_status_vocab_parity.py` 把「前端词表 ⇄ 后端 `STATUSES`」
+  钉成**逐值相等 + 成员冻结**，且逐个检查工序管理页每一处 `status` 字面量都落在词表内 ——
+  后端加/删一个值而前端没跟**当场红**。红→绿判据 =
+  `frontend/admin-web/tests/unit/pages/production-routings.test.tsx`
+  「#6103 抽屉「停用」发出的 payload.status 落在**后端受理词表**内（断言 payload，不断言文案）」。
+
 ### 岗位权限矩阵徽标 label 不再被同码节点覆盖 + 权限树不再报 React duplicate-key（2026-10-03，issue #6083）
 
 - **以前**：菜单树后端按设计就有同码多节点（#5699/#5291：工作台组两个 `dashboard:view` = 经营看板/每日简报；
