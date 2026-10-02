@@ -70,11 +70,33 @@ PSEUDO_TOOLS = frozenset({"direct_reply"})
 # 背景（issue #3555）：B 端此前**没有**任何"哪个工具没被测"的体检（scripts/ 只有
 # xiaobu_coverage.py），工具覆盖缺口只能靠真实 LLM 全量复测撞出来。把解析放在这里，
 # 使 B 端覆盖体检（scripts/mibao_coverage.py）与用例边界守卫共用同一口径，不产生漂移。
+# ── 「额外来源」显式登记面（值 = 一句「为什么它在」，供人工复核；不参与计算）──
+# 语义：不在 `MIBAO_CONFIG.skill_names` / `fallback_skill` 里、但其**只读**工具经
+# #4125「同 persona 家族并入」（`backend/ai-agent-service/app/graph/skills/base_skill.py`
+# 的 `_family_read_only_tool_names`）进入米宝工具集的 skill 文件。
+MIBAO_EXTRA_SKILL_FILES = {
+    # #5247 已把它从 skill_names 解绑（系统设置/通知配置不进 B 端对话面），但它的
+    # `default_persona` 仍是 `mibao` ⇒ 其 3 个只读工具经 #4125 家族并入**每个**米宝 skill
+    # ⇒ 它们仍是米宝可跑的工具，覆盖体检必须算上。
+    # 删掉本项 = 米宝工具集 34 → 31（实测），而 `MIBAO_TOOLSET_MIN = 25` 只是"防解析器坏掉"
+    # 的下界、**不是**覆盖门禁 ⇒ 体检会静默少算 3 个只读工具。
+    "settings_skill": "default_persona=mibao ⇒ 3 个只读工具经 #4125 家族并入米宝（settings_manage / notification_manage / validate_input）",
+}
+
+# B 端 skill 文件清单 = **真判据**（不是 `skill_names` 的抄本）：
+#   `MIBAO_CONFIG.skill_names` ∪ `fallback_skill` 的对应文件 ∪ `MIBAO_EXTRA_SKILL_FILES`。
+# ⚠️ **额外项必须逐条登记**：本元组里凡不属于 skill_names ∪ fallback_skill 的条目，都必须
+#    在 `MIBAO_EXTRA_SKILL_FILES` 里出现 —— 双向元守卫（未登记的额外项 ⇒ 红／登记的额外来源
+#    被删掉 ⇒ 红）见
+#    tests/unit_ci_workflows/test_mibao_case_invariants.py::TestMibaoToolsetTruth::test_extra_skill_files_are_registered_both_ways
 MIBAO_SKILL_FILES = (
     # mibao.py MIBAO_CONFIG.skill_names（顺序一致，便于人工比对）
     "order_skill", "product_skill", "aftersales_skill", "customer_skill",
-    "staff_skill", "settings_skill", "data_skill", "knowledge_skill",
+    "staff_skill", "data_skill", "knowledge_skill",
     "general_agent",          # MIBAO_CONFIG.fallback_skill = "general"
+    # ↓ 额外来源（不在 skill_names）：**必须先登记进 MIBAO_EXTRA_SKILL_FILES**，
+    #   否则双向元守卫判红（未登记的额外项 ⇒ 红；登记了却不在本元组 ⇒ 红）。
+    "settings_skill",
 )
 
 # B 端工具数下界（防「源码解析静默变空」→ 覆盖矩阵假绿 = 体检失效）。
