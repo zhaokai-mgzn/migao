@@ -68,15 +68,36 @@ def _preset_corpus(ref: str) -> tuple[list[str], str] | None:
     return (hits, ref) if hits else None
 
 
+def _last_nondelete_baseline_ref() -> str | None:
+    """→ `origin/main` 历史上最后一个**非删除**触碰预设前缀的提交（S4 后基线回溯用）；取不到 ⇒ None。
+
+    🔴 S4 合并落地（#6020）后固定榜会**全灭**：`origin/main` 已删该路径 ⇒ 用 `--diff-filter=d`
+    排除删除提交，确定性回溯到删除前最后一次预设改动（CI `fetch-depth: 0` ⇒ 全历史可达）。
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "log", "--diff-filter=d", "-1", "--format=%H",
+         "origin/main", "--", PRESET_BASELINE_PREFIX],
+        capture_output=True, text=True,
+    )
+    sha = proc.stdout.strip() if proc.returncode == 0 else ""
+    return sha or None
+
+
 def _git_preset_skills() -> tuple[list[str], str]:
     """→ （预设技能的**仓库相对路径**清单, 可用的 ref）。都取不到 ⇒ 抛错（fail-closed）。"""
     for ref in PRESET_BASELINE_REFS:
         got = _preset_corpus(ref)
         if got:
             return got
+    base_sha = _last_nondelete_baseline_ref()
+    if base_sha:
+        got = _preset_corpus(base_sha)
+        if got:
+            return got
     raise AssertionError(
         "任何候选基线里都读不到 "
-        f"`{PRESET_BASELINE_PREFIX}skills/*/SKILL.md`（试过 {list(PRESET_BASELINE_REFS)}）"
+        f"`{PRESET_BASELINE_PREFIX}skills/*/SKILL.md`（已试固定榜 {list(PRESET_BASELINE_REFS)}"
+        " 与「最后非删除触碰提交」回溯）"
         " —— 预设内容已迁出业务仓（S4 / issue #6020）⇒ 要么建本机预设仓镜像"
         "（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`，见 AGENTS.md「开发环境准备」），"
         "要么把候选换成还带着该路径的 ref"
@@ -87,7 +108,7 @@ def _materialize_preset_skills() -> list[Path]:
     """把预设的技能 `SKILL.md` **落到临时目录**再判 —— 返回那些文件路径。
 
     载体优先级：① 本机**预设仓镜像**（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`，= 权威源）；
-    ② 镜像不存在时回落到**本仓 git 基线** `origin/main~1`（S4 之前的提交里路径还在）。
+    ② 镜像不存在时回落到**本仓 git 基线**（固定榜 → 「最后非删除触碰提交」回溯，S4 之前的提交里路径还在）。
     两条都取不到 ⇒ **抛错**（刻意**不用** `pytest.skip`：那会污染 helper-leg 的 skip 冻结读数，
     而「判不了」也不该长得像「没东西可判」）。
     """
@@ -169,9 +190,15 @@ def _run_guard_anchor(repo: Path, *anchor_args: str) -> subprocess.CompletedProc
 
 
 def _run_guard(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    # 🔴 S4 次生环境耦合（#6020）：guard 活锚段的默认锚 = `~/.dsh/.agent-presets/migao`。本机一旦接线
+    # 真锚，`judge_anchor` 按**预设仓上游**口径（S4 语义）就会把**夹具仓库**的 `.agent-presets/**`
+    # 拿去跟真镜像逐字比对 ⇒ 夹具（v1.28.0）vs 真镜像（滚动版）恒红，单测变成环境噪声。
+    # 这些测试守的是版本单调性，**不该**依赖本机是否接线 ⇒ 统一隔离 HOME（默认锚落空 ⇒ 走 CI 等价的
+    # 「⏭️ 未接线」三态；CI 本就无锚 ⇒ 行为一致）。锚语义本身由 §⑤ 专测（显式 `--anchor`）。
     return subprocess.run(
         [sys.executable, str(GUARD), "--repo", str(repo), *args],
         capture_output=True, text=True,
+        env={**os.environ, "HOME": str(repo)},
     )
 
 
@@ -638,16 +665,17 @@ def test_dev_worktree_preset_guard_subcommand_is_wired_to_real_guard(tmp_path: P
     (repo / "scripts" / "dev-worktree.sh").write_bytes(DEV_WORKTREE.read_bytes())
     (repo / "scripts" / "agent-presets-guard.py").write_bytes(GUARD.read_bytes())
 
+    env = {**os.environ, "HOME": str(tmp_path)}   # 隔离本机活锚 ⇒ CI 等价「未接线」三态（判单调性本身）
     ok = subprocess.run(
         ["bash", str(repo / "scripts" / "dev-worktree.sh"), "preset-guard"],
-        cwd=repo, capture_output=True, text=True,
+        cwd=repo, capture_output=True, text=True, env=env,
     )
     assert ok.returncode == 0, ok.stdout + ok.stderr
 
     _write_business_skill(repo, "1.27.0", filler=2)   # 降级
     bad = subprocess.run(
         ["bash", str(repo / "scripts" / "dev-worktree.sh"), "preset-guard"],
-        cwd=repo, capture_output=True, text=True,
+        cwd=repo, capture_output=True, text=True, env=env,
     )
     assert bad.returncode != 0, bad.stdout
     assert "版本下降" in bad.stdout

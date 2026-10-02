@@ -128,7 +128,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILL_REL = ".agent-presets/migao/skills/migao-dev-flow/SKILL.md"
 #: 🔴 S4（issue #6020）：`.agent-presets/**` 的载体已迁到**预设仓**（本仓工作树里已删）。
 #: 台账里 16 处锚都指着这个前缀 ⇒ 读它必须走 `_preset_text_from_git`（镜像优先，其次 git 基线）。
-PRESET_PREFIX = ".agent-presets/"
+PRESET_PREFIX = ".agent-presets/migao/"
 #: 读预设内容的 **git 基线候选**（按序取第一个能读到 `.agent-presets/migao/skills/*/SKILL.md` 的）。
 #: 🔴 实测教训（本 PR 的 CI 第一轮）：CI 的 `pull_request` 检出是**浅克隆** ⇒ `origin/main~1`
 #: 这个**父提交根本不解析**（`fatal: Not a valid object name`）。所以不能钉死一个 ref，要**按可用性探**：
@@ -267,8 +267,9 @@ def _preset_text_from_git(rel: str) -> str | None:
 
     为什么这条能同时服务本机与 CI：
       · 工作的**真值**是那份 git 对象 —— S4 之前每个提交里都有完整预设（`scripts/../.agent-presets/**`）；
-      · CI 的 `pr-check` 是 `fetch-depth: 1` ⇒ `origin/main~1` 可取（`actions/checkout` 给的就是 main 的
-        父提交），故本函数**不联网、不依赖本机镜像**；
+      · 本机**没有**镜像时走 git 基线：S4 合并落地（#6020）后 `origin/main` 已删该路径 ⇒ 固定 ref 榜会
+        **全灭**，兜底回溯「`origin/main` 上最后一个**非删除**触碰提交」（CI `fetch-depth: 0`（S4 起）
+        ⇒ 全历史可达）；
       · 本机若有**预设仓镜像**（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`）则优先读它
         —— 那是预设的**权威源**（S4 后本仓的 `.agent-presets/**` 已删，git 里的那份是**冻结快照**）。
     取不到 ⇒ `None`（交给 `_require` **判红**，不静默跳过、也不新增 skip 读数）。
@@ -286,7 +287,29 @@ def _preset_text_from_git(rel: str) -> str | None:
         )
         if proc.returncode == 0:
             return proc.stdout
+    # 🔴 S4 合并落地后（#6020）固定榜会**全灭**：`origin/main` 已删该路径、`main~1` 是否含它取决于
+    # 合并时刻。兜底改**确定性回溯**：取 `origin/main` 历史上最后一个**非删除**触碰该路径的提交
+    # （`--diff-filter=d` 排除删除提交），从那份 git 对象读。仍取不到 ⇒ `None`（交给 `_require` 判红）。
+    base_sha = _last_nondelete_touch(REPO_ROOT, rel)
+    if base_sha:
+        proc = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "show", f"{base_sha}:{rel}"],
+            capture_output=True, text=True,
+        )
+        if proc.returncode == 0:
+            return proc.stdout
     return None
+
+
+def _last_nondelete_touch(repo_root: Path, rel: str) -> str | None:
+    """→ `origin/main` 历史上最后一个**非删除**触碰 `rel` 的提交（S4 后基线回溯用）；取不到 ⇒ None。"""
+    proc = subprocess.run(
+        ["git", "-C", str(repo_root), "log", "--diff-filter=d", "-1", "--format=%H",
+         "origin/main", "--", rel],
+        capture_output=True, text=True,
+    )
+    sha = proc.stdout.strip() if proc.returncode == 0 else ""
+    return sha or None
 
 
 def _preset_skill_corpus_ref() -> str | None:
@@ -306,6 +329,17 @@ def _preset_skill_corpus_ref() -> str | None:
                 if x.startswith(PRESET_PREFIX + "skills/") and x.endswith("/SKILL.md")]
         if hits:
             return ref
+    base_sha = _last_nondelete_touch(REPO_ROOT, SKILL_REL)
+    if base_sha:
+        proc = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "ls-tree", "-r", "--name-only", base_sha],
+            capture_output=True, text=True,
+        )
+        if proc.returncode == 0:
+            hits = [x for x in proc.stdout.splitlines()
+                    if x.startswith(PRESET_PREFIX + "skills/") and x.endswith("/SKILL.md")]
+            if hits:
+                return base_sha
     return None
 
 
@@ -753,7 +787,7 @@ def _require(text: str | None, rel: str) -> str:
             f"判据依赖的语料不存在：{rel}（路径漂移 ⇒ 红，不得静默跳过）\n"
             "  S4 / issue #6020 后预设住在**预设仓** ⇒ 两条正路：\n"
             "    ① 本机建预设仓镜像（$MIGAO_PRESET_MIRROR / ~/.migao-dev-preset-anchor，见 AGENTS.md「开发环境准备」）；\n"
-            f"    ② 让 git 基线里带着该路径（现试过 {list(PRESET_BASELINE_REFS)}，都不含它）。"
+            f"    ② 让 git 基线里带着该路径（已试固定榜 {list(PRESET_BASELINE_REFS)} 与「最后非删除触碰提交」回溯，都不含它）。"
         )
     return text
 
