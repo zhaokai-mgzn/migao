@@ -146,6 +146,25 @@ def _ts_function_source(source: str, pattern: str) -> str:
     raise AssertionError(f"花括号未配平：{pattern}")
 
 
+def _data_dict_keys() -> set:
+    """`ProactivePush.to_data()` 里 `return {...}` 字面量的键集合（**AST**，不扫原文）。"""
+    tree = ast.parse(_read(NAV_MODULE))
+    fn = None
+    for cls in [n for n in tree.body if isinstance(n, ast.ClassDef)]:
+        if cls.name != "ProactivePush":
+            continue
+        fn = next(
+            (n for n in cls.body
+             if isinstance(n, ast.FunctionDef) and n.name == "to_data"),
+            None,
+        )
+    assert fn is not None, "找不到 `ProactivePush.to_data`（被判对象漂移 ⇒ 红）"
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Return) and isinstance(node.value, ast.Dict):
+            return {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
+    raise AssertionError("`to_data` 没有返回 dict 字面量（结构面判据拿不到键集合 ⇒ 红）")
+
+
 class TestWiring:
     """判据 1：**接线在**（`migao-dev-flow` §28.2：判据本体绿 ≠ 接线在）。"""
 
@@ -260,12 +279,13 @@ class TestNoStepsSurface:
     """判据 4 / 5：**只给导航不给步骤** —— 结构 + 文案双层。"""
 
     def test_data_keys_are_a_closed_set_without_steps(self) -> None:
-        section = _p2_section(_read(NAV_MODULE))
-        literal = re.search(
-            r"def to_data\(self\).*?return\s*\{(.*?)\n\s*\}", section, re.S
-        )
-        assert literal, "找不到 `ProactivePush.to_data` 的返回字面量（被判对象漂移 ⇒ 红）"
-        keys = set(re.findall(r'"([A-Za-z][A-Za-z0-9]*)":', literal.group(1)))
+        """结构面：`to_data()` 的键闭集 —— **用 AST 取真语法单元**（不按引号扫原文）。
+
+        ⚠️ 本判据的**唯一实现**是 `_data_dict_keys()`；`tests/unit_ci_workflows/`
+        里凡「判据自己解析被测源码」的写法都必须过 `test_guard_parsing_is_comment_aware.py`
+        那道元守卫（按引号扫原文 = 注释/docstring 就能把它喂中）—— 本条按它的修法 ① 改 AST。
+        """
+        keys = _data_dict_keys()
         assert keys == PROACTIVE_DATA_KEYS, f"data 键与闭集不一致：{sorted(keys)}"
         assert "steps" not in keys
 
