@@ -17,8 +17,9 @@
   "_predicate_note": "口径 = **精确名 + 词边界**（谓词实现在守卫文件里：`STRIP_COMMENT_DEF_RE`）。选择理由与代价见守卫文件 `TestCriterion11YardstickIsSingleSource::test_the_predicate_itself_is_discriminating`（逐条具名的反面对照）与 `.github/cases/misc.yml` MC-060 的 merge_log。",
   "canonical": ".github/danger_scan.py",
   "scan_exclude": {
-    "tests/unit_ci_workflows/test_automerge_bot_safe_path.py": "**自匹配陷阱**（issue #5948 交付要求 3）：守卫文件自己的**断言与说明文字**里逐字写着被扫的函数名 ⇒ 不排除则它永远至少命中自己一次，台账里会多一条**永不消失**的假条目，「只许缩短」当场失效。排除是**具名**的（不是「跳过 tests/**」）——扫描面里仍含 `tests/**` 的其余全部 `.py`。",
-    "tests/unit_ci_workflows/strip_comment_uniqueness_ledger.json": "本台账**不是** `.py`（永不被 `rglob(\"*.py\")` 扫到）；显式登记的理由 = 它的 `_why` / `_invariants` 为了可读性引用了那个函数名 ⇒ 「它不在扫描面里」这件事是**有意**的，不靠后缀侥幸。"
+    "tests/unit_ci_workflows/test_automerge_bot_safe_path.py": "**自匹配陷阱**（issue #5948 交付要求 3）：守卫文件自己的**断言与说明文字**里逐字写着被扫的函数名 ⇒ 不排除则它永远至少命中自己一次，台账里会多一条**永不消失**的假条目，「只许缩短」当场失效。⚠️ 关键：排除它不是「**改写**成不命中自己」那条路的替代 —— 改写**额外**做了（注记用拆开的常量 `STRIP_COMMENT_FAMILY`，现取谓词不匹配本文件）；这里排除的是「守卫文件**将来**又把它写成字面量」的那条路（红证 ③ 证明：拷真文件裸扫 ⇒ 它当场命中自己）。⚠️ 排除清单**不许**扩成「跳过整个 `tests/**`」——那正是本单要堵的洞（判据里有三条塌缩守卫）。",
+    "tests/unit_ci_workflows/strip_comment_uniqueness_ledger.json": "本台账**不是** `.py`（永不被 `rglob(\"*.py\")` 扫到）；显式登记的理由 = 它的 `_why` / `_invariants` 为了可读性引用了那个函数名 ⇒ 「它不在扫描面里」这件事是**有意**的，不靠后缀侥幸。",
+    "tests/agent_eval/eval_cases.py": "**生成物**（文件头含 `GENERATED FILE — DO NOT EDIT`）。它的正文是**用例散文** —— `data_checks` 里会提到那个函数名（本包 MC-060 自己就写了），而 `tests/**` 的 `.py` 里**恰好只有这一个**这样的生成物 ⇒ 扫描面按**文件头逐字**排除它（不是按文件名白名单）。它**从不定义**那个函数这件事不靠排除侥幸：`test_no_generated_artifact_defines_the_yardstick` 正向钉住「生成物清单 == 这一个」且「生成物里一个定义都没有」。"
   },
   "live_exemptions": [
     {

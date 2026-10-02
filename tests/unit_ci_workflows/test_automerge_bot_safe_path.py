@@ -637,20 +637,37 @@ STRIP_COMMENT_DEF_RE = re.compile(
     r"^[ \t]*(?:async[ \t]+)?def[ \t]+strip_comment(?![A-Za-z0-9_])[ \t]*\(",
     re.MULTILINE,
 )
+# 生成物（`tests/agent_eval/eval_cases.py`）的文件头：它的正文是**用例散文**（会提到那个函数名），
+# **不是**实现 —— 逐字排除它（`strip_comment_scan_sources` 的 ③），并由
+# `test_no_generated_artifact_defines_the_yardstick` 正向钉住「生成物里从不出现那个**定义**」。
+# ⚠️ 判定看的是**第 1 行**（本文件自己的说明文字里也有这个词组 ⇒ 不能用「文件里出现过它」来判，
+#    那会让本文件又自匹配一次、并被踢出扫描面 = 静默缩小射程）。
+GENERATED_FILE_HEADER = "GENERATED FILE — " + "DO NOT EDIT"
+
+
+def is_generated_artifact(path) -> bool:
+    """`path` 是否为生成物：判据 = **第 1 行**逐字含生成物标记（不吃文件别处的说明文字）。"""
+    first_line = path.read_text(encoding="utf-8", errors="replace").split("\n", 1)[0]
+    return GENERATED_FILE_HEADER in first_line
 
 
 def strip_comment_scan_sources():
-    """把**整仓** `.py` 当扫描面（改前只有 `.github/**`）—— 排除物 = **两个**，都必须具名。
+    """把**整仓** `.py` 当扫描面（改前只有 `.github/**`）—— 排除物 = **三个**，都必须具名。
 
     ① `scan_exclude`（台账登记）= **本守卫文件自己**：它的**断言与说明文字**里逐字写着被扫的那个函数名，
        不排除 ⇒ 守卫**永远**至少命中自己一次（自匹配陷阱 ⇒ 台账里多一条**永不消失**的假条目，
        「只许缩短」当场失效）。⚠️ 不许把这条排除写成「跳过整个 `tests/**`」—— 那正是本包要堵的洞。
     ② `ledger_path`（同上）= 台账本体的 `_why_*` 字段也要引用那个函数名（可读性），
        它**不是**被扫对象（没有 `.py` 后缀）⇒ 排除它是**显式**豁免，不是靠后缀侥幸。
+    ③ `GENERATED_FILE_HEADER`（**约定**，不是台账条目）= `tests/agent_eval/eval_cases.py` 这类
+       **生成物**：它的正文是**用例散文**（`data_checks` 里会出现那个函数名 —— 本包 MC-060 就写了），
+       而 `tests/**` 的 `.py` 里**恰好只有一个**这样的文件 ⇒ 逐字排在扫描面之外；它**从不**定义
+       那个函数这件事由 `test_no_generated_artifact_defines_the_yardstick` 单独钉住（不靠排除侥幸）。
     """
     excluded = {GUARD_FILE, str(STRIP_COMMENT_HITS_LEDGER.relative_to(REPO_ROOT))}
     return sorted(p.relative_to(REPO_ROOT).as_posix() for p in REPO_ROOT.rglob("*.py")
-                  if p.relative_to(REPO_ROOT).as_posix() not in excluded)
+                  if p.relative_to(REPO_ROOT).as_posix() not in excluded
+                  and not is_generated_artifact(p))
 
 
 def strip_comment_ledger():
@@ -735,6 +752,7 @@ class TestCriterion11YardstickIsSingleSource:
                                if STRIP_COMMENT_HITS_PREDICATE in p.read_text(encoding="utf-8"))
         assert prefix_family == [
             CANONICAL_STRIP_COMMENT,
+            "tests/agent_eval/eval_cases.py",                      # ← **生成物**的用例散文（MC-060 的 data_checks 里引了这个串）
             GUARD_FILE,                                            # 自匹配（已排除）
             "tests/unit_ci_workflows/test_deploy_breaker_allowlist.py",
             "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
@@ -794,6 +812,21 @@ class TestCriterion11YardstickIsSingleSource:
                         if STRIP_COMMENT_HITS_PREDICATE in p.read_text(encoding="utf-8"))
         assert family == [CANONICAL_STRIP_COMMENT], \
             f"`.github/**` 面内出现前缀族副本（= `.github` 里的第二把尺子）：{family}"
+
+    def test_no_generated_artifact_defines_the_yardstick(self):
+        """生成物**从不**定义那个函数（扫描面排除生成物这件事**不是**在放行什么）。
+
+        生成物的正文是**用例散文**（会提到那个函数名 ⇒ 前缀谓词下会命中）；豁免它**只**针对「散文」，
+        本条正向钉住「生成物里一个**定义**都没有」—— 若有人把一份实现塞进生成物/或 render 出这种内容，
+        本条当场红（`hits` 里会出现定义）。
+        """
+        generated = [p.relative_to(REPO_ROOT).as_posix() for p in REPO_ROOT.rglob("*.py")
+                     if is_generated_artifact(p)]
+        assert generated == ["tests/agent_eval/eval_cases.py"], \
+            f"生成物清单变了（扫描面的生成物排除要跟着重取）：{generated}"
+        defined = [g for g in generated
+                   if STRIP_COMMENT_DEF_RE.search((REPO_ROOT / g).read_text(encoding="utf-8"))]
+        assert defined == [], f"生成物里出现了那个函数定义（= 藏起来的第二把尺子）：{defined}"
 
     # ── 活豁免台账（类级元守卫，issue #5948）：未登记即红 / 陈旧即红 / 只许缩短 ──────────
     def test_live_exemptions_are_registered_and_complete(self):
