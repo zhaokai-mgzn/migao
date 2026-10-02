@@ -462,5 +462,18 @@ class DashboardStatsTool(BaseTool):
                 suggestion="请稍后重试，如持续失败请联系技术支持",
             )
         data = response.get("data", {})
+        # 计数端点（pending-shipment-count / processing-shipment-count）的 `data` 是**裸标量**
+        # （`DashboardController` 返回 `ApiResponse<Long>`）⇒ 包成 dict 满足 `ToolResult.data`
+        # 的 dict 契约。不包 ⇒ pydantic ValidationError ⇒ 这两个 action **恒失败**
+        # （issue #6044 缺陷 B，2026-10-02 B 端真实评测实测）。
+        # 复用同文件既有约定：list ⇒ `{"list": …}`（order_trend 等）、dict 原样
+        # （product_ranking 的 `{"items": …}` 同理）。
+        if not isinstance(data, dict):
+            data = {"count": data}
         logger.info(f"[dashboard-stats] {action} fetched")
-        return ToolResult(success=True, data=data, message=f"{label}已获取")
+        return ToolResult(
+            success=True,
+            data=data,
+            message=f"{label}已获取",
+            summary=f"{label}: {data.get('count', '?')}",
+        )

@@ -967,10 +967,56 @@ def _get_intent_to_route(agent_type: str = "") -> dict[str, str]:
     按 agent_type 对齐 persona：xiaobu 的 C 端专属 skill（如 customer_quote 的
     quote 意图）只有 xiaobu persona，若用默认 mibao persona 构建会被过滤，
     导致 quote 意图 fallback 到 general。故按 agent_type 传对应 persona。
+
+    🔴 **只留本 agent 绑定得上的 route_key**（issue #6044 缺陷 C）：`get_intent_to_route_map`
+    按 **persona** 过滤，而 persona 过滤**不等于绑定过滤** —— 米宝 persona 的 skill 文件若
+    **未绑进**该 agent 的 `skill_names`，它的 route_key 仍会进映射表，而
+    `build_agent_graph` 的 `skill_route_map` **不会**建那个节点 ⇒ `route_by_intent` 返回一个
+    LangGraph 条件边的**不存在的目的地** ⇒ `BranchSpec._finish` 抛
+    `KeyError: '<route_key>'` ⇒ 整轮 SSE 崩（用户侧只看到"稍后重试"）。
+
+    实测（2026-10-02 B 端真实评测，ST-002/ST-004/ST-005 四个会话各一次）：
+    ```
+    error=KeyError: 'settings' | agent=mibao | 用户输入「看看通知」
+      File "…/langgraph/graph/_branch.py", line 203, in <listcomp>
+        r if isinstance(r, Send) else self.ends[r] for r in result
+    ```
+    `settings` skill 已按 #5247 解绑出米宝（`MIBAO_CONFIG.skill_names` 里没有它），但
+    `settings_skill.py` 的文件仍在注册表里（保留它是有意的：删除会让路由/账本口径漂移）
+    ⇒ 这个"文件在、绑定不在"的缝隙就是崩溃点。
+
+    ⇒ 三件事同时钉住：① 本 agent **绑定**得上的 route_key 才留；② 其余一律落到
+    **fallback skill**（= builder 一定会建的那个节点，兜底语义）；③ 路由结果因此**恒**是
+    图上存在的节点名（判据见 `backend/ai-agent-service/tests/test_route_destination_binding.py`）。
     """
+    from app.agents.agent_config import get_agent_config
     from app.graph.skills.skill_registry import get_skill_registry
+
     persona = "xiaobu" if agent_type == "xiaobu" else "mibao"
-    intent_map = get_skill_registry().get_intent_to_route_map(persona=persona)
+    agent_config = get_agent_config(agent_type or "mibao")
+    bound_skills = set(agent_config.get_all_skill_names())
+    fallback = agent_config.fallback_skill or "general"
+    registry = get_skill_registry()
+
+    #: 绑定得上的 route_key：skill name 与它自己的 route_keys 都算（builder 两者都映射）。
+    bound_keys: set[str] = set()
+    for skill_name in bound_skills:
+        config = registry.get(skill_name)
+        if not config:
+            continue
+        bound_keys.add(skill_name)
+        bound_keys.update(config.route_keys)
+
+    intent_map = registry.get_intent_to_route_map(persona=persona)
+    dropped = sorted({key for key in intent_map.values() if key not in bound_keys})
+    if dropped:
+        logger.info(
+            f"[_get_intent_to_route] agent={agent_type or 'mibao'} 未绑定的 route_key "
+            f"{dropped} 已改判到 fallback skill '{fallback}'"
+            "（不进图的目的地会让条件边抛 KeyError —— issue #6044 缺陷 C）"
+        )
+    intent_map = {intent: (key if key in bound_keys else fallback)
+                  for intent, key in intent_map.items()}
     for intent in _DIRECT_REPLY_INTENTS:
         intent_map[intent] = "direct_reply"
     intent_map["general"] = "general"
@@ -1039,16 +1085,53 @@ def route_by_intent(state: AgentState) -> str:
     """
     pending_skill = state.get("pending_interact_skill", "")
     session_id = state.get("session_id", "")
+    agent_type = state.get("agent_type", "")
     route = state.get("route_decision") or {}
     action = route.get("action", "full_agent")
 
+    # 🔴 **目的地闸**（issue #6044 缺陷 C）：条件边只认 `skill_route_map` 的 key/value，
+    # 返回别的名字 ⇒ `BranchSpec._finish` 抛 `KeyError: '<名字>'` ⇒ 整轮 SSE 崩
+    # （2026-10-02 实测：米宝 + pending_skill='settings' ⇒ `KeyError: 'settings'`）。
+    # 本函数有**两条**返回路径可能越过映射表：① `action=handoff_offer`（米宝图上没有该节点）；
+    # ② `pending_interact_skill`（会话状态里的 skill 名可能已按 #5247 解绑）。
+    # 两条都改判到本 agent 的 fallback skill（= builder 一定会建的那个节点，兜底语义）。
+    from app.agents.agent_config import get_agent_config as _get_agent_config
+    from app.graph.skills.skill_registry import get_skill_registry as _get_registry
+
+    _agent_config = _get_agent_config(agent_type or "mibao")
+    _fallback = _agent_config.fallback_skill or "general"
+    _registry = _get_registry()
+    _destinations: set[str] = {"direct_reply", "handoff_offer" if agent_type == "xiaobu" else None}
+    _destinations.discard(None)
+    for _skill_name in _agent_config.get_all_skill_names():
+        _config = _registry.get(_skill_name)
+        if not _config:
+            continue
+        _destinations.add(_skill_name)
+        _destinations.update(_config.route_keys)
+
     # AI 主动引导转人工（D3）：路由到 handoff_offer 节点（建议卡片）
     if action == "handoff_offer":
+        if "handoff_offer" not in _destinations:
+            logger.warning(
+                f"[route_by_intent] action=handoff_offer 但 agent={agent_type} 的图上没有该节点 "
+                f"⇒ 改判到 fallback skill '{_fallback}' | session={session_id}"
+            )
+            return _fallback
         logger.info(
             f"[route_by_intent] Routing to handoff_offer (AI guided handoff)"
             f" | tenant={state.get('tenant_id')} session={session_id}"
         )
         return "handoff_offer"
+
+    if pending_skill and pending_skill not in _destinations:
+        logger.warning(
+            f"[route_by_intent] pending_interact_skill='{pending_skill}' 不在 agent={agent_type} "
+            f"的目的地里（已解绑 / 名字漂移）⇒ 本轮改判到 fallback skill '{_fallback}'"
+            f" | session={session_id}"
+            "（会话状态面仍留着它 —— 清零归 SessionStateStore 的事，本函数据此只保证不进死路）"
+        )
+        return _fallback
 
     if action == "direct_reply":
         # 多模态输入不走直复节点——直接回复模板没有图片处理能力

@@ -2538,3 +2538,43 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-069
+    legacy_id: ""
+    title: "B 端真实评测 3 缺陷的类级固化：批次取值白名单 ⊆ DB 约束（缺陷 A）+ 路由目的地恒在图上（缺陷 C）"
+    domains:
+      - misc
+      - agent-contract
+    tier: normal
+    tags:
+      - single-source
+      - fail-closed
+      - red-proof
+      - db-contract
+      - routing
+    truths_ref: []
+    # ⚠️ 真值暂缺：两条判据都是**纯静态 / 纯内存**（只读仓内文本 + 编译图对象；零真库、零网络、零 LLM），
+    # 由 tests/unit_ci_workflows/test_agent_batch_type_domain.py 与
+    # backend/ai-agent-service/tests/test_route_destination_binding.py 验证，非 LLM 行为，不进入 agent-eval 冒烟。
+    user_inputs:
+      - "当有人在 AgentBatchService 里加一个新的具名批量类型（batch_type / field 取值）却忘了同步 DB 约束、或只同步了迁移没同步建库脚本（或反过来）时，必须有判据**具名**报出少了哪个取值；而只改无关注释时不得报红"
+      - "当有人把某个 skill 从某 agent 的 skill_names 解绑、而它的 route_key 仍留在意图映射表里（或有人在图上没有 handoff_offer 的 agent 上返回该目的地）时，必须有判据**具名**报出那个目的地不存在于该 agent 的图上；而绑定得上的 route_key 不得被一刀切兜底"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**病（issue #6044 缺陷 A，2026-10-02 B 端真实评测实测）**：代码已能写 `batch_type='inventory_stock'`（#5950），而 V127 的 `ck_agent_batch_type` 只有两个值 ⇒ 真库上 `POST /api/admin/agent/batches` 100% 撞 23514 ⇒ 500（`AgentBatchService.create`）。同型第二处：`ck_agent_batch_item_field` 只有 `basePrice`/`status`，缺 `stock`（明细行照样写不进去）。⇒ 本单缺的正是「代码写入的取值集合 ⊆ DB 约束允许的取值集合」这条判据。"
+      - "**判据 1（值域 ⊆ 白名单）**：`AgentBatchService` 的 `TYPE_*` 常量字面量 ⊆ `ck_agent_batch_type` 允许值；`TYPE_FIELD` 引用的 `FIELD_*` 常量字面量 ⊆ `ck_agent_batch_item_field` 允许值（**别名要解析**：`FIELD_*` 的定义体是 `AgentWriteValues.FIELD_*`）。执行点 = tests/unit_ci_workflows/test_agent_batch_type_domain.py 的 `test_code_batch_domains_are_allowed_by_the_db_constraints`。"
+      - "**判据 2（两条终态一致）**：迁移链按版本号重放（DROP 置空 / ADD 重取 `CHECK (<列> IN …)`）得到的终态白名单 == `db/init/schema.sql`（基线）的终态；任一侧少一个值 ⇒ 红。执行点 = 同文件同判据函数（`migration_replay` ⇄ `schema_constraints` 的差集）。"
+      - "**判据 3（fail-closed）**：两个来源解析为空 / 变量解析不出字面量 / 约束在两处都不存在 ⇒ 一律判红，不得读成「没问题」。执行点 = 同文件 `domain_problems` 的 fail-closed 分支 + 判别力自证的 ⑤⑥ 两条。"
+      - "**判据 4（缺陷 C：路由目的地恒在图上）**：`_get_intent_to_route(agent)` 的每个值、以及 `route_by_intent(state)` 在边界输入（未绑定的 `pending_interact_skill` / `action=handoff_offer` 在米宝上 / notification 意图）下的返回值，必须 ∈ 该 agent 的 `skill_route_map` 的 key ∪ value；另有「`_route_map` 的 value 必须是真的图节点」这条自证坐标。执行点 = backend/ai-agent-service/tests/test_route_destination_binding.py 的 `test_every_mapped_destination_is_a_node` / `test_known_intents_land_on_a_node` / `test_any_pending_skill_lands_on_a_node` / `test_handoff_offer_only_where_the_node_exists` / `test_route_map_values_are_real_nodes`。"
+      - "**判别力自证（注入式红证）**：① 约束里去掉 `inventory_stock` ⇒ `test_code_batch_domains_are_allowed_by_the_db_constraints` 红并具名「代码写入的取值 ['inventory_stock'] 不在 schema.sql 的 ck_agent_batch_type 的白名单里」（实测 1 failed / 2 passed）；② 摘掉 `pending_skill` 目的地闸 ⇒ `test_any_pending_skill_lands_on_a_node` 红并报出 `route_by_intent 返回 'settings'`（= 2026-10-02 实测崩溃形态，1 failed / 27 passed）；③ 摘掉 `handoff_offer` 目的地闸 ⇒ `test_handoff_offer_only_where_the_node_exists` 红（1 failed / 27 passed）；④ 对照：不注入 ⇒ 全绿、只改注释 ⇒ 不红。执行点 = 两文件各自的 `test_injected_bad_corpora_are_named` / 上列参数化用例。"
+      - "🔴 **覆盖边界（显式登记）**：① 批次取值判据只认落码形态（`public static final String X = <字面量>;` 与 `Map.of(TYPE_a, FIELD_b, …)` 两种落码形态）；拼接 / 枚举 / 反射 / 配置文件派生的取值不在射程。② 只对账 `schema.sql`（基线）与**活**迁移链；归档链有意不看（V127 已冻结在指纹账本里，其值由 V146 显式重建）。③ 路由判据只覆盖已登记的 `mibao` / `xiaobu`；`pending_interact_skill` 里图上没有的名字只在**本轮**改判到 fallback，会话状态面的清零不属射程。④ 真库面（索引/事务/端点）由 `AgentBatchMigrationTest` / `AgentBatchServiceTest` 承担。⑤ 不查 GitHub / 不联网 / 不起真库 / 不烧 token。⑥ 本判据不改任何门禁的通过条件、不新增豁免。"
+    skip_reason: "[backend-contract] 纯静态文本对账 + 纯内存图对象判定（零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_agent_batch_type_domain.py 与 backend/ai-agent-service/tests/test_route_destination_binding.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-02 新增（issue #6044：B 端真实 LLM 评测抓到的 3 个真缺陷的类级固化）。落码 = ① 缺陷 A：`V146__add_inventory_stock_to_agent_batch_type.sql`（两条白名单 DROP + ADD 纳入 `inventory_stock` / `stock`，含终态对账与可执行回滚）+ `db/init/schema.sql` 同步 + 值域判据 tests/unit_ci_workflows/test_agent_batch_type_domain.py（3 条：值域 ⊆ 白名单 / 两条终态一致 / fail-closed，含 8 条内存红证）② 缺陷 C：`app/graph/nodes.py` 的 `_get_intent_to_route`（按 agent **绑定面**过滤，未绑定 route_key 改判 fallback）+ `route_by_intent`（`pending_interact_skill` / `handoff_offer` 目的地闸）+ 判据 backend/ai-agent-service/tests/test_route_destination_binding.py（28 条参数化用例）③ 缺陷 B 的行为判据另立 backend/ai-agent-service/tests/test_tools_dashboard_stats_counts.py（14 条，本用例的 `traces.tests` 只登记前两条静态面）。**取号 MC-069**：`python3 scripts/next_case_id.py MC` 现取（候选 = main ∪ 全部 open PR 分支 ∪ 本工作区）报 `main:001-048,050-068 · PR #6043:049 ⇒ 取 MC-069`，同 PR 加 claim 文件 `.github/cases/claims/<PR号>-MC-069.json`。"
+    traces:
+      tests:
+        - tests/unit_ci_workflows/test_agent_batch_type_domain.py
+        - backend/ai-agent-service/tests/test_route_destination_binding.py
+      ci:
+        - pr-check.yml
+      verifies: []

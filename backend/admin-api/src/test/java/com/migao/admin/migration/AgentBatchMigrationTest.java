@@ -17,7 +17,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -101,9 +104,92 @@ class AgentBatchMigrationTest {
         }
     }
 
+    /** 活迁移（按版本号升序）。 */
+    private static List<Path> liveMigrationFiles() throws Exception {
+        Path dir = root().resolve(LIVE_DIR);
+        try (Stream<Path> s = Files.list(dir)) {
+            return s.filter(f -> f.getFileName().toString().endsWith(".sql"))
+                    .sorted(Comparator.comparing(f -> {
+                        Matcher m = Pattern.compile("^V(\\d+)__").matcher(f.getFileName().toString());
+                        return m.find() ? Integer.parseInt(m.group(1)) : Integer.MAX_VALUE;
+                    }))
+                    .toList();
+        }
+    }
+
+    /**
+     * 按版本号重放活迁移 ⇒ 某条白名单的**终态**取值集合（issue #6044 缺陷 A）。
+     *
+     * <p>{@code DROP CONSTRAINT <名>} 把它置空，{@code ADD CONSTRAINT <名>} 时取紧随其后的
+     * {@code CHECK (<列> IN (…))} 的取值。复刻「DROP 了却没重新 ADD」⇒ 集合为空 ⇒ 判据红。</p>
+     */
+    private static Set<String> constraintValuesAfterMigrations(String constraint, String column)
+            throws Exception {
+        Set<String> values = new LinkedHashSet<>();
+        Pattern drop = Pattern.compile("DROP\\s+CONSTRAINT\\s+(?:IF\\s+EXISTS\\s+)?" + constraint);
+        Pattern add = Pattern.compile("ADD\\s+CONSTRAINT\\s+" + constraint);
+        Pattern inList = Pattern.compile(
+                "CHECK\\s*\\(\\s*" + column + "\\s+IN\\s*\\(([^)]*)\\)", Pattern.CASE_INSENSITIVE);
+        for (Path file : liveMigrationFiles()) {
+            String code = sqlCode(Files.readString(file, StandardCharsets.UTF_8));
+            Matcher dm = drop.matcher(code);
+            if (dm.find()) {
+                values.clear();
+            }
+            Matcher am = add.matcher(code);
+            if (am.find()) {
+                String tail = code.substring(am.end(), Math.min(code.length(), am.end() + 600));
+                Matcher lm = inList.matcher(tail);
+                values.clear();
+                if (lm.find()) {
+                    Matcher v = Pattern.compile("'((?:[^']|'')*)'").matcher(lm.group(1));
+                    while (v.find()) {
+                        values.add(v.group(1).replace("''", "'"));
+                    }
+                }
+            }
+        }
+        return values;
+    }
+
     @Nested
     @DisplayName("① 迁移文件本体")
     class Migration {
+
+        @Test
+        @DisplayName("🔴 代码写入的 batch_type / field 取值 ⊆ 建库脚本白名单，且迁移链终态与之一致")
+        void codeValueDomainsAreCoveredByTheDbWhitelists() throws Exception {
+            Set<String> expected = Set.of(
+                    AgentBatchService.TYPE_PRODUCT_PRICE,
+                    AgentBatchService.TYPE_PRODUCT_STATUS,
+                    AgentBatchService.TYPE_INVENTORY_STOCK);
+            Set<String> expectedFields = Set.of(
+                    AgentBatchService.FIELD_BASE_PRICE,
+                    AgentBatchService.FIELD_STATUS,
+                    AgentBatchService.FIELD_STOCK);
+
+            String schema = read(SCHEMA_REL);
+            String batches = tableBody(schema, "agent_batches");
+            String items = tableBody(schema, "agent_batch_items");
+
+            // ① 建库脚本（bootstrap 终态）必须逐值放行代码写入的取值
+            for (String type : expected) {
+                assertThat(batches).as("schema.sql 的 ck_agent_batch_type 缺代码写入的 batch_type '%s'", type)
+                        .contains("'" + type + "'");
+            }
+            for (String field : expectedFields) {
+                assertThat(items).as("schema.sql 的 ck_agent_batch_item_field 缺代码写入的 field '%s'", field)
+                        .contains("'" + field + "'");
+            }
+
+            // ② 迁移链（存量库路径）重放出的终态必须**等于**建库脚本的终态（两个终态不许分叉）
+            assertThat(constraintValuesAfterMigrations("ck_agent_batch_type", "batch_type"))
+                    .as("活迁移链重放后的 ck_agent_batch_type 终态（DROP 后必须重新 ADD 并纳入全部取值）")
+                    .isEqualTo(expected);
+            assertThat(constraintValuesAfterMigrations("ck_agent_batch_item_field", "field"))
+                    .as("活迁移链重放后的 ck_agent_batch_item_field 终态")
+                    .isEqualTo(expectedFields);
+        }
 
         @Test
         @DisplayName("活目录迁移版本号唯一且不与归档链同号（防同号乱序：撞车 = 有一条永远不会跑）")

@@ -2024,7 +2024,7 @@ COMMENT ON TABLE remnant_small_item_specs IS
 CREATE TABLE IF NOT EXISTS agent_batches (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    batch_type VARCHAR(32) NOT NULL,                 -- product_price / product_status（白名单）
+    batch_type VARCHAR(32) NOT NULL,                 -- product_price / product_status / inventory_stock（白名单）
     status VARCHAR(16) NOT NULL DEFAULT 'preview',   -- preview → executing → done | partial → reverted | revert_partial
     item_count INTEGER NOT NULL DEFAULT 0,
     success_count INTEGER NOT NULL DEFAULT 0,
@@ -2034,7 +2034,7 @@ CREATE TABLE IF NOT EXISTS agent_batches (
     executed_at TIMESTAMP WITH TIME ZONE,
     reverted_at TIMESTAMP WITH TIME ZONE,
     CONSTRAINT ck_agent_batch_type
-        CHECK (batch_type IN ('product_price', 'product_status')),
+        CHECK (batch_type IN ('product_price', 'product_status', 'inventory_stock')),
     CONSTRAINT ck_agent_batch_status
         CHECK (status IN ('preview', 'executing', 'done', 'partial', 'reverted', 'revert_partial')),
     CONSTRAINT ck_agent_batch_counts
@@ -2055,7 +2055,7 @@ CREATE TABLE IF NOT EXISTS agent_batch_items (
     status VARCHAR(16) NOT NULL DEFAULT 'pending',     -- pending/success/failed/reverted/revert_failed/skipped
     error VARCHAR(500),                                -- 逐条失败原因（部分失败逐条报告的载体）
     CONSTRAINT ck_agent_batch_item_field
-        CHECK (field IN ('basePrice', 'status')),
+        CHECK (field IN ('basePrice', 'status', 'stock')),
     CONSTRAINT ck_agent_batch_item_status
         CHECK (status IN ('pending', 'success', 'failed', 'reverted', 'revert_failed', 'skipped'))
 );
