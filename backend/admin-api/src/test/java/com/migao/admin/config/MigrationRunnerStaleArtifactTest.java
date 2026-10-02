@@ -55,20 +55,25 @@ import static org.mockito.Mockito.when;
  * 现有语义下这些失败**只打 ERROR 然后继续启动**（#3615/#3270 的刻意权衡：一条坏迁移不得冻结整个
  * schema）⇒ 「陈旧产物」这种**部署事故**与「一条真坏迁移」在日志上同形，用户读到的是"产品故障"。
  *
- * ## 本测试锁什么（与 #3615 的裁定**不冲突**，边界由「源码树在不在」划开）
+ * ## 本测试锁什么（五条；与 #3615 / #3714 / #4991 的既有裁定**不冲突**）
  *
- * 1. **源码树在 ∧ classpath 多出源码树没有的迁移 ⇒ fail-fast**（抛
- *    {@link MigrationRunner.MigrationStaleArtifactException}），**且该文件根本不被执行**
- *    —— 陈旧产物不是"一条坏迁移"，是"构建产物与源码不一致"的部署事故，不可能靠"跳过这一条"自愈；
- * 2. **源码树在 ∧ 该迁移确实在源码树里 ⇒ 语义逐字不变**（#3615：跳过该条 + ERROR + 继续，
- *    不拒启动）—— 这是**防改过头**的负控臂，见
+ * 1. **陈旧产物 ⇒ fail-fast**（抛 {@link MigrationRunner.MigrationStaleArtifactException}）：文件名
+ *    **不在源码树** ∧ **不在台账** ∧ **不在 KNOWN_BENIGN_LEGACY** —— 且**该文件根本不被执行**
+ *    —— 陈旧产物不是"一条坏迁移"，是"构建产物与源码不一致"的部署事故，跳过它不会自愈；
+ * 2. **台账已有该键 ⇒ 不拒启动**（后面本来就会按台账跳过它，与"陈旧"无关）；
+ * 3. **在 KNOWN_BENIGN_LEGACY 登记册里 ⇒ 不拒启动**，仍走 #3714/#4991 的 INFO 降级通道
+ *    （否则等于新造一个「例外清单以外一律拒启动」的机制，把已裁定的发行语义改了）；
+ * 4. **源码树里真实存在的一条迁移内容失败 ⇒ 语义逐字不变**（#3615：跳过该条 + ERROR + 继续，
+ *    不拒启动）—— 这是**防改过头**的负控臂，与
  *    `backend/admin-api/src/test/java/com/migao/admin/config/MigrationRunnerConnectionFailClosedTest.java`
- *    的判据 3；
- * 3. **源码树不在**（Docker 镜像里只有打包好的 jar：`Dockerfile` 只 `COPY src` 构建后
+ *    的判据 3 同口径；
+ * 5. **源码树解析不到**（容器里只有打包好的 jar：`Dockerfile` 只 `COPY src` 构建后
  *    `COPY --from=builder /app/target/*.jar`）⇒ 检测**整段跳过**、不误判（历史行为逐字不变）。
  *    ⚠️ 这条是**射程声明**，不是"检测在镜像里也有效"。
  *
  * ⚠️ 判据 1 的失败必须**可归因**：点名**哪个文件** stale（否则又回到「真失败与噪音同形」）。
+ * ⚠️ 参照面**从 `migrationPattern` 推**（生产那条路径），不靠 `live-dir` 配置口 —— 判据改
+ * `migrationPattern` 时参照面跟着走，不会各说各话。
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
