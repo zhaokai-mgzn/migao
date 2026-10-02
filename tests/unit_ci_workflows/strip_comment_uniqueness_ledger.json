@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "_what": "「剥注释实现全仓只许一份」这条唯一性判据的**扫描面 + 活豁免台账**（issue #5948）。判据本体 = `tests/unit_ci_workflows/test_automerge_bot_safe_path.py::TestCriterion11YardstickIsSingleSource`。",
+  "_why": "改前扫描面**只有 `.github/**`**（现取命中 = 1）⇒ `tests/**` 里可以再写一份**同名同义**实现而**没有任何东西会红**（本仓最忌的「又一把尺子」）。用守卫自身的谓词整仓复算**现取命中 = 7**（`tests/**` 占 6）：正典 1 + 守卫文件**自己**（自匹配）+ 4 条**同名不同族** + 1 条**同名不同义**（nginx）。",
+  "_judged_by": "tests/unit_ci_workflows/test_automerge_bot_safe_path.py::TestCriterion11YardstickIsSingleSource（实例判据 + 活豁免台账元守卫）与 ::TestUniquenessScopeInjectionsProveDiscriminatingPower（四条坏形态的注入式红证）",
+  "_invariants": [
+    "扫描面 = **整仓** `*.py`，逐字排除两个**具名**对象（`scan_exclude`）：守卫文件自己（自匹配陷阱）+ 本台账（`_why` 等字段要引用那个函数名，可读性）。**不许**把排除写成「跳过整个 tests/**」—— 那正是本单要堵的洞。",
+    "命中的期望集合 = 正典（`canonical`）∪ `live_exemptions` 的 path ⇒ **又一份同名定义落地即红**，且判红**具名**。",
+    "`live_exemptions` 每条必须 `path` / `reason` / `owner` / `issue` 四字段齐全，必须**仍然命中**（不再命中 ⇒ **陈旧红**），且 `path` 必须是仓内真文件。",
+    "`live_exemptions` **只许缩短**：条数现取并冻结在 `FROZEN_LIVE_EXEMPTIONS`（= 1）。新增豁免**必须由人显式放行**（现实例的并入**只**发生在用户具名裁定时），删除时须同时把冻结锚调小 —— 不许**静默**缩小覆盖。",
+    "`predicate_key` / `predicate_kind` 登记的是判据所用谓词的**名字与口径**；台账**不复制**谓词实现（谓词的单一实现在守卫文件里，台账复制的正则会是**第二把尺子**）。",
+    "`skipped_same_family` 是**口径选择的证据**（不是豁免）：它逐条记着「为什么这四条不需要豁免」—— 它们**不**叫那个精确名，精确名谓词逐条不命中（⇔ 若退回前缀口径，它们会一起被卷进来）。"
+  ],
+  "_boundary": "本台账机械保证的是「**已登记的那两条**（正典 + nginx 豁免）与现取命中集一致」+「豁免条目活着」。它**不保证**：① 那份 nginx 实现**语义正确**（本判据只裁「唯一性」）；② 「同名不同义」这一族**将来**不会被合并（那是 code review 与 `skipped_same_family` 的理由文本承担，机械判据判不了「语义」）；③ `.py` 之外的语言（本仓该实现在 Python）；④ 「有人在别的分支上写第二份」—— 那由合并前 CI 拦，不在本判据射程。",
+  "predicate_kind": "exact",
+  "predicate_key": "def strip_comment",
+  "_predicate_note": "口径 = **精确名 + 词边界**（谓词实现在守卫文件里：`STRIP_COMMENT_DEF_RE`）。选择理由与代价见守卫文件 `TestCriterion11YardstickIsSingleSource::test_the_predicate_itself_is_discriminating`（逐条具名的反面对照）与 `.github/cases/misc.yml` MC-060 的 merge_log。",
+  "canonical": ".github/danger_scan.py",
+  "scan_exclude": {
+    "tests/unit_ci_workflows/test_automerge_bot_safe_path.py": "**自匹配陷阱**（issue #5948 交付要求 3）：守卫文件自己的**断言与说明文字**里逐字写着被扫的函数名 ⇒ 不排除则它永远至少命中自己一次，台账里会多一条**永不消失**的假条目，「只许缩短」当场失效。⚠️ 关键：排除它不是「**改写**成不命中自己」那条路的替代 —— 改写**额外**做了（注记用拆开的常量 `STRIP_COMMENT_FAMILY`，现取谓词不匹配本文件）；这里排除的是「守卫文件**将来**又把它写成字面量」的那条路（红证 ③ 证明：拷真文件裸扫 ⇒ 它当场命中自己）。⚠️ 排除清单**不许**扩成「跳过整个 `tests/**`」——那正是本单要堵的洞（判据里有三条塌缩守卫）。",
+    "tests/unit_ci_workflows/strip_comment_uniqueness_ledger.json": "本台账**不是** `.py`（永不被 `rglob(\"*.py\")` 扫到）；显式登记的理由 = 它的 `_why` / `_invariants` 为了可读性引用了那个函数名 ⇒ 「它不在扫描面里」这件事是**有意**的，不靠后缀侥幸。",
+    "tests/agent_eval/eval_cases.py": "**生成物**（文件头含 `GENERATED FILE — DO NOT EDIT`）。它的正文是**用例散文** —— `data_checks` 里会提到那个函数名（本包 MC-060 自己就写了），而 `tests/**` 的 `.py` 里**恰好只有这一个**这样的生成物 ⇒ 扫描面按**文件头逐字**排除它（不是按文件名白名单）。它**从不定义**那个函数这件事不靠排除侥幸：`test_no_generated_artifact_defines_the_yardstick` 正向钉住「生成物清单 == 这一个」且「生成物里一个定义都没有」。"
+  },
+  "live_exemptions": [
+    {
+      "path": "tests/unit_ci_workflows/test_swas_nginx_rate_limit.py",
+      "symbol": "strip_comment",
+      "reason": "**同名不同义，有意不合并**（用户 2026-10-02 具名裁定）：本条实现的是 **nginx.conf 语义** —— 引号外的**任意** `#` 即注释（`#` 后面有没有空白都一样），而正典 `.github/danger_scan.py::strip_comment` 是 **shell 语义**（只有**空白前置**的 `#` 才开注释，`${VAR#prefix}` / `${VAR##pattern}` 里的 `#` 必须留）。两份尺子服务两门语言、调用点互不相干（本文件判 nginx 限流配置；正典是 CI 的 secrets 判据）⇒ **合并必把其中一边改错**；请勿把它们当「可合并的重复实现」。",
+      "owner": "ci/研发工具（tests/unit_ci_workflows/**）",
+      "issue": "#5948"
+    }
+  ],
+  "skipped_same_family": [
+    {
+      "path": "tests/unit_ci_workflows/test_deploy_breaker_allowlist.py",
+      "symbol": "strip_comment_lines",
+      "reason": "**不是同名定义**（是 `strip_comment_lines`）⇒ 精确名谓词不命中、**不入豁免台账**（入册即陈旧红）。语义也不同：它**逐行丢弃整行注释**（`ln.lstrip().startswith(\"#\")`），不做行内截断、不处理引号。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
+      "symbol": "strip_comments_and_strings",
+      "reason": "**不是同名定义**（是 `strip_comments_and_strings`）。语义 = 把注释与字符串字面量**替换成等长空白**（保行号），对象是 Java 源码、扫描器带状态机。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_qty_stub_reads_calc_info.py",
+      "symbol": "strip_comments",
+      "reason": "**不是同名定义**（是 `strip_comments`，多一个 `s`）。语义 = Java 注释**原地涂白**（非换行字符 → 空格，长度/偏移/行号三者不变），基于正则而非逐字符扫描。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py",
+      "symbol": "strip_comments",
+      "reason": "**不是同名定义**（是 `strip_comments`，且**无自己的实现**）：它 `return load_manifest_guard().strip_for(suffix, text)` —— **复用**另一份守卫的实现，是**消费方**而非第二把尺子（把它并入豁免会把「复用」错记成「重复」）。"
+    }
+  ]
+}

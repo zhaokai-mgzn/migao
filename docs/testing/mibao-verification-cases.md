@@ -2822,7 +2822,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（58 case）
+## 杂项域（59 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3631,6 +3631,20 @@
 跳过: [backend-contract] deploy 腿 lint 的静态结构判据（零 LLM、秒级、只读仓内 workflow YAML + 内存合成语料）由 tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py 的判据 4~5 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #5944；来源 = 2026-10-02 在 PR #5943 里被这条 lint **挡了两次**，实施者按铁律 12(b) 在会话内提出，用户当日裁定「开小单 + 派包修」；归因层级 = 研发工具 / 判据级）。落码 = ① `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py`：新增 `_without_comments()`（逐行复用 `.github/danger_scan.py::strip_comment`，**唯一**一份剥注释实现），接在 `EXPR` / `SINGLE_QUOTED` **之前**；② 判据 4~5（假红消失 ⇄ 真红仍在 / 4 条负例锚 / 撇号反向缺陷锚 / 注入式双向自证 / 同源单一实现）+ `WIRING_UNDER_TEST` 声明与 `wiring_claims_ledger.json` 登记。取号 **MC-059**：`python3 scripts/next_case_id.py MC` 现取 main = 001–048、050–**056**，脚本建议的 **MC-049 是历史空档**（MC-050 的 merge_log 逐字记着它曾被在飞分支 `ci/5814-migrate-pr-legs` 占用，而该 PR #5818 已 CLOSED）⇒ 沿用 MC-054/055/056 的「空档号 ≠ 可用号」先例，按**当前最大号 +1** 取号；本包开工时现取在飞占用 = **PR #5940（MC-057）/ PR #5943（MC-058）** ⇒ 取 **MC-059**。 ｜ tags: ci, workflow, lint, comment-aware, red-proof
+
+### MC-060. 「剥注释实现全仓只许一份」的唯一性守卫扫描面扩到**整仓**（issue #5948）：口径显式收紧为**精确名 + 词边界**（不卷进 4 族同名不同义的实现）、**自匹配**（守卫自己）具名排除、nginx 语义那条**具名豁免且只许缩短**（不再命中 ⇒ 陈旧红）、`tests/**` 里再写一份同名同义实现 ⇒ 判红并具名 🔵
+```
+你: （研发工具 / 判据级，无 C 端行为）同一把「剥注释」尺子**不许在仓内静默长出第二份**：改前唯一性守卫只扫 `.github/**`，于是 `tests/**` 里写一份**同名同义**实现没有任何东西会红；而扩面又必须**具名**处置两种既有形态：① 守卫文件**自己**（断言/说明里逐字写着那个名字 ⇒ 自匹配陷阱）② 语义不同、**有意不合并**的实现（**nginx** 的「引号外任意 `#` 即注释」≠ shell 的「空白前置才算注释」）
+数据: **病（现取，2026-10-02）**：用守卫自身的谓词复算 —— `.github` 面内命中 = **1**；**整仓 = 7**（`.github/danger_scan.py` 正典 + 守卫文件**自己** + `test_deploy_breaker_allowlist.py` / `test_logic_delete_write_shape.py` / `test_qty_stub_reads_calc_info.py` / `test_rbac_derived_roles_and_catalog.py` 四族同名不同义 + `test_swas_nginx_rate_limit.py` 同名不同义）。复算 = `grep -rn 'def strip_comment' --include='*.py' .`。⇒ 「静默两份」的真实风险面 = `tests/**`：改前**没有任何东西**会因此变红。
+数据: **口径选择（显式二选一，本包选 ①）**：① **精确名 + 词边界**（`def strip_comment(`；谓词实现在守卫文件里、台账只登记它的名字，不复制正则）/ ② 前缀谓词（改前行为）。选 ① 的理由 = 「唯一性」的前提是**同一符号**：② 会把**四族同名不同义**的函数（`strip_comment_lines` 逐行去整行注释 / `strip_comments_and_strings` Java 注释+字符串涂白 / `strip_comments` Java 注释原地涂白 / `strip_comments` 复用 manifest 守卫的 `strip_for`）一起卷进来 ⇒ 台账要背 4 条**语义不同**的条目，等于教下一个人「它们可合并」；而真正需要豁免的**只有** nginx 那一条同名不同义。**代价如实登记** = 前缀族的新增变体不再被本判据看见 ⇒ 由 `.github/**` 面内的前缀族判据 + 分类器的 deny-definition 判据补位。
+数据: **判据 11 系列（全部在 tests/unit_ci_workflows/test_automerge_bot_safe_path.py）**：① `test_only_one_strip_comment_implementation_in_the_repo`（扫描面 = **整仓**，逐字排除三个**具名**对象（守卫自己 / 台账本体 / **生成物** `tests/agent_eval/eval_cases.py`，判生成物看**首行**、不看文件名白名单）；命中集 == 正典 ∪ 活豁免；三条塌缩守卫：排除清单里没有守卫自己 / 扫描面不得只剩 `.github/**` / 必须真含 `tests/unit_ci_workflows/**`）② `test_the_predicate_itself_is_discriminating`（谓词口径自证 + **逐条具名**的 7 条前缀族读数 + 四族同名不同义**逐条不命中** + 自匹配陷阱两半）③ `test_yardstick_family_has_no_copy_in_the_bot_classifier`（deny-definition：分类器里不许有 `def <名字>(` / `def <名字>s(` —— 改前判的是**裸名字**，会命中分类器的**说明文字**、还会逼人改坏措辞）④ `test_no_prefix_family_copy_exists_in_the_github_face`（收紧后的补位）⑤ `test_live_exemptions_are_registered_and_complete`（四字段齐全 + 指回真 issue + **仍然命中**，不再命中 ⇒ 陈旧红）⑥ `test_the_live_exemption_list_only_shrinks`（条数现取 == 冻结锚 1）⑦ `test_the_nginx_exemption_is_named_and_rationale_is_specific`（理由必须点出 nginx 语义与不可合并）⑧ `test_skipped_same_family_implementations_are_named`（四条「有意跳过」逐条具名 + 与豁免表互斥）。
+数据: **判别力自证（注入式红证，`TestUniquenessScopeInjectionsProveDiscriminatingPower`）**：① 在 `tmp_path` 的 `tests/**` 造一份**同名同义**实现（按词拼装，不落进本仓）⇒ 裸扫**必须红并具名**那两个对象；删掉 ⇒ **回绿** ② **反向对照**：只改注释 / 字符串（提及那个名字）⇒ **不红** ③ **自匹配**：把守卫文件真文件拷进临时树裸扫 ⇒ 它**当场命中自己**（这就是必须具名排除它的实测理由）；谓词现取**不**匹配本文件（注记用拆开的常量改写）④ **死条目**：把豁免指向一份没有那个定义的真实文件 ⇒ 「仍然命中」那条断言为假（陈旧红），「只许缩短」因此成立。**阳性对照**：`5 failed / 9 passed` 的改前读数（把 `test_only_one_*` 退回只扫 `.github/**`）见 PR body。
+数据: **红证怎么在真 object 上重放（可复制）**：`python3 -m pytest tests/unit_ci_workflows/test_automerge_bot_safe_path.py -q -k 'Criterion11 or UniquenessScope'`。⚠️ 注入物一律建在 `tmp_path`、**不落进本仓** ⇒ 每次跑都在重新取证，不依赖本包是否「已删干净」。
+数据: **活豁免台账（只许缩短）**：`tests/unit_ci_workflows/strip_comment_uniqueness_ledger.json` —— `live_exemptions` 现取 = **1**（`tests/unit_ci_workflows/test_swas_nginx_rate_limit.py::strip_comment`，用户 2026-10-02 具名裁定：**nginx** 语义、**有意不合并**），条数冻结在 `FROZEN_LIVE_EXEMPTIONS`；`scan_exclude` 两条**逐条写明理由**；`skipped_same_family` 四条是**口径选择的证据**（不是豁免，入豁免表即「陈旧红」）。
+数据: **过程中撞到的第二个自匹配形态（同批修掉，如实登记）**：本用例的 `data_checks` 散文里逐字写了那个函数名 ⇒ render 之后它进了生成物 `tests/agent_eval/eval_cases.py` ⇒ **生成物**也成了被扫对象（前缀谓词下命中）。处置 = 按**首行**的文件头标记把生成物逐字排除（不是按文件名白名单），并用 `test_no_generated_artifact_defines_the_yardstick` 正向钉住「生成物清单 == 这一个 ∧ 生成物里一个定义都没有」。**未固化（照实登记）**：① 「同名不同义**将来**不会被合并」这一半机械判不了（那是能否**变红**的语义问题）—— 由 `skipped_same_family` 的理由文本 + code review 承担；② 「有人在**别的分支**上写第二份」由合并前 CI 拦，不在本判据射程；③ `.py` 之外的语言不在面内（本仓该实现在 Python）。
+跳过: [backend-contract] CI / 研发工具的静态结构判据（零 LLM、秒级、只读仓内 `.py` 源文本 + 临时树上的注入式红证）由 tests/unit_ci_workflows/test_automerge_bot_safe_path.py 的判据 11 系列验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #5948；来源 = 2026-10-02 #5944 的修复包（PR #5947）在递交时把「唯一性守卫只见 `.github/**`」按铁律 12(b)③ 在会话内提出，用户当日裁定「**开小单：扩到 tests/** + 给 nginx 那份具名豁免**」；归因层级 = 研发工具 / 判据级）。落码 = ① 扫描面扩到**整仓** + 逐字具名排除（守卫自己 / 台账本体）② 谓词口径**显式收紧**为精确名 + 词边界（理由与代价逐条落在 `data_checks` 与台账 `_predicate_note`）③ 活豁免台账 `tests/unit_ci_workflows/strip_comment_uniqueness_ledger.json`（`path`/`reason`/`owner`/`issue` + 只许缩短 + 陈旧红）④ 判据 11 系列 9 条 + 四条注入式红证（含反向对照）；其中 `test_no_generated_artifact_defines_the_yardstick` 正向钉住「生成物里**从不**出现那个定义」—— 排除生成物**只**豁免它的**用例散文**，不是在放行实现。取号 **MC-060**：`python3 scripts/next_case_id.py MC` 现取 main = 001–**057** + **059**（058 只在 MC-059 的 merge_log 里被**引用**，不是 id），脚本建议的 **MC-049 是历史空档** ⇒ 沿用 MC-054~059 的「空档号 ≠ 可用号」先例，按**当前最大号 +1** 取号；本包开工时现取在飞占用 = PR #5943（**MC-058**，已在其分支的 `misc.yml` 里）⇒ 取 **MC-060**。⚠️ 与 PR #5943 并行改 `.github/cases/misc.yml` + 两份生成物 ⇒ **谁后合并谁** `./scripts/sync-main.sh --rebase` 并**重渲染**（生成物不许手改、二次渲染零 diff）。 ｜ tags: ci, guard, uniqueness, ledger, red-proof
 
 ## 商家入驻域（5 case）
 
@@ -8583,8 +8597,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：601（活跃 126，跳过 475）
-- tier 分布：smoke 12 / normal 556 / adversarial 31
+- 用例总数：602（活跃 126，跳过 476）
+- tier 分布：smoke 12 / normal 557 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8599,7 +8613,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：58
+- 杂项域：59
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -8684,6 +8698,7 @@
 - MC-057: 部署对账的「落状态」本身必须有判据 + 三态三分 + 事件驱动清零（issue #5935）：`gh workflow view --ref` 那条前置判据 100% 失败 ⇒ 六条腿全被误记 `notarget`；未落状态的腿必须具名判红、`notarget` 与机制故障不得混桶、部署完成事件必须能触发清零且不得自激
 - MC-058: 部署腿的「已构建就跳过」判据必须**真的能生效**：同一份 `gh run list` 查询要有凭据（`permissions: actions: read` + step 级 `GH_TOKEN`）、失败要出声、fail-open 要具名；未接即红
 - MC-059: deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#`
+- MC-060: 「剥注释实现全仓只许一份」的唯一性守卫扫描面扩到**整仓**（issue #5948）：口径显式收紧为**精确名 + 词边界**（不卷进 4 族同名不同义的实现）、**自匹配**（守卫自己）具名排除、nginx 语义那条**具名豁免且只许缩短**（不再命中 ⇒ 陈旧红）、`tests/**` 里再写一份同名同义实现 ⇒ 判红并具名
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
