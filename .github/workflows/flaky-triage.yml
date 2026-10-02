@@ -145,6 +145,27 @@ jobs:
             --comment-out /tmp/flaky-comment.md \
             --gh-output "$GITHUB_OUTPUT" | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # ── ③b #5960：**失败测试身份**进台账（从失败 job 的日志里机械提取）────────────────
+      # 病根（实测，别再重新猜）：台账此前**不记录失败的是哪条测试** ——
+      # `attempt_facts()[...]["assertion"]` 的自动路径恒为 `None`（GitHub 的 jobs API 只给**步骤名**），
+      # 而 `kind` / `step` 都太粗 ⇒ 有人事后按**测试名** grep `.github/flaky-ledger.json` 时
+      # **0 命中**（issue #5960 的作者就是这么发现的：一条真 flaky 被放行后查不出它放过什么）。
+      # 日志是另一条取数面：pytest 的 `short test summary info` 里每条失败一行
+      # `FAILED <node id> - <错误>`（⚠️ GitHub 给日志加时间戳前缀、且**真的有** ANSI 转义）。
+      # ⚠️ **fail-safe，不是 fail-closed**（有意）：日志取不到（job 已被清理 / 权限 / 网络）
+      #    不该让记账整条链变红 —— 本轮读数会打出 `unresolved=N`（**空 `failing_tests` =
+      #    「没取到」，不是「没有测试名」**）；拉日志最多 `MAX_LOG_FETCHES` 份（控时间）。
+      - name: ③b #5960 取失败测试身份（从失败 job 日志机械提取 pytest node id）
+        id: failing_tests
+        if: steps.decide.outputs.entry_count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          python3 .github/scripts/flaky_ledger.py collect-failing-tests \
+            --repo "$GITHUB_REPOSITORY" --entries /tmp/flaky-entries.json || {
+            echo "::error::条目文件读不到/形状不对 ⇒ **不得**当「没有条目」继续（未跑 ≠ 通过）"; exit 1; }
+
       # ── ① 首次失败 ⇒ 重跑失败 job（**上限 1 次**）────────────────────────────
       - name: ① 首次失败 ⇒ 自动重跑失败 job（最多 1 次）
         if: steps.decide.outputs.action == 'rerun'
@@ -196,28 +217,38 @@ jobs:
             echo "::error::auto-merge 仍在 arm（$AUTO）⇒ **自动放行未被阻止** ⇒ fail-closed"; exit 1; }
           echo "::notice::🎈 flaky 已标注（flaky/rerun-green + block/merge + 已卸 auto-merge）—— 第二次绿 ≠ 通过"
 
-      # ── ②′ #5687：跨时间桶的「重跑通过」⇒ **强制跟踪** + 仍然不许自动放行 ──────────
+      # ── ②′ #5687 / **#5960**：**判了「重跑才绿」就必须登记修复路径** ───────────────
       # 病根（实测，别再重新猜）：旧口径 `if rerun_result == "success" and "flaky" in kinds`
       # ⇒ **只凭「重跑通过」**就判 `flaky` ⇒ 窗口型确定性缺陷（如「UTC 16:00–24:00 每天必红」）
       # 被重跑掩盖：重跑落到窗口外就绿、PR 的红被消掉，而缺陷**仍在 main 上**，明天同一时段
       # 对所有人**再红一次** —— 不设限就可以**无限循环**（唯一的信号是那个**非 required** 的
       # `Flaky Ledger Reconcile` 红，而它自己逐字声明「判红不等于阻塞合并」）。
+      # 🔴 #5960：本步骤此前**只对 `mark_suspect`** 落单 ⇒ 普通 `kind=flaky` 的条目 `follow_up`
+      # 永远是 `null` ⇒ 「这条 flaky 放过的是哪条测试、谁去定位机制」没有任何承载体
+      # （实测：按测试名 grep 台账 0 命中）。⇒ **两类共用同一机械落单动作**：
+      #   · `mark_flaky`  —— 条目 `kind=flaky` ⇒ 开「重跑才绿 ⇒ 定位机制」单（#5960）；
+      #   · `mark_suspect` —— 条目 `kind=suspect-window-deterministic` ⇒ 开「跨时间桶」单（#5687）。
       # 分工：②′a **机械落跟踪单**（把单号注入 `/tmp/flaky-entries.json` 的 `follow_up`）；
       #       ②′b **拦住自动放行** + 复核（**不**打 `flaky/rerun-green` —— 它不是 flaky）。
-      - name: ②′a #5687 落跟踪单（跨时间桶 ⇒ 强制跟踪；缺它 ⇒ 台账写入即判违规）
+      - name: ②′a #5687/#5960 落跟踪单（判了「重跑才绿」⇒ 强制跟踪；缺它 ⇒ 台账写入即判违规）
         id: triage_follow_up
-        if: steps.decide.outputs.action == 'mark_suspect'
+        # ⚠️ **有意不设 `if:`**（不是漏写）：需要落单的是**两类**（`mark_flaky` #5960 /
+        # `mark_suspect` #5687），而「本条 run 有没有它们」**由脚本按条目 kind 判**（单一事实源
+        # `FOLLOW_UP_REQUIRED_KINDS`）：没有该类条目 ⇒ 脚本打印「零动作」并**退 0**（不建单、不写
+        # 文件）。把判据写进 `if:` 会**复制第二份** kind 判据，而 `mark_suspect` 那一步的条件是
+        # `test_rerun_to_clear_paths.py` 的**结构锚**（「`mark_suspect` 必须独占一步」）——
+        # 改它 = 让那条守卫的锚失配 ⇒ 守卫的判别力退化（本仓最忌的「锚失配 ⇒ 空断言」）。
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
           # 幂等：同 job 已有 open 的跟踪单则**复用**（marker 精确匹配），否则新建一张。
-          # fail-closed：落不出单 ⇒ 红 —— `ledger_violations` 把「该类条目缺 follow_up」判成
-          # **违规**（`append` 直接非零退出），所以「静默继续」在这条链上根本走不通。
+          # fail-closed：落不出单 ⇒ 红 —— `ledger_violations` / `append_entries` 把「该类条目缺
+          # follow_up」判成**违规**（`append` 直接非零退出），所以「静默继续」在这条链上走不通。
           python3 .github/scripts/flaky_ledger.py triage-follow-up \
             --repo "$GITHUB_REPOSITORY" --entries /tmp/flaky-entries.json \
             --gh-output "$GITHUB_OUTPUT" || {
-            echo "::error::落窗口型疑似的跟踪单失败 ⇒ 该类条目**必须**带跟踪单（#5687 判据③），fail-closed、不静默"; exit 1; }
+            echo "::error::落跟踪单失败 ⇒ flaky / 窗口型疑似条目**必须**带跟踪单（#5687 / #5960），fail-closed、不静默"; exit 1; }
           echo "::notice::🕒 跟踪单已落（issue #$(sed -n 's/^issue=//p' "$GITHUB_OUTPUT" | tail -1)）—— 单号已注入条目的 follow_up"
 
       - name: ②′b #5687 拦住自动放行 + 复核（不是 flaky，也不许消红）
