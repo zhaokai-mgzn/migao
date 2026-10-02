@@ -191,9 +191,12 @@ jobs:
             # ⇒ `|| echo 0` 兜不住 ⇒ 计数会打成空串（本机实测）。补上默认 `[]` 才是真兜底。
             RAW_ROWS=$(printf '%s' "${last_runs:-[]}" | jq -r 'if type == "array" then length else 0 end' 2>/dev/null || echo 0)
             # 排除**本轮 run 自己**：`gh run list` 把当前 in_progress 的 run 排在 `[0]`（本机
-            # 现取 2026-10-02）⇒ 不排除时 `[.[] | select(.headSha == $s)][0]` 永远取到「自己」
-            # ⇒ C′ 的「completed + success」恒不成立（会被下面那条「尚未跑完」闸门接住，
-            # 理由却是错的）。排除后 `[0]` = 同 sha 上一条**别的** run。
+            # 现取 2026-10-02）⇒ 不排除时「取同 sha 的最新一条」永远取到**自己** ⇒ C′ 的
+            # 「completed + success」恒不成立（会被下面那条「尚未跑完」闸门接住，理由却是错的）。
+            # 排除后 `[0]` = 同 sha 上一条**别的** run。
+            # ⚠️ 注释里**不要**写美元符号开头的变量名：本仓的 `set -u` 未定义变量守卫
+            # （tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py）连注释一起扫，
+            # 而它只剥离单引号区（jq 程序）⇒ 注释里的变量引用会被判成未定义变量（本包踩过）。
             last_runs=$(printf '%s' "$last_runs" | jq -c --arg rid "${GITHUB_RUN_ID:-}" \
                           'if type == "array" then [.[] | select((.databaseId // 0 | tostring) != $rid)] else . end' \
                           2>/dev/null || printf '%s' "$last_runs")
