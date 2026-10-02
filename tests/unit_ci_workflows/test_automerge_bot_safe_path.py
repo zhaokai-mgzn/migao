@@ -1,8 +1,9 @@
-# case_ids: MC-012
-# （沿用 tests/unit_ci_workflows/** 的既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012 ——
+# case_ids: MC-012, MC-060
+# （MC-012：沿用 tests/unit_ci_workflows/** 的既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012 ——
 #   见 tests/unit_ci_workflows/test_merge_gate.py 与 tests/unit_ci_workflows/test_close_linked_issues_chain.py
-#   的同款声明，以及 `.github/cases/misc.yml` MC-012 的登记。本 PR 不新建用例族：
-#   塞进行为用例库会污染覆盖矩阵。）
+#   的同款声明，以及 `.github/cases/misc.yml` MC-012 的登记。
+#  MC-060：issue #5948 **新增**的用例（唯一性守卫扫描面扩到整仓 + 活豁免台账 + 四条注入式红证）——
+#   它**确实**值得单独立案：改前那条唯一性守卫只扫 `.github/**`，扩面同时要处置自匹配与具名豁免。）
 """`automerge.yml` 的 **bot 安全路径** L0 守卫（关联 #5077）。
 
 ## 被移除的人工环节（本守卫存在的理由）
@@ -597,6 +598,72 @@ def _load_yardstick(path):
     return module.strip_comment
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 11 的扫描面与「活豁免」台账（issue #5948：唯一性守卫只扫 `.github/**`）
+# ══════════════════════════════════════════════════════════════════════════════
+# 病（**现取**，用守卫自身的谓词 `"def strip_comment" in text` 复算）：
+#   `.github` 面内命中 = 1；**整仓命中 = 7**（`tests/**` 占 6）。
+# ⇒ 「静默两份」的真空隙 = `tests/**` 里可以再写一份**同名同义**实现而没有任何东西会红。
+#
+# **口径选择（显式，二选一）**：① **精确名**（本包采用）/ ② 前缀谓词（改前行为）。
+# 选 ①。理由（见 `test_the_predicate_itself_is_discriminating` 的具名读数）：
+#   前缀谓词 `"def strip_comment"` 把**四族同名不同义**的函数一起卷进来 ——
+#   `test_deploy_breaker_allowlist.py::strip_comment_lines`（逐行去整行注释）、
+#   `test_logic_delete_write_shape.py::strip_comments_and_strings`（Java 注释+字符串涂白）、
+#   `test_qty_stub_reads_calc_info.py::strip_comments`（Java 注释原地涂白）、
+#   `test_rbac_derived_roles_and_catalog.py::strip_comments`（复用 manifest 守卫的 `strip_for`）。
+#   它们**不是** `strip_comment` 的副本（签名、语义、语言、调用点都不同），**合并必把一边改错**
+#   ⇒ 放进豁免台账只会教下一个人「这五条是同类，可以合并」。而且「唯一性」这个词的前提是
+#   **同一符号**：同名不同义（nginx 语义）才是需要**具名豁免**的那一条（用户 2026-10-02 裁定）。
+#   精确名的代价（如实登记）＝前缀族的新增实现不再被本判据看见 ⇒ 由
+#   `test_no_prefix_family_copy_exists_in_the_github_face`（`.github/**` 面内）+
+#   `test_yardstick_family_has_no_copy_in_the_bot_classifier`（deny-family）补上。
+STRIP_COMMENT_HITS_LEDGER = (REPO_ROOT / "tests" / "unit_ci_workflows"
+                             / "strip_comment_uniqueness_ledger.json")
+GUARD_FILE = "tests/unit_ci_workflows/test_automerge_bot_safe_path.py"
+CANONICAL_STRIP_COMMENT = ".github/danger_scan.py"
+# 🔵 「只许缩短」的锚：现取 = 1（nginx 语义那条具名豁免）。**新增豁免必须由人显式放行**
+#    （它们在语义上互不相同 ⇒ 前一条「跳过同名不同族」的理由对它们不成立），并把读数改大。
+FROZEN_LIVE_EXEMPTIONS = 1
+
+# 谓词**单一实现**（本文件唯一的定义处；台账只以 `predicate_key` 登记它的**名字**，不复制正则）：
+# ① 人类向的读数谓词 = 改动前那条前缀口径（**只**用于「为什么选精确名」的具名反面对照）；
+# ② 判据谓词 = 精确名、词边界。
+# ⚠️ 这两条正则**刻意**拼装而成：本文件的**说明文字**里逐字写着被扫的函数名 ⇒ 若在这里写成一个
+#    完整的字面量，本文件会命中自己（自匹配陷阱），台账里就得挂一条**永不消失**的假豁免。
+STRIP_COMMENT_FAMILY = ("strip_comment", "def ")
+STRIP_COMMENT_HITS_PREDICATE = STRIP_COMMENT_FAMILY[1] + STRIP_COMMENT_FAMILY[0]
+STRIP_COMMENT_DEF_RE = re.compile(
+    r"^[ \t]*(?:async[ \t]+)?def[ \t]+strip_comment(?![A-Za-z0-9_])[ \t]*\(",
+    re.MULTILINE,
+)
+
+
+def strip_comment_scan_sources():
+    """把**整仓** `.py` 当扫描面（改前只有 `.github/**`）—— 排除物 = **两个**，都必须具名。
+
+    ① `scan_exclude`（台账登记）= **本守卫文件自己**：它的**断言与说明文字**里逐字写着被扫的那个函数名，
+       不排除 ⇒ 守卫**永远**至少命中自己一次（自匹配陷阱 ⇒ 台账里多一条**永不消失**的假条目，
+       「只许缩短」当场失效）。⚠️ 不许把这条排除写成「跳过整个 `tests/**`」—— 那正是本包要堵的洞。
+    ② `ledger_path`（同上）= 台账本体的 `_why_*` 字段也要引用那个函数名（可读性），
+       它**不是**被扫对象（没有 `.py` 后缀）⇒ 排除它是**显式**豁免，不是靠后缀侥幸。
+    """
+    excluded = {GUARD_FILE, str(STRIP_COMMENT_HITS_LEDGER.relative_to(REPO_ROOT))}
+    return sorted(p.relative_to(REPO_ROOT).as_posix() for p in REPO_ROOT.rglob("*.py")
+                  if p.relative_to(REPO_ROOT).as_posix() not in excluded)
+
+
+def strip_comment_ledger():
+    """现取台账（`path` / `reason` / `owner` / `issue` 四条缺一不可，`issue` 必须指向真 issue）。"""
+    return json.loads(STRIP_COMMENT_HITS_LEDGER.read_text(encoding="utf-8"))
+
+
+def scan_for_strip_comment_definition() -> list[str]:
+    """现取「整仓里逐字写着那个精确函数定义」的文件清单（这个函数名 = 谓词**单一实现**）。"""
+    return sorted(rel for rel in strip_comment_scan_sources()
+                  if STRIP_COMMENT_DEF_RE.search((REPO_ROOT / rel).read_text(encoding="utf-8")))
+
+
 class TestCriterion9SecretsCommentOnlyArms:
     """判据 9（#5286 判据 1）：diff **仅在注释里**含 `secrets.*`、其余满足某一安全类 ⇒ 必须 arm。
 
@@ -635,12 +702,149 @@ class TestCriterion11YardstickIsSingleSource:
     COMMENTED = "  # " + COMMENT_ONLY_SECRETS
 
     def test_only_one_strip_comment_implementation_in_the_repo(self):
-        """仓库里 `def strip_comment` 只有 `.github/danger_scan.py` 一处，且分类器里没有副本。"""
-        hits = sorted(str(p.relative_to(REPO_ROOT))
-                      for p in (REPO_ROOT / ".github").rglob("*.py")
-                      if "def strip_comment" in p.read_text(encoding="utf-8"))
-        assert hits == [".github/danger_scan.py"], f"剥注释实现不止一处（= 又一把尺子）：{hits}"
-        assert "def strip_comment" not in bot_script(), "bot 分类器里复制了一份剥注释实现"
+        """**整仓**（改前只有 `.github/**`）那个精确函数名只有「正典 + 具名豁免」两处。
+
+        改前：`hits` 只扫 `.github/**` ⇒ `tests/**` 里写一份**同名同义**实现**没有任何东西会红**
+        （本仓最忌的「又一把尺子」）。改后扫描面 = 整仓（排除两个具名对象，见 `strip_comment_scan_sources`）。
+        """
+        blocked = strip_comment_scan_sources()
+        assert GUARD_FILE not in blocked, \
+            "自匹配陷阱：守卫文件必须在扫描面之外（否则它永远命中自己）"
+        assert len(blocked) > 500, \
+            f"扫描面塌缩（只剩 {len(blocked)} 个文件）⇒ 「整仓」被悄悄缩回 `.github/**`"
+        assert any(s.startswith(".github/") for s in blocked), "`.github/**` 不在扫描面里"
+        assert any(s.startswith("tests/unit_ci_workflows/") for s in blocked), \
+            "`tests/**` 不在扫描面里 —— 本包要堵的就是这个洞"
+
+        hits = scan_for_strip_comment_definition()
+        assert hits == [CANONICAL_STRIP_COMMENT, strip_comment_ledger()["live_exemptions"][0]["path"]], \
+            f"那个函数名全仓只许「正典 + 具名豁免」两处（= 又一把尺子）：{hits}"
+        assert CANONICAL_STRIP_COMMENT in hits, "正典实现不见了 ⇒ 下面的「同源」判据无从谈起"
+
+    def test_the_predicate_itself_is_discriminating(self):
+        """谓词口径自证（**具名读数**）：精确名命中那 2 条，而不卷进同名不同族的 4 条。
+
+        反面锚逐条具名（这就是「为什么选精确名」的可复算证据）：若把谓词退回改动前的**前缀**口径，
+        这四条会一起进 `hits` ⇒ 台账要背 4 条**语义不同**的条目，等于教下一个人「它们可合并」。
+        """
+        assert STRIP_COMMENT_DEF_RE.search("def strip_comment(line: str) -> str:") is not None
+        assert STRIP_COMMENT_DEF_RE.search("async def strip_comment(line):") is not None
+
+        prefix_family = sorted(p.relative_to(REPO_ROOT).as_posix()
+                               for p in REPO_ROOT.rglob("*.py")
+                               if STRIP_COMMENT_HITS_PREDICATE in p.read_text(encoding="utf-8"))
+        assert prefix_family == [
+            CANONICAL_STRIP_COMMENT,
+            GUARD_FILE,                                            # 自匹配（已排除）
+            "tests/unit_ci_workflows/test_deploy_breaker_allowlist.py",
+            "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
+            "tests/unit_ci_workflows/test_qty_stub_reads_calc_info.py",
+            "tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py",
+            "tests/unit_ci_workflows/test_swas_nginx_rate_limit.py",
+        ], f"前缀族现取读数变了 —— 「为什么选精确名」的理由要重取：{prefix_family}"
+
+        # 而同名不同族那四条，**精确名谓词逐条不命中** ⇒ 它们不进台账（也就不会**陈旧红**）。
+        for family in (".github/danger_scan.py",):
+            assert STRIP_COMMENT_DEF_RE.search(
+                (REPO_ROOT / family).read_text(encoding="utf-8")) is not None
+        for unrelated in ("tests/unit_ci_workflows/test_deploy_breaker_allowlist.py",
+                          "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
+                          "tests/unit_ci_workflows/test_qty_stub_reads_calc_info.py",
+                          "tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py"):
+            assert STRIP_COMMENT_DEF_RE.search(
+                (REPO_ROOT / unrelated).read_text(encoding="utf-8")) is None, \
+                f"{unrelated} 被精确名谓词误卷进来了 —— 口径与台账不一致"
+
+        # **自匹配陷阱的两半**（择一即可，改写的这一半必须真的成立，否则排除规则会变成空转）：
+        # ① 改写后：本文件里**没有**那个字面量（谓词不命中自己）；
+        # ② 但那个字面量在**别的**扫描面文件里照样被谓词抓住 ⇒ 排除规则不是空转。
+        assert STRIP_COMMENT_DEF_RE.search(
+            (REPO_ROOT / GUARD_FILE).read_text(encoding="utf-8")) is None, \
+            "本文件里出现了那个字面量 ⇒ 得回退到「关联键字面量」的写法（见 FROZEN 常量旁的口径注）"
+        assert sorted(p.relative_to(REPO_ROOT).as_posix()
+                      for p in REPO_ROOT.rglob("*.py")
+                      if STRIP_COMMENT_DEF_RE.search(p.read_text(encoding="utf-8"))) == [
+            CANONICAL_STRIP_COMMENT,
+            "tests/unit_ci_workflows/test_swas_nginx_rate_limit.py",
+        ], "谓词在真语料上的命中集变了 —— 台账 / 排除清单要跟着重取"
+
+    def test_yardstick_family_has_no_copy_in_the_bot_classifier(self):
+        """bot 分类器里**任何**剥注释**实现**都不许有（deny-definition，改前只判两条字面量）。
+
+        改前那两条断言用的是**裸名字**字面量 ⇒ 它同时命中了分类器的**说明文字**
+        （`SECRETS_YARDSTICK_UNAVAILABLE` 的理由串里提到那把尺子）——口径含糊、还会**逼人改坏措辞**。
+        本条只禁「**定义**」形态：`def <名字>(` / `def <名字>s(`（前缀串在定义形态里 ⊂ 精确名定义）。
+        """
+        script = bot_script()
+        definition = STRIP_COMMENT_FAMILY[1]
+        for family in (STRIP_COMMENT_FAMILY[0], STRIP_COMMENT_FAMILY[0] + "s"):
+            assert (definition + family) not in script, \
+                f"bot 分类器里复制了一份剥注释实现：{definition}{family}"
+        assert STRIP_COMMENT_DEF_RE.search(script) is None, \
+            "分类器里出现了那个精确名定义（= 第二把尺子）"
+
+    def test_no_prefix_family_copy_exists_in_the_github_face(self):
+        """**收紧后的补位**（如实登记口径代价）：`.github/**` 面内**不许**出现前缀族的新副本。
+
+        精确名谓词看不见 `strip_comments*` 这类**新造**变体；正典面（`.github/**`）是分类器的尺子来源，
+        这里必须保持只有正典一份 —— 否则「同源」判据会被一把改名副本绕过。
+        """
+        family = sorted(p.relative_to(REPO_ROOT).as_posix()
+                        for p in (REPO_ROOT / ".github").rglob("*.py")
+                        if STRIP_COMMENT_HITS_PREDICATE in p.read_text(encoding="utf-8"))
+        assert family == [CANONICAL_STRIP_COMMENT], \
+            f"`.github/**` 面内出现前缀族副本（= `.github` 里的第二把尺子）：{family}"
+
+    # ── 活豁免台账（类级元守卫，issue #5948）：未登记即红 / 陈旧即红 / 只许缩短 ──────────
+    def test_live_exemptions_are_registered_and_complete(self):
+        """台账每条必须**四字段齐全**、且必须**仍然命中**（不再命中 ⇒ 陈旧红；条目只许缩短）。"""
+        led = strip_comment_ledger()
+        live = led["live_exemptions"]
+        assert led["predicate_key"] == STRIP_COMMENT_HITS_PREDICATE and led["predicate_kind"] == "exact", \
+            "台账登记的口径与本文件的谓词不一致 ⇒ 两边各有一把尺子"
+        for entry in live:
+            core = [k for k in ("path", "reason", "owner", "issue") if not str(entry.get(k, "")).strip()]
+            assert not core, f"豁免条目缺字段 {core}：{entry.get('path')}"
+            assert entry["issue"].startswith("#"), f"issue 必须指回真单：{entry['path']}"
+            assert (REPO_ROOT / entry["path"]).is_file(), f"豁免指向不存在的文件：{entry['path']}"
+            assert STRIP_COMMENT_DEF_RE.search(
+                (REPO_ROOT / entry["path"]).read_text(encoding="utf-8")), \
+                f"陈旧豁免（该文件里已没有那个精确定义）⇒ 只许缩短：{entry['path']}"
+
+    def test_the_live_exemption_list_only_shrinks(self):
+        """**只许缩短**：条数现取，且必须 == 冻结锚（`FROZEN_LIVE_EXEMPTIONS`）。
+
+        现取 = **1**（`tests/unit_ci_workflows/test_swas_nginx_rate_limit.py` 的 nginx 语义实现，
+        用户 2026-10-02 具名裁定**有意不合并**）。新增豁免要走人；删了一条 ⇒ 这里变红，来的人当场
+        看到「把冻结锚一起调小」这一步（不是**静默**缩小覆盖）。
+        """
+        live = strip_comment_ledger()["live_exemptions"]
+        assert len(live) == FROZEN_LIVE_EXEMPTIONS, \
+            f"活豁免条数 {len(live)} ≠ 冻结锚 {FROZEN_LIVE_EXEMPTIONS}（只许缩短；新增须人放行）"
+
+    def test_the_nginx_exemption_is_named_and_rationale_is_specific(self):
+        """nginx 那条豁免必须**具名**且理由点出**语义差异**（防下一个人把它当「可合并」）。"""
+        entry = strip_comment_ledger()["live_exemptions"][0]
+        assert entry["path"] == "tests/unit_ci_workflows/test_swas_nginx_rate_limit.py"
+        assert STRIP_COMMENT_DEF_RE.search(
+            (REPO_ROOT / entry["path"]).read_text(encoding="utf-8")) is not None
+        for token in ("nginx", "#", "合并"):
+            assert token in entry["reason"], f"豁免理由没说清 {token!r} —— 下一个人会把它当可合并"
+        assert entry["owner"] and entry["issue"]
+
+    def test_skipped_same_family_implementations_are_named(self):
+        """登记「**有意跳过**的同名不同族」四条（只在理由里，不在豁免里）—— 它们是口径选择的证据。"""
+        skipped = strip_comment_ledger()["skipped_same_family"]
+        assert [s["path"] for s in skipped] == [
+            "tests/unit_ci_workflows/test_deploy_breaker_allowlist.py",
+            "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
+            "tests/unit_ci_workflows/test_qty_stub_reads_calc_info.py",
+            "tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py",
+        ]
+        for s in skipped:
+            assert len(s["reason"].strip()) > 20, f"语义差异没写清：{s['path']}"
+            assert s["path"] not in [e["path"] for e in strip_comment_ledger()["live_exemptions"]], \
+                f"{s['path']} 同时进了豁免台账 —— 口径自相矛盾（它**不是**同名定义）"
 
     def test_yardstick_is_reachable_in_the_repo(self):
         """接线存活：`.github/danger_scan.py` 必须真的导出可用的 `strip_comment`（判据来源）。"""
@@ -675,6 +879,91 @@ class TestCriterion11YardstickIsSingleSource:
         run = run_guard(tmp_path, [dep_file_with_comment_secrets()], title=PATCH_TITLE,
                         env_extra={"GITHUB_WORKSPACE": ""}, cwd=str(REPO_ROOT))
         assert run.armed, f"cwd 退路取不到尺子 ⇒ 本机复跑与 CI 判定不一致：{run.summary}"
+
+
+class TestUniquenessScopeInjectionsProveDiscriminatingPower:
+    """**判别力自证**（issue #5948）：扩面 + 自匹配排除 + 台账不腐坏，四种坏形态各自判红。
+
+    注入物一律建在 `tmp_path`：假实现（“又一把尺子”）**不落进本仓**，测量**不依赖**本包是否已删干净
+    ⇒ 每次跑都在重新取证。每条都配**反向对照**（不注入 ⇒ 不红）。
+    """
+
+    def _copy(self, tmp_path, rel):
+        dst = tmp_path / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text((REPO_ROOT / rel).read_text(encoding="utf-8"), encoding="utf-8")
+        return dst
+
+    def _scan(self, tmp_path) -> list[str]:
+        return sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.py")
+                      if STRIP_COMMENT_DEF_RE.search(p.read_text(encoding="utf-8")))
+
+    def test_a_second_same_named_implementation_in_tests_is_named_red(self, tmp_path):
+        """① 在 `tests/**` 造一份**同名同义**实现 ⇒ 必须红并**具名**；删掉 ⇒ 回绿。"""
+        real = self._copy(tmp_path, "tests/unit_ci_workflows/test_swas_nginx_rate_limit.py")
+        assert self._scan(tmp_path) == ["tests/unit_ci_workflows/test_swas_nginx_rate_limit.py"]
+        fake = tmp_path / "tests" / "unit_ci_workflows" / "test_fake_copy_of_the_yardstick.py"
+        # ⚠️ 这一段刻意**按词拼装**而不是把两行源码写成字面量：本文件里写不下那个字面量
+        #    （写下来这里就多一处自匹配）。注入仍然是**真的**多了一份同名同义定义。
+        fake.write_text(
+            f"{STRIP_COMMENT_FAMILY[1]}{STRIP_COMMENT_FAMILY[0]}(line):\n    return line\n",
+            encoding="utf-8",
+        )
+        assert STRIP_COMMENT_DEF_RE.search(fake.read_text(encoding="utf-8")) is not None, \
+            "注入未生效（假实现里没有那个精确定义）⇒ 本红证会空跑"
+        hits = self._scan(tmp_path)
+        assert hits == ["tests/unit_ci_workflows/test_fake_copy_of_the_yardstick.py",
+                        "tests/unit_ci_workflows/test_swas_nginx_rate_limit.py"], \
+            f"假实现没被判红 / 没具名：{hits}"
+        assert [h for h in hits if h != "tests/unit_ci_workflows/test_swas_nginx_rate_limit.py"] == \
+            ["tests/unit_ci_workflows/test_fake_copy_of_the_yardstick.py"], "具名对象不对"
+        fake.unlink()
+        assert self._scan(tmp_path) == ["tests/unit_ci_workflows/test_swas_nginx_rate_limit.py"], "删掉 ⇒ 必须回绿"
+
+    def test_comment_or_string_only_change_is_not_red(self, tmp_path):
+        """② 反向对照：**只改注释 / 字符串**（提及这个名字）⇒ 不红。"""
+        path = self._copy(tmp_path, "tests/unit_ci_workflows/test_qty_stub_reads_calc_info.py")
+        before = self._scan(tmp_path)
+        path.write_text(path.read_text(encoding="utf-8")
+                        + f'\n# 说明文字里提到 {STRIP_COMMENT_HITS_PREDICATE}( 不算实现\n'
+                          f'MENTION = "{STRIP_COMMENT_HITS_PREDICATE}(line)"\n', encoding="utf-8")
+        assert self._scan(tmp_path) == before == [], f"只改注释/字符串就判红 ⇒ 守卫被自己的文案喂红：{before}"
+
+    def test_excluding_the_guard_itself_is_what_keeps_the_ledger_alive(self, tmp_path):
+        """③ 自匹配陷阱：本文件**曾经**因「断言/说明里逐字写着那个名字」而命中自己 —— 必须排除它。
+
+        现取：谓词**不**匹配本文件（本包的注记用**拆开的常量** `STRIP_COMMENT_FAMILY` 改写，
+        不再逐字写下那个字面量）；但「守卫文件可能在扫描面里」这件事**仍必须**被具名排除
+        —— 红证 = 把**真文件**拷进临时树裸扫，它**当场命中**（下面这条断言就是那次的复算入口）。
+        """
+        guard = self._copy(tmp_path, GUARD_FILE)
+        raw_self_hit = [p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.py")
+                        if STRIP_COMMENT_HITS_PREDICATE in p.read_text(encoding="utf-8")]
+        assert raw_self_hit == [GUARD_FILE], \
+            "守卫文件在裸扫时确实会命中自己（这就是必须排除它的实测理由）"
+        assert STRIP_COMMENT_DEF_RE.search(guard.read_text(encoding="utf-8")) is None
+
+        assert GUARD_FILE not in strip_comment_scan_sources(), "守卫文件必须在扫描面之外"
+        excluded = strip_comment_ledger()["scan_exclude"]
+        assert GUARD_FILE in excluded and str(STRIP_COMMENT_HITS_LEDGER.relative_to(REPO_ROOT)) in excluded, \
+            f"排除清单不具名（必须逐条写明为什么）：{sorted(excluded)}"
+        guard.unlink()
+        assert [p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.py")] == []
+
+    def test_a_dead_ledger_entry_turns_the_guard_red(self, tmp_path):
+        """④ 豁免台账不腐坏：造一条**死条目**（所指向的文件里没有那个定义）⇒ 判据必须红。"""
+        live = strip_comment_ledger()["live_exemptions"][0]
+        corpus = tmp_path / "corpus"
+        self._copy(corpus, live["path"])
+        assert STRIP_COMMENT_DEF_RE.search(
+            (corpus / live["path"]).read_text(encoding="utf-8")) is not None, "语料没搬对 ⇒ 本红证会空跑"
+        # 死条目形态：把豁免指向一份**没有**那个定义的真实文件 ⇒ 判据里那条「仍然命中」的断言（复算入口
+        # 逐字同款）当场为假。这正是「陈旧红」，也是「只许缩短」得以成立的那一半。
+        dead = tmp_path / "dead"
+        self._copy(dead, "tests/unit_ci_workflows/test_qty_stub_reads_calc_info.py")
+        assert STRIP_COMMENT_DEF_RE.search(
+            (dead / "tests/unit_ci_workflows/test_qty_stub_reads_calc_info.py")
+            .read_text(encoding="utf-8")) is None, f"陈旧判定本身没判别力：{live['path']}"
 
 
 class TestSecretsYardstickInjectionsProveDiscriminatingPower:
