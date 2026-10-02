@@ -350,6 +350,10 @@ def problems_citation(mod) -> List[str]:
         out.append("citation 里没有「菜单节点」⇒ 无法从答案追回登记表")
     if mod.menu_node("no-such-group", "商品管理") is not None:
         out.append("未登记节点竟返回了节点对象（默认拒绝失效）")
+    else:
+        # 正例锚：登记过的节点**必须**查得到（否则上面的分支恒真 = 空断言）
+        if mod.menu_node(mod.STANDALONE_GROUP, "商品管理") is None:
+            out.append("登记过的节点竟然查不到（`menu_node` 坏了 ⇒ 上面那条判据恒真）")
     unregistered = mod.build_navigation_answer("怎么导出订单", ["*"]).citation
     if "（无）" not in unregistered:
         out.append(f"未登记问题的 citation 没有如实说明未登记：{unregistered!r}")
@@ -559,10 +563,11 @@ class TestEveryJudgementCanGoRed:
             )
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
             caught = exc
-        assert caught is not None, "删掉登记节点后模块竟然导入成功 ⇒ fail-closed 失效"
         with capsys.disabled():
             print(f"[MC-058][红证1b] 删节点 ⇒ 导入期自检抛 {type(caught).__name__}: {str(caught)[:90]}")
-        assert "订单列表" in str(caught), f"自检抛了，但没具名到节点：{caught}"
+        assert "订单列表" in str(caught), (
+            f"删掉登记节点后**没有**被具名拦下（caught={caught!r}）⇒ fail-closed 失效"
+        )
 
     def test_judgement_1b_red_on_coverage_gap(self, nav, tmp_path, capsys):
         """判据本体（`problems_coverage`）在**内存桩**上的判别力：缺节点 / 多节点 / 换序都红。"""
@@ -571,7 +576,10 @@ class TestEveryJudgementCanGoRed:
                                   "permission_code": code})()
 
         class _Stub:
-            pass
+            """内存替身：`problems_coverage` 只看 `MENU_TREE` 与 `MENU_TREE_ORDER_LOCKED`。"""
+
+            MENU_TREE: Tuple[Any, ...] = ()
+            MENU_TREE_ORDER_LOCKED: Tuple[Any, ...] = ()
 
         _Stub.MENU_TREE = (_node("/dashboard"), _node("/orders"))
         _Stub.MENU_TREE_ORDER_LOCKED = tuple(
@@ -634,6 +642,7 @@ class TestEveryJudgementCanGoRed:
 
         mutated = _load_mutated(tmp_path, mutate)
         assert mutated.resolve_feature("怎么导出订单 Excel") is not None, "前提自证失败：注入没生效"
+        assert nav.resolve_feature("怎么导出订单 Excel") is None, "对照：真模块必须不命中"
         problems = problems_default_deny(mutated)
         with capsys.disabled():
             print(f"[MC-058][红证3] 未命中改成猜 ⇒ problems={len(problems)} :: {problems[:1]}")
@@ -724,10 +733,11 @@ class TestEveryJudgementCanGoRed:
             )
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
             caught = exc
-        assert caught is not None, "自由同义词竟然导入成功 ⇒ 别名约束失效"
         with capsys.disabled():
             print(f"[MC-058][红证6c] 自由同义词 ⇒ 导入期自检抛 {type(caught).__name__}: {str(caught)[:90]}")
-        assert "库存盘点" in str(caught), f"自检抛了，但没具名到别名：{caught}"
+        assert "库存盘点" in str(caught), (
+            f"自由同义词**没有**被具名拦下（caught={caught!r}）⇒ 别名约束失效"
+        )
 
     def test_judgement_6c_red_on_free_synonym_judgement(self, nav, capsys):
         """下游（判据本体）的那一半：在**内存桩**上让别名不落地 ⇒ `problems_aliases_grounded` 必报。"""
@@ -822,7 +832,9 @@ class TestToolSurface:
         from app.tools.registry import get_tool_registry
 
         tool = get_tool_registry().get_tool("nav_guide")
-        assert tool is not None, "nav_guide 未注册进 `create_default_registry()` ⇒ 模型不可达"
+        assert getattr(tool, "name", None) == "nav_guide", (
+            "nav_guide 未注册进 `create_default_registry()` ⇒ 模型不可达"
+        )
         assert tool.read_only is True, "导航指引是纯本地只读能力：`read_only` 必须为 True"
         assert tool.destructive is False
         assert list(tool.required_permissions) == [], (
@@ -846,7 +858,9 @@ class TestToolSurface:
         import app.tools as facade
 
         assert "NavGuideTool" in facade.__all__, "未被 `app/tools` 门面导出（门面完整性判据会红）"
-        assert getattr(facade, "NavGuideTool", None) is not None
+        assert getattr(getattr(facade, "NavGuideTool", None), "__name__", None) == "NavGuideTool", (
+            "门面 `__all__` 里写了名字却没有真导入（门面谎报）"
+        )
 
     def test_tool_module_has_no_http_call_points(self):
         text = NAV_TOOL.read_text(encoding="utf8")
