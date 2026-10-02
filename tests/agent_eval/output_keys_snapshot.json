@@ -182,7 +182,7 @@
    "shape_notes": [
     "data=response.get('data') or {}"
    ],
-   "source_sha256": "3b1e89e6915689a723d4cd0fc752acaae1c781ee0592d727edbd222d213bd839"
+   "source_sha256": "f024f31ca502bf4de550f4311b50ca6bd62f76655d7b533288d14c7f4bfee5dc"
   },
   "curtain_calc": {
    "actions": null,

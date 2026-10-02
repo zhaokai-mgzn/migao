@@ -51,16 +51,6 @@ VALID_ACTIONS = {
     "stuck_points",
 }
 
-#: 「这个 action 取到的是一张**待办清单**」的 action（成功文案用）。
-_TODO_ACTIONS = {
-    "routing_gaps": "工艺路线缺口如下",
-    "fee_gaps": "加工费缺口如下",
-    "routing_anomalies": "路线来源异常订单如下",
-    "stuck_points": "卡点（没开工）如下",
-    "route_signals": "信号映射如下",
-    "fee_combinations": "加工费组合定价如下",
-}
-
 
 class CraftConfigQueryTool(BaseTool):
     """工艺配置读面查询 Tool（只读）"""
@@ -218,8 +208,19 @@ class CraftConfigQueryTool(BaseTool):
 
         data: Dict[str, Any] = response.get("data") or {}
         logger.info(f"[craft_config_query] action={action} done")
-        return ToolResult(
-            success=True,
-            data=data,
-            message=_TODO_ACTIONS[action],
-        )
+        # ⚠️ 成功文案必须**字面量内联在构造点**（不查模块级字典）：运行期文本若经**局部变量 /
+        # 容器索引**传入，`tests/unit_ci_workflows/test_dead_capability_meta_guard.py` 的
+        # `test_surfaces_are_fail_closed` 解析不到字面量 ⇒ 该文案进 `unresolved_runtime`
+        # ⇒ 判据静默免检（实测踩到：`craft_config_query.message`）。该文件的出口写得很明确：
+        # 「把文本**内联**到构造点，或扩展本判据的解析（**不要**登记豁免）」。
+        if action == "routing_gaps":
+            return ToolResult(success=True, data=data, message="工艺路线缺口如下")
+        if action == "route_signals":
+            return ToolResult(success=True, data=data, message="信号映射如下")
+        if action == "routing_anomalies":
+            return ToolResult(success=True, data=data, message="路线来源异常订单如下")
+        if action == "fee_combinations":
+            return ToolResult(success=True, data=data, message="加工费组合定价如下")
+        if action == "fee_gaps":
+            return ToolResult(success=True, data=data, message="加工费缺口如下")
+        return ToolResult(success=True, data=data, message="卡点（没开工）如下")
