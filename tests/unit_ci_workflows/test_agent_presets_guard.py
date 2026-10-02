@@ -35,7 +35,6 @@ CHECK_SH = REPO_ROOT / "scripts" / "preset-anchor-check.sh"
 REFRESH_SH = REPO_ROOT / "scripts" / "preset-anchor-refresh.sh"
 #: **业务仓**里的预设路径（`check` 子命令仍按这个口径判 —— 与活锚无关）。
 SKILL_REL = ".agent-presets/migao/skills/migao-dev-flow/SKILL.md"
-PRESET_YML_REL = ".agent-presets/migao/preset.yml"
 #: **预设仓检出（活锚镜像）的仓根** —— S4（issue #6020）起仓根**就是** preset 目录
 #: （`preset.yml` 在根，不再有 `.agent-presets/migao/` 这一层）。`MIGAO_PRESET_MIRROR` 可覆盖，
 #: 与本机 `scripts/preset-anchor-check.sh` 的默认值同源。
