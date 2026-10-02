@@ -17,6 +17,8 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -162,6 +164,22 @@ public class PermissionInterceptor implements HandlerInterceptor {
             throw new AccessDeniedException("无法获取用户信息");
         }
 
+        // F3 去重（issue #6063）：同一请求里 preHandle（MVC 提前判定）与 AOP @Around（双保险）
+        // 会先后各跑一次同一判定 ⇒ 以 request attribute 记 (userId, 权限码)，第二次直接复用，
+        // 保证一次请求只查一次权限（SecurityConfigTest 承重判据：getUserPermissions 恰好 1 次）。
+        // 拒绝路径不缓存（拒绝即异常终止请求，不会发生第二次）；非 Web 上下文（命令行/异步）无
+        // request attributes ⇒ 行为不变。
+        ServletRequestAttributes requestAttributes =
+                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        String memoKey = null;
+        if (requestAttributes != null) {
+            memoKey = getClass().getName() + ".checked." + userId + "." + requiredPermission;
+            if (Boolean.TRUE.equals(requestAttributes.getRequest().getAttribute(memoKey))) {
+                log.debug("权限检查复用本请求已通过的判定：用户 {} 权限 {}", userId, requiredPermission);
+                return;
+            }
+        }
+
         // 获取用户所有权限
         List<String> userPermissions = roleService.getUserPermissions(userId);
 
@@ -176,6 +194,9 @@ public class PermissionInterceptor implements HandlerInterceptor {
                     "权限不足，需要权限: " + requiredPermission, requiredPermission);
         }
 
+        if (requestAttributes != null) {
+            requestAttributes.getRequest().setAttribute(memoKey, Boolean.TRUE);
+        }
         log.debug("权限检查通过：用户 {} 拥有权限 {}", userId, requiredPermission);
     }
 
