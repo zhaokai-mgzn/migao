@@ -2822,7 +2822,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（56 case）
+## 杂项域（57 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3606,6 +3606,20 @@
 跳过: [backend-contract] 部署对账值守面的静态/执行式结构判据（只读仓内文件 + 桩 gh/docker + 真 git 仓库；零网络、零真 ACR、不写共享 /tmp、不烧 token）由 tests/unit_ci_workflows/test_deploy_watchdog.py 与 tests/unit_ci_workflows/test_deploy_reconcile_state.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #5935：PR #5931 的值守面**第一次真跑**（run 36911070357）就 fail-closed 误报）。**根因（实测复现，推翻 issue 正文的归因）**：`gh workflow view "$wf" --ref main` 100% 失败（gh 要求 `--ref` 必搭 `--yaml`；本机 0.063s、run 日志每条 ≈58ms）⇒ 六条腿全被误记 `notarget`、`seen=6 acted=0` 三桶全 0。落码 = ① `scripts/deploy_reconcile_state.sh`（新，外置状态机：腿清单唯一来源 = `reconcile_one` 调用 · `unrecorded` 种子 · 整行替换 · `on_main()` 三态 · `watchdog_missing_gate` 具名判红）② `.github/workflows/deploy-reconcile.yml`：判据换 `on_main`、逐腿状态机外置、`on.workflow_run`（六条 deploy 腿 `completed`，`branches: [main]`）、值守面四桶分级 + 机制故障单（`type/bug`，不开业务单）、存活读数带具名清单 ③ 判据 tests/unit_ci_workflows/test_deploy_watchdog.py（+13 条）+ tests/unit_ci_workflows/test_deploy_reconcile_state.py（新，on_main 三态正/负例锚）④ 台账 deploy_watchdog_ledger.json 补 `clearing_event` + `event_trigger_contract`。⚠️ **红证（改前/改后双向对照）**：把新增判据拿到 **pre-fix** 的 workflow 上跑 ⇒ **7 failed / 4 passed**（4 条通过的是**防放宽**的对照读数，不是修好的部分）；改后 **45 passed**。⚠️ 取号 **MC-056**（**空档号≠可用号**：`next_case_id.py MC` 建议 MC-049，而 MC-050 的 merge_log 逐字记着它被在飞分支占用 ⇒ 按「当前最大号 +1」取 056）。⚠️ 本包**顺手改准**了 test_deploy_watchdog.py 文件头那条过期注释（原写「main 上已是 12,524」，是 #5931 落地**前**的起草读数；现取改前 = 13,125）。⚠️ 未做（照单登记）：不改值守面的只读性质（不重试部署、不回滚、不写仓库）；不新增 schedule 频率；不碰 push 触发面。⚠️ 未固化：`wiring_claims_ledger.json` 的接线锚左端要求 `.py` ⇒ workflow YAML 接线面仍由**执行式判据**承担（作者的一次动作，不是常驻机制）。 ｜ tags: ci, deploy, watchdog, ledger, red-proof, event-driven
+
+### MC-059. deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#` 🔵
+```
+你: （研发工具 / 判据级，无 C 端行为）「注释里的 `$foo`」不得被判成未定义变量：注释**不参与执行** ⇒ 它既不是未定义引用、也不可能产生 `set -u` 的 unbound variable；而把**同一句**搬到可执行行必须照样具名判红 —— 本单治的是**假红**，**不放宽射程**
+数据: **病（现取读数，2026-10-02）**：在某条 deploy 腿的 `run` 正文里写一句**只是注释**的说明，只要含 `$foo` 就判红。内存复算（直接调 `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py` 的 `_lint`，喂合成语料）= `['x.yml::demo::foo']`（假红）。根因 = 清洗只有 `SINGLE_QUOTED.sub` + `EXPR.sub`，**没有剥注释**。影响（为什么值得单独立案）：作者唯一的过关办法是**把注释改写成不含 `$` 的措辞** —— 这正是本仓最忌的「判红逼人把东西写得更差」（本次实测：同一 PR **被挡两次**，两次都是改写注释）。
+数据: **修法（复用优先，不另造尺子）**：`_lint` 的清洗链前面加一环 `_without_comments(body)`（逐行调 `.github/danger_scan.py::strip_comment`，仓内**唯一**一份剥注释实现，issue #5268）—— **不新增第二份**（判据 4d 按 `is` 判同源）。⚠️ **顺序不许反**：剥注释必须在 `EXPR` / `SINGLE_QUOTED` **之前**，否则注释里的一个撇号（`# don't do this`）会跟后文任意一个 `'` 配对、把两者之间的**真代码整段抹掉** ⇒ 真未定义变量**漏检**（实测改前读数 `[]`、改后 `['x.yml::demo::REAL_UNDEFINED']`）—— 那是比假红更坏的**反向缺陷**，由负例锚 `test_comment_apostrophe_does_not_hide_a_real_ref` 钉住。
+数据: **射程不放宽的现取证据（全仓 41 个 workflow 文件，改前 ⇄ 改后走同一入口）**：判红条数 **13 → 11**；**新增 0 条**（没有任何真判据被这次修复吃掉）；消失的 2 条**逐条都是注释形态**（`.github/workflows/deploy-reconcile.yml` 的 step `值守面（超时未部署 ⇒ 判红 + 开/清值守 issue）` 里那句注释 `变量一律 ${X:-} 兜底`；`.github/workflows/verify-trigger.yml` 里那句注释 `index($n)`）。三条 deploy 腿改前 = 改后 = `[]`。
+数据: **判据 4~5（全部在 `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py`）**：① `test_comment_only_refs_are_not_flagged`（注释含 `$foo`/`$bar` ⇒ `[]`）② `test_executable_line_ref_is_flagged_by_name`（同一句搬到可执行行 ⇒ `['x.yml::demo::bar', 'x.yml::demo::foo']`；先断言「语料变异真的生效」）③ `test_comment_stripping_does_not_misfire`（**4 条负例锚**：`${VAR#prefix}` / `${VAR##pattern}` / 单引号 / 双引号内含 `#`；每条**尾部再挂一个真未定义引用** ⇒ 若被误当注释截断，尾部真判据会连带消失、断言当场红 —— 不是「恰好绿」）④ `test_comment_awareness_has_discriminating_power`（**注入式双向**：把尺子换成恒等函数 = 改前形态 ⇒ 注释语料**必须变红**、可执行行照旧红、撤掉注入回到 `[]`）⑤ `test_strip_comment_has_a_single_implementation`（同源 = 同一对象 + 本文件没有第二份实现）。另有 `test_shared_yardstick_is_shell_safe` 直接打在尺子本体上（4 条负例 + 1 条反向对照）。
+数据: **修前红（§28.1 出口①：临时反转 / 注入）**：把 `_lint` 的清洗那一环临时退回改前形态（`_without_comments(body)` → `body`；逐字节恢复已用 `cmp` 自证）⇒ 本文件判据 **3 failed / 12 passed**，失败三条 = `test_comment_only_refs_are_not_flagged` / `test_comment_apostrophe_does_not_hide_a_real_ref` / `test_comment_awareness_has_discriminating_power`。复算 = `python3 -m pytest tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py -q`。
+数据: **接线声明（§28.2.1）**：本判据显式声明 `WIRING_UNDER_TEST = .github/danger_scan.py::strip_comment` 并登记进 `tests/unit_ci_workflows/wiring_claims_ledger.json` ⇒ 该锚被删 / 改名时 `tests/unit_ci_workflows/test_wiring_claims_registry.py` 的判据 3 具名判红（**摘掉接线 ⇒ 红**）。
+数据: **未固化（照实登记）**：① 本仓**没有**「扫 shell 正文取 `$VAR` 的判据必须剥注释」的机械元守卫 —— 探测量过（用「只在注释里含 `$foo`」的语料喂判据面 372 个 `.py` 的每个常量正则）命中 **24 条**，绝大多数是通用引号正则的**假阳性**（判据分不清「这个正则扫的是不是 shell 正文」）⇒ 加这条规则要么背 24 条豁免台账、要么误伤，比不加更坏，故不加。② 既有「唯一性守卫」的扫描面**只有 `.github/**`**（`tests/unit_ci_workflows/test_automerge_bot_safe_path.py::TestCriterion11YardstickIsSingleSource`）：`tests/unit_ci_workflows/test_swas_nginx_rate_limit.py` 里另有一份同名 `strip_comment`（nginx.conf 语义，与 shell 的「空白前置」规则不同 ⇒ **有意不合并**）它扫不到 —— 属**顺带发现**，按铁律 12(b)③ 在会话内提出，不在本包修。
+跳过: [backend-contract] deploy 腿 lint 的静态结构判据（零 LLM、秒级、只读仓内 workflow YAML + 内存合成语料）由 tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py 的判据 4~5 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #5944；来源 = 2026-10-02 在 PR #5943 里被这条 lint **挡了两次**，实施者按铁律 12(b) 在会话内提出，用户当日裁定「开小单 + 派包修」；归因层级 = 研发工具 / 判据级）。落码 = ① `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py`：新增 `_without_comments()`（逐行复用 `.github/danger_scan.py::strip_comment`，**唯一**一份剥注释实现），接在 `EXPR` / `SINGLE_QUOTED` **之前**；② 判据 4~5（假红消失 ⇄ 真红仍在 / 4 条负例锚 / 撇号反向缺陷锚 / 注入式双向自证 / 同源单一实现）+ `WIRING_UNDER_TEST` 声明与 `wiring_claims_ledger.json` 登记。取号 **MC-059**：`python3 scripts/next_case_id.py MC` 现取 main = 001–048、050–**056**，脚本建议的 **MC-049 是历史空档**（MC-050 的 merge_log 逐字记着它曾被在飞分支 `ci/5814-migrate-pr-legs` 占用，而该 PR #5818 已 CLOSED）⇒ 沿用 MC-054/055/056 的「空档号 ≠ 可用号」先例，按**当前最大号 +1** 取号；本包开工时现取在飞占用 = **PR #5940（MC-057）/ PR #5943（MC-058）** ⇒ 取 **MC-059**。 ｜ tags: ci, workflow, lint, comment-aware, red-proof
 
 ## 商家入驻域（5 case）
 
@@ -8558,8 +8572,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：599（活跃 126，跳过 473）
-- tier 分布：smoke 12 / normal 554 / adversarial 31
+- 用例总数：600（活跃 126，跳过 474）
+- tier 分布：smoke 12 / normal 555 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8574,7 +8588,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：56
+- 杂项域：57
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -8657,6 +8671,7 @@
 - MC-055: 合并了但没上线必须有值守面（issue #5929）：main HEAD 合入超过 N 秒仍未部署 ⇒ 判红并自己开单、部署成功后自动关闭；C′ 之后「镜像不在 ACR」不得当判据（噪声判据是缺陷）；判不了必须 fail-closed
 - MC-056: CI 面记号与台账必须**双向**绑定（`FM-E24`/`FM-E25` 同批）：文档里具名而台账未登记 ⇒ 红；「CI 迟迟不来先看 `mergeable`」的判别动作必须留在加载面（文本锚，删掉即红）
 - MC-057: 部署对账的「落状态」本身必须有判据 + 三态三分 + 事件驱动清零（issue #5935）：`gh workflow view --ref` 那条前置判据 100% 失败 ⇒ 六条腿全被误记 `notarget`；未落状态的腿必须具名判红、`notarget` 与机制故障不得混桶、部署完成事件必须能触发清零且不得自激
+- MC-059: deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#`
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

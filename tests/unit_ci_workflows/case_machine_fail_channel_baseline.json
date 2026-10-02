@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 103
+    "backend_contract_scoring_zero": 104
   },
   "history": [
     {
@@ -177,6 +177,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 103,
       "note": "新业务需求（用户 2026-10-01 走查截图裁定：「放到新增商品标题右侧合适位置」+ 建单页同步对齐；issue #5918）新增 1 条 `[backend-contract]` 用例（PR-120：商品页「拍照 / 上传识别」入口进「新增商品」标题卡片内的标题行右侧、识别在重置前；含类级元守卫「渲染点必须登记落点 + 容器锚与运行期证据双向可查」）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，102 → 103）。机器判红通道 = `traces.tests` 的三个文件：`frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx`（3 条：落点在标题卡片内且与重置同排 / 选图→上传→识别→回填且零 createProduct / 回填后仍留在标题卡片内）、`frontend/admin-web/tests/unit/recognize-entry-placement-guard.test.ts`（6 条：未登记即红 / 台账双向 / 容器锚与运行期证据逐字可查 / 判别力自证）、`frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx`（既有判据 2：建单页不退化），逐条非空且真实存在。同一 PR 还**改判**了 PR-044（卷长文案正名为标称值：新增判据 5 + 补 `traces.tests` 的前端三条）—— 它本就是计入本读数的存量条目（`[backend-contract]` + `expectations: []`）⇒ 读数不变。改前实测读数（本包 5 个测试文件）：`9 failed / 43 passed`。真债务 `no_channel_total` 仍为 **0**。"
+    },
+    {
+      "sha": "pending-pr-5944",
+      "date": "2026-10-02",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 104,
+      "note": "issue #5944（deploy 腿 `set -u` 未定义变量 lint **把 shell 注释一起扫** ⇒ 注释里写 `$foo` 假红；实测把 PR #5943 挡了两次、作者只能把注释改写成不含 `$` 的措辞）新增 1 条 `[backend-contract]` 用例（MC-059）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，103 → 104）。机器判红通道 = `traces.tests` 的 `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py`（判据 4~5：注释语料 ⇒ `[]` / 可执行行 ⇒ 具名红 / 4 条负例锚 / 注入式双向自证 / 同源单一实现；修前红实测 3 failed / 12 passed），非空且真实存在；`traces.ci` = `pr-check.yml` 的 `ci workflow helper unit tests` job（实际跑该 pytest）。真债务 `no_channel_total` 仍为 **0**（不变）。"
     }
   ]
 }

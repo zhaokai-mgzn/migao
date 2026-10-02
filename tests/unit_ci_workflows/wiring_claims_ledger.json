@@ -26,6 +26,16 @@
       "case_ids": [
         "MC-051"
       ]
+    },
+    {
+      "declared_in": "tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py",
+      "wiring": ".github/danger_scan.py::strip_comment",
+      "registered_at": "2026-10-02（issue #5944）",
+      "covers": "deploy 腿 `set -u` 未定义变量 lint 的**剥注释这一环**：`_lint` 必须真的调 `.github/danger_scan.py::strip_comment`（仓内**唯一**一份剥注释实现，issue #5268），而不是本地复制一份 —— 本条目声明的是接线这一半：该锚被删 / 改名时，守卫必须能看见并具名报出。判据 4d = `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py::test_strip_comment_has_a_single_implementation`（按 `is` 判同源 + 本文件没有第二份 `def strip_comment`）。⚠️ 已登记的残余（顺带发现，不在本包修）：`tests/unit_ci_workflows/test_automerge_bot_safe_path.py::TestCriterion11YardstickIsSingleSource` 的「唯一性」扫描面**只有 `.github/**`**（不是全仓）—— `tests/unit_ci_workflows/test_swas_nginx_rate_limit.py` 里另有一份同名 `strip_comment`（nginx.conf 用，语义与 shell 不同、**有意不合并**）它扫不到。本包只钉「本判据用的是共享那一个对象」。",
+      "red_proof": "`tests/unit_ci_workflows/test_wiring_claims_registry.py::test_mutating_the_real_wiring_anchor_turns_it_red` —— 对台账里**每一条**锚（含本条目）各自的真文件做内存变异（符号改名）⇒ 判据 3 **各自**具名报出；不注入 ⇒ 都不报（反向对照）。另：本包自己的「摘掉剥注释 ⇒ 注释语料必红」双向自证 = `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py::test_comment_awareness_has_discriminating_power`（实测：摘掉后 3 failed / 12 passed）。",
+      "case_ids": [
+        "MC-059"
+      ]
     }
   ],
   "coverage_boundary": [
