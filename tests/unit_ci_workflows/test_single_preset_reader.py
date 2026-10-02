@@ -94,7 +94,9 @@ SYNTACTIC_PATTERNS: tuple[str, ...] = (
 )
 
 #: **冻结计数**：当前登记的残余条数（只许缩短 —— 修掉一条就必须同批减一）。
-RESIDUALS_FROZEN = 3
+#: 现取 = 1（`scripts/drift_audit.py`，`allowed_by_design`）；**集成时** `test_dev_mode_failure_modes.py`
+#: 与 `test_agent_presets_guard.py` 两条已随本次收口删除（它们已不再命中扫描面）。
+RESIDUALS_FROZEN = 1
 
 
 # ──────────────────────────────────────────────────────────────────────────────

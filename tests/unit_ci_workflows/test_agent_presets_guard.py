@@ -23,10 +23,11 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
+
+from unit_ci_workflows import preset_corpus as pc
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUARD = REPO_ROOT / "scripts" / "agent-presets-guard.py"
@@ -36,82 +37,11 @@ REFRESH_SH = REPO_ROOT / "scripts" / "preset-anchor-refresh.sh"
 #: **业务仓**里的预设路径（`check` 子命令仍按这个口径判 —— 与活锚无关）。
 SKILL_REL = ".agent-presets/migao/skills/migao-dev-flow/SKILL.md"
 #: **预设仓检出（活锚镜像）的仓根** —— S4（issue #6020）起仓根**就是** preset 目录
-#: （`preset.yml` 在根，不再有 `.agent-presets/migao/` 这一层）。`MIGAO_PRESET_MIRROR` 可覆盖，
-#: 与本机 `scripts/preset-anchor-check.sh` 的默认值同源。
-PRESET_MIRROR = Path(os.environ.get("MIGAO_PRESET_MIRROR") or (Path.home() / "migao-dev-preset-anchor"))
-#: 镜像里的技能 / preset.yml（相对镜像仓根）。
+#: （`preset.yml` 在根，不再有 `.agent-presets/migao/` 这一层）。
+#: 读那份内容的**唯一口径 = `tests/unit_ci_workflows/preset_corpus.py`**（`MIGAO_PRESET_MIRROR`
+#: 由它自己按同源规则解析）。
 SKILL_IN_PRESET = "skills/migao-dev-flow/SKILL.md"
 PRESET_YML_IN_PRESET = "preset.yml"
-
-#: 读**真资产**时的 git 基线**候选**（按序取第一个真读得到的）。
-#: 🔴 实测（本 PR 的 CI 第一轮）：`pull_request` 检出是**浅克隆** ⇒ `origin/main~1` 不解析
-#: （`fatal: Not a valid object name`）⇒ 钉死单个 ref 必红。按可用性探：
-#: `origin/main`（合并前带着预设）→ `origin/main~1`（合并后退到父提交）→ `HEAD`。
-PRESET_BASELINE_REFS = ("origin/main", "origin/main~1", "HEAD~1", "HEAD~2", "HEAD")
-#: 预设内容在**业务仓基线**里的前缀（S4 前的位置）。
-PRESET_BASELINE_PREFIX = ".agent-presets/migao/"
-
-
-def _preset_corpus(ref: str) -> tuple[list[str], str] | None:
-    """`ref` 里的预设技能清单；该 ref 解析不开 / 不含该路径 ⇒ None。
-
-    判据是「**内容真读得到**」而不是「ref 解析得开」—— 浅检出里会出现「ref 在但不含该路径」的形态。
-    """
-    proc = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "ls-tree", "-r", "--name-only", ref],
-        capture_output=True, text=True,
-    )
-    if proc.returncode != 0:
-        return None
-    hits = [x for x in proc.stdout.splitlines()
-            if x.startswith(PRESET_BASELINE_PREFIX + "skills/") and x.endswith("/SKILL.md")]
-    return (hits, ref) if hits else None
-
-
-def _git_preset_skills() -> tuple[list[str], str]:
-    """→ （预设技能的**仓库相对路径**清单, 可用的 ref）。都取不到 ⇒ 抛错（fail-closed）。"""
-    for ref in PRESET_BASELINE_REFS:
-        got = _preset_corpus(ref)
-        if got:
-            return got
-    raise AssertionError(
-        "任何候选基线里都读不到 "
-        f"`{PRESET_BASELINE_PREFIX}skills/*/SKILL.md`（试过 {list(PRESET_BASELINE_REFS)}）"
-        " —— 预设内容已迁出业务仓（S4 / issue #6020）⇒ 要么建本机预设仓镜像"
-        "（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`，见 AGENTS.md「开发环境准备」），"
-        "要么把候选换成还带着该路径的 ref"
-    )
-
-
-def _materialize_preset_skills() -> list[Path]:
-    """把预设的技能 `SKILL.md` **落到临时目录**再判 —— 返回那些文件路径。
-
-    载体优先级：① 本机**预设仓镜像**（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`，= 权威源）；
-    ② 镜像不存在时回落到**本仓 git 基线** `origin/main~1`（S4 之前的提交里路径还在）。
-    两条都取不到 ⇒ **抛错**（刻意**不用** `pytest.skip`：那会污染 helper-leg 的 skip 冻结读数，
-    而「判不了」也不该长得像「没东西可判」）。
-    """
-    out_dir = Path(tempfile.mkdtemp(prefix="migao-preset-skills-"))
-    if (PRESET_MIRROR / "skills").is_dir():
-        shutil.copytree(PRESET_MIRROR / "skills", out_dir / "skills")
-        return sorted((out_dir / "skills").glob("*/SKILL.md"))
-    rels, ref = _git_preset_skills()
-    for rel in rels:
-        proc = subprocess.run(
-            ["git", "-C", str(REPO_ROOT), "show", f"{ref}:{rel}"],
-            capture_output=True, text=True,
-        )
-        assert proc.returncode == 0, (
-            f"预设真资产读不到：`git show {ref}:{rel}` 失败（{proc.stderr.strip()}）"
-            " —— S4 / issue #6020 后预设住在预设仓；建本机镜像见 AGENTS.md「开发环境准备」"
-        )
-        dst = out_dir / Path(rel).relative_to(PRESET_BASELINE_PREFIX)
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(proc.stdout, encoding="utf-8")
-    skills = sorted(out_dir.glob("skills/*/SKILL.md"))
-    if not skills:
-        raise AssertionError("预设真资产为空 ⇒ 判据会空跑（不许静默通过）")
-    return skills
 
 SKILL_TMPL = """---
 name: migao-dev-flow
@@ -123,6 +53,30 @@ description: 夹具技能
 
 正文占位（第 {filler} 号夹具）。
 """
+
+
+def _preset_skills() -> list[Path]:
+    """→ 真资产里全部技能的 `SKILL.md` 路径 —— **委派**给唯一口径 `preset_corpus`。
+
+    🔴 本函数此前**自带第二份读取实现**（自己枚举 `PRESET_BASELINE_REFS` + `git ls-tree` +
+    `git show` + 自己拼镜像候选）。它与唯一口径**各自腐烂**：候选表只覆盖固定 5 个 ref ⇒
+    S4 之后（预设只在**历史**里）在 CI（无镜像）上整条读不到 ⇒
+    `test_real_presets_frontmatter_is_loadable` 判红（实测：试过
+    `origin/main / origin/main~1 / HEAD~1 / HEAD~2 / HEAD` 全部落空）。
+    ⇒ 读法（本仓 → **历史候选** → 镜像）现在**只住在** `preset_corpus` 里，本文件零预处理。
+
+    取不到 ⇒ **抛错**（刻意**不用** `pytest.skip`：那会污染 helper-leg 的 skip 冻结读数，
+    而「判不了」也不该长得像「没东西可判」）。
+    """
+    root = pc.preset_root()
+    if root is None:
+        raise AssertionError(pc.corpus_help(SKILL_IN_PRESET))
+    skills = sorted(root.glob("skills/*/SKILL.md"))
+    if not skills:
+        raise AssertionError(
+            f"预设真资产为空（`{root}/skills/*/SKILL.md`）⇒ 判据会空跑（不许静默通过）"
+        )
+    return skills
 
 
 def _load_guard():
@@ -966,8 +920,9 @@ def test_real_presets_frontmatter_is_loadable():
     """守**真资产**：仓库里两个技能的 frontmatter 必须能被加载器读到（0 问题）。
 
     这条会红在「有人把新节插进 frontmatter 注释块 / 写坏 `description`」上 —— 而那正是本批踩过的形态。
+    读那份真资产走**唯一口径** `preset_corpus`（业仓工作树 / 历史候选 / 镜像），不再自带第二份实现。
     """
-    skills = _materialize_preset_skills()
+    skills = _preset_skills()
     for skill in skills:
         assert GUARD_MODULE._frontmatter_problems(skill) == [], f"{skill} 的 frontmatter 有问题"
 

@@ -60,6 +60,11 @@ DEV_FLOW_SKILL_REL = "skills/migao-dev-flow/SKILL.md"
 DEV_FLOW_CARRIER_REL = "skills/migao-dev-flow/scripts/ui-multimodal-acceptance.mjs"
 PRESET_YML_REL = "preset.yml"
 
+#: 「预设内容在**本仓**」的**最小可判形态** —— 本仓那一路**只认内容**（详见 `_has_preset_content`）。
+LOCAL_PRESET_MARKER = "preset.yml"
+#: 「预设内容在**预设仓检出**里」的形态 = `skills/` 下有真技能（**不是**只判 `skills/` 目录在）。
+MATERIALIZED_PRESET_MARKER = "skills/*/SKILL.md"
+
 _CACHE: list = []
 
 
@@ -119,9 +124,24 @@ def _materialize_from_git() -> Path | None:
             dst = out / Path(rel).relative_to(PRESET_PREFIX_IN_REPO)
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_text(blob.stdout, encoding="utf-8")
-        if (out / "skills").is_dir():
+        if _has_preset_content(out):
             return out
     return None
+
+
+def _has_preset_content(root: Path) -> bool:
+    """→ 这个目录里**真有**预设内容吗（内容级判定，不判「目录在不在」）。
+
+    🔴 **为什么不能只判 `(root / "skills").is_dir()`**（实测 2026-10-02，本模块的一条**假绿**）：
+    git 与 `shutil` 都**不跟踪空目录**，所以「预设被删掉」之后，工作树里常留下
+    `.agent-presets/migao/skills/migao-dev-flow/` 这种**空壳**（`unlink` 文件不删目录 /
+    checkout 一个不带该文件的提交也会留下目录）。旧判定会因此把**空壳**当成「本仓那一路命中」，
+    `preset_root()` 立刻返回它、**根本轮不到 git 那些历史候选** ⇒ `preset_text` 读成 None。
+    ⇒ 判「内容真读得到」，不判「目录在不在」。
+    """
+    if (root / LOCAL_PRESET_MARKER).is_file():
+        return True
+    return any(root.glob(MATERIALIZED_PRESET_MARKER))
 
 
 def preset_root() -> Path | None:
@@ -129,7 +149,7 @@ def preset_root() -> Path | None:
     if _CACHE:
         return _CACHE[0]
     local = REPO_ROOT / PRESET_PREFIX_IN_REPO
-    root: Path | None = local if (local / "skills").is_dir() else None
+    root: Path | None = local if _has_preset_content(local) else None
     if root is None:
         # ② 业务仓 git 基线（本机与 CI **同一份** ⇒ 消掉「镜像落后」造成的口径漂移）
         root = _materialize_from_git()
@@ -181,3 +201,41 @@ def require_preset_path(rel: str) -> Path:
     if p is None or not p.is_file():
         raise AssertionError(corpus_help(rel))
     return p
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 路径口径转换：**业务仓相对** ⇄ **预设根相对**（「内化进唯一口径」的那一层）
+# ──────────────────────────────────────────────────────────────────────────────
+# 🔴 为什么这一层必须**住在这里**（实测 2026-10-02）：
+#   「`.agent-presets/migao/skills/…` → `skills/…`」这一步转换，此前**每个消费方各写一份**
+#   （`startswith` + 下标切片 / 另起别名常量）。那正是「第二份读取口径」长出来的入口：转换写错
+#   （少剥一层 / 多剥一层）会**静默读不到**，而形态学守卫会把它与「复用唯一口径」区分不开。
+#   ⇒ 转换收进唯一口径，消费方**零预处理**地调 `preset_text_from_in_repo_rel()`。
+
+def preset_rel_from_in_repo_rel(rel: str) -> str:
+    """业务仓相对路径（`.agent-presets/migao/skills/…`）⇒ **预设根相对**（`skills/…`）。
+
+    不带该前缀的路径**原样返回**（幂等）—— 调用方不必先自己判前缀。
+    """
+    prefix = PRESET_PREFIX_IN_REPO                          # ".agent-presets/migao/"
+    head = rel[: len(prefix)]
+    return rel[len(prefix):] if head == prefix else rel
+
+
+def is_in_repo_rel(rel: str) -> bool:
+    """`rel` 是不是**业务仓里**那条预设路径（`.agent-presets/migao/…`）。
+
+    给调用方做「这条路径该走预设语料、还是走本仓文件」的**单一**判据 —— 别处不许再自己比对前缀。
+    """
+    prefix = PRESET_PREFIX_IN_REPO
+    head = rel[: len(prefix)]
+    return head == prefix
+
+
+def preset_text_from_in_repo_rel(rel: str) -> str | None:
+    """业务仓相对路径 ⇒ 文本：**零预处理**入口（转换 + 读取都在这里）。
+
+    这是消费方该用的那个：`preset_text_from_in_repo_rel(SKILL_REL)`。
+    取不到 ⇒ None（调用方 fail-closed 判红）；非预设前缀的路径 ⇒ 同样按预设根相对处理（读不到即 None）。
+    """
+    return preset_text(preset_rel_from_in_repo_rel(rel))
