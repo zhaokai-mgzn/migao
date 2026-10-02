@@ -1594,6 +1594,10 @@ CREATE TABLE IF NOT EXISTS daily_briefings (
     biz_date DATE NOT NULL,
     content JSONB NOT NULL DEFAULT '{}',
     source_snapshot JSONB NOT NULL DEFAULT '{}',
+    -- 逐规则接线状态（issue #5955，V144 迁移）：ai-agent 引擎 proactive_status(snapshot) 的**原样**输出
+    -- （{rule_id: {status, reason, missing, gaps, caveats}}）。可空：NULL = 未采集（V144 之前的存量行）
+    -- ⇒ 卡片面**不渲染**该面板（未知 ≠ 没问题）。admin-api 只透传，不重算。
+    proactive_status JSONB,
     verify_status VARCHAR(32) NOT NULL DEFAULT 'pending',  -- pending / verified / partial / failed
     generated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

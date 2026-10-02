@@ -1,4 +1,4 @@
-// case_ids: DA-001, DA-002, ST-001, DA-014
+// case_ids: DA-001, DA-002, ST-001, DA-014, DA-021
 
 package com.migao.admin.controller;
 
@@ -7,6 +7,7 @@ import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.DailyBriefing;
 import com.migao.admin.service.DailyBriefingService;
+import com.migao.admin.time.BusinessClock;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -25,6 +27,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.*;
@@ -46,6 +49,11 @@ class BriefingControllerTest {
 
     @Mock
     private DailyBriefingService dailyBriefingService;
+
+    // 业务时间只经生产侧同一只单点（issue #5651 的测试侧守卫）：测试里**禁止**裸 `LocalDate.now()`
+    // —— 裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天（每天红 8 小时）。
+    @Spy
+    private BusinessClock businessClock = new BusinessClock();
 
     @InjectMocks
     private BriefingController briefingController;
@@ -72,7 +80,7 @@ class BriefingControllerTest {
         void generated() throws Exception {
             DailyBriefing briefing = DailyBriefing.builder()
                     .tenantId(1L)
-                    .bizDate(LocalDate.now())
+                    .bizDate(businessClock.today())
                     .verifyStatus("verified")
                     .content(Map.of("summary", "昨日经营平稳"))
                     .sourceSnapshot(Map.of("metrics", Map.of("today_orders", 3)))
@@ -99,6 +107,63 @@ class BriefingControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data.generated").value(false));
+        }
+
+        @Test
+        @DisplayName("逐规则接线状态随响应透出（issue #5955）：not_wired 带原因、wired 带 caveats")
+        void proactiveStatusIsExposed() throws Exception {
+            Map<String, Object> status = new HashMap<>();
+            status.put("repeat_returns", Map.of(
+                    "rule_id", "repeat_returns",
+                    "rule_name", "连续退货",
+                    "status", "not_wired",
+                    "reason", "快照未提供 returns 行数组（装配层未接线）",
+                    "missing", List.of("returns"),
+                    "gaps", List.of(),
+                    "caveats", List.of()));
+            status.put("low_stock", Map.of(
+                    "rule_id", "low_stock",
+                    "rule_name", "库存告急",
+                    "status", "wired",
+                    "missing", List.of(),
+                    "gaps", List.of(),
+                    "caveats", List.of("阈值可被租户配置覆盖")));
+            DailyBriefing briefing = DailyBriefing.builder()
+                    .tenantId(1L)
+                    .bizDate(businessClock.today())
+                    .verifyStatus("verified")
+                    .content(Map.of("summary", "昨日经营平稳"))
+                    .proactiveStatus(status)
+                    .build();
+            when(dailyBriefingService.getTodayBriefing(eq(1L))).thenReturn(briefing);
+
+            mockMvc.perform(get("/api/admin/briefing/today"))
+                    .andExpect(status().isOk())
+                    // 四态原样出网：不许被校验/对账层当作数值字段处理掉
+                    .andExpect(jsonPath("$.data.proactive_status.repeat_returns.status").value("not_wired"))
+                    .andExpect(jsonPath("$.data.proactive_status.repeat_returns.reason")
+                            .value("快照未提供 returns 行数组（装配层未接线）"))
+                    .andExpect(jsonPath("$.data.proactive_status.low_stock.status").value("wired"))
+                    .andExpect(jsonPath("$.data.proactive_status.low_stock.caveats[0]")
+                            .value("阈值可被租户配置覆盖"));
+        }
+
+        @Test
+        @DisplayName("未采集（存量行 / 本列面世前）→ proactive_status 为 null：未知 ≠ 没问题")
+        void proactiveStatusIsNullWhenNotCollected() throws Exception {
+            DailyBriefing briefing = DailyBriefing.builder()
+                    .tenantId(1L)
+                    .bizDate(businessClock.today())
+                    .verifyStatus("verified")
+                    .content(Map.of("summary", "昨日经营平稳"))
+                    .build();
+            when(dailyBriefingService.getTodayBriefing(eq(1L))).thenReturn(briefing);
+
+            mockMvc.perform(get("/api/admin/briefing/today"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.generated").value(true))
+                    // 前端把 null 与「键缺失」当同一件事（都 = 未采集）⇒ 这里钉住「不是对象」
+                    .andExpect(jsonPath("$.data.proactive_status").value(org.hamcrest.Matchers.nullValue()));
         }
     }
 
@@ -186,7 +251,7 @@ class BriefingControllerTest {
         void generateSuccess() throws Exception {
             DailyBriefing briefing = DailyBriefing.builder()
                     .tenantId(1L)
-                    .bizDate(LocalDate.now())
+                    .bizDate(businessClock.today())
                     .verifyStatus("verified")
                     .content(Map.of("summary", "今日简报"))
                     .build();

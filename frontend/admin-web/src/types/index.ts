@@ -2250,12 +2250,42 @@ export interface BriefingContent {
   suggestions: BriefingItem[]
 }
 
+// 逐规则接线状态（主动发现 · 族 1，issue #5955）
+//
+// 🔴 三端同一份契约（ai-agent 引擎 `app/briefing/proactive.py::proactive_status` 是唯一判据源）：
+// 字段名与四个枚举值由 `backend/ai-agent-service/tests/test_briefing_proactive_status_visibility.py`
+// 与 admin-api 侧单测钉住，这里只做**渲染**，不做任何重算/改写。
+//
+// 四态语义（不可合并）：
+// · wired       已接入**且本次完整** —— 只有它才能把「空命中」读成「这方面没问题」
+// · not_wired   系统**未实现**（不可行动）
+// · not_enabled 系统**有**、**该租户没开**（**可行动**：去开启）
+// · incomplete  接上了但**本次不完整**（截断 / 维度缺值 / 有行未判定）
+export type ProactiveRuleState = 'wired' | 'not_wired' | 'not_enabled' | 'incomplete'
+
+export interface ProactiveRuleStatus {
+  rule_id: string
+  rule_name: string
+  status: ProactiveRuleState
+  /** 非 `wired` 时必有（不变式：`reason == null` ⟺ `wired`）；`wired` 时为 null */
+  reason?: string | null
+  missing?: string[]
+  gaps?: string[]
+  /** **数据源固有边界**（如审计 fail-open）—— 恒在（可为空数组），`wired` 时也不许静默 */
+  caveats?: string[]
+}
+
+/** 逐规则状态表：键 = rule_id */
+export type ProactiveStatus = Record<string, ProactiveRuleStatus>
+
 // 今日简报响应
 export interface TodayBriefingResponse {
   generated: boolean
   verifyStatus: string | null
   content: BriefingContent | null
   bizDate: string | null
+  /** 逐规则接线状态；null/缺失 = 未采集（本列面世前的存量行）⇒ **不渲染**面板（未知 ≠ 没问题） */
+  proactive_status?: ProactiveStatus | null
 }
 
 // 简报配置（企业开关 + 生成时刻）

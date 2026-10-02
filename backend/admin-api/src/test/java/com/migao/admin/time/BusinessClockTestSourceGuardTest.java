@@ -345,7 +345,11 @@ class BusinessClockTestSourceGuardTest {
      * 本单已按此修掉三个类（见 {@link #theClassesFixedByThisChangeAreClean()}）。</p>
      */
     private static final Map<String, Integer> LEDGER = Map.ofEntries(
-            Map.entry("com/migao/admin/controller/BriefingControllerTest.java|无参 LocalDate.now()", 2),
+            // 2026-10-02（issue #5955）销账**一条残留**（只许缩短）：`BriefingControllerTest` 全改用注入的
+            // `BusinessClock`（`businessClock.today()`）⇒ 该类归零，台账条目删除。
+            // `DailyBriefingServiceTest` 的 ×2 **保留**：现存两处是带 `BusinessClock.BUSINESS_ZONE` 的
+            // 显式时区写法（`LocalDate.now(BusinessClock.BUSINESS_ZONE)`，本类规则 needle 是 `LocalDate.now(`）
+            // —— 它们不是「裸 now()」，但仍在 needle 射程内 ⇒ 台账照旧登记。
             Map.entry("com/migao/admin/controller/BusinessFlowIntegrationTest.java|无参 LocalDateTime.now()", 1),
             Map.entry("com/migao/admin/controller/UploadControllerTest.java|无参 LocalDateTime.now()", 1),
             Map.entry("com/migao/admin/service/AutoBatchDispatchTest.java|无参 LocalDate.now()", 13),

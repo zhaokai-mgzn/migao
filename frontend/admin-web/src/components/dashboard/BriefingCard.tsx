@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { Sparkles, AlertTriangle, Lightbulb, ListTodo, ArrowRight, RefreshCw, Newspaper, ShieldCheck } from 'lucide-react'
 import { briefingApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import type { BriefingContent, BriefingItem, BriefingReviewItem } from '@/types'
+import ProactiveStatusPanel from '@/components/dashboard/ProactiveStatusPanel'
+import type { BriefingContent, BriefingItem, BriefingReviewItem, ProactiveStatus } from '@/types'
 
 /**
  * 智能每日经营简报卡（issue #3468，设计文档 docs/design/daily-briefing-design.md v0.2）
@@ -19,6 +20,8 @@ import type { BriefingContent, BriefingItem, BriefingReviewItem } from '@/types'
 export interface BriefingCardProps {
   /** 是否启用简报（企业开关）。关闭时不渲染整卡（菜单/首页同时隐藏，红线 3） */
   enabled?: boolean
+  /** `page` = 日报页（逐规则原因全展开）；`dashboard` = 看板首页（紧凑，绿行收起） */
+  variant?: 'page' | 'dashboard'
 }
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -106,11 +109,13 @@ function ReviewStrip({ items }: { items: BriefingReviewItem[] }) {
   )
 }
 
-export default function BriefingCard({ enabled = true }: BriefingCardProps) {
+export default function BriefingCard({ enabled = true, variant = 'dashboard' }: BriefingCardProps) {
   const [loading, setLoading] = useState(false)
   const [briefing, setBriefing] = useState<BriefingContent | null>(null)
   const [verifyStatus, setVerifyStatus] = useState<string | null>(null)
   const [generated, setGenerated] = useState(false)
+  // 逐规则接线状态（issue #5955）：后端原样透传的引擎四态；null = 未采集（不渲染面板）
+  const [proactiveStatus, setProactiveStatus] = useState<ProactiveStatus | null>(null)
 
   const fetchBriefing = useCallback(async () => {
     if (!enabled) return
@@ -120,6 +125,7 @@ export default function BriefingCard({ enabled = true }: BriefingCardProps) {
       const data = res.data.data
       setGenerated(!!data?.generated)
       setVerifyStatus(data?.verifyStatus ?? null)
+      setProactiveStatus(data?.proactive_status ?? null)
       // 后端 failed 状态返回 content={}（空对象）：归一化为 null，
       // 避免渲染期 briefing.review.length 等对 undefined 取属性崩溃（UI 旅程实证）
       const content = data?.content
@@ -132,6 +138,7 @@ export default function BriefingCard({ enabled = true }: BriefingCardProps) {
       console.error('Briefing load:', e)
       setGenerated(false)
       setBriefing(null)
+      setProactiveStatus(null)
     } finally {
       setLoading(false)
     }
@@ -181,25 +188,32 @@ export default function BriefingCard({ enabled = true }: BriefingCardProps) {
           </div>
         ) : !generated ? (
           // 引导空态：未生成/生成失败（不展示假数据，红线 4）
-          <div className="flex flex-col items-center justify-center py-8 text-center">
-            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-50 to-indigo-50">
-              <Newspaper className="h-5 w-5 text-primary-400" />
+          <div className="space-y-4">
+            {/* 简报没生成 ≠ 没有主动检查结论：有采集到就说清楚「哪些方面本次没有数据」 */}
+            <ProactiveStatusPanel status={proactiveStatus} variant={variant} />
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-50 to-indigo-50">
+                <Newspaper className="h-5 w-5 text-primary-400" />
+              </div>
+              <p className="text-sm font-medium text-neutral-600">今日简报尚未生成</p>
+              <p className="mt-1 max-w-md text-xs text-neutral-400">
+                开启「智能每日经营简报」后，系统将在每日生成时刻自动为您整理经营要点；生成失败时会显示此状态，不会展示不实数据。
+              </p>
+              <Link
+                href="/settings?tab=basic"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3.5 py-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-100"
+              >
+                去开启 <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
             </div>
-            <p className="text-sm font-medium text-neutral-600">今日简报尚未生成</p>
-            <p className="mt-1 max-w-md text-xs text-neutral-400">
-              开启「智能每日经营简报」后，系统将在每日生成时刻自动为您整理经营要点；生成失败时会显示此状态，不会展示不实数据。
-            </p>
-            <Link
-              href="/settings?tab=basic"
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3.5 py-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-100"
-            >
-              去开启 <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
           </div>
         ) : !briefing ? (
-          <div className="flex items-center gap-2 py-6 text-sm text-neutral-500">
-            <ShieldCheck className="h-4 w-4 text-neutral-400" />
-            简报生成未通过数字校验，已安全丢弃不实条目（不会展示编造数据）。
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 py-2 text-sm text-neutral-500">
+              <ShieldCheck className="h-4 w-4 text-neutral-400" />
+              简报生成未通过数字校验，已安全丢弃不实条目（不会展示编造数据）。
+            </div>
+            <ProactiveStatusPanel status={proactiveStatus} variant={variant} />
           </div>
         ) : (
           <div className="space-y-5">
@@ -207,6 +221,9 @@ export default function BriefingCard({ enabled = true }: BriefingCardProps) {
             {briefing.summary && (
               <p className="rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-700">{briefing.summary}</p>
             )}
+
+            {/* 主动检查 · 逐规则四态（issue #5955）：让「今天为什么没有提示」可解释 */}
+            <ProactiveStatusPanel status={proactiveStatus} variant={variant} />
 
             {/* 昨日回顾 */}
             {briefing.review?.length > 0 && (
@@ -252,9 +269,13 @@ export default function BriefingCard({ enabled = true }: BriefingCardProps) {
               </div>
             )}
 
-            {/* 全部区块为空（如全部条目被校验丢弃但 summary 存在）→ 提示性兜底 */}
+            {/* 全部区块为空（如全部条目被校验丢弃但 summary 存在）→ 提示性兜底。
+                🔴 措辞只说「简报没有可执行条目」，**不**说「经营平稳 / 一切正常」：
+                「没命中」到底等于「没问题」还是「本次没检查」，只有上面的主动检查面板说得清。 */}
             {(briefing.todo?.length ?? 0) === 0 && (briefing.risks?.length ?? 0) === 0 && (briefing.suggestions?.length ?? 0) === 0 && (
-              <p className="text-xs text-neutral-400">今日暂无待办事项与预警，经营平稳。</p>
+              <p className="text-xs text-neutral-400">
+                今日简报没有待办与预警条目（是否代表「没问题」请看上方「主动检查」的逐规则结论）。
+              </p>
             )}
           </div>
         )}

@@ -1965,7 +1965,7 @@
 真值: customer-list.profile-view-disclosure
 溯源: 2026-09-25 新增（issue #5462）：#5456 / PR #5458 新增的 action 此前无专属条目 —— Case Coverage Gate 的「零覆盖」判据只管**工具粒度**（customer_manage 本身已覆盖）⇒ 该 action 钻了空子；本条目同时把它的归属（米宝 customer_manage(profile_view)）与披露纪律写明。 ｜ tags: query, tool, disclosure, field-truth
 
-## 数据域（20 case）
+## 数据域（21 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -2195,6 +2195,18 @@
 ```
 真值: agent-notification.session-status, agent-notification.session-isolation
 溯源: 2026-09-26 新增（issue #3592 销账）：session_manage 由「仅 DA-004 一条正向（monitor）」加厚为两条（+ 本条 list）⇒ .github/eval-coverage-baseline.yml 的 session_manage/thin_positive 登记同 PR 删除（陈旧登记会被体检报出）。取号 DA-020：DA-001~DA-019 已占用，DA-020 在 main 与全部在飞 ref 上均未占用（逐 ref 核过）。**未覆盖面（如实登记）**：第三个 action `detail` 需要真实 `session_id`，评测栈无 `agent_sessions` seed ⇒ 物理不可满足，待评测栈补种子后再补（登记在 #4941 总账，不在本条冒充已覆盖）。 ｜ tags: monitor, session, mibao, readonly, llm_behavior
+
+### DA-021. 日报卡片面「proactive 四态」可视化：让「今天为什么没有提示」逐规则可见（issue #5955） 🔵
+```
+你: 经营日报卡片面自检（主动检查面板）
+数据: 卡片面**逐规则一行**显示状态 + **原因**，四态各有各的说法：`wired` = 「已检查、无命中」；`not_wired` = 「系统尚未接入」（**不可行动**）；`not_enabled` = 「你还没开启」+ 开启引导（**可行动**，与「尚未接入」**分开说、不合并**）；`incomplete` = 「本次数据不完整」。**互斥红**：某规则未接线的快照 ⇒ 具名报出该规则 + 原因（**不是**「今天没问题」）；规则齐全且无命中的快照 ⇒ 「已检查、无命中」且**不出现**任何未接线/没开启/不完整的措辞；把状态注入摘掉（或把面板渲染摘掉）⇒ 两条判据分别变红
+数据: `wired` 的规则其 `caveats`（数据源固有边界，如审计 fail-open）**也必须在场**（不许因为「绿」就不显示边界）；`proactive_status` 为 NULL / 缺失（本列面世前的存量行）⇒ **不渲染**该面板（未知 ≠ 没问题，也不许用空壳冒充「已检查」）
+数据: 🔴 **状态字段不来自 LLM 出口**：`sanitize_briefing` 是**白名单**（只返回 summary/review/todo/risks/suggestions）⇒ 把 `proactive_status` 塞进 LLM 输出**被丢弃是预期**（断言对象），而**挂载点之后**的注入必须成功；挂上去的值 = 引擎 `proactive_status(snapshot)` 的**原样**（零重算、零改写、不改快照），且 admin-api 侧**数值回填校验层不得把它对账掉**（它不是数字、也不许混进 content）
+数据: 跨端契约：键名 `proactive_status`、规则 id（`below_cost_price`/`unshipped_overdue`/`low_stock`/`repeat_returns`/`price_change_over`/`discount_over`）与四个枚举值（`wired`/`not_wired`/`not_enabled`/`incomplete`）三端一致；卡片面**只读** —— 面板内无任何按钮/链接（不给「一键处置」入口）
+跳过: [backend-contract] 卡片面渲染与挂载点由三端确定性单测验证（ai-agent：tests/test_briefing_proactive_status_visibility.py；admin-api：DailyBriefingServiceTest 的 ProactiveStatusPassThrough / BriefingControllerTest 的 GetToday；admin-web：tests/unit/components/ProactiveStatusPanel.test.tsx + tests/unit/components/BriefingProactiveStatus.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: dashboard-jump.proactive-status-card, dashboard-jump.proactive-wiring-status
+溯源: 2026-10-02 新增（issue #5955）：日报卡片面 proactive 四态可视化（对话面此前已具备、卡片面零渲染）。取号 DA-021：现取 .github/cases/ 最大号 = DA-020（main ∪ 全部在飞 ref，逐 ref 核过，见 PR body）。**未覆盖面（如实登记）**：Playwright 页面多模态验收（真实登录 + 截图 + AI 读图）由集成方收口，本包不跑；面板在真实浏览器下的排版/对比度不在本单确定性判据面内。 ｜ tags: proactive, briefing, card, ui
 
 ## 防御域（23 case）
 
@@ -8634,8 +8646,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：603（活跃 127，跳过 476）
-- tier 分布：smoke 12 / normal 558 / adversarial 31
+- 用例总数：604（活跃 127，跳过 477）
+- tier 分布：smoke 12 / normal 559 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：19
@@ -8645,7 +8657,7 @@
 - 对话边界域：42
 - 跨域：3
 - 客户域：11
-- 数据域：20
+- 数据域：21
 - 防御域：23
 - 财务对账域：4
 - 人事域：11

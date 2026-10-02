@@ -19,6 +19,8 @@ business_truths:
   # 跨域视图内核（族 3 · 包 1，issue #5358）—— 把「没数据」与「没问题」在数据层分开
   - [dashboard-jump.proactive-wiring-status] 逐规则接线状态**四态可分**：`wired`（已接入**且本次完整**）/ `incomplete`（已接入但**本次不完整**：行数被上限截断、分组维度缺值、有行未判定）/ `not_enabled`（系统**有**该能力、**该租户没开**，**可行动**：引导开启）/ `not_wired`（系统**未实现**，**不可行动**）—— 🔴 `not_enabled` 与 `not_wired` **并列、不可合并**；不变式 `reason is None` ⟺ `wired`（状态取值与规则集**现取**：引擎 `RULES` × 装配层 `row_fields`）
   - [dashboard-jump.proactive-unwired-disclosure] **非 `wired` 的能力都不得读成「今日无异常」**，且各有各的说法：`not_wired` 说「尚未接入」（**不可行动**：系统没做）；`not_enabled` 说「你还没开启<能力>」+ **开启引导**（**可行动** —— 与「尚未接入」**分开说、不合并**）；`incomplete` 说明本次数据不完整（截断 / 维度缺值 / 有行未判定）
+  # 日报**卡片面**的同一份四态（issue #5955）—— 对话面有、卡片面此前一片空白
+  - [dashboard-jump.proactive-status-card] 日报卡片面逐规则一行显示四态 + **原因**（`not_enabled` 与 `not_wired` 分开说）且 `caveats`（数据源固有边界，如审计 fail-open）**恒在** —— 卡片面**只读**（无「一键处置」入口）；该状态是**确定性计算**、必须挂在 `sanitize_briefing` **之后**注入（它是**白名单**，塞进 LLM 出口会被静默丢弃），落库后由 admin-api **原样**透出（零重算）；未采集（NULL）时不渲染该面板（未知 ≠ 没问题）
 primary_specs:
   - tests/e2e/specs/dashboard/dashboard.spec.ts
   - tests/e2e/specs/orders/order-list.spec.ts

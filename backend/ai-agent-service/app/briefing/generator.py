@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
+from app.briefing.proactive import proactive_status
 from app.llm import LLMFactory
 
 MAX_SNAPSHOT_CHARS = 6000
@@ -146,6 +147,8 @@ def sanitize_briefing(raw: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]
             "unit": str(item.get("unit") or "")[:16],
             "change": str(item.get("change") or "")[:64],
         })
+    # 🔴 白名单：**只**返回这五个键。`proactive_status` **不在这里**（它不从 LLM 出口来）——
+    # 想给它开一扇门就是把「确定性计算」交到模型手里（issue #5955 点名的那条陷阱）。
     return {
         "summary": summary,
         "review": review,
@@ -153,6 +156,42 @@ def sanitize_briefing(raw: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]
         "risks": _clean_items(raw.get("risks"), MAX_RISK_ITEMS),
         "suggestions": _clean_items(raw.get("suggestions"), MAX_SUGGESTION_ITEMS),
     }
+
+
+#: 卡片面「主动发现」四态可视化的挂载键（issue #5955）。
+#: 与对话面 `app/tools/briefing_query.py` 进 `data` 的那个键**同名同形** —— 三端一份契约。
+PROACTIVE_STATUS_KEY = "proactive_status"
+
+
+def attach_proactive_status(
+    briefing: Optional[Dict[str, Any]], snapshot: Any
+) -> Optional[Dict[str, Any]]:
+    """在 **`sanitize_briefing` 之后**把引擎四态挂上去（issue #5955）—— **零重算、零改写**。
+
+    为什么必须挂在这里（而不是塞进 LLM 出口，也不是在调用方再算一遍）：
+
+    * `sanitize_briefing` 是**白名单** ⇒ 任何经它返回的字段都被截成五个键，塞进 LLM 输出的
+      `proactive_status` 会被**静默丢弃**（下方判据钉住这一条）；
+    * 挂载点与生成点**同一个函数** ⇒ 谁改 `sanitize_briefing` 都会路过这里，不存在"第二份口径"；
+    * **只注入不重算**：值就是 `proactive.py::proactive_status(snapshot)` 的返回对象（浅拷贝一层），
+      损坏/改写它 = 把「未知」重新变成「没问题」，正是本单要治的病。
+
+    `None`/缺失语义与引擎一致：**未知 ≠ 没问题** —— 快照里没有某个数组时，引擎**逐规则**落
+    `not_wired` + 原因（六条都带原因），这里照原样挂上去；`proactive_status` 返回**空 dict**
+    （引擎的规则集为空这种退化情形）时才**不挂键**（空壳不是「已检查」），消费方按未知处理。
+    """
+    if not briefing:
+        return briefing
+    if PROACTIVE_STATUS_KEY in briefing:
+        # 挂在白名单之后仍然取不到这个键 —— 除非有人在**本函数之后**又调了一次清洗；
+        # 那种情况下以引擎值为准（不静默保留一个来路不明的同名键）。
+        logger.warning("[briefing] 简报里已存在 {}，将以引擎值为准覆盖", PROACTIVE_STATUS_KEY)
+    status = proactive_status(snapshot)
+    if not status:
+        return briefing
+    attached = dict(briefing)
+    attached[PROACTIVE_STATUS_KEY] = status
+    return attached
 
 
 def _truncate_snapshot(snapshot_text: str) -> str:
@@ -193,6 +232,9 @@ async def generate_briefing(snapshot: Dict[str, Any]) -> Optional[Dict[str, Any]
         if briefing is None or not briefing["summary"]:
             logger.warning("[briefing] 清洗后简报为空")
             return None
+        # 🔴 挂载点在 `sanitize_briefing` **之后**（issue #5955）：白名单只认五个键，
+        # 新字段从 LLM 出口进不来；这里挂的是**同一个快照**的确定性计算结果（零重算、零改写）。
+        briefing = attach_proactive_status(briefing, snapshot)
         logger.info(
             "[briefing] 生成完成 todo={} risks={} suggestions={}",
             len(briefing["todo"]), len(briefing["risks"]), len(briefing["suggestions"]),
