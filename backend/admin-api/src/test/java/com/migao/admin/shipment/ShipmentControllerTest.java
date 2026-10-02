@@ -70,7 +70,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("发货单列表读面：order:list / 只读 / 汇总同源 / 租户·关键词·上限")
-class AdminShipmentListReadTest {
+class ShipmentControllerTest {
 
     private static final long TENANT = 7L;
     private static final int LIMIT = 200;

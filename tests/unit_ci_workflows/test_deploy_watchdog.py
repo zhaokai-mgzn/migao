@@ -739,9 +739,13 @@ def test_comment_only_change_is_not_red(tmp_path, monkeypatch):
 #   · 与整份文件大小无关（同批「+9KB 新 step」的探针有效）、与行数无关（22 行有效 / 21 行无效）。
 # 形态极隐蔽：本地 PyYAML 与仓库守卫**全绿**，GitHub 侧表现为「该 workflow 根本不建 run」
 # （push 只留一条 0 job 的 failure run，`name` 回落成文件路径）。
-# ⇒ 阈值取 **13,250**（**低于**已知有效读数 13,303，留 53 字符差）；`Reconcile deploys` 在 main 上已是
-#   **12,524**（全仓最长），本包往它里面加的状态记录块**刻意压到最短**（~430 字符）⇒ 现取 **12,9xx**。
-#   ⚠️ 出口：下一步真要往这条正文里加东西 ⇒ **先把实现体外置**（`source .github/scripts/*.sh`），
+# ⇒ 阈值取 **13,250**（**低于**已知有效读数 13,303，留 53 字符差）；`Reconcile deploys` 在**本包合并前**的
+#   main 上是 **12,524**，本包往它里面加的状态记录块**刻意压到最短**（~430 字符）⇒ 现取 **13,125**。
+#   🔴 **现取订正（2026-10-02，`origin/main` 3fa84ab89；本行原先只写到「12,9xx」≈ 估算）**：
+#   全仓 **238** 条 `run` 正文 —— 最长 = 上面那条 **13,125**（距本上限只剩 **125 字符**，**不是** ~2.3K），
+#   次长 = `.github/workflows/automerge.yml` 的 `Classify bot PR … and arm on` **10,975**。
+#   复算 = `python3 -m pytest tests/unit_ci_workflows/test_deploy_watchdog.py -q -k run_body`（或直接调 `run_bodies()`）。
+#   ⚠️ 出口：真要往这条正文里加东西 ⇒ **先把实现体外置**（`source .github/scripts/*.sh`），
 #   不要靠「再加一点点应该没事」（这正是本包踩到的形态）。
 RUN_BODY_LIMIT = 13250
 
