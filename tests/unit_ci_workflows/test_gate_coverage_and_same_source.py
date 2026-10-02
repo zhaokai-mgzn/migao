@@ -64,6 +64,7 @@ r"""**「声明 / 契约」与「门禁是否真的覆盖它」之间的常驻�
 from __future__ import annotations
 
 import ast
+import copy
 import json
 import re
 import sys
@@ -1171,6 +1172,97 @@ def _unannounced_legs(script: str, workflow: str) -> list[str]:
         if key.startswith(f"{workflow}::")
         and not any(f"{NOT_RUN_MARKER} {name} {NOT_RUN_CLAUSE}" in line for line in announced)
     ]
+
+
+#: 显式处置「上游被按面跳过」的守卫原子（`always()` 是仓内既有定式：
+#: 默认 `if` 等价于 `success()`，而 `success()` 要求**每个** need 都成功 ⇒ skipped 不算成功）。
+SKIP_PROOF_TOKENS = ("always()", "!cancelled()")
+#: 显式读**本 job 自己某个 need** 的结果（`needs.<id>.result`）也算已处置跳过这一态。
+NEEDS_REF_RE = re.compile(r"needs\.([A-Za-z0-9_-]+)\.")
+
+
+def _unsafe_downstream_skips(skip_target: str, gate: dict, jobs: dict) -> list[str]:
+    """「**依赖被 job 级门控的那条腿**（`skip_target`）、却会把它的跳过当成没问题」的下游 job（issue #6051）。
+
+    病（一类）：被 job 级 `if` 跳过的 job 其 `needs` 未满足 ⇒ **下游 job 默认一并跳过**
+    （默认 `if` 等价于 `success()`，而 `success()` 要求**每个** need 都成功 ⇒ skipped 不算成功）。
+    于是一个「依赖所有前置 job」的收口 job（清僵尸标签 / 报账 / 收口）在**上游按面跳过时静默不跑** ——
+    而那正是它最需要跑的情形（它要判的恰恰是「这一轮到底绿不绿」）。与「未跑被读成通过」同族。
+
+    ⚠️ `skip_target` 是**真正被按面跳过的那条腿**（= 带 job 级门控的 job 自己），
+    不是它 `needs` 的判定 job：`needs: detect` 只会让 detect **先跑**，跳过的是带门控的这条腿。
+    """
+    problems: list[str] = []
+    for cid, job in sorted(jobs.items()):
+        if not isinstance(job, dict) or cid == skip_target:
+            continue
+        needs = job.get("needs")
+        need_ids = [needs] if isinstance(needs, str) else [str(n) for n in (needs or [])]
+        if skip_target not in need_ids:
+            continue
+        cond = str(job.get("if") or "").strip()
+        name = f"{cid}（{job.get('name') or cid}）"
+        if any(tok in cond for tok in SKIP_PROOF_TOKENS):
+            continue  # `always()` / `!cancelled()` ⇒ 上游被跳过也照跑
+        if any(ref in need_ids for ref in NEEDS_REF_RE.findall(cond)):
+            continue  # 显式读**自己的** need 结果（`needs.<id>.result`）⇒ 已处置跳过这一态
+        if not cond:
+            problems.append(
+                f"{name} 没有 `if:` ⇒ 默认 `success()` 不穿透 skipped，`{skip_target}` 被按面跳过时它静默不跑"
+            )
+        else:
+            problems.append(f"{name} 的 `if: {cond}` 只要求上游成功 ⇒ 同款静默不跑")
+    return problems
+
+
+def test_downstream_of_a_job_gated_leg_does_not_silently_skip() -> None:
+    """⑤ **反向判据**：依赖「job 级门控腿」的下游 job，不得因上游按面跳过而静默不跑。
+
+    这是本包**自己造成的破坏面**（issue #6051）：加 job 级门控后，凡 `needs:` 那条腿的下游 job
+    都会跟着被跳过 —— `pr-check.yml` 的 `label-needs-changes` / `clear-needs-changes`
+    （原本 `needs: [..., e2e-quality-gate]`）就会在**非 e2e 面的 PR** 上静默不跑
+    ⇒ `review/needs-changes` 僵尸标签永不脱落，而**没有任何检查会变红**。
+    """
+    live = _path_gated_jobs()
+    checked = 0
+    problems: list[str] = []
+    for (wf, jid), info in sorted(live.items()):
+        gate = info.get("job_gate")
+        if not gate:
+            continue
+        checked += 1
+        for p in _unsafe_downstream_skips(jid, gate, _workflow_docs()[wf].get("jobs") or {}):
+            problems.append(f"{wf}::{jid} 被按面跳过会带倒下游 —— {p}")
+    print(f"扫到 job 级门控 {checked} 条；下游静默跳过={len(problems)} 条")
+    assert checked > 0, "一条 job 级门控都没扫到 ⇒ 本判据静默空跑成绿"
+    assert not problems, (
+        "「上游 job 级跳过 ⇒ 下游静默不跑」—— 这正是「未跑被读成没问题」的同族形态"
+        "（issue #6051 的连带破坏面）：\n"
+        + "\n".join(f"  {p}" for p in problems)
+        + "\n修法：给下游 job 的 `if:` 补 `always()`（仓内既有定式，见 pr-check.yml 的 "
+        "`label-needs-changes`），或显式读 `needs.<上游>.result` 处置跳过这一态。"
+    )
+
+    # ── 判别力自证（注入式，§28.1 出口 ①）：把下游的 `always()` 拿掉 ⇒ 必须当场红 ──
+    wf, jid = "pr-check.yml", "e2e-quality-gate"
+    gate = live[(wf, jid)]["job_gate"]
+    jobs = _workflow_docs()[wf]["jobs"]
+    downstream = [
+        cid
+        for cid, job in sorted(jobs.items())
+        if isinstance(job, dict)
+        and jid in ([job["needs"]] if isinstance(job.get("needs"), str) else list(job.get("needs") or []))
+    ]
+    assert downstream, f"注入对照缺失：{jid} 现取没有下游 job（本自证会失真）"
+    assert not _unsafe_downstream_skips(jid, gate, jobs), "未注入却判红 ⇒ 假红（判据被自己的文案喂红）"
+    mutated = copy.deepcopy(jobs)
+    mutated[downstream[0]]["if"] = "github.event_name == 'pull_request'"
+    caught = _unsafe_downstream_skips(jid, gate, mutated)
+    assert caught, f"把 `{downstream[0]}` 的 `always()` 拿掉后仍判绿 ⇒ 判据 ⑤ 没有判别力（空断言）"
+    # 反向对照 ②：连 `if:` 一起删掉（默认 `success()` 形态）也必须判红
+    del mutated[downstream[0]]["if"]
+    assert _unsafe_downstream_skips(jid, gate, mutated), "删掉整个 `if:` 后仍判绿 ⇒ 「没写 if」这一形态漏判"
+    print(f"判别力自证：拿掉 `{downstream[0]}` 的 always() ⇒ 判红 ✅；连 if 一起删 ⇒ 判红 ✅；未注入 ⇒ 不报 ✅")
 
 
 class TestJobLevelFaceGates:
