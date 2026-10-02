@@ -5069,6 +5069,24 @@ _CASE_MC_064 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-066 [NORMAL] 用例 id 取号登记台账（claim）：并行开发下不再撞号（撞了在 CI 里被具名抓住，而不是变成 misc.yml 的困惑冲突）（issue #6017）（源: cases/misc.yml）──
+_CASE_MC_066 = EvalCase(
+    id='MC-066',
+    legacy_id='',
+    title='用例 id 取号登记台账（claim）：并行开发下不再撞号（撞了在 CI 里被具名抓住，而不是变成 misc.yml 的困惑冲突）（issue #6017）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当两个并行 PR 各自取了同一个用例号、或一条 claim 在合并后忘了删除时，必须有东西**具名**报出（哪个号 + 哪两个 PR + 让号 / 删除出口）；而没有任何 claim 时**不得**报红（本台账是新增可选面）'],
+    expectations=['direct_reply'],
+    data_checks=["**病（2026-10-02 一天三次撞号，实证记在 MC-064 的 merge_log 里）**：用例 `id` 是全局唯一登记键，而现行取号法 = 「现取 `origin/main` 最大号 + 1（再加'猜在飞 PR'）」⇒ 并行下必然失效。症状形态是 `.github/cases/misc.yml` 的**困惑冲突** + 生成物连带冲突，而不是「你撞号了，请让号」—— 诊断成本极高（要靠 `git merge-tree` 逐条比对两侧用例块）。", "**设计（零文本冲突）**：每个 PR 一个 claim 文件 `.github/cases/claims/<PR号>-<CASE_ID>.json`（最小集 `id` / `pr` / `title` / `claimed_at`）；**文件名含 PR 号 ⇒ 两个并行 PR 永远不写同一个文件 ⇒ 把'撞号'从文本冲突翻译成语义冲突**；起草者在同一 PR 里加它，合并后删除。", '**判据 1（形态）**：文件名 `<PR号>-<CASE_ID>.json`、字段最小集齐全、文件名里的 PR / 用例号与内容 `pr` / `id` 一致、`claimed_at` 是 `YYYY-MM-DD`；claim 目录里出现非 claim 文件（除 `.gitkeep` / `README.md`）也判红。执行点 = tests/unit_ci_workflows/test_case_id_claims.py 的 `test_red_proof_form_violations_are_named`。', '**判据 2（两 claim 同 id ⇒ 红）**：**具名报出两个 PR 号** + 「后合入者让号」—— 这是把撞号在 CI 里具名抓住的主路径（`MC-064` 的三次撞号正是这个形状）。执行点 = 同文件 `test_red_proof_two_claims_with_the_same_id`。', '**判据 3（与已占号相撞 ⇒ 红）**：claim 的 `id` 已在用例库被占用 ⇒ 报出该号 + 让号出口（陷阱 3 的兜底）。执行点 = 同文件 `test_red_proof_claim_collides_with_a_used_id`。', '**判据 4（陈旧即红）**：claim 的 `id` 已进用例库（该 claim 已合并完成）而 claim 还在 ⇒ 红（台账**不许只增不减**）。执行点 = 同文件 `test_red_proof_stale_claim`。', '**判据 5（占位不得超额）**：每条 claim 的 `id` 必须在用例库里**有对应用例**（主防线）；同一 PR 的 claim 数 ≤ **现取上限**（= 用例库现取条数；变更集不可得时的兜底口径，**不拍魔法数**）。执行点 = 同文件 `test_red_proof_claim_without_a_case`。', '**判据 6（负向对照）**：没有 claim ⇒ 一条都不报；另有一条对照读数（形态齐全 + 号在自己 PR 的用例里 ⇒ 不红）。执行点 = 同文件 `test_negative_control_no_claims_is_green` / `test_control_clean_claim_is_green`。', '**纯静态自证**：本判据零 ai-agent 依赖（AST 取 import 名）+ 禁 `pytest.skip` —— CI 的 `ci workflow helper unit tests` 只装 `pytest` + `pyyaml`。执行点 = 同文件 `test_this_judgement_is_pure_static_and_never_skips`。', '🔴 **覆盖边界（显式登记）**：① 看不到在飞分支（别人的 open PR 上的 claim 不在我的树里）⇒ 「两个在飞 PR 同时取到同一个号」只有在其中一个合入后才现形；② 「claim 了号、还没写用例、而 main 恰好已有同号用例」这一角判不了（合并态近似把本 PR 的号扣掉了）；③ 判据**不查 GitHub / 不联网**，也**刻意不读 `origin/main`**（CI 的 checkout 是 `fetch-depth: 1`）⇒ 「已进 main」以**合并态近似**表达，精确主线段读数由 `MIGAO_CASE_CLAIMS_MAIN_DIR` 注入；④ main 侧没有守护（`pr-check` 只在 `pull_request` 触发）⇒ 陈旧面靠**下一个 PR** 现形。⑤ 本判据**不改**任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 纯静态扫描 + 内存 / tmp_path 注入式判别力自证（只读仓内 `.github/cases/**`；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_case_id_claims.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'casebook', 'case-id', 'claim', 'ledger', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -11932,6 +11950,7 @@ ALL_CASES = (
     _CASE_MC_063,
     _CASE_MC_065,
     _CASE_MC_064,
+    _CASE_MC_066,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
