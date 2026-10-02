@@ -956,6 +956,55 @@ def get_added_files(base="origin/main", strict=False):
         return None if strict else []
 
 
+def _load_blast_radius():
+    """加载**同一份**射程数据（`docs/wiki/Change-Blast-Radius.md` 的人读镜像源）。
+
+    为什么放在 `.github/scripts/` 而不是本文件里：提示与文档必须**同源**（一份数据、两处消费），
+    否则文档说的面与提示说的面会各漂各的（而漂移的两处都不会红）。
+    导入失败 ⇒ 返回 None（提示降级为静默，**绝不影响 blocker 判定** —— 本段是非阻塞提示，
+    不是门禁；把「提示模块坏了」升级成「门禁判红」会把一个展示面变成合并阻断面）。
+    """
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "scripts", "blast_radius.py")
+    try:
+        spec = importlib.util.spec_from_file_location("blast_radius_for_gate", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:
+        return None
+
+
+def blast_radius_hits(files, repo_root="."):
+    """变更文件 → 命中的射程面（`[]` = 没命中 / 模块不可用）。
+
+    🔴 **不改 blocker 语义**：本函数只服务提示段（`_render_blast_radius_hint`），
+    与 `blockers` / `warnings` 两个清单**零交集** —— 本仓有
+    `tests/unit_ci_workflows/test_growth_gate_fail_closed.py` 等判据盯着 `blocker_count`。
+
+    口径：**「窄集」必须由「变更的射程」反推** —— 改了工具源码 ⇒ 所有扫工具源码的 meta 面
+    都在射程内（实证：2026-10-02 四条 PR 17 条红，全部是「判据只在全量单测里，窄跑看不见」）。
+    """
+    mod = _load_blast_radius()
+    if mod is None:
+        return []
+    return mod.hit_faces(list(files or []))
+
+
+def _render_blast_radius_hint(hits, repo_root="."):
+    """射程提示正文（`""` = 无命中）；渲染失败 ⇒ 空串（同样不阻塞）。"""
+    if not hits:
+        return ""
+    mod = _load_blast_radius()
+    if mod is None:
+        return ""
+    try:
+        return mod.render_hint(hits, repo_root)
+    except Exception:
+        return ""
+
+
 def _render_markdown(results, blockers, warnings):
     lines = ["| 文件 | 模块 | 状态 |", "|------|------|------|"]
     for r in results:
@@ -1283,15 +1332,33 @@ def main(argv=None):
         warnings.extend(case_warns)
 
     md = _render_markdown(results, blockers, warnings)
-    print(md)
+
+    # ── 变更射程提示（issue #5970；**非阻塞**）──
+    # 病（实证 2026-10-02）：四条并行 PR（#5961/#5963/#5965/#5967）共 17 条红，全是
+    # 「判据只存在于全量单测里，窄跑看不见」—— 而 growth_gate 与 cases 面门禁**都不提示**
+    # 哪些 meta 面在射程内。本段把「射程 → 该跑的具名判据」在**提交时**打印出来。
+    # 🔴 硬约束：**不许改变 blocker_count 语义**（新提示是独立段 + JSON 新字段 `blast_radius`，
+    #    与 blockers/warnings 零交集）。数据源 = `.github/scripts/blast_radius.py`（与
+    #    `docs/wiki/Change-Blast-Radius.md` 同源；行数/命令由 test_blast_radius_registry.py 双向核）。
+    hits = blast_radius_hits(files, args.repo_root)
+    hint = _render_blast_radius_hint(hits, args.repo_root)
 
     summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+    print(md)
     if summary_file:
         try:
             with open(summary_file, "a") as f:
                 f.write(md + "\n")
         except OSError:
             pass
+    if hint:
+        print(hint)
+        if summary_file:
+            try:
+                with open(summary_file, "a") as f:
+                    f.write(hint + "\n")
+            except OSError:
+                pass
 
     if args.json:
         payload = {
@@ -1304,6 +1371,13 @@ def main(argv=None):
                 "blockers": len(case_blocks),
                 "warnings": len(case_warns),
                 "report": case_report,
+            },
+            # 变更射程提示（issue #5970）：**非阻塞**，与 blockers/warnings 零交集。
+            # 加字段不破坏既有消费方（已核：workflow / verify-all.sh 只读 blocker_count /
+            # warning_count，见 `grep -n "growth-gate-result" .github/workflows/pr-check.yml`）。
+            "blast_radius": {
+                "faces": [h["face"] for h in hits],
+                "hits": hits,
             },
         }
         with open(args.json_file, "w") as f:

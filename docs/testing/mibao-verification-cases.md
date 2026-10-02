@@ -2833,7 +2833,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（57 case）
+## 杂项域（58 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3633,6 +3633,22 @@
 跳过: [backend-contract] CI / 研发工具的静态结构判据（零 LLM、秒级、只读仓内 `.py` 源文本 + 临时树上的注入式红证）由 tests/unit_ci_workflows/test_automerge_bot_safe_path.py 的判据 11 系列验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #5948；来源 = 2026-10-02 #5944 的修复包（PR #5947）在递交时把「唯一性守卫只见 `.github/**`」按铁律 12(b)③ 在会话内提出，用户当日裁定「**开小单：扩到 tests/** + 给 nginx 那份具名豁免**」；归因层级 = 研发工具 / 判据级）。落码 = ① 扫描面扩到**整仓** + 逐字具名排除（守卫自己 / 台账本体）② 谓词口径**显式收紧**为精确名 + 词边界（理由与代价逐条落在 `data_checks` 与台账 `_predicate_note`）③ 活豁免台账 `tests/unit_ci_workflows/strip_comment_uniqueness_ledger.json`（`path`/`reason`/`owner`/`issue` + 只许缩短 + 陈旧红）④ 判据 11 系列 9 条 + 四条注入式红证（含反向对照）；其中 `test_no_generated_artifact_defines_the_yardstick` 正向钉住「生成物里**从不**出现那个定义」—— 排除生成物**只**豁免它的**用例散文**，不是在放行实现。取号 **MC-060**：`python3 scripts/next_case_id.py MC` 现取 main = 001–**057** + **059**（058 只在 MC-059 的 merge_log 里被**引用**，不是 id），脚本建议的 **MC-049 是历史空档** ⇒ 沿用 MC-054~059 的「空档号 ≠ 可用号」先例，按**当前最大号 +1** 取号；本包开工时现取在飞占用 = PR #5943（**MC-058**，已在其分支的 `misc.yml` 里）⇒ 取 **MC-060**。⚠️ 与 PR #5943 并行改 `.github/cases/misc.yml` + 两份生成物 ⇒ **谁后合并谁** `./scripts/sync-main.sh --rebase` 并**重渲染**（生成物不许手改、二次渲染零 diff）。 ｜ tags: ci, guard, uniqueness, ledger, red-proof
+
+### MC-061. 变更射程 → 必跑具名判据：射程注册表（面 → 具名判据 → 可复制命令）与 growth_gate 的**非阻塞**提示同源，两者漂移即红；射程表清空 ⇒ 提示消失而 blocker_count 不变 🔵
+```
+你: 改了工具源码 / graph state / 迁移 / 用例面 / 权限菜单码时，我必须在**提交那一刻**就看到「这次射程还欠哪几张登记面、各跑哪条命令」，且这个提示**不许**把通过条件变严；射程表被清空、文档少一面、命令指向不存在的判据时，必须有东西变红
+期望: direct_reply
+数据: **口径（逐字，注册表与文档共用）**：**「窄集」必须由「变更的射程」反推** —— 改了工具源码 ⇒ **所有扫工具源码的 meta 面都在射程内**；不是靠回忆清单。实证 = 2026-10-02 四条 PR 共 17 条红（#5961 复位族/写点/产出键 7 · #5963 state 必需字段 1 · #5965 工具见证集/权限码/门面/RBAC/死能力 5 · #5967 迁移指纹/bootstrap 建库面/事件通道基线/台账 4）
+数据: **单一数据源**：`.github/scripts/blast_radius.py` 的 `FACES`（面 → 路径 glob）与 `probes_by_face()`（面 → 具名判据 + 可复制命令）是唯一来源；`docs/wiki/Change-Blast-Radius.md` 是人读镜像，`growth_gate` 按**同一份数据**打印提示 ⇒ 三处漂移即红（`test_doc_mirrors_every_face_exactly_once` / `test_doc_lists_the_named_judgement_of_every_probe`）
+数据: **「不许凭印象写」的机械面**（本 bundle 的硬要求）：① 每个面必须能被**仓内某个真实文件**命中（否则提示永远沉默 —— 看起来像「已覆盖」，比没有提示更坏）② 每条探针的具名判据文件必须**真在仓里**（含命令 `cd` 目标与 `source` 两个解析基准）③ 命令不得是自然语言占位符
+数据: 🔴 **不改 blocker 语义**（硬约束）：提示是**独立段** + `--json` 新字段 `blast_radius`（与 `blockers` / `warnings` 零交集）；判据 = 命中射程时 `warning_count == 0`、`blocker_count` 与本组文件自身的判定一致；PR 评论文本里**连措辞都不出现**（否则会被读成阻塞项）
+数据: **注入式红证（判据 1 的对照臂，不可省）**：把 `FACES` 清空 ⇒ 同一组文件下**提示必须消失**且 `blocker_count` 仍为 0 —— 否则提示不是从这份数据源来的（判据 1 假绿）
+数据: **7 行实测红证（A 的验收核心，实测读数逐条写进文档表）**：① 新增工具**文件 + 注册**两处 ⇒ `test_tool_permission_codes.py` 1 failed / 37 passed（`以下 B 端工具既没有权限码、也不在登记表里：['redproof_probe']`；同一次改动 `growth_gate` 亦 BLOCKED 缺两个配套测试文件）② 改 `AgentState` 必需字段名 ⇒ `test_graph_state.py` 1 failed / 14 passed（`Missing field: pending_interact_skill`）③ 改已登记迁移一字节 ⇒ `test_migration_immutability.py` 1 failed / 6 passed ④ 加一条未登记写调用 ⇒ `test_eval_write_site_dispositions.py` 1 failed / 3 passed ⑤ 注册一个无实现的 clean type ⇒ `test_eval_preclean_registry.py` 3 failed / 24 passed（含 `table=15 runner=16`）⑥ 改 `menu.ts` 一个节点的权限码 ⇒ `test_agent_permission_parity.py` 4 failed / 11 passed ⑦ 改用例源不重渲染 ⇒ 生成物 `git diff --exit-code` rc=1。**每条都还原后复跑为绿**
+数据: **① 行实测得到的口径提醒（写进文档）**：**只新建工具文件、不注册**时工具面判据**全绿**（`registry_tools()` 由 `create_default_registry()` 显式构造 ⇒ 未注册的类不进入判据射程）⇒ 工具面的真实射程是**「文件 + 注册」两处**；而 `growth_gate` 的**缺测**判定在**只有文件**时就会响 —— 两者互补（缺测门禁管「有没有配套测试」，射程提示管「还有哪些 meta 面要一起跑」）
+数据: **覆盖面显式登记（照实，不粉饰）**：① `<venv>` 要自己建（新 worktree 里 `.venv` 常缺）⇒ 命令可复制但**不保证依赖已装** ② 只认**路径形态**，改了行为却没改任何路径时提示不响 ③ 人绕过 `growth_gate` 时不响 ④ `web` 行的多模态验收仍是 Playwright 剧本 + AI 读图（`migao-dev-flow` §15.7），**不是常驻判据** ⑤ 判据**不跑**被引用的测试（否则提示退化成再跑一遍全量套件）
+跳过: [backend-contract] CI 展示面 / 射程注册表的静态结构判据（零 LLM、秒级、只读仓内文本 + 内存注入）由 tests/unit_ci_workflows/test_blast_radius_registry.py 与 tests/unit_ci_workflows/test_growth_gate_blast_radius.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #5970；用户当日逐字裁定「选了 A+B 两项」，开单要求由用户给出）。A = `docs/wiki/Change-Blast-Radius.md`（变更面 → 必跑具名判据 → 可复制命令，7 行实测红证）；B = `.github/growth_gate.py` 的**非阻塞**射程提示（命中射程路径 ⇒ 打印「你还欠这几张登记面」+ 各给命令）。落码 = ① `.github/scripts/blast_radius.py`（**单一数据源**：8 个面 / 17 条具名判据 + 可复制命令）② `growth_gate` 接线（独立段 + `--json` 新字段 `blast_radius`，**不动 blocker_count 语义**）③ 人读镜像文档 ④ 两份判据文件 15 条（注册表 9 + 接线 6，含注入式反面「射程表清空 ⇒ 提示消失且 blocker 不变」）⑤ 7 行注入式红证（读数见本用例 data_checks 与文档表）。取号 **MC-061**：现取 main 最大 = **MC-060**（`grep -o 'id: MC-[0-9]*' .github/cases/misc.yml | sort -t- -k2 -n | tail -1`），本包开工时现取在飞分支（含 `feat/4923-craft-config-query`）最大亦为 MC-060 ⇒ 按「当前最大号 +1」取 **MC-061**（沿用 MC-054~060 的「空档号 ≠ 可用号」先例）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ **谁后合并谁** `./scripts/sync-main.sh --rebase` 并**重渲染**（生成物不许手改、二次渲染零 diff）。 ｜ tags: ci, blast-radius, growth-gate, registry, red-proof, fail-closed
 
 ## 商家入驻域（5 case）
 
@@ -8731,8 +8747,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：610（活跃 133，跳过 477）
-- tier 分布：smoke 12 / normal 565 / adversarial 31
+- 用例总数：611（活跃 133，跳过 478）
+- tier 分布：smoke 12 / normal 566 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：19
@@ -8747,7 +8763,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：57
+- 杂项域：58
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -8833,6 +8849,7 @@
 - MC-058: 部署腿的「已构建就跳过」判据必须**真的能生效**：同一份 `gh run list` 查询要有凭据（`permissions: actions: read` + step 级 `GH_TOKEN`）、失败要出声、fail-open 要具名；未接即红
 - MC-059: deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#`
 - MC-060: 「剥注释实现全仓只许一份」的唯一性守卫扫描面扩到**整仓**（issue #5948）：口径显式收紧为**精确名 + 词边界**（不卷进 4 族同名不同义的实现）、**自匹配**（守卫自己）具名排除、nginx 语义那条**具名豁免且只许缩短**（不再命中 ⇒ 陈旧红）、`tests/**` 里再写一份同名同义实现 ⇒ 判红并具名
+- MC-061: 变更射程 → 必跑具名判据：射程注册表（面 → 具名判据 → 可复制命令）与 growth_gate 的**非阻塞**提示同源，两者漂移即红；射程表清空 ⇒ 提示消失而 blocker_count 不变
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
