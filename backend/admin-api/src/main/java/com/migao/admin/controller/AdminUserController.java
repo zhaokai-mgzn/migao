@@ -12,6 +12,7 @@ import com.migao.admin.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.util.StringUtils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -102,38 +103,58 @@ public class AdminUserController {
         String name = (String) body.getOrDefault("name", "");
         String position = (String) body.getOrDefault("position", "");
 
+        // 岗位/角色必须显式给出（issue #5987，fail-closed）：三样都没有时**不再**兜底成
+        // `operator`（运营级 26 码含 order:create / inbound:create / finance:create / order:refund
+        // 等写权限）—— 缺省 = 「没选岗位」，不是「运营」；缺省权限只许由调用方**显式声明**。
+        // 页面（员工管理）本就强制选岗位 ⇒ 这条只拦 API 直连（AI 工具面 / 集成方 / 脚本）。
+        // ⚠️ 闸门在任何解析/落库**之前**（BusinessException.validationError ⇒ 400）。
+        boolean hasRoleKey = StringUtils.hasText((String) body.get("role"));
+        boolean hasRoleId = body.get("roleIds") instanceof List<?> roleIdsSent && !roleIdsSent.isEmpty();
+        if (!hasRoleKey && !hasRoleId && !StringUtils.hasText(position)) {
+            throw BusinessException.validationError("请选择岗位或角色：创建员工必须显式指定 position 或 role/roleIds");
+        }
+
         // 从请求体读取角色，支持 role 字段（字符串）或 roleIds（数组取第一个对应的角色代码）
-        String role = "operator"; // 默认角色
+        String role = null;
         List<?> roleIdList = null;
-        if (body.containsKey("role") && body.get("role") != null) {
+        if (hasRoleKey) {
             role = (String) body.get("role");
-        } else if (body.containsKey("roleIds") && body.get("roleIds") != null) {
+        } else if (hasRoleId) {
             roleIdList = (List<?>) body.get("roleIds");
-            if (!roleIdList.isEmpty()) {
-                String roleId = String.valueOf(roleIdList.get(0));
-                try {
-                    Role roleEntity = roleService.getRoleById(roleId);
+            try {
+                Role roleEntity = roleService.getRoleById(String.valueOf(roleIdList.get(0)));
+                if (roleEntity != null) {
                     role = roleEntity.getCode();
-                } catch (Exception e) {
-                    log.warn("根据 roleId 查找角色失败: {}", roleId, e);
                 }
+            } catch (Exception e) {
+                log.warn("根据 roleId 查找角色失败: {}", roleIdList.get(0), e);
             }
-        }
-
-        // 岗位必须
-        if (position.isBlank()) {
-            position = role; // fallback: 岗位 = 角色名
-        }
-
-        // 岗位=角色体系（#2969）：未显式传 role/roleIds 时，按岗位名解析岗位角色，
-        // 使 user_roles 关联 / JWT roles claim / ai-agent allowed_roles 保持岗位角色语义
-        Role positionRole = null;
-        if (!body.containsKey("role") && (roleIdList == null || roleIdList.isEmpty())
-                && org.springframework.util.StringUtils.hasText(position)) {
-            positionRole = roleService.getRoleByPosition(position, tenantId);
+        } else {
+            // 岗位=角色体系（#2969）：只传岗位时，按岗位名解析岗位角色，
+            // 使 user_roles 关联 / JWT roles claim / ai-agent allowed_roles 保持岗位角色语义
+            Role positionRole = roleService.getRoleByPosition(position, tenantId);
             if (positionRole != null) {
                 role = positionRole.getCode();
             }
+        }
+        if (hasRoleKey && !StringUtils.hasText((String) body.get("role"))) {
+            // 「显式传了 role 但值是空白」是缺省的另一种写法 ⇒ 同样拒绝（不得被空串骗过落下游）
+            throw BusinessException.validationError("角色不能为空，请选择有效的岗位或角色");
+        }
+        if (!StringUtils.hasText(role)) {
+            // 传了岗位/roleId 但解析不出角色 ⇒ 拒绝，不落到任何默认角色（fail-closed）
+            throw BusinessException.validationError("无法解析该岗位/角色，请选择有效的岗位");
+        }
+
+        // 岗位展示值兜底：未传岗位时回退为角色名（既有契约 employee-role.position-fallback）
+        if (!StringUtils.hasText(position)) {
+            position = role;
+        }
+
+        // 权限快照来源（#2969）：只传岗位（未显式传 role/roleIds）时按岗位默认权限预填
+        Role positionRole = null;
+        if (!hasRoleKey && !hasRoleId) {
+            positionRole = roleService.getRoleByPosition(position, tenantId);
         }
 
         // 从请求体读取权限列表（前端 TreeCheckbox 发送的菜单权限码 JSON 数组）

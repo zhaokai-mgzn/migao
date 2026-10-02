@@ -243,7 +243,7 @@
 真值: ai-chat.intent-domains
 溯源: 2026-10-02 新增（issue #5951）：该测试文件此前未声明 case_ids，本单改动它（去掉已退役的 suggestions 桩键）后按门禁口径补声明；用例内容如实对应该文件既有的两组断言，**未新增/未放宽任何断言**。 ｜ tags: agents, multimodal, routing, regression
 
-## API 层域（20 case）
+## API 层域（21 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -476,6 +476,20 @@
 跳过: [backend-contract] 由 admin-api 单测（GlobalExceptionHandlerCoverageTest / InboundOrderOpeningImportRequiredParamTest）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #5982）：缺必填 @RequestParam 一律落兜底 Exception ⇒ 500；补 MissingServletRequestParameterException / MethodArgumentTypeMismatchException 两个具名分支（400 + 字段名），并落「分支台账 ⇄ 反射 + 绑定族豁免台账（只许缩短）」类级元守卫 ｜ tags: api, error-handling, exception-handler
+
+### API-023. 建号缺岗位/角色 ⇒ 422 + 未落库（不再按 operator 兜底），且「缺省角色字面量」台账双向一致（#5987） 🔵
+```
+你: API 直连创建员工时没传岗位（也没传 role/roleIds）：账号不得拿到运营级权限，应明确报错要求选岗位
+数据: 实例（真端点 + 真 @RestControllerAdvice）：POST /api/admin/users 只带 phone/name/username/password（或缺 position 且 role/roleIds 皆无）⇒ 422 VALIDATION_ERROR（BusinessException.validationError 的既有码位）+ 响应全文含「岗位」（可行动文案）；闸门在调 userService.createUser 之前（verifyNoInteractions = 未落库的行为等价读数）；修前实测 200 + role=operator + 岗位名=operator（运营级 26 码含 order:create/inbound:create/finance:create/order:refund）
+数据: 正向对照（证明不是「什么都返 400」）：带 position（岗位=角色体系 #2969）⇒ 200 且 role 按岗位解析下发；只带 role 不传 position ⇒ 200 且 position 回退为角色名（既有契约 employee-role.position-fallback 不回归）
+数据: 服务侧实例：UserService.createUser 的 role 为空/空白 ⇒ 422 BusinessException（VALIDATION_ERROR），且 userMapper.insert 一次都没发生（「返回了错误」≠「没写进去」）；显式 role ⇒ 成功落库且写入行 role/position 逐字等于调用方声明
+数据: 类级元守卫：「缺省角色字面量」赋值点（.role("<字面量>") / .role(x != null ? x : "<字面量>")）扫描结果 ⇄ 台账双向相等（台账有而扫描无 = 陈旧 ⇒ 红；扫描有而台账无 = 新增缺省/授权字面量 ⇒ 红）；台账只许缩短（条数现取比较）
+数据: 类级语义判据：两个建号入口里含 .position(...) 的语句不得出现写权限角色字面量（admin/super_admin/operator/product_manager/finance/sales/manager）
+数据: 判别力自证：旧形态 .role(x != null ? x : "operator") 判 FALLBACK、.role("super_admin") 判 LITERAL、.role(user.getRole()) 与 .role(anyToString(map.get("role"))) 不命中；并反射读一次台账常量与扫描实现（防空跑绿）
+跳过: [backend-contract] 由 admin-api 单测（AdminUserControllerPostMissingPositionTest / EmployeeGrantDefaultRoleMetaGuardTest）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: employee-role.position-fallback
+溯源: 2026-10-02 新增（issue #5987）：API 建号缺省岗位/角色落到 operator（运营级 26 码含写权限，仅 API 直连可达，页面强制选岗位走不到）⇒ 两处 fail-open 默认（控制器角色兜底 + 服务实体构建处的 role != null ? role : operator）同批收口为 fail-closed（422 + 未落库），并落「缺省角色字面量台账（未登记即红、只许缩短）+ 建号缺省位不得含写权限字面量」类级元守卫 ｜ tags: api, fail-closed, permission
 
 ## 登录认证域（11 case）
 
@@ -8916,7 +8930,7 @@
 - tier 分布：smoke 12 / normal 577 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
-- API 层域：20
+- API 层域：21
 - 登录认证域：11
 - B 端小程序域：31
 - 分类域：3

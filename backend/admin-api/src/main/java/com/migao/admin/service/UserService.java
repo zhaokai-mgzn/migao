@@ -412,6 +412,13 @@ public class UserService implements UserDetailsService {
         // 安全校验：禁止商户侧分配系统保留角色/通配权限（审计 07 P0-2）+ 授予集 ⊆ 操作者自身权限（#4104）
         assertAssignableRoleAndPermissions(role, permissions, tenantId);
 
+        // 角色 fail-closed（issue #5987）：`role` 是**调用方显式声明**的授权语义，本方法没有
+        // 「缺省角色」——旧形态 `.role(role != null ? role : "operator")` 把「没传」静默变成运营
+        // （26 码含写权限）。缺省只许由调用方声明（页面强制选岗位；注册流程显式传 "admin"）。
+        if (!StringUtils.hasText(role)) {
+            throw BusinessException.validationError("请选择岗位或角色：创建员工必须显式指定 role");
+        }
+
         // 验证手机号唯一性
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getPhone, phone)
@@ -437,8 +444,8 @@ public class UserService implements UserDetailsService {
                 // 强制改密只对「确实设了密码」的账号生效（见方法 javadoc）
                 .mustChangePassword(forceChangePassword && passwordHash != null)
                 .nickname(nickname)
-                .role(role != null ? role : "operator")
-                .position(StringUtils.hasText(position) ? position : (role != null ? role : "operator"))
+                .role(role)
+                .position(StringUtils.hasText(position) ? position : role)
                 .permissions(permissions)
                 .status("active")
                 .build();

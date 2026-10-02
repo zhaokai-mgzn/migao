@@ -753,6 +753,24 @@ _CASE_API_008 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── API-023 [NORMAL] 建号缺岗位/角色 ⇒ 422 + 未落库（不再按 operator 兜底），且「缺省角色字面量」台账双向一致（#5987）（源: cases/api.yml）──
+_CASE_API_023 = EvalCase(
+    id='API-023',
+    legacy_id='',
+    title='建号缺岗位/角色 ⇒ 422 + 未落库（不再按 operator 兜底），且「缺省角色字面量」台账双向一致（#5987）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['API 直连创建员工时没传岗位（也没传 role/roleIds）：账号不得拿到运营级权限，应明确报错要求选岗位'],
+    expectations=[],
+    data_checks=['实例（真端点 + 真 @RestControllerAdvice）：POST /api/admin/users 只带 phone/name/username/password（或缺 position 且 role/roleIds 皆无）⇒ 422 VALIDATION_ERROR（BusinessException.validationError 的既有码位）+ 响应全文含「岗位」（可行动文案）；闸门在调 userService.createUser 之前（verifyNoInteractions = 未落库的行为等价读数）；修前实测 200 + role=operator + 岗位名=operator（运营级 26 码含 order:create/inbound:create/finance:create/order:refund）', '正向对照（证明不是「什么都返 400」）：带 position（岗位=角色体系 #2969）⇒ 200 且 role 按岗位解析下发；只带 role 不传 position ⇒ 200 且 position 回退为角色名（既有契约 employee-role.position-fallback 不回归）', '服务侧实例：UserService.createUser 的 role 为空/空白 ⇒ 422 BusinessException（VALIDATION_ERROR），且 userMapper.insert 一次都没发生（「返回了错误」≠「没写进去」）；显式 role ⇒ 成功落库且写入行 role/position 逐字等于调用方声明', '类级元守卫：「缺省角色字面量」赋值点（.role("<字面量>") / .role(x != null ? x : "<字面量>")）扫描结果 ⇄ 台账双向相等（台账有而扫描无 = 陈旧 ⇒ 红；扫描有而台账无 = 新增缺省/授权字面量 ⇒ 红）；台账只许缩短（条数现取比较）', '类级语义判据：两个建号入口里含 .position(...) 的语句不得出现写权限角色字面量（admin/super_admin/operator/product_manager/finance/sales/manager）', '判别力自证：旧形态 .role(x != null ? x : "operator") 判 FALLBACK、.role("super_admin") 判 LITERAL、.role(user.getRole()) 与 .role(anyToString(map.get("role"))) 不命中；并反射读一次台账常量与扫描实现（防空跑绿）'],
+    skip_reason='[backend-contract] 由 admin-api 单测（AdminUserControllerPostMissingPositionTest / EmployeeGrantDefaultRoleMetaGuardTest）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'fail-closed', 'permission'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── AU-001 [SMOKE] 员工登录 用户名@企业编码 + 密码 → 成功签发 JWT（源: cases/auth.yml）──
 _CASE_AU_001 = EvalCase(
     id='AU-001',
@@ -11718,6 +11736,7 @@ ALL_CASES = (
     _CASE_API_022,
     _CASE_API_012,
     _CASE_API_008,
+    _CASE_API_023,
     _CASE_AU_001,
     _CASE_AU_002,
     _CASE_AU_003,
