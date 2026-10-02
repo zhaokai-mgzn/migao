@@ -1,7 +1,7 @@
 ---
 domain: product
 display: 商品管理
-tools: product_search, product_detail, product_update, sku_update, inventory_manage, batch_stock_query, processing_item_query, category_manage, stock_ledger_query, inbound_order_query, operation_catalog_query, craft_calc_config_query, interact
+tools: product_search, product_detail, product_update, sku_update, inventory_manage, batch_stock_query, processing_item_query, category_manage, stock_ledger_query, inbound_order_query, operation_catalog_query, craft_calc_config_query, craft_config_query, interact
 ---
 
 ## 本域写边界（issue #5303：A 档可逆写补回）
@@ -39,6 +39,7 @@ tools: product_search, product_detail, product_update, sku_update, inventory_man
 | 店铺加工项目录（分类/单位） | processing_item_query |
 | 工序库/工艺路线模板 | operation_catalog_query(operations / routings) |
 | 算料配置（卷边/损耗等参数） | craft_calc_config_query |
+| 工艺配置缺口 · 异常 · 卡点 · 加工费组合（issue #4923） | craft_config_query(action=routing_gaps / route_signals / routing_anomalies / fee_combinations / fee_gaps / stuck_points) |
 | 建品/改名/改图/上下架 | ❌ 不可用（已下线）→ 引导商家到后台「商品管理」页(/products)操作 |
 | 库存调整（出库/入库/调整） | ❌ 不可用（已下线）→ 引导商家到后台「商品管理」页（编辑商品时填 SKU「库存（米）」）操作 |
 | 分类增删改 / 加工项增删改 | ❌ 不可用（已下线）→ 引导商家到后台「商品管理 → 分类管理」或「加工项管理」页操作 |

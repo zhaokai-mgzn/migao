@@ -253,6 +253,16 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # issue #5247 进场：算料配置读面 —— 此前配置读写同用 `processing:manage`。
     # issue #5291：读面改挂生产域读码 `production:view`（写面 `PUT` 仍是 `processing:manage`）。
     "craft_calc_config_query": ("production:view",),
+    # issue #4923 进场：工艺配置读面聚合（路线缺口 / 信号映射 / 路线来源异常 / 加工费组合 /
+    # 加工费缺口 / 卡点，6 个 action 全是 GET）—— 声明生产域**读**码，与侧边栏「工艺配置」
+    # 节点同码（同族只读工具一致）。
+    # 🔴 **本表登记的是「工具声明的码」（评审口径），不是端点生效码**：该工具 6 个端点里
+    # `routing-gaps` / `route-signals` / `stuck-points` 仍是类级 `order:list`、
+    # `orders/routing-anomalies` 仍是方法级写码 `processing:manage` ⇒ 端点侧三档码**有意保留**
+    # （收敛会改岗位集合，见 `tests/unit_ci_workflows/test_agent_permission_parity.py` 的
+    # `CODE_DIVERGENCE_EXCEPTIONS` 与 `test_tools_craft_config_query.py` 的
+    # `TestControllerPermissionParity`）。此处按**工具声明**登记，一字不掺端点口径。
+    "craft_config_query": ("production:view",),
     # issue #5247 改判：写 action（create/update/打标签族）已删除 ⇒ 写码 `customer:create` 退场。
     "customer_manage": ("customer:view",),
     "dashboard_stats": ("dashboard:view",),
@@ -337,6 +347,10 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "category_manage": frozenset({"operator", "product_manager"}),
     # issue #5247 进场；issue #5291：改挂 `production:view` 后持有角色不变（目录推导）。
     "craft_calc_config_query": frozenset({"operator", "product_manager"}),
+    # issue #4923 进场：声明 `production:view` ⇒ 目录推导的持有角色 = operator + product_manager
+    # （与 `craft_calc_config_query` / `operation_catalog_query` 同码同放行集）。
+    # ⚠️ C 端恒不可达：C 端 JWT 无权限码（`UserIdentity.permissions` 默认空）⇒ 小布不做权限码授权。
+    "craft_config_query": frozenset({"operator", "product_manager"}),
     "customer_manage": frozenset({"customer_service", "operator", "sales"}),
     "dashboard_stats": frozenset({
         "customer_service", "finance", "knowledge_editor", "operator", "product_manager", "sales",

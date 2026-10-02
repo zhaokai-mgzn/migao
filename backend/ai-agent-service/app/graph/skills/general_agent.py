@@ -33,6 +33,10 @@ GENERAL_TOOLS = [
     "inbound_order_query",
     "operation_catalog_query",
     "craft_calc_config_query",
+    # 工艺配置读面聚合（issue #4923）：缺口 / 异常 / 卡点 / 加工费组合 6 个只读 action。
+    # 绑兜底的依据 = 与同族只读工具同一份判据（工单 #3996 / #5188 / #5247 的既有惯例）：
+    # 「工艺配置缺口/卡点」**没有专属意图**，分类器可能落 general ⇒ 不绑就是能力谎报。
+    "craft_config_query",
     # 看板 / 日报 / 会话 / 人事（均已只读化）
     "dashboard_stats",
     "briefing_query",

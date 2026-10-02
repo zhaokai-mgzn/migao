@@ -165,6 +165,25 @@
    ],
    "source_sha256": "88ba4cfc8da6d417b66a4f27cedac7f0b9dc55673f7dfe8040398840765c3e81"
   },
+  "craft_config_query": {
+   "actions": null,
+   "actions_unattributed": [
+    "fee_combinations",
+    "fee_gaps",
+    "route_signals",
+    "routing_anomalies",
+    "routing_gaps",
+    "stuck_points"
+   ],
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/craft_config_query.py",
+   "keys": [],
+   "literal_keys": [],
+   "shape_notes": [
+    "data=response.get('data') or {}"
+   ],
+   "source_sha256": "f024f31ca502bf4de550f4311b50ca6bd62f76655d7b533288d14c7f4bfee5dc"
+  },
   "curtain_calc": {
    "actions": null,
    "dynamic": true,

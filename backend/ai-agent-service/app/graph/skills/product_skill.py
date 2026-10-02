@@ -34,6 +34,9 @@ PRODUCT_TOOLS = [
     "inbound_order_query",       # 入库单 / 批次（GET /api/admin/inbound-orders* → inbound:view）
     "operation_catalog_query",   # 工序库 / 工艺路线（GET /api/admin/production/{operations-catalog,routings} → production:view，#5291）
     "craft_calc_config_query",   # 算料配置（GET /api/admin/production/craft-calc-config → production:view，#5291）
+    # 工艺配置读面：缺口 / 信号映射 / 路线来源异常 / 加工费组合 / 加工费缺口 / 卡点
+    # （6 个 GET /api/admin/production/** → 工具声明 production:view；issue #4923）
+    "craft_config_query",
     # ── A 档可逆写补回（issue #5303，用户裁定 2026-09-24）：**只补这两条** ──
     # 判据：`WRITE|IDEMPOTENT`（重放安全）+ 可逆（价格能再调回去）+ 非对外承诺 +
     # 不绕过审核门禁；权限码 `product:create`（= admin-api `AgentProductController` 的

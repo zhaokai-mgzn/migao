@@ -98,7 +98,13 @@ LEDGER_CEILINGS = {
     # 台账条目数增长的原因是「确实发生了一次人已批准的新授权」，不是「有人把台账放宽了」。
     "AUTHORIZATION_CENSUS": 16,
     "UNANNOTATED_ENDPOINTS": 21,
-    "REGISTERED_RESIDUALS": 9,
+    # issue #4923（2026-10-02）：`craft_config_query` 是**跨码工具**（6 个读端点分属三档生效码，
+    # 工具声明生产域读码 `production:view`）⇒ 判据 2 的具名出口 `CODE_DIVERGENCE_EXCEPTIONS`
+    # 新增一条，`REGISTERED_RESIDUALS` 同步新增一条「载体说明」条目（9 → 10）。
+    # **这是显式放宽**（diff 里看得见）：增长的原因是「确实多了一把跨码只读工具、且它的缺口被
+    # 有意保留」（#5699 P4 的「会改变岗位集合的 ⇒ 具名登记、有意保留」口径），
+    # 不是「有人把台账放宽了」；缺口一旦收敛，两条都必须删除（各自都有陈旧即红的判据）。
+    "REGISTERED_RESIDUALS": 10,
     "A7_CODES_BEYOND_CATALOG": 0,
     "A7_VS_MIRROR_DIVERGENCES": 0,
     "PAGE_VISIBILITY_GAPS": 4,
