@@ -54,6 +54,31 @@ PSEUDO_TOOL_NAMES = set(PSEUDO_TOOLS) | {"none"}
 MIBAO_SKILL_FILES = list(eval_case_filter.MIBAO_SKILL_FILES)
 
 
+def _skill_name(skill_file_name: str) -> str:
+    """skill 文件名 → skill 名（`general_agent` → `general`）。
+
+    本文件里**唯一**一份归一化口径（`p.stem.replace("_skill", "").replace("_agent", "")`）
+    —— 「声明→清单」与「清单→声明/登记」两个方向守卫共用，勿另造第二套映射。
+    """
+    return skill_file(skill_file_name).stem.replace("_skill", "").replace("_agent", "")
+
+
+def _mibao_declared_skill_names() -> set:
+    """解析 `mibao.py` 的 `MIBAO_CONFIG.skill_names` + `fallback_skill`（纯文本，零 app 依赖）。
+
+    本文件里**唯一**一份「米宝声明了什么」的取值口径（两个方向守卫共用，避免两套解析漂移）。
+    """
+    src = MIBAO_AGENT_SRC.read_text(encoding="utf-8")
+    cfg = src[src.find("MIBAO_CONFIG"):]
+    names = re.search(r"skill_names\s*=\s*\[(.*?)\]", cfg, re.S)
+    assert names, "没能从 mibao.py 解析出 skill_names（本守卫失去意义，需同步解析口径）"
+    declared = set(re.findall(r'"([a-z_]+)"', names.group(1)))
+    fallback = re.search(r'fallback_skill\s*=\s*"([a-z_]+)"', cfg)
+    if fallback:
+        declared.add(fallback.group(1))
+    return declared
+
+
 def _mibao_real_toolset() -> set:
     """从源码解析：米宝各 skill 工具并集（B 端可跑工具集的单一真值来源）。
 
@@ -164,20 +189,55 @@ class TestMibaoToolsetTruth:
         )
 
     def test_declared_skills_cover_mibao_config(self):
-        """MIBAO_CONFIG 声明的 skill 必须都在解析清单里（防新增 skill 漏出覆盖体检）。"""
-        src = MIBAO_AGENT_SRC.read_text(encoding="utf-8")
-        cfg = src[src.find("MIBAO_CONFIG"):]
-        names = re.search(r"skill_names\s*=\s*\[(.*?)\]", cfg, re.S)
-        assert names, "没能从 mibao.py 解析出 skill_names（本守卫失去意义，需同步解析口径）"
-        declared = set(re.findall(r'"([a-z_]+)"', names.group(1)))
-        fallback = re.search(r'fallback_skill\s*=\s*"([a-z_]+)"', cfg)
-        if fallback:
-            declared.add(fallback.group(1))
-        covered = {p.stem.replace("_skill", "").replace("_agent", "")
-                   for p in (skill_file(s) for s in MIBAO_SKILL_FILES)}
+        """声明 → 清单：MIBAO_CONFIG 声明的 skill 必须都在解析清单里（防新增 skill 漏出覆盖体检）。
+
+        反方向（清单 → 声明/登记）由 `test_extra_skill_files_are_registered_both_ways` 承担。
+        """
+        declared = _mibao_declared_skill_names()
+        covered = {_skill_name(s) for s in MIBAO_SKILL_FILES}
         missing = sorted(n for n in declared if n not in covered)
         assert not missing, (
             f"mibao.py 声明的 skill {missing} 不在覆盖体检解析清单里（其工具不会被体检）"
+        )
+
+    def test_extra_skill_files_are_registered_both_ways(self):
+        """清单 → 声明/登记：额外来源文件必须**双向**与 `MIBAO_EXTRA_SKILL_FILES` 登记面一致。
+
+        判据（issue #5707）：
+          ① `MIBAO_SKILL_FILES` 里凡不属于 skill_names ∪ fallback 的条目 ⇒ 必须登记在
+             `eval_case_filter.MIBAO_EXTRA_SKILL_FILES`（**未登记的额外项 ⇒ 红**）；
+          ② 登记的每一项必须真在 `MIBAO_SKILL_FILES` 里（**删掉已登记的 settings_skill ⇒ 红**）；
+          ③ 登记面不得反过来把"已声明项"当额外来源登记（登记集 ⇄ 差集**相等**，不是包含）。
+
+        为什么需要：反方向此前没有具名判据 —— `MIBAO_TOOLSET_MIN = 25` 只是"防解析器坏掉"的
+        下界、**不是**覆盖门禁。`settings_skill` 的 3 个只读工具（`settings_manage` /
+        `notification_manage` / `validate_input`）经 #4125 家族并入后，删掉它会让米宝工具集
+        34 → 31（实测）——「清单与声明/登记是否自洽」这条判据必须自己说出来，不能靠
+        "正好有用例期望这些工具"这种偶然兜底。
+
+        归一化复用 `_skill_name`（本文件唯一口径），不另造第二套映射。
+        """
+        declared = _mibao_declared_skill_names()
+        covered = {_skill_name(s) for s in MIBAO_SKILL_FILES}
+        registered_files = set(eval_case_filter.MIBAO_EXTRA_SKILL_FILES)
+        registered = {_skill_name(s) for s in registered_files}
+
+        unregistered = sorted((covered - declared) - registered)
+        assert not unregistered, (
+            f"MIBAO_SKILL_FILES 里的额外来源 {unregistered} 不在 mibao.py 的 skill_names/fallback "
+            f"里，也没登记进 eval_case_filter.MIBAO_EXTRA_SKILL_FILES —— 它会被算进米宝工具集"
+            f"却来源不可见（额外来源必须逐条登记，issue #5707）"
+        )
+        not_in_list = sorted(registered_files - set(MIBAO_SKILL_FILES))
+        assert not not_in_list, (
+            f"MIBAO_EXTRA_SKILL_FILES 登记的 {not_in_list} 已不在 MIBAO_SKILL_FILES 里 —— "
+            f"已登记的额外来源被删掉（米宝工具集静默缩水，MIBAO_TOOLSET_MIN 的下界拦不住）；"
+            f"恢复该条目，或连同登记一起显式改判（issue #5707）"
+        )
+        over_registered = sorted(registered - (covered - declared))
+        assert not over_registered, (
+            f"MIBAO_EXTRA_SKILL_FILES 登记了 {over_registered}，但它并不是「额外来源」"
+            f"（已在 mibao.py 的 skill_names/fallback 里声明）—— 登记面只许放真正的额外来源"
         )
 
     def test_toolset_size_above_floor(self):
