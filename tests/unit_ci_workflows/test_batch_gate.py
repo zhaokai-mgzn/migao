@@ -27,7 +27,8 @@ r"""批次统一验证入口 `scripts/batch-gate.sh` 的实例判据（issue #60
 | 7 | 包与 base **有冲突（DIRTY）** ⇒ 拒绝（exit 3）、**没跑** gate、给同步出口 | 不判冲突就把它拉进批次（#6003/#6005 的形态）⇒ 红 |
 | 8 | PR 有 `fail` / `pending` ⇒ 拒绝（exit 3）、**没跑** gate | 把「CI 未绿」当就绪 ⇒ 红 |
 | 9 | **没有对应的 open PR** ⇒ 拒绝（exit 3）、**没跑** gate | 把「没开 PR」当就绪 ⇒ 红 |
-| 10 | `gh` 不可用 ⇒ **fail-closed 拒绝**（exit 3）且具名写「无法判定 ≠ 就绪」 | 把「取不到 PR 状态」静默当就绪（fail-open）⇒ 红 |
+| 10 | `gh` **在**但调用失败（无凭据/断网）⇒ **fail-closed 拒绝**（exit 3）+ 具名「无法判定 ≠ 就绪」 | 把「取不到 PR 状态」静默当就绪（fail-open）⇒ 红 |
+| 10' | `gh` **不在 PATH**（PATH 桩驱动）⇒ 同上，且走「gh 不存在」具名分支 | 只有环境「碰巧没有 gh」才成立 ⇒ CI 上永远走不到（空断言）⇒ 红 |
 | 11 | `--require-ready` **默认开启**（不传开关也判） | 默认值被改成 off ⇒ 判 11 红（沙箱里无 gh ⇒ 期望 fail-closed 却跑了 gate） |
 | 12 | `--no-require-ready` ⇒ 跑，但**必须打印**「未跑（--no-require-ready）—— 这不是「就绪」」 | 逃生口静默跳过（看起来和「就绪」一样）⇒ 红 |
 
@@ -43,9 +44,16 @@ r"""批次统一验证入口 `scripts/batch-gate.sh` 的实例判据（issue #60
 全部在**自足临时仓库**里跑（`git init` + 桩 `verify-all.sh` + 桩 `gh`），**不碰共享检出、不跑真全量**：
 判据造的是自己那几个分支与 worktree，`--base` 显式指向临时仓库的 `main`
 （默认 `origin/main` 在临时仓库里不存在 —— 这正是「不许悄悄依赖环境」的形态）。
-判据 1~6 走「未跑就绪判定」这条路（`MIGAO_BATCH_GATE_SKIP_READY=1`，脚本文件头登记的过渡逃生口）：
+判据 1~6 走「未跑就绪判定」这条路（**显式** `--no-require-ready`）：
 它们判的是**份数 / 归因 / 三态**，沙箱里既没有 remote 也没有真 PR ⇒ 就绪判定必然 fail-closed，
-与本组判题无关（不是「为了让绿而关掉」）。**判据 7~15 一律走真默认路径**（不注入逃生口）。
+与本组判题无关（不是「为了让绿而关掉」—— 逃生口是脚本的**唯一**口子，且它必打印未跑声明）。
+**判据 7~15 一律走真默认路径**（不传逃生口）。
+
+⚠️ **两个环境相关的坑（CI 实测，2026-10-02）**：
+① 「`gh` 不存在」这条路只能靠 **PATH 桩**驱动（把 `gh` 从 PATH 里摘干净）—— **不许**指望 CI 上没有 gh
+（实测 runner 上 gh 是装着的、只是没凭据 ⇒ 走的是「gh 调用失败」那条分支）；
+② 因此本文件对这两条**分别**判：`gh` 在但调用失败（挂桩 gh）与 `gh` 不在 PATH（`_slim_path`），
+两条都断**语义 + 三态**（`❓ 无法判定` + 具名「无法判定 ≠ 就绪」+ exit 3 + 一次全量都没跑）。
 
 ⚠️ **DIRTY 的分支怎么造**（实测教训）：只在分支上改一行、而 base 没动那份文件 ⇒ `merge-tree` 是**快进**、
 **退出码 0** —— 那**不是**冲突。真 DIRTY 的形态 = **分支切出后 main 前进了同一行**（`chapters-dirty`）；
@@ -217,20 +225,22 @@ def run_batch(
     """跑真脚本；返回 (CompletedProcess, 桩被调用的次数, gh 桩被调用的行)。
 
     两种环境形态：
-      - `gh_mode=<模式>`：挂**桩 gh**（`all-green` / `fail` / `pending` / `no-pr` / `offline` …）；
-      - 默认（`gh_mode=None`）：设过渡逃生口 `MIGAO_BATCH_GATE_SKIP_READY=1` —— 存量判据 1~6 在
-        本沙箱里**够不到** GitHub，故显式走「未跑就绪判定」这条路（判的是份数/归因/三态，不是就绪）。
-        （要跑**真默认路径**用 `run_raw`。）
+      - `gh_mode=<模式>`：挂**桩 gh**（`all-green` / `fail` / `pending` / `no-pr` / `offline` …），
+        走**真默认路径**（判就绪）；
+      - 默认（`gh_mode=None`）：给命令行**显式**加上 `--no-require-ready` —— 存量判据 1~6 在本沙箱里
+        **够不到** GitHub，故走「未跑就绪判定」这条路（判的是份数/归因/三态，不是就绪）。
+        ⚠️ 逃生口**只有命令行这一个**（脚本有意不做环境变量逃生口）。
+        （要跑**真默认路径且什么都不传**用 `run_raw`。）
     """
     log = root.parent / f"stub-{uuid.uuid4().hex}.log"
     env = dict(os.environ)
     env.pop("MIGAO_HEAVY_WAIT", None)
-    env.pop("MIGAO_BATCH_GATE_SKIP_READY", None)
     env.update({"BATCH_GATE_STUB_LOG": str(log), "BATCH_GATE_STUB_RC": stub_rc,
                 "BATCH_GATE_STUB_EXTRA": stub_extra})
     gh_calls: list[str] = []
     if gh_mode is None:
-        env["MIGAO_BATCH_GATE_SKIP_READY"] = "1"
+        if "--no-require-ready" not in args:
+            args = ("--no-require-ready", *args)
     else:
         gh_log = root.parent / f"gh-{uuid.uuid4().hex}.log"
         env.update({"BATCH_GATE_GH_MODE": gh_mode, "BATCH_GATE_GH_LOG": str(gh_log),
@@ -375,39 +385,52 @@ def test_missing_pr_is_refused_before_the_gate(sandbox):
 
 
 def test_gh_unavailable_fails_closed_and_says_undecidable(sandbox):
-    """判据 10：gh 不可用 ⇒ **fail-closed 拒绝**（exit 3）且具名写「无法判定 ≠ 就绪」。
+    """判据 10：**`gh` 在、但调用失败**（无凭据 / 断网 / 限流）⇒ fail-closed（exit 3）、一次全量都没跑。
 
-    不许 fail-open（把「取不到」当成「就绪」就是本条要拦的形态）。
+    这是 CI runner 上的**真实形态**（`gh` 装着、但拿不到 PR 读数）；不许 fail-open
+    （把「取不到」当成「就绪」就是本条要拦的形态）。断言只吃**语义 + 三态**，不吃环境特定措辞。
     """
     proc, calls, _ = run_batch(sandbox, "pkg-a", gh_mode="offline")
     out = proc.stdout + proc.stderr
     assert proc.returncode == 3, out
     assert calls == [], f"无法判定时不该跑 gate（fail-closed），实得 {calls}"
+    assert "❓" in out, f"没有印出「无法判定」标记：{out}"
     assert "无法判定 ≠ 就绪" in out, f"没有具名「无法判定 ≠ 就绪」：{out}"
     assert "gh pr list 失败" in out, f"没有给出无法判定的现取依据（pr list 那一步）：{out}"
+    # 用**逐包就绪行的形态**判 fail-open（裸 `✅` 会误伤：脚本 footer 里就有「别把 ❓ 读成 ✅」）
+    assert "✅ pkg-a：" not in out, f"不许把「取不到」印成就绪（fail-open）：{out}"
+
+
+#: 脚本与判据跑起来真正需要的命令（逐个软链进 slim PATH；缺一个都会当场红，不会静默降级）。
+_SLIM_TOOLS = ("git", "python3", "sed", "grep", "head", "tail", "tr", "date", "mktemp", "rm",
+               "cat", "dirname", "basename", "env", "sh", "bash", "sort", "uniq", "cut", "wc",
+               "mkdir", "cp", "mv", "ls", "printf", "sleep")
 
 
 def _slim_path(workdir: pathlib.Path) -> str:
-    """造一个**没有 gh** 的 PATH（只留 git / python3 / coreutils 的软链）。"""
+    """造一个**真的没有 gh** 的 PATH —— 用来驱动「`gh` 不在 PATH」那条分支。
+
+    ⚠️ **只返回软链目录**：早先的写法在末尾缀了 `/usr/bin:/bin`，而 CI runner 上 `/usr/bin/gh` 是**存在**的
+    ⇒ `command -v gh` 照样命中 ⇒ 判据走的是「gh 调用失败」那条分支，却被断言成「gh 不存在」的措辞
+    （CI 上**永远走不到** = 空断言形态；`--check-weak` 只扫字面串，拦不住这种）。
+    """
     bindir = workdir / f"slimbin-{uuid.uuid4().hex}"
     bindir.mkdir()
-    for tool in ("git", "python3", "sed", "grep", "head", "tail", "tr", "date", "mktemp",
-                 "rm", "printf", "cat", "dirname", "basename", "env", "sh", "bash"):
+    for tool in _SLIM_TOOLS:
         found = shutil.which(tool)
         if found:
             (bindir / tool).symlink_to(found)
-    return f"{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
+    return str(bindir)
 
 
 def run_raw(root: pathlib.Path, *args: str, path: str | None = None):
-    """**什么都不注入**地跑真脚本（不挂桩 gh、不设过渡逃生口）—— 判据 11 与**红证**走这条路。
+    """**什么都不注入**地跑真脚本（不挂桩 gh、不传逃生口）—— 判据 10'/11 与**红证**走这条路。
 
     返回 (CompletedProcess, gate 被调用次数)。
     """
     log = root.parent / f"stub-{uuid.uuid4().hex}.log"
     env = dict(os.environ)
     env.pop("MIGAO_HEAVY_WAIT", None)
-    env.pop("MIGAO_BATCH_GATE_SKIP_READY", None)
     env.update({"BATCH_GATE_STUB_LOG": str(log), "BATCH_GATE_STUB_RC": "0",
                 "BATCH_GATE_STUB_EXTRA": ""})
     if path is not None:
@@ -419,22 +442,38 @@ def run_raw(root: pathlib.Path, *args: str, path: str | None = None):
 
 
 def test_gh_missing_from_path_fails_closed(sandbox):
-    """判据 10'：`gh` 根本不存在 ⇒ 同样 fail-closed（exit 3），且提示装了再跑。"""
-    proc, calls = run_raw(sandbox, "pkg-a", path=_slim_path(sandbox.parent))
+    """判据 10'：`gh` **不在 PATH** ⇒ fail-closed（exit 3）、一次全量都没跑、具名「无法判定 ≠ 就绪」。
+
+    ⚠️ 这条路必须由 **PATH 桩**驱动（`_slim_path`）—— CI runner 上 `gh` 是**装着**的，
+    靠环境「碰巧没有 gh」写断言 ⇒ 该断言在 CI 上**永远走不到**（空断言）。故先自证桩生效。
+    """
+    slim = _slim_path(sandbox.parent)
+    assert shutil.which("gh", path=slim) is None, f"PATH 桩失效（还能找到 gh）：{slim}"
+    proc, calls = run_raw(sandbox, "pkg-a", path=slim)
     out = proc.stdout + proc.stderr
     assert proc.returncode == 3, out
-    assert calls == [], f"gh 不存在时不该跑 gate，实得 {calls}"
-    assert "gh 不存在" in out, f"没有具名「gh 不存在」：{out}"
+    assert calls == [], f"gh 不在 PATH 时不该跑 gate（fail-closed），实得 {calls}"
+    assert "❓" in out, f"没有印出「无法判定」标记：{out}"
     assert "无法判定 ≠ 就绪" in out, f"没有具名「无法判定 ≠ 就绪」：{out}"
+    assert "gh 不存在" in out, f"PATH 桩生效时应走「gh 不存在」那条具名分支：{out}"
+    # 用**逐包就绪行的形态**判 fail-open（裸 `✅` 会误伤：脚本 footer 里就有「别把 ❓ 读成 ✅」）
+    assert "✅ pkg-a：" not in out, f"不许把「取不到」印成就绪（fail-open）：{out}"
 
 
 def test_require_ready_is_on_by_default(sandbox):
-    """判据 11：**不传任何开关**也判就绪（沙箱里没有真 PR/remote ⇒ 期望 fail-closed 拒绝、没跑 gate）。"""
-    proc, calls = run_raw(sandbox, "pkg-a", path=_slim_path(sandbox.parent))
+    """判据 11：**不传任何开关**也判就绪（沙箱里没有真 PR/remote ⇒ 期望 fail-closed 拒绝、没跑 gate）。
+
+    与判据 10' 的分别：这条判的是**默认值**（有没有开），只断三态与「没跑全量」；
+    至于「无法判定具体走哪条具名分支」由 10'（gh 不在 PATH）与 10（gh 在但调用失败）各自承担。
+    """
+    slim = _slim_path(sandbox.parent)
+    assert shutil.which("gh", path=slim) is None, f"PATH 桩失效（还能找到 gh）：{slim}"
+    proc, calls = run_raw(sandbox, "pkg-a", path=slim)
     out = proc.stdout + proc.stderr
     assert proc.returncode == 3, out
     assert calls == [], f"默认路径下不就绪时不该跑 gate，实得 {calls}"
     assert "就绪前置判定（--require-ready 默认开启" in out, f"默认没有开就绪判定：{out}"
+    assert "❓" in out, f"默认路径没有印出「无法判定」标记：{out}"
     assert "无法判定 ≠ 就绪" in out, f"默认路径没有 fail-closed：{out}"
 
 
@@ -498,6 +537,14 @@ MUTATIONS = [
         "pkg-a",
         "offline",
     ),
+    (
+        "逃生口的「未跑」声明被摘掉（跳过变成静默）",
+        '  echo "⏭️ 就绪判定未跑',
+        '  : "⏭️ 就绪判定未跑',
+        "skip_notice_gone",
+        "pkg-a",
+        None,        # 走 run_batch 的默认：显式 `--no-require-ready`
+    ),
 ]
 
 
@@ -524,7 +571,8 @@ def test_mutations_turn_the_suite_red(sandbox, tmp_path, label, old, new, expect
     判红读数按 `expect` 分流（三种形态**互斥**，不许混着断 —— 混着断必然自相矛盾）：
       - `not_ready_became_ready` ⇒ 那个包被印成 **✅ <包>：<理由>**（不就绪被印成就绪）；
       - `undecidable_became_ready` ⇒ 那行被印成 **✅ pkg-a：gh pr list 失败**（fail-open 的可见形态）；
-      - `default_off` ⇒ **就绪判定横幅整个不见**（连判都没判）。
+      - `default_off` ⇒ **就绪判定横幅整个不见**（连判都没判）；
+      - `skip_notice_gone` ⇒ 走了逃生口却**不吭声**（「未跑…这不是「就绪」」那句没了）。
 
       这三条**都**会：① 不再打「⛔ 有包未通过就绪判定」；② 那一次全量**照跑**（`calls == 1`）。
 
@@ -532,7 +580,7 @@ def test_mutations_turn_the_suite_red(sandbox, tmp_path, label, old, new, expect
       与变异 B/C/D 的 exit 0 不同；共同读数是「就绪判定有没有再拒绝 + 全量有没有照跑」。
     """
     mutant = _mutated_repo(tmp_path, old, new)
-    # ⚠️ 必须走**真默认路径**（不注入过渡逃生口 MIGAO_BATCH_GATE_SKIP_READY）—— 否则脚本压根不判就绪，
+    # ⚠️ 必须走**真默认路径**（不传 `--no-require-ready`）—— 否则脚本压根不判就绪，
     # 变异体一律「看起来绿」⇒ 这组红证就成了空断言（这不是假设：本判据第一版正是如此被抓出来的）。
     proc, calls, _ = run_batch(mutant, branch, gh_mode=gh_mode)
     out = proc.stdout + proc.stderr
@@ -550,6 +598,10 @@ def test_mutations_turn_the_suite_red(sandbox, tmp_path, label, old, new, expect
         assert "✅ pkg-a：gh pr list 失败" in out, f"变异「{label}」没被抓住（fail-open 那行不在）：\n{out}"
         assert "❓" not in out, f"变异「{label}」仍印着「无法判定」标记：\n{out}"
         assert len(calls) == 1, f"变异「{label}」没被抓住（没放行）：{calls}"
+    elif expect == "skip_notice_gone":
+        # 逃生活儿口静默了 ⇒ 使用者**看不出**「这次没判就绪」（与「就绪」长得一样）
+        assert "这不是「就绪」" not in out, f"变异「{label}」没被抓住（声明还在）：\n{out}"
+        assert len(calls) == 1, f"变异「{label}」没被抓住（本该照跑全量）：{calls}"
     elif expect == "default_off":
         # 就绪判定**根本没跑** ⇒ 横幅不见 + 打印「未跑」声明（这与脚本自带逃生口是两回事：
         # 「默认关」下连判都不判；逃生口下会显式打印 `--no-require-ready` 那句）
@@ -558,6 +610,7 @@ def test_mutations_turn_the_suite_red(sandbox, tmp_path, label, old, new, expect
         assert len(calls) == 1, f"变异「{label}」没被抓住（没放行）：{calls}"
     else:  # pragma: no cover - 防呆：expect 写错时当场红，不静默放行
         raise AssertionError(f"未知的 expect：{expect!r}（变异表写错 ⇒ 红证无效）")
+
 
 def test_control_real_script_has_no_mutation_marker(sandbox):
     """判据 15（对照读数）：真脚本里没有留下任何变异——上面那组红证不是「冲着坏脚本测的」。"""

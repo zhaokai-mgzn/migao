@@ -48,9 +48,11 @@
 #   ./scripts/batch-gate.sh --no-require-ready <branch> ...  # 逃生口：跳过就绪判定（人类明知故犯时用）
 #
 #   环境变量：`MIGAO_HEAVY_WAIT=<秒>`（默认 2700）—— 透传给 gate 的排队上限。
-#             `MIGAO_BATCH_GATE_SKIP_READY=1` —— ⚠️ **过渡逃生口**，只为「既有调用点还没显式传 flag」而存在
-#             （老调用点跑在本机连不上 GitHub 的场景里 ⇒ 默认 fail-closed 会把它们全部拦死）。
-#             等各调用点都显式写上 `--no-require-ready` 后**本环境变量应当删除**。
+#
+#   ⚠️ **就绪判定只有一个逃生口**：显式 `--no-require-ready`（可见、在命令行里、必打印未跑声明）。
+#   有意**不做**环境变量逃生口：`git grep -n "batch-gate" origin/main` 命中的**全是文档**
+#   （`docs/wiki/Development.md` 两处裸调用示例、`docs/wiki/Dev-Mode-Balance.md` 的设计页），
+#   **没有任何程序化调用点** ⇒ 过渡期不存在，多一个环境变量只会多一个**无判据的分支** + 一个静默逃生口。
 #
 # ## 退出码（三态，与 merge_gate.py / stranding-check.sh 同口径）
 #
@@ -94,9 +96,6 @@ while [ $# -gt 0 ]; do
     *)      BRANCHES+=("$1"); shift ;;
   esac
 done
-
-# 过渡逃生口（见文件头「环境变量」）：只在**环境**里显式设了 1 才免判，且**仍然打印**未跑声明。
-if [ "${MIGAO_BATCH_GATE_SKIP_READY:-}" = "1" ]; then READY=0; fi
 
 if [ "${#BRANCHES[@]}" -eq 0 ]; then
   echo "用法: $0 <branch> [<branch> ...] ｜ $0 --in <worktree> <branch> ..." >&2
