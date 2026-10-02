@@ -3663,21 +3663,21 @@
 ```
 溯源: 2026-10-02 新增（issue #5970；用户当日逐字裁定「选了 A+B 两项」，开单要求由用户给出）。A = `docs/wiki/Change-Blast-Radius.md`（变更面 → 必跑具名判据 → 可复制命令，7 行实测红证）；B = `.github/growth_gate.py` 的**非阻塞**射程提示（命中射程路径 ⇒ 打印「你还欠这几张登记面」+ 各给命令）。落码 = ① `.github/scripts/blast_radius.py`（**单一数据源**：8 个面 / 17 条具名判据 + 可复制命令）② `growth_gate` 接线（独立段 + `--json` 新字段 `blast_radius`，**不动 blocker_count 语义**）③ 人读镜像文档 ④ 两份判据文件 15 条（注册表 9 + 接线 6，含注入式反面「射程表清空 ⇒ 提示消失且 blocker 不变」）⑤ 7 行注入式红证（读数见本用例 data_checks 与文档表）。取号 **MC-061**：现取 main 最大 = **MC-060**（`grep -o 'id: MC-[0-9]*' .github/cases/misc.yml | sort -t- -k2 -n | tail -1`），本包开工时现取在飞分支（含 `feat/4923-craft-config-query`）最大亦为 MC-060 ⇒ 按「当前最大号 +1」取 **MC-061**（沿用 MC-054~060 的「空档号 ≠ 可用号」先例）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ **谁后合并谁** `./scripts/sync-main.sh --rebase` 并**重渲染**（生成物不许手改、二次渲染零 diff）。 ｜ tags: ci, blast-radius, growth-gate, registry, red-proof, fail-closed
 
-### MC-062. 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建写按钮即红，豁免台账只许缩短 🔵
+### MC-062. 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短 🔵
 ```
-你: 在 (dashboard)/**/page.tsx 上新增一个「新增 X / 新建 X」写按钮，却没在按钮上接写权限码（#5983 的形态）
+你: 在 (dashboard)/**/page.tsx 上新增一个「新增 X / 新建 X / 登记 X」写按钮，却没在按钮上接写权限码（#5983 的形态）
 期望: direct_reply
-数据: 判据 1（未登记即红）：某页出现新增/新建类写按钮、文件内无 `hasPermission(...)` 引用、且不在豁免台账 ⇒ 红并**具名**报出「文件 + 行号:标签」
+数据: 判据 1（未登记即红）：某页出现新增/新建/**登记**类写按钮、文件内无 `hasPermission(...)` 引用、且不在豁免台账 ⇒ 红并**具名**报出「文件 + 行号:标签」
 数据: 判据 2（台账只许缩短）：台账条目对应的文件已不存在 / 已无写按钮 / 已接 `hasPermission` ⇒ 红（陈旧条目必须删）
 数据: 判据 3（冻结上限）：条目数 > `frozen_max_entries` ⇒ 红（新增豁免必须显式改上限、看得见）
 数据: 判据 4（fail-closed）：扫描面零命中 ⇒ 红（选择器 / 目录漂移时不许静默绿）
 数据: 判据 5（判别力自证 + 对照）：五种坏形态在**内存语料**上各自判红；合规语料 + 空台账 ⇒ **不红**（判据不许被自己的文案喂红）
-数据: 判据 6（实例面）：三张写码 `order:create` / `product:create` / `inbound:create` 必须逐字出现在各自页面文件里。执行点 = 同文件 test_three_fixed_pages_really_gate_their_write_button
+数据: 判据 6（实例面）：四张写码 `order:create` / `product:create` / `inbound:create` / `finance:create` 必须逐字出现在各自页面文件里。执行点 = 同文件 test_fixed_pages_really_gate_their_write_button
 数据: 🔴 红证（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复 ⇒ **2 failed / 3 passed**（`未登记的写按钮：…/orders/page.tsx …`、`orders/page.tsx 未接写码 order:create（实取 []）`）；恢复修复后 **5 passed**。复算命令 = `python3 -m pytest tests/unit_ci_workflows/test_list_page_write_button_gate.py -q`
 跳过: [backend-contract] 静态结构守卫（只读仓内文本 + 内存注入；零网络、零时钟、不跑被引用的测试）由 pytest 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-10-02 新增（issue #5983 铁律 8 的类级固化）：修三页（orders/products/inbound-orders 的写按钮按写码显隐）只是**实例面**；本条把「列表页写按钮漏接权限」钉成未登记即红 —— 扫描 `frontend/admin-web/src/app/(dashboard)/**/page.tsx`（排除 `…/new/page.tsx`，那是建单页本身）里「整行 = 新增/新建标签」的写按钮，必须同文件引用 `hasPermission(...)` 或登记进 tests/unit_ci_workflows/list_page_write_button_ledger.json（台账只许缩短、冻结上限与条数**现取**）。存量豁免 5 条 = after-sales / knowledge / production·processing / production·routings / roles（同类缺口，不在本 PR 范围，如实登记待办）。取号 MC-062：按「当前最大号 +1」（现取 main 最大 = MC-061；沿用 MC-054~061 的「空档号 ≠ 可用号」先例，故不采用取号工具给出的历史空档 MC-049）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。 ｜ tags: ci, guard, rbac, frontend
+溯源: 2026-10-02 新增（issue #5983 铁律 8 的类级固化）：修四页（orders / products / inbound-orders / finance 的写按钮按写码显隐）只是**实例面**；本条把「列表页写按钮漏接权限」钉成未登记即红 —— 扫描 `frontend/admin-web/src/app/(dashboard)/**/page.tsx`（排除 `…/new/page.tsx`，那是建单页本身）里「整行 = 新增/新建/**登记**标签」的写按钮，必须同文件引用 `hasPermission(...)` 或登记进 tests/unit_ci_workflows/list_page_write_button_ledger.json（台账只许缩短、冻结上限与条数**现取**）。词汇表含「登记」的原因见 ui.yml 的 UI-081：`/finance` 的按钮叫「登记收支」，只认「新增/新建」会把它漏在射程外（正是本判据要防的「看着覆盖了、其实没覆盖」）。存量豁免 5 条 = after-sales / knowledge / production·processing / production·routings / roles（同类缺口，不在本 PR 范围，如实登记待办）。取号 MC-062：按「当前最大号 +1」（现取 main 最大 = MC-061；沿用 MC-054~061 的「空档号 ≠ 可用号」先例，故不采用取号工具给出的历史空档 MC-049）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。 ｜ tags: ci, guard, rbac, frontend
 
 ## 商家入驻域（5 case）
 
@@ -8747,18 +8747,20 @@
 真值: frontend-fix.mibao-tool-not-exposed, frontend-fix.vitest
 溯源: 2026-10-02 新增（issue #5952）：B 端此前**已经**只渲染「正在处理您的请求...」这种人性化进度（ToolProgressIndicator，2026-06-14 起），但**没有任何判据把守** ⇒ 谁把 tool_calls 渲染回来都不会变红。本用例把「不暴露」钉成具名断言（工具名/入参/结果/JSON 形态四类字符串），并把手性化进度钉成正向断言（防止矫枉过正成「长时间无反馈」）。取号 UI-080。 ｜ tags: ui, chat, tool-call, privacy, admin-web
 
-### UI-081. 列表页写按钮随权限显隐（issue #5983）：无写码岗位在 /orders、/products、/inbound-orders 看不到建单/建品按钮，有码照旧 🔵
+### UI-081. 列表页写按钮随权限显隐（issue #5983）：无写码岗位在 /orders、/products、/inbound-orders、/finance 看不到建单/建品/登记按钮，有码照旧 🔵
 ```
-你: 客服/销售/财务登录后进 /orders、/products、/inbound-orders：页面能进（守卫是读码），但笔下的写按钮不该出现
+你: 客服/销售/财务登录后进 /orders、/products、/inbound-orders、/finance：页面能进（守卫是读码），但笔下的写按钮不该出现
 期望: direct_reply
 数据: 判据 1：客服（有 order:list、无 order:create）在 /orders **看不到**「新增订单」；运营（有 order:create）**看得到**。执行点 = frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx「判据 1」
 数据: 判据 2：销售（有 product:list、无 product:create）在 /products 看不到「新增商品」；运营看得到。执行点 = 同文件「判据 2」
 数据: 判据 3：财务（有 inbound:view、无 inbound:create）在 /inbound-orders 看不到「新建入库单」；运营看得到。执行点 = 同文件「判据 3」
 数据: 判据 4（对照，防「一刀切隐藏」）：只持 order:create 时只有订单页按钮在场，另两页按钮不在。执行点 = 同文件「判据 4」
-数据: 🔴 红证（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复后跑本判据 ⇒ **4 failed / 4**（报错形态逐字为 `expected document not to contain element, found <button …>新增商品</button>`）；恢复修复后 **4 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx`
+数据: 判据 5（第 4 页 · 链内同修）：有 `finance:view` 但无 `finance:create` 时 /finance 看不到「登记收支」；财务（有码）看得到。执行点 = 同文件「判据 5」
+数据: 🔴 红证 1（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复后跑本判据 ⇒ **4 failed / 4**（报错形态逐字为 `expected document not to contain element, found <button …>新增商品</button>`）；恢复修复后 **4 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx`
+数据: 🔴 红证 2（第 4 页加入时实测，2026-10-02）：先落判据 5、`/finance` 尚未接码时跑 ⇒ **1 failed / 4 passed**（`expected document not to contain element, found <button …>登记收支</button>`）；接码后 **5 passed**
 跳过: [backend-contract] 纯前端展示面（按钮是否渲染）由 vitest（jsdom）执行；「提交时后端 403」属 admin-api 权限链（另有用例），本用例不管，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-02 新增（issue #5983，P2·权限·UI）：12 格「页面可进 + 按钮可点 + 账号无写权限」的**实例判据**（三页 × 无码/有码两条读数，缺一不可）+ 同批类级元守卫 = tests/unit_ci_workflows/test_list_page_write_button_gate.py（MC-062）。取号 UI-081（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-080）。 ｜ tags: ui, rbac, button-gate, admin-web
+溯源: 2026-10-02 新增（issue #5983，P2·权限·UI）：12 格「页面可进 + 按钮可点 + 账号无写权限」的**实例判据**（页 × 无码/有码两条读数，缺一不可）+ 同批类级元守卫 = tests/unit_ci_workflows/test_list_page_write_button_gate.py（MC-062）。**范围后扩一次（链内同修，铁律 12(b)①）**：`/finance` 的「登记收支」同为该形态（页面守卫 `finance:view`，写面 `finance:create`；issue 把它当「正确范式」是**空真** —— 能进该页的岗位恰好都有写码），同 PR 同范式接码并补判据 5（红证 2）。取号 UI-081（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-080）。 ｜ tags: ui, rbac, button-gate, admin-web
 
 ## 跨切面工具域（2 case）
 
@@ -8893,7 +8895,7 @@
 - MC-059: deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#`
 - MC-060: 「剥注释实现全仓只许一份」的唯一性守卫扫描面扩到**整仓**（issue #5948）：口径显式收紧为**精确名 + 词边界**（不卷进 4 族同名不同义的实现）、**自匹配**（守卫自己）具名排除、nginx 语义那条**具名豁免且只许缩短**（不再命中 ⇒ 陈旧红）、`tests/**` 里再写一份同名同义实现 ⇒ 判红并具名
 - MC-061: 变更射程 → 必跑具名判据：射程注册表（面 → 具名判据 → 可复制命令）与 growth_gate 的**非阻塞**提示同源，两者漂移即红；射程表清空 ⇒ 提示消失而 blocker_count 不变
-- MC-062: 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建写按钮即红，豁免台账只许缩短
+- MC-062: 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
@@ -8995,5 +8997,5 @@
 - UI-073: 订单列表状态筛选支持逗号分隔多值：前端「待发货」= `confirmed,producing`（与看板卡计数取齐）
 - UI-075: 订单列表查询区在窄屏既不横向溢出（issue #5841）也不把筛选框压到不可读（issue #5850）：行必须可换行（flex-wrap）、每个字段格必须有 min-w-[…]；同行控件不得 flex-1 + 固定 min-w
 - UI-026: 跨权限域跳转入口按目标域守卫码显隐（生产看板「订单详情」+ 售后工单「订单号」）
-- UI-081: 列表页写按钮随权限显隐（issue #5983）：无写码岗位在 /orders、/products、/inbound-orders 看不到建单/建品按钮，有码照旧
+- UI-081: 列表页写按钮随权限显隐（issue #5983）：无写码岗位在 /orders、/products、/inbound-orders、/finance 看不到建单/建品/登记按钮，有码照旧
 

@@ -8,7 +8,7 @@
     "  ② 某页不再有写按钮后也必须删条目（陈旧即红）；",
     "  ③ 条数不得超过 frozen_max_entries；要新增条目必须先在 PR 里说明为什么该页不该接码。",
     "判据 = tests/unit_ci_workflows/test_list_page_write_button_gate.py（未登记即红 / 陈旧即红 / 超预算即红 / 零命中即红 + 内存判别力自证）。",
-    "本 PR（#5983）已修：orders（order:create）/ products（product:create）/ inbound-orders（inbound:create）；employees 早已合规（对照范式），故都不在本台账里。"
+    "本 PR（#5983）已修：orders（order:create）/ products（product:create）/ inbound-orders（inbound:create）/ finance（finance:create，链内同修的第 4 页）；employees 早已合规（对照范式），故都不在本台账里。"
   ],
   "entries": [
     {

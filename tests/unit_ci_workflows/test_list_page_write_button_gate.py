@@ -38,7 +38,7 @@ GATE_RE = re.compile(r"hasPermission\(\s*[\"']([a-z_]+):([a-z_]+)[\"']")
 
 
 def create_label_hits(source: str) -> list[tuple[int, str]]:
-    """返回 [(行号, 标签文本)] —— 整行形态的新增/新建写按钮。"""
+    """返回 [(行号, 标签文本)] —— 整行形态的新增/新建/登记 写按钮。"""
     hits: list[tuple[int, str]] = []
     for idx, line in enumerate(source.splitlines(), start=1):
         m = CREATE_LABEL_RE.match(line)
@@ -129,13 +129,15 @@ def test_real_dashboard_pages_have_no_unregistered_write_button():
     assert problems(pages, load_ledger()) == []
 
 
-def test_three_fixed_pages_really_gate_their_write_button():
-    """实例面（本单修的三页）：三张写码必须**逐字**出现在各自文件里（防「改回裸按钮但正好在台账里」）。"""
+def test_fixed_pages_really_gate_their_write_button():
+    """实例面（本单修的**四页**）：四张写码必须**逐字**出现在各自文件里
+    （防「改回裸按钮、但文件里恰好还留着一句提到 hasPermission 的注释」就蒙混过关）。"""
     pages = real_pages()
     expected = {
         "frontend/admin-web/src/app/(dashboard)/orders/page.tsx": "order:create",
         "frontend/admin-web/src/app/(dashboard)/products/page.tsx": "product:create",
         "frontend/admin-web/src/app/(dashboard)/inbound-orders/page.tsx": "inbound:create",
+        "frontend/admin-web/src/app/(dashboard)/finance/page.tsx": "finance:create",
     }
     for path, code in expected.items():
         assert path in pages, f"{path} 不在扫描面"

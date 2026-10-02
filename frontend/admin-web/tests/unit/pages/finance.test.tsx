@@ -4,6 +4,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
+// issue #5983：「登记收支」按钮改为按 `finance:create` 显隐（`canWrite = hasPermission('finance:create')`）
+// ⇒ 渲染必须带**登录态**，否则 user 为 null ⇒ 按钮恒不渲染（该页「打开登记收支弹窗」等用例会假红）。
+// 默认给管理员（`permissions: ['*']`）。
+const authMock = vi.hoisted(() => ({
+  state: {
+    user: { id: '1', username: 'admin', name: '管理员', permissions: ['*'] as string[], roles: [] as string[] },
+  },
+}))
+vi.mock('@/store/auth', () => ({
+  useAuthStore: (selector?: (s: unknown) => unknown) =>
+    typeof selector === 'function' ? selector(authMock.state) : authMock.state,
+}))
+
 // Mock API
 const mockGetSummary = vi.fn()
 const mockGetTransactions = vi.fn()
