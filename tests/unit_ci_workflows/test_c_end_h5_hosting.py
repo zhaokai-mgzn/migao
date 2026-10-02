@@ -636,10 +636,15 @@ def test_reconcile_has_the_c_end_leg_and_it_is_registered():
     assert '"c-end-h5": "c-end-h5-publish.yml"' in registry, (
         "腿没有进 SVC_TO_DEPLOY_WORKFLOW 登记册 ⇒ `T1`（逐服务调用数 == 登记册条目数）会红"
     )
-    assert "--seen 6" in reconcile, (
-        "存活读数的 `--seen` 必须跟着腿数走（6 条：3 镜像腿 + 3 条静态落地面腿）——"
-        "读数与事实不一致就是 #5264 的形态"
+    # issue #5935 把它从**写死的 6** 改成**现取**：`--seen` 的取值范围 = 状态机脚本从
+    # `reconcile_one` 调用算出的腿数（`$SEEN`）—— 写死的话，新加一条腿时读数不会自己跟上
+    # （读数与事实不一致就是 #5264 的形态；现在「跟着腿数走」由代码结构保证，不再靠人记得改）。
+    assert '--seen "${SEEN:-0}"' in reconcile, (
+        "存活读数的 `--seen` 必须由 `$SEEN` 现取（腿数从 `reconcile_one` 调用算出），"
+        "不许写死成 6 —— 写死就是 #5264 的形态"
     )
+    assert 'SEEN=$((SEEN + 1))' in (REPO_ROOT / "scripts" / "deploy_reconcile_state.sh").read_text(
+        encoding="utf-8"), "`$SEEN` 必须在状态机脚本里按腿逐个累加（不是别处另算一份）"
 
 
 def test_reconcile_leg_dispatches_are_safe_manual_only():

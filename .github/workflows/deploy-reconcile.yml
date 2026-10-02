@@ -96,6 +96,20 @@ on:
     branches: [main]
   schedule:
     - cron: '*/20 * * * *'
+  # 判据 4（issue #5935）：**部署成功这个事件本身**要能触发清零/对账 —— 实测 19:00Z 之后 ~12h
+  # 没有任何 reconcile run（GitHub 把 `*/20` 节流）⇒ 靠「下一轮 tick」关单在实测里没成立。
+  # ⚠️ 用途**限定**为「部署完成事件驱动的对账/清零」，**不是**检测加速；判据 1 的既有断路器与
+  # 「同 sha 有在途 run 就不重复派」一字未动（防自激：判据 test_deploy_watchdog.py 的执行式对照）。
+  # ⚠️ 新增触发面经用户 2026-10-02 逐字裁定允许（改写 MC-055 里「不做 ②」的登记，同 PR）。
+  # ⚠️ `workflows:` 要写各腿 workflow 的 **`name:`**（不是文件名）—— 写文件名/拼错 ⇒ 该兜底面
+  # **静默脱钩**（本 workflow 永不触发），而本地一切守卫都不会因此变红（既有守卫
+  # `test_publish_leg_fallback_surface.py` 会具名报出，本 PR 已按它改正）。
+  workflow_run:
+    workflows: ["Build and Deploy admin-api", "Build and Deploy ai-agent-service",
+                "Build and Deploy frontend (admin-web)", "Publish worker-h5 (app.migaozn.com/w/)",
+                "Publish bmini h5 (app.migaozn.com/b/)", "Publish C-end H5 (app.migaozn.com 根)"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -165,11 +179,17 @@ jobs:
           HEAD7="${HEAD_SHA::7}"
           SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
           MISSING=0; NODRIFT=0; SKIPPED=0; UNKNOWN=0; NOTARGET=0
-          # 值守面状态记录（issue #5929）：⚠️ 本步正文长度是硬约束（≈13.3K 越线 ⇒ 整份文件 invalid）
-          # 阈值/二分复算/守卫 = tests/unit_ci_workflows/test_deploy_watchdog.py（`RUN_BODY_LIMIT`）
-          WATCHDOG_STATE="${WATCHDOG_STATE:-.deploy-watchdog-state.tsv}"
-          : > "$WATCHDOG_STATE" 2>/dev/null || echo "::warning::值守面状态文件不可写——本轮按「判不了」（fail-closed）处理，不影响对账"
-          watchdog_note() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$WATCHDOG_STATE" 2>/dev/null || echo "::warning::值守面状态写入失败（$1=$2）"; return 0; }
+          # 值守面状态机（种子 + 恰好一行/腿）**外置**（issue #5935）：本步正文已顶到 13.3K 的硬约束
+          # （>13,250 ⇒ 整份 workflow invalid ⇒ 该腿完全不跑，阈值/守卫 = test_deploy_watchdog.py 的
+          # `RUN_BODY_LIMIT`）⇒ 出口是外置，不是「再加一点点应该没事」。
+          # ⚠️ 载不进 ⇒ 弃权（理由与两种坏修法见脚本文件头）。
+          if [ ! -f scripts/deploy_reconcile_state.sh ]; then
+            echo "::warning::值守面状态机不在检出里（多为「本腿还没上 main」）" || :; exit 0
+          fi
+          source scripts/deploy_reconcile_state.sh
+          source scripts/deploy_reconcile_state.sh
+          source scripts/deploy_reconcile_state.sh
+          source scripts/deploy_reconcile_state.sh
           # 单服务对账。$1=服务名 $2=deploy workflow $3=该服务的代码路径
           # $4=额外 pathspec（空格分隔）：`:(exclude)X` = 排除项，其余 = **附加包含项**（可空）
           reconcile_one() {
@@ -184,19 +204,11 @@ jobs:
             # **整个对账 step 非零退出**，把同轮其它四条腿的结果一起染红（而它们本来是对的）。
             # 这不是「要补的部署」，而是「还轮不到它」⇒ 显式 warn + 落 summary + **不** dispatch
             # （fail-open 的另一面：本检查自己出错绝不停掉对账，也绝不 dispatch 一个 main 上不存在的 workflow）。
-            if ! gh workflow view "$wf" --ref main >/dev/null 2>&1; then
-              echo "::warning::${svc}：目标 workflow ${wf} 不在 main 上（多为「新增腿的那个 PR」）——本轮不对账"
-              echo "| ${svc} | ⚠️ \`${wf}\` 尚未在 main 上（新增腿的那个 PR；gh 会 404） | **不补**（合并后自然接上） |" >> "$SUMMARY"
-              NOTARGET=$((NOTARGET + 1))
-              watchdog_note "$svc" notarget "目标 workflow ${wf} 不在 main 上"
-              return 0
-            fi
-            # ── 取「同 sha 的最新一条 run」（承重读数，B 的两条判据都用它）──────────────
-            # 取 `[0]`（`gh run list` 是**倒序**，`[0]` = 最新的一条）**同时**读出 conclusion 与
-            # status：conclusion 为空 = 该 run 还没跑完（GitHub 只在 completed 时给 conclusion）。
-            # 用**一次** jq 调用同时取两个字段（拆成两次解析会读到不一致的快照）。
-            # **fail-open**：`gh` 查询失败 / 无记录 ⇒ `runs=[]` ⇒ 两个变量都为空 ⇒ 不落进
-            # 下面任何跳闸分支 ⇒ 照旧补部署（本检查自己出错绝不停掉对账）。
+            # 判据本体 = `on_main`（三态 0/1/3；完整经过见该脚本的注释）。
+            # ⚠️ `_g=$?` 必须先存：`$?` 在 `||` 右侧会被前面的命令吃掉。
+            on_main "$wf" || { _g=$?; if [ "$_g" = 1 ]; then NOTARGET=$((NOTARGET + 1)); on_main_absent "$svc" "$wf"; fi; return 0; }
+            # 取「同 sha 的最新一条 run」——B 的两条判据都用它；`[0]` = 最新（`gh run list` 倒序）。
+            # **fail-open**：查询失败 / 无记录 ⇒ 两变量为空 ⇒ 不落进任何跳闸分支 ⇒ 照旧补部署。
             runs=$(gh run list --workflow "$wf" --branch main --limit 30 \
                      --json headSha,conclusion,status 2>/dev/null || echo "[]")
             last_pair=$(printf '%s' "$runs" | jq -r --arg s "$HEAD_SHA" \
@@ -378,14 +390,14 @@ jobs:
           echo "🧭 结论：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}"
           # 存活读数（issue #5326 判据 1）：计数类读数（补 dispatch / 无漂移 / 断路器 / 判定失败），
           # **非挂钟时长**。零动作（NODRIFT=4、MISSING=0）走的是同一条读数，`acted=0` + `why` 说明原因。
-          # `--seen` = 本轮的**对账腿数**（6 条：3 条镜像腿 + worker-h5 静态落地面腿 + bmini-h5-hosting
-          # 静态落地面腿 + c-end-h5 静态落地面腿，issue #5001 / #5668 / #4184）—— 它与读数必须同刻（不加腿就报 5 = 读数与事实相反，
-          # #5264 的形态）。
+          # `--seen` = 本轮对账腿数，由状态机从 `reconcile_one` 调用**现取**（`$SEEN`）；写死就是
+          # #5264 的形态（新加腿时那个数不会自己跟上）。
           # 发射器是**报告者**：它不可用（harness / 浅检出取不到文件）**绝不**得让机制本身失败。
+          watchdog_missing   # 判据 1 / 2：具名清单现取（下面进存活读数，末道闸再判红）
           if [ -f .github/scripts/mechanism_liveness.sh ]; then
             source .github/scripts/mechanism_liveness.sh
-            mechanism_liveness_declare --seen 6 --acted "${MISSING}" \
-              --why "dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}（基准 main HEAD=${HEAD7}）"
+            mechanism_liveness_declare --seen "${SEEN:-0}" --acted "${MISSING}" \
+              --why "dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN} · 不在main=${NOTARGET} · 未落状态=${MISS:-0}${MISS:+ 具名:$MISS}（基准 main HEAD=${HEAD7}）"
 
           fi
           if [ "$UNKNOWN" -gt 0 ]; then
@@ -395,6 +407,7 @@ jobs:
           else
             echo "::notice::Deploy Reconcile 判定完成：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED}（基准 main HEAD=${HEAD7}）"
           fi
+          watchdog_missing_gate || exit $?   # 判据 1：任一腿未落状态 ⇒ 本步自己判红并具名（不甩给下游兜）
 
       # ── 值守面（issue #5929：合并了但没上线 ⇒ 判红 + 自己开单）────────────────────
       # 判定本体（哪条腿算「已部署」）在**上一步**（对账步落的 `.deploy-watchdog-state.tsv`）；
@@ -437,6 +450,8 @@ jobs:
             echo "| — | ℹ️ 事件 \`${EVENT_NAME}\` | **不判定**（PR 面无 main HEAD 的部署对象） |" >> "$SUMMARY"
             exit 0
           fi
+          # `schedule` 与 `workflow_run` 走**同一套**判定（判据 4：部署完成事件驱动的清零）——
+          # 判定本体只此一份，事件只决定「什么时候跑」，不决定「怎么判」。
 
           HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
           HEAD7="${HEAD_SHA:0:7}"
@@ -449,7 +464,7 @@ jobs:
           echo "🧭 值守面判定：main HEAD=${HEAD7:-未知} · 合并至今=${AGE:-未知}s · N=${N}s · 豁免腿=${EXEMPT_LEGS}"
           {
             echo ""
-            echo "## 值守面（issue #5929：合并了但没上线）"
+            echo "## 值守面（issue #5929：合并了但没上线）\n\n> 判定桶：\`deployed\`/\`inflight\` ⇒ 不报 · \`terminal\`/\`dispatched\` ⇒ 业务告警 · \`notarget\` ⇒ 尚未轮到 · \`unrecorded\`/缺失 ⇒ **机制故障**"
             echo ""
             echo "- 判定基准：main HEAD \`${HEAD7:-未知}\` · 合并至今 \`${AGE:-未知}\`s · 宽限期 \`N=${N}\`s"
             echo "- 豁免腿（发布由人手动 —— 用户裁定 B；本对账的 dispatch 不会发布）：\`${EXEMPT_LEGS}\`"
@@ -458,7 +473,7 @@ jobs:
             echo "|---|---|---|"
           } >> "$SUMMARY"
 
-          OVERDUE=""; JUDGED=0; SUSPECT=0; NA=0
+          OVERDUE=""; JUDGED=0; SUSPECT=0; NA=0; PLANNED=0
           for svc in $WATCHED_LEGS; do
             # 状态**现取**自对账步落的状态文件：判定本体只此一份（不在这里重算镜像/漂移/断路器）
             state="$(awk -F'\t' -v s="$svc" '$1 == s { print $2; exit }' "$STATE" 2>/dev/null || true)"
@@ -477,18 +492,32 @@ jobs:
                 echo "🔴 ${svc}：${state}（${why:-无依据}）—— 本轮对账开始时该 commit 尚无可用的部署"
                 echo "| ${svc} | \`${state}\` | 🔴 计入告警面（${why:-无依据}） |" >> "$SUMMARY"
                 ;;
+              notarget)
+                # 目标 workflow 还没在 main 上（**新增腿的那个 PR** 的形态）——「还轮不到它」，**不是**故障；
+                # 与前两类一样**不得**混进同一个桶（判据 3：读不到状态 / 确认未部署 / 还没轮到，三态三分）。
+                PLANNED=$((PLANNED + 1))
+                echo "⏳ ${svc}：不在 main 上（${why:-无依据}）——尚未轮到这个腿，不报警"
+                echo "| ${svc} | \`notarget\` | ⏳ 尚未轮到这个腿（不报警） |" >> "$SUMMARY"
+                ;;
+              unrecorded | "")
+                # **机制故障**：对账步**没为这条腿落状态**（`unrecorded` = 种子位没被替换 / `""` = 状态文件
+                # 缺失或写不进去）。**它与「确认未部署」必须是两种东西**（判据 3）——
+                # 这一类**不开** `[deploy-watchdog]` 业务单，改开**机制故障**单（不同标题 + `type/bug`）。
+                NA=$((NA + 1)); MECH="${MECH:-} ${svc}"
+                echo "::error::值守面机制故障 ${svc}：对账状态=${state:-缺失}（fail-closed 判红，不许静默 success）"
+                echo "| ${svc} | \`${state:-缺失}\` | 🔴 **机制故障**（fail-closed） |" >> "$SUMMARY"
+                ;;
               *)
-                # 读不到状态（文件缺失 / 写失败）或 `notarget`（目标 workflow 不在 main 上）
-                NA=$((NA + 1))
-                echo "::error::值守面判不了 ${svc}：对账状态=${state:-缺失}（fail-closed 判红，不许静默 success）"
-                echo "| ${svc} | \`${state:-缺失}\` | 🔴 **判不了**（fail-closed） |" >> "$SUMMARY"
+                NA=$((NA + 1)); MECH="${MECH:-} ${svc}"
+                echo "::error::值守面机制故障 ${svc}：对账状态未登记（${state:-缺失}）——状态机没覆盖这个值"
+                echo "| ${svc} | \`${state:-缺失}\` | 🔴 **机制故障**（未登记的状态值） |" >> "$SUMMARY"
                 ;;
             esac
           done
 
           RC=0; VERDICT=""
           if [ "$NA" -gt 0 ]; then
-            RC=3; VERDICT="判定不可用（${NA} 条腿读不到对账状态：多为对账步失败，或目标 workflow 不在 main 上）"
+            RC=3; VERDICT="机制故障（${NA} 条腿读不到对账状态：对账步没为它落状态）"
           elif [ -z "$AGE" ]; then
             RC=3; VERDICT="判定不可用（取不到 main HEAD 的提交时间）"
           elif [ "$AGE" -le "$N" ]; then
@@ -498,10 +527,10 @@ jobs:
           else
             VERDICT="全部腿已部署或部署在途"
           fi
-          echo "🧭 值守面结论：${VERDICT} · 已判定=${JUDGED} · 计入告警=${SUSPECT} · 判不了=${NA} · RC=${RC}"
+          echo "🧭 值守面结论：${VERDICT} · 已判定=${JUDGED} · 计入告警=${SUSPECT} · 机制故障=${NA} · 尚未轮到=${PLANNED} · RC=${RC}"
           {
             echo ""
-            echo "**结论**：${VERDICT} · 已判定=${JUDGED} · 计入告警=${SUSPECT} · 判不了=${NA} · RC=${RC}"
+            echo "**结论**：${VERDICT} · 已判定=${JUDGED} · 计入告警=${SUSPECT} · 机制故障=${NA} · 尚未轮到=${PLANNED} · RC=${RC}"
             echo ""
             echo "> N=${N}s 的出处（现取复算）：冷构建上界 **2400s** + 余量 **300s** = 2700s（45min），"
             echo "> 原文 = \`deploy/scripts/swas-deploy-ci.sh\` 的「默认抬到 4500s（= 远端锁等待上限 1800s"
@@ -511,7 +540,9 @@ jobs:
           } >> "$SUMMARY"
 
           TITLE="[deploy-watchdog] main HEAD 超时未部署（合并后仍未上线）"
-          EXIST="$(gh issue list --state open --search "${TITLE} in:title" --json number --jq '.[0].number // empty' 2>/dev/null || true)"
+          MECH_TITLE="[deploy-watchdog] 机制故障：对账步没为某条腿落状态"
+          case "$VERDICT" in 机制故障*) SPECIFIC="$MECH_TITLE" ;; *) SPECIFIC="$TITLE" ;; esac
+          EXIST="$(gh issue list --state open --search "${SPECIFIC} in:title" --json number --jq '.[0].number // empty' 2>/dev/null || true)"
           if [ "$RC" != "0" ]; then
             echo "::error::值守面判红：${VERDICT} · main HEAD=${HEAD7:-未知} · 腿=${OVERDUE:-无}（明细见本 run 的 step summary）"
             BODY="$(mktemp)"
@@ -522,7 +553,7 @@ jobs:
               echo ""
               echo "- 判定基准：main HEAD \`${HEAD7:-未知}\`（合并至今 \`${AGE:-未知}\`s，宽限期 N=\`${N}\`s）"
               echo "- 结论：**${VERDICT}**"
-              echo "- 计入告警面的腿：\`${OVERDUE:-无}\`"
+              echo "- 计入告警面的腿：\`${OVERDUE:-无}\` · 机制故障的腿：\`${MECH:-无}\`"
               echo ""
               echo "### 这一类是什么（别读成「某个 PR 没写好」）"
               echo ""
@@ -550,6 +581,7 @@ jobs:
               sed -n '/^## 值守面/,$p' "$SUMMARY" 2>/dev/null || echo "(见本 run 的 step summary)"
               echo '```'
             } > "$BODY"
+            case "$SPECIFIC" in "$MECH_TITLE") L="type/bug" ;; *) L="priority/P1" ;; esac
             if [ -n "$EXIST" ]; then
               PREV="$(gh issue view "$EXIST" --json body --jq '.body' 2>/dev/null || true)"
               case "${PREV:-}" in
@@ -560,15 +592,19 @@ jobs:
                   gh issue comment "$EXIST" --body-file "$BODY" || echo "::warning::无法在值守单 #${EXIST} 追加本轮证据（限流/权限）"
                   ;;
               esac
-              gh issue edit "$EXIST" --add-label priority/P1 || echo "::warning::无法给值守单 #${EXIST} 打 priority/P1（限流/权限）"
-            else
-              gh issue create --title "$TITLE" --body-file "$BODY" --label priority/P1 \
+              gh issue edit "$EXIST" --add-label "$L" || echo "::warning::无法给值守单 #${EXIST} 打标签（限流/权限）"
+            elif [ -z "${MECH:-}" ]; then
+              gh issue create --title "$TITLE" --body-file "$BODY" --label "$L" \
                 || echo "::warning::无法创建 P1 值守 issue（限流/权限）——请人工按本 run 的 step summary 建单"
+            else
+              # 机制故障**不得**混进业务单（判据 3）：业务单在开着也照开机制单（去向不同、处置不同）。
+              gh issue create --title "$MECH_TITLE" --body-file "$BODY" --label "$L" \
+                || echo "::warning::无法创建「机制故障」issue（限流/权限）——请人工按本 run 的 step summary 建单"
             fi
             rm -f "$BODY"
           elif [ -n "$EXIST" ]; then
             # 清零判据：部署成功后**自动**关闭告警单（不依赖人记得 —— issue #5929 的验收判据 4）
-            gh issue comment "$EXIST" --body "值守面清零：${VERDICT}（main HEAD=${HEAD7:-未知}）。本单由 deploy-reconcile.yml 的值守面自动关闭。" \
+            gh issue comment "$EXIST" --body "值守面清零：${VERDICT}（main HEAD=${HEAD7:-未知}）。**清零条件已满足**（本轮对账判定该 commit 的部署已到位 / 无漂移）——事件驱动（部署完成触发本工作流）与下一轮 \`*/20\` 任一到达即关；本单由 deploy-reconcile.yml 的值守面自动关闭。" \
               || echo "::warning::无法在值守单 #${EXIST} 追加清零说明（限流/权限）"
             gh issue close "$EXIST" --reason completed || echo "::warning::无法关闭值守单 #${EXIST}（限流/权限）"
           fi
