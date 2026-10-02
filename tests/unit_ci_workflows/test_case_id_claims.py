@@ -393,7 +393,7 @@ def test_red_proof_claim_collides_with_a_used_id(tmp_path: Path) -> None:
 
 
 def test_control_another_prs_landed_claim_is_a_ledger_record_not_an_error(tmp_path: Path) -> None:
-    """红证 ②（本单核心修复）：**别人的落地 claim**（号已进用例库、claim 还在）⇒ **不红**。
+    """本单核心修复的对照读数：**别人的落地 claim**（号已进用例库、claim 还在）⇒ **不红**。
 
     形状 = main 上真实存在的 `.github/cases/claims/6033-MC-067.json`（PR #6033 已合并、MC-067 已进用例库，
     见 issue #6037 的复算证据）+ 当前 PR（#6060）什么都没占。
@@ -410,7 +410,7 @@ def test_control_another_prs_landed_claim_is_a_ledger_record_not_an_error(tmp_pa
 
 
 def test_red_proof_only_the_current_prs_claim_is_named(tmp_path: Path) -> None:
-    """红证 ③（作用域判别力）：同一批里**别人的**落地 claim 静默，**本 PR 自己撞号的那条**具名。
+    """作用域判别力（收窄 ≠ 关掉判据）：同一批里**别人的**落地 claim 静默，**本 PR 自己撞号的那条**具名。
 
     ⇒ 「收窄」与「全量判红」在这条夹具上读数不同（不是把判据整体关掉）。
     """
