@@ -1,6 +1,10 @@
 name: Build and Deploy admin-api
 permissions:
   contents: read
+  # 🔴 跳过 / 终态判据的**凭据**（issue #5941）：`Skip if already built` 步要跑 `gh run list`
+  # 读同 sha 的 run 结论。workflow 级 `permissions` 一旦显式声明，**未列出的作用域一律为
+  # `none`** ⇒ 缺这一行时即使注入了 token 也读不到 runs。最小权限 = 只读。
+  actions: read
 
 on:
   push:
@@ -121,6 +125,12 @@ jobs:
           # test_deploy_churn_and_env_gate.py）⇒ 走环境变量既更安全也更好测。
           EVENT_NAME: ${{ github.event_name }}
           INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          # 🔴 凭据（issue #5941）：`gh` 在 Actions 环境**不读**任何配置文件（runner 上没有
+          # `gh auth login` 写下的 hosts.yml），**只认** `GH_TOKEN` ⇒ 缺它 ⇒ 本步的
+          # `gh run list` 恒失败（本机复现：exit=4 + `To get started with GitHub CLI,
+          # please run: gh auth login`）⇒ 跳过判据恒不可用，而 `2>/dev/null` 把失败吞成
+          # 空结果 ⇒ 每次 cron 都全量重建重部署。配套 workflow 级 `permissions: actions: read`。
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           EXPECTED_TAG="sha-${GITHUB_SHA::7}"
@@ -168,8 +178,47 @@ jobs:
             #   显式回滚（`-f image_tag=<tag>`）在**更早**的分支就已放行，根本不进这里（#4852 的逃生口）。
             # ⚠️ **fail-open 保留**：`gh` 查询失败 / 无记录 ⇒ is_recoverable 保持 "true" ⇒ 照旧补部署
             #   —— 本检查自己出错**绝不**停掉部署（与 deploy-reconcile 同口径）。
+            # ── 跳过判据的**自证**（issue #5941）────────────────────────────────────
+            # 病（实测，2026-10-02）：本查询在 runner 上**没有凭据**（workflow 级只有
+            # `contents: read`、step 里也没有 `GH_TOKEN`）⇒ `gh` 未认证（本机复现：exit=4 +
+            # `To get started with GitHub CLI, please run: gh auth login`），而
+            # `2>/dev/null || echo "[]"` 把这层失败**整层吞掉**（实测 stderr 为空、stdout=`[]`）
+            # ⇒ LAST_STATUS/LAST_CONCLUSION 恒空 ⇒ **C′ 跳过臂从未生效**：实测 run 36939400575
+            # （2026-10-01T23:11:07Z，sha=3fa84ab）走的是 else 全量构建部署，而同一 sha 在
+            # 19:04:47Z **已完整部署成功过一次**（该 run 的 env 块里逐字没有 GH_TOKEN，输出逐字是
+            # 「最近一次同 sha 的 run 结论 = 无记录」）。
+            # 修法三条，缺一不可（本段即判据的自证面，由
+            # tests/unit_ci_workflows/test_deploy_skip_credential.py 逐字消费）：
+            #   ① 凭据：workflow 级 `permissions: actions: read` + 本步 `env: GH_TOKEN`；
+            #   ② 出声：凭据自检 + 查询 exit code + 返回条数 + **stderr 原文**一律打印；
+            #   ③ fail-open 具名：查不到 ⇒ 照旧全量部署（本检查自己出错**绝不**停掉部署），
+            #      但日志 + step summary 必须**具名**写出「跳过判据不可用」。
+            AUTH_RC=0; AUTH_OUT=$(gh auth status 2>&1) || AUTH_RC=$?
+            echo "── 跳过判据自证（issue #5941）──"
+            echo "gh auth status exit=${AUTH_RC}：${AUTH_OUT%%$'\n'*}"
+            QR_ERR_FILE=$(mktemp)
+            QR_RC=0
             last_runs=$(gh run list --workflow "${GITHUB_WORKFLOW:-}" --branch main --limit 30 \
-                          --json headSha,conclusion,status 2>/dev/null || echo "[]")
+                          --json databaseId,headSha,conclusion,status 2>"$QR_ERR_FILE") || QR_RC=$?
+            QR_ERR=$(cat "$QR_ERR_FILE"); rm -f "$QR_ERR_FILE"
+            # ⚠️ `${last_runs:-[]}` 而不是 `$last_runs`：jq 对**空输入**是「零次执行 + exit 0」
+            # ⇒ `|| echo 0` 兜不住 ⇒ 计数会打成空串（本机实测）。补上默认 `[]` 才是真兜底。
+            RAW_ROWS=$(printf '%s' "${last_runs:-[]}" | jq -r 'if type == "array" then length else 0 end' 2>/dev/null || echo 0)
+            # 排除**本轮 run 自己**：`gh run list` 把当前 in_progress 的 run 排在 `[0]`（本机
+            # 现取 2026-10-02）⇒ 不排除时 `[.[] | select(.headSha == $s)][0]` 永远取到「自己」
+            # ⇒ C′ 的「completed + success」恒不成立（会被下面那条「尚未跑完」闸门接住，
+            # 理由却是错的）。排除后 `[0]` = 同 sha 上一条**别的** run。
+            last_runs=$(printf '%s' "$last_runs" | jq -c --arg rid "${GITHUB_RUN_ID:-}" \
+                          'if type == "array" then [.[] | select((.databaseId // 0 | tostring) != $rid)] else . end' \
+                          2>/dev/null || printf '%s' "$last_runs")
+            ROWS=$(printf '%s' "${last_runs:-[]}" | jq -r 'if type == "array" then length else 0 end' 2>/dev/null || echo 0)
+            echo "gh run list exit=${QR_RC} · 原始 ${RAW_ROWS} 条 · 排除本轮 run（${GITHUB_RUN_ID:-?}）后 ${ROWS} 条"
+            if [ -n "$QR_ERR" ]; then
+              echo "::warning::gh run list 的 stderr（issue #5941：不再被 2>/dev/null 吞掉）：${QR_ERR}"
+            fi
+            # 「判据可用」= 查询成功 **且** 真的拿到了记录（0 条 / jq 缺失 / 查询失败都算不可用）。
+            QUERY_OK="true"
+            if [ "$QR_RC" != "0" ] || [ "$ROWS" = "0" ]; then QUERY_OK="false"; fi
             last_pair=$(printf '%s' "$last_runs" | jq -r --arg s "$GITHUB_SHA" \
                           '[.[] | select(.headSha == $s)][0] | "\(.conclusion // "")|\(.status // "")"' 2>/dev/null || echo "")
             LAST_CONCLUSION=""; LAST_STATUS=""
@@ -203,6 +252,9 @@ jobs:
             # 判据来源 = **同 sha 的部署 run 结论**（与下面 #5816 断路器**同一份** `gh run list`
             # ⇒ 零新增机制 / 零新增 secret）；语义正好等于改前 ACR 判据想近似的「该 commit 已部署过」。
             # ⚠️ 位置在「仍在跑」检查**之后**（未跑完的 run 由下面那条 churn 闸门挡，不归本臂）。
+            # ⚠️ 本臂**生效的两个前置**（issue #5941）：① 查询有凭据（workflow 级
+            #   `actions: read` + 本步 `GH_TOKEN`）② 查询结果已排除「本轮 run 自己」（见上）。
+            #   缺任一条 ⇒ 这里取不到那条 success ⇒ 本臂**形同不存在**（没有任何东西会变红）。
             if [ "$LAST_STATUS" = "completed" ] && [ "$LAST_CONCLUSION" = "success" ]; then
               echo "✅ ${LAST7} 的部署**已成功**——该 commit 已构建部署过，跳过本轮构建部署"
               echo "   判据来源（issue #5814 C′）：C′ 不推 ACR ⇒ 镜像必然不在 ACR，故改看「同 sha 的 run 结论」"
@@ -238,6 +290,19 @@ jobs:
             else
               echo "⚠️ 镜像 ${IMAGE} 缺失——该 commit 的部署触发可能被吞（连续快速合并），执行完整构建部署"
               echo "   （最近一次同 sha 的 run 结论 = \`${LAST_CONCLUSION:-无记录}\` ⇒ 在允许名单内，可安全重试）"
+              if [ "$QUERY_OK" != "true" ]; then
+                # 🔴 fail-open 的**具名**出口（issue #5941 判据 3）：查不到 ⇒ 照旧全量部署，
+                # 但要说清「是判据不可用，不是判据说该部署」——静默正是本单的病。
+                echo "::warning::跳过判据**不可用**（gh run list exit=${QR_RC}，返回 ${ROWS} 条，stderr 见上）⇒ **本轮全量部署**（fail-open：本检查自己出错绝不停掉部署）"
+                {
+                  echo "## ⚠️ 部署腿未跳过（跳过判据不可用 ⇒ fail-open，issue #5941）"
+                  echo ""
+                  echo "- 服务：\`${GITHUB_WORKFLOW:-}\` · commit：\`${GITHUB_SHA::7}\`"
+                  echo "- \`gh auth status\` exit=\`${AUTH_RC}\`；\`gh run list\` exit=\`${QR_RC}\`；返回 \`${ROWS}\` 条"
+                  echo "- 语义：**跳过判据不可用 ≠ 判据说该部署** —— 按现状口径（fail-open）本轮照旧全量构建部署"
+                  echo "- 排查入口：\`gh run list --workflow ${GITHUB_WORKFLOW:-} --branch main --limit 5\`"
+                } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+              fi
               echo "skip=false" >> "$GITHUB_OUTPUT"
             fi
           fi
