@@ -1,3 +1,5 @@
 {"_kind":"migao.package-heavy-entry-ledger","_what":"套件内全量入口的角色判定台账（只追加）：每次 verify-all.sh 被角色守卫拒绝 / 被显式 --allow-package-heavy 放行，记一条。","_judged_by":"tests/unit_ci_workflows/test_package_heavy_entry_ban.py","_idempotency":"键 = MIGAO_ROLE_LEDGER_ID（同一进程树内只记一笔）","_count":"./scripts/package-heavy-entry-ledger.sh count"}
 {"id":"r1.79541","ts":"2026-10-02T17:09:38Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/ci-package-heavy-entry-ban","why":"子包 worktree 直跑全量"}
 {"id":"o1.79541","ts":"2026-10-02T17:09:38Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/ci-package-heavy-entry-ban","why":"--allow-package-heavy 显式"}
+{"id":"1790961236.84483.19270","ts":"2026-10-02T17:13:56Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/ci-package-heavy-entry-ban","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1790961236.84523.4674","ts":"2026-10-02T17:13:57Z","role":"unknown","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/ci-package-heavy-entry-ban","why":"子包 worktree 直跑全量（无批次标记）"}
