@@ -101,7 +101,24 @@ job 日志**取证（读数见该 PR body）：21 条里 **7 条判错**（issue
 
 退出码（三态，照本仓库 `merge_gate.py` / `llm_sink_check.py` 口径）
 ------------------------------------------------------------------
-`0` = 正常；`1` = 违规（台账不自洽 / 参数非法 / 重跑动作失败 / 额度用尽）；`3` = **无法判定**（取不到事实）。
+`0` = 正常；`1` = 违规（台账不自洽 / 参数非法 / 重跑动作失败 / 额度用尽 / 缺跟踪单）；`3` = **无法判定**（取不到事实）。
+
+#5960：**判了 flaky 却没登记修复路径** = 红（本单修）
+---------------------------------------------------
+病灶（实测）：`flaky-triage.yml` 的「落跟踪单」步骤**只对** `kind == suspect-window-deterministic`
+强制跟踪 ⇒ 普通 `kind=flaky` 的条目 `follow_up` 永远是 `null`，而台账**也不记录失败的是哪条测试**
+（`attempt_facts()[...]["assertion"]` 的自动路径恒为 `None`：GitHub 的 jobs API 只给步骤名）
+⇒ 有人事后按**测试名** grep 台账时 **0 命中**（issue 作者就是这么发现的：一条真 flaky 被
+`flaky/rerun-green` 放行后，「以后没人知道它放过什么」没有任何承载体）。
+⇒ 两条：① 失败测试身份由 `collect-failing-tests` 从**失败 job 的日志**里机械提取
+（`FAILED <node id> - …`；剥掉 CI 的时间戳前缀与 ANSI 转义），写进**独立字段** `failing_tests`
+—— **不碰** `attempts[].assertion`（那是 `attest` 的凭据面，`classify_both_red()` 靠它判
+`deterministic`，而 `ledger_violations()` 又要求 deterministic 带 `attested_evidence` ⇒ 机械取数
+塞进去等于**无凭据的归因**）；② 判了 flaky ⇒ **必须**落跟踪单（复用既有 `ensure_tracking_issue`），
+并由 `ledger_violations` / `append_entries` **双向** fail-closed。
+⚠️ **约束不回溯存量**（存量 191 条 flaky 全都没有 `follow_up` ⇒ 回溯式判据会让台账在落地当天
+就整条链 fail-closed）：约束通过条目自己声明的 `requires_follow_up` 标志生效（新条目必带），
+存量缺口由 `reconcile` 的 `new_events` **显式登记**（可见，不藏）。
 
 #5687：`kind=suspect-window-deterministic`（跨时间桶的「重跑通过」）
 ------------------------------------------------------------------
@@ -193,6 +210,22 @@ INFRA_STEP_PATTERNS = tuple(re.compile(p) for p in (
     r"^cache ",
 ))
 
+#: 🔴 **#5960：判了 flaky 就必须登记修复路径** —— 新增条目**必须**带这个标志。
+#:
+#: 病灶（issue #5960，实测）：`flaky-triage.yml` 的「落跟踪单」步骤**只对**
+#: `kind == suspect-window-deterministic` 强制跟踪 ⇒ 普通 `kind=flaky` 的条目 `follow_up`
+#: 永远是 `null` ⇒ 有人事后按**测试名**grep 台账时**一条都找不到**（issue 作者就是这么发现的：
+#: 「这条 flaky 没被记上」），「以后没人知道它放过什么」在源头就没有关掉。
+#:
+#: **为什么是一个显式标志、而不是「所有 flaky 条目一律必须有 follow_up」**（判据不许回溯存量）：
+#: 存量 191 条 `kind=flaky`（`origin/main`，现取）**全部**没有 `follow_up` —— 一条回溯式判据会让
+#: `selftest` / `append` 在**落地当天**就判违规（台账自身不合规 ⇒ 台账整条链 fail-closed），
+#: 而「补齐存量」在本包是**做不到**的（台账数据文件的写者是数据面，不是代码面）。⇒ 约束形态：
+#:   · **新增**条目（`build_entries` 产出）必须带本标志 ⇒「判了 flaky 却没登记」在源头 fail-closed；
+#:   · **存量**条目（无本标志）**不判违规** —— 缺口由 `reconcile` 的 `new_events` 显式登记（可见），
+#:     **不用**「豁免台账」把它藏起来。
+REQUIRES_FOLLOW_UP_FIELD = "requires_follow_up"
+
 LEDGER_TOP_KEYS = ("version", "note", "_schema", "entries")
 ENTRY_REQUIRED = {
     "workflow": str,
@@ -219,6 +252,22 @@ LEGACY_ENTRY_KINDS = frozenset({"confirmed_failure"})
 ATTRIBUTABLE_KINDS = frozenset({"flaky", "deterministic", "infra_suspect"})
 #: 必须带**原始事实**（`attempts`）的新口径 kind；`deterministic` 另需 `attested_evidence`（凭据）。
 FACT_BACKED_KINDS = frozenset({"deterministic", "unknown"})
+
+#: 🔴 **#5960 判据①：失败测试身份进台账** —— 从**失败 job 的日志**里机械提取出来的 pytest node id
+#: （`FAILED tests/…/test_x.py::TestC::test_y - AssertionError: …` ⇒ 只留
+#: `tests/…/test_x.py::TestC::test_y`；**不是**断言文本）。
+#:
+#: 为什么需要一个**独立字段**（不许污染 `attempts[].assertion` 的既有语义）：
+#:   · `attempts[].assertion` 是 `attest` 的**凭据面** —— `classify_both_red()` 靠它判
+#:     `deterministic`，而 `ledger_violations()` 又要求 `deterministic` 必须带 `attested_evidence`；
+#:   · 本条是**机械取数**（正则从日志里抽），放进那个字段等于**无凭据的归因** ⇒ 会把
+#:     「两次都红 ⇒ unknown」这条 fail-closed 判据**绕过**（那正是 #5088 治过的形态）。
+#: 它是**追加字段**：存量条目没有它 ⇒ 不判违规（向后兼容），只有**新写入**的条目带它。
+FAILING_TESTS_FIELD = "failing_tests"
+
+#: `failing_tests` 的**提取上限**（防止一条日志的重复回显把台账灌爆）：条目是**只追加、可审计的
+#: 公开数据**，读的人要能一眼看完；截断时保留**首次出现顺序**的前 N 条（不排序、不去重后重排）。
+MAX_FAILING_TESTS = 50
 #: **为什么**「原事实」是承重的（而不是装饰）：`attempts[k].timestamp` 才是「失败时刻 / 重跑时刻」
 #: 的**取数面** —— `bucket_of()` / `classify_rerun_green()` 读的就是它。把 `attempts` 从
 #: `FACT_BACKED_KINDS` 的必填里摘出来，本条判据（跨时间桶 ⇒ `suspect-window-deterministic`）
@@ -250,6 +299,16 @@ SUSPECT_WINDOW_REMEDY = (
     "⚠️ **不许**把本类当普通 flaky 消红（它必须带 `follow_up` 跟踪单）；"
     "确属真 flaky（同桶内不可复现）⇒ 按 `flaky` 的 remedy 处理并说明为什么该跨桶是巧合"
 )
+
+#: 「**怎么给 `suspect-window-deterministic` 落跟踪单**」的权威口径（单一事实源）：
+#: `triage-follow-up` 的 `--help` epilog 与 workflow 的步骤注释都从它取值。为什么它必须是**机械动作**
+#: 而不是「文档要求人记得做」：`ledger_violations` 把「该类条目缺 `follow_up`」判成**违规**
+#: （`append`/`selftest` 直接非零退出）⇒ 没有机械动作时，分流会在**第一步**就死给你看 ——
+#: 这与 #5307 的教训同形（「文档要求做、却没有合法工具做」= 自我死锁）。
+#: 需要 `follow_up` 跟踪单的 kind（单一事实源）：`flaky`（#5960）与 `suspect-window-deterministic`
+#: （#5687）。`reconcile` 的新事件态、`ledger_violations` 的强制跟踪判据、`triage-follow-up`
+#: 的目标集合、`apply_tracking_issue` 的注入集合**都从它取值**（不各写一份）。
+FOLLOW_UP_REQUIRED_KINDS = ("flaky", SUSPECT_WINDOW_KIND)
 
 #: 「**怎么给 `suspect-window-deterministic` 落跟踪单**」的权威口径（单一事实源）：
 #: `triage-follow-up` 的 `--help` epilog 与 workflow 的步骤注释都从它取值。为什么它必须是**机械动作**
@@ -502,6 +561,160 @@ def classify_rerun_green(failure_utc: str, rerun_utc: str) -> tuple:
                      "（不是「已证同桶」）")
 
 
+# ── #5960 判据①：失败测试身份（从**失败 job 的日志**里机械提取） ─────────────────
+#
+# 为什么必须有它（**病灶**，issue #5960）：台账此前**不记录失败的是哪条测试** ——
+# `attempt_facts()[...]["assertion"]` 的自动路径恒为 `None`（GitHub 的 jobs API 只给**步骤名**），
+# 而 `kind` / `step` 都太粗 ⇒ 有人按测试名 grep `.github/flaky-ledger.json` 时**0 命中**，
+# 「这条 flaky 放过什么」查不出来（issue 作者就是这么发现的）。
+# 日志是**另一条取数面**：job 日志里有 pytest 的 `short test summary info`，
+# 每条失败测试一行 `FAILED <node id> - <错误>`。本函数就是那条取数面的**唯一**判据。
+
+#: ANSI 转义（CSI / OSC）：GitHub 的 job 日志里**真的有**（实测：`\x1b[36;1m` 在时间戳**之后**、
+#: 也可能包住 `FAILED` 一词）⇒ 不剥掉会**逐字**匹配不上（issue #5960 明确点名了这一形态）。
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+#: GitHub 给每行加的**日志前缀**（`2026-10-02T01:37:49.7209574Z `，7 位小数）：
+#: 只在**行首**剥（`^\s*` 允许前缀前有空白的形态），不在行中间乱切。
+LOG_LINE_PREFIX_RE = re.compile(r"^\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s")
+#: pytest 的 `short test summary info` 段头（真日志逐字，见 #5960 的实测取样）。
+PYTEST_SHORT_SUMMARY_MARKER = "short test summary info"
+#: pytest 的失败行：`FAILED <node id> - <错误>`（错误尾可缺）。
+#: node id 只收**文件路径（须以 .py 结尾）+ `::` + 可能的多级 `::`** —— 这条边界很重要：
+#: `FAILED tests/x.py::t - …` 之外的形态（`ERROR …` / `FAILED (no node id)`）**有意不收**
+#: （宁缺勿滥：写进台账的东西要能被人**逐字**复制去跑）。
+PYTEST_FAILED_LINE_RE = re.compile(
+    r"^\s*FAILED\s+(?P<node>[\w./\\+-]*\.py::[A-Za-z0-9_][\w.:\[\]-]*)(?:\s*-\s|$)")
+
+
+def strip_log_prefix(line: str) -> str:
+    """剥掉 GitHub 日志的**行首时间戳前缀**与 **ANSI 转义**（其余逐字保留）。"""
+    return LOG_LINE_PREFIX_RE.sub("", ANSI_ESCAPE_RE.sub("", line))
+
+
+def extract_failing_tests(log_text) -> list:
+    """**纯函数**：从一份 job 日志里提取失败的 pytest node id（去重、保序、上限 `MAX_FAILING_TESTS`）。
+
+    取数纪律（**三条**，每条都对着一个已发生的形态）：
+      · **优先只读 `short test summary info` 段之后** —— 该段之前的正文里可能**回显**测试输出
+        （`pytest -q` / `tee` / 嵌套调用都会把 `FAILED …` 重新打一遍，`-vv` 下还带缩进），
+        只在段后取能一次性把它们挡掉；段头**没出现**（日志被截断 / 非 pytest）⇒ 退回**全文**扫，
+        但此时**只认行首**形态（`^\\s*FAILED `），不认正文中间的引用；
+      · 只留 **node id**（`FAILED` 与错误文本都不要）⇒ 读的人能直接 `pytest <node id>` 复现；
+      · **去重保序**（同一条测试被回显多次只算一次），并截断到 `MAX_FAILING_TESTS`。
+    """
+    if isinstance(log_text, bytes):
+        log_text = log_text.decode("utf-8", errors="replace")
+    if not isinstance(log_text, str) or not log_text.strip():
+        return []
+    lines = [strip_log_prefix(line) for line in log_text.split("\n")]
+    start = 0
+    for i, line in enumerate(lines):
+        if PYTEST_SHORT_SUMMARY_MARKER in line:
+            start = i + 1
+            break
+    found: list = []
+    for line in lines[start:]:
+        match = PYTEST_FAILED_LINE_RE.match(line)
+        if match is None:
+            continue
+        node = match.group("node").strip()
+        if node and node not in found:
+            found.append(node)
+        if len(found) >= MAX_FAILING_TESTS:
+            break
+    return found
+
+
+#: 每次 run **最多拉几份 job 日志**（日志是重活：一份 60KB+，且 `gh api` 有速率限制；
+#: 而 GitHub 的 job 日志**读不回 API 速率**（读的是 `logs` 端点，不计入 `core` 限额）——
+#: 但**时间**与**上下文**仍要控 ⇒ 上限是**明确登记**的取舍，不是「忘了控」）。
+MAX_LOG_FETCHES = 4
+
+
+def job_id(job):
+    """该 job 的 GitHub job id（整数）；取不到 ⇒ `None`（**不猜**）。"""
+    value = (job or {}).get("id")
+    return value if isinstance(value, int) else None
+
+
+def fetch_attempt_jobs(repo: str, run_id: int, attempt: int) -> list:
+    """取**指定尝试**的 job 列表（失败日志的取数面）；取不到 ⇒ 抛（调用方 fail-safe 记账）。"""
+    listing = _gh_api(f"repos/{repo}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100")
+    return list((listing or {}).get("jobs") or [])
+
+
+def fetch_job_log(repo: str, job_id_: int) -> str:
+    """拉一份 job 日志（**含 ANSI**；`gh` 默认拒绝输出转义序列 ⇒ 必须显式放行）。
+
+    🔴 实测（#5960）：不加 `--allow-escape-sequences` 时 `gh api …/logs` **非零退出**且
+    stderr 只写「the response contains terminal escape sequences」⇒ 提取器拿到空串 ⇒
+    台账里 `failing_tests=[]`（**看起来像「这条失败没有测试名」** —— 正是本单要治的
+    「读数与事实不一致」）。
+    """
+    out = subprocess.run(
+        ["gh", "api", "--allow-escape-sequences",
+         f"repos/{repo}/actions/jobs/{int(job_id_)}/logs"],
+        check=True, capture_output=True).stdout
+    return out.decode("utf-8", errors="replace") if isinstance(out, bytes) else str(out or "")
+
+
+def collect_failing_tests(entries: list, repo: str, fetch_jobs=None, fetch_log=None,
+                          max_fetches: int = MAX_LOG_FETCHES) -> dict:
+    """把**失败测试 node id** 写进每条条目的 `failing_tests`（**原地**改 `entries`）。
+
+    取数面 = **失败那次尝试**的 job 日志（`(run_id, attempt, job name)` 三元组）：
+      · 条目里 `attempts[k]["attempt"]` 就是**失败那次尝试**的序号；
+      · 同一次 run / 同一个尝试里的多条条目**共用一份日志**（只拉一次，见 `max_fetches`）；
+      · 拉不到（job 已被清理 / 网络 / 权限）⇒ **不写** `failing_tests` 字段、不抛 —— 记进
+        `failed` 清单 ⇒ 本轮 `unresolved` =「台账没带测试名」，**可见**（不是静默成功）。
+
+    返回 `{"mapped": n, "unresolved": n, "fetches": n, "failed": [...]}`（**计数现取**，不写死）。
+    """
+    fetch_jobs = fetch_jobs or fetch_attempt_jobs
+    fetch_log = fetch_log or fetch_job_log
+    entries = entries if isinstance(entries, list) else []
+    log_cache: dict = {}
+    failed: list = []
+    mapped = unresolved = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            attempts = [int(f.get("attempt")) for f in (entry.get("attempts") or [])
+                        if isinstance(f, dict) and isinstance(f.get("attempt"), int)]
+        except (TypeError, ValueError):  # pragma: no cover - 已由生成形状保证
+            attempts = []
+        target = min(attempts) if attempts else 1
+        key = (entry.get("run_id"), target, entry.get("job"))
+        if key not in log_cache:
+            if len(log_cache) >= max(0, int(max_fetches)):
+                failed.append({"key": list(key), "why": f"超出每次 run 的日志拉取上限 "
+                                                        f"{max_fetches}（MAX_LOG_FETCHES）"})
+                log_cache[key] = None
+            else:
+                try:
+                    jobs = fetch_jobs(repo, int(entry.get("run_id") or 0), target)
+                    match = next((j for j in jobs
+                                  if (j or {}).get("name") == entry.get("job")
+                                  and job_id(j) is not None), None)
+                    if match is None:
+                        raise LookupError(f"尝试 {target} 里没有 job `{entry.get('job')}`"
+                                          f"（或它没有 job id）")
+                    log_cache[key] = extract_failing_tests(fetch_log(repo, job_id(match)))
+                except Exception as exc:  # noqa: BLE001 - fail-safe：记账面坏掉不许拖垮台账
+                    failed.append({"key": list(key), "why": f"{type(exc).__name__}: {exc}"})
+                    log_cache[key] = None
+        tests = log_cache[key]
+        if tests is None:
+            unresolved += 1
+            continue
+        entry[FAILING_TESTS_FIELD] = list(tests)
+        mapped += 1
+    return {"mapped": mapped, "unresolved": unresolved,
+            "fetches": sum(1 for v in log_cache.values() if v is not None),
+            "failed": failed}
+
+
 def attempt_facts(job, attempt: int, assertion=None) -> dict:
     """**一条原始事实**：第 `attempt` 次尝试里这个 job 的失败读数（不经解释）。
 
@@ -648,6 +861,16 @@ def build_entries(run, failed_jobs, rerun_result: str, prior_failed_jobs=None,
             # 跟踪单号由**分诊方**回填（CI 生成时不知道单号）——
             # `reconcile` 会把「kind=flaky 且 status=open 但没 follow_up」判成欠账（红）。
             "follow_up": None,
+            # 🔴 #5960：**判了 flaky / 窗口型疑似就必须登记修复路径** —— 本标志让
+            # `ledger_violations` 对**新增**条目 fail-closed（`triage-follow-up` 机械落单后
+            # 才写得进台账），同时**不回溯**存量条目（存量 191 条 flaky 全都没有 follow_up）。
+            # 形状纪律：flaky / 窗口型疑似的新条目**必须为 true**（`ledger_violations` 判）；
+            # 其它 kind 没有这条路（不写它）。
+            REQUIRES_FOLLOW_UP_FIELD: kind in FOLLOW_UP_REQUIRED_KINDS or None,
+            # #5960 判据①：**失败测试身份**由 `collect-failing-tests` 从**失败 job 的日志**里
+            # 机械提取（`FAILED <node id> - …`）；这里先给空列表 = 「尚未取数」，取数失败会由
+            # `collect_failing_tests` 的 `unresolved` 计数**显式可见**（不静默装成「没有测试名」）。
+            FAILING_TESTS_FIELD: [],
         }
         if unknown_reason:
             entry["unknown_reason"] = unknown_reason
@@ -774,11 +997,77 @@ def _terminal(run, failed_jobs, rerun_result: str, attempt: int, prior_failed_jo
 # ── 台账：只追加 + 幂等 ───────────────────────────────────────────────────────
 
 
+def requires_follow_up(entry) -> bool:
+    """该条目是否**被本判据约束**（= 新写入的 `flaky` / `suspect-window-deterministic` 条目）。
+
+    🔴 判据**读的是条目自己声明的标志**（`build_entries` 对这两类**必然**写入），不是「kind 是不是
+    flaky」—— 存量条目没有标志 ⇒ **不回溯**。这不是「豁免台账」（豁免台账会把缺口藏起来）：
+    存量缺口由 `reconcile` 的 `new_events` **显式登记**（可见），而**新增**条目在**写入那一刻**
+    fail-closed（`append_entries` 拒绝没有标志的新条目 ⇒ 没有「以后补个标志」的口子）。
+    """
+    return isinstance(entry, dict) and entry.get(REQUIRES_FOLLOW_UP_FIELD) is True
+
+
+def tracking_violations(pairs) -> list:
+    """🔴 **#5960 判据②的读侧判据**（空 = 合规）：条目**自己声明**要跟踪 ⇒ 必须带正整数跟踪单。
+
+    `pairs` = `[(下标, 条目)]`（`ledger_violations` 传全量并带下标）。
+
+    ⚠️ 判据**只**看带 `requires_follow_up=True` 的条目（= 新口径写入的）：存量条目没有该标志
+    ⇒ **不判违规**（存量 191 条 `kind=flaky` 全都没有 `follow_up`，回溯式判据会让台账在落地当天
+    就整条链 fail-closed）—— 存量缺口由 `reconcile` 的 `new_events` **显式登记**（可见，不藏）。
+    「新条目必须带标志」这条由**写侧**的 `new_entry_tracking_violations` 承担（`append_entries` 调用）。
+    """
+    bad = []
+    for i, entry in pairs if isinstance(pairs, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get(REQUIRES_FOLLOW_UP_FIELD) is not True:
+            continue
+        if entry.get("kind") not in FOLLOW_UP_REQUIRED_KINDS:
+            continue
+        fu = entry.get("follow_up")
+        if not (isinstance(fu, int) and fu > 0):
+            bad.append(
+                f"entries[{i}] kind={entry.get('kind')!r} 但 follow_up={fu!r} ⇒ "
+                f"**报了一条 flaky 却没有登记修复路径**（#5960）：判了「重跑才绿」的条目"
+                f"必须带跟踪单 —— 否则「以后没人知道它放过什么」在源头就没有关掉。"
+                f"落单口径：{FOLLOW_UP_TRACKING_HOWTO}")
+    return bad
+
+
+def new_entry_tracking_violations(entries) -> list:
+    """🔴 **#5960 写侧判据**（空 = 合规）：`append` 收下的**新条目**必须带标志 + 跟踪单。
+
+    这是**形状闸**（比读侧严一条）：flaky / 窗口型疑似的**新**条目**必须**带
+    `requires_follow_up=True`（由 `build_entries` 写）⇒ 摘掉标志这条退化路径**在写入那一刻**
+    就被拒（否则「以后没人知道它放过什么」可以靠「不写标志」绕过）。
+    ⚠️ 它**只**作用于 `append_entries` 的新条目，不作用于存量（存量没有标志是**已知缺口**，
+    不是违规 —— 见 `tracking_violations`）。
+    """
+    bad = []
+    for i, entry in enumerate(entries if isinstance(entries, list) else []):
+        if not isinstance(entry, dict) or entry.get("kind") not in FOLLOW_UP_REQUIRED_KINDS:
+            continue
+        if entry.get(REQUIRES_FOLLOW_UP_FIELD) is not True:
+            bad.append(
+                f"entries[{i}] kind={entry.get('kind')!r} 但缺 `{REQUIRES_FOLLOW_UP_FIELD}` 标志 ⇒ "
+                f"**判了一条「重跑才绿」却没有登记修复路径**（#5960）：新写入的该类条目必须带本标志"
+                f"（由 `build_entries` 写）⇒ 否则「以后没人知道它放过什么」")
+            continue
+        bad += tracking_violations([(i, entry)])
+    return bad
+
+
 def append_entries(ledger: dict, entries: list) -> tuple:
     """**只追加**、**幂等**。返回 `(added, skipped_keys)`。
 
     幂等判据 = `entry_key` 在「存量 ∪ 本批已收」里出现过 ⇒ 跳过。
     故「同一次失败被重跑多次 / 重判多次」只留一条；重复追加是**无副作用**的空操作。
+
+    🔴 #5960：写侧形状闸在 **CLI 的 `append` 路径**（`new_entry_tracking_violations`），
+    **不**在本函数 —— 本函数是「只追加 + 幂等」的**纯机制**（`union_ledgers` / 对齐重放也复用它），
+    而形状闸是**写入面**的判据（与 `ledger_violations` 同族，不写第二份）。
     """
     existing = {entry_key(e) for e in (ledger.get("entries") or [])}
     added, skipped = [], []
@@ -928,6 +1217,15 @@ def ledger_violations(ledger: dict) -> list:
         # 「第二次绿 ⇒ flaky」的**方向**也必须自洽：重跑没绿就不许标 flaky
         if entry.get("kind") == "flaky" and entry.get("rerun_result") != "success":
             bad.append(f"entries[{i}] kind=flaky 但 rerun_result≠success —— 放行了未复现的失败")
+        # 🔴 #5960 判据②（fail-closed）：**判了 flaky / 窗口型疑似 ⇒ 必须登记修复路径**。
+        # 判据本体 = `tracking_violations`（**单一实现**：`append_entries` 在写入那一刻也用它，
+        # 故「没有跟踪单的该类条目根本写不进台账」，而不是「写进去之后靠人发现」）。
+        for message in tracking_violations([(i, entry)]):
+            bad.append(message)
+        flag = entry.get(REQUIRES_FOLLOW_UP_FIELD)
+        if flag is not None and not isinstance(flag, bool):
+            bad.append(f"entries[{i}].{REQUIRES_FOLLOW_UP_FIELD} 应为布尔（或缺失 = 存量条目），"
+                       f"实际 {flag!r}")
         # #5088：新口径的 kind 必须**带原始事实**（只给结论不给读数 = 不可核 ⇒ 会被当成归因层用）
         if entry.get("kind") in FACT_BACKED_KINDS:
             attempts = entry.get("attempts")
@@ -1029,7 +1327,7 @@ def reconcile(ledger: dict) -> dict:
         # （`flaky` 至少被重跑复现过「不可复现」，而它是「**没修就会每天再红一次**」的形态）。
         # ⚠️ 这一行**有意**保持单行（与 `test_flaky_triage.py` 的注入式红证锚逐字一致）：
         # 锚失配会让那条红证变成**空断言**（本单已踩过一次，见该测试的 docstring）。
-        if entry.get("kind") in ("flaky", SUSPECT_WINDOW_KIND) and entry.get("status") != "fixed" and not entry.get("follow_up"):
+        if entry.get("kind") in FOLLOW_UP_REQUIRED_KINDS and entry.get("status") != "fixed" and not entry.get("follow_up"):
             new_events.append({
                 "index": i, "key": list(entry_key(entry)),
                 "why": (f"kind={entry.get('kind')} 且 status=open 但没有 follow_up 跟踪单 "
@@ -1811,21 +2109,35 @@ def branch_head_age_minutes():
 
 TRACKING_LABEL = "flaky/tracking"
 
+#: 🔴 #5960：**每一个需要跟踪单的 kind 各自的 marker**（单一事实源）。
+#:
+#: 为什么必须**按 kind 分开**（不能共用一个 marker）：`flaky` 与 `suspect-window-deterministic`
+#: 的**处置完全不同**（前者是「随机波动 ⇒ 定位机制」，后者是「跨时间桶 ⇒ 先按时间维度复核」）。
+#: 共用一个 marker 会让「找跟踪单」的机械判据把两类**互相误命中** —— 于是「这张单在跟哪一类」
+#: 变成只有一个模糊答案（正是本仓最忌的「读数与事实不一致」）。
+#: ⚠️ `suspect-window-deterministic` 的 marker 文本**逐字不变**（存量 open 单仍能被复用，
+#: 换文本 = 每张存量单都变成孤儿、下一轮再开一张新的 = 噪音）。
+TRACKING_MARKERS = {
+    SUSPECT_WINDOW_KIND: "<!-- flaky-window-tracking: job={job} -->",
+    "flaky": "<!-- flaky-rerun-tracking: job={job} -->",
+}
 
-def tracking_marker(job: str) -> str:
+
+def tracking_marker(job: str, kind: str = SUSPECT_WINDOW_KIND) -> str:
     """跟踪单的唯一身份标记（HTML 注释，写进 body）。
 
-    ⚠️ **按 job 收敛，不按 run / 日期收敛**：同一 job 反复判 `suspect` ⇒ **复用同一张单**
+    ⚠️ **按 job 收敛，不按 run / 日期收敛**：同一 job 反复判同类 ⇒ **复用同一张单**
     （新建单只会造噪音，而噪音正是「随机红 ⇒ 告警疲劳」的起点）；换 job ⇒ 换单。
-    ⚠️ 与 PR 评论的 `<!-- flaky-triage:` marker **不同前缀**：两者都是 HTML 注释，
+    ⚠️ 与 PR 评论的 `<!-- flaky-triage:` marker **不同前缀**：三者都是 HTML 注释，
     同前缀会让「找 PR 评论」和「找跟踪单」的机械判据互相误命中。
     """
-    return f"<!-- flaky-window-tracking: job={str(job or '').strip()} -->"
+    template = TRACKING_MARKERS.get(kind, TRACKING_MARKERS[SUSPECT_WINDOW_KIND])
+    return template.format(job=str(job or "").strip())
 
 
-def find_tracking_issue(repo: str, job: str):
+def find_tracking_issue(repo: str, job: str, kind: str = SUSPECT_WINDOW_KIND):
     """**只读**：找该 job 已存在的 **open** 跟踪单号（没有 ⇒ `None`）。**不创建任何东西**。"""
-    marker = tracking_marker(job)
+    marker = tracking_marker(job, kind)
     listing = _gh_api(f"repos/{repo}/issues?state=open&labels={TRACKING_LABEL}&per_page=100")
     for issue in listing if isinstance(listing, list) else []:
         if not isinstance(issue, dict):
@@ -1837,7 +2149,8 @@ def find_tracking_issue(repo: str, job: str):
     return None
 
 
-def ensure_tracking_issue(repo: str, job: str, *, subject: str = "") -> dict:
+def ensure_tracking_issue(repo: str, job: str, *, subject: str = "",
+                          kind: str = SUSPECT_WINDOW_KIND) -> dict:
     """**保证**该 job 有一张 open 跟踪单；返回 `{"number": int|None, "created": bool, "url": str}`。
 
     **幂等**：已有 ⇒ 复用（`_gh_api` 只读路径）；没有 ⇒ 新建（`issues` write 权限已在
@@ -1845,35 +2158,65 @@ def ensure_tracking_issue(repo: str, job: str, *, subject: str = "") -> dict:
 
     fail-closed（抛 `RuntimeError`）：拿不到事实 / 建不出来 ⇒ 调用方必须红 —— 否则
     「强制跟踪」会静默退化成「没有跟踪单也照样记一条」（正是 #5307 治过的形态）。
+
+    `kind` 决定**开哪种单**（#5960）：`flaky`（重跑才绿 ⇒ 定位机制）与
+    `suspect-window-deterministic`（跨时间桶 ⇒ 先按时间维度复核）的处置不同 ⇒ 单的
+    标题/正文/marker 都按 kind 分派（`TRACKING_MARKERS`）。
     """
-    existing = find_tracking_issue(repo, job)
+    existing = find_tracking_issue(repo, job, kind)
     if existing is not None:
         return {"number": existing, "created": False,
                 "url": f"https://github.com/{repo}/issues/{existing}"}
-    marker = tracking_marker(job)
-    body = (
-        f"{marker}\n"
-        f"### 窗口型疑似（`suspect-window-deterministic`）—— 由 CI 机械开单（issue #5687）\n\n"
-        f"**job**：`{job}`{f'（workflow {subject}）' if subject else ''}\n\n"
-        "**为什么有这张单**：某次失败被自动重跑后**通过**，但**失败时刻与重跑时刻不在同一个"
-        "时间桶**（跨了 UTC 日期 / +08 业务日的时段边界）⇒ 「重跑通过」**不再**是「与本次改动"
-        "无关」的证据。典型形态 = **窗口型确定性缺陷**（如「UTC 16:00–24:00 必红」）：重跑恰好"
-        "落到窗口外就绿，缺陷却仍在 main 上，**明天同一时段对所有人再红一次**。\n\n"
-        "⚠️ **本单不是定罪**：跨桶只说明「需人看」，不宣称它是确定性失败"
-        "（`deterministic` 要两次尝试**同一断言同一错误**的日志取证）。\n\n"
-        "**怎么处置**：\n"
-        "1. 拿台账条目里的 `failed_at` / `rerun_at` 与失败 job 日志复算「同一 commit 在失败那段"
-        "时刻是否**稳定地红**」（窗口型缺陷的特征 = 每天同一时段必红）；\n"
-        "2. 确认窗口型 ⇒ 修根因（冻结时钟 / 注入业务时钟 / 两侧同源取日），修后**必须给红证**"
-        "（把机制注回 ⇒ 必红）；\n"
-        "3. 确属真 flaky（同桶复算为巧合）⇒ 在台账条目上逐字说明理由，再 "
-        "`follow-up --status fixed --fixed-by '<凭据>'` 销账；\n"
-        "4. 本单**修好即关**（同一 job 下次再判 `suspect` 会**复用**本单，不会另开新单）。\n\n"
-        "**台账**：`.github/flaky-ledger.json`（条目按 `(workflow, run_id, job)` 幂等键定位）。\n"
-    )
+    marker = tracking_marker(job, kind)
+    if kind == SUSPECT_WINDOW_KIND:
+        title = f"窗口型疑似：`{job}` 的失败被跨时间桶的重跑掩盖（#5687）"
+        body = (
+            f"{marker}\n"
+            f"### 窗口型疑似（`suspect-window-deterministic`）—— 由 CI 机械开单（issue #5687）\n\n"
+            f"**job**：`{job}`{f'（workflow {subject}）' if subject else ''}\n\n"
+            "**为什么有这张单**：某次失败被自动重跑后**通过**，但**失败时刻与重跑时刻不在同一个"
+            "时间桶**（跨了 UTC 日期 / +08 业务日的时段边界）⇒ 「重跑通过」**不再**是「与本次改动"
+            "无关」的证据。典型形态 = **窗口型确定性缺陷**（如「UTC 16:00–24:00 必红」）：重跑恰好"
+            "落到窗口外就绿，缺陷却仍在 main 上，**明天同一时段对所有人再红一次**。\n\n"
+            "⚠️ **本单不是定罪**：跨桶只说明「需人看」，不宣称它是确定性失败"
+            "（`deterministic` 要两次尝试**同一断言同一错误**的日志取证）。\n\n"
+            "**怎么处置**：\n"
+            "1. 拿台账条目里的 `failed_at` / `rerun_at` 与失败 job 日志复算「同一 commit 在失败那段"
+            "时刻是否**稳定地红**」（窗口型缺陷的特征 = 每天同一时段必红）；\n"
+            "2. 确认窗口型 ⇒ 修根因（冻结时钟 / 注入业务时钟 / 两侧同源取日），修后**必须给红证**"
+            "（把机制注回 ⇒ 必红）；\n"
+            "3. 确属真 flaky（同桶复算为巧合）⇒ 在台账条目上逐字说明理由，再 "
+            "`follow-up --status fixed --fixed-by '<凭据>'` 销账；\n"
+            "4. 本单**修好即关**（同一 job 下次再判 `suspect` 会**复用**本单，不会另开新单）。\n\n"
+            "**台账**：`.github/flaky-ledger.json`（条目按 `(workflow, run_id, job)` 幂等键定位）。\n"
+        )
+    else:
+        title = f"flaky：`{job}` 的失败被重跑掩盖（需定位机制，#5960）"
+        body = (
+            f"{marker}\n"
+            f"### flaky（`kind=flaky`：重跑才绿）—— 由 CI 机械开单（issue #5960）\n\n"
+            f"**job**：`{job}`{f'（workflow {subject}）' if subject else ''}\n\n"
+            "**为什么有这张单**：某次失败在**首次尝试**判红、**重跑后通过**，两次尝试落在**同一个"
+            "时间桶**（所以它不是窗口型疑似）⇒ 判 `flaky`（随机波动）。「重跑才绿」**不等于通过**："
+            "这条失败**没有**被本次改动修好，而此前它在台账里**只留一个 `kind`** —— "
+            "没有任何东西记录「它放过的是哪条测试、下一步谁去定位机制」"
+            "（实测：按测试名 grep 台账 **0 命中**）⇒ 本单就是那条缺口。\n\n"
+            "**怎么处置**（口径：`migao-acceptance`「随机红 = 归因层失效」，**不许**只加 "
+            "`waitFor` / `sleep` 了事）：\n"
+            "1. 看条目里的 `failing_tests`（**失败的 pytest node id**，机械提取自失败 job 日志）"
+            "与 `attempts[].timestamp`；\n"
+            "2. **定位机制**：时间相关 ⇒ 冻结时钟 / 注入时钟；并行或共享状态 ⇒ 显式隔离或独立 "
+            "fixture；真机具 / 外部依赖 ⇒ 固定种子或显式门控；\n"
+            "3. 修后**必须给红证**（把机制注回 ⇒ 必红），再 "
+            "`follow-up --status fixed --fixed-by '<PR / run / 用例>'` 销账；\n"
+            "4. 本单**修好即关**（同一 job 下次再判 flaky 会**复用**本单，不会另开新单）。\n\n"
+            "⚠️ **人工恢复路径不在本单**：`flaky/rerun-green` 的摘标 / 重新 arm 在 PR 上做"
+            "（本单只承接「这条 flaky 的机制由谁定位」）。\n\n"
+            "**台账**：`.github/flaky-ledger.json`（条目按 `(workflow, run_id, job)` 幂等键定位）。\n"
+        )
     # ⚠️ 参数是 **`title=`/`body=`**（`gh api -f` 语义）；`labels` 用 CSV 字符串（同 `gh` CLI 口径）。
     listing = _gh_api(f"repos/{repo}/issues", method="POST", fields={
-        "title": f"窗口型疑似：`{job}` 的失败被跨时间桶的重跑掩盖（#5687）",
+        "title": title,
         "body": body,
         "labels": TRACKING_LABEL,
     })
@@ -1885,16 +2228,19 @@ def ensure_tracking_issue(repo: str, job: str, *, subject: str = "") -> dict:
 
 
 def apply_tracking_issue(entries: list, issue) -> list:
-    """把跟踪单号**注入** `suspect-window-deterministic` 条目的 `follow_up`（返回被改的条目）。
+    """把跟踪单号**注入**需要跟踪的条目的 `follow_up`（返回被改的条目）。
+
+    🔴 #5960：目标集合 = `FOLLOW_UP_REQUIRED_KINDS`（`flaky` **与** `suspect-window-deterministic`）
+    —— 「判了 flaky 却没登记」这条缺口就在旧实现在此处**只认窗口型**。判据从常量取（不写第二份）。
 
     幂等：已填同一个号 ⇒ 无改动；已填**别的**号 ⇒ 抛 `FollowUpError`（不猜、不覆盖别人填的值）；
     `issue` 非正整数 ⇒ 抛 `FollowUpError`（本函数**不替它编单号**）。
     """
     if not (isinstance(issue, int) and issue > 0):
-        raise FollowUpError(f"--issue 必须是正整数（窗口型疑似必须有跟踪单），实际 {issue!r}")
+        raise FollowUpError(f"--issue 必须是正整数（flaky / 窗口型疑似必须有跟踪单），实际 {issue!r}")
     changed = []
     for i, entry in enumerate(entries if isinstance(entries, list) else []):
-        if not isinstance(entry, dict) or entry.get("kind") != SUSPECT_WINDOW_KIND:
+        if not isinstance(entry, dict) or entry.get("kind") not in FOLLOW_UP_REQUIRED_KINDS:
             continue
         before = entry.get("follow_up")
         if isinstance(before, int) and before > 0:
@@ -1939,11 +2285,25 @@ def render_comment(decision: dict) -> str:
             f"{'｜' + str(f.get('assertion')) if f.get('assertion') else ''}"
             for f in facts)
 
+    def failing_cell(entry: dict) -> str:
+        """🔴 #5960：**失败的测试**（谁被这条 flaky 放过了）—— 空 = 「日志里没取到」，如实写出来。
+
+        为什么必须进 PR 评论（而不是只在台账里）：评论是这条 flaky 唯一的人读面，
+        「放过的是哪条测试」在这里可见 ⇒ 「以后没人知道它放过什么」当场被关掉。
+        """
+        tests = entry.get(FAILING_TESTS_FIELD)
+        if not isinstance(tests, list) or not tests:
+            return "⚠️ 未取到（`failing_tests` 空）"
+        shown = "、".join(f"`{t}`" for t in tests[:3])
+        return shown + (f"（等 {len(tests)} 条）" if len(tests) > 3 else "")
+
     def table(first_col: str) -> list:
-        out = [f"| job | {first_col} | 重跑结果 | 结论 | 台账条目（幂等键） |", "|---|---|---|---|---|"]
+        out = [f"| job | {first_col} | 重跑结果 | 结论 | 失败的测试 | 台账条目（幂等键） |",
+               "|---|---|---|---|---|---|"]
         for e in entries:
             out.append(f"| `{e['job']}` | {attempt_cell(e)} | `{e['rerun_result']}` | "
-                       f"**`{e['kind']}`** | `{e['workflow']}/{e['run_id']}/{e['job']}` |")
+                       f"**`{e['kind']}`** | {failing_cell(e)} | "
+                       f"`{e['workflow']}/{e['run_id']}/{e['job']}` |")
         return out
 
     why = (f"`{first.get('job')}` 在第 **1** 次尝试（run "
@@ -2076,6 +2436,23 @@ def _write(path: str, text: str) -> None:
     Path(path).write_text(text, encoding="utf-8")
 
 
+#: #5960 判据①的**机械落点**（`flaky-triage.yml` 必须调用它 ⇒ 失败测试身份真的进台账）。
+#: 单独做成常量是**判据需要**：workflow 结构守卫按这个名字找调用（`test_flaky_triage.py`），
+#: 且「摘掉这一步 ⇒ 必红」的注入锚也从它取值（不写第二份字面量）。
+COLLECT_FAILING_TESTS_COMMAND = "collect-failing-tests"
+
+
+def render_failing_tests_report(entries: list, info: dict) -> str:
+    """本轮「失败测试身份」取数的**可见读数**（job summary / 日志；空 = 无需报告）。"""
+    lines = [f"**失败测试身份（#5960）**：已写入 {info['mapped']} 条条目的 `{FAILING_TESTS_FIELD}` · "
+             f"拉取日志 {info['fetches']} 份 · **未取到 {info['unresolved']} 条**"
+             f"（`{FAILING_TESTS_FIELD}` 保持空 = 「没取到」，不是「没有测试名」）"]
+    for row in info["failed"]:
+        lines.append(f"   · ⚠️ run={row['key'][0]} attempt={row['key'][1]} job={row['key'][2]!r}："
+                     f"{row['why']}")
+    return "\n".join(lines)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="CI 失败重跑分流 + flaky 台账（issue #4717）")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -2125,6 +2502,16 @@ def main(argv=None) -> int:
     p.add_argument("--job", help="条目里多个 job 时只处理它（缺省 ⇒ 处理全部该类条目）")
     p.add_argument("--json-out")
     p.add_argument("--gh-output", help="写出 `issue=<号>` / `created=<0|1>` 供 workflow 引用")
+
+    p = sub.add_parser(COLLECT_FAILING_TESTS_COMMAND,
+                       help="#5960：从**失败 job 的日志**里机械提取失败的 pytest node id，"
+                            "写进条目的 `failing_tests`（**只读网络 + 原地改条目文件**）")
+    p.add_argument("--repo", required=True)
+    p.add_argument("--entries", required=True,
+                   help="`decide --entries-out` 写出的条目文件（本命令**原地**补 `failing_tests`）")
+    p.add_argument("--attempt", type=int, action="append", default=None,
+                   help="只处理失败那次尝试 = 该序号的条目（可重复；缺省 ⇒ 每条按自己的 attempts 推）")
+    p.add_argument("--json-out")
 
     p = sub.add_parser("ledger-drift",
                        help="台账落仓对账（#4825 兜底判据）：台账分支是否领先 main")
@@ -2384,11 +2771,61 @@ def main(argv=None) -> int:
             return 0
         return 0
 
+    if args.cmd == COLLECT_FAILING_TESTS_COMMAND:
+        # 🔴 #5960 判据①：**失败测试身份**进台账（从**失败 job 的日志**里机械提取）。
+        # ⚠️ **fail-safe，不是 fail-closed**（与 `append` 那条相反，且是**有意**的）：
+        #   日志取不到（job 已被清理 / 权限 / 网络）**不该**把分流整条链判红 —— 台账照常记账，
+        #   而「没取到」由 `render_failing_tests_report` 的 `unresolved` 计数**显式可见**
+        #   （空 `failing_tests` = 「没取到」，不是「没有测试名」）。把取数面做成硬门禁会让
+        #   一条网络抖动**卡住所有记账** —— 那是「噪音换噪音」。
+        #   唯一 fail-closed 的是**条目文件本身读不到**（那是「未跑」，不得当「零动作」）。
+        try:
+            entries = json.loads(Path(args.entries).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"⛔ 读不到/解析不了条目文件 {args.entries}（{exc}）⇒ **不得**当「没有条目」继续"
+                  f"（未跑 ≠ 通过）", file=sys.stderr)
+            return 1
+        if not isinstance(entries, list):
+            print(f"⛔ 条目文件 {args.entries} 不是列表（形状应为 decide --entries-out 的输出）"
+                  f"⇒ 拒绝继续", file=sys.stderr)
+            return 1
+        targets = [e for e in entries
+                   if isinstance(e, dict)
+                   and (not args.attempt
+                        or any(isinstance(f, dict) and f.get("attempt") in args.attempt
+                               for f in (e.get("attempts") or [])))]
+        if not targets:
+            print(f"ℹ️ 条目里没有匹配 {f'--attempt {args.attempt}' if args.attempt else '（未限尝试）'}"
+                  f" 的条目 ⇒ 本命令零动作（不拉日志、不写文件）")
+            if args.json_out:
+                _write(args.json_out, json.dumps(
+                    {"mapped": 0, "unresolved": 0, "fetches": 0, "failed": []},
+                    ensure_ascii=False, indent=2))
+            return 0
+        try:
+            info = collect_failing_tests(targets, args.repo)
+        except Exception as exc:  # noqa: BLE001 - 取数面坏掉不许拖垮记账（可见即可）
+            print(f"::warning::⚠️ 失败测试身份取数整体失败（{type(exc).__name__}: {exc}）⇒ "
+                  f"台账照常记账，但 `{FAILING_TESTS_FIELD}` 本轮未取到（**不是**「没有测试名」）",
+                  file=sys.stderr)
+            info = {"mapped": 0, "unresolved": len(targets), "fetches": 0,
+                    "failed": [{"key": ["-", "-", "-"], "why": f"{type(exc).__name__}: {exc}"}]}
+        Path(args.entries).write_text(
+            json.dumps(entries, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        report = render_failing_tests_report(entries, info)
+        print(("::notice::" if info["unresolved"] == 0 else "::warning::") + report)
+        if args.json_out:
+            _write(args.json_out, json.dumps(info, ensure_ascii=False, indent=2))
+        return 0
+
     if args.cmd == "triage-follow-up":
-        # 🔴 #5687：`suspect-window-deterministic` **强制跟踪**的机械落点。
+        # 🔴 #5687 / **#5960**：「必须跟踪」的机械落点（**两类共用**）。
         # 为什么必须在**这里**（而不是「让分诊方记得手动回填」）：`ledger_violations` 把
-        # 「该类条目缺 follow_up」判成**违规** ⇒ 没有本命令时 `append` 会在第一步就 fail-closed
-        # ⇒ 分流整条链死给你看 —— 正是 #5307 治过的「文档要求做、却没有合法工具做」。
+        # 「该类条目缺 follow_up」判成**违规**、`append_entries` 也在**写入那一刻**拒绝
+        # ⇒ 没有本命令时 `append` 会在第一步就 fail-closed ⇒ 分流整条链死给你看 ——
+        # 正是 #5307 治过的「文档要求做、却没有合法工具做」。
+        # #5960 把目标集合从「只窗口型」扩到 `FOLLOW_UP_REQUIRED_KINDS`（含 `flaky`）：
+        # 「判了 flaky 却没登记」这条缺口的出口就是它。
         try:
             entries = json.loads(Path(args.entries).read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
@@ -2400,19 +2837,22 @@ def main(argv=None) -> int:
                   f"⇒ 拒绝继续", file=sys.stderr)
             return 1
         targets = [e for e in entries
-                   if isinstance(e, dict) and e.get("kind") == SUSPECT_WINDOW_KIND
+                   if isinstance(e, dict) and e.get("kind") in FOLLOW_UP_REQUIRED_KINDS
                    and (args.job is None or e.get("job") == args.job)]
         if not targets:
-            print(f"ℹ️ 条目里没有 `{SUSPECT_WINDOW_KIND}` 类"
+            print(f"ℹ️ 条目里没有 `{'` / `'.join(FOLLOW_UP_REQUIRED_KINDS)}` 类"
                   f"{f'（--job {args.job!r}）' if args.job else ''} ⇒ 本命令零动作"
                   f"（不建单、不写文件）")
             if args.gh_output:
                 with open(args.gh_output, "a", encoding="utf-8") as fh:
                     fh.write("issue=\ncreated=0\n")
             return 0
-        # 一张单服务本条 job 的全部条目（同 run 多 job ⇒ 各自一张，靠 `--job` 分派）
+        # 一张单服务本条 job 的全部条目（同 run 多 job ⇒ 各自一张，靠 `--job` 分派）；
+        # 同 job 混了两类 ⇒ 以**第一类**开单（mark_flaky / mark_suspect 各自独占一步，
+        # 正常路径上不会混；混了也只会开错**标题**，而 marker 与 follow_up 仍逐条正确）。
         job = str(targets[0].get("job") or "")
         subject = str(targets[0].get("workflow") or "")
+        kind = str(targets[0].get("kind") or "")
         try:
             if args.issue is not None:
                 if not (isinstance(args.issue, int) and args.issue > 0):
@@ -2420,7 +2860,7 @@ def main(argv=None) -> int:
                 info = {"number": args.issue, "created": False,
                         "url": f"https://github.com/{args.repo}/issues/{args.issue}"}
             else:
-                info = ensure_tracking_issue(args.repo, job, subject=subject)
+                info = ensure_tracking_issue(args.repo, job, subject=subject, kind=kind)
         except (RuntimeError, FollowUpError) as exc:
             print(f"⛔ 落跟踪单失败（{exc}）⇒ **fail-closed**：该类条目必须带跟踪单，"
                   f"不许「没有单也照样记账」", file=sys.stderr)
@@ -2433,12 +2873,13 @@ def main(argv=None) -> int:
         Path(args.entries).write_text(
             json.dumps(entries, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         verb = "新建" if info["created"] else "复用"
-        print(f"::notice::🕒 {verb}窗口型疑似的跟踪单 #{info['number']}（job `{job}`）"
+        print(f"::notice::🕒 {verb}{kind} 的跟踪单 #{info['number']}（job `{job}`）"
               f"→ {info['url']}；已注入 {len(changed)} 条条目的 follow_up")
         if args.json_out:
             _write(args.json_out, json.dumps(
                 {"issue": info["number"], "created": info["created"], "job": job,
-                 "changed": changed, "url": info["url"]}, ensure_ascii=False, indent=2))
+                 "kind": kind, "changed": changed, "url": info["url"]},
+                ensure_ascii=False, indent=2))
         if args.gh_output:
             with open(args.gh_output, "a", encoding="utf-8") as fh:
                 fh.write(f"issue={info['number']}\n")
@@ -2526,6 +2967,19 @@ def main(argv=None) -> int:
         bad = ledger_violations(ledger)
         if bad:
             print("⛔ 台账自身不合规，拒绝写入：\n  - " + "\n  - ".join(bad), file=sys.stderr)
+            return 1
+        # 🔴 #5960 **写侧形状闸**：新条目里 flaky / 窗口型疑似必须带标志 + 跟踪单
+        # （即「判了 flaky 却没登记修复路径」**根本写不进台账**）。
+        # ⚠️ 幂等路径（键已登记）**不判**：那一条早已在台账里（存量条目合法），重复 append 是
+        #    无副作用的空操作 —— 否则重放历史批次会被新判据拦住（那会把「追加」变成「追债」）。
+        existing_keys = {entry_key(e) for e in (ledger.get("entries") or [])}
+        fresh = [e for e in entries
+                 if isinstance(e, dict) and entry_key(e) not in existing_keys]
+        bad_new = new_entry_tracking_violations(fresh)
+        if bad_new:
+            print("⛔ 拒绝写入「判了 flaky 却没有登记修复路径」的新条目（#5960）"
+                  "（先跑 `triage-follow-up` 注入单号）：\n  - " + "\n  - ".join(bad_new),
+                  file=sys.stderr)
             return 1
         added, skipped = append_entries(ledger, entries)
         if not added:

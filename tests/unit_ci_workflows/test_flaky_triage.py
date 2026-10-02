@@ -397,7 +397,11 @@ class TestLedgerSelfConsistency:
         ledger.write_text('{"version": 1, "note": "", "_schema": {}, "entries": []}',
                           encoding="utf-8")
         entries = tmp_path / "e.json"
-        entries.write_text(__import__("json").dumps([_entry()]), encoding="utf-8")
+        # 🔴 #5960：CLI 的 append 有**写侧形状闸** —— 新写入的 flaky 条目必须带
+        # `requires_follow_up` 标志 + 跟踪单（即「判了 flaky 却没登记修复路径」写不进去）。
+        # ⇒ 本用例喂的是**生产顺序**下的合法形状（`triage-follow-up` 注入单号之后的条目）。
+        new_entry = dict(_entry(), **{FL.REQUIRES_FOLLOW_UP_FIELD: True, "follow_up": 5960})
+        entries.write_text(__import__("json").dumps([new_entry]), encoding="utf-8")
         assert FL.main(["append", "--ledger", str(ledger), "--entries", str(entries)]) == 0
         assert len(FL.load_ledger(ledger)["entries"]) == 1
         assert FL.main(["append", "--ledger", str(ledger), "--entries", str(entries)]) == 0
@@ -746,10 +750,11 @@ class TestFollowUpRedProofs:
         """把「flaky 且 open 却没 follow_up」这条对账判据**摘掉**（= 为了变绿而放宽本意）⇒ 必红。
 
         ⚠️ 注入锚跟着实现走（#5687 给该条件加了「`suspect-window-deterministic` 也要求跟踪单」⇒
-        条件本身扩成两行）——**锚失配会让这条红证变成空断言**，故锚必须与当前实现逐字一致。
+        条件本身扩成两行；**#5960 起目标集合改从常量 `FOLLOW_UP_REQUIRED_KINDS` 取值** ⇒ 锚随之
+        改成常量形态）——**锚失配会让这条红证变成空断言**，故锚必须与当前实现逐字一致。
         """
         mutated = REAL_SCRIPT_SOURCE.replace(
-            'if entry.get("kind") in ("flaky", SUSPECT_WINDOW_KIND) and '
+            'if entry.get("kind") in FOLLOW_UP_REQUIRED_KINDS and '
             'entry.get("status") != "fixed" and not entry.get("follow_up"):',
             "if False:", 1)
         assert mutated != REAL_SCRIPT_SOURCE, "注入锚点失效（先修本测试）"
@@ -831,6 +836,10 @@ class TestActionableEntries:
         entry = d["entries"][0]
         assert entry["reason"] and entry["remedy"]
         assert entry["status"] == "open" and entry["follow_up"] is None
+        # 🔴 #5960：**新条目在「落跟踪单之前」本来就不合规**（`requires_follow_up=True` 但
+        # `follow_up=None`）—— 那正是 fail-closed 的形态：`triage-follow-up` 注入单号之后才写得进
+        # 台账（`append_entries` 同判）。故本用例先按**生产顺序**注入单号，再判「条目可行动」。
+        entry = dict(entry, follow_up=5960)
         assert FL.ledger_violations({"version": 1, "note": "", "_schema": {},
                                      "entries": [entry]}) == []
 
