@@ -7,6 +7,7 @@ import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.DailyBriefing;
 import com.migao.admin.service.DailyBriefingService;
+import com.migao.admin.time.BusinessClock;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -48,6 +50,11 @@ class BriefingControllerTest {
     @Mock
     private DailyBriefingService dailyBriefingService;
 
+    // 业务时间只经生产侧同一只单点（issue #5651 的测试侧守卫）：测试里**禁止**裸 `LocalDate.now()`
+    // —— 裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天（每天红 8 小时）。
+    @Spy
+    private BusinessClock businessClock = new BusinessClock();
+
     @InjectMocks
     private BriefingController briefingController;
 
@@ -73,7 +80,7 @@ class BriefingControllerTest {
         void generated() throws Exception {
             DailyBriefing briefing = DailyBriefing.builder()
                     .tenantId(1L)
-                    .bizDate(LocalDate.now())
+                    .bizDate(businessClock.today())
                     .verifyStatus("verified")
                     .content(Map.of("summary", "昨日经营平稳"))
                     .sourceSnapshot(Map.of("metrics", Map.of("today_orders", 3)))
@@ -123,7 +130,7 @@ class BriefingControllerTest {
                     "caveats", List.of("阈值可被租户配置覆盖")));
             DailyBriefing briefing = DailyBriefing.builder()
                     .tenantId(1L)
-                    .bizDate(LocalDate.now())
+                    .bizDate(businessClock.today())
                     .verifyStatus("verified")
                     .content(Map.of("summary", "昨日经营平稳"))
                     .proactiveStatus(status)
@@ -146,7 +153,7 @@ class BriefingControllerTest {
         void proactiveStatusIsNullWhenNotCollected() throws Exception {
             DailyBriefing briefing = DailyBriefing.builder()
                     .tenantId(1L)
-                    .bizDate(LocalDate.now())
+                    .bizDate(businessClock.today())
                     .verifyStatus("verified")
                     .content(Map.of("summary", "昨日经营平稳"))
                     .build();
@@ -244,7 +251,7 @@ class BriefingControllerTest {
         void generateSuccess() throws Exception {
             DailyBriefing briefing = DailyBriefing.builder()
                     .tenantId(1L)
-                    .bizDate(LocalDate.now())
+                    .bizDate(businessClock.today())
                     .verifyStatus("verified")
                     .content(Map.of("summary", "今日简报"))
                     .build();
