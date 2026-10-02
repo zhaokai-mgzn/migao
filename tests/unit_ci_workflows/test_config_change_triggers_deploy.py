@@ -320,6 +320,17 @@ def repo_with_single_change(tmp_path: Path, probe: str, name: str) -> dict:
         seed = repo / str(call["path"]) / "seed.txt"
         seed.parent.mkdir(parents=True, exist_ok=True)
         seed.write_text("seed", encoding="utf-8")
+    # 六条腿的 workflow + 外置状态机脚本（issue #5935）同批就位：对账步的前置判据 `on_main`
+    # （`git cat-file -e HEAD:.github/workflows/<wf>`）问的是**这棵树** ⇒ 不放就是「六条腿全不在
+    # main 上」（此后每个场景都跑不到判定本体 ⇒ 断言全过而判据没被执行 = **假绿**）。
+    for _c in parse_calls().values():
+        wf = repo / ".github" / "workflows" / str(_c["wf"])
+        wf.parent.mkdir(parents=True, exist_ok=True)
+        wf.write_text(str(_c["wf"]), encoding="utf-8")
+    _st = repo / "scripts" / "deploy_reconcile_state.sh"
+    _st.parent.mkdir(parents=True, exist_ok=True)
+    _st.write_text((REPO_ROOT / "scripts" / "deploy_reconcile_state.sh").read_text(encoding="utf-8"),
+                   encoding="utf-8")
     target = repo / probe
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("v1", encoding="utf-8")

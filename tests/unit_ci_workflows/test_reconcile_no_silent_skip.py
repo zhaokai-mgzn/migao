@@ -62,6 +62,8 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-reconcile.yml"
 RECONCILE_STEP = "Reconcile deploys"
+# 外置的状态机脚本（issue #5935）：对账步 `source` 它 ⇒ harness 的执行式仓库里必须有同一份
+STATE_SCRIPT = REPO_ROOT / "scripts" / "deploy_reconcile_state.sh"
 
 ACR_REGISTRY = "acr.example.com"
 ACR_NAMESPACE = "ns"
@@ -201,8 +203,14 @@ def make_stubs(tmp_path: Path) -> Path:
     return bin_dir
 
 
-def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",)) -> dict:
-    """`C1(代码) → C2(代码，部署被吞；只改 `drift_paths`) → D1(docs) → D2(docs, HEAD)`。"""
+def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",),
+                 absent_workflows: tuple = ()) -> dict:
+    """`C1(代码) → C2(代码，部署被吞；只改 `drift_paths`) → D1(docs) → D2(docs, HEAD)`。
+
+    `absent_workflows` = 模拟「**还没合并到 default branch** 的 workflow」（新增腿的那个 PR 的形态）：
+    这些 workflow **从一开始就不写进仓库** ⇒ 它们真的不在 HEAD 的树里（issue #5935 换用
+    `git cat-file -e HEAD:<path>` 之后，「在不在 main 上」问的就是这棵树）。
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
@@ -215,6 +223,15 @@ def commit_repos(tmp_path: Path, drift_paths=("backend/admin-api/b.py",)) -> dic
     for rel in ("backend/admin-api/a.py", "backend/ai-agent-service/a.py", "frontend/admin-web/a.ts",
                 "frontend/worker-h5/a.mjs", "frontend/bmini-app/a.ts", "frontend/mini-app/a.ts"):
         touch(rel)
+    # 六条腿的 workflow 与状态机脚本**同批**放进测试仓库（issue #5935）：
+    # 对账步的前置判据 = `on_main`（`git cat-file -e HEAD:.github/workflows/<wf>`，见
+    # scripts/deploy_reconcile_state.sh）⇒ 不放就是「六条腿全不在 main 上」，
+    # 后面每个场景都跑不到判定本体（断言全过 = **假绿**）。
+    for wf in sorted(set(DEPLOY_WF.values()) - set(absent_workflows)):
+        touch(f".github/workflows/{wf}")
+    (repo / "scripts").mkdir(exist_ok=True)
+    (repo / "scripts" / STATE_SCRIPT.name).write_text(STATE_SCRIPT.read_text(encoding="utf-8"),
+                                                      encoding="utf-8")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "code C1")
     c1 = git(repo, "rev-parse", "HEAD")
@@ -412,6 +429,40 @@ def test_current_workflow_has_no_pipefail_grep_q_construct():
     assert "declare -A" not in body, (
         "对账正文用了 bash4 关联数组（`declare -A`）：macOS 自带 bash 3.2 跑不起来 ⇒ "
         "本文件的执行式红证会退化成 CI-only（改用函数参数，见 step 内的注释）"
+    )
+
+
+def test_missing_state_script_does_not_kill_the_whole_step(tmp_path):
+    """🔴 **回归护栏（issue #5935 的本 PR 首轮 CI 实测）**：对账步 checkout 的是 **`ref: main`**
+    ⇒ 「新增这条腿的那个 PR」里 `scripts/deploy_reconcile_state.sh` **还不在 main 上**
+    ⇒ 裸 `source` 会 `No such file or directory` 并把**整个对账步**打成 rc=1，而同轮其它五条腿
+    本来是对的（实测 run `36943682332`，逐字报错见下）。
+
+    这与 issue #5668 那条前置判据治的是**同一形态**：「**还轮不到我**」不许让机制本身停摆。
+    修法 = 取仓库既有姿势（同 `.github/scripts/mechanism_liveness.sh`）：**存在才 source + 出声**。
+
+    复算（把脚本从 fixture 里拿走）：
+      `python3 -m pytest tests/unit_ci_workflows/test_reconcile_no_silent_skip.py -q -k missing_state_script`
+    """
+    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
+    # 把状态机脚本从检出里拿走 = 「本腿还没上 main」的形态（checkout 固定 ref: main）
+    (fx["repo"] / "scripts" / "deploy_reconcile_state.sh").unlink()
+    proc, summary, dispatches = run_reconcile(
+        tmp_path, fx["repo"], runs_all(fx["C1"], "success"), head7=fx["head7"],
+    )
+    assert proc.returncode == 0, (
+        f"状态机不在检出里**不许**把整个对账步打死（`source` 失败的原始报错 = "
+        f"`scripts/deploy_reconcile_state.sh: No such file or directory`）→ {proc.stdout}\n{proc.stderr}"
+    )
+    assert "No such file or directory" not in proc.stderr, f"裸 `source` 的形态还在 → {proc.stderr}"
+    assert "::warning::" in proc.stdout, (
+        f"「本轮不落状态」必须**出声**（不许静默 success）→ {proc.stdout}"
+    )
+    assert "on_main: command not found" not in proc.stderr, (
+        f"函数没定义就跑 = 「只加 `if [ -f ]`」那种半修 → {proc.stderr}"
+    )
+    assert not dispatches, (
+        f"弃权 = **本轮整体不对账**（不落状态就判不了，判不了就不许动线上）→ {dispatches}"
     )
 
 
@@ -614,7 +665,8 @@ def test_new_leg_whose_workflow_is_not_on_main_is_skipped_loudly(tmp_path):
     ⇒ 判据三面：① 该腿**不 dispatch**；② **出声**（`::warning::` + summary 明写原因与去向）；
     ③ 其它四条腿照常补部署、整步 rc=0（一个刚落地的腿不许让对账机制本身停摆）。
     """
-    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
+    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS,
+                      absent_workflows=("bmini-h5-publish.yml",))
     others = sorted(w for w in DEPLOY_WF.values() if w != "bmini-h5-publish.yml")
     # 基准 = C1（代码提交 C2 之前）⇒ 自上次成功部署起五条腿**都有**漂移，缺了前置判据就会去 dispatch
     proc, summary, dispatches = run_reconcile(
@@ -627,17 +679,26 @@ def test_new_leg_whose_workflow_is_not_on_main_is_skipped_loudly(tmp_path):
         f"必须出声（warning + 原因）→ {proc.stdout}"
     )
     assert "不在 main=1" in summary and "尚未在 main 上" in summary, f"{summary!r}"
+    # issue #5935：这条腿必须留下**它自己的**状态（`notarget` = 主动弃权）—— 与「状态机没记它」
+    # （`unrecorded` ⇒ 末道闸判红）**必须是两个值**，否则「新增腿的那个 PR」每轮判红（#5668 的契约）。
+    # ⚠️ 本 harness **不设** `WATCHDOG_STATE` ⇒ 走外置脚本的默认值（仓库根下的相对路径）
+    state = (tmp_path / "repo" / ".deploy-watchdog-state.tsv").read_text(encoding="utf-8")
+    rows = dict(ln.split("\t")[:2] for ln in state.splitlines() if ln.strip())
+    assert rows.get("bmini-h5-hosting") == "notarget", f"弃权的腿必须落 `notarget` → {rows}"
+    assert "unrecorded" not in state, f"没有腿该留在 `unrecorded`（那会让末道闸判红）→ {state}"
 
 
 def test_not_on_main_criterion_has_discriminating_power(tmp_path):
     """🔴 红证：去掉那条前置判据 ⇒ 同一输入下 `gh workflow run` **真的 404、整步非零退出**
     （复现 #5668 首轮 CI 的真实形态，不是纸面推断）。"""
-    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
+    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS,
+                      absent_workflows=("bmini-h5-publish.yml",))
     text = reconcile_script()
     broken = text.replace(
-        'if ! gh workflow view "$wf" --ref main >/dev/null 2>&1; then', "if false; then"
+        'on_main "$wf" || { _g=$?; if [ "$_g" = 1 ]; then NOTARGET=$((NOTARGET + 1)); on_main_absent "$svc" "$wf"; fi; return 0; }',
+        ":",
     )
-    assert broken != text, "变异注入未生效（找不到「workflow 是否在 main 上」的前置判据）"
+    assert broken != text, "变异注入未生效（找不到「workflow 是否在 main 上」的前置判据 `on_main`）"
     proc, _summary, _dispatches = run_reconcile(
         tmp_path, fx["repo"], runs_all(fx["C1"], "success"),
         absent_workflows=("bmini-h5-publish.yml",), head7=fx["head7"], script_text=broken,

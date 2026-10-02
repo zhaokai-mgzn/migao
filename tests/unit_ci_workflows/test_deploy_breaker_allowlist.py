@@ -357,6 +357,16 @@ def make_repo(tmp_path: Path) -> dict:
         p = repo / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(rel, encoding="utf-8")
+    # 六条腿的 workflow + 外置状态机脚本（issue #5935）同批就位：对账步的前置判据
+    # `on_main`（`git cat-file -e HEAD:.github/workflows/<wf>`）问的是**这棵树** ⇒
+    # 不放就是「六条腿全不在 main 上」，此后每个场景都跑不到判定本体（**假绿**）。
+    for _wf in RECONCILE_WF_NAMES:
+        p = repo / ".github" / "workflows" / _wf
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_wf, encoding="utf-8")
+    p = repo / "scripts" / RECONCILE_STATE_SCRIPT.name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(RECONCILE_STATE_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "code C1")
     c1 = git(repo, "rev-parse", "HEAD")
@@ -371,6 +381,7 @@ def make_repo(tmp_path: Path) -> dict:
 
 RECONCILE_WF_NAMES = ("deploy-admin-api.yml", "deploy-ai-agent-service.yml", "deploy-frontend.yml",
                       "worker-h5-publish.yml", "bmini-h5-publish.yml", "c-end-h5-publish.yml")
+RECONCILE_STATE_SCRIPT = REPO_ROOT / "scripts" / "deploy_reconcile_state.sh"
 
 
 def run_reconcile(tmp_path: Path, repo: Path, *, head_sha: str, baseline: str | None = None,

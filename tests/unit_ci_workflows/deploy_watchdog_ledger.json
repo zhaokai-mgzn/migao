@@ -9,38 +9,51 @@
       "svc": "admin-api",
       "wf": "deploy-admin-api.yml",
       "watchdog": true,
-      "why": "镜像腿。C′（#5814，服务器侧构建）之后 CI **不推 ACR** ⇒ 「镜像存在」这一臂恒不成立 ⇒ 有效判据 = 同 sha 的部署 run 结论 success（与 `deploy-admin-api.yml` 自己的 C′ 判据同一份）+ 漂移判据（自上次成功部署起 backend/admin-api 无改动）。"
+      "why": "镜像腿。C′（#5814，服务器侧构建）之后 CI **不推 ACR** ⇒ 「镜像存在」这一臂恒不成立 ⇒ 有效判据 = 同 sha 的部署 run 结论 success（与 `deploy-admin-api.yml` 自己的 C′ 判据同一份）+ 漂移判据（自上次成功部署起 backend/admin-api 无改动）。",
+      "clearing_event": true
     },
     {
       "svc": "ai-agent-service",
       "wf": "deploy-ai-agent-service.yml",
       "watchdog": true,
-      "why": "同 admin-api（镜像腿；C′ 后以「同 sha 结论 success / 无漂移」为有效判据）。"
+      "why": "同 admin-api（镜像腿；C′ 后以「同 sha 结论 success / 无漂移」为有效判据）。",
+      "clearing_event": true
     },
     {
       "svc": "admin-web",
       "wf": "deploy-frontend.yml",
       "watchdog": true,
-      "why": "同 admin-api。本腿就是 issue #5929 的现场：2026-10-01 `871db0c7f`（改 frontend/admin-web/**）合并后 push 触发被吞、上线停在 `bef78e7`，而全仓只有 reconcile 的 `::notice::` 说了一句。"
+      "why": "同 admin-api。本腿就是 issue #5929 的现场：2026-10-01 `871db0c7f`（改 frontend/admin-web/**）合并后 push 触发被吞、上线停在 `bef78e7`，而全仓只有 reconcile 的 `::notice::` 说了一句。",
+      "clearing_event": true
     },
     {
       "svc": "worker-h5",
       "wf": "worker-h5-publish.yml",
       "watchdog": true,
-      "why": "静态落地面腿（无镜像，判据 ① 对它恒不成立）。它的对账 dispatch 会**真的发布**（`worker-h5-publish.yml` 的 `workflow_dispatch` 面没有人工闸）⇒ 与镜像腿同口径：超期未发布也要有人被叫醒。"
+      "why": "静态落地面腿（无镜像，判据 ① 对它恒不成立）。它的对账 dispatch 会**真的发布**（`worker-h5-publish.yml` 的 `workflow_dispatch` 面没有人工闸）⇒ 与镜像腿同口径：超期未发布也要有人被叫醒。",
+      "clearing_event": true
     },
     {
       "svc": "bmini-h5-hosting",
       "wf": "bmini-h5-publish.yml",
       "watchdog": true,
-      "why": "第二条静态落地面腿（`frontend/bmini-app/**` → 静态根 `b/`）。同 worker-h5：dispatch 即发布（无人工闸）⇒ 一并值守。"
+      "why": "第二条静态落地面腿（`frontend/bmini-app/**` → 静态根 `b/`）。同 worker-h5：dispatch 即发布（无人工闸）⇒ 一并值守。",
+      "clearing_event": true
     },
     {
       "svc": "c-end-h5",
       "wf": "c-end-h5-publish.yml",
       "watchdog": false,
       "exempt_why": "**具名豁免**：本腿的发布步骤只在 `workflow_dispatch` **且** `inputs.publish == 'true'` 时执行（用户 2026-09-27 裁定 B：首次发布由人手动触发）⇒ 对账 dispatch 出去的 run 走「Manual gate」判红且**不会发布**。也就是说「未发布」是本腿的**设计态**、不是缺陷 ⇒ 把它计入告警面 = 每轮都开单的噪声判据（缺陷）。它的新鲜度另有值守：`.github/workflows/h5-freshness-guard.yml`（判红 + 自动重判），本值守面**不重复报警**。若将来给它接上自动发布，本条目必须删掉（豁免只许缩短）。",
-      "anchor": "本腿的方向是安全的（#4184 用户裁定 B：首次发布由人手动触发）"
+      "anchor": "本腿的方向是安全的（#4184 用户裁定 B：首次发布由人手动触发）",
+      "clearing_event": true
     }
-  ]
+  ],
+  "event_trigger_contract": {
+    "source": "`.github/workflows/deploy-reconcile.yml` 的 `on.workflow_run.workflows`；⚠️ 写的是各腿 workflow 的 **`name:`**（**不是文件名** —— 写文件名会被 GitHub 当成解析不到的名字而**静默脱钩**，既有守卫 `tests/unit_ci_workflows/test_publish_leg_fallback_surface.py` 会具名报出）。现取：`grep -m1 '^name:' .github/workflows/<腿的 workflow>`",
+    "why": "判据 4（issue #5935）：实测 19:00Z 之后 ~12h 没有任何 reconcile run（GitHub 节流 `*/20`）⇒ 靠「下一轮 tick」关单在实测里没成立；部署**完成这个事件**必须能触发对账/清零。用户 2026-10-02 逐字裁定允许新增该触发面（用途限定为事件驱动的对账/清零）。",
+    "guard": "tests/unit_ci_workflows/test_deploy_watchdog.py::test_watchdog_ledger_records_the_event_trigger_contract（上游清单 ⇄ 本台账的 `wf` 双向相等；漏登记 ⇒ 红）",
+    "anti_self_excitation": "tests/unit_ci_workflows/test_deploy_watchdog.py::test_no_self_excitation_when_deploy_just_succeeded + ::test_terminal_state_does_not_redispatch（部署刚成功 / 落在不可恢复终态 ⇒ 都不得再 dispatch）"
+  },
+  "_clearing_event_note": "`clearing_event: true` = 该腿的部署**完成**会触发 `deploy-reconcile.yml`（`workflow_run`）⇒ 清零不再只依赖下一轮 `*/20`（判据 4）。新增一条 deploy 腿却不登记 ⇒ `test_watchdog_ledger_records_the_event_trigger_contract` 当场红。"
 }

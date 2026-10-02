@@ -4853,6 +4853,24 @@ _CASE_MC_056 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-057 [NORMAL] 部署对账的「落状态」本身必须有判据 + 三态三分 + 事件驱动清零（issue #5935）：`gh workflow view --ref` 那条前置判据 100% 失败 ⇒ 六条腿全被误记 `notarget`；未落状态的腿必须具名判红、`notarget` 与机制故障不得混桶、部署完成事件必须能触发清零且不得自激（源: cases/misc.yml）──
+_CASE_MC_057 = EvalCase(
+    id='MC-057',
+    legacy_id='',
+    title='部署对账的「落状态」本身必须有判据 + 三态三分 + 事件驱动清零（issue #5935）：`gh workflow view --ref` 那条前置判据 100% 失败 ⇒ 六条腿全被误记 `notarget`；未落状态的腿必须具名判红、`notarget` 与机制故障不得混桶、部署完成事件必须能触发清零且不得自激',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当对账步**没为某条腿落状态**、或落下的状态**是错的**（例如把「在 main 上」判成「不在 main 上」）、或把「读不到状态」与「确认未部署」压成同一种告警、或部署成功这个事件不能触发清零时，都必须有东西**具名**报出；而只改注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（现取读数，run `36911070357`，2026-10-01T19:00:20Z，main HEAD `3fa84ab`）**：六条腿**各落了一条**状态、但**六条全是 `notarget`** ⇒ 值守面报「5 条腿读不到对账状态」、`MECHANISM-LIVENESS seen=6 acted=0` 且三桶全 0 ⇒ **无法自我归因**。⚠️ issue 正文把它归因成「对账步失败，或目标 workflow 不在 main 上」——**两者都不成立**（对账步 rc=0、六份 workflow 都在 main 上）', '**真根因（本机实测复现，铁律 11 的正面案例）**：那条前置判据写作 `gh workflow view "$wf" --ref main`，而 gh 要求 `--ref` **必须**搭 `--yaml` ⇒ 它 **100% 失败**（stderr `` `--yaml` required when specifying `--ref` ``、退出 1、耗时 **0.063s**；run 日志里六条腿各报一次、每条 **≈58ms**，同量级）⇒ **问错对象的判据比没有判据更糟**：6/6 命中同一条坏分支，形态学判据全都看不见。⇒ 换成 `on_main()`：本步 checkout 是 `ref: main` + `fetch-depth: 0` ⇒ `HEAD` 就是 main 的 HEAD，用 `git` 直接问那棵树', '**判据 1（落状态本身有判据）**：腿清单的**唯一来源** = 本步自己的 `reconcile_one` 调用（现取，**不另立第二份清单**）；每条腿**先落 `unrecorded` 种子**、`watchdog_note` **整行替换**（⇒ 任何时刻**恰好一行/腿**）；**没落状态**的腿 ⇒ 对账步**自己**判红（退出码 3）并**具名到腿**，不许把「缺状态」甩给下游 fail-closed 兜。判据 = tests/unit_ci_workflows/test_deploy_watchdog.py 的 `test_every_leg_gets_exactly_one_state_row_with_a_seeded_placeholder` / `test_reconcile_step_is_red_and_named_when_a_leg_is_left_unrecorded`', '**判据 2（零动作必须归因）**：`seen=N acted=0` 且原因桶全 0 ⇒ 存活读数的 `why` 必须带上**具名**的未落状态清单（`未落状态=N 具名:<腿>`）。判据 = 同文件 `test_liveness_why_accounts_for_every_leg_when_acted_is_zero`', '**判据 3（三态三分）**：`deployed`/`inflight`（不报）· `terminal`/`dispatched`（**业务告警** ⇒ `priority/P1` 单）· `notarget`（尚未轮到，不报）· `unrecorded`/缺失（**机制故障** ⇒ 换标题 + `type/bug` 单，**不开**业务单）—— 四桶**各自可见**（`已判定=` / `计入告警=` / `机制故障=` / `尚未轮到=`）。判据 = 同文件 `test_mechanism_failure_gets_its_own_bucket_and_does_not_open_a_business_issue`（注入一条缺状态的腿 ⇒ 机制故障分支、**不**开 `[deploy-watchdog] main HEAD 超时未部署` 单）/ `test_leg_not_on_main_is_not_collapsed_into_mechanism_failure` / `test_deployed_legs_stay_out_of_both_alert_buckets`', '**判据 4（清零不依赖下一轮 cron）**：`on.workflow_run`（`types: [completed]`、`branches: [main]`）监听**全部六条** deploy 腿 ⇒ 部署**完成这个事件**即触发对账/清零；`workflow_run` 与 `schedule` 走**同一套**判定（事件只决定「什么时候跑」，不决定「怎么判」）；清零时单上写明「**清零条件已满足**」。判据 = 同文件 `test_workflow_run_is_wired_as_the_deploy_completion_event` / `test_workflow_run_and_schedule_share_one_judgement_body`', '**判据 4 的防自激（派单硬要求）**：部署**刚刚成功**（同 sha 结论 success）⇒ **不得**再 dispatch（否则事件自激成环）；部署落在**不可恢复终态**（failure/cancelled…）⇒ 断路器跳闸、**不得**再 dispatch（否则「失败完成 → 对账 → 再补 → 再失败」成无限环）。判据 = 同文件 `test_no_self_excitation_when_deploy_just_succeeded` / `test_terminal_state_does_not_redispatch`；既有断路器与「同 sha 有在途 run 就不重复派」两条判据**一字未动**', '**判别力自证 + 对照读数**：`on_main` 三态在**内联 fixture**（桩 `git` 垫片 + 真 HEAD sha）上逐态断言 —— **正例锚**（真的在 HEAD 里的 workflow ⇒ 0）+ **负例锚**（不存在的 ⇒ 1；HEAD 取不到 ⇒ 3）；末道闸的具名判红用**注入式红证**（把状态文件覆盖成「一条已记 + 一条未记」⇒ 退出码 3 且具名 `ghost-leg`）；**只加注释 ⇒ 不红**。判据 = tests/unit_ci_workflows/test_deploy_reconcile_state.py（全文件）+ test_deploy_watchdog.py 的 `test_reconcile_step_is_red_and_named_when_a_leg_is_left_unrecorded`', '**类级元守卫（未登记即红）**：`workflow_run.workflows` 的上游清单 ⇄ `deploy_watchdog_ledger.json` 登记的 `wf`**双向相等**，且每条腿必须声明 `clearing_event: true`（新加一条 deploy 腿却忘了让它的 `completed` 触发清零 ⇒ 当场红，而不是等「部署成功了单还挂着」）。判据 = 同文件 `test_watchdog_ledger_records_the_event_trigger_contract`', '**run 正文长度硬约束（本包改的正是那条全仓最长的正文）**：单个 step 的 `run` 正文 > 13,250 字符 ⇒ **整份 workflow 被 GitHub 判 invalid** ⇒ 该腿**完全不跑**（本地 PyYAML 与仓库守卫全绿，只有线上表现为「不建 run」）。⚠️ 改前现取 `Reconcile deploys` = **13,125**（余量仅 125）⇒ 本包把状态机**外置**成 `scripts/deploy_reconcile_state.sh`，改后 = **12,847**。判据 = 同文件 `test_run_body_stays_under_the_github_limit` / `test_reconciliation_step_body_stays_within_the_github_limit`'],
+    skip_reason='[backend-contract] 部署对账值守面的静态/执行式结构判据（只读仓内文件 + 桩 gh/docker + 真 git 仓库；零网络、零真 ACR、不写共享 /tmp、不烧 token）由 tests/unit_ci_workflows/test_deploy_watchdog.py 与 tests/unit_ci_workflows/test_deploy_reconcile_state.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'watchdog', 'ledger', 'red-proof', 'event-driven'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -11457,6 +11475,7 @@ ALL_CASES = (
     _CASE_MC_054,
     _CASE_MC_055,
     _CASE_MC_056,
+    _CASE_MC_057,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
