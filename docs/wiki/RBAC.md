@@ -15,7 +15,10 @@
 | 财务 | finance | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `finance:view`, `processing:view`, `inbound:view`, **`finance:create`**（登记收支写码，issue #5246 第二批） |
 | 自定义岗位 | 岗位权限页创建 | **岗位权限页勾选的权限码落库到 `role_permissions`**（V16），作为该岗位默认权限 |
 
-> 新租户注册初始化五岗种子（管理员/客服/运营/销售/财务）+ role_permissions 预置（V29 为存量租户补齐）。
+> 新租户注册初始化**七岗**种子（管理员/客服/运营/销售/财务 + `product_manager` 商品管理员 / `knowledge_editor` 知识编辑）
+> + role_permissions 预置（V29 为存量租户补齐）。后两个岗位由 `V137__formalize_legacy_roles.sql` 正式定义
+> —— 在此之前它们**不是岗位**（无 `roles` 行、岗位权限页不可编辑、只能靠 `RoleService.getPermissionCodesForRole`
+> 的硬编码 `case` 兜底）⇒ 旧文档写「五岗」与实测不符（issue #5984 更正）。
 > **快照式权限语义（#2969）**：员工权限 = 员工管理页保存的勾选（users.permissions 快照），与岗位脱钩 ——
 > 后续修改岗位默认权限不影响已建员工；改岗位仅作为下次创建/编辑员工时的默认模板。
 > 兼容存量：无 users.permissions 快照（历史员工 / ai-agent 直接创建）时回退角色权限合并逻辑（role_permissions 优先，内置角色回退硬编码）。
@@ -103,6 +106,15 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 - `/api/customer/**`（C 端人工会话）与 `/api/super-admin/**`（`checkSuperAdminPermission()` 显式校验 `super_admin`）**都不走本门禁**。
 - ⚠️ **分支 ③ 的含义：没有 `@RequirePermission` 的端点 = 对所有商户员工开放**（含零权限岗位）——
   这就是 issue #4727 的审计对象。
+- ⚠️ **校验顺序（已知取舍，issue #5978）**：`@Valid` / `@RequestBody` 的绑定与校验发生在 **Spring MVC 参数解析阶段**，
+  而 `@RequirePermission` 由 `PermissionInterceptor`（`backend/admin-api/src/main/java/com/migao/admin/security/PermissionInterceptor.java`
+  的 `@Around` 切面）在**方法调用时**生效 ⇒ 无权限身份对写端点发**非法载荷**时拿到 **422**（字段级报错）而不是 **403**。
+  - **取舍成立的前提（必须保持）**：拒绝路径上**服务层永不执行** ⇒ 无权限身份**不可能产生任何写入**，
+    也拿不到任何业务数据；代价仅是可看到接口的**字段名**。实测判别性对照见 issue #5978（63/63 端点矩阵逐格匹配）。
+  - **判据**：`backend/admin-api/src/test/java/com/migao/admin/security/PermissionInterceptorTest.java` 的两条 ——
+    一条锁「权限校验是方法调用切面」（= 顺序前提），一条锁「本登记存在」（文档与实现同生命周期）。
+  - **若要改成 403 优先**（把权限判定前移到参数绑定之前，例如 `HandlerInterceptor`）：上面第一条判据会红
+    ⇒ 提示**同批**更新本登记与用例，不要只改代码。
 - ⚠️ **未把 `worker` 加进 `ServiceTokenFilter.C_END_ROLES`**（有意不做）：那里的语义是「C 端角色」，
   加进去会让持 `X-User-Id=工人` 的内部服务调用**回退成 `service` 身份**⇒ 反而**旁路**掉细粒度校验（更宽）。
   现状下 worker 经 service token 也会被解析成真实角色 `worker` ⇒ 落在上面的分支 ② 被 403。

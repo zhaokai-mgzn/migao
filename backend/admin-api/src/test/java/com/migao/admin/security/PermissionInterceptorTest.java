@@ -278,4 +278,46 @@ class PermissionInterceptorTest {
         verify(joinPoint).proceed();
         verifyNoInteractions(roleService);
     }
+
+    // ================== 校验顺序：@Valid 先于权限切面（issue #5978 的已登记取舍）==================
+
+    @Test
+    @DisplayName("权限校验是「方法调用切面」⇒ 参数绑定/校验必然先跑（#5978 取舍的前提）")
+    void permissionCheckIsMethodInvocationAdviceSoValidationRunsFirst() {
+        // 取舍的内容（已登记在 docs/wiki/RBAC.md）：@Valid 校验发生在方法调用之前的参数解析阶段，
+        // 而 @RequirePermission 由 AOP 在方法调用时生效 ⇒ 无权限身份拿到 422 而非 403。
+        // 本判据锁「前提」本身：一旦有人把权限判定前移到 HandlerInterceptor（#5978 的架构修法），
+        // 下面三条断言必红 ⇒ 提示同批更新 RBAC.md 的登记与本用例，而不是只改代码。
+        assertThat(com.migao.admin.security.PermissionInterceptor.class.isAnnotationPresent(
+                org.aspectj.lang.annotation.Aspect.class))
+                .as("PermissionInterceptor 必须是 AOP 切面（切面 = 方法调用时机；挪到拦截器即改变校验顺序）")
+                .isTrue();
+
+        assertThat(com.migao.admin.security.RequirePermission.class
+                .getAnnotation(java.lang.annotation.Target.class).value())
+                .as("RequirePermission 必须可标注在方法上（@Target 含 METHOD）")
+                .contains(java.lang.annotation.ElementType.METHOD);
+
+        boolean hasAroundAdviceOnAnnotation = java.util.Arrays.stream(
+                        com.migao.admin.security.PermissionInterceptor.class.getDeclaredMethods())
+                .filter(m -> m.isAnnotationPresent(org.aspectj.lang.annotation.Around.class))
+                .map(m -> m.getAnnotation(org.aspectj.lang.annotation.Around.class).value())
+                .anyMatch(expr -> expr.contains("@annotation") && expr.contains("RequirePermission"));
+        assertThat(hasAroundAdviceOnAnnotation)
+                .as("切点必须是 @Around + @annotation(RequirePermission)（改成 HandlerInterceptor ⇒ 红）")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("该取舍已登记在 docs/wiki/RBAC.md（文档与实现同生命周期，#5978）")
+    void tradeOffIsRegisteredInRbacDoc() throws Exception {
+        // surefire 的 cwd = 模块目录（backend/admin-api）⇒ 退两级到仓库根
+        java.nio.file.Path doc = java.nio.file.Paths.get("..", "..", "docs", "wiki", "RBAC.md");
+        assertThat(java.nio.file.Files.exists(doc)).as("文档必须存在：%s", doc.toAbsolutePath()).isTrue();
+        String text = java.nio.file.Files.readString(doc);
+
+        assertThat(text).as("必须登记 #5978 这条已知取舍").contains("#5978");
+        assertThat(text).as("必须写明顺序方向涉及 @Valid").contains("@Valid");
+        assertThat(text).as("必须写明可观察后果：422 早于 403").contains("422").contains("403");
+    }
 }
