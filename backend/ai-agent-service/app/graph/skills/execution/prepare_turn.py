@@ -18,7 +18,7 @@ from app.graph.skills.base_skill import (
     AIMessage, AgentState, CircuitBreakerOpenError, HumanMessage,
     LLM_CALL_TIMEOUT_S, SystemMessage, VISION_CLARIFY_GUIDE, _build_system_prompt,
     _extract_content, _extract_intent_name, _inject_pending_validated, _inject_permission_scope,
-    _inject_user_memories, _inject_user_preferences, _inject_write_input_recovery,
+    _inject_user_memories, _inject_write_input_recovery,
     _sanitize_messages_for_text_path, _track_llm_cost,
     _usable_vision_analysis, _vision_retry_needed, build_tool_context, has_images,
     llm_breaker_name,
@@ -169,9 +169,6 @@ async def prepare_turn(
 
     # 4b. C 端长期记忆注入（issue #2815：仅 xiaobu；mibao 不注入）
     system_prompt = await _inject_user_memories(system_prompt, state)
-
-    # 4c. 建议个性化偏好注入（issue #2997：flag 门控默认关闭；仅 xiaobu）
-    system_prompt = await _inject_user_preferences(system_prompt, state)
 
     # 4d. 确认-执行链「已校验待执行」注入（issue #3031：确认轮直接执行写工具）
     # last_user_msg 需在此处可用：从 raw_messages 反向取最后一条 HumanMessage

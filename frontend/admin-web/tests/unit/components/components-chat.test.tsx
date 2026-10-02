@@ -78,7 +78,7 @@ vi.mock('sonner', () => ({
   },
 }))
 
-// Mock global fetch for suggestion-feedback POST (fire-and-forget)
+// 组件内 fetch stub（fire-and-forget 调用一律吞掉）
 const mockFetch = vi.fn().mockResolvedValue({ ok: true })
 
 // ─── Imports ─────────────────────────────────────
@@ -269,27 +269,6 @@ describe('MessageList', () => {
     expect(screen.getByText('查看第2页')).toBeInTheDocument()
     expect(screen.queryByText(/__PAGE__/)).not.toBeInTheDocument()
     expect(screen.queryByText(/processing_item_query/)).not.toBeInTheDocument()
-  })
-
-  it('renders message suggestions', () => {
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        currentSessionId: 's1',
-        messages: [
-          {
-            id: '2',
-            role: 'assistant',
-            content: '您好',
-            suggestions: ['查看订单', '查询物流'],
-          },
-        ],
-      })
-    )
-    render(<MessageList />)
-
-    expect(screen.getByText('推荐提问：')).toBeInTheDocument()
-    expect(screen.getByText('查看订单')).toBeInTheDocument()
-    expect(screen.getByText('查询物流')).toBeInTheDocument()
   })
 
   it('shows 对话已中断 when assistant message was aborted with empty content', () => {

@@ -68,7 +68,6 @@ def _make_state(session_id: str = "sess_3810", tenant_id: int = 7) -> dict:
         "cached_answer": None,
         "final_answer": "",
         "skill_used": "",
-        "suggestions": [],
     }
 
 

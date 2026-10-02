@@ -11,12 +11,6 @@ business_truths:
   - [misc.classifier-classify] classify：懒加载 create_intent_llm；chat_history 取最近 8 条拼上下文；成本追踪 usage_metadata 优先、response_metadata.token_usage/usage 兜底，失败仅 warning 不影响主流程
   - [misc.classifier-parse-response] _parse_response：空 content→default general(0.5)；剥离 ```json 代码块；直接 json.loads；兜底 re 提取第一个 {...}；intent 非法→general；confidence 夹取 [0,1]；解析异常→default
   - [misc.classifier-fallback] classify 整体异常 → 回退 IntentResult(general, 0.5, source='default', matched_keywords=[])
-  - [misc.followup-presets] 预设数据：MIBAO_PRESET_SUGGESTIONS/XIAOBU_PRESET_SUGGESTIONS 覆盖高频意图且每意图多 stage；MIBAO/XIAOBU_DEFAULT_SUGGESTIONS 各 3 条兜底；farewell 空 dict 表示不推荐
-  - [misc.followup-get-preset] _get_preset：agent_type 选米宝/小布预设与兜底；未知 intent → general；farewell（空 dict）→ []；stage fallback 链 stage→querying→initial→第一个非空 stage→defaults
-  - [misc.followup-should-dynamic] _should_use_dynamic：无 API key→False；answer<20→False；含订单/商品/客户等实体关键词→True；answer>100→True；否则 _has_specific_entities 正则检测（订单号/物流单/商品/价格/日期）
-  - [misc.followup-parse-sanitize] _parse_suggestions_from_response：JSON 数组（全 str）→前 3 条；带文本 re 提取 [...]→前 3 条；失败→None；_sanitize_prompt_value 花括号→全角/换行制表→空格/截断 max_len
-  - [misc.followup-generate] generate：动态命中→截断 3 条 strategy=dynamic；动态失败/超时/异常→fallback preset；_log_generation 经 LogSanitizer.mask_text 脱敏后记日志
-  - [misc.followup-generate-dynamic] _generate_dynamic：xiaobu/mibao 选 prompt 与角色；mibao 角色白名单 ROLE_LABELS（未知/空角色→'员工'防注入）；user/preference/entity/历史上下文经 _sanitize_prompt_value 清洗注入；httpx.TimeoutException→None
   - [misc.config-defaults] Settings 默认值：APP_NAME/APP_VERSION/DEBUG/API_PREFIX/HOST/PORT/DATABASE_URL/REDIS_URL 及 LLM 路由/成本/重试参数（LLM_MODEL_PRIMARY/FAST、INTENT_MODEL、budget、retry）默认值正确
   - [misc.config-compat] 向后兼容属性：MINIMAX_API_KEY/BASE_URL/MODEL 取 PRIMARY_* 优先 VISION_* 兜底；DASHSCOPE_* property+setter 读写 PRIMARY/VISION 字段（测试 monkeypatch 需要）
   - [misc.config-validate-secrets] validate_production_secrets：非 DEBUG 且缺 JWT_PUBLIC_KEY/SERVICE_TOKEN → ValueError 提示生产必须设置；DEBUG=true 绕过；两者齐全通过
@@ -34,7 +28,6 @@ business_truths:
 primary_specs:
   - backend/ai-agent-service/tests/test_memory_extractor.py
   - backend/ai-agent-service/tests/test_intent_classifier.py
-  - backend/ai-agent-service/tests/test_follow_up_suggestions.py
   - backend/ai-agent-service/tests/test_config.py
   - backend/ai-agent-service/tests/test_llm_factory.py
   - backend/ai-agent-service/tests/test_main.py
@@ -45,8 +38,6 @@ reviewer_asserts:
     expect: 全部通过（解析直返/内嵌提取/非法返回 []；短对话跳过；保存成功/异常返回 0）
   - pytest: tests/test_intent_classifier.py
     expect: 全部通过（_extract_text 多模态拼接；prompt 构建 general 兜底；_parse_response 各类回退 general 0.5）
-  - pytest: tests/test_follow_up_suggestions.py
-    expect: 全部通过（preset fallback 链、动态生成截断/超时回退、sanitize 防注入）
   - pytest: tests/test_config.py
     expect: 全部通过（默认值、MINIMAX_*/DASHSCOPE_* fallback、validate_production_secrets）
   - pytest: tests/test_llm_factory.py

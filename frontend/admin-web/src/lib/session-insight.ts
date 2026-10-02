@@ -409,7 +409,7 @@ export function groupEntities(entities: SessionEntity[]): EntityGroup[] {
 //
 // 用户（商家）不关心 agent 调用了哪些工具，只关心业务结果：
 //   buildSessionBrief（会话结论）、extractLedgerRows（办理结果）、
-//   collectSuggestions（接下来可以问）、extractFailedActions（需要你处理）。
+//   extractFailedActions（需要你处理）。
 // 全部确定性推导（纯函数，刷新可靠、可单测），不调 LLM。
 // ═══════════════════════════════════════════════════════════
 
@@ -670,17 +670,4 @@ export function extractLedgerRows(messages: ChatMessage[]): LedgerRow[] {
     add({ type: e.type, label: e.label, followUp: e.followUp })
   }
   return rows
-}
-
-// ─── 接下来可以问：复用 agent 已生成的后续建议 ───────────
-
-/** 取最近一条 assistant 消息的后续问题建议（点击即发送） */
-export function collectSuggestions(messages: ChatMessage[]): string[] {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]
-    if (m.role === 'assistant' && Array.isArray(m.suggestions) && m.suggestions.length > 0) {
-      return m.suggestions
-    }
-  }
-  return []
 }

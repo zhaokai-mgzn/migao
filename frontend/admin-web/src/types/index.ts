@@ -2511,7 +2511,6 @@ export interface ChatMessage {
   cards?: ChatCard[]
   created_at?: string
   isStreaming?: boolean
-  suggestions?: string[]  // 后续问题建议列表
   interactive?: InteractiveComponent  // 交互式组件
   // 该交互组件是否已被用户答复（issue #3036）：消息级状态作为只读锁的单一事实源，
   // 历史回放/刷新/FAB 重开后仍保持，防止已答复卡片「复活」重复提交。
@@ -2520,7 +2519,7 @@ export interface ChatMessage {
 }
 
 // SSE 事件类型
-export type SSEEventType = 'message_start' | 'text_delta' | 'text' | 'tool_start' | 'tool_call' | 'tool_result' | 'card' | 'loading' | 'message_end' | 'error' | 'message' | 'done' | 'suggestions' | 'interactive' | 'page_fill'
+export type SSEEventType = 'message_start' | 'text_delta' | 'text' | 'tool_start' | 'tool_call' | 'tool_result' | 'card' | 'loading' | 'message_end' | 'error' | 'message' | 'done' | 'interactive' | 'page_fill'
 
 // 卡片类型
 // 卡型联合 = 后端 `_detect_card_type` **真实可产出**的集合（#4016 P14 收敛对齐）：

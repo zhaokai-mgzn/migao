@@ -30,9 +30,6 @@ class ChatSendRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="会话 ID，不传则创建新会话")
     message: str = Field(..., max_length=10000, description="用户消息内容")
     images: Optional[List[str]] = Field(None, description="图片URL列表")
-    ignored_suggestions: Optional[List[str]] = Field(
-        None, description="用户忽略的上一轮建议列表（用于日志分析）"
-    )
     # 结构化答卡（issue #5949）：B 端 form 卡提交 `{cardId, values}`。
     # 🔴 pydantic 默认**静默丢弃**未知字段 ⇒ 漏登记本字段时负例判据会假绿（已踩过）。
     card_answer: Optional[CardAnswer] = Field(

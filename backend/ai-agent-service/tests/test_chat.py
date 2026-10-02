@@ -2,7 +2,7 @@
 
 覆盖：sessions 生命周期（create/list/close/reopen/delete/history）的
 租户隔离与用户所有权、_should_send_card/_detect_card_type、_rewrite_image_url、
-_convert_history_to_agent_format 多模态、suggestion-feedback、quick-actions、
+_convert_history_to_agent_format 多模态、quick-actions、
 send_message 会话校验与 __PAGE__ 协议守卫、_agent_stream_to_sse 事件序列。
 """
 # case_ids: API-001, API-002, API-003, API-004, API-005, OR-012, UI-031, UI-032, CH-009, CH-010, CH-011
@@ -34,7 +34,6 @@ from app.api.chat import (
     reopen_session_endpoint,
     delete_session,
     get_history,
-    suggestion_feedback,
     get_quick_actions,
 )
 from app.api.schemas import ChatSendRequest, ChatSessionCreate
@@ -695,29 +694,7 @@ class TestGetHistoryMasking:
         assert "20260913027050006" in content and "123456" in content, content
 
 
-# ═══════════════════════════════════════════════
-# 建议反馈 + 快捷操作
-# ═══════════════════════════════════════════════
 
-class TestSuggestionFeedback:
-    @patch("app.suggestions.preference_tracker.PreferenceTracker")
-    @pytest.mark.asyncio
-    async def test_feedback(self, MockTracker):
-        tracker = MagicMock()
-        tracker.record_click = AsyncMock()
-        MockTracker.return_value = tracker
-        result = await suggestion_feedback(
-            {"session_id": "s1", "suggestion": "查看订单"}, current_user=_user()
-        )
-        assert result == {"ok": True}
-        tracker.record_click.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_feedback_empty_suggestion(self):
-        result = await suggestion_feedback(
-            {"session_id": "s1", "suggestion": ""}, current_user=_user()
-        )
-        assert result == {"ok": True}
 
 
 class TestQuickActions:

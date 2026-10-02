@@ -1,22 +1,11 @@
 """
-后续问题建议模块
+建议相关模块（issue #5951：主动「后续问题建议」通道已整体退役）
 
-在 AI 回复结束后自动推荐后续问题，引导用户继续对话。
-Agent 感知：米宝（B 端）和小布（C 端）使用不同的预设建议。
+存活模块：
+- `vague_guess.py`：模糊输入的「可点击猜测」投影（#4125 家族）
+
+已退役（本单删除）：`follow_up.py`（后续问题建议生成器，生产零调用）、
+`preference_tracker.py`（用户建议偏好读写 —— 写口 = 已删的 `/suggestion-feedback`，
+读口 = 已删的 `_inject_user_preferences`；两侧同时归零 ⇒ 整条支链删除，
+不留「永远命中空集」的活路径）。
 """
-
-from app.suggestions.follow_up import (
-    FollowUpSuggestionGenerator,
-    MIBAO_PRESET_SUGGESTIONS,
-    MIBAO_DEFAULT_SUGGESTIONS,
-    XIAOBU_PRESET_SUGGESTIONS,
-    XIAOBU_DEFAULT_SUGGESTIONS,
-)
-
-__all__ = [
-    "FollowUpSuggestionGenerator",
-    "MIBAO_PRESET_SUGGESTIONS",
-    "MIBAO_DEFAULT_SUGGESTIONS",
-    "XIAOBU_PRESET_SUGGESTIONS",
-    "XIAOBU_DEFAULT_SUGGESTIONS",
-]

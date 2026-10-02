@@ -3,7 +3,7 @@
  * SessionInsight（会话简报抽屉）组件测试
  *
  * 覆盖 UI-019「米宝工作台『洞察』重构为『会话简报』」组件侧：
- *  - 标题/顶部按钮文案为「会话简报」；四区块齐备（结论/需要你处理/办理结果/接下来可以问）
+ *  - 标题/顶部按钮文案为「会话简报」；三区块齐备（结论/需要你处理/办理结果）
  *  - 业务语言结论，不渲染工具原始名与 agent 内部动作（order_query/参数校验）
  *  - 办理结果明细行带状态徽标/金额/客户；建议 chip 点击即发送
  *  - 会话标识保留（弱化展示）；空会话显示友好空态
@@ -53,7 +53,6 @@ function buildMessages(): ChatMessage[] {
           },
         },
       ],
-      suggestions: ['查看该订单物流', '查看客户历史订单'],
     }),
     userMsg('把 A002 改成已发货'),
     assistantMsg({
@@ -88,13 +87,12 @@ beforeEach(() => {
 })
 
 describe('SessionInsight 会话简报', () => {
-  it('抽屉标题为「会话简报」，展开四区块', () => {
+  it('抽屉标题为「会话简报」，展开三区块', () => {
     render(<SessionInsight isOpen onClose={vi.fn()} />)
     expect(screen.getByText('会话简报')).toBeInTheDocument()
     expect(screen.getByText('会话结论')).toBeInTheDocument()
     expect(screen.getByText('需要你处理')).toBeInTheDocument()
     expect(screen.getByText('办理结果')).toBeInTheDocument()
-    expect(screen.getByText('接下来可以问')).toBeInTheDocument()
   })
 
   it('会话结论为业务语言：聚合查询 + 失败原因 + 待确认提示', () => {
@@ -120,16 +118,6 @@ describe('SessionInsight 会话简报', () => {
     expect(screen.getByText('张三')).toBeInTheDocument()
     const detailLink = screen.getByTitle('查看订单 A001 详情')
     expect(detailLink).toHaveAttribute('href', '/orders/o1')
-  })
-
-  it('接下来可以问：渲染建议 chip，点击即发送', () => {
-    const sendMessage = vi.fn().mockResolvedValue(undefined)
-    useChatStore.setState({ sendMessage } as Partial<typeof useChatStore.getState>)
-    render(<SessionInsight isOpen onClose={vi.fn()} />)
-    const suggestion = screen.getByText('查看该订单物流')
-    expect(suggestion).toBeInTheDocument()
-    fireEvent.click(suggestion)
-    expect(sendMessage).toHaveBeenCalledWith('查看该订单物流')
   })
 
   it('不渲染机器语言：工具原始名与参数校验均不可见', () => {

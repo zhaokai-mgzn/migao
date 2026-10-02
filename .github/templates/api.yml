@@ -3,7 +3,7 @@ description: ai-agent-service HTTP API 层（SSE / 聊天 / 内部接口 / 图�
 red_flags: []
 
 business_truths:
-  - [api.sse-frame] sse.SSEEvent 统一输出 "event: <type>\ndata: <json>\n\n"（json.dumps ensure_ascii=False）：text/tool_call/tool_result/card/done/error/heartbeat/suggestions/interactive/loading 共 10 种；heartbeat 为注释帧 ": heartbeat\n\n"（无 data 行，保活 ALB）
+  - [api.sse-frame] sse.SSEEvent 统一输出 "event: <type>\ndata: <json>\n\n"（json.dumps ensure_ascii=False）：text/tool_call/tool_result/card/done/error/heartbeat/interactive/loading 共 9 种；heartbeat 为注释帧 ": heartbeat\n\n"（无 data 行，保活 ALB）
   - [api.sse-error-interactive] sse.SSEEvent.error：data 仅 {"message"}，code 非空才追加 {"code"}；interactive：payload={"type": component_type, **data}；SSEStreamBuilder.add_* 链式追加并 build() 拼接，支持迭代协议
   - [api.page-protocol] chat.send_message 的 __PAGE__|tool|params_json 协议绕过 LLM 直调工具；_PAGE_WHITELIST 12 个只读查询工具白名单外一律拒绝（"不支持该操作的分页查询"）；split/json 解析失败拒绝（"翻页请求格式错误"）
   - [api.session-validation] chat.send_message 会话校验：不存在 404 SESSION_NOT_FOUND；tenant_id 不符 403 PERMISSION_DENIED；customer_id 不符 403 PERMISSION_DENIED；status=closed 409 SESSION_CLOSED
@@ -13,7 +13,6 @@ business_truths:
   - [api.agent-stream-sse] chat._agent_stream_to_sse：loading→text/tool_call/tool_result/card/interactive→done 序列；15s 心跳；180s 整体超时→error("响应超时")；assistant 空文本降级兜底文案；done 始终发送（finally 补发防重复）；tool_result 触发 interact→interactive 组件
   - [api.session-lifecycle] chat.sessions 生命周期：create/list/close/reopen/delete 全部校验租户隔离+用户所有权（404/403）；close 幂等（已 closed 仍 success 且不删消息）；reopen 仅 closed→active，非 closed 返回"会话已是活跃状态"
   - [api.format-datetime] chat._format_datetime：datetime 带 tzinfo 转 UTC 去 tzinfo 后 isoformat()+"Z"；字符串移除 "+00:00Z"/"+00:00" 双重后缀
-  - [api.suggestion-intent] chat.suggestion-feedback/_infer_intent_from_text：关键词表按"更具体词在前"顺序匹配（看板→dashboard、订单→order_query…）；空文本返回""、无匹配返回"general"；写偏好失败仅 warning；返回 {"ok": true}
   - [api.user-nickname] chat._get_user_nickname：Redis key nickname:{tenant}:{user}（TTL 3600s）命中直返；未命中查 DB 后写缓存；全程异常静默返回 None（昵称非必需）
   - [api.tool-execute-guard] internal.execute_tool：verify_service_token 认证；工具不存在 404 TOOL_NOT_FOUND；非 read_only 工具 403 WRITE_TOOL_FORBIDDEN（防 SERVICE_TOKEN 泄露执行写操作）；成功返回 {success,data,error,message}，异常 500 INTERNAL_ERROR
   - [api.knowledge-sync] internal.trigger_knowledge_sync：RAG 未部署(ImportError)→success=false RAG_DISABLED；document_created 缺 content 400 MISSING_CONTENT；document_updated/deleted 缺 resource_id 400 MISSING_RESOURCE_ID；未知 type 忽略；异常 500 SYNC_ERROR

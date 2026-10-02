@@ -126,70 +126,15 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
-
-  - id: MC-005
-    legacy_id: ""
-    title: "后续建议 - 预设模板与 stage fallback"
-    domains:
-      - misc
-      - chat
-    tier: normal
-    tags:
-      - suggestions
-      - preset
-      - fallback
-    truths_ref:
-      - misc.followup-presets
-      - misc.followup-get-preset
-    user_inputs:
-      - "ai-agent-service 按 agent_type/intent/stage 返回预设后续建议"
-    expectations:
-      - tool: direct_reply
-    data_checks:
-      - "MIBAO/XIAOBU 预设覆盖高频意图且每意图多 stage；farewell 空 dict 表示不推荐"
-      - "_get_preset agent_type 选米宝/小布预设与兜底；未知 intent → general；farewell → []；stage fallback 链 stage→querying→initial→第一个非空 stage→defaults"
-    skip_reason: "[backend-contract] 纯函数由 pytest 单测验证（tests/test_follow_up_suggestions.py），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424）"
-    traces:
-      tests:
-        - "backend/ai-agent-service/tests/test_follow_up_suggestions.py"
-      ci:
-        - ai-agent-tests.yml
-      verifies: []
-
-  - id: MC-006
-    legacy_id: ""
-    title: "后续建议 - 动态生成/清洗/兜底"
-    domains:
-      - misc
-      - chat
-    tier: normal
-    tags:
-      - suggestions
-      - dynamic
-      - sanitize
-    truths_ref:
-      - misc.followup-should-dynamic
-      - misc.followup-parse-sanitize
-      - misc.followup-generate
-      - misc.followup-generate-dynamic
-    user_inputs:
-      - "ai-agent-service 动态生成后续建议并在失败时回退预设"
-    expectations:
-      - tool: direct_reply
-    data_checks:
-      - "_should_use_dynamic 无 API key→False、answer<20→False、实体关键词→True、answer>100→True、否则 _has_specific_entities 正则检测"
-      - "_parse_suggestions_from_response JSON 数组（全 str）→前 3 条；带文本 re 提取→前 3 条；失败→None；_sanitize_prompt_value 花括号→全角/换行制表→空格/截断"
-      - "generate 动态命中→截断 3 条 strategy=dynamic；动态失败/超时/异常→fallback preset；_generate_dynamic 角色白名单（未知/空→'员工'）；httpx.TimeoutException→None"
-    skip_reason: "[backend-contract] 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_follow_up_suggestions.py），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424）"
-    traces:
-      tests:
-        - "backend/ai-agent-service/tests/test_follow_up_suggestions.py"
-      ci:
-        - ai-agent-tests.yml
-      verifies: []
-
+  # ▼▼ 2026-10-02（issue #5951，用户裁定）**因产品决策退役** ▼▼
+  # MC-005「后续建议 - 预设模板与 stage fallback」与 MC-006「后续建议 - 动态生成/清洗/兜底」
+  # 两条用例**整条退役**：其被测对象 `backend/ai-agent-service/app/suggestions/follow_up.py`
+  # 已随本单整体删除（生产零调用 —— 无任何写入点把建议写进图状态，SSE `event: suggestions`
+  # 零调用者），配套测试 `backend/ai-agent-service/tests/test_follow_up_suggestions.py` 同步删除。
+  # 退役方式 = **整条移除**（不是仅置 skip）：用例的 traces.tests 指向的文件已不存在，
+  # 保留条目会让 Case Trust 的「追踪文件必须存在」判红 —— 这类「被测对象整体消失」的退役
+  # 与 #5247 那种「能力下线但工具仍在」的退役形态不同（后者应保留条目 + 写明理由）。
+  # 退役台账：issue #5951。真值同步退役见 `.github/templates/misc.yml`。
   - id: MC-007
     legacy_id: ""
     title: "配置 - 默认值/向后兼容/生产密钥校验"

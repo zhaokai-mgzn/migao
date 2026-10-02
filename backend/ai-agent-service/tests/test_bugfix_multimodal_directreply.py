@@ -1,3 +1,4 @@
+# case_ids: AG-007
 """Bug 修复回归测试：多模态消息路由 + _extract_content 空响应兜底
 
 覆盖两个已确认的线上 Bug：
@@ -109,8 +110,7 @@ class TestRouteByIntentMultimodal:
             "cached_answer": None,
             "final_answer": "",
             "skill_used": "",
-            "suggestions": [],
-            **overrides,
+                **overrides,
         }
 
     def test_direct_reply_multimodal_routes_to_general(self):

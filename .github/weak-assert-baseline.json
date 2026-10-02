@@ -5,7 +5,7 @@
   "_how_to": "本文件是**数据**，人工/`--write-weak-baseline` 维护；判据在 `.github/growth_gate.py`。复核：`python3 -m pytest tests/unit_ci_workflows/test_weak_assert_blindspots.py -q`，或 `python3 .github/growth_gate.py --check-weak-baseline`。",
   "anchor_sha": "fc2ef7d60a202659242df38c91e2e92f6dfdb956",
   "anchored_at": "2026-09-21",
-  "weak_total": 242,
+  "weak_total": 240,
   "legacy_weak_counts": {
     "backend/ai-agent-service/tests/contracts/test_write_tool_errors.py": 1,
     "backend/ai-agent-service/tests/e2e/real/test_write_tools.py": 2,
@@ -20,7 +20,6 @@
     "backend/ai-agent-service/tests/test_customer_service_agent.py": 1,
     "backend/ai-agent-service/tests/test_dual_agent.py": 9,
     "backend/ai-agent-service/tests/test_e2e_mibao_scenarios.py": 1,
-    "backend/ai-agent-service/tests/test_follow_up_suggestions.py": 2,
     "backend/ai-agent-service/tests/test_graph_builder.py": 7,
     "backend/ai-agent-service/tests/test_graph_skills.py": 26,
     "backend/ai-agent-service/tests/test_id_resolver.py": 2,
@@ -110,6 +109,12 @@
       "anchor_sha": "fc2ef7d60a202659242df38c91e2e92f6dfdb956",
       "weak_total": 242,
       "note": "口径修正（**更严，只许缩**）：弱断言扫描器改为「命中落在**注释/文档字符串**里就不算」——此前按整行正则扫，会把**解释性注释里写出的模式**当成真实现象（当天同一形态一天撞 4 次：改法注释里出现那个模式的字面文本 ⇒ 账本当场多算一处）。实测 245 → 242（去掉 3 处说明里的假命中；其中 2 个文件归零 ⇒ 移出明细）。**只动这几格 + weak_total + 本行**，其余锚点值原样保留（未走 --write-weak-baseline）。"
+    },
+    {
+      "anchored_at": "2026-10-02",
+      "anchor_sha": "fc2ef7d60a202659242df38c91e2e92f6dfdb956",
+      "weak_total": 240,
+      "note": "精确销账（只许缩）：242 → 240 处（issue #5951）。主动「后续问题建议」通道整体退役 ⇒ `backend/ai-agent-service/tests/test_follow_up_suggestions.py` 整文件删除（2 处弱断言随之移出明细）。**只动这一格 + weak_total + 本行**，其余文件锚点值原样保留（未走 --write-weak-baseline，避免把别人的松弛量一并收紧）。"
     }
   ]
 }

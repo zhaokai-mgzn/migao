@@ -275,7 +275,7 @@ _CASE_AG_001 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['ai-agent-service 构造 AgentResponse / AgentContext 并从 AIMessage 提取文本'],
     expectations=['direct_reply'],
-    data_checks=['AgentResponse 默认 type=text、tool_calls=None、metadata=None；type 枚举 text/tool_call/tool_result/suggestions/error', '_extract_msg_content 移除 <think>...</think>（含多行），content 为 list 时仅拼接 type==text 的 text 块', 'AgentContext.to_dict 返回 6 字段；to_tool_context 透传 tenant_id/user_id/session_id/role'],
+    data_checks=['AgentResponse 默认 type=text、tool_calls=None、metadata=None；type 枚举 text/tool_call/tool_result/error', '_extract_msg_content 移除 <think>...</think>（含多行），content 为 list 时仅拼接 type==text 的 text 块', 'AgentContext.to_dict 返回 6 字段；to_tool_context 透传 tenant_id/user_id/session_id/role'],
     skip_reason='[backend-contract] dataclass/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['agents', 'data_contract', 'message_extraction'],
     persona='',
@@ -338,16 +338,16 @@ _CASE_AG_004 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── AG-005 [NORMAL] astream_chat 流式事件序列 - tool_call/tool_result/text/suggestions/error（源: cases/agents.yml）──
+# ── AG-005 [NORMAL] astream_chat 流式事件序列 - tool_call/tool_result/text/error（源: cases/agents.yml）──
 _CASE_AG_005 = EvalCase(
     id='AG-005',
     legacy_id='',
-    title='astream_chat 流式事件序列 - tool_call/tool_result/text/suggestions/error',
+    title='astream_chat 流式事件序列 - tool_call/tool_result/text/error',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['ai-agent-service 流式对话（graph.astream 节点级更新）'],
     expectations=['direct_reply'],
-    data_checks=['AIMessage.tool_calls 先 yield tool_calls 前文本，再逐条 yield type=tool_call', 'ToolMessage 经 json.loads 解析（失败降级 {data: str(content)}），图执行完统一 yield type=tool_result', 'final_answer 有新内容→yield type=text；suggestions 非空→yield type=suggestions；异常→yield type=error（含异常类名）'],
+    data_checks=['AIMessage.tool_calls 先 yield tool_calls 前文本，再逐条 yield type=tool_call', 'ToolMessage 经 json.loads 解析（失败降级 {data: str(content)}），图执行完统一 yield type=tool_result', 'final_answer 有新内容→yield type=text；异常→yield type=error（含异常类名）'],
     skip_reason='[backend-contract] 异步流式对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['agents', 'streaming', 'tool_result'],
     persona='',
@@ -368,6 +368,24 @@ _CASE_AG_006 = EvalCase(
     data_checks=["get_greeting 优先 get_direct_reply('greeting') 回退 config.greeting", 'get_agent 同 agent_type 二次调用返回同一实例，不同 agent_type 返回不同实例；reset_agent 后重建并调 reset_agent_intents_cache', 'CustomerServiceAgent→xiaobu / WorkAssistantAgent→mibao 别名映射'],
     skip_reason='[backend-contract] 工厂/单例/别名由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['agents', 'factory', 'alias'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AG-007 [NORMAL] 多模态路由 + _extract_content 空响应兜底（两个线上 Bug 的回归锁）（源: cases/agents.yml）──
+_CASE_AG_007 = EvalCase(
+    id='AG-007',
+    legacy_id='',
+    title='多模态路由 + _extract_content 空响应兜底（两个线上 Bug 的回归锁）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 路由带图消息 + 从回复内容里提取有效文本'],
+    expectations=['direct_reply'],
+    data_checks=['Bug A：带图（mixed/multimodal）消息**不得**被路由到 direct_reply_node（直复模板不处理图片）；_last_human_has_image 只认最近一条人类消息的图片块', 'Bug C：_extract_content 在回复**仅含思考内容**时返回空串（不把 think 内容当正文）；正常文本原样返回'],
+    skip_reason='[backend-contract] 纯函数/路由判定由 pytest 单测验证（tests/test_bugfix_multimodal_directreply.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'multimodal', 'routing', 'regression'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -453,7 +471,7 @@ _CASE_API_005 = EvalCase(
     title='chat Agent 流→SSE 序列 + 意图/昵称助手',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['ai-agent-service 将 Agent 流式输出转换为 SSE，并处理建议反馈/用户昵称'],
+    user_inputs=['ai-agent-service 将 Agent 流式输出转换为 SSE，并处理用户昵称'],
     expectations=['direct_reply'],
     data_checks=['loading→text/tool_call/tool_result/card/interactive→done 序列；空文本降级兜底文案', "suggestion-feedback 返回 {ok:true}；_infer_intent_from_text 关键词按具体词优先匹配，空/无匹配返回 ''/general", '_get_user_nickname Redis 命中直返、未命中查 DB、异常静默返回 None'],
     skip_reason='[backend-contract] SSE 流/助手函数由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟',
@@ -2028,24 +2046,6 @@ _CASE_CH_025 = EvalCase(
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘']}, {'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000', 'expect_customer_name': '张三', 'expect_address_contains': '2号5幢'}],
     namespaces=['customer_phone:13800138000'],
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000', 'max_growth': 1}],
-)
-
-# ── CH-029 [NORMAL] 建议个性化 - 偏好读取注入（flag 门控，默认关闭）（源: cases/chat.yml）──
-_CASE_CH_029 = EvalCase(
-    id='CH-029',
-    legacy_id='',
-    title='建议个性化 - 偏好读取注入（flag 门控，默认关闭）',
-    skill=Skill.MULTI_TURN,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['ai-agent-service 建议生成前的偏好注入（生产接线断言）'],
-    expectations=['direct_reply'],
-    data_checks=['开关 SUGGESTION_PREFERENCE_ENABLED=False（默认）→ _inject_user_preferences 直接返回原 prompt（零行为变化，不调 tracker）', '开启且 xiaobu 有偏好意图 → <user_preferences> 消毒块前置注入 system prompt（标签 XML 转义）+ [preference-inject] 日志', 'mibao 不注入 / 缺 tenant+user / 无偏好 / tracker 异常 → 原样返回不破坏主流程'],
-    skip_reason='[backend-contract] 偏好注入为纯函数接线，由 pytest 单测验证（tests/test_preference_injection.py），不进入 agent-eval 冒烟',
-    tags=['suggestions', 'xiaobu', 'personalization', 'preference'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
 )
 
 # ── CH-026 [NORMAL] 澄清卡后发图不崩溃 - 交互等待中用户发图走 vision 链路（线上 AttributeError 修复真实验收）（源: cases/chat.yml）──
@@ -3929,42 +3929,6 @@ _CASE_MC_004 = EvalCase(
     data_checks=['_parse_response 空 content→general(0.5)；剥离 ```json；直接 loads；兜底 re 提取第一个 {...}；intent 非法→general；confidence 夹取 [0,1]；解析异常→default', 'classify 正常返回 source=classifier；成本追踪 usage_metadata 优先、response_metadata 兜底；整体异常 → general(0.5, source=default, matched_keywords=[])'],
     skip_reason='[backend-contract] 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_intent_classifier.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['intent', 'classifier', 'fallback'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-)
-
-# ── MC-005 [NORMAL] 后续建议 - 预设模板与 stage fallback（源: cases/misc.yml）──
-_CASE_MC_005 = EvalCase(
-    id='MC-005',
-    legacy_id='',
-    title='后续建议 - 预设模板与 stage fallback',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['ai-agent-service 按 agent_type/intent/stage 返回预设后续建议'],
-    expectations=['direct_reply'],
-    data_checks=['MIBAO/XIAOBU 预设覆盖高频意图且每意图多 stage；farewell 空 dict 表示不推荐', '_get_preset agent_type 选米宝/小布预设与兜底；未知 intent → general；farewell → []；stage fallback 链 stage→querying→initial→第一个非空 stage→defaults'],
-    skip_reason='[backend-contract] 纯函数由 pytest 单测验证（tests/test_follow_up_suggestions.py），非 LLM 行为，不进入 agent-eval 冒烟',
-    tags=['suggestions', 'preset', 'fallback'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-)
-
-# ── MC-006 [NORMAL] 后续建议 - 动态生成/清洗/兜底（源: cases/misc.yml）──
-_CASE_MC_006 = EvalCase(
-    id='MC-006',
-    legacy_id='',
-    title='后续建议 - 动态生成/清洗/兜底',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['ai-agent-service 动态生成后续建议并在失败时回退预设'],
-    expectations=['direct_reply'],
-    data_checks=['_should_use_dynamic 无 API key→False、answer<20→False、实体关键词→True、answer>100→True、否则 _has_specific_entities 正则检测', '_parse_suggestions_from_response JSON 数组（全 str）→前 3 条；带文本 re 提取→前 3 条；失败→None；_sanitize_prompt_value 花括号→全角/换行制表→空格/截断', "generate 动态命中→截断 3 条 strategy=dynamic；动态失败/超时/异常→fallback preset；_generate_dynamic 角色白名单（未知/空→'员工'）；httpx.TimeoutException→None"],
-    skip_reason='[backend-contract] 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_follow_up_suggestions.py），非 LLM 行为，不进入 agent-eval 冒烟',
-    tags=['suggestions', 'dynamic', 'sanitize'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -11385,6 +11349,7 @@ ALL_CASES = (
     _CASE_AG_004,
     _CASE_AG_005,
     _CASE_AG_006,
+    _CASE_AG_007,
     _CASE_API_001,
     _CASE_API_002,
     _CASE_API_003,
@@ -11474,7 +11439,6 @@ ALL_CASES = (
     _CASE_CH_023,
     _CASE_CH_024,
     _CASE_CH_025,
-    _CASE_CH_029,
     _CASE_CH_026,
     _CASE_CH_027,
     _CASE_CH_028,
@@ -11575,8 +11539,6 @@ ALL_CASES = (
     _CASE_MC_002,
     _CASE_MC_003,
     _CASE_MC_004,
-    _CASE_MC_005,
-    _CASE_MC_006,
     _CASE_MC_007,
     _CASE_MC_008,
     _CASE_MC_009,

@@ -23,7 +23,7 @@ class TestAgentStateFields:
         expected_fields = [
             "messages", "tenant_id", "user_id", "session_id", "role",
             "intent_result", "route_decision",
-            "final_answer", "skill_used", "suggestions",
+            "final_answer", "skill_used",
             "pending_interact_skill",
         ]
         for field in expected_fields:
@@ -109,8 +109,7 @@ class TestAddMessagesReducer:
             "cached_answer": None,
             "final_answer": "",
             "skill_used": "",
-            "suggestions": [],
-        }
+            }
         assert state["tenant_id"] == 1
         assert len(state["messages"]) == 1
         assert state["messages"][0].content == "test"

@@ -386,16 +386,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         }))
       },
 
-      onSuggestions: (data) => {
-        set(state => ({
-          messages: state.messages.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, suggestions: data.questions || [] }
-              : msg
-          ),
-        }))
-      },
-
       onLoading: (_data) => {
         // 加载状态，不追加到内容
       },

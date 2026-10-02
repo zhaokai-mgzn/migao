@@ -175,12 +175,6 @@ modules:
       # （通用规则会要求 tests/test_suggestions/<源文件名>.py —— 不带 test_ 前缀 ⇒
       #  pytest.ini 只收 test_*.py ⇒ **不可被收集**，门禁会「绿」而测试从不运行；
       #  同 production / clarification 两处，故显式登记本规则，模板保持扁平可收集）
-      # 后续问题建议（issue #2575 / #5353）：既有测试名是 tests/test_follow_up_suggestions.py，
-      # 任何模板都命中不了它 —— 这正是该文件长期靠 .github/qa-exemptions.yml 豁免的原因
-      # ⇒ 逐文件显式登记，让门禁自己看得见（该豁免随之删除）。
-      - pattern: 'backend/ai-agent-service/app/suggestions/follow_up\.py'
-        tests:
-          - 'tests/test_follow_up_suggestions.py'
       - pattern: 'backend/ai-agent-service/app/suggestions/(.+)\.py'
         tests:
           - 'tests/test_suggestions_{1}.py'

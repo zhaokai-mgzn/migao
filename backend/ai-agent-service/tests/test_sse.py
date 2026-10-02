@@ -1,7 +1,7 @@
 """app/api/sse.py 单元测试 — SSE 事件构建与流构建器。
 
 覆盖 SSEEvent 全部事件类型（text/tool_call/tool_result/card/done/error/
-heartbeat/suggestions/interactive/loading）与 SSEStreamBuilder 链式追加、
+heartbeat/interactive/loading）与 SSEStreamBuilder 链式追加、
 build 拼接、迭代协议，确保 SSE 帧格式稳定。
 """
 # case_ids: API-006
@@ -85,14 +85,6 @@ class TestSSEEventHeartbeat:
         event = SSEEvent.heartbeat()
         assert event == ": heartbeat\n\n"
         assert "data:" not in event
-
-
-class TestSSEEventSuggestions:
-    def test_suggestions_shape(self):
-        event = SSEEvent.suggestions(["查订单", "看售后"])
-        name, data = _parse_data(event)
-        assert name == "suggestions"
-        assert data == {"questions": ["查订单", "看售后"]}
 
 
 class TestSSEEventInteractive:

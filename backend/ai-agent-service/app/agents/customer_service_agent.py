@@ -36,7 +36,7 @@ import app.utils.error_incident as _err_inc
 class AgentResponse:
     """Agent 响应数据类"""
     content: str
-    type: str = "text"  # text / tool_call / tool_result / suggestions / error
+    type: str = "text"  # text / tool_call / tool_result / error
     tool_calls: Optional[List[Dict]] = None
     metadata: Optional[Dict[str, Any]] = None
 
@@ -106,9 +106,6 @@ class BaseAgent:
     从 AgentConfig 获取所有差异化配置，无需子类。
     公共逻辑：图构建、流式对话、非流式对话等。
     """
-
-    # 不需要流式输出的辅助节点
-    _IGNORED_STREAM_NODES = {"suggestions"}
 
     def __init__(
         self,
@@ -242,7 +239,6 @@ class BaseAgent:
             "route_decision": None,
             "final_answer": "",
             "skill_used": "",
-            "suggestions": [],
             "pending_interact_skill": pending_skill,
             "last_confirm_value": last_confirm_value,
             "last_confirm_skill": last_confirm_skill,
@@ -301,7 +297,6 @@ class BaseAgent:
         通过 graph.astream 获取每个节点的状态更新，可靠地提取：
         - Skill 节点的 final_answer → AgentResponse(type="text")
         - Skill 节点的 messages 中的 ToolMessage → AgentResponse(type="tool_result")
-        - suggestions 节点的 suggestions → AgentResponse(type="suggestions")
         - direct_reply / cache 节点的 final_answer → AgentResponse(type="text")
         
         Args:
@@ -332,7 +327,6 @@ class BaseAgent:
             
             # 4. 状态追踪
             tool_results_queue: List[tuple] = []  # (tool_name, result_dict)
-            suggestions: List[str] = []
             text_streamed = False
             text_streamed_content = ""
             tool_calls_detected: List[Dict[str, Any]] = []
@@ -411,11 +405,6 @@ class BaseAgent:
                         )
                         text_streamed = True
                         text_streamed_content = final_answer
-                    
-                    # — 提取 suggestions
-                    sugs = output.get("suggestions")
-                    if isinstance(sugs, list) and sugs:
-                        suggestions = sugs
             
             # 6. 图执行完毕：发送积压的 tool_result 事件
             for tool_name, result_dict in tool_results_queue:
@@ -428,19 +417,11 @@ class BaseAgent:
                     }],
                 )
             
-            # 7. 发送 suggestions 事件
-            if suggestions:
-                yield AgentResponse(
-                    type="suggestions",
-                    content="",
-                    metadata={"suggestions": suggestions},
-                )
-            
             logger.info(
                 f"[astream_chat] Completed | agent={self._agent_type} "
                 f"tenant={context.tenant_id} "
                 f"session={context.session_id} "
-                f"tools={len(tool_calls_detected)} suggestions={len(suggestions)} "
+                f"tools={len(tool_calls_detected)} "
                 f"text_streamed={text_streamed}"
             )
             

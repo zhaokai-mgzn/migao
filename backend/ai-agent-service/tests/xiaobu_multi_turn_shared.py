@@ -130,7 +130,6 @@ def log_turn(
     skill_name: str,
     tool_calls: List[Dict[str, Any]],
     reply: str,
-    suggestions: Optional[List[str]] = None,
     entities: Optional[dict] = None,
 ):
     """记录每轮对话的详细日志 - 增强版"""
@@ -160,8 +159,6 @@ def log_turn(
     logger.info(f"  ║ 📤 小布回复:")
     for line in reply.split('\n'):
         logger.info(f"  ║    {line}")
-    if suggestions:
-        logger.info(f"  ║ 💡 建议问题: {suggestions}")
     if entities:
         logger.info(f"  ║ 📋 提取实体: {entities}")
     logger.info(f"  ╚{'═'*56}╝")
@@ -257,9 +254,6 @@ def _build_mock_patches():
     return {
         # [RAG 禁用] semantic_cache 已移除
         "cache_settings": patch("app.graph.nodes.settings", create=True),
-        "suggestions": patch(
-            "app.graph.nodes.FollowUpSuggestionGenerator", create=True,
-        ),
         "skill_llm": patch("app.graph.skills.base_skill.get_skill_llm"),
         "admin_api": patch("app.utils.http_client.AdminApiClient._get_client"),
         "classifier": patch("app.router.intent_classifier.IntentClassifier.classify"),
@@ -301,7 +295,6 @@ class MultiTurnRunner:
             final_answer = result.get("final_answer", "")
             intent_result = result.get("intent_result", None)
             skill_used = result.get("skill_used", "")
-            suggestions = result.get("suggestions", [])
             entities = result.get("entities", {})
             result_messages = result.get("messages", [])
 
@@ -315,7 +308,6 @@ class MultiTurnRunner:
                 metadata={
                     "skill_used": skill_used,
                     "intent_result": intent_result,
-                    "suggestions": suggestions,
                     "entities": entities,
                 },
             )
@@ -329,7 +321,6 @@ class MultiTurnRunner:
             intent_result = None
             skill_used = ""
             tool_calls = []
-            suggestions = []
             entities = {}
 
         # 记录到 history
@@ -344,7 +335,6 @@ class MultiTurnRunner:
             skill_name=skill_used,
             tool_calls=tool_calls,
             reply=resp.content,
-            suggestions=suggestions if suggestions else None,
             entities=entities if entities else None,
         )
         self.report.turns_executed = self.turn

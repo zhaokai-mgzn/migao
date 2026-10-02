@@ -5,7 +5,6 @@
  * 覆盖 UI-019「米宝工作台『洞察』重构为『会话简报』」：
  *  - buildSessionBrief   — 业务语言会话结论（查询聚合/写操作完成/失败/待确认）
  *  - extractLedgerRows   — 办理结果明细行（订单带状态/金额/客户，卡片 → 兜底 arg 去重）
- *  - collectSuggestions  — 最近 assistant 消息的后续问题建议
  *
  * 关键约束：结论与明细全部是业务语言，不出现工具原始名（order_query 等）与
  * agent 内部动作（参数校验/请求确认）。
@@ -14,7 +13,6 @@ import { describe, it, expect } from 'vitest'
 import {
   buildSessionBrief,
   extractLedgerRows,
-  collectSuggestions,
 } from '@/lib/session-insight'
 import type { ChatMessage } from '@/types'
 
@@ -256,20 +254,3 @@ describe('extractLedgerRows', () => {
   })
 })
 
-// ═══════════════════════════════════════════════════════════
-// collectSuggestions — 接下来可以问
-// ═══════════════════════════════════════════════════════════
-
-describe('collectSuggestions', () => {
-  it('取最近一条 assistant 消息的后续建议', () => {
-    const messages = [
-      assistantMsg({ suggestions: ['查看该订单物流', '查看客户历史订单'] }),
-      assistantMsg({ suggestions: ['确认订单信息', '打印发货单'] }),
-    ]
-    expect(collectSuggestions(messages)).toEqual(['确认订单信息', '打印发货单'])
-  })
-
-  it('无建议 → 空数组', () => {
-    expect(collectSuggestions([assistantMsg({ content: '你好' })])).toEqual([])
-  })
-})

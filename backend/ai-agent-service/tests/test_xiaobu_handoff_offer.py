@@ -51,7 +51,6 @@ def _make_state(messages, session_id="sess-offer-1", tenant_id=1, agent_type="xi
         "route_decision": None,
         "final_answer": "",
         "skill_used": "",
-        "suggestions": [],
         "pending_interact_skill": "",
     }
 

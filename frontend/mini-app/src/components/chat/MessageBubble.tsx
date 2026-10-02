@@ -12,7 +12,6 @@ import ProductionProgressCard from '../cards/ProductionProgressCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
 import FormCard from '../cards/FormCard'
-import SuggestionChips from './SuggestionChips'
 import { parseRichText } from '../../utils/richText'
 import './MessageBubble.scss'
 
@@ -191,7 +190,7 @@ function renderInteractive(
 export default function MessageBubble({ message, onInteract }: MessageBubbleProps) {
   const {
     role, content, isStreaming, cards, cardData,
-    type, created_at, images, interactive, suggestions,
+    type, created_at, images, interactive,
     interactiveAnswered,
   } = message
 
@@ -295,11 +294,6 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
           interactive,
           onInteract,
           interactiveAnswered,
-        )}
-
-        {/* 建议追问 chips */}
-        {suggestions && suggestions.length > 0 && onInteract && (
-          <SuggestionChips questions={suggestions} onAction={onInteract} />
         )}
 
         {/* 时间戳 */}

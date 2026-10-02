@@ -151,7 +151,6 @@ def _base_state(skill: str, **overrides):
         "cached_answer": None,
         "final_answer": "",
         "skill_used": "",
-        "suggestions": [],
     }
     state.update(overrides)
     return state
