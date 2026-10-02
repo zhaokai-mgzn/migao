@@ -14,6 +14,13 @@ import FloatingAssistant from '@/components/ai-assistant/FloatingAssistant'
 // 顺序敏感：更具体的子路径放在前面。
 const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/chat', code: 'agent:session' },
+  // issue #5977：`/agent-workspace` 子树（根 = 重定向占位页 / `sessions` = 会话监控 / `human-sessions`
+  // = 在线接待）**整棵同域同一码** —— 该域（含 `/chat`）唯一的权限码就是 `agent:session`
+  //（菜单节点「在线接待」的码 = `AgentSessionController` 的类级码）⇒ 一条**父前缀**覆盖三个路径，
+  // 不必逐条登记（子路径与父前缀**同码**，故不触发判据 11① 的遮蔽）。
+  // 此前只有 `/chat` 一项 ⇒ 销售（无 `agent:session`）直达 `/agent-workspace/human-sessions`
+  // 不被 403 拦截（#5977 的现场形态）。
+  { prefix: '/agent-workspace', code: 'agent:session' },
   // issue #5246：售后工单页是**读**页（建单/改状态是页内动作，后端按写码 order:refund 拦截）
   // ⇒ 页面守卫改用读码 after_sales:view，与 config/menu.ts 的节点码、后端 @RequirePermission 同源。
   { prefix: '/after-sales', code: 'after_sales:view' },
@@ -41,6 +48,11 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // 发货单（issue #5939）：页面守卫码 = 菜单节点码 = 该页第一屏读端点码（GET /api/admin/shipments）
   // = `order:list` —— 取**既有**码，与 /orders 同一把尺子（#5699 判据 12 的口径）。
   { prefix: '/shipments', code: 'order:list' },
+  // issue #5976：入库单（菜单节点码 `inbound:view` = 该页 `gate` = `InboundOrderController` 的读码）
+  // 此前只有菜单一道防线 ⇒ 无 `inbound:view` 者地址栏直达 `/inbound-orders` 不被拦。
+  // 一条前缀同时覆盖 `/inbound-orders/new`（**不单列** —— 更宽的父前缀排在前面会让子路径成为
+  // `find()` 永不命中的死条目，判据 11① 判红）。
+  { prefix: '/inbound-orders', code: 'inbound:view' },
   { prefix: '/employees', code: 'employee:list' },
   { prefix: '/settings', code: 'system:manage' },
   // issue #5246：知识库页同理 —— 页面本身的守卫用读码 knowledge:view
@@ -50,6 +62,15 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/roles', code: 'system:view' },
   { prefix: '/briefing', code: 'dashboard:view' },
   { prefix: '/dashboard', code: 'dashboard:view' },
+  // 🔴 `/notifications`（通知中心）**有意不登记**（issue #5977 点名的 6 条未覆盖路由里的第 6 条）：
+  // 菜单节点**无 `permissionCode`**（全员可见，与顶栏铃铛同源）；单一真值源 `rbac/manifest.json` 的
+  // `_note` 逐字登记「**顶层无码项**（通知中心，根本没有权限门控）……本清单照现值填写（**不补、不猜**）」
+  //（该类项的真实性由 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的
+  // 「一级项层 / 独立项层」判据守着），且读端点无 `@RequirePermission`（只有「发送」挂 `system:manage`）
+  // ⇒ **不凭空造码**。「它没有守卫码」这件事由 `tests/unit_ci_workflows/test_rbac_derived_pages.py`
+  // 的 C5② 从**单一真值源**派生豁免（不是手写台账）；塞一个空码进来反而会让 C4（守卫码 == 该页 `gate`）判红。
+  // 三层门控里它仍受「**登录即可见**」那一层保护 —— 未登录访问由 `components/auth-guard.tsx` 的
+  // `protectedRoutePrefixes` 送回登录页（**不是**权限码那一层，两件事不混写）。
 ]
 
 export default function DashboardLayout({

@@ -25,6 +25,9 @@
   ⇒ 即**每一步都要付的固定开销**；
 - **停顿分桶** = 相邻两步的时间差。`<30s` 桶的全价输入 ≈ 本步**新增内容**；间隔更长 ⇒ **缓存失效**，
   历史按全价重算（2026-10-01 实测：`<30s` 桶 1,513 token/步 → `30s-2m` 桶 49,010 → `>60m` 桶 151,298）；
+- **折叠 / prune 计数** = 日志里 `compaction/start` / `compaction/prune` 的记录数。**单向判据**：`prune>0`
+  ⇒ 该会话树挂着 tool-result-pruner（= **新 realm**）；`prune==0` **不能**反推旧 realm（短会话本来就没有大工具结果）。
+  §29 的读数**必须按 realm 分臂**（preset 的 compaction 组在 realm 挂载时读一次配置 ⇒ 旧树不折叠），见 #5999。
 - **阈值投影** = `Σ min(context_i, T)` 的反事实重放：「上下文从未超过 T」能省多少 prompt 量。
   ⚠️ 这是**反事实**：真实折叠后步数可能变化，且每次折叠本身要花一次摘要调用 ⇒ 它是**上界**，不是承诺。
 
@@ -39,6 +42,7 @@
 
     python3 scripts/token_ledger.py                    # 当前工作区，最近 14 天
     python3 scripts/token_ledger.py --days 30 --top 20
+    python3 scripts/token_ledger.py --days 6 --until 3   # 「前 3 天」——与 `--days 3`（近 3 天）配成滚动对照
     python3 scripts/token_ledger.py --all              # 该工作区全部会话（分钟级）
     python3 scripts/token_ledger.py --sessions ~/.dsh/sessions --all-workspaces
     python3 scripts/token_ledger.py --json out.json    # 机读形态（唯一写盘点，需显式指定）
@@ -80,6 +84,36 @@ GAP_BUCKETS: tuple[tuple[float, float, str], ...] = (
     (3600.0, float("inf"), ">60m"),
 )
 
+#: 「折叠后有没有返工」的口径：只统计这几类工具，窗口 = 折叠点之后 N 条事件。
+#: 这是**同会话前后对照**（同一任务、同一模型）⇒ 不受任务结构影响，是 §29 回退判据的唯一门槛。
+REPEAT_TOOLS: tuple[str, ...] = ("bash", "read", "grep", "glob")
+REPEAT_WINDOW_EVENTS = 120
+
+
+def _repeat_target(name: str, arguments: object) -> str | None:
+    """工具调用的「重复判据」目标；不在 `REPEAT_TOOLS` 里 ⇒ `None`（不参与重复率）。
+
+    口径：`bash` = 命令串**归一化后取前 160 字符**；`read` = `file_path`；`grep` / `glob` = 模式 + 路径。
+    ⚠️ 只判「同一会话里同一目标**再次**出现」，**不判语义等价**（改了参数的重跑不算重复）。
+    """
+    if name not in REPEAT_TOOLS or not isinstance(arguments, str):
+        return None
+    try:
+        args = json.loads(arguments)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(args, dict):
+        return None
+    if name == "bash":
+        raw = args.get("command")
+        return " ".join(raw.split())[:160] if isinstance(raw, str) else None
+    if name == "read":
+        raw = args.get("file_path")
+        return raw if isinstance(raw, str) else None
+    pattern, path = args.get("pattern"), args.get("path")
+    return f"{pattern}|{path}" if isinstance(pattern, str) else None
+
+
 #: 阈值投影的参考档（绝对 token 数）。默认模型窗口 1M ⇒ 首行 = 现状（0 节省）。
 CAP_LADDER: tuple[int, ...] = (1_000_000, 800_000, 600_000, 400_000, 300_000, 200_000, 150_000, 100_000)
 
@@ -91,7 +125,8 @@ REQUIRED_ACTION = (
     "  ③ **停顿 >30s 会让缓存失效**（历史按全价重算）—— 大上下文会话别挂着去等/去开会，宁可开新会话；\n"
     "  ④ **子代理是第二份独立上下文**（实测占 38.9%）—— 派之前先问「这一趟值不值一份上下文」；\n"
     "  ⑤ **思维链会留在上下文里被反复重发** —— 按任务调低 reasoning effort，别一律用最高档；\n"
-    "  ⑥ **工具输出进上下文就不再出来** —— bash 一律 `| head`、读大文件用 offset/limit（§29 P1~P4）。"
+    "  ⑥ **工具输出进上下文就不再出来** —— bash 一律 `| head`、读大文件用 offset/limit（§29 P1~P4）；\n"
+    "  ⑦ **读数先分臂** —— 改过 `compaction` 配置之后，先按 realm 分臂（树根建得早的那批不折叠），混臂读数不得用于归因（#5999）。"
 )
 
 
@@ -161,6 +196,9 @@ def parse_session(text: str, caps: tuple[int, ...] = CAP_LADDER) -> dict:
     sum_prompt = max_prompt = 0
     cap_sums = dict.fromkeys(caps, 0)
     gaps = {name: [0, 0, 0] for _, _, name in GAP_BUCKETS}  # name -> [n, fresh, prompt]
+    folds = prunes = 0
+    fold_seqs: list[int] = []
+    calls: list[tuple[int, str, str]] = []
     depth: int | None = None
     title: str | None = None
     t0: int | None = None
@@ -193,8 +231,31 @@ def parse_session(text: str, caps: tuple[int, ...] = CAP_LADDER) -> dict:
                 if isinstance(value, str):
                     title = value
             continue
+        if '"compaction/start"' in line:
+            folds += 1
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                rec = None
+            if isinstance(rec, dict) and isinstance(rec.get("seq"), int):
+                fold_seqs.append(rec["seq"])
+            continue
+        if '"compaction/prune"' in line:
+            prunes += 1
+            continue
         if '"tool/call"' in line:
             tool_calls += 1
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                rec = None
+            if isinstance(rec, dict):
+                data = rec.get("data") if isinstance(rec.get("data"), dict) else {}
+                name = data.get("name")
+                seq = rec.get("seq")
+                target = _repeat_target(name, data.get("arguments")) if isinstance(name, str) else None
+                if target is not None and isinstance(seq, int):
+                    calls.append((seq, name, target))
             continue
         if '"user/message"' in line:
             user_msgs += 1
@@ -247,6 +308,20 @@ def parse_session(text: str, caps: tuple[int, ...] = CAP_LADDER) -> dict:
                         break
             prev_t = ts
 
+    windows = [(f, f + REPEAT_WINDOW_EVENTS) for f in fold_seqs]
+    seen: set[tuple[str, str]] = set()
+    post_calls = post_repeats = other_calls = other_repeats = 0
+    for seq, name, target in calls:
+        key = (name, target)
+        repeated = key in seen
+        seen.add(key)
+        if any(lo < seq <= hi for lo, hi in windows):
+            post_calls += 1
+            post_repeats += repeated
+        else:
+            other_calls += 1
+            other_repeats += repeated
+
     return {
         "steps": steps,
         "fresh": fresh,
@@ -255,6 +330,14 @@ def parse_session(text: str, caps: tuple[int, ...] = CAP_LADDER) -> dict:
         "reason": reason,
         "user_msgs": user_msgs,
         "tool_calls": tool_calls,
+        "folds": folds,
+        "prunes": prunes,
+        "rework": {
+            "post_calls": post_calls,
+            "post_repeats": post_repeats,
+            "other_calls": other_calls,
+            "other_repeats": other_repeats,
+        },
         "malformed": malformed,
         "bad_identity": bad_identity,
         "first_prompt": first_prompt,
@@ -335,6 +418,7 @@ def summarize(rows: list[dict], caps: tuple[int, ...], price_cache: float, price
     gaps = {name: [0, 0, 0] for _, _, name in GAP_BUCKETS}
     cap_total = dict.fromkeys(caps, 0)
     firsts: list[int] = []
+    rework = {"post_calls": 0, "post_repeats": 0, "other_calls": 0, "other_repeats": 0, "sessions_with_folds": 0}
     for row in rows:
         steps = row["steps"]
         tot["steps"] += steps
@@ -366,6 +450,10 @@ def summarize(rows: list[dict], caps: tuple[int, ...], price_cache: float, price
         for name, bucket in row["gaps"].items():
             for idx in range(3):
                 gaps[name][idx] += bucket[idx]
+        for key, value in row.get("rework", {}).items():
+            rework[key] += value
+        if row.get("folds"):
+            rework["sessions_with_folds"] += 1
         for cap in caps:
             cap_total[cap] += row["cap_sums"][cap]
 
@@ -386,6 +474,7 @@ def summarize(rows: list[dict], caps: tuple[int, ...], price_cache: float, price
             "price_cache": price_cache,
             "price_output": price_output,
         },
+        "rework": rework,
         "by_day": sorted(by_day.items()),
         "by_depth": sorted(by_depth.items(), key=lambda kv: -kv[1][1]),
         "gaps": gaps,
@@ -444,14 +533,19 @@ def render(report: dict, scope: dict, top: int) -> str:
     add(f"步数>100 的会话：{len(big)} 个（占 {len(big) / max(t['sessions_with_usage'], 1):.0%}）"
         f"｜吃掉 {fmt(big_billed)} = **{big_billed / t['billed']:.1%}** 的计费 token")
     add(f"会话步数中位数：{statistics.median([r['steps'] for r in report['sessions'] if r['steps']]):.0f} 步")
+    folded = [r for r in report["sessions"] if r.get("folds")]
+    add(f"有折叠的会话：{len(folded)} 个（折叠合计 {sum(r.get('folds', 0) for r in report['sessions'])} 次）"
+        f"｜出现 prune 的会话：{sum(1 for r in report['sessions'] if r.get('prunes'))} 个"
+        f"（**单向判据**：`prune>0` ⇒ 该树挂着 pruner = 新 realm；`prune==0` **不能**反推旧 realm —— 见 #5999）")
     add("")
     add(f"── 会话榜（Top {top}，按计费 token）─────────────────────────────────")
-    add(f"{'计费token':>15} {'步数':>6} {'最大上下文':>12} {'平均上下文':>12} {'输出':>10} {'工具':>6}  会话")
+    add(f"{'计费token':>15} {'步数':>6} {'最大上下文':>12} {'平均上下文':>12} {'输出':>10} {'工具':>6} {'折叠':>4} {'prune':>5}  会话")
     for row in sorted(report["sessions"], key=lambda r: -(r["fresh"] + r["cache"] + r["out"]))[:top]:
         billed = row["fresh"] + row["cache"] + row["out"]
         avg = (row["fresh"] + row["cache"]) / row["steps"] if row["steps"] else 0
         add(f"{fmt(billed):>15} {row['steps']:>6} {fmt(row['max_prompt']):>12} {fmt(avg):>12} "
-            f"{fmt(row['out']):>10} {row['tool_calls']:>6}  {row['sid'][:26]}  {(row['title'] or '')[:36]}")
+            f"{fmt(row['out']):>10} {row['tool_calls']:>6} {row.get('folds', 0):>4} {row.get('prunes', 0):>5}  "
+            f"{row['sid'][:26]}  {(row['title'] or '')[:36]}")
     add("")
     add("── 归因 ①：谁花的（子代理是第二份独立上下文）────────────────────────")
     for key, (n, billed, steps) in report["by_depth"]:
@@ -479,6 +573,23 @@ def render(report: dict, scope: dict, top: int) -> str:
         f"（{o['p50'] * t['steps'] / t['billed']:.1%}）")
     add("")
     base = report["base_prompt"] or 1
+    rw = report.get("rework") or {}
+    add("── 归因 ④：折叠后有没有返工（**同会话前后对照**）────────────────────")
+
+    def _rate(n: int, r: int) -> str:
+        return f"{r}/{n} = {r / n:.1%}" if n else "0/0 = —"
+
+    if not rw.get("sessions_with_folds"):
+        add("本窗口没有折叠 ⇒ **无法判定**（这不是「没有返工」）。")
+    else:
+        add(f"折叠后 {REPEAT_WINDOW_EVENTS} 条事件内：{_rate(rw['post_calls'], rw['post_repeats'])}"
+            f"    （有折叠的会话 {rw['sessions_with_folds']} 个）")
+        add(f"同会话其余部分：      {_rate(rw['other_calls'], rw['other_repeats'])}")
+        add("  ↳ 口径：重复 = 同一（工具, 目标）在本会话**更早**出现过；只统计 " + "/".join(REPEAT_TOOLS)
+            + "；目标 = bash 命令串（归一化取前 160 字符）/ read 的 file_path / grep·glob 的模式+路径。")
+        add("  ↳ **同一会话 = 同一任务** ⇒ 这是不受任务结构影响的对照。**折叠后明显高于其余部分**才谈「折叠太早导致返工」"
+            "（§29 回退判据的唯一门槛，#6000）。")
+    add("")
     add("── 阈值投影：折叠阈值降到 T（反事实上界，不是承诺）───────────────────")
     add(f"{'cap T':>12} {'Σ min(上下文,T)':>18} {'可省':>18} {'降幅':>8}")
     for cap, value in report["caps"]:
@@ -502,6 +613,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--all-workspaces", action="store_true", help="不按工作区过滤，扫会话根下全部工作区")
     parser.add_argument("--days", type=float, default=14.0, help="只扫最近 N 天写过的会话文件（默认 14；`--all` 忽略）")
     parser.add_argument("--all", action="store_true", help="忽略 --days，扫全部会话（分钟级）")
+    parser.add_argument("--until", type=float, default=0.0,
+                        help="窗口上界（天前，**不含**）：与 --days 组合取更早那一段，"
+                             "如 `--days 6 --until 3` = 「前 3 天」（默认 0 = 不限；`--all` 忽略）")
     parser.add_argument("--top", type=int, default=15, help="会话榜长度（默认 15）")
     parser.add_argument("--jobs", type=int, default=8, help="并行读文件的线程数（默认 8）")
     parser.add_argument("--price-cache", type=float, default=0.1, help="缓存命中读取的单价系数（默认 0.1，**假设**）")
@@ -522,6 +636,7 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_UNDECIDABLE
 
     cutoff = None if args.all else time.time() - args.days * 86400
+    upper = None if args.all or args.until <= 0 else time.time() - args.until * 86400
     files: list[Path] = []
     for workspace in workspaces:
         for session_dir in sorted(workspace.iterdir()):
@@ -530,13 +645,18 @@ def main(argv: list[str] | None = None) -> int:
             picked = pick_session_file(session_dir)
             if picked is None:
                 continue
-            if cutoff is not None and picked.stat().st_mtime < cutoff:
+            mtime = picked.stat().st_mtime
+            if cutoff is not None and mtime < cutoff:
+                continue
+            if upper is not None and mtime >= upper:
                 continue
             files.append(picked)
     if not files:
         print(
             f"不可判定：窗口内一个会话文件都没有（工作区 {[w.name for w in workspaces]}，"
-            f"{'全部' if args.all else f'最近 {args.days:g} 天'}）—— 换 `--days` / `--all` 再跑。",
+            f"{'全部' if args.all else f'最近 {args.days:g} 天'}"
+            f"{'' if args.all or args.until <= 0 else f'（上界 {args.until:g} 天前）'}）—— "
+            "换 `--days` / `--until` / `--all` 再跑。",
             file=sys.stderr,
         )
         return EXIT_UNDECIDABLE
@@ -555,7 +675,10 @@ def main(argv: list[str] | None = None) -> int:
     report = summarize(rows, CAP_LADDER, args.price_cache, args.price_output)
     scope = {
         "workspaces": "、".join(str(w) for w in workspaces),
-        "window": "全部会话" if args.all else f"最近 {args.days:g} 天",
+        "window": "全部会话" if args.all else (
+            f"最近 {args.days:g} 天"
+            + (f"（上界 {args.until:g} 天前，不含 ⇒ 即「前 {args.days - args.until:g} 天」）" if args.until > 0 else "")
+        ),
         "elapsed_s": time.time() - started,
         "errors": errors,
     }
@@ -564,6 +687,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = {
             "scope": {**scope, "workspaces": [str(w) for w in workspaces]},
             "totals": report["totals"],
+            "rework": report["rework"],
             "by_day": report["by_day"],
             "by_depth": report["by_depth"],
             "gaps": report["gaps"],

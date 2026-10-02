@@ -3001,7 +3001,7 @@ cases:
       - "🔴 红证 1（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复后跑本判据 ⇒ **4 failed / 4**（报错形态逐字为 `expected document not to contain element, found <button …>新增商品</button>`）；恢复修复后 **4 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx`"
       - "🔴 红证 2（第 4 页加入时实测，2026-10-02）：先落判据 5、`/finance` 尚未接码时跑 ⇒ **1 failed / 4 passed**（`expected document not to contain element, found <button …>登记收支</button>`）；接码后 **5 passed**"
     skip_reason: "[backend-contract] 纯前端展示面（按钮是否渲染）由 vitest（jsdom）执行；「提交时后端 403」属 admin-api 权限链（另有用例），本用例不管，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-02 新增（issue #5983，P2·权限·UI）：12 格「页面可进 + 按钮可点 + 账号无写权限」的**实例判据**（页 × 无码/有码两条读数，缺一不可）+ 同批类级元守卫 = tests/unit_ci_workflows/test_list_page_write_button_gate.py（MC-062）。**范围后扩一次（链内同修，铁律 12(b)①）**：`/finance` 的「登记收支」同为该形态（页面守卫 `finance:view`，写面 `finance:create`；issue 把它当「正确范式」是**空真** —— 能进该页的岗位恰好都有写码），同 PR 同范式接码并补判据 5（红证 2）。取号 UI-081（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-080）。"
+    merge_log: "2026-10-02 新增（issue #5983，P2·权限·UI）：12 格「页面可进 + 按钮可点 + 账号无写权限」的**实例判据**（页 × 无码/有码两条读数，缺一不可）+ 同批类级元守卫 = tests/unit_ci_workflows/test_list_page_write_button_gate.py（MC-063）。**范围后扩一次（链内同修，铁律 12(b)①）**：`/finance` 的「登记收支」同为该形态（页面守卫 `finance:view`，写面 `finance:create`；issue 把它当「正确范式」是**空真** —— 能进该页的岗位恰好都有写码），同 PR 同范式接码并补判据 5（红证 2）。取号 UI-081（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-080）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx"

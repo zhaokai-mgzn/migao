@@ -2846,7 +2846,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（59 case）
+## 杂项域（60 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3309,10 +3309,10 @@
 ```
 你: 当清单 pages[] 的任一项（菜单可见码 gate / 第一屏读码 units / 逐页 visibility_rule）与现值不再相等，或菜单三源与路由守卫的码列不再等于该页的 gate 时，必须有东西**具名**报出那一项；而只改清单的说明文字（_note / _boundary）或只改源码注释时，**不得**报红
 期望: direct_reply
-数据: 🔴 **零 delta 是 P3 唯一的验收口径**：清单 pages[] 与现值 21 页逐值相等（逐页逐项点名）；C1（28 节点）/ C2（24 条）/ C3（14 条）/ C4（19 前缀）的**码列**逐条等于该页 gate（例外逐条具名）；第一屏读码 24 项、units 27 个端点、可见性 21 页 —— **P3 口径 = 205 项逐值**（摊平到叶的 (路径, 值) 对），不一致 = 0；不等时输出完整不一致清单（「发现 delta」是正常交付，**不许**本阶段抹平）
+数据: 🔴 **零 delta 是 P3 唯一的验收口径**：清单 pages[] 与现值 22 页逐值相等（逐页逐项点名）；C1（28 节点）/ C2（23 条）/ C3（21 条）/ C4（22 前缀）的**码列**逐条等于该页 gate（例外逐条具名）；第一屏读码 22 项、units 42 个端点、可见性 22 页 —— **P3 口径 = 204 项逐值**（摊平到叶的 (路径, 值) 对），不一致 = 0；不等时输出完整不一致清单（「发现 delta」是正常交付，**不许**本阶段抹平）。※ 2026-10-02（#5976/#5977）按现取校正了本行的计数（此前是 #5699 P4 / #5939 之后未同步的旧读数：21 页 / C2 24 / C3 14 / C4 19 / 24 项 / 27 端点 / 205 项）
 数据: **四跳现取不另造解析器**：菜单节点 → 页面锚点表 → lib/api.ts 的 URL → Java 侧**生效码**（方法级优先），全部调既有守卫 test_agent_permission_workflows 的既有函数（`parse_menu_ts_nodes` / `parse_frontend_api_calls` / `_effective_codes` / `parse_menus` / `parse_route_guard`），判据与生成器共用 rbac/derive.py 的同一份投影实现
 数据: **C2/C3 的节点集不属本面、码列属本面**：MenuController 只有 24 个节点、AuthService 只有 14 个（登录菜单是页面的子集）⇒ 「哪些节点进哪一列」是菜单结构的事实；本判据只判**码**（逐条 38 项），并把 4 个**动作节点**（新增商品 / 商品分类管理 / 新增员工 / 订单详情）与 1 处具名不一致（经营看板：节点无码而权限目录给 dashboard:view）逐条具名登记（未登记即红 / 陈旧亦红 ⇒ 只许缩短）
-数据: **C4 的路由前缀按三类逐条闭合**：15 条直接命中某页 path + 1 条别名（/processing → 加工项管理）+ 3 条无页面前缀（/chat / /categories / /processing-orders，逐条带理由）+ 1 条守卫码与该页 gate 不一致的具名项（/dashboard）—— 新增页面守卫不登记即红
+数据: **C4 的路由前缀按三类逐条闭合**：17 条直接命中某页 path + 1 条别名（/processing → 加工项管理）+ 4 条无页面前缀（/chat / /categories / /processing-orders / **/agent-workspace**（#5977 新增的子树父前缀，本次同 PR 显式把该账台上限 3 → 4），逐条带理由）—— 新增页面守卫不登记即红（#5699 P4 之后已无「守卫码 ≠ 该页 gate」的具名项：`ROUTE_GUARD_GATE_MISMATCHES` 现取为空）
 数据: **对照读数（证明变异真的被读到）**：内存里把某页 gate 改掉 ⇒ 派生器读数跟着变（route_guard_codes 现取到新值）且 pages 对账报出；清单 _note / _boundary 只改散文 ⇒ 三条对账全绿（不红）
 数据: 覆盖面显式登记（设计 §5.3）：非派生面 1 条（C2 的 MENU_TREE 码列为何不属本面）+ 未覆盖面 5 条（自建岗位读不到 · bmini/worker-h5 不在射程 · units 的 label/icon/组序有意不搬 · 残留与 gap 的存废归 P4 人裁定 · 运行时未取证）逐条写在 NON_DERIVED_FACES / UNCOVERED_FACES（含 reason/owner/issue，只许缩短）
 跳过: [backend-contract] RBAC「页面 → 码」派生层与现值的逐值对账（既有解析器四跳现取 + Python 标准库）由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
@@ -3663,7 +3663,22 @@
 ```
 溯源: 2026-10-02 新增（issue #5970；用户当日逐字裁定「选了 A+B 两项」，开单要求由用户给出）。A = `docs/wiki/Change-Blast-Radius.md`（变更面 → 必跑具名判据 → 可复制命令，7 行实测红证）；B = `.github/growth_gate.py` 的**非阻塞**射程提示（命中射程路径 ⇒ 打印「你还欠这几张登记面」+ 各给命令）。落码 = ① `.github/scripts/blast_radius.py`（**单一数据源**：8 个面 / 17 条具名判据 + 可复制命令）② `growth_gate` 接线（独立段 + `--json` 新字段 `blast_radius`，**不动 blocker_count 语义**）③ 人读镜像文档 ④ 两份判据文件 15 条（注册表 9 + 接线 6，含注入式反面「射程表清空 ⇒ 提示消失且 blocker 不变」）⑤ 7 行注入式红证（读数见本用例 data_checks 与文档表）。取号 **MC-061**：现取 main 最大 = **MC-060**（`grep -o 'id: MC-[0-9]*' .github/cases/misc.yml | sort -t- -k2 -n | tail -1`），本包开工时现取在飞分支（含 `feat/4923-craft-config-query`）最大亦为 MC-060 ⇒ 按「当前最大号 +1」取 **MC-061**（沿用 MC-054~060 的「空档号 ≠ 可用号」先例）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ **谁后合并谁** `./scripts/sync-main.sh --rebase` 并**重渲染**（生成物不许手改、二次渲染零 diff）。 ｜ tags: ci, blast-radius, growth-gate, registry, red-proof, fail-closed
 
-### MC-062. 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短 🔵
+### MC-062. 菜单码 ⊆ 路由守卫覆盖（C5）：带 permissionCode 的菜单节点必须被 ROUTE_PERMISSION_MAP 覆盖到**同一个码**，且 (dashboard) 下每条页面路由都有生效守卫码（唯一豁免由单一真值源派生 = 全员可见页） 🔵
+```
+你: 当有人给菜单节点加了 permissionCode（或给已有码的节点换了路径）却没有把对应前缀补进前端路由守卫表时，必须有东西**具名**变红（不许出现「菜单里看不见、地址栏直达却畅通」）；反之，把守卫表里某个前缀摘掉、或新增一个既没码也没守卫的页面时，同样必须变红
+期望: direct_reply
+数据: 🔴 **判据交付面（实例面 + 类级元守卫，两条）**：tests/unit_ci_workflows/test_rbac_derived_pages.py::test_every_menu_code_node_is_covered_by_the_route_guard（C5①：带码节点的 `path` 上的**生效守卫码**必须逐字等于节点码；未覆盖/不等即**具名**）与 ::test_every_dashboard_page_route_resolves_to_a_guard_code（C5②：`app/(dashboard)/**/page.tsx` 的每条路由都要有生效守卫码）。两条都带**内存注入的对照臂**（把 `/inbound-orders`、`/agent-workspace` 从守卫表里摘掉 ⇒ 必须具名报出）——「判据本体绿」不等于「它有判别力」。
+数据: **红读数（修复前，本机实测）**：`python3 -m pytest tests/unit_ci_workflows/test_rbac_derived_pages.py -q -k "route_guard or dashboard_page_route"` ⇒ C5① `带 permissionCode 的菜单节点 = 21 个 / 守卫码不一致 = 2 项`（『在线接待』`/agent-workspace/human-sessions` 期望 `agent:session` 实得 `None`；『入库单』`/inbound-orders` 期望 `inbound:view` 实得 `None`）；C5② `(dashboard) 页面路由 = 40 条 / 有守卫码 = 34 条 / 无守卫码 = 5 条`（`/agent-workspace`、`/agent-workspace/sessions`、`/agent-workspace/human-sessions`、`/inbound-orders`、`/inbound-orders/new`）+ 1 条**派生豁免**（`/notifications`：单一真值源该页 `gate` 为空）⇒ 与 issue #5977 的「无守卫路由 6/39」逐条对上。
+数据: **绿读数（修复后）**：同一条命令 ⇒ C5① `不一致 = 0`；C5② `(dashboard) 页面路由 = 40 条 / 有守卫码 = 39 条 / 无守卫码 = 0 条`（`/notifications` 走派生豁免）；`tests/unit_ci_workflows/test_rbac_derived_pages.py` 全文件 **17 passed**。
+数据: 🔴 **6 条路由各自的码与依据（逐条对照 `config/menu.ts` 的 `permissionCode`）**：① `/inbound-orders` → `inbound:view`（菜单节点『入库单』码 = `rbac/manifest.json` 该页 `gate` = `backend/admin-api` 的 `InboundOrderController` 读码，三处同码）；② `/inbound-orders/new` → 同码且**不单列前缀**（父前缀 `/inbound-orders` 已覆盖；更宽的父前缀排在前面会让子路径成为 `find()` 永不命中的死条目 ⇒ 判据 11① 判红）；③ `/agent-workspace/human-sessions` → `agent:session`（菜单节点『在线接待』码 = 该页 `gate` = `AgentSessionController` 类级码）；④ `/agent-workspace/sessions` → `agent:session`（会话监控页与 `/chat` 共用同一份 `chatApi` / `useChatStore`，同属 AI 会话面，该域唯一码）；⑤ `/agent-workspace` → `agent:session`（根是**重定向占位页**，与子树同码）；⑥ `/notifications` → **不登记、不造码**：菜单节点**无 `permissionCode`**（全员可见，与顶栏铃铛同源）+ 清单该页 `gate` 为空 + 读端点无 `@RequirePermission`（只有『发送』挂 `system:manage`）⇒ 凭空的码反而会让 C4（守卫码 == 该页 `gate`）判红。
+数据: **C5 是闭环的另一半（为什么 C4 不够）**：C4 只判「守卫表的每个前缀 → 必须是某页 `path` 的投影 / 别名 / 具名例外」；本缺陷形态是**守卫表里根本没有这一项** ⇒ 在 C4 的键空间里是**空集**。C5 从**菜单源**反查守卫表，两侧共用**同一份**现取（`parse_menu_ts_nodes` / `parse_route_guard`，不另造解析器），豁免**派生**（清单 `gate` 为空）而**不是**新手写台账。
+数据: **同批登记（改守卫表必改，缺一条即红）**：① `rbac/manifest.json` 的 `route_guard` +2 条（`/agent-workspace`、`/inbound-orders`）② `rbac/readings.json` 重生成（`test_generated_readings_are_fresh` + 清单 vs 生成物零 delta）③ tests/unit_ci_workflows/test_agent_permission_parity.py 的 `ROUTE_MENU_ANCHORS` +2（判据 11③：未登记即红）④ tests/unit_ci_workflows/test_rbac_derived_pages.py 的 `ROUTE_PREFIX_EXCEPTIONS` +1（`/agent-workspace` = 子树父前缀，不是任何一页的 `path`）—— **该账台上限 3 → 4 是同 PR 显式上调**（diff 里看得见）：不是放宽门禁，而是把本次修复**新引入的非派生前缀**登记进来（不登记才是假绿）；台账**仍只许缩短**（销掉任一条 ⇒ 红）。
+数据: **覆盖面（如实登记）**：C5② 也兜住「新增页面既没码也没守卫就上线」这一形态（issue #5977 的 6/39 正是这么数出来的）；但它判不了运行时可见性（真租户 / 真库上「这个岗位看不看得见这一页」），那一条归多模态验收与后端 @RequirePermission（本单的 API 侧 403 已在验收里实测）。
+跳过: [backend-contract] 静态结构判据（零 LLM、秒级、只读仓内文本 + 内存注入）由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的 C5 面验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #5976 + #5977；用户当日多角色隔离验收后裁定「全部开单处理掉」）。两单同族：菜单有码、守卫无码 ⇒ 直达不被拦。修复 = `ROUTE_PERMISSION_MAP` 补 `/inbound-orders`（`inbound:view`）与 `/agent-workspace`（`agent:session`，一条父前缀覆盖根 / `sessions` / `human-sessions`）；`/notifications` 有意不造码（全员可见，豁免由清单派生）。固化 = C5 两条判据（实例 + 类级元守卫，含内存注入对照臂）。取号 **MC-062**：开工时现取 main 最大 = **MC-061**，本分支现取亦为 MC-061 ⇒ 按「当前最大号 +1」取 MC-062。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ **谁后合并谁** `./scripts/sync-main.sh --rebase` 并**重渲染**（生成物不许手改、二次渲染零 diff）。 ｜ tags: rbac, route-guard, meta-guard, defense-in-depth, red-proof, fail-closed
+
+### MC-063. 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短 🔵
 ```
 你: 在 (dashboard)/**/page.tsx 上新增一个「新增 X / 新建 X / 登记 X」写按钮，却没在按钮上接写权限码（#5983 的形态）
 期望: direct_reply
@@ -3677,7 +3692,7 @@
 跳过: [backend-contract] 静态结构守卫（只读仓内文本 + 内存注入；零网络、零时钟、不跑被引用的测试）由 pytest 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-10-02 新增（issue #5983 铁律 8 的类级固化）：修四页（orders / products / inbound-orders / finance 的写按钮按写码显隐）只是**实例面**；本条把「列表页写按钮漏接权限」钉成未登记即红 —— 扫描 `frontend/admin-web/src/app/(dashboard)/**/page.tsx`（排除 `…/new/page.tsx`，那是建单页本身）里「整行 = 新增/新建/**登记**标签」的写按钮，必须同文件引用 `hasPermission(...)` 或登记进 tests/unit_ci_workflows/list_page_write_button_ledger.json（台账只许缩短、冻结上限与条数**现取**）。词汇表含「登记」的原因见 ui.yml 的 UI-081：`/finance` 的按钮叫「登记收支」，只认「新增/新建」会把它漏在射程外（正是本判据要防的「看着覆盖了、其实没覆盖」）。存量豁免 5 条 = after-sales / knowledge / production·processing / production·routings / roles（同类缺口，不在本 PR 范围，如实登记待办）。取号 MC-062：按「当前最大号 +1」（现取 main 最大 = MC-061；沿用 MC-054~061 的「空档号 ≠ 可用号」先例，故不采用取号工具给出的历史空档 MC-049）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。 ｜ tags: ci, guard, rbac, frontend
+溯源: 2026-10-02 新增（issue #5983 铁律 8 的类级固化）：修四页（orders / products / inbound-orders / finance 的写按钮按写码显隐）只是**实例面**；本条把「列表页写按钮漏接权限」钉成未登记即红 —— 扫描 `frontend/admin-web/src/app/(dashboard)/**/page.tsx`（排除 `…/new/page.tsx`，那是建单页本身）里「整行 = 新增/新建/**登记**标签」的写按钮，必须同文件引用 `hasPermission(...)` 或登记进 tests/unit_ci_workflows/list_page_write_button_ledger.json（台账只许缩短、冻结上限与条数**现取**）。词汇表含「登记」的原因见 ui.yml 的 UI-081：`/finance` 的按钮叫「登记收支」，只认「新增/新建」会把它漏在射程外（正是本判据要防的「看着覆盖了、其实没覆盖」）。存量豁免 5 条 = after-sales / knowledge / production·processing / production·routings / roles（同类缺口，不在本 PR 范围，如实登记待办）。取号 MC-063（**让号**：#6001 已合入并占用 MC-062 ⇒ 按「后合入者让号」顺延）：按「当前最大号 +1」（现取 main 最大 = MC-061；沿用 MC-054~061 的「空档号 ≠ 可用号」先例，故不采用取号工具给出的历史空档 MC-049）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。 ｜ tags: ci, guard, rbac, frontend
 
 ## 商家入驻域（5 case）
 
@@ -8760,7 +8775,7 @@
 数据: 🔴 红证 2（第 4 页加入时实测，2026-10-02）：先落判据 5、`/finance` 尚未接码时跑 ⇒ **1 failed / 4 passed**（`expected document not to contain element, found <button …>登记收支</button>`）；接码后 **5 passed**
 跳过: [backend-contract] 纯前端展示面（按钮是否渲染）由 vitest（jsdom）执行；「提交时后端 403」属 admin-api 权限链（另有用例），本用例不管，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-02 新增（issue #5983，P2·权限·UI）：12 格「页面可进 + 按钮可点 + 账号无写权限」的**实例判据**（页 × 无码/有码两条读数，缺一不可）+ 同批类级元守卫 = tests/unit_ci_workflows/test_list_page_write_button_gate.py（MC-062）。**范围后扩一次（链内同修，铁律 12(b)①）**：`/finance` 的「登记收支」同为该形态（页面守卫 `finance:view`，写面 `finance:create`；issue 把它当「正确范式」是**空真** —— 能进该页的岗位恰好都有写码），同 PR 同范式接码并补判据 5（红证 2）。取号 UI-081（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-080）。 ｜ tags: ui, rbac, button-gate, admin-web
+溯源: 2026-10-02 新增（issue #5983，P2·权限·UI）：12 格「页面可进 + 按钮可点 + 账号无写权限」的**实例判据**（页 × 无码/有码两条读数，缺一不可）+ 同批类级元守卫 = tests/unit_ci_workflows/test_list_page_write_button_gate.py（MC-063）。**范围后扩一次（链内同修，铁律 12(b)①）**：`/finance` 的「登记收支」同为该形态（页面守卫 `finance:view`，写面 `finance:create`；issue 把它当「正确范式」是**空真** —— 能进该页的岗位恰好都有写码），同 PR 同范式接码并补判据 5（红证 2）。取号 UI-081（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-080）。 ｜ tags: ui, rbac, button-gate, admin-web
 
 ## 跨切面工具域（2 case）
 
@@ -8791,8 +8806,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：614（活跃 133，跳过 481）
-- tier 分布：smoke 12 / normal 569 / adversarial 31
+- 用例总数：615（活跃 133，跳过 482）
+- tier 分布：smoke 12 / normal 570 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：20
@@ -8807,7 +8822,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：59
+- 杂项域：60
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -8895,7 +8910,8 @@
 - MC-059: deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#`
 - MC-060: 「剥注释实现全仓只许一份」的唯一性守卫扫描面扩到**整仓**（issue #5948）：口径显式收紧为**精确名 + 词边界**（不卷进 4 族同名不同义的实现）、**自匹配**（守卫自己）具名排除、nginx 语义那条**具名豁免且只许缩短**（不再命中 ⇒ 陈旧红）、`tests/**` 里再写一份同名同义实现 ⇒ 判红并具名
 - MC-061: 变更射程 → 必跑具名判据：射程注册表（面 → 具名判据 → 可复制命令）与 growth_gate 的**非阻塞**提示同源，两者漂移即红；射程表清空 ⇒ 提示消失而 blocker_count 不变
-- MC-062: 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短
+- MC-062: 菜单码 ⊆ 路由守卫覆盖（C5）：带 permissionCode 的菜单节点必须被 ROUTE_PERMISSION_MAP 覆盖到**同一个码**，且 (dashboard) 下每条页面路由都有生效守卫码（唯一豁免由单一真值源派生 = 全员可见页）
+- MC-063: 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

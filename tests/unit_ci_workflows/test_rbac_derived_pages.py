@@ -1,4 +1,4 @@
-# case_ids: MC-032, MC-033, MC-034
+# case_ids: MC-032, MC-033, MC-034, MC-062
 """RBAC 单一真值源 **P3**：由清单 `pages[]` **派生「页面 → 码」**（跟踪单 issue #5699）。
 
 设计真值源 = `docs/design/rbac-single-source.md` 的 **§4 的 P3 行**（「由清单 `pages[]` 生成
@@ -93,8 +93,9 @@ P3_COPY_FACES = ("page-first-screen-anchors", "page-parity-residual-ledger", "ro
 
 
 #: C4 面里**不以页面 `path` 出现**的前缀 —— 逐条具名 + 理由（只许缩短）。
-#: 前三条**没有对应页面**（路由常量 ≠ 页面：入口在别的页面里 / 已并入别的页面）；
-#: `/processing` 是**同一页的第二前缀**（该页 `path` 是 `/production/processing`）。
+#: 各条**都没有单一对应页面**（路由常量 ≠ 页面）：入口在别的页面里（`/categories`）/
+#: 已并入别的页面（`/processing-orders`）/ 会话页无节点（`/chat`）/ **子树父前缀**（`/agent-workspace`，
+#: issue #5977）；`/processing` 走的是另一张表（**同一页的第二前缀**，该页 `path` 是 `/production/processing`）。
 ROUTE_PREFIX_ALIASES = {
     "/processing": "加工项管理",
 }
@@ -102,6 +103,18 @@ ROUTE_PREFIX_EXCEPTIONS = {
     "/chat": (
         "会话页没有侧边栏节点（「在线接待」的 `path` 是 `/agent-workspace/human-sessions`）"
         "⇒ 该前缀不属「页面 → 码」面（判据 11③ 的 `ROUTE_WITHOUT_MENU_NODE` 同款理由）"
+    ),
+    # issue #5977：`/agent-workspace` 是**子树父前缀**（根 = 重定向占位页 / `sessions` = 会话监控
+    # 都**没有侧边栏节点**；子树唯一在册页面是 `/agent-workspace/human-sessions`）⇒ 它本身不是
+    # 任何一页的 `path`，按本台账的口径必须**具名**。
+    # 🔴 **本条目让本账台上限 3 → 4（同 PR 显式、diff 里看得见）**：不是放宽门禁，而是把本次修复
+    # **新引入的守卫前缀**登记进来 —— 台账的机制就是「非派生前缀必须具名」，不登记才是假绿。
+    # 台账**仍只许缩短**（销掉任一条 ⇒ 红）；码与「在线接待」节点逐字同码（`ROUTE_PREFIX_ALIASES`
+    # 的语义是「同一页的第二前缀」，与本条不同 ⇒ 不走别名）。
+    "/agent-workspace": (
+        "客服工作台子树的**父前缀**（覆盖 `/agent-workspace`、`/agent-workspace/sessions`、"
+        "`/agent-workspace/human-sessions`）—— 根与会话监控都没有侧边栏节点，故不属"
+        "「页面 → 码」面（同 `/chat` 的理由）；子树唯一码 = 「在线接待」节点的 `agent:session`"
     ),
     "/categories": (
         "分类管理**没有独立侧边栏节点**（入口在商品列表页内）⇒ 不属「页面 → 码」面"
@@ -447,6 +460,106 @@ def route_guard_problems(derived: dict, present: dict) -> list[str]:
     return out
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# C5 面：**菜单码 ⇒ 路由守卫覆盖**（issue #5976 / #5977 的类级元守卫）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 病（2026-10-02 多角色验收实测的两个同族缺陷）：`config/menu.ts` 的节点**有码**（菜单里隐藏），
+# 而 `frontend/admin-web/src/app/(dashboard)/layout.tsx` 的 `ROUTE_PERMISSION_MAP` **覆盖不到它的
+# 路由** ⇒ 地址栏直达**不被 403 拦截**、页面照常渲染（后端接口仍 403 ⇒ 不越权，但「看得见却做不了」）：
+#   · #5976：`/inbound-orders`（菜单码 `inbound:view`，守卫表**根本没有这一项**）；
+#   · #5977：`/agent-workspace/*`（守卫表只有 `/chat` → `agent:session`，覆盖不到该子树）。
+#
+# 🔴 **C4 抓不到这一形态**：C4 判的是**反方向**（守卫表的每个前缀 → 必须是某页的投影或具名例外）——
+# 「菜单有码、守卫表里**没有这一项**」在 C4 里是**空集**（没有前缀可判）⇒ 必须补这一面才闭环。
+#
+# 判据两侧都**现取**、不另造解析器、不另开手写台账：
+#   ① 节点码 + 节点路径 = 现取 `config/menu.ts`（经 `present_faces()['pages']`，P3 的同一份投影）；
+#   ② 守卫表 = 现取 `layout.tsx` 的 `ROUTE_PERMISSION_MAP`（`parse_route_guard`，**保持源序**）。
+# 豁免**派生**而非手写：某条页面路由**没有**守卫码 **iff** 单一真值源声明该页 `gate` 为空（全员可见）。
+
+
+def guard_entries(present: dict) -> tuple[tuple[str, str], ...]:
+    """现值守卫表（**保持源序**；`derive.page_present` 给的是 `[[prefix, code], …]`）。"""
+    return tuple((str(p), str(c)) for p, c in present["route_guard"])
+
+
+def effective_guard_code(route: str, guards) -> str | None:
+    """`layout.tsx` 的**运行时**语义：**首个**前缀命中即短路（`find()`），**不是**最长匹配。
+
+    逐字对齐渲染路径（`pathname.startsWith(r.prefix)` 的源序首个命中）—— 用最长匹配会与运行时
+    给出不同答案，判据就失去意义（判据 11① 正是为「顺序会改变结果」而立）。
+    """
+    for prefix, code in guards:
+        if route.startswith(prefix):
+            return code
+    return None
+
+
+def dashboard_page_routes() -> list[str]:
+    """`app/(dashboard)/**/page.tsx` → 路由路径（**动态段原样保留**：`startsWith` 语义下等价）。
+
+    路由组名 `(dashboard)` 不进 URL ⇒ 取相对该目录的路径；该目录自身的 `page.tsx`（若有）= `/`。
+    """
+    root = load_parity_guard().DASHBOARD_APP
+    assert root.is_dir(), f"页面目录不存在：{root}（路径漂移 ⇒ 红，不得静默扫空）"
+    routes = []
+    for page in sorted(root.rglob("page.tsx")):
+        rel = page.parent.relative_to(root).as_posix()
+        routes.append("/" if rel == "." else f"/{rel}")
+    assert len(routes) >= 30, f"只扫到 {len(routes)} 条页面路由 ⇒ 判据在扫空气（fail-closed）"
+    return routes
+
+
+def menu_code_route_guard_problems(present: dict) -> list[str]:
+    """C5①：**带 `permissionCode` 的每个菜单节点**，其 `path` 上的生效守卫码必须**逐字相等**。
+
+    码为 `None`（守卫表没有覆盖它的前缀）或码不等 ⇒ **具名**报出 —— 这正是 #5976 / #5977 的形态。
+    无码节点（如通知中心：全员可见）**不在本面**（它本就不该有守卫码）。
+    """
+    guards = guard_entries(present)
+    out: list[str] = []
+    for page in present["pages"]:
+        gate = page["gate"]
+        if not gate:
+            continue
+        code = effective_guard_code(str(page["path"]), guards)
+        if code != str(gate):
+            out.append(
+                f"『{page['name']}』（`{page['path']}`）菜单码 = `{gate}`，而路由守卫给出的码 = "
+                f"{code!r} ⇒ **菜单隐藏、地址栏直达不被拦**（`ROUTE_PERMISSION_MAP` 缺该前缀）"
+            )
+    return out
+
+
+def unguarded_dashboard_routes(present: dict, manifest: dict) -> list[str]:
+    """C5②：`app/(dashboard)/**` 的**每一条**页面路由都必须有生效守卫码。
+
+    无守卫码时**只**接受一种情形（**派生豁免**，不另开台账）：单一真值源 `rbac/manifest.json` 的
+    `pages[]` 里该 `path` 的 `gate` **显式为空**（= 该页全员可见）。其余一律具名 —— 含「清单里
+    根本没有这一页」（= 新页面既没码也没守卫，静默直达，issue #5977 的 6/39 就是这么数出来的）。
+    """
+    guards = guard_entries(present)
+    gates = {str(p["path"]): p["gate"] for p in manifest["pages"]}
+    out: list[str] = []
+    for route in dashboard_page_routes():
+        if effective_guard_code(route, guards):
+            continue
+        if route in gates and not gates[route]:
+            continue
+        if route in gates:
+            out.append(
+                f"路由 `{route}` 没有任何守卫码，而单一真值源声明该页 `gate` = `{gates[route]}` "
+                "⇒ 菜单按码隐藏、地址栏直达不被拦"
+            )
+        else:
+            out.append(
+                f"路由 `{route}` 既没有守卫码、也不在清单 `pages[]` 里 ⇒ 新增页面必须二选一："
+                "进 `ROUTE_PERMISSION_MAP`（有码）或在清单里声明为无码页（全员可见）"
+            )
+    return out
+
+
 def visibility_problems(derived: dict, present: dict, manifest: dict) -> list[str]:
     """逐页可见性：**规则合法性 + 派生 == 现值要求 + gap 台账双向闭合 + 投影岗位集逐值**。"""
     derive = load_derive()
@@ -530,8 +643,8 @@ def coverage_problems() -> list[str]:
         out.append(f"动作节点台账 {len(ACTION_NODE_CODES)} 条 > 上限 4（只许缩短）")
     if len(MENU_CODE_MISMATCHES) > 1:
         out.append(f"码列不一致台账 {len(MENU_CODE_MISMATCHES)} 条 > 上限 1（只许缩短）")
-    if len(ROUTE_PREFIX_EXCEPTIONS) > 3:
-        out.append(f"无页面前缀台账 {len(ROUTE_PREFIX_EXCEPTIONS)} 条 > 上限 3（只许缩短）")
+    if len(ROUTE_PREFIX_EXCEPTIONS) > 4:
+        out.append(f"无页面前缀台账 {len(ROUTE_PREFIX_EXCEPTIONS)} 条 > 上限 4（只许缩短）")
     if len(ROUTE_PREFIX_ALIASES) > 1:
         out.append(f"前缀别名台账 {len(ROUTE_PREFIX_ALIASES)} 条 > 上限 1（只许缩短）")
     if len(ROUTE_GUARD_GATE_MISMATCHES) > 1:
@@ -582,8 +695,9 @@ def test_derived_page_faces_match_present_values():
         f"── P3 逐值比对项数 = {counted}（**口径**：六个投影面摊平到叶的 `(路径, 值)` 对总数 ——"
         "C1 按「节点 → 码」逐节点一项（28）、第一屏码按「页 → 逐码」展开（24）、"
         "units 按「页 → 码 → 逐端点」展开（27）、多码页 3 项、残留页 6 项、可见性按「页 → 规则 + 岗位集」"
-        "逐页一项（21）。**另有两条不走摊平的面**：C4 按前缀逐条比（19 条 = 15 直接命中 + 1 别名 +"
-        " 3 无页面），C2/C3 的码列逐条比（24 + 14 = 38 条，含 4 个**动作节点**与 1 处具名不一致）"
+        "逐页一项（21）。**另有两条不走摊平的面**：C4 按前缀逐条比（22 条 = 17 直接命中 + 1 别名 +"
+        " 4 无页面 —— 末一条是 issue #5977 新登记的 `/agent-workspace`），C2/C3 的码列逐条比"
+        "（24 + 14 = 38 条，含 4 个**动作节点**与 1 处具名不一致）"
         "⇒ 全部逐项点名，**不一致 = 0**）──"
     )
     problems = (
@@ -928,3 +1042,66 @@ def test_unreconciled_segment_is_red():
     finally:
         p1.RECONCILED_SEGMENTS = original
     assert any("RECONCILED_SEGMENTS" in p for p in problems), f"段被移出对账后没报出：{problems}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# C5 的两条判据（实例面 + 类级元守卫；红证 = 内存构造「把守卫摘掉」的对照臂）
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def test_every_menu_code_node_is_covered_by_the_route_guard():
+    """🔴 **类级元守卫**：`config/menu.ts` 里**带 `permissionCode`** 的每个节点，路由守卫必须给**同一个码**。
+
+    这是 #5976 / #5977 的**拦网**：只要「菜单有码、守卫表缺该前缀」再出现一次，本判据当场**具名**报出
+    （C4 判不到这一形态 —— 见本文件 C5 面的注释）。判别力自证放在同一条用例里（内存构造，不碰仓内文件）。
+    """
+    present = present_faces()
+    problems = menu_code_route_guard_problems(present)
+    live = [p for p in present["pages"] if p["gate"]]
+    print(f"── 带 permissionCode 的菜单节点 = {len(live)} 个 / 守卫码不一致 = {len(problems)} 项 ──")
+    assert problems == [], (
+        f"菜单码与路由守卫不一致（共 {len(problems)} 项）—— 菜单按码隐藏、地址栏直达不被拦：\n"
+        + "\n".join(f"  · {p}" for p in problems)
+        + "\n出口：把该页前缀补进 `frontend/admin-web/src/app/(dashboard)/layout.tsx` 的"
+        " `ROUTE_PERMISSION_MAP`（码 = 菜单节点码）。"
+    )
+
+    mutated = copy.deepcopy(present)
+    mutated["route_guard"] = [
+        e for e in present["route_guard"] if str(e[0]) != "/inbound-orders"
+    ]
+    assert mutated["route_guard"] != present["route_guard"], "变异注入未生效（自证失败）"
+    hits = menu_code_route_guard_problems(mutated)
+    assert any("入库单" in h for h in hits), f"摘掉 `/inbound-orders` 守卫后没被判红：{hits}"
+
+
+def test_every_dashboard_page_route_resolves_to_a_guard_code():
+    """**实例面**：`app/(dashboard)/**` 的每条页面路由都必须有生效守卫码（issue #5977 的 6/39 判据）。
+
+    唯一豁免 = 单一真值源 `rbac/manifest.json` 声明该页 `gate` 为空的页（现取 1 条：`/notifications`
+    —— 菜单节点无码、读端点无 `@RequirePermission`，全员可见 ⇒ **不造码**、也不给它一个空守卫）。
+    判别力自证：内存摘掉 `/agent-workspace` ⇒ 该子树未被覆盖的子路由必须具名报出。
+    """
+    present, manifest = present_faces(), load_manifest()
+    problems = unguarded_dashboard_routes(present, manifest)
+    routes = dashboard_page_routes()
+    guarded = sum(1 for r in routes if effective_guard_code(r, guard_entries(present)))
+    print(
+        f"── (dashboard) 页面路由 = {len(routes)} 条 / 有守卫码 = {guarded} 条 / 无守卫码 = {len(problems)} 条 ──"
+    )
+    assert problems == [], (
+        f"`(dashboard)` 下有 {len(problems)} 条路由没有生效守卫码：\n"
+        + "\n".join(f"  · {p}" for p in problems)
+        + "\n出口：进 `ROUTE_PERMISSION_MAP`（有码页）或在 `rbac/manifest.json` 的 `pages[]` 里"
+        "声明该页 `gate` 为空（全员可见页，须与菜单节点「无 permissionCode」一致）。"
+    )
+
+    mutated = copy.deepcopy(present)
+    mutated["route_guard"] = [
+        e for e in present["route_guard"] if str(e[0]) != "/agent-workspace"
+    ]
+    assert mutated["route_guard"] != present["route_guard"], "变异注入未生效（自证失败）"
+    hits = unguarded_dashboard_routes(mutated, manifest)
+    assert any("agent-workspace/sessions" in h for h in hits), (
+        f"摘掉 `/agent-workspace` 守卫后没被判红：{hits}"
+    )

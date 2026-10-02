@@ -1,4 +1,4 @@
-# case_ids: MC-062
+# case_ids: MC-063
 """类级元守卫（issue #5983 铁律 8）：**列表页写按钮漏接权限**进不来。
 
 病（#5983）：`(dashboard)/**/page.tsx` 的页面守卫取的是**读**码（`order:list` / `product:list` /
