@@ -2997,7 +2997,7 @@ cases:
       - "判据 2：销售（有 product:list、无 product:create）在 /products 看不到「新增商品」；运营看得到。执行点 = 同文件「判据 2」"
       - "判据 3：财务（有 inbound:view、无 inbound:create）在 /inbound-orders 看不到「新建入库单」；运营看得到。执行点 = 同文件「判据 3」"
       - "判据 4（对照，防「一刀切隐藏」）：只持 order:create 时只有订单页按钮在场，另两页按钮不在。执行点 = 同文件「判据 4」"
-      - "🔴 红证（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复后跑本判据 ⇒ **4 failed / 4**（报错形态逐字为 `expected document not to contain element, found <button …>新增商品</button>`）；恢复修复后 **4 passed**。复算命令 = `cd frontend/admin-web && npx vitest run tests/unit/pages/list-write-button-permission.test.tsx`"
+      - "🔴 红证（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复后跑本判据 ⇒ **4 failed / 4**（报错形态逐字为 `expected document not to contain element, found <button …>新增商品</button>`）；恢复修复后 **4 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx`"
     skip_reason: "[backend-contract] 纯前端展示面（按钮是否渲染）由 vitest（jsdom）执行；「提交时后端 403」属 admin-api 权限链（另有用例），本用例不管，不进入 agent-eval 冒烟"
     merge_log: "2026-10-02 新增（issue #5983，P2·权限·UI）：12 格「页面可进 + 按钮可点 + 账号无写权限」的**实例判据**（三页 × 无码/有码两条读数，缺一不可）+ 同批类级元守卫 = tests/unit_ci_workflows/test_list_page_write_button_gate.py（MC-062）。取号 UI-081（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-080）。"
     traces:
