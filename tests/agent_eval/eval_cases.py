@@ -3989,6 +3989,42 @@ _CASE_MC_004 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-005 [NORMAL] RBAC 岗位目录读端点的权限注解守卫（AdminRoleController 逐端点台账 + 有意的跨码登记）（源: cases/misc.yml）──
+_CASE_MC_005 = EvalCase(
+    id='MC-005',
+    legacy_id='',
+    title='RBAC 岗位目录读端点的权限注解守卫（AdminRoleController 逐端点台账 + 有意的跨码登记）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 AdminRoleController（`/api/admin/roles/**`）新增/改动端点却没登记它要哪把权限码，或已登记的注解被删/被改成别的码，或注解里的码不在权限目录里，或 `/api/admin/**` 上「无任何生效码」的端点总数增长时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**判据 1+2（未登记即红 / 注解被删即红）**：controller 每个端点必须登记；`decision=annotated` 的条目现取生效码必须非空且逐字等于台账值 —— 摘掉 `@RequirePermission` ⇒ 当场红（issue #5980 的修前形态）', '**判据 3（三条读码逐值冻结）**：`GET /api/admin/roles` = `system:view`（岗位权限页第一屏）、`GET /api/admin/roles/all` = `employee:list`（员工管理页岗位下拉）、`GET /api/admin/roles/{id}` = `system:view` —— 少一条 / 改一个码 ⇒ 红', '**判据 4**：生效码必须在权限目录（`RegistrationService` 种子）里 —— 拼错 ⇒ 该端点对所有角色恒 403 ⇒ 红', '**判据 5（对照读数只许缩短）**：`/api/admin/**` 上「无任何生效码」的端点总数 ≤ 10（修前实测 13，本单 -3）；增长 ⇒ 红，缩短后须调低台账读数（台账读数与现取不一致亦红）', '**判据 6（判别力自证）**：五种坏形态（新增无注解读端点 / 摘掉注解 / 幽灵台账条目 / 码拼错 / 重新标 exempt）在**内存构造的源码**上各自判红；只改注释 ⇒ **不红**（对照读数）', "**跨码面（真值在同 PR 的判据 2）**：`/roles/all` 与米宝 `role_manage` 工具跨码（页面守卫 `employee:list` vs 工具 `system:view`）⇒ 具名登记在 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`，未登记/陈旧 ⇒ 判据 2 红", '**覆盖面照实登记**：判据只裁这一个 controller（其余 `/api/admin/**` 无码端点归既有 `UNANNOTATED_ENDPOINTS` 台账）；判「注解面」不判运行时授权（运行时身份级读数在 SecurityConfigTest）'],
+    skip_reason='[backend-contract] 注解面 / 台账的离线判据（零 LLM、秒级；只读源码文本，不连库/不跑 LLM）由 tests/unit_ci_workflows/test_admin_role_read_surface_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'permission-annotation', 'endpoint-ledger', 'class-level-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-006 [NORMAL] RBAC 岗位目录读端点的身份级鉴权（9 身份：无 employee:list/system:view ⇒ 403，持有者 ⇒ 200）（源: cases/misc.yml）──
+_CASE_MC_006 = EvalCase(
+    id='MC-006',
+    legacy_id='',
+    title='RBAC 岗位目录读端点的身份级鉴权（9 身份：无 employee:list/system:view ⇒ 403，持有者 ⇒ 200）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当商户员工（含 0 权限的自定义岗位）能读到 `GET /api/admin/roles` / `/roles/all`，或持有对应读码的岗位反而被拒（岗位下拉/岗位权限页 403），或 customer / worker 访问 `/api/admin/roles/all` 不再 403 时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**拒绝半（修前形态）**：0 权限自定义岗位读 `/roles/all` 与 `/roles` ⇒ **403 且 `error.code = PERMISSION_DENIED`**，且服务层一次都没被调用（负向控制：旧实现无注解会放到服务层 ⇒ `verify(never())` 会红）', '**正向对照（零回归）**：持 `employee:list` 读 `/roles/all` ⇒ **200**（员工管理页岗位下拉）；持 `system:view` 读 `/roles` 与 `/roles/{id}` ⇒ **200**（岗位权限页第一屏与回显）', '**垂直越权不回归**：`customer` / `worker` 读 `/roles/all` ⇒ 403（门禁分支 ② 先拒，不进权限码判定，服务层零调用）', '**检索口径**：判据走真实安全过滤链 + `PermissionInterceptor`（`backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java` 的全上下文 Spring 测试 + `MockMvc`），身份与权限集由 `SecurityMockMvcRequestPostProcessors.user` + `roleService.getUserPermissions` 注入 —— 与生产解析顺序（方法级注解优先）逐字一致'],
+    skip_reason='[backend-contract] 身份级 403/200 由 admin-api 的 Spring 集成测（backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'permission-denied', 'identity', 'zero-regression', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-007 [NORMAL] 配置 - 默认值/向后兼容/生产密钥校验（源: cases/misc.yml）──
 _CASE_MC_007 = EvalCase(
     id='MC-007',
@@ -11836,6 +11872,8 @@ ALL_CASES = (
     _CASE_MC_002,
     _CASE_MC_003,
     _CASE_MC_004,
+    _CASE_MC_005,
+    _CASE_MC_006,
     _CASE_MC_007,
     _CASE_MC_008,
     _CASE_MC_009,

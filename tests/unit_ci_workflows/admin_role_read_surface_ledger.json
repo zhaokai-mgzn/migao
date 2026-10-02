@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "issue": "#5980",
+  "_what": "`AdminRoleController`（`/api/admin/roles/**`）端点级**权限注解台账**：每个端点的生效码逐条登记，`annotated` 条目必须与现取一致（注解被删/被改码 ⇒ 红），`exempt`（有意不加码）面**只许缩短**——issue #5980 落地的三条读码之后该面必须为空。判据 = `tests/unit_ci_workflows/test_admin_role_read_surface_guard.py`。",
+  "_why_this_controller": "`docs/wiki/RBAC.md` 的「权限注解面审计（issue #4727）」把 `AdminRoleController` 的三个 GET 列为「该放行（读面）」；issue #5980 收紧了其中两条（见条目）。本台账把这件事从「文档里的散文」变成**逐条会红的机器读数**。",
+  "_scope_note": "只裁这一个 controller。`/api/admin/**` 上其余无码端点由既有台账管（`test_agent_permission_parity.py` 的判据 8 + `UNANNOTATED_ENDPOINTS`，逐条带理由）——本台账**不复制**那份台账（同一事实两处登记 = 又一处并行真值）。",
+  "_invariants": [
+    "条目 key 必须逐字等于 JavaEndpointIndex 现取的 `\"<VERB> <归一化路径>\"`（陈旧/漏登记 ⇒ 红）",
+    "`decision=annotated` 的条目：现取生效码必须非空且逐字等于 `effective_code`",
+    "`decision=exempt` 的条目：现取生效码必须为空（= 真的没注解）；该面只许缩短，issue #5980 后为 0 条",
+    "`GET /api/admin/roles` · `GET /api/admin/roles/all` 必须要求 `employee:list`（员工页岗位下拉的数据源，调用方已持该码）",
+    "`GET /api/admin/roles/{id}` 必须要求 `system:view`（岗位权限页回显，页面守卫即该码）",
+    "全部生效码必须在权限目录（`RegistrationService` 种子）里（拼错 ⇒ 该端点对所有角色恒 403）"
+  ],
+  "admin_scope_unannotated_count": 10,
+  "_admin_scope_unannotated_count_what": "对照读数（只报告、不判对错）：`/api/admin/**` 面上「无任何生效码」的端点**总数**（判据侧现取）。它只许**缩短**——增长说明新增了沉默放行而没有登记。复算：`python3 -c \"import importlib.util,sys;from pathlib import Path;R=Path('.').resolve();spec=importlib.util.spec_from_file_location('t',R/'backend/ai-agent-service/tests/tool_http_attribution.py');m=importlib.util.module_from_spec(spec);sys.modules['t']=m;spec.loader.exec_module(m);J=R/'backend/admin-api/src/main/java/com/migao/admin/controller';srcs={f'com/migao/admin/controller/{p.relative_to(J).as_posix()}':p.read_text(encoding='utf8') for p in J.rglob('*.java')};idx=m.JavaEndpointIndex(java_sources=srcs);print(sum(1 for eps in idx.endpoints().values() for e in eps if e.permission is None and e.path.startswith('/api/admin')))\"`",
+  "entries": [
+    {
+      "endpoint": "DELETE /api/admin/roles/{}",
+      "controller": "com/migao/admin/controller/AdminRoleController.java",
+      "decision": "annotated",
+      "effective_code": "system:manage",
+      "note": "删岗位（写面）；方法级注解，类级无码"
+    },
+    {
+      "endpoint": "GET /api/admin/roles",
+      "controller": "com/migao/admin/controller/AdminRoleController.java",
+      "decision": "annotated",
+      "effective_code": "system:view",
+      "note": "issue #5980：`/roles` 是「岗位权限」页（`/roles`）的**第一屏**读端点（`roleApi.getRoles()`），该页节点码 / 路由守卫码 = `system:view` ⇒ 取该页读码，**该页回显零回归**且无「看得见点不开」"
+    },
+    {
+      "endpoint": "GET /api/admin/roles/all",
+      "controller": "com/migao/admin/controller/AdminRoleController.java",
+      "decision": "annotated",
+      "effective_code": "employee:list",
+      "note": "issue #5980：唯一调用方 = `employeeApi.loadPositions()`（`frontend/admin-web/src/lib/api.ts`），只被「员工管理」页的岗位下拉消费；该页节点码 / 路由守卫码 = `employee:list` ⇒ 取该页读码，**岗位下拉零回归**（取 `system:view` 会让运营的下拉变空）。⚠️ 因**两个页面共用同一条 API 而守卫码不同**，它与米宝 `role_manage` 工具构成跨码 ⇒ 具名登记在 `test_agent_permission_parity.py` 的 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`"
+    },
+    {
+      "endpoint": "GET /api/admin/roles/{}",
+      "controller": "com/migao/admin/controller/AdminRoleController.java",
+      "decision": "annotated",
+      "effective_code": "system:view",
+      "note": "issue #5980：调用方 `roleApi.getRole`（岗位权限页回显），`/roles` 页的路由守卫码就是 `system:view`（`frontend/admin-web/src/app/(dashboard)/layout.tsx` / `config/menu.ts`）⇒ 零回归"
+    },
+    {
+      "endpoint": "POST /api/admin/roles",
+      "controller": "com/migao/admin/controller/AdminRoleController.java",
+      "decision": "annotated",
+      "effective_code": "system:manage",
+      "note": "建岗位（写面）；方法级注解，类级无码"
+    },
+    {
+      "endpoint": "PUT /api/admin/roles/{}",
+      "controller": "com/migao/admin/controller/AdminRoleController.java",
+      "decision": "annotated",
+      "effective_code": "system:manage",
+      "note": "改岗位（写面）；方法级注解，类级无码"
+    }
+  ],
+  "coverage_boundary": [
+    "判据算**注解面**（静态生效码），不是运行时授权：本机无真库 / 无 admin-api 环境（与 #4727 的审计同口径）——运行时身份级读数由 `backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java` 承担",
+    "租户自建岗位（`roles` 表里新建的角色）读不到 ⇒ 复核只覆盖「种子 ∪ 回退」两处岗位来源",
+    "`@RequirePermission` 的**取值选择**（该用哪把码）不设白名单：判据只要求「非空 + 在目录里」——选码是产品裁定",
+    "不判「Agent 工具调用方是否已持该码」：本 controller 的端点无任何 ai-agent 工具消费（判据 2 面外，如实登记）"
+  ]
+}

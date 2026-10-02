@@ -2862,7 +2862,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（62 case）
+## 杂项域（64 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2907,6 +2907,33 @@
 ```
 真值: misc.classifier-classify, misc.classifier-parse-response, misc.classifier-fallback
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: intent, classifier, fallback
+
+### MC-005. RBAC 岗位目录读端点的权限注解守卫（AdminRoleController 逐端点台账 + 有意的跨码登记） 🔵
+```
+你: 当 AdminRoleController（`/api/admin/roles/**`）新增/改动端点却没登记它要哪把权限码，或已登记的注解被删/被改成别的码，或注解里的码不在权限目录里，或 `/api/admin/**` 上「无任何生效码」的端点总数增长时，必须有东西**具名**报出
+期望: direct_reply
+数据: **判据 1+2（未登记即红 / 注解被删即红）**：controller 每个端点必须登记；`decision=annotated` 的条目现取生效码必须非空且逐字等于台账值 —— 摘掉 `@RequirePermission` ⇒ 当场红（issue #5980 的修前形态）
+数据: **判据 3（三条读码逐值冻结）**：`GET /api/admin/roles` = `system:view`（岗位权限页第一屏）、`GET /api/admin/roles/all` = `employee:list`（员工管理页岗位下拉）、`GET /api/admin/roles/{id}` = `system:view` —— 少一条 / 改一个码 ⇒ 红
+数据: **判据 4**：生效码必须在权限目录（`RegistrationService` 种子）里 —— 拼错 ⇒ 该端点对所有角色恒 403 ⇒ 红
+数据: **判据 5（对照读数只许缩短）**：`/api/admin/**` 上「无任何生效码」的端点总数 ≤ 10（修前实测 13，本单 -3）；增长 ⇒ 红，缩短后须调低台账读数（台账读数与现取不一致亦红）
+数据: **判据 6（判别力自证）**：五种坏形态（新增无注解读端点 / 摘掉注解 / 幽灵台账条目 / 码拼错 / 重新标 exempt）在**内存构造的源码**上各自判红；只改注释 ⇒ **不红**（对照读数）
+数据: **跨码面（真值在同 PR 的判据 2）**：`/roles/all` 与米宝 `role_manage` 工具跨码（页面守卫 `employee:list` vs 工具 `system:view`）⇒ 具名登记在 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`，未登记/陈旧 ⇒ 判据 2 红
+数据: **覆盖面照实登记**：判据只裁这一个 controller（其余 `/api/admin/**` 无码端点归既有 `UNANNOTATED_ENDPOINTS` 台账）；判「注解面」不判运行时授权（运行时身份级读数在 SecurityConfigTest）
+跳过: [backend-contract] 注解面 / 台账的离线判据（零 LLM、秒级；只读源码文本，不连库/不跑 LLM）由 tests/unit_ci_workflows/test_admin_role_read_surface_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #5980：`GET /api/admin/roles` 与 `/roles/all` 无 `@RequirePermission` ⇒ 按 `docs/wiki/RBAC.md` 的「放行策略现状」分支 ③ 对全部商户员工开放，含 0 权限岗位）。落码 = `AdminRoleController` 三条读端点的方法级注解（`/roles`·`/roles/{id}` → 既有读码 `system:view`；`/roles/all` → 既有读码 `employee:list`）+ 本判据 test_admin_role_read_surface_guard.py + 端点台账 `admin_role_read_surface_ledger.json`（`exempt` 面落地后为空 = 只许缩短）+ 既有台账三处同步：判据 8 的 `UNANNOTATED_ENDPOINTS` 删三条（陈旧即红）、`CODE_DIVERGENCE_EXCEPTIONS['role_manage']` 新增（上限 1→2，同 diff 显式）、`rbac/manifest.json` 的 `pages[employees|roles].units` 与 `rbac/readings.json` 重生成。**选码口径（逐调用方核对，零回归）**：`/roles/all` 唯一调用方 = `employeeApi.loadPositions()`（员工管理页岗位下拉，该页守卫码 `employee:list`）；`/roles` 是岗位权限页**第一屏**（`roleApi.getRoles()`，该页守卫码 `system:view`）⇒ 各取**该页**的既有读码，**不新增权限码、不改岗位矩阵**。取号 MC-005/006（现取最小空闲号：main ∪ 在飞 PR #5993/#5994 已占 MC-062；#5951 退役留下的空号由本单收回，与那两条无继承关系）。 ｜ tags: rbac, permission-annotation, endpoint-ledger, class-level-guard, red-proof
+
+### MC-006. RBAC 岗位目录读端点的身份级鉴权（9 身份：无 employee:list/system:view ⇒ 403，持有者 ⇒ 200） 🔵
+```
+你: 当商户员工（含 0 权限的自定义岗位）能读到 `GET /api/admin/roles` / `/roles/all`，或持有对应读码的岗位反而被拒（岗位下拉/岗位权限页 403），或 customer / worker 访问 `/api/admin/roles/all` 不再 403 时，必须有东西**具名**报出
+期望: direct_reply
+数据: **拒绝半（修前形态）**：0 权限自定义岗位读 `/roles/all` 与 `/roles` ⇒ **403 且 `error.code = PERMISSION_DENIED`**，且服务层一次都没被调用（负向控制：旧实现无注解会放到服务层 ⇒ `verify(never())` 会红）
+数据: **正向对照（零回归）**：持 `employee:list` 读 `/roles/all` ⇒ **200**（员工管理页岗位下拉）；持 `system:view` 读 `/roles` 与 `/roles/{id}` ⇒ **200**（岗位权限页第一屏与回显）
+数据: **垂直越权不回归**：`customer` / `worker` 读 `/roles/all` ⇒ 403（门禁分支 ② 先拒，不进权限码判定，服务层零调用）
+数据: **检索口径**：判据走真实安全过滤链 + `PermissionInterceptor`（`backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java` 的全上下文 Spring 测试 + `MockMvc`），身份与权限集由 `SecurityMockMvcRequestPostProcessors.user` + `roleService.getUserPermissions` 注入 —— 与生产解析顺序（方法级注解优先）逐字一致
+跳过: [backend-contract] 身份级 403/200 由 admin-api 的 Spring 集成测（backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #5980；与 MC-005 同 PR、同判据面）。行为面读数（修前 / 修后）：修前 `GET /api/admin/roles/all` 对 0 权限岗位返回 **200**、服务层被调用（`verify(roleService, never()).getAllRoles(any())` 会红）；修后 **403 + PERMISSION_DENIED** 且服务层零调用。正向对照同时钉住两头：`employee:list` → `/roles/all` 200、`system:view` → `/roles`·`/roles/{id}` 200（防「一刀切收窄」把岗位下拉与岗位权限页打死）。取号 MC-006（见 MC-005 的取号说明）。 ｜ tags: rbac, permission-denied, identity, zero-regression, red-proof
 
 ### MC-007. 配置 - 默认值/向后兼容/生产密钥校验 🔵
 ```
@@ -8867,8 +8894,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：618（活跃 133，跳过 485）
-- tier 分布：smoke 12 / normal 573 / adversarial 31
+- 用例总数：621（活跃 133，跳过 488）
+- tier 分布：smoke 12 / normal 576 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：20
@@ -8883,7 +8910,7 @@
 - 财务对账域：4
 - 人事域：12
 - 知识问答域：7
-- 杂项域：62
+- 杂项域：64
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -8925,6 +8952,8 @@
 - KN-007: 售后政策类问题走知识卡片检索（双端，P1-2 回归，issue #3064）
 - KN-004: 米宝知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除）
 - KN-008: 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）
+- MC-005: RBAC 岗位目录读端点的权限注解守卫（AdminRoleController 逐端点台账 + 有意的跨码登记）
+- MC-006: RBAC 岗位目录读端点的身份级鉴权（9 身份：无 employee:list/system:view ⇒ 403，持有者 ⇒ 200）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 - MC-016: 工人端 H5 静态落位 app.migaozn.com/w/（CI 自动发布 + 页面身份断言 + 静态根禁删）
 - MC-017: 六个红证机具必须真的有人调用（门禁面 = 前提自检 + 登记表只许增）
