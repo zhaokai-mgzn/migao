@@ -244,7 +244,22 @@ def test_deploy_job_keeps_its_gates(wf):
     assert job["concurrency"]["cancel-in-progress"] is False, (
         f"{wf} 的 `cancel-in-progress` 被改成 true —— 会让并发的部署互相取消（改变语义）"
     )
-    assert doc.get("permissions") == {"contents": "read"}, f"{wf} 的 permissions 被改动"
+    # 🔴 权限面（issue #5941 校准：**不是放宽**，是换成「白名单 + 禁写」的更强形态）：
+    #   ① 底必须是 `contents: read`（不许扩大 contents、不许换写法）
+    #   ② 只许**再加读作用域**，且**只允许** `actions` —— `Skip if already built` 步的
+    #      `gh run list` 需要它（issue #5941 判据 2 明确要求 `permissions: actions: read`；
+    #      runner 上 `gh` 只认 `GH_TOKEN`，而 workflow 级 permissions 一旦显式声明，
+    #      未列出的作用域一律为 `none` ⇒ 缺它时**即使**注入 token 也读不到 runs）。
+    #   ③ **任何** `write` 作用域、或**任何**未登记的作用域 ⇒ 红（防权限升级；旧写法
+    #      `== {"contents": "read"}` 表达的正是这条，这里把它**拆成可判的两条**）。
+    perms = doc.get("permissions") or {}
+    assert perms.get("contents") == "read", f"{wf} 的 contents 权限被改动：{perms}"
+    unknown = sorted(set(perms) - {"contents", "actions"})
+    assert not unknown, (
+        f"{wf} 出现未登记的作用域 {unknown} —— 只许 `contents: read` 加（跳过判据所需的）"
+        f"`actions: read`；要加别的必须先改本条判据")
+    non_read = {k: v for k, v in perms.items() if v != "read"}
+    assert not non_read, f"{wf} 的 permissions 里出现非 read 作用域（权限升级）：{non_read}"
 
 
 # ══════════════════════════════════════════════════════════════════════════
