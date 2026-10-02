@@ -1,4 +1,4 @@
-# case_ids: MC-058
+# case_ids: MC-065
 """米宝「导航类」指引真值源（issue #5989 · P1）—— 登记表镜像 `menu.ts` + 权限码真值 + 默认拒绝 + 角色裁剪 + citation + **禁止编步骤**。
 
 ## 本文件判什么（逐条对应 issue #5989 的必做判据）
@@ -11,8 +11,21 @@
 | 3 | **未登记 ⇒ 不答/不返回猜的**（`problems_default_deny`，fail-closed） | 把「未命中」改成「猜第一条」⇒ 红 |
 | 4 | **按角色裁剪**：只按服务端会话 `permissions` 过滤；**不读任何 role**（`problems_role_trim` + 签名判据） | 去掉裁剪 / 给 `build_navigation_answer` 加 role 形参 ⇒ 红 |
 | 5 | **citation 可溯**（登记项 → 菜单节点）；未登记时如实说明未登记（`problems_citation`） | 摘掉「菜单节点」/ 给未登记项编假 citation ⇒ 红 |
-| 6 | 🔴 **禁止编步骤**：结构与文本两层（`problems_no_steps_surface` / `problems_no_step_wording`） | 往 `data` 加 `steps` / 改用 `render()` 塞步骤词 ⇒ 红 |
+| 6 | 🔴 **禁止编步骤**：结构与文本两层（`problems_no_steps_surface` / `problems_no_step_wording`） | 往 `data` 加 `steps` / 从 `message` 构造点摘掉步骤禁令 ⇒ 红 |
 | 6b | 别名必须是**登记菜单名的一部分**（`problems_aliases_grounded`） | 换成自由同义词 ⇒ 红 |
+
+## 🔴 硬约束：本文件**跑在没装 ai-agent 依赖的解释器里**（issue #5989 的一条新盲区，实测踩到）
+
+CI 的 `ci workflow helper unit tests` job **只装 `pytest pyyaml`**（同 job 日志里既有 skip 逐字写着
+「当前解释器缺 ai-agent 依赖（fastapi/pytest_asyncio/pytest_cov）……静态判据仍生效」）⇒
+**本文件不得 import 任何 `app.*` 运行时模块**（`app.tools.*` 会拉 `pydantic` / `langchain_core`；
+实测直接 6 failed，本地全绿、CI 全红）。
+
+⇒ 本文件的每一条都必须是**静态**的：解析源码文本（AST / 正则）+ 执行**零依赖**的纯函数
+（`app/context/menu_navigator.py` 只依赖标准库 ⇒ 按路径加载它**是允许的**，它不是"ai-agent 运行时依赖"）。
+**需要真 import 的行为级判据**（工具真跑一遍的返回形状、`visible_nodes` 的角色裁剪）一律放
+`backend/ai-agent-service/tests/test_nav_guide.py`（那里有依赖）—— 两处**不重复**同一断言：
+本文件判「源码里有没有这件事」，那份判「跑起来是不是这样」。
 
 ## 复用而不造第二套（§17.3）
 
@@ -24,19 +37,19 @@
 
 ## 明确不在本文件射程（照实登记）
 
+- **工具真跑的行为面**（`execute` 的 `success`/`error` 口径、`data` 键运行时形状、按 role 不变性）
+  ⇒ `backend/ai-agent-service/tests/test_nav_guide.py`；
 - **LLM 是否真的引用了 citation / 是否真的没编步骤**（行为面）—— 按 `migao-dev-flow` §13.2 映射到
-  `.github/cases/misc.yml` 的 MC-058 走评测；本文件判的是**结构面**（真值源、裁剪、citation、无 steps 字段），
+  `.github/cases/misc.yml` 的 MC-065 走评测；本文件判的是**结构面**（真值源、裁剪、citation、无 steps 字段），
   即「可追溯、不可编」的**必要条件**；
 - **P2（主动新手引导）的推送面**：本包只提供 `visible_nodes` / `nodes_for_feature` 接口，**不判推送**。
 """
 from __future__ import annotations
 
-import asyncio
-import importlib
+import ast
 import importlib.util
 import inspect
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -54,29 +67,10 @@ NAV_TOOL = AI_SERVICE / "app" / "tools" / "nav_guide.py"
 PARITY_TEST = REPO_ROOT / "tests" / "unit_ci_workflows" / "test_agent_permission_parity.py"
 REGISTRATION_SERVICE = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java" / "com" / "migao" / "admin" / "service" / "RegistrationService.java"
 PERMISSION_SERVICE = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java" / "com" / "migao" / "admin" / "service" / "PermissionService.java"
-
-# `ai-agent-service` 根不在本仓根的 `sys.path` 上（工具面判据要 import `app.*`），
-# 且必须**插在** `sys.path` 前部（同名的 `app` 包不存在于仓根，故无遮蔽风险）。
-sys.path.insert(0, str(AI_SERVICE))
-
-# ⚠️ 本文件在 `tests/unit_ci_workflows/`（**不是** `ai-agent-service/tests/`）⇒ 那里 conftest 的
-# 「导入 `app.*` 前注入必需环境变量」**不生效**（`Settings` 的部分字段无默认值，实例化即抛）。
-# 这里只补同一份**缺失键**（`setdefault`，不覆盖任何已有值）—— 与
-# `backend/ai-agent-service/tests/conftest.py` 的口径同源。
-for _key, _value in (
-    ("DEBUG", "true"),
-    ("ADMIN_API_BASE_URL", "http://admin-api:8080"),
-    ("SERVICE_TOKEN", "test-service-token"),
-    ("JWT_PUBLIC_KEY", "-----BEGIN PUBLIC KEY-----\nTESTKEY\n-----END PUBLIC KEY-----"),
-    ("LOGISTICS_API_URL", "https://wuliu.market.alicloudapi.com/kdi"),
-    ("LOGISTICS_APPCODE", "test-appcode"),
-    ("SSE_TIMEOUT", "300"),
-    ("SSE_PING_INTERVAL", "30"),
-    ("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
-    ("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test_db"),
-    ("REDIS_URL", "redis://localhost:6379/0"),
-):
-    os.environ.setdefault(_key, _value)
+# 工具面的**静态**判据输入（本 job 只装 pytest/pyyaml ⇒ 一律扫源码，不 import `app.*`）
+REGISTRY_SOURCE = AI_SERVICE / "app" / "tools" / "registry.py"
+FACADE_SOURCE = AI_SERVICE / "app" / "tools" / "__init__.py"
+GENERAL_SKILL_SOURCE = AI_SERVICE / "app" / "graph" / "skills" / "general_agent.py"
 
 #: 步骤类反模式（禁止 LLM 编步骤的机械落点）：`message` / `suggestion` / `data` 的文本面。
 #:
@@ -134,6 +128,8 @@ def nav():
     if name in sys.modules:
         return sys.modules[name]
     assert NAV_MODULE.is_file(), f"被测模块不存在：{NAV_MODULE}（路径漂移 ⇒ 红）"
+    # `menu_navigator` 只依赖标准库（**不是** ai-agent 运行时依赖）⇒ 本 job 里按路径加载它是安全的；
+    # `sys.path` 只是为了让它按 `__name__` 正常完成（模块内部不再 import 别的东西）。
     sys.path.insert(0, str(AI_SERVICE))
     spec = importlib.util.spec_from_file_location(name, NAV_MODULE)
     mod = importlib.util.module_from_spec(spec)
@@ -202,7 +198,6 @@ def _load_mutated(tmp_path: Path, mutate: Callable[[str], str]) -> Any:
     path = tmp_path / f"menu_navigator_mutated_{abs(hash(mutated)) % 10**8}.py"
     path.write_text(mutated, encoding="utf8")
     name = f"migao_nav_mutated_{abs(hash(mutated)) % 10**8}"
-    sys.path.insert(0, str(AI_SERVICE))
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
@@ -335,42 +330,66 @@ def problems_role_trim(mod) -> List[str]:
     return out
 
 
-def problems_citation(mod) -> List[str]:
-    """判据 5：citation 必须**引登记项 → 菜单节点**；未登记 ⇒ 如实说明「（无）」。"""
+CITATION_NOT_REGISTERED = "登记项：（无）—— 未命中「功能 → 页面 → 权限」登记表"
+
+
+def problems_citation(mod, source: str) -> List[str]:
+    """判据 5：citation 必须**引登记项 → 菜单节点**；未登记 ⇒ 如实说明「（无）」。
+
+    ⚠️ 「citation 落在 source 里」是**结构必要条件**（`render()` 把 citation 拼进 message）。
+    真正的运行时读数（某条回答的 citation 逐字形态）在
+    `backend/ai-agent-service/tests/test_nav_guide.py` 判（本 job 跑不起来工具）。
+    """
     out: List[str] = []
     answer = mod.build_navigation_answer("商品管理在哪", ["product:list"])
     citation = answer.to_data()["citation"]
+    if citation != "登记项 #products → 菜单节点 一级项「商品管理」":
+        out.append(f"citation 不可溯到「登记项 → 菜单节点」：{citation!r}")
     node = mod.menu_node(mod.STANDALONE_GROUP, "商品管理")
     if node is None:
         out.append("`menu_node(STANDALONE_GROUP, '商品管理')` 查不到 —— 登记表被改坏了")
-        return out
-    if citation != "登记项 #products → 菜单节点 一级项「商品管理」":
-        out.append(f"citation 不可溯到「登记项 → 菜单节点」：{citation!r}")
-    if "菜单节点" not in citation:
-        out.append("citation 里没有「菜单节点」⇒ 无法从答案追回登记表")
     if mod.menu_node("no-such-group", "商品管理") is not None:
         out.append("未登记节点竟返回了节点对象（默认拒绝失效）")
-    else:
-        # 正例锚：登记过的节点**必须**查得到（否则上面的分支恒真 = 空断言）
-        if mod.menu_node(mod.STANDALONE_GROUP, "商品管理") is None:
-            out.append("登记过的节点竟然查不到（`menu_node` 坏了 ⇒ 上面那条判据恒真）")
-    unregistered = mod.build_navigation_answer("怎么导出订单", ["*"]).citation
-    if "（无）" not in unregistered:
-        out.append(f"未登记问题的 citation 没有如实说明未登记：{unregistered!r}")
+    literals = _module_string_literals(source)
+    # citation 的两段模板逐字锚（f-string 的静态片段就是字符串字面量 ⇒ AST 拿得到）
+    if "登记项 #" not in literals:
+        out.append("源码里找不到 citation 左端模板字面量「登记项 #」⇒ 无法从答案追回登记项")
+    if " → 菜单节点 " not in literals:
+        out.append("源码里找不到 citation 右端模板字面量「 → 菜单节点 」⇒ 无法从答案追回菜单节点")
+    if "登记项：（无）—— 未命中「功能 → 页面 → 权限」登记表" not in literals:
+        out.append("未登记时的 citation 文案（「登记项：（无）…」）不在源码的字符串字面量里")
+        out.append(
+            "`menu_navigator.py` 源码里找不到「登记项 #…→ 菜单节点 …」的拼装 ⇒ "
+            "citation 的**可追溯形态**在本文件里判不了（要么被删了，要么改了）"
+        )
+    if "self.citation" not in source:
+        out.append("citation 没有被拼进回答（`self.citation` 在源码里不出现）⇒ 答案不可追溯")
     return out
 
 
 def problems_no_steps_surface(mod) -> List[str]:
-    """判据 6（**结构面**）：`data` 键白名单 —— `steps` 这类字段结构上进不来。"""
+    """判据 6（**结构面**）：`data` 的键白名单 —— `steps` 这类字段**结构上**进不来。
+
+    两段：① **源码字面量**（`to_data()` 的 `return {…}` 字典键集，AST 取）—— 想加字段就必须在这里加键；
+    ② **运行时键集**（跑一遍 `to_data()` 看现取键集；纯标准库，本 job 可跑）。
+    ② 覆盖 `pages` 里每个页面项的键（① 只看最外层）。
+    """
     out: List[str] = []
+    outer, inner = _to_data_literal_keys(_nav_module_source())
+    extra_outer = sorted(outer - ALLOWED_DATA_KEYS)
+    if extra_outer:
+        out.append(
+            f"`NavigationAnswer.to_data()` 的最外层载荷多出未登记的键 {extra_outer} —— "
+            "`steps` / 操作说明 / 图文一律不得进这个载荷"
+        )
+    extra_inner = sorted(inner - ALLOWED_PAGE_KEYS)
+    if extra_inner:
+        out.append(f"`to_data()` 的页面项多出未登记的键 {extra_inner}")
     for feature in mod.NAV_FEATURES:
         payload = mod.build_navigation_answer(feature.label, ["*"]).to_data()
         extra = sorted(set(payload) - ALLOWED_DATA_KEYS)
         if extra:
-            out.append(
-                f"{feature.feature_id}：data 多出未登记的键 {extra} —— "
-                "`steps` / 操作说明 / 图文一律不得进这个载荷"
-            )
+            out.append(f"{feature.feature_id}：data 多出未登记的键 {extra}")
         for page in payload["pages"]:
             page_extra = sorted(set(page) - ALLOWED_PAGE_KEYS)
             if page_extra:
@@ -382,49 +401,101 @@ def problems_no_steps_surface(mod) -> List[str]:
     return out
 
 
-def _tool_replies(build: Callable[[str, Any], Any]) -> List[Tuple[str, Optional[str], Optional[str], Any]]:
-    """真跑一遍工具 —— `build` 就是被测的 `build_navigation_answer`（真模块或注入版）。
+def _nav_module_source() -> str:
+    """`app/context/menu_navigator.py` 的源码文本（**静态判据的唯一输入**）。"""
+    assert NAV_MODULE.is_file(), f"真值源源码不存在：{NAV_MODULE}（路径漂移 ⇒ 红，不得静默跳过）"
+    return NAV_MODULE.read_text(encoding="utf8")
 
-    **接线面直连**（§28.2「判据绿 ≠ 接线在」）：把 `app.tools.nav_guide` 里那个名字换成被测函数，
-    再**真跑** `NavGuideTool.execute` —— 这样「工具确实用了本模块的登记表」是被测的，
-    而不是被假设的（否则注入版与工具根本没关系 ⇒ 红证恒绿）。
+
+def _nav_tool_source() -> str:
+    """`app/tools/nav_guide.py` 的源码文本（**静态判据的唯一输入** —— 本 job 不 import 它）。"""
+    assert NAV_TOOL.is_file(), f"工具源码不存在：{NAV_TOOL}（路径漂移 ⇒ 红，不得静默跳过）"
+    return NAV_TOOL.read_text(encoding="utf8")
+
+
+def _nav_tool_class_attrs() -> dict:
+    """AST 反解 `NavGuideTool` 类体里的字面量赋值（`read_only` / `required_permissions` / `name` / …）。
+
+    **为什么不用 import**：CI 的 `ci workflow helper unit tests` job 只装 `pytest pyyaml` ⇒
+    `app.tools.*` 会拉 `pydantic` / `langchain_core` ⇒ `ModuleNotFoundError`（本地绿、CI 红，实测踩到）。
     """
-    from unittest.mock import patch
-
-    import app.tools.base as base_mod
-    import app.tools.nav_guide as tool_mod
-
-    tool = tool_mod.NavGuideTool()
-    ctx = base_mod.ToolContext(tenant_id=1, user_id="u1", role="admin", permissions=["*"])
-    questions = [f.label for f in NAV_FEATURES_OF(build)] + ["怎么导出订单", "这个怎么操作"]
-    out: List[Tuple[str, Optional[str], Optional[str], Any]] = []
-    with patch.object(tool_mod, "build_navigation_answer", build):
-        for question in questions:
-            result = asyncio.run(tool.execute(ctx, question=question))
-            out.append((question, result.message, result.suggestion, result.data))
-    return out
-
-
-def NAV_FEATURES_OF(build: Callable[[str, Any], Any]) -> Any:
-    """从被测的 `build_navigation_answer` 反查它所属模块的 `NAV_FEATURES`（注入版/真版通用）。"""
-    return sys.modules[build.__module__].NAV_FEATURES
+    tree = ast.parse(_nav_tool_source())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == "NavGuideTool":
+            out: dict = {}
+            for stmt in node.body:
+                if (
+                    isinstance(stmt, ast.Assign)
+                    and len(stmt.targets) == 1
+                    and isinstance(stmt.targets[0], ast.Name)
+                ):
+                    try:
+                        out[stmt.targets[0].id] = ast.literal_eval(stmt.value)
+                    except ValueError:
+                        out[stmt.targets[0].id] = None   # 非字面量（如 `parameters` 的 dict 也算字面量）
+            return out
+    raise AssertionError("`app/tools/nav_guide.py` 里找不到 `class NavGuideTool` ⇒ 判据会空跑（fail-closed）")
 
 
-def problems_no_step_wording(mod, replies) -> List[str]:
-    """判据 6（**文本面 + 接线面**）：工具的任何回答都不得出现步骤词，且不得含 steps 字段。"""
+def _dict_literal_keys(node: ast.Dict) -> set:
+    """字典字面量的**字符串键集**（非字符串键**具名**报出，不静默丢）。"""
+    keys: set = set()
+    for k in node.keys:
+        if k is None:
+            continue          # `**other` 展开：结构上取不到字面量 ⇒ 由调用方另判
+        if isinstance(k, ast.Constant) and isinstance(k.value, str):
+            keys.add(k.value)
+        else:
+            keys.add(f"<非字符串键：{ast.dump(k)[:40]}>")
+    return keys
+
+
+def _to_data_literal_keys(source: str) -> Tuple[set, set]:
+    """`NavigationAnswer.to_data()` 的两层键集：`(最外层 return {…} 的键, 页面项字典的键)`。
+
+    这是**结构面**判据 6 的机械落点：`steps` 这类字段想进来，就必须在字面量里出现一个新键。
+    ⚠️ 找不到最外层 `return {…}` ⇒ **直接抛**（fail-closed，不许静默返回空集恒绿）。
+    """
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name != "to_data":
+            continue
+        returns = [st for st in ast.walk(node) if isinstance(st, ast.Return)]
+        assert returns, "`to_data()` 里没有 `return`（函数体被改坏）⇒ 判据会空跑"
+        top = [r for r in returns if isinstance(r.value, ast.Dict)]
+        assert top, "`to_data()` 的 `return` 不是字典字面量 ⇒ 结构面判据会空跑（fail-closed）"
+        outer = _dict_literal_keys(top[0].value)
+        inner: set = set()
+        for sub in ast.walk(top[0].value):
+            if isinstance(sub, ast.Dict) and sub is not top[0].value:
+                inner |= _dict_literal_keys(sub)
+        return outer, inner
+    raise AssertionError("`NavigationAnswer.to_data()` 不存在 ⇒ 结构面判据会空跑（fail-closed）")
+
+
+def _module_string_literals(source: str) -> set:
+    """模块里所有**字符串字面量**的集合（用于核「某个告知文案逐字在源码里」）。"""
+    return {
+        node.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+
+
+def problems_no_step_wording(source: str) -> List[str]:
+    """判据 6（**源码文本面**）：工具源码（含**注入模型**的 `description` 与各 `message`/`suggestion`
+    构造点）里不得出现受控步骤词。
+
+    ⚠️ 这里判的是**源码**而不是"跑出来的回复"：本 job 没有 ai-agent 依赖，跑不起来。
+    「跑起来的回复里也没有步骤词」由 `backend/ai-agent-service/tests/test_nav_guide.py` 判（不重复）。
+    """
     out: List[str] = []
-    if not replies:
-        out.append("工具回复为空 ⇒ 判据会空跑（fail-closed）")
-    for question, message, suggestion, data in replies:
-        blob = json.dumps({"message": message, "suggestion": suggestion, "data": data}, ensure_ascii=False)
-        for word in STEP_WORDS:
-            if word in blob:
-                out.append(
-                    f"工具回答「{question}」里出现了步骤词「{word}」—— "
-                    "第一批**只做导航类**：禁止把工具返回扩写成操作步骤（用户裁定 2026-10-02）"
-                )
-        if "steps" in json.dumps(data or {}, ensure_ascii=False):
-            out.append(f"工具回答「{question}」的 data 里出现了 `steps` 字段")
+    hits = sorted({w for w in STEP_WORDS if w in source})
+    if hits:
+        out.append(
+            f"`app/tools/nav_guide.py` 的源码里出现步骤词 {hits} —— 该文件的散文字面量会进模型上下文；"
+            "第一批**只做导航类**：禁止把工具返回扩写成操作步骤（用户裁定 2026-10-02）"
+        )
     return out
 
 
@@ -459,56 +530,67 @@ class TestJudgementsOnRealObject:
     def test_judgement_1_paths_exist(self, nav, menu_ts_nodes, capsys):
         problems = problems_paths_exist(nav, menu_ts_nodes)
         with capsys.disabled():
-            print(f"\n[MC-058] 判据 1 paths_exist problems={len(problems)}")
+            print(f"\n[MC-065] 判据 1 paths_exist problems={len(problems)}")
         assert problems == []
 
     def test_judgement_1b_coverage_and_order(self, nav, menu_ts_nodes, capsys):
         problems = problems_coverage(nav, menu_ts_nodes)
         with capsys.disabled():
-            print(f"[MC-058] 判据 1b coverage problems={len(problems)}"
+            print(f"[MC-065] 判据 1b coverage problems={len(problems)}"
                   f" | MENU_TREE={len(nav.MENU_TREE)} menu.ts={len(menu_ts_nodes)}")
         assert problems == []
 
     def test_judgement_2_codes_are_real(self, nav, catalog, capsys):
         problems = problems_codes_real(nav, catalog)
         with capsys.disabled():
-            print(f"[MC-058] 判据 2 codes_real problems={len(problems)} | 目录={len(catalog[0])} 码")
+            print(f"[MC-065] 判据 2 codes_real problems={len(problems)} | 目录={len(catalog[0])} 码")
         assert problems == []
 
     def test_judgement_3_default_deny(self, nav, capsys):
         problems = problems_default_deny(nav)
         with capsys.disabled():
-            print(f"[MC-058] 判据 3 default_deny problems={len(problems)}"
+            print(f"[MC-065] 判据 3 default_deny problems={len(problems)}"
                   f" | NAV_FEATURES={len(nav.NAV_FEATURES)}")
         assert problems == []
 
     def test_judgement_4_role_trim(self, nav, capsys):
         problems = problems_role_trim(nav)
         with capsys.disabled():
-            print(f"[MC-058] 判据 4 role_trim problems={len(problems)}")
+            print(f"[MC-065] 判据 4 role_trim problems={len(problems)}")
         assert problems == []
 
     def test_judgement_5_citation(self, nav, capsys):
-        problems = problems_citation(nav)
+        problems = problems_citation(nav, _nav_module_source())
         with capsys.disabled():
-            print(f"[MC-058] 判据 5 citation problems={len(problems)}")
+            print(f"[MC-065] 判据 5 citation problems={len(problems)}")
         assert problems == []
 
     def test_judgement_6a_no_steps_surface(self, nav, capsys):
         problems = problems_no_steps_surface(nav)
         with capsys.disabled():
-            print(f"[MC-058] 判据 6a no_steps_surface problems={len(problems)}")
+            print(f"[MC-065] 判据 6a no_steps_surface problems={len(problems)}")
         assert problems == []
 
-    def test_judgement_6b_no_step_wording_and_tool_wiring(self, nav):
-        replies = _tool_replies(nav.build_navigation_answer)
-        assert len(replies) >= 20, f"工具回复只跑了 {len(replies)} 条 ⇒ 判据疑似空转"
-        # **接线面自证**：工具确实用了本模块的登记表（不是「碰巧没红」）
-        registered = [q for q, _m, _s, data in replies if data and data.get("registered")]
-        assert len(registered) >= 20, (
-            f"工具回复里只有 {len(registered)} 条 registered=True ⇒ 工具没接上本模块的登记表"
+    def test_judgement_6b_no_step_wording_in_source_and_notice(self, nav, capsys):
+        """判据 6 的**源码/文案面**（运行时回复面在 `backend/ai-agent-service/tests/test_nav_guide.py`）。"""
+        problems = problems_no_step_wording(_nav_tool_source())
+        with capsys.disabled():
+            print(f"[MC-065] 判据 6b no_step_wording(source) problems={len(problems)}")
+        assert problems == []
+        # 归属自证（不是恒真空断言）：受控词表真的会命中一个**故意写的**样本
+        assert problems_no_step_wording("第一步：点击左侧菜单。") != [], (
+            "受控步骤词表对本样本不敏感 ⇒ 判据退化成恒真空断言（先修词表）"
         )
-        assert problems_no_step_wording(nav, replies) == []
+        # 「问怎么做 ⇒ 如实说没有步骤级指引」的承载体（常量）必须在源码里
+        guess_literals = [
+            lit
+            for lit in _module_string_literals(_nav_module_source())
+            if "**不要**猜测页面，**不要**按猜测的页面口径作答。" in lit
+        ]
+        assert guess_literals, "登记表模块里没有「不要猜测页面」的如实告知口径字面量"
+        assert any("不确定" in lit for lit in guess_literals), (
+            "未登记告知口径里没有「（我）不确定」—— 用户裁定的第三句口径缺了"
+        )
 
     def test_judgement_6c_aliases_grounded(self, nav):
         assert problems_aliases_grounded(nav) == []
@@ -542,7 +624,7 @@ class TestEveryJudgementCanGoRed:
         assert "/production/wrong" not in ts_paths, "前提自证失败：注入的假路径竟然真的在 menu.ts 里"
         problems = problems_paths_exist(mutated, menu_ts_nodes)
         with capsys.disabled():
-            print(f"\n[MC-058][红证1] 假路径 ⇒ problems={len(problems)} :: {problems[:1]}")
+            print(f"\n[MC-065][红证1] 假路径 ⇒ problems={len(problems)} :: {problems[:1]}")
         assert problems, "判据 1 没看见注入的假路径 ⇒ 空断言"
         assert problems_paths_exist(nav, menu_ts_nodes) == [], "对照：真模块必须绿"
 
@@ -564,7 +646,7 @@ class TestEveryJudgementCanGoRed:
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
             caught = exc
         with capsys.disabled():
-            print(f"[MC-058][红证1b] 删节点 ⇒ 导入期自检抛 {type(caught).__name__}: {str(caught)[:90]}")
+            print(f"[MC-065][红证1b] 删节点 ⇒ 导入期自检抛 {type(caught).__name__}: {str(caught)[:90]}")
         assert "订单列表" in str(caught), (
             f"删掉登记节点后**没有**被具名拦下（caught={caught!r}）⇒ fail-closed 失效"
         )
@@ -601,7 +683,7 @@ class TestEveryJudgementCanGoRed:
         )
         reordered = problems_coverage(_Stub, ts)
         with capsys.disabled():
-            print(f"[MC-058][红证1b] 内存桩：缺节点 {len(missing)} 条 / 换序 {len(reordered)} 条")
+            print(f"[MC-065][红证1b] 内存桩：缺节点 {len(missing)} 条 / 换序 {len(reordered)} 条")
         assert any("顺序" in p for p in reordered), f"换序没被报出：{reordered}"
         assert problems_coverage(nav, []) != [], "对照：空的 menu.ts 节点集必须判红（防空跑）"
 
@@ -631,7 +713,7 @@ class TestEveryJudgementCanGoRed:
         assert "ghost:code" in {n.permission_code for n in mutated.MENU_TREE}, "前提自证失败：假码没进登记表"
         problems = problems_codes_real(mutated, catalog)
         with capsys.disabled():
-            print(f"[MC-058][红证2] 假权限码 ⇒ problems={len(problems)} :: {problems[:1]}")
+            print(f"[MC-065][红证2] 假权限码 ⇒ problems={len(problems)} :: {problems[:1]}")
         assert problems, "判据 2 没看见目录外的权限码 ⇒ 空断言"
 
     def test_judgement_3_red_on_guessing(self, nav, tmp_path, capsys):
@@ -645,7 +727,7 @@ class TestEveryJudgementCanGoRed:
         assert nav.resolve_feature("怎么导出订单 Excel") is None, "对照：真模块必须不命中"
         problems = problems_default_deny(mutated)
         with capsys.disabled():
-            print(f"[MC-058][红证3] 未命中改成猜 ⇒ problems={len(problems)} :: {problems[:1]}")
+            print(f"[MC-065][红证3] 未命中改成猜 ⇒ problems={len(problems)} :: {problems[:1]}")
         assert problems, "判据 3 没看见「猜了一条」⇒ 空断言"
 
     def test_judgement_4_red_on_dropping_trim(self, nav, tmp_path, capsys):
@@ -658,7 +740,7 @@ class TestEveryJudgementCanGoRed:
         assert mutated.build_navigation_answer("工艺配置在哪", ["order:list"]).to_data()["pages"], "前提自证失败"
         problems = problems_role_trim(mutated)
         with capsys.disabled():
-            print(f"[MC-058][红证4] 去掉裁剪 ⇒ problems={len(problems)} :: {problems[:1]}")
+            print(f"[MC-065][红证4] 去掉裁剪 ⇒ problems={len(problems)} :: {problems[:1]}")
         assert problems, "判据 4 没看见越权泄露 ⇒ 空断言"
 
     def test_judgement_4b_red_on_role_parameter(self, nav, tmp_path, capsys):
@@ -675,7 +757,7 @@ class TestEveryJudgementCanGoRed:
         ], "前提自证失败：role 形参没加上"
         problems = problems_role_trim(mutated)
         with capsys.disabled():
-            print(f"[MC-058][红证4b] 加 role 形参 ⇒ problems={len(problems)} :: {problems[:1]}")
+            print(f"[MC-065][红证4b] 加 role 形参 ⇒ problems={len(problems)} :: {problems[:1]}")
         assert problems, "判据 4 没看见「裁剪可能读客户端 role」⇒ 空断言"
 
     def test_judgement_5_red_on_weak_citation(self, nav, tmp_path, capsys):
@@ -686,9 +768,9 @@ class TestEveryJudgementCanGoRed:
 
         mutated = _load_mutated(tmp_path, mutate)
         assert "菜单节点" not in mutated.build_navigation_answer("商品管理在哪", ["product:list"]).citation
-        problems = problems_citation(mutated)
+        problems = problems_citation(mutated, mutate(_nav_module_source()))
         with capsys.disabled():
-            print(f"[MC-058][红证5] 摘掉菜单节点 ⇒ problems={len(problems)} :: {problems[:1]}")
+            print(f"[MC-065][红证5] 摘掉菜单节点 ⇒ problems={len(problems)} :: {problems[:1]}")
         assert problems, "判据 5 没看见 citation 不可溯 ⇒ 空断言"
 
     def test_judgement_6a_red_on_steps_key(self, nav, tmp_path, capsys):
@@ -703,22 +785,28 @@ class TestEveryJudgementCanGoRed:
         assert set(mutated.build_navigation_answer("商品管理在哪", ["product:list"]).to_data()) - ALLOWED_DATA_KEYS == {"steps"}, "前提自证失败"
         problems = problems_no_steps_surface(mutated)
         with capsys.disabled():
-            print(f"[MC-058][红证6a] data 多出 steps ⇒ problems={len(problems)} :: {problems[:1]}")
+            print(f"[MC-065][红证6a] data 多出 steps ⇒ problems={len(problems)} :: {problems[:1]}")
         assert problems, "判据 6a 没看见注入的 steps 键 ⇒ 空断言"
 
-    def test_judgement_6b_red_on_step_wording(self, nav, tmp_path, capsys):
-        """**直连工具**的红证：把 `render()` 换成带步骤的文案 ⇒ 工具返回里出现步骤词。"""
-        def mutate(source: str) -> str:
-            marker = 'lines.append("（以上仅为导航信息；用户若要操作步骤，如实说没有步骤级指引。）")'
-            assert marker in source, "注入锚不存在 ⇒ 红证是空断言（同步本判据）"
-            return source.replace(marker, 'lines.append("第一步：点击左侧菜单进入。")')
+    def test_judgement_6b_red_on_step_wording(self, nav, capsys):
+        """红证：在**工具源码**的文本面塞一句祈使步骤 ⇒ 判据必报。
 
-        mutated = _load_mutated(tmp_path, mutate)
-        replies = _tool_replies(mutated.build_navigation_answer)
-        problems = problems_no_step_wording(mutated, replies)
+        ⚠️ 本 job 跑不了工具（无 ai-agent 依赖）⇒ 注入的是**源码文本**；
+        「真跑工具的回复里也没有步骤词」由
+        `backend/ai-agent-service/tests/test_nav_guide.py::TestExecuteSemantics` 判（同名两臂不重复）。
+        """
+        source = _nav_tool_source()
+        assert problems_no_step_wording(source) == [], "对照：真源码必须绿"
+        injected = source.replace(
+            "用户问「怎么做」时，给导航答案 + **如实说「我没有步骤级指引」**。",
+            "用户问「怎么做」时，第一步先点击左侧菜单再按下确认按钮。",
+            1,
+        )
+        assert injected != source, "注入锚不存在 ⇒ 红证是空断言（同步本判据）"
+        problems = problems_no_step_wording(injected)
         with capsys.disabled():
-            print(f"[MC-058][红证6b] 文案塞步骤 ⇒ problems={len(problems)} :: {problems[:1]}")
-        assert problems, "判据 6b 没看见步骤词 ⇒ 空断言（工具没真的用本模块的 render？先查接线）"
+            print(f"[MC-065][红证6b] 源码塞步骤 ⇒ problems={len(problems)} :: {problems[:1]}")
+        assert problems, "判据 6b 没看见注入的步骤词 ⇒ 空断言"
 
     def test_judgement_6c_red_on_free_synonym_self_check(self, nav, tmp_path, capsys):
         """上游（导入期自检）的那一半：把别名换成自由同义词 ⇒ **模块 import 就抛**。"""
@@ -734,7 +822,7 @@ class TestEveryJudgementCanGoRed:
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
             caught = exc
         with capsys.disabled():
-            print(f"[MC-058][红证6c] 自由同义词 ⇒ 导入期自检抛 {type(caught).__name__}: {str(caught)[:90]}")
+            print(f"[MC-065][红证6c] 自由同义词 ⇒ 导入期自检抛 {type(caught).__name__}: {str(caught)[:90]}")
         assert "库存盘点" in str(caught), (
             f"自由同义词**没有**被具名拦下（caught={caught!r}）⇒ 别名约束失效"
         )
@@ -759,7 +847,7 @@ class TestEveryJudgementCanGoRed:
         )
         problems = problems_aliases_grounded(_Stub)
         with capsys.disabled():
-            print(f"[MC-058][红证6c] 内存桩自由同义词 ⇒ problems={len(problems)} :: {problems[:1]}")
+            print(f"[MC-065][红证6c] 内存桩自由同义词 ⇒ problems={len(problems)} :: {problems[:1]}")
         assert any("库存盘点" in p for p in problems), f"不受菜单名约束的别名没被报出：{problems}"
         assert problems_aliases_grounded(nav) == [], "对照：真模块必须绿"
 
@@ -778,7 +866,7 @@ class TestEveryJudgementCanGoRed:
         assert problems_codes_real(mutated, CATALOG_UNDER_TEST) == []
         assert problems_default_deny(mutated) == []
         assert problems_role_trim(mutated) == []
-        assert problems_citation(mutated) == []
+        assert problems_citation(mutated, _nav_module_source()) == []
         assert problems_no_steps_surface(mutated) == []
         assert problems_aliases_grounded(mutated) == []
 
@@ -789,87 +877,65 @@ class TestEveryJudgementCanGoRed:
 
 
 class TestToolSurface:
-    def test_no_steps_notice_is_present_on_every_tool_reply(self, nav):
-        """**用户裁定的第 3 条口径**（问「怎么做」⇒ 给导航 + 如实说没有步骤级指引）必须有承载体。
+    """工具面（**全部静态**：本 job 没有 ai-agent 依赖 ⇒ 只扫源码；运行时行为在 `test_nav_guide.py`）。"""
 
-        判据直接落在**工具真跑出来的回复**上（不是模块的 `render()`）—— 因为模型看到的是前者。
-        """
-        replies = _tool_replies(nav.build_navigation_answer)
-        assert len(replies) >= 20, f"工具回复只跑了 {len(replies)} 条 ⇒ 判据疑似空转"
-        for question, message, suggestion, data in replies:
-            blob = f"{message or ''}{suggestion or ''}{json.dumps(data or {}, ensure_ascii=False)}"
-            assert "没有步骤级指引" in blob, (
-                f"工具回答「{question}」里没有「我没有步骤级指引」的如实告知口径 —— "
-                "用户裁定 2026-10-02：第一步只做导航类，步骤级问题必须如实说不知道"
-            )
-        # 未登记的问题同样要有（它是最容易被模型「热心补步骤」的那一类）
-        unregistered = [r for r in replies if r[3] and r[3].get("registered") is False]
-        assert len(unregistered) >= 2, "工具回复里没有未登记样本 ⇒ 判据会空跑"
-        for question, message, suggestion, _data in unregistered:
-            assert "没有步骤级指引" in f"{message or ''}{suggestion or ''}"
-
-    def test_no_step_wording_in_tool_source_either(self):
-        """**更上游的一层**：工具源码里（含 `description` —— 它**也**注入模型）不得出现步骤词。
-
-        为什么单独判它：`description` 会随工具 schema 进模型上下文 —— 在里面写「第一步…」
-        同样是在把模型往编步骤上推（实测踩到：「点击」曾出现在 description 里，被本判据抓到）。
-        """
-        text = NAV_TOOL.read_text(encoding="utf8")
-        hits = [w for w in STEP_WORDS if w in text]
-        assert hits == [], (
-            f"`app/tools/nav_guide.py` 的源码里出现步骤词 {hits} —— "
-            "该文件的散文字面量会进模型上下文（docstring 尾部除外）"
+    def test_tool_source_declares_read_only_and_no_permission_code(self, nav):
+        attrs = _nav_tool_class_attrs()
+        assert attrs.get("name") == "nav_guide", "类里没声明 `name`"
+        assert attrs.get("read_only") is True, "导航指引是纯本地只读能力：`read_only` 必须为 True"
+        assert attrs.get("destructive") is False
+        assert attrs.get("required_permissions") == [], (
+            "纯本地工具（零 admin-api 调用点）不声明权限码 —— 与 `interact` / `image_recognize` 同口径"
         )
 
-    def test_citation_is_traceable_to_a_registered_node(self, nav):
-        answer = nav.build_navigation_answer("商品管理在哪", ["product:list"])
-        assert answer.citation.startswith("登记项 #products → 菜单节点")
-        assert nav.menu_node(nav.STANDALONE_GROUP, "商品管理").path == "/products"
-        assert nav.menu_node("no-such-group", "商品管理") is None
+    def test_registered_in_registry_source(self):
+        """注册面（**扫源码**）：`registry.py` 里 import + register 两处，缺一不可。"""
+        text = REGISTRY_SOURCE.read_text(encoding="utf8")
+        assert "from app.tools.nav_guide import NavGuideTool" in text, "registry 里没有 import 行"
+        assert "registry.register(NavGuideTool())" in text, "registry 里没有 register 行 ⇒ 模型不可达"
 
-    def test_tool_is_registered_and_read_only(self, nav):
-        sys.path.insert(0, str(AI_SERVICE))
-        from app.tools.registry import get_tool_registry
+    def test_exported_from_the_facade_source(self):
+        """门面面（**扫源码**）：`app/tools/__init__.py` 里 import + `__all__` 都有。"""
+        text = FACADE_SOURCE.read_text(encoding="utf8")
+        assert "from app.tools.nav_guide import NavGuideTool" in text, "门面里没有 import 行"
+        assert '"NavGuideTool"' in text, "`__all__` 里没有 NavGuideTool ⇒ 门面完整性判据会红"
 
-        tool = get_tool_registry().get_tool("nav_guide")
-        assert getattr(tool, "name", None) == "nav_guide", (
-            "nav_guide 未注册进 `create_default_registry()` ⇒ 模型不可达"
-        )
-        assert tool.read_only is True, "导航指引是纯本地只读能力：`read_only` 必须为 True"
-        assert tool.destructive is False
-        assert list(tool.required_permissions) == [], (
-            "nav_guide 是**纯本地**工具（零 admin-api 调用点）⇒ 不声明权限码"
-            "（与 `interact` / `image_recognize` 同口径，见 `LOCAL_ONLY_TOOLS`）；"
-            "授权面落在**答案级**的角色裁剪上。**不要**给它挂一个码："
-            "那会让 `test_agent_permission_parity` 的判据 2（工具码 ≡ 端点生效码）"
-            "在空端点集上结构性不成立"
-        )
+    def test_bound_to_a_b_side_skill_source(self):
+        """可达性（**扫源码**）：`general` 兜底 skill 的工具清单里有它。"""
+        text = GENERAL_SKILL_SOURCE.read_text(encoding="utf8")
+        assert '"nav_guide"' in text, "`general_agent.py` 的 `GENERAL_TOOLS` 里没有 nav_guide ⇒ 模型不可达"
 
-    def test_trimming_is_enforced_at_the_answer_level(self, nav):
-        """工具层没有码 ⇒ 授权面必须**真的**落在答案级裁剪上（不是「谁都没有」）。"""
-        blind = nav.build_navigation_answer("工艺配置在哪", ["order:list"]).to_data()
-        assert blind["pages"] == []
-        assert "production:view" not in json.dumps(blind, ensure_ascii=False)
-        granted = nav.build_navigation_answer("工艺配置在哪", ["production:view"]).to_data()
-        assert [p["path"] for p in granted["pages"]] == ["/production/routings"]
-
-    def test_tool_is_exported_from_the_facade(self):
-        sys.path.insert(0, str(AI_SERVICE))
-        import app.tools as facade
-
-        assert "NavGuideTool" in facade.__all__, "未被 `app/tools` 门面导出（门面完整性判据会红）"
-        assert getattr(getattr(facade, "NavGuideTool", None), "__name__", None) == "NavGuideTool", (
-            "门面 `__all__` 里写了名字却没有真导入（门面谎报）"
+    def test_tool_module_has_no_http_call_points_static(self):
+        """纯本地（**AST**）：没有 admin-api 客户端调用点，也没有 HTTP 动词调用。"""
+        source = _nav_tool_source()
+        assert "get_admin_api_client" not in source
+        tree = ast.parse(source)
+        calls = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        assert not ({"get", "post", "put", "patch", "delete"} & calls), (
+            f"nav_guide 里出现 HTTP 调用形态 {sorted(calls)} —— 它必须是纯本地工具"
         )
 
-    def test_tool_module_has_no_http_call_points(self):
-        text = NAV_TOOL.read_text(encoding="utf8")
-        assert "get_admin_api_client" not in text, "nav_guide 不得有 admin-api 调用点（真值源在仓内）"
-        assert '"question"' in text, "参数里没有 question ⇒ 模型无从提问"
+    def test_data_keys_and_notice_are_static_facts(self, nav):
+        """判据 6 的**静态承载体**：载荷键白名单 + 「没有步骤级指引」文案都在源码里。"""
+        module = _nav_module_source()
+        outer, inner = _to_data_literal_keys(module)
+        assert outer == set(ALLOWED_DATA_KEYS), (
+            f"`to_data()` 的最外层载荷键集 = {sorted(outer)}，与白名单 {sorted(ALLOWED_DATA_KEYS)} 不等"
+            " —— 新增键必须同批登记（`steps` 一律不得进这个载荷）"
+        )
+        assert inner == set(ALLOWED_PAGE_KEYS), (
+            f"页面项键集 = {sorted(inner)}，与白名单 {sorted(ALLOWED_PAGE_KEYS)} 不等"
+        )
+        # 「没有步骤级指引」的**承载体在工具**的 message/suggestion 构造点（而不是登记表模块）
+        assert any("没有步骤级指引" in lit for lit in _module_string_literals(_nav_tool_source())), (
+            "工具源码里没有「我没有步骤级指引」的如实告知口径"
+        )
 
-    def test_tool_is_bound_to_a_b_side_skill(self):
-        """可达性：`general` 兜底 skill 绑了它（否则模型拿不到 ⇒ 能力谎报）。"""
-        sys.path.insert(0, str(AI_SERVICE))
-        from app.graph.skills.general_agent import GENERAL_TOOLS
-
-        assert "nav_guide" in GENERAL_TOOLS, "nav_guide 没绑到任何 B 端 skill ⇒ 模型不可达"
+    def test_tool_description_is_in_the_model_surface(self):
+        """`description` 会进模型上下文 ⇒ 它也在判据 6 的射程内（扫源码即可，不必 import）。"""
+        source = _nav_tool_source()
+        assert "【触发】" in source and "【参数】" in source, "description 的形态变了（工具面判据会红）"

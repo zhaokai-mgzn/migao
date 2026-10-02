@@ -68,7 +68,7 @@ class NavGuideTool(BaseTool):
     # 与 `interact` / `image_recognize` 同口径；授权面落在**答案级**的角色裁剪
     # （`build_navigation_answer` 按服务端会话 `permissions` 逐节点裁剪）。
     # 理由与后果逐条写在模块 docstring「权限码：**不声明**」一节。
-    required_permissions: list = []
+    required_permissions = []
     read_only = True
     destructive = False
     idempotent = True

@@ -1,4 +1,4 @@
-# case_ids: MC-062
+# case_ids: MC-065
 """`nav_guide` 工具面判据（issue #5989 · P1）—— 注册 / 门面 / 只读 / 纯本地 / skill 绑定 / 执行语义。
 
 ## 与哪个判据分工（**不是重复**）
@@ -13,7 +13,7 @@
 
 ## 明确边界（照实登记）
 
-- **不判 LLM 行为**（是否真的引用了 citation / 真的没编步骤）—— 那是 `MC-062` 的行为面，
+- **不判 LLM 行为**（是否真的引用了 citation / 真的没编步骤）—— 那是 `MC-065` 的行为面，
   本文件只判**结构**（工具**没有能力**返回步骤：`data` 键白名单里不存在 `steps`）。
 - **不重复** `tests/unit_ci_workflows/test_agent_permission_parity.py` 的四源对账（工具码 ↔ 端点码 ↔
   菜单节点 ↔ 岗位）：本工具是**纯本地**工具（零 admin-api 调用点）⇒ 按 `LOCAL_ONLY_TOOLS` 口径

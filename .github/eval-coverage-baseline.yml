@@ -81,7 +81,7 @@ entries:
   #    （用户 2026-10-02 逐字：「不要自动进行验证，都是重复的验证，白白消耗成本」「手动集中跑一次即可」），
   #    真实 LLM 评测**手动、由用户显式触发**，本仓不自动派发 ⇒ 本包**不新增评测用例**。
   #    本包已有的确定性承载体（**不是**这条豁免的对象）：`tests/unit_ci_workflows/test_menu_navigator.py`
-  #    （跨包结构面，用例 MC-062）+ `backend/ai-agent-service/tests/test_nav_guide.py`（工具面）。
+  #    （跨包结构面，用例 MC-065）+ `backend/ai-agent-service/tests/test_nav_guide.py`（工具面）。
   #    🔴 **重启条件（= 什么条件下这件事才做得成，不是「正在做」）**：用户显式要求跑一次 B 端批量评测时，
   #    同批补一条 `persona: mibao` + `expectations: [{tool: nav_guide, args: {question: …}}]` 的正常档用例
   #    （正向 = 命中登记项并转述 citation；反向 = 未登记时如实说「我没有这条指引」且**不编步骤**），
@@ -90,7 +90,7 @@ entries:
     kind: uncovered
     persona: mibao
     issue: "#5989"
-    reason: "#5989 P1 新增的纯本地导航工具（功能 ⇄ 菜单路径 ⇄ 权限码的仓内登记表 + 会话权限裁剪），尚无评测用例；按用户 2026-10-02 裁定「真实 LLM 评测手动、用户显式触发」（#4262）本包不派发评测，且用例库由并发包独占 ⇒ 待集中跑批时补用例。确定性面已由 tests/unit_ci_workflows/test_menu_navigator.py（MC-062）+ backend/ai-agent-service/tests/test_nav_guide.py 覆盖；缺口现由 #5989 跟踪（P2 主动引导未做完）"
+    reason: "#5989 P1 新增的纯本地导航工具（功能 ⇄ 菜单路径 ⇄ 权限码的仓内登记表 + 会话权限裁剪），尚无评测用例；按用户 2026-10-02 裁定「真实 LLM 评测手动、用户显式触发」（#4262）本包不派发评测，且用例库由并发包独占 ⇒ 待集中跑批时补用例。确定性面已由 tests/unit_ci_workflows/test_menu_navigator.py（MC-065）+ backend/ai-agent-service/tests/test_nav_guide.py 覆盖；缺口现由 #5989 跟踪（P2 主动引导未做完）"
     added: "2026-10-02"
 
   # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_query` /
