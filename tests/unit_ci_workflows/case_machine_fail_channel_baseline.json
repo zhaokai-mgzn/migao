@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 106
+    "backend_contract_scoring_zero": 107
   },
   "history": [
     {
@@ -198,6 +198,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 106,
       "note": "issue #5955（日报卡片面 proactive 四态可视化）新增 1 条 `[backend-contract]` 用例（DA-021）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，105 → 106）。机器判红通道 = `traces.tests` 的四处真测试文件（`backend/ai-agent-service/tests/test_briefing_proactive_status_visibility.py`、`backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java`、`backend/admin-api/src/test/java/com/migao/admin/controller/BriefingControllerTest.java`、`frontend/admin-web/tests/unit/components/ProactiveStatusPanel.test.tsx` + `frontend/admin-web/tests/unit/components/BriefingProactiveStatus.test.tsx`），非空且逐条真实存在；`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。"
+    },
+    {
+      "sha": "pending-pr-5982",
+      "date": "2026-10-02",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 107,
+      "note": "issue #5982（缺必填 @RequestParam 一律 500：GlobalExceptionHandler 缺 MissingServletRequestParameterException 分支）新增 1 条 `[backend-contract]` 用例（API-008）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，106 → 107）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/config/GlobalExceptionHandlerCoverageTest.java`：分支台账 ⇄ 反射双向一致 / 绑定族豁免台账只许缩短 / 真 Spring 分发链 4xx 行为判据 / 判别力自证；`backend/admin-api/src/test/java/com/migao/admin/controller/InboundOrderOpeningImportRequiredParamTest.java`：真端点缺 importRunId ⇒ 400 + 字段名，修前实测 `Status expected:<400> but was:<500>`），非空且逐条真实存在；`traces.ci` = `pr-check.yml`（`admin-api unit tests` 跑这两个类）。`sha` 沿用 `pending-pr-*` 约定（合并前没有可引用的提交；此处填 issue 号）。真债务 `no_channel_total` 仍为 **0**（不变）。"
     }
   ]
 }
