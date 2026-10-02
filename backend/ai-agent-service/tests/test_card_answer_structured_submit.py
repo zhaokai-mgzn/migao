@@ -87,15 +87,21 @@ def _card_answer_request(values: dict, card_id: str,
                          message: str = PLAIN_ECHO) -> ChatSendRequest:
     """构造 B 端结构化提交请求，并**自证字段真被接受**。
 
-    pydantic 默认把未知字段**静默丢弃** ⇒ 不加这条自证的话，「cardId 不一致」这类
+    pydantic 默认把未知字段**静默丢弃** ⇒ 不加这两条自证的话，「cardId 不一致」这类
     负例会因为「字段根本没进模型」而**假绿**（本包实测踩到过：4 条负例全部"通过"）。
+
+    断言形态刻意写**逐值相等**（不是存在性断言）：字段被丢时
+    `getattr(None, "values", None)` 得 `None ≠ values` ⇒ 照样红，
+    而判据本身不落进「存在性/非空即通过」的弱断言族。
     """
     req = ChatSendRequest(session_id="sess_1", message=message,
                           card_answer={"cardId": card_id, "values": values})
-    assert req.card_answer is not None, (
-        "`ChatSendRequest` 未接受 `card_answer`（被当未知字段丢弃）——负例判据会假绿"
+    assert getattr(req.card_answer, "values", None) == values, (
+        "`ChatSendRequest` 未接受 `card_answer.values`（被当未知字段丢弃）——负例判据会假绿"
     )
-    assert getattr(req.card_answer, "values", None) == values
+    assert getattr(req.card_answer, "cardId", None) == card_id, (
+        "`card_answer.cardId` 未按原值保留 —— 卡身份一致性判据会假绿"
+    )
     return req
 
 
