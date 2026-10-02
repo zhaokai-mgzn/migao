@@ -168,7 +168,6 @@ def make_graph_result(
     tool_name: str = "",
     tool_args: Dict = None,
     tool_result_data: Any = None,
-    suggestions: List[str] = None,
 ) -> dict:
     """构造 graph.ainvoke 的返回值"""
     return {
@@ -177,7 +176,6 @@ def make_graph_result(
         "intent_result": {"intent": intent, "confidence": confidence, "source": "mock"},
         "route_decision": {"action": "route_with_hint"},
         "entities": {},
-        "suggestions": suggestions or [],
         "_test_tool_name": tool_name,
         "_test_tool_args": tool_args or {},
         "_test_tool_result": {"success": True, "data": tool_result_data} if tool_result_data else {},

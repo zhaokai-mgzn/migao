@@ -118,7 +118,6 @@ def _make_state(messages, session_id="sess-vague-1", agent_type="mibao"):
         "route_decision": None,
         "final_answer": "",
         "skill_used": "",
-        "suggestions": [],
         "pending_interact_skill": "",
     }
 

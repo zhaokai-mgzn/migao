@@ -171,11 +171,6 @@ async def _simple_agent_stream(message, context, chat_history):
     yield AgentResponse(content="您的消息了。", type="text")
 
 
-async def _agent_stream_with_suggestions(message, context, chat_history):
-    """Agent mock：返回文本 + 触发 suggestions 事件"""
-    yield AgentResponse(content="好的，我来帮您处理。", type="text")
-
-
 # ========== Fixtures ==========
 
 @pytest.fixture(autouse=True)

@@ -109,8 +109,7 @@ class TestAddMessagesReducer:
             "cached_answer": None,
             "final_answer": "",
             "skill_used": "",
-            "suggestions": [],
-        }
+            }
         assert state["tenant_id"] == 1
         assert len(state["messages"]) == 1
         assert state["messages"][0].content == "test"

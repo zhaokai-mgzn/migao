@@ -51,10 +51,13 @@ class TestBaseAgentState:
             [HumanMessage(content="hello")], mock_context
         )
 
+        # ⚠️ `suggestions` **已随 issue #5951 退役**（主动「后续问题建议」通道整体删除：
+        # 图状态里该字段**从来没有写入点**，SSE `suggestions` 事件零调用者 ⇒ 产品决策删除）。
+        # 这里**有意**不再要求它出现 —— 不是遗漏。若要恢复，必须先有真实的写入点与消费方。
         required_fields = [
             "messages", "agent_type", "tenant_id", "user_id", "user_name",
             "session_id", "role", "intent_result", "route_decision",
-            "final_answer", "skill_used", "suggestions",
+            "final_answer", "skill_used",
             "pending_interact_skill",
         ]
         for field in required_fields:

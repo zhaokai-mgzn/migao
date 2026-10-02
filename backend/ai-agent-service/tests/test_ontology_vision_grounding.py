@@ -194,8 +194,7 @@ class TestBaseSkillVisionWiring:
             "cached_answer": None,
             "final_answer": "",
             "skill_used": "",
-            "suggestions": [],
-        }
+            }
         await execute_skill(
             state=state,
             skill_name="product",
