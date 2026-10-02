@@ -432,6 +432,40 @@ def test_current_workflow_has_no_pipefail_grep_q_construct():
     )
 
 
+def test_missing_state_script_does_not_kill_the_whole_step(tmp_path):
+    """🔴 **回归护栏（issue #5935 的本 PR 首轮 CI 实测）**：对账步 checkout 的是 **`ref: main`**
+    ⇒ 「新增这条腿的那个 PR」里 `scripts/deploy_reconcile_state.sh` **还不在 main 上**
+    ⇒ 裸 `source` 会 `No such file or directory` 并把**整个对账步**打成 rc=1，而同轮其它五条腿
+    本来是对的（实测 run `36943682332`，逐字报错见下）。
+
+    这与 issue #5668 那条前置判据治的是**同一形态**：「**还轮不到我**」不许让机制本身停摆。
+    修法 = 取仓库既有姿势（同 `.github/scripts/mechanism_liveness.sh`）：**存在才 source + 出声**。
+
+    复算（把脚本从 fixture 里拿走）：
+      `python3 -m pytest tests/unit_ci_workflows/test_reconcile_no_silent_skip.py -q -k missing_state_script`
+    """
+    fx = commit_repos(tmp_path, drift_paths=ALL_DRIFT_PATHS)
+    # 把状态机脚本从检出里拿走 = 「本腿还没上 main」的形态（checkout 固定 ref: main）
+    (fx["repo"] / "scripts" / "deploy_reconcile_state.sh").unlink()
+    proc, summary, dispatches = run_reconcile(
+        tmp_path, fx["repo"], runs_all(fx["C1"], "success"), head7=fx["head7"],
+    )
+    assert proc.returncode == 0, (
+        f"状态机不在检出里**不许**把整个对账步打死（`source` 失败的原始报错 = "
+        f"`scripts/deploy_reconcile_state.sh: No such file or directory`）→ {proc.stdout}\n{proc.stderr}"
+    )
+    assert "No such file or directory" not in proc.stderr, f"裸 `source` 的形态还在 → {proc.stderr}"
+    assert "::warning::" in proc.stdout, (
+        f"「本轮不落状态」必须**出声**（不许静默 success）→ {proc.stdout}"
+    )
+    assert "on_main: command not found" not in proc.stderr, (
+        f"函数没定义就跑 = 「只加 `if [ -f ]`」那种半修 → {proc.stderr}"
+    )
+    assert not dispatches, (
+        f"弃权 = **本轮整体不对账**（不落状态就判不了，判不了就不许动线上）→ {dispatches}"
+    )
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # 二、改后行为（桩化真跑）：注入各场景 ⇒ 断言动作 + 判定依据
 # ══════════════════════════════════════════════════════════════════════════

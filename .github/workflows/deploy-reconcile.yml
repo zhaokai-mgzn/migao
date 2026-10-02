@@ -182,6 +182,15 @@ jobs:
           # 值守面状态机（种子 + 恰好一行/腿）**外置**（issue #5935）：本步正文已顶到 13.3K 的硬约束
           # （>13,250 ⇒ 整份 workflow invalid ⇒ 该腿完全不跑，阈值/守卫 = test_deploy_watchdog.py 的
           # `RUN_BODY_LIMIT`）⇒ 出口是外置，不是「再加一点点应该没事」。
+          # ⚠️ 本步 checkout 是 `ref: main` ⇒ 「本腿还没上 main」时状态机不在检出里：裸 `source` 把**整个
+          # 对账步**打成 rc=1，只加 `if [ -f ]` 也不行（函数没定义 ⇒ rc=127）—— 本 PR 首轮实测复现。
+          # ⇒ 取既有姿势（同 `mechanism_liveness.sh`）：**载不进就弃权**（出声 + 退出 0）。
+          if [ ! -f scripts/deploy_reconcile_state.sh ]; then
+            echo "::warning::值守面状态机不在检出里（多为「本腿还没上 main」）"
+            exit 0
+          fi
+          source scripts/deploy_reconcile_state.sh
+          source scripts/deploy_reconcile_state.sh
           source scripts/deploy_reconcile_state.sh
           # 单服务对账。$1=服务名 $2=deploy workflow $3=该服务的代码路径
           # $4=额外 pathspec（空格分隔）：`:(exclude)X` = 排除项，其余 = **附加包含项**（可空）
@@ -385,8 +394,8 @@ jobs:
           echo "🧭 结论：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}"
           # 存活读数（issue #5326 判据 1）：计数类读数（补 dispatch / 无漂移 / 断路器 / 判定失败），
           # **非挂钟时长**。零动作（NODRIFT=4、MISSING=0）走的是同一条读数，`acted=0` + `why` 说明原因。
-          # `--seen` = 本轮的**对账腿数**，由状态机脚本从 `reconcile_one` 调用**现取**（`$SEEN`）——
-          # 不许写死（#5264 的形态：读数与事实相反；新加一条腿时写死的那个数不会自己跟上）。
+          # `--seen` = 本轮对账腿数，由状态机从 `reconcile_one` 调用**现取**（`$SEEN`）；写死就是
+          # #5264 的形态（新加腿时那个数不会自己跟上）。
           # 发射器是**报告者**：它不可用（harness / 浅检出取不到文件）**绝不**得让机制本身失败。
           watchdog_missing   # 判据 1 / 2：具名清单现取（下面进存活读数，末道闸再判红）
           if [ -f .github/scripts/mechanism_liveness.sh ]; then
