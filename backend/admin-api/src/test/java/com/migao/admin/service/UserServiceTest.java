@@ -376,22 +376,15 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("创建用户 - 角色为空时默认 operator")
-    void createUser_DefaultRole() {
-        // given
-        when(userMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
-        when(userMapper.insert(any(User.class))).thenAnswer(invocation -> {
-            User u = invocation.getArgument(0);
-            u.setId("user-default");
-            return 1;
-        });
-
-        // when
-        User result = userService.createUser("13600136000", "password123", "默认角色", null, "运营", null, 1L);
-
-        // then
-        assertThat(result).isNotNull();
-        assertThat(result.getRole()).isEqualTo("operator");
+    @DisplayName("创建用户 - 角色为空白 ⇒ 拒绝（fail-closed，issue #5987；修前会静默落成 operator）")
+    void createUser_BlankRole_Rejected() {
+        // issue #5987：`.role(role != null ? role : "operator")` 把「没传角色」静默变成运营级
+        // 26 码（含写权限）⇒ 反回归防线改为断言拒绝，且不落库（insert 一次都不应发生）。
+        assertThatThrownBy(() -> userService.createUser("13600136000", "password123", "默认角色", null, "运营",
+                null, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("岗位");
+        verify(userMapper, never()).insert(any(User.class));
     }
 
     // ======================== updateUser 测试 ========================

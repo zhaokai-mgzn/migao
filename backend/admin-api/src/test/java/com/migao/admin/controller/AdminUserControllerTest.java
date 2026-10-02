@@ -1,4 +1,4 @@
-// case_ids: HR-001, HR-002, HR-003, HR-004
+// case_ids: HR-001, HR-002, HR-003, HR-004, API-023
 package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
@@ -30,6 +30,7 @@ import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
@@ -62,6 +63,10 @@ class AdminUserControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(adminUserController)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
+        // issue #5987：建号缺岗位/角色已 fail-closed ⇒ 只传 position 的 payload 需要岗位能解析出角色
+        // （种子换新租户必带五岗，此处按真实种子形态给出「客服」岗位）
+        when(roleService.getRoleByPosition(anyString(), any()))
+                .thenReturn(Role.builder().id("role-cs").code("customer_service").build());
         TenantContext.setTenantId(1L);
     }
 
@@ -111,7 +116,8 @@ class AdminUserControllerTest {
 
             mockMvc.perform(post("/api/admin/users")
                             .contentType("application/json")
-                            .content("{\"phone\":\"13900000001\",\"password\":\"test123\",\"name\":\"测试\"}"))
+                            .content("{\"phone\":\"13900000001\",\"password\":\"test123\",\"name\":\"测试\","
+                                    + "\"position\":\"客服\"}"))
                     .andExpect(status().isOk());
         }
 
@@ -124,7 +130,8 @@ class AdminUserControllerTest {
 
             mockMvc.perform(post("/api/admin/users")
                             .contentType("application/json")
-                            .content("{\"phone\":\"13900000001\",\"password\":\"test123\",\"name\":\"测试\"}"))
+                            .content("{\"phone\":\"13900000001\",\"password\":\"test123\",\"name\":\"测试\","
+                                    + "\"position\":\"客服\"}"))
                     .andExpect(status().isOk());
 
             verify(userService, times(1)).createUser(any(), any(), any(), any(), any(), any(), any(), any(), anyBoolean());
