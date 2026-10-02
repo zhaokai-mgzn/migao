@@ -8,6 +8,7 @@ import { Search, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
 import { OrderTable, CloseOrderModal, RemarkModal, RefundOrderModal } from '@/components/orders'
+import { usePermission } from '@/lib/permission'
 import type { Order, OrderStatus, OrderStatusTab } from '@/types'
 import { FrontendToBackendStatus, OrderStatusTabs, ORDER_CATEGORIES, OrderStatusLabels, toBackendStatusParam } from '@/types'
 
@@ -105,6 +106,11 @@ function resolveStatusParam(raw: string | null): OrderStatus | null {
 export default function OrdersPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  // issue #5983：列表页**写按钮随权限显隐** —— 与员工页同范式（`canWrite = hasPermission('employee:create')`）。
+  // 路由守卫取的是**读**码 `order:list`（页面可进），而建单入口 `/orders/new` 的提交要 `order:create`
+  // ⇒ 无码时若把按钮渲染出来，用户点进去、填完表单才吃 403（"白点一下"）。
+  const { has: hasPermission } = usePermission()
+  const canWrite = hasPermission('order:create')
 
   // 从 URL 读取初始参数（#387: Dashboard 卡片跳转）
   const urlCategory = searchParams.get('category')
@@ -403,17 +409,19 @@ export default function OrdersPage() {
       {/* 标题 */}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-neutral-900">订单列表</h1>
-        <button
-          type="button"
-          onClick={() => router.push('/orders/new')}
-          className="h-9 px-4 rounded bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 active:bg-primary-800 transition-colors inline-flex items-center gap-1.5 shadow-sm"
-        >
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          新增订单
-        </button>
+        {canWrite && (
+          <button
+            type="button"
+            onClick={() => router.push('/orders/new')}
+            className="h-9 px-4 rounded bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 active:bg-primary-800 transition-colors inline-flex items-center gap-1.5 shadow-sm"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            新增订单
+          </button>
+        )}
       </div>
 
       {/* 查询区域（issue #5880：**纯版式重构、零行为变更**）——

@@ -8,6 +8,7 @@ import ProductTable, { ProductSortField, ProductSortOrder } from '@/components/p
 import { productApi } from '@/lib/api'
 import { toast } from 'sonner'
 import type { Product, ProductStatus, ProductImportResult } from '@/types'
+import { usePermission } from '@/lib/permission'
 
 // 状态选项（PRD：全部/出售中/已下架/审核中/草稿）
 const STATUS_OPTIONS: { value: '' | ProductStatus; label: string }[] = [
@@ -66,6 +67,10 @@ interface SingleConfirm {
 export default function ProductsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  // issue #5983：列表页**写按钮随权限显隐** —— 与员工页同范式。页面守卫是**读**码 `product:list`，
+  // 建品入口 `/products/new` 的提交要 `product:create` ⇒ 无码时按钮不渲染（不再"白点一下"）。
+  const { has: hasPermission } = usePermission()
+  const canWrite = hasPermission('product:create')
 
   // ===== 搜索表单（受控）=====
   const [name, setName] = useState(searchParams.get('name') || '')
@@ -611,10 +616,12 @@ export default function ProductsPage() {
           )}
         </div>
         <div>
-          <Button onClick={() => router.push('/products/new')}>
-            <Plus className="w-4 h-4 mr-1.5" />
-            新增商品
-          </Button>
+          {canWrite && (
+            <Button onClick={() => router.push('/products/new')}>
+              <Plus className="w-4 h-4 mr-1.5" />
+              新增商品
+            </Button>
+          )}
         </div>
       </div>
 

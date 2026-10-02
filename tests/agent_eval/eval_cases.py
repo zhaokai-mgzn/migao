@@ -4961,6 +4961,24 @@ _CASE_MC_062 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-063 [NORMAL] 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短（源: cases/misc.yml）──
+_CASE_MC_063 = EvalCase(
+    id='MC-063',
+    legacy_id='',
+    title='列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['在 (dashboard)/**/page.tsx 上新增一个「新增 X / 新建 X / 登记 X」写按钮，却没在按钮上接写权限码（#5983 的形态）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1（未登记即红）：某页出现新增/新建/**登记**类写按钮、文件内无 `hasPermission(...)` 引用、且不在豁免台账 ⇒ 红并**具名**报出「文件 + 行号:标签」', '判据 2（台账只许缩短）：台账条目对应的文件已不存在 / 已无写按钮 / 已接 `hasPermission` ⇒ 红（陈旧条目必须删）', '判据 3（冻结上限）：条目数 > `frozen_max_entries` ⇒ 红（新增豁免必须显式改上限、看得见）', '判据 4（fail-closed）：扫描面零命中 ⇒ 红（选择器 / 目录漂移时不许静默绿）', '判据 5（判别力自证 + 对照）：五种坏形态在**内存语料**上各自判红；合规语料 + 空台账 ⇒ **不红**（判据不许被自己的文案喂红）', '判据 6（实例面）：四张写码 `order:create` / `product:create` / `inbound:create` / `finance:create` 必须逐字出现在各自页面文件里。执行点 = 同文件 test_fixed_pages_really_gate_their_write_button', '🔴 红证（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复 ⇒ **2 failed / 3 passed**（`未登记的写按钮：…/orders/page.tsx …`、`orders/page.tsx 未接写码 order:create（实取 []）`）；恢复修复后 **5 passed**。复算命令 = `python3 -m pytest tests/unit_ci_workflows/test_list_page_write_button_gate.py -q`'],
+    skip_reason='[backend-contract] 静态结构守卫（只读仓内文本 + 内存注入；零网络、零时钟、不跑被引用的测试）由 pytest 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'guard', 'rbac', 'frontend'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -11482,6 +11500,24 @@ _CASE_UI_080 = EvalCase(
     precondition="本用例是 [backend-contract] 纯前端用例：前置由单测自建 —— frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx `vi.mock('@/store/chat')` 注入带 `tool_calls`（工具名 order_query / 入参 {order_no: SO-2026-001} / 结果含 RESULT_SECRET_2026）的消息夹具；前置不成立时单测直接红，不依赖共享夹具；agent-eval 栈不跑它",
 )
 
+# ── UI-081 [NORMAL] 列表页写按钮随权限显隐（issue #5983）：无写码岗位在 /orders、/products、/inbound-orders、/finance 看不到建单/建品/登记按钮，有码照旧（源: cases/ui.yml）──
+_CASE_UI_081 = EvalCase(
+    id='UI-081',
+    legacy_id='',
+    title='列表页写按钮随权限显隐（issue #5983）：无写码岗位在 /orders、/products、/inbound-orders、/finance 看不到建单/建品/登记按钮，有码照旧',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['客服/销售/财务登录后进 /orders、/products、/inbound-orders、/finance：页面能进（守卫是读码），但笔下的写按钮不该出现'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1：客服（有 order:list、无 order:create）在 /orders **看不到**「新增订单」；运营（有 order:create）**看得到**。执行点 = frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx「判据 1」', '判据 2：销售（有 product:list、无 product:create）在 /products 看不到「新增商品」；运营看得到。执行点 = 同文件「判据 2」', '判据 3：财务（有 inbound:view、无 inbound:create）在 /inbound-orders 看不到「新建入库单」；运营看得到。执行点 = 同文件「判据 3」', '判据 4（对照，防「一刀切隐藏」）：只持 order:create 时只有订单页按钮在场，另两页按钮不在。执行点 = 同文件「判据 4」', '判据 5（第 4 页 · 链内同修）：有 `finance:view` 但无 `finance:create` 时 /finance 看不到「登记收支」；财务（有码）看得到。执行点 = 同文件「判据 5」', '🔴 红证 1（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复后跑本判据 ⇒ **4 failed / 4**（报错形态逐字为 `expected document not to contain element, found <button …>新增商品</button>`）；恢复修复后 **4 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx`', '🔴 红证 2（第 4 页加入时实测，2026-10-02）：先落判据 5、`/finance` 尚未接码时跑 ⇒ **1 failed / 4 passed**（`expected document not to contain element, found <button …>登记收支</button>`）；接码后 **5 passed**'],
+    skip_reason='[backend-contract] 纯前端展示面（按钮是否渲染）由 vitest（jsdom）执行；「提交时后端 403」属 admin-api 权限链（另有用例），本用例不管，不进入 agent-eval 冒烟',
+    tags=['ui', 'rbac', 'button-gate', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -11782,6 +11818,7 @@ ALL_CASES = (
     _CASE_MC_060,
     _CASE_MC_061,
     _CASE_MC_062,
+    _CASE_MC_063,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
@@ -12130,6 +12167,7 @@ ALL_CASES = (
     _CASE_UI_078,
     _CASE_UI_079,
     _CASE_UI_080,
+    _CASE_UI_081,
     _CASE_UT_001,
     _CASE_UT_002,
 )

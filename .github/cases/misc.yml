@@ -2232,3 +2232,38 @@ cases:
       tests:
         - tests/unit_ci_workflows/test_rbac_derived_pages.py
       verifies: []
+
+  - id: MC-063
+    legacy_id: ""
+    title: "列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短"
+    domains:
+      - misc
+      - ci
+      - permission
+    tier: normal
+    tags:
+      - ci
+      - guard
+      - rbac
+      - frontend
+    truths_ref: []
+    user_inputs:
+      - "在 (dashboard)/**/page.tsx 上新增一个「新增 X / 新建 X / 登记 X」写按钮，却没在按钮上接写权限码（#5983 的形态）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1（未登记即红）：某页出现新增/新建/**登记**类写按钮、文件内无 `hasPermission(...)` 引用、且不在豁免台账 ⇒ 红并**具名**报出「文件 + 行号:标签」"
+      - "判据 2（台账只许缩短）：台账条目对应的文件已不存在 / 已无写按钮 / 已接 `hasPermission` ⇒ 红（陈旧条目必须删）"
+      - "判据 3（冻结上限）：条目数 > `frozen_max_entries` ⇒ 红（新增豁免必须显式改上限、看得见）"
+      - "判据 4（fail-closed）：扫描面零命中 ⇒ 红（选择器 / 目录漂移时不许静默绿）"
+      - "判据 5（判别力自证 + 对照）：五种坏形态在**内存语料**上各自判红；合规语料 + 空台账 ⇒ **不红**（判据不许被自己的文案喂红）"
+      - "判据 6（实例面）：四张写码 `order:create` / `product:create` / `inbound:create` / `finance:create` 必须逐字出现在各自页面文件里。执行点 = 同文件 test_fixed_pages_really_gate_their_write_button"
+      - "🔴 红证（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复 ⇒ **2 failed / 3 passed**（`未登记的写按钮：…/orders/page.tsx …`、`orders/page.tsx 未接写码 order:create（实取 []）`）；恢复修复后 **5 passed**。复算命令 = `python3 -m pytest tests/unit_ci_workflows/test_list_page_write_button_gate.py -q`"
+    skip_reason: "[backend-contract] 静态结构守卫（只读仓内文本 + 内存注入；零网络、零时钟、不跑被引用的测试）由 pytest 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-02 新增（issue #5983 铁律 8 的类级固化）：修四页（orders / products / inbound-orders / finance 的写按钮按写码显隐）只是**实例面**；本条把「列表页写按钮漏接权限」钉成未登记即红 —— 扫描 `frontend/admin-web/src/app/(dashboard)/**/page.tsx`（排除 `…/new/page.tsx`，那是建单页本身）里「整行 = 新增/新建/**登记**标签」的写按钮，必须同文件引用 `hasPermission(...)` 或登记进 tests/unit_ci_workflows/list_page_write_button_ledger.json（台账只许缩短、冻结上限与条数**现取**）。词汇表含「登记」的原因见 ui.yml 的 UI-081：`/finance` 的按钮叫「登记收支」，只认「新增/新建」会把它漏在射程外（正是本判据要防的「看着覆盖了、其实没覆盖」）。存量豁免 5 条 = after-sales / knowledge / production·processing / production·routings / roles（同类缺口，不在本 PR 范围，如实登记待办）。取号 MC-063（**让号**：#6001 已合入并占用 MC-062 ⇒ 按「后合入者让号」顺延）：按「当前最大号 +1」（现取 main 最大 = MC-061；沿用 MC-054~061 的「空档号 ≠ 可用号」先例，故不采用取号工具给出的历史空档 MC-049）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。"
+    traces:
+      ci:
+        - pr-check.yml
+      tests:
+        - tests/unit_ci_workflows/test_list_page_write_button_gate.py
+      verifies: []

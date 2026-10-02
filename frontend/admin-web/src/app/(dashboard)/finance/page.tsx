@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Plus, Search, RotateCcw, Wallet, ArrowDownCircle, ArrowUpCircle, TrendingUp } from 'lucide-react'
 import { financeApi } from '@/lib/api'
+import { usePermission } from '@/lib/permission'
 import { Button, Input, Select, Pagination, Modal, Badge } from '@/components/ui'
 import type {
   FinanceTransaction,
@@ -92,6 +93,12 @@ export default function FinancePage() {
   const [recKeyword, setRecKeyword] = useState('')
   const [recSearch, setRecSearch] = useState('')
   const [onlyDiff, setOnlyDiff] = useState(false)
+
+  // issue #5983（链内同修的第 4 页）：列表页**写按钮随权限显隐** —— 与员工页同范式
+  //（`canWrite = hasPermission('employee:create')`）。页面守卫是**读**码 `finance:view`，
+  // 而「登记收支」的提交要 `finance:create` ⇒ 无码时不渲染该按钮（不再"白点一下"）。
+  const { has: hasPermission } = usePermission()
+  const canWrite = hasPermission('finance:create')
 
   // ===== 登记收支弹窗 =====
   const [createOpen, setCreateOpen] = useState(false)
@@ -237,10 +244,12 @@ export default function FinancePage() {
           <h1 className="text-xl font-semibold text-neutral-900">财务对账</h1>
           <p className="text-sm text-neutral-500 mt-1">资金流水、收支汇总与应收对账</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="w-4 h-4 mr-1.5" />
-          登记收支
-        </Button>
+        {canWrite && (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="w-4 h-4 mr-1.5" />
+            登记收支
+          </Button>
+        )}
       </div>
 
       {/* 时间范围筛选 */}
