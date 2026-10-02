@@ -182,7 +182,8 @@ export async function loginUi(page, opts = {}) {
     await page.fill('#password', opts.password)
   }
   await page.getByRole('button', { name: /登\s*录|登录/ }).last().click()
-  await page.waitForURL('**/dashboard**', { timeout: 45000 })
+  // 登录后落点未必是 /dashboard（0 权限岗位会被页面守卫挡在别处）⇒ 等待可配置，默认 15s 足够
+  await page.waitForURL('**/dashboard**', { timeout: opts.landingTimeoutMs ?? 15000 })
 }
 
 export function saveCtx(obj) {
