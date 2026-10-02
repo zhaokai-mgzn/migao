@@ -2,6 +2,7 @@ package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.dto.ProductResponse;
+import com.migao.admin.dto.ProductSkuResponse;
 import com.migao.admin.dto.agent.AgentBatchCreateRequest;
 import com.migao.admin.dto.agent.AgentBatchViews;
 import com.migao.admin.dto.agent.AgentProductUpdateRequest;
@@ -18,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -61,15 +63,19 @@ public class AgentBatchService {
     /** 单批上限（契约：N &gt; 50 拒绝并提示分批；本单不做后台任务）。 */
     public static final int MAX_ITEMS = 50;
 
-    /** batchType 白名单（本单只做两个具名批量）。 */
+    /** batchType 白名单（具名批量：商品改价 / 上下架 / 库存调整）。 */
     public static final String TYPE_PRODUCT_PRICE = "product_price";
     public static final String TYPE_PRODUCT_STATUS = "product_status";
+    /** 库存调整（issue #5950）：第三具名批量 —— 复用同一套批次资源 / 状态机 / 撤销语义，
+     *  **不新造第二套批量管道**；字段与词表复用 {@link AgentWriteValues#FIELD_STOCK}。 */
+    public static final String TYPE_INVENTORY_STOCK = "inventory_stock";
 
     /** 两个具名批量各自的字段（field 与 batchType 必须配对）。
      *  ⚠️ 词表单一源 = {@link AgentWriteValues}（issue #5317）：单条改价的改前价核对
      *  用的是**同一份字段词 + 同一套按值比对**，这里只是保留既有常量名（调用方零改动）。 */
     public static final String FIELD_BASE_PRICE = AgentWriteValues.FIELD_BASE_PRICE;
     public static final String FIELD_STATUS = AgentWriteValues.FIELD_STATUS;
+    public static final String FIELD_STOCK = AgentWriteValues.FIELD_STOCK;
 
     /** 批次状态机：preview → executing → done | partial → reverted | revert_partial。 */
     public static final String STATUS_PREVIEW = "preview";
@@ -94,7 +100,8 @@ public class AgentBatchService {
     /** batchType → 唯一合法 field。 */
     private static final Map<String, String> TYPE_FIELD = Map.of(
             TYPE_PRODUCT_PRICE, FIELD_BASE_PRICE,
-            TYPE_PRODUCT_STATUS, FIELD_STATUS);
+            TYPE_PRODUCT_STATUS, FIELD_STATUS,
+            TYPE_INVENTORY_STOCK, FIELD_STOCK);
 
     /** {@code agent_batch_items.error} 列宽（VARCHAR(500)）—— 超长截断，不让一次落库失败。 */
     private static final int MAX_ERROR_LEN = 500;
@@ -120,7 +127,8 @@ public class AgentBatchService {
         String expectedField = TYPE_FIELD.get(batchType);
         if (expectedField == null) {
             throw BusinessException.validationError("batchType 不在白名单内：" + batchType
-                    + "（本单只做 " + TYPE_PRODUCT_PRICE + " / " + TYPE_PRODUCT_STATUS + "）");
+                    + "（本单只做 " + TYPE_PRODUCT_PRICE + " / " + TYPE_PRODUCT_STATUS
+                    + " / " + TYPE_INVENTORY_STOCK + "）");
         }
         List<AgentBatchCreateRequest.Item> requested = request.getItems();
         if (requested == null || requested.isEmpty()) {
@@ -338,6 +346,8 @@ public class AgentBatchService {
         AgentProductUpdateRequest update = new AgentProductUpdateRequest();
         if (FIELD_BASE_PRICE.equals(item.getField())) {
             update.setBasePrice(new BigDecimal(value));
+        } else if (FIELD_STOCK.equals(item.getField())) {
+            update.setStock(new BigDecimal(value));
         } else {
             update.setStatus(value);
         }
@@ -358,7 +368,45 @@ public class AgentBatchService {
         if (FIELD_BASE_PRICE.equals(field)) {
             return product.getBasePrice() == null ? null : product.getBasePrice().toPlainString();
         }
+        if (FIELD_STOCK.equals(field)) {
+            // 🔴 库存批量的工作值 = **每个规格（SKU）**的库存，不是商品级汇总（issue #5950 复核订正）。
+            //
+            // 为什么不能用响应里的 `stock`：`getProductById` 把它覆盖成 **SKU 汇总**
+            // （`response.setStock(totalStock)`，唯一权威是 SKU 级 = #4038）—— 而本批量的执行
+            // 口径是「该商品的每个规格都置为 X」⇒ 拿汇总当 before/after 会在**多 SKU 商品**上
+            // 三方不自洽：预览显示 40→100，实际汇总变 100×N，撤销逐规格回 40 ⇒ 汇总 40×N ≠ 40
+            // （回不到原状 = 撤销语义失效）。
+            // ⇒ 准入改为：**≥1 个 SKU 且各规格库存一致**，工作值取该一致值；不一致 ⇒ 整批拒绝
+            // （预演表必须可信：一条 before 是错的，那张表就不再可信）。
+            // 顺带堵住「无 SKU 商品执行静默空转」：那种商品没有任何 SKU 行可写，
+            // `syncProductStockFromSkus` 也会早退 ⇒ 只写派生列 ⇒ 回读不变（假成功）。
+            return uniformSkuStock(product, resourceId);
+        }
         return product.getStatus();
+    }
+
+    /** 库存批量的工作值（= 每个规格的库存）—— 要求 **≥1 个 SKU 且各规格一致**，否则 fail-closed。 */
+    private String uniformSkuStock(ProductResponse product, String resourceId) {
+        List<ProductSkuResponse> skus = product.getSkus();
+        if (skus == null || skus.isEmpty()) {
+            throw BusinessException.validationError("商品没有 SKU 规格，无法逐规格调整库存：" + resourceId
+                    + "（商品级库存只是 SKU 汇总的派生展示值）—— 请先在商品管理页维护规格"
+                    + "（颜色 / 门幅 + 各自库存）后重试");
+        }
+        // 按**值**去重（40 与 40.0 是同一个库存）——与 `AgentWriteValues` 同一口径
+        Set<String> distinct = new LinkedHashSet<>();
+        for (ProductSkuResponse sku : skus) {
+            BigDecimal stock = sku.getStock() == null ? BigDecimal.ZERO : sku.getStock();
+            distinct.add(stock.stripTrailingZeros().toPlainString());
+        }
+        if (distinct.size() > 1) {
+            throw BusinessException.validationError("该商品各规格库存不一致（"
+                    + String.join(" / ", distinct) + "）：" + resourceId
+                    + " —— 批量库存调整按**规格逐值**预览与撤销，故要求每个规格库存相同"
+                    + "（否则预览与撤销都会失真）。请先在商品管理页把各规格调成一致，"
+                    + "或在商品管理页逐个规格调整");
+        }
+        return distinct.iterator().next();
     }
 
     /** 按**值**比对（数字不比字符串写法：{@code 10.0} 与 {@code 10.00} 是同一个价）。
@@ -372,6 +420,16 @@ public class AgentBatchService {
                 }
             } catch (NumberFormatException e) {
                 throw BusinessException.validationError("改后价不是合法数字：" + resourceId + " ⇒ " + value);
+            }
+            return;
+        }
+        if (FIELD_STOCK.equals(field)) {
+            // 精度准入与**建品/改品路径同一收口**（`StockQuantity`，issue #5063）：> 1 位小数
+            // 显式拒绝，不静默取整（账面与实物不符且无人发现）。负库存由单条写路径的既有校验管。
+            try {
+                StockQuantity.requireOneDecimal(new BigDecimal(value), "批量库存 stock");
+            } catch (NumberFormatException e) {
+                throw BusinessException.validationError("改后库存不是合法数字：" + resourceId + " ⇒ " + value);
             }
             return;
         }

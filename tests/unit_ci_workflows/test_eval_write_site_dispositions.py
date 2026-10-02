@@ -30,6 +30,7 @@
 | `_restore_product_status` | PUT 商品在售状态复位（`product_status_restore`，#4075） | 状态码 + **回读 `status`** | ✅ |
 | `_restore_sku_price` | PATCH SKU 价复位（`sku_price_restore`，#4075） | 状态码 + **回读 `skus[].price`** | ✅ |
 | `_restore_product_price` | PATCH **商品级基准价**复位（`product_price_restore`，#5303） | 状态码 + **回读 `basePrice`** | ✅ |
+| `_restore_product_stock` | PATCH **库存**复位（`product_stock_restore`，#5950） | 状态码 + **回读 `skus[].stock` 逐规格比对** | ✅ |
 
 > 注（#4075）：实现体函数名由 `_run_pre_clean_action` 改为 **`_run_clean_action`** ——
 > `post_clean` 与 `pre_clean` 共用同一份实现（不复制第二套），名字不再带阶段。
@@ -100,6 +101,14 @@ DISPOSITIONS = {
         "已校验：status_code >= 300 记账 + **回读** `skus[].price` 比对（按色名/售卖方式/门幅）；"
         "回读找不到该规格 ⇒ 按「未证实」记账（不静默当成功）",
     # ── 复位族第三批（issue #5303）：A 档可逆写回绑 ⇒ 商品级基准价这一面重新有写方 ──
+    # ── 复位族第四批（issue #5950）：第三个具名批量 `inventory_stock` 的复位面 ──
+    ("_restore_product_stock", "patch", 1):
+        "已校验（issue #5950）：① **成功判据** = HTTP < 300 **且** 回读 `skus[].stock` **逐规格**"
+        "都等于目标值（`_readback_product` + `_product_stock`，逐值口径与写入口径同形）；"
+        "② **失败可见** = status_code >= 300 ⇒ `_clean_not_applied`（`PRECONDITION_NOT_RESTORED: "
+        "post_clean` 进用例结论，不静默当成功）；回读里没有 SKU 规格 ⇒ 按「未证实」记账；"
+        "③ **幂等** = 各规格本就等于目标值 ⇒ 直接返回成功且**不发** PATCH（用汇总判会恒不等 ⇒ 判据形同虚设）；"
+        "④ **回读证据** = 逐规格列表写进失败文案，供归因",
     ("_restore_product_price", "patch", 1):
         "已校验（issue #5303）：status_code >= 300 记账 + **回读** `basePrice` 比对"
         "（`_readback_product` + `_product_price`，与 #3807 的 `restore_product` 同源口径）；"

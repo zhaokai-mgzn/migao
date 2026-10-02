@@ -270,6 +270,13 @@ PRODUCT_ATTR_WRITERS: dict = {
     # `revert` = 逐条还原为 `old_value`：还原的是**同一批**改过的属性 ⇒ 与 execute 同维。
     ("product_batch_update", "revert", "product_price"): "base_price",
     ("product_batch_update", "revert", "product_status"): "status",
+    # ── issue #5950（第三个具名批量：库存调整）───────────────────────────────────
+    # `inventory_stock` 写的是 **SKU 级库存**（`product_skus.stock`；商品级 `products.stock` 只是
+    # 派生冗余列，唯一权威是 SKU 级 = #4038）。属性键独立（`stock` ≠ `base_price` ≠ `sku_price`）：
+    # 共用一个键会让"声明了错的复位类型"也判绿（假绿）。
+    ("product_batch_update", "preview", "inventory_stock"): "",
+    ("product_batch_update", "execute", "inventory_stock"): "stock",
+    ("product_batch_update", "revert", "inventory_stock"): "stock",
     # 用例**未声明** `batch_type` ⇒ 改哪个属性**不可判定** ⇒ `unknown`（走台账可见路径，
     # 不静默当成"不改共享夹具"）；`preview` 不依赖判别维（它本就不改商品属性）。
     ("product_batch_update", "preview"): "",
@@ -295,7 +302,10 @@ PRODUCT_ATTR_WRITERS: dict = {
 RETIRED_ATTR_WRITERS: dict = {
     ("product_manage", "toggle_status"): "status",    # 上下架（PR-007 / PR-025 的写方）
     ("product_manage", "update"): "product_attr",     # images / 字段级更新
-    ("inventory_manage", "adjust"): "stock",          # 出库（PR-005 的写方）
+    # ⚠️ issue #5950：原 `("inventory_manage", "adjust") → "stock"` **已移出** —— 逐条调库存的
+    # 写 action `adjust` 早随 #5247 从源码删除（该工具只读），而 `stock` 这个属性键现在由
+    # **活写方**（`product_batch_update(execute, inventory_stock)`）提供 ⇒ 留在留档表 = 两表
+    # 重复声明同一个 key（`test_no_writer_key_is_double_claimed` 会红）。
     ("product_manage", "create"): "",     # 建品：写**新对象**，不触达共享夹具属性（#3835 守卫单独治）
     # ⚠️ 随 #4371（商品↔加工项解耦）退场的两条：`("product_processing_item_manage",
     #    "add"/"")` → `processing_items` —— 工具退场、该属性键也不再有写方，故不留条目。
@@ -339,8 +349,10 @@ REGISTERED_RESTORE_GAPS: dict = {}
 #: 「这条用例驱动的是哪类批量」是用例的**意图**，逐调用去要参数会造出假红（模型合理地不重复传）。
 NAMED_BATCH_TOOLS = frozenset({"product_batch_update"})
 
-#: 具名批量的 `batch_type` **白名单**（与工具侧 `app/tools/product_batch_update.py` 同源口径）。
-NAMED_BATCH_TYPES = ("product_price", "product_status")
+#: 具名批量的 `batch_type` **白名单**（与工具侧 `app/tools/product_batch_update.py` 同源口径；
+#: `tests/unit_ci_workflows/test_gate_coverage_and_same_source.py` 逐项比对两侧 ——
+#: 新增一个批类型必须两处同改）。
+NAMED_BATCH_TYPES = ("product_price", "product_status", "inventory_stock")
 
 
 def _case_batch_type(pairs) -> tuple:
@@ -996,18 +1008,35 @@ class TestUnrestorableWritersAreRegisteredGaps:
             ["FAKE-CID"], "无 issue 号的条目没被认出来 ⇒ 本判据在空台账下变空壳（假绿）"
 
     def test_red_proof_new_gap_is_caught(self, monkeypatch):
-        """**红证 ③**：活写方触达"无复位类型"的属性、又未登记台账 ⇒ 判据必红。
+        """**红证 ③**：活写方触达"**无复位类型**"的属性、又未登记台账 ⇒ 判据必红。
 
-        原口径用 `inventory_manage(adjust)`（写 `stock`）；**#5247 证伪**：该写 action 已从
-        源码删除、工具收窄为只读 ⇒ 换成当前可达的整工具写方 `order_create` 承接同一缺陷形态
-        （`stock` 这一属性键不在 runner 的复位族里 ⇒ 走台账路径）。
+        口径沿革：#5247 前用 `inventory_manage(adjust)`（写 `stock`）⇒ 该写 action 从源码删除后
+        换成 `order_create` 承接同一缺陷形态，**用一个当时无复位类型的属性键**（`stock`）。
+        ⚠️ issue #5950：`stock` **已**有复位类型（`product_stock_restore`）⇒ 不能再拿它当
+        "无复位类型"的样本；改用仍无复位类型的 `product_attr`（留档写方
+        `("product_manage","update") → product_attr` 的属性键），缺陷形态逐字保留。
+        判别力：谁把 `product_attr` 也补上复位类型 ⇒ 本条立刻红（它证明的是"台账路径还在"，
+        不是"某个具体属性永远无解"）。
         """
-        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, ("order_create", ""), "stock")
+        monkeypatch.setitem(PRODUCT_ATTR_WRITERS, ("order_create", ""), "product_attr")
         fake = [{"id": "FAKE-9", "user_inputs": ["调整遮光窗帘的库存，出库 3 件"],
                  "expectations": [{"tool": "order_create"}]}]
-        assert unregistered_restore_gaps(fake) == {"FAKE-9": ["stock"]}, unregistered_restore_gaps(fake)
+        assert unregistered_restore_gaps(fake) == {"FAKE-9": ["product_attr"]}, \
+            unregistered_restore_gaps(fake)
         assert ledger_new_entries(fake) == ["FAKE-9"], (
             "新缺口没进红名单 ⇒ 台账的 fail-closed 语义失效")
+
+    def test_red_proof_stock_binding_is_load_bearing(self, monkeypatch):
+        """**红证 ③（#5950 的反方向）**：撤掉 `stock` 的复位类型绑定 ⇒ 库存写方**立刻**变缺口。
+
+        为什么值得单列：它证"`PR-014` 不进台账"**不是销账** —— 它不进台账，只因为 `stock`
+        已有复位类型；绑定一撤，同一条用例立刻走 fail-closed 的台账路径。
+        """
+        monkeypatch.delitem(lr.RESTORE_TYPES_BY_ATTR, "stock")
+        by = {c["id"]: c for c in _all_cases()}
+        assert unregistered_restore_gaps([by["PR-014"]]) == {"PR-014": ["stock"]}, (
+            "撤掉 stock 的复位绑定后，PR-014 没被判成缺口 ⇒ `product_stock_restore` 这条绑定"
+            "是空挂的（判据 ② 对它无对象）")
 
     def test_red_proof_stale_ledger_entry_is_caught(self, monkeypatch):
         """**红证 ③（反方向）**：台账里留着一条已不复现的条目 ⇒ 判据必红（双向相等）。
@@ -1079,6 +1108,13 @@ class TestRunnerRegistryIsTheSingleSource:
         assert lr.RESTORE_TYPES_BY_ATTR.get("base_price") == "product_price_restore", (
             "#5303 回绑的 `product_update` 写的是商品级 `base_price` —— 没有独立属性键 ⇒ "
             f"判据 ②/③ 对它对不上号：{lr.RESTORE_TYPES_BY_ATTR}")
+        # issue #5950（第三个具名批量 = `inventory_stock`）：写方改的是 **SKU 级库存** ⇒ 必须
+        # 有**独立**属性键（`stock`）+ 可在 post 执行的复位类型，否则写方跑完把共享夹具的库存
+        # 留给同栈其它用例（#4075 的病灶形态），且判据 ② 对它无对象（静默失效）。
+        assert "product_stock_restore" in lr._POSTCLEAN_TYPES
+        assert lr.RESTORE_TYPES_BY_ATTR.get("stock") == "product_stock_restore", (
+            "#5950 的 `inventory_stock` 批量写的是 `stock` —— 没有独立属性键 ⇒ "
+            f"判据 ②/③ 对它对不上号：{lr.RESTORE_TYPES_BY_ATTR}")
         # #4992 的复位族第二批（订单状态 / 客户档案）：同一条结论通道
         # （`restore_failures` → `completion_verdict`）—— 行为面守卫见
         # `tests/unit_ci_workflows/test_shared_fixture_restore_order_customer.py`。
@@ -1104,6 +1140,35 @@ class TestRunnerRegistryIsTheSingleSource:
         assert orphans == [], (
             f"runner 的复位属性 {orphans} 在写面词表里没有对应写方 ⇒ 判据②无从适用"
             f"（词表见 PRODUCT_ATTR_WRITERS / RETIRED_ATTR_WRITERS）")
+
+    def test_third_named_batch_inventory_stock_has_a_restore_type(self):
+        """**#5950 主判据（真实库）**：第三个具名批量的写方必须**声明复位**且属性键对得上。
+
+        判据分两半，缺一不可：
+        ① `Pr-014`（批量库存调整用例）真的被扫描面认出**写 `stock`** —— 否则判据 ② 对它
+           无对象（`migao-acceptance`「绿了但没跑」）；
+        ② runner 侧存在 `stock` ↔ `product_stock_restore` 的绑定，且该用例真的声明了它 ——
+           只加类型不给用例声明 ⇒ 库存跑完仍把共享夹具留给同栈其它用例（#4075 的病灶形态）。
+
+        判别力（摘接线的注入点）：删掉用例里的 `post_clean` / 改属性键 / 删 runner 的绑定
+        ⇒ 本条立刻红并具名报出是哪一半。
+        """
+        by = {c["id"]: c for c in _all_cases()}
+        assert "PR-014" in by, (
+            "实际用例库里没有 PR-014（#5950 的库存批量用例）——判据无对象；"
+            f"现取 id 尾段：{sorted(by)[-5:]}")
+        case = by["PR-014"]      # 缺席即 KeyError（静默无对象在这里不可能）
+        assert ("product_batch_update", "execute", "inventory_stock") in live_write_expectations(case), (
+            "PR-014 没被认成 `inventory_stock` 的**写方** ⇒ 判据 ② 对它静默失效"
+            f"（实际认到：{live_write_expectations(case)}）")
+        assert touched_attrs(case) == {"stock"}, (
+            f"PR-014 触达的共享夹具属性不是 `stock`：{touched_attrs(case)}")
+        assert "product_stock_restore" in declared_restore_types(case), (
+            f"PR-014 写了库存却没声明复位：{sorted(declared_restore_types(case))}")
+        assert runner_restore_map().get("stock") == "product_stock_restore", (
+            f"runner 的 `stock` 属性没绑到 `product_stock_restore`：{runner_restore_map()}")
+        assert missing_restores([case]) == {}, (
+            f"PR-014 缺复位声明 ⇒ 跑完把共享夹具的库存留给同栈其它用例：{missing_restores([case])}")
 
     def test_registry_is_one_table_shared_by_both_phases(self):
         """**不复制第二套**：`pre`/`post` 的合法类型集合都由 `_CLEAN_TYPES` 派生。"""

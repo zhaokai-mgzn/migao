@@ -122,6 +122,17 @@ _saved_states: dict = {}  # {product_id: {"basePrice": ..., "name": ...}}
 # backend/admin-api/src/main/java/com/migao/admin/dto/agent/AgentProductUpdateRequest.java
 PRODUCT_PRICE_FIELD = "basePrice"
 
+#: 商品**库存**字段的 wire 名（issue #5950 的复位族用）—— 与 `PRODUCT_PRICE_FIELD` 同一条纪律：
+#: 请求体字段名必须与 `AgentProductUpdateRequest` / `ProductUpdateRequest` 的字段**逐字一致**
+#: （#3807 的实证：发错名字 ⇒ 后端 DTO 忽略未知属性 ⇒ 2xx + "已复位"文案 + 值根本没变）。
+PRODUCT_STOCK_FIELD = "stock"
+
+
+def _product_stock(item) -> object:
+    """商品库存的**唯一取值口径**（`stock` 权威；与 `_product_price` 同款纯读）。
+    """
+    return (item or {}).get(PRODUCT_STOCK_FIELD)
+
 
 def _product_price(item) -> object:
     """商品级基准价的**唯一取值口径**（`basePrice` 权威、`price` 兜底）。
@@ -484,6 +495,10 @@ _CLEAN_TYPES: dict[str, dict] = {
     # 属性键必须是**独立的** `base_price`：与 `sku_price` 共用一个键会让
     # 「写 SKU 价」与「写商品价」在守卫侧不可区分 ⇒ 声明了错误的那一个也判绿（假绿）。
     "product_price_restore":     {"phases": ("pre", "post"), "attr": "base_price"},
+    # issue #5950（第三个具名批量 `inventory_stock`）：写的是 **SKU 级库存**
+    # （`product_skus.stock`；`products.stock` 是派生冗余列）⇒ 属性键必须独立（`stock`），
+    # 与 `base_price` / `sku_price` 正交 —— 共用一个键会让"声明了错的复位类型"也判绿（假绿）。
+    "product_stock_restore":     {"phases": ("pre", "post"), "attr": "stock"},
     # ── 复位族第二批（issue #4992）：写方改的是**订单状态** / **客户档案字段** ──
     # 为什么这两条此前只能登记 `namespaces` 弱证据（OR-007 / CU-004 的原注释）：
     #   · OR-007 **取消**订单 ⇒ 重跑时那条订单已 `cancelled`（终态，状态机 `cancelled → Set.of()`
@@ -610,6 +625,7 @@ _PRECLEAN_FAILURE_PREFIXES: dict[str, tuple[str, ...]] = {
     "product_status_restore": (),   # 复位族（#4075）：不在位/写失败/回读不符走 `_clean_not_applied`
     "sku_price_restore": (),        # 同上
     "product_price_restore": (),    # 同上（#5303）
+    "product_stock_restore": (),    # 同上（#5950）：库存复位，未应用走 `_clean_not_applied`
     "order_status_restore": (),     # 同上（#4992）
     "customer_profile_restore": (),  # 同上（#4992）
     "session_credential_restore": (),  # 同上（#5482）
@@ -1105,6 +1121,61 @@ async def _restore_sku_price(token: str, spec: dict, phase: str) -> str:
     return f"已复位 {_who} 的 SKU 价 → {want}（回读一致）"
 
 
+async def _restore_product_stock(token: str, spec: dict, phase: str) -> str:
+    """`product_stock_restore`：按商品名把**库存**复位到给定值（issue #5950）。
+
+    为什么需要：第三个具名批量 `inventory_stock`（`product_batch_update(execute)`）把
+    **SKU 级库存**（`product_skus.stock`，唯一权威 = #4038）统一置为一个绝对值 ⇒ 跑完就把
+    共享夹具（PR-014 点名的两条种子商品）的库存改脏，而读方（PR-002「有哪些缺货的商品」、
+    PR-005 库存台账、低库存预警等）看到的是被改过的世界（#4075 的病灶形态）。
+
+    ⚠️ **口径 = 逐规格**（与写入口径同形，不能按商品级汇总判）：写方是「该商品每个规格都置为
+    `stock`」，故复位是「每个规格都置回 `stock`」，**幂等判定也必须逐规格**——用汇总判会
+    `Σ(500×3)=1500 ≠ 500` 恒不等 ⇒ 每次都重发 PATCH（幂等判据形同虚设）。
+    实现体刻意与 `_restore_product_price` **分开**（不抽公共 helper）：
+    那一份是**商品级单值列**（`base_price`）的语义，这一份是**逐 SKU 集合**的语义 ——
+    硬凑一处反而会让"回读证实"这一步对错对象。
+
+    `stock` 必填（缺 = 配置错误，交由调用侧 `_run_clean_specs` 折进结论）；定位口径与其余
+    复位族**共用** `_find_restore_target`（精确同名 > 唯一子串，0 件/多件即 fail-closed）。
+    """
+    kw = str(spec.get("product_keyword") or "")
+    want = spec.get("stock")
+    if want is None:
+        return _clean_not_applied(
+            phase, "`product_stock_restore` 缺 `stock`（无法确定复位目标值）")
+    _who = f"商品「{kw}」"
+
+    def _specs_are(prod) -> bool:
+        skus = (prod or {}).get("skus") or []
+        got = [_product_stock(sku) for sku in skus]
+        return bool(got) and all(g is not None and _same_number(g, want) for g in got)
+
+    async with httpx.AsyncClient() as c:
+        h = _admin_headers(token)
+        prod, err = await _find_restore_target(c, token, kw)
+        if not prod:
+            return _clean_not_applied(phase, err)
+        pid = str(prod.get("id") or "")
+        if _specs_are(await _readback_product(c, h, pid)):
+            return f"{_who} 的各规格库存本就是 {want}，无需复位（幂等）"
+        r = await c.patch(f"{ADMIN_API}/api/admin/agent/products/{pid}",
+                          headers=h, json={PRODUCT_STOCK_FIELD: want}, timeout=15)
+        if getattr(r, "status_code", 0) >= 300:
+            return _clean_not_applied(
+                phase, f"{_who} 的库存复位为 {want} 失败（HTTP {r.status_code}）")
+        after = await _readback_product(c, h, pid)
+        skus = (after or {}).get("skus") or []
+        if not skus:
+            return _clean_not_applied(
+                phase, f"{_who} 的库存复位**未证实** —— 回读里没有 SKU 规格")
+        bad = [str(_product_stock(sku)) for sku in skus if not _same_number(_product_stock(sku), want)]
+        if bad:
+            return _clean_not_applied(
+                phase, f"{_who} 的库存复位**未生效** —— 回读里仍有规格为 {sorted(set(bad))}，应为 {want}")
+    return f"已复位 {_who} 的各规格库存 → {want}（逐规格回读一致）"
+
+
 async def _restore_product_price(token: str, spec: dict, phase: str) -> str:
     """`product_price_restore`：按商品名把**商品级基准价**（`products.base_price`）复位到给定值。
 
@@ -1333,12 +1404,20 @@ def _match_sku_price(skus, color: str, method: str, width: str):
     return None
 
 
-def _same_price(a, b) -> bool:
-    """价格比较（字符串/数字混用，`0.010000000000000009` 类的浮点噪声按两位小数抹平）。"""
+def _same_number(a, b) -> bool:
+    """数值比较（字符串/数字混用，浮点噪声按 **1 位小数**抹平 = `NUMERIC(12,1)` 列精度）。
+
+    为什么容差不是 0：`Decimal`→JSON→float 往返会带 `0.010000000000000009` 这类噪声；
+    库存/价格列都是 1 位小数（issue #5063 的 V115）⇒ 容差取半个最小单位（0.05）。
+    """
     try:
-        return abs(float(a) - float(b)) < 0.005
+        return abs(float(a) - float(b)) < 0.05
     except (TypeError, ValueError):
         return False
+
+
+#: 兼容别名（旧名 = 价格面历史叫法；**不得**再新增第二份口径）。
+_same_price = _same_number
 
 
 # 会话凭证事实的载体（**单一事实源**）：PG `session_states`（`SessionStateStore`，键 = `session_id`）。
@@ -1612,6 +1691,9 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
     if _type == "sku_price_restore":
         # 复位族（#4075）：把 **SKU 价**复位（PR-021 的病灶面）。
         return await _restore_sku_price(token, spec, phase)
+    if _type == "product_stock_restore":
+        # 复位族（#5950）：把**库存**复位（第三个具名批量 `inventory_stock` 的病灶面）。
+        return await _restore_product_stock(token, spec, phase)
     if _type == "product_price_restore":
         # 复位族（#5303）：把**商品级基准价**复位（PR-009 的写方 `product_update` 重新可达后
         # 的病灶面；与 SKU 价正交 —— 见该函数 docstring）。

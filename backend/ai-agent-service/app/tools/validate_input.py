@@ -341,7 +341,7 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         "preview": {
             "required": ["batch_type", "items"],
             "batch_type": {"type": str, "min_len": 1,
-                           "label": "批量类型（product_price / product_status）"},
+                           "label": "批量类型（product_price / product_status / inventory_stock）"},
             "items": {"type": list, "min_len": 1,
                       "label": "要改的条目（每项 resourceId/field/oldValue/newValue）"},
         },

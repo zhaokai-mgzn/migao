@@ -5843,7 +5843,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 processing_order_set_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 processing_order_set_query/uncovered，同 PR 删除该条目）。取号 PG-064：库内 PG-001~PG-063 已占用（PG-044/045/046/047/059 为历史空号），PG-064 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: processing_order, set, scan_loop, mibao, readonly, llm_behavior
 
-## 商品域（107 case）
+## 商品域（108 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -7124,6 +7124,36 @@
 跳过: [backend-contract] 工具契约 / 阈值 / 两段确认结构锁 / 撤销端点归属 —— 全部由 pytest 单测（零 LLM、零网络，HTTP 客户端全程替身）执行，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-24 新增（issue #5314 的 Agent 侧包）：把「阈值 N>50 拒绝 / batchType 白名单两个 / 两段确认不可跳过 / 撤销逐条还原」从散文变成可执行判据（同 PR-104 / PR-107 的非 LLM 面形态：机器判据在 traces.tests）。LLM 行为面见 PR-108。 ｜ tags: batch, threshold, static-guard, evidence-strength
+
+### PR-014. 批量库存调整 - 两段确认（多选勾选集合 → 逐条「改前库存 → 改后库存」）→ 执行 → 撤销 🔵
+```
+你: 把遮光窗帘和北欧风窗帘每个规格的库存都调到 1200 米
+你: 已选商品：遮光窗帘、北欧风窗帘
+你: [🤖 按上一轮卡片作答]
+你: 撤销刚才那个批量调库存
+你: [🤖 按上一轮卡片作答]
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: interact(component=choice, multiSelect=True)
+期望: product_batch_update(action=preview, batch_type=inventory_stock)
+期望: interact(component=confirm)
+期望: product_batch_update(action=execute)
+数据: success=true
+数据: 两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**
+数据: 字段配对（机器断言）：`batch_type=inventory_stock` ⇒ 每条 `field` 必须是 `stock`（服务端 `AgentBatchService.TYPE_FIELD` 不配对直接 422），改前值 `oldValue` 必填（撤销的唯一依据）；判据见 backend/ai-agent-service/tests/test_product_batch_update.py 的 `TestInventoryStockBatch`
+数据: 阈值 N>50 拒绝并提示分批（本用例 N=2；边界判据见 PR-109）
+数据: 撤销逐条还原为改前值 `old_value`（服务端 `revert` → 状态 `reverted`；`revertible` 如实反映，false ⇒ 话术不得承诺可撤销）
+数据: 部分失败逐条报告、不做整体回滚（单测断言：执行路径**不得**顺带调用 revert）
+复位: product_stock_restore(product_keyword=遮光窗帘、stock=500)
+复位: product_stock_restore(product_keyword=北欧风窗帘、stock=500)
+前置: product_count_for_keyword(source=遮光窗帘、expect=1)
+前置: product_count_for_keyword(source=北欧风窗帘、expect=1)
+命名空间(同键互斥·自动串行): product_name:遮光窗帘、product_name:北欧风窗帘
+必填: product_batch_update(preview) 字段 batch_type, items
+必填: product_batch_update(execute) 字段 batch_id
+必填: product_batch_update(revert) 字段 batch_id
+必须成功: product_batch_update
+```
+溯源: 2026-10-02 新增（issue #5950，第三个具名批量扩面）：批量库存调整复用 #5314 的批次契约（工作值 = **每个规格**的 SKU 库存；要求该商品各规格库存一致，不一致 ⇒ preview 阶段 fail-closed，以免预览/撤销在多 SKU 商品上失真）（同一四端点 / 同一状态机 / 同一 `revertible`），只多一条 `batchType=inventory_stock` + field=`stock`。取号 `scripts/next_case_id.py PR` 现取 = PR-014（历史空档，main 未占用）。post_clean = `product_stock_restore`（属性键 `stock`，实现体见 tests/agent_eval/local_runner.py 的 `_restore_product_stock`）。机器判据（字段配对 / 改前值 / 两段确认结构锁 / 阈值 / 撤销还原 / before→after 投影单一源）在 traces.tests。 ｜ tags: batch, multi_turn, write, undo, two_stage_confirm, stock
 
 ### PR-110. 工人可达的入库端点：零商家权限码 + 请求体**结构上**不可表达「任意调整」 🔵
 ```
@@ -8597,8 +8627,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：602（活跃 126，跳过 476）
-- tier 分布：smoke 12 / normal 557 / adversarial 31
+- 用例总数：603（活跃 127，跳过 476）
+- tier 分布：smoke 12 / normal 558 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8619,7 +8649,7 @@
 - 订单域：55
 - 加工项域：19
 - 加工单域：56
-- 商品域：107
+- 商品域：108
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -8786,6 +8816,7 @@
 - PR-107: Python 侧真库判据不再静默 skip：兜底搜索路径与 Java 侧同源 + CI fail-closed（缺 PG 判红）+ skip 逐条可见
 - PR-108: 批量改价 - 两段确认（多选勾选集合 → 逐条「改前 → 改后」）→ 执行 → 撤销
 - PR-109: 批量更新 - 阈值 N>50 拒绝分批 + batchType 白名单只有两个 + 两段确认结构锁 + 撤销逐条还原（确定性判据，非 LLM 面）
+- PR-014: 批量库存调整 - 两段确认（多选勾选集合 → 逐条「改前库存 → 改后库存」）→ 执行 → 撤销
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序**进表**：`data-state=no_row` + 行尾 `管理▸` 可停用/删除，issue #5875）

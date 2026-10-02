@@ -27,13 +27,23 @@ public final class AgentWriteValues {
     /** 上下架状态。 */
     public static final String FIELD_STATUS = "status";
 
+    /** 商品级库存（issue #5950）：`products.stock` 的 wire 名 —— 与逐条改库存
+     *  （{@code AgentProductUpdateRequest.stock} / `ProductUpdateRequest.stock`）**同一个字段词**，
+     *  精度口径 = {@code StockQuantity}（NUMERIC(12,1)，最多 1 位小数）。 */
+    public static final String FIELD_STOCK = "stock";
+
+    /** **按数值**比对的字段词（其余按字面）——`basePrice` 与 `stock` 都是十进制数量列，
+     *  {@code 10.0} 与 {@code 10.00} 是同一个值。 */
+    private static final java.util.Set<String> NUMERIC_FIELDS =
+            java.util.Set.of(FIELD_BASE_PRICE, FIELD_STOCK);
+
     private AgentWriteValues() {
     }
 
     /**
      * 调用方声明的改前值 × DB 当前值：按值核对。
      *
-     * @param field   字段词（{@link #FIELD_BASE_PRICE} / {@link #FIELD_STATUS}）
+     * @param field   字段词（{@link #FIELD_BASE_PRICE} / {@link #FIELD_STATUS} / {@link #FIELD_STOCK}）
      * @param given   调用方声明的改前值（可为 null ⇒ 视为不可核对）
      * @param current DB 当前值（可为 null ⇒ 视为不可核对）
      * @return true = 两者等价（放行）；false = 不符或不可核对（拒绝）
@@ -42,7 +52,7 @@ public final class AgentWriteValues {
         if (given == null || current == null) {
             return false;   // 无处可比 ⇒ fail-closed（不得为「没法比」放行）
         }
-        if (FIELD_BASE_PRICE.equals(field)) {
+        if (NUMERIC_FIELDS.contains(field)) {
             try {
                 return new BigDecimal(given).compareTo(new BigDecimal(current)) == 0;
             } catch (NumberFormatException e) {

@@ -6,9 +6,9 @@
 （唯一补回的写能力，含批量形态）。
 🔴 写边界（用户裁定 2026-09-23 / issue #5247 只读化 → issue #5303 A 档可逆写补回 →
 issue #5314 批量更新）：
-除 `product_update` / `product_batch_update` / `sku_update`（改价 + 批量上下架；
+除 `product_update` / `product_batch_update` / `sku_update`（改价 + 批量上下架 + 批量库存调整；
 `WRITE`、可逆，批量另带**撤销**入口）外，本 skill **不得**绑定任何 `read_only != True`
-的工具（建品 / 单条上下架 / 调库存 / 分类增删改 / 加工项增删改仍在 B 端下线）。
+的工具（建品 / 单条上下架 / 单条调库存 / 分类增删改 / 加工项增删改仍在 B 端下线）。
 机械判据 = `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的
 `A_TIER_REVERSIBLE_WRITES` 白名单（新增成员必须显式改判）。
 
@@ -49,13 +49,17 @@ PRODUCT_TOOLS = [
 
 PRODUCT_SYSTEM_PROMPT = """## 本域写边界（issue #5303 A 档可逆写补回 → issue #5314 批量更新）
 
-商品/库存/工艺域可写的动作只有两类：
+商品/库存/工艺域可写的动作只有三类：
 ① **改价**：商品级统一定价 `product_update` / 单规格调价 `sku_update` / **批量改价**
 `product_batch_update`（batch_type=product_price）；
 ② **批量上/下架**：`product_batch_update`（batch_type=product_status）—— 只能走批量，
-单条上下架仍未开放。
-**其余写能力仍在 B 端下线**（建品 / 改名 / 改图 / 单条上下架 / 调库存 / 分类增删改 /
-加工项增删改）：商家提出这类请求时如实说明「米宝在商品域现在只做查询、改价与批量上下架」+
+单条上下架仍未开放；
+③ **批量库存调整**：`product_batch_update`（batch_type=inventory_stock，field=stock，issue #5950）
+—— 只能走批量（把一批商品**每个规格**的库存调到某个绝对值，逐条「改前 → 改后」预览 + 可撤销）；
+⚠️ 要求该商品**各规格库存一致**（不一致 ⇒ preview 阶段被服务端拒绝并给出实际值 →
+如实转述，引导到商品管理页逐个规格调整）；单条改库存仍未开放。
+**其余写能力仍在 B 端下线**（建品 / 改名 / 改图 / 单条上下架 / 单条调库存 / 分类增删改 /
+加工项增删改）：商家提出这类请求时如实说明「米宝在商品域现在只做查询、改价、批量上下架与批量库存调整」+
 给出具体后台页面（商品管理 /products 的对应按钮）→ **不得**承诺代办、不得发写确认卡。
 
 ## 🔴 改价必须先预览后写（禁止无预览直接写）
@@ -91,8 +95,10 @@ PRODUCT_SYSTEM_PROMPT = """## 本域写边界（issue #5303 A 档可逆写补回
    没有 `batch_id` 的执行一律被拒（`batch_preview_required`）。
 
 其它口径：
-- **batch_type 只有两个**：`product_price`（批量改价，field=price）/ `product_status`
-  （批量上/下架，field=status，取值 `on_sale` / `off_sale`）。改名/改图/改库存/自由字段的批量**不支持**。
+- **batch_type 只有三个**：`product_price`（批量改价，field=basePrice）/ `product_status`
+  （批量上/下架，field=status，取值 `on_sale` / `off_sale`）/ `inventory_stock`（批量库存调整，
+  field=stock，**每规格**该值、要求各规格库存一致，单位米，最多 1 位小数，issue #5950）。
+  改名/改图/自由字段的批量**不支持**。
 - **单批上限 50 条**：超过就如实告知并**分批**（每批 ≤ 50 条，逐批走两段确认），不要承诺后台异步执行。
 - 目标值必须**逐条明确**、并在第二段卡上逐条可核对；比例类需求（「统一上调 5%」）先把逐条目标值
   列给商家确认，再走 preview —— **不得**把推算出来的幅度当成商家的确认。
@@ -107,7 +113,7 @@ PRODUCT_SYSTEM_PROMPT = """## 本域写边界（issue #5303 A 档可逆写补回
 |------|------|
 | 搜商品 / 看商品档案与 SKU 价格 | product_search / product_detail |
 | **改价（商品级 / 单规格）** | product_update / sku_update（**先 confirm 预览**） |
-| **批量改价 / 批量上下架（多条）** | product_batch_update（**两段确认：勾选集合 → 逐条预览 → 执行；可 revert 撤销**） |
+| **批量改价 / 批量上下架 / 批量库存调整（多条）** | product_batch_update（**两段确认：勾选集合 → 逐条预览 → 执行；可 revert 撤销**） |
 | 某商品实时库存 / 低库存预警 | inventory_manage(query / low_stock_alert) |
 | 库存台账（按货号/颜色分页） | stock_ledger_query |
 | 入库单 / 批次到货来源 | inbound_order_query(list / batches / detail) |

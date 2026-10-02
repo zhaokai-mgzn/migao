@@ -43,6 +43,16 @@
     {"field": "status", "given": "ON_SALE", "current": "on_sale", "expect": false,
      "_why": "非价格字段：大小写敏感"},
     {"field": "status", "given": null, "current": "on_sale", "expect": false,
-     "_why": "非价格字段：一侧缺失 ⇒ fail-closed"}
+     "_why": "非价格字段：一侧缺失 ⇒ fail-closed"},
+    {"field": "stock", "given": "1200.0", "current": "1200.00", "expect": true,
+     "_why": "库存（issue #5950）与价格同属十进制数量列 ⇒ 按值比对：写法不同不算不符"},
+    {"field": "stock", "given": "800.5", "current": "800.5", "expect": true,
+     "_why": "库存可为 1 位小数（NUMERIC(12,1)，issue #5063）⇒ 小数逐值相等"},
+    {"field": "stock", "given": "800.5", "current": "800.6", "expect": false,
+     "_why": "库存在 0.1 米粒度上真的不同 ⇒ 拒（撤销依据不许是错值）"},
+    {"field": "stock", "given": "1.25", "current": "1.25", "expect": true,
+     "_why": "比对层不判精度（>1 位小数的准入在 StockQuantity / 批量 create 的 validateNewValue）——两件事不混"},
+    {"field": "stock", "given": "800", "current": null, "expect": false,
+     "_why": "当前库存缺失 ⇒ fail-closed（与价格面同口径）"}
   ]
 }

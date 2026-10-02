@@ -21,13 +21,15 @@ import java.util.List;
  * 故 {@code oldValue} 不是装饰：服务端会拿它与 DB 当前值逐条核对（按**值**比对，
  * 数字不比字符串写法），不符即拒绝 —— 撤销的唯一依据不允许是调用方的一面之词。</p>
  *
- * <p>{@code batchType} 只做两个具名批量（{@code product_price} / {@code product_status}）：
- * 具名批量的可逆性与预览形态是确定的，通用批量不是。</p>
+ * <p>{@code batchType} 只做三个**具名**批量（{@code product_price} / {@code product_status} /
+ * {@code inventory_stock}，issue #5950 扩面）：具名批量的可逆性与预览形态是确定的，
+ * 通用批量与批量**创建**不是（有意不做）。</p>
  */
 @Data
 public class AgentBatchCreateRequest {
 
-    /** 白名单：product_price（商品级统一定价批量改价）/ product_status（批量上/下架）。 */
+    /** 白名单：product_price（批量改价）/ product_status（批量上/下架）/
+     *  inventory_stock（批量库存调整，issue #5950）。 */
     @NotBlank(message = "batchType 不能为空")
     private String batchType;
 
@@ -44,7 +46,8 @@ public class AgentBatchCreateRequest {
         @NotBlank(message = "resourceId 不能为空")
         private String resourceId;
 
-        /** 字段名（product_price ⇒ basePrice / product_status ⇒ status）。 */
+        /** 字段名（product_price ⇒ basePrice / product_status ⇒ status /
+         *  inventory_stock ⇒ stock）。 */
         @NotBlank(message = "field 不能为空")
         private String field;
 

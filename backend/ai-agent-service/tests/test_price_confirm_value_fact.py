@@ -1,4 +1,4 @@
-# case_ids: PR-009, PR-010, PR-021
+# case_ids: PR-009, PR-010, PR-021, PR-014
 """改价确认记录**按值**记（issue #5414）—— 点过「价 A」的卡不得放行「价 B」的改动。
 
 ## 病灶（一句话）
@@ -370,6 +370,33 @@ class TestValueComparisonSemantics:
         assert api["facts"](dict(RENAME)) == {}
         assert api["fields"] == ("price", "before_price", "batch_id"), \
             f"值面字段集变了（改它就等于改放行面）：{api['fields']}"
+
+    def test_stock_batch_preview_is_display_only_not_a_value_fact(self):
+        """批量库存调整（issue #5950）的**取值面判据**：`stock` / `before_stock` **不进**
+        `CARD_ONLY_VALUE_FIELDS`（它们不是工具参数）。
+
+        形态差别（与 `before_price` 逐条对照，不是"漏了"）：
+          · `before_price` / `price` 是 `product_update` / `sku_update` 的**顶层参数** ⇒
+            参数级比对看得见它们 ⇒ 必须入面；
+          · 批量的库存值住在 `items[]` 里，而参数级值面**不可能**读 items（`items` 是结构化
+            载荷，比对的是"哪个批次"）⇒ 与改价批量**同一形态**：**`batch_id` 就是它的值身份**
+            （批次行里冻结了 old_value / new_value，撤销与执行都按批次行走）
+            ⇒ 用 `batch_id` 入面即可，多收 `stock` 只会凭空扩放行面（把「改了 items 的同一批，
+            参数一模一样」误判成"值不同"而反复拦）。
+        判别力：把 `before_stock` / `stock` 从 `NUMERIC_FIELD_WORDS` 或卡片标签表里摘掉 ⇒
+        本条红（`test_product_batch_update.py::TestInventoryStockBatch` 的卡片投影断言同时红）。
+        """
+        api = _new_api()
+        assert "stock" not in api["fields"] and "before_stock" not in api["fields"], \
+            f"库存值进了参数级值面 ⇒ 放行面被凭空扩大：{api['fields']}"
+        assert api["facts"]({"action": "execute", "batch_id": "b1"}) == {"batch_id": "b1"}
+        # 卡片侧仍必须成对呈现（显示面）——与上面的"不入值面"是两件事，缺一不可
+        from app.tools.confirm_value import confirm_card_fields, same_value
+        labels = [f["label"] for f in confirm_card_fields(
+            {"product_id": "遮光窗帘", "before_stock": 1500, "stock": 1200})]
+        assert "改前库存" in labels and "库存" in labels, f"库存预览卡缺成对字段：{labels}"
+        assert same_value("stock", "1200.0", "1200.00") is True, \
+            "库存与价格同属十进制数量列 ⇒ 必须走按值比对（否则 1200.0 与 1200.00 被判不符）"
 
 
 class TestCrossLanguageValueParity:

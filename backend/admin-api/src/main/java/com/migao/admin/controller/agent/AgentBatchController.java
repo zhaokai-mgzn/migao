@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
  * POST /api/admin/agent/batches                  创建批次（= 预演）
  *                                                req  {batchType, items:[{resourceId, field, oldValue, newValue}]}
  *                                                resp {batchId, itemCount, status:"preview"}
+ *                                                batchType ∈ product_price | product_status | inventory_stock（#5950）
  * POST /api/admin/agent/batches/{batchId}/execute 执行 → {batchId, status, results:[{resourceId, success, error?}]}
  * POST /api/admin/agent/batches/{batchId}/revert  撤销 → {batchId, status, results:[...]}
  * GET  /api/admin/agent/batches/{batchId}         查询进度 / 结果 / 可撤销性

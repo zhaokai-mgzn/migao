@@ -4129,6 +4129,122 @@ cases:
         - pr-check.yml
       verifies: []
 
+  # ── issue #5950：第三个具名批量 `inventory_stock`（批量库存调整）──────────────────
+  # 取号：`python3 scripts/next_case_id.py PR` 现取 = **PR-014**（最小空闲号；候选 = main ∪
+  # 全部 open PR 分支 ∪ 本工作区，工具在同一次调用里断言「返回号 ∉ 候选集」）。
+  # 为什么批量库存值得单独立用例：它是米宝相对页面的**唯一碾压场景**（「这 20 个商品统一
+  # 调到 1200 米」= 页面 20 次操作 → Agent 1 次意图），而形态与改价批量**不是同一条**：
+  # field 是 `stock`（十进制数量列、可 1 位小数）、写面是 **SKU 级库存**（唯一权威，
+  # `products.stock` 只是派生冗余列 = #4038）。
+  - id: PR-014
+    legacy_id: ""
+    title: "批量库存调整 - 两段确认（多选勾选集合 → 逐条「改前库存 → 改后库存」）→ 执行 → 撤销"
+    domains:
+      - product
+    tier: normal
+    persona: mibao
+    tags:
+      - batch
+      - multi_turn
+      - write
+      - undo
+      - two_stage_confirm
+      - stock
+    truths_ref: []
+    # ⚠️ 真值暂缺：批量形态的行为真值尚未进 `templates/*.yml`；真值源 = issue #5950 的
+    # 冻结口径（复用 #5314 的批次契约）+ 机器判据见 traces.tests（同 PR-108/PR-109 的分工）。
+    user_inputs:
+      # R1 请求（点名两条商品 ⇒ 批量形态；给的是**绝对值**，不自行推算幅度）
+      - "把遮光窗帘和北欧风窗帘每个规格的库存都调到 1200 米"
+      # R2 答第一段多选卡（协议文本 = multiSelectSubmitPrefix + 勾选名，与前端点击同形）
+      - "已选商品：遮光窗帘、北欧风窗帘"
+      # R3 答第二段「逐条改前 → 改后」确认卡（点卡；无卡时发「确认」兜底）
+      - auto_respond:
+          fallback: "确认"
+      # R4 撤销入口（用户只说「撤销」，批次号由会话上下文给出）
+      - "撤销刚才那个批量调库存"
+      # R5 答撤销前的确认卡（若米宝先发卡）
+      - auto_respond:
+          fallback: "确认"
+    namespaces:
+      - "product_name:遮光窗帘"
+      - "product_name:北欧风窗帘"
+    # 前置自断言（#3800 / §18.4）：本用例改的是**共享夹具的库存**，而
+    # `product_stock_restore`（post_clean）会把两条商品的 SKU 库存统一置回种子值
+    # ⇒ 重跑前置等价。`expect: 1` = 两条种子商品各**恰好一件**（同名多件 ⇒ 复位目标不唯一，
+    # `_find_restore_target` fail-closed，判据会在 post_clean 上红）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
+      - type: product_count_for_keyword
+        source: "北欧风窗帘"
+        expect: 1
+    expectations:
+      # 第一段：多选卡（勾选集合 = 改哪些）—— `multiSelect: true` 是硬要求
+      # （漏传会变单选，商家选不了多条）
+      - tool: interact
+        args:
+          component: choice
+          multiSelect: true
+      # 第二段材料：预演 —— 逐条「改前库存 → 改后库存」只能由它产出；
+      # `batch_type` 同时是共享夹具的**属性判别维**（见 test_shared_fixture_write_restore.py：
+      # `inventory_stock` ⇒ 写 `stock`）
+      - tool: product_batch_update
+        args:
+          action: preview
+          batch_type: inventory_stock
+      # 第二段卡：把逐条预览展示给商家并等其点卡
+      - tool: interact
+        args:
+          component: confirm
+      # 执行（带 preview 产生的 batch_id —— 机器断言见 required_args）
+      - tool: product_batch_update
+        args:
+          action: execute
+    must_succeed:
+      - tool: product_batch_update
+    required_args:
+      - tool: product_batch_update
+        action: preview
+        fields: [batch_type, items]
+      - tool: product_batch_update
+        action: execute
+        fields: [batch_id]
+      # 撤销也必须点名批次（凭空造批次号 = 失败面）
+      - tool: product_batch_update
+        action: revert
+        fields: [batch_id]
+    data_checks:
+      - "success=true"
+      - "两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**"
+      - "字段配对（机器断言）：`batch_type=inventory_stock` ⇒ 每条 `field` 必须是 `stock`（服务端 `AgentBatchService.TYPE_FIELD` 不配对直接 422），改前值 `oldValue` 必填（撤销的唯一依据）；判据见 backend/ai-agent-service/tests/test_product_batch_update.py 的 `TestInventoryStockBatch`"
+      - "阈值 N>50 拒绝并提示分批（本用例 N=2；边界判据见 PR-109）"
+      - "撤销逐条还原为改前值 `old_value`（服务端 `revert` → 状态 `reverted`；`revertible` 如实反映，false ⇒ 话术不得承诺可撤销）"
+      - "部分失败逐条报告、不做整体回滚（单测断言：执行路径**不得**顺带调用 revert）"
+    # 复位（#4075 的机制半边）：本用例把**共享夹具的 SKU 库存**改成 1200
+    # ⇒ 必须声明 `product_stock_restore`（属性键 `stock`，与 `base_price` / `sku_price` 正交）。
+    # 种子真值 = 每个 SKU 500（`fixtures/xiaobu_eval_seed.sql`：prod_eval_blackout /
+    # prod_eval_dark_green 各 3 个 SKU）—— 复位口径 = 每个 SKU 都置回 500（与写入口径同形）。
+    post_clean:
+      - type: product_stock_restore
+        product_keyword: "遮光窗帘"
+        stock: 500
+      - type: product_stock_restore
+        product_keyword: "北欧风窗帘"
+        stock: 500
+    skip_reason: ""
+    merge_log: "2026-10-02 新增（issue #5950，第三个具名批量扩面）：批量库存调整复用 #5314 的批次契约（工作值 = **每个规格**的 SKU 库存；要求该商品各规格库存一致，不一致 ⇒ preview 阶段 fail-closed，以免预览/撤销在多 SKU 商品上失真）（同一四端点 / 同一状态机 / 同一 `revertible`），只多一条 `batchType=inventory_stock` + field=`stock`。取号 `scripts/next_case_id.py PR` 现取 = PR-014（历史空档，main 未占用）。post_clean = `product_stock_restore`（属性键 `stock`，实现体见 tests/agent_eval/local_runner.py 的 `_restore_product_stock`）。机器判据（字段配对 / 改前值 / 两段确认结构锁 / 阈值 / 撤销还原 / before→after 投影单一源）在 traces.tests。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_product_batch_update.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AgentWriteValuesTest.java"
+        - "tests/unit_ci_workflows/test_shared_fixture_write_restore.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
   - id: PR-110
     legacy_id: ""
     title: "工人可达的入库端点：零商家权限码 + 请求体**结构上**不可表达「任意调整」"

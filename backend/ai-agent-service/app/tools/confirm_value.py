@@ -54,6 +54,13 @@ _CONFIRM_FIELD_LABELS = {
     # 批量 `product_status` 的预览必须成对呈现「改前状态 → 改后状态」，
     # 而 `old_value` 同时是撤销（revert）的唯一依据 ⇒ 卡片上不能只出现改后状态。
     "before_status": "改前状态",
+    # 批量库存调整预览（issue #5950）：与 `before_price` / `before_status` **同一形态的镜像**
+    # —— 批量的「改前库存 → 改后库存」必须成对呈现，`oldValue` 同时是撤销的唯一依据。
+    "before_stock": "改前库存",
+    # 改后库存（issue #5950）：与 `before_stock` 成对。`stock` 这个键在**单条建品**
+    # （`product_manage(stock_quantity=…)`）里也有 —— 那里用的是另一个键名
+    # （`stock_quantity`），故给 `stock` 挂中文标签不会改动既有工具的卡片。
+    "stock": "库存",
 }
 
 #: 改价预览里 `price` 的语义是**改后价**。仅在 `before_price` 在场时生效
@@ -180,20 +187,25 @@ CARD_ONLY_VALUE_FIELDS = ("price", "before_price", "batch_id")
 
 #: **按值**比对（数字不比字符串写法）的字段词。工具参数用 `price` / `before_price`，
 #: 线上字段用 `basePrice`（Java `FIELD_BASE_PRICE`）—— 词不同、语义必须同一。
-PRICE_FIELD_WORDS = frozenset({"price", "before_price", "basePrice"})
+#: `stock` / `before_stock`（issue #5950，批量库存调整）同属**十进制数量列**
+#: （`NUMERIC(12,1)`）⇒ 与价对同一套按值比对（`10.0` == `10.00`）。
+NUMERIC_FIELD_WORDS = frozenset({"price", "before_price", "basePrice", "stock", "before_stock"})
+
+#: 兼容别名（旧名 = 价格面的历史叫法；**不得**再新增第二份口径）。
+PRICE_FIELD_WORDS = NUMERIC_FIELD_WORDS
 
 
 def same_value(field, given, current) -> bool:
     """两侧是否**同一个值** —— 语义与 Java `AgentWriteValues.sameValue` 逐条对齐。
 
-      · 价格字段（`PRICE_FIELD_WORDS`）：按**值**比对（`10.0` 与 `10.00` 是同一个价）；
+    #: · 价格字段（`NUMERIC_FIELD_WORDS`）：按**值**比对（`10.0` 与 `10.00` 是同一个价/同一个库存）；
         非法数字 / 带空白 / 非有限数 ⇒ `False`（Java `BigDecimal` 同样直接抛 ⇒ 口径一致）；
       · 非价格字段：字面比对，**只 trim 左侧**（与 Java `given.trim().equals(current)` 一致）；
       · 任一侧缺失 ⇒ `False` —— **fail-closed**：绝不为"没法比对"放行。
     """
     if given is None or current is None:
         return False
-    if field in PRICE_FIELD_WORDS:
+    if field in NUMERIC_FIELD_WORDS:
         try:
             raw_left, raw_right = str(given), str(current)
             if any((ch.isspace() or ch == "_") for ch in raw_left + raw_right):
