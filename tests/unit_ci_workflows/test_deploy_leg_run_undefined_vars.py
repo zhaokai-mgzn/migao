@@ -1,4 +1,4 @@
-# case_ids: MC-012
+# case_ids: MC-012, MC-059
 """部署腿 run 正文的**未定义变量**守卫 —— issue #5814（C′ 守卫步 unbound variable 事故）。
 
 ## 事故（实测，非推断）
@@ -32,14 +32,41 @@ C′（PR #5821）新增的守卫步 `Assert server-side build (no ACR push)` �
    `$GITHUB_ENV` 写入 ∪ bash 内建）里解析；
 3. `test_lint_has_discriminating_power` —— 注入式红证：把修法退回「正文裸引用 `${IMAGE_TAG}` 且无 env」
    ⇒ 判据 1 与 2 **都必须红**（证明不是空断言）。
+
+## 判据 4~5（issue #5944）：这条 lint 是 **comment-aware** 的
+病（现取读数）：注释里写一句含 `$foo` 的**说明** ⇒ `['x.yml::demo::foo']` **假红**（集成侧内存复算，
+与本文件复算逐字一致）。作者唯一的过关办法 = 把注释改写成不含 `$` 的措辞 —— **判红逼人把东西写得更差**
+（PR #5943 因此被挡两次）。根因：清洗只有 `SINGLE_QUOTED.sub` + `EXPR.sub`，**没有剥注释**。
+修法 = 复用 `.github/danger_scan.py::strip_comment`（**唯一**一份剥注释实现，issue #5268），**不新增第二份**：
+
+4. `test_comment_only_refs_are_not_flagged`（注释含 `$foo`/`$bar` ⇒ `[]`）⇄
+   `test_executable_line_ref_is_flagged_by_name`（同一句搬到**可执行行** ⇒ 具名 `<file>::<step>::<var>`）；
+5. `test_comment_stripping_does_not_misfire`（4 条负例锚：`${VAR#prefix}` / `${VAR##pattern}` /
+   单引号 / 双引号内 `#`，每条**尾部再挂一个真未定义引用** ⇒ 误截断会连带切掉真判据，断言当场红）+
+   `test_shared_yardstick_is_shell_safe`（直接打在共享尺子本体上）+
+   `test_comment_apostrophe_does_not_hide_a_real_ref`（改前的**反向缺陷**：注释里的撇号会把后面的
+   真代码整段抹掉 ⇒ 真未定义变量漏检，实测改前 `[]` / 改后具名红）+
+   `test_comment_awareness_has_discriminating_power`（**注入式双向自证**：摘掉剥注释 ⇒ 注释语料必红）+
+   `test_strip_comment_has_a_single_implementation`（同源 = 同一对象 + 本文件没有第二份）。
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
+import sys
+
 import pytest
 import yaml
+
+#: 剥注释的**唯一**实现（`.github/danger_scan.py`，issue #5268）—— **复用，不复制**。
+#: `tests/unit_ci_workflows/conftest.py` 已把 `.github` 挂进 `sys.path`（与 `test_danger_scan.py` 同一机制）。
+from danger_scan import strip_comment
+
+#: 声明本判据守的**接线**（§28.2.1）：`_lint` 的「剥注释」这一环取自
+#: `.github/danger_scan.py::strip_comment` **这一个对象**（判据 4d 按 `is` 判同源）。
+#: 登记 = `tests/unit_ci_workflows/wiring_claims_ledger.json`（未登记即红）。
+WIRING_UNDER_TEST = ".github/danger_scan.py::strip_comment"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WF_DIR = REPO_ROOT / ".github" / "workflows"
@@ -79,6 +106,16 @@ def _steps(doc):
                     yield job, s
 
 
+def _without_comments(body: str) -> str:
+    """剥掉 shell 正文里的**行内注释** —— 逐行调用**共享**尺子，不新增第二份实现（issue #5944）。
+
+    为什么逐行就够：shell 的注释是**行**作用域，且 `#` 只有在**行首 / 前面是空白、又不在引号内**时
+    才是注释起点 —— `.github/danger_scan.py::strip_comment` 的启发式与 shell 同形
+    （`${VAR#prefix}` 的 `#` 前是标识符字符、`echo "a#b"` 的 `#` 在引号内 ⇒ 两处都不剥）。
+    """
+    return "\n".join(strip_comment(line) for line in body.splitlines())
+
+
 def _lint(docs: dict[str, str]) -> list[str]:
     """对 {文件名: YAML 正文} 跑同一份 lint（真语料与注入语料走**同一条路**）。"""
     bad: list[str] = []
@@ -93,7 +130,13 @@ def _lint(docs: dict[str, str]) -> list[str]:
             for sib in job.get("steps") or []:
                 if isinstance(sib, dict) and sib.get("run"):
                     genv |= set(GITHUB_ENV_WRITE.findall(sib["run"]))
-            clean = SINGLE_QUOTED.sub("''", EXPR.sub('""', body))
+            # ⚠️ **顺序不许反**：剥注释必须在 `EXPR` / `SINGLE_QUOTED` **之前** —— 否则注释里的一个
+            # 撇号（`# don't do this`）会跟后文任意一个 `'` 配对，把两者之间的**真代码整段抹掉**
+            # （实测：真未定义变量因此**漏检** ⇒ 那是**反向缺陷**，比假红更坏）。负例锚 =
+            # `test_comment_apostrophe_does_not_hide_a_real_ref`。
+            # ⚠️ `set -u` 门（上面的 `SET_U.search(body)`）仍读**原文**：注释里写 `set -u` 仍会把该步
+            # 纳入射程 —— 有意保守（本单只治假红，**不放宽射程**），真语料上 0 例。
+            clean = SINGLE_QUOTED.sub("''", EXPR.sub('""', _without_comments(body)))
             defined = (
                 wf_env
                 | _env_keys(job)
@@ -171,3 +214,137 @@ def test_lint_has_discriminating_power(monkeypatch, tmp_path):
     )
     # 对照读数：把 env 加回去 ⇒ lint 必须干净（证明它抓的是「未定义」而不是「出现过这个词」）
     assert _lint({"deploy-frontend.yml": fixed}) == [], "对照失败：修复后的语料不该被 lint 判红"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 4~5（issue #5944）：这条 lint 必须 **comment-aware**
+#
+# 病（现取读数）：注释里写一句含 `$foo` 的**说明** ⇒ `['x.yml::demo::foo']` 假红。作者唯一的过关
+# 办法 = 把注释改写成不含 `$` 的措辞 —— 判红逼人把东西写得更差（PR #5943 因它被挡两次）。
+# 根因：清洗只有 `SINGLE_QUOTED.sub` + `EXPR.sub`，**没有剥注释**。
+# 修法 = 复用 `.github/danger_scan.py::strip_comment`（**唯一**一份，issue #5268），不新增第二份。
+# ══════════════════════════════════════════════════════════════════════════════
+
+_COMMENT_LINE = "          # 说明：这里的 $foo / $bar 只是注释，不参与执行"
+COMMENT_ONLY = (
+    "name: x\non: push\njobs:\n  j:\n    steps:\n      - name: demo\n        run: |\n"
+    "          set -u\n"
+    f"{_COMMENT_LINE}\n"
+    "          echo ok\n"
+)
+_EXECUTABLE_LINE = "          echo ${foo} ${bar}"
+
+
+def _executable_variant() -> str:
+    """把注释那一句**搬到可执行行**（判据 4b 的对照语料；与注释语料逐字对照）。"""
+    return COMMENT_ONLY.replace(_COMMENT_LINE, _EXECUTABLE_LINE)
+
+
+def test_comment_only_refs_are_not_flagged():
+    """判据 4a（#5944 的**假红**）：注释里的 `$foo` / `$bar` ⇒ `_lint` 返回 `[]`。"""
+    assert _lint({"x.yml": COMMENT_ONLY}) == [], (
+        "注释不参与执行 ⇒ 里面的 `$var` 既不是未定义引用、也不该判红（#5944：作者当时唯一的出路是"
+        "把注释改写成不含 `$` 的措辞 —— 判红逼人把东西写得**更差**）"
+    )
+
+
+def test_executable_line_ref_is_flagged_by_name():
+    """判据 4b（**不放宽射程**）：同一句搬到可执行行 ⇒ 必须**具名**判红 `<file>::<step>::<var>`。"""
+    executable = _executable_variant()
+    assert executable != COMMENT_ONLY, "变异未生效：可执行行语料与注释语料逐字相同（下面就是空断言）"
+    assert _lint({"x.yml": executable}) == ["x.yml::demo::bar", "x.yml::demo::foo"], (
+        "可执行行里的未定义变量没被判红（或判红不具名）⇒ 本 lint 的射程被放宽了（#5944 明令禁止）"
+    )
+
+
+#: 负例锚（判据 4c）：`#` **不是**注释起点的四种形态。每行尾部再挂一个**真**未定义引用 ——
+#: 若剥注释在这一行误截断，尾部的真判据会**连带消失** ⇒ 断言当场红（不是「恰好绿」）。
+HASH_IS_NOT_A_COMMENT = [
+    ("param-expand-hash", "echo ${HOME#prefix} $UNDEF"),
+    ("param-expand-double-hash", "echo ${HOME##pattern} $UNDEF"),
+    ("single-quoted-hash", "echo 'a#b' $UNDEF"),
+    ("double-quoted-hash", 'echo "a#b" $UNDEF'),
+]
+
+
+@pytest.mark.parametrize("label,line", HASH_IS_NOT_A_COMMENT, ids=[c[0] for c in HASH_IS_NOT_A_COMMENT])
+def test_comment_stripping_does_not_misfire(label, line):
+    """判据 4c（负例锚）：`${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#` **不得**被当注释起点。"""
+    doc = (
+        "name: x\non: push\njobs:\n  j:\n    steps:\n      - name: demo\n        run: |\n"
+        f"          set -u\n          {line}\n"
+    )
+    assert _lint({"x.yml": doc}) == ["x.yml::demo::UNDEF"], (
+        f"[{label}] 这一行的 `#` 被当成注释起点了 ⇒ 行尾那个**真**未定义变量被一起切掉"
+        "（把真判据改弱 = 反向缺陷，代价比假红更大）"
+    )
+
+
+def test_shared_yardstick_is_shell_safe():
+    """判据 4c′：直接打在**共享尺子本体**上（`_lint` 用的就是同一个对象，见判据 4d）。"""
+    assert strip_comment("echo ${VAR#prefix}") == "echo ${VAR#prefix}", "${VAR#prefix} 被误当注释"
+    assert strip_comment("echo ${VAR##pattern}") == "echo ${VAR##pattern}", "${VAR##pattern} 被误当注释"
+    assert strip_comment("echo 'a#b'") == "echo 'a#b'", "单引号内的 `#` 被误当注释"
+    assert strip_comment('echo "a#b"') == 'echo "a#b"', "双引号内的 `#` 被误当注释"
+    assert strip_comment("echo ok  # 说明 $foo") == "echo ok  ", "真注释没被剥掉（另一个方向）"
+
+
+def test_comment_apostrophe_does_not_hide_a_real_ref():
+    """判据 4e（**反向缺陷**的负例锚）：注释里的撇号不得吞掉后文的真判据。
+
+    改前形态（先跑 `SINGLE_QUOTED`、而注释根本没剥）：`# don't` 的撇号与后文任意一个 `'` 配对，
+    **两者之间的真代码被整段抹掉** —— 实测改前读数 `[]`（真未定义变量被**漏检**），
+    改后 `['x.yml::demo::REAL_UNDEFINED']`。⇒ 「剥注释放在 `SINGLE_QUOTED` 之前」不是洁癖。
+    """
+    doc = (
+        "name: x\non: push\njobs:\n  j:\n    steps:\n      - name: demo\n        run: |\n"
+        "          set -u\n"
+        "          echo start  # don't do this\n"
+        "          echo ${REAL_UNDEFINED}\n"
+        "          echo 'quoted'\n"
+    )
+    assert _lint({"x.yml": doc}) == ["x.yml::demo::REAL_UNDEFINED"], (
+        "注释里的撇号把中间的真代码（含真未定义引用）整段抹掉了 ⇒ 判据**漏检**（改前就是这个读数）"
+    )
+
+
+def test_comment_awareness_has_discriminating_power(monkeypatch):
+    """判据 5（**类级**：这条 lint 是 comment-aware 的）—— 注入式双向自证。
+
+    ① 变异注入（先自证变异生效）：把 `_lint` 用的那把尺子换成**恒等函数** = 改前形态 ⇒
+       注释语料必须**变红**（证明判据 4a 不是空断言 —— 它真的会红）；
+    ② 同一注入下，可执行行语料**照旧**具名红（证明判据本体没被注入拆掉）；
+    ③ 撤掉注入 ⇒ 注释语料回到 `[]`（证明那条绿来自**剥注释**这一环，不是语料本身干净）。
+    """
+    executable = _executable_variant()
+    assert _lint({"x.yml": COMMENT_ONLY}) == [], "真尺子下注释语料应当绿（本自证的前置读数）"
+    assert _lint({"x.yml": executable}) == ["x.yml::demo::bar", "x.yml::demo::foo"]
+
+    monkeypatch.setattr(sys.modules[__name__], "strip_comment", lambda line: line)  # ← 变异注入
+    mutated_comment = _lint({"x.yml": COMMENT_ONLY})
+    mutated_executable = _lint({"x.yml": executable})
+    monkeypatch.undo()
+    restored = _lint({"x.yml": COMMENT_ONLY})
+
+    assert mutated_comment == ["x.yml::demo::bar", "x.yml::demo::foo"], (
+        "把「剥注释」这一环摘掉后注释语料**没有**变红 ⇒ 判据 4a 是无判别力的空断言："
+        f"实测注入后 = {mutated_comment}"
+    )
+    assert mutated_executable == ["x.yml::demo::bar", "x.yml::demo::foo"], (
+        f"注入把判据本体拆掉了（可执行行语料照旧该红）：实测 {mutated_executable}"
+    )
+    assert restored == [], f"撤掉注入后注释语料没回到绿 ⇒ 读数不可归因（实测 {restored}）"
+
+
+def test_strip_comment_has_a_single_implementation():
+    """判据 4d（**单一实现**）：本文件用**共享**尺子，不复制第二份（#5944 判据 4）。"""
+    import danger_scan
+
+    assert strip_comment is danger_scan.strip_comment, (
+        "本判据用的剥注释实现不是 `.github/danger_scan.py::strip_comment` 那个**对象** ⇒ 出现第二把尺子"
+    )
+    # 自指陷阱：断言的「针」**不能**在本文件里连续出现（否则这句话自己把文件喂红）⇒ 运行时拼出来
+    needle = "def " + "strip_comment"
+    assert needle not in Path(__file__).read_text(encoding="utf-8"), (
+        "本文件里出现了第二份剥注释实现 —— 复用 `.github/danger_scan.py` 那一份，不要复制"
+    )

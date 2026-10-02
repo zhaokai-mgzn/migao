@@ -4871,6 +4871,24 @@ _CASE_MC_057 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-059 [NORMAL] deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#`（源: cases/misc.yml）──
+_CASE_MC_059 = EvalCase(
+    id='MC-059',
+    legacy_id='',
+    title='deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#`',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（研发工具 / 判据级，无 C 端行为）「注释里的 `$foo`」不得被判成未定义变量：注释**不参与执行** ⇒ 它既不是未定义引用、也不可能产生 `set -u` 的 unbound variable；而把**同一句**搬到可执行行必须照样具名判红 —— 本单治的是**假红**，**不放宽射程**'],
+    expectations=[],
+    data_checks=["**病（现取读数，2026-10-02）**：在某条 deploy 腿的 `run` 正文里写一句**只是注释**的说明，只要含 `$foo` 就判红。内存复算（直接调 `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py` 的 `_lint`，喂合成语料）= `['x.yml::demo::foo']`（假红）。根因 = 清洗只有 `SINGLE_QUOTED.sub` + `EXPR.sub`，**没有剥注释**。影响（为什么值得单独立案）：作者唯一的过关办法是**把注释改写成不含 `$` 的措辞** —— 这正是本仓最忌的「判红逼人把东西写得更差」（本次实测：同一 PR **被挡两次**，两次都是改写注释）。", "**修法（复用优先，不另造尺子）**：`_lint` 的清洗链前面加一环 `_without_comments(body)`（逐行调 `.github/danger_scan.py::strip_comment`，仓内**唯一**一份剥注释实现，issue #5268）—— **不新增第二份**（判据 4d 按 `is` 判同源）。⚠️ **顺序不许反**：剥注释必须在 `EXPR` / `SINGLE_QUOTED` **之前**，否则注释里的一个撇号（`# don't do this`）会跟后文任意一个 `'` 配对、把两者之间的**真代码整段抹掉** ⇒ 真未定义变量**漏检**（实测改前读数 `[]`、改后 `['x.yml::demo::REAL_UNDEFINED']`）—— 那是比假红更坏的**反向缺陷**，由负例锚 `test_comment_apostrophe_does_not_hide_a_real_ref` 钉住。", '**射程不放宽的现取证据（全仓 41 个 workflow 文件，改前 ⇄ 改后走同一入口）**：判红条数 **13 → 11**；**新增 0 条**（没有任何真判据被这次修复吃掉）；消失的 2 条**逐条都是注释形态**（`.github/workflows/deploy-reconcile.yml` 的 step `值守面（超时未部署 ⇒ 判红 + 开/清值守 issue）` 里那句注释 `变量一律 ${X:-} 兜底`；`.github/workflows/verify-trigger.yml` 里那句注释 `index($n)`）。三条 deploy 腿改前 = 改后 = `[]`。', "**判据 4~5（全部在 `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py`）**：① `test_comment_only_refs_are_not_flagged`（注释含 `$foo`/`$bar` ⇒ `[]`）② `test_executable_line_ref_is_flagged_by_name`（同一句搬到可执行行 ⇒ `['x.yml::demo::bar', 'x.yml::demo::foo']`；先断言「语料变异真的生效」）③ `test_comment_stripping_does_not_misfire`（**4 条负例锚**：`${VAR#prefix}` / `${VAR##pattern}` / 单引号 / 双引号内含 `#`；每条**尾部再挂一个真未定义引用** ⇒ 若被误当注释截断，尾部真判据会连带消失、断言当场红 —— 不是「恰好绿」）④ `test_comment_awareness_has_discriminating_power`（**注入式双向**：把尺子换成恒等函数 = 改前形态 ⇒ 注释语料**必须变红**、可执行行照旧红、撤掉注入回到 `[]`）⑤ `test_strip_comment_has_a_single_implementation`（同源 = 同一对象 + 本文件没有第二份实现）。另有 `test_shared_yardstick_is_shell_safe` 直接打在尺子本体上（4 条负例 + 1 条反向对照）。", '**修前红（§28.1 出口①：临时反转 / 注入）**：把 `_lint` 的清洗那一环临时退回改前形态（`_without_comments(body)` → `body`；逐字节恢复已用 `cmp` 自证）⇒ 本文件判据 **3 failed / 12 passed**，失败三条 = `test_comment_only_refs_are_not_flagged` / `test_comment_apostrophe_does_not_hide_a_real_ref` / `test_comment_awareness_has_discriminating_power`。复算 = `python3 -m pytest tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py -q`。', '**接线声明（§28.2.1）**：本判据显式声明 `WIRING_UNDER_TEST = .github/danger_scan.py::strip_comment` 并登记进 `tests/unit_ci_workflows/wiring_claims_ledger.json` ⇒ 该锚被删 / 改名时 `tests/unit_ci_workflows/test_wiring_claims_registry.py` 的判据 3 具名判红（**摘掉接线 ⇒ 红**）。', '**未固化（照实登记）**：① 本仓**没有**「扫 shell 正文取 `$VAR` 的判据必须剥注释」的机械元守卫 —— 探测量过（用「只在注释里含 `$foo`」的语料喂判据面 372 个 `.py` 的每个常量正则）命中 **24 条**，绝大多数是通用引号正则的**假阳性**（判据分不清「这个正则扫的是不是 shell 正文」）⇒ 加这条规则要么背 24 条豁免台账、要么误伤，比不加更坏，故不加。② 既有「唯一性守卫」的扫描面**只有 `.github/**`**（`tests/unit_ci_workflows/test_automerge_bot_safe_path.py::TestCriterion11YardstickIsSingleSource`）：`tests/unit_ci_workflows/test_swas_nginx_rate_limit.py` 里另有一份同名 `strip_comment`（nginx.conf 语义，与 shell 的「空白前置」规则不同 ⇒ **有意不合并**）它扫不到 —— 属**顺带发现**，按铁律 12(b)③ 在会话内提出，不在本包修。'],
+    skip_reason='[backend-contract] deploy 腿 lint 的静态结构判据（零 LLM、秒级、只读仓内 workflow YAML + 内存合成语料）由 tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py 的判据 4~5 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'workflow', 'lint', 'comment-aware', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -11512,6 +11530,7 @@ ALL_CASES = (
     _CASE_MC_055,
     _CASE_MC_056,
     _CASE_MC_057,
+    _CASE_MC_059,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
