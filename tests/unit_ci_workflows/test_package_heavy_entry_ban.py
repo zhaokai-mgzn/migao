@@ -136,10 +136,15 @@ def _build_sandbox(root: pathlib.Path, verify_text: str | None = None) -> pathli
     (root / "scripts").mkdir(exist_ok=True)
     shutil.copy2(REPO / "scripts" / "machine-heavy-lock.sh", root / "scripts" / "machine-heavy-lock.sh")
     shutil.copy2(LEDGER_SH, root / "scripts" / "package-heavy-entry-ledger.sh")
-    # 真 `verify-all.sh`（可注入变异体）：本判据判的正是**它**的角色守卫与接线。
-    # ⚠️ 它必须在**最后**写 —— `dev-worktree.sh` 式地在别处再补一份桩会把真脚本整个盖掉。
-    # ⚠️ `verify_text` 非 None 时 = 内存里的**变异体**（§28.1 出口①），与真对象同一条构建路径。
-    (root / "verify-all.sh").write_text(verify_text if verify_text is not None else _verify_text(),
+    # ⚠️ **仓根**那份 `verify-all.sh` 一律是**桩**（`exit 0`）：它只被**真 `batch-gate.sh`** 当
+    #    「那一次 gate」调用（判据 13）。放**真**脚本在这里会让每次 `batch-gate.sh` 都去跑
+    #    「一次 gate」—— 在 `-p no:randomly` / 与随机化顺序下会**互相等机器级锁** ⇒ 挂到超时
+    #    （实测：CI 之外的本地组合运行里 180s `TimeoutExpired`）。
+    #    要判**真脚本**的用例（1/2/6/5 的第二半）一律用 `script_in(wt)` 把它放进**被测的那个
+    #    工作树**（真脚本的 `ROOT` 由自己所在位置算出 —— 放仓根是**测不到**子包形态的）。
+    #    `verify_text` 非 None 时 = 内存里的**变异体**（§28.1 出口①），与真对象同一条构建路径。
+    stub = '#!/usr/bin/env bash\nif [ -n "${BATCH_GATE_STUB_LOG:-}" ]; then echo "gate" >> "$BATCH_GATE_STUB_LOG"; fi\nexit 0\n'
+    (root / "verify-all.sh").write_text(verify_text if verify_text is not None else stub,
                                         encoding="utf-8")
     (root / "scripts" / "batch-gate.sh").write_text(BATCH.read_text(encoding="utf-8"), encoding="utf-8")
     for name, body in (("check-ui-regression.sh", "#!/usr/bin/env bash\nexit 0\n"),
@@ -283,7 +288,8 @@ def _guard_harness(script: str) -> str:
     return "\n".join(out)
 
 
-def script_in(root: pathlib.Path, name: str = "verify-all.sh") -> pathlib.Path:
+def script_in(root: pathlib.Path, name: str = "verify-all.sh",
+              text: str | None = None) -> pathlib.Path:
     """把一个**真** `verify-all.sh` 副本放进 `root`，返回脚本路径。
 
     🔴 为什么必须这样（本判据第一版就是在这里错的）：`verify-all.sh` 的 `ROOT` 是
@@ -293,7 +299,7 @@ def script_in(root: pathlib.Path, name: str = "verify-all.sh") -> pathlib.Path:
     脚本文件必须**物理落在**被判的那个工作树里。
     """
     dst = root / name
-    dst.write_text(_verify_text(), encoding="utf-8")
+    dst.write_text(_verify_text() if text is None else text, encoding="utf-8")
     os.chmod(dst, 0o755)
     return dst
 
@@ -624,9 +630,7 @@ def test_injected_mutations_turn_it_red(tmp_path, mut):
     if expect in ("guard_rejects_removed", "guard_call_removed"):
         wt = _make_worktree(sb, "pkg")
         # ⚠️ 变异脚本必须**物理落在这个 worktree 里**（真脚本的 ROOT 由自己所在位置算出）
-        mut_script = wt / "verify-all.sh"
-        mut_script.write_text(_mutated_verify(mut), encoding="utf-8")
-        os.chmod(mut_script, 0o755)
+        mut_script = script_in(wt, text=_mutated_verify(mut))
         v = run_verify(sb, wt, tmp_path, script=mut_script)
         assert v.rc != 5, f"变异「{label}」**没被抓住**（仍被守卫拒绝）：rc={v.rc}\n{v.out}"
         assert "套件内全量入口被**拒绝**" not in v.out, (
