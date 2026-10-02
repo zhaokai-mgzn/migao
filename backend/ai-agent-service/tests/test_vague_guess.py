@@ -1,4 +1,4 @@
-# case_ids: MC-005, MC-006, CH-003, MC-010
+# case_ids: CH-003, MC-010
 """模糊输入 → **可点击的猜测**（issue #5329，提问引导「类型 2」）。
 
 判据来源：`docs/agent-feature-design.md` §九「提问引导」的类型 2（P0：对话层「猜测式追问」）。
