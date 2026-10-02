@@ -1288,7 +1288,7 @@ cases:
 
   - id: CH-021
     legacy_id: ""
-    title: "图片消息端到端 - 真实发图后 AI 走 vision 链路（澄清/识别不报错）"
+    title: "图片消息端到端 - 真实发图后 AI 走 vision 链路（不崩溃、不推诿）"
     domains:
       - chat
       - product
@@ -1302,15 +1302,29 @@ cases:
     user_inputs:
       - text: "看看这个面料"
         images:
-          - "https://picsum.photos/seed/curtain-fabric/800/600"
-    expectations:
-      - tool: interact or product_search or direct_reply
+          - "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png"
+    # ── 恒真式收缩（issue #6090）─────────────────────────────────────────────
+    # 原期望 `interact or product_search or direct_reply` 的三个 OR 分支**覆盖了合法动作的全集**
+    # （澄清卡 / 接地检索 / 文本回答）⇒ 恒真式 = 什么都没断言（#3558 覆盖体检时已被 CH-034 的注释点名）。
+    # 本用例真正能判红的读数只有两条，如实写在这里（不编造第三条）：
+    #   ① 发图轮不得出现 `event: error`（`success=true` 形态，runner 计分，见 data_checks 首条）；
+    #   ② 不得以「图片分析失败 / 看不懂」类推诿话术作答（forbidden_text）。
+    # 正向面（图片内容**被看懂并驱动业务动作**）**不在**本用例声明 —— 由 CH-034（C 端，三条互补断言）
+    # 与 CH-044（B 端 image_recognize）承接；本用例只守「真实发图不崩溃、不推诿」这一层。
+    # 图片资产同批从 picsum.photos 换成云 dev OSS 资产：picsum 在 **vision 供应商侧抓取失败**，
+    # 会把**资产问题**误报成「图片分析暂时无法完成」⇒ ② 会假红（同因实证见 CH-026 的注释）。
+    expectations: []
+    forbidden_text:
+      - "图片分析失败"
+      - "无法识别图片"
+      - "图片无法处理"
     data_checks:
-      - "带图消息 body 含 images（local_runner send_message 透传，issue #2794）"
+      - "发图轮 `success=true`（runner 计分断言：该轮不得出现 `event: error`）—— 本用例唯一的正向计分读数"
+      - "带图消息 body 含 images（local_runner send_message 透传，issue #2794；透传实现由 tests/agent_eval/selftest_images.py 自测）"
       - "AI 不报『图片分析失败/无法处理』类错误；图片走 vision 链路（理解或澄清）"
       - "意图明确才执行；意图不明可澄清（候选卡或追问），不硬猜"
     skip_reason: "真实 vision LLM 行为（成本/波动），tier normal 不进 PR smoke；由手动 agent-eval normal/图片用例专用 CI 触发"
-    merge_log: "issue #2794：agent-eval runner 图片消息支持（case schema dict 形态 user_inputs）"
+    merge_log: "issue #2794：agent-eval runner 图片消息支持（case schema dict 形态 user_inputs）；2026-10-03（issue #6090）：**收缩恒真式期望** —— 原 `interact or product_search or direct_reply` 覆盖合法动作全集（零断言），改为「发图轮 success=true（计分）+ forbidden_text 三条推诿禁令」两条可判红读数；图片资产 picsum → 云 dev OSS（picsum 供应商侧抓取失败会误报）。**未新增 skip、未放宽任何判据**（原期望一条也拦不住，收缩后至少两条能红）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_graph_skills.py"
@@ -1379,16 +1393,21 @@ cases:
     user_inputs:
       - text: "帮我看看这个布料有没有卖的"
         images:
-          - "https://picsum.photos/seed/curtain-fabric-g/800/600"
-    expectations:
-      - tool: product_search or interact or direct_reply
+          - "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png"
+    # ── 恒真式收缩（issue #6090）─────────────────────────────────────────────
+    # 本用例是 `[backend-contract]`（不进 agent-eval）⇒ 原期望
+    # `product_search or interact or direct_reply` 不但覆盖合法动作全集（恒真式），而且
+    # **根本不参与计分**（runner 按 skip_reason 直接过滤掉它）⇒ 它是纯纸面断言。
+    # 本用例真正的判据通道是 `traces.tests` 的 pytest（Case Trust 对 `[backend-contract]`
+    # 的计分通道分流，见 .github/assertion_taxonomy.py）⇒ 删除该期望，**不另造纸面替身**。
+    expectations: []
     data_checks:
       - "VISION_CLARIFY_GUIDE 含 grounded 引导：商品类候选先按图片特征（颜色/面料/风格）调 product_search 检索"
       - "澄清候选引用命中的真实商品（名称+价格），如『店里的雪尼尔遮光窗帘 ¥88/米』"
       - "检索无命中 → 如实说『店里暂时没搜到一样的』，不凭空编造商品名/价格"
       - "关键词提取纯函数（clarify_grounded.extract_search_keywords）由 pytest 单测覆盖"
     skip_reason: "[backend-contract] 图片消息由 pytest 覆盖（TestVisionGroundedGuide + test_clarify_grounded），agent-eval runner 无稳定发图环境，不进入 agent-eval 冒烟"
-    merge_log: "issue #2799：Phase 2c 轻量版 grounded（关键词提取纯函数 + VISION_CLARIFY_GUIDE 检索引导）"
+    merge_log: "issue #2799：Phase 2c 轻量版 grounded（关键词提取纯函数 + VISION_CLARIFY_GUIDE 检索引导）；2026-10-03（issue #6090）：**删除恒真式期望**（`product_search or interact or direct_reply` 覆盖合法动作全集，且本用例是 [backend-contract] ⇒ 该期望**不参与计分** = 纯纸面断言）；判据仍以 traces.tests 的 pytest（TestVisionGroundedGuide / test_clarify_grounded）为准，**不另造纸面替身、不新增 skip、不放宽判据**；图片资产 picsum → 云 dev OSS。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_graph_skills.py"
@@ -2408,4 +2427,69 @@ cases:
         - "backend/ai-agent-service/tests/test_curtain_calc_tool_door_widths.py"
       ci:
         - xiaobu-acceptance.yml
+      verifies: []
+
+  - id: CH-044
+    legacy_id: ""
+    title: "B 端发图建品 - 米宝调 image_recognize 生成同页填充计划（图片 URL 逐字取自上下文，不落库）"
+    domains:
+      - chat
+      - product
+    tier: normal
+    persona: mibao
+    tags:
+      - multimodal
+      - image
+      - vision
+      - image_recognize
+      - mibao
+      - capability
+    truths_ref:
+      - ai-chat.route-actions
+    # ── 覆盖缺口销账（issue #6090；原登记 = issue #5368 包 2，跟踪单 #4941）──────────
+    # `.github/eval-coverage-baseline.yml` 的 `image_recognize` 是**当前唯一的阻断型条目**，
+    # 条目自述销账方式 = 「发图 → 米宝调 image_recognize → 同页填表」用例 ⇒ 本用例就是它
+    # （**同 PR 删条目**，分开做会被 `baseline_stale_blocking` 判红）。
+    # 三条断言各管一件事、互补：① 调用发生 ② 调用**成功**（success=true，工具级）
+    # ③ 参数契约（target_type + images 逐字取自上下文，不得编造 URL）。
+    # ⚠️ **有意不抄 CH-034 的 `want_text` 内容断言**：CH-034 的接地对象是某个**颜色词**
+    # （它用的是单色感的图 + 三次实测稳定词），而本用例的同图实测里颜色词会漂
+    # ⇒ 内容词断言 = 造 flake。本用例的接地对象是**工具调用与参数**。
+    user_inputs:
+      - text: "照这张图帮我建个商品。"
+        images:
+          - "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png"
+    expectations:
+      - tool: image_recognize
+    # 效果层断言（「调用了 ≠ 成了」#3778）：只有 expectations 时，工具返回
+    # success=false（图片抓不到 / target 非法 / 权限拒绝）照样满分 ⇒ 补 must_succeed。
+    must_succeed:
+      - tool: image_recognize
+    required_args:
+      - tool: image_recognize
+        fields:
+          - target_type
+          - images
+    forbidden_text:
+      - "图片分析失败"
+      - "无法识别图片"
+      - "图片无法处理"
+    data_checks:
+      - "识别结果进**同页填充计划**（`page_fill` 计划），**不落库、不提交** —— 提交永远是商家在页面上点按钮；机械判据 = backend/ai-agent-service/tests/test_tools_image_recognize.py 的 TestNoWriteBoundary（静态扫描识别内核不 import 写入缝）"
+      - "回复说明「哪几格已填、哪几格留空及原因」；取值不在店铺目录里 ⇒ 给候选 + 解释、**不填**（不猜）"
+      - "⚠️ 本用例**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）：只登记用例，等 #5966 那次 B 端集中跑批时验证"
+    precondition: "本用例依赖的图片资产 https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png 可被抓取（本机可达是必要不充分条件；vision 供应商侧能否抓取不在本仓可观测范围）。前置不成立时失败表现为「图片分析暂时无法完成」（命中 forbidden_text 或 must_succeed 失败），与它真正要守的「米宝发出 image_recognize 调用」**同名不同因** —— 此时该用例的红**不可归因于 agent**。"
+    # 🔴 `skip_reason` **必须为空**（照 CH-034 / CH-042 的形态）：`scripts/case_coverage.py` 走
+    # `select_cases_for_persona`（tests/agent_eval/eval_case_filter.py），它会**丢掉 skip_reason 非空**的用例
+    # ⇒ 写了 skip_reason 的用例**不计入覆盖矩阵**，条目销不掉（实测：本用例首版带 skip_reason 时
+    # `mibao_coverage --check` 仍报「image_recognize[uncovered] 0 条（正向 0）」）。
+    # 「手动触发、不进 PR smoke」由 **tier: normal** 表达（runner/CI 按 tier 选档），不靠 skip_reason。
+    skip_reason: ""
+    merge_log: "2026-10-03 新增（issue #6090）：销 `.github/eval-coverage-baseline.yml` 的 image_recognize 阻塞条目（登记于 2026-09-24 / issue #5368 包 2，跟踪单 #4941）。用例 = 「发图 → 米宝调 image_recognize → 同页填表」，断言 = 工具调用 + must_succeed + 参数契约（target_type/images）+ 不推诿禁令。**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）—— 真实读数由 #5966 那次 B 端集中跑批给出。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_image_recognize.py"
+        - "backend/ai-agent-service/tests/test_vision/test_deep_channel.py"
+      ci:
+        - agent-eval.yml
       verifies: []

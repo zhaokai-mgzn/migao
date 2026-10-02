@@ -1091,7 +1091,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `delete` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[interact(confirm), category_manage(action=delete)]` 改判为 `direct_reply`（如实说明 + 引导去后台商品分类页面：删除**没有存活的只读路径**），`must_succeed[category_manage(action=delete)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的写路径断言（「二次确认后才执行删除」+ 写面前置）改判为只读/如实说明口径（原第 1 条文本已并入新第 1 条保留为历史）。 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（42 case）
+## 对话边界域（43 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -1428,17 +1428,20 @@
 真值: ai-chat.route-actions
 溯源: issue #2789 Phase 2：C 端图片澄清候选引导（customer_product/customer_general 图片段升级） ｜ tags: clarification, multimodal, image
 
-### CH-021. 图片消息端到端 - 真实发图后 AI 走 vision 链路（澄清/识别不报错） 🔵
+### CH-021. 图片消息端到端 - 真实发图后 AI 走 vision 链路（不崩溃、不推诿） 🔵
 ```
 你: 看看这个面料 [📷 附 1 图]
-期望: interact or product_search or direct_reply
-数据: 带图消息 body 含 images（local_runner send_message 透传，issue #2794）
+数据: 发图轮 `success=true`（runner 计分断言：该轮不得出现 `event: error`）—— 本用例唯一的正向计分读数
+数据: 带图消息 body 含 images（local_runner send_message 透传，issue #2794；透传实现由 tests/agent_eval/selftest_images.py 自测）
 数据: AI 不报『图片分析失败/无法处理』类错误；图片走 vision 链路（理解或澄清）
 数据: 意图明确才执行；意图不明可澄清（候选卡或追问），不硬猜
+禁词: 图片分析失败
+禁词: 无法识别图片
+禁词: 图片无法处理
 跳过: 真实 vision LLM 行为（成本/波动），tier normal 不进 PR smoke；由手动 agent-eval normal/图片用例专用 CI 触发
 ```
 真值: ai-chat.route-actions
-溯源: issue #2794：agent-eval runner 图片消息支持（case schema dict 形态 user_inputs） ｜ tags: clarification, multimodal, image
+溯源: issue #2794：agent-eval runner 图片消息支持（case schema dict 形态 user_inputs）；2026-10-03（issue #6090）：**收缩恒真式期望** —— 原 `interact or product_search or direct_reply` 覆盖合法动作全集（零断言），改为「发图轮 success=true（计分）+ forbidden_text 三条推诿禁令」两条可判红读数；图片资产 picsum → 云 dev OSS（picsum 供应商侧抓取失败会误报）。**未新增 skip、未放宽任何判据**（原期望一条也拦不住，收缩后至少两条能红）。 ｜ tags: clarification, multimodal, image
 
 ### CH-022. 连续模糊意图 - 澄清轮上限后给具体示例兜底（不无限追问） 🔵
 ```
@@ -1460,7 +1463,6 @@
 ### CH-023. 图片澄清候选 grounded 商户库 - 商品类候选先检索真实商品（不编造） 🔵
 ```
 你: 帮我看看这个布料有没有卖的 [📷 附 1 图]
-期望: product_search or interact or direct_reply
 数据: VISION_CLARIFY_GUIDE 含 grounded 引导：商品类候选先按图片特征（颜色/面料/风格）调 product_search 检索
 数据: 澄清候选引用命中的真实商品（名称+价格），如『店里的雪尼尔遮光窗帘 ¥88/米』
 数据: 检索无命中 → 如实说『店里暂时没搜到一样的』，不凭空编造商品名/价格
@@ -1468,7 +1470,7 @@
 跳过: [backend-contract] 图片消息由 pytest 覆盖（TestVisionGroundedGuide + test_clarify_grounded），agent-eval runner 无稳定发图环境，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.route-actions
-溯源: issue #2799：Phase 2c 轻量版 grounded（关键词提取纯函数 + VISION_CLARIFY_GUIDE 检索引导） ｜ tags: clarification, multimodal, image, grounded
+溯源: issue #2799：Phase 2c 轻量版 grounded（关键词提取纯函数 + VISION_CLARIFY_GUIDE 检索引导）；2026-10-03（issue #6090）：**删除恒真式期望**（`product_search or interact or direct_reply` 覆盖合法动作全集，且本用例是 [backend-contract] ⇒ 该期望**不参与计分** = 纯纸面断言）；判据仍以 traces.tests 的 pytest（TestVisionGroundedGuide / test_clarify_grounded）为准，**不另造纸面替身、不新增 skip、不放宽判据**；图片资产 picsum → 云 dev OSS。 ｜ tags: clarification, multimodal, image, grounded
 
 ### CH-024. C 端长期记忆端到端 — 表达偏好→会话关闭落库→跨会话注入→个性化推荐（小布） 🔵
 ```
@@ -1770,6 +1772,24 @@
 ```
 真值: fabric-calc.fabric-widths-candidate, fabric-calc.fixed-width, ai-chat.intent-tool-map
 溯源: 2026-09-21 新增（issue #5039）：`fabric_widths` 用例库零覆盖补齐 —— LLM 级「模型按 prompt 把商品 SKU 门幅去重成候选集、填进 curtain_calc 入参」的行为面（CH-042 只覆盖引擎侧确定性逻辑）。断言形态 = `expectations[].args` 值级子集（键存在 + 数组 + 含 2.8/3.2 ⇒ 长度 ≥ 2），红证见 tests/unit_ci_workflows/test_eval_fabric_widths_case.py；接地对象 = 种子新增的第二门幅 SKU（prod_eval_summer 米白色散剪 3.2） ｜ tags: xiaobu, quote, curtain-calc, fabric-widths
+
+### CH-044. B 端发图建品 - 米宝调 image_recognize 生成同页填充计划（图片 URL 逐字取自上下文，不落库） 🔵
+```
+你: 照这张图帮我建个商品。 [📷 附 1 图]
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: image_recognize
+数据: 识别结果进**同页填充计划**（`page_fill` 计划），**不落库、不提交** —— 提交永远是商家在页面上点按钮；机械判据 = backend/ai-agent-service/tests/test_tools_image_recognize.py 的 TestNoWriteBoundary（静态扫描识别内核不 import 写入缝）
+数据: 回复说明「哪几格已填、哪几格留空及原因」；取值不在店铺目录里 ⇒ 给候选 + 解释、**不填**（不猜）
+数据: ⚠️ 本用例**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）：只登记用例，等 #5966 那次 B 端集中跑批时验证
+前置: 本用例依赖的图片资产 https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png 可被抓取（本机可达是必要不充分条件；vision 供应商侧能否抓取不在本仓可观测范围）。前置不成立时失败表现为「图片分析暂时无法完成」（命中 forbidden_text 或 must_succeed 失败），与它真正要守的「米宝发出 image_recognize 调用」**同名不同因** —— 此时该用例的红**不可归因于 agent**。
+禁词: 图片分析失败
+禁词: 无法识别图片
+禁词: 图片无法处理
+必填: image_recognize() 字段 target_type, images
+必须成功: image_recognize
+```
+真值: ai-chat.route-actions
+溯源: 2026-10-03 新增（issue #6090）：销 `.github/eval-coverage-baseline.yml` 的 image_recognize 阻塞条目（登记于 2026-09-24 / issue #5368 包 2，跟踪单 #4941）。用例 = 「发图 → 米宝调 image_recognize → 同页填表」，断言 = 工具调用 + must_succeed + 参数契约（target_type/images）+ 不推诿禁令。**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）—— 真实读数由 #5966 那次 B 端集中跑批给出。 ｜ tags: multimodal, image, vision, image_recognize, mibao, capability
 
 ## 跨域（3 case）
 
@@ -9061,15 +9081,15 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：632（活跃 133，跳过 499）
-- tier 分布：smoke 12 / normal 586 / adversarial 32
+- 用例总数：633（活跃 134，跳过 499）
+- tier 分布：smoke 12 / normal 587 / adversarial 32
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
 - 登录认证域：11
 - B 端小程序域：31
 - 分类域：3
-- 对话边界域：42
+- 对话边界域：43
 - 跨域：3
 - 客户域：11
 - 数据域：21
