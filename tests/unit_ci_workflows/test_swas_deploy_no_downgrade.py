@@ -589,7 +589,19 @@ def test_workflows_are_valid_yaml_and_permissions_unchanged():
     """workflow 仍是合法 YAML，且部署 job 的必需护栏（concurrency/超时）没被顺手改掉。"""
     for name in WORKFLOWS:
         doc = yaml.safe_load(read_workflow(name))
-        assert doc["permissions"] == {"contents": "read"}, f"{name}: permissions 被放宽"
+        # 🔴 权限面（issue #5941 校准：**不是放宽**，是换成「白名单 + 禁写」的更强形态）——
+        #    与 `tests/unit_ci_workflows/test_swas_deploy_ci_hardening.py` 的同名判据**同口径**
+        #    （两处各判一遍同一条纪律：只许 `contents: read` 加读作用域 `actions`、不许 write）：
+        #    ① 底必须是 `contents: read`；② 只许再加 `actions`（`Skip if already built` 步的
+        #    `gh run list` 需要它 —— issue #5941 判据 2 明确要求 `permissions: actions: read`，
+        #    而 workflow 级 permissions 一旦显式声明，未列出的作用域一律为 none）；
+        #    ③ 任何 `write` / 任何未登记作用域 ⇒ 红（旧等式 `== {"contents": "read"}` 表达的正是这条）。
+        perms = doc.get("permissions") or {}
+        assert perms.get("contents") == "read", f"{name}: contents 权限被改动（{perms}）"
+        unknown = sorted(set(perms) - {"contents", "actions"})
+        assert not unknown, f"{name}: 出现未登记的作用域 {unknown} —— 只许加读作用域 `actions`"
+        non_read = {k: v for k, v in perms.items() if v != "read"}
+        assert not non_read, f"{name}: permissions 里出现非 read 作用域（权限放宽）：{non_read}"
         job = doc["jobs"]["build-and-deploy"]
         # 🔴 **本 PR 含一次有意的语义变更**（issue #5814 的 C′，2026-09-30）：
         #    旧读数 45min / 新读数 75min。依据 = 构建已搬到**服务器侧**，其墙钟算在
