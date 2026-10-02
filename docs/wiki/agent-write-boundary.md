@@ -139,7 +139,7 @@
 |---|---|---|
 | 1 | `product_update` / `sku_update`（**单条**可逆写 + before → after 预览） | ✅ 已交付 —— #5303 / PR #5311（merge `64fa89460`） |
 | 2 | **A 档第二批**：`inventory_manage`、`toggle_status`、标签 / 备注、`session_manage` 接管类 | 待启动 |
-| 3 | **撤销入口** → 然后 **批量写**（「这 20 个商品统一上调 5%」） | 待启动 —— issue **#5314** |
+| 3 | **撤销入口** → 然后 **批量写**（「这 20 个商品统一上调 5%」） | ✅ 已交付 —— issue **#5314**（CLOSED 2026-09-24）：`product_batch_update` 的 `preview / execute / revert` + `/api/admin/agent/batches` 四端点 + 响应 `revertible` |
 | 4 | 草稿实体 + 前端 draft 消费入口 → 打通 B 档 | 🔴 **用户裁定不做（2026-10-02）** —— 技术前提见 §二 B 档；重启条件 = 用户显式要求 |
 | 5 | 跨域只读推理 + **对话外主动推送** | 待启动 —— 非写操作，但决定「智能程度」的实际体感 |
 
@@ -196,7 +196,7 @@
 | 残留 | 记录 |
 |---|---|
 | **图片指引面已修**（PR #5324）：`product_update` / `sku_update` 的图片反例不再点名不可达工具。**仍空着的是判据 2** —— 把既有 L0 不变式从「描述点名的工具必须**真实注册**」扩展到「必须**本 skill 可达**」；另注意 `base_skill.py` 新增的机械判据守的是**注入话术面**，两者是两个面 | issue **#5315**（**收窄，未收口**） |
-| `settings` 域只读化漏网（`settings_manage` / `notification_manage` / `settings_skill`） | issue **#5302**（收口进行中） |
+| `settings` 域只读化漏网（`settings_manage` / `notification_manage` / `settings_skill`） | ✅ **已收口** —— issue **#5302**（CLOSED）/ PR **#5341**（MERGED）；**剩余一笔有意保留的欠账**：`validate_input` 是 #5247 解绑时漏掉的**第 9 个**（`settings_skill.py` 注释逐字「本单**有意不**解绑」）——解绑它会连带改判 3 条 B 端用例（DF-003 / DF-010 / OR-030）⇒ 属另一单 |
 | 撤销入口未建 | issue **#5314** |
 
 ---
