@@ -2846,7 +2846,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（61 case）
+## 杂项域（62 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3677,6 +3677,23 @@
 跳过: [backend-contract] 静态结构判据（零 LLM、秒级、只读仓内文本 + 内存注入）由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的 C5 面验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #5976 + #5977；用户当日多角色隔离验收后裁定「全部开单处理掉」）。两单同族：菜单有码、守卫无码 ⇒ 直达不被拦。修复 = `ROUTE_PERMISSION_MAP` 补 `/inbound-orders`（`inbound:view`）与 `/agent-workspace`（`agent:session`，一条父前缀覆盖根 / `sessions` / `human-sessions`）；`/notifications` 有意不造码（全员可见，豁免由清单派生）。固化 = C5 两条判据（实例 + 类级元守卫，含内存注入对照臂）。取号 **MC-062**：开工时现取 main 最大 = **MC-061**，本分支现取亦为 MC-061 ⇒ 按「当前最大号 +1」取 MC-062。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ **谁后合并谁** `./scripts/sync-main.sh --rebase` 并**重渲染**（生成物不许手改、二次渲染零 diff）。 ｜ tags: rbac, route-guard, meta-guard, defense-in-depth, red-proof, fail-closed
+
+### MC-063. 导航类指引真值源（issue #5989 · P1）：登记表逐节点镜像 config/menu.ts + 权限码逐值真 + 未登记默认拒绝 + 只按服务端会话权限裁剪 + citation 可溯 + 结构上不含 steps（禁编步骤） 🔵
+```
+你: 当登记表里引用了一条 config/menu.ts 里**不存在**的菜单路径、或声明了一个权限目录里没有的**假权限码**、或把「未登记」的问题猜成一条登记项、或去掉了按会话权限的裁剪（让无权角色拿到页面路径）、或把 citation 摘成不可溯、或往载荷里加 `steps` / 往文案里塞步骤词时 —— 都必须有东西**具名**报出；而只改一行注释时不得报红
+期望: direct_reply
+数据: **判据 1 / 1b（结构层 = `config/menu.ts` 的镜像）**：`app/context/menu_navigator.py` 的 `MENU_TREE` 与 `frontend/admin-web/src/config/menu.ts` **逐节点逐字段逐序**相等（6 组 20 项 + 2 个一级独立项 = 22），且 `MENU_TREE_ORDER_LOCKED` 是注入式红证的锚；`menu.ts` 解析器**复用** `tests/unit_ci_workflows/test_agent_permission_parity.py::parse_menu_ts_nodes`（**不造第二套解析器**，§17.3 ⑤）
+数据: **判据 2（权限码是真码）**：每个非空 `permission_code` 必须落在 `RegistrationService` / `PermissionService` 两处权限目录（复用 `parse_catalog`，两处目录逐值相等也由它核）；无码节点必须**显式**列举（现取 = 仅 `/notifications`）
+数据: **判据 3（未登记 ⇒ 默认拒绝）**：6 个未登记样本问题（含空串）一律 `registered=False`、`pages=[]`、`featureId` 为空；`resolve_feature` 是**确定性最长命中**、歧义即 `None`（不猜、不近似匹配）；每条登记项都能被自己的功能名**恰好**命中（别名撞车即红）
+数据: **判据 4（角色裁剪）**：只按 `ToolContext.permissions`（**服务端会话**）逐节点过滤 —— 无权 ⇒ 载荷里**不含页面路径也不含权限码**（只给菜单名 + 「你没有权限」），但 citation 仍可溯到登记项 → 菜单节点；`build_navigation_answer` 的签名里**没有 role**（形参判据，与 `page_registry.build_page_context` 同纪律）
+数据: **判据 5（citation 可溯）**：citation 形态 = `登记项 #<id> → 菜单节点 <组>/一级项「<菜单名>」`；未登记时如实写「（无）—— 未命中登记表」；未登记节点 `menu_node(group, label)` 返回 `None`（fail-closed）
+数据: 🔴 **判据 6（禁止编步骤，结构 + 文本 + 上游三层）**：① **结构** —— `ToolResult.data` 的键**白名单**（`registered`/`featureId`/`label`/`pages`/`deniedMenuNames`/`citation`）与页面项键白名单（`menuGroup`/`menuName`/`path`/`requiredPermission`）⇒ `steps` 这类字段**结构上进不来**；② **文本** —— **真跑** `NavGuideTool.execute`（直连接线：把工具模块里的 `build_navigation_answer` 换成被测函数）得到的 `message`/`suggestion`/`data` 里不得出现受控步骤词表（`第一步`/`点击`/`按钮`/…），且每条回复都必须含「我没有步骤级指引」的如实告知；③ **上游** —— `app/tools/nav_guide.py` 源码（含**注入模型**的 `description`）里不得出现步骤词
+数据: **判据 6b（别名不得退化成同义词词典）**：每条 `aliases` 必须与它所属节点的菜单名有**包含关系**（导入期自检 + 判据双闸）；「换一个新叫法」的唯一正确做法是先改菜单名，不是在别名表里偷偷扩同义词
+数据: **类级元守卫（工具面）**：`nav_guide` 注册进 `create_default_registry()` + 从 `app/tools` 门面导出 + `read_only=True` + **不声明权限码**（纯本地、零 admin-api 调用点，登记在 `LOCAL_ONLY_TOOLS`，与 `interact`/`image_recognize` 同口径）+ 绑 B 端 `general` 兜底 skill（不绑 = 能力谎报）+ B 端专属只读见证集 25 ⇒ **26** 把（`test_readonly_cross_domain_sharing.py`，C 端零改动由此量化）
+数据: 🔴 **注入式红证（11 条，实测读数见 PR body）**：① 假菜单路径 ⇒ `problems_paths_exist` 报出；①b 删节点 ⇒ **模块导入期自检**抛 `MenuNavigatorError: orders：引用了 MENU_TREE 里不存在的节点 ('trade-center', '订单列表')`；①c 换序 / 内存桩缺节点 ⇒ `problems_coverage` 具名报出；② 假权限码 `ghost:code` ⇒ `problems_codes_real` 报出；③ 未命中改成「猜第一条」⇒ `problems_default_deny` 报出；④ 去掉裁剪 ⇒ 无权角色拿到 `pages`；④b 给 `build_navigation_answer` 加 `role` 形参 ⇒ 签名判据报出；⑤ citation 摘掉「菜单节点」⇒ `problems_citation` 报出；⑥a 往 `data` 加 `steps` ⇒ 键白名单报出；⑥b 把 `render()` 换成带步骤词的文案（**经工具真跑**）⇒ `problems_no_step_wording` 报出；⑥c 自由同义词 ⇒ 导入期自检抛 `MenuNavigatorError`（同条判据的内存桩臂另证判别力）。**对照读数**：只改一行注释 ⇒ 八条判据**全绿**
+跳过: [backend-contract] 真值源与菜单单一源的结构对账（源码静态事实 + 内存注入 + 真跑工具形状），零 LLM、秒级、不连网不连库；承载体 = tests/unit_ci_workflows/test_menu_navigator.py，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #5989，P1；用户 2026-10-02 逐字裁定：真值源 = **C 混合**、**第一批只做导航类**、问「怎么做」⇒ 给导航 + **如实说没有步骤级指引**、**禁止 LLM 编步骤**；#5989 余下的 **P2 主动新手引导不在本包**，本包只预留接口）。落码 = ① 真值源 `backend/ai-agent-service/app/context/menu_navigator.py`（结构层 = `config/menu.ts` 的 22 节点镜像 + 语义层 = 22 条**显式登记**的「意图 → 功能」，路径与权限码**派生**不手抄；导入期自检 fail-closed；`visible_nodes`/`nodes_for_feature` = **P2 预留接口**）② 工具 `backend/ai-agent-service/app/tools/nav_guide.py`（纯本地只读、零 admin-api 调用点、**不声明权限码**、`data` 键白名单结构上不含 steps、注册 + 门面导出 + 绑 `general` 兜底）③ 提示词口径（`general_agent.py` 三条硬纪律：不得扩写成步骤 / 未命中就说未命中 / 权限按工具裁剪口径说）④ 判据 tests/unit_ci_workflows/test_menu_navigator.py（八条判据 + 11 条注入式红证 + 接线面直连 + 内存桩判别力）⑤ 登记面四处同步（`test_agent_permission_parity.py` 的 `LOCAL_ONLY_TOOLS`、`test_readonly_cross_domain_sharing.py` 见证集 26、`test_graph_skills.py` 的 `GENERAL_TOOLS` 等值集、本用例）。⚠️ **未覆盖（照实登记）**：P2 的推送面（触发条件 / 频率上限 / 未登记页面不推）**不在本包**；LLM 是否**真的**引用了 citation / 真的没编步骤属行为面（本判据只证「可追溯、不可编」的**必要条件**）；别名只能取菜单名的子串 ⇒ 用户口语与菜单名差异大时以「未登记」如实回复（**有意选择**：宁可说不知道，也不做近似匹配）。取号 **MC-063**（**合并态撞号后顺延，记实**）：起草时现取 `origin/main` 最大 = **MC-061**（此刻 0 个 open PR 改 `.github/cases/misc.yml`）⇒ 按「当前最大号 + 1」取 MC-062；**推送后合并态实测**：`origin/main` 的 `975b97ac1`（#6001）已占 **MC-062**（`Refs #5976 + #5977`）⇒ 两个 PR 的 merge ref 里出现**重号**（取号判据只看已合并/在飞状态，拦不住合并后才进 main 的同号包）⇒ 按「后合入者让号」顺延为 **MC-063**（沿用 MC-054/055/056 先例）。⚠️ 同族提醒：本文件是**多包共用**的用例源，改它必须 rebase 到最新 main 再重渲染生成物（新鲜度判据跑在**合并态**）。 ｜ tags: ci, permission, rbac, fail-closed, red-proof, navigation, no-steps
 
 ### MC-063. 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短 🔵
 ```
@@ -8833,8 +8850,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：617（活跃 133，跳过 484）
-- tier 分布：smoke 12 / normal 572 / adversarial 31
+- 用例总数：618（活跃 133，跳过 485）
+- tier 分布：smoke 12 / normal 573 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：20
@@ -8849,7 +8866,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：61
+- 杂项域：62
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -8938,6 +8955,7 @@
 - MC-060: 「剥注释实现全仓只许一份」的唯一性守卫扫描面扩到**整仓**（issue #5948）：口径显式收紧为**精确名 + 词边界**（不卷进 4 族同名不同义的实现）、**自匹配**（守卫自己）具名排除、nginx 语义那条**具名豁免且只许缩短**（不再命中 ⇒ 陈旧红）、`tests/**` 里再写一份同名同义实现 ⇒ 判红并具名
 - MC-061: 变更射程 → 必跑具名判据：射程注册表（面 → 具名判据 → 可复制命令）与 growth_gate 的**非阻塞**提示同源，两者漂移即红；射程表清空 ⇒ 提示消失而 blocker_count 不变
 - MC-062: 菜单码 ⊆ 路由守卫覆盖（C5）：带 permissionCode 的菜单节点必须被 ROUTE_PERMISSION_MAP 覆盖到**同一个码**，且 (dashboard) 下每条页面路由都有生效守卫码（唯一豁免由单一真值源派生 = 全员可见页）
+- MC-063: 导航类指引真值源（issue #5989 · P1）：登记表逐节点镜像 config/menu.ts + 权限码逐值真 + 未登记默认拒绝 + 只按服务端会话权限裁剪 + citation 可溯 + 结构上不含 steps（禁编步骤）
 - MC-063: 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短
 - MC-064: Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离

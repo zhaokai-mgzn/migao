@@ -715,6 +715,11 @@ def create_default_registry() -> ToolRegistry:
     # 纯本地（只调 vision + 纯函数，**无任何 admin-api 调用点**）+ 只读 ⇒ 登记在
     # tests/unit_ci_workflows/test_agent_permission_parity.py 的 `LOCAL_ONLY_TOOLS`（判据 1）。
     from app.tools.image_recognize import ImageRecognizeTool
+    # 导航类指引（issue #5989 · P1）：**纯本地**只读 —— 答案来自仓内登记表
+    # `app/context/menu_navigator.py`（`config/menu.ts` 的镜像 + 显式登记的意图表），
+    # **没有任何 admin-api 调用点** ⇒ 登记进 test_agent_permission_parity 的 `LOCAL_ONLY_TOOLS`。
+    # 可达性由 persona 的 skill 工具集决定（米宝 general；C 端一律不绑 ⇒ 小布零改动）。
+    from app.tools.nav_guide import NavGuideTool
 
     registry = ToolRegistry()
     
@@ -794,6 +799,10 @@ def create_default_registry() -> ToolRegistry:
     # Agent 深通道（issue #5368 包 2）：可达性由 persona 的 skill 工具集决定
     # （米宝 product / order 各绑一条；C 端一律不绑 ⇒ 小布零改动）。
     registry.register(ImageRecognizeTool())
+
+    # 导航类指引（issue #5989 · P1）：纯本地只读；可达性由 persona 的 skill 工具集决定
+    # （米宝 general 兜底 —— 「这个功能在哪一页」没有专属意图，分类器可能落 general）。
+    registry.register(NavGuideTool())
 
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry

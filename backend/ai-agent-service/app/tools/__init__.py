@@ -84,6 +84,9 @@ from app.tools.craft_config_query import CraftConfigQueryTool
 from app.tools.processing_order_set_query import ProcessingOrderSetQueryTool
 # Agent 深通道（issue #5368 包 2）：图 → 同页填充计划（纯本地只读；绑 B 端 product / order）
 from app.tools.image_recognize import ImageRecognizeTool
+# 导航类指引（issue #5989 · P1）：纯本地只读（仓内登记表 = `config/menu.ts` 的镜像 + 显式意图表）；
+# 绑 B 端 general 兜底（注册集双向核对 = tests/test_tools_registry.py::TestToolsFacadeCompleteness）
+from app.tools.nav_guide import NavGuideTool
 
 __all__ = [
     # 基础设施 + 注册器
@@ -120,4 +123,6 @@ __all__ = [
     "CraftConfigQueryTool",
     # Agent 深通道（issue #5368 包 2）：同页填充计划的构造者（注册集双向核对同上）
     "ImageRecognizeTool",
+    # 导航类指引（issue #5989 · P1）：纯本地只读的「功能 ⇄ 页面 ⇄ 权限」指引（注册集双向核对同上）
+    "NavGuideTool",
 ]
