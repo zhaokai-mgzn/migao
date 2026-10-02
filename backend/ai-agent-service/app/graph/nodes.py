@@ -178,6 +178,16 @@ def _is_card_confirm_round(state: dict) -> bool:
 # 判据与 #3557 / #3361 一致：**本轮输入是否被"本 skill 自己刚发的那张卡"接受**，
 # 而不是"有没有卡"——报价卡后顾客另起一句「确认下单」不在这张卡的取值集合里，
 # 照旧放行切换（#3361 不回归）。
+# ── form 卡答卡轮的**注入形态**常量（issue #5949）──
+# 入口 `app/api/chat.py::_handle_form_request` 解析 `__FORM__|{json}` 后，把字段渲染成
+# **可读文本**（LLM 无感：模型看到的是「（用户通过表单提交）k: v；…」，不是协议串），
+# 换掉本轮消息再交给图 —— ⇒ **图里永远看不到 `__FORM__|` 前缀**（落库历史也是这份文本）。
+# 🔴 契约单一事实源：入口注入与下面 `_card_accepts_answer` 的判据**必须引用同一个常量**。
+#    改前两边各写一份（入口写字面量、判据只认前缀）⇒ form 卡答卡轮**恒 False**，
+#    而没有任何判据会红（既有单测用手写前缀构造 state，属假绿）。
+FORM_ANSWER_INJECT_PREFIX = "（用户通过表单提交）"
+
+
 def _card_accepts_answer(card: dict, msg: str) -> bool:
     """本轮消息是否是**这张卡**接受的答复（对齐前端点击协议，单一事实源
     `frontend/admin-web/src/components/chat/InteractiveMessage.tsx`）：
@@ -186,7 +196,8 @@ def _card_accepts_answer(card: dict, msg: str) -> bool:
     - `choice`  → 逐字等于某个 option 的 `label`/`value`，或逐字等于多选卡的
       `multiSelectSkipLabel`（「不需要加工项」）；多选提交 = `multiSelectSubmitPrefix`
       前缀（「已选加工项：A、B」）；
-    - `form`    → `__FORM__|{json}`（`app/api/chat.py` 的表单提交协议）。
+    - `form`    → **两条通道都成立**（issue #5949）：线上协议形态 `__FORM__|{json}`，
+      或入口注入的可读形态 `FORM_ANSWER_INJECT_PREFIX`（图里见到的只有后者）。
     """
     if not msg or not isinstance(card, dict):
         return False
@@ -210,7 +221,7 @@ def _card_accepts_answer(card: dict, msg: str) -> bool:
             return bool(prefix) and msg.startswith(prefix)
         return False
     if component == "form":
-        return msg.startswith("__FORM__|")
+        return msg.startswith("__FORM__|") or msg.startswith(FORM_ANSWER_INJECT_PREFIX)
     return False
 
 

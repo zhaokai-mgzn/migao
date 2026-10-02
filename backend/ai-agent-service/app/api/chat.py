@@ -28,6 +28,9 @@ from app.api.schemas import (
 from app.api.response_models import make_response
 from app.config import settings
 from app.api.sse import SSEEvent
+# 表单注入形态的**契约常量**（issue #5949）：入口注入与 `_card_accepts_answer` 的判据
+# 必须引用同一个字符串，否则「入口注入的形态」与「判据认的形态」各写一份、谁改了都不红。
+from app.graph.nodes import FORM_ANSWER_INJECT_PREFIX
 from app.memory.session_memory import SessionMemory
 from app.memory.user_memory import UserMemoryManager
 from app.agents.customer_service_agent import (
@@ -1070,7 +1073,8 @@ async def _agent_stream_to_sse(
     将 Agent 的流式输出转换为 SSE 事件
     
     这是一个桥接函数，负责：
-    1. 调用 Agent 的流式对话方法（LangGraph astream_events）
+    1. 调用 Agent 的流式对话方法（`app/agents/customer_service_agent.py` 的
+       `graph.astream(initial_state, stream_mode="updates")` —— **节点级**更新，不是 `astream_events`）
     2. 将 Agent 输出转换为 SSE 事件
     3. Tool 调用由 LangGraph Skill 节点内部处理
     4. 根据 Tool 结果发送卡片事件
@@ -1739,6 +1743,48 @@ async def _handle_page_request(
 _FORM_MAX_LEN = 2048
 
 
+def _card_identity(card: dict) -> str:
+    """卡片在会话里的身份（B 端 `card_answer.cardId` 口径，issue #5949）。
+
+    组成 = `component|title|formField keys` 逐字 join（无哈希）—— 选它是因为**客户端也要算**：
+    admin-web 的 `cardAnswerId()` 用同一条规则（跨端判据见
+    `backend/ai-agent-service/tests/test_card_form_submit_shape_cross_end_contract.py`），
+    服务端对**同一份真值源** `last_card` 复算 ⇒ 「答的是不是本会话待答的那张卡」可判。
+
+    ⚠️ 射程（如实登记）：这是**卡片内容身份**，不是实例 id —— 同 component + 同 title +
+    同字段 key 的第二张卡与之同 id（真正的实例 id 要在 `app/tools/interact.py` 落字段，
+    越出本包文件面）。
+    """
+    fields = card.get("formFields")
+    keys = ([str(f.get("key") or "") for f in fields if isinstance(f, dict)]
+            if isinstance(fields, list) else [])
+    return "|".join([str(card.get("component") or ""), str(card.get("title") or ""), *keys])
+
+
+async def _card_answer_targets_pending_card(card_answer, session_id: str) -> bool:
+    """`card_answer.cardId` 是否指向本会话待答的那张卡（真值源 = 会话状态里的 `last_card`）。
+
+    - **未给出 cardId** ⇒ 不在这里判（`_is_card_answer_round` 的
+      `pending_interact_skill` / `last_card_skill` / `last_card` 三元组兜底）；
+    - **给出** ⇒ 必须与本会话 `last_card` 的身份**逐字相等**（防「答的是一张已经过期的卡」）；
+    - 会话不存在 / 没有 `last_card` / 读状态异常 ⇒ **False**（fail-closed：值仍以普通消息进本轮，
+      只是不进答卡豁免）。
+    """
+    card_id = str(getattr(card_answer, "cardId", "") or "").strip()
+    if not card_id:
+        return True
+    try:
+        from app.memory.session_state_store import SessionStateStore
+
+        full = await SessionStateStore().load(session_id) or {}
+    except Exception as e:
+        logger.warning(f"[form] 读取会话卡状态失败（按非答卡处理）: {e}")
+        return False
+    last_card = full.get("last_card")
+    return bool(isinstance(last_card, dict) and last_card
+                and card_id == _card_identity(last_card))
+
+
 async def _handle_form_request(
     request: "ChatSendRequest",
     tenant_id: int,
@@ -1746,10 +1792,15 @@ async def _handle_form_request(
     current_user,
 ):
     """
-    处理 __FORM__ 表单提交：解析字段 → 注入 LLM 上下文 → 走正常 agent 流程。
+    处理表单提交：解析字段 → 注入 LLM 上下文 → 走正常 agent 流程。
 
-    消息格式：__FORM__|{json}
-    例：__FORM__|{"customer_name":"张三","customer_phone":"13800138000","quantity":"3"}
+    **两条入口通道（issue #5949）**：
+    - C 端：消息前缀 `__FORM__|{json}`
+      例：`__FORM__|{"customer_name":"张三","customer_phone":"13800138000","quantity":"3"}`
+    - B 端：请求体结构化字段 `card_answer = {cardId?, values}`
+      —— **先归一到上面那条前缀形态**再走同一段链路（大小上限 / 非法回退 / PII 脱敏 /
+      「非法 payload 不递归」全部复用，不新写第二份注入）；`cardId` 给出且与本会话
+      `last_card` 不一致 ⇒ 本轮**不算答卡轮**，按普通消息走（值不丢）。
 
     设计（docs/design/miniapp-multiturn-form-scenarios.md §4）：
     - 表单字段以可读文本注入本轮会话上下文（LLM 无感协议，兼容现有 flow，
@@ -1784,9 +1835,26 @@ async def _handle_form_request(
 
         - **换入口**：交回分派入口 `send_message` 会被按 `__FORM__|` 前缀再分派回本函数 ⇒ 递归；
         - **带上 session_id**：`session_id` 为空时上面已建好会话，交回原文会让普通路径再建一个
-          （旧形态实测：同一次坏请求建 328 个会话）。
+          （旧形态实测：同一次坏请求建 328 个会话）；
+        - **清掉 `card_answer`**（issue #5949）：已归一的请求不得再把结构化字段带下去
+          （否则入口按它二次分派 = 又一条自递归面）。
         """
-        return request.model_copy(update={"session_id": session_id})
+        return request.model_copy(update={"session_id": session_id, "card_answer": None})
+
+    # ── 结构化答卡（issue #5949）：B 端 `card_answer={cardId?, values}` → 归一到前缀形态 ──
+    card_answer = request.card_answer
+    if card_answer is not None:
+        if not await _card_answer_targets_pending_card(card_answer, session_id):
+            logger.info(
+                f"[form] card_answer 的 cardId 未指向本会话待答卡 → 按普通消息处理"
+                f" | session={session_id}"
+            )
+            return await _send_plain_message(_degrade(), current_user)
+        raw = "__FORM__|" + json.dumps(card_answer.values, ensure_ascii=False)
+        logger.info(
+            f"[form] card_answer 归一为 __FORM__ 协议 | session={session_id} "
+            f"fields={len(card_answer.values)}"
+        )
 
     # 大小限制：超限回退普通文本（防超长注入）
     if len(raw) > _FORM_MAX_LEN:
@@ -1809,8 +1877,11 @@ async def _handle_form_request(
     )
 
     # 注入上下文：转可读文本作为本轮用户消息（LLM 自然理解，不改写历史）
+    # ⚠️ 前缀必须用 `FORM_ANSWER_INJECT_PREFIX`（契约单一事实源）：图里的答卡判据
+    # （`app/graph/nodes.py::_card_accepts_answer` 的 form 分支）认的就是这一条，
+    # 两边各写一份字符串就会「入口换了形态、判据还认旧的」而没有任何东西会红。
     lines = [f"{k}: {v}" for k, v in payload.items() if v not in (None, "")]
-    injected = "（用户通过表单提交）" + "；".join(lines)
+    injected = FORM_ANSWER_INJECT_PREFIX + "；".join(lines)
     injected_request = ChatSendRequest(
         session_id=session_id,
         message=injected,
@@ -1917,6 +1988,12 @@ async def send_message(
 
     # ── __FORM__ 表单协议：解析字段注入 LLM 上下文（C 端表单化交互）──
     if request.message.startswith("__FORM__|"):
+        return await _handle_form_request(request, tenant_id, user_id, current_user)
+
+    # ── 结构化答卡（issue #5949）：B 端 form 卡提交 `card_answer={cardId?, values}` ──
+    # 与上面同一条链路（归一 + 注入 + 护栏都在 `_handle_form_request` 里），
+    # 不新写第二个分派入口 —— 也**不得**把它塞进上面的前缀分支（那要让前端拼协议串）。
+    if request.card_answer is not None:
         return await _handle_form_request(request, tenant_id, user_id, current_user)
 
     # ── 页面上下文（issue #5371 族 4）：未登记 route ⇒ 不注入（默认拒绝）──

@@ -2456,6 +2456,16 @@ export interface InteractiveFormField {
   required?: boolean
 }
 
+// 结构化答卡（issue #5949）：B 端 form 卡提交的「本卡的取值」。
+// 与 C 端 `__FORM__|{json}` **同等语义**（LLM 无感注入：模型只看到可读文本），
+// 只是换一个传输字段承载 —— 前缀协议只认前缀，自由文本永远不成立「答卡轮」。
+export interface CardAnswer {
+  // 卡片身份 `component|title|formField keys`（与服务端 `_card_identity` 同口径）；
+  // 给出则须与本会话待答卡一致，否则本轮不算答卡轮（防跨卡误判）
+  cardId?: string
+  values: Record<string, string>
+}
+
 // 交互式组件数据
 export interface InteractiveComponent {
   component: InteractiveComponentType

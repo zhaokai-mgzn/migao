@@ -45,6 +45,8 @@ from unittest.mock import patch
 
 from app.graph.nodes import (
     _CARD_CONFIRM_INTENT_SOURCE,
+    FORM_ANSWER_INJECT_PREFIX,
+    _card_accepts_answer,
     _is_card_answer_round,
     intent_router_node,
     route_by_intent,
@@ -152,17 +154,41 @@ class TestCardAnswerRoundStaysInOwnSkill:
         assert route_by_intent(state) == "order"
 
     def test_form_card_answer_keeps_own_skill(self):
-        """form 卡提交（`__FORM__|{json}`）同样是答卡轮（含跨域字段值时不得换域）。"""
+        """form 卡提交同样是答卡轮（含跨域字段值时不得换域）。
+
+        ⚠️ **判据必须用生产形态**（issue #5949 更正）：入口
+        `app/api/chat.py::_handle_form_request` 会把 `__FORM__|{json}` **换成可读注入文本**
+        再交给图，图里**永远看不到前缀**（落库历史也是这份文本）。
+        本用例**旧版本用字面 `__FORM__|` 手工构造 state** —— 生产永不出现的形态 ⇒ **假绿**；
+        现在改用入口真产出的形态（`FORM_ANSWER_INJECT_PREFIX + 字段行`）。
+        """
         card = {
             "component": "form",
             "title": "订单 — 收货信息",
             "formFields": [{"key": "remark", "label": "备注"}],
             "submitLabel": "提交",
         }
-        msg = '__FORM__|{"remark": "商品要加工项"}'
+        msg = f"{FORM_ANSWER_INJECT_PREFIX}remark: 商品要加工项"   # 入口产出的本轮消息形态
         assert _l1(msg).intent.value == "product_inquiry"      # 跨域词确实在
         state = _state(msg, pending="order", card=card, card_skill="order")
+        assert _is_card_answer_round(state) is True, (
+            "form 卡答卡轮未被识别（生产形态）—— 上游 L1 域逃逸会清掉本 skill 的会话锁"
+        )
         assert route_by_intent(state) == "order"
+
+    def test_form_card_two_channels_both_accepted(self):
+        """两条通道都成立：C 端 `__FORM__|` 前缀 + 入口注入形态；自由文本不算答卡。
+
+        线上图里见不到前缀（入口会换掉），但它是 C 端的**线上协议形态**，
+        契约层两条都要认（C 端零改动，issue #5949 判据 4/5）。
+        """
+        card = {"component": "form", "title": "订单 — 收货信息",
+                "formFields": [{"key": "remark", "label": "备注"}]}
+        assert _card_accepts_answer(card, '__FORM__|{"remark": "商品要加工项"}') is True
+        assert _card_accepts_answer(
+            card, f"{FORM_ANSWER_INJECT_PREFIX}remark: 商品要加工项") is True
+        # 自由文本（旧 B 端形态）不得被当成答卡 —— 否则判据失去判别力
+        assert _card_accepts_answer(card, "备注: 商品要加工项") is False
 
     @pytest.mark.asyncio
     async def test_answer_round_skips_l1_at_intent_router(self):
