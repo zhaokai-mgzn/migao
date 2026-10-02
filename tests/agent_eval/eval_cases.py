@@ -5159,6 +5159,24 @@ _CASE_MC_069 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-049 [NORMAL] 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）（源: cases/misc.yml）──
+_CASE_MC_049 = EvalCase(
+    id='MC-049',
+    legacy_id='',
+    title='评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当一条用例把人读名称塞进 id 型参数（如 `product_detail(product_id=遮光窗帘)`）却不声明对应前置、或声明了一个 runner 没实现的 `precondition.type` 时，必须有判据**具名**报出（哪个用例 + 哪个参数 + 缺哪种前置 + 出口）；而只改注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（issue #6041，2026-10-02 活栈实测）**：`PR-003`（smoke 档）`expectations: [product_detail(product_id=遮光窗帘)]` 此前**无任何前置声明**，而本机活栈（`:8001`/`:8090` 打云 dev RDS，tenant_id=1）名字含「遮光窗帘」的商品实测 **7 件** ⇒ agent **正确地**反问「要查看哪一件」（发 choice 交互卡）⇒ 期望 unmatched ⇒ 被判 `🔬 确定性回归·禁止 rerun`（**假红**；`local_runner.py smoke` 读数 = `7/8 通过 均分 88%`，唯一失败 PR-003）。形态 = 「用例把**运行期数据事实**（该名称唯一与否）当成了常量」。', '**判据 1（名称塞进 id 型参数 ⇒ 必须声明对应前置）**：对真语料逐条期望核 —— 值不是 id 形态、不是「上轮产物」占位（`复用上轮 UUID` 这类）、不是跨用例引用（值里含 `MC-067` 这类用例号）、且不落在任一已声明 `precondition[].source` 里 ⇒ 该 `<tool, arg>` 规则项要求的前置 type 必须已声明 ⇒ 否则**具名判红**。规则表 = tests/unit_ci_workflows/test_eval_id_arg_precondition.py 的 `_PARAM_PRECONDITION_TYPES`（显式声明射程；全库现取命中 = PR-003 一条）。执行点 = 同文件 `test_id_typed_arguments_with_names_declare_matching_preconditions`。', '**判据 2（声明的 type 必须有实现）**：`.github/cases/**` 里每一条**结构化** `precondition[].type` 必须在 tests/agent_eval/local_runner.py 的 `_PRECONDITION_TYPES`（唯一真相源）键集里；且每个已登记 type 在 runner 源码里有运行期接线（结构形状 `f"{t}:{src}"`）。执行点 = tests/unit_ci_workflows/test_eval_precondition_types_implemented.py 的 `test_every_declared_precondition_type_is_implemented` / `test_every_registered_type_is_wired_in_the_runner`。', '**判据 3（判别力自证，注入式）**：摘掉某用例的前置声明 / 注入一个未实现的 type / 让规则表指向未登记 type ⇒ **各自判红**；只加一行注释 ⇒ **不红**（对照读数）。执行点 = 两个判据文件的 `test_red_proof_*` 与 `test_only_comments_change_is_green`。', '**纯静态自证**：两个判据文件零 ai-agent 依赖（AST 取 import 名）+ 禁「跑不了就跳」—— CI 的 `ci workflow helper unit tests` job 只装 `pytest` + `pyyaml`（不装 `pydantic` / `langchain_core`）。执行点 = 两个文件的 `test_this_judgement_is_pure_static_and_never_skips`。', '🔴 **覆盖边界（显式登记）**：① 判的是**声明层形态** —— 判不了「那条前置本身对不对」（值/下界是 test_precondition_target_present.py 的面），也判不了「该名称在某个栈上到底唯一与否」（那是运行期 `precondition[...]` 的读数）；② 「占位 = 上轮产物」的判定是**词法**的（含「上轮」或尖括号形态）；③ **散文形态**的 `precondition`（值本身是 str）不在射程（本仓现取 14 条，只输出条数作可见性登记）；④ 本判据**不跑**评测、不联网、不 import ai-agent 依赖；⑤ 本判据**不改**任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 纯静态扫真用例语料与 runner 的 type 注册表（只读仓内文件；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_eval_id_arg_precondition.py + tests/unit_ci_workflows/test_eval_precondition_types_implemented.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'casebook', 'precondition', 'id-resolve', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -7989,13 +8007,15 @@ _CASE_PR_003 = EvalCase(
     difficulty=Difficulty.SMOKE,
     user_inputs=['查看遮光窗帘的详细信息'],
     expectations=['product_detail(product_id=遮光窗帘)'],
-    data_checks=['data.name.length > 0', 'data.skus.length > 0'],
+    data_checks=['data.name.length > 0', 'data.skus.length > 0', '前置（precondition）：名字含「遮光窗帘」的商品恰好 1 件（`pre_clean[product_dedupe]` 先于基线捕获执行；计数口径与 `_probe_product_count` 共用 `_list_products_matching` = 服务端 keyword 模糊匹配 + 客户端精确子串，§18 单一真相源）—— R1 按**名字**定位商品，唯一性是它真正依赖且**只读**的前置；名字 >1 件时 agent 合理地反问「要查看哪一件」（choice 卡），期望 `product_detail(product_id=遮光窗帘)` 必然落空 ⇒ 判红会伪装成「agent 不会查商品详情」（**归因全错**）。前置不成立时报告落 `precondition[product_count_for_keyword]`（**不可归因于 agent**），不落行为失败。'],
     skip_reason='',
     tags=['detail', 'id_resolve', 'smoke'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PR-004 [NORMAL] 查库存（源: cases/product.yml）──
@@ -12027,6 +12047,7 @@ ALL_CASES = (
     _CASE_MC_067,
     _CASE_MC_068,
     _CASE_MC_069,
+    _CASE_MC_049,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
