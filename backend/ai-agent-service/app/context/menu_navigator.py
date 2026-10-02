@@ -52,9 +52,22 @@ P2 的推送面直接复用本模块，**不要另造第二份真值**（本包�
 ## 明确不做（照实登记）
 
 - **不做步骤/图文**：知识卡片的面（业务方维护），本模块结构上不含 steps 字段；
-- **不做自由匹配 / 同义词推断 / 拼音纠错**：别名必须**是菜单名的一部分**（或含菜单名），
-  判据逐条核（`_alias_is_grounded`）—— 这一条把「别名表退化成同义词词典」的漂移堵在门外；
+- **不做自由匹配 / 同义词推断 / 拼音纠错**：说法必须**接地**（与所属菜单名 / 本功能 `label`
+  有包含关系）且**不被别的功能更长说法遮蔽**，判据逐条核（`_alias_is_grounded` /
+  `problems_aliases_grounded`）—— 这一条把「说法表退化成同义词词典」的漂移堵在门外；
 - **不查实体、不调 admin-api**：纯本地只读（无 HTTP 调用点 ⇒ 登记进 `LOCAL_ONLY_TOOLS`）。
+
+## 类级判据（issue #6062：让「同类覆盖缺口」进不来）
+
+| # | 判据 | 红 |
+|---|---|---|
+| ① | **每个菜单节点至少一条可命中的说法** | 某节点没有任何说法能命中 ⇒ 红（那个页面用户永远问不到） |
+| ② | **没有空登记（死条目）** | 某条说法永远解不出它自己的功能 ⇒ 红（登记了但不生效） |
+| ③ | **说法 ⇄ `menu.ts` 同步** | 说法与镜像漂移 ⇒ 红（页面增删/改名必须同批改登记表） |
+
+判据的独立实现（**不 import 本模块**，纯静态）在
+`tests/unit_ci_workflows/test_menu_navigator.py`；行为面在
+`backend/ai-agent-service/tests/test_nav_guide.py`。
 """
 
 from __future__ import annotations
@@ -149,99 +162,64 @@ class NavFeature:
     label: str
     #: 该功能落在哪些菜单节点（多节点 = 同一功能分布在多页，各自独立裁剪）
     node_keys: Tuple[Tuple[str, str], ...]
-    #: **登记**的意图台词（枢纽词）—— 必须**是某个被登记菜单名的一部分**（或包含它）
+    #: **登记**的意图台词（可搜索键）—— 每条必须**接地**（见 `NAV_FEATURES` 上方的硬约束）：
+    #: 与所属节点菜单名 / 本功能 `label`（含括注）有包含关系，且**不被别的功能更长说法遮蔽**
     aliases: Tuple[str, ...]
 
 
 #: 意图 → 功能登记表（**第一批：只做导航类**；未登记 ⇒ 默认拒绝）。
 #: 🔴 新增条目 = 显式改本表（语义判断必须人做），**不许**改成「模糊匹配 menu.ts 的菜单名」。
-#: 🔴 **别名的硬约束**：每个别名**必须**是它所属节点菜单名的一部分（或含菜单名）——
-#: 导入期自检 + 判据 `problems_aliases_grounded` 双重拦截「别名表退化成同义词词典」。
-#: ⇒ 表里只会出现**菜单名的子串**（如「订单管理」之于「订单列表」不行、「订单列表」之于
-#: 「订单列表」才行）—— 想要新说法，就把它做成菜单名的一部分，别在别名里偷偷扩同义词。
+#:
+#: ## 每个节点登记**两个可搜索键**（issue #6062：修「问不到」与「空登记」两类病）
+#:
+#: ① **菜单名**（逐字等于 `menu.ts` 的 `name`，**必须**登记）—— 用户问「XX 在哪」时
+#:    `resolve_feature` 按最长命中拿到它；缺了它 ⇒ 那个页面**用户永远问不到**（判据
+#:    `problems_nodes_without_hit_alias`）；
+#: ② **常见说法 / 括注**（同义词表超集：口语、简称、行业叫法）—— 从 `menu.ts` 既有
+#:    `keywords`、`.github/cases/**` 的 `user_inputs` 语料与真实评测失败样例里摘，
+#:    **不是凭空造词**。没有合适说法的节点只登记菜单名（如「知识库」）。
+#:
+#: ## 括注承载两件事（**同一个字段，不新增第五列**）
+#:
+#: · **菜单名与口语的落差**（如「发货单（出库）」「企业基础信息（系统设置）」）；
+#: · 🔴 **「无独立导航目标」的操作**：某功能**在菜单里确实没有可指的页面**（例：给员工开账号
+#:   只在「员工管理」页内以按钮形式存在）⇒ **不许编一个不存在的菜单路径**，而是把它登记成
+#:   **该页的括注**（「员工管理（员工开账号）」），指向**最近的可指页面**。实测来源：
+#:   2026-10-02 B 端真实评测 `normal` 档 `nav_guide!nav_not_registered ×1`，用户输入
+#:   「怎么给员工开账号」；同一说法也出现在本仓既有用例 `HR-009` 的 `user_inputs`。
+#:
+#: ## 硬约束（自检 + 判据双闸）
+#:
+#: 🔴 **接地**：每条说法必须与它所属节点的菜单名有包含关系，**或**与它所属功能的
+#: `label`（含括注）有包含关系 —— 这一条把「说法表退化成同义词词典」的漂移堵在门外，
+#: 同时给①/②留下落点（判据 `problems_aliases_grounded`）。
+#: 🔴 **非空登记**：每条说法都必须**能自己赢**（作为整句问句解出自己）——被更长的说法遮蔽
+#: 的短说法**永远不可能**命中（`resolve_feature` 取最长命中）⇒ 那是死条目（判据
+#: `problems_shadowed_aliases`）。推论：同一功能**不得**登记 `("发货单", "发货单列表")`
+#: 这种「短说法是长说法子串」的形态（旧的 `…页` / `…列表` **装饰性变体**即属此列，已清掉）。
 NAV_FEATURES: Tuple[NavFeature, ...] = (
-    NavFeature("dashboard", "经营看板", (("workspace", "经营看板"),), ("经营看板", "经营看板数据")),
-    NavFeature("briefing", "每日简报", (("workspace", "每日简报"),), ("每日简报", "每日简报页")),
-    NavFeature(
-        "human-sessions",
-        "在线接待",
-        (("customer-service", "在线接待"),),
-        ("在线接待", "在线接待会话"),
-    ),
-    NavFeature("customers", "客户列表", (("customer-service", "客户列表"),), ("客户列表", "客户列表管理")),
-    NavFeature("knowledge", "知识库", (("customer-service", "知识库"),), ("知识库", "知识库管理")),
-    NavFeature(
-        "after-sales",
-        "售后工单",
-        (("customer-service", "售后工单"),),
-        ("售后工单", "售后工单管理"),
-    ),
-    NavFeature("orders", "订单列表", (("trade-center", "订单列表"),), ("订单列表", "订单列表页")),
-    NavFeature("finance", "财务对账", (("trade-center", "财务对账"),), ("财务对账", "财务对账页")),
-    NavFeature(
-        "production-board",
-        "生产看板",
-        (("production-center", "生产看板"),),
-        ("生产看板", "生产看板页"),
-    ),
-    NavFeature(
-        "production-pool",
-        "智能派单",
-        (("production-center", "智能派单"),),
-        ("智能派单", "智能派单池"),
-    ),
-    NavFeature(
-        "processing-items",
-        "加工项管理",
-        (("production-center", "加工项管理"),),
-        ("加工项管理", "加工项管理页"),
-    ),
-    NavFeature(
-        "production-process",
-        "工艺配置",
-        (("production-center", "工艺配置"),),
-        ("工艺配置", "工艺配置页"),
-    ),
-    NavFeature(
-        "piecework",
-        "计件工资",
-        (("production-center", "计件工资"),),
-        ("计件工资", "计件工资表"),
-    ),
-    NavFeature(
-        "inbound-orders",
-        "入库单",
-        (("inventory-center", "入库单"),),
-        ("入库单", "入库单列表"),
-    ),
-    NavFeature("shipments", "发货单", (("inventory-center", "发货单"),), ("发货单", "发货单列表")),
-    NavFeature(
-        "remnants",
-        "余料台账",
-        (("inventory-center", "余料台账"),),
-        ("余料台账", "余料台账页"),
-    ),
-    NavFeature(
-        "saving-board",
-        "省料看板",
-        (("inventory-center", "省料看板"),),
-        ("省料看板", "省料看板页"),
-    ),
-    NavFeature("employees", "员工管理", (("org-center", "员工管理"),), ("员工管理", "员工管理页")),
-    NavFeature("roles", "岗位权限", (("org-center", "岗位权限"),), ("岗位权限", "岗位权限页")),
-    NavFeature(
-        "settings",
-        "企业基础信息",
-        (("org-center", "企业基础信息"),),
-        ("企业基础信息", "企业基础信息页"),
-    ),
-    NavFeature("products", "商品管理", ((STANDALONE_GROUP, "商品管理"),), ("商品管理", "商品管理页")),
-    NavFeature(
-        "notifications",
-        "通知中心",
-        ((STANDALONE_GROUP, "通知中心"),),
-        ("通知中心", "通知中心页"),
-    ),
+    NavFeature("dashboard", "经营看板（经营数据）", (("workspace", "经营看板"),), ("经营看板", "经营数据")),
+    NavFeature("briefing", "每日简报（日报）", (("workspace", "每日简报"),), ("每日简报", "日报")),
+    NavFeature("human-sessions", "在线接待（人工接待）", (("customer-service", "在线接待"),), ("在线接待", "人工接待")),
+    NavFeature("customers", "客户列表（客户）", (("customer-service", "客户列表"),), ("客户列表", "客户")),
+    NavFeature("knowledge", "知识库", (("customer-service", "知识库"),), ("知识库",)),
+    NavFeature("after-sales", "售后工单（退换货）", (("customer-service", "售后工单"),), ("售后工单", "退换货")),
+    NavFeature("orders", "订单列表（订单）", (("trade-center", "订单列表"),), ("订单列表", "订单")),
+    NavFeature("finance", "财务对账（对账）", (("trade-center", "财务对账"),), ("财务对账", "对账")),
+    NavFeature("production-board", "生产看板（加工单）", (("production-center", "生产看板"),), ("生产看板", "加工单")),
+    NavFeature("production-pool", "智能派单（派单）", (("production-center", "智能派单"),), ("智能派单", "派单")),
+    NavFeature("processing-items", "加工项管理（加工项）", (("production-center", "加工项管理"),), ("加工项管理", "加工项")),
+    NavFeature("production-process", "工艺配置（工艺）", (("production-center", "工艺配置"),), ("工艺配置", "工艺")),
+    NavFeature("piecework", "计件工资（计件）", (("production-center", "计件工资"),), ("计件工资", "计件")),
+    NavFeature("inbound-orders", "入库单（入库）", (("inventory-center", "入库单"),), ("入库单", "入库")),
+    NavFeature("shipments", "发货单（出库）", (("inventory-center", "发货单"),), ("发货单", "出库")),
+    NavFeature("remnants", "余料台账（余料）", (("inventory-center", "余料台账"),), ("余料台账", "余料")),
+    NavFeature("saving-board", "省料看板（省料）", (("inventory-center", "省料看板"),), ("省料看板", "省料")),
+    NavFeature("employees", "员工管理（员工开账号）", (("org-center", "员工管理"),), ("员工管理", "员工开账号")),
+    NavFeature("roles", "岗位权限（角色权限）", (("org-center", "岗位权限"),), ("岗位权限", "角色权限")),
+    NavFeature("settings", "企业基础信息（系统设置）", (("org-center", "企业基础信息"),), ("企业基础信息", "系统设置")),
+    NavFeature("products", "商品管理（商品）", ((STANDALONE_GROUP, "商品管理"),), ("商品管理", "商品")),
+    NavFeature("notifications", "通知中心（消息）", ((STANDALONE_GROUP, "通知中心"),), ("通知中心", "消息")),
 )
 
 #: 所有节点都**不需要**权限码时的哨兵（`通知中心` 是全员可见项）。
@@ -309,11 +287,51 @@ def _self_check() -> None:
             raise MenuNavigatorError(f"{feature.feature_id}：aliases 为空 ⇒ 这条登记永远匹配不到")
         labels = {_NODES[k].label for k in feature.node_keys}
         for alias in feature.aliases:
-            if not any(alias in label or label in alias for label in labels):
+            if not any(
+                alias in label or label in alias for label in labels | {feature.label}
+            ):
                 raise MenuNavigatorError(
-                    f"{feature.feature_id}：别名 {alias!r} 不是任何被登记菜单名的一部分"
-                    f"（{sorted(labels)}）⇒ 别名表正在退化成同义词词典（禁止自由匹配）"
+                    f"{feature.feature_id}：说法 {alias!r} 与登记菜单名 {sorted(labels)} /"
+                    f" 功能名 {feature.label!r} 都无包含关系"
+                    " ⇒ 说法表正在退化成同义词词典（禁止自由匹配）"
                 )
+    # ── 类级两条（issue #6062）：① 每个节点至少一条可命中的说法 ② 没有空登记（死条目）──
+    declaring = {
+        _NODES[k].label
+        for feature in NAV_FEATURES
+        for k in feature.node_keys
+        if any(alias in _NODES[k].label for alias in feature.aliases)
+    }
+    no_alias = [node.label for node in MENU_TREE if node.label not in declaring]
+    if no_alias:
+        raise MenuNavigatorError(
+            f"这些菜单节点**没有任何说法能命中**（用户永远问不到）：{no_alias}"
+            " ⇒ 给它的登记项补一条**逐字等于菜单名**的说法（menu.ts 改了菜单名也要同批改）"
+        )
+    aliases = [(feature.feature_id, alias) for feature in NAV_FEATURES for alias in feature.aliases]
+    # 有资格进 `has_prefix` 分支的 = 不在**同一功能**里被别的更长说法盖住的（见「可达性」推导）。
+    maximal = [
+        (owner, alias)
+        for owner, alias in aliases
+        if not any(
+            other_owner == owner and alias in other_alias and alias != other_alias
+            for other_owner, other_alias in aliases
+        )
+    ]
+    for owner, alias in maximal:
+        # 去掉这一条后，其功能还有没有别的说法能同样长度命中 `alias` 这句问句？
+        siblings = [
+            a for o, a in maximal if o == owner and a != alias
+        ]
+        if not any(a in alias for a in siblings) and any(
+            other_owner != owner and other_alias in alias
+            for other_owner, other_alias in maximal
+        ):
+            raise MenuNavigatorError(
+                f"{owner} 的说法 {alias!r} 命不中自己：问「{alias}」时它会被"
+                f"别的功能的更长说法抢先命中 ⇒ 这条说法永远解不出它自己的功能（属空登记）"
+                " ⇒ 换一个不与别家成子串的说法，或删掉它"
+            )
 
 
 _self_check()

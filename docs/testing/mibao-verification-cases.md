@@ -3847,6 +3847,7 @@
 ```
 溯源: 2026-10-02 新增（issue #6044：B 端真实 LLM 评测抓到的 3 个真缺陷的类级固化）。落码 = ① 缺陷 A：`V146__add_inventory_stock_to_agent_batch_type.sql`（两条白名单 DROP + ADD 纳入 `inventory_stock` / `stock`，含终态对账与可执行回滚）+ `db/init/schema.sql` 同步 + 值域判据 tests/unit_ci_workflows/test_agent_batch_type_domain.py（3 条：值域 ⊆ 白名单 / 两条终态一致 / fail-closed，含 8 条内存红证）② 缺陷 C：`app/graph/nodes.py` 的 `_get_intent_to_route`（按 agent **绑定面**过滤，未绑定 route_key 改判 fallback）+ `route_by_intent`（`pending_interact_skill` / `handoff_offer` 目的地闸）+ 判据 backend/ai-agent-service/tests/test_route_destination_binding.py（28 条参数化用例）③ 缺陷 B 的行为判据另立 backend/ai-agent-service/tests/test_tools_dashboard_stats_counts.py（14 条，本用例的 `traces.tests` 只登记前两条静态面）。**取号 MC-069**：`python3 scripts/next_case_id.py MC` 现取（候选 = main ∪ 全部 open PR 分支 ∪ 本工作区）报 `main:001-048,050-068 · PR #6043:049 ⇒ 取 MC-069`，同 PR 加 claim 文件 `.github/cases/claims/<PR号>-MC-069.json`。 ｜ tags: single-source, fail-closed, red-proof, db-contract, routing
 
+<<<<<<< HEAD
 ### MC-049. 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据） 🔵
 ```
 你: 当一条用例把人读名称塞进 id 型参数（如 `product_detail(product_id=遮光窗帘)`）却不声明对应前置、或声明了一个 runner 没实现的 `precondition.type` 时，必须有判据**具名**报出（哪个用例 + 哪个参数 + 缺哪种前置 + 出口）；而只改注释时不得报红
@@ -3860,6 +3861,23 @@
 跳过: [backend-contract] 纯静态扫真用例语料与 runner 的 type 注册表（只读仓内文件；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_eval_id_arg_precondition.py + tests/unit_ci_workflows/test_eval_precondition_types_implemented.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #6041，用户点名「评测用例与现实业务/数据不匹配（PR-003 假红）+ 类级固化」）。落码 = ① 实例判据与修复：`.github/cases/product.yml` 的 PR-003 补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]` + `pre_clean[product_dedupe: 遮光窗帘]`（与同族 22 条既定用例同口径）② 类级固化 A = tests/unit_ci_workflows/test_eval_precondition_types_implemented.py（声明的 type 必须有实现 + 注册表不许空转 + 注册了必须有接线 + 注入式判别力自证）③ 类级固化 B = tests/unit_ci_workflows/test_eval_id_arg_precondition.py（规则表 `_PARAM_PRECONDITION_TYPES`；全库现取命中 = PR-003 一条）④ 文档规则 = docs/testing/acceptance-protocol.md 新增 §3.7「先判前置、再判产品」。**读数（可复算，只读）**：修前 2026-10-02 20:08+08 `tenant_id=1` 名字含「遮光窗帘」的非删除行 = **7**（`psql … -c "select count(*) from products where deleted=0 and tenant_id=1 and name like '%遮光窗帘%';"`；成员 = `米白色遮光窗帘` / `遮光窗帘`×3 / `2699 雪尼尔遮光窗帘` / `9231 遮光窗帘` / 又一件 `遮光窗帘` 已下架）⇒ agent 正确地反问「要查看哪一件」⇒ 期望 unmatched ⇒ 假红（`local_runner.py smoke` = `7/8 通过 均分 88%`）；同刻 HTTP 侧读数（口径 = runner `_list_products_matching`：`GET /api/admin/products?keyword=` 模糊匹配 + 客户端精确子串）= **7**。修后现取（2026-10-02 20:30+08，同一条 SQL 与同一探针）= **1**（`米白色遮光窗帘`）—— 其中「同关键词副本被收敛」这一步由**该周已存在的 `pre_clean[product_dedupe]` 家族**（PR-010 / OR-014 / CR-001… 本仓现取 22 条）在同一时段跑过所致（本包**未**对 dev 库做任何写操作：全程只读 `psql` + 只读 HTTP 探针），即本包补的正是 PR-003 **缺失的那一步**。**取号 MC-049**：`scripts/next_case_id.py MC` 现取（候选 = main ∪ 全部 open PR 分支 ∪ 工作区）= 「main:001-048,050-067 · PR #6038:068」⇒ 取最小空闲号 **049**（历史空档），同 PR 带 claim 文件 `.github/cases/claims/<PR号>-MC-049.json`（合并后删）。⚠️ **未覆盖（照实登记）**：用户点名的「多命中 ⇒ 应先反问用户选哪件」独立冒烟用例**未做** —— 它的前置需要「命中数 ≥ 2」（现机制只有 `expect_min` 下界 1 与 `expect` 精确值，`expect_min: 2` 是运行期新语义，超出本包射程）⇒ 登记为后续单；本轮也**未**跑真实 LLM 评测（`migao-dev-flow` §13 口径：默认不跑，且集成侧正在本机跑 mibao 腿）。 ｜ tags: ci, casebook, precondition, id-resolve, red-proof
+=======
+### MC-070. nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062） 🔵
+```
+你: 用户问导航类问题的**登记面**：当某个菜单节点没有任何说法能命中它、或某条已登记的说法永远解不出它自己的功能（空登记）、或登记的说法与 config/menu.ts 的镜像漂移（页面增删 / 改名 / 编出来的页面）、或有人把一条被别的功能更长说法遮蔽的说法登记进去时，都必须有东西**具名**报出；而只改一行注释时不得报红。有据可依的常见说法样例：「怎么给员工开账号」（实测失败输入，同一说法亦在 HR-009 的 user_inputs）
+期望: direct_reply
+数据: 🔴 **实测失败样例（本用例的起点）**：same-round 真跑 `build_navigation_answer("怎么给员工开账号", ["employee:list"])` ⇒ `registered=True`、`pages=[{"path": "/employees", …}]`、citation=「登记项 #employees → 菜单节点 菜单组「员工管理」」；且答案里**不含**任何受控步骤词（导航答案不给操作步骤）。执行点 = backend/ai-agent-service/tests/test_nav_guide.py 的 `TestExecuteSemantics::test_employee_account_phrasing_resolves_without_steps` 与 tests/unit_ci_workflows/test_menu_navigator.py 的 `test_measured_failure_common_phrasing_resolves`
+数据: **判据 7（每个节点至少一条可命中的说法）**：`MENU_TREE` 的每个节点都必须至少有一条登记说法**逐字出现在该菜单名里** ⇒ 缺了它，那个页面用户永远问不到。注入式红证：加一个没有任何说法的节点 ⇒ 具名报出该节点。执行点 = tests/unit_ci_workflows/test_menu_navigator.py 的 `test_judgement_7_every_node_has_a_hit_alias` / `test_judgement_7_red_on_node_without_alias`
+数据: **判据 8（没有空登记 = 死条目）**：每条登记说法都必须**能解出它自己的功能** —— 判法与 `resolve_feature` 的最长命中口径同源：被**别的功能**更长说法遮蔽的说法（如登记 `发货单` 的 `出库`，而别家登记了 `出库管理`）永远解不出自己 ⇒ 红并具名报出「哪条说法 / 解到了谁 / 被谁遮蔽」。执行点 = 同文件的 `test_judgement_8_no_shadowed_alias` / `test_judgement_8_red_on_shadowed_alias`
+数据: **判据 9（说法 ⇄ config/menu.ts 双向同步）**：① `menu.ts` 的每个导航节点都要有登记项以它为主节点；② 每个登记项的主节点都要在 `menu.ts` 里，且**至少一条说法逐字等于**该节点 `name`（改名不同批改登记表 ⇒ 静默漂移）。执行点 = 同文件的 `test_judgement_9_feature_map_syncs_with_menu_ts` / `test_judgement_9_red_on_mirror_drift`
+数据: **判据 6b（说法接地，同批对齐 `label`）**：说法必须与所属节点菜单名**或本功能 `label`（含括注）**有包含关系 —— 括注承载两件事：菜单名与口语的落差（「发货单（出库）」）与**无独立导航目标的**操作（「员工管理（员工开账号）」）。这**不放宽**判据实质：`label` 仍在本模块（人登记），不是 `menu.ts` 的任意文本。执行点 = 同文件的 `test_judgement_6c_aliases_grounded`
+数据: **覆盖测绘（现取读数，零成本可复算）**：MENU_TREE 22 节点 ⇄ NAV_FEATURES 22 条登记（1:1）；「无任何说法能命中的节点」= 0；「空登记（死条目）」= 0；每条说法都能解出自己。复算命令 = 加载 backend/ai-agent-service/app/context/menu_navigator.py 后逐节点/逐说法跑 `resolve_feature`
+数据: 🔴 **未覆盖与风险（照实登记）**：① 说法**只做确定性子串命中**（无同义 / 拼音 / 纠错）⇒ 口语与登记说法的用词差异大时仍会**如实回「未登记」**（例如「员工账号怎么开通」「给员工开通账号」今天仍不命中 —— 见 PR body 的「未覆盖」节）；② `menu.ts` 的 `keywords`（拼音 / 常见叫法）**不是**本判据的强制对账面（它自己写着「只影响搜得到，不影响渲染与权限」）⇒ 拼音类关键词**有意不抬**进说法表，靠括注承载口语；③ 本判据只判**结构面**（登记面覆盖、可解析、镜像一致）与**确定性的解析结果**，**不判** LLM 是否真的引用了 citation / 真的没编步骤（那是 MC-065 的行为面）
+前置: 员工管理页在 config/menu.ts 的导航节点里存在（key=employees / path=/employees / 码=employee:list）—— 本用例问的「员工账号开通」指向这一页；菜单被删或改名 ⇒ 本用例的前置不成立，应由登记面判据先红
+跳过: [backend-contract] 登记面与菜单单一源的结构对账（源码静态事实 + 零依赖纯函数 + 内存注入红证），零 LLM、秒级、不连网不连库；承载体 = tests/unit_ci_workflows/test_menu_navigator.py 与 backend/ai-agent-service/tests/test_nav_guide.py，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #6062）：实测起点 = 2026-10-02 B 端真实 LLM 评测 `normal` 档 tool health 里的 `nav_guide!nav_not_registered ×1`（用户输入「怎么给员工开账号」；同一说法也在既有用例 HR-009 的 user_inputs 里）。**归因**：不是 agent 不听话，是**登记面覆盖不足**（常见说法没进登记表）⇒ 修法是补登记面，不是改 prompt 让模型猜。落码 = ① 登记面 backend/ai-agent-service/app/context/menu_navigator.py：每个节点登记**两个可搜索键**（菜单名 + 常见说法，后者从 menu.ts 既有 keywords / .github/cases/** 的 user_inputs / 实测失败样例里摘），括注承载「菜单名与口语的落差」与「**无独立导航目标的**操作」（「员工管理（员工开账号）」⇒ 指向最近的可指页面，**不编菜单路径**），并清掉旧表里 22 条 `…页` / `…列表` 装饰性变体（它们是被更长说法遮蔽的空登记形态）② 导入期自检新增两条 fail-closed（节点无说法 / 说法被别的功能遮蔽）③ 判据 tests/unit_ci_workflows/test_menu_navigator.py 新增判据 7/8/9 + 3 条注入式红证（含内存桩臂与真模块注入臂）+ 一条只改注释的对照读数 ④ 行为判据 backend/ai-agent-service/tests/test_nav_guide.py 新增实测样例的真跑断言。取号 MC-070（现取 main 最大 = MC-069，且 .github/cases/claims/ 现只有 6038-MC-068 / 6046-MC-069 两条累积 claim ⇒ 按「当前最大号 + 1」取 MC-070；同 PR 加 claim 文件 .github/cases/claims/<PR号>-MC-070.json）。⚠️ 与并行改 .github/cases/misc.yml 的包（如 PR #6043）⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。 ｜ tags: ci, guard, navigation, fail-closed, red-proof, no-steps
+>>>>>>> 8e6de947e (fix(ai-agent): #6062 nav_guide 意图登记覆盖缺口 —— 常见说法入册 + 三条类级判据（节点可问 / 无空登记 / 镜像同步）)
 
 ## 商家入驻域（5 case）
 
@@ -9103,7 +9121,11 @@
 - MC-067: §15.7 页面多模态验收承载体（issue #6009）：登录步先切「管理员登录」再填手机号 + 登录页形态指纹 fail-closed + 唯一入口与「取不到证据怎么判」三态（纯静态判据）
 - MC-068: RBAC 文档岗位清单 ⇄ 真值源逐值对账（issue #6036 的 F7 固化）：docs/wiki/RBAC.md 的「新租户种子岗位」清单必须逐值等于 rbac/manifest.json 的 roles.seed（纯静态判据）
 - MC-069: B 端真实评测 3 缺陷的类级固化：批次取值白名单 ⊆ DB 约束（缺陷 A）+ 路由目的地恒在图上（缺陷 C）
+<<<<<<< HEAD
 - MC-049: 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）
+=======
+- MC-070: nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）
+>>>>>>> 8e6de947e (fix(ai-agent): #6062 nav_guide 意图登记覆盖缺口 —— 常见说法入册 + 三条类级判据（节点可问 / 无空登记 / 镜像同步）)
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

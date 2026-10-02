@@ -1,4 +1,4 @@
-# case_ids: MC-065
+# case_ids: MC-065, MC-070
 """`nav_guide` 工具面判据（issue #5989 · P1）—— 注册 / 门面 / 只读 / 纯本地 / skill 绑定 / 执行语义。
 
 ## 与哪个判据分工（**不是重复**）
@@ -91,7 +91,11 @@ class TestExecuteSemantics:
 
     @pytest.mark.asyncio
     async def test_unregistered_question_is_a_failure_with_no_pages(self):
-        result = await NavGuideTool().execute(_ctx(["*"]), question="怎么导出订单 Excel")
+        # ⚠️ 样本换成「一个已登记说法都不含」的问句：`怎么导出订单 Excel` 含了 #6062 登记的
+        # 口语说法「订单」⇒ 它现在**有**登记项（返回订单列表页 + 如实说没有步骤级指引）。
+        # 判据本身（未登记 ⇒ success=False / 零路径）一字未动，只换样本 —— 静态面同步
+        # `tests/unit_ci_workflows/test_menu_navigator.py` 的 `UNREGISTERED_QUESTIONS`。
+        result = await NavGuideTool().execute(_ctx(["*"]), question="皮料怎么算价")
         assert result.success is False
         assert result.error == "nav_not_registered"
         assert result.data["pages"] == []
@@ -131,3 +135,33 @@ class TestExecuteSemantics:
             assert hits == [], f"「{question}」的返回里出现步骤词 {hits}"
             assert "steps" not in json.dumps(result.data or {}, ensure_ascii=False)
             assert "没有步骤级指引" in blob, f"「{question}」没有如实告知「没有步骤级指引」"
+
+    @pytest.mark.asyncio
+    async def test_employee_account_phrasing_resolves_without_steps(self):
+        """🔴 **实测失败样例的真跑判据**（issue #6062；2026-10-02 B 端真实评测 `normal` 档）。
+
+        修前：用户问「怎么给员工开账号」⇒ 登记面没有这条常见说法 ⇒ `nav_guide` 返回
+        `success=False` / `error="nav_not_registered"`（fail-closed 是对的，但对用户没用）。
+        修后：命中「员工账号开通」这条登记说法 ⇒ 给出**页面位置**（`/employees`），
+        并仍然**不给操作步骤**（导航类口径）、不假承诺改账号。
+
+        前置（前置不成立时本用例应先在登记面判据上红）：「员工管理」页在 `config/menu.ts`
+        的导航节点里存在（key=employees / path=/employees / 码=employee:list）。
+        """
+        result = await NavGuideTool().execute(_ctx(["employee:list"]), question="怎么给员工开账号")
+        assert result.success is True, f"仍未登记（实测失败的复现）：error={result.error!r}"
+        assert [p["path"] for p in result.data["pages"]] == ["/employees"]
+        assert result.data["featureId"] == "employees"
+        assert result.data["citation"] == "登记项 #employees → 菜单节点 菜单组「员工管理」"
+        # 权限不足时不许泄露路径（与既有裁剪口径同一条）
+        blind = await NavGuideTool().execute(_ctx(["order:list"]), question="怎么给员工开账号")
+        assert blind.data["pages"] == []
+        assert "/employees" not in json.dumps(blind.data, ensure_ascii=False)
+        # 导航口径：不给步骤、不给「我帮你开」这类写承诺的假承诺
+        blob = json.dumps(
+            {"m": result.message, "s": result.suggestion, "d": result.data}, ensure_ascii=False
+        )
+        step_words = ("第一步", "第二步", "步骤如下", "点击", "按钮", "输入框", "下拉框", "依次")
+        assert [w for w in step_words if w in blob] == [], "导航答案里出现步骤词"
+        assert "没有步骤级指引" in blob
+        assert "employee:list" in blob
