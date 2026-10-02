@@ -140,13 +140,19 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 入库单 = inbound:view（仓储动作，仓管/财务要看入库单却不需要 processing:manage）、
     // 余料台账 = processing:manage（`RemnantController` 类级码）、
     // 🔴 省料看板 = product:list（issue #5699 P4：该页两个读端点在 `StockBatchController` 上是方法级 product:list）。
+    // #5939：入库单之后新增「发货单」（`/shipments`，码 = 既有 `order:list`）——
+    // 出口单据与入口单据对称，仍与「生产管理」组无关。
     expect(inventoryGroup()!.children.map((c) => c.path)).toEqual([
       '/inbound-orders',
+      '/shipments',
       '/production/remnants',
       '/production/saving-board',
     ])
+    // #5939：发货单取**既有** order:list（不新造 shipment:view —— 新码今天没有岗位持有 ⇒ 菜单对
+    // 所有人不可见，见 #4203 同族坑）。
     expect(inventoryGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'inbound:view',
+      'order:list',
       'processing:manage',
       'product:list',
     ])
@@ -161,9 +167,9 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 已不存在 —— 用码点构造，避免在源码里再写出该旧名（issue #4542 判据 1：零命中）
     expect(allNames).not.toContain('\u52a0\u5de5\u9879\u4e0e\u52a0\u5de5\u8d39')
     expect(allNames.filter((n) => n === '加工项管理')).toHaveLength(1)
-    // 一项不少不减：21 项 = 1 顶部一级项 + 19 个组内项 + 1 个尾部独立项（#5778）
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(19)
-    expect(allNames).toHaveLength(19)
+    // 一项不少不减：22 项 = 1 顶部一级项 + 20 个组内项 + 1 个尾部独立项（#5778；#5939 +「发货单」）
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(20)
+    expect(allNames).toHaveLength(20)
   })
 })
 

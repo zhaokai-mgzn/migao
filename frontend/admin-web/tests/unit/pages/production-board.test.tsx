@@ -194,13 +194,16 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expandGroup('inventory-center')
     const group = screen.getByText('仓储与物料').closest('[data-group-key]') as HTMLElement
     const links = group.querySelectorAll('a')
-    expect(links).toHaveLength(3)
+    // #5939：本组 3 → 4 项（+「发货单」`/shipments`，与「入库单」上下相邻）
+    expect(links).toHaveLength(4)
     expect(links[0].textContent).toContain('入库单')
     expect(links[0]).toHaveAttribute('href', '/inbound-orders')
-    expect(links[1].textContent).toContain('余料台账')
-    expect(links[1]).toHaveAttribute('href', '/production/remnants')
-    expect(links[2].textContent).toContain('省料看板')
-    expect(links[2]).toHaveAttribute('href', '/production/saving-board')
+    expect(links[1].textContent).toContain('发货单')
+    expect(links[1]).toHaveAttribute('href', '/shipments')
+    expect(links[2].textContent).toContain('余料台账')
+    expect(links[2]).toHaveAttribute('href', '/production/remnants')
+    expect(links[3].textContent).toContain('省料看板')
+    expect(links[3]).toHaveAttribute('href', '/production/saving-board')
   })
 
   it('「加工单」不再是独立菜单项：交易管理组只余两个业务项（issue #4357；#5778 收窄）', () => {
@@ -232,7 +235,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
       expandGroup(key)
     }
     const hrefs = Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'))
-    expect(hrefs).toHaveLength(20) // 简报开关关 ⇒ 20 项（21 - 每日简报）
+    expect(hrefs).toHaveLength(21) // 简报开关关 ⇒ 21 项（22 - 每日简报；#5939：21 → 22 项）
     expect(hrefs).not.toContain('/processing-orders')
   })
 
@@ -253,6 +256,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     const inventory = menuGroups.find((g) => g.key === 'inventory-center')
     expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
       'inbound:view',
+      'order:list',         // 发货单（issue #5939：取**既有** order:list ⇒ 与订单列表同码、零授权 delta）
       'processing:manage',
       'product:list',       // 省料看板（issue #5699 P4：节点码 = 该页两个读端点的码）
     ])
