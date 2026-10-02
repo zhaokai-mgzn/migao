@@ -4979,6 +4979,24 @@ _CASE_MC_063 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-065 [NORMAL] 导航类指引真值源（issue #5989 · P1）：登记表逐节点镜像 config/menu.ts + 权限码逐值真 + 未登记默认拒绝 + 只按服务端会话权限裁剪 + citation 可溯 + 结构上不含 steps（禁编步骤）（源: cases/misc.yml）──
+_CASE_MC_065 = EvalCase(
+    id='MC-065',
+    legacy_id='',
+    title='导航类指引真值源（issue #5989 · P1）：登记表逐节点镜像 config/menu.ts + 权限码逐值真 + 未登记默认拒绝 + 只按服务端会话权限裁剪 + citation 可溯 + 结构上不含 steps（禁编步骤）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当登记表里引用了一条 config/menu.ts 里**不存在**的菜单路径、或声明了一个权限目录里没有的**假权限码**、或把「未登记」的问题猜成一条登记项、或去掉了按会话权限的裁剪（让无权角色拿到页面路径）、或把 citation 摘成不可溯、或往载荷里加 `steps` / 往文案里塞步骤词时 —— 都必须有东西**具名**报出；而只改一行注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**判据 1 / 1b（结构层 = `config/menu.ts` 的镜像）**：`app/context/menu_navigator.py` 的 `MENU_TREE` 与 `frontend/admin-web/src/config/menu.ts` **逐节点逐字段逐序**相等（6 组 20 项 + 2 个一级独立项 = 22），且 `MENU_TREE_ORDER_LOCKED` 是注入式红证的锚；`menu.ts` 解析器**复用** `tests/unit_ci_workflows/test_agent_permission_parity.py::parse_menu_ts_nodes`（**不造第二套解析器**，§17.3 ⑤）', '**判据 2（权限码是真码）**：每个非空 `permission_code` 必须落在 `RegistrationService` / `PermissionService` 两处权限目录（复用 `parse_catalog`，两处目录逐值相等也由它核）；无码节点必须**显式**列举（现取 = 仅 `/notifications`）', '**判据 3（未登记 ⇒ 默认拒绝）**：6 个未登记样本问题（含空串）一律 `registered=False`、`pages=[]`、`featureId` 为空；`resolve_feature` 是**确定性最长命中**、歧义即 `None`（不猜、不近似匹配）；每条登记项都能被自己的功能名**恰好**命中（别名撞车即红）', '**判据 4（角色裁剪）**：只按 `ToolContext.permissions`（**服务端会话**）逐节点过滤 —— 无权 ⇒ 载荷里**不含页面路径也不含权限码**（只给菜单名 + 「你没有权限」），但 citation 仍可溯到登记项 → 菜单节点；`build_navigation_answer` 的签名里**没有 role**（形参判据，与 `page_registry.build_page_context` 同纪律）', '**判据 5（citation 可溯）**：citation 形态 = `登记项 #<id> → 菜单节点 <组>/一级项「<菜单名>」`；未登记时如实写「（无）—— 未命中登记表」；未登记节点 `menu_node(group, label)` 返回 `None`（fail-closed）', '🔴 **判据 6（禁止编步骤，结构 + 文本 + 上游三层）**：① **结构** —— `ToolResult.data` 的键**白名单**（`registered`/`featureId`/`label`/`pages`/`deniedMenuNames`/`citation`）与页面项键白名单（`menuGroup`/`menuName`/`path`/`requiredPermission`）⇒ `steps` 这类字段**结构上进不来**；② **文本** —— **真跑** `NavGuideTool.execute`（直连接线：把工具模块里的 `build_navigation_answer` 换成被测函数）得到的 `message`/`suggestion`/`data` 里不得出现受控步骤词表（`第一步`/`点击`/`按钮`/…），且每条回复都必须含「我没有步骤级指引」的如实告知；③ **上游** —— `app/tools/nav_guide.py` 源码（含**注入模型**的 `description`）里不得出现步骤词', '**判据 6b（别名不得退化成同义词词典）**：每条 `aliases` 必须与它所属节点的菜单名有**包含关系**（导入期自检 + 判据双闸）；「换一个新叫法」的唯一正确做法是先改菜单名，不是在别名表里偷偷扩同义词', '**类级元守卫（工具面）**：`nav_guide` 注册进 `create_default_registry()` + 从 `app/tools` 门面导出 + `read_only=True` + **不声明权限码**（纯本地、零 admin-api 调用点，登记在 `LOCAL_ONLY_TOOLS`，与 `interact`/`image_recognize` 同口径）+ 绑 B 端 `general` 兜底 skill（不绑 = 能力谎报）+ B 端专属只读见证集 25 ⇒ **26** 把（`test_readonly_cross_domain_sharing.py`，C 端零改动由此量化）', "🔴 **注入式红证（11 条，实测读数见 PR body）**：① 假菜单路径 ⇒ `problems_paths_exist` 报出；①b 删节点 ⇒ **模块导入期自检**抛 `MenuNavigatorError: orders：引用了 MENU_TREE 里不存在的节点 ('trade-center', '订单列表')`；①c 换序 / 内存桩缺节点 ⇒ `problems_coverage` 具名报出；② 假权限码 `ghost:code` ⇒ `problems_codes_real` 报出；③ 未命中改成「猜第一条」⇒ `problems_default_deny` 报出；④ 去掉裁剪 ⇒ 无权角色拿到 `pages`；④b 给 `build_navigation_answer` 加 `role` 形参 ⇒ 签名判据报出；⑤ citation 摘掉两段模板字面量 ⇒ `problems_citation` 报出；⑥a 往 `data` 加 `steps` ⇒ 键白名单报出；⑥b 在**工具源码**文本面塞祈使步骤 ⇒ `problems_no_step_wording` 报出；⑥c 自由同义词 ⇒ 导入期自检抛 `MenuNavigatorError`（同条判据的内存桩臂另证判别力）。**对照读数**：只改一行注释 ⇒ 八条判据**全绿**", '🔴 **本文件跑在没装 ai-agent 依赖的解释器里**（CI 的 `ci workflow helper unit tests` job 只装 `pytest pyyaml`）：因此**一律不 import `app.*`**（`app.tools.*` 会拉 `pydantic` / `langchain_core` ⇒ 本地绿、CI 红，实测 6 failed）。本文件只做**静态**判据（AST / 源码文本）+ 运行**零依赖**的纯函数（`app/context/menu_navigator.py` 只依赖标准库）；**需要真 import 的行为面**（工具真跑一遍的返回形状、`visible_nodes` 的裁剪、回复里也无步骤词）在 `backend/ai-agent-service/tests/test_nav_guide.py`（那里有依赖）——两处不重复同一断言。**复算方式（两侧都要跑）**：`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=<毒化 pydantic/langchain_core/app 的目录> python3 -m pytest tests/unit_ci_workflows/test_menu_navigator.py -q` ⇒ 31 passed（在**装不了**这些包的环境里也全绿）'],
+    skip_reason='[backend-contract] 真值源与菜单单一源的结构对账（源码静态事实 + 内存注入 + 真跑工具形状），零 LLM、秒级、不连网不连库；承载体 = tests/unit_ci_workflows/test_menu_navigator.py，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'permission', 'rbac', 'fail-closed', 'red-proof', 'navigation', 'no-steps'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-064 [NORMAL] Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975）（源: cases/misc.yml）──
 _CASE_MC_064 = EvalCase(
     id='MC-064',
@@ -11855,6 +11873,7 @@ ALL_CASES = (
     _CASE_MC_061,
     _CASE_MC_062,
     _CASE_MC_063,
+    _CASE_MC_065,
     _CASE_MC_064,
     _CASE_OB_001,
     _CASE_OB_002,

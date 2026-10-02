@@ -297,8 +297,17 @@ class TestPersonaBoundaryIsHard:
 
         ⚠️ **顺带订正（同源陈旧读数）**：本 docstring 原写「**23** 把」（上一段 2026-09-25 改判段落
         里的「实测值 23」），而集合当时实为 **24** 条（#5368 包 2 的 `image_recognize` 进场后
-        散文没跟上）—— 本次一并订正为**实测值 25**。集合相等断言本身不受影响（它比的是现算集合），
+        散文没跟上）—— 本次一并订正为**实测值 26**。集合相等断言本身不受影响（它比的是现算集合），
         订正的是**散文读数**（陈旧散文 = 下一个改判者的错误前提）。
+
+        🔴 **2026-10-02 改判（issue #5989 P1 进场，实测；导航类指引真值源）**：25 → **26**，
+        进场的是 `nav_guide`（功能 ⇄ 菜单路径 ⇄ 权限码的**仓内**登记表 + 按会话权限裁剪；
+        **零 admin-api 调用点**、不读也不写业务数据）。它绑在 B 端 `general` 兜底 skill 上，
+        **小布（C 端）一个 skill 都不绑** ⇒ 按本见证的既有口径自然进场，三条逐条成立：
+        ① `read_only = True`（无任何写 action）；② C 端零绑定；
+        ③ 与 `interact` / `image_recognize` 同口径**不声明权限码**（授权面落在**答案级**裁剪）。
+        口径一字未改；「C 端零改动」同样由此**量化**：C 端任一域的 `set_tool_scope` 里出现
+        `nav_guide` ⇒ 本用例红。
         """
         by_persona = _tools_by_persona()
         assert {"mibao", "xiaobu"} <= set(by_persona), (
@@ -323,10 +332,16 @@ class TestPersonaBoundaryIsHard:
             "image_recognize",
             # ── #4923 进场（工艺配置 6 个零覆盖读端点；只读聚合，绑 B 端 product）──
             "craft_config_query",
+            # ── #5989（P1 导航类指引）进场：**纯本地**只读（仓内登记表，零 admin-api 调用点），
+            #    只绑 B 端 `general` 兜底 skill ⇒ 按本见证既有口径自然进场；
+            #    ① `read_only = True`；② 小布（C 端）一个 skill 都不绑；
+            #    ③ 不声明权限码（与 `interact` / `image_recognize` 同口径）⇒ 授权靠**答案级**裁剪。
+            "nav_guide",
         }, (
-            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（25 把）不等，口径漂移"
+            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（26 把）不等，口径漂移"
             "（进场/退场都必须在本见证里显式改判，见 docstring 的 2026-09-21 / 2026-09-23 /"
-            "2026-09-24 / 2026-09-25 / 2026-09-24(#5368) / 2026-10-02(#4923) 六次改判说明）")
+            "2026-09-24 / 2026-09-25 / 2026-09-24(#5368) / 2026-10-02(#4923) /"
+            "2026-10-02(#5989) 七次改判说明）")
         for cfg in get_skill_registry().get_all():
             if "xiaobu" not in (cfg.system_prompts or {}):
                 continue
