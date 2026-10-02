@@ -430,11 +430,36 @@ PR `#6077` = `cbd0b9173`，套件自带准入现在「祖先持锁 ⇒ 立即拒
   （≥5 次批次记录）要用的读数 —— 把「被拦下的浪费」与「人类明知故犯的放行」混成一个数，两者都读不出来。
 - 🔻 **盖不到的**（照实登记）：判据**不保证**有人不用 `verify-all.sh` 而直连
   `pytest tests/unit_ci_workflows` —— 那一路由 `conftest.py` 的**套件自带准入**承担
-  （上一节，判据 `test_suite_self_lock.py`）；`git` 不可用 ⇒ 判 `unknown` ⇒ **拒绝**（fail-closed）。
+  （上一节，判据 `test_suite_self_lock.py`）；`git` 不可用 / 工作树外 ⇒ 判 `unknown` ⇒ **拒绝**
+  （fail-closed；行为面判据见下面「夹具复用」小节）。
 
 **判据**：`tests/unit_ci_workflows/test_package_heavy_entry_ban.py`（四态处置 / 拒绝**先于任何重活**
 （`PATH` 审计桩证明没有起过测试进程）/ 摘掉标记 ⇒ 拒绝 / 逃生口只在命令行 / 台账幂等与分类计数 /
-**四条注入式红证** / `batch-gate.sh` 真接线留下标记）。
+**四条注入式红证** / `batch-gate.sh` 真接线留下标记 / **非 git 目录与 `git` 不可用的端到端
+fail-closed**（含其注入式红证）/ **真锁与真台账未被碰**）。
+
+### 夹具复用：写同类判据请 import 这个 harness（2026-10-03，issue #6085 的后续）
+
+判据要跑**真脚本**（`verify-all.sh` / `batch-gate.sh` / `machine-heavy-lock.sh` /
+`package-heavy-entry-ledger.sh`）时，**不要各自手搓沙箱** —— 用共享 harness：
+
+```python
+from unit_ci_workflows import heavy_entry_sandbox as hs
+
+sb = hs.build(tmp_path / "repo")                 # 自足临时仓（git init + 包分支 + 本地 origin/main）
+wt = hs.build_worktree(sb, "pkg")                # linked worktree（= 「子包 worktree」形态）
+v = hs.run_verify(sb, wt, tmp_path, script=hs.install_real_script(wt))   # 真脚本 + PATH 审计桩
+```
+
+- **仓根那份 `verify-all.sh` 必须是桩（`exit 0`）** —— 它只被**真 `batch-gate.sh`** 当「那一次
+  gate」调用；放真脚本会让每次 `batch-gate.sh` 都真跑一次全量 gate ⇒ **互等机器级锁 ⇒ 180s
+  超时**（`#6085` 首轮 CI 实测；修后同一条腿 **0:35**）。要判真脚本就用
+  `hs.install_real_script(root)` 把它放进**被测的那个工作树**（真脚本的 `ROOT` 由自己所在位置算出）。
+- 判据**一律**把 `MIGAO_HEAVY_LOCK_FILE` / `MIGAO_PACKAGE_HEAVY_LEDGER` 指到 `tmp_path` ——
+  `hs.clean_env` 把这件事做成**结构保证**（默认落 `tmp_path`；显式路径先过
+  `hs.unscoped_tmp_root`，落在 `$HOME` 下当场失败），不再靠人记得。
+- 血泪教训（桩仓根 / 审计桩转发方式 / `origin/main` 必需 / 读数不许用「锁文件还在」…）逐条写在
+  `tests/unit_ci_workflows/heavy_entry_sandbox.py` 的模块 docstring 里，**改夹具前先读它**。
 
 ## 测试分层
 
