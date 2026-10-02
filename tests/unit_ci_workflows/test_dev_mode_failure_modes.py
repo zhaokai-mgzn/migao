@@ -2054,8 +2054,10 @@ def test_preset_corpus_resolution_is_independent_of_head_distance(tmp_path: Path
         assert probe.returncode != 0, f"夹具不成立：固定候选 {ref} 仍读得到语料（判据会空跑）"
 
     text = _preset_text_from_git(SKILL_REL)
-    assert text is not None, "「最后动过该路径的提交」这条路没生效（HEAD 距离一变就读不到语料）"
-    assert "老提交里的语料" in text
+    assert isinstance(text, str) and "老提交里的语料" in text, (
+        "「最后动过该路径的提交」这条路没生效（HEAD 距离一变就读不到语料）："
+        f"读到的内容 = {text!r}"
+    )
 
     # 正路 ①：镜像仓根 = preset 目录。刻意让 REPO_ROOT 指向**没有该路径**的仓库 ⇒ 只能靠镜像
     empty = tmp_path / "empty-repo"
@@ -2075,8 +2077,7 @@ def test_preset_corpus_resolution_is_independent_of_head_distance(tmp_path: Path
     monkeypatch.setenv("MIGAO_PRESET_MIRROR", str(mirror))
 
     mirrored = _preset_text_from_git(SKILL_REL)
-    assert mirrored is not None, (
+    assert isinstance(mirrored, str) and "镜像里的语料" in mirrored, (
         "预设仓镜像（正路 ①）读不到 —— 镜像**仓根就是 preset 目录**，`rel` 去掉 `.agent-presets/` 之后"
-        "还要去掉镜像名那一段（旧实现只试 `mirror/migao/skills/…`，等于报错信息在骗人）"
+        f"还要去掉镜像名那一段（旧实现只试 `mirror/migao/skills/…`，等于报错信息在骗人）：读到 = {mirrored!r}"
     )
-    assert "镜像里的语料" in mirrored
