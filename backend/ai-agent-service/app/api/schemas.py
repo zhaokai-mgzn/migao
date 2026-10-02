@@ -8,6 +8,23 @@ from typing import Optional, List, Any, Dict
 from pydantic import BaseModel, Field
 
 
+class CardAnswer(BaseModel):
+    """交互卡的结构化答卷（issue #5949）—— 请求体里「本卡的取值」。
+
+    语义与 `__FORM__|{json}` **完全等价**（都是「LLM 无感」注入：模型只看到可读文本），
+    只是**换一个传输字段**承载：B 端 admin-web 的 form 卡走它，C 端继续走前缀协议
+    （用户裁定 2026-10-02：C 端零改动）。
+    """
+    cardId: Optional[str] = Field(
+        None,
+        description="卡片身份 `component|title|formField keys`（与服务端同口径）；"
+                    "给出则须与本会话待答卡一致，否则本轮不算答卡轮",
+    )
+    values: Dict[str, Any] = Field(
+        default_factory=dict, description="字段 key → 用户填写值（原样进注入链）"
+    )
+
+
 class ChatSendRequest(BaseModel):
     """发送消息请求"""
     session_id: Optional[str] = Field(None, description="会话 ID，不传则创建新会话")
@@ -15,6 +32,11 @@ class ChatSendRequest(BaseModel):
     images: Optional[List[str]] = Field(None, description="图片URL列表")
     ignored_suggestions: Optional[List[str]] = Field(
         None, description="用户忽略的上一轮建议列表（用于日志分析）"
+    )
+    # 结构化答卡（issue #5949）：B 端 form 卡提交 `{cardId, values}`。
+    # 🔴 pydantic 默认**静默丢弃**未知字段 ⇒ 漏登记本字段时负例判据会假绿（已踩过）。
+    card_answer: Optional[CardAnswer] = Field(
+        None, description="结构化答卡：{cardId?, values}（与 `__FORM__|` 同等的 LLM 无感注入）"
     )
     # 页面上下文（issue #5371 族 4）：前端**只递交** `{"route": "<路径>", "entityId": "<id>"}`
     # —— 路径不含查询串、实体只传 id 不传快照；**角色不在这里**（只从会话取，客户端说了不算）。

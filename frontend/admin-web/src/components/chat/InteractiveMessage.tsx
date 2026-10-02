@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Check, X, ChevronRight, ChevronLeft } from 'lucide-react'
 import type { InteractiveComponent, InteractiveOption, InteractiveFormField } from '@/types'
@@ -238,8 +238,24 @@ function ConfirmCard({ interactive, disabled }: Props) {
 }
 
 /**
+ * 本卡在会话里的身份（`card_answer.cardId`）—— 与服务端
+ * `app/api/chat.py::_card_identity` **同口径**：`component|title|formField keys` 逐字 join。
+ * 两侧各算一份就必须同规则，否则「cardId 一致」判据在真机上永远不一致。
+ * 跨端判据：backend/ai-agent-service/tests/test_card_form_submit_shape_cross_end_contract.py
+ */
+export function cardAnswerId(interactive: InteractiveComponent): string {
+  const fields = Array.isArray(interactive.formFields) ? interactive.formFields : []
+  const keys = fields.map(f => f.key)
+  return [interactive.component, interactive.title ?? '', ...keys].join('|')
+}
+
+/**
  * 内联表单 — 一次性收集多个信息字段
  * 用于图片识别后预填已知信息，让用户补充/确认缺失字段后一次性提交
+ *
+ * 提交形态（issue #5949）：请求体**结构化字段** `card_answer={cardId, values}`
+ * —— 不再把 `label: value` 多行文本当提交体（那形态后端只当普通消息，
+ * 「答卡轮」契约不成立 ⇒ 卡答了却没执行、又被重问一遍）。
  */
 function FormCard({ interactive, disabled }: Props) {
   const { sendMessage } = useChatStore()
@@ -254,20 +270,41 @@ function FormCard({ interactive, disabled }: Props) {
     return initial
   })
   const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState('')
+  // 已答锁（issue #5949）：`submitted` 的**同步影子** —— 同一次事件里连点两次/父层尚未
+  // 重渲染时，闭包里的 `submitted` 仍是 false（React 状态提交在事件之后）⇒ 会发两次。
+  const answeredRef = useRef(false)
 
   const setField = (key: string, val: string) => {
-    if (submitted || disabled) return
+    if (answeredRef.current || submitted || disabled) return
     setValues(prev => ({ ...prev, [key]: val }))
   }
 
+  // required 本地校验（issue #5949）：缺必填**不得**发出提交（后端只做业务校验，
+  // 空值会以「（未填写）」进注入文本 ⇒ 白跑一轮）
+  const missingRequired = formFields
+    .filter(f => f.required && !(values[f.key] || '').trim())
+    .map(f => f.label)
+
   const handleSubmit = () => {
-    if (submitted || disabled) return
-    // 构建结构化提交文本：每行 "label: value"
-    const lines = formFields
-      .map(f => `${f.label}: ${values[f.key] || '（未填写）'}`)
-      .join('\n')
+    if (answeredRef.current || submitted || disabled) return
+    if (missingRequired.length > 0) {
+      setError(`请先填写：${missingRequired.join('、')}`)
+      return
+    }
+    answeredRef.current = true
+    setError('')
     setSubmitted(true)
-    sendMessage(lines)
+    // `message` 仍下发可读回显：它是**降级路径**的载体（cardId 对不上本会话待答卡时，
+    // 后端按普通消息处理 —— 值不丢、只是不进答卡豁免）。第二参是图片位（本卡无图片）。
+    sendMessage(
+      formFields.map(f => `${f.label}: ${values[f.key] || '（未填写）'}`).join('\n'),
+      undefined,
+      {
+        cardId: cardAnswerId(interactive),
+        values: Object.fromEntries(formFields.map(f => [f.key, values[f.key] || ''])),
+      },
+    )
   }
 
   return (
@@ -296,7 +333,10 @@ function FormCard({ interactive, disabled }: Props) {
         ))}
       </div>
       {!submitted && (
-        <div className="px-3 py-2 border-t border-neutral-100 flex justify-end">
+        <div className="px-3 py-2 border-t border-neutral-100 flex items-center justify-end gap-2">
+          {error && (
+            <p role="alert" className="mr-auto text-[11px] text-red-500">{error}</p>
+          )}
           <button
             onClick={handleSubmit}
             disabled={disabled}

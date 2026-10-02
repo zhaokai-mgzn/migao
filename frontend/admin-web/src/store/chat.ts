@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { chatApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
-import type { ChatSession, ChatMessage, ChatToolCall, ChatCard, QuickAction } from '@/types'
+import type { ChatSession, ChatMessage, ChatToolCall, ChatCard, QuickAction, CardAnswer } from '@/types'
 import { toast } from 'sonner'
 import { SSEParser, type SSEEvent } from '@/lib/sse-parser'
 // 同页填充（issue #5368 包 2）：SSE `page_fill` → **浏览器内存事件** → 当前页面表单。
@@ -51,7 +51,7 @@ interface ChatState {
   fetchSessions: () => Promise<void>
   createSession: () => Promise<void>
   selectSession: (id: string) => Promise<void>
-  sendMessage: (content: string, images?: string[]) => Promise<void>
+  sendMessage: (content: string, images?: string[], cardAnswer?: CardAnswer) => Promise<void>
   closeSession: (id: string) => Promise<void>
   reopenSession: (id: string) => Promise<void>
   setSearchKeyword: (keyword: string) => void
@@ -395,7 +395,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }
   },
 
-  sendMessage: async (content: string, images?: string[]) => {
+  sendMessage: async (content: string, images?: string[], cardAnswer?: CardAnswer) => {
     const { currentSessionId, isStreaming, sessions } = get()
     // 只挡当前会话正在回复；其他会话的并发流不受影响（issue #2906）
     // 纯图片消息（无文字）可发送：MessageInput 对纯图发送传 content=' ' 占位
@@ -482,6 +482,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         body: JSON.stringify({
           session_id: currentSessionId,
           message: content.trim(),
+          // 结构化答卡（issue #5949）：B 端交互卡的「本卡取值」——
+          // 与 `message` 并存：`card_answer` 走答卡链路，`message` 只是可读回显/降级载体
+          ...(cardAnswer ? { card_answer: cardAnswer } : {}),
           ...(pageContext ? { page_context: pageContext } : {}),
           ...(images && images.length > 0 ? { images } : {}),
           ...(ignoredSuggestions.length > 0 ? { ignored_suggestions: ignoredSuggestions } : {}),
