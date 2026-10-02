@@ -2599,7 +2599,7 @@
 数据: 无权限身份 GET 带 @RequestParam 必填参数的 admin 端点必须返回 403（code=PERMISSION_DENIED、details 含 requiredPermission），不得先落入 400/422 参数校验（信息泄露：可从错误形态确认端点存在与参数结构，且与带齐参数时的 403 语义不一致）
 数据: 类级元守卫：权限判定必须挂在 PermissionInterceptor.preHandle（MVC 分发阶段，先于参数解析）+ AOP 双保险并存；删除 WebConfig 的拦截器注册即红（PermissionPreHandleGateTest#webConfig_registersPreHandleInterceptor）
 前置: admin-api 管理端（租户 20）：无 order:view 权限的员工会话
-跳过: 纯 admin-api HTTP 语义（MockMvc standalone + 真实矩阵探针），非 LLM 行为，不进 agent-eval；实例判据 = backend/admin-api/src/test/java/com/migao/admin/security/PermissionPreHandleGateTest.java
+跳过: [backend-contract] 纯 admin-api HTTP 语义（MockMvc standalone + 真实矩阵探针），非 LLM 行为，不进 agent-eval；实例判据 = backend/admin-api/src/test/java/com/migao/admin/security/PermissionPreHandleGateTest.java
 ```
 真值: ai-chat.permission-layers
 溯源: 2026-10-02 新增（R2 商家后台全量重测发现 F3，issue #6063）：PermissionInterceptor 原为 AOP @Around，晚于 @RequestParam 参数解析 ⇒ 无权限 GET 缺必填参数返回 422（阶段3 矩阵 6 角色 × W01/W02/W04/W05 共 20 格 422≠403）。修复：preHandle 复用 public requirePermission（同一份授权语义）+ WebConfig 注册 /api/**，AOP 保留双保险。 ｜ tags: defense, rbac, prehandle, info-leak
