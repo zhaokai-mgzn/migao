@@ -534,6 +534,10 @@
       "agent:session"
     ],
     [
+      "/agent-workspace",
+      "agent:session"
+    ],
+    [
       "/after-sales",
       "after_sales:view"
     ],
@@ -584,6 +588,10 @@
     [
       "/shipments",
       "order:list"
+    ],
+    [
+      "/inbound-orders",
+      "inbound:view"
     ],
     [
       "/employees",
