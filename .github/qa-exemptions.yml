@@ -32,6 +32,9 @@ exemptions:
   - pattern: "backend/ai-agent-service/app/tools/__init__.py"
     reason: "Tool 模块 re-export（纯 import + __all__，无运行时逻辑）；新增 CustomerOrderQueryTool 由 tests/test_tools_customer_order_query.py 直接覆盖"
 
+  - pattern: "backend/ai-agent-service/app/suggestions/__init__.py"
+    reason: "纯 docstring（包说明 + issue #5951 退役登记），无任何可执行语句 —— 该文件原先只有 follow_up 的 re-export，随 #5951 一并删除 ⇒ 现在没有可测行为。存活的 app/suggestions/{vague_guess,preference_tracker}.py 各有自己的配套测试（tests/test_suggestions_vague_guess.py 等），行为不由本文件承担。"
+
   - pattern: "backend/admin-api/src/main/java/com/migao/admin/dto/agent/*"
     reason: "Agent DTO 定义 — 纯数据结构无运行时逻辑，由编译检查保障"
 
