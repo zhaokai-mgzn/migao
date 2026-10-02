@@ -1154,8 +1154,10 @@ class TestRunnerRegistryIsTheSingleSource:
         ⇒ 本条立刻红并具名报出是哪一半。
         """
         by = {c["id"]: c for c in _all_cases()}
-        case = by.get("PR-014")
-        assert case is not None, "实际用例库里没有 PR-014（#5950 的库存批量用例）——判据无对象"
+        assert "PR-014" in by, (
+            "实际用例库里没有 PR-014（#5950 的库存批量用例）——判据无对象；"
+            f"现取 id 尾段：{sorted(by)[-5:]}")
+        case = by["PR-014"]      # 缺席即 KeyError（静默无对象在这里不可能）
         assert ("product_batch_update", "execute", "inventory_stock") in live_write_expectations(case), (
             "PR-014 没被认成 `inventory_stock` 的**写方** ⇒ 判据 ② 对它静默失效"
             f"（实际认到：{live_write_expectations(case)}）")

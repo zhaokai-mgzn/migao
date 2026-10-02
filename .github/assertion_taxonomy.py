@@ -650,6 +650,7 @@ KNOWN_PRECLEAN_TARGET_FIELDS: dict[str, str | None] = {
     "order_status_restore": "order_no",             # `_restore_order_status` → `spec.get("order_no")`；不可变键定位订单（#4161 补登记）
     "customer_profile_restore": "customer_keyword", # `_restore_customer_profile` → `spec.get("customer_keyword")`（或 `customer_id`）；定位客户（#4161 补登记）
     "session_credential_restore": "session_id",     # `_restore_session_credentials` → `spec.get("session_id")`（缺省回落 `EVAL_SESSION_ID`）；不可变键定位会话（#5482 登记）
+    "product_stock_restore": "product_keyword",     # `_restore_product_stock` → `spec.get("product_keyword")`；子串匹配商品名（#5950 登记）
 }
 # ⚠️ **键类字段的解析口径未实装**（如实登记，不粉饰）：`resolve_pre_clean_target` 只覆盖
 # **名字类**三条（`tag_name` / `employee_name` / `product_keyword` —— 种子目录
@@ -673,7 +674,8 @@ def pre_clean_targets(case_or_spec: dict) -> list[tuple[str, str, str]]:
     `TestPrecleanTargetTableMatchesRunner` 锁死 —— #4161 之前本表漏了 7 个类型）：
       · **名字类（有解析口径，真核对）**：`customer_tag_remove` → `tag_name`（精确匹配种子
         `customer_tags.name`）；`product_remove` / `product_dedupe` / `product_status_restore` /
-        `sku_price_restore` / `product_price_restore` → `product_keyword`（子串匹配商品名）；
+        `sku_price_restore` / `product_price_restore` / `product_stock_restore` →
+        `product_keyword`（子串匹配商品名）；
         `employee_reactivate` / `employee_remove` → `employee_name`（精确匹配员工名）。
       · **键类（登记了字段、门禁侧暂无口径 ⇒ 不判）**：`aftersales_ticket_prepare` →
         `ticket_no`；`processing_order_reset` / `order_status_restore` → `order_no`；

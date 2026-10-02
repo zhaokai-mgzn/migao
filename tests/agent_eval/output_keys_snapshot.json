@@ -623,7 +623,7 @@
     "stock_source",
     "threshold"
    ],
-   "source_sha256": "f32e98a1a6c3991c502c861284fad29e836b5435e20997bac658f9a69a5cb46f"
+   "source_sha256": "f5b02ef13173d8a985c81b820e99d61dda35d6cb5b34af7fe022e990896ae3ab"
   },
   "knowledge_search": {
    "actions": null,
@@ -1021,7 +1021,7 @@
    "shape_notes": [
     "data=dict(response.get('data') or {})"
    ],
-   "source_sha256": "b0f370441bd61d8eb0c80b02245b8f411e166fc5fb3de62282eae27f9f535fab"
+   "source_sha256": "e0fdb950af5be55e868739b234051d33a591bbbdc21ec681a0944505d04602aa"
   },
   "product_detail": {
    "actions": null,
@@ -1316,7 +1316,7 @@
     "params",
     "validated"
    ],
-   "source_sha256": "b805178bfc1725b239e31c4e285406079b6fcff3d25281d4b7143da5be05aa65"
+   "source_sha256": "851ee88c5c12f5d483ba9212f67868b1db19bc73f00442417ce9b8a33c5432b8"
   }
  }
 }

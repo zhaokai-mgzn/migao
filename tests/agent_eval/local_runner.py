@@ -625,6 +625,7 @@ _PRECLEAN_FAILURE_PREFIXES: dict[str, tuple[str, ...]] = {
     "product_status_restore": (),   # 复位族（#4075）：不在位/写失败/回读不符走 `_clean_not_applied`
     "sku_price_restore": (),        # 同上
     "product_price_restore": (),    # 同上（#5303）
+    "product_stock_restore": (),    # 同上（#5950）：库存复位，未应用走 `_clean_not_applied`
     "order_status_restore": (),     # 同上（#4992）
     "customer_profile_restore": (),  # 同上（#4992）
     "session_credential_restore": (),  # 同上（#5482）
@@ -1120,51 +1121,6 @@ async def _restore_sku_price(token: str, spec: dict, phase: str) -> str:
     return f"已复位 {_who} 的 SKU 价 → {want}（回读一致）"
 
 
-async def _restore_product_attr(token: str, spec: dict, phase: str, *,
-                              field: str, want: object, read, label: str,
-                              clean_type: str, same=None) -> str:
-    """**商品级字段复位**的共用实现（`product_price_restore` / `product_stock_restore`）。
-
-    为什么抽一处：两个复位族**除字段名与文案外逐字同构**（定位目标 → 幂等判定 → PATCH →
-    回读证实）；各写一份 = 同一口径两份实现，`#3807` 的坑（请求体字段名写错 ⇒ 2xx 但值没变）
-    只会在其中一份上被修掉。`read` = 该字段的回读取值口径（`_product_price` / `_product_stock`）。
-
-    ⚠️ 请求体字段名走常量（`PRODUCT_PRICE_FIELD` / `PRODUCT_STOCK_FIELD`）而不是字面量：
-    #3807 的实证 —— 发错名字时后端 DTO 忽略未知属性 ⇒ **2xx + "已复位"文案 + 值根本没变**
-    （静默空转）。故**必须回读**：2xx ≠ 值已落地（回读不符 / 回读里没有该字段 ⇒ 按"未证实/未生效"记账）。
-    """
-    # 延迟解析默认比较器：`_same_number` 定义在本文件后面（默认参数在 def 期求值 ⇒ 写在这里会
-    # 直接 NameError，整个用例面收集期就炸 —— 实测踩过）。
-    same = same or _same_number
-    kw = str(spec.get("product_keyword") or "")
-    if want is None:
-        return _clean_not_applied(
-            phase, f"`{clean_type}` 缺取值键 `{field}`（无法确定复位目标值）")
-    _who = f"商品「{kw}」"
-    async with httpx.AsyncClient() as c:
-        h = _admin_headers(token)
-        prod, err = await _find_restore_target(c, token, kw)
-        if not prod:
-            return _clean_not_applied(phase, err)
-        pid = str(prod.get("id") or "")
-        cur = read(await _readback_product(c, h, pid))
-        if cur is not None and same(cur, want):
-            return f"{_who} 的{label}本就是 {want}，无需复位（幂等）"
-        r = await c.patch(f"{ADMIN_API}/api/admin/agent/products/{pid}",
-                          headers=h, json={field: want}, timeout=15)
-        if getattr(r, "status_code", 0) >= 300:
-            return _clean_not_applied(
-                phase, f"{_who} 的{label}复位为 {want} 失败（HTTP {r.status_code}）")
-        got = read(await _readback_product(c, h, pid))
-        if got is None:
-            return _clean_not_applied(
-                phase, f"{_who} 的{label}复位**未证实** —— 回读里没有 {field}")
-        if not same(got, want):
-            return _clean_not_applied(
-                phase, f"{_who} 的{label}复位**未生效** —— 回读 {got}，应为 {want}")
-    return f"已复位 {_who} 的{label} → {want}（回读一致）"
-
-
 async def _restore_product_stock(token: str, spec: dict, phase: str) -> str:
     """`product_stock_restore`：按商品名把**库存**复位到给定值（issue #5950）。
 
@@ -1176,7 +1132,7 @@ async def _restore_product_stock(token: str, spec: dict, phase: str) -> str:
     ⚠️ **口径 = 逐规格**（与写入口径同形，不能按商品级汇总判）：写方是「该商品每个规格都置为
     `stock`」，故复位是「每个规格都置回 `stock`」，**幂等判定也必须逐规格**——用汇总判会
     `Σ(500×3)=1500 ≠ 500` 恒不等 ⇒ 每次都重发 PATCH（幂等判据形同虚设）。
-    实现体刻意与 `_restore_product_price` **分开**（不是共用 `_restore_product_attr`）：
+    实现体刻意与 `_restore_product_price` **分开**（不抽公共 helper）：
     那一份是**商品级单值列**（`base_price`）的语义，这一份是**逐 SKU 集合**的语义 ——
     硬凑一处反而会让"回读证实"这一步对错对象。
 
