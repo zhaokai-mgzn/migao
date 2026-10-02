@@ -54,13 +54,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PARITY_MODULE = REPO_ROOT / "tests" / "unit_ci_workflows" / "test_agent_permission_parity.py"
-SQL_HELPER = REPO_ROOT / "tests" / "unit_ci_workflows" / "_sql_schema.py"
+#: 迁移链 `role_permissions` 语句解析的**唯一实现**（本文件不写第二个解析器，见 `role_backfill_migration`）
+DERIVE_MODULE = REPO_ROOT / "rbac" / "derive.py"
 
 ROLE_SERVICE_REL = "backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java"
 REGISTRATION_REL = "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java"
@@ -111,8 +111,9 @@ def _parity():
     return _load_module("migao_position_perms_parity", PARITY_MODULE)
 
 
-def _sql_helper():
-    return _load_module("migao_position_perms_sql", SQL_HELPER)
+def _derive_module():
+    """`rbac/derive.py` —— 迁移链 `role_permissions` 语句的**唯一**解析实现（本文件复用它）。"""
+    return _load_module("migao_position_perms_derive", DERIVE_MODULE)
 
 
 def read_source(rel: str) -> str:
@@ -144,57 +145,28 @@ def role_seed_manifest(manifest: dict | None = None) -> dict[str, frozenset[str]
     return {role: frozenset(codes) for role, codes in seed.items()}
 
 
-def maximal_roles(per_role_codes: dict[str, frozenset[str]], block_text: str) -> dict[str, frozenset[str]]:
-    """`(岗位, 码)` 对 → 岗位最大码集（`p.code IN (…)` 展开成|agent 语义）。
-
-    按**仓库既有约定**（`rbac/derive.py` 的 P5 段逐字登记）：迁移链只授不撤
-    ⇒ 同一岗位在链上的**累计**集合由 `r.code` 的表意承担；本函数把它显式算出来。
-    """
-    per_code = {code: set() for codes in per_role_codes.values() for code in codes}
-    for code in per_code:
-        if re.search(rf"(?<![A-Za-z0-9_])p\.code\s*=\s*'{re.escape(code)}'", block_text):
-            per_code[code].add(code)
-    for raw in re.findall(r"(?<![A-Za-z0-9_])p\.code\s+IN\s*\(([^)]*)\)", block_text):
-        for code in re.findall(r"'([a-z_:]+)'", raw):
-            if code in per_code:
-                per_code[code].add(code)
-    reachable = {code for code, hits in per_code.items() if hits}
-    return {role: frozenset(c for c in codes if c in reachable) for role, codes in per_role_codes.items()}
-
-
 def role_backfill_migration(sql_text: str | None = None) -> dict[str, frozenset[str]]:
-    """④ 存量迁移 —— 读每条 `INSERT INTO role_permissions` 的岗位谓词与码谓词。
+    """④ 存量迁移 —— 每岗位在本次回填里拿到的码（**委托给唯一实现**，本文件不写第二个解析器）。
 
-    解析规则与 `rbac/derive.py` 的 `parse_role_grants` **同源**（剥 SQL 注释 +
-    `r.code = 'x'` / `r.code IN (…)` + `p.code = 'x'` / `p.code IN (…)`）；
-    本函数只把它收敛成「岗位 → 码集」，不复制那套推演。
+    🔴 为什么委托（issue #5325 的元守卫逐字要求）：「按引号扫原文取值」的解析**不许新增** ——
+    它的假绿形态是「注释/docstring 里写一句看起来像声明的话就喂中」。
+    `rbac/derive.py` 的 `parse_role_grants` 是**全仓唯一**的「迁移链 role_permissions 语句」解析实现
+    （剥 SQL 注释 + 岗位谓词 / 码谓词，且自带「语句数 == 解析数」的 fail-closed 断言）
+    ⇒ 本判据复用它，于是**同一个事实只有一份解析口径**（判据升级时不会与推演漂移）。
     """
-    helper = _sql_helper()
-    text = _sql_helper().strip_sql_comments(read_source(BACKFILL_MIGRATION_REL) if sql_text is None else sql_text)
-    stmts = []
-    idx = 0
-    while True:
-        start = text.find("INSERT INTO role_permissions", idx)
-        if start < 0:
-            break
-        end = text.find(";", start)
-        assert end > start, f"`{BACKFILL_MIGRATION_REL}`: role_permissions 语句没有以 `;` 收尾（fail-closed）"
-        stmts.append(text[start:end])
-        idx = end + 1
-    assert stmts, f"`{BACKFILL_MIGRATION_REL}` 里没有任何 `INSERT INTO role_permissions` 语句（fail-closed）"
+    derive = _derive_module()
+    text = read_source(BACKFILL_MIGRATION_REL) if sql_text is None else sql_text
+    grants = derive.parse_role_grants(145, BACKFILL_MIGRATION_REL, text)
+    assert grants, f"`{BACKFILL_MIGRATION_REL}` 解析不出任何 role_permissions 语句（fail-closed）"
     per_role: dict[str, set[str]] = {}
-    for stmt in stmts:
-        roles: set[str] = set()
-        for group in re.findall(r"r\.code\s+IN\s*\(([^)]*)\)", stmt):
-            roles.update(re.findall(r"'([a-z_]+)'", group))
-        roles.update(re.findall(r"r\.code\s*=\s*'([a-z_]+)'", stmt))
-        assert roles, f"`{BACKFILL_MIGRATION_REL}`: 一条 role_permissions 语句解析不出岗位谓词（fail-closed）"
-        codes: set[str] = set()
-        for group in re.findall(r"(?<![A-Za-z0-9_])p\.code\s+IN\s*\(([^)]*)\)", stmt):
-            codes.update(re.findall(r"'([a-z_:]+)'", group))
-        codes.update(re.findall(r"(?<![A-Za-z0-9_])p\.code\s*=\s*'([a-z_:]+)'", stmt))
-        for role in roles:
-            per_role.setdefault(role, set()).update(codes)
+    for grant in grants:
+        assert grant.codes is not None, (
+            f"`{BACKFILL_MIGRATION_REL}` 里有一条**未显式列码**的授权（`p.code` 谓词缺失）⇒ "
+            "本判据只认「逐码点名」的回填（缺码 ⇒ 授权面不可判，fail-closed）"
+        )
+        assert grant.roles, f"`{BACKFILL_MIGRATION_REL}`: 一条语句解析不出岗位谓词（fail-closed）"
+        for role in grant.roles:
+            per_role.setdefault(role, set()).update(grant.codes)
     return {role: frozenset(codes) for role, codes in per_role.items()}
 
 
