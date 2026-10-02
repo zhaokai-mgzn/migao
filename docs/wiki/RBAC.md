@@ -15,10 +15,15 @@
 | 财务 | finance | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `finance:view`, `processing:view`, `inbound:view`, **`finance:create`**（登记收支写码，issue #5246 第二批） |
 | 自定义岗位 | 岗位权限页创建 | **岗位权限页勾选的权限码落库到 `role_permissions`**（V16），作为该岗位默认权限 |
 
-> 新租户注册初始化**七岗**种子（管理员/客服/运营/销售/财务 + `product_manager` 商品管理员 / `knowledge_editor` 知识编辑）
-> + role_permissions 预置（V29 为存量租户补齐）。后两个岗位由 `V137__formalize_legacy_roles.sql` 正式定义
-> —— 在此之前它们**不是岗位**（无 `roles` 行、岗位权限页不可编辑、只能靠 `RoleService.getPermissionCodesForRole`
-> 的硬编码 `case` 兜底）⇒ 旧文档写「五岗」与实测不符（issue #5984 更正）。
+> 新租户注册初始化**七岗**种子（管理员/客服/运营/销售/财务 + 商品管理员/知识编辑），逐值为：
+> `admin` / `customer_service` / `operator` / `sales` / `finance` / `product_manager` / `knowledge_editor`，
+> 后两个岗位由 `V137__formalize_legacy_roles.sql` 正式定义。
+> role_permissions 预置（V29 为存量租户补齐）；V137 之前那两个码**不是岗位**（无 `roles` 行、岗位权限页不可编辑、
+> 只能靠 `RoleService.getPermissionCodesForRole` 的硬编码 `case` 兜底）⇒ 旧文档写「五岗」与实测不符（issue #5984 更正）。
+>
+> 🔴 **本行的岗位清单是「声明行」**：唯一真值源 = `rbac/manifest.json` 的 `roles.seed`（**不是本行**），
+> 两侧由 `tests/unit_ci_workflows/test_rbac_role_list_doc_consistency.py` **逐值对账**（issue #6036 的 F7 固化）
+> —— 增删岗位而不同步本行 ⇒ 该判据**具名判红**（报出少/多了哪几个码）。**禁止**只改本行或只改清单。
 > **快照式权限语义（#2969）**：员工权限 = 员工管理页保存的勾选（users.permissions 快照），与岗位脱钩 ——
 > 后续修改岗位默认权限不影响已建员工；改岗位仅作为下次创建/编辑员工时的默认模板。
 > 兼容存量：无 users.permissions 快照（历史员工 / ai-agent 直接创建）时回退角色权限合并逻辑（role_permissions 优先，内置角色回退硬编码）。
