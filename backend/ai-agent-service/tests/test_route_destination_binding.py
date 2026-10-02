@@ -41,6 +41,7 @@ KeyError: 'settings'
 - 本判据**不改**任何门禁的通过条件、不新增豁免。
 """
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -50,28 +51,21 @@ AGENTS = ("mibao", "xiaobu")
 
 
 def _route_map(agent_type: str) -> dict:
-    """复刻 `build_agent_graph` 的 `skill_route_map`（route_key / skill name ⇒ 节点名）。
+    """本 agent **能到达的目的地** —— **直接问生产要**（不再复刻；2026-10-03 独立复核发现）。
 
-    与 builder 的差别只有一处：builder 在 for 循环里"后注册的覆盖先注册的"，这里同样按
-    `get_all_skill_names()` 的顺序覆盖 —— 结果与 `graph.add_conditional_edges` 的 `ends` 一致。
+    🔴 病：本文件原先**复刻**了 `build_agent_graph` 的 `skill_route_map`，却只实现生产
+    `_agent_route_map` 的**来源①**（本 agent 绑定的 skill），漏了**来源②**（注册表里
+    `name == agent_type` 那条 —— `xiaobu` 的**会话连续性**目的地正落在这一面）。
+    ⇒ 复刻**比生产更窄**，而这种漂移在本文件里**永远不会红**：判据全都拿这张（更窄的）表当
+    「目的地全集」去比对真编译图，窄集合自然处处落在图上（"更严"是假象，实际是**覆盖更窄**）。
+
+    ⇒ 收敛到**唯一口径**（与 `preset_corpus` 那条同族）：直接调用生产实现
+    `app.graph.nodes._agent_route_map` —— 生产改了这里自动跟上；生产一旦把某个目的地
+    映射到图上不存在的节点，判据 1 会**当场红**（那正是它存在的理由）。
     """
-    from app.agents.agent_config import get_agent_config
-    from app.graph.skills.skill_registry import get_skill_registry
+    from app.graph.nodes import _agent_route_map
 
-    agent_config = get_agent_config(agent_type)
-    registry = get_skill_registry()
-    route_map = {"direct_reply": "direct_reply"}
-    if agent_type == "xiaobu":
-        route_map["handoff_offer"] = "handoff_offer"
-    for skill_name in agent_config.get_all_skill_names():
-        config = registry.get(skill_name)
-        if not config:
-            continue
-        node_id = f"{skill_name}_skill"
-        for route_key in config.route_keys:
-            route_map[route_key] = node_id
-        route_map[skill_name] = node_id
-    return route_map
+    return _agent_route_map(agent_type)
 
 
 def _destinations(agent_type: str) -> set:
@@ -261,3 +255,45 @@ class TestUnboundRouteKeysFallBackToTheFallbackSkill:
         )
         assert mapping["greeting"] == "direct_reply"
         assert mapping["general"] == "general"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 类级守卫（2026-10-03，独立复核发现）：路由表**只许问生产要**，不许在测试里复刻
+# ──────────────────────────────────────────────────────────────────────────────
+
+#: 扫描面到此为止（本元守卫段自身当然要写出那些记号，不算违规）。
+_SCAN_STOP = "类级守卫（2026-10-03"
+
+#: 复刻体一定会出现的两个记号（生产 `_agent_route_map` 的循环体）。
+_REPLICA_MARKERS = ("get_all_skill_names()", "registry.get(skill_name)")
+
+
+def _replica_violations(src: str) -> list[str]:
+    """剥掉**整行注释**后命中复刻记号 ⇒ 违规（注释里说明历史仍可写）。
+
+    为什么判这个（而不是只靠"当前调用对了"）：复刻是**会自己长回来**的形态 ——
+    本轮实证：本文件复刻生产表时漏了来源②，而**更窄的复刻表让所有判据照样绿**
+    （判据拿它当"目的地全集"去比真编译图，窄集合自然处处在图上）⇒ 漂移**不可见**。
+    """
+    head = src.split(_SCAN_STOP)[0]          # 本元守卫自身在下面 —— 它当然要写出这些记号
+    code = "\n".join(l for l in head.splitlines() if not l.lstrip().startswith("#"))
+    return [m for m in _REPLICA_MARKERS if m in code]
+
+
+def test_route_map_is_not_reimplemented_here():
+    """类级：本文件**不复刻**路由表（唯一口径 = 生产 `_agent_route_map`）。"""
+    src = Path(__file__).read_text(encoding="utf-8")
+    hits = _replica_violations(src)
+    assert hits == [], (
+        f"本文件又出现了**复刻体**（{hits}）⇒ 请改回 `from app.graph.nodes import _agent_route_map`："
+        "复刻比生产窄时判据全绿（漂移不可见），而生产是唯一真相源"
+    )
+
+
+def test_replica_detector_has_teeth():
+    """判别力自证：复刻体必被抓到，注释里的同名记号必不误伤。"""
+    bad = "    for skill_name in agent_config.get_all_skill_names():\n        pass\n"
+    assert _replica_violations(bad), "复刻体没被抓到 ⇒ 上一条是空断言"
+    assert _replica_violations("# 注释里提到 get_all_skill_names() 不算违规\n") == [], (
+        "注释被误判 ⇒ 会喂假红"
+    )

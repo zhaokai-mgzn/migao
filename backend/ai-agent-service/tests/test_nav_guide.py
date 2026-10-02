@@ -142,7 +142,7 @@ class TestExecuteSemantics:
 
         修前：用户问「怎么给员工开账号」⇒ 登记面没有这条常见说法 ⇒ `nav_guide` 返回
         `success=False` / `error="nav_not_registered"`（fail-closed 是对的，但对用户没用）。
-        修后：命中「员工账号开通」这条登记说法 ⇒ 给出**页面位置**（`/employees`），
+        修后：命中「员工开账号」这条登记说法 ⇒ 给出**页面位置**（`/employees`），
         并仍然**不给操作步骤**（导航类口径）、不假承诺改账号。
 
         前置（前置不成立时本用例应先在登记面判据上红）：「员工管理」页在 `config/menu.ts`
