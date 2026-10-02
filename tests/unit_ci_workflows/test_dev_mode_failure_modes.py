@@ -262,24 +262,57 @@ def strip_hash_comments(text: str) -> str:
 # 纯函数层：**判据吃文本**（红证当场在内存里构造坏形态，不改磁盘）
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _preset_text_from_git(rel: str) -> str | None:
-    """从 **git 基线**里读预设内容（`.agent-presets/**` 在本仓工作树里已不存在，S4 / issue #6020）。
+def _preset_corpus_refs(rel: str = SKILL_REL) -> tuple[str, ...]:
+    """读预设语料的 ref **候选序**：**最后动过该路径的提交**优先，再退到固定的几个起点。
 
-    为什么这条能同时服务本机与 CI：
-      · 工作的**真值**是那份 git 对象 —— S4 之前每个提交里都有完整预设（`scripts/../.agent-presets/**`）；
-      · CI 的 `pr-check` 是 `fetch-depth: 1` ⇒ `origin/main~1` 可取（`actions/checkout` 给的就是 main 的
-        父提交），故本函数**不联网、不依赖本机镜像**；
-      · 本机若有**预设仓镜像**（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`）则优先读它
-        —— 那是预设的**权威源**（S4 后本仓的 `.agent-presets/**` 已删，git 里的那份是**冻结快照**）。
+    🔴 **为什么必须与 HEAD 距离无关**（实测 2026-10-02，承载体 = 本文件的
+    `test_preset_corpus_resolution_survives_head_distance`）：
+    S4（issue #6020）之后预设路径**最后存在于 `#6034` 之前的那次提交**（`b93fb8719`），
+    而固定候选表 `PRESET_BASELINE_REFS` 里唯一能命中它的 `HEAD~2` **只在 HEAD 恰好是 `ab1a52fa` 时**成立 ——
+    任何一次提交（**连空提交也算**）都会把它移出窗口 ⇒ 本文件 **31 条判红**，
+    **本机全量 `gate` 的 helper 腿（整目录）直接废掉**。
+
+    探针（同一份代码，只差一个提交）：
+
+    ```
+    干净 ab1a52fa                          ⇒ 45 passed
+    + 1 个 --allow-empty 提交               ⇒ 31 failed / 14 passed
+    ```
+
+    ⇒ 先取「**最后一次 `A`dded/`M`odified 该路径**的提交」（`--diff-filter=AM` 排掉**删除**它的那次，
+    删除提交里文件是不存在的），再退到固定候选表（浅检出 / 历史被裁时仍照旧）。
+    """
+    refs: list[str] = []
+    last = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "log", "-1", "--format=%H", "--diff-filter=AM", "--", rel],
+        capture_output=True, text=True,
+    )
+    if last.returncode == 0 and last.stdout.strip():
+        refs.append(last.stdout.strip())
+    refs += [r for r in PRESET_BASELINE_REFS if r not in refs]
+    return tuple(refs)
+
+
+def _preset_text_from_git(rel: str) -> str | None:
+    """从**预设仓镜像**或 **git 基线**里读预设内容（`.agent-presets/**` 在本仓工作树里已不存在）。
+
+    读序（S4 / issue #6020 之后）：
+      ① **预设仓镜像**（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`）= 预设的**权威源**。
+         ⚠️ 换链后镜像的**仓根就是 preset 目录**（`preset.yml` 在根）⇒ `rel` 去掉 `.agent-presets/`
+         之后还要再去掉**镜像名**那一段才是镜像内路径（旧布局 `<镜像>/.agent-presets/migao/…` 也照旧认）。
+         旧实现只试了 `mirror/migao/skills/…` ⇒ **正路 ① 永远读不到**（下面 `_require` 的报错信息在骗人）。
+      ② 本仓工作树（旧拓扑 / 夹具仓）；
+      ③ git 基线（见 `_preset_corpus_refs` 的候选序）。
     取不到 ⇒ `None`（交给 `_require` **判红**，不静默跳过、也不新增 skip 读数）。
     """
     mirror = Path(os.environ.get("MIGAO_PRESET_MIRROR") or (Path.home() / "migao-dev-preset-anchor"))
-    inner = rel[len(PRESET_PREFIX):]
-    if (mirror / inner).is_file():
-        return (mirror / inner).read_text(encoding="utf-8")
+    inner = rel[len(PRESET_PREFIX):]                       # ".agent-presets/migao/skills/…" → "migao/skills/…"
+    for cand in (mirror / inner, mirror / inner.split("/", 1)[-1]):
+        if cand.is_file():
+            return cand.read_text(encoding="utf-8")
     if (REPO_ROOT / rel).is_file():
         return (REPO_ROOT / rel).read_text(encoding="utf-8")
-    for ref in PRESET_BASELINE_REFS:
+    for ref in _preset_corpus_refs(rel):
         proc = subprocess.run(
             ["git", "-C", str(REPO_ROOT), "show", f"{ref}:{rel}"],
             capture_output=True, text=True,
@@ -293,9 +326,9 @@ def _preset_skill_corpus_ref() -> str | None:
     """→ 第一个**能读到全部技能语料**的 ref（都读不到 ⇒ None）。
 
     判据不是「ref 解析得开」而是「**内容真读得到**」—— 只有后者才说明这份语料可用
-    （浅检出里会出现「ref 在但不含该路径」的形态）。
+    （浅检出里会出现「ref 在但不含该路径」的形态）。候选序同 `_preset_corpus_refs`。
     """
-    for ref in PRESET_BASELINE_REFS:
+    for ref in _preset_corpus_refs():
         proc = subprocess.run(
             ["git", "-C", str(REPO_ROOT), "ls-tree", "-r", "--name-only", ref],
             capture_output=True, text=True,
@@ -1959,3 +1992,92 @@ class TestConflictDiagnosisAnchor:
         line = next(l for l in sec.split("\n") if "FM-E25" in l)
         assert conflict_diagnosis_problems(
             skill_text.replace(line, line + "\n<!-- 只加一条注释：不改锚 -->", 1)) == []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 预设语料解析：**不许钉在「HEAD 往回数第几个提交」上**（实测 2026-10-02）
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _git_run(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    assert proc.returncode == 0, f"git {' '.join(args)} 失败：{proc.stderr}"
+    return proc
+
+
+def test_preset_corpus_resolution_is_independent_of_head_distance(tmp_path: Path, monkeypatch):
+    """**红证**（本机全量 `gate` helper 腿那一格）：语料解析不得依赖 HEAD 距离；正路 ① 必须真读得到。
+
+    探针读数（**同一份代码**，只差一个提交）：
+
+    ```
+    干净 ab1a52fa              ⇒ 45 passed
+    + 1 个 --allow-empty 提交   ⇒ 31 failed / 14 passed
+    ```
+
+    机制：预设路径最后存在于 `#6034` **之前**那次提交（`b93fb8719`），而固定候选表里唯一能命中它的
+    `HEAD~2` 只在 HEAD 恰好等于 `ab1a52fa` 时成立 ⇒ **任何一次提交（连空提交也算）都把窗口移走**，
+    于是「判据依赖的语料不存在」⇒ 31 条红。**没跑判定的红**会把唯一那次全量 gate 直接废掉。
+
+    夹具 = 本仓历史的**同形状缩影**：老提交带语料 → 后一次提交**删掉**它 → 再压 4 个填充提交。
+    ① 与 HEAD 距离无关那一格：固定候选**全部落空**（夹具自证）⇒ 仍必须读到语料；
+    ② 正路 ①（预设仓镜像）：镜像**仓根即 preset 目录**（`skills/…` 在根）⇒ 必须读到。
+    """
+    repo = tmp_path / "hist"
+    repo.mkdir()
+    _git_run(repo, "init", "-q", "-b", "main")
+    _git_run(repo, "config", "user.email", "fixture@example.com")
+    _git_run(repo, "config", "user.name", "fixture")
+    rel = Path(SKILL_REL)
+    (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+    (repo / rel).write_text("---\nname: migao-dev-flow\nversion: 1.99.0\n---\n\n老提交里的语料\n",
+                            encoding="utf-8")
+    (repo / rel.parent / "preset.yml").write_text("name: migao\n", encoding="utf-8")
+    _git_run(repo, "add", "-A")
+    _git_run(repo, "commit", "-q", "-m", "老提交：带预设语料")
+    (repo / rel).unlink()
+    (repo / rel.parent / "preset.yml").unlink()
+    _git_run(repo, "add", "-A")
+    _git_run(repo, "commit", "-q", "-m", "S4：删掉预设语料")
+    for i in range(4):
+        (repo / f"filler{i}.txt").write_text("x\n", encoding="utf-8")
+        _git_run(repo, "add", "-A")
+        _git_run(repo, "commit", "-q", "-m", f"填充提交 {i}")
+    _git_run(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    monkeypatch.setitem(globals(), "REPO_ROOT", repo)
+    monkeypatch.setenv("MIGAO_PRESET_MIRROR", str(tmp_path / "no-such-mirror"))
+
+    # 夹具自证：固定候选**全部落空** ⇒ 本判据测的正是「与 HEAD 距离无关」那一格（否则空跑）
+    for ref in PRESET_BASELINE_REFS:
+        probe = subprocess.run(["git", "-C", str(repo), "show", f"{ref}:{SKILL_REL}"],
+                               capture_output=True, text=True)
+        assert probe.returncode != 0, f"夹具不成立：固定候选 {ref} 仍读得到语料（判据会空跑）"
+
+    text = _preset_text_from_git(SKILL_REL)
+    assert isinstance(text, str) and "老提交里的语料" in text, (
+        "「最后动过该路径的提交」这条路没生效（HEAD 距离一变就读不到语料）："
+        f"读到的内容 = {text!r}"
+    )
+
+    # 正路 ①：镜像仓根 = preset 目录。刻意让 REPO_ROOT 指向**没有该路径**的仓库 ⇒ 只能靠镜像
+    empty = tmp_path / "empty-repo"
+    empty.mkdir()
+    _git_run(empty, "init", "-q", "-b", "main")
+    _git_run(empty, "config", "user.email", "fixture@example.com")
+    _git_run(empty, "config", "user.name", "fixture")
+    (empty / "README.md").write_text("无预设\n", encoding="utf-8")
+    _git_run(empty, "add", "-A")
+    _git_run(empty, "commit", "-q", "-m", "空仓")
+    mirror = tmp_path / "preset-mirror"
+    (mirror / "skills/migao-dev-flow").mkdir(parents=True)
+    (mirror / "skills/migao-dev-flow/SKILL.md").write_text(
+        "---\nname: migao-dev-flow\nversion: 2.0.0\n---\n\n镜像里的语料\n", encoding="utf-8")
+    (mirror / "preset.yml").write_text("name: migao\n", encoding="utf-8")
+    monkeypatch.setitem(globals(), "REPO_ROOT", empty)
+    monkeypatch.setenv("MIGAO_PRESET_MIRROR", str(mirror))
+
+    mirrored = _preset_text_from_git(SKILL_REL)
+    assert isinstance(mirrored, str) and "镜像里的语料" in mirrored, (
+        "预设仓镜像（正路 ①）读不到 —— 镜像**仓根就是 preset 目录**，`rel` 去掉 `.agent-presets/` 之后"
+        f"还要去掉镜像名那一段（旧实现只试 `mirror/migao/skills/…`，等于报错信息在骗人）：读到 = {mirrored!r}"
+    )

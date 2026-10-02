@@ -129,8 +129,11 @@ git clone --no-checkout <预设仓 URL> "$MIRROR"     # 默认 git@github.com:zh
 git -C "$MIRROR" checkout --detach origin/main
 ls "$MIRROR/preset.yml"     # preset.yml 在预设仓 == 镜像的**根**（不在 `.agent-presets/migao` 下），可读才继续
 
-# ② 摘掉旧目录 / 旧软链（若是实体目录，先备份而不是直接删）
-mv "$HOME/.dsh/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+# ② 摘掉旧目录 / 旧软链：**只在活锚是真目录时**才备份（新拓扑下活锚就是**软链**，
+#    `mv` 它只会把软链挪成一堆无主 `.bak`；实测清出过两个 6 周前的）
+if [ -d "$HOME/.dsh/.agent-presets/migao" ] && [ ! -L "$HOME/.dsh/.agent-presets/migao" ]; then
+  mv "$HOME/.dsh/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao.bak-$(date +%Y%m%d-%H%M%S)"
+fi
 
 # ③ 换链：软链目标 = 镜像的**仓根**；-s 建软链 / -f 覆盖已存在项 / -n 不跟随已存在的软链目录
 ln -sfn "$MIRROR" "$HOME/.dsh/.agent-presets/migao"
@@ -140,7 +143,10 @@ cat "$HOME/.dsh/.agent-presets/migao/preset.yml"
 head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
 
 # ⑤ 每天/每次开工：自检（红就停）+ 自愈（把镜像刷到 origin/main）
-./scripts/preset-anchor-check.sh       # 落后/悬空/内容不同 ⇒ 非零退出
+#    自检**按拓扑自动选判定**（换链后 = 拓扑 A：活锚 = 预设仓检出的仓根）
+#    ⇒ 判「是否有 preset.yml + skills/ / 工作树是否干净 / HEAD 是否就是**它自己的** origin/main」
+#    落后/悬空/内容不同/就地编辑 ⇒ **非零退出**；取不到远端 main / 基线仓该前缀空集 ⇒ **`3` 无法判定**
+./scripts/preset-anchor-check.sh       # 落后/悬空/内容不同/无法判定 ⇒ 非零退出
 ./scripts/preset-anchor-refresh.sh     # 刷新镜像并复检（改预设的 PR 合并后必跑一次）
 ```
 
@@ -158,8 +164,12 @@ head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
   ⚠️ **合并后活锚不会自动跟上**：跑一次 `./scripts/preset-anchor-refresh.sh`（否则下次会话读到的仍是旧模式）。
 - **权威源 = [zhaokai-mgzn/migao-agent-presets](https://github.com/zhaokai-mgzn/migao-agent-presets)（裁定 2026-10-02：复用并复活该仓；issue #6020 是迁移单）**；
   本业务仓已不再承载 `.agent-presets/**`。预设仓的接线与运维说明见其 [`README.md`](https://github.com/zhaokai-mgzn/migao-agent-presets/blob/main/README.md)。
-- **过渡期（issue #6020）**：换链（把活锚改指到上面的新镜像路径）是 `S3`，在本次迁移合并**之后**单独做；
-  换链完成前 `./scripts/preset-anchor-check.sh` **可能是红的 —— 这是预期的过渡态**；
+- **过渡期已结束（issue #6020）**：换链（把活锚改指到上面的新镜像路径）是 `S3`，**已于 2026-10-02 执行**
+  ⇒ 活锚 = `$HOME/migao-dev-preset-anchor`（**预设仓检出的仓根**），`./scripts/preset-anchor-check.sh`
+  的默认调用落在**拓扑 A** 并给出真判定（预置内容随预设仓 PR 演进，合并后跑 `preset-anchor-refresh.sh`）。
+  🔴 **口径要点**：自检**按拓扑自动选判定**（拓扑 A = 仓根检出 / 拓扑 B = 业务仓内的
+  `.agent-presets/migao` 子树，兼容窗口）；**基线仓已无该前缀（空集）时判 `3` 无法判定**，
+  **绝不许**输出「✅ 新鲜（0 个文件）」—— 空集比空集是**恒等**，那种绿是**假绿**。
   但 `~/.dsh/.agent-presets/migao` **任何时刻都必须可解析**（悬空 ⇒ DSH 静默加载不到研发模式，见下面 ②）。
 
 ## 环境

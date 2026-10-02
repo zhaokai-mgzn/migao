@@ -11,8 +11,8 @@
 #       `<镜像>/.agent-presets/migao`）；
 #     · 基线 = **预设仓的 `origin/main`**（旧口径是业务仓的 origin/main）；
 #     · 镜像的克隆源 = **预设仓**（`MIGAO_PRESET_REPO_URL` 覆盖）。
-#   按 `#6020` 的顺序铁律，换链（S3）在迁移 PR 合并之后做 ⇒ **换链之前跑本脚本会红**，
-#   那是「旧镜像 + 新脚本」的**预期过渡态**，不是回归。
+#   S3 换链**已执行**（2026-10-02）⇒ 本脚本的默认调用落在**拓扑 A**（活锚 = 预设仓检出）并给出**真判定**；
+#   旧的「业务仓当基线」口径在拓扑 C 下会**恒绿**（空集比空集）—— 那种绿已按 `3` 判掉，见下面「按拓扑」。
 #
 # 为什么单靠 `preset-guard` / 预设仓自己的 CI 不够：那两条只查**仓内**内容（版本单调、沿革不回流），
 # **查不出活锚落后** —— 实测活锚曾指向一个落后 `origin/main` **42 个提交**的主工作区：
@@ -25,18 +25,27 @@
 #   取不到（离线 / 无权限）⇒ 退到镜像本地已知的 ref，并**降级出声**，不静默当通过。
 #
 # 用法（在任一 migao 工作区根目录执行；**开工第一件事** + 提交前）：
-#   ./scripts/preset-anchor-check.sh                    # 核本机活锚 vs 预设仓 main
-#   ./scripts/preset-anchor-check.sh --fetch            # 先把镜像 fetch 到预设仓 main 再核
+#   ./scripts/preset-anchor-check.sh                    # 核本机活锚 vs 预设仓 main（按拓扑自动选判定）
+#   ./scripts/preset-anchor-check.sh --fetch            # 先 fetch 活锚检出到预设仓 main 再核（取不到远端 ⇒ 3）
 #   ./scripts/preset-anchor-check.sh --anchor <路径>     # 核指定路径（**显式 ⇒ 一律判定**）
 #   ./scripts/preset-anchor-check.sh --repo <基线仓> --ref <ref>
 #   MIGAO_PRESET_LIVE=<路径> ./scripts/preset-anchor-check.sh
 #   MIGAO_PRESET_MIRROR=<路径> ./scripts/preset-anchor-check.sh
 #   MIGAO_PRESET_REPO_URL=<url|路径> ./scripts/preset-anchor-check.sh
 #
+# 🔴 **按拓扑自动选判定**（判定本体 = `scripts/agent-presets-guard.py` 的 `anchor` 子命令，口径只放一处）：
+#   · **拓扑 A**（活锚 = 预设仓检出的**仓根**，= 换链后的当前形态）：判 ① 形态（`preset.yml` + `skills/`
+#     缺一即红）② 工作树**干净**（读不到状态 ⇒ `3`）③ HEAD == **活锚自己的** `origin/main`
+#     （取不到远端 ⇒ `3`；不同 ⇒ 红）+ 打印两个技能 version 供人眼核对；
+#   · **拓扑 B**（活锚仍是基线仓里的 `.agent-presets/migao` 子树，兼容窗口）：历史口径（内容逐字节比对）；
+#   · **拓扑 C**（拓扑 B 形态且基线仓该前缀**空集**）：`⏭️ 未跑判定` + **`3`** —— 「基线仓已无该前缀
+#     ⇒ 这条比对本就不适用」。**绝不**输出「✅ 新鲜（0 个文件）」：空集比空集恒等 = **假绿**。
+#
 # 退出码（**三态**，与 `scripts/agent-presets-guard.py` / `scripts/drift_audit.py` 同口径）：
 #         0 = 绿（新鲜）**或** ⏭️ 未跑判定（本机没接线 / 与基线仓**有证据地**不同源）；
-#         1 = 红（落后 / 悬空 / 内容不同 / **镜像不在远端 main 上** / 技能加载不了）；
-#         3 = **无法判定**（基线 ref 取不到 ⇒ 连「能不能比」都判不了 —— **不得当 0 读**；issue #5430）；
+#         1 = 红（落后 / 悬空 / 内容不同 / **镜像不在远端 main 上** / **活锚工作树不干净** / 技能加载不了）；
+#         3 = **无法判定**（基线 ref 取不到；拓扑 A 下**活锚自己的远端 main 取不到**或**工作树状态读不到**；
+#             或**基线仓该前缀空集 ⇒ 比对本就不适用** —— 均**不得当 0 读**；issue #5430 / #6020）；
 #         2 = 环境或用法错误（找不到 python3 等）。
 # ⚠️ `⏭️ 未跑判定` 与 `3 无法判定` **都不是**「通过」，读输出时别把它们混起来（本仓库「空跑=假绿」同族）。
 #
@@ -78,15 +87,11 @@ GUARD="${ROOT}/scripts/agent-presets-guard.py"
 
 # 🔴 镜像必须**只读且绝不 fetch**：它是活锚的软链目标，就地写它 = 在 DSH 正加载的那份内容上动手。
 #   故「把镜像刷到预设仓 main」这条自愈**只在这里**（`--fetch`，人显式要求），其余一律只读。
-if [ "${FETCH}" = "1" ]; then
-  if ! git -C "${REPO}" rev-parse --git-dir >/dev/null 2>&1; then
-    echo "⚠️ --fetch 跳过：${REPO} 不是 git 检出（取不到它的 origin/main）—— 按下面的判定输出处置"
-  elif git -C "${REPO}" fetch --prune origin main 2>/dev/null; then
-    echo "已 fetch 预设仓 main（${REPO} 的 origin/main → $(git -C "${REPO}" rev-parse --short origin/main 2>/dev/null || echo '?'))"
-  else
-    echo "⚠️ fetch 预设仓 main 失败（离线 / 无权限？）—— 下面按**本地已知的** origin/main 判定"
-  fi
-fi
+# 🔴 `--fetch` 一律**转交判定本体**（口径只放一处）：fetch 的对象随**拓扑**定 —— 拓扑 A（活锚 = 预设仓
+#   检出的仓根）fetch **活锚自己**，且**取不到远端 ⇒ 判 `3`**（不许拿本地旧 ref 报绿）；拓扑 B fetch 基线仓
+#   （失败只降级出声，沿用历史容忍度）。判定本体据此把「有没有第二视角」判成三态，本脚本不复制这套规则。
+FETCH_ARGS=()
+[ "${FETCH}" = "1" ] && FETCH_ARGS=(--fetch)
 
 # 镜像相对**远端** main 落后与否（换链后「活锚 ⇄ 镜像」是同一份，旧判据失去第二视角 ⇒ 这里补上
 # 一条**新增**判据；既有判据一条不放宽）。`ls-remote` **只读远端**、不写镜像 ⇒ 与「镜像只读」不冲突；
@@ -109,4 +114,5 @@ exec "${PY}" "${GUARD}" --repo "${REPO}" anchor \
   --anchor-base "" \
   --ref "${REF}" \
   --expected-remote "${REPO_URL}" \
+  ${FETCH_ARGS[@]+"${FETCH_ARGS[@]}"} \
   ${REMOTE_ARGS[@]+"${REMOTE_ARGS[@]}"}

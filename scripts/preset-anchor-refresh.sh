@@ -66,8 +66,11 @@ bootstrap_hint() {
 
     git clone --no-checkout "${REPO_URL}" "\$HOME/migao-dev-preset-anchor"
     git -C "\$HOME/migao-dev-preset-anchor" checkout --detach origin/main
-    # 确认镜像在位、preset.yml 可读后**再**换链（先备份旧锚，不要删）：
-    mv "\$HOME/.dsh/.agent-presets/migao" "\$HOME/.dsh/.agent-presets/migao.bak-\$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+    # 确认镜像在位、preset.yml 可读后**再**换链。备份只对**真目录**（旧拓扑）做 ——
+    # 新拓扑下活锚是**软链**，\`mv\` 它只会把软链挪成一堆 \`.bak\`（实测：清出过两个 6 周前的 .bak）：
+    if [ -d "\$HOME/.dsh/.agent-presets/migao" ] && [ ! -L "\$HOME/.dsh/.agent-presets/migao" ]; then
+      mv "\$HOME/.dsh/.agent-presets/migao" "\$HOME/.dsh/.agent-presets/migao.bak-\$(date +%Y%m%d-%H%M%S)"
+    fi
     ln -sfn "\$HOME/migao-dev-preset-anchor" "\$HOME/.dsh/.agent-presets/migao"
 
   注意：S4 起预设内容在**预设仓仓根**（\`preset.yml\` 直接在仓根），软链指向**仓根**，
