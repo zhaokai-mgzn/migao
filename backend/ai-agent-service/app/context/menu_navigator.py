@@ -72,6 +72,7 @@ P2 的推送面直接复用本模块，**不要另造第二份真值**（本包�
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Iterable, Optional, Sequence, Tuple
 
@@ -517,3 +518,225 @@ def registered_aliases() -> Iterable[str]:
     """已登记的全部别名（判据用：核「别名不撞车」）。"""
     for feature in NAV_FEATURES:
         yield from feature.aliases
+
+# ══════════════════════════════════════════════════════════════════════════════
+# P2（主动新手引导，issue #5989 下半场）—— 推送面：**只推导航，不推步骤**
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 用户裁定（2026-10-02）：**A** 形态 —— 「用户**首次进入某个已登记页面**时，米宝在**对话区**
+# 主动发一条**导航提示**」（每页每会话最多 1 次 · 只推该角色可见的 · 未登记页面不推 · 只给导航不给步骤）。
+#
+# 本段**不建任何推送基础设施**（无 SSE 主动推 / 无定时 / 无队列）：运输形态 = **客户端首次进页时
+# 带 `page_context` 发一轮**（族 4 既有运输形态），服务端**只做判定**（发不发 / 发什么）。
+# ⇒ 判定是**纯函数**（登记表 + 会话权限 + 已推集，三样都是入参或仓内真值）。
+
+#: 推送判定的**不发**理由（枚举即契约；判据逐值核「四种都存在」，且**不推时理由必命中闭集**）。
+PUSH_REASON_UNREGISTERED = "unregistered"        # 未登记页面 ⇒ 不推（默认拒绝）
+PUSH_REASON_NOT_VISIBLE = "not_visible"          # 该角色看不到这一页 ⇒ 不推（越权面）
+PUSH_REASON_ALREADY_PUSHED = "already_pushed"    # 本会话已推过这一页 ⇒ 不推（骚扰面）
+PUSH_REASON_AMBIGUOUS_ROUTE = "ambiguous_route"  # route ↔ 功能不是一一对应 ⇒ 不推（不猜）
+
+#: 不发理由的**闭集**（新增理由必须同批登记进本元组）。
+PUSH_REASONS: Tuple[str, ...] = (
+    PUSH_REASON_UNREGISTERED,
+    PUSH_REASON_NOT_VISIBLE,
+    PUSH_REASON_ALREADY_PUSHED,
+    PUSH_REASON_AMBIGUOUS_ROUTE,
+)
+
+#: 主动推送的**步骤禁令**（常量；结构上推不出步骤 ⇒ 本句只是「文案里也别写成步骤」的机械落点）。
+PROACTIVE_STEPS_NOTICE = "（只给导航：在哪一页 / 这页有什么。操作步骤不在本轮。）"
+
+#: 「这一页能做什么」的自述前缀（**可行动性判据的结构锚**：说不出它 ⇒ 这条推送不该发）。
+PROACTIVE_CAPABILITY_PREFIX = "这页能做："
+
+
+@dataclass(frozen=True)
+class ProactivePush:
+    """一条**已判定可发**的主动导航提示（结构上**不含** steps / 图文 / 操作顺序）。"""
+
+    #: 登记项 id（citation 左端）
+    feature_id: str
+    #: 功能名（= 菜单名）
+    label: str
+    #: 当前页（**可行动性的那一半**：告诉用户「你在哪一页」）
+    route: str
+    #: 页面所属菜单组（`STANDALONE_GROUP` = 一级独立项）
+    group: str
+    #: 「这页能做什么」的自述（导航级：能看到什么、入口在哪 —— **不含**操作顺序）
+    capabilities: Tuple[str, ...]
+
+    @property
+    def citation(self) -> str:
+        where = "一级项" if self.group == STANDALONE_GROUP else f"菜单组「{self.group}」"
+        return f"登记项 #{self.feature_id} → {where}「{self.label}」"
+
+    def to_data(self) -> Dict[str, Any]:
+        """给模型的**结构化载荷**（键白名单：**没有** steps / 操作说明 / 图文）。"""
+        return {
+            "proactive": True,
+            "featureId": self.feature_id,
+            "label": self.label,
+            "route": self.route,
+            "capabilities": list(self.capabilities),
+            "citation": self.citation,
+        }
+
+    def render(self) -> str:
+        """上屏文案 —— 「你在【X】，这页能做 A、B」+ citation。**只给导航，不给步骤。**"""
+        caps = "、".join(self.capabilities)
+        return (
+            f"你在【{self.label}】（{self.route}）。{PROACTIVE_CAPABILITY_PREFIX}{caps}。"
+            f"（{self.citation}）{PROACTIVE_STEPS_NOTICE}"
+        )
+
+
+@dataclass(frozen=True)
+class ProactiveVerdict:
+    """推送判定结果。`push is None` ⇔ **不发**（此时 `reason` 必命中 `PUSH_REASONS`）。"""
+
+    reason: str
+    push: Optional[ProactivePush] = None
+
+    @property
+    def should_push(self) -> bool:
+        """可行动性判据的入口：`True` ⇒ 一定带得出「在哪一页 + 这页能做什么」。"""
+        return self.push is not None
+
+
+def page_capabilities(node: MenuNode) -> Tuple[str, ...]:
+    """「这页能做什么」——**导航级**自述（能看到什么 / 从哪进）。
+
+    🔴 **不是操作步骤**：不写点击顺序、不写字段名、不写「第一步」。文案由**结构**生成
+    （菜单组 + 菜单名），判据核「文案里不含受控步骤词」。
+    """
+    where = "菜单" if node.group == STANDALONE_GROUP else f"菜单组「{node.group}」"
+    return (f"查看「{node.label}」", f"从{where}进入这一页")
+
+
+def _route_feature_ids() -> Dict[str, Tuple[str, ...]]:
+    """菜单路径 → 登记它的功能 id（**从 `MENU_TREE` / `NAV_FEATURES` 现算**，不手抄第二份）。
+
+    多个功能登记同一路径 ⇒ 记成**多元组** ⇒ 调用方按 `ambiguous_route` 不推（不猜）。
+    """
+    index: Dict[str, list] = {}
+    for feature in NAV_FEATURES:
+        for key in feature.node_keys:
+            index.setdefault(_NODES[key].path, []).append(feature.feature_id)
+    return {path: tuple(ids) for path, ids in index.items()}
+
+
+_ROUTE_FEATURES: Dict[str, Tuple[str, ...]] = _route_feature_ids()
+
+
+#: 路由形态：**只认路径**（与 `app/context/page_registry.py` 的 `_ROUTE_RE` / 前端
+#: `frontend/admin-web/src/lib/page-context.ts` 的 `ROUTE_FORM` **逐字同源**）。
+#: 为什么本模块**不 import** `page_registry.normalize_route`：那样会把 `app.tools.base`
+#: （pydantic + 环境变量）拉进**只跑标准库**的静态判据环境 —— 实测 `tests/unit_ci_workflows/**`
+#: 的解释器里直接 `ModuleNotFoundError: pydantic`，而 CI 只装 `pytest pyyaml`（见
+#: `docs/wiki/Change-Blast-Radius.md` 陷阱 1）。⇒ 语料一致性由判据核（两侧同语料判决必须一致），
+#: **不是靠共享 import**。
+_ROUTE_RE = re.compile(r"^/[A-Za-z0-9/_.\-]*$")
+_ROUTE_MAX_LEN = 200
+
+
+def normalize_route(raw: Any) -> str:
+    """规范化 route：**只保留路径**（丢查询串/片段）；非法形态 ⇒ `""`（调用方按未登记处理）。
+
+    与 `app/context/page_registry.py::normalize_route` **逐条同语义**（长度上限 / 只认路径字符集 /
+    拒 `%` 与空格与非 ASCII / 拒路径穿越与 `//` / 去尾斜杠）。
+    """
+    if not isinstance(raw, str):
+        return ""
+    s = raw.strip()
+    if not s or len(s) > _ROUTE_MAX_LEN:
+        return ""
+    for sep in ("?", "#"):
+        s = s.split(sep, 1)[0]
+    if not s.startswith("/") or not _ROUTE_RE.match(s):
+        return ""
+    if ".." in s or "//" in s:
+        return ""
+    if len(s) > 1:
+        s = s.rstrip("/") or "/"
+    return s
+
+
+def _feature_ids_for_route(route: Any) -> Optional[Tuple[str, ...]]:
+    """路由 → 功能 id 元组。`None` = route 形态不合法/未登记；`()` = 歧义（被多条登记项覆盖）。"""
+    normalized = normalize_route(route)
+    if not normalized:
+        return None
+    return _ROUTE_FEATURES.get(normalized)
+
+
+def feature_for_route(route: Any) -> Optional[str]:
+    """路由 → 功能 id；**未登记 / 歧义 / 脏形态 ⇒ `None`**（默认拒绝，不猜）。"""
+    ids = _feature_ids_for_route(route)
+    if not ids or len(ids) != 1:
+        return None
+    return ids[0]
+
+
+def route_feature_coverage_problems() -> Tuple[str, ...]:
+    """自检：`MENU_TREE` 的每个导航节点必须**恰好**被一条登记项覆盖（现算，供判据与元守备用）。
+
+    病根同 P1：新增菜单节点却没人登记功能 ⇒ 那一页**永远不推**，而没有任何东西会红。
+    """
+    problems: list = []
+    for node in MENU_TREE:
+        ids = _ROUTE_FEATURES.get(node.path, ())
+        if not ids:
+            problems.append(f"菜单节点「{node.label}」（{node.path}）没有被任何 NAV_FEATURES 登记")
+        elif len(ids) > 1:
+            problems.append(f"菜单路径 {node.path} 被多条登记项覆盖 {sorted(ids)} ⇒ 功能不唯一")
+    return tuple(problems)
+
+
+def build_proactive_push(
+    raw_route: Any,
+    permissions: Any,
+    *,
+    already_pushed: Iterable[str] = (),
+) -> ProactiveVerdict:
+    """**主动新手引导的判定本体**（纯函数：登记表 + 会话权限 + 已推集，全部是入参）。
+
+    判定顺序（**每一步 fail-closed**，逐条对应 issue #5989 的必做判据）：
+
+    1. route ↔ 功能**唯一**对应 —— 没登记 ⇒ `unregistered`；被多条覆盖 ⇒ `ambiguous_route`；
+    2. 该节点在**当前会话权限**下可见 —— 看不到 ⇒ `not_visible`
+       （推了就是让用户去看他看不到的页面，既越权又不可行动）；
+    3. 本会话还没推过这一页（`already_pushed`）—— 推过 ⇒ `already_pushed`（每页每会话 ≤ 1 次）；
+    4. 🔴 **可行动性**：文案必须能说出「**在哪一页**（label + route）+ **这页能做什么**」
+       —— 任一为空 ⇒ **不发**（`unregistered`，宁可静默）。
+
+    ⚠️ `permissions` **只能来自服务端会话**（`ToolContext.permissions` / `UserIdentity.permissions`）；
+    本函数签名里**没有 role** ⇒ 客户端递交的 role 结构上读不到（与 `build_navigation_answer` 同纪律）。
+    """
+    ids = _feature_ids_for_route(raw_route)
+    if ids is None:
+        return ProactiveVerdict(PUSH_REASON_UNREGISTERED)   # 未登记 / 脏形态
+    if len(ids) != 1:
+        return ProactiveVerdict(PUSH_REASON_AMBIGUOUS_ROUTE)  # 歧义 ⇒ 不猜
+    feature_id = ids[0]
+    node = _NODES[next(f for f in NAV_FEATURES if f.feature_id == feature_id).node_keys[0]]
+    # 角色裁剪：**只按服务端会话权限**判（无权 ⇒ 不推：越权面 + 无处置入口）
+    if not has_permissions((node.permission_code,), permissions):
+        return ProactiveVerdict(PUSH_REASON_NOT_VISIBLE)
+    if feature_id in set(already_pushed or ()):
+        return ProactiveVerdict(PUSH_REASON_ALREADY_PUSHED)
+    # 可行动性：说不出「在哪一页」或「这页能做什么」⇒ 不发（宁可静默）
+    # ⚠️ 判的是**即将上屏的那两个值**（`record`），不是登记表字段 —— 判登记表字段的话，
+    # 构造时把 route/label 弄空也不会有东西红（实测：一条 `push.route in text` 的弱断言
+    # 对空串恒真 ⇒ 红证 `⑥ 可行动性` **跑不红**）。本仓口径：**不会红的判据 = 空断言**。
+    capabilities = page_capabilities(node)
+    record = ProactivePush(
+        feature_id=feature_id, label=node.label, route=node.path,
+        group=node.group, capabilities=capabilities,
+    )
+    if not record.route or not record.label or not record.capabilities:
+        return ProactiveVerdict(PUSH_REASON_UNREGISTERED)
+    return ProactiveVerdict(
+        "",
+        record,
+    )

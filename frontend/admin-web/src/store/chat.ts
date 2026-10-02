@@ -17,6 +17,17 @@ const generateId = () => Math.random().toString(36).substring(2, 15) + Date.now(
 /** 当前页面路径（SSR / 测试环境无 window ⇒ 空串 ⇒ 不递交，退回普通问答） */
 const currentPagePath = () => (typeof window === 'undefined' ? '' : window.location.pathname)
 
+/**
+ * 主动新手引导（issue #5989 · P2）：**最近一次「进页」的 route**（前端侧省流用）。
+ *
+ * 为什么前端也记一份（服务端**另有**权威上限）：服务端上限才是判据的承载体（不靠前端自觉）
+ * —— 这里只是**省流 + 补发**：① 同一 route 反复经过（重渲染 / 前后端往返）不重复打接口；
+ * ② 没有会话（面板还没开过）时把 route 留在这里，等**有会话后的下一次进页**再递
+ * （用户没打开对话区之前无处可推，这正是「对话区推送」的形态，不是缺陷）。
+ * 刷新后本变量清空 ⇒ 服务端 `session_states` 仍会挡住第二次推送。
+ */
+let pendingPageEntry: string | null = null
+
 /** 在途流：AI 回复累计缓冲 + 该流的 abort 控制器（多会话并发，key = 归属 session_id） */
 interface ActiveStream {
   aiMsg: ChatMessage
@@ -52,6 +63,7 @@ interface ChatState {
   createSession: () => Promise<void>
   selectSession: (id: string) => Promise<void>
   sendMessage: (content: string, images?: string[], cardAnswer?: CardAnswer) => Promise<void>
+  notifyPageEnter: (pathname?: string) => Promise<void>
   closeSession: (id: string) => Promise<void>
   reopenSession: (id: string) => Promise<void>
   setSearchKeyword: (keyword: string) => void
@@ -558,6 +570,86 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
       // 刷新会话列表以更新标题/最后消息
       get().fetchSessions()
+    }
+  },
+
+  /**
+   * 主动新手引导（issue #5989 · P2）：**首次进入某个已登记页面**时递一轮「进页」事件，
+   * 服务端判定后回的主动导航提示渲染进对话区（无用户气泡 —— 不是用户说的话）。
+   *
+   * 服务端可能回**静默流**（未登记页面 / 无权 / 本会话已推过 / 拿不到可行动信息）——
+   * 此时什么都不渲染，**不弹错、不空转**。
+   *
+   * ⚠️ 这里**不做任何判定**（哪一页能推、推什么、推几次，唯一真值在服务端
+   * `backend/ai-agent-service/app/context/menu_navigator.py` + `app/api/chat.py`）。
+   */
+  notifyPageEnter: async (pathname?: string) => {
+    const route = pageContextPayload(pathname ?? currentPagePath())?.route
+    if (!route) return
+    // 省流（非判据）：同一次浏览器会话里同一 route 只递一次（服务端另有权威上限）
+    if (pendingPageEntry === route) return
+    const { currentSessionId, isStreaming, sessions } = get()
+    // 没有会话 ⇒ 没有对话区可推（首次打开米宝面板时会建会话）；正在回复 ⇒ 不打断本轮。
+    // 🔴 **此时不记 `pendingPageEntry`**：否则这一页的引导会**永久丢掉**（用户下次再进这一页
+    // 就被省流挡掉）。不记 ⇒ 会话建好后 / 本轮结束后的下一次进页会重试。
+    if (!currentSessionId || isStreaming) return
+    const currentSession = sessions.find(s => s.session_id === currentSessionId)
+    if (currentSession?.status === 'closed') return
+    pendingPageEntry = route
+
+    const abortController = new AbortController()
+    const aiMsgId = generateId()
+    const aiMsg: ChatMessage = {
+      id: aiMsgId,
+      role: 'assistant',
+      content: '',
+      isStreaming: true,
+      created_at: new Date().toISOString(),
+    }
+    set(state => withView(state, {
+      streams: { ...state.streams, [currentSessionId]: { aiMsg, abortController } },
+    }))
+
+    try {
+      const response = await fetch(`${chatApi.AI_SERVICE_URL}/api/chat/send`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({
+          session_id: currentSessionId,
+          message: `__PAGE_ENTER__|${JSON.stringify({ route })}`,
+        }),
+        signal: abortController.signal,
+      })
+      if (response.ok && response.body) {
+        const parser = new SSEParser((event: SSEEvent) => {
+          handleSSEEvent(event.event, event.data, aiMsgId, set, get)
+        })
+        for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+          parser.parse(new TextDecoder().decode(chunk, { stream: true }))
+        }
+      }
+    } catch {
+      // 主动引导是**尽力而为**：断网 / 会话竞态都不该打扰用户（服务端拿不到就是不发）
+    } finally {
+      const streamKey = findStreamKey(get(), aiMsgId)
+      if (streamKey !== null) {
+        const stream = get().streams[streamKey]
+        set(state => withView(state, {
+          streams: omitStream(state.streams, streamKey),
+          messageStore: {
+            ...state.messageStore,
+            [streamKey]: stream.aiMsg.content
+              ? [...(state.messageStore[streamKey] ?? []), { ...stream.aiMsg, isStreaming: false }]
+              : (state.messageStore[streamKey] ?? []),
+          },
+        }))
+      } else {
+        set(state => withView(state, {}))
+      }
     }
   },
 }))

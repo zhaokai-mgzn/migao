@@ -178,8 +178,14 @@ EXIT_POLICY = {
     "_handle_page_request": "plain-entry-only",     # 不得调用分派入口
     "_handle_form_request": "plain-entry-only",     # 不得调用分派入口（回退即降级到普通入口）
     "_handle_page_ctx_request": "changed-handoff",  # 可交接，但**不得**交回本处理器自己的 request
+    # issue #5989 · P2：`__PAGE_ENTER__`（客户端首次进页 ⇒ 主动导航提示）—— 出口是**直接回流的
+    # 静默流 / 提示流**，结构上不调用分派入口（「把原文交回入口」这一类它天然免疫）。
+    "_handle_page_enter_request": "plain-entry-only",
 }
 _PREFIX_LITERALS = ("__PAGE__|", "__FORM__|")
+#: 主动引导（issue #5989 · P2）的分派用的是**常量** `PAGE_ENTER_PREFIX`（不是内联字面量）
+#: ⇒ 单独核「常量 + 调用点」都在入口里（防悄悄摘掉分支）。
+_PAGE_ENTER_CONST = "PAGE_ENTER_PREFIX"
 _PAGE_CTX_BRANCH = "page_context is not None"
 
 
@@ -252,6 +258,9 @@ def test_dispatcher_still_carries_every_prefix_branch():
     sender_src = _src_of("send_message")
     for prefix in _PREFIX_LITERALS:
         assert f'startswith("{prefix}")' in sender_src, f"入口不再按 {prefix} 前缀分派"
+    assert f"startswith({_PAGE_ENTER_CONST})" in sender_src, (
+        "入口不再按 `PAGE_ENTER_PREFIX` 分派（issue #5989 · P2 的进页分支被摘掉）"
+    )
     assert _PAGE_CTX_BRANCH in sender_src, "入口不再有页面上下文分支"
 
 
