@@ -4871,6 +4871,24 @@ _CASE_MC_057 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-058 [NORMAL] 部署腿的「已构建就跳过」判据必须**真的能生效**：同一份 `gh run list` 查询要有凭据（`permissions: actions: read` + step 级 `GH_TOKEN`）、失败要出声、fail-open 要具名；未接即红（源: cases/misc.yml）──
+_CASE_MC_058 = EvalCase(
+    id='MC-058',
+    legacy_id='',
+    title='部署腿的「已构建就跳过」判据必须**真的能生效**：同一份 `gh run list` 查询要有凭据（`permissions: actions: read` + step 级 `GH_TOKEN`）、失败要出声、fail-open 要具名；未接即红',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一 commit 在两轮 schedule 里被**完整**部署两次（sha=3fa84ab，19:04:47Z 与 23:11:07Z，各 6–8min）⇒「已构建就跳过」这道闸必须**真的生效**：同 sha 的部署 run 已 success 的 tick 必须走 `skip=true` 并在 step summary 写明理由；判据不可用时**可以**照旧全量部署，但必须**具名出声**（不许静默）'],
+    expectations=['direct_reply'],
+    data_checks=['**病（实测）**：三条 deploy 腿的 `Skip if already built (schedule reconcile)` 步用**同一次** `gh run list --workflow … --branch main --limit 30 --json …` 判定 C′「同 sha 已 success ⇒ 跳过」与「不可恢复终态 / 仍在跑 ⇒ 不重复派」，而三条 workflow 都**没有**给该步注入凭据（workflow 级只有 `contents: read`、step 里没有 `GH_TOKEN`）⇒ `gh` 未认证 ⇒ 查询恒失败，而 `2>/dev/null || echo "[]"` 把失败**整层吞掉**（本机实测：未认证 `gh run list` = exit 4 + `To get started with GitHub CLI, please run: gh auth login`；套上工作流那一行后 = exit 0、**stderr 为空**、stdout `[]`）⇒ `LAST_STATUS/LAST_CONCLUSION` 恒空 ⇒ 跳过臂**从未生效**。实测 run `36939400575`（2026-10-01T23:11:07Z，sha=3fa84ab，event=schedule）：step env 块里逐字没有 `GH_TOKEN`、输出逐字「最近一次同 sha 的 run 结论 = `无记录`」⇒ 跑完整 `npm ci → Type check → Unit tests → Deploy to SWAS`；而同一 sha 在 19:04:47Z 已完整部署成功过一次。', '**修法（三条，缺一不可）**：① 凭据 = workflow 级 `permissions: actions: read` + step 级 `env: GH_TOKEN: ${{ github.token }}`（最小权限）② 出声 = 凭据自检 `gh auth status` 的 exit code、查询 exit code、返回条数、**stderr 原文**一律打印（`2>/dev/null` 那层静默拿掉）③ fail-open 具名 = 查不到时**照旧全量部署**（现状口径：本检查自己出错绝不停掉部署），但日志 + step summary 必须写明「跳过判据不可用 ⇒ 本轮全量部署」。外加**二阶缺陷**：`gh run list` 把当前 in_progress 的 run 排在 `[0]`（本机现取 2026-10-02）⇒ `[.[] | select(.headSha == $s)][0]` 永远取到「自己」⇒ 即使注入凭据，C′ 的 `completed + success` 也恒不成立（改前实测：落到「不可恢复的终态」那一臂、**理由错**（把 `status=in_progress` 打成终态）、**step summary 为空**）⇒ 查询结果必须先排除本轮 run 自己（`databaseId` vs `GITHUB_RUN_ID`）。', '**判据**：`tests/unit_ci_workflows/test_deploy_skip_credential.py`（现取 22 passed）① 类级自动发现面 = `.github/workflows/deploy-*.yml` 里**每一步**跑 `gh run list` 的 step 都必须有凭据（step 级 token env + workflow 级 `actions: read|write`）② 跳过腿（写 `skip=`）还必须带自证面（逐字锚点 = 凭据自检 / 查询 exit code / 返回条数 / `::warning::` / `跳过判据**不可用**` / `GITHUB_STEP_SUMMARY` / 自排除表达式），且 `gh run list` 的**整条语句**（含续行）不得再挂 `2>/dev/null` ③ 双向登记进台账 `tests/unit_ci_workflows/deploy_skip_credential_ledger.json`（未登记即红；豁免上界冻结在判据里 `EXEMPTIONS_FROZEN = 0`，**只许缩短**）④ 执行式行为面（桩 `gh`/`docker`，零网络）：a) 无凭据 ⇒ 出声 + 具名 fail-open + `skip=false`（**不许**改成停部署）b) 同 sha 已 success 且本轮自己在跑 ⇒ `skip=true` + step summary 写明 C′ 理由 c) 同 sha 另一条在跑 ⇒ `skip=true`（不重复派）⑤ 注入式红证 8 条（拿掉凭据注入 / `actions: read` / 任一条自证 / 自排除表达式 ⇒ 各自具名红；只加注释 ⇒ 不红）。**修前红读数**（把 origin/main 三份正文喂进同一套判据函数）：凭据判据 **6** 条、自证判据 **21** 条。'],
+    skip_reason='[backend-contract] CI / workflow 结构判据（零 LLM、秒级、只读仓内 YAML + 桩 gh/docker）由 tests/unit_ci_workflows/test_deploy_skip_credential.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'credential', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-059 [NORMAL] deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#`（源: cases/misc.yml）──
 _CASE_MC_059 = EvalCase(
     id='MC-059',
@@ -11530,6 +11548,7 @@ ALL_CASES = (
     _CASE_MC_055,
     _CASE_MC_056,
     _CASE_MC_057,
+    _CASE_MC_058,
     _CASE_MC_059,
     _CASE_OB_001,
     _CASE_OB_002,

@@ -2822,7 +2822,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（57 case）
+## 杂项域（58 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3606,6 +3606,17 @@
 跳过: [backend-contract] 部署对账值守面的静态/执行式结构判据（只读仓内文件 + 桩 gh/docker + 真 git 仓库；零网络、零真 ACR、不写共享 /tmp、不烧 token）由 tests/unit_ci_workflows/test_deploy_watchdog.py 与 tests/unit_ci_workflows/test_deploy_reconcile_state.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #5935：PR #5931 的值守面**第一次真跑**（run 36911070357）就 fail-closed 误报）。**根因（实测复现，推翻 issue 正文的归因）**：`gh workflow view "$wf" --ref main` 100% 失败（gh 要求 `--ref` 必搭 `--yaml`；本机 0.063s、run 日志每条 ≈58ms）⇒ 六条腿全被误记 `notarget`、`seen=6 acted=0` 三桶全 0。落码 = ① `scripts/deploy_reconcile_state.sh`（新，外置状态机：腿清单唯一来源 = `reconcile_one` 调用 · `unrecorded` 种子 · 整行替换 · `on_main()` 三态 · `watchdog_missing_gate` 具名判红）② `.github/workflows/deploy-reconcile.yml`：判据换 `on_main`、逐腿状态机外置、`on.workflow_run`（六条 deploy 腿 `completed`，`branches: [main]`）、值守面四桶分级 + 机制故障单（`type/bug`，不开业务单）、存活读数带具名清单 ③ 判据 tests/unit_ci_workflows/test_deploy_watchdog.py（+13 条）+ tests/unit_ci_workflows/test_deploy_reconcile_state.py（新，on_main 三态正/负例锚）④ 台账 deploy_watchdog_ledger.json 补 `clearing_event` + `event_trigger_contract`。⚠️ **红证（改前/改后双向对照）**：把新增判据拿到 **pre-fix** 的 workflow 上跑 ⇒ **7 failed / 4 passed**（4 条通过的是**防放宽**的对照读数，不是修好的部分）；改后 **45 passed**。⚠️ 取号 **MC-056**（**空档号≠可用号**：`next_case_id.py MC` 建议 MC-049，而 MC-050 的 merge_log 逐字记着它被在飞分支占用 ⇒ 按「当前最大号 +1」取 056）。⚠️ 本包**顺手改准**了 test_deploy_watchdog.py 文件头那条过期注释（原写「main 上已是 12,524」，是 #5931 落地**前**的起草读数；现取改前 = 13,125）。⚠️ 未做（照单登记）：不改值守面的只读性质（不重试部署、不回滚、不写仓库）；不新增 schedule 频率；不碰 push 触发面。⚠️ 未固化：`wiring_claims_ledger.json` 的接线锚左端要求 `.py` ⇒ workflow YAML 接线面仍由**执行式判据**承担（作者的一次动作，不是常驻机制）。 ｜ tags: ci, deploy, watchdog, ledger, red-proof, event-driven
+
+### MC-058. 部署腿的「已构建就跳过」判据必须**真的能生效**：同一份 `gh run list` 查询要有凭据（`permissions: actions: read` + step 级 `GH_TOKEN`）、失败要出声、fail-open 要具名；未接即红 🔵
+```
+你: 同一 commit 在两轮 schedule 里被**完整**部署两次（sha=3fa84ab，19:04:47Z 与 23:11:07Z，各 6–8min）⇒「已构建就跳过」这道闸必须**真的生效**：同 sha 的部署 run 已 success 的 tick 必须走 `skip=true` 并在 step summary 写明理由；判据不可用时**可以**照旧全量部署，但必须**具名出声**（不许静默）
+期望: direct_reply
+数据: **病（实测）**：三条 deploy 腿的 `Skip if already built (schedule reconcile)` 步用**同一次** `gh run list --workflow … --branch main --limit 30 --json …` 判定 C′「同 sha 已 success ⇒ 跳过」与「不可恢复终态 / 仍在跑 ⇒ 不重复派」，而三条 workflow 都**没有**给该步注入凭据（workflow 级只有 `contents: read`、step 里没有 `GH_TOKEN`）⇒ `gh` 未认证 ⇒ 查询恒失败，而 `2>/dev/null || echo "[]"` 把失败**整层吞掉**（本机实测：未认证 `gh run list` = exit 4 + `To get started with GitHub CLI, please run: gh auth login`；套上工作流那一行后 = exit 0、**stderr 为空**、stdout `[]`）⇒ `LAST_STATUS/LAST_CONCLUSION` 恒空 ⇒ 跳过臂**从未生效**。实测 run `36939400575`（2026-10-01T23:11:07Z，sha=3fa84ab，event=schedule）：step env 块里逐字没有 `GH_TOKEN`、输出逐字「最近一次同 sha 的 run 结论 = `无记录`」⇒ 跑完整 `npm ci → Type check → Unit tests → Deploy to SWAS`；而同一 sha 在 19:04:47Z 已完整部署成功过一次。
+数据: **修法（三条，缺一不可）**：① 凭据 = workflow 级 `permissions: actions: read` + step 级 `env: GH_TOKEN: ${{ github.token }}`（最小权限）② 出声 = 凭据自检 `gh auth status` 的 exit code、查询 exit code、返回条数、**stderr 原文**一律打印（`2>/dev/null` 那层静默拿掉）③ fail-open 具名 = 查不到时**照旧全量部署**（现状口径：本检查自己出错绝不停掉部署），但日志 + step summary 必须写明「跳过判据不可用 ⇒ 本轮全量部署」。外加**二阶缺陷**：`gh run list` 把当前 in_progress 的 run 排在 `[0]`（本机现取 2026-10-02）⇒ `[.[] | select(.headSha == $s)][0]` 永远取到「自己」⇒ 即使注入凭据，C′ 的 `completed + success` 也恒不成立（改前实测：落到「不可恢复的终态」那一臂、**理由错**（把 `status=in_progress` 打成终态）、**step summary 为空**）⇒ 查询结果必须先排除本轮 run 自己（`databaseId` vs `GITHUB_RUN_ID`）。
+数据: **判据**：`tests/unit_ci_workflows/test_deploy_skip_credential.py`（现取 22 passed）① 类级自动发现面 = `.github/workflows/deploy-*.yml` 里**每一步**跑 `gh run list` 的 step 都必须有凭据（step 级 token env + workflow 级 `actions: read|write`）② 跳过腿（写 `skip=`）还必须带自证面（逐字锚点 = 凭据自检 / 查询 exit code / 返回条数 / `::warning::` / `跳过判据**不可用**` / `GITHUB_STEP_SUMMARY` / 自排除表达式），且 `gh run list` 的**整条语句**（含续行）不得再挂 `2>/dev/null` ③ 双向登记进台账 `tests/unit_ci_workflows/deploy_skip_credential_ledger.json`（未登记即红；豁免上界冻结在判据里 `EXEMPTIONS_FROZEN = 0`，**只许缩短**）④ 执行式行为面（桩 `gh`/`docker`，零网络）：a) 无凭据 ⇒ 出声 + 具名 fail-open + `skip=false`（**不许**改成停部署）b) 同 sha 已 success 且本轮自己在跑 ⇒ `skip=true` + step summary 写明 C′ 理由 c) 同 sha 另一条在跑 ⇒ `skip=true`（不重复派）⑤ 注入式红证 8 条（拿掉凭据注入 / `actions: read` / 任一条自证 / 自排除表达式 ⇒ 各自具名红；只加注释 ⇒ 不红）。**修前红读数**（把 origin/main 三份正文喂进同一套判据函数）：凭据判据 **6** 条、自证判据 **21** 条。
+跳过: [backend-contract] CI / workflow 结构判据（零 LLM、秒级、只读仓内 YAML + 桩 gh/docker）由 tests/unit_ci_workflows/test_deploy_skip_credential.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #5941：同一 sha 6h 内被完整部署两次 —— 「已构建就跳过」的机制从未生效，三条 deploy 腿的同一份查询无凭据 ⇒ fail-open 恒走全量部署）。⚠️ **先诊断后修**：issue 把成因写成「集成侧推出」的最可能假设（未直接观测到 `gh` 的报错，因为它被 `2>/dev/null` 吞了）⇒ 本包先取三次直接读数再动手：① 本机复现未认证 `gh run list` = exit 4 + 逐字 stderr；② 套上工作流那一行 = exit 0 / stderr **空** / stdout `[]`（= 静默成立）③ 真实 run `36939400575` 的日志里 step env 块逐字没有 `GH_TOKEN`、输出逐字「无记录」⇒ **假设被证实**（并额外现取到二阶缺陷：`gh run list` 把本轮 run 自己排在 `[0]`）。落地 = `.github/workflows/deploy-{admin-api,ai-agent-service,frontend}.yml` 三腿同批（`permissions: actions: read` + step 级 `GH_TOKEN` + 自证段 + fail-open 具名 + 自排除）+ 判据 + 台账 + 8 条注入式红证。取号 **MC-058**：`python3 scripts/next_case_id.py MC` 给的是**历史空档 MC-049**（该号写在**已 CLOSED 的 PR #5818 分支** `ci/5814-migrate-pr-legs` 里 ⇒ 空档号 ≠ 可用号，沿用 MC-055/056 的先例）⇒ 按「当前最大号 + 1」取；现取 main 最大 = MC-056、在飞 PR #5940（issue #5935）占 MC-057 ⇒ **MC-058**。⚠️ 未固化：`gh` 的真实凭据语义（public 仓读 runs 是否需要 `actions: read`）只能由合并后第一个 schedule tick 的读数确认，桩面判不了。 ｜ tags: ci, deploy, credential, red-proof, ledger
 
 ### MC-059. deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#` 🔵
 ```
@@ -8572,8 +8583,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：600（活跃 126，跳过 474）
-- tier 分布：smoke 12 / normal 555 / adversarial 31
+- 用例总数：601（活跃 126，跳过 475）
+- tier 分布：smoke 12 / normal 556 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8588,7 +8599,7 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：57
+- 杂项域：58
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -8671,6 +8682,7 @@
 - MC-055: 合并了但没上线必须有值守面（issue #5929）：main HEAD 合入超过 N 秒仍未部署 ⇒ 判红并自己开单、部署成功后自动关闭；C′ 之后「镜像不在 ACR」不得当判据（噪声判据是缺陷）；判不了必须 fail-closed
 - MC-056: CI 面记号与台账必须**双向**绑定（`FM-E24`/`FM-E25` 同批）：文档里具名而台账未登记 ⇒ 红；「CI 迟迟不来先看 `mergeable`」的判别动作必须留在加载面（文本锚，删掉即红）
 - MC-057: 部署对账的「落状态」本身必须有判据 + 三态三分 + 事件驱动清零（issue #5935）：`gh workflow view --ref` 那条前置判据 100% 失败 ⇒ 六条腿全被误记 `notarget`；未落状态的腿必须具名判红、`notarget` 与机制故障不得混桶、部署完成事件必须能触发清零且不得自激
+- MC-058: 部署腿的「已构建就跳过」判据必须**真的能生效**：同一份 `gh run list` 查询要有凭据（`permissions: actions: read` + step 级 `GH_TOKEN`）、失败要出声、fail-open 要具名；未接即红
 - MC-059: deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#`
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
