@@ -8,6 +8,11 @@ export interface TreeNode {
   children?: TreeNode[]
 }
 
+// 后端菜单树允许同码多节点（#5699/#5291 设计面，如 workspace 组两个 dashboard:view），
+// code 不唯一 ⇒ React key 必须由 code+label 派生（issue #6083）；
+// 同码同 label 的极端形态仍会撞 key —— 已知接受的边界。
+export const treeNodeKey = (node: TreeNode): string => `${node.code}:${node.label}`
+
 interface TreeCheckboxProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange'> {
   tree: TreeNode[]
   selected: string[]
@@ -61,7 +66,7 @@ export const TreeCheckbox = forwardRef<HTMLDivElement, TreeCheckboxProps>(
             const isIndeterminate = checkedCount > 0 && checkedCount < childCodes.length
 
             return (
-              <div key={node.code}>
+              <div key={treeNodeKey(node)}>
                 <label className="flex items-center gap-2 py-1 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -81,7 +86,7 @@ export const TreeCheckbox = forwardRef<HTMLDivElement, TreeCheckboxProps>(
                 {node.children && node.children.length > 0 && (
                   <div className="ml-6 space-y-0.5">
                     {node.children.map(child => (
-                      <label key={child.code} className="flex items-center gap-2 py-0.5 cursor-pointer select-none">
+                      <label key={treeNodeKey(child)} className="flex items-center gap-2 py-0.5 cursor-pointer select-none">
                         <input
                           type="checkbox"
                           checked={selectedSet.has(child.code)}

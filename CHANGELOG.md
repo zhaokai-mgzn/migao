@@ -1,5 +1,20 @@
 ## [Unreleased]
 
+### 岗位权限矩阵徽标 label 不再被同码节点覆盖 + 权限树不再报 React duplicate-key（2026-10-03，issue #6083）
+
+- **以前**：菜单树后端按设计就有同码多节点（#5699/#5291：工作台组两个 `dashboard:view` = 经营看板/每日简报；
+  生产中心组四个 `production:view`），前端两处假设 code 唯一 ⇒ ① TreeCheckbox 拿 `node.code` 当 React key，
+  打开 /employees 控制台报 6 条 duplicate-key；② 权限矩阵徽标 labelMap 按 code 后写覆盖先写，
+  员工持有 `dashboard:view` 时徽标显示「每日简报」而非「经营看板」。
+- **现在**：TreeCheckbox key 改由 `treeNodeKey(node)`（`code:label`）派生（两处 key 位）；
+  labelMap 改首见优先。勾选 / 联动语义零变化（同码 = 同一权限，勾其一同码节点一起高亮照旧）。
+- 红→绿判据 = `frontend/admin-web/tests/unit/components/TreeCheckbox.test.tsx`
+  「#6083: 同码多节点渲染不触发 React duplicate-key 告警，且 6 个 label 全部渲染」+
+  「#6083: treeNodeKey 由 code+label 派生唯一 key（同码不同 label ⇒ key 不同，幂等）」+
+  `frontend/admin-web/tests/unit/pages/employees.test.tsx`
+  「#6083: 同码多节点时权限徽标 label 取菜单树首见（dashboard:view → 经营看板，不被「每日简报」覆盖）」；
+  类级守卫 = TreeCheckbox.test.tsx「#6083 类级守卫: 同码勾选语义不回退 —— 勾选其一上抛共享 code，同码节点一起高亮」。
+
 ### 修复米宝工作台登录后恒空白：/api/auth/me 的 capabilities 未并入前端 store（2026-10-03，issue #6081）
 
 - **现象**：任何用户登录 / 刷新页面后打开米宝工作台（/chat）都是整页空白——#3099 修复 `/api/auth/me`

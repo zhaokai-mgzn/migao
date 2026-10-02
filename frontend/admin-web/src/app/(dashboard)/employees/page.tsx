@@ -96,7 +96,8 @@ export default function EmployeesPage() {
     const map: Record<string, string> = {}
     let count = 0
     menuTree.forEach(p => {
-      p.children?.forEach(c => { map[c.code] = c.label; count++ })
+      // 同码多节点按设计存在（#5699/#5291）：labelMap 首见优先，不被后到同码节点覆盖（issue #6083）
+      p.children?.forEach(c => { if (!(c.code in map)) map[c.code] = c.label; count++ })
     })
     return { permissionLabelMap: map, totalLeafCount: count }
   }, [menuTree])
