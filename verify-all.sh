@@ -696,25 +696,6 @@ if [ "$MODE" != quick ] && [ "$MODE" != full ] && [ "$MODE" != frontend ] && \
   exit 2
 fi
 
-# ── 禁空跑（2026-09-15 固化）────────────────────────────────────────────────
-# 为什么（实测）：在**干净 worktree、detached HEAD == origin/main（零 diff）**上跑
-# `./verify-all.sh quick` 会得到「5 通过 / 2 失败」—— 但那是一次**空跑**：
-#   · `gate` 预检必然走「无变更…跳过」分支（它按 diff 扫描）；
-#   · 其余检查对一棵与 main **完全一致**的树没有边际信息（绿了也不代表你的改动没问题 ——
-#     你根本没有改动）。
-# 把这种运行读成「验证通过」= migao-acceptance v1.3 的「空跑」（绿了但没跑）。
-# 判据复用 gate_check() 的变更集来源（committed_changes/worktree_changes，**不写第二套**）。
-CHANGE_SET="$( { committed_changes; worktree_changes | awk '{print $NF}'; } \
-  | grep -v '^[[:space:]]*$' | sort -u )"
-if [ -z "$CHANGE_SET" ]; then
-  echo "⏭️  无变更 ⇒ 未执行任何检查（这不是通过）"
-  echo "     判据：git diff --name-only origin/main...HEAD 与 git status --porcelain -uall 均为空"
-  echo "     处置：先改代码并提交，再跑验证 —— 在零 diff 的树上跑验证没有边际信息（空跑）。"
-  exit 3
-fi
-# ⚠️ 措辞避让：这行**不得**含「未提交」三字 —— `test_gate_uncommitted_noop.py` 用
-# 「无未提交改动时控制台不得出现『未提交』」做**防误伤**断言，这里的结构性提示会误触它。
-echo "变更集：$(printf '%s\n' "$CHANGE_SET" | grep -c .) 个文件（origin/main...HEAD ∪ 工作区改动）"
 
 # ══════════════════════════════════════════════════════════════════════════════════════
 # 套件内全量入口的**角色判定**（issue #6084）—— 子包 worktree 里**拒绝**直跑全量
@@ -785,14 +766,28 @@ _env_truthy() {
   esac
 }
 
+#: `git rev-parse <参数…>` 的**单个**取值口：取不到（`git` 不在 PATH / 不在工作树里 /
+#: 输出为空）⇒ **非零**。
+#: ⚠️ 为什么必需（实测缺陷，本包修）：两个取值点各自独立调用 `git rev-parse` 时，
+#:    **两次失败都返回空串** ⇒ `[ "$abs" = "$common" ]` 对 `""` 与 `""` 判**真** ⇒
+#:    非 git 目录被算成 `primary`（= **放行**）。实测：`cwd=/tmp` 跑 `verify-all.sh quick`
+#:    得 rc=**3**（「无变更」）而非**文档承诺**的 `unknown ⇒ exit 5` —— 这正是
+#:    「fail-closed 写在文档里、没写在代码里」的形态。取值口把**退出码**与**空输出**
+#:    收进同一条判据，`unknown` 才真的会走到拒绝分支。
+_git_rev_parse() {
+  local out
+  out="$(git rev-parse "$@" 2>/dev/null)" || return 1
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out"
+}
+
 #: 角色判定（**纯函数**：只打印角色，不做 IO 副作用之外的判断）。
 #: ⛔ 不许在这里 acquire —— 判定必须在**任何重活派发之前**（拿锁本身就是重活面的一部分）。
 package_heavy_role() {
-  git rev-parse --absolute-git-dir >/dev/null 2>&1 || { echo unknown; return 0; }
   local abs common
-  abs="$(git rev-parse --absolute-git-dir 2>/dev/null)"
-  common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
-  [ -n "$abs" ] && [ -n "$common" ] || { echo unknown; return 0; }
+  #: `git` 不可用 / 工作树外 ⇒ **unknown**（调用方 fail-closed 拒绝）。
+  abs="$(_git_rev_parse --absolute-git-dir)" || { echo unknown; return 0; }
+  common="$(_git_rev_parse --path-format=absolute --git-common-dir)" || { echo unknown; return 0; }
   if [ "$abs" = "$common" ]; then
     echo primary                       # 主检出：人工 / 批次的**一次性**全量在这里跑
     return 0
@@ -854,7 +849,14 @@ package_heavy_guard() {
   return 5
 }
 
-# ⚠️ 必须在**任何重活派发之前**（也在 `macquire` 之前：拿锁本身就是重活面）。
+
+# ⚠️ **必须先于「禁空跑」判定**（本包修，实测缺陷）：角色守卫原先排在下面那段之后 ⇒
+#    非 git 目录里变更集**也**算不出来（`origin/main` 都没有）⇒ 脚本先走「无变更 ⇒ exit 3」
+#    早退，**永远走不到拒绝分支** ⇒ 文档承诺的「`unknown` ⇒ `exit 5`」在行为面上不成立
+#    （实测：`cwd=/tmp` 得 rc=3；而 `exit 3` 会被读成「你没改东西」= 错误归因）。
+#    顺序即语义：**角色被拒 ⇒ 什么都没跑** ⇒ 优先于变更集读数（变更集是「跑什么」的输入，
+#    角色是「能不能跑」的前提）。
+# ⚠️ 也必须在**任何重活派发之前**（也在 `macquire` 之前：拿锁本身就是重活面）。
 #    判据点：① 拒绝发生在任何 pytest 之前（PATH 桩 / 审计钩子可证）；
 #              ② `package_heavy_guard` 的直接调用出现在 `macquire` 之前（现取顺序，不是文本 grep）。
 package_heavy_guard "$@"
@@ -862,6 +864,26 @@ PKG_RC=$?
 if [ "$PKG_RC" -ne 0 ]; then
   exit "$PKG_RC"
 fi
+
+# ── 禁空跑（2026-09-15 固化）────────────────────────────────────────────────
+# 为什么（实测）：在**干净 worktree、detached HEAD == origin/main（零 diff）**上跑
+# `./verify-all.sh quick` 会得到「5 通过 / 2 失败」—— 但那是一次**空跑**：
+#   · `gate` 预检必然走「无变更…跳过」分支（它按 diff 扫描）；
+#   · 其余检查对一棵与 main **完全一致**的树没有边际信息（绿了也不代表你的改动没问题 ——
+#     你根本没有改动）。
+# 把这种运行读成「验证通过」= migao-acceptance v1.3 的「空跑」（绿了但没跑）。
+# 判据复用 gate_check() 的变更集来源（committed_changes/worktree_changes，**不写第二套**）。
+CHANGE_SET="$( { committed_changes; worktree_changes | awk '{print $NF}'; } \
+  | grep -v '^[[:space:]]*$' | sort -u )"
+if [ -z "$CHANGE_SET" ]; then
+  echo "⏭️  无变更 ⇒ 未执行任何检查（这不是通过）"
+  echo "     判据：git diff --name-only origin/main...HEAD 与 git status --porcelain -uall 均为空"
+  echo "     处置：先改代码并提交，再跑验证 —— 在零 diff 的树上跑验证没有边际信息（空跑）。"
+  exit 3
+fi
+# ⚠️ 措辞避让：这行**不得**含「未提交」三字 —— `test_gate_uncommitted_noop.py` 用
+# 「无未提交改动时控制台不得出现『未提交』」做**防误伤**断言，这里的结构性提示会误触它。
+echo "变更集：$(printf '%s\n' "$CHANGE_SET" | grep -c .) 个文件（origin/main...HEAD ∪ 工作区改动）"
 
 # ── 机器级重活并发准入（issue #5814）──────────────────────────────────────────
 # 为什么（2026-09-30 14:24 CST 现场实测，不是推断）：三份**同样的**全量 `tests/unit_ci_workflows`

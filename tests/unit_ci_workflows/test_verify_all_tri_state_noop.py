@@ -239,15 +239,33 @@ class TestTriState:
         脚本里另有一处 ⏭️ 属**禁空跑**的结构性提示（「无变更 ⇒ 未执行任何检查」），
         它不针对任何单个检查项，故先把它剔除再判。
         ⚠️ 只扫**代码行**（剥掉注释）—— 注释里会引用 ⏭️ 说明三态语义，那不是行为。
+        🔻 **第二处合法 ⏭️（issue #6084 的角色守卫）**：`package_heavy_guard()` 在 `CI` 为真时
+        打印「角色判定未跑（CI 为真）」并放行 —— 那是**整块不适用**的声明，与「逐检查项未就绪」
+        同族（都不是「绕过 `probe_ready()` 直接标跳过」）。它随 #6084 落在本区间内 ⇒ 这里把它
+        按**函数**剔除（与上面剔 `report_env` 同法；将来它搬走/改名，`_extract` 会当场报错，
+        不会静默放宽）。
+        ⚠️ 剥完必须**仍在**：`package_heavy_guard` 的调用 + 禁空跑那句提示 —— 否则本判据会
+        因为「什么都找不到」而恒绿（空断言方向）。
         """
         body = _extract("report_env")
         assert "⏭️" in body, "report_env() 里没有「未就绪」分支 —— 三态没落地"
+        guard_block = _extract("package_heavy_guard")
+        assert "⏭️" in guard_block, (
+            "package_heavy_guard() 里没有 CI 豁免声明 —— 结构变了就同步更新本守卫"
+        )
         noop_guard = re.search(r"^# ── 禁空跑.*?(?=\ncase \"\$MODE\" in)", _SCRIPT, re.M | re.S)
         assert noop_guard, "找不到禁空跑块 —— 结构变了就同步更新本守卫"
-        stripped = _SCRIPT.replace(body, "").replace(noop_guard.group(0), "")
+        assert "无变更 ⇒ 未执行任何检查" in noop_guard.group(0), (
+            "禁空跑区间取错了（没覆盖到那句提示）—— 本守卫会退化成空断言"
+        )
+        stripped = _SCRIPT.replace(body, "").replace(guard_block, "") \
+                          .replace(noop_guard.group(0), "")
         code_only = "\n".join(ln.split("#", 1)[0] for ln in stripped.splitlines())
+        assert 'package_heavy_guard "$@"' in code_only, (
+            "剥完连角色守卫的**调用**都不见了 ⇒ 上面那两处剔除把真对象也吃掉了（本判据恒绿）"
+        )
         assert "⏭️" not in code_only, (
-            "⏭️ 标记出现在 report_env() 与禁空跑块之外的**代码**里 —— "
+            "⏭️ 标记出现在 report_env() / 禁空跑块 / 角色守卫之外的**代码**里 —— "
             "未就绪判定被散落到调用点，会绕过 probe_ready()"
         )
 
