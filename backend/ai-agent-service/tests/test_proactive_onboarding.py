@@ -180,6 +180,8 @@ class TestDecisionBody:
         verdict = nav.build_proactive_push("/shipments", ["order:list"])
         assert verdict.should_push is True
         text = verdict.push.render()
+        # 🔴 先钉「两个字段都非空」（否则 `"" in text` **恒真** ⇒ 这条断言永远绿 = 空断言）
+        assert verdict.push.label and verdict.push.route, "推送缺「在哪一页」的字段（空串不算给出）"
         assert verdict.push.label in text and verdict.push.route in text, "文案里没有「在哪一页」"
         assert nav.PROACTIVE_CAPABILITY_PREFIX in text, "文案里没有「这页能做什么」"
         assert verdict.push.capabilities, "capabilities 为空 ⇒ 这条推送不该发"

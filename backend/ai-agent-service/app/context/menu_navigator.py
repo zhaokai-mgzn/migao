@@ -707,16 +707,17 @@ def build_proactive_push(
     if feature_id in set(already_pushed or ()):
         return ProactiveVerdict(PUSH_REASON_ALREADY_PUSHED)
     # 可行动性：说不出「在哪一页」或「这页能做什么」⇒ 不发（宁可静默）
+    # ⚠️ 判的是**即将上屏的那两个值**（`record`），不是登记表字段 —— 判登记表字段的话，
+    # 构造时把 route/label 弄空也不会有东西红（实测：一条 `push.route in text` 的弱断言
+    # 对空串恒真 ⇒ 红证 `⑥ 可行动性` **跑不红**）。本仓口径：**不会红的判据 = 空断言**。
     capabilities = page_capabilities(node)
-    if not node.path or not node.label or not capabilities:
+    record = ProactivePush(
+        feature_id=feature_id, label=node.label, route=node.path,
+        group=node.group, capabilities=capabilities,
+    )
+    if not record.route or not record.label or not record.capabilities:
         return ProactiveVerdict(PUSH_REASON_UNREGISTERED)
     return ProactiveVerdict(
         "",
-        ProactivePush(
-            feature_id=feature_id,
-            label=node.label,
-            route=node.path,
-            group=node.group,
-            capabilities=capabilities,
-        ),
+        record,
     )
