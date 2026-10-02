@@ -7500,7 +7500,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（78 case）
+## 前端 UI 域（80 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -8598,6 +8598,37 @@
 真值: frontend-fix.vitest, order.shipment-read-faces
 溯源: 2026-10-02 新增（issue #5939）：用户报障「我让你开发过发货单的，但是在大菜单上没见到这个单据」—— 核对 `git log -S "发货单" -- frontend/admin-web/src/config/menu.ts` 与对 MenuController.java 的同命令**均为空** ⇒ 发货单从未进过菜单（纸面 #3768 / 数据面 #5648 都做完了，但它只挂在订单详情里）。本单：菜单三源同批加节点（仓储与物料组、入库单之后）+ 新建 `/shipments` 列表页（含补打）+ 后端租户级列表读面（见 OR-056）+ **单据入口台账**类级守卫（下次再有单据做完没人问「用户从哪进得来」时会判红）。⚠️ **未跑（照实登记）**：Playwright 页面多模态验收（真实登录 + 截图 + AI 读图）本轮**未跑** —— 本检出另有一个 07:17 起的 `next dev` 听着 :3001（`lsof` 实测 cwd = 本检出的 frontend/admin-web，非本会话所起），而 tests/playwright.config.ts 的服务身份守卫（#4313/#5121）对「本检出已有活着的 dev server」在配置加载期硬红（Next 16 起 `.next/dev/lock` 按目录取 flock ⇒ 换端口也起不来），杀它属破坏性动作 ⇒ 不做。重启条件 = 该 dev server 停掉或改用独立 worktree 后，按 `tests/playwright.config.ts` 跑一轮针对 `/shipments` 的 Playwright 用例（该 spec **本单未新建、也未跑过** —— 不把未验证的测试塞进 CI；补跑时一并落地并挂 `# case_ids: UI-078`）。本用例**不声称**该轮通过。 ｜ tags: ui, menu, ia, navigation, shipment, rbac
 
+### UI-079. 米宝对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（单调不回退 / 收口替换不卡 / 结束中断卸载立刻全文 / 减少动画直接全文） 🔵
+```
+你: 用户 2026-10-02 原话（流式体验）：问「米宝走 SSE 但不是逐字输出，是否要改成逐字」⇒ 裁定 =「选 2（客户端打字机）」
+你: 同一裁定附带的结构性理由（不做服务端真逐字）：backend/ai-agent-service/app/agents/customer_service_agent.py 的 astream_chat 用 graph.astream(initial_state, stream_mode="updates") = 节点级更新；backend/ai-agent-service/app/graph/skills/execution/finalize_turn.py 有后置收口（追加确认卡 XML / 用工具返回 message 替换回复）；C 端出站还有 backend/ai-agent-service/app/api/chat.py 的 _mask_for_customer 跨片脱敏 ⇒ 服务端逐字会与「收口后才是最终文本」冲突
+期望: direct_reply
+数据: 判据 1·**真的在逐字**：注入一段文本后，t 时刻可见字符数 **< 全文长度**，且可见文本恒为全文**前缀**；最终 == 全长。执行点 = frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx「UI-079-1」+ frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx「UI-079 流式回复（真实打字机）」
+数据: 判据 2·**收口替换不卡**：先注入短文本、随后注入收口后的长文本（模拟 finalize_turn 替换）⇒ 全程采样「已揭示字符数」**只增不减**（不出现「先短后长再回退」），最终显示**必须是收口版**；反向（收口版更短）⇒ 立刻夹到收口版，不出现越界可见文本。执行点 = 同 hook 文件「UI-079-2」两条
+数据: 判据 3·**立刻收敛**：流式结束（isStreaming=false）/ 用户中断（wasAborted）/ 组件卸载 / 切换会话 ⇒ 可见文本**立刻**等于全文（不许卡在半截）；减少动画（prefers-reduced-motion: reduce）与历史回放 ⇒ 直接全文、不逐字。执行点 = hook 文件「UI-079-3」四条 + 组件文件「UI-079 流式结束」「UI-079 中断」「UI-079 历史回放」「UI-079 切会话/重挂载」
+数据: 🔴 判据 4·**服务端不被改动（本单边界）**：本用例只判展示面 —— `git diff origin/main...HEAD -- backend/` 为空。执行点 = PR 的改动清单（本包零后端改动）
+数据: 🔴 红证（改前实测）：本单落地前全仓 `grep -rn "typewriter\|useTypewriter" frontend/admin-web/src` = 0 命中 ⇒ 组件测试 import 即失败；把 hook 换成直返全文（等效「无打字机」）⇒ 判据 1/2/3 的「中途可见 < 全长」「维持替换过程单调」「流式结束立刻等于全文」三条当场红（本机实测 3 failed / 6 passed）；把组件的 `data-revealed` 接入摘掉 ⇒ 组件侧两条红
+前置: 本用例是 [backend-contract] 纯前端用例：前置由单测自建 —— frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx 用 `vi.useFakeTimers()` 直接驱动 hook 的揭示时钟；frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx `vi.mock('@/store/chat')` 注入带 `isStreaming/tool_calls` 的消息夹具。前置不成立时单测直接红（找不到 `data-revealed` / 找不到文案），不依赖共享夹具；agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端揭示层（服务端一字未改：仍整段下发）由 vitest（jsdom）执行，不进入 agent-eval 冒烟；LLM 行为面不变，故无 agent 用例
+```
+真值: frontend-fix.mibao-client-typewriter, frontend-fix.vitest
+溯源: 2026-10-02 新增（issue #5952）：米宝对话从「服务端整段下发、界面一次性刷出」改为「客户端按节奏揭示」（用户同日裁定「选 2」）。服务端真逐字**有意不做**（节点级 astream + finalize_turn 后置收口 + C 端跨片脱敏三重结构性冲突，见 user_inputs）。取号 UI-079（现取 ui.yml 最大 = UI-078 的下一号）。 ｜ tags: ui, chat, streaming, typewriter, admin-web
+
+### UI-080. 米宝对话不向用户暴露 tool：带 tool_calls 的消息只渲染人性化进度文案，工具名/入参/结果/原始 JSON 一律不进 DOM（对齐 C 端先例 issue #2857） 🔵
+```
+你: 用户 2026-10-02 原话（同一次裁定）：「不要把 tool 暴露给用户，用户只关注 agent 回复了什么以及用户要交互什么」
+期望: direct_reply
+数据: 判据 1·**工具执行中仍有可感知进度**：无正文 + `tool_calls[{status:'running'}]` ⇒ 渲染「正在处理您的请求...」（用户裁定的是「不暴露 tool」，不是「让界面长时间无反馈」）。执行点 = frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx「UI-080 工具执行中（无正文）」
+数据: 🔴 判据 2·**具名不暴露断言**（不是 `not None` 这类弱断言）：渲染结果里不得出现工具名 `order_query`、入参值 `SO-2026-001`、结果值 `RESULT_SECRET_2026`，也不得出现 `tool_calls` / `tool_name` / `"input"` / `"args"` / `工具调用` / `{"order_no"` 这些技术形态。执行点 = 同文件四个 UI-080 用例共用的 `expectNoToolDetails()`（有正文 / 仅 tool_calls 的历史消息 / status=error 各覆盖一次）
+数据: 判据 3·**正文本体不回归**：工具在场时正文照常显示（不得因「藏 tool」把回复内容一起藏掉）；仅 tool_calls、无正文的历史消息仍显示「（已处理）」兜底文案。执行点 = 同文件「有正文 + 工具同时在场」「仅 tool_calls、无正文的历史消息」
+数据: 判据 4·**C 端先例零回归（复算读数）**：frontend/mini-app/src/components/chat/MessageBubble.tsx 的「工具调用过程对客户隐藏（issue #2857）」行为不动，既有判据 frontend/mini-app/tests/message-bubble.test.tsx「UI-017: 工具执行过程对客户隐藏（不渲染 tool_calls 指示器）」仍绿（本包**未改** C 端任何文件）
+数据: 🔴 红证（改前实测）：把 `AIMessageContent` 的 tool_calls 分支改回「渲染工具名 + JSON.stringify(input)」⇒ 判据 2 当场红（本机实测：`data-injected-tool-exposure` 注入 ⇒ 3 条红 1 条绿，其中两条正是「工具名/入参进了 DOM」）
+前置: 本用例是 [backend-contract] 纯前端用例：前置由单测自建 —— frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx `vi.mock('@/store/chat')` 注入带 `tool_calls`（工具名 order_query / 入参 {order_no: SO-2026-001} / 结果含 RESULT_SECRET_2026）的消息夹具；前置不成立时单测直接红，不依赖共享夹具；agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端展示面（后端是否下发 tool 信息是另一条边界，本用例不管）由 vitest（jsdom）执行，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.mibao-tool-not-exposed, frontend-fix.vitest
+溯源: 2026-10-02 新增（issue #5952）：B 端此前**已经**只渲染「正在处理您的请求...」这种人性化进度（ToolProgressIndicator，2026-06-14 起），但**没有任何判据把守** ⇒ 谁把 tool_calls 渲染回来都不会变红。本用例把「不暴露」钉成具名断言（工具名/入参/结果/JSON 形态四类字符串），并把手性化进度钉成正向断言（防止矫枉过正成「长时间无反馈」）。取号 UI-080。 ｜ tags: ui, chat, tool-call, privacy, admin-web
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -8627,8 +8658,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：603（活跃 127，跳过 476）
-- tier 分布：smoke 12 / normal 558 / adversarial 31
+- 用例总数：605（活跃 127，跳过 478）
+- tier 分布：smoke 12 / normal 560 / adversarial 31
 - 售后域：10
 - Agent 核心域：6
 - API 层域：19
@@ -8653,7 +8684,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：78
+- 前端 UI 域：80
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

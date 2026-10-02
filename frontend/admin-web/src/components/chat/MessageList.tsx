@@ -24,6 +24,7 @@ import ToolResultCard from './ToolResultCard'
 import InteractiveMessage from './InteractiveMessage'
 import { resolveInteractiveState } from '@/lib/interactive-render'
 import WelcomePanel from './WelcomePanel'
+import { useTypewriter } from '@/hooks/use-typewriter'
 
 export default function MessageList() {
   const { messages, isLoadingMessages, currentSessionId, sessions } =
@@ -298,6 +299,18 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
   const [copied, setCopied] = useState(false)
   const isStreamingEmpty = message.isStreaming && !message.content
 
+  // 清理 AI 回复中的 tool_call 伪代码块（Vision LLM 可能有幻觉输出）；
+  // 同时兜底剥离 <interact>…</interact> XML 伪代码块（issue #3036 / UI-032）——
+  // 正常路径下后端已转 SSE interactive 事件并剥离，此处兜底历史消息残留
+  const cleanContent = (message.content || '')
+    .replace(/```tool_call[\s\S]*?```/g, '')
+    .replace(/<interact>[\s\S]*?<\/interact>/g, '')
+    .trim()
+
+  // 客户端打字机（issue #5952，用户 2026-10-02 裁定「选 2」）：服务端仍整段下发，这里按节奏揭示。
+  // 流式结束 / 中断 / 错误 / 切会话 / 历史回放 / 减少动画 ⇒ 立刻等于全文（hook 内部收敛，不卡半截）。
+  const visibleContent = useTypewriter(cleanContent, { streaming: !!message.isStreaming })
+
   // 正在执行中的工具
   const runningTools = (message.tool_calls || []).filter(
     (tc) => tc.status === 'running'
@@ -332,14 +345,6 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
     )
   }
 
-  // 清理 AI 回复中的 tool_call 伪代码块（Vision LLM 可能有幻觉输出）；
-  // 同时兜底剥离 <interact>…</interact> XML 伪代码块（issue #3036 / UI-032）——
-  // 正常路径下后端已转 SSE interactive 事件并剥离，此处兜底历史消息残留
-  const cleanContent = (message.content || '')
-    .replace(/```tool_call[\s\S]*?```/g, '')
-    .replace(/<interact>[\s\S]*?<\/interact>/g, '')
-    .trim()
-
   if (!cleanContent && !message.isStreaming) {
     // 用户主动中断 → 显示"对话已中断"
     if (message.wasAborted) {
@@ -360,9 +365,13 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
 
   return (
     <div className="group relative">
-      <div className="prose prose-sm max-w-none text-neutral-800 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_pre]:my-2 [&_code]:text-xs [&_code]:bg-neutral-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_table]:text-xs [&_table]:border-collapse [&_th]:border [&_th]:border-neutral-300 [&_th]:bg-neutral-100 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-neutral-300 [&_td]:px-2 [&_td]:py-1">
+      <div
+        className="prose prose-sm max-w-none text-neutral-800 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_pre]:my-2 [&_code]:text-xs [&_code]:bg-neutral-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_table]:text-xs [&_table]:border-collapse [&_th]:border [&_th]:border-neutral-300 [&_th]:bg-neutral-100 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-neutral-300 [&_td]:px-2 [&_td]:py-1"
+        // 打字机揭示进度（可见字符数）：只在流式期暴露，供判据读「t 时刻可见 < 全长」（issue #5952）
+        {...(message.isStreaming ? { 'data-revealed': visibleContent.length } : {})}
+      >
         <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {cleanContent}
+          {visibleContent}
         </ReactMarkdown>
         {message.isStreaming && (
           <span className="inline-block w-1.5 h-4 bg-primary-600 animate-pulse ml-0.5 align-text-bottom" />

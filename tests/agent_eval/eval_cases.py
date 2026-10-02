@@ -11294,6 +11294,44 @@ _CASE_UI_078 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-079 [NORMAL] 米宝对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（单调不回退 / 收口替换不卡 / 结束中断卸载立刻全文 / 减少动画直接全文）（源: cases/ui.yml）──
+_CASE_UI_079 = EvalCase(
+    id='UI-079',
+    legacy_id='',
+    title='米宝对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（单调不回退 / 收口替换不卡 / 结束中断卸载立刻全文 / 减少动画直接全文）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-02 原话（流式体验）：问「米宝走 SSE 但不是逐字输出，是否要改成逐字」⇒ 裁定 =「选 2（客户端打字机）」', '同一裁定附带的结构性理由（不做服务端真逐字）：backend/ai-agent-service/app/agents/customer_service_agent.py 的 astream_chat 用 graph.astream(initial_state, stream_mode="updates") = 节点级更新；backend/ai-agent-service/app/graph/skills/execution/finalize_turn.py 有后置收口（追加确认卡 XML / 用工具返回 message 替换回复）；C 端出站还有 backend/ai-agent-service/app/api/chat.py 的 _mask_for_customer 跨片脱敏 ⇒ 服务端逐字会与「收口后才是最终文本」冲突'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**真的在逐字**：注入一段文本后，t 时刻可见字符数 **< 全文长度**，且可见文本恒为全文**前缀**；最终 == 全长。执行点 = frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx「UI-079-1」+ frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx「UI-079 流式回复（真实打字机）」', '判据 2·**收口替换不卡**：先注入短文本、随后注入收口后的长文本（模拟 finalize_turn 替换）⇒ 全程采样「已揭示字符数」**只增不减**（不出现「先短后长再回退」），最终显示**必须是收口版**；反向（收口版更短）⇒ 立刻夹到收口版，不出现越界可见文本。执行点 = 同 hook 文件「UI-079-2」两条', '判据 3·**立刻收敛**：流式结束（isStreaming=false）/ 用户中断（wasAborted）/ 组件卸载 / 切换会话 ⇒ 可见文本**立刻**等于全文（不许卡在半截）；减少动画（prefers-reduced-motion: reduce）与历史回放 ⇒ 直接全文、不逐字。执行点 = hook 文件「UI-079-3」四条 + 组件文件「UI-079 流式结束」「UI-079 中断」「UI-079 历史回放」「UI-079 切会话/重挂载」', '🔴 判据 4·**服务端不被改动（本单边界）**：本用例只判展示面 —— `git diff origin/main...HEAD -- backend/` 为空。执行点 = PR 的改动清单（本包零后端改动）', '🔴 红证（改前实测）：本单落地前全仓 `grep -rn "typewriter\\|useTypewriter" frontend/admin-web/src` = 0 命中 ⇒ 组件测试 import 即失败；把 hook 换成直返全文（等效「无打字机」）⇒ 判据 1/2/3 的「中途可见 < 全长」「维持替换过程单调」「流式结束立刻等于全文」三条当场红（本机实测 3 failed / 6 passed）；把组件的 `data-revealed` 接入摘掉 ⇒ 组件侧两条红'],
+    skip_reason='[backend-contract] 纯前端揭示层（服务端一字未改：仍整段下发）由 vitest（jsdom）执行，不进入 agent-eval 冒烟；LLM 行为面不变，故无 agent 用例',
+    tags=['ui', 'chat', 'streaming', 'typewriter', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition="本用例是 [backend-contract] 纯前端用例：前置由单测自建 —— frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx 用 `vi.useFakeTimers()` 直接驱动 hook 的揭示时钟；frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx `vi.mock('@/store/chat')` 注入带 `isStreaming/tool_calls` 的消息夹具。前置不成立时单测直接红（找不到 `data-revealed` / 找不到文案），不依赖共享夹具；agent-eval 栈不跑它",
+)
+
+# ── UI-080 [NORMAL] 米宝对话不向用户暴露 tool：带 tool_calls 的消息只渲染人性化进度文案，工具名/入参/结果/原始 JSON 一律不进 DOM（对齐 C 端先例 issue #2857）（源: cases/ui.yml）──
+_CASE_UI_080 = EvalCase(
+    id='UI-080',
+    legacy_id='',
+    title='米宝对话不向用户暴露 tool：带 tool_calls 的消息只渲染人性化进度文案，工具名/入参/结果/原始 JSON 一律不进 DOM（对齐 C 端先例 issue #2857）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-02 原话（同一次裁定）：「不要把 tool 暴露给用户，用户只关注 agent 回复了什么以及用户要交互什么」'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·**工具执行中仍有可感知进度**：无正文 + `tool_calls[{status:'running'}]` ⇒ 渲染「正在处理您的请求...」（用户裁定的是「不暴露 tool」，不是「让界面长时间无反馈」）。执行点 = frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx「UI-080 工具执行中（无正文）」", '🔴 判据 2·**具名不暴露断言**（不是 `not None` 这类弱断言）：渲染结果里不得出现工具名 `order_query`、入参值 `SO-2026-001`、结果值 `RESULT_SECRET_2026`，也不得出现 `tool_calls` / `tool_name` / `"input"` / `"args"` / `工具调用` / `{"order_no"` 这些技术形态。执行点 = 同文件四个 UI-080 用例共用的 `expectNoToolDetails()`（有正文 / 仅 tool_calls 的历史消息 / status=error 各覆盖一次）', '判据 3·**正文本体不回归**：工具在场时正文照常显示（不得因「藏 tool」把回复内容一起藏掉）；仅 tool_calls、无正文的历史消息仍显示「（已处理）」兜底文案。执行点 = 同文件「有正文 + 工具同时在场」「仅 tool_calls、无正文的历史消息」', '判据 4·**C 端先例零回归（复算读数）**：frontend/mini-app/src/components/chat/MessageBubble.tsx 的「工具调用过程对客户隐藏（issue #2857）」行为不动，既有判据 frontend/mini-app/tests/message-bubble.test.tsx「UI-017: 工具执行过程对客户隐藏（不渲染 tool_calls 指示器）」仍绿（本包**未改** C 端任何文件）', '🔴 红证（改前实测）：把 `AIMessageContent` 的 tool_calls 分支改回「渲染工具名 + JSON.stringify(input)」⇒ 判据 2 当场红（本机实测：`data-injected-tool-exposure` 注入 ⇒ 3 条红 1 条绿，其中两条正是「工具名/入参进了 DOM」）'],
+    skip_reason='[backend-contract] 纯前端展示面（后端是否下发 tool 信息是另一条边界，本用例不管）由 vitest（jsdom）执行，不进入 agent-eval 冒烟',
+    tags=['ui', 'chat', 'tool-call', 'privacy', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition="本用例是 [backend-contract] 纯前端用例：前置由单测自建 —— frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx `vi.mock('@/store/chat')` 注入带 `tool_calls`（工具名 order_query / 入参 {order_no: SO-2026-001} / 结果含 RESULT_SECRET_2026）的消息夹具；前置不成立时单测直接红，不依赖共享夹具；agent-eval 栈不跑它",
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -11932,6 +11970,8 @@ ALL_CASES = (
     _CASE_UI_077,
     _CASE_UI_026,
     _CASE_UI_078,
+    _CASE_UI_079,
+    _CASE_UI_080,
     _CASE_UT_001,
     _CASE_UT_002,
 )
