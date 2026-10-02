@@ -2760,7 +2760,9 @@ cases:
       - "槽满时必须出声给出可行动出口，不许静默排队"
     expectations:
       - tool: direct_reply
+    precondition: "本用例是 [backend-contract] 的**研发机具契约**（不进 agent-eval 冒烟）：两条 `user_inputs` 是对**同一个台账机制**的两条断言（要有读数 / 槽满要出声），**不是两次会话**。前置 = 机器级锁脚本 + 台账接口在位（`scripts/machine-heavy-lock.sh` 的 `acquire`/`release`/`stats` 与 `MIGAO_HEAVY_LEDGER` 注入口），由 `tests/unit_ci_workflows/test_machine_heavy_lock_ledger.py` 在 `tmp_path` 上直接构造锁面/台账面并断言 —— 前置不成立（脚本/函数/字段被摘掉）时那条 pytest **当场红**，不会表现为「agent 不干活」。"
     data_checks:
+      - "**前置自断言（机器计分型，不可省）**：`_ledger_append` 的记录必须有 `kind` 字段且 `stats --json` 能解析出 `overflow_count` —— 判据先断言这两条（前置：台账接口真的在），**前置不成立时判据立即红**；摘掉 `kind` / `overflow_count` ⇒ `::TestStatsReadings` 当场红（不是 unmatched expectation）。"
       - "**病（蓝图 docs/wiki/Dev-Mode-Balance.md §4 行 4/5 + §10 的 P2 行）**：D 口径下本机是「并发=1 的重活单槽」，重活要么拿到锁、要么**安静排队**（实测排队 45 分钟的先例），而**没有任何台账**回答「到底溢出多少次、每次都等多久、是谁在抢」⇒ 「分档准入」与「批次粒度」都只能凭感觉。本包**只做测量/留痕**（埋点），**不做**分档准入本身。"
       - "**埋点在唯一收窄点**：`scripts/machine-heavy-lock.sh`（acquire/release 都经它）。每次 acquire 尝试的**结局**落一条 JSONL，`kind` ∈ `acquired_nowait` / `acquired_after_wait` / `refused_busy`（= 溢出/准入被拒）/ `acquire_timeout`（等待档溢出）/ `stale_reaped` / `released`（`acquire_timeout` 是照实加的第六类：把「秒拒」与「等满上限」分开，否则两类混淆就读不出「白等了多少墙钟」。判据 `test_machine_heavy_lock_ledger.py::TestKinds` 逐条钉住）。字段 = `ts`（**带时区偏移**）/ `kind` / `req`（请求者名字，来自既有 `acquire <名字>` 参数）/ `wait_seconds` / `worktree` / `branch` / `surface` / `holder` / `holder_pid` / `owner_pid`。"
       - "**台账落在本机、不进仓**：默认 `${MIGAO_HEAVY_LEDGER:-$HOME/.migao-heavy-lock-ledger.jsonl}`（与锁文件 `~/.migao-heavy.lock` 同域）。⛔ **不放进仓库**（⑨ 包把 JSONL 放仓里首轮就触发 `drift_audit` 的 ext-census 漂移 —— 本包有意避开这个坑）；判据一律把台账指到 `tmp_path`（`_run_lock` 强制注入 `MIGAO_HEAVY_LEDGER`），**绝不写用户的真台账**。"
