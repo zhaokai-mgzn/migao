@@ -242,7 +242,19 @@ jobs:
           # ⚠️ 真库族在并行下**不需要**跑得更多：各模块的临时集群本来就是每模块独立
           # （自己的 `sockdir` / `datadir` / `_free_port()`，unix socket 不占 TCP 端口）
           # ⇒ 并行不改变隔离手段，只改变它们同时存在的数量。
-          python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4
+          # ── 执行面（issue #6015，2026-10-02 用户裁定「只做 CI 面分离」）──────────────────
+          # required 检查**每 PR 都上报**（不得 workflow 级 `paths:` 过滤 —— 否则卡 Waiting 且**不会变红**，
+          # 判据 = tests/unit_ci_workflows/test_required_check_no_paths_filter.py），但**不必每 PR 都跑全套**：
+          #   让出名单 = tests/unit_ci_workflows/ci_execution_scope_ledger.json 的 `dev_only`（每条带 why）；
+          #   **未登记的一律照跑**（默认 always-run ⇒ 新增判据不会因漏登记而少跑）；
+          #   拿不到变更集 / 台账判不过 ⇒ **跑全量**（fail-closed）；判定实现 = scripts/ci_helper_scope.py。
+          # ⛔ 不许用「少跑」换快而不出声：让出时必须打印**未跑条数**（「没跑」必须长得像「没跑」）。
+          if [ "$(python3 scripts/ci_helper_scope.py --decide 2>/dev/null || echo full)" = "narrow" ]; then
+            echo "⏭️ 未命中研发面 ⇒ 只跑 always-run 判据；**dev-only 判据未跑**：$(python3 scripts/ci_helper_scope.py --count) 条（这不是「通过」）"
+            python3 scripts/ci_helper_scope.py --run-narrow
+          else
+            python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4
+          fi
 
 
   admin-web-test:

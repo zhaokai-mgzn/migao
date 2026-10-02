@@ -1,0 +1,215 @@
+{
+  "schema": 1,
+  "issue": 6015,
+  "_what": "CI 执行面台账：**未命中研发面**的 PR 上，`dev-only` 判据可让出（不跑）；其余一律 **always-run**（默认安全）。让出 = 少跑，**必须显式打印未跑条数**（「没跑」必须长得像「没跑」）。",
+  "_judged_by": "tests/unit_ci_workflows/test_ci_execution_scope.py",
+  "_invariants": [
+    "条目 path 必须真实存在（幽灵即红）",
+    "每条必须写 why（≥10 字）—— 让出必须有理由，不许静默",
+    "未命中研发面时生成的 --ignore 集合 == dev-only 集合（双向）",
+    "**默认 always-run**：不在本台账的判据文件一律照跑（新增判据不会因漏登记而少跑）",
+    "台账不许清空（清空不能消红）"
+  ],
+  "dev_only": [
+    {
+      "path": "tests/unit_ci_workflows/test_agent_presets_guard.py",
+      "why": "`.agent-presets/**` 版本单调性守卫（issue #3851）—— 含**红证**。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_ci_cost_ledger.py",
+      "why": "\"\"\"CI 成本台账的常驻判据（issue #3507 ②）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_ci_helper_leg.py",
+      "why": "\"\"\"**ci-helper 腿**的常驻判据（issue #5770）：本地必须有一条与 CI 同名同命令的腿。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py",
+      "why": "部署腿 run 正文的**未定义变量**守卫 —— issue #5814（C′ 守卫步 unbound variable 事故）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_deploy_reconcile_state.py",
+      "why": "`on_main()` 的三态判据（issue #5935）：**「目标 workflow 在不在 main 上」必须问对对象**。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_deploy_skip_credential.py",
+      "why": "\"\"\"部署腿「跳过 / 终态」判据的**凭据 + 自证**类级守卫（issue #5941）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_dev_flow_sync_claim.py",
+      "why": "`docs/wiki/DEV-FLOW.md` 的「同步副本」claim 已**撤回** ⇒ 不许再悄悄长回来（issue #4315）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_dev_worktree_preset_wording.py",
+      "why": "`scripts/dev-worktree.sh` 的预设快照文案必须与脚本事实一致（issue #4350）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_dev_worktree_rebase.py",
+      "why": "`dev-worktree.sh rebase` —— 预设快照不再挡住 `git rebase origin/main`（issue #3972）；"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_drift_audit_allow_unknown.py",
+      "why": "定时腿的**逐条点名**未知豁免（`--allow-unknown <check-id>`，issue #3951）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_drift_audit_outer_drift_channel.py",
+      "why": "背景（**本包实测**，不是照抄 issue 文本）"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_drift_audit_reconcile.py",
+      "why": "L0 红证（#4247）：`reconcile_baseline` 的**键形映射**必须显式 —— 否则 `refs-are-fixtures`"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_drift_audit_unjudgeable_tri_state.py",
+      "why": "判据异常 ⇒ **不可判（三态 `3`）**，不是「发现数为 0 / 基线归零未删」（issue #5151）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_eval_blocked_vs_failed.py",
+      "why": "结论档「阻塞条目」按两类分组（issue #4207）—— 红证。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_eval_case_asset_bucket.py",
+      "why": "`precondition_not_applied` 型失败单列 `case_asset_failures` 桶（issue #4245）—— 红证。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_eval_preclean_registry.py",
+      "why": "夹具层（`pre_clean` / `post_clean`）**fail-closed**：注册表 + 未应用必须进结论（#3781 / #4075）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_eval_seed_selfcheck_ordering.py",
+      "why": "评测栈 fixture 的**自检块不得引用「同文件后面才插入」的对象**（issue #5501）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_eval_stack_seed_parity.py",
+      "why": "评测栈种子口径单一源 + 跨 workflow 一致性（L0 静态锁，issue #3563）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_eval_summary_attribution.py",
+      "why": "结论档 summary 的**失败可归因**层（issue #3708 / `migao-acceptance` v1.2 §治法 3）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_ledger_append_selfheal.py",
+      "why": "根因（**实测**，不是照抄 issue 文本）"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py",
+      "why": "病根（**实测读数**，2026-09-25 push `425732992` / 台账 PR #5563；别再重新猜）"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_ledger_reconcile_conflict_split.py",
+      "why": "被测对象 = `.github/workflows/flaky-ledger-reconcile.yml` 的"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_gate_uncommitted_noop.py",
+      "why": "`./verify-all.sh gate` 在「改动未提交」时**不得静默空跑通过**（issue #3724，L0 零 LLM）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_guard_scope_declaration.py",
+      "why": "「守卫**声称**的射程」必须等于「判据**实际**扫描的路径集」（issue #5284 的类级视角；承 #5260 / #5283）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_helper_leg_execution_shape.py",
+      "why": "本腿**执行形态**的登记与漂移守卫（issue #5814 判据；MC-050）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py",
+      "why": "铁律 10 的**窄例外**必须有机械承载体：新增 `schedule` **未登记即红**（2026-09-27 收窄，不取消禁令）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_lifecycle_land_push_sync.py",
+      "why": "`land` 的**推送 + 同步断言**（issue #5489；`scripts/issue_lifecycle.py`）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_machine_heavy_lock.py",
+      "why": "\"\"\"**机器级重活准入锁**的实例判据（issue #5814）：三态语义 / 孤儿回收 / 不误杀 / verify-all 接线。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_post_deploy_eval_supersede.py",
+      "why": "部署后评测的「被取代即抑制」+「仓库级串行槽位」守卫（issue #3587）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_preset_version_collision.py",
+      "why": "preset-guard：`.agent-presets/**` **同号不同内容 ⇒ 判红**（跨包撞车，issue #5425）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_prune_merged_branches.py",
+      "why": "`scripts/prune-merged-branches.sh` —— 远程分支卫生清理（**手动、attended**）的守卫与红证。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_publish_leg_fallback_surface.py",
+      "why": "发布 / 守护腿的**自走触发面**必须有兜底面 —— `FM-E17` 的收口（issue #5707；用户 2026-09-27 逐字裁定 = 方案 A）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_readonly_verification_pack.py",
+      "why": "\"\"\"真库 / 现场只读复核包（`docs/testing/production-readonly-verification-pack.md`）的**机械保证**。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_redproof_live_sweep.py",
+      "why": "红证**实跑**巡检的判据（issue #5328，L0：零 LLM、零网络、零 Maven/npm/PG）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_render_leg_escape_decode.py",
+      "why": "渲染腿**转义解码**：生成物取值必须逐值等于真值（issue #5179）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_rework_hotspot_scan.py",
+      "why": "返工高频扫描（`scripts/rework_hotspot_scan.py`）的 L0 守卫 —— issue #4012「追加」项。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_roundtrip_report.py",
+      "why": "会话往返账（`scripts/roundtrip_report.py`）的 L0 守卫 —— issue #4428。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_skip_source_reachability.py",
+      "why": "\"\"\"**类级元守卫**：部署腿「skip / 去重」判据的**真值来源**必须登记，且必须**真的可命中**（issue #5814）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_source_parsing_shared.py",
+      "why": "共享解析器 `tests/unit_ci_workflows/_source_parsing.py` 的**成对红证**（issue #5323 收口包）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_stale_report_reaper.py",
+      "why": "`scripts/stale_report_reaper.py` —— **腿转绿 ⇒ 自动关陈旧 CI 报告**（issue #5491）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_step_exit_code_propagation.py",
+      "why": "CI workflow 步骤的退出码传播守卫（issue #3270）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_sys_modules_cross_file_independence.py",
+      "why": "「面内判据不得依赖**别的**判据往 `sys.modules` 注入模块」—— issue #5575 的类级锁。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_token_ledger.py",
+      "why": "会话 token 账（`scripts/token_ledger.py`）的 L0 守卫 —— issue #5920。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_tool_results_write_read_agreement.py",
+      "why": "写侧落库的 metadata 字段**必须能被读侧读出来**（issue #4097 的类级锁）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_unchecked_rc_evidence_guard.py",
+      "why": "类级元守卫：「`check=False` 的子进程调用**把 stdout 当证据**」必须判退出码（issue #5430）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_verify_all_log_scope.py",
+      "why": "`verify-all.sh` 检查项日志的**定位与清理口径**守卫（issue #4158，L0 零 LLM、零网络）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_verify_trigger_chain.py",
+      "why": "「PR 合并 → 自动评审/验收」链路（verify-trigger.yml）的触发可靠性守卫（issue #3608）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_weak_assert_blindspots.py",
+      "why": "弱断言门禁的双盲区守卫（issue #5080；顺带 #5083 的一条：`--check-weak` 正则误报真断言）。"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_wiring_claims_registry.py",
+      "why": "from __future__ import annotations"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_xiaobu_adversarial.py",
+      "why": "C 端对抗面守卫（issue #3367，参考 B 端做法）。"
+    }
+  ]
+}
