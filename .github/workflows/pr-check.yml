@@ -373,16 +373,81 @@ jobs:
         run: npm audit --production --audit-level=high
         continue-on-error: true
 
+  # ── 共用的面判定（本 workflow 的**单一来源**）────────────────────────────────────
+  # 为什么单独一个 job（issue #6051）：`e2e-quality-gate` 是**非 required** 腿，此前靠**步骤级**
+  #   内联判定 —— job 仍会被创建、runner 仍会拉起，空转 13s 才决定「不跑重活」
+  #   （实测 run 36998459851，2026-10-02T10:58Z：13s，重活 step 全 skipped）。
+  #   现在判定收到**一处**，腿用 job 级 `needs` + `if:` 整层跳过 ⇒ runner 不再空转。
+  # ⛔ 本 job **不**替 required 腿做门控：GitHub 对**被 job 级 `if` 跳过**的 job **不上报**该 context
+  #   ⇒ 分支保护会永久等一条不会到来的状态（#4786 / #5101 的形态）。required 腿一律保持**步骤级**门控。
+  # 面口径 = 与既有内联判定**同一份面**（变更路径的**首段** ∈ { tests .github }，与既有锚定正则的交替
+  #   逐值等价）。⚠️ 刻意不用 `grep -E` 把交替写进命令行：管道库存判据
+  #   （tests/unit_ci_workflows/test_step_exit_code_propagation.py）把**引号内的裸竖线**也保守计成管道，
+  #   在 28+10 零余量下会把新步骤误判成「新增真管道」；首段比对避开这层误报且行为等价。
+  # 登记册 = tests/unit_ci_workflows/declaration_gate_registry.json（未登记即红）。
+  detect:
+    name: E2E 面判定（决定 e2e 门禁是否跑）
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.face.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect e2e face
+        id: face
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件（push/workflow_dispatch），面门控开放 ⇒ 腿照常跑"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          # 面 = 变更路径**前缀**落在 tests · .github/workflows/pr-check.yml · frontend/admin-web
+          #（与 `e2e-quality-gate` 既有内联判定 + 登记册 `trigger.predicate` 逐值等价）
+          HITS=""
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            HIT=""
+            rest=""
+            case "$f" in tests) HIT=1 ;; esac
+            case "$f" in tests/*) HIT=1 ;; esac
+            case "$f" in .github) HIT=1 ;; esac
+            rest_gh=""
+            rest_fe=""
+            case "$f" in .github/*) rest_gh="${f#*/}" ;; esac
+            case "$f" in frontend) HIT=1 ;; esac
+            case "$f" in frontend/*) rest_fe="${f#*/}" ;; esac
+            case "$rest_gh" in workflows/pr-check.yml) HIT=1 ;; esac
+            case "$rest_fe" in admin-web) HIT=1 ;; esac
+            case "$rest_fe" in admin-web/*) HIT=1 ;; esac
+            if [ -n "$HIT" ]; then HITS="$HITS$f"$'\n'; fi
+          done <<< "$CHANGED"
+          if [ -n "$HITS" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 命中面 tests .github/workflows/pr-check.yml frontend/admin-web ⇒ 跑 E2E 质量门禁"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ E2E quality gate 未跑：未命中面 tests .github/workflows/pr-check.yml frontend/admin-web（这不是「通过」）"
+          fi
   # ============ E2E 质量门禁 — fixture 模式，不依赖后端 ============
   # 数据质量校验 + 核心页面冒烟（dashboard）。
   # 业务流程测试和真实后端验证由 post-deploy smoke 负责。
   e2e-quality-gate:
     name: E2E quality gate
+    # 面门控（issue #6051）：非 required 腿 ⇒ 整层跳过（runner 不再空转）。
+    needs: detect
     runs-on: ubuntu-latest
     # 2026-09-04 提升：GitHub 托管 runner 高峰慢时 6 分钟跑不完（多次 exceed 6m 超时），
     # 改为 15 分钟吸收慢 runner 波动（issue #2786 环境问题）
     timeout-minutes: 15
-    if: github.event_name == 'pull_request'
+    if: >-
+      github.event_name == 'pull_request'
+      && needs.detect.outputs.run == 'true'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -958,7 +1023,7 @@ jobs:
     name: Label needs-changes on any CI failure
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    if: failure() && github.event_name == 'pull_request'
+    if: always() && github.event_name == 'pull_request'
     needs:
       - block-env-files
       - admin-api-test
@@ -988,7 +1053,7 @@ jobs:
     name: Clear stale needs-changes label
     runs-on: ubuntu-latest
     timeout-minutes: 1
-    if: github.event_name == 'pull_request'
+    if: always() && github.event_name == 'pull_request'
     needs:
       - block-env-files
       - admin-api-test

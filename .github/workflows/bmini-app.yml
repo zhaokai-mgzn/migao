@@ -22,6 +22,64 @@ env:
   WORKING_DIR: frontend/bmini-app
 
 jobs:
+  # ── 共用的面判定（本 workflow 的**单一来源**）────────────────────────────────────
+  # 为什么单独一个 job（issue #6051）：非 required 腿此前各自内联一份同样的 diff 判定
+  #   ⇒ 每个 PR 仍白拉起 runner、各空转 11~13s 才决定「不跑重活」
+  #   （实测 run 36998459786 / 36998459788 / 36998459851，2026-10-02T10:58Z：11s / 11s / 13s，重活全 skipped）。
+  #   现在判定收到**一处**，腿用 job 级 `needs` + `if:` 整层跳过 ⇒ runner 不再空转。
+  # ⛔ 本 job **不**替 required 腿做门控：GitHub 对**被 job 级 `if` 跳过**的 job **不上报**该 context
+  #   ⇒ 分支保护会永久等一条不会到来的状态（#5101 / #4786 的形态）。required 腿一律保持**步骤级**门控
+  #   —— 它永远会创建 job 并上报结论，required 检查因此永不悬空。
+  # 面口径 = 与各腿既有内联判定**同一份面**（变更路径的**首段** ∈ { frontend tests .github }，
+  #   与既有锚定正则的交替逐值等价）。⚠️ 刻意不用 `grep -E` 把交替写进命令行：管道库存判据
+  #   （tests/unit_ci_workflows/test_step_exit_code_propagation.py）把**引号内的裸竖线**也保守计成管道，
+  #   在 28+10 零余量下会把新步骤误判成「新增真管道」；首段比对避开这层误报且行为等价（含 frontend/bmini-app 与 frontend/mini-app 两类改动均命中 → 更保守）。
+  # 登记册 = tests/unit_ci_workflows/declaration_gate_registry.json（未登记即红）。
+  detect:
+    name: bmini H5 面判定（决定哪些腿跑）
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.face.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect bmini-app face
+        id: face
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件（push/workflow_dispatch），面门控开放 ⇒ 腿照常跑"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          # 面 = 变更路径的**首段**落在 frontend tests .github（与既有锚定正则的交替逐值等价）
+          HITS=""
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            rest="/$f"
+            HIT=""
+            case "$f" in frontend) HIT=1 ;; esac
+            case "$f" in tests) HIT=1 ;; esac
+            case "$f" in .github) HIT=1 ;; esac
+            case "$rest" in */*/*) rest="${rest#*/}" ;; *) rest="" ;; esac
+            case "$rest" in frontend/*) HIT=1 ;; esac
+            case "$rest" in tests/*) HIT=1 ;; esac
+            case "$rest" in .github/*) HIT=1 ;; esac
+            if [ -n "$HIT" ]; then HITS="$HITS$f"$'\n'; fi
+          done <<< "$CHANGED"
+          if [ -n "$HITS" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 命中面 frontend tests .github ⇒ 跑腿"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ bmini-app build (h5 + weapp) 未跑：未命中面 frontend tests .github（这不是「通过」）"
+            echo "⏭️ bmini H5 tabBar geometry (e2e) 未跑：未命中面 frontend tests .github（这不是「通过」）"
+          fi
   # v1.3 门控：job 保持运行（required check 永不悬空），仅当 bmini-app 相关路径有变更才执行。
   typecheck-and-test:
     name: bmini-app typecheck + unit tests
@@ -86,6 +144,9 @@ jobs:
   # ⚠️ 本单**只加构建腿**，不动 required 集合（翻 required 有两条前置，见 `migao-dev-flow` §2.2）。
   build:
     name: bmini-app build (h5 + weapp)
+    # 面门控（issue #6051）：非 required 腿 ⇒ 整层跳过（runner 不再空转）。
+    needs: detect
+    if: needs.detect.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -146,6 +207,9 @@ jobs:
   # ⚠️ 只加腿、**不动 required 集合**（翻 required 有两条前置，见 `migao-dev-flow` §2.2）。
   tabbar-geometry:
     name: bmini H5 tabBar geometry (e2e)
+    # 面门控（issue #6051）：非 required 腿 ⇒ 整层跳过（runner 不再空转）。
+    needs: detect
+    if: needs.detect.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
