@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -220,6 +221,23 @@ public class GlobalExceptionHandler {
         log.warn("请求参数类型不符: {} (期望 {})", field, expected);
         ApiResponse<Void> response = ApiResponse.error("BAD_REQUEST", "参数类型不正确: " + field,
                 List.of(new ApiResponse.ErrorDetail(field, "参数类型不正确，期望 " + expected)));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    /**
+     * 处理 400 —— 缺**必填的 multipart 部分**（{@code @RequestPart} 未标 {@code required=false} 而请求里没有）
+     *
+     * <p>issue #6008：与 #5982 **同族同因** —— 此前无此分支 ⇒ 落兜底 {@code Exception} ⇒ 客户端少传一个
+     * 表单部分被报成 500「服务器内部错误」。本仓有**可达**的 multipart 端点
+     * （{@code POST /api/admin/inbound-orders/opening-import} 的 {@code file}）⇒ 不是纸面残余。</p>
+     */
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingServletRequestPart(
+            MissingServletRequestPartException e) {
+        String field = e.getRequestPartName();
+        log.warn("缺少必填的表单部分: {}", field);
+        ApiResponse<Void> response = ApiResponse.error("BAD_REQUEST", "缺少必填的表单部分: " + field,
+                List.of(new ApiResponse.ErrorDetail(field, "缺少必填的表单部分")));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 

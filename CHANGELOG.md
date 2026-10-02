@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+### 缺 multipart 表单部分（如期初导入的 `file`）从 500 改为 **400 + 点名缺的那个部分**（2026-10-02，issue #6008）
+
+- **以前是 500「服务器内部错误」**：请求少传一个 `multipart/form-data` 的必填部分时，Spring 抛
+  `MissingServletRequestPartException`，而 `GlobalExceptionHandler` **没有它的具名分支** ⇒ 落兜底 ⇒
+  **客户端的请求错误被报成服务端故障**（监控误报、排障走偏）。这与 #5982 修掉的
+  「缺必填 `@RequestParam` / 参数类型不符」是**同族同因**，只是当时族定义里漏了它。
+- **现在**：返回 **400 `BAD_REQUEST` + `error.details[0].field` 点名缺失的那个部分**（错误体与既有 400/422 同形）。
+  可达路径举例：`POST /api/admin/inbound-orders/opening-import` 不带 `file` 部分。
+- 页面（期初建账导入按模板上传）一直带 `file` ⇒ **正常流程零变化**；影响面是 **API / 脚本直调**。
+
 ### 直达无权限页面不再放行：入库单 / 客服工作台补齐前端路由守卫（页面级 403），并落「菜单有码 ⇒ 守卫必有」的元守卫（2026-10-02，issue #5976 + #5977）
 
 - **以前「菜单里看不见、地址栏直达却畅通」**：入库单（`/inbound-orders`）与客服工作台
