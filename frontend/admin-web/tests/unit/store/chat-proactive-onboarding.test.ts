@@ -149,12 +149,17 @@ describe('notifyPageEnter（首次进页 ⇒ 递一轮「进页」事件）', ()
     vi.stubGlobal('fetch', fetchMock)
 
     act(() => { useChatStore.setState({ currentSessionId: null }) })
-    await act(async () => { await useChatStore.getState().notifyPageEnter('/products') })
+    await act(async () => { await useChatStore.getState().notifyPageEnter('/finance') })
     expect(fetchMock).not.toHaveBeenCalled()
 
     act(() => { useChatStore.setState({ currentSessionId: 'cs1', isStreaming: true }) })
-    await act(async () => { await useChatStore.getState().notifyPageEnter('/products') })
+    await act(async () => { await useChatStore.getState().notifyPageEnter('/finance') })
     expect(fetchMock).not.toHaveBeenCalled()
+
+    // 🔴 **被跳过 ≠ 永久丢掉**：条件恢复后（会话在、不在流式中）这一页仍应递出去
+    act(() => { useChatStore.setState({ currentSessionId: 'cs1', isStreaming: false }) })
+    await act(async () => { await useChatStore.getState().notifyPageEnter('/finance') })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('同一 route 连续两次 ⇒ 只递一次（省流；**权威上限在服务端**）', async () => {

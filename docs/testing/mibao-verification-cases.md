@@ -3850,8 +3850,8 @@
 ### MC-070. 米宝**主动新手引导**（issue #5989 · P2）：首次进某个已登记页面 ⇒ 对话区主动发一条**导航提示**；**每页每会话最多 1 次**（服务端判，不靠前端自觉）· **只推该角色可见的**（只读服务端会话权限）· **未登记页面不推**（默认拒绝，静默）· **只给导航不给步骤**（结构 + 文案双层）· 拿不到「在哪一页 / 这页能做什么」⇒ **不发**（可行动性） 🔵
 ```
 你: 用户**首次进入**某个已登记页面（如商品管理 /products）⇒ 米宝在对话区主动发一条：「你在【商品管理】（/products）。这页能做：…（登记项 #products → 一级项「商品管理」）（只给导航：在哪一页 / 这页有什么。操作步骤不在本轮。）」
-你: 同一会话**第二次**进入同一页 ⇒ **什么都不发**（静默流：无 text 事件）；无权限的角色进入该页 ⇒ 不发；未登记页面（如 /nope）⇒ 不发
 期望: direct_reply
+数据: **对照读数**：同一会话**第二次**进入同一页 ⇒ **什么都不发**（静默流：无 text 事件）；无权限的角色进入该页 ⇒ 不发；未登记页面（如 /nope）⇒ 不发。
 数据: **每页每会话最多 1 次（服务端）**：判定本体 = `backend/ai-agent-service/app/context/menu_navigator.py::build_proactive_push`（纯函数，`already_pushed` 是入参）；上限的**落点** = `backend/ai-agent-service/app/api/chat.py::_load_pushed_features` / `_commit_pushed_feature`（会话维度 `session_states.state.onboarding_pushed_features`，存**功能 id** 而不是 route —— 同一功能多路径共享一次推送），且顺序是**先记账、后推送**（写失败 ⇒ 不发，不退化成「每次进页都推」）。红证：去掉上限臂 ⇒ 第二次也推（红）。
 数据: **角色裁剪**：只按**服务端会话**的 `permissions` 判（`build_proactive_push` 签名里**没有 role** ⇒ 客户端递交的 role/permissions 结构上读不到）。无权 ⇒ `not_visible` ⇒ 静默。红证：删掉裁剪 ⇒ 无权角色照样收到路径（红）。
 数据: **未登记页面不推**：route → 功能唯一对应（`_ROUTE_FEATURES` 从 `MENU_TREE`/`NAV_FEATURES` **现算**）；未登记 / 被多条登记项覆盖（歧义）⇒ `unregistered` / `ambiguous_route` ⇒ 静默。红证：把未登记 route 放行 ⇒ 红。

@@ -586,15 +586,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   notifyPageEnter: async (pathname?: string) => {
     const route = pageContextPayload(pathname ?? currentPagePath())?.route
     if (!route) return
-    const routeChanged = pendingPageEntry !== route
-    pendingPageEntry = route
     // 省流（非判据）：同一次浏览器会话里同一 route 只递一次（服务端另有权威上限）
-    if (!routeChanged) return
+    if (pendingPageEntry === route) return
     const { currentSessionId, isStreaming, sessions } = get()
-    // 没有会话 ⇒ 没有对话区可推（首次打开米宝面板时会建会话）；正在回复 ⇒ 不打断本轮
+    // 没有会话 ⇒ 没有对话区可推（首次打开米宝面板时会建会话）；正在回复 ⇒ 不打断本轮。
+    // 🔴 **此时不记 `pendingPageEntry`**：否则这一页的引导会**永久丢掉**（用户下次再进这一页
+    // 就被省流挡掉）。不记 ⇒ 会话建好后 / 本轮结束后的下一次进页会重试。
     if (!currentSessionId || isStreaming) return
     const currentSession = sessions.find(s => s.session_id === currentSessionId)
     if (currentSession?.status === 'closed') return
+    pendingPageEntry = route
 
     const abortController = new AbortController()
     const aiMsgId = generateId()
