@@ -51,9 +51,9 @@ Python 面优先 `.venv/bin/python`，缺失时退回 `python3`。设 `SVC=backe
 |---|---|
 | 任何改动 | `./verify-all.sh gate`（拿机器级重活锁；同参数跑 CI 规则） |
 
-## 写新判据时的两个**环境陷阱**（2026-10-02 各实测栽过一次）
+## 写新判据时的三个**环境陷阱**（2026-10-02 各实测栽过一次）
 
-> 两条都只在「**在射程内新增判据 / 改用例面**」时踩到，且都是**本地绿、CI 红**——本仓的经典假绿形态。
+> 三条都只在「**在射程内新增判据 / 改用例面 / 取用例号**」时踩到，且前两条是**本地绿、CI 红**——本仓的经典假绿形态。
 > 为什么写在这一页：主表指引你去跑这些判据；**而"照着跑"之前，你得先知道它们跑在什么环境里**。
 
 ### 陷阱 1 · 在 `tests/unit_ci_workflows/**` 新增判据，**不得依赖 ai-agent 运行时依赖**
@@ -78,6 +78,38 @@ main 在你的 merge-base 之后进了新用例 ⇒ **你分支上"自己新鲜"
 
 ⇒ **改用例面（`casebook` 面）之后，先 `rebase origin/main` + 重渲染，再去依赖"fresh"这个结论**；
 **不要**用"我分支上 fresh"推断 CI 会绿。
+
+### 陷阱 3 · **用例号是全局唯一登记键**：并行开发下「现取最大号 + 1」必然撞号 ⇒ 取号走 `claims/` 台账
+
+**病（2026-10-02 一天三次撞号，具名实证）**：用例 `id`（`.github/cases/*.yml` 的 `- id:`）是**全局唯一**登记键，
+而取号此前是**每个包手工做**的「现取 `origin/main` 最大号 + 1（再加"猜在飞 PR"）」—— 预判在飞 PR 是**不可靠启发式**
+⇒ 实测：起草取 `MC-062` ⇒ 被已合入的 #6001 占；让号到 `MC-063` ⇒ 被 #5983 占；再跳 `MC-064` ⇒ …（逐条记在
+`.github/cases/misc.yml` 的 `MC-064` 的 `merge_log` 里）。**症状形态极难诊断**：不是「你撞号了，请让号」，
+而是 `.github/cases/misc.yml` 的**困惑冲突** + 生成物连带冲突（排查要靠 `git merge-tree` 逐条比对两侧用例块）。
+
+**取号流程（现行口径，取代「现取最大号 + 1」）**：
+
+1. **查台账 + 已用号**：看 `.github/cases/claims/` 里已有的 claim（每条 `<PR号>-<CASE_ID>.json` 就是一次占位）
+   + `.github/cases/**` 里已用的号 —— 取一个两边都没占的号；
+2. **同一 PR 加 claim**：把 `.github/cases/claims/<PR号>-<CASE_ID>.json`（最小集 `id` / `pr` / `title` / `claimed_at`）
+   与用例一起放进**同一个 PR**；
+3. **合并后删 claim**：用例随 PR 进 main 后，claim 的使命完成 ⇒ **删掉它**（台账不许只增不减）。
+
+🔑 **为什么文件名里要带 PR 号**：两个并行 PR 永远不写同一个文件 ⇒ **零文本冲突**；撞号因此从"文本冲突"
+被翻译成"**语义冲突**"，于是可以被判据**具名**抓住，而不是变成一份需要人逐条比对的 YAML 冲突。
+
+**判据**（`tests/unit_ci_workflows/test_case_id_claims.py`，纯静态、零网络、不 import ai-agent 依赖）：
+① 形态（文件名 ⇄ 内容双向绑定）② **两个 claim 同 id ⇒ 红**（报出两个 PR 号 + 后合入者让号）
+③ claim 与**已占号**相撞 ⇒ 红（请让号）④ **陈旧即红**（号已进 main、claim 还在 ⇒ 删 claim）
+⑤ 占位不得超额（每条 claim 必须对应一条真用例）；**没有 claim 时一条都不报**（新增可选面，不误伤不用的包）。
+全量命令与上表同形：`python3 -m pytest tests/unit_ci_workflows -q -n 4`。
+
+**兜底仍是「后合入者让号」**：台账是主路径（先占位、零冲突），让号是**补救**出口 —— 判据 ②/③ 把该让号的那一个
+**具名**指出来（谁后合入谁让；改号时同步改 claim 文件名与内容里的 `id`）。
+
+⚠️ **边界（照实登记）**：判据**看不到在飞分支**（别人 open PR 上的 claim 不在你的树里）⇒「两个在飞 PR 同时取到
+同一个号」只有在其中一个**合入 main 之后**才在你的合并态里现形；判据**也不查 GitHub / 不联网**（同样刻意不读
+`origin/main` —— CI 的 `actions/checkout` 是 `fetch-depth: 1`）⇒「已进 main」以**合并态近似**表达。
 | 跨模块 / 跨端契约 | `./contract-check.sh` |
 | 改 web 页面 | `./check-ui-regression.sh` + 上表 `web` 行的多模态验收 |
 | 改 `.github/growth_gate.py`（**本页的宿主**） | `python3 -m pytest tests/unit_ci_workflows -q -n 4`（与 CI job `ci workflow helper unit tests` 同参数） |
