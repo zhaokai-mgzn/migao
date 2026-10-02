@@ -9,6 +9,7 @@ import { Modal, Button, Input, Select } from '@/components/ui'
 import type { InboundOrder, InboundOrderLine, InboundOrderStatus, OpeningImportReport } from '@/types'
 import { cn } from '@/lib/utils'
 import { formatStockQuantity } from '@/lib/stock-quantity'
+import { usePermission } from '@/lib/permission'
 
 // ============================================================
 // 入库单（V111，issue #5034）—— 商品布料入库
@@ -78,6 +79,10 @@ function newImportRunId(): string {
 
 export default function InboundOrdersPage() {
   const router = useRouter()
+  // issue #5983：列表页**写按钮随权限显隐** —— 与员工页同范式。页面守卫是**读**码 `inbound:view`，
+  // 建单入口 `/inbound-orders/new` 的提交要 `inbound:create` ⇒ 无码时按钮不渲染（不再"白点一下"）。
+  const { has: hasPermission } = usePermission()
+  const canWrite = hasPermission('inbound:create')
   const [keyword, setKeyword] = useState('')
   const [status, setStatus] = useState<InboundOrderStatus | ''>('')
   const [rows, setRows] = useState<InboundOrderLine[]>([])
@@ -225,10 +230,12 @@ export default function InboundOrdersPage() {
             <Upload className="w-4 h-4 mr-1.5" />
             期初建账导入
           </Button>
-          <Button onClick={() => router.push('/inbound-orders/new')}>
-            <Plus className="w-4 h-4 mr-1.5" />
-            新建入库单
-          </Button>
+          {canWrite && (
+            <Button onClick={() => router.push('/inbound-orders/new')}>
+              <Plus className="w-4 h-4 mr-1.5" />
+              新建入库单
+            </Button>
+          )}
         </div>
       </div>
 

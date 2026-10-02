@@ -13,6 +13,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
+// issue #5983：「新建入库单」按钮改为按 `inbound:create` 显隐（`canWrite = hasPermission('inbound:create')`）
+// ⇒ 渲染必须带**登录态**，否则 user 为 null ⇒ 按钮恒不渲染（下方导航判据会假红）。
+// 默认给管理员（`permissions: ['*']`）；要测「无码看不见」请改 `authMock.state.user.permissions`。
+const authMock = vi.hoisted(() => ({
+  state: {
+    user: { id: '1', username: 'admin', name: '管理员', permissions: ['*'] as string[], roles: [] as string[] },
+  },
+}))
+vi.mock('@/store/auth', () => ({
+  useAuthStore: (selector?: (s: unknown) => unknown) =>
+    typeof selector === 'function' ? selector(authMock.state) : authMock.state,
+}))
+
 const mockList = vi.fn()
 const mockDetail = vi.fn()
 const mockCreate = vi.fn()
