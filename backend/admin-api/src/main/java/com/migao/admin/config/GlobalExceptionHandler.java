@@ -18,8 +18,10 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
 import java.util.List;
@@ -188,6 +190,37 @@ public class GlobalExceptionHandler {
         ApiResponse<Void> response = ApiResponse.error("UNSUPPORTED_MEDIA_TYPE",
                 "不支持的 Content-Type: " + e.getContentType());
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(response);
+    }
+
+    /**
+     * 处理 400 —— 缺少**必填**请求参数（{@code @RequestParam} 未标 {@code required=false} 而请求里没有）
+     *
+     * <p>issue #5982：此前无此分支 ⇒ 落兜底 {@code Exception} ⇒ 客户端集成错误被报成
+     * 500「服务器内部错误」（监控误报、排障走偏）。此处给出**缺失的字段名**，错误体与既有
+     * 400 / 422 同形（{@code error.details:[{field,message}]}）。</p>
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingServletRequestParameter(
+            MissingServletRequestParameterException e) {
+        String field = e.getParameterName();
+        log.warn("缺少必填请求参数: {} (期望类型 {})", field, e.getParameterType());
+        ApiResponse<Void> response = ApiResponse.error("BAD_REQUEST", "缺少必填参数: " + field,
+                List.of(new ApiResponse.ErrorDetail(field, "缺少必填参数")));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    /**
+     * 处理 400 —— 请求参数**类型不符**（有值但转不成目标类型，同为客户端错误 ⇒ 不是 500）
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodArgumentTypeMismatch(
+            MethodArgumentTypeMismatchException e) {
+        String field = e.getName();
+        String expected = e.getRequiredType() == null ? "?" : e.getRequiredType().getSimpleName();
+        log.warn("请求参数类型不符: {} (期望 {})", field, expected);
+        ApiResponse<Void> response = ApiResponse.error("BAD_REQUEST", "参数类型不正确: " + field,
+                List.of(new ApiResponse.ErrorDetail(field, "参数类型不正确，期望 " + expected)));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
     /**
