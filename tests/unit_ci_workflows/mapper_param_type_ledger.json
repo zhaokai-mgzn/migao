@@ -1,0 +1,7 @@
+{
+  "_doc": "Mapper SQL「裸参出现在 PG 无法推断类型的位置」的豁免台账（issue #5975）。判定本体 = tests/unit_ci_workflows/test_mapper_null_param_type_guard.py。",
+  "_why": "`CASE WHEN #{x} IS NULL` / `WHEN #{x}` 这类位置里的 `#{x}` 没有类型锚点：实参为 NULL 时 PG 收到 unspecified 类型的参数，抛 `could not determine data type of parameter $N` ⇒ BadSqlGrammarException ⇒ 接口 500（#5975 的入库过账 500）。修法 = 显式 `jdbcType=` 或 SQL cast。",
+  "_rules": "① 命中即红，除非在本表登记；② 每条登记必须是**活的**命中（带上 reason + case_ids；命中已修好 ⇒ 死条目判红 ⇒ 台账只许缩短）；③ 条数上限 max_exemptions **冻结**，且不得超过 test_mapper_null_param_type_guard.py 里的 FROZEN_MAX_EXEMPTIONS（放一条豁免要同时改两处 = 一次被评审的动作）。",
+  "max_exemptions": 0,
+  "exemptions": []
+}

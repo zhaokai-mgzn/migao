@@ -2846,7 +2846,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（60 case）
+## 杂项域（61 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3693,6 +3693,20 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-10-02 新增（issue #5983 铁律 8 的类级固化）：修四页（orders / products / inbound-orders / finance 的写按钮按写码显隐）只是**实例面**；本条把「列表页写按钮漏接权限」钉成未登记即红 —— 扫描 `frontend/admin-web/src/app/(dashboard)/**/page.tsx`（排除 `…/new/page.tsx`，那是建单页本身）里「整行 = 新增/新建/**登记**标签」的写按钮，必须同文件引用 `hasPermission(...)` 或登记进 tests/unit_ci_workflows/list_page_write_button_ledger.json（台账只许缩短、冻结上限与条数**现取**）。词汇表含「登记」的原因见 ui.yml 的 UI-081：`/finance` 的按钮叫「登记收支」，只认「新增/新建」会把它漏在射程外（正是本判据要防的「看着覆盖了、其实没覆盖」）。存量豁免 5 条 = after-sales / knowledge / production·processing / production·routings / roles（同类缺口，不在本 PR 范围，如实登记待办）。取号 MC-063（**让号**：#6001 已合入并占用 MC-062 ⇒ 按「后合入者让号」顺延）：按「当前最大号 +1」（现取 main 最大 = MC-061；沿用 MC-054~061 的「空档号 ≠ 可用号」先例，故不采用取号工具给出的历史空档 MC-049）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。 ｜ tags: ci, guard, rbac, frontend
+
+### MC-064. Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975） 🔵
+```
+你: 当有人在 Mapper SQL 的**类型盲区位置**（空值判定的主语 / CASE WHEN 的布尔主语）写下无类型锚点的裸参 `#{x}` 时，必须有东西**具名**报出（文件:行:绑定 + 修法）；而只改注释时不得报红
+期望: direct_reply
+数据: **病（真库实测，issue #5975）**：`CASE WHEN #{newAvgCost} IS NULL` 里的绑定没有类型锚点（左边无列/cast/函数签名）⇒ 实参为 **NULL** 时 PG 抛 `ERROR: could not determine data type of parameter $3` ⇒ BadSqlGrammarException ⇒ 接口 500；而「新 SKU 首次入库 + 明细不记单价」（入库页明示允许留空）**必然**走 null 实参。修一处不算修：同类形态只要是「类型盲区 + 裸参」就同族 ⇒ 落**类级元守卫**。
+数据: **判据 1（未登记即红）**：扫 `backend/**/src/main/**` 的 Java 注解 SQL + XML 映射文件，`#{x}` 出现在 ①`IS NULL`/`IS NOT NULL` 主语 ②`WHEN #{x}` 布尔主语，且绑定里无 `jdbcType=` ⇒ 判红并具名（`文件:行:绑定` + 修法）。有锚点的一律放行：`jdbcType=` / `CAST(#{x} AS numeric)` / `#{x}::numeric`（后两者 `}` 与 `IS`/`WHEN` 之间夹了别的东西，正则天然不命中）。执行点 = tests/unit_ci_workflows/test_mapper_null_param_type_guard.py 的 `test_no_unregistered_bare_param_in_type_blind_context`。
+数据: **判据 2（覆盖锚，防假绿）**：扫描面必须**真的读到** #5975 的缺陷点文件（backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java），且全仓 `#{}` 绑定数 > 0 —— 扫了个空集 ⇒ 后面断言恒绿。执行点 = 同文件 `test_scan_covers_the_known_defect_site`。
+数据: **判据 3（对照读数 + 缺陷点现态）**：缺陷点现在必须是带类型的绑定（去掉 `jdbcType=NUMERIC` ⇒ 本守卫与真库判据同时红）。执行点 = 同文件 `test_known_defect_site_binding_is_typed`。
+数据: **判据 4（豁免台账只许缩短）**：`tests/unit_ci_workflows/mapper_param_type_ledger.json` 的每条登记必须是**活的命中**（修好后条目变死 ⇒ 判红 ⇒ 不许留死条目凑数）、且带 `reason` + `case_ids`；条数上限 `max_exemptions` 另受守卫里 `FROZEN_MAX_EXEMPTIONS` 冻结（放行一条要同时改两处 = 一次被评审的动作）。现取 `exemptions = []`（0 条）。执行点 = 同文件 `test_exemptions_are_live_and_justified` / `test_exemption_budget_does_not_grow`。
+数据: **判别力自证（8 种形态双向）**：坏形态三种各自判红（裸 `IS NULL` / `IS NOT NULL` / `CASE WHEN #{x}`）；好形态五种判**不**红（`jdbcType=` / `CAST(...)` / `#{x}::numeric` / 纯比较位（有列锚点）/ **注释里提一句** —— 最后一条防判据被自己的文案喂红）；XML 面用 tmp_path 真造一份语料证明它被读进来（仓内现取 0 份 XML mapper，不能只靠 glob 声称覆盖）；同一份 Java 语料的双向量（注入裸参 ⇒ 红 / 换成带类型 ⇒ 不红）。执行点 = 同文件 `test_blind_context_forms_are_flagged` / `test_anchored_forms_are_not_flagged` / `test_xml_mapper_form_is_scanned` / `test_temp_java_tree_injection_red_and_clean`。
+跳过: [backend-contract] 静态扫描 + 内存注入式的类级元守卫（只读仓内文件 + tmp_path 自造语料；零真库、零网络、不烧 token）由 tests/unit_ci_workflows/test_mapper_null_param_type_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #5975：入库过账 500）。**取号 MC-064（两次顺延，号位冲突的活标本）**：开工时按「当前最大号 +1」取了 MC-062；**同步 main 时该号已被 #5976+#5977 占用**（`misc.yml` 现取的 MC-062 条目 = 「菜单码 ⊆ 路由守卫覆盖（C5）」，正是「空档/号段≠可用」的实例）⇒ 抬到 MC-063；随后核实 **MC-063 已被 #5983 的在飞分支占用** ⇒ 再顺延到 **MC-064**（现取 main 最大 = MC-062，MC-063 为在飞占用）。类级固化的理由：缺陷形态是「裸参落在 PG 的类型盲区」，修 `ProductSkuMapper` 一处只是**实例判据**；本守卫让**同类进不来**（新写一个 `CASE WHEN #{x} IS NULL` 的 Mapper SQL ⇒ 当场红，而不是等商家过账 500）。如实登记的边界：① 只覆盖 `backend/**/src/main/**`（测试里的 SQL 片段不算生产契约）；② 只覆盖「`IS [NOT] NULL` 主语」与「`WHEN` 布尔主语」两类盲区，**不**覆盖其它推断不出类型的形态（如 `SELECT #{x}` 无上下文）；③ 判据是**形态学**的 —— 它判「有没有显式类型」，判不了「显式类型给得对不对」（后者由真库判据 PR-121 承担）；④ 豁免台账的 `max_exemptions` 需要同时改两处才能放宽（有意为之）。⑤ 剥 Java 注释**复用仓内唯一实现** `tests/unit_ci_workflows/_source_parsing.py::java_code`（不自写第二把尺子 —— 唯一性判据见 tests/unit_ci_workflows/test_automerge_bot_safe_path.py 的判据 11），XML 面只去 `<!-- -->`。 ｜ tags: ci, backend-contract, mapper, null-param, ledger, red-proof
 
 ## 商家入驻域（5 case）
 
@@ -5976,7 +5990,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 processing_order_set_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 processing_order_set_query/uncovered，同 PR 删除该条目）。取号 PG-064：库内 PG-001~PG-063 已占用（PG-044/045/046/047/059 为历史空号），PG-064 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: processing_order, set, scan_loop, mibao, readonly, llm_behavior
 
-## 商品域（108 case）
+## 商品域（109 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -7443,6 +7457,19 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-01 新增（issue #5918，用户 2026-10-01 走查截图裁定「放到新增商品标题右侧合适位置」并要求建单页同步对齐）：改前**同一个组件在两页两种版式** —— 商品页把它渲染成表单卡片**外面**的独立容器（悬在页面底色上），建单页在「商品信息」卡标题行里。落地 = `ProductForm` 新增 `titleActions` 标题行动作槽（落点由卡片决定、页面只给内容与回调），商品页经该槽注入识别按钮 ⇒ 与「重置」同排、识别在前。**功能一条未减**（选图→上传→识别→回填的判据继续绿），识别结果仍**不落库**。类级固化 = 渲染点必须登记落点（未登记即红）+ 容器锚与运行期证据双向可查 + 判别力自证。取号 PR-120（现取脚本 `scripts/next_case_id.py PR` 给出的是**历史空档 PR-014**，而该号是 #4371 解耦时**已注销**的用例（tests/unit_ci_workflows/test_eval_product_name_pollution.py 里有「留注释防被当成漏登记再塞回来」的明文）⇒ 按取号口径「空档≠可用」取当前最大号 + 1）。 ｜ tags: product, admin-web, layout, image-recognize, backend_contract
 
+### PR-121. 入库 receiveStock：null 均价（新 SKU 首次入库「不记单价」）必须能过真 PG —— PG 参数类型推断 🔵
+```
+你: 入库单过账（含页面明示允许的「新 SKU 首次入库 + 明细不记单价」这条路径）
+期望: direct_reply
+数据: **病（真库实测，2026-10-02）**：新 SKU（avg_cost 为 NULL）+ 明细留空单价 ⇒ movingAverage 返回 NULL ⇒ receiveStock(..., newAvgCost=null, ...) ⇒ PG 抛 `ERROR: could not determine data type of parameter $3`（`receiveStock-Inline`）⇒ BadSqlGrammarException ⇒ 接口 500（issue #5975 的服务端栈逐字如此）。根因 = `CASE WHEN #{newAvgCost} IS NULL` 里的绑定**没有类型锚点**（左边没有列/cast/函数签名），实参为 NULL 时 PG 拿到 unspecified 类型参数、推断不出。判据 = backend/admin-api/src/test/java/com/migao/admin/service/ProductSkuReceiveStockNullCostRealDbTest.java（真 PG，4 条）。**红证（修前实测读数）**：`Tests run: 4, Failures: 1, Errors: 2` —— 两条 NULL 实参判据抛 PSQLException、一条判据失败；**带单价的对照条通过**（证明判据认的是「null 参数」而不是「SQL 变了没有」）。
+数据: **判据 1（过账成功 + 落库三件套）**：全新 SKU + 不记单价首次过账**不得抛异常**，且 `stock` 0→3、`latest_batch_no` 落批次号；`avg_cost` / `cost_amount` 留 **NULL**（不用 0 冒充「成本为零」）。执行点 = 同文件 `newSkuFirstPostWithoutUnitCostSucceeds` / `costUnknownStaysNullNotZeroAfterCostlessPost`。
+数据: **判据 2（跨次语义）**：先不记单价过账（avg_cost 仍 NULL）→ 再带单价过账 ⇒ 均价取带价那次、`cost_amount` = 总库存 × 均价（3 + 3 = 6，单价 10 ⇒ 60）。执行点 = 同文件 `costlessFirstPostThenCostedSecondPostAccumulates`。
+数据: **判据 3（SQL 形态钉在类型上）**：`newAvgCost` 的**每个**绑定都必须显式 `jdbcType=NUMERIC`，裸 `#{newAvgCost}` 一处都不许留 —— 丢掉 jdbcType 就是回退到 500。执行点 = backend/admin-api/src/test/java/com/migao/admin/mapper/ProductSkuMapperTest.java 的 `receiveStockBindsCostWithExplicitNumericJdbcType`（反射读 @Update 注解 SQL，定位串与 `avg_cost = #{newAvgCost,jdbcType=NUMERIC}` / `CASE WHEN #{newAvgCost,jdbcType=NUMERIC} IS NULL` 对齐）。
+跳过: [backend-contract] 入库过账的**真库**判据 + Mapper SQL 形态契约（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-10-02 新增（issue #5975，P1·仓储：入库过账 500）。**取号 PR-121**：`scripts/next_case_id.py PR` 建议 PR-015，但那是历史空档（< 现取最大号 120，且本仓口径「空档≠可用」）⇒ 按「当前最大号 + 1」取 121。⚠️ 本单**更正了 issue 的转述**：issue 正文把根因写成「内联 SQL 里的裸 `?`」，而 `git show origin/main:backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java` 现取是 MyBatis `#{newAvgCost}`（`git diff 3fa84ab89 origin/main` 对该文件零 diff）—— 日志里的 `?` 是 **MyBatis 渲染后的占位符**，不是源码形态；机制（PG 在 `CASE WHEN ? IS NULL` 处推断不出 null 参数类型）与 issue 描述一致，故修法落在 `jdbcType=NUMERIC` 上。**红→绿**：修前 `Tests run: 4, Failures: 1, Errors: 2`（PSQLException 无法确定参数 $3 的数据类型）⇒ 修后 `4 passed`；静态契约 `ProductSkuMapperTest` 9 passed。类级固化 = tests/unit_ci_workflows/test_mapper_null_param_type_guard.py（用例 MC-064；原取号 MC-062 已被 #5976+#5977 占用、MC-063 被 #5983 的在飞分支占用 ⇒ 两次顺延）。 ｜ tags: inventory, inbound, backend-contract, realdb, null-param
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -8806,8 +8833,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：615（活跃 133，跳过 482）
-- tier 分布：smoke 12 / normal 570 / adversarial 31
+- 用例总数：617（活跃 133，跳过 484）
+- tier 分布：smoke 12 / normal 572 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：20
@@ -8822,13 +8849,13 @@
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：60
+- 杂项域：61
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
 - 加工项域：25
 - 加工单域：56
-- 商品域：108
+- 商品域：109
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -8912,6 +8939,7 @@
 - MC-061: 变更射程 → 必跑具名判据：射程注册表（面 → 具名判据 → 可复制命令）与 growth_gate 的**非阻塞**提示同源，两者漂移即红；射程表清空 ⇒ 提示消失而 blocker_count 不变
 - MC-062: 菜单码 ⊆ 路由守卫覆盖（C5）：带 permissionCode 的菜单节点必须被 ROUTE_PERMISSION_MAP 覆盖到**同一个码**，且 (dashboard) 下每条页面路由都有生效守卫码（唯一豁免由单一真值源派生 = 全员可见页）
 - MC-063: 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短
+- MC-064: Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

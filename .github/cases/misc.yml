@@ -2267,3 +2267,41 @@ cases:
       tests:
         - tests/unit_ci_workflows/test_list_page_write_button_gate.py
       verifies: []
+
+  - id: MC-064
+    legacy_id: ""
+    title: "Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - backend-contract
+      - mapper
+      - null-param
+      - ledger
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**静态扫描 + 内存注入式判别力自证**事实（只读仓内文件 + tmp_path 自造语料，
+    # 零真库、零网络、零 LLM），由 tests/unit_ci_workflows/test_mapper_null_param_type_guard.py 验证，
+    # 非 LLM 行为，不进入 agent-eval 冒烟。
+    user_inputs:
+      - "当有人在 Mapper SQL 的**类型盲区位置**（空值判定的主语 / CASE WHEN 的布尔主语）写下无类型锚点的裸参 `#{x}` 时，必须有东西**具名**报出（文件:行:绑定 + 修法）；而只改注释时不得报红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**病（真库实测，issue #5975）**：`CASE WHEN #{newAvgCost} IS NULL` 里的绑定没有类型锚点（左边无列/cast/函数签名）⇒ 实参为 **NULL** 时 PG 抛 `ERROR: could not determine data type of parameter $3` ⇒ BadSqlGrammarException ⇒ 接口 500；而「新 SKU 首次入库 + 明细不记单价」（入库页明示允许留空）**必然**走 null 实参。修一处不算修：同类形态只要是「类型盲区 + 裸参」就同族 ⇒ 落**类级元守卫**。"
+      - "**判据 1（未登记即红）**：扫 `backend/**/src/main/**` 的 Java 注解 SQL + XML 映射文件，`#{x}` 出现在 ①`IS NULL`/`IS NOT NULL` 主语 ②`WHEN #{x}` 布尔主语，且绑定里无 `jdbcType=` ⇒ 判红并具名（`文件:行:绑定` + 修法）。有锚点的一律放行：`jdbcType=` / `CAST(#{x} AS numeric)` / `#{x}::numeric`（后两者 `}` 与 `IS`/`WHEN` 之间夹了别的东西，正则天然不命中）。执行点 = tests/unit_ci_workflows/test_mapper_null_param_type_guard.py 的 `test_no_unregistered_bare_param_in_type_blind_context`。"
+      - "**判据 2（覆盖锚，防假绿）**：扫描面必须**真的读到** #5975 的缺陷点文件（backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java），且全仓 `#{}` 绑定数 > 0 —— 扫了个空集 ⇒ 后面断言恒绿。执行点 = 同文件 `test_scan_covers_the_known_defect_site`。"
+      - "**判据 3（对照读数 + 缺陷点现态）**：缺陷点现在必须是带类型的绑定（去掉 `jdbcType=NUMERIC` ⇒ 本守卫与真库判据同时红）。执行点 = 同文件 `test_known_defect_site_binding_is_typed`。"
+      - "**判据 4（豁免台账只许缩短）**：`tests/unit_ci_workflows/mapper_param_type_ledger.json` 的每条登记必须是**活的命中**（修好后条目变死 ⇒ 判红 ⇒ 不许留死条目凑数）、且带 `reason` + `case_ids`；条数上限 `max_exemptions` 另受守卫里 `FROZEN_MAX_EXEMPTIONS` 冻结（放行一条要同时改两处 = 一次被评审的动作）。现取 `exemptions = []`（0 条）。执行点 = 同文件 `test_exemptions_are_live_and_justified` / `test_exemption_budget_does_not_grow`。"
+      - "**判别力自证（8 种形态双向）**：坏形态三种各自判红（裸 `IS NULL` / `IS NOT NULL` / `CASE WHEN #{x}`）；好形态五种判**不**红（`jdbcType=` / `CAST(...)` / `#{x}::numeric` / 纯比较位（有列锚点）/ **注释里提一句** —— 最后一条防判据被自己的文案喂红）；XML 面用 tmp_path 真造一份语料证明它被读进来（仓内现取 0 份 XML mapper，不能只靠 glob 声称覆盖）；同一份 Java 语料的双向量（注入裸参 ⇒ 红 / 换成带类型 ⇒ 不红）。执行点 = 同文件 `test_blind_context_forms_are_flagged` / `test_anchored_forms_are_not_flagged` / `test_xml_mapper_form_is_scanned` / `test_temp_java_tree_injection_red_and_clean`。"
+    skip_reason: "[backend-contract] 静态扫描 + 内存注入式的类级元守卫（只读仓内文件 + tmp_path 自造语料；零真库、零网络、不烧 token）由 tests/unit_ci_workflows/test_mapper_null_param_type_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-02 新增（issue #5975：入库过账 500）。**取号 MC-064（两次顺延，号位冲突的活标本）**：开工时按「当前最大号 +1」取了 MC-062；**同步 main 时该号已被 #5976+#5977 占用**（`misc.yml` 现取的 MC-062 条目 = 「菜单码 ⊆ 路由守卫覆盖（C5）」，正是「空档/号段≠可用」的实例）⇒ 抬到 MC-063；随后核实 **MC-063 已被 #5983 的在飞分支占用** ⇒ 再顺延到 **MC-064**（现取 main 最大 = MC-062，MC-063 为在飞占用）。类级固化的理由：缺陷形态是「裸参落在 PG 的类型盲区」，修 `ProductSkuMapper` 一处只是**实例判据**；本守卫让**同类进不来**（新写一个 `CASE WHEN #{x} IS NULL` 的 Mapper SQL ⇒ 当场红，而不是等商家过账 500）。如实登记的边界：① 只覆盖 `backend/**/src/main/**`（测试里的 SQL 片段不算生产契约）；② 只覆盖「`IS [NOT] NULL` 主语」与「`WHEN` 布尔主语」两类盲区，**不**覆盖其它推断不出类型的形态（如 `SELECT #{x}` 无上下文）；③ 判据是**形态学**的 —— 它判「有没有显式类型」，判不了「显式类型给得对不对」（后者由真库判据 PR-121 承担）；④ 豁免台账的 `max_exemptions` 需要同时改两处才能放宽（有意为之）。⑤ 剥 Java 注释**复用仓内唯一实现** `tests/unit_ci_workflows/_source_parsing.py::java_code`（不自写第二把尺子 —— 唯一性判据见 tests/unit_ci_workflows/test_automerge_bot_safe_path.py 的判据 11），XML 面只去 `<!-- -->`。"
+    traces:
+      tests:
+        - tests/unit_ci_workflows/test_mapper_null_param_type_guard.py
+      ci:
+        - pr-check.yml
+      verifies: []

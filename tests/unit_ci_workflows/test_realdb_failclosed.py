@@ -125,6 +125,7 @@ REALDB_FILES: dict[str, str] = {
     # issue #4157：库存台账**第三条变更路径**（建品/改品直写 SKU 库存）的真库判据 ——
     # 证的是「一行真的进了 stock_ledger_entries」（含 ck_stock_ledger_reason 约束与 NUMERIC(12,1) 列）。
     _SVC + "ProductStockLedgerRealDbTest.java": "direct",
+    _SVC + "ProductSkuReceiveStockNullCostRealDbTest.java": "direct",
     # issue #5515：改品 prune 射程的真库判据 —— 证的是「请求没声明的维度一行都不许删」：
     # 只带 skus 的改品会把颜色删光、再经 product_skus.color_id 的 ON DELETE CASCADE 把其下 SKU 行
     # 一并静默删掉（真库读数 2 → 0）。级联是**数据库行为**，mock 面结构上不可见 ⇒ 必须真库。

@@ -4979,6 +4979,24 @@ _CASE_MC_063 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-064 [NORMAL] Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975）（源: cases/misc.yml）──
+_CASE_MC_064 = EvalCase(
+    id='MC-064',
+    legacy_id='',
+    title='Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人在 Mapper SQL 的**类型盲区位置**（空值判定的主语 / CASE WHEN 的布尔主语）写下无类型锚点的裸参 `#{x}` 时，必须有东西**具名**报出（文件:行:绑定 + 修法）；而只改注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（真库实测，issue #5975）**：`CASE WHEN #{newAvgCost} IS NULL` 里的绑定没有类型锚点（左边无列/cast/函数签名）⇒ 实参为 **NULL** 时 PG 抛 `ERROR: could not determine data type of parameter $3` ⇒ BadSqlGrammarException ⇒ 接口 500；而「新 SKU 首次入库 + 明细不记单价」（入库页明示允许留空）**必然**走 null 实参。修一处不算修：同类形态只要是「类型盲区 + 裸参」就同族 ⇒ 落**类级元守卫**。', '**判据 1（未登记即红）**：扫 `backend/**/src/main/**` 的 Java 注解 SQL + XML 映射文件，`#{x}` 出现在 ①`IS NULL`/`IS NOT NULL` 主语 ②`WHEN #{x}` 布尔主语，且绑定里无 `jdbcType=` ⇒ 判红并具名（`文件:行:绑定` + 修法）。有锚点的一律放行：`jdbcType=` / `CAST(#{x} AS numeric)` / `#{x}::numeric`（后两者 `}` 与 `IS`/`WHEN` 之间夹了别的东西，正则天然不命中）。执行点 = tests/unit_ci_workflows/test_mapper_null_param_type_guard.py 的 `test_no_unregistered_bare_param_in_type_blind_context`。', '**判据 2（覆盖锚，防假绿）**：扫描面必须**真的读到** #5975 的缺陷点文件（backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java），且全仓 `#{}` 绑定数 > 0 —— 扫了个空集 ⇒ 后面断言恒绿。执行点 = 同文件 `test_scan_covers_the_known_defect_site`。', '**判据 3（对照读数 + 缺陷点现态）**：缺陷点现在必须是带类型的绑定（去掉 `jdbcType=NUMERIC` ⇒ 本守卫与真库判据同时红）。执行点 = 同文件 `test_known_defect_site_binding_is_typed`。', '**判据 4（豁免台账只许缩短）**：`tests/unit_ci_workflows/mapper_param_type_ledger.json` 的每条登记必须是**活的命中**（修好后条目变死 ⇒ 判红 ⇒ 不许留死条目凑数）、且带 `reason` + `case_ids`；条数上限 `max_exemptions` 另受守卫里 `FROZEN_MAX_EXEMPTIONS` 冻结（放行一条要同时改两处 = 一次被评审的动作）。现取 `exemptions = []`（0 条）。执行点 = 同文件 `test_exemptions_are_live_and_justified` / `test_exemption_budget_does_not_grow`。', '**判别力自证（8 种形态双向）**：坏形态三种各自判红（裸 `IS NULL` / `IS NOT NULL` / `CASE WHEN #{x}`）；好形态五种判**不**红（`jdbcType=` / `CAST(...)` / `#{x}::numeric` / 纯比较位（有列锚点）/ **注释里提一句** —— 最后一条防判据被自己的文案喂红）；XML 面用 tmp_path 真造一份语料证明它被读进来（仓内现取 0 份 XML mapper，不能只靠 glob 声称覆盖）；同一份 Java 语料的双向量（注入裸参 ⇒ 红 / 换成带类型 ⇒ 不红）。执行点 = 同文件 `test_blind_context_forms_are_flagged` / `test_anchored_forms_are_not_flagged` / `test_xml_mapper_form_is_scanned` / `test_temp_java_tree_injection_red_and_clean`。'],
+    skip_reason='[backend-contract] 静态扫描 + 内存注入式的类级元守卫（只读仓内文件 + tmp_path 自造语料；零真库、零网络、不烧 token）由 tests/unit_ci_workflows/test_mapper_null_param_type_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'backend-contract', 'mapper', 'null-param', 'ledger', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -9777,6 +9795,24 @@ _CASE_PR_120 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-121 [NORMAL] 入库 receiveStock：null 均价（新 SKU 首次入库「不记单价」）必须能过真 PG —— PG 参数类型推断（源: cases/product.yml）──
+_CASE_PR_121 = EvalCase(
+    id='PR-121',
+    legacy_id='',
+    title='入库 receiveStock：null 均价（新 SKU 首次入库「不记单价」）必须能过真 PG —— PG 参数类型推断',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['入库单过账（含页面明示允许的「新 SKU 首次入库 + 明细不记单价」这条路径）'],
+    expectations=['direct_reply'],
+    data_checks=['**病（真库实测，2026-10-02）**：新 SKU（avg_cost 为 NULL）+ 明细留空单价 ⇒ movingAverage 返回 NULL ⇒ receiveStock(..., newAvgCost=null, ...) ⇒ PG 抛 `ERROR: could not determine data type of parameter $3`（`receiveStock-Inline`）⇒ BadSqlGrammarException ⇒ 接口 500（issue #5975 的服务端栈逐字如此）。根因 = `CASE WHEN #{newAvgCost} IS NULL` 里的绑定**没有类型锚点**（左边没有列/cast/函数签名），实参为 NULL 时 PG 拿到 unspecified 类型参数、推断不出。判据 = backend/admin-api/src/test/java/com/migao/admin/service/ProductSkuReceiveStockNullCostRealDbTest.java（真 PG，4 条）。**红证（修前实测读数）**：`Tests run: 4, Failures: 1, Errors: 2` —— 两条 NULL 实参判据抛 PSQLException、一条判据失败；**带单价的对照条通过**（证明判据认的是「null 参数」而不是「SQL 变了没有」）。', '**判据 1（过账成功 + 落库三件套）**：全新 SKU + 不记单价首次过账**不得抛异常**，且 `stock` 0→3、`latest_batch_no` 落批次号；`avg_cost` / `cost_amount` 留 **NULL**（不用 0 冒充「成本为零」）。执行点 = 同文件 `newSkuFirstPostWithoutUnitCostSucceeds` / `costUnknownStaysNullNotZeroAfterCostlessPost`。', '**判据 2（跨次语义）**：先不记单价过账（avg_cost 仍 NULL）→ 再带单价过账 ⇒ 均价取带价那次、`cost_amount` = 总库存 × 均价（3 + 3 = 6，单价 10 ⇒ 60）。执行点 = 同文件 `costlessFirstPostThenCostedSecondPostAccumulates`。', '**判据 3（SQL 形态钉在类型上）**：`newAvgCost` 的**每个**绑定都必须显式 `jdbcType=NUMERIC`，裸 `#{newAvgCost}` 一处都不许留 —— 丢掉 jdbcType 就是回退到 500。执行点 = backend/admin-api/src/test/java/com/migao/admin/mapper/ProductSkuMapperTest.java 的 `receiveStockBindsCostWithExplicitNumericJdbcType`（反射读 @Update 注解 SQL，定位串与 `avg_cost = #{newAvgCost,jdbcType=NUMERIC}` / `CASE WHEN #{newAvgCost,jdbcType=NUMERIC} IS NULL` 对齐）。'],
+    skip_reason='[backend-contract] 入库过账的**真库**判据 + Mapper SQL 形态契约（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）',
+    tags=['inventory', 'inbound', 'backend-contract', 'realdb', 'null-param'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -11819,6 +11855,7 @@ ALL_CASES = (
     _CASE_MC_061,
     _CASE_MC_062,
     _CASE_MC_063,
+    _CASE_MC_064,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
@@ -12072,6 +12109,7 @@ ALL_CASES = (
     _CASE_PR_117,
     _CASE_PR_119,
     _CASE_PR_120,
+    _CASE_PR_121,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
