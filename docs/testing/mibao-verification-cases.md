@@ -243,7 +243,7 @@
 真值: ai-chat.intent-domains
 溯源: 2026-10-02 新增（issue #5951）：该测试文件此前未声明 case_ids，本单改动它（去掉已退役的 suggestions 桩键）后按门禁口径补声明；用例内容如实对应该文件既有的两组断言，**未新增/未放宽任何断言**。 ｜ tags: agents, multimodal, routing, regression
 
-## API 层域（19 case）
+## API 层域（20 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -463,6 +463,19 @@
 跳过: [backend-contract] 函数级容错由 ai-agent 单测（test_asr.py TestTranscribeAudioFriendlyErrors）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-07 新增：#2984 语音空录音体验优化（生产实证：无声音停止 → 空/极小 webm → 后端裸 500 → 前端 Failed to fetch） ｜ tags: asr, voice, error-handling
+
+### API-008. 缺必填 @RequestParam / 参数类型不符 ⇒ 400 + 字段名（不是 500），且处理器分支台账双向一致（#5982） 🔵
+```
+你: B 端调后端接口漏传必填参数（或把参数类型写错）时，返回 400 并点名该字段，而不是 500「服务器内部错误」
+数据: 实例（真端点 + 真 @RestControllerAdvice）：POST /api/admin/inbound-orders/opening-import 只带 file、缺 importRunId ⇒ 400 code=BAD_REQUEST、error.details[0].field=importRunId、响应全文含 importRunId；修前实测 500 INTERNAL_ERROR「服务器内部错误」（日志 Required request parameter 'importRunId' ... is not present）；闸门在调 service 之前（verifyNoInteractions）
+数据: 类级守卫（反射双向）：GlobalExceptionHandler 的 @ExceptionHandler 目标类型集合 ⇄ 台账 BRANCH_LEDGER 相等 —— 台账有而处理器缺 = 红（即 #5982 形态）、处理器有而台账缺 = 红（新增分支未登记）；兜底 Exception.class 必须仍在（削掉 = 未知异常漏原始堆栈）
+数据: 请求绑定失败族（MissingServletRequestParameterException / MethodArgumentTypeMismatchException / HttpMessageNotReadableException / MissingRequestHeaderException / MissingPathVariableException / ServletRequestBindingException）每个成员要么有具名分支、要么在豁免台账里登记理由（裸露成员判红）
+数据: 豁免台账只许缩短：现取豁免 ⊆ 冻结基线；理由非空；已被处理的「陈旧豁免」判红；MissingRequestHeaderException 的豁免附带**可判前置** = main 源码必填 @RequestHeader 数 = 0（出现即该豁免失效并判红）
+数据: 行为双向对照（探针控制器经真 Spring 分发链）：缺必填参数 / 参数类型不符 ⇒ 400；无具名分支的裸 RuntimeException ⇒ 仍 500 INTERNAL_ERROR（证明不是「什么都返 400」；反向对照**不能**用 IllegalStateException —— 它自己有具名分支、返 400）
+数据: 判别力自证：四类坏形态（删分支 / 增未登记分支 / 豁免超基线 / 出现必填请求头）在内存里各自判红，合法输入不判红
+跳过: [backend-contract] 由 admin-api 单测（GlobalExceptionHandlerCoverageTest / InboundOrderOpeningImportRequiredParamTest）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #5982）：缺必填 @RequestParam 一律落兜底 Exception ⇒ 500；补 MissingServletRequestParameterException / MethodArgumentTypeMismatchException 两个具名分支（400 + 字段名），并落「分支台账 ⇄ 反射 + 绑定族豁免台账（只许缩短）」类级元守卫 ｜ tags: api, error-handling, exception-handler
 
 ## 登录认证域（11 case）
 
@@ -8747,11 +8760,11 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：611（活跃 133，跳过 478）
-- tier 分布：smoke 12 / normal 566 / adversarial 31
+- 用例总数：612（活跃 133，跳过 479）
+- tier 分布：smoke 12 / normal 567 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
-- API 层域：19
+- API 层域：20
 - 登录认证域：11
 - B 端小程序域：31
 - 分类域：3
@@ -8787,6 +8800,7 @@
 - API-021: 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6）
 - API-022: Agent 知识卡片检索 - 词条优先、命中标注来源、未命中通用兜底（LLM WIKI 板块 #3051 P7）
 - API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
+- API-008: 缺必填 @RequestParam / 参数类型不符 ⇒ 400 + 字段名（不是 500），且处理器分支台账双向一致（#5982）
 - BM-008: 米宝唤出授权门（按权限码）- 管理员默认可唤；未授权员工明确「需要管理员授权」+ 可行动引导
 - BM-009: 管理面手机端 4 项（智能派单 / 入库过账 / 售后处理 / 计件工资报表）- h5 可用 + 权限双面 + 写动作护栏 + 与 PC 同源
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）

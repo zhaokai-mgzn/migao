@@ -735,6 +735,24 @@ _CASE_API_012 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── API-008 [NORMAL] 缺必填 @RequestParam / 参数类型不符 ⇒ 400 + 字段名（不是 500），且处理器分支台账双向一致（#5982）（源: cases/api.yml）──
+_CASE_API_008 = EvalCase(
+    id='API-008',
+    legacy_id='',
+    title='缺必填 @RequestParam / 参数类型不符 ⇒ 400 + 字段名（不是 500），且处理器分支台账双向一致（#5982）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['B 端调后端接口漏传必填参数（或把参数类型写错）时，返回 400 并点名该字段，而不是 500「服务器内部错误」'],
+    expectations=[],
+    data_checks=["实例（真端点 + 真 @RestControllerAdvice）：POST /api/admin/inbound-orders/opening-import 只带 file、缺 importRunId ⇒ 400 code=BAD_REQUEST、error.details[0].field=importRunId、响应全文含 importRunId；修前实测 500 INTERNAL_ERROR「服务器内部错误」（日志 Required request parameter 'importRunId' ... is not present）；闸门在调 service 之前（verifyNoInteractions）", '类级守卫（反射双向）：GlobalExceptionHandler 的 @ExceptionHandler 目标类型集合 ⇄ 台账 BRANCH_LEDGER 相等 —— 台账有而处理器缺 = 红（即 #5982 形态）、处理器有而台账缺 = 红（新增分支未登记）；兜底 Exception.class 必须仍在（削掉 = 未知异常漏原始堆栈）', '请求绑定失败族（MissingServletRequestParameterException / MethodArgumentTypeMismatchException / HttpMessageNotReadableException / MissingRequestHeaderException / MissingPathVariableException / ServletRequestBindingException）每个成员要么有具名分支、要么在豁免台账里登记理由（裸露成员判红）', '豁免台账只许缩短：现取豁免 ⊆ 冻结基线；理由非空；已被处理的「陈旧豁免」判红；MissingRequestHeaderException 的豁免附带**可判前置** = main 源码必填 @RequestHeader 数 = 0（出现即该豁免失效并判红）', '行为双向对照（探针控制器经真 Spring 分发链）：缺必填参数 / 参数类型不符 ⇒ 400；无具名分支的裸 RuntimeException ⇒ 仍 500 INTERNAL_ERROR（证明不是「什么都返 400」；反向对照**不能**用 IllegalStateException —— 它自己有具名分支、返 400）', '判别力自证：四类坏形态（删分支 / 增未登记分支 / 豁免超基线 / 出现必填请求头）在内存里各自判红，合法输入不判红'],
+    skip_reason='[backend-contract] 由 admin-api 单测（GlobalExceptionHandlerCoverageTest / InboundOrderOpeningImportRequiredParamTest）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'error-handling', 'exception-handler'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── AU-001 [SMOKE] 员工登录 用户名@企业编码 + 密码 → 成功签发 JWT（源: cases/auth.yml）──
 _CASE_AU_001 = EvalCase(
     id='AU-001',
@@ -11519,6 +11537,7 @@ ALL_CASES = (
     _CASE_API_021,
     _CASE_API_022,
     _CASE_API_012,
+    _CASE_API_008,
     _CASE_AU_001,
     _CASE_AU_002,
     _CASE_AU_003,
