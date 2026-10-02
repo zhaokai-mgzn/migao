@@ -2862,7 +2862,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（64 case）
+## 杂项域（65 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3768,6 +3768,24 @@
 跳过: [backend-contract] 静态扫描 + 内存注入式的类级元守卫（只读仓内文件 + tmp_path 自造语料；零真库、零网络、不烧 token）由 tests/unit_ci_workflows/test_mapper_null_param_type_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #5975：入库过账 500）。**取号 MC-064（两次顺延，号位冲突的活标本）**：开工时按「当前最大号 +1」取了 MC-062；**同步 main 时该号已被 #5976+#5977 占用**（`misc.yml` 现取的 MC-062 条目 = 「菜单码 ⊆ 路由守卫覆盖（C5）」，正是「空档/号段≠可用」的实例）⇒ 抬到 MC-063；随后核实 **MC-063 已被 #5983 的在飞分支占用** ⇒ 再顺延到 **MC-064**（现取 main 最大 = MC-062，MC-063 为在飞占用）。类级固化的理由：缺陷形态是「裸参落在 PG 的类型盲区」，修 `ProductSkuMapper` 一处只是**实例判据**；本守卫让**同类进不来**（新写一个 `CASE WHEN #{x} IS NULL` 的 Mapper SQL ⇒ 当场红，而不是等商家过账 500）。如实登记的边界：① 只覆盖 `backend/**/src/main/**`（测试里的 SQL 片段不算生产契约）；② 只覆盖「`IS [NOT] NULL` 主语」与「`WHEN` 布尔主语」两类盲区，**不**覆盖其它推断不出类型的形态（如 `SELECT #{x}` 无上下文）；③ 判据是**形态学**的 —— 它判「有没有显式类型」，判不了「显式类型给得对不对」（后者由真库判据 PR-121 承担）；④ 豁免台账的 `max_exemptions` 需要同时改两处才能放宽（有意为之）。⑤ 剥 Java 注释**复用仓内唯一实现** `tests/unit_ci_workflows/_source_parsing.py::java_code`（不自写第二把尺子 —— 唯一性判据见 tests/unit_ci_workflows/test_automerge_bot_safe_path.py 的判据 11），XML 面只去 `<!-- -->`。 ｜ tags: ci, backend-contract, mapper, null-param, ledger, red-proof
+
+### MC-066. 用例 id 取号登记台账（claim）：并行开发下不再撞号（撞了在 CI 里被具名抓住，而不是变成 misc.yml 的困惑冲突）（issue #6017） 🔵
+```
+你: 当两个并行 PR 各自取了同一个用例号、或一条 claim 在合并后忘了删除时，必须有东西**具名**报出（哪个号 + 哪两个 PR + 让号 / 删除出口）；而没有任何 claim 时**不得**报红（本台账是新增可选面）
+期望: direct_reply
+数据: **病（2026-10-02 一天三次撞号，实证记在 MC-064 的 merge_log 里）**：用例 `id` 是全局唯一登记键，而现行取号法 = 「现取 `origin/main` 最大号 + 1（再加'猜在飞 PR'）」⇒ 并行下必然失效。症状形态是 `.github/cases/misc.yml` 的**困惑冲突** + 生成物连带冲突，而不是「你撞号了，请让号」—— 诊断成本极高（要靠 `git merge-tree` 逐条比对两侧用例块）。
+数据: **设计（零文本冲突）**：每个 PR 一个 claim 文件 `.github/cases/claims/<PR号>-<CASE_ID>.json`（最小集 `id` / `pr` / `title` / `claimed_at`）；**文件名含 PR 号 ⇒ 两个并行 PR 永远不写同一个文件 ⇒ 把'撞号'从文本冲突翻译成语义冲突**；起草者在同一 PR 里加它，合并后删除。
+数据: **判据 1（形态）**：文件名 `<PR号>-<CASE_ID>.json`、字段最小集齐全、文件名里的 PR / 用例号与内容 `pr` / `id` 一致、`claimed_at` 是 `YYYY-MM-DD`；claim 目录里出现非 claim 文件（除 `.gitkeep` / `README.md`）也判红。执行点 = tests/unit_ci_workflows/test_case_id_claims.py 的 `test_red_proof_form_violations_are_named`。
+数据: **判据 2（两 claim 同 id ⇒ 红）**：**具名报出两个 PR 号** + 「后合入者让号」—— 这是把撞号在 CI 里具名抓住的主路径（`MC-064` 的三次撞号正是这个形状）。执行点 = 同文件 `test_red_proof_two_claims_with_the_same_id`。
+数据: **判据 3（与已占号相撞 ⇒ 红）**：claim 的 `id` 已在用例库被占用 ⇒ 报出该号 + 让号出口（陷阱 3 的兜底）。执行点 = 同文件 `test_red_proof_claim_collides_with_a_used_id`。
+数据: **判据 4（陈旧即红）**：claim 的 `id` 已进用例库（该 claim 已合并完成）而 claim 还在 ⇒ 红（台账**不许只增不减**）。执行点 = 同文件 `test_red_proof_stale_claim`。
+数据: **判据 5（占位不得超额）**：每条 claim 的 `id` 必须在用例库里**有对应用例**（主防线）；同一 PR 的 claim 数 ≤ **现取上限**（= 用例库现取条数；变更集不可得时的兜底口径，**不拍魔法数**）。执行点 = 同文件 `test_red_proof_claim_without_a_case`。
+数据: **判据 6（负向对照）**：没有 claim ⇒ 一条都不报；另有一条对照读数（形态齐全 + 号在自己 PR 的用例里 ⇒ 不红）。执行点 = 同文件 `test_negative_control_no_claims_is_green` / `test_control_clean_claim_is_green`。
+数据: **纯静态自证**：本判据零 ai-agent 依赖（AST 取 import 名）+ 禁 `pytest.skip` —— CI 的 `ci workflow helper unit tests` 只装 `pytest` + `pyyaml`。执行点 = 同文件 `test_this_judgement_is_pure_static_and_never_skips`。
+数据: 🔴 **覆盖边界（显式登记）**：① 看不到在飞分支（别人的 open PR 上的 claim 不在我的树里）⇒ 「两个在飞 PR 同时取到同一个号」只有在其中一个合入后才现形；② 「claim 了号、还没写用例、而 main 恰好已有同号用例」这一角判不了（合并态近似把本 PR 的号扣掉了）；③ 判据**不查 GitHub / 不联网**，也**刻意不读 `origin/main`**（CI 的 checkout 是 `fetch-depth: 1`）⇒ 「已进 main」以**合并态近似**表达，精确主线段读数由 `MIGAO_CASE_CLAIMS_MAIN_DIR` 注入；④ main 侧没有守护（`pr-check` 只在 `pull_request` 触发）⇒ 陈旧面靠**下一个 PR** 现形。⑤ 本判据**不改**任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 纯静态扫描 + 内存 / tmp_path 注入式判别力自证（只读仓内 `.github/cases/**`；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_case_id_claims.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #6017，用户 2026-10-02 裁定方案 B）。落码 = ① 判据 tests/unit_ci_workflows/test_case_id_claims.py（六条 + 5 条注入式红证 + 负向对照 + 合并态近似的无注入红证 + 纯静态自证）② 规范面 docs/wiki/Change-Blast-Radius.md 新增「陷阱 3」（取号流程改为：查 `.github/cases/claims/` + 已用号 ⇒ 取号 ⇒ 同一 PR 加 claim ⇒ 合并后删 claim；「后合入者让号」保留为**兜底**）。取号 **MC-066**（**现行办法取得，让号一次，记实**）：现取 `origin/main` 最大 = MC-064；`scripts/next_case_id.py MC` 现取到在飞 PR #5996 已占 MC-065（工具同时给出历史空档 MC-049，按 MC-054~064 的「空档号 ≠ 可用号」先例不采用）⇒ 按「当前最大号 + 1 且跳过在飞占用」取 MC-066。⚠️ **本单自己的用例仍走现行取号办法**（claim 机制由本 PR 才引入，尚不在 main 上）⇒ 待 #6017 落地后本用例可迁到 claim 机制。⚠️ 本 PR **不带任何 claim 文件**：一是本用例按现行办法取号，二是 claim 一旦随合并进 main 就会按判据 4 变成陈旧项。 ｜ tags: ci, casebook, case-id, claim, ledger, red-proof
 
 ## 商家入驻域（5 case）
 
@@ -8894,8 +8912,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：621（活跃 133，跳过 488）
-- tier 分布：smoke 12 / normal 576 / adversarial 31
+- 用例总数：622（活跃 133，跳过 489）
+- tier 分布：smoke 12 / normal 577 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：20
@@ -8910,7 +8928,7 @@
 - 财务对账域：4
 - 人事域：12
 - 知识问答域：7
-- 杂项域：64
+- 杂项域：65
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -9004,6 +9022,7 @@
 - MC-063: 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短
 - MC-065: 导航类指引真值源（issue #5989 · P1）：登记表逐节点镜像 config/menu.ts + 权限码逐值真 + 未登记默认拒绝 + 只按服务端会话权限裁剪 + citation 可溯 + 结构上不含 steps（禁编步骤）
 - MC-064: Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975）
+- MC-066: 用例 id 取号登记台账（claim）：并行开发下不再撞号（撞了在 CI 里被具名抓住，而不是变成 misc.yml 的困惑冲突）（issue #6017）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
