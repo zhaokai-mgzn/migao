@@ -233,6 +233,43 @@ def test_residuals_ledger_is_shortenable_and_really_hits() -> None:
         assert str(e.get("reason") or "").strip(), f"{rel}：残余必须写明理由（否则它就是豁免）"
 
 
+def residual_state_problems(ledger: dict, hit_paths: set[str]) -> list[str]:
+    """台账**状态机**判据（纯函数，红证可内存构造）：
+
+      · 每条必须有**具名状态**（三态之一）——没有状态 = 没写处置方式 ⇒ 红；
+      · 三条语义各自的「必然退休」判据：一旦它**不再命中扫描面**（= 已被迁移 / 修掉）
+        ⇒ **必须**从台账删除（`state` 不豁免）——这就是「只许缩短」的牙齿。
+    """
+    allowed = {"in_flight", "awaiting_migration", "allowed_by_design"}
+    bad: list[str] = []
+    for e in ledger.get("residuals") or []:
+        rel, state = str(e.get("path", "")), e.get("state")
+        if state not in allowed:
+            bad.append(f"{rel}：`state`={state!r} 不在 {sorted(allowed)} 里（没写处置方式 = 豁免）")
+        if rel not in hit_paths:
+            bad.append(f"{rel}：已不再命中扫描面（迁移 / 修掉了？）⇒ **必须**从台账删除（state={state}）")
+    return bad
+
+
+def test_residual_states_are_declared_and_must_retire() -> None:
+    """判据 2b：残余必须写明**处置状态**；且**一旦不再命中就必须清账**（多留一条 ⇒ 红）。"""
+    ledger = json.loads((REPO_ROOT / RESIDUALS_LEDGER_REL).read_text(encoding="utf-8"))
+    hit_paths = {rel for rel, *_ in scan_corpus(REPO_ROOT)}
+    assert residual_state_problems(ledger, hit_paths) == [], (
+        "残余台账状态判据未过：\n  " + "\n  ".join(residual_state_problems(ledger, hit_paths)))
+    # 注入式红证（①②③ 三种坏形态在内存里各自判红）
+    stale = json.loads(json.dumps(ledger))
+    stale["residuals"][0]["path"] = "tests/unit_ci_workflows/conftest.py"   # 存在但**不命中**形态 ⇒ 已退休
+    assert any("不再命中扫描面" in p for p in residual_state_problems(stale, hit_paths)), stale
+    nostate = json.loads(json.dumps(ledger))
+    nostate["residuals"][0].pop("state", None)
+    assert any("`state`" in p for p in residual_state_problems(nostate, hit_paths)), nostate
+    extra = json.loads(json.dumps(ledger))
+    extra["residuals"].append({"path": "tests/unit_ci_workflows/some_reader.py", "state": "in_flight",
+                              "reason": "凭空多一条"})
+    assert len(extra["residuals"]) > RESIDUALS_FROZEN, "多出来的条目必须同时触发判据 2 的上限（只许缩短）"
+
+
 def test_residuals_ledger_cannot_be_emptied() -> None:
     """判据 3：台账不许空转（清空「消红」⇒ 红）——与判据 2 的冻结计数互为牙印。"""
     ledger = json.loads((REPO_ROOT / RESIDUALS_LEDGER_REL).read_text(encoding="utf-8"))

@@ -8,19 +8,28 @@
       "path": "tests/unit_ci_workflows/test_dev_mode_failure_modes.py",
       "reason": "**在飞**（PR #6069 / 包 9ac9e692 拥有该文件，本包**一字不动**）：它仍自带 `PRESET_PREFIX` + 自带候选表 + 自带镜像候选。本条是**依赖登记**（不是豁免）——让守卫与本包都看得见「这个文件里还有第二份口径」。",
       "risk": "它修的是同一族病的另一层（语料解析钉在 HEAD 距离上 / 镜像只试 `mirror/migao/skills/…`）；**只要它最终不改成走 `preset_corpus`，本台账这条就撤不掉**。",
-      "restart_condition": "PR #6069 落地后：① 若那份读者改成 `preset_corpus` ⇒ 本条**必然**从扫描面消失 ⇒ 判据 2 具名判红 ⇒ 从台账删除、`RESIDUALS_FROZEN` 同批减一；② 若仍自带实现 ⇒ 本条**必须**保留（届时由集成侧决定是否两包并一）。"
+      "restart_condition": "PR #6069 落地后：① 若那份读者改成 `preset_corpus` ⇒ 本条**必然**从扫描面消失 ⇒ 判据 2 具名判红 ⇒ 从台账删除、`RESIDUALS_FROZEN` 同批减一；② 若仍自带实现 ⇒ 本条**必须**保留（届时由集成侧决定是否两包并一）。",
+      "state": "in_flight"
     },
     {
       "path": "scripts/drift_audit.py",
       "reason": "**有意不合并**（不是漏修）：`drift_audit.py` 是**独立运行的生产机具**（`scripts/`，不 import 测试助手包，也不该为了共用而把 `tests/` 变成 `scripts/` 的依赖）。它按**传入的 repo 参数**解析预设语料（`preset_root(repo)`），与其他消费方（只读业务仓自己）的对象不同 ⇒ 合并需要先把读取口径上提成 `scripts/lib/**` 的共享模块（超出本包射程）。",
       "risk": "它同样只枚举固定基线 `(\"origin/main\",\"origin/main~1\",\"HEAD~1\",\"HEAD\")` ⇒ **S4 后与业务仓 CI 同款风险**（git 历史退役 ⇒ 读不到）。影响面 = `drift_audit` 的 skill-anchor / 契约面（**非 required**判据），不是本包的 required 腿。",
-      "restart_condition": "把唯一读取口径上提为 `scripts/lib/preset_corpus.py`（业务仓侧）后，`drift_audit.py` 与 `tests/unit_ci_workflows/preset_corpus.py` 同源引用 ⇒ 本条从台账删除、`RESIDUALS_FROZEN` 同批减一。"
+      "restart_condition": "把唯一读取口径上提为 `scripts/lib/preset_corpus.py`（业务仓侧）后，`drift_audit.py` 与 `tests/unit_ci_workflows/preset_corpus.py` 同源引用 ⇒ 本条从台账删除、`RESIDUALS_FROZEN` 同批减一。",
+      "state": "allowed_by_design"
     },
     {
       "path": "tests/unit_ci_workflows/test_agent_presets_guard.py",
       "reason": "**范围外**（本包硬约束：该文件由另一子在改「活锚解耦」，本包一字不动）：它的第 67 行附近仍自带 `PRESET_BASELINE_PREFIX` 去 `ls-tree` 里挑 `skills/*/SKILL.md`。登记而不修 = 让「已知残余」与「新长出来的第二份口径」在仓内**可区分**。",
       "risk": "它同样只枚举固定基线 ⇒ 历史对象退役后读不到（与 test_agent_presets_guard 那 5 条本机假红同族）。",
-      "restart_condition": "活锚解耦那一子落地后，把这段改走 `preset_corpus`（或随文件一起消失）⇒ 从本台账删除、`RESIDUALS_FROZEN` 同批减一。"
+      "restart_condition": "活锚解耦那一子落地后，把这段改走 `preset_corpus`（或随文件一起消失）⇒ 从本台账删除、`RESIDUALS_FROZEN` 同批减一。",
+      "state": "awaiting_migration"
     }
-  ]
+  ],
+  "_states": {
+    "in_flight": "在飞（有具名承接单/PR）⇒ **集成前必须从本台账删除**（届时它已迁移）；集成时若还在 ⇒ 守卫判红就是对的，别放宽。",
+    "awaiting_migration": "待迁移（归另一个包）⇒ 迁移落地后从本台账删除。",
+    "allowed_by_design": "**有意自持**（脚本不能 import tests/ 助手包）⇒ 可在台账长期存在，但仍受「只许缩短」。"
+  },
+  "_retire_rule": "任何残余一旦被迁移 / 修掉，它与扫描面**不再相交** ⇒ 判据 2 具名判红（`state` 不豁免）⇒ 必须同批从本台账删除并下调 `RESIDUALS_FROZEN`。"
 }
