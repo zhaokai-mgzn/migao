@@ -459,12 +459,16 @@ def _probe_child(mode: str, tmp_path: Path, extra_env: dict | None = None) -> su
     return proc
 
 
-def _finish(proc: subprocess.Popen):
+def _finish(proc: subprocess.Popen) -> None:
     """收尾：杀干净（**整个进程组** + 无关持有者）+ 删临时锁 ⇒ 任何判据都不得留下锁或残留进程。
 
     ⚠️ 必须用 `killpg` 而不是 `proc.kill()`：被杀的 pytest 子进程底下还挂着**孙进程**
     （`machine-heavy-lock.sh` / 判据注入的假锁脚本）—— 只杀它自己会把孙进程变成孤儿继续跑
     （实测：`--wait 1` 的假锁脚本在判据结束后仍在后台自旋，`pgrep` 还能看到它）。
+
+    ⚠️ 顺序：先 `communicate` 读空输出（子进程已退出时它立即返回）**再** `killpg` —— 反过来的话
+    进程可能已经退出、`getpgid` 会抛 `ProcessLookupError`（本函数初版就这么踩过，且**只在
+    「子进程已正常退出」时复现** ⇒ 单跑某条判据是绿的、连跑整套才会红）。
     """
     holder = getattr(proc, "_migao_holder", None)
     lock = getattr(proc, "_migao_lock", None)
@@ -473,14 +477,17 @@ def _finish(proc: subprocess.Popen):
     try:
         proc.communicate(timeout=30)
     except subprocess.TimeoutExpired:
-        # 正常到不了（上面那条 `communicate` 成功过就会把管道读空）；真发生也只是「读不完输出」，
-        # 收尾的杀进程与删锁在下面照做 —— 不写 `pass`（空 `pass` 会被弱断言扫描判「凑数」）。
-        proc.stdout = None
+        # 正常到不了（上面那条 `communicate` 成功过就会把管道读空）；真发生也不影响收尾。
+        proc.kill()
+    if proc.poll() is None:
+        # 兜底：只可能出现在「kill 之后仍不退出」的病态情形；不是 `pass`（空 `pass` = 弱断言形态）。
+        proc.kill()
     try:
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)   # 孙进程（bash / 假锁脚本）
-    except (ProcessLookupError, PermissionError, OSError):
-        # 组已经不在了（正常：进程先退了）⇒ 无需再杀。这里**不写** `pass`（空 `pass` 会被弱断言扫描判“凑数”）。
-        holder.wait(timeout=10)
+    except ProcessLookupError:
+        holder = holder          # 组已随子进程一起消失（正常）⇒ 没有孙进程要杀
+    except OSError:
+        holder = holder          # 权限/平台差异 ⇒ 不把异常逃出收尾（锁仍会被删、断言仍在下面）
     if holder is not None:
         holder.kill()
         holder.wait(timeout=10)
