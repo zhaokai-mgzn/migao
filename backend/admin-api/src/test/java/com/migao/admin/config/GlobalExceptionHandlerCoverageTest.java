@@ -9,6 +9,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.MissingPathVariableException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,6 +36,7 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -88,13 +92,18 @@ class GlobalExceptionHandlerCoverageTest {
             "org.springframework.web.HttpMediaTypeNotSupportedException",
             // ↓ #5982 本单补的两个分支
             "org.springframework.web.bind.MissingServletRequestParameterException",
-            "org.springframework.web.method.annotation.MethodArgumentTypeMismatchException"
+            "org.springframework.web.method.annotation.MethodArgumentTypeMismatchException",
+            // ↓ #6008：同族漏掉的第三个（缺必填 multipart 部分）
+            "org.springframework.web.multipart.support.MissingServletRequestPartException"
     );
 
     /** 请求绑定失败族：Spring 在「把 HTTP 请求绑定到控制器方法参数」时抛出的异常家族。 */
     private static final Set<String> BINDING_FAMILY = Set.of(
             MissingServletRequestParameterException.class.getName(),
             MethodArgumentTypeMismatchException.class.getName(),
+            // ↓ #6008：同族里被漏掉的那个成员 —— 本仓有**可达**的 multipart 端点
+            // （`POST /api/admin/inbound-orders/opening-import` 的 `file`），客户端少传一个 part 曾落兜底 500
+            MissingServletRequestPartException.class.getName(),
             HttpMessageNotReadableException.class.getName(),
             MissingRequestHeaderException.class.getName(),
             MissingPathVariableException.class.getName(),
@@ -184,7 +193,14 @@ class GlobalExceptionHandlerCoverageTest {
                 .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"))
                 .andExpect(jsonPath("$.error.details[0].field").value("openingId"));
 
-        // 反向对照：无具名分支的异常（裸 RuntimeException）仍是 500 —— 证明上面两个 400 是
+        // 缺必填 multipart 部分（MissingServletRequestPartException）—— issue #6008：
+        // 真 Spring 分发链在 @RequestPart 未标 required=false 而请求缺该 part 时抛的就是它。
+        mvc.perform(multipart("/probe/part"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"))
+                .andExpect(jsonPath("$.error.details[0].field").value("file"));
+
+        // 反向对照：无具名分支的异常（裸 RuntimeException）仍是 500 —— 证明上面三个 400 是
         // 「具名分支生效」，不是「什么东西都返 400」。
         // ⚠️ 别拿 IllegalStateException 当对照：它**有**具名分支（400）
         mvc.perform(get("/probe/boom"))
@@ -219,7 +235,13 @@ class GlobalExceptionHandlerCoverageTest {
         assertThat(exemptionViolations(EXEMPT_BASELINE, EXEMPT_BASELINE, handled, 1))
                 .anyMatch(v -> v.contains("MissingRequestHeaderException"));
 
-        // 对照：合法输入不判红（证明上面四条不是「什么输入都报」）
+        // ⑤ 族里新增了成员却没人给具名分支 ⇒ **族判据**具名判红（= #6008 的形态本身）
+        Set<String> withoutPart = new TreeSet<>(handled);
+        withoutPart.remove(MissingServletRequestPartException.class.getName());
+        assertThat(familyViolations(BINDING_FAMILY, withoutPart, EXEMPT_BASELINE))
+                .anyMatch(v -> v.contains("MissingServletRequestPartException"));
+
+        // 对照：合法输入不判红（证明上面五条不是「什么输入都报」）
         assertThat(ledgerViolations(handled, BRANCH_LEDGER)).isEmpty();
         assertThat(exemptionViolations(EXEMPT_BASELINE, EXEMPT_BASELINE, handled, 0)).isEmpty();
     }
@@ -347,6 +369,11 @@ class GlobalExceptionHandlerCoverageTest {
         @GetMapping("/probe/typed")
         String typed(@RequestParam("openingId") Long openingId) {
             return String.valueOf(openingId);
+        }
+
+        @PostMapping("/probe/part")
+        String part(@RequestPart("file") MultipartFile file) {
+            return "ok:" + file.getOriginalFilename();
         }
 
         @GetMapping("/probe/boom")
