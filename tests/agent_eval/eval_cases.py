@@ -5159,6 +5159,24 @@ _CASE_MC_069 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-070 [NORMAL] 米宝**主动新手引导**（issue #5989 · P2）：首次进某个已登记页面 ⇒ 对话区主动发一条**导航提示**；**每页每会话最多 1 次**（服务端判，不靠前端自觉）· **只推该角色可见的**（只读服务端会话权限）· **未登记页面不推**（默认拒绝，静默）· **只给导航不给步骤**（结构 + 文案双层）· 拿不到「在哪一页 / 这页能做什么」⇒ **不发**（可行动性）（源: cases/misc.yml）──
+_CASE_MC_070 = EvalCase(
+    id='MC-070',
+    legacy_id='',
+    title='米宝**主动新手引导**（issue #5989 · P2）：首次进某个已登记页面 ⇒ 对话区主动发一条**导航提示**；**每页每会话最多 1 次**（服务端判，不靠前端自觉）· **只推该角色可见的**（只读服务端会话权限）· **未登记页面不推**（默认拒绝，静默）· **只给导航不给步骤**（结构 + 文案双层）· 拿不到「在哪一页 / 这页能做什么」⇒ **不发**（可行动性）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户**首次进入**某个已登记页面（如商品管理 /products）⇒ 米宝在对话区主动发一条：「你在【商品管理】（/products）。这页能做：…（登记项 #products → 一级项「商品管理」）（只给导航：在哪一页 / 这页有什么。操作步骤不在本轮。）」', '同一会话**第二次**进入同一页 ⇒ **什么都不发**（静默流：无 text 事件）；无权限的角色进入该页 ⇒ 不发；未登记页面（如 /nope）⇒ 不发'],
+    expectations=['direct_reply'],
+    data_checks=['**每页每会话最多 1 次（服务端）**：判定本体 = `backend/ai-agent-service/app/context/menu_navigator.py::build_proactive_push`（纯函数，`already_pushed` 是入参）；上限的**落点** = `backend/ai-agent-service/app/api/chat.py::_load_pushed_features` / `_commit_pushed_feature`（会话维度 `session_states.state.onboarding_pushed_features`，存**功能 id** 而不是 route —— 同一功能多路径共享一次推送），且顺序是**先记账、后推送**（写失败 ⇒ 不发，不退化成「每次进页都推」）。红证：去掉上限臂 ⇒ 第二次也推（红）。', '**角色裁剪**：只按**服务端会话**的 `permissions` 判（`build_proactive_push` 签名里**没有 role** ⇒ 客户端递交的 role/permissions 结构上读不到）。无权 ⇒ `not_visible` ⇒ 静默。红证：删掉裁剪 ⇒ 无权角色照样收到路径（红）。', '**未登记页面不推**：route → 功能唯一对应（`_ROUTE_FEATURES` 从 `MENU_TREE`/`NAV_FEATURES` **现算**）；未登记 / 被多条登记项覆盖（歧义）⇒ `unregistered` / `ambiguous_route` ⇒ 静默。红证：把未登记 route 放行 ⇒ 红。', '**只给导航不给步骤（结构 + 文案双层）**：① 结构 = `ProactivePush.to_data()` 的键闭集 `{proactive, featureId, label, route, capabilities, citation}`（**没有** steps / 操作说明 / 图文）；② 文案 = `render()` / `capabilities` 不含受控步骤词（复用 `tests/unit_ci_workflows/test_menu_navigator.py::STEP_WORDS` 同一份词表）。红证：给 `data` 塞一个 `steps` 键 ⇒ 红。', '**可行动性**：文案必须带「在哪一页」（label + route）+「这页能做什么」（capabilities 非空），否则 `unregistered` ⇒ **不发**（宁可静默）。红证：让 label/route/capabilities 取空仍发 ⇒ 红。', '**不新建推送基础设施**：运输形态 = 客户端在路由变化时发 `__PAGE_ENTER__|{"route": "…"}`（复用既有 `POST /api/chat/send`），服务端判定后**不经 LLM** 直接回一条 `text` + `done`（文案全部来自登记表）。判据核「`chat.py` 不含**任何**定时 / 队列 / 主动 SSE 推送的原语（`asyncio.create_task` / `sleep` / `Queue` 等）」与「进页前缀的分派在 `page_context` 之前」。'],
+    skip_reason='[backend-contract] 判定本体是**零依赖纯函数**（登记表 + 会话权限 + 已推集三样入参）⇒ 由 tests/unit_ci_workflows/test_proactive_onboarding.py（静态面，**不 import `app.*` 运行时依赖**，CI 的 helper job 只装 pytest/pyyaml）+ backend/ai-agent-service/tests/test_proactive_onboarding.py（行为面，真跑 `_handle_page_enter_request`）+ frontend/admin-web/tests/unit/store/chat-proactive-onboarding.test.ts（前端只递交、不判定）验证，**非 LLM 行为**，不进入 agent-eval 冒烟',
+    tags=['ai-agent', 'onboarding', 'navigation', 'proactive-push', 'default-deny', 'role-trim', 'no-steps', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-049 [NORMAL] 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）（源: cases/misc.yml）──
 _CASE_MC_049 = EvalCase(
     id='MC-049',
@@ -12047,6 +12065,7 @@ ALL_CASES = (
     _CASE_MC_067,
     _CASE_MC_068,
     _CASE_MC_069,
+    _CASE_MC_070,
     _CASE_MC_049,
     _CASE_OB_001,
     _CASE_OB_002,

@@ -2876,7 +2876,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（69 case）
+## 杂项域（70 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3846,6 +3846,21 @@
 跳过: [backend-contract] 纯静态文本对账 + 纯内存图对象判定（零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_agent_batch_type_domain.py 与 backend/ai-agent-service/tests/test_route_destination_binding.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #6044：B 端真实 LLM 评测抓到的 3 个真缺陷的类级固化）。落码 = ① 缺陷 A：`V146__add_inventory_stock_to_agent_batch_type.sql`（两条白名单 DROP + ADD 纳入 `inventory_stock` / `stock`，含终态对账与可执行回滚）+ `db/init/schema.sql` 同步 + 值域判据 tests/unit_ci_workflows/test_agent_batch_type_domain.py（3 条：值域 ⊆ 白名单 / 两条终态一致 / fail-closed，含 8 条内存红证）② 缺陷 C：`app/graph/nodes.py` 的 `_get_intent_to_route`（按 agent **绑定面**过滤，未绑定 route_key 改判 fallback）+ `route_by_intent`（`pending_interact_skill` / `handoff_offer` 目的地闸）+ 判据 backend/ai-agent-service/tests/test_route_destination_binding.py（28 条参数化用例）③ 缺陷 B 的行为判据另立 backend/ai-agent-service/tests/test_tools_dashboard_stats_counts.py（14 条，本用例的 `traces.tests` 只登记前两条静态面）。**取号 MC-069**：`python3 scripts/next_case_id.py MC` 现取（候选 = main ∪ 全部 open PR 分支 ∪ 本工作区）报 `main:001-048,050-068 · PR #6043:049 ⇒ 取 MC-069`，同 PR 加 claim 文件 `.github/cases/claims/<PR号>-MC-069.json`。 ｜ tags: single-source, fail-closed, red-proof, db-contract, routing
+
+### MC-070. 米宝**主动新手引导**（issue #5989 · P2）：首次进某个已登记页面 ⇒ 对话区主动发一条**导航提示**；**每页每会话最多 1 次**（服务端判，不靠前端自觉）· **只推该角色可见的**（只读服务端会话权限）· **未登记页面不推**（默认拒绝，静默）· **只给导航不给步骤**（结构 + 文案双层）· 拿不到「在哪一页 / 这页能做什么」⇒ **不发**（可行动性） 🔵
+```
+你: 用户**首次进入**某个已登记页面（如商品管理 /products）⇒ 米宝在对话区主动发一条：「你在【商品管理】（/products）。这页能做：…（登记项 #products → 一级项「商品管理」）（只给导航：在哪一页 / 这页有什么。操作步骤不在本轮。）」
+你: 同一会话**第二次**进入同一页 ⇒ **什么都不发**（静默流：无 text 事件）；无权限的角色进入该页 ⇒ 不发；未登记页面（如 /nope）⇒ 不发
+期望: direct_reply
+数据: **每页每会话最多 1 次（服务端）**：判定本体 = `backend/ai-agent-service/app/context/menu_navigator.py::build_proactive_push`（纯函数，`already_pushed` 是入参）；上限的**落点** = `backend/ai-agent-service/app/api/chat.py::_load_pushed_features` / `_commit_pushed_feature`（会话维度 `session_states.state.onboarding_pushed_features`，存**功能 id** 而不是 route —— 同一功能多路径共享一次推送），且顺序是**先记账、后推送**（写失败 ⇒ 不发，不退化成「每次进页都推」）。红证：去掉上限臂 ⇒ 第二次也推（红）。
+数据: **角色裁剪**：只按**服务端会话**的 `permissions` 判（`build_proactive_push` 签名里**没有 role** ⇒ 客户端递交的 role/permissions 结构上读不到）。无权 ⇒ `not_visible` ⇒ 静默。红证：删掉裁剪 ⇒ 无权角色照样收到路径（红）。
+数据: **未登记页面不推**：route → 功能唯一对应（`_ROUTE_FEATURES` 从 `MENU_TREE`/`NAV_FEATURES` **现算**）；未登记 / 被多条登记项覆盖（歧义）⇒ `unregistered` / `ambiguous_route` ⇒ 静默。红证：把未登记 route 放行 ⇒ 红。
+数据: **只给导航不给步骤（结构 + 文案双层）**：① 结构 = `ProactivePush.to_data()` 的键闭集 `{proactive, featureId, label, route, capabilities, citation}`（**没有** steps / 操作说明 / 图文）；② 文案 = `render()` / `capabilities` 不含受控步骤词（复用 `tests/unit_ci_workflows/test_menu_navigator.py::STEP_WORDS` 同一份词表）。红证：给 `data` 塞一个 `steps` 键 ⇒ 红。
+数据: **可行动性**：文案必须带「在哪一页」（label + route）+「这页能做什么」（capabilities 非空），否则 `unregistered` ⇒ **不发**（宁可静默）。红证：让 label/route/capabilities 取空仍发 ⇒ 红。
+数据: **不新建推送基础设施**：运输形态 = 客户端在路由变化时发 `__PAGE_ENTER__|{"route": "…"}`（复用既有 `POST /api/chat/send`），服务端判定后**不经 LLM** 直接回一条 `text` + `done`（文案全部来自登记表）。判据核「`chat.py` 不含**任何**定时 / 队列 / 主动 SSE 推送的原语（`asyncio.create_task` / `sleep` / `Queue` 等）」与「进页前缀的分派在 `page_context` 之前」。
+跳过: [backend-contract] 判定本体是**零依赖纯函数**（登记表 + 会话权限 + 已推集三样入参）⇒ 由 tests/unit_ci_workflows/test_proactive_onboarding.py（静态面，**不 import `app.*` 运行时依赖**，CI 的 helper job 只装 pytest/pyyaml）+ backend/ai-agent-service/tests/test_proactive_onboarding.py（行为面，真跑 `_handle_page_enter_request`）+ frontend/admin-web/tests/unit/store/chat-proactive-onboarding.test.ts（前端只递交、不判定）验证，**非 LLM 行为**，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 集成侧 rebase 让号：本用例原取 MC-067，与同日落 main 的 #6009 承载体用例（MC-067）撞号 ⇒ 按取号台账「后合入者让号」改判为 **MC-070**，并同 PR 补 `.github/cases/claims/6030-MC-070.json`（accumulating ledger）。2026-10-02 新增（issue #5989 的下半场；上半场 P1 = 导航真值源 #5996 已在 main）。用户 2026-10-02 裁定形态 = **A：对话区 + 首次进页触发**，口径逐字：「每页每会话最多 1 次 · 只推该角色可见的 · 未登记页面不推 · 只给导航不给步骤」。落地 = ① `menu_navigator.py` 新增 route→功能解析 + `build_proactive_push` 纯函数判定（四种 fail-closed 出口）+ `ProactivePush`（结构不含 steps）；② `chat.py` 新增 `__PAGE_ENTER__|` 客户端触发入口（**不经 LLM**）+ 会话级上限（`session_states`，先记账后推送）；③ 前端 store `notifyPageEnter` + dashboard layout 路由变化触发（只在有会话时递，无用户气泡）。**有意不做**（未覆盖）：服务端主动推（SSE 定时/队列）、「用户可关闭 / 静默」设置面、**子页面**（`/orders/123` 这类非菜单路径）不推（严格按菜单节点判定）。取号 **MC-067**：现取（main ∪ 全部 open PR ∪ 工作区）= main 最大 MC-065、在飞 **PR #6021 占 MC-066**（该 PR 的 `misc.yml` 现取最大 = MC-066）⇒ 按「现取最大号 + 1」= MC-067；`.github/cases/claims/` 机制尚未落地（#6017 仍 draft）⇒ 待 #6017 落地后迁移。⚠️ `scripts/next_case_id.py MC` 给的是**历史空档 MC-049**，与 MC-055/056/058/064 的先例一致地**不采用**（空档号 ≠ 可用号：该号写在已 CLOSED 的 PR 分支里）。 ｜ tags: ai-agent, onboarding, navigation, proactive-push, default-deny, role-trim, no-steps, red-proof
 
 ### MC-049. 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据） 🔵
 ```
@@ -8989,8 +9004,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：627（活跃 133，跳过 494）
-- tier 分布：smoke 12 / normal 582 / adversarial 31
+- 用例总数：628（活跃 133，跳过 495）
+- tier 分布：smoke 12 / normal 583 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -9005,7 +9020,7 @@
 - 财务对账域：4
 - 人事域：12
 - 知识问答域：7
-- 杂项域：69
+- 杂项域：70
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -9103,6 +9118,7 @@
 - MC-067: §15.7 页面多模态验收承载体（issue #6009）：登录步先切「管理员登录」再填手机号 + 登录页形态指纹 fail-closed + 唯一入口与「取不到证据怎么判」三态（纯静态判据）
 - MC-068: RBAC 文档岗位清单 ⇄ 真值源逐值对账（issue #6036 的 F7 固化）：docs/wiki/RBAC.md 的「新租户种子岗位」清单必须逐值等于 rbac/manifest.json 的 roles.seed（纯静态判据）
 - MC-069: B 端真实评测 3 缺陷的类级固化：批次取值白名单 ⊆ DB 约束（缺陷 A）+ 路由目的地恒在图上（缺陷 C）
+- MC-070: 米宝**主动新手引导**（issue #5989 · P2）：首次进某个已登记页面 ⇒ 对话区主动发一条**导航提示**；**每页每会话最多 1 次**（服务端判，不靠前端自觉）· **只推该角色可见的**（只读服务端会话权限）· **未登记页面不推**（默认拒绝，静默）· **只给导航不给步骤**（结构 + 文案双层）· 拿不到「在哪一页 / 这页能做什么」⇒ **不发**（可行动性）
 - MC-049: 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
