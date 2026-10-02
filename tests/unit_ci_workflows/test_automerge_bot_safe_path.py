@@ -640,15 +640,45 @@ STRIP_COMMENT_DEF_RE = re.compile(
 # 生成物（`tests/agent_eval/eval_cases.py`）的文件头：它的正文是**用例散文**（会提到那个函数名），
 # **不是**实现 —— 逐字排除它（`strip_comment_scan_sources` 的 ③），并由
 # `test_no_generated_artifact_defines_the_yardstick` 正向钉住「生成物里从不出现那个**定义**」。
-# ⚠️ 判定看的是**第 1 行**（本文件自己的说明文字里也有这个词组 ⇒ 不能用「文件里出现过它」来判，
+# ⚠️ 判定看的是**首行**（本文件自己的说明文字里也有这个词组 ⇒ 不能用「文件里出现过它」来判，
 #    那会让本文件又自匹配一次、并被踢出扫描面 = 静默缩小射程）。
 GENERATED_FILE_HEADER = "GENERATED FILE — " + "DO NOT EDIT"
 
 
 def is_generated_artifact(path) -> bool:
-    """`path` 是否为生成物：判据 = **第 1 行**逐字含生成物标记（不吃文件别处的说明文字）。"""
+    """`path` 是否为生成物：判据 = **首行**逐字含生成物标记（不吃文件别处的说明文字）。"""
     first_line = path.read_text(encoding="utf-8", errors="replace").split("\n", 1)[0]
     return GENERATED_FILE_HEADER in first_line
+
+
+#: 判据 9~11 共用的夹具行（`# <secrets 引用>` 形态的注释行）。
+COMMENTED_SECRETS = "  # " + COMMENT_ONLY_SECRETS
+
+
+def test_only_one_strip_comment_implementation_in_the_repo():
+    """**整仓**（改前只有 `.github/**`）那个精确函数名只有「正典 + 具名豁免」两处。
+
+    改前：`hits` 只扫 `.github/**` ⇒ `tests/**` 里写一份**同名同义**实现**没有任何东西会红**
+    （本仓最忌的「又一把尺子」）。改后扫描面 = 整仓（排除三个具名对象，见 `strip_comment_scan_sources`）。
+
+    ⚠️ **本条刻意放在模块级**（与同族其它判据不同）：`declaration_gate_registry.json` 的
+    `same_source_claims` 只认**模块级** `def <名字>(` 作为 criterion（`^def ...` 逐字匹配）——
+    写成类方法会被 `tests/unit_ci_workflows/test_gate_coverage_and_same_source.py` 判成**死判据**。
+    故这里不能是 `TestCriterion11YardstickIsSingleSource` 的方法（本仓既有 14 条同源声明**全部**是模块级函数）。
+    """
+    blocked = strip_comment_scan_sources()
+    assert GUARD_FILE not in blocked, \
+        "自匹配陷阱：守卫文件必须在扫描面之外（否则它永远命中自己）"
+    assert len(blocked) > 500, \
+        f"扫描面塌缩（只剩 {len(blocked)} 个文件）⇒ 「整仓」被悄悄缩回 `.github/**`"
+    assert any(s.startswith(".github/") for s in blocked), "`.github/**` 不在扫描面里"
+    assert any(s.startswith("tests/unit_ci_workflows/") for s in blocked), \
+        "`tests/**` 不在扫描面里 —— 本包要堵的就是这个洞"
+
+    hits = scan_for_strip_comment_definition()
+    assert hits == [CANONICAL_STRIP_COMMENT, strip_comment_ledger()["live_exemptions"][0]["path"]], \
+        f"那个函数名全仓只许「正典 + 具名豁免」两处（= 又一把尺子）：{hits}"
+    assert CANONICAL_STRIP_COMMENT in hits, "正典实现不见了 ⇒ 下面的「同源」判据无从谈起"
 
 
 def strip_comment_scan_sources():
@@ -718,25 +748,8 @@ class TestCriterion11YardstickIsSingleSource:
 
     COMMENTED = "  # " + COMMENT_ONLY_SECRETS
 
-    def test_only_one_strip_comment_implementation_in_the_repo(self):
-        """**整仓**（改前只有 `.github/**`）那个精确函数名只有「正典 + 具名豁免」两处。
-
-        改前：`hits` 只扫 `.github/**` ⇒ `tests/**` 里写一份**同名同义**实现**没有任何东西会红**
-        （本仓最忌的「又一把尺子」）。改后扫描面 = 整仓（排除两个具名对象，见 `strip_comment_scan_sources`）。
-        """
-        blocked = strip_comment_scan_sources()
-        assert GUARD_FILE not in blocked, \
-            "自匹配陷阱：守卫文件必须在扫描面之外（否则它永远命中自己）"
-        assert len(blocked) > 500, \
-            f"扫描面塌缩（只剩 {len(blocked)} 个文件）⇒ 「整仓」被悄悄缩回 `.github/**`"
-        assert any(s.startswith(".github/") for s in blocked), "`.github/**` 不在扫描面里"
-        assert any(s.startswith("tests/unit_ci_workflows/") for s in blocked), \
-            "`tests/**` 不在扫描面里 —— 本包要堵的就是这个洞"
-
-        hits = scan_for_strip_comment_definition()
-        assert hits == [CANONICAL_STRIP_COMMENT, strip_comment_ledger()["live_exemptions"][0]["path"]], \
-            f"那个函数名全仓只许「正典 + 具名豁免」两处（= 又一把尺子）：{hits}"
-        assert CANONICAL_STRIP_COMMENT in hits, "正典实现不见了 ⇒ 下面的「同源」判据无从谈起"
+    # ⚠️ 扫描面那条判据（`test_only_one_strip_comment_implementation_in_the_repo`）在**模块级**
+    #    —— 同源声明的 criterion 只认模块级函数，理由见它的 docstring。
 
     def test_the_predicate_itself_is_discriminating(self):
         """谓词口径自证（**具名读数**）：精确名命中那 2 条，而不卷进同名不同族的 4 条。

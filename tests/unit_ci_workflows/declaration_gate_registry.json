@@ -551,6 +551,13 @@
       "issue": "#5771",
       "criterion": "tests/unit_ci_workflows/test_next_case_id_allocator.py::test_only_one_allocation_implementation_in_scripts",
       "note": "该一元组的「单一实现」声明此前**不进登记面**：`_module_literals` 只收 `len(elts) >= 2` 的字面量集合（issue #5771 已把下界降到 1）。它的判据本身是既有的那条双向核验（多一份实现 / 少一份都红）——本单只是把它**纳入面内**，不改它的语义。"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_automerge_bot_safe_path.py",
+      "symbol": "STRIP_COMMENT_FAMILY",
+      "issue": "#5948",
+      "criterion": "tests/unit_ci_workflows/test_automerge_bot_safe_path.py::test_only_one_strip_comment_implementation_in_the_repo",
+      "note": "模块级常量上方注记声明「被扫的函数名 + 谓词 = **单一实现**（唯一性）」（#5948）⇒ 由该判据承担：整仓扫描面的命中集必须恰好 == 正典 ∪ 活豁免，多一份同名定义即红并具名。谓词本身是拼装常量（不逐字写出那个名字）⇒ 本文件不自匹配，该声明由 `test_the_predicate_itself_is_discriminating` 的反面对照（8 条前缀族读数）另行具名。"
     }
   ],
   "frozen_declarations": [
