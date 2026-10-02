@@ -4623,3 +4623,37 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PR-121
+    legacy_id: ""
+    title: "入库 receiveStock：null 均价（新 SKU 首次入库「不记单价」）必须能过真 PG —— PG 参数类型推断"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - inbound
+      - backend-contract
+      - realdb
+      - null-param
+    truths_ref:
+      - inbound-order-flow.draft-then-post
+    user_inputs:
+      - "入库单过账（含页面明示允许的「新 SKU 首次入库 + 明细不记单价」这条路径）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**病（真库实测，2026-10-02）**：新 SKU（avg_cost 为 NULL）+ 明细留空单价 ⇒ movingAverage 返回 NULL ⇒ receiveStock(..., newAvgCost=null, ...) ⇒ PG 抛 `ERROR: could not determine data type of parameter $3`（`receiveStock-Inline`）⇒ BadSqlGrammarException ⇒ 接口 500（issue #5975 的服务端栈逐字如此）。根因 = `CASE WHEN #{newAvgCost} IS NULL` 里的绑定**没有类型锚点**（左边没有列/cast/函数签名），实参为 NULL 时 PG 拿到 unspecified 类型参数、推断不出。判据 = backend/admin-api/src/test/java/com/migao/admin/service/ProductSkuReceiveStockNullCostRealDbTest.java（真 PG，4 条）。**红证（修前实测读数）**：`Tests run: 4, Failures: 1, Errors: 2` —— 两条 NULL 实参判据抛 PSQLException、一条判据失败；**带单价的对照条通过**（证明判据认的是「null 参数」而不是「SQL 变了没有」）。"
+      - "**判据 1（过账成功 + 落库三件套）**：全新 SKU + 不记单价首次过账**不得抛异常**，且 `stock` 0→3、`latest_batch_no` 落批次号；`avg_cost` / `cost_amount` 留 **NULL**（不用 0 冒充「成本为零」）。执行点 = 同文件 `newSkuFirstPostWithoutUnitCostSucceeds` / `costUnknownStaysNullNotZeroAfterCostlessPost`。"
+      - "**判据 2（跨次语义）**：先不记单价过账（avg_cost 仍 NULL）→ 再带单价过账 ⇒ 均价取带价那次、`cost_amount` = 总库存 × 均价（3 + 3 = 6，单价 10 ⇒ 60）。执行点 = 同文件 `costlessFirstPostThenCostedSecondPostAccumulates`。"
+      - "**判据 3（SQL 形态钉在类型上）**：`newAvgCost` 的**每个**绑定都必须显式 `jdbcType=NUMERIC`，裸 `#{newAvgCost}` 一处都不许留 —— 丢掉 jdbcType 就是回退到 500。执行点 = backend/admin-api/src/test/java/com/migao/admin/mapper/ProductSkuMapperTest.java 的 `receiveStockBindsCostWithExplicitNumericJdbcType`（反射读 @Update 注解 SQL，定位串与 `avg_cost = #{newAvgCost,jdbcType=NUMERIC}` / `CASE WHEN #{newAvgCost,jdbcType=NUMERIC} IS NULL` 对齐）。"
+    skip_reason: "[backend-contract] 入库过账的**真库**判据 + Mapper SQL 形态契约（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）"
+    merge_log: "2026-10-02 新增（issue #5975，P1·仓储：入库过账 500）。**取号 PR-121**：`scripts/next_case_id.py PR` 建议 PR-015，但那是历史空档（< 现取最大号 120，且本仓口径「空档≠可用」）⇒ 按「当前最大号 + 1」取 121。⚠️ 本单**更正了 issue 的转述**：issue 正文把根因写成「内联 SQL 里的裸 `?`」，而 `git show origin/main:backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java` 现取是 MyBatis `#{newAvgCost}`（`git diff 3fa84ab89 origin/main` 对该文件零 diff）—— 日志里的 `?` 是 **MyBatis 渲染后的占位符**，不是源码形态；机制（PG 在 `CASE WHEN ? IS NULL` 处推断不出 null 参数类型）与 issue 描述一致，故修法落在 `jdbcType=NUMERIC` 上。**红→绿**：修前 `Tests run: 4, Failures: 1, Errors: 2`（PSQLException 无法确定参数 $3 的数据类型）⇒ 修后 `4 passed`；静态契约 `ProductSkuMapperTest` 9 passed。类级固化 = tests/unit_ci_workflows/test_mapper_null_param_type_guard.py（用例 MC-064；原取号 MC-062 已被 #5976+#5977 占用、MC-063 被 #5983 的在飞分支占用 ⇒ 两次顺延）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductSkuReceiveStockNullCostRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/ProductSkuMapperTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

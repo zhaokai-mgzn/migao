@@ -57,10 +57,16 @@ P5_EXPECTED_DIFF: dict[str, tuple[str, ...]] = {
         "inbound:create", "inbound:view", "knowledge:view", "order:create", "order:update",
         "processing:update", "processing:view",
     ),
-    "customer_service": (),
-    "finance": (),
+    # issue #5979 / #5988（人类 2026-10-02 裁定「应允许」）：三个岗位各补一个本职码，
+    # 声明面（`roles.seed`）前进 ⇒ **现取差集随之变化**（本读数就是那条「差集是现取」的读数：
+    # 它变了不是 bug，而是声明改了 —— 同步它是本判据的**必须动作**）。
+    # 消解去向：`V136` 由同一份清单渲染（`rbac/generate_migration.py`）⇒ 三个岗位的授权语句
+    # 已同批出现在 `V136` 里，**存量租户由 V136 + V145 双保险回填**（两处都 `ON CONFLICT DO NOTHING`）。
+    # `knowledge_editor` 不在 P5 射程（它不是「五个原有内置岗位」之一）⇒ 仍为空。
+    "customer_service": ("order:refund",),
+    "finance": ("customer:view",),
     "operator": (),
-    "sales": (),
+    "sales": ("order:create",),
 }
 
 #: P6 正式定义的两个角色码（**逐值取自回退 switch**，见设计 §2.6 的现取事实表）。
@@ -188,9 +194,22 @@ def p6_problems(manifest: dict, parity) -> list[str]:
 
 
 def p6_migration_problems(manifest: dict, text: str | None) -> list[str]:
-    """P6 的存量迁移必须**逐值**等于清单声明（未登记 / 陈旧 / 少一个码都红）。"""
+    """P6 的存量迁移必须**逐值**等于**它发布时刻的清单快照**（少一个码 / 多一个码都红）。
+
+    🔴 **`manifest` 入参已不使用（issue #5979 / #5988 改判）**——`V137` 是**已发布**迁移
+    ⇒ `Danger Scan` 判「已发布迁移不可重写」，它的内容**不得**随活清单前进而变形。
+    生成器把它的渲染输入钉在 `rbac/manifest-published-at-V137.json`（`FROZEN_SNAPSHOTS`）上，
+    本判据**读同一份快照**做逐值比较，于是「P6 的内容 ≡ 它自己发布时刻的声明」这条不变量**照旧成立**。
+
+    🔴 **改判后本判据的射程变了（如实登记，别读成覆盖面更大）**：它**不再**判「活清单声明 == V137」。
+    那一半（含清单之后新增的 `knowledge:view` / `knowledge:manage` 等）由**同一文件的**
+    `convergence_problems`（链累计 == 活清单声明，逐岗位逐码具名）承担 —— 两条判据合起来
+    才等价于改判前的射程，**任何一条单独都不完整**。
+    """
     derive = load_derive()
     generator = load_generator()
+    # 与生成器 render_p6 **同源**：同一份冻结快照（避免两处各写一个「发布时刻」口径）
+    manifest = generator.load_frozen_snapshot(f"V{generator.P6_VERSION}")
     rel = next(r for r in generator.ARTIFACTS if "formalize_legacy_roles" in r)
     if text is None:
         return [f"`{rel}` 不存在 ⇒ P6 的存量侧没有物化（新租户有、老租户没有）"]

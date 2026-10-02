@@ -40,13 +40,23 @@ public interface ProductSkuMapper extends BaseMapper<ProductSku> {
      * <p>均价是<b>条件更新</b>：{@code newAvgCost IS NULL}（本行未记单价且此前无均价）时
      * 保持 NULL —— 不用 0 冒充「成本为零」。{@code cost_amount} 只在均价非 NULL 时算。</p>
      *
+     * <p><b>每个 {@code newAvgCost} 绑定都必须带 {@code jdbcType=NUMERIC}（issue #5975）</b>：
+     * {@code CASE WHEN ? IS NULL} 里的 {@code ?} <b>没有列 / cast 作为类型锚点</b> —— 实参为
+     * <b>NULL</b> 时 PG 收到的是 <i>unspecified</i> 类型参数，直接抛
+     * {@code ERROR: could not determine data type of parameter $3} ⇒ {@code BadSqlGrammarException}
+     * ⇒ 接口 500。而「新 SKU 首次入库 + 明细不记单价」（入库页明示允许留空）恰好<b>必然</b>
+     * 走 null 实参（{@code InboundOrderService.movingAverage} 在无进价且此前无均价时原样返回
+     * {@code beforeAvg} = NULL）⇒ 商家按页面提示操作时，新 SKU 的第一次过账必然失败。
+     * 显式 jdbcType 让 PG 拿到参数类型，不再依赖推断。真库判据 =
+     * {@code com.migao.admin.service.ProductSkuReceiveStockNullCostRealDbTest}。</p>
+     *
      * @param newAvgCost 变更后的移动加权平均成本（null = 成本仍未知）
      */
     @Update("UPDATE product_skus SET "
             + "stock = COALESCE(stock, 0) + #{quantity}, "
-            + "avg_cost = #{newAvgCost}, "
-            + "cost_amount = CASE WHEN #{newAvgCost} IS NULL THEN NULL "
-            + "                   ELSE ROUND((COALESCE(stock, 0) + #{quantity}) * #{newAvgCost}, 4) END, "
+            + "avg_cost = #{newAvgCost,jdbcType=NUMERIC}, "
+            + "cost_amount = CASE WHEN #{newAvgCost,jdbcType=NUMERIC} IS NULL THEN NULL "
+            + "                   ELSE ROUND((COALESCE(stock, 0) + #{quantity}) * #{newAvgCost,jdbcType=NUMERIC}, 4) END, "
             + "latest_batch_no = #{batchNo} "
             + "WHERE id = #{skuId}")
     int receiveStock(@Param("skuId") Long skuId, @Param("quantity") BigDecimal quantity,

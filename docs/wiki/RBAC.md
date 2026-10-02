@@ -201,13 +201,21 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 
 | controller | 未覆盖端点 | 结论 | 依据 |
 |---|---|---|---|
-| `AdminRoleController` | `GET /roles`、`GET /roles/all`、`GET /roles/{id}` | ⬜ **该放行**（读面） | `/roles/all` 是「员工管理」页**岗位下拉**的数据源（`employeeApi.loadPositions()`），持 `employee:create` 的员工必须能读；写面（POST/PUT/DELETE）已是 `system:manage` |
+| `AdminRoleController` | `GET /roles`、`GET /roles/all`、`GET /roles/{id}` | ✅ **该收紧（已收紧，issue #5980）** | 三条读面原**无注解** ⇒ 按分支 ③ 对全部商户员工开放（含 0 权限岗位）。**issue #5980 逐调用方核对后取各页既有的读码**：`GET /roles/all` → `employee:list`（唯一调用方 = 「员工管理」页岗位下拉 `employeeApi.loadPositions()`，该页节点码/守卫码即本码）；`GET /roles`、`GET /roles/{id}` → `system:view`（「岗位权限」页的**第一屏**读端点与回显，该页节点码/守卫码即本码）。**不新增权限码、不改岗位矩阵**；写面（POST/PUT/DELETE）仍是 `system:manage`。⚠️ `/roles/all` 因此与米宝 `role_manage` 工具**跨码**（同一 API 被两个守卫码不同的页面共用）⇒ 具名登记在 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']` |
 | `SettingsController` | `PUT /api/admin/settings/password` | ⬜ **该放行** | 自助改密：只改**当前认证用户**自己的密码 |
 | `agent/AgentPaymentController` | `GET /api/admin/agent/payment-qrcodes` | ⬜ **该放行** | 米宝收款码读面（会话内展示给客户），与类级 `order:list` 同族的读口径 |
 
 > **残余风险（照实登记，本轮不修）**：分支 ③ + 上表第 6/7 行意味着**零权限的商户员工**仍能读
 > `/api/admin/menus`（静态目录）与自己的 `/api/admin/user/info`。二者都不含跨用户/租户数据，
 > 且与 `/api/auth/me` 已返回的信息同源 ⇒ 判定为**可接受**；不为此加码（加码会砍掉自助首屏与员工页勾选树）。
+>
+> **`AdminRoleController` 的三个读面已于 issue #5980 从本表移出**（收窄为读码，不再是「有意放行」）；
+> 同一批把「新增读端点忘了加注解」这个形态**落成类级元守卫**：
+> `tests/unit_ci_workflows/test_admin_role_read_surface_guard.py`（端点台账
+> `tests/unit_ci_workflows/admin_role_read_surface_ledger.json`，`exempt` 面只许缩短）。
+> 未注解端点的**全局**台账仍是 `tests/unit_ci_workflows/test_agent_permission_parity.py` 的
+> `UNANNOTATED_ENDPOINTS`（判据 8；`rbac/manifest.json` 的 `ledger_counts.UNANNOTATED_ENDPOINTS`
+> 由 21 缩到 **18**，只许缩短）。
 
 ## 员工授权面的 ⊆ 门禁（issue #4104，用户 2026-09-26 裁定）
 

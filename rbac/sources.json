@@ -274,7 +274,7 @@
       "hits": 1,
       "kind": "declaration",
       "derived_from": "manifest.roles.*",
-      "note": "P5：由 rbac/generate_migration.py 从清单**渲染**的收敛迁移（存量内置岗位补齐清单差集）"
+      "note": "P5：由 rbac/generate_migration.py 渲染的收敛迁移（存量内置岗位补齐清单差集）。🔴 issue #5979 / #5988：本迁移**已发布** ⇒ 渲染输入被钉在 `rbac/manifest-published-at-V136.json`（`FROZEN_SNAPSHOTS`）上 ⇒ 活清单前进**不再**改变它（本读数仍为 1，与 origin/main 逐字节相同）；清单之后新增的存量授权由 V145 承担"
     },
     {
       "face": "sql-role-grants",
@@ -282,7 +282,15 @@
       "hits": 2,
       "kind": "declaration",
       "derived_from": "manifest.roles.*",
-      "note": "P6（出口 i）：由生成器渲染 —— 两个历史岗位码建 roles 行 + 按清单授权"
+      "note": "P6（出口 i）：由生成器渲染 —— 两个历史岗位码建 roles 行 + 按清单授权。🔴 issue #5979 / #5988：同 V136，**已发布** ⇒ 输入钉在 `rbac/manifest-published-at-V137.json` 快照上（本读数仍为 2 = 两句 role_permissions 授权，与 origin/main 逐字节相同）"
+    },
+    {
+      "face": "sql-role-grants",
+      "file": "backend/admin-api/src/main/resources/db/migration/V145__backfill_position_permissions.sql",
+      "hits": 4,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.*",
+      "note": "issue #5979 / #5988：手写的**存量回填**迁移（四个岗位各 1 条 role_permissions 授权）。它不在 `generate_migration.py` 的渲染面上（人工撰写，因为差集口径按「四个岗位各补本职码」逐条具名），故在此显式登记为 declaration 副本"
     },
     {
       "face": "sql-role-grants",

@@ -1,5 +1,5 @@
 package com.migao.admin.security;
-// case_ids: DF-007, DF-017, PG-020, PG-018, PR-113
+// case_ids: DF-007, DF-017, PG-020, PG-018, PR-113, MC-006
 
 import com.aliyun.oss.OSS;
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -945,6 +945,92 @@ class SecurityConfigTest {
         mockMvc.perform(get("/api/admin/users")
                         .with(user("operator-6").roles("OPERATOR")))
                 .andExpect(status().isForbidden());
+    }
+
+    // ======================== 岗位目录读端点（issue #5980）========================
+    // 背景：`GET /api/admin/roles` 与 `/roles/all` 此前**无 `@RequirePermission`** ⇒ 按
+    // `docs/wiki/RBAC.md` 的「放行策略现状」分支 ③（没有注解 = 对所有商户员工开放）
+    // **9 个身份（含 0 权限的自定义岗位）全部 200**，本企业的岗位名 / 权限码集合对全体可见。
+    // 收窄口径（调用方逐个核对，零回归）：
+    //   · `/roles/all` ← `employeeApi.loadPositions()`（「员工管理」页岗位下拉，**唯一**调用方）
+    //   · `/roles`     ← `roleApi.getRoles()`（岗位列表）+ 该页路由守卫 `employee:list`
+    //   · `/roles/{id}`← `roleApi.getRole()`（岗位权限页回显）⇒ 要求 `system:view`（该页守卫码）
+    // ⇒ 两个读端点取**覆盖面最小但足够**的既有读码 `employee:list`（不新增码、不动岗位矩阵）。
+
+    @Test
+    @DisplayName("岗位目录 - 0 权限自定义岗位读 /api/admin/roles/all ⇒ 403（issue #5980 要关掉的口子）")
+    void rolesAll_zeroPermissionCustomRole_denied() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/roles/all")
+                        .with(user("custom-zero").roles("STORE_MANAGER")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("PERMISSION_DENIED"));
+
+        // 负向控制：旧实现（无注解）会放到服务层 ⇒ 这条 verify 会红
+        verify(roleService, never()).getAllRoles(any());
+    }
+
+    @Test
+    @DisplayName("岗位目录 - 持 employee:list 读 /api/admin/roles/all ⇒ 200（岗位下拉的正向对照）")
+    void rolesAll_operatorWithEmployeeList_allowed() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("employee:list"));
+        when(roleService.getAllRoles(any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/roles/all")
+                        .with(user("operator-roles-all").roles("OPERATOR")))
+                .andExpect(status().isOk());
+
+        verify(roleService).getAllRoles(any());
+    }
+
+    @Test
+    @DisplayName("岗位目录 - 0 权限自定义岗位读 /api/admin/roles ⇒ 403（「岗位权限」页第一屏）")
+    void roles_zeroPermissionCustomRole_denied() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/roles")
+                        .with(user("custom-zero-2").roles("STORE_MANAGER")))
+                .andExpect(status().isForbidden());
+
+        verify(roleService, never()).getRolePage(anyLong(), anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("岗位目录 - 持 system:view 读 /api/admin/roles ⇒ 200（岗位权限页第一屏的零回归对照）")
+    void roles_systemViewHolder_allowed() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("system:view"));
+        when(roleService.getRolePage(anyLong(), anyLong(), any(), any()))
+                .thenReturn(new PageResponse<>());
+
+        mockMvc.perform(get("/api/admin/roles")
+                        .with(user("roles-page-user").roles("OPERATOR")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("岗位目录 - 持 system:view 读 /api/admin/roles/{} ⇒ 200（岗位权限页回显的零回归对照）")
+    void roleDetail_systemViewCode_allowed() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("system:view"));
+        when(roleService.getRoleById("7")).thenReturn(new com.migao.admin.entity.Role());
+
+        mockMvc.perform(get("/api/admin/roles/7")
+                        .with(user("roles-page-user").roles("OPERATOR")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("岗位目录 - 垂直越权不回归：customer / worker 读 /api/admin/roles/all ⇒ 403（门禁先拒）")
+    void rolesAll_customerAndWorker_deniedByGate() throws Exception {
+        mockMvc.perform(get("/api/admin/roles/all")
+                        .with(user("customer-1").roles("CUSTOMER")))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/admin/roles/all")
+                        .with(user("worker-1").roles("WORKER")))
+                .andExpect(status().isForbidden());
+
+        verify(roleService, never()).getAllRoles(any());
     }
 
     // ======================== 工人档案接口（issue #4869）=======================

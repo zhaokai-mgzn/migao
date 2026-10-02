@@ -137,6 +137,10 @@ KNOWN_REGISTERED_TOOLS: frozenset[str] = frozenset({
     # taxonomy 的 `WRITE_TOOLS`（该集合是「写用例必须有效果层断言」的判据源）；
     # 本条只同步注册表真值 —— 本守卫失败信息里的「① 工具真的增删了」正是这条路径。
     "image_recognize",
+    # 导航类指引（issue #5989 · P1）：纯本地只读（仓内登记表 = `config/menu.ts` 的镜像 +
+    # 显式登记的「意图 → 功能」表）⇒ `read_only=True`，**不进** taxonomy 的 `WRITE_TOOLS`
+    # （该集合是「写用例必须有效果层断言」的判据源）；本条只同步注册表真值。
+    "nav_guide",
 })
 
 
