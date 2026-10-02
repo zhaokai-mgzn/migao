@@ -160,13 +160,13 @@
 真值: aftersales-flow.create-order-required, aftersales-flow.dup-guard, aftersales-flow.ticket-format
 溯源: 2026-09-26 新增（issue #4074 第 2 条「同步覆盖售后路径」）：售后建单（C 端 aftersale_create，B 端 after_sales_manage 自 #5247 起只读、无 create）与下单**对称**地走同一套幂等实现（同 `ClientRequestIdService`，键只差操作维度 op=aftersale）。断言四件套：must_succeed[min_successes=2]（可达性）+ output_verify[last]（回放可见）+ db_verify[after_sales_by_client_request_id]（同会话 + 一次回放 + 恰好一张）+ order_before（confirm 卡先行）。persona 显式标注 xiaobu。 ｜ tags: aftersale_create, idempotency, retry
 
-## Agent 核心域（7 case）
+## Agent 核心域（6 case）
 
 ### AG-001. AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离 🔵
 ```
 你: ai-agent-service 构造 AgentResponse / AgentContext 并从 AIMessage 提取文本
 期望: direct_reply
-数据: AgentResponse 默认 type=text、tool_calls=None、metadata=None；type 枚举 text/tool_call/tool_result/error
+数据: AgentResponse 默认 type=text、tool_calls=None、metadata=None；type 枚举 text/tool_call/tool_result/suggestions/error
 数据: _extract_msg_content 移除 <think>...</think>（含多行），content 为 list 时仅拼接 type==text 的 text 块
 数据: AgentContext.to_dict 返回 6 字段；to_tool_context 透传 tenant_id/user_id/session_id/role
 跳过: [backend-contract] dataclass/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
@@ -208,16 +208,16 @@
 真值: ai-chat.achat
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, chat, error_fallback
 
-### AG-005. astream_chat 流式事件序列 - tool_call/tool_result/text/error 🔵
+### AG-005. astream_chat 流式事件序列 - tool_call/tool_result/text/suggestions/error 🔵
 ```
 你: ai-agent-service 流式对话（graph.astream 节点级更新）
 期望: direct_reply
 数据: AIMessage.tool_calls 先 yield tool_calls 前文本，再逐条 yield type=tool_call
 数据: ToolMessage 经 json.loads 解析（失败降级 {data: str(content)}），图执行完统一 yield type=tool_result
-数据: final_answer 有新内容→yield type=text；异常→yield type=error（含异常类名）
+数据: final_answer 有新内容→yield type=text；suggestions 非空→yield type=suggestions；异常→yield type=error（含异常类名）
 跳过: [backend-contract] 异步流式对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
-真值: ai-chat.astream-tool-calls, ai-chat.astream-tool-result, ai-chat.astream-text
+真值: ai-chat.astream-tool-calls, ai-chat.astream-tool-result, ai-chat.astream-text-suggestion
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, streaming, tool_result
 
 ### AG-006. get_greeting/get_agent 单例/reset_agent/兼容别名 🔵
@@ -231,17 +231,6 @@
 ```
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
-
-### AG-007. 多模态路由 + _extract_content 空响应兜底（两个线上 Bug 的回归锁） 🔵
-```
-你: ai-agent-service 路由带图消息 + 从回复内容里提取有效文本
-期望: direct_reply
-数据: Bug A：带图（mixed/multimodal）消息**不得**被路由到 direct_reply_node（直复模板不处理图片）；_last_human_has_image 只认最近一条人类消息的图片块
-数据: Bug C：_extract_content 在回复**仅含思考内容**时返回空串（不把 think 内容当正文）；正常文本原样返回
-跳过: [backend-contract] 纯函数/路由判定由 pytest 单测验证（tests/test_bugfix_multimodal_directreply.py），非 LLM 行为，不进入 agent-eval 冒烟
-```
-真值: ai-chat.intent-domains
-溯源: 2026-10-02 新增（issue #5951）：该测试文件此前未声明 case_ids，本单改动它（去掉已退役的 suggestions 桩键）后按门禁口径补声明；用例内容如实对应该文件既有的两组断言，**未新增/未放宽任何断言**。 ｜ tags: agents, multimodal, routing, regression
 
 ## API 层域（19 case）
 
@@ -294,15 +283,15 @@
 
 ### API-005. chat Agent 流→SSE 序列 + 意图/昵称助手 🔵
 ```
-你: ai-agent-service 将 Agent 流式输出转换为 SSE，并处理用户昵称
+你: ai-agent-service 将 Agent 流式输出转换为 SSE，并处理建议反馈/用户昵称
 期望: direct_reply
 数据: loading→text/tool_call/tool_result/card/interactive→done 序列；空文本降级兜底文案
 数据: suggestion-feedback 返回 {ok:true}；_infer_intent_from_text 关键词按具体词优先匹配，空/无匹配返回 ''/general
 数据: _get_user_nickname Redis 命中直返、未命中查 DB、异常静默返回 None
 跳过: [backend-contract] SSE 流/助手函数由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
-真值: api.agent-stream-sse, api.user-nickname
-溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428）｜2026-10-02（issue #5951，用户裁定）：因产品决策退役 —— 主动「后续问题建议」通道整体删除（`/suggestion-feedback` 端点 + `_infer_intent_from_text` 随之删除）⇒ 该条 data_check 整条移除；title / expectations / 其余 data_checks / traces 一字未动。 ｜ tags: api, sse_stream, suggestion
+真值: api.agent-stream-sse, api.suggestion-intent, api.user-nickname
+溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, sse_stream, suggestion
 
 ### API-006. sse.SSEEvent 帧格式 + SSEStreamBuilder 链式/迭代 🔵
 ```
@@ -1064,7 +1053,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `delete` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[interact(confirm), category_manage(action=delete)]` 改判为 `direct_reply`（如实说明 + 引导去后台商品分类页面：删除**没有存活的只读路径**），`must_succeed[category_manage(action=delete)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的写路径断言（「二次确认后才执行删除」+ 写面前置）改判为只读/如实说明口径（原第 1 条文本已并入新第 1 条保留为历史）。 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（42 case）
+## 对话边界域（43 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -1489,6 +1478,18 @@
 ```
 真值: ai-chat.context-memory
 溯源: issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景；issue #3360：解 skip + 补可执行断言（原 skip 理由已过期） ｜ tags: memory, xiaobu, address_prefill, order_create
+
+### CH-029. 建议个性化 - 偏好读取注入（flag 门控，默认关闭） 🔵
+```
+你: ai-agent-service 建议生成前的偏好注入（生产接线断言）
+期望: direct_reply
+数据: 开关 SUGGESTION_PREFERENCE_ENABLED=False（默认）→ _inject_user_preferences 直接返回原 prompt（零行为变化，不调 tracker）
+数据: 开启且 xiaobu 有偏好意图 → <user_preferences> 消毒块前置注入 system prompt（标签 XML 转义）+ [preference-inject] 日志
+数据: mibao 不注入 / 缺 tenant+user / 无偏好 / tracker 异常 → 原样返回不破坏主流程
+跳过: [backend-contract] 偏好注入为纯函数接线，由 pytest 单测验证（tests/test_preference_injection.py），不进入 agent-eval 冒烟
+```
+真值: misc.followup-generate-dynamic
+溯源: 2026-09-07 新增：issue #2997 闭环缺口 A 类 — 偏好读取接线（flag 门控） ｜ tags: suggestions, xiaobu, personalization, preference
 
 ### CH-026. 澄清卡后发图不崩溃 - 交互等待中用户发图走 vision 链路（线上 AttributeError 修复真实验收） 🔵
 ```
@@ -1965,7 +1966,7 @@
 真值: customer-list.profile-view-disclosure
 溯源: 2026-09-25 新增（issue #5462）：#5456 / PR #5458 新增的 action 此前无专属条目 —— Case Coverage Gate 的「零覆盖」判据只管**工具粒度**（customer_manage 本身已覆盖）⇒ 该 action 钻了空子；本条目同时把它的归属（米宝 customer_manage(profile_view)）与披露纪律写明。 ｜ tags: query, tool, disclosure, field-truth
 
-## 数据域（20 case）
+## 数据域（21 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -2195,6 +2196,18 @@
 ```
 真值: agent-notification.session-status, agent-notification.session-isolation
 溯源: 2026-09-26 新增（issue #3592 销账）：session_manage 由「仅 DA-004 一条正向（monitor）」加厚为两条（+ 本条 list）⇒ .github/eval-coverage-baseline.yml 的 session_manage/thin_positive 登记同 PR 删除（陈旧登记会被体检报出）。取号 DA-020：DA-001~DA-019 已占用，DA-020 在 main 与全部在飞 ref 上均未占用（逐 ref 核过）。**未覆盖面（如实登记）**：第三个 action `detail` 需要真实 `session_id`，评测栈无 `agent_sessions` seed ⇒ 物理不可满足，待评测栈补种子后再补（登记在 #4941 总账，不在本条冒充已覆盖）。 ｜ tags: monitor, session, mibao, readonly, llm_behavior
+
+### DA-021. 日报卡片面「proactive 四态」可视化：让「今天为什么没有提示」逐规则可见（issue #5955） 🔵
+```
+你: 经营日报卡片面自检（主动检查面板）
+数据: 卡片面**逐规则一行**显示状态 + **原因**，四态各有各的说法：`wired` = 「已检查、无命中」；`not_wired` = 「系统尚未接入」（**不可行动**）；`not_enabled` = 「你还没开启」+ 开启引导（**可行动**，与「尚未接入」**分开说、不合并**）；`incomplete` = 「本次数据不完整」。**互斥红**：某规则未接线的快照 ⇒ 具名报出该规则 + 原因（**不是**「今天没问题」）；规则齐全且无命中的快照 ⇒ 「已检查、无命中」且**不出现**任何未接线/没开启/不完整的措辞；把状态注入摘掉（或把面板渲染摘掉）⇒ 两条判据分别变红
+数据: `wired` 的规则其 `caveats`（数据源固有边界，如审计 fail-open）**也必须在场**（不许因为「绿」就不显示边界）；`proactive_status` 为 NULL / 缺失（本列面世前的存量行）⇒ **不渲染**该面板（未知 ≠ 没问题，也不许用空壳冒充「已检查」）
+数据: 🔴 **状态字段不来自 LLM 出口**：`sanitize_briefing` 是**白名单**（只返回 summary/review/todo/risks/suggestions）⇒ 把 `proactive_status` 塞进 LLM 输出**被丢弃是预期**（断言对象），而**挂载点之后**的注入必须成功；挂上去的值 = 引擎 `proactive_status(snapshot)` 的**原样**（零重算、零改写、不改快照），且 admin-api 侧**数值回填校验层不得把它对账掉**（它不是数字、也不许混进 content）
+数据: 跨端契约：键名 `proactive_status`、规则 id（`below_cost_price`/`unshipped_overdue`/`low_stock`/`repeat_returns`/`price_change_over`/`discount_over`）与四个枚举值（`wired`/`not_wired`/`not_enabled`/`incomplete`）三端一致；卡片面**只读** —— 面板内无任何按钮/链接（不给「一键处置」入口）
+跳过: [ui-contract] 卡片面渲染与挂载点由三端确定性单测验证（ai-agent：tests/test_briefing_proactive_status_visibility.py；admin-api：DailyBriefingServiceTest 的 ProactiveStatusPassThrough / BriefingControllerTest 的 GetToday；admin-web：tests/unit/components/ProactiveStatusPanel.test.tsx + tests/unit/components/BriefingProactiveStatus.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: dashboard-jump.proactive-status-card, dashboard-jump.proactive-wiring-status
+溯源: 2026-10-02 新增（issue #5955）：日报卡片面 proactive 四态可视化（对话面此前已具备、卡片面零渲染）。取号 DA-021：现取 .github/cases/ 最大号 = DA-020（main ∪ 全部在飞 ref，逐 ref 核过，见 PR body）。**未覆盖面（如实登记）**：Playwright 页面多模态验收（真实登录 + 截图 + AI 读图）由集成方收口，本包不跑；面板在真实浏览器下的排版/对比度不在本单确定性判据面内。 ｜ tags: proactive, briefing, card, ui
 
 ## 防御域（23 case）
 
@@ -2821,7 +2834,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（57 case）
+## 杂项域（59 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2866,6 +2879,29 @@
 ```
 真值: misc.classifier-classify, misc.classifier-parse-response, misc.classifier-fallback
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: intent, classifier, fallback
+
+### MC-005. 后续建议 - 预设模板与 stage fallback 🔵
+```
+你: ai-agent-service 按 agent_type/intent/stage 返回预设后续建议
+期望: direct_reply
+数据: MIBAO/XIAOBU 预设覆盖高频意图且每意图多 stage；farewell 空 dict 表示不推荐
+数据: _get_preset agent_type 选米宝/小布预设与兜底；未知 intent → general；farewell → []；stage fallback 链 stage→querying→initial→第一个非空 stage→defaults
+跳过: [backend-contract] 纯函数由 pytest 单测验证（tests/test_follow_up_suggestions.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: misc.followup-presets, misc.followup-get-preset
+溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: suggestions, preset, fallback
+
+### MC-006. 后续建议 - 动态生成/清洗/兜底 🔵
+```
+你: ai-agent-service 动态生成后续建议并在失败时回退预设
+期望: direct_reply
+数据: _should_use_dynamic 无 API key→False、answer<20→False、实体关键词→True、answer>100→True、否则 _has_specific_entities 正则检测
+数据: _parse_suggestions_from_response JSON 数组（全 str）→前 3 条；带文本 re 提取→前 3 条；失败→None；_sanitize_prompt_value 花括号→全角/换行制表→空格/截断
+数据: generate 动态命中→截断 3 条 strategy=dynamic；动态失败/超时/异常→fallback preset；_generate_dynamic 角色白名单（未知/空→'员工'）；httpx.TimeoutException→None
+跳过: [backend-contract] 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_follow_up_suggestions.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: misc.followup-should-dynamic, misc.followup-parse-sanitize, misc.followup-generate, misc.followup-generate-dynamic
+溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: suggestions, dynamic, sanitize
 
 ### MC-007. 配置 - 默认值/向后兼容/生产密钥校验 🔵
 ```
@@ -8634,23 +8670,23 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：603（活跃 127，跳过 476）
-- tier 分布：smoke 12 / normal 558 / adversarial 31
+- 用例总数：606（活跃 127，跳过 479）
+- tier 分布：smoke 12 / normal 561 / adversarial 31
 - 售后域：10
-- Agent 核心域：7
+- Agent 核心域：6
 - API 层域：19
 - 登录认证域：11
 - B 端小程序域：31
 - 分类域：3
-- 对话边界域：42
+- 对话边界域：43
 - 跨域：3
 - 客户域：11
-- 数据域：20
+- 数据域：21
 - 防御域：23
 - 财务对账域：4
 - 人事域：11
 - 知识问答域：7
-- 杂项域：57
+- 杂项域：59
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
