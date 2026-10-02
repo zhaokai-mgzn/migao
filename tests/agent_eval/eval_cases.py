@@ -374,6 +374,24 @@ _CASE_AG_006 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── AG-007 [NORMAL] 多模态路由 + _extract_content 空响应兜底（两个线上 Bug 的回归锁）（源: cases/agents.yml）──
+_CASE_AG_007 = EvalCase(
+    id='AG-007',
+    legacy_id='',
+    title='多模态路由 + _extract_content 空响应兜底（两个线上 Bug 的回归锁）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 路由带图消息 + 从回复内容里提取有效文本'],
+    expectations=['direct_reply'],
+    data_checks=['Bug A：带图（mixed/multimodal）消息**不得**被路由到 direct_reply_node（直复模板不处理图片）；_last_human_has_image 只认最近一条人类消息的图片块', 'Bug C：_extract_content 在回复**仅含思考内容**时返回空串（不把 think 内容当正文）；正常文本原样返回'],
+    skip_reason='[backend-contract] 纯函数/路由判定由 pytest 单测验证（tests/test_bugfix_multimodal_directreply.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'multimodal', 'routing', 'regression'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── API-001 [NORMAL] chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开（源: cases/api.yml）──
 _CASE_API_001 = EvalCase(
     id='API-001',
@@ -11331,6 +11349,7 @@ ALL_CASES = (
     _CASE_AG_004,
     _CASE_AG_005,
     _CASE_AG_006,
+    _CASE_AG_007,
     _CASE_API_001,
     _CASE_API_002,
     _CASE_API_003,

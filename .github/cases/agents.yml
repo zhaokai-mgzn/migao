@@ -1,5 +1,8 @@
 # cases/agents.yml — AI 客服双 Agent 核心类用例（agents-customer_service_agent 覆盖率分组，issue #2429）
 # 来源：issue #2429 coverage-gap 反推，6 条（customer_service_agent.py 的 12 条 L2 真值）。
+# 2026-10-02（issue #5951）：补 AG-007 —— `test_bugfix_multimodal_directreply.py` 被本单改动
+#   （去掉一个已退役的 `suggestions` 桩键）⇒ Growth Gate 要求「修改的测试须声明 case_ids」；
+#   该文件此前**没有任何** case_ids、也没有任何用例把它当 traces ⇒ 补一条**如实描述其断言行为**的用例。
 # 均为单元测试契约（dataclass / 纯函数 / 依赖注入 mock 的 async 方法），不进入 agent-eval 冒烟（skip_reason 显式标注）。
 
 schema: "case-contract/1.0"
@@ -186,6 +189,36 @@ cases:
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_customer_service_agent.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
+
+  - id: AG-007
+    legacy_id: ""
+    title: "多模态路由 + _extract_content 空响应兜底（两个线上 Bug 的回归锁）"
+    domains:
+      - agents
+      - chat
+    tier: normal
+    tags:
+      - agents
+      - multimodal
+      - routing
+      - regression
+    truths_ref:
+      - ai-chat.intent-domains
+    user_inputs:
+      - "ai-agent-service 路由带图消息 + 从回复内容里提取有效文本"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "Bug A：带图（mixed/multimodal）消息**不得**被路由到 direct_reply_node（直复模板不处理图片）；_last_human_has_image 只认最近一条人类消息的图片块"
+      - "Bug C：_extract_content 在回复**仅含思考内容**时返回空串（不把 think 内容当正文）；正常文本原样返回"
+    skip_reason: "[backend-contract] 纯函数/路由判定由 pytest 单测验证（tests/test_bugfix_multimodal_directreply.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-02 新增（issue #5951）：该测试文件此前未声明 case_ids，本单改动它（去掉已退役的 suggestions 桩键）后按门禁口径补声明；用例内容如实对应该文件既有的两组断言，**未新增/未放宽任何断言**。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_bugfix_multimodal_directreply.py"
       ci:
         - ai-agent-tests.yml
       verifies: []

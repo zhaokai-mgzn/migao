@@ -160,7 +160,7 @@
 真值: aftersales-flow.create-order-required, aftersales-flow.dup-guard, aftersales-flow.ticket-format
 溯源: 2026-09-26 新增（issue #4074 第 2 条「同步覆盖售后路径」）：售后建单（C 端 aftersale_create，B 端 after_sales_manage 自 #5247 起只读、无 create）与下单**对称**地走同一套幂等实现（同 `ClientRequestIdService`，键只差操作维度 op=aftersale）。断言四件套：must_succeed[min_successes=2]（可达性）+ output_verify[last]（回放可见）+ db_verify[after_sales_by_client_request_id]（同会话 + 一次回放 + 恰好一张）+ order_before（confirm 卡先行）。persona 显式标注 xiaobu。 ｜ tags: aftersale_create, idempotency, retry
 
-## Agent 核心域（6 case）
+## Agent 核心域（7 case）
 
 ### AG-001. AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离 🔵
 ```
@@ -231,6 +231,17 @@
 ```
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
+
+### AG-007. 多模态路由 + _extract_content 空响应兜底（两个线上 Bug 的回归锁） 🔵
+```
+你: ai-agent-service 路由带图消息 + 从回复内容里提取有效文本
+期望: direct_reply
+数据: Bug A：带图（mixed/multimodal）消息**不得**被路由到 direct_reply_node（直复模板不处理图片）；_last_human_has_image 只认最近一条人类消息的图片块
+数据: Bug C：_extract_content 在回复**仅含思考内容**时返回空串（不把 think 内容当正文）；正常文本原样返回
+跳过: [backend-contract] 纯函数/路由判定由 pytest 单测验证（tests/test_bugfix_multimodal_directreply.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.intent-domains
+溯源: 2026-10-02 新增（issue #5951）：该测试文件此前未声明 case_ids，本单改动它（去掉已退役的 suggestions 桩键）后按门禁口径补声明；用例内容如实对应该文件既有的两组断言，**未新增/未放宽任何断言**。 ｜ tags: agents, multimodal, routing, regression
 
 ## API 层域（19 case）
 
@@ -8623,10 +8634,10 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：602（活跃 127，跳过 475）
-- tier 分布：smoke 12 / normal 557 / adversarial 31
+- 用例总数：603（活跃 127，跳过 476）
+- tier 分布：smoke 12 / normal 558 / adversarial 31
 - 售后域：10
-- Agent 核心域：6
+- Agent 核心域：7
 - API 层域：19
 - 登录认证域：11
 - B 端小程序域：31
