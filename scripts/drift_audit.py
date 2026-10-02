@@ -153,6 +153,22 @@ CASES_DIR = ".github/cases"
 LIVE_ANCHOR_DEFAULT = "~/.dsh/.agent-presets/migao"
 LIVE_ANCHOR_ENV = "MIGAO_PRESET_LIVE"
 
+#: 🔴 S4（issue #6020，2026-10-02）：预设内容已迁到**独立仓** `zhaokai-mgzn/migao-agent-presets`，
+#: 业务仓**不再承载** `.agent-presets/**`。`SKILLS_DIR` / `DEV_FLOW_SKILL` 随之失效 ⇒ 「技能活锚 /
+#: 预设单调性 / 同步副本」三条判据的**判定面变成 0**，框架按「空集会让护栏恒真」判
+#: `<id>|empty-surface` 这类 **`always=True` 硬漂移**（`--regen-baseline` **消不掉**）⇒ 助手腿整条红。
+#: 处置 = **把判定面改指仍然存在的语料**（判据的比对逻辑一字不动）：
+#:   ① 本仓自带 `.agent-presets/`（夹具仓 / 反向验证）→ 就用它；
+#:   ② 本仓 **git 基线**（`origin/main` → `origin/main~1` → `HEAD~1` → `HEAD` 里第一个真带着该路径的）
+#:      → 落到临时目录。⚠️ 顺序必须**基线在镜像之前**：本机镜像会落后 `origin/main`（实测 v1.103.0 vs
+#:      v1.104.0）⇒ 拿落后镜像当语料会与本仓期望口径漂移（「本机绿 / CI 红」的根因形态）。
+#:   ③ 本机**预设仓镜像**（`$MIGAO_PRESET_REPO_ROOT` / `$MIGAO_PRESET_MIRROR` / `~/migao-dev-preset-anchor`）
+#:      —— 仅当基线取不到时兜底。
+PRESET_PREFIX_IN_REPO = ".agent-presets/migao/"
+PRESET_BASELINE_REFS = ("origin/main", "origin/main~1", "HEAD~1", "HEAD")
+PRESET_MIRROR_ENVS = ("MIGAO_PRESET_REPO_ROOT", "MIGAO_PRESET_MIRROR")
+PRESET_MIRROR_DEFAULT = "~/migao-dev-preset-anchor"
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 数据结构
@@ -297,6 +313,104 @@ class Audit:
 FM_VERSION = re.compile(r"^version:\s*([0-9][0-9A-Za-z.\-]*)\s*$", re.M)
 
 
+_PRESET_ROOT_CACHE: dict[str, Path | None] = {}
+
+
+def _preset_mirror() -> Path:
+    """本机预设仓镜像路径（`MIGAO_PRESET_REPO_ROOT` / `MIGAO_PRESET_MIRROR` 可覆盖）。"""
+    for env in PRESET_MIRROR_ENVS:
+        if os.environ.get(env):
+            return Path(os.path.expanduser(os.environ[env]))
+    return Path(os.path.expanduser(PRESET_MIRROR_DEFAULT))
+
+
+def _preset_root_from_git(repo: Path) -> Path | None:
+    """把 `repo` 的 git 基线里的预设目录落到临时目录；取不到 ⇒ None。"""
+    for ref in PRESET_BASELINE_REFS:
+        proc = subprocess.run(["git", "-C", str(repo), "ls-tree", "-r", "--name-only", ref],
+                              capture_output=True, text=True)
+        if proc.returncode != 0:
+            continue
+        rels = [x for x in proc.stdout.splitlines() if x.startswith(PRESET_PREFIX_IN_REPO)]
+        if not rels:
+            continue
+        out = Path(tempfile.mkdtemp(prefix="migao-drift-preset-"))
+        for rel in rels:
+            blob = subprocess.run(["git", "-C", str(repo), "show", f"{ref}:{rel}"],
+                                  capture_output=True, text=True)
+            if blob.returncode != 0:
+                continue
+            dst = out / Path(rel).relative_to(PRESET_PREFIX_IN_REPO)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_text(blob.stdout, encoding="utf-8")
+        if (out / "skills").is_dir():
+            return out
+    return None
+
+
+def preset_root(repo: Path) -> Path | None:
+    """→ 装着预设语料的目录（其下有 `skills/`、`preset.yml`）；都取不到 ⇒ None。
+
+    ⚠️ 结果按 `repo` 缓存（同一轮里三条判据共用一次解析，避免重复物化）。
+    """
+    key = str(repo)
+    if key in _PRESET_ROOT_CACHE:
+        return _PRESET_ROOT_CACHE[key]
+    local = repo / PRESET_PREFIX_IN_REPO
+    root: Path | None = local if (local / "skills").is_dir() else None
+    if root is None:
+        root = _preset_root_from_git(repo)
+    if root is None and (_preset_mirror() / "skills").is_dir():
+        root = _preset_mirror()
+    _PRESET_ROOT_CACHE[key] = root
+    return root
+
+
+def preset_skill_text(repo: Path, rel_in_preset: str) -> str | None:
+    """→ 预设语料里 `rel_in_preset`（如 `skills/migao-dev-flow/SKILL.md`）的文本。"""
+    root = preset_root(repo)
+    if root is None:
+        return None
+    f = root / rel_in_preset
+    return f.read_text(encoding="utf-8", errors="ignore") if f.is_file() else None
+
+
+def preset_baseline_text(repo: Path, rel_in_preset: str) -> str | None:
+    """→ 与 `preset_root` **同源**的「上一版」文本（比「不得降级 / 是否分叉」用）。
+
+    为什么必须同源：本机镜像落后 `origin/main` 时，拿镜像现取去比 `origin/main` 会读出
+    「版本下降 1.104.0 → 1.103.0」这种**假红**（两边不是同一时点）。规则：语料来自哪，
+    基线就从哪取 —— 本仓自带 ⇒ `git -C <repo> show <base>:<rel>`；git 基线 ⇒ 该 ref 的父提交；
+    镜像 ⇒ 该镜像仓的 `HEAD~1`。
+    """
+    rel = f"{PRESET_PREFIX_IN_REPO}{rel_in_preset}"
+    local = repo / PRESET_PREFIX_IN_REPO
+    if (local / "skills").is_dir():
+        return None            # 夹具仓：直接比 `a.base`（调用方已有那份参照）
+    root = preset_root(repo)
+    if root is not None and (root / ".git").exists():
+        prev = subprocess.run(["git", "-C", str(root), "show", f"HEAD~1:{rel_in_preset}"],
+                              capture_output=True, text=True)
+        if prev.returncode == 0:
+            return prev.stdout
+        return None
+    if root is not None:
+        for ref in PRESET_BASELINE_REFS:
+            base_ref = ref if "~" in ref else f"{ref}~1"
+            prev = subprocess.run(["git", "-C", str(repo), "show", f"{base_ref}:{rel}"],
+                                  capture_output=True, text=True)
+            if prev.returncode == 0:
+                return prev.stdout
+    return None
+
+
+def _preset_moved_note(what: str) -> str:
+    """预设语料取不到时的**显式**说明（防「静默通过」）。"""
+    return (f"⏭️ 读不到预设语料（{what}）—— S4 / issue #6020 起预设权威源在 "
+            f"zhaokai-mgzn/migao-agent-presets，业务仓已不承载 {PRESET_PREFIX_IN_REPO}。"
+            f"本判据**不可判**（未跑 ≠ 通过）；本机建镜像 / CI 用 `fetch-depth: 0` 让基线带着该路径。")
+
+
 def _skill_versions(skills_dir: Path) -> dict[str, str]:
     """`skills_dir` = 直接含 `<技能名>/SKILL.md` 的目录（仓库与活锚的布局不同，勿拼接）。"""
     out: dict[str, str] = {}
@@ -320,11 +434,14 @@ def _ver_tuple(v: str) -> tuple:
 
 def check_skill_anchor(a: Audit) -> CheckResult:
     r = CheckResult("skill-anchor")
-    repo_skills = _skill_versions(a.repo / SKILLS_DIR)
+    # 🔴 S4（issue #6020）：判定面改指**仍然存在的预设语料**（本仓 `.agent-presets/**` 已删）。
+    skills_dir = ((preset_root(a.repo) or Path("/nonexistent")) / "skills")
+    repo_skills = _skill_versions(skills_dir)
     r.evaluated = len(repo_skills)
     if not repo_skills:
-        r.status = "error"
-        r.error = f"{SKILLS_DIR} 下没解析到任何 SKILL.md（判据面为空 = 护栏失效）"
+        # 语料取不到 ⇒ **不可判**（三态）：既不判红（无对象可比），也不当「通过」。
+        r.status = "unknown"
+        r.notes.append(_preset_moved_note(f"{skills_dir} 下没有 SKILL.md"))
         return r
     for name, ver in repo_skills.items():
         r.notes.append(f"仓库 {name} = {ver}")
@@ -356,7 +473,7 @@ def check_skill_anchor(a: Audit) -> CheckResult:
 
     # 内容哈希：版本号相同也可能内容漂移（version 不参与加载，是人工字段）
     for name in repo_skills:
-        src = a.repo / SKILLS_DIR / name / "SKILL.md"
+        src = skills_dir / name / "SKILL.md"
         dst = anchor / "skills" / name / "SKILL.md"
         if src.is_file() and dst.is_file():
             if sha256_text(src.read_text(encoding="utf-8", errors="ignore")) != \
@@ -446,17 +563,20 @@ def check_preset_monotonic(a: Audit) -> CheckResult:
     """
     r = CheckResult("preset-monotonic")
     base = a.base
-    skills_dir = a.repo / SKILLS_DIR
+    # 🔴 S4（issue #6020）：判定面改指预设语料（本仓 `.agent-presets/**` 已删）。
+    skills_dir = ((preset_root(a.repo) or Path("/nonexistent")) / "skills")
     names = sorted(p.parent.name for p in skills_dir.glob("*/SKILL.md"))
     r.evaluated = len(names)
     if not names:
-        r.status = "error"
-        r.error = f"{SKILLS_DIR} 下 0 个 SKILL.md（判据面为空 = 护栏失效）"
+        r.status = "unknown"
+        r.notes.append(_preset_moved_note(f"{skills_dir} 下没有 SKILL.md"))
         return r
     for name in names:
         rel = f"{SKILLS_DIR}/{name}/SKILL.md"
-        cur_txt = a.read(rel)
-        base_txt = a.read(rel, base)
+        cur_txt = (skills_dir / name / "SKILL.md").read_text(encoding="utf-8", errors="ignore")
+        # 参照 = **与语料同源**的上一版（本机镜像落后时，拿业务仓 main 当参照会读出假「版本下降」）；
+        # 取不到才退回业务仓基线（夹具仓走的就是这一支）。
+        base_txt = preset_baseline_text(a.repo, f"skills/{name}/SKILL.md") or a.read(rel, base)
         if cur_txt is None or base_txt is None:
             r.findings.append(Finding(f"{name}|missing",
                                       f"{rel} 在 {base} 或工作树上不存在", always=True))
@@ -502,13 +622,38 @@ def _sections(text: str) -> dict[str, str]:
     return {k: "\n".join(v) for k, v in out.items()}
 
 
+def _declared_source_in_preset(a: Audit, declared: str) -> bool:
+    """副本声明的权威源是否在**预设语料**里在位（S4：权威源已迁出业务仓 ⇒ 本仓没有 ≠ 悬空）。
+
+    接受两种写法（都指向同一份内容）：
+      · **历史**路径 `.agent-presets/migao/skills/...`（S4 前业务仓里的位置）；
+      · **预设仓内**相对路径 `skills/...`（S4 后的权威写法，S4 起 `DEV-FLOW.md` 用的是它）。
+    """
+    root = preset_root(a.repo)
+    if root is None:
+        return False
+    if declared.startswith(PRESET_PREFIX_IN_REPO):
+        rel = Path(declared).relative_to(PRESET_PREFIX_IN_REPO)
+    elif declared.startswith("skills/"):
+        rel = Path(declared)
+    else:
+        return False
+    return (root / rel).is_file()
+
+
 def check_sync_copy(a: Audit) -> CheckResult:
     r = CheckResult("sync-copy")
-    src_txt = a.read(DEV_FLOW_SKILL)
+    # 🔴 S4（issue #6020）：**权威源**已在预设仓 ⇒ 从预设语料读（不在业务仓里找那个路径）。
+    # 夹具仓自带 `.agent-presets/` ⇒ `a.read` 就是对的（保留它，先试它）。
+    src_txt = a.read(DEV_FLOW_SKILL) or preset_skill_text(a.repo, "skills/migao-dev-flow/SKILL.md")
     cp_txt = a.read(DEV_FLOW_COPY)
-    if src_txt is None or cp_txt is None:
+    if src_txt is None:
+        r.status = "unknown"
+        r.notes.append(_preset_moved_note("权威源 `migao-dev-flow/SKILL.md`"))
+        return r
+    if cp_txt is None:
         r.status = "error"
-        r.error = f"缺文件：{DEV_FLOW_SKILL} 或 {DEV_FLOW_COPY}"
+        r.error = f"缺文件：{DEV_FLOW_COPY}（副本在本仓，它不该消失）"
         return r
     r.evaluated = 3
 
@@ -527,7 +672,7 @@ def check_sync_copy(a: Audit) -> CheckResult:
     ds = DECLARED_SOURCE.search(cp_txt)
     if not ds:
         r.findings.append(Finding("declared-source", "副本未声明权威源路径（缺『权威源：`path`』）"))
-    elif not (a.repo / ds.group(1)).is_file():
+    elif not (a.repo / ds.group(1)).is_file() and not _declared_source_in_preset(a, ds.group(1)):
         r.findings.append(Finding("declared-source-dangling",
                                   f"副本声明的权威源不存在：{ds.group(1)}"))
 
@@ -1088,28 +1233,30 @@ CHECKS: list[Check] = [
     Check(
         id="skill-anchor", invariant="I1/I4",
         title="技能活锚新鲜度",
-        judgment="逐技能比较仓库 `.agent-presets/**/SKILL.md` 的 `version:` + 逐字节 sha256 + "
-                 "活锚仓库落后 `origin/main` 的提交数；活锚不存在 ⇒ 未知（不判通过）。",
-        remedy="`cp -R .agent-presets /` 重装活锚（或重跑 preset 安装脚本），再重载技能；"
-               "落后提交数 > 0 时先 `git -C <活锚仓库> pull`。",
+        judgment="逐技能比较**预设语料**（S4 / issue #6020 起：本仓 `.agent-presets/**` → 预设仓镜像 / "
+                 "git 基线，见 `preset_root()`）的 `version:` + 逐字节 sha256 + 活锚仓库落后 "
+                 "`origin/main` 的提交数；活锚不存在 ⇒ 未知（不判通过）；语料取不到 ⇒ 未知（未跑 ≠ 通过）。",
+        remedy="跑 `./scripts/preset-anchor-refresh.sh`（刷新预设仓镜像）后重载技能；"
+               "活锚落后时先 `git -C <活锚仓库> pull`。",
         fn=check_skill_anchor, min_evaluated=1,
     ),
     Check(
         id="preset-monotonic", invariant="I1",
         title="预设版本单调性（技能版本不得降级）",
-        judgment="对 `origin/main`（或 `--base`）与工作树的 `.agent-presets/migao/skills/*/SKILL.md` "
-                 "比 `version:`：**下降 ⇒ 红**（不许存量放行）；**同版本但内容不同 ⇒ 红**（那是分叉）；"
-                 "上升或相同且内容一致 ⇒ 绿。",
-        remedy="你的 worktree 里的 `.agent-presets/` 是**创建时的快照**：`git fetch origin main && "
-               "git rebase origin/main` 后再提交（`git checkout origin/main -- .agent-presets`），"
-               "**不要**用 `git add -A` 把旧预设带上去。",
+        judgment="对**预设语料**（S4 / issue #6020 起：预设仓镜像 / 本仓 git 基线，见 `preset_root()`；"
+                 "夹具仓自带 `.agent-presets/` 时就用它）的 `skills/*/SKILL.md` 比 `version:`："
+                 "**下降 ⇒ 红**（不许存量放行）；**同版本但内容不同 ⇒ 红**（那是分叉）；上升或相同且内容一致 ⇒ 绿。"
+                 "参照物取**与语料同源**的上一版（镜像落后时拿业务仓 main 当参照会读出假「版本下降」）。",
+        remedy="改预设到**预设仓**提 PR（`zhaokai-mgzn/migao-agent-presets`）；合并后跑 "
+               "`./scripts/preset-anchor-refresh.sh` 让活锚镜像跟上。",
         fn=check_preset_monotonic, min_evaluated=1,
     ),
     Check(
         id="sync-copy", invariant="I1",
         title="同步副本 diff",
-        judgment="`docs/wiki/DEV-FLOW.md` 声明的『当前版本』必须等于权威源 `migao-dev-flow/SKILL.md` 的 "
-                 "`version:`；声明的权威源路径必须存在；副本不得有权威源没有的章节；"
+        judgment="`docs/wiki/DEV-FLOW.md` 声明的『当前版本』必须等于**权威源**（S4 / issue #6020 起 = "
+                 "预设仓的 `skills/migao-dev-flow/SKILL.md`，经 `preset_root()` 解析）的 `version:`；"
+                 "声明的权威源路径必须在位（预设仓内的相对路径也算在位）；副本不得有权威源没有的章节；"
                  "共有章节归一化后不同的**条数**与基线比较。",
         remedy="改流程**先改技能**再同步副本（副本自称『两份不一致时按技能执行』，但读者不会去比）；"
                "同步后 `--regen-baseline --reason`，并在 PR 里说明销账项。",

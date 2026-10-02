@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Callable, NoReturn
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# 命名空间包导入（S4 / issue #6020，与 `test_source_parsing_shared.py` 同款）
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 LEDGER_PATH = Path(__file__).resolve().parent / "wiring_claims_ledger.json"
 SKILL_REL = ".agent-presets/migao/skills/migao-dev-flow/SKILL.md"
 SELF_REL = "tests/unit_ci_workflows/test_wiring_claims_registry.py"
@@ -283,9 +286,12 @@ def test_ledger_names_the_skill_section_that_carries_the_rule() -> None:
     assert skill.get("path") == SKILL_REL, f"台账 skill.path 必须指向 {SKILL_REL}"
     heading = skill.get("section")
     assert isinstance(heading, str) and heading.strip(), "台账 skill.section 必须写下节标题（可检索）"
-    text = repo_read_text(SKILL_REL)
+    # 🔴 S4（issue #6020）：台账指的那份技能正文已迁到**预设仓** ⇒ 从 `preset_corpus` 读
+    # （台账里的 `skill.path` **保持**写它在业务仓时的历史路径 —— 那正是「承载体在哪」的登记）。
+    from unit_ci_workflows.preset_corpus import DEV_FLOW_SKILL_REL, preset_text
+    text = preset_text(DEV_FLOW_SKILL_REL)
     if text is None:
-        _raise(f"技能文件不在仓内：{SKILL_REL}")
+        _raise(f"技能正文读不到（预设仓镜像 / git 基线都没有）：{SKILL_REL}")
     assert heading in text, f"技能里找不到台账声称的节标题：{heading!r} ⇒ 台账给不存在的承载体盖章"
 
 

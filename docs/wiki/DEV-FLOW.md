@@ -2,8 +2,10 @@
 
 > ⚠️ **本页不是 `migao-dev-flow` 技能的同步副本 —— 已停止同步**（issue #4315）。
 > 它是**人工节选的历史快照**（停在某个历史时点）：**不会随技能更新而更新**，也**未逐节核对过现状**。
-> **流程口径一律以技能为准**：`migao-dev-flow`（权威源：预设仓 `zhaokai-mgzn/migao-agent-presets` 的
-> `skills/migao-dev-flow/SKILL.md`，本地活锚 `~/.dsh/.agent-presets/migao` 只是它的只读镜像）。
+> **流程口径一律以技能为准**：`migao-dev-flow`（权威源：`skills/migao-dev-flow/SKILL.md`
+> —— **预设仓** `zhaokai-mgzn/migao-agent-presets` 的**仓根**下；本地活锚 `~/.dsh/.agent-presets/migao`
+> 只是指向它的只读镜像）。⚠️ S4（issue #6020）后业务仓**已不再承载**该路径 ⇒ 读它要走预设仓镜像 /
+> git 基线（`scripts/drift_audit.py` 的 `sync-copy` 已按此口径改，判据 = `test_drift_audit_contract.py`）。
 > 本页与技能冲突时**按技能执行**；改流程规范**先改技能** —— 本页**不要再同步**（历史路径 `migao/.agents/skills/...` 已废弃）。
 > 本页落后多少**不写死**（版本戳与计数是**现值**，会腐烂且没人会因此变红 —— 技能 §19.2 ③），用命令自证：
 >

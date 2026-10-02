@@ -335,7 +335,9 @@ def test_same_version_different_content_is_rejected(fixture_repo: Path):
 
     形态与「两个并行包各自只抬一格、撞到同一个号」（2026-09-24 一晚 2 次）逐字相同
     ⇒ 撞车必须当场可见，出口 = 抬号到「基准版本 + 1」。
-    5 种形态的完整判据在 `tests/unit_ci_workflows/test_preset_version_collision.py`（本文件不再重复）。
+    5 种形态的完整判据在 `tests/unit_ci_workflows/test_preset_version_collision.py`；
+⚠️ S4（issue #6020）起该文件**已删** —— 预设内容迁出业务仓，同号撞车/版本单调性由**预设仓 CI**
+（`.github/workflows/preset-guards.yml`）承担；本文件保留的是**业务仓读预设的链路**那一面。
     """
     _aligned_to_ref(fixture_repo)
     _write_skill(fixture_repo, "1.28.0", filler=99)   # 版本不变，正文变了

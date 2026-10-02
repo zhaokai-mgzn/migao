@@ -39,7 +39,7 @@
 
 | # | 判定方式 | 违反后的处置 | 落码 |
 |---|---|---|---|
-| I1-a | 逐技能比 `origin/main` 与工作树的 `.agent-presets/migao/skills/*/SKILL.md` 的 `version:`：**下降 ⇒ 红**；**同版本但内容不同 ⇒ 红**（那是分叉）；上升/相同且内容一致 ⇒ 绿 | `git fetch origin main && git rebase origin/main` 后再提交；**不要** `git add -A`（worktree 的 `.agent-presets/` 是创建时的快照，会把旧预设带上去） | `preset-monotonic` |
+| I1-a | 逐技能比**预设语料**（🔴 S4 / issue #6020 起：**预设仓** `zhaokai-mgzn/migao-agent-presets` 的镜像 / 本仓 git 基线，解析见 `drift_audit.preset_root()`；夹具仓自带 `.agent-presets/` 时用它）的 `skills/*/SKILL.md` 的 `version:`：**下降 ⇒ 红**；**同版本但内容不同 ⇒ 红**（那是分叉）；上升/相同且内容一致 ⇒ 绿。参照物取**与语料同源**的上一版 | 改预设到**预设仓**提 PR；合并后 `./scripts/preset-anchor-refresh.sh` 让活锚镜像跟上 | `preset-monotonic` |
 | I1-b | 生成物 `eval_cases.py` / `mibao-verification-cases.md` 重跑 `.github/render_cases.py` 后**逐字节相等**；且用例库里的 `pre_clean` 字段在渲染结果里**存在** | 以 `.github/cases/` 为唯一源重渲染并提交生成物；**不要手改生成物** | `generated-freshness` |
 | I1-c | 受管引用面上每个 `path:NNN`：① 路径能解析（否则**悬空**）；② 行号 ≤ 目标文件在 `base` 上的行数（否则**越界**）；③ 带 `@<sha>` 限定（否则**裸行号**）；带文件名的裸 `第 N 行` 同理 | 改成**符号/文本锚点**（首选）或 `第 N 行` + `@<sha>`（限定值）；越界引用删掉行号只留符号。见 dev-flow §18.1 / §16.7 | `ref-freshness` |
 | I1-d | 派生文档**自称**是某权威源的副本时，它声明的版本必须等于权威源当前 `version:`；声明的权威源路径必须存在；副本不得有权威源没有的章节 | 见 §4「同步副本」——**兑现或撤回**，二选一 | `sync-copy` |
@@ -101,7 +101,7 @@
 
 | # | 判定方式 | 违反后的处置 | 落码 |
 |---|---|---|---|
-| I4-a | **活锚**（`~/.dsh/.agent-presets/migao`，软链）逐技能与仓库比 `version:` + **逐字节 sha256**；活锚检出落后 `base` **且落后区间动过 `.agent-presets/migao/**` ⇒ 红**（**内容级**判定，不是提交数 —— 落后 1 个提交但预设未变 ⇒ 规则仍是最新，判红就是噪音红）；活锚 `.agent-presets/` 下**有未提交改动 ⇒ 红**（内容无法用 sha 引证）；活锚**不存在 ⇒ 未知**（不判通过） | 见 §5「活锚拓扑」；对活锚所在检出 `git fetch origin main && git merge --ff-only origin/main`（**不要手抄文件**，手抄就是新一层快照） | `skill-anchor` |
+| I4-a | **活锚**（`~/.dsh/.agent-presets/migao`，软链）逐技能与**预设语料**（S4 / issue #6020 起 = 预设仓镜像 / git 基线，不再读业务仓工作树）比 `version:` + **逐字节 sha256**；活锚检出落后 `base` **且落后区间动过预设 ⇒ 红**（**内容级**判定，不是提交数 —— 落后 1 个提交但预设未变 ⇒ 规则仍是最新，判红就是噪音红）；活锚 `.agent-presets/` 下**有未提交改动 ⇒ 红**（内容无法用 sha 引证）；活锚**不存在 ⇒ 未知**（不判通过） | 见 §5「活锚拓扑」；对活锚所在检出 `git fetch origin main && git merge --ff-only origin/main`（**不要手抄文件**，手抄就是新一层快照） | `skill-anchor` |
 | I4-b | 凡声明 `schedule:` 的 workflow（含**被注释停用**的）：核"最后一次**成功**运行"与 cron 周期推出的阈值；**零成功 / 从未跑过 / 超阈值 / 调度被注释停用 ⇒ 红**；`gh` 不可达 ⇒ **未知**（不假装通过）。**分钟级** cron（声明周期 < 60min）的阈值按**登记的**最坏投递间隔取有效周期（workflow 头部 `# drift-audit: minute-cron-throttle-minutes = <N>`，实测依据见下表注）—— GitHub 对分钟级 cron 的节流会让「3×声明周期」结构性不可达（误红）；登记缺失 / 取值冲突 ⇒ **不放松**（照旧按 3×声明周期判并在报告里点名） | 当**缺陷开单**，不得读成"它一直红/它不重要"；修稳定再恢复 `schedule:`；**分钟级 cron 的阈值**走上面那个登记值（改登记 ⇒ 判定跟着改；摘登记 ⇒ 立刻在报告里说话） | `heartbeat` |
 
 > **I4-b 的实测依据（现取，别写死）**：`gh run list --workflow=flaky-ledger-reconcile.yml --limit 100 --json event,createdAt,conclusion`
@@ -175,7 +175,7 @@ policy_version        # 判据口径版本（口径一改即失效）
    （权威源路径 / `@<sha>` / 生成命令 / "本页由脚本生成，勿手改"），输出到 `docs/wiki/DEV-FLOW.md`；
    在 `drift_audit.py` 的 `sync-copy` 里加"重生成 diff == 0"一格（与 I1-b 同款）。
 2. **撤回**：若坚持人工节选，就**删掉"同步副本"的 claim**，页头改写为
-   「**非权威、可能滞后；流程口径以技能为准**（`git show origin/main:.agent-presets/migao/skills/migao-dev-flow/SKILL.md`）」，
+   「**非权威、可能滞后；流程口径以技能为准**（预设仓 `zhaokai-mgzn/migao-agent-presets` 的 `skills/migao-dev-flow/SKILL.md`；业务仓已无该路径 ⇒ 见 `drift_audit.preset_root()` 的读取口径）」，
    并**保留**版本戳检查（声明版本仍须等于权威源，或干脆不写版本）。
 
 **为什么不由本包落地**：`docs/wiki/DEV-FLOW.md` 正文正被别的包改（本包开工时主工作区里它已是
@@ -184,7 +184,7 @@ policy_version        # 判据口径版本（口径一改即失效）
 ### 4.1 反面教材：**基于错误的真相模型写出来的护栏 = 空判据**
 
 本契约的**委托 brief 里有一条错判据**（原文）：
-> 「同步副本 diff：`docs/wiki/DEV-FLOW.md` ↔ `.agent-presets/**/SKILL.md`（现零校验，可静默分叉）」
+> 「同步副本 diff：`docs/wiki/DEV-FLOW.md` ↔ 预设仓 `skills/**/SKILL.md`（S4 / issue #6020 起权威源在预设仓）」
 
 字面实现就是"**两者 diff 必须为 0**"。而实测：971 行 vs 230 行、**diff 949 行** ⇒ 这条护栏
 **永远不可能绿**，只能被塞进基线豁免 ⇒ **一条"永远红或永远被豁免"的空判据**（`migao-acceptance`
@@ -204,12 +204,12 @@ policy_version        # 判据口径版本（口径一改即失效）
 
 | 拓扑 | 形态 | 风险 | 判定 |
 |---|---|---|---|
-| **专用检出 / 只读镜像**（`#4026` 起为实际形态） | `ln -sfn <专职只读镜像>/.agent-presets/migao ~/.dsh/.agent-presets/migao` | 需手动/时机性 ff，**会漂移但可断言**（`#4026` 已补可执行判据 + 自愈：`./scripts/preset-anchor-check.sh` / `preset-anchor-refresh.sh`） | ✅ **正解** |
+| **专用检出 / 只读镜像**（`#4026` 起为实际形态） | `ln -sfn <专职只读镜像> ~/.dsh/.agent-presets/migao`（🔴 S4 / issue #6020：**软链目标是镜像的仓根** —— 预设仓的 `preset.yml` / `skills/` 都在仓根，不再有 `.agent-presets/migao` 这一层） | 需手动/时机性 ff，**会漂移但可断言**（`#4026` 已补可执行判据 + 自愈：`./scripts/preset-anchor-check.sh` / `preset-anchor-refresh.sh`） | ✅ **正解** |
 | **主工作区**（**原** `AGENTS.md` 教法，`#4026` 已改掉） | `ln -sfn "$PWD/.agent-presets/migao" …` | 主工作区常年**脏 + 落后**（实测 `HEAD=aa64bb98` 落后 `origin/main` **136 个提交**且脏）⇒ 照做 = **活锚指向陈旧树**，且 `AGENTS.md` 那句"合并/拉取后自动生效"**变成"永远按几天前的规则干活"** | ❌ **反模式**（issue **#3849**；已由 **#4026** 在指令层修正） |
 
 **现状（`#4026` 落码后，2026-09-17）**：本机活锚 = `$HOME/migao-preset-anchor`（**独立克隆**、
 `checkout --detach origin/main`；不是 worktree、不是主工作区）。`AGENTS.md`「开发环境准备」与
-`.agent-presets/migao/README.md`「接线」已按此拓扑改写，并给出「自检（红就停）+ 自愈刷新」两条命令；
+预设仓 `README.md`「接线」已按此拓扑改写（S4 / issue #6020 起接线说明随预设一起住在预设仓），并给出「自检（红就停）+ 自愈刷新」两条命令；
 `scripts/dev-worktree.sh add/rebase` 会在与主干同步的时机**顺带刷新镜像**（best-effort）。
 上面的表保留为**反模式记录**（历史 + 为什么危险）。
 

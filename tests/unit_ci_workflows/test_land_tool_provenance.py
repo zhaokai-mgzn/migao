@@ -19,7 +19,8 @@ rc=0**、失败后 5 秒六个判据全「无漂移」⇒ **白烧三轮才定�
 ## 🔴 取舍：仅打印 + 落后即显式告警，**有意不** fail-closed
 
 落后是**会话中的常态**（每个工具修复都会造成），一味 fail-closed 会变成**新的假阻塞**
-（本仓刚修过一个同类：`land` 对预设面的假阻塞 —— 见 `tests/unit_ci_workflows/test_dev_worktree_rebase.py`）。
+（本仓刚修过一个同类：`land` 对预设面的假阻塞 —— 见 `tests/unit_ci_workflows/test_dev_worktree_rebase.py`；
+⚠️ 该文件 S4 / issue #6020 起**已删**，同类假阻塞的判据现由 `test_agent_presets_guard.py` 的反向用例承担）。
 真正致命的是**诊断路径太长**（三轮），而可见性正好治它 ⇒ 告警随带**可执行的解除命令**。
 本文件把它钉成判据（落后形态下 `land --dry-run` 仍 rc=0）：改成 fail-closed 必须是有意的。
 
