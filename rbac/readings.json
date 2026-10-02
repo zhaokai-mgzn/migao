@@ -122,10 +122,12 @@
         "knowledge:view",
         "order:detail",
         "order:list",
+        "order:refund",
         "processing:view",
         "production:execute"
       ],
       "finance": [
+        "customer:view",
         "dashboard:view",
         "finance:create",
         "finance:view",
@@ -137,6 +139,8 @@
       ],
       "knowledge_editor": [
         "dashboard:view",
+        "knowledge:manage",
+        "knowledge:view",
         "product:list"
       ],
       "operator": [
@@ -181,6 +185,7 @@
         "customer:view",
         "dashboard:view",
         "inbound:view",
+        "order:create",
         "order:detail",
         "order:list",
         "processing:view",
@@ -202,10 +207,12 @@
         "knowledge:view",
         "order:detail",
         "order:list",
+        "order:refund",
         "processing:view",
         "production:execute"
       ],
       "finance": [
+        "customer:view",
         "dashboard:view",
         "finance:create",
         "finance:view",
@@ -217,6 +224,8 @@
       ],
       "knowledge_editor": [
         "dashboard:view",
+        "knowledge:manage",
+        "knowledge:view",
         "product:list"
       ],
       "operator": [
@@ -261,6 +270,7 @@
         "customer:view",
         "dashboard:view",
         "inbound:view",
+        "order:create",
         "order:detail",
         "order:list",
         "processing:view",
@@ -915,7 +925,7 @@
     "MULTI_READ_ENDPOINT_PAGES": 1,
     "READ_WRITE_EXCEPTIONS": 0,
     "ROLE_FALLBACK_DIVERGENCES": 0,
-    "AUTHORIZATION_CENSUS": 16,
+    "AUTHORIZATION_CENSUS": 19,
     "UNANNOTATED_ENDPOINTS": 21,
     "REGISTERED_RESIDUALS": 10,
     "A7_CODES_BEYOND_CATALOG": 0,

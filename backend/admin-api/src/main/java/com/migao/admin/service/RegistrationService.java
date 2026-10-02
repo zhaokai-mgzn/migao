@@ -768,7 +768,9 @@ public class RegistrationService {
                 "processing:view", "inbound:view", "after_sales:view", "knowledge:view",
                 "agent:session:manage",
                 // issue #5699 的 I4：生产执行写码（今日持 order:list ⇒ 建加工单/报工/打印/发货本来就过得了）
-                "production:execute"), permissionByCode);
+                "production:execute",
+                // issue #5988（人类 2026-10-02 裁定「应允许」）：客服处理售后 = 本职（说明见 RoleService 同码）
+                "order:refund"), permissionByCode);
         attachDefaultPermissions(tenantId, operatorRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "order:refund",
                 "product:list", "product:create", "product:category", "product:category:view",
@@ -787,20 +789,26 @@ public class RegistrationService {
                 "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
                 "processing:view", "inbound:view",
                 // issue #5699 的 I4：生产执行写码（销售今日持 order:list ⇒ 这 4 个端点本来就放行）
-                "production:execute"), permissionByCode);
+                "production:execute",
+                // issue #5988（人类 2026-10-02 裁定「应允许」）：销售下单 = 本职
+                "order:create"), permissionByCode);
         attachDefaultPermissions(tenantId, financeRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "finance:view",
                 "processing:view", "inbound:view", "finance:create",
                 // issue #5699 的 I4：生产执行写码（财务今日持 order:list ⇒ 同上）
-                "production:execute"), permissionByCode);
+                "production:execute",
+                // issue #5988（人类 2026-10-02 裁定「应允许」）：财务对账要读客户
+                "customer:view"), permissionByCode);
 
         // ── P6（issue #5699 出口 (i)）：两个历史岗位码的默认码**逐值取自回退 switch**（不增不减）──
         attachDefaultPermissions(tenantId, productManagerRole, List.of(
                 "dashboard:view", "product:list", "product:create", "product:category",
                 "product:category:view", "processing:manage", "production:view",
                 "processing:view"), permissionByCode);
+        // issue #5979（人类 2026-10-02 裁定「应允许」）：知识编辑**维护知识库**是本职 ⇒
+        // 读码（菜单可见性 / 列表 / 检索）+ 写码（创建 / 编辑 / 删除 / 发布 / 归档）两码一起给。
         attachDefaultPermissions(tenantId, knowledgeEditorRole, List.of(
-                "dashboard:view", "product:list"), permissionByCode);
+                "dashboard:view", "product:list", "knowledge:view", "knowledge:manage"), permissionByCode);
 
         log.info("新租户默认岗位和权限初始化完成: tenantId={}, roles=7, permissions={}", tenantId, defaultPermissions.length);
     }

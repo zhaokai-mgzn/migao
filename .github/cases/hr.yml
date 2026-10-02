@@ -781,3 +781,44 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: HR-012
+    legacy_id: ""
+    title: "岗位默认权限补本职码：客服+order:refund / 销售+order:create / 财务+customer:view / 知识编辑+knowledge:view+knowledge:manage（四处真值源逐值一致 + 存量回填 V145）（issue #5979 / #5988）"
+    domains:
+      - hr
+      - backend
+    tier: normal
+    tags:
+      - role
+      - permission
+      - seed
+      - fallback
+      - migration
+      - rbac
+    truths_ref:
+      - employee-role.fallback-seed-parity
+      - employee-role.snapshot-permissions
+    user_inputs:
+      - "新租户管理员在「岗位权限」页查看 客服 / 销售 / 财务 / 知识编辑 四个岗位的默认权限（存量租户由 V145 同批回填）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **四个岗位的默认权限含各自的本职码**（人类 2026-10-02 逐条裁定「应允许」）：客服 `order:refund`（处理售后工单）/ 销售 `order:create`（下单）/ 财务 `customer:view`（读客户列表）/ 知识编辑 `knowledge:view` + `knowledge:manage`（维护知识库）。缺任一码 ⇒ 该岗位**做不了本职**（#5979 的原始形态 = 知识编辑一个 knowledge 码都没有 ⇒ 打开「知识库」被守卫拦下「当前账号缺少权限 knowledge:view」、调 `/api/admin/knowledge/cards` 得 403）。执行点 = tests/unit_ci_workflows/test_position_default_permissions.py 的 problems_裁定面（**逐码穷举四处真值源**，不是集合相等 —— 相等会把整份岗位矩阵抄成第二份真值）。"
+      - "判据 2·🔴 **四处真值源逐值一致**：① `RoleService.getPermissionCodesForRole` 的回退 switch / ② `rbac/manifest.json` 的 `roles.seed` / ③ `RegistrationService.attachDefaultPermissions` 的注册种子 —— 三者对同一岗位**逐值相等**（穷举，不抽样）；④ 迁移 `V145__backfill_position_permissions.sql` 只承担**增量** ⇒ 判据是「不得授 ①②③ 之外的码」（子集，防真放宽），**不是**逐值相等。执行点 = 同文件的 problems_四处逐值一致。红证（实测）：从回退删一个码 ⇒ 具名红；从 V145 删/多一个码 ⇒ 具名红；往回退加一个别处没有的码 ⇒ 具名红；只改注释 ⇒ **不红**（对照）。"
+      - "判据 3·🔴 **存量租户一起回填（口径必须写进 PR body）**：`V145` **无租户过滤** —— 语句以 `r.code = '<码>'` 为谓词、`JOIN permissions p ON p.tenant_id = r.tenant_id` 取该租户自己的码行 ⇒ 对**每一个**存在该岗位的租户生效。幂等 = `ON CONFLICT (role_id, permission_id) DO NOTHING`（与 V124 / V125 / V137 同款）⇒ 第二遍 0 行；**有意不清空后重加**（那会把租户在岗位权限页的手工增减静默复位）。边界（照实登记）：① 不回填 `users.permissions` 员工级快照（设计 §2.9）；② 不改 `roles` 行 ⇒ 没有该岗位行的租户不被波及；③ 目录缺该码的租户会被**终态对账** `RAISE EXCEPTION` 回滚（不静默放过）。"
+      - "判据 4·🔴 **P5 收敛不变量仍成立**：声明面（`roles.seed`）前进后，整条迁移链（含 V136 / V137 的**重新渲染**与 V145）推演出的每个岗位累计码 **== 清单声明** ⇒ 「新租户（Java seed）与存量租户（迁移链）逐值相等」这条口径常驻可判。本轮三个岗位各补 1 码 ⇒ P5 固定读数由「全 ∅」变为 `customer_service: (order:refund,) / finance: (customer:view,) / sales: (order:create,)`（`knowledge_editor` 不在 P5 射程），**同批重锚是本判据的必须动作**。执行点 = tests/unit_ci_workflows/test_rbac_migration_convergence.py 的 convergence_problems + census_problems。"
+      - "判据 5·🔴 **授权变更 census 逐条交代「打开了哪几扇门」**：本轮新增的码在判据 14 的 `AUTHORIZATION_CENSUS` 里必须逐条给出「哪些端点 / 菜单节点 / Agent 工具因此变为可达」：`order:refund` = 4 个写端点、无菜单节点、**无** Agent 工具（`after_sales_manage` 已于 #5247 收窄为只读）；`order:create` = 2 个端点 + 工具 `order_create`；`knowledge:manage` = 11 个端点、无菜单节点、无工具；`customer:view` / `knowledge:view` 已有条目只改 `roles` 集。台账条数 16 → 19（**显式放宽**，diff 里看得见）。"
+      - "判据 6·**工具层镜像同批同步且口径零变化**：backend/ai-agent-service/tests/test_tool_permission_codes.py 的 `ROLE_PERMISSIONS` 对 `knowledge_editor` 同批补两码 ⇒ `seeded_role_gaps(...) == []` 与 `fallback_role_gaps(...) == []` 同时成立（镜像 ≡ 种子 ≡ 回退）。"
+      - "判据 7·**RBAC 单一真值源的派生面同批更新**：清单改了 ⇒ `python3 rbac/generate_readings.py` 的 `rbac/readings.json` 必须重生成（新鲜度逐字节判）、`python3 rbac/generate_migration.py` 渲染的 V136 / V137 必须重渲染（`test_generated_migrations_are_fresh` 判红）、`rbac/sources.json` 的副本登记命中数必须同批重锚（涨跌都红）。"
+    skip_reason: "[backend-contract] 岗位默认权限的静态契约 + 行为契约（tests/unit_ci_workflows/test_position_default_permissions.py 的四真值源逐码判据 + test_agent_permission_parity.py 判据 14 + test_rbac_migration_convergence.py 的 P5 不变量 + backend/ai-agent-service/tests/test_tool_permission_codes.py 的镜像判据），无 LLM 环节，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-02 新增（issue #5979 / #5988）：验收报告（acceptance/2026-10-02/new-tenant-multirole/REPORT.md）暴露「岗位能力与命名不符」一组产品口径，人类逐条裁定「应允许」。裁定前实测：知识编辑默认权限 = [dashboard:view, product:list]（**一个 knowledge 码都没有**）；客服无 order:refund（#5246 只补了读码 after_sales:view ⇒ 菜单看得见、建不了单）；销售无 order:create（#5246 有意把写码只给运营）；财务无 customer:view（对账看不到客户）。本用例把「四处真值源逐值一致 + 逐码期望集 + 存量回填」立成常驻判据，并顺带补上两个**结构性失明**：① census 的基线 `FALLBACK_BASELINE_BEFORE_5683` 缺 knowledge_editor ⇒ 该角色的授权变更此前**结构性无人计票**（已按基线自述口径补登「#5683 生效前的当时读数」）；② 判据 14 只判「两处 Java 集合相等」⇒ 判不了「值本身对不对」（两处一起写错即全绿，其 docstring 边界 ③ 已登记），本单补上逐码那一半。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_position_default_permissions.py"
+        - "tests/unit_ci_workflows/test_agent_permission_parity.py"
+        - "tests/unit_ci_workflows/test_rbac_migration_convergence.py"
+        - "backend/ai-agent-service/tests/test_tool_permission_codes.py"
+      ci:
+        - pr-check.yml
+      verifies: []
