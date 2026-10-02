@@ -390,6 +390,52 @@ pytest -q --durations=20    # 单用例 >2s 即可疑
 `TestSuiteInternalEntries` 单独裁）+ `tests/unit_ci_workflows/test_suite_self_lock.py`
 （**直连整目录**自己拿锁：接线真跑 / 拦在收集之前 / 纯函数触发面与三类豁免 / fail-closed / 释放面）。
 
+## 子包 worktree **不许**直跑全量（2026-10-03 固化，issue #6078）
+
+上一节把「一批只跑一次全量」做成了**入口**（`scripts/batch-gate.sh`），但**纪律不是机制**：
+两条实测事实说明误跑的入口仍然敞开 ——
+① 在**集成 worktree** 里跑全量 gate 曾**挂死 26 分钟并握着机器级重活锁**（缺陷已修：`#6076` /
+PR `#6077` = `cbd0b9173`，套件自带准入现在「祖先持锁 ⇒ 立即拒绝 + 有界等待」）——
+**修好不等于不会再被误跑**；
+② 在**子包 worktree** 里跑全量 = 把「批次那一次」**提前烧掉**（D 口径的全部意义就是**一批一次**），
+还会跟别人的重活抢同一把机器锁。
+
+**修法**：`verify-all.sh` 在任何重活派发**之前**按**现取的事实**判角色（**不依赖 agent 自报**）：
+
+| 角色 | 判定依据（现取） | 处置 | 会不会持锁 + 跑整目录 |
+|---|---|---|---|
+| 主检出 | `git rev-parse --absolute-git-dir` == `--git-common-dir` | **允许** | 会（人工 / 批次的**一次性**全量在这里跑） |
+| 批次集成 worktree | 上述不等，**且** `git rev-parse --git-path` 处有标记 | **允许** | 会（`batch-gate.sh` 留的标记） |
+| 子包 worktree | 上述不等，**且**没有标记 | **拒绝**（`exit 5`） | **不会** —— 拒绝先于 `macquire` 与档位分发 |
+| CI（`CI` 为真） | 环境标记 | **不受影响** | 会（托管 runner 不占本机资源） |
+
+- **标记是文件，不是名字前缀 / 环境变量**：名字前缀会漂（`batch-gate.sh --in <任意路径>` 形态
+  建出来的集成工作区**不叫** `batch-*`）；环境变量**可被子包自己 export** ⇒ 等于把「我是谁」交给
+  被判对象自报。标记路径由 `git rev-parse --git-path` 现取（= `.git/worktrees/<name>/…`）：
+  **不在工作树里** ⇒ 不进 `git status`、不会被 `git add -A` 提交，`git worktree remove` 时随之消失。
+- **逃生口只在命令行上可见**：`--allow-package-heavy`（放行时打印醒目一行）。有意**不做**环境变量
+  逃生口 —— 本仓刚按 `#6056` 删掉一个不可见的（`MIGAO_BATCH_GATE_SKIP_READY`，YAGNI + 不可见）。
+- **退出码**：`5` = **角色守卫拒绝**。⚠️ 与既有 `3`（无变更）/ `4`（有变更但零项真跑）**不复用**：
+  3/4 说的是「变更集」的读数，而 5 说的是「**调用角色**」被拒 —— **此时变更集根本没算**，
+  用 3/4 会把它读成「你没改东西」/「跑了但零项真跑」（都是**错误归因**，会把人引去查 diff）。
+- **台账（只追加，`.jsonl`）**：`tests/unit_ci_workflows/package_heavy_entry_ledger.jsonl`
+  —— 每次**拒绝 / 显式放行**各记一条，**幂等**（键 = `MIGAO_ROLE_LEDGER_ID`：同一进程树只记一笔）。
+  现取计数（**拒绝 / 放行分开报**）：
+
+  ```bash
+  ./scripts/package-heavy-entry-ledger.sh count     # refused=<n> / override=<n>
+  ```
+
+  为什么要分两类：本台账正是 `Dev-Mode-Balance.md` §10 那条「批次粒度」优化的**重启条件**
+  （≥5 次批次记录）要用的读数 —— 把「被拦下的浪费」与「人类明知故犯的放行」混成一个数，两者都读不出来。
+- 🔻 **盖不到的**（照实登记）：判据**不保证**有人不用 `verify-all.sh` 而直连
+  `pytest tests/unit_ci_workflows` —— 那一路由 `conftest.py` 的**套件自带准入**承担
+  （上一节，判据 `test_suite_self_lock.py`）；`git` 不可用 ⇒ 判 `unknown` ⇒ **拒绝**（fail-closed）。
+
+**判据**：`tests/unit_ci_workflows/test_package_heavy_entry_ban.py`（四态处置 / 拒绝**先于任何重活**
+（`PATH` 审计桩证明没有起过测试进程）/ 摘掉标记 ⇒ 拒绝 / 逃生口只在命令行 / 台账幂等与分类计数 /
+**四条注入式红证** / `batch-gate.sh` 真接线留下标记）。
+
 ## 测试分层
 
 | 层 | 工具 | 覆盖要求 |
