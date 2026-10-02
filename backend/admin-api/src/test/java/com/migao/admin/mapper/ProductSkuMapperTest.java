@@ -1,6 +1,6 @@
 package com.migao.admin.mapper;
 
-// case_ids: PR-041, PR-046, PR-047
+// case_ids: PR-041, PR-046, PR-047, PR-121
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.ProductSku;
@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -56,9 +58,37 @@ class ProductSkuMapperTest {
         String sql = sqlOf("receiveStock", Long.class, java.math.BigDecimal.class,
                 java.math.BigDecimal.class, String.class);
         assertThat(sql).contains("stock = COALESCE(stock, 0) + #{quantity}");
-        assertThat(sql).contains("avg_cost = #{newAvgCost}");
+        assertThat(sql).contains("avg_cost = #{newAvgCost,jdbcType=NUMERIC}");
         assertThat(sql).contains("latest_batch_no = #{batchNo}");
         assertThat(sql).contains("cost_amount =");
+    }
+
+    /**
+     * issue #5975：{@code newAvgCost} 的**每个**绑定都必须显式带 {@code jdbcType=NUMERIC}。
+     *
+     * <p>它不是「风格」判据，而是「PG 能不能推断参数类型」的判据：{@code CASE WHEN ? IS NULL} 里的
+     * {@code ?} 没有类型锚点，实参为 NULL 时 PG 报
+     * {@code could not determine data type of parameter $3}（修前真库红证见
+     * {@code com.migao.admin.service.ProductSkuReceiveStockNullCostRealDbTest}）。
+     * 裸 {@code #{newAvgCost}} 一律判红 —— 丢掉 jdbcType 就是回退到 500。</p>
+     */
+    @Test
+    @DisplayName("receiveStock：newAvgCost 的每个绑定都显式 jdbcType=NUMERIC（裸参 ⇒ 新 SKU 不记单价时 PG 推断不出类型 ⇒ 500）")
+    void receiveStockBindsCostWithExplicitNumericJdbcType() throws NoSuchMethodException {
+        String sql = sqlOf("receiveStock", Long.class, java.math.BigDecimal.class,
+                java.math.BigDecimal.class, String.class);
+        // 每个 #{newAvgCost...} 都必须紧跟 jdbcType=NUMERIC（`#{newAvgCost}` = 裸参形态，判红）
+        Matcher matcher = Pattern.compile("#\\{newAvgCost([^}]*)}").matcher(sql);
+        int bindings = 0;
+        while (matcher.find()) {
+            bindings++;
+            assertThat(matcher.group(1))
+                    .as("#{newAvgCost%s} 缺 jdbcType=NUMERIC ⇒ NULL 实参时 PG 无法确定参数类型（#5975）",
+                            matcher.group(1))
+                    .contains("jdbcType=NUMERIC");
+        }
+        assertThat(bindings).as("newAvgCost 的绑定数必须 > 0（否则本判据空跑）").isPositive();
+        assertThat(sql).doesNotContain("#{newAvgCost}"); // 裸参一处都不许留
     }
 
     @Test
@@ -77,7 +107,7 @@ class ProductSkuMapperTest {
     void receiveStockKeepsCostAmountNullWhenCostUnknown() throws NoSuchMethodException {
         String sql = sqlOf("receiveStock", Long.class, java.math.BigDecimal.class,
                 java.math.BigDecimal.class, String.class);
-        assertThat(sql).contains("CASE WHEN #{newAvgCost} IS NULL THEN NULL");
+        assertThat(sql).contains("CASE WHEN #{newAvgCost,jdbcType=NUMERIC} IS NULL THEN NULL");
     }
 
     @Test
@@ -91,7 +121,7 @@ class ProductSkuMapperTest {
         assertThat(sqlOf("receiveStock", Long.class, java.math.BigDecimal.class,
                 java.math.BigDecimal.class, String.class))
                 .contains("#{skuId}").contains("#{quantity}")
-                .contains("#{newAvgCost}").contains("#{batchNo}");
+                .contains("#{newAvgCost,jdbcType=NUMERIC}").contains("#{batchNo}");
     }
 
     @Test
