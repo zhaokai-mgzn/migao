@@ -48,6 +48,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PRESET_PREFIX_IN_REPO = ".agent-presets/migao/"
 #: 读预设内容的 git 基线候选（按序取第一个**真读得到**的）。
 PRESET_BASELINE_REFS = ("origin/main", "origin/main~1", "HEAD~1", "HEAD")
+
+#: 历史候选的扫描上限（个提交）与最多试几个候选（性能：每个候选都要 `ls-tree`）。
+HISTORY_SCAN_LIMIT = 200
+HISTORY_CANDIDATES_MAX = 12
 #: 本机预设仓镜像（= 权威源）。`MIGAO_PRESET_MIRROR` 可覆盖，与 `scripts/preset-anchor-check.sh` 同源。
 PRESET_MIRROR = Path(os.environ.get("MIGAO_PRESET_MIRROR")
                      or (Path.home() / "migao-dev-preset-anchor"))
@@ -59,9 +63,42 @@ PRESET_YML_REL = "preset.yml"
 _CACHE: list = []
 
 
+def _history_baseline_refs(rev_list_output: str) -> list[str]:
+    """把 `git rev-list --all -- <前缀>` 的输出变成候选 ref：**每个提交 + 它的父提交**（提交在前）。
+
+    🔴 为什么必须带**父**：把该路径**删掉的那个提交自己不带它** ⇒ 只试提交本身会漏掉「刚刚被删」的形态。
+    实测（2026-10-02，S4 合并后 6 分钟）：候选链若只有 `origin/main~1`，main 侧守护腿在 CI（无镜像）上
+    解析不到预设内容 ⇒ **fail-closed 判红**；而本机有镜像兜底 ⇒ 绿 —— 正是本模块要消掉的「本机绿 / CI 红」。
+    """
+    out: list[str] = []
+    for sha in rev_list_output.split():
+        for ref in (sha, f"{sha}^"):
+            if ref not in out:
+                out.append(ref)
+    return out
+
+
+def _baseline_candidate_refs() -> list[str]:
+    """固定候选（新→旧）**+ 历史候选**（真改过该前缀的最近提交及其父），按序去重。
+
+    历史候选按「最近改过 → 更早」排列，且**内容真读得到**仍是唯一判定（口径不变）。
+    """
+    refs = list(PRESET_BASELINE_REFS)
+    proc = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "rev-list", "--all", "-n", str(HISTORY_SCAN_LIMIT),
+         "--", PRESET_PREFIX_IN_REPO],
+        capture_output=True, text=True,
+    )
+    if proc.returncode == 0:
+        for ref in _history_baseline_refs(proc.stdout)[:HISTORY_CANDIDATES_MAX]:
+            if ref not in refs:
+                refs.append(ref)
+    return refs
+
+
 def _materialize_from_git() -> Path | None:
     """把 git 基线里的预设目录落到临时目录 ⇒ 返回它（取不到 ⇒ None）。"""
-    for ref in PRESET_BASELINE_REFS:
+    for ref in _baseline_candidate_refs():
         proc = subprocess.run(
             ["git", "-C", str(REPO_ROOT), "ls-tree", "-r", "--name-only", ref],
             capture_output=True, text=True,
