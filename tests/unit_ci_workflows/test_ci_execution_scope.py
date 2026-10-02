@@ -140,3 +140,39 @@ def test_cli_count_and_override():
                           capture_output=True, text=True, cwd=str(REPO), timeout=60,
                           env={**os.environ, "MIGAO_CI_HELPER_SCOPE": "full"})
     assert full.returncode == 0 and full.stdout.strip() == "", "override=full 时不许让出任何判据"
+
+
+def _python_stub(tmp_path: pathlib.Path) -> pathlib.Path:
+    """PATH 上放一个 `python` 桩 —— 用来接住 `--run-narrow` 真正 exec 出去的 argv。"""
+    stub = tmp_path / "python"
+    stub.write_text('#!/usr/bin/env bash\necho "ARGV: $*"\n', encoding="utf-8")
+    stub.chmod(0o755)
+    return stub
+
+
+def test_run_narrow_really_passes_the_ignores(tmp_path):
+    """🔴 接线真跑：narrow 档必须把 dev_only 全部作为 `--ignore=` 传给套件（不是只写在注释里）。"""
+    stub = _python_stub(tmp_path)
+    env = {**os.environ, "MIGAO_CI_HELPER_SCOPE": "narrow",
+           "PATH": f"{tmp_path}:{os.environ.get('PATH', '')}"}
+    p = subprocess.run([sys.executable, str(REPO / "scripts/ci_helper_scope.py"), "--run-narrow"],
+                       capture_output=True, text=True, cwd=str(REPO), env=env, timeout=60)
+    assert p.returncode == 0, p.stderr
+    argv_line = [ln for ln in p.stdout.split("\n") if ln.startswith("ARGV: ")]
+    assert argv_line, f"桩没被调用 —— narrow 档没有真起套件：{p.stdout}{p.stderr}"
+    tokens = argv_line[-1].split()
+    ignores = [t for t in tokens if t.startswith("--ignore=")]
+    assert len(ignores) == len(_ledger()["dev_only"]), f"让出参数没传全：{len(ignores)}"
+    assert "-m" in tokens and "pytest" in tokens, "窄档不是走同一份 canonical argv"
+    assert "未跑" in p.stdout, "窄档必须出声（未跑条数）"
+
+
+def test_run_narrow_with_full_override_passes_no_ignores(tmp_path):
+    """对照读数：override=full ⇒ 同一条命令**一条 ignore 都不加**（证明上面那条不是恒真）。"""
+    _python_stub(tmp_path)
+    env = {**os.environ, "MIGAO_CI_HELPER_SCOPE": "full",
+           "PATH": f"{tmp_path}:{os.environ.get('PATH', '')}"}
+    p = subprocess.run([sys.executable, str(REPO / "scripts/ci_helper_scope.py"), "--run-narrow"],
+                       capture_output=True, text=True, cwd=str(REPO), env=env, timeout=60)
+    assert p.returncode == 0, p.stderr
+    assert "--ignore=" not in p.stdout, p.stdout
