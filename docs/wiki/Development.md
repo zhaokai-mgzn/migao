@@ -436,6 +436,107 @@ PR `#6077` = `cbd0b9173`，套件自带准入现在「祖先持锁 ⇒ 立即拒
 （`PATH` 审计桩证明没有起过测试进程）/ 摘掉标记 ⇒ 拒绝 / 逃生口只在命令行 / 台账幂等与分类计数 /
 **四条注入式红证** / `batch-gate.sh` 真接线留下标记）。
 
+## 重活锁的**准入/溢出**台账（2026-10-03 固化，issue #6091；蓝图 P2 的「测量那一半」）
+
+**治的形态（蓝图 `Dev-Mode-Balance.md` §4 行 4/5 + §10 的 P2 行）**：D 口径下本机是「并发 = 1 的
+重活单槽」，重活要么拿到锁、要么**安静排队**（实测排队 45 分钟的先例），而**没有任何台账**回答
+「到底溢出多少次、每次都等多久、是谁在抢」。⇒ 分档容量（P2 的另一半）与批次粒度都只能凭感觉。
+本包**只做测量/留痕**：把事实记下来，并把「槽满」变成**出声**。
+
+> 🔻 **本包不做分档准入**（heavy/service/jvm/tooling/ops），也不改任何容量/并发决策 ——
+> 那是需求方拿着这份读数才谈得上的下一件事。
+
+**台账（只追加 JSONL，默认落在本机、与锁文件同域）**：
+
+```bash
+# 路径：${MIGAO_HEAVY_LEDGER:-$HOME/.migao-heavy-lock-ledger.jsonl}
+./scripts/machine-heavy-lock.sh stats                    # 全量读数
+./scripts/machine-heavy-lock.sh stats --since 24h        # 相对窗口（24h / 90m / 7d）
+./scripts/machine-heavy-lock.sh stats --since 2026-10-03T00:00:00+08:00
+./scripts/machine-heavy-lock.sh stats --since 1          # unix epoch 秒
+./scripts/machine-heavy-lock.sh stats --since 7d --json  # 机器可读（离线，零第三方）
+```
+
+⛔ **它不进仓库**：JSONL 放仓里会触发 `drift_audit` 的 ext-census 漂移（⑨ 包的先例）⇒ 本台账
+有意放在 `$HOME`（**不在任何 worktree 内**，`dev-worktree.sh rm/prune` 也碰不到它）。
+**台账不会出现在 `git status` 里** —— 这是设计，不是巧合。
+它**不依赖网络 / `gh`**：`stats` 只读本地文件（`python3` 标准库解析）。
+
+**六类 `kind` 的语义（判据逐条钉住，见下「判据」）**：
+
+| kind | 语义 | 关键读数 |
+|---|---|---|
+| `acquired_nowait` | 立即拿到（本次调用**一次都没等**） | `wait_seconds == 0` |
+| `acquired_after_wait` | **排队等待后**拿到 | `wait_seconds > 0` |
+| `refused_busy` | **溢出 / 准入被拒**：默认语义下第一次尝试就被活的持有者挡回 | 溢出计数的一半 |
+| `acquire_timeout` | 溢出（等待档）：`--wait <n>` 等满上限仍被挡回 | 溢出计数另一半 + 「白等了多久」 |
+| `stale_reaped` | 陈旧锁回收（原持有者 PID 已死） | 回收频率 |
+| `released` | 释放 | 「持有者 / 抢占者」榜 |
+
+> `unknown` 是**读出口径**给「形态不认识的行」（旧格式 / 别处手写的 fixture）留的桶 ——
+> **不猜**：它不参与溢出计数。
+
+**字段（记录契约）**：`ts`（**带时区偏移**，如 `2026-10-03T06:56:26+0800`）· `kind` · `req`
+（请求者名字，来自既有 `acquire <名字>` 参数，如 `verify-all.sh gate`）· `wait_seconds` ·
+`worktree` · `branch` · `surface`（`single` / `batch-integration`）· `holder` · `holder_pid` ·
+`owner_pid`。首行是 schema 头（`_kind` = `migao.heavy-lock-ledger`），读出口径按它认对象。
+
+**批次面（「批次粒度」重启条件 = 批次记录 ≥5 次）**：`scripts/batch-gate.sh` 发起的那一次全量
+**不需要改 batch-gate 一行**就能被数出来 —— 它跑的 worktree 里有 `#6084` 留的批次标记
+`migao-package-heavy-entry-allow`（位置由 `git rev-parse --git-path` 现取 ⇒ **不在工作树里**、
+不进 `git status`）⇒ 本脚本记 `surface=batch-integration`，`stats` 单独报 `batch_integration=`。
+
+**「槽满 ⇒ 出声」的处置（拒绝报文里的三条可行动出口）**：
+① 为什么（锁被谁占着 + PID + 已跑多久 + worktree/cwd）；② **改走 CI**（推一次即可 —— GitHub 上
+每个 PR 并行跑同一套 required 检查，它是**权威**，且不占本机这颗单槽）；③ 在 PR body 写
+「**本机未跑（机器级重活锁被谁占着）+ 理由 + CI 覆盖清单**」。
+**不许静默排队**：`wait=0` 的既有默认语义一字未改，只有显式 `--wait` / `MIGAO_HEAVY_WAIT` 才排队。
+
+**旁路（绝不动锁语义）**：① **写台账时绝不持锁** —— 全部写点在 `_acquire_once` **之外**（判定已定、
+锁要么还没写、要么已删）；② **写失败只打 `::warning::`**，`acquire`/`release` 的判定与退出码
+**一字不变**；③ 一次 `printf >>`（O_APPEND 短行原子），**不 fork `python3`**。
+实测开销（80 组 acquire+release 均值）：`origin/main` 基线 `252.9ms` → 带台账 `293.3ms`
+（**+40ms / 组**）；`status` 100 次 `mean=201ms`（与基线同量级）。
+
+### 一次真实的 `stats` 读数（可复算）
+
+```text
+$ ./scripts/machine-heavy-lock.sh stats --since 24h
+── 机器级重活锁 准入/溢出台账（只读；口径见 docs/wiki/Development.md）──
+台账文件    : /Users/<you>/.migao-heavy-lock-ledger.jsonl
+时区        : UTC+0800（本机）—— 台账 `ts` 带该偏移；`--since` 不带时区时按它解释
+时间窗      : --since 24h
+记录条数    : 4（时间窗内）
+按 kind     :
+  acquired_nowait      1
+  refused_busy         1
+  acquire_timeout      1
+  released             1
+溢出（准入被拒）次数 : 2 / 4 次 acquire 尝试（50.0%）   ← **本台账的核心读数**（refused_busy=1 + acquire_timeout=1）
+  处置口径  : 溢出 ⇒ **改走 CI**（推一次即可，CI 是权威）＋ 在 PR body 写「本机未跑 + 理由 + CI 覆盖清单」。不许静默排队。
+wait_seconds: n=4 p50=0 p95=3 max=3
+top 请求者  : verify-all.sh gate×3, pytest unit_ci_workflows（直连整目录）×1
+top 持有者  : verify-all.sh gate×4
+批次记录    : 0 条（surface=batch-integration）—— 「批次粒度」重启条件的读数之一
+```
+
+**三条硬口径（都判据化）**：① **读不到台账 ⇒ 明说「暂无记录」**，**不是** 0 分的假绿
+（「0 是读数，没有读数不是 0」）；② **半行 / 非法 JSON / 非对象 ⇒ 具名跳过几条**（出声不崩）；
+③ `--since` 只认 `24h` / `90m` / `7d` / ISO8601（带或不带时区 —— 不带按**本机**时区）/ epoch 秒，
+**不认识就 `exit 2`**（不猜窗口：猜错 = 悄悄换了时间窗而读数看起来一样）。
+🔴 **它不是门禁**：读数再差也 `exit 0` —— 本命令是**分母/事实**，不设阈值、不拦任何东西。
+
+**判据**：`tests/unit_ci_workflows/test_machine_heavy_lock_ledger.py`（20 条，每条能单独变红：
+六类 kind 的语义 / 批次面 / 固定夹具的计数·分位数·top 榜 / 空账与坏行 / `--since` 三态 /
+**写失败不改判定**（注入不可写路径）/ **参数个数契约**（`printf` 实参 ≠ `%s` 个数 ⇒ 格式串重启 ⇒
+每条记录后多一行残缺 JSON）/ 写点必须在持锁窗口之外）。
+**判据一律把台账指到 `tmp_path`**（`_run_lock` 强制注入 `MIGAO_HEAVY_LEDGER`）——
+**绝不写用户的真台账**（⑨ 包踩过「判据污染真台账」的坑）。
+
+**未固化 / 边界（照实登记，§19.1）**：台账**无限增长**（轮转/上限未做；只追加是本机口径的取舍）·
+**多机不适用**（路径与语义都是「本机单槽」；多机各记各的，不聚合）· `stats` 的**时区口径 = 本机**
+（`--since` 不带时区时按它解释，`--json` 里给 `utc_offset`）· 本判据**不判**「分档准入实现了没有」。
+
 ## 测试分层
 
 | 层 | 工具 | 覆盖要求 |

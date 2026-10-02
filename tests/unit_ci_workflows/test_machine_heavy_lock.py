@@ -62,11 +62,18 @@ WIRING_UNDER_TEST = "verify-all.sh::macquire"
 
 
 def _run_lock(args: list[str], *, lock_file: Path, roots: Path | None = None, **kw):
-    """跑锁脚本，锁文件与射程都指到临时面（**绝不碰机器上真的锁与真的进程**）。"""
+    """跑锁脚本：锁文件 / 射程 / **台账**都指到临时面（**绝不碰机器上真的锁、真的进程、真的台账**）。
+
+    ⚠️ `MIGAO_HEAVY_LEDGER` 是 issue #6091 起的第二个机器级面：不指走的话，本文件每次跑
+    （本机 + CI）都会往 `$HOME/.migao-heavy-lock-ledger.jsonl` **真台账**里追加记录 ——
+    那是「**判据写坏数据**」，会让用户读到一份被测试数据污染的分母（#6084 同款口径：
+    拒绝必记账，但判据不许写用户的账）。指到 `lock_file.parent` ⇒ 与锁面同域、随 tmp 一起消失。
+    """
     env = {
         **os.environ,
         "MIGAO_HEAVY_LOCK_FILE": str(lock_file),
         "MIGAO_HEAVY_ROOTS": str(roots if roots is not None else lock_file.parent / "roots-none"),
+        "MIGAO_HEAVY_LEDGER": str(lock_file.parent / "heavy-lock-ledger.jsonl"),
     }
     return subprocess.run(
         ["bash", str(SCRIPT), *args],
@@ -518,7 +525,9 @@ class TestVerifyAllWiring:
             "echo HEAVY_DONE\n",
             encoding="utf-8",
         )
-        env = {**os.environ, "MIGAO_HEAVY_LOCK_FILE": str(lock)}
+        env = {**os.environ, "MIGAO_HEAVY_LOCK_FILE": str(lock),
+                 "MIGAO_HEAVY_LEDGER": str(lock.parent / "heavy-lock-ledger.jsonl"),
+               "MIGAO_HEAVY_LEDGER": str(lock.parent / "heavy-lock-ledger.jsonl")}
         holder = subprocess.Popen(["bash", str(harness)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
         try:
             for _ in range(200):
@@ -607,7 +616,8 @@ class TestVerifyAllWiring:
             "true\n",
             encoding="utf-8",
         )
-        env = {**os.environ, "MIGAO_HEAVY_LOCK_FILE": str(clean_lock)}
+        env = {**os.environ, "MIGAO_HEAVY_LOCK_FILE": str(clean_lock),
+               "MIGAO_HEAVY_LEDGER": str(clean_lock.parent / "heavy-lock-ledger.jsonl")}
         r = subprocess.run(["bash", str(holder)], capture_output=True, text=True, env=env)
         assert r.returncode == 0, f"holder 脚本必须成功：{r.stderr}"
         assert not clean_lock.exists(), (
@@ -676,6 +686,7 @@ class TestVerifyAllWiring:
             encoding="utf-8",
         )
         env = {**os.environ, "MIGAO_HEAVY_LOCK_FILE": str(lock),
+                 "MIGAO_HEAVY_LEDGER": str(lock.parent / "heavy-lock-ledger.jsonl"),
                "MIGAO_HEAVY_ROOTS": str(lock.parent / "no-roots-here")}
         try:
             good = subprocess.run(["bash", str(harness)], capture_output=True, text=True, env=env)
@@ -827,7 +838,11 @@ class TestWaitOption:
         """🔴 **变异红证**：把「可等待」那行拿掉 ⇒ `test_wait_queues_until_the_holder_releases`
         的断言对象（rc=0 / 「排队等待后取得」）必须**当场不成立** —— 证明判据不是空断言。"""
         src = SCRIPT.read_text(encoding="utf-8")
-        old = '    [ "${wait_seconds}" -gt 0 ] || return 1'
+        # ⚠️ 变异锚点 = **「可等待」那条判定的存在**（`--wait` 必须真的能再试一次释放后的锁）。
+        #    ⚠️ 2026-10-03（issue #6091）：准入循环为了把**结局**记进台账而重写（早退 ⇒ 置终局标记 +
+        #    循环末尾统一记账），判定的**写法**由 `… || return 1` 变成 `… || break`；变异的语义
+        #    一字未变（都是「永不等待」）。下面两条断言（判据本体）零改动。
+        old = '    [ "${wait_seconds}" -gt 0 ] || break'
         assert src.count(old) == 1, "变异锚点未命中（脚本结构变了 ⇒ 请同步更新本红证）"
         mutated = tmp_path / "machine-heavy-lock-mutated.sh"
         mutated.write_text(src.replace(old, '    return 1  # 变异：永不等待', 1), encoding="utf-8")
@@ -842,7 +857,8 @@ class TestWaitOption:
         r = subprocess.run(
             ["bash", str(mutated), "acquire", "waiter", "--wait", "40"],
             capture_output=True, text=True, cwd=str(REPO),
-            env={**os.environ, "MIGAO_HEAVY_LOCK_FILE": str(clean_lock)},
+            env={**os.environ, "MIGAO_HEAVY_LOCK_FILE": str(clean_lock),
+                 "MIGAO_HEAVY_LEDGER": str(clean_lock.parent / "heavy-lock-ledger.jsonl")},
         )
         th.join(timeout=5)
         assert r.returncode == 1, f"变异体（永不等待）**必须**判红：rc={r.returncode}\n{r.stdout}"
