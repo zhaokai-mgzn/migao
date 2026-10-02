@@ -246,12 +246,17 @@ class TestReverseAnchors:
         for msg in ("确认下单", "我要下单", "帮我下单"):
             state = _state(msg, pending="customer_quote", card=quote_card,
                            card_skill="customer_quote")
+            # 🔴 `customer_*` 是**小布**的 skill：必须声明 agent_type="xiaobu"
+            #    （issue #6044 缺陷 C 起，`route_by_intent` 的目的地闸按 agent 绑定面判；
+            #    默认按米宝判会把 customer_quote 判成"图上没有的名字" ⇒ 本 fixture 漏前提）。
+            state["agent_type"] = "xiaobu"
             state["intent_result"] = {"intent": "order_create", "confidence": 0.98,
                                       "source": "rule"}
+            # 🔴 缓存键 = 本 agent（xiaobu）；值 = **真实目的地**（route_key 形态）
             with patch.dict("app.graph.nodes._INTENT_TO_ROUTE",
-                            {"mibao": {"order_create": "customer_order_skill",
-                                       "general": "general_skill"}}):
-                assert route_by_intent(state) == "customer_order_skill", (
+                            {"xiaobu": {"order_create": "order",
+                                        "general": "general"}}):
+                assert route_by_intent(state) == "order", (
                     f"{msg!r} 未切回下单流程 —— 报价 skill 没有 order_create，#3361 回归"
                 )
 

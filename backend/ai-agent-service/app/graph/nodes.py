@@ -961,6 +961,43 @@ _DIRECT_REPLY_INTENTS = {"greeting", "farewell", "capabilities"}
 _KNOWLEDGE_FALLBACK = {"knowledge_manage": "general"}  # 仅管理意图 fallback（知识管理走 admin-web，不经 agent）
 
 
+def _agent_fallback_skill(agent_type: str) -> str:
+    """本 agent 的兜底 skill（= `build_agent_graph` 一定会建那个节点）。"""
+    from app.agents.agent_config import get_agent_config
+
+    return get_agent_config(agent_type or "mibao").fallback_skill or "general"
+
+
+def _agent_route_map(agent_type: str) -> dict[str, str]:
+    """复刻 `build_agent_graph` 的 `skill_route_map`（**唯一口径**，issue #6044 缺陷 C）。
+
+    key = route_key / skill name（`route_by_intent` 可能返回的两种形态）；
+    value = 节点名。**只含本 agent 绑定得上的 skill** —— 这正是「persona 过滤 ≠ 绑定过滤」
+    那条缝隙的封堵点（`settings` skill 已按 #5247 解绑出米宝，但文件仍在注册表里）。
+
+    ⚠️ 与 `builder.build_agent_graph` 的口径必须逐字一致（覆盖顺序按
+    `get_all_skill_names()`）；判据 `test_route_map_values_are_real_nodes` 对着**真编译图**
+    自证坐标，复刻漂移会当场红。
+    """
+    from app.agents.agent_config import get_agent_config
+    from app.graph.skills.skill_registry import get_skill_registry
+
+    agent_config = get_agent_config(agent_type or "mibao")
+    registry = get_skill_registry()
+    route_map: dict[str, str] = {"direct_reply": "direct_reply"}
+    if agent_type == "xiaobu":
+        route_map["handoff_offer"] = "handoff_offer"
+    for skill_name in agent_config.get_all_skill_names():
+        config = registry.get(skill_name)
+        if not config:
+            continue
+        node_id = f"{skill_name}_skill"
+        for route_key in config.route_keys:
+            route_map[route_key] = node_id
+        route_map[skill_name] = node_id
+    return route_map
+
+
 def _get_intent_to_route(agent_type: str = "") -> dict[str, str]:
     """意图→路由key映射。从 skill_registry 动态构建,避免硬编码不同步。
 
@@ -989,33 +1026,21 @@ def _get_intent_to_route(agent_type: str = "") -> dict[str, str]:
     **fallback skill**（= builder 一定会建的那个节点，兜底语义）；③ 路由结果因此**恒**是
     图上存在的节点名（判据见 `backend/ai-agent-service/tests/test_route_destination_binding.py`）。
     """
-    from app.agents.agent_config import get_agent_config
     from app.graph.skills.skill_registry import get_skill_registry
 
     persona = "xiaobu" if agent_type == "xiaobu" else "mibao"
-    agent_config = get_agent_config(agent_type or "mibao")
-    bound_skills = set(agent_config.get_all_skill_names())
-    fallback = agent_config.fallback_skill or "general"
-    registry = get_skill_registry()
+    fallback = _agent_fallback_skill(agent_type)
+    route_map = _agent_route_map(agent_type)
 
-    #: 绑定得上的 route_key：skill name 与它自己的 route_keys 都算（builder 两者都映射）。
-    bound_keys: set[str] = set()
-    for skill_name in bound_skills:
-        config = registry.get(skill_name)
-        if not config:
-            continue
-        bound_keys.add(skill_name)
-        bound_keys.update(config.route_keys)
-
-    intent_map = registry.get_intent_to_route_map(persona=persona)
-    dropped = sorted({key for key in intent_map.values() if key not in bound_keys})
+    intent_map = get_skill_registry().get_intent_to_route_map(persona=persona)
+    dropped = sorted({key for key in intent_map.values() if key not in route_map})
     if dropped:
         logger.info(
             f"[_get_intent_to_route] agent={agent_type or 'mibao'} 未绑定的 route_key "
             f"{dropped} 已改判到 fallback skill '{fallback}'"
             "（不进图的目的地会让条件边抛 KeyError —— issue #6044 缺陷 C）"
         )
-    intent_map = {intent: (key if key in bound_keys else fallback)
+    intent_map = {intent: (key if key in route_map else fallback)
                   for intent, key in intent_map.items()}
     for intent in _DIRECT_REPLY_INTENTS:
         intent_map[intent] = "direct_reply"
@@ -1095,20 +1120,9 @@ def route_by_intent(state: AgentState) -> str:
     # 本函数有**两条**返回路径可能越过映射表：① `action=handoff_offer`（米宝图上没有该节点）；
     # ② `pending_interact_skill`（会话状态里的 skill 名可能已按 #5247 解绑）。
     # 两条都改判到本 agent 的 fallback skill（= builder 一定会建的那个节点，兜底语义）。
-    from app.agents.agent_config import get_agent_config as _get_agent_config
-    from app.graph.skills.skill_registry import get_skill_registry as _get_registry
-
-    _agent_config = _get_agent_config(agent_type or "mibao")
-    _fallback = _agent_config.fallback_skill or "general"
-    _registry = _get_registry()
-    _destinations: set[str] = {"direct_reply", "handoff_offer" if agent_type == "xiaobu" else None}
-    _destinations.discard(None)
-    for _skill_name in _agent_config.get_all_skill_names():
-        _config = _registry.get(_skill_name)
-        if not _config:
-            continue
-        _destinations.add(_skill_name)
-        _destinations.update(_config.route_keys)
+    _route_map = _agent_route_map(agent_type)
+    _destinations = set(_route_map) | set(_route_map.values())
+    _fallback = _agent_fallback_skill(agent_type)
 
     # AI 主动引导转人工（D3）：路由到 handoff_offer 节点（建议卡片）
     if action == "handoff_offer":
