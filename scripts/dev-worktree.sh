@@ -12,40 +12,33 @@
 #   ./scripts/dev-worktree.sh list                  # 列出所有工作区 + 会话锁状态
 #   ./scripts/dev-worktree.sh lock                  # 查看/清理会话锁（多会话并发时先查锁）
 #   ./scripts/dev-worktree.sh rm <分支|路径> [--delete-branch]  # 移除工作区（可选连带删分支）
-#   ./scripts/dev-worktree.sh rebase <分支|路径>    # 丢弃**未提交**的预设快照差异 → rebase origin/main → （未改预设的分支才）重刷（#3972 / #5707）
+#   ./scripts/dev-worktree.sh rebase <分支|路径>    # rebase origin/main（+ 顺带把活锚镜像带到预设仓 main）
 #   ./scripts/dev-worktree.sh preset-guard [--source both|index|worktree]  # 提交路径守卫（版本下降 / 同号不同内容撞车 / 活锚落后即非零退出）
 #   ./scripts/dev-worktree.sh prune --dry-run       # worktree 存量体检（只打印清单，不删除）
 #   ./scripts/preset-anchor-check.sh                # 活锚新鲜度自检（红就停；开工第一件事）
-#   ./scripts/preset-anchor-refresh.sh              # 活锚自愈：只读镜像 → origin/main（自检转绿）
+#   ./scripts/preset-anchor-refresh.sh              # 活锚自愈：只读镜像（预设仓）→ 预设仓 main（自检转绿）
 #
-# 预设快照地雷与**四个面**（v1.8，2026-09-15 新增，issue #3851；v1.11 按事实改判，issue #4350）：
-#   worktree 的 `.agent-presets/**` 是**创建时刻快照**（看着像普通代码路径，实际是 fork 那一刻的副本）
-#   ⇒ 这些文件相对 origin/main 就是「改动」（内容在**回退**），一条 `git add -A` + push 就提交
-#   一个把研发模式回退若干版本的 PR，而 **CI 不看 `.agent-presets/**` 的版本 ⇒ 不红**（静默）。
-#   ⚠️ 别再拿「一句话说清快照之后怎么走」的旧口径概括它（本文件 v1.11 前的写法已作废）——
-#   **分四个面看，结论各不相同**：
-#   ① 创建路径（本脚本 `add`）：**已自动刷新** —— 建完工作区即把 `.agent-presets/**` 对齐 origin/main
-#      （`refresh_presets()`，v1.8 / issue #3851）⇒ 这个面**不需要**人工再刷一遍；
-#   ② 提交路径（本脚本 `preset-guard`）：判定暂存/工作区是否构成**版本下降**，命中即 fail-closed；
-#      **合法升级放行**（改研发模式本身不能被堵死）；**同号不同内容 = 跨包撞车 ⇒ 也判红**
-#      （v1.12 / issue #5425：两个并行包各自只抬一格 ⇒ 同号两条沿革，只能靠人肉发现；
-#       出口逐字给「抬号到「基准版本 + 1」」）；
-#   ③ 加载点（活锚 `~/.dsh/.agent-presets/migao`）：**必须自愈** —— `./scripts/preset-anchor-refresh.sh`
-#      把专职只读镜像刷到 origin/main（`preset-guard` 同时判活锚新鲜度，落后/悬空即非零退出）；
-#   ④ 清理半径：`rm` / `prune` **会命中** worktree 的预设快照 ⇒ 清理前先 `readlink` 活锚目标并排除它
-#      （issue #3956 实证：软链目标被删 ⇒ DSH 静默加载不到研发模式）。
-#   另：机械安全网（别处，互补）—— #3843 的统一审计 `drift_audit --check` 将加
-#      「`.agent-presets/**` 版本单调性」守卫（全库/定时对账；本脚本管增量/贴合工作区）。
-#   v1.9（issue #3972）：刷新后工作区相对**本分支 HEAD** 就是「改动」，`git rebase origin/main`
-#   会被 git 拒绝（未跟踪快照挡 checkout / 已跟踪但版本旧= unstaged changes）⇒ 新增 `rebase`
-#   子命令：丢弃预设快照差异 → rebase → 重新刷新（只丢弃与 origin/main 一致的纯刷新产物，
-#   内容不一致即停手，避免丢掉别人正在改的研发模式）。
-#   ⚠️ v1.13（2026-09-27，关联 #5707）改判：**已提交**的预设改动不算「快照差异」——
-#   丢弃只在「相对 HEAD 有未提交漂移」时才有对象；分支自己改过预设时 `refresh_presets` 一并跳过
-#   （否则 0 behind 的预设面 PR 会被判「与 origin/main 不一致」而停在 [rebase]，`land` 整条走不通）。
-#   也不用「让 git 忽略这些文件的改动」那类手法（索引标记 / 本地忽略）：那会把**合法的预设改动**
-#   （改研发模式本身）一起吞掉 —— 「眼不见为净」在这里等于把正事也堵死。
-#   详见 docs/wiki/DEV-FLOW.md「预设快照地雷」节（落地单 #3859，事实单 #3851）。
+# 🔴 S4（issue #6020，2026-10-02）：**预设已迁出业务仓**。预设内容的权威源 = 独立仓
+#   `zhaokai-mgzn/migao-agent-presets`；本业务仓**不再承载** `.agent-presets/**`。
+#   ⇒ 原先那套「worktree 的 `.agent-presets/**` 是创建时刻快照 / 快照挡住 rebase」的机制
+#   （`refresh_presets()` / `discard_preset_snapshot()`，v1.8 #3851 + v1.9 #3972 + v1.13 #5707）
+#   **随路径一起消失**：`add` / `rebase` 不再对 `.agent-presets/**` 做任何刷新或丢弃
+#   （业务仓里根本没有这个路径 ⇒ 那是零动作）；`rebase` 现在就是一条普通的 `git rebase origin/main`。
+#   真正的加载点仍然是**活锚**（软链 → 专职只读镜像 `$HOME/migao-dev-preset-anchor`），
+#   由 `./scripts/preset-anchor-refresh.sh` 负责让它跟上**预设仓**的 main。
+#
+# 预设地雷与**三个面**（v1.8，2026-09-15 新增，issue #3851；S4 起面①/面④已不存在）：
+#   ① 提交路径（本脚本 `preset-guard`）：判暂存/工作区**业务仓** `.agent-presets/**` 是否构成
+#      **版本下降**，命中即 fail-closed；**合法升级放行**（改研发模式本身不能被堵死）；
+#      **同号不同内容 = 跨包撞车 ⇒ 也判红**（v1.12 / #5425；出口逐字给「抬号到「基准版本 + 1」」）。
+#      ⚠️ S4 起业务仓无该路径 ⇒ 本面**零动作放行**；预设内容侧的版本判据由**预设仓自己的 CI**承担
+#      （预设仓 `.github/workflows/preset-guards.yml` + `tests/test_preset_guards.py`）。
+#   ② 加载点（活锚 `~/.dsh/.agent-presets/migao`）：**必须自愈** —— `./scripts/preset-anchor-refresh.sh`
+#      把专职只读镜像刷到**预设仓** main（`preset-guard` 同时判活锚新鲜度，落后/悬空即非零退出）。
+#   ③ 清理半径：`rm` / `prune` 会命中 **worktree 里的软链与工作区目录** ⇒ 清理前先 `readlink` 活锚目标并
+#      排除它（issue #3956 实证：软链目标被删 ⇒ DSH 静默加载不到研发模式）。
+#   另：机械安全网（别处，互补）—— #3843 的统一审计 `drift_audit --check` 的版本单调性守卫（全库/定时对账）。
+#   详见 docs/wiki/DEV-FLOW.md「预设落后地雷」节（落地单 #3859，事实单 #3851）。
 #
 # 地雷 B：内容全对，但**到不了加载点**（v1.10，2026-09-17 新增，issue #4026）：
 #   `preset-guard` 原先只判「仓库里的 `.agent-presets/**` 有没有版本下降」——**查不出活锚落后**。
@@ -55,7 +48,7 @@
 #   v1.10 起：`preset-guard`（判定本体 `scripts/agent-presets-guard.py`）同时判**活锚新鲜度**
 #   （内容逐字节 + 检出 sha；落后/悬空/内容不同 ⇒ 非零退出），并给出同步命令：
 #     ./scripts/preset-anchor-check.sh      # 只判（开工第一件事；红就停）
-#     ./scripts/preset-anchor-refresh.sh    # 判 + 自愈（把**专职只读镜像**刷到 origin/main）
+#     ./scripts/preset-anchor-refresh.sh    # 判 + 自愈（把**专职只读镜像**刷到预设仓 main）
 #   活锚目标必须是**独立克隆**（不是任何会被开发的 worktree —— 那在 rm/prune 清理半径内，
 #   被删即软链悬空、DSH 静默加载不到研发模式，issue #3956 实证）；见根 AGENTS.md「开发环境准备」。
 #
@@ -115,7 +108,8 @@ usage() {
   # v1.9（issue #3972）：用法块 +1 行（rebase 子命令）⇒ 上限同步 +2
   # v1.10（issue #4026）：用法块 +2 行（活锚自检/自愈脚本）⇒ 上限再 +2
   # v1.14（issue #5930）：新增「地雷 C：删除不许穿过软链」段（文件头 +18 行）⇒ 上限 46 → 80
-  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -80
+  # S4（issue #6020）：文件头重写（预设迁出业务仓）⇒ 头部现 95 行，上限 80 → 100
+  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -100
   exit 1
 }
 
@@ -183,126 +177,6 @@ lock_prune() {
   echo "已清理 ${pruned} 个失效锁"
 }
 
-# ── 预设快照刷新（v1.8，issue #3851）：worktree 的 .agent-presets/** 是创建时刻快照 ──
-# 建完工作区后立刻把 .agent-presets/** 对齐 origin/main，使其**开局就不是「相对 main 的改动」**。
-# 若你自己确实要改研发模式：在工作区里改即可（本函数只在 `add` 那一刻跑一次，不覆盖你的后续改动）。
-# 刷新方式用 `checkout origin/main -- .agent-presets/`（与 issue #3851 记录的人工修法同一形状），
-# 不用「让 git 忽略这些文件改动」的索引标记手法 —— 那会把合法的预设改动一起吞掉（见文件头说明）。
-refresh_presets() {
-  local wt="$1"
-  echo
-  echo "🔄 预设快照刷新（.agent-presets/** → origin/main）..."
-  if [ ! -d "${wt}" ]; then
-    echo "❌ 跳不过去：工作区目录不存在（${wt}）—— 预设未刷新，**不要**在这种情况下提交 .agent-presets/**"
-    return 1
-  fi
-  if ! git -C "$wt" rev-parse --verify --quiet origin/main >/dev/null; then
-    echo "⚠️  跳过：本仓库无 origin/main 引用 —— 无法刷新，请自行核对 .agent-presets/** 版本。"
-    return 0
-  fi
-  if ! git -C "$wt" fetch --quiet origin main 2>/dev/null; then
-    echo "⚠️  fetch origin main 失败（离线/无权限？）—— 下面按**本地已知的** origin/main 刷新。"
-  fi
-  # 🔴 v1.13（2026-09-27，关联 #5707）：分支**自己**改过 `.agent-presets/**` ⇒ 覆盖它 = 静默回退自己的
-  #   固化工作（工作区会留下「把分支产物改回去」的**已暂存**改动，一条 `git commit -a` 就落盘）。
-  #   判据 = 与**合并基点**比：分支没碰过（只是 main 前进）⇒ 快照确实过期 ⇒ 照旧刷新。
-  if preset_touched_by_branch "$wt"; then
-    echo "⏭️  跳过刷新：本分支自己改过 .agent-presets/**（相对合并基点有已提交改动）——"
-    echo "    那是**分支产物**、不是创建时刻快照 ⇒ 覆盖它会让工作区出现「把自己改回去」的改动。"
-    return 0
-  fi
-  # 列出将要被刷新的文件（`head` 兜底：`grep -c` 无匹配会 exit 1 且 set -e 会中止）
-  local changed
-  changed="$(git -C "$wt" ls-files --others --exclude-standard -- .agent-presets/ 2>/dev/null | head -20 || true)"
-  if [ -n "${changed}" ]; then
-    echo "   ↑ 以下文件是创建时刻的未跟踪快照（相对 origin/main 即「改动」）："
-    echo "${changed}" | sed 's/^/     /'
-  fi
-  git -C "$wt" checkout origin/main -- .agent-presets/
-  local n
-  n="$(git -C "$wt" ls-tree -r --name-only origin/main -- .agent-presets/ | wc -l | tr -d ' ')"
-  echo "✅ 已把 .agent-presets/**（${n} 个文件）刷新到 origin/main —— 开局即不是「相对 main 的改动」。"
-  echo "   理由（issue #4350 改判后的口径）：快照是**创建时刻**的副本，而 main 上的预设会继续推进"
-  echo "         ⇒ **本步骤（add 路径）就是替你补齐的地方**，不需要事后再手动刷一遍；"
-  echo "         真正需要人工**自愈**的是**活锚**：./scripts/preset-anchor-refresh.sh"
-  echo "         （另注：rm/prune 会命中 worktree 的预设快照 —— 清理前先 readlink 活锚目标）。"
-  echo "         不刷新则一条 \`git add -A\` 就会把研发模式**静默回退**（CI 不看预设版本 ⇒ 不红）。"
-  echo "   你自己要改研发模式：直接在工作区改 + 升 version（提交前跑 preset-guard，升级放行）。"
-}
-
-# ── 预设快照 × rebase 的冲突处置（v1.9，issue #3972）───────────────────────────
-# refresh_presets 把 .agent-presets/** 对齐到 origin/main 后，工作区相对**本分支 HEAD**
-# 就出现了改动，于是 `git rebase origin/main` 会被 git 拒绝。实测两种形态：
-#   · 本分支 HEAD **未跟踪**该路径（旧分支，早于预设入库）⇒ checkout 把快照留在**索引**里
-#     （staged new files）→ 「untracked working tree files would be overwritten by checkout」；
-#   · 本分支 HEAD 跟踪但版本较旧 ⇒ 刷新后相对 HEAD 变成**已修改** → 「cannot rebase: You have unstaged changes」。
-# 两者都不是开发者的活（预设是主干资产），故处置 = **丢弃预设差异 → rebase → 重新刷新**。
-# 刻意不用「本地忽略 / 索引标记」手法（见文件头 v1.8 说明：那会把合法的预设改动一起吞掉）。
-# 安全护栏：只丢弃**与 origin/main 完全一致**的快照（= 纯刷新产物）；一旦不一致，
-# 视为开发者自己的研发模式改动 ⇒ 停手，交人工处置（不静默丢别人的活）。
-#
-# 🔴 v1.13（2026-09-27，关联 #5707）：「**已提交**的分支产物」不是漂移，判据见下面两个函数。
-#   原先只用 origin/main 当参照物 ⇒ 分支**自己已提交**的 `.agent-presets/**` 改动（而它正是所有
-#   「研发模式固化」工作的落点）被读成「与 origin/main 不一致」⇒ ① 分支**0 behind 也停在 [rebase]**
-#   （`scripts/issue-lifecycle.sh` 的 `land` ①步）；② rebase 之后无条件的 `refresh_presets`
-#   又把它覆盖成 origin/main 版本（工作区留下「把自己改回去」的已暂存改动）。
-preset_has_uncommitted_drift() {
-  local wt="$1"
-  git -C "$wt" diff --quiet HEAD -- .agent-presets/ 2>/dev/null || return 0
-  git -C "$wt" diff --cached --quiet HEAD -- .agent-presets/ 2>/dev/null || return 0
-  [ -z "$(git -C "$wt" ls-files --others --exclude-standard -- .agent-presets/ 2>/dev/null | head -1)" ] || return 0
-  return 1
-}
-
-preset_touched_by_branch() {
-  local wt="$1" base
-  base="$(git -C "$wt" merge-base HEAD origin/main 2>/dev/null || true)"
-  # 算不出基点 ⇒ 保守当作「改过」（宁可不刷新，也不覆盖分支产物）
-  [ -n "$base" ] || return 0
-  ! git -C "$wt" diff --quiet "$base" HEAD -- .agent-presets/ 2>/dev/null
-}
-
-discard_preset_snapshot() {
-  local wt="$1"
-  local drifted=0 f h1 h2
-  # ① 先问「有没有**可丢弃之物**」：工作区 + 索引相对 HEAD 无漂移 ⇒ 分支上的 `.agent-presets/**`
-  #    全是**已提交**内容 ⇒ 直接放行（HEAD 与 origin/main 的差由 rebase 重放并保留）。
-  #    这一步**没有放宽任何丢弃语义**：此处跳过的 `checkout HEAD --` 本来就是 no-op。
-  if ! preset_has_uncommitted_drift "$wt"; then
-    echo "ℹ️  \`.agent-presets/**\` 相对 HEAD 无未提交漂移 ⇒ 跳过「丢弃快照」（分支内容是**已提交**的，rebase 会保留）"
-    return 0
-  fi
-  if git -C "$wt" ls-tree -r --name-only HEAD -- .agent-presets/ 2>/dev/null | grep -q .; then
-    git -C "$wt" diff --quiet origin/main -- .agent-presets/ 2>/dev/null || drifted=1
-  else
-    # 未跟踪**与已暂存**文件都不进常规 `git diff` 比较（陷阱形态正是"已暂存"）
-    # ⇒ 逐文件比 blob 哈希：工作区实际内容 + 索引内容，两侧都要与 origin/main 一致
-    while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      h2="$(git -C "$wt" rev-parse "origin/main:$f" 2>/dev/null || echo '!')"
-      if [ -f "$wt/$f" ]; then
-        h1="$(git -C "$wt" hash-object "$wt/$f" 2>/dev/null || echo '?')"
-        [ "$h1" = "$h2" ] || drifted=1
-      fi
-      h3="$(git -C "$wt" rev-parse ":$f" 2>/dev/null || echo '!')"
-      if [ "$h3" != "!" ] && [ "$h3" != "$h2" ]; then drifted=1; fi
-    done < <(git -C "$wt" ls-files --cached --others --exclude-standard -- .agent-presets/ 2>/dev/null || true)
-  fi
-  if [ "$drifted" = "1" ]; then
-    echo "❌ .agent-presets/** 与 origin/main 不一致 —— 可能是你自己的研发模式改动，拒绝自动丢弃。"
-    echo "   人工处置（确认可弃后再执行）："
-    echo "     已跟踪：git -C ${wt} checkout origin/main -- .agent-presets/"
-    echo "     未跟踪：rm -rf ${wt}/.agent-presets   # 旧分支；rebase 到含该路径的 main 后会由 main 带出"
-    return 1
-  fi
-  if git -C "$wt" ls-tree -r --name-only HEAD -- .agent-presets/ 2>/dev/null | grep -q .; then
-    git -C "$wt" checkout -q HEAD -- .agent-presets/
-  else
-    git -C "$wt" rm -r -q --cached --ignore-unmatch -- .agent-presets/ 2>/dev/null || true
-    rm -rf "${wt}/.agent-presets"
-  fi
-}
-
 # ── 活锚镜像刷新（v1.10，issue #4026）：让活锚**跟随 main**，而不是停在某个时刻 ──
 # 只在「与主干同步」的两个时机顺带刷新（add / rebase）。best-effort：
 # 镜像缺失（本机没接线）或离线 ⇒ **只告警**，不得因此把建工作区 / rebase 弄失败。
@@ -345,14 +219,15 @@ cmd_rebase() {
   [ -n "$path" ] || { echo "❌ 无法解析工作区路径：${target}"; exit 1; }
 
   echo "🔄 rebase origin/main：${path}（分支 ${branch:-detached}）"
-  discard_preset_snapshot "$path"
   if ! git -C "$path" rebase origin/main; then
     echo "❌ rebase 未完成（上面是 git 原始输出）。冲突需你自行解决，然后："
     echo "   git -C ${path} rebase --continue    # 或 --abort 放弃"
-    echo "   ./scripts/dev-worktree.sh rebase ${branch:-<分支>}   # 完成后重新刷新预设"
+    echo "   ./scripts/dev-worktree.sh rebase ${branch:-<分支>}   # 完成后重跑一次"
     exit 1
   fi
-  refresh_presets "$path"
+  # v1.10（issue #4026）：与主干同步的时机顺带把**活锚镜像**带上预设仓 main。
+  # ⚠️ S4（issue #6020）起 `add` / `rebase` **不再**有「把 `.agent-presets/**` 刷到业务仓 origin/main」
+  #    这一步 —— 预设内容已迁出业务仓，业务仓只在**加载点**（活锚 → 只读镜像）消费它。
   refresh_anchor_mirror
   echo
   echo "✅ rebase 完成：$(git -C "$path" log -1 --format='%h %s')"
@@ -418,11 +293,10 @@ cmd_add() {
   fi
   lock_register "$branch" "$path"
 
-  # v1.8（issue #3851）：建完立刻把预设快照对齐 origin/main（否则 `git add -A` 会静默回退研发模式）
-  refresh_presets "$path"
-
-  # v1.10（issue #4026）：与主干同步的时机顺带把**活锚镜像**也带上 main ——
+  # v1.10（issue #4026）：与主干同步的时机顺带把**活锚镜像**带上预设仓 main ——
   # 否则「预设 PR 合并后活锚落后一格」会一直留到有人手动刷（改进到不了加载点）。
+  # 🔴 S4（issue #6020）：这里**不再**刷新业务仓的 `.agent-presets/**`（预设已迁出业务仓；
+  #    那条"创建时刻快照"的地雷随路径一起消失）。活锚镜像才是真正要跟上的那一份。
   refresh_anchor_mirror
 
   echo
@@ -436,17 +310,11 @@ cmd_add() {
   echo "      软链（${path}/tests/node_modules → 主仓库同名目录）会在「删/重建 node_modules」的动作下**打穿目标**："
   echo "      2026-10-01 实测一次 worktree 内的 npm ci 就把主工作区 tests/node_modules 清成空目录（issue #5930）。"
   echo "      正确姿势见 docs/wiki/Development.md 的「worktree 依赖准备」节（与本提示**同源**，不另写一份）。"
-  echo "   ⚠️  本工作区已把 .agent-presets/** 对齐 origin/main（**本分支自己改过预设 ⇒ 跳过刷新**："
-  echo "      那是分支产物、不是创建时刻快照）。要 rebase 请用："
-  echo "      ./scripts/dev-worktree.sh rebase ${branch}"
-  echo "      （该子命令会先丢弃预设快照差异再 rebase，否则 git 会以「本地改动会被覆盖」拒绝；issue #3972）"
-  # v1.12（2026-09-25 包实测）：**创建之后** main 若再抬技能版本，本 worktree 的 `.agent-presets/`
-  #   就比 `origin/main` 旧 ⇒ 本地跑全量套件会出现 `preset-monotonic` 判「技能版本回退」的**假红**
-  #   （CI 不红：CI 的 base 是本分支的合并基点）。实测代价 = 一个包白跑一轮排查。
-  #   ⇒ 建完就把出口印出来，别让人再去猜。
-  echo "   ℹ️  若**之后** main 抬过技能版本 ⇒ 本地复跑可能报 \`preset-monotonic\` 假红（CI 不会）。一条命令出口："
-  echo "      git -C ${path} checkout origin/main -- .agent-presets"
-  echo "      （本分支**没碰** .agent-presets 时这样做是安全的；碰过则用 rebase 子命令，别覆盖自己的改动）"
+  # 🔴 S4（issue #6020）：本仓**不再承载** `.agent-presets/**` ⇒ 这里既没有「预设快照」要对齐，
+  #   也没有「快照挡住 rebase」要处置。预设住在**预设仓**，业务仓只在**加载点**消费它
+  #   （活锚软链 → 专职只读镜像 `$HOME/migao-dev-preset-anchor`）；上面那一步已把镜像带到预设仓 main。
+  echo "   ℹ️  预设内容已迁出本仓（issue #6020）⇒ 本工作区**没有**预设快照要刷/要丢，rebase 直接跑即可。"
+  echo "      要改研发模式：到预设仓 zhaokai-mgzn/migao-agent-presets 提 PR；活锚自检 ./scripts/preset-anchor-check.sh"
 }
 
 cmd_list() {
@@ -559,31 +427,25 @@ case "${1:-}" in
   rm)   shift; cmd_rm "$@" ;;
   rebase) shift; cmd_rebase "$@" ;;
   preset-guard)
-    # v1.8（issue #3851）：提交路径 fail-closed 守卫 —— 判定 .agent-presets/** 是否构成版本下降。
+    # v1.8（issue #3851）：提交路径 fail-closed 守卫 —— 判定**业务仓** .agent-presets/** 是否构成版本下降。
     # v1.10（issue #4026）：同一守卫同时判**活锚新鲜度**（内容 + sha；落后/悬空即非零退出）
     #   —— 「仓库内容全对但改进到不了加载点」也是静默失效的一种，光看仓库内容查不出来。
-    # v1.11（issue #4350）：本分支提示按**四个面**说清（旧口径「快照建好之后就不再跟随」已在
-    #   v1.35 的技能里改判 ⇒ 脚本侧同步；照旧口径写会让人白刷一遍预设）：
-    #     ① 创建路径 `add`：**已自动刷新**（refresh_presets()，v1.8 / #3851）⇒ 不需要人工再刷；
-    #     ② 提交路径：**就是本子命令**（判版本下降，命中即 fail-closed；合法升级放行）；
-    #     ③ 加载点（活锚）：**必须自愈** —— ./scripts/preset-anchor-refresh.sh（落后/悬空本命令同样非零退出）；
-    #     ④ 清理半径：rm / prune **会命中** worktree 的预设快照（清理前先 readlink 活锚目标）。
-    # v1.12（issue #5425）：新增一条判定 —— 候选与基准 **`version:` 相同、但文件内容不同**
-    #   = **同号不同内容 = 跨包撞车** ⇒ **判红**（原先只告警 ⇒ 只能靠人肉发现；2026-09-24 一晚撞 2 次）；
-    #   出口逐字给出「**抬号到「基准版本 + 1」**」（本仓约定抬次版本：`1.56.0` → `1.57.0`）。
-    #   既有语义一字未动：降级 ⇒ 红；升级 ⇒ 放行；无 `.agent-presets/**` 改动 ⇒ 放行；**同号同内容 ⇒ 放行**。
-    # v1.13（issue #5430）：退出码**三态** —— `0` 通过 / `1` 判红 / **`3` 无法判定**
-    #   （基线 `origin/main` 取不到 ⇒ 连「能不能比」都判不了，**不得当 0 读**；1 优先于 3）+ `2` 用法错误。
+    # v1.11（issue #4350）：本分支提示按**面**说清（旧口径「快照建好之后就不再跟随」已改判 ⇒ 脚本侧同步）。
+    # 🔴 S4（issue #6020，2026-10-02）：预设**已迁出业务仓**（权威源 = 独立仓 zhaokai-mgzn/migao-agent-presets），
+    #   业务仓**不再承载** `.agent-presets/**` ⇒ 本子命令对业务仓**零动作放行**（没有候选可比）；
+    #   预设内容侧的版本 / 同号撞车 / 沿革不回流由**预设仓自己的 CI**承担。
+    #   仍保留本子命令：它同时判**加载点**（活锚 → 只读镜像 `$HOME/migao-dev-preset-anchor`）。
+    # v1.12（issue #5425）：候选与基准 **`version:` 相同、但文件内容不同** = **跨包撞车** ⇒ **判红**。
+    # v1.13（issue #5430）：退出码**三态** —— `0` 通过 / `1` 判红 / **`3` 无法判定**（基线 ref 取不到
+    #   ⇒ 连「能不能比」都判不了，**不得当 0 读**；1 优先于 3）+ `2` 用法错误。
     # 判定逻辑在 scripts/agent-presets-guard.py（可独立单测，含红证）—— 本分支只负责提示与出口。
     shift
     PY="$(command -v python3.11 || command -v python3 || true)"
     if [ -z "${PY}" ]; then
-      echo "❌ 找不到 python3 —— 无法判定 .agent-presets/** 版本单调性（fail-closed）："
-      echo "   worktree 的 .agent-presets/** 是创建时刻快照，未判定前不得提交它。"
-      echo "   四个面：① add 路径**已自动刷新**（不需要人工再刷）；② 本守卫 = 提交路径（判版本下降）；"
-      echo "           ③ 活锚**必须自愈**：./scripts/preset-anchor-refresh.sh；"
-      echo "           ④ rm/prune 会命中 worktree 快照（清理前先 readlink 活锚目标）。"
-      echo "   兜底修法：git checkout origin/main -- .agent-presets/"
+      echo "❌ 找不到 python3 —— 无法判定 .agent-presets/** 版本单调性 / 活锚新鲜度（fail-closed）："
+      echo "   两个面：① 提交路径（判业务仓 .agent-presets/** 版本下降；S4 起本仓无该路径 ⇒ 零动作放行）；"
+      echo "           ② 加载点（活锚）**必须自愈**：./scripts/preset-anchor-refresh.sh。"
+      echo "   预设内容已迁出业务仓（issue #6020）⇒ 改预设去 zhaokai-mgzn/migao-agent-presets 提 PR。"
       exit 1
     fi
     guard="${ROOT}/scripts/agent-presets-guard.py"

@@ -52,6 +52,7 @@ import base64
 import importlib.util
 import json
 import os
+
 import re
 import stat
 import subprocess
@@ -60,11 +61,23 @@ import warnings
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# ── 预设语料读取（S4 / issue #6020）：与 `test_source_parsing_shared.py` 同款的命名空间包导入 ──
+sys.path.append(str(Path(__file__).resolve().parents[1]))  # tests/（append：只作兜底解析路径）
+
+from unit_ci_workflows.preset_corpus import (  # noqa: E402
+    DEV_FLOW_SKILL_REL,
+    require_preset_text,
+)
 TOOL_REL = "scripts/next_case_id.py"
 TOOL_PATH = REPO_ROOT / TOOL_REL
 SCRIPTS_DIR = REPO_ROOT / "scripts"
+#: 🔴 S4（issue #6020）：预设内容已迁出业务仓 ⇒ 统一走 `preset_corpus`（镜像优先 / 其次 git 基线）。
 SKILL_REL = ".agent-presets/migao/skills/migao-dev-flow/SKILL.md"
-SKILL_PATH = REPO_ROOT / SKILL_REL
+
+
+def _skill_text() -> str:
+    """现取技能正文（取不到 ⇒ 抛 AssertionError，fail-closed）。"""
+    return require_preset_text(DEV_FLOW_SKILL_REL)
 
 #: 注入点（与 `MG_GH_BIN` / `SBT_GH_BIN` / `DANGLING_GH_BIN` 同先例）：`gh` 替身 + 主线段 ref。
 GH_ENV = "NCI_GH_BIN"
@@ -566,15 +579,14 @@ def test_single_implementation_criterion_has_discriminating_power() -> None:
 # ═════════════════════════════════════════════════════════════════════════════
 def test_skill_points_at_the_tool_and_the_hand_rolled_recipe_is_gone() -> None:
     """判据 7：`migao-dev-flow` §26.3 必须调用该工具，且旧的手工取号配方必须消失。"""
-    assert SKILL_PATH.is_file(), f"技能不在：{SKILL_REL}（判据 fail-closed）"
-    text = SKILL_PATH.read_text(encoding="utf-8")
+    text = _skill_text()
     bad = skill_face_problems(text)
     assert bad == [], "\n".join(bad)
 
 
 def test_skill_face_criterion_has_discriminating_power() -> None:
     """判据 7 的判别力自证：旧配方写回去 ⇒ 红；工具调用删掉 ⇒ 红；只加散文 ⇒ 不红。"""
-    text = SKILL_PATH.read_text(encoding="utf-8")
+    text = _skill_text()
     assert skill_face_problems(text) == []
     section = text.split(CMD_SECTION_HEADING, 1)[1].split(NEXT_SECTION_HEADING, 1)[0]
     restored = text.replace(section, section + "\n```bash\ngrep -rhoE '[A-Z]{2}-[0-9]+' .github/cases/ | sort -u | tail -5\n```\n", 1)

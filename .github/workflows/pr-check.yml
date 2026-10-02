@@ -181,7 +181,16 @@ jobs:
     #   ⛔ 本文件**不写**判据面文件数 / 用例数等**易变现值**（现值必腐，复算命令见该评论）。
     timeout-minutes: 20
     steps:
+      # `fetch-depth: 0`（与其余 job 同口径）—— 本 job 里有判据要读**基线提交里的语料**：
+      # `test_dev_mode_failure_modes` / `test_agent_presets_guard` / `test_skill_load_surface`
+      # 的预设语料来源是「预设仓镜像（本机才有）优先，其次 git 基线」，而 CI 上**没有镜像** ⇒
+      # 必须能从 git 基线读到。实测（issue #6020 S4 第一轮 CI）：默认的 `fetch-depth: 1` 下
+      # `origin/main~1` **根本不解析**（`fatal: Not a valid object name`）⇒ 三条判据全红。
+      # 本 job 既有的 20 分钟上限与 `-n 4` 分片远不足以被一次深克隆的成本压垮，
+      # 而「浅克隆让判据读不到语料」是**假红**（外观与真失败一样，会把排查引向错误的归因对象）。
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'

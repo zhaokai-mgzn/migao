@@ -34,7 +34,7 @@
 # **拒绝行为**（拿不到锁就出声拒跑，不是静默跳过）② `status` 的值守读数。**拒绝本身就是机制**，
 # 不是「提醒你记得去看」。
 # 🔻 如实登记的缺口：本脚本**盖不到**「有人绕过入口直接 `pytest tests/unit_ci_workflows`」
-#    （那一路没有锁）—— 承载体 = 研发模式纪律（`.agent-presets/migao`）＋ `verify-all.sh` 的
+#    （那一路没有锁）—— 承载体 = 研发模式纪律（🔴 S4 / issue #6020 起住在**预设仓** `zhaokai-mgzn/migao-agent-presets`，业务仓已无 `.agent-presets/**`）＋ `verify-all.sh` 的
 #    唯一入口，**不是**任何机械拦截。
 #
 # ## 用法

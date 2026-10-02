@@ -34,7 +34,8 @@
    **不得**打印「未评测」抬头、**不得**打印「判红」。
 
 case_ids 口径：本测试属 **dev/CI 工具链**，与同族 `test_red_proof_guard.py`（#4260）、
-`test_stranding_check.py`（#4065）、`test_dev_worktree_rebase.py`（#3972）沿用同一组 case id
+`test_stranding_check.py`（#4065）、`test_dev_worktree_rebase.py`（#3972；⚠️ S4 / issue #6020 起**已删** ——
+被测对象 `dev-worktree.sh` 的预设快照动作随预设迁出业务仓而删除）沿用同一组 case id
 （`MC-012`）—— 仓库没有「开发工具链」用例族，塞进行为用例库会污染覆盖矩阵（同族 PR 既有裁定）。
 """
 from __future__ import annotations

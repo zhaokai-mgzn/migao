@@ -29,11 +29,24 @@ from __future__ import annotations
 
 import ast
 import re
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CARRIER = REPO_ROOT / ".agent-presets/migao/skills/migao-dev-flow/scripts/ui-multimodal-acceptance.mjs"
-SKILL = REPO_ROOT / ".agent-presets/migao/skills/migao-dev-flow/SKILL.md"
+#: 🔴 S4（issue #6020）：承载体与技能都在**预设仓** ⇒ 统一走 `preset_corpus`。
+# ── 预设语料读取（S4 / issue #6020）：与 `test_source_parsing_shared.py` 同款的命名空间包导入 ──
+import sys as _sys
+
+_sys.path.append(str(Path(__file__).resolve().parents[1]))  # tests/（append：只作兜底解析路径）
+
+from unit_ci_workflows.preset_corpus import (  # noqa: E402
+    DEV_FLOW_CARRIER_REL,
+    DEV_FLOW_SKILL_REL,
+    require_preset_path,
+    require_preset_text,
+)
+CARRIER = require_preset_path(DEV_FLOW_CARRIER_REL)
+SKILL = require_preset_path(DEV_FLOW_SKILL_REL)
 
 # 逐字锚（改承载体时这些串就是契约；改契约必须同时改本判据 —— 那正是本判据存在的意义）
 ADMIN_TAB_ANCHOR = "const adminTab = page.getByRole('tab'"
@@ -208,7 +221,13 @@ def test_this_judgement_is_pure_static_and_never_skips():
             imported.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module.split(".")[0])
-    allowed = {"__future__", "ast", "re", "pathlib", "pytest"}
+    # 🔴 S4（issue #6020）扩了**两种**：都**不是**第三方依赖，本判据的射程（「CI 只装 pytest+pyyaml
+    # ⇒ 不许引运行时/第三方」）**一字未松**：
+    #   · `sys` —— 标准库（加它只为把 `tests/` 挂进 `sys.path` 以便导入下面的仓内测试助手）；
+    #   · `unit_ci_workflows` —— **本目录自己的**测试助手包（`preset_corpus`，纯标准库实现）。
+    # 预设内容迁出业务仓后，读那份语料必须走仓内统一口径（镜像 / git 基线），否则本判据读空 ⇒
+    # 要么静默绿、要么在本机与 CI 之间口径漂移（本 PR 实测踩过）。**第三方 / ai-agent 运行时照旧禁止。**
+    allowed = {"__future__", "ast", "re", "pathlib", "pytest", "sys", "unit_ci_workflows"}
     unexpected = sorted(imported - allowed)
     assert not unexpected, f"判据引入了额外依赖（CI 里会因缺依赖变红）：{unexpected}；且不许 import ai-agent 运行时"
     skip_needle = "pytest." + "skip"

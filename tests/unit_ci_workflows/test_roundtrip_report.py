@@ -243,8 +243,28 @@ def test_usage_error_is_2_not_a_silent_pass(tmp_path):
 
 
 # ── 8. 研发模式落点判据（本单改的是 persona + 技能，两处必须对得上）──────────
-PRESET = ROOT / ".agent-presets" / "migao" / "agent.cordis.yml"
-SKILL = ROOT / ".agent-presets" / "migao" / "skills" / "migao-dev-flow" / "SKILL.md"
+#: 🔴 S4（issue #6020）：预设内容已迁出业务仓 ⇒ 统一走 `preset_corpus`。
+#: `PRESET`（persona 载体）与 `SKILL`（技能正文）都改由它解析（取不到 ⇒ 判据红，不跳过）。
+
+# ── 预设语料读取（S4 / issue #6020）：与 `test_source_parsing_shared.py` 同款的命名空间包导入 ──
+import sys as _sys
+
+_sys.path.append(str(Path(__file__).resolve().parents[1]))  # tests/（append：只作兜底解析路径）
+
+from unit_ci_workflows.preset_corpus import (  # noqa: E402
+    DEV_FLOW_CARRIER_REL,
+    DEV_FLOW_SKILL_REL,
+    require_preset_path,
+    require_preset_text,
+)
+
+
+def _preset_yml_path():
+    return require_preset_path("agent.cordis.yml")
+
+
+def _skill_path():
+    return require_preset_path(DEV_FLOW_SKILL_REL)
 
 # `text` / `prefix` 的合法形态（issue #5081 起允许锚点合流为单一源）：
 #   ① `key: >-`             字面块标量（两份独立副本）
@@ -314,7 +334,7 @@ def _persona_violations(path: Path) -> list:
 
 def test_persona_text_and_prefix_are_byte_identical():
     """两处正文必须逐字相同：锚点形态由 YAML 保证，字面形态由本判据盯着。"""
-    blocks = _persona_blocks(PRESET)
+    blocks = _persona_blocks(_preset_yml_path())
     assert set(blocks) == {"text", "prefix"}, (
         f"persona 的 text/prefix 没解析出来（实测键 = {sorted(blocks)}）—— 判据会退化成空断言，宁可红"
     )
@@ -323,13 +343,13 @@ def test_persona_text_and_prefix_are_byte_identical():
 
 def test_persona_carries_the_roundtrip_budget_rule():
     """#4428 的落点判据：规则名 + 指向的章节号必须两处都在（措辞可变，身份不可丢）。"""
-    problems = [p for p in _persona_violations(PRESET) if "往返预算" in p or "§21" in p]
+    problems = [p for p in _persona_violations(_preset_yml_path()) if "往返预算" in p or "§21" in p]
     assert problems == []
 
 
 def test_the_section_the_persona_points_at_really_exists():
     """悬空指针 = 读的人找不到判据 ⇒ persona 说「全文见 §21」时技能里必须有 §21。"""
-    assert "## 21. " in SKILL.read_text(encoding="utf-8")
+    assert "## 21. " in _skill_path().read_text(encoding="utf-8")
 
 
 _PERSONA_BODY = """\
@@ -462,7 +482,7 @@ def test_section_11_no_longer_offers_the_polling_escape_hatch():
     ⚠️ 判据盯的是**那个许可式措辞**（`--watch` 与轮询**并列可选**），不是「或轮询」这四个字 ——
     本节现在**引述**被删掉的措辞来解释为什么删它，**引述 ≠ 许可**（判据若只看字面会误伤这条引述）。
     """
-    section = SKILL.read_text(encoding="utf-8").split("## 11. ")[1].split("## 12. ")[0]
+    section = _skill_path().read_text(encoding="utf-8").split("## 11. ")[1].split("## 12. ")[0]
     assert "或轮询 `gh pr checks" not in section  # 旧的许可式措辞：--watch 与轮询并列
     assert "禁止 `sleep N` 轮询" in section  # 替代它的禁令必须在场
     assert "--watch" in section

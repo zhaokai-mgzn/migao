@@ -363,7 +363,8 @@ pytest -q --durations=20    # 单用例 >2s 即可疑
   调用数**不随 N 增长**；红 ⇒ 面级归因；冲突/读不到分支 ⇒ 不跑 + 非零）。
 - 并发仍守 `migao-dev-flow` §17.2 的 **≤3**；CI 仍是权威（本入口是**起飞前**的整合层守护）。
 - 🔻 **盖不到的**：有人**绕过脚本**直接 `pytest tests/unit_ci_workflows`（那一路没有锁）；
-  靠研发模式纪律（`.agent-presets/migao`）+ 本节的唯一入口保证。
+  靠研发模式纪律（活锚 `~/.dsh/.agent-presets/migao` → 预设仓
+  `zhaokai-mgzn/migao-agent-presets` 的只读镜像）+ 本节的唯一入口保证。
 
 **判据**：`tests/unit_ci_workflows/test_machine_heavy_lock.py`（三态语义 / 孤儿回收 / **不误杀** /
 `verify-all.sh` 接线与顺序 / 静态契约）+ `tests/unit_ci_workflows/test_heavy_suite_entry_ledger.py`

@@ -13,7 +13,7 @@
   "dev_only": [
     {
       "path": "tests/unit_ci_workflows/test_agent_presets_guard.py",
-      "why": "`.agent-presets/**` 版本单调性守卫（issue #3851）—— 含**红证**。"
+      "why": "`.agent-presets/**` 版本单调性守卫 + **活锚新鲜度**（issue #3851 / #4026）—— 含**红证**。S4（issue #6020）起预设内容已迁出业务仓，本判据主职转为**加载点**（活锚 → 预设仓只读镜像）。"
     },
     {
       "path": "tests/unit_ci_workflows/test_ci_cost_ledger.py",
@@ -41,13 +41,9 @@
     },
     {
       "path": "tests/unit_ci_workflows/test_dev_worktree_preset_wording.py",
-      "why": "`scripts/dev-worktree.sh` 的预设快照文案必须与脚本事实一致（issue #4350）。"
+      "why": "`scripts/dev-worktree.sh` 的预设文案必须与脚本事实一致（issue #4350）；S4（issue #6020）后钉的是**新形态**：不再有「预设随业务仓」的动作，只剩「提交路径 + 加载点」两面。"
     },
-    {
-      "path": "tests/unit_ci_workflows/test_dev_worktree_rebase.py",
-      "why": "`dev-worktree.sh rebase` —— 预设快照不再挡住 `git rebase origin/main`（issue #3972）；"
-    },
-    {
+      {
       "path": "tests/unit_ci_workflows/test_drift_audit_allow_unknown.py",
       "why": "定时腿的**逐条点名**未知豁免（`--allow-unknown <check-id>`，issue #3951）。"
     },
@@ -127,11 +123,7 @@
       "path": "tests/unit_ci_workflows/test_post_deploy_eval_supersede.py",
       "why": "部署后评测的「被取代即抑制」+「仓库级串行槽位」守卫（issue #3587）。"
     },
-    {
-      "path": "tests/unit_ci_workflows/test_preset_version_collision.py",
-      "why": "preset-guard：`.agent-presets/**` **同号不同内容 ⇒ 判红**（跨包撞车，issue #5425）。"
-    },
-    {
+      {
       "path": "tests/unit_ci_workflows/test_prune_merged_branches.py",
       "why": "`scripts/prune-merged-branches.sh` —— 远程分支卫生清理（**手动、attended**）的守卫与红证。"
     },

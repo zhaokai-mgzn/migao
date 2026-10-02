@@ -30,6 +30,22 @@
 **「加载面」的准确定义**（由 `load_surface_text()` 实现）：真正进上下文的两部分 = frontmatter 的 `name` / `description` 值 **＋** 正文；
 **不含** frontmatter 里的 YAML 注释 —— 注释不进上下文 ⇒ 允许在那里留「此前写…」的历史说明，判据不误伤（判据 5 的第 ⑧⑨ 例就是这组对照）。
 
+## 🔴 S4（issue #6020，2026-10-02）改判：预设内容已迁出业务仓
+
+本判据判的是**预设内容**（两个技能的 `SKILL.md` / `CHANGELOG.md`），而 S4 之后业务仓**不再承载**
+`.agent-presets/**` ⇒ 语料来源改为「**预设仓镜像**优先、否则 git 基线」：
+
+- **预设仓镜像**：`$MIGAO_PRESET_MIRROR`（默认 `~/.migao-dev-preset-anchor`）—— 那是**权威源**；
+- **git 基线**：`origin/main` → `origin/main~1` → `HEAD` 里**第一个真读得到**该路径的
+  （合并前 `origin/main` 还带着它；合并后退到父提交。⚠️ CI 的 `pull_request` 检出是**浅克隆**，
+  `origin/main~1` 可能**根本不解析** —— 实测本 PR 第一轮 CI 就红在这上面 ⇒ 不能钉死单个 ref）。
+- 都取不到 ⇒ **红**（不是 skip：`pytest.skip` 会污染 helper-leg 的 skip 冻结读数，
+  而「判不了」也不该长得像「没东西可判」）。
+
+**职责归属**：内容侧的**常驻**守卫在**预设仓 CI**（`.github/workflows/preset-guards.yml`）；
+本判据留在业务仓是因为它同时是用例 `MC-052` 点名的**机器证据**（`traces.tests`），
+且「加载面不许回流沿革」这条纪律的**消费方**仍是本仓（技能在这里被加载）。
+
 ## 不判（如实登记边界，§19.1）
 
 - **不设体积上限**：设了会挡住**正常的纪律新增**（加载面本来就该随纪律增长）；
@@ -42,14 +58,66 @@
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SKILLS_ROOT = REPO_ROOT / ".agent-presets" / "migao" / "skills"
+
+#: 预设内容在**业务仓基线**里的前缀（S4 前的位置）。
+PRESET_BASELINE_PREFIX = ".agent-presets/migao/"
+#: 读预设内容的 git 基线候选（按序取第一个**真读得到**的；理由见文件头 S4 段）。
+PRESET_BASELINE_REFS = (
+    "origin/main",       # 合并前 main 还带着预设（深克隆的 CI / 本机）
+    "origin/main~1",     # 合并后 main 上没有它了，退到父提交
+    "HEAD~1", "HEAD~2",  # 浅克隆里远端跟踪 ref 可能不存在 ⇒ 退到**本地历史**（需 fetch-depth ≥ 2）
+    "HEAD",
+)
+#: 本机预设仓镜像（= 权威源）。
+PRESET_MIRROR = Path(os.environ.get("MIGAO_PRESET_MIRROR") or (Path.home() / "migao-dev-preset-anchor"))
+
+
+def resolve_skills_root() -> Path:
+    """→ 装着**当前预设**的那个 `skills/` 目录（镜像优先，其次 git 基线 ⇒ 落到临时目录）。
+
+    取不到 ⇒ 抛错（**fail-closed**：这不是「无对象可判」，是「语料漂了」）。
+    """
+    if (PRESET_MIRROR / "skills").is_dir():
+        return PRESET_MIRROR / "skills"
+    for ref in PRESET_BASELINE_REFS:
+        proc = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "ls-tree", "-r", "--name-only", ref],
+            capture_output=True, text=True,
+        )
+        if proc.returncode != 0:
+            continue
+        rels = [x for x in proc.stdout.splitlines()
+                if x.startswith(PRESET_BASELINE_PREFIX + "skills/")]
+        if not rels:
+            continue
+        out = Path(tempfile.mkdtemp(prefix="migao-skill-corpus-"))
+        for rel in rels:
+            blob = subprocess.run(
+                ["git", "-C", str(REPO_ROOT), "show", f"{ref}:{rel}"],
+                capture_output=True, text=True,
+            )
+            if blob.returncode != 0:
+                continue
+            dst = out / Path(rel).relative_to(PRESET_BASELINE_PREFIX)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_text(blob.stdout, encoding="utf-8")
+        if sorted(out.glob("skills/*/SKILL.md")):
+            return out / "skills"
+    raise AssertionError(
+        "任何来源都取不到预设语料（`skills/*/SKILL.md`）—— S4 / issue #6020 后预设住在**预设仓**：\n"
+        f"  · 本机镜像：{PRESET_MIRROR}（建镜像见 AGENTS.md「开发环境准备」）\n"
+        f"  · git 基线候选：{list(PRESET_BASELINE_REFS)}（都不含 `{PRESET_BASELINE_PREFIX}skills/`）"
+    )
 
 #: 冻结：这些技能的沿革**已外置**，此表**只许增加**（新技能外置后请登记进来）。
 EXTERNALIZED_SKILLS_FROZEN = ("migao-acceptance", "migao-dev-flow")
@@ -64,7 +132,17 @@ POINTER_RE = re.compile(r"^##[ \t]*版本沿革[^\n]*CHANGELOG\.md", re.M)
 #: 独立验收抓到的第 4 处副本用的就是另一个动词（「迁至」），按单一字面同步必然漏。
 LEGACY_HOME_RE = re.compile(r"沿革[^\n。；]{0,24}(?:写进|迁至|移至|放进|放入|放在)[^\n。；]{0,12}正文")
 
-SKILL_FILES = sorted(SKILLS_ROOT.glob("*/SKILL.md"))
+def skill_files() -> list[Path]:
+    """现取：当前预设的技能文件清单（收集期**不**求值 —— 语料漂了要在**用例里**红，不是收集期炸）。"""
+    return sorted(resolve_skills_root().glob("*/SKILL.md"))
+
+
+def _skill_id(path: Path) -> str:
+    return path.parent.name
+
+
+def _skill_params() -> list:
+    return [pytest.param(p, id=_skill_id(p)) for p in skill_files()]
 
 
 def load_surface_text(skill_md_text: str) -> str:
@@ -96,15 +174,15 @@ def legacy_home_problems(text: str) -> list[str]:
 
 def test_corpus_nonempty() -> None:
     """判据 1：语料非空（fail-closed）。"""
-    assert SKILL_FILES, f"找不到任何 `skills/*/SKILL.md`（语料缺失 ⇒ 不可判定，不得退化成通过）：{SKILLS_ROOT}"
+    assert skill_files(), "找不到任何 `skills/*/SKILL.md`（语料缺失 ⇒ 不可判定，不得退化成通过）"
 
 
-@pytest.mark.parametrize("skill_md", SKILL_FILES, ids=lambda p: p.parent.name)
+@pytest.mark.parametrize("skill_md", _skill_params())
 def test_load_surface_has_no_version_log(skill_md: Path) -> None:
     """判据 2（牙齿）：加载面不得含沿革 —— **回流即红**。"""
     problems = load_surface_problems(load_surface_text(skill_md.read_text(encoding="utf-8")))
     assert not problems, (
-        f"{skill_md.relative_to(REPO_ROOT)} 的**加载面**里出现了沿革"
+        f"{skill_md.parent.name} 的**加载面**里出现了沿革"
         "（加载本技能 = 为它付一次上下文；沿革执行流程时零需要）：\n  "
         + "\n  ".join(problems)
         + "\n出口（可行动）：把沿革写进**同目录** `CHANGELOG.md`（倒序，最新在上），本文件只留指针一行 —— "
@@ -112,7 +190,7 @@ def test_load_surface_has_no_version_log(skill_md: Path) -> None:
     )
 
 
-@pytest.mark.parametrize("skill_md", SKILL_FILES, ids=lambda p: p.parent.name)
+@pytest.mark.parametrize("skill_md", _skill_params())
 def test_load_surface_has_no_legacy_home_wording(skill_md: Path) -> None:
     """判据 6：**换了措辞的「旧落点」副本**同样判红（独立验收抓到的第 4 处副本形态）。
 
@@ -121,7 +199,7 @@ def test_load_surface_has_no_legacy_home_wording(skill_md: Path) -> None:
     """
     problems = legacy_home_problems(load_surface_text(skill_md.read_text(encoding="utf-8")))
     assert not problems, (
-        f"{skill_md.relative_to(REPO_ROOT)} 的**加载面**里还写着「沿革 … 写回正文」的旧落点口径"
+        f"{skill_md.parent.name} 的**加载面**里还写着「沿革 … 写回正文」的旧落点口径"
         "（沿革 v1.95.0 起已移出加载面）：\n  "
         + "\n  ".join(problems)
         + "\n出口（可行动）：改成指向**同目录** `CHANGELOG.md`；历史说明请写进 YAML 注释（注释不进上下文，不算加载面）。"
@@ -131,11 +209,12 @@ def test_load_surface_has_no_legacy_home_wording(skill_md: Path) -> None:
 @pytest.mark.parametrize("name", EXTERNALIZED_SKILLS_FROZEN)
 def test_externalized_log_exists_and_pointer_in_place(name: str) -> None:
     """判据 3 + 4：**外置 ≠ 删除** —— 沿革文件必须在且非空，指针必须在位。"""
-    skill_md = SKILLS_ROOT / name / "SKILL.md"
-    changelog = SKILLS_ROOT / name / "CHANGELOG.md"
+    root = resolve_skills_root()
+    skill_md = root / name / "SKILL.md"
+    changelog = root / name / "CHANGELOG.md"
     assert skill_md.is_file(), f"{name}/SKILL.md 不存在（登记的技能被删了？登记表只许增加，删技能请同 PR 改登记）"
     assert changelog.is_file(), (
-        f"{name}：登记的沿革文件 `{changelog.relative_to(REPO_ROOT)}` **不存在** —— "
+        f"{name}：登记的沿革文件 `{changelog}` **不存在** —— "
         "外置 ≠ 删除：沿革是「这条纪律为什么存在」的唯一出处，删掉即无法回溯"
     )
     body = changelog.read_text(encoding="utf-8")
@@ -180,7 +259,7 @@ def test_readings_printed(capsys: pytest.CaptureFixture[str]) -> None:
     「加载面」= `load_surface_text()` 的长度（这才是每次加载真正进上下文的字符数）；
     整份文件的字符数会**高估**（含 YAML 注释）。
     """
-    for skill_md in SKILL_FILES:
+    for skill_md in skill_files():
         changelog = skill_md.parent / "CHANGELOG.md"
         surface = len(load_surface_text(skill_md.read_text(encoding="utf-8")))
         file_chars = len(skill_md.read_text(encoding="utf-8"))

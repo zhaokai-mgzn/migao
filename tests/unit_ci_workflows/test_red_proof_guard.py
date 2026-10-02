@@ -24,7 +24,7 @@
 ⑤ **留痕 + 还原自证**：`injected` 输出必须含注入前后 **sha256 + 内容 diff**；`restored` 未还原即非零退出。
 
 case_ids 口径：本测试属 **dev/CI 工具链**，与同族 `test_stranding_check.py`（#4065）、
-`test_dev_worktree_rebase.py`（#3972）、`test_agent_presets_guard.py`（#3851）沿用同一组 case id
+`test_dev_worktree_rebase.py`（#3972；⚠️ S4 / issue #6020 起**已删**）、`test_agent_presets_guard.py`（#3851）沿用同一组 case id
 （`MC-012`）—— 仓库目前没有「开发工具链」用例族，本 PR **未新建**用例：塞进行为用例库会污染覆盖矩阵
 （同族 PR 的既有裁定）。
 """

@@ -112,25 +112,28 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
 ## 开发环境准备（获取研发模式）
 
 「米高研发」= DSH agent preset（`preset.yml` + `agent.cordis.yml` + `migao-dev-flow` / `migao-acceptance`
-两个技能），**权威源就是本仓库 [`.agent-presets/migao/`](.agent-presets/migao/README.md)** —— 随代码一起评审、一起回溯。
+两个技能），**权威源是独立仓 [zhaokai-mgzn/migao-agent-presets](https://github.com/zhaokai-mgzn/migao-agent-presets)**
+（裁定 2026-10-02：复用并复活该仓；issue #6020 是迁移单），**预设随预设仓的 PR 一起评审、一起回溯**；
+本业务仓**已不再承载 `.agent-presets/**`**。
 DSH 从 root `~/.dsh/.agent-presets/`（`USER_PRESET_DIR = '.agent-presets'`）发现 preset，
-因此把它软链到本仓库该路径即可获得同一份研发模式。
+因此把它软链到**预设仓的专职只读镜像**即可获得同一份研发模式。
 **⚠️ 锚点必须指向「专职只读镜像」，不是任何会被开发/会被清理的工作区**（`#3849`/`#4026`）：
 
-**⚠️ 顺序铁律：先合并含 `.agent-presets/migao/` 的 PR，再执行换链** —— 仓库尚无该路径时换链会让 DSH 当场失效。
+**⚠️ 顺序铁律：先确认镜像里已有 preset 内容，再执行换链** —— 镜像尚无该路径时换链会让 DSH 当场失效。
 
 ```bash
-# ① 建**专职只读镜像**（独立克隆；本机约定路径 $HOME/migao-preset-anchor —— 长期保留、勿删）
-MIRROR="$HOME/migao-preset-anchor"
-git clone --no-checkout <本仓库 URL> "$MIRROR"
+# ① 建**专职只读镜像**（独立克隆**预设仓**；本机约定路径 $HOME/migao-dev-preset-anchor —— 长期保留、勿删）
+#    ⚠️ `${MIGAO_PRESET_MIRROR:-…}` 就是机器辅助脚本认的那个镜像变量，换路径请同时改环境变量
+MIRROR="${MIGAO_PRESET_MIRROR:-$HOME/migao-dev-preset-anchor}"
+git clone --no-checkout <预设仓 URL> "$MIRROR"     # 默认 git@github.com:zhaokai-mgzn/migao-agent-presets.git
 git -C "$MIRROR" checkout --detach origin/main
-ls "$MIRROR/.agent-presets/migao/preset.yml"     # 镜像里已有该路径才继续
+ls "$MIRROR/preset.yml"     # preset.yml 在预设仓 == 镜像的**根**（不在 `.agent-presets/migao` 下），可读才继续
 
 # ② 摘掉旧目录 / 旧软链（若是实体目录，先备份而不是直接删）
 mv "$HOME/.dsh/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
 
-# ③ 换链：-s 建软链 / -f 覆盖已存在项 / -n 不跟随已存在的软链目录
-ln -sfn "$MIRROR/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao"
+# ③ 换链：软链目标 = 镜像的**仓根**；-s 建软链 / -f 覆盖已存在项 / -n 不跟随已存在的软链目录
+ln -sfn "$MIRROR" "$HOME/.dsh/.agent-presets/migao"
 
 # ④ 校验：应能读到 preset 元数据与技能
 cat "$HOME/.dsh/.agent-presets/migao/preset.yml"
@@ -148,11 +151,16 @@ head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
   软链悬空 ⇒ **DSH 静默加载不到研发模式**（不报错，只是"模式不见了"，`#3956`）。
   `migao-wt/*` 的 worktree 属 `dev-worktree.sh rm/prune` 的清理半径，**同样不能当锚点**。
   ⇒ 任何清理命令执行**之前**先 `readlink "$HOME/.dsh/.agent-presets/migao"`，把解析出的目标及其父目录排除在外。
-- **换机 / 新队友**：`git clone` 本仓库 → 跑上面 ①~④（独立克隆镜像 + 换链），即获得同一份研发模式
+- **换机 / 新队友**：`git clone` 预设仓 → 跑上面 ①~④（独立克隆镜像 + 换链），即获得同一份研发模式
   （不再依赖个人 `~/.dsh` 手抄副本 —— 手抄副本没有跟随机制，必然腐烂）。
-- **改研发模式 = 提 PR**：改 `.agent-presets/migao/**` 走正常 PR 流程（评审 + 回溯）。
+- **改研发模式 = 到预设仓提 PR**：预设内容已迁出业务仓，改预设改的是 `zhaokai-mgzn/migao-agent-presets`
+  仓里的 `preset.yml` / `agent.cordis.yml` / `skills/**`（评审 + 回溯照旧）。
   ⚠️ **合并后活锚不会自动跟上**：跑一次 `./scripts/preset-anchor-refresh.sh`（否则下次会话读到的仍是旧模式）。
-- 历史独立仓库 `zhaokai-mgzn/migao-agent-presets` 现为**历史 / 镜像，以本仓库为准**；其远程去留（保留/归档/删除）**待用户裁定**，裁定前不动它。详见 [`.agent-presets/migao/README.md`](.agent-presets/migao/README.md)。
+- **权威源 = [zhaokai-mgzn/migao-agent-presets](https://github.com/zhaokai-mgzn/migao-agent-presets)（裁定 2026-10-02：复用并复活该仓；issue #6020 是迁移单）**；
+  本业务仓已不再承载 `.agent-presets/**`。预设仓的接线与运维说明见其 [`README.md`](https://github.com/zhaokai-mgzn/migao-agent-presets/blob/main/README.md)。
+- **过渡期（issue #6020）**：换链（把活锚改指到上面的新镜像路径）是 `S3`，在本次迁移合并**之后**单独做；
+  换链完成前 `./scripts/preset-anchor-check.sh` **可能是红的 —— 这是预期的过渡态**；
+  但 `~/.dsh/.agent-presets/migao` **任何时刻都必须可解析**（悬空 ⇒ DSH 静默加载不到研发模式，见下面 ②）。
 
 ## 环境
 
