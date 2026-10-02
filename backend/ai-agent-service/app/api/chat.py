@@ -42,6 +42,8 @@ from app.tools import ToolRegistry, get_tool_registry
 from app.tools.base import CUSTOMER_ONLY_ROLES, ToolContext  # 角色口径单点（#4013 A10）
 # 页面上下文（issue #5371 族 4）：route→真值源登记表 + **默认拒绝**的注入面
 from app.context.page_registry import build_page_context, render_page_context
+# 主动新手引导（issue #5989 · P2）：route→功能登记表（复用 P1 真值源）+ 推送判定（纯函数）
+from app.context.menu_navigator import build_proactive_push
 from app.utils.auth import get_current_user, UserIdentity
 import app.utils.error_incident as _err_inc
 # 图片管线（URL 校验 / CDN 重写 / 文本提示）的**单一事实源**（issue #5321 包 1）：
@@ -1992,6 +1994,12 @@ async def send_message(
     if request.card_answer is not None:
         return await _handle_form_request(request, tenant_id, user_id, current_user)
 
+    # ── __PAGE_ENTER__ 协议（issue #5989 · P2）：客户端首次进页 ⇒ 主动导航提示 ──
+    # 放在 `page_context` 之前：本轮的**意图**是「进页」而不是「问问题」，不注入页面上下文、
+    # 不经 LLM（文案全部来自登记表 ⇒ 结构上不含步骤）。
+    if request.message.startswith(PAGE_ENTER_PREFIX):
+        return await _handle_page_enter_request(request, tenant_id, user_id, current_user)
+
     # ── 页面上下文（issue #5371 族 4）：未登记 route ⇒ 不注入（默认拒绝）──
     if request.page_context is not None:
         return await _handle_page_ctx_request(request, tenant_id, user_id, current_user)
@@ -1999,6 +2007,164 @@ async def send_message(
     # 无前缀协议 ⇒ 普通文本路径。**回退/交接只能落到这个独立入口**，不得交回本函数：
     # 本函数按**前缀**分派，交回（未改变状态的）原文 = 按同一前缀再分派回原处理器 ⇒ 递归（issue #5451）。
     return await _send_plain_message(request, current_user)
+
+
+# ============ 主动新手引导（issue #5989 · P2）============
+
+#: 客户端**首次进入某个页面**时发的轻量轮次前缀（运输形态 = 复用 `/api/chat/send`，**不推送**）：
+#: `__PAGE_ENTER__|{"route": "/products"}`。
+#: ⚠️ 只允许 **route** 一个键 —— 客户端**说了不算**：可见性由服务端会话权限判（不读 role）。
+PAGE_ENTER_PREFIX = "__PAGE_ENTER__|"
+
+#: 「每页每会话最多 1 次」的**服务端**落点：`session_states.state` 的这个键
+#: （存**功能 id** 列表，不是 route —— 同一功能的多个路径共享一次推送）。
+_PROACTIVE_STATE_KEY = "onboarding_pushed_features"
+
+#: 会话状态读写的超时（秒）—— 与 `_save_message_or_report` 同口径，不阻塞 SSE。
+_PROACTIVE_STATE_TIMEOUT = 10.0
+
+
+async def _load_pushed_features(session_id: str) -> List[str]:
+    """读「本会话已推过的功能 id」。
+
+    ⚠️ 本仓 `SessionStateStore.load` 对「没有这一行」（= 新会话的**正常**形态）与「存储故障」
+    都返回 `None`（见 `app/memory/session_state_store.py`）⇒ **这里必须把两者都读成「没有记录」**。
+    若把 `None` 读成「存储不可用 ⇒ 不发」，本功能会在**每个新会话的第一次进页**（`session_states`
+    还没有行）静默失效 = 结构性死路（本仓最忌的「绿了但没跑」）。
+
+    真正的安全网在**写**那一侧：`_commit_pushed_feature` 失败 ⇒ **不发**（存储不可用时不会
+    退化成「每次进页都推」），而重复推由「先记账、后推送」挡住。
+    """
+    from app.memory.session_state_store import SessionStateStore
+
+    try:
+        state = await asyncio.wait_for(
+            SessionStateStore().load(session_id), timeout=_PROACTIVE_STATE_TIMEOUT)
+    except Exception as exc:
+        _report_persist_failure(
+            exc=exc, op="load", source="proactive.state_load", session_id=session_id,
+        )
+        return []
+    if not isinstance(state, dict):
+        return []
+    pushed = state.get(_PROACTIVE_STATE_KEY)
+    return [str(x) for x in pushed] if isinstance(pushed, list) else []
+
+
+async def _commit_pushed_feature(session_id: str, feature_id: str, existing: List[str]) -> bool:
+    """把 `feature_id` 记进会话状态（**推送前**调用：先记账，后推送 —— 重复推比漏推糟）。
+
+    返回 `True` = 已记账（可推）；`False` = 没记上 ⇒ 本轮**不发**（否则一次存储故障会退回
+    「每次进页都推」）。
+    """
+    from app.memory.session_state_store import SessionStateStore
+
+    try:
+        # 🔴 **必须取 commit 的返回值**：`SessionStateStore.commit` 用「返回 False」表示写失败
+        # （不抛异常）—— 丢掉它就会把「没记上」当成功 ⇒ 一次存储故障退回「每次进页都推」。
+        # 本行原本写成 `await …; return True`（实测被 `test_commit_failure_means_no_push` 抓出）。
+        return bool(await asyncio.wait_for(
+            SessionStateStore().commit(session_id, {_PROACTIVE_STATE_KEY: list(existing) + [feature_id]}),
+            timeout=_PROACTIVE_STATE_TIMEOUT,
+        ))
+    except Exception as exc:
+        _report_persist_failure(
+            exc=exc, op="commit", source="proactive.state_commit", session_id=session_id,
+        )
+        return False
+
+
+def _proactive_noop_stream(session_id: Optional[str]) -> StreamingResponse:
+    """**不推**时的静默流：一个 `done` 事件，无文本、不进历史（前端什么都不渲染）。
+
+    「宁可静默，也不要猜错 / 越权 / 骚扰」—— 未登记页面、无权页面、已推过、存储不可用，
+    四条出口都落在这里。
+    """
+    async def _empty():
+        yield SSEEvent.done(session_id or "", None)
+
+    return StreamingResponse(_empty(), media_type="text/event-stream")
+
+
+async def _handle_page_enter_request(
+    request: "ChatSendRequest",
+    tenant_id: int,
+    user_id: str,
+    current_user,
+):
+    """**客户端首次进页 ⇒ 米宝在对话区主动发一条导航提示**（issue #5989 · P2）。
+
+    运输形态：前端在**路由变化**时发一条 `__PAGE_ENTER__|{"route": …}`（复用 `/api/chat/send`）
+    —— **客户端触发、服务端判定**。不新建 SSE 主动推 / 定时 / 队列等基础设施。
+
+    判定（**每一条 fail-closed ⇒ 静默**，判定本体在 `app/context/menu_navigator.py`）：
+
+    1. route ↔ 功能**唯一**对应（未登记 / 歧义 ⇒ 不推）；
+    2. 该页在**服务端会话权限**下可见（客户端递交的 role / permissions **一律不读**）；
+    3. 「**每页每会话最多 1 次**」——**服务端**判（`session_states`），不靠前端自觉；
+    4. **可行动性**：文案必须带「在哪一页 + 这页能做什么」，否则不发。
+
+    命中时**不经 LLM**（文案来自登记表 ⇒ 结构上不含步骤）：只回一条 `text` + `done`，并落进
+    会话历史（用户下次打开会话仍能看到这条导航）。
+    """
+    from app.memory.session_service import SessionService
+    from app.utils.log_sanitizer import LogSanitizer
+
+    # ── 会话守卫（与 `_handle_page_ctx_request` 复用同一守卫）──
+    session_memory = SessionMemory()
+    session_service = SessionService(session_memory)
+    session_id = request.session_id
+    if not session_id:
+        logger.info("[proactive] skip | reason=no_session")
+        return _proactive_noop_stream(None)
+    _session, _gate_error = await session_service.send_gate(
+        session_id, tenant_id=tenant_id, user_id=user_id,
+    )
+    if _gate_error:
+        _raise_session_error(*_gate_error)
+
+    # ── payload：只认 route（畸形 ⇒ 按未登记 ⇒ 静默）──
+    try:
+        payload = json.loads(request.message[len(PAGE_ENTER_PREFIX):])
+    except (ValueError, json.JSONDecodeError):
+        payload = None
+    route = payload.get("route") if isinstance(payload, dict) else None
+
+    # ── 服务端会话的权限（**唯一**裁剪输入；客户端 role/permissions 不读）──
+    permissions = getattr(current_user, "permissions", None)
+
+    # 「每页每会话 ≤ 1 次」：已推集（新会话没有 `session_states` 行 ⇒ 空集）
+    already_pushed = await _load_pushed_features(session_id)
+
+    verdict = build_proactive_push(route, permissions, already_pushed=already_pushed)
+
+    # 留痕只记**判定结果**，不记 route 原文（防路径/PII 进日志）
+    logger.info(
+        f"[proactive] route_enter | push={verdict.should_push} reason={verdict.reason or '-'} "
+        f"| tenant={tenant_id} user={user_id} session={session_id} "
+        f"msg={LogSanitizer.mask_text(request.message[:80])}"
+    )
+
+    if not verdict.should_push or verdict.push is None:
+        return _proactive_noop_stream(session_id)
+
+    # 先记账（失败 ⇒ 不发）：一次存储故障不该退回「每次进页都推」
+    if not await _commit_pushed_feature(session_id, verdict.push.feature_id, already_pushed):
+        logger.info(f"[proactive] skip | reason=state_commit_failed session={session_id}")
+        return _proactive_noop_stream(session_id)
+
+    text = verdict.push.render()
+
+    async def _push_stream():
+        # 落进会话历史（用户重开会话时仍能看到这条导航）；落库失败不打断 —— 文案已经能推给他
+        await _save_message_or_report(
+            session_memory, source="chat.proactive",
+            session_id=session_id, role="assistant", content=text, tenant_id=tenant_id,
+        )
+        yield SSEEvent.text(text)
+        yield SSEEvent.done(session_id, None)
+
+    return StreamingResponse(_push_stream(), media_type="text/event-stream")
 
 
 async def _send_plain_message(

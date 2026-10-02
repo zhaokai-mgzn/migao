@@ -6,6 +6,7 @@ import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
 import CommandPalette from '@/components/layout/CommandPalette'
 import { usePermission } from '@/lib/permission'
+import { useChatStore } from '@/store/chat'
 import { cn } from '@/lib/utils'
 import FloatingAssistant from '@/components/ai-assistant/FloatingAssistant'
 
@@ -120,6 +121,16 @@ export default function DashboardLayout({
     setMobileOpen(false)
     setPaletteOpen(false)
   }, [pathname])
+
+  // 主动新手引导（issue #5989 · P2）：**首次进入某个已登记页面** ⇒ 递一轮「进页」事件，
+  // 米宝在对话区主动发一条**导航提示**（在哪一页 / 这页能做什么）。
+  // 前端**不做任何判定**（哪一页能推、推什么、推几次：唯一真值在服务端
+  // `backend/ai-agent-service/app/context/menu_navigator.py` + `app/api/chat.py`）；
+  // 服务端回静默流时这里什么都不渲染。`/chat` 是米宝自己的会话页，不推。
+  useEffect(() => {
+    if (permissionDenied || pathname.startsWith('/chat')) return
+    void useChatStore.getState().notifyPageEnter(pathname)
+  }, [pathname, permissionDenied])
 
   const handleToggle = () => {
     manualToggle.current = true
