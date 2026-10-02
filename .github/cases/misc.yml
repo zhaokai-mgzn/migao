@@ -2140,3 +2140,48 @@ cases:
       tests:
         - tests/unit_ci_workflows/test_automerge_bot_safe_path.py
       verifies: []
+
+  # MC-061（issue #5970，用户 2026-10-02 裁定 A+B）：**「窄集」必须由「变更的射程」反推**。
+  # 病（实证，17 条红）：四条并行 PR（#5961/#5963/#5965/#5967）全栽在同一处 ——
+  # 判据只存在于全量单测里、窄跑看不见；而 growth_gate 与 cases 面门禁**都不提示**
+  # 「这次改动的射程命中了哪些 meta 面」⇒ 只跑窄测试的包在这些面上是**结构性盲的**。
+  # ==========================================================================
+  - id: MC-061
+    legacy_id: ""
+    title: "变更射程 → 必跑具名判据：射程注册表（面 → 具名判据 → 可复制命令）与 growth_gate 的**非阻塞**提示同源，两者漂移即红；射程表清空 ⇒ 提示消失而 blocker_count 不变"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - blast-radius
+      - growth-gate
+      - registry
+      - red-proof
+      - fail-closed
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是 CI 展示面 / 注册表的**结构事实**（面 ↔ 路径 glob ↔ 具名判据 ↔ 文档表行），
+    # 由 tests/unit_ci_workflows/test_blast_radius_registry.py 与 test_growth_gate_blast_radius.py 的离线判据验证，非 LLM 行为。
+    user_inputs:
+      - "改了工具源码 / graph state / 迁移 / 用例面 / 权限菜单码时，我必须在**提交那一刻**就看到「这次射程还欠哪几张登记面、各跑哪条命令」，且这个提示**不许**把通过条件变严；射程表被清空、文档少一面、命令指向不存在的判据时，必须有东西变红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**口径（逐字，注册表与文档共用）**：**「窄集」必须由「变更的射程」反推** —— 改了工具源码 ⇒ **所有扫工具源码的 meta 面都在射程内**；不是靠回忆清单。实证 = 2026-10-02 四条 PR 共 17 条红（#5961 复位族/写点/产出键 7 · #5963 state 必需字段 1 · #5965 工具见证集/权限码/门面/RBAC/死能力 5 · #5967 迁移指纹/bootstrap 建库面/事件通道基线/台账 4）"
+      - "**单一数据源**：`.github/scripts/blast_radius.py` 的 `FACES`（面 → 路径 glob）与 `probes_by_face()`（面 → 具名判据 + 可复制命令）是唯一来源；`docs/wiki/Change-Blast-Radius.md` 是人读镜像，`growth_gate` 按**同一份数据**打印提示 ⇒ 三处漂移即红（`test_doc_mirrors_every_face_exactly_once` / `test_doc_lists_the_named_judgement_of_every_probe`）"
+      - "**「不许凭印象写」的机械面**（本 bundle 的硬要求）：① 每个面必须能被**仓内某个真实文件**命中（否则提示永远沉默 —— 看起来像「已覆盖」，比没有提示更坏）② 每条探针的具名判据文件必须**真在仓里**（含命令 `cd` 目标与 `source` 两个解析基准）③ 命令不得是自然语言占位符"
+      - "🔴 **不改 blocker 语义**（硬约束）：提示是**独立段** + `--json` 新字段 `blast_radius`（与 `blockers` / `warnings` 零交集）；判据 = 命中射程时 `warning_count == 0`、`blocker_count` 与本组文件自身的判定一致；PR 评论文本里**连措辞都不出现**（否则会被读成阻塞项）"
+      - "**注入式红证（判据 1 的对照臂，不可省）**：把 `FACES` 清空 ⇒ 同一组文件下**提示必须消失**且 `blocker_count` 仍为 0 —— 否则提示不是从这份数据源来的（判据 1 假绿）"
+      - "**7 行实测红证（A 的验收核心，实测读数逐条写进文档表）**：① 新增工具**文件 + 注册**两处 ⇒ `test_tool_permission_codes.py` 1 failed / 37 passed（`以下 B 端工具既没有权限码、也不在登记表里：['redproof_probe']`；同一次改动 `growth_gate` 亦 BLOCKED 缺两个配套测试文件）② 改 `AgentState` 必需字段名 ⇒ `test_graph_state.py` 1 failed / 14 passed（`Missing field: pending_interact_skill`）③ 改已登记迁移一字节 ⇒ `test_migration_immutability.py` 1 failed / 6 passed ④ 加一条未登记写调用 ⇒ `test_eval_write_site_dispositions.py` 1 failed / 3 passed ⑤ 注册一个无实现的 clean type ⇒ `test_eval_preclean_registry.py` 3 failed / 24 passed（含 `table=15 runner=16`）⑥ 改 `menu.ts` 一个节点的权限码 ⇒ `test_agent_permission_parity.py` 4 failed / 11 passed ⑦ 改用例源不重渲染 ⇒ 生成物 `git diff --exit-code` rc=1。**每条都还原后复跑为绿**"
+      - "**① 行实测得到的口径提醒（写进文档）**：**只新建工具文件、不注册**时工具面判据**全绿**（`registry_tools()` 由 `create_default_registry()` 显式构造 ⇒ 未注册的类不进入判据射程）⇒ 工具面的真实射程是**「文件 + 注册」两处**；而 `growth_gate` 的**缺测**判定在**只有文件**时就会响 —— 两者互补（缺测门禁管「有没有配套测试」，射程提示管「还有哪些 meta 面要一起跑」）"
+      - "**覆盖面显式登记（照实，不粉饰）**：① `<venv>` 要自己建（新 worktree 里 `.venv` 常缺）⇒ 命令可复制但**不保证依赖已装** ② 只认**路径形态**，改了行为却没改任何路径时提示不响 ③ 人绕过 `growth_gate` 时不响 ④ `web` 行的多模态验收仍是 Playwright 剧本 + AI 读图（`migao-dev-flow` §15.7），**不是常驻判据** ⑤ 判据**不跑**被引用的测试（否则提示退化成再跑一遍全量套件）"
+    skip_reason: "[backend-contract] CI 展示面 / 射程注册表的静态结构判据（零 LLM、秒级、只读仓内文本 + 内存注入）由 tests/unit_ci_workflows/test_blast_radius_registry.py 与 tests/unit_ci_workflows/test_growth_gate_blast_radius.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-02 新增（issue #5970；用户当日逐字裁定「选了 A+B 两项」，开单要求由用户给出）。A = `docs/wiki/Change-Blast-Radius.md`（变更面 → 必跑具名判据 → 可复制命令，7 行实测红证）；B = `.github/growth_gate.py` 的**非阻塞**射程提示（命中射程路径 ⇒ 打印「你还欠这几张登记面」+ 各给命令）。落码 = ① `.github/scripts/blast_radius.py`（**单一数据源**：8 个面 / 17 条具名判据 + 可复制命令）② `growth_gate` 接线（独立段 + `--json` 新字段 `blast_radius`，**不动 blocker_count 语义**）③ 人读镜像文档 ④ 两份判据文件 15 条（注册表 9 + 接线 6，含注入式反面「射程表清空 ⇒ 提示消失且 blocker 不变」）⑤ 7 行注入式红证（读数见本用例 data_checks 与文档表）。取号 **MC-061**：现取 main 最大 = **MC-060**（`grep -o 'id: MC-[0-9]*' .github/cases/misc.yml | sort -t- -k2 -n | tail -1`），本包开工时现取在飞分支（含 `feat/4923-craft-config-query`）最大亦为 MC-060 ⇒ 按「当前最大号 +1」取 **MC-061**（沿用 MC-054~060 的「空档号 ≠ 可用号」先例）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ **谁后合并谁** `./scripts/sync-main.sh --rebase` 并**重渲染**（生成物不许手改、二次渲染零 diff）。"
+    traces:
+      ci:
+        - pr-check.yml
+      tests:
+        - tests/unit_ci_workflows/test_blast_radius_registry.py
+        - tests/unit_ci_workflows/test_growth_gate_blast_radius.py
+      verifies: []
