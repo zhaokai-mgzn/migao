@@ -59,8 +59,32 @@
 # **同一份判据**）。变更集为空 ⇒ **不跑任何检查**并**非零退出**——在零 diff 的树上跑验证没有边际
 # 信息，把它的 ✅ 读成「验证通过」属 migao-acceptance v1.3 的「空跑」。
 #
+# ── 套件内全量入口的**角色判定**（issue #6078）：子包 worktree **不许**直跑全量 ──────────
+#
+# D 口径 = 「**一批只跑一次**全量」，而那一次属于**批次集成**（`scripts/batch-gate.sh`）。
+# 在**子包 worktree** 里直跑全量会「把批次那一次提前烧掉」并跟别人的重活抢同一把机器锁。
+# 本脚本因此按**现取的事实**判角色（**不靠 agent 自报**，也不看名字前缀、不用环境变量）：
+#
+#   主检出（primary worktree：`git rev-parse --absolute-git-dir` == `--git-common-dir`）⇒ **允许**
+#   批次集成 worktree（`batch-gate.sh` 在自己造出的 worktree 里留的**仓内标记**）⇒ **允许**
+#   子包 worktree（linked worktree 且无该标记）⇒ **拒绝**（`exit 5`，在任何重活派发之前）
+#   CI（`CI` 为真）⇒ **不受影响**（托管 runner 不占本机资源）
+#
+# 标记为什么是**文件**而不是名字前缀 / 环境变量：名字前缀会漂（`--in <任意路径>` 形态就不叫
+# `batch-*`）；环境变量**可被子包自己 export** —— 那等于把「我是谁」交给被判对象自报。标记的
+# 位置由 `git rev-parse --git-path` 现取（= `.git/worktrees/<name>/…`，**不在工作树里**、
+# 不会被 `git add -A` 带进提交，也不污染 `git status`）。
+#
+# 逃生口**只在命令行上可见**：`--allow-package-heavy`（放行时打印醒目一行）。有意**不做**
+# 环境变量逃生口（本仓刚按 #6056 删掉一个不可见的环境变量逃生口 ⇒ YAGNI + 不可见）。
+#
 # 返回码：0=全部**真跑**的检查通过；1=有真跑的检查失败；2=用法错误；
-#         3=无变更（未执行任何检查）；4=有变更但零项真跑（纯空跑）。开发自查与 CI 用同一命令。
+#         3=无变更（未执行任何检查）；4=有变更但零项真跑（纯空跑）；
+#         5=**角色守卫拒绝**（子包 worktree 直跑全量；在任何重活之前，见上）。
+#         ⚠️ 5 与 3/4 **不复用**：3/4 说的是「变更集」的读数（有没有变更 / 有没有真跑），
+#         而 5 说的是「**调用角色**」被拒 —— 此时**变更集根本没算**，用 3/4 会把它读成
+#         「你没改东西」/「跑了但零项真跑」，两者都是**错误归因**（会让读者去查 diff 而不是查调用位置）。
+#         开发自查与 CI 用同一命令。
 # =============================================================================
 set -uo pipefail
 
@@ -691,6 +715,153 @@ fi
 # ⚠️ 措辞避让：这行**不得**含「未提交」三字 —— `test_gate_uncommitted_noop.py` 用
 # 「无未提交改动时控制台不得出现『未提交』」做**防误伤**断言，这里的结构性提示会误触它。
 echo "变更集：$(printf '%s\n' "$CHANGE_SET" | grep -c .) 个文件（origin/main...HEAD ∪ 工作区改动）"
+
+# ══════════════════════════════════════════════════════════════════════════════════════
+# 套件内全量入口的**角色判定**（issue #6078）—— 子包 worktree 里**拒绝**直跑全量
+# ══════════════════════════════════════════════════════════════════════════════════════
+# ## 病灶（两条实测事实，不是推断）
+#
+# ① 2026-10-02：在**集成 worktree** 里跑全量 gate，**挂死 26 分钟并握着机器级重活锁**
+#    （`#6076` / PR `#6077` = `cbd0b9173` 修的是那个**死锁**）。**修好不等于不会再被误跑** ——
+#    误跑的入口仍然敞开。
+# ② 在**子包 worktree** 里跑全量 = 把「批次那一次」**提前烧掉**（D 口径的全部意义就是**一批一次**），
+#    还会跟别人的重活抢同一把机器锁。
+# ⇒ 本块把「子包不许跑全量」从**纪律**变成**机制**：出声、可归因、可在命令行显式绕过。
+#
+# ## 角色按**现取的事实**判（不许依赖 agent 自报）
+#
+# | 角色 | 判定依据（现取） | 处置 |
+# |---|---|---|
+# | `primary` | `git rev-parse --absolute-git-dir` == `--git-common-dir` | 放行（人工 / 批次的**一次性**全量在这里跑） |
+# | `batch-integration` | 上述不等，**且** `--git-path ${MARKER}` 处有标记 | 放行（`batch-gate.sh` 留的标记） |
+# | `package` | 上述不等，**且**没有标记 | **拒绝**（exit 5，在任何重活之前） |
+# | `ci` | `CI` 为真 | 放行（托管 runner 不占本机资源） |
+# | `unknown` | git 不可用 / 工作树外 | **拒绝**（fail-closed，绝不猜） |
+#
+# ## 标记为什么是**文件**（why 不用名字前缀 / 环境变量）
+#
+# · **名字前缀会漂**：`batch-gate.sh --in <任意路径>` 形态建出来的集成 worktree 不叫 `batch-*`
+#   ⇒ 按名字判会把合法的集成面误拒；而 `migao-wt/batch-*` 这种名字**任何人手建一个就有**——
+#   假绿方向。
+# · **环境变量会被子包自己 export**：那等于把「我是谁」交给**被判对象自报**，判据就没意义了。
+# · 标记路径由 `git rev-parse --git-path` **现取**（= `.git/worktrees/<name>/…`）：**不在工作树里**
+#   ⇒ 不会被 `git add -A` 带进提交、不污染 `git status`，`git worktree remove` 时随
+#   工作树管理目录一起消失（不残留）。
+#
+# ## 逃生口**只在命令行上可见**（`--allow-package-heavy`）
+#
+# 有意**不做**环境变量逃生口：本仓刚按 `#6056` 删掉一个不可见的（`MIGAO_BATCH_GATE_SKIP_READY`，
+# YAGNI + 不可见）；判据也钉着「逃生口不得做成环境变量」这一条。
+# 放行时**必须打印醒目一行**（绕过批次口径这件事本身要能被看见）。
+# ══════════════════════════════════════════════════════════════════════════════════════
+
+#: 批次集成 worktree 的标记文件名（`batch-gate.sh` 写入；本脚本只读）。
+#: ⚠️ 名字里带 `-allow` 是**有意的**：读到它 = 「这个 worktree 被授权跑那一次全量」。
+MARKER_NAME="migao-package-heavy-entry-allow"
+LEDGER_SCRIPT="scripts/package-heavy-entry-ledger.sh"
+
+#: 本次调用的**幂等键**（顶层生成一次并 export ⇒ 子 shell / 重复调用不会给同一次调用记两笔）。
+#: 台账口径见 `scripts/package-heavy-entry-ledger.sh`。
+: "${MIGAO_ROLE_LEDGER_ID:="$(date +%s).$$.${RANDOM:-0}"}"
+export MIGAO_ROLE_LEDGER_ID
+
+#: 台账追加（**拒绝路径与放行路径都记**）。台账不可用 ⇒ 出声警告但**不改判定**
+#: （记账失败不得把「拒绝」变成「放行」—— 那正是本块要防的方向）。
+record_verdict() {  # record_verdict <role> <refused|override> <why>
+  local out
+  out="$(MIGAO_ROLE_LEDGER_ID="$MIGAO_ROLE_LEDGER_ID" "$ROOT/$LEDGER_SCRIPT" append "$1" "$2" "$3" 2>&1)"
+  case "$out" in
+    recorded*) ;;
+    *) echo "::warning:: 角色判定台账**没记上**（$1/$2）：$out" ;;
+  esac
+}
+
+#: 「为真」判定（与 `scripts/machine-heavy-lock.sh` / `tests/unit_ci_workflows/conftest.py`
+#: 的同名口径一致：非空且不是 `0` / `false` / `no` / `off`）。`CI` 与 `MIGAO_*` 开关共用这一处。
+_env_truthy() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    ""|0|false|no|off) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+#: 角色判定（**纯函数**：只打印角色，不做 IO 副作用之外的判断）。
+#: ⛔ 不许在这里 acquire —— 判定必须在**任何重活派发之前**（拿锁本身就是重活面的一部分）。
+package_heavy_role() {
+  git rev-parse --absolute-git-dir >/dev/null 2>&1 || { echo unknown; return 0; }
+  local abs common
+  abs="$(git rev-parse --absolute-git-dir 2>/dev/null)"
+  common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  [ -n "$abs" ] && [ -n "$common" ] || { echo unknown; return 0; }
+  if [ "$abs" = "$common" ]; then
+    echo primary                       # 主检出：人工 / 批次的**一次性**全量在这里跑
+    return 0
+  fi
+  local marker
+  marker="$(git rev-parse --git-path "$MARKER_NAME" 2>/dev/null)"
+  if [ -n "$marker" ] && [ -f "$marker" ]; then
+    echo batch-integration             # 判别读的是**标记**，不是名字前缀（判据：摘掉标记 ⇒ 拒绝）
+    return 0
+  fi
+  echo package                         # linked worktree 且没有批次标记 ⇒ 子包 worktree
+}
+
+#: `--allow-package-heavy`：显式逃生口（**直接**给 flag，未包裹起来 ⇒ 本块的「环境变量逃生口」自证无假阳性）。
+package_heavy_flag_given() {
+  local a
+  for a in "$@"; do
+    case "$a" in
+      --allow-package-heavy) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+package_heavy_guard() {
+  if _env_truthy "${CI:-}"; then
+    echo "⏭️ 角色判定未跑（CI 为真）—— 托管 runner 不占本机资源，本块不适用"
+    return 0
+  fi
+  local role; role="$(package_heavy_role)"
+  if package_heavy_flag_given "$@"; then
+    # 醒目一行：绕过了批次口径这件事本身必须能被看见（不许静默放行）。
+    echo "⚠️⚠️ **这是子包内直跑全量：绕过了批次口径** —— 那一次全量属于批次集成（本次角色：${role}）；"
+    echo "     已由命令行 --allow-package-heavy 显式放行（台账记一条 override）。"
+    if [ "$role" = "package" ] || [ "$role" = "unknown" ]; then
+      record_verdict "$role" override "--allow-package-heavy（命令行显式）"
+    fi
+    return 0
+  fi
+  case "$role" in
+    primary|batch-integration) return 0 ;;
+  esac
+  local marker_path
+  marker_path="$(git rev-parse --git-path "$MARKER_NAME" 2>/dev/null || echo "<?>")"
+  echo "⛔ 套件内全量入口被**拒绝**（exit 5）—— 本次**没有跑**任何检查（这不是「通过」）"
+  echo "   为什么  ：当前工作区是**子包 worktree**（linked worktree 且没有批次标记）："
+  echo "             $(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  echo "             D 口径 = **一批只跑一次**全量，那一次属于**批次集成**；在这里直跑会把它**提前烧掉**，"
+  echo "             并与别人的重活抢同一把机器级锁（issue #6078）。"
+  echo "             判定：git-dir=$(git rev-parse --absolute-git-dir 2>/dev/null || echo '?')"
+  echo "                   = common-dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo '?')；"
+  echo "                   标记 ${marker_path} 不存在"
+  echo "   替代    ：① 包内只跑**定点判据**（子集 ⇒ 不拿锁、可与其它包并行）"
+  echo "             ② 一批（多包）的那一次全量 ⇒ ./scripts/batch-gate.sh <分支...>（它自己 merge 串行 + 跑一次）"
+  echo "             ③ 单包的一整套 ⇒ 交给 CI（每 PR 并行，仍是权威）"
+  echo "   真要跑  ：显式加 --allow-package-heavy（命令行可见；会打印醒目一行 + 台账记一条 override）"
+  echo "   现场读取：./scripts/machine-heavy-lock.sh status"
+  record_verdict "$role" refused "子包 worktree 直跑全量（无批次标记）"
+  return 5
+}
+
+# ⚠️ 必须在**任何重活派发之前**（也在 `macquire` 之前：拿锁本身就是重活面）。
+#    判据点：① 拒绝发生在任何 pytest 之前（PATH 桩 / 审计钩子可证）；
+#              ② `package_heavy_guard` 的直接调用出现在 `macquire` 之前（现取顺序，不是文本 grep）。
+package_heavy_guard "$@"
+PKG_RC=$?
+if [ "$PKG_RC" -ne 0 ]; then
+  exit "$PKG_RC"
+fi
 
 # ── 机器级重活并发准入（issue #5814）──────────────────────────────────────────
 # 为什么（2026-09-30 14:24 CST 现场实测，不是推断）：三份**同样的**全量 `tests/unit_ci_workflows`

@@ -33,9 +33,14 @@
 # **没有常驻告警**（不新增守护进程 / launchd agent，超出本包范围）。值守面 = ① `acquire` 的
 # **拒绝行为**（拿不到锁就出声拒跑，不是静默跳过）② `status` 的值守读数。**拒绝本身就是机制**，
 # 不是「提醒你记得去看」。
-# 🔻 如实登记的缺口：本脚本**盖不到**「有人绕过入口直接 `pytest tests/unit_ci_workflows`」
-#    （那一路没有锁）—— 承载体 = 研发模式纪律（🔴 S4 / issue #6020 起住在**预设仓** `zhaokai-mgzn/migao-agent-presets`，业务仓已无 `.agent-presets/**`）＋ `verify-all.sh` 的
-#    唯一入口，**不是**任何机械拦截。
+# 🔻 缺口①已收口（2026-10-02，issue #6019）：**直连整目录也拿锁** —— 由 `tests/unit_ci_workflows/conftest.py`
+#    的套件自带准入承担（`pytest_collection` 里 acquire / `pytest_sessionfinish` 里 release），
+#    判据 = `test_suite_self_lock.py`。⇒ 本脚本的射程现在是**直连与入口两条路**。
+# 🔻 缺口②（**仍然是缺口**，照实登记）：本脚本盖不到「**入口打不开**」这一类 —— 即「在**不该**跑
+#    全量的工作区里跑」（子包 worktree）。那一路由 `verify-all.sh` 的**角色守卫**承担
+#    （2026-10-03，issue #6078；判据 `test_package_heavy_entry_ban.py`），**不是**本脚本。
+#    承载体也不再是「研发模式纪律」：🔴 S4 / issue #6020 起研发模式住在**预设仓**
+#    `zhaokai-mgzn/migao-agent-presets`，业务仓已无 `.agent-presets/**`。
 #
 # ## 用法
 #

@@ -50,9 +50,19 @@
 #   环境变量：`MIGAO_HEAVY_WAIT=<秒>`（默认 2700）—— 透传给 gate 的排队上限。
 #
 #   ⚠️ **就绪判定只有一个逃生口**：显式 `--no-require-ready`（可见、在命令行里、必打印未跑声明）。
-#   有意**不做**环境变量逃生口：`git grep -n "batch-gate" origin/main` 命中的**全是文档**
-#   （`docs/wiki/Development.md` 两处裸调用示例、`docs/wiki/Dev-Mode-Balance.md` 的设计页），
-#   **没有任何程序化调用点** ⇒ 过渡期不存在，多一个环境变量只会多一个**无判据的分支** + 一个静默逃生口。
+#   有意**不做**环境变量逃生口：本命令**没有**任何程序化调用点（过渡期不存在），多一个环境变量
+#   只会多一个**无判据的分支** + 一个静默逃生口；本仓刚按 #6056 删掉一个不可见的环境变量逃生口
+#   （`MIGAO_BATCH_GATE_SKIP_READY`，YAGNI + 不可见）—— 这里沿用同一口径。
+#
+# ## 批次标记（`migao-package-heavy-entry-allow`，issue #6078）
+#
+#   本命令是**合法**在 worktree 里跑全量的那一方 ⇒ 它必须留下**可现取的证据**，否则
+#   `verify-all.sh` 的角色判定（见 `verify-all.sh` 的 `package_heavy_guard`）只能靠猜。
+#   故本命令在它造出的 / `--in` 指到的工作区里写一个标记文件，路径由 `git rev-parse --git-path`
+#   现取（默认落在该工作树的**管理目录** `.git/worktrees/<name>/` 下 —— **不在工作树里**，
+#   因此不进 `git status`、不会被 `git add -A` 提交，`git worktree remove` 时随之消失）。
+#   ⛔ 有意**不**用名字前缀（`--in <任意路径>` 形态不叫 `batch-*` ⇒ 按名字判会误拒合法的集成面）
+#   与环境变量（**可被子包自己 export** ⇒ 等于让被判对象自报「我是谁」）。
 #
 # ## 退出码（三态，与 merge_gate.py / stranding-check.sh 同口径）
 #
@@ -118,6 +128,35 @@ trap cleanup EXIT
 
 # 无法判定 ⇒ 出声 + 非零（**不是**「通过」）
 die() { echo "❌ $*" >&2; echo "exit=3（无法判定 —— 不是「通过」）" >&2; exit 3; }
+
+#: 批次集成 worktree 的**标记文件名** —— 与 `verify-all.sh` 的角色判定共用同一个约定
+#: （那边只读、这边只写；名字变了两边一起变）。
+MARKER_NAME="migao-package-heavy-entry-allow"
+
+# ── 1.4) 给集成工作区**留标记**（issue #6078）─────────────────────────────────
+#
+# 为什么要有这个标记：`verify-all.sh` 现在会**拒绝**在**子包 worktree** 里直跑全量（那一次全量
+# 属于**批次**）。而本命令恰恰是**合法**在 worktree 里跑全量的那一方 ⇒ 必须在它造出的（或
+# `--in` 指到的）工作区里留下**可现取的证据**，否则角色判定只能靠猜。
+#
+# 为什么是**标记文件**、不是名字前缀 / 环境变量（与 `verify-all.sh` 同一段理由，这里只留结论）：
+#   · 名字前缀会漂 —— `--in <任意路径>` 建出来的集成工作区**不叫** `batch-*`；
+#   · 环境变量可被**被判对象自己 export** ⇒ 等于让「我是谁」自报，判据就没意义了（本仓刚按
+#     #6056 删掉一个不可见的环境变量逃生口）。
+# 位置由 `git rev-parse --git-path` 现取（= `.git/worktrees/<name>/…`）：**不在工作树里**
+# ⇒ 不进 `git status` / 不会被 `git add -A` 提交 / `git worktree remove` 时随之消失。
+#
+# 幂等：标记已存在 ⇒ 内容一字不改（重复调用等价）。写不进去 ⇒ `die`（无法判定，不是「没标记」）：
+# 让「标记没留成」退化成「拒绝跑全量」，正是本块要防的方向。
+mark_package_heavy_entry() {
+  local wt="$1" marker
+  marker="$(git -C "$wt" rev-parse --git-path "$MARKER_NAME" 2>/dev/null || true)"
+  [ -n "$marker" ] || die "取不到集成工作区的标记路径（git rev-parse --git-path ${MARKER_NAME}）：${wt}"
+  [ -e "$marker" ] && return 0                        # 幂等
+  printf 'batch-integration\n# 由 scripts/batch-gate.sh 写入（issue #6078）：本工作区被授权跑那一批**唯一一次**全量。\n# 读取方 = verify-all.sh 的 package_heavy_guard（只读）。删除本文件 ⇒ 该工作区立刻被当成子包 worktree 拒绝。\n' \
+    > "$marker" 2>/dev/null || die "标记写不进去：${marker}（工作区：${wt}）"
+  echo "  🔑 已留批次标记：${marker}（= 本工作区被授权跑那一次全量；verify-all.sh 的判别读它，不读名字）"
+}
 
 # ── 1) 解析每个包分支到 commit（本地优先，其次 origin/<branch>）────────────────
 for b in "${BRANCHES[@]}"; do
@@ -293,6 +332,9 @@ else
   OWNS_WT=1
   echo "集成工作区（临时，结束即删；--keep 保留）：${WT}"
 fi
+# ⚠️ 标记在**跑全量之前**留（verify-all.sh 的 package_heavy_guard 会读它）；`--in` 与自建**都要**
+#    —— 两种形态都是「合法在 worktree 里跑那一次全量」。
+mark_package_heavy_entry "$WT"
 
 merge_failed=""
 while IFS=$'\t' read -r b sha; do
