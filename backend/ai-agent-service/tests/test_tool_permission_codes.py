@@ -194,15 +194,17 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         "order:detail", "order:list", "processing:view",
         # issue #5699 的 I4：生产执行**写**码（把守建加工单/报工/打印/发货四个真写端点）
         "production:execute",
+        # issue #5988（人类 2026-10-02 裁定「应允许」）：客服处理售后 = 本职（同 `roles.seed`）
+        "order:refund",
     }),
     "sales": frozenset({
-        "customer:view", "dashboard:view", "inbound:view", "order:detail", "order:list",
+        "customer:view", "dashboard:view", "inbound:view", "order:create", "order:detail", "order:list",
         "processing:view", "product:list",
         # issue #5699 的 I4：生产执行写码（销售今日持 order:list ⇒ 这四个端点本来就放行）
         "production:execute",
     }),
     "finance": frozenset({
-        "dashboard:view", "finance:create", "finance:view", "inbound:view",
+        "customer:view", "dashboard:view", "finance:create", "finance:view", "inbound:view",
         "order:detail", "order:list", "processing:view",
         # issue #5699 的 I4：生产执行写码（财务今日持 order:list）
         "production:execute",
@@ -224,7 +226,10 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         "product:category", "product:category:view",
         "product:create", "product:list",
     }),
-    "knowledge_editor": frozenset({"dashboard:view", "product:list"}),
+    # issue #5979（人类 2026-10-02 裁定「应允许」）：知识编辑此前**一个 knowledge 码都没有**
+    # ⇒ 工具层镜像同批补读 + 写码（与 `rbac/manifest.json` 的 `roles.seed` **逐值相等**，
+    # 判据 = 本文件的 `test_seeded_role_defaults_match_the_mirror`）。
+    "knowledge_editor": frozenset({"dashboard:view", "product:list", "knowledge:view", "knowledge:manage"}),
     # 以下角色在 admin-api 权限目录里没有任何码（C 端角色 / 幽灵角色）
     "customer": frozenset(),
     "agent": frozenset(),
@@ -351,7 +356,9 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     # （与 `craft_calc_config_query` / `operation_catalog_query` 同码同放行集）。
     # ⚠️ C 端恒不可达：C 端 JWT 无权限码（`UserIdentity.permissions` 默认空）⇒ 小布不做权限码授权。
     "craft_config_query": frozenset({"operator", "product_manager"}),
-    "customer_manage": frozenset({"customer_service", "operator", "sales"}),
+    # issue #5988（2026-10-02 人类裁定「应允许」）：财务补 `customer:view` ⇒
+    # 它**首次**满足本工具的码门禁 ⇒ 放行集必须加上它（否则「有码却被角色层拒」= 假拒绝）。
+    "customer_manage": frozenset({"customer_service", "finance", "operator", "sales"}),
     "dashboard_stats": frozenset({
         "customer_service", "finance", "knowledge_editor", "operator", "product_manager", "sales",
     }),
@@ -364,7 +371,9 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     # （`product:create` 的持有者恰好都持 `product:list`，diff 里看得见"没有谁被收回"）。
     "inventory_manage": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     # issue #5246：知识库**读**码下发给客服 + 运营（本次新授予的两个岗位）。
-    "knowledge_search": frozenset({"customer_service", "operator"}),
+    # issue #5979（2026-10-02 人类裁定「应允许」）：知识编辑补 `knowledge:view` ⇒
+    # 它**首次**满足本工具的码门禁 ⇒ 放行集必须加上它（否则「有码却被角色层拒」= 假拒绝）。
+    "knowledge_search": frozenset({"customer_service", "knowledge_editor", "operator"}),
     "logistics_track": frozenset({"customer_service", "finance", "operator", "sales"}),
     # 🔴 issue #5302 改判：`notification_manage` 从本表**移出**（无码 ⇒ 回到角色层，
     # 放行集由类体 `allowed_roles` 决定，不再由权限码目录推导）。

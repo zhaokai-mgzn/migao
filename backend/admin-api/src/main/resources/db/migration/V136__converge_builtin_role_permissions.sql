@@ -11,6 +11,9 @@
 --
 -- ## 现取差集（渲染时刻的读数，由推演给出而不是手抄）
 --   · `admin` ← `after_sales:view`、`agent:session:manage`、`customer:create`、`finance:create`、`inbound:create`、`inbound:view`、`knowledge:view`、`order:create`、`order:update`、`processing:update`、`processing:view`
+--   · `customer_service` ← `order:refund`
+--   · `finance` ← `customer:view`
+--   · `sales` ← `order:create`
 --   逐角色逐码读数（可复算）：
 --   `python3 -c "import sys;sys.path.insert(0,'rbac');import derive,json;print(derive.convergence_diff(derive.load_manifest()))"`
 --
@@ -52,7 +55,10 @@
 --        ('admin', 'order:create'),
 --        ('admin', 'order:update'),
 --        ('admin', 'processing:update'),
---        ('admin', 'processing:view'));
+--        ('admin', 'processing:view'),
+--        ('customer_service', 'order:refund'),
+--        ('finance', 'customer:view'),
+--        ('sales', 'order:create'));
 --   ```
 --   **回滚是收窄**：会把管理员岗位在这批码上的勾选一并删掉（岗位权限页的勾选与岗位默认权限同表）⇒
 --   属**有意**（宁可回到「缺码」，也不要留下指向不存在权限的悬空授权）。
@@ -70,6 +76,33 @@ FROM roles r
 JOIN permissions p ON p.tenant_id = r.tenant_id
 WHERE r.code = 'admin' AND r.deleted = 0
   AND p.code IN ('after_sales:view', 'agent:session:manage', 'customer:create', 'finance:create', 'inbound:create', 'inbound:view', 'knowledge:view', 'order:create', 'order:update', 'processing:update', 'processing:view')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ── customer_service：链上缺 1 个码 ──
+INSERT INTO role_permissions (id, tenant_id, role_id, permission_id, created_at, deleted)
+SELECT gen_random_uuid()::text, r.tenant_id, r.id, p.id, NOW(), 0
+FROM roles r
+JOIN permissions p ON p.tenant_id = r.tenant_id
+WHERE r.code = 'customer_service' AND r.deleted = 0
+  AND p.code IN ('order:refund')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ── finance：链上缺 1 个码 ──
+INSERT INTO role_permissions (id, tenant_id, role_id, permission_id, created_at, deleted)
+SELECT gen_random_uuid()::text, r.tenant_id, r.id, p.id, NOW(), 0
+FROM roles r
+JOIN permissions p ON p.tenant_id = r.tenant_id
+WHERE r.code = 'finance' AND r.deleted = 0
+  AND p.code IN ('customer:view')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- ── sales：链上缺 1 个码 ──
+INSERT INTO role_permissions (id, tenant_id, role_id, permission_id, created_at, deleted)
+SELECT gen_random_uuid()::text, r.tenant_id, r.id, p.id, NOW(), 0
+FROM roles r
+JOIN permissions p ON p.tenant_id = r.tenant_id
+WHERE r.code = 'sales' AND r.deleted = 0
+  AND p.code IN ('order:create')
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ══════════════════════════════════════════════════════════════════════════════════════
@@ -102,7 +135,10 @@ BEGIN
         ('admin', 'order:create'),
         ('admin', 'order:update'),
         ('admin', 'processing:update'),
-        ('admin', 'processing:view')
+        ('admin', 'processing:view'),
+        ('customer_service', 'order:refund'),
+        ('finance', 'customer:view'),
+        ('sales', 'order:create')
       ) AS want(role_code, perm_code) ON want.role_code = r.code AND want.perm_code = p.code
      WHERE NOT EXISTS (
             SELECT 1 FROM role_permissions rp

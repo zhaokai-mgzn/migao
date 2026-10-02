@@ -57,10 +57,16 @@ P5_EXPECTED_DIFF: dict[str, tuple[str, ...]] = {
         "inbound:create", "inbound:view", "knowledge:view", "order:create", "order:update",
         "processing:update", "processing:view",
     ),
-    "customer_service": (),
-    "finance": (),
+    # issue #5979 / #5988（人类 2026-10-02 裁定「应允许」）：三个岗位各补一个本职码，
+    # 声明面（`roles.seed`）前进 ⇒ **现取差集随之变化**（本读数就是那条「差集是现取」的读数：
+    # 它变了不是 bug，而是声明改了 —— 同步它是本判据的**必须动作**）。
+    # 消解去向：`V136` 由同一份清单渲染（`rbac/generate_migration.py`）⇒ 三个岗位的授权语句
+    # 已同批出现在 `V136` 里，**存量租户由 V136 + V145 双保险回填**（两处都 `ON CONFLICT DO NOTHING`）。
+    # `knowledge_editor` 不在 P5 射程（它不是「五个原有内置岗位」之一）⇒ 仍为空。
+    "customer_service": ("order:refund",),
+    "finance": ("customer:view",),
     "operator": (),
-    "sales": (),
+    "sales": ("order:create",),
 }
 
 #: P6 正式定义的两个角色码（**逐值取自回退 switch**，见设计 §2.6 的现取事实表）。

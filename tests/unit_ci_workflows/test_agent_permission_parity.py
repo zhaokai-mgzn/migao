@@ -2716,6 +2716,12 @@ FALLBACK_BASELINE_BEFORE_5683: dict[str, frozenset[str]] = {
         "dashboard:view", "processing:manage", "product:category", "product:category:view",
         "product:create", "product:list", "production:view",
     }),
+    #: issue #5979（2026-10-02 人类裁定「应允许」）：`knowledge_editor` **此前不在本基线里**
+    #: ⇒ 它后来的整个码集都不会被读成「新增」，census 对它的授权变更**结构性失明**
+    #: （`AUTHORIZATION_CENSUS['knowledge:manage']` 会被判「陈旧登记」）。
+    #: ⇒ 按本基线的自述口径（「#5683 生效**前**的回退集合逐值冻结」）补登它的**当时读数**：
+    #: `[dashboard:view, product:list]`。这是「把失明的角色纳入读数面」，**不是**修改历史事实。
+    "knowledge_editor": frozenset({"dashboard:view", "product:list"}),
     # 这三个角色**补码前在 switch 里根本没有 `case`** ⇒ 落 `default -> List.of()` ⇒ **空表**。
     # 「空表」在这里逐字记为空集（不是「没有这一项」）：基线要能区分「当时没有 case」与「当时查不到」。
     "customer_service": frozenset(),
@@ -2768,7 +2774,8 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：3 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（POST /api/admin/agent-sessions/{}/assign；POST /api/admin/agent-sessions/{}/end；POST /api/admin/agent-sessions/{}/messages）。'),
     ),
     "customer:view": AuthorizationCensusEntry(
-        roles=('customer_service', 'sales'),
+        # issue #5988（2026-10-02 人类裁定「应允许」）：财务对账要读客户 ⇒ 新增 `finance`。
+        roles=('customer_service', 'finance', 'sales'),
         endpoints=('GET /api/admin/customer-tags', 'GET /api/admin/customers', 'GET /api/admin/customers/profile-view', 'GET /api/admin/customers/{}'),
         menu_nodes=('auth:客户列表', 'controller:客户列表', 'frontend:客户列表'),
         tools=('customer_manage',),
@@ -2810,7 +2817,11 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         reachable=('「入库单」菜单节点的**节点码就是本码**（三处菜单源一致）⇒ 补码前回退账号**根本看不见该节点**（issue #5271 新增的页面 = 菜单凭空消失）；补码后节点出现且三个读端点同时可读。Agent 侧 `inbound_order_query`（只读）同批对回退账号开放。'),
     ),
     "knowledge:view": AuthorizationCensusEntry(
-        roles=('customer_service',),
+        # 🔴 `roles` = **现取**（`w.role_fallback` 与本文件 `FALLBACK_BASELINE_BEFORE_5683` 的差集），
+        # 逐值由判据复算 —— 不是「谁在种子里有它」。`knowledge_editor` 因 issue #5979 进了基线
+        # ⇒ 它的 `knowledge:view` 同批被读成「新增」（见基线处说明）；而它在 #5683 前**根本没有 case**
+        # （空表）⇒ 本码对它是**由不可见变可见**的真实授权变更，登记在此。
+        roles=('customer_service', 'knowledge_editor'),
         endpoints=('GET /api/admin/knowledge/candidates', 'GET /api/admin/knowledge/candidates/pending-count', 'GET /api/admin/knowledge/cards', 'GET /api/admin/knowledge/cards/search', 'GET /api/admin/knowledge/templates'),
         menu_nodes=('auth:知识库', 'controller:知识库', 'frontend:知识库'),
         tools=('knowledge_search',),
@@ -2829,6 +2840,48 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         menu_nodes=('auth:订单列表', 'controller:订单列表', 'frontend:订单列表'),
         tools=('logistics_track', 'order_query'),
         reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；19 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
+    ),
+    "order:create": AuthorizationCensusEntry(
+        # issue #5988（2026-10-02 人类裁定「应允许」）：销售**下单**是本职。
+        roles=('sales',),
+        endpoints=('POST /api/admin/agent/orders', 'POST /api/admin/orders'),
+        menu_nodes=(),
+        tools=('order_create',),
+        reachable=('issue #5988（人类 2026-10-02 裁定「应允许」）：销售此前持 `order:list`/`order:detail`'
+                   '（看得见订单）却没有 `order:create` ⇒ 建单 403（#5246 有意把写码只给运营）。'
+                   '本码不挂菜单节点（订单列表的节点码是 `order:list`）⇒ 补它**不改变任何菜单可见性**，'
+                   '只把「下单」这个动作打通：2 个端点的生效码就是本码 ⇒ 由 403 变为可写'
+                   '（POST /api/admin/agent/orders；POST /api/admin/orders）；'
+                   'Agent 侧 1 个工具声明本码 ⇒ 米宝的建单工具对销售由「权限不足」变为可达（order_create）。'),
+    ),
+    "order:refund": AuthorizationCensusEntry(
+        # issue #5988（2026-10-02 人类裁定「应允许」）：客服**处理售后**是本职（#5246 只给了读码）。
+        roles=('customer_service',),
+        endpoints=('POST /api/admin/after-sales', 'POST /api/admin/agent/after-sales', 'PUT /api/admin/after-sales/{}/status', 'PUT /api/admin/orders/{}/refund'),
+        menu_nodes=(),
+        tools=(),
+        reachable=('issue #5988（人类 2026-10-02 裁定「应允许」）：客服此前持读码 `after_sales:view`'
+                   '（#5246 补的）⇒ 「售后工单」菜单看得见，但**建单 / 改状态**仍要写码 `order:refund`'
+                   ' ⇒ 该岗位**做不了本职**（菜单看得见、动作做不了）。本码不挂菜单节点'
+                   '（「售后工单」节点码是 `after_sales:view`）⇒ 补它不改变任何菜单可见性，'
+                   '只把 4 个写端点打通：2 个 POST + 2 个 PUT 的生效码就是本码 ⇒ 由 403 变为可写'
+                   '（POST /api/admin/after-sales；POST /api/admin/agent/after-sales；'
+                   'PUT /api/admin/after-sales/{}/status；PUT /api/admin/orders/{}/refund）。'
+                   '🔴 无 Agent 工具声明本码：`after_sales_manage` 已于 issue #5247 收窄为只读'
+                   '（写 action 从工具删除）⇒ 本次补码**不**放宽任何 Agent 面。'),
+    ),
+    "knowledge:manage": AuthorizationCensusEntry(
+        # issue #5979（2026-10-02 人类裁定「应允许」）：知识编辑**维护**知识库是本职（读码之外还要写码）。
+        roles=('knowledge_editor',),
+        endpoints=('DELETE /api/admin/knowledge/cards/{}', 'POST /api/admin/knowledge/candidates/{}/adopt', 'POST /api/admin/knowledge/candidates/{}/adopt-edited', 'POST /api/admin/knowledge/candidates/{}/reject', 'POST /api/admin/knowledge/cards', 'POST /api/admin/knowledge/cards/{}/archive', 'POST /api/admin/knowledge/cards/{}/publish', 'POST /api/admin/knowledge/distill/conversations', 'POST /api/admin/knowledge/distill/documents', 'POST /api/admin/knowledge/templates/{}/apply', 'PUT /api/admin/knowledge/cards/{}'),
+        menu_nodes=(),
+        tools=(),
+        reachable=('issue #5979（人类 2026-10-02 裁定「应允许」）：知识编辑此前**一个 knowledge 码都没有**'
+                   '（默认权限 = `[dashboard:view, product:list]`）⇒ 打开「知识库」被守卫拦下'
+                   '（文案「当前账号缺少权限 knowledge:view」）。本码是**写**码：把守创建 / 编辑 / 删除 / '
+                   '发布 / 归档 / 候选采纳与拒绝 / 模板套用 / 蒸馏等 11 个端点 ⇒ 由 403 变为可写。'
+                   '它**不挂菜单节点**（「知识库」节点码是读码 `knowledge:view`，issue #5246 的读写分权）'
+                   ' ⇒ 补它不改变菜单可见性，只让该岗位真正**做得成**本职。无 Agent 工具声明本码。'),
     ),
     "production:execute": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'operator', 'sales'),

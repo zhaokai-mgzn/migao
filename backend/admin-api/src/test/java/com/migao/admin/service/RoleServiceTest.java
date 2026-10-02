@@ -1,4 +1,4 @@
-// case_ids: HR-004, HR-005, HR-006, HR-011
+// case_ids: HR-004, HR-005, HR-006, HR-011, HR-012
 package com.migao.admin.service;
 
 import com.migao.admin.dto.PageResponse;
@@ -532,7 +532,7 @@ class RoleServiceTest {
     }
 
     @Test
-    @DisplayName("getUserPermissions: knowledge_editor 获得 dashboard + product:list")
+    @DisplayName("getUserPermissions: knowledge_editor 获得 dashboard + product:list + 知识库读/写（#5979）")
     void getUserPermissions_KnowledgeEditorMinimal() {
         // given
         when(userRoleMapper.selectList(any(LambdaQueryWrapper.class)))
@@ -547,9 +547,12 @@ class RoleServiceTest {
         // when
         List<String> result = roleService.getUserPermissions("u4");
 
-        // then
-        assertThat(result).contains("dashboard:view", "product:list");
-        assertThat(result).hasSize(2);
+        // then: issue #5979（2026-10-02 人类裁定「应允许」）—— 该岗位**维护知识库**是本职：
+        // 此前只有 dashboard + product:list（**一个 knowledge 码都没有**）⇒ 打开「知识库」被拦下、
+        // 调 `/api/admin/knowledge/cards` 得 403。读码给菜单 + 列表/检索，写码给增删改发布归档。
+        assertThat(result).contains("dashboard:view", "product:list",
+                "knowledge:view", "knowledge:manage");
+        assertThat(result).hasSize(4);
     }
 
     @Test
@@ -762,17 +765,20 @@ class RoleServiceTest {
                         "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session",
                         "processing:view", "inbound:view", "after_sales:view", "knowledge:view",
                         "agent:session:manage",
-                        "production:execute");   // issue #5699 的 I4
+                        "production:execute",   // issue #5699 的 I4
+                        "order:refund");        // issue #5988（2026-10-02 裁定「应允许」：客服处理售后）
         assertThat(roleService.getEffectivePermissionCodesForRoleCode("sales", null))
                 .containsExactlyInAnyOrder(
                         "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
                         "processing:view", "inbound:view",
-                        "production:execute");   // issue #5699 的 I4
+                        "production:execute",   // issue #5699 的 I4
+                        "order:create");        // issue #5988（2026-10-02 裁定「应允许」：销售下单）
         assertThat(roleService.getEffectivePermissionCodesForRoleCode("finance", null))
                 .containsExactlyInAnyOrder(
                         "dashboard:view", "order:list", "order:detail", "finance:view",
                         "processing:view", "inbound:view", "finance:create",
-                        "production:execute");   // issue #5699 的 I4
+                        "production:execute",   // issue #5699 的 I4
+                        "customer:view");       // issue #5988（2026-10-02 裁定「应允许」：财务读客户列表）
     }
 
     @Test
