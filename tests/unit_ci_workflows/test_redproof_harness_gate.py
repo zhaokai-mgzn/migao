@@ -51,6 +51,16 @@ CI / 门禁调用它们** ⇒ 「每条断言都要有红证」落地成了**手
    红证 = 删掉证据闸 / 削掉三态出口 / 把 `run_evidence()` 换成「永远说有证据」/ 把闸写到判决之后
    ⇒ 同名判据必须变红；判据还对 `run_evidence()` **喂三组夹具真跑**（负向夹具 = 编译失败 / 收集失败）。
 
+9. **注入不碰真实工作树（issue #5960 —— CI flake 的根因）**：CI 跑本目录用的是 `pytest -n 4`
+   （xdist，`.github/workflows/pr-check.yml`）⇒ **多进程共享同一个工作树**。原先在真实工作树上注入
+   ⇒ 与「整树前提自检」（`TestLegTriState::test_real_leg_is_green_with_the_real_tools`）**并发**时
+   读到变异中的源码 ⇒ `LEG_RC=1`；更糟的是两个 worker 各自「备份 → 写变异 → 还原」同一文件
+   ⇒ **还原会把别人的变异写回磁盘**（实测：一轮 xdist 跑完 `OrderService.java` 残留 **1253 行**差异，
+   此后本树上的**所有**前提自检都判腐烂）。判据：① `_injected` / `_moved_away` 收到 `REPO_ROOT`
+   **当场拒绝**（fail-closed，不写任何字节）；② 模块级 autouse 夹具比对被守卫文件的 sha256
+   （跑前 / 跑后），不等即红（别名 / 间接写路径也盖得住）。
+   ⚠️ 这条**不改**「注入是否语义等价」那一层的判定（那是实跑面的职责，见下）。
+
 ## 为什么不是「实跑」在 CI 里（边界，如实登记）
 
 实跑 = 真注入 + 真跑判据，实测单机具 **107s ~ __ELAPSED_CP__**（`cutting-plan` 逐条判据强制重编译
@@ -79,6 +89,7 @@ import ast
 import contextlib
 import hashlib
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -159,18 +170,27 @@ def _wiring_problems(text: str) -> list[str]:
     return problems
 
 
-# ── 子进程 + 注入（都只在仓库根跑，绝不并发：pytest 默认串行）────────────────
+# ── 子进程 + 注入（注入一律落在**临时夹具仓库**；真实工作树零写入 —— issue #5960）───────
+#
+# 为什么不能就地在仓库根注入：CI 用 `pytest -n 4`（xdist）跑本目录 ⇒ 多进程**共享同一个工作树**，
+# 注入与「整树前提自检」并发即假红（实测 `LEG_RC=1`），且各自还原会把**别人的变异**写回磁盘
+# （实测跑完 `OrderService.java` 残留 1253 行差异）。详见文件头「判据 9」。
 
-def _run_check(tool_rel: str) -> subprocess.CompletedProcess:
+#: 机具与登记表是**一对**（机具 `import red_proof_harness`）⇒ 夹具必须把两份都带上。
+HARNESS_REL = "scripts/red_proof_harness.py"
+
+
+def _run_check(tool_rel: str, root: Path = REPO_ROOT) -> subprocess.CompletedProcess:
+    """在 `root` 里跑 `scripts/<机具> --check`（默认真实仓库；注入用例传夹具仓库）。"""
     return subprocess.run(
         [sys.executable, tool_rel, "--check"],
-        cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=_CHECK_TIMEOUT,
+        cwd=str(root), capture_output=True, text=True, timeout=_CHECK_TIMEOUT,
     )
 
 
-def _check_green(tool_rel: str) -> str:
+def _check_green(tool_rel: str, root: Path = REPO_ROOT) -> str:
     """跑一次 `--check` 并断言**真跑了且全绿**；返回 stdout（供解析报告行）。"""
-    r = _run_check(tool_rel)
+    r = _run_check(tool_rel, root)
     assert r.returncode == harness.OK, (
         f"{tool_rel} --check 应退出 0，实得 {r.returncode}\n--- stdout ---\n{r.stdout}\n"
         f"--- stderr ---\n{r.stderr}")
@@ -185,13 +205,63 @@ def _counts_of(out: str, tool_rel: str) -> re.Match:
     return m
 
 
+def _fixture_root(root: Path) -> Path:
+    """注入目标根必须**不是真实工作树**（issue #5960：xdist 下会与整树自检竞态、并把变异写回磁盘）。"""
+    resolved = Path(root).resolve()
+    assert resolved != REPO_ROOT, (
+        "注入**绝不许**落在真实工作树（`REPO_ROOT`）上：CI 用 `pytest -n 4`（xdist）共享同一个工作树，"
+        "与整树前提自检并发会读出变异中的源码（`LEG_RC=1`），且两个 worker 的还原竞态会把变异写回磁盘"
+        "（#5960 实测 `OrderService.java` 残留 1253 行差异）。注入目标请用 `_fixture_repo()` 造的夹具仓库。")
+    return resolved
+
+
+def _fixture_repo(tool_rel: str, tmp_path: Path) -> Path:
+    """造一个**临时夹具仓库**：机具 + 登记表 + 该机具的被守卫文件（保留仓库相对路径）。
+
+    `--check` 是零 Maven / 零 npm / 零 PG、零副作用的纯前提自检 ⇒ 这几份文件就是它的**全部读面**
+    （机具按 `Path(__file__).resolve().parents[1]` 自解 `REPO`，在夹具里跑 ⇒ `REPO` = 夹具根）。
+    """
+    spec = harness.TOOLS[tool_rel]
+    dst_root = tmp_path / "fixture-repo"
+    for rel in (tool_rel, HARNESS_REL, *spec.impl, *spec.criteria):
+        dst = dst_root / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO_ROOT / rel, dst)
+    return dst_root
+
+
+#: 被守卫文件的**全部**（夹具与真实树两侧的 sha256 判据都用它，避免两处漂移）。
+_GUARDED_RELS = tuple(sorted({rel for spec in harness.TOOLS.values()
+                              for rel in (*spec.impl, *spec.criteria)}))
+
+
+def _guarded_digests(root: Path = REPO_ROOT) -> dict[str, str]:
+    return {rel: hashlib.sha256((root / rel).read_bytes()).hexdigest() for rel in _GUARDED_RELS}
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _real_tree_is_never_written():
+    """**类级守卫**（issue #5960）：本模块跑完，真实工作树的被守卫文件必须逐字节未变。
+
+    这是行为级判据（比静态扫 `REPO_ROOT.write_text` 强：别名 / 间接写路径也盖得住）——
+    本文件是唯一会在本目录写被守卫文件的模块，故「谁写的」可归因。
+    """
+    before = _guarded_digests()
+    yield
+    after = _guarded_digests()
+    changed = sorted(rel for rel in _GUARDED_RELS if before.get(rel) != after.get(rel))
+    assert not changed, (
+        "本模块把变异写进了**真实工作树**（与其它 xdist worker 共享）⇒ 会与整树前提自检竞态、"
+        f"并可能把变异还原回磁盘（#5960）：{changed}")
+
+
 @contextlib.contextmanager
-def _injected(rel: str, mutate):
-    """把 `rel` 的内容换成 `mutate(原文)`，跑完（含异常）**逐字节还原**并按 sha256 自证。
+def _injected(root: Path, rel: str, mutate):
+    """把**夹具仓库** `root` 里 `rel` 的内容换成 `mutate(原文)`，跑完（含异常）**逐字节还原**并按 sha256 自证。
 
     原字节同时留在内存与磁盘（`assert` 自证）⇒ 还原失败即**大声失败**，绝不静默留下变异源码。
     """
-    path = REPO_ROOT / rel
+    path = _fixture_root(root) / rel
     original = path.read_text(encoding="utf-8")
     digest = hashlib.sha256(original.encode("utf-8")).hexdigest()
     mutated = mutate(original)
@@ -206,9 +276,9 @@ def _injected(rel: str, mutate):
 
 
 @contextlib.contextmanager
-def _moved_away(rel: str):
-    """把文件暂时挪走（比「写坏内容」更安全：原字节始终在磁盘上，任何路径都能还原）。"""
-    path = REPO_ROOT / rel
+def _moved_away(root: Path, rel: str):
+    """把**夹具仓库**里的文件暂时挪走（比「写坏内容」更安全：原字节始终在磁盘上，任何路径都能还原）。"""
+    path = _fixture_root(root) / rel
     aside = path.with_name(path.name + ".rot-aside")
     assert path.is_file(), f"{rel} 不在（前置不成立）"
     assert not aside.exists(), f"{aside.name} 已存在 ⇒ 上一次注入没清干净，先人工核对"
@@ -221,14 +291,14 @@ def _moved_away(rel: str):
         assert path.is_file(), f"{rel} 未还原 —— 停手人工核对"
 
 
-def _rot_source(tool_rel: str, impl_rel: str):
+def _rot_source(tool_rel: str, impl_rel: str, root: Path = REPO_ROOT):
     """注入②：把「机具源码里出现过、被守卫源码里也有」的标识符统一改名（模拟源码重构）。
 
     词表取自**机具自身**（单一事实源）⇒ 只动机具真正依赖的那些名字，其余部分保持原样
     （改名后仍是合法标识符，不会把文件弄成语法错误）。
     """
-    tool_text = (REPO_ROOT / tool_rel).read_text(encoding="utf-8")
-    impl_text = (REPO_ROOT / impl_rel).read_text(encoding="utf-8")
+    tool_text = (root / tool_rel).read_text(encoding="utf-8")
+    impl_text = (root / impl_rel).read_text(encoding="utf-8")
     names = {m for m in _IDENT_RE.findall(tool_text) if m in impl_text}
     assert names, (
         f"{impl_rel} 里没有任何「{tool_rel} 源码中出现过的标识符」⇒ 注入无从进行"
@@ -274,9 +344,9 @@ def _rename_method(text: str, method: str) -> str:
     return out
 
 
-def _mutation_element_lines(tool_rel: str) -> tuple[int, int]:
+def _mutation_element_lines(tool_rel: str, root: Path = REPO_ROOT) -> tuple[int, int]:
     """`MUTATIONS = [...]` 里**最后一个元素**的起止行号（1-based，含）——删掉它 = 削弱机具。"""
-    text = (REPO_ROOT / tool_rel).read_text(encoding="utf-8")
+    text = (root / tool_rel).read_text(encoding="utf-8")
     tree = ast.parse(text)
     for node in tree.body:
         if isinstance(node, ast.AnnAssign):
@@ -390,66 +460,103 @@ class TestHarnessRegistry:
 # ══════════════════ ③ 腐烂必须被检出（三类注入，逐机具） ══════════════════
 
 class TestRotIsCaught:
-    """三类注入都必须让 `--check` 非零退出并具名报出；还原后复跑必须回到绿。"""
+    """三类注入都必须让 `--check` 非零退出并具名报出；还原后复跑必须回到绿。
+
+    ⚠️ 注入**一律落在临时夹具仓库**（`_fixture_repo`），真实工作树零写入 —— issue #5960：
+    CI 用 `pytest -n 4`（xdist）跑本目录，就地注入会与「整树前提自检」并发竞态（`LEG_RC=1`），
+    且还原竞态会把变异写回磁盘。夹具 = 机具 + 登记表 + 该机具的被守卫文件（`--check` 的全部读面）。
+    """
 
     @pytest.mark.parametrize("tool", TOOL_RELS)
-    def test_missing_guarded_file_is_rot(self, tool):
+    def test_missing_guarded_file_is_rot(self, tool, tmp_path):
+        root = _fixture_repo(tool, tmp_path)
         rel = harness.TOOLS[tool].impl[0]
-        with _moved_away(rel):
-            r = _run_check(tool)
+        with _moved_away(root, rel):
+            r = _run_check(tool, root)
             assert r.returncode == harness.ROT, (
                 f"{tool}：被守卫文件 {rel} 消失时 --check 应判「有腐烂」，实得 {r.returncode}\n"
                 f"{r.stdout[-600:]}")
             assert rel in r.stdout, f"{tool} 的腐烂未被具名（{rel} 不在输出里）：\n{r.stdout[-600:]}"
-        _check_green(tool)   # 对照组：还原后必须回到绿
+        _check_green(tool, root)   # 对照组：还原后必须回到绿
 
     @pytest.mark.parametrize("tool", TOOL_RELS)
-    def test_source_refactor_is_rot(self, tool):
+    def test_source_refactor_is_rot(self, tool, tmp_path):
+        root = _fixture_repo(tool, tmp_path)
         rel = harness.TOOLS[tool].impl[0]
-        with _injected(rel, _rot_source(tool, rel)):
-            r = _run_check(tool)
+        with _injected(root, rel, _rot_source(tool, rel, root)):
+            r = _run_check(tool, root)
             assert r.returncode == harness.ROT, (
                 f"{tool}：被守卫源码标识符改名（注入锚点失配）后 --check 应判「有腐烂」，"
                 f"实得 {r.returncode}\n{r.stdout[-600:]}")
             assert "锚点" in r.stdout, (
                 f"{tool} 的腐烂未被归因到「注入锚点失配」：\n{r.stdout[-600:]}")
-        _check_green(tool)
+        _check_green(tool, root)
 
     @pytest.mark.parametrize("tool", TOOL_RELS)
-    def test_renamed_criterion_is_rot(self, tool):
-        out = _check_green(tool)
+    def test_renamed_criterion_is_rot(self, tool, tmp_path):
+        root = _fixture_repo(tool, tmp_path)
+        out = _check_green(tool, root)
         kind, payload = _rot_criteria(tool, _first_target(out))
         if kind == "moved":
-            with _moved_away(payload):
-                r = _run_check(tool)
+            with _moved_away(root, payload):
+                r = _run_check(tool, root)
                 assert r.returncode == harness.ROT, (
                     f"{tool}：判据文件 {payload} 消失后 --check 应判「有腐烂」，"
                     f"实得 {r.returncode}\n{r.stdout[-600:]}")
         else:
             hit = [c for c in harness.TOOLS[tool].criteria
-                   if re.search(rf"(?<![\w.]){re.escape(payload)}\s*\(", (REPO_ROOT / c).read_text(
+                   if re.search(rf"(?<![\w.]){re.escape(payload)}\s*\(", (root / c).read_text(
                        encoding="utf-8"))]
             assert hit, f"{tool} 的目标判据 {payload} 不在登记表的 criteria 源码里（漂移了？）"
-            with _injected(hit[0], lambda text: _rename_method(text, payload)):
-                r = _run_check(tool)
+            with _injected(root, hit[0], lambda text: _rename_method(text, payload)):
+                r = _run_check(tool, root)
                 assert r.returncode == harness.ROT, (
                     f"{tool}：判据方法 {payload} 改名后 --check 应判「有腐烂」，"
                     f"实得 {r.returncode}\n{r.stdout[-600:]}")
                 assert payload in r.stdout, (
                     f"{tool} 的腐烂未被具名（{payload} 不在输出里）：\n{r.stdout[-600:]}")
-        _check_green(tool)
+        _check_green(tool, root)
 
     @pytest.mark.parametrize("tool", TOOL_RELS)
-    def test_deleting_a_mutation_is_rot(self, tool):
+    def test_deleting_a_mutation_is_rot(self, tool, tmp_path):
         """issue #5193 判据 1 的形态：把一条变异从机具里删掉 ⇒ 登记表判据必须红。"""
-        span = _mutation_element_lines(tool)
-        with _injected(tool, lambda text: _drop_last_mutation(text, span)):
-            r = _run_check(tool)
+        root = _fixture_repo(tool, tmp_path)
+        span = _mutation_element_lines(tool, root)
+        with _injected(root, tool, lambda text: _drop_last_mutation(text, span)):
+            r = _run_check(tool, root)
             assert r.returncode == harness.ROT, (
                 f"{tool}：删掉一条变异后 --check 应判「有腐烂」（机具被削弱），"
                 f"实得 {r.returncode}\n{r.stdout[-800:]}")
             assert "被削弱" in r.stdout, f"{tool} 没有把腐烂归因到「机具被削弱」：\n{r.stdout[-800:]}"
-        _check_green(tool)
+        _check_green(tool, root)
+
+    @pytest.mark.parametrize("tool", TOOL_RELS)
+    def test_fixture_repo_is_a_faithful_read_surface(self, tool, tmp_path):
+        """夹具仓库必须**够 `--check` 全绿**（否则「注入后判红」可能来自夹具缺文件，不是注入）。
+
+        这条是上面四条注入用例的**前提自证**：夹具一绿，`LEG_RC` 的红就只能归因到注入本身。
+        """
+        root = _fixture_repo(tool, tmp_path)
+        out = _check_green(tool, root)
+        m = _counts_of(out, tool)
+        declared = int(m.group("ok")) + int(m.group("bad"))
+        assert declared >= harness.TOOLS[tool].floor, (
+            f"夹具仓库里 {tool} 的前提自检只覆盖 {declared} 条 < 登记下限 "
+            f"{harness.TOOLS[tool].floor}（夹具缺文件）：\n{out[-600:]}")
+        assert int(m.group("bad")) == 0, f"夹具仓库里 {tool} 有腐烂的前提：\n{out[-600:]}"
+
+    def test_injecting_into_the_real_tree_is_refused(self):
+        """红证（issue #5960）：把注入目标写回 `REPO_ROOT` ⇒ **当场拒绝**，一个字节都不写。
+
+        这条钉的是「类级守卫真的会红」：判据不靠人记得传夹具根，而是接口自己 fail-closed。
+        """
+        rel = harness.TOOLS[TOOL_RELS[0]].impl[0]
+        before = hashlib.sha256((REPO_ROOT / rel).read_bytes()).hexdigest()
+        with pytest.raises(AssertionError, match="真实工作树"):
+            with _injected(REPO_ROOT, rel, lambda text: text + "\n// 注入不该落在这里\n"):
+                pytest.fail("拒绝路径居然执行了注入体 —— 接口没有 fail-closed")
+        after = hashlib.sha256((REPO_ROOT / rel).read_bytes()).hexdigest()
+        assert before == after, f"拒绝路径居然写了真实工作树：{rel}"
 
 
 # ══════════════════ ⑥ 报告卫生：surefire 报告必须先 unlink + 缺失即「无法判定」 ══════════════════
