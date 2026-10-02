@@ -1,6 +1,6 @@
 # case_ids: MC-012
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI 结构类 L0 不变式统一挂 MC-012）
-r"""**子包 worktree 不许直跑全量**的角色判定判据（issue #6078）。
+r"""**子包 worktree 不许直跑全量**的角色判定判据（issue #6084）。
 
 ## 治的形态（两条实测事实，不是推断）
 
