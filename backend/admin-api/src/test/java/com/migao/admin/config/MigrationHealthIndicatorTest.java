@@ -163,6 +163,11 @@ class MigrationHealthIndicatorTest {
         ReflectionTestUtils.setField(runner, "migrationPattern", "classpath:db/migration/*.sql");
         // 基线（issue #5243）：`@Value` 字段在纯单测里不会被注入 ⇒ 显式钉上与生产一致的
         // 默认值（与本行的 migrationPattern 同理），否则 applyBaseline 会拿到 null 位置。
+        // issue #5981：本类注入的都是**合成迁移名**（不在源码树里），会把"陈旧产物 fail-fast"判成红。
+        // ⇒ 显式关掉该检测，让本类只测它自己的契约（语义逐字不变；陈旧检测由
+        // MigrationRunnerStaleArtifactTest 正反两面覆盖）。
+        ReflectionTestUtils.setField(runner, "liveMigrationDir",
+                MigrationRunner.DISABLE_STALE_ARTIFACT_CHECK);
         ReflectionTestUtils.setField(runner, "initScriptLocation", "classpath:db/init/schema.sql");
         return runner;
     }
