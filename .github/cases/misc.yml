@@ -2587,20 +2587,6 @@ cases:
     title: "评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）"
     domains:
       - misc
-
-  # MC-071（issue #6062）：米宝**导航指引（nav_guide）意图登记覆盖不足** + 类级固化。
-  # 病（实测 2026-10-02 B 端真实 LLM 评测 `normal` 档 tool health）：`nav_guide!nav_not_registered ×1`，
-  # 用户输入「怎么给员工开账号」（同一说法也在既有用例 HR-009 的 user_inputs 里）⇒ 登记面没有这条
-  # 常见说法 ⇒ agent 只能含糊其辞（fail-closed 是对的，但对用户没用）。
-  # ⇒ 修法是**把登记面补全**（不是改 prompt 让它猜），并把「同类缺口进不来」做成三条类级判据。
-  # ==========================================================================
-
-  - id: MC-071
-    legacy_id: ""
-    title: "nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）"
-    domains:
-      - misc
-      - chat
       - ci
     tier: normal
     tags:
@@ -2631,6 +2617,19 @@ cases:
       tests:
         - tests/unit_ci_workflows/test_eval_id_arg_precondition.py
         - tests/unit_ci_workflows/test_eval_precondition_types_implemented.py
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: MC-071
+    legacy_id: ""
+    title: "nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）"
+    domains:
+      - misc
+      - chat
+      - ci
+    tier: normal
+    tags:
+      - ci
       - guard
       - navigation
       - fail-closed

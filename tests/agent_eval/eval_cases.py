@@ -5159,8 +5159,6 @@ _CASE_MC_069 = EvalCase(
     forbidden_card_text=[],
 )
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 # ── MC-049 [NORMAL] 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）（源: cases/misc.yml）──
 _CASE_MC_049 = EvalCase(
     id='MC-049',
@@ -5173,15 +5171,15 @@ _CASE_MC_049 = EvalCase(
     data_checks=['**病（issue #6041，2026-10-02 活栈实测）**：`PR-003`（smoke 档）`expectations: [product_detail(product_id=遮光窗帘)]` 此前**无任何前置声明**，而本机活栈（`:8001`/`:8090` 打云 dev RDS，tenant_id=1）名字含「遮光窗帘」的商品实测 **7 件** ⇒ agent **正确地**反问「要查看哪一件」（发 choice 交互卡）⇒ 期望 unmatched ⇒ 被判 `🔬 确定性回归·禁止 rerun`（**假红**；`local_runner.py smoke` 读数 = `7/8 通过 均分 88%`，唯一失败 PR-003）。形态 = 「用例把**运行期数据事实**（该名称唯一与否）当成了常量」。', '**判据 1（名称塞进 id 型参数 ⇒ 必须声明对应前置）**：对真语料逐条期望核 —— 值不是 id 形态、不是「上轮产物」占位（`复用上轮 UUID` 这类）、不是跨用例引用（值里含 `MC-067` 这类用例号）、且不落在任一已声明 `precondition[].source` 里 ⇒ 该 `<tool, arg>` 规则项要求的前置 type 必须已声明 ⇒ 否则**具名判红**。规则表 = tests/unit_ci_workflows/test_eval_id_arg_precondition.py 的 `_PARAM_PRECONDITION_TYPES`（显式声明射程；全库现取命中 = PR-003 一条）。执行点 = 同文件 `test_id_typed_arguments_with_names_declare_matching_preconditions`。', '**判据 2（声明的 type 必须有实现）**：`.github/cases/**` 里每一条**结构化** `precondition[].type` 必须在 tests/agent_eval/local_runner.py 的 `_PRECONDITION_TYPES`（唯一真相源）键集里；且每个已登记 type 在 runner 源码里有运行期接线（结构形状 `f"{t}:{src}"`）。执行点 = tests/unit_ci_workflows/test_eval_precondition_types_implemented.py 的 `test_every_declared_precondition_type_is_implemented` / `test_every_registered_type_is_wired_in_the_runner`。', '**判据 3（判别力自证，注入式）**：摘掉某用例的前置声明 / 注入一个未实现的 type / 让规则表指向未登记 type ⇒ **各自判红**；只加一行注释 ⇒ **不红**（对照读数）。执行点 = 两个判据文件的 `test_red_proof_*` 与 `test_only_comments_change_is_green`。', '**纯静态自证**：两个判据文件零 ai-agent 依赖（AST 取 import 名）+ 禁「跑不了就跳」—— CI 的 `ci workflow helper unit tests` job 只装 `pytest` + `pyyaml`（不装 `pydantic` / `langchain_core`）。执行点 = 两个文件的 `test_this_judgement_is_pure_static_and_never_skips`。', '🔴 **覆盖边界（显式登记）**：① 判的是**声明层形态** —— 判不了「那条前置本身对不对」（值/下界是 test_precondition_target_present.py 的面），也判不了「该名称在某个栈上到底唯一与否」（那是运行期 `precondition[...]` 的读数）；② 「占位 = 上轮产物」的判定是**词法**的（含「上轮」或尖括号形态）；③ **散文形态**的 `precondition`（值本身是 str）不在射程（本仓现取 14 条，只输出条数作可见性登记）；④ 本判据**不跑**评测、不联网、不 import ai-agent 依赖；⑤ 本判据**不改**任何门禁的通过条件、不新增豁免。'],
     skip_reason='[backend-contract] 纯静态扫真用例语料与 runner 的 type 注册表（只读仓内文件；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_eval_id_arg_precondition.py + tests/unit_ci_workflows/test_eval_precondition_types_implemented.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ci', 'casebook', 'precondition', 'id-resolve', 'red-proof'],
-=======
-# ── MC-070 [NORMAL] nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）（源: cases/misc.yml）──
-_CASE_MC_070 = EvalCase(
-    id='MC-070',
-=======
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-071 [NORMAL] nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）（源: cases/misc.yml）──
 _CASE_MC_071 = EvalCase(
     id='MC-071',
->>>>>>> 4bef53a33 (chore(cases): #6062 让号 MC-070 → MC-071（并行 PR #6030 已占 MC-070，按「后合入者让号」）+ claim 改名 + 生成物重渲染)
     legacy_id='',
     title='nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）',
     skill=Skill.GENERAL,
@@ -5191,15 +5189,11 @@ _CASE_MC_071 = EvalCase(
     data_checks=['🔴 **实测失败样例（本用例的起点）**：same-round 真跑 `build_navigation_answer("怎么给员工开账号", ["employee:list"])` ⇒ `registered=True`、`pages=[{"path": "/employees", …}]`、citation=「登记项 #employees → 菜单节点 菜单组「员工管理」」；且答案里**不含**任何受控步骤词（导航答案不给操作步骤）。执行点 = backend/ai-agent-service/tests/test_nav_guide.py 的 `TestExecuteSemantics::test_employee_account_phrasing_resolves_without_steps` 与 tests/unit_ci_workflows/test_menu_navigator.py 的 `test_measured_failure_common_phrasing_resolves`', '**判据 7（每个节点至少一条可命中的说法）**：`MENU_TREE` 的每个节点都必须至少有一条登记说法**逐字出现在该菜单名里** ⇒ 缺了它，那个页面用户永远问不到。注入式红证：加一个没有任何说法的节点 ⇒ 具名报出该节点。执行点 = tests/unit_ci_workflows/test_menu_navigator.py 的 `test_judgement_7_every_node_has_a_hit_alias` / `test_judgement_7_red_on_node_without_alias`', '**判据 8（没有空登记 = 死条目）**：每条登记说法都必须**能解出它自己的功能** —— 判法与 `resolve_feature` 的最长命中口径同源：被**别的功能**更长说法遮蔽的说法（如登记 `发货单` 的 `出库`，而别家登记了 `出库管理`）永远解不出自己 ⇒ 红并具名报出「哪条说法 / 解到了谁 / 被谁遮蔽」。执行点 = 同文件的 `test_judgement_8_no_shadowed_alias` / `test_judgement_8_red_on_shadowed_alias`', '**判据 9（说法 ⇄ config/menu.ts 双向同步）**：① `menu.ts` 的每个导航节点都要有登记项以它为主节点；② 每个登记项的主节点都要在 `menu.ts` 里，且**至少一条说法逐字等于**该节点 `name`（改名不同批改登记表 ⇒ 静默漂移）。执行点 = 同文件的 `test_judgement_9_feature_map_syncs_with_menu_ts` / `test_judgement_9_red_on_mirror_drift`', '**判据 6b（说法接地，同批对齐 `label`）**：说法必须与所属节点菜单名**或本功能 `label`（含括注）**有包含关系 —— 括注承载两件事：菜单名与口语的落差（「发货单（出库）」）与**无独立导航目标的**操作（「员工管理（员工开账号）」）。这**不放宽**判据实质：`label` 仍在本模块（人登记），不是 `menu.ts` 的任意文本。执行点 = 同文件的 `test_judgement_6c_aliases_grounded`', '**覆盖测绘（现取读数，零成本可复算）**：MENU_TREE 22 节点 ⇄ NAV_FEATURES 22 条登记（1:1）；「无任何说法能命中的节点」= 0；「空登记（死条目）」= 0；每条说法都能解出自己。复算命令 = 加载 backend/ai-agent-service/app/context/menu_navigator.py 后逐节点/逐说法跑 `resolve_feature`', '🔴 **未覆盖与风险（照实登记）**：① 说法**只做确定性子串命中**（无同义 / 拼音 / 纠错）⇒ 口语与登记说法的用词差异大时仍会**如实回「未登记」**（例如「员工账号怎么开通」「给员工开通账号」今天仍不命中 —— 见 PR body 的「未覆盖」节）；② `menu.ts` 的 `keywords`（拼音 / 常见叫法）**不是**本判据的强制对账面（它自己写着「只影响搜得到，不影响渲染与权限」）⇒ 拼音类关键词**有意不抬**进说法表，靠括注承载口语；③ 本判据只判**结构面**（登记面覆盖、可解析、镜像一致）与**确定性的解析结果**，**不判** LLM 是否真的引用了 citation / 真的没编步骤（那是 MC-065 的行为面）'],
     skip_reason='[backend-contract] 登记面与菜单单一源的结构对账（源码静态事实 + 零依赖纯函数 + 内存注入红证），零 LLM、秒级、不连网不连库；承载体 = tests/unit_ci_workflows/test_menu_navigator.py 与 backend/ai-agent-service/tests/test_nav_guide.py，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ci', 'guard', 'navigation', 'fail-closed', 'red-proof', 'no-steps'],
->>>>>>> 8e6de947e (fix(ai-agent): #6062 nav_guide 意图登记覆盖缺口 —— 常见说法入册 + 三条类级判据（节点可问 / 无空登记 / 镜像同步）)
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-<<<<<<< HEAD
-=======
     precondition=['员工管理页在 config/menu.ts 的导航节点里存在（key=employees / path=/employees / 码=employee:list）—— 本用例问的「员工账号开通」指向这一页；菜单被删或改名 ⇒ 本用例的前置不成立，应由登记面判据先红'],
->>>>>>> 8e6de947e (fix(ai-agent): #6062 nav_guide 意图登记覆盖缺口 —— 常见说法入册 + 三条类级判据（节点可问 / 无空登记 / 镜像同步）)
 )
 
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
@@ -12072,15 +12066,8 @@ ALL_CASES = (
     _CASE_MC_067,
     _CASE_MC_068,
     _CASE_MC_069,
-<<<<<<< HEAD
-<<<<<<< HEAD
     _CASE_MC_049,
-=======
-    _CASE_MC_070,
->>>>>>> 8e6de947e (fix(ai-agent): #6062 nav_guide 意图登记覆盖缺口 —— 常见说法入册 + 三条类级判据（节点可问 / 无空登记 / 镜像同步）)
-=======
     _CASE_MC_071,
->>>>>>> 4bef53a33 (chore(cases): #6062 让号 MC-070 → MC-071（并行 PR #6030 已占 MC-070，按「后合入者让号」）+ claim 改名 + 生成物重渲染)
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
