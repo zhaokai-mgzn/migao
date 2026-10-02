@@ -2793,7 +2793,7 @@
 数据: 判据 7·**RBAC 单一真值源的派生面同批更新**：清单改了 ⇒ `python3 rbac/generate_readings.py` 的 `rbac/readings.json` 必须重生成（新鲜度逐字节判）、`python3 rbac/generate_migration.py` 渲染的 V136 / V137 必须重渲染（`test_generated_migrations_are_fresh` 判红）、`rbac/sources.json` 的副本登记命中数必须同批重锚（涨跌都红）。
 跳过: [backend-contract] 岗位默认权限的静态契约 + 行为契约（tests/unit_ci_workflows/test_position_default_permissions.py 的四真值源逐码判据 + test_agent_permission_parity.py 判据 14 + test_rbac_migration_convergence.py 的 P5 不变量 + backend/ai-agent-service/tests/test_tool_permission_codes.py 的镜像判据），无 LLM 环节，不进入 agent-eval 冒烟
 ```
-真值: employee-role.seed-matrix, employee-role.fallback-seed-parity
+真值: employee-role.fallback-seed-parity, employee-role.snapshot-permissions
 溯源: 2026-10-02 新增（issue #5979 / #5988）：验收报告（acceptance/2026-10-02/new-tenant-multirole/REPORT.md）暴露「岗位能力与命名不符」一组产品口径，人类逐条裁定「应允许」。裁定前实测：知识编辑默认权限 = [dashboard:view, product:list]（**一个 knowledge 码都没有**）；客服无 order:refund（#5246 只补了读码 after_sales:view ⇒ 菜单看得见、建不了单）；销售无 order:create（#5246 有意把写码只给运营）；财务无 customer:view（对账看不到客户）。本用例把「四处真值源逐值一致 + 逐码期望集 + 存量回填」立成常驻判据，并顺带补上两个**结构性失明**：① census 的基线 `FALLBACK_BASELINE_BEFORE_5683` 缺 knowledge_editor ⇒ 该角色的授权变更此前**结构性无人计票**（已按基线自述口径补登「#5683 生效前的当时读数」）；② 判据 14 只判「两处 Java 集合相等」⇒ 判不了「值本身对不对」（两处一起写错即全绿，其 docstring 边界 ③ 已登记），本单补上逐码那一半。 ｜ tags: role, permission, seed, fallback, migration, rbac
 
 ## 知识问答域（7 case）

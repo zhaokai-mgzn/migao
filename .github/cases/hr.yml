@@ -797,8 +797,8 @@ cases:
       - migration
       - rbac
     truths_ref:
-      - employee-role.seed-matrix
       - employee-role.fallback-seed-parity
+      - employee-role.snapshot-permissions
     user_inputs:
       - "新租户管理员在「岗位权限」页查看 客服 / 销售 / 财务 / 知识编辑 四个岗位的默认权限（存量租户由 V145 同批回填）"
     expectations:
