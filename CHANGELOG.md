@@ -10,6 +10,15 @@
 - 配套（用户不可见）：处理器补两个具名分支（`MissingServletRequestParameterException` /
   `MethodArgumentTypeMismatchException`），并落类级元守卫「分支台账 ⇄ 反射双向一致 + 请求绑定族豁免台账只许缩短」。
 
+### 批次账对账缺 `productId` 时改为**显式报错**：「没查」不再被读成「没差异」（2026-10-02，issue #5985）
+
+- **以前是个假绿灯**：`GET /api/admin/batch-stock/reconcile` 不带 `productId` 时返回
+  `rows: [] / totalDiff: 0 / unreconciledCount: 0` —— 看着「账全平」，其实**一条都没查**
+  （SKU 过滤条件是 `product_id = NULL`，永不成立）。
+- **现在**：缺 `productId`（含空白串）⇒ **422 + 点名 `productId` 的可行动报错**；
+  带 `productId` 的调用**行为一字不变**。
+- 页面上的批次面板一直会传 `productId` ⇒ **UI 零变化**；影响面是 **API / 脚本直调**。
+
 ### 米宝能查工艺配置的缺口 / 异常 / 卡点 / 加工费组合了（新增只读工具 `craft_config_query`，6 个读面）（2026-10-02，issue #4923）
 
 - **以前只能自己翻页面**：工艺配置里的「缺口 / 异常 / 卡点 / 加工费组合 / 加工费缺口 / 生产卡点」这 6 个读面

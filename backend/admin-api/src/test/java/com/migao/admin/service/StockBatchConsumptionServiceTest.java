@@ -1029,4 +1029,82 @@ class StockBatchConsumptionServiceTest {
         return ProductSku.builder().id(SKU_ID).tenantId(TENANT).productId(PRODUCT_ID)
                 .skuCode("SKU-A").stock(new BigDecimal(stock)).build();
     }
+
+    // ==================== 缺 productId 的「假绿灯」防护（issue #5985）====================
+
+    /** 允许「缺参 ⇒ 全量」而无须守卫的方法名（**当前为空**；新增须写明理由，台账只许缩短）。 */
+    private static final java.util.Set<String> ALLOWED_WITHOUT_BLANK_GUARD = java.util.Set.of();
+
+    @Test
+    @DisplayName("对账读面缺 productId ⇒ 显式拒绝（不得把「没查」读成「没差异」）")
+    void reconcileWithoutProductIdIsRejectedExplicitly() {
+        // 旧行为：SKU 过滤无条件 .eq(getProductId, productId) ⇒ productId=null 时 SQL 成
+        // product_id = NULL（永不成立）⇒ skus 为空 ⇒ rows:[] / totalDiff:0 / unreconciledCount:0
+        // —— 看着「账全平」，其实一条都没查。审计读面宁可报错，也不许给出零差异的错觉。
+        BusinessException missing = catchThrowableOfType(
+                () -> service.reconcile(TENANT, null, null), BusinessException.class);
+        assertThat(missing).as("缺 productId 必须显式拒绝（旧行为 = 返回空行的假绿灯）").isNotNull();
+        assertThat(missing.getMessage()).as("报错必须点名 productId").contains("productId");
+
+        BusinessException blank = catchThrowableOfType(
+                () -> service.reconcile(TENANT, "   ", null), BusinessException.class);
+        assertThat(blank).as("空白串按缺参处理（hasText 语义）").isNotNull();
+
+        BusinessException withProduct = catchThrowableOfType(
+                () -> service.reconcile(TENANT, PRODUCT_ID, null), BusinessException.class);
+        assertThat(withProduct).as("给了 productId 时不得被这条守卫误伤").isNull();
+    }
+
+    @Test
+    @DisplayName("类级元守卫：按 productId 过滤 product_sku 的读面必须有缺参守卫（未登记即红）")
+    void productSkuFiltersRequireBlankProductIdGuard() throws Exception {
+        java.nio.file.Path src = java.nio.file.Paths.get("src", "main", "java", "com", "migao", "admin",
+                "service", "StockBatchConsumptionService.java");
+        assertThat(java.nio.file.Files.exists(src)).as("源码必须在：%s", src.toAbsolutePath()).isTrue();
+        String text = java.nio.file.Files.readString(src);
+        // 🔴 扫描前**先剥注释**：本守卫要抓的是**代码里的**过滤形态，而解释这条缺陷的注释里必然要引用同一个串
+        //    （实测踩过：guard 注释里写了那个 `.eq(...)` ⇒ 扫描把它当成第二处「无守卫的过滤」⇒ 假红）。
+        //    与仓内既有口径一致（#5944 lint-comment-aware）。
+        String code = text.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("(?m)//.*$", "");
+
+        // 归因单位 = 方法区间（4 空格缩进的可见性前缀即方法起点；签名跨行也适用）
+        java.util.List<Integer> starts = new java.util.ArrayList<>();
+        java.util.List<String> names = new java.util.ArrayList<>();
+        java.util.regex.Matcher sig = java.util.regex.Pattern
+                .compile("(?m)^    (?:public|private|protected)\\s").matcher(code);
+        while (sig.find()) {
+            String seg = code.substring(sig.start(), Math.min(code.length(), sig.start() + 200));
+            java.util.regex.Matcher nm = java.util.regex.Pattern.compile("(\\w+)\\s*\\(").matcher(seg);
+            String n = "(未知)";
+            while (nm.find()) {
+                n = nm.group(1);
+                break;
+            }
+            starts.add(sig.start());
+            names.add(n);
+        }
+
+        java.util.List<String> offenders = new java.util.ArrayList<>();
+        String needle = ".eq(ProductSku::getProductId, productId)";
+        int idx = code.indexOf(needle);
+        while (idx >= 0) {
+            int m = -1;
+            for (int i = 0; i < starts.size(); i++) {
+                if (starts.get(i) < idx) {
+                    m = i;
+                }
+            }
+            String method = m < 0 ? "(未知)" : names.get(m);
+            int from = m < 0 ? 0 : starts.get(m);
+            if (!code.substring(from, idx).contains("hasText(productId)")
+                    && !ALLOWED_WITHOUT_BLANK_GUARD.contains(method)) {
+                offenders.add(method);
+            }
+            idx = code.indexOf(needle, idx + 1);
+        }
+        assertThat(offenders)
+                .as("这些方法按 productId 过滤 product_sku 却没有缺参守卫 —— 缺参会被读成空结果（假绿灯）：%s",
+                        offenders)
+                .isEmpty();
+    }
 }

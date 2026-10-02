@@ -628,6 +628,16 @@ public class StockBatchConsumptionService {
      * 表示恒等式不成立（有批次/台账落到了读面覆盖不到的地方）——**读得出，不是静默**。</p>
      */
     public BatchStockViews.Reconcile reconcile(Long tenantId, String productId, Long skuId) {
+        // 🔴 缺 productId 必须**显式拒绝**（issue #5985）：下面 SKU 过滤是**无条件**的
+        //    `.eq(ProductSku::getProductId, productId)` ⇒ productId 为 null 时 SQL 成
+        //    `product_id = NULL`（**永不成立**）⇒ skus 为空 ⇒ 返回 rows:[] / totalDiff:0 /
+        //    unreconciledCount:0 —— 即「**没查**」被读成「**没差异**」的**假绿灯**。
+        //    对账是审计读面，宁可报错也不许给出零差异的错觉（要全租户对账请逐个商品查询）。
+        if (!StringUtils.hasText(productId)) {
+            throw BusinessException.validationError(
+                    "productId 必填：不传会把「没查」读成「没差异」（旧行为返回 rows:[] / totalDiff:0 的假绿灯）；"
+                            + "如需全租户对账，请逐个商品查询");
+        }
         List<StockBatch> batches = listBatches(tenantId, productId, skuId);
         Map<Long, BigDecimal> consumed = consumedByBatchId(tenantId, ids(batches));
         // 逐 SKU 聚：入库总米数 / 批次余量
