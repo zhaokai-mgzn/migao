@@ -415,6 +415,35 @@ describe('useAuthStore (Zustand auth store)', () => {
       expect(user.menus).toEqual([{ key: 'dashboard', name: '经营看板', path: '/dashboard' }])
     })
 
+    it('应把 /api/auth/me 顶层的 capabilities 并入 user（#5642：米宝门禁/看板 AI 卡在页面刷新后仍为真值）', async () => {
+      mockGetUserInfo.mockResolvedValue({
+        data: {
+          data: {
+            user: {
+              id: 'u1',
+              username: '13870217889',
+              nickname: '王小明',
+              tenantId: 20,
+            },
+            roles: ['admin'],
+            permissions: ['*'],
+            menus: [],
+            // 🔴 capabilities 在 /api/auth/me 响应的 data **顶层**（与 user 平级），不在 user 内；
+            // store 漏并 ⇒ user.capabilities 恒 undefined ⇒ 米宝页 gate 恒 return null（全站空白）、
+            // 看板 aiService 指标卡恒不渲染
+            capabilities: { mibaoChat: true, aiService: true },
+          },
+        },
+      })
+
+      await act(async () => {
+        await useAuthStore.getState().fetchUserInfo()
+      })
+
+      const user = useAuthStore.getState().user as any
+      expect(user.capabilities).toEqual({ mibaoChat: true, aiService: true })
+    })
+
     it('员工的 /api/auth/me：username 是账号用户名，且带 mustChangePassword（页面刷新后仍能判强制改密）', async () => {
       mockGetUserInfo.mockResolvedValue({
         data: {
