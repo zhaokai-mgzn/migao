@@ -182,13 +182,11 @@ jobs:
           # 值守面状态机（种子 + 恰好一行/腿）**外置**（issue #5935）：本步正文已顶到 13.3K 的硬约束
           # （>13,250 ⇒ 整份 workflow invalid ⇒ 该腿完全不跑，阈值/守卫 = test_deploy_watchdog.py 的
           # `RUN_BODY_LIMIT`）⇒ 出口是外置，不是「再加一点点应该没事」。
-          # ⚠️ 本步 checkout 是 `ref: main` ⇒ 「本腿还没上 main」时状态机不在检出里：裸 `source` 把**整个
-          # 对账步**打成 rc=1，只加 `if [ -f ]` 也不行（函数没定义 ⇒ rc=127）—— 本 PR 首轮实测复现。
-          # ⇒ 取既有姿势（同 `mechanism_liveness.sh`）：**载不进就弃权**（出声 + 退出 0）。
+          # ⚠️ 载不进 ⇒ 弃权（理由与两种坏修法见脚本文件头）。
           if [ ! -f scripts/deploy_reconcile_state.sh ]; then
-            echo "::warning::值守面状态机不在检出里（多为「本腿还没上 main」）"
-            exit 0
+            echo "::warning::值守面状态机不在检出里（多为「本腿还没上 main」）"; exit 0
           fi
+          source scripts/deploy_reconcile_state.sh
           source scripts/deploy_reconcile_state.sh
           source scripts/deploy_reconcile_state.sh
           source scripts/deploy_reconcile_state.sh
@@ -206,10 +204,8 @@ jobs:
             # **整个对账 step 非零退出**，把同轮其它四条腿的结果一起染红（而它们本来是对的）。
             # 这不是「要补的部署」，而是「还轮不到它」⇒ 显式 warn + 落 summary + **不** dispatch
             # （fail-open 的另一面：本检查自己出错绝不停掉对账，也绝不 dispatch 一个 main 上不存在的 workflow）。
-            # 判据本体 = `on_main`（`scripts/deploy_reconcile_state.sh`；**三态**：0 在 / 1 不在 / 3 取不到 HEAD；
-            # ⚠️ 判别 `$?` 要用 `_g=$?` 先存下来 —— `$?` 在 `||` 的右侧会被前面的命令吃掉）。
-            # ⚠️ 改前它是 `gh workflow view "$wf" --ref main` —— **100% 失败** ⇒ 六条腿全被误记成「不在 main 上」
-            # （issue #5935 的现场根因、run 36911070357；完整经过见那个脚本的函数注释）。
+            # 判据本体 = `on_main`（三态 0/1/3；完整经过见该脚本的注释）。
+            # ⚠️ `_g=$?` 必须先存：`$?` 在 `||` 右侧会被前面的命令吃掉。
             on_main "$wf" || { _g=$?; if [ "$_g" = 1 ]; then NOTARGET=$((NOTARGET + 1)); on_main_absent "$svc" "$wf"; fi; return 0; }
             # 取「同 sha 的最新一条 run」——B 的两条判据都用它；`[0]` = 最新（`gh run list` 倒序）。
             # **fail-open**：查询失败 / 无记录 ⇒ 两变量为空 ⇒ 不落进任何跳闸分支 ⇒ 照旧补部署。

@@ -21,7 +21,20 @@
 #    而不是「空」⇒ 使唤方可以**具名**判红（`reconcile_one` 中途崩了也照样抓得到）。
 # ③ **恰好一行/腿**：`watchdog_note` 整行替换（不是追加）⇒ 重复调用不会长出第二行。
 #
-# ⚠️ 与 `scripts/tests/` 的判据 `tests/unit_ci_workflows/test_deploy_reconcile_state.py` 同批。
+#
+# ## 调用方的**弃权闸**（issue #5935 本 PR 首轮 CI 实测；正文里只留一行指针，理由在这里）
+# 对账步的 `checkout` 是 **`ref: main`**（对账基准必须是 main HEAD）⇒ **「新增这条腿的那个 PR」里
+# 本文件还不在 main 上**。两种坏修法都**实测**过：
+#   ① 裸 `source` ⇒ `scripts/deploy_reconcile_state.sh: No such file or directory` ⇒
+#      **整个对账步 rc=1**（而其它五条腿本来是对的）—— run `36943682332` 逐字；
+#   ② 只加 `if [ -f … ]` 包起来 ⇒ 函数**一个都没定义** ⇒ 循环里 `on_main: command not found`
+#      ⇒ **rc=127**（本机判据当场红）。
+# ⇒ 正确姿势（调用方已落码，同 `.github/scripts/mechanism_liveness.sh`）：**载不进就弃权** ——
+#   `::warning::` + `exit 0` + **不 dispatch 任何东西**。这与 issue #5668 那条前置判据治的是**同一形态**：
+#   「**还轮不到我**」不许让机制本身停摆。回归判据 =
+#   `tests/unit_ci_workflows/test_reconcile_no_silent_skip.py::test_missing_state_script_does_not_kill_the_whole_step`。
+#
+# ⚠️ 与 `tests/unit_ci_workflows/test_deploy_reconcile_state.py` 的判据同批。
 
 set -uo pipefail
 
