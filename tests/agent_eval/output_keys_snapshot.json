@@ -678,6 +678,18 @@
    ],
    "source_sha256": "206bfecde86632297de4323a4711e7773ded7f4becb74f82a4db3190282c169c"
   },
+  "nav_guide": {
+   "actions": null,
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/nav_guide.py",
+   "keys": [],
+   "literal_keys": [],
+   "shape_notes": [
+    "data ← answer.to_data()",
+    "data=answer.to_data()"
+   ],
+   "source_sha256": "1996037f80eda5478d3c810a55dbd449aa3ec932d704ce7ad54e68445ebc75c8"
+  },
   "notification_manage": {
    "actions": {
     "list": {

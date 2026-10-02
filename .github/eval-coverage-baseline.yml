@@ -38,7 +38,7 @@ version: 2
 # ⚠️ 本文件由 `yaml_light`（仓库零依赖解析器）读取 —— 只能用**单行标量**：
 #    多行字符串（`>-`）/ flow style 会让解析在缩进更深的行处**静默停止**，
 #    entries 整段读成空 = 存量缺口全部当作新缺口阻塞（门禁全红，且看不出原因）。
-note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 **1 条阻塞**（image_recognize，跟踪 #4941 —— 需 vision 能力模型 + 一次真实 LLM 批量评测，按 #4262 手动、用户显式触发，本仓不自动派发）+ **1 条薄覆盖**（validate_input，跟踪 #3558），全部有归属。2026-09-26（issue #3592 销账）：briefing_query / craft_calc_config_query / processing_order_set_query 三条 uncovered + session_manage/thin_positive 一条**销账删除** —— 配套用例 DA-019 / PP-015 / PG-064 / DA-020 在**同一个 PR** 补上（补用例与删条目必须同 PR，否则陈旧登记被判红）。2026-09-24（issue #5247，B 端只读化）：order_manage/missing_positive 与 sku_update/thin_positive 两条**销账删除** —— 两个工具已从 B 端解绑（不再是 B 端工具 ⇒ 登记被判无效/阻塞）。"
+note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 **2 条阻塞**（image_recognize 跟踪 #4941 · nav_guide 跟踪 #5989 —— 需 vision 能力模型 + 一次真实 LLM 批量评测，按 #4262 手动、用户显式触发，本仓不自动派发）+ **1 条薄覆盖**（validate_input，跟踪 #3558），全部有归属。2026-09-26（issue #3592 销账）：briefing_query / craft_calc_config_query / processing_order_set_query 三条 uncovered + session_manage/thin_positive 一条**销账删除** —— 配套用例 DA-019 / PP-015 / PG-064 / DA-020 在**同一个 PR** 补上（补用例与删条目必须同 PR，否则陈旧登记被判红）。2026-09-24（issue #5247，B 端只读化）：order_manage/missing_positive 与 sku_update/thin_positive 两条**销账删除** —— 两个工具已从 B 端解绑（不再是 B 端工具 ⇒ 登记被判无效/阻塞）。"
 
 entries:
   # ── 结构性缺失（阻塞项，靠本清单才保持绿）──────────────────────────────
@@ -73,6 +73,25 @@ entries:
     issue: "#4941"
     reason: "#5368 包 2 新增的纯本地识别工具（图 → 同页填充计划），尚无评测用例；本包按用户裁定不派发真实 LLM 评测，且用例库（.github/cases/**）由并发包独占 ⇒ 待集中跑批时补用例。重启条件 = 用户显式要求跑一次 B 端批量评测（#4262：手动、用户触发）时同批补「发图 → 米宝调 image_recognize → 同页填表」用例；缺口现由 #4941 总账跟踪"
     added: "2026-09-24"
+
+  # ⚠️ 2026-10-02（issue #5989 P1，导航类指引）本条首次登记：登记 = 让缺口**可见且可收缩**
+  #    （不是免死金牌）：补一条用例即删一条，陈旧登记会被 `baseline_stale_blocking` 判红。
+  #    为什么本包不自己补：`nav_guide` 的行为面（用户问「XX 在哪一页」→ 模型会不会调它、会不会
+  #    把 citation 转述出来、会不会**不**编步骤）**只有真跑 LLM 才判得了**；按 issue #4262 的裁定
+  #    （用户 2026-10-02 逐字：「不要自动进行验证，都是重复的验证，白白消耗成本」「手动集中跑一次即可」），
+  #    真实 LLM 评测**手动、由用户显式触发**，本仓不自动派发 ⇒ 本包**不新增评测用例**。
+  #    本包已有的确定性承载体（**不是**这条豁免的对象）：`tests/unit_ci_workflows/test_menu_navigator.py`
+  #    （跨包结构面，用例 MC-062）+ `backend/ai-agent-service/tests/test_nav_guide.py`（工具面）。
+  #    🔴 **重启条件（= 什么条件下这件事才做得成，不是「正在做」）**：用户显式要求跑一次 B 端批量评测时，
+  #    同批补一条 `persona: mibao` + `expectations: [{tool: nav_guide, args: {question: …}}]` 的正常档用例
+  #    （正向 = 命中登记项并转述 citation；反向 = 未登记时如实说「我没有这条指引」且**不编步骤**），
+  #    届时本条销账。跟踪单 = **#5989**（本单仍 open：余下的 **P2 主动新手引导**不在本包）。
+  - tool: nav_guide
+    kind: uncovered
+    persona: mibao
+    issue: "#5989"
+    reason: "#5989 P1 新增的纯本地导航工具（功能 ⇄ 菜单路径 ⇄ 权限码的仓内登记表 + 会话权限裁剪），尚无评测用例；按用户 2026-10-02 裁定「真实 LLM 评测手动、用户显式触发」（#4262）本包不派发评测，且用例库由并发包独占 ⇒ 待集中跑批时补用例。确定性面已由 tests/unit_ci_workflows/test_menu_navigator.py（MC-062）+ backend/ai-agent-service/tests/test_nav_guide.py 覆盖；缺口现由 #5989 跟踪（P2 主动引导未做完）"
+    added: "2026-10-02"
 
   # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_query` /
   #    `processing_order_update` 的 uncovered 条目**已删除** —— 配套正向用例
