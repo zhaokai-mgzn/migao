@@ -1226,3 +1226,52 @@ class TestProbeWiring:
                              "  case-truth-check:\n    # 注释里提到 --merge-probe origin/main 与 "
                              "steps.probe_face.outputs.probe == 'true' 都不算实现\n", 1)
         assert noisy != text and probe_wiring_problems(noisy) == [], "只加注释却判红 ⇒ 判据在读原文"
+
+
+# ── `--base-probe`：一步归因（issue #6027）────────────────────────────────────
+# 病灶（2026-10-02 实测）：main 先漂移 11 分钟 ⇒ 窗口内 `#6016` / `#6024` 两个**零改动用例库**的 PR
+# 各红一次，红的信息指向它们自己的 diff（**归因指向错误的对象**）；人工复算 ~10 分钟才摘清。
+# 现有的 main-freshness-guard 是**事后**兜底（`push` 被 auto-merge 吞掉 / `schedule` 小时级），
+# 兜不住窗口内的归因 ⇒ 归因只能由**撞上的那一方**现取，本类钉住这条出口存在且三态正确。
+
+
+def _load_freshness_module():
+    """加载判定本体。🔴 必须**先注册进 `sys.modules`** 再 `exec_module` —— 否则 `@dataclass`
+    在 exec 期查 `sys.modules[cls.__module__].__dict__` 会拿到 None（实测 `AttributeError`，issue #6027）。"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("genfresh_base_probe", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestBaseProbe:
+    """一步归因：`base` 陈旧 ⇒ **不许**把归因记到本 PR 头上。"""
+
+    def test_flag_and_command_are_declared(self):
+        src = SCRIPT.read_text(encoding="utf-8")
+        assert '"--base-probe"' in src, (
+            "`--base-probe` 没声明 ⇒ 一步归因这条出口不存在（删掉它 ⇒ 本判据红）")
+        mod = _load_freshness_module()
+        assert "--base-probe origin/main" in mod.BASE_PROBE_COMMAND
+
+    def test_drift_output_names_the_one_step_command(self):
+        src = SCRIPT.read_text(encoding="utf-8")
+        assert "一步归因" in src, "漂移输出里没有「一步归因」提示"
+        assert src.count("BASE_PROBE_COMMAND") >= 2, (
+            "漂移输出没有印出命令原文（只在常量处出现一次 ⇒ 提示与命令脱钩）")
+
+    def test_undecidable_is_fail_closed_and_never_read_as_this_tree(self, tmp_path):
+        mod = _load_freshness_module()
+        non_repo = mod.base_probe(tmp_path, "origin/main")
+        assert non_repo["verdict"] == "undecidable", "非 git 仓路径必须**无法判定**，不许读成新鲜"
+        assert "不许读成" in non_repo["attribution"], "无法判定时必须写明「不许读成本树引入」"
+        bogus = mod.base_probe(REPO, "refs/heads/绝不存在的分支-6027")
+        assert bogus["verdict"] == "undecidable", "取不到的 ref 必须无法判定"
+
+    def test_drifted_base_says_it_is_not_this_tree(self):
+        """判别力自证（不写盘）：把 base 侧结论喂成 drifted ⇒ 归因话术必须指向 base，而不是本树。"""
+        src = SCRIPT.read_text(encoding="utf-8")
+        assert "**不是本树/本 PR 引入**" in src and "**本树引入**" in src, (
+            "两种归因结论必须都在源码里具名（缺一条 ⇒ 归因会退化成含糊表述）")
