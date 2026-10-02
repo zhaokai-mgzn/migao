@@ -5123,6 +5123,24 @@ _CASE_MC_067 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-068 [NORMAL] RBAC 文档岗位清单 ⇄ 真值源逐值对账（issue #6036 的 F7 固化）：docs/wiki/RBAC.md 的「新租户种子岗位」清单必须逐值等于 rbac/manifest.json 的 roles.seed，V137 的建行码集必须与它的声明行一致且 ⊆ 真值源（纯静态判据）（源: cases/misc.yml）──
+_CASE_MC_068 = EvalCase(
+    id='MC-068',
+    legacy_id='',
+    title='RBAC 文档岗位清单 ⇄ 真值源逐值对账（issue #6036 的 F7 固化）：docs/wiki/RBAC.md 的「新租户种子岗位」清单必须逐值等于 rbac/manifest.json 的 roles.seed，V137 的建行码集必须与它的声明行一致且 ⊆ 真值源（纯静态判据）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人在 `rbac/manifest.json` 里增删一个种子岗位码而不同步 `docs/wiki/RBAC.md` 的清单声明行、或反过来只改文档、或把 V137 正式化的岗位码改掉而不同步它的声明行、或把声明行写到解析不出来的形态时，必须有判据**具名**报出（报出少/多了哪几个码）；而只改与清单无关的散文时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（验收报告 §四·F7，issue #5984）**：`docs/wiki/RBAC.md` 写「新租户注册初始化**五岗**种子（管理员/客服/运营/销售/财务）」，而实测新租户是 **7 岗**（多出 `product_manager` / `knowledge_editor`，由 `V137__formalize_legacy_roles.sql` 正式定义）。#5992 改了字面但**没有留任何判据**把它钉住 ⇒ 清单再变时文档会静默漂移，而「文档 vs 实测」的差只能靠人工验收再发现一次。', '**判据 1（主判据：文档清单 ⇄ 真值源逐值相等）**：`docs/wiki/RBAC.md` 的清单声明行（以 `> 新租户注册初始化` 起头的那一行 + 它的**一行**续行）里的岗位码集合，必须与 `rbac/manifest.json` 的 `roles.seed` 键集合**逐值相等**；行内的 `**<中文数字>岗**` 必须等于真值源条数。执行点 = tests/unit_ci_workflows/test_rbac_role_list_doc_consistency.py 的 `test_doc_seed_role_list_matches_manifest`。', "**判据 2（真值源的另一侧：V137）**：`backend/admin-api/src/main/resources/db/migration/V137__formalize_legacy_roles.sql` 的声明行 `-- V137 formalized_roles=…` 必须逐值等于它真建的 `roles` 行（幂等 `INSERT INTO roles … SELECT gen_random_uuid()::text, t.id, '<name>', '<code>'`），且 ⊆ `roles.seed`，且**不得**等于全部种子岗（另五岗由 V29/V32 + `RegistrationService` 建）。执行点 = 同文件 `test_v137_formalized_roles_match_manifest`。", '**判据 3（正向钉死集合，不是数量相等）**：文档清单排序后必须逐值等于 `roles.seed`，且中文数字 == 条数。执行点 = 同文件 `test_doc_seed_roles_are_the_manifest_seed_exactly`。', '**判据 4（fail-closed）**：声明行缺失 / 中文数字不可解析 / 出现**两行**声明（多处同步 = 漂移温床）/ V137 被改写成解析不到的形态 ⇒ 一律判红，**不得**读成「没问题」。执行点 = 同文件的 `parse_doc_seed_roles` 抛 `RoleListDrift` + `test_redproof_missing_declaration_line_is_red` / `test_redproof_duplicate_declaration_lines_are_red` / `test_redproof_v137_rewritten_shape_is_red`。', "**判别力自证（注入式红证，全部在内存里对真语料变异）**：① 文档改回 F7 的原始缺陷形态「五岗 / 只列历史五岗」⇒ 红且具名「文档写「5 岗」而真值源 roles.seed 有 7 个岗位码 + 漏了 ['knowledge_editor','product_manager']」；② 真值源**新增**一个岗位码而文档没跟 ⇒ 红（F7 的真正方向）；③ 文档把 `finance` 写成 `financial` ⇒ 红（逐值口径）；④ 声明行被删 / 数字写坏 ⇒ 红（fail-closed）；⑤ 声明行重复 ⇒ 红；⑥ V137 少建一个岗位行 ⇒ 红；⑦ V137 改成解析不到的形态 ⇒ 红；**对照读数**：不注入 ⇒ 绿、只改无关散文 ⇒ 不红。执行点 = 同文件 8 条 `test_redproof_*` + `test_control_only_comment_change_does_not_go_red`。", '🔴 **覆盖边界（显式登记）**：① 只覆盖 `docs/wiki/RBAC.md` 这一处清单声明行 + V137；**判不了散文**（`docs/design/rbac-single-source.md`、`RegistrationService` 注释里的「七岗」不在语料里 —— 有意如此：散文描述可读性、不是声明）；② 判不了「岗位**应该**有哪些权限码」（那是 `rbac/readings.json` 的 `roles.seed` 值对账，归 tests/unit_ci_workflows/test_rbac_single_source_manifest.py）；③ 不查 GitHub / 不联网；④ 本判据**不改**任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 纯静态文本 ⇄ 清单对账（只读仓内三个文件；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_rbac_role_list_doc_consistency.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'docs-drift', 'single-source', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -11989,6 +12007,7 @@ ALL_CASES = (
     _CASE_MC_064,
     _CASE_MC_066,
     _CASE_MC_067,
+    _CASE_MC_068,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

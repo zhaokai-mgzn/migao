@@ -2876,7 +2876,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（66 case）
+## 杂项域（67 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3817,6 +3817,21 @@
 跳过: [backend-contract] 纯静态扫承载体与 §15.7 文本（只读仓内两个文件；零真库、零网络、不烧 token、不跑 node / Playwright、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_ui_multimodal_acceptance_carrier.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #6009，集成侧裁定按 P0）。落码 = ① 承载体 `.agent-presets/migao/skills/migao-dev-flow/scripts/ui-multimodal-acceptance.mjs` 的登录步重写（等表单真渲染 → 核对 `LOGIN_SHAPE` 指纹 → 按语义锚 `role=tab` / `getByLabel` 操作；新增 `--login-shape-check`；指纹不符 ⇒ fail-closed 报「页面形态已变」+ 逐条缺失项 + 处置指引；凭据面失败另报页面提示 + `login-failed.png`）② `migao-dev-flow` §15.7 补「唯一入口」「登录步与形态指纹」「取不到证据时怎么判（三态）」+ 假绿清单 ④⑤；`version` 1.103.0 → 1.104.0 ③ 判据 tests/unit_ci_workflows/test_ui_multimodal_acceptance_carrier.py（5 条 + 5 条注入式红证 + 只改注释不红的对照 + 纯静态自证）④ 本 PR 带 claim 文件 `.github/cases/claims/<PR号>-MC-067.json`（合并后删）。**取号 MC-067**：按现行机制先查 `.github/cases/claims/`（空）与已用号（现取最大 MC-066）⇒ 取 067 并同 PR 加 claim。**本机实测读数**：修前（同一注入：`page.route('**/*.js')` 延迟 9s）= `TimeoutError: locator('input[placeholder*="手机号"]')`（与 issue 原文同形，rc=1）；修后（同一注入）= 登录成功 rc=0；形态红证 = 夹具 A（只有员工页签）⇒「缺少页签『管理员登录』」，夹具 B（`获取验证码` 被改名）⇒「找不到『获取验证码』按钮」，两者 rc=1；真机证据 = `--site http://localhost:3001 --path /orders/new` rc=0（`loginOk=true` / testid 21 / 5xx 0）。⚠️ **未覆盖（照实登记）**：部署环境 `https://merchant.migaozn.com` 需要**真人手机**收验证码 ⇒ 本包未跑，登记为**未覆盖**（不是「通过」）。 ｜ tags: ci, ui, playwright, fail-closed, red-proof
+
+### MC-068. RBAC 文档岗位清单 ⇄ 真值源逐值对账（issue #6036 的 F7 固化）：docs/wiki/RBAC.md 的「新租户种子岗位」清单必须逐值等于 rbac/manifest.json 的 roles.seed，V137 的建行码集必须与它的声明行一致且 ⊆ 真值源（纯静态判据） 🔵
+```
+你: 当有人在 `rbac/manifest.json` 里增删一个种子岗位码而不同步 `docs/wiki/RBAC.md` 的清单声明行、或反过来只改文档、或把 V137 正式化的岗位码改掉而不同步它的声明行、或把声明行写到解析不出来的形态时，必须有判据**具名**报出（报出少/多了哪几个码）；而只改与清单无关的散文时不得报红
+期望: direct_reply
+数据: **病（验收报告 §四·F7，issue #5984）**：`docs/wiki/RBAC.md` 写「新租户注册初始化**五岗**种子（管理员/客服/运营/销售/财务）」，而实测新租户是 **7 岗**（多出 `product_manager` / `knowledge_editor`，由 `V137__formalize_legacy_roles.sql` 正式定义）。#5992 改了字面但**没有留任何判据**把它钉住 ⇒ 清单再变时文档会静默漂移，而「文档 vs 实测」的差只能靠人工验收再发现一次。
+数据: **判据 1（主判据：文档清单 ⇄ 真值源逐值相等）**：`docs/wiki/RBAC.md` 的清单声明行（以 `> 新租户注册初始化` 起头的那一行 + 它的**一行**续行）里的岗位码集合，必须与 `rbac/manifest.json` 的 `roles.seed` 键集合**逐值相等**；行内的 `**<中文数字>岗**` 必须等于真值源条数。执行点 = tests/unit_ci_workflows/test_rbac_role_list_doc_consistency.py 的 `test_doc_seed_role_list_matches_manifest`。
+数据: **判据 2（真值源的另一侧：V137）**：`backend/admin-api/src/main/resources/db/migration/V137__formalize_legacy_roles.sql` 的声明行 `-- V137 formalized_roles=…` 必须逐值等于它真建的 `roles` 行（幂等 `INSERT INTO roles … SELECT gen_random_uuid()::text, t.id, '<name>', '<code>'`），且 ⊆ `roles.seed`，且**不得**等于全部种子岗（另五岗由 V29/V32 + `RegistrationService` 建）。执行点 = 同文件 `test_v137_formalized_roles_match_manifest`。
+数据: **判据 3（正向钉死集合，不是数量相等）**：文档清单排序后必须逐值等于 `roles.seed`，且中文数字 == 条数。执行点 = 同文件 `test_doc_seed_roles_are_the_manifest_seed_exactly`。
+数据: **判据 4（fail-closed）**：声明行缺失 / 中文数字不可解析 / 出现**两行**声明（多处同步 = 漂移温床）/ V137 被改写成解析不到的形态 ⇒ 一律判红，**不得**读成「没问题」。执行点 = 同文件的 `parse_doc_seed_roles` 抛 `RoleListDrift` + `test_redproof_missing_declaration_line_is_red` / `test_redproof_duplicate_declaration_lines_are_red` / `test_redproof_v137_rewritten_shape_is_red`。
+数据: **判别力自证（注入式红证，全部在内存里对真语料变异）**：① 文档改回 F7 的原始缺陷形态「五岗 / 只列历史五岗」⇒ 红且具名「文档写「5 岗」而真值源 roles.seed 有 7 个岗位码 + 漏了 ['knowledge_editor','product_manager']」；② 真值源**新增**一个岗位码而文档没跟 ⇒ 红（F7 的真正方向）；③ 文档把 `finance` 写成 `financial` ⇒ 红（逐值口径）；④ 声明行被删 / 数字写坏 ⇒ 红（fail-closed）；⑤ 声明行重复 ⇒ 红；⑥ V137 少建一个岗位行 ⇒ 红；⑦ V137 改成解析不到的形态 ⇒ 红；**对照读数**：不注入 ⇒ 绿、只改无关散文 ⇒ 不红。执行点 = 同文件 8 条 `test_redproof_*` + `test_control_only_comment_change_does_not_go_red`。
+数据: 🔴 **覆盖边界（显式登记）**：① 只覆盖 `docs/wiki/RBAC.md` 这一处清单声明行 + V137；**判不了散文**（`docs/design/rbac-single-source.md`、`RegistrationService` 注释里的「七岗」不在语料里 —— 有意如此：散文描述可读性、不是声明）；② 判不了「岗位**应该**有哪些权限码」（那是 `rbac/readings.json` 的 `roles.seed` 值对账，归 tests/unit_ci_workflows/test_rbac_single_source_manifest.py）；③ 不查 GitHub / 不联网；④ 本判据**不改**任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 纯静态文本 ⇄ 清单对账（只读仓内三个文件；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_rbac_role_list_doc_consistency.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #6036 的 F7 类级固化）。落码 = ① 判据 tests/unit_ci_workflows/test_rbac_role_list_doc_consistency.py（13 条：3 条正向 + 1 条 V137 正向 + 8 条注入式红证 + 1 条只改注释不红的对照；纯静态、零外部依赖）② `docs/wiki/RBAC.md` 的清单声明行改写为「逐值为 `<code>` × N」形态 + 显式写明真值源 = `rbac/manifest.json` 的 `roles.seed`（声明行是**副本**，不是真值）③ `V137__formalize_legacy_roles.sql` 补机器可读声明行 `-- V137 formalized_roles=knowledge_editor,product_manager`（此前它的声明面只散在注释散文里）。**红证（注入式，同一命令）**：修前（把声明行改回「五岗」）= `test_doc_seed_role_list_matches_manifest` / `test_doc_seed_roles_are_the_manifest_seed_exactly` **2 failed**（报出「文档写「5 岗」而真值源 `roles.seed` 有 7 个岗位码」「文档清单**漏了**真值源里的岗位码：['knowledge_editor', 'product_manager']」）；修后 = **13 passed**。**取号 MC-068**：按现行机制先查 `.github/cases/claims/`（现取 `6033-MC-067.json`）与 main 已用号（现取最大 MC-067，已由 #6033 占用）⇒ 取 068 并同 PR 加 claim 文件 `.github/cases/claims/<PR号>-MC-068.json`。 ｜ tags: rbac, docs-drift, single-source, fail-closed, red-proof
 
 ## 商家入驻域（5 case）
 
@@ -8943,8 +8958,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：624（活跃 133，跳过 491）
-- tier 分布：smoke 12 / normal 579 / adversarial 31
+- 用例总数：625（活跃 133，跳过 492）
+- tier 分布：smoke 12 / normal 580 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -8959,7 +8974,7 @@
 - 财务对账域：4
 - 人事域：12
 - 知识问答域：7
-- 杂项域：66
+- 杂项域：67
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -9055,6 +9070,7 @@
 - MC-064: Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975）
 - MC-066: 用例 id 取号登记台账（claim）：并行开发下不再撞号（撞了在 CI 里被具名抓住，而不是变成 misc.yml 的困惑冲突）（issue #6017）
 - MC-067: §15.7 页面多模态验收承载体（issue #6009）：登录步先切「管理员登录」再填手机号 + 登录页形态指纹 fail-closed + 唯一入口与「取不到证据怎么判」三态（纯静态判据）
+- MC-068: RBAC 文档岗位清单 ⇄ 真值源逐值对账（issue #6036 的 F7 固化）：docs/wiki/RBAC.md 的「新租户种子岗位」清单必须逐值等于 rbac/manifest.json 的 roles.seed，V137 的建行码集必须与它的声明行一致且 ⊆ 真值源（纯静态判据）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
