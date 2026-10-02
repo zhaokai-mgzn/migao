@@ -135,22 +135,28 @@ def _comment_rows(pairs) -> str:
 
 #: 🔴 **已发布迁移的冻结清单快照**（issue #5979 / #5988 引入）。
 #:
-#: `V136` **已经跑在所有环境上** ⇒ 它受两条**同等强制**的约束，且二者在「清单前进」时冲突：
+#: `V136` / `V137` **已经跑在所有环境上** ⇒ 它们受两条**同等强制**的约束，且二者在「清单前进」时冲突：
 #:   ① `Danger Scan (破坏性变更检测)`：**已发布迁移不可重写**（重渲染 = 改已应用的迁移 ⇒ blocker）；
 #:   ② 本生成器的新鲜度判据：产物必须 == 当场渲染（否则判红 ⇒ 落 main 后每个 PR 都会红）。
-#: ⇒ 消解方式 = **把 V136 的渲染输入钉在它发布时刻的清单上** —— 它从此是**历史事实的产物**，
+#: ⇒ 消解方式 = **把这两份产物的渲染输入钉在它们发布时刻的清单上** —— 它们从此是**历史事实的产物**，
 #: 不再随 `rbac/manifest.json` 前进而变形。**清单之后新增的授权由新迁移（V145）承担**，
 #: 收敛不变量（`convergence_problems`：链累计 == 清单声明）仍用**活清单**判 ⇒ 两条约束同时成立。
-#: （未来的已发布生成物同理：新增一份快照文件名，不改既有快照 —— 快照一旦写出即历史。）
-FROZEN_MANIFEST_V136 = REPO_ROOT / "rbac" / "manifest-published-at-V136.json"
+#: 两份快照**今日逐字节相同**（同一个发布时刻），但**有意分开命名**：将来清单再前进时，
+#: 各产物各自的发布日期不同 ⇒ 共享一份会重新引入「改 A 变形 B」的同一个病。
+#: 🔴 **快照一旦写出即历史，永不修改**；新情形 = **新增**一份快照文件名。
+FROZEN_SNAPSHOTS: dict[str, Path] = {
+    f"V{P5_VERSION}": REPO_ROOT / "rbac" / "manifest-published-at-V136.json",
+    f"V{P6_VERSION}": REPO_ROOT / "rbac" / "manifest-published-at-V137.json",
+}
 
 
-def load_frozen_manifest_v136() -> dict:
-    """读 V136 的冻结清单快照（缺文件 ⇒ 抛错，fail-closed，不静默回落到活清单）。"""
-    assert FROZEN_MANIFEST_V136.is_file(), (
-        f"V136 的冻结清单快照不存在：{FROZEN_MANIFEST_V136}（路径漂移 ⇒ 红，不得静默回落）"
+def load_frozen_snapshot(version: str) -> dict:
+    """读某份**已发布**迁移的冻结清单快照（缺文件 ⇒ 抛错，fail-closed，不静默回落到活清单）。"""
+    path = FROZEN_SNAPSHOTS[version]
+    assert path.is_file(), (
+        f"{version} 的冻结清单快照不存在：{path}（路径漂移 ⇒ 红，不得静默回落到活清单）"
     )
-    return json.loads(FROZEN_MANIFEST_V136.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def p5_missing(manifest: dict, root: Path | None = None) -> dict[str, list[str]]:
@@ -167,12 +173,12 @@ def p5_missing(manifest: dict, root: Path | None = None) -> dict[str, list[str]]
 
 
 def render_p5(manifest: dict, root: Path | None = None) -> str:
-    """渲染 `V136`（**已发布 ⇒ 输入钉在发布时刻的清单快照上**，见 `FROZEN_MANIFEST_V136`）。
+    """渲染 `V136`（**已发布 ⇒ 输入钉在发布时刻的清单快照上**，见 `FROZEN_SNAPSHOTS`）。
 
     `manifest` 入参**有意不使用**（保留形参只为与 `ARTIFACTS` 的 `{rel: renderer}` 同形）。
     改活清单**不会**改动本产物 —— 这正是「已发布迁移不可重写」与「生成物必须新鲜」的消解点。
     """
-    manifest = load_frozen_manifest_v136()
+    manifest = load_frozen_snapshot(f"V{P5_VERSION}")
     missing = p5_missing(manifest, root)
     pairs = [(role, code) for role, codes in sorted(missing.items()) for code in codes]
     assert pairs, "P5 的差集为空 ⇒ 这份迁移没有内容可渲染（清单与链已收敛时应当删掉本产物，而不是渲染空文件）"
@@ -285,6 +291,8 @@ def p6_codes(manifest: dict, role: str) -> list[str]:
 
 
 def render_p6(manifest: dict) -> str:
+    """渲染 `V137`（**已发布 ⇒ 输入钉在发布时刻的清单快照上**，见 `FROZEN_SNAPSHOTS`；同 `render_p5`）。"""
+    manifest = load_frozen_snapshot(f"V{P6_VERSION}")
     for role in P6_ROLES:
         assert role in manifest["roles"]["seed"], f"P6 的出口 (i) 要求 `{role}` 进种子矩阵（现取缺失 ⇒ 不渲染）"
         fallback = manifest["roles"]["fallback"].get(role)

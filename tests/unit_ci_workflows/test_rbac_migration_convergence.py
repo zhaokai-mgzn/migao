@@ -194,9 +194,22 @@ def p6_problems(manifest: dict, parity) -> list[str]:
 
 
 def p6_migration_problems(manifest: dict, text: str | None) -> list[str]:
-    """P6 的存量迁移必须**逐值**等于清单声明（未登记 / 陈旧 / 少一个码都红）。"""
+    """P6 的存量迁移必须**逐值**等于**它发布时刻的清单快照**（少一个码 / 多一个码都红）。
+
+    🔴 **`manifest` 入参已不使用（issue #5979 / #5988 改判）**——`V137` 是**已发布**迁移
+    ⇒ `Danger Scan` 判「已发布迁移不可重写」，它的内容**不得**随活清单前进而变形。
+    生成器把它的渲染输入钉在 `rbac/manifest-published-at-V137.json`（`FROZEN_SNAPSHOTS`）上，
+    本判据**读同一份快照**做逐值比较，于是「P6 的内容 ≡ 它自己发布时刻的声明」这条不变量**照旧成立**。
+
+    🔴 **改判后本判据的射程变了（如实登记，别读成覆盖面更大）**：它**不再**判「活清单声明 == V137」。
+    那一半（含清单之后新增的 `knowledge:view` / `knowledge:manage` 等）由**同一文件的**
+    `convergence_problems`（链累计 == 活清单声明，逐岗位逐码具名）承担 —— 两条判据合起来
+    才等价于改判前的射程，**任何一条单独都不完整**。
+    """
     derive = load_derive()
     generator = load_generator()
+    # 与生成器 render_p6 **同源**：同一份冻结快照（避免两处各写一个「发布时刻」口径）
+    manifest = generator.load_frozen_snapshot(f"V{generator.P6_VERSION}")
     rel = next(r for r in generator.ARTIFACTS if "formalize_legacy_roles" in r)
     if text is None:
         return [f"`{rel}` 不存在 ⇒ P6 的存量侧没有物化（新租户有、老租户没有）"]

@@ -271,10 +271,10 @@
     {
       "face": "sql-role-grants",
       "file": "backend/admin-api/src/main/resources/db/migration/V136__converge_builtin_role_permissions.sql",
-      "hits": 4,
+      "hits": 1,
       "kind": "declaration",
       "derived_from": "manifest.roles.*",
-      "note": "P5：由 rbac/generate_migration.py 从清单**渲染**的收敛迁移（存量内置岗位补齐清单差集）。issue #5979 / #5988：清单声明前进 ⇒ 差集随之由 1 句（仅 admin）变为 4 句（+客服/财务/销售各 1），本读数同批重锚"
+      "note": "P5：由 rbac/generate_migration.py 渲染的收敛迁移（存量内置岗位补齐清单差集）。🔴 issue #5979 / #5988：本迁移**已发布** ⇒ 渲染输入被钉在 `rbac/manifest-published-at-V136.json`（`FROZEN_SNAPSHOTS`）上 ⇒ 活清单前进**不再**改变它（本读数仍为 1，与 origin/main 逐字节相同）；清单之后新增的存量授权由 V145 承担"
     },
     {
       "face": "sql-role-grants",
@@ -282,7 +282,7 @@
       "hits": 2,
       "kind": "declaration",
       "derived_from": "manifest.roles.*",
-      "note": "P6（出口 i）：由生成器渲染 —— 两个历史岗位码建 roles 行 + 按清单授权。issue #5979：knowledge_editor 的清单码集补齐后，它那条授权语句的码表由 2 个变 4 个（**语句条数不变** ⇒ 本读数仍为 2）"
+      "note": "P6（出口 i）：由生成器渲染 —— 两个历史岗位码建 roles 行 + 按清单授权。🔴 issue #5979 / #5988：同 V136，**已发布** ⇒ 输入钉在 `rbac/manifest-published-at-V137.json` 快照上（本读数仍为 2 = 两句 role_permissions 授权，与 origin/main 逐字节相同）"
     },
     {
       "face": "sql-role-grants",

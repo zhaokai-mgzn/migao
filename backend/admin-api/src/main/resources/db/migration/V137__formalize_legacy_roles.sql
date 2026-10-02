@@ -3,7 +3,7 @@
 -- ## 一句话
 --   `product_manager`（商品管理员）/ `knowledge_editor`（知识编辑）此前**不是岗位**：
 --   不在种子里、迁移链一条谓词都不提（⇒ **没有 `roles` 行**）、岗位权限页**无法编辑**，
---   只靠 `RoleService.getPermissionCodesForRole` 的 `switch` 一行 `case` 拿 8 / 4 个码。
+--   只靠 `RoleService.getPermissionCodesForRole` 的 `switch` 一行 `case` 拿 8 / 2 个码。
 --   本迁移把它们**正式定义**为岗位：**建 `roles` 行**（幂等）＋**按清单授权**（幂等）＋终态对账。
 --
 -- ## 🔴 为什么账号的**有效权限集合逐值不变**（本迁移的兼容性判据）
@@ -32,7 +32,7 @@
 
 BEGIN;
 
--- ── knowledge_editor（知识编辑）：4 个码 ──
+-- ── knowledge_editor（知识编辑）：2 个码 ──
 INSERT INTO roles (id, tenant_id, name, code, description, status, created_at, updated_at, deleted)
 SELECT gen_random_uuid()::text, t.id, '知识编辑', 'knowledge_editor', '知识库编辑（POC 期历史岗位，issue #5699 的 P6 正式定义）', 'active', NOW(), NOW(), 0
 FROM tenants t
@@ -43,7 +43,7 @@ SELECT gen_random_uuid()::text, r.tenant_id, r.id, p.id, NOW(), 0
 FROM roles r
 JOIN permissions p ON p.tenant_id = r.tenant_id
 WHERE r.code = 'knowledge_editor' AND r.deleted = 0
-  AND p.code IN ('dashboard:view', 'knowledge:manage', 'knowledge:view', 'product:list')
+  AND p.code IN ('dashboard:view', 'product:list')
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- ── product_manager（商品管理员）：8 个码 ──
@@ -85,8 +85,6 @@ BEGIN
       JOIN permissions p ON p.tenant_id = t.id
       JOIN (VALUES
         ('knowledge_editor', 'dashboard:view'),
-        ('knowledge_editor', 'knowledge:manage'),
-        ('knowledge_editor', 'knowledge:view'),
         ('knowledge_editor', 'product:list'),
         ('product_manager', 'dashboard:view'),
         ('product_manager', 'processing:manage'),
