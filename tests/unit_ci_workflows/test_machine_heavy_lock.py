@@ -827,7 +827,11 @@ class TestWaitOption:
         """🔴 **变异红证**：把「可等待」那行拿掉 ⇒ `test_wait_queues_until_the_holder_releases`
         的断言对象（rc=0 / 「排队等待后取得」）必须**当场不成立** —— 证明判据不是空断言。"""
         src = SCRIPT.read_text(encoding="utf-8")
-        old = '    [ "${wait_seconds}" -gt 0 ] || return 1'
+        # ⚠️ 变异锚点 = **「可等待」那条判定的存在**（`--wait` 必须真的能再试一次释放后的锁）。
+        #    ⚠️ 2026-10-03（issue #6091）：准入循环为了把**结局**记进台账而重写（早退 ⇒ 置终局标记 +
+        #    循环末尾统一记账），判定的**写法**由 `… || return 1` 变成 `… || break`；变异的语义
+        #    一字未变（都是「永不等待」）。下面两条断言（判据本体）零改动。
+        old = '    [ "${wait_seconds}" -gt 0 ] || break'
         assert src.count(old) == 1, "变异锚点未命中（脚本结构变了 ⇒ 请同步更新本红证）"
         mutated = tmp_path / "machine-heavy-lock-mutated.sh"
         mutated.write_text(src.replace(old, '    return 1  # 变异：永不等待', 1), encoding="utf-8")

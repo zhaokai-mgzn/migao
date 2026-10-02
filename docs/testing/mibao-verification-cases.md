@@ -2921,7 +2921,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（72 case）
+## 杂项域（73 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3952,6 +3952,26 @@
 跳过: [backend-contract] 本机研发机具（机器级重活锁 / 套件自带准入）的行为与接线由 tests/unit_ci_workflows/ 的 pytest 单测验证（真子进程 + 临时锁面 + 硬超时），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #6074：本机挂死级缺陷 —— `verify-all.sh` 从不设置 `MIGAO_HEAVY_LOCK_HELD` ⇒ 套件自锁自抢死锁）。**根因复核（照实）**：2026-10-02 18:55 +0800 合入的 #6024 已在 origin/main 落地那行 `export`（`verify-all.sh` 的 `macquire` 内），**观测到挂死的那个 worktree 是更早的集成分支**（其 `verify-all.sh` 里 0 命中）⇒ 「缺接线」属实、但**只在那条分支上**；main 上残留的真缺陷是**第二层**：缺接线时**不是出声红而是挂死**（继承来的 `MIGAO_HEAVY_WAIT=2700`）。⇒ 本包 ① 把该接线钉进台账 + 加两条会红的接线判据（防再次漏掉）② 加**祖先已持锁 ⇒ 立即拒绝 + 有界等待**的纵深防御（缺接线再次发生时后果 = 立即红）。本机实测读数（临时锁面，不碰真锁）：修前 `pytest tests/unit_ci_workflows --collect-only`（祖先持锁 + `MIGAO_HEAVY_WAIT=2700`）⇒ **45s 硬超时仍未返回**（进程树 = pytest → `machine-heavy-lock.sh acquire --wait 2700`）；修后 ⇒ **0.6s rc=1** 且报文点出「祖先已持锁 / batch-gate 的 2700 / 怎么办」。**取号 MC-072（让号记实）**：起草时现取 `.github/cases/claims/` ∪ `origin/main` 最大 = MC-069 ⇒ 取 MC-070，同 PR 加 claim `6077-MC-070.json`；rebase 到 `origin/main` 后发现并行 PR **#6030** 已占 MC-070（`claims/6030-MC-070.json` 随其合并进 main）⇒ 按取号台账「**后合入者让号**」改判 **MC-072**（只改号：claim 文件名/内容、`misc.yml` 的 `id`、测试文件头、台账 `case_ids` 同步），并同 PR 加 `claims/6077-MC-072.json`。 ｜ tags: ci, heavy-lock, deadlock, flaky-infra
+
+### MC-073. 重活锁准入/溢出台账：五类 kind + stats 读出口径 + 槽满出声（蓝图 P2 测量面） 🔵
+```
+你: 本机重活单槽到底溢出多少次、每次等多久、谁在抢 —— 要有台账回答（蓝图 P2 的测量那一半）
+你: 槽满时必须出声给出可行动出口，不许静默排队
+期望: direct_reply
+数据: **病（蓝图 docs/wiki/Dev-Mode-Balance.md §4 行 4/5 + §10 的 P2 行）**：D 口径下本机是「并发=1 的重活单槽」，重活要么拿到锁、要么**安静排队**（实测排队 45 分钟的先例），而**没有任何台账**回答「到底溢出多少次、每次都等多久、是谁在抢」⇒ 「分档准入」与「批次粒度」都只能凭感觉。本包**只做测量/留痕**（埋点），**不做**分档准入本身。
+数据: **埋点在唯一收窄点**：`scripts/machine-heavy-lock.sh`（acquire/release 都经它）。每次 acquire 尝试的**结局**落一条 JSONL，`kind` ∈ `acquired_nowait` / `acquired_after_wait` / `refused_busy`（= 溢出/准入被拒）/ `acquire_timeout`（等待档溢出）/ `stale_reaped` / `released`（`acquire_timeout` 是照实加的第六类：把「秒拒」与「等满上限」分开，否则两类混淆就读不出「白等了多少墙钟」。判据 `test_machine_heavy_lock_ledger.py::TestKinds` 逐条钉住）。字段 = `ts`（**带时区偏移**）/ `kind` / `req`（请求者名字，来自既有 `acquire <名字>` 参数）/ `wait_seconds` / `worktree` / `branch` / `surface` / `holder` / `holder_pid` / `owner_pid`。
+数据: **台账落在本机、不进仓**：默认 `${MIGAO_HEAVY_LEDGER:-$HOME/.migao-heavy-lock-ledger.jsonl}`（与锁文件 `~/.migao-heavy.lock` 同域）。⛔ **不放进仓库**（⑨ 包把 JSONL 放仓里首轮就触发 `drift_audit` 的 ext-census 漂移 —— 本包有意避开这个坑）；判据一律把台账指到 `tmp_path`（`_run_lock` 强制注入 `MIGAO_HEAVY_LEDGER`），**绝不写用户的真台账**。
+数据: **读出口径** `./scripts/machine-heavy-lock.sh stats [--since <ISO/相对>] [--json]`：按 kind 计数 + `wait_seconds` 的 p50/p95/max + top 请求者/持有者 + **一条明确的「溢出（准入被拒）次数」**。三条硬要求：① **离线可用**（不依赖网络/`gh`）② **读不到台账 ⇒ 明确说「暂无记录」**（不是 0 分的假绿 —— 「0 是读数，没有读数不是 0」）③ **台账损坏（半行/非法 JSON/非对象）⇒ 出声但不崩**（具名跳过几条）。判据 = `::TestStatsReadings`（固定夹具台账：含 p50/p95 与角例「空台账 / 半行损坏 / 只有 released / unknown kind」）。
+数据: **槽满必须出声**（蓝图 §4 行 5）：拒绝报文要给**可行动**出口 —— ① 为什么（锁被谁占着 + PID + 已跑多久 + worktree/cwd）② **改走 CI**（推一次即可；CI 是权威、每 PR 并行、不占本机单槽）③ 在 PR body 写「**本机未跑 + 理由 + CI 覆盖清单**」。**不许**静默排队（`wait=0` 的既有默认语义保留；只有显式 `--wait` / `MIGAO_HEAVY_WAIT` 才排队）。判据 = `test_machine_heavy_lock.py::TestLockThreeStates::test_live_holder_refuses_with_actionable_report`（既有，本包只加出口文案）+ 本文件的 `::TestKinds::test_refused_busy_is_recorded_exactly_once_with_the_blocker`。
+数据: **批次事件可识别**（「批次粒度」重启条件 = 批次记录 ≥5 次）：`scripts/batch-gate.sh` 发起的那一次全量**不改 batch-gate 一行**即可被数出来 —— 它跑的 worktree 里有 `#6084` 留的批次标记 `migao-package-heavy-entry-allow`（位置由 `git rev-parse --git-path` 现取、**不在工作树里** ⇒ 不进 `git status`），本脚本按 `surface=batch-integration` 记，`stats` 单独报 `batch_integration=`。判据 = `::TestBatchSurface`（自建一次性仓 + 真标记文件；不碰任何真 worktree）。
+数据: **绝不动锁语义（埋点是旁路，三条硬约束）**：① **写台账时绝不持锁** —— 全部写点在 `_acquire_once` **之外**（判定已定、锁要么还没写、要么已删）⇒ 没有「持锁期间做 IO」这一步（#6076 同族的递归/死锁风险面）；② **写失败只 `::warning::`** —— `|| true` + `_ledger_warn`，**不**参与任何 `if`/`return` 判定、不改退出码；③ **零额外子进程**（一次 `printf >>`，O_APPEND 短行原子；不 fork `python3`）。判据 = `::TestSideChannelNeverTouchesAdmission`（含两条**注入式**：台账落点不可写 ⇒ acquire 仍 `rc=0` + 锁照写 + 出声；拒绝路径仍 `rc=1`）+ 一条**结构性红证** `::test_ledger_writes_happen_outside_the_held_lock_window`（把写点挪进 `_acquire_once` 即红）。
+数据: 🔴 **参数个数契约（本包实测踩过的坑，已固化成判据）**：`_ledger_append` 的 `printf` **实参个数必须 == 格式串 `%s` 个数**（多一个 ⇒ `printf` **重启格式串** ⇒ 每条记录后多出一行残缺 JSON，而**准入判定毫发无损** ⇒ 只有台账在坏，极难察觉）。判据 = `::test_ledger_append_argv_count_matches_the_printf_specifiers`（顶层实参计数，不误数嵌套引号）。
+数据: **性能**：埋点不许让准入路径可感知变慢。实测（80 组 acquire+release 的均值）：`origin/main` 基线 `252.9ms` → 带台账 `293.3ms`（**+40.3ms / 组 ≈ +20ms 每次调用**；`status` 100 次 `mean=201ms` 与基线同量级）。三处优化都写进注释：`_ledger_git_probe` 一次 `git rev-parse` 取三个读数（分开调三次 = +126ms）、`_simple_json_value` 短路使常见值零 fork、`_ledger_git_values` 用 tab 分隔一行拆分。**这不是门禁**：读数再差也 `exit 0`（本命令是分母/事实，不设阈值、不拦任何东西）。
+数据: **类级固化**：本包是**新能力**（不是缺陷修复），实例判据 = `tests/unit_ci_workflows/test_machine_heavy_lock_ledger.py`（20 条，每条能单独变红）；**未新增**机械元守卫 —— 因为台账面**新增即进本判据**（换文件/换 kind 都会当场红），且既有元守卫 `test_heavy_suite_entry_ledger.py` / `test_package_heavy_entry_ban.py` 的覆盖面未变（本包**不动**入口集合与角色判定）。**未固化项照实登记**：台账无限增长（轮转策略未做）/ 多机不适用 / `stats` 时区口径 = 本机。
+数据: 🔴 **覆盖边界（显式登记）**：① 本判据**不判**「分档准入实现了没有」（那是蓝图 P2 的另一半，本包有意不做）；② 不判「有人绕过入口直接 `pytest tests/unit_ci_workflows`」（那一路没有锁，见 `test_machine_heavy_lock.py` 的同款边界）；③ 台账的**轮转/上限**未做（只追加）。
+跳过: [backend-contract] 本机研发机具（机器级重活锁的准入/溢出台账）的行为与读出口径由 tests/unit_ci_workflows/ 的 pytest 单测验证（真锁脚本 + 临时锁面/台账面 + 固定夹具），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-03 新增（issue #6091：蓝图 P2 的「测量那一半」—— 分档准入与批次粒度都需要「到底溢出多少次 / 等多久 / 谁在抢」这份读数，而当时**完全没有台账**）。本包把事实记下来（JSONL 只追加、本机路径）并把「槽满」变成出声，**不做**分档准入本身。实测踩过并固化的两处：① `printf` 多一个实参 ⇒ 格式串重启 ⇒ 每条记录后多一行残缺 JSON（准入判定毫发无损 ⇒ 极难察觉）⇒ 判据 = 顶层实参计数；② `--abbrev-ref HEAD` 在无提交的仓里 `fatal` 并截断 argv ⇒ 排在后面的 `--git-path` 被静默吞掉（批次面判成 single）⇒ 顺序改成 `--git-path` 最前（判据 = `::TestBatchSurface` 的自建仓）。取号 MC-073（让号记实）：起草时现取本分支 + 全部 `origin/*` refs 的 `- id:` 最大号 = MC-072 ⇒ 取 MC-073。 ｜ tags: ci, heavy-lock, ledger, observability
 
 ## 商家入驻域（5 case）
 
@@ -9081,8 +9101,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：633（活跃 134，跳过 499）
-- tier 分布：smoke 12 / normal 587 / adversarial 32
+- 用例总数：634（活跃 134，跳过 500）
+- tier 分布：smoke 12 / normal 588 / adversarial 32
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -9097,7 +9117,7 @@
 - 财务对账域：4
 - 人事域：13
 - 知识问答域：7
-- 杂项域：72
+- 杂项域：73
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -9199,6 +9219,7 @@
 - MC-049: 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）
 - MC-071: nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）
 - MC-072: 机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线）
+- MC-073: 重活锁准入/溢出台账：五类 kind + stats 读出口径 + 槽满出声（蓝图 P2 测量面）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

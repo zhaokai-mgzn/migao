@@ -48,6 +48,7 @@
 #   ./scripts/machine-heavy-lock.sh acquire <名字>              # 拿锁（拿不到 ⇒ **立即**非零退出 + 打印谁在跑 + kill 命令）
 #   ./scripts/machine-heavy-lock.sh acquire <名字> --wait <秒>   # 拿锁（拿不到 ⇒ 内部轮询至多 <秒>；超时仍非零退出 + 具名）
 #   ./scripts/machine-heavy-lock.sh release                    # 释放（只释放**自己**持有的那份）
+#   ./scripts/machine-heavy-lock.sh stats [--since <窗口>] [--json]  # 只读：准入/溢出**台账**读数（离线；issue #6091）
 #
 # ## 拿不到锁时怎么办（**重试约定**，2026-10-01 补，issue #5863）
 #
@@ -68,14 +69,66 @@
 #   MIGAO_HEAVY_LOCK_FILE  锁文件路径（默认 `$HOME/.migao-heavy.lock`）
 #   MIGAO_HEAVY_ROOTS      已知工作根（冒号分隔；默认见 `_default_roots`）
 #   MIGAO_HEAVY_OWNER_PID  `release` 的显式持有者逃生口（默认比对 `$PPID` —— 也就是 `acquire` 时记下的那个）
+#   MIGAO_HEAVY_LEDGER     准入/溢出台账路径（默认 `$HOME/.migao-heavy-lock-ledger.jsonl`）
 #
 # 退出码：0 = 成功；1 = 锁被活的持有者占着（**拒绝**：这是准入判定，不是脚本错误）；
 #         2 = 用法错误；3 = 无法判定（锁机制不可用/状态不一致 —— fail-closed，**不得当 0 读**）。
+#
+# =============================================================================
+# 准入/溢出**台账**（measurement only，issue #6091；蓝图 P2 的「测量那一半」）
+#
+# ## 治什么
+#
+# 蓝图 `docs/wiki/Dev-Mode-Balance.md` §4 行 4/5 + §10 的 P2 行：**分档准入**与
+# **「准入被拒 ⇒ 改走 CI」计数**都还是 ⏳。而在分档准入落地之前，本机是「并发 = 1 的重活单槽」——
+# 重活要么拿到锁、要么**安静排队**（实测有排队 45 分钟的先例），**没有任何台账**回答
+# 「到底溢出多少次、每次都等多久、是谁在抢」。没有这份读数，分档容量与批次粒度都只能凭感觉。
+# ⇒ 本块把**事实**记下来，并把「槽满」变成**出声**。**它不改任何准入判定**（见下「旁路」）。
+#
+# ## 五类 kind（判据逐条钉住；语义表也在 `docs/wiki/Development.md`）
+#
+#   acquired_nowait       立即拿到（本次调用**一次都没等**）⇒ wait_seconds == 0
+#   acquired_after_wait   **排队等待后**拿到（`--wait` 真排上过队）⇒ wait_seconds > 0
+#   refused_busy          **溢出 / 准入被拒**：默认语义下第一次尝试就被活的持有者挡回
+#   acquire_timeout       溢出（等待档）：`--wait <n>` 等满上限仍被挡回（真溢出且**白等**了墙钟）
+#   stale_reaped          陈旧锁回收（持有者 PID 已死 —— 它是准入判定的一部分，值得留读数）
+#   released              释放（记持有者，供「持有者 / 抢占者」读数）
+#   unknown               形态不认识的行（旧格式 / 判据手写的 fixture）—— 读出口径**不猜**
+#
+# ## 覆盖边界（**有意**不做，照实登记 §19.1）
+#
+# - ⛔ **不做分档准入**（heavy/service/jvm/tooling/ops）：那是蓝图 P2 的**另一半** ——
+#   本块只提供「该不该做、能做到几路」所需的**现取读数**；本块**不改**任何容量/并发决策。
+# - ⛔ **不做轮转 / 上限**：台账只追加、会无限增长（本机口径，约 200 字节/条；读出口径按 kind
+#   过滤，故暂不需要 cap）。**这是登记在案的未固化项**，不是「已经处理好了」。
+# - ⛔ **不是多机台账**：路径与语义都是**本机单槽**口径（多机各记各的，不聚合）。
+# - ⛔ **不是值守面**：本块只记读数；「拿不到锁怎么办」的出口在拒绝报文里（人不看台账也读得到）。
+#
+# ## 旁路（铁律：**绝不动锁语义**）—— 三条硬约束，都有判据
+#
+# ① **写台账时绝不持锁**：全部写点在 `_acquire_once` **之外**（判定已定、锁要么还没写、
+#    要么已经删掉）⇒ 没有「持锁期间做 IO」这一步，也就没有 #6076 同族的递归/死锁风险；
+# ② **写失败只 warning**：`|| true` + `_ledger_warn`，**不**参与任何 `if` / `return` 判定；
+# ③ **零额外子进程**：一次 `printf >>`（O_APPEND，短行 < `PIPE_BUF` ⇒ 并发追加原子），
+#    不 fork `python3` —— 本脚本在**拒绝路径**上跑，那里最不该变慢（同 `_process_table` 的注）。
+#
+# ## 批次事件可识别（「批次粒度」重启条件 = 批次记录 ≥5 次）
+#
+# `scripts/batch-gate.sh` 发起的那一次全量**不改 batch-gate 一行**即可被数出来：它跑的 worktree 里
+# 有批次标记 `migao-package-heavy-entry-allow`（#6084 留的，位置由 `git rev-parse --git-path` 现取）
+# ⇒ 本脚本按 `surface=batch-integration` 记，`stats` 单独报 `batch_integration=`。
+# 判据 = `tests/unit_ci_workflows/test_machine_heavy_lock_ledger.py` 的 `TestBatchSurface`。
 # =============================================================================
 set -uo pipefail
 
 SELF="$0"
 LOCK_FILE="${MIGAO_HEAVY_LOCK_FILE:-$HOME/.migao-heavy.lock}"
+LEDGER="${MIGAO_HEAVY_LEDGER:-$HOME/.migao-heavy-lock-ledger.jsonl}"
+#: 台账首行（schema 头）。与 `scripts/package-heavy-entry-ledger.sh` 同口径：读出口径按 `_kind` 认对象。
+LEDGER_KIND="migao.heavy-lock-ledger"
+#: `batch-gate.sh` 的批次标记名（**与 `verify-all.sh` 的角色判定共用同一个约定**；名字变了两边一起变
+#: —— 本脚本**只读**）。见 #6084。
+BATCH_MARKER_NAME="migao-package-heavy-entry-allow"
 
 # ── 过程视图（**单一实现**：一条 `ps` 拿全量，供孤儿回收与 status 共用）────────────────
 # 为什么是 `ps -o pid=,ppid=,command=`：`pid=`/`ppid=` 的数字**不带表头**、`command=` 是**完整
@@ -219,6 +272,124 @@ _lock_field() {
   sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1
 }
 
+# ── 台账（准入/溢出测量；**旁路**，绝不参与判定）────────────────────────────────
+# ⚠️ JSON 转义**手写**（同 `package-heavy-entry-ledger.sh` 的口径）：只有 `\` 与 `"` 两种在
+#    路径 / 名字里可能出现，而**不引 python3** 是硬要求 —— 本函数在**拒绝路径**上跑，那里多 fork
+#    一个解释器就是可感知变慢（也避免「记账失败」与「判定」耦合）。
+# ⚠️ **顺序**：`tr` 先把控制字符（换行 / 回车 / TAB）压成空格 —— **必须在** `sed` 之前：
+#    `sed 's/\\/\\\\/g'` 产生的反斜杠若被 `tr '\\' …` 再处理一次就变成双重转义（坏 JSON）。
+#    `\r` **必须**处理：它会让 `awk` 把 JSON 行切错（行尾多出控制字符 ⇒ 读出口径误判损坏）。
+#: ⚠️ **常见情形零 fork**：本机路径 / 名字里几乎不会出现 `\` `"` 控制字符 ⇒ 先用一行 `case`
+#:    短路（bash 内建）—— 每次调用省下 `tr` + `sed` 两个子进程（本包实测，逐值调用 4~6 次/条）。
+#:    真出现要转义的字符时才走子进程那条路（正确性不变）。
+_simple_json_value() {
+  case "$1" in
+    *\\*|*\"*|*$'\n'*|*$'\r'*|*$'\t'*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+_ledger_escape() {
+  _simple_json_value "$1" && { printf '%s' "$1"; return 0; }
+  printf '%s' "$1" | tr '\n\r\t' '   ' | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+_ledger_warn() {
+  # 🔴 **出声不改判定**：GitHub Actions 认 `::warning::`，终端也读得懂 ⇒ 一处写、两处可见。
+  echo "::warning::机器级重活锁**台账**写不进去（${LEDGER}）：$* —— 准入判定与退出码**一字不变**" >&2
+}
+
+#: append 严格**在判定之后**调用（锁要么还没写、要么已删）⇒ 不存在「持锁期间做 IO」。
+# ⚠️ **参数个数 = printf 的 %s 个数（11 个），一个都不许多**：多一个 ⇒ `printf` 会**重启格式串**，
+#    于是每条记录后面**多出一行残缺 JSON**（实测踩过；读出口径会把它记成 `malformed`）——
+#    这不是"多余参数被忽略"，而是一个**沉默的坏行发射器**。改格式串时必须同步改这一行。
+_ledger_append() {
+  local kind="$1" req="$2" wait_s="$3" ck="$4" cp="$5" opid="${6:-}"
+  _ledger_git_probe
+  local dir; dir="$(dirname "$LEDGER")"
+  if [ ! -d "$dir" ]; then
+    # 只试一次建目录；失败也不拦（真正的判定在下面的 `||`）。
+    mkdir -p "$dir" 2>/dev/null || true
+    [ -d "$dir" ] || { _ledger_warn "台账目录不存在且建不出来：${dir}"; return 0; }
+  fi
+  if [ ! -s "$LEDGER" ]; then
+    printf '{"_kind":"%s","_what":"机器级重活锁的准入/溢出**只追加**台账（issue #6091）：每次 acquire 尝试的结局与每次 release 各记一条。","_judged_by":"tests/unit_ci_workflows/test_machine_heavy_lock_ledger.py","_count":"./scripts/machine-heavy-lock.sh stats","_kinds":"acquired_nowait|acquired_after_wait|refused_busy|acquire_timeout|stale_reaped|released"}\n' \
+      "$LEDGER_KIND" >> "$LEDGER" 2>/dev/null \
+      || { _ledger_warn "台账首行追加失败（目录可写？磁盘满？）"; return 0; }
+  fi
+  local ts wt br
+  ts="$(_ledger_now)"
+  # 三个读数**一次 probe** 拿全（见 `_ledger_git_probe` 的注）；`IFS=tab` ⇒ 一行拆三个。
+  IFS=$'\t' read -r wt br _ <<EOF2
+$(_ledger_git_values)
+EOF2
+  printf '{"ts":"%s","kind":"%s","req":"%s","wait_seconds":%s,"worktree":"%s","branch":"%s","surface":"%s","holder":"%s","holder_pid":"%s","owner_pid":"%s"}\n' \
+    "$ts" "$kind" "$(_ledger_escape "$req")" "${wait_s:-0}" "$(_ledger_escape "$wt")" \
+    "$(_ledger_escape "$br")" "$(_ledger_surface)" "$(_ledger_escape "$ck")" \
+    "$(_ledger_escape "$cp")" "$(_ledger_escape "$opid")" \
+    >> "$LEDGER" 2>/dev/null \
+    || { _ledger_warn "追加失败（kind=${kind} req=${req}）"; return 0; }
+  return 0
+}
+
+#: 带**时区**的时间戳（本机 Asia/Shanghai）。`date +%z` 在 BSD 与 GNU 上都会给出 `+0800` 形态。
+_ledger_now() {
+  printf '%s%s' "$(date '+%Y-%m-%dT%H:%M:%S')" "$(date '+%z')"
+}
+
+#: 一次 `git rev-parse` 同时取三个读数（批次标记路径 / 工作树 / 分支）。
+#: ⚠️ **为什么必须合成一次**（本包实测）：分开调三次 = 每个记账点多 ~126ms（60 组 acquire+release 的
+#: 均值 197ms → 323ms）；合成一次后回到基线量级。记账不许让准入路径可感知变慢（铁律）。
+#: ⚠️ **顺序不能换**（实测，git 2.54）：`--abbrev-ref HEAD` 在**还没有提交**的仓里会 `fatal: ambiguous
+#: argument 'HEAD'` **并从那里截断 argv** ⇒ 排在前面的 `--git-path` 会被静默吞掉、批次面判成 `single`。
+#: `--git-path` 永远成功 ⇒ 放**最前**，后面被截断也不影响它。
+#: ⚠️ 成败都写进**全局** `_LEDGER_GIT`（挂在 `$$` 上的 append 会静默丢值）。
+_LEDGER_GIT=""
+_ledger_git_probe() {
+  _LEDGER_GIT="$(git rev-parse --git-path "$BATCH_MARKER_NAME" --show-toplevel --abbrev-ref HEAD 2>/dev/null)"
+  return 0
+}
+
+#: 从全局读数里拆出 (worktree, branch, marker) —— 三行，**全程零 fork**（不用 `cut`/`sed`）。
+_ledger_git_values() {
+  local nl=$'\n' raw="$_LEDGER_GIT"
+  local wt br marker rest
+  marker="${raw%%"$nl"*}"
+  if [ "$raw" != "$marker" ]; then
+    rest="${raw#*"$nl"}"; wt="${rest%%"$nl"*}"
+    if [ "$rest" = "$wt" ]; then br=""; else br="${rest#*"$nl"}"; fi
+  else
+    wt=""; br=""; marker=""
+  fi
+  # ⚠️ tab 分隔（不是换行）：整份读数**永远在一行** ⇒ 调用方一句 `read` 就能拆开
+  #    （换行分隔时 `read` 只吃第一行、其余**整段塞进第二个变量** —— 实测踩过）。
+  printf '%s\t%s\t%s\n' "${wt:-$(pwd)}" "${br:-?}" "$marker"
+}
+
+#: 批次面判定（只读；见文件头「批次事件可识别」）。⚠️ `git rev-parse --git-path` 取的是
+#: **管理目录**（`.git/worktrees/<name>/…`）⇒ **不在工作树里**，所以它不会进 `git status`。
+_ledger_surface() {
+  # ⚠️ 只从**已取好的**全局读数里拆（`_ledger_append` 入口已经 probe 过）⇒ 零额外 git 调用。
+  local parts marker
+  parts="$(_ledger_git_values)"
+  # ⚠️ 只取**第 3 段**（marker）：`read` 一句就够（tab 分隔 ⇒ 一行）
+  local IFS=$'\t'
+  # shellcheck disable=SC2034  # wt/br 只为把位置占住，这里不用
+  read -r _wt _br marker <<EOF2
+$parts
+EOF2
+  if [ -n "$marker" ] && [ -f "$marker" ]; then printf 'batch-integration'; else printf 'single'; fi
+}
+
+#: 记 **acquire 的一次调用**（调用点只在 `cmd_acquire`，**不在** `_acquire_once` 里 —— 见文件头旁路①）。
+_ledger_record_acquire() {
+  local kind="$1" req="$2" waited="$3"
+  local hname hpid
+  hname="$(_lock_field "$LOCK_FILE" name)"
+  hpid="$(_lock_field "$LOCK_FILE" pid)"
+  _ledger_append "$kind" "$req" "$waited" "$hname" "$hpid" ""
+}
+
 # 人类可读的「已跑多久」：由 `started_at` 的 epoch 秒现算（不依赖锁文件里的可读串）。
 _elapsed_of() {
   local started="$1"
@@ -268,10 +439,16 @@ _report_holder() {
   echo "   持有者 已跑多久 : $(_elapsed_of "$started")（started_at=${started:-未知}）"
   echo "   持有者 worktree : ${worktree:-未知}"
   echo "   持有者 cwd      : ${cwd:-未知}"
-  echo "   怎么办（二选一）："
+  # 三条**可行动**出口（蓝图 §4 行 5「槽满 ⇒ 出声 + 溢出 CI + 留痕」；issue #6091）：
+  # ① 等（串行是锁的意义）② **改走 CI**（不再抢本机单槽）③ 先杀（仅在确认卡死时）。
+  echo "   怎么办（三选一）："
   echo "     ① 等它跑完（重活串行是本锁的全部意义）：./scripts/machine-heavy-lock.sh status"
-  echo "     ② 确认它确实卡死了再杀（**先看上面的 worktree/cwd 是不是你自己的会话**）："
+  echo "     ② **改走 CI（推荐）**：把分支推上去即可 —— GitHub 上每个 PR 并行跑同一套 required 检查，"
+  echo "        它是**权威**，且不占本机这颗单槽；本地这一趟**没跑**就必须在 PR body 写清楚："
+  echo "        「本机未跑（机器级重活锁被 ${name:-别人} 占着）+ 理由 + CI 覆盖清单」。"
+  echo "     ③ 确认它确实卡死了再杀（**先看上面的 worktree/cwd 是不是你自己的会话**）："
   echo "        kill ${pid:-<pid>}"
+  echo "   溢出读数：./scripts/machine-heavy-lock.sh stats   # 这份台账回答「被拒了多少次 / 每次都等多久」"
 }
 
 # ── 子命令 ───────────────────────────────────────────────────────────────────
@@ -302,8 +479,11 @@ _acquire_once() {
       echo "  ✅ 机器级重活锁空闲（${LOCK_FILE}）"
       ;;
     stale)
-      local old_pid; old_pid="$(_lock_field "$LOCK_FILE" pid)"
+      local old_pid old_name; old_pid="$(_lock_field "$LOCK_FILE" pid)"; old_name="$(_lock_field "$LOCK_FILE" name)"
       echo "  ♻️  回收**陈旧**锁：原持有者 pid=${old_pid:-未知} 已不存在（进程表里查不到）"
+      # 台账：回收**先记**（`rm` 之后锁文件就没了 ⇒ 记不到是谁的陈旧锁了）。此刻锁尚未被本进程持有
+      # （`rm` 立刻跟在后面）⇒ 满足旁路①「写台账时绝不持锁」。
+      _ledger_append "stale_reaped" "$name" 0 "$old_name" "$old_pid" ""
       rm -f "$LOCK_FILE"
       ;;
     *)
@@ -353,18 +533,27 @@ cmd_acquire() {
   # 默认（wait_seconds=0）**与既有语义逐字等价**：一次尝试，拿不到就立即非零退出。
   local deadline=$(( $(date +%s) + wait_seconds ))
   local waited=0 first=1 rc=0
+  # 台账的三个终局量：`refused=1`（被**活的**持有者挡回）/ `timed_out=1`（等满上限）。
+  # ⚠️ 记在**循环内**、每个终局只置一次；`unknown_request` 只在「第一次尝试就不可判定」时置
+  #    （它没有 kind 语义 ⇒ **不**记账 —— 记一条 `unknown` 只会把 `stats` 的 kind 计数搅浑）。
+  local refused=0 timed_out=0 unknown_request=0
   while :; do
     rc=0; _acquire_once "$name" "$first" || rc=$?
     first=0
     [ "${rc}" -eq 0 ] && break
     # 只有「被活的持有者占着」才值得等；**无法判定（3）立即失败** —— 不拿等待掩盖它。
-    [ "${rc}" -eq 1 ] || return "${rc}"
-    [ "${wait_seconds}" -gt 0 ] || return 1
+    if [ "${rc}" -eq 3 ]; then
+      [ "${waited}" -eq 0 ] && unknown_request=1
+      break
+    fi
+    refused=1
+    [ "${wait_seconds}" -gt 0 ] || break
     local now; now="$(date +%s)"
     if [ "${now}" -ge "${deadline}" ]; then
       echo "⏱️  等待已到上限（--wait ${wait_seconds}s）仍未拿到锁 —— **本次没有跑**任何重活（这不是「通过」）"
       _report_holder
-      return 1
+      timed_out=1
+      break
     fi
     local nap remain; nap="$(_wait_backoff_seconds)"; remain=$(( deadline - now ))
     [ "${nap}" -le "${remain}" ] || nap="${remain}"
@@ -372,10 +561,26 @@ cmd_acquire() {
     echo "⏳ 锁被占，${nap}s 后重试（已等 ${waited}s / 上限 ${wait_seconds}s）"
     sleep "${nap}"
   done
-  if [ "${waited}" -gt 0 ]; then
-    echo "  ⏳ 本次为**排队等待**后取得：累计等待 ${waited}s（上限 ${wait_seconds}s）"
+
+  # ── 台账（**旁路**：判定已定、锁要么还没写、要么已经删）──────────────────────────
+  if [ "${rc}" -eq 0 ]; then
+    if [ "${waited}" -gt 0 ]; then
+      _ledger_record_acquire "acquired_after_wait" "$name" "$waited"
+      echo "  ⏳ 本次为**排队等待**后取得：累计等待 ${waited}s（上限 ${wait_seconds}s）"
+    else
+      _ledger_record_acquire "acquired_nowait" "$name" 0
+    fi
+    return 0
   fi
-  return 0
+  if [ "${unknown_request}" -eq 1 ]; then
+    return "${rc}"
+  fi
+  if [ "${timed_out}" -eq 1 ]; then
+    _ledger_record_acquire "acquire_timeout" "$name" "$waited"
+  else
+    _ledger_record_acquire "refused_busy" "$name" 0
+  fi
+  return "${rc}"
 }
 
 cmd_release() {
@@ -389,7 +594,10 @@ cmd_release() {
     echo "  ⚠️  锁由 pid=${pid} 持有，本进程（pid=${PPID:-?}）**不是**持有者 —— 不释放别人的锁"
     return 1
   fi
+  local hname; hname="$(_lock_field "$LOCK_FILE" name)"
   rm -f "$LOCK_FILE"
+  # 台账：**删掉锁之后**才写（旁路①）—— `released` 的持有者 = 刚放锁的那个人。
+  _ledger_append "released" "$hname" 0 "$hname" "$pid" "$pid"
   echo "  🔓 已释放机器级重活锁（pid=${pid}）"
   return 0
 }
@@ -443,6 +651,195 @@ EOF
   return 0
 }
 
+# ── 读出口径：`stats`（**只读、离线**）───────────────────────────────────────────
+# 用法：`./scripts/machine-heavy-lock.sh stats [--since <窗口>] [--json]`
+#   `--since` 收三种形态（**其余一律报错**，绝不猜 —— 猜错 = 悄悄换了时间窗而读数看起来一样）：
+#     ① 相对：`24h` / `90m` / `7d`（本机时区的「现在往前推」）② ISO8601：`2026-10-03T00:00:00+08:00`
+#     / `2026-10-03T00:00:00Z` / `2026-10-03T00:00`（无时区 ⇒ 按**本机**时区，读出口径写明）
+#     ③ unix epoch 秒
+#   三态口径：**读不到台账 ⇒ 「暂无记录」**（不是 0 分的假绿）；**半行 / 非法 JSON ⇒ 具名跳过**（出声不崩）。
+#   🔴 **它不是门禁**：读数再差也 `exit 0` —— 本命令是**分母/事实**，不设阈值、不拦任何东西。
+cmd_stats() {
+  local since="" json=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --since)
+        if [ $# -lt 2 ]; then echo "用法: $0 stats [--since <24h|ISO8601|epoch>] [--json]" >&2; return 2; fi
+        since="$2"; shift 2 ;;
+      --json) json=1; shift ;;
+      *) echo "用法: $0 stats [--since <24h|ISO8601|epoch>] [--json]（未知参数：$1）" >&2; return 2 ;;
+    esac
+  done
+  if [ ! -e "$LEDGER" ]; then
+    if [ "$json" -eq 1 ]; then
+      printf '{"ledger":"%s","exists":false,"records":0,"malformed":0,"by_kind":{},"overflow_count":0,"wait_seconds":{"n":0,"p50":null,"p95":null,"max":0},"top_requesters":[],"top_holders":[],"batch_integration":0,"empty_reason":"no-ledger-file"}\n' \
+        "$(_ledger_escape "$LEDGER")"
+    else
+      echo "── 机器级重活锁 准入/溢出台账（只读）──"
+      echo "台账文件    : ${LEDGER}"
+      echo "暂无记录    : 台账文件还不存在 —— 本机还没有发生过任何 acquire/release。"
+      echo "              ⚠️ 这不是「0 次溢出」，是**还没有读数**（区别很重要：0 是读数，这没有读数）。"
+    fi
+    return 0
+  fi
+  # 解析 + 聚合交给 python3（**标准库**，离线、零第三方）—— 见上面 `--since` 的形态表。
+  # ⚠️ 输出是**现取**的：任何一条读不出来都只在 `malformed` 里计数，不改变别人的读数。
+  #    `bash` 传参不用 `$1` 占位：`$0` 在这里就是脚本名（python 本行内不需要它）。
+  MIGAO_STATS_LEDGER="$LEDGER" MIGAO_STATS_SINCE="$since" MIGAO_STATS_JSON="$json" \
+    python3 -c '
+import datetime, json, os, sys
+from collections import Counter
+
+path = os.environ["MIGAO_STATS_LEDGER"]
+since_raw = os.environ.get("MIGAO_STATS_SINCE", "").strip()
+as_json = os.environ.get("MIGAO_STATS_JSON", "0") == "1"
+KINDS = ("acquired_nowait", "acquired_after_wait", "refused_busy",
+         "acquire_timeout", "stale_reaped", "released", "unknown")
+# 溢出 = **准入被拒** = 立即拒绝 + 等待档超时（`refused_busy` 是其中的「零等待」那一半）。
+REFUSAL_KINDS = ("refused_busy", "acquire_timeout")
+
+def die(msg):
+    print(msg, file=sys.stderr)
+    sys.exit(2)
+
+def local_tz():
+    return datetime.datetime.now().astimezone().tzinfo
+
+def zone_label():
+    """本机时区的**离线**标签（`zoneinfo` 在部分环境不可用 ⇒ 失败就退回 UTC 偏移，绝不崩）。"""
+    try:
+        import zoneinfo
+        return datetime.datetime.now().astimezone().tzinfo.key or "UTC" + tz_off
+    except Exception:
+        return "UTC" + tz_off
+
+def parse_ts(raw):
+    """台账的 `ts`（`%Y-%m-%dT%H:%M:%S%z`）⇒ **aware** datetime。读不出来 ⇒ None（调用方计数）。"""
+    try:
+        dt = datetime.datetime.strptime(raw, "%Y-%m-%dT%H:%M:%S%z")
+    except (ValueError, TypeError):
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=local_tz())
+
+def parse_since(raw):
+    """`--since` 的三种形态 ⇒ (epoch_seconds, 回显用原文)。**不认识的形态一律 exit 2。**"""
+    if not raw:
+        return None, ""
+    text = raw.strip()
+    unit = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    if len(text) > 1 and text[-1] in unit and text[:-1].isdigit():
+        return datetime.datetime.now().timestamp() - int(text[:-1]) * unit[text[-1]], text
+    if text.isdigit():
+        return float(text), text
+    iso = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
+    try:
+        dt = datetime.datetime.fromisoformat(iso)
+    except ValueError:
+        die("❌ --since 形态不认识：%r —— 只认 24h / 90m / 7d · ISO8601（带或带不带时区）· epoch 秒" % raw)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=local_tz())
+    return dt.timestamp(), text
+
+cutoff, since_display = parse_since(since_raw)
+tz_off = datetime.datetime.now().astimezone().strftime("%z") or "?"   # 如 +0800（**不用** tzname：CST 有歧义）
+
+records, malformed, malformed_at = [], 0, []
+with open(path, "r", encoding="utf-8", errors="replace") as fh:
+    for lineno, line in enumerate(fh, 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            malformed += 1                      # 半行 / 非法 JSON ⇒ **具名跳过**，不崩
+            if len(malformed_at) < 5:
+                malformed_at.append(lineno)
+            continue
+        if not isinstance(obj, dict):
+            malformed += 1
+            if len(malformed_at) < 5:
+                malformed_at.append(lineno)
+            continue
+        if "_kind" in obj:                      # schema 头（不是记录）
+            continue
+        kind = obj.get("kind", "")
+        if kind not in KINDS:                   # 旧格式 / 手写 fixture ⇒ `unknown`，**不猜**
+            kind = "unknown"
+        ts = parse_ts(obj.get("ts", ""))
+        if cutoff is not None and (ts is None or ts.timestamp() < cutoff):
+            continue
+        records.append({
+            "kind": kind,
+            "req": str(obj.get("req", "")),
+            "holder": str(obj.get("holder", "")),
+            "holder_pid": str(obj.get("holder_pid", "")),
+            "wait": obj.get("wait_seconds") if isinstance(obj.get("wait_seconds"), int) else 0,
+            "surface": str(obj.get("surface", "")),
+        })
+
+by_kind = Counter(r["kind"] for r in records)
+waits = sorted(r["wait"] for r in records)
+def pct(values, p):
+    if not values:
+        return None
+    return values[max(0, min(len(values) - 1, (p * len(values) + 99) // 100 - 1))]
+wait_stats = {
+    "n": len(waits),
+    "p50": pct(waits, 50),
+    "p95": pct(waits, 95),
+    "max": max(waits) if waits else 0,
+}
+overflow = sum(by_kind.get(k, 0) for k in REFUSAL_KINDS)
+top_req = Counter(r["req"] for r in records if r["req"]).most_common(5)
+top_holder = Counter(r["holder"] for r in records if r["holder"]).most_common(5)
+batch_n = sum(1 for r in records if r["surface"] == "batch-integration")
+
+if as_json:
+    print(json.dumps({
+        "ledger": path, "exists": True, "utc_offset": tz_off, "since": since_display or None,
+        "records": len(records), "malformed": malformed,
+        "by_kind": {k: by_kind.get(k, 0) for k in KINDS if by_kind.get(k, 0)},
+        "overflow_count": overflow,
+        "refusal_kinds": {k: by_kind.get(k, 0) for k in REFUSAL_KINDS if by_kind.get(k, 0)},
+        "wait_seconds": wait_stats,
+        "top_requesters": [{"name": n, "count": c} for n, c in top_req],
+        "top_holders": [{"name": n, "count": c} for n, c in top_holder],
+        "batch_integration": batch_n,
+    }, ensure_ascii=False, sort_keys=True))
+else:
+    print("── 机器级重活锁 准入/溢出台账（只读；口径见 docs/wiki/Development.md）──")
+    print("台账文件    : %s" % path)
+    print("时区        : %s（本机）—— 台账 `ts` 带该偏移；`--since` 不带时区时按它解释" % zone_label())
+    if since_display:
+        print("时间窗      : --since %s" % since_display)
+    print("记录条数    : %d（时间窗内）" % len(records))
+    if malformed:
+        print("损坏行跳过  : %d 条（行号 %s%s）—— **出声不崩**：坏行只让它自己读不出来"
+              % (malformed, ", ".join(str(n) for n in malformed_at),
+                 " …" if malformed > len(malformed_at) else ""))
+    if not records:
+        print("暂无记录    : 时间窗内没有**任何**记录 —— 这不是「0 次溢出」，是**没有读数**。")
+        sys.exit(0)
+    print("按 kind     :")
+    for k in KINDS:
+        if by_kind.get(k, 0):
+            print("  %-20s %d" % (k, by_kind[k]))
+    print("溢出（准入被拒）次数 : %d / %d 次 acquire 尝试（%.1f%%）   ← **本台账的核心读数**"
+          "（refused_busy=%d + acquire_timeout=%d）"
+          % (overflow, len(records), 100.0 * overflow / len(records),
+             by_kind.get("refused_busy", 0), by_kind.get("acquire_timeout", 0)))
+    print("  处置口径  : 溢出 ⇒ **改走 CI**（推一次即可，CI 是权威）＋ 在 PR body 写"
+          "「本机未跑 + 理由 + CI 覆盖清单」。不许静默排队。")
+    print("wait_seconds: n=%d p50=%s p95=%s max=%s"
+          % (wait_stats["n"], wait_stats["p50"], wait_stats["p95"], wait_stats["max"]))
+    print("top 请求者  : %s" % (", ".join("%s×%d" % (n, c) for n, c in top_req) or "（无）"))
+    print("top 持有者  : %s" % (", ".join("%s×%d" % (n, c) for n, c in top_holder) or "（无）"))
+    print("批次记录    : %d 条（surface=batch-integration）—— 「批次粒度」重启条件的读数之一" % batch_n)
+' || return $?
+  return 0
+}
+
 # ── dispatch（is-callable 形态：`MIGAO_HEAVY_LIB=1` 时只装函数，供判据 source）──────
 # 判据需要直接调 `_runner_of_command` / `_command_in_roots` 这类纯函数（零子进程、零时钟），
 # 故留一个「只装不上膛」的开关；默认（不带该变量）行为一字不变。
@@ -450,7 +847,7 @@ if [ "${MIGAO_HEAVY_LIB:-}" = "1" ]; then
   return 0 2>/dev/null || true
 else
   case "${1:-}" in
-    acquire|release|status)
+    acquire|release|status|stats)
       sub="$1"; shift
       "cmd_${sub}" "$@"
       # ⚠️ **不在本进程退出时自动删锁**：本脚本的 `$$` 与调用方的
@@ -461,7 +858,7 @@ else
       exit "$?"
       ;;
     *)
-      echo "用法: $0 {status|acquire <名字>|release}" >&2
+      echo "用法: $0 {status|acquire <名字> [--wait <秒>]|release|stats [--since <窗口>] [--json]}" >&2
       exit 2
       ;;
   esac
