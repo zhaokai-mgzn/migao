@@ -435,7 +435,7 @@ def test_shell_carrier_anchor_is_reachable_and_pinned() -> None:
     for c in shell:
         path_rel, symbol = str(c["wiring"]).split("::", 1)
         text = repo_read_text(path_rel)
-        assert text is not None, f"台账登记的 shell 载体不在仓内：{path_rel}"
+        assert text and len(text) > 0, f"台账登记的 shell 载体不在仓内 / 不可读：{path_rel}"
         assert _mentions(text, symbol), (
             f"shell 锚 {c['wiring']!r} 在 {path_rel} 里逐字找不到 ⇒ 台账给不存在的接线盖章"
         )
