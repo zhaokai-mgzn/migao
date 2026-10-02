@@ -92,12 +92,17 @@ ALLOWED_PAGE_KEYS = frozenset({"menuGroup", "menuName", "path", "requiredPermiss
 
 #: 未登记问题的样本（默认拒绝判据的输入面）。
 UNREGISTERED_QUESTIONS: Tuple[str, ...] = (
-    "怎么导出订单 Excel",
     "米宝你能帮我做什么",
     "帮我看看这个怎么弄",
     "这些数字是什么意思",
     "",
     "皮料怎么算价",
+    # issue #6062：**这里必须放「一个已登记说法都不含」的问句**（判据 3 的新前置臂会机械核它）。
+    # 「怎么导出订单 Excel」原先在这张表里，而 #6062 给「订单列表」登记了口语说法「订单」
+    # ⇒ 它现在**有**登记项（返回订单列表页 + 如实说没有步骤级指引 = 导航类的正确回答）。
+    # 这不是放宽判据：判据 3 仍逐条核「未登记 ⇒ 零路径零码 + 如实告知」，只是把**样本**换成
+    # 真的不含任何说法的问句 —— 顺手把「样本表自己过期」这一类做成机械前置（见下）。
+    "日程怎么安排",
 )
 
 
@@ -275,8 +280,21 @@ def problems_codes_real(mod, catalog) -> List[str]:
 
 
 def problems_default_deny(mod) -> List[str]:
-    """判据 3：未登记的问题 ⇒ `registered is False`、**零路径零码**，且如实说明未登记。"""
+    """判据 3：未登记的问题 ⇒ `registered is False`、**零路径零码**，且如实说明未登记。
+
+    ⚠️ **样本表的前置自断言**（issue #6062）：表里每条问句都必须**一个已登记说法都不含** ——
+    否则「未登记」这个读数与它声称的对象不是同一个（样本过期），判据会**因错的原因**变红/变绿。
+    #6062 给菜单名登记了口语说法后，「怎么导出订单 Excel」含了「订单」⇒ 已按此口径移出该表。
+    """
     out: List[str] = []
+    known_aliases = sorted({a for feature in mod.NAV_FEATURES for a in feature.aliases})
+    for question in UNREGISTERED_QUESTIONS:
+        contaminated = [a for a in known_aliases if a and a in question]
+        if contaminated:
+            out.append(
+                f"未登记样本 {question!r} 含了已登记的说法 {contaminated} ⇒ 样本过期"
+                "（它现在**有**登记项）—— 判据 3 会因错的原因判红，请换一条真的不含任何说法的问句"
+            )
     for question in UNREGISTERED_QUESTIONS:
         answer = mod.build_navigation_answer(question, ["*"])
         if answer.registered:
@@ -500,7 +518,13 @@ def problems_no_step_wording(source: str) -> List[str]:
 
 
 def problems_aliases_grounded(mod) -> List[str]:
-    """判据 6b：别名必须是某个被登记菜单名的一部分 ⇒ 别名表不可能退化成同义词词典。"""
+    """判据 6b：说法必须是某个被登记菜单名（**或本功能 `label` 的括注**）的一部分
+    ⇒ 说法表不可能退化成同义词词典。
+
+    issue #6062 把接地面对齐到 `label`：`label` 的括注承载两件事 —— ① 菜单名与口语的落差
+    （「发货单（出库）」）② **无独立导航目标的**操作（「员工管理（员工开账号）」）。
+    这**不放宽**判据的实质：`label` 仍在本模块（人登记），不是 `menu.ts` 的任意文本。
+    """
     out: List[str] = []
     for feature in mod.NAV_FEATURES:
         labels = set()
@@ -513,11 +537,123 @@ def problems_aliases_grounded(mod) -> List[str]:
         if not feature.aliases:
             out.append(f"{feature.feature_id}：aliases 为空 ⇒ 这条登记永远匹配不到")
         for alias in feature.aliases:
-            if not any(alias in label or label in alias for label in labels):
+            if not any(
+                alias in label or label in alias for label in labels | {feature.label}
+            ):
                 out.append(
-                    f"{feature.feature_id}：别名 {alias!r} 与登记菜单名 {sorted(labels)} 无包含关系"
-                    " ⇒ 别名表正在退化成同义词词典（禁止自由匹配）"
+                    f"{feature.feature_id}：说法 {alias!r} 与登记菜单名 {sorted(labels)} /"
+                    f" 功能名 {feature.label!r} 都无包含关系"
+                    " ⇒ 说法表正在退化成同义词词典（禁止自由匹配）"
                 )
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# issue #6062 新增的三条**类级**判据（治「真值源覆盖不足」，与既有八条不重复）
+#
+# 病（实测 2026-10-02 B 端真实评测 `normal` 档）：`nav_guide!nav_not_registered ×1`，
+# 用户输入「怎么给员工开账号」⇒ 登记面里**没有这条说法** ⇒ agent 只能含糊其辞。
+# 这不是「agent 不听话」，是**登记面覆盖不足**；三条判据把同类缺口堵在门外。
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def problems_nodes_without_hit_alias(mod) -> List[str]:
+    """判据 7：**每个菜单节点至少有一条说法能命中它**（否则那个页面用户永远问不到）。
+
+    判法：这条说法必须**逐字出现在它所属节点的菜单名里**（= 用户问菜单名时能命中）。
+    语义层只登记「`menu.ts` 的菜单名也能命中」的那条，是「该页面可达」的**必要条件**：
+    没有它，`resolve_feature` 对该页的菜单名必然未命中（最长命中无从谈起）。
+    """
+    out: List[str] = []
+    declaring: dict = {}
+    for feature in mod.NAV_FEATURES:
+        for group, label in feature.node_keys:
+            node = mod.menu_node(group, label)
+            if node is None:
+                continue
+            for alias in feature.aliases:
+                if alias and alias in node.label:
+                    declaring.setdefault(node.label, []).append(feature.feature_id)
+    for node in mod.MENU_TREE:
+        if node.label not in declaring:
+            out.append(
+                f"菜单节点「{node.label}」（{node.path}）**没有任何说法能命中它** ⇒ 用户永远问不到"
+                "（给它的登记项补一条**逐字等于菜单名**的说法；menu.ts 改菜单名要同批改）"
+            )
+    return out
+
+
+def _maximal_aliases(mod) -> List[Tuple[str, str]]:
+    """有资格进 `has_prefix` 分支的说法 = 不在**同一功能**里被更长说法盖住的那些。
+
+    为什么先做这一步（**可达性的推导**）：`resolve_feature` 对同一功能取**最长**命中
+    ⇒ 若 a 是 b 的子串且 a/b 同属一个功能，凡是命中 a 的 `has_prefix` 查询也必然命中 b
+    ⇒ a 永远不可能是该功能的**决定性**说法。
+    """
+    aliases = [(f.feature_id, a) for f in mod.NAV_FEATURES for a in f.aliases]
+    return [
+        (owner, alias)
+        for owner, alias in aliases
+        if not any(
+            other_owner == owner and alias in other_alias and alias != other_alias
+            for other_owner, other_alias in aliases
+        )
+    ]
+
+
+def problems_shadowed_aliases(mod) -> List[str]:
+    """判据 8：**没有空登记（死条目）** —— 每条说法都必须**能解出它自己的功能**。
+
+    判法（与 `resolve_feature` 的最长命中口径**逐字同源**）：对每条说法取
+    `has_prefix` 分支 = 「含它 + 在别的功能里含一个更长说法」的问句；它不命中任何功能
+    （或命中的不是自己）⇒ 这条说法**永远解不出自己** ⇒ 空登记。
+    """
+    out: List[str] = []
+    maximal = _maximal_aliases(mod)
+    for owner, alias in maximal:
+        siblings = [a for o, a in maximal if o == owner and a != alias]
+        if any(s in alias for s in siblings):
+            continue          # 同功能内有别的说法能同样长度命中这句 ⇒ 不是死条目
+        hit_fid = getattr(mod.resolve_feature(alias), "feature_id", None)
+        if hit_fid == owner:
+            continue
+        longer = sorted(f"{o}#{a}" for o, a in maximal if o != owner and a in alias)
+        out.append(
+            f"{owner} 的说法 {alias!r} 是**空登记**：问「{alias}」时解到 {hit_fid!r}"
+            f"（别的功能的更长说法 {longer} 抢先命中，或歧义）"
+            " ⇒ 登记了但**永远解不出自己的功能**，删掉它或换成不与别家成子串的说法"
+        )
+    return out
+
+
+def problems_feature_map_sync(mod, menu_ts_nodes) -> List[str]:
+    """判据 9：「说法」⇄ `menu.ts` 的镜像必须一致（页面增删时判据要跟着红，不许静默漂移）。
+
+    双向：
+    ① **每个** `menu.ts` 导航节点都要有登记项以它为主节点（缺 ⇒ 该页问不到）；
+    ② **每个**登记项的主节点都要在 `menu.ts` 里（多 ⇒ 编出来的页面），且它的菜单名那条说法
+       必须**逐字等于** `menu.ts` 的 `name`（改名而不同批改登记表 ⇒ 静默漂移）。
+    """
+    out: List[str] = []
+    ts_names = {n.name for n in menu_ts_nodes if n.path}
+    registered: dict = {}
+    for feature in mod.NAV_FEATURES:
+        for group, label in feature.node_keys:
+            node = mod.menu_node(group, label)
+            if node is None:
+                continue
+            if not any(a == node.label for a in feature.aliases):
+                out.append(
+                    f"{feature.feature_id}：登记了节点「{node.label}」却**没有**一条说法逐字等于"
+                    " 该菜单名 ⇒ 用户问菜单名时命中不了这一页（menu.ts 改名要同批改登记表）"
+                )
+            registered.setdefault(node.label, feature.feature_id)
+    only_ts = sorted(ts_names - set(registered))
+    if only_ts:
+        out.append(f"menu.ts 里这些菜单项**没有任何登记项**（页面用户问不到）：{only_ts}")
+    only_reg = sorted(set(registered) - ts_names)
+    if only_reg:
+        out.append(f"登记项引用的菜单名在 menu.ts 里不存在（编出来的页面）：{only_reg}")
     return out
 
 
@@ -594,6 +730,41 @@ class TestJudgementsOnRealObject:
 
     def test_judgement_6c_aliases_grounded(self, nav):
         assert problems_aliases_grounded(nav) == []
+
+    def test_judgement_7_every_node_has_a_hit_alias(self, nav):
+        """判据 7（issue #6062）：每个菜单节点至少一条说法能命中它（那个页面问得到）。"""
+        problems = problems_nodes_without_hit_alias(nav)
+        assert problems == []
+
+    def test_judgement_8_no_shadowed_alias(self, nav):
+        """判据 8（issue #6062）：没有空登记 —— 每条说法都能解出它自己的功能。"""
+        problems = problems_shadowed_aliases(nav)
+        assert problems == []
+
+    def test_judgement_9_feature_map_syncs_with_menu_ts(self, nav, menu_ts_nodes):
+        """判据 9（issue #6062）：说法 ⇄ `menu.ts` 镜像双向一致（页面增删/改名 ⇒ 红）。"""
+        problems = problems_feature_map_sync(nav, menu_ts_nodes)
+        assert problems == []
+
+    def test_measured_failure_common_phrasing_resolves(self, nav):
+        """🔴 **实测失败样例**（2026-10-02 B 端真实评测 `normal` 档 `nav_guide!nav_not_registered ×1`）：
+        用户输入「怎么给员工开账号」在修复前 ⇒ `resolve_feature` 返回 `None` ⇒ agent 只能含糊其辞。
+        修后 ⇒ 命中 `employees`，答案给出**页面位置**且**不含任何操作步骤**。
+        """
+        for question in ("怎么给员工开账号", "那我要怎么才能给员工开账号？"):
+            hit = nav.resolve_feature(question)
+            assert hit is not None and hit.feature_id == "employees", (
+                f"「{question}」仍未登记 ⇒ 用户问不到（实测失败的复现）"
+            )
+        answer = nav.build_navigation_answer("怎么给员工开账号", ["employee:list"])
+        payload = answer.to_data()
+        assert [p["path"] for p in payload["pages"]] == ["/employees"]
+        assert payload["citation"] == "登记项 #employees → 菜单节点 菜单组「员工管理」"
+        assert "employees" in payload["featureId"]
+        # 同一句问句必须仍然**不含步骤**（结构面：键白名单里没有 steps；文本面：无受控步骤词）
+        assert set(payload) == ALLOWED_DATA_KEYS
+        rendered = answer.render()
+        assert not [w for w in STEP_WORDS if w in rendered], "导航答案里出现步骤词"
 
     def test_p2_interface_is_available(self, nav):
         """**P2 预留接口**（本包只提供，不判推送）：这一页有什么 + 哪些角色能看。"""
@@ -723,8 +894,8 @@ class TestEveryJudgementCanGoRed:
             return source.replace(marker, "    if not hits:\n        return NAV_FEATURES[0]\n")
 
         mutated = _load_mutated(tmp_path, mutate)
-        assert mutated.resolve_feature("怎么导出订单 Excel") is not None, "前提自证失败：注入没生效"
-        assert nav.resolve_feature("怎么导出订单 Excel") is None, "对照：真模块必须不命中"
+        assert mutated.resolve_feature("皮料怎么算价") is not None, "前提自证失败：注入没生效"
+        assert nav.resolve_feature("皮料怎么算价") is None, "对照：真模块必须不命中"
         problems = problems_default_deny(mutated)
         with capsys.disabled():
             print(f"[MC-065][红证3] 未命中改成猜 ⇒ problems={len(problems)} :: {problems[:1]}")
@@ -815,8 +986,8 @@ class TestEveryJudgementCanGoRed:
             _load_mutated(
                 tmp_path,
                 lambda s: s.replace(
-                    '(("trade-center", "订单列表"),), ("订单列表", "订单列表页")',
-                    '(("trade-center", "订单列表"),), ("订单列表", "库存盘点")',
+                    'NavFeature("orders", "订单列表（订单）", (("trade-center", "订单列表"),), ("订单列表", "订单"))',
+                    'NavFeature("orders", "订单列表（订单）", (("trade-center", "订单列表"),), ("订单列表", "库存盘点"))',
                 ),
             )
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
@@ -841,6 +1012,7 @@ class TestEveryJudgementCanGoRed:
                 {
                     "feature_id": "products",
                     "node_keys": (("(一级独立项)", "商品管理"),),
+                    "label": "商品管理",
                     "aliases": ("商品管理", "库存盘点"),
                 },
             )(),
@@ -850,6 +1022,193 @@ class TestEveryJudgementCanGoRed:
             print(f"[MC-065][红证6c] 内存桩自由同义词 ⇒ problems={len(problems)} :: {problems[:1]}")
         assert any("库存盘点" in p for p in problems), f"不受菜单名约束的别名没被报出：{problems}"
         assert problems_aliases_grounded(nav) == [], "对照：真模块必须绿"
+
+    def test_judgement_7_red_on_node_without_alias(self, nav, tmp_path, capsys):
+        """判据 7 红证（issue #6062）：**加一个没有任何说法的节点** ⇒ 必须具名报出它。
+
+        为什么用**新节点**注入：`problems_nodes_without_hit_alias` 的输入是
+        「`MENU_TREE` 的每个节点 ⇄ 登记项的 aliases」，把一条登记的 aliases 摘空会被
+        **导入期自检**先拦下（那是上游那一半）；要证明**判据本体**有判别力，就得构造
+        「节点在、说法不在」的形态 —— 而 `MENU_TREE` 与 `MENU_TREE_ORDER_LOCKED` 被其余判据锁着，
+        故这里在**内存桩**上做（与既有 `problems_coverage` 的内存桩臂同法）。
+        """
+        def _node(label, path):
+            return type("N", (), {"group": "g", "label": label, "path": path,
+                                  "permission_code": ""})()
+
+        class _Stub:
+            MENU_TREE: Tuple[Any, ...] = (_node("员工管理", "/employees"), _node("新页面", "/new-page"))
+            NAV_FEATURES = (
+                type("F", (), {"feature_id": "employees", "node_keys": (("g", "员工管理"),),
+                               "aliases": ("员工管理",), "label": "员工管理"})(),
+            )
+            menu_node = staticmethod(lambda group, label: _node(label, "/x"))
+
+        problems = problems_nodes_without_hit_alias(_Stub)
+        with capsys.disabled():
+            print(f"[MC-071][红证7] 无说法的节点 ⇒ problems={len(problems)} :: {problems[:1]}")
+        assert any("新页面" in p for p in problems), f"无说法的节点没被具名报出：{problems}"
+        assert problems_nodes_without_hit_alias(nav) == [], "对照：真模块必须绿"
+
+    def test_judgement_8_red_on_shadowed_alias(self, nav, tmp_path, capsys):
+        """判据 8 红证（issue #6062）：**加一条被别的功能更长说法遮蔽的说法** ⇒ 必须报出。
+
+        红证两臂（都要）：
+        ① **判据本体**（内存桩）：`发货单` 功能登记 `"出库"`，另一个功能登记 `"出库管理"` ⇒ 报出；
+        ② **上游自检**（真模块注入）：把别家的说法改成一个**包含**它的更长说法 ⇒ 导入期即抛
+           `MenuNavigatorError`（fail-closed：空登记不生效，不是被放行）。
+        """
+        # ① **前置（对照）**：别的功能没有那条更长说法时 ⇒ 不是死条目
+        class _Clean:
+            NAV_FEATURES = (
+                type("F", (), {"feature_id": "shipments", "node_keys": (("g", "发货单"),),
+                               "aliases": ("发货单", "出库"), "label": "发货单（出库）"})(),
+                type("F", (), {"feature_id": "other", "node_keys": (("g", "入库单"),),
+                               "aliases": ("入库单",), "label": "入库单（入库）"})(),
+            )
+
+            @staticmethod
+            def resolve_feature(q):
+                """与 `resolve_feature` 的最长命中口径**同形**的最小版（歧义 ⇒ None）。"""
+                hits = [
+                    (len(a), f) for f in _Clean.NAV_FEATURES for a in f.aliases if a in q
+                ]
+                if not hits:
+                    return None
+                longest = max(n for n, _ in hits)
+                winners = {f.feature_id for n, f in hits if n == longest}
+                return hits[0][1] if len(winners) == 1 else None
+
+        assert problems_shadowed_aliases(_Clean) == [], "对照：没有遮蔽时不许报红"
+
+        # ② **坏形态**：别的功能登记了 `发货单列表`（含 `发货单`）⇒ shipments 的 `发货单` 永远赢不了
+        class _Shadowed:
+            NAV_FEATURES = (
+                type("F", (), {"feature_id": "shipments", "node_keys": (("g", "发货单"),),
+                               "aliases": ("发货单", "出库"), "label": "发货单（出库）"})(),
+                type("F", (), {"feature_id": "other", "node_keys": (("g", "入库单"),),
+                               "aliases": ("入库单", "发货单列表"), "label": "入库单（入库/发货单列表）"})(),
+            )
+
+            @staticmethod
+            def resolve_feature(q):
+                """与 `resolve_feature` 的最长命中口径**同形**的最小版（歧义 ⇒ None）。"""
+                hits = [
+                    (len(a), f)
+                    for f in _Shadowed.NAV_FEATURES
+                    for a in f.aliases
+                    if a in q
+                ]
+                if not hits:
+                    return None
+                longest = max(n for n, _ in hits)
+                winners = {f.feature_id for n, f in hits if n == longest}
+                return hits[0][1] if len(winners) == 1 else None
+
+        problems = problems_shadowed_aliases(_Shadowed)
+        with capsys.disabled():
+            print(f"[MC-071][红证8] 内存桩：被遮蔽的说法 ⇒ problems={len(problems)} :: {problems[:1]}")
+        assert any("发货单列表" in p and "shipments#发货单" in p for p in problems), (
+            f"被遮蔽的说法没被报出：{problems}"
+        )
+        assert problems_shadowed_aliases(nav) == [], "对照：真模块必须绿"
+
+        # ② 上游那一半：真模块里把别家的说法改长到包含它 ⇒ 导入期自检抛
+        caught: Optional[BaseException] = None
+        try:
+            _load_mutated(
+                tmp_path,
+                lambda s: s.replace(
+                    'NavFeature("inbound-orders", "入库单（入库）", (("inventory-center", "入库单"),), ("入库单", "入库"))',
+                    'NavFeature("inbound-orders", "入库单（入库/发货单列表）", (("inventory-center", "入库单"),), ("入库单", "发货单列表"))',
+                    1,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
+            caught = exc
+        with capsys.disabled():
+            print(f"[MC-071][红证8] 上游自检 ⇒ {type(caught).__name__}: {str(caught)[:110]}")
+        assert caught is not None and "发货单" in str(caught), (
+            f"被遮蔽的说法**没有**被导入期自检具名拦下（caught={caught!r}）⇒ fail-closed 失效"
+        )
+
+    def test_judgement_9_red_on_mirror_drift(self, nav, menu_ts_nodes, tmp_path, capsys):
+        """判据 9 红证（issue #6062）：删一个登记项 / 改一条说法与菜单名不一致 ⇒ 必须报出。"""
+        class _Stub:
+            NAV_FEATURES = (
+                type("F", (), {"feature_id": "employees", "node_keys": (("org-center", "员工管理"),),
+                               "aliases": ("员工管理",), "label": "员工管理"})(),
+            )
+            MENU_TREE = (
+                type("N", (), {"group": "org-center", "label": "员工管理",
+                               "path": "/employees", "permission_code": "employee:list"})(),
+                type("N", (), {"group": "workspace", "label": "经营看板",
+                               "path": "/dashboard", "permission_code": "dashboard:view"})(),
+            )
+            menu_node = staticmethod(
+                lambda group, label: type("N", (), {"label": label, "path": "/x"})(),
+            )
+
+        problems = problems_feature_map_sync(_Stub, menu_ts_nodes)
+        with capsys.disabled():
+            print(f"[MC-071][红证9] 镜像漂移 ⇒ problems={len(problems)} :: {problems[:1]}")
+        assert any("经营看板" in p for p in problems), f"未登记的菜单项没被报出：{problems}"
+        assert problems_feature_map_sync(nav, menu_ts_nodes) == [], "对照：真模块必须绿"
+
+        # 另一半：登记项**没有**一条逐字等于菜单名的说法（menu.ts 改名没同批改）⇒ 也红
+        class _Renamed:
+            NAV_FEATURES = (
+                type("F", (), {"feature_id": "employees", "node_keys": (("org-center", "员工管理"),),
+                               "aliases": ("账号开通",), "label": "员工管理（账号开通）"})(),
+            )
+            MENU_TREE = _Stub.MENU_TREE
+            menu_node = staticmethod(
+                lambda group, label: type("N", (), {"label": label, "path": "/x"})(),
+            )
+
+        renamed = problems_feature_map_sync(_Renamed, menu_ts_nodes)
+        with capsys.disabled():
+            print(f"[MC-071][红证9] 说法与菜单名不一致 ⇒ problems={len(renamed)} :: {renamed[:1]}")
+        assert any("逐字等于" in p for p in renamed), f"改名的漂移没被报出：{renamed}"
+
+        # ③ 真模块注入：删掉一条登记项 ⇒ 导入期自检抛（那个菜单节点没人登记 = 问不到）
+        caught: Optional[BaseException] = None
+        try:
+            _load_mutated(
+                tmp_path,
+                lambda s: s.replace(
+                    '    NavFeature("notifications", "通知中心（消息）",'
+                    ' ((STANDALONE_GROUP, "通知中心"),), ("通知中心", "消息")),\n',
+                    "",
+                    1,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
+            caught = exc
+        with capsys.disabled():
+            print(f"[MC-071][红证9] 删登记项 ⇒ 上游自检 {type(caught).__name__}: {str(caught)[:110]}")
+        assert caught is not None and "通知中心" in str(caught), (
+            f"删掉登记项后没有被具名拦下（caught={caught!r}）⇒ fail-closed 失效"
+        )
+
+    def test_judgement_3b_red_on_stale_unregistered_sample(self, nav, monkeypatch, capsys):
+        """判据 3 的**样本前置**红证（issue #6062）：样本表里出现含已登记说法的问句 ⇒ 具名报出。
+
+        这一条治的是「**读数与它声称的对象不是同一个**」：样本自己过期（含了刚登记的说法）时，
+        判据会因错的原因变红/变绿。红证 = 把一条含「订单」的问句塞回样本表 ⇒ 判据报「样本过期」。
+        """
+        assert problems_default_deny(nav) == [], "对照：真样本表必须绿"
+        monkeypatch.setattr(
+            sys.modules[__name__],
+            "UNREGISTERED_QUESTIONS",
+            ("怎么导出订单 Excel", "皮料怎么算价"),
+        )
+        problems = problems_default_deny(nav)
+        with capsys.disabled():
+            print(f"[MC-071][红证3b] 过期样本 ⇒ problems={len(problems)} :: {problems[:1]}")
+        assert any("样本过期" in p and "订单" in p for p in problems), (
+            f"过期样本没被具名报出：{problems}"
+        )
 
     def test_control_comment_only_change_stays_green(self, nav, menu_ts_nodes, tmp_path):
         """**对照读数**：只改一行注释 ⇒ 所有判据**仍然全绿**（判据不是「见改动就红」）。"""
@@ -869,6 +1228,9 @@ class TestEveryJudgementCanGoRed:
         assert problems_citation(mutated, _nav_module_source()) == []
         assert problems_no_steps_surface(mutated) == []
         assert problems_aliases_grounded(mutated) == []
+        assert problems_nodes_without_hit_alias(mutated) == []
+        assert problems_shadowed_aliases(mutated) == []
+        assert problems_feature_map_sync(mutated, menu_ts_nodes) == []
 
 
 # ══════════════════════════════════════════════════════════════════════════════

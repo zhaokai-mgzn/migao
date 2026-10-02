@@ -5177,6 +5177,25 @@ _CASE_MC_049 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-071 [NORMAL] nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）（源: cases/misc.yml）──
+_CASE_MC_071 = EvalCase(
+    id='MC-071',
+    legacy_id='',
+    title='nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户问导航类问题的**登记面**：当某个菜单节点没有任何说法能命中它、或某条已登记的说法永远解不出它自己的功能（空登记）、或登记的说法与 config/menu.ts 的镜像漂移（页面增删 / 改名 / 编出来的页面）、或有人把一条被别的功能更长说法遮蔽的说法登记进去时，都必须有东西**具名**报出；而只改一行注释时不得报红。有据可依的常见说法样例：「怎么给员工开账号」（实测失败输入，同一说法亦在 HR-009 的 user_inputs）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **实测失败样例（本用例的起点）**：same-round 真跑 `build_navigation_answer("怎么给员工开账号", ["employee:list"])` ⇒ `registered=True`、`pages=[{"path": "/employees", …}]`、citation=「登记项 #employees → 菜单节点 菜单组「员工管理」」；且答案里**不含**任何受控步骤词（导航答案不给操作步骤）。执行点 = backend/ai-agent-service/tests/test_nav_guide.py 的 `TestExecuteSemantics::test_employee_account_phrasing_resolves_without_steps` 与 tests/unit_ci_workflows/test_menu_navigator.py 的 `test_measured_failure_common_phrasing_resolves`', '**判据 7（每个节点至少一条可命中的说法）**：`MENU_TREE` 的每个节点都必须至少有一条登记说法**逐字出现在该菜单名里** ⇒ 缺了它，那个页面用户永远问不到。注入式红证：加一个没有任何说法的节点 ⇒ 具名报出该节点。执行点 = tests/unit_ci_workflows/test_menu_navigator.py 的 `test_judgement_7_every_node_has_a_hit_alias` / `test_judgement_7_red_on_node_without_alias`', '**判据 8（没有空登记 = 死条目）**：每条登记说法都必须**能解出它自己的功能** —— 判法与 `resolve_feature` 的最长命中口径同源：被**别的功能**更长说法遮蔽的说法（如登记 `发货单` 的 `出库`，而别家登记了 `出库管理`）永远解不出自己 ⇒ 红并具名报出「哪条说法 / 解到了谁 / 被谁遮蔽」。执行点 = 同文件的 `test_judgement_8_no_shadowed_alias` / `test_judgement_8_red_on_shadowed_alias`', '**判据 9（说法 ⇄ config/menu.ts 双向同步）**：① `menu.ts` 的每个导航节点都要有登记项以它为主节点；② 每个登记项的主节点都要在 `menu.ts` 里，且**至少一条说法逐字等于**该节点 `name`（改名不同批改登记表 ⇒ 静默漂移）。执行点 = 同文件的 `test_judgement_9_feature_map_syncs_with_menu_ts` / `test_judgement_9_red_on_mirror_drift`', '**判据 6b（说法接地，同批对齐 `label`）**：说法必须与所属节点菜单名**或本功能 `label`（含括注）**有包含关系 —— 括注承载两件事：菜单名与口语的落差（「发货单（出库）」）与**无独立导航目标的**操作（「员工管理（员工开账号）」）。这**不放宽**判据实质：`label` 仍在本模块（人登记），不是 `menu.ts` 的任意文本。执行点 = 同文件的 `test_judgement_6c_aliases_grounded`', '**覆盖测绘（现取读数，零成本可复算）**：MENU_TREE 22 节点 ⇄ NAV_FEATURES 22 条登记（1:1）；「无任何说法能命中的节点」= 0；「空登记（死条目）」= 0；每条说法都能解出自己。复算命令 = 加载 backend/ai-agent-service/app/context/menu_navigator.py 后逐节点/逐说法跑 `resolve_feature`', '🔴 **未覆盖与风险（照实登记）**：① 说法**只做确定性子串命中**（无同义 / 拼音 / 纠错）⇒ 口语与登记说法的用词差异大时仍会**如实回「未登记」**（例如「员工账号怎么开通」「给员工开通账号」今天仍不命中 —— 见 PR body 的「未覆盖」节）；② `menu.ts` 的 `keywords`（拼音 / 常见叫法）**不是**本判据的强制对账面（它自己写着「只影响搜得到，不影响渲染与权限」）⇒ 拼音类关键词**有意不抬**进说法表，靠括注承载口语；③ 本判据只判**结构面**（登记面覆盖、可解析、镜像一致）与**确定性的解析结果**，**不判** LLM 是否真的引用了 citation / 真的没编步骤（那是 MC-065 的行为面）'],
+    skip_reason='[backend-contract] 登记面与菜单单一源的结构对账（源码静态事实 + 零依赖纯函数 + 内存注入红证），零 LLM、秒级、不连网不连库；承载体 = tests/unit_ci_workflows/test_menu_navigator.py 与 backend/ai-agent-service/tests/test_nav_guide.py，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'guard', 'navigation', 'fail-closed', 'red-proof', 'no-steps'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition=['员工管理页在 config/menu.ts 的导航节点里存在（key=employees / path=/employees / 码=employee:list）—— 本用例问的「员工账号开通」指向这一页；菜单被删或改名 ⇒ 本用例的前置不成立，应由登记面判据先红'],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -12048,6 +12067,7 @@ ALL_CASES = (
     _CASE_MC_068,
     _CASE_MC_069,
     _CASE_MC_049,
+    _CASE_MC_071,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
