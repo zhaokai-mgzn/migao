@@ -1152,6 +1152,96 @@ def _detect_script(workflow: str, detect_job: str) -> str:
     return next(e["run"] for e in emit.values() if "run" in e["outputs"])
 
 
+#: 面判定三种**等价**载体的取法（见判据 ④ 的 docstring）：
+#:   · 锚定正则的交替 —— 腿内联 / 旧形态 / **登记册的 `trigger.predicate`**：`^(frontend/bmini-app/|tests/)`
+#:   · `case` 路径模式 —— 判定 job 现形态：`case "$f" in tests) …` / `case "$rest_gh" in workflows/x) …`
+_FACE_REGEX_RE = re.compile(r"(\^\([^']*?\))")
+_FACE_CASE_RE = re.compile(r'case\s+"\$(?:f|rest|head|file|rest_gh|rest_fe)"\s+in\s+([^\s)]+)\)')
+
+
+def _face_prefixes(script: str) -> set[str]:
+    """把一份面判定归一到**路径面集合**（两种等价书写形态 + 登记册 predicate 都认）。
+
+    `^(a/x/|b/|\.github/)` → {"a/x","b",".github"}；`case "$f" in a)` / `case "$rest_fe" in a/x/*)`
+    → "a" / "a/x"。取不到 ⇒ **空集**（调用点据此 fail-closed 判红）。
+
+    比的是**语义面**（扫哪些路径下的改动），不是书写形态 —— 同一份面既可写成锚定正则的交替，
+    也可写成 `case` 路径模式（后者用于绕开管道库存判据把**引号内裸竖线**计成管道的误报，
+    见 `.github/workflows/*.yml` 的 detect 注释）。
+    """
+    out: set[str] = set()
+    for m in _FACE_REGEX_RE.finditer(script or ""):
+        for part in m.group(1)[2:-1].split("|"):          # 去掉 `^(` 与 `)`
+            part = part.strip().rstrip("/").replace("\\.", ".").rstrip("$")
+            if part and "*" not in part and "\\" not in part:
+                out.add(part)
+    for m in _FACE_CASE_RE.finditer(script or ""):
+        raw = m.group(1).strip()
+        if "*" in raw:
+            continue                                       # 兜底分支（`*)`）不是「面」
+        part = raw.rstrip("/").replace("\\.", ".")
+        if part.startswith("workflows/"):
+            part = ".github/" + part                       # `rest_gh` 取自 `.github/*`
+        if part:
+            out.add(part)
+    return out
+
+
+def _covers(face: set[str], targets: set[str]) -> bool:
+    """面 `face` 是否**覆盖** `targets` 里的每一条路径（**并集**语义：任一面命中即可）。
+
+    `x` 覆盖 `x/y`；反向**不**成立。方向很重要：判定 job 的面**偏粗可接受**（代价只是腿被拉起后
+    发现无改动，不是正确性问题），**偏细则静默少覆盖** ⇒ 只有「覆盖不足」才判红。
+    ⚠️ 不是「每个 face 元素都要匹配每个 target」——那是全交叉，方向错了（本包实测踩过）。
+    """
+    return all(any(t == f or t.startswith(f + "/") for f in face) for t in targets)
+
+
+#: 判定面必须覆盖的**路径空间**（判定 job 是这些前缀下的共用门）。
+_FACE_PROBE_ROOTS = ("frontend", "tests", ".github", "backend", "docs", "scripts", "mobile")
+
+
+def _bash_realised_face(script: str) -> set[str]:
+    """**真跑一次 bash** 求出该判定脚本实际命中的**探针路径**（不靠解析、不靠猜）。
+
+    做法：把 `git diff --name-only origin/main...HEAD` 换成 `cat "$STUB"`，在**同一个 bash 进程**里
+    对每个探针各跑一遍判定体，读 `$GITHUB_OUTPUT` 的 `run`。探针 = `_FACE_PROBE_ROOTS` 每根 +
+    `/<根>/__probe__`，覆盖「根目录本身」与「根下任意文件」。
+    ⚠️ 必须**一次跑完**：逐探针各起一个 bash 会让本判据慢到分钟级（本包实测超时），
+    而它要跑在 required 的 `ci workflow helper unit tests` 里。
+    """
+    import os as _os
+    import subprocess as _sp
+    import tempfile as _tf
+
+    probes = list(_FACE_PROBE_ROOTS) + [r + "/__probe__" for r in _FACE_PROBE_ROOTS]
+    marker = "git diff --name-only origin/main...HEAD"
+    body = script.replace(marker, 'cat "$STUB"')
+    # ⛔ 必须剔除 `git fetch origin main --quiet`：探针循环会把判定体跑 14 次 ⇒ 14 次**真联网**，
+    #    本机实测直接把本判据挂到超时（而它要跑在 required 的 `ci workflow helper unit tests` 里）。
+    body = "\n".join(l for l in body.splitlines() if "git fetch origin main" not in l)
+    assert body != script, "判定脚本里找不到 diff 取法 ⇒ 本判据取不到真值（前提失效，需同步修订）"
+    sh = ('GITHUB_EVENT_NAME=pull_request\n'
+          'STUB=$(mktemp)\n'
+          "printf '%s\\n' " + " ".join(f'"{p}"' for p in probes) + " > \"$STUB\"\n"
+          '_run_one() {\n'
+          '  P="$1"\n'
+          '  printf \'%s\' "$P" > "$STUB"\n'
+          '  GITHUB_OUTPUT=$(mktemp)\n'
+          '  { ' + body + '\n  } >/dev/null 2>&1\n'
+          '  if grep -q "^run=true" "$GITHUB_OUTPUT"; then printf "HIT:%s\\n" "$P"; fi\n'
+          '}\n'
+          'for p in ' + " ".join(f'"{p}"' for p in probes) + '; do _run_one "$p"; done\n')
+    with _tf.NamedTemporaryFile("w", suffix=".sh", delete=False) as fh:
+        fh.write(sh)
+        fn = fh.name
+    try:
+        out = _sp.run(["/bin/bash", fn], capture_output=True, text=True).stdout
+    finally:
+        _os.unlink(fn)
+    return {line[4:] for line in out.splitlines() if line.startswith("HIT:")}
+
+
 def _unannounced_legs(script: str, workflow: str) -> list[str]:
     """`<workflow>` 里被 job 级门控的腿中，**没有**在 `detect` 脚本 else（未命中面）分支里公告的。
 
@@ -1356,32 +1446,99 @@ class TestJobLevelFaceGates:
         print(f"判别力自证：3 种坏形态各自被判红 ✅（现取语料 {len(script)} 字符）")
 
     def test_face_criterion_has_a_single_source_per_workflow(self) -> None:
-        """④ 面口径**单一来源**：判定 job 与**被它门控的每条腿**必须用同一份面正则。
+        """④ 面口径**单一来源**：**真跑判定脚本**，其实际命中的面必须覆盖**登记册声明的面**。
 
-        （不要求整个 workflow 只有一份正则 —— `pr-check.yml` 里的 `admin-api-test` /
-        `admin-web-test` 各有**自己的面**，那是另一族门禁；本条只裁**同族**不得出现第二份。）
+        （不要求整个 workflow 只有一份面 —— `pr-check.yml` 的 `admin-api-test` /
+        `admin-web-test` 各有自己的面，那是另一族门禁；本条只裁**同族**：job 级门控这一族。）
+
+        为什么**真跑 bash** 而不是比对字符串（issue #6051 实测教训）：同一份面有三种等价载体 ——
+        锚定正则的交替 `^(a/|b/)`（腿内联 + 登记册 `trigger.predicate`）、`case` 路径模式（判定 job 现形态，
+        用于绕开管道库存判据把**引号内裸竖线**计成管道的误报）。按字面比对会把等价写法判成「第二份规则」⇒ 假红；
+        而**验字符串是推不出行为**的（本包实测：正则字样正确、但 bash 逻辑漏掉了 `frontend/admin-web` 这一支）。
+
+        判据规则（**覆盖不足判红，偏粗只记录**）：
+          · 覆盖不足 = 声明面里的改动不再触发腿 = **静默少覆盖** ⇒ 判红；
+          · 偏粗 = 判定 job 是这一族腿的**共用**门，按路径前缀取共用前缀必然可能比某腿声明面粗 —— 代价只是
+            腿被拉起来后发现无改动，**不是正确性问题** ⇒ 记为读数（可复核），不判红。
         """
         problems: list[str] = []
-        live = _path_gated_jobs()
-        for key, check_name in JOB_GATED_LEGS_FROZEN.items():
-            wf, jid = key.split("::", 1)
-            detect_job = FACE_DETECT_JOBS[wf]
-            want = set(re.findall(r"grep -E '(\^\([^']+\))'", _detect_script(wf, detect_job)))
-            gate = (live.get((wf, jid)) or {}).get("job_gate") or {}
-            if gate.get("needs") != detect_job:
-                problems.append(f"{key}：门控来源 `{gate.get('needs')}` ≠ 唯一判定 job `{detect_job}`")
-            job = (_workflow_docs()[wf].get("jobs") or {}).get(jid) or {}
-            for step in job.get("steps") or []:
-                if not isinstance(step, dict):
-                    continue
-                inline = set(re.findall(r"grep -E '(\^\([^']+\))'", str(step.get("run") or "")))
-                if inline and inline != want:
+        over: dict[str, list[str]] = {}
+        reg = _gate_index()
+        for wf, detect_job in FACE_DETECT_JOBS.items():
+            legs = [k for k in JOB_GATED_LEGS_FROZEN if k.split("::", 1)[0] == wf]
+            assert legs, f"{wf} 有判定 job `{detect_job}` 却没有被门控的腿 —— 面门控成了空转"
+            declared: set[str] = set()
+            for key in legs:
+                _, jid = key.split("::", 1)
+                predicate = ((reg.get((wf, jid)) or {}).get("trigger") or {}).get("predicate") or ""
+                faces = {f for f in (_face_prefixes(predicate) or set())}
+                if not faces:
                     problems.append(
-                        f"{key} 的步骤 `{step.get('name')}` 内联了**另一份面正则** {sorted(inline)}"
-                        f" ≠ 判定 job 的 {sorted(want)} —— 两份面规则漂移 = 实际扫的面比声明的窄"
-                        "（宽的会跑、窄的会静默少覆盖），而没有任何东西会变红"
+                        f"{key}：登记册里 `trigger.predicate` 取不到面（{predicate!r}）⇒ "
+                        "**声明的单一来源没了**（fail-closed：没有声明就没有可比对象）"
                     )
+                    continue
+                declared |= faces
+                # ① 腿自己的步骤必须按**声明的那一份**面跑（同族的第二份规则）
+                job = (_workflow_docs()[wf].get("jobs") or {}).get(jid) or {}
+                for step in job.get("steps") or []:
+                    if not isinstance(step, dict):
+                        continue
+                    inline = _face_prefixes(str(step.get("run") or ""))
+                    if inline and inline != faces:
+                        problems.append(
+                            f"{key} 的步骤 `{step.get('name')}` 内联的面 {sorted(inline)}"
+                            f" ≠ 登记册声明的面 {sorted(faces)} —— 两份面规则漂移，而没有任何东西会变红"
+                        )
+            # ② **真跑**判定脚本：实际命中的根必须覆盖每一条声明面
+            realised = _bash_realised_face(_detect_script(wf, detect_job))
+            roots = {p for p in realised if "/" not in p}
+            missing = sorted(d for d in declared
+                             if not any(d == r or d.startswith(r + "/") for r in roots))
+            if missing:
+                problems.append(
+                    f"{wf}::{detect_job} 的判定脚本**实际命中** {sorted(roots)}，**覆盖不足**："
+                    f"声明面 {missing} 里的改动不会触发判定（**静默少覆盖**）—— 真跑读数 = {sorted(realised)}"
+                )
+            extra = sorted(r for r in roots
+                           if not any(d == r or d.startswith(d + "/") for d in declared))
+            if extra:
+                over[f"{wf}::{detect_job}"] = extra
         assert not problems, (
             "面口径出现**第二份**规则（同族门禁内）：\n" + "\n".join(f"  {p}" for p in problems)
         )
-        print(f"面口径单一来源：{len(JOB_GATED_LEGS_FROZEN)} 条腿各自与判定 job 同源 ✅")
+        print(f"面口径单一来源：{len(JOB_GATED_LEGS_FROZEN)} 条腿的声明面都被判定脚本**真跑命中** ✅"
+              f"（判定面**偏粗**（可接受、非正确性问题）现取 = {over or '无'}）")
+
+    def test_face_criterion_probe_has_discriminating_power(self) -> None:
+        """④ 的**判别力自证**：真跑探针必须能判出「漏一支」的坏形态（本包实测踩过的那个 bug）。"""
+        script = _detect_script("pr-check.yml", FACE_DETECT_JOBS["pr-check.yml"])
+        realised = _bash_realised_face(script)
+        assert ".github" in realised and "tests" in realised, f"探针取不到真值：{sorted(realised)}"
+        # 注入式红证①：把 frontend 那一支整段删掉 ⇒ 探针必须立刻不再命中 frontend
+        broken = "\n".join(l for l in script.splitlines()
+                            if 'case "$f" in frontend' not in l)
+        assert 'case "$f" in frontend/*)' not in broken, "注入没生效（删不到 frontend 支）"
+        broken_realised = _bash_realised_face(broken)
+        assert "frontend" not in broken_realised, (
+            f"删掉 frontend 支后探针仍命中 ⇒ 判据 ④ 没有判别力（{sorted(broken_realised)}）"
+        )
+        # 注入式红证②：把判定改成恒 false ⇒ 一条都不命中
+        always_off = script.replace('echo "run=true"', 'echo "run=false"')
+        assert _bash_realised_face(always_off) == set(), "恒 false 的判定仍被判命中 ⇒ 探针坏了"
+        print("判别力自证：删掉 frontend 支 ⇒ 真跑探针立刻不再命中 ✅；恒 false ⇒ 零命中 ✅")
+
+    def test_announcement_checker_has_discriminating_power(self) -> None:
+        """③ 的**注入式红证**：把公告行删掉 / 换成中性措辞，判定必须**当场红**。"""
+        wf = "bmini-app.yml"
+        script = _detect_script(wf, FACE_DETECT_JOBS[wf])
+        assert not _unannounced_legs(script, wf), "现取语料本应全部已公告 ⇒ 下面的注入无从对照（自证失败）"
+        for label, mutated in (
+            ("公告行退化成中性措辞（拿掉「⏭️ … 未跑」）", script.replace(f"{NOT_RUN_MARKER} bmini-app build (h5 + weapp) {NOT_RUN_CLAUSE}", "跳过")),
+            ("只留中性措辞（去掉「这不是「通过」」）", script.replace(NOT_RUN_NOT_PASS, "")),
+            ("把 else 分支整段删掉", script.rsplit("else", 1)[0]),
+        ):
+            assert mutated != script, f"注入未生效（自证）：{label} 没有改到语料"
+            caught = _unannounced_legs(mutated, wf)
+            assert caught, f"注入「{label}」后判定仍为绿 ⇒ 判据 ③ 没有判别力（空断言）"
+        print(f"判别力自证：3 种坏形态各自被判红 ✅（现取语料 {len(script)} 字符）")
