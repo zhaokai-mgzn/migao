@@ -50,6 +50,34 @@ Python 面优先 `.venv/bin/python`，缺失时退回 `python3`。设 `SVC=backe
 | 场景 | 命令 |
 |---|---|
 | 任何改动 | `./verify-all.sh gate`（拿机器级重活锁；同参数跑 CI 规则） |
+
+## 写新判据时的两个**环境陷阱**（2026-10-02 各实测栽过一次）
+
+> 两条都只在「**在射程内新增判据 / 改用例面**」时踩到，且都是**本地绿、CI 红**——本仓的经典假绿形态。
+> 为什么写在这一页：主表指引你去跑这些判据；**而"照着跑"之前，你得先知道它们跑在什么环境里**。
+
+### 陷阱 1 · 在 `tests/unit_ci_workflows/**` 新增判据，**不得依赖 ai-agent 运行时依赖**
+
+CI 的 `ci workflow helper unit tests` 这个 job **只装 `pytest` + `pyyaml`**（不装 `pydantic` / `langchain_core` / `fastapi`）。
+新判据若在**模块层** `import app.*` ⇒ **CI 直接红**（实测 6 failed：`ModuleNotFoundError: No module named 'pydantic'` / `'langchain_core'`），
+而你在本地用主工作区 venv 跑是**全绿**的。
+
+- ✅ **正确修法**：把这些判据写成**静态的**（AST 反解类属性 / 扫源码文本 / 两边源码对照），
+  照 `tests/unit_ci_workflows/test_agent_permission_parity.py` 里"重解析调用点"的既有机具；
+  **需要真 import 的行为级判据** ⇒ 放 `backend/ai-agent-service/tests/`（那里有依赖，且本来就跑）。
+- 🔴 **禁止** `try/except ImportError: pytest.skip(...)` —— 该判据在 CI 里**永远是空的**（"绿了但没跑"，见 `migao-dev-flow` §2.1）。
+- **怎么自证「无依赖也绿」**（实测可用的造法）：毒化 `PYTHONPATH`
+  （放 `pydantic.py` / `langchain_core.py` / `app/__init__.py` 三个 `raise ImportError` 的模块）
+  \+ `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`，再跑该文件。
+
+### 陷阱 2 · **生成物新鲜度判据跑在「`head + main` 合并态」**
+
+`Case Contract (truths_ref)` 的新鲜度腿判的是**合并态**，不是你的分支态：
+main 在你的 merge-base 之后进了新用例 ⇒ **你分支上"自己新鲜"的用例书，在合并态下就是陈旧的**
+（实测：`提交版 8987 行 / 现取 8987 行，不同 2 行` ⇒ `verdict=drifted`，CI 红）。
+
+⇒ **改用例面（`casebook` 面）之后，先 `rebase origin/main` + 重渲染，再去依赖"fresh"这个结论**；
+**不要**用"我分支上 fresh"推断 CI 会绿。
 | 跨模块 / 跨端契约 | `./contract-check.sh` |
 | 改 web 页面 | `./check-ui-regression.sh` + 上表 `web` 行的多模态验收 |
 | 改 `.github/growth_gate.py`（**本页的宿主**） | `python3 -m pytest tests/unit_ci_workflows -q -n 4`（与 CI job `ci workflow helper unit tests` 同参数） |
