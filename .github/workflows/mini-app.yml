@@ -22,9 +22,51 @@ env:
   WORKING_DIR: frontend/mini-app
 
 jobs:
+  # ── 共用的面判定（本 workflow 的**单一来源**）────────────────────────────────────
+  # 为什么单独一个 job（issue #6051）：**非 required** 腿 `xiaobu-h5-visual` 此前内联自己的 diff 判定
+  #   ⇒ 每个 PR 仍白拉起一个 runner、空转 11~13s 才决定「不跑重活」
+  #   （实测 run 36998459788，2026-10-02T10:58Z：该腿 11s，`npm ci` / build / Playwright 全 skipped）。
+  #   现在判定收到**一处**，该腿用 job 级 `needs` + `if:` 整层跳过 ⇒ runner 不再空转。
+  # ⛔ 本 job **不**替 required 腿做门控：GitHub 对**被 job 级 `if` 跳过**的 job **不上报**该 context
+  #   ⇒ 分支保护会永久等一条不会到来的状态（#5101 / #4786 的形态）。required 腿（`typecheck-and-test`）
+  #   一律保持**步骤级**门控 —— 它永远会创建 job 并上报结论，required 检查因此永不悬空。
+  # 面口径与各腿既有内联判定逐字同源（`^(frontend/mini-app/|tests/|\.github/)`）；
+  # 登记册 = tests/unit_ci_workflows/declaration_gate_registry.json（未登记即红）。
+  detect:
+    name: mini-app 面判定（决定哪些腿跑）
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.face.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect mini-app face
+        id: face
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件（push/workflow_dispatch），面门控开放 ⇒ 视觉回归照常跑"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          HITS=$(echo "$CHANGED" | grep -E '^(frontend/mini-app/|tests/|\.github/)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 命中面 frontend/mini-app|tests|.github ⇒ 跑视觉回归"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ xiaobu H5 visual regression 未跑：未命中面 frontend/mini-app|tests|.github（这不是「通过」）"
+          fi
+
   # v1.3 门控（2026-09-04）：job 保持运行（required check 永不悬空），
   # 仅当 mini-app 相关路径有变更才执行实际构建/测试 —— 纯依赖升级（dependabot）跳过空跑。
   # 与 pr-check/ai-agent-tests 同款 bash 变更检测（不加第三方 action）。
+  # 🔒 本 job 是 **required check**（mini-app typecheck + unit tests）⇒ 保持步骤级门控，一行不改。
   typecheck-and-test:
     name: mini-app typecheck + unit tests
     runs-on: ubuntu-latest
@@ -82,6 +124,10 @@ jobs:
   # issue #2693 跟进：恢复实验（2026-09-01）——重新启用该 job，观察最新 CI 失败日志定位环境差异
   xiaobu-h5-visual:
     name: xiaobu H5 visual regression
+    # 面门控（issue #6051）：非 required 腿 ⇒ 整层跳过（runner 不再空转）。
+    # 「未跑」由 `detect` 的 else 分支显式打印（见上），不静默绿。
+    needs: detect
+    if: needs.detect.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
