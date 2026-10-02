@@ -837,6 +837,11 @@ LOCAL_ONLY_TOOLS: dict[str, str] = {
     # ⇒ 没有可对账的端点码（与 `interact` 同一豁免口径）。可达性只由 B 端两个 skill 的
     # 工具集决定（`product` / `order`；小布不绑 ⇒ C 端零改动）。
     "image_recognize": "纯本地图片识别 + 同页填充计划构造（只调 vision 模型与 app/vision 纯函数）：无 admin-api 调用点",
+    # issue #5989（P1 导航类指引）：`nav_guide` 的答案来自**仓内登记表**
+    # `app/context/menu_navigator.py`（`config/menu.ts` 的镜像 + 显式登记的意图表）
+    # ⇒ **没有任何 admin-api HTTP 调用点**，没有可对账的端点码（与 `interact` 同一豁免口径）。
+    # 可达性只由 B 端 `general` 兜底 skill 的工具集决定（小布不绑 ⇒ C 端零改动）。
+    "nav_guide": "纯本地导航指引（功能 ⇄ 菜单路径 ⇄ 权限码的仓内登记表 + 会话权限裁剪）：无 admin-api 调用点",
 }
 
 #: 读码后缀（判据 5 的机械口径）：`模块:动作` 的动作 ∈ 这些 ⇒ 读码，其余 ⇒ 写/管理码。
@@ -909,10 +914,44 @@ CODE_DIVERGENCE_EXCEPTIONS: dict[str, dict[str, object]] = {
             "要么按 #5699 P4 的口径继续具名保留）；收口后本条目必须**删除**（陈旧即红）。"
         ),
     },
+    # ── issue #5980（第二条；上限同批显式 1 → 2）────────────────────────────────
+    # 「同一条 API 被**两个守卫码不同的页面/消费者**共用」——这是**结构事实**，不是漂移：
+    # `GET /api/admin/roles/all` 的唯一前端调用方是「员工管理」页岗位下拉
+    # （该页守卫码 `employee:list`），而米宝 `role_manage` 工具（挂「岗位权限」页、声明
+    # `system:view`）也消费它 —— 两个消费者对同一端点各有**正确但不同**的最小码。
+    # 收敛到任意一侧都会**弄坏另一侧的既有功能**。
+    "role_manage": {
+        "code": "system:view",
+        "diverges": ["/api/admin/roles/all"],
+        "live": {
+            "/api/admin/roles/all": "employee:list",
+        },
+        "why": (
+            "issue #5980：`GET /api/admin/roles/all` 在修前**无任何 `@RequirePermission`**"
+            "（`docs/wiki/RBAC.md` 的「放行策略现状」分支 ③ ⇒ 对全部商户员工开放，含 0 权限岗位）。"
+            "逐调用方核对后取**覆盖面最小但足够**的既有读码 `employee:list`：唯一调用方是"
+            "`frontend/admin-web/src/lib/api.ts` 的 `employeeApi.loadPositions()`（「员工管理」页的岗位下拉），"
+            "而该页的节点码 / 路由守卫码本来就是 `employee:list` ⇒ **岗位下拉零回归**。"
+            "收敛到 `system:view` 会让**运营**（持 `employee:list`、不持 `system:view`）的岗位下拉变空"
+            "—— 那正是 issue #5980 要避免的功能故障。工具侧声明的是「岗位权限」页读码 `system:view`"
+            "（`TOOL_MENU_NODE['role_manage'] = 岗位权限`，判据 3 要求工具至少持本页读码），"
+            "而本端点的正确守卫码由**另一个页面**（员工管理页）决定 ⇒ 工具的码集"
+            "`{system:view}` 与端点码 `{employee:list}` 结构性不等（同一条 API 被两个守卫码不同的页面共用）。"
+            "⚠️ 同批修正：`GET /api/admin/roles` 与 `/roles/{id}` 取 `system:view`"
+            "（它们是「岗位权限」页的第一屏读端点，节点码 = `system:view`）⇒ 与工具**同码**、不在本条目里。"
+        ),
+        "where": (
+            "`/api/admin/roles/all` 的生效码 = `employee:list`（本单落地），工具声明 `system:view`；"
+            "**重启条件** = 若将来把「员工管理」页的岗位下拉改为走一个**专用**岗位目录读端点"
+            "（只服务该页、只要求 `employee:list`），则本条目应改为「工具码 ≡ 端点码」并**删除**"
+            "（陈旧即红）。判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py` 的判据 2。"
+        ),
+    },
 }
 
 #: `CODE_DIVERGENCE_EXCEPTIONS` 的**条数上限**（**现取** ⇒ 加条目必须在同一 diff 里改这一行）。
-CODE_DIVERGENCE_EXCEPTIONS_CEILING = 1
+#: issue #5980：1 → 2（新增 `role_manage` 那条；上限本身就是「例外表只许缩短」的闸门）。
+CODE_DIVERGENCE_EXCEPTIONS_CEILING = 2
 
 #: **在飞端点**的显式登记（判据 1/2 的补集；issue #5314）。
 #:
@@ -943,9 +982,10 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     "PUT /api/super-admin/*": "同上",
     "GET /api/admin/menus": "静态权限目录常量；「员工管理」页的勾选树依赖它（#4727 第 6 行）",
     "GET /api/admin/user/info": "自助首屏：只返回当前用户自己的角色/权限/菜单（#4727 第 7 行）",
-    "GET /api/admin/roles": "「员工管理」页岗位下拉的数据源（写面已是 `system:manage`；#4727 部分覆盖表）",
-    "GET /api/admin/roles/all": "同上",
-    "GET /api/admin/roles/{}": "同上",
+    # issue #5980：`GET /api/admin/roles` · `/roles/all` · `/roles/{id}` **三条已从本表删除**
+    # （它们不再是「未注解端点」）—— 本守卫的「陈旧登记必须删除」面要求如此。
+    # 其中 `/roles`·`/roles/all` 与米宝 `role_manage` 工具的跨码关系具名登记在
+    # `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`（那才是它们现在的正确登记处）。
     "PUT /api/admin/settings/password": "自助改密：只改当前认证用户自己的密码（#4727 部分覆盖表）",
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
     "PUT /api/admin/notifications*": "同上（标记已读）",
@@ -2716,6 +2756,12 @@ FALLBACK_BASELINE_BEFORE_5683: dict[str, frozenset[str]] = {
         "dashboard:view", "processing:manage", "product:category", "product:category:view",
         "product:create", "product:list", "production:view",
     }),
+    #: issue #5979（2026-10-02 人类裁定「应允许」）：`knowledge_editor` **此前不在本基线里**
+    #: ⇒ 它后来的整个码集都不会被读成「新增」，census 对它的授权变更**结构性失明**
+    #: （`AUTHORIZATION_CENSUS['knowledge:manage']` 会被判「陈旧登记」）。
+    #: ⇒ 按本基线的自述口径（「#5683 生效**前**的回退集合逐值冻结」）补登它的**当时读数**：
+    #: `[dashboard:view, product:list]`。这是「把失明的角色纳入读数面」，**不是**修改历史事实。
+    "knowledge_editor": frozenset({"dashboard:view", "product:list"}),
     # 这三个角色**补码前在 switch 里根本没有 `case`** ⇒ 落 `default -> List.of()` ⇒ **空表**。
     # 「空表」在这里逐字记为空集（不是「没有这一项」）：基线要能区分「当时没有 case」与「当时查不到」。
     "customer_service": frozenset(),
@@ -2768,7 +2814,8 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：3 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（POST /api/admin/agent-sessions/{}/assign；POST /api/admin/agent-sessions/{}/end；POST /api/admin/agent-sessions/{}/messages）。'),
     ),
     "customer:view": AuthorizationCensusEntry(
-        roles=('customer_service', 'sales'),
+        # issue #5988（2026-10-02 人类裁定「应允许」）：财务对账要读客户 ⇒ 新增 `finance`。
+        roles=('customer_service', 'finance', 'sales'),
         endpoints=('GET /api/admin/customer-tags', 'GET /api/admin/customers', 'GET /api/admin/customers/profile-view', 'GET /api/admin/customers/{}'),
         menu_nodes=('auth:客户列表', 'controller:客户列表', 'frontend:客户列表'),
         tools=('customer_manage',),
@@ -2810,7 +2857,11 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         reachable=('「入库单」菜单节点的**节点码就是本码**（三处菜单源一致）⇒ 补码前回退账号**根本看不见该节点**（issue #5271 新增的页面 = 菜单凭空消失）；补码后节点出现且三个读端点同时可读。Agent 侧 `inbound_order_query`（只读）同批对回退账号开放。'),
     ),
     "knowledge:view": AuthorizationCensusEntry(
-        roles=('customer_service',),
+        # 🔴 `roles` = **现取**（`w.role_fallback` 与本文件 `FALLBACK_BASELINE_BEFORE_5683` 的差集），
+        # 逐值由判据复算 —— 不是「谁在种子里有它」。`knowledge_editor` 因 issue #5979 进了基线
+        # ⇒ 它的 `knowledge:view` 同批被读成「新增」（见基线处说明）；而它在 #5683 前**根本没有 case**
+        # （空表）⇒ 本码对它是**由不可见变可见**的真实授权变更，登记在此。
+        roles=('customer_service', 'knowledge_editor'),
         endpoints=('GET /api/admin/knowledge/candidates', 'GET /api/admin/knowledge/candidates/pending-count', 'GET /api/admin/knowledge/cards', 'GET /api/admin/knowledge/cards/search', 'GET /api/admin/knowledge/templates'),
         menu_nodes=('auth:知识库', 'controller:知识库', 'frontend:知识库'),
         tools=('knowledge_search',),
@@ -2829,6 +2880,48 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         menu_nodes=('auth:订单列表', 'controller:订单列表', 'frontend:订单列表'),
         tools=('logistics_track', 'order_query'),
         reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；19 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
+    ),
+    "order:create": AuthorizationCensusEntry(
+        # issue #5988（2026-10-02 人类裁定「应允许」）：销售**下单**是本职。
+        roles=('sales',),
+        endpoints=('POST /api/admin/agent/orders', 'POST /api/admin/orders'),
+        menu_nodes=(),
+        tools=('order_create',),
+        reachable=('issue #5988（人类 2026-10-02 裁定「应允许」）：销售此前持 `order:list`/`order:detail`'
+                   '（看得见订单）却没有 `order:create` ⇒ 建单 403（#5246 有意把写码只给运营）。'
+                   '本码不挂菜单节点（订单列表的节点码是 `order:list`）⇒ 补它**不改变任何菜单可见性**，'
+                   '只把「下单」这个动作打通：2 个端点的生效码就是本码 ⇒ 由 403 变为可写'
+                   '（POST /api/admin/agent/orders；POST /api/admin/orders）；'
+                   'Agent 侧 1 个工具声明本码 ⇒ 米宝的建单工具对销售由「权限不足」变为可达（order_create）。'),
+    ),
+    "order:refund": AuthorizationCensusEntry(
+        # issue #5988（2026-10-02 人类裁定「应允许」）：客服**处理售后**是本职（#5246 只给了读码）。
+        roles=('customer_service',),
+        endpoints=('POST /api/admin/after-sales', 'POST /api/admin/agent/after-sales', 'PUT /api/admin/after-sales/{}/status', 'PUT /api/admin/orders/{}/refund'),
+        menu_nodes=(),
+        tools=(),
+        reachable=('issue #5988（人类 2026-10-02 裁定「应允许」）：客服此前持读码 `after_sales:view`'
+                   '（#5246 补的）⇒ 「售后工单」菜单看得见，但**建单 / 改状态**仍要写码 `order:refund`'
+                   ' ⇒ 该岗位**做不了本职**（菜单看得见、动作做不了）。本码不挂菜单节点'
+                   '（「售后工单」节点码是 `after_sales:view`）⇒ 补它不改变任何菜单可见性，'
+                   '只把 4 个写端点打通：2 个 POST + 2 个 PUT 的生效码就是本码 ⇒ 由 403 变为可写'
+                   '（POST /api/admin/after-sales；POST /api/admin/agent/after-sales；'
+                   'PUT /api/admin/after-sales/{}/status；PUT /api/admin/orders/{}/refund）。'
+                   '🔴 无 Agent 工具声明本码：`after_sales_manage` 已于 issue #5247 收窄为只读'
+                   '（写 action 从工具删除）⇒ 本次补码**不**放宽任何 Agent 面。'),
+    ),
+    "knowledge:manage": AuthorizationCensusEntry(
+        # issue #5979（2026-10-02 人类裁定「应允许」）：知识编辑**维护**知识库是本职（读码之外还要写码）。
+        roles=('knowledge_editor',),
+        endpoints=('DELETE /api/admin/knowledge/cards/{}', 'POST /api/admin/knowledge/candidates/{}/adopt', 'POST /api/admin/knowledge/candidates/{}/adopt-edited', 'POST /api/admin/knowledge/candidates/{}/reject', 'POST /api/admin/knowledge/cards', 'POST /api/admin/knowledge/cards/{}/archive', 'POST /api/admin/knowledge/cards/{}/publish', 'POST /api/admin/knowledge/distill/conversations', 'POST /api/admin/knowledge/distill/documents', 'POST /api/admin/knowledge/templates/{}/apply', 'PUT /api/admin/knowledge/cards/{}'),
+        menu_nodes=(),
+        tools=(),
+        reachable=('issue #5979（人类 2026-10-02 裁定「应允许」）：知识编辑此前**一个 knowledge 码都没有**'
+                   '（默认权限 = `[dashboard:view, product:list]`）⇒ 打开「知识库」被守卫拦下'
+                   '（文案「当前账号缺少权限 knowledge:view」）。本码是**写**码：把守创建 / 编辑 / 删除 / '
+                   '发布 / 归档 / 候选采纳与拒绝 / 模板套用 / 蒸馏等 11 个端点 ⇒ 由 403 变为可写。'
+                   '它**不挂菜单节点**（「知识库」节点码是读码 `knowledge:view`，issue #5246 的读写分权）'
+                   ' ⇒ 补它不改变菜单可见性，只让该岗位真正**做得成**本职。无 Agent 工具声明本码。'),
     ),
     "production:execute": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'operator', 'sales'),
@@ -4055,12 +4148,20 @@ def test_divergence_ledger_is_load_bearing() -> None:
     """
     from dataclasses import replace as _replace
 
+    global CODE_DIVERGENCE_EXCEPTIONS_CEILING
+
     base_sources = _source_map()
     w = build_world(base_sources)
     assert not problems_endpoint_parity(w), "① 前提：真实树上判据 2 全绿（登记兑现）"
-    assert sorted(CODE_DIVERGENCE_EXCEPTIONS) == ["craft_config_query"], (
-        "本判据的注入锚只覆盖 `craft_config_query`；台账加了第二条 ⇒ 同批补注入（不许留空）"
+    # `craft_config_query`（#4923）与 `role_manage`（#5980）**逐条**都必须被下面这段注入覆盖到
+    # —— 台账加了第 N 条却不给它注入，等于那一条**没有判别力证据**（不许留空）。
+    assert len(CODE_DIVERGENCE_EXCEPTIONS) == CODE_DIVERGENCE_EXCEPTIONS_CEILING, (
+        "台账条数与上限不一致 ⇒ 先对齐上限那一行（上限本身就是「只许缩短」的闸门）"
     )
+    for _name in sorted(CODE_DIVERGENCE_EXCEPTIONS):
+        assert _name in {t.name for t in w.tools}, (
+            f"`CODE_DIVERGENCE_EXCEPTIONS` 里的 `{_name}` 不是现存工具（陈旧登记）"
+        )
 
     # ② 「声明码恰好是台里那一个」是**载荷条件**：加一个第三个码 ⇒ 名字在台账里也照样红
     tools = list(w.tools)
@@ -4089,7 +4190,6 @@ def test_divergence_ledger_is_load_bearing() -> None:
     assert not problems_endpoint_parity(build_world(base_sources)), "③ 还原后判据 2 必须回绿"
 
     # ④ 上限现取：上限低于条数 ⇒ 红（「只许缩短」的台账面）
-    global CODE_DIVERGENCE_EXCEPTIONS_CEILING
     original_ceiling = CODE_DIVERGENCE_EXCEPTIONS_CEILING
     CODE_DIVERGENCE_EXCEPTIONS_CEILING = 0
     try:

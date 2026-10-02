@@ -3773,6 +3773,24 @@ _CASE_HR_011 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── HR-012 [NORMAL] 岗位默认权限补本职码：客服+order:refund / 销售+order:create / 财务+customer:view / 知识编辑+knowledge:view+knowledge:manage（四处真值源逐值一致 + 存量回填 V145）（issue #5979 / #5988）（源: cases/hr.yml）──
+_CASE_HR_012 = EvalCase(
+    id='HR-012',
+    legacy_id='',
+    title='岗位默认权限补本职码：客服+order:refund / 销售+order:create / 财务+customer:view / 知识编辑+knowledge:view+knowledge:manage（四处真值源逐值一致 + 存量回填 V145）（issue #5979 / #5988）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['新租户管理员在「岗位权限」页查看 客服 / 销售 / 财务 / 知识编辑 四个岗位的默认权限（存量租户由 V145 同批回填）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **四个岗位的默认权限含各自的本职码**（人类 2026-10-02 逐条裁定「应允许」）：客服 `order:refund`（处理售后工单）/ 销售 `order:create`（下单）/ 财务 `customer:view`（读客户列表）/ 知识编辑 `knowledge:view` + `knowledge:manage`（维护知识库）。缺任一码 ⇒ 该岗位**做不了本职**（#5979 的原始形态 = 知识编辑一个 knowledge 码都没有 ⇒ 打开「知识库」被守卫拦下「当前账号缺少权限 knowledge:view」、调 `/api/admin/knowledge/cards` 得 403）。执行点 = tests/unit_ci_workflows/test_position_default_permissions.py 的 problems_裁定面（**逐码穷举四处真值源**，不是集合相等 —— 相等会把整份岗位矩阵抄成第二份真值）。', '判据 2·🔴 **四处真值源逐值一致**：① `RoleService.getPermissionCodesForRole` 的回退 switch / ② `rbac/manifest.json` 的 `roles.seed` / ③ `RegistrationService.attachDefaultPermissions` 的注册种子 —— 三者对同一岗位**逐值相等**（穷举，不抽样）；④ 迁移 `V145__backfill_position_permissions.sql` 只承担**增量** ⇒ 判据是「不得授 ①②③ 之外的码」（子集，防真放宽），**不是**逐值相等。执行点 = 同文件的 problems_四处逐值一致。红证（实测）：从回退删一个码 ⇒ 具名红；从 V145 删/多一个码 ⇒ 具名红；往回退加一个别处没有的码 ⇒ 具名红；只改注释 ⇒ **不红**（对照）。', "判据 3·🔴 **存量租户一起回填（口径必须写进 PR body）**：`V145` **无租户过滤** —— 语句以 `r.code = '<码>'` 为谓词、`JOIN permissions p ON p.tenant_id = r.tenant_id` 取该租户自己的码行 ⇒ 对**每一个**存在该岗位的租户生效。幂等 = `ON CONFLICT (role_id, permission_id) DO NOTHING`（与 V124 / V125 / V137 同款）⇒ 第二遍 0 行；**有意不清空后重加**（那会把租户在岗位权限页的手工增减静默复位）。边界（照实登记）：① 不回填 `users.permissions` 员工级快照（设计 §2.9）；② 不改 `roles` 行 ⇒ 没有该岗位行的租户不被波及；③ 目录缺该码的租户会被**终态对账** `RAISE EXCEPTION` 回滚（不静默放过）。", '判据 4·🔴 **P5 收敛不变量仍成立**：声明面（`roles.seed`）前进后，整条迁移链（含 V136 / V137 的**重新渲染**与 V145）推演出的每个岗位累计码 **== 清单声明** ⇒ 「新租户（Java seed）与存量租户（迁移链）逐值相等」这条口径常驻可判。本轮三个岗位各补 1 码 ⇒ P5 固定读数由「全 ∅」变为 `customer_service: (order:refund,) / finance: (customer:view,) / sales: (order:create,)`（`knowledge_editor` 不在 P5 射程），**同批重锚是本判据的必须动作**。执行点 = tests/unit_ci_workflows/test_rbac_migration_convergence.py 的 convergence_problems + census_problems。', '判据 5·🔴 **授权变更 census 逐条交代「打开了哪几扇门」**：本轮新增的码在判据 14 的 `AUTHORIZATION_CENSUS` 里必须逐条给出「哪些端点 / 菜单节点 / Agent 工具因此变为可达」：`order:refund` = 4 个写端点、无菜单节点、**无** Agent 工具（`after_sales_manage` 已于 #5247 收窄为只读）；`order:create` = 2 个端点 + 工具 `order_create`；`knowledge:manage` = 11 个端点、无菜单节点、无工具；`customer:view` / `knowledge:view` 已有条目只改 `roles` 集。台账条数 16 → 19（**显式放宽**，diff 里看得见）。', '判据 6·**工具层镜像同批同步且口径零变化**：backend/ai-agent-service/tests/test_tool_permission_codes.py 的 `ROLE_PERMISSIONS` 对 `knowledge_editor` 同批补两码 ⇒ `seeded_role_gaps(...) == []` 与 `fallback_role_gaps(...) == []` 同时成立（镜像 ≡ 种子 ≡ 回退）。', '判据 7·**RBAC 单一真值源的派生面同批更新**：清单改了 ⇒ `python3 rbac/generate_readings.py` 的 `rbac/readings.json` 必须重生成（新鲜度逐字节判）、`python3 rbac/generate_migration.py` 渲染的 V136 / V137 必须重渲染（`test_generated_migrations_are_fresh` 判红）、`rbac/sources.json` 的副本登记命中数必须同批重锚（涨跌都红）。'],
+    skip_reason='[backend-contract] 岗位默认权限的静态契约 + 行为契约（tests/unit_ci_workflows/test_position_default_permissions.py 的四真值源逐码判据 + test_agent_permission_parity.py 判据 14 + test_rbac_migration_convergence.py 的 P5 不变量 + backend/ai-agent-service/tests/test_tool_permission_codes.py 的镜像判据），无 LLM 环节，不进入 agent-eval 冒烟',
+    tags=['role', 'permission', 'seed', 'fallback', 'migration', 'rbac'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── KN-001 [SMOKE] 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）（源: cases/knowledge.yml）──
 _CASE_KN_001 = EvalCase(
     id='KN-001',
@@ -3965,6 +3983,42 @@ _CASE_MC_004 = EvalCase(
     data_checks=['_parse_response 空 content→general(0.5)；剥离 ```json；直接 loads；兜底 re 提取第一个 {...}；intent 非法→general；confidence 夹取 [0,1]；解析异常→default', 'classify 正常返回 source=classifier；成本追踪 usage_metadata 优先、response_metadata 兜底；整体异常 → general(0.5, source=default, matched_keywords=[])'],
     skip_reason='[backend-contract] 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_intent_classifier.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['intent', 'classifier', 'fallback'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-005 [NORMAL] RBAC 岗位目录读端点的权限注解守卫（AdminRoleController 逐端点台账 + 有意的跨码登记）（源: cases/misc.yml）──
+_CASE_MC_005 = EvalCase(
+    id='MC-005',
+    legacy_id='',
+    title='RBAC 岗位目录读端点的权限注解守卫（AdminRoleController 逐端点台账 + 有意的跨码登记）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 AdminRoleController（`/api/admin/roles/**`）新增/改动端点却没登记它要哪把权限码，或已登记的注解被删/被改成别的码，或注解里的码不在权限目录里，或 `/api/admin/**` 上「无任何生效码」的端点总数增长时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**判据 1+2（未登记即红 / 注解被删即红）**：controller 每个端点必须登记；`decision=annotated` 的条目现取生效码必须非空且逐字等于台账值 —— 摘掉 `@RequirePermission` ⇒ 当场红（issue #5980 的修前形态）', '**判据 3（三条读码逐值冻结）**：`GET /api/admin/roles` = `system:view`（岗位权限页第一屏）、`GET /api/admin/roles/all` = `employee:list`（员工管理页岗位下拉）、`GET /api/admin/roles/{id}` = `system:view` —— 少一条 / 改一个码 ⇒ 红', '**判据 4**：生效码必须在权限目录（`RegistrationService` 种子）里 —— 拼错 ⇒ 该端点对所有角色恒 403 ⇒ 红', '**判据 5（对照读数只许缩短）**：`/api/admin/**` 上「无任何生效码」的端点总数 ≤ 10（修前实测 13，本单 -3）；增长 ⇒ 红，缩短后须调低台账读数（台账读数与现取不一致亦红）', '**判据 6（判别力自证）**：五种坏形态（新增无注解读端点 / 摘掉注解 / 幽灵台账条目 / 码拼错 / 重新标 exempt）在**内存构造的源码**上各自判红；只改注释 ⇒ **不红**（对照读数）', "**跨码面（真值在同 PR 的判据 2）**：`/roles/all` 与米宝 `role_manage` 工具跨码（页面守卫 `employee:list` vs 工具 `system:view`）⇒ 具名登记在 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`，未登记/陈旧 ⇒ 判据 2 红", '**覆盖面照实登记**：判据只裁这一个 controller（其余 `/api/admin/**` 无码端点归既有 `UNANNOTATED_ENDPOINTS` 台账）；判「注解面」不判运行时授权（运行时身份级读数在 SecurityConfigTest）'],
+    skip_reason='[backend-contract] 注解面 / 台账的离线判据（零 LLM、秒级；只读源码文本，不连库/不跑 LLM）由 tests/unit_ci_workflows/test_admin_role_read_surface_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'permission-annotation', 'endpoint-ledger', 'class-level-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-006 [NORMAL] RBAC 岗位目录读端点的身份级鉴权（9 身份：无 employee:list/system:view ⇒ 403，持有者 ⇒ 200）（源: cases/misc.yml）──
+_CASE_MC_006 = EvalCase(
+    id='MC-006',
+    legacy_id='',
+    title='RBAC 岗位目录读端点的身份级鉴权（9 身份：无 employee:list/system:view ⇒ 403，持有者 ⇒ 200）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当商户员工（含 0 权限的自定义岗位）能读到 `GET /api/admin/roles` / `/roles/all`，或持有对应读码的岗位反而被拒（岗位下拉/岗位权限页 403），或 customer / worker 访问 `/api/admin/roles/all` 不再 403 时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**拒绝半（修前形态）**：0 权限自定义岗位读 `/roles/all` 与 `/roles` ⇒ **403 且 `error.code = PERMISSION_DENIED`**，且服务层一次都没被调用（负向控制：旧实现无注解会放到服务层 ⇒ `verify(never())` 会红）', '**正向对照（零回归）**：持 `employee:list` 读 `/roles/all` ⇒ **200**（员工管理页岗位下拉）；持 `system:view` 读 `/roles` 与 `/roles/{id}` ⇒ **200**（岗位权限页第一屏与回显）', '**垂直越权不回归**：`customer` / `worker` 读 `/roles/all` ⇒ 403（门禁分支 ② 先拒，不进权限码判定，服务层零调用）', '**检索口径**：判据走真实安全过滤链 + `PermissionInterceptor`（`backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java` 的全上下文 Spring 测试 + `MockMvc`），身份与权限集由 `SecurityMockMvcRequestPostProcessors.user` + `roleService.getUserPermissions` 注入 —— 与生产解析顺序（方法级注解优先）逐字一致'],
+    skip_reason='[backend-contract] 身份级 403/200 由 admin-api 的 Spring 集成测（backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'permission-denied', 'identity', 'zero-regression', 'red-proof'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -4973,6 +5027,24 @@ _CASE_MC_063 = EvalCase(
     data_checks=['判据 1（未登记即红）：某页出现新增/新建/**登记**类写按钮、文件内无 `hasPermission(...)` 引用、且不在豁免台账 ⇒ 红并**具名**报出「文件 + 行号:标签」', '判据 2（台账只许缩短）：台账条目对应的文件已不存在 / 已无写按钮 / 已接 `hasPermission` ⇒ 红（陈旧条目必须删）', '判据 3（冻结上限）：条目数 > `frozen_max_entries` ⇒ 红（新增豁免必须显式改上限、看得见）', '判据 4（fail-closed）：扫描面零命中 ⇒ 红（选择器 / 目录漂移时不许静默绿）', '判据 5（判别力自证 + 对照）：五种坏形态在**内存语料**上各自判红；合规语料 + 空台账 ⇒ **不红**（判据不许被自己的文案喂红）', '判据 6（实例面）：四张写码 `order:create` / `product:create` / `inbound:create` / `finance:create` 必须逐字出现在各自页面文件里。执行点 = 同文件 test_fixed_pages_really_gate_their_write_button', '🔴 红证（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复 ⇒ **2 failed / 3 passed**（`未登记的写按钮：…/orders/page.tsx …`、`orders/page.tsx 未接写码 order:create（实取 []）`）；恢复修复后 **5 passed**。复算命令 = `python3 -m pytest tests/unit_ci_workflows/test_list_page_write_button_gate.py -q`'],
     skip_reason='[backend-contract] 静态结构守卫（只读仓内文本 + 内存注入；零网络、零时钟、不跑被引用的测试）由 pytest 验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ci', 'guard', 'rbac', 'frontend'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-065 [NORMAL] 导航类指引真值源（issue #5989 · P1）：登记表逐节点镜像 config/menu.ts + 权限码逐值真 + 未登记默认拒绝 + 只按服务端会话权限裁剪 + citation 可溯 + 结构上不含 steps（禁编步骤）（源: cases/misc.yml）──
+_CASE_MC_065 = EvalCase(
+    id='MC-065',
+    legacy_id='',
+    title='导航类指引真值源（issue #5989 · P1）：登记表逐节点镜像 config/menu.ts + 权限码逐值真 + 未登记默认拒绝 + 只按服务端会话权限裁剪 + citation 可溯 + 结构上不含 steps（禁编步骤）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当登记表里引用了一条 config/menu.ts 里**不存在**的菜单路径、或声明了一个权限目录里没有的**假权限码**、或把「未登记」的问题猜成一条登记项、或去掉了按会话权限的裁剪（让无权角色拿到页面路径）、或把 citation 摘成不可溯、或往载荷里加 `steps` / 往文案里塞步骤词时 —— 都必须有东西**具名**报出；而只改一行注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**判据 1 / 1b（结构层 = `config/menu.ts` 的镜像）**：`app/context/menu_navigator.py` 的 `MENU_TREE` 与 `frontend/admin-web/src/config/menu.ts` **逐节点逐字段逐序**相等（6 组 20 项 + 2 个一级独立项 = 22），且 `MENU_TREE_ORDER_LOCKED` 是注入式红证的锚；`menu.ts` 解析器**复用** `tests/unit_ci_workflows/test_agent_permission_parity.py::parse_menu_ts_nodes`（**不造第二套解析器**，§17.3 ⑤）', '**判据 2（权限码是真码）**：每个非空 `permission_code` 必须落在 `RegistrationService` / `PermissionService` 两处权限目录（复用 `parse_catalog`，两处目录逐值相等也由它核）；无码节点必须**显式**列举（现取 = 仅 `/notifications`）', '**判据 3（未登记 ⇒ 默认拒绝）**：6 个未登记样本问题（含空串）一律 `registered=False`、`pages=[]`、`featureId` 为空；`resolve_feature` 是**确定性最长命中**、歧义即 `None`（不猜、不近似匹配）；每条登记项都能被自己的功能名**恰好**命中（别名撞车即红）', '**判据 4（角色裁剪）**：只按 `ToolContext.permissions`（**服务端会话**）逐节点过滤 —— 无权 ⇒ 载荷里**不含页面路径也不含权限码**（只给菜单名 + 「你没有权限」），但 citation 仍可溯到登记项 → 菜单节点；`build_navigation_answer` 的签名里**没有 role**（形参判据，与 `page_registry.build_page_context` 同纪律）', '**判据 5（citation 可溯）**：citation 形态 = `登记项 #<id> → 菜单节点 <组>/一级项「<菜单名>」`；未登记时如实写「（无）—— 未命中登记表」；未登记节点 `menu_node(group, label)` 返回 `None`（fail-closed）', '🔴 **判据 6（禁止编步骤，结构 + 文本 + 上游三层）**：① **结构** —— `ToolResult.data` 的键**白名单**（`registered`/`featureId`/`label`/`pages`/`deniedMenuNames`/`citation`）与页面项键白名单（`menuGroup`/`menuName`/`path`/`requiredPermission`）⇒ `steps` 这类字段**结构上进不来**；② **文本** —— **真跑** `NavGuideTool.execute`（直连接线：把工具模块里的 `build_navigation_answer` 换成被测函数）得到的 `message`/`suggestion`/`data` 里不得出现受控步骤词表（`第一步`/`点击`/`按钮`/…），且每条回复都必须含「我没有步骤级指引」的如实告知；③ **上游** —— `app/tools/nav_guide.py` 源码（含**注入模型**的 `description`）里不得出现步骤词', '**判据 6b（别名不得退化成同义词词典）**：每条 `aliases` 必须与它所属节点的菜单名有**包含关系**（导入期自检 + 判据双闸）；「换一个新叫法」的唯一正确做法是先改菜单名，不是在别名表里偷偷扩同义词', '**类级元守卫（工具面）**：`nav_guide` 注册进 `create_default_registry()` + 从 `app/tools` 门面导出 + `read_only=True` + **不声明权限码**（纯本地、零 admin-api 调用点，登记在 `LOCAL_ONLY_TOOLS`，与 `interact`/`image_recognize` 同口径）+ 绑 B 端 `general` 兜底 skill（不绑 = 能力谎报）+ B 端专属只读见证集 25 ⇒ **26** 把（`test_readonly_cross_domain_sharing.py`，C 端零改动由此量化）', "🔴 **注入式红证（11 条，实测读数见 PR body）**：① 假菜单路径 ⇒ `problems_paths_exist` 报出；①b 删节点 ⇒ **模块导入期自检**抛 `MenuNavigatorError: orders：引用了 MENU_TREE 里不存在的节点 ('trade-center', '订单列表')`；①c 换序 / 内存桩缺节点 ⇒ `problems_coverage` 具名报出；② 假权限码 `ghost:code` ⇒ `problems_codes_real` 报出；③ 未命中改成「猜第一条」⇒ `problems_default_deny` 报出；④ 去掉裁剪 ⇒ 无权角色拿到 `pages`；④b 给 `build_navigation_answer` 加 `role` 形参 ⇒ 签名判据报出；⑤ citation 摘掉两段模板字面量 ⇒ `problems_citation` 报出；⑥a 往 `data` 加 `steps` ⇒ 键白名单报出；⑥b 在**工具源码**文本面塞祈使步骤 ⇒ `problems_no_step_wording` 报出；⑥c 自由同义词 ⇒ 导入期自检抛 `MenuNavigatorError`（同条判据的内存桩臂另证判别力）。**对照读数**：只改一行注释 ⇒ 八条判据**全绿**", '🔴 **本文件跑在没装 ai-agent 依赖的解释器里**（CI 的 `ci workflow helper unit tests` job 只装 `pytest pyyaml`）：因此**一律不 import `app.*`**（`app.tools.*` 会拉 `pydantic` / `langchain_core` ⇒ 本地绿、CI 红，实测 6 failed）。本文件只做**静态**判据（AST / 源码文本）+ 运行**零依赖**的纯函数（`app/context/menu_navigator.py` 只依赖标准库）；**需要真 import 的行为面**（工具真跑一遍的返回形状、`visible_nodes` 的裁剪、回复里也无步骤词）在 `backend/ai-agent-service/tests/test_nav_guide.py`（那里有依赖）——两处不重复同一断言。**复算方式（两侧都要跑）**：`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=<毒化 pydantic/langchain_core/app 的目录> python3 -m pytest tests/unit_ci_workflows/test_menu_navigator.py -q` ⇒ 31 passed（在**装不了**这些包的环境里也全绿）'],
+    skip_reason='[backend-contract] 真值源与菜单单一源的结构对账（源码静态事实 + 内存注入 + 真跑工具形状），零 LLM、秒级、不连网不连库；承载体 = tests/unit_ci_workflows/test_menu_navigator.py，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'permission', 'rbac', 'fail-closed', 'red-proof', 'navigation', 'no-steps'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -11788,6 +11860,7 @@ ALL_CASES = (
     _CASE_HR_009,
     _CASE_HR_010,
     _CASE_HR_011,
+    _CASE_HR_012,
     _CASE_KN_001,
     _CASE_KN_002,
     _CASE_KN_003,
@@ -11799,6 +11872,8 @@ ALL_CASES = (
     _CASE_MC_002,
     _CASE_MC_003,
     _CASE_MC_004,
+    _CASE_MC_005,
+    _CASE_MC_006,
     _CASE_MC_007,
     _CASE_MC_008,
     _CASE_MC_009,
@@ -11855,6 +11930,7 @@ ALL_CASES = (
     _CASE_MC_061,
     _CASE_MC_062,
     _CASE_MC_063,
+    _CASE_MC_065,
     _CASE_MC_064,
     _CASE_OB_001,
     _CASE_OB_002,

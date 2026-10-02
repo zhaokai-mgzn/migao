@@ -410,23 +410,41 @@ public class RoleService {
                     "agent:session:manage",
                     // issue #5699 的 I4：生产执行写码 —— 回退路径（无 role_permissions 记录的历史账号）
                     // 若不跟上，这批账号会在「建加工单/报工/打印/发货」上 403（它们今日靠 order:list 放行）。
-                    "production:execute"
+                    "production:execute",
+                    // issue #5988（人类 2026-10-02 裁定「应允许」）：客服**处理售后**是本职，
+                    // 而 `after_sales:view`（#5246 补的读码）只让它**看见**售后工单 ⇒
+                    // 建单/改状态仍要写码 `order:refund`，缺了就是「菜单看得见、动作做不了」。
+                    "order:refund"
             );
             case "sales" -> List.of(
                     "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
                     "processing:view", "inbound:view",
                     // issue #5699 的 I4：销售今日持 order:list ⇒ 这四个写端点本来就放行（收窄即现场停线）
-                    "production:execute"
+                    "production:execute",
+                    // issue #5988（人类 2026-10-02 裁定「应允许」）：销售**下单**是本职。
+                    // 此前它持 `order:list`/`order:detail`（看得见订单）却没有 `order:create`
+                    // ⇒ 建单 403（#5246 有意把写码留给运营；本次裁定改口径）。
+                    "order:create"
             );
             case "finance" -> List.of(
                     "dashboard:view", "order:list", "order:detail", "finance:view",
                     "processing:view", "inbound:view", "finance:create",
                     // issue #5699 的 I4：同销售（财务今日持 order:list）
-                    "production:execute"
+                    "production:execute",
+                    // issue #5988（人类 2026-10-02 裁定「应允许」）：财务**对账**要读客户。
+                    // 此前缺 `customer:view` ⇒ 客户列表 403（对账时看不到客户是谁）。
+                    "customer:view"
             );
+            // issue #5979（人类 2026-10-02 裁定「应允许」）：知识编辑此前 = `[dashboard:view, product:list]`，
+            // **一个 knowledge 码都没有** ⇒ 打开「知识库」被守卫拦下、调
+            // `/api/admin/knowledge/cards` 得 403 = **岗位做不了本职**。
+            // 补**读 + 写**两码：读码决定菜单可见性（节点码 = `knowledge:view`），
+            // 写码把守创建/编辑/删除/发布/归档（`KnowledgeCardController` 等）。
             case "knowledge_editor" -> List.of(
                     "dashboard:view",
-                    "product:list"
+                    "product:list",
+                    "knowledge:view",
+                    "knowledge:manage"
             );
             default -> List.of();
         };
