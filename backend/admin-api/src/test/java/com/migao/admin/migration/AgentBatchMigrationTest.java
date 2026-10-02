@@ -94,6 +94,21 @@ class AgentBatchMigrationTest {
         return m.group(1);
     }
 
+    /**
+     * 同 {@link #tableBody}，但**保留字符串字面量**（只剥注释）。
+     *
+     * <p>{@code sqlCode()} 会把 {@code '…'} 抹成 {@code ''}（那是「注释里的提及不算通路」那条判据的需要），
+     * 于是拿它断言白名单字面量会永远失败。断字面量的判据必须走这里。</p>
+     */
+    private static String tableBodyKeepingLiterals(String sql, String table) {
+        String noComments = sql.replaceAll("(?m)--.*$", " ");
+        Matcher m = Pattern.compile(
+                "CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?" + table + "\\s*\\(([\\s\\S]*?)\\n\\)\\s*;",
+                Pattern.CASE_INSENSITIVE).matcher(noComments);
+        assertThat(m.find()).as("找不到 %s 的 CREATE TABLE（或它不以 `\\n);` 收尾）", table).isTrue();
+        return m.group(1);
+    }
+
     private static List<String> liveMigrations() throws Exception {
         Path dir = root().resolve(LIVE_DIR);
         try (Stream<Path> s = Files.list(dir)) {
@@ -131,7 +146,8 @@ class AgentBatchMigrationTest {
         Pattern inList = Pattern.compile(
                 "CHECK\\s*\\(\\s*" + column + "\\s+IN\\s*\\(([^)]*)\\)", Pattern.CASE_INSENSITIVE);
         for (Path file : liveMigrationFiles()) {
-            String code = sqlCode(Files.readString(file, StandardCharsets.UTF_8));
+            // 🔴 也必须**保留字面量**（`sqlCode` 会把 `'…'` 抹成 `''` ⇒ 取值全读成空串，首轮实测即踩中）。
+            String code = Files.readString(file, StandardCharsets.UTF_8).replaceAll("(?m)--.*$", " ");
             Matcher dm = drop.matcher(code);
             if (dm.find()) {
                 values.clear();
@@ -169,8 +185,10 @@ class AgentBatchMigrationTest {
                     AgentBatchService.FIELD_STOCK);
 
             String schema = read(SCHEMA_REL);
-            String batches = tableBody(schema, "agent_batches");
-            String items = tableBody(schema, "agent_batch_items");
+            // 🔴 必须用**保留字符串字面量**的版本：`tableBody` 走 `sqlCode`（剥注释 + 把 `'…'` 抹成 `''`），
+            //    拿它断言字面量会永远失败（首轮实测即踩中：报出 `CHECK (batch_type IN ('', '', ''))`）。
+            String batches = tableBodyKeepingLiterals(schema, "agent_batches");
+            String items = tableBodyKeepingLiterals(schema, "agent_batch_items");
 
             // ① 建库脚本（bootstrap 终态）必须逐值放行代码写入的取值
             for (String type : expected) {
