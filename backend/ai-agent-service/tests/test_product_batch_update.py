@@ -31,6 +31,7 @@ from app.tools.base import ToolContext
 from app.tools.product_batch_update import (
     BATCH_TYPE_PRICE,
     BATCH_TYPE_STATUS,
+    BATCH_TYPE_STOCK,
     BATCH_TYPES,
     MAX_BATCH_ITEMS,
     VALID_ACTIONS,
@@ -44,6 +45,11 @@ PRICE_ITEMS = [
 STATUS_ITEMS = [
     {"resourceId": "prod_eval_blackout", "field": "status", "oldValue": "on_sale", "newValue": "off_sale"},
     {"resourceId": "prod_eval_dark_green", "field": "status", "oldValue": "on_sale", "newValue": "off_sale"},
+]
+#: 第三个具名批量（issue #5950）：库存调整 —— field 是 `stock`（与逐条写同一个字段词）。
+STOCK_ITEMS = [
+    {"resourceId": "prod_eval_blackout", "field": "stock", "oldValue": 1000, "newValue": 1200},
+    {"resourceId": "prod_eval_dark_green", "field": "stock", "oldValue": 800, "newValue": 1200},
 ]
 
 
@@ -159,6 +165,80 @@ class TestPreview:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 一点五、第三个具名批量 `inventory_stock`（issue #5950 库存调整）
+# ══════════════════════════════════════════════════════════════════════════════
+# 为什么复用同一工具而不是新造第二个批量工具：服务端是**同一个批次资源**
+# （`/api/admin/agent/batches` 的四端点 + 同一状态机 + 同一 `revertible`），批量语义由
+# `batchType` 声明 ⇒ 新造工具 = 把同一份两段确认 / 阈值 / 撤销逻辑抄第二份（必然漂移）。
+# 红证 = 本类「字段配对 / 改前值 / before → after 投影」三条 + `test_only_three_batch_types_are_declared`。
+
+
+class TestInventoryStockBatch:
+    @pytest.mark.asyncio
+    async def test_preview_posts_inventory_stock_batch_type(self, tool):
+        """库存批量与另两种**走同一端点、同一契约**（payload 的 field 归一成 `stock`）。"""
+        client = _client(_ok({"batchId": "b-stock", "itemCount": 2, "status": "preview"}))
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="preview",
+                                        batch_type=BATCH_TYPE_STOCK, items=STOCK_ITEMS)
+        assert result.success is True
+        args, kwargs = client.post.await_args.args, client.post.await_args.kwargs
+        assert args[0] == "/api/admin/agent/batches"
+        body = kwargs["json_data"]
+        assert body["batchType"] == "inventory_stock"
+        assert [it["field"] for it in body["items"]] == ["stock", "stock"]
+        assert [it["oldValue"] for it in body["items"]] == [1000, 800]
+
+    def test_field_of_the_stock_batch_type_is_stock(self, tool):
+        """字段配对（`_FIELD_OF_BATCH_TYPE`）：库存在场时 field 必须是 `stock`。
+
+        为什么单列一条：字段词与 `batchType` 必须配对是服务端的硬前提
+        （`AgentBatchService.TYPE_FIELD` 不配对直接 422）；工具侧漏了这一格 ⇒
+        每次 preview 都白烧一轮。
+        """
+        from app.tools.product_batch_update import _FIELD_OF_BATCH_TYPE
+        assert _FIELD_OF_BATCH_TYPE[BATCH_TYPE_STOCK] == "stock"
+
+    @pytest.mark.asyncio
+    async def test_stock_item_without_old_value_is_rejected(self, tool):
+        """改前库存缺席 ⇒ `batch_preview_required` 且**不发请求**（撤销的唯一依据不许缺）。"""
+        client = _client(_ok({"batchId": "b1"}))
+        items = [{"resourceId": "prod_eval_blackout", "field": "stock", "newValue": 1200}]
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="preview",
+                                        batch_type=BATCH_TYPE_STOCK, items=items)
+        assert result.success is False
+        assert result.error == "batch_preview_required"
+        assert "改前" in result.message
+        client.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_stock_field_cannot_be_mixed_into_a_price_batch(self, tool):
+        """`stock` 条目混进改价批量 ⇒ `batch_field_mismatch`（不许服务端去猜）。"""
+        client = _client(_ok({"batchId": "b1"}))
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="preview",
+                                        batch_type=BATCH_TYPE_PRICE, items=STOCK_ITEMS)
+        assert result.success is False
+        assert result.error == "batch_field_mismatch"
+        client.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_stock_preview_rows_are_before_after_via_single_projection(self, tool):
+        """逐条「改前库存 → 改后库存」由 `confirm_value.confirm_card_fields` 派生（投影单一源）。"""
+        client = _client(_ok({"batchId": "b-stock", "itemCount": 2, "status": "preview"}))
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="preview",
+                                        batch_type=BATCH_TYPE_STOCK, items=STOCK_ITEMS)
+        row = result.data["preview"][0]
+        expect = confirm_value.confirm_card_fields(
+            {"product_id": "prod_eval_blackout", "before_stock": 1000, "stock": 1200})
+        assert row["fields"] == expect
+        labels = [f["label"] for f in row["fields"]]
+        assert "改前库存" in labels and "库存" in labels
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 二、阈值：N > 50 拒绝并提示分批（边界双侧；不做后台任务）
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -194,15 +274,19 @@ class TestThreshold:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 三、batchType 白名单（只有两个）+ 入参 fail-closed
+# 三、batchType 白名单（三个）+ 入参 fail-closed
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 class TestWhitelistAndInputGuards:
-    def test_only_two_batch_types_are_declared(self, tool):
-        """白名单只有 `product_price` / `product_status`（通用批量有意不做）。"""
+    def test_only_three_batch_types_are_declared(self, tool):
+        """白名单只有 `product_price` / `product_status` / `inventory_stock`（通用批量有意不做）。
+
+        （原断言名 `test_only_two_batch_types_are_declared` + 期望两条 —— #5950 扩面后更新；
+        判据形状不变：**闭集**相等，多一个 / 少一个都红。）
+        """
         declared = set(tool.parameters["properties"]["batch_type"]["enum"])
-        assert declared == {BATCH_TYPE_PRICE, BATCH_TYPE_STATUS}
+        assert declared == {BATCH_TYPE_PRICE, BATCH_TYPE_STATUS, BATCH_TYPE_STOCK}
 
     def test_enums_are_literals_for_the_static_action_catalog(self, tool):
         """🔴 action / batch_type 的 enum 必须与常量一致**且是字面量列表**。
@@ -215,7 +299,7 @@ class TestWhitelistAndInputGuards:
         props = tool.parameters["properties"]
         assert props["action"]["enum"] == ["preview", "execute", "revert"]
         assert set(props["action"]["enum"]) == set(VALID_ACTIONS)
-        assert props["batch_type"]["enum"] == ["product_price", "product_status"]
+        assert props["batch_type"]["enum"] == ["product_price", "product_status", "inventory_stock"]
         assert set(props["batch_type"]["enum"]) == set(BATCH_TYPES)
 
     @pytest.mark.asyncio
@@ -227,6 +311,7 @@ class TestWhitelistAndInputGuards:
         assert result.success is False
         assert result.error == "batch_type_unsupported"
         assert BATCH_TYPE_PRICE in result.suggestion and BATCH_TYPE_STATUS in result.suggestion
+        assert BATCH_TYPE_STOCK in result.suggestion
         client.post.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -495,6 +580,23 @@ class TestWiring:
         from app.tools.registry import get_tool_registry
         assert Exported is ProductBatchUpdateTool
         assert "product_batch_update" in get_tool_registry()
+
+    def test_inventory_stock_channel_is_reachable_and_documented(self):
+        """第三个具名批量对模型**可达且被讲清**（issue #5950）。
+
+        两半缺一不可：① 工具 schema 的 `batch_type` enum（模型唯一能看到的取值面）；
+        ② `product` skill 的提示词（模型据此知道该走两段确认 + 可撤销）。
+        只改一半 ⇒ 能力存在但模型不会用（= 交付了等于没交付）。
+        """
+        from app.graph.skills.product_skill import PRODUCT_SKILL_CONFIG, PRODUCT_SYSTEM_PROMPT
+        from app.tools.product_batch_update import ProductBatchUpdateTool as Tool
+        assert "inventory_stock" in Tool.parameters["properties"]["batch_type"]["enum"]
+        assert "inventory_stock" in PRODUCT_SYSTEM_PROMPT
+        assert "stock" in PRODUCT_SYSTEM_PROMPT
+        # 前置条件必须被讲清（否则模型会把服务端拒绝当"再来一次"，白烧轮次）
+        desc = ProductBatchUpdateTool.description
+        assert "各规格库存一致" in desc and "各规格库存一致" in PRODUCT_SYSTEM_PROMPT
+        assert "product_batch_update" in PRODUCT_SKILL_CONFIG.tool_names
 
     def test_bound_to_product_skill_with_two_stage_prompt(self):
         """绑定 B 端商品 skill，且 prompt 讲清两段确认 / 阈值 / 撤销 / 白名单。"""

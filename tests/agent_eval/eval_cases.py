@@ -9405,6 +9405,29 @@ _CASE_PR_109 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-014 [NORMAL] 批量库存调整 - 两段确认（多选勾选集合 → 逐条「改前库存 → 改后库存」）→ 执行 → 撤销（源: cases/product.yml）──
+_CASE_PR_014 = EvalCase(
+    id='PR-014',
+    legacy_id='',
+    title='批量库存调整 - 两段确认（多选勾选集合 → 逐条「改前库存 → 改后库存」）→ 执行 → 撤销',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把遮光窗帘和北欧风窗帘每个规格的库存都调到 1200 米', '已选商品：遮光窗帘、北欧风窗帘', {'auto_respond': {'fallback': '确认'}}, '撤销刚才那个批量调库存', {'auto_respond': {'fallback': '确认'}}],
+    expectations=['interact(component=choice, multiSelect=True)', 'product_batch_update(action=preview, batch_type=inventory_stock)', 'interact(component=confirm)', 'product_batch_update(action=execute)'],
+    data_checks=['success=true', '两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**', '字段配对（机器断言）：`batch_type=inventory_stock` ⇒ 每条 `field` 必须是 `stock`（服务端 `AgentBatchService.TYPE_FIELD` 不配对直接 422），改前值 `oldValue` 必填（撤销的唯一依据）；判据见 backend/ai-agent-service/tests/test_product_batch_update.py 的 `TestInventoryStockBatch`', '阈值 N>50 拒绝并提示分批（本用例 N=2；边界判据见 PR-109）', '撤销逐条还原为改前值 `old_value`（服务端 `revert` → 状态 `reverted`；`revertible` 如实反映，false ⇒ 话术不得承诺可撤销）', '部分失败逐条报告、不做整体回滚（单测断言：执行路径**不得**顺带调用 revert）'],
+    skip_reason='',
+    tags=['batch', 'multi_turn', 'write', 'undo', 'two_stage_confirm', 'stock'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    required_args=[{'tool': 'product_batch_update', 'action': 'preview', 'fields': ['batch_type', 'items']}, {'tool': 'product_batch_update', 'action': 'execute', 'fields': ['batch_id']}, {'tool': 'product_batch_update', 'action': 'revert', 'fields': ['batch_id']}],
+    must_succeed=[{'tool': 'product_batch_update'}],
+    post_clean=[{'type': 'product_stock_restore', 'product_keyword': '遮光窗帘', 'stock': 500}, {'type': 'product_stock_restore', 'product_keyword': '北欧风窗帘', 'stock': 500}],
+    namespaces=['product_name:遮光窗帘', 'product_name:北欧风窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}, {'type': 'product_count_for_keyword', 'source': '北欧风窗帘', 'expect': 1}],
+)
+
 # ── PR-110 [NORMAL] 工人可达的入库端点：零商家权限码 + 请求体**结构上**不可表达「任意调整」（源: cases/product.yml）──
 _CASE_PR_110 = EvalCase(
     id='PR-110',
@@ -11805,6 +11828,7 @@ ALL_CASES = (
     _CASE_PR_107,
     _CASE_PR_108,
     _CASE_PR_109,
+    _CASE_PR_014,
     _CASE_PR_110,
     _CASE_PR_111,
     _CASE_PR_112,

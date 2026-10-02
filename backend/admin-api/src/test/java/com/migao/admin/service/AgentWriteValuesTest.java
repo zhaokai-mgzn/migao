@@ -1,4 +1,4 @@
-// case_ids: PR-007, PR-009, PR-010
+// case_ids: PR-007, PR-009, PR-010, PR-014
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -9,15 +9,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.dto.agent.AgentProductUpdateRequest;
 import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductSku;
+import com.migao.admin.entity.StockLedger;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.BeforeEach;import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -30,11 +31,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -89,6 +95,19 @@ class AgentWriteValuesTest {
     @Mock
     private ProductSkuMapper productSkuMapper;
 
+    @Mock
+    private com.migao.admin.mapper.ProductColorMapper productColorMapper;
+
+    // `updateProduct` 的其余依赖（判据 1.5 会真的走进该路径 ⇒ 缺一个就 NPE 在**没跑到被测分支**前）。
+    @Mock
+    private com.migao.admin.mapper.ProductAttributeMapper productAttributeMapper;
+
+    @Mock
+    private com.migao.admin.mapper.CategoryMapper categoryMapper;
+
+    @Mock
+    private StockLedgerService stockLedgerService;
+
     @BeforeEach
     void setUp() {
         MybatisConfiguration configuration = new MybatisConfiguration();
@@ -118,6 +137,86 @@ class AgentWriteValuesTest {
             req.setBeforePrice(new BigDecimal(beforePrice));
         }
         return req;
+    }
+
+    /** 只给 `stock` 的部分更新（批量库存调整 `inventory_stock` 走的形态）。 */
+    private AgentProductUpdateRequest stockUpdate(String stock) {
+        AgentProductUpdateRequest req = new AgentProductUpdateRequest();
+        req.setStock(new BigDecimal(stock));
+        return req;
+    }
+
+    // ═══════════════ 判据 1.5：库存写必须落到 SKU（issue #5950 的红证）═══════════════
+
+    /**
+     * 只给 `stock` 的部分更新（批量库存调整走的形态）必须落到 **SKU 级**。
+     *
+     * <h2>病灶（红证 = 摘掉修复 ⇒ {@code stockOnlyUpdateReachesSkus} 必红）</h2>
+     * `updateProduct` 的「改价落到 SKU」分支只认 {@code basePrice}
+     * （`} else if (request.getBasePrice() != null) {`），而 `products.stock` 是
+     * <b>派生冗余列</b>（唯一权威 = SKU 级，issue #4038），`getProductById` 又把响应里的
+     * `stock` 覆盖成 SKU 汇总 ⇒ 只带 stock 的部分更新会「播放成功、回读旧值」
+     * （与 #3743 假成功同型）。红色读数（修前）：`productSkuMapper.update(...)` 调用 **0 次**。
+     *
+     * <h2>桩面为什么只有这些</h2>
+     * `updateProduct` 的依赖图很大；本组只铺**该路径真正会走到**的桩（selectById / 价格回查
+     * selectOne / 库存同步 selectList + update），其余走 Mockito 默认值（`isBlank` 假 /
+     * 集合默认空）—— 路径在「无颜色无 skus、图片为空、状态不变」这一支，不触发 SKU 重建
+     * （那条分支的既有用例见 `ProductServiceTest`）。
+     */
+    @Nested
+    @DisplayName("判据 1.5 —— 只给 stock 的部分更新必须落到 SKU 级（否则回读仍是旧库存）")
+    class StockUpdateReachesSkus {
+
+        @Test
+        @DisplayName("修后：stock 落到 SKU 级并回写派生列 ⇒ 详情回读 = 新库存")
+        void stockOnlyUpdateReachesSkus() {
+            when(productMapper.selectOne(any(LambdaQueryWrapper.class)))
+                    .thenReturn(productWithPrice("168.00"));
+            when(productMapper.selectById(P1)).thenReturn(productWithPrice("168.00"));
+            ProductSku sku = skuWithPrice("168.00");
+            sku.setStock(new BigDecimal("1500.0"));
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
+
+            productService.updateProductForAgent(P1, stockUpdate("1200.0"), TENANT);
+
+            ArgumentCaptor<ProductSku> patch = ArgumentCaptor.forClass(ProductSku.class);
+            verify(productSkuMapper).update(patch.capture(), any(LambdaQueryWrapper.class));
+            assertThat(patch.getValue().getStock()).as("SKU 级被置为改后库存")
+                    .isEqualByComparingTo("1200.0");
+            // 派生列回写（`products.stock` = Σ SKU）+ 主更新 = 2 次（#4038：只写派生列 = 假成功）
+            verify(productMapper, atLeast(2)).updateById(any(Product.class));
+        }
+
+        @Test
+        @DisplayName("🔴 库存变更**必须落账**（#4157 的纪律）：摘掉 snapshot/record ⇒ 本条红")
+        void stockChangeIsLedgeredAtTheExistingChokepoint() {
+            when(productMapper.selectOne(any(LambdaQueryWrapper.class)))
+                    .thenReturn(productWithPrice("168.00"));
+            when(productMapper.selectById(P1)).thenReturn(productWithPrice("168.00"));
+            ProductSku sku = skuWithPrice("168.00");
+            sku.setStock(new BigDecimal("1500.0"));
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
+            // 快照服务是替身 ⇒ 手工给它一份「变更前」快照（真实实现读的是 DB，本判据只看
+            // **时序与入参**：快照必须发生在写之前、并把变更前的值交给落账比对）。
+            ProductSku beforeSnapshot = skuWithPrice("168.00");
+            beforeSnapshot.setStock(new BigDecimal("1500.0"));
+            when(stockLedgerService.snapshotSkus(any())).thenReturn(Map.of(2001L, beforeSnapshot));
+
+            productService.updateProductForAgent(P1, stockUpdate("1200.0"), TENANT);
+
+            // 收口 = 变更前快照 + 变更后按实际值比对落账（既有唯一实现，不新造第二套）
+            verify(stockLedgerService).snapshotSkus(any());
+            ArgumentCaptor<Map<Long, ProductSku>> before = ArgumentCaptor.forClass(Map.class);
+            verify(stockLedgerService).recordChangesAgainstSnapshot(
+                    eq(TENANT), before.capture(), eq(StockLedger.REASON_MANUAL), isNull(),
+                    contains("批量库存调整"));
+            assertThat(before.getValue()).as("快照必须取自**变更前**（否则 delta 恒 0 ⇒ 台账没有真行）")
+                    .containsKey(2001L);
+            assertThat(before.getValue().get(2001L).getStock())
+                    .as("快照里是变更前的值 1500 —— 落账依据是它")
+                    .isEqualByComparingTo("1500.0");
+        }
     }
 
     // ═══════════════ 判据 1：共享实现的按值比对 ═══════════════
@@ -163,6 +262,24 @@ class AgentWriteValuesTest {
             assertThat(AgentWriteValues.sameValue(AgentWriteValues.FIELD_STATUS, "on_sale", "on_sale"))
                     .isTrue();
             assertThat(AgentWriteValues.sameValue(AgentWriteValues.FIELD_STATUS, "off_sale", "on_sale"))
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("库存（issue #5950）与价格同属**十进制数量列** ⇒ 按值比对，不按字符串写法")
+        void stockIsComparedByNumericValue() {
+            assertThat(AgentWriteValues.FIELD_STOCK).as("库存字段词 = 逐条写的同一个词")
+                    .isEqualTo("stock");
+            assertThat(AgentWriteValues.sameValue(AgentWriteValues.FIELD_STOCK, "1200.0", "1200.00"))
+                    .as("10.0 与 10.00 是同一个库存")
+                    .isTrue();
+            assertThat(AgentWriteValues.sameValue(AgentWriteValues.FIELD_STOCK, "800.5", "800.5"))
+                    .isTrue();
+            assertThat(AgentWriteValues.sameValue(AgentWriteValues.FIELD_STOCK, "800.5", "800.6"))
+                    .as("0.1 米粒度上真的不同 ⇒ 拒")
+                    .isFalse();
+            assertThat(AgentWriteValues.sameValue(AgentWriteValues.FIELD_STOCK, "800", null))
+                    .as("一侧缺失 ⇒ fail-closed")
                     .isFalse();
         }
 

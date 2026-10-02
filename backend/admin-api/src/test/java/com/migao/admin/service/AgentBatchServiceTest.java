@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ProductResponse;
+import com.migao.admin.dto.ProductSkuResponse;
 import com.migao.admin.dto.agent.AgentBatchCreateRequest;
 import com.migao.admin.dto.agent.AgentBatchViews;
 import com.migao.admin.dto.agent.AgentProductUpdateRequest;
@@ -38,6 +39,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -109,6 +111,47 @@ class AgentBatchServiceTest {
 
     private AgentBatchCreateRequest priceRequest(String... triples) {
         return request("product_price", "basePrice", triples);
+    }
+
+    /** 库存批量的请求（`inventory_stock` ⇒ field 必须是 `stock`）。 */
+    private AgentBatchCreateRequest stockRequest(String... triples) {
+        return request(AgentBatchService.TYPE_INVENTORY_STOCK, AgentBatchService.FIELD_STOCK, triples);
+    }
+
+    /** DB 里商品的**当前库存**：`stocks` = 各 SKU 规格的库存（`getProductById` 的 `skus[].stock`）。
+     *  ⚠️ 库存批量的工作值是**每规格值**，不是汇总 —— 夹具必须给 SKU 行（多 SKU 是布艺常态）。 */
+    private ProductResponse productWithSkuStocks(String... stocks) {
+        ProductResponse p = product("168.00", "on_sale");
+        BigDecimal total = BigDecimal.ZERO;
+        List<ProductSkuResponse> skus = new ArrayList<>();
+        for (int i = 0; i < stocks.length; i++) {
+            BigDecimal v = new BigDecimal(stocks[i]);
+            ProductSkuResponse sku = new ProductSkuResponse();
+            sku.setId(2001L + i);
+            sku.setProductId(P1);
+            sku.setColorName("米白" + i);
+            sku.setDoorWidth("2.8");
+            sku.setStock(v);
+            skus.add(sku);
+            total = total.add(v);
+        }
+        p.setSkus(skus);
+        p.setStock(stocks.length == 0 ? BigDecimal.ZERO : total);   // 汇总（`getProductById` 的既有口径）
+        return p;
+    }
+
+    /** 库存批次的明细行（field = `stock`）。 */
+    private AgentBatchItem stockItem(String resourceId, String oldValue, String newValue, String status) {
+        return AgentBatchItem.builder()
+                .id(1L)
+                .batchId(BATCH_ID)
+                .tenantId(TENANT)
+                .resourceId(resourceId)
+                .field(AgentBatchService.FIELD_STOCK)
+                .oldValue(oldValue)
+                .newValue(newValue)
+                .status(status)
+                .build();
     }
 
     private AgentBatchCreateRequest request(String batchType, String field, String... triples) {
@@ -306,6 +349,181 @@ class AgentBatchServiceTest {
 
             assertThat(ex.getCode()).isEqualTo("VALIDATION_ERROR");
             verify(itemMapper, never()).insert(any(AgentBatchItem.class));
+        }
+    }
+
+    // ══════════════════ ①.5 第三个具名批量：inventory_stock（issue #5950）════════════════
+
+    /**
+     * 库存调整批次 —— **复用**同一套批次资源 / 状态机 / 撤销语义，只多一条 `batchType`。
+     *
+     * <h2>工作值的口径（issue #5950 复核订正，**不是**商品级汇总）</h2>
+     * 库存的权威在 **SKU 级**（#4038），而 `getProductById` 把响应里的 `stock` 覆盖成 Σ 汇总。
+     * 本批量的执行口径是「该商品的**每个规格**都置为 X」⇒ before/after 必须按**规格值**取，
+     * 否则多 SKU 商品三方不自洽（预览 40→100 / 实际汇总 100×N / 撤销回 40×N ≠ 40）。
+     * 故准入 = **≥1 个 SKU 且各规格一致**（不一致 ⇒ preview 整批拒绝，绝不给出失真预览）。
+     */
+    @Nested
+    @DisplayName("inventory_stock（批量库存调整，issue #5950）")
+    class InventoryStock {
+
+        @Test
+        @DisplayName("🔴 红判据①「预览即承诺」：多 SKU 商品的工作值 = **每规格值**，且执行后同口径回读 == newValue")
+        void previewValueIsThePerSkuValueAndMatchesTheReadbackAfterExecute() {
+            // 两个规格各 40（汇总 80）—— 修前（取汇总）这里会得到 "80"，与执行口径（每规格 80）不符
+            when(productService.getProductById(P1, TENANT)).thenReturn(productWithSkuStocks("40", "40"));
+
+            batchService.create(TENANT, USER, stockRequest(P1, "40", "80"));
+
+            ArgumentCaptor<AgentBatchItem> inserted = ArgumentCaptor.forClass(AgentBatchItem.class);
+            verify(itemMapper).insert(inserted.capture());
+            assertThat(inserted.getValue().getOldValue())
+                    .as("🔴 预览的 before 必须是**每规格值**（不是 SKU 汇总 80）——否则预览即失真")
+                    .isEqualTo("40");
+            assertThat(inserted.getValue().getNewValue()).isEqualTo("80");
+
+            // 执行后：该商品每个规格都置为 80 ⇒ 用**同一口径**回读仍是 "80" == 预览承诺的 newValue
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
+            when(itemMapper.selectList(any())).thenReturn(List.of(
+                    stockItem(P1, "40", "80", AgentBatchService.ITEM_PENDING)));
+            when(productService.updateProductForAgent(eq(P1), any(), eq(TENANT)))
+                    .thenReturn(productWithSkuStocks("80", "80"));
+            batchService.execute(TENANT, BATCH_ID);
+
+            when(productService.getProductById(P1, TENANT)).thenReturn(productWithSkuStocks("80", "80"));
+            batchService.create(TENANT, USER, stockRequest(P1, "80", "90"));
+            ArgumentCaptor<AgentBatchItem> second = ArgumentCaptor.forClass(AgentBatchItem.class);
+            verify(itemMapper, times(2)).insert(second.capture());
+            assertThat(second.getAllValues().get(1).getOldValue())
+                    .as("执行后同口径回读 == 预览承诺的 newValue（预览即承诺）")
+                    .isEqualTo(inserted.getValue().getNewValue());
+        }
+
+        @Test
+        @DisplayName("🔴 红判据②「撤销即还原」：各规格互不相等的商品 ⇒ preview 拒绝且零写（不给失真预览）")
+        void rejectsNonUniformSpecStocksAtPreview() {
+            when(productService.getProductById(P1, TENANT)).thenReturn(productWithSkuStocks("10", "30"));
+
+            BusinessException ex = rejection(() -> batchService.create(TENANT, USER,
+                    stockRequest(P1, "40", "80")));
+
+            assertThat(ex.getCode()).isEqualTo("VALIDATION_ERROR");
+            assertThat(ex.getMessage()).as("必须把实际值报出来（可行动）").contains("10").contains("30");
+            verify(batchMapper, never()).insert(any(AgentBatch.class));
+            verify(itemMapper, never()).insert(any(AgentBatchItem.class));
+        }
+
+        @Test
+        @DisplayName("🔴 红判据②「撤销即还原」：各规格一致 ⇒ 撤销逐值回 oldValue（每规格 == 原值）")
+        void revertRestoresEverySpecToThePersistedOldStock() {
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_DONE));
+            when(itemMapper.selectList(any())).thenReturn(List.of(
+                    stockItem(P1, "40", "80", AgentBatchService.ITEM_SUCCESS)));
+
+            AgentBatchViews.Batch view = batchService.revert(TENANT, BATCH_ID);
+
+            ArgumentCaptor<AgentProductUpdateRequest> req =
+                    ArgumentCaptor.forClass(AgentProductUpdateRequest.class);
+            verify(productService).updateProductForAgent(eq(P1), req.capture(), eq(TENANT));
+            assertThat(req.getValue().getStock()).as("🔴 还原的是 old_value（每规格值）")
+                    .isEqualByComparingTo("40");
+            assertThat(view.getStatus()).isEqualTo(AgentBatchService.STATUS_REVERTED);
+            assertThat(view.getRevertible()).as("已撤销 ⇒ revertible=false").isFalse();
+        }
+
+        @Test
+        @DisplayName("无 SKU 规格的商品 ⇒ preview 拒绝（否则执行会静默空转：0 行可写 + 派生列回写早退）")
+        void rejectsProductsWithoutSkus() {
+            when(productService.getProductById(P1, TENANT)).thenReturn(productWithSkuStocks());
+
+            BusinessException ex = rejection(() -> batchService.create(TENANT, USER,
+                    stockRequest(P1, "0", "80")));
+
+            assertThat(ex.getCode()).isEqualTo("VALIDATION_ERROR");
+            assertThat(ex.getMessage()).contains("SKU");
+            verify(itemMapper, never()).insert(any(AgentBatchItem.class));
+        }
+
+        @Test
+        @DisplayName("白名单 + 字段配对：batchType=inventory_stock ⇒ field 必须是 stock")
+        void createsPreviewWithStockFieldCollectedFromDb() {
+            when(productService.getProductById(P1, TENANT)).thenReturn(productWithSkuStocks("40", "40"));
+
+            AgentBatchViews.Batch view = batchService.create(TENANT, USER,
+                    stockRequest(P1, "40", "80"));
+
+            assertThat(view.getBatchType()).isEqualTo(AgentBatchService.TYPE_INVENTORY_STOCK);
+            assertThat(view.getStatus()).isEqualTo(AgentBatchService.STATUS_PREVIEW);
+            ArgumentCaptor<AgentBatchItem> items = ArgumentCaptor.forClass(AgentBatchItem.class);
+            verify(itemMapper).insert(items.capture());
+            assertThat(items.getValue().getField()).isEqualTo("stock");
+        }
+
+        @Test
+        @DisplayName("field 不配对（inventory_stock + status）⇒ 拒绝且零写")
+        void rejectsMismatchedFieldForStockBatch() {
+            BusinessException ex = rejection(() -> batchService.create(TENANT, USER,
+                    request(AgentBatchService.TYPE_INVENTORY_STOCK, AgentBatchService.FIELD_STATUS,
+                            P1, "on_sale", "off_sale")));
+
+            assertThat(ex.getCode()).isEqualTo("VALIDATION_ERROR");
+            assertThat(ex.getMessage()).contains("stock");
+            verify(itemMapper, never()).insert(any(AgentBatchItem.class));
+        }
+
+        @Test
+        @DisplayName("改后库存 > 1 位小数 ⇒ 拒绝且零写（精度准入与单条写同一收口 StockQuantity）")
+        void rejectsSubTenthStockPrecision() {
+            when(productService.getProductById(P1, TENANT)).thenReturn(productWithSkuStocks("40", "40"));
+
+            BusinessException ex = rejection(() -> batchService.create(TENANT, USER,
+                    stockRequest(P1, "40", "12.25")));
+
+            assertThat(ex.getCode()).isEqualTo("VALIDATION_ERROR");
+            verify(batchMapper, never()).insert(any(AgentBatch.class));
+            verify(itemMapper, never()).insert(any(AgentBatchItem.class));
+        }
+
+        @Test
+        @DisplayName("执行：写的是 stock 字段（不是 status / basePrice）")
+        void executesIntoTheStockField() {
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
+            when(itemMapper.selectList(any())).thenReturn(List.of(
+                    stockItem(P1, "40", "80", AgentBatchService.ITEM_PENDING)));
+            when(productService.updateProductForAgent(eq(P1), any(), eq(TENANT)))
+                    .thenReturn(productWithSkuStocks("80", "80"));
+
+            AgentBatchViews.Batch view = batchService.execute(TENANT, BATCH_ID);
+
+            ArgumentCaptor<AgentProductUpdateRequest> req =
+                    ArgumentCaptor.forClass(AgentProductUpdateRequest.class);
+            verify(productService).updateProductForAgent(eq(P1), req.capture(), eq(TENANT));
+            assertThat(req.getValue().getStock()).as("执行 = 写 newValue 到 stock")
+                    .isEqualByComparingTo("80");
+            assertThat(req.getValue().getStatus()).as("不得落到 status 分支").isNull();
+            assertThat(req.getValue().getBasePrice()).as("不得落到价格分支").isNull();
+            assertThat(view.getStatus()).isEqualTo(AgentBatchService.STATUS_DONE);
+            assertThat(view.getRevertible()).as("done ⇒ revertible（撤销如实反映）").isTrue();
+        }
+
+        @Test
+        @DisplayName("撤销逐条失败 ⇒ revert_partial（不掩盖哪几条没还原回去）")
+        void revertFailureIsReportedPerItem() {
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_DONE));
+            when(itemMapper.selectList(any())).thenReturn(List.of(
+                    stockItem(P1, "40", "80", AgentBatchService.ITEM_SUCCESS),
+                    stockItem(P2, "30", "80", AgentBatchService.ITEM_SUCCESS)));
+            when(productService.updateProductForAgent(eq(P1), any(), eq(TENANT)))
+                    .thenReturn(productWithSkuStocks("40", "40"));
+            when(productService.updateProductForAgent(eq(P2), any(), eq(TENANT)))
+                    .thenThrow(new BusinessException("VALIDATION_ERROR", "库存还原失败"));
+
+            AgentBatchViews.Batch view = batchService.revert(TENANT, BATCH_ID);
+
+            assertThat(view.getStatus()).isEqualTo(AgentBatchService.STATUS_REVERT_PARTIAL);
+            assertThat(view.getResults()).extracting(AgentBatchViews.Result::isSuccess)
+                    .containsExactly(true, false);
+            assertThat(view.getResults().get(1).getError()).contains(P2);
         }
     }
 

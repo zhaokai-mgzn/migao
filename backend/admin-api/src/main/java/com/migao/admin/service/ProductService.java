@@ -131,6 +131,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     private static final String LEDGER_NOTE_SKU_CHANGED = "商品建档/编辑：SKU 库存变更";
     private static final String LEDGER_NOTE_SKU_BASELINE = "商品建档/编辑：新 SKU 初始库存（基线行）";
+    /** 批量库存调整（issue #5950）：与建档/编辑**同一条落账收口**，note 区分来源
+     *  （#4157 的纪律：凡改 SKU 库存的路径都必须落账，否则台账里查不到这次变更）。 */
+    private static final String LEDGER_NOTE_SKU_BATCH_STOCK = "批量库存调整：SKU 库存变更";
 
     /**
      * 分页查询商品列表
@@ -498,6 +501,33 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     .eq(ProductSku::getProductId, id)
                     .eq(ProductSku::getTenantId, tenantId));
             log.info("商品改价已同步到 SKU: id={}, price={}", id, request.getBasePrice());
+        }
+
+        // 库存同理必须落到 SKU（issue #5950）：只给 stock、不给 colors/skus 的部分更新
+        // （批量库存调整 `inventory_stock` 与单条 `AgentProductUpdateRequest.stock` 走的就是这条）
+        // 上面两个分支都不成立 ⇒ `products.stock` 只是**派生冗余列**（唯一权威是 SKU 级，
+        // issue #4038），而 `getProductById` 又把响应里的 `stock` 覆盖成 SKU 汇总 ⇒ 只写那一列
+        // 的后果是「执行成功、回读库存仍是旧值」（与 #3743 的假成功同型）。
+        // 口径 = 该商品现有 SKU 统一置为该绝对值（「每个规格都调到 X 米」——与改价的
+        // 「每个 SKU 都置为该价」同一形态），随后由唯一入口 `syncProductStockFromSkus`
+        // 把派生列回写为汇总值 —— 不新造第二条写链路。
+        if (request.getStock() != null) {
+            // 🔴 必须落账（issue #4157 的纪律，issue #5950 复核时被指出）：直写 SKU 库存而不落账
+            // =「库存台账第三条变更路径未落账」那个形态的**第四条**实例 —— 批次改完库存在
+            // `stock_ledger` 里查不到，与页面改库存口径不一致（审计/对账缺口）。
+            // 收口 = 变更前快照 + 变更后按实际值比对落账（`snapshotSkus` /
+            // `recordChangesAgainstSnapshot` 是既有唯一比对实现，不新造第二套）。
+            Map<Long, ProductSku> stockBeforeBatch = stockLedgerService.snapshotSkus(List.of(id));
+            ProductSku stockSync = new ProductSku();
+            stockSync.setStock(request.getStock());
+            productSkuMapper.update(stockSync, new LambdaQueryWrapper<ProductSku>()
+                    .eq(ProductSku::getProductId, id)
+                    .eq(ProductSku::getTenantId, tenantId));
+            // 派生列回写的**唯一入口**（#4038：商品级 `products.stock` 只是冗余展示列）
+            syncProductStockFromSkus(id);
+            stockLedgerService.recordChangesAgainstSnapshot(tenantId, stockBeforeBatch,
+                    StockLedger.REASON_MANUAL, null, LEDGER_NOTE_SKU_BATCH_STOCK);
+            log.info("商品库存已同步到 SKU: id={}, stock={}", id, request.getStock());
         }
 
         // 更新商品属性：仅当请求中明确提交 brand 或 specifications 时才重写，避免误清空

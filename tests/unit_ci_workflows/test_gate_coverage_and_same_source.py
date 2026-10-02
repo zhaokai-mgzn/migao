@@ -792,6 +792,26 @@ def test_named_batch_types_match_tool_side() -> None:
     )
 
 
+def test_stock_batch_type_is_wired_in_both_batch_registries() -> None:
+    """第三个具名批量 `inventory_stock`（issue #5950）在三处**同源**清单里都在场。
+
+    为什么单独立判据：两侧**一起漏**（工具加了白名单却忘了字段配对/别名）时，上一条
+    「两侧相等」判据照样绿，而该批类型会在工具里 KeyError / 被静默判成错字段。
+    三处分别覆盖：工具白名单（`BATCH_TYPES`）、字段词（`stock`）、用例侧写方归类。
+    **删掉任一处 ⇒ 本条红并具名报出**（= 摘掉接线的注入点）。
+    """
+    tool_rel = "backend/ai-agent-service/app/tools/product_batch_update.py"
+    src = (REPO / tool_rel).read_text(encoding="utf-8")
+    assert "inventory_stock" in _members_of(src, "BATCH_TYPES", tool_rel), (
+        f"{tool_rel} 的 `BATCH_TYPES` 里没有 `inventory_stock` ⇒ 服务端批量类型在 Agent 侧不可达")
+    assert '"stock"' in src or "'stock'" in src, (
+        f"{tool_rel} 里找不到库存字段词 `stock`（字段配对表 / 别名表）⇒ #5950 的条目拿不到字段")
+    guard_rel = "tests/unit_ci_workflows/test_shared_fixture_write_restore.py"
+    guard_src = (REPO / guard_rel).read_text(encoding="utf-8")
+    assert '("product_batch_update", "execute", "inventory_stock"): "stock"' in guard_src, (
+        f"{guard_rel} 没有把 `inventory_stock` 的写方归类到 `stock` ⇒ 判据 ② 对它无对象（静默失效）")
+
+
 def test_effect_layer_fields_are_a_subset_of_taxonomy() -> None:
     """`_EFFECT_LAYER_FIELDS` 与其注释声称**同源子集**的 `EFFECT_FIELDS` 必须真含于它。"""
     runner = _load_runner()

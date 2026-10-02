@@ -83,7 +83,9 @@ class InventoryManageTool(BaseTool):
         "【参数】action 必填：**只有 query（需 product_id）/ low_stock_alert（可选 threshold）两个只读 action**"
         "（B 端已只读化，issue #5247）。"
         "【反例】查商品详情（含库存字段）用 product_detail；查批次余量/剩料分布用 batch_stock_query。"
-        "【反例】调库存**不在本工具能力内**——引导用户到后台「商品管理 → 编辑商品 → 库存」页调整。"
+        "【反例】调**单条**库存**不在本工具能力内**——引导用户到后台「商品管理 → 编辑商品 → 库存」页调整。"
+        "【批量】多条商品一起调库存用 product_batch_update(action=preview, batch_type=inventory_stock)"
+        "（两段确认 + 可撤销，issue #5950）—— 本工具自身不含任何写 action。"
         "【标注】READONLY — 纯查询，不含任何写 action"
     )
     
