@@ -13,8 +13,9 @@ S4 把预设内容（`SKILL.md` / `CHANGELOG.md` / `scripts/*.mjs` / `agent.cord
 | 顺序 | 来源 | 何时命中 |
 |---|---|---|
 | ① | **本仓工作树** `.agent-presets/migao/` | 该路径若在本仓重新出现（反向验证 / 回滚），判据立即照旧判**它** |
-| ② | **git 基线**（`origin/main` → `origin/main~1` → `HEAD~1` → `HEAD` 里第一个真带着该路径的） | 默认（CI 与**本机都走这条** —— 见下面的「为什么不是镜像优先」）|
-| ③ | **预设仓镜像**（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`） | 兜底（基线都取不到时）|
+| ② | **预设语料快照**（`tests/unit_ci_workflows/preset_snapshot/`，`MANIFEST.json` 哈希钉定来源） | **默认**（CI 无凭据 / 无镜像也必可达）|
+| ③ | **git 基线**（`origin/main` → `origin/main~1` → `HEAD~1` → `HEAD` 里第一个真带着该路径的） | 过渡（迁移未落地 / 回滚的基线里仍有预设目录时）|
+| ④ | **预设仓镜像**（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`） | 兜底（无 git 历史且快照缺失的本地工作副本）|
 
 ### 为什么**不是**镜像优先（本 PR 实测）
 
@@ -22,6 +23,14 @@ S4 把预设内容（`SKILL.md` / `CHANGELOG.md` / `scripts/*.mjs` / `agent.cord
 而本目录这些判据的**期望字面量**（逐字锚、章节标题、版本口径）是跟着**业务仓 main** 走的 ⇒ 拿落后镜像当语料
 会让它们在本机**假红**，且与 CI（无镜像 ⇒ 只能走基线）**口径不一致** —— 「本机绿 / CI 红」正是本 PR
 返工三轮的根因形态。⇒ 统一以**业务仓基线**为准（本机与 CI 同一份），镜像只在基线取不到时兜底。
+
+⚠️ **S4 终态后基线级失效（issue #6071 实测双爆）**：迁移 PR 合并后 `origin/main` 自身不再带
+`.agent-presets/migao/` ⇒ 基线候选全空；预设仓 **PRIVATE**（CI actions 无凭据 clone）、runner 也无
+本地镜像 ⇒ `test_ui_multimodal_acceptance_carrier` 等 4 个判据文件在 CI **采集期**必红
+（`ci workflow helper unit tests` 8m23s + `Post-Merge Verify` 53s，报错里那「两条正路」在 CI 一条都走不通）。
+⇒ 快照级（②）成为**默认事实源**：预设仓 `origin/main` 中**被判据读取的文件子集**，逐字节落仓 +
+`MANIFEST.json` 记来源 commit 与 sha256；预设仓更新 ⇒ 重跑物化步骤同步快照（同步义务显式化，
+判据由 `test_preset_snapshot_corpus.py` 锁定）。
 
 ## 硬规矩
 
@@ -48,6 +57,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PRESET_PREFIX_IN_REPO = ".agent-presets/migao/"
 #: 读预设内容的 git 基线候选（按序取第一个**真读得到**的）。
 PRESET_BASELINE_REFS = ("origin/main", "origin/main~1", "HEAD~1", "HEAD")
+#: 预设语料快照（S4 终态的 CI 事实源）：预设仓 origin/main 被判据读取的文件子集 + MANIFEST.json 哈希钉定。
+PRESET_SNAPSHOT = Path(__file__).resolve().parent / "preset_snapshot"
 #: 本机预设仓镜像（= 权威源）。`MIGAO_PRESET_MIRROR` 可覆盖，与 `scripts/preset-anchor-check.sh` 同源。
 PRESET_MIRROR = Path(os.environ.get("MIGAO_PRESET_MIRROR")
                      or (Path.home() / "migao-dev-preset-anchor"))
@@ -93,11 +104,14 @@ def preset_root() -> Path | None:
         return _CACHE[0]
     local = REPO_ROOT / PRESET_PREFIX_IN_REPO
     root: Path | None = local if (local / "skills").is_dir() else None
+    if root is None and (PRESET_SNAPSHOT / "skills").is_dir():
+        # ② 预设语料快照（S4 终态默认：CI 无凭据 / 无镜像也必可达；MANIFEST.json 哈希钉定）
+        root = PRESET_SNAPSHOT
     if root is None:
-        # ② 业务仓 git 基线（本机与 CI **同一份** ⇒ 消掉「镜像落后」造成的口径漂移）
+        # ③ 业务仓 git 基线（迁移未落地 / 回滚的基线里仍有预设目录时命中）
         root = _materialize_from_git()
     if root is None and (PRESET_MIRROR / "skills").is_dir():
-        # ③ 兜底：基线取不到（例如无 git 历史的工作副本）时才用本机镜像
+        # ④ 兜底：基线与快照都取不到（例如无 git 历史的工作副本）时才用本机镜像
         root = PRESET_MIRROR
     _CACHE.append(root)
     return root
@@ -123,9 +137,11 @@ def preset_text(rel: str) -> str | None:
 def corpus_help(rel: str) -> str:
     """读不到时的**可行动**说明（所有判据共用，别各写一份）。"""
     return (
-        f"读不到预设内容 `{rel}`（S4 / issue #6020 后预设已迁出业务仓）。两条正路：\n"
-        f"  · 本机：建预设仓镜像 —— `{PRESET_MIRROR}`（见 AGENTS.md「开发环境准备」）；\n"
-        f"  · CI：让 git 基线里带着 `{PRESET_PREFIX_IN_REPO}`"
+        f"读不到预设内容 `{rel}`（S4 / issue #6020 后预设已迁出业务仓）。正路（按序）：\n"
+        f"  · 首选：同步预设语料快照 —— `tests/unit_ci_workflows/preset_snapshot/`"
+        f"（从预设仓 origin/main 物化，MANIFEST.json 记来源 commit 与 sha256）；\n"
+        f"  · 本机兜底：建预设仓镜像 —— `{PRESET_MIRROR}`（见 AGENTS.md「开发环境准备」）；\n"
+        f"  · 过渡兜底：让 git 基线里带着 `{PRESET_PREFIX_IN_REPO}`"
         f"（已试 {list(PRESET_BASELINE_REFS)} —— 注意 `pull_request` 检出需要 `fetch-depth: 0`）。"
     )
 

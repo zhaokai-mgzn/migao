@@ -1,0 +1,2 @@
+name: 米高研发
+description: MIGAO AI 智能客服系统专用研发 preset — 标准编码 Agent + migao-dev-flow（三把工具/提交流程/行为改动自动体检 §13/AI-TDD 铁律已并入 §3.4/§15.6）+ migao-acceptance（可执行验收协议：L1/L2/UA + 证据链 + 双 AI 交叉验证，零人工执行）+ 最少代码阶梯（ponytail 集成：YAGNI→复用→标准库→原生→已装依赖→一行→最小实现，见 docs/wiki/Code-Minimalism.md）+ 米高 persona（CI 门禁、case_ids、wiki 索引指引）。

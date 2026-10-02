@@ -1,0 +1,23 @@
+{
+ "source_repo": "zhaokai-mgzn/migao-agent-presets",
+ "source_commit": "42283c2d7f6cd992a4e69947f2ab64edc83fa7cf",
+ "synced_at": "2026-10-02T23:00+08:00",
+ "files": {
+  "agent.cordis.yml": {
+   "sha256": "d65da22e938836a80a9aec9f88da43b9da48cdadc505855f4a541b036c80136f",
+   "bytes": 19931
+  },
+  "preset.yml": {
+   "sha256": "ec58bc00f90ebe7f8c594cd327023406ba9b51b3ec6253f94d799d7894551985",
+   "bytes": 542
+  },
+  "skills/migao-dev-flow/SKILL.md": {
+   "sha256": "34ae7f5cf4d5a889451519c8856ef425cde9233c0fb72990566d04b923ebc4f4",
+   "bytes": 448261
+  },
+  "skills/migao-dev-flow/scripts/ui-multimodal-acceptance.mjs": {
+   "sha256": "8c2e2f7e06b7a96d927b4f28981bdf4a08764037035659411e6740e2b70bcbe1",
+   "bytes": 20002
+  }
+ }
+}
