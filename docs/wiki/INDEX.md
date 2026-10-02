@@ -44,6 +44,7 @@ Wiki 页面是摘要，详细文档在：
 | 域 | 详细文档路径 |
 |----|------------|
 | 架构 | [docs/wiki/Architecture.md](Architecture.md)（当前事实） |
+| **研发模式三维平衡（墙钟 / 质量 / token：目标函数 + 执行域 + 十项机制 + 反模式 + 路线图）** | **[Dev-Mode-Balance.md](Dev-Mode-Balance.md)** |
 | 部署 | [docs/deployment/swas-migration-lessons.md](../deployment/swas-migration-lessons.md)（SWAS 踩坑）· [deployment-checklist.md](../deployment/deployment-checklist.md) |
 | API | [docs/api/api-reference.md](../api/api-reference.md) |
 | SQL | [docs/sql/schema.sql](../sql/schema.sql) |
