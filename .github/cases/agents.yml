@@ -142,7 +142,7 @@ cases:
     truths_ref:
       - ai-chat.astream-tool-calls
       - ai-chat.astream-tool-result
-      - ai-chat.astream-text-suggestion
+      - ai-chat.astream-text
     user_inputs:
       - "ai-agent-service 流式对话（graph.astream 节点级更新）"
     expectations:

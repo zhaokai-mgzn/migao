@@ -217,7 +217,7 @@
 数据: final_answer 有新内容→yield type=text；异常→yield type=error（含异常类名）
 跳过: [backend-contract] 异步流式对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
-真值: ai-chat.astream-tool-calls, ai-chat.astream-tool-result, ai-chat.astream-text-suggestion
+真值: ai-chat.astream-tool-calls, ai-chat.astream-tool-result, ai-chat.astream-text
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, streaming, tool_result
 
 ### AG-006. get_greeting/get_agent 单例/reset_agent/兼容别名 🔵
