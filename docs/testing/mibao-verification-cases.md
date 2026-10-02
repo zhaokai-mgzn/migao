@@ -2235,7 +2235,7 @@
 真值: dashboard-jump.proactive-status-card, dashboard-jump.proactive-wiring-status
 溯源: 2026-10-02 新增（issue #5955）：日报卡片面 proactive 四态可视化（对话面此前已具备、卡片面零渲染）。取号 DA-021：现取 .github/cases/ 最大号 = DA-020（main ∪ 全部在飞 ref，逐 ref 核过，见 PR body）。**未覆盖面（如实登记）**：Playwright 页面多模态验收（真实登录 + 截图 + AI 读图）由集成方收口，本包不跑；面板在真实浏览器下的排版/对比度不在本单确定性判据面内。 ｜ tags: proactive, briefing, card, ui
 
-## 防御域（23 case）
+## 防御域（24 case）
 
 ### DF-001. Token攻击 - 要求生成超长回复 🔴
 ```
@@ -2591,6 +2591,18 @@
 ```
 真值: order.shipment-read-faces, aftersales-flow.tenant-isolation
 溯源: 2026-09-27 新增（issue #5651 收口）：新增的 admin 发货读面按仓内既有租户口径（跨租户 = 404 且与不存在逐字同形）落判据 —— 该形态此前只在售后/会话域有判据，订单发货面是新的可达路径（admin-web 直接调它），必须同批钉住。 ｜ tags: defense, tenant-isolation, existence-leak, shipment
+
+### DF-025. 无权限 403 先于参数 422 - preHandle 权限门禁（防端点/参数结构探测） 🔴
+```
+你: 无权限员工 GET /api/admin/orders（缺必填参数）——后端必须先判权限再校验参数，返回 403 而非 422
+期望: direct_reply
+数据: 无权限身份 GET 带 @RequestParam 必填参数的 admin 端点必须返回 403（code=PERMISSION_DENIED、details 含 requiredPermission），不得先落入 400/422 参数校验（信息泄露：可从错误形态确认端点存在与参数结构，且与带齐参数时的 403 语义不一致）
+数据: 类级元守卫：权限判定必须挂在 PermissionInterceptor.preHandle（MVC 分发阶段，先于参数解析）+ AOP 双保险并存；删除 WebConfig 的拦截器注册即红（PermissionPreHandleGateTest#webConfig_registersPreHandleInterceptor）
+前置: admin-api 管理端（租户 20）：无 order:view 权限的员工会话
+跳过: 纯 admin-api HTTP 语义（MockMvc standalone + 真实矩阵探针），非 LLM 行为，不进 agent-eval；实例判据 = backend/admin-api/src/test/java/com/migao/admin/security/PermissionPreHandleGateTest.java
+```
+真值: ai-chat.permission-layers
+溯源: 2026-10-02 新增（R2 商家后台全量重测发现 F3，issue #6063）：PermissionInterceptor 原为 AOP @Around，晚于 @RequestParam 参数解析 ⇒ 无权限 GET 缺必填参数返回 422（阶段3 矩阵 6 角色 × W01/W02/W04/W05 共 20 格 422≠403）。修复：preHandle 复用 public requirePermission（同一份授权语义）+ WebConfig 注册 /api/**，AOP 保留双保险。 ｜ tags: defense, rbac, prehandle, info-leak
 
 ## 财务对账域（4 case）
 
@@ -9036,8 +9048,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：630（活跃 133，跳过 497）
-- tier 分布：smoke 12 / normal 585 / adversarial 31
+- 用例总数：631（活跃 133，跳过 498）
+- tier 分布：smoke 12 / normal 585 / adversarial 32
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -9048,7 +9060,7 @@
 - 跨域：3
 - 客户域：11
 - 数据域：21
-- 防御域：23
+- 防御域：24
 - 财务对账域：4
 - 人事域：12
 - 知识问答域：7

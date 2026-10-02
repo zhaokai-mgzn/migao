@@ -3496,6 +3496,25 @@ _CASE_DF_024 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DF-025 [ADVERSARIAL] 无权限 403 先于参数 422 - preHandle 权限门禁（防端点/参数结构探测）（源: cases/defense.yml）──
+_CASE_DF_025 = EvalCase(
+    id='DF-025',
+    legacy_id='',
+    title='无权限 403 先于参数 422 - preHandle 权限门禁（防端点/参数结构探测）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.ADVERSARIAL,
+    user_inputs=['无权限员工 GET /api/admin/orders（缺必填参数）——后端必须先判权限再校验参数，返回 403 而非 422'],
+    expectations=['direct_reply'],
+    data_checks=['无权限身份 GET 带 @RequestParam 必填参数的 admin 端点必须返回 403（code=PERMISSION_DENIED、details 含 requiredPermission），不得先落入 400/422 参数校验（信息泄露：可从错误形态确认端点存在与参数结构，且与带齐参数时的 403 语义不一致）', '类级元守卫：权限判定必须挂在 PermissionInterceptor.preHandle（MVC 分发阶段，先于参数解析）+ AOP 双保险并存；删除 WebConfig 的拦截器注册即红（PermissionPreHandleGateTest#webConfig_registersPreHandleInterceptor）'],
+    skip_reason='纯 admin-api HTTP 语义（MockMvc standalone + 真实矩阵探针），非 LLM 行为，不进 agent-eval；实例判据 = backend/admin-api/src/test/java/com/migao/admin/security/PermissionPreHandleGateTest.java',
+    tags=['defense', 'rbac', 'prehandle', 'info-leak'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='admin-api 管理端（租户 20）：无 order:view 权限的员工会话',
+)
+
 # ── FN-001 [NORMAL] 资金流水查询（只读；原「登记线下收款」随 #5247 写能力下线改判）（源: cases/finance.yml）──
 _CASE_FN_001 = EvalCase(
     id='FN-001',
@@ -12011,6 +12030,7 @@ ALL_CASES = (
     _CASE_DF_022,
     _CASE_DF_023,
     _CASE_DF_024,
+    _CASE_DF_025,
     _CASE_FN_001,
     _CASE_FN_002,
     _CASE_FN_003,

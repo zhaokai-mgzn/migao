@@ -3,17 +3,22 @@ package com.migao.admin.security;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.exception.PermissionDeniedException;
 import com.migao.admin.service.RoleService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
+import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.util.Collection;
 import java.util.HashSet;
@@ -31,9 +36,29 @@ import java.util.Set;
 @Aspect
 @Component
 @RequiredArgsConstructor
-public class PermissionInterceptor {
+public class PermissionInterceptor implements HandlerInterceptor {
 
     private final RoleService roleService;
+
+    // ── F3（issue #6063）：403 必须先于 422/400 ──
+    // AOP @Around 运行在方法体调用阶段，晚于 @RequestParam 必填校验（参数解析阶段）⇒
+    // 无权限 GET 缺必填参数先拿到 422（泄露端点存在 + 参数结构）。preHandle 在 MVC 分发
+    // 阶段运行，把同一份授权判定提前到参数解析之前；AOP 保留为双保险（非 MVC 直调仍被拦）。
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        if (!(handler instanceof HandlerMethod handlerMethod)) {
+            return true;
+        }
+        RequirePermission annotation = AnnotationUtils.findAnnotation(handlerMethod.getMethod(), RequirePermission.class);
+        if (annotation == null) {
+            annotation = AnnotationUtils.findAnnotation(handlerMethod.getBeanType(), RequirePermission.class);
+        }
+        if (annotation == null) {
+            return true;
+        }
+        requirePermission(annotation.value());
+        return true;
+    }
 
     /**
      * 越权授予的可行动建议（与 {@link PermissionDeniedResponse} 同口径：说清「不是参数问题」+
