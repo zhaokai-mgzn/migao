@@ -10,9 +10,15 @@
 # 通道：与 `deploy/scripts/swas-h5-publish-ci.sh`（工人端 `w/`）**同一把钥匙、同一条云 API**
 # （SWAS RunCommand）—— **不引入任何新 secret**。
 #
-# 远端逻辑**不在本文件里**：本文件只做「取 sha → 发起云调用 → 轮询 → 解码输出 → 断言」，
-# 真正动手的是 `deploy/swas/c-end-h5-publish-remote.sh`（**单一出处**：线上发布、本地沙箱复跑、
-# 守卫 `tests/unit_ci_workflows/test_c_end_h5_hosting.py` 的行为级红证，跑的都是同一份文件）。
+# 远端逻辑**不在本文件里**：本文件只做「取 sha → 组装**极小的引导** → 发起云调用 → 轮询 →
+# 解码输出 → 断言」，真正动手的是 `deploy/swas/c-end-h5-publish-remote.sh`（**单一出处**：
+# 线上发布、本地沙箱复跑、守卫 `tests/unit_ci_workflows/test_c_end_h5_hosting.py` 的行为级红证，
+# 跑的都是同一份文件）。
+#
+# 🔴 **远端执行体不进 SWAS 命令内容**（命令内容只做「按**不可变 sha** 从 codeload 取回执行体并执行」）
+#    —— 命令内容与远端脚本大小**解耦**，且组装后在 CI 侧**前置断言**其字节数 < 上限
+#    （上限出处见「组装远端命令」一节；超限 ⇒ **本机具名判红**，不是云上一个 `SDKError 400`）。
+#    病根与实测：issue #6095 / run 37075737625（整份脚本被内联 ⇒ `400 CmdContent.ExceedLimit`）。
 #
 # 🔴 **首次发布在 CI 侧被机械禁止**（与远端脚本的 `TAKEOVER_REQUIRED` 是**两条独立的闸**）：
 #   静态根上**已经住着两条腿的产物**（`w/` 工人端、`b/` 商家端），而根的现值
@@ -39,7 +45,9 @@ SK=${4:-}
 SHA=${5:-${GITHUB_SHA:-}}
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-REMOTE_SCRIPT="$ROOT/deploy/swas/c-end-h5-publish-remote.sh"
+# `H5_REMOTE_SCRIPT_PATH` = **判据注入夹具用**（生产不带它 ⇒ 走下面「远端执行体缺失 ⇒ 判红」那条断言）。
+# 它**不是**后门：远端脚本路径不是安全边界（命令内容才是），且注入只影响**本机**这一侧。
+REMOTE_SCRIPT=${H5_REMOTE_SCRIPT_PATH:-"$ROOT/deploy/swas/c-end-h5-publish-remote.sh"}
 DIST_DIR="$ROOT/frontend/mini-app/dist"
 LOCAL_INDEX="$DIST_DIR/index.html"
 
@@ -187,16 +195,74 @@ say "- 产物：\`frontend/mini-app/dist/\`（CI 跑 \`npm run build:h5\`，publ
 say "- 源：\`https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/$SHA\`（不可变 commit）"
 say "- 本地 \`dist/index.html\` 哈希：\`$LOCAL_SHA\`"
 
-# ── 组装远端命令 = 远端执行体 + 四个环境变量前缀（无参数拼接 ⇒ 无注入面）──────
+# ── 组装远端命令 = **极小的引导**（远端执行体**不进命令内容**）──────────────────
+# 命令内容只做「按**不可变 sha** 取回远端执行体并执行」；其余（首次发布闸、原子切换、备份、
+# reserved-prefix、identity 断言…）**原样留在远端脚本里**（发布逻辑的单一出处不变）。
+#
+# 🔴 病根（run 37075737625 / sha f3e49752f / 2026-10-02T23:06Z）：此前这里把**远端执行体整份内联**
+#    （`cat` 远端脚本再拼进命令内容）⇒ 随迭代增长越过 SWAS `CommandContent` 上限 ⇒ **每次** RunCommand
+#    都返回 `400 CmdContent.ExceedLimit`（线上产物因此陈旧 33 天：`app.migaozn.com/js/app.js` 的
+#    `Last-Modified` 停在 2026-08-30T06:54Z）。本改动令**命令内容与远端脚本大小解耦**：
+#    远端执行体 20176 字节 ⇒ 命令内容只剩引导的几百字节 ⇒ 往远端脚本加发布逻辑**不再**推高命令内容。
+#
 # `H5_TAKEOVER_FIRST_PUBLISH=1` 是**给远端脚本的**：本文件已在下面断言过「上一版清单已在线上」，
 # 所以这里带 takeover 只是为了让远端的「无人认领」闸不再触发（**不是**在替人签字：
 # 首次发布若清单不在线上，本文件在云调用之前就判红，压根走不到这一步）。
+#
+# 取回通道 = **既有已证明可用的那一条**（与远端脚本自己取源码、与 `swas-deploy-ci.sh` 的 bootstrap
+# 同源）：`https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/<sha>`
+#   · 不可变引用：URL 用 `$SHA`（= `$GITHUB_SHA`）；**不是**取 main 的最新 ⇒「发布的内容」与
+#     「CI 构建的内容」必定同一个 commit（按 main 的最新取会让两者漂移）；
+#   · `$SHA` 已在上面过字符集白名单（只接受十六进制）⇒ 无注入面；
+#   · 取不到 / 解不出 ⇒ **远端非零退出并打印具名原因**（绝不静默半成品发布）。
+#
+# ⚠️ 引导**不比对**执行体内容哈希：「取回的**是不是那个 sha 的内容**」由通道保证（不可变引用 +
+#    HTTPS）；「线上发布的产物是不是本次构建」由下面 CI 侧的 `PUBLISHED_INDEX_SHA256` 断言承担
+#    （那条是**真实采样**，不是「再算一遍现值 ⇒ 与自己恒等」的空断言）。
+#
+# 🔴 命令内容字节上限（`COMMAND_CONTENT_LIMIT_BYTES`）的**出处**：SWAS Open `RunCommand` 官方文档
+#    https://help.aliyun.com/zh/simple-application-server/developer-reference/api-swas-open-2020-06-01-runcommand
+#    —— `CommandContent` 与自定义参数在 **base64 编码后**综合长度 ≤ **16 KB**（= 16384 字节）。
+#    ⚠️ 冲突登记（照实）：ECS 侧同族 API 的文档口径是 **64 KB**（`CommandContent` Base64 后 ≤ 64 KB），
+#    而本仓既有实测把上限读成 **43.8~50.7 KB**（`tests/unit_ci_workflows/test_swas_server_side_build.py`
+#    的读数：38 000 字节正文 = 50 769 字符即被拒）。**能复现的实测优先** ⇒ 取三者中**最保守**的 16 KB
+#    当闸值：超了就在**本机**判红（具名报文），而不是云上冒一个 `SDKError 400`。
+REMOTE_FETCH='WORK=$(mktemp -d) && T=$(mktemp) && die() { echo "❌ 引导失败：$1 —— 未做任何发布动作" >&2; exit 1; } && trap '"'"'rc=$?; rm -rf "$WORK"; rm -f "$T"; exit $rc'"'"' EXIT && curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 180 -o "$T" "https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/'"$SHA"'" || die "取不到远端执行体（codeload tar.gz/$SHA）" && tar xzf "$T" -C "$WORK" --strip-components=1 || die "解不开远端执行体（$T）" && bash "$WORK/deploy/swas/c-end-h5-publish-remote.sh"'
+# 命令内容字节上限（**保守值**）与出处（判据：tests/unit_ci_workflows/test_c_end_h5_hosting.py）
+COMMAND_CONTENT_LIMIT_BYTES=${H5_COMMAND_CONTENT_LIMIT_BYTES:-16384}
+COMMAND_CONTENT_LIMIT_SOURCE="SWAS Open RunCommand：CommandContent 与自定义参数在 base64 编码后综合长度 ≤ 16 KB —— https://help.aliyun.com/zh/simple-application-server/developer-reference/api-swas-open-2020-06-01-runcommand"
+
 COMMAND_CONTENT="export H5_STATIC_ROOT=$STATIC_ROOT
 export H5_PUBLISH_SHA=$SHA
 export H5_MANIFEST=$MANIFEST
 export H5_RESERVED_PREFIXES=\"$RESERVED_PREFIXES\"
 export H5_TAKEOVER_FIRST_PUBLISH=1
-$(cat "$REMOTE_SCRIPT") --apply"
+$REMOTE_FETCH --apply"
+
+# ── CI 侧前置断言（**在发起任何云调用之前**）───────────────────────────────────
+# 让「命令内容超限」在**本机**就是可读的判红（具名报文 + 字节读数 + 出处），
+# 而不是云上一个 `SDKError 400`（那正是本单的形态：失败发生在别人看不见的地方）。
+COMMAND_CONTENT_BYTES=$(printf '%s' "$COMMAND_CONTENT" | wc -c | tr -d ' \n')
+if [ "$COMMAND_CONTENT_BYTES" -ge "$COMMAND_CONTENT_LIMIT_BYTES" ]; then
+  die "SWAS 命令内容超限：命令内容 ${COMMAND_CONTENT_BYTES} 字节 / 上限 ${COMMAND_CONTENT_LIMIT_BYTES} 字节 —— 拒绝发起云调用。
+   上限出处：${COMMAND_CONTENT_LIMIT_SOURCE}
+   口径：远端执行体**不许**被内联进命令内容（命令内容只做「按 sha 取回执行体并执行」）。
+   修法：① 新增的发布逻辑加进远端脚本 deploy/swas/c-end-h5-publish-remote.sh（不占命令内容）；
+         ② 复核是否有人把「内联远端脚本」的旧写法又加回来了（判据见 tests/unit_ci_workflows/）。"
+fi
+# 判据入口（**可注入**）：只打印组装结果与字节读数，**不发起任何云调用**。
+# 判据 = tests/unit_ci_workflows/test_c_end_h5_hosting.py::TestCommandContentLimit
+if [ -n "${H5_PRINT_COMMAND_CONTENT:-}" ]; then
+  # 命令内容走 stdout（消费用），BEGIN/END 标记把它夹住（定位用）——
+  # 判据从 stdout 里切出**标记之间**的那一份，读的就是要发给云上的那个字节序列。
+  printf 'COMMAND_CONTENT_BEGIN\n'
+  printf '%s\n' "$COMMAND_CONTENT"
+  printf 'COMMAND_CONTENT_END\n' >&2
+  printf 'COMMAND_CONTENT_BYTES=%s\n' "$COMMAND_CONTENT_BYTES" >&2
+  printf 'COMMAND_CONTENT_LIMIT_BYTES=%s\n' "$COMMAND_CONTENT_LIMIT_BYTES" >&2
+  printf 'REMOTE_SCRIPT=%s\n' "$REMOTE_SCRIPT" >&2
+  exit 0
+fi
 
 if [ -n "$AK" ] && [ -n "$SK" ]; then
   command -v aliyun >/dev/null 2>&1 || die "未安装 aliyun CLI（CI 侧应先安装，见 .github/workflows/c-end-h5-publish.yml）"

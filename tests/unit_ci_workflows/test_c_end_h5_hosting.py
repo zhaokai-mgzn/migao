@@ -161,6 +161,22 @@ def _if_text(step) -> str:
     return str((step or {}).get("if") or "")
 
 
+def _live_lines(text: str) -> str:
+    """只保留**非整行注释**的行，返回 `\n` 连接的可执行文本。
+
+    口径与 `_unsanctioned_destructive_lines` 逐字一致：**只跳过整行注释**（`lstrip()` 后以 `#` 开头），
+    **绝不**按 `#` 截断行（朴素截断会让字符串里的 `#` 吃掉行尾 ⇒ 假绿）。
+    ⚠️ 为什么需要它：本文件的判据**必须能引用被判红的串**（否则讲课的注释会把自己判红）——
+    实测自伤：注释里逐字写「`cat 远端脚本`」这一句就让本判据在真语料上判红。
+    代价（照实登记）：**行尾注释里的裸串不算** ⇒ 若有人把内联写法**整行注释掉**，
+    本判据不报 —— 但那行**不会执行**，不是本判据要拦的对象。
+    """
+    return "\n".join(
+        raw for raw in text.splitlines()
+        if raw.strip() and not raw.lstrip().startswith("#")
+    )
+
+
 def _unsanctioned_destructive_lines(text: str) -> list:
     """破坏性语句必须只指向受守卫的目标或自建临时目录（源码层红线）。
 
@@ -371,6 +387,49 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
         if token in wf_text:
             problems.append(f"workflow 里出现 `{token}` ⇒ 发布逻辑被内联了第二份（必须只调 {PUBLISH_SCRIPT}）")
 
+    # —— 🔴 SWAS 命令内容上限（issue #6095）：远端执行体**不许**进命令内容 ——
+    # 病（run 37075737625 / sha f3e49752f）：把远端执行体整份内联进 `RunCommand` 的
+    # `--command-content` ⇒ 越过 `CommandContent` 上限 ⇒ **每次**发布都 `400 CmdContent.ExceedLimit`
+    # （线上产物因此陈旧 33 天）。下面钉三件事：
+    #   ① 上限常量**带出处**（官方文档链接，口径不许靠猜）；
+    #   ② 组装段**不得**内联远端脚本（形态判据：不含远端脚本的特征行，也不用 `cat` 读它）；
+    #   ③ 组装后有**字节数前置断言**（超限 ⇒ 本机判红，不是云上 400）。
+    #
+    # ⚠️ 本节的 token 扫描一律走 `_live_lines`（**去掉整行注释**）⇒ 讲解本病灶的注释不会把自己判红
+    #    （同族先例：test_guard_parsing_is_comment_aware.py）。判据是**控件**，形状是代码不是说明文字。
+    if ci_src:
+        ci_live = _live_lines(ci_src)
+        inline_call = "cat " + '"$REMOTE_SCRIPT"'
+        if inline_call in ci_live:
+            problems.append(
+                f"🔴 CI 脚本又出现 `cat 远端脚本`（`{inline_call}`）—— 远端执行体被内联进 SWAS 命令内容"
+                "（#6095：它会随脚本增长越过 CommandContent 上限，每次发布都 400）"
+            )
+        for token in ("assert_target_safe() {", "compute_new_top_level() {", "apply_publish() {",
+                      "需要 `--takeover-first-publish`"):
+            if token in ci_live:
+                problems.append(
+                    f"🔴 CI 脚本的**可执行行**里出现远端执行体的特征行 `{token}` —— 命令内容不许含远端脚本全文"
+                    "（判据：命令内容只做「按 sha 取回执行体并执行」）"
+                )
+        for token in ("COMMAND_CONTENT_LIMIT_BYTES", "COMMAND_CONTENT_LIMIT_SOURCE"):
+            if token not in ci_src:
+                problems.append(f"CI 脚本缺命令内容上限常量 `{token}`（#6095）")
+        if "help.aliyun.com" not in ci_live:
+            problems.append("命令内容上限**没有出处**（可执行行须带官方文档链接，口径不许靠猜）")
+        for token in ("COMMAND_CONTENT_BYTES=", '"$COMMAND_CONTENT_BYTES" -ge "$COMMAND_CONTENT_LIMIT_BYTES"'):
+            if token not in ci_live:
+                problems.append(f"CI 脚本缺命令内容的字节数前置断言 `{token}`（超限必须在**本机**判红）")
+        # 取回通道 = **既有已证明可用**的那一条，且**按不可变 sha**（不许取 main 的最新 ⇒ 会漂移）
+        if "codeload.github.com/zhaokai-mgzn/migao/tar.gz/$SHA" not in ci_live:
+            problems.append("引导必须按**不可变 sha** 从 codeload 取回远端执行体（`tar.gz/$SHA`）")
+        if "refs/heads/" in ci_live:
+            problems.append("引导里出现按分支取（`refs/heads/…`）—— 取回通道必须按不可变 sha，否则与 CI 构建漂移")
+        if "raw.githubusercontent.com" in ci_live:
+            problems.append("引导用了 raw.githubusercontent.com —— 杭州机房实测超时，必须走 codeload")
+        if "未做任何发布动作" not in ci_live:
+            problems.append("引导取不到执行体时缺**具名失败**出口（不许静默半成品发布）")
+
     # —— CI 包装脚本：五条承重断言（逐字形态，不是「提到过这个词」）——
     if ci_src:
         for token in (
@@ -422,6 +481,185 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
             problems.append(f"远端脚本里有未限定目标的破坏性语句（红线）：{line}")
 
     return problems
+
+
+# ── 命令内容上限（issue #6095）：**真跑组装段**（注入夹具）的字节判据 ─────────
+# 结构层的 token 扫描（`_workflow_problems`）判「形态」；本节判**读数**：真的把脚本跑起来，
+# 读它打印出来的命令内容与字节数。两节互补：形态容易被绕过（换个写法），读数不会。
+CI_SHA = "f3e49752fa140dd6af4da6b75948e541f90c76da"
+CI_INSTANCE = "b23c69e599524b1da719734f72e6a0e3"
+CI_REGION = "cn-hangzhou"
+# 组装预算（**设计判据**，不是上限）：真实读数 ~795 字节。取 1024 当「有没有人把大块文本
+# 拼回命令内容」的报警线 —— 它离上限（16384）很远，触发它的一定是**结构**退化，不是文案变长。
+COMMAND_BUDGET_BYTES = 1024
+
+
+def _ci_stub(tmp_path: Path) -> Path:
+    """把 CI 脚本放进一个**结构完整的**临时检出（脚本自身算出的 `dist/` 路径要能过前置断言）。
+
+    目录形状必须与真检出一致（`<root>/deploy/scripts/…`）—— 脚本用 `$(dirname $0)/../..` 求根，
+    所以这里**不复制** `frontend/mini-app/dist` 的真产物（那是 CI 的 `npm run build:h5` 的活儿），
+    只造满足前置断言的最小桩。
+    """
+    root = tmp_path / "checkout"
+    (root / "deploy" / "scripts").mkdir(parents=True)
+    (root / "frontend" / "mini-app" / "dist" / "js").mkdir(parents=True)
+    dst = root / "deploy" / "scripts" / CI_SCRIPT.name
+    dst.write_bytes(CI_SCRIPT.read_bytes())
+    (root / "frontend" / "mini-app" / "dist" / "index.html").write_text("<html>stub</html>\n", encoding="utf-8")
+    return dst
+
+
+def _run_ci_script(dst: Path, remote: Path, extra_env: dict | None = None):
+    """真跑 CI 脚本的**组装段**（`H5_PRINT_COMMAND_CONTENT=1`）—— 不联网、不发起任何云调用。
+
+    返回 `(proc, content, reported_bytes)`：`content` 是**标记之间**的那份命令内容
+    （`say` 的前言走 stdout，不能混进来 —— 否则字节读数会随前言文案漂移）。
+    """
+    env = dict(os.environ)
+    env.update({
+        "H5_PRINT_COMMAND_CONTENT": "1",
+        "H5_REMOTE_SCRIPT_PATH": str(remote),
+        "GITHUB_SHA": CI_SHA,
+    })
+    env.update(extra_env or {})
+    # ⚠️ 显式 `encoding="utf-8", errors="replace"`：CI 脚本会打印中文，而本机 locale 下
+    #    子进程（如 curl）的错误文本可能不是 UTF-8 ⇒ 不显式指定会在某些机器上**解码崩**（假红）。
+    proc = subprocess.run(
+        ["bash", str(dst), CI_INSTANCE, CI_REGION],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=120,
+    )
+    # BEGIN 标记在 **stdout** 上（命令内容也走 stdout；`say` 的前言在它前面）⇒ 从标记切到行尾。
+    content = ""
+    if "COMMAND_CONTENT_BEGIN\n" in proc.stdout:
+        content = proc.stdout.split("COMMAND_CONTENT_BEGIN\n", 1)[1]
+        if content.endswith("\n"):
+            content = content[:-1]
+    m = re.search(r"^COMMAND_CONTENT_BYTES=(\d+)$", proc.stderr, re.M)
+    return proc, content, int(m.group(1)) if m else None
+
+
+def _tiny_remote(tmp_path: Path) -> Path:
+    f = tmp_path / "tiny-remote.sh"
+    f.write_text("#!/bin/bash\n# 夹具：极小远端执行体\necho ok\n", encoding="utf-8")
+    return f
+
+
+class TestCommandContentLimit:
+    """`COMMAND_CONTENT` 的**读数**判据（issue #6095）：与远端脚本大小解耦 + 超限本机判红 + 取不到就具名判红。
+
+    四条：① 解耦（超大夹具 ⇒ 读数不变）② 带不可变 sha（不是「取 main 的最新」）
+    ③ 超限 ⇒ 本机判红（注入式）③′ 取不到执行体 ⇒ 非零 + 具名原因 ④ 变异（内联写法回来）⇒ 判红。
+    """
+
+    def test_assembled_command_is_decoupled_from_the_remote_script_size(self, tmp_path):
+        """① 命令内容**不含**远端执行体全文，且字节数远在上限之下。
+
+        红证：把远端脚本换成一个 20 KB 的「超大夹具」⇒ 读数**不变**（解耦成立）；
+        若有人把远端脚本内联回来，同一个夹具会让读数涨到 20 KB+ 并被下面的上限闸判红。
+        """
+        dst = _ci_stub(tmp_path)
+        tiny = _tiny_remote(tmp_path)
+        big = tmp_path / "big-remote.sh"
+        big.write_text("#!/bin/bash\n" + ("# 超大夹具行：把命令内容顶上去\n" * 900), encoding="utf-8")
+        assert big.stat().st_size > 20000, "超大夹具没造出来（判据没有判别力）"
+
+        p_tiny, c_tiny, b_tiny = _run_ci_script(dst, tiny)
+        p_big, c_big, b_big = _run_ci_script(dst, big)
+        assert p_tiny.returncode == 0, f"组装段跑不起来：\n{p_tiny.stderr}"
+        assert p_big.returncode == 0, f"组装段跑不起来：\n{p_big.stderr}"
+        assert c_tiny and c_big, "没拿到命令内容（打印段的标记变了？）"
+        # 脚本自报的字节数必须等于**它真打印出来的那份内容**的字节数（自证，不是自报自话）
+        assert b_tiny == len(c_tiny.encode("utf-8")), f"自报 {b_tiny} ≠ 实测 {len(c_tiny.encode('utf-8'))}"
+        assert b_big == len(c_big.encode("utf-8")), f"自报 {b_big} ≠ 实测 {len(c_big.encode('utf-8'))}"
+        assert b_tiny == b_big, (
+            f"命令内容随远端脚本大小变化（{b_tiny} → {b_big} 字节）⇒ 远端执行体又被内联进命令内容"
+        )
+        assert b_big < COMMAND_BUDGET_BYTES, (
+            f"组装出的命令内容 {b_big} 字节 ≥ 预算 {COMMAND_BUDGET_BYTES} —— 大块文本又进了命令内容"
+        )
+        # 形态判据（在**真读数**上再钉一遍）：远端脚本的特征行一个都不许出现
+        for token in ("assert_target_safe() {", "compute_new_top_level() {", "apply_publish() {",
+                      "需要 `--takeover-first-publish`"):
+            assert token not in c_big, f"命令内容里出现远端脚本全文的特征行：{token}"
+
+    def test_bootstrap_carries_the_immutable_sha(self, tmp_path):
+        """② 引导按**不可变 sha** 取回执行体（不是「取 main 的最新」⇒ 会与 CI 构建漂移）。"""
+        dst = _ci_stub(tmp_path)
+        proc, content, _ = _run_ci_script(dst, _tiny_remote(tmp_path))
+        assert proc.returncode == 0, proc.stderr
+        assert f"https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/{CI_SHA}" in content, (
+            "引导里没有按不可变 sha 取回执行体（codeload + tar.gz/<sha>）"
+        )
+        assert "refs/heads/" not in content, "引导里出现按分支取（应只按不可变 sha）"
+        assert "raw.githubusercontent.com" not in content, "引导用了 raw（杭州机房实测超时）"
+        # 语义不放宽：远端拿到的仍是这四个环境变量 + `--apply`
+        for token in ('export H5_STATIC_ROOT=/opt/migao-deploy/h5',
+                      f"export H5_PUBLISH_SHA={CI_SHA}",
+                      "export H5_MANIFEST=.migao-c-end-h5-manifest.json",
+                      'export H5_RESERVED_PREFIXES="w b"',
+                      "export H5_TAKEOVER_FIRST_PUBLISH=1"):
+            assert token in content, f"命令内容缺语义：{token}"
+        assert "--apply" in content, "命令内容没把 --apply 传给远端执行体（会用 dry-run 静默什么都不发）"
+        assert "未做任何发布动作" in content, "引导取不到执行体时没有具名失败出口"
+
+    def test_over_limit_command_content_fails_locally_with_named_reading(self, tmp_path):
+        """③ **注入式红证**：命令内容超限 ⇒ 本机判红 + 具名读数（不是云上 `SDKError 400`）。
+
+        注入方式（§28.1 出口①）+ 复算命令：
+
+            H5_PRINT_COMMAND_CONTENT=1 H5_REMOTE_SCRIPT_PATH=/tmp/tiny-remote.sh \
+              H5_COMMAND_CONTENT_LIMIT_BYTES=200 GITHUB_SHA=<sha> \
+              bash deploy/scripts/c-end-h5-publish-ci.sh <instance> cn-hangzhou
+
+        ⇒ rc=1 + stderr 含「命令内容 N 字节 / 上限 M 字节」。上限是**可注入的**（`H5_COMMAND_CONTENT_LIMIT_BYTES`）
+        ⇒ 不必真造一个超限的真脚本（那样会把「解耦」这个结论反过来）。
+        """
+        dst = _ci_stub(tmp_path)
+        proc, content, _ = _run_ci_script(dst, _tiny_remote(tmp_path), {"H5_COMMAND_CONTENT_LIMIT_BYTES": "200"})
+        assert proc.returncode != 0, "超限竟然没判红（空断言）：\n" + proc.stdout
+        assert "命令内容超限" in proc.stderr, f"判红报文不具名：\n{proc.stderr}"
+        assert "字节 / 上限" in proc.stderr, f"判红报文没给「N 字节 / 上限 M 字节」读数：\n{proc.stderr}"
+        assert "help.aliyun.com" in proc.stderr, "判红报文没给出上限的**出处**（链接）"
+        assert content == "", "判红前就把超限的命令内容打出去了（不许把它带出去）"
+
+    def test_bootstrap_fails_closed_when_it_cannot_fetch(self, tmp_path):
+        """③′ 取不到执行体 ⇒ **非零退出 + 具名原因**（不是「静默半成品发布」）。
+
+        注入方式（§28.1 出口①）：把引导里 URL 的不可变 sha 换成 40 个 `0`（目录不存在 ⇒ 真 404）。
+        ⚠️ 这条**必须在真跑里钉**：引导是**引号嵌套的一行**，读代码看不出 `curl` 失败会不会被吞掉
+        （实测教训：`curl … | tar xz` 的管道退出码只取末命令 ⇒ curl 404 时 tar 退 0、
+        **失败被吞**，随后 bash 去执行不存在的文件 ⇒ 只剩一句没有归因的 127）。
+        """
+        dst = _ci_stub(tmp_path)
+        proc, content, _ = _run_ci_script(dst, _tiny_remote(tmp_path))
+        assert proc.returncode == 0 and content, proc.stderr
+        assert "未做任何发布动作" in content, "引导取不到执行体时没有具名失败出口"
+        # 真跑：坏 sha ⇒ 期望非零退出 + 具名报文
+        bad = tmp_path / "bad-sha.sh"
+        bad.write_text(content.replace(CI_SHA, "0" * 40) + "\n", encoding="utf-8")
+        got = subprocess.run(["bash", str(bad)], capture_output=True, text=True,
+                             encoding="utf-8", errors="replace", timeout=300)
+        assert got.returncode != 0, "取不到执行体竟然退 0（静默半成品发布）"
+        assert "未做任何发布动作" in got.stderr, (
+            f"失败没有具名归因（看不出是引导取不到执行体）：\n{got.stderr}"
+        )
+
+    def test_inline_mutation_is_detected(self, tmp_path):
+        """④ 变异 ⇒ 必红：把「内联远端脚本」的旧写法放回可执行行 ⇒ 结构判据当场判红。"""
+        live = _live_lines(_read(CI_SCRIPT) or "")
+        inline = live.replace(
+            "COMMAND_CONTENT_BYTES=",
+            'leak=$(cat "$REMOTE_SCRIPT")\nCOMMAND_CONTENT_BYTES=',
+            1,
+        )
+        assert inline != live, "变异注入未生效（找不到可执行锚点）"
+        assert _live_lines(inline) != live, "变异没进入可执行行（注入写进了注释？）"
+        assert "cat " + '"$REMOTE_SCRIPT"' in _live_lines(inline)
+        problems = _workflow_problems(_load_workflow(), ci_src=inline.replace("\n", chr(10)))
+        assert any("内联进 SWAS 命令内容" in x for x in problems), (
+            f"把内联写法放回可执行行竟没判红（空断言）：{problems}"
+        )
 
 
 def _load_workflow() -> dict:
