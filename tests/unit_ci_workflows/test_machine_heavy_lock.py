@@ -52,6 +52,14 @@ REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts" / "machine-heavy-lock.sh"
 VERIFY = REPO / "verify-all.sh"
 
+#: 🔴 本文件守的接线锚（§28.2；登记在 `wiring_claims_ledger.json`）：`verify-all.sh` 的锁包装函数
+#: **拿锁成功后必须 `export MIGAO_HEAVY_LOCK_HELD=1`**（子代继承 ⇒ 不再二次 acquire；issue #6074）。
+#: 摘线注入点 = 把这行 export 删掉 / 改名 ⇒ `test_wiring_claims_registry.py` 判据 3 当场红。
+#: ⚠️ 位置：必须排在 docstring **之前** —— 守卫用的是「常量名 + 等号 + 带引号的值」这条正则，
+#: 取**首个**命中；本文件的 docstring 里也会**提及**这个常量名 ⇒ 声明落到 docstring 之后就会被抢走。
+#: （踩坑记实：本注释初稿里逐字写了那条正则的**形态**，`DECL_RE` 当场把注释里的占位符读成声明锚。）
+WIRING_UNDER_TEST = "verify-all.sh::macquire"
+
 
 def _run_lock(args: list[str], *, lock_file: Path, roots: Path | None = None, **kw):
     """跑锁脚本，锁文件与射程都指到临时面（**绝不碰机器上真的锁与真的进程**）。"""
@@ -382,6 +390,11 @@ class TestOrphanReaping:
 
 # ── ⑥⑦ verify-all.sh 的接线 ──────────────────────────────────────────────────
 
+def _code_lines(text: str) -> str:
+    """剥掉整行注释（`#` 起）——「说到了」不算「接线在」（与 `test_suite_self_lock.py` 同口径）。"""
+    return "\n".join(ln for ln in text.split("\n") if not ln.lstrip().startswith("#"))
+
+
 def _extract_fn(name: str) -> str:
     """从 verify-all.sh 抽 `name() { … }` 的函数体（到第 0 列的 `}`）。"""
     m = re.search(rf"^{re.escape(name)}\(\) \{{[\s\S]*?^\}}", VERIFY.read_text(encoding="utf-8"), re.M)
@@ -600,6 +613,91 @@ class TestVerifyAllWiring:
         assert not clean_lock.exists(), (
             "调用方退出后锁还在 ⇒ EXIT trap 没接上（或被误删的逻辑写坏了）"
         )
+
+    def test_macquire_exports_the_marker_after_a_successful_acquire(self):
+        """🔴 **拿锁成功后必须 export `MIGAO_HEAVY_LOCK_HELD=1`**（issue #6074 的根因接线）。
+
+        缺这一步的实测后果（2026-10-02 23:00 +08，集成分支 worktree，`MIGAO_HEAVY_WAIT=2700`）：
+        子进程 pytest **挂死 26 分钟**、握着机器级锁、0% CPU，只能 `kill -9`。
+        判据形态 = **结构化**读 `macquire` 的函数体 + 剥注释（不是裸 grep：注释里「说到」不算接线）。
+        """
+        body = _code_lines(_extract_fn("macquire"))
+        assert "MIGAO_HEAVY_LOCK_HELD=1" in body, (
+            "`macquire` 拿锁成功后**没有** export `MIGAO_HEAVY_LOCK_HELD=1` ⇒ 子代（ci-helper 腿 /"
+            " 直连整目录的 pytest）会去抢**祖先手里的同一把锁** = 死等；配 `MIGAO_HEAVY_WAIT` 就是挂死"
+        )
+        export_at = body.find("MIGAO_HEAVY_LOCK_HELD=1")
+        acquire_at = body.find("machine-heavy-lock.sh")
+        assert acquire_at >= 0, "macquire 里看不到 acquire 调用（判据不可判定 ⇒ 不得当通过）"
+        assert export_at > acquire_at, (
+            "export 出现在 acquire **之前** ⇒ 拿不到锁也把标记导出去了（子代放弃准入、重活裸跑）"
+        )
+        assert re.search(r"^\s*export\s+MIGAO_HEAVY_LOCK_HELD=1\s*$", body, re.M), (
+            "标记必须以 `export`（而不是普通赋值）落到**子进程环境**里 —— 普通赋值只在当前 shell 生效，"
+            "子进程看不到（本缺陷的形态：标记「写了」但传不下去）"
+        )
+        assert body.find("MIGAO_HEAVY_LOCK_HELD=1") < body.rfind("}"), (
+            "export 落在函数体外 ⇒ 本函数没导出这个标记（结构判据）"
+        )
+
+    def test_the_marker_really_reaches_a_child_process(self, tmp_path):
+        """**行为判据**（真进程，装的是 verify-all.sh 里**真实**的 `heavy_lock_wanted` / `macquire`）：
+        拿锁成功后，`macquire` 的子进程必须**看得见**那个标记（不是只在本 shell 里）。
+
+        形态与 `test_lock_is_held_while_the_heavy_leg_runs_and_released_on_exit` 同源（同一对真函数 +
+        临时锁面），额外加了「注入开关」：把 `export` 换成普通赋值 ⇒ 子进程**看不见** ⇒ 判据当场红
+        （这就是本缺陷的注入式红证；`--no-export` 分支不落盘、只作用于本次判据）。
+        """
+        lock = tmp_path / "wired.lock"
+        harness = tmp_path / "marker.sh"
+        macquire_src = _extract_fn("macquire")
+        marker_consumer = (
+            "python3 -c \"import os;print('CHILD_SEES=' + os.environ.get('MIGAO_HEAVY_LOCK_HELD', '<unset>'))\"\n"
+        )
+        harness.write_text(
+            "#!/usr/bin/env bash\n"
+            f'ROOT="{REPO}"\n'
+            'MODE="gate"\n'
+            + _extract_fn("heavy_lock_wanted")
+            + macquire_src
+            + 'if [ "${1:-}" = "--no-export" ]; then\n'
+            '  macquire() {\n'
+            '    heavy_lock_wanted || return 0\n'
+            '    "$ROOT/scripts/machine-heavy-lock.sh" acquire "verify-all.sh $MODE" || return 1\n'
+            '    trap \'"$ROOT/scripts/machine-heavy-lock.sh" release >/dev/null 2>&1 || true\' EXIT\n'
+            '    MIGAO_HEAVY_LOCK_HELD=1   # 注入：普通赋值（只有 export 才进子进程环境）\n'
+            '    return 0\n'
+            '  }\n'
+            'fi\n'
+            "macquire\n"
+            "LOCK_RC=$?\n"
+            '[ "$LOCK_RC" -eq 0 ] || { echo "REFUSED"; exit "$LOCK_RC"; }\n'
+            + marker_consumer,
+            encoding="utf-8",
+        )
+        env = {**os.environ, "MIGAO_HEAVY_LOCK_FILE": str(lock),
+               "MIGAO_HEAVY_ROOTS": str(lock.parent / "no-roots-here")}
+        try:
+            good = subprocess.run(["bash", str(harness)], capture_output=True, text=True, env=env)
+            assert good.returncode == 0, f"成功路径必须过：{good.stdout}\n{good.stderr}"
+            assert "CHILD_SEES=1" in good.stdout, (
+                "拿锁成功后子进程**看不到** `MIGAO_HEAVY_LOCK_HELD=1` ⇒ 嵌套腿会二次 acquire = 自抢死锁"
+                f"\n{good.stdout}\n{good.stderr}"
+            )
+            assert not lock.exists(), "harness 退出后锁还在 ⇒ EXIT trap 没接上"
+
+            injected = subprocess.run(["bash", str(harness), "--no-export"],
+                                      capture_output=True, text=True, env=env)
+            assert injected.returncode == 0, f"注入分支本身要能跑通：{injected.stdout}\n{injected.stderr}"
+            assert "CHILD_SEES=<unset>" in injected.stdout, (
+                "注入（`MIGAO_HEAVY_LOCK_HELD=1` 不用 export）后子进程**仍然**看得见 ⇒ 本判据没有判别力"
+                f"（空断言）\n{injected.stdout}\n{injected.stderr}"
+            )
+        finally:
+            # 任何失败都不得把临时锁留下（真锁在 `$HOME`，本判据从不碰它）
+            subprocess.run(["bash", str(SCRIPT), "release"], capture_output=True, text=True, env=env)
+            lock.unlink(missing_ok=True)
+            assert not lock.exists(), "收尾失败：临时锁仍然存在"
 
 
 class TestPurePredicates:

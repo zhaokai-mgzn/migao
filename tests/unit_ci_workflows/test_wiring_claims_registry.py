@@ -46,7 +46,7 @@ MARKER_RE = re.compile(r"\bWIRING_UNDER_TEST\b")
 |---|---|---|
 | 1 | **未登记即红** | 文件里有声明标记、台账里没有对应条目 ⇒ 具名报出该文件 |
 | 2 | **台账未被兑现即红** | 台账每条必须能在它声称的文件里逐字找到同一句声明 |
-| 3 | **声明必须指名真对象** | `::` 左边是仓内**存在**的 `.py` 文件、右边在该文件里**逐字出现**（**摘线注入点**：删掉 / 改名 ⇒ 红） |
+| 3 | **声明必须指名真对象** | `::` 左边是仓内**存在**的 `.py` / `.sh` 载体、右边在该载体里**逐字出现**（**摘线注入点**：删掉 / 改名 ⇒ 红） |
 | 4 | **fail-closed** | 台账 `claims` 为空 ⇒ 红（清空台账不得把守卫变成空跑） |
 | 5 | **声明 ⇄ 台账双向** | 台账的锚值必须等于它声称的文件里那个常量的**现取值**（改声明不改台账 / 改台账不改声明 ⇒ 红） |
 | 6 | 每条必须写下 `case_ids`（用例面关联） | 新增登记却不声明用例 ⇒ 红 |
@@ -164,7 +164,11 @@ def _problems(*, ledger: dict,
                     f"台账写 {anchor!r} ⇒ 改了一边没改另一边"
                 )
 
-        # 判据 3：声明必须指名真对象（左边真文件 + 右边逐字出现 + `.py` 后缀）
+        # 判据 3：声明必须指名真对象（左边真载体 + 右边逐字出现 + `.py` / `.sh` 后缀）
+        # ⚠️ `.sh` 是 2026-10-02 起的**扩展**（issue #6074）：被守的接线（`verify-all.sh` 拿锁后
+        #    `export MIGAO_HEAVY_LOCK_HELD=1`）**就在 shell 载体里** —— 那个文件在仓内、是可读文本，
+        #    与 `.py` 同样能被「逐字出现」判。这不是放宽（判据一字未删）：只是把载体后缀从
+        #    「只有 Python」扩到「仓内可读文本」，让「接线在 shell 里」这件事也能进台账。
         # —— 对**每一条**需要核的对象都判：本条的 `wiring` + 台账登记的第二注入目标
         # (`_runtime.consumption_anchor`)。
         for extra in [anchor] + ledger_extra_anchors(ledger):
@@ -172,9 +176,9 @@ def _problems(*, ledger: dict,
                 bad.append(f"{where}：`{extra!r}` 必须是 `<仓库相对路径>::<符号>`")
                 continue
             path_rel, symbol = extra.split("::", 1)
-            if not path_rel.endswith(".py"):
+            if not path_rel.endswith((".py", ".sh")):
                 bad.append(
-                    f"{where}：`{extra!r}` 左边必须以 `.py` 结尾（避免与「裸文件名 + 冒号 + 行号」的"
+                    f"{where}：`{extra!r}` 左边必须以 `.py` / `.sh` 结尾（避免与「裸文件名 + 冒号 + 行号」的"
                     f"既有禁令混淆），现取 {path_rel!r}"
                 )
             elif read_text(path_rel) is None:
@@ -408,6 +412,33 @@ def anchor_injection_targets(ledger: dict) -> list[str]:
     if isinstance(marker, str) and marker and marker not in targets:
         targets.append(marker)
     return targets
+
+
+def test_shell_carrier_anchor_is_reachable_and_pinned() -> None:
+    """**`.sh` 载体**（issue #6074 的扩展）必须在册、可读、可判 —— 不是「台账里写了个 shell 路径」。
+
+    被守的接线（`verify-all.sh` 拿锁后 `export MIGAO_HEAVY_LOCK_HELD=1`）**就在 shell 载体里**：
+    它不在 `tests/unit_ci_workflows/**` 语料面内（语料面按设计只收 `.py`），所以「未登记即红」看不见它
+    ⇒ 唯一的机械保证 = **台账里登记 + 判据 3 能在那个载体上逐字命中**。本判据把那两半钉住：
+    ① 台账现取必须有一条 `.sh` 锚；② 该文件在仓内可读；③ 锚右边的符号逐字在（注入红证见
+    `test_mutating_the_real_wiring_anchor_turns_it_red`，它对**每一条**锚各自跑）。
+    """
+    led, _ = _live()
+    shell = []
+    for c in led.get("claims") or []:
+        wiring = str((c or {}).get("wiring") or "")
+        if "::" in wiring and wiring.split("::", 1)[0].endswith(".sh"):
+            shell.append(c)
+    assert shell, (
+        "台账里没有任何 `.sh` 载体的接线锚 ⇒ `verify-all.sh` 那条接线（export 标记）失去了机械面"
+    )
+    for c in shell:
+        path_rel, symbol = str(c["wiring"]).split("::", 1)
+        text = repo_read_text(path_rel)
+        assert text is not None, f"台账登记的 shell 载体不在仓内：{path_rel}"
+        assert _mentions(text, symbol), (
+            f"shell 锚 {c['wiring']!r} 在 {path_rel} 里逐字找不到 ⇒ 台账给不存在的接线盖章"
+        )
 
 
 def test_mutating_the_real_wiring_anchor_turns_it_red() -> None:

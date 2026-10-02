@@ -2876,7 +2876,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（71 case）
+## 杂项域（72 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3891,6 +3891,21 @@
 跳过: [backend-contract] 登记面与菜单单一源的结构对账（源码静态事实 + 零依赖纯函数 + 内存注入红证），零 LLM、秒级、不连网不连库；承载体 = tests/unit_ci_workflows/test_menu_navigator.py 与 backend/ai-agent-service/tests/test_nav_guide.py，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #6062）：实测起点 = 2026-10-02 B 端真实 LLM 评测 `normal` 档 tool health 里的 `nav_guide!nav_not_registered ×1`（用户输入「怎么给员工开账号」；同一说法也在既有用例 HR-009 的 user_inputs 里）。**归因**：不是 agent 不听话，是**登记面覆盖不足**（常见说法没进登记表）⇒ 修法是补登记面，不是改 prompt 让模型猜。落码 = ① 登记面 backend/ai-agent-service/app/context/menu_navigator.py：每个节点登记**两个可搜索键**（菜单名 + 常见说法，后者从 menu.ts 既有 keywords / .github/cases/** 的 user_inputs / 实测失败样例里摘），括注承载「菜单名与口语的落差」与「**无独立导航目标的**操作」（「员工管理（员工开账号）」⇒ 指向最近的可指页面，**不编菜单路径**），并清掉旧表里 22 条 `…页` / `…列表` 装饰性变体（它们是被更长说法遮蔽的空登记形态）② 导入期自检新增两条 fail-closed（节点无说法 / 说法被别的功能遮蔽）③ 判据 tests/unit_ci_workflows/test_menu_navigator.py 新增判据 7/8/9 + 3 条注入式红证（含内存桩臂与真模块注入臂）+ 一条只改注释的对照读数 ④ 行为判据 backend/ai-agent-service/tests/test_nav_guide.py 新增实测样例的真跑断言。取号 **MC-071**（**让号记实**：起草时现取 main 最大 = MC-069（.github/cases/claims/ 当时只有 6038-MC-068 / 6046-MC-069 两条累积 claim）⇒ 按「当前最大号 + 1」取 MC-070，而同 PR 加 claim 文件 .github/cases/claims/<PR号>-MC-070.json；**随后集成侧把并行 PR #6030（P2 主动新手引导）的用例号让到了同一个 MC-070** 并加了 claims/6030-MC-070.json —— 正是取号台账的已知边界（**看不到在飞分支**），由判据 2「两个 claim 同 id ⇒ 具名报两个 PR + 后合入者让号」兜住。#6030 ready + auto（先合入）而本 PR 当时仍是 draft ⇒ **按『后合入者让号』，让号的是本 PR**：MC-070 → **MC-071**（只改号，标题/内容/判据一字不动）。⚠️ 这就是机制存在的意义：**在 CI 报红之前主动让号**，省一轮无用全量。⚠️ 与并行改 .github/cases/misc.yml 的包（如 PR #6043）⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。 ｜ tags: ci, guard, navigation, fail-closed, red-proof, no-steps
+
+### MC-070. 机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线） 🔵
+```
+你: 祖先（verify-all.sh / scripts/batch-gate.sh 那条链）已经持有机器级重活锁时，子进程直连整目录 pytest 必须立即出声拒绝（有界时间），不得挂死
+你: verify-all.sh 拿锁成功后必须 export MIGAO_HEAVY_LOCK_HELD=1，让子代不再二次 acquire
+期望: direct_reply
+数据: **病（2026-10-02 23:00 +08 实测，不是推断）**：在集成分支 worktree 跑 `./verify-all.sh gate` ⇒ **挂死 26 分钟**、且握着机器级重活锁（`~/.migao-heavy.lock` 里 `pid=34625 name=verify-all.sh gate`），只能 `kill -9`。进程树 = `verify-all.sh gate`（持锁）→ `python -m pytest tests/unit_ci_workflows`（26:28 / 0.0% CPU）。机理两层：① 祖先已持锁、但 `MIGAO_HEAVY_LOCK_HELD=1` 没传到子代（上游漏接线）⇒ 套件自带准入去抢**祖先手里的同一把锁**；② `scripts/batch-gate.sh` 给 `verify-all.sh` 默认注入 `MIGAO_HEAVY_WAIT=2700`，子进程**继承** ⇒ 锁脚本按上限排队 2700s ⇒ 把「缺接线」放大成「本机挂死」。CI 看不见（`CI` 为真 ⇒ 走豁免 ③）⇒ 典型「CI 绿 / 本机挂死」。
+数据: **接线（根因那一半）**：`verify-all.sh` 的拿锁包装函数 `macquire` 必须在**拿锁成功后** `export MIGAO_HEAVY_LOCK_HELD=1`（`export` 而非普通赋值 ⇒ 落到**子进程环境**；位置在 acquire 之后）。判据 = `tests/unit_ci_workflows/test_machine_heavy_lock.py::TestVerifyAllWiring::test_macquire_exports_the_marker_after_a_successful_acquire`（结构化读函数体 + 剥注释，删那行 / 挪到 acquire 之前 / 改成普通赋值 ⇒ 各自判红）+ `::test_the_marker_really_reaches_a_child_process`（装真 `macquire` 起真子进程：正常 export ⇒ `CHILD_SEES=1`；注入普通赋值 ⇒ `CHILD_SEES=<unset>` ⇒ 判红）。
+数据: **行为（核心，纵深防御）**：造「祖先已持锁（真锁文件 + 活持有者）+ `MIGAO_HEAVY_WAIT=2700`」的形态 ⇒ `pytest tests/unit_ci_workflows --collect-only` 必须**在有界时间内非零退出**并给出可归因报文（锁路径 / 持有者 / 怎么办），**不得挂死**。判据 = `tests/unit_ci_workflows/test_suite_self_lock.py::TestNeverHangsWhenAnAncestorHoldsTheLock::test_real_whole_directory_pytest_exits_instead_of_hanging`（**硬超时** 60s：挂死 ⇒ `TimeoutExpired` ⇒ 判红）。实现 = `tests/unit_ci_workflows/conftest.py`：`_lock_holder_is_an_ancestor`（读锁文件 `pid=` + `ps` 祖先链 ⇒ 祖先持锁则**不排队**）+ `_suite_lock_timeout_seconds`（`MIGAO_HEAVY_WAIT` + 60s / 未设置 60s 的墙钟预算）。
+数据: **反向（不得砍掉有界性 / 不得误伤排队语义）**：① 拿一个永不返回的假锁脚本 ⇒ `acquire_suite_lock` 必须在预算内返回 fail-closed 报文（去掉 `subprocess` 的 `timeout` ⇒ 判据真跑硬超时 ⇒ 红）；② 持有者**不是祖先**（真·无关会话）⇒ `--wait` 仍必须排队并**等到释放后取得**（把「祖先判定」写宽成「只要锁被占就拒绝」⇒ 红）。判据 = 同文件的 `test_unrelated_holder_still_queues_until_release` / `::TestNeverHangsWhenAnAncestorHoldsTheLock::test_pure_predicate_fires_immediately_with_a_bounded_budget`，以及 `test_machine_heavy_lock.py::TestWaitOption` 既有的 `--wait` 语义判据。
+数据: **类级固化**：① 上面两条接线判据的载体（`macquire` 的 export = `verify-all.sh::macquire`）登记进 `tests/unit_ci_workflows/wiring_claims_ledger.json`，由 `tests/unit_ci_workflows/test_wiring_claims_registry.py` 逐条保证「锚真实存在 + 声明与台账双向一致 + 摘线即红」（该表自本次起允许 `.sh` 载体 —— 判据 = 同文件 `test_shell_carrier_anchor_is_reachable_and_pinned`）；② 入口台账 `tests/unit_ci_workflows/heavy_entry_ledger.json` 的 `verify-all.sh` 条目写明这条接线与兜底（由 `test_heavy_suite_entry_ledger.py` 裁）；③ 纪律面 `docs/wiki/Development.md` 的「机器级重活并发准入」节同步（由 `test_suite_self_lock.py::TestDisciplineIsUpdated` 裁）。
+数据: 🔴 **覆盖边界（显式登记）**：① 「祖先已持锁」判定只认锁文件的 `pid=` 与 `ps` 祖先链 ⇒ `MIGAO_HEAVY_LOCK_FILE` 指向别的锁文件时判不了（那时按原有语义走锁脚本）；② 有界预算只覆盖**套件自带准入**这一路，`verify-all.sh` 自己的 `macquire` 仍按 `MIGAO_HEAVY_WAIT` 排队（那里是**合法的排队入口**，不是死等 —— 它的持有者不是自己的祖先）；③ 本判据**不跑** `verify-all.sh gate`（那会拉起全量套件 ⇒ 自我递归 + 打瘫开发机），接线面用「结构化读函数体 + 真 `macquire` 起子进程」承担；④ 不改任何门禁的通过条件、不新增豁免、不新增 `pytest.skip`。
+跳过: [backend-contract] 本机研发机具（机器级重活锁 / 套件自带准入）的行为与接线由 tests/unit_ci_workflows/ 的 pytest 单测验证（真子进程 + 临时锁面 + 硬超时），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #6074：本机挂死级缺陷 —— `verify-all.sh` 从不设置 `MIGAO_HEAVY_LOCK_HELD` ⇒ 套件自锁自抢死锁）。**根因复核（照实）**：2026-10-02 18:55 +0800 合入的 #6024 已在 origin/main 落地那行 `export`（`verify-all.sh` 的 `macquire` 内），**观测到挂死的那个 worktree 是更早的集成分支**（其 `verify-all.sh` 里 0 命中）⇒ 「缺接线」属实、但**只在那条分支上**；main 上残留的真缺陷是**第二层**：缺接线时**不是出声红而是挂死**（继承来的 `MIGAO_HEAVY_WAIT=2700`）。⇒ 本包 ① 把该接线钉进台账 + 加两条会红的接线判据（防再次漏掉）② 加**祖先已持锁 ⇒ 立即拒绝 + 有界等待**的纵深防御（缺接线再次发生时后果 = 立即红）。本机实测读数（临时锁面，不碰真锁）：修前 `pytest tests/unit_ci_workflows --collect-only`（祖先持锁 + `MIGAO_HEAVY_WAIT=2700`）⇒ **45s 硬超时仍未返回**（进程树 = pytest → `machine-heavy-lock.sh acquire --wait 2700`）；修后 ⇒ **0.6s rc=1** 且报文点出「祖先已持锁 / batch-gate 的 2700 / 怎么办」。**取号 MC-070**：现取 `.github/cases/claims/` ∪ `origin/main` 的 MC 号，最大 = MC-069 ⇒ 取 070，同 PR 加 claim 文件 `.github/cases/claims/<PR号>-MC-070.json`。 ｜ tags: ci, heavy-lock, deadlock, flaky-infra
 
 ## 商家入驻域（5 case）
 
@@ -9020,8 +9035,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：629（活跃 133，跳过 496）
-- tier 分布：smoke 12 / normal 584 / adversarial 31
+- 用例总数：630（活跃 133，跳过 497）
+- tier 分布：smoke 12 / normal 585 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -9036,7 +9051,7 @@
 - 财务对账域：4
 - 人事域：12
 - 知识问答域：7
-- 杂项域：71
+- 杂项域：72
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -9137,6 +9152,7 @@
 - MC-070: 米宝**主动新手引导**（issue #5989 · P2）：首次进某个已登记页面 ⇒ 对话区主动发一条**导航提示**；**每页每会话最多 1 次**（服务端判，不靠前端自觉）· **只推该角色可见的**（只读服务端会话权限）· **未登记页面不推**（默认拒绝，静默）· **只给导航不给步骤**（结构 + 文案双层）· 拿不到「在哪一页 / 这页能做什么」⇒ **不发**（可行动性）
 - MC-049: 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）
 - MC-071: nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）
+- MC-070: 机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
