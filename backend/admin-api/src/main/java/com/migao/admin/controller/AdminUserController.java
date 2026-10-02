@@ -11,8 +11,8 @@ import com.migao.admin.service.RoleService;
 import com.migao.admin.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.bind.annotation.*;
 import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.*;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -107,7 +107,7 @@ public class AdminUserController {
         // `operator`（运营级 26 码含 order:create / inbound:create / finance:create / order:refund
         // 等写权限）—— 缺省 = 「没选岗位」，不是「运营」；缺省权限只许由调用方**显式声明**。
         // 页面（员工管理）本就强制选岗位 ⇒ 这条只拦 API 直连（AI 工具面 / 集成方 / 脚本）。
-        // ⚠️ 闸门在任何解析/落库**之前**（BusinessException.validationError ⇒ 400）。
+        // ⚠️ 闸门在任何解析/落库**之前**（BusinessException.validationError ⇒ 422 VALIDATION_ERROR）。
         boolean hasRoleKey = StringUtils.hasText((String) body.get("role"));
         boolean hasRoleId = body.get("roleIds") instanceof List<?> roleIdsSent && !roleIdsSent.isEmpty();
         if (!hasRoleKey && !hasRoleId && !StringUtils.hasText(position)) {
