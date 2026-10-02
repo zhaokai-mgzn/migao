@@ -59,6 +59,7 @@ import argparse
 import difflib
 import io
 import json
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -81,6 +82,11 @@ RC_FRESH, RC_DRIFT, RC_UNDECIDABLE = 0, 1, 3
 
 #: 判红/无法判定时打进日志的 GitHub 注解前缀（**单行**；多行注解会被截断）。
 ERROR_PREFIX = "::error::"
+
+#: 「一步归因」命令原文（`--base-probe`）：判红时**先问 base 是不是也陈旧**，再决定是不是本 PR 的事。
+#: 本仓具名实例（2026-10-02，issue #6027）：main 侧漂移 11 分钟 ⇒ 窗口内两个**没碰过用例库**的 PR
+#: 各自红一次，信息指向它们自己的 diff（归因指向错误的对象）。
+BASE_PROBE_COMMAND = "python3 scripts/generated_artifacts_freshness.py --base-probe origin/main"
 
 
 @dataclass(frozen=True)
@@ -301,6 +307,10 @@ def evaluate(repo: Path, *, python: str | None = None, cases_rel: str = CASES_RE
         report["problems"].append(
             "     若无人在 PR 上改了 `.github/cases/**`，说明漂移是**直接落在 main 上**的"
             "（本腿存在的理由）—— 归因看提交级读数，不要指向某个 PR。")
+        report["problems"].append(
+            f"     一步归因（**先做这个再动手**，issue #6027）：{BASE_PROBE_COMMAND}"
+            "  ⇒ base 侧同样陈旧 = 漂移不是本 PR 引入（别在这里重渲染去顶）；"
+            "base 新鲜 = 漂移由本树引入；无法判定 ≠ 本树引入。")
         report["error_annotation"] = error_annotation(drifted, [])
     else:
         report["verdict"] = "fresh"
@@ -427,6 +437,57 @@ def probe_merge(repo: Path, ref: str, *, python: str | None = None, window: int 
     return report
 
 
+def base_probe(repo: Path, ref: str, *, python: str | None = None) -> dict:
+    """在**临时 worktree** 上复算 `ref` 的同一判定本体 ⇒ 回答「漂移是不是本树引入的」。
+
+    三态：`fresh`（base 新鲜 ⇒ 漂移由**本树**引入）/ `drifted`（base 同样陈旧 ⇒ **不是**本树引入）/
+    `undecidable`（取不到 ref / worktree 建不起来 / 复算失败）—— **`undecidable` 绝不允许读成「本树引入」**。
+
+    与 `probe_merge` 的分工：那个回答「把本树合到 ref 之后是否新鲜」（`FM-E22`），本函数回答
+    「**ref 自己**是否已经陈旧」（`FM-E4` 的归因纪律：别把 main 侧漂移记到下一个撞上的 PR 头上）。
+    🔴 判定本体**只有一份**：本函数不写 render+diff，只在临时 worktree 里调同一份 `evaluate()`。
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="migao-base-probe-"))
+    wt = tmp / "base"
+    out = {"ref": ref, "verdict": "undecidable", "problems": [], "attribution": "", "base_sha": ""}
+    try:
+        add = _git_rc(repo, "worktree", "add", "--detach", str(wt), ref)
+        if add.returncode != 0:
+            err = (add.stderr or add.stdout or "").strip().splitlines()
+            out["problems"].append(
+                f"{ERROR_PREFIX}base 归因**无法判定**：取不到 `{ref}`（git worktree add rc={add.returncode}）"
+                f"：{err[-1][:160] if err else '（无输出）'}")
+            out["attribution"] = (f"归因：**无法判定**（取不到 `{ref}`）—— 不许读成「本树引入」；"
+                                  f"先 `git fetch origin main` 再复算。")
+            return out
+        sha = _git_rc(wt, "rev-parse", "HEAD")
+        out["base_sha"] = sha.stdout.strip() if sha.returncode == 0 else ""
+        report = evaluate(wt, python=python or sys.executable)
+        verdict = report.get("verdict")
+        if verdict not in ("fresh", "drifted"):
+            out["problems"].append(
+                f"{ERROR_PREFIX}base 归因**无法判定**：`{ref}` 上复算未得出结论（verdict={verdict}）")
+            out["attribution"] = "归因：**无法判定**（base 侧复算没出结论）—— 不许读成「本树引入」。"
+            return out
+        out["verdict"] = verdict
+        if verdict == "drifted":
+            out["problems"].append(
+                f"🔎 base 归因结果：`{ref}`（{out['base_sha'][:8] or '?'}）**自己也是陈旧的** "
+                f"⇒ 漂移**不是本树/本 PR 引入**（本仓具名实例：2026-10-02 的 11 分钟窗口，issue #6027）。")
+            out["attribution"] = (
+                f"归因：**base 侧同样陈旧** ⇒ 不要在这个 PR 上重渲染生成物去顶；"
+                f"按 main-freshness-guard 的面处置（或等 base 修复后重跑）。")
+        else:
+            out["problems"].append(
+                f"🔎 base 归因结果：`{ref}`（{out['base_sha'][:8] or '?'}）**是新鲜的** "
+                f"⇒ 漂移由**本树**引入。")
+            out["attribution"] = f"归因：**本树引入** ⇒ 在本 PR 上 {rerender_command()} 并提交生成物。"
+        return out
+    finally:
+        _git_rc(repo, "worktree", "remove", "--force", str(wt))
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="生成物新鲜度判定（render + 逐字节比对；单一实现）")
     ap.add_argument("--repo", default=str(DEFAULT_REPO), help="仓根（缺省 = 本文件所在仓库）")
@@ -437,6 +498,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", default="", help="把机器可读报告写到该路径")
     ap.add_argument("--merge-probe", default="", metavar="REF",
                     help="额外判「把本树合并到该 ref 之后」生成物是否新鲜（`FM-E22`；缺省不跑）")
+    ap.add_argument("--base-probe", default="", metavar="REF",
+                    help="额外判「该 ref 自己是否也陈旧」⇒ 一步归因（issue #6027；缺省不跑）")
     args = ap.parse_args(argv)
 
     report = evaluate(Path(args.repo), python=args.python, cases_rel=args.cases,
@@ -462,6 +525,17 @@ def main(argv: list[str] | None = None) -> int:
         if probe["verdict"] == "drifted":
             rc = RC_DRIFT
         elif probe["verdict"] == "undecidable" and rc == RC_FRESH:
+            rc = RC_UNDECIDABLE
+
+    if args.base_probe:
+        bp = base_probe(Path(args.repo), args.base_probe, python=args.python)
+        for line in bp["problems"]:
+            print(line)
+        if bp.get("attribution"):
+            print(f"   {bp['attribution']}")
+        print(f"MIGAO-GENFRESH-BASE ref={bp['ref']} base={bp['base_sha'][:8] or '?'} verdict={bp['verdict']}")
+        # 诊断档：结论已给出 ⇒ 0；**无法判定 ⇒ 3**（不许读成「本树引入」）
+        if bp["verdict"] == "undecidable" and rc == RC_FRESH:
             rc = RC_UNDECIDABLE
 
     if args.json:

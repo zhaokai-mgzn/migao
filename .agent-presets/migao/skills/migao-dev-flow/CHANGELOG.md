@@ -1,3 +1,7 @@
+- v1.103.0（2026-10-02，issue #6027）**新增 §25.6「清单 E：判红归因」** —— main 侧漂移（11 分钟窗口实测）
+  会让**下一个无辜 PR** 变红且信息指向它自己的 diff；现要求**动手前先做一步归因**
+  （`python3 scripts/generated_artifacts_freshness.py --base-probe origin/main`，三态：base 陈旧 ⇒ 不是本 PR /
+  base 新鲜 ⇒ 本树引入 / 退出码 3 ⇒ 无法判定，不许读成「本树引入」）。同批把该出口落进判定本体的漂移输出。
 # migao-dev-flow 版本沿革
 
 > **本文件不在技能加载面内**（DSH 的 skill 加载器只读 `SKILL.md` 的 `name` + `description`）。
