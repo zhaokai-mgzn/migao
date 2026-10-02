@@ -158,7 +158,9 @@ def _data_dict_keys() -> set:
              if isinstance(n, ast.FunctionDef) and n.name == "to_data"),
             None,
         )
-    assert fn is not None, "找不到 `ProactivePush.to_data`（被判对象漂移 ⇒ 红）"
+    assert isinstance(fn, ast.FunctionDef), (
+        "找不到 `ProactivePush.to_data`（被判对象漂移 ⇒ 红）"
+    )
     for node in ast.walk(fn):
         if isinstance(node, ast.Return) and isinstance(node.value, ast.Dict):
             return {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
