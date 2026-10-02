@@ -1,6 +1,10 @@
 // case_ids: UI-030, CH-009, UI-017
 /**
- * B 端 form 卡的**提交形态**与本地护栏（issue #5949）。
+ * B 端 form 卡（`InteractiveMessage.tsx` 的 `FormCard`）**提交形态**与本地护栏（issue #5949）。
+ *
+ * 文件名 = 被测源文件同名（`tests/unit/components/<被测组件>.test.tsx`，
+ * `.github/tech-stack.yml` 的 admin-web 规则：`src/components/…/<Name>.tsx` ⇒ 缺测门禁
+ * 找的正是这个名字 —— 取别的名字会被 QA Growth Gate 判「缺测」而**看不出是命名问题**）。
  *
  * 病（可复算）：`frontend/admin-web/src/components/chat/InteractiveMessage.tsx` 的 `FormCard`
  * 曾把字段拼成 `label: value` 多行文本后 `sendMessage(lines)`；而后端「答卡轮」契约
