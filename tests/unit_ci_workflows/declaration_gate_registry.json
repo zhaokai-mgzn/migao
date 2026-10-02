@@ -558,6 +558,16 @@
       "issue": "#5948",
       "criterion": "tests/unit_ci_workflows/test_automerge_bot_safe_path.py::test_only_one_strip_comment_implementation_in_the_repo",
       "note": "模块级常量上方注记声明「被扫的函数名 + 谓词 = **单一实现**（唯一性）」（#5948）⇒ 由该判据承担：整仓扫描面的命中集必须恰好 == 正典 ∪ 活豁免，多一份同名定义即红并具名。谓词本身是拼装常量（不逐字写出那个名字）⇒ 本文件不自匹配，该声明由 `test_the_predicate_itself_is_discriminating` 的反面对照（8 条前缀族读数）另行具名。"
+    },
+    {
+      "file": "scripts/ci_helper_scope.py",
+      "symbol": "CANONICAL_ARGV",
+      "criterion": "tests/unit_ci_workflows/test_ci_execution_scope.py::test_canonical_argv_is_the_same_source_everywhere"
+    },
+    {
+      "file": "scripts/ci_helper_scope.py",
+      "symbol": "DEV_FACE_PREFIXES",
+      "criterion": "tests/unit_ci_workflows/test_ci_execution_scope.py::test_face_prefixes_are_same_source_as_the_local_helper"
     }
   ],
   "frozen_declarations": [
