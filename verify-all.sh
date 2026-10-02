@@ -833,19 +833,35 @@ package_heavy_guard() {
   local marker_path
   marker_path="$(git rev-parse --git-path "$MARKER_NAME" 2>/dev/null || echo "<?>")"
   echo "⛔ 套件内全量入口被**拒绝**（exit 5）—— 本次**没有跑**任何检查（这不是「通过」）"
-  echo "   为什么  ：当前工作区是**子包 worktree**（linked worktree 且没有批次标记）："
-  echo "             $(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-  echo "             D 口径 = **一批只跑一次**全量，那一次属于**批次集成**；在这里直跑会把它**提前烧掉**，"
-  echo "             并与别人的重活抢同一把机器级锁（issue #6084）。"
-  echo "             判定：git-dir=$(git rev-parse --absolute-git-dir 2>/dev/null || echo '?')"
-  echo "                   = common-dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo '?')；"
-  echo "                   标记 ${marker_path} 不存在"
+  # 归因（`role` / `marker` / 台账原因）**按角色拆开**（issue #6101 复核发现）：`unknown`
+  # （= **不是 git 仓库 / `git` 不可用**）原先共用 `package` 的措辞与台账原因 ⇒ 行为对（rc=5）
+  # 但**归因错** —— 而这条台账正是角色读数的仪表，归因错会污染后续裁定。
+  # ⚠️ 两条路径必须**各自三点齐全**（为什么 / 替代 / 真要跑）：拆归因不许把出口也拆掉。
+  if [ "$role" = "unknown" ]; then
+    echo "   为什么  ：**当前不是 git 仓库**（或 \`git\` 不可用）⇒ 判不出角色（fail-closed）："
+    echo "             cwd=$(pwd)"
+    echo "             取不到坐标：git-dir=$(git rev-parse --absolute-git-dir 2>/dev/null || echo '取不到')"
+    echo "                         common-dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo '取不到')"
+    echo "             ⚠️ 判不出角色时**不猜**（不按名字 / 环境变量兜底）：拿不准就不许跑全量（issue #6084）。"
+  else
+    echo "   为什么  ：当前工作区是**子包 worktree**（linked worktree 且没有批次标记）："
+    echo "             $(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+    echo "             D 口径 = **一批只跑一次**全量，那一次属于**批次集成**；在这里直跑会把它**提前烧掉**，"
+    echo "             并与别人的重活抢同一把机器级锁（issue #6084）。"
+    echo "             判定：git-dir=$(git rev-parse --absolute-git-dir 2>/dev/null || echo '?')"
+    echo "                   = common-dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo '?')；"
+    echo "                   标记 ${marker_path} 不存在"
+  fi
   echo "   替代    ：① 包内只跑**定点判据**（子集 ⇒ 不拿锁、可与其它包并行）"
   echo "             ② 一批（多包）的那一次全量 ⇒ ./scripts/batch-gate.sh <分支...>（它自己 merge 串行 + 跑一次）"
   echo "             ③ 单包的一整套 ⇒ 交给 CI（每 PR 并行，仍是权威）"
   echo "   真要跑  ：显式加 --allow-package-heavy（命令行可见；会打印醒目一行 + 台账记一条 override）"
   echo "   现场读取：./scripts/machine-heavy-lock.sh status"
-  record_verdict "$role" refused "子包 worktree 直跑全量（无批次标记）"
+  if [ "$role" = "unknown" ]; then
+    record_verdict "$role" refused "判不出角色（非 git 仓库 / git 不可用）"
+  else
+    record_verdict "$role" refused "子包 worktree 直跑全量（无批次标记）"
+  fi
   return 5
 }
 
