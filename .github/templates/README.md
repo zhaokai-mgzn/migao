@@ -1,6 +1,6 @@
 # 验证模板
 
-模板文件位于 `templates/`（部署后位于 `/opt/ershen/templates/`）。
+模板文件位于 `.github/templates/`。
 
 当前 16 个模板，覆盖 8 大业务域（对照 [业务真值设计链路](../../product/truth-design-pipeline.md)）：
 
