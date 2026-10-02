@@ -136,7 +136,14 @@
         "Install dependencies",
         "Build H5",
         "Build weapp"
-      ]
+      ],
+      "job_gate": {
+        "needs": "detect",
+        "output": "run",
+        "emit_step": "Detect bmini-app face",
+        "if": "needs.detect.outputs.run == 'true'"
+      },
+      "job_gate_note": "issue #6051：本腿是**非 required** ⇒ 加 job 级面门控（`needs: detect` + `if: needs.detect.outputs.run == 'true'`），非命中面的 PR 上**整层不创建**（runner 不再空转）。「未跑」由判定 job 的 else 分支具名打印（见各 workflow 的 `detect` job）；⛔ required 腿**禁止**用这条形态：job 级跳过不上报 context ⇒ required 检查永久悬空。"
     },
     {
       "id": "mini-app-typecheck-and-test",
@@ -190,7 +197,14 @@
         "Build H5 (test env overrides prod URL)",
         "Run visual regression",
         "Upload visual diff artifacts (failure)"
-      ]
+      ],
+      "job_gate": {
+        "needs": "detect",
+        "output": "run",
+        "emit_step": "Detect mini-app face",
+        "if": "needs.detect.outputs.run == 'true'"
+      },
+      "job_gate_note": "issue #6051：本腿是**非 required** ⇒ 加 job 级面门控（`needs: detect` + `if: needs.detect.outputs.run == 'true'`），非命中面的 PR 上**整层不创建**（runner 不再空转）。「未跑」由判定 job 的 else 分支具名打印（见各 workflow 的 `detect` job）；⛔ required 腿**禁止**用这条形态：job 级跳过不上报 context ⇒ required 检查永久悬空。"
     },
     {
       "id": "pr-check-admin-web-tests",
@@ -366,7 +380,14 @@
         "Install test deps",
         "Install admin-web deps (for Playwright webServer)",
         "Run quality specs (fixture-only)"
-      ]
+      ],
+      "job_gate": {
+        "needs": "detect",
+        "output": "run",
+        "emit_step": "Detect e2e face",
+        "if": "github.event_name == 'pull_request' && needs.detect.outputs.run == 'true'"
+      },
+      "job_gate_note": "issue #6051：本腿是**非 required** ⇒ 加 job 级面门控（`needs: detect` + `if: needs.detect.outputs.run == 'true'`），非命中面的 PR 上**整层不创建**（runner 不再空转）。「未跑」由判定 job 的 else 分支具名打印（见各 workflow 的 `detect` job）；⛔ required 腿**禁止**用这条形态：job 级跳过不上报 context ⇒ required 检查永久悬空。"
     },
     {
       "id": "case-truth-check-merge-probe",
@@ -448,7 +469,14 @@
         "Install Playwright deps",
         "Run tabBar geometry e2e",
         "Upload e2e artifacts (failure)"
-      ]
+      ],
+      "job_gate": {
+        "needs": "detect",
+        "output": "run",
+        "emit_step": "Detect bmini-app face",
+        "if": "needs.detect.outputs.run == 'true'"
+      },
+      "job_gate_note": "issue #6051：本腿是**非 required** ⇒ 加 job 级面门控（`needs: detect` + `if: needs.detect.outputs.run == 'true'`），非命中面的 PR 上**整层不创建**（runner 不再空转）。「未跑」由判定 job 的 else 分支具名打印（见各 workflow 的 `detect` job）；⛔ required 腿**禁止**用这条形态：job 级跳过不上报 context ⇒ required 检查永久悬空。"
     }
   ],
   "same_source_claims": [

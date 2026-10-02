@@ -102,8 +102,19 @@ issue #3956 实证过「软链目标被误删 ⇒ DSH 研发模式当场消失�
 | 活锚内容 ≠ `origin/main`（缺文件 / 内容不同） | ❌ 红（含逐文件清单 + 版本对比 + 同步命令） |
 | 内容一致但活锚检出**落后** `origin/main` | ❌ 红（现在无害，但**下一次改预设就到不了加载点** —— 正是 #4026 的病灶） |
 | 内容一致、sha 也是同一个提交 | ✅ 绿 |
-| 活锚检出与本仓库**不同源**（默认活锚路径才适用；**且有证据**：生效 origin URL 不等，或基线 sha 不在活锚历史里） | `⏭️ 未跑判定`（exit 0）—— 拿无关仓库的 main 量活锚没有意义 |
+| 活锚检出与本仓库**不同源**（**隐式默认活锚**才适用；**且有证据**：生效 origin URL 不等，或基线 sha 不在活锚历史里） | `⏭️ 未跑判定`（exit 0）—— 拿无关仓库的 main 量活锚没有意义 |
 | 基线 `ref` **不可解析**（`origin/main` 不在检出里 / 浅检出 / ref 名变了） | ❌ **`3` 无法判定**（fail-closed）—— 见下面「地雷 E」 |
+
+### 按拓扑自动选判定（S4 / issue #6020 换链之后；**补充**上表，不放宽任何一条）
+
+| 形态 | 判定 |
+|---|---|
+| **拓扑 A** = 活锚**就是**某个检出的**仓根**（预设仓镜像形态） | ① 缺 `preset.yml` / `skills/` ⇒ ❌ 红（加载面是空的）；② 工作树不干净 ⇒ ❌ 红，**读不到状态** ⇒ `3`；③ HEAD ≠ **活锚自己的** `origin/main` ⇒ ❌ 红，**取不到该 ref**（离线 / 没 fetch / 无 origin）⇒ `3`；全过 ⇒ ✅ 并打印两个技能 version |
+| **拓扑 B** = 活锚是某检出里的 preset 子树（S4 前的业务仓形态 / 手抄副本） | 历史口径：内容与基线仓该前缀逐字节比对（上表原样适用） |
+| **拓扑 C** = 拓扑 B 形态 + **基线仓该前缀是空集** | `⏭️ 未跑判定` + **`3`** —— 「基线仓已无该前缀 ⇒ 这条比对本就不适用」。**绝不许**输出「✅ 新鲜（0 个文件）」：空集比空集是**恒等**，那种绿 = 假绿（本单实测形态） |
+
+🔴 **空集不许报绿**是本节的核心：`0 个文件` 的「逐字节一致」不是「比过且一致」，是**没得比**。
+判「没得比」必须显式出声，并按三态给 `3`（**不得当 `0` 读**）。
 
 **地雷 E：取不到 `ref` 时判据自己选择「看得见」（issue #5430）**
 
@@ -484,12 +495,23 @@ def _same_upstream(ref: str, cwd: Path, anchor_repo: Path,
        「不同历史」⇒ 落后**不红**；而这恰恰是本单要治的形态（main 刚前进、锚点还没跟上）。
     ③ 把 `git rev-parse` 的**回显**当 sha（`ref` 不存在时它把 ref 名原样打到 stdout）⇒ 判出
        「同一上游（同一份历史）」这种**没有证据的结论**（issue #5430）—— 故这里**先判 rc**。
+
+    🔴 **`expected_remote` 只由「显式判定」的调用方传入**（`judge_anchor` 的隐式分支一律传空串）：
+    隐式默认活锚沿用**历史口径**（与本仓库比）。否则本机活锚（预设仓检出）会把**任何**夹具仓库 /
+    业务仓库都判成「同一上游」—— 实测在已接线的机器上让 5 条既有判据误红（`check` 的活锚段拿
+    1.104.0 的活锚去量 1.28.0 的夹具），也把「不同源 ⇒ `⏭️` 未跑判定」这条豁免整个架空。
+    显式 `--anchor` 时调用方已声明「这就是预设锚点」，才轮到预设仓 URL 当参照物。
     """
     if anchor_repo.resolve() == cwd.resolve():
         return True, "活锚就在本仓库检出内"
     a = _norm_remote(_remote_url(anchor_repo))
     b = _norm_remote(_remote_url(cwd))
-    for label, target in (("预设仓", expected_remote or PRESET_REPO_URL), ("本仓库", b)):
+    # 🔴 预设仓那条腿**只在调用方显式给了 `expected_remote` 时**才比（= 只有「显式判定」会传）。
+    #    旧实现回落到常量 `PRESET_REPO_URL` ⇒ **隐式默认活锚**在已接线的机器上把**任何**仓库都判成
+    #    「同一上游」（活锚的 origin 就是预设仓）⇒ 活锚段拿 1.104.0 的活锚去量夹具仓的 1.28.0，
+    #    实测让 5 条既有判据误红，也把「不同源 ⇒ ⏭️ 未跑判定」这条豁免整个架空。
+    targets = ([("预设仓", expected_remote)] if expected_remote else []) + [("本仓库", b)]
+    for label, target in targets:
         t = _norm_remote(target)
         if a and t and a == t:
             return True, f"活锚检出与{label}同一上游（{a}）"
@@ -500,7 +522,7 @@ def _same_upstream(ref: str, cwd: Path, anchor_repo: Path,
                        check=False).returncode == 0:
         return True, f"活锚检出拥有基线提交 {ref_sha[:12]}（同一份历史）"
     return False, (f"活锚检出与预设仓、本仓库都不是同一上游"
-                   f"（origin={a or '—'} vs 预设仓={_norm_remote(expected_remote or PRESET_REPO_URL) or '—'}"
+                   f"（origin={a or '—'} vs 预设仓={_norm_remote(expected_remote) or '（未比：非显式判定）'}"
                    f" vs 本仓库={b or '—'}）—— 拿无关仓库的 main 量活锚没有意义")
 
 
@@ -513,6 +535,48 @@ def _anchor_checkout(anchor: Path) -> tuple[Path | None, str | None]:
     head = git("-C", str(anchor), "rev-parse", "HEAD", check=False)
     sha = head.stdout.strip() if head.returncode == 0 else ""
     return top, (sha or None)
+
+
+#: 活锚形态（**按拓扑自动选判定**；S4 / issue #6020 换链之后的正确语义）：
+#:   · `preset-checkout`（**拓扑 A**）= 活锚**就是**一个检出的**仓根**（软链目标 = 预设仓镜像的仓根）
+#:     ⇒ 参照物是**活锚自己的 `origin/main`**，且它必须是**只读**的干净检出。
+#:   · `preset-subdir`（**拓扑 B**）= 活锚是某检出里的 preset **子树**（S4 前的业务仓形态 / 手抄副本）
+#:     ⇒ 沿用历史口径：内容与**基线仓**该前缀逐字节比对。
+#: 两种拓扑都**不许在「没跑判定」时报绿**（见 `judge_anchor` 的拓扑 C 与空集分支）。
+ANCHOR_TOPO_CHECKOUT = "preset-checkout"
+ANCHOR_TOPO_SUBDIR = "preset-subdir"
+
+
+def _anchor_topology(real: Path, top: Path | None) -> str:
+    """活锚形态：仓根检出（A）还是仓内子树（B）。判据 = **活锚是否就是它所在检出的仓根**。
+
+    不猜、不看路径字面量：`git rev-parse --show-toplevel` 回答「谁包含它」，比一下就知道。
+    不是 git 检出（手抄副本）⇒ 按 B 判（判不了 sha，但内容照样能比）。
+    """
+    if top is not None and top.resolve() == real.resolve():
+        return ANCHOR_TOPO_CHECKOUT
+    return ANCHOR_TOPO_SUBDIR
+
+
+def _own_remote_main(anchor_repo: Path, fetch: bool) -> tuple[str | None, str]:
+    """活锚检出**自己**的远端 main sha（拓扑 A 的参照物）。
+
+    `fetch=True` ⇒ 先 `git -C <anchor> fetch --prune origin main`（只有人显式 `--fetch` 时才联网；
+    活锚默认只读，绝不自动 fetch / 写盘）。
+
+    返回 `(sha, 取不到的原因)`：`sha is None` ⇒ **取不到**（离线 / 无凭据 / 没 fetch / 无 origin）
+    ⇒ 调用方**必须判 `3` 无法判定**（拿不到第二视角就报绿，正是本单要治的假绿形态）。
+    """
+    if fetch:
+        proc = git("-C", str(anchor_repo), "fetch", "--prune", "origin", "main", check=False)
+        if proc.returncode != 0:
+            return None, (f"`git -C {anchor_repo} fetch origin main` 失败"
+                          f"（离线 / 无凭据 / 无 origin）：{proc.stderr.strip()[:200]}")
+    proc = git("-C", str(anchor_repo), "rev-parse", "--verify", "origin/main", check=False)
+    sha = proc.stdout.strip() if proc.returncode == 0 else ""
+    if not sha:
+        return None, f"活锚检出里取不到 `origin/main`（{anchor_repo}；没 fetch / 没接 origin）"
+    return sha, ""
 
 
 def _resolve_anchor(anchor: Path) -> Path:
@@ -657,7 +721,7 @@ def _commits_behind(ref: str, sha: str, cwd: Path) -> str:
 
 def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=sys.stdout,
                  *, anchor_base: str = PRESET_SUBDIR, expected_remote: str = "",
-                 remote_sha: str = "") -> int:
+                 remote_sha: str = "", fetch: bool = False) -> int:
     """活锚新鲜度判定。三态：0 = 绿（或 `⏭️` 未跑判定）；1 = 红（落后 / 悬空 / 内容不同 / 不可加载）；
     **3 = 无法判定**（基线 `ref` 取不到 ⇒ 内容比对与落后判定的**共同前提缺失** —— issue #5430）。
 
@@ -673,6 +737,17 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
         给定时**额外**判一条「镜像是否还在远端 main 上」：换链后活锚 ⇄ 镜像同体，旧的
         「活锚 ⇄ 基线」视角失去第二只眼，镜像落后将**无人报**（#4026 的同族静默失效）。
         取不到远端 sha 时**不传**即可（这一条跳过），但入口必须**出声**说明跳过了什么。
+      · `fetch`：只有人显式 `--fetch` 时才为真 ⇒ **拓扑 A** 下先 `git -C <活锚> fetch origin main`；
+        取不到远端（fetch 失败 / 没有 `origin/main`）⇒ **判 `3` 无法判定**（不许拿本地旧 ref 报绿）。
+        **拓扑 B** 下 fetch 打在基线仓上，失败只**降级出声**（沿用历史容忍度）。
+
+    🔴 **按拓扑自动选判定**（S4 / issue #6020 换链后）：
+      · **拓扑 A**（活锚 = 预设仓检出的仓根）⇒ 三条：① 活锚下必须有 `preset.yml` + `skills/`；
+        ② 活锚工作树**干净**（`git status --porcelain` 空；读不到 ⇒ `3`）；③ HEAD 就在**活锚自己的
+        `origin/main`** 上（取不到 ⇒ `3`；不同 ⇒ 红）；并打印两个技能 version 供人眼核对。
+      · **拓扑 B**（活锚仍是基线仓里的 preset 子树）⇒ 历史口径：内容与基线前缀逐字节比对。
+      · **拓扑 C**（拓扑 B 形态 + 基线仓该前缀**空集**）⇒ `⏭️ 未跑判定` + **`3`**：
+        「基线仓已无该前缀 ⇒ 这条比对本就不适用」——**绝不**输出「✅ 新鲜」（空集比空集恒等 = 假绿）。
 
     ⚠️ **为什么 `ref` 解析失败在入口判、且判 `3` 而不是 `1`**（#5430）：`ref` 是**调用的前提**，
     前提缺失 ⇒ 内容级与 sha 级两条判据**都没跑出结论** ⇒ 按本仓三态口径（`scripts/drift_audit.py`
@@ -696,6 +771,20 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
               "预设仓 README.md（S4 起预设内容在**预设仓仓根**，软链指向镜像的**仓根**）", file=out)
         return 1
 
+    # 拓扑与「活锚是不是检出」都要在**基线 ref 解析之前**算（`--fetch` 可能正是让 ref 变得可解析的动作）。
+    top, sha = _anchor_checkout(real)
+    topology = _anchor_topology(real, top)
+
+    # `--fetch`（**只有人显式要求才联网**；活锚默认只读）：拓扑 A 的 fetch 在 `_own_remote_main` 里
+    # （取不到远端 ⇒ 判 `3`）；其余形态 fetch **基线仓**，沿用历史容忍度：失败**降级出声**、不因此判红。
+    if fetch and topology != ANCHOR_TOPO_CHECKOUT:
+        fetched = git("-C", str(cwd), "fetch", "--prune", "origin", "main", check=False)
+        if fetched.returncode == 0:
+            print(f"   已 fetch 基线仓 origin main（{cwd}）", file=out)
+        else:
+            print(f"   ⚠️ fetch 基线仓 main 失败（离线 / 无权限 / 无 origin）—— "
+                  f"下面按**本地已知的** {ref} 判定", file=out)
+
     # 🔴 入口先核**基线 ref 能否解析**（#5430）：`git rev-parse <ref>` 在 ref 不存在时把 `<ref>`
     # **原样回显**到 stdout（非零退出）—— 旧版 `check=False` 且不看 rc ⇒ 回显被当成基线 sha
     # （伪造「拥有基线提交 origin/main（同一份历史）」这种**没有证据的结论**）；而判「同源」的退路
@@ -711,7 +800,17 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
               f"`--ref <本仓库真实存在的基线 ref>`", file=out)
         return 3
 
-    top, sha = _anchor_checkout(real)
+    # ① **拓扑 A 的形态判据**（活锚 = 预设仓检出的仓根）：`preset.yml` + `skills/` 缺一不可。
+    #    `preset.yml` 已由 `_resolve_anchor` 保证；这里补 `skills/` —— 缺了整个加载面就是空的，
+    #    而「内容比对」这一路在空技能集下**照样可能报绿**（比的是别的文件）。
+    if topology == ANCHOR_TOPO_CHECKOUT:
+        missing_layout = [p for p in ("preset.yml", "skills") if not (real / p).exists()]
+        if missing_layout:
+            print(f"   ❌ 活锚形态不对（拓扑 A：仓根检出）—— 缺 "
+                  f"{'、'.join(f'`{p}`' for p in missing_layout)}：{real}", file=out)
+            print("      后果：DSH **静默**加载不到（或加载到空）研发模式 —— 不报错，只是「模式不见了」"
+                  "（#3956 同族）。活锚应指向**预设仓检出（镜像）的仓根**。", file=out)
+            return 1
     ref_short = git("rev-parse", "--short", ref, cwd=cwd, check=False)
     # rc 已在上面判过；这里只为打印读数，且**绝不用回显**当读数（#5430）
     base_sha = ref_short.stdout.strip() if ref_short.returncode == 0 else "?"
@@ -723,7 +822,7 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
         if explicit:
             print("   判定依据：显式 `--anchor` ⇒ 一律判定", file=out)
         else:
-            same, why = _same_upstream(ref, cwd, top, expected_remote)
+            same, why = _same_upstream(ref, cwd, top, expected_remote if explicit else "")
             if not same:
                 print(f"   ⏭️ 未跑判定：{why}", file=out)
                 print(f"      （活锚检出 origin={_remote_url(top) or '—'}；本仓库 origin={_remote_url(cwd) or '—'}）", file=out)
@@ -743,6 +842,21 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
     except GitError as exc:
         print(f"   ❌ 无法判定活锚内容（fail-closed）：{exc}", file=out)
         return 1
+
+    # **拓扑 C**（S4 之后的业务仓形态）：基线仓里该前缀**空集** ⇒ 「逐字节比对」这条**本就不适用**。
+    # 🔴 这里曾经是**假绿**：0 个文件比 0 个文件恒等 ⇒ 旧口径打印「✅ 新鲜（0 个文件）」+ exit 0，
+    #    与「跑了且绿」长得一模一样（实测：业务仓 origin/main 已无 `.agent-presets/**` 之后的默认调用）。
+    #    ⇒ 不适用就说「没跑判定」，并用 **`3`**（不可判定）而不是 `0`（通过）。
+    if not expected and topology != ANCHOR_TOPO_CHECKOUT:
+        print(f"   ⏭️ 未跑判定：基线仓（{cwd}）在 `{anchor_base or '<仓根>'}` 下**没有任何文件** —— "
+              "这条「内容逐字节比对」**本就不适用**（**空集比空集 = 恒等** ⇒ 恒绿是**假绿**）",
+              file=out)
+        print("      ⇒ 三态 `3`（**无法判定，不得当 0 读**）：S4 / issue #6020 起预设已迁出业务仓，"
+              "拿业务仓当基线**比不了**。", file=out)
+        print("      修（可行动）：按预设仓口径判 —— `./scripts/preset-anchor-check.sh`"
+              "（活锚 = 预设仓检出，基线 = 预设仓 main）；或显式给出真正比得上的 `--repo <预设仓检出>`"
+              " `--anchor-base ''`。", file=out)
+        return 3
 
     for rel in [p for p in expected if VERSION_FILE_RE.search("/" + p)]:
         target = real / rel
@@ -797,9 +911,80 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
         print(f"      {REFRESH_CMD}", file=out)
         return 1
 
+    # ── 拓扑 A 的两条**新增**判据（既有判据一条不放宽；它们只在「其余判据都没红」时才轮到）──
+    remote_main = ""
+    if topology == ANCHOR_TOPO_CHECKOUT:
+        # ② 活锚必须**只读 + 干净**：就地编辑 = 藏在软链目标里的第三份副本（不报错，只是规则变了）。
+        status = git("-C", str(real), "status", "--porcelain", check=False)
+        # 🔴 rc 必须判（#5430 同族）：`git status` 失败时 stdout 为空 —— 旧口径会把它读成「干净」
+        #    （取不到证据却判「安全」）。这里判 **3**。
+        if status.returncode != 0:
+            print(f"   ❌ 无法判定（三态 `3`）：读不到活锚工作树状态（`git -C {real} status` 失败）"
+                  " ⇒ **判不了它是否干净**（取不到证据 ≠ 干净）", file=out)
+            return 3
+        if status.stdout.strip():
+            n = len(status.stdout.splitlines())
+            print(f"   ❌ 活锚工作树**不干净**（{n} 条改动）—— 活锚必须**只读**："
+                  "就地编辑 = 藏在软链目标里的第三份副本。**先看清再处置**（不许 reset --hard）：", file=out)
+            for line in status.stdout.splitlines()[:10]:
+                print(f"      {line}", file=out)
+            return 1
+        # ③ HEAD 必须就在**活锚自己的** `origin/main` 上（这是「到不了加载点」的第二只眼：
+        #    拓扑 A 下活锚 ⇄ 基线常是同体，`--repo <无关仓>` 时旧的 sha 关系判据一律 `unknown`）。
+        remote_main, why = _own_remote_main(real, fetch)
+        if remote_main is None:
+            print(f"   ❌ 无法判定（三态 `3`）：{why}", file=out)
+            print("      ⇒ **判不了「活锚是否还在其远端 main 上」** —— 拿不到第二视角就报绿，"
+                  "正是本单要治的假绿形态（**不许**当 `0` 读）。", file=out)
+            print(f"      修（可行动）：`git -C {real} fetch origin main` 后重跑；"
+                  "或确认该检出确实接了 origin（预设仓）。", file=out)
+            return 3
+        if sha and sha != remote_main:
+            is_ahead = git("-C", str(real), "merge-base", "--is-ancestor", remote_main, sha,
+                           check=False).returncode == 0
+            if is_ahead:
+                ahead = git("-C", str(real), "rev-list", "--count", f"{remote_main}..{sha}", check=False)
+                # 🔴 rc 必须判（#5430 同族；承载体 = `tests/unit_ci_workflows/test_unchecked_rc_evidence_guard.py`）：
+                # `check=False` 的 stdout **不是**证据 —— 读不到就打 `?`，**不猜数**。
+                ahead_n = (ahead.stdout.strip() if ahead.returncode == 0 and ahead.stdout.strip() else "?")
+                if fetch:
+                    print(f"   ❌ 活锚 HEAD **领先**其 origin/main {ahead_n} 个提交，且刚 fetch 过 ⇒ "
+                          "活锚上有**本地提交**（活锚必须**只读**）—— 先看清再处置", file=out)
+                    print(f"      {REFRESH_CMD}", file=out)
+                    return 1
+                # 没 fetch 时**判不了**这 N 个提交是「本机就地提交」还是「上游确实比本机旧」——
+                # 取不到证据就不下结论（既不许伪造红，也不许当成绿）：记告警 + 给取证命令。
+                print(f"   ⚠️ 活锚 HEAD 领先其 `origin/main` {ahead_n} 个提交"
+                      "（可能是上游比本机旧，也可能是活锚上有就地提交）—— **未判**，取证："
+                      f"`git -C {real} log --oneline origin/main..HEAD`；要判死请加 `--fetch`", file=out)
+            else:
+                behind = git("-C", str(real), "merge-base", "--is-ancestor", sha, remote_main,
+                             check=False).returncode == 0
+                print(f"   ❌ 活锚**不在其远端 main 上**：本机 {sha[:12]} ≠ origin/main {remote_main[:12]}"
+                      f"（{'落后' if behind else '分叉'} "
+                      f"{_commits_behind(remote_main, sha, real) if behind else '?'} 个提交）"
+                      "—— **先同步再动手**", file=out)
+                print("      含义：DSH 此刻加载的**不是**预设仓 main 上的那份内容；"
+                      "上游已前进 ⇒ 改进到不了加载点（#4026 同族）。", file=out)
+                print(f"      {REFRESH_CMD}", file=out)
+                return 1
+        # 存活读数（§23 G6/G8）：**跑了**必须看得见 —— 否则「没跑判定」与「跑了且绿」长得一样
+        # （本单要治的正是这个形态）。这一行只报**与负载无关**的事实读数，不报挂钟。
+        print(f"   拓扑 A 判据：形态完整（preset.yml + skills/）· 工作树干净 · "
+              f"HEAD {(sha or '?')[:12]} 相对其远端 origin/main {remote_main[:12]}："
+              f"{'同一提交' if sha == remote_main else '未判（见上）'}", file=out)
+
     # 读数必须指向**真实原因**（#5430 同族：读数指向错误对象 = 把人带偏）：
     # `unknown` 有两种来源 —— 活锚不是 git 检出（判不了 sha），或活锚 HEAD 提交**不在基准仓对象库**里
     # （实测：活锚镜像比本工作区的对象库新 ⇒ `cat-file` 查不到 ⇒ 关系未判，而活锚**确实是** git 检出）。
+    if not expected:
+        # 拓扑 A + 基线仓该前缀空集（例如 `--repo` 指业务仓）：**内容比对无对象可比**。
+        # 不许把「0 个文件」说成「逐字节一致」—— 那是把「没比」说成「比过且一致」（假绿同族）。
+        print(f"   ✅ 活锚新鲜（拓扑 A：仓根检出）：内容比对**不适用**（基线 {cwd} 在 "
+              f"`{anchor_base or '<仓根>'}` 下是空集 ⇒ 没有可比的字节）；"
+              f"本轮判定落在活锚自身远端：HEAD {(sha or '?')[:12]} == origin/main {remote_main[:12]}"
+              "，工作树干净、形态完整", file=out)
+        return 0
     if state == "same":
         tail = "，且 sha 为同一提交"
     elif top is None:
@@ -872,6 +1057,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         anchor_base=args.anchor_base,
         expected_remote=args.expected_remote or "",
         remote_sha=args.remote_sha or "",
+        fetch=getattr(args, "fetch", False),
     ))
     if rc == 3:
         print("\n❌ **无法判定**（exit 3）—— 本判据这次**没跑出结论**，**不得当 0 读**，更不得当成「通过」："
@@ -882,11 +1068,12 @@ def cmd_check(args: argparse.Namespace) -> int:
 def cmd_anchor(args: argparse.Namespace) -> int:
     """活锚新鲜度（独立入口；供 `scripts/preset-anchor-check.sh` 与开工自检调用）。
 
-    三态退出码：`0` 绿 / `1` 红 / **`3` 无法判定**（基线 ref 取不到）。
+    三态退出码：`0` 绿 / `1` 红 / **`3` 无法判定**（基线 ref 取不到；或拓扑 A 下**活锚自己的远端 main
+    取不到 / 工作树状态读不到**）。
 
-    🔴 S4（issue #6020）：`--anchor-base` / `--expected-remote` / `--remote-sha` 由入口脚本传入
-    （预设内容在**预设仓仓根**；活锚的上游是**预设仓**；镜像是否落后由**远端 sha** 判）。三个都有默认值
-    ⇒ 老调用点（夹具 / 手工调用）一字不改仍按历史口径跑。
+    🔴 S4（issue #6020）：`--anchor-base` / `--expected-remote` / `--remote-sha` / `--fetch` 由入口脚本传入
+    （预设内容在**预设仓仓根**；活锚的上游是**预设仓**；镜像是否落后由**远端 sha** 判；`--fetch` 只为人
+    显式要求时才联网）。四个都有默认值 ⇒ 老调用点（夹具 / 手工调用）一字不改仍按历史口径跑。
     """
     cwd = Path(args.repo).resolve()
     return judge_anchor(
@@ -894,6 +1081,7 @@ def cmd_anchor(args: argparse.Namespace) -> int:
         anchor_base=args.anchor_base,
         expected_remote=args.expected_remote or "",
         remote_sha=args.remote_sha or "",
+        fetch=getattr(args, "fetch", False),
     )
 
 
@@ -1117,6 +1305,11 @@ def main(argv: list[str] | None = None) -> int:
         "--remote-sha", default="",
         help="活锚段：上游远端 main 的 sha（给出则额外判「镜像是否还在远端 main 上」）",
     )
+    p_check.add_argument(
+        "--fetch", action="store_true",
+        help="活锚段：显式联网 —— 拓扑 A 先 fetch 活锚自己的 origin/main（取不到 ⇒ 判 3）；"
+             "拓扑 B fetch 基线仓（失败只降级出声）",
+    )
     p_check.set_defaults(func=cmd_check)
 
     p_anchor = sub.add_parser("anchor", help="活锚新鲜度判定（活锚 vs 基准 ref；落后/悬空/内容不同即非零退出）")
@@ -1138,6 +1331,11 @@ def main(argv: list[str] | None = None) -> int:
     p_anchor.add_argument(
         "--remote-sha", default="",
         help="上游远端 main 的 sha（入口用 `git ls-remote` 取；给出则**额外**判「镜像是否还在远端 main 上」）",
+    )
+    p_anchor.add_argument(
+        "--fetch", action="store_true",
+        help="显式联网：拓扑 A 先 `git -C <活锚> fetch origin main`（取不到远端 ⇒ 判 **3**，不许报绿）；"
+             "拓扑 B fetch 基线仓（失败只降级出声）",
     )
     p_anchor.set_defaults(func=cmd_anchor)
 

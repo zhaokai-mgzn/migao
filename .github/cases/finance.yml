@@ -1,6 +1,7 @@
 # cases/finance.yml — 财务对账域用例（B 端管理后台）
 #
-# 标准：ershen/design/16-case-contract.md（schema v1.0 草案）
+# 标准：case contract schema v1.0（原上游文档 ershen/design/16-case-contract.md 已随该仓归档，
+#       出处与取回方式见 docs/wiki/upstream-ershen-archive.md）
 # ★ 格式铁律：只用 block style（与 yaml_light 兼容），禁止 flow style。
 
 schema: "case-contract/1.0"

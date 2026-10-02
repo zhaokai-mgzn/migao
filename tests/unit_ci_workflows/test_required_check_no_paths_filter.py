@@ -74,6 +74,11 @@ REPO_SLUG = "zhaokai-mgzn/migao"
 BRANCH = "main"
 REFRESH_CMD = f"python3 {SELF_REL} --refresh"
 
+#: **job 级**面门控的结构签名（issue #6051）：`if:` 里引用另一个 job 的输出
+#: （`needs.<job>.outputs.<名>`）。这种 job 会被**整层跳过**，而 GitHub 对**被 job 级 `if` 跳过**
+#: 的 job **不上报**该 context ⇒ 若该 job 提供 required 检查，该检查在非命中面的 PR 上永不到来。
+JOB_GATE_RE = re.compile(r"needs\.[A-Za-z0-9_-]+\.outputs\.[A-Za-z0-9_-]+")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 现取 required 集合（复用 scripts/merge_gate.py 的读法，不另写一套）
@@ -190,6 +195,52 @@ def test_no_pr_paths_filter_on_a_workflow_reporting_a_required_check() -> None:
         " `Detect admin-web changes` 步，登记册见 tests/unit_ci_workflows/declaration_gate_registry.json）；"
         "② 真的不需要它当 required ⇒ **从分支保护里撤掉**这条检查（不是留着 paths 过滤）。"
         "⚠️ 顺序不可换：**先删 paths、再改分支保护**（见 docs/wiki/CI-CD.md「变更门控」）。"
+    )
+
+
+def test_no_job_level_gate_on_a_workflow_reporting_a_required_check() -> None:
+    """🔴 承重判据（issue #6051）：required 检查不得被 **job 级 `if:`** 门控遮住。
+
+    与判据 1 是**同一形态的姊妹**，只是遮法不同：
+
+    | 形态 | 结果 |
+    |---|---|
+    | workflow 级 `paths:`（判据 1） | 该 workflow **整个不触发** ⇒ 检查不上报 |
+    | **job 级 `if:`（本条）** | 该 job 被跳过；GitHub 对**被 job 级 `if` 跳过**的 job **不上报**该 context（只有 job 创建了才上报，步骤级跳过照旧上报 `success`）⇒ 检查同样不上报 |
+
+    两条的后果逐字相同：不命中该面的 PR 上该 required 检查**永不到来** ⇒ PR 永久
+    `BLOCKED`（`Expected — waiting for status to be reported`），而**没有任何检查会变红**。
+    """
+    required = set(_snapshot_contexts())
+    offenders: list[str] = []
+    gated_seen = 0
+    for wf, doc in sorted(_workflows().items()):
+        if _pr_config(doc) is None:
+            continue
+        jobs = doc.get("jobs") or {}
+        for jid, job in jobs.items():
+            if not isinstance(job, dict):
+                continue
+            cond = str(job.get("if") or "")
+            if not JOB_GATE_RE.search(cond):
+                continue
+            gated_seen += 1
+            name = str(job.get("name") or jid)
+            if name in required:
+                offenders.append(f"{wf}::{jid}（{name}）：`if: {cond}`")
+    print(f"扫到 job 级面门控 {gated_seen} 条；其中撞 required 名的={len(offenders)} 条"
+          f"（snapshot required 名 {len(required)} 条）")
+    assert gated_seen > 0, (
+        "一条 job 级面门控都没扫到 ⇒ 读法失效（本判据会静默空跑成绿）。"
+        "若确实已无 job 级门控，须同时删掉本条判据（并说明理由）—— 不许让它空跑。"
+    )
+    assert not offenders, (
+        "**required 检查被 job 级 `if` 门控** —— 不命中该面的 PR 上该检查**永不到来** ⇒ PR 永久 BLOCKED"
+        "且无红信号（issue #6051；与 #3507 ① / #4786 / #5101 同族）：\n"
+        + "\n".join("  " + o for o in offenders)
+        + "\n修法（二选一）：① required 腿改用**步骤级**门控（job 保持创建、结论照常上报，口径见"
+        " pr-check.yml 的 `Detect admin-web changes` 一族）；② 从分支保护里撤掉该 required（顺序不可换："
+        "**先改门控、再改分支保护**，见 docs/wiki/CI-CD.md「变更门控」）。"
     )
 
 

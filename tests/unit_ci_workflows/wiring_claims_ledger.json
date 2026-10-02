@@ -36,6 +36,17 @@
       "case_ids": [
         "MC-059"
       ]
+    },
+    {
+      "declared_in": "tests/unit_ci_workflows/test_single_preset_reader.py",
+      "wiring": "tests/unit_ci_workflows/preset_corpus.py::preset_root",
+      "registered_at": "2026-10-02（issue #6020 收口包）",
+      "covers": "本判据守的是**唯一读取口径**这个接线点：读预设内容必须真的走 `preset_corpus.preset_root`（本仓 → git 基线 → 镜像三层），而不是各消费方自己拼一份。该锚被删 / 改名 ⇒ 判据 3 具名报出；消费侧的**行为面**由本文件的判据 5（夹具镜像 + 隔离仓 ⇒ `preset_root()` 必须命中镜像那一层）承担。",
+      "red_proof": "`tests/unit_ci_workflows/test_single_preset_reader.py::test_guard_has_discriminating_power`（注入旧实现 ⇒ 判据 1 具名判红；移除 ⇒ 不报）与 `::test_mirror_route_is_hit_when_history_is_gone`（排除历史 refs ⇒ 镜像那一路必须命中）。",
+      "case_ids": [
+        "MC-012",
+        "MC-028"
+      ]
     }
   ],
   "coverage_boundary": [

@@ -399,7 +399,7 @@ def to_md(cases):
         "# 米宝 B端 全覆盖验证 Case（生成物）",
         "",
         "> ⚠️ 本文件由 `render_cases.py` 从 `cases/*.yml` 生成，禁止手改。",
-        "> 单一源：`ershen/seed/migao/cases/`（部署副本 `.github/cases/`）。",
+        "> 单一源：`.github/cases/`（本仓唯一源）。",
         "> 启动服务后按序执行；每轮 Case 独立。tier：🟢 smoke / 🔵 normal / 🔴 adversarial。",
         "",
     ]

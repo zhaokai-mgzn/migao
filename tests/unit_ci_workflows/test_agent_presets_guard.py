@@ -23,10 +23,11 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
+
+from unit_ci_workflows import preset_corpus as pc
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUARD = REPO_ROOT / "scripts" / "agent-presets-guard.py"
@@ -36,82 +37,11 @@ REFRESH_SH = REPO_ROOT / "scripts" / "preset-anchor-refresh.sh"
 #: **业务仓**里的预设路径（`check` 子命令仍按这个口径判 —— 与活锚无关）。
 SKILL_REL = ".agent-presets/migao/skills/migao-dev-flow/SKILL.md"
 #: **预设仓检出（活锚镜像）的仓根** —— S4（issue #6020）起仓根**就是** preset 目录
-#: （`preset.yml` 在根，不再有 `.agent-presets/migao/` 这一层）。`MIGAO_PRESET_MIRROR` 可覆盖，
-#: 与本机 `scripts/preset-anchor-check.sh` 的默认值同源。
-PRESET_MIRROR = Path(os.environ.get("MIGAO_PRESET_MIRROR") or (Path.home() / "migao-dev-preset-anchor"))
-#: 镜像里的技能 / preset.yml（相对镜像仓根）。
+#: （`preset.yml` 在根，不再有 `.agent-presets/migao/` 这一层）。
+#: 读那份内容的**唯一口径 = `tests/unit_ci_workflows/preset_corpus.py`**（`MIGAO_PRESET_MIRROR`
+#: 由它自己按同源规则解析）。
 SKILL_IN_PRESET = "skills/migao-dev-flow/SKILL.md"
 PRESET_YML_IN_PRESET = "preset.yml"
-
-#: 读**真资产**时的 git 基线**候选**（按序取第一个真读得到的）。
-#: 🔴 实测（本 PR 的 CI 第一轮）：`pull_request` 检出是**浅克隆** ⇒ `origin/main~1` 不解析
-#: （`fatal: Not a valid object name`）⇒ 钉死单个 ref 必红。按可用性探：
-#: `origin/main`（合并前带着预设）→ `origin/main~1`（合并后退到父提交）→ `HEAD`。
-PRESET_BASELINE_REFS = ("origin/main", "origin/main~1", "HEAD~1", "HEAD~2", "HEAD")
-#: 预设内容在**业务仓基线**里的前缀（S4 前的位置）。
-PRESET_BASELINE_PREFIX = ".agent-presets/migao/"
-
-
-def _preset_corpus(ref: str) -> tuple[list[str], str] | None:
-    """`ref` 里的预设技能清单；该 ref 解析不开 / 不含该路径 ⇒ None。
-
-    判据是「**内容真读得到**」而不是「ref 解析得开」—— 浅检出里会出现「ref 在但不含该路径」的形态。
-    """
-    proc = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "ls-tree", "-r", "--name-only", ref],
-        capture_output=True, text=True,
-    )
-    if proc.returncode != 0:
-        return None
-    hits = [x for x in proc.stdout.splitlines()
-            if x.startswith(PRESET_BASELINE_PREFIX + "skills/") and x.endswith("/SKILL.md")]
-    return (hits, ref) if hits else None
-
-
-def _git_preset_skills() -> tuple[list[str], str]:
-    """→ （预设技能的**仓库相对路径**清单, 可用的 ref）。都取不到 ⇒ 抛错（fail-closed）。"""
-    for ref in PRESET_BASELINE_REFS:
-        got = _preset_corpus(ref)
-        if got:
-            return got
-    raise AssertionError(
-        "任何候选基线里都读不到 "
-        f"`{PRESET_BASELINE_PREFIX}skills/*/SKILL.md`（试过 {list(PRESET_BASELINE_REFS)}）"
-        " —— 预设内容已迁出业务仓（S4 / issue #6020）⇒ 要么建本机预设仓镜像"
-        "（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`，见 AGENTS.md「开发环境准备」），"
-        "要么把候选换成还带着该路径的 ref"
-    )
-
-
-def _materialize_preset_skills() -> list[Path]:
-    """把预设的技能 `SKILL.md` **落到临时目录**再判 —— 返回那些文件路径。
-
-    载体优先级：① 本机**预设仓镜像**（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`，= 权威源）；
-    ② 镜像不存在时回落到**本仓 git 基线** `origin/main~1`（S4 之前的提交里路径还在）。
-    两条都取不到 ⇒ **抛错**（刻意**不用** `pytest.skip`：那会污染 helper-leg 的 skip 冻结读数，
-    而「判不了」也不该长得像「没东西可判」）。
-    """
-    out_dir = Path(tempfile.mkdtemp(prefix="migao-preset-skills-"))
-    if (PRESET_MIRROR / "skills").is_dir():
-        shutil.copytree(PRESET_MIRROR / "skills", out_dir / "skills")
-        return sorted((out_dir / "skills").glob("*/SKILL.md"))
-    rels, ref = _git_preset_skills()
-    for rel in rels:
-        proc = subprocess.run(
-            ["git", "-C", str(REPO_ROOT), "show", f"{ref}:{rel}"],
-            capture_output=True, text=True,
-        )
-        assert proc.returncode == 0, (
-            f"预设真资产读不到：`git show {ref}:{rel}` 失败（{proc.stderr.strip()}）"
-            " —— S4 / issue #6020 后预设住在预设仓；建本机镜像见 AGENTS.md「开发环境准备」"
-        )
-        dst = out_dir / Path(rel).relative_to(PRESET_BASELINE_PREFIX)
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(proc.stdout, encoding="utf-8")
-    skills = sorted(out_dir.glob("skills/*/SKILL.md"))
-    if not skills:
-        raise AssertionError("预设真资产为空 ⇒ 判据会空跑（不许静默通过）")
-    return skills
 
 SKILL_TMPL = """---
 name: migao-dev-flow
@@ -123,6 +53,30 @@ description: 夹具技能
 
 正文占位（第 {filler} 号夹具）。
 """
+
+
+def _preset_skills() -> list[Path]:
+    """→ 真资产里全部技能的 `SKILL.md` 路径 —— **委派**给唯一口径 `preset_corpus`。
+
+    🔴 本函数此前**自带第二份读取实现**（自己枚举 `PRESET_BASELINE_REFS` + `git ls-tree` +
+    `git show` + 自己拼镜像候选）。它与唯一口径**各自腐烂**：候选表只覆盖固定 5 个 ref ⇒
+    S4 之后（预设只在**历史**里）在 CI（无镜像）上整条读不到 ⇒
+    `test_real_presets_frontmatter_is_loadable` 判红（实测：试过
+    `origin/main / origin/main~1 / HEAD~1 / HEAD~2 / HEAD` 全部落空）。
+    ⇒ 读法（本仓 → **历史候选** → 镜像）现在**只住在** `preset_corpus` 里，本文件零预处理。
+
+    取不到 ⇒ **抛错**（刻意**不用** `pytest.skip`：那会污染 helper-leg 的 skip 冻结读数，
+    而「判不了」也不该长得像「没东西可判」）。
+    """
+    root = pc.preset_root()
+    if root is None:
+        raise AssertionError(pc.corpus_help(SKILL_IN_PRESET))
+    skills = sorted(root.glob("skills/*/SKILL.md"))
+    if not skills:
+        raise AssertionError(
+            f"预设真资产为空（`{root}/skills/*/SKILL.md`）⇒ 判据会空跑（不许静默通过）"
+        )
+    return skills
 
 
 def _load_guard():
@@ -966,8 +920,9 @@ def test_real_presets_frontmatter_is_loadable():
     """守**真资产**：仓库里两个技能的 frontmatter 必须能被加载器读到（0 问题）。
 
     这条会红在「有人把新节插进 frontmatter 注释块 / 写坏 `description`」上 —— 而那正是本批踩过的形态。
+    读那份真资产走**唯一口径** `preset_corpus`（业仓工作树 / 历史候选 / 镜像），不再自带第二份实现。
     """
-    skills = _materialize_preset_skills()
+    skills = _preset_skills()
     for skill in skills:
         assert GUARD_MODULE._frontmatter_problems(skill) == [], f"{skill} 的 frontmatter 有问题"
 
@@ -1399,3 +1354,463 @@ def test_prune_does_not_read_unreadable_status_as_clean(tmp_path: Path):
     assert str(wt) not in safe_block, "读不到工作树状态却被判『可安全移除』（无证据的『安全』）"
     assert str(wt) in manual_block
     assert "读不到工作树状态" in manual_block
+
+
+# ── ⑧ 换链后的**拓扑 A/B/C**（S4 / issue #6020；本批新增）────────────────────────
+# 背景（实测 2026-10-02 21:4x，S3 换链之后）：默认口径曾经是**假绿** —— 脚本/守卫把基线仓默认成
+# **业务仓**，而业务仓 `origin/main` 已无 `.agent-presets/**` ⇒ 比对集合是**空集** ⇒ 逐字节比对
+# **恒等** ⇒ 打印「✅ 活锚新鲜：内容与 origin/main 逐字节一致（0 个文件）」+ exit 0 ——
+# 「**没跑判定**」长得和「**跑了且绿**」一模一样（与「空跑 = 假绿」的口径直接冲突）。
+#
+# 现口径（判定本体 `judge_anchor`，**按拓扑自动选**；本组逐格钉住）：
+#   · **拓扑 A**（活锚 = 预设仓检出的**仓根**，换链后的当前形态）：
+#     ① 形态（`preset.yml` + `skills/` 缺一即红）② 工作树**干净**（读不到状态 ⇒ `3`）
+#     ③ HEAD 就在**活锚自己的** `origin/main` 上（取不到 ⇒ `3`；不同 ⇒ 红）+ 打印两个技能 version；
+#   · **拓扑 B**（活锚仍是基线仓里的 preset 子树，兼容窗口）：历史口径（内容逐字节比对）；
+#   · **拓扑 C**（拓扑 B 形态 + 基线仓该前缀**空集**）：`⏭️ 未跑判定` + **`3`**。
+# 夹具一律是真 git 仓库 / 真脚本（不 mock git —— mock 掉 git 等于把被测对象换成替身，红证会变假绿）。
+
+
+def _business_repo(tmp_path: Path, name: str, version: str = "1.29.0") -> Path:
+    """建一个**业务仓形状**的检出（仓内有 `.agent-presets/migao/**`）并返回**仓根**。
+
+    `repo / ".agent-presets/migao"` 即**拓扑 B 形态的活锚**（S4 之前的真实活锚形状）；
+    `anchor_env` 的 mirror 是**预设仓形状**（仓根就是 preset 目录），两者刻意不同。
+    """
+    repo = tmp_path / name
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "fixture@example.com")
+    _git(repo, "config", "user.name", "fixture")
+    _write_business_skill(repo, version, filler=2)
+    (repo / ".agent-presets/migao/preset.yml").write_text("name: migao\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", f"业务仓形状活锚 v{version}")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    return repo
+
+
+def _unrelated_baseline(tmp_path: Path, version: str = "1.29.0") -> Path:
+    """一个**与活锚无共同历史**的基线仓（内容与活锚逐字节相同）—— 复现「假绿」那一格。"""
+    repo = tmp_path / "unrelated-baseline"
+    _init_repo(repo)
+    _seed_preset(repo, version, filler=2)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", f"无关基线 v{version}（内容同、历史不同）")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    return repo
+
+
+def test_topology_a_gives_a_real_verdict_and_prints_both_skill_versions(anchor_env: dict):
+    """拓扑 A（= 当前换链形态）：默认调用必须给出**真判定**，并打印**两个**技能 version 供人眼核对。
+
+    红证形态（改前）：拿**业务仓**当基线 ⇒ 比对集合空集 ⇒ 「✅ 新鲜（0 个文件）」+ exit 0。
+    本用例往真夹具里放**第二个技能**（`skills/migao-acceptance`），钉住「两个 version 都打印」。
+    """
+    seed, baseline, mirror = anchor_env["seed"], anchor_env["baseline"], anchor_env["mirror"]
+    (seed / "skills/migao-acceptance").mkdir(parents=True, exist_ok=True)
+    (seed / "skills/migao-acceptance/SKILL.md").write_text(
+        SKILL_TMPL.format(version="1.14.0", filler=3).replace("migao-dev-flow", "migao-acceptance"),
+        encoding="utf-8",
+    )
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "c3b 第二个技能")
+    _git(seed, "push", "-q", "origin", "main")
+    _git(baseline, "fetch", "-q", "origin", "main")
+    _git(mirror, "fetch", "-q", "origin", "main")
+    _git(mirror, "checkout", "-q", "--detach", "origin/main")
+
+    proc = subprocess.run(
+        ["bash", str(CHECK_SH), "--anchor", _anchor_of(anchor_env), "--repo", str(baseline)],
+        capture_output=True, text=True, env=_check_env(anchor_env),
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "✅ 活锚新鲜" in proc.stdout
+    assert "migao-acceptance" in proc.stdout and "活锚=1.14.0" in proc.stdout
+    assert "migao-dev-flow" in proc.stdout and "活锚=1.29.0" in proc.stdout
+    # 存活读数：**跑了**必须看得见（否则与「没跑判定」无法区分）
+    assert "拓扑 A 判据" in proc.stdout
+    assert "工作树干净" in proc.stdout
+
+
+def test_topology_a_dirty_worktree_is_red(anchor_env: dict):
+    """**注入式红证**（拓扑 A ②）：把活锚工作树弄脏（未跟踪文件）⇒ 必须非零。
+
+    刻意用**未跟踪**文件：它只让「多余文件」告警（⚠️，不非零）⇒ 这条红**只可能**来自新增的
+    「工作树干净」判据（否则断言会被别的红因顶替 = 空断言）。
+    """
+    mirror = anchor_env["mirror"]
+    _git(mirror, "checkout", "-q", "--detach", anchor_env["c3"])
+    (mirror / "local-note.txt").write_text("就地编辑的残留\n", encoding="utf-8")
+
+    proc = _run_guard_anchor(anchor_env["baseline"], "--anchor", _anchor_of(anchor_env))
+
+    assert proc.returncode == 1, proc.stdout
+    assert "工作树**不干净**" in proc.stdout
+    assert "local-note.txt" in proc.stdout
+    assert "活锚必须**只读**" in proc.stdout
+
+
+def test_topology_a_head_behind_its_own_remote_main_is_red(anchor_env: dict, tmp_path: Path):
+    """**注入式红证**（拓扑 A ③）：活锚 HEAD 不在**它自己的** `origin/main` 上 ⇒ 必须非零。
+
+    注入方式刻意让**内容逐字节不变**（上游加一个**空提交**）⇒ 「内容比对」那一路必然全绿；
+    基线仓刻意选**无关仓库**（无共同历史 ⇒ 旧口径 `state=unknown`）⇒ 唯一可能判红的只有新增的 ③。
+    改前这一格就是**假绿**（✅ + 0 个文件 + exit 0）。
+    """
+    seed, mirror = anchor_env["seed"], anchor_env["mirror"]
+    _git(mirror, "checkout", "-q", "--detach", anchor_env["c3"])
+    _git(seed, "commit", "-q", "--allow-empty", "-m", "空提交（树相同，只有 sha 前进）")
+    _git(seed, "push", "-q", "origin", "main")
+    _git(mirror, "fetch", "-q", "origin", "main")
+    if _git(mirror, "rev-parse", "HEAD").stdout.strip() == \
+            _git(mirror, "rev-parse", "origin/main").stdout.strip():
+        raise AssertionError("夹具不成立：活锚 HEAD 竟等于其 origin/main（判据会空跑成假绿）")
+
+    unrelated = _unrelated_baseline(tmp_path)
+    if _try_git(unrelated, "cat-file", "-e",
+                f"{_git(mirror, 'rev-parse', 'HEAD').stdout.strip()}^{{commit}}").returncode == 0:
+        raise AssertionError("夹具不成立：无关基线里竟有活锚的提交（红因会被旧判据顶替）")
+
+    out = io.StringIO()
+    rc = GUARD_MODULE.judge_anchor("origin/main", unrelated, mirror, anchor_base="",
+                                   expected_remote="", explicit=True, out=out)
+    text = out.getvalue()
+
+    assert rc == 1, text
+    assert "不在其远端 main 上" in text
+    assert "落后 1 个提交" in text
+    assert "✅" not in text
+
+
+def test_topology_a_remote_main_unreachable_is_undecidable_not_green(anchor_env: dict, tmp_path: Path):
+    """**注入式红证**（拓扑 A ③ 的三态格）：取不到**活锚自己的远端 main** ⇒ `3`，不许报绿。
+
+    夹具：活锚是**真检出**、内容与基线逐字节一致，只是**没有 `origin`**（离线 / 没接远端）——
+    「第二视角缺失」时旧口径照样能打印 ✅。`--fetch` 变体一并钉住（fetch 失败同样 `3`）。
+    """
+    detached = tmp_path / "anchor-no-origin"
+    _git(tmp_path, "clone", "-q", str(anchor_env["origin"]), str(detached))
+    _git(detached, "checkout", "-q", "--detach", anchor_env["c3"])
+    _git(detached, "remote", "remove", "origin")
+    if _try_git(detached, "rev-parse", "--verify", "-q", "origin/main").returncode == 0:
+        raise AssertionError("夹具不成立：移除 origin 后仍能解析 origin/main（判据会空跑）")
+
+    plain = _run_guard(anchor_env["baseline"], "anchor", "--anchor", str(detached), "--anchor-base=")
+    assert plain.returncode == 3, plain.stdout
+    assert "无法判定" in plain.stdout
+    assert "取不到" in plain.stdout
+    assert "✅" not in plain.stdout
+
+    fetched = _run_guard(anchor_env["baseline"], "anchor", "--anchor", str(detached),
+                         "--anchor-base=", "--fetch")
+    assert fetched.returncode == 3, fetched.stdout
+    assert "fetch origin main` 失败" in fetched.stdout
+    assert "✅" not in fetched.stdout
+
+    # 正对照（别把判据改成「永远无法判定」）：同一形状、**接了 origin** ⇒ 照常判绿
+    ok = _run_guard_anchor(anchor_env["baseline"], "--anchor", _anchor_of(anchor_env))
+    assert ok.returncode == 0, ok.stdout
+    assert "✅ 活锚新鲜" in ok.stdout
+
+
+def test_topology_a_missing_skills_is_red(anchor_env: dict, tmp_path: Path):
+    """**注入式红证**（拓扑 A ①）：活锚是仓根检出、但**没有 `skills/`** ⇒ 加载面是空的 ⇒ 非零。"""
+    broken = tmp_path / "anchor-no-skills"
+    _git(tmp_path, "clone", "-q", str(anchor_env["origin"]), str(broken))
+    _git(broken, "checkout", "-q", "--detach", anchor_env["c3"])
+    shutil.rmtree(broken / "skills")
+    if (broken / "skills").exists():
+        raise AssertionError("夹具不成立：skills/ 还在（判据会空跑）")
+
+    proc = _run_guard(anchor_env["baseline"], "anchor", "--anchor", str(broken), "--anchor-base=")
+
+    assert proc.returncode == 1, proc.stdout
+    assert "活锚形态不对" in proc.stdout
+    assert "skills" in proc.stdout
+    assert "模式不见了" in proc.stdout
+
+
+def test_topology_b_subdir_anchor_keeps_the_byte_compare(tmp_path: Path):
+    """**拓扑 B**（兼容窗口）：活锚仍指业务仓内的 `.agent-presets/migao` ⇒ 历史口径照常（内容逐字节）。
+
+    S4 之前这就是真实活锚形态（软链 → `<镜像>/.agent-presets/migao`）；换链后只应作为兼容窗口存在。
+    """
+    repo = tmp_path / "biz-with-presets"
+    _init_repo(repo)
+    _write_business_skill(repo, "1.29.0", filler=2)
+    (repo / ".agent-presets/migao/preset.yml").write_text("name: migao\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "业务仓 + 预设子树 v1.29.0")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    anchor = repo / ".agent-presets/migao"
+
+    ok = _run_guard(repo, "anchor", "--anchor", str(anchor))
+
+    assert ok.returncode == 0, ok.stdout
+    assert "✅ 活锚新鲜" in ok.stdout
+    assert "逐字节一致（2 个文件）" in ok.stdout
+
+
+def test_topology_c_empty_baseline_prefix_is_undecided_not_green(tmp_path: Path):
+    """**本批的核心判据：空集不许报绿**（拓扑 C），并配**双向对照**。
+
+    形态 = 基线仓 `origin/main` 里该前缀**空集**（S4 之后业务仓的真实形态）+ 活锚**不是**预设仓检出。
+    改前：`0 个文件` 比 `0 个文件` **恒等** ⇒ 「✅ 活锚新鲜：…逐字节一致（0 个文件）」+ exit 0（假绿）。
+    改后：`⏭️ 未跑判定` + **`3`**，并明说「这条比对本就不适用」。
+    """
+    empty_baseline = tmp_path / "biz-post-s4"
+    _init_repo(empty_baseline)
+    (empty_baseline / "README.md").write_text("业务仓：已无 .agent-presets/**\n", encoding="utf-8")
+    _git(empty_baseline, "add", "-A")
+    _git(empty_baseline, "commit", "-q", "-m", "S4 后：业务仓不再承载预设")
+    _git(empty_baseline, "update-ref", "refs/remotes/origin/main", "HEAD")
+    anchor_repo = _business_repo(tmp_path, "anchor-b")
+    anchor = anchor_repo / ".agent-presets/migao"
+
+    proc = _run_guard(empty_baseline, "anchor", "--anchor", str(anchor))
+
+    assert proc.returncode == 3, proc.stdout
+    assert "未跑判定" in proc.stdout
+    assert "本就不适用" in proc.stdout
+    assert "假绿" in proc.stdout
+    assert "✅" not in proc.stdout
+    assert "0 个文件" not in proc.stdout, "空集不得被说成「逐字节一致（0 个文件）」"
+
+    # 双向对照：**同一份活锚** + **非空**基线（业务仓形状，内容一致）⇒ 照常判绿
+    green = _run_guard(_business_repo(tmp_path, "anchor-b2"), "anchor", "--anchor", str(anchor))
+    assert green.returncode == 0, green.stdout
+    assert "✅ 活锚新鲜" in green.stdout
+
+
+@pytest.mark.parametrize("form", ["subdir-of-checkout", "handcopied"])
+def test_empty_comparison_set_never_claims_freshness(tmp_path: Path, form: str):
+    """**类级判据**（本包核心）：**任何**拓扑下，「比对的集合是空集」都不许被说成「比过且一致」。
+
+    两种活锚形态各钉一遍（都是拓扑 B 形态 ⇒ 落进拓扑 C 分支）：
+      · `subdir-of-checkout`：活锚 = 某检出的 `.agent-presets/migao` 子树（S4 前的业务仓形态）；
+      · `handcopied`：手抄副本（无 `.git`，判不了 sha，但内容照样能比）。
+    判据：`rc` = `3` + 输出里**没有** `✅`、**没有**「0 个文件」/「逐字节一致」。
+
+    为什么是**类级**：不针对某个调用点，而是钉「**空集 ⇒ 不得声明新鲜**」这个**形状** ——
+    将来任何人把基线换成空集（换链、迁仓、ref 改名）都会撞上它，而不是撞上假绿。
+    """
+    empty_baseline = tmp_path / f"empty-{form}"
+    _init_repo(empty_baseline)
+    (empty_baseline / "README.md").write_text("无预设前缀\n", encoding="utf-8")
+    _git(empty_baseline, "add", "-A")
+    _git(empty_baseline, "commit", "-q", "-m", "空前缀基线")
+    _git(empty_baseline, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    src = _business_repo(tmp_path, f"anchor-{form}") / ".agent-presets/migao"
+    if form == "handcopied":
+        anchor = tmp_path / "handcopied-anchor"
+        shutil.copytree(src, anchor)          # 无 .git 的纯目录（拓扑 B 形态）
+    else:
+        anchor = src
+    if _try_git(anchor, "rev-parse", "--show-toplevel").returncode != 0 and form != "handcopied":
+        raise AssertionError("夹具不成立：subdir 形态的活锚不是检出内的子树")
+
+    proc = _run_guard(empty_baseline, "anchor", "--anchor", str(anchor))
+
+    assert proc.returncode == 3, proc.stdout
+    assert "未跑判定" in proc.stdout
+    assert "✅" not in proc.stdout
+    assert "0 个文件" not in proc.stdout
+    assert "逐字节一致" not in proc.stdout
+
+
+def test_topology_a_empty_comparison_does_not_claim_byte_identity(anchor_env: dict, tmp_path: Path):
+    """类级判据的另一半：**拓扑 A** 下若基线仓该前缀也是空集（`--repo` 指业务仓的旧调用点），
+    判定要落到**活锚自身**，且**不许**把「0 个文件」说成「逐字节一致」。
+
+    改前实测（本单复现命令）：`python3 scripts/agent-presets-guard.py --repo <业务仓> anchor`
+    ⇒ `✅ 活锚新鲜：内容与 origin/main 逐字节一致（0 个文件）` + `rc=0`。
+    """
+    empty_baseline = tmp_path / "biz-post-s4-a"
+    _init_repo(empty_baseline)
+    (empty_baseline / "README.md").write_text("业务仓：已无 .agent-presets/**\n", encoding="utf-8")
+    _git(empty_baseline, "add", "-A")
+    _git(empty_baseline, "commit", "-q", "-m", "S4 后：业务仓不再承载预设")
+    _git(empty_baseline, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    proc = _run_guard(empty_baseline, "anchor", "--anchor", _anchor_of(anchor_env))
+
+    assert proc.returncode == 0, proc.stdout
+    assert "内容比对**不适用**" in proc.stdout
+    assert "0 个文件" not in proc.stdout
+    assert "逐字节一致" not in proc.stdout
+    assert "拓扑 A 判据" in proc.stdout
+
+
+def test_fixture_baselines_are_decoupled_from_the_machine_live_anchor(anchor_env: dict, tmp_path: Path):
+    """**夹具场景必须与本机活锚解耦**（本机专属 5 红的机制，实测 2026-10-02）。
+
+    机制：这些用例拿 **pytest 临时夹具仓**当基线，且**没有钉住活锚** ⇒ guard 回落到本机活锚
+    `~/.dsh/.agent-presets/migao`。S3 换链**前**活锚 = 业务仓 clone ⇒ 与夹具「有证据地不同源」⇒
+    `⏭️ 未跑判定`（rc=0）。换链**后**活锚 = 预设仓检出，而 `#6034` 把「同上游」的参照物默认成
+    **预设仓 URL 常量** ⇒ 与**任何**夹具仓都判「同一上游 ⇒ 要判」⇒ 拿夹具基线量真活锚 ⇒ 必然不一致 ⇒
+    5 条既有判据**在本机误红**（CI 上因无活锚而看不到）。
+
+    🔴 本用例把**真机形态**建出来（A 形态检出 + `origin` = 预设仓 URL），并钉死两件事：
+      ① **隐式**活锚（调用方没指定要比谁）⇒ 必须 `⏭️ 未跑判定` + `0`，且**没有**拿夹具基线去量它；
+      ② **判别力自证**：把旧口径（常量回落）显式喂给 `_same_upstream` ⇒ 同一个活锚**立刻**变「同一上游」
+         ⇒ 说明本条判据真能测到那一格（改回旧口径 ⇒ ① 必红）。
+    """
+    live = tmp_path / "live-anchor"
+    _git(tmp_path, "clone", "-q", str(anchor_env["origin"]), str(live))
+    _git(live, "remote", "set-url", "origin", GUARD_MODULE.PRESET_REPO_URL)   # = 真机活锚的上游
+    _git(live, "checkout", "-q", "--detach", anchor_env["c3"])
+
+    fixture = tmp_path / "fixture-repo"
+    _init_repo(fixture)
+    _seed_preset(fixture, "1.28.0", filler=4)
+    _git(fixture, "add", "-A")
+    _git(fixture, "commit", "-q", "-m", "夹具基线（与活锚无共同历史）")
+    _git(fixture, "update-ref", "refs/remotes/origin/main", "HEAD")
+    if _try_git(fixture, "cat-file", "-e",
+                f"{_git(live, 'rev-parse', 'HEAD').stdout.strip()}^{{commit}}").returncode == 0:
+        raise AssertionError("夹具不成立：夹具仓里竟有活锚的提交（判据会空跑）")
+
+    out = io.StringIO()
+    rc = GUARD_MODULE.judge_anchor("origin/main", fixture, live, explicit=False, out=out)
+    text = out.getvalue()
+
+    assert rc == 0, text
+    assert "未跑判定" in text
+    assert "不是同一上游" in text
+    assert "活锚内容与" not in text, "隐式活锚被拿去量无关夹具基线了（本机 5 红就是这个形态）"
+
+    same, why = GUARD_MODULE._same_upstream("origin/main", fixture, live, GUARD_MODULE.PRESET_REPO_URL)
+    assert same, f"夹具不成立：旧口径（常量回落）也没判「同上游」⇒ 本判据测不到那一格（why={why}）"
+    assert "预设仓" in why
+
+
+def test_anchor_scripts_stay_quiet_when_the_live_anchor_is_absent_or_unrelated(tmp_path: Path):
+    """对照读数：把活锚指到**不存在**的路径（= CI / 新队友未接线的真实条件）⇒ `⏭️` + `rc=0`（不是红）。
+
+    红才是误伤：没有活锚要维持新鲜。这条同时钉住「env 覆盖的活锚路径」这条线仍然通。
+    """
+    baseline = tmp_path / "baseline"
+    _init_repo(baseline)
+    _seed_preset(baseline, "1.28.0", filler=4)
+    _git(baseline, "add", "-A")
+    _git(baseline, "commit", "-q", "-m", "无关基线")
+    _git(baseline, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    env = {**os.environ, "MIGAO_PRESET_LIVE": str(tmp_path / "no-such-anchor")}
+    proc = subprocess.run(
+        ["bash", str(CHECK_SH), "--repo", str(baseline)],
+        capture_output=True, text=True, env=env,
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "未接线" in proc.stdout
+    assert "未跑判定" in proc.stdout
+    assert "✅" not in proc.stdout
+
+
+# ── ⑨ 换机 / 新队友的**唯一上手路径**（`bootstrap_hint`）必须教**当前拓扑** ──────────
+# 实测（本批）：这条提示是「一次性上手」的唯一载体 —— 教错拓扑 ⇒ 新队友 clone 一个**没有预设**的仓、
+# 链到一个**不存在**的路径 ⇒ 活锚解析失败（DSH 读不到预设，且**不报错**，只是「模式不见了」#3956 同族）。
+# 另一处同源载体是根 `AGENTS.md`「开发环境准备」的 ② ~ ⑤ —— **两处口径必须一致**（本组一起钉）。
+
+#: 正确的「建镜像 + 换链」两行（软链目标 = **镜像仓根**，不是 `<镜像>/.agent-presets/migao`）。
+_HINT_CLONE_LINE = r'git clone --no-checkout "${REPO_URL}" "\$HOME/migao-dev-preset-anchor"'
+_HINT_LINK_ROOT = r'ln -sfn "\$HOME/migao-dev-preset-anchor" "\$HOME/.dsh/.agent-presets/migao"'
+_HINT_LINK_SUBTARGET = (r'ln -sfn "\$HOME/migao-dev-preset-anchor/.agent-presets/migao"'
+                        r' "\$HOME/.dsh/.agent-presets/migao"')
+#: 备份必须**只对真目录**做（活锚是软链时 `mv` 它 = 把软链挪成一堆 `.bak`；实测清出过两个无主 .bak）。
+_HINT_BACKUP_GATE = (r'if [ -d "\$HOME/.dsh/.agent-presets/migao" ]'
+                     r' && [ ! -L "\$HOME/.dsh/.agent-presets/migao" ]; then')
+_AGENTS_BACKUP_GATE = ('if [ -d "$HOME/.dsh/.agent-presets/migao" ]'
+                       ' && [ ! -L "$HOME/.dsh/.agent-presets/migao" ]; then')
+_AGENTS_LINK_LINE = 'ln -sfn "$MIRROR" "$HOME/.dsh/.agent-presets/migao"'
+_OLD_MIRROR_NAME = "migao-preset-anchor"
+
+
+def _bootstrap_hint(src: str | None = None) -> str:
+    """`preset-anchor-refresh.sh` 的 `bootstrap_hint()` 正文（**结构化定位**，不靠行号）。"""
+    text = REFRESH_SH.read_text(encoding="utf-8") if src is None else src
+    start = text.find("bootstrap_hint() {")
+    if start < 0:
+        raise AssertionError("定位 `bootstrap_hint()` 失败（fail-closed，别静默跳过）")
+    end = text.find("\nEOF\n", start)
+    if end < 0:
+        raise AssertionError("定位 `bootstrap_hint` 的 heredoc 结尾失败（fail-closed）")
+    return text[start:end]
+
+
+def _bootstrap_hint_problems(hint: str) -> list[str]:
+    """提示里「教错拓扑」的形态（纯函数 ⇒ 红证可在内存里构造，不改磁盘）。"""
+    bad: list[str] = []
+    if _HINT_CLONE_LINE not in hint:
+        bad.append("克隆源不是**预设仓**（`git clone --no-checkout \"${REPO_URL}\" …`）"
+                   " —— 教人 clone 业务仓会拿到一个**没有预设**的检出")
+    if "migao-dev-preset-anchor" not in hint:
+        bad.append("镜像路径不是 `$HOME/migao-dev-preset-anchor`（S4 后的约定路径）")
+    if _OLD_MIRROR_NAME in hint.replace("migao-dev-preset-anchor", ""):
+        bad.append(f"还留着**旧**镜像路径 `{_OLD_MIRROR_NAME}`")
+    if _HINT_LINK_ROOT not in hint:
+        bad.append("软链目标不是**镜像仓根**（`ln -sfn \"$HOME/migao-dev-preset-anchor\" …`）")
+    if _HINT_LINK_SUBTARGET in hint:
+        bad.append("软链目标是 `<镜像>/.agent-presets/migao` —— S4 后**该路径不存在** ⇒ 活锚解析失败")
+    if _HINT_BACKUP_GATE not in hint:
+        bad.append("备份步骤没按「**真目录**才 mv 备份 / **软链**直接覆盖」区分 "
+                   "⇒ `.bak` 会连着软链一起堆积")
+    return bad
+
+
+def test_bootstrap_hint_teaches_the_current_topology():
+    """本机空镜像时打印的上手路径必须指向**预设仓 + 镜像仓根**，且备份只对真目录做。
+
+    改前形态（S4 之前的提示）：`clone <业务仓>` + `ln -sfn <镜像>/.agent-presets/migao` ——
+    照做 ⇒ 链到不存在的路径 ⇒ DSH 静默读不到预设。
+    """
+    hint = _bootstrap_hint()
+
+    assert _bootstrap_hint_problems(hint) == [], "\n".join(_bootstrap_hint_problems(hint))
+    assert "预设仓仓根" in hint, "提示必须写明「软链指向仓根，不再有 `.agent-presets/migao` 这一层」"
+
+
+def test_bootstrap_hint_problems_have_discriminating_power():
+    """**注入式红证**：四种旧形态各改一处 ⇒ 判据必须各自判红（否则这条判据是空的）。
+
+    变异都在**内存**里做（不改磁盘）：判据吃文本，红证就没必要写盘（写盘反而制造假红风险）。
+    """
+    hint = _bootstrap_hint()
+    assert _bootstrap_hint_problems(hint) == [], "正对照：未变异的提示必须是干净的"
+
+    mutations = {
+        "旧克隆源（业务仓）": hint.replace(_HINT_CLONE_LINE,
+                                    'git clone --no-checkout "git@github.com:zhaokai-mgzn/migao.git"'),
+        "旧软链目标（子路径）": hint.replace(_HINT_LINK_ROOT, _HINT_LINK_SUBTARGET),
+        "旧镜像路径名": hint.replace("migao-dev-preset-anchor", _OLD_MIRROR_NAME),
+        "无条件备份（软链也 mv）": hint.replace(_HINT_BACKUP_GATE,
+                                        r'if [ -d "\$HOME/.dsh/.agent-presets/migao" ]; then'),
+    }
+    for name, mutated in mutations.items():
+        assert mutated != hint, f"变异没生效（{name}）—— 判据测不到那一格"
+        assert _bootstrap_hint_problems(mutated), f"变异没被判红：{name}"
+
+
+def test_agents_md_and_refresh_hint_agree_on_the_current_topology():
+    """两处同源载体（根 `AGENTS.md`「开发环境准备」⇄ `bootstrap_hint`）口径必须一致。
+
+    实测口径：AGENTS.md 早就按 S4 的新拓扑写了（clone **预设仓** + 链**镜像仓根**）——
+    本判据把这份一致**钉住**，防止任一处被改回旧拓扑而没人发现。
+    """
+    agents = Path(REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    hint = _bootstrap_hint()
+
+    for face, text in (("AGENTS.md", agents), ("bootstrap_hint", hint)):
+        assert _OLD_MIRROR_NAME not in text.replace("migao-dev-preset-anchor", ""), \
+            f"{face} 里还有旧镜像路径 `{_OLD_MIRROR_NAME}`"
+        assert "migao-dev-preset-anchor" in text, f"{face} 里没有 S4 后的镜像路径"
+    assert _AGENTS_BACKUP_GATE in agents, "AGENTS.md 的备份步骤没按「真目录才 mv」设门"
+    assert _AGENTS_LINK_LINE in agents, "AGENTS.md 的换链目标不是镜像仓根"
+    assert _HINT_BACKUP_GATE in hint, "bootstrap_hint 的备份步骤没按「真目录才 mv」设门"
+    assert _HINT_LINK_ROOT in hint, "bootstrap_hint 的换链目标不是镜像仓根"
+    # AGENTS.md 的镜像克隆源也必须是**预设仓**（不是业务仓）
+    assert "git clone --no-checkout <预设仓 URL>" in agents

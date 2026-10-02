@@ -58,10 +58,8 @@
 
 from __future__ import annotations
 
-import os
 import re
-import subprocess
-import tempfile
+import sys
 from pathlib import Path
 
 import pytest
@@ -69,55 +67,26 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-#: 预设内容在**业务仓基线**里的前缀（S4 前的位置）。
-PRESET_BASELINE_PREFIX = ".agent-presets/migao/"
-#: 读预设内容的 git 基线候选（按序取第一个**真读得到**的；理由见文件头 S4 段）。
-PRESET_BASELINE_REFS = (
-    "origin/main",       # 合并前 main 还带着预设（深克隆的 CI / 本机）
-    "origin/main~1",     # 合并后 main 上没有它了，退到父提交
-    "HEAD~1", "HEAD~2",  # 浅克隆里远端跟踪 ref 可能不存在 ⇒ 退到**本地历史**（需 fetch-depth ≥ 2）
-    "HEAD",
-)
-#: 本机预设仓镜像（= 权威源）。
-PRESET_MIRROR = Path(os.environ.get("MIGAO_PRESET_MIRROR") or (Path.home() / "migao-dev-preset-anchor"))
+#: 🔴 S4（issue #6020）后业务仓**不再承载** `.agent-presets/**` ⇒ 本文件**不许自己拼前缀 / 枚举基线
+#: / 拼镜像候选**（那是「第二份读取口径」，历史上正是它让镜像那一路永不命中）——
+#: 语料来源统一走 `preset_corpus`（**唯一**口径），由 `test_single_preset_reader.py` 的类级守卫钉住。
+TESTS_DIR = Path(__file__).resolve().parents[1]
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+
+from unit_ci_workflows import preset_corpus  # noqa: E402
 
 
 def resolve_skills_root() -> Path:
-    """→ 装着**当前预设**的那个 `skills/` 目录（镜像优先，其次 git 基线 ⇒ 落到临时目录）。
+    """→ 装着**当前预设**的那个 `skills/` 目录（`preset_corpus` 解析：本仓 → git 基线 → 镜像）。
 
     取不到 ⇒ 抛错（**fail-closed**：这不是「无对象可判」，是「语料漂了」）。
     """
-    if (PRESET_MIRROR / "skills").is_dir():
-        return PRESET_MIRROR / "skills"
-    for ref in PRESET_BASELINE_REFS:
-        proc = subprocess.run(
-            ["git", "-C", str(REPO_ROOT), "ls-tree", "-r", "--name-only", ref],
-            capture_output=True, text=True,
-        )
-        if proc.returncode != 0:
-            continue
-        rels = [x for x in proc.stdout.splitlines()
-                if x.startswith(PRESET_BASELINE_PREFIX + "skills/")]
-        if not rels:
-            continue
-        out = Path(tempfile.mkdtemp(prefix="migao-skill-corpus-"))
-        for rel in rels:
-            blob = subprocess.run(
-                ["git", "-C", str(REPO_ROOT), "show", f"{ref}:{rel}"],
-                capture_output=True, text=True,
-            )
-            if blob.returncode != 0:
-                continue
-            dst = out / Path(rel).relative_to(PRESET_BASELINE_PREFIX)
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            dst.write_text(blob.stdout, encoding="utf-8")
-        if sorted(out.glob("skills/*/SKILL.md")):
-            return out / "skills"
-    raise AssertionError(
-        "任何来源都取不到预设语料（`skills/*/SKILL.md`）—— S4 / issue #6020 后预设住在**预设仓**：\n"
-        f"  · 本机镜像：{PRESET_MIRROR}（建镜像见 AGENTS.md「开发环境准备」）\n"
-        f"  · git 基线候选：{list(PRESET_BASELINE_REFS)}（都不含 `{PRESET_BASELINE_PREFIX}skills/`）"
-    )
+    root = preset_corpus.preset_root()
+    if root is None or not (root / "skills").is_dir():
+        raise AssertionError("取不到预设语料根（`skills/`）—— " + preset_corpus.corpus_help("skills/*/SKILL.md"))
+    return root / "skills"
+
 
 #: 冻结：这些技能的沿革**已外置**，此表**只许增加**（新技能外置后请登记进来）。
 EXTERNALIZED_SKILLS_FROZEN = ("migao-acceptance", "migao-dev-flow")

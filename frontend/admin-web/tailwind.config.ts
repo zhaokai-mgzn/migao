@@ -3,7 +3,7 @@ import type { Config } from 'tailwindcss'
 /**
  * 经营看板「织物质感」设计 token（issue #2534 子任务 A）。
  * primary/accent/neutral 三组各为完整 50-900 阶，替换原有单一默认蓝 primary。
- * 设计依据：ershen/design/20-migao-ui-redesign.md。
+ * 设计依据：上游 ershen/design/20-migao-ui-redesign.md（该仓已归档；出处见 docs/wiki/upstream-ershen-archive.md）。
  */
 const config: Config = {
   content: [

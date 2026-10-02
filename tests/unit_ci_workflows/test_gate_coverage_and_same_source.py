@@ -37,8 +37,12 @@ r"""**「声明 / 契约」与「门禁是否真的覆盖它」之间的常驻�
 ## 读法（结构化证据，不是文案匹配）
 
 - **门禁触发面**：读**真 YAML**（`yaml.safe_load`）的 `on.pull_request.paths` / `paths-ignore`，
-  以及「一步把 `NAME=true|false` 写进 `$GITHUB_OUTPUT`、另一步的 `if:` 引用 `steps.<id>.outputs.`」这条**结构**；
+  以及**两种** job 内门控：① 步骤级 —— 「一步把 `NAME=true|false` 写进 `$GITHUB_OUTPUT`、另一步的 `if:`
+  引用 `steps.<id>.outputs.`」；② **job 级**（issue #6051）—— 「`needs: <判定 job>` + `if:` 引用
+  `needs.<判定 job>.outputs.<名>`，且该输出名确由判定 job 产出」；
   **不按文件名/步骤文案清单**枚举。
+  ⚠️ 第 ② 种**必须**在面内：被 job 级 `if` 跳过的 job **连创建都不会** ⇒ 它的断言整段不跑，
+  而登记册与所有判据都不会因此变红（#4177 的同族形态）。
 - **断言面自动发现**：读测试源码的 **AST**（`repo_base / "字面量"` 链表、`Path("字面量")`），
   且只认**在仓内真实存在**的路径（fixture 里当字符串传的路径不会被读成「读取面」）。
 - **同源声明 / 冻结集合**：读模块级字面量集合（走共享读法 `_source_parsing.assigned_strings`，
@@ -60,6 +64,7 @@ r"""**「声明 / 契约」与「门禁是否真的覆盖它」之间的常驻�
 from __future__ import annotations
 
 import ast
+import copy
 import json
 import re
 import sys
@@ -157,10 +162,15 @@ def _pr_config(doc: dict) -> dict | None:
     return pr if isinstance(pr, dict) else {}
 
 
-def _emitters(job: dict) -> dict[str, dict]:
+def _emitters(job: dict, all_jobs: dict | None = None) -> dict[str, dict]:
     """把 `<名>=true|false` 写进 `$GITHUB_OUTPUT` 的步骤（`id` → 步骤名 / 输出名 / run 原文）。
 
     这是「**步骤级路径门控**」的结构签名：门控输出只有这两个取值，且写在 `$GITHUB_OUTPUT`。
+
+    `all_jobs` 非空时**额外**收集「**job 级**门控」那一路（issue #6051）：
+    别的 job 用 `jobs.<that>.outputs.<名>: ${{ steps.<本 job 某 id>.outputs.<名> }}`
+    把本 job 的判定结果转出去（`needs.<that>.outputs.<名>` 型门控的**前置结构**）。
+    不收这一路 ⇒ 判定 job（`detect`）与其消费者会被读成「没有门控」而**静默漏登记**。
     """
     out: dict[str, dict] = {}
     for step in job.get("steps") or []:
@@ -173,13 +183,57 @@ def _emitters(job: dict) -> dict[str, dict]:
                 names.update(OUTPUT_ASSIGN_RE.findall(line))
         if names:
             out[str(step["id"])] = {"step": str(step.get("name") or step["id"]), "outputs": sorted(names), "run": run}
+    for jid, other in (all_jobs or {}).items():
+        if not isinstance(other, dict):
+            continue
+        for name, expr in (other.get("outputs") or {}).items():
+            m = re.fullmatch(r"\$\{\{\s*steps\.([A-Za-z0-9_-]+)\.outputs\.[A-Za-z0-9_-]+\s*\}\}", str(expr))
+            if not m or m.group(1) not in out:
+                continue
+            entry = out[m.group(1)]
+            entry["outputs"] = sorted({*entry["outputs"], str(name)})
+            entry.setdefault("consumed_by", []).append(f"{jid}.outputs.{name}")
     return out
 
 
-def _path_gated_jobs() -> dict[tuple[str, str], dict]:
-    """现取的「**会被路径门控**的 PR 门禁」：workflow 级 `paths` 过滤，或步骤级门控输出。
+#: `needs.<job>.outputs.<名>` 形态（job 级 `if:` 门控的**结构签名**，issue #6051）。
+NEEDS_OUTPUT_RE = re.compile(r"needs\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)")
 
-    为什么是这两条：它们正是「**断言可能整段不跑而结论照旧**」的两种结构（#4177 的现场是后者）。
+
+def _job_level_gate(job: dict, workflow_jobs: dict) -> dict | None:
+    """本 job 的 **job 级**面门控：`needs: <判定 job>` + `if: needs.<判定 job>.outputs.<名> == ...`。
+
+    为什么必须读这一路（issue #6051）：job 级 `if` 与步骤级门控是**两种不同形态**，
+    而「会被路径门控的 PR 门禁必须登记」这条不变式原先只认后者 ⇒ 新造的 job 级门控会**整条漏登记**
+    （它的断言整段不跑，而登记册与所有判据都不会因此变红 —— #4177 的同族形态）。
+    """
+    cond = str(job.get("if") or "")
+    if not cond:
+        return None
+    needs = job.get("needs")
+    need_ids = [str(needs)] if isinstance(needs, str) else [str(n) for n in (needs or [])]
+    for m in NEEDS_OUTPUT_RE.finditer(cond):
+        producer, output = m.group(1), m.group(2)
+        if producer not in need_ids:
+            continue  # 只看**真依赖**的那个判定 job（`needs` 里没写 ⇒ 该表达式在 GitHub 上取空）
+        emit = _emitters(workflow_jobs.get(producer) or {}, workflow_jobs)
+        produced = {name for e in emit.values() for name in e["outputs"]}
+        if output not in produced:
+            continue  # 该输出名不由判定 job 产出 ⇒ 不是面门控（宁缺勿滥）
+        return {
+            "needs": producer,
+            "output": output,
+            "emit_step": next((e["step"] for e in emit.values() if output in e["outputs"]), None),
+            "if": cond,
+        }
+    return None
+
+
+def _path_gated_jobs() -> dict[tuple[str, str], dict]:
+    """现取的「**会被路径门控**的 PR 门禁」：workflow 级 `paths` 过滤、步骤级门控输出，或 **job 级门控**。
+
+    为什么是这三条：它们正是「**断言可能整段不跑而结论照旧**」的三种结构（#4177 的现场是第二条；
+    第三条由 issue #6051 引入 —— job 级 `if` 跳过时该 check **连创建都不会**，连空跑的 log 都没有）。
     `if: failure()` / `if: github.event_name == ...` 这类**不看路径**的条件不算门控 —— 它们不改变射程。
     """
     found: dict[tuple[str, str], dict] = {}
@@ -189,10 +243,11 @@ def _path_gated_jobs() -> dict[tuple[str, str], dict]:
             continue
         paths = list(pr.get("paths") or [])
         ignored = list(pr.get("paths-ignore") or [])
-        for jid, job in (doc.get("jobs") or {}).items():
+        all_jobs = doc.get("jobs") or {}
+        for jid, job in all_jobs.items():
             if not isinstance(job, dict):
                 continue
-            emitters = _emitters(job)
+            emitters = _emitters(job, all_jobs)
             gated_steps: list[str] = []
             for step in job.get("steps") or []:
                 if not isinstance(step, dict):
@@ -200,7 +255,8 @@ def _path_gated_jobs() -> dict[tuple[str, str], dict]:
                 cond = str(step.get("if") or "")
                 if any(f"steps.{sid}.outputs." in cond for sid in emitters):
                     gated_steps.append(str(step.get("name") or step.get("id")))
-            if not (paths or ignored or gated_steps):
+            job_gate = _job_level_gate(job, all_jobs)
+            if not (paths or ignored or gated_steps or job_gate):
                 continue
             found[(name, str(jid))] = {
                 "workflow": name,
@@ -210,6 +266,7 @@ def _path_gated_jobs() -> dict[tuple[str, str], dict]:
                 "paths_ignore": ignored,
                 "gated_steps": gated_steps,
                 "emitters": emitters,
+                "job_gate": job_gate,
             }
     return found
 
@@ -609,6 +666,23 @@ def test_registry_entries_are_live_and_verbatim() -> None:
                 f"{key[0]}::{key[1]}：被门控的步骤名不符 —— 登记 {sorted(gate.get('gated_steps') or [])}"
                 f" / 现取 {sorted(info['gated_steps'])}（按**步骤名**定位，改步骤序列必须同改登记册，§23.5）"
             )
+        # job 级门控（issue #6051）：登记项必须**双向**与现取相符 —— 未登记即红、登记未兑现即红。
+        # 两个方向都不可省：只查「没登记」（`job_gate is None`）会漏掉「登记了但现取没有」，
+        # 而后者正是「门控被摘掉却留着盖章」的形态（登记册沦为**空承诺**）。
+        want_gate = gate.get("job_gate")
+        live_gate = info.get("job_gate")
+        if bool(want_gate) != bool(live_gate):
+            problems.append(
+                f"{key[0]}::{key[1]}：job 级门控**单边缺失** —— 登记 {want_gate!r} / 现取 {live_gate!r}"
+                "（新增 job 级门控必须登记；门控被摘掉则必须撤登记）"
+            )
+        elif want_gate and live_gate:
+            for field in ("needs", "output", "emit_step", "if"):
+                if str(want_gate.get(field)) != str(live_gate.get(field)):
+                    problems.append(
+                        f"{key[0]}::{key[1]}：job 级门控的 `{field}` 不符 —— 登记 {want_gate.get(field)!r}"
+                        f" / 现取 {live_gate.get(field)!r}"
+                    )
         trigger = gate.get("trigger") or {}
         text = _workflow_text(key[0])
         if str(trigger.get("kind")) == "pull_request_paths":
@@ -1037,3 +1111,434 @@ class TestRedProofs:
         paths = ["frontend/admin-web/**", "tests/e2e/**"]
         assert _globs_cover(paths, "frontend/admin-web")
         assert not _globs_cover(paths, "frontend/mini-app"), "`*` 不得跨越 `/`（宽松锚会遮蔽缺口）"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 四、job 级面门控（issue #6051）：非 required 重腿整层跳过的形态与「未跑」可见性
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: issue #6051 的**具名实例**：`<workflow 文件>::<job id>` → 该腿的 check_name。
+#: 逐条具名（不是「至少有 4 条」那种计数式）：少一条 / 换一条都判红。
+JOB_GATED_LEGS_FROZEN: dict[str, str] = {
+    "bmini-app.yml::build": "bmini-app build (h5 + weapp)",
+    "bmini-app.yml::tabbar-geometry": "bmini H5 tabBar geometry (e2e)",
+    "mini-app.yml::xiaobu-h5-visual": "xiaobu H5 visual regression",
+    "pr-check.yml::e2e-quality-gate": "E2E quality gate",
+}
+
+#: 面门控的判定 job（每条 workflow 一个 = 面口径的**单一来源**）。
+FACE_DETECT_JOBS: dict[str, str] = {
+    "bmini-app.yml": "detect",
+    "mini-app.yml": "detect",
+    "pr-check.yml": "detect",
+}
+
+#: 「未跑」的机器可读标记 + 必带口径（铁律 2：跳过的腿不许静默绿）。
+NOT_RUN_MARKER = "⏭️"
+NOT_RUN_CLAUSE = "未跑"
+NOT_RUN_NOT_PASS = "这不是「通过」"
+
+
+def _detect_script(workflow: str, detect_job: str) -> str:
+    """判定 job 里**真正产出 `run` 输出**的那个步骤的 `run:` 原文。"""
+    job = (_workflow_docs()[workflow].get("jobs") or {}).get(detect_job)
+    assert isinstance(job, dict), f"{workflow} 里没有判定 job `{detect_job}`（面口径的单一来源没了）"
+    emit = _emitters(job, _workflow_docs()[workflow].get("jobs") or {})
+    outs = {name for e in emit.values() for name in e["outputs"]}
+    assert "run" in outs, (
+        f"{workflow}::{detect_job} 没有产出 `run` 输出 ⇒ job 级门控的 `needs.<job>.outputs.run` 恒为空"
+        "（腿会**永远不跑**，而不是「按面跑」）"
+    )
+    return next(e["run"] for e in emit.values() if "run" in e["outputs"])
+
+
+#: 面判定三种**等价**载体的取法（见判据 ④ 的 docstring）：
+#:   · 锚定正则的交替 —— 腿内联 / 旧形态 / **登记册的 `trigger.predicate`**：`^(frontend/bmini-app/|tests/)`
+#:   · `case` 路径模式 —— 判定 job 现形态：`case "$f" in tests) …` / `case "$rest_gh" in workflows/x) …`
+_FACE_REGEX_RE = re.compile(r"(\^\([^']*?\))")
+_FACE_CASE_RE = re.compile(r'case\s+"\$(?:f|rest|head|file|rest_gh|rest_fe)"\s+in\s+([^\s)]+)\)')
+
+
+def _face_prefixes(script: str) -> set[str]:
+    """把一份面判定归一到**路径面集合**（两种等价书写形态 + 登记册 predicate 都认）。
+
+    `^(a/x/|b/|\.github/)` → {"a/x","b",".github"}；`case "$f" in a)` / `case "$rest_fe" in a/x/*)`
+    → "a" / "a/x"。取不到 ⇒ **空集**（调用点据此 fail-closed 判红）。
+
+    比的是**语义面**（扫哪些路径下的改动），不是书写形态 —— 同一份面既可写成锚定正则的交替，
+    也可写成 `case` 路径模式（后者用于绕开管道库存判据把**引号内裸竖线**计成管道的误报，
+    见 `.github/workflows/*.yml` 的 detect 注释）。
+    """
+    out: set[str] = set()
+    for m in _FACE_REGEX_RE.finditer(script or ""):
+        for part in m.group(1)[2:-1].split("|"):          # 去掉 `^(` 与 `)`
+            part = part.strip().rstrip("/").replace("\\.", ".").rstrip("$")
+            if part and "*" not in part and "\\" not in part:
+                out.add(part)
+    for m in _FACE_CASE_RE.finditer(script or ""):
+        raw = m.group(1).strip()
+        if "*" in raw:
+            continue                                       # 兜底分支（`*)`）不是「面」
+        part = raw.rstrip("/").replace("\\.", ".")
+        if part.startswith("workflows/"):
+            part = ".github/" + part                       # `rest_gh` 取自 `.github/*`
+        if part:
+            out.add(part)
+    return out
+
+
+def _covers(face: set[str], targets: set[str]) -> bool:
+    """面 `face` 是否**覆盖** `targets` 里的每一条路径（**并集**语义：任一面命中即可）。
+
+    `x` 覆盖 `x/y`；反向**不**成立。方向很重要：判定 job 的面**偏粗可接受**（代价只是腿被拉起后
+    发现无改动，不是正确性问题），**偏细则静默少覆盖** ⇒ 只有「覆盖不足」才判红。
+    ⚠️ 不是「每个 face 元素都要匹配每个 target」——那是全交叉，方向错了（本包实测踩过）。
+    """
+    return all(any(t == f or t.startswith(f + "/") for f in face) for t in targets)
+
+
+#: 判定面必须覆盖的**路径空间**（判定 job 是这些前缀下的共用门）。
+_FACE_PROBE_ROOTS = ("frontend", "tests", ".github", "backend", "docs", "scripts", "mobile")
+
+
+def _bash_realised_face(script: str) -> set[str]:
+    """**真跑一次 bash** 求出该判定脚本实际命中的**探针路径**（不靠解析、不靠猜）。
+
+    做法：把 `git diff --name-only origin/main...HEAD` 换成 `cat "$STUB"`，在**同一个 bash 进程**里
+    对每个探针各跑一遍判定体，读 `$GITHUB_OUTPUT` 的 `run`。探针 = `_FACE_PROBE_ROOTS` 每根 +
+    `/<根>/__probe__`，覆盖「根目录本身」与「根下任意文件」。
+    ⚠️ 必须**一次跑完**：逐探针各起一个 bash 会让本判据慢到分钟级（本包实测超时），
+    而它要跑在 required 的 `ci workflow helper unit tests` 里。
+    """
+    import os as _os
+    import subprocess as _sp
+    import tempfile as _tf
+
+    probes = list(_FACE_PROBE_ROOTS) + [r + "/__probe__" for r in _FACE_PROBE_ROOTS]
+    marker = "git diff --name-only origin/main...HEAD"
+    body = script.replace(marker, 'cat "$STUB"')
+    # ⛔ 必须剔除 `git fetch origin main --quiet`：探针循环会把判定体跑 14 次 ⇒ 14 次**真联网**，
+    #    本机实测直接把本判据挂到超时（而它要跑在 required 的 `ci workflow helper unit tests` 里）。
+    body = "\n".join(l for l in body.splitlines() if "git fetch origin main" not in l)
+    assert body != script, "判定脚本里找不到 diff 取法 ⇒ 本判据取不到真值（前提失效，需同步修订）"
+    sh = ('GITHUB_EVENT_NAME=pull_request\n'
+          'STUB=$(mktemp)\n'
+          "printf '%s\\n' " + " ".join(f'"{p}"' for p in probes) + " > \"$STUB\"\n"
+          '_run_one() {\n'
+          '  P="$1"\n'
+          '  printf \'%s\' "$P" > "$STUB"\n'
+          '  GITHUB_OUTPUT=$(mktemp)\n'
+          '  { ' + body + '\n  } >/dev/null 2>&1\n'
+          '  if grep -q "^run=true" "$GITHUB_OUTPUT"; then printf "HIT:%s\\n" "$P"; fi\n'
+          '}\n'
+          'for p in ' + " ".join(f'"{p}"' for p in probes) + '; do _run_one "$p"; done\n')
+    with _tf.NamedTemporaryFile("w", suffix=".sh", delete=False) as fh:
+        fh.write(sh)
+        fn = fh.name
+    try:
+        out = _sp.run(["/bin/bash", fn], capture_output=True, text=True).stdout
+    finally:
+        _os.unlink(fn)
+    return {line[4:] for line in out.splitlines() if line.startswith("HIT:")}
+
+
+def _unannounced_legs(script: str, workflow: str) -> list[str]:
+    """`<workflow>` 里被 job 级门控的腿中，**没有**在 `detect` 脚本 else（未命中面）分支里公告的。
+
+    只看该 workflow 自己的腿（别的 workflow 的腿不由这份脚本承担）；只看 else 分支
+    （命中面时打印的是「✅ 跑」，不承担公告职责 —— 拿它顶替 = 假绿）。
+    公告行的形态 = 「`⏭️ <腿名> 未跑：…（这不是「通过」）」」；三要素缺一即算未公告。
+    ⚠️ 匹配**不锚定行首**：YAML 块标量里行首是 `echo "`，锚定行首会让判据永远判红（假红）。
+    """
+    body = script.rsplit("else", 1)[1] if "else" in script else ""
+    announced = [
+        line
+        for line in body.splitlines()
+        if f"{NOT_RUN_MARKER} " in line and NOT_RUN_CLAUSE in line and NOT_RUN_NOT_PASS in line
+    ]
+    return [
+        f"{key}（{name}）"
+        for key, name in JOB_GATED_LEGS_FROZEN.items()
+        if key.startswith(f"{workflow}::")
+        and not any(f"{NOT_RUN_MARKER} {name} {NOT_RUN_CLAUSE}" in line for line in announced)
+    ]
+
+
+#: 显式处置「上游被按面跳过」的守卫原子（`always()` 是仓内既有定式：
+#: 默认 `if` 等价于 `success()`，而 `success()` 要求**每个** need 都成功 ⇒ skipped 不算成功）。
+SKIP_PROOF_TOKENS = ("always()", "!cancelled()")
+#: 显式读**本 job 自己某个 need** 的结果（`needs.<id>.result`）也算已处置跳过这一态。
+NEEDS_REF_RE = re.compile(r"needs\.([A-Za-z0-9_-]+)\.")
+
+
+def _unsafe_downstream_skips(skip_target: str, gate: dict, jobs: dict) -> list[str]:
+    """「**依赖被 job 级门控的那条腿**（`skip_target`）、却会把它的跳过当成没问题」的下游 job（issue #6051）。
+
+    病（一类）：被 job 级 `if` 跳过的 job 其 `needs` 未满足 ⇒ **下游 job 默认一并跳过**
+    （默认 `if` 等价于 `success()`，而 `success()` 要求**每个** need 都成功 ⇒ skipped 不算成功）。
+    于是一个「依赖所有前置 job」的收口 job（清僵尸标签 / 报账 / 收口）在**上游按面跳过时静默不跑** ——
+    而那正是它最需要跑的情形（它要判的恰恰是「这一轮到底绿不绿」）。与「未跑被读成通过」同族。
+
+    ⚠️ `skip_target` 是**真正被按面跳过的那条腿**（= 带 job 级门控的 job 自己），
+    不是它 `needs` 的判定 job：`needs: detect` 只会让 detect **先跑**，跳过的是带门控的这条腿。
+    """
+    problems: list[str] = []
+    for cid, job in sorted(jobs.items()):
+        if not isinstance(job, dict) or cid == skip_target:
+            continue
+        needs = job.get("needs")
+        need_ids = [needs] if isinstance(needs, str) else [str(n) for n in (needs or [])]
+        if skip_target not in need_ids:
+            continue
+        cond = str(job.get("if") or "").strip()
+        name = f"{cid}（{job.get('name') or cid}）"
+        if any(tok in cond for tok in SKIP_PROOF_TOKENS):
+            continue  # `always()` / `!cancelled()` ⇒ 上游被跳过也照跑
+        if any(ref in need_ids for ref in NEEDS_REF_RE.findall(cond)):
+            continue  # 显式读**自己的** need 结果（`needs.<id>.result`）⇒ 已处置跳过这一态
+        if not cond:
+            problems.append(
+                f"{name} 没有 `if:` ⇒ 默认 `success()` 不穿透 skipped，`{skip_target}` 被按面跳过时它静默不跑"
+            )
+        else:
+            problems.append(f"{name} 的 `if: {cond}` 只要求上游成功 ⇒ 同款静默不跑")
+    return problems
+
+
+def test_downstream_of_a_job_gated_leg_does_not_silently_skip() -> None:
+    """⑤ **反向判据**：依赖「job 级门控腿」的下游 job，不得因上游按面跳过而静默不跑。
+
+    这是本包**自己造成的破坏面**（issue #6051）：加 job 级门控后，凡 `needs:` 那条腿的下游 job
+    都会跟着被跳过 —— `pr-check.yml` 的 `label-needs-changes` / `clear-needs-changes`
+    （原本 `needs: [..., e2e-quality-gate]`）就会在**非 e2e 面的 PR** 上静默不跑
+    ⇒ `review/needs-changes` 僵尸标签永不脱落，而**没有任何检查会变红**。
+    """
+    live = _path_gated_jobs()
+    checked = 0
+    problems: list[str] = []
+    for (wf, jid), info in sorted(live.items()):
+        gate = info.get("job_gate")
+        if not gate:
+            continue
+        checked += 1
+        for p in _unsafe_downstream_skips(jid, gate, _workflow_docs()[wf].get("jobs") or {}):
+            problems.append(f"{wf}::{jid} 被按面跳过会带倒下游 —— {p}")
+    print(f"扫到 job 级门控 {checked} 条；下游静默跳过={len(problems)} 条")
+    assert checked > 0, "一条 job 级门控都没扫到 ⇒ 本判据静默空跑成绿"
+    assert not problems, (
+        "「上游 job 级跳过 ⇒ 下游静默不跑」—— 这正是「未跑被读成没问题」的同族形态"
+        "（issue #6051 的连带破坏面）：\n"
+        + "\n".join(f"  {p}" for p in problems)
+        + "\n修法：给下游 job 的 `if:` 补 `always()`（仓内既有定式，见 pr-check.yml 的 "
+        "`label-needs-changes`），或显式读 `needs.<上游>.result` 处置跳过这一态。"
+    )
+
+    # ── 判别力自证（注入式，§28.1 出口 ①）：把下游的 `always()` 拿掉 ⇒ 必须当场红 ──
+    wf, jid = "pr-check.yml", "e2e-quality-gate"
+    gate = live[(wf, jid)]["job_gate"]
+    jobs = _workflow_docs()[wf]["jobs"]
+    downstream = [
+        cid
+        for cid, job in sorted(jobs.items())
+        if isinstance(job, dict)
+        and jid in ([job["needs"]] if isinstance(job.get("needs"), str) else list(job.get("needs") or []))
+    ]
+    assert downstream, f"注入对照缺失：{jid} 现取没有下游 job（本自证会失真）"
+    assert not _unsafe_downstream_skips(jid, gate, jobs), "未注入却判红 ⇒ 假红（判据被自己的文案喂红）"
+    mutated = copy.deepcopy(jobs)
+    mutated[downstream[0]]["if"] = "github.event_name == 'pull_request'"
+    caught = _unsafe_downstream_skips(jid, gate, mutated)
+    assert caught, f"把 `{downstream[0]}` 的 `always()` 拿掉后仍判绿 ⇒ 判据 ⑤ 没有判别力（空断言）"
+    # 反向对照 ②：连 `if:` 一起删掉（默认 `success()` 形态）也必须判红
+    del mutated[downstream[0]]["if"]
+    assert _unsafe_downstream_skips(jid, gate, mutated), "删掉整个 `if:` 后仍判绿 ⇒ 「没写 if」这一形态漏判"
+    print(f"判别力自证：拿掉 `{downstream[0]}` 的 always() ⇒ 判红 ✅；连 if 一起删 ⇒ 判红 ✅；未注入 ⇒ 不报 ✅")
+
+
+class TestJobLevelFaceGates:
+    """issue #6051：4 条非 required 重腿的 job 级面门控（逐条具名 + 反向 + 可见性 + 单一来源）。"""
+
+    def test_every_named_leg_has_a_job_level_face_gate(self) -> None:
+        """① 这 4 条腿**各自**都有 job 级面门控（逐条具名：少一条 / 换一条都红）。"""
+        live = _path_gated_jobs()
+        missing: list[str] = []
+        hit = 0
+        for key, check_name in JOB_GATED_LEGS_FROZEN.items():
+            wf, jid = key.split("::", 1)
+            info = live.get((wf, jid))
+            if info is None:
+                missing.append(f"{key}：已不是「会被路径门控的 PR 门禁」（门控被摘掉 / job 改名 / workflow 改了 on）")
+                continue
+            if info["check_name"] != check_name:
+                missing.append(f"{key}：check_name 变了 —— 现取 {info['check_name']!r} / 冻结 {check_name!r}")
+            gate = info.get("job_gate")
+            if not gate:
+                missing.append(f"{key}：**没有 job 级门控**（只有步骤级 ⇒ runner 仍空转，本单要治的就是它）")
+                continue
+            want = FACE_DETECT_JOBS[wf]
+            if gate["needs"] != want:
+                missing.append(f"{key}：门控来源是 `{gate['needs']}`，面口径应来自 `{want}`（单一来源）")
+                continue
+            hit += 1
+        print(f"job 级面门控现取={hit} 条 / 冻结 {len(JOB_GATED_LEGS_FROZEN)} 条")
+        assert not missing, (
+            "非 required 重腿的 job 级面门控不完整（它会让 runner 继续空转，或让面口径不再是单一来源）：\n"
+            + "\n".join(f"  {m}" for m in missing)
+            + f"\n复算：python3 -m pytest {SELF_REL} -q -s"
+        )
+
+    def test_required_jobs_never_carry_a_job_level_gate(self) -> None:
+        """② **反向判据**：required 的 job 不得带 job 级面门控（防止有人顺手加）。"""
+        req_path = UNIT_CI_DIR / "required_status_snapshot.json"
+        assert req_path.exists(), f"缺 required 集合快照：{req_path.relative_to(REPO)}（没有它本条会空跑成绿）"
+        required = {str(c) for c in (json.loads(req_path.read_text(encoding="utf-8")).get("contexts") or [])}
+        assert required, "required 集合取空 ⇒ 本判据恒真（空跑成绿）"
+        offenders: list[str] = []
+        for (wf, jid), info in sorted(_path_gated_jobs().items()):
+            if info.get("job_gate") and info["check_name"] in required:
+                offenders.append(
+                    f"{wf}::{jid}（{info['check_name']}）带 job 级门控 "
+                    f"`needs: {info['job_gate']['needs']}` + `if: {info['job_gate']['if']}`"
+                )
+        print(f"required 名={len(required)} 条；其中带 job 级门控的={len(offenders)} 条")
+        assert not offenders, (
+            "**required 检查被 job 级 `if` 门控** —— GitHub 对**被 job 级 `if` 跳过**的 job **不上报**"
+            "该 context（只有 job 创建了才上报），而分支保护只等「上报过的」那些 ⇒ 不命中该面的 PR 上\n"
+            "该检查**永不到来** ⇒ PR 永久 `BLOCKED`（`Expected — waiting for status to be reported`），"
+            "而**没有任何检查会变红**（#5101 / #4786 的形态）：\n"
+            + "\n".join(f"  {o}" for o in offenders)
+            + "\n修法：① required 腿改用**步骤级**门控（job 保持创建、结论照常上报，口径见"
+            " pr-check.yml 的 `Detect admin-web changes` 一族）；② 或从分支保护里撤掉该 required。"
+            " 顺序不可换：**先改门控、再改分支保护**。"
+        )
+
+    def test_skipped_legs_are_announced_as_not_run(self) -> None:
+        """③ 跳过路径**必然**打印「未跑」：每条具名腿都必须在判定 job 的 else 分支里被点到。"""
+        unannounced: dict[str, list[str]] = {}
+        for wf, detect_job in FACE_DETECT_JOBS.items():
+            script = _detect_script(wf, detect_job)
+            legs = {k: v for k, v in JOB_GATED_LEGS_FROZEN.items() if k.startswith(f"{wf}::")}
+            assert legs, f"{wf} 在冻结清单里没有任何 job 级门控腿 ⇒ 本判据对它空跑"
+            missing = _unannounced_legs(script, wf)
+            if missing:
+                unannounced[wf] = missing
+        print(f"判定 job 现取={sorted(set(FACE_DETECT_JOBS.values()))}；"
+              f"公告缺口={sum(len(v) for v in unannounced.values())} 条")
+        assert not unannounced, (
+            "被面门控跳过的腿**没有在判定 job 的 else（未命中面）分支里被具名公告** —— 那就是静默绿"
+            "（铁律 2：跳过的腿必须显式打印「未跑」，且写明这不是「通过」）：\n"
+            + "\n".join(f"  {wf}: {', '.join(v)}" for wf, v in unannounced.items())
+        )
+
+    def test_announcement_checker_has_discriminating_power(self) -> None:
+        """③ 的**注入式红证**：把公告行删掉 / 换成中性措辞，判定必须**当场红**。"""
+        wf = "bmini-app.yml"
+        script = _detect_script(wf, FACE_DETECT_JOBS[wf])
+        assert not _unannounced_legs(script, wf), "现取语料本应全部已公告 ⇒ 下面的注入无从对照（自证失败）"
+        for label, mutated in (
+            ("公告行退化成中性措辞（拿掉「⏭️ … 未跑」）", script.replace(f"{NOT_RUN_MARKER} bmini-app build (h5 + weapp) {NOT_RUN_CLAUSE}", "跳过")),
+            ("只留中性措辞（去掉「这不是「通过」」）", script.replace(NOT_RUN_NOT_PASS, "")),
+            ("把 else 分支整段删掉", script.rsplit("else", 1)[0]),
+        ):
+            assert mutated != script, f"注入未生效（自证）：{label} 没有改到语料"
+            caught = _unannounced_legs(mutated, wf)
+            assert caught, f"注入「{label}」后判定仍为绿 ⇒ 判据 ③ 没有判别力（空断言）"
+        print(f"判别力自证：3 种坏形态各自被判红 ✅（现取语料 {len(script)} 字符）")
+
+    def test_face_criterion_has_a_single_source_per_workflow(self) -> None:
+        """④ 面口径**单一来源**：**真跑判定脚本**，其实际命中的面必须覆盖**登记册声明的面**。
+
+        （不要求整个 workflow 只有一份面 —— `pr-check.yml` 的 `admin-api-test` /
+        `admin-web-test` 各有自己的面，那是另一族门禁；本条只裁**同族**：job 级门控这一族。）
+
+        为什么**真跑 bash** 而不是比对字符串（issue #6051 实测教训）：同一份面有三种等价载体 ——
+        锚定正则的交替 `^(a/|b/)`（腿内联 + 登记册 `trigger.predicate`）、`case` 路径模式（判定 job 现形态，
+        用于绕开管道库存判据把**引号内裸竖线**计成管道的误报）。按字面比对会把等价写法判成「第二份规则」⇒ 假红；
+        而**验字符串是推不出行为**的（本包实测：正则字样正确、但 bash 逻辑漏掉了 `frontend/admin-web` 这一支）。
+
+        判据规则（**覆盖不足判红，偏粗只记录**）：
+          · 覆盖不足 = 声明面里的改动不再触发腿 = **静默少覆盖** ⇒ 判红；
+          · 偏粗 = 判定 job 是这一族腿的**共用**门，按路径前缀取共用前缀必然可能比某腿声明面粗 —— 代价只是
+            腿被拉起来后发现无改动，**不是正确性问题** ⇒ 记为读数（可复核），不判红。
+        """
+        problems: list[str] = []
+        over: dict[str, list[str]] = {}
+        reg = _gate_index()
+        for wf, detect_job in FACE_DETECT_JOBS.items():
+            legs = [k for k in JOB_GATED_LEGS_FROZEN if k.split("::", 1)[0] == wf]
+            assert legs, f"{wf} 有判定 job `{detect_job}` 却没有被门控的腿 —— 面门控成了空转"
+            declared: set[str] = set()
+            for key in legs:
+                _, jid = key.split("::", 1)
+                predicate = ((reg.get((wf, jid)) or {}).get("trigger") or {}).get("predicate") or ""
+                faces = {f for f in (_face_prefixes(predicate) or set())}
+                if not faces:
+                    problems.append(
+                        f"{key}：登记册里 `trigger.predicate` 取不到面（{predicate!r}）⇒ "
+                        "**声明的单一来源没了**（fail-closed：没有声明就没有可比对象）"
+                    )
+                    continue
+                declared |= faces
+                # ① 腿自己的步骤必须按**声明的那一份**面跑（同族的第二份规则）
+                job = (_workflow_docs()[wf].get("jobs") or {}).get(jid) or {}
+                for step in job.get("steps") or []:
+                    if not isinstance(step, dict):
+                        continue
+                    inline = _face_prefixes(str(step.get("run") or ""))
+                    if inline and inline != faces:
+                        problems.append(
+                            f"{key} 的步骤 `{step.get('name')}` 内联的面 {sorted(inline)}"
+                            f" ≠ 登记册声明的面 {sorted(faces)} —— 两份面规则漂移，而没有任何东西会变红"
+                        )
+            # ② **真跑**判定脚本：实际命中的根必须覆盖每一条声明面
+            realised = _bash_realised_face(_detect_script(wf, detect_job))
+            roots = {p for p in realised if "/" not in p}
+            missing = sorted(d for d in declared
+                             if not any(d == r or d.startswith(r + "/") for r in roots))
+            if missing:
+                problems.append(
+                    f"{wf}::{detect_job} 的判定脚本**实际命中** {sorted(roots)}，**覆盖不足**："
+                    f"声明面 {missing} 里的改动不会触发判定（**静默少覆盖**）—— 真跑读数 = {sorted(realised)}"
+                )
+            extra = sorted(r for r in roots
+                           if not any(d == r or d.startswith(d + "/") for d in declared))
+            if extra:
+                over[f"{wf}::{detect_job}"] = extra
+        assert not problems, (
+            "面口径出现**第二份**规则（同族门禁内）：\n" + "\n".join(f"  {p}" for p in problems)
+        )
+        print(f"面口径单一来源：{len(JOB_GATED_LEGS_FROZEN)} 条腿的声明面都被判定脚本**真跑命中** ✅"
+              f"（判定面**偏粗**（可接受、非正确性问题）现取 = {over or '无'}）")
+
+    def test_face_criterion_probe_has_discriminating_power(self) -> None:
+        """④ 的**判别力自证**：真跑探针必须能判出「漏一支」的坏形态（本包实测踩过的那个 bug）。"""
+        script = _detect_script("pr-check.yml", FACE_DETECT_JOBS["pr-check.yml"])
+        realised = _bash_realised_face(script)
+        assert ".github" in realised and "tests" in realised, f"探针取不到真值：{sorted(realised)}"
+        # 注入式红证①：把 frontend 那一支整段删掉 ⇒ 探针必须立刻不再命中 frontend
+        broken = "\n".join(l for l in script.splitlines()
+                            if 'case "$f" in frontend' not in l)
+        assert 'case "$f" in frontend/*)' not in broken, "注入没生效（删不到 frontend 支）"
+        broken_realised = _bash_realised_face(broken)
+        assert "frontend" not in broken_realised, (
+            f"删掉 frontend 支后探针仍命中 ⇒ 判据 ④ 没有判别力（{sorted(broken_realised)}）"
+        )
+        # 注入式红证②：把判定改成恒 false ⇒ 一条都不命中
+        always_off = script.replace('echo "run=true"', 'echo "run=false"')
+        assert _bash_realised_face(always_off) == set(), "恒 false 的判定仍被判命中 ⇒ 探针坏了"
+        print("判别力自证：删掉 frontend 支 ⇒ 真跑探针立刻不再命中 ✅；恒 false ⇒ 零命中 ✅")
+
+    def test_announcement_checker_has_discriminating_power(self) -> None:
+        """③ 的**注入式红证**：把公告行删掉 / 换成中性措辞，判定必须**当场红**。"""
+        wf = "bmini-app.yml"
+        script = _detect_script(wf, FACE_DETECT_JOBS[wf])
+        assert not _unannounced_legs(script, wf), "现取语料本应全部已公告 ⇒ 下面的注入无从对照（自证失败）"
+        for label, mutated in (
+            ("公告行退化成中性措辞（拿掉「⏭️ … 未跑」）", script.replace(f"{NOT_RUN_MARKER} bmini-app build (h5 + weapp) {NOT_RUN_CLAUSE}", "跳过")),
+            ("只留中性措辞（去掉「这不是「通过」」）", script.replace(NOT_RUN_NOT_PASS, "")),
+            ("把 else 分支整段删掉", script.rsplit("else", 1)[0]),
+        ):
+            assert mutated != script, f"注入未生效（自证）：{label} 没有改到语料"
+            caught = _unannounced_legs(mutated, wf)
+            assert caught, f"注入「{label}」后判定仍为绿 ⇒ 判据 ③ 没有判别力（空断言）"
+        print(f"判别力自证：3 种坏形态各自被判红 ✅（现取语料 {len(script)} 字符）")
