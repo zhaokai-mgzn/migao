@@ -91,7 +91,9 @@ while [ $# -gt 0 ]; do
     --keep) KEEP=1; shift ;;
     --require-ready)    READY=1; shift ;;
     --no-require-ready) READY=0; shift ;;
-    -h|--help) sed -n 's/^# \{0,1\}//p' "$0" | sed -n '1,58p'; exit 0 ;;
+    # --help = 文件头**全部**注释行（写到「第一行非注释」为止）。⛔ 别写死行数区间：
+    # 头部长一英寸就被静默截断（本包加「就绪判定」段后就截到了「## 退出码」标题、0/1/3 三态看不见了）。
+    -h|--help) awk '/^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
     -*)     echo "未知参数：$1（用法见 $0 --help）" >&2; exit 2 ;;
     *)      BRANCHES+=("$1"); shift ;;
   esac

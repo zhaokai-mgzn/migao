@@ -336,6 +336,11 @@ def test_help_and_usage_are_actionable(sandbox):
                          capture_output=True, text=True, timeout=60)
     assert hel.returncode == 0
     assert "--in" in hel.stdout and "退出码" in hel.stdout
+    # ⚠️ `--help` 必须是**整个文件头**，不许写死行数区间 —— 实测：本包给头部加了「就绪判定」段后，
+    # 写死的 `sed -n '1,58p'` 把「## 退出码」**从三态正文处截断**（标题在、0/1/3 看不见），
+    # 而上面只断言「退出码」三个字 ⇒ 截断**不会红**。这三条锁住「三态正文 + 新逃生口」真的可见。
+    for needle in ("0 = 那一次 gate 全绿", "1 = 红", "3 = 无法判定", "--no-require-ready"):
+        assert needle in hel.stdout, f"--help 被截断了（缺 {needle!r}）：{hel.stdout}"
 
 
 # ── 判据 7~12：就绪前置判定（issue #6028）─────────────────────────────────────
