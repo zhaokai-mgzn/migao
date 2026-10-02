@@ -129,9 +129,14 @@ SKILL_REL = ".agent-presets/migao/skills/migao-dev-flow/SKILL.md"
 #: 🔴 S4（issue #6020）：`.agent-presets/**` 的载体已迁到**预设仓**（本仓工作树里已删）。
 #: 台账里 16 处锚都指着这个前缀 ⇒ 读它必须走 `_preset_text_from_git`（镜像优先，其次 git 基线）。
 PRESET_PREFIX = ".agent-presets/"
-#: 读预设内容的 **git 基线**。取 `origin/main~1` 而不是 `origin/main`：本 S4 提交把该路径删掉后，
-#: `origin/main` 上就没有它了（浅检出 `fetch-depth: 1` 下父提交仍可取 ⇒ 本机 / CI 都能读）。
-PRESET_BASELINE_REF = "origin/main~1"
+#: 读预设内容的 **git 基线候选**（按序取第一个能读到 `.agent-presets/migao/skills/*/SKILL.md` 的）。
+#: 🔴 实测教训（本 PR 的 CI 第一轮）：CI 的 `pull_request` 检出是**浅克隆** ⇒ `origin/main~1`
+#: 这个**父提交根本不解析**（`fatal: Not a valid object name`）。所以不能钉死一个 ref，要**按可用性探**：
+#:   · `origin/main`  —— 浅检出里通常就在（本 PR 合并**前**用它：那时 `main` 还带着预设）；
+#:   · `origin/main~1` —— 合并后 `main` 上没有该路径了，退回它的父提交（本机深克隆可取）；
+#:   · `HEAD`          —— 万一有人在业务仓**重新**放回 `.agent-presets/**`（那会是另一场回归），
+#:                       读工作树/HEAD 比读远端更贴近事实。
+PRESET_BASELINE_REFS = ("origin/main", "origin/main~1", "HEAD")
 LEDGER_REL = "tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json"
 CICD_REL = "docs/wiki/CI-CD.md"
 LEDGER_PATH = REPO_ROOT / LEDGER_REL
@@ -267,11 +272,36 @@ def _preset_text_from_git(rel: str) -> str | None:
     inner = rel[len(PRESET_PREFIX):]
     if (mirror / inner).is_file():
         return (mirror / inner).read_text(encoding="utf-8")
-    proc = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "show", f"{PRESET_BASELINE_REF}:{rel}"],
-        capture_output=True, text=True,
-    )
-    return proc.stdout if proc.returncode == 0 else None
+    if (REPO_ROOT / rel).is_file():
+        return (REPO_ROOT / rel).read_text(encoding="utf-8")
+    for ref in PRESET_BASELINE_REFS:
+        proc = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "show", f"{ref}:{rel}"],
+            capture_output=True, text=True,
+        )
+        if proc.returncode == 0:
+            return proc.stdout
+    return None
+
+
+def _preset_skill_corpus_ref() -> str | None:
+    """→ 第一个**能读到全部技能语料**的 ref（都读不到 ⇒ None）。
+
+    判据不是「ref 解析得开」而是「**内容真读得到**」—— 只有后者才说明这份语料可用
+    （浅检出里会出现「ref 在但不含该路径」的形态）。
+    """
+    for ref in PRESET_BASELINE_REFS:
+        proc = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "ls-tree", "-r", "--name-only", ref],
+            capture_output=True, text=True,
+        )
+        if proc.returncode != 0:
+            continue
+        hits = [x for x in proc.stdout.splitlines()
+                if x.startswith(PRESET_PREFIX + "skills/") and x.endswith("/SKILL.md")]
+        if hits:
+            return ref
+    return None
 
 
 def real_file_text(rel: str) -> str | None:
@@ -714,7 +744,12 @@ def check_discriminating_power(*, skill_text: str, cicd_text: str, ledger: dict,
 def _require(text: str | None, rel: str) -> str:
     """路径漂移 ⇒ 红（**不得静默跳过**：判据依赖的语料读不到时，「没东西可判」不是通过）。"""
     if text is None:
-        raise AssertionError(f"判据依赖的语料不存在：{rel}（路径漂移 ⇒ 红，不得静默跳过）")
+        raise AssertionError(
+            f"判据依赖的语料不存在：{rel}（路径漂移 ⇒ 红，不得静默跳过）\n"
+            "  S4 / issue #6020 后预设住在**预设仓** ⇒ 两条正路：\n"
+            "    ① 本机建预设仓镜像（$MIGAO_PRESET_MIRROR / ~/.migao-dev-preset-anchor，见 AGENTS.md「开发环境准备」）；\n"
+            f"    ② 让 git 基线里带着该路径（现试过 {list(PRESET_BASELINE_REFS)}，都不含它）。"
+        )
     return text
 
 

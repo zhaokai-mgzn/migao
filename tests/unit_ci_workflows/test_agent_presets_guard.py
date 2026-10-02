@@ -43,28 +43,44 @@ PRESET_MIRROR = Path(os.environ.get("MIGAO_PRESET_MIRROR") or (Path.home() / "mi
 SKILL_IN_PRESET = "skills/migao-dev-flow/SKILL.md"
 PRESET_YML_IN_PRESET = "preset.yml"
 
-#: 读**真资产**时的 git 基线（`origin/main~1` = 本 S4 提交的父提交；那个提交上路径还在。
-#: 浅检出 `fetch-depth: 1` 下父提交仍可取 ⇒ 本机与 CI 都能读，**不联网、不新增 skip**）。
-PRESET_BASELINE_REF = "origin/main~1"
+#: 读**真资产**时的 git 基线**候选**（按序取第一个真读得到的）。
+#: 🔴 实测（本 PR 的 CI 第一轮）：`pull_request` 检出是**浅克隆** ⇒ `origin/main~1` 不解析
+#: （`fatal: Not a valid object name`）⇒ 钉死单个 ref 必红。按可用性探：
+#: `origin/main`（合并前带着预设）→ `origin/main~1`（合并后退到父提交）→ `HEAD`。
+PRESET_BASELINE_REFS = ("origin/main", "origin/main~1", "HEAD")
 #: 预设内容在**业务仓基线**里的前缀（S4 前的位置）。
 PRESET_BASELINE_PREFIX = ".agent-presets/migao/"
 
 
-def _git_ls_preset_skills() -> list[str]:
-    """git 基线里预设技能的**仓库相对路径**清单（取不到 ⇒ 抛错，fail-closed）。"""
+def _preset_corpus(ref: str) -> tuple[list[str], str] | None:
+    """`ref` 里的预设技能清单；该 ref 解析不开 / 不含该路径 ⇒ None。
+
+    判据是「**内容真读得到**」而不是「ref 解析得开」—— 浅检出里会出现「ref 在但不含该路径」的形态。
+    """
     proc = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "ls-tree", "-r", "--name-only", PRESET_BASELINE_REF],
+        ["git", "-C", str(REPO_ROOT), "ls-tree", "-r", "--name-only", ref],
         capture_output=True, text=True,
     )
-    assert proc.returncode == 0, f"列不出 {PRESET_BASELINE_REF} 的文件清单：{proc.stderr.strip()}"
-    hits = [p for p in proc.stdout.splitlines()
-            if p.startswith(PRESET_BASELINE_PREFIX + "skills/") and p.endswith("/SKILL.md")]
-    assert hits, (
-        f"{PRESET_BASELINE_REF} 里找不到 `{PRESET_BASELINE_PREFIX}skills/*/SKILL.md`"
-        " —— 预设内容已迁出业务仓（S4 / issue #6020）⇒ 要么建本机预设仓镜像（`$MIGAO_PRESET_MIRROR`），"
-        "要么把基线换成还带着该路径的那个提交"
+    if proc.returncode != 0:
+        return None
+    hits = [x for x in proc.stdout.splitlines()
+            if x.startswith(PRESET_BASELINE_PREFIX + "skills/") and x.endswith("/SKILL.md")]
+    return (hits, ref) if hits else None
+
+
+def _git_preset_skills() -> tuple[list[str], str]:
+    """→ （预设技能的**仓库相对路径**清单, 可用的 ref）。都取不到 ⇒ 抛错（fail-closed）。"""
+    for ref in PRESET_BASELINE_REFS:
+        got = _preset_corpus(ref)
+        if got:
+            return got
+    raise AssertionError(
+        "任何候选基线里都读不到 "
+        f"`{PRESET_BASELINE_PREFIX}skills/*/SKILL.md`（试过 {list(PRESET_BASELINE_REFS)}）"
+        " —— 预设内容已迁出业务仓（S4 / issue #6020）⇒ 要么建本机预设仓镜像"
+        "（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`，见 AGENTS.md「开发环境准备」），"
+        "要么把候选换成还带着该路径的 ref"
     )
-    return hits
 
 
 def _materialize_preset_skills() -> list[Path]:
@@ -79,13 +95,14 @@ def _materialize_preset_skills() -> list[Path]:
     if (PRESET_MIRROR / "skills").is_dir():
         shutil.copytree(PRESET_MIRROR / "skills", out_dir / "skills")
         return sorted((out_dir / "skills").glob("*/SKILL.md"))
-    for rel in _git_ls_preset_skills():
+    rels, ref = _git_preset_skills()
+    for rel in rels:
         proc = subprocess.run(
-            ["git", "-C", str(REPO_ROOT), "show", f"{PRESET_BASELINE_REF}:{rel}"],
+            ["git", "-C", str(REPO_ROOT), "show", f"{ref}:{rel}"],
             capture_output=True, text=True,
         )
         assert proc.returncode == 0, (
-            f"预设真资产读不到：`git show {PRESET_BASELINE_REF}:{rel}` 失败（{proc.stderr.strip()}）"
+            f"预设真资产读不到：`git show {ref}:{rel}` 失败（{proc.stderr.strip()}）"
             " —— S4 / issue #6020 后预设住在预设仓；建本机镜像见 AGENTS.md「开发环境准备」"
         )
         dst = out_dir / Path(rel).relative_to(PRESET_BASELINE_PREFIX)
