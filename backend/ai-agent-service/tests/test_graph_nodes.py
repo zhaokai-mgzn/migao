@@ -488,19 +488,14 @@ class TestRouteByIntent:
         for msg in ("确认下单", "我要下单", "帮我下单"):
             state = {
                 "pending_interact_skill": "customer_quote",
-                # 🔴 必须声明 agent（issue #6044 缺陷 C 后目的地闸会按 agent 绑定面判）：
-                #    `customer_*` 是**小布**的 skill；不声明 agent_type 会默认按米宝判，
-                #    而米宝图里没有 customer_* 节点 —— 那不是产品缺陷，是本 fixture 漏了前提。
-                "agent_type": "xiaobu",
                 "route_decision": {"action": "full_agent"},
                 "intent_result": {"intent": "order_create"},
                 "messages": [HumanMessage(content=msg)],
             }
-            # 🔴 缓存键 = 本 agent（xiaobu）；值 = **真实目的地**（route_key 形态，不是节点名）
             with patch.dict("app.graph.nodes._INTENT_TO_ROUTE",
-                            {"xiaobu": {"order_create": "order", "general": "general"}}):
+                            {"": {"order_create": "customer_order_skill", "general": "general"}}):
                 result = route_by_intent(state)
-            assert result == "order", f"{msg!r} 未切回下单流程（route={result}）"
+            assert result == "customer_order_skill", f"{msg!r} 未切回下单流程（route={result}）"
             assert state["pending_interact_skill"] == "", f"{msg!r} 未释放报价 skill 的会话锁"
 
     def test_processing_order_signal_escapes_product_lock(self):
@@ -516,15 +511,14 @@ class TestRouteByIntent:
         )
         state = {
             "pending_interact_skill": "product_skill",
-            "agent_type": "mibao",
             "route_decision": {"action": "full_agent"},
             "intent_result": {"intent": "order_query"},
             "messages": [HumanMessage(content="查看加工单数据")],
         }
         with patch.dict("app.graph.nodes._INTENT_TO_ROUTE",
-                        {"mibao": {"order_query": "order", "general": "general"}}):
+                        {"": {"order_query": "order_skill", "general": "general"}}):
             result = route_by_intent(state)
-        assert result == "order", f"加工单话题未逃逸到订单域（route={result}）"
+        assert result == "order_skill", f"加工单话题未逃逸到订单域（route={result}）"
         assert state["pending_interact_skill"] == "", "加工单话题未释放商品锁"
 
     def test_own_domain_keyword_does_not_escape_customer_skill(self):
@@ -546,7 +540,6 @@ class TestRouteByIntent:
         for msg in ("确认下单：遮光窗帘3米+打孔加工，合计¥95.4", "帮我查一下订单"):
             state = {
                 "pending_interact_skill": "customer_order",
-                "agent_type": "xiaobu",   # 同上：customer_* 是小布的 skill
                 "route_decision": {"action": "full_agent"},
                 "intent_result": {"intent": "quote"},
                 "messages": [HumanMessage(content=msg)],
@@ -564,7 +557,6 @@ class TestRouteByIntent:
         """反向：顾客只是在报价流程里闲聊，不得被误切走（escape hatch 不能过宽）。"""
         state = {
             "pending_interact_skill": "customer_quote",
-            "agent_type": "xiaobu",   # 同上：customer_* 是小布的 skill
             "route_decision": {"action": "full_agent"},
             "intent_result": {"intent": "quote"},
             "messages": [HumanMessage(content="这个报价挺合适，再帮我看看褶皱倍数")],

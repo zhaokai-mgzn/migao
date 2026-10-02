@@ -3834,8 +3834,7 @@
 
 ### MC-069. B 端真实评测 3 缺陷的类级固化：批次取值白名单 ⊆ DB 约束（缺陷 A）+ 路由目的地恒在图上（缺陷 C） 🔵
 ```
-你: 当有人在 AgentBatchService 里加一个新的具名批量类型（batch_type / field 取值）却忘了同步 DB 约束、或只同步了迁移没同步建库脚本（或反过来）时，必须有判据**具名**报出少了哪个取值；而只改无关注释时不得报红
-你: 当有人把某个 skill 从某 agent 的 skill_names 解绑、而它的 route_key 仍留在意图映射表里（或有人在图上没有 handoff_offer 的 agent 上返回该目的地）时，必须有判据**具名**报出那个目的地不存在于该 agent 的图上；而绑定得上的 route_key 不得被一刀切兜底
+你: 当有人 ① 在 AgentBatchService 里加一个新的具名批量类型（batch_type / field 取值）却忘了同步 DB 约束、或只同步了迁移没同步建库脚本（或反过来），或 ② 把某个 skill 从某 agent 的 skill_names 解绑而它的 route_key 仍留在意图映射表里（或在图上没有 handoff_offer 的 agent 上返回该目的地）时，必须有判据**具名**报出少了哪个取值 / 哪个目的地不存在于该 agent 的图上；而只改无关注释时、以及绑定得上的 route_key，都不得被误判红
 期望: direct_reply
 数据: **病（issue #6044 缺陷 A，2026-10-02 B 端真实评测实测）**：代码已能写 `batch_type='inventory_stock'`（#5950），而 V127 的 `ck_agent_batch_type` 只有两个值 ⇒ 真库上 `POST /api/admin/agent/batches` 100% 撞 23514 ⇒ 500（`AgentBatchService.create`）。同型第二处：`ck_agent_batch_item_field` 只有 `basePrice`/`status`，缺 `stock`（明细行照样写不进去）。⇒ 本单缺的正是「代码写入的取值集合 ⊆ DB 约束允许的取值集合」这条判据。
 数据: **判据 1（值域 ⊆ 白名单）**：`AgentBatchService` 的 `TYPE_*` 常量字面量 ⊆ `ck_agent_batch_type` 允许值；`TYPE_FIELD` 引用的 `FIELD_*` 常量字面量 ⊆ `ck_agent_batch_item_field` 允许值（**别名要解析**：`FIELD_*` 的定义体是 `AgentWriteValues.FIELD_*`）。执行点 = tests/unit_ci_workflows/test_agent_batch_type_domain.py 的 `test_code_batch_domains_are_allowed_by_the_db_constraints`。

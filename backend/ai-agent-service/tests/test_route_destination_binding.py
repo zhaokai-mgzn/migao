@@ -151,22 +151,13 @@ class TestRouteByIntentNeverReturnsADanglingDestination:
             "（图上没有该目的地 ⇒ LangGraph 必抛 KeyError）"
         )
 
-    @pytest.mark.parametrize("agent_type", AGENTS)
-    def test_unbound_pending_skill_is_not_propagated(self, agent_type):
-        """未绑定的 pending skill（按 #5247，`settings` 是现成的一例）不许被原样返回。"""
-        from app.graph.nodes import route_by_intent
-
-        state = self._state(agent_type, pending_interact_skill="settings")
-        destination = route_by_intent(state)
-        assert destination in _destinations(agent_type), (
-            f"agent={agent_type} 的 pending_skill='settings' ⇒ route_by_intent 返回 {destination!r}"
-            "（图上没有该目的地 ⇒ 与 2026-10-02 实测的 KeyError 同型）"
-        )
-
-    @pytest.mark.parametrize("agent_type", AGENTS)
-    @pytest.mark.parametrize("pending", ["settings", "order", "general", "order_skill", "ghost"])
-    def test_any_pending_skill_lands_on_a_node(self, agent_type, pending):
-        """pending skill 的**任何**取值（绑定的 / 解绑的 / 图节点名 / 不存在的）都不许越出目的地集。"""
+    @pytest.mark.parametrize("agent_type,pending", [
+        ("mibao", "order"), ("mibao", "product"), ("mibao", "general"),
+        ("mibao", "order_skill"),                       # 节点名形态（builder 同时映射 skill name）
+        ("xiaobu", "customer_order"), ("xiaobu", "customer_quote"),
+    ])
+    def test_bound_pending_skill_lands_on_its_node(self, agent_type, pending):
+        """**绑定的** pending skill（skill 名或节点名两种形态）必须回到图上真实节点。"""
         from app.graph.nodes import route_by_intent
 
         state = self._state(agent_type, pending_interact_skill=pending,
@@ -176,6 +167,30 @@ class TestRouteByIntentNeverReturnsADanglingDestination:
         assert destination in _destinations(agent_type), (
             f"agent={agent_type} pending_skill={pending!r} ⇒ route_by_intent 返回 {destination!r}"
             "（图上没有该目的地 ⇒ LangGraph 必抛 KeyError）"
+        )
+
+    @pytest.mark.parametrize("agent_type", AGENTS)
+    def test_unbound_pending_skill_is_passed_through_verbatim(self, agent_type):
+        """**未绑定**的 pending skill 不许被「改判」——既有契约是**原样返回**（可归因地告警）。
+
+        🔴 为什么**不**在这里改判到 fallback（CI run 37009338419 的实测教训）：
+        「会话连续性返回 pending skill 的**原样值**」是 4 条既有断言的契约
+        （`test_graph_nodes.py` 的 `test_quote_skill_下单_escapes_to_order_skill` /
+        `test_quote_skill_stays_without_order_intent` /
+        `test_own_domain_keyword_does_not_escape_customer_skill` 与
+        `test_card_answer_round_routing.py` 的 `test_quote_skill_下单_still_escapes_with_its_own_card`，
+        逐字编码 #3361 / OR-014 的防护）。首版把目的地闸也装在这条路径上 ⇒ 那 4 条被吞成
+        `general` ⇒ CI 真红。⇒ 崩溃面改在**源头**堵（`_get_intent_to_route` 按绑定面过滤），
+        这条路径只留**可归因告警**、返回值一律原样。
+
+        ⚠️ 本条是**契约锁定**（钉住「不许再回来改判」），不是"未绑定也没关系"的许可：
+        真正防 KeyError 的是 `test_every_mapped_destination_is_a_node`（映射表侧）。
+        """
+        from app.graph.nodes import route_by_intent
+
+        state = self._state(agent_type, pending_interact_skill="settings")
+        assert route_by_intent(state) == "settings", (
+            "pending skill 必须原样返回（会话连续性契约）—— 改判会打穿 #3361 / OR-014"
         )
 
     @pytest.mark.parametrize("agent_type", AGENTS)

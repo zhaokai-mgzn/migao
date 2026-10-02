@@ -124,6 +124,28 @@ def derived_reader_problems(sources: dict[str, str], registry: tuple[str, ...]) 
     return out
 
 
+#: 盘点来源所在的表（判断「这条迁移是否在讲盘点来源」的对象面）
+STOCKTAKE_TABLE = "stock_batch_consumptions"
+
+
+def touches_stocktake_source(name: str, text: str) -> bool:
+    """这条迁移是否**在讲盘点来源**（= 改的是 `stock_batch_consumptions` 且提到 `stocktake`）。
+
+    🔴 为什么不能只用 `STOCKTAKE_REASON in text`（本函数是 issue #6044 修的一个**判据自身缺陷**）：
+    那是**纯子串**判定 ⇒ 任何一条**只是把表名写进注释**的迁移都会被误认成"盘点来源迁移"。
+    实证：V146（批次取值白名单，`agent_batches` / `agent_batch_items`）在注释里引用了
+    `V143__add_stocktake_to_batch_consumptions.sql` 的**文件名**（含 `stocktake` 子串）
+    ⇒ 被要求"必须有 `uk_batch_consumption_stocktake` 幂等闸" ⇒ 假红。
+    收紧成「**改的表** + 取值」两件同时成立：对象面（`ALTER TABLE stock_batch_consumptions` /
+    `CREATE ... ON stock_batch_consumptions`）才是承重的，注释里的提及不是。
+    """
+    if STOCKTAKE_REASON not in text:
+        return False
+    return (f"ALTER TABLE {STOCKTAKE_TABLE}" in text
+            or f"ON {STOCKTAKE_TABLE}" in text
+            or f"CREATE TABLE IF NOT EXISTS {STOCKTAKE_TABLE}" in text)
+
+
 def source_shape_problems(schema_text: str, migration_texts: dict[str, str],
                           java_constants: dict[str, str],
                           fingerprints: dict[str, str]) -> list[str]:
@@ -152,7 +174,7 @@ def source_shape_problems(schema_text: str, migration_texts: dict[str, str],
                 f"{SOURCE_SHAPE_CONSTRAINT} 没要求扣料行必须有加工单号（既有契约被放宽）")
 
     for label, text in [("schema.sql", schema_text), *sorted(migration_texts.items())]:
-        if label != "schema.sql" and STOCKTAKE_REASON not in text:
+        if label != "schema.sql" and not touches_stocktake_source(label, text):
             continue  # 别的迁移不涉及盘点来源
         require(STOCKTAKE_IDEMPOTENCY_INDEX in text,
                 f"`{label}` 里没有幂等闸 {STOCKTAKE_IDEMPOTENCY_INDEX}"
@@ -168,7 +190,7 @@ def source_shape_problems(schema_text: str, migration_texts: dict[str, str],
             "（DB 约束会当场拒掉应用写出来的行）")
 
     stocktake_migrations = [name for name, text in migration_texts.items()
-                            if STOCKTAKE_REASON in text]
+                            if touches_stocktake_source(name, text)]
     require(len(stocktake_migrations) >= 1,
             "活迁移目录里没有任何一条迁移引入盘点来源 ⇒ 存量库拿不到新列 / 新约束")
     for name in stocktake_migrations:

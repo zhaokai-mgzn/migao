@@ -2557,8 +2557,12 @@ cases:
     # 由 tests/unit_ci_workflows/test_agent_batch_type_domain.py 与
     # backend/ai-agent-service/tests/test_route_destination_binding.py 验证，非 LLM 行为，不进入 agent-eval 冒烟。
     user_inputs:
-      - "当有人在 AgentBatchService 里加一个新的具名批量类型（batch_type / field 取值）却忘了同步 DB 约束、或只同步了迁移没同步建库脚本（或反过来）时，必须有判据**具名**报出少了哪个取值；而只改无关注释时不得报红"
-      - "当有人把某个 skill 从某 agent 的 skill_names 解绑、而它的 route_key 仍留在意图映射表里（或有人在图上没有 handoff_offer 的 agent 上返回该目的地）时，必须有判据**具名**报出那个目的地不存在于该 agent 的图上；而绑定得上的 route_key 不得被一刀切兜底"
+      # ⚠️ **有意只有一条**：本用例是**纯静态**判据（不跑 agent-eval ⇒ `skip_reason` 已登记），
+      # 而 Case Trust 的 `CASE-TRUST-NO-PRECONDITION-ASSERTION` 把「≥2 条 user_inputs」读成多轮
+      # （`assertion_taxonomy.needs_precondition_assertion` 的口径是**轮次计数**）⇒ 两条描述性
+      # 输入会被判成"多轮用例缺前置自断言"。修法 = 把两个触发面写进**一条**输入（不新增
+      # `preconditions` 声明：本用例没有"运行期前置"这种东西，硬造一条就是凑数断言）。
+      - "当有人 ① 在 AgentBatchService 里加一个新的具名批量类型（batch_type / field 取值）却忘了同步 DB 约束、或只同步了迁移没同步建库脚本（或反过来），或 ② 把某个 skill 从某 agent 的 skill_names 解绑而它的 route_key 仍留在意图映射表里（或在图上没有 handoff_offer 的 agent 上返回该目的地）时，必须有判据**具名**报出少了哪个取值 / 哪个目的地不存在于该 agent 的图上；而只改无关注释时、以及绑定得上的 route_key，都不得被误判红"
     expectations:
       - tool: direct_reply
     data_checks:

@@ -965,15 +965,25 @@ def _agent_fallback_skill(agent_type: str) -> str:
     """本 agent 的兜底 skill（= `build_agent_graph` 一定会建那个节点）。"""
     from app.agents.agent_config import get_agent_config
 
-    return get_agent_config(agent_type or "mibao").fallback_skill or "general"
+    _config = get_agent_config(agent_type or "mibao")
+    return (_config.fallback_skill if _config else "") or "general"
 
 
 def _agent_route_map(agent_type: str) -> dict[str, str]:
-    """复刻 `build_agent_graph` 的 `skill_route_map`（**唯一口径**，issue #6044 缺陷 C）。
+    """本 agent **能到达的目的地**（`route_by_intent` 的返回值必须落在其中）。
 
-    key = route_key / skill name（`route_by_intent` 可能返回的两种形态）；
-    value = 节点名。**只含本 agent 绑定得上的 skill** —— 这正是「persona 过滤 ≠ 绑定过滤」
-    那条缝隙的封堵点（`settings` skill 已按 #5247 解绑出米宝，但文件仍在注册表里）。
+    两个来源合起来（缺一个都会误判，两条都有实测）：
+
+    ① **本 agent 绑定的 skill**：`get_all_skill_names()` 里每个 skill 的
+       route_keys + skill name ⇒ 节点名。这是 `build_agent_graph` 的 `skill_route_map`。
+    ② **注册表里 `name == agent_type` 那条 skill 自己的路由面**（issue #6044 CI 首轮实测）：
+       `xiaobu` 在注册表里**不是** agent 配置，而是一条 skill ——
+       `XIAOBU_CONFIG.skill_names` 含 `customer_order` / `customer_quote` 等，
+       `route_keys` 含 `customer` 等。会话连续性（`pending_interact_skill`）返回的正是
+       **skill 名**（如 `customer_order` / `customer_quote`，`route_by_intent` 里那条
+       "会话连续性返回的是 pending skill 的**节点名**（原样）"的既有断言）。不把这一面并进来，
+       目的地闸会把**图上真实需要回到的 skill** 当成"不存在的名字"吞掉
+       ⇒ `route_by_intent` 退化成 `general` ⇒ #3361 的防护被打穿（CI run 37009338419 实证）。
 
     ⚠️ 与 `builder.build_agent_graph` 的口径必须逐字一致（覆盖顺序按
     `get_all_skill_names()`）；判据 `test_route_map_values_are_real_nodes` 对着**真编译图**
@@ -987,14 +997,20 @@ def _agent_route_map(agent_type: str) -> dict[str, str]:
     route_map: dict[str, str] = {"direct_reply": "direct_reply"}
     if agent_type == "xiaobu":
         route_map["handoff_offer"] = "handoff_offer"
-    for skill_name in agent_config.get_all_skill_names():
+
+    def _add(skill_name: str) -> None:
         config = registry.get(skill_name)
         if not config:
-            continue
+            return
         node_id = f"{skill_name}_skill"
         for route_key in config.route_keys:
             route_map[route_key] = node_id
         route_map[skill_name] = node_id
+
+    for skill_name in agent_config.get_all_skill_names():
+        _add(skill_name)
+    # ② 注册表里 `name == agent_type` 那条（`xiaobu` 的会话连续性目的地在这一面）
+    _add(agent_type)
     return route_map
 
 
@@ -1116,12 +1132,23 @@ def route_by_intent(state: AgentState) -> str:
 
     # 🔴 **目的地闸**（issue #6044 缺陷 C）：条件边只认 `skill_route_map` 的 key/value，
     # 返回别的名字 ⇒ `BranchSpec._finish` 抛 `KeyError: '<名字>'` ⇒ 整轮 SSE 崩
-    # （2026-10-02 实测：米宝 + pending_skill='settings' ⇒ `KeyError: 'settings'`）。
-    # 本函数有**两条**返回路径可能越过映射表：① `action=handoff_offer`（米宝图上没有该节点）；
-    # ② `pending_interact_skill`（会话状态里的 skill 名可能已按 #5247 解绑）。
-    # 两条都改判到本 agent 的 fallback skill（= builder 一定会建的那个节点，兜底语义）。
-    _route_map = _agent_route_map(agent_type)
-    _destinations = set(_route_map) | set(_route_map.values())
+    # （2026-10-02 实测：米宝 + 意图 notification ⇒ `KeyError: 'settings'`）。
+    # **闸只装在 `action=handoff_offer` 这一条返回路径上**，原因如下（CI run 37009338419 的实测教训）：
+    #
+    # · `pending_interact_skill` 那条路径**不能**改判 —— 它的既有契约是
+    #   「会话连续性返回 pending skill 的**原样值**」（`test_graph_nodes.py` 的
+    #   `test_quote_skill_下单_escapes_to_order_skill` / `test_quote_skill_stays_without_order_intent`
+    #   / `test_own_domain_keyword_does_not_escape_customer_skill` 与
+    #   `test_card_answer_round_routing.py` 的 `test_quote_skill_下单_still_escapes_with_its_own_card`
+    #   逐字编码了 #3361 / OR-014 的防护）。首版把闸也装在这里 ⇒ 4 条既有断言被吞成 `general`
+    #   ⇒ CI 真红。**那 4 条不许改**，所以闸改成只做**可归因诊断**、不改返回值。
+    # · 该路径的真正崩溃面（`settings`）已在**源头**堵住：`_get_intent_to_route` 现在按**绑定面**
+    #   过滤，`notification` / `system_settings` / `ai_config` 一律落到 fallback skill ⇒
+    #   `route_by_intent` 再也不会返回 `'settings'`（判据 = `test_route_destination_binding.py`
+    #   的 `test_every_mapped_destination_is_a_node` + 其注入式红证）。
+    # · `handoff_offer` 那条**没有**这类既有契约（该 action 只由 `handoff_judge` 为 xiaobu 产出），
+    #   所以闸装在那里是安全的。
+    _destinations = set(_agent_route_map(agent_type))
     _fallback = _agent_fallback_skill(agent_type)
 
     # AI 主动引导转人工（D3）：路由到 handoff_offer 节点（建议卡片）
@@ -1139,13 +1166,13 @@ def route_by_intent(state: AgentState) -> str:
         return "handoff_offer"
 
     if pending_skill and pending_skill not in _destinations:
+        # **只诊断、不改判**：返回值必须是 pending skill 的原样值（既有契约，见上面的长注释）。
+        # 这条日志是给「某个 skill 被解绑后会话状态里还留着它」这个形态留的可归因入口。
         logger.warning(
             f"[route_by_intent] pending_interact_skill='{pending_skill}' 不在 agent={agent_type} "
-            f"的目的地里（已解绑 / 名字漂移）⇒ 本轮改判到 fallback skill '{_fallback}'"
-            f" | session={session_id}"
-            "（会话状态面仍留着它 —— 清零归 SessionStateStore 的事，本函数据此只保证不进死路）"
+            f"的目的地里（已解绑 / 名字漂移）—— 按既有契约原样返回（会话连续性），"
+            f"但该 skill 若真不在图上，条件边会抛 KeyError | session={session_id}"
         )
-        return _fallback
 
     if action == "direct_reply":
         # 多模态输入不走直复节点——直接回复模板没有图片处理能力
