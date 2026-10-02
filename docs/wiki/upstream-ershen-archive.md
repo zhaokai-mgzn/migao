@@ -38,4 +38,16 @@ gh repo unarchive zhaokai-mgzn/ershen
 ```
 
 - **本记录建立时的最后有效 sha**：`8a8cfa5`（2026-09-02「fix(automerge): dependabot PR 跳过关联 issue 要求」）
-- **归档动作执行时的 sha**：见下方「归档执行读数」
+- **归档动作执行时的 sha**：`8a8cfa5daf96996dafc15b67ad2a92eb6b8682ab`（见下方读数）
+
+## 归档执行读数
+
+```
+执行时间（本机 Asia/Shanghai）：2026-10-02 22:16:25 CST
+命令：gh repo archive zhaokai-mgzn/ershen --yes
+结果：archived=true（只读；内容仍可 clone / 网页只读访问）
+归档时 main HEAD sha：8a8cfa5daf96996dafc15b67ad2a92eb6b8682ab
+```
+
+- 归档**不删内容**；需要恢复可写：`gh repo unarchive zhaokai-mgzn/ershen`。
+- migao 侧对本仓的依赖 = **0**（运行期/部署期无引用；文本引用已在本页 + 各引用点标注「已归档」）。
