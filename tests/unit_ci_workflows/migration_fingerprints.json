@@ -139,6 +139,7 @@
     "V141__create_worker_page_configs.sql": "sha256:8a37def562e52ae5452b9d1db0e84c53f963734722de09e8e4135b970f7d07c8",
     "V142__add_order_created_by.sql": "sha256:c579b7686b85503d5baedc1efba969670c0d906455f177686894e54c80e23348",
     "V143__add_stocktake_to_batch_consumptions.sql": "sha256:6b9366b393e24e5ec262969af344eddcc31ed106385feb3eb91b82895133cfea",
-    "schema.sql": "sha256:3aacf236c6b11d47c94d46937560db61bcebbfc68df541fb19157acb1a1e3e6a"
+    "schema.sql": "sha256:2d2ec059afaed7d32ce6cc6bc3f8eea9bf440ce6f1a0cbfa73b28c3a3147a961",
+    "V144__add_proactive_status_to_daily_briefings.sql": "sha256:02f7bd92a8e08dd8f2254ef7accce5d858e0b6d7d159c8918fefc8c4f65b09ad"
   }
 }
