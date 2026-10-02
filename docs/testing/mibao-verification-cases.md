@@ -2862,11 +2862,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-<<<<<<< HEAD
 ## 杂项域（61 case）
-=======
-## 杂项域（60 case）
->>>>>>> 50c46a422 (fix(cases): rebase 冲突解错方向导致 casebook 陈旧 —— 重渲染两个生成物)
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3714,7 +3710,6 @@
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-10-02 新增（issue #5983 铁律 8 的类级固化）：修四页（orders / products / inbound-orders / finance 的写按钮按写码显隐）只是**实例面**；本条把「列表页写按钮漏接权限」钉成未登记即红 —— 扫描 `frontend/admin-web/src/app/(dashboard)/**/page.tsx`（排除 `…/new/page.tsx`，那是建单页本身）里「整行 = 新增/新建/**登记**标签」的写按钮，必须同文件引用 `hasPermission(...)` 或登记进 tests/unit_ci_workflows/list_page_write_button_ledger.json（台账只许缩短、冻结上限与条数**现取**）。词汇表含「登记」的原因见 ui.yml 的 UI-081：`/finance` 的按钮叫「登记收支」，只认「新增/新建」会把它漏在射程外（正是本判据要防的「看着覆盖了、其实没覆盖」）。存量豁免 5 条 = after-sales / knowledge / production·processing / production·routings / roles（同类缺口，不在本 PR 范围，如实登记待办）。取号 MC-063（**让号**：#6001 已合入并占用 MC-062 ⇒ 按「后合入者让号」顺延）：按「当前最大号 +1」（现取 main 最大 = MC-061；沿用 MC-054~061 的「空档号 ≠ 可用号」先例，故不采用取号工具给出的历史空档 MC-049）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。 ｜ tags: ci, guard, rbac, frontend
 
-<<<<<<< HEAD
 ### MC-064. Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975） 🔵
 ```
 你: 当有人在 Mapper SQL 的**类型盲区位置**（空值判定的主语 / CASE WHEN 的布尔主语）写下无类型锚点的裸参 `#{x}` 时，必须有东西**具名**报出（文件:行:绑定 + 修法）；而只改注释时不得报红
@@ -3729,8 +3724,6 @@
 ```
 溯源: 2026-10-02 新增（issue #5975：入库过账 500）。**取号 MC-064（两次顺延，号位冲突的活标本）**：开工时按「当前最大号 +1」取了 MC-062；**同步 main 时该号已被 #5976+#5977 占用**（`misc.yml` 现取的 MC-062 条目 = 「菜单码 ⊆ 路由守卫覆盖（C5）」，正是「空档/号段≠可用」的实例）⇒ 抬到 MC-063；随后核实 **MC-063 已被 #5983 的在飞分支占用** ⇒ 再顺延到 **MC-064**（现取 main 最大 = MC-062，MC-063 为在飞占用）。类级固化的理由：缺陷形态是「裸参落在 PG 的类型盲区」，修 `ProductSkuMapper` 一处只是**实例判据**；本守卫让**同类进不来**（新写一个 `CASE WHEN #{x} IS NULL` 的 Mapper SQL ⇒ 当场红，而不是等商家过账 500）。如实登记的边界：① 只覆盖 `backend/**/src/main/**`（测试里的 SQL 片段不算生产契约）；② 只覆盖「`IS [NOT] NULL` 主语」与「`WHEN` 布尔主语」两类盲区，**不**覆盖其它推断不出类型的形态（如 `SELECT #{x}` 无上下文）；③ 判据是**形态学**的 —— 它判「有没有显式类型」，判不了「显式类型给得对不对」（后者由真库判据 PR-121 承担）；④ 豁免台账的 `max_exemptions` 需要同时改两处才能放宽（有意为之）。⑤ 剥 Java 注释**复用仓内唯一实现** `tests/unit_ci_workflows/_source_parsing.py::java_code`（不自写第二把尺子 —— 唯一性判据见 tests/unit_ci_workflows/test_automerge_bot_safe_path.py 的判据 11），XML 面只去 `<!-- -->`。 ｜ tags: ci, backend-contract, mapper, null-param, ledger, red-proof
 
-=======
->>>>>>> 50c46a422 (fix(cases): rebase 冲突解错方向导致 casebook 陈旧 —— 重渲染两个生成物)
 ## 商家入驻域（5 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
@@ -8856,13 +8849,8 @@
 
 ## 覆盖统计（生成）
 
-<<<<<<< HEAD
 - 用例总数：618（活跃 133，跳过 485）
 - tier 分布：smoke 12 / normal 573 / adversarial 31
-=======
-- 用例总数：616（活跃 133，跳过 483）
-- tier 分布：smoke 12 / normal 571 / adversarial 31
->>>>>>> 50c46a422 (fix(cases): rebase 冲突解错方向导致 casebook 陈旧 —— 重渲染两个生成物)
 - 售后域：10
 - Agent 核心域：7
 - API 层域：20
@@ -8877,11 +8865,7 @@
 - 财务对账域：4
 - 人事域：12
 - 知识问答域：7
-<<<<<<< HEAD
 - 杂项域：61
-=======
-- 杂项域：60
->>>>>>> 50c46a422 (fix(cases): rebase 冲突解错方向导致 casebook 陈旧 —— 重渲染两个生成物)
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -8971,10 +8955,7 @@
 - MC-061: 变更射程 → 必跑具名判据：射程注册表（面 → 具名判据 → 可复制命令）与 growth_gate 的**非阻塞**提示同源，两者漂移即红；射程表清空 ⇒ 提示消失而 blocker_count 不变
 - MC-062: 菜单码 ⊆ 路由守卫覆盖（C5）：带 permissionCode 的菜单节点必须被 ROUTE_PERMISSION_MAP 覆盖到**同一个码**，且 (dashboard) 下每条页面路由都有生效守卫码（唯一豁免由单一真值源派生 = 全员可见页）
 - MC-063: 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短
-<<<<<<< HEAD
 - MC-064: Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975）
-=======
->>>>>>> 50c46a422 (fix(cases): rebase 冲突解错方向导致 casebook 陈旧 —— 重渲染两个生成物)
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
