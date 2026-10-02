@@ -20,23 +20,56 @@
 #   都在加类级判据/台账（AGENTS.md 铁律 8）⇒ 每包都必然触发那条最重的腿。故「N 份全量」是
 #   **结构性**的，不是偶发。集成层本来就是这些判据互相影响的地方 ⇒ 一次跑在**合起来之后**更有效。
 #
+# ## 就绪前置判定（`--require-ready`，默认**开启**；issue #6028）
+#
+#   治的形态（2026-10-02 实测）：`#6003` / `#6005` 这类**与 base 冲突（GitHub 侧 DIRTY）**的包被拉进批次
+#   ⇒ 集成结果必然红、且红在**别人**身上（面级归因指向错误对象）⇒ 白烧一次全量。
+#   「一次全量」这么贵 ⇒ 先把「明知会红」的包挡在门外。
+#
+#   跑那一次全量**之前**，逐包做两条判定（任一不就绪 ⇒ **拒绝**，exit 3，**不跑**全量）：
+#     ① **无冲突**（离线可判，必做）：`git merge-tree --write-tree <base> <head>`
+#        （**只读**：不落工作区、不改索引）。有冲突 ⇒ 提示先同步主线。
+#     ② **required 全绿**（需 `gh` + 网络）：`gh pr list --head <branch> --state open` 取 PR 号，
+#        再 `gh pr checks <PR> --json name,state,bucket`；有 `fail` / `pending` ⇒ 提示等 CI 或先修红；
+#        **找不到对应 PR** ⇒ 提示先开 PR。
+#
+#   三态口径（**不许糊**）：
+#     - **明确不就绪** ⇒ 拒绝（exit 3）+ 逐包打印**判定依据**（哪条不满足 / 现取读数 / 下一步命令）；
+#     - **无法判定**（`gh` 不存在 / 无凭据 / 网络不可用 / 取不到 base ref / `gh` 输出不可解析）
+#       ⇒ **fail-closed 拒绝**（exit 3），输出里**具名**写「无法判定 ≠ 就绪」；
+#     - 只有**显式** `--no-require-ready` 才跳过这套判定（逃生口；跳过时**必须打印**未跑声明）。
+#
 # ## 用法
 #
 #   ./scripts/batch-gate.sh <branch> [<branch> ...]   # 建临时集成 worktree → 串行 merge → **一次** gate → 逐包归因
 #   ./scripts/batch-gate.sh --in <worktree> <branch> ...   # 在**既有**集成 worktree 里只跑那一次（环境已备时用）
 #   ./scripts/batch-gate.sh --keep <branch> ...       # 保留集成 worktree（默认结束即删）
 #   ./scripts/batch-gate.sh --base <ref> <branch> ... # 换基准（默认 origin/main）
+#   ./scripts/batch-gate.sh --no-require-ready <branch> ...  # 逃生口：跳过就绪判定（人类明知故犯时用）
 #
 #   环境变量：`MIGAO_HEAVY_WAIT=<秒>`（默认 2700）—— 透传给 gate 的排队上限。
+#
+#   ⚠️ **就绪判定只有一个逃生口**：显式 `--no-require-ready`（可见、在命令行里、必打印未跑声明）。
+#   有意**不做**环境变量逃生口：`git grep -n "batch-gate" origin/main` 命中的**全是文档**
+#   （`docs/wiki/Development.md` 两处裸调用示例、`docs/wiki/Dev-Mode-Balance.md` 的设计页），
+#   **没有任何程序化调用点** ⇒ 过渡期不存在，多一个环境变量只会多一个**无判据的分支** + 一个静默逃生口。
 #
 # ## 退出码（三态，与 merge_gate.py / stranding-check.sh 同口径）
 #
 #   0 = 那一次 gate 全绿
 #   1 = 红（**整合冲突** / gate 非零）—— 冲突时**不跑** gate：「没跑」必须长得像「没跑」
-#   3 = 无法判定（分支不存在 / 建不出 worktree / gate 自己 exit 3）—— **不得当 0 读**
+#   3 = 无法判定（分支不存在 / 包不就绪 / 就绪判定无法判定 / 建不出 worktree / gate 自己 exit 3）
+#       —— **不得当 0 读**
 #
 # ## 边界（照实登记）
 #
+#   - **就绪判定 ≠ 合并后 main 健康**：`merge-tree` 判的是「此刻 head vs base 的文本冲突」，
+#     不含语义冲突、不含 CI 之后的 base 前进（判定与跑全量之间主线仍可能动）。
+#   - **「无法判定即拒绝」会挡住合法场景**（照实登记）：`gh` 未登录 / 断网 / API 限流时，
+#     **即使完全就绪的批次也会被拒**。出口 = 修好凭据/网络重跑，或人类显式 `--no-require-ready`。
+#   - **要求的口径** = `gh pr checks <PR>` 报出的**全部** check（非仅 required 集合）—— 比对「只在
+#     required 集合上判」更严；更严是**安全**方向，代价 = 可能挡住「required 全绿而非 required 有
+#     存量债」的批次（同 `migao-dev-flow` §2.2 v1.98.0 的存量债形态）。
 #   - 归因是**面级映射**（算的是「这个包碰没碰失败腿的触发面」），**不是**「这个包就是真凶」的证明；
 #     面内多于一个包时**不许**指认唯一真凶，具名打印 `无法唯独归因`。
 #   - 集成 worktree 里 merge ≠ GitHub squash 合并后的 main，是**起飞前**的近似（冲突照实报）。
@@ -49,13 +82,18 @@ BASE="${BATCH_GATE_BASE:-origin/main}"
 KEEP=0
 IN_WT=""
 BRANCHES=()
+READY=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --in)   IN_WT="${2:-}"; [ -n "$IN_WT" ] || { echo "用法: $0 --in <worktree>" >&2; exit 2; }; shift 2 ;;
     --base) BASE="${2:-}"; [ -n "$BASE" ] || { echo "用法: $0 --base <ref>" >&2; exit 2; }; shift 2 ;;
     --keep) KEEP=1; shift ;;
-    -h|--help) sed -n 's/^# \{0,1\}//p' "$0" | sed -n '1,36p'; exit 0 ;;
+    --require-ready)    READY=1; shift ;;
+    --no-require-ready) READY=0; shift ;;
+    # --help = 文件头**全部**注释行（写到「第一行非注释」为止）。⛔ 别写死行数区间：
+    # 头部长一英寸就被静默截断（本包加「就绪判定」段后就截到了「## 退出码」标题、0/1/3 三态看不见了）。
+    -h|--help) awk '/^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
     -*)     echo "未知参数：$1（用法见 $0 --help）" >&2; exit 2 ;;
     *)      BRANCHES+=("$1"); shift ;;
   esac
@@ -93,6 +131,155 @@ done
 BASE_SHA="$(git -C "$ROOT" rev-parse --short "$BASE" 2>/dev/null || echo '?')"
 echo "批次数：${#BRANCHES[@]} 个包｜基准：${BASE}@${BASE_SHA}"
 echo "包：${BRANCHES[*]}"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 1.5) **就绪前置判定**（issue #6028）—— 在跑那一次全量**之前**
+#
+#   为什么放在这里：全量是这一批**唯一一次**、也是最贵的一步。明知有 DIRTY 包（与 base 冲突）
+#   或 CI 未绿的包拉进来，只会「必然红 + 归因指向别人」⇒ 白烧。**拒绝必须发生在花钱之前**。
+#   判定**只读**：`git merge-tree --write-tree` 不落工作区、不改索引；`gh` 只查不写。
+#   三态各写一行到 ready.txt（`o` 就绪 / `x` 明确不就绪 / `?` **无法判定**），供下面统一打印与判红。
+# ══════════════════════════════════════════════════════════════════════════════
+READY_TXT="$TMP/ready.txt"
+: > "$READY_TXT"
+ready_ok()    { printf 'o\t%s\t%s\n' "$1" "$2" >> "$READY_TXT"; }
+not_ready()   { printf 'x\t%s\t%s\n' "$1" "$2" >> "$READY_TXT"; }
+undecidable() { printf '?\t%s\t%s\n' "$1" "$2" >> "$READY_TXT"; }
+
+#: 同步主线的出口命令（真可行动）
+SYNC_CMD='./scripts/sync-main.sh --rebase'
+
+#: gh 输出 → 单值。三态：0 = 正常（stdout 是结论）；2 = **输出不可解析**（= 无法判定）
+#: ⚠️ 空白输入（含 `<<<""` 送来的**单个换行**）必须走「无法判定」，不许当成空数组 —— 那是假绿方向。
+_gh_json_pick() {
+  python3 -c '
+import json, sys
+raw = sys.stdin.read()
+if not raw.strip():
+    sys.exit(2)
+try:
+    data = json.loads(raw)
+except Exception:
+    sys.exit(2)
+if not isinstance(data, list):
+    sys.exit(2)
+if len(sys.argv) > 1 and sys.argv[1] == "numbers":
+    nums = [i.get("number") for i in data if isinstance(i, dict) and isinstance(i.get("number"), int)]
+    print(nums[0] if nums else "")
+else:
+    if not data:
+        print("EMPTY"); raise SystemExit(0)
+    fail = [i.get("name", "?") for i in data
+            if (i.get("bucket") or "") in ("fail", "cancel", "cancelled", "skipping")]
+    pend = [i.get("name", "?") for i in data if (i.get("bucket") or "") == "pending"]
+    if fail:
+        print("FAIL " + str(len(data)) + " 条 check；红：" + "、".join(fail[:6]))
+    elif pend:
+        print("PENDING " + str(len(data)) + " 条 check；未完成：" + "、".join(pend[:6]))
+    else:
+        print("OK " + str(len(data)) + " 条 check 全绿")
+' "$@"
+}
+
+check_one_package() {
+  local b="$1" sha="$2" out rc prlist pr checks verdict
+
+  # ── ① 无冲突（离线；`git merge-tree --write-tree` **只读**）──────────────────
+  # 退出码语义（git-merge-tree 文档）：0 = 干净合并（stdout 是 tree oid）；
+  #                                1 = 有冲突（stdout 是 tree oid、stderr 是冲突消息）；
+  #                                >1 = 自身失败（base 无法解析 / 历史不相干 …）⇒ **无法判定**。
+  out="$(git -C "$ROOT" merge-tree --write-tree --name-only "$BASE" "$sha" 2>"$TMP/mt.err")"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    : # 无冲突，继续判 PR
+  elif [ "$rc" -eq 1 ]; then
+    # stdout = tree oid + 冲突路径（`--name-only` 时从第 2 行起是路径）
+    local paths
+    paths="$(printf '%s\n' "$out" | sed -n '2,7p' | tr '\n' ' ')"
+    not_ready "$b" "与基准 ${BASE} 有冲突（git merge-tree --write-tree 退出码 1；冲突路径：${paths:-见 stderr}）｜下一步：${SYNC_CMD}"
+    return
+  else
+    undecidable "$b" "冲突判定跑不动（git merge-tree --write-tree 退出码 ${rc}；stderr：$(head -1 "$TMP/mt.err" 2>/dev/null)）—— 无法判定 ≠ 就绪"
+    return
+  fi
+
+  # ── ② required 全绿（需 gh + 网络）─────────────────────────────────────────
+  if ! command -v gh >/dev/null 2>&1; then
+    undecidable "$b" "gh 不存在 ⇒ 取不到该包的 PR 状态 —— 无法判定 ≠ 就绪（装好 gh 再跑，或显式 --no-require-ready）"
+    return
+  fi
+
+  prlist="$(gh pr list --head "$b" --state open --json number 2>"$TMP/gh.err")"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    undecidable "$b" "gh pr list 失败（无凭据 / 网络不可用？stderr：$(head -1 "$TMP/gh.err" 2>/dev/null)）—— 无法判定 ≠ 就绪"
+    return
+  fi
+  pr="$(_gh_json_pick numbers <<<"$prlist")"
+  rc=$?
+  if [ "$rc" -eq 2 ]; then
+    undecidable "$b" "gh pr list 输出不可解析（不是 JSON 数组）—— 无法判定 ≠ 就绪"
+    return
+  fi
+  if [ -z "$pr" ]; then
+    not_ready "$b" "没有对应的 open PR（gh pr list --head ${b} --state open 为空）｜下一步：先开 PR"
+    return
+  fi
+
+  checks="$(gh pr checks "$pr" --json name,state,bucket 2>"$TMP/ghc.err")"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    undecidable "$b" "gh pr checks ${pr} 失败（无凭据 / 网络不可用 / 限流？stderr：$(head -1 "$TMP/ghc.err" 2>/dev/null)）—— 无法判定 ≠ 就绪"
+    return
+  fi
+  verdict="$(_gh_json_pick <<<"$checks")"
+  rc=$?
+  if [ "$rc" -eq 2 ]; then
+    undecidable "$b" "gh pr checks 输出不可解析（不是 JSON 数组）—— 无法判定 ≠ 就绪"
+    return
+  fi
+  case "$verdict" in
+    "OK "*      ) ready_ok    "$b" "PR #${pr}；${verdict#OK }" ;;
+    "FAIL "*    ) not_ready   "$b" "PR #${pr}；${verdict#FAIL } ｜下一步：等 CI 或先修红（gh pr checks ${pr}）" ;;
+    "PENDING "* ) not_ready   "$b" "PR #${pr}；${verdict#PENDING } ｜下一步：等 CI 绿（gh pr checks ${pr} --watch）" ;;
+    *           ) undecidable "$b" "PR #${pr}；没有上报任何 check（起飞前的 PR？）—— 无法判定 ≠ 就绪" ;;
+  esac
+}
+
+if [ "$READY" = 1 ]; then
+  echo "── 就绪前置判定（--require-ready 默认开启；issue #6028）──"
+  if git -C "$ROOT" rev-parse --verify --quiet "${BASE}^{commit}" >/dev/null 2>&1; then
+    while IFS=$'\t' read -r b sha; do
+      check_one_package "$b" "$sha"
+    done < "$TMP/branches.tsv"
+  else
+    # 取不到基准 ⇒ 两条判定都做不了 ⇒ **无法判定**（fail-closed，≠ 就绪）
+    for b in "${BRANCHES[@]}"; do
+      undecidable "$b" "取不到基准 ${BASE}（git rev-parse ${BASE} 失败）—— 无法判定 ≠ 就绪"
+    done
+  fi
+
+  blocked=0
+  while IFS=$'\t' read -r mark b why; do
+    case "$mark" in
+      o) echo "  ✅ ${b}：${why}" ;;
+      x) echo "  ❌ ${b}（不就绪）：${why}"; blocked=1 ;;
+      ?) echo "  ❓ ${b}（**无法判定 ≠ 就绪**）：${why}"; blocked=1 ;;
+    esac
+  done < "$READY_TXT"
+
+  if [ "$blocked" = 1 ]; then
+    echo "⛔ 有包未通过就绪判定 ⇒ **拒绝**，**没有跑**那一次全量（没跑 ≠ 通过、≠ 全绿）。"
+    echo "   出口（三选一）：① 按上面逐包的「下一步」修好再重跑；② 修不了 ⇒ 把该包移出本批；"
+    echo "                   ③ 人类明知故犯 ⇒ 显式 --no-require-ready（跳过判定，风险自负）"
+    echo "   ⚠️ 「无法判定」是 fail-closed 的**拒绝**，不是「就绪」—— 别把 ❓ 读成 ✅。"
+    exit 3
+  fi
+  echo "  ⇒ 全部 ${#BRANCHES[@]} 个包就绪（无冲突 + PR checks 全绿）"
+else
+  echo "⏭️ 就绪判定未跑（--no-require-ready）—— 这不是「就绪」"
+  echo "   ⇒ 本批**可能**含与基准冲突（DIRTY）或 CI 未绿的包；那次全量的红**未必**是集成引入的。"
+fi
 
 # ── 2) 集成工作区 + 串行 merge（合并串行 = §17.1 第 4 步）───────────────────────
 if [ -n "$IN_WT" ]; then
