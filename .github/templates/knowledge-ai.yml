@@ -11,7 +11,7 @@ business_truths:
   - [knowledge-ai.tenant-isolation] 租户隔离：列表/测试搜索按 TenantContext.getTenantId() 做 eq 过滤；删除/重嵌先按 id 查询，文档不存在或 tenant_id 不匹配均抛 NOT_FOUND(HTTP 404)
   - [knowledge-ai.test-search-like] 测试搜索为 MySQL LIKE 文本匹配(非向量 RAG)：tenant_id=? AND is_active=true AND title LIKE ? OR content LIKE ?，固定 LIMIT 10；请求体 topK 字段被忽略；返回 {"results": [文档]}
   - [knowledge-ai.ai-disconnected] AI 客服当前未接入知识库：knowledge_search / knowledge_manage 两个 Tool 在 registry.py 中被注释禁用(RAG 未部署)，知识 Skill 为占位、0 个激活工具
-  - [knowledge-ai.sse-no-citation] AI 客服 SSE 不含任何"引用/来源"字段：事件仅 loading/heartbeat/text/tool_call/tool_result/card/interactive/suggestions/error/done，text 事件 data 仅 {"content"}
+  - [knowledge-ai.sse-no-citation] AI 客服 SSE 不含任何"引用/来源"字段：事件仅 loading/heartbeat/text/tool_call/tool_result/card/interactive/error/done，text 事件 data 仅 {"content"}
   - [knowledge-ai.sync-internal] 知识库向量同步走 ai-agent-service 内部接口 POST /api/internal/knowledge/sync(Service Token 认证)，同步类型 document_created/document_updated/document_deleted/product_updated/full_sync；RAG pipeline 未部署时返回 success=false + RAG_DISABLED
   - [knowledge-ai.readonly-tools] 内部反向工具执行 POST /api/internal/tools/execute 仅允许只读工具，写工具返回 403 WRITE_TOOL_FORBIDDEN
 

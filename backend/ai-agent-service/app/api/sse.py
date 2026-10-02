@@ -113,19 +113,6 @@ class SSEEvent:
         return ": heartbeat\n\n"
     
     @staticmethod
-    def suggestions(questions: list[str]) -> str:
-        """
-        后续问题建议事件
-
-        Args:
-            questions: 建议的后续问题列表
-
-        Returns:
-            SSE 格式字符串
-        """
-        return f"event: suggestions\ndata: {json.dumps({'questions': questions}, ensure_ascii=False)}\n\n"
-
-    @staticmethod
     def interactive(component_type: str, data: dict) -> str:
         """
         交互式组件事件（Choice / Confirm / Form）

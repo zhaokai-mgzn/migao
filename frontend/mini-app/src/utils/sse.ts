@@ -27,7 +27,6 @@ import type {
   SSEErrorEvent,
   SSELoadingEvent,
   SSEInteractiveEvent,
-  SSESuggestionsEvent,
 } from '../types'
 
 export interface SSECallbacks {
@@ -41,8 +40,6 @@ export interface SSECallbacks {
   onCard?: (data: SSECardEvent) => void
   /** 交互式组件（choice/confirm/form） */
   onInteractive?: (data: SSEInteractiveEvent) => void
-  /** 建议追问 */
-  onSuggestions?: (data: SSESuggestionsEvent) => void
   /** 加载状态 */
   onLoading?: (data: SSELoadingEvent) => void
   /** 流式完成 */
@@ -238,10 +235,6 @@ export class SSEClient {
 
         case 'interactive':
           callbacks.onInteractive?.(data as SSEInteractiveEvent)
-          break
-
-        case 'suggestions':
-          callbacks.onSuggestions?.(data as SSESuggestionsEvent)
           break
 
         case 'loading':

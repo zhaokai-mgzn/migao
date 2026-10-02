@@ -257,9 +257,6 @@ def _build_mock_patches():
     return {
         # [RAG 禁用] semantic_cache 已移除
         "cache_settings": patch("app.graph.nodes.settings", create=True),
-        "suggestions": patch(
-            "app.graph.nodes.FollowUpSuggestionGenerator", create=True,
-        ),
         "skill_llm": patch("app.graph.skills.base_skill.get_skill_llm"),
         "admin_api": patch("app.utils.http_client.AdminApiClient._get_client"),
         "classifier": patch("app.router.intent_classifier.IntentClassifier.classify"),

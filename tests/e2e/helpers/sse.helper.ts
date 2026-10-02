@@ -11,7 +11,7 @@
  * Known event types (src/types/index.ts SSEEventType):
  *   message_start | text_delta | text | tool_start | tool_call |
  *   tool_result | card | loading | message_end | error |
- *   message | done | suggestions
+ *   message | done
  *
  * Strategy:
  *   We inject a `fetch` monkey-patch into the page context that:
@@ -239,18 +239,6 @@ export class SSEHelper {
         return (data?.content || data?.delta || '') as string
       })
       .join('')
-  }
-
-  /**
-   * Get all suggestion strings from the 'suggestions' event.
-   */
-  async getSuggestions(): Promise<string[]> {
-    const events = await this.getEvents('suggestions')
-    if (events.length === 0) return []
-
-    const lastEvent = events[events.length - 1]
-    const data = lastEvent.data as Record<string, unknown>
-    return (data?.questions || []) as string[]
   }
 
   /**

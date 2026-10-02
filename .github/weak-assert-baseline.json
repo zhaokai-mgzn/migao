@@ -20,7 +20,6 @@
     "backend/ai-agent-service/tests/test_customer_service_agent.py": 1,
     "backend/ai-agent-service/tests/test_dual_agent.py": 9,
     "backend/ai-agent-service/tests/test_e2e_mibao_scenarios.py": 1,
-    "backend/ai-agent-service/tests/test_follow_up_suggestions.py": 2,
     "backend/ai-agent-service/tests/test_graph_builder.py": 7,
     "backend/ai-agent-service/tests/test_graph_skills.py": 26,
     "backend/ai-agent-service/tests/test_id_resolver.py": 2,

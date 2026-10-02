@@ -143,10 +143,9 @@ cases:
       - suggestion
     truths_ref:
       - api.agent-stream-sse
-      - api.suggestion-intent
       - api.user-nickname
     user_inputs:
-      - "ai-agent-service 将 Agent 流式输出转换为 SSE，并处理建议反馈/用户昵称"
+      - "ai-agent-service 将 Agent 流式输出转换为 SSE，并处理用户昵称"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -154,7 +153,7 @@ cases:
       - "suggestion-feedback 返回 {ok:true}；_infer_intent_from_text 关键词按具体词优先匹配，空/无匹配返回 ''/general"
       - "_get_user_nickname Redis 命中直返、未命中查 DB、异常静默返回 None"
     skip_reason: "[backend-contract] SSE 流/助手函数由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428）"
+    merge_log: "2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428）｜2026-10-02（issue #5951，用户裁定）：因产品决策退役 —— 主动「后续问题建议」通道整体删除（`/suggestion-feedback` 端点 + `_infer_intent_from_text` 随之删除）⇒ 该条 data_check 整条移除；title / expectations / 其余 data_checks / traces 一字未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_chat.py"

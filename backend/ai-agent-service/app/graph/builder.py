@@ -5,7 +5,7 @@ LangGraph StateGraph 构建器（配置驱动版）
 不再使用 if/else 硬编码 Agent 类型。
 
 图结构（所有 Agent 类型共用）：
-  START → intent_router →(条件边)→ Skill 节点 → suggest_node → END
+  START → intent_router →(条件边)→ Skill 节点 → END
 
 新增 Agent 类型只需：
 1. 在 app/agents/agents/ 中添加 AgentConfig 声明

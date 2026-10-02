@@ -435,8 +435,6 @@ _INSTANCE_EXPECTATIONS = {
     "backend/ai-agent-service/app/core/circuit_breaker.py": ["tests/unit/test_circuit_breaker.py"],
     "backend/ai-agent-service/app/core/fallback.py": ["tests/unit/test_fallback.py"],
     "backend/ai-agent-service/app/core/admin_api_cache.py": ["tests/unit/test_admin_api_cache.py"],
-    "backend/ai-agent-service/app/suggestions/preference_tracker.py": ["tests/test_preference_tracker.py"],
-    "backend/ai-agent-service/app/suggestions/follow_up.py": ["tests/test_follow_up_suggestions.py"],
     "backend/ai-agent-service/app/llm/router.py": ["tests/test_vision_integration.py"],
 }
 
@@ -446,6 +444,9 @@ def test_issue_5353_instances_resolve_to_their_real_tests():
 
     只断言「解析到某个测试」是不够的 —— 那正是本单的病灶形态（门禁绿，而配对测试根本
     不在变更集里）。这里逐条钉「映射能看见哪条测试」。
+
+    （`app/suggestions/follow_up.py` 这一格已随 issue #5951 退役：该模块整体删除，
+    其配套测试一并删除 ⇒ 不再有可钉的实例。）
 
     红证：删掉 `app/core/` 的显式规则（或把兜底换回 `(.+)`）⇒ 前三条立刻退回不可见 ⇒ 本判据红。
     """
@@ -465,7 +466,6 @@ def test_issue_5353_instances_resolve_to_their_real_tests():
 def test_issue_5353_unproven_cells_are_concluded():
     """issue 里两格「未取证」的**结论**必须落在判据上，不能只活在报告里。
 
-    - `app/suggestions/follow_up.py` → **有**真实测试（tests/test_follow_up_suggestions.py，已核 import）；
     - `app/middleware/logging_middleware.py` → **真没测试**（全仓只有两处把它当装配件 import，
       无任何断言其行为的用例）⇒ 登记进 `_NO_TEST_REGISTRY`，不是忽略、也不是「名字对不上」。
     """
@@ -473,9 +473,6 @@ def test_issue_5353_unproven_cells_are_concluded():
     rules = _rules(gate)
     entry = _NO_TEST_REGISTRY.get("backend/ai-agent-service/app/middleware/logging_middleware.py", "")
     assert "真没测试" in entry, "logging_middleware 这一格必须给出「真没测试」的结论与理由"
-    assert "tests/test_follow_up_suggestions.py" in _INSTANCE_EXPECTATIONS[
-        "backend/ai-agent-service/app/suggestions/follow_up.py"
-    ], "follow_up 这一格必须钉住它的真实测试"
     source = "backend/ai-agent-service/app/middleware/logging_middleware.py"
     rule = gate.match_rule(source, rules)
     assert rule, f"{source} 无规则命中 ⇒ 判据会空转"

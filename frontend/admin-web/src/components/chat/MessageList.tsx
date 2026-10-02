@@ -12,8 +12,6 @@ import {
 import NextImage from 'next/image'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
-import { useAuthStore } from '@/store/auth'
-import { chatApi } from '@/lib/api'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import dayjs from 'dayjs'
@@ -235,45 +233,6 @@ function MessageBubble({ message }: { message: ChatMessage }) {
               interactive={message.interactive}
               disabled={resolveInteractiveState(message) === 'readonly'}
             />
-          </div>
-        )}
-
-        {/* 回复建议 */}
-        {isAI && message.suggestions && message.suggestions.length > 0 && !message.isStreaming && (
-          <div className="mt-3 w-full">
-            <p className="mb-1.5 px-1 text-xs font-medium text-neutral-500">推荐提问：</p>
-            <div className="space-y-1">
-              {message.suggestions.map((suggestion, index) => (
-                <button
-                  key={index}
-                  onClick={() => {
-                    // 埋点：记录建议被点击
-                    const token = useAuthStore.getState().accessToken || ''
-                    const AI_SERVICE_URL = chatApi.AI_SERVICE_URL
-                    fetch(`${AI_SERVICE_URL}/api/chat/suggestion-feedback`, {
-                      method: 'POST',
-                      // 与其它 ai-api 调用一致：携带 HttpOnly cookie（整页刷新后内存 token 缺失）
-                      credentials: 'include',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`,
-                      },
-                      body: JSON.stringify({
-                        session_id: message.session_id || useChatStore.getState().currentSessionId,
-                        suggestion,
-                        message_id: message.id,
-                      }),
-                    }).catch(() => { /* fire-and-forget */ })
-
-                    const { sendMessage } = useChatStore.getState()
-                    sendMessage(suggestion)
-                  }}
-                  className="block w-full text-left px-2.5 py-1.5 rounded-lg border border-dashed border-neutral-300 hover:border-primary-300 hover:bg-primary-50/50 transition-colors text-xs text-neutral-600 hover:text-primary-700 break-words line-clamp-2"
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
           </div>
         )}
 

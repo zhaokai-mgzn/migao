@@ -328,7 +328,7 @@ class TestVisionModelCostAccounting:
     `settings.VISION_MODEL` 缺失 → `track_call(model=VISION_MODEL, ...)` 在
     `_calc_cost_cny` 内走 fallback `MODEL_PRICING[settings.LLM_MODEL]`；而
     `settings.LLM_MODEL = PRIMARY_MODEL or VISION_MODEL`，一旦两者都不在表内
-    就 **KeyError**。三处调用点（base_skill / follow_up / intent_classifier）均
+    就 **KeyError**。两处调用点（base_skill / intent_classifier）均
     try/except 吞掉 → 视觉调用的 token **静默不计费**，月度预算形同虚设。
     """
 

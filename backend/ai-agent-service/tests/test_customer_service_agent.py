@@ -341,8 +341,8 @@ class TestBuildInitialState:
         assert state["pending_interact_skill"] == ""
 
     @pytest.mark.asyncio
-    async def test_returns_15_keys(self):
-        """_build_initial_state 返回 20 个键（19 + issue #3976 的 pending_validated_input）：
+    async def test_returns_19_keys(self):
+        """_build_initial_state 返回 19 个键（18 + issue #3976 的 pending_validated_input）：
 
         `last_confirm_value` / `last_confirm_skill` —— confirm 卡答卡轮判据（#3557）；
         `last_card` / `last_card_skill` —— **任意卡型**答卡轮判据（choice / form）。
@@ -362,7 +362,7 @@ class TestBuildInitialState:
             state = await agent._build_initial_state(
                 [HumanMessage(content="hi")], self._ctx()
             )
-        assert len(state) == 20
+        assert len(state) == 19
         assert state["last_confirm_value"] == ""
         assert state["last_confirm_skill"] == ""
         assert state["last_card"] == {}
@@ -484,7 +484,7 @@ class TestAchat:
 
 
 class TestAstreamChat:
-    """astream_chat 流式事件序列：tool_call / tool_result / text / suggestions / error（AG-005）。"""
+    """astream_chat 流式事件序列：tool_call / tool_result / text / error（AG-005）。"""
 
     @staticmethod
     def _ctx():
@@ -550,16 +550,6 @@ class TestAstreamChat:
         out = await self._collect(agent)
         texts = [r for r in out if r.type == "text"]
         assert texts[-1].content == "这是最终答案"
-
-    @pytest.mark.asyncio
-    async def test_suggestions_yielded(self):
-        agent = self._agent([
-            {"skill": {"final_answer": "答案"}},
-            {"suggestions": {"suggestions": ["查物流", "查售后"]}},
-        ])
-        out = await self._collect(agent)
-        sug = next(r for r in out if r.type == "suggestions")
-        assert sug.metadata["suggestions"] == ["查物流", "查售后"]
 
     @pytest.mark.asyncio
     async def test_non_dict_node_output_skipped(self):

@@ -40,7 +40,6 @@ import {
   detectPendingInteraction,
   extractFailedActions,
   extractLedgerRows,
-  collectSuggestions,
   type BriefKind,
   type EntityType,
   type LedgerRow,
@@ -149,8 +148,6 @@ export default function SessionInsight({
   const failedActions = useMemo(() => extractFailedActions(messages), [messages])
   // 办理结果明细
   const ledgerRows = useMemo(() => extractLedgerRows(messages), [messages])
-  // 接下来可以问
-  const suggestions = useMemo(() => collectSuggestions(messages), [messages])
 
   const handleSend = useCallback(
     (followUp: string) => { sendMessage(followUp) },
@@ -336,25 +333,6 @@ export default function SessionInsight({
                   </div>
                 )}
               </div>
-
-              {/* ─── 接下来可以问 ─── */}
-              {suggestions.length > 0 && (
-                <div className="px-3 py-3" data-testid="brief-questions">
-                  <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">接下来可以问</h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {suggestions.map(suggestion => (
-                      <button
-                        key={suggestion}
-                        onClick={() => handleSend(suggestion)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-medium text-primary-700 bg-primary-50 border border-primary-200 hover:bg-primary-100 transition-colors cursor-pointer"
-                      >
-                        {suggestion}
-                        <ChevronRight className="w-3 h-3" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>

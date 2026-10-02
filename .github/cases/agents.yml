@@ -26,7 +26,7 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "AgentResponse 默认 type=text、tool_calls=None、metadata=None；type 枚举 text/tool_call/tool_result/suggestions/error"
+      - "AgentResponse 默认 type=text、tool_calls=None、metadata=None；type 枚举 text/tool_call/tool_result/error"
       - "_extract_msg_content 移除 <think>...</think>（含多行），content 为 list 时仅拼接 type==text 的 text 块"
       - "AgentContext.to_dict 返回 6 字段；to_tool_context 透传 tenant_id/user_id/session_id/role"
     skip_reason: "[backend-contract] dataclass/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
@@ -130,7 +130,7 @@ cases:
 
   - id: AG-005
     legacy_id: ""
-    title: "astream_chat 流式事件序列 - tool_call/tool_result/text/suggestions/error"
+    title: "astream_chat 流式事件序列 - tool_call/tool_result/text/error"
     domains:
       - agents
       - chat
@@ -150,7 +150,7 @@ cases:
     data_checks:
       - "AIMessage.tool_calls 先 yield tool_calls 前文本，再逐条 yield type=tool_call"
       - "ToolMessage 经 json.loads 解析（失败降级 {data: str(content)}），图执行完统一 yield type=tool_result"
-      - "final_answer 有新内容→yield type=text；suggestions 非空→yield type=suggestions；异常→yield type=error（含异常类名）"
+      - "final_answer 有新内容→yield type=text；异常→yield type=error（含异常类名）"
     skip_reason: "[backend-contract] 异步流式对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429）"
     traces:

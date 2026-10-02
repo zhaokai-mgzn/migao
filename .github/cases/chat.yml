@@ -1573,38 +1573,15 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
-
-  - id: CH-029
-    legacy_id: ""
-    title: "建议个性化 - 偏好读取注入（flag 门控，默认关闭）"
-    domains:
-      - chat
-      - customer
-    tier: normal
-    tags:
-      - suggestions
-      - xiaobu
-      - personalization
-      - preference
-    truths_ref:
-      - misc.followup-generate-dynamic
-    user_inputs:
-      - "ai-agent-service 建议生成前的偏好注入（生产接线断言）"
-    expectations:
-      - tool: direct_reply
-    data_checks:
-      - "开关 SUGGESTION_PREFERENCE_ENABLED=False（默认）→ _inject_user_preferences 直接返回原 prompt（零行为变化，不调 tracker）"
-      - "开启且 xiaobu 有偏好意图 → <user_preferences> 消毒块前置注入 system prompt（标签 XML 转义）+ [preference-inject] 日志"
-      - "mibao 不注入 / 缺 tenant+user / 无偏好 / tracker 异常 → 原样返回不破坏主流程"
-    skip_reason: "[backend-contract] 偏好注入为纯函数接线，由 pytest 单测验证（tests/test_preference_injection.py），不进入 agent-eval 冒烟"
-    merge_log: "2026-09-07 新增：issue #2997 闭环缺口 A 类 — 偏好读取接线（flag 门控）"
-    traces:
-      tests:
-        - "backend/ai-agent-service/tests/test_preference_injection.py"
-      ci:
-        - ai-agent-tests.yml
-      verifies: []
-
+  # ▼▼ 2026-10-02（issue #5951，用户裁定）**因产品决策退役** ▼▼
+  # CH-029「建议个性化 - 偏好读取注入（flag 门控，默认关闭）」**整条退役**。
+  # 死因：其唯一数据来源 `user_suggestion_prefs` 的**写口**是与本单同批删除的
+  # `POST /suggestion-feedback`（`PreferenceTracker.record_click`）⇒ 保留读侧
+  # `_inject_user_preferences` 只会得到「永远命中空集」的活路径（`if not top: return`），
+  # 正是本单要杜绝的**静默死亡**形态 ⇒ 读侧（含 `SUGGESTION_PREFERENCE_ENABLED` 开关）
+  # 随写侧一并删除，不留半删。退役方式 = 整条移除（traces.tests 指向的
+  # `tests/test_preference_injection.py` 已随之删除，保留条目会让 Case Trust 判红）。
+  # 退役台账：issue #5951。
   - id: CH-026
     legacy_id: ""
     title: "澄清卡后发图不崩溃 - 交互等待中用户发图走 vision 链路（线上 AttributeError 修复真实验收）"

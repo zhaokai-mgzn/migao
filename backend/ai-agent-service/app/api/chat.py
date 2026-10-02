@@ -1416,8 +1416,6 @@ async def _agent_stream_to_sse(
             tenant_id=tenant_id,
         )
 
-        # suggestions 由 LLM 在回复中自然生成，无需在此额外生成
-
         # 异步提取用户记忆（fire-and-forget，不阻塞 SSE 流）
         # user_message 提取自 message 参数（可能为 str 或 list）
         user_msg_text = message if isinstance(message, str) else (
@@ -1886,7 +1884,6 @@ async def _handle_form_request(
         session_id=session_id,
         message=injected,
         images=request.images,
-        ignored_suggestions=request.ignored_suggestions,
     )
     return await _send_plain_message(injected_request, current_user)
 
@@ -1952,7 +1949,6 @@ async def _handle_page_ctx_request(
         session_id=session_id,
         message=render_page_context(request.message, context),
         images=request.images,
-        ignored_suggestions=request.ignored_suggestions,
         # page_context 不再下发（本轮已消费：防重复注入，也防入口再分派成自递归）
     )
     return await send_message(injected_request, current_user)
@@ -2023,23 +2019,6 @@ async def _send_plain_message(
         f"[chat/send] Message received | tenant={tenant_id} user={user_id} session={request.session_id or 'new'} msg_len={len(request.message)}"
     )
 
-    # 记录被忽略的上一轮建议（用于训练数据分析）
-    if request.ignored_suggestions:
-        import json as _json
-        from app.utils.log_sanitizer import LogSanitizer
-        for s in request.ignored_suggestions:
-            logger.info(
-                "[suggestion:feedback]",
-                _json.dumps({
-                    "session_id": request.session_id or "",
-                    "tenant_id": tenant_id,
-                    "user_id": user_id,
-                    "suggestion": LogSanitizer.mask_text(s),
-                    "clicked": False,
-                    "source": "ignored",
-                }, ensure_ascii=False),
-            )
-    
     # 初始化组件
     session_memory = SessionMemory()
     tool_registry = get_tool_registry()
@@ -2535,106 +2514,6 @@ async def get_history(
         "session_id": session_id,
         "messages": formatted_messages,
     })
-
-
-@router.post("/suggestion-feedback")
-async def suggestion_feedback(
-    body: dict,
-    current_user: UserIdentity = Depends(get_current_user),
-):
-    """
-    记录建议反馈（点击），用于后续训练数据分析 + 用户偏好学习
-
-    ⚠️ 数据安全：日志包含用户建议文本（已脱敏手机号/邮箱），
-    应配置日志访问权限和保留策略。
-
-    Body:
-        session_id: str - 会话 ID
-        suggestion: str - 被点击的建议文本
-        message_id: str (optional) - 关联的消息 ID
-    """
-    import json as _json
-    from app.utils.log_sanitizer import LogSanitizer
-
-    suggestion_text = body.get("suggestion", "")
-
-    logger.info(
-        "[suggestion:feedback]",
-        _json.dumps({
-            "session_id": body.get("session_id", ""),
-            "tenant_id": current_user.tenant_id,
-            "user_id": current_user.user_id,
-            "suggestion": LogSanitizer.mask_text(suggestion_text),
-            "clicked": True,
-            "message_id": body.get("message_id", ""),
-            "source": "click",
-        }, ensure_ascii=False),
-    )
-
-    # 写入用户偏好表（用于个性化推荐）
-    try:
-        intent_type = _infer_intent_from_text(suggestion_text)
-        if intent_type:
-            from app.suggestions.preference_tracker import PreferenceTracker
-            tracker = PreferenceTracker()
-            await tracker.record_click(
-                tenant_id=current_user.tenant_id,
-                user_id=str(current_user.user_id) if current_user.user_id else "",
-                intent_type=intent_type,
-                suggestion_text=suggestion_text,
-            )
-    except Exception as e:
-        logger.warning(f"[suggestion:feedback] failed to record preference: {e}")
-
-    return {"ok": True}
-
-
-# ──────────────── 建议文本 → 意图推断（关键词匹配） ────────────────
-
-_SUGGESTION_INTENT_KEYWORDS: list[tuple[str, str]] = [
-    # 更具体的词在前，避免被通用词吞掉
-    ("看板", "dashboard"),       # 在看板数据中先于"数据"匹配
-    ("统计", "statistics"),      # 在统计报表中先于"报表"匹配
-    ("报表", "data_report"),     # 在数据报表中先于"数据"匹配
-    ("物流", "logistics_track"),
-    ("快递", "logistics_track"),
-    ("签收", "logistics_track"),
-    ("售后", "after_sales"),
-    ("退款", "after_sales"),
-    ("工单", "after_sales"),
-    ("投诉", "complaint"),
-    ("订单", "order_query"),
-    ("发货", "order_query"),
-    ("商品", "product_inquiry"),
-    ("产品", "product_inquiry"),
-    ("库存", "product_inquiry"),
-    ("分类", "category_manage"),
-    ("加工", "processing_manage"),
-    ("客户", "customer_manage"),
-    ("员工", "employee_manage"),
-    ("角色", "role_manage"),
-    ("权限", "permission_manage"),
-    ("经营", "dashboard"),
-    ("数据", "statistics"),
-    ("通知", "notification"),
-    ("消息", "notification"),
-    ("知识", "knowledge_faq"),
-    ("FAQ", "knowledge_faq"),
-    ("会话", "session_manage"),
-    ("模型", "ai_config"),       # 在模型设置中先于"设置"匹配
-    ("AI", "ai_config"),         # 在AI设置中先于"设置"匹配
-    ("设置", "system_settings"),
-]
-
-
-def _infer_intent_from_text(text: str) -> str:
-    """从建议文本推断意图类型（简单关键词匹配）"""
-    if not text:
-        return ""
-    for keyword, intent in _SUGGESTION_INTENT_KEYWORDS:
-        if keyword in text:
-            return intent
-    return "general"
 
 
 @router.get("/quick-actions")

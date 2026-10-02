@@ -411,12 +411,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     const abortController = new AbortController()
 
-    // 检查上一轮 AI 消息是否有未被采纳的建议（用于日志分析）—— 基于当前视图
-    const lastAiMsg = [...get().messages].reverse().find(m => m.role === 'assistant')
-    const ignoredSuggestions = lastAiMsg?.suggestions?.filter(
-      s => s !== content.trim()
-    ) || []
-
     // 添加用户消息
     const userMsg: ChatMessage = {
       id: generateId(),
@@ -426,17 +420,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       created_at: new Date().toISOString(),
     }
 
-    // 清除上一轮 AI 消息的建议（已被消费）—— 写入归属会话的 messageStore；
-    // 同时把最后一条交互组件未答复消息标记为 interactiveAnswered（issue #3036）：
+    // 把最后一条交互组件未答复消息标记为 interactiveAnswered（issue #3036）：
     // 用户发出新消息（含点击 choice/confirm/form 按钮产生的消息）后，上一条
     // 交互即视为答复，本地即时锁死卡片 —— 防 FAB 重开/会话切换后「复活」重复提交
     set(state => withView(state, {
       messageStore: {
         ...state.messageStore,
         [currentSessionId]: (state.messageStore[currentSessionId] ?? []).map(msg => {
-          if (msg.id === lastAiMsg?.id) {
-            return { ...msg, suggestions: undefined }
-          }
           // 有 interactive 且未答复且非流式 → 标记已答复（用户本轮已回应）
           if (msg.role === 'assistant' && msg.interactive && !msg.interactiveAnswered && !msg.isStreaming) {
             return { ...msg, interactiveAnswered: true }
@@ -487,7 +477,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           ...(cardAnswer ? { card_answer: cardAnswer } : {}),
           ...(pageContext ? { page_context: pageContext } : {}),
           ...(images && images.length > 0 ? { images } : {}),
-          ...(ignoredSuggestions.length > 0 ? { ignored_suggestions: ignoredSuggestions } : {}),
         }),
         signal: abortController.signal,
       })
@@ -640,12 +629,6 @@ function handleSSEEvent(
           ...msg,
           cards: [...(msg.cards || []), card],
         }))))
-        break
-      }
-
-      case 'suggestions': {
-        const suggestions = parsedData.questions || []
-        set(state => withView(state, patchStream(state, aiMsgId, msg => ({ ...msg, suggestions }))))
         break
       }
 

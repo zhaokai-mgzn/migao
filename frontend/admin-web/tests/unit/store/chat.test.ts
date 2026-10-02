@@ -1096,30 +1096,6 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       expect(cards![0].data).toEqual({ items: [{ id: '1' }] })
     })
 
-    it('should handle suggestions event', async () => {
-      const mockRead = vi.fn()
-        .mockResolvedValueOnce({
-          done: false,
-          value: new TextEncoder().encode(
-            'event: suggestions\ndata: {"questions":["Q1","Q2"]}\n\n',
-          ),
-        })
-        .mockResolvedValueOnce({ done: true, value: undefined })
-
-      const mockReader = { read: mockRead, cancel: vi.fn(), releaseLock: vi.fn() }
-
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        body: { getReader: () => mockReader },
-      })
-
-      await act(async () => {
-        await useChatStore.getState().sendMessage('help')
-      })
-
-      expect(useChatStore.getState().messages[1]?.suggestions).toEqual(['Q1', 'Q2'])
-    })
-
     it('should handle error SSE event', async () => {
       const mockRead = vi.fn()
         .mockResolvedValueOnce({
@@ -1547,46 +1523,6 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       })
 
       expect(useChatStore.getState().isStreaming).toBe(false)
-    })
-
-    // -----------------------------------------------------------------------
-    // Suggestions clearing
-    // -----------------------------------------------------------------------
-    it('should clear suggestions from previous AI message', async () => {
-      act(() => {
-        useChatStore.setState({
-          messages: [
-            makeMsg({ role: 'user', content: 'hello' }),
-            makeMsg({
-              role: 'assistant',
-              content: 'hi',
-              suggestions: ['追问1', '追问2'],
-            }),
-          ],
-        })
-      })
-
-      const mockRead = vi.fn()
-        .mockResolvedValueOnce({
-          done: false,
-          value: new TextEncoder().encode('event: done\ndata: {}\n\n'),
-        })
-        .mockResolvedValueOnce({ done: true, value: undefined })
-
-      const mockReader = { read: mockRead, cancel: vi.fn(), releaseLock: vi.fn() }
-
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        body: { getReader: () => mockReader },
-      })
-
-      await act(async () => {
-        await useChatStore.getState().sendMessage('new message')
-      })
-
-      const msgs = useChatStore.getState().messages
-      const oldAiMsg = msgs.find(m => m.content === 'hi')
-      expect(oldAiMsg?.suggestions).toBeUndefined()
     })
 
     // -----------------------------------------------------------------------
