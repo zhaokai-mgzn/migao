@@ -94,6 +94,11 @@ class SecurityConfigTest {
     @BeforeEach
     void setUpServiceTokenSecret() {
         ReflectionTestUtils.setField(serviceTokenFilter, "serviceTokenSecret", SERVICE_SECRET);
+        // issue #5987：建号缺岗位/角色已 fail-closed（不再兜底 operator）⇒ 只传 position 的 payload
+        // 必须能让岗位解析出角色（真库里新租户必带五岗种子；此处按种子形态给出「客服」岗位）。
+        when(roleService.getRoleByPosition(any(), any()))
+                .thenReturn(com.migao.admin.entity.Role.builder()
+                        .id("role-cs").code("customer_service").build());
     }
 
     @MockBean
