@@ -1754,3 +1754,108 @@ def test_anchor_scripts_stay_quiet_when_the_live_anchor_is_absent_or_unrelated(t
     assert "未接线" in proc.stdout
     assert "未跑判定" in proc.stdout
     assert "✅" not in proc.stdout
+
+
+# ── ⑨ 换机 / 新队友的**唯一上手路径**（`bootstrap_hint`）必须教**当前拓扑** ──────────
+# 实测（本批）：这条提示是「一次性上手」的唯一载体 —— 教错拓扑 ⇒ 新队友 clone 一个**没有预设**的仓、
+# 链到一个**不存在**的路径 ⇒ 活锚解析失败（DSH 读不到预设，且**不报错**，只是「模式不见了」#3956 同族）。
+# 另一处同源载体是根 `AGENTS.md`「开发环境准备」的 ② ~ ⑤ —— **两处口径必须一致**（本组一起钉）。
+
+#: 正确的「建镜像 + 换链」两行（软链目标 = **镜像仓根**，不是 `<镜像>/.agent-presets/migao`）。
+_HINT_CLONE_LINE = r'git clone --no-checkout "${REPO_URL}" "\$HOME/migao-dev-preset-anchor"'
+_HINT_LINK_ROOT = r'ln -sfn "\$HOME/migao-dev-preset-anchor" "\$HOME/.dsh/.agent-presets/migao"'
+_HINT_LINK_SUBTARGET = (r'ln -sfn "\$HOME/migao-dev-preset-anchor/.agent-presets/migao"'
+                        r' "\$HOME/.dsh/.agent-presets/migao"')
+#: 备份必须**只对真目录**做（活锚是软链时 `mv` 它 = 把软链挪成一堆 `.bak`；实测清出过两个无主 .bak）。
+_HINT_BACKUP_GATE = (r'if [ -d "\$HOME/.dsh/.agent-presets/migao" ]'
+                     r' && [ ! -L "\$HOME/.dsh/.agent-presets/migao" ]; then')
+_AGENTS_BACKUP_GATE = ('if [ -d "$HOME/.dsh/.agent-presets/migao" ]'
+                       ' && [ ! -L "$HOME/.dsh/.agent-presets/migao" ]; then')
+_AGENTS_LINK_LINE = 'ln -sfn "$MIRROR" "$HOME/.dsh/.agent-presets/migao"'
+_OLD_MIRROR_NAME = "migao-preset-anchor"
+
+
+def _bootstrap_hint(src: str | None = None) -> str:
+    """`preset-anchor-refresh.sh` 的 `bootstrap_hint()` 正文（**结构化定位**，不靠行号）。"""
+    text = REFRESH_SH.read_text(encoding="utf-8") if src is None else src
+    start = text.find("bootstrap_hint() {")
+    if start < 0:
+        raise AssertionError("定位 `bootstrap_hint()` 失败（fail-closed，别静默跳过）")
+    end = text.find("\nEOF\n", start)
+    if end < 0:
+        raise AssertionError("定位 `bootstrap_hint` 的 heredoc 结尾失败（fail-closed）")
+    return text[start:end]
+
+
+def _bootstrap_hint_problems(hint: str) -> list[str]:
+    """提示里「教错拓扑」的形态（纯函数 ⇒ 红证可在内存里构造，不改磁盘）。"""
+    bad: list[str] = []
+    if _HINT_CLONE_LINE not in hint:
+        bad.append("克隆源不是**预设仓**（`git clone --no-checkout \"${REPO_URL}\" …`）"
+                   " —— 教人 clone 业务仓会拿到一个**没有预设**的检出")
+    if "migao-dev-preset-anchor" not in hint:
+        bad.append("镜像路径不是 `$HOME/migao-dev-preset-anchor`（S4 后的约定路径）")
+    if _OLD_MIRROR_NAME in hint.replace("migao-dev-preset-anchor", ""):
+        bad.append(f"还留着**旧**镜像路径 `{_OLD_MIRROR_NAME}`")
+    if _HINT_LINK_ROOT not in hint:
+        bad.append("软链目标不是**镜像仓根**（`ln -sfn \"$HOME/migao-dev-preset-anchor\" …`）")
+    if _HINT_LINK_SUBTARGET in hint:
+        bad.append("软链目标是 `<镜像>/.agent-presets/migao` —— S4 后**该路径不存在** ⇒ 活锚解析失败")
+    if _HINT_BACKUP_GATE not in hint:
+        bad.append("备份步骤没按「**真目录**才 mv 备份 / **软链**直接覆盖」区分 "
+                   "⇒ `.bak` 会连着软链一起堆积")
+    return bad
+
+
+def test_bootstrap_hint_teaches_the_current_topology():
+    """本机空镜像时打印的上手路径必须指向**预设仓 + 镜像仓根**，且备份只对真目录做。
+
+    改前形态（S4 之前的提示）：`clone <业务仓>` + `ln -sfn <镜像>/.agent-presets/migao` ——
+    照做 ⇒ 链到不存在的路径 ⇒ DSH 静默读不到预设。
+    """
+    hint = _bootstrap_hint()
+
+    assert _bootstrap_hint_problems(hint) == [], "\n".join(_bootstrap_hint_problems(hint))
+    assert "预设仓仓根" in hint, "提示必须写明「软链指向仓根，不再有 `.agent-presets/migao` 这一层」"
+
+
+def test_bootstrap_hint_problems_have_discriminating_power():
+    """**注入式红证**：四种旧形态各改一处 ⇒ 判据必须各自判红（否则这条判据是空的）。
+
+    变异都在**内存**里做（不改磁盘）：判据吃文本，红证就没必要写盘（写盘反而制造假红风险）。
+    """
+    hint = _bootstrap_hint()
+    assert _bootstrap_hint_problems(hint) == [], "正对照：未变异的提示必须是干净的"
+
+    mutations = {
+        "旧克隆源（业务仓）": hint.replace(_HINT_CLONE_LINE,
+                                    'git clone --no-checkout "git@github.com:zhaokai-mgzn/migao.git"'),
+        "旧软链目标（子路径）": hint.replace(_HINT_LINK_ROOT, _HINT_LINK_SUBTARGET),
+        "旧镜像路径名": hint.replace("migao-dev-preset-anchor", _OLD_MIRROR_NAME),
+        "无条件备份（软链也 mv）": hint.replace(_HINT_BACKUP_GATE,
+                                        r'if [ -d "\$HOME/.dsh/.agent-presets/migao" ]; then'),
+    }
+    for name, mutated in mutations.items():
+        assert mutated != hint, f"变异没生效（{name}）—— 判据测不到那一格"
+        assert _bootstrap_hint_problems(mutated), f"变异没被判红：{name}"
+
+
+def test_agents_md_and_refresh_hint_agree_on_the_current_topology():
+    """两处同源载体（根 `AGENTS.md`「开发环境准备」⇄ `bootstrap_hint`）口径必须一致。
+
+    实测口径：AGENTS.md 早就按 S4 的新拓扑写了（clone **预设仓** + 链**镜像仓根**）——
+    本判据把这份一致**钉住**，防止任一处被改回旧拓扑而没人发现。
+    """
+    agents = Path(REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    hint = _bootstrap_hint()
+
+    for face, text in (("AGENTS.md", agents), ("bootstrap_hint", hint)):
+        assert _OLD_MIRROR_NAME not in text.replace("migao-dev-preset-anchor", ""), \
+            f"{face} 里还有旧镜像路径 `{_OLD_MIRROR_NAME}`"
+        assert "migao-dev-preset-anchor" in text, f"{face} 里没有 S4 后的镜像路径"
+    assert _AGENTS_BACKUP_GATE in agents, "AGENTS.md 的备份步骤没按「真目录才 mv」设门"
+    assert _AGENTS_LINK_LINE in agents, "AGENTS.md 的换链目标不是镜像仓根"
+    assert _HINT_BACKUP_GATE in hint, "bootstrap_hint 的备份步骤没按「真目录才 mv」设门"
+    assert _HINT_LINK_ROOT in hint, "bootstrap_hint 的换链目标不是镜像仓根"
+    # AGENTS.md 的镜像克隆源也必须是**预设仓**（不是业务仓）
+    assert "git clone --no-checkout <预设仓 URL>" in agents

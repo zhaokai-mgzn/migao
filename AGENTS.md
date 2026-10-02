@@ -129,8 +129,11 @@ git clone --no-checkout <预设仓 URL> "$MIRROR"     # 默认 git@github.com:zh
 git -C "$MIRROR" checkout --detach origin/main
 ls "$MIRROR/preset.yml"     # preset.yml 在预设仓 == 镜像的**根**（不在 `.agent-presets/migao` 下），可读才继续
 
-# ② 摘掉旧目录 / 旧软链（若是实体目录，先备份而不是直接删）
-mv "$HOME/.dsh/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+# ② 摘掉旧目录 / 旧软链：**只在活锚是真目录时**才备份（新拓扑下活锚就是**软链**，
+#    `mv` 它只会把软链挪成一堆无主 `.bak`；实测清出过两个 6 周前的）
+if [ -d "$HOME/.dsh/.agent-presets/migao" ] && [ ! -L "$HOME/.dsh/.agent-presets/migao" ]; then
+  mv "$HOME/.dsh/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao.bak-$(date +%Y%m%d-%H%M%S)"
+fi
 
 # ③ 换链：软链目标 = 镜像的**仓根**；-s 建软链 / -f 覆盖已存在项 / -n 不跟随已存在的软链目录
 ln -sfn "$MIRROR" "$HOME/.dsh/.agent-presets/migao"
