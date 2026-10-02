@@ -420,7 +420,7 @@ node harness/summary.mjs         # 汇总
 - **6 条无任何守卫**（主干确认）：`agent-workspace`、`agent-workspace/human-sessions`、`agent-workspace/sessions`、`inbound-orders`、`inbound-orders/new`、`notifications`
 
 **元素级（按钮）RBAC**（产物 `out/s8-buttons-employees.json`）
-- 口径更正：该页对无权者是 **`disabled` 而非隐藏**（源码 `employees/page.tsx:295-296`：`onClick={canWrite && …} disabled={!canWrite}`）⇒ 「无权 ⇒ 按钮不可见」是**错的断言**；且按 `/编辑/` 模糊匹配会命中**员工姓名**「验收知识编辑978212」
+- 口径更正：该页对无权者是 **`disabled` 而非隐藏**（源码 `frontend/admin-web/src/app/(dashboard)/employees/page.tsx:295-296`：`onClick={canWrite && …} disabled={!canWrite}`）⇒ 「无权 ⇒ 按钮不可见」是**错的断言**；且按 `/编辑/` 模糊匹配会命中**员工姓名**「验收知识编辑978212」
 - 修正后（有权=可点／无权=禁用或不存在）：**9 个岗位全部符合**。全仓元素级门控共 **6 处**（员工页 1、加工生产页 4、路由 1），其余 37 页不做按钮级隐藏 —— 与 `layout.tsx` 具名注释「前端不重复表达写权限」一致，属**有意取舍**
 
 ### 10.2 验收租户已按要求清理
@@ -484,7 +484,7 @@ node harness/summary.mjs         # 汇总
 
 **（2）F12 · P3｜建号缺省岗位 = `operator`（26 码，含建单/过账/退款）**
 `UserService.createUser`：`.role(role != null ? role : "operator")`、`.position(... : "operator")` ⇒ **不传岗位/角色的建号请求会得到运营级权限**（实测：`POST /api/admin/users` 只给 name/phone/username/password ⇒ `role=operator`、26 码）。
-**可达性**：后台员工页**强制选岗位**（`employees/page.tsx:194` `if (!formData.position.trim()) { toast.error('请选择岗位'); return }`）⇒ **页面走不到**，仅 API 直连（AI 工具面 / 集成方）可达。建议把缺省值改为「无权限」或强制显式传岗位（fail-closed）。
+**可达性**：后台员工页**强制选岗位**（`frontend/admin-web/src/app/(dashboard)/employees/page.tsx:194` `if (!formData.position.trim()) { toast.error('请选择岗位'); return }`）⇒ **页面走不到**，仅 API 直连（AI 工具面 / 集成方）可达。建议把缺省值改为「无权限」或强制显式传岗位（fail-closed）。
 
 
 ---
