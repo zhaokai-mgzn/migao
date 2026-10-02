@@ -336,6 +336,23 @@ pytest -q --durations=20    # 单用例 >2s 即可疑
   （嵌套的 ci-helper 腿不要二次 acquire）。台账登记为 `surface=suite-internal` 载体
   （它在 `tests/unit_ci_workflows/**`，**不在**语料普查面内 ⇒ 由
   `test_heavy_suite_entry_ledger.py` 的 suite-internal 判据**单独**裁）。
+- 🔴 **不得挂死：有界等待 + 祖先已持锁 ⇒ 立即拒绝**（2026-10-02，issue #6074）。上面那条
+  `export MIGAO_HEAVY_LOCK_HELD=1` 是**豁免**；它依赖**上游接线**，而「缺接线」的后果
+  **不应当是挂死**。实测形态（2026-10-02 23:00 +08，集成分支 worktree）：祖先（`verify-all.sh`）
+  已持锁、标记没传下来，而 `scripts/batch-gate.sh` 默认注入的 `MIGAO_HEAVY_WAIT=2700` 被**继承**
+  ⇒ 子进程 pytest 去抢**祖先手里的同一把锁** ⇒ **挂死 26 分钟 / 0% CPU / 全程握着机器级锁**，
+  只能 `kill -9`。⇒ 两条出口（都在 `tests/unit_ci_workflows/conftest.py`）：
+  ① **锁持有者是本进程祖先**（`_lock_holder_is_an_ancestor` 读锁文件的 `pid=` + `ps` 祖先链）
+  ⇒ **不排队，立即 fail-closed 拒绝**（那条路**注定**等不到：持有者要等本进程结束才释放）；
+  ② **墙钟预算** `_suite_lock_timeout_seconds`（= `MIGAO_HEAVY_WAIT` + 60s；未设置时 60s）
+  ⇒ 锁脚本自己卡住也走得出去。两条都复用**同一份**拒绝报文（锁路径 / 持有者 / 怎么办）。
+  **持有者不是祖先的排队语义一字未改**（`--wait` 仍等到释放后取得，有判据对照）。
+  判据 = `test_suite_self_lock.py::TestNeverHangsWhenAnAncestorHoldsTheLock`（**硬超时**的真子进程 +
+  真整目录 pytest 调用；挂死 ⇒ `TimeoutExpired` ⇒ 判红）+ `test_machine_heavy_lock.py` 的
+  `TestVerifyAllWiring::test_macquire_exports_the_marker_after_a_successful_acquire` /
+  `::test_the_marker_really_reaches_a_child_process`（接线**真的**落到子进程环境里）。
+  接线声明登记在 `tests/unit_ci_workflows/wiring_claims_ledger.json`（锚 = `verify-all.sh::macquire`
+  —— 该表自本次起允许 `.sh` 载体）。
 
 ## 批次统一验证：本机全量「每批一次」（2026-10-02 固化，issue #6012）
 

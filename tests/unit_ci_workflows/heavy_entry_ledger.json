@@ -20,7 +20,7 @@
       "tier": "gate",
       "leg": "ci workflow helper 判据集（ci_helper_leg）",
       "acquire_site": "macquire / gate 档（case 之前）",
-      "note": "本仓**唯一**由人/agent 会话发起的全量入口。接线 = 进入 gate 档前 acquire、EXIT trap release；拿不到锁 ⇒ 非零退出 + 出声（不静默跳过、不记成 ✅）。"
+      "note": "本仓**唯一**由人/agent 会话发起的全量入口。接线 = 进入 gate 档前 acquire、EXIT trap release；拿不到锁 ⇒ 非零退出 + 出声（不静默跳过、不记成 ✅）。🔴 **拿锁成功后必须 `export MIGAO_HEAVY_LOCK_HELD=1`**（issue #6074：缺它时子代二次 acquire = 自抢死锁；配 `MIGAO_HEAVY_WAIT=2700` 就是本机挂死 —— 实测 26 分钟）。兜底 = `tests/unit_ci_workflows/conftest.py` 的「锁持有者是祖先 ⇒ 立即拒绝 + 有界等待」（即使本接线再次被漏掉，也只是立即红、不再挂死）。"
     },
     {
       "path": ".github/workflows/pr-check.yml",

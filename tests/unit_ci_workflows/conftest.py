@@ -18,6 +18,7 @@
 
 红证与负例见 `tests/unit_ci_workflows/test_shared_eval_case_immutability.py`（喂真·原地改写 ⇒ 守卫必红）。
 """
+import atexit
 import copy
 import hashlib
 import json
@@ -484,6 +485,19 @@ def collection_floor_problems(session, ledger: dict | None = None) -> list[str]:
 # `MIGAO_HEAVY_WAIT=<秒>` 存在时按它排队（与 `verify-all.sh` 的 `macquire` 同形）。
 # 拿锁发生在 `pytest_collection` 钩子里 ⇒ 在**任何收集之前**，输出里不会出现正常收集汇总。
 #
+# ## 🔴 不得无限阻塞：有界等待 + 祖先已持锁 ⇒ 立即拒绝（issue #6074，纵深防御）
+#
+# 上面那条「`MIGAO_HEAVY_LOCK_HELD=1` ⇒ 不 acquire」是**豁免**；豁免依赖**上游接线**（`verify-all.sh`
+# 拿锁成功后 export）。2026-10-02 实测的缺陷形态 = **上游漏了那一步**，而
+# `scripts/batch-gate.sh` 又给 `verify-all.sh` 默认注入 `MIGAO_HEAVY_WAIT=2700`（子代**继承**）⇒
+# 子进程 pytest 去抢**祖先手里的同一把锁** ⇒ **死等**（实测：阻塞 26 分钟、0% CPU、全程握着机器级锁）。
+# ⇒ 两条出口把「豁免失效」从**挂死**降级成**立即红**：
+#   ① **祖先已持锁 ⇒ 不排队**（`_lock_holder_is_an_ancestor`）：持有者要等本进程结束才释放 ⇒ 排队
+#      是**结构性死等**，不是"可能等到"；
+#   ② **墙钟预算**（`_suite_lock_timeout_seconds` = `MIGAO_HEAVY_WAIT` + 60 / 未设置时 60）⇒ 锁脚本
+#      自己卡住也走不出去。
+# 两条都走**同一个** fail-closed 出口（`pytest.exit.Exception(returncode=1)` + 可归因报文）。
+#
 # ## 释放面
 #
 # `pytest_sessionfinish`（正常 / 异常退出都到）+ 只释放**自己**持有的那份（`machine-heavy-lock.sh release`
@@ -492,6 +506,93 @@ LOCK_SCRIPT = REPO_ROOT / "scripts" / "machine-heavy-lock.sh"
 SUITE_DIR = "tests/unit_ci_workflows"
 #: pytest 位置参数的**形态**兜底：`tests/unit_ci_workflows` 前后各留一个空格（下一个匹配到才停）。
 _SUITE_ARG_RE = re.compile(r"(?:^|\s)" + re.escape(SUITE_DIR) + r"(?=\s|$)")
+
+
+#: `acquire_suite_lock` 在 `MIGAO_HEAVY_WAIT` **未设置**时的墙钟预算（秒）。
+#: 未设置时锁脚本只试**一次**（`wait_seconds=0` ⇒ 立即 `return 1`），秒级足够；
+#: 这个预算只兜「锁脚本自己卡住」那一路 —— 有它才谈得上「任何情况下都不得无限阻塞」。
+_SUITE_LOCK_BASE_BUDGET_SECONDS = 60
+#: 设置 `MIGAO_HEAVY_WAIT=<秒>` 时，在**它之上**再加的缓冲（给锁脚本打印具名超时报文）。
+_SUITE_LOCK_BUDGET_GRACE_SECONDS = 60
+#: `_ancestors_of` 的默认递归上限（PID 环 / 病态进程树兜底）。
+_MAX_ANCESTOR_DEPTH = 64
+
+
+def _process_parent_table() -> dict[int, int]:
+    """`{pid: ppid}` 现取（`ps -Ao pid=,ppid=`）：取不到 ⇒ 空表（= 判不了，绝不猜）。"""
+    try:
+        run = subprocess.run(["ps", "-Ao", "pid=,ppid="], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    table: dict[int, int] = {}
+    for line in run.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+            table[int(parts[0])] = int(parts[1])
+    return table
+
+
+def _ancestors_of(pid: int, table: dict[int, int] | None = None,
+                  *, depth: int = _MAX_ANCESTOR_DEPTH) -> list[int]:
+    """`pid` 的**祖先链**（从 `pid` 自己开始，向上到 PID 1；带环保护与深度上限）。"""
+    table = _process_parent_table() if table is None else table
+    chain: list[int] = []
+    seen: set[int] = set()
+    cur = int(pid)
+    while cur > 0 and cur not in seen and len(chain) <= depth:
+        chain.append(cur)
+        seen.add(cur)
+        cur = table.get(cur, 0)
+    return chain
+
+
+def _lock_file_holder_pid(lock_file) -> int | None:
+    """锁文件里记的**持有者 PID**（`machine-heavy-lock.sh` 的 `pid=` 字段）；读不到 ⇒ `None`。"""
+    try:
+        text = Path(lock_file).read_text(encoding="utf-8", errors="replace")[:65536]
+    except OSError:
+        return None
+    match = re.search(r"^pid=(\d+)$", text, re.M)
+    return int(match.group(1)) if match else None
+
+
+def _lock_holder_is_an_ancestor(lock_file, env=None, *, table: dict[int, int] | None = None) -> str | None:
+    """**纯函数 / 可注入**：锁文件的持有者是不是**本进程的祖先**？是 ⇒ 返回归因串，否 ⇒ `None`。
+
+    治的形态（2026-10-02 实测）：`verify-all.sh` 已持锁、却**没给子代**设 `MIGAO_HEAVY_LOCK_HELD=1`
+    而 `MIGAO_HEAVY_WAIT=<大数>` 又是**继承**来的 ⇒ 子进程 pytest 直连整目录时去抢**祖先手里的同一把锁**：
+    祖先要等子进程结束才释放、子进程在等祖先 ⇒ **死等**（实测阻塞 26 分钟 + 握锁 0% CPU）。
+    这一路**注定拿不到锁**（持有者是活的祖先）⇒ 排队等待不是"可能等到"，而是**结构性不可能** ⇒
+    必须**立即**拒绝，而不是把 `MIGAO_HEAVY_WAIT` 走完。
+    """
+    env = os.environ if env is None else env
+    pid = _lock_file_holder_pid(env.get("MIGAO_HEAVY_LOCK_FILE") or (REPO_ROOT / ".." / ".none"))
+    if pid is None:
+        return None
+    table = _process_parent_table() if table is None else table
+    if pid not in _ancestors_of(os.getpid(), table):
+        return None
+    if pid == os.getpid():
+        return f"pid={pid}（= 本进程自己）"
+    return f"pid={pid}（= 本进程的祖先）"
+
+
+def _suite_lock_timeout_seconds(env=None) -> int:
+    """`acquire_suite_lock` 的**墙钟上限**（有界等待的落点，代表 = `_suite_lock_timeout_seconds`）。
+
+    `MIGAO_HEAVY_WAIT` 存在时 = 它 + `_SUITE_LOCK_BUDGET_GRACE_SECONDS`（真等满再看锁脚本自己的
+    具名超时报文）；未设置时 = `_SUITE_LOCK_BASE_BUDGET_SECONDS`（其实秒级就够 —— 那一路锁脚本
+    只试一次）。
+    """
+    env = os.environ if env is None else env
+    base = _SUITE_LOCK_BASE_BUDGET_SECONDS
+    raw = str(env.get("MIGAO_HEAVY_WAIT") or "").strip()
+    if raw:
+        try:
+            base = max(0, int(raw)) + _SUITE_LOCK_BUDGET_GRACE_SECONDS
+        except ValueError:
+            pass        # 非法值由锁脚本自己判用法错误（rc=2）⇒ 这里只给预算，不改语义
+    return max(1, base)
 
 
 def _target_is_the_whole_suite(arg: str, scope: dict[str, bool] | None = None) -> bool:
@@ -609,23 +710,68 @@ def acquire_suite_lock(env=None) -> tuple[bool, str]:
     """
     env = os.environ if env is None else env
     lock_file = env.get("MIGAO_HEAVY_LOCK_FILE") or "<$HOME/.migao-heavy.lock>"
-    cmd = [str(LOCK_SCRIPT), "acquire", "pytest unit_ci_workflows（直连整目录）"]
+    # 🔴 **纵深防御（issue #6074）**：无论豁免是否生效（= 祖先有没有设 `MIGAO_HEAVY_LOCK_HELD=1`），
+    #    这条路都**不得无限阻塞**。两条出口，按顺序：
+    #      ① **祖先已持锁 ⇒ 立即拒绝**（那一路排队注定等不到：持有者要等本进程结束才释放）；
+    #      ② 超出墙钟预算（= `MIGAO_HEAVY_WAIT` + 缓冲 / 未设置时 60s）⇒ 同样 **fail-closed** 拒绝。
+    #    两条都复用**同一份**拒绝报文出口（锁路径 / 持有者 / 怎么办），不新增第二套格式。
+    ancestor = _lock_holder_is_an_ancestor(lock_file, env)
+    if ancestor is not None:
+        return False, (
+            "⛔ 直连整目录 `pytest` 的**机器级重活准入被拒**（issue #6019 / #6074）—— 本次**没有跑**"
+            "任何判据（这不是通过、也不是跳过）：\n"
+            f"   锁文件 : {lock_file}\n"
+            f"   持有者 : {ancestor} —— **祖先已持锁**，它要等本进程结束才释放 ⇒ 排队等待是"
+            "**死等**（本形态实测：阻塞 26 分钟 / 0% CPU / 全程握着机器级锁）。\n"
+            "   ⚠️ 形态归因：祖先（如 `verify-all.sh`）拿锁成功后**必须** `export MIGAO_HEAVY_LOCK_HELD=1`"
+            "（子代继承 ⇒ 不再二次 acquire）；缺这一步时，**任何** `MIGAO_HEAVY_WAIT=<大数>`（如"
+            " `scripts/batch-gate.sh` 默认的 2700）都会把「缺接线」放大成「本机挂死」。\n"
+            "   怎么办 : 给祖先补上那行 export（本形态的根因，见 verify-all.sh 的 `macquire`）；"
+            "或显式给本进程 MIGAO_HEAVY_LOCK_HELD=1（= 祖先已持锁，绝不能再 acquire）；"
+            "或只跑子集（很轻、不拿锁）：`pytest tests/unit_ci_workflows/<单文件>`。\n"
+            "   现场读取：./scripts/machine-heavy-lock.sh status（看谁在跑 / 已跑多久）"
+        )
+    # 锁脚本路径：`MIGAO_HEAVY_LOCK_SCRIPT` 覆盖**只为判据注入**（缺省 = 仓内那一份，行为一字不改）。
+    lock_script = env.get("MIGAO_HEAVY_LOCK_SCRIPT") or str(LOCK_SCRIPT)
+    cmd = [lock_script, "acquire", "pytest unit_ci_workflows（直连整目录）"]
     if env.get("MIGAO_HEAVY_WAIT"):
         cmd += ["--wait", str(env["MIGAO_HEAVY_WAIT"])]
+    budget = _suite_lock_timeout_seconds(env)
+    acquired = False
     try:
-        run = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT), env=env)
+        run = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT), env=env,
+                             timeout=budget)
+        acquired = run.returncode == 0
+        stdout = run.stdout
     except OSError as exc:
         return False, (
-            f"机器级准入锁不可用（issue #6019）：无法执行 {LOCK_SCRIPT}（{exc!r}）。\n"
+            f"机器级准入锁不可用（issue #6019）：无法执行 {lock_script}（{exc!r}）。\n"
             "本次**没有跑**任何判据（这不是通过）—— 先修锁脚本，或显式带着自己的锁再进来。"
         )
+    except subprocess.TimeoutExpired:
+        # ⚠️ `TimeoutExpired` **是** `SubprocessError` ⇒ 必须排在 `OSError` 之后、且不能被它吞掉；
+        #    走到这里 = 锁脚本本身没在预算内退出（与「锁被占」是两回事）⇒ 按拒绝处理（fail-closed）。
+        return False, (
+            "⛔ 直连整目录 `pytest` 的**机器级重活准入被拒**（issue #6019 / #6074）—— 本次**没有跑**"
+            "任何判据（这不是通过、也不是跳过）：\n"
+            f"   锁文件 : {lock_file}\n"
+            f"   锁脚本 : {lock_script} 在**有界预算 {budget}s** 内没有退出 ⇒ 不等了（有界等待的落点）。\n"
+            "   怎么办 : ./scripts/machine-heavy-lock.sh status（看谁在跑 / 已跑多久）；"
+            "要么等它跑完；要么排队的调用显式给 MIGAO_HEAVY_WAIT=<秒>；"
+            "要么内部腿显式给 MIGAO_HEAVY_LOCK_HELD=1（= 祖先已持锁，绝不能再 acquire）。"
+        )
+    finally:
+        if acquired:
+            # acquire 记的持有者是**本进程**（锁脚本用 `$PPID`）⇒ 本进程被 Ctrl-C / 被杀也必须放掉，
+            # 否则一次中断就把机器级锁永久占住（§27 的「一次异常退出就死锁」）。
+            atexit.register(release_suite_lock, env)
     if run.returncode == 0:
-        return True, run.stdout
+        return True, stdout
     return False, (
         "⛔ 直连整目录 `pytest` 的**机器级重活准入被拒**（issue #6019）—— 本次**没有跑**任何判据"
         "（这不是通过、也不是跳过）：\n"
         f"   锁文件 : {lock_file}\n"
-        f"   {run.stdout.strip()}\n"
+        f"   {stdout.strip()}\n"
         "   怎么办 : ./scripts/machine-heavy-lock.sh status（看谁在跑 / 已跑多久）\n"
         "            要么等它跑完；要么排队的调用显式给 MIGAO_HEAVY_WAIT=<秒>；"
         "要么内部腿显式给 MIGAO_HEAVY_LOCK_HELD=1（= 祖先已持锁，绝不能再 acquire）。\n"

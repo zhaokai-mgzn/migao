@@ -47,6 +47,17 @@
         "MC-012",
         "MC-028"
       ]
+    },
+    {
+      "declared_in": "tests/unit_ci_workflows/test_machine_heavy_lock.py",
+      "wiring": "verify-all.sh::macquire",
+      "registered_at": "2026-10-02（issue #6074）",
+      "covers": "🔴 **`verify-all.sh` 拿锁成功后必须 `export MIGAO_HEAVY_LOCK_HELD=1`**（拿锁包装函数 = `macquire`）。这是 issue #6074 的根因接线：缺它时「祖先已持锁」的豁免传不到子代 ⇒ 子进程 pytest 去抢祖先手里的同一把锁 = **死等**（实测 26 分钟 / 0% CPU / 全程握锁）。本条目声明的是**接线这一半**（该 export 在真脚本里存在）；行为面由 `test_machine_heavy_lock.py::TestVerifyAllWiring::test_the_marker_really_reaches_a_child_process` 承担（装真 `macquire` 起子进程 ⇒ 子进程必须看得见标记；注入「普通赋值代替 export」⇒ 子进程看不见 ⇒ 判据当场红）。⚠️ 已登记的残余：本守卫只保证 `macquire` 这个**符号**还在 `verify-all.sh` 里；`batch-gate.sh` / 别的入口若自己起整目录 pytest 而**不经过** `macquire`，本锚看不见（那条路由 conftest 的「祖先已持锁 ⇒ 立即拒绝」兜底，见另一条登记）。\n\n🔻 **同批的纵深防御**（判据在 `test_suite_self_lock.py::TestNeverHangsWhenAnAncestorHoldsTheLock`，不单独占一条接线声明）：`tests/unit_ci_workflows/conftest.py` 里「锁持有者是本进程祖先 ⇒ **立即拒绝**」+ `acquire_suite_lock` 的**墙钟预算**。它保证**即使本条 export 再次被漏掉**，后果也只是「立即红」而不是「挂死 26 分钟」。",
+      "red_proof": "`tests/unit_ci_workflows/test_machine_heavy_lock.py::TestVerifyAllWiring::test_macquire_exports_the_marker_after_a_successful_acquire`（结构化读 `macquire` 体 + 剥注释：删那行 export / 挪到 acquire 之前 / 改成普通赋值 ⇒ 各自判红）与 `::test_the_marker_really_reaches_a_child_process`（真进程双向：正常 export ⇒ `CHILD_SEES=1`；注入普通赋值 ⇒ `CHILD_SEES=<unset>` ⇒ 判红）。另：删/改名 `macquire` ⇒ 本台账守卫 `test_wiring_claims_registry.py` 判据 3 具名报出。",
+      "case_ids": [
+        "MC-012",
+        "MC-072"
+      ]
     }
   ],
   "coverage_boundary": [

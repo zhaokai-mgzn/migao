@@ -5214,6 +5214,24 @@ _CASE_MC_071 = EvalCase(
     precondition=['员工管理页在 config/menu.ts 的导航节点里存在（key=employees / path=/employees / 码=employee:list）—— 本用例问的「员工账号开通」指向这一页；菜单被删或改名 ⇒ 本用例的前置不成立，应由登记面判据先红'],
 )
 
+# ── MC-072 [NORMAL] 机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线）（源: cases/misc.yml）──
+_CASE_MC_072 = EvalCase(
+    id='MC-072',
+    legacy_id='',
+    title='机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['祖先（verify-all.sh / scripts/batch-gate.sh 那条链）已经持有机器级重活锁时，子进程直连整目录 pytest 必须立即出声拒绝（有界时间），不得挂死', 'verify-all.sh 拿锁成功后必须 export MIGAO_HEAVY_LOCK_HELD=1，让子代不再二次 acquire'],
+    expectations=['direct_reply'],
+    data_checks=['**病（2026-10-02 23:00 +08 实测，不是推断）**：在集成分支 worktree 跑 `./verify-all.sh gate` ⇒ **挂死 26 分钟**、且握着机器级重活锁（`~/.migao-heavy.lock` 里 `pid=34625 name=verify-all.sh gate`），只能 `kill -9`。进程树 = `verify-all.sh gate`（持锁）→ `python -m pytest tests/unit_ci_workflows`（26:28 / 0.0% CPU）。机理两层：① 祖先已持锁、但 `MIGAO_HEAVY_LOCK_HELD=1` 没传到子代（上游漏接线）⇒ 套件自带准入去抢**祖先手里的同一把锁**；② `scripts/batch-gate.sh` 给 `verify-all.sh` 默认注入 `MIGAO_HEAVY_WAIT=2700`，子进程**继承** ⇒ 锁脚本按上限排队 2700s ⇒ 把「缺接线」放大成「本机挂死」。CI 看不见（`CI` 为真 ⇒ 走豁免 ③）⇒ 典型「CI 绿 / 本机挂死」。', '**接线（根因那一半）**：`verify-all.sh` 的拿锁包装函数 `macquire` 必须在**拿锁成功后** `export MIGAO_HEAVY_LOCK_HELD=1`（`export` 而非普通赋值 ⇒ 落到**子进程环境**；位置在 acquire 之后）。判据 = `tests/unit_ci_workflows/test_machine_heavy_lock.py::TestVerifyAllWiring::test_macquire_exports_the_marker_after_a_successful_acquire`（结构化读函数体 + 剥注释，删那行 / 挪到 acquire 之前 / 改成普通赋值 ⇒ 各自判红）+ `::test_the_marker_really_reaches_a_child_process`（装真 `macquire` 起真子进程：正常 export ⇒ `CHILD_SEES=1`；注入普通赋值 ⇒ `CHILD_SEES=<unset>` ⇒ 判红）。', "**前置断言（可判定，CASE-TRUST-NO-PRECONDITION-ASSERTION）**：每条判据开跑前，夹具必须先在**临时锁面**（`tmp_path`）写好锁文件、且其中 `pid=` **真的等于一个活着的持有者**（祖先=探针进程自己 / 无关持有者=`sleep` 进程），并断言 `lock.exists() and f'pid={holder_pid}' in lock.read_text()` —— 前置不成立时判据立即红（`夹具前置失败：锁文件没有落到临时面（这一条不成立时下面就变成「没有持有者」的空断言）`），而不是静默按「没有持有者」跑过去（那等于让「祖先判定」这条求解通道**未被调用** = 空断言）。执行点 = `tests/unit_ci_workflows/test_suite_self_lock.py::_probe_child` 的前置断言（每条本用例判据都经它建场景）。", '**行为（核心，纵深防御）**：造「祖先已持锁（真锁文件 + 活持有者）+ `MIGAO_HEAVY_WAIT=2700`」的形态 ⇒ `pytest tests/unit_ci_workflows --collect-only` 必须**在有界时间内非零退出**并给出可归因报文（锁路径 / 持有者 / 怎么办），**不得挂死**。判据 = `tests/unit_ci_workflows/test_suite_self_lock.py::TestNeverHangsWhenAnAncestorHoldsTheLock::test_real_whole_directory_pytest_exits_instead_of_hanging`（**硬超时** 60s：挂死 ⇒ `TimeoutExpired` ⇒ 判红）。实现 = `tests/unit_ci_workflows/conftest.py`：`_lock_holder_is_an_ancestor`（读锁文件 `pid=` + `ps` 祖先链 ⇒ 祖先持锁则**不排队**）+ `_suite_lock_timeout_seconds`（`MIGAO_HEAVY_WAIT` + 60s / 未设置 60s 的墙钟预算）。', '**反向（不得砍掉有界性 / 不得误伤排队语义）**：① 拿一个永不返回的假锁脚本 ⇒ `acquire_suite_lock` 必须在预算内返回 fail-closed 报文（去掉 `subprocess` 的 `timeout` ⇒ 判据真跑硬超时 ⇒ 红）；② 持有者**不是祖先**（真·无关会话）⇒ `--wait` 仍必须排队并**等到释放后取得**（把「祖先判定」写宽成「只要锁被占就拒绝」⇒ 红）。判据 = 同文件的 `test_unrelated_holder_still_queues_until_release` / `::TestNeverHangsWhenAnAncestorHoldsTheLock::test_pure_predicate_fires_immediately_with_a_bounded_budget`，以及 `test_machine_heavy_lock.py::TestWaitOption` 既有的 `--wait` 语义判据。', '**类级固化**：① 上面两条接线判据的载体（`macquire` 的 export = `verify-all.sh::macquire`）登记进 `tests/unit_ci_workflows/wiring_claims_ledger.json`，由 `tests/unit_ci_workflows/test_wiring_claims_registry.py` 逐条保证「锚真实存在 + 声明与台账双向一致 + 摘线即红」（该表自本次起允许 `.sh` 载体 —— 判据 = 同文件 `test_shell_carrier_anchor_is_reachable_and_pinned`）；② 入口台账 `tests/unit_ci_workflows/heavy_entry_ledger.json` 的 `verify-all.sh` 条目写明这条接线与兜底（由 `test_heavy_suite_entry_ledger.py` 裁）；③ 纪律面 `docs/wiki/Development.md` 的「机器级重活并发准入」节同步（由 `test_suite_self_lock.py::TestDisciplineIsUpdated` 裁）。', '🔴 **覆盖边界（显式登记）**：① 「祖先已持锁」判定只认锁文件的 `pid=` 与 `ps` 祖先链 ⇒ `MIGAO_HEAVY_LOCK_FILE` 指向别的锁文件时判不了（那时按原有语义走锁脚本）；② 有界预算只覆盖**套件自带准入**这一路，`verify-all.sh` 自己的 `macquire` 仍按 `MIGAO_HEAVY_WAIT` 排队（那里是**合法的排队入口**，不是死等 —— 它的持有者不是自己的祖先）；③ 本判据**不跑** `verify-all.sh gate`（那会拉起全量套件 ⇒ 自我递归 + 打瘫开发机），接线面用「结构化读函数体 + 真 `macquire` 起子进程」承担；④ 不改任何门禁的通过条件、不新增豁免、不新增 `pytest.skip`。'],
+    skip_reason='[backend-contract] 本机研发机具（机器级重活锁 / 套件自带准入）的行为与接线由 tests/unit_ci_workflows/ 的 pytest 单测验证（真子进程 + 临时锁面 + 硬超时），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'heavy-lock', 'deadlock', 'flaky-infra'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -12087,6 +12105,7 @@ ALL_CASES = (
     _CASE_MC_070,
     _CASE_MC_049,
     _CASE_MC_071,
+    _CASE_MC_072,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
