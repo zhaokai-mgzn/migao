@@ -1896,6 +1896,13 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     # 发货单（issue #5939）：新菜单节点 ⇒ 路由守卫（`(dashboard)/layout.tsx` 的 ROUTE_PERMISSION_MAP）
     # 与节点必须成对登记（判据 11 ③：未登记即红）。
     "/shipments": "发货单",
+    # 入库单（issue #5976）：菜单节点早有码 `inbound:view`，而守卫表此前**没有这一项** ⇒
+    # 「菜单隐藏、地址栏直达不被拦」。本前缀同时覆盖 `/inbound-orders/new`。
+    "/inbound-orders": "入库单",
+    # 在线接待（issue #5977）：守卫表此前只有 `/chat` ⇒ 覆盖不到 `/agent-workspace/*`。
+    # 登记的是**父前缀** `/agent-workspace`（子树唯一菜单节点 = 「在线接待」；根 = 重定向占位页、
+    # `sessions` = 会话监控都**没有侧边栏节点**）—— 三者同一码 `agent:session`（= 该节点码）。
+    "/agent-workspace": "在线接待",
 }
 
 #: 没有可钉菜单节点的路由前缀（逐条带理由；**新增路由不登记即红** —— 见判据 11 ③ 末段）。
