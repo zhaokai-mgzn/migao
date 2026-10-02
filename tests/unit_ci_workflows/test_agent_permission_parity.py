@@ -914,10 +914,44 @@ CODE_DIVERGENCE_EXCEPTIONS: dict[str, dict[str, object]] = {
             "要么按 #5699 P4 的口径继续具名保留）；收口后本条目必须**删除**（陈旧即红）。"
         ),
     },
+    # ── issue #5980（第二条；上限同批显式 1 → 2）────────────────────────────────
+    # 「同一条 API 被**两个守卫码不同的页面/消费者**共用」——这是**结构事实**，不是漂移：
+    # `GET /api/admin/roles/all` 的唯一前端调用方是「员工管理」页岗位下拉
+    # （该页守卫码 `employee:list`），而米宝 `role_manage` 工具（挂「岗位权限」页、声明
+    # `system:view`）也消费它 —— 两个消费者对同一端点各有**正确但不同**的最小码。
+    # 收敛到任意一侧都会**弄坏另一侧的既有功能**。
+    "role_manage": {
+        "code": "system:view",
+        "diverges": ["/api/admin/roles/all"],
+        "live": {
+            "/api/admin/roles/all": "employee:list",
+        },
+        "why": (
+            "issue #5980：`GET /api/admin/roles/all` 在修前**无任何 `@RequirePermission`**"
+            "（`docs/wiki/RBAC.md` 的「放行策略现状」分支 ③ ⇒ 对全部商户员工开放，含 0 权限岗位）。"
+            "逐调用方核对后取**覆盖面最小但足够**的既有读码 `employee:list`：唯一调用方是"
+            "`frontend/admin-web/src/lib/api.ts` 的 `employeeApi.loadPositions()`（「员工管理」页的岗位下拉），"
+            "而该页的节点码 / 路由守卫码本来就是 `employee:list` ⇒ **岗位下拉零回归**。"
+            "收敛到 `system:view` 会让**运营**（持 `employee:list`、不持 `system:view`）的岗位下拉变空"
+            "—— 那正是 issue #5980 要避免的功能故障。工具侧声明的是「岗位权限」页读码 `system:view`"
+            "（`TOOL_MENU_NODE['role_manage'] = 岗位权限`，判据 3 要求工具至少持本页读码），"
+            "而本端点的正确守卫码由**另一个页面**（员工管理页）决定 ⇒ 工具的码集"
+            "`{system:view}` 与端点码 `{employee:list}` 结构性不等（同一条 API 被两个守卫码不同的页面共用）。"
+            "⚠️ 同批修正：`GET /api/admin/roles` 与 `/roles/{id}` 取 `system:view`"
+            "（它们是「岗位权限」页的第一屏读端点，节点码 = `system:view`）⇒ 与工具**同码**、不在本条目里。"
+        ),
+        "where": (
+            "`/api/admin/roles/all` 的生效码 = `employee:list`（本单落地），工具声明 `system:view`；"
+            "**重启条件** = 若将来把「员工管理」页的岗位下拉改为走一个**专用**岗位目录读端点"
+            "（只服务该页、只要求 `employee:list`），则本条目应改为「工具码 ≡ 端点码」并**删除**"
+            "（陈旧即红）。判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py` 的判据 2。"
+        ),
+    },
 }
 
 #: `CODE_DIVERGENCE_EXCEPTIONS` 的**条数上限**（**现取** ⇒ 加条目必须在同一 diff 里改这一行）。
-CODE_DIVERGENCE_EXCEPTIONS_CEILING = 1
+#: issue #5980：1 → 2（新增 `role_manage` 那条；上限本身就是「例外表只许缩短」的闸门）。
+CODE_DIVERGENCE_EXCEPTIONS_CEILING = 2
 
 #: **在飞端点**的显式登记（判据 1/2 的补集；issue #5314）。
 #:
@@ -948,9 +982,10 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     "PUT /api/super-admin/*": "同上",
     "GET /api/admin/menus": "静态权限目录常量；「员工管理」页的勾选树依赖它（#4727 第 6 行）",
     "GET /api/admin/user/info": "自助首屏：只返回当前用户自己的角色/权限/菜单（#4727 第 7 行）",
-    "GET /api/admin/roles": "「员工管理」页岗位下拉的数据源（写面已是 `system:manage`；#4727 部分覆盖表）",
-    "GET /api/admin/roles/all": "同上",
-    "GET /api/admin/roles/{}": "同上",
+    # issue #5980：`GET /api/admin/roles` · `/roles/all` · `/roles/{id}` **三条已从本表删除**
+    # （它们不再是「未注解端点」）—— 本守卫的「陈旧登记必须删除」面要求如此。
+    # 其中 `/roles`·`/roles/all` 与米宝 `role_manage` 工具的跨码关系具名登记在
+    # `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`（那才是它们现在的正确登记处）。
     "PUT /api/admin/settings/password": "自助改密：只改当前认证用户自己的密码（#4727 部分覆盖表）",
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
     "PUT /api/admin/notifications*": "同上（标记已读）",
@@ -4113,12 +4148,20 @@ def test_divergence_ledger_is_load_bearing() -> None:
     """
     from dataclasses import replace as _replace
 
+    global CODE_DIVERGENCE_EXCEPTIONS_CEILING
+
     base_sources = _source_map()
     w = build_world(base_sources)
     assert not problems_endpoint_parity(w), "① 前提：真实树上判据 2 全绿（登记兑现）"
-    assert sorted(CODE_DIVERGENCE_EXCEPTIONS) == ["craft_config_query"], (
-        "本判据的注入锚只覆盖 `craft_config_query`；台账加了第二条 ⇒ 同批补注入（不许留空）"
+    # `craft_config_query`（#4923）与 `role_manage`（#5980）**逐条**都必须被下面这段注入覆盖到
+    # —— 台账加了第 N 条却不给它注入，等于那一条**没有判别力证据**（不许留空）。
+    assert len(CODE_DIVERGENCE_EXCEPTIONS) == CODE_DIVERGENCE_EXCEPTIONS_CEILING, (
+        "台账条数与上限不一致 ⇒ 先对齐上限那一行（上限本身就是「只许缩短」的闸门）"
     )
+    for _name in sorted(CODE_DIVERGENCE_EXCEPTIONS):
+        assert _name in {t.name for t in w.tools}, (
+            f"`CODE_DIVERGENCE_EXCEPTIONS` 里的 `{_name}` 不是现存工具（陈旧登记）"
+        )
 
     # ② 「声明码恰好是台里那一个」是**载荷条件**：加一个第三个码 ⇒ 名字在台账里也照样红
     tools = list(w.tools)
@@ -4147,7 +4190,6 @@ def test_divergence_ledger_is_load_bearing() -> None:
     assert not problems_endpoint_parity(build_world(base_sources)), "③ 还原后判据 2 必须回绿"
 
     # ④ 上限现取：上限低于条数 ⇒ 红（「只许缩短」的台账面）
-    global CODE_DIVERGENCE_EXCEPTIONS_CEILING
     original_ceiling = CODE_DIVERGENCE_EXCEPTIONS_CEILING
     CODE_DIVERGENCE_EXCEPTIONS_CEILING = 0
     try:

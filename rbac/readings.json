@@ -701,10 +701,8 @@
       "path": "/employees",
       "gate": "employee:list",
       "units": {
-        "__unannotated__": [
-          "GET /api/admin/roles/all"
-        ],
         "employee:list": [
+          "GET /api/admin/roles/all",
           "GET /api/admin/users"
         ]
       },
@@ -882,11 +880,9 @@
       "path": "/roles",
       "gate": "system:view",
       "units": {
-        "__unannotated__": [
-          "GET /api/admin/roles"
-        ],
         "system:view": [
-          "GET /api/admin/permissions"
+          "GET /api/admin/permissions",
+          "GET /api/admin/roles"
         ]
       },
       "visibility_rule": "all"
@@ -926,7 +922,7 @@
     "READ_WRITE_EXCEPTIONS": 0,
     "ROLE_FALLBACK_DIVERGENCES": 0,
     "AUTHORIZATION_CENSUS": 19,
-    "UNANNOTATED_ENDPOINTS": 21,
+    "UNANNOTATED_ENDPOINTS": 18,
     "REGISTERED_RESIDUALS": 10,
     "A7_CODES_BEYOND_CATALOG": 0,
     "A7_VS_MIRROR_DIVERGENCES": 0,

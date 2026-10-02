@@ -135,6 +135,68 @@ cases:
   # 保留条目会让 Case Trust 的「追踪文件必须存在」判红 —— 这类「被测对象整体消失」的退役
   # 与 #5247 那种「能力下线但工具仍在」的退役形态不同（后者应保留条目 + 写明理由）。
   # 退役台账：issue #5951。真值同步退役见 `.github/templates/misc.yml`。
+  # ⚠️ MC-005 / MC-006 这两个号**已于 2026-10-02 由 issue #5980 重新占用**（下方两条）——
+  # 退役留下的空号被 `scripts/next_case_id.py` 的「最小空闲号」口径收回（候选 = main ∪ 全部
+  # open PR ∪ 本工作区；当时的读数：PR #5993/#5994 已占 MC-062 ⇒ 取 MC-005/MC-006）。
+  # ⚠️ 与已退役的 #5951 那两条**无任何继承关系**：号相同、对象不同（旧对象已随该单整体删除）。
+  - id: MC-005
+    legacy_id: ""
+    title: "RBAC 岗位目录读端点的权限注解守卫（AdminRoleController 逐端点台账 + 有意的跨码登记）"
+    domains:
+      - misc
+      - ci
+      - security
+    tier: normal
+    tags: [rbac, permission-annotation, endpoint-ledger, class-level-guard, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "当 AdminRoleController（`/api/admin/roles/**`）新增/改动端点却没登记它要哪把权限码，或已登记的注解被删/被改成别的码，或注解里的码不在权限目录里，或 `/api/admin/**` 上「无任何生效码」的端点总数增长时，必须有东西**具名**报出"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**判据 1+2（未登记即红 / 注解被删即红）**：controller 每个端点必须登记；`decision=annotated` 的条目现取生效码必须非空且逐字等于台账值 —— 摘掉 `@RequirePermission` ⇒ 当场红（issue #5980 的修前形态）"
+      - "**判据 3（三条读码逐值冻结）**：`GET /api/admin/roles` = `system:view`（岗位权限页第一屏）、`GET /api/admin/roles/all` = `employee:list`（员工管理页岗位下拉）、`GET /api/admin/roles/{id}` = `system:view` —— 少一条 / 改一个码 ⇒ 红"
+      - "**判据 4**：生效码必须在权限目录（`RegistrationService` 种子）里 —— 拼错 ⇒ 该端点对所有角色恒 403 ⇒ 红"
+      - "**判据 5（对照读数只许缩短）**：`/api/admin/**` 上「无任何生效码」的端点总数 ≤ 10（修前实测 13，本单 -3）；增长 ⇒ 红，缩短后须调低台账读数（台账读数与现取不一致亦红）"
+      - "**判据 6（判别力自证）**：五种坏形态（新增无注解读端点 / 摘掉注解 / 幽灵台账条目 / 码拼错 / 重新标 exempt）在**内存构造的源码**上各自判红；只改注释 ⇒ **不红**（对照读数）"
+      - "**跨码面（真值在同 PR 的判据 2）**：`/roles/all` 与米宝 `role_manage` 工具跨码（页面守卫 `employee:list` vs 工具 `system:view`）⇒ 具名登记在 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`，未登记/陈旧 ⇒ 判据 2 红"
+      - "**覆盖面照实登记**：判据只裁这一个 controller（其余 `/api/admin/**` 无码端点归既有 `UNANNOTATED_ENDPOINTS` 台账）；判「注解面」不判运行时授权（运行时身份级读数在 SecurityConfigTest）"
+    skip_reason: "[backend-contract] 注解面 / 台账的离线判据（零 LLM、秒级；只读源码文本，不连库/不跑 LLM）由 tests/unit_ci_workflows/test_admin_role_read_surface_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-02 新增（issue #5980：`GET /api/admin/roles` 与 `/roles/all` 无 `@RequirePermission` ⇒ 按 `docs/wiki/RBAC.md` 的「放行策略现状」分支 ③ 对全部商户员工开放，含 0 权限岗位）。落码 = `AdminRoleController` 三条读端点的方法级注解（`/roles`·`/roles/{id}` → 既有读码 `system:view`；`/roles/all` → 既有读码 `employee:list`）+ 本判据 test_admin_role_read_surface_guard.py + 端点台账 `admin_role_read_surface_ledger.json`（`exempt` 面落地后为空 = 只许缩短）+ 既有台账三处同步：判据 8 的 `UNANNOTATED_ENDPOINTS` 删三条（陈旧即红）、`CODE_DIVERGENCE_EXCEPTIONS['role_manage']` 新增（上限 1→2，同 diff 显式）、`rbac/manifest.json` 的 `pages[employees|roles].units` 与 `rbac/readings.json` 重生成。**选码口径（逐调用方核对，零回归）**：`/roles/all` 唯一调用方 = `employeeApi.loadPositions()`（员工管理页岗位下拉，该页守卫码 `employee:list`）；`/roles` 是岗位权限页**第一屏**（`roleApi.getRoles()`，该页守卫码 `system:view`）⇒ 各取**该页**的既有读码，**不新增权限码、不改岗位矩阵**。取号 MC-005/006（现取最小空闲号：main ∪ 在飞 PR #5993/#5994 已占 MC-062；#5951 退役留下的空号由本单收回，与那两条无继承关系）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_admin_role_read_surface_guard.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: MC-006
+    legacy_id: ""
+    title: "RBAC 岗位目录读端点的身份级鉴权（9 身份：无 employee:list/system:view ⇒ 403，持有者 ⇒ 200）"
+    domains:
+      - misc
+      - security
+      - hr
+    tier: normal
+    tags: [rbac, permission-denied, identity, zero-regression, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "当商户员工（含 0 权限的自定义岗位）能读到 `GET /api/admin/roles` / `/roles/all`，或持有对应读码的岗位反而被拒（岗位下拉/岗位权限页 403），或 customer / worker 访问 `/api/admin/roles/all` 不再 403 时，必须有东西**具名**报出"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**拒绝半（修前形态）**：0 权限自定义岗位读 `/roles/all` 与 `/roles` ⇒ **403 且 `error.code = PERMISSION_DENIED`**，且服务层一次都没被调用（负向控制：旧实现无注解会放到服务层 ⇒ `verify(never())` 会红）"
+      - "**正向对照（零回归）**：持 `employee:list` 读 `/roles/all` ⇒ **200**（员工管理页岗位下拉）；持 `system:view` 读 `/roles` 与 `/roles/{id}` ⇒ **200**（岗位权限页第一屏与回显）"
+      - "**垂直越权不回归**：`customer` / `worker` 读 `/roles/all` ⇒ 403（门禁分支 ② 先拒，不进权限码判定，服务层零调用）"
+      - "**检索口径**：判据走真实安全过滤链 + `PermissionInterceptor`（`backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java` 的全上下文 Spring 测试 + `MockMvc`），身份与权限集由 `SecurityMockMvcRequestPostProcessors.user` + `roleService.getUserPermissions` 注入 —— 与生产解析顺序（方法级注解优先）逐字一致"
+    skip_reason: "[backend-contract] 身份级 403/200 由 admin-api 的 Spring 集成测（backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-02 新增（issue #5980；与 MC-005 同 PR、同判据面）。行为面读数（修前 / 修后）：修前 `GET /api/admin/roles/all` 对 0 权限岗位返回 **200**、服务层被调用（`verify(roleService, never()).getAllRoles(any())` 会红）；修后 **403 + PERMISSION_DENIED** 且服务层零调用。正向对照同时钉住两头：`employee:list` → `/roles/all` 200、`system:view` → `/roles`·`/roles/{id}` 200（防「一刀切收窄」把岗位下拉与岗位权限页打死）。取号 MC-006（见 MC-005 的取号说明）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
   - id: MC-007
     legacy_id: ""
     title: "配置 - 默认值/向后兼容/生产密钥校验"
