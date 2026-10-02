@@ -35,12 +35,25 @@ worktree 的 `.agent-presets/**` 是**创建时刻的快照**；此后 main 上�
 
 **活锚** = DSH 真正加载的那份内容：软链 `~/.dsh/.agent-presets/migao` 解析出的目录。
 只查「仓库里的版本单调性」**查不出活锚落后** —— 实测活锚曾指向一个落后 `origin/main` **42 个提交**的
-主工作区：**内容当时恰好一致（无害）**，但只要下一次有人改 `.agent-presets/**` 并合并，
+主工作区：**内容当时恰好一致（无害）**，但只要下一次有人改预设并合并，
 改进就**永远到不了加载点**，后续所有会话读到的仍是旧模式（「迭代了但模式没进化」的确切机制）。
 ⇒ 本脚本 `anchor` 子命令/`check` 的活锚段：**活锚解析出来的检出 sha 与内容**都要对 `origin/main` 核，
 落后即**非零退出**并打印同步命令（`./scripts/preset-anchor-refresh.sh`）。
 **活锚必须指向专职只读镜像**（不是任何会被开发/会被 `rm -rf`、`worktree prune` 命中的工作区）——
 issue #3956 实证过「软链目标被误删 ⇒ DSH 研发模式当场消失（静默）」。
+
+🔴 **S4（issue #6020）：锚点与基线都换了对象。** 预设的**权威源**已从业务仓
+`.agent-presets/migao/**` 迁到**独立预设仓** `zhaokai-mgzn/migao-agent-presets`
+（裁定 2026-10-02：复用并复活该仓），本业务仓**不再承载**预设内容。因此 `anchor` 的语义变成：
+  · 活锚 = 软链 → **专职只读镜像的仓根**（`$HOME/migao-dev-preset-anchor`；旧口径 `<镜像>/.agent-presets/migao`）；
+  · 基线 = **预设仓的 `origin/main`**（旧口径：业务仓工作区的 `origin/main`）；
+  · 内容清单与逐字节比对一律相对**该检出仓的根**（`--anchor-base ''`；旧口径前缀 `.agent-presets/migao/`）。
+  `check` 子命令（版本单调性）**一字未改** —— 它仍是业务仓**提交路径**的守卫；换链后业务仓不再有
+  `.agent-presets/**`，它自然「零动作放行」，而预设内容侧的版本判据由**预设仓自己的 CI** 承担
+  （`zhaokai-mgzn/migao-agent-presets` 的 `.github/workflows/preset-guards.yml` + `tests/test_preset_guards.py`）。
+  ⇒ **新增一条判据**（既有判据一条不放宽）：镜像**是否还在上游远端的 `main` 上**（`--remote-sha`）——
+  换链后活锚与镜像同体，旧的「活锚 ⇄ 基线」视角失去第二只眼，落后将无人报；故由入口脚本用
+  `git ls-remote`（只读远端、不写镜像）取远端 sha 交给本判据；取不到时**出声降级**，不静默当通过。
 
 **地雷 C：存量工作区积压** —— `prune` 只出清单、绝不删除（见下）。
 
@@ -127,7 +140,14 @@ from pathlib import Path
 PRESETS_DIR = ".agent-presets/"
 DEFAULT_REF = "origin/main"
 #: 活锚应指向的那一层（软链 `~/.dsh/.agent-presets/migao` 指向的就是它）。
+#: ⚠️ **S4（issue #6020）起 `check` 子命令仍用它**（业务仓 `.agent-presets/**` 版本单调性）——
+#: 迁移后该目录在业务仓不再存在 ⇒ 该子命令「零动作放行」，其内容侧判据由**预设仓 CI** 承担。
+#: **`anchor` 子命令不用它**（改用 `--anchor-base`，默认 = 预设仓仓根 `""`）。
 PRESET_SUBDIR = ".agent-presets/migao"
+#: **预设仓**（S4 起的权威源）—— 活锚镜像的克隆源 / 「同一上游」判定的参照物。
+PRESET_REPO_URL = "git@github.com:zhaokai-mgzn/migao-agent-presets.git"
+#: 活锚镜像默认路径（S4 起；旧口径 `$HOME/migao-preset-anchor`）。
+DEFAULT_MIRROR = Path.home() / "migao-dev-preset-anchor"
 #: 本机活锚（DSH 的 preset root `~/.dsh/.agent-presets/` 下的 preset id 目录）。
 DEFAULT_ANCHOR = Path.home() / ".dsh" / ".agent-presets" / "migao"
 REFRESH_CMD = "./scripts/preset-anchor-refresh.sh"
@@ -445,8 +465,14 @@ def _norm_remote(url: str) -> str:
     return u.lower()
 
 
-def _same_upstream(ref: str, cwd: Path, anchor_repo: Path) -> tuple[bool, str]:
+def _same_upstream(ref: str, cwd: Path, anchor_repo: Path,
+                   expected_remote: str = "") -> tuple[bool, str]:
     """活锚检出与基线是否**同一上游**（决定「活锚落后」这条判据能不能比）。
+
+    🔴 **S4（issue #6020）**：`expected_remote`（默认 = `PRESET_REPO_URL`）优先 —— 换链后活锚/基线
+    都是**预设仓**的检出，而 `cwd`（业务仓）**不再是**同一上游；拿业务仓的 URL 去比会把整条判据
+    **静默跳过**（`⏭️` + exit 0 = 与「通过」同一个码，正是 #4026 的同族假绿）。故默认参照物改成
+    **预设仓 URL**；`cwd` 只作第二参照物与退路（老调用点/夹具仍可显式传）。
 
     默认活锚只在同一上游时才判 —— 否则拿无关仓库的 `main` 量活锚，夹具/别的产品仓库全部误红。
     **主判据 = 生效 origin URL（归一后相等）**，对象级「有没有基线提交」只作退路：
@@ -461,17 +487,21 @@ def _same_upstream(ref: str, cwd: Path, anchor_repo: Path) -> tuple[bool, str]:
     """
     if anchor_repo.resolve() == cwd.resolve():
         return True, "活锚就在本仓库检出内"
-    a, b = _norm_remote(_remote_url(anchor_repo)), _norm_remote(_remote_url(cwd))
-    if a and a == b:
-        return True, f"活锚检出与本仓库同一上游（{a}）"
+    a = _norm_remote(_remote_url(anchor_repo))
+    b = _norm_remote(_remote_url(cwd))
+    for label, target in (("预设仓", expected_remote or PRESET_REPO_URL), ("本仓库", b)):
+        t = _norm_remote(target)
+        if a and t and a == t:
+            return True, f"活锚检出与{label}同一上游（{a}）"
     proc = git("rev-parse", ref, cwd=cwd, check=False)
     # 🔴 rc 必须判（issue #5430）：`rev-parse` 失败时 stdout 是**回显**，不是 sha。
     ref_sha = proc.stdout.strip() if proc.returncode == 0 else ""
     if ref_sha and git("-C", str(anchor_repo), "cat-file", "-e", f"{ref_sha}^{{commit}}",
                        check=False).returncode == 0:
         return True, f"活锚检出拥有基线提交 {ref_sha[:12]}（同一份历史）"
-    return False, (f"活锚检出与本仓库不是同一上游（origin={a or '—'} vs {b or '—'}）"
-                   "—— 拿无关仓库的 main 量活锚没有意义")
+    return False, (f"活锚检出与预设仓、本仓库都不是同一上游"
+                   f"（origin={a or '—'} vs 预设仓={_norm_remote(expected_remote or PRESET_REPO_URL) or '—'}"
+                   f" vs 本仓库={b or '—'}）—— 拿无关仓库的 main 量活锚没有意义")
 
 
 def _anchor_checkout(anchor: Path) -> tuple[Path | None, str | None]:
@@ -504,20 +534,36 @@ def _resolve_anchor(anchor: Path) -> Path:
     return real
 
 
-def _ref_preset_paths(ref: str, cwd: Path) -> list[str]:
-    """基准 ref 里 preset 子树的文件清单（相对 preset 子树根）。"""
-    prefix = PRESET_SUBDIR + "/"
-    proc = git("ls-tree", "-r", "--name-only", ref, "--", prefix, cwd=cwd, check=False)
+def _ref_preset_paths(ref: str, cwd: Path, anchor_base: str = PRESET_SUBDIR) -> list[str]:
+    """基准 ref 里 preset 子树的文件清单（相对 preset 子树根）。
+
+    `anchor_base` = preset 内容所在的那一层相对**基线仓**根的路径（见 `_anchor_content`）。
+    ⚠️ 空串（预设仓仓根）时**不能**给 `ls-tree` 传 `--`（那会把路径限定成当前目录），
+    而是列出该 ref 的**全部**文件 —— 预设仓仓根就是 preset 目录，这正是我们要的清单。
+    """
+    prefix = (anchor_base + "/") if anchor_base else ""
+    args = ["ls-tree", "-r", "--name-only", ref]
+    if prefix:
+        args += ["--", prefix]
+    proc = git(*args, cwd=cwd, check=False)
     if proc.returncode != 0:
         raise GitError(
-            f"读不到 {ref}:{prefix} 的文件清单（{proc.stderr.strip()}）—— 无法判定活锚"
+            f"读不到 {ref}:{prefix or '<仓根>'} 的文件清单（{proc.stderr.strip()}）—— 无法判定活锚"
         )
+    if not prefix:
+        return [p for p in proc.stdout.splitlines() if p]
     return [p[len(prefix):] for p in proc.stdout.splitlines() if p.startswith(prefix)]
 
 
-def _anchor_content(ref: str, cwd: Path, anchor: Path) -> tuple[list[str], list[str], list[str], list[str]]:
-    """(expected, differing, missing, extra) —— 全部逐字节比对，不做任何「聪明」归一化。"""
-    expected = _ref_preset_paths(ref, cwd)
+def _anchor_content(ref: str, cwd: Path, anchor: Path,
+                    anchor_base: str = PRESET_SUBDIR) -> tuple[list[str], list[str], list[str], list[str]]:
+    """(expected, differing, missing, extra) —— 全部逐字节比对，不做任何「聪明」归一化。
+
+    `anchor_base` = preset 内容所在的那一层相对**基线仓**根的路径：
+      · `".agent-presets/migao"`（默认，历史口径：业务仓里的预设子树）；
+      · `""`（**S4 / issue #6020**：基线仓 = **预设仓**，其**仓根就是 preset 目录**）。
+    """
+    expected = _ref_preset_paths(ref, cwd, anchor_base)
     differing: list[str] = []
     missing: list[str] = []
     for rel in expected:
@@ -525,18 +571,25 @@ def _anchor_content(ref: str, cwd: Path, anchor: Path) -> tuple[list[str], list[
         if not target.is_file():
             missing.append(rel)
             continue
-        blob = git_bytes("cat-file", "blob", f"{ref}:{PRESET_SUBDIR}/{rel}", cwd=cwd)
+        ref_path = f"{anchor_base}/{rel}" if anchor_base else rel
+        blob = git_bytes("cat-file", "blob", f"{ref}:{ref_path}", cwd=cwd)
         if blob.returncode != 0:
             raise GitError(
-                f"读不到 {ref}:{PRESET_SUBDIR}/{rel}（{blob.stderr.decode(errors='replace').strip()}）"
+                f"读不到 {ref}:{ref_path}（{blob.stderr.decode(errors='replace').strip()}）"
             )
         if target.read_bytes() != blob.stdout:
             differing.append(rel)
     known = set(expected)
+    # 🔴 S4（issue #6020）：活锚 = **克隆的仓根** ⇒ `.git/**` 是**结构性元数据**（每个克隆都有），
+    # 不是「就地编辑残留 / 本机备份」。不排除它 ⇒ 一次正常的绿判定会印出 30+ 行噪声警告
+    # （实测 34 行 `.git/hooks/*.sample`），把真正的「extra」淹掉。**只排 `.git/` 这一族**：
+    # 其他多余文件（含根下未跟踪的备份）照旧逐条报出。
     extra = sorted(
         p.relative_to(anchor).as_posix()
         for p in anchor.rglob("*")
-        if p.is_file() and not p.is_symlink() and p.relative_to(anchor).as_posix() not in known
+        if p.is_file() and not p.is_symlink()
+        and p.relative_to(anchor).as_posix() not in known
+        and not p.relative_to(anchor).as_posix().startswith(".git/")
     )
     return expected, differing, missing, extra
 
@@ -602,12 +655,24 @@ def _commits_behind(ref: str, sha: str, cwd: Path) -> str:
     return proc.stdout.strip() if proc.returncode == 0 and proc.stdout.strip() else "?"
 
 
-def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=sys.stdout) -> int:
+def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=sys.stdout,
+                 *, anchor_base: str = PRESET_SUBDIR, expected_remote: str = "",
+                 remote_sha: str = "") -> int:
     """活锚新鲜度判定。三态：0 = 绿（或 `⏭️` 未跑判定）；1 = 红（落后 / 悬空 / 内容不同 / 不可加载）；
     **3 = 无法判定**（基线 `ref` 取不到 ⇒ 内容比对与落后判定的**共同前提缺失** —— issue #5430）。
 
     `explicit=True`（用户显式 `--anchor`）⇒ **一律判定**；否则默认活锚只在「与当前仓库同源」时判定
     （拿无关仓库的 `main` 量活锚没有意义：夹具仓库、别的产品仓库都会误报）。
+
+    🔴 **S4（issue #6020）新增三个参数**（默认值 = 历史口径，老调用点一字不改）：
+      · `anchor_base`：preset 内容相对**基线仓**根的路径。默认 `.agent-presets/migao`（业务仓），
+        换链后传 `""`（基线仓 = 预设仓，**仓根就是 preset 目录**）。
+      · `expected_remote`：判「同一上游」时优先比的远程（默认 `PRESET_REPO_URL`）——
+        换链后活锚是预设仓的检出，而 `cwd`（业务仓）不再是同一上游。
+      · `remote_sha`：**上游远端 `main` 的 sha**（由入口脚本 `git ls-remote` 取得，只读远端、不写镜像）。
+        给定时**额外**判一条「镜像是否还在远端 main 上」：换链后活锚 ⇄ 镜像同体，旧的
+        「活锚 ⇄ 基线」视角失去第二只眼，镜像落后将**无人报**（#4026 的同族静默失效）。
+        取不到远端 sha 时**不传**即可（这一条跳过），但入口必须**出声**说明跳过了什么。
 
     ⚠️ **为什么 `ref` 解析失败在入口判、且判 `3` 而不是 `1`**（#5430）：`ref` 是**调用的前提**，
     前提缺失 ⇒ 内容级与 sha 级两条判据**都没跑出结论** ⇒ 按本仓三态口径（`scripts/drift_audit.py`
@@ -628,7 +693,7 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
         print(f"   ❌ {exc}", file=out)
         print("      后果：DSH **静默**加载不到研发模式（不报错，只是「模式不见了」—— #3956 同款事故）", file=out)
         print("      修：确认专职只读镜像在位后重链；见根 AGENTS.md「开发环境准备」/ "
-              f"{PRESET_SUBDIR}/README.md", file=out)
+              "预设仓 README.md（S4 起预设内容在**预设仓仓根**，软链指向镜像的**仓根**）", file=out)
         return 1
 
     # 🔴 入口先核**基线 ref 能否解析**（#5430）：`git rev-parse <ref>` 在 ref 不存在时把 `<ref>`
@@ -650,19 +715,20 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
     ref_short = git("rev-parse", "--short", ref, cwd=cwd, check=False)
     # rc 已在上面判过；这里只为打印读数，且**绝不用回显**当读数（#5430）
     base_sha = ref_short.stdout.strip() if ref_short.returncode == 0 else "?"
+    # sha 关系**只算一次**（原来在尾部又算了一遍 ⇒ 同一次运行两个读数来源，改口径时必漂）。
+    state = _lag_state(ref, cwd, sha) if top else "unknown"
     if top is None:
         print("   ⚠️ 活锚不是 git 检出（判不了 sha/落后）—— 形态上属**手抄副本**：没有跟随机制", file=out)
     else:
         if explicit:
             print("   判定依据：显式 `--anchor` ⇒ 一律判定", file=out)
         else:
-            same, why = _same_upstream(ref, cwd, top)
+            same, why = _same_upstream(ref, cwd, top, expected_remote)
             if not same:
                 print(f"   ⏭️ 未跑判定：{why}", file=out)
                 print(f"      （活锚检出 origin={_remote_url(top) or '—'}；本仓库 origin={_remote_url(cwd) or '—'}）", file=out)
                 return 0
             print(f"   判定依据：{why}", file=out)
-        state = _lag_state(ref, cwd, sha)
         lag_txt = {
             "same": "与基线同一提交",
             "behind": f"落后 {_commits_behind(ref, sha, cwd)} 个提交",
@@ -673,7 +739,7 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
     print(f"   基线：{ref} @{base_sha}（仓库 {cwd}；只读**本地** ref —— 要连远端一起核请先 fetch/刷新）", file=out)
 
     try:
-        expected, differing, missing, extra = _anchor_content(ref, cwd, real)
+        expected, differing, missing, extra = _anchor_content(ref, cwd, real, anchor_base)
     except GitError as exc:
         print(f"   ❌ 无法判定活锚内容（fail-closed）：{exc}", file=out)
         return 1
@@ -681,7 +747,7 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
     for rel in [p for p in expected if VERSION_FILE_RE.search("/" + p)]:
         target = real / rel
         live_v = parse_version(target.read_text(encoding="utf-8")) if target.is_file() else None
-        ref_v = ref_version(ref, f"{PRESET_SUBDIR}/{rel}", cwd)
+        ref_v = ref_version(ref, f"{anchor_base}/{rel}" if anchor_base else rel, cwd)
         print(f"   {rel.split('/')[-2]:<18} 活锚={live_v or '?'} 基线={ref_v or '?'}", file=out)
 
     fm_problems: list[tuple[str, str]] = []
@@ -698,7 +764,7 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
     if differing or missing:
         print(f"   ❌ 活锚内容与 {ref} 不一致：{len(differing)} 个文件内容不同、{len(missing)} 个文件缺失", file=out)
         for rel in (differing + missing)[:20]:
-            print(f"      - {PRESET_SUBDIR}/{rel}", file=out)
+            print(f"      - {anchor_base + '/' if anchor_base else ''}{rel}", file=out)
         print("   ⇒ 这正是「迭代了但模式没进化」：改进**到不了加载点**。**先同步再动手**：", file=out)
         print(f"      {REFRESH_CMD}", file=out)
         return 1
@@ -707,11 +773,22 @@ def judge_anchor(ref: str, cwd: Path, anchor: Path, explicit: bool = False, out=
         print(f"   ⇒ 活锚内容与基线一致，但**技能本身加载不了**（加载器会静默忽略它）。先修 frontmatter 再动手。", file=out)
         return 1
 
-    state = _lag_state(ref, cwd, sha) if top else "unknown"
     if state == "divergent":
         print(f"   ❌ 活锚检出不在 {ref} 的历史上（分叉）：{(sha or '?')[:12]} —— 按「先同步」处理", file=out)
         print(f"      {REFRESH_CMD}", file=out)
         return 1
+
+    # 🔴 **S4 新增判据**（既有判据一条不放宽）：镜像**是否还在上游远端 main 上**。
+    #    换链后活锚 ⇄ 镜像同体 ⇒ 上面那些「活锚 vs 基线」的判据对「镜像落后」**恒为绿**
+    #    （自己比自己）；这条用远端 sha 当第二只眼。`remote_sha` 取不到时**不传**（调用方已出声）。
+    if top is not None and remote_sha and sha and sha != remote_sha:
+        behind_n = _commits_behind(remote_sha, sha, cwd)
+        print(f"   ❌ 镜像**不在上游远端 main 上**：本机 {sha[:12]} ≠ 远端 {remote_sha[:12]}"
+              f"（落后 {behind_n} 个提交）—— **先同步再动手**", file=out)
+        print("      含义：DSH 此刻加载的是**旧预设**；上游已前进 ⇒ 改进到不了加载点（#4026 同族）。", file=out)
+        print(f"      {REFRESH_CMD}", file=out)
+        return 1
+
     if state == "behind":
         print(f"   ❌ 活锚**落后** {ref} {_commits_behind(ref, sha, cwd)} 个提交"
               f"（内容当前恰好一致：0 个文件不同）—— **先同步再动手**", file=out)
@@ -790,7 +867,12 @@ def cmd_check(args: argparse.Namespace) -> int:
     # 地雷 B（issue #4026）：仓库内容全对 ≠ 活锚新鲜 —— 活锚落后时改进到不了加载点。
     # 显式 `--anchor` 一律判定；默认活锚只在「与当前仓库同源」时判定（见 judge_anchor）。
     anchor = Path(args.anchor).expanduser() if args.anchor else DEFAULT_ANCHOR
-    rc = _merge_exit(rc, judge_anchor(args.ref, cwd, anchor, explicit=bool(args.anchor), out=sys.stdout))
+    rc = _merge_exit(rc, judge_anchor(
+        args.ref, cwd, anchor, explicit=bool(args.anchor), out=sys.stdout,
+        anchor_base=args.anchor_base,
+        expected_remote=args.expected_remote or "",
+        remote_sha=args.remote_sha or "",
+    ))
     if rc == 3:
         print("\n❌ **无法判定**（exit 3）—— 本判据这次**没跑出结论**，**不得当 0 读**，更不得当成「通过」："
               "按上面的修法让基线 ref 可解析后重跑。")
@@ -800,9 +882,19 @@ def cmd_check(args: argparse.Namespace) -> int:
 def cmd_anchor(args: argparse.Namespace) -> int:
     """活锚新鲜度（独立入口；供 `scripts/preset-anchor-check.sh` 与开工自检调用）。
 
-    三态退出码：`0` 绿 / `1` 红 / **`3` 无法判定**（基线 ref 取不到）。"""
+    三态退出码：`0` 绿 / `1` 红 / **`3` 无法判定**（基线 ref 取不到）。
+
+    🔴 S4（issue #6020）：`--anchor-base` / `--expected-remote` / `--remote-sha` 由入口脚本传入
+    （预设内容在**预设仓仓根**；活锚的上游是**预设仓**；镜像是否落后由**远端 sha** 判）。三个都有默认值
+    ⇒ 老调用点（夹具 / 手工调用）一字不改仍按历史口径跑。
+    """
     cwd = Path(args.repo).resolve()
-    return judge_anchor(args.ref, cwd, Path(args.anchor).expanduser(), explicit=True, out=sys.stdout)
+    return judge_anchor(
+        args.ref, cwd, Path(args.anchor).expanduser(), explicit=True, out=sys.stdout,
+        anchor_base=args.anchor_base,
+        expected_remote=args.expected_remote or "",
+        remote_sha=args.remote_sha or "",
+    )
 
 
 def _worktrees(cwd: Path) -> list[dict]:
@@ -1011,6 +1103,20 @@ def main(argv: list[str] | None = None) -> int:
         "--anchor", default=None,
         help=f"活锚路径（默认 {DEFAULT_ANCHOR}）；**显式给出即一律判定**，不因「不同源」跳过",
     )
+    # 🔴 S4（issue #6020）：`check` 里的**活锚段**同样要能按预设仓口径判（仓根 = preset 目录）。
+    # ⚠️ 只作用于活锚段 —— `check` 的**版本单调性**仍按业务仓 `.agent-presets/**` 判，未动。
+    p_check.add_argument(
+        "--anchor-base", default=PRESET_SUBDIR,
+        help=f"活锚段：preset 内容相对基线仓根的路径（默认 {PRESET_SUBDIR}；**预设仓仓根传空串**）",
+    )
+    p_check.add_argument(
+        "--expected-remote", default="",
+        help=f"活锚段：判「同一上游」时优先比的远程（默认 {PRESET_REPO_URL}）",
+    )
+    p_check.add_argument(
+        "--remote-sha", default="",
+        help="活锚段：上游远端 main 的 sha（给出则额外判「镜像是否还在远端 main 上」）",
+    )
     p_check.set_defaults(func=cmd_check)
 
     p_anchor = sub.add_parser("anchor", help="活锚新鲜度判定（活锚 vs 基准 ref；落后/悬空/内容不同即非零退出）")
@@ -1018,6 +1124,20 @@ def main(argv: list[str] | None = None) -> int:
     p_anchor.add_argument(
         "--anchor", default=str(DEFAULT_ANCHOR),
         help=f"活锚路径（默认 {DEFAULT_ANCHOR}）",
+    )
+    # 🔴 S4（issue #6020）：预设内容迁到独立预设仓后，锚点的基线仓/内容层/上游都换了对象。
+    # 三个默认值 = **历史口径** ⇒ 老调用点（夹具 / 手工调用）行为一字不变。
+    p_anchor.add_argument(
+        "--anchor-base", default=PRESET_SUBDIR,
+        help=f"preset 内容相对基线仓根的路径（默认 {PRESET_SUBDIR}；**预设仓仓根传空串**）",
+    )
+    p_anchor.add_argument(
+        "--expected-remote", default="",
+        help=f"判「同一上游」时优先比的远程（默认 {PRESET_REPO_URL}；预设仓）",
+    )
+    p_anchor.add_argument(
+        "--remote-sha", default="",
+        help="上游远端 main 的 sha（入口用 `git ls-remote` 取；给出则**额外**判「镜像是否还在远端 main 上」）",
     )
     p_anchor.set_defaults(func=cmd_anchor)
 

@@ -115,7 +115,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 
 import yaml
 from pathlib import Path
@@ -124,6 +126,12 @@ from typing import Callable
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 SKILL_REL = ".agent-presets/migao/skills/migao-dev-flow/SKILL.md"
+#: 🔴 S4（issue #6020）：`.agent-presets/**` 的载体已迁到**预设仓**（本仓工作树里已删）。
+#: 台账里 16 处锚都指着这个前缀 ⇒ 读它必须走 `_preset_text_from_git`（镜像优先，其次 git 基线）。
+PRESET_PREFIX = ".agent-presets/"
+#: 读预设内容的 **git 基线**。取 `origin/main~1` 而不是 `origin/main`：本 S4 提交把该路径删掉后，
+#: `origin/main` 上就没有它了（浅检出 `fetch-depth: 1` 下父提交仍可取 ⇒ 本机 / CI 都能读）。
+PRESET_BASELINE_REF = "origin/main~1"
 LEDGER_REL = "tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json"
 CICD_REL = "docs/wiki/CI-CD.md"
 LEDGER_PATH = REPO_ROOT / LEDGER_REL
@@ -244,8 +252,36 @@ def strip_hash_comments(text: str) -> str:
 # 纯函数层：**判据吃文本**（红证当场在内存里构造坏形态，不改磁盘）
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _preset_text_from_git(rel: str) -> str | None:
+    """从 **git 基线**里读预设内容（`.agent-presets/**` 在本仓工作树里已不存在，S4 / issue #6020）。
+
+    为什么这条能同时服务本机与 CI：
+      · 工作的**真值**是那份 git 对象 —— S4 之前每个提交里都有完整预设（`scripts/../.agent-presets/**`）；
+      · CI 的 `pr-check` 是 `fetch-depth: 1` ⇒ `origin/main~1` 可取（`actions/checkout` 给的就是 main 的
+        父提交），故本函数**不联网、不依赖本机镜像**；
+      · 本机若有**预设仓镜像**（`$MIGAO_PRESET_MIRROR` / `~/.migao-dev-preset-anchor`）则优先读它
+        —— 那是预设的**权威源**（S4 后本仓的 `.agent-presets/**` 已删，git 里的那份是**冻结快照**）。
+    取不到 ⇒ `None`（交给 `_require` **判红**，不静默跳过、也不新增 skip 读数）。
+    """
+    mirror = Path(os.environ.get("MIGAO_PRESET_MIRROR") or (Path.home() / "migao-dev-preset-anchor"))
+    inner = rel[len(PRESET_PREFIX):]
+    if (mirror / inner).is_file():
+        return (mirror / inner).read_text(encoding="utf-8")
+    proc = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "show", f"{PRESET_BASELINE_REF}:{rel}"],
+        capture_output=True, text=True,
+    )
+    return proc.stdout if proc.returncode == 0 else None
+
+
 def real_file_text(rel: str) -> str | None:
-    """默认读盘器：仓库相对路径 ⇒ 文本；不存在 ⇒ None（**不抛**，交给判据判红）。"""
+    """默认读盘器：仓库相对路径 ⇒ 文本；不存在 ⇒ None（**不抛**，交给判据判红）。
+
+    S4（issue #6020）起 `.agent-presets/**` 的载体在**预设仓**（本仓工作树里已删）⇒ 那一段改走
+    `_preset_text_from_git`（镜像优先，其次 git 基线）。**其余路径行为一字未变。**
+    """
+    if rel.startswith(PRESET_PREFIX):
+        return _preset_text_from_git(rel)
     p = REPO_ROOT / rel
     if not p.is_file():
         return None

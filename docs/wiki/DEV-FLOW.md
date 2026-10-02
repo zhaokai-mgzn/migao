@@ -2,15 +2,16 @@
 
 > ⚠️ **本页不是 `migao-dev-flow` 技能的同步副本 —— 已停止同步**（issue #4315）。
 > 它是**人工节选的历史快照**（停在某个历史时点）：**不会随技能更新而更新**，也**未逐节核对过现状**。
-> **流程口径一律以技能为准**：`migao-dev-flow`（权威源：`.agent-presets/migao/skills/migao-dev-flow/SKILL.md`）。
+> **流程口径一律以技能为准**：`migao-dev-flow`（权威源：预设仓 `zhaokai-mgzn/migao-agent-presets` 的
+> `skills/migao-dev-flow/SKILL.md`，本地活锚 `~/.dsh/.agent-presets/migao` 只是它的只读镜像）。
 > 本页与技能冲突时**按技能执行**；改流程规范**先改技能** —— 本页**不要再同步**（历史路径 `migao/.agents/skills/...` 已废弃）。
 > 本页落后多少**不写死**（版本戳与计数是**现值**，会腐烂且没人会因此变红 —— 技能 §19.2 ③），用命令自证：
 >
 > ```bash
 > # 章节级差异（判据本体：scripts/drift_audit.py 的 `sync-copy`；版本戳不写进本页）
 > python3 scripts/drift_audit.py --check --only sync-copy
-> # 权威源当前版本（**现取**，不要抄进本页）
-> git show origin/main:.agent-presets/migao/skills/migao-dev-flow/SKILL.md | sed -n 's/^version: *//p'
+> # 权威源当前版本（**现取**，不要抄进本页；⚠️ 必须在**预设仓的克隆**里跑 —— 业务仓已无该路径）
+> git show origin/main:skills/migao-dev-flow/SKILL.md | sed -n 's/^version: *//p'
 > ```
 >
 > 内容源自历史全链路复盘（RETROSPECTIVE，**未入库**）的 P0/P1 改进，经实战固化。
@@ -84,52 +85,29 @@
 5. **分支卫生**：验证完即 PR，CI 绿即合并，分支存活 < 1-2 天；定期 `git branch --merged origin/main` 全删 + 清理 `origin gone` 的本地分支。
 6. **开工前读契约**：`docs/wiki/CONTRACT-LEDGER.md`（状态枚举/字段名/端点签名）；跨模块改动后跑 `./contract-check.sh`。
 
-### 2.4 预设快照地雷：worktree 的 `.agent-presets/**` 是**创建时刻快照**（v1.8 新增，2026-09-15，issue #3851）
+### 2.4 预设落后地雷：镜像 / 活锚落后 ⇒ 改进到不了加载点（原「worktree 快照」已随迁移消失，issue #6020）
 
-**症状（静默）**：worktree 建好那一刻，`.agent-presets/**` 是**当时**的副本；此后 main 上预设再推进，工作区
-**不会自动跟上** ⇒ 这些文件相对 `origin/main` 就是「改动」（内容在**回退**）⇒ 一条 `git add -A` + push 就提交一个
-**把研发模式回退若干版本**的 PR。而现有门禁（Case Contract / Coverage / QA Growth / Case Trust）**都不看
-`.agent-presets/**` 的版本 ⇒ 不红**。
+**新现实**：`.agent-presets/**` **不再存在于业务仓** —— 预设内容住在预设仓
+`zhaokai-mgzn/migao-agent-presets`，业务仓只在**加载点**消费它（活锚软链 → 专职只读镜像）。
+原先的「worktree 的 `.agent-presets/**` 是创建时刻快照」（issue #3851）随该路径一起消失。
 
-**实测（只写「形状」，不写条数 —— 条数是**时点值**，会腐烂且没人会因此变红，命令自证）**：
-`migao-wt/` 下**确实会**出现「含该预设文件、但 `migao-dev-flow` 版本 ≠ main」的工作区，**数量与落后区间用下面的命令现取**。
-**本单开工时就踩到了这个形状**：一个刚建几分钟的 worktree，其预设版本已经不是 main 的版本，
-只能靠人工 `git checkout origin/main -- .agent-presets/` 补上：
+**剩下的真地雷还是 `#4026` 那条**：镜像 / 活锚落后 ⇒ **改进到不了加载点**
+（实测活锚曾指向落后 `origin/main` **42 个提交**的主工作区，内容当时恰好一致 ⇒ 什么都不红，
+但下一次改预设的改进**永远到不了**）。⇒ 开工第一件事自查，红就停：
 
 ```bash
-# 自取现状（不写死条数；macOS 自带 uniq 无 -w，故用 sed+sort 计数）
-git -C <migao 仓库根> worktree list --porcelain | grep '^worktree ' | cut -d' ' -f2- | while read -r wt; do
-  f="$wt/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"; [ -f "$f" ] || continue
-  printf '%s %s\n' "$(sed -n 's/^version: *//p' "$f" | head -1)" "$wt"
-done | sed 's/ .*//' | sort | uniq -c | sort -rn
+./scripts/preset-anchor-check.sh     # 红就停：落后/悬空/内容不同/技能加载不了 ⇒ 非零退出
+./scripts/preset-anchor-refresh.sh   # 自愈：只读镜像 fetch + checkout --detach origin/main + 复检
 ```
-
-**三层防线（互补，别只靠一层）**：
 
 | 层 | 位置 | 管什么 |
 |---|---|---|
-| ① **创建路径**（根治） | `scripts/dev-worktree.sh add` | 建完工作区**自动** `git checkout origin/main -- .agent-presets/`；输出刷新了哪些文件与**理由** |
-| ② **提交路径**（增量 fail-closed） | `./scripts/dev-worktree.sh preset-guard`（判定本体 `scripts/agent-presets-guard.py`） | 暂存/工作区的预设**版本下降** ⇒ **非零退出**；**合法升级放行**；**同号不同内容 = 跨包撞车 ⇒ 非零退出**（issue #5425；2026-09-24 一晚 2 次，出口 = 抬号到「基准版本 + 1」）；**并判活锚新鲜度**（见 ④）；退出码**三态**：`0` 通过 / `1` 判红 / **`3` 无法判定**（基线 `origin/main` 取不到 ⇒ 连「能不能比」都判不了，**不得当 0 读**；`1` 优先于 `3`）+ `2` 用法错误；每次运行打印工作量读数（判定/命中/跳过原因，不报挂钟；零动作也出声） |
-| ③ **机械安全网**（全库/定时对账） | `#3843` 的统一审计 `drift_audit --check` 的「`.agent-presets/**` 版本单调性」守卫 | 存量工作区 + CI 侧对账。**与本单互补**：本单管增量、贴合工作区；审计管全库、定时 |
-| ④ **加载点**（活锚，`#4026`） | `./scripts/preset-anchor-check.sh` / `preset-anchor-refresh.sh`（判定本体同上 `anchor` 子命令） | **DSH 真正加载的那份内容**是否就是 `origin/main`：内容逐字节 + 检出 sha + frontmatter 可加载性 ⇒ 落后/悬空/内容不同/加载不了 = **非零退出**（`⏭️ 未跑判定` ≠ 通过；基线 ref 取不到 ⇒ **`3` 无法判定**，同样 ≠ 通过）。前三层都对了、活锚落后 ⇒ 改进仍**到不了加载点** |
+| ① **提交路径**（仅预设仓；增量 fail-closed） | `./scripts/dev-worktree.sh preset-guard`（判定本体 `scripts/agent-presets-guard.py`） | 暂存/工作区的预设**版本下降** ⇒ **非零退出**；**合法升级放行**；**同号不同内容 = 跨包撞车 ⇒ 非零退出**（issue #5425；2026-09-24 一晚 2 次，出口 = 抬号到「基准版本 + 1」）；退出码**三态**：`0` 通过 / `1` 判红 / **`3` 无法判定**（基线 `origin/main` 取不到 ⇒ 连「能不能比」都判不了，**不得当 0 读**；`1` 优先于 `3`）+ `2` 用法错误；每次运行打印工作量读数（判定/命中/跳过原因，不报挂钟；零动作也出声） |
+| ② **加载点**（活锚，`#4026`） | `./scripts/preset-anchor-check.sh` / `preset-anchor-refresh.sh`（判定本体同上 `anchor` 子命令） | **DSH 真正加载的那份内容**是否就是预设仓 `origin/main`：内容逐字节 + 检出 sha + frontmatter 可加载性 ⇒ 落后/悬空/内容不同/加载不了 = **非零退出**（`⏭️ 未跑判定` ≠ 通过；基线 ref 取不到 ⇒ **`3` 无法判定**，同样 ≠ 通过） |
 
-```bash
-# 提交前自查（版本下降即拒绝提交；升级/相同放行）
-./scripts/dev-worktree.sh preset-guard              # 默认同时看暂存区与工作区
-./scripts/dev-worktree.sh preset-guard --source index   # 只看 `git diff --cached`
-# 命中时的修法（与 issue #3851 记录的人工修法同一形状）
-git checkout origin/main -- .agent-presets/
-
-# 加载点自查（开工第一件事；落后即先同步再动手）
-./scripts/preset-anchor-check.sh                    # 红就停：落后/悬空/内容不同/技能加载不了
-./scripts/preset-anchor-refresh.sh                  # 自愈：只读镜像 fetch + checkout --detach origin/main + 复检
-```
-
-> **④ 为什么单列一层**：①②③ 管的都是「**仓库里的**（工作区/暂存区/全库）预设内容」，
-> 而**生效的是活锚**（`~/.dsh/.agent-presets/migao` 解析出的目录）。实测活锚曾指向落后 `origin/main`
-> **42 个提交**的主工作区，**内容当时恰好一致** ⇒ 前三层全绿、也没有任何东西变红，
-> 但下一次改预设的改进**永远到不了加载点**。故锚点必须是**专职只读镜像**（不是会在清理半径内的
-> `migao-wt/*` worktree，也不是会被开发的主工作区），并由 `preset-anchor-refresh.sh` 负责跟随。
+> **② 为什么单列一层**：**生效的是活锚**（`~/.dsh/.agent-presets/migao` 解析出的目录），
+> 不是任何仓库里的副本。故锚点必须是**专职只读镜像**（不是会在清理半径内的 `migao-wt/*` worktree，
+> 也不是会被开发的主工作区），并由 `preset-anchor-refresh.sh` 负责跟随。
 
 **存量清理（只出清单，脚本绝不代删）**：判据 = **分支已合入 `origin/main`**（祖先可达，或 `git cherry` 无 `+` 行
 —— squash 合并后 commit 可达性不是判据）+ **工作树干净** + **无活跃会话锁** ⇒ 列「可安全移除」；否则列「需人看」并给原因：
@@ -139,12 +117,12 @@ git checkout origin/main -- .agent-presets/
 ./scripts/dev-worktree.sh rm <分支或路径> --delete-branch   # 人工逐条确认后真删（脚本不代劳）
 ```
 
-**禁止手法**：不要用「让 git 忽略这些文件的改动」的索引标记手法（`--skip-worktree` / `--assume-unchanged` 之类）——
-那会把**合法的预设改动**（改研发模式本身）一起吞掉，「眼不见为净」在这里等于把正事也堵死。
-**要改研发模式**：直接在工作区改 + 升 `version:`（`preset-guard` 对升级放行），PR 走正常评审。
+**要改研发模式**：**去预设仓 `zhaokai-mgzn/migao-agent-presets` 提 PR**（升 `version:`；`preset-guard` 对升级放行），
+走正常评审；**合并后跑一次 `./scripts/preset-anchor-refresh.sh`**，否则改进到不了加载点。
+接线与运维细节见 `AGENTS.md`「开发环境准备（获取研发模式）」。
 
 > 同族病灶：`migao-dev-flow` §18.2（**活锚** `~/.dsh/.agent-presets/migao` 陈旧 ⇒ 按过期规则干活）、
-> `#3849`（`AGENTS.md` 换链拓扑会指向**落后 136 提交**的主工作区）—— 三者都是「**读的是快照，不是真相源**」。
+> `#3849`（`AGENTS.md` 换链拓扑会指向**落后 136 提交**的主工作区）—— 都是「**读的是快照，不是真相源**」。
 > 相关单：`#3843`（返工主机制 A~H 护栏）· `#3846`（断言可信度门禁包实测中发现并拦截此风险）。
 
 ## 3. CI 关卡（合并前会自动跑）
@@ -326,7 +304,7 @@ python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守
 - 生产登录：13800138000 / 万能码 123456（短信网关仍 bypass，上线前需接入）。
 
 ## 5. 相关文档
-- `migao-dev-flow` 技能（**权威源**，本页只是它的历史节选）— `.agent-presets/migao/skills/migao-dev-flow/SKILL.md`
+- `migao-dev-flow` 技能（**权威源**，本页只是它的历史节选）— 预设仓 `zhaokai-mgzn/migao-agent-presets` 的 `skills/migao-dev-flow/SKILL.md`（本机经活锚 `~/.dsh/.agent-presets/migao` 读到只读镜像）
 - `docs/wiki/CONTRACT-LEDGER.md` — 并行开发契约清单
 - 全链路复盘 RETROSPECTIVE（**未入库**、仓内无此路径）— 本页与技能的改进来源
 - `verify-all.sh` / `contract-check.sh` / `check-ui-regression.sh` — 三把工具

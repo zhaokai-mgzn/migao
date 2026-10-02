@@ -89,19 +89,21 @@
 （当时的活锚 `~/ai native/migao-preset-live/`）**硬删**了 ⇒ 软链悬空 ⇒ DSH 扫描器按
 「dangling link is not a preset」跳过 ⇒ 研发模式消失。**会话与数据未丢**（最新会话 JSONL 完好）。
 
-**修复（重指软链到权威源；当前内容与 origin/main 一致）**：
+**修复（重指软链到权威源；权威源 = 预设仓 `zhaokai-mgzn/migao-agent-presets`）**：
 ```bash
-ln -sfn "$HOME/ai native/migao/.agent-presets/migao" "$HOME/.dsh/.agent-presets/migao"
+# 前提：专职只读镜像已在位（$HOME/migao-dev-preset-anchor 是预设仓的克隆；建法见 AGENTS.md「开发环境准备」）
+ln -sfn "$HOME/migao-dev-preset-anchor" "$HOME/.dsh/.agent-presets/migao"
 readlink "$HOME/.dsh/.agent-presets/migao"     # 必须解析到真实存在的目录（不能悬空）
 cat "$HOME/.dsh/.agent-presets/migao/preset.yml" >/dev/null && echo "preset 可读"
+./scripts/preset-anchor-refresh.sh             # 在业务仓工作区跑；若活锚落后于预设仓 origin/main ⇒ 刷新镜像并复检
 ```
 
 **规避铁律（任何会话 / 清理脚本通用）**：
 - `~/.dsh/.agent-presets/migao` 是**软链接**：`rm -rf <软链>`、`rm -rf <软链>/`、删其**目标目录**都会弄坏它。
 - 执行任何清理（`rm -rf` / `git clean` / worktree prune / 脚本清理）**之前**：
   `readlink "$HOME/.dsh/.agent-presets/migao"`，把解析出的目标（及父目录）**排除在外**。
-- 本机 preset 布局 / 换链 / 健康检查见 [`.agent-presets/migao/README.md`](../../.agent-presets/migao/README.md)
-  「本机 live 锚点与运维铁律」；改 preset 内容 = 仓库 PR（AGENTS.md「开发环境准备」）。
+- 本机 preset 布局 / 换链 / 健康检查见预设仓 [`README.md`](https://github.com/zhaokai-mgzn/migao-agent-presets/blob/main/README.md)
+  「本机 live 锚点与运维铁律」；**改 preset 内容 = 预设仓 PR**（详见 `AGENTS.md`「开发环境准备」）。
 
 ## SWAS 部署
 

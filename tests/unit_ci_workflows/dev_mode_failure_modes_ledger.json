@@ -1118,8 +1118,8 @@
       "same_family": "`FM-R4`（没先检索就下否定性断言 —— 本条是它的**肯定窄口径**镜像）+ `FM-A12`（否定性结论没有对象可指）+ `FM-D1`（按族枚举，不是按「我见过哪个」）",
       "evidence": [
         "scripts/issue_lifecycle.py::_land_do_step",
-        "scripts/dev-worktree.sh::preset_has_uncommitted_drift",
-        "scripts/dev-worktree.sh::preset_touched_by_branch"
+        "scripts/dev-worktree.sh::refresh_anchor_mirror",
+        "scripts/dev-worktree.sh::refresh_anchor_mirror"
       ],
       "refs": [
         "#5707",
@@ -1137,7 +1137,7 @@
       "covers": "**无机械锁**：判据看得见「台账里有没有写复现读数」（文本形态），**看不见**「提修法的人到底跑没跑」。⚠️ 与 §25 的 `FM-C1`/`FM-C2`（**红证**要有读数、变异要证明被读到）**同族但对象不同**：那两条治**判据**，本条治**修法**。",
       "same_family": "`FM-C1`（自称红证恒绿 = 只写「已注入」不给读数）+ `FM-C2`（改磁盘的变异可能不被读到）+ `FM-A5`（从「提交里含该文件」推出「内容也对」）",
       "evidence": [
-        "scripts/dev-worktree.sh::preset_has_uncommitted_drift",
+        "scripts/dev-worktree.sh::refresh_anchor_mirror",
         "tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json::NS-2"
       ],
       "refs": [
