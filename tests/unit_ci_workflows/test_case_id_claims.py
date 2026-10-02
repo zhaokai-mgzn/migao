@@ -11,14 +11,21 @@
 **症状形态**（诊断成本极高）：表现为 `.github/cases/misc.yml` 的**困惑冲突** + 生成物连带冲突，
 而不是「你撞号了，请让号」—— 排查要靠 `git merge-tree`、逐条比对两侧用例块。
 
+🔴 **2026-10-02 收窄（issue #6037）**：本判据首版把「claim 的号已进用例库、而这条 claim 还在」判成
+**陈旧即红**（「台账不许只增不减」）。实测后果：`.github/cases/claims/6033-MC-067.json`（PR #6033 已合并、
+MC-067 已进用例库）落 main 之后，**下一个 PR 一律被判红** ⇒ 阻塞所有并行开发。
+现行口径 = **取号台账是累积的分配登记**：落地 claim **继续留在** `.github/cases/claims/` 是**有意设计**
+（它记录「这个号已经分配过」），**不是垃圾、不是要删的东西**；只有 `claim.pr == 当前 PR`
+（= **你自己这个 PR 的** claim）与已用号相撞才判红。规则表见下（判据 3 / 4 的边界即在此）。
+
 ## 本文件锁什么（每一条都能单独变红）
 
 | # | 判据 | 取法 | 红证 |
 |---|---|---|---|
 | 1 | **形态**：claim 文件名 `<PR号>-<CASE_ID>.json`、字段最小集齐全、文件名里的 `PR`/`CASE_ID` 与内容 `pr`/`id` 一致、`claimed_at` 是 `YYYY-MM-DD`；目录里出现非 claim 文件（除 `.gitkeep` / `README.md`）也判红 | 逐文件解析（纯静态） | 改错文件名 / 删字段 / 内容与文件名不一致 ⇒ 红 |
 | 2 | **两 claim 同 id ⇒ 红**：**具名报出两个 PR 号** + 「后合入者让号」 | 按 `id` 分组 | 造两份同 id claim ⇒ 红 |
-| 3 | **与已占号相撞 ⇒ 红**：claim 的 `id` 已在用例库被占用 ⇒ 报出该号 + 让号出口 | 用例库现取号集 ⇄ claim | 造 claim `MC-9xx` + 用例库里已有 `MC-9xx` ⇒ 红 |
-| 4 | **陈旧即红**：claim 的 `id` 已进用例库（该 claim 已合并完成）而 claim 还在 ⇒ 红（台账**不许只增不减**） | 同上 + claim 的 `pr` ≠ 当前 PR | 造「main 侧遗留 claim」⇒ 红 |
+| 3 | **本 PR 自己的 claim 与已用号相撞 ⇒ 红**：`claim.pr == 当前 PR` 且该 `id` 已在 main 侧被占用 ⇒ 报出该号 + 让号出口 | 用例库现取号集 ⇄ **本 PR 的** claim | 造 claim `MC-9xx`（`pr` = 当前 PR）+ main 侧已有 `MC-9xx` ⇒ 红 |
+| 4 | **他人 claim 一律不判红（累积台账）**：`claim.pr ≠ 当前 PR` 的 claim —— **含已落地的历史 claim** —— 是「这个号已分配过」的登记，**不是错误** ⇒ 一条都不报 | 与判据 3 同一谓词，作用域按 `claim.pr` 收窄 | 造「别人的落地 claim」（号已在用例库、claim 还在）⇒ **不红**（= 判据 3/4 的分界线） |
 | 5 | **占位不得超额**：每条 claim 的 `id` 必须在用例库里**有对应用例**；同一 PR 的 claim 数 ≤ **现取上限**（= 用例库现取条数；变更集不可得时的兜底，**不拍魔法数**） | 现取 | 造「claim 了一个没写用例的号」⇒ 红 |
 | 6 | **负向对照**：没有 claim ⇒ 一条都不报（本台账是**新增可选面**，不能把不用的包判红） | —— | 空目录 ⇒ 全绿 |
 
@@ -34,6 +41,9 @@
   ⇒ 「**id 是否已进 main**」一律以**合并态近似**表达（见 `main_side_ids`）：合并态的用例库 ⊇ main 的用例库，
   再扣掉**本 PR 自己的号**（= 本 PR 的 claim 声明的号，设计上 1:1）。
   **精确的 main 侧读数**可由 `MIGAO_CASE_CLAIMS_MAIN_DIR` 注入（一个内含 `*.yml` 的目录；红证与判别力自证用它）。
+- 🔴 **作用域 = 本 PR 自己**（判据 3/4 的唯一分界线；`current_pr` 的取法见其 docstring）：台账**累积**，
+  别人的 claim（无论它的用例有没有进 main）都不判红；真正的撞号面是判据 2（**两个 claim 同 id，全量判红**，
+  它不看 `pr`）。⚠️ 收窄**只**收窄作用域，**不放宽**任何其他判据、不新增豁免。
 
 ## 边界（照实登记，**不要**把本判据读成覆盖面更大的东西）
 
@@ -43,8 +53,9 @@
   显形条件 = 早占号 + 对方已合并 + 本 PR 还没写用例。
 - ❌ **变更集不可得**（不读 git / 不联网）⇒ 判据 5 一律用现取上限兜底；「占一堆号」的主要防线是
   「每条 claim 必须对应一条真用例」这一条，不是那个上限。
-- ❌ **没有常驻守护跑在 main 上**（`pr-check` 只在 `pull_request` 触发）：本判据的陈旧面靠**下一个 PR**
-  的合并态现形。
+- ❌ **没有常驻守护跑在 main 上**（`pr-check` 只在 `pull_request` 触发）：**本 PR 自己**的 claim 与 main 侧
+  相撞（判据 3）只能在**它自己那个 PR** 的 CI 上现形；⚠️ **别人的** claim **不是**判红对象（见上面「作用域」一节），
+  落地 claim 留在 main 上**不再**有任何后续 PR 会因此变红。
 - ❌ 本判据**不改任何门禁的通过条件、不新增豁免**。
 """
 from __future__ import annotations
@@ -238,26 +249,26 @@ def main_side_ids(used: Counter, live_ids: set[str], injected: set[str] | None) 
 def collision_problems(
     claims: list[Claim], used: Counter, current: int | None, injected: set[str] | None
 ) -> list[str]:
-    """判据 3 + 判据 4：「与已占号相撞」与「陈旧 claim」—— 同一谓词（claim 的号已在 main 侧），
-    按 claim 是不是**本 PR 的**分成两条**具名**出口。"""
+    """判据 3：**本 PR 自己**的 claim 与已用号相撞 ⇒ 红（具名到文件 + 让号出口）。
+
+    🔴 **作用域收窄（issue #6037）**：`claim.pr != 当前 PR` 的 claim —— **含已落地的历史 claim** ——
+    只是「这个号分配过」的登记（**累积台账**），**一律不判红**。修前的「陈旧即红」分支正是本单要修的病：
+    它让一条落地 claim 把**每一个后续 PR** 都判红。
+    """
     live_ids = {c.cid for c in claims if current is not None and c.pr == current}
     main_ids = main_side_ids(used, live_ids, injected)
     out: list[str] = []
     for c in sorted(claims, key=lambda x: (x.cid, x.pr, x.file)):
+        if current is None or c.pr != current:
+            continue  # 别人的 claim（含已落地）= 台账记录，不是错误
         if c.cid not in main_ids:
             continue
-        if current is not None and c.pr == current:
-            others = sorted({o.pr for o in claims if o.cid == c.cid and o.pr != c.pr})
-            who = f"（同号 claim 还见 PR {'/'.join(f'#{p}' for p in others)}）" if others else ""
-            out.append(
-                f"{c.file}：claim 的用例号 {c.cid} **已进 main / 已被占用**{who}"
-                f" ⇒ 请让号（陷阱 3 的兜底：后合入者让号），并同步改 claim 文件名与内容"
-            )
-        else:
-            out.append(
-                f"{c.file}：**陈旧 claim** —— {c.cid} 的用例已进用例库（PR #{c.pr} 的 claim 使命已完成）"
-                f" ⇒ 删除该 claim 文件（台账不许只增不减）"
-            )
+        others = sorted({o.pr for o in claims if o.cid == c.cid and o.pr != c.pr})
+        who = f"（同号 claim 还见 PR {'/'.join(f'#{p}' for p in others)}）" if others else ""
+        out.append(
+            f"{c.file}：claim 的用例号 {c.cid} **已进 main / 已被占用**{who}"
+            f" ⇒ 请让号（陷阱 3 的兜底：后合入者让号），并同步改 claim 文件名与内容"
+        )
     return out
 
 
@@ -381,13 +392,36 @@ def test_red_proof_claim_collides_with_a_used_id(tmp_path: Path) -> None:
     assert "MC-902" in problems[0] and "让号" in problems[0], problems[0]
 
 
-def test_red_proof_stale_claim(tmp_path: Path) -> None:
-    """红证 ④：**陈旧 claim**（该号已进 main、claim 还在）⇒ 红 + 「删除该 claim」。"""
-    _write_claim(tmp_path, "6009-MC-903.json", pr=6009, id="MC-903")
+def test_control_another_prs_landed_claim_is_a_ledger_record_not_an_error(tmp_path: Path) -> None:
+    """本单核心修复的对照读数：**别人的落地 claim**（号已进用例库、claim 还在）⇒ **不红**。
+
+    形状 = main 上真实存在的 `.github/cases/claims/6033-MC-067.json`（PR #6033 已合并、MC-067 已进用例库，
+    见 issue #6037 的复算证据）+ 当前 PR（#6060）什么都没占。
+    修前：它是「**陈旧 claim** ⇒ 删除该 claim 文件」；修后：它是**累积台账**里的一条分配登记 ⇒ 一条都不报。
+    """
+    _write_claim(tmp_path, "6033-MC-067.json", pr=6033, id="MC-067")
     claims = parse_claims(scan_claims(tmp_path)[0])
-    problems = collision_problems(claims, Counter({"MC-903": 1}), current=6013, injected={"MC-903"})
+    assert claims, "夹具没被读到 ⇒ 本条的绿是空跑"
+    used = Counter({"MC-067": 1, "MC-068": 1})
+    # 判别力自证：**同一个 claim** 若被当成「本 PR 自己的」⇒ 立刻判红（绿只因作用域收窄，不是因为假绿）
+    assert collision_problems(claims, used, current=6033, injected={"MC-067"}) != []
+    assert collision_problems(claims, used, current=6060, injected={"MC-067"}) == []
+    assert all_problems(tmp_path, used, current=6060, injected={"MC-067"}) == []
+
+
+def test_red_proof_only_the_current_prs_claim_is_named(tmp_path: Path) -> None:
+    """作用域判别力（收窄 ≠ 关掉判据）：同一批里**别人的**落地 claim 静默，**本 PR 自己撞号的那条**具名。
+
+    ⇒ 「收窄」与「全量判红」在这条夹具上读数不同（不是把判据整体关掉）。
+    """
+    _write_claim(tmp_path, "6033-MC-067.json", pr=6033, id="MC-067")
+    _write_claim(tmp_path, "6060-MC-068.json", pr=6060, id="MC-068")
+    used = Counter({"MC-067": 1, "MC-068": 1})
+    problems = all_problems(tmp_path, used, current=6060, injected={"MC-067", "MC-068"})
+    joined = "\n".join(problems)
     assert len(problems) == 1, problems
-    assert "陈旧" in problems[0] and "删除" in problems[0], problems[0]
+    assert "6060-MC-068.json" in joined and "让号" in joined, joined
+    assert "6033-MC-067.json" not in joined, joined
 
 
 def test_red_proof_claim_without_a_case(tmp_path: Path) -> None:
@@ -429,34 +463,38 @@ def test_control_clean_claim_is_green(tmp_path: Path) -> None:
     assert parse_claims(entries)[0].cid == "MC-906"
 
 
-def test_merge_state_approximation_flags_a_stale_claim_without_any_injection(tmp_path: Path) -> None:
-    """合并态近似（CI 的真实口径，**无主线段注入**）：main 侧遗留的 claim 也必须被抓到。
+def test_merge_state_approximation_does_not_flag_another_prs_landed_claim(tmp_path: Path) -> None:
+    """**无主线段注入**（= CI 的真实口径）下，**别人的落地 claim** 也不许被误判。
 
-    形状 = 用例库里有 `MC-907`（main 侧那份）而本 PR（#6020）只 claim 了 `MC-908` ⇒ `MC-907` 那条陈旧。
+    形状 = main 侧遗留 claim（`MC-907`，PR #6019）+ 本 PR（#6020）自己的干净 claim `MC-908`，
+    合并态里两个号都在用例库。修前：`MC-907` 被判「陈旧」（本单要修的病，实测读数见 issue #6037）；
+    修后：它只是台账记录 ⇒ 不报；本 PR 自己的 `MC-908` 也不报（两边都不误伤）。
     """
     _write_claim(tmp_path, "6019-MC-907.json", pr=6019, id="MC-907")
     _write_claim(tmp_path, "6020-MC-908.json", pr=6020, id="MC-908")
+    assert len(parse_claims(scan_claims(tmp_path)[0])) == 2, "夹具没被读到 ⇒ 本条的绿是空跑"
     used = Counter({"MC-907": 1, "MC-908": 1})
     problems = all_problems(tmp_path, used, current=6020, injected=None)
-    joined = "\n".join(problems)
-    assert "MC-907" in joined and "陈旧" in joined, joined
-    assert "MC-908" not in joined, f"本 PR 自己的 claim 被误判：{joined}"
+    assert problems == [], "\n".join(problems)
 
 
-def test_duplicate_and_stale_are_not_the_same_reading(tmp_path: Path) -> None:
-    """判别力自证：**同号两条** 与 **一条陈旧** 必须产出不同读数（不许一个函数吞掉两种形态）。"""
+def test_duplicate_is_full_volume_while_collision_is_own_pr_scoped(tmp_path: Path) -> None:
+    """判别力自证：**判据 2 全量判红** vs **判据 3 只看本 PR** —— 两条读数必须不同。
+
+    - 别人的**两个** claim 同 id ⇒ 仍红（判据 2 不看 `pr`；那才是真正的撞号）；
+    - 别人的**一条** claim 占着已用号（没有第二个 claim 与它同号）⇒ 不红（累积台账）。
+    """
     dup = tmp_path / "dup"
     dup.mkdir()
-    _write_claim(dup, "6021-MC-909.json", pr=6021, id="MC-909")
-    _write_claim(dup, "6022-MC-909.json", pr=6022, id="MC-909")
-    stale = tmp_path / "stale"
-    stale.mkdir()
-    _write_claim(stale, "6021-MC-910.json", pr=6021, id="MC-910")
-    used = Counter({"MC-909": 2, "MC-910": 1})
-    dup_problems = all_problems(dup, used, current=6022, injected=None)
-    stale_problems = all_problems(stale, used, current=6022, injected=None)
+    _write_claim(dup, "6019-MC-909.json", pr=6019, id="MC-909")
+    _write_claim(dup, "6020-MC-909.json", pr=6020, id="MC-909")
+    dup_problems = all_problems(dup, Counter({"MC-909": 2}), current=6060, injected={"MC-909"})
     assert any("同时占着" in p for p in dup_problems), dup_problems
-    assert any("陈旧" in p for p in stale_problems), stale_problems
+
+    ledger = tmp_path / "ledger"
+    ledger.mkdir()
+    _write_claim(ledger, "6019-MC-910.json", pr=6019, id="MC-910")
+    assert all_problems(ledger, Counter({"MC-910": 1}), current=6060, injected={"MC-910"}) == []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
