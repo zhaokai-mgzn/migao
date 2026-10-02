@@ -40,6 +40,20 @@ public class DailyBriefing {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Object sourceSnapshot;
 
+    /**
+     * 逐规则接线状态（issue #5955）= ai-agent 引擎 `proactive_status(snapshot)` 的**原样**输出。
+     *
+     * <p>{@code {rule_id: {rule_id, rule_name, status, reason, missing, gaps, caveats}}}，
+     * {@code status ∈ {wired, not_wired, not_enabled, incomplete}}；不变式 {@code reason == null} ⟺
+     * {@code wired}。**确定性**计算，生成时从 ai-agent 生成返回体取出后原样落库 ——
+     * 🔴 admin-api **不重算**（重算 = 引擎判据的第二份实现，见 {@code V144} 的理由段）。</p>
+     *
+     * <p>{@code null} = 未采集（本列面世前的存量行）⇒ 卡片面**不渲染**该面板：
+     * **未知 ≠ 没问题**，也不许渲染成空壳冒充「已检查」。</p>
+     */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Object proactiveStatus;
+
     /** pending / verified / partial / failed */
     private String verifyStatus;
 

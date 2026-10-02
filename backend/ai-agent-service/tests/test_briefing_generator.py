@@ -122,6 +122,10 @@ class TestGenerateBriefing:
             factory.create_briefing_llm.return_value = mock_llm
             result = await generate_briefing({"metrics": {"pending_ship_orders": 10}})
 
+        # issue #5955：返回体在四区块之外**恒多一个确定性键** `proactive_status`（引擎四态，
+        # 挂在 sanitize_briefing 之后）—— 先把它取下来，再逐字对账四区块（LLM 出口的内容不变）。
+        proactive = result.pop("proactive_status")
+        assert proactive, "proactive_status 必须挂在 sanitize_briefing 之后（白名单吃不到它）"
         assert result == {
             "summary": "昨日订单 5 单",
             "review": [],

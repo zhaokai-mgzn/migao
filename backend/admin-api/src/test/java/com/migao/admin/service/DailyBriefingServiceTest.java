@@ -1,4 +1,4 @@
-// case_ids: DA-001, DA-002, ST-001, DA-016, DA-017
+// case_ids: DA-001, DA-002, ST-001, DA-016, DA-017, DA-021
 
 package com.migao.admin.service;
 
@@ -342,6 +342,128 @@ class DailyBriefingServiceTest {
             JsonNode content = objectMapper.valueToTree(vr.content());
 
             assertThat(content.path("summary").asText()).isEqualTo("昨日订单 5 单，10 个订单待发货");
+        }
+    }
+
+    @Nested
+    @DisplayName("逐规则接线状态透传（issue #5955）")
+    class ProactiveStatusPassThrough {
+
+        /** ai-agent 返回体形状：四区块 + 引擎在 `sanitize_briefing` 之后挂上来的 `proactive_status`。 */
+        private static final String LLM_OUTPUT_WITH_STATUS = """
+                {
+                  "summary": "昨日订单 5 单，经营平稳",
+                  "todo": [{"priority": "high", "title": "10 个订单待发货", "metrics": [{"key": "pending_ship_orders", "value": 10}]}],
+                  "risks": [],
+                  "suggestions": [],
+                  "proactive_status": {
+                    "repeat_returns": {
+                      "rule_id": "repeat_returns",
+                      "rule_name": "连续退货",
+                      "status": "not_wired",
+                      "reason": "快照未提供 returns 行数组（装配层未接线）",
+                      "missing": ["returns"],
+                      "gaps": [],
+                      "caveats": []
+                    },
+                    "low_stock": {
+                      "rule_id": "low_stock",
+                      "rule_name": "库存告急",
+                      "status": "wired",
+                      "reason": null,
+                      "missing": [],
+                      "gaps": [],
+                      "caveats": ["阈值可被租户配置覆盖"]
+                    }
+                  }
+                }
+                """;
+
+        @Test
+        @DisplayName("引擎状态原样落库：四态与 reason/caveats 一个不丢（不允许被对账掉）")
+        void engineStatusIsPersistedVerbatim() throws Exception {
+            when(tenantMapper.selectById(1L)).thenReturn(enabledTenant());
+            when(dailyBriefingMapper.selectOne(any())).thenReturn(null);
+            // 先解析成局部变量再 stub：Mockito 把 `thenReturn(静态字段的表达式)` 判成未完成的桩
+            JsonNode parsed = objectMapper.readTree(LLM_OUTPUT_WITH_STATUS);
+            when(briefingGenerateClient.generate(eq(1L), anyMap())).thenReturn(parsed);
+
+            DailyBriefing result = service.generateForTenant(1L);
+
+            // 断言落在**入库那一刻的对象**上（而不是返回对象）：「透传」的消费面是落库记录 ——
+            // 丢了这一层，卡片面就永远读不到状态。
+            ArgumentCaptor<DailyBriefing> captor = ArgumentCaptor.forClass(DailyBriefing.class);
+            verify(dailyBriefingMapper).insert(captor.capture());
+            DailyBriefing persisted = captor.getValue();
+            assertThat(persisted.getProactiveStatus()).isNotNull();
+            JsonNode status = objectMapper.valueToTree(persisted.getProactiveStatus());
+            // 四态取值逐字透传（不许被改写 / 归并：not_wired 与 not_enabled 是两件事）
+            assertThat(status.path("repeat_returns").path("status").asText()).isEqualTo("not_wired");
+            assertThat(status.path("repeat_returns").path("reason").asText()).contains("未接线");
+            assertThat(status.path("repeat_returns").path("missing").get(0).asText()).isEqualTo("returns");
+            // wired 的规则其 caveats（数据源固有边界）也必须在场 —— 不许因为「绿」就不显示边界
+            assertThat(status.path("low_stock").path("status").asText()).isEqualTo("wired");
+            assertThat(status.path("low_stock").path("reason").isNull()).isTrue();
+            assertThat(status.path("low_stock").path("caveats").get(0).asText()).isNotBlank();
+            assertThat(result.getProactiveStatus()).isSameAs(persisted.getProactiveStatus());
+        }
+
+        @Test
+        @DisplayName("校验层是**数值**对账：状态字段不是数字，不许被它丢弃或塞进 content")
+        void statusSurvivesTheNumericVerificationLayer() throws Exception {
+            when(tenantMapper.selectById(1L)).thenReturn(enabledTenant());
+            when(dailyBriefingMapper.selectOne(any())).thenReturn(null);
+            // 先解析成局部变量再 stub：Mockito 把 `thenReturn(静态字段的表达式)` 判成未完成的桩
+            JsonNode parsed = objectMapper.readTree(LLM_OUTPUT_WITH_STATUS);
+            when(briefingGenerateClient.generate(eq(1L), anyMap())).thenReturn(parsed);
+
+            DailyBriefing result = service.generateForTenant(1L);
+
+            // todo 条目带完整 metrics 引用 ⇒ verified；状态字段的在场与 verifyStatus 无关
+            assertThat(result.getVerifyStatus()).isEqualTo("verified");
+            assertThat(result.getProactiveStatus()).isNotNull();
+            // 落库的 content 仍是**四区块**：状态不进 content（它不来自 LLM 出口，
+            // 也不许混进日报正文的语义）
+            JsonNode content = objectMapper.valueToTree(result.getContent());
+            assertThat(content.has("summary")).isTrue();
+            assertThat(content.has("proactive_status")).isFalse();
+        }
+
+        @Test
+        @DisplayName("ai-agent 未返回状态（旧版/降级）⇒ 留 null，不落空壳冒充「已检查」")
+        void missingStatusStaysNull() throws Exception {
+            when(tenantMapper.selectById(1L)).thenReturn(enabledTenant());
+            when(dailyBriefingMapper.selectOne(any())).thenReturn(null);
+            JsonNode parsed = objectMapper.readTree("""
+                    {
+                      "summary": "昨日订单 5 单",
+                      "todo": [{"priority": "high", "title": "10 个订单待发货", "metrics": [{"key": "pending_ship_orders", "value": 10}]}],
+                      "risks": [],
+                      "suggestions": []
+                    }
+                    """);
+            when(briefingGenerateClient.generate(eq(1L), anyMap())).thenReturn(parsed);
+
+            DailyBriefing result = service.generateForTenant(1L);
+
+            assertThat(result.getProactiveStatus()).isNull();
+        }
+
+        @Test
+        @DisplayName("空对象 = 没有这个事实 ⇒ 同样留 null（空壳会被读成「已检查、没有问题」）")
+        void emptyStatusObjectStaysNull() {
+            DailyBriefing record = DailyBriefing.builder().tenantId(1L).build();
+            DailyBriefingService.setProactiveStatus(record,
+                    objectMapper.valueToTree(Map.of("proactive_status", Map.of())));
+            assertThat(record.getProactiveStatus()).isNull();
+        }
+
+        @Test
+        @DisplayName("LLM 降级（briefing=null）⇒ 不设值，且不因此改变 failed 语义")
+        void nullBriefingLeavesStatusNull() {
+            DailyBriefing record = DailyBriefing.builder().tenantId(1L).build();
+            DailyBriefingService.setProactiveStatus(record, null);
+            assertThat(record.getProactiveStatus()).isNull();
         }
     }
 

@@ -414,10 +414,39 @@ public class DailyBriefingService {
         VerifyResult vr = verifyAndFilter(briefing, metrics);
         record.setContent(vr.content);
         record.setVerifyStatus(vr.status);
+        // 4) 逐规则接线状态（issue #5955）：**不是**数字对账面上的字段 —— 它由 ai-agent 的
+        //    确定性引擎在 sanitize_briefing **之后**挂上，admin-api 只**原样**落库 + 透出，
+        //    零重算、零改写（判据钉住：它不经过 verifyAndFilter 的数值回填对账）。
+        setProactiveStatus(record, briefing);
         dailyBriefingMapper.insert(record);
         log.info("简报生成完成 tenantId={} status={} todo={} risks={} suggestions={}",
                 tenantId, vr.status, vr.todoKept, vr.risksKept, vr.suggestionsKept);
         return record;
+    }
+
+    // ==================== 逐规则接线状态（issue #5955）====================
+
+    /** ai-agent 生成返回体里逐规则接线状态的键名（**三端同一份契约**：ai-agent / admin-api / admin-web）。 */
+    public static final String PROACTIVE_STATUS_FIELD = "proactive_status";
+
+    /**
+     * 把 ai-agent 生成返回体里的 {@code proactive_status} 透传到落库记录（issue #5955）——**零重算**。
+     *
+     * <p>为什么只做「取出来放上去」这一件事：那是**引擎**（`proactive.py::proactive_status`）的判定
+     * 结果，四态判据只许有一份实现。在 admin-api 侧重算 = 同一判据两份实现，两份必然漂移
+     * （见 `V144` 的理由段）。</p>
+     *
+     * <p>键缺失 / 非对象 / 空对象 ⇒ **不设值**（留 {@code null}）：那是「本次没有这个事实」，
+     * 落一个空对象正好是卡片面最该禁止的形态 —— 它长得像「已检查、没有问题」。</p>
+     */
+    static void setProactiveStatus(DailyBriefing record, JsonNode briefing) {
+        if (briefing == null) {
+            return;
+        }
+        JsonNode node = briefing.path(PROACTIVE_STATUS_FIELD);
+        if (node.isObject() && !node.isEmpty()) {
+            record.setProactiveStatus(node);
+        }
     }
 
     // ==================== 聚合快照（确定性层）====================

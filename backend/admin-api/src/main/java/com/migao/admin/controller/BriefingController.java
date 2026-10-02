@@ -50,6 +50,12 @@ public class BriefingController {
         resp.put("verifyStatus", briefing != null ? briefing.getVerifyStatus() : null);
         resp.put("content", briefing != null ? briefing.getContent() : null);
         resp.put("bizDate", briefing != null ? briefing.getBizDate().toString() : null);
+        // 逐规则接线状态（issue #5955）：由 ai-agent 引擎在 `sanitize_briefing` **之后**挂上、
+        // admin-api 生成时**原样**落库 —— 这里同样只**透传**：不做对账、不重算、不改写
+        // （它不是数字，不许进 `verifyAndFilter` 那套数值回填口径）。null = 未采集
+        // （本列面世前的存量行）⇒ 前端据此**不渲染**该面板（未知 ≠ 没问题）。
+        resp.put(DailyBriefingService.PROACTIVE_STATUS_FIELD,
+                briefing != null ? briefing.getProactiveStatus() : null);
         // 主动发现（族 1 · 包 1，issue #5322）：把**聚合快照**（确定性层产出）一并返回，
         // 供 ai-agent 侧 `briefing_query` 做确定性规则扫描 —— 与简报**同源** ⇒ 两个入口口径一致。
         // 快照只含聚合数字 + 脱敏事实（无客户 PII，见 aggregateSnapshot）。
