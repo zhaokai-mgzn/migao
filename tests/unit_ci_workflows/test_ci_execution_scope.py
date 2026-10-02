@@ -115,6 +115,20 @@ def test_face_prefixes_are_same_source_as_the_local_helper():
         assert pref in sh, f"本地 helper 腿的触发面里没有 {pref} —— 两侧口径漂移了"
 
 
+def test_canonical_argv_is_the_same_source_everywhere():
+    """🔴 同源判据：`CANONICAL_ARGV` 必须与**本地腿**（`verify-all.sh`）和 **CI 全量档**逐字相同。
+
+    本测试是 `scripts/ci_helper_scope.py::CANONICAL_ARGV` 那句「同源」承诺的**承担者** ——
+    登记在 `tests/unit_ci_workflows/declaration_gate_registry.json` 的 `same_source_claims`
+    （守卫 = `tests/unit_ci_workflows/test_gate_coverage_and_same_source.py::test_same_source_claims_have_criteria`；
+    注释里的承诺没有判据承担 ⇒ CI 判红，这正是 #5007① 的形态）。
+    """
+    tail = " ".join(scope.CANONICAL_ARGV).split(" ", 1)[1]   # 去掉解释器（本地写 python3 / CI 写 python）
+    assert tail.startswith("-m pytest tests/unit_ci_workflows"), tail
+    assert tail in (REPO / "verify-all.sh").read_text(encoding="utf-8"), "本地腿 argv 与 CANONICAL_ARGV 漂移"
+    assert tail in (REPO / CI_REL).read_text(encoding="utf-8"), "CI 全量档 argv 与 CANONICAL_ARGV 漂移"
+
+
 # ── 接线：CI 真调它，且全量命令与「未跑」打印都在 ─────────────────────────────
 def test_ci_wiring_keeps_full_command_and_prints_what_it_skipped():
     ci = (REPO / CI_REL).read_text(encoding="utf-8")
