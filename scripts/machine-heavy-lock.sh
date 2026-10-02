@@ -38,7 +38,7 @@
 #    判据 = `test_suite_self_lock.py`。⇒ 本脚本的射程现在是**直连与入口两条路**。
 # 🔻 缺口②（**仍然是缺口**，照实登记）：本脚本盖不到「**入口打不开**」这一类 —— 即「在**不该**跑
 #    全量的工作区里跑」（子包 worktree）。那一路由 `verify-all.sh` 的**角色守卫**承担
-#    （2026-10-03，issue #6078；判据 `test_package_heavy_entry_ban.py`），**不是**本脚本。
+#    （2026-10-03，issue #6084；判据 `test_package_heavy_entry_ban.py`），**不是**本脚本。
 #    承载体也不再是「研发模式纪律」：🔴 S4 / issue #6020 起研发模式住在**预设仓**
 #    `zhaokai-mgzn/migao-agent-presets`，业务仓已无 `.agent-presets/**`。
 #

@@ -54,7 +54,7 @@
 #   只会多一个**无判据的分支** + 一个静默逃生口；本仓刚按 #6056 删掉一个不可见的环境变量逃生口
 #   （`MIGAO_BATCH_GATE_SKIP_READY`，YAGNI + 不可见）—— 这里沿用同一口径。
 #
-# ## 批次标记（`migao-package-heavy-entry-allow`，issue #6078）
+# ## 批次标记（`migao-package-heavy-entry-allow`，issue #6084）
 #
 #   本命令是**合法**在 worktree 里跑全量的那一方 ⇒ 它必须留下**可现取的证据**，否则
 #   `verify-all.sh` 的角色判定（见 `verify-all.sh` 的 `package_heavy_guard`）只能靠猜。
@@ -133,7 +133,7 @@ die() { echo "❌ $*" >&2; echo "exit=3（无法判定 —— 不是「通过」
 #: （那边只读、这边只写；名字变了两边一起变）。
 MARKER_NAME="migao-package-heavy-entry-allow"
 
-# ── 1.4) 给集成工作区**留标记**（issue #6078）─────────────────────────────────
+# ── 1.4) 给集成工作区**留标记**（issue #6084）─────────────────────────────────
 #
 # 为什么要有这个标记：`verify-all.sh` 现在会**拒绝**在**子包 worktree** 里直跑全量（那一次全量
 # 属于**批次**）。而本命令恰恰是**合法**在 worktree 里跑全量的那一方 ⇒ 必须在它造出的（或
@@ -153,7 +153,7 @@ mark_package_heavy_entry() {
   marker="$(git -C "$wt" rev-parse --git-path "$MARKER_NAME" 2>/dev/null || true)"
   [ -n "$marker" ] || die "取不到集成工作区的标记路径（git rev-parse --git-path ${MARKER_NAME}）：${wt}"
   [ -e "$marker" ] && return 0                        # 幂等
-  printf 'batch-integration\n# 由 scripts/batch-gate.sh 写入（issue #6078）：本工作区被授权跑那一批**唯一一次**全量。\n# 读取方 = verify-all.sh 的 package_heavy_guard（只读）。删除本文件 ⇒ 该工作区立刻被当成子包 worktree 拒绝。\n' \
+  printf 'batch-integration\n# 由 scripts/batch-gate.sh 写入（issue #6084）：本工作区被授权跑那一批**唯一一次**全量。\n# 读取方 = verify-all.sh 的 package_heavy_guard（只读）。删除本文件 ⇒ 该工作区立刻被当成子包 worktree 拒绝。\n' \
     > "$marker" 2>/dev/null || die "标记写不进去：${marker}（工作区：${wt}）"
   echo "  🔑 已留批次标记：${marker}（= 本工作区被授权跑那一次全量；verify-all.sh 的判别读它，不读名字）"
 }

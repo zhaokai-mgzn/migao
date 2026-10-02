@@ -59,7 +59,7 @@
 # **同一份判据**）。变更集为空 ⇒ **不跑任何检查**并**非零退出**——在零 diff 的树上跑验证没有边际
 # 信息，把它的 ✅ 读成「验证通过」属 migao-acceptance v1.3 的「空跑」。
 #
-# ── 套件内全量入口的**角色判定**（issue #6078）：子包 worktree **不许**直跑全量 ──────────
+# ── 套件内全量入口的**角色判定**（issue #6084）：子包 worktree **不许**直跑全量 ──────────
 #
 # D 口径 = 「**一批只跑一次**全量」，而那一次属于**批次集成**（`scripts/batch-gate.sh`）。
 # 在**子包 worktree** 里直跑全量会「把批次那一次提前烧掉」并跟别人的重活抢同一把机器锁。
@@ -717,7 +717,7 @@ fi
 echo "变更集：$(printf '%s\n' "$CHANGE_SET" | grep -c .) 个文件（origin/main...HEAD ∪ 工作区改动）"
 
 # ══════════════════════════════════════════════════════════════════════════════════════
-# 套件内全量入口的**角色判定**（issue #6078）—— 子包 worktree 里**拒绝**直跑全量
+# 套件内全量入口的**角色判定**（issue #6084）—— 子包 worktree 里**拒绝**直跑全量
 # ══════════════════════════════════════════════════════════════════════════════════════
 # ## 病灶（两条实测事实，不是推断）
 #
@@ -841,7 +841,7 @@ package_heavy_guard() {
   echo "   为什么  ：当前工作区是**子包 worktree**（linked worktree 且没有批次标记）："
   echo "             $(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   echo "             D 口径 = **一批只跑一次**全量，那一次属于**批次集成**；在这里直跑会把它**提前烧掉**，"
-  echo "             并与别人的重活抢同一把机器级锁（issue #6078）。"
+  echo "             并与别人的重活抢同一把机器级锁（issue #6084）。"
   echo "             判定：git-dir=$(git rev-parse --absolute-git-dir 2>/dev/null || echo '?')"
   echo "                   = common-dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo '?')；"
   echo "                   标记 ${marker_path} 不存在"

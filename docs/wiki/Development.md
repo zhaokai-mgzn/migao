@@ -390,7 +390,7 @@ pytest -q --durations=20    # 单用例 >2s 即可疑
 `TestSuiteInternalEntries` 单独裁）+ `tests/unit_ci_workflows/test_suite_self_lock.py`
 （**直连整目录**自己拿锁：接线真跑 / 拦在收集之前 / 纯函数触发面与三类豁免 / fail-closed / 释放面）。
 
-## 子包 worktree **不许**直跑全量（2026-10-03 固化，issue #6078）
+## 子包 worktree **不许**直跑全量（2026-10-03 固化，issue #6084）
 
 上一节把「一批只跑一次全量」做成了**入口**（`scripts/batch-gate.sh`），但**纪律不是机制**：
 两条实测事实说明误跑的入口仍然敞开 ——
