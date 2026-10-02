@@ -102,7 +102,12 @@ LEDGER_CEILINGS = {
     # 新增授权」，不是「有人把台账放宽了」。（`customer:view` / `knowledge:view` 已有条目，
     # 只更新其 `roles` 集，不新增条数。）
     "AUTHORIZATION_CENSUS": 19,
-    "UNANNOTATED_ENDPOINTS": 21,
+    # issue #5980（2026-10-02）：`AdminRoleController` 的三条读端点补了 `@RequirePermission`
+    # （`/roles`·`/roles/{id}` → `system:view`；`/roles/all` → `employee:list`）⇒ 未注解端点
+    # 台账从 21 条**缩短**到 18 条。**这不是放宽而是收窄**（只许缩短的台账自然下落）——
+    # 上限随之调低，防它悄悄长回去。
+    "UNANNOTATED_ENDPOINTS": 18,
+
     # issue #4923（2026-10-02）：`craft_config_query` 是**跨码工具**（6 个读端点分属三档生效码，
     # 工具声明生产域读码 `production:view`）⇒ 判据 2 的具名出口 `CODE_DIVERGENCE_EXCEPTIONS`
     # 新增一条，`REGISTERED_RESIDUALS` 同步新增一条「载体说明」条目（9 → 10）。
