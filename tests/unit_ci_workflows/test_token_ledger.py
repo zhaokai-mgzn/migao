@@ -11,9 +11,11 @@
    ⇒ 数字还在，**含义变了**（§25：读数与它声称的对象）；
 3. **悄悄变成门禁**：加一条阈值 `exit 1` ⇒ 从此没人敢跑它，而 §29 要的是「把分母摆到台面上」。
 
-故本文件锁八件事（每条都能指出反例输入）：
+故本文件锁十一件事（每条都能指出反例输入）：
 精确计数 / 恒等式不符**计数上报** / 停顿桶**边界**（半开区间）/ 上下文口径 / 阈值投影的**单调与精确** /
-子代理归属 / 不可判定 ⇒ `exit 3` / 报告型语义（指标再差也 `exit 0`，且必须含处置要求原文）。
+子代理归属 / 不可判定 ⇒ `exit 3` / 报告型语义（指标再差也 `exit 0`，且必须含处置要求原文） /
+`--until` 窗口上界的**半开边界**（冻结时钟钉死，不靠「大概在窗口里」）/ 折叠·prune 精确计数 /
+**折叠后返工**的同会话前后对照（分子分母都精确 —— 分母错 = 判不出返工）。
 
 ## 红证（每条都能指出反例输入）
 
@@ -435,3 +437,103 @@ def test_real_session_log_shape_is_read() -> None:
         f"真日志首行的 `delegationDepth` 没被读出来（实际 {depth!r}，形态漂移？）"
         f"—— 取证：zstd -dc {log} | head -1"
     )
+
+
+# ── 判据 9：窗口叠加 ────────────────────────────────────────────────────────
+class _FrozenClock:
+    """只替换 `token_ledger` 模块内的 `time`（不碰全局 `time` 模块）—— 边界判据要的是确定性。"""
+
+    def __init__(self, now: float) -> None:
+        self._now = now
+
+    def time(self) -> float:
+        return self._now
+
+
+def _run_json(root: Path, cwd: str, out_path: Path, *extra: str) -> dict:
+    """跑一次 `main()`，返回 `--json` 机读形态（判据不依赖控制台排版）。"""
+    code = mod.main(["--sessions", str(root), "--cwd", cwd, "--json", str(out_path), *extra])
+    assert code == 0, f"main() 退出码 {code}（期望 0）"
+    return json.loads(out_path.read_text(encoding="utf-8"))
+
+
+def _fold(seq: int) -> str:
+    """一条 `compaction/start`（折叠点；返工对照靠它的 `seq` 划窗口）。"""
+    return json.dumps({"type": "compaction/start", "seq": seq, "time": 1_700_000_000_000 + seq,
+                       "data": {"compactionId": f"c{seq}", "turn": 1}})
+
+
+def _tool(seq: int, name: str, **args) -> str:
+    """一条 `tool/call`（真形态：`data.name` + `data.arguments` 是 **JSON 字符串**）。"""
+    return json.dumps({"type": "tool/call", "seq": seq, "time": 1_700_000_000_000 + seq,
+                       "data": {"name": name, "arguments": json.dumps(args), "callId": f"c{seq}"}})
+
+
+def test_until_window_is_half_open(tmp_path: Path, monkeypatch) -> None:
+    """`--days D` = `[T-D, ∞)`；`--days D --until U` = `[T-D, T-U)` —— 上界**不含**、下界**含**。
+
+    冻结时钟才能判「恰好压在边界上」那一格：真时钟下 mtime 与边界永远差几毫秒 ⇒
+    判据退化成「大概在窗口里」（= §25 的**空断言**形态）。
+    """
+    now = 5_000_000.0
+    monkeypatch.setattr(mod, "time", _FrozenClock(now))
+    root, cwd = tmp_path / "sessions", str(tmp_path / "repo")
+    for name, age_days in (("a", 1.0), ("b", 4.0), ("c", 3.0)):
+        p = _write(root, cwd, [_session_header(0), _step(1_700_000_000_000, i=10, c=90, o=1)], name=name)
+        stamp = now - age_days * 86400
+        os.utime(p, (stamp, stamp))
+
+    # 下界**含**：c 恰好 3 天前仍在「最近 3 天」里；b（4 天前）在外。
+    data = _run_json(root, cwd, tmp_path / "a.json", "--days", "3")
+    assert data["totals"]["steps"] == 2, data["scope"]["window"]
+    # 上界**不含**：`--days 6 --until 3` 只剩 b（c 恰好压在上界 ⇒ 排除；a 太新 ⇒ 排除）。
+    data = _run_json(root, cwd, tmp_path / "b.json", "--days", "6", "--until", "3")
+    assert data["totals"]["steps"] == 1, data["scope"]["window"]
+    assert "前 3 天" in data["scope"]["window"], data["scope"]["window"]
+
+
+# ── 判据 10：折叠 / prune 计数（分臂判据，单向） ────────────────────────────
+def test_fold_and_prune_counts(tmp_path: Path, capsys) -> None:
+    lines = [
+        _session_header(0),
+        _fold(100),
+        json.dumps({"type": "compaction/end", "seq": 101, "time": 1_700_000_000_101, "data": {}}),
+        json.dumps({"type": "compaction/prune", "seq": 102, "time": 1_700_000_000_102, "data": {}}),
+        _step(1_700_000_000_103, i=10, c=90, o=1),
+    ]
+    root, cwd = tmp_path / "sessions", str(tmp_path / "repo")
+    _write(root, cwd, lines)
+    data = _run_json(root, cwd, tmp_path / "fold.json")
+    row = data["sessions"][0]
+    assert (row["folds"], row["prunes"]) == (1, 1), row
+    assert data["rework"]["sessions_with_folds"] == 1, data["rework"]
+
+    # 接线面：报告里真出现这一节（判据本体绿 ≠ 接线在，§28.2）
+    code, out, err = _run(capsys, root, cwd)
+    assert code == 0, err
+    assert "有折叠的会话：1 个" in out, out
+    assert "归因 ④" in out, out
+
+
+# ── 判据 11：折叠后返工 = 同会话前后对照（分子分母都要精确） ────────────────
+def test_post_fold_rework_is_compared_against_the_rest_of_the_session(tmp_path: Path) -> None:
+    lines = [
+        _session_header(0),
+        _step(1_700_000_000_001, i=10, c=90, o=1),
+        _tool(10, "bash", command="pytest tests/x"),  # 首次出现
+        _tool(20, "read", file_path="/repo/a.py"),    # 首次出现
+        _tool(30, "job_output", job_id="j1"),         # 不在 REPEAT_TOOLS ⇒ 不进分母
+        _fold(100),
+        _tool(110, "bash", command="pytest tests/x"),  # 重复 + 折叠后窗口 (100, 220]
+        _tool(120, "read", file_path="/repo/a.py"),    # 重复 + 折叠后窗口
+        _tool(130, "job_output", job_id="j1"),         # 不进分母
+        _tool(300, "bash", command="pytest tests/x"),  # 重复，但**在窗口外**
+        _tool(310, "bash", command="ls"),              # 不重复
+    ]
+    root, cwd = tmp_path / "sessions", str(tmp_path / "repo")
+    _write(root, cwd, lines)
+    data = _run_json(root, cwd, tmp_path / "rework.json")
+    rw = data["rework"]
+    assert (rw["post_calls"], rw["post_repeats"]) == (2, 2), rw
+    # 窗口外 = 折叠点之前的两条首现（10 / 20）+ 窗口关闭后的两条（300 重复、310 不重复）。
+    assert (rw["other_calls"], rw["other_repeats"]) == (4, 1), rw
