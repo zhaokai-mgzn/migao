@@ -1,4 +1,4 @@
-// case_ids: AU-007, HR-001, HR-002, UI-028
+// case_ids: AU-007, HR-001, HR-002, UI-028, HR-013
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
@@ -226,6 +226,42 @@ describe('EmployeesPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('pagination')).toBeInTheDocument()
     })
+  })
+
+  it('#6083: 同码多节点时权限徽标 label 取菜单树首见（dashboard:view → 经营看板，不被「每日简报」覆盖）', async () => {
+    // #5699/#5291 的设计：后端菜单树允许同码多节点（workspace 组两个 dashboard:view 叶子）
+    // ⇒ 前端 labelMap 不能「后写覆盖先写」，必须首见优先，否则徽标名随数据顺序漂移
+    mockRequestGet.mockResolvedValue({
+      data: {
+        data: [
+          {
+            code: 'workspace',
+            label: '工作台',
+            children: [
+              { code: 'dashboard:view', label: '经营看板' },
+              { code: 'dashboard:view', label: '每日简报' },
+            ],
+          },
+        ],
+      },
+    })
+    mockGetEmployees.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            { id: 1, name: '张三', phone: '13800001111', position: '客服', permissions: ['dashboard:view'], status: 'active', createdAt: '2026-06-01T10:00:00' },
+          ],
+          total: 1,
+        },
+      },
+    })
+    render(<EmployeesPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('employee-1')).toBeInTheDocument()
+    })
+    // 修复前：labelMap 按 code 后写覆盖先写 ⇒ 徽标显示「每日简报」；修复后首见优先 ⇒ 「经营看板」
+    expect(within(screen.getByTestId('employee-1')).getByText('经营看板')).toBeInTheDocument()
+    expect(within(screen.getByTestId('employee-1')).queryByText('每日简报')).not.toBeInTheDocument()
   })
 
   // ==================== #5485: 员工登录账号（用户名 + 初始密码） ====================

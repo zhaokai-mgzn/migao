@@ -2648,7 +2648,7 @@
 真值: finance.summary
 溯源: 本期默认时间范围（本月1号~今天） ｜ tags: finance, summary
 
-## 人事域（12 case）
+## 人事域（13 case）
 
 ### HR-001. 员工列表 🟢
 ```
@@ -2821,6 +2821,19 @@
 ```
 真值: employee-role.fallback-seed-parity, employee-role.snapshot-permissions
 溯源: 2026-10-02 新增（issue #5979 / #5988）：验收报告（acceptance/2026-10-02/new-tenant-multirole/REPORT.md）暴露「岗位能力与命名不符」一组产品口径，人类逐条裁定「应允许」。裁定前实测：知识编辑默认权限 = [dashboard:view, product:list]（**一个 knowledge 码都没有**）；客服无 order:refund（#5246 只补了读码 after_sales:view ⇒ 菜单看得见、建不了单）；销售无 order:create（#5246 有意把写码只给运营）；财务无 customer:view（对账看不到客户）。本用例把「四处真值源逐值一致 + 逐码期望集 + 存量回填」立成常驻判据，并顺带补上两个**结构性失明**：① census 的基线 `FALLBACK_BASELINE_BEFORE_5683` 缺 knowledge_editor ⇒ 该角色的授权变更此前**结构性无人计票**（已按基线自述口径补登「#5683 生效前的当时读数」）；② 判据 14 只判「两处 Java 集合相等」⇒ 判不了「值本身对不对」（两处一起写错即全绿，其 docstring 边界 ③ 已登记），本单补上逐码那一半。 ｜ tags: role, permission, seed, fallback, migration, rbac
+
+### HR-013. 岗位权限树同码多节点：TreeCheckbox key 唯一不触发 React duplicate-key + 权限徽标 label 首见优先不被同码节点覆盖（issue #6083） 🔵
+```
+你: 管理员打开员工管理页：菜单树按设计含同码多节点（workspace 组两个 dashboard:view 叶子「经营看板/每日简报」、production-center 组四个 production:view 叶子），员工权限徽标应显示权限中文名
+期望: direct_reply
+数据: 判据 1·🔴 **同码多节点渲染零 duplicate-key**：树组件对同码多节点渲染时 console.error 不得出现「Encountered two children with the same key」——key 不得只用 node.code（同码 = #5699/#5291 的有意设计面），必须由 code+label 派生唯一 key。执行点 = frontend/admin-web/tests/unit/components/TreeCheckbox.test.tsx（#6083 describe 判据 1）。红证（实测）：还原 key={node.code} ⇒ 具名红。
+数据: 判据 2·🔴 **同码节点全部渲染且 key 派生幂等**：同码多叶子的 6 个 label 全部渲染（一个不少）；treeNodeKey 对同码不同 label 派生不同 key 且幂等（同码同 label 的极端形态仍会撞 key —— 已知接受的边界，登记不修）。执行点 = 同文件判据 2。
+数据: 判据 3·🔴 **类级守卫·同码勾选语义不回退**：同码 = 同权限 —— 勾选其一上抛共享 code，同码各节点一起高亮（selected=['dashboard:view'] ⇒ 经营看板与每日简报同时勾选）。该语义是正确设计，禁因修 key 而改坏。执行点 = 同文件判据 3。
+数据: 判据 4·🔴 **权限徽标 label 首见优先**：员工权限徽标按菜单树**首见** label 展示（dashboard:view → 经营看板），不被同码后到节点（每日简报）后写覆盖。执行点 = frontend/admin-web/tests/unit/pages/employees.test.tsx（#6083 行为判据）。红证（实测）：还原 map[c.code]=c.label ⇒ 徽标变「每日简报」⇒ 具名红。
+跳过: [backend-contract] 纯前端渲染契约（React key 唯一性 + 徽标 label 映射），vitest 单测验证，无 LLM 环节，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-10-03 新增（issue #6083）：/employees 页控制台 6 条「Encountered two children with the same key」+ 徽标 label 被同码节点覆盖（dashboard:view 显示「每日简报」而非「经营看板」）。后端同码多节点是 #5699/#5291 的有意设计，前端不得假设 code 唯一；本用例把「key 唯一 + 首见优先 + 同码勾选语义不回退」立成常驻判据。 ｜ tags: permission, menu, same-code, react-key, ui
 
 ## 知识问答域（7 case）
 
@@ -9048,8 +9061,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：631（活跃 133，跳过 498）
-- tier 分布：smoke 12 / normal 585 / adversarial 32
+- 用例总数：632（活跃 133，跳过 499）
+- tier 分布：smoke 12 / normal 586 / adversarial 32
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -9062,7 +9075,7 @@
 - 数据域：21
 - 防御域：24
 - 财务对账域：4
-- 人事域：12
+- 人事域：13
 - 知识问答域：7
 - 杂项域：72
 - 商家入驻域：5
