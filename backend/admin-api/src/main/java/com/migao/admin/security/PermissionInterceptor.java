@@ -3,17 +3,24 @@ package com.migao.admin.security;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.exception.PermissionDeniedException;
 import com.migao.admin.service.RoleService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
+import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.util.Collection;
 import java.util.HashSet;
@@ -31,9 +38,29 @@ import java.util.Set;
 @Aspect
 @Component
 @RequiredArgsConstructor
-public class PermissionInterceptor {
+public class PermissionInterceptor implements HandlerInterceptor {
 
     private final RoleService roleService;
+
+    // ── F3（issue #6063）：403 必须先于 422/400 ──
+    // AOP @Around 运行在方法体调用阶段，晚于 @RequestParam 必填校验（参数解析阶段）⇒
+    // 无权限 GET 缺必填参数先拿到 422（泄露端点存在 + 参数结构）。preHandle 在 MVC 分发
+    // 阶段运行，把同一份授权判定提前到参数解析之前；AOP 保留为双保险（非 MVC 直调仍被拦）。
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        if (!(handler instanceof HandlerMethod handlerMethod)) {
+            return true;
+        }
+        RequirePermission annotation = AnnotationUtils.findAnnotation(handlerMethod.getMethod(), RequirePermission.class);
+        if (annotation == null) {
+            annotation = AnnotationUtils.findAnnotation(handlerMethod.getBeanType(), RequirePermission.class);
+        }
+        if (annotation == null) {
+            return true;
+        }
+        requirePermission(annotation.value());
+        return true;
+    }
 
     /**
      * 越权授予的可行动建议（与 {@link PermissionDeniedResponse} 同口径：说清「不是参数问题」+
@@ -137,6 +164,22 @@ public class PermissionInterceptor {
             throw new AccessDeniedException("无法获取用户信息");
         }
 
+        // F3 去重（issue #6063）：同一请求里 preHandle（MVC 提前判定）与 AOP @Around（双保险）
+        // 会先后各跑一次同一判定 ⇒ 以 request attribute 记 (userId, 权限码)，第二次直接复用，
+        // 保证一次请求只查一次权限（SecurityConfigTest 承重判据：getUserPermissions 恰好 1 次）。
+        // 拒绝路径不缓存（拒绝即异常终止请求，不会发生第二次）；非 Web 上下文（命令行/异步）无
+        // request attributes ⇒ 行为不变。
+        ServletRequestAttributes requestAttributes =
+                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        String memoKey = null;
+        if (requestAttributes != null) {
+            memoKey = getClass().getName() + ".checked." + userId + "." + requiredPermission;
+            if (Boolean.TRUE.equals(requestAttributes.getRequest().getAttribute(memoKey))) {
+                log.debug("权限检查复用本请求已通过的判定：用户 {} 权限 {}", userId, requiredPermission);
+                return;
+            }
+        }
+
         // 获取用户所有权限
         List<String> userPermissions = roleService.getUserPermissions(userId);
 
@@ -151,6 +194,9 @@ public class PermissionInterceptor {
                     "权限不足，需要权限: " + requiredPermission, requiredPermission);
         }
 
+        if (requestAttributes != null) {
+            requestAttributes.getRequest().setAttribute(memoKey, Boolean.TRUE);
+        }
         log.debug("权限检查通过：用户 {} 拥有权限 {}", userId, requiredPermission);
     }
 
