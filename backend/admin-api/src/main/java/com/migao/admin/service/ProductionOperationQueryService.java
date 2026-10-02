@@ -668,17 +668,29 @@ public class ProductionOperationQueryService {
     /**
      * **缺口可查**（issue #4308 交付物 5 / P4）：把「只活在代码注释里的缺口」变成商家能看见的数据。
      *
-     * <p>两只清单：</p>
+     * <p>清单（issue #6104 起为三只）：</p>
      * <ol>
-     *   <li>{@code unrouted_operations} —— **有活跃工序但未进任何活跃路线**的工序。
-     *       真值源下应为 {@code 裁剪-布 / 裁剪-纱 / 质检 / 腰靠垫} 四道，且它们**不是缺陷**：
-     *       issue #4261 逐项登记了「为什么必须问客户」（裁剪vs精裁是否两道 / 质检是否每单必做 /
-     *       腰靠垫归属 / 罗马帘整套工序 / 纱帘熨烫定型）⇒ 每条带
-     *       {@code pending_confirmation=true}，**不要让商家/前端把它们读成「系统漏了」**。</li>
+     *   <li>{@code unrouted_operations} —— **没有任何活跃消费方**的工序。消费方 =
+     *       **活跃主线 ∪ 活跃适用条件的 {@code operation}**，两侧都按
+     *       {@link #normalizeOperationName} 归一后比对（主线 / 规则存**逻辑名** {@code 韩褶}、
+     *       工序库存**变体名** {@code 韩褶-布} —— 不归一就是拿两种口径相比）。其中
+     *       {@code pending_confirmation=true} 的那几道**不是缺陷**：issue #4261 逐项登记了
+     *       「为什么必须问客户」（裁剪vs精裁是否两道 / 质检是否每单必做 / 腰靠垫归属 /
+     *       罗马帘整套工序 / 纱帘熨烫定型），**不要让商家/前端把它们读成「系统漏了」**。</li>
+     *   <li>{@code unreachable_operations} —— **已被路线/适用条件引用、但任何加工单都取不到**的
+     *       工序（{@code reason="unreachable"}）。「挂了路线」≠「可达」：判定按
+     *       **部位 × 路线 → 变体名**做（与实例化侧同一份 {@link #variantNameOf}），
+     *       例：{@code 裁剪} 挂在「布料工序路线」（{@code positions=["布料"]}）上，而该部位解析出的
+     *       变体是 {@code 裁剪-布} ⇒ {@code 裁剪-纱} 一辈子派不到。旧实现把它算成「已挂路线」
+     *       ⇒ **静默漏报**；现在单独成清单，**不得**再静默丢掉。</li>
      *   <li>{@code signal_keys_without_route} —— **库里没有路线的信号组合**：逐个活跃信号行算出
      *       「只命中它时会派生的键」（另一维取默认），报出库中无该路线的那些。
      *       例：商家自建信号「罗马帘」⇒ {@code 罗马帘×韩褶} 无路线（#4261 ①，本单**不发明**该路线）。</li>
      * </ol>
+     *
+     * <p>🔴 <b>建议不得有害</b>：对**已被规则消费**的工序绝不建议「加进某条路线」——
+     * 那会把**条件工序**变成**无条件工序**（{@code 韩褶} / {@code 花边} 从此每张单都出现
+     * = 直接改计件工资，见 {@link #gapNote}）。</p>
      *
      * <p><b>P2b 口径（issue #4459 §2②，按最小改动定）</b>：{@code signal_keys_without_route}
      * **不纳入**「工艺无规则」缺口 —— 它回答的是「这个键有没有路线」，而新结构里
@@ -687,35 +699,57 @@ public class ProductionOperationQueryService {
      * ⇒ 真缺口（库里连模板都没有）被淹没。</p>
      */
     public Map<String, Object> routingGaps(Long tenantId) {
-        Set<String> routed = new LinkedHashSet<>();
-        for (ProductionRouteTemplate template : routeTemplates(tenantId)) {
-            routed.addAll(stringList(template.getMainline()));
+        List<ProductionRouteTemplate> templates = routeTemplates(tenantId);
+        List<ProductionRouteRule> rules = routeRules(tenantId);
+
+        // 「被消费」= **活跃主线 ∪ 活跃适用条件的 operation**（issue #6104）。两侧都走**既有**
+        // 归一函数：主线 / 规则里存的是**逻辑名**（韩褶 / 花边），工序库存的是**变体名**
+        // （韩褶-布 / 花边-布）—— 不归一就是拿两种口径相比（旧实现因此把 20 道**正被规则消费**
+        // 的工序误报成缺口，并建议商家把它加进路线 = 把条件工序变成每单必出的无条件工序）。
+        Set<String> consumed = new LinkedHashSet<>();
+        for (ProductionRouteTemplate template : templates) {
+            consumed.addAll(normalizedMainline(template.getMainline()));
+        }
+        for (ProductionRouteRule rule : rules) {
+            if (rule.getOperation() != null) {
+                consumed.add(normalizeOperationName(rule.getOperation()));
+            }
         }
 
+        Map<String, Map<String, Object>> catalog = operationsByName(tenantId);
+
         List<Map<String, Object>> unrouted = new ArrayList<>();
+        List<Map<String, Object>> unreachable = new ArrayList<>();
         int pending = 0;
         for (ProductionOperation op : activeOperations(tenantId)) {
-            // 判据 = **归一后的逻辑名**是否被某条主线消费（主线存的是逻辑名，工序库存的是旧名）
-            if (routed.contains(normalizeOperationName(op.getName()))) {
-                continue;
-            }
+            String logical = normalizeOperationName(op.getName());
             boolean isPending = PENDING_CUSTOMER_CONFIRMATION_OPERATIONS.contains(op.getName());
-            if (isPending) {
-                pending++;
+            boolean isConsumed = consumed.contains(logical);
+            // 「挂了路线」≠「任何单都取得到」：被消费的还要过**可达性**（部位 × 路线 → 变体名）
+            if (isConsumed && reachableAtSomePosition(logical, op.getName(), templates, rules, catalog)) {
+                continue;
             }
             Map<String, Object> entry = new LinkedHashMap<>();
             // 读时归一（issue #4642，与 operationView 同口径）：缺口清单是**同一条泄漏路径**
             // —— 当前 FE 无渲染方，但让库口径变体名留在 web 可见响应里就是下一次漏回界的入口。
-            entry.put("name", normalizeOperationName(op.getName()));
+            entry.put("name", logical);
             entry.put("library_name", op.getName());
             entry.put("group_name", op.getGroupName());
             entry.put("unit", op.getUnit());
             entry.put("unit_price", nz(op.getUnitPrice()));
             entry.put("pending_confirmation", isPending);
-            entry.put("note", isPending
-                    ? "有意挂起、等客户输入（issue #4261 提问清单），不是系统漏了；客户回复前不要替它编工序/单价"
-                    : "该工序有价但没有任何活跃路线消费它；可经「工艺路线」页把它加进某条路线，或停用它");
-            unrouted.add(entry);
+            // 两类的出口不同：`no_consumer` = 没人消费它（可行动：挂进路线或停用）；
+            // `unreachable` = 已被引用但取不到（挂进路线无用，只有改部位/停用可行动）。
+            entry.put("reason", isConsumed ? "unreachable" : "no_consumer");
+            entry.put("note", gapNote(isPending, isConsumed));
+            if (isConsumed) {
+                unreachable.add(entry);
+            } else {
+                if (isPending) {
+                    pending++;
+                }
+                unrouted.add(entry);
+            }
         }
 
         List<Map<String, Object>> signalGaps = new ArrayList<>();
@@ -742,8 +776,90 @@ public class ProductionOperationQueryService {
         result.put("unrouted_operations", unrouted);
         result.put("unrouted_operation_total", unrouted.size());
         result.put("pending_confirmation_total", pending);
+        result.put("unreachable_operations", unreachable);
+        result.put("unreachable_operation_total", unreachable.size());
         result.put("signal_keys_without_route", signalGaps);
         return result;
+    }
+
+    /**
+     * 「已挂路线/适用条件、但任何加工单都取不到」的说明（issue #6104）。
+     *
+     * <p>⚠️ 措辞里**不得**出现「加进某条路线」：这类工序是**按部位派生**的
+     * （{@code 裁剪 @布料 → 裁剪-布}），把它挂进主线只会让它在**每个**部位都出现
+     * —— 那是与缺陷相反的坏建议。</p>
+     */
+    private static final String UNREACHABLE_NOTE =
+            "该工序已被活跃路线或适用条件引用，但按「部位 × 路线」解析不出这个变体 ⇒ 任何加工单都取不到它；"
+                    + "请核对该工序适用的部位，或经「工艺路线」页把它停用";
+
+    /**
+     * 缺口条目的人话说明（issue #6104）——**建议不得有害**（理由见 {@link #UNREACHABLE_NOTE}）。
+     *
+     * @param isPending  在 {@link #PENDING_CUSTOMER_CONFIRMATION_OPERATIONS} 里（有意挂起，不是漏了）
+     * @param isConsumed 已被活跃主线/适用条件消费（⇒ 只可能是「不可达」这一档）
+     */
+    private static String gapNote(boolean isPending, boolean isConsumed) {
+        if (isPending) {
+            String note = "有意挂起、等客户输入（issue #4261 提问清单），不是系统漏了；"
+                    + "客户回复前不要替它编工序/单价";
+            // 挂起 + 不可达（如 裁剪-纱）两件事都要说：只报「挂起」会把漏报藏回去
+            return isConsumed ? note + "；" + UNREACHABLE_NOTE : note;
+        }
+        return isConsumed ? UNREACHABLE_NOTE
+                : "该工序有价但没有任何活跃路线或适用条件消费它；"
+                        + "可经「工艺路线」页把它加进某条路线，或停用它";
+    }
+
+    /**
+     * **可达性**判据（issue #6104）：该变体能不能被**某个部位**的**某条活跃路线**解析出来。
+     *
+     * <p>判定与实例化侧**同一份口径**（{@link #variantNameOf} + 规则级部位限定，逐字对齐
+     * {@code ProcessingOrderService.insertConditionalOperations}）：某部位这条路线会产出该逻辑工序
+     * （在主线里，或某条 {@code insert} 规则会插它且不限部位/限该部位），且该部位解析出的变体名
+     * **就是它自己**。缺了这一层，「已挂路线」就把 {@code 裁剪-纱} 这类**任何单都取不到**的工序
+     * 算成「没问题」⇒ 清单既不回答「能不能派工到」。</p>
+     */
+    private boolean reachableAtSomePosition(String logical, String variantName,
+                                            List<ProductionRouteTemplate> templates,
+                                            List<ProductionRouteRule> rules,
+                                            Map<String, Map<String, Object>> catalog) {
+        for (ProductionRouteTemplate template : templates) {
+            List<String> mainline = normalizedMainline(template.getMainline());
+            for (String position : stringList(template.getPositions())) {
+                if (!producedAt(logical, mainline, rules, position)) {
+                    continue;
+                }
+                if (variantName.equals(variantNameOf(logical, position, catalog))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 该部位的这条路线**会不会产出**该逻辑工序：主线含它（逐项归一），或某条 {@code insert} 规则
+     * 会插它且该规则**不限部位 / 限的正是该部位**（与 {@code ProductionRouteRule#getPosition} 的
+     * 实例化语义逐字同款）。
+     */
+    private static boolean producedAt(String logical, List<String> mainline,
+                                      List<ProductionRouteRule> rules, String position) {
+        if (mainline.contains(logical)) {
+            return true;
+        }
+        for (ProductionRouteRule rule : rules) {
+            if (!"insert".equals(rule.getAction()) || rule.getOperation() == null) {
+                continue;
+            }
+            if (!logical.equals(logicalOperationName(rule.getOperation()))) {
+                continue;
+            }
+            if (rule.getPosition() == null || rule.getPosition().equals(position)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ══════════════════════════════════════════════════════════════════════════════
