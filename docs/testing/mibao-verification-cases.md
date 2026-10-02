@@ -2876,7 +2876,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（68 case）
+## 杂项域（69 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3846,6 +3846,20 @@
 跳过: [backend-contract] 纯静态文本对账 + 纯内存图对象判定（零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_agent_batch_type_domain.py 与 backend/ai-agent-service/tests/test_route_destination_binding.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-02 新增（issue #6044：B 端真实 LLM 评测抓到的 3 个真缺陷的类级固化）。落码 = ① 缺陷 A：`V146__add_inventory_stock_to_agent_batch_type.sql`（两条白名单 DROP + ADD 纳入 `inventory_stock` / `stock`，含终态对账与可执行回滚）+ `db/init/schema.sql` 同步 + 值域判据 tests/unit_ci_workflows/test_agent_batch_type_domain.py（3 条：值域 ⊆ 白名单 / 两条终态一致 / fail-closed，含 8 条内存红证）② 缺陷 C：`app/graph/nodes.py` 的 `_get_intent_to_route`（按 agent **绑定面**过滤，未绑定 route_key 改判 fallback）+ `route_by_intent`（`pending_interact_skill` / `handoff_offer` 目的地闸）+ 判据 backend/ai-agent-service/tests/test_route_destination_binding.py（28 条参数化用例）③ 缺陷 B 的行为判据另立 backend/ai-agent-service/tests/test_tools_dashboard_stats_counts.py（14 条，本用例的 `traces.tests` 只登记前两条静态面）。**取号 MC-069**：`python3 scripts/next_case_id.py MC` 现取（候选 = main ∪ 全部 open PR 分支 ∪ 本工作区）报 `main:001-048,050-068 · PR #6043:049 ⇒ 取 MC-069`，同 PR 加 claim 文件 `.github/cases/claims/<PR号>-MC-069.json`。 ｜ tags: single-source, fail-closed, red-proof, db-contract, routing
+
+### MC-049. 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据） 🔵
+```
+你: 当一条用例把人读名称塞进 id 型参数（如 `product_detail(product_id=遮光窗帘)`）却不声明对应前置、或声明了一个 runner 没实现的 `precondition.type` 时，必须有判据**具名**报出（哪个用例 + 哪个参数 + 缺哪种前置 + 出口）；而只改注释时不得报红
+期望: direct_reply
+数据: **病（issue #6041，2026-10-02 活栈实测）**：`PR-003`（smoke 档）`expectations: [product_detail(product_id=遮光窗帘)]` 此前**无任何前置声明**，而本机活栈（`:8001`/`:8090` 打云 dev RDS，tenant_id=1）名字含「遮光窗帘」的商品实测 **7 件** ⇒ agent **正确地**反问「要查看哪一件」（发 choice 交互卡）⇒ 期望 unmatched ⇒ 被判 `🔬 确定性回归·禁止 rerun`（**假红**；`local_runner.py smoke` 读数 = `7/8 通过 均分 88%`，唯一失败 PR-003）。形态 = 「用例把**运行期数据事实**（该名称唯一与否）当成了常量」。
+数据: **判据 1（名称塞进 id 型参数 ⇒ 必须声明对应前置）**：对真语料逐条期望核 —— 值不是 id 形态、不是「上轮产物」占位（`复用上轮 UUID` 这类）、不是跨用例引用（值里含 `MC-067` 这类用例号）、且不落在任一已声明 `precondition[].source` 里 ⇒ 该 `<tool, arg>` 规则项要求的前置 type 必须已声明 ⇒ 否则**具名判红**。规则表 = tests/unit_ci_workflows/test_eval_id_arg_precondition.py 的 `_PARAM_PRECONDITION_TYPES`（显式声明射程；全库现取命中 = PR-003 一条）。执行点 = 同文件 `test_id_typed_arguments_with_names_declare_matching_preconditions`。
+数据: **判据 2（声明的 type 必须有实现）**：`.github/cases/**` 里每一条**结构化** `precondition[].type` 必须在 tests/agent_eval/local_runner.py 的 `_PRECONDITION_TYPES`（唯一真相源）键集里；且每个已登记 type 在 runner 源码里有运行期接线（结构形状 `f"{t}:{src}"`）。执行点 = tests/unit_ci_workflows/test_eval_precondition_types_implemented.py 的 `test_every_declared_precondition_type_is_implemented` / `test_every_registered_type_is_wired_in_the_runner`。
+数据: **判据 3（判别力自证，注入式）**：摘掉某用例的前置声明 / 注入一个未实现的 type / 让规则表指向未登记 type ⇒ **各自判红**；只加一行注释 ⇒ **不红**（对照读数）。执行点 = 两个判据文件的 `test_red_proof_*` 与 `test_only_comments_change_is_green`。
+数据: **纯静态自证**：两个判据文件零 ai-agent 依赖（AST 取 import 名）+ 禁「跑不了就跳」—— CI 的 `ci workflow helper unit tests` job 只装 `pytest` + `pyyaml`（不装 `pydantic` / `langchain_core`）。执行点 = 两个文件的 `test_this_judgement_is_pure_static_and_never_skips`。
+数据: 🔴 **覆盖边界（显式登记）**：① 判的是**声明层形态** —— 判不了「那条前置本身对不对」（值/下界是 test_precondition_target_present.py 的面），也判不了「该名称在某个栈上到底唯一与否」（那是运行期 `precondition[...]` 的读数）；② 「占位 = 上轮产物」的判定是**词法**的（含「上轮」或尖括号形态）；③ **散文形态**的 `precondition`（值本身是 str）不在射程（本仓现取 14 条，只输出条数作可见性登记）；④ 本判据**不跑**评测、不联网、不 import ai-agent 依赖；⑤ 本判据**不改**任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 纯静态扫真用例语料与 runner 的 type 注册表（只读仓内文件；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_eval_id_arg_precondition.py + tests/unit_ci_workflows/test_eval_precondition_types_implemented.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-02 新增（issue #6041，用户点名「评测用例与现实业务/数据不匹配（PR-003 假红）+ 类级固化」）。落码 = ① 实例判据与修复：`.github/cases/product.yml` 的 PR-003 补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]` + `pre_clean[product_dedupe: 遮光窗帘]`（与同族 22 条既定用例同口径）② 类级固化 A = tests/unit_ci_workflows/test_eval_precondition_types_implemented.py（声明的 type 必须有实现 + 注册表不许空转 + 注册了必须有接线 + 注入式判别力自证）③ 类级固化 B = tests/unit_ci_workflows/test_eval_id_arg_precondition.py（规则表 `_PARAM_PRECONDITION_TYPES`；全库现取命中 = PR-003 一条）④ 文档规则 = docs/testing/acceptance-protocol.md 新增 §3.7「先判前置、再判产品」。**读数（可复算，只读）**：修前 2026-10-02 20:08+08 `tenant_id=1` 名字含「遮光窗帘」的非删除行 = **7**（`psql … -c "select count(*) from products where deleted=0 and tenant_id=1 and name like '%遮光窗帘%';"`；成员 = `米白色遮光窗帘` / `遮光窗帘`×3 / `2699 雪尼尔遮光窗帘` / `9231 遮光窗帘` / 又一件 `遮光窗帘` 已下架）⇒ agent 正确地反问「要查看哪一件」⇒ 期望 unmatched ⇒ 假红（`local_runner.py smoke` = `7/8 通过 均分 88%`）；同刻 HTTP 侧读数（口径 = runner `_list_products_matching`：`GET /api/admin/products?keyword=` 模糊匹配 + 客户端精确子串）= **7**。修后现取（2026-10-02 20:30+08，同一条 SQL 与同一探针）= **1**（`米白色遮光窗帘`）—— 其中「同关键词副本被收敛」这一步由**该周已存在的 `pre_clean[product_dedupe]` 家族**（PR-010 / OR-014 / CR-001… 本仓现取 22 条）在同一时段跑过所致（本包**未**对 dev 库做任何写操作：全程只读 `psql` + 只读 HTTP 探针），即本包补的正是 PR-003 **缺失的那一步**。**取号 MC-049**：`scripts/next_case_id.py MC` 现取（候选 = main ∪ 全部 open PR 分支 ∪ 工作区）= 「main:001-048,050-067 · PR #6038:068」⇒ 取最小空闲号 **049**（历史空档），同 PR 带 claim 文件 `.github/cases/claims/<PR号>-MC-049.json`（合并后删）。⚠️ **未覆盖（照实登记）**：用户点名的「多命中 ⇒ 应先反问用户选哪件」独立冒烟用例**未做** —— 它的前置需要「命中数 ≥ 2」（现机制只有 `expect_min` 下界 1 与 `expect` 精确值，`expect_min: 2` 是运行期新语义，超出本包射程）⇒ 登记为后续单；本轮也**未**跑真实 LLM 评测（`migao-dev-flow` §13 口径：默认不跑，且集成侧正在本机跑 mibao 腿）。 ｜ tags: ci, casebook, precondition, id-resolve, red-proof
 
 ## 商家入驻域（5 case）
 
@@ -6157,9 +6171,12 @@
 期望: product_detail(product_id=遮光窗帘)
 数据: data.name.length > 0
 数据: data.skus.length > 0
+数据: 前置（precondition）：名字含「遮光窗帘」的商品恰好 1 件（`pre_clean[product_dedupe]` 先于基线捕获执行；计数口径与 `_probe_product_count` 共用 `_list_products_matching` = 服务端 keyword 模糊匹配 + 客户端精确子串，§18 单一真相源）—— R1 按**名字**定位商品，唯一性是它真正依赖且**只读**的前置；名字 >1 件时 agent 合理地反问「要查看哪一件」（choice 卡），期望 `product_detail(product_id=遮光窗帘)` 必然落空 ⇒ 判红会伪装成「agent 不会查商品详情」（**归因全错**）。前置不成立时报告落 `precondition[product_count_for_keyword]`（**不可归因于 agent**），不落行为失败。
+清理: product_dedupe(product_keyword=遮光窗帘)
+前置: product_count_for_keyword(source=遮光窗帘、expect=1)
 ```
 真值: id-resolve.name, id-resolve.no-fabricate, product-sku-stock.aggregate
-溯源: eval P002 + verification 2.3（同义） ｜ tags: detail, id_resolve, smoke
+溯源: eval P002 + verification 2.3（同义） ｜ 2026-10-02（issue #6041，用户点名「评测用例与现实业务/数据不匹配」）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]` + `pre_clean[product_dedupe: 遮光窗帘]` —— 修前该用例**无任何前置声明**，而 R1 按名字定位商品；活栈实测（`:8001`/`:8090` 打云 dev RDS tenant 1）名字含「遮光窗帘」的商品 **7 件**（`米白色遮光窗帘` / `遮光窗帘`×3 / `2699 雪尼尔遮光窗帘` / `9231 遮光窗帘` + 1 件已下架）⇒ agent 正确反问选哪一件 ⇒ 期望落空被判 `🔬 确定性回归·禁止 rerun`（**假红**；`local_runner.py smoke` 读数 = `7/8 通过 均分 88%`，唯一失败 PR-003）。修法与同族 22 条既定用例**同口径**（先例 PR-010 / PR-009 / OR-014 / CR-001）：`product_dedupe` 先把同关键词副本收敛成 1 件（保留最早创建 = 种子），`expect: 1` 才有判别力；用**精确值**而非下界是**有意**的 —— 只有「恰好 1 件」才等于「唯一性成立」。断言面（user_inputs / expectations / data_checks 原有两条）**只增不减**、`traces` 未动。类级固化见 tests/unit_ci_workflows/test_eval_precondition_types_implemented.py（A：声明的 type 必须有实现）+ tests/unit_ci_workflows/test_eval_id_arg_precondition.py（B：名称塞进 id 型参数必须声明对应前置 —— 本用例正是 B 全库唯一命中的那一条）。 ｜ tags: detail, id_resolve, smoke
 
 ### PR-004. 查库存 🔵
 ```
@@ -8972,8 +8989,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：626（活跃 133，跳过 493）
-- tier 分布：smoke 12 / normal 581 / adversarial 31
+- 用例总数：627（活跃 133，跳过 494）
+- tier 分布：smoke 12 / normal 582 / adversarial 31
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -8988,7 +9005,7 @@
 - 财务对账域：4
 - 人事域：12
 - 知识问答域：7
-- 杂项域：68
+- 杂项域：69
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -9086,6 +9103,7 @@
 - MC-067: §15.7 页面多模态验收承载体（issue #6009）：登录步先切「管理员登录」再填手机号 + 登录页形态指纹 fail-closed + 唯一入口与「取不到证据怎么判」三态（纯静态判据）
 - MC-068: RBAC 文档岗位清单 ⇄ 真值源逐值对账（issue #6036 的 F7 固化）：docs/wiki/RBAC.md 的「新租户种子岗位」清单必须逐值等于 rbac/manifest.json 的 roles.seed（纯静态判据）
 - MC-069: B 端真实评测 3 缺陷的类级固化：批次取值白名单 ⊆ DB 约束（缺陷 A）+ 路由目的地恒在图上（缺陷 C）
+- MC-049: 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

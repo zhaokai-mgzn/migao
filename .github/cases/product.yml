@@ -109,11 +109,33 @@ cases:
       - tool: product_detail
         args:
           product_id: 遮光窗帘
+    # ── 真前置（issue #6041；2026-10-02 活栈实测假红）──────────────────────────
+    # R1「查看遮光窗帘的详细信息」**按名字**定位商品，而期望 `product_detail(product_id=遮光窗帘)`
+    # 正是「名称解析成了唯一那件」的产物。这条**只读**依赖此前**没有**任何声明 ⇒ 名字不唯一时
+    # agent 会**正确地**反问「要查看哪一件」（发 choice 交互卡），而报告上表现为
+    # `unmatched expectation`（**看起来像「agent 不会查商品详情」= 归因全错**）。
+    # 实测（2026-10-02，本机活栈 `:8001`/`:8090` 打云 dev RDS，tenant_id=1）：**修前 20:08+08**
+    # 名字含「遮光窗帘」的非删除行 = **7 件** ⇒ 期望落空 ⇒ 被判 `🔬 确定性回归·禁止 rerun`（**假红**）；
+    # **修后现取 20:30+08** = **1 件**（`米白色遮光窗帘`）—— 「同关键词副本被收敛」那一步由该周
+    # **已存在**的 `product_dedupe` 家族（本仓现取 22 条）在同一时段跑过所致（本包全程只读 `psql`
+    # + 只读 HTTP 探针，**未**对 dev 库做过任何写操作）⇒ 本包补的正是 PR-003 **缺的那一步**。
+    # 修法与同族 **22 条**既定用例同口径（`pre_clean[product_dedupe]` + `precondition[..., expect: 1]`，
+    # 先例 = PR-010 / PR-009 / OR-014 / CR-001…）：`product_dedupe` 在**独占窗口**里**先于**基线捕获
+    # 执行（`_pre_clean_for_case` 由调度器在 `_attempt` 之前调用）⇒ 基线恒为 1，`expect: 1` 才是
+    # **可判定的**真值（不是装饰）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
     data_checks:
       - "data.name.length > 0"
       - "data.skus.length > 0"
+      - "前置（precondition）：名字含「遮光窗帘」的商品恰好 1 件（`pre_clean[product_dedupe]` 先于基线捕获执行；计数口径与 `_probe_product_count` 共用 `_list_products_matching` = 服务端 keyword 模糊匹配 + 客户端精确子串，§18 单一真相源）—— R1 按**名字**定位商品，唯一性是它真正依赖且**只读**的前置；名字 >1 件时 agent 合理地反问「要查看哪一件」（choice 卡），期望 `product_detail(product_id=遮光窗帘)` 必然落空 ⇒ 判红会伪装成「agent 不会查商品详情」（**归因全错**）。前置不成立时报告落 `precondition[product_count_for_keyword]`（**不可归因于 agent**），不落行为失败。"
     skip_reason: ""
-    merge_log: "eval P002 + verification 2.3（同义）"
+    merge_log: "eval P002 + verification 2.3（同义） ｜ 2026-10-02（issue #6041，用户点名「评测用例与现实业务/数据不匹配」）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]` + `pre_clean[product_dedupe: 遮光窗帘]` —— 修前该用例**无任何前置声明**，而 R1 按名字定位商品；活栈实测（`:8001`/`:8090` 打云 dev RDS tenant 1）名字含「遮光窗帘」的商品 **7 件**（`米白色遮光窗帘` / `遮光窗帘`×3 / `2699 雪尼尔遮光窗帘` / `9231 遮光窗帘` + 1 件已下架）⇒ agent 正确反问选哪一件 ⇒ 期望落空被判 `🔬 确定性回归·禁止 rerun`（**假红**；`local_runner.py smoke` 读数 = `7/8 通过 均分 88%`，唯一失败 PR-003）。修法与同族 22 条既定用例**同口径**（先例 PR-010 / PR-009 / OR-014 / CR-001）：`product_dedupe` 先把同关键词副本收敛成 1 件（保留最早创建 = 种子），`expect: 1` 才有判别力；用**精确值**而非下界是**有意**的 —— 只有「恰好 1 件」才等于「唯一性成立」。断言面（user_inputs / expectations / data_checks 原有两条）**只增不减**、`traces` 未动。类级固化见 tests/unit_ci_workflows/test_eval_precondition_types_implemented.py（A：声明的 type 必须有实现）+ tests/unit_ci_workflows/test_eval_id_arg_precondition.py（B：名称塞进 id 型参数必须声明对应前置 —— 本用例正是 B 全库唯一命中的那一条）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_detail.py"

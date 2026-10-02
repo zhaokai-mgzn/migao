@@ -2582,3 +2582,41 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-049
+    legacy_id: ""
+    title: "评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - casebook
+      - precondition
+      - id-resolve
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**纯静态**扫真用例语料与 runner 的 type 注册表的事实（只读仓内
+    # `.github/cases/**` 与 tests/agent_eval/local_runner.py；零真库、零网络、零 LLM、
+    # 不 import ai-agent 依赖），由 tests/unit_ci_workflows/test_eval_id_arg_precondition.py +
+    # test_eval_precondition_types_implemented.py 验证，非 LLM 行为，不进入 agent-eval 冒烟。
+    user_inputs:
+      - "当一条用例把人读名称塞进 id 型参数（如 `product_detail(product_id=遮光窗帘)`）却不声明对应前置、或声明了一个 runner 没实现的 `precondition.type` 时，必须有判据**具名**报出（哪个用例 + 哪个参数 + 缺哪种前置 + 出口）；而只改注释时不得报红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**病（issue #6041，2026-10-02 活栈实测）**：`PR-003`（smoke 档）`expectations: [product_detail(product_id=遮光窗帘)]` 此前**无任何前置声明**，而本机活栈（`:8001`/`:8090` 打云 dev RDS，tenant_id=1）名字含「遮光窗帘」的商品实测 **7 件** ⇒ agent **正确地**反问「要查看哪一件」（发 choice 交互卡）⇒ 期望 unmatched ⇒ 被判 `🔬 确定性回归·禁止 rerun`（**假红**；`local_runner.py smoke` 读数 = `7/8 通过 均分 88%`，唯一失败 PR-003）。形态 = 「用例把**运行期数据事实**（该名称唯一与否）当成了常量」。"
+      - "**判据 1（名称塞进 id 型参数 ⇒ 必须声明对应前置）**：对真语料逐条期望核 —— 值不是 id 形态、不是「上轮产物」占位（`复用上轮 UUID` 这类）、不是跨用例引用（值里含 `MC-067` 这类用例号）、且不落在任一已声明 `precondition[].source` 里 ⇒ 该 `<tool, arg>` 规则项要求的前置 type 必须已声明 ⇒ 否则**具名判红**。规则表 = tests/unit_ci_workflows/test_eval_id_arg_precondition.py 的 `_PARAM_PRECONDITION_TYPES`（显式声明射程；全库现取命中 = PR-003 一条）。执行点 = 同文件 `test_id_typed_arguments_with_names_declare_matching_preconditions`。"
+      - "**判据 2（声明的 type 必须有实现）**：`.github/cases/**` 里每一条**结构化** `precondition[].type` 必须在 tests/agent_eval/local_runner.py 的 `_PRECONDITION_TYPES`（唯一真相源）键集里；且每个已登记 type 在 runner 源码里有运行期接线（结构形状 `f\"{t}:{src}\"`）。执行点 = tests/unit_ci_workflows/test_eval_precondition_types_implemented.py 的 `test_every_declared_precondition_type_is_implemented` / `test_every_registered_type_is_wired_in_the_runner`。"
+      - "**判据 3（判别力自证，注入式）**：摘掉某用例的前置声明 / 注入一个未实现的 type / 让规则表指向未登记 type ⇒ **各自判红**；只加一行注释 ⇒ **不红**（对照读数）。执行点 = 两个判据文件的 `test_red_proof_*` 与 `test_only_comments_change_is_green`。"
+      - "**纯静态自证**：两个判据文件零 ai-agent 依赖（AST 取 import 名）+ 禁「跑不了就跳」—— CI 的 `ci workflow helper unit tests` job 只装 `pytest` + `pyyaml`（不装 `pydantic` / `langchain_core`）。执行点 = 两个文件的 `test_this_judgement_is_pure_static_and_never_skips`。"
+      - "🔴 **覆盖边界（显式登记）**：① 判的是**声明层形态** —— 判不了「那条前置本身对不对」（值/下界是 test_precondition_target_present.py 的面），也判不了「该名称在某个栈上到底唯一与否」（那是运行期 `precondition[...]` 的读数）；② 「占位 = 上轮产物」的判定是**词法**的（含「上轮」或尖括号形态）；③ **散文形态**的 `precondition`（值本身是 str）不在射程（本仓现取 14 条，只输出条数作可见性登记）；④ 本判据**不跑**评测、不联网、不 import ai-agent 依赖；⑤ 本判据**不改**任何门禁的通过条件、不新增豁免。"
+    skip_reason: "[backend-contract] 纯静态扫真用例语料与 runner 的 type 注册表（只读仓内文件；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_eval_id_arg_precondition.py + tests/unit_ci_workflows/test_eval_precondition_types_implemented.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-02 新增（issue #6041，用户点名「评测用例与现实业务/数据不匹配（PR-003 假红）+ 类级固化」）。落码 = ① 实例判据与修复：`.github/cases/product.yml` 的 PR-003 补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]` + `pre_clean[product_dedupe: 遮光窗帘]`（与同族 22 条既定用例同口径）② 类级固化 A = tests/unit_ci_workflows/test_eval_precondition_types_implemented.py（声明的 type 必须有实现 + 注册表不许空转 + 注册了必须有接线 + 注入式判别力自证）③ 类级固化 B = tests/unit_ci_workflows/test_eval_id_arg_precondition.py（规则表 `_PARAM_PRECONDITION_TYPES`；全库现取命中 = PR-003 一条）④ 文档规则 = docs/testing/acceptance-protocol.md 新增 §3.7「先判前置、再判产品」。**读数（可复算，只读）**：修前 2026-10-02 20:08+08 `tenant_id=1` 名字含「遮光窗帘」的非删除行 = **7**（`psql … -c \"select count(*) from products where deleted=0 and tenant_id=1 and name like '%遮光窗帘%';\"`；成员 = `米白色遮光窗帘` / `遮光窗帘`×3 / `2699 雪尼尔遮光窗帘` / `9231 遮光窗帘` / 又一件 `遮光窗帘` 已下架）⇒ agent 正确地反问「要查看哪一件」⇒ 期望 unmatched ⇒ 假红（`local_runner.py smoke` = `7/8 通过 均分 88%`）；同刻 HTTP 侧读数（口径 = runner `_list_products_matching`：`GET /api/admin/products?keyword=` 模糊匹配 + 客户端精确子串）= **7**。修后现取（2026-10-02 20:30+08，同一条 SQL 与同一探针）= **1**（`米白色遮光窗帘`）—— 其中「同关键词副本被收敛」这一步由**该周已存在的 `pre_clean[product_dedupe]` 家族**（PR-010 / OR-014 / CR-001… 本仓现取 22 条）在同一时段跑过所致（本包**未**对 dev 库做任何写操作：全程只读 `psql` + 只读 HTTP 探针），即本包补的正是 PR-003 **缺失的那一步**。**取号 MC-049**：`scripts/next_case_id.py MC` 现取（候选 = main ∪ 全部 open PR 分支 ∪ 工作区）= 「main:001-048,050-067 · PR #6038:068」⇒ 取最小空闲号 **049**（历史空档），同 PR 带 claim 文件 `.github/cases/claims/<PR号>-MC-049.json`（合并后删）。⚠️ **未覆盖（照实登记）**：用户点名的「多命中 ⇒ 应先反问用户选哪件」独立冒烟用例**未做** —— 它的前置需要「命中数 ≥ 2」（现机制只有 `expect_min` 下界 1 与 `expect` 精确值，`expect_min: 2` 是运行期新语义，超出本包射程）⇒ 登记为后续单；本轮也**未**跑真实 LLM 评测（`migao-dev-flow` §13 口径：默认不跑，且集成侧正在本机跑 mibao 腿）。"
+    traces:
+      tests:
+        - tests/unit_ci_workflows/test_eval_id_arg_precondition.py
+        - tests/unit_ci_workflows/test_eval_precondition_types_implemented.py
+      ci:
+        - pr-check.yml
+      verifies: []

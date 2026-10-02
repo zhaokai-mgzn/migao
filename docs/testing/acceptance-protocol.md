@@ -435,6 +435,42 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
   "清理失败静默"本身就是假绿温床：收尾失败必须可见（warning），审计要能对账
   （DB 审计报 ai-agent `sessions` 残留 + `memories=` 假绿告警）。
 
+### 3.7 先判前置、再判产品（用例前置可能与现实数据不匹配，issue #6041）
+
+**纪律（一句话）**：一条用例红了，**先问「它依赖的前置在这个栈上成立吗」，再谈 agent 行为**。
+判红若可归因到「前置不成立」，那条红**不是**产品回归，**不许**写进「agent 不会做 X」的结论、
+**不许**用它派修复单。
+
+- **病灶（实测，2026-10-02）**：`.github/cases/product.yml` 的 `PR-003` 期望
+  `product_detail(product_id=遮光窗帘)`（**按名字**定位商品），而它**没有声明任何前置**。
+  活栈（`:8001`/`:8090` 打云 dev RDS，`tenant_id=1`）实测名字含「遮光窗帘」的商品 **7 件**
+  ⇒ agent **正确地**反问「要查看哪一件」（发 choice 交互卡）⇒ 期望 unmatched
+  ⇒ 被判 `🔬 确定性回归·禁止 rerun`。**红是真的、归因是错的**：它看起来像「agent 不会查商品详情」。
+- **形态**：**用例把「运行期数据事实」当成了常量** ——「这个名字在库里唯一」「这条工单在库里」
+  「该手机号名下订单不增长」都是**数据面**事实，随栈漂移（种子 vs 累积的 dev 库）。
+  凡是「按**名称 / 手机号 / 单号**定位共享夹具」的期望，唯一性都必须写成**可判定的前置**。
+- **口径（两个方向都要）**：
+  1. **期望依赖唯一性 ⇒ 必须声明** `precondition`（`type` / `source` / `expect`），
+     并配 `pre_clean` 的同关键词收敛动作（先例 = `product_dedupe`；本仓现取 **22 条**用例已是这个形态）。
+     `expect` 取**精确值**而不是下界：只有「恰好 1 件」才等于「唯一性成立」。
+  2. **声明的 `type` 必须有实现** —— `tests/agent_eval/local_runner.py` 的 `_PRECONDITION_TYPES`
+     是唯一真相源；声明一个没人实现的 type = **装饰性前置 = 空断言**（用例照跑照给分，
+     而它自称依赖的前置**根本没被核过**）。散文形态的 `precondition`（值本身是 `str`）
+     **不参与**运行期求值 —— 只能当**说明**读，别把它当判据。
+- **判据（纯静态、零 ai-agent 依赖，跑在 `ci workflow helper unit tests`）**：
+  - `tests/unit_ci_workflows/test_eval_precondition_types_implemented.py`（A 面：声明的 type 必须有实现 +
+    注册表不许空转 + 注册了必须有接线 + 注入式判别力自证）；
+  - `tests/unit_ci_workflows/test_eval_id_arg_precondition.py`（B 面：把**人读名称**塞进 id 型参数
+    ⇒ 必须声明对应前置；规则表 = 该文件的 `_PARAM_PRECONDITION_TYPES`，全库现取命中 = PR-003 一条）。
+  - 运行期那一半（真的取基线 / 判漂移 / 落 `precondition[...]` 而不是行为失败）在
+    `tests/agent_eval/local_runner.py::check_precondition_drift`，靶子存在性下界的守卫见
+    `tests/unit_ci_workflows/test_precondition_target_present.py`。
+- **边界（照实登记）**：这两条判据判的是**声明层形态**，判不了「该名称在某个栈上到底唯一与否」
+  —— 那是**运行期读数**（`precondition_baseline` / `precondition_check` 字段）；
+  也判不了「前置声明得对不对」（值 / 下界是 `test_precondition_target_present.py` 的面）。
+- **报告纪律**：前置不成立时报告里必须能读到「本次红/绿**不可归因于 agent 行为**」
+  （落 `precondition_not_applied(declared)` 通道），**不得**与行为失败混在同一个通过率里读。
+
 ---
 
 ## 4. 证据与报告规范
