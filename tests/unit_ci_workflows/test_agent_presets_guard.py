@@ -47,7 +47,7 @@ PRESET_YML_IN_PRESET = "preset.yml"
 #: 🔴 实测（本 PR 的 CI 第一轮）：`pull_request` 检出是**浅克隆** ⇒ `origin/main~1` 不解析
 #: （`fatal: Not a valid object name`）⇒ 钉死单个 ref 必红。按可用性探：
 #: `origin/main`（合并前带着预设）→ `origin/main~1`（合并后退到父提交）→ `HEAD`。
-PRESET_BASELINE_REFS = ("origin/main", "origin/main~1", "HEAD")
+PRESET_BASELINE_REFS = ("origin/main", "origin/main~1", "HEAD~1", "HEAD~2", "HEAD")
 #: 预设内容在**业务仓基线**里的前缀（S4 前的位置）。
 PRESET_BASELINE_PREFIX = ".agent-presets/migao/"
 

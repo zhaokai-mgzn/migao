@@ -72,7 +72,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: 预设内容在**业务仓基线**里的前缀（S4 前的位置）。
 PRESET_BASELINE_PREFIX = ".agent-presets/migao/"
 #: 读预设内容的 git 基线候选（按序取第一个**真读得到**的；理由见文件头 S4 段）。
-PRESET_BASELINE_REFS = ("origin/main", "origin/main~1", "HEAD")
+PRESET_BASELINE_REFS = (
+    "origin/main",       # 合并前 main 还带着预设（深克隆的 CI / 本机）
+    "origin/main~1",     # 合并后 main 上没有它了，退到父提交
+    "HEAD~1", "HEAD~2",  # 浅克隆里远端跟踪 ref 可能不存在 ⇒ 退到**本地历史**（需 fetch-depth ≥ 2）
+    "HEAD",
+)
 #: 本机预设仓镜像（= 权威源）。
 PRESET_MIRROR = Path(os.environ.get("MIGAO_PRESET_MIRROR") or (Path.home() / "migao-dev-preset-anchor"))
 

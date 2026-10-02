@@ -136,7 +136,12 @@ PRESET_PREFIX = ".agent-presets/"
 #:   · `origin/main~1` —— 合并后 `main` 上没有该路径了，退回它的父提交（本机深克隆可取）；
 #:   · `HEAD`          —— 万一有人在业务仓**重新**放回 `.agent-presets/**`（那会是另一场回归），
 #:                       读工作树/HEAD 比读远端更贴近事实。
-PRESET_BASELINE_REFS = ("origin/main", "origin/main~1", "HEAD")
+PRESET_BASELINE_REFS = (
+    "origin/main",       # 合并前 main 还带着预设（深克隆的 CI / 本机）
+    "origin/main~1",     # 合并后 main 上没有它了，退到父提交
+    "HEAD~1", "HEAD~2",  # 浅克隆里远端跟踪 ref 可能不存在 ⇒ 退到**本地历史**（需 fetch-depth ≥ 2）
+    "HEAD",
+)
 LEDGER_REL = "tests/unit_ci_workflows/dev_mode_failure_modes_ledger.json"
 CICD_REL = "docs/wiki/CI-CD.md"
 LEDGER_PATH = REPO_ROOT / LEDGER_REL
