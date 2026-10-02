@@ -7,12 +7,15 @@
 >
 > 本文是**补回清单**。**移除是清扫态，不是终态。**
 
-> ⚠️ **已知漏网（待收口）**：`settings` 域**未被只读化** ——
-> `settings_manage.py` 仍标 `WRITE|DESTRUCTIVE`（`update_settings` / `update_ai_config` / `change_password`）、
-> `notification_manage.py` 仍标 `WRITE`（`create` / `delete` / `read_all`）、
-> `settings_skill.py` 未解绑且 prompt 未改判（仍在教 Agent「写操作必须先确认」）。
-> 这三个文件**不在** #5285 的改动清单里 —— 属**确定性漏网**，落在本表 **C 档（判定为不该给 Agent）**。
-> 收口进行中：issue **#5302**。
+> ✅ **该漏网已收口（2026-10-02 复核，逐条核过）**：`settings` 域只读化由 issue **#5302**（CLOSED）/
+> PR **#5341**（MERGED，标题「#5302 settings 域只读化收口（settings_manage / notification_manage /
+> settings 域提示词）」）交付 —— `settings_manage` / `notification_manage` 已**无任何写 action**，
+> `settings_skill.py` 的 prompt 已改判（逐字「本域**已只读**」，并引导同事去商户后台自助）。
+> ⇒ 这三个文件**不属 C 档**，是**只读保留**（见 §二 D 档）。
+>
+> **剩余一笔「有意不做」的欠账**（不是"待收口"）：`validate_input` 是 #5247 解绑时漏掉的**第 9 个**
+> （`settings_skill.py` 注释逐字「本单**有意不**解绑」）——解绑它会连带改判 3 条 B 端用例
+> （DF-003 / DF-010 / OR-030）⇒ **属另一单**。登记口径见铁律 12(d)⑤：**「有意不做」≠「待收口」≠「已解决」**。
 
 ## 为什么必须有这张表
 
