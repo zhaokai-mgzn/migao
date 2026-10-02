@@ -5214,9 +5214,9 @@ _CASE_MC_071 = EvalCase(
     precondition=['员工管理页在 config/menu.ts 的导航节点里存在（key=employees / path=/employees / 码=employee:list）—— 本用例问的「员工账号开通」指向这一页；菜单被删或改名 ⇒ 本用例的前置不成立，应由登记面判据先红'],
 )
 
-# ── MC-070 [NORMAL] 机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线）（源: cases/misc.yml）──
-_CASE_MC_070 = EvalCase(
-    id='MC-070',
+# ── MC-072 [NORMAL] 机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线）（源: cases/misc.yml）──
+_CASE_MC_072 = EvalCase(
+    id='MC-072',
     legacy_id='',
     title='机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线）',
     skill=Skill.GENERAL,
@@ -12105,7 +12105,7 @@ ALL_CASES = (
     _CASE_MC_070,
     _CASE_MC_049,
     _CASE_MC_071,
-    _CASE_MC_070,
+    _CASE_MC_072,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

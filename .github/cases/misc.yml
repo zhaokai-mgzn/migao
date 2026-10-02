@@ -2703,7 +2703,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: MC-070
+  - id: MC-072
     legacy_id: ""
     title: "机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线）"
     domains:
@@ -2731,7 +2731,7 @@ cases:
       - "**类级固化**：① 上面两条接线判据的载体（`macquire` 的 export = `verify-all.sh::macquire`）登记进 `tests/unit_ci_workflows/wiring_claims_ledger.json`，由 `tests/unit_ci_workflows/test_wiring_claims_registry.py` 逐条保证「锚真实存在 + 声明与台账双向一致 + 摘线即红」（该表自本次起允许 `.sh` 载体 —— 判据 = 同文件 `test_shell_carrier_anchor_is_reachable_and_pinned`）；② 入口台账 `tests/unit_ci_workflows/heavy_entry_ledger.json` 的 `verify-all.sh` 条目写明这条接线与兜底（由 `test_heavy_suite_entry_ledger.py` 裁）；③ 纪律面 `docs/wiki/Development.md` 的「机器级重活并发准入」节同步（由 `test_suite_self_lock.py::TestDisciplineIsUpdated` 裁）。"
       - "🔴 **覆盖边界（显式登记）**：① 「祖先已持锁」判定只认锁文件的 `pid=` 与 `ps` 祖先链 ⇒ `MIGAO_HEAVY_LOCK_FILE` 指向别的锁文件时判不了（那时按原有语义走锁脚本）；② 有界预算只覆盖**套件自带准入**这一路，`verify-all.sh` 自己的 `macquire` 仍按 `MIGAO_HEAVY_WAIT` 排队（那里是**合法的排队入口**，不是死等 —— 它的持有者不是自己的祖先）；③ 本判据**不跑** `verify-all.sh gate`（那会拉起全量套件 ⇒ 自我递归 + 打瘫开发机），接线面用「结构化读函数体 + 真 `macquire` 起子进程」承担；④ 不改任何门禁的通过条件、不新增豁免、不新增 `pytest.skip`。"
     skip_reason: "[backend-contract] 本机研发机具（机器级重活锁 / 套件自带准入）的行为与接线由 tests/unit_ci_workflows/ 的 pytest 单测验证（真子进程 + 临时锁面 + 硬超时），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-02 新增（issue #6074：本机挂死级缺陷 —— `verify-all.sh` 从不设置 `MIGAO_HEAVY_LOCK_HELD` ⇒ 套件自锁自抢死锁）。**根因复核（照实）**：2026-10-02 18:55 +0800 合入的 #6024 已在 origin/main 落地那行 `export`（`verify-all.sh` 的 `macquire` 内），**观测到挂死的那个 worktree 是更早的集成分支**（其 `verify-all.sh` 里 0 命中）⇒ 「缺接线」属实、但**只在那条分支上**；main 上残留的真缺陷是**第二层**：缺接线时**不是出声红而是挂死**（继承来的 `MIGAO_HEAVY_WAIT=2700`）。⇒ 本包 ① 把该接线钉进台账 + 加两条会红的接线判据（防再次漏掉）② 加**祖先已持锁 ⇒ 立即拒绝 + 有界等待**的纵深防御（缺接线再次发生时后果 = 立即红）。本机实测读数（临时锁面，不碰真锁）：修前 `pytest tests/unit_ci_workflows --collect-only`（祖先持锁 + `MIGAO_HEAVY_WAIT=2700`）⇒ **45s 硬超时仍未返回**（进程树 = pytest → `machine-heavy-lock.sh acquire --wait 2700`）；修后 ⇒ **0.6s rc=1** 且报文点出「祖先已持锁 / batch-gate 的 2700 / 怎么办」。**取号 MC-070**：现取 `.github/cases/claims/` ∪ `origin/main` 的 MC 号，最大 = MC-069 ⇒ 取 070，同 PR 加 claim 文件 `.github/cases/claims/<PR号>-MC-070.json`。"
+    merge_log: "2026-10-02 新增（issue #6074：本机挂死级缺陷 —— `verify-all.sh` 从不设置 `MIGAO_HEAVY_LOCK_HELD` ⇒ 套件自锁自抢死锁）。**根因复核（照实）**：2026-10-02 18:55 +0800 合入的 #6024 已在 origin/main 落地那行 `export`（`verify-all.sh` 的 `macquire` 内），**观测到挂死的那个 worktree 是更早的集成分支**（其 `verify-all.sh` 里 0 命中）⇒ 「缺接线」属实、但**只在那条分支上**；main 上残留的真缺陷是**第二层**：缺接线时**不是出声红而是挂死**（继承来的 `MIGAO_HEAVY_WAIT=2700`）。⇒ 本包 ① 把该接线钉进台账 + 加两条会红的接线判据（防再次漏掉）② 加**祖先已持锁 ⇒ 立即拒绝 + 有界等待**的纵深防御（缺接线再次发生时后果 = 立即红）。本机实测读数（临时锁面，不碰真锁）：修前 `pytest tests/unit_ci_workflows --collect-only`（祖先持锁 + `MIGAO_HEAVY_WAIT=2700`）⇒ **45s 硬超时仍未返回**（进程树 = pytest → `machine-heavy-lock.sh acquire --wait 2700`）；修后 ⇒ **0.6s rc=1** 且报文点出「祖先已持锁 / batch-gate 的 2700 / 怎么办」。**取号 MC-072**：现取 `.github/cases/claims/` ∪ `origin/main` 的 MC 号，最大 = MC-069 ⇒ 取 070，同 PR 加 claim 文件 `.github/cases/claims/<PR号>-MC-070.json`。"
     traces:
       tests:
         - tests/unit_ci_workflows/test_suite_self_lock.py

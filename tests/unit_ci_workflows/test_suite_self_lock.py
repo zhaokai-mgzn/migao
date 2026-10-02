@@ -1,4 +1,4 @@
-# case_ids: MC-012
+# case_ids: MC-072
 from __future__ import annotations
 
 r"""**直连整目录 `pytest` 的套件自带机器级准入**的判据（issue #6019）。
