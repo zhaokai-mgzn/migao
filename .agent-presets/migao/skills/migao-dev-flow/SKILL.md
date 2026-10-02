@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.103.0
+version: 1.104.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -926,22 +926,67 @@ const vision = await agent(
    `.agent-presets/migao/skills/migao-dev-flow/scripts/ui-multimodal-acceptance.mjs`
    （真实手机验证码登录 → 目标页 → 全页截图 + 逐元素截图 + `page-text.txt` 逐字 + `testids.txt` + `summary.json`）。
    它 **fail-closed**：登录没生效 / 零 `data-testid` ⇒ **非零退出** —— "截了张登录页"不算证据。
+
+   ```bash
+   # ① 本机唯一入口（#6009）：页面 :3001 + 接口 :8080 —— 别用其它端口（见下「唯一入口」）
+   node .agent-presets/migao/skills/migao-dev-flow/scripts/ui-multimodal-acceptance.mjs \
+     --site http://localhost:3001 --path /orders/new --out /tmp/ui-acceptance
+   # ② 只验登录页形态（不登录 / 不截图 / 不需要账号）：改过登录页、或工具莫名超时时**先跑这条**
+   node .agent-presets/migao/skills/migao-dev-flow/scripts/ui-multimodal-acceptance.mjs \
+     --login-shape-check --site http://localhost:3001
+   # ③ 部署环境（https://merchant.migaozn.com）：需要**真人手机**收验证码；取不到就按「取不到证据时怎么判」登记为未覆盖
+   node .agent-presets/migao/skills/migao-dev-flow/scripts/ui-multimodal-acceptance.mjs \
+     --site https://merchant.migaozn.com --path /orders/new --phone <真人手机号> --code <收到的码>
+   ```
+
+   🔴 **唯一入口（#6009：两条阻断的处置 —— 结论是「不需要改 Java」）**：本机 = **admin-web `:3001` + admin-api `:8080`**
+   （同机跨端口，CORS 生效）。源白名单有两层：`backend/admin-api/.env` 的 `CORS_ALLOWED_ORIGINS`
+   （本机值含 `http://localhost:3000,http://localhost:3001`）与 `SecurityConfig` 的**默认清单**（含 `:3000` / `:3001`）。
+   ⇒ **`:3003` / `:3004` 之类的端口不是入口**：前者不在白名单 ⇒ 预检 `403`（浏览器只显示「网络连接失败」）；
+   自建同源反代 ⇒ 页面对不上 API 版本时停在「加载中…」。**这两种现象都不是页面缺陷，别据此改 Java、也别登记豁免**。
+   登录用**管理员手机验证码**；本机 `SMS_BYPASS_CODE=123456`（就在 `.env` 里）⇒ 默认 `--phone 13800138000` 直接可登。
+
+   🔴 **登录步与形态指纹（#6009）**：登录页是**客户端渲染**的（`useSearchParams` ⇒ SSR 出来的是空壳，连
+   「手机验证码」四个字都不在 HTML 里）⇒ 「domcontentloaded 后凭手速点击」在**慢首帧**下必然静默失败：
+   点了一个还不存在的元素、异常被 `.catch` 吞掉 ⇒ 停在「员工登录」页签 ⇒ 等手机号输入框 30s ⇒ `TimeoutError`。
+   承载体现在按序做三件事：**等表单真渲染出来 → 核对形态指纹 → 只在指纹通过后按语义锚操作**。
+   指纹 = 脚本顶部 `LOGIN_SHAPE`（两页签名 + 副标题、手机号/验证码占位、`获取验证码` / `登 录`）——
+   **不匹配即红**并逐条报缺失项 + 处置指引（页面改版 ⇒ 改 `LOGIN_SHAPE` 一处 + 升 preset 版本）。
+   两类失败**必须分清**：**「页面形态已变（登录页）」** = 工具与页面失配（去改工具）；
+   **「登录未生效 + 页面提示」** = 凭据 / 服务端面（核对 `--code` 与 `SMS_BYPASS_CODE`，同时留 `login-failed.png`）。
 2. **AI 读图判定（多模态）**：用 `read_image` **自己看**截图，逐条对照**本次改动的验收点**，
    给出「**看到了什么**」而不是「应该是什么」；主模型无读图能力 ⇒ 按 §15.5 用视觉模型开子代理
    （**不派 workflow 评测**，§13 的"仅用户显式要求"不变）。
 3. **证据落 PR body**：截图路径 + **被测 SHA**（部署来源 commit，缺 SHA 的活环境结论不可复核）+
    逐条判定原文 + **未覆盖项**。修复类改动按 `migao-acceptance` 铁律 5 **再跑一轮**（before/after 成对）。
 
+**取不到证据时怎么判（#6009 硬要求：**不许**把"跑不出来"写成"通过"）**：
+
+| 情形 | 判定 | PR body 必须写什么 |
+|---|---|---|
+| 命令 `rc=0` 且 `summary.json` 里 `loginOk=true` | **可判** ⇒ 进入第 2 步读图 | 截图路径 + 被测 SHA + 逐条读图判定 + 未覆盖项 |
+| 承载体报「**登录页形态已变**」（rc=1） | **先修工具**（改 `LOGIN_SHAPE` + 升 preset 版本），**不许**放宽判据、不许绕过 | 形态红证读数（哪个指纹项不符）+ 修好后的 rc=0 证据 |
+| 入口不可达 / 没有可用验证码（rc=1 或无服务） | **未覆盖** —— 既不是「通过」也不是「失败」 | 阻塞原因 + 已试过的入口与读数 + 重启条件 |
+
 **假绿清单（每条都在 2026-09-30 那一轮真实出现过）**：
-① **停在登录页 / 空白页当证据** ⇒ 承载体 fail-closed（实测错手机号 ⇒ rc=1）；
+① **停在登录页 / 空白页当证据** ⇒ 承载体 fail-closed（实测错验证码 ⇒ rc=1，页面提示「短信验证码错误或已过期」）；
 ② **"标记在 bundle 里"当渲染证据** ⇒ 只证明代码被打包，不证明它渲染（门幅块的 testid 就在 bundle 里，
    但当时**根本没渲染** —— 因为规格未选）；
-③ **拿替身 / mock 数据当真实链路** ⇒ 判的是替身，用云测试环境真接口。
+③ **拿替身 / mock 数据当真实链路** ⇒ 判的是替身，用云测试环境真接口；
+④ **拿「未登记端口」的失败当页面结论**（#6009）⇒ `:3003` / `:3004` 不在 CORS 白名单 / 没接反代，浏览器只会
+   显示「网络连接失败」或「加载中…」—— 那是**入口不对**（见上「唯一入口」），不是页面缺陷；
+⑤ **把"工具自己失配"当"被验功能坏了"**（#6009）⇒ 看到 `TimeoutError` 或「形态已变」先去跑
+   `--login-shape-check`；工具与页面失配时，**任何**页面结论都无效（与具体被验功能无关）。
 
-**边界（照实登记，不粉饰）**：本节的**判定**是 AI 读图（UA 层）⇒ **没有机械判据**：
-"跑没跑"判不了、"看得对不对"有主观性；承载体只保证**证据是真的**（fail-closed + `page-text.txt` 可逐字复核）。
-可加机械判据的方向（**未实施**，别顺手做）：PR body 必须有本节证据段 —— 需要新 workflow，
+**边界（照实登记，不粉饰）**：本节的**判定**是 AI 读图（UA 层）⇒ "看得对不对"仍有主观性；
+承载体只保证两件事：**证据是真的**（fail-closed + `page-text.txt` 可逐字复核）、**工具与页面失配会自己爆**
+（形态指纹 + `--login-shape-check`）。机械判据**只盖工具面**，盖不到"跑没跑 / 看得对不对"：
+① **已落机械判据**（会红）= `tests/unit_ci_workflows/test_ui_multimodal_acceptance_carrier.py` ——
+登录步必须**先切「管理员登录」再填手机号**（顺序判据）、登录步内**不许再出现静默吞异常的 `.catch(() => {})`**、
+形态指纹与 `--login-shape-check` 必须在位、本节必须写明**唯一入口**与**三态判法**；
+② **未实施**（别顺手做）：PR body 必须有本节证据段 —— 需要新 workflow，
 按 §2.2 的两条前置（每个 PR 都上报？判定方式确定？）先评估，**不要**随手翻 required。
+
 
 ## 16. 评测根本解（#3483）：分层探测 + 分档纪律 + 完成定义（v1.13 新增，2026-09-14）
 

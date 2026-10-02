@@ -5105,6 +5105,24 @@ _CASE_MC_066 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-067 [NORMAL] §15.7 页面多模态验收承载体（issue #6009）：登录步先切「管理员登录」再填手机号 + 登录页形态指纹 fail-closed + 唯一入口与「取不到证据怎么判」三态（纯静态判据）（源: cases/misc.yml）──
+_CASE_MC_067 = EvalCase(
+    id='MC-067',
+    legacy_id='',
+    title='§15.7 页面多模态验收承载体（issue #6009）：登录步先切「管理员登录」再填手机号 + 登录页形态指纹 fail-closed + 唯一入口与「取不到证据怎么判」三态（纯静态判据）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 §15.7 的承载体把「切管理员登录」删掉、或把它挪到填手机号之后、或某次改动把静默吞异常的 `.catch(() => {})` 加回来、或摘掉登录页形态指纹与 `--login-shape-check` 自检开关时，必须有判据**具名**报出；而 §15.7 若不再写明唯一入口与「取不到证据时怎么判」三态，也必须红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（issue #6009，两包实测同形）**：承载体 `.agent-presets/migao/skills/migao-dev-flow/scripts/ui-multimodal-acceptance.mjs` 原登录步 = 「domcontentloaded + 1.2s 点提示文案『手机验证码』⇒ 填手机号」；而登录页是**客户端渲染**的（`useSearchParams` ⇒ SSR 出来的是空壳，连「手机验证码」四个字都不在 HTML 里）⇒ 慢首帧下那次点击打在**还不存在**的元素上、异常被 `.catch(() => {})` 吞掉 ⇒ 页面仍停在「员工登录」页签 ⇒ 等手机号输入框 30s ⇒ `TimeoutError`。症状与**被验功能无关**：任何会话跑 §15.7 都撞同一堵墙 = 「看起来跑了、其实拿不到证据」。', '**判据 1（顺序）**：登录步里「切管理员登录」的语义锚（`role=tab`）必须**先于**手机号输入框的「等可见 / 填值」锚 —— 否则必然停在员工表单、只能靠 30s 超时兜底。执行点 = tests/unit_ci_workflows/test_ui_multimodal_acceptance_carrier.py 的 `test_carrier_login_step_is_wired`。', '**判据 2（不许静默吞异常）**：承载体里**不许**出现空处理器形态的 `.catch`（空 body 的箭头函数）。执行点 = 同文件（正则扫，判据自身不含该字面量）。', '**判据 3（形态指纹 + 自检开关在位）**：`LOGIN_SHAPE`（两页签名 + 副标题、手机号/验证码占位、`获取验证码` / `登 录`）+ 两阶段判定函数（`probeLoginShape` / `judgeLoginTabs` / `judgeAdminForm`）+ `--login-shape-check` 自检开关必须在位。执行点 = 同文件。', '**判据 4（fail-closed）**：「页面形态已变」文案与非零退出必须在位；登录段里失败路径**逐个具名**（`dieShape(` / `die(` ≥ 4 处），不许退化成一次笼统超时。执行点 = 同文件。', '**判据 5（文档面）**：`migao-dev-flow` §15.7 必须写明**唯一入口**（本机 admin-web `:3001` + admin-api `:8080`；`CORS_ALLOWED_ORIGINS` 已含 `http://localhost:3001`）、`--login-shape-check`、以及「**取不到证据时怎么判**」三态（含「**未覆盖**」与「不许把跑不出来写成通过」）。执行点 = 同文件 `test_skill_15_7_states_entry_and_three_way_verdict`。', '**判别力自证（注入式红证：全部在内存里对**真语料**变异）**：顺序反转 / 加回静默 catch / 摘掉指纹常量 / 摘掉自检开关 / 把非零退出改成 0 / §15.7 删掉「唯一入口」·「取不到证据时怎么判」·「未覆盖」⇒ **各自判红**；只加一行注释 ⇒ **不红**（对照读数）。执行点 = 同文件 5 条 `test_red_proof_*` + `test_control_comment_only_change_is_green`。', '**纯静态自证**：本判据零 ai-agent 依赖（AST 取 import 名）+ 禁 pytest 的 skip / importorskip（针脚拼出来 —— 判据自身出现这两个字面量会扫到自己 ⇒ 永远红，本包实测踩过两次）。执行点 = 同文件 `test_this_judgement_is_pure_static_and_never_skips`。', '🔴 **覆盖边界（显式登记）**：① 判据是**形态学**的 —— 判「接线 / 文案 / 顺序在不在」，**判不了**「工具真跑起来能不能登进去」「截图看着对不对」（后者是 §15.7 的 AI 读图面，边界已在 §15.7 照实登记）；② **不跑** node / Playwright（CI 的 `ci workflow helper unit tests` 只装 `pytest` + `pyyaml`）；③ 逐字锚即契约：改承载体就必须同步改本判据（有意为之 —— 让「悄悄改工具」当场红）；④ 本判据**不改**任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 纯静态扫承载体与 §15.7 文本（只读仓内两个文件；零真库、零网络、不烧 token、不跑 node / Playwright、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_ui_multimodal_acceptance_carrier.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'ui', 'playwright', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -11970,6 +11988,7 @@ ALL_CASES = (
     _CASE_MC_065,
     _CASE_MC_064,
     _CASE_MC_066,
+    _CASE_MC_067,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
