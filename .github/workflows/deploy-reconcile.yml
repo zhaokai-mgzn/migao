@@ -184,7 +184,7 @@ jobs:
           # `RUN_BODY_LIMIT`）⇒ 出口是外置，不是「再加一点点应该没事」。
           # ⚠️ 载不进 ⇒ 弃权（理由与两种坏修法见脚本文件头）。
           if [ ! -f scripts/deploy_reconcile_state.sh ]; then
-            echo "::warning::值守面状态机不在检出里（多为「本腿还没上 main」）"; exit 0
+            echo "::warning::值守面状态机不在检出里（多为「本腿还没上 main」）" || :; exit 0
           fi
           source scripts/deploy_reconcile_state.sh
           source scripts/deploy_reconcile_state.sh
