@@ -488,3 +488,12 @@ if (!SHIPPABLE_FROM.contains(order.getStatus())) { throw …「当前状态（%s
 **两条元规则（下一轮派单时直接写进任务书）**：
 1. **新增真库判据 ⇒ 必须登记冻结清单**；**新增 `[backend-contract]` 用例 ⇒ 必须重锚机判红通道**（都是"判据不许悄悄消失/悄悄增加"的设计，登记本身就是闭环的一环）；
 2. **多包同改一份共享台账 ⇒ 派单时定顺序**：第 N 个包的锚点值 = **它自己分支当下的实测值**（不是预判别包号）；后合者 rebase 后按当时实测值再对齐一次。本轮 `AS-011/012`（#6230）与 `AS-013/014`（#6231）的撞号、以及两份台账的先后重锚，都是这条规则的实例。
+
+### 19.11 有意不做 / 待接续（写清接受的缺口 + 重启条件，按铁律 12(d)⑤）
+
+| 项 | 状态 | 为什么先不做 | 重启条件 + 确切命令 |
+|---|---|---|---|
+| **批次统一 `batch-gate`**（issue #6012：N 个包只跑**一次**全量 `gate`） | **未跑**（有意推迟） | ① 四个修复包里 **F-6226（#6226）尚未出 PR/分支** ⇒ 现在跑会漏掉一个包、之后还得再跑一次（正好违反 #6012 的"只跑一次"）；② 机器级重活锁当时被**别的 worktree** 持有（`pytest unit_ci_workflows`，pid 23726，load 10.6）⇒ 按"重活串行"不得插队 | **触发**：F-6226 分支落地 **且** `./scripts/machine-heavy-lock.sh status` 显示空闲。**命令**：`./scripts/batch-gate.sh fix/6220-aftersales-concurrency fix/6221-money-precision fix/6219-cutting-height-npe fix/6226-mapof-null-key-siblings`（排队可用 `MIGAO_HEAVY_WAIT=<秒>`）；结果追加到本节 |
+| **三个修复 PR 的合并** | 未合并（`mergeStateStatus=BLOCKED`，`fail=0`） | 合并需要人工评审面（本机无该权限）；仓内 auto-merge 只对 safe classes 开放 | 由人类按顺序合：**#6230 → #6233 → #6231 → #6226**（后两个与前面同改 `aftersales.yml` / `processing.yml` 与生成物，合前各自 `./scripts/sync-main.sh --rebase` + **重渲染** 消冲突） |
+| **`true-reload` / 其它跨租户读面** | skip（未覆盖） | 线A：租户 21 无合法夹具（写面已用"服务端零写入"侧证） | 需要一套租户 21 的只读夹具；重启条件 = 后续轮次建夹具时一并做 |
+| **`>1000 行` 大批量读档** | skip（未覆盖） | 本租户最大面 652 行（不往活库灌数据） | 重启条件 = 有独立压测库或可从快照克隆；届时把 `C4-BULK-READ-1000` 从 skip 转实测 |
