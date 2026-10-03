@@ -4770,18 +4770,36 @@ _CASE_MC_030 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-031 [NORMAL] main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch，判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）（源: cases/misc.yml）──
+# ── MC-031 [NORMAL] main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch + 对账面（pull_request_target: [opened,reopened]），判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）（源: cases/misc.yml）──
 _CASE_MC_031 = EvalCase(
     id='MC-031',
     legacy_id='',
-    title='main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch，判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）',
+    title='main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch + 对账面（pull_request_target: [opened,reopened]），判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['改了 .github/cases/** 却没提交生成物（漂移直接落在 main 上）时，必须有东西在 **main 侧当场**判红，且报错要具名到「哪个产物、差多少、怎么复算」；把 schedule 摘掉、把 fail-closed 换成「跳过」、把判定换成恒绿、把报错改成不具名的一句话时，都必须有东西变红'],
     expectations=['direct_reply'],
-    data_checks=['守护腿 = .github/workflows/main-freshness-guard.yml（on 含 push:main + schedule + workflow_dispatch；**刻意不挂 pull_request** —— 判定基准是 main 的当前状态，挂 PR 面会把红重新显示在无辜 PR 上而它并不拦任何东西）；判定本体 = scripts/generated_artifacts_freshness.py（三态 0 新鲜 / 1 陈旧 / 3 无法判定，**没有「跳过」这一态**）；调用面 = pr-check 的 Verify generated artifacts fresh 步 / 本腿的判定步 / verify-all.sh gate 的 cases 面门禁（**三处同一个脚本**，本地↔CI parity 由 tests/unit_ci_workflows/test_verify_all_gate_parity.py 继续钉住）', '判定对象 = tests/agent_eval/eval_cases.py 与 docs/testing/mibao-verification-cases.md 相对 .github/cases/** 的新鲜度；逐个**行为级**验证（只弄脏一个 ⇒ 只有它被具名报出），且登记表与判定本体的 ARTIFACTS **双向相等**（多一条 / 少一条都红）', '判红输出必须具名：产物名 + 差量（提交版 vs 现取的行数 + 首个差异的两侧原文）+ 可复制的复算/重渲染命令；漂移候选区间**只给读数、不下断言**（用提交级读数下断言正是本单要治的归因错误）', '告警面三件齐全：::error:: 注解 + $GITHUB_STEP_SUMMARY 落笔（失败也要有）+ 非零退出；判红出口 = P1 值班 issue（定时腿没有 PR 对象，block/merge 无处施加）；读数步 = job 最后一步且 if: always()，并登记进 scripts/mechanism-registry.json（含 schedule + 写作用域 ⇒ 未登记即红）', '覆盖面显式登记（**覆盖不到什么**，逐条 face/reason/owner/restart）：两次 cron 之间引入又修掉的漂移 / 需要网络或密钥才能算的新鲜度 / **渲染器本身坏了导致两侧一起错**（第 3 条由行为级证明是真的：同一个漂移夹具，真渲染器判红、坏渲染器判绿 ⇒ 边界不是手写的免责声明）', '每条判据各配注入式红证（清单见 tests/unit_ci_workflows/test_main_freshness_guard.py 的「本文件锁什么」表，不写死条数）；凡涉及改磁盘的变异一律**当场在内存里 exec 变异体**（依据 docs/wiki/CI-CD.md「改磁盘文件的变异可能不被读到」），并配「只改注释 ⇒ 不红」的对照读数', '**合并产物的两种伪装**（issue #5741 的现场，判据 10/11）：把 casebook 的**汇总读数整体减 1、不增减任何行**（真实现场 = 提交版 8112 行 / 现取 8112 行、仅 4 行不同；且**分域合计仍等于总数** ⇒ 内部自洽）⇒ 仍必红且具名；把「逐字节相等」换成「只比行数」的内存变异体 ⇒ 同一夹具变绿（判别力自证）。🔴 根因在**时序**（检查跑的快照 ≠ 落地的合并结果），两条出口登记在 docs/wiki/CI-CD.md 的 FM-E18（需人裁定）', '**独立验收驱动的订正**（2026-09-28，双 AI 交叉验证）：① `reap` 的远程删除是**四态**（`deleted`/`already-absent`/`absent-unverified`/`failed`）—— 回退路径（删前读数取不到）**判不了**「是不是我删的」，故**不许**报 `deleted`；② 一个坏 ref 会让整批 `push --delete` 被拒 ⇒ 对「仍在」的逐个补删（上限 20）；③ `pr-check` 的门控必须**判 `git diff` 的 rc**（「算不出」≠「未命中」）；④ `--merge-probe --json` 顶层补 `verdict_overall`/`exit_code`；⑤ `NS-3` 销账同批降 `NOT_SOLIDIFIED_FROZEN` 4→3（PD-10）'],
+    data_checks=['守护腿 = .github/workflows/main-freshness-guard.yml（on 含 push:main + schedule + workflow_dispatch + **对账面** `pull_request_target: [opened, reopened]`（#6255 第 2 项补，见 MC-078）；**不挂 `pull_request`** —— 判定基准是 main 的当前状态，对账面只在对账时机量一次 main 的现状、不进 required）；判定本体 = scripts/generated_artifacts_freshness.py（三态 0 新鲜 / 1 陈旧 / 3 无法判定，**没有「跳过」这一态**）；调用面 = pr-check 的 Verify generated artifacts fresh 步 / 本腿的判定步 / verify-all.sh gate 的 cases 面门禁（**三处同一个脚本**，本地↔CI parity 由 tests/unit_ci_workflows/test_verify_all_gate_parity.py 继续钉住）', '判定对象 = tests/agent_eval/eval_cases.py 与 docs/testing/mibao-verification-cases.md 相对 .github/cases/** 的新鲜度；逐个**行为级**验证（只弄脏一个 ⇒ 只有它被具名报出），且登记表与判定本体的 ARTIFACTS **双向相等**（多一条 / 少一条都红）', '判红输出必须具名：产物名 + 差量（提交版 vs 现取的行数 + 首个差异的两侧原文）+ 可复制的复算/重渲染命令；漂移候选区间**只给读数、不下断言**（用提交级读数下断言正是本单要治的归因错误）', '告警面三件齐全：::error:: 注解 + $GITHUB_STEP_SUMMARY 落笔（失败也要有）+ 非零退出；判红出口 = P1 值班 issue（定时腿没有 PR 对象，block/merge 无处施加）；读数步 = job 最后一步且 if: always()，并登记进 scripts/mechanism-registry.json（含 schedule + 写作用域 ⇒ 未登记即红）', '覆盖面显式登记（**覆盖不到什么**，逐条 face/reason/owner/restart）：两次 cron 之间引入又修掉的漂移 / 需要网络或密钥才能算的新鲜度 / **渲染器本身坏了导致两侧一起错**（第 3 条由行为级证明是真的：同一个漂移夹具，真渲染器判红、坏渲染器判绿 ⇒ 边界不是手写的免责声明）', '每条判据各配注入式红证（清单见 tests/unit_ci_workflows/test_main_freshness_guard.py 的「本文件锁什么」表，不写死条数）；凡涉及改磁盘的变异一律**当场在内存里 exec 变异体**（依据 docs/wiki/CI-CD.md「改磁盘文件的变异可能不被读到」），并配「只改注释 ⇒ 不红」的对照读数', '**合并产物的两种伪装**（issue #5741 的现场，判据 10/11）：把 casebook 的**汇总读数整体减 1、不增减任何行**（真实现场 = 提交版 8112 行 / 现取 8112 行、仅 4 行不同；且**分域合计仍等于总数** ⇒ 内部自洽）⇒ 仍必红且具名；把「逐字节相等」换成「只比行数」的内存变异体 ⇒ 同一夹具变绿（判别力自证）。🔴 根因在**时序**（检查跑的快照 ≠ 落地的合并结果），两条出口登记在 docs/wiki/CI-CD.md 的 FM-E18（需人裁定）', '**独立验收驱动的订正**（2026-09-28，双 AI 交叉验证）：① `reap` 的远程删除是**四态**（`deleted`/`already-absent`/`absent-unverified`/`failed`）—— 回退路径（删前读数取不到）**判不了**「是不是我删的」，故**不许**报 `deleted`；② 一个坏 ref 会让整批 `push --delete` 被拒 ⇒ 对「仍在」的逐个补删（上限 20）；③ `pr-check` 的门控必须**判 `git diff` 的 rc**（「算不出」≠「未命中」）；④ `--merge-probe --json` 顶层补 `verdict_overall`/`exit_code`；⑤ `NS-3` 销账同批降 `NOT_SOLIDIFIED_FROZEN` 4→3（PD-10）'],
     skip_reason='[backend-contract] main 侧 CI 守护腿的结构与判定由 tests/unit_ci_workflows/test_main_freshness_guard.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ci', 'freshness', 'main-side-guard', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-078 [NORMAL] main 侧生成物新鲜度守护腿的**对账面**：`pull_request_target: [opened, reopened]`（bot 合并后唯一可靠的对账时机）—— 只检出 main、不翻 required、不折进 pr-check（源: cases/misc.yml）──
+_CASE_MC_078 = EvalCase(
+    id='MC-078',
+    legacy_id='',
+    title='main 侧生成物新鲜度守护腿的**对账面**：`pull_request_target: [opened, reopened]`（bot 合并后唯一可靠的对账时机）—— 只检出 main、不翻 required、不折进 pr-check',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['改了 .github/cases/** 却没提交生成物、且漂移随 bot 合并落到 main（不产生 push/closed 事件）时，必须有东西在**下一个 PR 打开/重开**的那一刻把 main 的现状量出来并具名判红；把对账面换成 `pull_request` / `[closed]` / `[synchronize]`、把判定基准从 main 换成 PR head、或把本腿翻成 required 时，都必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['对账面 = .github/workflows/main-freshness-guard.yml 的 `on.pull_request_target`，且**恰好** `types: [opened, reopened]` + `branches: [main]`（`closed` 对 bot 合并 100% 不触发 —— issue #3585，挂了等于没有；`synchronize` 会让每个 PR 的每次 push 都跑一遍 = 纯噪声）；判定基准仍是 main（checkout **恰好** `ref: main`，**永不**检出 PR head ⇒ 不引入 pwn-request 面）', '**这一面不把本腿变成门禁**：仍报告型 —— 不进 required 集合、不折进 pr-check.yml（检查名也不得出现）、不带 `paths:` 过滤；判红出口仍是 P1 值班 issue', '为什么必须有这一面（实测读数，可复算）：本腿 `push` 面对 2026-10-03 的两个 merge sha（14eb33212 / d45b7ff39）**零 run**（`gh run list --workflow=main-freshness-guard.yml --json headSha,event`）；`schedule` 实测投递 4~5 次/日、相邻最长 8.9h（`gh api repos/{owner}/{repo}/actions/workflows/368111215/runs?per_page=100&event=schedule`）⇒ 只靠这两面时 main 的漂移可静默近 9h', '**残余边界（照实登记，不粉饰）**：对账面也只在**事件**上跑 —— 若漂移落地后长时间没有任何新 PR 打开/重开，本腿仍只剩 `schedule`（4~5 次/日）⇒ 静默窗口仍可能达数小时。登记在 tests/unit_ci_workflows/test_main_freshness_guard.py 的 UNCOVERED_FACES 第 4 条（带 restart 条件）', '判据 8 v2 的四条新约束各配注入式红证（`pull_request` / `[closed]` / `[synchronize]` / `branches: [dev]` / 检出 PR head），且每条红证**必须归因到注入点**（判红信息里出现该注入的自证锚 —— 防「别的原因红」冒充本次红证）'],
+    skip_reason='[backend-contract] main 侧 CI 守护腿的对账面结构由 tests/unit_ci_workflows/test_main_freshness_guard.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'freshness', 'main-side-guard', 'red-proof'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -12577,6 +12595,7 @@ ALL_CASES = (
     _CASE_MC_029,
     _CASE_MC_030,
     _CASE_MC_031,
+    _CASE_MC_078,
     _CASE_MC_032,
     _CASE_MC_033,
     _CASE_MC_034,
