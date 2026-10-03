@@ -1045,3 +1045,18 @@ run 37120817043   event=pull_request_target   conclusion=success   2026-10-03T11
 **它如实登记的剩余边界（我认）**：① 对账面**只在事件上跑** ⇒ 漂移落地后若长时间无新 PR，仍只剩 `schedule`（实测 4~5 次/日）⇒ 静默窗口仍可达数小时（已进其 `UNCOVERED_FACES` 第 4 条 + restart 条件）；② 本兜底**只判生成物新鲜度、不判用例语义**；③ TOCTOU（`FM-E22`）不在本单 ⇒ 归 **`#6260`**；④ 它的 worktree 在合并后被**外部**清理（非它删），自证改用 `git archive origin/main` 在临时树完成 —— **此点值得留意**（承载体台账里记一笔：本轮出现过"worktree 被外部清掉"，若再现需查明是谁清的，别与"半收尾"混淆）。
 
 **承载体 `#6229` 现状**：`OPEN/BLOCKED`，检查明细里**只剩 `ci workflow helper unit tests` pending**，其余（Case Contract / Case Trust / QA Growth / Coverage / UI Regression / 三模块 unit / 多条 H5 / 面判定）**全 pass**、`fail=0` ⇒ 等这一条即可（auto-merge 已挂）。
+
+### 19.44 `#6254` 中期：**题面前提被实测推翻**（走向 B）+ 一条待人工确认的兼容性变化
+
+**包按"先量清"做了只读量化，三处关键读数**：
+1. `OrderLogisticsWriter.upsert` 生产调用方**只有两处**（`OrderService.upsertLogistics` 服务 B 端端点/智能体/商家生产三条路 + `OrderShipmentService.doShip` 工人 H5）；**但 `PUT /api/admin/orders/{id}/logistics` 的写入并不经过它**（端点内自己 save/updateById）⇒ 该"单一实现点"只服务那三条**不经端点**的写面；
+2. **「无需物流」在该路径结构性不可达**：三条路各自**硬前置运单号非空**（均 422）· `order_logistics.tracking_no` **NOT NULL** · worker-h5 请求体只有五个键（无 `shippingMethod`）；
+3. **只读 SQL**：存量 **29 行全部**带非空运单号、**0** 条空运单号。
+⇒ **该路径造不出"无需物流"单** ⇒ `#6254` 原话「经工人/商家路径发货的『无需物流』单会被显示成『物流发货』」**不可达**（题面推翻，已在 issue 评论登记修正）。
+
+**真正可达的三处（写入侧）**：① `buildLogisticsPayload` 缺席兜底 `'logistics'` ⇒ **把 NULL 凭空写成"已采集"**；② `LogisticsForm` 提交**硬编码** `'logistics'` + `initialData.shippingMethod` 是**死 prop** ⇒ 已记录的 `none` 被**静默翻转**；③ `OrderDetail` 的「非 `none` ⇒ `logistics`」兜底喂的正是这个死 prop。
+
+**处置 = 走向 B**（不硬接不存在的语义，只收口前端）：PR **#6263**（head `c31dabc75`）—— `data-adapter.ts`（未采集 ⇒ **省略该键**；新增 `shippingMethodForEdit`）/ `LogisticsForm.tsx`（回填什么提交什么）/ `OrderDetail.tsx`（走 lib）/ `types/index.ts`（可缺席）+ 用例 **OR-059** + CHANGELOG + 重渲染。红→绿逐字：`Test Files 2 failed / Tests 6 failed | 41 passed`（含 `expected 'logistics' to be 'none'`）⇒ `4 passed / 111 passed`；tsc 0、eslint 0 error、`check-ui-regression` ✅、`contract-check` ✅、Case Trust ✅、Case Contract ✅、新鲜度 ✅。**锚点实测 119 → 120**（按 `_how_to_regen` 追加 + 对齐）。
+
+**⏳ 一条待人工确认的兼容性变化（包如实登记、没擅自决定）**：订单**尚无**物流记录时用「编辑物流」弹窗新建 ⇒ 改前写 `logistics`、**改后写 NULL（未采集）**。
+包的理由：该弹窗**不是发货方式采集面**，"物流发货"是改前从**表单必填项反推**的；与 `#6239` 的「缺席 ≠ 猜测」、本仓「**缺值不猜**」口径一致 ⇒ **我倾向批准**，但这是**用户可见路径上的口径**，故登记待人工一句话确认（若产品口径要求"经此弹窗新建一律算物流发货"，属另一条裁定 + 另开单）。
