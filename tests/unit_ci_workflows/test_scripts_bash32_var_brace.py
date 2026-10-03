@@ -38,6 +38,7 @@ bash 3.2 把变量名后紧跟的非 ASCII **字节并进变量名** ⇒ `set -u
 | 3 | 射程**真的覆盖**（a）**仓库根** `*.sh` 全集、（b）`.github/scripts/**` 这一族面（#5283 残余② 选甲：扩面，不登记缺口） | 把 `GUARD_SCOPE.roots` 收窄成 `["scripts"]` ⇒ 必红（两条射程自证） |
 | 4 | **行为级**：`bash scripts/sync-main.sh --bogus` 必须打印「未知参数」+ exit 1；`./check-ui-regression.sh` 走「token 减少」分支必须打印可读文案 | 改回 `$arg（` / `$f（` ⇒ 必红 |
 | 5 | 反绕过锁：shebang 必须是 `#!/usr/bin/env bash`（不引入 bash 5 依赖假设） | 改成具体 bash 5 路径 ⇒ 必红 |
+| 6 | **双引号内**不得有**裸反引号**（bash 会当**命令替换**执行 ⇒ 报错文案里凭空多出 `command not found`，且原文案被吃掉） | 去掉 `\`` 的转义 ⇒ 必红 |
 
 判据 4 的两条行为腿是**承重件**（行为级比静态扫描硬）；判据 1 是「防新增 + 防存量回退」的类级扫描；
 判据 3 是 #5284 的**射程自证**（没有它，「扩了射程」只是一句话）。
@@ -167,6 +168,79 @@ def _code_face(src: str) -> str:
         at_word_start = ch in _WORD_START
         i += 1
     return "".join(out)
+
+
+#: 开一个 heredoc（`<<EOF` / `<<'EOF'` / `<<-EOF`）—— 本仓 `.sh` 里的 heredoc 多是
+#: **Python / JS 载荷**（见 `scripts/sync-main.sh` 里的内联 `python3 - <<'PY'`），
+#: 那里的反引号属于**另一种语言**，不归 bash 引号语义管
+#: （实测：不平掉这一段，判定会报 35 处**假红**，全部是被内联 Python 的三引号 docstring 带出来的）。
+_HEREDOC_OPEN = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+
+def _without_heredoc_bodies(src: str) -> str:
+    """把 heredoc **正文**替换成等长空格（保长度 ⇒ 行号仍可定位；终止行原样保留）。"""
+    lines = src.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        m = _HEREDOC_OPEN.search(line)
+        i += 1
+        if not m:
+            continue
+        delim = m.group(2)
+        while i < len(lines):
+            if lines[i].strip() == delim:
+                out.append(lines[i])
+                i += 1
+                break
+            out.append(" " * len(lines[i]))
+            i += 1
+    return "\n".join(out)
+
+
+def find_bare_backtick_inside_double_quotes(src: str) -> list[str]:
+    """→ `["第 N 行 …", …]`：**双引号串内**的裸反引号（bash 会把它当**命令替换**执行）。
+
+    病灶（本包实测，issue #6095 第四层同批扫出）：报错文案里想打**行内代码**标记，写成
+    `die "…（`refs/heads/*`、`main`）…"` ⇒ bash 去执行 `refs/heads/*` / `main` ⇒ 真正走到那个
+    失败分支的人拿到的是
+
+        c-end-h5-publish-ci.sh: line 195: refs/heads/*: No such file or directory
+        c-end-h5-publish-ci.sh: line 195: h5-dist: command not found
+
+    外加一条**被吃掉行内代码**的文案 —— 而这条文案长的正是**参数传错时唯一可读的出口**。
+    与判据 1 同源（都是 bash 引号语义咬人），且同样要**剥注释 + 屏蔽单引号字面量**：
+      · 注释里讲解这个坑（本仓已有）不算；单引号里的反引号是**纯文本**、不展开 ⇒ 不算。
+      · **双引号里的 `\`` （转义）也不算** —— 那正是合法写法（本仓既有文案全是这个形态）；
+      · **heredoc 正文**不算 —— `<<'PY'` 里是 Python/JS 载荷，归另一种语言的引号语义。
+        ⚠️ 覆盖面照实登记：若将来有人在 heredoc 里**生成** shell 文案并在其中写裸反引号，本判据看不见它。
+    """
+    code = _code_face(_without_heredoc_bodies(src))
+    hits: list[str] = []
+    state = ""
+    lineno = 1
+    i, n = 0, len(code)
+    while i < n:
+        ch = code[i]
+        if ch == "\n":
+            lineno += 1
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            if code[i + 1] == "\n":
+                lineno += 1
+            i += 2
+            continue
+        if ch == "'":
+            state = "" if state == "'" else ("'" if state == "" else state)
+        elif ch == '"':
+            state = "" if state == '"' else ('"' if state == "" else state)
+        elif ch == "`" and state == '"':
+            hits.append(f"第 {lineno} 行双引号内裸反引号（会被当命令替换执行）")
+        i += 1
+    return hits
 
 
 def find_unbraced_var_before_non_ascii(src: str) -> list[str]:
@@ -442,3 +516,69 @@ def test_github_scripts_face_is_inside_range_and_mutation_is_detected():
         f"`.github/scripts/` 面注入同族形态后扫描器没抓到（#5283 残余② 的射程仍是缺口）：{hits}"
     )
     assert victim.name in " ".join(sorted(rel)), "该面文件必须在射程内（与上面 face ⊆ rel 互为佐证）"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 判据 6：双引号内的**裸反引号**（bash 命令替换）—— issue #6095 第四层同批扫出
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_repo_shell_has_no_bare_backtick_inside_double_quotes():
+    """判据 6：射程内的**代码面**不得出现「双引号串内的裸反引号」（= 会被 bash 当命令替换执行）。
+
+    病（本包实测）：报错文案里想打**行内代码**标记：
+
+        die "… 不许传分支 / 标签 / ref 名（`refs/heads/*`、`main` …）…"
+
+    ⇒ bash 去执行 `refs/heads/*` / `main` ⇒ 走到那个失败分支的人拿到
+
+        c-end-h5-publish-ci.sh: line 195: refs/heads/*: No such file or directory
+        c-end-h5-publish-ci.sh: line 195: h5-dist: command not found
+
+    **外加一条被吃掉行内代码的文案** —— 而那条文案正是**参数传错时唯一可读的出口**
+    （同族判据 1：都长在报错分支上，咬的都是「出问题时最需要读的那句话」）。
+    """
+    files = scanned_shell_files()
+    assert files, "扫描集为空 ⇒ 判据恒绿（fail-closed）"
+    bad = [f"{p.relative_to(REPO_ROOT).as_posix()} {hit}" for p in files
+           for hit in find_bare_backtick_inside_double_quotes(p.read_text(encoding="utf-8"))]
+    assert bad == [], (
+        "这些脚本在**双引号**里写了**裸反引号**（bash 会当命令替换执行 ⇒ 报错分支凭空多出 "
+        "`command not found`，且原文案被吃掉）：\n  - " + "\n  - ".join(bad) +
+        "\n  修法：把文案里的反引号**转义**（\\`），或改写成不含反引号的措辞。"
+    )
+
+
+def test_backtick_scanner_discriminates_code_from_comment_literal_and_heredoc():
+    """判据 6 的**判别力**（负例，防假红）：只判「双引号内 + 未转义」这一种形态。
+
+    实测教训：不做 heredoc 预处理时，内联 Python（`python3 - <<'PY'`）的三引号 docstring 会被
+    当成 shell 双引号 ⇒ 真语料上**35 处假红**（`scripts/sync-main.sh` / `scripts/stranding-check.sh`）。
+    """
+    defect = 'die "见 `x` 与 `y`"\n'
+    assert len(find_bare_backtick_inside_double_quotes(defect)) == 4, "病灶形态必须命中（每个反引号一处）"
+    for label, src in {
+        "已转义（本仓合法写法）": 'die "见 \\`x\\`"\n',
+        "单引号字面量（不展开）": "die '见 `x`'\n",
+        "整行注释": "# 见 `x`\n",
+        "行内注释": "echo ok   # 见 `x`\n",
+        "heredoc 正文（Python/JS 载荷）": "<<'PY'\n\"\"\"见 `x`\"\"\"\nPY\n",
+    }.items():
+        assert find_bare_backtick_inside_double_quotes(src) == [], f"{label} 被误判（假红）：{src!r}"
+    # heredoc **终止之后**必须恢复检测（否则「平掉正文」会变成整段失明）
+    resume = "<<'PY'\ncode\nPY\ndie \"见 `x`\"\n"
+    assert find_bare_backtick_inside_double_quotes(resume), "heredoc 之后的行不再被判 ⇒ 平正文变成失明"
+
+
+def test_backtick_defect_mutation_on_real_corpus_is_detected():
+    """判据 6 的**注入式红证**（在**真语料**上注入 ⇒ 必红，报出文件 + 行号）。"""
+    victim = REPO_ROOT / "deploy" / "scripts" / "c-end-h5-dist-push.sh"
+    src = victim.read_text(encoding="utf-8")
+    assert find_bare_backtick_inside_double_quotes(src) == [], "真语料基线不该命中（否则先修它）"
+    base = src.rstrip("\n")
+    probe = 'die "取不到远端执行体（`tar.gz/<sha>`）"\n'
+    mutated = f"{base}\n{probe}"
+    assert mutated != src, "变异注入未生效（自证失败 ⇒ 红证是空断言）"
+    hits = find_bare_backtick_inside_double_quotes(mutated)
+    assert hits == [f"第 {len(base.splitlines()) + 1} 行双引号内裸反引号（会被当命令替换执行）"] * 2, (
+        f"真语料注入同族形态后扫描器没抓到（判据 6 是空断言）：{hits}"
+    )

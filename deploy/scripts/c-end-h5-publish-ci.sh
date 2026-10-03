@@ -191,8 +191,18 @@ esac
 # 远端取回用的就是这个值 ⇒ 「远端取的那份」与「CI 推的那份」由 workflow 的 step output 对齐。
 [ "${#SHA}" -eq 40 ] || die "DIST_SHA 必须是 40 位十六进制 commit sha（不可变引用），实际 '${SHA}'（长度 ${#SHA}）——
    · CI 侧应传 workflow 里 dist 推送步的 step output（见 .github/workflows/c-end-h5-publish.yml）；
-   · **不许**传分支 / 标签 / ref 名（`refs/heads/*`、`h5-dist`、`main` …）—— 那些会漂，
+   · **不许**传分支 / 标签 / ref 名（\`refs/heads/*\`、\`h5-dist\`、\`main\` …）—— 那些会漂，
      会让「远端取回的产物」与「本次 CI 构建的产物」不再是同一个对象。"
+# `H5_PUBLISHED_COMMIT`（可选）同样**被拼进远端命令内容** ⇒ 同等做白名单（**允许空**：
+# 人工排障时不传；但传了就必须是 40 位十六进制 commit —— 它不是「随便一段文本」）。
+# ⚠️ 这是本包第四层（#6095 / run 37081920188）顺带扫出的**同类继承面**：新加的环境变量
+#    在拼进命令内容前必须过同一道白名单，否则「注入防线」就只覆盖了老的那几个值。
+case "$PUBLISHED_COMMIT" in
+  "") : ;;
+  *[!0-9a-fA-F]*) die "H5_PUBLISHED_COMMIT 非法：'$PUBLISHED_COMMIT'（只接受空或十六进制；它会被拼进远端命令内容）" ;;
+esac
+[ -z "$PUBLISHED_COMMIT" ] || [ "${#PUBLISHED_COMMIT}" -eq 40 ] \
+  || die "H5_PUBLISHED_COMMIT 长度不是 40：'${PUBLISHED_COMMIT}'（它是产出这份 dist 的源码 commit）"
 case "$STATIC_ROOT" in
   /*) : ;;
   *) die "H5_STATIC_ROOT 必须是绝对路径：'$STATIC_ROOT'" ;;
