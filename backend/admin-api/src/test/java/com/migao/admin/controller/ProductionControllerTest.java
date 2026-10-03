@@ -1483,6 +1483,53 @@ class ProductionControllerTest {
     }
 
     @Test
+    @DisplayName("#6115 POST /routings positions 含词表外值 ⇒ 422 + error.details 指向 positions（写库前拦截）")
+    void createRoutingRejectsUnknownPosition() throws Exception {
+        mockMvc.perform(post("/api/admin/production/routings")
+                        .contentType("application/json")
+                        .content("{\"name\":\"火星路线\",\"positions\":[\"火星帘\"],\"is_default\":true}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.details[0].field").value("positions"))
+                .andExpect(jsonPath("$.suggestion").isNotEmpty());
+
+        verify(productionRouteTemplateMapper, never()).insert(any(ProductionRouteTemplate.class));
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
+    }
+
+    @Test
+    @DisplayName("#6115 PUT /routings/{id} positions 含词表外值 ⇒ 422 且库内不变（不落半成品）")
+    void updateRoutingRejectsUnknownPosition() throws Exception {
+        when(productionRouteTemplateMapper.selectById("rt-1")).thenReturn(
+                ProductionRouteTemplate.builder().id("rt-1").tenantId(TENANT).name("路线甲")
+                        .isDefault(false).positions(List.of("布帘")).mainline(List.of("布三边"))
+                        .status("active").deleted(0).build());
+
+        mockMvc.perform(put("/api/admin/production/routings/rt-1")
+                        .contentType("application/json")
+                        .content("{\"positions\":[\"火星帘\"]}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.details[0].field").value("positions"));
+
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
+    }
+
+    @Test
+    @DisplayName("#6115 合法 positions（闭词表全表）⇒ 200 且按预期落库（两侧夹住：不得误伤）")
+    void createRoutingAcceptsVocabularyPositions() throws Exception {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        mockMvc.perform(post("/api/admin/production/routings")
+                        .contentType("application/json")
+                        .content("{\"name\":\"全帘种路线\",\"positions\":[\"布帘\",\"纱帘\",\"帘头\",\"布料\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.positions[3]").value("布料"));
+    }
+
+    @Test
     @DisplayName("#4308 POST /routings 新建路线 ⇒ 200 且响应与 GET /routings 单项同构")
     void createRoutingReturnsRoutingView() throws Exception {
         when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
