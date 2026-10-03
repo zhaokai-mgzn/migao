@@ -947,11 +947,52 @@ CODE_DIVERGENCE_EXCEPTIONS: dict[str, dict[str, object]] = {
             "（陈旧即红）。判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py` 的判据 2。"
         ),
     },
+    # ── issue #6217（第三条；上限同批显式 2 → 3）────────────────────────────────
+    # **跨域具名视图**固有的形态：一个视图要横跨**三个权限面**（客户 / 订单 / 售后），
+    # 而仓内**没有任何一个码**同时覆盖这三面 ⇒ 工具声明的「入口码」必然 ≠ 其中两个端点的生效码。
+    "customer_manage": {
+        "code": "customer:view",
+        "diverges": ["/api/admin/after-sales", "/api/admin/orders"],
+        "live": {
+            "/api/admin/after-sales": "after_sales:view",
+            "/api/admin/orders": "order:list",
+        },
+        "why": (
+            "issue #6217（族 3 包 4 / V1：客户价值分层 / 流失预警视图）：新增的"
+            " `customer_manage(action=\"value_view\")` 要横跨**三个权限面**才能回答"
+            "「哪些老客户最近不下单了 / 谁最值得维护」—— 客户档案（`customer:view`）+ 订单"
+            "（`order:list`）+ 售后工单（`after_sales:view`）。"
+            "**为什么不能收敛**：① 收敛到**联合**（工具声明三个码）会**收窄**既有能力 ——"
+            " `customer_manage` 的其余四个只读 action（list / detail / list_tags / profile_view）"
+            " 目前只需 `customer:view`，要求联合码等于把客户列表从「只持客户读码」的岗位"
+            "（客服 / 销售）手里拿走：那是**授权面改动**，属需人工裁定的五类之一，本单不做；"
+            "② 收敛到其中**任一个**（如 `order:list`）是同一收窄的另一条路（客户列表反而要订单码）；"
+            "③ 把三个码塞进 `required_permissions` 还会让 `customer_manage` 与「客户管理」菜单节点"
+            " 的码不再一致（判据 3 的锚定关系被破坏）。"
+            "🔴 **为什么这不构成越权**：工具声明的码是**入口码**（它属于哪个页面），不是数据面授权 ——"
+            " `_value_view` 的三条取数各自带**调用方自己的** tenant/user 令牌走 admin-api，"
+            " 每个端点仍由 `@RequirePermission` 逐面把关；缺任一码 ⇒ 该面 403 ⇒ 工具**fail-closed**"
+            "（`cross_domain_fetch_failed`）并在消息里**点名**缺哪个码（判据 ="
+            " `backend/ai-agent-service/tests/test_customer_manage.py::TestCustomerValueAction`"
+            " 的 `test_any_face_failure_is_fail_closed_and_names_the_permission`，三面各注入一次）。"
+            " ⇒ 「只持 `customer:view` 的人能拿到订单/售后数据」这条路径**不存在**。"
+        ),
+        "where": (
+            "工具声明 `customer:view`（客户域读码，与「客户管理」菜单节点同码）；"
+            "`/api/admin/orders` 生效码 `order:list`、`/api/admin/after-sales` 生效码 `after_sales:view`"
+            " —— 两侧**本单零改动**（未碰任何 `@RequirePermission`）。"
+            "**重启条件** = 若将来由人工裁定「跨域视图应有自己的联合权限面」（例如为族 3 的跨域视图"
+            "设计一个 `cross_domain:view` 之类的码，或裁定 value_view 必须要求联合码），则本条目"
+            "**改判或删除**（陈旧即红）；届时同批要改的是工具声明 + 菜单节点锚定 + 岗位目录三处。"
+            "判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py` 的判据 2。"
+        ),
+    },
 }
 
 #: `CODE_DIVERGENCE_EXCEPTIONS` 的**条数上限**（**现取** ⇒ 加条目必须在同一 diff 里改这一行）。
 #: issue #5980：1 → 2（新增 `role_manage` 那条；上限本身就是「例外表只许缩短」的闸门）。
-CODE_DIVERGENCE_EXCEPTIONS_CEILING = 2
+#: issue #6217：2 → 3（新增 `customer_manage` 那条 —— 跨域视图横跨三个权限面，仓内无单码可覆盖）。
+CODE_DIVERGENCE_EXCEPTIONS_CEILING = 3
 
 #: **在飞端点**的显式登记（判据 1/2 的补集；issue #5314）。
 #:
