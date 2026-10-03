@@ -362,7 +362,7 @@ def _api_get_retrying(url: str, token: str, timeout: float, attempts: int = 2) -
             last = e
         except OSError as e:
             last = e
-    assert last is not None
+    assert isinstance(last, Exception), "重试耗尽却没有留下异常 ⇒ 循环逻辑漏了出口"
     raise last
 
 
@@ -803,7 +803,9 @@ def test_live_probe_open_pr_claims_endpoint_is_readable(monkeypatch) -> None:
         return
     monkeypatch.setenv(REPO_ENV, os.environ[REPO_ENV])
     result = fetch_open_pr_claims()
-    assert result is not None, f"`{REPO_ENV}` 在环境里却返回 `None` ⇒ 门未按声明生效"
+    assert result is not None and isinstance(result[1], list), (
+        f"`{REPO_ENV}` 在环境里却返回 `None` ⇒ 门未按声明生效"
+    )
     open_prs, problems = result
     if token_value():
         assert all("判定不了" in p for p in problems), f"有凭据却出现非「判定不了」的问题：{problems}"
@@ -1093,7 +1095,10 @@ def test_http_full_path_names_the_other_in_flight_pr(monkeypatch) -> None:
     _api_env(monkeypatch, base)
     try:
         fetched = fetch_open_pr_claims()
-        assert fetched is not None, "取数面返回 `None` ⇒ 不该发生（凭据与环境都已注入）"
+        assert fetched is not None and {p.pr: p.ids for p in fetched[0]} == {
+            7001: frozenset({"MC-950"}),
+            7002: frozenset({"MC-950"}),
+        }, f"取数面没把两个 PR 同号的读数取出来（现取 {fetched!r}）"
         open_prs, problems = fetched
         assert problems == [], problems
         by_pr = {p.pr: p.ids for p in open_prs}
