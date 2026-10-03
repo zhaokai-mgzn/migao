@@ -5746,6 +5746,24 @@ _CASE_OR_058 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-059 [NORMAL] 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）（源: cases/order.yml）──
+_CASE_OR_059 = EvalCase(
+    id='OR-059',
+    legacy_id='',
+    title='发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue #6254：工人 / 商家发货写面（OrderShipmentService → OrderLogisticsWriter）创建的物流记录 shipping_method 恒为 NULL，而前端回填把 NULL 当 logistics'],
+    expectations=[],
+    data_checks=['判据 1·**未采集 ⇒ 不下发该键（红）**：`buildLogisticsPayload` 收到缺席的 `shippingMethod` ⇒ 序列化后的请求体里**没有这个键**（改前兜底成 `logistics` = 把一条 NULL 记录凭空写成「已采集」= 造数据）。执行点 = frontend/admin-web/tests/unit/lib/data-adapter.test.ts 的「未采集 ⇒ 不下发该键」。', '判据 2·**正对照**：真 `shippingMethod=logistics` ⇒ 照旧下发 `logistics`（证明判据 1 不是「一律不下发」）。执行点 = 同文件「正对照：真 shippingMethod=logistics」。', "判据 3·**回填口径本体**：`shippingMethodForEdit(undefined)` / `(null)` ⇒ `undefined`（未记录，**不再读成 logistics**）；`('none')` / `('logistics')` ⇒ 原样透传（正 / 反向对照：已采集的取值不被改写）。执行点 = 同文件 `shippingMethodForEdit` 两条。", '判据 4·🔴 **编辑物流弹窗不静默改写（红）**：未采集回填 ⇒ 提交时省略该键（不凭空写成 logistics）；已记录 `none` ⇒ 仍提交 `none`（改前弹窗**硬编码** `logistics`、`initialData.shippingMethod` 一字不读 = 死 prop ⇒ 用户选的「无需物流」被静默翻转）；已记录 `logistics` ⇒ 仍 `logistics`（正对照）。执行点 = frontend/admin-web/tests/unit/components/LogisticsForm.test.tsx 的三条。', '判据 5·🔴 **接线**：订单详情回填点必须真的走 `shippingMethodForEdit`，且源码里不再出现「非 none ⇒ logistics」的兜底表达式（谁把兜底改回去 ⇒ 这一条当场红）。执行点 = data-adapter.test.ts 的「接线」一条。', '量清读数（本单主要交付物，明细见 PR body）：`OrderLogisticsWriter.upsert` 的生产调用方只有两处 —— `OrderService.upsertLogistics`（B 端端点 / 智能体 `order_manage(update_logistics)` / 商家生产发货 `POST /api/admin/production/orders/{id}/ship` 三条路径共用）与 `OrderShipmentService.doShip`（工人 H5 `POST /api/worker/shipment/orders/{id}/ship`）；后三条**结构性不产生「无需物流」语义**（各自硬前置运单号非空，且 `order_logistics.tracking_no` 是 NOT NULL）⇒ **不硬接线**，只收口 NULL 兜底这一半。'],
+    skip_reason='[backend-contract] 纯前端回填 / payload 兜底口径（零 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-web vitest 执行',
+    tags=['order', 'logistics', 'shipping-method', 'admin-web', 'null-not-guessed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
 _CASE_OR_001 = EvalCase(
     id='OR-001',
@@ -12648,6 +12666,7 @@ ALL_CASES = (
     _CASE_ON_003,
     _CASE_ON_004,
     _CASE_OR_058,
+    _CASE_OR_059,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,

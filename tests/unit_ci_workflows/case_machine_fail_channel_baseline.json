@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 119
+    "backend_contract_scoring_zero": 120
   },
   "history": [
     {
@@ -281,6 +281,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 119,
       "note": "issue #6238（P2·待核验·涉钱：工序改价**并发重复记账** —— `ProductionOperationCommandService#update` 是「读旧价 → 判『价变了吗』 → 条件追加版本行」的读-判-写，同一次调价被并发重复提交 ⇒ 各追加一行；真库实测 N=4 × 3 轮全为「版本账 5 行 / 新价行 4 行」）新增 1 条 `[backend-contract]` 用例（PP-022：并发面核验 + 修法 = 先取工序行排他锁再读旧价）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 118 + 1 = **119**；118 = 本单 rebase 到含 #6242（PG-070）/ #6246（OR-057）的 main 之后**实测**的基线）。机器判红通道 = `traces.tests` 的两个真测试文件，均非空且真实存在：`backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java`（4 条：并发主判据（库内事实 → 版本账恰追加 1 行、当前价 = 最新版本行）/ 串行正对照 + 同价重复提交幂等 / 库层零兜底实测（除主键外无唯一约束）/ 入口面无 Idempotency-Key；注入式红证 = 摘掉 `FOR UPDATE` ⇒ 3 轮全红）与 `backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesSideEffectConcurrencyMetaGuardTest.java`（本单把台账该条 `unverified` → `entries`，元守卫窄跑 2/0/0）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 119}` vs 锚点 118 —— **不是**按号推算。"
+    },
+    {
+      "sha": "pending-pr-6254",
+      "date": "2026-10-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 120,
+      "note": "issue #6254（P3·发货方式 shippingMethod **半接线**收口：工人/商家发货写面 `shipping_method` 恒为 NULL，而前端兜底把 NULL 当 `logistics`）新增 **1** 条 `[backend-contract]` 用例（OR-059）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 119 + 1 = **120**）。机器判红通道 = `traces.tests` 的两个真测试文件，均非空且真实存在：`frontend/admin-web/tests/unit/lib/data-adapter.test.ts`（未采集 ⇒ 不下发该键 / 正对照真 logistics 仍下发 / `shippingMethodForEdit` 的 NULL ⇒ undefined 与 none·logistics 原样透传 / 接线判据（订单详情回填点真走本函数且不再有旧兜底表达式））与 `frontend/admin-web/tests/unit/components/LogisticsForm.test.tsx`（未采集 ⇒ 省略该键 / 已记录 none ⇒ 仍 none / 正对照 logistics ⇒ 仍 logistics）；`traces.ci` = `pr-check.yml` 的 `admin-web typecheck + unit tests`（真跑这两个 vitest）。修前红实测 = `6 failed / 41 passed`（两个文件），修后绿 = `111 passed`（4 个文件）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 120}` vs 锚点 119 —— **不是**按号推算。"
     }
   ]
 }

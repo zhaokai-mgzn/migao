@@ -4319,7 +4319,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（58 case）
+## 订单域（59 case）
 
 ### OR-058. 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239） 🔵
 ```
@@ -4334,6 +4334,19 @@
 跳过: [backend-contract] 纯后端写面接线（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 OrderControllerTest 的 UpdateLogistics 嵌套类 + FrontendUnionFieldProducerMetaGuardTest 执行
 ```
 溯源: 2026-10-03 新增（issue #6239）：发货方式 shippingMethod 从「前端采集后丢弃」改为「落库 + 回吐 + 服务端权威」。存储 = V147 加可空列 shipping_method（存量 NULL = 未采集，不猜不回填）；接收 = 端点继续用 Map<String,String> 显式取值（最少代码，不抽 DTO）；服务端 = 白名单 fail-closed + 「物流发货 ⇒ 运单号必填」；回吐 = OrderDetailResponse.LogisticsInfo 补字段。兼容形态 = 仅在**显式**给非空 shippingMethod 且生效后运单号为空时拒绝（保护老客户端 / 编辑弹窗 / 无需物流三条路径）。 ｜ tags: order, logistics, shipping-method, admin-api, write-surface, fail-closed
+
+### OR-059. 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none） 🔵
+```
+你: issue #6254：工人 / 商家发货写面（OrderShipmentService → OrderLogisticsWriter）创建的物流记录 shipping_method 恒为 NULL，而前端回填把 NULL 当 logistics
+数据: 判据 1·**未采集 ⇒ 不下发该键（红）**：`buildLogisticsPayload` 收到缺席的 `shippingMethod` ⇒ 序列化后的请求体里**没有这个键**（改前兜底成 `logistics` = 把一条 NULL 记录凭空写成「已采集」= 造数据）。执行点 = frontend/admin-web/tests/unit/lib/data-adapter.test.ts 的「未采集 ⇒ 不下发该键」。
+数据: 判据 2·**正对照**：真 `shippingMethod=logistics` ⇒ 照旧下发 `logistics`（证明判据 1 不是「一律不下发」）。执行点 = 同文件「正对照：真 shippingMethod=logistics」。
+数据: 判据 3·**回填口径本体**：`shippingMethodForEdit(undefined)` / `(null)` ⇒ `undefined`（未记录，**不再读成 logistics**）；`('none')` / `('logistics')` ⇒ 原样透传（正 / 反向对照：已采集的取值不被改写）。执行点 = 同文件 `shippingMethodForEdit` 两条。
+数据: 判据 4·🔴 **编辑物流弹窗不静默改写（红）**：未采集回填 ⇒ 提交时省略该键（不凭空写成 logistics）；已记录 `none` ⇒ 仍提交 `none`（改前弹窗**硬编码** `logistics`、`initialData.shippingMethod` 一字不读 = 死 prop ⇒ 用户选的「无需物流」被静默翻转）；已记录 `logistics` ⇒ 仍 `logistics`（正对照）。执行点 = frontend/admin-web/tests/unit/components/LogisticsForm.test.tsx 的三条。
+数据: 判据 5·🔴 **接线**：订单详情回填点必须真的走 `shippingMethodForEdit`，且源码里不再出现「非 none ⇒ logistics」的兜底表达式（谁把兜底改回去 ⇒ 这一条当场红）。执行点 = data-adapter.test.ts 的「接线」一条。
+数据: 量清读数（本单主要交付物，明细见 PR body）：`OrderLogisticsWriter.upsert` 的生产调用方只有两处 —— `OrderService.upsertLogistics`（B 端端点 / 智能体 `order_manage(update_logistics)` / 商家生产发货 `POST /api/admin/production/orders/{id}/ship` 三条路径共用）与 `OrderShipmentService.doShip`（工人 H5 `POST /api/worker/shipment/orders/{id}/ship`）；后三条**结构性不产生「无需物流」语义**（各自硬前置运单号非空，且 `order_logistics.tracking_no` 是 NOT NULL）⇒ **不硬接线**，只收口 NULL 兜底这一半。
+跳过: [backend-contract] 纯前端回填 / payload 兜底口径（零 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-web vitest 执行
+```
+溯源: 2026-10-03 新增（issue #6254）：先量清写面（#6239 留下的半接线）—— 工人 / 商家 / 生产 / 智能体四条发货写面**结构性不产生「无需物流」语义**（各自硬前置运单号非空 + order_logistics.tracking_no NOT NULL；存量 29 行全部带非空运单号）⇒ 裁定**不硬接**该写面，只收口前端 NULL 兜底：① `buildLogisticsPayload` 不再把缺席兜底成 'logistics'（改前 = 把 NULL 记录凭空写成已采集）；② 编辑物流弹窗不再硬编码 'logistics'（改前 initialData.shippingMethod 是死 prop ⇒ 已记录的 none 被静默翻转成 logistics）；③ 订单详情回填口径抽成 shippingMethodForEdit（NULL ⇒ undefined = 未记录）。修前红 = 6 failed / 41 passed；修后绿 = 111 passed（4 个文件）。 ｜ tags: order, logistics, shipping-method, admin-web, null-not-guessed
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -9475,7 +9488,7 @@
 - 杂项域：78
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：58
+- 订单域：59
 - 加工项域：27
 - 加工单域：61
 - 商品域：109
@@ -9582,6 +9595,7 @@
 - MC-076: 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed
 - MC-077: worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
+- OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
