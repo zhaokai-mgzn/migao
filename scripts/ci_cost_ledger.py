@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import statistics
 import subprocess
 import sys
@@ -69,8 +70,61 @@ def _required_names() -> set[str]:
     return set(json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))["contexts"])
 
 
+def _matrix_values(matrix: dict | None) -> dict[str, list[str]]:
+    """`strategy.matrix` → `{键: [取值…]}`（`include` 里的键值也收；`exclude` 不收）。"""
+    out: dict[str, list[str]] = {}
+    for key, val in (matrix or {}).items():
+        if key == "include":
+            for entry in val or []:
+                if not isinstance(entry, dict):
+                    continue
+                for k, v in entry.items():
+                    out.setdefault(str(k), [])
+                    if str(v) not in out[str(k)]:
+                        out[str(k)].append(str(v))
+        elif key == "exclude":
+            continue
+        elif isinstance(val, list):
+            out[str(key)] = [str(v) for v in val]
+    return out
+
+
+def check_names(job: dict, jid: str) -> list[str]:
+    """该 job 会**上报的检查名**（**matrix 展开**，issue #6164）—— 本仓的**单一实现**。
+
+    `name:` 里的 `${{ matrix.<键> }}` 由 GitHub 按 matrix 每个取值各渲染一次 ⇒ **一个 job id
+    可以上报多个检查名**（现取：拆腿后的 `ci-workflow-tests` 有 2 片 ⇒ 2 个名）。
+    不展开的后果是**双向**的：① 骨架里只有第一个名 ⇒ 第二个名**无从登记**，而它一旦进分支保护，
+    判据 3（snapshot ⇄ 台账 required 集合）必红、且**没有任何人能把台账改对**
+    （`--measure` 每次都会把它重新抹掉）② 采样到的第二个名的读数无处安放。
+    ⇒ 展开是**必须**的，不是可选的美化。
+
+    取法 = `include` 条目（或普通列表）里各键的取值集合 × 占位符个数（笛卡尔积）——
+    与本仓现取语料一致：一个占位符 + 两个取值 ⇒ 两个名。非 matrix 的 job ⇒ 原样一个名。
+    """
+    raw = str(job.get("name") or jid)
+    keys = re.findall(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}", raw)
+    if not keys:
+        return [raw]
+    values = _matrix_values((job.get("strategy") or {}).get("matrix") or {})
+    parts = re.split(r"\$\{\{\s*matrix\.[A-Za-z0-9_-]+\s*\}\}", raw)
+    names = [parts[0]]
+    for i, key in enumerate(keys):
+        choices = values.get(key) or [""]
+        names = [n + v + parts[i + 1] for n in names for v in choices]
+    seen: list[str] = []
+    for n in names:
+        if n not in seen:
+            seen.append(n)
+    return seen
+
+
 def _legs_skeleton() -> dict[str, dict]:
-    """从**现取 YAML** 取每一条 PR 触发腿：job 名 / 硬杀上限 / 是否被路径门控。"""
+    """从**现取 YAML** 取每一条 PR 触发腿：job 名 / 硬杀上限 / 是否被路径门控。
+
+    ⚠️ **一个 job id 可能对应多条腿**（matrix，issue #6164）⇒ 按**渲染后的检查名**逐条登记：
+    第一条沿用历史 id（`workflow::job`，冻结预算靠它延续），后几条加 `#N` 后缀（id 唯一即可）。
+    """
     legs: dict[str, dict] = {}
     for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -80,14 +134,16 @@ def _legs_skeleton() -> dict[str, dict]:
             if not isinstance(job, dict) or "runs-on" not in job:
                 continue
             timeout = job.get("timeout-minutes")
-            legs[f"{path.name}::{jid}"] = {
-                "workflow": path.name,
-                "job": str(jid),
-                "check_name": str(job.get("name") or jid),
-                "hard_kill_seconds": (int(timeout) * 60) if timeout else None,
-                "hard_kill_source": (f"workflow `timeout-minutes: {int(timeout)}`" if timeout
-                                     else "workflow 未声明 `timeout-minutes`（GitHub 默认 360min）"),
-            }
+            for index, check in enumerate(check_names(job, str(jid))):
+                suffix = "" if index == 0 else f"#{index + 1}"
+                legs[f"{path.name}::{jid}{suffix}"] = {
+                    "workflow": path.name,
+                    "job": str(jid),
+                    "check_name": check,
+                    "hard_kill_seconds": (int(timeout) * 60) if timeout else None,
+                    "hard_kill_source": (f"workflow `timeout-minutes: {int(timeout)}`" if timeout
+                                         else "workflow 未声明 `timeout-minutes`（GitHub 默认 360min）"),
+                }
     return legs
 
 

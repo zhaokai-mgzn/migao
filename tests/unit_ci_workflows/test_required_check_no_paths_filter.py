@@ -437,25 +437,6 @@ def _job_gating_offenders(
     return offenders, pr_workflows, non_required_gated
 
 
-def _matrix_values(matrix: dict | None) -> dict[str, list[str]]:
-    """`strategy.matrix` → `{键: [取值…]}`（`include` 里的键值也收；`exclude` 不收）。"""
-    out: dict[str, list[str]] = {}
-    for key, val in (matrix or {}).items():
-        if key == "include":
-            for entry in val or []:
-                if not isinstance(entry, dict):
-                    continue
-                for k, v in entry.items():
-                    out.setdefault(str(k), [])
-                    if str(v) not in out[str(k)]:
-                        out[str(k)].append(str(v))
-        elif key == "exclude":
-            continue
-        elif isinstance(val, list):
-            out[str(key)] = [str(v) for v in val]
-    return out
-
-
 def job_check_names(job: dict, jid: str) -> list[str]:
     """该 job 在 PR 事件上**会上报的检查名**（**matrix 展开**，issue #6164）。
 
@@ -463,22 +444,17 @@ def job_check_names(job: dict, jid: str) -> list[str]:
     每个取值各渲染一次。现取：拆腿后的 `ci-workflow-tests` 有 2 片 ⇒ 两个名
     （`ci workflow helper unit tests` / `ci workflow helper unit tests（后半）`）。
     不展开 ⇒ snapshot 里第二片那个名会「找不到上报它的 job」⇒ 被判成陈旧（**假红**）。
+
+    ⚠️ 展开在本仓**只有一份实现**（`scripts/ci_cost_ledger.py::check_names`）：成本台账的骨架
+    用同一份展开来决定「每个渲染名登记一条腿」，两边各写一份必然各自演化 ⇒ 这里**只做委托**。
     """
-    raw = str(job.get("name") or jid)
-    keys = re.findall(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}", raw)
-    if not keys:
-        return [raw]
-    values = _matrix_values((job.get("strategy") or {}).get("matrix") or {})
-    parts = re.split(r"\$\{\{\s*matrix\.[A-Za-z0-9_-]+\s*\}\}", raw)
-    names = [parts[0]]
-    for i, key in enumerate(keys):
-        choices = values.get(key) or [""]
-        names = [n + v + parts[i + 1] for n in names for v in choices]
-    seen: list[str] = []
-    for n in names:
-        if n not in seen:
-            seen.append(n)
-    return seen
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "ci_cost_ledger_for_names", REPO / "scripts" / "ci_cost_ledger.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.check_names(job, jid)
 
 
 def _pr_reported_checks() -> tuple[dict[str, set[str]], dict[str, list[str]]]:
