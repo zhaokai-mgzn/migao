@@ -67,17 +67,34 @@ public final class MoneyScale {
      * @return 合法值**原样返回**（{@code 0.01} → {@code 0.01}、{@code 100.00} → {@code 100.00}）
      */
     public static BigDecimal requireTwoDecimalsOrNull(BigDecimal raw, String label) {
+        String problem = precisionProblemOrNull(raw, label);
+        if (problem != null) {
+            throw BusinessException.validationError(problem);
+        }
+        return raw;
+    }
+
+    /**
+     * 与 {@link #requireTwoDecimalsOrNull} **同一判定**，但把「哪里不合法」作为**可行动文案**返回
+     * （合法 / {@code null} ⇒ 返回 {@code null}）。
+     *
+     * <p>存在理由（issue #6228）：本仓有一类入口用**收集式校验**（逐条 {@code ApiResponse.ErrorDetail}
+     * 汇总后一次性 422，如 {@code ProcessingFeeCombinationCommandService#requiredPrice}）——
+     * 它们要的是「文案」而不是「立刻抛」。没有本方法，这类入口只能**再写一份**小数位判定
+     * （= 第二处口径，正是本单要消灭的形态）；有了它，判定仍只有一处，抛与收集只是两种消费方式。</p>
+     */
+    public static String precisionProblemOrNull(BigDecimal raw, String label) {
         if (raw == null) {
             return null;
         }
         int effectiveScale = effectiveScale(raw);
         if (effectiveScale > SCALE) {
-            throw BusinessException.validationError(String.format(
+            return String.format(
                     "%s 最多支持 2 位小数（金额按「分」记账，列精度 NUMERIC(·,2)），当前值 %s 有 %d 位小数"
                             + " —— 请改为最多 2 位小数后重试（服务端不做静默取整/四舍五入）",
-                    label, raw.toPlainString(), effectiveScale));
+                    label, raw.toPlainString(), effectiveScale);
         }
-        return raw;
+        return null;
     }
 
     /** 有效小数位数（去尾零后；{@code 2.70} → 1、{@code 0.001} → 3、{@code 100.00} → 0）。 */

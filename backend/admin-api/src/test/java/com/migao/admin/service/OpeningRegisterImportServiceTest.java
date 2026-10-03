@@ -1,7 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids=[PR-061]
-
+// case_ids=[PR-061, FN-006]
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -332,5 +331,39 @@ class OpeningRegisterImportServiceTest {
                 xlsx(new String[][]{{"HUOHAO-01", "0", "", "", "", ""}}), "another-run", TENANT, "op");
         assertThat(zero.getFailCount()).isEqualTo(1);
         assertThat(zero.getRows().get(0).getMessage()).contains("必须大于 0 米");
+    }
+
+    // ════════════════ issue #6228：入库单价小数位准入（超 2 位有效小数 ⇒ 该行标红 + 未建账）════════════
+
+    @Test
+    @DisplayName("#6228 入库单价 0.005（3 位有效小数）⇒ 该行标红、**未建账**（不静默舍成 0.01）")
+    void rejectsSubCentUnitCostAtRowLevel() {
+        stubSkus(Map.of("HUOHAO-01", sku(11L, "HUOHAO-01")));
+
+        OpeningImportReport report = service.importOpening(
+                xlsx(new String[][]{{"HUOHAO-01", "2.5", "", "", "0.005", ""}}), RUN_ID, TENANT, "op");
+
+        assertThat(report.getFailCount()).isEqualTo(1);
+        assertThat(report.getRows().get(0).getMessage()).contains("2 位小数");
+        verify(inboundOrderService, never()).create(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("#6228 正对照 单价 12.50（2 位小数）⇒ 校验通过并把值**原样**透传给建单")
+    void acceptsTwoDecimalUnitCostAndPassesItThrough() {
+        stubSkus(Map.of("HUOHAO-01", sku(11L, "HUOHAO-01")));
+        when(inboundOrderService.create(any(), any(), any()))
+                .thenReturn(order(InboundOrder.STATUS_DRAFT));
+        when(inboundOrderService.post(any(), any(), any()))
+                .thenReturn(order(InboundOrder.STATUS_POSTED));
+
+        OpeningImportReport report = service.importOpening(
+                xlsx(new String[][]{{"HUOHAO-01", "2.5", "", "", "12.50", ""}}), RUN_ID, TENANT, "op");
+
+        assertThat(report.getFailCount()).isZero();
+        org.mockito.ArgumentCaptor<InboundOrderCreateRequest> captor =
+                org.mockito.ArgumentCaptor.forClass(InboundOrderCreateRequest.class);
+        verify(inboundOrderService).create(captor.capture(), any(), any());
+        assertThat(captor.getValue().getItems().get(0).getUnitCost().toPlainString()).isEqualTo("12.50");
     }
 }

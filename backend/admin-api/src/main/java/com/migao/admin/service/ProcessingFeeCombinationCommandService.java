@@ -233,6 +233,11 @@ public class ProcessingFeeCombinationCommandService {
         if (!StringUtils.hasText(compositionKey) || unitPrice == null) {
             return;
         }
+        // 金额精度准入（issue #6228）：本路径的价来自**订单里的人工人改价**（经取价器原样带来），
+        // 而 `processing_fee_combinations.unit_price` / 版本台账列是 NUMERIC(·,2) ——
+        // 超 2 位有效小数会被 PG 静默四舍五入，之后每次下单取价都按被改掉的价算钱。
+        // 判在这里 = 本方法任何写（updateById / insert / 版本台账）之前。
+        MoneyScale.requireTwoDecimalsOrNull(unitPrice, "加工费单价 unit_price");
         ProcessingFeeCombination existing = null;
         for (ProcessingFeeCombination row : allCombinations(tenantId)) {
             if (Objects.equals(row.getCompositionKey(), compositionKey)) {
@@ -352,6 +357,14 @@ public class ProcessingFeeCombinationCommandService {
         if (price.compareTo(BigDecimal.ZERO) < 0) {
             details.add(BusinessException.detail("unit_price",
                     "unit_price 不得为负数：加工费是商家收的钱，负单价会把订单金额算成负数"));
+            return null;
+        }
+        // 金额精度准入（issue #6228）：`processing_fee_combinations.unit_price` 是 NUMERIC(·,2)，
+        // 超 2 位有效小数会被 PG 静默四舍五入（下单取价按被改掉的值算钱）。
+        // 判定本体仍在 MoneyScale（同一处）；此处只是把「问题」并入本方法既有的**收集式校验**清单。
+        String scaleProblem = MoneyScale.precisionProblemOrNull(price, "unit_price");
+        if (scaleProblem != null) {
+            details.add(BusinessException.detail("unit_price", scaleProblem));
             return null;
         }
         return price;

@@ -359,6 +359,11 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     @Transactional(rollbackFor = Exception.class)
     public AfterSalesDetailResponse createTicket(AfterSalesCreateRequest request, Long tenantId, String operator,
                                                  String source) {
+        // 金额精度准入（issue #6228）：`after_sales_tickets.refund_amount` 是 NUMERIC(10,2)，
+        // 超 2 位有效小数会被 PG **静默四舍五入**（工单创建 200、库内值与请求值不等；完结时
+        // 联动退款还会按被改掉的值真退钱）⇒ 入口显式拒绝、不静默取整。
+        // 判在本方法开头 = 任何写之前；`null` 原样透传（= 未填，**不得**归一成 0）。
+        MoneyScale.requireTwoDecimalsOrNull(request.getRefundAmount(), "退款金额");
         // 投诉类工单可无关联订单（转人工/服务投诉场景）；其余类型必须关联订单
         boolean isComplaint = "complaint".equals(request.getTicketType());
         Order order = null;

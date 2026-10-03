@@ -1,7 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045, PR-046, PR-048, PR-058, PR-061]
-
+// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045, PR-046, PR-048, PR-058, PR-061, FN-006]
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -993,6 +992,67 @@ class InboundOrderServiceTest {
                     .isEqualByComparingTo("8.80");
             // 从未有过成本 ⇒ 仍是未知（NULL），**不得**变成 0
             assertThat(InboundOrderService.movingAverage(BigDecimal.valueOf(0), null, BigDecimal.valueOf(30), null)).isNull();
+        }
+    }
+
+    // ════════════════ issue #6228：金额入口小数位准入（超 2 位有效小数 ⇒ 422 + 零写入）════════════════
+
+    @Nested
+    @DisplayName("#6228 入库金额精度准入：单价 2 位小数 + 「积」逐处准入")
+    class MoneyScaleAdmission {
+
+        @Test
+        @DisplayName("单价 0.005（3 位有效小数）⇒ 422，inbound_orders / inbound_order_items **零写入**")
+        void rejectsUnitCostOverScale() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
+
+            assertThatThrownBy(() -> service.create(
+                    request(itemQty("prod-1", 11L, "2.5", "0.005")), TENANT, "op"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("2 位小数")
+                    .hasMessageContaining("0.005");
+
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderItemMapper, never()).insert(any(InboundOrderItem.class));
+        }
+
+        @Test
+        @DisplayName("「积」超精度（数量 1.5 × 单价 0.01 = 0.015）⇒ 422，明细/单据零写入（单价本身合法）")
+        void rejectsAmountProductOverScale() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
+
+            assertThatThrownBy(() -> service.create(
+                    request(itemQty("prod-1", 11L, "1.5", "0.01")), TENANT, "op"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("入库金额")
+                    .hasMessageContaining("0.015");
+
+            verify(inboundOrderItemMapper, never()).insert(any(InboundOrderItem.class));
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+        }
+
+        @Test
+        @DisplayName("正对照 数量 2.5 × 单价 12.50 ⇒ 建单成功，单价/金额落库逐字 12.50 / 31.250（有效 2 位）")
+        void acceptsTwoDecimalProduct() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
+            // 建单末尾会回读详情（真实部署里单据已落库）——同本类 PR-029 用例的既有口径
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedOrder);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedLines);
+
+            service.create(request(itemQty("prod-1", 11L, "2.5", "12.50")), TENANT, "op");
+
+            ArgumentCaptor<InboundOrderItem> itemCap = ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper).insert(itemCap.capture());
+            assertThat(itemCap.getValue().getUnitCost().toPlainString()).isEqualTo("12.50");
+            assertThat(itemCap.getValue().getAmount().toPlainString()).isEqualTo("31.250");
         }
     }
 }

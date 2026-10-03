@@ -117,6 +117,10 @@ public class FinanceService extends ServiceImpl<FinanceTransactionMapper, Financ
         if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw BusinessException.validationError("金额必须大于 0");
         }
+        // 金额精度准入（issue #6228）：`finance_transactions.amount` 是 NUMERIC(12,2)，超 2 位有效小数
+        // 会被 PG **静默四舍五入**（流水登记 200、账上金额与请求值不等，且对账会按被改掉的值核）
+        // ⇒ 在 insert 之前显式拒绝，不静默取整。
+        MoneyScale.requireTwoDecimalsOrNull(request.getAmount(), "金额 amount");
         if (StringUtils.hasText(request.getPaymentMethod()) && !VALID_METHODS.contains(request.getPaymentMethod())) {
             throw BusinessException.validationError("支付方式无效，可选 wechat/alipay/bank_transfer/cash/other");
         }
@@ -166,6 +170,10 @@ public class FinanceService extends ServiceImpl<FinanceTransactionMapper, Financ
         if (order == null || amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
+        // 金额精度准入（issue #6228）：同一列 `finance_transactions.amount`（NUMERIC(12,2)）。
+        // 上游（订单退款 / 售后工单）已各自准入一次；这里是**流水这一侧的入口**，独立再判一次
+        // —— 换调用方（将来的对账冲正 / 批量导入）不会因为绕开上游而静默舍入。
+        MoneyScale.requireTwoDecimalsOrNull(amount, "退款金额 amount");
         FinanceTransaction txn = FinanceTransaction.builder()
                 .tenantId(order.getTenantId())
                 .transactionNo(generateTransactionNo(order.getTenantId()))

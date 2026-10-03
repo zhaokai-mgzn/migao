@@ -115,6 +115,9 @@ public class ProductionOperationCommandService {
                 if (newPrice.signum() < 0) {
                     throw BusinessException.validationError("unit_price 不能为负");
                 }
+                // 金额精度准入（issue #6228）：计件单价列 NUMERIC(·,2)，超 2 位有效小数会被 PG
+                // 静默四舍五入（付工人的价按被改掉的值算）⇒ 在任何写之前显式拒绝。
+                newPrice = MoneyScale.requireTwoDecimalsOrNull(newPrice, "unit_price");
                 partial.setUnitPrice(newPrice);
                 op.setUnitPrice(newPrice);
             }
@@ -244,6 +247,9 @@ public class ProductionOperationCommandService {
         if (unitPrice.signum() < 0) {
             throw BusinessException.validationError("unit_price 不能为负");
         }
+        // 金额精度准入（issue #6228）：`production_operations.unit_price` 与单价版本台账列均为
+        // NUMERIC(·,2) ⇒ 超 2 位有效小数会被 PG 静默四舍五入。判在 insert 之前。
+        unitPrice = MoneyScale.requireTwoDecimalsOrNull(unitPrice, "unit_price");
         // issue #4642：**旧形态工序名不许建**（拒绝，不归一）。病根 = 同一个请求里
         // `name` 原样落库、而 `attachPositions` 用归一后的逻辑名建矩阵行 ⇒ **同一道工序在库里两名并存**
         // （库里 `布三边` + 矩阵行 `三边`），且 `name` 会经目录/孤儿弹窗上屏（变体名泄漏）。

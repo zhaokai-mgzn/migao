@@ -1,6 +1,5 @@
 package com.migao.admin.service;
-// case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010, PG-042, OR-023, OR-046, OR-053
-
+// case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010, PG-042, OR-023, OR-046, OR-053, FN-006
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
@@ -3255,5 +3254,94 @@ class OrderServiceTest {
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
         OrderService.applyStatusFilter(none, "  ");
         assertThat(none.getSqlSegment()).isEmpty();
+    }
+
+    // ════════════════ issue #6228：金额入口小数位准入（超 2 位有效小数 ⇒ 422 + 零写入）════════════════
+
+    @Test
+    @DisplayName("#6228 明细单价 1.005（3 位有效小数）⇒ 422，订单/明细**零写入**")
+    void createOrder_unitPriceOverScale_isRejectedWithNoWrites() {
+        OrderCreateRequest request = minimalCreateOrderRequest();
+        request.getItems().get(0).setUnitPrice(new BigDecimal("1.005"));
+
+        assertThatThrownBy(() -> orderService.createOrder(request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("商品明细第 1 项的单价")
+                .hasMessageContaining("2 位小数");
+
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderItemMapper, never()).insert(any(OrderItem.class));
+    }
+
+    @Test
+    @DisplayName("#6228 总额「积」超精度（单价 1.00 × 数量 1.005 = 1.005）⇒ 422 + 零写入")
+    void createOrder_totalAmountProductOverScale_isRejectedWithNoWrites() {
+        OrderCreateRequest request = minimalCreateOrderRequest();
+        request.getItems().get(0).setQuantity(new BigDecimal("1.005"));
+        request.getItems().get(0).setUnitPrice(new BigDecimal("1.00"));
+
+        assertThatThrownBy(() -> orderService.createOrder(request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("订单总额")
+                .hasMessageContaining("2 位小数");
+
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderItemMapper, never()).insert(any(OrderItem.class));
+    }
+
+    @Test
+    @DisplayName("#6228 优惠 / 实收超精度 ⇒ 422 + 零写入（精度准入必须先于容差校验）")
+    void createOrder_discountAndActualOverScale_areRejectedWithNoWrites() {
+        OrderCreateRequest discountReq = minimalCreateOrderRequest();
+        discountReq.setDiscountAmount(new BigDecimal("0.005"));
+        assertThatThrownBy(() -> orderService.createOrder(discountReq, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("优惠金额");
+
+        OrderCreateRequest actualReq = minimalCreateOrderRequest();
+        actualReq.setActualAmount(new BigDecimal("0.005"));
+        assertThatThrownBy(() -> orderService.createOrder(actualReq, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("实收金额");
+
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("#6228 改单（PUT content）单价超精度 ⇒ 422 且 orderMapper.updateById / 明细软删**从不被调用**")
+    void updatePendingOrderContent_unitPriceOverScale_isRejectedWithNoUpdate() {
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(processingOrderMapper.selectActiveByOrderId("order-001", 1L)).thenReturn(null);
+
+        OrderContentUpdateRequest request = new OrderContentUpdateRequest();
+        OrderContentUpdateRequest.Item item = new OrderContentUpdateRequest.Item();
+        item.setProductId("prod-001");
+        item.setProductName("蜂巢帘");
+        item.setQuantity(BigDecimal.ONE);
+        item.setUnitPrice(new BigDecimal("1.005"));
+        request.setItems(List.of(item));
+
+        assertThatThrownBy(() -> orderService.updatePendingOrderContent("order-001", request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("2 位小数");
+
+        verify(orderMapper, never()).updateById(any(Order.class));
+        verify(orderItemMapper, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("#6228 正对照 0.01（2 位小数 = 1 分）⇒ 建单成功，total_amount / actual_amount 落库逐字 0.01")
+    void createOrder_oneCentUnitPrice_persistsLiterally() {
+        stubCreateOrderPersistence("order-new");
+        OrderCreateRequest request = minimalCreateOrderRequest();
+        request.getItems().get(0).setQuantity(BigDecimal.ONE);
+        request.getItems().get(0).setUnitPrice(new BigDecimal("0.01"));
+
+        orderService.createOrder(request, 1L);
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).insert(captor.capture());
+        assertThat(captor.getValue().getTotalAmount().toPlainString()).isEqualTo("0.01");
+        assertThat(captor.getValue().getActualAmount().toPlainString()).isEqualTo("0.01");
     }
 }

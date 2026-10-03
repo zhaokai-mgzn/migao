@@ -1,4 +1,4 @@
-// case_ids: AS-014
+// case_ids: AS-014, FN-006
 package com.migao.admin.service;
 
 import org.junit.jupiter.api.DisplayName;
@@ -85,10 +85,14 @@ class MoneyEntryPrecisionMetaGuardTest {
     private static final String EQUIVALENT_MARKER = "RoundingMode.UNNECESSARY";
 
     /**
-     * 债务台账的**冻结上限**（只许缩短）：本包落库时的现取读数（判据 13 现场复核）。
-     * 🔴 将来**只许改小**；改大 = 把新缺口塞进豁免（评审可见，判据 11 会给出具名读数）。
+     * 债务台账的**冻结上限**（只许缩短）：现取读数（判据 13 现场复核）。
+     *
+     * <p>#6221 落库时 = **17**（只修了退款一处）；#6228 把其余 16 处入口逐个补上 MoneyScale 准入、
+     * 1 处（{@code InboundOrder.builder()}，落的是常量 ZERO）改判为「不引入新输入源」⇒ **现取 = 0**。
+     * 🔴 将来**只许改小**（已到底，即**不许再出现 DEBT**）；改大 = 把新缺口塞进豁免
+     * （评审可见，判据 11 会给出具名读数）。</p>
      */
-    private static final int FROZEN_DEBT_BASELINE = 17;
+    private static final int FROZEN_DEBT_BASELINE = 0;
 
     /** 金额字段的识别规则（实体里现取，不硬编码字段清单）。 */
     private static final Pattern MONEY_FIELD = Pattern.compile(
@@ -118,10 +122,14 @@ class MoneyEntryPrecisionMetaGuardTest {
     }
 
     /**
-     * **入口台账**（本包的全仓金额入口扫描读数，19 个文件 / 39 处）。
+     * **入口台账**（全仓金额入口扫描读数，19 个文件 / 39 处）。
      *
-     * <p>读法：`<文件>` 里出现 `<符号>` 写面 ⇒ 该条给出**是否有小数位准入**。
-     * DEBT 条目指向跟进单 **#6228**（本包只修退款这一处，其余入口按边界纪律不改）。</p>
+     * <p>读法：`<文件>` 里出现 `<符号>` 写面 ⇒ 该条给出**是否有小数位准入**。</p>
+     *
+     * <p>沿革：#6221 落库时 17 条 DEBT（只修了退款一处）；**#6228 把其余入口逐个补上准入**
+     * （16 条 → {@code GATED}、1 条 {@code InboundOrder.builder()} 改判为不引入新输入源）⇒
+     * **现取 DEBT = 0**。台账**只许缩短**：此后任何金额写面若未过 {@code MoneyScale} 且要进台账，
+     * 只能进 DEBT，而 DEBT 上限已是 0 ⇒ **当场红**（判据 11 / 13）。</p>
      */
     private static List<Site> registry() {
         return List.of(
@@ -139,44 +147,46 @@ class MoneyEntryPrecisionMetaGuardTest {
                         Admission.EQUIVALENT_GATED,
                         "特殊选项对客单价经 optionalCustomerPrice 的 setScale(2, UNNECESSARY) 准入"),
 
-                // ── ③ 外部输入直接落库且**无**准入 ⇒ 债务（跟单 #6228）────────────
-                site("com/migao/admin/service/AfterSalesTicketService.java", "setRefundAmount", Admission.DEBT,
-                        "售后工单 refund_amount（NUMERIC(10,2)）建单直接落请求值；完结联动退款沿用同一未准入值（跟单 #6228）"),
-                site("com/migao/admin/service/AgentBatchService.java", "setBasePrice", Admission.DEBT,
-                        "批量改价的价来自批次输入，透传 ProductService.updateProductForAgent ⇒ 准入缺失同 ProductService（跟单 #6228）"),
-                site("com/migao/admin/service/FinanceService.java", "FinanceTransaction.builder()", Admission.DEBT,
-                        "手工登记收款/退款（request.amount）只判正、不校小数位；流水列 NUMERIC(12,2)（跟单 #6228）"),
-                site("com/migao/admin/service/InboundOrderService.java", "InboundOrder.builder()", Admission.DEBT,
-                        "入库单总额 = Σ(数量×单价)：数量已 1 位小数准入、**单价只判 > 0** ⇒ 积可超 2 位小数（跟单 #6228）"),
-                site("com/migao/admin/service/InboundOrderService.java", "InboundOrderItem.builder()", Admission.DEBT,
-                        "入库单行的 unitCost/amount 同上（单价无小数位准入）（跟单 #6228）"),
-                site("com/migao/admin/service/OpeningRegisterImportService.java", "setUnitCost", Admission.DEBT,
-                        "期初建账 Excel 导入单价来自外部表格，无小数位准入（跟单 #6228）"),
-                site("com/migao/admin/service/OrderService.java", "setActualAmount", Admission.DEBT,
-                        "建单/改单 actual_amount = 请求实收，任意精度直接落库（同文件响应 DTO 的 setActualAmount 非落库）（跟单 #6228）"),
-                site("com/migao/admin/service/OrderService.java", "setDiscountAmount", Admission.DEBT,
-                        "建单/改单 discount_amount 来自请求，无小数位准入（跟单 #6228）"),
-                site("com/migao/admin/service/OrderService.java", "setTotalAmount", Admission.DEBT,
-                        "建单/改单 total_amount = 服务端 Σ(单价×数量)，积可超 2 位小数（跟单 #6228）"),
-                site("com/migao/admin/service/OrderService.java", "setUnitPrice", Admission.DEBT,
-                        "订单明细 order_items.unit_price 只校 > 0，不校小数位（跟单 #6228）"),
+                // ── ③ #6228 补齐的金额入口（GATED：落库前复用 MoneyScale 单点准入）────
+                site("com/migao/admin/service/AfterSalesTicketService.java", "setRefundAmount", Admission.GATED,
+                        "建单入口 createTicket 开头过 MoneyScale：工单 refund_amount 列 NUMERIC(10,2)；"
+                                + "完结联动的 applied 由该已准入值派化"),
+                site("com/migao/admin/service/AgentBatchService.java", "setBasePrice", Admission.GATED,
+                        "apply() 落字段前过 MoneyScale（批次值来自外部表格输入）"),
+                site("com/migao/admin/service/FinanceService.java", "FinanceTransaction.builder()", Admission.GATED,
+                        "createTransaction 与 recordRefund 两条入口各自过 MoneyScale（流水列 NUMERIC(12,2)）"),
+                site("com/migao/admin/service/InboundOrderService.java", "setUnitCost", Admission.GATED,
+                        "建单请求行的 unitCost（DTO 写面）在 validateRequest 过 MoneyScale（先于任何写）"),
+                site("com/migao/admin/service/InboundOrderService.java", "InboundOrderItem.builder()", Admission.GATED,
+                        "行金额 = 数量×单价（\"积\"）在建单**校验阶段** validateRequest 过 MoneyScale"
+                                + "（先于任何写）"),
+                site("com/migao/admin/service/OpeningRegisterImportService.java", "setUnitCost", Admission.GATED,
+                        "Excel 行单价写入报告行前过 MoneyScale（外部表格输入）"),
+                site("com/migao/admin/service/OrderService.java", "setActualAmount", Admission.GATED,
+                        "建单/改单过 MoneyScale（请求实收）；未传 ⇒ 沿用原值/总额，不归一成 0"),
+                site("com/migao/admin/service/OrderService.java", "setDiscountAmount", Admission.GATED,
+                        "建单/改单过 MoneyScale（请求优惠）"),
+                site("com/migao/admin/service/OrderService.java", "setTotalAmount", Admission.GATED,
+                        "订单总额（服务端 Σ(单价×数量)+行加工费，\"积\"）在 computeItemsTotal 之后过 MoneyScale"),
+                site("com/migao/admin/service/OrderService.java", "setUnitPrice", Admission.GATED,
+                        "明细单价在 assertItemAmountsValid（建单/改单唯一共享闸门）过 MoneyScale"),
                 site("com/migao/admin/service/ProcessingFeeCombinationCommandService.java", "setUnitPrice",
-                        Admission.DEBT,
-                        "加工费组合单价只校 >= 0（requiredPrice），不校小数位（跟单 #6228）"),
+                        Admission.GATED,
+                        "requiredPrice（create/update 的收集式校验）与 upsertFromOrderOverride 两处过 MoneyScale"),
                 site("com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
-                        "ProcessingFeeCombination.builder()", Admission.DEBT,
-                        "建单人工改价写入组合单价，同上（跟单 #6228）"),
-                site("com/migao/admin/service/ProductService.java", "setBasePrice", Admission.DEBT,
-                        "products.base_price（建品/改品/Excel 导入）来自请求，无小数位准入（跟单 #6228）"),
-                site("com/migao/admin/service/ProductService.java", "setPrice", Admission.DEBT,
-                        "product_skus.price（建品/改品/导入）同上（跟单 #6228）"),
-                site("com/migao/admin/service/ProductionOperationCommandService.java", "setUnitPrice", Admission.DEBT,
-                        "付工人的计件单价只校 >= 0（decimal()），不校小数位（跟单 #6228）"),
+                        "ProcessingFeeCombination.builder()", Admission.GATED,
+                        "同上：两条入口的单价都已过准入后才进 builder"),
+                site("com/migao/admin/service/ProductService.java", "setBasePrice", Admission.GATED,
+                        "saveColorsAndSkus 收口 + updateProduct 仅改价分支 + Excel 导入 upsertImportedProduct 三处过 MoneyScale"),
+                site("com/migao/admin/service/ProductService.java", "setPrice", Admission.GATED,
+                        "saveColorsAndSkus（建品/改品/导入/Agent 唯一收口）+ updateSkuPrice / updateSkuPriceById 过 MoneyScale"),
+                site("com/migao/admin/service/ProductionOperationCommandService.java", "setUnitPrice", Admission.GATED,
+                        "create / update 两条入口在 insert 前过 MoneyScale（本包**只加金额准入**，不动并发/版本逻辑）"),
                 site("com/migao/admin/service/ProductionOperationCommandService.java", "ProductionOperation.builder()",
-                        Admission.DEBT,
-                        "工序单价（含批量改价的局部实体）同上（跟单 #6228）"),
-                site("com/migao/admin/service/WorkerInboundService.java", "setUnitCost", Admission.DEBT,
-                        "工人面入库单价来自工人输入，透传 InboundOrderService ⇒ 准入缺失同上（跟单 #6228）"),
+                        Admission.GATED,
+                        "同上：单价已过准入后才进 builder"),
+                site("com/migao/admin/service/WorkerInboundService.java", "setUnitCost", Admission.GATED,
+                        "工人面请求 → 建单请求时过 MoneyScale（工人输入）"),
 
                 // ── ④ 无准入但**不引入新的超精度输入源**（逐条给理由）──────────────
                 site("com/migao/admin/service/CustomerService.java", "CustomerProfile.builder()",
@@ -185,8 +195,14 @@ class MoneyEntryPrecisionMetaGuardTest {
                 site("com/migao/admin/service/InboundOrderService.java", "StockBatch.builder()",
                         Admission.NO_NEW_INPUT_SOURCE,
                         "同一入库请求的 unitCost/amount 落到批次（根条目 = 本文件的 InboundOrderItem.builder()）"),
+                site("com/migao/admin/service/InboundOrderService.java", "InboundOrder.builder()",
+                        Admission.NO_NEW_INPUT_SOURCE,
+                        "该 builder 落的总额是**代码常量 ZERO**（草稿建单时先写 0，行落库后再累加写回）；"
+                                + "总额的真实写面 = 同文件的 setTotalAmount，其值 = Σ 已过 amountOf() 准入的行金额"
+                                + "（根条目 = 本文件的 InboundOrderItem.builder()）"),
                 site("com/migao/admin/service/InboundOrderService.java", "setTotalAmount", Admission.NO_NEW_INPUT_SOURCE,
-                        "入库单主表同步内存对象的总额（同一笔钱，根条目 = 本文件的 InboundOrder.builder()）"),
+                        "入库单主表总额 = Σ 行金额，而每条行金额已在唯一积计算点 amountOf() 过 MoneyScale "
+                                + "（≤2 位小数之和精确，不引入新精度；根条目 = 本文件的 InboundOrderItem.builder()）"),
                 site("com/migao/admin/service/OrderService.java", "setAmount", Admission.NO_NEW_INPUT_SOURCE,
                         "订单明细内的响应 DTO（读面回显 unitPrice×quantity），不落库"),
                 site("com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
@@ -262,7 +278,7 @@ class MoneyEntryPrecisionMetaGuardTest {
 
     // ════════════════════════════ 判据 6~13：判别力自证（内存注入）════════════════════
 
-    /** 干净夹具：一条 GATED + 一条 DEBT，且文本齐备。 */
+    /** 干净夹具：一条 GATED + 一条豁免（**无 DEBT** —— 冻结上限已到 0，夹具里留 DEBT 会自证假红）。 */
     private static Map<String, Set<String>> cleanDiscovered() {
         Map<String, Set<String>> d = new TreeMap<>();
         d.put("A.java", new TreeSet<>(Set.of("setRefundAmount")));
@@ -273,7 +289,7 @@ class MoneyEntryPrecisionMetaGuardTest {
     private static List<Site> cleanRegistry() {
         return List.of(
                 site("A.java", "setRefundAmount", Admission.GATED, "过 MoneyScale"),
-                site("B.java", "setUnitPrice", Admission.DEBT, "无准入（跟单 #6228）"));
+                site("B.java", "setUnitPrice", Admission.NO_NEW_INPUT_SOURCE, "库列回读值，不引入新的外部精度"));
     }
 
     private static Map<String, String> cleanTexts() {

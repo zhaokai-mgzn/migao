@@ -215,3 +215,46 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: FN-006
+    legacy_id: ""
+    title: "涉钱入口的小数位准入：超 2 位有效小数显式拒绝、不静默四舍五入（issue #6228）"
+    domains:
+      - finance
+      - api
+      - backend
+    tier: normal
+    persona: ""
+    tags:
+      - finance
+      - money-precision
+      - admin-api
+      - write-surface
+    truths_ref:
+      - finance.txn-types
+    user_inputs:
+      - "用户 2026-10-03 派单（issue #6228）：#6221 只修了订单退款一处，其余金额入口仍会把超精度金额静默交给 PG 四舍五入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**显式拒绝 + 零写入**：17 处金额入口（建单/改单的 setTotalAmount / setActualAmount / setDiscountAmount / setUnitPrice、售后 setRefundAmount、商品 setPrice / setBasePrice、批量改价 setBasePrice、入库 InboundOrderItem.builder() / setUnitCost、期初导入 setUnitCost、工人面 setUnitCost、加工费组合 setUnitPrice / builder、工序计件 setUnitPrice / builder、财务 FinanceTransaction.builder()）传 3 位有效小数（0.005 / 1.005 / 「积」1.5×0.01=0.015）⇒ 显式拒绝（常规 422、工人面 400）+ **写面零调用**（insert=never / updateById=never / updateProductForAgent=never）。执行点 = 各 service 单测（OrderServiceTest / InboundOrderServiceTest / FinanceServiceTest / AfterSalesTicketServiceTest / AgentBatchServiceTest / ProductServiceTest / OpeningRegisterImportServiceTest / WorkerInboundServiceTest / ProcessingFeeCombinationCommandServiceTest / ProductionOperationCommandServiceTest）。"
+      - "判据 2·**正对照（合法值逐字落库）**：2 位以内**有效**小数的值（0.01 = 1 分 / 12.50 / 31.250）**原样**落库（按 `toPlainString()` 逐字比对）；`null` 语义不变（退款金额未传 = 全额退，不得归一成 0）。"
+      - "判据 3·**类级固化（让同类进不来）**：backend/admin-api/src/test/java/com/migao/admin/service/MoneyEntryPrecisionMetaGuardTest.java 的入口台账现取 DEBT = 0（冻结上限 0）—— 新金额写面未登记 / 债务条数增长 / 声称 GATED 但文件里没有 `MoneyScale.requireTwoDecimals` 文本 ⇒ 当场红并具名；台账条目空转（写面被删 / 改名）同样红。"
+    skip_reason: "[backend-contract] 纯后端金额精度准入（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 MoneyEntryPrecisionMetaGuardTest + 10 个 service 单测执行"
+    merge_log: "2026-10-03 新增（issue #6228）：金额入口小数位准入补齐。根因 = 金额列 NUMERIC(·,2) 而 PG 对超 scale 的写入只四舍五入、不报错；应用层不校小数位 ⇒ 接口 200、库内值被静默改掉（涉钱面「成功」但与请求值不等）。#6221 已落单点准入 MoneyScale，本单把其余 17 处入口逐处接上（16 处 → GATED、1 处常量写面改判为不引入新输入源），DEBT 17 → 0。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/MoneyEntryPrecisionMetaGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/FinanceServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesTicketServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OpeningRegisterImportServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WorkerInboundServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingFeeCombinationCommandServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationCommandServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

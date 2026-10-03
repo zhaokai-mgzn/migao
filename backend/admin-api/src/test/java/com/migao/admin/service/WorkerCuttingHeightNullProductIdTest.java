@@ -396,7 +396,7 @@ class WorkerCuttingHeightNullProductIdTest {
                         new IndexSite("skusByProduct", "costSkusByProduct", "line.getProductId()", "line.getProductId()", 975,
                                 Verdict.READ_IS_NULL_TOLERANT, "getOrDefault(line.getProductId(), List.of()) ⇒ 空键安全")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/FinanceService.java|refundMap",
-                        new IndexSite("refundMap", "sumRefundByOrder", "o.getId()", "o.getId()", 315,
+                        new IndexSite("refundMap", "sumRefundByOrder", "o.getId()", "o.getId()", 323,
                                 Verdict.KEY_PROVABLY_NON_NULL,
                                 "键 = Order.getId()（已注入参数非空）⇒ 键来源确非空；读取点另有 getOrDefault 兜底")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/OrderShipGuard.java|snapshot",

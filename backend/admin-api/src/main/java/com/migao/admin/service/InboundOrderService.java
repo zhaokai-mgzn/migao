@@ -438,6 +438,16 @@ public class InboundOrderService {
             // 数量/单价判据**只有一处**（requireItemNumbers）：建单与批量建账导入共用同一条口径
             item.setQuantity(requireItemNumbers(item.getQuantity(), item.getUnitCost(),
                     "商品明细第 " + idx + " 项的数量", "商品明细第 " + idx + " 项的入库单价"));
+            // 单价小数位准入（issue #6228）：`inbound_order_items.unit_cost` / `stock_batches.unit_cost`
+            // 是 NUMERIC(·,2)，超 2 位有效小数会被 PG 静默四舍五入（占成本、算均价都按被改掉的值）。
+            // 判在**本入口**（校验阶段，早于任何写）；`null` = 不记单价 ⇒ 原样透传（不归一成 0）。
+            item.setUnitCost(MoneyScale.requireTwoDecimalsOrNull(item.getUnitCost(),
+                    "商品明细第 " + idx + " 项的入库单价"));
+            // 金额精度准入（issue #6228）：行金额是**计算值**（"积"）—— 单价 2 位小数 × 数量 1 位小数
+            // 可出 3 位小数（`1.5 × 0.01 = 0.015`），而列是 NUMERIC(·,2) ⇒ 逐行显式拒绝。
+            // 判在本方法（= 校验阶段，`create()` 的第一条语句）⇒ 拒绝对**任何写**之前。
+            MoneyScale.requireTwoDecimalsOrNull(amountOf(item.getQuantity(), item.getUnitCost()),
+                    "商品明细第 " + idx + " 项的入库金额（数量 × 单价）");
             item.setLegacyBatchNo(legacyBatchNoOf(item.getLegacyBatchNo(), source, idx));
             Map<Long, ProductSku> skuById = skuCache.computeIfAbsent(item.getProductId(), this::skusOfProduct);
             if (!skuById.containsKey(item.getSkuId())) {
@@ -452,7 +462,12 @@ public class InboundOrderService {
     }
 
     /**
-     * 单行**数值准入** —— 全仓**唯一一处**（下限、粒度、单价三条口径都在这里）。
+     * 单行**数值准入** —— 全仓**唯一一处**（下限、粒度、单价 &gt; 0 三条口径都在这里）。
+     *
+     * <p>单价的**小数位**准入（issue #6228）不在本方法内，而在两个调用方的**入口**：
+     * 建单见 {@code validateRequest}、期初导入见 {@code OpeningRegisterImportService.parseRow}
+     * —— 两处都在「任何写之前」判，且各自把拒绝落到本入口的错误载体上
+     * （建单 = 422；导入 = 该行标红，不中断整份报告）。</p>
      *
      * <p>建单（{@link #validateRequest}）与期初建账的 Excel 批量导入
      * （{@link OpeningRegisterImportService}）**共用**本方法：两处各写一遍必然漂移
@@ -735,6 +750,10 @@ public class InboundOrderService {
     }
 
     private static BigDecimal amountOf(BigDecimal quantity, BigDecimal unitCost) {
+        // 纯计算（**唯一积计算点**）：建单 / 过账 / 期初建账三条路径都只经这里。
+        // 🔴 精度准入**不在这里**，而在校验阶段 `validateRequest`（那是任何写之前的位置）——
+        // 放这里会让"拒绝"发生在草稿单 insert 之后（@Transactional 虽会回滚，但判据面上
+        // 「超精度 ⇒ 零写入」就不成立了，见 issue #6228 的实例判据）。
         return unitCost == null ? null : unitCost.multiply(StockQuantity.orZero(quantity));
     }
 

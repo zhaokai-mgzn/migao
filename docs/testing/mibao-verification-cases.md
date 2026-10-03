@@ -2723,7 +2723,7 @@
 真值: ai-chat.permission-layers
 溯源: 2026-10-02 新增（R2 商家后台全量重测发现 F3，issue #6063）：PermissionInterceptor 原为 AOP @Around，晚于 @RequestParam 参数解析 ⇒ 无权限 GET 缺必填参数返回 422（阶段3 矩阵 6 角色 × W01/W02/W04/W05 共 20 格 422≠403）。修复：preHandle 复用 public requirePermission（同一份授权语义）+ WebConfig 注册 /api/**，AOP 保留双保险。 ｜ tags: defense, rbac, prehandle, info-leak
 
-## 财务对账域（5 case）
+## 财务对账域（6 case）
 
 ### FN-001. 资金流水查询（只读；原「登记线下收款」随 #5247 写能力下线改判） 🔵
 ```
@@ -2780,6 +2780,18 @@
 ```
 真值: finance.summary
 溯源: 2026-10-03 新增（issue #6200）：财务 / 订单的日期筛选窗口由 UTC 日改为业务日（+08）。根因 = FinanceService.parseDateStart/parseDateEnd 与 OrderService.getOrderPage 用 `date + "T00:00:00Z"` / `"T23:59:59Z"` 拼窗口；正确单源 = 同仓既有的 BusinessClock.startOfDay（看板 / 简报 / 订单趋势早已在用）⇒ 本单不是新口径，而是把窗口口径收敛到既定单源。 ｜ tags: finance, time-window, admin-api, read-surface
+
+### FN-006. 涉钱入口的小数位准入：超 2 位有效小数显式拒绝、不静默四舍五入（issue #6228） 🔵
+```
+你: 用户 2026-10-03 派单（issue #6228）：#6221 只修了订单退款一处，其余金额入口仍会把超精度金额静默交给 PG 四舍五入
+期望: direct_reply
+数据: 判据 1·**显式拒绝 + 零写入**：17 处金额入口（建单/改单的 setTotalAmount / setActualAmount / setDiscountAmount / setUnitPrice、售后 setRefundAmount、商品 setPrice / setBasePrice、批量改价 setBasePrice、入库 InboundOrderItem.builder() / setUnitCost、期初导入 setUnitCost、工人面 setUnitCost、加工费组合 setUnitPrice / builder、工序计件 setUnitPrice / builder、财务 FinanceTransaction.builder()）传 3 位有效小数（0.005 / 1.005 / 「积」1.5×0.01=0.015）⇒ 显式拒绝（常规 422、工人面 400）+ **写面零调用**（insert=never / updateById=never / updateProductForAgent=never）。执行点 = 各 service 单测（OrderServiceTest / InboundOrderServiceTest / FinanceServiceTest / AfterSalesTicketServiceTest / AgentBatchServiceTest / ProductServiceTest / OpeningRegisterImportServiceTest / WorkerInboundServiceTest / ProcessingFeeCombinationCommandServiceTest / ProductionOperationCommandServiceTest）。
+数据: 判据 2·**正对照（合法值逐字落库）**：2 位以内**有效**小数的值（0.01 = 1 分 / 12.50 / 31.250）**原样**落库（按 `toPlainString()` 逐字比对）；`null` 语义不变（退款金额未传 = 全额退，不得归一成 0）。
+数据: 判据 3·**类级固化（让同类进不来）**：backend/admin-api/src/test/java/com/migao/admin/service/MoneyEntryPrecisionMetaGuardTest.java 的入口台账现取 DEBT = 0（冻结上限 0）—— 新金额写面未登记 / 债务条数增长 / 声称 GATED 但文件里没有 `MoneyScale.requireTwoDecimals` 文本 ⇒ 当场红并具名；台账条目空转（写面被删 / 改名）同样红。
+跳过: [backend-contract] 纯后端金额精度准入（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 MoneyEntryPrecisionMetaGuardTest + 10 个 service 单测执行
+```
+真值: finance.txn-types
+溯源: 2026-10-03 新增（issue #6228）：金额入口小数位准入补齐。根因 = 金额列 NUMERIC(·,2) 而 PG 对超 scale 的写入只四舍五入、不报错；应用层不校小数位 ⇒ 接口 200、库内值被静默改掉（涉钱面「成功」但与请求值不等）。#6221 已落单点准入 MoneyScale，本单把其余 17 处入口逐处接上（16 处 → GATED、1 处常量写面改判为不引入新输入源），DEBT 17 → 0。 ｜ tags: finance, money-precision, admin-api, write-surface
 
 ## 人事域（13 case）
 
@@ -9416,8 +9428,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：655（活跃 134，跳过 521）
-- tier 分布：smoke 12 / normal 603 / adversarial 32
+- 用例总数：656（活跃 134，跳过 522）
+- tier 分布：smoke 12 / normal 604 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9429,7 +9441,7 @@
 - 客户域：12
 - 数据域：21
 - 防御域：24
-- 财务对账域：5
+- 财务对账域：6
 - 人事域：13
 - 知识问答域：7
 - 杂项域：77
