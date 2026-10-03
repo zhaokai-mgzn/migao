@@ -459,9 +459,11 @@ def test_longer_prefix_wins_over_order_field() -> None:
     谁把顺序改坏 / 把实现改成「先到先得」⇒ 新建订单页拿到订单**列表**的页面码 ⇒ 红。
     """
     entry = PR.resolve_page_entry("/orders/new")
-    assert entry is not None, "前提自证：/orders/new 已登记"
-    assert entry.route == "/orders/new" and entry.page_permissions == ("order:create",), (
-        f"`/orders/new` 命中的是 {entry.route}（页面码 {entry.page_permissions}）——"
+    assert entry is not None and entry.route == "/orders/new", (
+        f"前提自证：/orders/new 必须命中精确条目，实际 {entry.route if entry else None}"
+    )
+    assert entry.page_permissions == ("order:create",), (
+        f"`/orders/new` 命中的页面码是 {entry.page_permissions}（应为 order:create）——"
         "精确条目被通配条目盖掉了"
     )
     # 通配条目覆盖**整族**（含列表页本身）：`/orders/*` 与 `/products/*` 同式
