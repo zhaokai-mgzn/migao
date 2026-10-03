@@ -56,6 +56,11 @@
       "kind": "mentions",
       "issue": "#5935",
       "reason": "**只点名**：`RUN_BODY_LIMIT` 那段说明写着「出口是把实现体外置成 shell 脚本再 `source`」—— 它**不枚举、不扫描** `*.sh` 语料（harness 只拷 `scripts/deploy_reconcile_state.sh` 这一份单文件）⇒ 按 mentions 入册，不声称射程。"
+    },
+    "tests/unit_ci_workflows/test_c_end_h5_hosting.py": {
+      "kind": "mentions",
+      "issue": "#6132",
+      "reason": "**只点名**：C 端 H5 发布腿的判据（MC-046）。它在一条 docstring 里点名「类级判据 6 的射程 = 全仓受控 `*.sh`」（说明那条反引号判据抓到了本腿文案里的同类形态）—— 它**不枚举、不扫描** `*.sh` 语料，扫的是本腿那三个具名文件（`c-end-h5-publish-ci.sh` / `c-end-h5-dist-push.sh` / `c-end-h5-publish-remote.sh`）⇒ 按 exit ② 以 mentions 入册，不假装是 kind=scans。"
     }
   }
 }

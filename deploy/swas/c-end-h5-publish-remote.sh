@@ -310,7 +310,9 @@ data = {
     "_why": "发布腿的删除范围 = 本文件的 managed_top_level ∩ 磁盘现值。没有它就没有删除动作（首次发布走 --takeover-first-publish）。",
     "_owner": "deploy/swas/c-end-h5-publish-remote.sh（唯一写者）",
     "managed_top_level": new.split(),
-    "published_commit": published_commit or sha or "",
+    # ⚠️ **不许**回落到 `sha`（= 产物 ref）：那会把「h5-dist 的孤儿提交」标成「源码 commit」
+    #    （#6095 第五层：两个 ref 混用的一族）。没有源码 commit 就照实留空。
+    "published_commit": published_commit or "",
     "published_dist_ref": sha or "",
     "published_index_sha256": published,
     "written_at_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
