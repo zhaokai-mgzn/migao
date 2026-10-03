@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-032, PG-035, PG-039
+// case_ids: PG-018, PG-032, PG-035, PG-039, PP-012
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -171,6 +171,74 @@ class ProductionOperationQueryServiceTest {
 
         assertThat(result.get("total")).isEqualTo(0);
         assertThat((List<?>) result.get("groups")).isEmpty();
+    }
+
+    // ══════════════════ 数量口径缺口的读面标记（issue #6117）══════════════════
+    //
+    // 缺陷：商家自建工序不在算料引擎的工序目录（`routing.py::OPERATION_CATALOG`）里 ⇒ 派工
+    // 应做数量走「引擎不认识的工序 ⇒ 兜底 1」分支（`qty_source=fallback`）⇒ 计件工资按 1 计量，
+    // 而**界面没有任何提示**。裁定：保留兜底 1（口径不改），写面告警 + 读面标记。
+    // 本组判据**两侧夹住**（目录外 ⇒ true；目录内 ⇒ false），防「一律告警」这种永远绿的实现。
+
+    /** 目录响应里某一分组的工序行（`catalog` 的分组结构 → 扁平化）。 */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> groupOperations(Map<String, Object> catalog, String group) {
+        return ((List<Map<String, Object>>) catalog.get("groups")).stream()
+                .filter(g -> group.equals(g.get("group")))
+                .map(g -> (List<Map<String, Object>>) g.get("operations"))
+                .findFirst().orElseThrow(() -> new AssertionError("目录响应里没有分组 " + group));
+    }
+
+    @Test
+    @DisplayName("#6117 读面标记：目录外工序（商家自建）⇒ qty_rule_missing=true")
+    void catalogMarksCustomOperationAsMissingQtyRule() {
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-custom", "验收探针工序-6117", "其他", null, "米", "0.90", false, false, 99)));
+
+        Map<String, Object> result = service().catalog(TENANT);
+        List<Map<String, Object>> ops = groupOperations(result, "其他");
+
+        assertThat(ops.get(0).get("name")).isEqualTo("验收探针工序-6117");
+        assertThat(ops.get(0).get(ProductionOperationQueryService.QTY_RULE_MISSING_KEY))
+                .as("商家自建工序不在算料目录内 ⇒ 读面必须标出来（改前该键根本不存在 = 静默）")
+                .isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("#6117 读面标记：目录内工序（韩褶-布 / 外帘装袋 / 打包）⇒ qty_rule_missing=false")
+    void catalogDoesNotMarkCatalogOperationsAsMissingQtyRule() {
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-v54-07", "韩褶-布", "车位", "布帘", "折", "0.40", false, false, 7),
+                op("op-v54-25", "外帘装袋", "后道", "外帘", "套", "1.00", true, false, 25),
+                op("op-v54-04", "打包", "后道", "通用", "套", "0.00", false, false, 4)));
+
+        Map<String, Object> result = service().catalog(TENANT);
+
+        // 库行 `韩褶-布` 是引擎目录的键（`OPERATION_CATALOG`）⇒ 它的数量口径存在（`unit=折` 读 pleat_count）
+        List<Map<String, Object>> tailoring = groupOperations(result, "车位");
+        assertThat(tailoring.get(0).get("name")).isEqualTo("韩褶");
+        assertThat(tailoring.get(0).get(ProductionOperationQueryService.QTY_RULE_MISSING_KEY))
+                .as("目录内工序不得被标成缺口径（防「一律告警」这种永远绿的实现）")
+                .isEqualTo(false);
+        // 外帘装袋 / 打包 也都在目录内（打包 是 Java 侧表的增量那两道之一）
+        List<Map<String, Object>> backstage = groupOperations(result, "后道");
+        assertThat(backstage).extracting(o -> o.get("name")).containsExactly("外帘装袋", "打包");
+        assertThat(backstage).extracting(o -> o.get(ProductionOperationQueryService.QTY_RULE_MISSING_KEY))
+                .containsOnly(false);
+    }
+
+    @Test
+    @DisplayName("#6117 写面同源：商家建**逻辑工序名**（韩褶）⇒ 不告警（目录内，只有变体名才是目录键）")
+    void qtyRuleJudgementAcceptsLogicalNameAsInCatalog() {
+        // 用户裁定的「目录内」例子 = 韩褶（**逻辑名**）；引擎目录的键是 韩褶-布 / 韩褶-纱。
+        // 判定必须把两者都算「目录内」，否则商家建的 `韩褶` 会被误报成缺口径（误报 = 另一种误导）。
+        assertThat(ProductionOperationQueryService.qtyRuleMissing("韩褶")).isFalse();
+        assertThat(ProductionOperationQueryService.qtyRuleMissing("韩褶-布")).isFalse();
+        assertThat(ProductionOperationQueryService.qtyRuleMissing("外帘装袋")).isFalse();
+        assertThat(ProductionOperationQueryService.qtyRuleMissing("配料")).isFalse();
+        assertThat(ProductionOperationQueryService.qtyRuleMissing("验收探针工序-6117")).isTrue();
+        // 目录为空名也要标（缺省“米”单位也救不了它 —— 键不在目录里 ⇒ 兜底 1）
+        assertThat(ProductionOperationQueryService.qtyRuleMissing(null)).isTrue();
     }
 
     // ══════════════════ 路线模板（P2b：具名主线 + 适用帘种）══════════════════

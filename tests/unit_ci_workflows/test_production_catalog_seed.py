@@ -1,4 +1,4 @@
-# case_ids: PG-018, PG-066
+# case_ids: PG-018, PP-012, PG-066
 """工序库 / 工艺路线种子**多源**收敛守卫（issue #4116 P0-2；#4230 扩为多源）。
 
 ⚠️ 本文件的用例声明行**必须**在文件前 50 行内（`.github/growth_gate.py` 的
@@ -68,6 +68,11 @@ V54 落**初始种子**（把 `app/production/routing.py` 的既有确定性常�
 ⚠️ **可红性是底线**：下列比对一律**逐行逐值**（不是「包含即可」），故「改名/改价」仍能红。
 """
 import json
+# ⚠️ `ast` 只用于 `_java_string_list`：**不用正则**取 Java 字面量里的引号区间 ——
+# 「引号紧跟捕获组」的正则属 `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`
+# 的 `quote-parse` 面（注释/docstring 里同形文本即可喂中），而
+# `tests/unit_ci_workflows/guard_parsing_allowlist.json` **只许缩短**（新增债务不许靠加条目吸收）。
+import ast
 import re
 import sys
 from pathlib import Path
@@ -2434,3 +2439,157 @@ def test_sig_hook_rules_are_absent_in_every_terminal_source(schema_sql):
     assert retired_in_migration == ledger, (
         f"迁移侧（`V71` 字面量）与退休台账不一致：台账 {sorted(ledger)} vs 迁移侧 "
         f"{sorted(retired_in_migration)} —— 台账**只许缩短**；改台账必须同时改 V135 与两侧终态")
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 引擎**数量**目录 ⇄ Java 侧判定输入（issue #6117）
+#
+# 病：商家在「工序库」新建的工序不在算料引擎的工序目录（`routing.py::OPERATION_CATALOG`）里
+# ⇒ 派工应做数量走「引擎不认识的工序 ⇒ 兜底 1」分支（`qty_source=fallback`）⇒ 计件工资按 1
+# 计量，而**商家侧没有任何提示**。裁定（用户 2026-10-03）：**保留兜底 1**（数量口径一字不改）
+# + 写面告警 + 读面标记。
+#
+# 本段守的是**告警判定的输入**：Java 侧 `ProductionOperationQueryService::ENGINE_QTY_OPERATIONS`
+# （= `OPERATION_LOGICAL_NAMES` 的键集 ∪ `ENGINE_QTY_OPERATIONS_EXTRA`）必须**逐字等于**
+# `OPERATION_CATALOG` 的键集。少一道 ⇒ 目录内的工序被**误报**成「派工按 1 计」；
+# 多一道 ⇒ 目录外的工序**静默**（那正是本单要治的形态）。
+#
+# ⚠️ **为什么 Java 侧只写「差额 + 判定」而不复制 41 条字面量**：`OPERATION_LOGICAL_NAMES` 的
+# 键集**本就是**「目录键集 − 2」（Java 侧
+# `ProductionOperationQueryServiceTest#logicalNameTableMatchesTruthSource` 已把它逐条双向
+# 对着 `_LOGICAL_NAME_PAIRS` 钉住）⇒ 复制一遍就是第二份清单。故 Java 侧只多出两道
+# （`配料` / `打包`），差额由本段**双向**钉住 —— 两语言任一侧漂移都有一处会红。
+# ══════════════════════════════════════════════════════════════════════════════════
+
+#: Java 侧判定输入的载体（**仓库相对路径**；裸文件名 + 行号的引用会被 Case Trust 规则 G 判红）。
+OPERATION_QUERY_SERVICE_JAVA = (
+    REPO / "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationQueryService.java")
+
+
+def _java_string_list(java_source: str, constant: str) -> set:
+    """Java 侧 `private static final List<String> <constant> = List.of("a", "b");` → `{"a", "b"}`。
+
+    fail-closed：常量缺失 / 形态变了（不是 `List.of(...)` 字面量）⇒ 抛 AssertionError
+    （**不返回空集** —— 空集会让下面的双向比对退化成「只比一半」的空跑，正是本仓反复踩的
+    「绿了但没跑」）。
+
+    🔴 **为什么用 `ast.literal_eval` 而不是「引号配对」的正则**（返工 R1，CI `ci workflow helper
+    unit tests` 红）：按引号扫原文取值属 `quote-parse` 面（注释 / docstring 里同形文本即可喂中），
+    而 `tests/unit_ci_workflows/guard_parsing_allowlist.json` **只许缩短** ⇒ 新增一处这种写法
+    只能靠加条目吸收（**明令禁止**）。改用「切出参数区 + 标准库按**语法**解析元组字面量」：
+    只认 `List.of("a", "b")` 这种**纯字面量**形态，形态一变即抛（比正则更严，且不引入引号口径）。
+    """
+    marker = "List.of("
+    head = java_source.find(f"{constant} = {marker}")
+    assert head >= 0, (
+        f"Java 侧读不到 `{constant} = List.of(...)` 的声明 —— 判定输入被改名/改形态 ⇒ "
+        f"本段判据会空跑；请同步：{OPERATION_QUERY_SERVICE_JAVA.relative_to(REPO)}")
+    body = java_source[head + len(constant) + len(" = ") + len(marker):]
+    body = body[:body.find(")")]
+    try:
+        parsed = ast.literal_eval(f"({body},)")
+    except (SyntaxError, ValueError) as error:  # 非纯字符串字面量（转义 / 表达式）⇒ fail-closed
+        raise AssertionError(
+            f"Java 侧 `{constant}` 的参数区不是**纯字符串字面量**（`List.of(...)` 形态）："
+            f"{body!r} —— {error}") from error
+    assert parsed and all(isinstance(item, str) for item in parsed), (
+        f"Java 侧 `{constant}` 解析出空集 / 非字符串元素 ⇒ 下面的双向比对会退化成"
+        f"「空集 == 空集」的假绿：{parsed!r}")
+    return set(parsed)
+
+
+def java_engine_qty_catalog_extra() -> set:
+    """Java 侧判定的**差额**（`ENGINE_QTY_OPERATIONS_EXTRA`）—— 逐字从 Java 源解析。
+
+    ⚠️ 只解析**差额**，不解析 Java 那 39 条键：Java 的 `OPERATION_LOGICAL_NAMES` 由
+    `logicalNamePairs()` + `withSheerVariants()` 两段**合成**（源文本里有 `.getOrDefault`、
+    `new LinkedHashMap<>(names)` 等包装）⇒ 在 Python 里重演那段合成逻辑就是**第二份口径**。
+    40 条那一半由**既有**同源守卫承担：Java 侧
+    `ProductionOperationQueryServiceTest#logicalNameTableMatchesTruthSource` 已把
+    `OPERATION_LOGICAL_NAMES` **逐条双向**对着 `routing.py::_LOGICAL_NAME_PAIRS` 钉住
+    （缺一条 / 多一条 / 映射不同都红）⇒ 本判据只需要钉「Java 目录 = Python 表键集 ∪ 差额」。
+    """
+    assert OPERATION_QUERY_SERVICE_JAVA.exists(), (
+        f"读不到 Java 侧载体 {OPERATION_QUERY_SERVICE_JAVA.relative_to(REPO)} —— "
+        f"路径变了就必须同步本判据（否则下面的比对是空跑）")
+    return _java_string_list(OPERATION_QUERY_SERVICE_JAVA.read_text(encoding="utf-8"),
+                             "ENGINE_QTY_OPERATIONS_EXTRA")
+
+
+def test_java_engine_qty_catalog_matches_python_catalog():
+    """判据（issue #6117）：Java 侧「引擎数量目录」**逐字等于** `routing.py::OPERATION_CATALOG` 的键集。
+
+    承载面 = 「Python 的 `OPERATION_LOGICAL_NAMES` 键集（与 Java 表同源、由既有跨语言守卫逐条钉住）
+    ∪ Java 登记的差额 `ENGINE_QTY_OPERATIONS_EXTRA`」⇄ `OPERATION_CATALOG` 的键集。
+
+    双向可红：**少一道** ⇒ 目录内的工序被**误报**成「派工按 1 计」；**多一道** ⇒ 目录外的工序
+    **静默**（本单要治的形态）。两侧由同一个集合比较照出（`==`，不是包含）。
+    """
+    catalog, logical_names = _catalog_truth()
+    extras = java_engine_qty_catalog_extra()
+    from_java = set(logical_names) | extras
+    assert from_java == set(catalog), (
+        "Java 侧「引擎数量目录」≠ `routing.py::OPERATION_CATALOG`："
+        f"Java 多出 {sorted(from_java - set(catalog))}；Java 缺 {sorted(set(catalog) - from_java)}"
+        "（少一道 ⇒ 目录内工序被误报按 1 计；多一道 ⇒ 目录外工序静默）")
+    # 自证（防「两侧都空」的恒等绿）：两侧都非空、差额**恰好**是登记的那几道、且没有重复口径
+    assert from_java, "Java 侧目录解析出空集 ⇒ 上面的比对是「空集 == 空集」的假绿"
+    assert len(catalog) > 2 and extras, "Python 目录或 Java 差额为空 ⇒ 判据空跑"
+    assert set(catalog) - set(logical_names) == extras, (
+        "Java 侧 `ENGINE_QTY_OPERATIONS_EXTRA` 应当**恰好**补上 `OPERATION_LOGICAL_NAMES` 键集与"
+        f"引擎目录的差额：差额 {sorted(set(catalog) - set(logical_names))} vs 登记 {sorted(extras)}")
+    # ⚠️ 值域**可以**有交集（`外帘打卷` 这类部位无关工序的逻辑名就等于库名）：这不是漂移，
+    # 而是「同一道工序在两侧同名」。故这里只断言**键域**（上面的 `==`），不对值域做集合断言 ——
+    # 对值域断言会假红（`外帘装袋` 等 3 道天然同时出现在两个集合里）。
+    java_qty_rule_wiring_is_consumed()
+
+
+#: 「判定被消费」的两条接线锚（`<仓库相对路径>::<可检索文本>`）—— `view.put` 摘掉 ⇒ 判据红。
+QTY_RULE_WIRING = (
+    ("backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationQueryService.java",
+     "view.put(QTY_RULE_MISSING_KEY, qtyRuleMissing(op.getName()));"),
+    ("backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java",
+     'view.put("qty_rule_hint", ProductionOperationQueryService.QTY_RULE_MISSING_HINT);'),
+)
+
+
+def java_qty_rule_wiring_is_consumed() -> None:
+    """**接线判据**（migao-dev-flow §28.2）：判定必须真被读面/写面**消费**，不只是「定义在」。
+
+    只钉输入时，把 `view.put(...)` 摘掉**不会有任何 Python 判据变红**（Java 侧判据要跑 mvn 才见红）
+    ⇒ 那正是「判据本体绿 ≠ 接线在」。这里对两处消费点做**空白无关**的逐字检索。
+    """
+    for relative, anchor in QTY_RULE_WIRING:
+        source = (REPO / relative).read_text(encoding="utf-8")
+        assert re.sub(r"\s+", " ", source).find(anchor) >= 0, (
+            f"{relative} 里找不到数量口径判定的消费点：`{anchor}` —— 判定被摘掉/被绕过 ⇒ "
+            "写面不再告警、读面不再标记（本单要治的静默会原样回来）")
+
+
+def _catalog_truth() -> tuple:
+    """真值源 → `(OPERATION_CATALOG, OPERATION_LOGICAL_NAMES)`（单一 import 点）。"""
+    sys.path.insert(0, str(ROUTING_PY_DIR))
+    try:
+        from app.production.routing import OPERATION_CATALOG, OPERATION_LOGICAL_NAMES
+        return OPERATION_CATALOG, OPERATION_LOGICAL_NAMES
+    finally:
+        sys.path.pop(0)
+
+
+def test_java_engine_qty_catalog_parser_self_check():
+    """注入式自证：解析器**读得出来**、坏形态 **fail-closed**（否则上面的双向比对是空断言）。
+
+    三种形态：① 正常字面量 ⇒ 读得出；② 常量被改名 ⇒ 抛（不返回空集）；③ 形态变了
+    （不是 `List.of(...)`）⇒ 抛。
+    """
+    good = 'private static final List<String> ENGINE_QTY_OPERATIONS_EXTRA = List.of("配料", "打包");'
+    assert _java_string_list(good, "ENGINE_QTY_OPERATIONS_EXTRA") == {"配料", "打包"}
+    for bad in (
+        'private static final List<String> ENGINE_QTY_OPERATIONS_XTRA = List.of("配料");',
+        'private static final List<String> ENGINE_QTY_OPERATIONS_EXTRA = new ArrayList<>();',
+    ):
+        try:
+            _java_string_list(bad, "ENGINE_QTY_OPERATIONS_EXTRA")
+        except AssertionError:
+            continue
+        raise AssertionError(f"坏形态未被 fail-closed 抛错 ⇒ 判据会空跑：{bad}")
