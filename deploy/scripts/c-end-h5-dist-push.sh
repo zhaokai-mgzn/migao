@@ -127,7 +127,7 @@ esac
 PUSH_REF="refs/heads/$BRANCH"
 echo "== 推送孤儿提交 $SHA → $GIT_REMOTE:${PUSH_REF}（只含 ${DIST_DIR}，共 ${BLOBS} 个文件）=="
 git push --force "$GIT_REMOTE" "$SHA:$PUSH_REF" \
-  || die "推送失败：$GIT_REMOTE $SHA:$PUSH_REF（权限？网络？）—— 没有产物到达远端，发布腿会在取回时判红"
+  || die "推送失败：$GIT_REMOTE $SHA:${PUSH_REF}（权限？网络？）—— 没有产物到达远端，发布腿会在取回时判红"
 
 # ── 自证（推送后**再读一次远端**，确认远端那个分支真的是这个 sha）──────────────
 REMOTE_SHA=$(git ls-remote "$GIT_REMOTE" "$PUSH_REF" | awk '{print $1}')
