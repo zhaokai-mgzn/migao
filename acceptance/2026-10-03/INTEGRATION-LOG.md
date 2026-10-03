@@ -613,3 +613,23 @@ AS-012 scoring_assertion_count = 1 | 同上
 1. **锚点/读数一律"以本分支实测为准"**；跨包只传**方法与口径**，**绝不传数值**（数值取决于该包自己的用例形态：`expectations` 是否为空、是否计分型）；
 2. 判断"该不该 +1/+2"，看**该用例的 `scoring_assertion_count`**（计分型 expectation 或机器计分型 `data_check` ⇒ ≥1 ⇒ 不进桶），不是看"新增了几条用例"；
 3. 我给预警时**必须同时给出"如何自测得出该值"的命令**（而非给一个数）—— 这次它自己用 `scoring_assertion_count` 逐条复算裁定，是本轮**第 3 次**由包纠正主会话的记录（前两次见 §19.13 / §19.14）。
+
+### 19.19 批次 `batch-gate` 的两次拒绝（**都如实记录，未跑 ≠ 通过**）+ 重启条件
+
+按 §19.11 的重启条件（分支落地 + 锁空闲）两次尝试，两次都被**就绪前置判定**（issue #6028）**拒绝**，**全量一次都没跑**：
+
+| 次 | 时刻(+08) | 输出 | 真因 | 处置 |
+|---|---|---|---|---|
+| ① | 17:30:45 | `⛔ 有包未通过就绪判定 ⇒ 拒绝`；红项 = `Detect dangling PRs…`、`Enable auto-merge (bot…)` 两条 **skipping** | 🔴 **我跑在了过期检出上**：主检出 HEAD `72831715d` 早于 #6218，那版判定式仍把 `skipping` 当红 | **未开单**（先核坐标后发现 #6218 已修 `origin/main` 版本）；改从**对齐 main 的干净 worktree** `migao-wt/batchgate-run`（`24b7381d1`）重跑 |
+| ② | 17:31:47 | `⛔ 有包未通过就绪判定 ⇒ 拒绝`；逐包列 **未完成**的 check（`admin-api unit tests` / `ci workflow helper unit tests（后半）` / `ai-agent-service unit tests` / …），并**另列** `另有 2 条 skipping` | **CI 还在跑**（三个 PR 的必过腿未全部完成）—— 这是**正当拒绝** | 记录；**等 CI 全绿后重跑** |
+
+⇒ **顺带实证了 #6218 的修法在真实环境里工作**：新版把"未完成"与"skipping"**分开表述**（`未完成：…（另有 2 条 skipping：…）`），不再把有意跳过的腿当红。
+
+**重启条件（机械可判）**：`gh pr checks 6230` / `6231` / `6234` 三条**均已无 `pending`**（`fail=0`）后重跑：
+```bash
+cd "/Users/guangzhen.zk/ai native/migao-wt/batchgate-run"     # 该 worktree = origin/main 对齐（含 #6218 的判定修法）
+MIGAO_HEAVY_WAIT=2700 ./scripts/batch-gate.sh \
+  fix/6220-aftersales-concurrency fix/6221-money-precision fix/6226-mapof-null-key-siblings
+```
+⚠️ **不得**用 `--no-require-ready` 绕过（那是"人类明知故犯"的逃生口，不是等 CI 的捷径）。
+⚠️ 输出已落 `acceptance/2026-10-03/out/batch-gate-round3.log`（两次尝试的逐字读数）。
