@@ -4,7 +4,7 @@
 > 单一源：`.github/cases/`（本仓唯一源）。
 > 启动服务后按序执行；每轮 Case 独立。tier：🟢 smoke / 🔵 normal / 🔴 adversarial。
 
-## 售后域（15 case）
+## 售后域（14 case）
 
 ### AS-001. 售后工单列表 🟢
 ```
@@ -212,18 +212,6 @@
 ```
 真值: aftersales-flow.refund-money-scale
 溯源: 2026-10-03 新增（issue #6221，铁律 8 类级固化）：修一处只修一处 = 没修 —— 同形态缺口在别的金额入口（建单/改价、收款、售后联动、入库单价、加工费/计件单价…）原样成立。逐处读数落在 MoneyEntryPrecisionMetaGuardTest 的台账里，无准入者登记为债务并跟单 #6228。 ｜ tags: money-precision, meta-guard, backend-contract
-
-### AS-015. 售后工单详情/列表响应不再携带恒空的 refundMethod 键（三个 Java 载体上字段/getter/setter 全无；键不存在而非值为 null） 🟡
-```
-你: GET /api/admin/after-sales（列表）与 GET /api/admin/after-sales/{id}（详情）—— 响应体里不得出现 refundMethod 键
-数据: **形状判据（加回去即红）**（机器断言 = backend/admin-api/src/test/java/com/migao/admin/controller/AfterSalesRefundMethodRetiredTest.java 的 refundMethodIsGoneFromEveryJavaCarrier）：实体 AfterSalesTicket + 列表/详情两个响应 DTO 上不得再有 refundMethod 字段，也不得有 getRefundMethod / setRefundMethod。反射判据与 Jackson 的 null 策略无关 ⇒ 把字段加回去 ⇒ 当场红。
-数据: **线上响应判据（键不存在，不是值为 null）**（断言 = listResponseCarriesNoRefundMethodKey / detailResponseCarriesNoRefundMethodKey）：真走一次列表与详情（MockMvc + mock 服务）⇒ 响应体里不得出现 refundMethod 键；同时给正对照（同一份响应里 ticketNo / refundAmount 在），证明读到的是那份真响应而不是空壳。
-数据: **修后实测读数**：本包落库时该测试类 Tests run: 3, Failures: 0, Errors: 0；修前红用注入式红证取（把 refundMethod 加回 types + 三个 Java 载体 ⇒ 形状判据与元守卫同时具名红）。
-数据: **类级元守卫（铁律 8）**：本字段所属的「前端 types 声明、后端零生产者」族由 backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java 承担（未登记即红 / 台账只许缩短 / 扫描面为空 fail-closed）。
-数据: **射程边界（照实登记）**：MockMvc 走 standaloneSetup ⇒ 默认 Jackson 会序列化 null，比线上（spring.jackson.default-property-inclusion: non_null）更严；本判据不断言 DB 列被删（列无写者无读者即无害，删列是破坏性迁移，不在本包内）。
-跳过: [backend-contract] 售后响应契约下线由 Java 单测验证（AfterSalesRefundMethodRetiredTest），非 LLM 行为，不进入 agent-eval 冒烟
-```
-溯源: 2026-10-03 新增（issue #6224，用户 2026-10-03 逐字裁定「退款方式 不用记」⇒ 执行选项 2 下线该字段）。修前实测：refundMethod 是零生产者字段（DB 列 after_sales_tickets.refund_method 全仓无 INSERT/UPDATE、无 setter 实参写入，响应里只有「实体 getter → DTO setter」直通）⇒ 线上恒不下发（NON_NULL）而前端 types 却声明了它。修法 = 移除实体/列表响应/详情响应三处字段声明 + 服务里两处直通 + frontend/admin-web/src/types/index.ts 的声明（保留 DB 列）。取号 AS-015（python3 scripts/next_case_id.py AS ⇒ main:001-010,013-014 + 在飞 PR #6230:011-012 ⇒ 最小空闲 AS-015）。 ｜ tags: refund, dead-field, response-contract, backend-contract
 
 ## Agent 核心域（7 case）
 
@@ -3034,7 +3022,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（76 case）
+## 杂项域（75 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4138,21 +4126,6 @@
 ```
 溯源: 2026-10-03 新增（issue #6215，用户 2026-10-03 裁定「先做 4，这个更有价值」）。落地 = ① `backend/ai-agent-service/app/context/page_registry.py` 登记面 6 → **10** 条 route、真值源 3 → **7** 条（新增 `curtain-production-rules` / `dashboard-cards` / `order-amount` / `sales-shipment` 四条真值源）；② 新增豁免台账 `tests/unit_ci_workflows/page_context_exemptions_ledger.json`（**13** 条，只许缩短，每条带 reason + 具名重启条件）；③ 新增元守卫 `tests/unit_ci_workflows/test_page_context_registry_coverage.py`（双向相等 + 登记项自证 + 8 条注入式红证）；④ `backend/ai-agent-service/tests/test_page_context.py` 同步更新未登记语料（`/dashboard` 等已登记 ⇒ 换成仍在豁免台账里的真实页面 + 两个不存在的路径）并新增「精确 > 通配」「登记面只许扩」两条判据。取号 MC-075（`scripts/next_case_id.py MC` ⇒ main:001-074 ⇒ 最小空闲 MC-075）。⚠️ 未固化（照实登记）：不判「该页真值源是否为该页口径」这一判断本身；不跑真实 LLM 评测。 ｜ tags: ai-agent, page-context, coverage, exemption-ledger, shrink-only, default-deny, red-proof
 
-### MC-076. 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed 🔵
-```
-你: 在 frontend/admin-web/src/types/index.ts 的任一 interface 里新增一个「字符串字面量并集」类型字段（如 'a' | 'b'），而后端没有任何写点（无 setter 实参写入 / 不在 *Request 或 *Params / 无线上键字面量 / 无 SQL 写入 / ai-agent 无写入）—— 必须有判据具名报出该字段。
-数据: **未登记即红**（机器断言 = backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java 的 everyZeroProducerFieldIsRegisteredAndBacked）：语料 = types/index.ts 里 export interface 内部的字符串字面量并集字段（现取 19 个）；逐字段跑生产者判定 P1~P5（setter 实参写入 / *Request 或 *Params 里的声明 / Java 里的线上键字面量 / SQL INSERT 或 UPDATE / ai-agent 字典键写入；P1 排除 x.setFoo(y.getFoo()) 直通形态）⇒ 零生产者且未登记 ⇒ 具名红。
-数据: **台账不许空转（幽灵条目即红）**（断言 = redproof_ghostEntryFieldVanished / redproof_staleEntryAfterProducerAppears）：登记的字段已从 types 删掉 ⇒ 红；或该字段已获得后端生产者（缺口已修却还挂着）⇒ 红 —— 台账只许缩短。
-数据: **豁免必须可追**（断言 = redproof_debtWithoutIssueReference / redproof_exemptionWithoutReason）：登记为债务（BACKEND_ABSENT_DEBT）必须带跟进 issue 号；每条必须写 why，不许空口说「不是缺口」。
-数据: **只许缩短**（断言 = redproof_baselineGrew / liveBaselineDoesNotExceedFrozenBaseline）：台账条数现取 2 ≤ 冻结上限 2；长过上限 ⇒ 红。
-数据: **扫描面为空 fail-closed**（断言 = scanSurfaceIsNotEmpty / redproof_emptyScanFailsClosed）：发现规则扫不到任何联合类型字段（或 types 单一源被改名/搬走）⇒ 红，不许「扫不到 ⇒ 变绿」。
-数据: **判别力自证 + 反向对照（注入式红证）**：真语料注入（把 AfterSalesTicket.refundMethod 加回 types）⇒ 具名判红（redproof_realCorpusCatchesRefundMethod，证明本守卫真能抓住本包修的那个字段）；内存注入 5 类坏形态各自判红；同一夹具不注入 ⇒ 零违规（cleanFixture_hasNoViolation）。
-数据: **现取读数（2026-10-03 本包落库）**：语料 19；零生产者 2 = LogisticsFormData.shippingMethod（FRONTEND_ONLY：前端发货表单状态）+ LogisticsInfo.shippingMethod（BACKEND_ABSENT_DEBT：后端恒不下发、前端在 OrderDetail.tsx 真有消费者 ⇒ 恒 undefined，已开单 #6239 待人工裁业务口径）。
-数据: 🔴 **射程边界（照实登记）**：① 只覆盖「字符串字面量并集」字段，非联合类型字段（string/number/对象）与 types/ 之外的 TS 文件不在面内；② 「有生产者」判定含宽松项 P3（Java 里出现「字段名」加英文双引号的字面量即算）⇒ 名字越通用越容易被兜成「有生产者」，宁可漏不可误；③ 归类（FRONTEND_ONLY / BACKEND_ABSENT_DEBT）是人读 + 代码证据的判定，每条 why 给锚点，评审可逐条质疑；④ 判不了「有人把冻结上限改大」（落在 diff 评审里）。
-跳过: [backend-contract] 纯源码扫描 + 内存注入判据（只读 types/index.ts / admin-api 源码 / 迁移 SQL / ai-agent 源码；零真库、零网络、零 LLM），由 Java 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
-```
-溯源: 2026-10-03 新增（issue #6224，铁律 8 类级固化）：修一处只修一处 = 没修 —— refundMethod 的形态（声明在前端 types、后端零生产者、线上恒不下发）在别的联合类型字段上照样成立，而没有任何东西会红。本守卫把「凡前端 types 里的联合类型字段，必须有后端生产者、否则登记」变成机械判据；真语料注入证明它真能抓住本包修的那个字段（把 refundMethod 加回 types ⇒ 具名 UNREGISTERED 红）。取号 MC-076（python3 scripts/next_case_id.py MC ⇒ main:001-075 ⇒ 最小空闲 MC-076）。⚠️ 未固化（照实登记）：非联合类型字段不在射程内；P3 宽松项会漏掉名字通用的字段。 ｜ tags: meta-guard, dead-field, frontend-types, shrink-only, backend-contract
-
 ## 商家入驻域（5 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
@@ -4277,7 +4250,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（57 case）
+## 订单域（56 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -5321,20 +5294,6 @@
 ```
 溯源: 2026-10-03 新增（issue #6200）：订单列表的日期筛选窗口由 UTC 日改为业务日（+08）。根因 = OrderService.getOrderPage 用日期串 + UTC 日界拼窗口；正确单源 = 同仓既有的 BusinessClock.startOfDay（右界改半开区间 `lt(D+1 00:00+08)`，不再漏掉最后一秒的亚秒部分）。 ｜ tags: order, time-window, admin-api, read-surface
 
-### OR-057. 入库过账并发面核验（N=4 并发过账同一 draft 单）：恰一个赢家、库存恰加一次、批次/台账各恰 2 行（issue #6237） 🟡
-```
-你: 两个管理员（或一个人在慢网络下双击）同时点了同一张草稿入库单的「过账」
-数据: **核验结论 = 不真**（台账 after-sales-sideeffect-concurrency-ledger.json 的 unverified 观察项逐字称「入库过账 = 无条件置 POSTED + 逐行 insert stock_batches ⇒ 并发重复过账可能重复建批次 / 重复入库」）：该主张在当前代码上不成立 —— issue #5148（V117）已把过账改成 DB 原子条件更新，且闸位于任何库存写入之前。
-数据: **恰一个赢家**（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/InboundPostConcurrentRealDbTest.java 的 concurrentPostHasExactlyOneWinnerAndOneStockIncrease）：N=4 并发过账同一 draft 单 ⇒ 成功数恰 1，其余 3 个返回 409（「只有草稿可以过账」）；重复 3 轮，且逐轮打印「真重叠」证据（4 个请求的时间区间逐对求交 + 并集跨度 < 各历时之和）。
-数据: **库存/批次/台账恰一份**（同一判据的落库读数，主判据取库内事实）：product_skus.stock 增量 == 独立算式（明细两行 3.0 + 2.0 = 5.0）；stock_batches 该单恰 2 行（一个 SKU 行 = 一个批次）+ 明细行回写批次号恰 2 行；stock_ledger_entries 的 ref_no = 本单号 ∧ reason = 'inbound' 恰 2 行；单据终态 posted 且 posted_by = 那一个赢家。重复入库 ⇒ 会读到 +20.0 / 8 行 / 8 行。
-数据: **正对照（护栏不误杀）**：单请求串行过账必须成功（条件更新谓词里的 tenant_id / status 非空 ⇒ 正常请求不被 409 误杀）—— 断言 = 同文件 serialPostStillSucceeds。
-数据: **带 Idempotency-Key 的入口也核验**：工人过账入口（WorkerInboundService#postDraft）的幂等键闸（client_request_keys 的 UNIQUE (tenant_id, client_request_id) + ON CONFLICT DO NOTHING）并发同键调用 ⇒ 库存仍恰加一次、批次/台账各恰 1 行、幂等键恰 1 行，全部落败都是显式 409（不是 500 / 不是静默成功）—— 断言 = 同文件 concurrentPostWithSharedIdempotencyKeyAlsoAddsStockOnce。
-数据: **DB 对象（实测在场，不是从代码推断）**：uk_stock_batches_no = UNIQUE (tenant_id, batch_no) 且 batch_no 为 NOT NULL（schema.sql 的 bootstrap 终态）⇒ 单张单内重复建批次会撞唯一索引，跨单并发取号撞索引则**显式失败并回滚**（不是重复入库）。
-数据: **判别力（红证，注入式 · 双向）**：把 InboundOrderMapper#markPosted 的 `AND status = 'draft'` 谓词摘掉（= 退回「无条件置 POSTED」形态）⇒ 本判据必红，实测读数 = 成功数 4 / 库存 +20.0 / 批次 8 行 / 台账 8 行；注入撤回后复绿。注入方式与成对读数见 PR body（注入是手动、一次性动作，不落成常驻判据）。
-跳过: [backend-contract] 纯后端并发落库判据（无 LLM 写路径：入库过账不经米宝 Agent 工具，B 端 PATCH action=post 与工人入口都是 admin-api 服务层）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 InboundPostConcurrentRealDbTest 执行
-```
-溯源: 2026-10-03 新增（issue #6237，第三轮深度测试的核验包）：台账 #6220 的 unverified 观察项「入库过账无条件置 POSTED ⇒ 并发重复建批次 / 重复入库」核验为**不真** —— issue #5148 的 CAS 闸（markPosted）已在任何库存写入之前，且批次号唯一索引 uk_stock_batches_no 兜底。本单**未改生产代码**（核验型交付）：交付物 = 真库并发判据（N=4 × 3 轮 + 串行正对照 + 带幂等键入口）+ 台账 unverified → entries 回填。 ｜ tags: inbound, stock, concurrency, backend-contract
-
 ## 加工项域（26 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
@@ -5738,7 +5697,7 @@
 真值: processing-manage.worker-cutting-height-terminal
 溯源: 2026-10-03 新增（第三轮深度测试 C23 / issue #6219）：`order_items.product_id` 为空时 `positionRow` 对 `brands()` 的空集分支（`Map.of()`）做 `get(null)` ⇒ `ImmutableCollections$MapN.get` 抛 NPE ⇒ 端点 500（线上栈与单测栈逐字同源）。修法取最少代码：调用点显式短路空键 + 空集分支返回**可索引**的 LinkedHashMap（同文件 `itemsOf()` 既有范式），**不改查询语义、不改只读契约、不写机器**。⚠️ 同族存量（`getCategoryNameMap` / `loadOrders` 的调用点未判空）**不在本包文件族内** ⇒ 已另开 issue #6226。 ｜ tags: processing, cutting_height, scan, backend-contract, null_safety
 
-## 加工单域（60 case）
+## 加工单域（61 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -6526,6 +6485,18 @@
 跳过: [backend-contract] 视图语义由 ai-agent 单测验证（backend/ai-agent-service/tests/test_briefing_delivery_risk.py 的逐字段三态 / 未知≠0 / 跨单聚合 / 注入式红证），工具面由 backend/ai-agent-service/tests/test_tools_processing_order_query.py 的 TestDeliveryRiskAction 验证（action 白名单 / 两条端点字面量归属 / 有界取数 / fail-closed / 披露纪律），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-03 新增（issue #6217 / 族 3 · 包 4 / V2）：生产页是**单任务视图**（一次一张加工单），结构上答不出「哪些单快到交期还卡着工序」「卡在哪个工序最多」——本条目为该**跨单聚合**视图的专属用例。⚠️ 不并进简报表快照（权限面不同 ⇒ 复用即越权）；落点是既有加工单查询工具的一个新 action，不新开工具、不新开端点。 ｜ tags: query, tool, cross-domain, delivery-risk, disclosure
+
+### PG-070. 列表端点非法分页入参（size<0 / page<1 / 非整数）⇒ 400 显式拒绝，不再 200 + total=0 + 整页行（issue #6222） 🔵
+```
+数据: 判据 1·**判定本体**：`page` / `size` 的非法值必须被**显式拒绝** —— `size<0` ⇒ 400 `VALIDATION_ERROR` 且 `error.details[0].field=size`；`page<1`（含 0 与负数）⇒ 400 且 `field=page`；非十进制整数（`abc` / `` / `1.5` / `+5` / 溢出）⇒ 400（**不**落兜底 500）。`size=0` 仍合法（零行 + 真 total ⇒ 语义自洽，不是本次要拒的形态）。白名单**先于**解析：`othersize=-5` / `pageSize=-5` / `fileSize=-5` **一律不判**（判了就是新的假红）。断言 = backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateTest.java（纯函数判据，17 条）
+数据: 判据 2·**端到端（真 MVC 分发链 + 真拦截器 + 真 @RestControllerAdvice）**：`GET /api/admin/orders?page=1&size=-5`、`GET /api/admin/stock-ledger?page=1&size=-5`、`GET /api/admin/notifications?page=1&size=-5` 三条各取一个族代表 ⇒ **400** + `error.details[0].field=size`，且对应 service **零调用**（`verifyNoInteractions` = 「拒绝了 ⇒ 没进查询」的行为等价读数）；正对照 = 同一端点 `size=20` / `size=0` / 不带分页参数 ⇒ **200** 且 service 真被调用（证明不是「什么都拒」）；`?SIZE=-5`（大写）同样 400（Servlet 取参大小写不敏感）。断言 = backend/admin-api/src/test/java/com/migao/admin/controller/PaginationParamGateEndpointTest.java（10 条）
+数据: 判据 3·**接线判据（判据本体绿 ≠ 接线在）**：真 `WebConfig.webMvcConfigurer().addInterceptors(...)` 给出的注册清单里**必须**含分页入参闸，且它**排在** PermissionInterceptor / TenantOwnershipInterceptor **之后**（注册序 = 执行序）⇒ 无权限 + `size=-5` 仍是 403，不破坏 F3 #6063 的 403-before-400 契约。断言 = backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateWiringTest.java（2 条）+ backend/admin-api/src/test/java/com/migao/admin/security/PermissionPreHandleGateTest.java 的类级注册判据（同批扩到三条闸）
+数据: 判据 4·**类级元守卫（本单重点）**：`backend/admin-api/src/main/java/com/migao/admin/controller/**` 里凡按 `page`/`size` 分页的控制器方法（`@RequestParam` 字面量族 **22** 个 + 查询 DTO 族 **3** 个 = 现取 **25** 条）必须逐条登记在 tests/unit_ci_workflows/pagination_param_gate_ledger.json。六条判据：(a) **扫描面为空 ⇒ fail-closed**（空集比空集是恒等，那种绿是假绿）；(b) **未登记即红**；(c) **台账不许有幽灵条目**（条目被删/改名 ⇒ 红，只许缩短）；(d) 每条必须写 `source` + `why`，且 `source` 指向 DTO 的条目必须**机械可核**（DTO 文件真存在 + 真有 `private Long size` 声明）；(e) **接线不许消失**：三个 `gated_by` 锚（闸本体 / 拦截器 / WebConfig 注册行）的 `requires` 文本必须逐字存在；(f) **判别力自证 5 种坏形态**（新增未登记入口 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 ⇒ 各自判红）+ 只改措辞**不红**（对照读数）。断言 = tests/unit_ci_workflows/test_pagination_param_gate.py
+数据: 🔴 **红证（注入式，本机实跑，2026-10-03）**：把 `backend/admin-api/src/main/java/com/migao/admin/config/WebConfig.java` 里的分页入参闸注册行（`registry.addInterceptor(paginationParamInterceptor).addPathPatterns("/api/**");`）临时摘掉后，`./mvnw -Dtest='PaginationParamGateEndpointTest,PaginationParamGateWiringTest' test` ⇒ `Tests run: 12, Failures: 2`，两条具名：`PaginationParamGateWiringTest.webConfig_registersPaginationGate:48 [#6222：分页入参闸必须进 /api/** 的 MVC 链]`、`PaginationParamGateWiringTest.gateIsRegisteredAfterAuthorization:64 [闸必须排在授权拦截器之后（注册序 = 执行序）]`（同批 `PaginationParamGateEndpointTest` 的 10 条**仍绿** —— 正是「实例判据自己调 addInterceptors ⇒ 摘掉生产接线它们照样绿」的形态，故判据 3 不可省）。恢复该行后 ⇒ `PaginationParamGateTest 16 / PaginationParamGateEndpointTest 10 / PaginationParamGateWiringTest 2 / PermissionPreHandleGateTest 6` = **34 passed / 0 failed**。
+数据: **未固化 / 边界（如实登记）**：① 闸在 **HTTP 参数取参层**（`preHandle`），因此**不覆盖**「不经 HTTP 层直接调 service」的内部调用（审计 / 定时任务 / 内部 recompute）—— 那属另一条兜底线，不在本单射程；② 元守卫只认**字面形态**（`@RequestParam(...) page/size` 含跨行注解 + 已知分页查询 DTO 形参），注解被注释掉 / 常量拼接 / 自定义 `HandlerMethodArgumentResolver` 造成的参数名探测不到（会漏报、不会误报）；③ `source` 指向的 DTO 字段与 HTTP 参数名的一致性**不在此机械判**（实测 `ProductQueryRequest.productId` 对 `@RequestParam productCode` ⇒ 属性名≠参数名的形态真实存在），HTTP 参数名一侧由单点闸在取参层兜住、与 DTO 如何绑无关；④ 本包**不起真库 / 不起 :8085 短命实例**：行为面由真 MVC 分发链（standalone MockMvc，装配与 WebConfig 同构）取到，`total` 与行数**自洽性**的 DB 面读数沿用主会话在未修复构建 :8080 上的逐字复现（上面的 359/5/389），真机复探属集成侧。
+跳过: [backend-contract] 后端契约用例（分页入参准入 + 类级源码元守卫，无 LLM 环节，不进 agent-eval 冒烟）：断言由 PaginationParamGateTest / PaginationParamGateEndpointTest / PaginationParamGateWiringTest（Java，standalone MockMvc + Mockito，不连真库）与 tests/unit_ci_workflows/test_pagination_param_gate.py（读生产源码的类级元守卫 + 判别力自证）执行
+```
+溯源: 2026-10-03 新增（issue #6222，P3·读面）：主会话在未修复构建 :8080 上逐字复现 —— `GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行（after-sales 5 / stock-ledger 389 同款）。机制：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（`pageSize < 0` 直接 return ⇒ 不追加 LIMIT、**不执行 count 查询**）⇒ 拦截器只填 `records`、`total` 停在默认 0；被 `setMaxLimit(500)` 约束的只是**正数** size ⇒ 行数不设上界。危害：`total=0` 让客户端分页器立刻认为已到末页 ⇒ 「有数据却显示为空 / 翻不动页」。**口径裁定 = 显式拒绝（400）而非钳到合法下界**，三条理由：① 病根是「非法入参**不静默**」，钳位仍是静默（把「静默给错数据」换成「静默改口径」）；② 本仓已有同族显式拒绝范式（`StockQuantity.requireOneDecimal` / `MoneyScale.requireTwoDecimals`(#6221) / 负数数量 ⇒ 400）；③ 钳位会掩盖调用方（含 Agent / 前端）的真实缺陷。**为什么这样选单点**（最少代码阶梯）：分页入口有两个族（`@RequestParam long size` 控制器方法现取 22 个 + 自带 page/size 字段的查询 DTO 三个、**无共同基类**），且 DTO 属性名不保证等于 HTTP 参数名（`ProductQueryRequest.productId` 对 `@RequestParam productCode`）⇒ DTO 侧做准入要么靠 `WebDataBinder` 名字启发（会漏）、要么按属性名校验（对不上）；两族**都必须**经同一个 HTTP 参数集 ⇒ 唯一真正单点 = Servlet 层参数闸（`prehandle` 取参 + `PaginationParamGate` 判定），并在 WebConfig 注册（排在授权/归属之后，沿用 F3 #6063 与 #6158 的次序纪律）。**类级固化**：台账 25 条分页入口 + 6 条判据 + 5 种坏形态判别力自证（未登记即红 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 + 只改措辞不红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-070（origin/main@dacac7471:001-067,069 · PR #6227:068 ⇒ 最小空闲 070）。 ｜ tags: api, pagination, fail-closed, backend-contract, negative-size
 
 ## 商品域（109 case）
 
@@ -9374,9 +9345,9 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：652（活跃 134，跳过 518）
+- 用例总数：650（活跃 134，跳过 516）
 - tier 分布：smoke 12 / normal 600 / adversarial 32
-- 售后域：15
+- 售后域：14
 - Agent 核心域：7
 - API 层域：21
 - 登录认证域：11
@@ -9390,12 +9361,12 @@
 - 财务对账域：5
 - 人事域：13
 - 知识问答域：7
-- 杂项域：76
+- 杂项域：75
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：57
+- 订单域：56
 - 加工项域：26
-- 加工单域：60
+- 加工单域：61
 - 商品域：109
 - 工具注册器域：1
 - 设置域：10
@@ -9404,7 +9375,6 @@
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
-- AS-015: 售后工单详情/列表响应不再携带恒空的 refundMethod 键（三个 Java 载体上字段/getter/setter 全无；键不存在而非值为 null）
 - API-013: 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）
 - API-014: 提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051）
 - API-015: 知识知识卡片 CRUD + 状态机 - 创建/编辑/发布/归档/删除（LLM WIKI 板块 #3051）
@@ -9496,7 +9466,6 @@
 - MC-073: 重活锁准入/溢出台账：五类 kind + stats 读出口径 + 槽满出声（蓝图 P2 测量面）
 - MC-074: 凭据字面量不得进仓：明文 service token 一律走环境注入（不设 ⇒ 未就绪 / 不带该头），由仓内守卫按**现取**扫真源码判红（gitleaks 只扫新增行 ⇒ 存量明文它看不见）
 - MC-075: B 端米宝页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）
-- MC-076: 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
@@ -9514,7 +9483,6 @@
 - OR-049: 同会话同键重试下单 —— 第二次是幂等回放（replayed=true），落库订单恰好一张
 - OR-050: 合法复购负例 —— 同会话第二笔**内容不同**的订单必须新建（不得被当重试吞掉）
 - OR-027: 订单列表 startDate/endDate 窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 下单的单归错天/月/年）
-- OR-057: 入库过账并发面核验（N=4 并发过账同一 draft 单）：恰一个赢家、库存恰加一次、批次/台账各恰 2 行（issue #6237）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）
@@ -9572,6 +9540,7 @@
 - PG-067: 开工单默认配置 - 纱帘单带加工项（花边/扣环/接高）不再整单失败（规则级部位限定落在开租种子；issue #6123）
 - PG-069: 加工项/加工单列表：该页键全为空时不再 500（Map.of() 空表 + 未判空的空键索引；issue #6226）
 - PG-068: 生产交付风险视图：processing_order_query(delivery_risk) 的跨单聚合与披露纪律（issue #6217）
+- PG-070: 列表端点非法分页入参（size<0 / page<1 / 非整数）⇒ 400 显式拒绝，不再 200 + total=0 + 整页行（issue #6222）
 - PP-007: 米宝加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）
