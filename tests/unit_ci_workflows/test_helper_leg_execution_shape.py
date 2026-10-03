@@ -78,7 +78,29 @@ def pytest_argv(text: str, *, ci: bool) -> str:
     else:
         text = _extract_function(text, "ci_helper_leg")
     match = re.search(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", text)
-    return match.group(0).strip() if match else ""
+    return _argv_only(match.group(0)) if match else ""
+
+
+#: argv 之后的 **shell 控制尾巴**（`|| rc=1` 等）不是 argv 的一部分（同 MC-031 的口径）：
+#: 拆腿后本地每片都写成 `MIGAO_CI_HELPER_SHARD=N/M python3 -m pytest … -n 4 || ci_helper_rc=1`
+#: —— 片号必须走 env、每片退出码必须逐片收集。
+_ARGV_TAIL_RE = re.compile(r"\s*(?:\|\||&&|;).*$")
+
+
+def _argv_only(line: str) -> str:
+    """去掉 shell 控制尾巴后的 argv 原文。"""
+    return _ARGV_TAIL_RE.sub("", line or "").strip()
+
+
+def pytest_argv_lines(text: str) -> list[str]:
+    """现取**全部** pytest 命令行（本地腿拆腿后有两片 ⇒ 两行）。
+
+    🔴 取全部而不是第一条：本包实测过一处真退化 —— 只比第一条时，**只改第二片**
+    （`-n 4 → -n 8`）判据毫无反应 ⇒ 「并行度三方一致」这条契约被钉住的只剩两片中的一片。
+    """
+    body = _extract_function(text, "ci_helper_leg")
+    return [_argv_only(m.group(0))
+            for m in re.finditer(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", body)]
 
 
 def parallel_flag(argv: str, flag: str) -> str | None:
@@ -509,6 +531,21 @@ def shard_problems(ledger: dict, ci_text: str, verify_text: str, census=None) ->
         if value <= 0:
             bad.append(f"分片 {name} 没有冻结基线（`frozen_inventory.shards[{name!r}].collected_total`）"
                        "⇒ 该片的运行期库存牙齿无对象可判")
+
+    # ⑤ **本地腿的每一条** pytest 行都要合规（#6164 补的真退化）：行数 == 片数，且每条的
+    #    `-n` 都等于台账声明的并行度 —— 只比第一条 ⇒ 只改第二片就没人拦（本包实测过）。
+    shape = ledger.get("shape") or {}
+    flag = str(shape.get("parallel_flag") or "-n")
+    declared = shape.get("parallel_workers")
+    lines = pytest_argv_lines(verify_text)
+    if len(lines) != len(names):
+        bad.append(f"本地腿里现取到 {len(lines)} 条 pytest 行，而台账声明 {len(names)} 片"
+                   " ⇒ 少一条 = 本地少跑一片（而 CI 照旧两片）")
+    for i, argv in enumerate(lines):
+        got = parallel_flag(argv, flag)
+        if declared is not None and str(got) != str(declared):
+            bad.append(f"本地腿第 {i + 1} 条 pytest 行的 `{flag}` = {got!r}，台账声明 {declared}"
+                       f" ⇒ 形态漂移（**只比第一条**是放走这条的写法；argv = {argv}）")
     return bad
 
 
@@ -593,4 +630,19 @@ def test_shard_criteria_are_not_vacuous_injected_red_proofs() -> None:
     holes_problems = shard_problems(holes, ci_text, verify_text)
     assert any("全划分" in p for p in holes_problems), (
         f"片名与规则值域对不上 ⇒ 必须报「不是全划分」，实际：{holes_problems}"
+    )
+
+    # ⑧ **只改第二片**那行的 `-n` ⇒ 必红（#6164 补的真退化：只比第一条 ⇒ 放走它）
+    idx = verify_text.find("ci_helper_leg()")
+    assert idx >= 0, "找不到本地腿函数（注入点漂移）"
+    body = verify_text[idx:]
+    matches = list(re.finditer(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", body))
+    assert len(matches) == 2, f"本地腿里现取到 {len(matches)} 条 pytest 行（应为 2）"
+    second = matches[1]
+    at = second.start() + second.group(0).rfind("-n 4")
+    assert at > second.start(), f"第二条 pytest 行里找不到 `-n 4`：{second.group(0)!r}"
+    second_only = verify_text[:idx] + body[:at] + "-n 8" + body[at + len("-n 4"):]
+    assert pytest_argv_lines(second_only)[1] != pytest_argv_lines(verify_text)[1], "变异没命中第二片"
+    assert any("第 2 条" in p or "条 pytest" in p for p in shard_problems(_LEDGER, ci_text, second_only)), (
+        "只改第二片的 `-n` ⇒ 不报 ⇒ 并行度契约只钉住了两片中的一片（本包实测过的真退化）"
     )

@@ -144,6 +144,7 @@ bad = workflow_structure_violations(mutant)              # 判据吃的是**当�
   - **片号走环境变量**（`MIGAO_CI_HELPER_SHARD`），pytest 命令行**一字不改** ⇒ 「CI ⇄ 本地 argv 逐字相同」这条契约不受影响。
   - 🔴 **最危险的坏形态**：运行期的「本轮跑的是不是整套」判定若按「覆盖目录下**全部** `test_*.py`」写死，分片后**每条腿**都会被判成「子集运行」⇒ 早退 ⇒ **库存牙齿全掉**（「变快」重新等于「少跑」而无人能判）。⇒ 那条判定必须**分片感知**（`conftest.expected_test_files()` + 逐片冻结基线 `frozen_inventory.shards`），且**分片形态下缺本片基线 = fail-closed 判红**。
   - **守卫**：`tests/unit_ci_workflows/test_helper_leg_execution_shape.py`（三方一致 / 全划分（并集 == 现取语料、两两不相交、无空片）/ 逐片基线 / 注入式红证）+ `conftest.py` 的 `shard_of`（规则**单一实现**）。⚠️ 铁律 11「声明存在 ≠ 可达」的实例：`test_realdb_failclosed.py` 那条判据**只钉旧 job id** ⇒ 若把真库族挪进一个**新 job**，新腿会退回静默 skip 而旧判据不红；本形态（同一 job id + matrix）刻意不触发它。
+  - **代价（照实登记）**：① **总 runner 秒数没降**（拆腿前 step 中位 ~500s；拆腿后两轮实测 319+209 与 331+292）—— 用 CI 分钟换**人的等待时间**；② **本地腿墙钟≈翻倍**（同一套件顺序跑两遍，两个进程各付一次启动 / xdist 启动）—— 换的是「本地跑一次 == 覆盖全部判据」；③ **本地腿里那条 pytest 命令出现两次** ⇒ 任何「只取第一条」的现取写法都会只钉住两片中的一片（本包实测过这处退化：只改第二片的 `-n` 没有任何判据会红；现已改成**逐条都比**）。
 - **真实 LLM 成本**：**PR 层 = 0 次真实 LLM**（2026-09-17 用户裁定 2′/4′，承载 issue #4034；**#4275** 之后 PR 层连**零 LLM 的映射信号**也没有了 —— `agent-behavior-eval.yml` 已整体删除，PR 上**不再有任何自动行为信号**，代价已知并接受）。判定走**单一入口** `post-deploy-eval`（**仅手动 `workflow_dispatch`**：#4262 收敛定时档、**#4974 删掉最后一条每周一 cron** ⇒ 全仓自动真实 LLM 触发 = **0 条**）；映射能力保留在 `tests/agent_eval/behavior_mapping.py`（零依赖纯函数，本机可调）。LLM 红例的闭环改由**确定性下沉台账**承接（`.github/llm-finding-ledger.json` + `llm_sink_check.py`，见 `docs/testing/llm-finding-sinking.md`）。
 - **观察指标**：`gh run list --status queued` 排队 >20 即需治理（先按 DEV-FLOW §7 清 dependabot 潮）。
 
