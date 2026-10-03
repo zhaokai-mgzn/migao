@@ -1,7 +1,7 @@
 # case_ids: CH-009, CH-004, DF-007, DF-013, CH-003, CH-045
 """页面上下文（issue #5371 · B 端能力地图族 4）—— 注入面按角色裁剪 + route→真值源登记 + **默认拒绝**。
 
-## issue #6215 扩面（登记 6 → 10 条 / 真值源 3 → 7 条）
+## issue #6215 扩面（登记 6 → 10 条 / 真值源 3 → 6 条）
 
 - 新增登记：`/orders/new`（算料口径）、`/dashboard`（看板指标卡口径）、`/production` 与
   `/production/piecework`（生产与计件规则）、`/shipments`（发货数量口径）；

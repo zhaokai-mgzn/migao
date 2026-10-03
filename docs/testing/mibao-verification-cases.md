@@ -1803,7 +1803,7 @@
 跳过: [backend-contract] 注入面判据是**纯函数 + 入口级**（登记表 + 会话权限入参；零 LLM、零网络）由 backend/ai-agent-service/tests/test_page_context.py 验证；「米宝是否真的照真值源解释」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测
 ```
 真值: ai-chat.context-memory
-溯源: 2026-10-03 新增（issue #6215）：族 4 登记面 6 → 10 条 route（真值源 3 → 7 条），未确证的 12 个菜单页进豁免台账（只许缩短）。取号 = `scripts/next_case_id.py CH` 给的是历史空档 **CH-029**，但该号**已在 `.github/skip-exemption-baseline.json` 里且已被 #5951 整条退役**（`.github/cases/chat.yml` 有逐字注记）⇒ **不采用**，改为现取最大号 + 1 = **CH-045**（与 MC-070 不采用历史空档 MC-049 的先例同口径）。 ｜ tags: page-context, injection-surface, default-deny, role-trim
+溯源: 2026-10-03 新增（issue #6215）：族 4 登记面 6 → 10 条 route（真值源 3 → 6 条），未确证的 13 个菜单页进豁免台账（只许缩短）。取号 = `scripts/next_case_id.py CH` 给的是历史空档 **CH-029**，但该号**已在 `.github/skip-exemption-baseline.json` 里且已被 #5951 整条退役**（`.github/cases/chat.yml` 有逐字注记）⇒ **不采用**，改为现取最大号 + 1 = **CH-045**（与 MC-070 不采用历史空档 MC-049 的先例同口径）。 ｜ tags: page-context, injection-surface, default-deny, role-trim
 
 ## 跨域（3 case）
 

@@ -2524,7 +2524,7 @@ cases:
       - "**登记面只许扩 + 登记自证**：条数不写死（现取 10），只与冻结地板比；每条登记的真值源在册且 `path` 真实存在、权限码真实存在、route 对应真实页面（通配条目跳过目录核）。执行点 = 同文件 `test_registry_does_not_shrink_below_expanded_floor` / `test_registry_routes_match_real_pages` / `problems_truth_source_registered` / `problems_permission_codes`。"
       - "**覆盖面（漏登记 / 悬挂 / 真值源与权限码 / 只许缩短）**由元守卫判，**不在本用例重复**：tests/unit_ci_workflows/test_page_context_registry_coverage.py（用例 MC-075）。"
     skip_reason: "[backend-contract] 注入面判据是**纯函数 + 入口级**（登记表 + 会话权限入参；零 LLM、零网络）由 backend/ai-agent-service/tests/test_page_context.py 验证；「米宝是否真的照真值源解释」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测"
-    merge_log: "2026-10-03 新增（issue #6215）：族 4 登记面 6 → 10 条 route（真值源 3 → 7 条），未确证的 12 个菜单页进豁免台账（只许缩短）。取号 = `scripts/next_case_id.py CH` 给的是历史空档 **CH-029**，但该号**已在 `.github/skip-exemption-baseline.json` 里且已被 #5951 整条退役**（`.github/cases/chat.yml` 有逐字注记）⇒ **不采用**，改为现取最大号 + 1 = **CH-045**（与 MC-070 不采用历史空档 MC-049 的先例同口径）。"
+    merge_log: "2026-10-03 新增（issue #6215）：族 4 登记面 6 → 10 条 route（真值源 3 → 6 条），未确证的 13 个菜单页进豁免台账（只许缩短）。取号 = `scripts/next_case_id.py CH` 给的是历史空档 **CH-029**，但该号**已在 `.github/skip-exemption-baseline.json` 里且已被 #5951 整条退役**（`.github/cases/chat.yml` 有逐字注记）⇒ **不采用**，改为现取最大号 + 1 = **CH-045**（与 MC-070 不采用历史空档 MC-049 的先例同口径）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_page_context.py"
