@@ -592,7 +592,10 @@ class ProductionOperationCommandServiceTest {
         assertThat(rows.getValue().getLogicalName()).isEqualTo("韩褶");
         assertThat(rows.getValue().getPosition()).as("只补缺的那个部位").isEqualTo("纱帘");
         assertThat(rows.getValue().getUnitPrice())
-                .as("补建行取工序**当前**计件单价（不发明第二份价）").isEqualByComparingTo("0.40");
+                .as("补建行取该逻辑工序的**既有有效价**（issue #6102；这里是商家改过的 0.99），"
+                        + "不是工序库行价 0.40 —— 否则新行会在「布帘列优先」的收敛里盖住既有行、"
+                        + "保存一次设置就把工人单价改掉")
+                .isEqualByComparingTo("0.99");
         assertThat(rows.getValue().getApplicable()).isTrue();
         assertThat(rows.getValue().getStatus()).isEqualTo("active");
         assertThat(rows.getValue().getDeleted()).isZero();
