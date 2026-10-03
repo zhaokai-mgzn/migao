@@ -2957,6 +2957,9 @@ cases:
   - id: MC-077
     legacy_id: ""
     title: "worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）"
+  - id: PK-001
+    legacy_id: ""
+    title: "包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）"
     domains:
       - misc
       - ci
@@ -3027,6 +3030,24 @@ cases:
     traces:
       tests:
         - tests/unit_ci_workflows/test_case_id_claims.py
+    tags: [dev-flow, narrow-check, auto-detect, fail-closed, read-only]
+    truths_ref: []
+    user_inputs:
+      - "并行修复包按「只跑定点」的纪律干活时，新增/修改 Java 测试、或新增 `[backend-contract]`（`expectations: []`）用例 —— 这两类改动必须**自动**带出它们各自那条必然判据，不靠人记得加开关；不改测试也不加用例的包则**不许**跑它们，也不许把全量档拖进来。"
+    expectations: []
+    data_checks:
+      - "**只读 + 只跑测试**（判据 = tests/unit_ci_workflows/test_pkg_narrow_check.py::TestReadOnly::test_entry_writes_nothing）：整跑一遍（两条必然项**都**触发）后工作树快照**逐字节相同** ⇒ 任何写盘 / 改文件即红。"
+      - "**自动探测（机械判定，不靠人记得加开关）**（判据 = test_java_test_file_auto_enables_wall_clock_leg / test_case_or_claim_change_auto_enables_anchor_leg）：变更集（`git diff --name-only <base>...HEAD` ∪ 工作区未提交，`-uall`）里出现 `src/test/**/*.java` ⇒ 自动带上 `--java-tests`，出现 `.github/cases/**` 或 `claims/**` ⇒ 自动带上 `--new-cases`；两条都由**真 runner 的调用记录**证明（不只是打印）。"
+      - "**反向对照（不该跑就不跑）**（判据 = test_neither_inevitable_leg_runs_when_nothing_triggers / test_lightweight_gates_run_and_no_full_suite_is_pulled）：只有一条无关文件变动时，两条必然项都 `⏭️ 未跑` 且 `mvnw-probe` / `test_case_machine_fail_channel.py` 都不在调用记录里；无开关时**只**跑三条轻量门禁（`case_trust_gate --base origin/main` / `generated_artifacts_freshness.py` / `test_realdb_failclosed.py`），调用记录里没有整目录 pytest。"
+      - "**不许静默跳过**（判据 = test_skips_are_never_silent）：未跑的腿必须打印「未跑 + 触发面 + 依据」三样；`--no-auto` 必须打印「已按 --no-auto 关闭」（与「没命中」分开措辞）。"
+      - "**fail-closed（无法判定 ⇒ 非零）**（判据 = TestFailClosed）：基准 ref 取不到 ⇒ `rc=3`；零 diff 树 ⇒ `rc=3`；有腿真红 ⇒ `rc=1`；`--dry-run` 只打印计划且不执行任何腿。三种都**不得**出现「该跑的腿全部通过」。"
+      - "**判别力自证 + 注入式红证**（判据 = TestMutationProvesDiscrimination，含内存变异体）：把 `AUTO_JAVA=1` / `AUTO_CASES=1` 从脚本里摘掉 ⇒ 同一夹具、同一注入下该腿不再被带上 ⇒ 判据当场红（§28.1 出口①）。"
+      - "**落点与出口（人可照做）**：`docs/wiki/Development.md` 新增「包级定点清单」节（并从上节「批次统一验证」交叉链接），写明「改 Java 测试 / 新增用例的包，必须跑 `./scripts/pkg-narrow-check.sh`」，把两条必然项的**窄跑命令逐字**与第 ② 条红了的重锚出口（`_how_to_regen`）一并写进文档。"
+    skip_reason: "[backend-contract] 纯离线判据（零 LLM、零真库、零网络；沙箱里跑**真脚本** + runner 桩）：由 tests/unit_ci_workflows/test_pkg_narrow_check.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-03 新增（issue #6250）：把「新增测试 / 新增用例就必然要动的两条冻结台账」并入包级定点清单。触发 4 次实测：#6237（`src/test` 里 `System.nanoTime(` ⇒ BusinessClockTestSourceGuardTest 的 presentInTree 冻结判红）、#6231/#6226/#6224/#6237（各一次新增 `[backend-contract]` + `expectations: []` ⇒ backend_contract_scoring_zero 读数 +1 而锚点没动）。本单只加**包级定点入口**（scripts/pkg-narrow-check.sh，只读、只跑测试、不做全量），**不改**任何既有门禁的判据逻辑。取号 PK-001（python3 scripts/next_case_id.py PK ⇒ 候选集 main ∪ 全部在飞 PR ∪ 工作区均无 PK 前缀 ⇒ 最小空闲 PK-001；另经 `git log --all -S PK-001` + `git grep PK- origin/main` 跨 refs 复核：全新前缀、无退役号）。⚠️ 未固化（照实登记）：自动探测只看**路径**，非 `src/test` 的传统 Java 测试目录不在面内（`--java-tests` 是那条例外口）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_pkg_narrow_check.py"
       ci:
         - pr-check.yml
       verifies: []
