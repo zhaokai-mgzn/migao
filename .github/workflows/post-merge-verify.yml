@@ -172,7 +172,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          OUT="$(python3 scripts/drift_audit.py 2>&1)"
+          # 🔴 **必须有 `--check`**（issue #6144 §1-C1）：不带它时 `tri_state()` 第一行
+          # `if not check: return 0` ⇒ 本步**永不失败**（`drift_audit.py` 模块头自述
+          # 「不带 `--check` 永远 exit 0」）⇒ 「跑了但不判」= 死步。
+          # 带 `--check` 之后才真判（0 通过 / 1 判红 / 3 不可判，非 0 一律带出去）。
+          OUT="$(python3 scripts/drift_audit.py --check 2>&1)"
           RC=$?
           printf '%s\n' "${OUT}" | tail -30
           echo "漂移审计退出码 = ${RC}（0 通过 / 1 判红 / 3 不可判 —— 非 0 都不得当 0 读）"
