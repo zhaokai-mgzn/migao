@@ -125,6 +125,14 @@ REALDB_FILES: dict[str, str] = {
     # **逐字相同**（都是"调了一次 mapper"）；而 `deleted = 0` 谓词与 `COUNT(*)` 同处一个子查询，
     # 「软删行混进批次号、而行数仍然对」这种自相矛盾的读数也只有真库才现形（同 #5052 家族）。
     _SVC + "InboundOrderListBatchNosRealDbTest.java": "direct",
+    # issue #6237：入库过账的**并发面核验**（N=4 并发过账同一 draft 单 ⇒ 恰一个赢家 + 库存恰加一次）。
+    # 为什么必须真 PG：过账权靠 `UPDATE … WHERE status='draft'` 的**行锁 + 条件重估** —— 后到者阻塞到
+    # 前者提交后按新版本行重估谓词（影响行数 0）⇒「条件更新只放一个赢家过去」在 mock 面**结构上不可见**
+    # （mock 的 updateById 恒返回 1、也不会因 WHERE 不满足而返回 0 ⇒ 判据会恒绿）；而「一个赢家 ⇒
+    # 库存 +5.0 / 批次恰 2 行 / 台账恰 2 行」是**并发下的落库读数**。另有两条只真库能证：① 幂等键闸
+    # `INSERT … ON CONFLICT (tenant_id, client_request_id) DO NOTHING` 的原子性由 DDL 的 UNIQUE 约束提供；
+    # ② `stock_batches.batch_no NOT NULL` + `uk_stock_batches_no` 是 DB 对象（mock 里不存在）。
+    _SVC + "InboundPostConcurrentRealDbTest.java": "direct",
     _SVC + "OrderNoSkuIdentityRealDbTest.java": "direct",
     _SVC + "OrderUrgencyRealDbTest.java": "direct",
     _SVC + "PooledDispatchRealDbTest.java": "direct",
