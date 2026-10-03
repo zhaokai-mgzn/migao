@@ -1,2 +1,6 @@
 34b0a2b1e4423d0f43560784db326aa4cbe0a2e6:acceptance/2026-09-25/login-rework/ua/journey2.cjs:generic-api-key:172
 866aab980f2815409b6629938eb357ce6769ef19:acceptance/2026-09-25/login-rework/ua/journey2.cjs:generic-api-key:172
+# 验收承载体里的**测试数据**被 generic-api-key 误报（13 处，2026-10-03 实测）：
+#   dev 环境测试 key（lb-…-as / fsp-S3-…-0）、被测件随机 hex token（qr_token / part_token / idemKey）。
+# 这些是**测试夹具值**、不是可用凭据；用路径正则豁免（对 rebase 稳健，不用逐 commit 指纹）。
+acceptance/.*:generic-api-key
