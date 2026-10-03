@@ -8,6 +8,7 @@ import com.migao.admin.service.OrderLogisticsService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -136,6 +137,7 @@ public class OrderController {
      * 不新造权限）；{@code order:create} 是**建单**粒度，改单属于"改"。</p>
      */
     @RequirePermission("order:update")
+    @TenantOwnedResource("order")
     @PutMapping("/{id:[0-9a-fA-F-]+}/content")
     public ApiResponse<OrderDetailResponse> updateOrderContent(
             @PathVariable String id,
@@ -236,6 +238,7 @@ public class OrderController {
      * 于是「能看订单列表」=「能改状态/取消/删除」，只读持有者被动拿到写能力）。
      */
     @RequirePermission("order:update")
+    @TenantOwnedResource("order")
     @PutMapping("/{id:[0-9a-fA-F-]+}/status")
     public ApiResponse<Void> updateOrderStatus(
             @PathVariable String id,
@@ -346,6 +349,7 @@ public class OrderController {
      * PUT /api/admin/orders/{id}/follow-status
      */
     @RequirePermission("order:update")  // issue #5246：改跟进状态是写（其 GET 仍是 order:list）
+    @TenantOwnedResource("order")
     @PutMapping("/{id:[0-9a-fA-F-]+}/follow-status")
     public ApiResponse<Void> updateFollowStatus(
             @PathVariable String id,

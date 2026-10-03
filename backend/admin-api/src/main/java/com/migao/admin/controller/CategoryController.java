@@ -8,6 +8,7 @@ import com.migao.admin.dto.CategoryResponse;
 import com.migao.admin.dto.CategoryUpdateRequest;
 import com.migao.admin.service.CategoryService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -63,6 +64,7 @@ public class CategoryController {
      *
      * PUT /api/admin/categories/{id}
      */
+    @TenantOwnedResource("category")
     @PutMapping("/{id}")
     public ApiResponse<CategoryResponse> updateCategory(
             @PathVariable String id,

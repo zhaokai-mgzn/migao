@@ -1,6 +1,7 @@
 package com.migao.admin.config;
 
 import com.migao.admin.security.PermissionInterceptor;
+import com.migao.admin.security.TenantOwnershipInterceptor;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,14 +17,25 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * {@code HandlerInterceptor.preHandle} 注册（MVC 分发阶段，早于 {@code @RequestParam}
  * 必填校验的参数解析阶段），否则无权限 GET 缺必填参数先拿到 400/422 而非 403
  * （信息泄露：端点存在 + 参数结构可被探测）。AOP {@code @Around} 保留为双保险。</p>
+ *
+ * <p>issue #6158：{@code TenantOwnershipInterceptor} 同款注册（同一条「判定必须先于参数解析」
+ * 的次序纪律，那条治授权、这条治**归属**）—— 跨租户 + 非法载荷写现在拿 404 而不是
+ * 422/400，认定不过时不进入参数解析。两个拦截器的**相对顺序**不敏感：一个判授权、
+ * 一个判归属，任一不过都应在参数解析之前结束请求（`@RequirePermission` 与
+ * `@TenantOwnedResource` 可同时标注，两者都抛异常 ⇒ 谁先谁后都是「先拒绝」）。</p>
  */
 @Configuration
 public class WebConfig {
 
     private final PermissionInterceptor permissionInterceptor;
 
-    public WebConfig(PermissionInterceptor permissionInterceptor) {
+    /** 归属认定拦截器（issue #6158）—— 构造注入：漏装配 ⇒ 启动期/判据当场红，不静默少一条闸。 */
+    private final TenantOwnershipInterceptor tenantOwnershipInterceptor;
+
+    public WebConfig(PermissionInterceptor permissionInterceptor,
+                     TenantOwnershipInterceptor tenantOwnershipInterceptor) {
         this.permissionInterceptor = permissionInterceptor;
+        this.tenantOwnershipInterceptor = tenantOwnershipInterceptor;
     }
 
     @Bean
@@ -32,6 +44,9 @@ public class WebConfig {
             @Override
             public void addInterceptors(InterceptorRegistry registry) {
                 registry.addInterceptor(permissionInterceptor)
+                        .addPathPatterns("/api/**");
+                // issue #6158：归属认定先于载荷校验（同一条次序纪律的第二个实例）
+                registry.addInterceptor(tenantOwnershipInterceptor)
                         .addPathPatterns("/api/**");
             }
 

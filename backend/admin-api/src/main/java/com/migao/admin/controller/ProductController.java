@@ -5,6 +5,7 @@ import com.migao.admin.dto.*;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.ProductService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -76,6 +77,7 @@ public class ProductController {
      * PUT /api/admin/products/{id}
      */
     @RequirePermission("product:create")
+    @TenantOwnedResource("product")
     @PutMapping("/{id}")
     public ApiResponse<ProductResponse> updateProduct(
             @PathVariable String id,
