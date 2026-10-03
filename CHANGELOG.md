@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+### 售后工单详情 / 列表不再返回「退款方式」这个恒空的字段（2026-10-03，issue #6224）
+
+- 以前：售后响应里有 `refundMethod`（前端类型也声明了它），而**全仓没有任何写点** ——
+  DB 列 `after_sales_tickets.refund_method` 无 `INSERT` / `UPDATE`，实体上无 setter 实参写入，
+  响应里那一条只是「实体 getter → DTO setter」的**直通** ⇒ 该键**恒不下发**（`NON_NULL`），
+  前后端都以为「有这么个可读字段」，实际永远是空。
+- 现在：按用户裁定「**退款方式 不用记**」**下线该字段** —— 实体 / 列表响应 DTO / 详情响应 DTO 三处字段声明
+  与 `frontend/admin-web/src/types/index.ts` 的声明一并移除 ⇒ 响应体里**不再出现** `refundMethod` 键
+  （键**不存在**，不是值恰好为 `null`）。
+- 边界（如实登记）：**保留 DB 列**（云 dev 库与 `backend/admin-api/src/main/resources/db/init/schema.sql` 的同名列）
+  —— 该列**无写者、无读者** ⇒ 无害；删列是**破坏性迁移**，**不在本包内**。
+- 类级固化（铁律 8）：新增元守卫 `backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java`
+  —— 「前端 `types` 里联合类型字段、后端零生产者」**未登记即红**、台账**只许缩短**；现取读数 语料 19 / 零生产者 2。
+  同族第二例 `LogisticsInfo.shippingMethod`（前端**有消费者**、后端**恒不下发**）已开单 **#6239**，
+  待人工裁「无需物流要不要持久化 / 回显」后出包。
+
 ### 加工项 / 加工单列表页在「这一页的分类（或订单）为空」时不再整页 500（2026-10-03，issue #6226）
 
 - 以前：加工项列表页只要**有一行** `category_id` 为空，`getCategoryNameMap` 就会走「分类集合为空」这条支路，

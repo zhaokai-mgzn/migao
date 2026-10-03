@@ -49,7 +49,6 @@ public class AfterSalesDetailResponse {
     private String handlerName;
     private OffsetDateTime assignedAt;
     private BigDecimal refundAmount;
-    private String refundMethod;
     private List<String> evidenceImages;
     private String internalNotes;
     private OffsetDateTime deadline;

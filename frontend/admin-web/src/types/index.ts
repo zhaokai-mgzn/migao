@@ -2429,7 +2429,6 @@ export interface AfterSalesTicket {
   handlerName?: string
   assignedAt?: string
   refundAmount?: number
-  refundMethod?: 'original_route' | 'bank_transfer' | 'balance'
   evidenceImages?: string[]
   internalNotes?: string
   deadline?: string

@@ -813,7 +813,6 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         response.setHandlerId(ticket.getHandlerId());
         response.setAssignedAt(ticket.getAssignedAt());
         response.setRefundAmount(ticket.getRefundAmount());
-        response.setRefundMethod(ticket.getRefundMethod());
         response.setInternalNotes(ticket.getInternalNotes());
         response.setDeadline(ticket.getDeadline());
         response.setClosedAt(ticket.getClosedAt());
@@ -852,7 +851,6 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         response.setHandlerId(ticket.getHandlerId());
         response.setAssignedAt(ticket.getAssignedAt());
         response.setRefundAmount(ticket.getRefundAmount());
-        response.setRefundMethod(ticket.getRefundMethod());
         response.setInternalNotes(ticket.getInternalNotes());
         response.setDeadline(ticket.getDeadline());
         response.setClosedAt(ticket.getClosedAt());
