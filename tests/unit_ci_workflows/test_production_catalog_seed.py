@@ -68,6 +68,11 @@ V54 落**初始种子**（把 `app/production/routing.py` 的既有确定性常�
 ⚠️ **可红性是底线**：下列比对一律**逐行逐值**（不是「包含即可」），故「改名/改价」仍能红。
 """
 import json
+# ⚠️ `ast` 只用于 `_java_string_list`：**不用正则**取 Java 字面量里的引号区间 ——
+# 「引号紧跟捕获组」的正则属 `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`
+# 的 `quote-parse` 面（注释/docstring 里同形文本即可喂中），而
+# `tests/unit_ci_workflows/guard_parsing_allowlist.json` **只许缩短**（新增债务不许靠加条目吸收）。
+import ast
 import re
 import sys
 from pathlib import Path
@@ -2352,14 +2357,30 @@ def _java_string_list(java_source: str, constant: str) -> set:
     fail-closed：常量缺失 / 形态变了（不是 `List.of(...)` 字面量）⇒ 抛 AssertionError
     （**不返回空集** —— 空集会让下面的双向比对退化成「只比一半」的空跑，正是本仓反复踩的
     「绿了但没跑」）。
+
+    🔴 **为什么用 `ast.literal_eval` 而不是「引号配对」的正则**（返工 R1，CI `ci workflow helper
+    unit tests` 红）：按引号扫原文取值属 `quote-parse` 面（注释 / docstring 里同形文本即可喂中），
+    而 `tests/unit_ci_workflows/guard_parsing_allowlist.json` **只许缩短** ⇒ 新增一处这种写法
+    只能靠加条目吸收（**明令禁止**）。改用「切出参数区 + 标准库按**语法**解析元组字面量」：
+    只认 `List.of("a", "b")` 这种**纯字面量**形态，形态一变即抛（比正则更严，且不引入引号口径）。
     """
-    match = re.search(
-        r"static\s+final\s+List<String>\s+" + re.escape(constant) + r"\s*=\s*List\.of\((?P<body>[^;]*)\)",
-        java_source)
-    assert match, (
-        f"Java 侧读不到 `{constant}` 的 `List.of(...)` 字面量 —— 判定输入被改名/改形态 ⇒ "
+    marker = "List.of("
+    head = java_source.find(f"{constant} = {marker}")
+    assert head >= 0, (
+        f"Java 侧读不到 `{constant} = List.of(...)` 的声明 —— 判定输入被改名/改形态 ⇒ "
         f"本段判据会空跑；请同步：{OPERATION_QUERY_SERVICE_JAVA.relative_to(REPO)}")
-    return set(re.findall(r'"([^"]+)"', match.group("body")))
+    body = java_source[head + len(constant) + len(" = ") + len(marker):]
+    body = body[:body.find(")")]
+    try:
+        parsed = ast.literal_eval(f"({body},)")
+    except (SyntaxError, ValueError) as error:  # 非纯字符串字面量（转义 / 表达式）⇒ fail-closed
+        raise AssertionError(
+            f"Java 侧 `{constant}` 的参数区不是**纯字符串字面量**（`List.of(...)` 形态）："
+            f"{body!r} —— {error}") from error
+    assert parsed and all(isinstance(item, str) for item in parsed), (
+        f"Java 侧 `{constant}` 解析出空集 / 非字符串元素 ⇒ 下面的双向比对会退化成"
+        f"「空集 == 空集」的假绿：{parsed!r}")
+    return set(parsed)
 
 
 def java_engine_qty_catalog_extra() -> set:
