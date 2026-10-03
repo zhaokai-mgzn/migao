@@ -1,0 +1,38 @@
+{
+  "http": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "total": 5,
+      "successCount": 1,
+      "failCount": 4,
+      "blankRows": 0,
+      "createdProducts": 1,
+      "updatedProducts": 0,
+      "errors": [
+        {
+          "row": 2,
+          "skuCode": "L2-IMP-B-MURZ83HT-MURZ83HT",
+          "message": "商品名称不能为空"
+        },
+        {
+          "row": 3,
+          "skuCode": "L2-IMP-B-MURZ83HT-MURZ83HT",
+          "message": "第 3 行的价格不是数字：「abc」—— 请填数字后重试"
+        },
+        {
+          "row": 5,
+          "skuCode": "L2-IMP-B-MURZ83HT-MURZ83HT",
+          "message": "第 5 行的「颜色 + 门幅」组合重复：货号 L2-IMP-B-MURZ83HT-MURZ83HT 的 米白/2.8m 在同一文件里已出现过 —— 同一组合只能出现一次，否则后一行会**静默覆盖**前一行的库存"
+        },
+        {
+          "row": 6,
+          "skuCode": "L2-IMP-B-MURZ83HT-MURZ83HT",
+          "message": "第 6 行与第 4 行的「描述」不一致（线②验收描述 vs 空）—— 同一货号 L2-IMP-B-MURZ83HT-MURZ83HT 只能有一份商品级信息（价格等涉钱字段不取「最后一行为准」）"
+        }
+      ]
+    },
+    "requestId": "req_2a21ebc2eaa94f92",
+    "timestamp": 1791006832
+  }
+}

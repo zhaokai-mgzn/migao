@@ -1,0 +1,80 @@
+{
+  "商品": {
+    "id": "16bc7029d314663f661197346718da9e",
+    "name": "链路商品118362",
+    "status": "on_shelf"
+  },
+  "SKU与现货": {
+    "id": "2106048724734005249",
+    "sku_code": "CHAIN-118362",
+    "stock": "100.0",
+    "price": "68.00"
+  },
+  "入库单": {
+    "inbound_no": "RK-20261002-0003",
+    "status": "posted",
+    "amount": "1250.0000"
+  },
+  "批次": [
+    {
+      "batch_no": "PC-20261002-0001",
+      "qty": "100.0",
+      "cost": "12.5000",
+      "dye_lot": "DYE-118362"
+    }
+  ],
+  "批次消耗": [
+    {
+      "id": 3,
+      "tenant_id": 20,
+      "batch_id": 12,
+      "batch_no": "PC-20261002-0001",
+      "product_id": "16bc7029d314663f661197346718da9e",
+      "sku_id": 2106048724734005200,
+      "sku_code": "CHAIN-118362",
+      "delta": -20,
+      "before_qty": 100,
+      "after_qty": 80,
+      "reason": "processing_order",
+      "processing_order_no": "JG-20261002-5094",
+      "order_no": "20261002950190004",
+      "order_item_id": "f4fe8ef00348dcc0e2d154fc35cbfc26",
+      "operator": "13870217889",
+      "note": "生成加工单指定批次扣减",
+      "created_at": "2026-10-02T23:50:19.930379+08:00",
+      "deleted": 0,
+      "formula_meters": 20,
+      "planned_meters": 20,
+      "unit_cost": 12.5,
+      "stocktake_run_id": null
+    }
+  ],
+  "库存台账": [
+    {
+      "reason": "inbound",
+      "delta": "100.0",
+      "before_qty": "0.0",
+      "after_qty": "100.0",
+      "ref_no": "RK-20261002-0003",
+      "avg_after": "12.5000"
+    }
+  ],
+  "订单": {
+    "order_no": "20261002267720003",
+    "status": "shipped",
+    "amount": "680.00"
+  },
+  "加工单": {
+    "processing_order_no": "JG-20261002-5093",
+    "status": "completed"
+  },
+  "工序": {
+    "total": 12,
+    "done": 12
+  },
+  "报工": {
+    "n": 12,
+    "qty": "75.00",
+    "amount": "31.4000"
+  }
+}

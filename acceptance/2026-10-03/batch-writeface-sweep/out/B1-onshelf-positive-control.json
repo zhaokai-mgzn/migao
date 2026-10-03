@@ -1,0 +1,58 @@
+{
+  "offRes": {
+    "success": true,
+    "data": {
+      "success": 0,
+      "failed": 3,
+      "errors": [
+        {
+          "id": "e8d1262428e954d235c5621657539ec1",
+          "message": "当前状态[草稿]不允许下架"
+        },
+        {
+          "id": "c8f2ea7e659ba1f99ead57ff2af09703",
+          "message": "当前状态[草稿]不允许下架"
+        },
+        {
+          "id": "30801d55cd8425a4fa965fe0cd06388f",
+          "message": "当前状态[草稿]不允许下架"
+        }
+      ]
+    },
+    "requestId": "req_25890c301e9e496c",
+    "timestamp": 1791006300
+  },
+  "offStatus": {
+    "e8d1262428e954d235c5621657539ec1": "draft",
+    "c8f2ea7e659ba1f99ead57ff2af09703": "draft",
+    "30801d55cd8425a4fa965fe0cd06388f": "draft"
+  },
+  "onRes2": {
+    "success": true,
+    "data": {
+      "success": 0,
+      "failed": 3,
+      "errors": [
+        {
+          "id": "e8d1262428e954d235c5621657539ec1",
+          "message": "当前状态[草稿]不允许上架"
+        },
+        {
+          "id": "c8f2ea7e659ba1f99ead57ff2af09703",
+          "message": "当前状态[草稿]不允许上架"
+        },
+        {
+          "id": "30801d55cd8425a4fa965fe0cd06388f",
+          "message": "当前状态[草稿]不允许上架"
+        }
+      ]
+    },
+    "requestId": "req_d59bcf66ce234666",
+    "timestamp": 1791006301
+  },
+  "onStatus2": {
+    "e8d1262428e954d235c5621657539ec1": "draft",
+    "c8f2ea7e659ba1f99ead57ff2af09703": "draft",
+    "30801d55cd8425a4fa965fe0cd06388f": "draft"
+  }
+}

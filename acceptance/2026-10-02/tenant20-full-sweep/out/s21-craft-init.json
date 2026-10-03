@@ -1,0 +1,182 @@
+[
+  {
+    "id": "T21-00",
+    "name": "初始化前现场：配置来源",
+    "status": "pass",
+    "detail": "source=stored keys=11（default=本轮初始化对象；stored=本轮已初始化·幂等重放）",
+    "evidence": [
+      "GET /api/admin/production/craft-calc-config"
+    ],
+    "at": "2026-10-02T13:45:10.382Z"
+  },
+  {
+    "id": "T21-01",
+    "name": "GET with_defaults=true 附引擎默认值",
+    "status": "pass",
+    "detail": "HTTP 200 defaults_source=engine defaults_keys=11",
+    "evidence": [
+      "GET /api/admin/production/craft-calc-config?with_defaults=true"
+    ],
+    "at": "2026-10-02T13:45:10.460Z"
+  },
+  {
+    "id": "T21-02",
+    "name": "PUT 非法值（per_fold_single='abc'）→ 422 逐条理由",
+    "status": "pass",
+    "detail": "HTTP 422 details=11 条[per_fold_mixed_times:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回；margin_single:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回；margin_multi:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回]",
+    "evidence": [
+      "PUT /api/admin/production/craft-calc-config"
+    ],
+    "at": "2026-10-02T13:45:10.509Z"
+  },
+  {
+    "id": "T21-03",
+    "name": "PUT 合法全量配置（default→stored 初始化）",
+    "status": "pass",
+    "detail": "HTTP 200 source=stored",
+    "evidence": [
+      "PUT /api/admin/production/craft-calc-config"
+    ],
+    "at": "2026-10-02T13:45:10.597Z"
+  },
+  {
+    "id": "T21-04",
+    "name": "回读幂等（PUT 后 config 与写入逐键一致）",
+    "status": "pass",
+    "detail": "HTTP 200 source=stored equal=true",
+    "evidence": [
+      "GET /api/admin/production/craft-calc-config"
+    ],
+    "at": "2026-10-02T13:45:10.659Z"
+  },
+  {
+    "id": "T21-05",
+    "name": "DB：craft_calc_configs 落行（宽表）",
+    "status": "pass",
+    "detail": "tenant=20 per_fold_single=0.250 status=active",
+    "evidence": [
+      "SQL: craft_calc_configs"
+    ],
+    "at": "2026-10-02T13:45:10.759Z"
+  },
+  {
+    "id": "T21-06",
+    "name": "POST 主线含不存在工序 → 422",
+    "status": "pass",
+    "detail": "HTTP 422 msg=工艺路线主线未通过校验（1 条问题）",
+    "evidence": [
+      "POST /api/admin/production/routings"
+    ],
+    "at": "2026-10-02T13:45:10.883Z"
+  },
+  {
+    "id": "T21-07",
+    "name": "POST 主线重复工序 → 422",
+    "status": "pass",
+    "detail": "HTTP 422 msg=工艺路线主线未通过校验（1 条问题）",
+    "evidence": [
+      "POST /api/admin/production/routings"
+    ],
+    "at": "2026-10-02T13:45:10.961Z"
+  },
+  {
+    "id": "T21-08",
+    "name": "POST 空主线（仅名称）→ 200 初版壳（设计：POST mainline 可缺省，PUT 才强制四护栏；重名 → 409）",
+    "status": "pass",
+    "detail": "HTTP 200 id=ff1671b6e7c036e9575d152c9f47ac1b mainline=[]",
+    "evidence": [
+      "POST /api/admin/production/routings"
+    ],
+    "at": "2026-10-02T13:45:11.067Z"
+  },
+  {
+    "id": "T21-09",
+    "name": "PUT 既有默认路线 is_default=false → 422",
+    "status": "pass",
+    "detail": "HTTP 422 msg=is_default 不能置为 false",
+    "evidence": [
+      "PUT /api/admin/production/routings/rt-v72-20"
+    ],
+    "at": "2026-10-02T13:45:11.133Z"
+  },
+  {
+    "id": "T21-10",
+    "name": "PUT 既有默认路线改名原值（护栏：不动 mainline）",
+    "status": "pass",
+    "detail": "HTTP 200 name=窗帘工序路线（默认） mainline_len=10",
+    "evidence": [
+      "PUT /api/admin/production/routings/rt-v72-20"
+    ],
+    "at": "2026-10-02T13:45:11.220Z"
+  },
+  {
+    "id": "T21-10b",
+    "name": "PUT 停用默认路线 → 422（零默认 fail-closed；inactive 值域先拒）",
+    "status": "pass",
+    "detail": "HTTP 422 msg=默认路线不能停用",
+    "evidence": [
+      "PUT /api/admin/production/routings/rt-v72-20"
+    ],
+    "at": "2026-10-02T13:45:11.301Z"
+  },
+  {
+    "id": "T21-08b",
+    "name": "回收初版壳探针（软删，净增 0）",
+    "status": "pass",
+    "detail": "HTTP 200",
+    "evidence": [
+      "DELETE /api/admin/production/routings/ff1671b6e7c036e9575d152c9f47ac1b"
+    ],
+    "at": "2026-10-02T13:45:11.421Z"
+  },
+  {
+    "id": "T21-11",
+    "name": "POST 合法新路线（自建）",
+    "status": "pass",
+    "detail": "HTTP 200 id=89a6aebedf00c2b10bbb707baa0ea9a4 name=R2-自建回收探针",
+    "evidence": [
+      "POST /api/admin/production/routings"
+    ],
+    "at": "2026-10-02T13:45:11.535Z"
+  },
+  {
+    "id": "T21-12",
+    "name": "自建后列表数",
+    "status": "pass",
+    "detail": "total=3",
+    "evidence": [
+      "GET /api/admin/production/routings"
+    ],
+    "at": "2026-10-02T13:45:11.598Z"
+  },
+  {
+    "id": "T21-13",
+    "name": "DELETE 软删自建路线",
+    "status": "pass",
+    "detail": "HTTP 200",
+    "evidence": [
+      "DELETE /api/admin/production/routings/89a6aebedf00c2b10bbb707baa0ea9a4"
+    ],
+    "at": "2026-10-02T13:45:11.681Z"
+  },
+  {
+    "id": "T21-14",
+    "name": "软删后列表数（应回到初始 2）",
+    "status": "pass",
+    "detail": "total=2 ids=rt-v72-20,rt-v79-20",
+    "evidence": [
+      "GET /api/admin/production/routings"
+    ],
+    "at": "2026-10-02T13:45:11.733Z"
+  },
+  {
+    "id": "T21-15",
+    "name": "DB：路线有效行数（初始化后）",
+    "status": "pass",
+    "detail": "count=2",
+    "evidence": [
+      "SQL: production_route_templates"
+    ],
+    "at": "2026-10-02T13:45:11.827Z"
+  }
+]

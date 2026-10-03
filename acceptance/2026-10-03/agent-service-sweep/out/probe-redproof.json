@@ -1,0 +1,161 @@
+[
+  {
+    "id": "RP-A1",
+    "name": "红证（负向侧）：当前 DEBUG=false 下无 token 请求必须 401",
+    "status": "pass",
+    "detail": "期望 HTTP 401 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 同一请求在 DEBUG=true 侧实测为 200（见 out/probe-auth-debugtrue.json A2-notoken-*）⇒ 两侧夹住 = 判据有判别力",
+      "HTTP/读数: {\"status\":401,\"body\":{\"detail\":{\"success\":false,\"error\":{\"code\":\"AUTH_REQUIRED\",\"message\":\"Authentication required\"}}}}",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8 (fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180)) procStart=六 10月/ 3 13:44:52 2026",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "对照读数: out/probe-auth-debugtrue.json 的 A2-notoken-_api_chat_sessions（HTTP 200）—— 同判据反向读数"
+    ],
+    "at": "2026-10-03 13:51:02 +08",
+    "atUtc": "2026-10-03T05:51:02.461Z"
+  },
+  {
+    "id": "RP-A2",
+    "name": "红证（判别力证据）：两侧读数成对存在",
+    "status": "pass",
+    "detail": "DEBUG=false ⇒ 401（probe-auth-debugfalse.json） / DEBUG=true ⇒ 200（probe-auth-debugtrue.json）—— 同一路径同一头，读数相反",
+    "evidence": [
+      "文件 sha256: e75fbb7f2e6bedd85b4f6bb3e8f51f5d8e05bd652753ff28b16334eb7bf41a49",
+      "⚠️ 本项不是注入式，而是**两侧对照**（真红证形态之一④「直连真对象」）；其余族用注入式"
+    ],
+    "at": "2026-10-03 13:51:02 +08",
+    "atUtc": "2026-10-03T05:51:02.534Z"
+  },
+  {
+    "id": "RP-B1",
+    "name": "红证：注入「会话租户=他租户」⇒ 属主自读判据当场红（403）",
+    "status": "pass",
+    "detail": "期望 注入后 HTTP 403（token 租户 20，会话租户被改成 21） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: _guard_session 按 session.tenant_id != token.tenant_id 判 ⇒ 数据被改坏时判据必须红",
+      "HTTP/读数: {\"injectedStatus\":403,\"code\":\"PERMISSION_DENIED\",\"fpInjected\":\"12a86b5aae24cdf0d4a10b199b11251907f14fe30980c4084d4af299cc70e0ab\"}",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8 (fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180)) procStart=六 10月/ 3 13:44:52 2026",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "指纹 before=1cce37b8bca576cf2af2f8057be12a0f5fb10303cd718e14f1cad02bf43f3c9c injected=12a86b5aae24cdf0d4a10b199b11251907f14fe30980c4084d4af299cc70e0ab",
+      "SQL: update sessions set tenant_id=21 where id='sess_3793bfd094bf4649'"
+    ],
+    "at": "2026-10-03 13:51:03 +08",
+    "atUtc": "2026-10-03T05:51:03.870Z"
+  },
+  {
+    "id": "RP-B2",
+    "name": "红证还原：改回租户 20 ⇒ 同一判据回绿（200）",
+    "status": "pass",
+    "detail": "期望 还原后 HTTP 200 且指纹回到 before == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 还原后读数必须与注入前一致（内容指纹相等）⇒ 证明 RP-B1 的红是注入造成的",
+      "HTTP/读数: {\"restoredStatus\":200,\"fpRestored\":\"1cce37b8bca576cf2af2f8057be12a0f5fb10303cd718e14f1cad02bf43f3c9c\",\"fpBefore\":\"1cce37b8bca576cf2af2f8057be12a0f5fb10303cd718e14f1cad02bf43f3c9c\"}",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8 (fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180)) procStart=六 10月/ 3 13:44:52 2026",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "指纹 restored=1cce37b8bca576cf2af2f8057be12a0f5fb10303cd718e14f1cad02bf43f3c9c == before=1cce37b8bca576cf2af2f8057be12a0f5fb10303cd718e14f1cad02bf43f3c9c ⇒ true"
+    ],
+    "at": "2026-10-03 13:51:03 +08",
+    "atUtc": "2026-10-03T05:51:03.871Z"
+  },
+  {
+    "id": "RP-B3",
+    "name": "红证前置：注入前/还原后均为 200（基线非空）",
+    "status": "pass",
+    "detail": "期望 两次均 200 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 正对照（缺它则 RP-B2 可能只是「一直 200」的空断言）",
+      "HTTP/读数: {\"before\":200,\"after\":200}",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8 (fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180)) procStart=六 10月/ 3 13:44:52 2026",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026"
+    ],
+    "at": "2026-10-03 13:51:03 +08",
+    "atUtc": "2026-10-03T05:51:03.871Z"
+  },
+  {
+    "id": "RP-C1",
+    "name": "红证：DB 标题被改坏 ⇒ 「读面==期望标题」判据当场红",
+    "status": "pass",
+    "detail": "期望 注入后 hit.title ≠ 期望标题（判据为假） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 读面一致性判据以「创建请求体的标题」为期望来源 ⇒ DB 被改坏时必红",
+      "HTTP/读数: {\"injectedDbTitle\":\"线①验收被改坏-rmurz4gn2\",\"readFaceTitle\":\"线①验收被改坏-rmurz4gn2\",\"expected\":\"线①验收红证卡-rmurz4gn2\",\"fp0\":\"6a4a96b7b2b8c2c4f63042ff04f60297a24082db94a4dcc93f6494143bd73f32\",\"fp1\":\"113f4796ffee74d293da1551e815719c43fd74ac775b0605bf476253c5d28c2e\"}",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8 (fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180)) procStart=六 10月/ 3 13:44:52 2026",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "SQL: update knowledge_cards set title='被改坏' where id='afaffc21c0fefb780decd0db8785efd1'"
+    ],
+    "at": "2026-10-03 13:51:05 +08",
+    "atUtc": "2026-10-03T05:51:05.139Z"
+  },
+  {
+    "id": "RP-C2",
+    "name": "红证还原：标题改回 ⇒ 判据回绿且指纹复位",
+    "status": "pass",
+    "detail": "期望 hit2.title == 期望标题 且 sha256(t2)==sha256(t0) == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 还原后读数与注入前逐字节一致",
+      "HTTP/读数: {\"restoredDbTitle\":\"线①验收红证卡-rmurz4gn2\",\"readFaceTitle\":\"线①验收红证卡-rmurz4gn2\",\"fp2\":\"6a4a96b7b2b8c2c4f63042ff04f60297a24082db94a4dcc93f6494143bd73f32\",\"fp0\":\"6a4a96b7b2b8c2c4f63042ff04f60297a24082db94a4dcc93f6494143bd73f32\"}",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8 (fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180)) procStart=六 10月/ 3 13:44:52 2026",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026"
+    ],
+    "at": "2026-10-03 13:51:05 +08",
+    "atUtc": "2026-10-03T05:51:05.316Z"
+  },
+  {
+    "id": "RP-D1",
+    "name": "红证：候选被改回 pending ⇒ 「不得仍 pending」判据当场红",
+    "status": "pass",
+    "detail": "期望 注入后 status==\"pending\"（判据为假） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: D4-1/D5-2 用的判据（处置后 ≠ pending）⇒ 数据被改回时必须红",
+      "HTTP/读数: {\"afterReject\":\"rejected\",\"injected\":\"pending\",\"httpStatus\":200}",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8 (fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180)) procStart=六 10月/ 3 13:44:52 2026",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "SQL: update knowledge_candidates set status='pending' where id='l1rpcrmurz4gn2'"
+    ],
+    "at": "2026-10-03 13:51:06 +08",
+    "atUtc": "2026-10-03T05:51:06.301Z"
+  },
+  {
+    "id": "RP-D2",
+    "name": "红证还原：状态改回 rejected ⇒ 判据回绿",
+    "status": "pass",
+    "detail": "期望 status==\"rejected\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 还原回绿 ⇒ 证明 RP-D1 的红由注入造成",
+      "HTTP/读数: {\"restored\":\"rejected\",\"before\":\"rejected\"}",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8 (fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180)) procStart=六 10月/ 3 13:44:52 2026",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026"
+    ],
+    "at": "2026-10-03 13:51:06 +08",
+    "atUtc": "2026-10-03T05:51:06.305Z"
+  },
+  {
+    "id": "RP-E1",
+    "name": "红证：会话租户被改成 B ⇒ 「B 不可读」判据当场翻绿=内容外泄（红证成立）",
+    "status": "pass",
+    "detail": "期望 注入后 B 能读到（即判据『必须拒』被破）⇒ 证明该判据对租户字段敏感 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: F3-3 的判据（跨租户必须拒）在数据被改成同租户时必然放行 ⇒ 该判据可判别",
+      "HTTP/读数: {\"baseline\":404,\"injected\":200,\"leakedContent\":true}",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8 (fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180)) procStart=六 10月/ 3 13:44:52 2026",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "SQL: update agent_sessions set tenant_id=21 where id='80daf1d42ed650ab4cbdd8a3c82d0908'"
+    ],
+    "at": "2026-10-03 13:51:07 +08",
+    "atUtc": "2026-10-03T05:51:07.243Z"
+  },
+  {
+    "id": "RP-E2",
+    "name": "红证还原：租户改回 A ⇒ B 重新读到 4xx（判据回绿）",
+    "status": "pass",
+    "detail": "期望 HTTP 4xx == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 还原回绿",
+      "HTTP/读数: {\"restored\":404}",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8 (fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180)) procStart=六 10月/ 3 13:44:52 2026",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026"
+    ],
+    "at": "2026-10-03 13:51:07 +08",
+    "atUtc": "2026-10-03T05:51:07.245Z"
+  }
+]

@@ -1,0 +1,22 @@
+{
+  "filenameTraversal": {
+    "http": 200,
+    "url": "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/8f131db0197b42a7bd179e72c125928d.png",
+    "name": "../../l2evil.png"
+  },
+  "directoryTraversal": {
+    "http": 500,
+    "body": {
+      "success": false,
+      "error": {
+        "code": "INTERNAL_ERROR",
+        "message": "服务器内部错误"
+      },
+      "requestId": "req_eea03c71fba445f0",
+      "timestamp": 1791006926
+    }
+  },
+  "uploadsDir": "/Users/guangzhen.zk/ai native/migao/backend/admin-api/uploads",
+  "newLocalFiles": [],
+  "escapedFiles": []
+}

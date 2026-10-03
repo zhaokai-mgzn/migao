@@ -1,0 +1,76 @@
+{
+  "empty": {
+    "http": 422,
+    "body": {
+      "success": false,
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "请选择要上传的文件"
+      },
+      "requestId": "req_6372d0ccc9c340b6",
+      "timestamp": 1791006922,
+      "suggestion": "请检查必填字段是否完整，字段格式是否正确"
+    }
+  },
+  "exe": {
+    "http": 422,
+    "body": {
+      "success": false,
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "不支持的文件类型，仅支持 JPG、JPEG、PNG、GIF、WebP、PDF、XLSX、DOCX 格式"
+      },
+      "requestId": "req_cddb555ba1cf457b",
+      "timestamp": 1791006922,
+      "suggestion": "请检查必填字段是否完整，字段格式是否正确"
+    }
+  },
+  "big6": {
+    "http": 422,
+    "bytes": 6291525,
+    "body": {
+      "success": false,
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "文件大小不能超过 5MB"
+      },
+      "requestId": "req_e81b1d7666a844d8",
+      "timestamp": 1791006922,
+      "suggestion": "请检查必填字段是否完整，字段格式是否正确"
+    }
+  },
+  "fakeContentPng": {
+    "http": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "id": "45119223fc3b45cc84679728ea85767a",
+        "url": "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/40017b28cf3546e4a02657fbe335b229.png",
+        "name": "fake.png",
+        "size": 38,
+        "type": "image/png",
+        "createdAt": "2026-10-03T13:55:22.527117"
+      },
+      "requestId": "req_527c2dfa69e14f99",
+      "timestamp": 1791006922
+    },
+    "srcBytes": 30
+  },
+  "pdfCtPngExt19MB": {
+    "http": 200,
+    "bytes": 19922953,
+    "body": {
+      "success": true,
+      "data": {
+        "id": "46a2522434a54729998e593422635cef",
+        "url": "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/cfee60b8965342a8b0fa87f560bdaec1.png",
+        "name": "big19.png",
+        "size": 19922953,
+        "type": "application/pdf",
+        "createdAt": "2026-10-03T13:55:26.257909"
+      },
+      "requestId": "req_61b9f46c35714dc7",
+      "timestamp": 1791006926
+    }
+  }
+}

@@ -1,0 +1,591 @@
+2026-10-03 13:41:38.301 | INFO     | app.utils.database:<module>:45 - Database engine created with QueuePool (production mode)
+2026-10-03 13:41:39.108 | INFO     | app.agents.agent_config:register_agent:85 - [AgentConfig] Registered: mibao (米宝) | skills=['order', 'product', 'aftersales', 'customer', 'staff', 'data', 'knowledge'] fallback=general roles=10
+2026-10-03 13:41:39.108 | INFO     | app.agents.agent_config:register_agent:85 - [AgentConfig] Registered: xiaobu (小布) | skills=['customer_order', 'customer_product', 'customer_quote', 'customer_aftersales', 'customer_knowledge'] fallback=customer_general roles=1
+2026-10-03 13:41:39.143 | INFO     | app.log_config:setup_logging:43 - Logging system initialized (debug=False)
+2026-10-03 13:41:39.144 | INFO     | app.main:create_app:179 - CORS allowed origins: ['http://localhost:3000', 'http://localhost:3001']
+INFO:     Started server process [48361]
+INFO:     Waiting for application startup.
+2026-10-03 13:41:39.158 | INFO     | app.main:lifespan:91 - Starting ai-agent-service v1.0.0
+2026-10-03 13:41:39.158 | INFO     | app.main:lifespan:92 - Environment: production
+2026-10-03 13:41:39.411 | INFO     | app.utils.database:init_db:96 - Database connection initialized successfully
+2026-10-03 13:41:39.411 | INFO     | app.main:lifespan:97 - Database connection initialized
+2026-10-03 13:41:39.455 | INFO     | app.utils.redis_client:init_redis:45 - [redis] Connected to Redis | url=redis://:Redis2026Migao!Secure@r-bp162hozkjd55e18rbpd.redis.rds.aliyuncs.com:6379/0
+2026-10-03 13:41:39.455 | INFO     | app.main:lifespan:106 - Redis connection initialized
+2026-10-03 13:41:39.455 | INFO     | app.main:lifespan:113 - AI Agent Service started successfully
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+INFO:     127.0.0.1:61714 - "GET /health HTTP/1.1" 200 OK
+2026-10-03 13:41:51.785 | INFO     | app.middleware.logging_middleware:dispatch:39 - [6f7f25e3] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:41:51.788 | WARNING  | app.utils.auth:get_current_user:375 - Authentication failed: no token provided (DEBUG=False, x-debug-role='customer'), client_ip=127.0.0.1
+2026-10-03 13:41:51.788 | INFO     | app.middleware.logging_middleware:dispatch:48 - [6f7f25e3] GET /api/chat/sessions completed | status=401 | duration=2.8ms
+INFO:     127.0.0.1:61715 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:61733 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61734 - "GET /ready HTTP/1.1" 200 OK
+2026-10-03 13:42:22.272 | INFO     | app.middleware.logging_middleware:dispatch:39 - [15ec6a8f] GET /api/chat/nonexistent-endpoint-xyz started | client=127.0.0.1
+2026-10-03 13:42:22.273 | INFO     | app.middleware.logging_middleware:dispatch:48 - [15ec6a8f] GET /api/chat/nonexistent-endpoint-xyz completed | status=404 | duration=0.4ms
+INFO:     127.0.0.1:61733 - "GET /api/chat/nonexistent-endpoint-xyz HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61734 - "DELETE /health HTTP/1.1" 405 Method Not Allowed
+2026-10-03 13:42:22.279 | INFO     | app.middleware.logging_middleware:dispatch:39 - [20217a37] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:42:22.288 | WARNING  | app.utils.auth:get_current_user:375 - Authentication failed: no token provided (DEBUG=False, x-debug-role='none'), client_ip=127.0.0.1
+2026-10-03 13:42:22.289 | INFO     | app.middleware.logging_middleware:dispatch:48 - [20217a37] GET /api/chat/sessions completed | status=401 | duration=9.3ms
+INFO:     127.0.0.1:61733 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:42:22.292 | INFO     | app.middleware.logging_middleware:dispatch:39 - [98d22ae7] GET /api/chat/sessions/latest started | client=127.0.0.1
+2026-10-03 13:42:22.293 | WARNING  | app.utils.auth:get_current_user:375 - Authentication failed: no token provided (DEBUG=False, x-debug-role='none'), client_ip=127.0.0.1
+2026-10-03 13:42:22.293 | INFO     | app.middleware.logging_middleware:dispatch:48 - [98d22ae7] GET /api/chat/sessions/latest completed | status=401 | duration=1.0ms
+INFO:     127.0.0.1:61734 - "GET /api/chat/sessions/latest HTTP/1.1" 401 Unauthorized
+2026-10-03 13:42:22.296 | INFO     | app.middleware.logging_middleware:dispatch:39 - [b496d69b] GET /api/chat/quick-actions started | client=127.0.0.1
+2026-10-03 13:42:22.297 | WARNING  | app.utils.auth:get_current_user:375 - Authentication failed: no token provided (DEBUG=False, x-debug-role='none'), client_ip=127.0.0.1
+2026-10-03 13:42:22.297 | INFO     | app.middleware.logging_middleware:dispatch:48 - [b496d69b] GET /api/chat/quick-actions completed | status=401 | duration=0.7ms
+INFO:     127.0.0.1:61733 - "GET /api/chat/quick-actions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:42:22.298 | INFO     | app.middleware.logging_middleware:dispatch:39 - [a0a5d131] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:42:22.299 | WARNING  | app.utils.auth:verify_jwt_token:260 - JWT verification failed: invalid token - Invalid header padding
+2026-10-03 13:42:22.299 | INFO     | app.middleware.logging_middleware:dispatch:48 - [a0a5d131] GET /api/chat/sessions completed | status=401 | duration=0.6ms
+INFO:     127.0.0.1:61734 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:42:22.326 | INFO     | app.middleware.logging_middleware:dispatch:39 - [683f71f5] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:42:22.329 | WARNING  | app.utils.auth:verify_jwt_token:260 - JWT verification failed: invalid token - Signature verification failed
+2026-10-03 13:42:22.329 | INFO     | app.middleware.logging_middleware:dispatch:48 - [683f71f5] GET /api/chat/sessions completed | status=401 | duration=2.8ms
+INFO:     127.0.0.1:61733 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:42:22.375 | INFO     | app.middleware.logging_middleware:dispatch:39 - [c4613967] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:42:22.376 | WARNING  | app.utils.auth:verify_jwt_token:260 - JWT verification failed: invalid token - Signature verification failed
+2026-10-03 13:42:22.376 | INFO     | app.middleware.logging_middleware:dispatch:48 - [c4613967] GET /api/chat/sessions completed | status=401 | duration=0.5ms
+INFO:     127.0.0.1:61734 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:42:22.388 | INFO     | app.middleware.logging_middleware:dispatch:39 - [ff6fe8eb] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:42:22.388 | WARNING  | app.utils.auth:verify_jwt_token:260 - JWT verification failed: invalid token - Signature verification failed
+2026-10-03 13:42:22.388 | INFO     | app.middleware.logging_middleware:dispatch:48 - [ff6fe8eb] GET /api/chat/sessions completed | status=401 | duration=0.6ms
+INFO:     127.0.0.1:61733 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:42:22.399 | INFO     | app.middleware.logging_middleware:dispatch:39 - [c469b1bd] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:42:22.400 | WARNING  | app.utils.auth:verify_jwt_token:260 - JWT verification failed: invalid token - Signature verification failed
+2026-10-03 13:42:22.400 | INFO     | app.middleware.logging_middleware:dispatch:48 - [c469b1bd] GET /api/chat/sessions completed | status=401 | duration=0.5ms
+INFO:     127.0.0.1:61734 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:42:22.402 | INFO     | app.middleware.logging_middleware:dispatch:39 - [1d1a5c6a] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:42:22.405 | WARNING  | app.utils.auth:verify_service_token:130 - Service token authentication failed: missing X-Service-Token header
+2026-10-03 13:42:22.405 | INFO     | app.middleware.logging_middleware:dispatch:48 - [1d1a5c6a] GET /api/internal/tools completed | status=401 | duration=2.1ms
+INFO:     127.0.0.1:61733 - "GET /api/internal/tools HTTP/1.1" 401 Unauthorized
+2026-10-03 13:42:22.407 | INFO     | app.middleware.logging_middleware:dispatch:39 - [2158c5c0] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:42:22.407 | WARNING  | app.utils.auth:verify_service_token:163 - Service token authentication failed: invalid token provided
+2026-10-03 13:42:22.407 | INFO     | app.middleware.logging_middleware:dispatch:48 - [2158c5c0] GET /api/internal/tools completed | status=401 | duration=0.4ms
+INFO:     127.0.0.1:61734 - "GET /api/internal/tools HTTP/1.1" 401 Unauthorized
+2026-10-03 13:42:22.410 | INFO     | app.middleware.logging_middleware:dispatch:39 - [d485574d] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:42:22.410 | INFO     | app.tools.registry:register:358 - Tool registered: product_search
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: product_detail
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: logistics_track
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: customer_logistics_track
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: knowledge_search
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: order_query
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: customer_order_query
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: customer_address_query
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: order_manage
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: order_create
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: processing_order_generate
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: processing_order_query
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: processing_order_update
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: product_manage
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: inventory_manage
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: processing_item_query
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: customer_manage
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: employee_manage
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: role_manage
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: dashboard_stats
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: finance_api
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: after_sales_manage
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: aftersale_create
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: aftersale_query
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: notification_manage
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: settings_manage
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: session_manage
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: category_manage
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: processing_item_manage
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: product_update
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: product_batch_update
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: sku_update
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: interact
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: validate_input
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: curtain_calc
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: production_progress_query
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: piecework_query
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: production_worklog_query
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: payment_qrcode_query
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: batch_stock_query
+2026-10-03 13:42:22.411 | INFO     | app.tools.registry:register:358 - Tool registered: stock_ledger_query
+2026-10-03 13:42:22.412 | INFO     | app.tools.registry:register:358 - Tool registered: inbound_order_query
+2026-10-03 13:42:22.412 | INFO     | app.tools.registry:register:358 - Tool registered: operation_catalog_query
+2026-10-03 13:42:22.412 | INFO     | app.tools.registry:register:358 - Tool registered: briefing_query
+2026-10-03 13:42:22.412 | INFO     | app.tools.registry:register:358 - Tool registered: craft_calc_config_query
+2026-10-03 13:42:22.412 | INFO     | app.tools.registry:register:358 - Tool registered: processing_order_set_query
+2026-10-03 13:42:22.412 | INFO     | app.tools.registry:register:358 - Tool registered: craft_config_query
+2026-10-03 13:42:22.412 | INFO     | app.tools.registry:register:358 - Tool registered: image_recognize
+2026-10-03 13:42:22.412 | INFO     | app.tools.registry:register:358 - Tool registered: nav_guide
+2026-10-03 13:42:22.412 | INFO     | app.tools.registry:create_default_registry:807 - Default registry created with 49 tools
+2026-10-03 13:42:22.415 | INFO     | app.middleware.logging_middleware:dispatch:48 - [d485574d] GET /api/internal/tools completed | status=200 | duration=4.8ms
+INFO:     127.0.0.1:61733 - "GET /api/internal/tools HTTP/1.1" 200 OK
+2026-10-03 13:42:22.420 | INFO     | app.middleware.logging_middleware:dispatch:39 - [bbd1c737] POST /api/internal/tools/execute started | client=127.0.0.1
+2026-10-03 13:42:22.421 | INFO     | app.middleware.logging_middleware:dispatch:48 - [bbd1c737] POST /api/internal/tools/execute completed | status=403 | duration=1.2ms
+INFO:     127.0.0.1:61734 - "POST /api/internal/tools/execute HTTP/1.1" 403 Forbidden
+2026-10-03 13:42:22.424 | INFO     | app.middleware.logging_middleware:dispatch:39 - [212f3135] POST /api/internal/tools/execute started | client=127.0.0.1
+2026-10-03 13:42:22.424 | INFO     | app.middleware.logging_middleware:dispatch:48 - [212f3135] POST /api/internal/tools/execute completed | status=404 | duration=0.4ms
+INFO:     127.0.0.1:61733 - "POST /api/internal/tools/execute HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61734 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61733 - "GET /ready HTTP/1.1" 200 OK
+2026-10-03 13:42:22.517 | INFO     | app.middleware.logging_middleware:dispatch:39 - [d2e32730] GET /openapi.json started | client=127.0.0.1
+2026-10-03 13:42:22.558 | INFO     | app.middleware.logging_middleware:dispatch:48 - [d2e32730] GET /openapi.json completed | status=200 | duration=40.5ms
+INFO:     127.0.0.1:61734 - "GET /openapi.json HTTP/1.1" 200 OK
+2026-10-03 13:42:22.559 | INFO     | app.middleware.logging_middleware:dispatch:39 - [f5814a7f] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:42:22.560 | WARNING  | app.utils.auth:verify_service_token:163 - Service token authentication failed: invalid token provided
+2026-10-03 13:42:22.560 | INFO     | app.middleware.logging_middleware:dispatch:48 - [f5814a7f] GET /api/internal/tools completed | status=401 | duration=0.3ms
+INFO:     127.0.0.1:61733 - "GET /api/internal/tools HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:62018 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62019 - "GET /ready HTTP/1.1" 200 OK
+2026-10-03 13:43:03.018 | INFO     | app.middleware.logging_middleware:dispatch:39 - [8671093a] GET /api/chat/nonexistent-endpoint-xyz started | client=127.0.0.1
+2026-10-03 13:43:03.019 | INFO     | app.middleware.logging_middleware:dispatch:48 - [8671093a] GET /api/chat/nonexistent-endpoint-xyz completed | status=404 | duration=0.6ms
+INFO:     127.0.0.1:62018 - "GET /api/chat/nonexistent-endpoint-xyz HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62019 - "DELETE /health HTTP/1.1" 405 Method Not Allowed
+2026-10-03 13:43:03.029 | INFO     | app.middleware.logging_middleware:dispatch:39 - [d8f6db95] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:03.031 | WARNING  | app.utils.auth:get_current_user:375 - Authentication failed: no token provided (DEBUG=False, x-debug-role='none'), client_ip=127.0.0.1
+2026-10-03 13:43:03.031 | INFO     | app.middleware.logging_middleware:dispatch:48 - [d8f6db95] GET /api/chat/sessions completed | status=401 | duration=1.6ms
+INFO:     127.0.0.1:62018 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:03.037 | INFO     | app.middleware.logging_middleware:dispatch:39 - [4f979e0a] GET /api/chat/sessions/latest started | client=127.0.0.1
+2026-10-03 13:43:03.037 | WARNING  | app.utils.auth:get_current_user:375 - Authentication failed: no token provided (DEBUG=False, x-debug-role='none'), client_ip=127.0.0.1
+2026-10-03 13:43:03.037 | INFO     | app.middleware.logging_middleware:dispatch:48 - [4f979e0a] GET /api/chat/sessions/latest completed | status=401 | duration=0.7ms
+INFO:     127.0.0.1:62019 - "GET /api/chat/sessions/latest HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:03.040 | INFO     | app.middleware.logging_middleware:dispatch:39 - [b4df6e73] GET /api/chat/quick-actions started | client=127.0.0.1
+2026-10-03 13:43:03.041 | WARNING  | app.utils.auth:get_current_user:375 - Authentication failed: no token provided (DEBUG=False, x-debug-role='none'), client_ip=127.0.0.1
+2026-10-03 13:43:03.042 | INFO     | app.middleware.logging_middleware:dispatch:48 - [b4df6e73] GET /api/chat/quick-actions completed | status=401 | duration=1.8ms
+INFO:     127.0.0.1:62018 - "GET /api/chat/quick-actions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:03.046 | INFO     | app.middleware.logging_middleware:dispatch:39 - [361cb4d1] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:03.047 | WARNING  | app.utils.auth:verify_jwt_token:260 - JWT verification failed: invalid token - Invalid header padding
+2026-10-03 13:43:03.048 | INFO     | app.middleware.logging_middleware:dispatch:48 - [361cb4d1] GET /api/chat/sessions completed | status=401 | duration=1.5ms
+INFO:     127.0.0.1:62019 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:03.254 | INFO     | app.middleware.logging_middleware:dispatch:39 - [6c44bea3] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:03.256 | WARNING  | app.utils.auth:verify_jwt_token:248 - JWT verification failed: token has expired
+2026-10-03 13:43:03.256 | INFO     | app.middleware.logging_middleware:dispatch:48 - [6c44bea3] GET /api/chat/sessions completed | status=401 | duration=1.8ms
+INFO:     127.0.0.1:62018 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:03.592 | INFO     | app.middleware.logging_middleware:dispatch:39 - [c342cde4] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:03.593 | WARNING  | app.utils.auth:verify_jwt_token:260 - JWT verification failed: invalid token - Signature verification failed
+2026-10-03 13:43:03.594 | INFO     | app.middleware.logging_middleware:dispatch:48 - [c342cde4] GET /api/chat/sessions completed | status=401 | duration=1.0ms
+INFO:     127.0.0.1:62019 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:03.926 | INFO     | app.middleware.logging_middleware:dispatch:39 - [2ccc4578] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:03.928 | WARNING  | app.utils.auth:verify_jwt_token:260 - JWT verification failed: invalid token - Audience doesn't match: expected 'migao', got ['not-migao']
+2026-10-03 13:43:03.928 | INFO     | app.middleware.logging_middleware:dispatch:48 - [2ccc4578] GET /api/chat/sessions completed | status=401 | duration=1.6ms
+INFO:     127.0.0.1:62018 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:04.205 | INFO     | app.middleware.logging_middleware:dispatch:39 - [6b3eff58] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:04.305 | INFO     | app.middleware.logging_middleware:dispatch:48 - [6b3eff58] GET /api/chat/sessions completed | status=200 | duration=99.6ms
+INFO:     127.0.0.1:62019 - "GET /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:04.308 | INFO     | app.middleware.logging_middleware:dispatch:39 - [511cd548] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:43:04.308 | WARNING  | app.utils.auth:verify_service_token:130 - Service token authentication failed: missing X-Service-Token header
+2026-10-03 13:43:04.309 | INFO     | app.middleware.logging_middleware:dispatch:48 - [511cd548] GET /api/internal/tools completed | status=401 | duration=0.6ms
+INFO:     127.0.0.1:62018 - "GET /api/internal/tools HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:04.313 | INFO     | app.middleware.logging_middleware:dispatch:39 - [330f1427] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:43:04.314 | WARNING  | app.utils.auth:verify_service_token:163 - Service token authentication failed: invalid token provided
+2026-10-03 13:43:04.314 | INFO     | app.middleware.logging_middleware:dispatch:48 - [330f1427] GET /api/internal/tools completed | status=401 | duration=0.8ms
+INFO:     127.0.0.1:62019 - "GET /api/internal/tools HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:04.317 | INFO     | app.middleware.logging_middleware:dispatch:39 - [f6db1827] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:43:04.323 | INFO     | app.middleware.logging_middleware:dispatch:48 - [f6db1827] GET /api/internal/tools completed | status=200 | duration=6.3ms
+INFO:     127.0.0.1:62018 - "GET /api/internal/tools HTTP/1.1" 200 OK
+2026-10-03 13:43:04.331 | INFO     | app.middleware.logging_middleware:dispatch:39 - [7a1d4342] POST /api/internal/tools/execute started | client=127.0.0.1
+2026-10-03 13:43:04.333 | INFO     | app.middleware.logging_middleware:dispatch:48 - [7a1d4342] POST /api/internal/tools/execute completed | status=403 | duration=1.4ms
+INFO:     127.0.0.1:62019 - "POST /api/internal/tools/execute HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:04.338 | INFO     | app.middleware.logging_middleware:dispatch:39 - [305c6ca1] POST /api/internal/tools/execute started | client=127.0.0.1
+2026-10-03 13:43:04.339 | INFO     | app.middleware.logging_middleware:dispatch:48 - [305c6ca1] POST /api/internal/tools/execute completed | status=404 | duration=1.2ms
+INFO:     127.0.0.1:62018 - "POST /api/internal/tools/execute HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62019 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62018 - "GET /ready HTTP/1.1" 200 OK
+2026-10-03 13:43:04.439 | INFO     | app.middleware.logging_middleware:dispatch:39 - [58788458] GET /openapi.json started | client=127.0.0.1
+2026-10-03 13:43:04.441 | INFO     | app.middleware.logging_middleware:dispatch:48 - [58788458] GET /openapi.json completed | status=200 | duration=1.7ms
+INFO:     127.0.0.1:62019 - "GET /openapi.json HTTP/1.1" 200 OK
+2026-10-03 13:43:04.443 | INFO     | app.middleware.logging_middleware:dispatch:39 - [496ebf48] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:43:04.444 | WARNING  | app.utils.auth:verify_service_token:163 - Service token authentication failed: invalid token provided
+2026-10-03 13:43:04.444 | INFO     | app.middleware.logging_middleware:dispatch:48 - [496ebf48] GET /api/internal/tools completed | status=401 | duration=0.6ms
+INFO:     127.0.0.1:62018 - "GET /api/internal/tools HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:37.699 | INFO     | app.middleware.logging_middleware:dispatch:39 - [7b62999b] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:37.810 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_4d82650fda24407d tenant=20
+2026-10-03 13:43:37.811 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_4d82650fda24407d, user_id=probe_line1_A1_bmuryux5s, tenant_id=20
+2026-10-03 13:43:37.906 | INFO     | app.middleware.logging_middleware:dispatch:48 - [7b62999b] POST /api/chat/sessions completed | status=200 | duration=203.7ms
+INFO:     127.0.0.1:62050 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:37.916 | INFO     | app.middleware.logging_middleware:dispatch:39 - [165eb10d] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:38.001 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_0bd9dfeb28e44860 tenant=21
+2026-10-03 13:43:38.003 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_0bd9dfeb28e44860, user_id=probe_line1_B1_bmuryux5s, tenant_id=21
+2026-10-03 13:43:38.088 | INFO     | app.middleware.logging_middleware:dispatch:48 - [165eb10d] POST /api/chat/sessions completed | status=200 | duration=172.0ms
+INFO:     127.0.0.1:62051 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:38.387 | INFO     | app.middleware.logging_middleware:dispatch:39 - [b26661dd] GET /api/chat/history/sess_4d82650fda24407d started | client=127.0.0.1
+2026-10-03 13:43:38.471 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_4d82650fda24407d, user_id=probe_line1_B1_bmuryux5s
+2026-10-03 13:43:38.471 | INFO     | app.middleware.logging_middleware:dispatch:48 - [b26661dd] GET /api/chat/history/sess_4d82650fda24407d completed | status=403 | duration=83.9ms
+INFO:     127.0.0.1:62050 - "GET /api/chat/history/sess_4d82650fda24407d HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:38.476 | INFO     | app.middleware.logging_middleware:dispatch:39 - [ab46f9ad] PUT /api/chat/sessions/sess_4d82650fda24407d/close started | client=127.0.0.1
+2026-10-03 13:43:38.559 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 关闭 attempt: user_tenant=21, session_tenant=20, session_id=sess_4d82650fda24407d, user_id=probe_line1_B1_bmuryux5s
+2026-10-03 13:43:38.559 | INFO     | app.middleware.logging_middleware:dispatch:48 - [ab46f9ad] PUT /api/chat/sessions/sess_4d82650fda24407d/close completed | status=403 | duration=82.1ms
+INFO:     127.0.0.1:62051 - "PUT /api/chat/sessions/sess_4d82650fda24407d/close HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:38.564 | INFO     | app.middleware.logging_middleware:dispatch:39 - [b17fe37c] DELETE /api/chat/sessions/sess_4d82650fda24407d started | client=127.0.0.1
+2026-10-03 13:43:38.657 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 删除 attempt: user_tenant=21, session_tenant=20, session_id=sess_4d82650fda24407d, user_id=probe_line1_B1_bmuryux5s
+2026-10-03 13:43:38.657 | INFO     | app.middleware.logging_middleware:dispatch:48 - [b17fe37c] DELETE /api/chat/sessions/sess_4d82650fda24407d completed | status=403 | duration=93.4ms
+INFO:     127.0.0.1:62050 - "DELETE /api/chat/sessions/sess_4d82650fda24407d HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:38.777 | INFO     | app.middleware.logging_middleware:dispatch:39 - [c66e4d05] GET /api/chat/history/sess_4d82650fda24407d started | client=127.0.0.1
+2026-10-03 13:43:38.860 | WARNING  | app.api.chat:_guard_session:405 - [chat/guard] Unauthorized 访问 attempt: user_id=probe_line1_A2_bmuryux5s, session_owner=probe_line1_A1_bmuryux5s, session_id=sess_4d82650fda24407d, tenant_id=20
+2026-10-03 13:43:38.861 | INFO     | app.middleware.logging_middleware:dispatch:48 - [c66e4d05] GET /api/chat/history/sess_4d82650fda24407d completed | status=403 | duration=83.2ms
+INFO:     127.0.0.1:62051 - "GET /api/chat/history/sess_4d82650fda24407d HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:38.865 | INFO     | app.middleware.logging_middleware:dispatch:39 - [6e1eb8e8] GET /api/chat/history/sess_4d82650fda24407d started | client=127.0.0.1
+2026-10-03 13:43:39.038 | INFO     | app.middleware.logging_middleware:dispatch:48 - [6e1eb8e8] GET /api/chat/history/sess_4d82650fda24407d completed | status=200 | duration=172.9ms
+INFO:     127.0.0.1:62050 - "GET /api/chat/history/sess_4d82650fda24407d HTTP/1.1" 200 OK
+2026-10-03 13:43:39.336 | INFO     | app.middleware.logging_middleware:dispatch:39 - [c52009af] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.338 | WARNING  | app.utils.auth:get_current_user:460 - Authentication failed: error parsing user identity - 1 validation error for UserIdentity
+tenant_id
+  Input should be a valid integer [type=int_type, input_value=None, input_type=NoneType]
+    For further information visit https://errors.pydantic.dev/2.13/v/int_type
+2026-10-03 13:43:39.341 | INFO     | app.middleware.logging_middleware:dispatch:48 - [c52009af] GET /api/chat/sessions completed | status=401 | duration=5.0ms
+INFO:     127.0.0.1:62051 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:39.347 | INFO     | app.middleware.logging_middleware:dispatch:39 - [fa99cb33] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.347 | WARNING  | app.utils.auth:get_current_user:375 - Authentication failed: no token provided (DEBUG=False, x-debug-role='customer'), client_ip=127.0.0.1
+2026-10-03 13:43:39.348 | INFO     | app.middleware.logging_middleware:dispatch:48 - [fa99cb33] GET /api/chat/sessions completed | status=401 | duration=0.8ms
+INFO:     127.0.0.1:62050 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:39.354 | INFO     | app.middleware.logging_middleware:dispatch:39 - [b79cb047] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.444 | INFO     | app.middleware.logging_middleware:dispatch:48 - [b79cb047] GET /api/chat/sessions completed | status=200 | duration=89.4ms
+INFO:     127.0.0.1:62051 - "GET /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.460 | INFO     | app.middleware.logging_middleware:dispatch:39 - [9c77cfc5] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.461 | INFO     | app.middleware.logging_middleware:dispatch:39 - [98d7ca0d] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.462 | INFO     | app.middleware.logging_middleware:dispatch:39 - [5a06a282] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.463 | INFO     | app.middleware.logging_middleware:dispatch:39 - [d849a746] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.464 | INFO     | app.middleware.logging_middleware:dispatch:39 - [796264e1] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.465 | INFO     | app.middleware.logging_middleware:dispatch:39 - [1945b9d6] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.469 | INFO     | app.middleware.logging_middleware:dispatch:39 - [cf779f9d] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.474 | INFO     | app.middleware.logging_middleware:dispatch:39 - [9e580c1b] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.476 | INFO     | app.middleware.logging_middleware:dispatch:39 - [1cd803f3] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.477 | INFO     | app.middleware.logging_middleware:dispatch:39 - [89872e21] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.478 | INFO     | app.middleware.logging_middleware:dispatch:39 - [c1ebc1e9] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.479 | INFO     | app.middleware.logging_middleware:dispatch:39 - [cc3eedaa] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.481 | INFO     | app.middleware.logging_middleware:dispatch:39 - [4d85e62e] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.482 | INFO     | app.middleware.logging_middleware:dispatch:39 - [ab389776] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.483 | INFO     | app.middleware.logging_middleware:dispatch:39 - [939c1ae8] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.484 | INFO     | app.middleware.logging_middleware:dispatch:39 - [49e8a227] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.485 | INFO     | app.middleware.logging_middleware:dispatch:39 - [21eb1cd2] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.486 | INFO     | app.middleware.logging_middleware:dispatch:39 - [70a4de23] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:39.547 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_68f8817fe79d4b43 tenant=20
+2026-10-03 13:43:39.548 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_68f8817fe79d4b43, user_id=probe_line1_A1_bmuryux5s, tenant_id=20
+2026-10-03 13:43:39.588 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_5860747028fa4871 tenant=20
+2026-10-03 13:43:39.593 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_5860747028fa4871, user_id=probe_line1_A1_bmuryux5s, tenant_id=20
+2026-10-03 13:43:39.602 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_f1c84548397a4051 tenant=21
+2026-10-03 13:43:39.606 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_f1c84548397a4051, user_id=probe_line1_B1_bmuryux5s, tenant_id=21
+2026-10-03 13:43:39.616 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_7efe03593e0f48dd tenant=21
+2026-10-03 13:43:39.620 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_7efe03593e0f48dd, user_id=probe_line1_B1_bmuryux5s, tenant_id=21
+2026-10-03 13:43:39.622 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_8bc4b21f541d4e53 tenant=21
+2026-10-03 13:43:39.622 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_5142cae10e7e4e54 tenant=20
+2026-10-03 13:43:39.623 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_8bc4b21f541d4e53, user_id=probe_line1_B1_bmuryux5s, tenant_id=21
+2026-10-03 13:43:39.623 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_5142cae10e7e4e54, user_id=probe_line1_A2_bmuryux5s, tenant_id=20
+2026-10-03 13:43:39.629 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_cf8debff22a744a7 tenant=20
+2026-10-03 13:43:39.629 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_cf8debff22a744a7, user_id=probe_line1_A2_bmuryux5s, tenant_id=20
+2026-10-03 13:43:39.632 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_30cb1f5684b94970 tenant=21
+2026-10-03 13:43:39.633 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_70c30c2f90b1483b tenant=20
+2026-10-03 13:43:39.637 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_30cb1f5684b94970, user_id=probe_line1_B1_bmuryux5s, tenant_id=21
+2026-10-03 13:43:39.638 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_70c30c2f90b1483b, user_id=probe_line1_A2_bmuryux5s, tenant_id=20
+2026-10-03 13:43:39.638 | INFO     | app.middleware.logging_middleware:dispatch:48 - [9c77cfc5] POST /api/chat/sessions completed | status=200 | duration=177.7ms
+INFO:     127.0.0.1:62050 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.638 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_89a74e774fff4fef tenant=20
+2026-10-03 13:43:39.645 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_89a74e774fff4fef, user_id=probe_line1_A1_bmuryux5s, tenant_id=20
+2026-10-03 13:43:39.646 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_874c49f843b845eb tenant=20
+2026-10-03 13:43:39.647 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_874c49f843b845eb, user_id=probe_line1_A1_bmuryux5s, tenant_id=20
+2026-10-03 13:43:39.649 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_b449f132d2bd46da tenant=21
+2026-10-03 13:43:39.651 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_b449f132d2bd46da, user_id=probe_line1_B1_bmuryux5s, tenant_id=21
+2026-10-03 13:43:39.658 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_be95ad9b0a124aed tenant=20
+2026-10-03 13:43:39.660 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_6559be3207b541a2 tenant=20
+2026-10-03 13:43:39.660 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_be95ad9b0a124aed, user_id=probe_line1_A1_bmuryux5s, tenant_id=20
+2026-10-03 13:43:39.662 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_6559be3207b541a2, user_id=probe_line1_A2_bmuryux5s, tenant_id=20
+2026-10-03 13:43:39.666 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_c7d6e0ca2b0c44cb tenant=20
+2026-10-03 13:43:39.669 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_c7d6e0ca2b0c44cb, user_id=probe_line1_A2_bmuryux5s, tenant_id=20
+2026-10-03 13:43:39.670 | INFO     | app.middleware.logging_middleware:dispatch:48 - [d849a746] POST /api/chat/sessions completed | status=200 | duration=207.0ms
+INFO:     127.0.0.1:62057 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.674 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_900ba705df134d94 tenant=21
+2026-10-03 13:43:39.675 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_f5255cb287994de6 tenant=20
+2026-10-03 13:43:39.676 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_900ba705df134d94, user_id=probe_line1_B1_bmuryux5s, tenant_id=21
+2026-10-03 13:43:39.678 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_f5255cb287994de6, user_id=probe_line1_A1_bmuryux5s, tenant_id=20
+2026-10-03 13:43:39.682 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_965f96ec86f04cc4 tenant=20
+2026-10-03 13:43:39.687 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_965f96ec86f04cc4, user_id=probe_line1_A2_bmuryux5s, tenant_id=20
+2026-10-03 13:43:39.695 | INFO     | app.middleware.logging_middleware:dispatch:48 - [c1ebc1e9] POST /api/chat/sessions completed | status=200 | duration=217.3ms
+INFO:     127.0.0.1:62064 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.700 | INFO     | app.middleware.logging_middleware:dispatch:48 - [98d7ca0d] POST /api/chat/sessions completed | status=200 | duration=238.6ms
+INFO:     127.0.0.1:62055 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.705 | INFO     | app.middleware.logging_middleware:dispatch:48 - [5a06a282] POST /api/chat/sessions completed | status=200 | duration=243.0ms
+INFO:     127.0.0.1:62056 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.722 | INFO     | app.middleware.logging_middleware:dispatch:48 - [796264e1] POST /api/chat/sessions completed | status=200 | duration=258.0ms
+INFO:     127.0.0.1:62058 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.722 | INFO     | app.middleware.logging_middleware:dispatch:48 - [9e580c1b] POST /api/chat/sessions completed | status=200 | duration=248.0ms
+INFO:     127.0.0.1:62061 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.733 | INFO     | app.middleware.logging_middleware:dispatch:48 - [89872e21] POST /api/chat/sessions completed | status=200 | duration=256.0ms
+INFO:     127.0.0.1:62063 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.733 | INFO     | app.middleware.logging_middleware:dispatch:48 - [1cd803f3] POST /api/chat/sessions completed | status=200 | duration=257.7ms
+INFO:     127.0.0.1:62062 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.734 | INFO     | app.middleware.logging_middleware:dispatch:48 - [1945b9d6] POST /api/chat/sessions completed | status=200 | duration=268.9ms
+INFO:     127.0.0.1:62059 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.739 | INFO     | app.middleware.logging_middleware:dispatch:48 - [4d85e62e] POST /api/chat/sessions completed | status=200 | duration=258.4ms
+INFO:     127.0.0.1:62066 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.743 | INFO     | app.middleware.logging_middleware:dispatch:48 - [cf779f9d] POST /api/chat/sessions completed | status=200 | duration=274.1ms
+INFO:     127.0.0.1:62060 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.770 | INFO     | app.middleware.logging_middleware:dispatch:48 - [939c1ae8] POST /api/chat/sessions completed | status=200 | duration=287.1ms
+INFO:     127.0.0.1:62068 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.771 | INFO     | app.middleware.logging_middleware:dispatch:48 - [49e8a227] POST /api/chat/sessions completed | status=200 | duration=286.5ms
+INFO:     127.0.0.1:62069 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.771 | INFO     | app.middleware.logging_middleware:dispatch:48 - [70a4de23] POST /api/chat/sessions completed | status=200 | duration=284.8ms
+INFO:     127.0.0.1:62071 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.773 | INFO     | app.middleware.logging_middleware:dispatch:48 - [ab389776] POST /api/chat/sessions completed | status=200 | duration=290.6ms
+INFO:     127.0.0.1:62067 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.778 | INFO     | app.middleware.logging_middleware:dispatch:48 - [21eb1cd2] POST /api/chat/sessions completed | status=200 | duration=292.1ms
+INFO:     127.0.0.1:62070 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.815 | INFO     | app.middleware.logging_middleware:dispatch:48 - [cc3eedaa] POST /api/chat/sessions completed | status=200 | duration=335.5ms
+INFO:     127.0.0.1:62065 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:39.963 | INFO     | app.middleware.logging_middleware:dispatch:39 - [3bef46da] GET /api/chat/history/sess_68f8817fe79d4b43 started | client=127.0.0.1
+2026-10-03 13:43:40.078 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_68f8817fe79d4b43, user_id=probe_line1_B1_bmuryux5s
+2026-10-03 13:43:40.078 | INFO     | app.middleware.logging_middleware:dispatch:48 - [3bef46da] GET /api/chat/history/sess_68f8817fe79d4b43 completed | status=403 | duration=115.5ms
+INFO:     127.0.0.1:62050 - "GET /api/chat/history/sess_68f8817fe79d4b43 HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:40.082 | INFO     | app.middleware.logging_middleware:dispatch:39 - [d1bb1137] GET /api/chat/history/sess_f1c84548397a4051 started | client=127.0.0.1
+2026-10-03 13:43:40.210 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=20, session_tenant=21, session_id=sess_f1c84548397a4051, user_id=probe_line1_A1_bmuryux5s
+2026-10-03 13:43:40.210 | INFO     | app.middleware.logging_middleware:dispatch:48 - [d1bb1137] GET /api/chat/history/sess_f1c84548397a4051 completed | status=403 | duration=127.7ms
+INFO:     127.0.0.1:62051 - "GET /api/chat/history/sess_f1c84548397a4051 HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:40.217 | INFO     | app.middleware.logging_middleware:dispatch:39 - [7d1ce572] GET /api/chat/history/sess_5142cae10e7e4e54 started | client=127.0.0.1
+2026-10-03 13:43:40.281 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_5142cae10e7e4e54, user_id=probe_line1_B1_bmuryux5s
+2026-10-03 13:43:40.288 | INFO     | app.middleware.logging_middleware:dispatch:48 - [7d1ce572] GET /api/chat/history/sess_5142cae10e7e4e54 completed | status=403 | duration=70.9ms
+INFO:     127.0.0.1:62050 - "GET /api/chat/history/sess_5142cae10e7e4e54 HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:40.291 | INFO     | app.middleware.logging_middleware:dispatch:39 - [51c67968] GET /api/chat/history/sess_5860747028fa4871 started | client=127.0.0.1
+2026-10-03 13:43:40.361 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_5860747028fa4871, user_id=probe_line1_B1_bmuryux5s
+2026-10-03 13:43:40.364 | INFO     | app.middleware.logging_middleware:dispatch:48 - [51c67968] GET /api/chat/history/sess_5860747028fa4871 completed | status=403 | duration=73.3ms
+INFO:     127.0.0.1:62051 - "GET /api/chat/history/sess_5860747028fa4871 HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:40.372 | INFO     | app.middleware.logging_middleware:dispatch:39 - [4b3dcd44] GET /api/chat/history/sess_7efe03593e0f48dd started | client=127.0.0.1
+2026-10-03 13:43:40.428 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=20, session_tenant=21, session_id=sess_7efe03593e0f48dd, user_id=probe_line1_A1_bmuryux5s
+2026-10-03 13:43:40.429 | INFO     | app.middleware.logging_middleware:dispatch:48 - [4b3dcd44] GET /api/chat/history/sess_7efe03593e0f48dd completed | status=403 | duration=57.1ms
+INFO:     127.0.0.1:62050 - "GET /api/chat/history/sess_7efe03593e0f48dd HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:40.431 | INFO     | app.middleware.logging_middleware:dispatch:39 - [c71f3c30] GET /api/chat/history/sess_cf8debff22a744a7 started | client=127.0.0.1
+2026-10-03 13:43:40.511 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_cf8debff22a744a7, user_id=probe_line1_B1_bmuryux5s
+2026-10-03 13:43:40.517 | INFO     | app.middleware.logging_middleware:dispatch:48 - [c71f3c30] GET /api/chat/history/sess_cf8debff22a744a7 completed | status=403 | duration=86.4ms
+INFO:     127.0.0.1:62051 - "GET /api/chat/history/sess_cf8debff22a744a7 HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:40.532 | INFO     | app.middleware.logging_middleware:dispatch:39 - [86f7c86b] GET /api/chat/history/sess_874c49f843b845eb started | client=127.0.0.1
+2026-10-03 13:43:40.625 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_874c49f843b845eb, user_id=probe_line1_B1_bmuryux5s
+2026-10-03 13:43:40.625 | INFO     | app.middleware.logging_middleware:dispatch:48 - [86f7c86b] GET /api/chat/history/sess_874c49f843b845eb completed | status=403 | duration=92.9ms
+INFO:     127.0.0.1:62050 - "GET /api/chat/history/sess_874c49f843b845eb HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:40.628 | INFO     | app.middleware.logging_middleware:dispatch:39 - [cdd820eb] GET /api/chat/history/sess_30cb1f5684b94970 started | client=127.0.0.1
+2026-10-03 13:43:40.690 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=20, session_tenant=21, session_id=sess_30cb1f5684b94970, user_id=probe_line1_A1_bmuryux5s
+2026-10-03 13:43:40.696 | INFO     | app.middleware.logging_middleware:dispatch:48 - [cdd820eb] GET /api/chat/history/sess_30cb1f5684b94970 completed | status=403 | duration=68.1ms
+INFO:     127.0.0.1:62051 - "GET /api/chat/history/sess_30cb1f5684b94970 HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:40.708 | INFO     | app.middleware.logging_middleware:dispatch:39 - [cf4dcbad] GET /api/chat/history/sess_70c30c2f90b1483b started | client=127.0.0.1
+2026-10-03 13:43:40.804 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_70c30c2f90b1483b, user_id=probe_line1_B1_bmuryux5s
+2026-10-03 13:43:40.805 | INFO     | app.middleware.logging_middleware:dispatch:48 - [cf4dcbad] GET /api/chat/history/sess_70c30c2f90b1483b completed | status=403 | duration=96.5ms
+INFO:     127.0.0.1:62050 - "GET /api/chat/history/sess_70c30c2f90b1483b HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:40.808 | INFO     | app.middleware.logging_middleware:dispatch:39 - [7d4a9cdd] GET /api/chat/history/sess_f5255cb287994de6 started | client=127.0.0.1
+2026-10-03 13:43:40.882 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_f5255cb287994de6, user_id=probe_line1_B1_bmuryux5s
+2026-10-03 13:43:40.882 | INFO     | app.middleware.logging_middleware:dispatch:48 - [7d4a9cdd] GET /api/chat/history/sess_f5255cb287994de6 completed | status=403 | duration=73.9ms
+INFO:     127.0.0.1:62051 - "GET /api/chat/history/sess_f5255cb287994de6 HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:40.886 | INFO     | app.middleware.logging_middleware:dispatch:39 - [06c156bc] GET /api/chat/history/sess_8bc4b21f541d4e53 started | client=127.0.0.1
+2026-10-03 13:43:40.955 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=20, session_tenant=21, session_id=sess_8bc4b21f541d4e53, user_id=probe_line1_A1_bmuryux5s
+2026-10-03 13:43:40.956 | INFO     | app.middleware.logging_middleware:dispatch:48 - [06c156bc] GET /api/chat/history/sess_8bc4b21f541d4e53 completed | status=403 | duration=69.8ms
+INFO:     127.0.0.1:62050 - "GET /api/chat/history/sess_8bc4b21f541d4e53 HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:40.959 | INFO     | app.middleware.logging_middleware:dispatch:39 - [c226d076] GET /api/chat/history/sess_965f96ec86f04cc4 started | client=127.0.0.1
+2026-10-03 13:43:41.038 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_965f96ec86f04cc4, user_id=probe_line1_B1_bmuryux5s
+2026-10-03 13:43:41.039 | INFO     | app.middleware.logging_middleware:dispatch:48 - [c226d076] GET /api/chat/history/sess_965f96ec86f04cc4 completed | status=403 | duration=79.4ms
+INFO:     127.0.0.1:62051 - "GET /api/chat/history/sess_965f96ec86f04cc4 HTTP/1.1" 403 Forbidden
+2026-10-03 13:43:41.044 | INFO     | app.middleware.logging_middleware:dispatch:39 - [15df82a6] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:43:41.045 | WARNING  | app.utils.auth:verify_service_token:130 - Service token authentication failed: missing X-Service-Token header
+2026-10-03 13:43:41.045 | INFO     | app.middleware.logging_middleware:dispatch:48 - [15df82a6] GET /api/internal/tools completed | status=401 | duration=1.4ms
+INFO:     127.0.0.1:62050 - "GET /api/internal/tools HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:41.053 | INFO     | app.middleware.logging_middleware:dispatch:39 - [2154e608] POST /api/internal/tools/execute started | client=127.0.0.1
+2026-10-03 13:43:41.055 | WARNING  | app.utils.auth:verify_service_token:130 - Service token authentication failed: missing X-Service-Token header
+2026-10-03 13:43:41.055 | INFO     | app.middleware.logging_middleware:dispatch:48 - [2154e608] POST /api/internal/tools/execute completed | status=401 | duration=2.2ms
+INFO:     127.0.0.1:62051 - "POST /api/internal/tools/execute HTTP/1.1" 401 Unauthorized
+2026-10-03 13:43:41.062 | INFO     | app.middleware.logging_middleware:dispatch:39 - [d08db5bb] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:43:41.069 | INFO     | app.middleware.logging_middleware:dispatch:48 - [d08db5bb] GET /api/internal/tools completed | status=200 | duration=6.3ms
+INFO:     127.0.0.1:62050 - "GET /api/internal/tools HTTP/1.1" 200 OK
+2026-10-03 13:43:59.596 | INFO     | app.middleware.logging_middleware:dispatch:39 - [f5710c40] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:59.682 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_70cc783ce2d04e9c tenant=20
+2026-10-03 13:43:59.683 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_70cc783ce2d04e9c, user_id=probe_line1_A1_bmuryvdtd, tenant_id=20
+2026-10-03 13:43:59.820 | INFO     | app.middleware.logging_middleware:dispatch:48 - [f5710c40] POST /api/chat/sessions completed | status=200 | duration=219.9ms
+INFO:     127.0.0.1:62107 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:43:59.865 | INFO     | app.middleware.logging_middleware:dispatch:39 - [b1cde2ee] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:43:59.951 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_7e6adeeae6704c51 tenant=21
+2026-10-03 13:43:59.953 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_7e6adeeae6704c51, user_id=probe_line1_B1_bmuryvdtd, tenant_id=21
+2026-10-03 13:44:00.136 | INFO     | app.middleware.logging_middleware:dispatch:48 - [b1cde2ee] POST /api/chat/sessions completed | status=200 | duration=270.3ms
+INFO:     127.0.0.1:62108 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:00.559 | INFO     | app.middleware.logging_middleware:dispatch:39 - [4cea3971] GET /api/chat/history/sess_70cc783ce2d04e9c started | client=127.0.0.1
+2026-10-03 13:44:00.634 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_70cc783ce2d04e9c, user_id=probe_line1_B1_bmuryvdtd
+2026-10-03 13:44:00.636 | INFO     | app.middleware.logging_middleware:dispatch:48 - [4cea3971] GET /api/chat/history/sess_70cc783ce2d04e9c completed | status=403 | duration=76.1ms
+INFO:     127.0.0.1:62107 - "GET /api/chat/history/sess_70cc783ce2d04e9c HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:00.643 | INFO     | app.middleware.logging_middleware:dispatch:39 - [265d8f8f] PUT /api/chat/sessions/sess_70cc783ce2d04e9c/close started | client=127.0.0.1
+2026-10-03 13:44:00.730 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 关闭 attempt: user_tenant=21, session_tenant=20, session_id=sess_70cc783ce2d04e9c, user_id=probe_line1_B1_bmuryvdtd
+2026-10-03 13:44:00.730 | INFO     | app.middleware.logging_middleware:dispatch:48 - [265d8f8f] PUT /api/chat/sessions/sess_70cc783ce2d04e9c/close completed | status=403 | duration=87.1ms
+INFO:     127.0.0.1:62108 - "PUT /api/chat/sessions/sess_70cc783ce2d04e9c/close HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:00.738 | INFO     | app.middleware.logging_middleware:dispatch:39 - [14941a8b] DELETE /api/chat/sessions/sess_70cc783ce2d04e9c started | client=127.0.0.1
+2026-10-03 13:44:00.826 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 删除 attempt: user_tenant=21, session_tenant=20, session_id=sess_70cc783ce2d04e9c, user_id=probe_line1_B1_bmuryvdtd
+2026-10-03 13:44:00.827 | INFO     | app.middleware.logging_middleware:dispatch:48 - [14941a8b] DELETE /api/chat/sessions/sess_70cc783ce2d04e9c completed | status=403 | duration=88.7ms
+INFO:     127.0.0.1:62107 - "DELETE /api/chat/sessions/sess_70cc783ce2d04e9c HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:01.004 | INFO     | app.middleware.logging_middleware:dispatch:39 - [20f749db] GET /api/chat/history/sess_70cc783ce2d04e9c started | client=127.0.0.1
+2026-10-03 13:44:01.115 | WARNING  | app.api.chat:_guard_session:405 - [chat/guard] Unauthorized 访问 attempt: user_id=probe_line1_A2_bmuryvdtd, session_owner=probe_line1_A1_bmuryvdtd, session_id=sess_70cc783ce2d04e9c, tenant_id=20
+2026-10-03 13:44:01.119 | INFO     | app.middleware.logging_middleware:dispatch:48 - [20f749db] GET /api/chat/history/sess_70cc783ce2d04e9c completed | status=403 | duration=114.5ms
+INFO:     127.0.0.1:62108 - "GET /api/chat/history/sess_70cc783ce2d04e9c HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:01.131 | INFO     | app.middleware.logging_middleware:dispatch:39 - [2437ff9b] GET /api/chat/history/sess_70cc783ce2d04e9c started | client=127.0.0.1
+2026-10-03 13:44:01.329 | INFO     | app.middleware.logging_middleware:dispatch:48 - [2437ff9b] GET /api/chat/history/sess_70cc783ce2d04e9c completed | status=200 | duration=197.4ms
+INFO:     127.0.0.1:62107 - "GET /api/chat/history/sess_70cc783ce2d04e9c HTTP/1.1" 200 OK
+2026-10-03 13:44:01.868 | INFO     | app.middleware.logging_middleware:dispatch:39 - [8521d6bc] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:01.871 | WARNING  | app.utils.auth:get_current_user:460 - Authentication failed: error parsing user identity - 1 validation error for UserIdentity
+tenant_id
+  Input should be a valid integer [type=int_type, input_value=None, input_type=NoneType]
+    For further information visit https://errors.pydantic.dev/2.13/v/int_type
+2026-10-03 13:44:01.878 | INFO     | app.middleware.logging_middleware:dispatch:48 - [8521d6bc] GET /api/chat/sessions completed | status=401 | duration=9.2ms
+INFO:     127.0.0.1:62108 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:44:01.914 | INFO     | app.middleware.logging_middleware:dispatch:39 - [16962ba3] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:01.919 | WARNING  | app.utils.auth:get_current_user:375 - Authentication failed: no token provided (DEBUG=False, x-debug-role='customer'), client_ip=127.0.0.1
+2026-10-03 13:44:01.925 | INFO     | app.middleware.logging_middleware:dispatch:48 - [16962ba3] GET /api/chat/sessions completed | status=401 | duration=9.8ms
+INFO:     127.0.0.1:62107 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:44:01.940 | INFO     | app.middleware.logging_middleware:dispatch:39 - [e0328967] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.013 | INFO     | app.middleware.logging_middleware:dispatch:48 - [e0328967] GET /api/chat/sessions completed | status=200 | duration=72.5ms
+INFO:     127.0.0.1:62108 - "GET /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.027 | INFO     | app.middleware.logging_middleware:dispatch:39 - [c55e90e3] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.033 | INFO     | app.middleware.logging_middleware:dispatch:39 - [f3dce10d] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.034 | INFO     | app.middleware.logging_middleware:dispatch:39 - [be43f53c] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.034 | INFO     | app.middleware.logging_middleware:dispatch:39 - [7b369693] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.034 | INFO     | app.middleware.logging_middleware:dispatch:39 - [d2d58a99] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.034 | INFO     | app.middleware.logging_middleware:dispatch:39 - [9bfc591f] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.035 | INFO     | app.middleware.logging_middleware:dispatch:39 - [18f77ca8] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.035 | INFO     | app.middleware.logging_middleware:dispatch:39 - [e4e6e1c0] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.037 | INFO     | app.middleware.logging_middleware:dispatch:39 - [93095544] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.038 | INFO     | app.middleware.logging_middleware:dispatch:39 - [e2e4c9da] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.038 | INFO     | app.middleware.logging_middleware:dispatch:39 - [8b5f8740] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.038 | INFO     | app.middleware.logging_middleware:dispatch:39 - [aecd1b41] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.040 | INFO     | app.middleware.logging_middleware:dispatch:39 - [0604d707] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.040 | INFO     | app.middleware.logging_middleware:dispatch:39 - [940a61a5] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.041 | INFO     | app.middleware.logging_middleware:dispatch:39 - [94218c93] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.046 | INFO     | app.middleware.logging_middleware:dispatch:39 - [adf5697b] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.050 | INFO     | app.middleware.logging_middleware:dispatch:39 - [a1d32f4f] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.051 | INFO     | app.middleware.logging_middleware:dispatch:39 - [e0473dda] POST /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:02.099 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_86ca71dc8b81485c tenant=20
+2026-10-03 13:44:02.102 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_86ca71dc8b81485c, user_id=probe_line1_A2_bmuryvdtd, tenant_id=20
+2026-10-03 13:44:02.110 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_3379419ad6764e1a tenant=20
+2026-10-03 13:44:02.112 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_9e18623c6d1d4ede tenant=20
+2026-10-03 13:44:02.112 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_932032fdad294add tenant=20
+2026-10-03 13:44:02.114 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_3379419ad6764e1a, user_id=probe_line1_A1_bmuryvdtd, tenant_id=20
+2026-10-03 13:44:02.115 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_9e18623c6d1d4ede, user_id=probe_line1_A1_bmuryvdtd, tenant_id=20
+2026-10-03 13:44:02.116 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_932032fdad294add, user_id=probe_line1_A2_bmuryvdtd, tenant_id=20
+2026-10-03 13:44:02.122 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_8f118569a8674a98 tenant=20
+2026-10-03 13:44:02.122 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_9b857ac089ea4d95 tenant=20
+2026-10-03 13:44:02.123 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_8f118569a8674a98, user_id=probe_line1_A2_bmuryvdtd, tenant_id=20
+2026-10-03 13:44:02.123 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_9b857ac089ea4d95, user_id=probe_line1_A2_bmuryvdtd, tenant_id=20
+2026-10-03 13:44:02.124 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_613b6e8608934dad tenant=21
+2026-10-03 13:44:02.125 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_613b6e8608934dad, user_id=probe_line1_B1_bmuryvdtd, tenant_id=21
+2026-10-03 13:44:02.129 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_44527560667846f6 tenant=21
+2026-10-03 13:44:02.129 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_66b0d455a1fd46ac tenant=20
+2026-10-03 13:44:02.129 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_7b049c7115644c29 tenant=20
+2026-10-03 13:44:02.136 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_44527560667846f6, user_id=probe_line1_B1_bmuryvdtd, tenant_id=21
+2026-10-03 13:44:02.137 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_66b0d455a1fd46ac, user_id=probe_line1_A1_bmuryvdtd, tenant_id=20
+2026-10-03 13:44:02.137 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_7b049c7115644c29, user_id=probe_line1_A1_bmuryvdtd, tenant_id=20
+2026-10-03 13:44:02.138 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_253a19ffe6db492e tenant=20
+2026-10-03 13:44:02.138 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_b88e143b10ff4454 tenant=21
+2026-10-03 13:44:02.138 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_760a0ff2f9574256 tenant=20
+2026-10-03 13:44:02.138 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_1bc4d472749e459e tenant=21
+2026-10-03 13:44:02.138 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_72df5b9b572245a7 tenant=21
+2026-10-03 13:44:02.138 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_7385b5c0980a489e tenant=20
+2026-10-03 13:44:02.145 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_fff8631631644b56 tenant=21
+2026-10-03 13:44:02.146 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_253a19ffe6db492e, user_id=probe_line1_A1_bmuryvdtd, tenant_id=20
+2026-10-03 13:44:02.146 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_b88e143b10ff4454, user_id=probe_line1_B1_bmuryvdtd, tenant_id=21
+2026-10-03 13:44:02.147 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_760a0ff2f9574256, user_id=probe_line1_A2_bmuryvdtd, tenant_id=20
+2026-10-03 13:44:02.147 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_1bc4d472749e459e, user_id=probe_line1_B1_bmuryvdtd, tenant_id=21
+2026-10-03 13:44:02.147 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_72df5b9b572245a7, user_id=probe_line1_B1_bmuryvdtd, tenant_id=21
+2026-10-03 13:44:02.147 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_7385b5c0980a489e, user_id=probe_line1_A1_bmuryvdtd, tenant_id=20
+2026-10-03 13:44:02.148 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_fff8631631644b56, user_id=probe_line1_B1_bmuryvdtd, tenant_id=21
+2026-10-03 13:44:02.155 | INFO     | app.memory.session_memory:create_session:130 - [session-memory] Session created | session_id=sess_854b6fd470004be1 tenant=20
+2026-10-03 13:44:02.159 | INFO     | app.api.chat:create_session:2380 - Session created: session_id=sess_854b6fd470004be1, user_id=probe_line1_A2_bmuryvdtd, tenant_id=20
+2026-10-03 13:44:02.170 | INFO     | app.middleware.logging_middleware:dispatch:48 - [be43f53c] POST /api/chat/sessions completed | status=200 | duration=136.2ms
+INFO:     127.0.0.1:62116 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.181 | INFO     | app.middleware.logging_middleware:dispatch:48 - [e0473dda] POST /api/chat/sessions completed | status=200 | duration=129.1ms
+INFO:     127.0.0.1:62131 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.182 | INFO     | app.middleware.logging_middleware:dispatch:48 - [adf5697b] POST /api/chat/sessions completed | status=200 | duration=135.4ms
+INFO:     127.0.0.1:62129 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.194 | INFO     | app.middleware.logging_middleware:dispatch:48 - [c55e90e3] POST /api/chat/sessions completed | status=200 | duration=167.2ms
+INFO:     127.0.0.1:62107 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.196 | INFO     | app.middleware.logging_middleware:dispatch:48 - [9bfc591f] POST /api/chat/sessions completed | status=200 | duration=161.8ms
+INFO:     127.0.0.1:62119 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.202 | INFO     | app.middleware.logging_middleware:dispatch:48 - [93095544] POST /api/chat/sessions completed | status=200 | duration=164.2ms
+INFO:     127.0.0.1:62122 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.202 | INFO     | app.middleware.logging_middleware:dispatch:48 - [a1d32f4f] POST /api/chat/sessions completed | status=200 | duration=151.7ms
+INFO:     127.0.0.1:62130 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.209 | INFO     | app.middleware.logging_middleware:dispatch:48 - [e4e6e1c0] POST /api/chat/sessions completed | status=200 | duration=174.9ms
+INFO:     127.0.0.1:62121 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.210 | INFO     | app.middleware.logging_middleware:dispatch:48 - [7b369693] POST /api/chat/sessions completed | status=200 | duration=175.6ms
+INFO:     127.0.0.1:62117 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.213 | INFO     | app.middleware.logging_middleware:dispatch:48 - [18f77ca8] POST /api/chat/sessions completed | status=200 | duration=178.4ms
+INFO:     127.0.0.1:62120 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.218 | INFO     | app.middleware.logging_middleware:dispatch:48 - [e2e4c9da] POST /api/chat/sessions completed | status=200 | duration=180.0ms
+INFO:     127.0.0.1:62123 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.223 | INFO     | app.middleware.logging_middleware:dispatch:48 - [d2d58a99] POST /api/chat/sessions completed | status=200 | duration=188.1ms
+INFO:     127.0.0.1:62118 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.223 | INFO     | app.middleware.logging_middleware:dispatch:48 - [aecd1b41] POST /api/chat/sessions completed | status=200 | duration=184.6ms
+INFO:     127.0.0.1:62125 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.229 | INFO     | app.middleware.logging_middleware:dispatch:48 - [f3dce10d] POST /api/chat/sessions completed | status=200 | duration=196.1ms
+INFO:     127.0.0.1:62115 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.234 | INFO     | app.middleware.logging_middleware:dispatch:48 - [8b5f8740] POST /api/chat/sessions completed | status=200 | duration=195.7ms
+INFO:     127.0.0.1:62124 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.234 | INFO     | app.middleware.logging_middleware:dispatch:48 - [0604d707] POST /api/chat/sessions completed | status=200 | duration=194.5ms
+INFO:     127.0.0.1:62126 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.238 | INFO     | app.middleware.logging_middleware:dispatch:48 - [940a61a5] POST /api/chat/sessions completed | status=200 | duration=197.5ms
+INFO:     127.0.0.1:62127 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.256 | INFO     | app.middleware.logging_middleware:dispatch:48 - [94218c93] POST /api/chat/sessions completed | status=200 | duration=215.2ms
+INFO:     127.0.0.1:62128 - "POST /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:02.413 | INFO     | app.middleware.logging_middleware:dispatch:39 - [d20bf291] GET /api/chat/history/sess_3379419ad6764e1a started | client=127.0.0.1
+2026-10-03 13:44:02.472 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_3379419ad6764e1a, user_id=probe_line1_B1_bmuryvdtd
+2026-10-03 13:44:02.472 | INFO     | app.middleware.logging_middleware:dispatch:48 - [d20bf291] GET /api/chat/history/sess_3379419ad6764e1a completed | status=403 | duration=59.3ms
+INFO:     127.0.0.1:62107 - "GET /api/chat/history/sess_3379419ad6764e1a HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:02.478 | INFO     | app.middleware.logging_middleware:dispatch:39 - [65a2d90e] GET /api/chat/history/sess_1bc4d472749e459e started | client=127.0.0.1
+2026-10-03 13:44:02.537 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=20, session_tenant=21, session_id=sess_1bc4d472749e459e, user_id=probe_line1_A1_bmuryvdtd
+2026-10-03 13:44:02.538 | INFO     | app.middleware.logging_middleware:dispatch:48 - [65a2d90e] GET /api/chat/history/sess_1bc4d472749e459e completed | status=403 | duration=60.6ms
+INFO:     127.0.0.1:62108 - "GET /api/chat/history/sess_1bc4d472749e459e HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:02.542 | INFO     | app.middleware.logging_middleware:dispatch:39 - [383f000a] GET /api/chat/history/sess_86ca71dc8b81485c started | client=127.0.0.1
+2026-10-03 13:44:02.596 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_86ca71dc8b81485c, user_id=probe_line1_B1_bmuryvdtd
+2026-10-03 13:44:02.597 | INFO     | app.middleware.logging_middleware:dispatch:48 - [383f000a] GET /api/chat/history/sess_86ca71dc8b81485c completed | status=403 | duration=54.5ms
+INFO:     127.0.0.1:62107 - "GET /api/chat/history/sess_86ca71dc8b81485c HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:02.600 | INFO     | app.middleware.logging_middleware:dispatch:39 - [ab08069f] GET /api/chat/history/sess_7b049c7115644c29 started | client=127.0.0.1
+2026-10-03 13:44:02.680 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_7b049c7115644c29, user_id=probe_line1_B1_bmuryvdtd
+2026-10-03 13:44:02.681 | INFO     | app.middleware.logging_middleware:dispatch:48 - [ab08069f] GET /api/chat/history/sess_7b049c7115644c29 completed | status=403 | duration=80.0ms
+INFO:     127.0.0.1:62108 - "GET /api/chat/history/sess_7b049c7115644c29 HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:02.683 | INFO     | app.middleware.logging_middleware:dispatch:39 - [09b5d44c] GET /api/chat/history/sess_b88e143b10ff4454 started | client=127.0.0.1
+2026-10-03 13:44:02.749 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=20, session_tenant=21, session_id=sess_b88e143b10ff4454, user_id=probe_line1_A1_bmuryvdtd
+2026-10-03 13:44:02.750 | INFO     | app.middleware.logging_middleware:dispatch:48 - [09b5d44c] GET /api/chat/history/sess_b88e143b10ff4454 completed | status=403 | duration=66.4ms
+INFO:     127.0.0.1:62107 - "GET /api/chat/history/sess_b88e143b10ff4454 HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:02.753 | INFO     | app.middleware.logging_middleware:dispatch:39 - [7d3fae22] GET /api/chat/history/sess_8f118569a8674a98 started | client=127.0.0.1
+2026-10-03 13:44:02.823 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_8f118569a8674a98, user_id=probe_line1_B1_bmuryvdtd
+2026-10-03 13:44:02.823 | INFO     | app.middleware.logging_middleware:dispatch:48 - [7d3fae22] GET /api/chat/history/sess_8f118569a8674a98 completed | status=403 | duration=69.8ms
+INFO:     127.0.0.1:62108 - "GET /api/chat/history/sess_8f118569a8674a98 HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:02.827 | INFO     | app.middleware.logging_middleware:dispatch:39 - [58086522] GET /api/chat/history/sess_66b0d455a1fd46ac started | client=127.0.0.1
+2026-10-03 13:44:02.893 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_66b0d455a1fd46ac, user_id=probe_line1_B1_bmuryvdtd
+2026-10-03 13:44:02.894 | INFO     | app.middleware.logging_middleware:dispatch:48 - [58086522] GET /api/chat/history/sess_66b0d455a1fd46ac completed | status=403 | duration=66.6ms
+INFO:     127.0.0.1:62107 - "GET /api/chat/history/sess_66b0d455a1fd46ac HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:02.897 | INFO     | app.middleware.logging_middleware:dispatch:39 - [2ebe6f31] GET /api/chat/history/sess_44527560667846f6 started | client=127.0.0.1
+2026-10-03 13:44:02.967 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=20, session_tenant=21, session_id=sess_44527560667846f6, user_id=probe_line1_A1_bmuryvdtd
+2026-10-03 13:44:02.969 | INFO     | app.middleware.logging_middleware:dispatch:48 - [2ebe6f31] GET /api/chat/history/sess_44527560667846f6 completed | status=403 | duration=72.0ms
+INFO:     127.0.0.1:62108 - "GET /api/chat/history/sess_44527560667846f6 HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:02.975 | INFO     | app.middleware.logging_middleware:dispatch:39 - [e4963c00] GET /api/chat/history/sess_9b857ac089ea4d95 started | client=127.0.0.1
+2026-10-03 13:44:03.044 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_9b857ac089ea4d95, user_id=probe_line1_B1_bmuryvdtd
+2026-10-03 13:44:03.045 | INFO     | app.middleware.logging_middleware:dispatch:48 - [e4963c00] GET /api/chat/history/sess_9b857ac089ea4d95 completed | status=403 | duration=69.8ms
+INFO:     127.0.0.1:62107 - "GET /api/chat/history/sess_9b857ac089ea4d95 HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:03.050 | INFO     | app.middleware.logging_middleware:dispatch:39 - [1ff795f7] GET /api/chat/history/sess_253a19ffe6db492e started | client=127.0.0.1
+2026-10-03 13:44:03.120 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_253a19ffe6db492e, user_id=probe_line1_B1_bmuryvdtd
+2026-10-03 13:44:03.123 | INFO     | app.middleware.logging_middleware:dispatch:48 - [1ff795f7] GET /api/chat/history/sess_253a19ffe6db492e completed | status=403 | duration=72.9ms
+INFO:     127.0.0.1:62108 - "GET /api/chat/history/sess_253a19ffe6db492e HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:03.127 | INFO     | app.middleware.logging_middleware:dispatch:39 - [69831498] GET /api/chat/history/sess_72df5b9b572245a7 started | client=127.0.0.1
+2026-10-03 13:44:03.197 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=20, session_tenant=21, session_id=sess_72df5b9b572245a7, user_id=probe_line1_A1_bmuryvdtd
+2026-10-03 13:44:03.198 | INFO     | app.middleware.logging_middleware:dispatch:48 - [69831498] GET /api/chat/history/sess_72df5b9b572245a7 completed | status=403 | duration=70.9ms
+INFO:     127.0.0.1:62107 - "GET /api/chat/history/sess_72df5b9b572245a7 HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:03.206 | INFO     | app.middleware.logging_middleware:dispatch:39 - [758ae157] GET /api/chat/history/sess_760a0ff2f9574256 started | client=127.0.0.1
+2026-10-03 13:44:03.284 | WARNING  | app.api.chat:_guard_session:395 - [chat/guard] Cross-tenant 访问 attempt: user_tenant=21, session_tenant=20, session_id=sess_760a0ff2f9574256, user_id=probe_line1_B1_bmuryvdtd
+2026-10-03 13:44:03.285 | INFO     | app.middleware.logging_middleware:dispatch:48 - [758ae157] GET /api/chat/history/sess_760a0ff2f9574256 completed | status=403 | duration=79.4ms
+INFO:     127.0.0.1:62108 - "GET /api/chat/history/sess_760a0ff2f9574256 HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:03.292 | INFO     | app.middleware.logging_middleware:dispatch:39 - [97359066] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:44:03.295 | WARNING  | app.utils.auth:verify_service_token:130 - Service token authentication failed: missing X-Service-Token header
+2026-10-03 13:44:03.298 | INFO     | app.middleware.logging_middleware:dispatch:48 - [97359066] GET /api/internal/tools completed | status=401 | duration=5.2ms
+INFO:     127.0.0.1:62107 - "GET /api/internal/tools HTTP/1.1" 401 Unauthorized
+2026-10-03 13:44:03.306 | INFO     | app.middleware.logging_middleware:dispatch:39 - [3d4ddaf1] POST /api/internal/tools/execute started | client=127.0.0.1
+2026-10-03 13:44:03.307 | WARNING  | app.utils.auth:verify_service_token:130 - Service token authentication failed: missing X-Service-Token header
+2026-10-03 13:44:03.307 | INFO     | app.middleware.logging_middleware:dispatch:48 - [3d4ddaf1] POST /api/internal/tools/execute completed | status=401 | duration=1.6ms
+INFO:     127.0.0.1:62108 - "POST /api/internal/tools/execute HTTP/1.1" 401 Unauthorized
+2026-10-03 13:44:03.312 | INFO     | app.middleware.logging_middleware:dispatch:39 - [db94fcca] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:44:03.322 | INFO     | app.middleware.logging_middleware:dispatch:48 - [db94fcca] GET /api/internal/tools completed | status=200 | duration=9.8ms
+INFO:     127.0.0.1:62107 - "GET /api/internal/tools HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-10-03 13:44:14.778 | INFO     | app.main:lifespan:128 - Shutting down AI Agent Service
+2026-10-03 13:44:14.797 | INFO     | app.utils.redis_client:close_redis:62 - Redis connection pool closed
+2026-10-03 13:44:14.798 | INFO     | app.main:lifespan:133 - Redis connection closed
+2026-10-03 13:44:15.096 | INFO     | app.utils.database:close_db:109 - Database connection closed
+2026-10-03 13:44:15.097 | INFO     | app.main:lifespan:140 - Database connection closed
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48361]

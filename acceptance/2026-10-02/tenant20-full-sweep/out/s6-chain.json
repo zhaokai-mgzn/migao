@@ -1,0 +1,211 @@
+[
+  {
+    "id": "CH-01",
+    "name": "链路①：建商品/分类/SKU（库存起点 0）",
+    "status": "pass",
+    "detail": "products#16bc7029d314663f661197346718da9e（分类 ef6b536224c2f000b263ccb50b04b0c3）；product_skus#2106048724734005249 现货=0.0 单价=68.00",
+    "evidence": [
+      "POST /api/admin/categories",
+      "POST /api/admin/products",
+      "SQL: select * from product_skus where id=2106048724734005249"
+    ],
+    "at": "2026-10-02T15:48:39.799Z"
+  },
+  {
+    "id": "CH-02",
+    "name": "链路②：建入库单（草稿，未动库存）",
+    "status": "pass",
+    "detail": "inbound_orders#RK-20261002-0003 status=draft；过账前：SKU 现货 0.0 / 批次 0 个 0 米 / 台账 2 条",
+    "evidence": [
+      "POST /api/admin/inbound-orders",
+      "SQL: select status from inbound_orders where id='1feafd32c5763055a96d84c67b731cb3'"
+    ],
+    "at": "2026-10-02T15:48:40.146Z"
+  },
+  {
+    "id": "CH-03",
+    "name": "链路③：**入库过账**（状态 + 批次 + 现货 + 台账 四联）",
+    "status": "pass",
+    "detail": "inbound_orders.status=draft→posted；product_skus.stock 0.0→100.0；stock_batches 0→1 个（批次号 PC-20261002-0001｜数量 100.0｜单价 12.5000｜金额 1250.0000｜缸号 DYE-118362｜来源 RK-20261002-0003）；stock_ledger_entries 2→3 条（inbound delta=100.0 0.0→100.0，ref=RK-20261002-0003，操作人=13870217889）",
+    "evidence": [
+      "PATCH /api/admin/inbound-orders/1feafd32c5763055a96d84c67b731cb3 {action:'post'}",
+      "SQL: select * from stock_batches where sku_id=2106048724734005249",
+      "SQL: select * from stock_ledger_entries where sku_id=2106048724734005249"
+    ],
+    "at": "2026-10-02T15:48:41.137Z"
+  },
+  {
+    "id": "CH-04",
+    "name": "链路③b：移动加权平均成本口径正确",
+    "status": "pass",
+    "detail": "台账 avg_cost null → 12.5000（过账前现货 0.0、本次入库 100.0@12.5000）⇒ 与加权平均公式一致；成本金额 1250.0000",
+    "evidence": [
+      "SQL: select avg_cost_before, avg_cost_after, cost_amount from stock_ledger_entries where sku_id=2106048724734005249"
+    ],
+    "at": "2026-10-02T15:48:41.138Z"
+  },
+  {
+    "id": "CH-05",
+    "name": "链路③c：批次查询端点可见新批次",
+    "status": "pass",
+    "detail": "GET /api/admin/inbound-orders/batches?skuId= → 1 条（）",
+    "evidence": [
+      "GET /api/admin/inbound-orders/batches"
+    ],
+    "at": "2026-10-02T15:48:41.260Z"
+  },
+  {
+    "id": "CH-06",
+    "name": "链路④：下单**引用本链路入库的商品**（SKU 随加工信息带下）",
+    "status": "pass",
+    "detail": "orders#20261002267720003；order_items.product_id=16bc7029d314663f661197346718da9e（= 入库批次同一商品）；数量 10.00@68.00；processing_info 含本链路 skuId=false；SKU 现货 100.0→100.0（下单不扣减 —— 扣减发生在加工备料/发货）",
+    "evidence": [
+      "POST /api/admin/orders",
+      "SQL: select * from order_items where order_id='f51a2222310fcd3a57229ebd2b0cdb20'"
+    ],
+    "at": "2026-10-02T15:48:42.297Z"
+  },
+  {
+    "id": "CH-07",
+    "name": "链路④b：确认收款 → 已确认",
+    "status": "pass",
+    "detail": "HTTP 200；DB status=confirmed",
+    "evidence": [
+      "PUT /api/admin/orders/{id}/payment"
+    ],
+    "at": "2026-10-02T15:48:42.659Z"
+  },
+  {
+    "id": "CH-08",
+    "name": "链路⑤：生成加工单 + 实例化工序 + 二维码",
+    "status": "pass",
+    "detail": "processing_orders#JG-20261002-5093 status=generated；工序实例 12 行（解析面 12 道 / 部位 1 个）；qr_token=f13c1fe4910d…（32 位hex=true）",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "GET /api/admin/production/orders/f51a2222310fcd3a57229ebd2b0cdb20/operations",
+      "SQL: select * from processing_position_operations where processing_order_id='b0c22f9d776a7e527700dacc1dd69bbb'"
+    ],
+    "at": "2026-10-02T15:48:43.943Z"
+  },
+  {
+    "id": "CH-09",
+    "name": "链路⑤b：生产看板页面显示该加工单（页面证据）",
+    "status": "pass",
+    "detail": "DOM 文本含加工单号 JG-20261002-5093",
+    "evidence": [
+      "screenshots/s6-01-production-board.png",
+      "GET http://localhost:3001/production"
+    ],
+    "at": "2026-10-02T15:48:47.351Z"
+  },
+  {
+    "id": "CH-10",
+    "name": "链路⑥：**发货守卫正向生效**（含加工项且加工单未完成 ⇒ 页面阻断、不放表单）",
+    "status": "pass",
+    "detail": "页面文案命中「须先完成加工单后再发货」；发货表单可见=false；加工单 status=generated",
+    "evidence": [
+      "screenshots/s6-02-ship-guard-blocked.png",
+      "OrderShipGuard.assertProcessingCompletedBeforeShip"
+    ],
+    "at": "2026-10-02T15:48:50.651Z"
+  },
+  {
+    "id": "CH-11",
+    "name": "链路⑦：B 端 H5 扫本链路的码 → 开工记账（页面 → DB）",
+    "status": "pass",
+    "detail": "扫 qr_token → 工序「精裁」；本加工单记账 0 → 1 条（精裁-布 10.00 @0.40，工人=验收工人790472，工作日=2026-10-02）；回执：已领活 · 下一道：三边",
+    "evidence": [
+      "screenshots/s6-03-h5-report-on-chain.png",
+      "POST /api/worker/production/scan/complete"
+    ],
+    "at": "2026-10-02T15:49:58.560Z"
+  },
+  {
+    "id": "CH-12",
+    "name": "链路⑦b：工序全部领走 → 加工单 completed（发货前置条件达成）",
+    "status": "pass",
+    "detail": "进度 12/12（12 轮补齐）；processing_orders.status=completed；累计记账 12 条 / 数量 75.00 / 计件金额 31.4000",
+    "evidence": [
+      "GET /api/admin/production/orders/f51a2222310fcd3a57229ebd2b0cdb20/operations",
+      "SQL: select status from processing_orders where id='b0c22f9d776a7e527700dacc1dd69bbb'"
+    ],
+    "at": "2026-10-02T15:50:11.125Z"
+  },
+  {
+    "id": "CH-13",
+    "name": "链路⑧：**商家侧发货页真实发货**（页面操作 → orders 转已发货 + 物流留痕）",
+    "status": "pass",
+    "detail": "orders.status=confirmed→shipped（物流类型=express 承运=顺丰速运）；页面出现「发货成功」=true；order_shipments 行数=0（商家侧路径**不**写该表 —— 它归工人侧发货，见 CH-18）",
+    "evidence": [
+      "screenshots/s6-04-ship-form.png",
+      "screenshots/s6-05-ship-result.png",
+      "SQL: select status, logistics_company from orders where id='f51a2222310fcd3a57229ebd2b0cdb20'"
+    ],
+    "at": "2026-10-02T15:50:18.753Z"
+  },
+  {
+    "id": "CH-17",
+    "name": "链路⑩：**派工指定批次 ⇒ 入库批次被本单消耗**（闭环「入库的货被这单吃掉」）",
+    "status": "pass",
+    "detail": "generate(batches=[{orderId,itemId,batchNo:PC-20261002-0001}]) HTTP 200；stock_batch_consumptions 新行：批次 PC-20261002-0001 delta=-20.0 100.0→80.0（原因 processing_order，订单 20261002950190004，加工单 JG-20261002-5094，操作人 13870217889）；SKU 现货 100.0→100.0（下降=false）",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate {batches:[...]}",
+      "SQL: select * from stock_batch_consumptions where sku_id=2106048724734005249",
+      "SQL: select stock from product_skus where id=2106048724734005249"
+    ],
+    "at": "2026-10-02T15:50:20.741Z"
+  },
+  {
+    "id": "CH-18",
+    "name": "链路⑪：**工人侧发货**（打包 → 发货，实发明细落库）",
+    "status": "pass",
+    "detail": "pack HTTP 200（orders.status=packed）；ship HTTP 200；order_shipments#SH202610022350217973 来源=worker 打包人=验收工人790472 发货人=验收工人790472 运单=SF118362W；实发 1 行 / 5.00 米；orders.status=shipped",
+    "evidence": [
+      "POST /api/worker/shipment/orders/{id}/pack",
+      "POST /api/worker/shipment/orders/{id}/ship",
+      "SQL: select * from order_shipments where order_id='e934d5a84e90c824e938a4e0a5cb7ee5'",
+      "SQL: select * from order_shipment_items where shipment_id='fed594555616d536ded68a7d2bc755a3'"
+    ],
+    "at": "2026-10-02T15:50:22.133Z"
+  },
+  {
+    "id": "CH-14",
+    "name": "链路⑨：**全链路闭合快照**（商品→入库过账→批次→订单→加工单→工序→报工→发货→库存）",
+    "status": "pass",
+    "detail": "商品 链路商品118362(on_shelf)｜入库单 RK-20261002-0003(posted) 批次 1 个｜订单 20261002267720003(shipped)｜加工单 JG-20261002-5093(completed) 工序 12/12｜报工 12 条 75.00 米 计件 31.4000 元｜发货单 undefined 运单 undefined｜SKU 现货 100.0（入库 100，已出 0.00）",
+    "evidence": [
+      "out/s6-chain-flow.json"
+    ],
+    "at": "2026-10-02T15:50:23.285Z"
+  },
+  {
+    "id": "CH-15",
+    "name": "链路⑨b：库存台账贯连（入库 + 出库都在同一 SKU 的台账上）",
+    "status": "pass",
+    "detail": "台账 1 条：inbound 100.0→100.0｜批次消耗 1 条",
+    "evidence": [
+      "SQL: select * from stock_ledger_entries where sku_id=2106048724734005249 order by created_at",
+      "SQL: select * from stock_batch_consumptions where tenant_id=20"
+    ],
+    "at": "2026-10-02T15:50:23.285Z"
+  },
+  {
+    "id": "CH-16",
+    "name": "日志侧：链路各环节留痕",
+    "status": "pass",
+    "detail": "命中 10 行；示例：2026-10-02 12:07:54.108 [http-nio-8080-exec-111] INFO  c.m.a.service.InboundOrderService - 入库单已过账: tenant=24, inboundNo=RK-20261002-0017, batchNos=[PC",
+    "evidence": [
+      "L214772: 2026-10-02 11:59:31.465 [http-nio-8080-exec-102] INFO  c.m.a.controller.ProductController - 创建商品: name=过账红绿红569915, tenantId=24",
+      "L214777: 2026-10-02 11:59:31.569 [http-nio-8080-exec-102] DEBUG c.m.a.mapper.ProductMapper.insert - ==> Parameters: 2a00cee1a1e113d74f6b24ec886f24fc(String), 24(Long), 过账红绿红569915(String), ",
+      "L214803: 2026-10-02 11:59:31.719 [http-nio-8080-exec-102] INFO  c.migao.admin.service.ProductService - 创建商品成功: id=2a00cee1a1e113d74f6b24ec886f24fc, name=过账红绿红569915",
+      "L214846: 2026-10-02 11:59:32.181 [http-nio-8080-exec-96] INFO  c.m.a.service.InboundOrderService - 入库单已建（草稿，未动库存）: tenant=24, inboundNo=RK-20261002-0015, items=1, total=0, operator=acc_oper",
+      "L216402: 2026-10-02 12:00:43.413 [http-nio-8080-exec-96] INFO  c.m.a.service.InboundOrderService - 入库单已建（草稿，未动库存）: tenant=24, inboundNo=RK-20261002-0016, items=1, total=9.9, operator=acc_op",
+      "L216538: 2026-10-02 12:00:53.139 [http-nio-8080-exec-101] DEBUG c.m.a.m.StockLedgerMapper.insert - ==> Parameters: 24(Long), 2265f6f42235d759abb66fbc0b0da6a9(String), 2105870329551224833(Lo",
+      "L216553: 2026-10-02 12:00:53.190 [http-nio-8080-exec-101] INFO  c.m.a.service.InboundOrderService - 入库单已过账: tenant=24, inboundNo=RK-20261002-0016, batchNos=[PC-20261002-0016], items=1, tota",
+      "L225605: 2026-10-02 12:07:44.138 [http-nio-8080-exec-117] INFO  c.m.a.service.InboundOrderService - 入库单已建（草稿，未动库存）: tenant=24, inboundNo=RK-20261002-0017, items=1, total=9.9, operator=acc_o",
+      "L225741: 2026-10-02 12:07:54.057 [http-nio-8080-exec-111] DEBUG c.m.a.m.StockLedgerMapper.insert - ==> Parameters: 24(Long), 1ff719b55d178220f0e924f2554fd2e9(String), 2105871169477378049(Lo",
+      "L225756: 2026-10-02 12:07:54.108 [http-nio-8080-exec-111] INFO  c.m.a.service.InboundOrderService - 入库单已过账: tenant=24, inboundNo=RK-20261002-0017, batchNos=[PC-20261002-0017], items=1, tota"
+    ],
+    "at": "2026-10-02T15:50:23.445Z"
+  }
+]

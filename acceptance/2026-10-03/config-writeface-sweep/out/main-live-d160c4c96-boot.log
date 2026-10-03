@@ -1,0 +1,939 @@
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::               (v3.5.16)
+
+2026-10-03 09:37:18.554 [main] INFO  com.migao.admin.AdminApiApplication - Starting AdminApiApplication using Java 21.0.12 with PID 74399 (/Users/guangzhen.zk/migao-wt/main-live/backend/admin-api/target/classes started by guangzhen.zk in /Users/guangzhen.zk/migao-wt/main-live/backend/admin-api)
+2026-10-03 09:37:18.555 [main] INFO  com.migao.admin.AdminApiApplication - No active profile set, falling back to 1 default profile: "default"
+2026-10-03 09:37:19.280 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Multiple Spring Data modules found, entering strict repository configuration mode
+2026-10-03 09:37:19.281 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2026-10-03 09:37:19.312 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Finished Spring Data repository scanning in 22 ms. Found 0 Redis repository interfaces.
+2026-10-03 09:37:19.823 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat initialized with port 8080 (http)
+2026-10-03 09:37:19.834 [main] INFO  o.a.catalina.core.StandardService - Starting service [Tomcat]
+2026-10-03 09:37:19.834 [main] INFO  o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/10.1.55]
+2026-10-03 09:37:19.867 [main] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring embedded WebApplicationContext
+2026-10-03 09:37:19.868 [main] INFO  o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 1289 ms
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+2026-10-03 09:37:19.880 [main] INFO  c.m.admin.security.JwtTokenProvider - RSA 密钥加载成功（RS256）
+2026-10-03 09:37:19.881 [main] INFO  c.m.admin.security.JwtTokenProvider - JWT 使用 RS256 (RSA) 算法
+ _ _   |_  _ _|_. ___ _ |    _ 
+| | |\/|_)(_| | |_\  |_)||_|_\ 
+     /               |         
+                        3.5.16 
+2026-10-03 09:37:20.474 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter jwtFilterRegistration was not registered (disabled)
+2026-10-03 09:37:20.474 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter passwordChangeRequiredFilterRegistration was not registered (disabled)
+2026-10-03 09:37:20.474 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter workerSessionFilterRegistration was not registered (disabled)
+2026-10-03 09:37:20.474 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter serviceTokenFilterRegistration was not registered (disabled)
+2026-10-03 09:37:21.209 [main] WARN  com.migao.admin.service.SmsService - [POC 模式] SMS 万能验证码已启用（bypass-code 非空）：任意手机号可使用万能码 123456 登录。接入真实短信服务后必须移除该机制，见技术债 Issue #2616。
+2026-10-03 09:37:21.564 [main] INFO  com.migao.admin.config.OssConfig - 初始化 OSS 客户端: endpoint=oss-cn-hangzhou.aliyuncs.com, bucket=, permanentBucket=ai-customer-service-admin-dev, temporaryBucket=
+2026-10-03 09:37:22.047 [main] INFO  o.s.b.a.e.web.EndpointLinksResolver - Exposing 3 endpoints beneath base path '/actuator'
+2026-10-03 09:37:22.075 [main] INFO  o.s.s.c.a.a.c.InitializeAuthenticationProviderBeanManagerConfigurer$InitializeAuthenticationProviderManagerConfigurer - Global AuthenticationManager configured with AuthenticationProvider bean with name authenticationProvider
+2026-10-03 09:37:22.076 [main] WARN  o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer - Global AuthenticationManager configured with an AuthenticationProvider bean. UserDetailsService beans will not be used by Spring Security for automatically configuring username/password login. Consider removing the AuthenticationProvider bean. Alternatively, consider using the UserDetailsService in a manually instantiated DaoAuthenticationProvider. If the current configuration is intentional, to turn off this warning, increase the logging level of 'org.springframework.security.config.annotation.authentication.configuration.InitializeUserDetailsBeanManagerConfigurer' to ERROR
+2026-10-03 09:37:22.228 [main] INFO  c.b.m.e.s.MybatisPlusApplicationContextAware - Register ApplicationContext instances org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext@58ffcbd7
+2026-10-03 09:37:22.563 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port 8080 (http) with context path '/'
+2026-10-03 09:37:22.576 [main] INFO  com.migao.admin.AdminApiApplication - Started AdminApiApplication in 4.244 seconds (process running for 4.428)
+2026-10-03 09:37:22.618 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Starting...
+2026-10-03 09:37:22.771 [main] INFO  com.zaxxer.hikari.pool.HikariPool - HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@248227db
+2026-10-03 09:37:22.775 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Start completed.
+2026-10-03 09:37:22.807 [main] INFO  c.migao.admin.config.MigrationRunner - ⏭️ 跳过基线 schema.sql：台账已有该键（幂等）
+2026-10-03 09:37:22.822 [main] INFO  c.m.a.c.PlatformAdminInitializer - 未配置 platform.admin.phone，跳过平台管理员初始化
+2026-10-03 09:37:22.822 [main] WARN  o.s.c.events.SpringDocAppInitializer - SpringDoc /v3/api-docs endpoint is enabled by default. To disable it in production, set the property 'springdoc.api-docs.enabled=false'
+2026-10-03 09:37:22.822 [main] WARN  o.s.c.events.SpringDocAppInitializer - SpringDoc /swagger-ui.html endpoint is enabled by default. To disable it in production, set the property 'springdoc.swagger-ui.enabled=false'
+2026-10-03 09:37:30.246 [http-nio-8080-exec-1] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-10-03 09:37:30.246 [http-nio-8080-exec-1] INFO  o.s.web.servlet.DispatcherServlet - Initializing Servlet 'dispatcherServlet'
+2026-10-03 09:37:30.248 [http-nio-8080-exec-1] INFO  o.s.web.servlet.DispatcherServlet - Completed initialization in 1 ms
+2026-10-03 09:37:30.694 [http-nio-8080-exec-2] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 09:37:30.698 [http-nio-8080-exec-2] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 09:37:30.698 [http-nio-8080-exec-2] WARN  com.migao.admin.service.SmsService - [POC 模式] 使用万能验证码通过校验: phone=138****7889（接入真实短信服务后必须移除 bypass，Issue #2616）
+2026-10-03 09:37:30.789 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, phone, password_hash, nickname, avatar, status, last_login_at, created_at, updated_at FROM platform_admins WHERE (phone = ?)
+2026-10-03 09:37:30.799 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==> Parameters: 13870217889(String)
+2026-10-03 09:37:30.816 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - <==      Total: 0
+2026-10-03 09:37:30.817 [http-nio-8080-exec-2] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - ==>  Preparing: SELECT id, tenant_id, phone, username, password_hash, nickname, avatar, role, worker_no, session_ttl, status, must_change_password, created_at, updated_at, deleted FROM users WHERE phone = ? AND deleted = 0 AND status = 'active' ORDER BY updated_at DESC
+2026-10-03 09:37:30.817 [http-nio-8080-exec-2] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - ==> Parameters: 13870217889(String)
+2026-10-03 09:37:30.830 [http-nio-8080-exec-2] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - <==      Total: 1
+2026-10-03 09:37:30.837 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:30.838 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:30.850 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:30.913 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.TenantMapper.selectById - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE id = ? AND deleted = 0
+2026-10-03 09:37:30.914 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.TenantMapper.selectById - ==> Parameters: 20(Long)
+2026-10-03 09:37:30.927 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.TenantMapper.selectById - <==      Total: 1
+2026-10-03 09:37:30.932 [http-nio-8080-exec-2] DEBUG c.m.a.m.T.selectList - ==>  Preparing: SELECT id, tenant_id, bot_name, greeting_template, business_hours, timezone, auto_handoff_keywords, emotion_handoff, ai_fallback_handoff, ai_fallback_threshold, after_hours_mode, after_hours_message, recommend_strategy, recommend_count, recommend_trigger, quick_replies, channel_configs, created_at, updated_at, deleted FROM tenant_ai_configs WHERE deleted = 0 AND (tenant_id = ?) AND tenant_id = 20 LIMIT 1
+2026-10-03 09:37:30.933 [http-nio-8080-exec-2] DEBUG c.m.a.m.T.selectList - ==> Parameters: 20(Long)
+2026-10-03 09:37:30.945 [http-nio-8080-exec-2] DEBUG c.m.a.m.T.selectList - <==      Total: 1
+2026-10-03 09:37:33.562 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:33.562 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:33.574 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:33.585 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, composition_key, items, unit_price, status, sort_order, source, created_at, updated_at, deleted FROM processing_fee_combinations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:33.585 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectById - ==> Parameters: fd3751f59ea14a47891e54bd8afc5db4(String)
+2026-10-03 09:37:33.596 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:33.721 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:33.722 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:33.733 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:33.734 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, composition_key, items, unit_price, status, sort_order, source, created_at, updated_at, deleted FROM processing_fee_combinations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:33.734 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectById - ==> Parameters: f5a9ceb04778ec2b386a0b00309f3002(String)
+2026-10-03 09:37:33.745 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:33.877 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:33.877 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:33.887 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:33.888 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, composition_key, items, unit_price, status, sort_order, source, created_at, updated_at, deleted FROM processing_fee_combinations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:33.888 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectById - ==> Parameters: faa15dc832853601bff60c2c0e3d5d58(String)
+2026-10-03 09:37:33.898 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:34.014 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:34.014 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:34.027 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:34.028 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, composition_key, items, unit_price, status, sort_order, source, created_at, updated_at, deleted FROM processing_fee_combinations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:34.028 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectById - ==> Parameters: 2ec0e27d06c867e2c908e6711c148cd2(String)
+2026-10-03 09:37:34.038 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:34.166 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:34.167 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:34.187 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:34.188 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, composition_key, items, unit_price, status, sort_order, source, created_at, updated_at, deleted FROM processing_fee_combinations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:34.188 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - ==> Parameters: 651638e76cf81c1fdd43e664be499b7d(String)
+2026-10-03 09:37:34.199 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:34.330 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:34.331 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:34.351 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:34.352 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, composition_key, items, unit_price, status, sort_order, source, created_at, updated_at, deleted FROM processing_fee_combinations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:34.352 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectById - ==> Parameters: 02b5de975f9c9b2470e3e9d0cc32433d(String)
+2026-10-03 09:37:34.375 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:34.479 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:34.479 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:34.500 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:34.501 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, composition_key, items, unit_price, status, sort_order, source, created_at, updated_at, deleted FROM processing_fee_combinations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:34.501 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectById - ==> Parameters: d68f93bb2cba146b45967e6c9786abbe(String)
+2026-10-03 09:37:34.521 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:34.646 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:34.646 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:34.667 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:34.669 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, composition_key, items, unit_price, status, sort_order, source, created_at, updated_at, deleted FROM processing_fee_combinations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:34.669 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectById - ==> Parameters: 93cab3a7ae5cf1eef80235075a8f0499(String)
+2026-10-03 09:37:34.691 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:34.811 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:34.811 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:34.833 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:34.835 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, composition_key, items, unit_price, status, sort_order, source, created_at, updated_at, deleted FROM processing_fee_combinations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:34.835 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - ==> Parameters: afd89e23238ef43ad56285f2016d18d3(String)
+2026-10-03 09:37:34.857 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:35.090 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:35.090 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:35.112 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:35.116 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:35.117 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:35.129 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - <==      Total: 30
+2026-10-03 09:37:35.131 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectCount - ==>  Preparing: SELECT COUNT(*) AS total FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND name = ?) AND tenant_id = 20
+2026-10-03 09:37:35.132 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectCount - ==> Parameters: 20(Long), 0(Integer), 写面横切正对照450181(String)
+2026-10-03 09:37:35.143 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectCount - <==      Total: 1
+2026-10-03 09:37:35.146 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operations (id, tenant_id, name, group_name, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:35.147 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==> Parameters: 4aa9b0c8af8d2243781ba74f340e66a2(String), 20(Long), 写面横切正对照450181(String), 写面探针组(String), position(String), 米(String), 0.55(BigDecimal), false(Boolean), false(Boolean), 999(Integer), active(String), 2026-10-03T09:37:35.143387+08:00(OffsetDateTime), 2026-10-03T09:37:35.143394+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:35.159 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:35.160 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_price_versions (id, tenant_id, operation_id, unit_price, created_at, deleted) VALUES (?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:35.160 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==> Parameters: 231a002b12421aa62dea48ca3d190e25(String), 20(Long), 4aa9b0c8af8d2243781ba74f340e66a2(String), 0.55(BigDecimal), 2026-10-03T09:37:35.159291+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:35.173 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:35.174 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_positions (id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:35.175 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==> Parameters: 7ca06a06dd9ba1aa66b3ccdd9dbd7cae(String), 20(Long), 写面横切正对照450181(String), 通用(String), 0.55(BigDecimal), true(Boolean), active(String), 2026-10-03T09:37:35.173799+08:00(OffsetDateTime), 2026-10-03T09:37:35.173804+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:35.185 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:35.185 [http-nio-8080-exec-2] INFO  c.m.a.s.ProductionOperationCommandService - 新增工序: tenantId=20, name=写面横切正对照450181, unit=米, unitPrice=0.55, positions=[通用]
+2026-10-03 09:37:35.408 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:35.408 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:35.428 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:35.430 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:37:35.430 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:35.442 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:35.444 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:35.445 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:35.460 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:37:35.824 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:35.824 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:35.846 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:35.847 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:35.847 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectById - ==> Parameters: 4aa9b0c8af8d2243781ba74f340e66a2(String)
+2026-10-03 09:37:35.859 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:35.860 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:35.860 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:35.872 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:35.875 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.updateById - ==>  Preparing: UPDATE production_operations SET scope = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:35.875 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.updateById - ==> Parameters: set(String), 2026-10-03T09:37:35.859509+08:00(OffsetDateTime), 4aa9b0c8af8d2243781ba74f340e66a2(String)
+2026-10-03 09:37:35.885 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.updateById - <==    Updates: 1
+2026-10-03 09:37:35.886 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_positions (id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:35.886 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.insert - ==> Parameters: d68b73db1ecab015ec9da890b3367d07(String), 20(Long), 写面横切正对照450181(String), 布帘(String), 0.55(BigDecimal), true(Boolean), active(String), 2026-10-03T09:37:35.885778+08:00(OffsetDateTime), 2026-10-03T09:37:35.885781+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:35.897 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:35.897 [http-nio-8080-exec-4] INFO  c.m.a.s.ProductionOperationCommandService - 存量工序接入部位: tenantId=20, operationId=4aa9b0c8af8d2243781ba74f340e66a2, name=写面横切正对照450181, positions=[布帘], created=1, skipped=0
+2026-10-03 09:37:37.125 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:37.125 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:37.150 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:37.152 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:37:37.152 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:37.165 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:37.170 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:37.170 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:37.185 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:37:37.676 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:37.676 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:37.697 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:37.699 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:37.699 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectById - ==> Parameters: 4aa9b0c8af8d2243781ba74f340e66a2(String)
+2026-10-03 09:37:37.709 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:37.710 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:37.710 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:37.722 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:37.723 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.updateById - ==>  Preparing: UPDATE production_operations SET updated_at = ? WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:37.723 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.updateById - ==> Parameters: 2026-10-03T09:37:37.709333+08:00(OffsetDateTime), 4aa9b0c8af8d2243781ba74f340e66a2(String)
+2026-10-03 09:37:37.735 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.updateById - <==    Updates: 1
+2026-10-03 09:37:37.736 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_positions (id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:37.736 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.insert - ==> Parameters: 3104b8070decde9738d3ac36eeac7a51(String), 20(Long), 写面横切正对照450181(String), 布帘(String), 0.55(BigDecimal), true(Boolean), active(String), 2026-10-03T09:37:37.735646+08:00(OffsetDateTime), 2026-10-03T09:37:37.735650+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:37.747 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:37.747 [http-nio-8080-exec-6] INFO  c.m.a.s.ProductionOperationCommandService - 存量工序接入部位: tenantId=20, operationId=4aa9b0c8af8d2243781ba74f340e66a2, name=写面横切正对照450181, positions=[布帘], created=1, skipped=0
+2026-10-03 09:37:39.439 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:39.439 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:39.459 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:39.461 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:39.462 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - ==> Parameters: 4aa9b0c8af8d2243781ba74f340e66a2(String)
+2026-10-03 09:37:39.471 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:39.474 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, is_default, positions, mainline, status, created_at, updated_at, deleted FROM production_route_templates WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY is_default DESC, created_at ASC, id ASC
+2026-10-03 09:37:39.474 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:39.486 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 2
+2026-10-03 09:37:39.488 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, factor, customer_unit_price, status, created_at, updated_at, deleted FROM production_route_rules WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY priority ASC, id ASC
+2026-10-03 09:37:39.488 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:39.501 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 26
+2026-10-03 09:37:39.502 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:39.502 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:39.515 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:37:39.517 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY logical_name ASC, position ASC
+2026-10-03 09:37:39.517 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:39.529 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:39.532 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET unit_price = ?, applicable = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:39.533 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==> Parameters: null, false(Boolean), 2026-10-03T09:37:39.529558+08:00(OffsetDateTime), 7ca06a06dd9ba1aa66b3ccdd9dbd7cae(String), 20(Long), 0(Integer)
+2026-10-03 09:37:39.544 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:39.544 [http-nio-8080-exec-7] INFO  c.m.a.s.ProductionOperationCommandService - 一键摘格（设为不做）: tenantId=20, operationId=4aa9b0c8af8d2243781ba74f340e66a2, cells=1
+2026-10-03 09:37:39.546 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET deleted = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:39.546 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==> Parameters: 1(Integer), 2026-10-03T09:37:39.529558+08:00(OffsetDateTime), 7ca06a06dd9ba1aa66b3ccdd9dbd7cae(String), 20(Long), 0(Integer)
+2026-10-03 09:37:39.555 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:39.557 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operations SET deleted = ?, updated_at = ? WHERE deleted = 0 AND (id = ?) AND tenant_id = 20
+2026-10-03 09:37:39.557 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==> Parameters: 1(Integer), 2026-10-03T09:37:39.529558+08:00(OffsetDateTime), 4aa9b0c8af8d2243781ba74f340e66a2(String)
+2026-10-03 09:37:39.567 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:39.567 [http-nio-8080-exec-7] INFO  c.m.a.s.ProductionOperationCommandService - 软删工序（一键摘格）: tenantId=20, operationId=4aa9b0c8af8d2243781ba74f340e66a2, name=写面横切正对照450181, 级联软删矩阵行=1
+2026-10-03 09:37:40.564 [http-nio-8080-exec-1] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 09:37:40.564 [http-nio-8080-exec-1] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 09:37:40.564 [http-nio-8080-exec-1] WARN  com.migao.admin.service.SmsService - [POC 模式] 使用万能验证码通过校验: phone=138****7889（接入真实短信服务后必须移除 bypass，Issue #2616）
+2026-10-03 09:37:40.566 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, phone, password_hash, nickname, avatar, status, last_login_at, created_at, updated_at FROM platform_admins WHERE (phone = ?)
+2026-10-03 09:37:40.566 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 13870217889(String)
+2026-10-03 09:37:40.577 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 0
+2026-10-03 09:37:40.577 [http-nio-8080-exec-1] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - ==>  Preparing: SELECT id, tenant_id, phone, username, password_hash, nickname, avatar, role, worker_no, session_ttl, status, must_change_password, created_at, updated_at, deleted FROM users WHERE phone = ? AND deleted = 0 AND status = 'active' ORDER BY updated_at DESC
+2026-10-03 09:37:40.577 [http-nio-8080-exec-1] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - ==> Parameters: 13870217889(String)
+2026-10-03 09:37:40.588 [http-nio-8080-exec-1] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - <==      Total: 1
+2026-10-03 09:37:40.589 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:40.589 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:40.610 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:40.629 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.TenantMapper.selectById - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE id = ? AND deleted = 0
+2026-10-03 09:37:40.629 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.TenantMapper.selectById - ==> Parameters: 20(Long)
+2026-10-03 09:37:40.640 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.TenantMapper.selectById - <==      Total: 1
+2026-10-03 09:37:40.642 [http-nio-8080-exec-1] DEBUG c.m.a.m.T.selectList - ==>  Preparing: SELECT id, tenant_id, bot_name, greeting_template, business_hours, timezone, auto_handoff_keywords, emotion_handoff, ai_fallback_handoff, ai_fallback_threshold, after_hours_mode, after_hours_message, recommend_strategy, recommend_count, recommend_trigger, quick_replies, channel_configs, created_at, updated_at, deleted FROM tenant_ai_configs WHERE deleted = 0 AND (tenant_id = ?) AND tenant_id = 20 LIMIT 1
+2026-10-03 09:37:40.642 [http-nio-8080-exec-1] DEBUG c.m.a.m.T.selectList - ==> Parameters: 20(Long)
+2026-10-03 09:37:40.718 [http-nio-8080-exec-1] DEBUG c.m.a.m.T.selectList - <==      Total: 1
+2026-10-03 09:37:40.761 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:40.762 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:40.783 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:40.785 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:40.785 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:40.798 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - <==      Total: 30
+2026-10-03 09:37:40.799 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectCount - ==>  Preparing: SELECT COUNT(*) AS total FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND name = ?) AND tenant_id = 20
+2026-10-03 09:37:40.799 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectCount - ==> Parameters: 20(Long), 0(Integer), 写面横切工序写面460491(String)
+2026-10-03 09:37:40.810 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectCount - <==      Total: 1
+2026-10-03 09:37:40.811 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operations (id, tenant_id, name, group_name, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:40.811 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==> Parameters: b3651d4cc5e07248ec069d2f14460449(String), 20(Long), 写面横切工序写面460491(String), 写面探针组(String), position(String), 米(String), 0.66(BigDecimal), false(Boolean), false(Boolean), 999(Integer), active(String), 2026-10-03T09:37:40.810543+08:00(OffsetDateTime), 2026-10-03T09:37:40.810547+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:40.822 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:40.823 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_price_versions (id, tenant_id, operation_id, unit_price, created_at, deleted) VALUES (?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:40.823 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==> Parameters: 9b67b0678730c132af782bbfdf4dcafd(String), 20(Long), b3651d4cc5e07248ec069d2f14460449(String), 0.66(BigDecimal), 2026-10-03T09:37:40.822906+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:40.834 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:40.835 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_positions (id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:40.835 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==> Parameters: 4f61e9bd424df0696e9c128b8bee9a6a(String), 20(Long), 写面横切工序写面460491(String), 布帘(String), 0.66(BigDecimal), true(Boolean), active(String), 2026-10-03T09:37:40.834261+08:00(OffsetDateTime), 2026-10-03T09:37:40.834265+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:40.846 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:40.846 [http-nio-8080-exec-2] INFO  c.m.a.s.ProductionOperationCommandService - 新增工序: tenantId=20, name=写面横切工序写面460491, unit=米, unitPrice=0.66, positions=[布帘]
+2026-10-03 09:37:41.078 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:41.078 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:41.100 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:41.101 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:37:41.101 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:41.112 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:41.113 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:41.114 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:41.127 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:37:41.501 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:41.501 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:41.523 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:41.525 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:41.525 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectById - ==> Parameters: b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:41.536 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:41.537 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:41.537 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:41.549 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:41.549 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.updateById - ==>  Preparing: UPDATE production_operations SET scope = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:41.550 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.updateById - ==> Parameters: set(String), 2026-10-03T09:37:41.536567+08:00(OffsetDateTime), b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:41.560 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.updateById - <==    Updates: 1
+2026-10-03 09:37:41.560 [http-nio-8080-exec-4] INFO  c.m.a.s.ProductionOperationCommandService - 存量工序接入部位: tenantId=20, operationId=b3651d4cc5e07248ec069d2f14460449, name=写面横切工序写面460491, positions=[布帘], created=0, skipped=1
+2026-10-03 09:37:43.122 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:43.122 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:43.143 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:43.147 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:43.149 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectById - ==> Parameters: b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:43.161 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:43.164 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:43.164 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:43.176 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:43.178 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.updateById - ==>  Preparing: UPDATE production_operations SET group_name = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:43.178 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.updateById - ==> Parameters: 写面横切改组(String), 2026-10-03T09:37:43.161426+08:00(OffsetDateTime), b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:43.189 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.updateById - <==    Updates: 1
+2026-10-03 09:37:43.189 [http-nio-8080-exec-5] INFO  c.m.a.s.ProductionOperationCommandService - 存量工序接入部位: tenantId=20, operationId=b3651d4cc5e07248ec069d2f14460449, name=写面横切工序写面460491, positions=[布帘], created=0, skipped=1
+2026-10-03 09:37:44.744 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:44.744 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:44.766 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:44.767 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:44.767 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectById - ==> Parameters: b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:44.795 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:44.797 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:44.797 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:44.810 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:44.811 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.updateById - ==>  Preparing: UPDATE production_operations SET unit = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:44.811 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.updateById - ==> Parameters: 个(String), 2026-10-03T09:37:44.795970+08:00(OffsetDateTime), b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:44.821 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.updateById - <==    Updates: 1
+2026-10-03 09:37:44.821 [http-nio-8080-exec-6] INFO  c.m.a.s.ProductionOperationCommandService - 存量工序接入部位: tenantId=20, operationId=b3651d4cc5e07248ec069d2f14460449, name=写面横切工序写面460491, positions=[布帘], created=0, skipped=1
+2026-10-03 09:37:46.248 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:46.248 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:46.270 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:46.271 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:46.272 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - ==> Parameters: b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:46.294 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:46.295 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:46.295 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:46.307 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:46.307 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.updateById - ==>  Preparing: UPDATE production_operations SET is_start_marker = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:46.308 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.updateById - ==> Parameters: true(Boolean), 2026-10-03T09:37:46.294237+08:00(OffsetDateTime), b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:46.318 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.updateById - <==    Updates: 1
+2026-10-03 09:37:46.318 [http-nio-8080-exec-7] INFO  c.m.a.s.ProductionOperationCommandService - 存量工序接入部位: tenantId=20, operationId=b3651d4cc5e07248ec069d2f14460449, name=写面横切工序写面460491, positions=[布帘], created=0, skipped=1
+2026-10-03 09:37:47.793 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:47.794 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:47.815 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:47.817 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:47.817 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectById - ==> Parameters: b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:47.838 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:47.839 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:47.839 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:47.851 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:47.852 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.updateById - ==>  Preparing: UPDATE production_operations SET sort_order = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:47.852 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.updateById - ==> Parameters: 7(Integer), 2026-10-03T09:37:47.838742+08:00(OffsetDateTime), b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:47.863 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.updateById - <==    Updates: 1
+2026-10-03 09:37:47.863 [http-nio-8080-exec-8] INFO  c.m.a.s.ProductionOperationCommandService - 存量工序接入部位: tenantId=20, operationId=b3651d4cc5e07248ec069d2f14460449, name=写面横切工序写面460491, positions=[布帘], created=0, skipped=1
+2026-10-03 09:37:49.310 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:49.310 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:49.331 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:49.332 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:49.332 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectById - ==> Parameters: b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:49.356 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:49.357 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.updateById - ==>  Preparing: UPDATE production_operations SET status = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:49.357 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.updateById - ==> Parameters: disabled(String), 2026-10-03T09:37:49.356673+08:00(OffsetDateTime), b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:49.369 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.updateById - <==    Updates: 1
+2026-10-03 09:37:50.444 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:50.444 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:50.465 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:50.467 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:50.467 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectById - ==> Parameters: b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:50.488 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:50.489 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:50.490 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:50.501 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:50.502 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.updateById - ==>  Preparing: UPDATE production_operations SET status = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:50.502 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.updateById - ==> Parameters: active(String), 2026-10-03T09:37:50.489048+08:00(OffsetDateTime), b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:50.513 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.updateById - <==    Updates: 1
+2026-10-03 09:37:50.513 [http-nio-8080-exec-10] INFO  c.m.a.s.ProductionOperationCommandService - 存量工序接入部位: tenantId=20, operationId=b3651d4cc5e07248ec069d2f14460449, name=写面横切工序写面460491, positions=[布帘], created=0, skipped=1
+2026-10-03 09:37:50.750 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:50.750 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:50.772 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:50.774 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:50.774 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - ==> Parameters: b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:50.796 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:50.809 [http-nio-8080-exec-1] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [VALIDATION_ERROR] status 仅支持 active/disabled suggestion=null
+2026-10-03 09:37:52.031 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:52.031 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:52.053 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:52.055 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:52.055 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectById - ==> Parameters: b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:52.077 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:52.078 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:52.078 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:52.090 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:52.091 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.updateById - ==>  Preparing: UPDATE production_operations SET unit_price = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:52.091 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.updateById - ==> Parameters: 0.99(BigDecimal), 2026-10-03T09:37:52.077393+08:00(OffsetDateTime), b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:52.101 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.updateById - <==    Updates: 1
+2026-10-03 09:37:52.102 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_price_versions (id, tenant_id, operation_id, unit_price, created_at, deleted) VALUES (?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:52.102 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - ==> Parameters: 026947c2185b87fad7221639fa8138a4(String), 20(Long), b3651d4cc5e07248ec069d2f14460449(String), 0.99(BigDecimal), 2026-10-03T09:37:52.102069+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:52.113 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:52.114 [http-nio-8080-exec-2] INFO  c.m.a.s.ProductionOperationCommandService - 工序调价: operationId=b3651d4cc5e07248ec069d2f14460449, name=写面横切工序写面460491, 0.66 -> 0.99
+2026-10-03 09:37:52.114 [http-nio-8080-exec-2] INFO  c.m.a.s.ProductionOperationCommandService - 存量工序接入部位: tenantId=20, operationId=b3651d4cc5e07248ec069d2f14460449, name=写面横切工序写面460491, positions=[布帘], created=0, skipped=1
+2026-10-03 09:37:53.537 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:53.538 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:53.560 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:53.563 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:53.563 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectById - ==> Parameters: b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:53.586 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:53.588 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:53.589 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:53.601 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:53.602 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.updateById - ==>  Preparing: UPDATE production_operations SET updated_at = ? WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:53.603 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.updateById - ==> Parameters: 2026-10-03T09:37:53.586671+08:00(OffsetDateTime), b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:53.612 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.updateById - <==    Updates: 1
+2026-10-03 09:37:53.612 [http-nio-8080-exec-3] INFO  c.m.a.s.ProductionOperationCommandService - 存量工序接入部位: tenantId=20, operationId=b3651d4cc5e07248ec069d2f14460449, name=写面横切工序写面460491, positions=[布帘], created=0, skipped=1
+2026-10-03 09:37:54.756 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:54.757 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:54.778 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:54.780 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:54.780 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:54.793 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:54.795 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectCount - ==>  Preparing: SELECT COUNT(*) AS total FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND name = ?) AND tenant_id = 20
+2026-10-03 09:37:54.795 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectCount - ==> Parameters: 20(Long), 0(Integer), 写面横切新建工序460491(String)
+2026-10-03 09:37:54.806 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectCount - <==      Total: 1
+2026-10-03 09:37:54.807 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operations (id, tenant_id, name, group_name, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:54.807 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.insert - ==> Parameters: 3a73d0eb100af916c904d12e1106f3a4(String), 20(Long), 写面横切新建工序460491(String), 写面探针组(String), set(String), 米(String), 1.23(BigDecimal), false(Boolean), false(Boolean), 999(Integer), active(String), 2026-10-03T09:37:54.806651+08:00(OffsetDateTime), 2026-10-03T09:37:54.806656+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:54.818 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:54.819 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_price_versions (id, tenant_id, operation_id, unit_price, created_at, deleted) VALUES (?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:54.820 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.insert - ==> Parameters: 00a73c58b20c77427260599dbd9db730(String), 20(Long), 3a73d0eb100af916c904d12e1106f3a4(String), 1.23(BigDecimal), 2026-10-03T09:37:54.818635+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:54.830 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:54.831 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_positions (id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:54.832 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.insert - ==> Parameters: 8367c1330cc84c88d0b9d83a609e777a(String), 20(Long), 写面横切新建工序460491(String), 布帘(String), 1.23(BigDecimal), true(Boolean), active(String), 2026-10-03T09:37:54.830545+08:00(OffsetDateTime), 2026-10-03T09:37:54.830548+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:54.842 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:54.842 [http-nio-8080-exec-4] INFO  c.m.a.s.ProductionOperationCommandService - 新增工序: tenantId=20, name=写面横切新建工序460491, unit=米, unitPrice=1.23, positions=[布帘]
+2026-10-03 09:37:55.397 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:55.397 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:55.419 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:55.421 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:55.421 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectById - ==> Parameters: 3a73d0eb100af916c904d12e1106f3a4(String)
+2026-10-03 09:37:55.443 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:55.445 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, is_default, positions, mainline, status, created_at, updated_at, deleted FROM production_route_templates WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY is_default DESC, created_at ASC, id ASC
+2026-10-03 09:37:55.445 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:55.457 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - <==      Total: 2
+2026-10-03 09:37:55.459 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, factor, customer_unit_price, status, created_at, updated_at, deleted FROM production_route_rules WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY priority ASC, id ASC
+2026-10-03 09:37:55.459 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:55.471 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - <==      Total: 26
+2026-10-03 09:37:55.473 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:55.473 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:55.489 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - <==      Total: 42
+2026-10-03 09:37:55.491 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY logical_name ASC, position ASC
+2026-10-03 09:37:55.491 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:55.503 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - <==      Total: 32
+2026-10-03 09:37:55.505 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET unit_price = ?, applicable = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:55.505 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.update - ==> Parameters: null, false(Boolean), 2026-10-03T09:37:55.503540+08:00(OffsetDateTime), 8367c1330cc84c88d0b9d83a609e777a(String), 20(Long), 0(Integer)
+2026-10-03 09:37:55.515 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:55.515 [http-nio-8080-exec-5] INFO  c.m.a.s.ProductionOperationCommandService - 一键摘格（设为不做）: tenantId=20, operationId=3a73d0eb100af916c904d12e1106f3a4, cells=1
+2026-10-03 09:37:55.517 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET deleted = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:55.517 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.update - ==> Parameters: 1(Integer), 2026-10-03T09:37:55.503540+08:00(OffsetDateTime), 8367c1330cc84c88d0b9d83a609e777a(String), 20(Long), 0(Integer)
+2026-10-03 09:37:55.528 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:55.529 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operations SET deleted = ?, updated_at = ? WHERE deleted = 0 AND (id = ?) AND tenant_id = 20
+2026-10-03 09:37:55.529 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.update - ==> Parameters: 1(Integer), 2026-10-03T09:37:55.503540+08:00(OffsetDateTime), 3a73d0eb100af916c904d12e1106f3a4(String)
+2026-10-03 09:37:55.539 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:55.539 [http-nio-8080-exec-5] INFO  c.m.a.s.ProductionOperationCommandService - 软删工序（一键摘格）: tenantId=20, operationId=3a73d0eb100af916c904d12e1106f3a4, name=写面横切新建工序460491, 级联软删矩阵行=1
+2026-10-03 09:37:55.966 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:55.966 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:55.988 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:55.990 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:55.990 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:56.002 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:56.003 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectCount - ==>  Preparing: SELECT COUNT(*) AS total FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND name = ?) AND tenant_id = 20
+2026-10-03 09:37:56.003 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectCount - ==> Parameters: 20(Long), 0(Integer), 写面横切级联复核460491(String)
+2026-10-03 09:37:56.013 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectCount - <==      Total: 1
+2026-10-03 09:37:56.014 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operations (id, tenant_id, name, group_name, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:56.014 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.insert - ==> Parameters: 2ceff40ce2d2f982fafda4ee73311b40(String), 20(Long), 写面横切级联复核460491(String), 写面探针组(String), position(String), 米(String), 0.44(BigDecimal), false(Boolean), false(Boolean), 999(Integer), active(String), 2026-10-03T09:37:56.013844+08:00(OffsetDateTime), 2026-10-03T09:37:56.013846+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:56.025 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:56.026 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_price_versions (id, tenant_id, operation_id, unit_price, created_at, deleted) VALUES (?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:56.027 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.insert - ==> Parameters: 166375da367278aa84c20b2ceab6c832(String), 20(Long), 2ceff40ce2d2f982fafda4ee73311b40(String), 0.44(BigDecimal), 2026-10-03T09:37:56.026019+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:56.037 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:56.038 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_positions (id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:56.038 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.insert - ==> Parameters: d14dbcf6f15b3140280a46dc1ca3caa1(String), 20(Long), 写面横切级联复核460491(String), 通用(String), 0.44(BigDecimal), true(Boolean), active(String), 2026-10-03T09:37:56.037360+08:00(OffsetDateTime), 2026-10-03T09:37:56.037362+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:56.050 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:56.050 [http-nio-8080-exec-6] INFO  c.m.a.s.ProductionOperationCommandService - 新增工序: tenantId=20, name=写面横切级联复核460491, unit=米, unitPrice=0.44, positions=[通用]
+2026-10-03 09:37:56.378 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:56.378 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:56.407 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:56.408 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:56.408 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - ==> Parameters: 2ceff40ce2d2f982fafda4ee73311b40(String)
+2026-10-03 09:37:56.430 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:56.432 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, is_default, positions, mainline, status, created_at, updated_at, deleted FROM production_route_templates WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY is_default DESC, created_at ASC, id ASC
+2026-10-03 09:37:56.432 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:56.442 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 2
+2026-10-03 09:37:56.443 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, factor, customer_unit_price, status, created_at, updated_at, deleted FROM production_route_rules WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY priority ASC, id ASC
+2026-10-03 09:37:56.443 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:56.455 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 26
+2026-10-03 09:37:56.456 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:56.456 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:56.470 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 42
+2026-10-03 09:37:56.471 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY logical_name ASC, position ASC
+2026-10-03 09:37:56.471 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:56.483 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 32
+2026-10-03 09:37:56.484 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET unit_price = ?, applicable = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:56.485 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==> Parameters: null, false(Boolean), 2026-10-03T09:37:56.484008+08:00(OffsetDateTime), d14dbcf6f15b3140280a46dc1ca3caa1(String), 20(Long), 0(Integer)
+2026-10-03 09:37:56.494 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:56.494 [http-nio-8080-exec-7] INFO  c.m.a.s.ProductionOperationCommandService - 一键摘格（设为不做）: tenantId=20, operationId=2ceff40ce2d2f982fafda4ee73311b40, cells=1
+2026-10-03 09:37:56.495 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET deleted = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:56.495 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==> Parameters: 1(Integer), 2026-10-03T09:37:56.484008+08:00(OffsetDateTime), d14dbcf6f15b3140280a46dc1ca3caa1(String), 20(Long), 0(Integer)
+2026-10-03 09:37:56.506 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:56.506 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operations SET deleted = ?, updated_at = ? WHERE deleted = 0 AND (id = ?) AND tenant_id = 20
+2026-10-03 09:37:56.507 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==> Parameters: 1(Integer), 2026-10-03T09:37:56.484008+08:00(OffsetDateTime), 2ceff40ce2d2f982fafda4ee73311b40(String)
+2026-10-03 09:37:56.517 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:56.517 [http-nio-8080-exec-7] INFO  c.m.a.s.ProductionOperationCommandService - 软删工序（一键摘格）: tenantId=20, operationId=2ceff40ce2d2f982fafda4ee73311b40, name=写面横切级联复核460491, 级联软删矩阵行=1
+2026-10-03 09:37:57.045 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:57.045 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:57.068 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:57.069 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:57.069 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectById - ==> Parameters: 2ceff40ce2d2f982fafda4ee73311b40(String)
+2026-10-03 09:37:57.090 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectById - <==      Total: 0
+2026-10-03 09:37:57.101 [http-nio-8080-exec-8] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [NOT_FOUND] 工序不存在 suggestion=null
+2026-10-03 09:37:57.116 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:57.116 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:57.137 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:57.139 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:57.139 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectById - ==> Parameters: 2ceff40ce2d2f982fafda4ee73311b40(String)
+2026-10-03 09:37:57.161 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectById - <==      Total: 0
+2026-10-03 09:37:57.172 [http-nio-8080-exec-9] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [NOT_FOUND] 工序不存在 suggestion=null
+2026-10-03 09:37:57.653 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:57.653 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:57.675 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:57.677 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:57.677 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:57.689 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:57.690 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectCount - ==>  Preparing: SELECT COUNT(*) AS total FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND name = ?) AND tenant_id = 20
+2026-10-03 09:37:57.690 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectCount - ==> Parameters: 20(Long), 0(Integer), 写面横切软删工序460491(String)
+2026-10-03 09:37:57.701 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectCount - <==      Total: 1
+2026-10-03 09:37:57.702 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operations (id, tenant_id, name, group_name, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:57.702 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.insert - ==> Parameters: 72754236e482556668e20f23476b7bec(String), 20(Long), 写面横切软删工序460491(String), 写面探针组(String), set(String), 米(String), 0.5(BigDecimal), false(Boolean), false(Boolean), 999(Integer), active(String), 2026-10-03T09:37:57.701741+08:00(OffsetDateTime), 2026-10-03T09:37:57.701743+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:57.713 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:57.714 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_price_versions (id, tenant_id, operation_id, unit_price, created_at, deleted) VALUES (?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:57.714 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.insert - ==> Parameters: ebdf3b47dac8207f7bc88b501a0e6198(String), 20(Long), 72754236e482556668e20f23476b7bec(String), 0.5(BigDecimal), 2026-10-03T09:37:57.713677+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:57.725 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:57.726 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_positions (id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:37:57.726 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.insert - ==> Parameters: 58d932bd566a6f37b3bdd0eb24d71466(String), 20(Long), 写面横切软删工序460491(String), 通用(String), 0.5(BigDecimal), true(Boolean), active(String), 2026-10-03T09:37:57.725633+08:00(OffsetDateTime), 2026-10-03T09:37:57.725635+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:37:57.736 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:37:57.736 [http-nio-8080-exec-10] INFO  c.m.a.s.ProductionOperationCommandService - 新增工序: tenantId=20, name=写面横切软删工序460491, unit=米, unitPrice=0.5, positions=[通用]
+2026-10-03 09:37:58.220 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:58.220 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:58.241 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:58.242 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:58.242 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - ==> Parameters: 72754236e482556668e20f23476b7bec(String)
+2026-10-03 09:37:58.264 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:58.265 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, is_default, positions, mainline, status, created_at, updated_at, deleted FROM production_route_templates WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY is_default DESC, created_at ASC, id ASC
+2026-10-03 09:37:58.265 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:58.276 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 2
+2026-10-03 09:37:58.277 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, factor, customer_unit_price, status, created_at, updated_at, deleted FROM production_route_rules WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY priority ASC, id ASC
+2026-10-03 09:37:58.277 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:58.288 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 26
+2026-10-03 09:37:58.289 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:58.289 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:58.303 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 42
+2026-10-03 09:37:58.304 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY logical_name ASC, position ASC
+2026-10-03 09:37:58.304 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:58.316 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 32
+2026-10-03 09:37:58.327 [http-nio-8080-exec-1] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [VALIDATION_ERROR] 删除工序未通过校验（1 条问题） suggestion=按每条理由处理：先改主线 / 先删改那条规则 / 先在对应部位设为不做
+2026-10-03 09:37:58.886 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:58.886 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:58.908 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:58.909 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:58.909 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectById - ==> Parameters: 72754236e482556668e20f23476b7bec(String)
+2026-10-03 09:37:58.931 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:58.932 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, is_default, positions, mainline, status, created_at, updated_at, deleted FROM production_route_templates WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY is_default DESC, created_at ASC, id ASC
+2026-10-03 09:37:58.932 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:58.943 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - <==      Total: 2
+2026-10-03 09:37:58.944 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, factor, customer_unit_price, status, created_at, updated_at, deleted FROM production_route_rules WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY priority ASC, id ASC
+2026-10-03 09:37:58.944 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:58.957 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - <==      Total: 26
+2026-10-03 09:37:58.958 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:58.958 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:58.972 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - <==      Total: 42
+2026-10-03 09:37:58.973 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY logical_name ASC, position ASC
+2026-10-03 09:37:58.973 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:58.984 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - <==      Total: 32
+2026-10-03 09:37:58.985 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET unit_price = ?, applicable = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:58.985 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.update - ==> Parameters: null, false(Boolean), 2026-10-03T09:37:58.984944+08:00(OffsetDateTime), 58d932bd566a6f37b3bdd0eb24d71466(String), 20(Long), 0(Integer)
+2026-10-03 09:37:58.996 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:58.996 [http-nio-8080-exec-2] INFO  c.m.a.s.ProductionOperationCommandService - 一键摘格（设为不做）: tenantId=20, operationId=72754236e482556668e20f23476b7bec, cells=1
+2026-10-03 09:37:58.997 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET deleted = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:58.997 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.update - ==> Parameters: 1(Integer), 2026-10-03T09:37:58.984944+08:00(OffsetDateTime), 58d932bd566a6f37b3bdd0eb24d71466(String), 20(Long), 0(Integer)
+2026-10-03 09:37:59.007 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:59.007 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operations SET deleted = ?, updated_at = ? WHERE deleted = 0 AND (id = ?) AND tenant_id = 20
+2026-10-03 09:37:59.008 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.update - ==> Parameters: 1(Integer), 2026-10-03T09:37:58.984944+08:00(OffsetDateTime), 72754236e482556668e20f23476b7bec(String)
+2026-10-03 09:37:59.018 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:59.018 [http-nio-8080-exec-2] INFO  c.m.a.s.ProductionOperationCommandService - 软删工序（一键摘格）: tenantId=20, operationId=72754236e482556668e20f23476b7bec, name=写面横切软删工序460491, 级联软删矩阵行=1
+2026-10-03 09:37:59.700 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:59.700 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:37:59.721 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:37:59.722 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:37:59.722 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectById - ==> Parameters: b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:59.744 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:37:59.745 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, is_default, positions, mainline, status, created_at, updated_at, deleted FROM production_route_templates WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY is_default DESC, created_at ASC, id ASC
+2026-10-03 09:37:59.745 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:59.767 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - <==      Total: 2
+2026-10-03 09:37:59.768 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, factor, customer_unit_price, status, created_at, updated_at, deleted FROM production_route_rules WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY priority ASC, id ASC
+2026-10-03 09:37:59.769 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:59.792 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - <==      Total: 26
+2026-10-03 09:37:59.793 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:59.793 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:37:59.806 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:37:59.807 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY logical_name ASC, position ASC
+2026-10-03 09:37:59.807 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:37:59.830 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:37:59.831 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET unit_price = ?, applicable = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:59.831 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.update - ==> Parameters: null, false(Boolean), 2026-10-03T09:37:59.830499+08:00(OffsetDateTime), 4f61e9bd424df0696e9c128b8bee9a6a(String), 20(Long), 0(Integer)
+2026-10-03 09:37:59.842 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:59.842 [http-nio-8080-exec-3] INFO  c.m.a.s.ProductionOperationCommandService - 一键摘格（设为不做）: tenantId=20, operationId=b3651d4cc5e07248ec069d2f14460449, cells=1
+2026-10-03 09:37:59.843 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET deleted = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:37:59.843 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.update - ==> Parameters: 1(Integer), 2026-10-03T09:37:59.830499+08:00(OffsetDateTime), 4f61e9bd424df0696e9c128b8bee9a6a(String), 20(Long), 0(Integer)
+2026-10-03 09:37:59.853 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:59.853 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operations SET deleted = ?, updated_at = ? WHERE deleted = 0 AND (id = ?) AND tenant_id = 20
+2026-10-03 09:37:59.854 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.update - ==> Parameters: 1(Integer), 2026-10-03T09:37:59.830499+08:00(OffsetDateTime), b3651d4cc5e07248ec069d2f14460449(String)
+2026-10-03 09:37:59.864 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:37:59.864 [http-nio-8080-exec-3] INFO  c.m.a.s.ProductionOperationCommandService - 软删工序（一键摘格）: tenantId=20, operationId=b3651d4cc5e07248ec069d2f14460449, name=写面横切工序写面460491, 级联软删矩阵行=1
+2026-10-03 09:38:00.004 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:38:00.004 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:38:00.015 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:38:00.788 [http-nio-8080-exec-7] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 09:38:00.788 [http-nio-8080-exec-7] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 09:38:00.788 [http-nio-8080-exec-7] WARN  com.migao.admin.service.SmsService - [POC 模式] 使用万能验证码通过校验: phone=138****7889（接入真实短信服务后必须移除 bypass，Issue #2616）
+2026-10-03 09:38:00.789 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, phone, password_hash, nickname, avatar, status, last_login_at, created_at, updated_at FROM platform_admins WHERE (phone = ?)
+2026-10-03 09:38:00.789 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 13870217889(String)
+2026-10-03 09:38:00.801 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 0
+2026-10-03 09:38:00.801 [http-nio-8080-exec-7] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - ==>  Preparing: SELECT id, tenant_id, phone, username, password_hash, nickname, avatar, role, worker_no, session_ttl, status, must_change_password, created_at, updated_at, deleted FROM users WHERE phone = ? AND deleted = 0 AND status = 'active' ORDER BY updated_at DESC
+2026-10-03 09:38:00.801 [http-nio-8080-exec-7] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - ==> Parameters: 13870217889(String)
+2026-10-03 09:38:00.812 [http-nio-8080-exec-7] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - <==      Total: 1
+2026-10-03 09:38:00.813 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:00.813 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:00.833 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:00.851 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.TenantMapper.selectById - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE id = ? AND deleted = 0
+2026-10-03 09:38:00.851 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.TenantMapper.selectById - ==> Parameters: 20(Long)
+2026-10-03 09:38:00.862 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.TenantMapper.selectById - <==      Total: 1
+2026-10-03 09:38:00.863 [http-nio-8080-exec-7] DEBUG c.m.a.m.T.selectList - ==>  Preparing: SELECT id, tenant_id, bot_name, greeting_template, business_hours, timezone, auto_handoff_keywords, emotion_handoff, ai_fallback_handoff, ai_fallback_threshold, after_hours_mode, after_hours_message, recommend_strategy, recommend_count, recommend_trigger, quick_replies, channel_configs, created_at, updated_at, deleted FROM tenant_ai_configs WHERE deleted = 0 AND (tenant_id = ?) AND tenant_id = 20 LIMIT 1
+2026-10-03 09:38:00.863 [http-nio-8080-exec-7] DEBUG c.m.a.m.T.selectList - ==> Parameters: 20(Long)
+2026-10-03 09:38:00.874 [http-nio-8080-exec-7] DEBUG c.m.a.m.T.selectList - <==      Total: 1
+2026-10-03 09:38:00.902 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:00.902 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:00.924 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:00.926 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:00.926 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:00.938 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - <==      Total: 30
+2026-10-03 09:38:00.939 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectCount - ==>  Preparing: SELECT COUNT(*) AS total FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND name = ?) AND tenant_id = 20
+2026-10-03 09:38:00.939 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectCount - ==> Parameters: 20(Long), 0(Integer), 写面横切价目写面480722(String)
+2026-10-03 09:38:00.950 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectCount - <==      Total: 1
+2026-10-03 09:38:00.950 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operations (id, tenant_id, name, group_name, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:38:00.950 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.insert - ==> Parameters: 388d9ed73adbbb67943d86089ccccdcb(String), 20(Long), 写面横切价目写面480722(String), 写面探针组(String), position(String), 米(String), 0.66(BigDecimal), false(Boolean), false(Boolean), 999(Integer), active(String), 2026-10-03T09:38:00.950105+08:00(OffsetDateTime), 2026-10-03T09:38:00.950107+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:38:00.960 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:38:00.961 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_price_versions (id, tenant_id, operation_id, unit_price, created_at, deleted) VALUES (?, ?, ?, ?, ?, ?)
+2026-10-03 09:38:00.961 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.insert - ==> Parameters: e059db715c50bf952bc1f5887425789a(String), 20(Long), 388d9ed73adbbb67943d86089ccccdcb(String), 0.66(BigDecimal), 2026-10-03T09:38:00.960655+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:38:00.971 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:38:00.972 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_positions (id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-10-03 09:38:00.972 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.insert - ==> Parameters: 287458356d76020c2bfe858eb73b339b(String), 20(Long), 写面横切价目写面480722(String), 布帘(String), 0.66(BigDecimal), true(Boolean), active(String), 2026-10-03T09:38:00.971645+08:00(OffsetDateTime), 2026-10-03T09:38:00.971647+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:38:00.982 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:38:00.983 [http-nio-8080-exec-8] INFO  c.m.a.s.ProductionOperationCommandService - 新增工序: tenantId=20, name=写面横切价目写面480722, unit=米, unitPrice=0.66, positions=[布帘]
+2026-10-03 09:38:01.271 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:01.271 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:01.293 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:01.294 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:01.294 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:01.306 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:01.307 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:01.307 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:01.321 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:01.684 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:01.684 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:01.706 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:01.707 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:01.707 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:01.719 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:01.720 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:01.720 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:01.733 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:02.008 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:02.008 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:02.029 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:02.030 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:02.030 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - ==> Parameters: 287458356d76020c2bfe858eb73b339b(String)
+2026-10-03 09:38:02.041 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:38:02.043 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET unit_price = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:02.044 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.update - ==> Parameters: 0.77(BigDecimal), 2026-10-03T09:38:02.041970+08:00(OffsetDateTime), 287458356d76020c2bfe858eb73b339b(String), 20(Long), 0(Integer)
+2026-10-03 09:38:02.054 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:38:02.055 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_position_price_versions (id, tenant_id, position_row_id, unit_price, created_at, deleted) VALUES (?, ?, ?, ?, ?, ?)
+2026-10-03 09:38:02.055 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.insert - ==> Parameters: fc49f05039586acfaa21f124cafb6a97(String), 20(Long), 287458356d76020c2bfe858eb73b339b(String), 0.77(BigDecimal), 2026-10-03T09:38:02.054949+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:38:02.065 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:38:02.065 [http-nio-8080-exec-1] INFO  c.m.a.s.ProductionOperationPositionCommandService - 部位价目调价: tenantId=20, rowId=287458356d76020c2bfe858eb73b339b, 写面横切价目写面480722 × 布帘 : 0.66 -> 0.77
+2026-10-03 09:38:02.066 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:02.066 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:02.079 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:03.224 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:03.224 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:03.244 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:03.245 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:03.245 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:03.267 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:03.268 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:03.268 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:03.282 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:03.626 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:03.626 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:03.647 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:03.648 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:03.648 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:03.671 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:03.672 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:03.672 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:03.686 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:03.972 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:03.972 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:03.994 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:03.996 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:03.996 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectById - ==> Parameters: 287458356d76020c2bfe858eb73b339b(String)
+2026-10-03 09:38:04.007 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:38:04.009 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET unit_price = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:04.009 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.update - ==> Parameters: 0.00(BigDecimal), 2026-10-03T09:38:04.008210+08:00(OffsetDateTime), 287458356d76020c2bfe858eb73b339b(String), 20(Long), 0(Integer)
+2026-10-03 09:38:04.019 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:38:04.021 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_position_price_versions (id, tenant_id, position_row_id, unit_price, created_at, deleted) VALUES (?, ?, ?, ?, ?, ?)
+2026-10-03 09:38:04.021 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.insert - ==> Parameters: e5124b8c6285d9627d3b6338c0400d22(String), 20(Long), 287458356d76020c2bfe858eb73b339b(String), 0.00(BigDecimal), 2026-10-03T09:38:04.020068+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:38:04.036 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:38:04.036 [http-nio-8080-exec-5] INFO  c.m.a.s.ProductionOperationPositionCommandService - 部位价目调价: tenantId=20, rowId=287458356d76020c2bfe858eb73b339b, 写面横切价目写面480722 × 布帘 : 0.77 -> 0.00
+2026-10-03 09:38:04.037 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:04.037 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:04.051 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:05.112 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:05.112 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:05.134 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:05.135 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:05.135 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:05.158 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:05.159 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:05.159 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:05.172 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:05.511 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:05.511 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:05.532 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:05.533 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:05.533 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:05.554 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:05.556 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:05.556 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:05.569 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:05.886 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:05.886 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:05.908 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:05.909 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:05.909 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - ==> Parameters: 287458356d76020c2bfe858eb73b339b(String)
+2026-10-03 09:38:05.920 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:38:05.921 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET unit_price = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:05.921 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - ==> Parameters: null, 2026-10-03T09:38:05.920287+08:00(OffsetDateTime), 287458356d76020c2bfe858eb73b339b(String), 20(Long), 0(Integer)
+2026-10-03 09:38:05.932 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:38:05.932 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.insert - ==>  Preparing: INSERT INTO production_operation_position_price_versions (id, tenant_id, position_row_id, created_at, deleted) VALUES (?, ?, ?, ?, ?)
+2026-10-03 09:38:05.932 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.insert - ==> Parameters: 2d92562028af5ba52a9d41c42b2e3c4b(String), 20(Long), 287458356d76020c2bfe858eb73b339b(String), 2026-10-03T09:38:05.932133+08:00(OffsetDateTime), 0(Integer)
+2026-10-03 09:38:05.943 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.insert - <==    Updates: 1
+2026-10-03 09:38:05.943 [http-nio-8080-exec-7] INFO  c.m.a.s.ProductionOperationPositionCommandService - 部位价目调价: tenantId=20, rowId=287458356d76020c2bfe858eb73b339b, 写面横切价目写面480722 × 布帘 : 0.00 -> null
+2026-10-03 09:38:05.944 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:05.944 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:05.957 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:06.904 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:06.905 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:06.925 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:06.926 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:06.926 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:06.948 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:06.949 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:06.949 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:06.961 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:07.250 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:07.250 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:07.271 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:07.272 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:07.272 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:07.293 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:07.298 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:07.298 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:07.310 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:07.586 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:07.587 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:07.608 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:07.609 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:07.610 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectById - ==> Parameters: 287458356d76020c2bfe858eb73b339b(String)
+2026-10-03 09:38:07.621 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:38:07.621 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET unit_price = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:07.622 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.update - ==> Parameters: null, 2026-10-03T09:38:07.621110+08:00(OffsetDateTime), 287458356d76020c2bfe858eb73b339b(String), 20(Long), 0(Integer)
+2026-10-03 09:38:07.632 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:38:07.633 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:07.634 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:07.647 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:08.609 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:08.609 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:08.632 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:08.633 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:08.633 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:08.654 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:08.655 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:08.655 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:08.669 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:08.897 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:08.897 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:08.918 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:08.919 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:08.919 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:08.941 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:08.942 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:08.942 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:08.954 [http-nio-8080-exec-2] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:09.275 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:09.275 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:09.295 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:09.296 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:09.296 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectById - ==> Parameters: 287458356d76020c2bfe858eb73b339b(String)
+2026-10-03 09:38:09.308 [http-nio-8080-exec-3] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:38:09.319 [http-nio-8080-exec-3] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [VALIDATION_ERROR] 部位价目更新未通过校验（1 条问题） suggestion=可写键只有 [unit_price]（词表外的键一律拒绝，不静默忽略）；单价填 ≥ 0 且最多两位小数的金额；要表示「未定价」请传 null，**不要**传 0
+2026-10-03 09:38:10.435 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:10.435 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:10.455 [http-nio-8080-exec-5] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:10.456 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:10.456 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:10.478 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:10.479 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:10.479 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:10.492 [http-nio-8080-exec-5] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:10.765 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:10.765 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:10.787 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:10.788 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:10.789 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:10.811 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:10.812 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:10.812 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:10.824 [http-nio-8080-exec-4] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:11.086 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:11.086 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:11.108 [http-nio-8080-exec-6] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:11.109 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:11.109 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectById - ==> Parameters: 287458356d76020c2bfe858eb73b339b(String)
+2026-10-03 09:38:11.130 [http-nio-8080-exec-6] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:38:11.141 [http-nio-8080-exec-6] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [VALIDATION_ERROR] 部位价目更新未通过校验（1 条问题） suggestion=可写键只有 [unit_price]（词表外的键一律拒绝，不静默忽略）；单价填 ≥ 0 且最多两位小数的金额；要表示「未定价」请传 null，**不要**传 0
+2026-10-03 09:38:12.298 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:12.298 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:12.322 [http-nio-8080-exec-7] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:12.323 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:12.323 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:12.345 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:12.347 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:12.347 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:12.360 [http-nio-8080-exec-7] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:12.685 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:12.685 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:12.706 [http-nio-8080-exec-8] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:12.707 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:12.707 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:12.729 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:12.730 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:12.731 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:12.744 [http-nio-8080-exec-8] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:13.029 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:13.029 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:13.050 [http-nio-8080-exec-9] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:13.052 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:13.052 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectById - ==> Parameters: 287458356d76020c2bfe858eb73b339b(String)
+2026-10-03 09:38:13.074 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:38:13.076 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET unit_price = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:13.076 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.update - ==> Parameters: null, 2026-10-03T09:38:13.074564+08:00(OffsetDateTime), 287458356d76020c2bfe858eb73b339b(String), 20(Long), 0(Integer)
+2026-10-03 09:38:13.086 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:38:13.088 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:13.089 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:13.102 [http-nio-8080-exec-9] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:14.309 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:14.310 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:14.332 [http-nio-8080-exec-10] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:14.333 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20
+2026-10-03 09:38:14.333 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:14.356 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:14.358 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:14.358 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:14.371 [http-nio-8080-exec-10] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:14.689 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:14.689 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 09:38:14.709 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 09:38:14.712 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 09:38:14.712 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - ==> Parameters: 388d9ed73adbbb67943d86089ccccdcb(String)
+2026-10-03 09:38:14.734 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectById - <==      Total: 1
+2026-10-03 09:38:14.736 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, is_default, positions, mainline, status, created_at, updated_at, deleted FROM production_route_templates WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY is_default DESC, created_at ASC, id ASC
+2026-10-03 09:38:14.736 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:14.759 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 2
+2026-10-03 09:38:14.833 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, factor, customer_unit_price, status, created_at, updated_at, deleted FROM production_route_rules WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY priority ASC, id ASC
+2026-10-03 09:38:14.833 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:14.866 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 26
+2026-10-03 09:38:14.868 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, name, group_name, position, scope, unit, unit_price, is_must_finish, is_start_marker, sort_order, status, source, created_at, updated_at, deleted FROM production_operations WHERE deleted = 0 AND (tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:14.869 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer)
+2026-10-03 09:38:14.883 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 41
+2026-10-03 09:38:14.885 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, tenant_id, logical_name, position, unit_price, applicable, status, created_at, updated_at, deleted FROM production_operation_positions WHERE deleted = 0 AND (tenant_id = ? AND deleted = ? AND status = ?) AND tenant_id = 20 ORDER BY logical_name ASC, position ASC
+2026-10-03 09:38:14.885 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 20(Long), 0(Integer), active(String)
+2026-10-03 09:38:14.908 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 31
+2026-10-03 09:38:14.909 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET unit_price = ?, applicable = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:14.909 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.update - ==> Parameters: null, false(Boolean), 2026-10-03T09:38:14.908323+08:00(OffsetDateTime), 287458356d76020c2bfe858eb73b339b(String), 20(Long), 0(Integer)
+2026-10-03 09:38:14.921 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:38:14.921 [http-nio-8080-exec-1] INFO  c.m.a.s.ProductionOperationCommandService - 一键摘格（设为不做）: tenantId=20, operationId=388d9ed73adbbb67943d86089ccccdcb, cells=1
+2026-10-03 09:38:14.922 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operation_positions SET deleted = ?, updated_at = ? WHERE deleted = 0 AND (id = ? AND tenant_id = ? AND deleted = ?) AND tenant_id = 20
+2026-10-03 09:38:14.922 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.update - ==> Parameters: 1(Integer), 2026-10-03T09:38:14.908323+08:00(OffsetDateTime), 287458356d76020c2bfe858eb73b339b(String), 20(Long), 0(Integer)
+2026-10-03 09:38:14.933 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:38:14.934 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.update - ==>  Preparing: UPDATE production_operations SET deleted = ?, updated_at = ? WHERE deleted = 0 AND (id = ?) AND tenant_id = 20
+2026-10-03 09:38:14.934 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.update - ==> Parameters: 1(Integer), 2026-10-03T09:38:14.908323+08:00(OffsetDateTime), 388d9ed73adbbb67943d86089ccccdcb(String)
+2026-10-03 09:38:14.945 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.update - <==    Updates: 1
+2026-10-03 09:38:14.945 [http-nio-8080-exec-1] INFO  c.m.a.s.ProductionOperationCommandService - 软删工序（一键摘格）: tenantId=20, operationId=388d9ed73adbbb67943d86089ccccdcb, name=写面横切价目写面480722, 级联软删矩阵行=1
+2026-10-03 09:39:00.027 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:39:00.027 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:39:00.039 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:40:00.033 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:40:00.034 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:40:00.045 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:41:00.021 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:41:00.023 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:41:00.035 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:42:00.053 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:42:00.057 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:42:00.074 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:43:00.031 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:43:00.032 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:43:00.043 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:44:00.013 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:44:00.013 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:44:00.024 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:45:00.019 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:45:00.020 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:45:00.030 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:46:00.016 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:46:00.017 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:46:00.029 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:47:00.021 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:47:00.022 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:47:00.033 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:48:00.018 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:48:00.020 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:48:00.030 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:49:00.020 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:49:00.021 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:49:00.031 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:50:00.024 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:50:00.026 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:50:00.036 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:51:00.027 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:51:00.028 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:51:00.039 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:52:00.031 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 09:52:00.031 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 09:52:00.042 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 09:52:42.954 [SpringApplicationShutdownHook] INFO  o.s.b.w.e.tomcat.GracefulShutdown - Commencing graceful shutdown. Waiting for active requests to complete
+2026-10-03 09:52:42.957 [tomcat-shutdown] INFO  o.s.b.w.e.tomcat.GracefulShutdown - Graceful shutdown complete
+2026-10-03 09:52:42.979 [SpringApplicationShutdownHook] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown initiated...
+2026-10-03 09:52:42.981 [SpringApplicationShutdownHook] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown completed.
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:3.5.16:run (default-cli) on project admin-api: Process terminated with exit code: 143 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

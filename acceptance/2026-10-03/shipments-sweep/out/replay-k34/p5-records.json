@@ -1,0 +1,105 @@
+[
+  {
+    "id": "K1-1",
+    "name": "发货**不写**库存台账（stock_ledger_entries 无本单 ref_no 的行）",
+    "status": "pass",
+    "detail": "期望 本单台账行 = 0 == 实测 本单台账行 = 0；全租户台账 385 → 385",
+    "evidence": [
+      "期望来源: 代码事实：OrderShipmentService 不引用 StockLedger；台账 reason 实测只有 order/manual/inbound（发货运维不在其中）",
+      "resp: {\"success\":true,\"data\":{\"order_id\":\"fa9be9e42408886a07f2ae\",\"status\":\"shipped\",\"shipment_no\":\"SH202610031334482591\",\"source\":\"worker\",\"tracking_no\":\"SF-PROBE-K1",
+      "SQL: select * from stock_ledger_entries where ref_no='fa9be9e42408886a07f2ae' → []",
+      "SQL: select reason, count(*) from stock_ledger_entries where tenant_id=20 group by reason"
+    ],
+    "at": "2026-10-03 21:34:48 +08"
+  },
+  {
+    "id": "K1-2",
+    "name": "发货扣减库存（products.stock / stock_ledger）面：**不存在**",
+    "status": "skip",
+    "detail": "本包枚举全量端点无「发货出库」写面；实证：worker /ship 后本单零台账行（K1-1）。⇒ 按任务书口径「如实登记不存在」，不写成通过。",
+    "evidence": [],
+    "at": "2026-10-03 21:34:48 +08"
+  },
+  {
+    "id": "K2-RESTOCK",
+    "name": "发货退回 / 库存回补 / 回补幂等面：**不存在**（如实登记）",
+    "status": "skip",
+    "detail": "OpenAPI 里与退货/回补相关的路径 = [\"/api/admin/orders/{id}/refund\",\"/api/admin/after-sales/{id}/status\",\"/api/admin/agent/batches/{batchId}/revert\",\"/api/admin/agent/after-sales\",\"/api/admin/after-sales\",\"/api/admin/agent/after-sales/mine\",\"/api/admin/after-sales/{id}\"]（无一属于发货单回补语义）；发货单无「作废/红冲」写面（唯一回退动作是工人 unpack：packed→producing，且不影响已发数量）。",
+    "evidence": [],
+    "at": "2026-10-03 21:34:48 +08"
+  },
+  {
+    "id": "K3-1",
+    "name": "商家发货路：confirmed → shipped 且记物流（2xx）",
+    "status": "pass",
+    "detail": "期望 2xx ∧ status=shipped ∧ logistics 1 行 == 实测 HTTP 200 ∧ shipped ∧ 1 行",
+    "evidence": [
+      "期望来源: shipWithLogistics：记物流 + 原子流转 shipped",
+      "resp: {\"success\":true,\"data\":{\"order_id\":\"fa86eab92b2926661129f2\",\"status\":\"shipped\",\"tracking_no\":\"SF-ADMIN-1\",\"logistics_company\":\"顺丰\"},\"requestId\":\"req_48b143d0109",
+      "变化: [\"order_logistics.*\",\"orders.status\"]"
+    ],
+    "at": "2026-10-03 21:34:50 +08"
+  },
+  {
+    "id": "K3-2",
+    "name": "🔴 商家发货路**必须**产出可查的发货单（用户 2026-10-03 裁定「要建」）",
+    "status": "fail",
+    "detail": "期望 shipments=1（可查）∧ logistics=1 ≠ 实测 shipments=0 ∧ logistics=1",
+    "evidence": [
+      "期望来源: 用户裁定 2026-10-03「商家发货也应产生发货单」（实现单 #6171）⇒ 本判据在 S2 落地前**应为红**（判据先红后绿）",
+      "SQL: select * from order_shipments where order_id='fa86eab92b2926661129f2' → []",
+      "SQL: select * from order_logistics where order_id='fa86eab92b2926661129f2' → [{\"id\":\"bc5af25f192a5869c00786e4d73260d6\",\"tracking_no\":\"SF-ADMIN-2\"}]",
+      "⇒ 已发货订单在「发货单」读面/列表上是**查不到的**（无单据 ⇒ 无实发数量）"
+    ],
+    "at": "2026-10-03 21:34:50 +08"
+  },
+  {
+    "id": "K3-3",
+    "name": "商家发货路重复调用（第二次换单号）：**不得多建**发货单（恰一张），物流一把",
+    "status": "fail",
+    "detail": "期望 2xx（幂等重发不报错）∧ shipments 仍 1 ∧ logistics 仍 1 行 ≠ 实测 HTTP 200 ∧ shipments=0 ∧ logistics=1 ∧ tracking=SF-ADMIN-2",
+    "evidence": [
+      "期望来源: 不变量：重复发货不得产生第二张单据；upsertLogistics = 存在则更新（同一订单一条物流）",
+      "R2(200): {\"success\":true,\"data\":{\"order_id\":\"fa86eab92b2926661129f2\",\"status\":\"shipped\",\"tracking_no\":\"SF-ADMIN-2\",\"logistics_company\":\"顺丰\"},\"requestId\":\"req_a4b0ac5240f",
+      "SQL: select tracking_no from order_logistics → [{\"id\":\"bc5af25f192a5869c00786e4d73260d6\",\"tracking_no\":\"SF-ADMIN-2\"}]",
+      "⚠️ 覆写判定：第二次 tracking_no=SF-ADMIN-2（若为 SF-ADMIN-2 则该次调用**改写了发货事实**）"
+    ],
+    "at": "2026-10-03 21:34:50 +08"
+  },
+  {
+    "id": "K3-4",
+    "name": "🔴 读面一致（用户裁定的核心）：商家发货后该订单**在发货单列表查得到**，实发量与按单读面同源",
+    "status": "fail",
+    "detail": "期望 列表命中 = 1 ∧ itemCount ≥ 1 ∧ 列表 by_unit 与按单读面 by_unit **逐字相同** ≠ 实测 命中=0 ∧ itemCount=undefined ∧ 列表=null ∧ 按单=null",
+    "evidence": [
+      "期望来源: 用户 2026-10-03 裁定「商家发货也应产生发货单」；两面必须同源（#5939 判据 4：shippedTotals 由同一份 totals() 给出，不许第二份投影）",
+      "GET /api/admin/shipments?keyword=FS00568858760 → HTTP 200，命中 0 行",
+      "命中行: []",
+      "GET /api/admin/orders/fa86eab92b2926661129f2/shipments → HTTP 200，shippedTotals=null"
+    ],
+    "at": "2026-10-03 21:34:50 +08"
+  },
+  {
+    "id": "K3b-1",
+    "name": "🔴 商家发货路**不认幂等键**：同 X-Client-Request-Id 两次调用都生效（运单号被二次覆写）",
+    "status": "pass",
+    "detail": "期望 带同键的两次调用应回放首次结果 ⇒ tracking_no 保持 SF-SECOND-8888 == 实测 tracking_no: SF-FIRST-7777 → SF-SECOND-8888 → SF-SECOND-8888（HTTP 200/200，client_request_keys 命中 1 行）",
+    "evidence": [
+      "期望来源: 幂等契约（#4037）：带 X-Client-Request-Id 的写请求同键重复 ⇒ 回放首次结果，不得再执行",
+      "R1(200) tracking=SF-FIRST-7777",
+      "RA(200) tracking=SF-SECOND-8888",
+      "RB(200) tracking=SF-SECOND-8888",
+      "client_request_keys 命中: [{\"client_request_id\":\"fsp-K3b-muryjnfj-0\",\"endpoint\":\"POST /api/admin/production/orders/{orderId}/ship\"}]（空 ⇒ 该端点从未接幂等键）",
+      "代码依据：ProductionController.ship 直接转发 orderService.shipWithLogistics，未走 ClientRequestIdService.claim"
+    ],
+    "at": "2026-10-03 21:34:51 +08"
+  },
+  {
+    "id": "K4-INBOUND",
+    "name": "入库单 / 入库标签补打（WorkerInboundLabelController /print）不在本包射程",
+    "status": "skip",
+    "detail": "本包射程 = 发货单/仓储链中的**发货**半边；入库标签 print 属「入库」半边（另包/另轮）。任务书要求「不存在则如实登记」——此处登记为**未覆盖**，不写成通过。",
+    "evidence": [],
+    "at": "2026-10-03 21:34:51 +08"
+  }
+]

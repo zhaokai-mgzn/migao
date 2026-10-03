@@ -1,0 +1,80 @@
+2026-10-03T01:05:12.637Z === P4 工艺路线写面 开始 2026-10-03 17:05:12 +08（UTC 2026-10-03T01:05:12.636Z）run=512415 ===
+2026-10-03T01:05:14.718Z [leftovers] 清理 8 条：fee:写面横切组合料405227(HTTP 200→disabled) | fee:写面横切组合料384160(HTTP 200→disabled) | fee:写面横切组合料668012(HTTP 200→disabled) | fee:写面横切组合料764045(HTTP 200→disabled) | fee:写面横切组合料857105(HTTP 200→disabled) | fee:写面横切组合料955206(HTTP 200→disabled) | fee:写面横切组合料172510(HTTP 200→disabled) | fee:写面横切组合料030585(HTTP 200→disabled)；复核：前缀存活矩阵行=0
+2026-10-03T01:05:14.718Z ✅ [W4-L0] 清场：历史残留同前缀对象 — 清理 8 条：fee:写面横切组合料405227(HTTP 200→disabled) | fee:写面横切组合料384160(HTTP 200→disabled) | fee:写面横切组合料668012(HTTP 200→disabled) | fee:写面横切组合料764045(HTTP 200→disabled) | fee:写面横切组合料857105(HTTP 200→disabled) | fee:写面横切组合料955206(HTTP 200→disabled) | fee:写面横切组合料172510(HTTP 200→disabled) | fee:写面横切组合料030585(HTTP 200→disabled)
+2026-10-03T01:05:15.060Z [build] 写面横切路线甲512415 HTTP 200 id=6e4a212ec0c8ca020fe72a150b9f911d scope=position 库价=0.30 价目行=[{"applicable":true,"id":"e41ea3bf2393ad40d947b1f374fab88e","p":"0.30","position":"通用"}]
+2026-10-03T01:05:15.394Z [build] 写面横切路线乙512415 HTTP 200 id=6bb66e36b16a2e1ad8e5811c582d7416 scope=position 库价=0.40 价目行=[{"applicable":true,"id":"5f7319bc8ca9133caa4446f0b8169f45","p":"0.40","position":"通用"}]
+2026-10-03T01:05:15.492Z ✅ [W4-00] 自建探针夹具：两道工序（供路线主线引用） — op1=写面横切路线甲512415(6e4a212ec0c8ca020fe72a150b9f911d) op2=写面横切路线乙512415(6bb66e36b16a2e1ad8e5811c582d7416)；默认路线（只读，不碰）=[{"id":"rt-v79-20","is_default":false,"name":"布料工序路线","status":"active"},{"id":"rt-v72-20","is_default":true,"name":"窗帘工序路线（默认）","status":"active"}]
+2026-10-03T01:05:15.717Z [build-route] 写面横切路线甲512415 HTTP 200 id=dcb04c3d76c6abb4fde77f9991d288de positions=["布帘"] mainline=["写面横切路线甲512415", "写面横切路线乙512415"]
+2026-10-03T01:05:15.896Z ✅ [W4-01] 路线写面：POST /routings 新建（自建自清） — HTTP 200；id=dcb04c3d76c6abb4fde77f9991d288de；name=写面横切路线甲512415；mainline=["写面横切路线甲512415", "写面横切路线乙512415"]；positions=["布帘"]
+2026-10-03T01:05:16.270Z [snapshot W4-02-before] 2026-10-03T01:05:15.897Z rows=707 tables=17
+2026-10-03T01:05:16.670Z [snapshot W4-02-after] 2026-10-03T01:05:16.401Z rows=707 tables=17
+2026-10-03T01:05:16.686Z ✅ [W4-02] 路线写面：只改 name（改名） — 越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=["production_route_templates.name","production_route_templates.updated_at"]
+2026-10-03T01:05:16.953Z [snapshot restore-pass1] 2026-10-03T01:05:16.687Z rows=707 tables=17
+2026-10-03T01:05:17.314Z [snapshot restore-pass2] 2026-10-03T01:05:17.050Z rows=707 tables=17
+2026-10-03T01:05:17.519Z [snapshot verify-clean] 2026-10-03T01:05:17.314Z rows=707 tables=17
+2026-10-03T01:05:17.522Z ✅ [W4-02-restore] 路线写面：只改 name（改名） · 还原自证 — 逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0
+2026-10-03T01:05:17.737Z [snapshot W4-03-before] 2026-10-03T01:05:17.522Z rows=707 tables=17
+2026-10-03T01:05:18.219Z [snapshot W4-03-after] 2026-10-03T01:05:17.898Z rows=708 tables=17
+2026-10-03T01:05:18.222Z ✅ [W4-03] 路线写面：只改 mainline（调序：甲乙 → 乙甲） — 越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=["production_route_templates.mainline","production_route_templates.updated_at","production_routing_versions.*(row-added)"]
+2026-10-03T01:05:18.480Z [snapshot restore-pass1] 2026-10-03T01:05:18.222Z rows=708 tables=17
+2026-10-03T01:05:18.866Z [snapshot restore-pass2] 2026-10-03T01:05:18.566Z rows=708 tables=17
+2026-10-03T01:05:19.230Z [snapshot verify-clean] 2026-10-03T01:05:18.957Z rows=708 tables=17
+2026-10-03T01:05:19.236Z ✅ [W4-03-restore] 路线写面：只改 mainline（调序：甲乙 → 乙甲） · 还原自证 — 逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=2（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=1 行；**非我的行**（并行包改动，未触碰）=0
+2026-10-03T01:05:19.593Z [snapshot W4-04-before] 2026-10-03T01:05:19.237Z rows=708 tables=17
+2026-10-03T01:05:20.057Z [snapshot W4-04-after] 2026-10-03T01:05:19.777Z rows=709 tables=17
+2026-10-03T01:05:20.062Z ✅ [W4-04] 路线写面：只改 mainline（删一道：甲乙 → 甲） — 越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=["production_route_templates.mainline","production_route_templates.updated_at","production_routing_versions.*(row-added)"]
+2026-10-03T01:05:20.392Z [snapshot restore-pass1] 2026-10-03T01:05:20.062Z rows=709 tables=17
+2026-10-03T01:05:20.746Z [snapshot restore-pass2] 2026-10-03T01:05:20.488Z rows=709 tables=17
+2026-10-03T01:05:21.226Z [snapshot verify-clean] 2026-10-03T01:05:20.891Z rows=709 tables=17
+2026-10-03T01:05:21.231Z ✅ [W4-04-restore] 路线写面：只改 mainline（删一道：甲乙 → 甲） · 还原自证 — 逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=2（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=1 行；**非我的行**（并行包改动，未触碰）=0
+2026-10-03T01:05:21.501Z [snapshot W4-05-before] 2026-10-03T01:05:21.232Z rows=709 tables=17
+2026-10-03T01:05:21.881Z [snapshot W4-05-after] 2026-10-03T01:05:21.637Z rows=709 tables=17
+2026-10-03T01:05:21.888Z ✅ [W4-05] 路线写面：只改 mainline（加回：甲 → 甲乙） — 越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=["production_route_templates.updated_at"]
+2026-10-03T01:05:22.182Z [snapshot restore-pass1] 2026-10-03T01:05:21.889Z rows=709 tables=17
+2026-10-03T01:05:22.578Z [snapshot restore-pass2] 2026-10-03T01:05:22.316Z rows=709 tables=17
+2026-10-03T01:05:22.853Z [snapshot verify-clean] 2026-10-03T01:05:22.579Z rows=709 tables=17
+2026-10-03T01:05:22.858Z ✅ [W4-05-restore] 路线写面：只改 mainline（加回：甲 → 甲乙） · 还原自证 — 逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0
+2026-10-03T01:05:23.129Z [snapshot W4-06-before] 2026-10-03T01:05:22.858Z rows=709 tables=17
+2026-10-03T01:05:23.524Z [snapshot W4-06-after] 2026-10-03T01:05:23.240Z rows=709 tables=17
+2026-10-03T01:05:23.532Z ✅ [W4-06] 路线写面：只改 positions（适用帘种 布帘 → 布帘+纱帘） — 越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=["production_route_templates.positions","production_route_templates.updated_at"]
+2026-10-03T01:05:23.813Z [snapshot restore-pass1] 2026-10-03T01:05:23.533Z rows=709 tables=17
+2026-10-03T01:05:24.136Z [snapshot restore-pass2] 2026-10-03T01:05:23.918Z rows=709 tables=17
+2026-10-03T01:05:24.411Z [snapshot verify-clean] 2026-10-03T01:05:24.136Z rows=709 tables=17
+2026-10-03T01:05:24.412Z ✅ [W4-06-restore] 路线写面：只改 positions（适用帘种 布帘 → 布帘+纱帘） · 还原自证 — 逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0
+2026-10-03T01:05:24.681Z [snapshot W4-07-before] 2026-10-03T01:05:24.412Z rows=709 tables=17
+2026-10-03T01:05:25.009Z [snapshot W4-07-after] 2026-10-03T01:05:24.799Z rows=709 tables=17
+2026-10-03T01:05:25.011Z ✅ [W4-07] 路线写面：只改 status（active → disabled，停用） — 越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=["production_route_templates.status","production_route_templates.updated_at"]
+2026-10-03T01:05:25.292Z [snapshot restore-pass1] 2026-10-03T01:05:25.011Z rows=709 tables=17
+2026-10-03T01:05:25.629Z [snapshot restore-pass2] 2026-10-03T01:05:25.383Z rows=709 tables=17
+2026-10-03T01:05:25.925Z [snapshot verify-clean] 2026-10-03T01:05:25.630Z rows=709 tables=17
+2026-10-03T01:05:25.926Z ✅ [W4-07-restore] 路线写面：只改 status（active → disabled，停用） · 还原自证 — 逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0
+2026-10-03T01:05:26.162Z [snapshot W4-08-before] 2026-10-03T01:05:25.926Z rows=709 tables=17
+2026-10-03T01:05:26.535Z [snapshot W4-08-after] 2026-10-03T01:05:26.284Z rows=709 tables=17
+2026-10-03T01:05:26.537Z ✅ [W4-08] 路线写面：只改 status（disabled → active，启用） — 越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=["production_route_templates.updated_at"]
+2026-10-03T01:05:26.796Z [snapshot restore-pass1] 2026-10-03T01:05:26.537Z rows=709 tables=17
+2026-10-03T01:05:27.175Z [snapshot restore-pass2] 2026-10-03T01:05:26.919Z rows=709 tables=17
+2026-10-03T01:05:27.418Z [snapshot verify-clean] 2026-10-03T01:05:27.175Z rows=709 tables=17
+2026-10-03T01:05:27.420Z ✅ [W4-08-restore] 路线写面：只改 status（disabled → active，启用） · 还原自证 — 逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0
+2026-10-03T01:05:27.629Z [snapshot W4-09-before] 2026-10-03T01:05:27.421Z rows=709 tables=17
+2026-10-03T01:05:27.991Z [snapshot W4-09-after] 2026-10-03T01:05:27.737Z rows=709 tables=17
+2026-10-03T01:05:27.992Z ✅ [W4-09] 路线写面：is_default=false（契约声明 422：零默认不可） — 越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[]
+2026-10-03T01:05:28.227Z [snapshot restore-pass1] 2026-10-03T01:05:27.993Z rows=709 tables=17
+2026-10-03T01:05:28.476Z [snapshot restore-pass2] 2026-10-03T01:05:28.229Z rows=709 tables=17
+2026-10-03T01:05:28.719Z [snapshot verify-clean] 2026-10-03T01:05:28.478Z rows=709 tables=17
+2026-10-03T01:05:28.723Z ✅ [W4-09-restore] 路线写面：is_default=false（契约声明 422：零默认不可） · 还原自证 — 逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0
+2026-10-03T01:05:28.849Z ⏭️ [W4-10] 路线写面：is_default=true（设默认）——**本轮不测** — 原因：会把商家现有默认路线降级（改动既有生产配置，非自建对象）⇒ 按纪律不碰。当前默认=[{"id":"rt-v72-20","is_default":true,"name":"窗帘工序路线（默认）","status":"active"}]
+2026-10-03T01:05:29.164Z [snapshot W4-11-before] 2026-10-03T01:05:28.850Z rows=709 tables=17
+2026-10-03T01:05:29.636Z [snapshot W4-11-after] 2026-10-03T01:05:29.309Z rows=709 tables=17
+2026-10-03T01:05:29.645Z ✅ [W4-11] 路线写面：DELETE /routings/{id}（软删） — HTTP 200；changed=["production_route_templates.deleted","production_route_templates.updated_at"]
+2026-10-03T01:05:29.933Z [snapshot restore-pass1] 2026-10-03T01:05:29.646Z rows=709 tables=17
+2026-10-03T01:05:30.385Z [snapshot restore-pass2] 2026-10-03T01:05:30.063Z rows=709 tables=17
+2026-10-03T01:05:30.620Z [snapshot verify-clean] 2026-10-03T01:05:30.386Z rows=709 tables=17
+2026-10-03T01:05:30.625Z ✅ [W4-11b] 路线软删还原自证 — 我的行主面残留=0；还原动作=1(no-op=0)；软删回收=0；非我的行=0；（无残留）
+2026-10-03T01:05:31.164Z [remove-route] dcb04c3d76c6abb4fde77f9991d288de HTTP 200 del: 0 → 1
+2026-10-03T01:05:31.164Z [cleanup-route] 写面横切路线甲512415 HTTP 200 del=1
+2026-10-03T01:05:32.241Z [remove-op] 6e4a212ec0c8ca020fe72a150b9f911d(写面横切路线甲512415) via=detach-and-delete HTTP 200 del: 0→1；该工序矩阵行存活 1→0（兜底扫 0）；最终存活=0；resp={"id":"6e4a212ec0c8ca020fe72a150b9f911d","deleted":true,"detached_positions":1,"deleted_positions":1}
+2026-10-03T01:05:33.278Z [remove-op] 6bb66e36b16a2e1ad8e5811c582d7416(写面横切路线乙512415) via=detach-and-delete HTTP 200 del: 0→1；该工序矩阵行存活 1→0（兜底扫 0）；最终存活=0；resp={"id":"6bb66e36b16a2e1ad8e5811c582d7416","deleted":true,"detached_positions":1,"deleted_positions":1}
+2026-10-03T01:05:33.785Z ✅ [W4-98] 零残留读数：前缀对象存活数 = 0 — 存活明细=0（ops/pos/routes/rules/fees 全部 deleted=1 或不存在）
+2026-10-03T01:05:33.878Z ✅ [W4-99] 既有默认路线未被触碰（还原自证：只读比对） — 当前活跃路线 = [{"id":"rt-v79-20","is_default":false,"name":"布料工序路线","status":"active"},{"id":"rt-v72-20","is_default":true,"name":"窗帘工序路线（默认）","status":"active"}]
+2026-10-03T01:05:33.879Z ✅ [W4-90] 时间戳（+08 口径） — 开始 2026-10-03 17:05:12 +08 / 结束 2026-10-03 17:05:33 +08（UTC: 2026-10-03T01:05:12.636Z → 2026-10-03T01:05:33.879Z）
+2026-10-03T01:05:33.879Z P4 summary={"pass":24,"fail":0,"skip":1,"total":25} at 2026-10-03 17:05:33 +08

@@ -1,0 +1,25 @@
+{
+  "pkg": "line3-finance-stock-time-sweep",
+  "generatedAt": "2026-10-03T13:50:00+08 (Asia/Shanghai)",
+  "note": "构建点切换登记（migao-acceptance v1.9 活环境测量窗口纪律）。所有时间 +08。",
+  "liveWorktree": "/Users/guangzhen.zk/migao-wt/main-live",
+  "switch": {
+    "from": { "sha": "d1c09d02f", "shaFullSubject": "chore(ci): flaky 台账追加（run 37096947254） (#6183)", "commitTime": "2026-10-03T05:01:54Z", "pid": 99086, "processStart": "2026-10-03 13:09:45 +08" },
+    "to": { "sha": "7e9f66ce5", "subject": "fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)", "commitTime": "2026-10-03T05:42:36Z", "pid": 60585, "processStart": "2026-10-03 13:44:16 +08" },
+    "switchWallClock_plus08": "2026-10-03 13:44:16 +08"
+  },
+  "readingsAttribution": [
+    { "run": "recon", "window_plus08": "13:40:23 → 13:40:26", "sha": "d1c09d02f", "pid": 99086, "attested": true, "role": "现状只读枚举（面存在性/存量读数）", "verdict": "旧构建；但全部为只读面枚举，且 run3 已在 7e9f66ce5 上逐条复现同样结果" },
+    { "run": "run1", "window_plus08": "13:44:26 → 13:44:49", "sha": "7e9f66ce5", "pid": "unknown", "attested": false, "role": "首轮全量（39 条）", "verdict": "**sha 已证、进程面未证**（`lsof -t` 在换构建重启的瞬态窗口读不到 pid ⇒ 记录为 unknown）。因该轮为换构建后**首跑**、进程面无法自证 ⇒ 整轮**判为 superseded**，不引用其结论。" },
+    { "run": "run2", "window_plus08": "13:47:51 → 13:48:12", "sha": "7e9f66ce5", "pid": 60585, "attested": true, "role": "修正 harness 后重跑（46 条）", "verdict": "可用；随后 run3 以 B0 双采样复证" },
+    { "run": "run3", "window_plus08": "13:49:06 → 13:49:27", "sha": "7e9f66ce5", "pid": 60585, "attested": true, "role": "**权威轮**（47 条）", "verdict": "B0 判据 pass：构建点/进程 before==after，测量期间零漂移 ⇒ 本轮读数有效" }
+  ],
+  "factCorrection": {
+    "claim": "首轮读数观测窗「横跨切换点」",
+    "verdict": "**不成立（据本包时间戳）**",
+    "evidence": "切换点 13:44:16 +08 **早于** 首轮开始 13:44:26 +08 **10 秒** ⇒ 首轮已在 7e9f66ce5 上，并未跨越。唯一落在 d1c09d02f 上的是 recon（13:40:23，只读枚举）。",
+    "residualDoubt": "首轮 buildPoint 的 pid 读数为 unknown（换构建重启的瞬态）⇒ 无法自证「进程面」，故首轮仍整体判为 superseded（见上）。"
+  },
+  "originMainAtClose": "05ca1f6c9",
+  "originMainAtStart": "d877f19ef"
+}

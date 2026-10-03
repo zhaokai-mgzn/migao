@@ -1,0 +1,46 @@
+[
+ {
+  "id": "PCW-products",
+  "name": "同租户写正对照·products",
+  "verdict": "fail",
+  "detail": "A(20) 幂等 PUT 自己的对象 → 422；库未变=true",
+  "evidence": [
+   "PUT /api/admin/products/e292e7fd91eb5d5725e86ee02fc7b1c4 body={\"name\":\"工序验收商品084340\",\"unit\":\"米\",\"basePrice\":68,\"status\":\"on_shelf\"} → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"分类ID不能为空\"},\"requestId\":\"req_178a95b553eb4bac\",\"timestamp\":1790995400,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+   "before=[{\"name\":\"工序验收商品084340\",\"base_price\":68,\"status\":\"on_shelf\",\"updated_at\":\"2026-10-03T07:01:25.057344+08:00\"}]",
+   "after=[{\"name\":\"工序验收商品084340\",\"base_price\":68,\"status\":\"on_shelf\",\"updated_at\":\"2026-10-03T07:01:25.057344+08:00\"}]"
+  ]
+ },
+ {
+  "id": "PCW-categories",
+  "name": "同租户写正对照·categories",
+  "verdict": "pass",
+  "detail": "A(20) 幂等 PUT 自己的对象 → 200；库未变=true",
+  "evidence": [
+   "PUT /api/admin/categories/dae835d8ae5f68bdb7cd191f29d2e827 body={\"name\":\"POC-窗帘面料\"} → 200 {\"success\":true,\"data\":{\"id\":\"dae835d8ae5f68bdb7cd191f29d2e827\",\"name\":\"POC-窗帘面料\",\"level\":1,\"children\":[],\"createdAt\":\"2026-09-03 06:29:15\",\"updatedAt\":\"2026-09-03 06:29:15\",\"sort\":0},\"requestId\":\"req",
+   "before=[{\"name\":\"POC-窗帘面料\",\"sort_order\":0,\"updated_at\":\"2026-09-03T06:29:15.242106+08:00\"}]",
+   "after=[{\"name\":\"POC-窗帘面料\",\"sort_order\":0,\"updated_at\":\"2026-09-03T06:29:15.242106+08:00\"}]"
+  ]
+ },
+ {
+  "id": "PCW-processing_items",
+  "name": "同租户写正对照·processing_items",
+  "verdict": "pass",
+  "detail": "A(20) 幂等 PUT 自己的对象 → 200；库未变=true",
+  "evidence": [
+   "PUT /api/admin/processing-items/pi-v83-20-13 body={\"name\":\"换货\",\"categoryId\":\"pc-v83-20-fee\",\"unit\":\"米\"} → 200 {\"success\":true,\"data\":{\"id\":\"pi-v83-20-13\",\"name\":\"换货\",\"categoryId\":\"pc-v83-20-fee\",\"categoryName\":\"加工费\",\"unit\":\"米\",\"minQuantity\":1,\"maxQuantity\":999,\"description\":\"ERP 加工费单项\",\"options\":[],\"processin",
+   "before=[{\"name\":\"换货\",\"status\":\"active\",\"updated_at\":\"2026-09-19T21:16:24.875721+08:00\"}]",
+   "after=[{\"name\":\"换货\",\"status\":\"active\",\"updated_at\":\"2026-09-19T21:16:24.875721+08:00\"}]"
+  ]
+ },
+ {
+  "id": "PCW-customers",
+  "name": "同租户写正对照·customer_profiles",
+  "verdict": "pass",
+  "detail": "A(20) 幂等 PUT 自己的对象 → 200；库未变=true",
+  "evidence": [
+   "PUT /api/admin/customers/25f7d887731f04a2b1599609d2580d41 body={} → 200 {\"success\":true,\"data\":{\"id\":\"25f7d887731f04a2b1599609d2580d41\",\"tenantId\":20,\"wechatNickname\":\"POC-测试客户-李雷\",\"phone\":\"13900001234\",\"gender\":\"unknown\",\"vipLevel\":\"normal\",\"customerStatus\":\"active\",\"sou",
+   "before=[{\"phone\":\"13900001234\",\"vip_level\":\"normal\",\"updated_at\":\"2026-09-03T06:44:31.590401+08:00\"}]",
+   "after=[{\"phone\":\"13900001234\",\"vip_level\":\"normal\",\"updated_at\":\"2026-09-03T06:44:31.590401+08:00\"}]"
+  ]
+ }
+]

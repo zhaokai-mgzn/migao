@@ -1,0 +1,19 @@
+[
+ {
+  "table": "users",
+  "tenant": "20",
+  "before": {
+   "alive": 15,
+   "max_updated": "2026-10-02 21:46:39.808541+08",
+   "idfp": "387210698e8170edfb01472c52bece30",
+   "rowfp": "4279b5bec9c1a639532f23abf1905912"
+  },
+  "after": {
+   "alive": 16,
+   "max_updated": "2026-10-03 10:42:54.905551+08",
+   "idfp": "562446acd8a17e49f2a09139b5f786c2",
+   "rowfp": "c4f314531bb26e71618e89038be0402d"
+  },
+  "kind": "行数变"
+ }
+]

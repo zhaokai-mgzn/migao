@@ -1,0 +1,36 @@
+{
+  "http": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "success": 0,
+      "failed": 3,
+      "errors": [
+        {
+          "id": "4ecf2c2c68f1bfbebad05afbc67eff0e",
+          "message": "当前状态[草稿]不允许上架"
+        },
+        {
+          "id": "0fbbef4b125e356d7b03c39d51dae312",
+          "message": "当前状态[草稿]不允许上架"
+        },
+        {
+          "id": "898092b774152959f915b994f63be877",
+          "message": "当前状态[草稿]不允许上架"
+        }
+      ]
+    },
+    "requestId": "req_af27141df6d747c7",
+    "timestamp": 1791006909
+  },
+  "before": {
+    "4ecf2c2c68f1bfbebad05afbc67eff0e": "draft",
+    "0fbbef4b125e356d7b03c39d51dae312": "draft",
+    "898092b774152959f915b994f63be877": "draft"
+  },
+  "after": {
+    "4ecf2c2c68f1bfbebad05afbc67eff0e": "draft",
+    "0fbbef4b125e356d7b03c39d51dae312": "draft",
+    "898092b774152959f915b994f63be877": "draft"
+  }
+}

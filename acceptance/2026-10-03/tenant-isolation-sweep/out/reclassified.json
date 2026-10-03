@@ -1,0 +1,103 @@
+[
+ {
+  "id": "WT-products-RECLASS",
+  "name": "跨租户写·商品（校验先于租户判定）",
+  "verdict": "pass",
+  "detail": "⚠️无安全影响：跨租户写先被**载荷校验**拦下（422/400）⇒ 改判 pass；但**有效载荷**跨租户写仍被租户闸拒绝（WV-products：有效载荷也被拒：404；库逐字段未变；无 B 数据泄漏）；同租户写可达性：A(20) 幂等 PUT 自己的对象 → 422",
+  "evidence": [
+   "跨租户写 A→B：PUT /api/admin/products/caa4b914ff80bb3fdac746929a421560 body={} → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"name\",\"message\":\"商品名称不能为空\"}]},\"requestId\":\"req_b40a560099d84f57\",\"timestamp\":1790995031}",
+   "DB 前后快照（表 products id=caa4b914ff80bb3fdac746929a421560）：before={\"id\":\"caa4b914ff80bb3fdac746929a421560\",\"name\":\"彩排窗帘9434\",\"base_price\":39.9,\"status\":\"on_sale\",\"stock\":49,\"updated_at\":\"2026-09-22T04:48:40.658722+08:00\",\"deleted\":0,\"tenant_id\":21} after={\"id\":\"caa4b914ff80bb3fdac746929a421560\",\"name\":\"彩排窗帘9434\",\"base_price\":39.9,\"status\":\"on_sale\",\"stock\":49,\"updated_at\":\"2026-09-22T04:48:40.658722+08:00\",\"deleted\":0,\"tenant_id\":21} unchanged=true",
+   "正对照 A→A 幂等写：PUT /api/admin/products/e292e7fd91eb5d5725e86ee02fc7b1c4 → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"name\",\"message\":\"商品名称不能为空\"}]},\"requestId\":\"req_39ca488efa9f41d3\",\"ti",
+   "A(20)→B(21) 有效载荷 PUT /api/admin/products/caa4b914ff80bb3fdac746929a421560 body={\"name\":\"彩排窗帘9434\",\"unit\":\"米\",\"basePrice\":39.9,\"status\":\"on_sale\"} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_a1ab9c6da6904661\",\"timestamp\":1790995103,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 快照 before={\"id\":\"caa4b914ff80bb3fdac746929a421560\",\"name\":\"彩排窗帘9434\",\"base_price\":39.9,\"status\":\"on_sale\",\"stock\":49,\"updated_at\":\"2026-09-22T04:48:40.658722+08:00\",\"deleted\":0,\"tenant_id\":21} after={\"id\":\"caa4b914ff80bb3fdac746929a421560\",\"name\":\"彩排窗帘9434\",\"base_price\":39.9,\"status\":\"on_sale\",\"stock\":49,\"updated_at\":\"2026-09-22T04:48:40.658722+08:00\",\"deleted\":0,\"tenant_id\":21} unchanged=true",
+   "正对照 A→A 同载荷 → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"分类ID不能为空\"},\"requestId\":\"req_4955e45521064052\",\"timestamp\":1790995103,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+   "PUT /api/admin/products/e292e7fd91eb5d5725e86ee02fc7b1c4 body={\"name\":\"工序验收商品084340\",\"unit\":\"米\",\"basePrice\":68,\"status\":\"on_shelf\"} → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"分类ID不能为空\"},\"requestId\":\"req_178a95b553eb4bac\",\"timestamp\":1790995400,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+   "before=[{\"name\":\"工序验收商品084340\",\"base_price\":68,\"status\":\"on_shelf\",\"updated_at\":\"2026-10-03T07:01:25.057344+08:00\"}]",
+   "after=[{\"name\":\"工序验收商品084340\",\"base_price\":68,\"status\":\"on_shelf\",\"updated_at\":\"2026-10-03T07:01:25.057344+08:00\"}]"
+  ]
+ },
+ {
+  "id": "WT-categories-RECLASS",
+  "name": "跨租户写·商品分类（校验先于租户判定）",
+  "verdict": "pass",
+  "detail": "⚠️无安全影响：跨租户写先被**载荷校验**拦下（422/400）⇒ 改判 pass；但**有效载荷**跨租户写仍被租户闸拒绝（WV-categories：有效载荷也被拒：404；库逐字段未变；无 B 数据泄漏）；同租户写可达性：A(20) 幂等 PUT 自己的对象 → 200",
+  "evidence": [
+   "跨租户写 A→B：PUT /api/admin/categories/8506a1ee8f20f61fc09a0651137547e9 body={} → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"name\",\"message\":\"分类名称不能为空\"}]},\"requestId\":\"req_0a5e4548ad6d4525\",\"timestamp\":1790995034}",
+   "DB 前后快照（表 categories id=8506a1ee8f20f61fc09a0651137547e9）：before={\"id\":\"8506a1ee8f20f61fc09a0651137547e9\",\"name\":\"彩排-窗帘\",\"parent_id\":null,\"sort_order\":0,\"updated_at\":\"2026-09-03T20:13:17.807384+08:00\",\"deleted\":0,\"tenant_id\":21} after={\"id\":\"8506a1ee8f20f61fc09a0651137547e9\",\"name\":\"彩排-窗帘\",\"parent_id\":null,\"sort_order\":0,\"updated_at\":\"2026-09-03T20:13:17.807384+08:00\",\"deleted\":0,\"tenant_id\":21} unchanged=true",
+   "正对照 A→A 幂等写：PUT /api/admin/categories/2df2103eebe2a70cdd5dab51c5484c95 → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"name\",\"message\":\"分类名称不能为空\"}]},\"requestId\":\"req_728d31ed5e87447b\",\"ti",
+   "A(20)→B(21) 有效载荷 PUT /api/admin/categories/8506a1ee8f20f61fc09a0651137547e9 body={\"name\":\"彩排-窗帘\"} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"分类不存在\"},\"requestId\":\"req_85f9fce7da9240bf\",\"timestamp\":1790995104,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 快照 before={\"id\":\"8506a1ee8f20f61fc09a0651137547e9\",\"name\":\"彩排-窗帘\",\"parent_id\":null,\"sort_order\":0,\"updated_at\":\"2026-09-03T20:13:17.807384+08:00\",\"deleted\":0,\"tenant_id\":21} after={\"id\":\"8506a1ee8f20f61fc09a0651137547e9\",\"name\":\"彩排-窗帘\",\"parent_id\":null,\"sort_order\":0,\"updated_at\":\"2026-09-03T20:13:17.807384+08:00\",\"deleted\":0,\"tenant_id\":21} unchanged=true",
+   "正对照 A→A 同载荷 → 200 {\"success\":true,\"data\":{\"id\":\"2df2103eebe2a70cdd5dab51c5484c95\",\"name\":\"工资验收分类567249-Z1\",\"level\":1,\"children\":[],\"createdAt\":\"2026-10-03 08:49:28\",\"updatedAt\":\"2026-10-03 08:49:28\"",
+   "PUT /api/admin/categories/dae835d8ae5f68bdb7cd191f29d2e827 body={\"name\":\"POC-窗帘面料\"} → 200 {\"success\":true,\"data\":{\"id\":\"dae835d8ae5f68bdb7cd191f29d2e827\",\"name\":\"POC-窗帘面料\",\"level\":1,\"children\":[],\"createdAt\":\"2026-09-03 06:29:15\",\"updatedAt\":\"2026-09-03 06:29:15\",\"sort\":0},\"requestId\":\"req",
+   "before=[{\"name\":\"POC-窗帘面料\",\"sort_order\":0,\"updated_at\":\"2026-09-03T06:29:15.242106+08:00\"}]",
+   "after=[{\"name\":\"POC-窗帘面料\",\"sort_order\":0,\"updated_at\":\"2026-09-03T06:29:15.242106+08:00\"}]"
+  ]
+ },
+ {
+  "id": "WT-processing_items-RECLASS",
+  "name": "跨租户写·加工项（校验先于租户判定）",
+  "verdict": "pass",
+  "detail": "⚠️无安全影响：跨租户写先被**载荷校验**拦下（422/400）⇒ 改判 pass；但**有效载荷**跨租户写仍被租户闸拒绝（WV-processing_items：有效载荷也被拒：404；库逐字段未变；无 B 数据泄漏）；同租户写可达性：A(20) 幂等 PUT 自己的对象 → 200",
+  "evidence": [
+   "跨租户写 A→B：PUT /api/admin/processing-items/b8a89a836baa4d58eaabc2bb05ccf3d7 body={} → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"name\",\"message\":\"加工项名称不能为空\"},{\"field\":\"categoryId\",\"message\":\"分类ID不能为空\"}]},\"requestId\":\"req_e3a79c2f27db4730\",\"timestamp\":179099",
+   "DB 前后快照（表 processing_items id=b8a89a836baa4d58eaabc2bb05ccf3d7）：before={\"id\":\"b8a89a836baa4d58eaabc2bb05ccf3d7\",\"name\":\"彩排-裁剪\",\"unit\":\"米\",\"status\":\"active\",\"updated_at\":\"2026-09-03T20:13:25.250123+08:00\",\"deleted\":0,\"tenant_id\":21} after={\"id\":\"b8a89a836baa4d58eaabc2bb05ccf3d7\",\"name\":\"彩排-裁剪\",\"unit\":\"米\",\"status\":\"active\",\"updated_at\":\"2026-09-03T20:13:25.250123+08:00\",\"deleted\":0,\"tenant_id\":21} unchanged=true",
+   "正对照 A→A 幂等写：PUT /api/admin/processing-items/pi-v83-20-13 → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"name\",\"message\":\"加工项名称不能为空\"},{\"field\":\"categoryId\",\"message\":\"分类ID不能",
+   "A(20)→B(21) 有效载荷 PUT /api/admin/processing-items/b8a89a836baa4d58eaabc2bb05ccf3d7 body={\"name\":\"彩排-裁剪\",\"categoryId\":\"a48ff42ce0a034a26c6e8e8fb04199da\",\"unit\":\"米\"} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"加工项不存在\"},\"requestId\":\"req_2b50425ba97f42c6\",\"timestamp\":1790995105,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 快照 before={\"id\":\"b8a89a836baa4d58eaabc2bb05ccf3d7\",\"name\":\"彩排-裁剪\",\"unit\":\"米\",\"status\":\"active\",\"updated_at\":\"2026-09-03T20:13:25.250123+08:00\",\"deleted\":0,\"tenant_id\":21} after={\"id\":\"b8a89a836baa4d58eaabc2bb05ccf3d7\",\"name\":\"彩排-裁剪\",\"unit\":\"米\",\"status\":\"active\",\"updated_at\":\"2026-09-03T20:13:25.250123+08:00\",\"deleted\":0,\"tenant_id\":21} unchanged=true",
+   "正对照 A→A 同载荷 → 200 {\"success\":true,\"data\":{\"id\":\"pi-v83-20-13\",\"name\":\"换货\",\"categoryId\":\"pc-v83-20-fee\",\"categoryName\":\"加工费\",\"unit\":\"米\",\"minQuantity\":1,\"maxQuantity\":999,\"description\":\"ERP 加工费单项\",\"op",
+   "PUT /api/admin/processing-items/pi-v83-20-13 body={\"name\":\"换货\",\"categoryId\":\"pc-v83-20-fee\",\"unit\":\"米\"} → 200 {\"success\":true,\"data\":{\"id\":\"pi-v83-20-13\",\"name\":\"换货\",\"categoryId\":\"pc-v83-20-fee\",\"categoryName\":\"加工费\",\"unit\":\"米\",\"minQuantity\":1,\"maxQuantity\":999,\"description\":\"ERP 加工费单项\",\"options\":[],\"processin",
+   "before=[{\"name\":\"换货\",\"status\":\"active\",\"updated_at\":\"2026-09-19T21:16:24.875721+08:00\"}]",
+   "after=[{\"name\":\"换货\",\"status\":\"active\",\"updated_at\":\"2026-09-19T21:16:24.875721+08:00\"}]"
+  ]
+ },
+ {
+  "id": "WT-processing_categories-RECLASS",
+  "name": "跨租户写·加工分类（校验先于租户判定）",
+  "verdict": "skip",
+  "detail": "无法用有效载荷复核 ⇒ 判据不可判",
+  "evidence": [
+   "跨租户写 A→B：PUT /api/admin/processing-categories/a48ff42ce0a034a26c6e8e8fb04199da body={} → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"name\",\"message\":\"分类名称不能为空\"}]},\"requestId\":\"req_978ee33cefe445d0\",\"timestamp\":1790995041}",
+   "DB 前后快照（表 processing_categories id=a48ff42ce0a034a26c6e8e8fb04199da）：before={\"id\":\"a48ff42ce0a034a26c6e8e8fb04199da\",\"name\":\"彩排-基础加工\",\"sort_order\":0,\"status\":\"active\",\"updated_at\":\"2026-09-03T20:13:22.991893+08:00\",\"deleted\":0,\"tenant_id\":21} after={\"id\":\"a48ff42ce0a034a26c6e8e8fb04199da\",\"name\":\"彩排-基础加工\",\"sort_order\":0,\"status\":\"active\",\"updated_at\":\"2026-09-03T20:13:22.991893+08:00\",\"deleted\":0,\"tenant_id\":21} unchanged=true",
+   "正对照 A→A 幂等写：PUT /api/admin/processing-categories/2989f97400c2dfeba7ee9f3516ba3cb1 → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"name\",\"message\":\"分类名称不能为空\"}]},\"requestId\":\"req_56caa5a8937a4801\",\"ti"
+  ]
+ },
+ {
+  "id": "WT-orders-RECLASS",
+  "name": "跨租户写·订单（校验先于租户判定）",
+  "verdict": "pass",
+  "detail": "⚠️无安全影响：跨租户写先被**载荷校验**拦下（422/400）⇒ 改判 pass；但**有效载荷**跨租户写仍被租户闸拒绝（WV-orders：有效载荷也被拒：404；库逐字段未变；无 B 数据泄漏）；同租户写可达性：（未测）",
+  "evidence": [
+   "跨租户写 A→B：PUT /api/admin/orders/fed91dedfe07a56620ab4bc8ec2a4972/content body= → 400 {\"success\":false,\"error\":{\"code\":\"BAD_REQUEST\",\"message\":\"请求体格式错误或缺失\"},\"requestId\":\"req_022086e1394e40b8\",\"timestamp\":1790995042}",
+   "DB 前后快照（表 orders id=fed91dedfe07a56620ab4bc8ec2a4972）：before={\"id\":\"fed91dedfe07a56620ab4bc8ec2a4972\",\"order_no\":\"20260903361530005\",\"status\":\"completed\",\"total_amount\":39.9,\"remark\":null,\"updated_at\":\"2026-09-03T20:16:14.236653+08:00\",\"deleted\":0,\"tenant_id\":21} after={\"id\":\"fed91dedfe07a56620ab4bc8ec2a4972\",\"order_no\":\"20260903361530005\",\"status\":\"completed\",\"total_amount\":39.9,\"remark\":null,\"updated_at\":\"2026-09-03T20:16:14.236653+08:00\",\"deleted\":0,\"tenant_id\":21} unchanged=true",
+   "正对照 A→A 幂等写：PUT /api/admin/orders/1c5b02620efb20f11e85af5ac6e65432/content → 400 {\"success\":false,\"error\":{\"code\":\"BAD_REQUEST\",\"message\":\"请求体格式错误或缺失\"},\"requestId\":\"req_ff5dd3f4cfe34528\",\"timestamp\":1790995042}",
+   "A(20)→B(21) 有效载荷 PUT /api/admin/orders/fed91dedfe07a56620ab4bc8ec2a4972/content body={\"customerName\":\"张三\",\"customerPhone\":\"13800138000\",\"items\":[{\"productName\":\"x\",\"quantity\":1,\"unitPrice\":1}]} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"订单不存在\"},\"requestId\":\"req_29986878cea24af5\",\"timestamp\":1790995107,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 快照 before={\"id\":\"fed91dedfe07a56620ab4bc8ec2a4972\",\"order_no\":\"20260903361530005\",\"status\":\"completed\",\"total_amount\":39.9,\"remark\":null,\"updated_at\":\"2026-09-03T20:16:14.236653+08:00\",\"deleted\":0,\"tenant_id\":21} after={\"id\":\"fed91dedfe07a56620ab4bc8ec2a4972\",\"order_no\":\"20260903361530005\",\"status\":\"completed\",\"total_amount\":39.9,\"remark\":null,\"updated_at\":\"2026-09-03T20:16:14.236653+08:00\",\"deleted\":0,\"tenant_id\":21} unchanged=true",
+   "正对照 A→A 同载荷 → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"实收金额与应收不一致：应收 1.00 - 优惠 0.00 = 1.00，实收 100.00（容差 0.01）\"},\"requestId\":\"req_8ae8e930903a4a5e\",\"timestamp\":1790995107,\"s"
+  ]
+ },
+ {
+  "id": "ROLE-plat-RECLASS",
+  "name": "角色越权·平台级端点（复核）",
+  "verdict": "pass",
+  "detail": "初判红（400「参数类型不正确」）源于**类型解析先于权限判定**；改用**合法数字 id** 复核 ⇒ 商家 admin 一律 403 PERMISSION_DENIED，超管正对照到业务层 404 ⇒ 权限闸生效，改判 pass",
+  "evidence": [
+   "A → 403 {\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足\"},\"requestId\":\"req_3c04d00535f24328\",\"timestamp\":1790995353}",
+   "B → 403 {\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足\"},\"requestId\":\"req_11cd7e9439644d68\",\"timestamp\":1790995353}",
+   "P → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"入驻申请不存在\"},\"requestId\":\"req_2d6edaa8c24e42c8\",\"timestamp\":1790995353,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查",
+   "A → 403 {\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足\"},\"requestId\":\"req_d33efcb3adac40ea\",\"timestamp\":1790995353}",
+   "B → 403 {\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足\"},\"requestId\":\"req_0146bc593ffe45c1\",\"timestamp\":1790995353}",
+   "P → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"入驻申请不存在\"},\"requestId\":\"req_d04570676c904a73\",\"timestamp\":1790995353,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查"
+  ]
+ },
+ {
+  "id": "PCW-products-NOTE",
+  "name": "探针侧登记：商品幂等 PUT 的载荷契约",
+  "verdict": "skip",
+  "detail": "A 对自己商品用「值=现值」幂等 PUT 得 422（库未变）⇒ 是探针载荷与商品更新契约未对齐（见 out/probe5-products.json：**仅 name** 或 **带 categoryId** 均 200）⇒ 不是隔离缺陷，登记待复核",
+  "evidence": [
+   "PUT /api/admin/products/e292e7fd91eb5d5725e86ee02fc7b1c4 body={\"name\":\"工序验收商品084340\",\"unit\":\"米\",\"basePrice\":68,\"status\":\"on_shelf\"} → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"分类ID不能为空\"},\"requestId\":\"req_178a95b553eb4bac\",\"timestamp\":1790995400,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+   "before=[{\"name\":\"工序验收商品084340\",\"base_price\":68,\"status\":\"on_shelf\",\"updated_at\":\"2026-10-03T07:01:25.057344+08:00\"}]",
+   "after=[{\"name\":\"工序验收商品084340\",\"base_price\":68,\"status\":\"on_shelf\",\"updated_at\":\"2026-10-03T07:01:25.057344+08:00\"}]"
+  ]
+ }
+]

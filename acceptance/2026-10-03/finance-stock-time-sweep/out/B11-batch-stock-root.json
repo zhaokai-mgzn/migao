@@ -1,0 +1,13 @@
+{
+  "status": 404,
+  "body": {
+    "success": false,
+    "error": {
+      "code": "NOT_FOUND",
+      "message": "请求的资源不存在: /api/admin/batch-stock"
+    },
+    "requestId": "req_aa99076a6ea34e26",
+    "timestamp": 1791006557
+  },
+  "text": "{\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"请求的资源不存在: /api/admin/batch-stock\"},\"requestId\":\"req_aa99076a6ea34e26\",\"timestamp\":1791006557}"
+}

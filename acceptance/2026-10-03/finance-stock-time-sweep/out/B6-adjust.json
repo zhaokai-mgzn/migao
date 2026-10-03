@@ -1,0 +1,9 @@
+{
+  "adjStatus": 200,
+  "adjBody": "{\"success\":true,\"data\":{\"id\":\"c3prodmurz23h2000000000000\",\"name\":\"线③验收探针货号\",\"basePrice\":0.00,\"images\":[],\"status\":\"active\",\"stock\":95.0,\"stockWarningThreshold\":10,\"unit\":\"件\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":0,\"totalStock\":95.0,\"salesCount\":0.0,\"salesAmount\":0.00",
+  "avgBeforeAdj": 11.6113,
+  "avgAfterAdj": {
+    "avg_cost": 11.6113,
+    "stock": 95
+  }
+}

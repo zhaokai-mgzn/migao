@@ -1,0 +1,35 @@
+{
+  "at": "2026-10-03T00:34:34.165Z",
+  "steps": [
+    {
+      "id": "RED-01",
+      "name": "注入式：把未定价工序按「0 元」混进 per_operation 明细",
+      "predicate": "predUnpricedNotZeroInDetail()",
+      "injectedReading": "per_operation 追加 {operation:'定型-布', amount:0}",
+      "verdictOnInjected": "RED",
+      "controlOnCleanReading": true,
+      "verdict": "RED-证成立",
+      "at": "2026-10-03T00:34:43.624Z"
+    },
+    {
+      "id": "RED-02",
+      "name": "注入式：total 少/多一分",
+      "predicate": "predTotalEqualsOwnMath()",
+      "injectedReading": "total='11.21'（真实 11.20）",
+      "verdictOnInjected": "RED",
+      "controlOnCleanReading": true,
+      "verdict": "RED-证成立",
+      "at": "2026-10-03T00:34:43.625Z"
+    },
+    {
+      "id": "RED-03",
+      "name": "注入式：明细行少一道",
+      "predicate": "predDetailEqualsOwnMath()",
+      "injectedReading": "去掉 精裁-布 的明细行",
+      "verdictOnInjected": "RED",
+      "controlOnCleanReading": true,
+      "verdict": "RED-证成立",
+      "at": "2026-10-03T00:34:43.625Z"
+    }
+  ]
+}

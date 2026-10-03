@@ -1,0 +1,19 @@
+{
+  "A_products": [
+    "e292e7fd91eb5d5725e86ee02fc7b1c4",
+    "03d290a355b40c44dc0cd793af9b36e6",
+    "291ccb15ba5a13e00fe6c9fba8c9e214",
+    "4e9f41284d8577470d3b3811d15e5362",
+    "9d0b9bb4086cdfd360c76db910894bc6"
+  ],
+  "B_products": [
+    "caa4b914ff80bb3fdac746929a421560"
+  ],
+  "C1_recommended": [
+    {
+      "id": "701dec2d2d994da111167c859c7cbf26",
+      "name": "盯防加工项价格0908"
+    }
+  ],
+  "sql": "select id from products where tenant_id in (20,21,1)"
+}

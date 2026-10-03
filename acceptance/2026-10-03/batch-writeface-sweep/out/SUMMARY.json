@@ -1,0 +1,272 @@
+{
+  "buildPoint": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "sha": "7e9f66ce5",
+    "shaFull": "7e9f66ce57915ce17f6e949e3dc23d53bae291eb",
+    "subject": "fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)",
+    "adminApiStart": "六 10月/ 3 13:44:16 2026",
+    "originMain": "ee65ea70d"
+  },
+  "buildPointShift": {
+    "from": {
+      "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+      "sha": "d1c09d02f",
+      "subject": "chore(ci): flaky 台账追加（run 37096947254） (#6183)",
+      "adminApiStart": "2026-10-03 13:09:45 +08",
+      "pid": 99086
+    },
+    "to": {
+      "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+      "sha": "7e9f66ce5",
+      "subject": "fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)",
+      "adminApiStart": "六 10月/ 3 13:44:16 2026",
+      "pid": "60585"
+    },
+    "switchAt": "2026-10-03 13:44:16 +08",
+    "observedAt": {
+      "cst": "2026-10-03 13:56:27 +08",
+      "utc": "2026-10-03T05:56:27.850Z"
+    }
+  },
+  "window": {
+    "start": "2026-10-03 13:56:35 +08",
+    "utc": "2026-10-03T05:56:35.918Z"
+  },
+  "perSuite": {
+    "A-import-export.json": {
+      "pass": 20,
+      "fail": 1,
+      "skip": 0,
+      "total": 21
+    },
+    "B-batch-and-detach.json": {
+      "pass": 17,
+      "fail": 0,
+      "skip": 0,
+      "total": 17
+    },
+    "D-uploads.json": {
+      "pass": 11,
+      "fail": 2,
+      "skip": 0,
+      "total": 13
+    },
+    "E-concurrency-and-redproof.json": {
+      "pass": 4,
+      "fail": 3,
+      "skip": 0,
+      "total": 7
+    },
+    "F-redproof.json": {
+      "pass": 2,
+      "fail": 2,
+      "skip": 0,
+      "total": 4
+    }
+  },
+  "totals": {
+    "pass": 54,
+    "fail": 8,
+    "skip": 0,
+    "total": 62
+  },
+  "failures": [
+    {
+      "suite": "A-import-export.json",
+      "id": "A5.2",
+      "name": "导出行数 == 同筛选条件下列表 total（口径一致）",
+      "detail": "期望 导出行数(500) == 列表 total(989) ≠ 实测 导出行数=500 列表 total=989",
+      "at": "2026-10-03 13:55:07 +08"
+    },
+    {
+      "suite": "D-uploads.json",
+      "id": "D2.5",
+      "name": "伪 Content-Type 绕过图片 5MB 上限（.png + application/pdf + 19MB）",
+      "detail": "期望 4xx（不许用客户端自报的 Content-Type 放宽上限）或 200（登记为绕过） ≠ 实测 HTTP 200 bytes=19922953 body={\"success\":true,\"data\":{\"id\":\"46a2522434a54729998e593422635cef\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/cfee60b8965342a8b0fa87f5",
+      "at": "2026-10-03 13:55:26 +08"
+    },
+    {
+      "suite": "D-uploads.json",
+      "id": "D3.2",
+      "name": "directory 参数穿越 ../../l2evil：存储实现必须拦住（本地实现 safeResolve / OSS 实现无校验）",
+      "detail": "期望 HTTP 4xx（干净拒绝，本地实现是 422 \"非法文件路径\"） ≠ 实测 HTTP 500 url=undefined body={\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestId\":\"req_eea03c71fba445f0\",\"timestamp\":1791006926}",
+      "at": "2026-10-03 13:55:26 +08"
+    },
+    {
+      "suite": "E-concurrency-and-redproof.json",
+      "id": "E1.1",
+      "name": "并发 5 次同 payload 同 X-Client-Request-Id ⇒ 只应产生一份数据（不得 5 份）",
+      "detail": "期望 落库份数 = 1（幂等键生效）；若为 6 ⇒ 幂等键未生效（登记项） ≠ 实测 落库=6（并发前=1）HTTP=[200,200,200,200,200]",
+      "at": "2026-10-03 13:55:28 +08"
+    },
+    {
+      "suite": "E-concurrency-and-redproof.json",
+      "id": "E2.1",
+      "name": "库存不得为负：写 -5 ⇒ 必须拒绝且 DB 零变更（超卖护栏）",
+      "detail": "期望 HTTP 4xx 且 products.stock 仍为 7 ≠ 实测 HTTP 200 body={\"success\":true,\"data\":{\"id\":\"efeff4b0a9d1749c163864efca435c9e\",\"name\":\"线②验收库存E2\",\"basePrice\":20.00,\"description\":\"线②验收并发探针\",\"images\":[],\"status\":\"draft\",\"stock\":-5.0,\"stockWarning；product=-5.0",
+      "at": "2026-10-03 13:55:32 +08"
+    },
+    {
+      "suite": "E-concurrency-and-redproof.json",
+      "id": "E2.2",
+      "name": "并发写负库存 5 次 ⇒ 不得有任一次落库（仓库不得出现负库存）",
+      "detail": "期望 5 次全 4xx；products.stock ≥ 0 ≠ 实测 HTTP=[200,200,200,200,200]；product=-1.0 sku=[{\"id\":2106261833989976000,\"s\":\"-1.0\"}]",
+      "at": "2026-10-03 13:55:32 +08"
+    },
+    {
+      "suite": "F-redproof.json",
+      "id": "F2",
+      "name": "红证②：幂等判据（同货号商品数=1）**会红**（注入第二条同货号 ⇒ 2 ⇒ 清理 ⇒ 1），sha256 自证",
+      "detail": "期望 1 → 注入后 2（判据当场红）→ 清理后 1 ≠ 实测 green=1 red=2 restored=2；注入行 sha256=770c016fcc60471d；还原后 sha256=eb93f353b4fd5c91",
+      "at": "2026-10-03 13:56:29 +08"
+    },
+    {
+      "suite": "F-redproof.json",
+      "id": "F4",
+      "name": "故意的失效控制项（**必须红**）：断言 1 === 2 —— 证明 fail 桶可达、红证通道可用",
+      "detail": "期望 1 === 2（**故意为假**） ≠ 实测 1 === 2 为 false ⇒ 本条预期就是 fail",
+      "at": "2026-10-03 13:56:31 +08"
+    }
+  ],
+  "skips": [],
+  "residue": {
+    "counts": {
+      "products": 0,
+      "productsByName": 0,
+      "productSkus": 0,
+      "productColors": 0,
+      "productAttrs": 0,
+      "operations": 0,
+      "opPositions": 0,
+      "opPositionsByName": 0,
+      "opPriceVersions": 0,
+      "routeTemplates": 0,
+      "routeRules": 0,
+      "ledger": 0,
+      "ledgerByProduct": 0
+    },
+    "total": 0
+  },
+  "segments": {
+    "f1-redproof": {
+      "status": "ok",
+      "tail": "2026-10-03 13:56:33 +08 F 段探针对象已清理\n2026-10-03 13:56:33 +08 F 段结束，摘要 {\"pass\":2,\"fail\":2,\"skip\":0,\"total\":4}\n"
+    }
+  },
+  "note": "fail 桶中 F4 是**故意的失效控制项**（必须红，不计缺陷）；判据缺陷（假红）单列在 REPORT §7",
+  "triage": {
+    "real_defects": [
+      {
+        "id": "D-1",
+        "sev": "P1",
+        "assertions": [
+          "A5.2"
+        ],
+        "title": "导出静默截断在 500 行（列表 total=989）",
+        "evidence": "out/A5-export-all.json",
+        "root_cause": "MybatisPlusConfig.setMaxLimit(500L) × ProductService.exportProducts size=10000",
+        "money": "否",
+        "permission": "否",
+        "irreversible": "否"
+      },
+      {
+        "id": "D-2",
+        "sev": "P1",
+        "assertions": [
+          "E2.1",
+          "E2.2"
+        ],
+        "title": "库存可为负：PUT /api/admin/products/{id} 接受 stock=-5 并落库 + 写台账",
+        "evidence": "out/E2-stock-negative.json",
+        "redproof": "out/F3-stock-redproof.json",
+        "money": "间接（可售库存/超卖决策）",
+        "permission": "否",
+        "irreversible": "否"
+      },
+      {
+        "id": "D-3",
+        "sev": "P2",
+        "assertions": [
+          "D2.5"
+        ],
+        "title": "上传 5MB 图片上限可被客户端 Content-Type 绕过（19MB .png 落 OSS）",
+        "evidence": "out/D2-boundaries.json",
+        "money": "否（存储配额面）",
+        "permission": "否",
+        "irreversible": "否"
+      },
+      {
+        "id": "D-4",
+        "sev": "P2",
+        "assertions": [
+          "D3.2"
+        ],
+        "title": "directory 参数无校验 ⇒ ../../ 触发 500（本地实现有 safeResolve，OSS 实现无）",
+        "evidence": "out/D3-traversal.json",
+        "money": "否",
+        "permission": "是（输入校验缺失/实现间护栏不一致）",
+        "irreversible": "否"
+      },
+      {
+        "id": "D-5",
+        "sev": "P2",
+        "assertions": [
+          "E1.1"
+        ],
+        "title": "重复提交无服务端幂等：X-Client-Request-Id 完全未被消费（并发 5 次 ⇒ 6 条商品）",
+        "evidence": "out/E1-duplicate-submit.json",
+        "money": "否",
+        "permission": "否",
+        "irreversible": "否"
+      }
+    ],
+    "control_items_must_be_red": [
+      {
+        "id": "F4",
+        "why": "故意的失效控制项"
+      }
+    ],
+    "judge_defects_false_red": [
+      {
+        "id": "F2",
+        "why": "probeSku 同毫秒碰撞（Date.now 毫秒精度）⇒ 按货号计数把两个商品并成一个口径；红半段成立、回绿半段未证"
+      },
+      {
+        "id": "(首轮) A5.x",
+        "why": "自写 zip 解析器按 local header 读 POI streamed zip（size=0）⇒ 导出被读成 0 行"
+      },
+      {
+        "id": "(首轮) B1.x",
+        "why": "期望错：batchOnShelf 白名单只有 off_sale"
+      },
+      {
+        "id": "(首轮) B3.1",
+        "why": "schema 前提不成立：子表无 deleted 列 + 软删语义 + 8 条 FK ⇒ 真孤儿不可能="
+      },
+      {
+        "id": "(首轮) C1.3",
+        "why": "写错列名（positions 无 operation_id；position_price_versions 无 status）⇒ psql 报错被读成 dangling"
+      },
+      {
+        "id": "(首轮) D5.1",
+        "why": "我的正则自相矛盾（要求含 directory 段 ∧ 不得以 uuid.ext 结尾）"
+      },
+      {
+        "id": "(首轮) A4.3-半",
+        "why": "期望过严：产品未声明支持 CSV"
+      }
+    ],
+    "not_determined": [
+      "U-1 不落盘判定不可达（存储=OSS，无列举权限）",
+      "U-2 OSS 侧对象残留无法列举（端点口径 8/8 删除成功）",
+      "U-3 stocktake 同 runId 并发幂等（需批次夹具）",
+      "U-4 导入并发",
+      "U-5 大批量 batch(>500 ids) 与 batch×单条交叉并发",
+      "U-6 上传删除面跨租户/越权（DELETE /files/{fileId} 未跑）",
+      "U-7 导出 xlsx 字节级编码/样式",
+      "U-8 UI 级复核（admin-web :3001 / worker-h5 :3100）",
+      "B3.2 真孤儿扫描已改判为『结构性保证、无判别力』（F1 注入被 FK 拒绝）"
+    ]
+  },
+  "report": "REPORT.md"
+}

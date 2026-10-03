@@ -1,0 +1,698 @@
+[
+ {
+  "meta": true,
+  "ref": "origin/main",
+  "commit": "9214e483e591ab86b4a57585a081cc28eea8772e",
+  "generated_at": "2026-10-03T06:32:08+08:00"
+ },
+ {
+  "path": "/api/admin/roles",
+  "method": "GET",
+  "perm": "system:view",
+  "controller": "AdminRoleController.java"
+ },
+ {
+  "path": "/api/admin/roles/all",
+  "method": "GET",
+  "perm": "employee:list",
+  "controller": "AdminRoleController.java"
+ },
+ {
+  "path": "/api/admin/roles/{id}",
+  "method": "GET",
+  "perm": "system:view",
+  "controller": "AdminRoleController.java"
+ },
+ {
+  "path": "/api/admin/roles",
+  "method": "POST",
+  "perm": "system:manage",
+  "controller": "AdminRoleController.java"
+ },
+ {
+  "path": "/api/admin/roles/{id}",
+  "method": "PUT",
+  "perm": "system:manage",
+  "controller": "AdminRoleController.java"
+ },
+ {
+  "path": "/api/admin/roles/{id}",
+  "method": "DELETE",
+  "perm": "system:manage",
+  "controller": "AdminRoleController.java"
+ },
+ {
+  "path": "/api/admin/users",
+  "method": "GET",
+  "perm": "employee:list",
+  "controller": "AdminUserController.java"
+ },
+ {
+  "path": "/api/admin/users/{id}",
+  "method": "GET",
+  "perm": "employee:list",
+  "controller": "AdminUserController.java"
+ },
+ {
+  "path": "/api/admin/users",
+  "method": "POST",
+  "perm": "employee:create",
+  "controller": "AdminUserController.java"
+ },
+ {
+  "path": "/api/admin/users/{id}",
+  "method": "PUT",
+  "perm": "employee:create",
+  "controller": "AdminUserController.java"
+ },
+ {
+  "path": "/api/admin/users/{id}",
+  "method": "DELETE",
+  "perm": "employee:create",
+  "controller": "AdminUserController.java"
+ },
+ {
+  "path": "/api/admin/users/{id}/reset-password",
+  "method": "PUT",
+  "perm": "employee:create",
+  "controller": "AdminUserController.java"
+ },
+ {
+  "path": "/api/admin/users/{id}/status",
+  "method": "PUT",
+  "perm": "employee:create",
+  "controller": "AdminUserController.java"
+ },
+ {
+  "path": "/api/admin/workers",
+  "method": "GET",
+  "perm": "employee:list",
+  "controller": "AdminWorkerController.java"
+ },
+ {
+  "path": "/api/admin/workers",
+  "method": "POST",
+  "perm": "employee:create",
+  "controller": "AdminWorkerController.java"
+ },
+ {
+  "path": "/api/admin/after-sales",
+  "method": "GET",
+  "perm": "after_sales:view",
+  "controller": "AfterSalesController.java"
+ },
+ {
+  "path": "/api/admin/after-sales/{id}",
+  "method": "GET",
+  "perm": "after_sales:view",
+  "controller": "AfterSalesController.java"
+ },
+ {
+  "path": "/api/admin/after-sales",
+  "method": "POST",
+  "perm": "order:refund",
+  "controller": "AfterSalesController.java"
+ },
+ {
+  "path": "/api/admin/after-sales/{id}/status",
+  "method": "PUT",
+  "perm": "order:refund",
+  "controller": "AfterSalesController.java"
+ },
+ {
+  "path": "/api/admin/agent-sessions/{id}/assign",
+  "method": "POST",
+  "perm": "agent:session:manage",
+  "controller": "AgentSessionController.java"
+ },
+ {
+  "path": "/api/admin/agent-sessions/{id}/end",
+  "method": "POST",
+  "perm": "agent:session:manage",
+  "controller": "AgentSessionController.java"
+ },
+ {
+  "path": "/api/admin/agent-sessions/{id}/messages",
+  "method": "POST",
+  "perm": "agent:session:manage",
+  "controller": "AgentSessionController.java"
+ },
+ {
+  "path": "/api/admin/customers",
+  "method": "GET",
+  "perm": "customer:view",
+  "controller": "CustomerController.java"
+ },
+ {
+  "path": "/api/admin/customers/profile-view",
+  "method": "GET",
+  "perm": "customer:view",
+  "controller": "CustomerController.java"
+ },
+ {
+  "path": "/api/admin/customers/{id}",
+  "method": "GET",
+  "perm": "customer:view",
+  "controller": "CustomerController.java"
+ },
+ {
+  "path": "/api/admin/customers/{id}",
+  "method": "PUT",
+  "perm": "customer:create",
+  "controller": "CustomerController.java"
+ },
+ {
+  "path": "/api/admin/customers/{id}",
+  "method": "DELETE",
+  "perm": "customer:create",
+  "controller": "CustomerController.java"
+ },
+ {
+  "path": "/api/admin/customers/{customerId}/tags/{tagId}",
+  "method": "POST",
+  "perm": "customer:create",
+  "controller": "CustomerController.java"
+ },
+ {
+  "path": "/api/admin/customers/{customerId}/tags/{tagId}",
+  "method": "DELETE",
+  "perm": "customer:create",
+  "controller": "CustomerController.java"
+ },
+ {
+  "path": "/api/admin/customer-tags",
+  "method": "GET",
+  "perm": "customer:view",
+  "controller": "CustomerController.java"
+ },
+ {
+  "path": "/api/admin/customer-tags",
+  "method": "POST",
+  "perm": "customer:create",
+  "controller": "CustomerController.java"
+ },
+ {
+  "path": "/api/admin/customer-tags/{id}",
+  "method": "PUT",
+  "perm": "customer:create",
+  "controller": "CustomerController.java"
+ },
+ {
+  "path": "/api/admin/customer-tags/{id}",
+  "method": "DELETE",
+  "perm": "customer:create",
+  "controller": "CustomerController.java"
+ },
+ {
+  "path": "/api/admin/finance/transactions",
+  "method": "POST",
+  "perm": "finance:create",
+  "controller": "FinanceController.java"
+ },
+ {
+  "path": "/api/admin/inbound-orders",
+  "method": "GET",
+  "perm": "inbound:view",
+  "controller": "InboundOrderController.java"
+ },
+ {
+  "path": "/api/admin/inbound-orders/batches",
+  "method": "GET",
+  "perm": "inbound:view",
+  "controller": "InboundOrderController.java"
+ },
+ {
+  "path": "/api/admin/inbound-orders/opening-template",
+  "method": "GET",
+  "perm": "inbound:create",
+  "controller": "InboundOrderController.java"
+ },
+ {
+  "path": "/api/admin/inbound-orders/opening-import",
+  "method": "POST",
+  "perm": "inbound:create",
+  "controller": "InboundOrderController.java"
+ },
+ {
+  "path": "/api/admin/inbound-orders",
+  "method": "POST",
+  "perm": "inbound:create",
+  "controller": "InboundOrderController.java"
+ },
+ {
+  "path": "/api/admin/inbound-orders/{id}",
+  "method": "GET",
+  "perm": "inbound:view",
+  "controller": "InboundOrderController.java"
+ },
+ {
+  "path": "/api/admin/inbound-orders/{id}",
+  "method": "PATCH",
+  "perm": "inbound:create",
+  "controller": "InboundOrderController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/candidates",
+  "method": "GET",
+  "perm": "knowledge:view",
+  "controller": "KnowledgeCandidateController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/candidates/pending-count",
+  "method": "GET",
+  "perm": "knowledge:view",
+  "controller": "KnowledgeCandidateController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/candidates/{id}/adopt",
+  "method": "POST",
+  "perm": "knowledge:manage",
+  "controller": "KnowledgeCandidateController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/candidates/{id}/adopt-edited",
+  "method": "POST",
+  "perm": "knowledge:manage",
+  "controller": "KnowledgeCandidateController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/candidates/{id}/reject",
+  "method": "POST",
+  "perm": "knowledge:manage",
+  "controller": "KnowledgeCandidateController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/cards",
+  "method": "GET",
+  "perm": "knowledge:view",
+  "controller": "KnowledgeCardController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/cards/search",
+  "method": "GET",
+  "perm": "knowledge:view",
+  "controller": "KnowledgeCardController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/cards",
+  "method": "POST",
+  "perm": "knowledge:manage",
+  "controller": "KnowledgeCardController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/cards/{id}",
+  "method": "PUT",
+  "perm": "knowledge:manage",
+  "controller": "KnowledgeCardController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/cards/{id}",
+  "method": "DELETE",
+  "perm": "knowledge:manage",
+  "controller": "KnowledgeCardController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/cards/{id}/publish",
+  "method": "POST",
+  "perm": "knowledge:manage",
+  "controller": "KnowledgeCardController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/cards/{id}/archive",
+  "method": "POST",
+  "perm": "knowledge:manage",
+  "controller": "KnowledgeCardController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/templates",
+  "method": "GET",
+  "perm": "knowledge:view",
+  "controller": "KnowledgeTemplateController.java"
+ },
+ {
+  "path": "/api/admin/knowledge/templates/{templateId}/apply",
+  "method": "POST",
+  "perm": "knowledge:manage",
+  "controller": "KnowledgeTemplateController.java"
+ },
+ {
+  "path": "/api/admin/notifications",
+  "method": "POST",
+  "perm": "system:manage",
+  "controller": "NotificationController.java"
+ },
+ {
+  "path": "/api/admin/processing-orders/generate",
+  "method": "POST",
+  "perm": "processing:update",
+  "controller": "ProcessingOrderController.java"
+ },
+ {
+  "path": "/api/admin/processing-orders",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "ProcessingOrderController.java"
+ },
+ {
+  "path": "/api/admin/processing-orders/{id}",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "ProcessingOrderController.java"
+ },
+ {
+  "path": "/api/admin/processing-orders/{id}",
+  "method": "PATCH",
+  "perm": "processing:update",
+  "controller": "ProcessingOrderController.java"
+ },
+ {
+  "path": "/api/admin/processing-order-sets/scan-progress",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "ProcessingOrderSetController.java"
+ },
+ {
+  "path": "/api/admin/processing-order-sets",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "ProcessingOrderSetController.java"
+ },
+ {
+  "path": "/api/admin/processing-order-sets/{id}",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "ProcessingOrderSetController.java"
+ },
+ {
+  "path": "/api/admin/production/orders/{orderId}/instantiate",
+  "method": "POST",
+  "perm": "production:execute",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/orders/{orderId}/ship",
+  "method": "POST",
+  "perm": "production:execute",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/orders/{orderId}/qr-token/revoke",
+  "method": "POST",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/orders/{orderId}/qr-token/regenerate",
+  "method": "POST",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/orders/{orderId}/print",
+  "method": "POST",
+  "perm": "production:execute",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/todo-overview",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/orders/{orderId}/operations/{operationId}/report",
+  "method": "POST",
+  "perm": "production:execute",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/piecework/summary",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/orders/{orderId}/repricing",
+  "method": "POST",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/repricing/{batchId}/rollback",
+  "method": "POST",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/operations-catalog",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/routings",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/operations/{id}",
+  "method": "PUT",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/operations/{id}",
+  "method": "DELETE",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/operations/{id}/detach-and-delete",
+  "method": "DELETE",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/operations",
+  "method": "POST",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/routings",
+  "method": "POST",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/routings/{id}",
+  "method": "PUT",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/routings/{id}",
+  "method": "DELETE",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/route-rules/{id}/customer-unit-price",
+  "method": "PUT",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/orders/routing-anomalies",
+  "method": "GET",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/processing-fee-combinations",
+  "method": "POST",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/processing-fee-combinations/{id}",
+  "method": "PUT",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/processing-fee-combinations/{id}",
+  "method": "DELETE",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/operation-positions",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/operation-layers",
+  "method": "GET",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/operation-positions/{id}",
+  "method": "PUT",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/route-rules",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/route-rule-options",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/route-rules",
+  "method": "POST",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/production/route-rules/{id}",
+  "method": "DELETE",
+  "perm": "processing:manage",
+  "controller": "ProductionController.java"
+ },
+ {
+  "path": "/api/admin/tenant/ai-config",
+  "method": "GET",
+  "perm": "system:manage",
+  "controller": "SettingsController.java"
+ },
+ {
+  "path": "/api/admin/tenant/ai-config",
+  "method": "PUT",
+  "perm": "system:manage",
+  "controller": "SettingsController.java"
+ },
+ {
+  "path": "/api/admin/shipments",
+  "method": "GET",
+  "perm": "order:list",
+  "controller": "ShipmentController.java"
+ },
+ {
+  "path": "/api/admin/files/upload",
+  "method": "POST",
+  "perm": "dashboard:view",
+  "controller": "UploadController.java"
+ },
+ {
+  "path": "/api/admin/files/upload-batch",
+  "method": "POST",
+  "perm": "dashboard:view",
+  "controller": "UploadController.java"
+ },
+ {
+  "path": "/api/admin/files/{fileId}",
+  "method": "DELETE",
+  "perm": "dashboard:view",
+  "controller": "UploadController.java"
+ },
+ {
+  "path": "/api/admin/upload/image",
+  "method": "POST",
+  "perm": "dashboard:view",
+  "controller": "UploadController.java"
+ },
+ {
+  "path": "/api/admin/upload/images",
+  "method": "POST",
+  "perm": "dashboard:view",
+  "controller": "UploadController.java"
+ },
+ {
+  "path": "/api/admin/upload/image",
+  "method": "DELETE",
+  "perm": "dashboard:view",
+  "controller": "UploadController.java"
+ },
+ {
+  "path": "/api/admin/agent/after-sales",
+  "method": "POST",
+  "perm": "order:refund",
+  "controller": "AgentAfterSalesController.java"
+ },
+ {
+  "path": "/api/admin/agent/after-sales/mine",
+  "method": "GET",
+  "perm": "after_sales:view",
+  "controller": "AgentAfterSalesController.java"
+ },
+ {
+  "path": "/api/admin/agent/orders",
+  "method": "POST",
+  "perm": "order:create",
+  "controller": "AgentOrderController.java"
+ },
+ {
+  "path": "/api/admin/agent/orders/{id}",
+  "method": "PATCH",
+  "perm": "order:update",
+  "controller": "AgentOrderController.java"
+ },
+ {
+  "path": "/api/admin/agent/products",
+  "method": "POST",
+  "perm": "product:create",
+  "controller": "AgentProductController.java"
+ },
+ {
+  "path": "/api/admin/agent/products/{id}",
+  "method": "PATCH",
+  "perm": "product:create",
+  "controller": "AgentProductController.java"
+ },
+ {
+  "path": "/api/admin/agent/products/{id}/stock",
+  "method": "PATCH",
+  "perm": "product:create",
+  "controller": "AgentProductController.java"
+ },
+ {
+  "path": "/api/admin/agent/products/{productId}/skus/price",
+  "method": "PATCH",
+  "perm": "product:create",
+  "controller": "AgentProductController.java"
+ },
+ {
+  "path": "/api/admin/agent/products/{productId}/skus/{skuId}",
+  "method": "PATCH",
+  "perm": "product:create",
+  "controller": "AgentProductController.java"
+ },
+ {
+  "path": "/api/admin/agent/production/progress",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "AgentProductionController.java"
+ },
+ {
+  "path": "/api/admin/agent/production/piecework",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "AgentProductionController.java"
+ },
+ {
+  "path": "/api/admin/agent/production/worklog",
+  "method": "GET",
+  "perm": "production:view",
+  "controller": "AgentProductionController.java"
+ }
+]

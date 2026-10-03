@@ -1,0 +1,237 @@
+{
+  "at": "2026-10-03T00:39:10.234Z",
+  "run": "950046",
+  "candidates": [
+    {
+      "logical_name": "logo条",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.60"
+    },
+    {
+      "logical_name": "三边",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.40"
+    },
+    {
+      "logical_name": "上车布",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.50"
+    },
+    {
+      "logical_name": "外帘发货",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "1.00"
+    },
+    {
+      "logical_name": "外帘打卷",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "1.00"
+    },
+    {
+      "logical_name": "外帘装袋",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "1.00"
+    },
+    {
+      "logical_name": "定型",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.40"
+    },
+    {
+      "logical_name": "帘头制作",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "2.00"
+    },
+    {
+      "logical_name": "打孔",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.15"
+    },
+    {
+      "logical_name": "扣环",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.30"
+    },
+    {
+      "logical_name": "抱枕",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "2.00"
+    },
+    {
+      "logical_name": "拼1次",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.80"
+    },
+    {
+      "logical_name": "拼2次",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "1.20"
+    },
+    {
+      "logical_name": "拼3次",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "1.60"
+    },
+    {
+      "logical_name": "接高",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "1.00"
+    },
+    {
+      "logical_name": "熨烫",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.35"
+    },
+    {
+      "logical_name": "立边",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.50"
+    },
+    {
+      "logical_name": "精裁",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.40"
+    },
+    {
+      "logical_name": "绑带",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.50"
+    },
+    {
+      "logical_name": "腰靠垫",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "2.00"
+    },
+    {
+      "logical_name": "花边",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.60"
+    },
+    {
+      "logical_name": "裁剪",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.40"
+    },
+    {
+      "logical_name": "车被",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.40"
+    },
+    {
+      "logical_name": "铅坠",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.30"
+    },
+    {
+      "logical_name": "防翘扣",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.20"
+    },
+    {
+      "logical_name": "韩褶",
+      "br": 0,
+      "gen": 1,
+      "gen_price": "0.40"
+    }
+  ],
+  "probeOrder": {
+    "tag": "F",
+    "orderId": "e48fe9a45f640cdf0ea8287e0e168531",
+    "poId": "399a59ec6af44411daba8babe4d49224",
+    "poNo": "JG-20261003-6406"
+  },
+  "instances": [
+    {
+      "id": "2bb8085568c09f4f081226923d5ab11e",
+      "operation_name": "精裁-布",
+      "unit_price": "0.40",
+      "qty": "12.30"
+    },
+    {
+      "id": "ac13fc0b3c5edea7b970c0426a0000b5",
+      "operation_name": "布三边",
+      "unit_price": "0.40",
+      "qty": "12.30"
+    },
+    {
+      "id": "101b75dca9c9bd26e7a91059648ce406",
+      "operation_name": "熨烫-布",
+      "unit_price": "0.35",
+      "qty": "12.30"
+    },
+    {
+      "id": "ff208a783d254f338f2d5801bf61c807",
+      "operation_name": "定型-布",
+      "unit_price": "0.40",
+      "qty": "12.30"
+    },
+    {
+      "id": "4328985f336670d60cdfe2ab2b42d476",
+      "operation_name": "复烫-布",
+      "unit_price": "0.35",
+      "qty": "12.30"
+    },
+    {
+      "id": "a88863e9c09cc5b8ff4be7aa77590119",
+      "operation_name": "布帘车被",
+      "unit_price": "0.40",
+      "qty": "12.30"
+    },
+    {
+      "id": "c8626b294875077440b503af931fb6cd",
+      "operation_name": "外帘打卷",
+      "unit_price": "1.00",
+      "qty": "1.00"
+    },
+    {
+      "id": "8c42a5966829653d692c5f80d95b6978",
+      "operation_name": "打包",
+      "unit_price": "0.00",
+      "qty": "1.00"
+    },
+    {
+      "id": "90d3e76175d67e9ae9b006c31cf742ab",
+      "operation_name": "外帘装袋",
+      "unit_price": "1.00",
+      "qty": "1.00"
+    },
+    {
+      "id": "e9e6cdcdda04dfc5ebae11b0675ebda0",
+      "operation_name": "外帘发货",
+      "unit_price": "1.00",
+      "qty": "1.00"
+    }
+  ],
+  "target": {
+    "logical_name": "logo条",
+    "br": 0,
+    "gen": 1,
+    "gen_price": "0.60"
+  },
+  "instance": null
+}

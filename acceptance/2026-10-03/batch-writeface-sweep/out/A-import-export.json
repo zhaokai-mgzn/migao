@@ -1,0 +1,312 @@
+{
+  "records": [
+    {
+      "id": "A1.1",
+      "name": "正常导入：HTTP 200 + 逐行报告 total==success+fail+blank",
+      "status": "pass",
+      "detail": "期望 200 且 total=2 == success(2)+fail(0)+blank(0) == 实测 HTTP 200 total=2 success=2 fail=0 blank=0",
+      "evidence": [
+        "期望来源: ProductController#importProducts 注释「响应恒为 200 + 逐行报告」+ ProductImportResult(total/successCount/failCount/blankRows)",
+        "期望: 200 且 total=2 == success(2)+fail(0)+blank(0)",
+        "实得: HTTP 200 total=2 success=2 fail=0 blank=0",
+        "原始响应: {\"success\":true,\"data\":{\"total\":2,\"successCount\":2,\"failCount\":0,\"blankRows\":0,\"createdProducts\":1,\"updatedProducts\":0,\"errors\":[]},\"requestId\":\"req_c878dc76efe04d5c\",\"timestamp\":1791006831}"
+      ],
+      "at": "2026-10-03 13:53:51 +08",
+      "atUtc": "2026-10-03T05:53:51.875Z"
+    },
+    {
+      "id": "A1.2",
+      "name": "正常导入：DB 落库读数（1 商品 + 2 SKU 行）",
+      "status": "pass",
+      "detail": "期望 products(L2-IMP-A-MURZ83HT-MURZ83HT) = 1 且 product_skus = 2 == 实测 products = 1 且 product_skus = 2",
+      "evidence": [
+        "期望来源: 独立 SQL 计数（不经被测系统读面）；两行同货号 = 1 商品 2 SKU（Service 注释「同一货号多行 = 一个商品的多 SKU」）",
+        "期望: products(L2-IMP-A-MURZ83HT-MURZ83HT) = 1 且 product_skus = 2",
+        "实得: products = 1 且 product_skus = 2",
+        "SQL: select count(*) from products where tenant_id=20 and sku_code='L2-IMP-A-MURZ83HT-MURZ83HT' and deleted=0",
+        "SQL: select count(*) from product_skus s join products p on p.id=s.product_id where p.sku_code='L2-IMP-A-MURZ83HT-MURZ83HT'"
+      ],
+      "at": "2026-10-03 13:53:51 +08",
+      "atUtc": "2026-10-03T05:53:51.875Z"
+    },
+    {
+      "id": "A1.3",
+      "name": "导入的租户归属 = 当前租户（tenant_id 核对）",
+      "status": "pass",
+      "detail": "期望 tenant_id = 20 == 实测 tenant_id = 20",
+      "evidence": [
+        "期望来源: ProductController#importProducts：租户取自 TenantContext，不接受客户端传入",
+        "期望: tenant_id = 20",
+        "实得: tenant_id = 20",
+        "DB 行: {\"id\":\"173f58a95a2b49f8c184790353859aef\",\"tenant_id\":20,\"name\":\"线②验收导入商品A\",\"base_price\":128.5,\"stock\":72.5,\"status\":\"draft\",\"deleted\":0,\"unit\":\"件\",\"pricing_type\":\"per_meter\"}"
+      ],
+      "at": "2026-10-03 13:53:52 +08",
+      "atUtc": "2026-10-03T05:53:52.062Z"
+    },
+    {
+      "id": "A2.1",
+      "name": "部分坏行：逐行报告（每条带 行号 + 货号 + 可行动原因）",
+      "status": "pass",
+      "detail": "期望 failCount = 4（3 类错各带行号），每题 errors[] 有 row/skuCode/message 非空 == 实测 failCount=4 errors=[{\"row\":2,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"商品名称不能为空\"},{\"row\":3,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"第 3 行的价格不是数字：「abc」—— 请填数字后重试\"},{\"row\":5,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"第 5 行的「颜色 + 门幅」组合重复：货号 L2-IMP-B-MURZ83HT-MURZ83HT 的 米白/2.8m 在同一文件里已出现过 —— 同一组合只能出现一次，否则后一行会**静默覆盖**前一行的库存\"},{\"row\":6,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"第 6 行与第 4 行的「描述」不一致（线②验收描述 vs 空）—— 同一货号 L2-IMP-B-MURZ83HT-MURZ83HT 只能有一份商品级信息（价格等涉钱字段不取「最后一行为准」）\"}]",
+      "evidence": [
+        "期望来源: Service#importProducts 阶段1/2：每个数据行必落「成功/失败/空白」三桶之一，失败行带行号+货号+原因",
+        "期望: failCount = 4（3 类错各带行号），每题 errors[] 有 row/skuCode/message 非空",
+        "实得: failCount=4 errors=[{\"row\":2,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"商品名称不能为空\"},{\"row\":3,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"第 3 行的价格不是数字：「abc」—— 请填数字后重试\"},{\"row\":5,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"第 5 行的「颜色 + 门幅」组合重复：货号 L2-IMP-B-MURZ83HT-MURZ83HT 的 米白/2.8m 在同一文件里已出现过 —— 同一组合只能出现一次，否则后一行会**静默覆盖**前一行的库存\"},{\"row\":6,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"第 6 行与第 4 行的「描述」不一致（线②验收描述 vs 空）—— 同一货号 L2-IMP-B-MURZ83HT-MURZ83HT 只能有一份商品级信息（价格等涉钱字段不取「最后一行为准」）\"}]",
+        "errors 原文: [{\"row\":2,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"商品名称不能为空\"},{\"row\":3,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"第 3 行的价格不是数字：「abc」—— 请填数字后重试\"},{\"row\":5,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"第 5 行的「颜色 + 门幅」组合重复：货号 L2-IMP-B-MURZ83HT-MURZ83HT 的 米白/2.8m 在同一文件里已出现过 —— 同一组合只能出现一次，否则后一行会**静默覆盖**前一行的库存\"},{\"row\":6,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"第 6 行与第 4 行的「描述」不一致（线②验收描述 vs 空）—— 同一货号 L2-IMP-B-MURZ83HT-MURZ83HT 只能有一份商品级信息（价格等涉钱字段不取「最后一行为准」）\"}]"
+      ],
+      "at": "2026-10-03 13:53:52 +08",
+      "atUtc": "2026-10-03T05:53:52.727Z"
+    },
+    {
+      "id": "A2.2",
+      "name": "部分坏行：失败行不落库 + 成功行落库（DB 逐行判定）",
+      "status": "pass",
+      "detail": "期望 导入前 products(L2-IMP-B-MURZ83HT-MURZ83HT)=0 → 导入后 =1 且 SKU 行 =1（坏行零副作用，好行落库） == 实测 before=0 after=1 skuRows=1",
+      "evidence": [
+        "期望来源: Service 注释「行级原子（不是整包回滚）：校验全部在写入之前完成 ⇒ 非法行零落库副作用」；独立 SQL 计数",
+        "期望: 导入前 products(L2-IMP-B-MURZ83HT-MURZ83HT)=0 → 导入后 =1 且 SKU 行 =1（坏行零副作用，好行落库）",
+        "实得: before=0 after=1 skuRows=1",
+        "SQL 前/后计数 products(sku_code='L2-IMP-B-MURZ83HT-MURZ83HT')：0 → 1",
+        "SQL 后计数 product_skus = 1"
+      ],
+      "at": "2026-10-03 13:53:52 +08",
+      "atUtc": "2026-10-03T05:53:52.727Z"
+    },
+    {
+      "id": "A2.3",
+      "name": "坏行的「失败原因」不含 0 条错却成功（报告与 DB 一致）",
+      "status": "pass",
+      "detail": "期望 successCount(1) + failCount(4) + blank(0) = total(5) 且 DB 新增商品数 == 成功组数 1 == 实测 total=5 success=1 fail=4 blank=0",
+      "evidence": [
+        "期望来源: ProductImportResult 恒等式（migao-acceptance 假绿形态：报告与 DB 必须互证）",
+        "期望: successCount(1) + failCount(4) + blank(0) = total(5) 且 DB 新增商品数 == 成功组数 1",
+        "实得: total=5 success=1 fail=4 blank=0",
+        "原始: {\"success\":true,\"data\":{\"total\":5,\"successCount\":1,\"failCount\":4,\"blankRows\":0,\"createdProducts\":1,\"updatedProducts\":0,\"errors\":[{\"row\":2,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"商品名称不能为空\"},{\"row\":3,\"skuCode\":\"L2-IMP-B-MURZ83HT-MURZ83HT\",\"message\":\"第 3 行的价格不是数字：「abc」—— 请填数字后重试\"},{\"row\":5,\"s"
+      ],
+      "at": "2026-10-03 13:53:52 +08",
+      "atUtc": "2026-10-03T05:53:52.728Z"
+    },
+    {
+      "id": "A3.1",
+      "name": "幂等：同一文件连导两次 ⇒ 商品数不翻倍",
+      "status": "pass",
+      "detail": "期望 第1次后 products=1，第2次后仍 products=1（未翻倍） == 实测 after1=1 after2=1",
+      "evidence": [
+        "期望来源: Service#importProducts 口径①「幂等键 = (tenant_id, 货号)，命中即原地更新 ⇒ 同一文件重复导入不产生重复商品」",
+        "期望: 第1次后 products=1，第2次后仍 products=1（未翻倍）",
+        "实得: after1=1 after2=1",
+        "第2次响应: {\"success\":true,\"data\":{\"total\":2,\"successCount\":2,\"failCount\":0,\"blankRows\":0,\"createdProducts\":0,\"updatedProducts\":1,\"errors\":[]},\"requestId\":\"req_122450447e13461f\",\"timestamp\":1791006833}"
+      ],
+      "at": "2026-10-03 13:53:53 +08",
+      "atUtc": "2026-10-03T05:53:53.843Z"
+    },
+    {
+      "id": "A3.2",
+      "name": "幂等：SKU 数不翻倍 + 商品主键不变（旧 skuId 不断链）",
+      "status": "pass",
+      "detail": "期望 SKU 行 after1 = 2 → after2 = 2；product.id 两次相同 == 实测 skus after1=2 after2=2; productId=f9de0832f1f816e2063d1152bce826e3",
+      "evidence": [
+        "期望来源: Service 口径①「SKU 按「颜色 + 门幅」匹配后原地更新 ⇒ 订单/批次里存的旧 skuId 不断链」",
+        "期望: SKU 行 after1 = 2 → after2 = 2；product.id 两次相同",
+        "实得: skus after1=2 after2=2; productId=f9de0832f1f816e2063d1152bce826e3",
+        "skus: 2 → 2"
+      ],
+      "at": "2026-10-03 13:53:53 +08",
+      "atUtc": "2026-10-03T05:53:53.844Z"
+    },
+    {
+      "id": "A3.3",
+      "name": "幂等：第2次报告应报 updated 而非 created（不静默建重复）",
+      "status": "pass",
+      "detail": "期望 第2次 createdProducts=0 且 updatedProducts=1 == 实测 created=0 updated=1",
+      "evidence": [
+        "期望来源: ProductImportResult.createdProducts/updatedProducts 语义（Service 幂等键命中 ⇒ 原地更新）",
+        "期望: 第2次 createdProducts=0 且 updatedProducts=1",
+        "实得: created=0 updated=1",
+        "第1次 created=1 updated=0"
+      ],
+      "at": "2026-10-03 13:53:53 +08",
+      "atUtc": "2026-10-03T05:53:53.844Z"
+    },
+    {
+      "id": "A4.1",
+      "name": "空文件 ⇒ 4xx（非 200）+ 零落库",
+      "status": "pass",
+      "detail": "期望 HTTP ∈ 4xx/5xx 且无新增商品 == 实测 HTTP 422，body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"解析Excel文件失败: The supplied file was empty (zero bytes long)\"},\"requestId\":\"req_44d1cd1caf2a4817\",\"timestamp\":1791006833,\"suggestion\":\"请检查必",
+      "evidence": [
+        "期望来源: Service#importProducts：解析失败 ⇒ BusinessException.validationError（Controller 注释「只有整包级别的输入问题才走 400」）",
+        "期望: HTTP ∈ 4xx/5xx 且无新增商品",
+        "实得: HTTP 422，body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"解析Excel文件失败: The supplied file was empty (zero bytes long)\"},\"requestId\":\"req_44d1cd1caf2a4817\",\"timestamp\":1791006833,\"suggestion\":\"请检查必",
+        "原始: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"解析Excel文件失败: The supplied file was empty (zero bytes long)\"},\"requestId\":\"req_44d1cd1caf2a4817\",\"timestamp\":1791006833,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+      ],
+      "at": "2026-10-03 13:54:27 +08",
+      "atUtc": "2026-10-03T05:54:27.969Z"
+    },
+    {
+      "id": "A4.2",
+      "name": "表头缺失/缺必填列 ⇒ 4xx 且零副作用（DB 核对）",
+      "status": "pass",
+      "detail": "期望 noHeader HTTP>=400 且 missingCol HTTP>=400 且 两个货号均零落库 == 实测 noHeader=422 missingCol=422 落库货号=[]",
+      "evidence": [
+        "期望来源: Service#resolveImportHeader：缺 REQUIRED_IMPORT_HEADERS（商品名称/货号/价格）⇒ 整包拒绝 400；独立 SQL 核对零副作用",
+        "期望: noHeader HTTP>=400 且 missingCol HTTP>=400 且 两个货号均零落库",
+        "实得: noHeader=422 missingCol=422 落库货号=[]",
+        "noHeader: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Excel 表头缺少必填列：商品名称、货号、价格（可列：分类ID、库存、描述、颜色、门幅、SKU编码）—— 请在商品管理页点「下载导入模板」获取标准表头\"},\"requestId\":\"req_723fa4c955424ab8\",\"timestamp\":1791006833,",
+        "missingCol: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Excel 表头缺少必填列：价格（可列：分类ID、库存、描述、颜色、门幅、SKU编码）—— 请在商品管理页点「下载导入模板」获取标准表头\"},\"requestId\":\"req_c9ee8f478093423c\",\"timestamp\":1791006834,\"suggest"
+      ],
+      "at": "2026-10-03 13:54:27 +08",
+      "atUtc": "2026-10-03T05:54:27.970Z"
+    },
+    {
+      "id": "A4.3a",
+      "name": "伪 .xlsx（真内容是 CSV 文本）⇒ 明确拒绝",
+      "status": "pass",
+      "detail": "期望 HTTP >= 400 == 实测 伪 xlsx=422 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"解析Excel文件失败: Can't open workbook - unsupported file type: UNKNOWN\"},\"requestId\":\"req_b7bb1803844c",
+      "evidence": [
+        "期望来源: Service 用 WorkbookFactory.create 解析 ⇒ 非 OOXML 必抛；前端 accept=\".xlsx,.xls\"（admin-web products/page.tsx）",
+        "期望: HTTP >= 400",
+        "实得: 伪 xlsx=422 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"解析Excel文件失败: Can't open workbook - unsupported file type: UNKNOWN\"},\"requestId\":\"req_b7bb1803844c",
+        "响应: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"解析Excel文件失败: Can't open workbook - unsupported file type: UNKNOWN\"},\"requestId\":\"req_b7bb1803844c4020\",\"timestamp\":1791006834,\"suggestion"
+      ],
+      "at": "2026-10-03 13:54:27 +08",
+      "atUtc": "2026-10-03T05:54:27.971Z"
+    },
+    {
+      "id": "A4.3b",
+      "name": "口径登记：`.csv` 扩展名但内容是**合法 xlsx** ⇒ 200（按内容解析，忽略扩展名）",
+      "status": "pass",
+      "detail": "期望 HTTP 200 表示「按内容而非扩展名解析」（产品**未声明**支持 CSV ⇒ 属未定义行为，登记而非判红） == 实测 HTTP 200 body={\"success\":true,\"data\":{\"total\":2,\"successCount\":2,\"failCount\":0,\"blankRows\":0,\"createdProducts\":0,\"updatedProducts\":1,\"errors\":[]},\"requestId\":\"req_c80c410972da40cd\",\"timestamp\":1791006834}",
+      "evidence": [
+        "期望来源: main 内无任何 CSV 支持声明（前端 accept=\".xlsx,.xls\"；模板名 商品导入模板.xlsx）⇒ 该半条降为口径登记",
+        "期望: HTTP 200 表示「按内容而非扩展名解析」（产品**未声明**支持 CSV ⇒ 属未定义行为，登记而非判红）",
+        "实得: HTTP 200 body={\"success\":true,\"data\":{\"total\":2,\"successCount\":2,\"failCount\":0,\"blankRows\":0,\"createdProducts\":0,\"updatedProducts\":1,\"errors\":[]},\"requestId\":\"req_c80c410972da40cd\",\"timestamp\":1791006834}",
+        "实测：.csv 名 + xlsx 内容 ⇒ 200（同内容换 .xlsx 名 ⇒ 422 与内容一致的行为）"
+      ],
+      "at": "2026-10-03 13:54:27 +08",
+      "atUtc": "2026-10-03T05:54:27.971Z"
+    },
+    {
+      "id": "A4.4",
+      "name": "超大文件（>5MB，实测 9462328 字节）⇒ 不得 5xx 崩溃；结果如实（4xx 或逐行报告）",
+      "status": "pass",
+      "detail": "期望 HTTP ≠ 5xx；若 200 则 total==success+fail+blank 且 DB 无脏行 == 实测 HTTP 200 body={\"success\":true,\"data\":{\"total\":4000,\"successCount\":250,\"failCount\":3750,\"blankRows\":0,\"createdProducts\":250,\"updatedProducts\":0,\"errors\":[{\"row\":52,\"skuCode\":\"L2-BIG0-MURZ85TA\",\"message\":\"第 52 行与第 2 ",
+      "evidence": [
+        "期望来源: migao-acceptance「明确 4xx 且零副作用」；超大文件无显式上限 ⇒ 至少不得 5xx",
+        "期望: HTTP ≠ 5xx；若 200 则 total==success+fail+blank 且 DB 无脏行",
+        "实得: HTTP 200 body={\"success\":true,\"data\":{\"total\":4000,\"successCount\":250,\"failCount\":3750,\"blankRows\":0,\"createdProducts\":250,\"updatedProducts\":0,\"errors\":[{\"row\":52,\"skuCode\":\"L2-BIG0-MURZ85TA\",\"message\":\"第 52 行与第 2 ",
+        "文件大小: 9462328 字节",
+        "body: {\"success\":true,\"data\":{\"total\":4000,\"successCount\":250,\"failCount\":3750,\"blankRows\":0,\"createdProducts\":250,\"updatedProducts\":0,\"errors\":[{\"row\":52,\"skuCode\":\"L2-BIG0-MURZ85TA\",\"message\":\"第 52 行与第 2 行的「商品名称」不一致（线②验收大文件行50 vs 线②验收大文件行0）—— 同一货号 L2-BIG0-MURZ85TA 只能有一份商品级信息（价格等涉钱字段不取「最后一行为准」）\"},{\"row\":"
+      ],
+      "at": "2026-10-03 13:54:27 +08",
+      "atUtc": "2026-10-03T05:54:27.971Z"
+    },
+    {
+      "id": "A5.1",
+      "name": "导出非空（正对照：真有数据才谈口径）",
+      "status": "pass",
+      "detail": "期望 响应体 > 1KB 且 数据行 > 0 == 实测 19407 字节，数据行 500",
+      "evidence": [
+        "期望来源: 正对照（migao-acceptance 反假绿）：先证面非空，口径比对才有意义；列表接口 total=989",
+        "期望: 响应体 > 1KB 且 数据行 > 0",
+        "实得: 19407 字节，数据行 500",
+        "Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition: attachment; filename=%E5%95%86%E5%93%81%E5%88%97%E8%A1%A8.xlsx"
+      ],
+      "at": "2026-10-03 13:55:07 +08",
+      "atUtc": "2026-10-03T05:55:07.299Z"
+    },
+    {
+      "id": "A5.2",
+      "name": "导出行数 == 同筛选条件下列表 total（口径一致）",
+      "status": "fail",
+      "detail": "期望 导出行数(500) == 列表 total(989) ≠ 实测 导出行数=500 列表 total=989",
+      "evidence": [
+        "期望来源: ProductController#exportProducts 注释「GET /export?keyword…」+ Service 用 getProducts(query, tenantId) 同一查询（page=1,size=10000）⇒ 与列表同口径",
+        "期望: 导出行数(500) == 列表 total(989)",
+        "实得: 导出行数=500 列表 total=989",
+        "列表响应 total=989",
+        "导出表头=[\"商品名称\",\"货号\",\"分类\",\"价格\",\"库存\",\"状态\",\"描述\"]"
+      ],
+      "at": "2026-10-03 13:55:07 +08",
+      "atUtc": "2026-10-03T05:55:07.300Z"
+    },
+    {
+      "id": "A5.3",
+      "name": "导出表头逐字 == EXPORT_HEADERS（7 列）",
+      "status": "pass",
+      "detail": "期望 [\"商品名称\",\"货号\",\"分类\",\"价格\",\"库存\",\"状态\",\"描述\"] == 实测 [\"商品名称\",\"货号\",\"分类\",\"价格\",\"库存\",\"状态\",\"描述\"]",
+      "evidence": [
+        "期望来源: ProductService.java 常量 EXPORT_HEADERS（逐字内联，出处 = main-live 构建点 d1c09d02f 源码）",
+        "期望: [\"商品名称\",\"货号\",\"分类\",\"价格\",\"库存\",\"状态\",\"描述\"]",
+        "实得: [\"商品名称\",\"货号\",\"分类\",\"价格\",\"库存\",\"状态\",\"描述\"]",
+        "实测表头: [\"商品名称\",\"货号\",\"分类\",\"价格\",\"库存\",\"状态\",\"描述\"]"
+      ],
+      "at": "2026-10-03 13:55:07 +08",
+      "atUtc": "2026-10-03T05:55:07.300Z"
+    },
+    {
+      "id": "A5.4",
+      "name": "金额/库存精度逐字核对（DB 原文 vs 导出 cell）",
+      "status": "pass",
+      "detail": "期望 价格 cell = 1.00，库存 cell = 0.0（商品 L2-BIG43-MURZ85TE） == 实测 价格=1.0 库存=0.0",
+      "evidence": [
+        "期望来源: DB 原文（numeric::text）独立读出；导出走 xlsx 数值 cell（doubleValue）⇒ 允许多余小数但不许值不等",
+        "期望: 价格 cell = 1.00，库存 cell = 0.0（商品 L2-BIG43-MURZ85TE）",
+        "实得: 价格=1.0 库存=0.0",
+        "DB: {\"id\":\"67f14e4a581c7d5bb2a5aeac32b7337a\",\"sku_code\":\"L2-BIG43-MURZ85TE\",\"name\":\"线②验收大文件行3243\",\"bp\":\"1.00\",\"st\":\"0.0\"}",
+        "导出首行: [\"线②验收大文件行3243\",\"L2-BIG43-MURZ85TE\",\"\",\"1.0\",\"0.0\",\"草稿\",\"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\"]"
+      ],
+      "at": "2026-10-03 13:55:07 +08",
+      "atUtc": "2026-10-03T05:55:07.401Z"
+    },
+    {
+      "id": "A5.5",
+      "name": "导出不含其他租户数据（按货号反查他租户命中数）",
+      "status": "pass",
+      "detail": "期望 他租户命中 = 0 == 实测 他租户命中 = 0 []",
+      "evidence": [
+        "期望来源: 多租户隔离：ProductController 从 TenantContext 取 tenantId，导出与列表同查询",
+        "期望: 他租户命中 = 0",
+        "实得: 他租户命中 = 0 []",
+        "导出货号样本(500 个): [\"L2-BIG43-MURZ85TE\",\"L2-BIG42-MURZ85TE\",\"L2-BIG41-MURZ85TE\",\"L2-BIG40-MURZ85TE\",\"L2-BIG39-MURZ85TE\"]"
+      ],
+      "at": "2026-10-03 13:55:07 +08",
+      "atUtc": "2026-10-03T05:55:07.483Z"
+    },
+    {
+      "id": "A5.6",
+      "name": "空结果导出：非畸形（不是 0 字节却报成功）+ 行数=0",
+      "status": "pass",
+      "detail": "期望 HTTP 200 且 字节数 > 0 且 数据行 = 0 且 表头齐 7 列（列表 total=0） == 实测 HTTP 200 字节=3549 行=0 表头=[\"商品名称\",\"货号\",\"分类\",\"价格\",\"库存\",\"状态\",\"描述\"]",
+      "evidence": [
+        "期望来源: Service#exportProducts 无条件写表头（sheet.createRow(0)）⇒ 零数据时仍应是合法 xlsx（表头齐、非 0 字节）",
+        "期望: HTTP 200 且 字节数 > 0 且 数据行 = 0 且 表头齐 7 列（列表 total=0）",
+        "实得: HTTP 200 字节=3549 行=0 表头=[\"商品名称\",\"货号\",\"分类\",\"价格\",\"库存\",\"状态\",\"描述\"]",
+        "列表同筛选 total=0",
+        "字节数=3549"
+      ],
+      "at": "2026-10-03 13:55:07 +08",
+      "atUtc": "2026-10-03T05:55:07.611Z"
+    },
+    {
+      "id": "A6.1",
+      "name": "导入模板表头 == IMPORT_HEADERS（模板与解析同源）",
+      "status": "pass",
+      "detail": "期望 [\"商品名称\",\"货号\",\"分类ID\",\"价格\",\"库存\",\"描述\",\"颜色\",\"门幅\",\"SKU编码\"] == 实测 [\"商品名称\",\"货号\",\"分类ID\",\"价格\",\"库存\",\"描述\",\"颜色\",\"门幅\",\"SKU编码\"]",
+      "evidence": [
+        "期望来源: ProductService.java 常量 IMPORT_HEADERS；模板生成与导入解析共用同一常量",
+        "期望: [\"商品名称\",\"货号\",\"分类ID\",\"价格\",\"库存\",\"描述\",\"颜色\",\"门幅\",\"SKU编码\"]",
+        "实得: [\"商品名称\",\"货号\",\"分类ID\",\"价格\",\"库存\",\"描述\",\"颜色\",\"门幅\",\"SKU编码\"]",
+        "HTTP 200, 3884 字节, 示例行 3"
+      ],
+      "at": "2026-10-03 13:55:07 +08",
+      "atUtc": "2026-10-03T05:55:07.655Z"
+    }
+  ],
+  "summary": {
+    "pass": 20,
+    "fail": 1,
+    "skip": 0,
+    "total": 21
+  }
+}

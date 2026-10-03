@@ -1,0 +1,107 @@
+[
+  {
+    "id": "W1-1",
+    "name": "发货写面：HTTP 成功（前置）",
+    "status": "pass",
+    "detail": "期望 2xx == 实测 HTTP 200",
+    "evidence": [
+      "期望来源: confirmed ∈ SHIPPABLE_FROM，body 完整",
+      "resp: {\"success\":true,\"data\":{\"order_id\":\"fac373d89550bbee9a59be\",\"status\":\"shipped\",\"shipment_no\":\"SH202610031345044693\",\"source\":\"worker_photo\",\"tracking_no\":\"SF-PROBE-W1\",\"shipped_items\":[{\"order_item_id"
+    ],
+    "at": "2026-10-03 21:45:04 +08"
+  },
+  {
+    "id": "W1-2",
+    "name": "🔴 写后等价性：变化集 ⊆ payload 键 ∪ 显式声明审计列（多一处即红）",
+    "status": "pass",
+    "detail": "期望 越界 0 处 == 实测 越界 0 处 / 总变化 4 处",
+    "evidence": [
+      "期望来源: 允许集 = 本包声明的 payload 键 ∪ AUDIT（订单状态/新建发货单与明细/物流/时间戳）；其余一律越界",
+      "越界明细: []",
+      "全部变化(表.字段去重): [\"order_logistics.*\",\"order_shipment_items.*\",\"order_shipments.*\",\"orders.status\"]"
+    ],
+    "at": "2026-10-03 21:45:04 +08"
+  },
+  {
+    "id": "W1-3",
+    "name": "未发货的订单行数量不被写面改动（orders/order_items 的业务列零变化）",
+    "status": "pass",
+    "detail": "期望 order_items.quantity 无变化 ∧ orders 仅 status/updated_at 变化 == 实测 [\"orders.status\"]",
+    "evidence": [
+      "期望来源: 发货是**记录事实**，不得改订单/订单行内容（payload 不含这些键）",
+      "diff: [\"orders.status: \\\"confirmed\\\" → \\\"shipped\\\" [field]\"]"
+    ],
+    "at": "2026-10-03 21:45:04 +08"
+  },
+  {
+    "id": "W2-1",
+    "name": "同幂等键 + **不同 payload** ⇒ 重放结果为首次快照（运单号/数量均不变）",
+    "status": "pass",
+    "detail": "期望 tracking_no=SF-FIRST-0001 ∧ Σ=6.000 ∧ diff=0 处 == 实测 tracking_no=SF-FIRST-0001 ∧ diff=0 处",
+    "evidence": [
+      "期望来源: 幂等语义：同键 = 回放首次结果，**不得**让第二次 payload 生效（否则改写发货事实）",
+      "R1(200): {\"success\":true,\"data\":{\"order_id\":\"fa15118356364d0581e794\",\"status\":\"shipped\",\"shipment_no\":\"SH202610031345055503\",\"source\":\"worker_photo\",\"tracking_no\":\"SF-FI",
+      "R2(200) replayed=true: {\"success\":true,\"data\":{\"source\":\"worker_photo\",\"status\":\"shipped\",\"order_id\":\"fa15118356364d0581e794\",\"shipment_no\":\"SH202610031345055503\",\"tracking_no\":\"SF-FIRST-0001\",\"shipped_items\":[{\"unit\":\"米\",\"",
+      "SQL: select tracking_no, shipped_at from order_shipments → {\"tracking_no\":\"SF-FIRST-0001\",\"shipped_at\":\"2026-10-03T13:45:05.354648+08:00\"}",
+      "diff: []"
+    ],
+    "at": "2026-10-03 21:45:07 +08"
+  },
+  {
+    "id": "P1-1",
+    "name": "补打数据源（订单 + 单据读面）：连读两次逐字段一致（补打纸面内容稳定）",
+    "status": "pass",
+    "detail": "期望 hash(o1)==hash(o2) ∧ hash(s1)==hash(s2) == 实测 o 7617c1278b47116b/7617c1278b47116b ∧ s 6b0ae2e7f44ea8c4/6b0ae2e7f44ea8c4",
+    "evidence": [
+      "期望来源: 前端补打路径 = GET /orders/{id}（订单）+ 该订单的发货单读面；两次必须逐字段一致（否则「同一单据两次补打内容不同」= 缺陷）",
+      "GET /api/admin/orders/fa4f66eb3adeb93b180089 ×2",
+      "GET /api/admin/orders/fa4f66eb3adeb93b180089/shipments ×2"
+    ],
+    "at": "2026-10-03 21:45:10 +08"
+  },
+  {
+    "id": "P1-2",
+    "name": "打印计数端点（production /print）连打两次：不新建单据、不改数量",
+    "status": "pass",
+    "detail": "期望 shipments=1 ∧ Σ=9.000 ∧ 单据行 diff 仅 orders.updated_at == 实测 shipments=1 ∧ 变化列=[]",
+    "evidence": [
+      "期望来源: 打印是**读计数**动作（recordPrint 只写 print_count）⇒ 不得触碰发货单/明细",
+      "print #1(200): {\"success\":true,\"data\":{\"order_id\":\"fa4f66eb3adeb93b180089\",\"processing_order_no\":\"JG00630812956\",\"print_count\":1},\"requestId\":\"req_2292732e5ccb4d5e\",\"timestamp",
+      "print #2(200): {\"success\":true,\"data\":{\"order_id\":\"fa4f66eb3adeb93b180089\",\"processing_order_no\":\"JG00630812956\",\"print_count\":2},\"requestId\":\"req_0a07b710c1564e1f\",\"timestamp",
+      "diff: []"
+    ],
+    "at": "2026-10-03 21:45:11 +08"
+  },
+  {
+    "id": "P1-3",
+    "name": "补打**不改已发数量**（Σ 前后一致，独立算式）",
+    "status": "pass",
+    "detail": "期望 9.000 == 实测 9.000",
+    "evidence": [
+      "期望来源: 独立算式：订单量 9（夹具给定）；补打不得改动实发",
+      "SQL: select shipped_quantity from order_shipment_items where order_id='fa4f66eb3adeb93b180089'"
+    ],
+    "at": "2026-10-03 21:45:11 +08"
+  },
+  {
+    "id": "P1-4",
+    "name": "打印次数确实递增（证明这个面**真的被调用**，不是空跑；读数直连 RDS）",
+    "status": "pass",
+    "detail": "期望 print_count: 0 → 1 → 2 == 实测 print_count: 0 → 1 → 2（HTTP 200/200）",
+    "evidence": [
+      "期望来源: recordPrint 每次 +1（issue #4202 的 print_count 唯一写方）⇒ 两次调用必须 +2",
+      "SQL: select print_count from processing_orders where order_id='fa4f66eb3adeb93b180089' → 0/1/2",
+      "print #1: {\"success\":true,\"data\":{\"order_id\":\"fa4f66eb3adeb93b180089\",\"processing_order_no\":\"JG00630812956\",\"print_count\":1},\"requestId\":\"req_2292732e",
+      "print #2: {\"success\":true,\"data\":{\"order_id\":\"fa4f66eb3adeb93b180089\",\"processing_order_no\":\"JG00630812956\",\"print_count\":2},\"requestId\":\"req_0a07b710"
+    ],
+    "at": "2026-10-03 21:45:11 +08"
+  },
+  {
+    "id": "P2-EXPORT",
+    "name": "发货单**导出**面：不存在（如实登记，不写成通过）",
+    "status": "skip",
+    "detail": "本包枚举到的发货相关端点里无任何 export；三条候选路径读数 = [{\"path\":\"/api/admin/shipments/export\",\"status\":404,\"ct\":\"{\\\"success\\\":false,\\\"error\\\":{\\\"code\\\":\\\"NOT_FOUND\\\",\\\"message\\\":\\\"请求的资\"},{\"path\":\"/api/admin/shipments?format=csv\",\"status\":200,\"ct\":\"{\\\"success\\\":true,\\\"data\\\":[{\\\"id\\\":\\\"18efbdfa33a9c1457b66f7a0497a9\"},{\"path\":\"/api/admin/orders/X/shipments/export\",\"status\":404,\"ct\":\"{\\\"success\\\":false,\\\"error\\\":{\\\"code\\\":\\\"NOT_FOUND\\\",\\\"message\\\":\\\"请求的资\"}]（404/405 即不存在）",
+    "evidence": [],
+    "at": "2026-10-03 21:45:11 +08"
+  }
+]

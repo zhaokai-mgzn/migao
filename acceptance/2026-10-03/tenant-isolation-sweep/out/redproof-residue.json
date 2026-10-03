@@ -1,0 +1,23 @@
+[
+ {
+  "id": "RP-RESIDUE-DETECT",
+  "name": "残留读数红证·注入检出",
+  "verdict": "pass",
+  "detail": "注入一次行内容改动后，指纹**确实变了** ⇒ 该读数不是空断言",
+  "evidence": [
+   "基线：products#21 行数=1 max_updated=2026-09-22 04:48:40.658722+08 rowfp=195613bc566d870c4a6362dd6466970a",
+   "注入后：行数=1 max_updated=2026-09-22 04:48:40.658722+08 rowfp=811485183ae4a0f813072186e6a648ca（rowfp 变=true）"
+  ]
+ },
+ {
+  "id": "RP-RESIDUE-RESTORE",
+  "name": "残留读数红证·还原",
+  "verdict": "pass",
+  "detail": "还原后指纹逐字节回到基线（name 已复原）",
+  "evidence": [
+   "基线：products#21 行数=1 max_updated=2026-09-22 04:48:40.658722+08 rowfp=195613bc566d870c4a6362dd6466970a",
+   "注入后：行数=1 max_updated=2026-09-22 04:48:40.658722+08 rowfp=811485183ae4a0f813072186e6a648ca（rowfp 变=true）",
+   "还原后：行数=1 max_updated=2026-09-22 04:48:40.658722+08 rowfp=195613bc566d870c4a6362dd6466970a（回到基线=true）；name 现值=彩排窗帘9434"
+  ]
+ }
+]

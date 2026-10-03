@@ -1,0 +1,69 @@
+{
+  "records": [
+    {
+      "id": "F1",
+      "name": "红证①（**注入被拒**）：真孤儿无法注入 ⇒ 「孤儿扫描=0」是 DB 结构性保证、**无判别力**",
+      "status": "pass",
+      "detail": "期望 注入应被 FK 拒绝（error 非空）且注入后仍无该行 == 实测 error=ERROR:  insert or update on table \"product_skus\" violates foreign key constraint \"product_skus_product_id_fkey\"；注入后命中行数=0；指向 products 的 FK 数=8",
+      "evidence": [
+        "期望来源: migao-acceptance 铁律 2 + 「关系式断言在空集上恒真」：判据自己要先接受\"它有没有判别力\"的检验",
+        "期望: 注入应被 FK 拒绝（error 非空）且注入后仍无该行",
+        "实得: error=ERROR:  insert or update on table \"product_skus\" violates foreign key constraint \"product_skus_product_id_fkey\"；注入后命中行数=0；指向 products 的 FK 数=8",
+        "指向 products 的 8 条 FK: fabric_remnants.product_id, inbound_order_items.product_id, product_attributes.product_id, product_colors.product_id, product_skus.product_id, stock_batch_consumptions.product_id, stock_batches.product_id, stock_ledger_entries.product_id",
+        "⇒ 结论：B3.2 的「真孤儿=0」不是被测行为的结果而是**约束的结果** ⇒ 已改判 skip（见 REPORT §2/§7）"
+      ],
+      "at": "2026-10-03 13:56:28 +08",
+      "atUtc": "2026-10-03T05:56:28.387Z"
+    },
+    {
+      "id": "F2",
+      "name": "红证②：幂等判据（同货号商品数=1）**会红**（注入第二条同货号 ⇒ 2 ⇒ 清理 ⇒ 1），sha256 自证",
+      "status": "fail",
+      "detail": "期望 1 → 注入后 2（判据当场红）→ 清理后 1 ≠ 实测 green=1 red=2 restored=2；注入行 sha256=770c016fcc60471d；还原后 sha256=eb93f353b4fd5c91",
+      "evidence": [
+        "期望来源: migao-acceptance 铁律 2：把被测行为改坏 ⇒ 判据必须红（否则是恒绿空断言）；指纹自证注入/还原真的生效",
+        "期望: 1 → 注入后 2（判据当场红）→ 清理后 1",
+        "实得: green=1 red=2 restored=2；注入行 sha256=770c016fcc60471d；还原后 sha256=eb93f353b4fd5c91",
+        "注入 SQL: insert into products(id='l2dup8fbdc9ddafbbd0f24a39', sku_code='L2-F-MURZBGPW')",
+        "清理 SQL: delete from products where id='l2dup8fbdc9ddafbbd0f24a39'"
+      ],
+      "at": "2026-10-03 13:56:29 +08",
+      "atUtc": "2026-10-03T05:56:29.451Z"
+    },
+    {
+      "id": "F3",
+      "name": "红证③：库存不变式（stock ≥ 0）**会红**（注入 -5 ⇒ 变红 ⇒ 还原 7 ⇒ 回绿），sha256 自证",
+      "status": "pass",
+      "detail": "期望 7（绿）→ 注入 -5 后读数为负（红）→ 还原 7（绿） == 实测 green=7.0 → 注入(-5) HTTP 200 读数=-5.0 → 还原=7.0；指纹 3f0b7773f4b8 → 91722f0cd5d5",
+      "evidence": [
+        "期望来源: migao-acceptance 铁律 2：不变式判据必须能被违反它的状态判红（本注入**成功** ⇒ 同时证明 E2.1 是真缺陷而非空断言）",
+        "期望: 7（绿）→ 注入 -5 后读数为负（红）→ 还原 7（绿）",
+        "实得: green=7.0 → 注入(-5) HTTP 200 读数=-5.0 → 还原=7.0；指纹 3f0b7773f4b8 → 91722f0cd5d5",
+        "注入前 DB 指纹=3f0b7773f4b8442cf906ec38add04b679b66915d086978a7ecddaca16a9e5d99",
+        "注入后 DB 指纹=91722f0cd5d5335c3d71f3caaa050bed94e2bd7010ad0b58e1fcebba9ec679f6"
+      ],
+      "at": "2026-10-03 13:56:31 +08",
+      "atUtc": "2026-10-03T05:56:31.741Z"
+    },
+    {
+      "id": "F4",
+      "name": "故意的失效控制项（**必须红**）：断言 1 === 2 —— 证明 fail 桶可达、红证通道可用",
+      "status": "fail",
+      "detail": "期望 1 === 2（**故意为假**） ≠ 实测 1 === 2 为 false ⇒ 本条预期就是 fail",
+      "evidence": [
+        "期望来源: migao-acceptance 反假绿：保留一条**故意的失效控制项**（必须红）",
+        "期望: 1 === 2（**故意为假**）",
+        "实得: 1 === 2 为 false ⇒ 本条预期就是 fail",
+        "本条**不计入缺陷**，仅作通道自证"
+      ],
+      "at": "2026-10-03 13:56:31 +08",
+      "atUtc": "2026-10-03T05:56:31.742Z"
+    }
+  ],
+  "summary": {
+    "pass": 2,
+    "fail": 2,
+    "skip": 0,
+    "total": 4
+  }
+}

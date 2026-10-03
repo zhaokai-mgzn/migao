@@ -1,0 +1,1658 @@
+[
+ {
+  "principal": "管理员(admin)",
+  "perms": 1,
+  "rows": [
+   {
+    "route": "after-sales/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "after-sales/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "agent-workspace/human-sessions/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "agent-workspace/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "agent-workspace/sessions/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "briefing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "categories/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "chat/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "customers/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "customers/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "dashboard/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "employees/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "finance/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "inbound-orders/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "inbound-orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "knowledge/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "notifications/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/ship/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "processing-orders/:id/production/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "processing-orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "processing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/operations/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/piecework/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/pool/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/processing-fees/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/processing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/remnants/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/routings/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/saving-board/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/:id/edit/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "roles/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "settings/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "shipments/page.tsx",
+    "denied": false,
+    "expected": false
+   }
+  ],
+  "mismatch": 0
+ },
+ {
+  "principal": "客服(customer_service)",
+  "perms": 12,
+  "rows": [
+   {
+    "route": "after-sales/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "after-sales/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "agent-workspace/human-sessions/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "agent-workspace/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "agent-workspace/sessions/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "briefing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "categories/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "chat/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "customers/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "customers/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "dashboard/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "employees/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "finance/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "inbound-orders/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "inbound-orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "knowledge/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "notifications/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/ship/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "processing-orders/:id/production/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "processing-orders/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "processing/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/operations/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/piecework/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/pool/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/processing-fees/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/processing/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/remnants/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/routings/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/saving-board/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "products/:id/edit/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "products/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "products/new/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "products/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "roles/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "settings/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "shipments/page.tsx",
+    "denied": false,
+    "expected": false
+   }
+  ],
+  "mismatch": 0
+ },
+ {
+  "principal": "运营(operator)",
+  "perms": 26,
+  "rows": [
+   {
+    "route": "after-sales/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "after-sales/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "agent-workspace/human-sessions/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "agent-workspace/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "agent-workspace/sessions/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "briefing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "categories/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "chat/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "customers/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "customers/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "dashboard/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "employees/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "finance/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "inbound-orders/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "inbound-orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "knowledge/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "notifications/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/ship/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "processing-orders/:id/production/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "processing-orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "processing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/operations/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/piecework/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/pool/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/processing-fees/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/processing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/remnants/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/routings/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/saving-board/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/:id/edit/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "roles/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "settings/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "shipments/page.tsx",
+    "denied": false,
+    "expected": false
+   }
+  ],
+  "mismatch": 0
+ },
+ {
+  "principal": "销售(sales)",
+  "perms": 9,
+  "rows": [
+   {
+    "route": "after-sales/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "after-sales/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/human-sessions/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/sessions/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "briefing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "categories/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "chat/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "customers/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "customers/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "dashboard/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "employees/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "finance/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "inbound-orders/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "inbound-orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "knowledge/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "notifications/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/ship/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "processing-orders/:id/production/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "processing-orders/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "processing/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/operations/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/piecework/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/pool/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/processing-fees/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/processing/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/remnants/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/routings/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/saving-board/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/:id/edit/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "roles/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "settings/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "shipments/page.tsx",
+    "denied": false,
+    "expected": false
+   }
+  ],
+  "mismatch": 0
+ },
+ {
+  "principal": "财务(finance)",
+  "perms": 9,
+  "rows": [
+   {
+    "route": "after-sales/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "after-sales/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/human-sessions/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/sessions/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "briefing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "categories/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "chat/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "customers/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "customers/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "dashboard/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "employees/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "finance/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "inbound-orders/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "inbound-orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "knowledge/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "notifications/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/ship/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "processing-orders/:id/production/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "processing-orders/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "processing/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/operations/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/piecework/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/pool/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/processing-fees/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/processing/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/remnants/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/routings/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/saving-board/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "products/:id/edit/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "products/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "products/new/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "products/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "roles/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "settings/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "shipments/page.tsx",
+    "denied": false,
+    "expected": false
+   }
+  ],
+  "mismatch": 0
+ },
+ {
+  "principal": "商品管理员(product_manager)",
+  "perms": 8,
+  "rows": [
+   {
+    "route": "after-sales/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "after-sales/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/human-sessions/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/sessions/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "briefing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "categories/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "chat/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "customers/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "customers/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "dashboard/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "employees/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "finance/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "inbound-orders/new/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "inbound-orders/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "knowledge/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "notifications/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "orders/:id/ship/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "orders/new/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "orders/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "processing-orders/:id/production/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "processing-orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "processing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/operations/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/piecework/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/pool/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/processing-fees/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/processing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/remnants/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/routings/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "production/saving-board/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/:id/edit/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "roles/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "settings/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "shipments/page.tsx",
+    "denied": true,
+    "expected": true
+   }
+  ],
+  "mismatch": 0
+ },
+ {
+  "principal": "知识编辑(knowledge_editor)",
+  "perms": 4,
+  "rows": [
+   {
+    "route": "after-sales/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "after-sales/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/human-sessions/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/sessions/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "briefing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "categories/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "chat/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "customers/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "customers/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "dashboard/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "employees/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "finance/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "inbound-orders/new/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "inbound-orders/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "knowledge/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "notifications/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "orders/:id/ship/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "orders/new/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "orders/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "processing-orders/:id/production/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "processing-orders/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "processing/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/operations/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/piecework/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/pool/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/processing-fees/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/processing/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/remnants/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/routings/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/saving-board/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/:id/edit/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "products/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "roles/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "settings/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "shipments/page.tsx",
+    "denied": true,
+    "expected": true
+   }
+  ],
+  "mismatch": 0
+ },
+ {
+  "principal": "验收临时岗790472(acc_custom_790472)",
+  "perms": 2,
+  "rows": [
+   {
+    "route": "after-sales/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "after-sales/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/human-sessions/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "agent-workspace/sessions/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "briefing/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "categories/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "chat/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "customers/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "customers/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "dashboard/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "employees/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "finance/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "inbound-orders/new/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "inbound-orders/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "knowledge/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "notifications/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/:id/ship/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/new/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "orders/page.tsx",
+    "denied": false,
+    "expected": false
+   },
+   {
+    "route": "processing-orders/:id/production/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "processing-orders/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "processing/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/operations/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/piecework/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/pool/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/processing-fees/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/processing/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/remnants/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/routings/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "production/saving-board/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "products/:id/edit/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "products/:id/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "products/new/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "products/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "roles/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "settings/page.tsx",
+    "denied": true,
+    "expected": true
+   },
+   {
+    "route": "shipments/page.tsx",
+    "denied": false,
+    "expected": false
+   }
+  ],
+  "mismatch": 0
+ }
+]

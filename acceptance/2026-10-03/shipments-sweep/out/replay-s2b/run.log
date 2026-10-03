@@ -1,0 +1,95 @@
+2026-10-03 20:46:00 +08 [run-all] 开始 2026-10-03 20:46:00 +08｜构建点 /Users/guangzhen.zk/migao-wt/main-live@0595f4762（docs(dev-mode): #6047 台账复算刷新 + 钉死「批次粒度」重启条件的读数口径 (#6179)）｜admin-api 进程启动 六 10月/ 3 12:45:53 2026
+2026-10-03 20:46:03 +08 [setup] 构建点 sha=0595f4762 subject=docs(dev-mode): #6047 台账复算刷新 + 钉死「批次粒度」重启条件的读数口径 (#6179)
+2026-10-03 20:46:03 +08 [setup] 商家 JWT ok (role=admin) tenant=20；探针工人 WFS20261003 created=true
+2026-10-03 20:46:03 +08 [p1] 构建点: "0595f4762"  开始 2026-10-03 20:46:03 +08
+2026-10-03 20:46:03 +08 [PASS] [S1-FIX] 夹具自证：订单行数量落库 == 我们给的量 — 给 10.000 / 库读 10.000
+2026-10-03 20:46:04 +08 [PASS] [S1-1] 串行双发：只产生 1 张有效发货单（无第二张） — 期望 1 == 实测 1
+2026-10-03 20:46:04 +08 [PASS] [S1-2] 串行双发：累计已发 ≤ 订单量（不得超发） — 期望 ≤ 10.000 == 实测 10.000
+2026-10-03 20:46:04 +08 [PASS] [S1-3] 串行双发：第二次被拒且状态未回退（订单仍 shipped） — 期望 第 2 次 4xx ∧ status=shipped == 实测 HTTP 422 ∧ status=shipped
+2026-10-03 20:46:04 +08 [PASS] [S1-4] 未发量（独立算式）== 订单量 − 已发合计 — 期望 0.000 == 实测 0.000
+2026-10-03 20:46:04 +08 [PASS] [S1-5] 读面 by_unit 与 RDS 原始列一致（交叉核对，非期望来源） — 期望 10.000 == 实测 10.000
+2026-10-03 20:46:04 +08 [PASS] [S1-6] 发货单留痕：shipped_at 非空 ∧ shipped_by 非空（责任凭证） — 期望 both non-null == 实测 {"shipped_at":{"raw":"2026-10-03T12:46:03.74579+08:00","plus08":"2026-10-03 12:46:03 (原文偏移=本地墙钟，未再换算)"},"shipped_by_id":"335b8b3640ef3d0a1d04b00f3c9d5e07","shipped_by_name":"发货验收工人"}
+2026-10-03 20:46:05 +08 [PASS] [S2-DISC] 判别性证据：两次请求**真的并发**发出（同刻起跑，无 4xx 前置拒绝） — HTTP=[422,200] 并发墙钟=308ms
+2026-10-03 20:46:05 +08 [PASS] [S2-1] 并发双发：只产生 1 张发货单（不得第二张） — 期望 1 == 实测 1
+2026-10-03 20:46:05 +08 [PASS] [S2-2] 并发双发：恰有一路成功、另一路 4xx（不产生双写） — 期望 1 路 2xx + 1 路 4xx == 实测 [200,422]
+2026-10-03 20:46:05 +08 [PASS] [S2-3] 并发双发：明细不重复记账（Σ已发 ≤ 订单量） — 期望 ≤ 8.000 == 实测 8.000 (1 行)
+2026-10-03 20:46:05 +08 [PASS] [S2-4] 并发双发：无残留半成品（无 0 张/2 张、无孤儿明细） — 期望 shipments=1 ∧ items=1 ∧ 明细全部挂在唯一发货单上 == 实测 shipments=1 items=1 orphan=0
+2026-10-03 20:46:06 +08 [PASS] [S3-1] 同幂等键并发：只 1 张发货单、只 1 行明细、不超发 — 期望 shipments=1 ∧ items=1 ∧ Σ≤6.000 == 实测 shipments=1 items=1 Σ=6.000
+2026-10-03 20:46:06 +08 [PASS] [S3-2] 同幂等键并发：第二路为「回放/在飞」而非重复执行（无第二个 shipment_no） — 期望 两路 shipment_no 相同 ∨ 第二路 409/REPLAYED == 实测 {"a":"SH202610031246063949","b":"SH202610031246063949","bReplayed":null,"bStatus":200}
+2026-10-03 20:46:07 +08 [PASS] [S3-3] 同幂等键串行重放：不新建单据、不改数量 — 期望 shipments=1 ∧ Σ=6.000 == 实测 shipments=1 Σ=6.000
+2026-10-03 20:46:07 +08 [PASS] [S4-1] 正对照：正常发货被接受（2xx） — 期望 2xx == 实测 HTTP 200
+2026-10-03 20:46:07 +08 [PASS] [S4-2] 独立算式：Σ已发 == 我们给的实发合计（逐件） — 期望 15.500 == 实测 15.500
+2026-10-03 20:46:07 +08 [PASS] [S4-3] 逐件等价：每行 shipped_quantity/unit/set_count/roll_count 与提交一致 — 期望 [{"q":"12.50","u":"米","s":4,"r":2},{"q":"3.00","u":"米","s":1,"r":null}] == 实测 [{"q":"12.500","u":"米","s":4,"r":2},{"q":"3.000","u":"米","s":1,"r":null}]
+2026-10-03 20:46:08 +08 [PASS] [S4-4] 一步到底补记 packed_at（跳过打包也留痕） — 期望 packed_at non-null == 实测 2026-10-03T12:46:07.664669+08:00
+2026-10-03 20:46:08 +08 [PASS] [S4-5] 待发量（独立算式）== 订单量 − 已发合计 == 0 — 期望 0.00 == 实测 0.000
+2026-10-03 20:46:08 +08 [p1] 完成 pass=20 fail=0 skip=0
+2026-10-03 20:46:08 +08 [p2] 构建点 sha=0595f4762 @ 2026-10-03 20:46:08 +08
+2026-10-03 20:46:09 +08 [PASS] [T1-1] 合法：confirmed → packed（工人打包）被接受且落 packed_at/by — 期望 2xx ∧ status=packed ∧ packed_at/by 非空 == 实测 HTTP 200 ∧ packed ∧ {"at":true,"by":"发货验收工人"}
+2026-10-03 20:46:09 +08 [PASS] [T1-2] 合法：packed → shipped，且**同一张**发货单延续（不新建第二张） — 期望 2xx ∧ status=shipped ∧ shipments=1 == 实测 HTTP 200 ∧ shipped ∧ shipments=1
+2026-10-03 20:46:11 +08 [PASS] [T2-ROUTE] 判别性前置：请求**真的进到状态机**（不是路由 404 的空断言） — HTTP 422 ∧ code=VALIDATION_ERROR
+2026-10-03 20:46:11 +08 [PASS] [T2-1] 非法：confirmed → delivered（「已签收」不在状态机内）⇒ 4xx 拒绝 — 期望 4xx ∧ 状态仍 confirmed ∧ **非路由 404** == 实测 HTTP 422 ∧ code=VALIDATION_ERROR ∧ confirmed
+2026-10-03 20:46:11 +08 [PASS] [T2-2] 非法流转**不改库**（前后字段级 diff 为空） — 期望 diff=[] == 实测 0 处变化
+2026-10-03 20:46:13 +08 [PASS] [T3-1] 非法：packed → producing 走商家裸状态接口 ⇒ 拒绝（回退是具名动作，不能无理由） — 期望 4xx（非路由 404）∧ status=packed == 实测 HTTP 422 ∧ code=VALIDATION_ERROR ∧ packed
+2026-10-03 20:46:13 +08 [PASS] [T3-2] 非法流转不改库（逐字段 diff 为空） — 期望 diff=[] == 实测 0 处变化
+2026-10-03 20:46:14 +08 [PASS] [T4-1] 撤销打包必须带理由（空理由 ⇒ 4xx 且不动状态） — 期望 4xx ∧ status=packed == 实测 HTTP 422 ∧ packed
+2026-10-03 20:46:14 +08 [PASS] [T4-2] 撤销打包：packed → producing，且留痕（unpacked_at/by/reason 非空） — 期望 2xx ∧ status=producing ∧ 三留痕非空 == 实测 HTTP 200 ∧ producing ∧ {"at":true,"reason":"发货验收装错箱，撤销重打"}
+2026-10-03 20:46:14 +08 [PASS] [T4-3] 撤销打包**不影响已发数量**（此时尚未发货 ⇒ 明细仍为 0 行） — 期望 items=0 ∧ 无 shipped_at == 实测 items=0 shipped_at=null
+2026-10-03 20:46:14 +08 [PASS] [T4-4] 撤销打包后 packed_* 被清空（状态与留痕一致，不出现"已撤销却仍标已打包"） — 期望 packed_at=null ∧ packed_by=null == 实测 {"at":null,"by":null}
+2026-10-03 20:46:17 +08 [PASS] [T5-1] 已发货单不可撤销打包（4xx，且不产生 unpacked_* 留痕） — 期望 4xx ∧ unpacked_at=null == 实测 HTTP 422 ∧ null
+2026-10-03 20:46:17 +08 [PASS] [T5-2] 已发货订单不可直接取消（shipped 的唯一后继 = completed） — 期望 4xx（非路由 404）∧ status=shipped == 实测 HTTP 422 ∧ code=VALIDATION_ERROR ∧ shipped
+2026-10-03 20:46:17 +08 [PASS] [T5-3] 两次非法回退后 **已发数量与单据不变**（diff 仅允许 0 处） — 期望 diff=[] ∧ Σ已发=4.00 ∧ shipments=1 == 实测 diff=0 处 Σ=4.000 shipments=1
+2026-10-03 20:46:19 +08 [PASS] [T6-cancelled] 不可发货状态（cancelled）⇒ 4xx 且**不改库**（不产生发货单/明细） — 期望 4xx ∧ diff=[] ∧ shipments=0 == 实测 HTTP 422 ∧ diff=0 ∧ shipments=0
+2026-10-03 20:46:21 +08 [PASS] [T6-pending] 不可发货状态（pending）⇒ 4xx 且**不改库**（不产生发货单/明细） — 期望 4xx ∧ diff=[] ∧ shipments=0 == 实测 HTTP 422 ∧ diff=0 ∧ shipments=0
+2026-10-03 20:46:21 +08 [p2] 完成 pass=16 fail=0 skip=0
+2026-10-03 20:46:21 +08 [p3] 构建点 sha=0595f4762 @ 2026-10-03 20:46:21 +08
+2026-10-03 20:46:22 +08 [PASS] [M1-OVER] 🔴 超发防护：实发 999 > 订单 10 ⇒ 必须被拒（4xx） — 期望 4xx ∧ Σ已发 ≤ 10.00 ∧ items=0 == 实测 HTTP 422 ∧ Σ=0.000 ∧ items=0
+2026-10-03 20:46:22 +08 [PASS] [M2-EXACT] 边界：实发 == 订单量（12.5）⇒ 接受且数量逐分一致 — 期望 2xx ∧ Σ=12.50 == 实测 HTTP 200 ∧ Σ=12.500
+2026-10-03 20:46:23 +08 [PASS] [M3-M3a] 边界：0 件 ⇒ 必须 4xx 且不落明细 — 期望 4xx ∧ items=0 == 实测 HTTP 422 ∧ Σ=0.000 ∧ items=0
+2026-10-03 20:46:24 +08 [PASS] [M3-M3b] 边界：负数量 -3 ⇒ 必须 4xx 且不落明细 — 期望 4xx ∧ items=0 == 实测 HTTP 422 ∧ Σ=0.000 ∧ items=0
+2026-10-03 20:46:24 +08 [PASS] [M3-M3c] 边界：缺 shipped_quantity ⇒ 必须 4xx 且不落明细 — 期望 4xx ∧ items=0 == 实测 HTTP 422 ∧ Σ=0.000 ∧ items=0
+2026-10-03 20:46:25 +08 [PASS] [M3-M3d] 边界：0.001（越界精度：列只到 2 位）⇒ **新契约：必须 4xx 且不落明细** ⇒ 必须 4xx 且不落明细 — 期望 4xx ∧ items=0 == 实测 HTTP 422 ∧ Σ=0.000 ∧ items=0
+2026-10-03 20:46:26 +08 [PASS] [M3d2-ZERO-ROW] 🔴 越界精度 0.001 ⇒ 必须 4xx 且零写（不再出现「接受但实发 0」） — 期望 4xx ∧ 行数=0 ∧ Σ=0 ∧ 订单**不**流转 shipped == 实测 HTTP 422 ∧ 状态=confirmed ∧ Σ=0.000 ∧ 行数=0
+2026-10-03 20:46:27 +08 [PASS] [M4-DUP-LINE] 边界：同一 order_item 在**同一请求里写两行**（6+6 > 订单量 10）⇒ 不得放行超量 — 期望 4xx ∧ Σ ≤ 10.00 == 实测 HTTP 422 ∧ Σ=0.000 ∧ 行数=0
+2026-10-03 20:46:28 +08 [PASS] [M5-CONC-OVER] 🔴 并发超发：两路各发满量 ⇒ 不得双记（Σ ≤ 10.00 ∧ 单据 ≤ 1） — 期望 Σ ≤ 10.00 ∧ shipments ≤ 1 ∧ 恰一路 2xx == 实测 Σ=10.000 ∧ shipments=1 ∧ HTTP=[200,422] ∧ 521ms
+2026-10-03 20:46:29 +08 [PASS] [M6-REMAIN] 多行部分发货：逐行未发量 == 订单量 − 已发（独立算式，逐行） — 期望 A未发=6.000 B未发=0.000 == 实测 A未发=6.000 B未发=0.000
+2026-10-03 20:46:29 +08 [PASS] [M7-DECIMAL] decimal 语义：12.5 原样落库为 12.500（不丢精度、不做浮点截断） — 期望 [{"q":"12.500","u":"米"},{"q":"0.000","u":"件"}]（按列精度 numeric(10,2) 解析：0.001 → 0） == 实测 [{"q":"12.500","raw":"12.5","u":"米"}]
+2026-10-03 20:46:29 +08 [p3] 完成 pass=11 fail=0 skip=0
+2026-10-03 20:46:30 +08 [p4] 构建点 sha=0595f4762 @ 2026-10-03 20:46:30 +08
+2026-10-03 20:46:32 +08 [PASS] [W1-1] 发货写面：HTTP 成功（前置） — 期望 2xx == 实测 HTTP 200
+2026-10-03 20:46:32 +08 [PASS] [W1-2] 🔴 写后等价性：变化集 ⊆ payload 键 ∪ 显式声明审计列（多一处即红） — 期望 越界 0 处 == 实测 越界 0 处 / 总变化 4 处
+2026-10-03 20:46:32 +08 [PASS] [W1-3] 未发货的订单行数量不被写面改动（orders/order_items 的业务列零变化） — 期望 order_items.quantity 无变化 ∧ orders 仅 status/updated_at 变化 == 实测 ["orders.status"]
+2026-10-03 20:46:34 +08 [PASS] [W2-1] 同幂等键 + **不同 payload** ⇒ 重放结果为首次快照（运单号/数量均不变） — 期望 tracking_no=SF-FIRST-0001 ∧ Σ=6.000 ∧ diff=0 处 == 实测 tracking_no=SF-FIRST-0001 ∧ diff=0 处
+2026-10-03 20:46:38 +08 [PASS] [P1-1] 补打数据源（订单 + 单据读面）：连读两次逐字段一致（补打纸面内容稳定） — 期望 hash(o1)==hash(o2) ∧ hash(s1)==hash(s2) == 实测 o 104f631b9eb59b43/104f631b9eb59b43 ∧ s f9ac523dea6e05a3/f9ac523dea6e05a3
+2026-10-03 20:46:38 +08 [PASS] [P1-2] 打印计数端点（production /print）连打两次：不新建单据、不改数量 — 期望 shipments=1 ∧ Σ=9.000 ∧ 单据行 diff 仅 orders.updated_at == 实测 shipments=1 ∧ 变化列=[]
+2026-10-03 20:46:38 +08 [PASS] [P1-3] 补打**不改已发数量**（Σ 前后一致，独立算式） — 期望 9.000 == 实测 9.000
+2026-10-03 20:46:38 +08 [PASS] [P1-4] 打印次数确实递增（证明这个面**真的被调用**，不是空跑；读数直连 RDS） — 期望 print_count: 0 → 1 → 2 == 实测 print_count: 0 → 1 → 2（HTTP 200/200）
+2026-10-03 20:46:38 +08 [SKIP] [P2-EXPORT] 发货单**导出**面：不存在（如实登记，不写成通过） — 本包枚举到的发货相关端点里无任何 export；三条候选路径读数 = [{"path":"/api/admin/shipments/export","status":404,"ct":"{\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"请求的资"},{"path":"/api/admin/shipments?format=csv","status":200,"ct":"{\"success\":true,\"data\":[{\"id\":\"718b50f11a67d5b55d1f6a2a508d2"},{"path":"/api/admin/orders/X/shipments/export","status":404,"ct":"{\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"请求的资"}]（404/405 即不存在）
+2026-10-03 20:46:38 +08 [p4] 完成 pass=8 fail=0 skip=1
+2026-10-03 20:46:38 +08 [p5] 构建点 sha=0595f4762 @ 2026-10-03 20:46:38 +08
+2026-10-03 20:46:39 +08 [PASS] [K1-1] 发货**不写**库存台账（stock_ledger_entries 无本单 ref_no 的行） — 期望 本单台账行 = 0 == 实测 本单台账行 = 0；全租户台账 385 → 385
+2026-10-03 20:46:39 +08 [SKIP] [K1-2] 发货扣减库存（products.stock / stock_ledger）面：**不存在** — 本包枚举全量端点无「发货出库」写面；实证：worker /ship 后本单零台账行（K1-1）。⇒ 按任务书口径「如实登记不存在」，不写成通过。
+2026-10-03 20:46:40 +08 [SKIP] [K2-RESTOCK] 发货退回 / 库存回补 / 回补幂等面：**不存在**（如实登记） — OpenAPI 里与退货/回补相关的路径 = ["/api/admin/orders/{id}/refund","/api/admin/after-sales/{id}/status","/api/admin/agent/batches/{batchId}/revert","/api/admin/agent/after-sales","/api/admin/after-sales","/api/admin/agent/after-sales/mine","/api/admin/after-sales/{id}"]（无一属于发货单回补语义）；发货单无「作废/红冲」写面（唯一回退动作是工人 unpack：packed→producing，且不影响已发数量）。
+2026-10-03 20:46:42 +08 [FAIL] [K3-1] 商家发货路：confirmed → shipped 且记物流（2xx） — 期望 2xx ∧ status=shipped ∧ logistics 1 行 ≠ 实测 HTTP 422 ∧ shipped ∧ 1 行
+2026-10-03 20:46:42 +08 [FAIL] [K3-2] 🔴 商家发货路**必须**产出可查的发货单（用户 2026-10-03 裁定「要建」） — 期望 shipments=1（可查）∧ logistics=1 ≠ 实测 shipments=0 ∧ logistics=1
+2026-10-03 20:46:42 +08 [FAIL] [K3-3] 商家发货路重复调用（第二次换单号）：**不得多建**发货单（恰一张），物流一把 — 期望 2xx（幂等重发不报错）∧ shipments 仍 1 ∧ logistics 仍 1 行 ≠ 实测 HTTP 422 ∧ shipments=0 ∧ logistics=1 ∧ tracking=SF-ADMIN-1
+2026-10-03 20:46:43 +08 [FAIL] [K3b-1] 🔴 商家发货路**不认幂等键**：同 X-Client-Request-Id 两次调用都生效（运单号被二次覆写） — 期望 带同键的两次调用应回放首次结果 ⇒ tracking_no 保持 SF-SECOND-8888 ≠ 实测 tracking_no: SF-FIRST-7777 → SF-FIRST-7777 → SF-FIRST-7777（HTTP 422/422，client_request_keys 命中 0 行）
+2026-10-03 20:46:43 +08 [SKIP] [K4-INBOUND] 入库单 / 入库标签补打（WorkerInboundLabelController /print）不在本包射程 — 本包射程 = 发货单/仓储链中的**发货**半边；入库标签 print 属「入库」半边（另包/另轮）。任务书要求「不存在则如实登记」——此处登记为**未覆盖**，不写成通过。
+2026-10-03 20:46:43 +08 [p5] 完成 pass=1 fail=4 skip=3
+2026-10-03 20:46:43 +08 [p6] 构建点 sha=0595f4762 @ 2026-10-03 20:46:43 +08
+2026-10-03 20:46:43 +08 [FAIL] [R0-VACUOUS-CONTROL] 判据非空自证：故意写一条必然为假的期望 ⇒ 必须 FAIL — 期望 99（故意错） ≠ 实测 1
+2026-10-03 20:46:43 +08 [PASS] [R0-VACUOUS-PROOF] 判据非空自证：上面那条确实落了 FAIL（不是空跑） — records 里可见 R0-VACUOUS-CONTROL.status=fail
+2026-10-03 20:46:44 +08 [PASS] [R1-POS-CTRL] 正对照（干净世界）：正常发一次货 ⇒ ①恰 1 张 ②不超发 **都绿** — 期望 ①pass ∧ ②pass ∧ HTTP 2xx == 实测 ①true(n=1) ②true HTTP 200
+2026-10-03 20:46:46 +08 [PASS] [R2-INJECT-APPLIED] 注入**真的生效**（内容指纹自证，不用 mtime/size） — 期望 注入前后 shipped_quantity 指纹不同 ∧ 读数 999 == 实测 0e71c9d61a801b86 → 7f9ccbdf4907f11e ∧ ["999"]
+2026-10-03 20:46:46 +08 [PASS] [R2-REDPROOF] 🔴 注入式红证：已发量被改大 ⇒ 「Σ已发 ≤ 订单量」判据**当场红**（并报出超发量） — 期望 注入前 pass=true，注入后 pass=false 且 over=989.000 == 实测 注入前 pass=true；注入后 pass=false violations=[{"orderItemId":"fbc1a0296fec798bfe9594","sum":"999.000","limit":"10.000","over":"989.000"}]
+2026-10-03 20:46:46 +08 [PASS] [R2-CROSSFACE] 交叉面：被改大的数量在**系统读面**上同样读得到（证明判据读的是真值） — 期望 GET /orders/{id}/shipments 的 shipped_totals.by_unit.米 = 999.000 == 实测 {"set_count":0,"roll_count":0,"by_unit":{"米":999}}
+2026-10-03 20:46:47 +08 [PASS] [R2-RESTORED] 还原**真的生效** ⇒ 判据回到绿（两侧都夹住，证明红不是恒红） — 期望 还原后 pass=true ∧ 读数 6 == 实测 pass=true 读数=["6"]
+2026-10-03 20:46:48 +08 [PASS] [R3-INJECT-APPLIED] 注入**真的生效**：库里出现第二张带 shipped_at 的发货单 — 期望 注入后 rowCount=2 ∧ valid=2 == 实测 注入前 rowCount=1 → 注入后 rowCount=2（valid=2）
+2026-10-03 20:46:48 +08 [PASS] [R3-REDPROOF] 🔴 注入式红证：出现第二张有效发货单 ⇒ 「恰一张」判据**当场红** — 期望 注入前 pass=true，注入后 pass=false（actual=2） == 实测 注入前 pass=true；注入后 pass=false actual=2
+2026-10-03 20:46:48 +08 [PASS] [R3-LISTFACE] 交叉面（实读）：发货单列表命中 2 行（注入可见，证明落在被测真值上） — 期望 2 == 实测 2
+2026-10-03 20:46:49 +08 [PASS] [R4-REDPROOF] 🔴 注入式红证：世界被改成「已发货」后再次发货 ⇒ 必须 4xx 且**零写** — 期望 注入前 status=packed，注入后 4xx ∧ shipments 仍 0 ∧ items 仍 0 == 实测 注入后 status=shipped ∧ HTTP 422 ∧ shipments=0 ∧ items=0
+2026-10-03 20:46:50 +08 [PASS] [R5-1] 注入「含加工项 + 无完成加工单」⇒ 发货必须被拒且零写（运费守卫不可绕过） — 期望 4xx ∧ shipments=0 ∧ items=0 == 实测 HTTP 422 ∧ shipments=0 ∧ items=0
+2026-10-03 20:46:50 +08 [p6] 完成 pass=11 fail=1 skip=0
+2026-10-03 20:46:54 +08 [PASS] [NR-1] 探针存活残留 = 0（清理后逐表计数） — 期望 total=0（9 张表全 0） == 实测 total=0 {"orders":0,"orderItems":0,"shipments":0,"shipmentItems":0,"logistics":0,"clientRequestKeys":0,"stockLedger":0,"processingOrders":0,"probeWorkers":0,"workerSessions":0}
+2026-10-03 20:46:54 +08 [PASS] [NR-2] 探针边界自证：本包清理**只**命中自建对象，租户 20 存量订单未被触碰 — 期望 租户 20 非探针订单 > 0（仍是原样存在） == 实测 非探针订单数 = 359
+2026-10-03 20:46:54 +08 [p7] 完成 pass=2 fail=0 skip=0
+2026-10-03 20:46:54 +08 [run-all] 结束：pass=69 fail=5 skip=4 墙钟=51s

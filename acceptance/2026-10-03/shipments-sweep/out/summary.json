@@ -1,0 +1,73 @@
+{
+  "startedAt": {
+    "cst": "2026-10-03 18:49:21 +08",
+    "utc": "2026-10-03T02:49:21.503Z"
+  },
+  "finishedAt": {
+    "cst": "2026-10-03 18:50:07 +08",
+    "utc": "2026-10-03T02:50:07.586Z"
+  },
+  "wallMs": 44369,
+  "buildPoint": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "sha": "1233b8a42",
+    "shaFull": "1233b8a426036d77d93b928bfbcee5b644686bf1",
+    "subject": "fix(production): #6126 工序设置写面不再凭空新建价目行（连空 payload {} 也建、只增不减） (#6129)",
+    "commitTime": "2026-10-03T09:58:07+08:00",
+    "adminApiStart": "六 10月/ 3 09:58:44 2026",
+    "observedAt": {
+      "cst": "2026-10-03 18:49:21 +08",
+      "utc": "2026-10-03T02:49:21.624Z"
+    }
+  },
+  "perScript": {
+    "p1-ship-protection": {
+      "pass": 20,
+      "fail": 0,
+      "skip": 0,
+      "total": 20
+    },
+    "p2-state-machine": {
+      "pass": 15,
+      "fail": 1,
+      "skip": 0,
+      "total": 16
+    },
+    "p3-independent-math": {
+      "pass": 8,
+      "fail": 4,
+      "skip": 0,
+      "total": 12
+    },
+    "p4-writeface-equivalence": {
+      "pass": 8,
+      "fail": 0,
+      "skip": 1,
+      "total": 9
+    },
+    "p5-stock-and-print": {
+      "pass": 4,
+      "fail": 1,
+      "skip": 3,
+      "total": 8
+    },
+    "p6-redproof": {
+      "pass": 11,
+      "fail": 1,
+      "skip": 0,
+      "total": 12
+    },
+    "p7-noresidue": {
+      "pass": 2,
+      "fail": 0,
+      "skip": 0,
+      "total": 2
+    }
+  },
+  "total": {
+    "pass": 68,
+    "fail": 7,
+    "skip": 4,
+    "all": 79
+  }
+}

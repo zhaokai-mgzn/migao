@@ -1,0 +1,135 @@
+[
+  {
+    "id": "W5-L0",
+    "name": "清场：历史残留同前缀对象",
+    "status": "pass",
+    "detail": "清理 8 条：fee:写面横切组合料405227(HTTP 200→disabled) | fee:写面横切组合料384160(HTTP 200→disabled) | fee:写面横切组合料668012(HTTP 200→disabled) | fee:写面横切组合料764045(HTTP 200→disabled) | fee:写面横切组合料857105(HTTP 200→disabled) | fee:写面横切组合料955206(HTTP 200→disabled) | fee:写面横切组合料172510(HTTP 200→disabled) | fee:写面横切组合料030585(HTTP 200→disabled)",
+    "evidence": [],
+    "at": "2026-10-03T01:05:36.447Z"
+  },
+  {
+    "id": "W5-00",
+    "name": "自建探针夹具：一道工序（规则的 operation 引用它）",
+    "status": "pass",
+    "detail": "op=写面横切规则用533931(7ac5acf891a8d379cb93b3769ac0ce60)",
+    "evidence": [],
+    "at": "2026-10-03T01:05:36.796Z"
+  },
+  {
+    "id": "W5-01",
+    "name": "规则写面：POST /route-rules 新建（自建自清）",
+    "status": "pass",
+    "detail": "HTTP 200；新建行={\"action\":\"insert\",\"after_operation\":null,\"cup\":null,\"del\":0,\"factor\":null,\"id\":\"5a7370827b0cd057df859b9ccea65be9\",\"operation\":\"写面横切规则用533931\",\"position\":\"布帘\",\"priority\":999,\"status\":\"active\",\"trigger_kind\":\"option\",\"trigger_value\":\"写面横切选533931\"}；其余变化 = 0（含审计面 ）",
+    "evidence": [
+      "POST /api/admin/production/route-rules body={trigger_value:'写面横切选533931',operation:'写面横切规则用533931',action:'insert',priority:999,position:'布帘'}",
+      "新建行 SQL 读数={\"action\":\"insert\",\"after_operation\":null,\"cup\":null,\"del\":0,\"factor\":null,\"id\":\"5a7370827b0cd057df859b9ccea65be9\",\"operation\":\"写面横切规则用533931\",\"position\":\"布帘\",\"priority\":999,\"status\":\"active\",\"trigger_kind\":\"option\",\"trigger_value\":\"写面横切选533931\"}",
+      "diff=production_route_rules.5a7370827b0cd057df859b9ccea65be9.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]"
+    ],
+    "at": "2026-10-03T01:05:37.981Z"
+  },
+  {
+    "id": "W5-02",
+    "name": "规则写面：只改 customer_unit_price（元/套）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_route_rules.customer_unit_price\",\"production_route_rules.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/route-rules/5a7370827b0cd057df859b9ccea65be9/customer-unit-price body={\"customer_unit_price\":12.5}",
+      "payload 键=[customer_unit_price]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_route_rules.5a7370827b0cd057df859b9ccea65be9.customer_unit_price: null → 12.5 [field] | production_route_rules.5a7370827b0cd057df859b9ccea65be9.updated_at: \"2026-10-03T09:05:37.31155+08:00\" → \"2026-10-03T09:05:38.33671+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:05:38.663Z"
+  },
+  {
+    "id": "W5-02-restore",
+    "name": "规则写面：只改 customer_unit_price（元/套） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: updated_at='2026-10-03T09:05:37.31155+08:00',customer_unit_price=null[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:39.571Z"
+  },
+  {
+    "id": "W5-03",
+    "name": "规则写面：只改 customer_unit_price=null（改回未定价）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_route_rules.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/route-rules/5a7370827b0cd057df859b9ccea65be9/customer-unit-price body={\"customer_unit_price\":null}",
+      "payload 键=[customer_unit_price]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_route_rules.5a7370827b0cd057df859b9ccea65be9.updated_at: \"2026-10-03T09:05:37.31155+08:00\" → \"2026-10-03T09:05:39.866129+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:05:40.237Z"
+  },
+  {
+    "id": "W5-03-restore",
+    "name": "规则写面：只改 customer_unit_price=null（改回未定价） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: updated_at='2026-10-03T09:05:37.31155+08:00'[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:41.180Z"
+  },
+  {
+    "id": "W5-04",
+    "name": "规则写面：DELETE /route-rules/{id}（软删）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_route_rules.deleted\",\"production_route_rules.updated_at\"]",
+    "evidence": [
+      "DELETE /api/admin/production/route-rules/5a7370827b0cd057df859b9ccea65be9",
+      "payload 键=[deleted]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_route_rules.5a7370827b0cd057df859b9ccea65be9.deleted: 0 → 1 [field] | production_route_rules.5a7370827b0cd057df859b9ccea65be9.updated_at: \"2026-10-03T09:05:37.31155+08:00\" → \"2026-10-03T09:05:41.542649+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:05:41.882Z"
+  },
+  {
+    "id": "W5-04-restore",
+    "name": "规则写面：DELETE /route-rules/{id}（软删） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: updated_at='2026-10-03T09:05:37.31155+08:00',deleted=0[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:42.773Z"
+  },
+  {
+    "id": "W5-05",
+    "name": "规则写面：改触发维与取值 / 改动作 / 改部位限定 —— 仓内**无该写面**",
+    "status": "skip",
+    "detail": "依据：backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java 只有 @PostMapping(\"/route-rules\")、@PutMapping(\"/route-rules/{id}/customer-unit-price\")、@DeleteMapping(\"/route-rules/{id}\") 三个；frontend/admin-web/src/lib/api.ts 同。⇒ 该动作**不可达**（如实登记为未覆盖面，不是「已覆盖」）",
+    "evidence": [],
+    "at": "2026-10-03T01:05:42.775Z"
+  },
+  {
+    "id": "W5-98",
+    "name": "零残留读数：前缀对象存活数 = 0",
+    "status": "pass",
+    "detail": "存活明细=0（ops/pos/routes/rules/fees 全部 deleted=1 或不存在）",
+    "evidence": [],
+    "at": "2026-10-03T01:05:44.824Z"
+  },
+  {
+    "id": "W5-90",
+    "name": "时间戳（+08 口径）",
+    "status": "pass",
+    "detail": "开始 2026-10-03 17:05:34 +08 / 结束 2026-10-03 17:05:44 +08（UTC: 2026-10-03T01:05:34.151Z → 2026-10-03T01:05:44.825Z）",
+    "evidence": [],
+    "at": "2026-10-03T01:05:44.825Z"
+  }
+]

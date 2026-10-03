@@ -1,0 +1,22 @@
+2026-10-03T02:40:26.943Z ❌ [WV-products] 跨租户写(有效载荷)·商品 — 🔴 有效载荷跨租户写得到 404；库变动=false；泄漏=[]
+2026-10-03T02:40:28.276Z ❌ [WV-categories] 跨租户写(有效载荷)·商品分类 — 🔴 有效载荷跨租户写得到 404；库变动=false；泄漏=[]
+2026-10-03T02:40:29.674Z ❌ [WV-processing_items] 跨租户写(有效载荷)·加工项 — 🔴 有效载荷跨租户写得到 404；库变动=false；泄漏=[]
+2026-10-03T02:40:31.927Z ❌ [WV-orders] 跨租户写(有效载荷)·订单 — 🔴 有效载荷跨租户写得到 404；库变动=false；泄漏=[]
+2026-10-03T02:40:32.987Z ❌ [F-products] 伪造越权·商品 — 🔴 query ?tenantId=21:404 query ?tenant_id=21:404 header X-Tenant-Id: 21:404 header X-Tenant-Id: 21 + query tenantId=21:404
+2026-10-03T02:40:34.084Z ❌ [F-orders] 伪造越权·订单 — 🔴 query ?tenantId=21:404 query ?tenant_id=21:404 header X-Tenant-Id: 21:404 header X-Tenant-Id: 21 + query tenantId=21:404
+2026-10-03T02:40:34.807Z ❌ [F-customers] 伪造越权·客户 — 🔴 query ?tenantId=21:404 query ?tenant_id=21:404 header X-Tenant-Id: 21:404 header X-Tenant-Id: 21 + query tenantId=21:404
+2026-10-03T02:40:35.796Z ❌ [F-users] 伪造越权·员工用户 — 🔴 query ?tenantId=21:404 query ?tenant_id=21:404 header X-Tenant-Id: 21:404 header X-Tenant-Id: 21 + query tenantId=21:404
+2026-10-03T02:40:36.630Z ❌ [F-roles] 伪造越权·角色 — 🔴 query ?tenantId=21:404 query ?tenant_id=21:404 header X-Tenant-Id: 21:404 header X-Tenant-Id: 21 + query tenantId=21:404
+2026-10-03T02:40:37.569Z ❌ [F-body] 伪造越权·body.tenantId — A 的 token + body{tenantId:21,name:'伪造越权探针'} PUT B 的商品 → 404；库未变=true
+2026-10-03T02:40:38.023Z ❌ [N-products] 未认证·商品 — 🔴 无 token:401 乱 token:401 篡改 token（签名改字符）:401
+2026-10-03T02:40:38.425Z ❌ [N-orders] 未认证·订单 — 🔴 无 token:401 乱 token:401 篡改 token（签名改字符）:401
+2026-10-03T02:40:38.755Z ❌ [N-users] 未认证·员工用户 — 🔴 无 token:401 乱 token:401 篡改 token（签名改字符）:401
+2026-10-03T02:40:39.088Z ❌ [N-customers] 未认证·客户 — 🔴 无 token:401 乱 token:401 篡改 token（签名改字符）:401
+2026-10-03T02:40:39.199Z ❌ [ROLE-plat] 角色越权·平台级端点 — 🔴 /api/super-admin/registrations?page=1&size=5:403 /api/super-admin/registrations/x:400 /api/super-admin/registrations/x/approve:400
+2026-10-03T02:40:39.224Z ✅ [ROLE-tenants] 角色越权·租户管理端点存在性 — 不存在商家侧「租户管理」端点（GET /api/admin/tenants → 404）⇒ 如实登记「不存在」
+2026-10-03T02:40:39.510Z ✅ [SA-products] 超管反向对照·商品 — 超管(P tenantId=-1) 读 B(21) 的 商品 → 404（未返回 B 数据）
+2026-10-03T02:40:39.761Z ✅ [SA-orders] 超管反向对照·订单 — 超管(P tenantId=-1) 读 B(21) 的 订单 → 404（未返回 B 数据）
+2026-10-03T02:40:40.141Z ✅ [SA-customers] 超管反向对照·客户 — 超管(P tenantId=-1) 读 B(21) 的 客户 → 404（未返回 B 数据）
+2026-10-03T02:40:40.407Z ✅ [SA-users] 超管反向对照·员工用户 — 超管(P tenantId=-1) 读 B(21) 的 员工用户 → 404（未返回 B 数据）
+2026-10-03T02:40:40.853Z ✅ [SA-note] 超管反向对照·判据边界 — 同一伪造手法在商家 token 下：query ?tenantId=21→404 query ?tenant_id=21→404 header X-Tenant-Id: 21→404 header X-Tenant-Id: 21 + query tenantId=21→404（若上面超管能读 ⇒ 差异来自**主体身份**而非伪造头，属设计允许）
+2026-10-03T02:40:40.854Z === 批次2 读数（FLIP）：pass=6 fail=15 skip=0 total=21

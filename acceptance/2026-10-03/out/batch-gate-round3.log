@@ -1,0 +1,10 @@
+批次数：3 个包｜基准：origin/main@24b7381d1
+包：fix/6220-aftersales-concurrency fix/6221-money-precision fix/6226-mapof-null-key-siblings
+── 就绪前置判定（--require-ready 默认开启；issue #6028）──
+  ❌ fix/6220-aftersales-concurrency（不就绪）：PR #6230；24 条 check；未完成：mini-app 面判定（决定哪些腿跑）、bmini-app build (h5 + weapp)、bmini H5 tabBar geometry (e2e)、ai-agent-service unit tests、ci workflow helper unit tests（后半）、admin-web typecheck + unit tests（另有 2 条 skipping：Enable auto-merge (bot, safe classes only)、Detect dangling PRs (open >N min, no red, required not met)） ｜下一步：等 CI 绿（gh pr checks 6230 --watch）
+  ❌ fix/6221-money-precision（不就绪）：PR #6231；24 条 check；未完成：mini-app 面判定（决定哪些腿跑）、ci workflow helper unit tests（后半）、mini-app typecheck + unit tests、admin-api unit tests、ai-agent-service unit tests、bmini-app build (h5 + weapp)（另有 2 条 skipping：Detect dangling PRs (open >N min, no red, required not met)、Enable auto-merge (bot, safe classes only)） ｜下一步：等 CI 绿（gh pr checks 6231 --watch）
+  ❌ fix/6226-mapof-null-key-siblings（不就绪）：PR #6234；26 条 check；未完成：xiaobu H5 visual regression、E2E quality gate、ci workflow helper unit tests、bmini H5 tabBar geometry (e2e)、admin-api unit tests、LLM Sink Ledger (红例→确定性下沉)（另有 2 条 skipping：Enable auto-merge (bot, safe classes only)、Detect dangling PRs (open >N min, no red, required not met)） ｜下一步：等 CI 绿（gh pr checks 6234 --watch）
+⛔ 有包未通过就绪判定 ⇒ **拒绝**，**没有跑**那一次全量（没跑 ≠ 通过、≠ 全绿）。
+   出口（三选一）：① 按上面逐包的「下一步」修好再重跑；② 修不了 ⇒ 把该包移出本批；
+                   ③ 人类明知故犯 ⇒ 显式 --no-require-ready（跳过判定，风险自负）
+   ⚠️ 「无法判定」是 fail-closed 的**拒绝**，不是「就绪」—— 别把 ❓ 读成 ✅。

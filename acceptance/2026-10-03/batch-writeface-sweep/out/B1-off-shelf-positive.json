@@ -1,0 +1,21 @@
+{
+  "http": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "success": 2,
+      "failed": 0,
+      "errors": []
+    },
+    "requestId": "req_f25b33480fdf4131",
+    "timestamp": 1791006911
+  },
+  "before": {
+    "c08eff1ecc6187ebf748f54de2d7256b": "on_sale",
+    "bb46af2464b791082c4bb43d09250d31": "on_sale"
+  },
+  "after": {
+    "c08eff1ecc6187ebf748f54de2d7256b": "off_sale",
+    "bb46af2464b791082c4bb43d09250d31": "off_sale"
+  }
+}
