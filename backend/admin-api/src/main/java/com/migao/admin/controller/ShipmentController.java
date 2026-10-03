@@ -34,12 +34,8 @@ import java.util.List;
  * 要真按岗位细分，得连带岗位默认权限 / 迁移 / 岗位权限页多处对齐 —— 那是授权变更，须人类裁定。</p>
  *
  * <h2>只读</h2>
- * <p>本文件里一个写动词都没有（判据：{@code AdminShipmentListReadTest.listFaceIsReadOnly}）。</p>
- * <p>⚠️ <b>发货写面在哪</b>（issue #6171 校准）：工人面 {@code /api/worker/shipment/**}（打包 / 发货 /
- * 撤销）+ 商家/生产面 {@code POST /api/admin/production/orders/{orderId}/ship} —— 后者自 #6171 起
- * **也**产出发货单（{@code source='admin'}，实发数量 = 订单未发余量）。此前那句「发货写面全归 #5648
- * 的工人面」是 #5648 当时的形态描述；#6171 用户裁定「商家发货也要建发货单」后它**已不成立**
- * （本读面正是那第③条路产出的单据的入口）。</p>
+ * <p>本单只补读面：发货写面（拍照 / 打包 / 发货 / 撤销）全归 issue #5648 的工人面，此处一个写动词都没有
+ * （判据：{@code AdminShipmentListReadTest.listFaceIsReadOnly}）。</p>
  *
  * <p>租户隔离：{@code TenantContext.getTenantId()} 一路传到 SQL 的 {@code WHERE tenant_id = ?}
  * （真库判据 {@code ShipmentListQueryRealDbTest.otherTenantsShipmentsAreNotVisible}）。</p>

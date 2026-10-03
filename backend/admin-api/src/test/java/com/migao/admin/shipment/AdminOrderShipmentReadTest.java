@@ -93,14 +93,12 @@ class AdminOrderShipmentReadTest {
     @Mock private ImageRecognitionClient imageRecognitionClient;
     /** issue #5939：发货单列表读面（本类不测它，但构造器按字段序要求它在场）。 */
     @Mock private OrderShipmentQueryMapper orderShipmentQueryMapper;
-    /** issue #6171：商家发货路的单位来源（本类不测它，但构造器按字段序要求它在场）。 */
-    @Mock private com.migao.admin.mapper.ProductMapper productMapper;
 
     private OrderShipmentService service() {
         return new OrderShipmentService(orderMapper, orderItemMapper, orderLogisticsMapper,
                 orderShipmentMapper, orderShipmentItemMapper, processingOrderMapper,
                 clientRequestIdService, imageRecognitionClient, new ObjectMapper(),
-                productMapper, orderShipmentQueryMapper);
+                orderShipmentQueryMapper);
     }
 
     private Order order(long tenantId) {

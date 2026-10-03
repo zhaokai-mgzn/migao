@@ -2818,11 +2818,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @return 本次发货的结果快照（{@code order_id} / {@code status} / {@code tracking_no} /
      *         {@code logistics_company}）—— <b>幂等回放的载体</b>（issue #6157）：端点拿它当
      *         {@code ClientRequestIdService.complete} 的快照，同键第二次到达时**逐字回放**同一份。
-     *         ⚠️ 返回值**不含实发明细**：本方法只管**物流 + 状态流转**；发货单（实发数量）由
-     *         {@code OrderShipmentService.recordMerchantShipment} 在**流转成功之后**落 ——
-     *         调用方（{@code ProductionController.ship}）负责按序调用，写序见该方法的注释。
-     *         <b>issue #6171</b> 起商家路**也建发货单**（用户 2026-10-03 裁定「要建」），
-     *         此前「本路不建发货单」的登记缺口随之销账。
+     *         ⚠️ 返回值**不含实发明细** —— 本路不建发货单（见 {@code OrderShipmentService} 的
+     *         「能力保留、载体分离」注释；issue #6157 的 F4 已按「有意设计」登记）。
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> shipWithLogistics(String orderId, String trackingNo, String logisticsCompany) {
@@ -2833,11 +2830,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (order == null) {
             throw BusinessException.notFound("订单");
         }
-        // 与工人发货路**同一份**可发货状态集合（issue #6171）：此前这里把三个字面量抄了一遍，
-        // 而两条路都会把订单置 shipped ⇒ 抄两份迟早漂移（见 OrderShipmentService.SHIPPABLE_FROM）。
-        // 本路多认 shipped：已发货后仅补记/纠正物流（不流转状态），故它是合法的记物流态。
+        // 与 PUT /orders/{id}/logistics 同一状态前置：仅已确认/生产中/已发货可记物流
         String status = order.getStatus();
-        if (!OrderShipmentService.SHIPPABLE_FROM.contains(status) && !"shipped".equals(status)) {
+        if (!"shipped".equals(status) && !"confirmed".equals(status) && !"producing".equals(status)) {
             throw BusinessException.validationError("仅已确认/生产中/已发货状态可发货，当前状态: " + status);
         }
         String company = StringUtils.hasText(logisticsCompany)

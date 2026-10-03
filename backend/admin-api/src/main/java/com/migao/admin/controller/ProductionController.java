@@ -109,27 +109,6 @@ public class ProductionController {
     private ClientRequestIdService clientRequestIdService;
 
     /**
-     * 发货单写面 owner（issue #6171）：{@code /ship} 收口时把这次发货记成一张**可查的发货单**
-     * （{@code order_shipments} + {@code order_shipment_items}，实发数量 = 订单未发余量）。
-     *
-     * <p>为什么经 owner 而不是在本类里拼列：{@code order_shipment_items} 的真值 owner 是
-     * {@link OrderShipmentService}（见其类注释）—— 第二条路自己拼一次列 = 同一真值两处投影。
-     * 用**字段注入**的理由与上面几条同款（不动既有 6 参构造，见 {@code ProductionControllerTest}
-     * 的 standaloneSetup 装配）。</p>
-     */
-    @org.springframework.beans.factory.annotation.Autowired
-    private OrderShipmentService orderShipmentService;
-
-    /**
-     * 订单读面（**只读**，issue #6171）：{@link #assertShippableOrder} 用它取「订单在不在 / 属不属于
-     * 本租户 / 处在什么状态」—— 发货的**零写前置**必须在任何写之前判，故这里要一个只读入口。
-     *
-     * <p>字段注入的理由与上面几条同款（不动既有 6 参构造 + 不让既有装配全改一遍）。</p>
-     */
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.migao.admin.mapper.OrderMapper orderMapper;
-
-    /**
      * 加工费组合定价（V68，issue #4386）：读面（列表 / 缺口）+ 写面（新建 / 改价 / 停用）。
      *
      * <p>用字段注入而不是构造参数：本类构造签名被 {@code ProductionControllerTest} 的
@@ -266,19 +245,6 @@ public class ProductionController {
      * （HTTP 25s / 工具 30s 窗口客观存在，正是 issue #4037 的立项理由）会把单号静默改写。
      * 修法 = <b>复用</b> {@link ClientRequestIdService}（工人侧那条路同一份实现、同一张表，
      * **不新造第二套**）：占位在调服务**之前**、成功写快照、失败丢弃占位（否则一次失败会把该键占死）。</p>
-     *
-     * <p>🔴 <b>本路也产出发货单（issue #6171，用户 2026-10-03 裁定「要建」）</b>：修前实测
-     * {@code order_shipments=0} ⇒ 该订单在「发货单」列表（{@code GET /api/admin/shipments}）里
-     * **永远查不到**、无实发数量（#5939 新功能的漏单形态）。现在本端点把这次发货记成一张
-     * {@code source='admin'} 的发货单，实发数量逐 {@code order_item} = {@code 订单量 − 已发合计}
-     * （该端点 body 只有运单号 / 承运商、**没有数量** ⇒ 未发余量是唯一不编造的来源）。</p>
-     *
-     * <p>⚠️ <b>写序是契约的一部分</b>（本方法的三步必须按这个次序）：
-     * ① {@link #assertShippableOrder}（订单存在 + 归属本租户 + 处于可发货状态，**零写**）；
-     * ② {@code shipWithLogistics}（记物流 + 原子流转 {@code shipped}）；
-     * ③ {@code recordMerchantShipment}（记发货单）。
-     * ③ 在 ② 之后 ⇒ 订单流转不成功时**根本不会建单**，「有发货单但订单没发货」在结构上不可能出现；
-     * ① 在最前 ⇒ 拒绝分支在**任何写之前**（字段级快照判据：被拒请求不落库）。</p>
      */
     @PostMapping("/orders/{orderId}/ship")
     @RequirePermission("production:execute")
@@ -293,17 +259,9 @@ public class ProductionController {
         }
         Map<String, Object> result;
         try {
-            // ① 零写前置（订单存在 / 归属本租户 / 可发货状态）—— 被拒请求不落任何一行
-            assertShippableOrder(orderId, tenantId);
-            // ② 记物流 + 原子流转 shipped（加工单守卫在服务内部，与状态端点同一份）
             result = orderService.shipWithLogistics(orderId,
                     body == null ? null : body.get("trackingNo"),
                     body == null ? null : body.get("logisticsCompany"));
-            // ③ 发货单（只在订单**真的**流转成功后建）：实发数量 = 订单未发余量
-            com.migao.admin.entity.OrderShipment shipment = orderShipmentService.recordMerchantShipment(
-                    orderId, text(result, "tracking_no"), text(result, "logistics_company"), tenantId);
-            result.put("shipment_no", shipment.getShipmentNo());
-            result.put("shipment_source", shipment.getSource());
         } catch (RuntimeException e) {
             // 失败必须释放占位，否则该键被永久占死（此后所有重试都被误判为「重复」）
             clientRequestIdService.discard(tenantId, clientRequestId);
@@ -311,34 +269,6 @@ public class ProductionController {
         }
         clientRequestIdService.complete(tenantId, clientRequestId, result);
         return ApiResponse.success(result);
-    }
-
-    /**
-     * 商家发货路的**零写前置**（issue #6171 ③ 之前）：订单必须存在、属于当前租户、且处于
-     * 可发货状态（{@link OrderShipmentService#SHIPPABLE_FROM}，与工人路**同一份**状态集合）。
-     *
-     * <p>为什么要在调服务之前先判一次：订单还没流转就该 4xx 的请求，若让它先落一张发货单
-     * （而 {@code shipWithLogistics} 随后才抛），就会留下「有发货单但订单没发货」——
-     * 验收判据 4（拒绝请求**不落库**，字段级快照）正是要夹住它。</p>
-     *
-     * <p>本方法**不**复制业务判定本体：可发货状态集合取
-     * {@link OrderShipmentService#SHIPPABLE_FROM} 这一份；加工单守卫 / 物流 / 状态流转仍在服务层。</p>
-     */
-    private void assertShippableOrder(String orderId, Long tenantId) {
-        com.migao.admin.entity.Order order = orderMapper.selectById(orderId);
-        if (order == null || tenantId == null || !tenantId.equals(order.getTenantId())) {
-            throw com.migao.admin.exception.BusinessException.notFound("订单");
-        }
-        if (!OrderShipmentService.SHIPPABLE_FROM.contains(order.getStatus())) {
-            throw com.migao.admin.exception.BusinessException.validationError(String.format(
-                    "仅已确认/生产中/已打包状态可发货，当前状态: %s", order.getStatus()));
-        }
-    }
-
-    /** 结果快照里的字符串取值（{@code null} 安全）。 */
-    private static String text(Map<String, Object> source, String key) {
-        Object value = source == null ? null : source.get(key);
-        return value == null ? null : String.valueOf(value);
     }
 
     /**
