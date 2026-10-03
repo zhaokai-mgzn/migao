@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, UI-030, PR-068, PR-069, PR-070, PR-077
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, PG-069, UI-030, PR-068, PR-069, PR-070, PR-077
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -4262,6 +4262,30 @@ class ProcessingOrderServiceTest {
 
         verify(orderMapper, never()).selectById(anyString());
         verify(orderMapper, never()).selectBatchIds(anyCollection());
+    }
+
+    @Test
+    @DisplayName("#6226 列表：该批加工单 order_id 全为空 ⇒ 不得对不可变空表 get(null) 抛 NPE（原 500）")
+    void listWithAllNullOrderIdsRendersInsteadOfFiveHundred() {
+        // 夹具（构造式，不写库）：该批加工单**所有** order_id 都为空 ⇒ loadOrders 的
+        // orderIds 集合为空 ⇒ 走空集分支。修复前该分支 return Map.of() ⇒ 调用点
+        // orders.get(po.getOrderId()) 抛 NullPointerException ⇒ 列表端点 500。
+        // 本断言在修前**必红**（NPE）。
+        ProcessingOrder po = po("po-null-order-id", "issued");
+        po.setOrderId(null);
+        po.setProcessingOrderNo("JG-20260912-9999");
+        when(processingOrderMapper.selectList(any())).thenReturn(List.of(po));
+
+        // when：不得抛（抛 NPE ⇒ 列表端点 500）
+        List<ProcessingOrderResponse> result = processingOrderService.list(null, null, TENANT);
+
+        // then：正常渲染，订单缺值渲染为 null（不是 500）
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getOrderId()).isNull();
+        assertThat(result.get(0).getOrderNo()).isNull();
+        // 空键集合不下发批量查询（与「批量取回」同口径，不因修复而多发一次查询）
+        verify(orderMapper, never()).selectBatchIds(anyCollection());
+        verify(orderMapper, never()).selectById(anyString());
     }
 
     @Test
