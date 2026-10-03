@@ -2624,7 +2624,7 @@
 真值: ai-chat.permission-layers
 溯源: 2026-10-02 新增（R2 商家后台全量重测发现 F3，issue #6063）：PermissionInterceptor 原为 AOP @Around，晚于 @RequestParam 参数解析 ⇒ 无权限 GET 缺必填参数返回 422（阶段3 矩阵 6 角色 × W01/W02/W04/W05 共 20 格 422≠403）。修复：preHandle 复用 public requirePermission（同一份授权语义）+ WebConfig 注册 /api/**，AOP 保留双保险。 ｜ tags: defense, rbac, prehandle, info-leak
 
-## 财务对账域（4 case）
+## 财务对账域（5 case）
 
 ### FN-001. 资金流水查询（只读；原「登记线下收款」随 #5247 写能力下线改判） 🔵
 ```
@@ -2667,6 +2667,20 @@
 ```
 真值: finance.summary
 溯源: 本期默认时间范围（本月1号~今天） ｜ tags: finance, summary
+
+### FN-005. 财务 / 订单日期窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 的数据归错天/月/年） 🔵
+```
+你: 用户 2026-10-03 报告（issue #6200）：日期查询窗口按 UTC 日界而不是 +08，北京 00:00–08:00 的数据归到错误的天/月/年
+期望: direct_reply
+数据: 判据 1·**窗口 = 业务日整天**：`startDate=endDate=2026-10-03` 的两个查询参数必须恰好是 `2026-10-02T16:00Z`（= 北京 10-03 00:00）与 `2026-10-03T16:00Z`（= 北京 10-04 00:00，不含）—— 库列是 `timestamptz`，MyBatis-Plus 参数**惰性绑定** ⇒ 断言前必须先触发 `getSqlSegment()`（否则 `paramNameValuePairs` 恒为空 = 假绿）。执行点 = backend/admin-api/src/test/java/com/migao/admin/time/BusinessDayWindowTest.java 的 financeTxnWindowIsTheBusinessDayItself / financeSummaryWindowIsTheBusinessDayItself / orderListWindowIsTheBusinessDayItself。红证（改前实测）：实际绑成 `2026-10-03T00:00Z` … `2026-10-03T23:59:59Z`（UTC 日）⇒ 该三条判据全红（读数 `Tests run: 8, Failures: 5`）。
+数据: 判据 2·**跨端点自洽（同系统内不得自相矛盾）**：同一笔「北京今日凌晨」记录，列表窗口起点必须等于 `BusinessClock.startOfDay(业务日)`（看板 / 订单趋势 / 简报用的同一只钟）。执行点 = 同文件 financeTxnWindowAgreesWithBusinessClock。实证档（只读）= acceptance/2026-10-03/finance-stock-time-sweep/out/C9-cross-endpoint.json：同一笔 `ordAt=2026-10-03 02:00+08` 的订单，看板 dashboardTodayOrders=351 收录而订单列表 listTotal=9 不收录（listHit=false）。
+数据: 判据 3·**跨月 / 跨年边界各落对月份**：`2026-10-01 00:00+08` 落 10 月、`2026-09-30 23:59:59+08` 落 9 月、`2026-01-01 00:01+08` 落 2026-01（改前会落进 2025-12-31）。执行点 = 同文件 monthEndToMonthStartFallsInTheRightMonths / yearBoundaryRecordFallsInTheNewYear（两条都带**缺陷形态自证**：同一时刻在 UTC 窗下判红 ⇒ 红的来源是日界本身，不是别的）。
+数据: 判据 4·**夹住边界 + 右界语义**：北京 `07:59:59` 与 `08:00:00` **同属当日**（都在业务日窗口内）；`endDate=D` 覆盖 D 当天整日（含 `23:59:59.999999999+08`），右界 = 次日业务日零点（不含）。执行点 = 同文件 boundaryPairIsInsideAndOutsideTheSameDay / windowCoversTheWholeDayNotToTheSecondBefore。红证：`T23:59:59Z` 在 +08 口径下等于「次日 07:59:59」⇒ 既漏掉当天 08:00 之后、又把次日凌晨 8 小时算进来（该自证断言改前为红）。
+数据: 判据 5·**类级固化（让同类进不来）**：admin-api/src/main 下出现 `T00:00:00Z` / `T23:59:59Z` 字面量、或日界形态的 `ZoneOffset.UTC` ⇒ 守卫判红（放行口径 = `now(ZoneOffset.UTC)` 这种「打时刻」拼写，闭括号紧邻）。执行点 = backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockSourceGuardTest.java 的 onlyTheClockComponentReadsBusinessTimeFromMain + rulesHaveDiscriminatingPower（每条新禁则必须能命中一个坏样本 ⇒ 不会退化成空断言）。
+跳过: [backend-contract] 纯后端日期窗口判据（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 BusinessDayWindowTest + BusinessClockSourceGuardTest 执行
+```
+真值: finance.summary
+溯源: 2026-10-03 新增（issue #6200）：财务 / 订单的日期筛选窗口由 UTC 日改为业务日（+08）。根因 = FinanceService.parseDateStart/parseDateEnd 与 OrderService.getOrderPage 用 `date + "T00:00:00Z"` / `"T23:59:59Z"` 拼窗口；正确单源 = 同仓既有的 BusinessClock.startOfDay（看板 / 简报 / 订单趋势早已在用）⇒ 本单不是新口径，而是把窗口口径收敛到既定单源。 ｜ tags: finance, time-window, admin-api, read-surface
 
 ## 人事域（13 case）
 
@@ -4131,7 +4145,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（55 case）
+## 订单域（56 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -5163,6 +5177,17 @@
 ```
 真值: order.shipment-actual-quantity-owner, order.shipment-read-faces
 溯源: 2026-10-02 新增（issue #5939）：补上发货单的**列表读面** —— 此前只有按单读面（OR-051），想知道「这个月发过哪些货」必须先知道是哪张订单。权限码取**既有** order:list（不新造）；实发汇总复用 totals()（不建第二份投影）；租户/软删/上限三条由真库 + SQL 文本双判据把守。 ｜ tags: order, shipment, admin-api, read-surface, tenant-isolation, menu
+
+### OR-027. 订单列表 startDate/endDate 窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 下单的单归错天/月/年） 🔵
+```
+你: 用户 2026-10-03 报告（issue #6200）：订单列表按 startDate/endDate 筛选时用的是 UTC 日界而不是 +08，北京 00:00–08:00 下单的订单归到错误的天/月/年
+期望: direct_reply
+数据: 判据 1·**窗口 = 业务日整天**：`GET /orders?startDate=endDate=2026-10-03` 对应 `OrderService.getOrderPage` 的两个包装器参数必须恰好是 `2026-10-02T16:00Z`（= 北京 10-03 00:00，含）与 `2026-10-03T16:00Z`（= 北京 10-04 00:00，不含）；上界由 `le(UTC 日最后一秒)` 改为半开区间 `lt(次日业务日零点)`。执行点 = backend/admin-api/src/test/java/com/migao/admin/time/BusinessDayWindowTest.java 的 orderListWindowIsTheBusinessDayItself。红证（改前实测）：实际绑成 `2026-10-03T00:00Z` … `2026-10-03T23:59:59Z`（UTC 日）⇒ 该判据红（读数为 BusinessDayWindowTest `Tests run: 8, Failures: 5`；订单列表那条的元素差集逐字为 actual `[2026-10-03T23:59:59Z, 2026-10-03T00:00Z]` vs expected `[2026-10-02T16:00Z, 2026-10-03T16:00Z]`）。
+数据: 判据 2·**跨端点自洽（同系统内不得自相矛盾）**：同一笔「北京今日凌晨」下单的订单，订单列表窗口起点必须等于 `BusinessClock.startOfDay(业务日)` —— 即与 dashboard/stats、order-trend（走 businessClock）同源。执行点 = 同文件 financeTxnWindowAgreesWithBusinessClock（同一断言里同时钉财务窗口与订单窗口）。实证档（只读）= acceptance/2026-10-03/finance-stock-time-sweep/out/C9-cross-endpoint.json：同一笔 `ordAt=2026-10-03 02:00+08` 的订单，看板 dashboardTodayOrders=351 收录而订单列表 listTotal=9 不收录（listHit=false）。
+数据: 判据 3·**类级固化（让同类进不来）**：admin-api/src/main 下出现 `T00:00:00Z` / `T23:59:59Z` 字面量、或日界形态的 `ZoneOffset.UTC` ⇒ 守卫判红（放行口径 = `now(ZoneOffset.UTC)` 这种「打时刻」整参形态）。执行点 = backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockSourceGuardTest.java 的 onlyTheClockComponentReadsBusinessTimeFromMain（改前实测逐条报出 OrderService 的两处窗口行）+ detectsInjectedViolationInIsolatedTree（隔离目录注入 8 条违规逐条具名报出，且「打时刻」形态不误伤）。
+跳过: [backend-contract] 纯后端日期窗口判据（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 BusinessDayWindowTest + BusinessClockSourceGuardTest 执行
+```
+溯源: 2026-10-03 新增（issue #6200）：订单列表的日期筛选窗口由 UTC 日改为业务日（+08）。根因 = OrderService.getOrderPage 用日期串 + UTC 日界拼窗口；正确单源 = 同仓既有的 BusinessClock.startOfDay（右界改半开区间 `lt(D+1 00:00+08)`，不再漏掉最后一秒的亚秒部分）。 ｜ tags: order, time-window, admin-api, read-surface
 
 ## 加工项域（25 case）
 
@@ -9161,8 +9186,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：637（活跃 134，跳过 503）
-- tier 分布：smoke 12 / normal 591 / adversarial 32
+- 用例总数：639（活跃 134，跳过 505）
+- tier 分布：smoke 12 / normal 593 / adversarial 32
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -9174,13 +9199,13 @@
 - 客户域：11
 - 数据域：21
 - 防御域：24
-- 财务对账域：4
+- 财务对账域：5
 - 人事域：13
 - 知识问答域：7
 - 杂项域：74
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：55
+- 订单域：56
 - 加工项域：25
 - 加工单域：58
 - 商品域：109
@@ -9297,6 +9322,7 @@
 - OR-048: 下单页图片识别 —— 明细条目 → 匹配候选（可解释） → 用户选品 → 建订单行（数量 / 规格 / 单价）+ 不猜商品 / 不落库 / 单价只来自目录·SKU / 门幅只来自所选 SKU
 - OR-049: 同会话同键重试下单 —— 第二次是幂等回放（replayed=true），落库订单恰好一张
 - OR-050: 合法复购负例 —— 同会话第二笔**内容不同**的订单必须新建（不得被当重试吞掉）
+- OR-027: 订单列表 startDate/endDate 窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 下单的单归错天/月/年）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）
