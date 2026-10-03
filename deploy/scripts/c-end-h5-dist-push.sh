@@ -55,6 +55,13 @@ DIST_DIR=${1:-${H5_DIST_DIR:-}}
 BRANCH=${2:-${H5_DIST_BRANCH:-h5-dist}}
 GIT_REMOTE=${H5_DIST_GIT_REMOTE:-origin}
 
+# 孤儿提交的作者/提交者身份（**显式给**，见下面「不继承调用方的环境」一节）。
+# `github-actions[bot]` = GitHub 官方的 Actions bot 账号（ID 41898282）⇒ 推上去的提交**可追溯到
+# 「由哪次 Actions 产出」；它承载的**源码 commit** 另写在提交信息里（`${GITHUB_SHA}`），
+# 发布侧还记在托管清单的 `published_commit` / `published_dist_ref`（`deploy/swas/c-end-h5-publish-remote.sh`）。
+IDENT_NAME='github-actions[bot]'
+IDENT_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+
 die() { printf '❌ %s\n' "$*" >&2; exit 1; }
 
 # ── 参数 / 前置校验（在任何 git 写动作之前）────────────────────────────────────
@@ -66,6 +73,12 @@ case "$BRANCH" in
 esac
 
 command -v git >/dev/null 2>&1 || die "找不到 git"
+
+# 🔴 **不继承调用方的环境**（#6095 第四层 / 与 #6113 同族：「脚本继承了运行环境」）：
+#    `GIT_DIR` / `GIT_WORK_TREE` / `GIT_COMMON_DIR` 一旦被调用方设过，本脚本「在哪个仓上工作、
+#    把产物推到哪个远端」就**由环境决定**而不是由 cwd 决定 —— 那是静默的错仓发布面。
+#    ⇒ 显式清掉（本脚本只认 cwd 所在的工作树；`GIT_INDEX_FILE` 由本脚本自己设，见下）。
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
 
 # 🔴 git 对象库里的路径**必须相对检出根**（远端解包后按 `frontend/mini-app/dist` 找 index.html
 #    ⇒ 树里多一层 `/Users/…` 前缀就等于「发布源里没有 index.html」的旧病换个地方复发）。
@@ -113,7 +126,20 @@ INDEX_BLOB=$(git ls-tree -r "$TREE" --name-only | grep -c 'dist/index.html' || t
 
 # ⚠️ 提交信息用 `-m` 单个参数传入 ⇒ 不会被 shell 拆分 / 不会被 `git commit-tree` 当参数解析。
 #    不带 `-p` ⇒ **无父提交**（孤儿）；分支每次 force-push 都只有这一个提交 ⇒ 不胀历史。
-SHA=$(git commit-tree "$TREE" -m "chore(h5-dist): C 端 H5 构建产物 ${GITHUB_SHA:-$(date -u +%Y-%m-%dT%H:%M:%SZ)} [skip ci]")
+#
+# 🔴 **必须显式给 author/committer 身份**（#6095 第四层，run `37081920188` 实测）：
+#    `git commit-tree` 需要一个可用身份，而 **CI runner 上没有全局/仓内身份、系统 GECOS 也是空的**
+#    ⇒ git 兜底出来的 name 是空串 ⇒ `fatal: empty ident name (for <runner@…>) not allowed` ⇒ exit 128。
+#    病根属「**脚本/判据继承了运行环境**」这一族（同 #6113 剔除继承来的 `MIGAO_HEAVY_L*`）：
+#    本机有隐式身份（GECOS + hostname 都非空）⇒ **本机跑绿证明不了 CI 会绿**（实测：同一脚本
+#    本机 rc=0 / runner rc=128）。
+#    ⚠️ 写法取**环境变量前缀**而不是 `-c user.name=…`：`-c` 是 **config 层**，而**环境变量优先于
+#    config** ⇒ 若调用方环境里有一个**空**的 `GIT_AUTHOR_NAME`（判据夹具正是这么模拟 runner 的），
+#    `-c` 会被它盖掉、仍然 `empty ident name`（实测 rc=128）。四个 `GIT_*` 前缀是**最高优先级**
+#    ⇒ 两种继承渠道（环境 / config）都盖得住，且**不写 `--global`**、不污染 runner 配置。
+SHA=$(GIT_AUTHOR_NAME="$IDENT_NAME" GIT_AUTHOR_EMAIL="$IDENT_EMAIL" \
+      GIT_COMMITTER_NAME="$IDENT_NAME" GIT_COMMITTER_EMAIL="$IDENT_EMAIL" \
+      git commit-tree "$TREE" -m "chore(h5-dist): C 端 H5 构建产物 ${GITHUB_SHA:-$(date -u +%Y-%m-%dT%H:%M:%SZ)} [skip ci]")
 case "$SHA" in
   [0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) : ;;
   *) die "git commit-tree 没给出 sha：'$SHA'" ;;

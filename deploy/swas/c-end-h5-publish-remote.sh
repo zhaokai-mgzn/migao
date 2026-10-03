@@ -149,7 +149,7 @@ assert_target_safe() {
   [ ! -L "$STATIC_ROOT" ] || die "静态根是软链：'$STATIC_ROOT' ⇒ 拒绝（「我发到哪里」必须可判定）"
   [ -d "$STATIC_ROOT" ] || die "静态根不存在：'$STATIC_ROOT'（路径写错时**宁可红**，不新建目录）"
   case "$MANIFEST" in
-    ""|/*|*/*|.|..) die "清单名必须是静态根下的单一普通文件名（不接受空/绝对路径/含斜杠/`.`/`..`）：'$MANIFEST'" ;;
+    ""|/*|*/*|.|..) die "清单名必须是静态根下的单一普通文件名（不接受空/绝对路径/含斜杠/\`.\`/\`..\`）：'$MANIFEST'" ;;
   esac
   TARGET="$STATIC_ROOT"
 }

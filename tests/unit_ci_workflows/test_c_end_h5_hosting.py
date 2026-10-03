@@ -102,6 +102,13 @@ DIST_BRANCH = "h5-dist"
 DIST_OUTPUT_REF = "steps.dist.outputs.sha"
 # `git commit-tree` 的**不可替代形态**：不给 `-p` ⇒ 无父 ⇒ 孤儿（每次 force-push 只 1 个提交）
 DIST_COMMIT_FORM = "git commit-tree \"$TREE\""
+# 🔴 第四层（#6095 / run 37081920188）：孤儿提交必须**显式带身份** —— CI runner 上没有可用身份，
+#   git 兜底出来的 name 是空串 ⇒ `fatal: empty ident name (for <runner@…>) not allowed`（exit 128）。
+DIST_IDENT_NAME = "github-actions[bot]"
+DIST_IDENT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
+DIST_IDENT_FORM = 'GIT_AUTHOR_NAME="$IDENT_NAME" GIT_AUTHOR_EMAIL="$IDENT_EMAIL" \\'
+# 「我在哪个仓 / 往哪推」不许由环境决定（同族：脚本继承了运行环境）
+DIST_ENV_UNSET_FORM = "unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR"
 VERIFY_SERVED = "deploy/scripts/c-end-h5-verify-served.sh"
 MINI_APP_GLOB = "frontend/mini-app/**"
 STATIC_ROOT = "/opt/migao-deploy/h5"
@@ -295,7 +302,22 @@ def _dist_delivery_problems(wf, wf_src=None, dist_src=None) -> list:
                 f"🔴 `{DIST_PUSH_SCRIPT}` 的可执行行给 `commit-tree` 加了父提交（`-p`）：`{raw.strip()}`"
                 " —— 那样每次发布都会往分支历史里加一份 MB 级产物（孤儿单提交是**不胀历史**的机械载体）"
             )
-    body = _dist_ref_shape_problems("\n".join(live))
+    live_text = "\n".join(live)
+    # 🔴 **孤儿提交必须显式带身份**（#6095 第四层；run 37081920188：CI runner 上没有可用身份
+    #    ⇒ `fatal: empty ident name` ⇒ exit 128）。这条与下面的行为级判据**互为补强**：
+    #    静态这条会在**任何**改动路径上当场点名，行为级那条证明它**真的**解掉了 CI 的条件。
+    if DIST_IDENT_FORM not in live_text:
+        problems.append(
+            f"🔴 `{DIST_PUSH_SCRIPT}` 的可执行行里没有**显式身份**（`{DIST_IDENT_FORM}`）—— "
+            "CI runner 上没有作者/提交者身份源 ⇒ `git commit-tree` 报 `empty ident name`"
+            "（#6095 第四层，run 37081920188 实测 exit 128）"
+        )
+    if DIST_ENV_UNSET_FORM not in live_text:
+        problems.append(
+            f"🔴 `{DIST_PUSH_SCRIPT}` 没有清掉调用方的「我在哪个仓」环境（`{DIST_ENV_UNSET_FORM}`）—— "
+            "`GIT_DIR` / `GIT_WORK_TREE` 会把「在哪个仓上造提交、往哪个远端推」交给环境决定"
+        )
+    body = _dist_ref_shape_problems(live_text)
     problems.extend(f"🔴 `{DIST_PUSH_SCRIPT}` 的{hit}" for hit in body)
     return problems
 
@@ -800,6 +822,77 @@ class TestCommandContentLimit:
         )
 
 
+class TestCiSideInjectedValuesAndMessages:
+    """CI 侧两个「出问题时最需要读的那句话」面：注入白名单 + 报错文案**不被 bash 吃掉**。
+
+    两条都是本包第四层同批扫出的（issue #6095 第四层 / run 37081920188 的连带面）：
+      ① `H5_PUBLISHED_COMMIT` 是本包**新加**的环境变量，且它会被**拼进 SWAS 命令内容** ——
+         而该文件对**其它**每个注入值都有字符集白名单（`SHA` / `STATIC_ROOT` / `MANIFEST` /
+         `RESERVED_PREFIXES`）⇒ 新值不豁免同一道闸（否则「注入防线」只覆盖老的那几个值）；
+      ② 报错文案里写了**裸反引号**（想打行内代码标记）⇒ bash 把它们当**命令替换执行**：
+         `line 195: refs/heads/*: No such file or directory` / `main: command not found`，
+         并**吃掉文案里的行内代码** —— 而这句正是「DIST_SHA 传错」时唯一可读的出口。
+         类级判据在 `test_scripts_bash32_var_brace.py`（判据 6，全仓射程）；**这里钉行为面**。
+    """
+
+    def _run_ci(self, tmp_path, sha: str, extra_env: dict | None = None, dst: Path | None = None):
+        dst = dst or _ci_stub(tmp_path)
+        env = {
+            **os.environ,
+            "H5_PRINT_COMMAND_CONTENT": "1",
+            "H5_REMOTE_SCRIPT_PATH": str(_tiny_remote(tmp_path)),
+            "GITHUB_SHA": CI_SHA,
+            **(extra_env or {}),
+        }
+        return subprocess.run(
+            ["bash", str(dst), CI_INSTANCE, CI_REGION, "", "", sha],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=120,
+        )
+
+    def test_wrong_length_dist_sha_dies_with_a_clean_readable_message(self, tmp_path):
+        """① 坏长度 ⇒ 本机具名判红，且文案**干净**（不含命令替换咬出来的噪音）。"""
+        proc = self._run_ci(tmp_path, "a" * 45)
+        assert proc.returncode != 0, f"45 位 DIST_SHA 竟被接受：\n{proc.stdout}"
+        assert "DIST_SHA 必须是 40 位十六进制" in proc.stderr, f"判红不具名：\n{proc.stderr}"
+        for noise in ("command not found", "No such file or directory"):
+            assert noise not in proc.stderr, (
+                f"报错文案被 bash 当命令执行了（`{noise}`）—— 文案里的反引号没转义：\n{proc.stderr}"
+            )
+        # 行内代码**原样**留在文案里（被吃掉就是「错误信息少了一半」）
+        assert "refs/heads/*" in proc.stderr and "h5-dist" in proc.stderr, (
+            f"文案里的行内代码被命令替换吃掉了：\n{proc.stderr}"
+        )
+
+    def test_bare_backtick_mutation_reproduces_the_noisy_message(self, tmp_path):
+        """①′ **注入式红证**：把反引号转义撤掉 ⇒ 同一分支立刻吐出 `command not found` 噪音。"""
+        dst = _ci_stub(tmp_path)
+        src = dst.read_text(encoding="utf-8")
+        mutant = src.replace("\\`refs/heads/*\\`、\\`h5-dist\\`、\\`main\\`",
+                             "`refs/heads/*`、`h5-dist`、`main`")
+        assert mutant != src, "变异注入未生效（找不到转义后的反引号锚点）"
+        assert "\\`" not in mutant.split("DIST_SHA 必须是")[1][:400], "变异没进入目标文案"
+        dst.write_text(mutant, encoding="utf-8")
+        proc = self._run_ci(tmp_path, "a" * 45, dst=dst)
+        assert proc.returncode != 0
+        assert "command not found" in proc.stderr or "No such file or directory" in proc.stderr, (
+            f"撤掉转义后竟没有命令替换噪音（那条断言是空断言）：\n{proc.stderr}"
+        )
+
+    def test_published_commit_must_be_a_commit_sha_or_empty(self, tmp_path):
+        """② 新加的注入值 `H5_PUBLISHED_COMMIT` 必须过同一道白名单（空 = 人工排障，允许）。"""
+        bad = self._run_ci(tmp_path / "bad", "a" * 40, {"H5_PUBLISHED_COMMIT": "main; rm -rf /"})
+        assert bad.returncode != 0, f"注入式坏值竟被放行：\n{bad.stdout}"
+        assert "H5_PUBLISHED_COMMIT 非法" in bad.stderr, f"判红不具名：\n{bad.stderr}"
+        short = self._run_ci(tmp_path / "short", "a" * 40, {"H5_PUBLISHED_COMMIT": "deadbeef"})
+        assert short.returncode != 0 and "长度不是 40" in short.stderr, f"短值竟被放行：\n{short.stderr}"
+        empty = self._run_ci(tmp_path / "empty", "a" * 40, {"H5_PUBLISHED_COMMIT": ""})
+        assert empty.returncode == 0, f"空值（人工排障）被拒了：\n{empty.stderr}"
+        good = self._run_ci(tmp_path / "good", "a" * 40, {"H5_PUBLISHED_COMMIT": "b" * 40})
+        assert good.returncode == 0 and "export H5_PUBLISHED_COMMIT=" + "b" * 40 in good.stdout, (
+            f"40 位十六进制没进命令内容：\n{good.stdout}"
+        )
+
+
 class TestDistDeliveryWiring:
     """🔴 **CI 构建的 dist 到不到得了服务器**（issue #6095 第三层）—— 逐条可单独变红。
 
@@ -919,6 +1012,86 @@ class TestDistDeliveryWiring:
         assert _dist_ref_shape_problems(live) == []
 
 
+# ── 无 ambient 身份的推送夹具（第四层：CI runner 的条件）────────────────────────
+#
+# ⚠️ **为什么必须有这一节**（本包实测的教训）：`git commit-tree` 需要作者/提交者身份，而
+#    - **CI runner**：没有全局/仓内身份，系统 GECOS 也是空的 ⇒ git 兜底出的 name 是空串
+#      ⇒ `fatal: empty ident name (for <runner@…>) not allowed`（run 37081920188，exit 128）；
+#    - **开发机**：git 会用 GECOS + hostname **自动兜一个非空身份** ⇒ 同一脚本**本机绿、CI 红**。
+#    ⇒ 「用本机的 git 跑一遍」**证明不了 CI 会过**（这正是第四层漏掉的那一半）。
+#    夹具做法（确定性、跨平台一致）：空 `HOME` + `GIT_CONFIG_GLOBAL/SYSTEM=/dev/null`
+#    （无任何身份来源）+ 把 `GIT_AUTHOR_NAME`/`GIT_COMMITTER_NAME` **显式置空**
+#    （把「本机自动兜底」这条路也堵掉 —— 不置空的话，开发机上永远复现不出 CI 的那条报错）。
+
+
+def _dist_push_fixture(tmp_path: Path, *, name: str = "push") -> tuple[Path, Path]:
+    """造「检出（含 dist）+ 本地裸远端（已配成 `origin`）+ 空 HOME」——零联网、零 ambient 身份。
+
+    ⚠️ **刻意不设** `user.name` / `user.email`（旧版桩演练设了 ⇒ 它继承了一个 CI 上不存在的身份，
+    于是**证明不了 CI 会过**：那正是第四层的形态）。
+    """
+    root = tmp_path / name
+    origin = root / "origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
+    checkout = root / "checkout"
+    dist = checkout / "frontend" / "mini-app" / "dist"
+    (dist / "js").mkdir(parents=True)
+    (dist / "index.html").write_text(
+        '<!doctype html><title>桩产物</title><script defer src="/js/app.js"></script>', encoding="utf-8"
+    )
+    (dist / "js" / "app.js").write_text("// stub built by the drill\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=checkout, check=True, capture_output=True)
+    subprocess.run(["git", "remote", "add", "origin", str(origin)], cwd=checkout, check=True, capture_output=True)
+    (root / "emptyhome").mkdir()
+    return checkout, origin
+
+
+def _dist_push_env(checkout: Path, *, hostile_repo_env: bool = False) -> dict:
+    """**无 ambient 身份**的环境（+ 可选：敌意的 `GIT_DIR`/`GIT_WORK_TREE`，指向另一个仓）。"""
+    root = checkout.parent
+    env = {
+        "PATH": os.environ["PATH"],                 # git / coreutils（CI runner 同样由 PATH 提供）
+        "HOME": str(root / "emptyhome"),            # 空 HOME ⇒ 没有 ~/.gitconfig
+        "GIT_CONFIG_GLOBAL": os.devnull,            # 显式：不读全局配置
+        "GIT_CONFIG_SYSTEM": os.devnull,            # 显式：不读系统配置
+        "GIT_TERMINAL_PROMPT": "0",                 # 无 tty 时不挂住
+        "GIT_AUTHOR_NAME": "",                      # 复现 runner 的那一半：name 解出来是空串
+        "GIT_COMMITTER_NAME": "",
+        "GITHUB_SHA": CI_SHA,                       # 写进提交信息（可追溯到源码 commit）
+    }
+    if hostile_repo_env:
+        decoy = root / "decoy"
+        (decoy / "other").mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q"], cwd=decoy, check=True, capture_output=True)
+        env["GIT_DIR"] = str(decoy / ".git")
+        env["GIT_WORK_TREE"] = str(decoy)
+    return env
+
+
+def _run_dist_push(checkout: Path, *, script: Path | None = None, env: dict | None = None):
+    """按 **CI 的调用形态**跑推送脚本：cwd = 检出根、参数 = 仓内相对路径。"""
+    return subprocess.run(
+        ["bash", str(script or (REPO_ROOT / DIST_PUSH_SCRIPT)), "frontend/mini-app/dist", DIST_BRANCH],
+        cwd=str(checkout), env=env or _dist_push_env(checkout),
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
+    )
+
+
+def _pushed_sha(proc) -> str:
+    m = re.search(r"^H5_DIST_SHA=([0-9a-f]{40})$", proc.stdout, re.M)
+    assert m, f"脚本没有输出 40 位 sha：\n{proc.stdout}\n{proc.stderr}"
+    return m.group(1)
+
+
+def _commit_ident(repo: Path, sha: str) -> tuple[str, str]:
+    """取该提交的 author / committer 身份行（逐字）。"""
+    out = subprocess.run(["git", "cat-file", "-p", sha], cwd=str(repo),
+                         capture_output=True, text=True, encoding="utf-8").stdout
+    author = next((ln for ln in out.splitlines() if ln.startswith("author ")), "")
+    committer = next((ln for ln in out.splitlines() if ln.startswith("committer ")), "")
+    return author, committer
+
+
 def test_dist_pipeline_end_to_end_stub_drill(tmp_path):
     """🔴 **端到端桩演练**（不联网、不碰真机器）：真推一次 → 按那个 sha 取回 → 真有 index.html。
 
@@ -928,35 +1101,12 @@ def test_dist_pipeline_end_to_end_stub_drill(tmp_path):
     ⚠️ 边界：`git archive` **不是** GitHub codeload（不验 codeload 对孤儿提交的可用性），
     真发布也没跑（生产触发权在人手里）—— 两条都在 PR body 的「未固化 / 边界」里照实登记。
     """
-    origin = tmp_path / "origin.git"
-    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
-
-    dist = tmp_path / "checkout" / "frontend" / "mini-app" / "dist"
-    (dist / "js").mkdir(parents=True)
-    (dist / "index.html").write_text(
-        '<!doctype html><title>桩产物</title><script defer src="/js/app.js"></script>', encoding="utf-8"
-    )
-    (dist / "js" / "app.js").write_text("// stub built by the drill\n", encoding="utf-8")
-
-    work = {"cwd": str(tmp_path / "checkout")}
-    subprocess.run(["git", "init", "-q"], check=True, capture_output=True, **work)
-    for k, v in (("user.email", "drill@example.com"), ("user.name", "drill")):
-        subprocess.run(["git", "config", k, v], check=True, capture_output=True, **work)
-
-    env = dict(os.environ)
-    env["H5_DIST_GIT_REMOTE"] = str(origin)
-    env["GITHUB_SHA"] = CI_SHA
-    proc = subprocess.run(
-        # 与 CI 调用形态一致：工作目录 = 检出根，参数 = **仓内相对路径**
-        # （远端解包后按 `frontend/mini-app/dist` 找 index.html ⇒ 树里的路径必须正好是它）
-        ["bash", str(REPO_ROOT / DIST_PUSH_SCRIPT), "frontend/mini-app/dist", DIST_BRANCH],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-        env=env, timeout=180, **work,
-    )
-    assert proc.returncode == 0, f"推送桩演练失败：\n{proc.stdout}\n{proc.stderr}"
-    m = re.search(r"^H5_DIST_SHA=([0-9a-f]{40})$", proc.stdout, re.M)
-    assert m, f"脚本没有输出 40 位 sha：\n{proc.stdout}"
-    sha = m.group(1)
+    # ⚠️ **无 ambient 身份**下跑（`_dist_push_env`）：本机靠 GECOS 自动兜身份，不显式置空就
+    #    永远复现不出 runner 的那条 `empty ident name` ⇒ 旧版桩演练因此**证明不了 CI 会过**。
+    checkout, origin = _dist_push_fixture(tmp_path)
+    proc = _run_dist_push(checkout)
+    assert proc.returncode == 0, f"（无 ambient 身份）推送桩演练失败：\n{proc.stdout}\n{proc.stderr}"
+    sha = _pushed_sha(proc)
 
     # ① 远端那个分支上**就是这个** sha（自证：产物真的到达远端）
     got = subprocess.run(["git", "ls-remote", str(origin), f"refs/heads/{DIST_BRANCH}"],
@@ -973,7 +1123,13 @@ def test_dist_pipeline_end_to_end_stub_drill(tmp_path):
                              encoding="utf-8", cwd=str(await_repo)).stdout.split()
     assert len(parents) == 1, f"提交有父：{parents}"
 
-    # ③ 按那个 sha 取回（= 远端 `curl tar.gz/<sha>` + `tar xzf` 的等价物）⇒ dist/index.html 真在里面
+    # ③ 身份**可追溯**（不是「谁在 runner 上就是谁」）：作者/提交者都必须是那个显式 bot 身份
+    author, committer = _commit_ident(await_repo, sha)
+    expected_ident = f"{DIST_IDENT_NAME} <{DIST_IDENT_EMAIL}>"
+    assert expected_ident in author, f"author 不是显式 bot 身份：{author!r}（期望含 {expected_ident}）"
+    assert expected_ident in committer, f"committer 不是显式 bot 身份：{committer!r}"
+
+    # ④ 按那个 sha 取回（= 远端 `curl tar.gz/<sha>` + `tar xzf` 的等价物）⇒ dist/index.html 真在里面
     archive = subprocess.run(["git", "archive", "--format=tar", sha], capture_output=True, cwd=str(await_repo))
     assert archive.returncode == 0, archive.stderr
     unpack = tmp_path / "unpack"
@@ -986,6 +1142,93 @@ def test_dist_pipeline_end_to_end_stub_drill(tmp_path):
         f"{sorted(str(p.relative_to(unpack)) for p in unpack.rglob('*'))}"
     )
     assert (src / "js" / "app.js").read_text(encoding="utf-8") == "// stub built by the drill\n"
+
+
+class TestDistPushIdentityIndependence:
+    """🔴 第四层（run 37081920188）：**推送步骤继承了运行环境** ⇒ CI 上 `Prepare dist ref` 挂掉。
+
+    病 = `git commit-tree` 需要身份，CI runner 上没有身份源、系统 GECOS 为空 ⇒
+    `fatal: empty ident name (for <runner@…>) not allowed`（exit 128）；而开发机 git 会自动兜一个
+    非空身份 ⇒ **本机绿、CI 红**（旧版桩演练的盲区）。同族：#6113（剔除继承来的 `MIGAO_HEAVY_L*`）。
+    本类钉两件事：① 无 ambient 身份下**必须绿**（且身份可追溯）② 身份/环境隔离一旦被摘掉 ⇒ **必红**。
+    """
+
+    def test_push_succeeds_without_ambient_git_identity(self, tmp_path):
+        """① 无 ambient 身份（空 HOME + 无全局/系统配置 + name 置空）⇒ **rc=0** 且身份可追溯。"""
+        checkout, origin = _dist_push_fixture(tmp_path)
+        proc = _run_dist_push(checkout)
+        assert proc.returncode == 0, (
+            f"无 ambient 身份下推送失败（= CI 上 `Prepare dist ref` 会红）：\n{proc.stdout}\n{proc.stderr}"
+        )
+        sha = _pushed_sha(proc)
+        remote = subprocess.run(["git", "ls-remote", str(origin), f"refs/heads/{DIST_BRANCH}"],
+                                capture_output=True, text=True, encoding="utf-8").stdout
+        assert remote.split()[0] == sha, f"远端分支不是这个 sha：{remote!r}"
+        author, committer = _commit_ident(origin, sha)
+        assert f"{DIST_IDENT_NAME} <{DIST_IDENT_EMAIL}>" in author, f"author 不可追溯：{author!r}"
+        assert f"{DIST_IDENT_NAME} <{DIST_IDENT_EMAIL}>" in committer, f"committer 不可追溯：{committer!r}"
+
+    def test_removing_the_explicit_identity_reproduces_the_ci_failure(self, tmp_path):
+        """② **注入式红证**：把显式身份摘掉 ⇒ 必须在同一夹具下复现 CI 那条报错（不是「我觉得会红」）。"""
+        src = _read(REPO_ROOT / DIST_PUSH_SCRIPT) or ""
+        i = src.find("SHA=$(GIT_AUTHOR_NAME=")
+        j = src.find(DIST_COMMIT_FORM, i)
+        assert i > 0 and j > i, "注入锚点找不到（脚本的显式身份写法变了？）"
+        mutant = src[:i] + "SHA=$(" + src[j:]
+        assert mutant != src, "变异注入未生效"
+        assert DIST_IDENT_FORM not in mutant, "变异没把显式身份摘掉"
+        path = tmp_path / "mut-no-identity.sh"
+        path.write_text(mutant, encoding="utf-8")
+
+        checkout, _origin = _dist_push_fixture(tmp_path)
+        proc = _run_dist_push(checkout, script=path)
+        assert proc.returncode != 0, (
+            f"摘掉显式身份竟然还能推成功（判据是空断言；说明夹具没有复现 runner 的条件）：\n{proc.stdout}"
+        )
+        assert "empty ident name" in proc.stderr, (
+            f"判红报文不是 CI 上那条 `empty ident name`（夹具没复现 runner 条件）：\n{proc.stderr}"
+        )
+
+    def test_hostile_repo_env_is_ignored_and_the_unset_line_is_load_bearing(self, tmp_path):
+        """③ `GIT_DIR`/`GIT_WORK_TREE` 指向**另一个仓**时：必须无视它；摘掉那行 ⇒ 必红。"""
+        checkout, origin = _dist_push_fixture(tmp_path, name="hostile")
+        hostile = _dist_push_env(checkout, hostile_repo_env=True)
+        proc = _run_dist_push(checkout, env=hostile)
+        assert proc.returncode == 0, (
+            f"敌意 GIT_DIR/GIT_WORK_TREE 下推送失败（环境没被隔离）：\n{proc.stdout}\n{proc.stderr}"
+        )
+        sha = _pushed_sha(proc)
+        remote = subprocess.run(["git", "ls-remote", str(origin), f"refs/heads/{DIST_BRANCH}"],
+                                capture_output=True, text=True, encoding="utf-8").stdout
+        assert sha in remote, f"产物没推到**本检出**对应的远端（环境把它带偏了）：{remote!r}"
+
+        # 注入式红证：摘掉 `unset GIT_DIR …` ⇒ 同一个敌意环境下判红（且是**具名**判红）
+        src = _read(REPO_ROOT / DIST_PUSH_SCRIPT) or ""
+        mutant = src.replace(DIST_ENV_UNSET_FORM + "\n", "", 1)
+        assert mutant != src and DIST_ENV_UNSET_FORM not in mutant, "变异注入未生效"
+        path = tmp_path / "mut-no-unset.sh"
+        path.write_text(mutant, encoding="utf-8")
+        checkout2, _origin2 = _dist_push_fixture(tmp_path, name="hostile-mut")
+        proc2 = _run_dist_push(checkout2, script=path, env=_dist_push_env(checkout2, hostile_repo_env=True))
+        assert proc2.returncode != 0, (
+            f"摘掉 `{DIST_ENV_UNSET_FORM}` 后竟仍成功 —— 那行不是承重的（判据是空断言）：\n{proc2.stdout}"
+        )
+        assert "不在检出内" in proc2.stderr, f"判红不具名：\n{proc2.stderr}"
+
+    def test_static_form_is_pinned_by_the_wiring_guard(self):
+        """④ 形态面：**接线判据**也必须点名这两件事（静态这条与行为级两条互为补强）。"""
+        wf = _load_workflow()
+        assert _dist_delivery_problems(wf) == []
+        src = _read(REPO_ROOT / DIST_PUSH_SCRIPT) or ""
+        for mutant, marker in (
+            (src.replace(DIST_IDENT_FORM + "\n", "", 1), "没有**显式身份**"),
+            (src.replace(DIST_ENV_UNSET_FORM + "\n", "", 1), "没有清掉调用方的"),
+        ):
+            assert mutant != src, "变异注入未生效"
+            problems = _dist_delivery_problems(wf, dist_src=mutant)
+            assert any(marker in p for p in problems), (
+                f"摘掉这条形态竟没判红（期望含 {marker!r}）：{problems}"
+            )
 
 
 def _wf_with_dist_push_step() -> dict:
