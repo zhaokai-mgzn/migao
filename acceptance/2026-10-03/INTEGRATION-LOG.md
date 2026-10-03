@@ -586,3 +586,12 @@ git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/Wor
 
 ⇒ **"只在上下文里的规格"= 0**：本轮所有口径都已落成 `§19.7~§19.16` 或 PR/issue 评论；**未推送提交只剩两个正在收尾的包**（它们的 PR 已存在，push 后即闭合）。
 ⇒ 另有两个**别的会话**的 worktree 有未推送/未提交（`migao-dev/6200` ahead 1、`migao-dev/6198` 未提交 1）—— **不属于本轮**，登记备查、不越界处置。
+
+### 19.17 第 8 张单：worktree 登记与磁盘不一致（#6235）—— 由修复包实测撞见，主会话核实后开单
+
+**形态**：`git worktree list` 登记了某 worktree，但磁盘上目录**不存在** ⇒ 该分支被判"已被占用"、`worktree add` 报
+`fatal: '<branch>' is already used by worktree at …`；而 **`prune` / `remove --force` 都无效**（前者认为目录存在、后者报 `not a working tree`）。
+**现场**：`.git/worktrees/6219-cutting-height-npe/gitdir` 指向已不存在的路径，`index` 504KB、mtime 16:42；同模式当时在 `6220-aftersales-concurrency` 并存。
+**唯一有效修法**：`rm -rf .git/worktrees/<name> && git worktree prune -v && git worktree add <path> <branch>`。
+**代价**：每个撞上的包白花 **3~4 轮往返**手工诊断，且**没有任何东西会因此变红**（与铁律 11「声明存在 ≠ 可达」同族）。
+⇒ 已开 **#6235（P3·研发工具）**，建议把"路径真的存在"的断言与自愈放进 `scripts/dev-worktree.sh add`（派活前校验），附会红的判据（构造"登记存在/目录不存在"fixture）。
