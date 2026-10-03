@@ -151,6 +151,25 @@ public class ProductionSeedTemplateService {
     private static final String OPTION_OPERATION_POSITION = "布帘";
 
     /**
+     * **加工项触发**规则的规则级部位限定（issue #6123）：{@code '布帘'}。
+     *
+     * <p>与 {@link #OPTION_OPERATION_POSITION} 是**同一个事实**的另一条触发维：{@link #PROCESSING_ITEM_RULES}
+     * 引用的三道逻辑工序（{@code 花边} / {@code 扣环} / {@code 接高}）在工序库里同样**只有布帘变体**
+     * （有 {@code 花边-布}、没有 {@code 花边-纱}；真值源 {@code backend/ai-agent-service/app/production/routing.py}
+     * 的 {@code OPERATION_CATALOG} 同款）。触发键 = 订单行 {@code processingInfo.processingItems[].name}
+     * （**精确相等**）⇒ 一张**纱帘单**只要带了这些加工项之一，规则就会在纱帘部位命中 ⇒
+     * {@code variantNameOf(逻辑名, '纱帘', catalog)} 返回 {@code null} ⇒ 整单 fail-closed（实测逐字：
+     * 「工艺路线「窗帘工序路线（默认）」（产品形态「纱帘」）引用的工序 [花边] 在工序库中不存在，无法实例化工序」）。</p>
+     *
+     * <p>为什么单列一个常量而不复用 {@link #OPTION_OPERATION_POSITION}：两条触发维**种子来源不同**
+     * （选项规则来自模板 JSON，加工项规则与 V84 迁移逐条同值）⇒ 各自带具名护栏，任一侧的值被改都能被
+     * 具名判看点名（一条常量覆盖两处会把归因糊在一起）。</p>
+     *
+     * <p>⛔ 不给这些工序补 {@code -纱} 变体：那是发明新工序（会进工人计件口径），不是配置修正。</p>
+     */
+    private static final String PROCESSING_ITEM_POSITION = "布帘";
+
+    /**
      * 规范工艺变体规则（7 条）：{@code {trigger_value, position|NULL, action, operation, after|NULL}}。
      *
      * <p>与 {@code routing.py::ROUTE_RULES} 的 {@code trigger_kind='craft'} 部分逐条同源
@@ -598,10 +617,12 @@ public class ProductionSeedTemplateService {
         }
         // ③ 加工项触发（issue #4577：3 条，与 V84 逐条同值）—— 排在选项之后、系数档之前，
         //    与 V84 的 priority 270/280/290（> 选项 260、< 系数 300）**同序**。
+        //    🔴 issue #6123：与 ② 同因，这三条引用的工序**只有布帘变体** ⇒ 必须带规则级部位限定
+        //    （`null` = 不限部位时，带这些加工项的**纱帘单**会整单 fail-closed）。
         for (String[] rule : PROCESSING_ITEM_RULES) {
             priority += 10;
             addRule(plan, existing, available, tenantId, "processing_item", rule[0],
-                    null, rule[1], rule[2], rule[3], priority, null);
+                    PROCESSING_ITEM_POSITION, rule[1], rule[2], rule[3], priority, null);
         }
         // ④ 计件系数档（模板 JSON 逐条搬迁；operation_name 为空 = 平摊档 ⇒ operation 落 NULL）
         for (JsonNode node : template.path("option_factors")) {
