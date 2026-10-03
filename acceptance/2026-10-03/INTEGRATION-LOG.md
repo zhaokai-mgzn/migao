@@ -862,3 +862,16 @@ PUT /api/admin/orders/{id}/logistics 收 Map<String,String>，后端只读 logis
 **PR**：`#6249` · 分支 `fix/6238-price-version-concurrency` · head `dec9dc75c`。
 
 ⇒ 台账 `unverified` 观察项机制**两发两中**：`#6237` 结论"不真"（已有 CAS 保护，收敛为已验证资产）、`#6238` 结论"真"（涉钱并发重复追加，已修）—— **"疑似"清单值得逐条核**，两边都有价值。
+
+### 19.32 `#6241` 收口（`BLOCKED` 等 CI）+ 一条**用例块 rebase 冲突**的血教训（包自己登记的失误）
+
+**`#6241`**：head **`22c1808bc`**（rebase 至 `ea65540f6`），生成物重渲染 **653 条 / id 零重复**；窄跑 `74 passed`；`case_trust_gate` ✅ / `generated_artifacts_freshness` ✅ / `growth_gate --check-weak` 本包 **0 处弱断言**；`MC-077` **跨 refs 复核为空闲**（只命中本分支与 origin 本分支，main MC 段仍只到 `MC-076`）⇒ 第 3 次撞号彻底消除；`mergeState=BLOCKED`（等 required 检查，非 DIRTY）。
+
+**🔴 包自己登记的失误（值得写成纪律）**：它在**消解 rebase 冲突**时「只取了本包 hunk」，把 **main 侧同一 block 里的 `ci: [pr-check.yml]` + `verifies: []` 吃掉了** —— 被 `traces.ci` 判据打红后，按 `git show origin/main:` **逐字补回**，并写进 PR body 当"本会话真实失误"。
+⇒ **纪律（用例块的 rebase 冲突，逐条）**：
+1. **同一个用例 block 两侧都改过时，不许 `--ours`/`--theirs` 整块取**（本仓已发生 3 种形态：`#6220` 取"两侧都保留"手工合并、`#6231` 生成物重渲染、本条"只取 ours 吃掉 main 字段"）；
+2. 必须**逐字段比对** `id / title / traces.tests / traces.ci / verifies / expectations / skip_reason`，缺一即为"静默丢字段"；
+3. **生成物一律重渲染**（`render_cases.py`），源文件才手工合并；
+4. 合并后**必须**跑 `case_trust_gate --base origin/main` + 该 block 相关判据（本条正是被 `traces.ci` 抓住的 —— **判据在这里就是兜底网**）。
+
+**主线进度**：`origin/main` 已到 `ea65540f6`（本轮已并入 `#6230` / `#6240` / `#6246` 等）。
