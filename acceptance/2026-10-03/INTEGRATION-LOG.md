@@ -794,3 +794,18 @@ MC-077 现取：main 全 cases 0 命中 + git grep 全 refs 0 命中 ⇒ **空�
 **新开 `#6248`（P3·待核验·涉库存）**：`#6237` 的边界登记 —— `nextFreeBatchNo` **跨请求**批次号竞争（**不同入库单**并发取号 ⇒ 疑似撞 `uk_stock_batches_no`）。有唯一索引 ⇒ 不会静默写坏数据，但**用户侧会看到失败**，要弄清"有没有重试/退避"。
 
 **在飞/排队（并发上限 3）**：在飞 `#6241`（#6235 改 MC-077 收口）· `#6242`（#6222 收 `page<1` 裁定）· **`#6238`（价格版本追加并发核验，刚派）**；排队 **`#6228` · `#6243` · `#6245` · `#6248`**。
+
+### 19.28 `#6222` 收口 + 派 `#6228`（金额入口准入 17 处）+ 当前并发盘点
+
+**`#6222`（负 size 读面）收口**：按裁定删掉 `page<1` 拒绝后，把该裁定**固化成"正向钉子"**（谁哪天顺手拒了 `page<1` 当场红）：
+`PaginationParamGateTest.nonPositivePage_isAccepted`（`page=0/-1/-5` 必须放行）· 端点侧 `orders_nonPositivePage_isAccepted`（`?page=-1&size=20` ⇒ 200 + service 真被调用）· `zeroSize_isAccepted`（`size=0` 必须放行）。
+rebase 到 `69f98cfe7` ⇒ head **`e0891cb9c`**；复跑 `34 passed / 0 failed` + 元守卫 `4 passed`；**号段跨 refs 复核**：`id: PG-070` 仅在本分支与 origin 本分支命中，`origin/main` PG 段最大 = `PG-069` ⇒ **未撞号**；`mergeable=MERGEABLE` / `BLOCKED`（等 CI）。
+⇒ **口径沉淀**：「裁定不许做什么」也要落成**会红的正向钉子**，否则下一个人会在同处再犯。
+
+**`#6246`（#6237 核验 PR）一条必过腿红**：`admin-api unit tests` fail 2m13s ⇒ 已退回该包自查（给了三处预判：`REALDB_FILES` 逐字一致 + alphabetical 块 / 台账元守卫 9→8 的冻结快照口径 / `OR-057` 的 `traces.tests` 必须真实存在）。**我没有代它改**（包自己的收尾归包）。
+**`#6242` 收 `page<1` 裁定**后转 `DIRTY`（main 并入 #6240/#6230）⇒ 已要求其 rebase + 跨 refs 复核 PG-070。
+
+**新派 `#6228`（金额入口准入，17 处）**：worktree `migao-wt/6228-money-entry-admission`，分支 `fix/6228-money-entry-admission`。
+要求：① 一律复用 #6221 的 `MoneyScale.requireTwoDecimalsOrNull`（**不许在 17 处各写一份**）；② 口径 = 显式拒绝、**拒绝发生在任何写之前**、**不做静默兜底**；③ 每处一条"超精度 ⇒ 拒 + 无写入"的实例判据 + 正对照 + 注入式红证；④ `MoneyEntryPrecisionMetaGuardTest` 台账里把 17 处从 DEBT 移出且**债务计数真的降**；⑤ **并发写面提醒**：`ProductionOperationCommandService.java` 正被 `#6238` 占用 ⇒ 只加准入、别动其并发逻辑；冲突按"两侧都保留"解，生成物重渲染；做不完的**登记为待接续**而不是硬改别人的在飞文件。
+
+**并发盘点（§17.2 ≤3 的重活口径）**：重活/长跑包在飞 = `#6238`（真库并发核验）· `#6228`（17 处涉钱写面）；轻量收尾轮 = `#6241`（改号已生效）· `#6246`（红腿诊断）。⇒ **在长跑包落地前不再新派**，队列 `#6243` · `#6245` · `#6248` 依次等额度。
