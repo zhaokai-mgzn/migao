@@ -215,7 +215,14 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
         ungated.perform(get("/api/admin/orders").param("page", "1").param("size", "-5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(0));
-        // 清掉上面那次调用（无闸路径**会**打到 service —— 这正是修前的行为）
+        // 「修前」的其余两个形态同批钉住：
+        //   · page=0 ⇒ 200（网关放行 ⇒ 一路打到 service；MyBatis-Plus 给负 offset 出整表）
+        //   · size=abc ⇒ 400，但**不是**本闸给的 —— Spring 绑定 long 失败 ⇒ MethodArgumentTypeMismatch（也是 400）
+        ungated.perform(get("/api/admin/orders").param("page", "0").param("size", "20"))
+                .andExpect(status().isOk());
+        ungated.perform(get("/api/admin/orders").param("page", "1").param("size", "abc"))
+                .andExpect(status().isBadRequest());
+        // 清掉上面几次调用（无闸路径**会**打到 service —— 这正是修前的行为）
         clearInvocations(orderService);
         // 反向：有闸装配下同一请求是 400，且 service 零调用
         mockMvc.perform(get("/api/admin/orders").param("page", "1").param("size", "-5"))
