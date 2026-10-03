@@ -140,6 +140,20 @@ def test_pragma_is_the_only_exemption_channel():
     assert other, "pragma 把别的行一起豁免了 ⇒ 通道过宽"
 
 
+def test_hash_inside_a_string_is_not_treated_as_a_comment():
+    """**引号感知**（issue #5325 的同族形态）：字符串里的 `#` 不是注释 ⇒ 不许吃掉行尾。
+
+    朴素截断（`split("#")`）会把 `"<hex>#tail"` 这行截成半截 ⇒ **漏判**。
+    """
+    body = f'SERVICE_TOKEN = "{FAKE_HEX}#not-a-comment"'
+    assert [f.rule for f in _synthetic("x.py", body)] == ["R1-credential-literal"]
+    # 行尾真注释仍要被剥掉（否则 `# 说明：SERVICE_TOKEN = "…"` 会假红）
+    assert _synthetic("x.py", f'X = 1  # SERVICE_TOKEN = "{FAKE_HEX}"') == []
+    # 行内注释跟在取值后面（本仓 `deploy/swas/*.sh` 就是这个形态）⇒ 认得出「值 + 注释」
+    assert [f.rule for f in _synthetic("deploy/x.sh", f'SERVICE_TOKEN="{FAKE_HEX}"  # 注释')] == [
+        "R1-credential-literal"]
+
+
 def test_pragma_must_carry_a_reason():
     """pragma 是**描述性**的（原因写在注释里）；判据只做一条最小形态检查：pragma 与原因同行。"""
     no_reason = f'FAKE = "{FAKE_HEX}"  # noqa: plaintext-credential'

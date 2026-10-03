@@ -131,6 +131,35 @@ def _looks_like_credential(value: str) -> bool:
     return bool(_LONG_RANDOM.match(value))
 
 
+def _comment_free_value(value: str) -> str:
+    """从捕获到的取值里取「无注释、无闭引号」的那一段。
+
+    ⚠️ 这里是**元守卫点名的 `naive-hash-cut` 形态**所在（`tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`）：
+    朴素的 `split("#")` 会把字符串**内部**的 `#` 也当注释切掉 ⇒ 那正是本仓的
+    `test_guard_parsing_is_comment_aware` 要防的假绿。本函数因此**引号感知**：
+    从取值开头重扫（调用方在取值前垫一个空格，**不把开引号喂进来** —— 喂进来的话闭引号
+    会被记成「开引号」而让串内/串外判定整个反过来），只切**引号外**的 `#`，并去掉尾巴上的闭引号。
+    """
+    quote: str | None = None
+    i = 0
+    while i < len(value):
+        ch = value[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "\"'":
+            quote = ch
+        elif ch == "#":
+            return value[:i].strip("\"'").strip()
+        i += 1
+    return value.strip("\"'").strip()
+
+
 def _is_environment_reference(line: str, name_end: int) -> bool:
     """`= os.environ[...]` / `= os.getenv(...)` / `= settings.<NAME>` ⇒ 环境注入，正确形态。
 
@@ -154,20 +183,46 @@ class Finding:
         return f"{self.path}:{self.lineno}: [{self.rule}] {self.name}"
 
 
+def _strip_py_comment(line: str) -> str:
+    """剥 Python 系的行尾 `#` 注释 —— **引号感知**（字符串里的 `#` 不是注释）。
+
+    ⚠️ 不用 `.split("#")` / `re.sub(r"#.*")` 那类**朴素截断**：字符串里的一个 `#`
+    （如 `"X-Service-Token": "a#b"`）会把行尾整段吃掉 ⇒ 可能**漏判**（仓内元守卫
+    `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py` 的 `naive-hash-cut`
+    正是判这个形态）。字符串内的 `#` 不切；转义 `\\` 跳过下一个字符。
+    """
+    quote: str | None = None
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "#":
+            return line[:i]
+        i += 1
+    return line
+
+
 def _scan_line(rel: str, lineno: int, line: str) -> list[Finding]:
     """单行判定（纯函数，供测试在内存里做变异注入）。"""
     if PRAGMA in line or _COMMENT_LINE.match(line):
         return []
-    # 只剥 Python 系的行尾 `#` 注释（少数几类文本里 `#` 不是注释符 ⇒ 可能假剥 ⇒ 只可能**漏报**，
-    # 不会假红；本仓的期望形态里 `#` 注释占绝大多数）。
-    code = line if not rel.endswith((".py", ".sh", ".yml", ".yaml", ".toml", ".cfg", ".ini")) \
-        else line.split("#", 1)[0]
+    # 只剥 Python 系的 `#` 注释（少数几类文本里 `#` 不是注释符 ⇒ 只可能**漏判**，不会假红）。
+    code = _strip_py_comment(line) if rel.endswith(
+        (".py", ".sh", ".yml", ".yaml", ".toml", ".cfg", ".ini")) else line
     findings: list[Finding] = []
     for m in _R1.finditer(code):
-        if _looks_like_credential(m.group("v")) and not _is_environment_reference(code, m.end("name")):
+        value = _comment_free_value(" " + m.group("v"))
+        if _looks_like_credential(value) and not _is_environment_reference(code, m.end("name")):
             findings.append(Finding(rel, lineno, "R1-credential-literal", m.group("name"), line))
     for m in _R2.finditer(code):
-        if _looks_like_credential(m.group("v")):
+        if _looks_like_credential(_comment_free_value(" " + m.group("v"))):
             findings.append(Finding(rel, lineno, "R2-service-token-header-literal", "X-Service-Token", line))
     return findings
 
