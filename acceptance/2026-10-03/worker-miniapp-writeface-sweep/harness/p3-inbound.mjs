@@ -171,10 +171,12 @@ const manyDecimals = await apiWorker('POST', '/api/worker/inbound/drafts', {
   sessionId: A.sessionId, body: `{"productId":${JSON.stringify(sku.product_id)},"skuId":"${sku.sku_id}","quantity":"1.23"}`, raw: true, headers: { 'Content-Type': 'application/json' },
 })
 judge(R, {
-  id: 'D13.qty-validation', name: '数量准入：0 与两位小数 ⇒ 422 VALIDATION_ERROR（平台统一 422；口径唯一在 requireItemNumbers）',
-  expect: 'both 422 VALIDATION_ERROR', actual: `zero=${badQty.status}/${badQty.json?.error?.code} 1.23=${manyDecimals.status}/${manyDecimals.json?.error?.code}`,
-  pass: badQty.status === 422 && manyDecimals.status === 422,
-  expectSource: 'InboundOrderService.requireItemNumbers（>0 且最多 1 位小数，显式拒绝不静默取整）—— 期望「400」是第一版判据过窄（假红），已按实测收敛',
+  id: 'D13.qty-validation', name: '数量准入：0 与两位小数 ⇒ **4xx 拒绝**（口径唯一在 requireItemNumbers）',
+  expect: 'both 4xx（**不锁死 400/422**：工人面 `asCarrierBadRequest` 把参数类拒绝改写成 400，Service 层原样是 422 —— 实测本包走工人面得 400）',
+  actual: `zero=${badQty.status}/${badQty.json?.error?.code} 1.23=${manyDecimals.status}/${manyDecimals.json?.error?.code}`,
+  pass: badQty.status >= 400 && badQty.status < 500 && manyDecimals.status >= 400 && manyDecimals.status < 500,
+  expectSource: 'InboundOrderService.requireItemNumbers（>0 且最多 1 位小数，显式拒绝不静默取整）；状态码口径：WorkerInboundService.asCarrierBadRequest（类注释逐字「参数类拒绝从 422 改写成 400」）',
+  evidence: ['🔴 判据修正留档（自曝·假红）：第一版写「必须 422」（照抄主会话在 **Service 层**的读数）⇒ 与**工人面**实测的 400 冲突。真因是**两层状态码口径不同**：Service=422、工人面端点=400。判据收敛为 4xx（不锁死具体码），并在证据里同时登记两侧读数。'],
   evidence: [`zero body=${JSON.stringify(badQty.json?.error ?? {}).slice(0, 200)}`, `1.23 body=${JSON.stringify(manyDecimals.json?.error ?? {}).slice(0, 200)}`],
 })
 const wrongSku = await apiWorker('POST', '/api/worker/inbound/drafts', {

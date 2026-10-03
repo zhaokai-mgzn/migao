@@ -4,17 +4,17 @@
       "id": "N1.cutting-height-null-product",
       "name": "🔴 cutting-height：订单行 product_id 为 NULL ⇒ **HTTP 500**（NPE at positionRow）",
       "status": "fail",
-      "detail": "期望 设计期望（源码类注释逐字）：缺值 ⇒ 该行进 missing[] + 页面显示「—」，**三条失败路径都显式、没有一条静默按 0**；即 200 或 4xx，不得 500 ≠ 实测 product_id=NULL ⇒ HTTP 500 / 前置同一码(HAS product_id)=HTTP 200 / body={\"granularity\":\"set_position\",\"scanned\":{\"order_item_id\":\"laitmmus5oyo0qj\",\"position_kind\":\"布帘\"},\"order\":{\"order_id\":\"laordmus5oyo0qj\",\"order_no\":\"LA-ORD-MUS5OY",
+      "detail": "期望 设计期望（源码类注释逐字）：缺值 ⇒ 该行进 missing[] + 页面显示「—」，**三条失败路径都显式、没有一条静默按 0**；即 200 或 4xx，不得 500 ≠ 实测 product_id=NULL ⇒ HTTP 500 / 前置同一码(HAS product_id)=HTTP 200 / body={\"granularity\":\"set_position\",\"scanned\":{\"order_item_id\":\"laitmmus5y93fod\",\"position_kind\":\"布帘\"},\"order\":{\"order_id\":\"laordmus5y93fod\",\"order_no\":\"LA-ORD-MUS5Y9",
       "evidence": [
         "期望来源: WorkerCuttingHeightService.positionRow 第 149 行 `brands.get(item.getProductId())`：`brands` 在该批产品零命中时返回 `Map.of()`（不可变）⇒ 以 NULL 建键 ⇒ `ImmutableCollections$MapN.get` NPE",
         "期望: 设计期望（源码类注释逐字）：缺值 ⇒ 该行进 missing[] + 页面显示「—」，**三条失败路径都显式、没有一条静默按 0**；即 200 或 4xx，不得 500",
-        "实得: product_id=NULL ⇒ HTTP 500 / 前置同一码(HAS product_id)=HTTP 200 / body={\"granularity\":\"set_position\",\"scanned\":{\"order_item_id\":\"laitmmus5oyo0qj\",\"position_kind\":\"布帘\"},\"order\":{\"order_id\":\"laordmus5oyo0qj\",\"order_no\":\"LA-ORD-MUS5OY",
+        "实得: product_id=NULL ⇒ HTTP 500 / 前置同一码(HAS product_id)=HTTP 200 / body={\"granularity\":\"set_position\",\"scanned\":{\"order_item_id\":\"laitmmus5y93fod\",\"position_kind\":\"布帘\"},\"order\":{\"order_id\":\"laordmus5y93fod\",\"order_no\":\"LA-ORD-MUS5Y9",
         "栈（/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-03/out/main-live-round3-api-envfix.log 第 6605~6610 行）: java.lang.NullPointerException at ImmutableCollections$MapN.get … WorkerCuttingHeightService.positionRow",
-        "夹具 order_items.id=laitmmus5oyo0qj product_id=NULL（本包自建行）",
+        "夹具 order_items.id=laitmmus5y93fod product_id=NULL（本包自建行）",
         "只读面零副作用自证：ops 前后=true logs=0→0"
       ],
-      "at": "2026-10-03 16:54:58 +08",
-      "atUtc": "2026-10-03T08:54:58.703Z"
+      "at": "2026-10-03 17:02:11 +08",
+      "atUtc": "2026-10-03T09:02:11.973Z"
     },
     {
       "id": "N2.single-variable-control",
@@ -26,8 +26,8 @@
         "期望: HTTP 200",
         "实得: HTTP 200 keys=[\"granularity\",\"scanned\",\"order\",\"positions\"]"
       ],
-      "at": "2026-10-03 16:54:59 +08",
-      "atUtc": "2026-10-03T08:54:59.407Z"
+      "at": "2026-10-03 17:02:12 +08",
+      "atUtc": "2026-10-03T09:02:12.611Z"
     },
     {
       "id": "N3.no-brand-attr",
@@ -39,8 +39,8 @@
         "期望: HTTP 200（若这里也 500 ⇒ 触发面更宽，需一并登记）",
         "实得: HTTP 200"
       ],
-      "at": "2026-10-03 16:55:00 +08",
-      "atUtc": "2026-10-03T08:55:00.173Z"
+      "at": "2026-10-03 17:02:13 +08",
+      "atUtc": "2026-10-03T09:02:13.131Z"
     },
     {
       "id": "N4.scan-unaffected",
@@ -52,8 +52,8 @@
         "期望: HTTP 200（scan 不读 brands()）",
         "实得: HTTP 200 granularity=set_position"
       ],
-      "at": "2026-10-03 16:55:00 +08",
-      "atUtc": "2026-10-03T08:55:00.775Z"
+      "at": "2026-10-03 17:02:13 +08",
+      "atUtc": "2026-10-03T09:02:13.654Z"
     },
     {
       "id": "N5.brands-null-key",
@@ -66,8 +66,8 @@
         "实得: 有=200 → 置NULL=500 → 还原=200（该商品 brand 属性行数=0）",
         "N1 的 okOnFullItem 前置也是 500 ⇒ 触发面比「product_id IS NULL」更宽（凡是**本单订单行的 product_id 全为空**就必然命中）"
       ],
-      "at": "2026-10-03 16:55:04 +08",
-      "atUtc": "2026-10-03T08:55:04.334Z"
+      "at": "2026-10-03 17:02:16 +08",
+      "atUtc": "2026-10-03T09:02:16.670Z"
     }
   ],
   "summary": {

@@ -11,8 +11,8 @@
         "实得: login=true no=1 pin=1",
         "截图 out/shots/U1-login-view.png"
       ],
-      "at": "2026-10-03 16:55:20 +08",
-      "atUtc": "2026-10-03T08:55:20.629Z"
+      "at": "2026-10-03 17:04:11 +08",
+      "atUtc": "2026-10-03T09:04:11.636Z"
     },
     {
       "id": "U2.bad-pin-negative-control",
@@ -27,22 +27,22 @@
         "网络面：[[\"/api/worker/login\",401]]",
         "🔴 第一版只断言「#wh5-error 非空」⇒ 抓到的是 `Failed to fetch`（**测试装置没做同源代理**，不是产品文案）= 判据什么都没证（主会话复核指出）"
       ],
-      "at": "2026-10-03 16:55:22 +08",
-      "atUtc": "2026-10-03T08:55:22.021Z"
+      "at": "2026-10-03 17:04:13 +08",
+      "atUtc": "2026-10-03T09:04:13.034Z"
     },
     {
       "id": "U3.current-worker-in-dom",
       "name": "正确登录 ⇒ 页头「当前工人：<探针工人>」出现在**真实 DOM**",
       "status": "pass",
-      "detail": "期望 #wh5-current-worker 含「线A验收工人671879」 == 实测 header=\"当前工人：线A验收工人671879（工号 LAA71879）\" err=\"工号或 PIN 不正确\" 登录响应=[[\"/api/worker/login\",200,null]]",
+      "detail": "期望 #wh5-current-worker 含「线A验收工人246619」 == 实测 header=\"当前工人：线A验收工人246619（工号 LAA46619）\" err=\"工号或 PIN 不正确\" 登录响应=[[\"/api/worker/login\",200,null]]",
       "evidence": [
         "期望来源: WorkerProfileController/current-worker（服务端解身份）+ render.mjs 页头渲染",
-        "期望: #wh5-current-worker 含「线A验收工人671879」",
-        "实得: header=\"当前工人：线A验收工人671879（工号 LAA71879）\" err=\"工号或 PIN 不正确\" 登录响应=[[\"/api/worker/login\",200,null]]",
+        "期望: #wh5-current-worker 含「线A验收工人246619」",
+        "实得: header=\"当前工人：线A验收工人246619（工号 LAA46619）\" err=\"工号或 PIN 不正确\" 登录响应=[[\"/api/worker/login\",200,null]]",
         "截图 out/shots/U3-logged-in.png"
       ],
-      "at": "2026-10-03 16:55:22 +08",
-      "atUtc": "2026-10-03T08:55:22.337Z"
+      "at": "2026-10-03 17:04:13 +08",
+      "atUtc": "2026-10-03T09:04:13.413Z"
     },
     {
       "id": "U3b.me-called",
@@ -54,8 +54,8 @@
         "期望: 网络面出现 worker 读面请求",
         "实得: [[\"/api/worker/login\",200],[\"/api/worker/me\",null]]"
       ],
-      "at": "2026-10-03 16:55:22 +08",
-      "atUtc": "2026-10-03T08:55:22.337Z"
+      "at": "2026-10-03 17:04:13 +08",
+      "atUtc": "2026-10-03T09:04:13.413Z"
     },
     {
       "id": "U4a.scan-input-empty",
@@ -67,8 +67,8 @@
         "期望: #wh5-code 存在且值 == \"\"；#wh5-scan 存在",
         "实得: codeBefore=\"\" ids=[\"wh5-current-worker\",\"wh5-switch\",\"wh5-logout\",\"wh5-perm-unread\",\"wh5-worker-entries\",\"wh5-machine-entry\",\"wh5-error\",\"wh5-code\",\"wh5-scan\"]"
       ],
-      "at": "2026-10-03 16:55:23 +08",
-      "atUtc": "2026-10-03T08:55:23.667Z"
+      "at": "2026-10-03 17:04:14 +08",
+      "atUtc": "2026-10-03T09:04:14.402Z"
     },
     {
       "id": "U4.scan-resolves-in-ui",
@@ -81,8 +81,8 @@
         "实得: 扫码后 code=null 出现开工按钮=true 页面 id 集=[\"wh5-current-worker\",\"wh5-switch\",\"wh5-logout\",\"wh5-worker-entries\",\"wh5-machine-entry\",\"wh5-set\",\"wh5-operation\",\"wh5-qty\",\"wh5-report\",\"wh5-set-overview\",\"wh5-cut-plan\",\"wh5-rescan\"]",
         "截图 out/shots/U4-scan-view.png"
       ],
-      "at": "2026-10-03 16:55:54 +08",
-      "atUtc": "2026-10-03T08:55:54.613Z"
+      "at": "2026-10-03 17:04:45 +08",
+      "atUtc": "2026-10-03T09:04:45.276Z"
     },
     {
       "id": "U5.ui-report-writes",
@@ -95,10 +95,10 @@
         "实得: net=[[\"/api/worker/production/scan/complete\",200]] logs=0→1 done_qty=2.00",
         "截图 out/shots/U5-after-report.png",
         "点击异常=无",
-        "页面文本片段= 工人报工 当前工人：线A验收工人671879（工号 LAA71879） 切换 登出 拍照入库 补打入库标签 机台模式 第 LA-JG-MUS5PJ6LQR-001 套 · 线B验收派工行-P3 线B验收派工色-P3 本套工序都已被领走 🎉 第 LA-JG-MUS5PJ6LQR-001 套 · 本套工序 线B验收派工行-P3 线B验收派工色-P3 外帘发货（同序） 应做 2.00 套 1.00 元/套 待领 已报 0.00 套 精裁输"
+        "页面文本片段= 工人报工 当前工人：线A验收工人246619（工号 LAA46619） 切换 登出 拍照入库 补打入库标签 机台模式 第 LA-JG-MUS60X0SSR-001 套 · P9f-576588 本白 本套工序都已被领走 🎉 第 LA-JG-MUS60X0SSR-001 套 · 本套工序 P9f-576588 本白 外帘发货 应做 2.00 套 1.00 元/套 待领 已报 0.00 套 精裁输出（裁多长 × 几片） 裁 — P9f-"
       ],
-      "at": "2026-10-03 16:55:58 +08",
-      "atUtc": "2026-10-03T08:55:58.286Z"
+      "at": "2026-10-03 17:04:49 +08",
+      "atUtc": "2026-10-03T09:04:49.405Z"
     },
     {
       "id": "U5b.receipt-rendered",
@@ -110,29 +110,43 @@
         "期望: 页面正文含回执语义文案",
         "实得: 本套"
       ],
-      "at": "2026-10-03 16:55:58 +08",
-      "atUtc": "2026-10-03T08:55:58.302Z"
+      "at": "2026-10-03 17:04:49 +08",
+      "atUtc": "2026-10-03T09:04:49.411Z"
     },
     {
       "id": "U7.machine-null-product-500",
       "name": "🔴 #6219 的 **UI 层**复现：一体机屏扫「订单行 product_id 为空」的码 ⇒ 裁高读面 500，页面显示失败大字（用户可见面）",
       "status": "pass",
-      "detail": "期望 网络面 GET /api/worker/production/cutting-height ⇒ 500；页面**显式报错**（不是假装成功/空值静默） == 实测 cutting-height 请求=[[\"/api/worker/production/cutting-height\",500]]；页面文本= 机台模式 · 裁高 机台模式 · 裁高 线A验收工人671879 服务器内部错误 请重新扫一次水洗唛（或手工输入短码） ",
+      "detail": "期望 网络面 GET /api/worker/production/cutting-height ⇒ 500；页面**显式报错**（不是假装成功/空值静默） == 实测 cutting-height 请求=[[\"/api/worker/production/cutting-height\",500]]；页面文本= 机台模式 · 裁高 机台模式 · 裁高 线A验收工人246619 服务器内部错误 请重新扫一次水洗唛（或手工输入短码） ",
       "evidence": [
         "期望来源: machine-app.mjs::onScan → api.readCuttingHeight（WorkerCuttingHeightService.positionRow:149 NPE ⇒ 500）",
         "期望: 网络面 GET /api/worker/production/cutting-height ⇒ 500；页面**显式报错**（不是假装成功/空值静默）",
-        "实得: cutting-height 请求=[[\"/api/worker/production/cutting-height\",500]]；页面文本= 机台模式 · 裁高 机台模式 · 裁高 线A验收工人671879 服务器内部错误 请重新扫一次水洗唛（或手工输入短码） ",
+        "实得: cutting-height 请求=[[\"/api/worker/production/cutting-height\",500]]；页面文本= 机台模式 · 裁高 机台模式 · 裁高 线A验收工人246619 服务器内部错误 请重新扫一次水洗唛（或手工输入短码） ",
         "截图 out/shots/U7-machine-null-product.png",
         "与 API 层复现（P2b/N1、P2/C23）互为**两侧证据**：接口 500 + 车间屏可见失败"
       ],
-      "at": "2026-10-03 16:56:03 +08",
-      "atUtc": "2026-10-03T08:56:03.743Z"
+      "at": "2026-10-03 17:04:55 +08",
+      "atUtc": "2026-10-03T09:04:55.375Z"
+    },
+    {
+      "id": "U6.redproof",
+      "name": "🔴 红证：把 U4 的期望改成「输入框 == 不存在的 token」⇒ 该判据**必红**（证明它不是空断言）",
+      "status": "fail",
+      "detail": "期望 codeBefore == lamus60x0ssrffffffffffffffffffff-BROKEN（**故意错的期望**） ≠ 实测 codeBefore=\"\"",
+      "evidence": [
+        "期望来源: 红证夹具：期望值故意改坏；若这里 pass ⇒ U4 的判据没在真读 DOM（空断言）",
+        "期望: codeBefore == lamus60x0ssrffffffffffffffffffff-BROKEN（**故意错的期望**）",
+        "实得: codeBefore=\"\"",
+        "本条按设计**必须 fail**（fail 桶中的失效控制项，不计产品缺陷）"
+      ],
+      "at": "2026-10-03 17:04:55 +08",
+      "atUtc": "2026-10-03T09:04:55.377Z"
     }
   ],
   "summary": {
     "pass": 9,
-    "fail": 0,
+    "fail": 1,
     "skip": 0,
-    "total": 9
+    "total": 10
   }
 }

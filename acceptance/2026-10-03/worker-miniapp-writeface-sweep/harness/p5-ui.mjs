@@ -210,11 +210,12 @@ judge(R, {
 })
 
 // ── U6 红证：把期望改坏 ⇒ 判据必红（证明 U4 判据真的在看读数）──
-const brokenExpectation = F.token + '-BROKEN'   // F 已被上面的流程扫过 ⇒ 输入框值即 F.token
-const brokenPass = codeVal === brokenExpectation
+// 红证取「扫码**前**」的读数（那时输入框是空的）⇒ 期望它 == 一个不存在的 token，必然不成立。
+const brokenExpectation = F.token + '-BROKEN'
+const brokenPass = codeBefore === brokenExpectation
 judge(R, {
   id: 'U6.redproof', name: '🔴 红证：把 U4 的期望改成「输入框 == 不存在的 token」⇒ 该判据**必红**（证明它不是空断言）',
-  expect: `code == ${brokenExpectation}（**故意错的期望**）`, actual: `code=${codeVal}`,
+  expect: `codeBefore == ${brokenExpectation}（**故意错的期望**）`, actual: `codeBefore=${JSON.stringify(codeBefore)}`,
   pass: brokenPass,
   expectSource: '红证夹具：期望值故意改坏；若这里 pass ⇒ U4 的判据没在真读 DOM（空断言）',
   evidence: ['本条按设计**必须 fail**（fail 桶中的失效控制项，不计产品缺陷）'],

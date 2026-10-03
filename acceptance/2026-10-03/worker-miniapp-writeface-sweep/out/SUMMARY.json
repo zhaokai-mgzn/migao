@@ -8,23 +8,23 @@
     "commitTime": "2026-10-03T08:15:11Z",
     "adminApiPid": "61739",
     "adminApiStart": "六 10月/ 3 16:22:58 2026",
-    "originMain": "4f8f4903f",
+    "originMain": "cf9a45c3c",
     "how": "git -C /Users/guangzhen.zk/migao-wt/main-live rev-parse HEAD + ps -o lstart（harness/lib.mjs::buildPoint）；服务地址与健康读自 acceptance/2026-10-03/env/env-round3.json（16:23 主会话带 .env 重启，构建点未变）",
     "observedAt": {
-      "cst": "2026-10-03 16:54:15 +08",
-      "utc": "2026-10-03T08:54:15.752Z"
+      "cst": "2026-10-03 17:05:05 +08",
+      "utc": "2026-10-03T09:05:05.291Z"
     }
   },
   "window": {
-    "start": "2026-10-03 16:56:10 +08",
-    "utc": "2026-10-03T08:56:10.515Z"
+    "start": "2026-10-03 17:05:19 +08",
+    "utc": "2026-10-03T09:05:19.609Z"
   },
   "counts": {
-    "pass": 90,
+    "pass": 91,
     "fail": 2,
     "skip": 2,
     "falseRed": 1,
-    "total": 94
+    "total": 95
   },
   "perSuite": {
     "P1 工人身份面": {
@@ -50,8 +50,8 @@
     },
     "P3 小程序入库写面": {
       "file": "P3-inbound.json",
-      "pass": 17,
-      "fail": 1,
+      "pass": 18,
+      "fail": 0,
       "skip": 1,
       "total": 19
     },
@@ -65,15 +65,15 @@
     "P5 UI 级（真机驱动）": {
       "file": "P5-ui.json",
       "pass": 9,
-      "fail": 0,
+      "fail": 1,
       "skip": 0,
-      "total": 9
+      "total": 10
     }
   },
   "residue": {
     "at": {
-      "cst": "2026-10-03 16:56:09 +08",
-      "utc": "2026-10-03T08:56:09.640Z"
+      "cst": "2026-10-03 17:05:17 +08",
+      "utc": "2026-10-03T09:05:17.839Z"
     },
     "cleanupError": null,
     "residue": {
@@ -95,46 +95,80 @@
       "total": 0
     },
     "clean": true,
-    "ledgerBefore": {
-      "hash": "61f3fe98fa716249e02ebdcbf8e7b089d1d4521ac977b0434d2bea6aa35d629e",
+    "ledgerBeforeAllRows": {
+      "hash": "b3c23222253b1f99b1383158276095f83b5b0e0dac74d308ebcce101d2c7aef2",
       "parts": [
-        "orders=af4692733e8aae2ccb2fedd43a2c2ae9#411",
-        "processing_orders=946f05abbce855205677ce47aa70ad73#273",
-        "processing_position_operations=374c481a2eb48bd9827d2e1efbaf512d#3041",
-        "processing_set_part_tokens=eb85170138a446f1efc07f64fe1dedc8#289",
-        "production_work_logs=1c6ef171f116d056f8634c54b5f944f9#15",
-        "worker_report_audits=0d09663149db13d7da5349963be445bd#15",
-        "users=14d02ea9d6e7684c1ec75f5898159e7e#20",
-        "worker_sessions=a3c06d857734dea114efa73cdb4c5e29#9",
-        "inbound_labels=8553f2d315b98d60f3f67a74122b70c5#1",
-        "client_request_keys=177353d4b11c3227889a6797f8350ffe#37"
-      ]
-    },
-    "ledgerAfter": {
-      "hash": "b460637ce5e3ad27355563410c3a5c581f566e8d26904105ecc143e5194c8f35",
-      "parts": [
-        "orders=143409ccb900afd77be6b06dc8cb84fe#366",
+        "orders=06aff4dd8b0e55e4948a6616da735153#435",
         "processing_orders=62aaa224f1327833739b18cc8fe26696#271",
         "processing_position_operations=bc193b93f04e37c3da317b9c0ef559bf#3021",
         "processing_set_part_tokens=559b66cac18417c5df0bac1ae07d9a8c#287",
         "production_work_logs=1c6ef171f116d056f8634c54b5f944f9#15",
         "worker_report_audits=0d09663149db13d7da5349963be445bd#15",
+        "users=3d4bbc402804300c710aae475ff70245#21",
+        "worker_sessions=2ebe5b2863ce0d072f319cee92089dee#10",
+        "inbound_labels=7cb792a0116f58f6fe7164d9286039cb#4",
+        "client_request_keys=ed893df28bea527a5b939845fee7db60#40"
+      ],
+      "excludeProbe": false
+    },
+    "ledgerAfterAllRows": {
+      "hash": "64253549d56114eac8c07575971ae052eab881b79b014166b2ffe40a9a1fc441",
+      "parts": [
+        "orders=5e274568dba4e3965f4f0f9749948aa5#454",
+        "processing_orders=93008843cf490fa52ef695d6fda2bf02#277",
+        "processing_position_operations=cc1b71c1eeb0ddeb2dbfb25909520e4c#3081",
+        "processing_set_part_tokens=407a5056a088adc294c0f9e6a4a7a899#293",
+        "production_work_logs=1c6ef171f116d056f8634c54b5f944f9#15",
+        "worker_report_audits=0d09663149db13d7da5349963be445bd#15",
         "users=d248ac6f28fd5ca3004795fb1708eda3#19",
         "worker_sessions=9b6255dbbbe166e4a529926606b57c50#8",
-        "inbound_labels=5d7fd457d47102fd75b0e92f49521193#2",
-        "client_request_keys=03854dda640a63ce43875bf2d9f97033#38"
-      ]
+        "inbound_labels=7cb792a0116f58f6fe7164d9286039cb#4",
+        "client_request_keys=f19eee1e039e21aa4fe5816acf8c54ee#41"
+      ],
+      "excludeProbe": false
+    },
+    "ledgerBefore": {
+      "hash": "47310277f72588d7015e100f734434fe96bb02a5c280245da3b0010df8e26fed",
+      "parts": [
+        "orders=8cfda49c60aa1041c6ae679b5e6270c2#452",
+        "processing_orders=f6b9beb9e725f0120c6e4dd10f68d6af#274",
+        "processing_position_operations=83fee0eb845f8d09255f2d34c8baf6cf#3051",
+        "processing_set_part_tokens=4f7f6a746d38752067c3fa7182d3d205#290",
+        "production_work_logs=10724634f8623960bbca64876d017708#16",
+        "worker_report_audits=4dc9a612f925ef2a8d8ee66a91fc65d3#16",
+        "users=e72708ec56af434cc8d3e00fcb2057f1#23",
+        "worker_sessions=4313b0be4447993d59f6d659b26205e5#16",
+        "inbound_labels=7cb792a0116f58f6fe7164d9286039cb#4",
+        "client_request_keys=f19eee1e039e21aa4fe5816acf8c54ee#41"
+      ],
+      "excludeProbe": true
+    },
+    "ledgerAfter": {
+      "hash": "be04171665ab4c258de59757c68b195a1c88f112be03d796f2f49ba11ae5c433",
+      "parts": [
+        "orders=5e274568dba4e3965f4f0f9749948aa5#454",
+        "processing_orders=53318b07934d79de7c7c6589dc130046#276",
+        "processing_position_operations=cc1b71c1eeb0ddeb2dbfb25909520e4c#3081",
+        "processing_set_part_tokens=407a5056a088adc294c0f9e6a4a7a899#293",
+        "production_work_logs=1c6ef171f116d056f8634c54b5f944f9#15",
+        "worker_report_audits=0d09663149db13d7da5349963be445bd#15",
+        "users=d248ac6f28fd5ca3004795fb1708eda3#19",
+        "worker_sessions=9b6255dbbbe166e4a529926606b57c50#8",
+        "inbound_labels=7cb792a0116f58f6fe7164d9286039cb#4",
+        "client_request_keys=f19eee1e039e21aa4fe5816acf8c54ee#41"
+      ],
+      "excludeProbe": true
     },
     "ledgerUnchanged": false,
     "tableCounts": {
-      "orders": 366,
-      "processingOrders": 271,
-      "positionOps": 3021,
-      "partTokens": 287,
+      "orders": 454,
+      "processingOrders": 277,
+      "positionOps": 3081,
+      "partTokens": 293,
       "workLogs": 15,
       "users": 19,
-      "inboundOrders": 15,
-      "inboundLabels": 2
+      "inboundOrders": 19,
+      "inboundLabels": 4
     }
   },
   "records": [
@@ -143,7 +177,7 @@
       "group": "P1 工人身份面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 200 + users 行落库(role=worker,status=active) == 实测 HTTP 200 id=e65eb55ce5dbc6839f913f401244e3d8 row={\"id\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"worker_no\":\"LAA71879\",\"nickname\":\"线A验收工人671879\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60} ｜ 期望来源: AdminWorkerController.createWorker + WorkerAdminService（API 建行的终态由 DB 独立复读） ｜ 期望: HTTP 200 + users 行落库(role=worker,status=active) ｜ 实得: HTTP 200 id=e65eb55ce5dbc6839f913f401244e3d8 row={\"id\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"worker_no\":\"LAA71879\",\"nickname\":\"线A验收工人671879\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60} ｜ {\"workerNo\":\"LAA71879\",\"name\":\"线A验收工人671879\",\"pin\":\"246810\"} ｜ DB row: {\"id\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"worker_no\":\"LAA71879\",\"nickname\":\"线A验收工人671879\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60}",
+      "evidence": "期望 HTTP 200 + users 行落库(role=worker,status=active) == 实测 HTTP 200 id=51fc571b4669f34bc2026953752492c8 row={\"id\":\"51fc571b4669f34bc2026953752492c8\",\"worker_no\":\"LAA46619\",\"nickname\":\"线A验收工人246619\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60} ｜ 期望来源: AdminWorkerController.createWorker + WorkerAdminService（API 建行的终态由 DB 独立复读） ｜ 期望: HTTP 200 + users 行落库(role=worker,status=active) ｜ 实得: HTTP 200 id=51fc571b4669f34bc2026953752492c8 row={\"id\":\"51fc571b4669f34bc2026953752492c8\",\"worker_no\":\"LAA46619\",\"nickname\":\"线A验收工人246619\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60} ｜ {\"workerNo\":\"LAA46619\",\"name\":\"线A验收工人246619\",\"pin\":\"246810\"} ｜ DB row: {\"id\":\"51fc571b4669f34bc2026953752492c8\",\"worker_no\":\"LAA46619\",\"nickname\":\"线A验收工人246619\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60}",
       "redProof": ""
     },
     {
@@ -151,7 +185,7 @@
       "group": "P1 工人身份面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 200 + users 行落库(role=worker,status=active) == 实测 HTTP 200 id=0a191eedb8aef3b02b2eab8000d39d7f row={\"id\":\"0a191eedb8aef3b02b2eab8000d39d7f\",\"worker_no\":\"LAB72593\",\"nickname\":\"线A验收工人672593\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60} ｜ 期望来源: AdminWorkerController.createWorker + WorkerAdminService（API 建行的终态由 DB 独立复读） ｜ 期望: HTTP 200 + users 行落库(role=worker,status=active) ｜ 实得: HTTP 200 id=0a191eedb8aef3b02b2eab8000d39d7f row={\"id\":\"0a191eedb8aef3b02b2eab8000d39d7f\",\"worker_no\":\"LAB72593\",\"nickname\":\"线A验收工人672593\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60} ｜ {\"workerNo\":\"LAB72593\",\"name\":\"线A验收工人672593\",\"pin\":\"246810\"} ｜ DB row: {\"id\":\"0a191eedb8aef3b02b2eab8000d39d7f\",\"worker_no\":\"LAB72593\",\"nickname\":\"线A验收工人672593\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60}",
+      "evidence": "期望 HTTP 200 + users 行落库(role=worker,status=active) == 实测 HTTP 200 id=f5bc35b1174b74a2b61ada1405b57305 row={\"id\":\"f5bc35b1174b74a2b61ada1405b57305\",\"worker_no\":\"LAB47028\",\"nickname\":\"线A验收工人247028\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60} ｜ 期望来源: AdminWorkerController.createWorker + WorkerAdminService（API 建行的终态由 DB 独立复读） ｜ 期望: HTTP 200 + users 行落库(role=worker,status=active) ｜ 实得: HTTP 200 id=f5bc35b1174b74a2b61ada1405b57305 row={\"id\":\"f5bc35b1174b74a2b61ada1405b57305\",\"worker_no\":\"LAB47028\",\"nickname\":\"线A验收工人247028\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60} ｜ {\"workerNo\":\"LAB47028\",\"name\":\"线A验收工人247028\",\"pin\":\"246810\"} ｜ DB row: {\"id\":\"f5bc35b1174b74a2b61ada1405b57305\",\"worker_no\":\"LAB47028\",\"nickname\":\"线A验收工人247028\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60}",
       "redProof": ""
     },
     {
@@ -159,7 +193,7 @@
       "group": "P1 工人身份面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 200 + session_id 32 位 + worker_sessions 行(ended_at IS NULL) == 实测 HTTP session=b9743fc6… worker=线A验收工人671879 idle=10080min row={\"id\":\"b9743fc613f346a487e67863944fa2ce\",\"worker_id\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"worker_no\":\"LAA71879\",\"worker_name\":\"线A验收工人671879\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-10 16:54:33.447394\"} ｜ 期望来源: WorkerSessionService.login + createSession（session 行从 DB 独立复读，不看 API 回执） ｜ 期望: HTTP 200 + session_id 32 位 + worker_sessions 行(ended_at IS NULL) ｜ 实得: HTTP session=b9743fc6… worker=线A验收工人671879 idle=10080min row={\"id\":\"b9743fc613f346a487e67863944fa2ce\",\"worker_id\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"worker_no\":\"LAA71879\",\"worker_name\":\"线A验收工人671879\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-10 16:54:33.447394\"} ｜ loginData={\"session_id\":\"b9743fc613f346a487e67863944fa2ce\",\"worker_id\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"worker_no\":\"LAA71879\",\"worker_name\":\"线A验收工人671879\",\"idle_minutes\":10080,\"idle_expires_at\":\"2026-10-10T16:54:33.447394+08:00\"} ｜ DB worker_sessions: {\"id\":\"b9743fc613f346a487e67863944fa2ce\",\"worker_id\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"worker_no\":\"LAA71879\",\"worker_name\":\"线A验收工人671879\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-10 16:54:33.447394\"}",
+      "evidence": "期望 HTTP 200 + session_id 32 位 + worker_sessions 行(ended_at IS NULL) == 实测 HTTP session=6967d4d2… worker=线A验收工人246619 idle=10080min row={\"id\":\"6967d4d25f3f41eca5f5b869d59f1a7a\",\"worker_id\":\"51fc571b4669f34bc2026953752492c8\",\"worker_no\":\"LAA46619\",\"worker_name\":\"线A验收工人246619\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-10 17:04:07.636192\"} ｜ 期望来源: WorkerSessionService.login + createSession（session 行从 DB 独立复读，不看 API 回执） ｜ 期望: HTTP 200 + session_id 32 位 + worker_sessions 行(ended_at IS NULL) ｜ 实得: HTTP session=6967d4d2… worker=线A验收工人246619 idle=10080min row={\"id\":\"6967d4d25f3f41eca5f5b869d59f1a7a\",\"worker_id\":\"51fc571b4669f34bc2026953752492c8\",\"worker_no\":\"LAA46619\",\"worker_name\":\"线A验收工人246619\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-10 17:04:07.636192\"} ｜ loginData={\"session_id\":\"6967d4d25f3f41eca5f5b869d59f1a7a\",\"worker_id\":\"51fc571b4669f34bc2026953752492c8\",\"worker_no\":\"LAA46619\",\"worker_name\":\"线A验收工人246619\",\"idle_minutes\":10080,\"idle_expires_at\":\"2026-10-10T17:04:07.636192+08:00\"} ｜ DB worker_sessions: {\"id\":\"6967d4d25f3f41eca5f5b869d59f1a7a\",\"worker_id\":\"51fc571b4669f34bc2026953752492c8\",\"worker_no\":\"LAA46619\",\"worker_name\":\"线A验收工人246619\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-10 17:04:07.636192\"}",
       "redProof": ""
     },
     {
@@ -167,7 +201,7 @@
       "group": "P1 工人身份面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 200 + session_id 32 位 + worker_sessions 行(ended_at IS NULL) == 实测 HTTP session=c18d2676… worker=线A验收工人672593 idle=10080min row={\"id\":\"c18d2676b4ec4b499db54509c4adf323\",\"worker_id\":\"0a191eedb8aef3b02b2eab8000d39d7f\",\"worker_no\":\"LAB72593\",\"worker_name\":\"线A验收工人672593\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-10 16:54:33.891455\"} ｜ 期望来源: WorkerSessionService.login + createSession（session 行从 DB 独立复读，不看 API 回执） ｜ 期望: HTTP 200 + session_id 32 位 + worker_sessions 行(ended_at IS NULL) ｜ 实得: HTTP session=c18d2676… worker=线A验收工人672593 idle=10080min row={\"id\":\"c18d2676b4ec4b499db54509c4adf323\",\"worker_id\":\"0a191eedb8aef3b02b2eab8000d39d7f\",\"worker_no\":\"LAB72593\",\"worker_name\":\"线A验收工人672593\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-10 16:54:33.891455\"} ｜ loginData={\"session_id\":\"c18d2676b4ec4b499db54509c4adf323\",\"worker_id\":\"0a191eedb8aef3b02b2eab8000d39d7f\",\"worker_no\":\"LAB72593\",\"worker_name\":\"线A验收工人672593\",\"idle_minutes\":10080,\"idle_expires_at\":\"2026-10-10T16:54:33.891455+08:00\"} ｜ DB worker_sessions: {\"id\":\"c18d2676b4ec4b499db54509c4adf323\",\"worker_id\":\"0a191eedb8aef3b02b2eab8000d39d7f\",\"worker_no\":\"LAB72593\",\"worker_name\":\"线A验收工人672593\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-10 16:54:33.891455\"}",
+      "evidence": "期望 HTTP 200 + session_id 32 位 + worker_sessions 行(ended_at IS NULL) == 实测 HTTP session=7b5c6821… worker=线A验收工人247028 idle=10080min row={\"id\":\"7b5c6821e9ea4323b019e2620f137386\",\"worker_id\":\"f5bc35b1174b74a2b61ada1405b57305\",\"worker_no\":\"LAB47028\",\"worker_name\":\"线A验收工人247028\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-10 17:04:08.101381\"} ｜ 期望来源: WorkerSessionService.login + createSession（session 行从 DB 独立复读，不看 API 回执） ｜ 期望: HTTP 200 + session_id 32 位 + worker_sessions 行(ended_at IS NULL) ｜ 实得: HTTP session=7b5c6821… worker=线A验收工人247028 idle=10080min row={\"id\":\"7b5c6821e9ea4323b019e2620f137386\",\"worker_id\":\"f5bc35b1174b74a2b61ada1405b57305\",\"worker_no\":\"LAB47028\",\"worker_name\":\"线A验收工人247028\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-10 17:04:08.101381\"} ｜ loginData={\"session_id\":\"7b5c6821e9ea4323b019e2620f137386\",\"worker_id\":\"f5bc35b1174b74a2b61ada1405b57305\",\"worker_no\":\"LAB47028\",\"worker_name\":\"线A验收工人247028\",\"idle_minutes\":10080,\"idle_expires_at\":\"2026-10-10T17:04:08.101381+08:00\"} ｜ DB worker_sessions: {\"id\":\"7b5c6821e9ea4323b019e2620f137386\",\"worker_id\":\"f5bc35b1174b74a2b61ada1405b57305\",\"worker_no\":\"LAB47028\",\"worker_name\":\"线A验收工人247028\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-10 17:04:08.101381\"}",
       "redProof": ""
     },
     {
@@ -175,7 +209,7 @@
       "group": "P1 工人身份面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 200 + worker_id == 探针工人 + pages 为数组 == 实测 HTTP 200 worker_id=e65eb55ce5dbc6839f913f401244e3d8 pages=[\"report\",\"order\",\"cut_calc\",\"shipment\"] ｜ 期望来源: WorkerProfileController.me（worker_id 必须等于 A1 建的工人 id） ｜ 期望: HTTP 200 + worker_id == 探针工人 + pages 为数组 ｜ 实得: HTTP 200 worker_id=e65eb55ce5dbc6839f913f401244e3d8 pages=[\"report\",\"order\",\"cut_calc\",\"shipment\"]",
+      "evidence": "期望 HTTP 200 + worker_id == 探针工人 + pages 为数组 == 实测 HTTP 200 worker_id=51fc571b4669f34bc2026953752492c8 pages=[\"report\",\"order\",\"cut_calc\",\"shipment\"] ｜ 期望来源: WorkerProfileController.me（worker_id 必须等于 A1 建的工人 id） ｜ 期望: HTTP 200 + worker_id == 探针工人 + pages 为数组 ｜ 实得: HTTP 200 worker_id=51fc571b4669f34bc2026953752492c8 pages=[\"report\",\"order\",\"cut_calc\",\"shipment\"]",
       "redProof": ""
     },
     {
@@ -183,7 +217,7 @@
       "group": "P1 工人身份面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 200 + worker_id == 探针工人 + worker_name 与建号一致 == 实测 HTTP 200 worker_id=e65eb55ce5dbc6839f913f401244e3d8 worker_name=线A验收工人671879 ｜ 期望来源: WorkerSessionService.currentWorker（页头数据源 = 服务端 session） ｜ 期望: HTTP 200 + worker_id == 探针工人 + worker_name 与建号一致 ｜ 实得: HTTP 200 worker_id=e65eb55ce5dbc6839f913f401244e3d8 worker_name=线A验收工人671879",
+      "evidence": "期望 HTTP 200 + worker_id == 探针工人 + worker_name 与建号一致 == 实测 HTTP 200 worker_id=51fc571b4669f34bc2026953752492c8 worker_name=线A验收工人246619 ｜ 期望来源: WorkerSessionService.currentWorker（页头数据源 = 服务端 session） ｜ 期望: HTTP 200 + worker_id == 探针工人 + worker_name 与建号一致 ｜ 实得: HTTP 200 worker_id=51fc571b4669f34bc2026953752492c8 worker_name=线A验收工人246619",
       "redProof": ""
     },
     {
@@ -223,7 +257,7 @@
       "group": "P1 工人身份面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 切换 HTTP 200 + 旧 session 再用 ⇒ 401 + DB end_reason=switched == 实测 switch=200 newSession=116677f0… 旧session再用=401 DB={\"id\":\"b9743fc613f346a487e67863944fa2ce\",\"end_reason\":\"switched\",\"ended\":true}（switch body={\"session_id\":\"116677f0b2634b57b54f7bbb14861c34\",\"worker_id\":\"0a191eedb8aef3b02b2eab8000d39d7f\",\"worker_no\":\"LAB72593\",\"worker_name\":\"线A验收工人672593\",\"idle_minute） ｜ 期望来源: WorkerSessionService.switchWorker（endSession(switched) + 新 session）—— 旧 id 报工必 401（设计 W2） ｜ 期望: 切换 HTTP 200 + 旧 session 再用 ⇒ 401 + DB end_reason=switched ｜ 实得: switch=200 newSession=116677f0… 旧session再用=401 DB={\"id\":\"b9743fc613f346a487e67863944fa2ce\",\"end_reason\":\"switched\",\"ended\":true}（switch body={\"session_id\":\"116677f0b2634b57b54f7bbb14861c34\",\"worker_id\":\"0a191eedb8aef3b02b2eab8000d39d7f\",\"worker_no\":\"LAB72593\",\"worker_name\":\"线A验收工人672593\",\"idle_minute） ｜ switch body={\"session_id\":\"116677f0b2634b57b54f7bbb14861c34\",\"worker_id\":\"0a191eedb8aef3b02b2eab8000d39d7f\",\"worker_no\":\"LAB72593\",\"worker_name\":\"线A验收工人672593\",\"idle_minutes\":10080,\"idle_expires_at\":\"2026-10-10T16:54:34.867289+08:00\"}",
+      "evidence": "期望 切换 HTTP 200 + 旧 session 再用 ⇒ 401 + DB end_reason=switched == 实测 switch=200 newSession=0b18f5c6… 旧session再用=401 DB={\"id\":\"6967d4d25f3f41eca5f5b869d59f1a7a\",\"end_reason\":\"switched\",\"ended\":true}（switch body={\"session_id\":\"0b18f5c63d4b47938a242c5e9c59db7e\",\"worker_id\":\"f5bc35b1174b74a2b61ada1405b57305\",\"worker_no\":\"LAB47028\",\"worker_name\":\"线A验收工人247028\",\"idle_minute） ｜ 期望来源: WorkerSessionService.switchWorker（endSession(switched) + 新 session）—— 旧 id 报工必 401（设计 W2） ｜ 期望: 切换 HTTP 200 + 旧 session 再用 ⇒ 401 + DB end_reason=switched ｜ 实得: switch=200 newSession=0b18f5c6… 旧session再用=401 DB={\"id\":\"6967d4d25f3f41eca5f5b869d59f1a7a\",\"end_reason\":\"switched\",\"ended\":true}（switch body={\"session_id\":\"0b18f5c63d4b47938a242c5e9c59db7e\",\"worker_id\":\"f5bc35b1174b74a2b61ada1405b57305\",\"worker_no\":\"LAB47028\",\"worker_name\":\"线A验收工人247028\",\"idle_minute） ｜ switch body={\"session_id\":\"0b18f5c63d4b47938a242c5e9c59db7e\",\"worker_id\":\"f5bc35b1174b74a2b61ada1405b57305\",\"worker_no\":\"LAB47028\",\"worker_name\":\"线A验收工人247028\",\"idle_minutes\":10080,\"idle_expires_at\":\"2026-10-10T17:04:09.138907+08:00\"}",
       "redProof": ""
     },
     {
@@ -231,7 +265,7 @@
       "group": "P1 工人身份面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 logout=200 + 之后 current-worker=401 + DB end_reason=logout == 实测 logout=200 登出后=401 DB={\"id\":\"116677f0b2634b57b54f7bbb14861c34\",\"end_reason\":\"logout\",\"ended\":true} ｜ 期望来源: WorkerSessionService.logout 的 endSession(logout) 由 DB 复读；失效由 WorkerSessionFilter 复读 ｜ 期望: logout=200 + 之后 current-worker=401 + DB end_reason=logout ｜ 实得: logout=200 登出后=401 DB={\"id\":\"116677f0b2634b57b54f7bbb14861c34\",\"end_reason\":\"logout\",\"ended\":true}",
+      "evidence": "期望 logout=200 + 之后 current-worker=401 + DB end_reason=logout == 实测 logout=200 登出后=401 DB={\"id\":\"0b18f5c63d4b47938a242c5e9c59db7e\",\"end_reason\":\"logout\",\"ended\":true} ｜ 期望来源: WorkerSessionService.logout 的 endSession(logout) 由 DB 复读；失效由 WorkerSessionFilter 复读 ｜ 期望: logout=200 + 之后 current-worker=401 + DB end_reason=logout ｜ 实得: logout=200 登出后=401 DB={\"id\":\"0b18f5c63d4b47938a242c5e9c59db7e\",\"end_reason\":\"logout\",\"ended\":true}",
       "redProof": ""
     },
     {
@@ -255,7 +289,7 @@
       "group": "P1 工人身份面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 200 + worker_id == 会话解出的工人（请求头换租户不是通道） == 实测 HTTP 200 worker_id=0a191eedb8aef3b02b2eab8000d39d7f (期望 0a191eedb8aef3b02b2eab8000d39d7f) ｜ 期望来源: WorkerSessionService.loadActiveSession：租户只来自会话行；TenantDomainResolver 只服务 /api/worker/login ｜ 期望: HTTP 200 + worker_id == 会话解出的工人（请求头换租户不是通道） ｜ 实得: HTTP 200 worker_id=0a191eedb8aef3b02b2eab8000d39d7f (期望 0a191eedb8aef3b02b2eab8000d39d7f) ｜ 假红留档：第一版断言 401 ⇒ 实测 200（判据写错了「租户权威在哪一层」）",
+      "evidence": "期望 HTTP 200 + worker_id == 会话解出的工人（请求头换租户不是通道） == 实测 HTTP 200 worker_id=f5bc35b1174b74a2b61ada1405b57305 (期望 f5bc35b1174b74a2b61ada1405b57305) ｜ 期望来源: WorkerSessionService.loadActiveSession：租户只来自会话行；TenantDomainResolver 只服务 /api/worker/login ｜ 期望: HTTP 200 + worker_id == 会话解出的工人（请求头换租户不是通道） ｜ 实得: HTTP 200 worker_id=f5bc35b1174b74a2b61ada1405b57305 (期望 f5bc35b1174b74a2b61ada1405b57305) ｜ 假红留档：第一版断言 401 ⇒ 实测 200（判据写错了「租户权威在哪一层」）",
       "redProof": "假红留档：第一版断言 401 ⇒ 实测 200（判据写错了「租户权威在哪一层」）"
     },
     {
@@ -271,7 +305,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 200 + granularity=set_position + set_no 与本夹具一致 + operation.operation_id == 夹具唯一待做工序 == 实测 HTTP 200 granularity=set_position set_no=LA-JG-MUS5OJT9PB-001 op=laopmus5ojt9pb determined_by=inferred ｜ 期望来源: ProductionScanService.findPartToken + setPositionView（工序由系统推断 = min(seq) 唯一那道） ｜ 期望: HTTP 200 + granularity=set_position + set_no 与本夹具一致 + operation.operation_id == 夹具唯一待做工序 ｜ 实得: HTTP 200 granularity=set_position set_no=LA-JG-MUS5OJT9PB-001 op=laopmus5ojt9pb determined_by=inferred ｜ set_overview.positions=[{\"item\":\"laitmmus5ojt9pb\",\"ops\":1}]",
+      "evidence": "期望 HTTP 200 + granularity=set_position + set_no 与本夹具一致 + operation.operation_id == 夹具唯一待做工序 == 实测 HTTP 200 granularity=set_position set_no=LA-JG-MUS5XTJRJS-001 op=laopmus5xtjrjs determined_by=inferred ｜ 期望来源: ProductionScanService.findPartToken + setPositionView（工序由系统推断 = min(seq) 唯一那道） ｜ 期望: HTTP 200 + granularity=set_position + set_no 与本夹具一致 + operation.operation_id == 夹具唯一待做工序 ｜ 实得: HTTP 200 granularity=set_position set_no=LA-JG-MUS5XTJRJS-001 op=laopmus5xtjrjs determined_by=inferred ｜ set_overview.positions=[{\"item\":\"laitmmus5xtjrjs\",\"ops\":1}]",
       "redProof": ""
     },
     {
@@ -279,7 +313,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 before == after（processing_position_operations 与 production_work_logs 逐字相同） == 实测 ops: true / logs: 0→0 ｜ 期望来源: ProductionScanService 类注释「本切片是只读面，不写库、不落痕」 ｜ 期望: before == after（processing_position_operations 与 production_work_logs 逐字相同） ｜ 实得: ops: true / logs: 0→0 ｜ beforeOps=[{\"id\":\"laopmus5ojt9pb\",\"seq\":1,\"status\":\"pending\",\"done_qty\":\"0.00\",\"qty\":\"12.30\",\"worker_id\":null,\"worker_name\":null,\"position_name\":\"线B验收派工行-P2 线B验收派工色-P2\",\"has_done_at\":false,\"has_started_at\":false,\"started_at_cst\":null,\"done_at_cst\":null}] ｜ afterOps=[{\"id\":\"laopmus5ojt9pb\",\"seq\":1,\"status\":\"pending\",\"done_qty\":\"0.00\",\"qty\":\"12.30\",\"worker_id\":null,\"worker_name\":null,\"position_name\":\"线B验收派工行-P2 线B验收派工色-P2\",\"has_done_at\":false,\"has_started_at\":false,\"started_at_cst\":null,\"done_at_cst\":null}]",
+      "evidence": "期望 before == after（processing_position_operations 与 production_work_logs 逐字相同） == 实测 ops: true / logs: 0→0 ｜ 期望来源: ProductionScanService 类注释「本切片是只读面，不写库、不落痕」 ｜ 期望: before == after（processing_position_operations 与 production_work_logs 逐字相同） ｜ 实得: ops: true / logs: 0→0 ｜ beforeOps=[{\"id\":\"laopmus5xtjrjs\",\"seq\":1,\"status\":\"pending\",\"done_qty\":\"0.00\",\"qty\":\"12.30\",\"worker_id\":null,\"worker_name\":null,\"position_name\":\"P9f-576588 本白\",\"has_done_at\":false,\"has_started_at\":false,\"started_at_cst\":null,\"done_at_cst\":null}] ｜ afterOps=[{\"id\":\"laopmus5xtjrjs\",\"seq\":1,\"status\":\"pending\",\"done_qty\":\"0.00\",\"qty\":\"12.30\",\"worker_id\":null,\"worker_name\":null,\"position_name\":\"P9f-576588 本白\",\"has_done_at\":false,\"has_started_at\":false,\"started_at_cst\":null,\"done_at_cst\":null}]",
       "redProof": ""
     },
     {
@@ -287,7 +321,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 200 + work_logs 恰好 1 行（operation_id=夹具工序） == 实测 HTTP 200 logs=1 [{\"id\":\"8399cd39aa5b80279c0d0337c092f638\",\"operation_id\":\"laopmus5ojt9pb\",\"operation_name\":\"外帘发货\",\"worker_id\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"worker_name\":\"线A验收工人671879\",\"qty\":\"12.30\",\"qualified_qty\":\"12.30\",\"work_type\":\"normal\",\"unit_price\":\"1.00\",\"factor\":null,\"work_date\":\"2026-10-03\",\"created_at_cst\":\"2026-10-03 16:54:38.674295\"}] ｜ 期望来源: ProductionScanCompleteService.complete → ProductionService.applyScanComplete（一次事务） ｜ 期望: HTTP 200 + work_logs 恰好 1 行（operation_id=夹具工序） ｜ 实得: HTTP 200 logs=1 [{\"id\":\"8399cd39aa5b80279c0d0337c092f638\",\"operation_id\":\"laopmus5ojt9pb\",\"operation_name\":\"外帘发货\",\"worker_id\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"worker_name\":\"线A验收工人671879\",\"qty\":\"12.30\",\"qualified_qty\":\"12.30\",\"work_type\":\"normal\",\"unit_price\":\"1.00\",\"factor\":null,\"work_date\":\"2026-10-03\",\"created_at_cst\":\"2026-10-03 16:54:38.674295\"}] ｜ resp={\"operation_id\":\"laopmus5ojt9pb\",\"done_qty\":12.3,\"status\":\"done\",\"order_completed\":true,\"worker_id\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"worker_name\":\"线A验收工人671879\",\"identity_source\":\"server_session\",\"set_no\":\"LA-JG-MUS5OJT9PB-001\",\"position\":{\"order_item_id\":\"laitmmus5ojt9pb\",\"position_kind\":\"布帘\",\"position_name\":\"线B验收派工行-P2 线B验收派工色-P2\"},\"set_overview\":{\"set_no\":\"LA-JG-MUS5OJT9PB-001\",\"set_index\":1",
+      "evidence": "期望 HTTP 200 + work_logs 恰好 1 行（operation_id=夹具工序） == 实测 HTTP 200 logs=1 [{\"id\":\"dffc9efd09201e544d2726b18966496c\",\"operation_id\":\"laopmus5xtjrjs\",\"operation_name\":\"外帘发货\",\"worker_id\":\"82729aba31ac53c981825072ffa00d39\",\"worker_name\":\"线A验收工人103778\",\"qty\":\"12.30\",\"qualified_qty\":\"12.30\",\"work_type\":\"normal\",\"unit_price\":\"1.00\",\"factor\":null,\"work_date\":\"2026-10-03\",\"created_at_cst\":\"2026-10-03 17:01:51.715297\"}] ｜ 期望来源: ProductionScanCompleteService.complete → ProductionService.applyScanComplete（一次事务） ｜ 期望: HTTP 200 + work_logs 恰好 1 行（operation_id=夹具工序） ｜ 实得: HTTP 200 logs=1 [{\"id\":\"dffc9efd09201e544d2726b18966496c\",\"operation_id\":\"laopmus5xtjrjs\",\"operation_name\":\"外帘发货\",\"worker_id\":\"82729aba31ac53c981825072ffa00d39\",\"worker_name\":\"线A验收工人103778\",\"qty\":\"12.30\",\"qualified_qty\":\"12.30\",\"work_type\":\"normal\",\"unit_price\":\"1.00\",\"factor\":null,\"work_date\":\"2026-10-03\",\"created_at_cst\":\"2026-10-03 17:01:51.715297\"}] ｜ resp={\"operation_id\":\"laopmus5xtjrjs\",\"done_qty\":12.3,\"status\":\"done\",\"order_completed\":true,\"worker_id\":\"82729aba31ac53c981825072ffa00d39\",\"worker_name\":\"线A验收工人103778\",\"identity_source\":\"server_session\",\"set_no\":\"LA-JG-MUS5XTJRJS-001\",\"position\":{\"order_item_id\":\"laitmmus5xtjrjs\",\"position_kind\":\"布帘\",\"position_name\":\"P9f-576588 本白\"},\"set_overview\":{\"set_no\":\"LA-JG-MUS5XTJRJS-001\",\"set_index\":1,\"positi",
       "redProof": ""
     },
     {
@@ -295,7 +329,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 qty=12.30 qualified=12.30 worker_id=e65eb55ce5dbc6839f913f401244e3d8 worker_name=线A验收工人671879 == 实测 qty=12.30 qualified=12.30 worker_id=e65eb55ce5dbc6839f913f401244e3d8 worker_name=线A验收工人671879 ｜ 期望来源: 缺省 qty = 剩余应做(12.30)；worker 由 X-Worker-Session-Id 解（#4733：body 同名字段不读） ｜ 期望: qty=12.30 qualified=12.30 worker_id=e65eb55ce5dbc6839f913f401244e3d8 worker_name=线A验收工人671879 ｜ 实得: qty=12.30 qualified=12.30 worker_id=e65eb55ce5dbc6839f913f401244e3d8 worker_name=线A验收工人671879",
+      "evidence": "期望 qty=12.30 qualified=12.30 worker_id=82729aba31ac53c981825072ffa00d39 worker_name=线A验收工人103778 == 实测 qty=12.30 qualified=12.30 worker_id=82729aba31ac53c981825072ffa00d39 worker_name=线A验收工人103778 ｜ 期望来源: 缺省 qty = 剩余应做(12.30)；worker 由 X-Worker-Session-Id 解（#4733：body 同名字段不读） ｜ 期望: qty=12.30 qualified=12.30 worker_id=82729aba31ac53c981825072ffa00d39 worker_name=线A验收工人103778 ｜ 实得: qty=12.30 qualified=12.30 worker_id=82729aba31ac53c981825072ffa00d39 worker_name=线A验收工人103778",
       "redProof": ""
     },
     {
@@ -303,7 +337,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 done_qty=12.30 + has_done_at + has_started_at + worker_id=本次工人 == 实测 done_qty=12.30 done_at=true started_at=true worker_id=e65eb55ce5dbc6839f913f401244e3d8 started_cst=2026-10-03 16:54:38.685103 ｜ 期望来源: applyScanComplete：CAS 推进 done_qty + done_at + started_at/worker_id（#4967 领活语义） ｜ 期望: done_qty=12.30 + has_done_at + has_started_at + worker_id=本次工人 ｜ 实得: done_qty=12.30 done_at=true started_at=true worker_id=e65eb55ce5dbc6839f913f401244e3d8 started_cst=2026-10-03 16:54:38.685103",
+      "evidence": "期望 done_qty=12.30 + has_done_at + has_started_at + worker_id=本次工人 == 实测 done_qty=12.30 done_at=true started_at=true worker_id=82729aba31ac53c981825072ffa00d39 started_cst=2026-10-03 17:01:51.740101 ｜ 期望来源: applyScanComplete：CAS 推进 done_qty + done_at + started_at/worker_id（#4967 领活语义） ｜ 期望: done_qty=12.30 + has_done_at + has_started_at + worker_id=本次工人 ｜ 实得: done_qty=12.30 done_at=true started_at=true worker_id=82729aba31ac53c981825072ffa00d39 started_cst=2026-10-03 17:01:51.740101",
       "redProof": ""
     },
     {
@@ -311,7 +345,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 worker_report_audits 行数 ≥1 且 identity_source=server_session + session_id 为本次 == 实测 [{\"id\":\"f540d252984cbbbc2a5560bc3c4fbdb1\",\"work_log_id\":\"8399cd39aa5b80279c0d0337c092f638\",\"operation_id\":\"laopmus5ojt9pb\",\"worker_id\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"worker_name\":\"线A验收工人671879\",\"worker_session_id\":\"6256031346db4f5cae170299267d1724\",\"identity_source\":\"server_session\"}] ｜ 期望来源: WorkerReportAudit（V98 旁路账：server_session 权威 / client_body 显式降级） ｜ 期望: worker_report_audits 行数 ≥1 且 identity_source=server_session + session_id 为本次 ｜ 实得: [{\"id\":\"f540d252984cbbbc2a5560bc3c4fbdb1\",\"work_log_id\":\"8399cd39aa5b80279c0d0337c092f638\",\"operation_id\":\"laopmus5ojt9pb\",\"worker_id\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"worker_name\":\"线A验收工人671879\",\"worker_session_id\":\"6256031346db4f5cae170299267d1724\",\"identity_source\":\"server_session\"}]",
+      "evidence": "期望 worker_report_audits 行数 ≥1 且 identity_source=server_session + session_id 为本次 == 实测 [{\"id\":\"95b61a4298e0b98afd7bf89740bab45e\",\"work_log_id\":\"dffc9efd09201e544d2726b18966496c\",\"operation_id\":\"laopmus5xtjrjs\",\"worker_id\":\"82729aba31ac53c981825072ffa00d39\",\"worker_name\":\"线A验收工人103778\",\"worker_session_id\":\"d7a1ff4a4da34cc0bda44b982a91d97f\",\"identity_source\":\"server_session\"}] ｜ 期望来源: WorkerReportAudit（V98 旁路账：server_session 权威 / client_body 显式降级） ｜ 期望: worker_report_audits 行数 ≥1 且 identity_source=server_session + session_id 为本次 ｜ 实得: [{\"id\":\"95b61a4298e0b98afd7bf89740bab45e\",\"work_log_id\":\"dffc9efd09201e544d2726b18966496c\",\"operation_id\":\"laopmus5xtjrjs\",\"worker_id\":\"82729aba31ac53c981825072ffa00d39\",\"worker_name\":\"线A验收工人103778\",\"worker_session_id\":\"d7a1ff4a4da34cc0bda44b982a91d97f\",\"identity_source\":\"server_session\"}]",
       "redProof": ""
     },
     {
@@ -319,7 +353,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 work_logs 仍恰好 1 行 + 第二次响应 replayed=true + client_request_keys 有快照 == 实测 logs=1（第二次 HTTP 200）第二次响应={\"set_no\":\"LA-JG-MUS5OJT9PB-001\",\"status\":\"done\",\"done_qty\":12.3,\"position\":{\"order_item_id\":\"laitmmus5ojt9pb\",\"position_kind\":\"布帘\",\"position_name\":\"线B验收派工行-P2 线B验收派工色-P2\"},\"rerouted\":false,\"worker_id idemRow={\"tenant_id\":20,\"client_request_id\":\"la-p2complete-mus5ol5g-0\",\"endpoint\":\"POST /api/worker/production/scan/complete\",\"has_snapshot\":true,\"created_at_cst\":\"2026-10-03 16:54:38.481912\"} ｜ 期望来源: ClientRequestIdService.claim/complete（同租户同键唯一 + 响应快照回放，issue #4037） ｜ 期望: work_logs 仍恰好 1 行 + 第二次响应 replayed=true + client_request_keys 有快照 ｜ 实得: logs=1（第二次 HTTP 200）第二次响应={\"set_no\":\"LA-JG-MUS5OJT9PB-001\",\"status\":\"done\",\"done_qty\":12.3,\"position\":{\"order_item_id\":\"laitmmus5ojt9pb\",\"position_kind\":\"布帘\",\"position_name\":\"线B验收派工行-P2 线B验收派工色-P2\"},\"rerouted\":false,\"worker_id idemRow={\"tenant_id\":20,\"client_request_id\":\"la-p2complete-mus5ol5g-0\",\"endpoint\":\"POST /api/worker/production/scan/complete\",\"has_snapshot\":true,\"created_at_cst\":\"2026-10-03 16:54:38.481912\"} ｜ op done_qty=12.30（不得被再加一次）",
+      "evidence": "期望 work_logs 仍恰好 1 行 + 第二次响应 replayed=true + client_request_keys 有快照 == 实测 logs=1（第二次 HTTP 200）第二次响应={\"set_no\":\"LA-JG-MUS5XTJRJS-001\",\"status\":\"done\",\"done_qty\":12.3,\"position\":{\"order_item_id\":\"laitmmus5xtjrjs\",\"position_kind\":\"布帘\",\"position_name\":\"P9f-576588 本白\"},\"rerouted\":false,\"worker_id\":\"82729 idemRow={\"tenant_id\":20,\"client_request_id\":\"la-p2complete-mus5xv6p-0\",\"endpoint\":\"POST /api/worker/production/scan/complete\",\"has_snapshot\":true,\"created_at_cst\":\"2026-10-03 17:01:51.536403\"} ｜ 期望来源: ClientRequestIdService.claim/complete（同租户同键唯一 + 响应快照回放，issue #4037） ｜ 期望: work_logs 仍恰好 1 行 + 第二次响应 replayed=true + client_request_keys 有快照 ｜ 实得: logs=1（第二次 HTTP 200）第二次响应={\"set_no\":\"LA-JG-MUS5XTJRJS-001\",\"status\":\"done\",\"done_qty\":12.3,\"position\":{\"order_item_id\":\"laitmmus5xtjrjs\",\"position_kind\":\"布帘\",\"position_name\":\"P9f-576588 本白\"},\"rerouted\":false,\"worker_id\":\"82729 idemRow={\"tenant_id\":20,\"client_request_id\":\"la-p2complete-mus5xv6p-0\",\"endpoint\":\"POST /api/worker/production/scan/complete\",\"has_snapshot\":true,\"created_at_cst\":\"2026-10-03 17:01:51.536403\"} ｜ op done_qty=12.30（不得被再加一次）",
       "redProof": ""
     },
     {
@@ -327,7 +361,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 4xx + work_logs 仍 1 行 + done_qty 仍 12.30 == 实测 HTTP 409 code=SET_ALREADY_COMPLETED logs=1 done_qty=12.30 ｜ 期望来源: ProductionScanCompleteService：plannedRemaining<=0 ⇒ OPERATION_ALREADY_ADVANCED(409) / 推断 completed ｜ 期望: HTTP 4xx + work_logs 仍 1 行 + done_qty 仍 12.30 ｜ 实得: HTTP 409 code=SET_ALREADY_COMPLETED logs=1 done_qty=12.30 ｜ body={\"code\":\"SET_ALREADY_COMPLETED\",\"message\":\"本套（LA-JG-MUS5OJT9PB-001）的工序都已完成，没有可报的工序（本次未记账）\"}",
+      "evidence": "期望 HTTP 4xx + work_logs 仍 1 行 + done_qty 仍 12.30 == 实测 HTTP 409 code=SET_ALREADY_COMPLETED logs=1 done_qty=12.30 ｜ 期望来源: ProductionScanCompleteService：plannedRemaining<=0 ⇒ OPERATION_ALREADY_ADVANCED(409) / 推断 completed ｜ 期望: HTTP 4xx + work_logs 仍 1 行 + done_qty 仍 12.30 ｜ 实得: HTTP 409 code=SET_ALREADY_COMPLETED logs=1 done_qty=12.30 ｜ body={\"code\":\"SET_ALREADY_COMPLETED\",\"message\":\"本套（LA-JG-MUS5XTJRJS-001）的工序都已完成，没有可报的工序（本次未记账）\"}",
       "redProof": ""
     },
     {
@@ -343,7 +377,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 next_operation 存在且其 operation_id == \"laopmus5omyzxi_1\"（= 本包独立从 DB 读出的剩余工序） == 实测 keys=[\"operation_id\",\"done_qty\",\"status\",\"order_completed\",\"worker_id\",\"worker_name\",\"identity_source\",\"set_no\",\"position\",\"set_overview\",\"rerouted\",\"set_progress\",\"set_completed\",\"next_operation\"] next={\"operation_id\":\"laopmus5omyzxi_1\",\"logical_name\":\"外帘发货\",\"group_name\":\"后道\",\"unit\":\"套\",\"qty\":5,\"qty_source\":\"fallback\",\"unit_price\":1,\"seq\":2,\"status\":\"pending\",\"determined_by\":\"inferred\",\"rerouted\":false} 剩余工序=[\"laopmus5omyzxi_1\"] ｜ 期望来源: ProductionScanCompleteService 的 next_operation（报工提交后**再解析一次**，尽力而为）+ DB 独立复读剩余工序 ｜ 期望: next_operation 存在且其 operation_id == \"laopmus5omyzxi_1\"（= 本包独立从 DB 读出的剩余工序） ｜ 实得: keys=[\"operation_id\",\"done_qty\",\"status\",\"order_completed\",\"worker_id\",\"worker_name\",\"identity_source\",\"set_no\",\"position\",\"set_overview\",\"rerouted\",\"set_progress\",\"set_completed\",\"next_operation\"] next={\"operation_id\":\"laopmus5omyzxi_1\",\"logical_name\":\"外帘发货\",\"group_name\":\"后道\",\"unit\":\"套\",\"qty\":5,\"qty_source\":\"fallback\",\"unit_price\":1,\"seq\":2,\"status\":\"pending\",\"determined_by\":\"inferred\",\"rerouted\":false} 剩余工序=[\"laopmus5omyzxi_1\"] ｜ 首道=laopmus5omyzxi_0 已报满；剩余=1 道",
+      "evidence": "期望 next_operation 存在且其 operation_id == \"laopmus5xx76pw_1\"（= 本包独立从 DB 读出的剩余工序） == 实测 keys=[\"operation_id\",\"done_qty\",\"status\",\"order_completed\",\"worker_id\",\"worker_name\",\"identity_source\",\"set_no\",\"position\",\"set_overview\",\"rerouted\",\"set_progress\",\"set_completed\",\"next_operation\"] next={\"operation_id\":\"laopmus5xx76pw_1\",\"logical_name\":\"外帘发货\",\"group_name\":\"后道\",\"unit\":\"套\",\"qty\":5,\"qty_source\":\"fallback\",\"unit_price\":1,\"seq\":2,\"status\":\"pending\",\"determined_by\":\"inferred\",\"rerouted\":false} 剩余工序=[\"laopmus5xx76pw_1\"] ｜ 期望来源: ProductionScanCompleteService 的 next_operation（报工提交后**再解析一次**，尽力而为）+ DB 独立复读剩余工序 ｜ 期望: next_operation 存在且其 operation_id == \"laopmus5xx76pw_1\"（= 本包独立从 DB 读出的剩余工序） ｜ 实得: keys=[\"operation_id\",\"done_qty\",\"status\",\"order_completed\",\"worker_id\",\"worker_name\",\"identity_source\",\"set_no\",\"position\",\"set_overview\",\"rerouted\",\"set_progress\",\"set_completed\",\"next_operation\"] next={\"operation_id\":\"laopmus5xx76pw_1\",\"logical_name\":\"外帘发货\",\"group_name\":\"后道\",\"unit\":\"套\",\"qty\":5,\"qty_source\":\"fallback\",\"unit_price\":1,\"seq\":2,\"status\":\"pending\",\"determined_by\":\"inferred\",\"rerouted\":false} 剩余工序=[\"laopmus5xx76pw_1\"] ｜ 首道=laopmus5xx76pw_0 已报满；剩余=1 道",
       "redProof": ""
     },
     {
@@ -359,7 +393,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 work_logs=0 + 两道工序 done_qty 全 0 + status 全 pending == 实测 logs=0 ops=[[\"s5oplt\",\"0.00\",\"pending\"],[\"5ooulu\",\"0.00\",\"pending\"]] ｜ 期望来源: ProductionScanCompleteService 类注释③「未确定工序 ⇒ 拒绝记账，一个字节都不写 production_work_logs」 ｜ 期望: work_logs=0 + 两道工序 done_qty 全 0 + status 全 pending ｜ 实得: logs=0 ops=[[\"s5oplt\",\"0.00\",\"pending\"],[\"5ooulu\",\"0.00\",\"pending\"]]",
+      "evidence": "期望 work_logs=0 + 两道工序 done_qty 全 0 + status 全 pending == 实测 logs=0 ops=[[\"s5y0e7\",\"0.00\",\"pending\"],[\"xzeoge\",\"0.00\",\"pending\"]] ｜ 期望来源: ProductionScanCompleteService 类注释③「未确定工序 ⇒ 拒绝记账，一个字节都不写 production_work_logs」 ｜ 期望: work_logs=0 + 两道工序 done_qty 全 0 + status 全 pending ｜ 实得: logs=0 ops=[[\"s5y0e7\",\"0.00\",\"pending\"],[\"xzeoge\",\"0.00\",\"pending\"]]",
       "redProof": ""
     },
     {
@@ -415,7 +449,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 worker_id=e65eb55ce5dbc6839f913f401244e3d8（不是 0a191eedb8aef3b02b2eab8000d39d7f） == 实测 HTTP 200 log.worker_id=e65eb55ce5dbc6839f913f401244e3d8 worker_name=线A验收工人671879 ｜ 期望来源: WorkerProductionController 类注释：body 的 worker_id/worker_name「一个字节都不读」（#4733 工资凭证） ｜ 期望: worker_id=e65eb55ce5dbc6839f913f401244e3d8（不是 0a191eedb8aef3b02b2eab8000d39d7f） ｜ 实得: HTTP 200 log.worker_id=e65eb55ce5dbc6839f913f401244e3d8 worker_name=线A验收工人671879",
+      "evidence": "期望 worker_id=82729aba31ac53c981825072ffa00d39（不是 2ccd5487791aae78a98d08ee338dcd83） == 实测 HTTP 200 log.worker_id=82729aba31ac53c981825072ffa00d39 worker_name=线A验收工人103778 ｜ 期望来源: WorkerProductionController 类注释：body 的 worker_id/worker_name「一个字节都不读」（#4733 工资凭证） ｜ 期望: worker_id=82729aba31ac53c981825072ffa00d39（不是 2ccd5487791aae78a98d08ee338dcd83） ｜ 实得: HTTP 200 log.worker_id=82729aba31ac53c981825072ffa00d39 worker_name=线A验收工人103778",
       "redProof": ""
     },
     {
@@ -423,7 +457,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 200 + work_logs 1 行 qty=4.00 worker=A == 实测 HTTP 200 logs=1 qty=4.00 worker=e65eb55ce5dbc6839f913f401244e3d8 ｜ 期望来源: WorkerProductionController.report → ProductionService.report（identity 来自 session） ｜ 期望: HTTP 200 + work_logs 1 行 qty=4.00 worker=A ｜ 实得: HTTP 200 logs=1 qty=4.00 worker=e65eb55ce5dbc6839f913f401244e3d8",
+      "evidence": "期望 HTTP 200 + work_logs 1 行 qty=4.00 worker=A == 实测 HTTP 200 logs=1 qty=4.00 worker=82729aba31ac53c981825072ffa00d39 ｜ 期望来源: WorkerProductionController.report → ProductionService.report（identity 来自 session） ｜ 期望: HTTP 200 + work_logs 1 行 qty=4.00 worker=A ｜ 实得: HTTP 200 logs=1 qty=4.00 worker=82729aba31ac53c981825072ffa00d39",
       "redProof": ""
     },
     {
@@ -455,7 +489,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 200 且含 base/cutting_height 键 / 或 4xx；不得 5xx == 实测 HTTP 200 keys=[\"granularity\",\"scanned\",\"order\",\"positions\"] positions[0]={\"order_item_id\":\"laitmmus5ouphwz\",\"position_kind\":\"布帘\",\"position_name\":\"线B验收派工行-P3 线B验收派工色-P3\",\"scanned\":true,\"product_name\":\"线A验收布\",\"width\":3,\"height\":2.5,\"craft\":\"线A验收工艺\",\"curtain_type\":\"布帘\",\"base\":2.5,\"cutting_height ｜ 期望来源: WorkerCuttingHeightService.read（只读；#5161「不写机器」）+ 类注释「缺值 ⇒ 显式缺失，不静默」 ｜ 期望: 200 且含 base/cutting_height 键 / 或 4xx；不得 5xx ｜ 实得: HTTP 200 keys=[\"granularity\",\"scanned\",\"order\",\"positions\"] positions[0]={\"order_item_id\":\"laitmmus5ouphwz\",\"position_kind\":\"布帘\",\"position_name\":\"线B验收派工行-P3 线B验收派工色-P3\",\"scanned\":true,\"product_name\":\"线A验收布\",\"width\":3,\"height\":2.5,\"craft\":\"线A验收工艺\",\"curtain_type\":\"布帘\",\"base\":2.5,\"cutting_height ｜ 夹具工序/报工数：ops=1 logs=1（只读面零副作用）",
+      "evidence": "期望 200 且含 base/cutting_height 键 / 或 4xx；不得 5xx == 实测 HTTP 200 keys=[\"granularity\",\"scanned\",\"order\",\"positions\"] positions[0]={\"order_item_id\":\"laitmmus5y5hwsz\",\"position_kind\":\"布帘\",\"position_name\":\"P9f-576588 本白\",\"scanned\":true,\"product_name\":\"线A验收布\",\"width\":3,\"height\":2.5,\"craft\":\"线A验收工艺\",\"curtain_type\":\"布帘\",\"base\":2.5,\"cutting_height\":2.5,\"r ｜ 期望来源: WorkerCuttingHeightService.read（只读；#5161「不写机器」）+ 类注释「缺值 ⇒ 显式缺失，不静默」 ｜ 期望: 200 且含 base/cutting_height 键 / 或 4xx；不得 5xx ｜ 实得: HTTP 200 keys=[\"granularity\",\"scanned\",\"order\",\"positions\"] positions[0]={\"order_item_id\":\"laitmmus5y5hwsz\",\"position_kind\":\"布帘\",\"position_name\":\"P9f-576588 本白\",\"scanned\":true,\"product_name\":\"线A验收布\",\"width\":3,\"height\":2.5,\"craft\":\"线A验收工艺\",\"curtain_type\":\"布帘\",\"base\":2.5,\"cutting_height\":2.5,\"r ｜ 夹具工序/报工数：ops=1 logs=1（只读面零副作用）",
       "redProof": ""
     },
     {
@@ -463,7 +497,7 @@
       "group": "P2 扫码闭环（A1 核心写路径）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 不得 5xx（设计：缺值 ⇒ 进 missing[]，不静默、不 500） == 实测 本夹具 product_id={\"product_id\":\"2a092de89cf55c56959cfa2d594dbec6\"}；端点 HTTP 200 ｜ 期望来源: WorkerCuttingHeightService.positionRow:149 `brands.get(item.getProductId())` + brands():276 `Map.of()` ⇒ NULL 建键 NPE ｜ 期望: 不得 5xx（设计：缺值 ⇒ 进 missing[]，不静默、不 500） ｜ 实得: 本夹具 product_id={\"product_id\":\"2a092de89cf55c56959cfa2d594dbec6\"}；端点 HTTP 200 ｜ 独立复现（自建夹具 + 单变量对照）见 P2b/N1~N5 与 out/P2b-cuttingheight-npe.json",
+      "evidence": "期望 不得 5xx（设计：缺值 ⇒ 进 missing[]，不静默、不 500） == 实测 本夹具 product_id={\"product_id\":\"2177bc3325e6bd021c6f3a1a6f875b03\"}；端点 HTTP 200 ｜ 期望来源: WorkerCuttingHeightService.positionRow:149 `brands.get(item.getProductId())` + brands():276 `Map.of()` ⇒ NULL 建键 NPE ｜ 期望: 不得 5xx（设计：缺值 ⇒ 进 missing[]，不静默、不 500） ｜ 实得: 本夹具 product_id={\"product_id\":\"2177bc3325e6bd021c6f3a1a6f875b03\"}；端点 HTTP 200 ｜ 独立复现（自建夹具 + 单变量对照）见 P2b/N1~N5 与 out/P2b-cuttingheight-npe.json",
       "redProof": ""
     },
     {
@@ -471,7 +505,7 @@
       "group": "P2b 裁高 NPE 复现 + 红证",
       "verdict": "fail",
       "falseRed": false,
-      "evidence": "期望 设计期望（源码类注释逐字）：缺值 ⇒ 该行进 missing[] + 页面显示「—」，**三条失败路径都显式、没有一条静默按 0**；即 200 或 4xx，不得 500 ≠ 实测 product_id=NULL ⇒ HTTP 500 / 前置同一码(HAS product_id)=HTTP 200 / body={\"granularity\":\"set_position\",\"scanned\":{\"order_item_id\":\"laitmmus5oyo0qj\",\"position_kind\":\"布帘\"},\"order\":{\"order_id\":\"laordmus5oyo0qj\",\"order_no\":\"LA-ORD-MUS5OY ｜ 期望来源: WorkerCuttingHeightService.positionRow 第 149 行 `brands.get(item.getProductId())`：`brands` 在该批产品零命中时返回 `Map.of()`（不可变）⇒ 以 NULL 建键 ⇒ `ImmutableCollections$MapN.get` NPE ｜ 期望: 设计期望（源码类注释逐字）：缺值 ⇒ 该行进 missing[] + 页面显示「—」，**三条失败路径都显式、没有一条静默按 0**；即 200 或 4xx，不得 500 ｜ 实得: product_id=NULL ⇒ HTTP 500 / 前置同一码(HAS product_id)=HTTP 200 / body={\"granularity\":\"set_position\",\"scanned\":{\"order_item_id\":\"laitmmus5oyo0qj\",\"position_kind\":\"布帘\"},\"order\":{\"order_id\":\"laordmus5oyo0qj\",\"order_no\":\"LA-ORD-MUS5OY ｜ 栈（/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-03/out/main-live-round3-api-envfix.log 第 6605~6610 行）: java.lang.NullPointerException at ImmutableCollections$MapN.get … WorkerCuttingHeightService.positionRow ｜ 夹具 order_items.id=laitmmus5oyo0qj product_id=NULL（本包自建行） ｜ 只读面零副作用自证：ops 前后=true logs=0→0",
+      "evidence": "期望 设计期望（源码类注释逐字）：缺值 ⇒ 该行进 missing[] + 页面显示「—」，**三条失败路径都显式、没有一条静默按 0**；即 200 或 4xx，不得 500 ≠ 实测 product_id=NULL ⇒ HTTP 500 / 前置同一码(HAS product_id)=HTTP 200 / body={\"granularity\":\"set_position\",\"scanned\":{\"order_item_id\":\"laitmmus5y93fod\",\"position_kind\":\"布帘\"},\"order\":{\"order_id\":\"laordmus5y93fod\",\"order_no\":\"LA-ORD-MUS5Y9 ｜ 期望来源: WorkerCuttingHeightService.positionRow 第 149 行 `brands.get(item.getProductId())`：`brands` 在该批产品零命中时返回 `Map.of()`（不可变）⇒ 以 NULL 建键 ⇒ `ImmutableCollections$MapN.get` NPE ｜ 期望: 设计期望（源码类注释逐字）：缺值 ⇒ 该行进 missing[] + 页面显示「—」，**三条失败路径都显式、没有一条静默按 0**；即 200 或 4xx，不得 500 ｜ 实得: product_id=NULL ⇒ HTTP 500 / 前置同一码(HAS product_id)=HTTP 200 / body={\"granularity\":\"set_position\",\"scanned\":{\"order_item_id\":\"laitmmus5y93fod\",\"position_kind\":\"布帘\"},\"order\":{\"order_id\":\"laordmus5y93fod\",\"order_no\":\"LA-ORD-MUS5Y9 ｜ 栈（/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-03/out/main-live-round3-api-envfix.log 第 6605~6610 行）: java.lang.NullPointerException at ImmutableCollections$MapN.get … WorkerCuttingHeightService.positionRow ｜ 夹具 order_items.id=laitmmus5y93fod product_id=NULL（本包自建行） ｜ 只读面零副作用自证：ops 前后=true logs=0→0",
       "redProof": ""
     },
     {
@@ -527,7 +561,7 @@
       "group": "P3 小程序入库写面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 200 + DB inbound_orders 行 status=draft + source=purchase + created_by=探针工人 id == 实测 HTTP 200 draftId=2d4404e455acbf5ff148fa176c47c8e3 row={\"id\":\"2d4404e455acbf5ff148fa176c47c8e3\",\"inbound_no\":\"RK-20261003-0010\",\"status\":\"draft\",\"source\":\"purchase\",\"created_by\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"total_amount\":\"93.7500\"} ｜ 期望来源: WorkerInboundService.createDraft → InboundOrderService.create（source 服务端固定 purchase；DTO 无 source 键） ｜ 期望: HTTP 200 + DB inbound_orders 行 status=draft + source=purchase + created_by=探针工人 id ｜ 实得: HTTP 200 draftId=2d4404e455acbf5ff148fa176c47c8e3 row={\"id\":\"2d4404e455acbf5ff148fa176c47c8e3\",\"inbound_no\":\"RK-20261003-0010\",\"status\":\"draft\",\"source\":\"purchase\",\"created_by\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"total_amount\":\"93.7500\"} ｜ resp={\"draftId\":\"2d4404e455acbf5ff148fa176c47c8e3\",\"inboundNo\":\"RK-20261003-0010\",\"status\":\"draft\",\"source\":\"purchase\",\"needsConfirmation\":true,\"items\":[{\"skuId\":2095281075309326300,\"skuCode\":\"POC-AB-001-01-SJ-28\",\"quantity\":7.5}]} ｜ req={\"productId\":\"9d0b9bb4086cdfd360c76db910894bc6\",\"skuId\":\"2095281075309326338\",\"quantity\":\"7.5\",\"unitCost\":\"12.5\",\"supplier\":\"线A验收供应商\",\"dyeLot\":\"la-LOT\"}",
+      "evidence": "期望 HTTP 200 + DB inbound_orders 行 status=draft + source=purchase + created_by=探针工人 id == 实测 HTTP 200 draftId=b93a6b9d590ca55cabba36cf57efe9c8 row={\"id\":\"b93a6b9d590ca55cabba36cf57efe9c8\",\"inbound_no\":\"RK-20261003-0014\",\"status\":\"draft\",\"source\":\"purchase\",\"created_by\":\"82729aba31ac53c981825072ffa00d39\",\"total_amount\":\"93.7500\"} ｜ 期望来源: WorkerInboundService.createDraft → InboundOrderService.create（source 服务端固定 purchase；DTO 无 source 键） ｜ 期望: HTTP 200 + DB inbound_orders 行 status=draft + source=purchase + created_by=探针工人 id ｜ 实得: HTTP 200 draftId=b93a6b9d590ca55cabba36cf57efe9c8 row={\"id\":\"b93a6b9d590ca55cabba36cf57efe9c8\",\"inbound_no\":\"RK-20261003-0014\",\"status\":\"draft\",\"source\":\"purchase\",\"created_by\":\"82729aba31ac53c981825072ffa00d39\",\"total_amount\":\"93.7500\"} ｜ resp={\"draftId\":\"b93a6b9d590ca55cabba36cf57efe9c8\",\"inboundNo\":\"RK-20261003-0014\",\"status\":\"draft\",\"source\":\"purchase\",\"needsConfirmation\":true,\"items\":[{\"skuId\":2095281075309326300,\"skuCode\":\"POC-AB-001-01-SJ-28\",\"quantity\":7.5}]} ｜ req={\"productId\":\"9d0b9bb4086cdfd360c76db910894bc6\",\"skuId\":\"2095281075309326338\",\"quantity\":\"7.5\",\"unitCost\":\"12.5\",\"supplier\":\"线A验收供应商\",\"dyeLot\":\"la-LOT\"}",
       "redProof": ""
     },
     {
@@ -535,7 +569,7 @@
       "group": "P3 小程序入库写面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 107.5 == 107.5 == 实测 before=107.5 after=107.5 ｜ 期望来源: WorkerInboundService.createDraft 类注释：「草稿态完全不动库存」（设计 §5.3 硬约束 1） ｜ 期望: 107.5 == 107.5 ｜ 实得: before=107.5 after=107.5",
+      "evidence": "期望 122.5 == 122.5 == 实测 before=122.5 after=122.5 ｜ 期望来源: WorkerInboundService.createDraft 类注释：「草稿态完全不动库存」（设计 §5.3 硬约束 1） ｜ 期望: 122.5 == 122.5 ｜ 实得: before=122.5 after=122.5",
       "redProof": ""
     },
     {
@@ -543,7 +577,7 @@
       "group": "P3 小程序入库写面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 200 + 同 draftId + 无第二张单 == 实测 HTTP 200 draftId=2d4404e455acbf5ff148fa176c47c8e3（首次 2d4404e455acbf5ff148fa176c47c8e3）行数=1 ｜ 期望来源: ClientRequestIdService（ENDPOINT_DRAFTS=worker/inbound/drafts）+ 同键回放 ｜ 期望: HTTP 200 + 同 draftId + 无第二张单 ｜ 实得: HTTP 200 draftId=2d4404e455acbf5ff148fa176c47c8e3（首次 2d4404e455acbf5ff148fa176c47c8e3）行数=1",
+      "evidence": "期望 HTTP 200 + 同 draftId + 无第二张单 == 实测 HTTP 200 draftId=b93a6b9d590ca55cabba36cf57efe9c8（首次 b93a6b9d590ca55cabba36cf57efe9c8）行数=1 ｜ 期望来源: ClientRequestIdService（ENDPOINT_DRAFTS=worker/inbound/drafts）+ 同键回放 ｜ 期望: HTTP 200 + 同 draftId + 无第二张单 ｜ 实得: HTTP 200 draftId=b93a6b9d590ca55cabba36cf57efe9c8（首次 b93a6b9d590ca55cabba36cf57efe9c8）行数=1",
       "redProof": ""
     },
     {
@@ -551,7 +585,7 @@
       "group": "P3 小程序入库写面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 409 + stock 不变 == 实测 HTTP 409 code=CONFLICT stock=107.5 ｜ 期望来源: WorkerInboundService.postDraft：req.confirmed != TRUE ⇒ conflict(409)（设计 §6.5 未确认不落库） ｜ 期望: HTTP 409 + stock 不变 ｜ 实得: HTTP 409 code=CONFLICT stock=107.5",
+      "evidence": "期望 HTTP 409 + stock 不变 == 实测 HTTP 409 code=CONFLICT stock=122.5 ｜ 期望来源: WorkerInboundService.postDraft：req.confirmed != TRUE ⇒ conflict(409)（设计 §6.5 未确认不落库） ｜ 期望: HTTP 409 + stock 不变 ｜ 实得: HTTP 409 code=CONFLICT stock=122.5",
       "redProof": ""
     },
     {
@@ -559,7 +593,7 @@
       "group": "P3 小程序入库写面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 stock 107.5 + 7.500 = 115.000；inbound_orders.status=posted == 实测 HTTP 200 stock=115.0 row={\"id\":\"2d4404e455acbf5ff148fa176c47c8e3\",\"status\":\"posted\",\"posted\":true,\"posted_by\":\"e65eb55ce5dbc6839f913f401244e3d8\"} ledger={\"id\":1438,\"delta\":\"7.5\",\"before_qty\":\"107.5\",\"after_qty\":\"115.0\",\"reason\":\"inbound\",\"ref_no\":\"RK-20261003-0010\",\"operator\":\"system\",\"cst\":\"2026-10-03 16:55:10.601338\"} ｜ 期望来源: InboundOrderService.post（过账才动库存）+ stock_ledger_entries 独立复读 ｜ 期望: stock 107.5 + 7.500 = 115.000；inbound_orders.status=posted ｜ 实得: HTTP 200 stock=115.0 row={\"id\":\"2d4404e455acbf5ff148fa176c47c8e3\",\"status\":\"posted\",\"posted\":true,\"posted_by\":\"e65eb55ce5dbc6839f913f401244e3d8\"} ledger={\"id\":1438,\"delta\":\"7.5\",\"before_qty\":\"107.5\",\"after_qty\":\"115.0\",\"reason\":\"inbound\",\"ref_no\":\"RK-20261003-0010\",\"operator\":\"system\",\"cst\":\"2026-10-03 16:55:10.601338\"} ｜ expectedStock=115.000 ｜ ledger delta=7.5 107.5→115.0 reason=inbound",
+      "evidence": "期望 stock 122.5 + 7.500 = 130.000；inbound_orders.status=posted == 实测 HTTP 200 stock=130.0 row={\"id\":\"b93a6b9d590ca55cabba36cf57efe9c8\",\"status\":\"posted\",\"posted\":true,\"posted_by\":\"82729aba31ac53c981825072ffa00d39\"} ledger={\"id\":1614,\"delta\":\"7.5\",\"before_qty\":\"122.5\",\"after_qty\":\"130.0\",\"reason\":\"inbound\",\"ref_no\":\"RK-20261003-0014\",\"operator\":\"system\",\"cst\":\"2026-10-03 17:02:19.979569\"} ｜ 期望来源: InboundOrderService.post（过账才动库存）+ stock_ledger_entries 独立复读 ｜ 期望: stock 122.5 + 7.500 = 130.000；inbound_orders.status=posted ｜ 实得: HTTP 200 stock=130.0 row={\"id\":\"b93a6b9d590ca55cabba36cf57efe9c8\",\"status\":\"posted\",\"posted\":true,\"posted_by\":\"82729aba31ac53c981825072ffa00d39\"} ledger={\"id\":1614,\"delta\":\"7.5\",\"before_qty\":\"122.5\",\"after_qty\":\"130.0\",\"reason\":\"inbound\",\"ref_no\":\"RK-20261003-0014\",\"operator\":\"system\",\"cst\":\"2026-10-03 17:02:19.979569\"} ｜ expectedStock=130.000 ｜ ledger delta=7.5 122.5→130.0 reason=inbound",
       "redProof": ""
     },
     {
@@ -567,7 +601,7 @@
       "group": "P3 小程序入库写面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 inbound_labels 1 行 + short_code 匹配 ^[0-9A-HJKMNP-TV-Z]{8}$ + print_count=0 == 实测 [{\"id\":\"b5c1a5c08c1c82b32bd4ef957893c41f\",\"short_code\":\"G3GWXD7Z\",\"print_count\":0,\"inbound_order_id\":\"2d4404e455acbf5ff148fa176c47c8e3\"}] ｜ 期望来源: WorkerInboundService.postDraft → InboundLabelService.ensureLabels（§7.1 缺码不画假码） ｜ 期望: inbound_labels 1 行 + short_code 匹配 ^[0-9A-HJKMNP-TV-Z]{8}$ + print_count=0 ｜ 实得: [{\"id\":\"b5c1a5c08c1c82b32bd4ef957893c41f\",\"short_code\":\"G3GWXD7Z\",\"print_count\":0,\"inbound_order_id\":\"2d4404e455acbf5ff148fa176c47c8e3\"}]",
+      "evidence": "期望 inbound_labels 1 行 + short_code 匹配 ^[0-9A-HJKMNP-TV-Z]{8}$ + print_count=0 == 实测 [{\"id\":\"e4c097b3fe5354e77f0c78357782a62d\",\"short_code\":\"WXF951S6\",\"print_count\":0,\"inbound_order_id\":\"b93a6b9d590ca55cabba36cf57efe9c8\"}] ｜ 期望来源: WorkerInboundService.postDraft → InboundLabelService.ensureLabels（§7.1 缺码不画假码） ｜ 期望: inbound_labels 1 行 + short_code 匹配 ^[0-9A-HJKMNP-TV-Z]{8}$ + print_count=0 ｜ 实得: [{\"id\":\"e4c097b3fe5354e77f0c78357782a62d\",\"short_code\":\"WXF951S6\",\"print_count\":0,\"inbound_order_id\":\"b93a6b9d590ca55cabba36cf57efe9c8\"}]",
       "redProof": ""
     },
     {
@@ -575,7 +609,7 @@
       "group": "P3 小程序入库写面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 stock 仍 115.000 == 实测 HTTP 200 stock=115.0 ｜ 期望来源: ClientRequestIdService（ENDPOINT_POST）+ 条件更新 CAS 双保险 ｜ 期望: stock 仍 115.000 ｜ 实得: HTTP 200 stock=115.0",
+      "evidence": "期望 stock 仍 130.000 == 实测 HTTP 200 stock=130.0 ｜ 期望来源: ClientRequestIdService（ENDPOINT_POST）+ 条件更新 CAS 双保险 ｜ 期望: stock 仍 130.000 ｜ 实得: HTTP 200 stock=130.0",
       "redProof": ""
     },
     {
@@ -583,16 +617,16 @@
       "group": "P3 小程序入库写面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 409 + stock 不变 == 实测 HTTP 409 code=CONFLICT stock=115.0 ｜ 期望来源: InboundOrderService.post 的条件更新（CAS）—— WorkerInboundService 类注释逐字「第二次会得到 409 而不是回放结果」 ｜ 期望: HTTP 409 + stock 不变 ｜ 实得: HTTP 409 code=CONFLICT stock=115.0",
+      "evidence": "期望 HTTP 409 + stock 不变 == 实测 HTTP 409 code=CONFLICT stock=130.0 ｜ 期望来源: InboundOrderService.post 的条件更新（CAS）—— WorkerInboundService 类注释逐字「第二次会得到 409 而不是回放结果」 ｜ 期望: HTTP 409 + stock 不变 ｜ 实得: HTTP 409 code=CONFLICT stock=130.0",
       "redProof": ""
     },
     {
       "id": "D13.qty-validation",
       "group": "P3 小程序入库写面",
-      "verdict": "fail",
-      "falseRed": true,
-      "evidence": "期望 both 422 VALIDATION_ERROR ≠ 实测 zero=400/VALIDATION_ERROR 1.23=400/VALIDATION_ERROR ｜ 期望来源: InboundOrderService.requireItemNumbers（>0 且最多 1 位小数，显式拒绝不静默取整）—— 期望「400」是第一版判据过窄（假红），已按实测收敛 ｜ 期望: both 422 VALIDATION_ERROR ｜ 实得: zero=400/VALIDATION_ERROR 1.23=400/VALIDATION_ERROR ｜ zero body={\"code\":\"VALIDATION_ERROR\",\"message\":\"商品明细第 1 项的数量必须大于 0 米（按米入库；库存按 0.1 米粒度记账，0.5 米的尾料可如实登记）\"} ｜ 1.23 body={\"code\":\"VALIDATION_ERROR\",\"message\":\"商品明细第 1 项的数量 最多支持 1 位小数（库存按 0.1 米粒度记账），当前值 1.23 有 2 位小数 —— 请改为 1 位小数后重试（服务端不做静默取整）\"}",
-      "redProof": "期望来源: InboundOrderService.requireItemNumbers（>0 且最多 1 位小数，显式拒绝不静默取整）—— 期望「400」是第一版判据过窄（假红），已按实测收敛"
+      "verdict": "pass",
+      "falseRed": false,
+      "evidence": "期望 both 4xx（**不锁死 400/422**：工人面 `asCarrierBadRequest` 把参数类拒绝改写成 400，Service 层原样是 422 —— 实测本包走工人面得 400） == 实测 zero=400/VALIDATION_ERROR 1.23=400/VALIDATION_ERROR ｜ 期望来源: InboundOrderService.requireItemNumbers（>0 且最多 1 位小数，显式拒绝不静默取整）；状态码口径：WorkerInboundService.asCarrierBadRequest（类注释逐字「参数类拒绝从 422 改写成 400」） ｜ 期望: both 4xx（**不锁死 400/422**：工人面 `asCarrierBadRequest` 把参数类拒绝改写成 400，Service 层原样是 422 —— 实测本包走工人面得 400） ｜ 实得: zero=400/VALIDATION_ERROR 1.23=400/VALIDATION_ERROR ｜ zero body={\"code\":\"VALIDATION_ERROR\",\"message\":\"商品明细第 1 项的数量必须大于 0 米（按米入库；库存按 0.1 米粒度记账，0.5 米的尾料可如实登记）\"} ｜ 1.23 body={\"code\":\"VALIDATION_ERROR\",\"message\":\"商品明细第 1 项的数量 最多支持 1 位小数（库存按 0.1 米粒度记账），当前值 1.23 有 2 位小数 —— 请改为 1 位小数后重试（服务端不做静默取整）\"}",
+      "redProof": ""
     },
     {
       "id": "D14.sku-not-exist",
@@ -615,7 +649,7 @@
       "group": "P3 小程序入库写面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 HTTP 404 == 实测 B 建单=200/a4b3dfcb81ab9c2e6b66e62ebe9eeab8 A 过账=404/NOT_FOUND ｜ 期望来源: WorkerInboundService.requireOwnDraft：created_by != operator ⇒ notFound(404)（设计 §5.2 逐字） ｜ 期望: HTTP 404 ｜ 实得: B 建单=200/a4b3dfcb81ab9c2e6b66e62ebe9eeab8 A 过账=404/NOT_FOUND",
+      "evidence": "期望 HTTP 404 == 实测 B 建单=200/68949e41c10ff8dfcb1b8cd659d197b4 A 过账=404/NOT_FOUND ｜ 期望来源: WorkerInboundService.requireOwnDraft：created_by != operator ⇒ notFound(404)（设计 §5.2 逐字） ｜ 期望: HTTP 404 ｜ 实得: B 建单=200/68949e41c10ff8dfcb1b8cd659d197b4 A 过账=404/NOT_FOUND",
       "redProof": ""
     },
     {
@@ -631,7 +665,7 @@
       "group": "P3 小程序入库写面",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 DB print_count=2 == 实测 print1=200 print2=200 row={\"short_code\":\"G3GWXD7Z\",\"print_count\":2} ｜ 期望来源: InboundLabelService.recordPrint（COALESCE(print_count,0)+1 原子自增；重打同样计数） ｜ 期望: DB print_count=2 ｜ 实得: print1=200 print2=200 row={\"short_code\":\"G3GWXD7Z\",\"print_count\":2}",
+      "evidence": "期望 DB print_count=2 == 实测 print1=200 print2=200 row={\"short_code\":\"WXF951S6\",\"print_count\":2} ｜ 期望来源: InboundLabelService.recordPrint（COALESCE(print_count,0)+1 原子自增；重打同样计数） ｜ 期望: DB print_count=2 ｜ 实得: print1=200 print2=200 row={\"short_code\":\"WXF951S6\",\"print_count\":2}",
       "redProof": ""
     },
     {
@@ -703,7 +737,7 @@
       "group": "P4 小程序其余写面 + C 端上传",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 pack=200 且订单**离开起始态**（confirmed→{packed,producing}）+ order_shipments 行 source=worker 且记录打包人；ship=4xx（探针单无实发明细） == 实测 pack=200 ship=422/VALIDATION_ERROR unpack=200 终态 orders.status=producing shipments=[{\"id\":\"d4d8fddbabd42a5ae63caa7062c11a39\",\"source\":\"worker\",\"packed\":false,\"shipped\":false,\"packed_by_worker_id\":null}] ｜ 期望来源: OrderShipmentService.doPack（OrderStatusTransitions.assertTransitionAllowed(current,\"packed\")）+ WorkerShipmentController.unpack 注释「packed → producing」 ｜ 期望: pack=200 且订单**离开起始态**（confirmed→{packed,producing}）+ order_shipments 行 source=worker 且记录打包人；ship=4xx（探针单无实发明细） ｜ 实得: pack=200 ship=422/VALIDATION_ERROR unpack=200 终态 orders.status=producing shipments=[{\"id\":\"d4d8fddbabd42a5ae63caa7062c11a39\",\"source\":\"worker\",\"packed\":false,\"shipped\":false,\"packed_by_worker_id\":null}] ｜ 🔴 判据修正留档（两次）：① 第一版写「三个端点全 4xx」= 假红（判据是**订单**状态，confirmed 是合法起点）；② 第二版要求 `packed_at IS NOT NULL` 也过严 —— `unpack` 把 `packed → producing` 时会**清掉**打包标记，故终态读 `packed=false` 属正常（改为断言 source=worker + 打包人列存在）。 ｜ 夹具订单状态轨迹：confirmed --pack--> producing（unpack 把 packed 退回 producing）⇒ 与源码声明的迁移一致",
+      "evidence": "期望 pack=200 且订单**离开起始态**（confirmed→{packed,producing}）+ order_shipments 行 source=worker 且记录打包人；ship=4xx（探针单无实发明细） == 实测 pack=200 ship=422/VALIDATION_ERROR unpack=200 终态 orders.status=producing shipments=[{\"id\":\"00067cbd46a36c916fdbc5834a65c426\",\"source\":\"worker\",\"packed\":false,\"shipped\":false,\"packed_by_worker_id\":null}] ｜ 期望来源: OrderShipmentService.doPack（OrderStatusTransitions.assertTransitionAllowed(current,\"packed\")）+ WorkerShipmentController.unpack 注释「packed → producing」 ｜ 期望: pack=200 且订单**离开起始态**（confirmed→{packed,producing}）+ order_shipments 行 source=worker 且记录打包人；ship=4xx（探针单无实发明细） ｜ 实得: pack=200 ship=422/VALIDATION_ERROR unpack=200 终态 orders.status=producing shipments=[{\"id\":\"00067cbd46a36c916fdbc5834a65c426\",\"source\":\"worker\",\"packed\":false,\"shipped\":false,\"packed_by_worker_id\":null}] ｜ 🔴 判据修正留档（两次）：① 第一版写「三个端点全 4xx」= 假红（判据是**订单**状态，confirmed 是合法起点）；② 第二版要求 `packed_at IS NOT NULL` 也过严 —— `unpack` 把 `packed → producing` 时会**清掉**打包标记，故终态读 `packed=false` 属正常（改为断言 source=worker + 打包人列存在）。 ｜ 夹具订单状态轨迹：confirmed --pack--> producing（unpack 把 packed 退回 producing）⇒ 与源码声明的迁移一致",
       "redProof": "🔴 判据修正留档（两次）：① 第一版写「三个端点全 4xx」= 假红（判据是**订单**状态，confirmed 是合法起点）；② 第二版要求 `packed_at IS NOT NULL` 也过严 —— `unpack` 把 `packed → producing` 时会**清掉**打包标记，故终态读 `packed=false` 属正常（改为断言 source=worker + 打包人列存在）。"
     },
     {
@@ -807,7 +841,7 @@
       "group": "P4 小程序其余写面 + C 端上传",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 状态 ∈ {200, 5xx-存储类} 且 **不是** INVALID_FILE_TYPE/FILE_TOO_LARGE 这类校验拒绝 == 实测 HTTP 200 body={\"success\":true,\"data\":{\"files\":[{\"id\":\"93f174fdf07940909328842817cd287a\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/chat/20/2026/10/03/9cb5f6796e174fa198d98a3552b0cf33. ｜ 期望来源: app/api/upload.py：校验顺序 = 张数 → MIME/扩展名 → 读字节大小 → magic number → 代理 admin-api ｜ 期望: 状态 ∈ {200, 5xx-存储类} 且 **不是** INVALID_FILE_TYPE/FILE_TOO_LARGE 这类校验拒绝 ｜ 实得: HTTP 200 body={\"success\":true,\"data\":{\"files\":[{\"id\":\"93f174fdf07940909328842817cd287a\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/chat/20/2026/10/03/9cb5f6796e174fa198d98a3552b0cf33.",
+      "evidence": "期望 状态 ∈ {200, 5xx-存储类} 且 **不是** INVALID_FILE_TYPE/FILE_TOO_LARGE 这类校验拒绝 == 实测 HTTP 200 body={\"success\":true,\"data\":{\"files\":[{\"id\":\"cfc7284e404d4c21af06086ccf08ba42\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/chat/20/2026/10/03/5dff358bc95544f59d5f11f5ea371af8. ｜ 期望来源: app/api/upload.py：校验顺序 = 张数 → MIME/扩展名 → 读字节大小 → magic number → 代理 admin-api ｜ 期望: 状态 ∈ {200, 5xx-存储类} 且 **不是** INVALID_FILE_TYPE/FILE_TOO_LARGE 这类校验拒绝 ｜ 实得: HTTP 200 body={\"success\":true,\"data\":{\"files\":[{\"id\":\"cfc7284e404d4c21af06086ccf08ba42\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/chat/20/2026/10/03/5dff358bc95544f59d5f11f5ea371af8.",
       "redProof": ""
     },
     {
@@ -839,7 +873,7 @@
       "group": "P5 UI 级（真机驱动）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 #wh5-current-worker 含「线A验收工人671879」 == 实测 header=\"当前工人：线A验收工人671879（工号 LAA71879）\" err=\"工号或 PIN 不正确\" 登录响应=[[\"/api/worker/login\",200,null]] ｜ 期望来源: WorkerProfileController/current-worker（服务端解身份）+ render.mjs 页头渲染 ｜ 期望: #wh5-current-worker 含「线A验收工人671879」 ｜ 实得: header=\"当前工人：线A验收工人671879（工号 LAA71879）\" err=\"工号或 PIN 不正确\" 登录响应=[[\"/api/worker/login\",200,null]] ｜ 截图 out/shots/U3-logged-in.png",
+      "evidence": "期望 #wh5-current-worker 含「线A验收工人246619」 == 实测 header=\"当前工人：线A验收工人246619（工号 LAA46619）\" err=\"工号或 PIN 不正确\" 登录响应=[[\"/api/worker/login\",200,null]] ｜ 期望来源: WorkerProfileController/current-worker（服务端解身份）+ render.mjs 页头渲染 ｜ 期望: #wh5-current-worker 含「线A验收工人246619」 ｜ 实得: header=\"当前工人：线A验收工人246619（工号 LAA46619）\" err=\"工号或 PIN 不正确\" 登录响应=[[\"/api/worker/login\",200,null]] ｜ 截图 out/shots/U3-logged-in.png",
       "redProof": ""
     },
     {
@@ -871,7 +905,7 @@
       "group": "P5 UI 级（真机驱动）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 网络面 1 次 scan/complete 且 status=200；work_logs 0→1；工序 done_qty 0→2.00 == 实测 net=[[\"/api/worker/production/scan/complete\",200]] logs=0→1 done_qty=2.00 ｜ 期望来源: worker-h5 app.mjs::completeByScan（唯一写入口）+ ProductionScanCompleteService（服务端记账） ｜ 期望: 网络面 1 次 scan/complete 且 status=200；work_logs 0→1；工序 done_qty 0→2.00 ｜ 实得: net=[[\"/api/worker/production/scan/complete\",200]] logs=0→1 done_qty=2.00 ｜ 截图 out/shots/U5-after-report.png ｜ 点击异常=无 ｜ 页面文本片段= 工人报工 当前工人：线A验收工人671879（工号 LAA71879） 切换 登出 拍照入库 补打入库标签 机台模式 第 LA-JG-MUS5PJ6LQR-001 套 · 线B验收派工行-P3 线B验收派工色-P3 本套工序都已被领走 🎉 第 LA-JG-MUS5PJ6LQR-001 套 · 本套工序 线B验收派工行-P3 线B验收派工色-P3 外帘发货（同序） 应做 2.00 套 1.00 元/套 待领 已报 0.00 套 精裁输",
+      "evidence": "期望 网络面 1 次 scan/complete 且 status=200；work_logs 0→1；工序 done_qty 0→2.00 == 实测 net=[[\"/api/worker/production/scan/complete\",200]] logs=0→1 done_qty=2.00 ｜ 期望来源: worker-h5 app.mjs::completeByScan（唯一写入口）+ ProductionScanCompleteService（服务端记账） ｜ 期望: 网络面 1 次 scan/complete 且 status=200；work_logs 0→1；工序 done_qty 0→2.00 ｜ 实得: net=[[\"/api/worker/production/scan/complete\",200]] logs=0→1 done_qty=2.00 ｜ 截图 out/shots/U5-after-report.png ｜ 点击异常=无 ｜ 页面文本片段= 工人报工 当前工人：线A验收工人246619（工号 LAA46619） 切换 登出 拍照入库 补打入库标签 机台模式 第 LA-JG-MUS60X0SSR-001 套 · P9f-576588 本白 本套工序都已被领走 🎉 第 LA-JG-MUS60X0SSR-001 套 · 本套工序 P9f-576588 本白 外帘发货 应做 2.00 套 1.00 元/套 待领 已报 0.00 套 精裁输出（裁多长 × 几片） 裁 — P9f-",
       "redProof": ""
     },
     {
@@ -887,40 +921,19 @@
       "group": "P5 UI 级（真机驱动）",
       "verdict": "pass",
       "falseRed": false,
-      "evidence": "期望 网络面 GET /api/worker/production/cutting-height ⇒ 500；页面**显式报错**（不是假装成功/空值静默） == 实测 cutting-height 请求=[[\"/api/worker/production/cutting-height\",500]]；页面文本= 机台模式 · 裁高 机台模式 · 裁高 线A验收工人671879 服务器内部错误 请重新扫一次水洗唛（或手工输入短码）  ｜ 期望来源: machine-app.mjs::onScan → api.readCuttingHeight（WorkerCuttingHeightService.positionRow:149 NPE ⇒ 500） ｜ 期望: 网络面 GET /api/worker/production/cutting-height ⇒ 500；页面**显式报错**（不是假装成功/空值静默） ｜ 实得: cutting-height 请求=[[\"/api/worker/production/cutting-height\",500]]；页面文本= 机台模式 · 裁高 机台模式 · 裁高 线A验收工人671879 服务器内部错误 请重新扫一次水洗唛（或手工输入短码）  ｜ 截图 out/shots/U7-machine-null-product.png ｜ 与 API 层复现（P2b/N1、P2/C23）互为**两侧证据**：接口 500 + 车间屏可见失败",
+      "evidence": "期望 网络面 GET /api/worker/production/cutting-height ⇒ 500；页面**显式报错**（不是假装成功/空值静默） == 实测 cutting-height 请求=[[\"/api/worker/production/cutting-height\",500]]；页面文本= 机台模式 · 裁高 机台模式 · 裁高 线A验收工人246619 服务器内部错误 请重新扫一次水洗唛（或手工输入短码）  ｜ 期望来源: machine-app.mjs::onScan → api.readCuttingHeight（WorkerCuttingHeightService.positionRow:149 NPE ⇒ 500） ｜ 期望: 网络面 GET /api/worker/production/cutting-height ⇒ 500；页面**显式报错**（不是假装成功/空值静默） ｜ 实得: cutting-height 请求=[[\"/api/worker/production/cutting-height\",500]]；页面文本= 机台模式 · 裁高 机台模式 · 裁高 线A验收工人246619 服务器内部错误 请重新扫一次水洗唛（或手工输入短码）  ｜ 截图 out/shots/U7-machine-null-product.png ｜ 与 API 层复现（P2b/N1、P2/C23）互为**两侧证据**：接口 500 + 车间屏可见失败",
       "redProof": ""
+    },
+    {
+      "id": "U6.redproof",
+      "group": "P5 UI 级（真机驱动）",
+      "verdict": "fail",
+      "falseRed": true,
+      "evidence": "期望 codeBefore == lamus60x0ssrffffffffffffffffffff-BROKEN（**故意错的期望**） ≠ 实测 codeBefore=\"\" ｜ 期望来源: 红证夹具：期望值故意改坏；若这里 pass ⇒ U4 的判据没在真读 DOM（空断言） ｜ 期望: codeBefore == lamus60x0ssrffffffffffffffffffff-BROKEN（**故意错的期望**） ｜ 实得: codeBefore=\"\" ｜ 本条按设计**必须 fail**（fail 桶中的失效控制项，不计产品缺陷）",
+      "redProof": "期望来源: 红证夹具：期望值故意改坏；若这里 pass ⇒ U4 的判据没在真读 DOM（空断言）"
     }
   ],
-  "segments": {
-    "p0-env": {
-      "status": "ok",
-      "tail": "2026-10-03 16:54:25 +08 GET /api/worker/me: HTTP 200 body={\"worker_id\":\"c6c85752c0446327007de4583f3854d7\",\"worker_name\":\"线A验收工人664208\",\"session_id\":\"7deaa1828ead4d7c94bfdcb81b15ddb7\",\"identity_source\":\"server_session\",\"pages\":[\"report\",\"order\",\"cut_calc\",\"shipment\"]} | 2026-10-03 16:54:31 +08 P0 完成：时钟差 0.1s；残留(起始)={\"probeUsers\":1,\"probeSessions\":1,\"probeOrders\":0,\"probeProcessingOrders\":0,\"probeSe"
-    },
-    "p1-auth": {
-      "status": "ok",
-      "tail": "2026-10-03 16:54:36 +08 收尾重登 B: session=9de50dc7… | 2026-10-03 16:54:36 +08 P1 汇总: {\"pass\":16,\"fail\":0,\"skip\":0,\"total\":16}"
-    },
-    "p2-scan": {
-      "status": "ok",
-      "tail": "2026-10-03 16:54:55 +08 [PASS] [C23b.cutting-height-null-product] 🔴 cutting-height：本夹具订单行 product_id 为 NULL 时的读数（真缺陷复现见 P2b） — 期望 不得 5xx（设计：缺值 ⇒ 进 missing[]，不静默、不 500） == 实测 本夹具 product_id={\"product_id\":\"2a092de89cf55c56959cfa2d594dbec6\"}；端点 HTTP 200 | 2026-10-03 16:54:55 +08 P2 汇总: {\"pass\":24,\"fail\":0,\"skip\":1,\"total\":25}"
-    },
-    "p2b-cuttingheight-npe": {
-      "status": "ok",
-      "tail": "2026-10-03 16:55:04 +08 [PASS] [N5.brands-null-key] 单变量三步对照（有/无 product_id/还原）⇒ 归因：`brands.get(item.getProductId())` 以 NULL 建键 — 期望 有 product_id ⇒ 200；置 NULL ⇒ 500；还原 ⇒ 200 == 实测 有=200 → 置NULL=500 → 还原=200（该商品 brand 属性行数=0） | 2026-10-03 16:55:04 +08 P2b 汇总: {\"pass\":4,\"fail\":1,\"skip\":0,\"total\":5}"
-    },
-    "p3-inbound": {
-      "status": "ok",
-      "tail": "2026-10-03 16:55:14 +08 [SKIP] [D21.cross-tenant-label] 跨租户标签读面（租户21 短码） — 租户 21 无标签短码夹具 ⇒ 未覆盖（不冒充已验） | 2026-10-03 16:55:14 +08 P3 汇总: {\"pass\":17,\"fail\":1,\"skip\":1,\"total\":19}"
-    },
-    "p4-ship-upload": {
-      "status": "ok",
-      "tail": "2026-10-03 16:55:19 +08 [PASS] [E19.upload-doc-path-mismatch] 观察项（非产品缺陷）：源码 docstring 写 `POST /upload-image`，实际挂载为 `/api/chat/upload-image` ⇒ 文档路径 404 — 期望 登记即可：实际路由 = openapi 的 /api/chat/upload-image（唯一真值） == 实测 GET/POST /upload-image = 404；openapi paths 含 /api/chat/upload-image | 2026-10-03 16:55:19 +08 P4 汇总: {\"pass\":20,\"fail\":0,\"skip\":0,\"total\":20}"
-    },
-    "p5-ui": {
-      "status": "exit 1",
-      "tail": " | Node.js v24.19.0"
-    }
-  },
+  "segments": {},
   "note": [
     "fail 桶里的 U6 是**故意的失效控制项**（红证），不计产品缺陷；真缺陷见 REPORT §发现。",
     "本包不下「验收通过」结论（铁律 2）：只产读数 + 判定 + 证据。"
