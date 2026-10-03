@@ -98,7 +98,73 @@
       "names": [
         "1/2",
         "2/2"
-      ]
+      ],
+      "ci_readings": {
+        "issue": "#6164",
+        "what": "这条腿的**关键路径**（= 两片里较慢那片的 `Run ci workflow helper tests` step 秒数）的现取口径与读数。",
+        "recompute": "gh run list --workflow pr-check.yml --limit 25 --json databaseId --jq '.[].databaseId' | while read id; do gh api \"repos/{owner}/{repo}/actions/runs/$id/jobs?per_page=100\" --jq '.jobs[]|select(.name|test(\"ci workflow helper\"))|\"\\(.name)\\t\\((((.completed_at|fromdate)-(.started_at|fromdate))|tostring))s\"'; done",
+        "how_to_read": [
+          "按**片名**分列；一轮 = 同一个 run 的两条腿。",
+          "🔴 **分档**：让出档（`dev_only` 生效、narrow）的两片都在 190~270s ⇒ 与全量档**不可混算**；判别法 = 该轮是否出现过 `--run-narrow`（或两片同时明显偏低）。",
+          "关键路径取**两条腿的 max**（不是平均）：PR 反馈等的是最慢的那条。",
+          "⚠️ **单轮不足以定论**：同一片两轮之间实测差过 40%（runner/负载噪声）⇒ 至少看 5 轮取中位。"
+        ],
+        "baseline_before_split": {
+          "job_median_seconds": 514,
+          "step_median_seconds": 500,
+          "sample": "60 个已完成的 pull_request run"
+        },
+        "after_split_before_balance": {
+          "rounds": 9,
+          "full_tier_step_max_range": [
+            306,
+            346
+          ],
+          "full_tier_step_max_median": 324,
+          "narrow_tier_step_max_range": [
+            191,
+            271
+          ],
+          "note": "片 1 恒比片 2 慢（gap 33~110s）—— 重判据堆在片 1（旧盐 74）。"
+        },
+        "after_balance": {
+          "salt": 130,
+          "rounds": 3,
+          "full_tier_step_max_range": [
+            299,
+            318
+          ],
+          "full_tier_step_max_median": 316,
+          "readings": [
+            {
+              "run": "37106767471",
+              "at": "2026-10-03T07:33Z",
+              "steps": {
+                "1/2": 313,
+                "2/2": 318
+              }
+            },
+            {
+              "run": "37106878725",
+              "at": "2026-10-03T07:35Z",
+              "steps": {
+                "1/2": 233,
+                "2/2": 316
+              }
+            },
+            {
+              "run": "37106993989",
+              "at": "2026-10-03T07:38Z",
+              "steps": {
+                "1/2": 286,
+                "2/2": 299
+              }
+            }
+          ],
+          "verdict": "关键路径 **~500s（拆腿前）→ 316s（换盐后中位，N=3）≈ −37%**；换盐把「片 1 恒慢」的系统偏差消掉了（一轮 gap 110s → 5s），但**绝对数**的改进受总时长波动支配（同一份工作两轮差 40%）⇒ N=3 只作指示，**继续按 recompute 命令累加**。",
+          "target_250s": "两片**到不了** 250s：以现取总 step（528~635s）算，两片下界 = 总量/2 ≈ 264~318s。要到 ~250s 需要**第 3 片**（总量/3 + 固定开销 ≈ 215~250s）⇒ 代价 = 第 3 条 required context + 在飞 PR 需再推一次。**2026-10-03 用户裁定：停在两片**，目标收口为「两片 + 已平衡」。"
+        }
+      }
     }
   },
   "frozen_inventory": {
