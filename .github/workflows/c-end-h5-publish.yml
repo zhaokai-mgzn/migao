@@ -46,8 +46,16 @@ on:
         type: boolean
         default: false
 
+# 🔴 为什么需要 `contents: write`（issue #6095 第三层）：CI 构建出来的 `frontend/mini-app/dist/`
+#   **不在 git 里**（`git ls-tree -r origin/main --name-only frontend/mini-app/dist` = 0 个文件，
+#   `.gitignore` 里有 `dist/`）⇒ 而远端那条通道只认 git（按不可变 sha 从 codeload 取 tarball）
+#   ⇒ 「CI 构建的产物」与「远端能取到的东西」之间**没有通路**（run 37078030820 的
+#   `❌ 发布源里没有 index.html` 正是这个形态）。本腿现在把产物推成一个**孤儿单提交**（无父提交
+#   ⇒ 不胀历史）到专用分支 `h5-dist`，远端按**该提交的 sha** 取回 ⇒ 仍是不可变 sha、仍是单一源。
+#   ⚠️ 该推送**不会触发任何其它 workflow**：现取全部带 `push` 的 workflow，`on.push.branches`
+#   一律是 `['main']`（由 `tests/unit_ci_workflows/test_c_end_h5_hosting.py` 从真 YAML 现取钉住）。
 permissions:
-  contents: read
+  contents: write
 
 # 与 deploy-* 同口径：不取消进行中的发布（两个并发发布会让「谁最后落地」不可判定）
 concurrency:
@@ -120,6 +128,32 @@ jobs:
           TARO_APP_AI_API_URL: https://app.migaozn.com
         run: npm run build:h5
 
+      # 🔴 **把 CI 构建的那份 dist 变成远端能取到的东西**（issue #6095 第三层）：
+      # `build:h5` 的产物 `frontend/mini-app/dist/**` 是**构建产物、不在 git 里**，而远端唯一的
+      # 取回通道是「按不可变 sha 从 codeload 取 tarball」⇒ 在此之前远端**必然**
+      # `❌ 发布源里没有 index.html`（run 37078030820）。本步造一个**孤儿单提交**（`git commit-tree`
+      # 不给 `-p` ⇒ 无父 ⇒ 不胀历史）force-push 到专用分支 `h5-dist`，并把**该提交的 sha**
+      # （= 不可变引用）经 step output 交给发布步 ⇒ 远端取回的 tarball 里就有
+      # `frontend/mini-app/dist/index.html`。
+      # ⚠️ 脚本用**临时 index**（`GIT_INDEX_FILE`）+ `git add -f`（`dist/` 在 `.gitignore` 里）
+      #    ⇒ 不碰工作区 / 不碰主索引 / 不动 `HEAD`；commit message 带 `[skip ci]`。
+      # ⚠️ 本步与「写盘」**同档**（都只在 publish 模式跑）⇒ 对账 / push 触发下不会推分支出门。
+      - name: Prepare dist ref (孤儿单提交 → h5-dist；发布腿按不可变 sha 取回)
+        id: dist
+        if: steps.mode.outputs.mode == 'publish'
+        env:
+          H5_DIST_DIR: frontend/mini-app/dist
+        run: |
+          set -o pipefail
+          bash deploy/scripts/c-end-h5-dist-push.sh | tee /tmp/h5-dist-push.log
+          SHA=$(sed -n 's/^H5_DIST_SHA=//p' /tmp/h5-dist-push.log | head -1)
+          case "$SHA" in
+            *[!0-9a-f]*) echo "::error::dist 推送步给出的 sha 不是十六进制：'$SHA'"; exit 1 ;;
+          esac
+          [ "${#SHA}" -eq 40 ] || { echo "::error::dist 推送步没有给出 40 位 sha（实际 '${SHA}'）—— 发布腿按它会取不到产物"; exit 1; }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "✅ dist 已推到 h5-dist：$SHA（**不可变 sha**；发布腿按它取回，不是按分支名）"
+
       - name: Install Aliyun CLI
         if: steps.mode.outputs.mode == 'publish'
         run: |
@@ -137,9 +171,14 @@ jobs:
         env:
           AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          # 🔴 第 5 个参数 = **产物 ref**（`h5-dist` 上那个孤儿单提交的 sha，来自上一步的 step output）
+          #    —— **不是** `$GITHUB_SHA`（源码 commit 所指向的 tarball 里**没有** `dist/`，
+          #    那正是 run 37078030820 的失败形态）。这条替换是第三层修复的接线点。
+          #    格式断言在本地脚本里（必须 40 位十六进制 ⇒ 分支 / 标签 / `refs/heads/*` 过不去）。
+          H5_PUBLISHED_COMMIT: ${{ github.sha }}
         run: |
           bash deploy/scripts/c-end-h5-publish-ci.sh \
-            "${{ env.SWAS_INSTANCE_ID }}" "${{ env.SWAS_REGION }}" "$AK" "$SK" "$GITHUB_SHA"
+            "${{ env.SWAS_INSTANCE_ID }}" "${{ env.SWAS_REGION }}" "$AK" "$SK" "${{ steps.dist.outputs.sha }}"
 
       # 落地面断言（**不是**「/ 返回 200 就算过」—— 修复前 `/` 一直是 200 的旧产物）
       - name: Assert served identity (线上 = 本次构建；不串端；/w/ 与 /b/ 仍在且未被覆盖)

@@ -53,6 +53,8 @@ REPO=${H5_REPO:-zhaokai-mgzn/migao}
 SRC_SUBPATH=${H5_SRC_SUBPATH:-frontend/mini-app}
 SHA=${H5_PUBLISH_SHA:-}
 FROM_DIR=${H5_PUBLISH_FROM_DIR:-}
+# 产出这份 dist 的**源码 commit**（只写进托管清单，不参与取回 —— 取回用的是 `SHA`）。
+PUBLISHED_COMMIT=${H5_PUBLISHED_COMMIT:-}
 MANIFEST=${H5_MANIFEST-.migao-c-end-h5-manifest.json}
 # 保留前缀（**本腿不许碰的子树**）：工人端 `w/`（#4837，线上有工人在用）与商家端 `b/`（#5668）
 RESERVED_PREFIXES=${H5_RESERVED_PREFIXES:-"w b"}
@@ -297,15 +299,19 @@ apply_publish() {
 
 write_manifest() {
   local mf; mf="$(manifest_path)"
-  python3 - "$mf" "$NEW" "$SHA" "$(file_sha256 "$TARGET/index.html")" <<'PY'
+  # `H5_PUBLISHED_COMMIT`（可空）= 产出这份 dist 的**源码 commit**（CI 侧透传；codeload tarball 里
+  # 没有 `dist/` ⇒ 远端推不出来）。留空时写空串 —— 不是「拿取回 ref 冒充源码 commit」（#6095 第三层
+  # 之后取回 ref 是 dist 的孤儿提交，与源码 commit 不是一回事）。
+  python3 - "$mf" "$NEW" "$SHA" "$(file_sha256 "$TARGET/index.html")" "$PUBLISHED_COMMIT" <<'PY'
 import datetime, json, os, sys
-mf, new, sha, published = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+mf, new, sha, published, published_commit = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 data = {
     "_what": "C 端小布 H5（frontend/mini-app 的 build:h5 产物）在 app.migaozn.com 静态根上的**托管物台账**（issue #4184）。",
     "_why": "发布腿的删除范围 = 本文件的 managed_top_level ∩ 磁盘现值。没有它就没有删除动作（首次发布走 --takeover-first-publish）。",
     "_owner": "deploy/swas/c-end-h5-publish-remote.sh（唯一写者）",
     "managed_top_level": new.split(),
-    "published_commit": sha or "",
+    "published_commit": published_commit or sha or "",
+    "published_dist_ref": sha or "",
     "published_index_sha256": published,
     "written_at_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }

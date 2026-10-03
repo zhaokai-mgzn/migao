@@ -352,6 +352,19 @@ def _obs(**over) -> dict:
     return base
 
 
+def _real_exempt() -> list:
+    """现取登记表里**真实的**豁免面（夹具不许假设它是空的）。
+
+    ⚠️ 为什么（实测教训）：本文件的两条 exempt 夹具原先写死 `data["exempt"] = [<stale 夹具>]`
+    —— 一旦登记表里出现**任何**真实豁免（本单 #6109：`c-end-h5-publish.yml` 因为 #6095 第三层
+    新增了 `permissions: contents: write`，被「无人值守触发面 × 写作用域」规则识别，而它的
+    schedule 档**只报告不写盘** ⇒ 走了豁免出口），写死的数组就把它从 `exempt` 里挤掉 ⇒
+    `exempt-stale: c-end-h5-publish.yml` 判红 —— **夹具污染真语料**，而失败信息指向的是
+    一个完全正当的条目。夹具只该**追加**它自己的条目，不该整体覆盖。
+    """
+    return [dict(e) for e in _registry_data().get("exempt") or []]
+
+
 def _single(reg_entry: dict) -> dict:
     return {"mechanisms": [reg_entry], "exempt": []}
 
@@ -569,7 +582,9 @@ def test_exempt_entries_must_carry_reason_and_issue(tmp_path):
     path = repo / "scripts" / "mechanism-registry.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     data["mechanisms"] = [e for e in data["mechanisms"] if e["id"] != "stale"]
-    data["exempt"] = [{"workflow": ".github/workflows/stale.yml", "reason": "短", "issue": "nope"}]
+    data["exempt"] = _real_exempt() + [
+        {"workflow": ".github/workflows/stale.yml", "reason": "短", "issue": "nope"}
+    ]
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     keys = {f.key for f in ML.check_registration(repo, ML.load_registry(repo))[0].findings}
@@ -579,9 +594,11 @@ def test_exempt_entries_must_carry_reason_and_issue(tmp_path):
     )
 
     # **负控**：补上理由 + 单号后，同一个豁免条目必须**放行**（否则「登记」这条出口是假的）
-    data["exempt"] = [{"workflow": ".github/workflows/stale.yml",
-                       "reason": "夹具：验证豁免面是合法出口（真实场景下每个豁免都必须有理由 + 单号）",
-                       "issue": "#5326"}]
+    data["exempt"] = _real_exempt() + [{
+        "workflow": ".github/workflows/stale.yml",
+        "reason": "夹具：验证豁免面是合法出口（真实场景下每个豁免都必须有理由 + 单号）",
+        "issue": "#5326",
+    }]
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     keys_ok = {f.key for f in ML.check_registration(repo, ML.load_registry(repo))[0].findings}
     assert not keys_ok, f"合规的豁免条目必须放行，实测仍判红：{sorted(keys_ok)}"
@@ -592,9 +609,11 @@ def test_negative_control_duplicate_exempt_and_registry_is_red(tmp_path):
     repo = _mini_repo(tmp_path)
     path = repo / "scripts" / "mechanism-registry.json"
     data = json.loads(path.read_text(encoding="utf-8"))
-    data["exempt"] = [{"workflow": ".github/workflows/stale.yml",
-                       "reason": "夹具：故意与 mechanisms 重复记账，验证该形态会被拦",
-                       "issue": "#5326"}]
+    data["exempt"] = _real_exempt() + [{
+        "workflow": ".github/workflows/stale.yml",
+        "reason": "夹具：故意与 mechanisms 重复记账，验证该形态会被拦",
+        "issue": "#5326",
+    }]
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     keys = {f.key for f in ML.check_registration(repo, ML.load_registry(repo))[0].findings}
     assert "exempt-duplicate:.github/workflows/stale.yml" in keys, (
