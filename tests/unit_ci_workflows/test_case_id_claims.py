@@ -158,6 +158,11 @@ PR_LIST_LIMIT = 100
 #: ⚠️ 实测：这个数**不能**贪大 —— 响应体积由 `patch` 决定，带大 diff 的 PR 会到 **1MB+**（本机固定超时）。
 #: ⇒ 清单调用按它取（多数 PR < 100），**patch 另起一次**只为语料文件取（见 `list_changed_case_files`）。
 PR_FILE_LIST_MIN = 100
+#: 改动清单的**分页上限**（页数；每页 `PR_FILE_LIST_MIN` 条）⇒ 覆盖到 1000 个改动文件。
+#: 🔴 2026-10-03 实测（issue #6245 假绿面）：**只请求一页 ⇒ 任何 >100 文件的 PR 都让判据面 fail-closed**，
+#: 而它卡的是**所有**在飞 PR（#6278 承载体 562 文件 ⇒ #6277/#6275/#6229 全被连带判红）。
+#: 分页后仍超上限 ⇒ 照旧 fail-closed（宁红不绿）。
+PR_FILE_LIST_MAX_PAGES = 10
 #: 远端 claims 目录（判据 7 的**第一面**：取号台账的正门；只读这一层）。
 CLAIMS_API_PATH = ".github/cases/claims"
 #: 语料文件形态（判据 7 的**第二面**：该 PR **改过**的 `.github/cases/*.yml`）。
@@ -466,29 +471,39 @@ def list_changed_case_files(base: str, repo: str, token: str, number: int, sha: 
     """
     # 🔴 **成本/稳定性口径（实测读数，见 PR body）**：`/files` 的响应体积由 `patch` 决定 ——
     #    小 PR 仅 **12KB**，带大 diff 的 PR 可到 **1MB+**（本机模拟器实测：`1MB+` 的响应在慢链路上
-    #    会固定超时 / `IncompleteRead`）。⇒ ① 只请求**一页**、命中页上限即判「无法判定」；
+    #    会固定超时 / `IncompleteRead`）。⇒ ① **分页取全**（每页 `PR_FILE_LIST_MIN` 条，
+    #    页数上限 `PR_FILE_LIST_MAX_PAGES`；超页数上限 ⇒ 判「无法判定」）；
     #    ② 语料文件的 patch **拿不到**时才退回下载该文件 blob（见 `read_blob`）；
     #    ③ 整轮仍受 `BUDGET_S` 兜底（超预算 ⇒ 判「无法判定」，不是绿）。
     #    ⚠️ 试过 `&path=<file>` 只取单个文件的 patch ⇒ **无效**（GitHub 忽略该参数，实测仍返回全部
     #    files）⇒ 不采用（那只会多付一次大响应）。
-    entries, err = _api_json(
-        f"{base}/repos/{repo}/pulls/{number}/files?per_page={PR_FILE_LIST_MIN}", token, HTTP_TIMEOUT_S
-    )
-    if err or not isinstance(entries, list):
-        return [], err or "响应不是数组"
-    if len(entries) >= PR_FILE_LIST_MIN:
-        return [], f"改动文件数达到取数上限 {PR_FILE_LIST_MIN} ⇒ 可能还有下一页，语料面不完整"
+    #    🔴 **为什么必须分页**（2026-10-03 实测）：只取一页 ⇒ 任何 >100 文件的 PR 都进 fail-closed，
+    #    而这条判据**人人跑**（`ci workflow helper unit tests` 是 required）⇒ **一个大 PR 卡住所有在飞 PR**
+    #    （实证：承载体 #6278 562 文件 ⇒ #6277/#6275/#6229 全部连带判红）。
     out: list[tuple[str, str, str]] = []
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        name, blob, patch = entry.get("filename"), entry.get("sha"), entry.get("patch")
-        if not isinstance(name, str) or not CASES_FILE_RE.match(name):
-            continue
-        if not isinstance(blob, str) or not blob:
-            return [], f"改动清单里的 `{name}` 没有内容 SHA"
-        out.append((name, blob, patch if isinstance(patch, str) else ""))
-    return out, ""
+    for page in range(1, PR_FILE_LIST_MAX_PAGES + 1):
+        entries, err = _api_json(
+            f"{base}/repos/{repo}/pulls/{number}/files"
+            f"?{urllib.parse.urlencode({'per_page': PR_FILE_LIST_MIN, 'page': page})}",
+            token, HTTP_TIMEOUT_S,
+        )
+        if err or not isinstance(entries, list):
+            return [], err or "响应不是数组"
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            name, blob, patch = entry.get("filename"), entry.get("sha"), entry.get("patch")
+            if not isinstance(name, str) or not CASES_FILE_RE.match(name):
+                continue
+            if not isinstance(blob, str) or not blob:
+                return [], f"改动清单里的 `{name}` 没有内容 SHA"
+            out.append((name, blob, patch if isinstance(patch, str) else ""))
+        if len(entries) < PR_FILE_LIST_MIN:
+            return out, ""          # 最后一页（或空页）⇒ 清单已取全
+    return [], (
+        f"改动文件数超过分页上限（{PR_FILE_LIST_MAX_PAGES} 页 × {PR_FILE_LIST_MIN} 条）"
+        f" ⇒ 可能还有下一页，语料面不完整"
+    )
 
 
 def read_blob(base: str, repo: str, token: str, blob_sha: str) -> tuple[str, str]:
@@ -1257,7 +1272,13 @@ class _ApiStub:
             return self.status, self.pulls, ""
         if "/pulls/" in path and path.endswith("/files"):
             number = int(path.rsplit("/pulls/", 1)[-1].split("/")[0])
-            return 200, self.pr_files.get(number, []), ""
+            q = urllib.parse.parse_qs(query)
+            per_page = int((q.get("per_page") or [str(PR_FILE_LIST_MIN)])[0])
+            page = int((q.get("page") or ["1"])[0])
+            # 真 GitHub 按 `per_page`/`page` 切片；替身必须同语义，否则分页判据跑不出真形态
+            items = self.pr_files.get(number, [])
+            start = (page - 1) * per_page
+            return 200, items[start:start + per_page], ""
         if "/git/blobs/" in path:
             content = self.blobs.get(path.rsplit("/git/blobs/", 1)[-1])
             if content is None:
@@ -1538,6 +1559,42 @@ def test_red_proof_http_corpus_collision_is_named(monkeypatch, tmp_path: Path) -
         joined = "\n".join(problems)
         assert "OR-900" in joined and "#7002" in joined, joined
         assert "OR-058" not in joined, joined
+    finally:
+        _release(stub)
+
+
+def test_http_changed_file_list_is_paginated_for_big_prs(monkeypatch) -> None:
+    """🔴 **红证（真 HTTP 面 · 分页，2026-10-03 实测补）**：改动文件数 **> 一页** 的 PR，
+    其**改动清单必须分页取全**（语料文件落在**末页**也要被读到），而不是 fail-closed。
+
+    病（实证）：只取一页 ⇒ `改动文件数达到取数上限 100 ⇒ 语料面不完整` ⇒ 判据判红；
+    而 `ci workflow helper unit tests` **人人跑** ⇒ **一个大 PR 卡住所有在飞 PR**
+    （#6278 承载体 562 文件 ⇒ #6277/#6275/#6229 全被连带判红）。
+    """
+    page_size = PR_FILE_LIST_MIN
+    noisy = [{"filename": f"acceptance/noise/{i}.json", "sha": f"n{i}"} for i in range(page_size + 7)]
+    pr_files = {7101: noisy, 7102: noisy + [{"filename": ".github/cases/order.yml", "sha": "blob-a"}]}
+    stub = _ApiStub(
+        [{"number": 7101, "head": {"sha": "sha-a"}}, {"number": 7102, "head": {"sha": "sha-b"}}],
+        {"sha-a/" + CLAIMS_API_PATH: [], "sha-b/" + CLAIMS_API_PATH: []},
+        200,
+        {"blob-a": "cases:\n  - id: OR-900\n"},
+        pr_files=pr_files,
+    )
+    base = _serve_api(monkeypatch, stub)
+    _api_env(monkeypatch, base)
+    try:
+        fetched = fetch_open_pr_claims()
+        assert fetched is not None and fetched[1] == [], f"取数面读数/问题异常：{fetched!r}"
+        open_prs, problems = fetched
+        assert problems == [], problems
+        by_pr = {p.pr: p for p in open_prs}
+        # 语料文件在**第二页**（第一页全是噪声）⇒ 不分页就取不到它
+        assert by_pr[7102].added_ids == frozenset({"OR-900"}), by_pr[7102]
+        assert by_pr[7101].added_ids == frozenset(), by_pr[7101]
+        # 分页真发生：两个 PR 各 ≥2 次 `/files` 调用 ⇒ 响应里必然出现「噪声 + 语料」两类文件
+        files_calls = [r for r in stub.snapshot()[1] if r.endswith("/files")]
+        assert len(files_calls) >= 4, files_calls
     finally:
         _release(stub)
 
