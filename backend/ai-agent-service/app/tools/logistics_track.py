@@ -14,68 +14,23 @@ from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 from app.config import settings
 
-# 内部状态 → 中文文本
-STATUS_TEXT_MAP = {
-    "pending": "待发货",
-    "picked": "已揽收",
-    "in_transit": "运输中",
-    "out_for_delivery": "派送中",
-    "delivered": "已签收",
-    "exception": "异常",
-    "returned": "已退回",
-}
+# 第三方轨迹 API 结果缓存（issue #6185：该 API 按次计费）。
+# 顶层导入，便于测试用 patch 把它替换成 fake —— 与 `get_admin_api_client` 同款接缝。
+from app.core.logistics_trace_cache import (
+    CN_STATUS_MAP,
+    COMPANY_NAME_MAP,
+    STATUS_TEXT_MAP,
+    get_logistics_trace_cache,
+)
 
-# 中文物流状态关键词 → 内部状态
-CN_STATUS_MAP = {
-    "签收": "delivered",
-    "已签收": "delivered",
-    "签收人": "delivered",   # 如「送货上门，签收人：家门口」
-    "送达": "delivered",     # 如「快件已送达（上门服务）」
-    "派送成功": "delivered",  # 如「您的快件已派送成功（家门口）」
-    "派送": "out_for_delivery",
-    "派件": "out_for_delivery",
-    "正在派送": "out_for_delivery",
-    "揽收": "picked",
-    "已揽收": "picked",
-    "揽件": "picked",
-    "退回": "returned",
-    "退件": "returned",
-    "异常": "exception",
-    "问题件": "exception",
-    "到达": "in_transit",
-    "在途": "in_transit",
-    "发往": "in_transit",
-    "运输": "in_transit",
-    "转运": "in_transit",
-}
+# 说明（issue #6185）：上面三张表与「轨迹 → 状态」推断的**唯一实现**现在都在
+# `app/core/logistics_trace_cache.py` —— 实时查询与缓存命中必须共用同一份解析，
+# 各写一份一旦漂移就会出现「实时查是已签收 / 命中缓存是在途」的分歧（TTL 分档也跟着错）。
+# 这里按原样 re-export，保持既有对外符号（`tests/test_tools_logistics_track.py`
+# 直接从本模块 import `STATUS_TEXT_MAP`）不破。
 
 # 需要手机号后4位的快递公司
 PHONE_REQUIRED_COMPANIES = {"SF", "SFEXPRESS", "ZTO", "STO"}
-
-# 快递公司编码(大写) → 中文名称
-COMPANY_NAME_MAP = {
-    "SF": "顺丰速运",
-    "SFEXPRESS": "顺丰速运",
-    "YTO": "圆通速递",
-    "YUNDA": "韵达快递",
-    "STO": "申通快递",
-    "ZTO": "中通快递",
-    "EMS": "EMS",
-    "JD": "京东物流",
-    "JT": "极兔速递",
-    "JITU": "极兔速递",  # 阿里云市场 kdi API 实际返回的极兔 code（JT 不被识别）
-    "DB": "德邦快递",
-    "BEST": "百世快递",
-    "TTKDEX": "天天快递",
-    "YOUZHENG": "中国邮政",
-    "ANE": "安能物流",
-    "ZJS": "宅急送",
-    "DPEX": "DPEX",
-    "FEDEX": "FedEx",
-    "UPS": "UPS",
-    "DHL": "DHL",
-    "USPS": "USPS",
-}
 
 
 class LogisticsTrackTool(BaseTool):
@@ -297,16 +252,18 @@ class LogisticsTrackTool(BaseTool):
         phone: Optional[str] = None,
     ) -> ToolResult:
         """通过快递单号查询物流
-        
-        优先调用阿里云市场物流 API，失败时降级到 Mock 数据。
-        
+
+        缓存优先（issue #6185）：命中即返回，**不再调用按次计费的第三方 API**；
+        未命中才查 API，并把成功响应写回缓存。
+        API 失败（或未配置 APPCODE）时仍降级到 Mock 数据。
+
         Args:
             context: Tool 执行上下文
             tracking_number: 快递单号
             company: 快递公司
             order_id: 订单号
             phone: 收/寄件人手机号后四位
-            
+
         Returns:
             ToolResult: 物流信息
         """
@@ -314,10 +271,32 @@ class LogisticsTrackTool(BaseTool):
             f"[logistics] Tracking: tracking_no={tracking_number}, company={company}, "
             f"order_id={order_id} | tenant={context.tenant_id}"
         )
-        
+
+        # 缓存 key 的快递公司一维用「编码」：顺丰 203 重试时 `type` 会被摘掉，
+        # 用同一个 key 才能让两次尝试共享同一份缓存（详见 tests/unit/test_logistics_trace_cache.py）
+        com_code = self._get_company_code(company) if company else None
+
         # 尝试调用真实 API
         if settings.LOGISTICS_APPCODE:
             try:
+                # ── 先查缓存：命中即返回，第三方调用次数直接减一 ──
+                cached = await get_logistics_trace_cache().get(
+                    context.tenant_id, tracking_number, com_code, phone
+                )
+                if cached is not None:
+                    # order_id 属于**本次**查询的上下文，不能沿用缓存里的那份
+                    # （同一运单可能被不同订单引用），与 `logistics_type` 同款按次注入
+                    data = {**cached, "order_id": order_id}
+                    return ToolResult(
+                        success=True,
+                        data=data,
+                        message=(
+                            f"【{data['company']}】{data['tracking_number']}，"
+                            f"当前状态：{data['status_text']}"
+                        ),
+                        summary=f"物流状态: {data['company']} {data['tracking_number']}, {data['status_text']}",
+                    )
+
                 api_result = await self._call_logistics_api(
                     tracking_number, company, phone
                 )
@@ -326,6 +305,10 @@ class LogisticsTrackTool(BaseTool):
                     # API 调用成功，转换为标准格式
                     data = self._transform_api_response(
                         api_result, tracking_number, company, order_id
+                    )
+                    # 成功响应写回缓存（含 status=205「无信息」，它同样按次计费）
+                    await get_logistics_trace_cache().set(
+                        context.tenant_id, tracking_number, com_code, phone, api_result
                     )
                     return ToolResult(
                         success=True,
@@ -436,85 +419,51 @@ class LogisticsTrackTool(BaseTool):
         order_id: Optional[str],
     ) -> dict:
         """将 API 响应转换为项目标准格式
-        
+
+        **解析复用** `LogisticsTraceCache._decode`（issue #6185）：缓存写的是同一份标准格式，
+        两处各写一份解析，一旦漂移就会出现「实时查是已签收 / 命中缓存是在途」的分歧。
+        本方法只补上只有调用方才知道的兜底与 order_id。
+
         Args:
             api_result: API 原始响应
             tracking_number: 快递单号
             company: 快递公司（来自订单）
             order_id: 订单号
-            
+
         Returns:
             标准格式的物流数据 dict
         """
-        result_data = api_result.get("result", {})
-        
-        # 快递公司名称：优先用 API 返回的 type 映射，其次用传入的 company
-        api_type = result_data.get("type", "")
-        company_name = (
-            COMPANY_NAME_MAP.get(api_type.upper(), "")
-            if api_type
-            else ""
-        )
-        if not company_name:
-            company_name = company or "未知快递"
-        
-        # 快递单号
-        actual_tracking_no = result_data.get("number") or tracking_number or ""
-        
-        # 物流轨迹
-        traces = []
-        trace_list = result_data.get("list") or []
-        for item in trace_list:
-            # 兼容：物流描述可能在 context 或 status 字段
-            content = item.get("context") or item.get("status") or ""
-            traces.append({
-                "time": item.get("time", ""),
-                "content": content,
-            })
-        
-        # 从最新轨迹推断状态
-        status = self._infer_status_from_traces(traces)
-        status_text = STATUS_TEXT_MAP.get(status, "未知")
-        
-        # 最新一条
-        latest = traces[0] if traces else {
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "content": "暂无物流信息",
-        }
-        
-        return {
-            "order_id": order_id,
-            "tracking_number": actual_tracking_no,
-            "company": company_name,
-            "status": status,
-            "status_text": status_text,
-            "latest": latest,
-            "traces": traces,
-        }
-    
+        # 延迟导入：本模块在 import 期被缓存模块导入（避免循环导入）
+        from app.core.logistics_trace_cache import LogisticsTraceCache
+
+        data = LogisticsTraceCache._decode(api_result) or {}
+
+        # 快递公司名称：API type 映射不到时用传入的 company
+        if not data.get("company") or data["company"] == "未知快递":
+            data["company"] = company or data.get("company") or "未知快递"
+
+        # 快递单号：API 未回传时用传入的单号
+        data["tracking_number"] = data.get("tracking_number") or tracking_number or ""
+        data["order_id"] = order_id
+        return data
+
     @staticmethod
     def _infer_status_from_traces(traces: list[dict]) -> str:
         """从物流轨迹中推断当前状态
-        
-        检查最新几条轨迹的内容，匹配中文关键词判断状态。
-        
+
+        实现已迁到 `app/core/logistics_trace_cache.py::infer_status_from_traces`
+        （issue #6185）：缓存 TTL 分档与 Tool 显示必须用同一份关键词表，否则同一段轨迹会
+        出现「显示已签收 / 按在途计 TTL」的分歧。本方法保留为薄转发，不改变既有调用点。
+
         Args:
             traces: 物流轨迹列表（最新在前）
-            
+
         Returns:
             内部状态字符串
         """
-        if not traces:
-            return "in_transit"
-        
-        # 优先看最新的几条（最多看3条）
-        for trace in traces[:3]:
-            content = trace.get("content", "")
-            for keyword, status in CN_STATUS_MAP.items():
-                if keyword in content:
-                    return status
-        
-        return "in_transit"
+        from app.core.logistics_trace_cache import infer_status_from_traces
+
+        return infer_status_from_traces(traces)
     
     def _get_company_code(self, company: str) -> Optional[str]:
         """将快递公司名称或编码转换为 API 所需的公司编码（大写）

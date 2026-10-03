@@ -5738,7 +5738,7 @@ _CASE_OR_013 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['用快递单号 SF1234567890 查一下物流', '那用我最近一笔订单的订单号查一下物流', {'repeat_until': {'tool_called': 'logistics_track', 'max': 2}, 'fallback': '就用你查到的那笔订单号帮我查物流'}],
     expectations=['logistics_track'],
-    data_checks=['logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号', '快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）', '按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）；显式公司 code 不被 API 识别(203)时去掉 type 自动识别重试一次', '第 2 轮必须解析出**真实存在的**订单号（required_args 守住 order_id 非空），不得沿用第 1 轮被拒绝的快递单号'],
+    data_checks=['logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号', '快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）', '按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）；显式公司 code 不被 API 识别(203)时去掉 type 自动识别重试一次', '第 2 轮必须解析出**真实存在的**订单号（required_args 守住 order_id 非空），不得沿用第 1 轮被拒绝的快递单号', '🔴 issue #6185：第三方轨迹 API（阿里云市场 kdi）**按次计费** ⇒ 同一运单号第二次查询必须命中 Redis 缓存、**不再调用**第三方 API（判据 = tests/unit/test_logistics_trace_cache.py 的 TestToolConsultsCache；注入式红证：把 `_track_by_number` 的缓存读/写换成 no-op ⇒ 3 条判据红）。TTL 分档：已签收/已退回 90 分钟、运输中/派送中 65 分钟、异常/未知 60 分钟；API status=205（无信息）缓存 120 秒；**调用失败不缓存**。'],
     skip_reason='',
     tags=['query', 'logistics', 'data_safety'],
     persona='',

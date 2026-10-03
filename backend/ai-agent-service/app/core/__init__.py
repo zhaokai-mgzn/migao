@@ -24,6 +24,10 @@ from app.core.admin_api_cache import (
     AdminApiCache,
     get_admin_api_cache,
 )
+from app.core.logistics_trace_cache import (
+    LogisticsTraceCache,
+    get_logistics_trace_cache,
+)
 
 __all__ = [
     "CircuitBreaker",
@@ -37,4 +41,6 @@ __all__ = [
     "get_fallback_result",
     "AdminApiCache",
     "get_admin_api_cache",
+    "LogisticsTraceCache",
+    "get_logistics_trace_cache",
 ]
