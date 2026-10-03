@@ -585,7 +585,9 @@ class TestNonGitFailsClosed:
         )
         assert "没有跑" in out, f"「没跑」必须长得像「没跑」：\n{out}"
         # 三点：为什么 / 替代 / 怎么显式跑（与判据 1 同口径，**不写死文案**）
-        assert "子包 worktree" in out, f"报文没写清**为什么**：\n{out}"
+        # ⚠️ 「为什么」必须是 **unknown 的**措辞（issue #6101：这里原先断言的是 `package` 的
+        #    「子包 worktree」—— 那正是**归因错**的形态被写成判据的样子）。
+        assert "不可用" in out, f"报文没写清**为什么**（不是 git 仓库 / git 不可用）：\n{out}"
         assert "batch-gate.sh" in out, f"报文没给**替代**（批次入口）：\n{out}"
         assert "--allow-package-heavy" in out, f"报文没给**怎么显式跑**：\n{out}"
         assert not ctx["lock"].exists(), (
@@ -623,13 +625,176 @@ class TestNonGitFailsClosed:
         assert proc.returncode == 5, (
             f"`git` 不在 PATH 时必须 fail-closed（exit 5），实得 {proc.returncode}：\n{out}"
         )
-        assert "子包 worktree" in out and "batch-gate.sh" in out, f"三点报文不全：\n{out}"
+        assert "不可用" in out and "batch-gate.sh" in out, f"三点报文不全：\n{out}"
         assert "--allow-package-heavy" in out, out
         assert not ctx["lock"].exists(), "拒绝之前拿了机器级锁（守卫顺序错了）"
         records = hs.ledger_records(ctx["ledger"].read_text(encoding="utf-8"))
         assert [r["role"] for r in records] == ["unknown"], (
             f"`git` 不可用 ⇒ 角色应是 unknown：{records}"
         )
+
+
+#: 归因拆分的注入点（issue #6101 复核发现：`unknown` 曾用 `package` 的措辞与台账原因）。
+#: 变异 = **把两种角色的归因合并回一套**，两种坏形态各自必须被**对应**的判据抓住：
+#:   · 把 `package` 那句主因换成 `unknown` 的 ⇒ `TestRefusalAttributionIsSplit::test_package_...` 红；
+#:   · 把 `unknown` 那句主因换成 `package` 的 ⇒ 同类的 `test_unknown_...` 红。
+#: 命中数 ≠ 1 ⇒ `hs.mutate` 当场判红（红证会变成空断言）。
+#: 两种角色的「为什么」主因行 —— **现取真脚本**（不抄文案：措辞一变，本判据自动跟上；
+#: 也避免「抄错反引号 ⇒ 命中 0 次 ⇒ 红证变成空断言」，本包就实测踩过一次）。
+_WHY_LINES = [ln for ln in hs.real_verify_text().split("\n")
+              if '   为什么  ：' in ln]
+assert len(_WHY_LINES) == 2, (
+    f"应当**恰好两条**主因行（package / unknown 各一条），实得 {len(_WHY_LINES)}：{_WHY_LINES}"
+)
+
+
+def _role_why_line(role: str) -> str:
+    """取某个角色的主因行（`package` = 子包 worktree / `unknown` = 非 git 仓库 / git 不可用）。"""
+    want_git_missing = role == "unknown"
+    hits = [ln for ln in _WHY_LINES if ("不是 git 仓库" in ln) == want_git_missing]
+    assert len(hits) == 1, f"角色 {role} 的主因行取不到（命中 {len(hits)} 条）：{hits}"
+    return hits[0]
+
+
+ATTRIBUTION_MUTATIONS = {
+    "package": [
+        (
+            "package_blames_git_missing",
+            _role_why_line("package"),
+            _role_why_line("unknown"),
+            '    record_verdict "$role" refused "子包 worktree 直跑全量（无批次标记）"',
+            '    record_verdict "$role" refused "判不出角色（非 git 仓库 / git 不可用）"',
+        ),
+    ],
+    "unknown": [
+        (
+            "unknown_blames_package_worktree",
+            _role_why_line("unknown"),
+            _role_why_line("package"),
+            '    record_verdict "$role" refused "判不出角色（非 git 仓库 / git 不可用）"',
+            '    record_verdict "$role" refused "子包 worktree 直跑全量（无批次标记）"',
+        ),
+    ],
+}
+
+
+class TestRefusalAttributionIsSplit:
+    """判据 22：**两种角色的报文与台账原因必须各自独立**（issue #6101 复核发现）。
+
+    形态（复核实测）：`package` 与 `unknown` 共用一套措辞 ⇒ 非 git 目录里跑脚本，报的是
+    「当前工作区是**子包 worktree**」、台账记的是「**子包 worktree** 直跑全量」—— 行为（rc=5）
+    没错，但**归因错**；而这条台账正是角色读数的仪表 ⇒ 归因错会污染后续裁定
+    （`docs/wiki/Development.md` 的表格本来就把 `unknown` 定义成「git 不可用 / 工作树外」）。
+    """
+
+    def _deny(self, tmp_path, sb, cwd, *args, script=None, env_extra=None):
+        """在 `cwd` 跑**真脚本**并返回 `(rc, 输出, 台账记录, 锁路径)`（锁 / 台账都在 tmp_path）。"""
+        lock = tmp_path / f"attr-lock-{uuid.uuid4().hex}"
+        ledger = tmp_path / f"attr-ledger-{uuid.uuid4().hex}.jsonl"
+        env = _env(MIGAO_HEAVY_LOCK_FILE=str(lock), MIGAO_PACKAGE_HEAVY_LEDGER=str(ledger))
+        if env_extra:
+            env.update({k: str(v) for k, v in env_extra.items()})
+        target = pathlib.Path(script) if script is not None else pathlib.Path(cwd) / "verify-all.sh"
+        proc = subprocess.run([shutil.which("bash") or "/bin/bash", str(target), "quick", *args],
+                              cwd=str(cwd), capture_output=True, text=True, env=env, timeout=180)
+        records = (hs.ledger_records(ledger.read_text(encoding="utf-8"))
+                   if ledger.exists() else [])
+        return proc.returncode, proc.stdout + proc.stderr, records, lock
+
+    def test_package_refusal_keeps_its_own_wording_and_reason(self, tmp_path):
+        """`package`（linked worktree、无标记）⇒ 报文与台账原因**仍是**子包 worktree 那套。"""
+        sb = hs.build(tmp_path / "repo")
+        wt = hs.build_worktree(sb, "pkg")
+        rc, out, records, lock = self._deny(tmp_path, sb, wt, script=hs.install_real_script(wt))
+        assert rc == 5, f"子包 worktree 应被拒（exit 5），实得 {rc}：\n{out}"
+        assert "子包 worktree" in out, f"package 的**为什么**不见了：\n{out}"
+        assert "git 不可用" not in out, (
+            f"package 场景误用了 `unknown` 的措辞（两种角色被合并）：\n{out}"
+        )
+        assert not lock.exists(), "拒绝之前拿了机器级锁（守卫顺序错了）"
+        assert [r["role"] for r in records] == ["package"], records
+        assert "子包 worktree" in records[0]["why"], (
+            f"package 的台账原因被改成了别的归因：{records[0]['why']!r}"
+        )
+
+    def test_unknown_refusal_keeps_its_own_wording_and_reason(self, tmp_path):
+        """`unknown`（非 git 目录）⇒ 报文说「**不是 git 仓库 / `git` 不可用**」，且台账原因独立。"""
+        d = _non_git_dir(tmp_path)
+        rc, out, records, lock = self._deny(tmp_path, None, d)
+        assert rc == 5, f"非 git 目录应被拒（exit 5），实得 {rc}：\n{out}"
+        # 三点齐全（替代 / 真要跑两行两种角色都要有）
+        assert "batch-gate.sh" in out, f"报文没给**替代**（批次入口）：\n{out}"
+        assert "--allow-package-heavy" in out, f"报文没给**怎么显式跑**：\n{out}"
+        assert "没有跑" in out, f"「没跑」必须长得像「没跑」：\n{out}"
+        # 归因：必须是 unknown 的措辞，且**不得**串到 package 的措辞上
+        assert "不可用" in out, f"`unknown` 没写清是「不是 git 仓库 / git 不可用」：\n{out}"
+        assert "子包 worktree" not in out, (
+            f"**归因错了**（issue #6101 复核发现的形态）：非 git 目录用了 `package` 的措辞：\n{out}"
+        )
+        assert not lock.exists(), "拒绝之前拿了机器级锁（守卫顺序错了）"
+        assert len(records) == 1, f"应恰好记 1 条：{records}"
+        assert records[0]["role"] == "unknown", records
+        assert records[0]["decision"] == "refused", records
+        assert "子包 worktree" not in records[0]["why"], (
+            f"**台账原因归错**了（记了一条但原因错 ⇒ 不能当通过）：{records[0]['why']!r}"
+        )
+        assert "git" in records[0]["why"], f"台账原因没说清是判不出角色：{records[0]['why']!r}"
+
+    def test_allow_flag_also_allows_unknown(self, tmp_path):
+        """`--allow-package-heavy` 在 `unknown` 场景**也放行**（与 `package` 同权）——钉住这一条。
+
+        ⚠️ 脚本的实现是 `case`-fall-through + 顶部 flag 分支 ⇒ 两种角色都放行；本判据把它钉成
+        **契约**：逃生口是「命令行可见的显式动作」，不该因为「为什么判不出角色」而少一个出口
+        （否则非 git 目录里连显式放行的路都没有）。
+        """
+        d = _non_git_dir(tmp_path)
+        rc, out, records, lock = self._deny(tmp_path, None, d, "--allow-package-heavy")
+        assert "绕过了批次口径" in out, f"`unknown` 场景显式 flag **没有放行**：\n{out}"
+        assert "⚠️" in out, f"放行行必须醒目（带警示符）：\n{out}"
+        # ⚠️ 放行**不等于** rc=0：这里是非 git 目录，放行之后脚本继续往下走，随即收在既有的
+        #    「无变更 ⇒ exit 3」（`origin/main` 都没有 ⇒ 变更集为空）—— 那是**放行之后**的读数，
+        #    与角色判定无关。若 rc 仍是 5，说明 flag 根本没被认。
+        assert rc != 5, f"flag 未被识别（仍被角色守卫拒绝 rc=5）：\n{out}"
+        assert "无变更 ⇒ 未执行任何检查" in out, (
+            f"放行后没有继续往下走（读数太弱，说明不了「放行」）：\n{out}"
+        )
+        assert not lock.exists(), "角色判定阶段不该拿锁（放行后脚本随即早退）"
+        assert [r["decision"] for r in records] == ["override"], f"放行要记一条 override：{records}"
+        assert records[0]["role"] == "unknown", records
+
+    @pytest.mark.parametrize("role", ["package", "unknown"],
+                             ids=["package-措辞被换成-unknown", "unknown-措辞被换成-package"])
+    def test_merged_attribution_is_caught(self, tmp_path, role):
+        """判据 22 的**注入式红证**：把两种角色的归因合并回一套 ⇒ 对应的那条判据必红。"""
+        label, old_why, new_why, old_led, new_led = ATTRIBUTION_MUTATIONS[role][0]
+        # 两处变异（措辞 + 台账原因）都落在**同一份真文本**上：第一处由 `hs.mutate` 保证命中数 == 1，
+        # 第二处自己再自证一次（命中数 ≠ 1 ⇒ 红证会变成空断言）。
+        src = hs.mutate("verify-all.sh", old_why, new_why)
+        hits = src.count(old_led)
+        assert hits == 1, f"台账原因锚点命中 {hits} 次（应为 1）⇒ 变异没生效"
+        mutated = src.replace(old_led, new_led, 1)
+        if role == "package":
+            sb = hs.build(tmp_path / "repo")
+            wt = hs.build_worktree(sb, "pkg")
+            script = hs.install_real_script(wt, text=mutated)
+            rc, out, records, _lock = self._deny(tmp_path, sb, wt, script=script)
+            assert rc == 5, f"变异体仍应拒绝（只是归因错），实得 {rc}：\n{out}"
+            assert "不可用" in out, (
+                f"变异「{label}」**没被抓住**（package 场景仍没串到 unknown 的措辞）：\n{out}"
+            )
+            assert "子包 worktree" not in records[0]["why"], (
+                f"变异「{label}」**没被抓住**（台账原因仍是对的）：{records[0]['why']!r}"
+            )
+        else:
+            d = _non_git_dir(tmp_path, script_text=mutated)
+            rc, out, records, _lock = self._deny(tmp_path, None, d)
+            assert rc == 5, f"变异体仍应拒绝（只是归因错），实得 {rc}：\n{out}"
+            assert "子包 worktree" in out, (
+                f"变异「{label}」**没被抓住**（unknown 场景仍没串到 package 的措辞）：\n{out}"
+            )
+            assert "子包 worktree" in records[0]["why"], (
+                f"变异「{label}」**没被抓住**（台账原因仍是对的）：{records[0]['why']!r}"
+            )
 
 
 class TestUnknownRoleInjectionIsCaught:

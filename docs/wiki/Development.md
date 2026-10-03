@@ -407,8 +407,16 @@ PR `#6077` = `cbd0b9173`，套件自带准入现在「祖先持锁 ⇒ 立即拒
 | 主检出 | `git rev-parse --absolute-git-dir` == `--git-common-dir` | **允许** | 会（人工 / 批次的**一次性**全量在这里跑） |
 | 批次集成 worktree | 上述不等，**且** `git rev-parse --git-path` 处有标记 | **允许** | 会（`batch-gate.sh` 留的标记） |
 | 子包 worktree | 上述不等，**且**没有标记 | **拒绝**（`exit 5`） | **不会** —— 拒绝先于 `macquire` 与档位分发 |
+| **非 git 仓库 / `git` 不可用** | 上面两种都取不到（`git rev-parse` 失败 / 输出为空） | **拒绝**（`exit 5`，fail-closed） | **不会** —— 拿不准就不许跑全量 |
 | CI（`CI` 为真） | 环境标记 | **不受影响** | 会（托管 runner 不占本机资源） |
 
+- **两种「拒绝」的归因是分开的**（2026-10-03 收口，issue #6101 复核发现）：`package`（子包 worktree）
+  与 `unknown`（非 git 仓库 / `git` 不可用）**各有自己的「为什么」与**台账 `why` —— 台
+  账正是角色读数的仪表，两者共用一套措辞会把「有人在工作树外跑全量」误报成「子包直跑」
+  （判据 = `test_package_heavy_entry_ban.py::TestRefusalAttributionIsSplit`，含注入式红证）。
+- **`--allow-package-heavy` 对两种角色都放行**（`package` 与 `unknown` 同权）：逃生口是「命令行
+  可见的显式动作」，不该因为「为什么判不出角色」而少一个出口（判据同上：`test_allow_flag_also_allows_unknown`）。
+  ⚠️ 放行**不等于** `rc=0`：非 git 目录里放行之后脚本继续往下走，随即收在既有的「无变更 ⇒ `exit 3`」。
 - **标记是文件，不是名字前缀 / 环境变量**：名字前缀会漂（`batch-gate.sh --in <任意路径>` 形态
   建出来的集成工作区**不叫** `batch-*`）；环境变量**可被子包自己 export** ⇒ 等于把「我是谁」交给
   被判对象自报。标记路径由 `git rev-parse --git-path` 现取（= `.git/worktrees/<name>/…`）：
