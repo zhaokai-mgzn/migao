@@ -1,11 +1,11 @@
 {
   "key": "<PROBE-IDEMPOTENCY-KEY>",
-  "k1": "{\"success\":true,\"data\":{\"id\":\"2e43ac03cf91f5ed708e375b6161206f\",\"ticketNo\":\"AS-20261003-0001\",\"orderId\":\"2a515aa749b6d5717aa212ad725cbfbe\",\"orderNo\":\"20261003538590304\",\"customerId\":\"线B验收客户-IDEM-mus5ld78alsp\",\"customerName\":\"线B验收客户-IDEM-mus5ld78alsp\",\"customerPhone\":\"13937778302\",\"ticketType\":\"refund\",\"status\":\"pending\",\"description\":\"线B验收工单-幂等\",\"images\":[],\"source\":\"merchant\",\"priority\":\"normal\",\"refundAmount\":100.00,\"evidenceImages\":[],\"statusHistory\":[{\"status\":\"pending\",\"time\":\"2026-10-03T08:52:09.345399Z\",\"operator\":\"13870217889\",\"remark\":\"工单创建\"}],\"createdAt\":\"2026-10-03T16:52:09.345399+08:00\",\"updatedAt\":\"2026-10-03T16:52:09.345428+08:00\"},\"requestId\":\"req_a50fb715345c4bd2\",\"timestamp\":1791017529}",
-  "k2": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已有 退款 类型的活跃工单（AS-20261003-0001），请先处理后再创建\"},\"requestId\":\"req_db7ab59d60244ad8\",\"timestamp\":1791017529,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+  "k1": "{\"success\":true,\"data\":{\"id\":\"a0422d2296776379f5764936cf3f9f49\",\"ticketNo\":\"AS-20261003-0013\",\"orderId\":\"3bd7905d56f2d7eb73f0c0414242a2aa\",\"orderNo\":\"20261003536210432\",\"customerId\":\"线B验收客户-IDEM-mus5yrxpegt1\",\"customerName\":\"线B验收客户-IDEM-mus5yrxpegt1\",\"customerPhone\":\"13924674822\",\"ticketType\":\"refund\",\"status\":\"pending\",\"description\":\"线B验收工单-幂等\",\"images\":[],\"source\":\"merchant\",\"priority\":\"normal\",\"refundAmount\":100.00,\"evidenceImages\":[],\"statusHistory\":[{\"status\":\"pending\",\"time\":\"2026-10-03T09:02:35.018414Z\",\"operator\":\"13870217889\",\"remark\":\"工单创建\"}],\"createdAt\":\"2026-10-03T17:02:35.018414+08:00\",\"updatedAt\":\"2026-10-03T17:02:35.018425+08:00\"},\"requestId\":\"req_ccb560e6f5474628\",\"timestamp\":1791018155}",
+  "k2": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已有 退款 类型的活跃工单（AS-20261003-0013），请先处理后再创建\"},\"requestId\":\"req_cb6dbe5e83a4452c\",\"timestamp\":1791018155,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
   "rowsForKey": [
     {
-      "id": "2e43ac03cf91f5ed708e375b6161206f",
-      "ticket_no": "AS-20261003-0001"
+      "id": "a0422d2296776379f5764936cf3f9f49",
+      "ticket_no": "AS-20261003-0013"
     }
   ]
 }

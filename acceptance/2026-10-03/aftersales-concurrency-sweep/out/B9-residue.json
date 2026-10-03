@@ -1,25 +1,25 @@
 {
   "at": {
-    "cst": "2026-10-03 16:56:34 +08",
-    "utc": "2026-10-03T08:56:34.512Z"
+    "cst": "2026-10-03 17:05:27 +08",
+    "utc": "2026-10-03T09:05:27.005Z"
   },
   "preCleanupResidue": {
     "counts": {
-      "products": 0,
-      "productSkus": 0,
-      "orders": 0,
-      "orderItems": 0,
-      "tickets": 0,
-      "ticketTimeline": 0,
-      "ledger": 0,
-      "finance": 0,
+      "products": 91,
+      "productSkus": 91,
+      "orders": 88,
+      "orderItems": 88,
+      "tickets": 31,
+      "ticketTimeline": 100,
+      "ledger": 193,
+      "finance": 141,
       "clientKeys": 0,
       "tempTables": 0,
-      "processingOrders": 0,
-      "positionOperations": 0,
+      "processingOrders": 6,
+      "positionOperations": 60,
       "workLogs": 0
     },
-    "total": 0
+    "total": 889
   },
   "residue": {
     "counts": {

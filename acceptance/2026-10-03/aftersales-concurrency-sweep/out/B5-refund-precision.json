@@ -9,13 +9,13 @@
         "期望来源: 本包独立算式：请求值 0.01 = 列可表示的最小正数（列类型现查见 B5-col-types.json）⇒ 两处都必须逐字 0.01",
         "期望: 200；orders.refund_amount=0.01；finance_transactions 恰 1 行 amount=0.01；两者**相等**",
         "实得: 200；orders.refund_amount=0.01；流水 1 行 amount=0.01",
-        "响应原文: {\"success\":true,\"requestId\":\"req_dafc7b2d9c82422a\",\"timestamp\":1791017636}",
-        "DB orders: {\"id\":\"7a408ffa8bd313f96837d8b28353a069\",\"tenant_id\":20,\"order_no\":\"20261003934490336\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":0.01,\"refund_at\":\"2026-10-03T16:53:56.741738+08:00\",\"deleted\":0}",
-        "DB 流水: [{\"id\":\"32880e1b0556c6a836de36e13f144c18\",\"type\":\"refund\",\"amount\":0.01,\"status\":\"success\",\"occurred_at\":\"2026-10-03T16:53:56.774459+08:00\",\"remark\":\"订单退款: 线B验收精度探针\"}]",
+        "响应原文: {\"success\":true,\"requestId\":\"req_512d51eadbd24874\",\"timestamp\":1791018264}",
+        "DB orders: {\"id\":\"0b2ab6b18cc10d4eaaf060315a796d28\",\"tenant_id\":20,\"order_no\":\"20261003860120464\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":0.01,\"refund_at\":\"2026-10-03T17:04:24.812861+08:00\",\"deleted\":0}",
+        "DB 流水: [{\"id\":\"996a7fabe23a12bdffe71422e11ac4f9\",\"type\":\"refund\",\"amount\":0.01,\"status\":\"success\",\"occurred_at\":\"2026-10-03T17:04:24.841842+08:00\",\"remark\":\"订单退款: 线B验收精度探针\"}]",
         "列类型: [{\"col\":\"after_sales_tickets.refund_amount\",\"typ\":\"numeric(10,2)\"},{\"col\":\"finance_transactions.amount\",\"typ\":\"numeric(12,2)\"},{\"col\":\"orders.actual_amount\",\"typ\":\"numeric(10,2)\"},{\"col\":\"orders.refund_amount\",\"typ\":\"numeric(12,2)\"}]"
       ],
-      "at": "2026-10-03 16:53:57 +08",
-      "atUtc": "2026-10-03T08:53:57.142Z",
+      "at": "2026-10-03 17:04:25 +08",
+      "atUtc": "2026-10-03T09:04:25.381Z",
       "orderRefund": 0.01,
       "finance": [
         0.01
@@ -35,17 +35,17 @@
         "   而 orders.refund_amount / finance_transactions.amount 皆为 numeric(…,2) ⇒ 库内四舍五入）",
         "⇒ 请求被「成功」接受（HTTP 200 + refund_at 落笔）而退款金额**一分未落**（订单与资金流水两处都 0.00）",
         "红线断言: orders.refund_amount 与 finance_transactions.amount 必须相等 —— 实测 两者相等=true（相等则无「一侧 0 一侧非 0」的更重证据）",
-        "响应原文: {\"success\":true,\"requestId\":\"req_326ee6e7f5684408\",\"timestamp\":1791017639}",
-        "DB orders: {\"id\":\"da46a2cbd41cd0df36f1085023a49626\",\"tenant_id\":20,\"order_no\":\"20261003459800337\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":0,\"refund_at\":\"2026-10-03T16:53:59.061379+08:00\",\"deleted\":0}",
-        "DB 流水: [{\"id\":\"7bc8f4e742b94ba3ba41366b4a4e1598\",\"type\":\"refund\",\"amount\":0,\"status\":\"success\",\"occurred_at\":\"2026-10-03T16:53:59.106404+08:00\",\"remark\":\"订单退款: 线B验收精度探针\"}]",
+        "响应原文: {\"success\":true,\"requestId\":\"req_a9be01613a244ea8\",\"timestamp\":1791018268}",
+        "DB orders: {\"id\":\"cd78beb3bb7341d5fe45744d94e9daa1\",\"tenant_id\":20,\"order_no\":\"20261003624710465\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":0,\"refund_at\":\"2026-10-03T17:04:28.207986+08:00\",\"deleted\":0}",
+        "DB 流水: [{\"id\":\"b5a14372fd8067c7aa965a2bc9fad945\",\"type\":\"refund\",\"amount\":0,\"status\":\"success\",\"occurred_at\":\"2026-10-03T17:04:28.246337+08:00\",\"remark\":\"订单退款: 线B验收精度探针\"}]",
         "列类型: [{\"col\":\"after_sales_tickets.refund_amount\",\"typ\":\"numeric(10,2)\"},{\"col\":\"finance_transactions.amount\",\"typ\":\"numeric(12,2)\"},{\"col\":\"orders.actual_amount\",\"typ\":\"numeric(10,2)\"},{\"col\":\"orders.refund_amount\",\"typ\":\"numeric(12,2)\"}]"
       ],
-      "at": "2026-10-03 16:53:59 +08",
-      "atUtc": "2026-10-03T08:53:59.419Z",
+      "at": "2026-10-03 17:04:28 +08",
+      "atUtc": "2026-10-03T09:04:28.606Z",
       "extra": {
         "status": 200,
         "orderRefund": 0,
-        "refundAt": "2026-10-03T16:53:59.061379+08:00",
+        "refundAt": "2026-10-03T17:04:28.207986+08:00",
         "finance": [
           0
         ],
@@ -63,8 +63,8 @@
         "关注点: 0.005 的舍入方向（PG numeric 为「四舍五入、.005 进位」）与「订单侧 = 流水侧」的一致性",
         "原始读数: [{\"requested\":\"0.004\",\"status\":200,\"orderRefund\":0,\"finance\":[0],\"equal\":true},{\"requested\":\"0.005\",\"status\":200,\"orderRefund\":0.01,\"finance\":[0.01],\"equal\":true},{\"requested\":\"0.009\",\"status\":200,\"orderRefund\":0.01,\"finance\":[0.01],\"equal\":true}]"
       ],
-      "at": "2026-10-03 16:54:10 +08",
-      "atUtc": "2026-10-03T08:54:10.087Z",
+      "at": "2026-10-03 17:04:38 +08",
+      "atUtc": "2026-10-03T09:04:38.241Z",
       "extra": {
         "rows": [
           {

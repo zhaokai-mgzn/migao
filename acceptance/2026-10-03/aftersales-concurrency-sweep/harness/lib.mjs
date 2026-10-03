@@ -282,6 +282,8 @@ export const SCALE = 1000n
 export function cents(v) {
   if (typeof v === 'bigint') return v
   if (v === null || v === undefined || v === '') return null
+  // ⚠️ 必须**显式** String()：把 number 直接喂给下面的正则 → `.exec()` 会 TypeError，
+  //    而 `cents(x) * BigInt(n)` 会抛 "Cannot mix BigInt and other types"（实测踩过两次）
   const s = String(v).trim()
   const m = /^(-?)(\d+)(?:\.(\d*))?$/.exec(s)
   if (!m) throw new Error(`非十进制读数: ${JSON.stringify(v)}`)

@@ -1,24 +1,7 @@
 {
   "categories": [],
-  "products": [
-    "c78eb24eec9ec964fcf48fe4eff37b38",
-    "4e108239853c11ce5410ebad9ae8ad82",
-    "bda42f082170b514fcb0f14b85dc9825",
-    "2bd987ec994aa290932572dbc8312a87",
-    "1c693ffdd26883c68d4eba7542656d7f",
-    "6e75688a6a81b459e669fdd04956046e",
-    "fa0d89b59b2f506e24c1a2e79488549c",
-    "435b4d80658457bf0ca7202c8c5b8da1"
-  ],
-  "orders": [
-    "bd51d38ef1b1b5c7d5780cd5a743976c",
-    "2965cbc89cbab9f05020d515f3674513",
-    "9c4934ec82cb16f680717c5abca0116d",
-    "9a9d36547b15b5972f0c3d03481471ae",
-    "6891ff47fc47665e3d16a7d5c70ff9b6",
-    "5ee3f9a4b5f8bfd4930deb43c29d31dc",
-    "170eb3913e52b0dc9b11b2ba217f5fa0"
-  ],
+  "products": [],
+  "orders": [],
   "tickets": [],
   "processingOrders": []
 }

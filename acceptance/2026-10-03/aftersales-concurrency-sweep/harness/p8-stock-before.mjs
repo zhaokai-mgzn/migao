@@ -1,4 +1,8 @@
-// p8-stock-before —— 记录「存量行零改动」的**前**快照（p9 清理后对照用）
+// p8-stock-before —— 记录一份**留档用**的存量行快照
+//
+// ⚠️ 它**不是** LB-Z-02 的判据来源（实测教训）：拿这份历史快照与 p9 的现快照比，会读到**别的包**
+//    （线A，id 前缀 `laord…`）中途清理掉的行 ⇒ 假红。⇒ `LB-Z-02` 的判据改为 **p9 段内紧邻的前后快照**，
+//    本文件仅作「会话开始时的存量留档」，供人工核对用。
 // 用法：node p8-stock-before.mjs
 import { writeFileSync } from 'node:fs'
 import { psql, sha256, outPath, log, nowCST, TENANT_ID, PROBE_PREFIX } from './lib.mjs'

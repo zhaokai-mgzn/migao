@@ -9,46 +9,70 @@
 
 ## 0. 一句话结论
 
-B1 串行闭环（建单 / 状态机 / 退款金额 / 回补开关两侧 / 三方自洽）**逐条有红证、读数干净**；
-B2 并发族跑出 **1 条真缺陷（并发双跑副作用 ⇒ 库存重复回补 + 审计重复）**、**1 条涉钱精度缺陷（0.001 静默归零）**、
-**1 条读面自相矛盾缺陷（size<0 ⇒ total=0 而返回整页）**；订单侧并发（CAS 谓词在位）作为**正对照全绿**，
-证明「并发到得了、判据会红也会绿」。
+- **四态读数**（采集 2026-10-03 17:05:32 +08，全量 57 条）：**pass 48 / fail(产品) 7 / skip(未覆盖) 2 / 假红 0**；
+  零残留逐表 **0**、存量行逐行 diff **0/0/0**。**本报告不下"验收通过/交付完成"结论**。
+- **B1 串行闭环**（建单 / 状态机 7 态 / 退款金额 8 类 / 回补开关**两侧** / 三方自洽）逐条有红证、读数干净；
+- **B2 并发族**（射程四条**逐条对齐**）跑出 **3 条真缺陷**（7 条判据）：
+  ① **并发双跑副作用**（售后工单并发完结 ⇒ 库存重复回补 4 次 + 审计 4 行；`LB-C2`/`C21`/`C22`/`C23`）——主会话按 **P1** 开 issue **#6220**；
+  ② **涉钱精度静默归零**（`refund_amount=0.001` ⇒ HTTP 200 但一分未落；`LB-REF-B03`/`LB-PREC-02`）；
+  ③ **读面自相矛盾**（`size<0` ⇒ `total=0` 却返回整页；`LB-C4-NEGATIVE-SIZE`）——主会话已开 issue **#6222**；
+- **正对照全绿**：订单侧并发改状态（DB 状态谓词在位）恰 1 个赢家、SQL 层量化 有谓词 w=1 / 无谓词 w=4；
+  **并发派工**（同一单据 + pooled 两侧）业务成功恰 1、活跃加工单恰 1、工序实例不重复，兜底物 = 库级部分唯一索引 `uk_processing_orders_active`。
+- ⇒ 结论不是"系统有问题/没问题"，而是：**同一装置换一条实现必变号**（守卫在位则守住、缺谓词则翻倍），
+  本轮把这条做成了可复用的**并发判据范式**（见 §5）。
 
 ---
 
 ## 1. 读数汇总（四态分列）
 
-> 真值以 `out/SUMMARY.json` 为准（一键重跑会刷新）。下表为最后一次全量跑的分组汇总。
+> **采集时刻 = 2026-10-03 17:05:32 +08**（最后一次全量跑）；真值以 `out/SUMMARY.json` 的 `counts`/`byGroup` 为准。
+> 构建点 = `main-live` HEAD **`43ca703221a714e143c468ff0b29c4a46e67a88f`**（pid 61739，启动 16:22:58 +08）。
 
-| 组 | pass | fail | skip | 假红(falseRed) | total |
+| 组 | pass | fail(产品) | skip(未覆盖) | 假红(falseRed) | total |
 |---|---|---|---|---|---|
 | B0 环境自证 | 6 | 0 | 0 | 0 | 6 |
-| B1 夹具 | 4 | 0 | 0 | 0 | 4 |
-| B1 售后退款闭环（串行） | 17 | 0 | 0 | 0 | 17 |
-| B2 并发竞态（C1~C4 族） | — | — | — | — | — |
-| B1/B2 补强探针（精度/边界/正对照） | — | — | — | — | — |
-| Z 零残留 | — | — | — | — | — |
-| **合计** | 见 `out/SUMMARY.json` 的 `counts` | | | | |
+| B1 夹具（探针商品/已确认订单） | 4 | 0 | 0 | 0 | 4 |
+| B1 售后退款闭环（串行） | 19 | 0 | 1 | 0 | 20 |
+| B2 并发竞态（C1~C4 族） | 4 | 1 | 0 | 0 | 5 |
+| B2/B1 补强探针（状态机并发面 / 精度 / 读面） | 6 | 5 | 1 | 0 | 12 |
+| B1 涉钱精度（p5） | 2 | 1 | 0 | 0 | 3 |
+| B2 正对照（订单侧 CAS + SQL 量化） | 2 | 0 | 0 | 0 | 2 |
+| B2 并发派工（C5，pooled 两侧 + 红证） | 3 | 0 | 0 | 0 | 3 |
+| Z 零残留 | 2 | 0 | 0 | 0 | 2 |
+| **合计** | **48** | **7** | **2** | **0** | **57** |
 
-并发族单列（每项都带 `N` / `rounds[3]` / `overlapEvidence`，见 `out/SUMMARY.json` 的 `items[].concurrency`）：
+**7 条 fail 的构成**（详见 §2）：
+- 并发状态机族 4 条：`LB-C2-CONCURRENT-RESOLVE` / `LB-C21-CONCURRENT-SAME-TARGET` / `LB-C22-CONCURRENT-CONFLICT` / `LB-C23-CONCURRENT-RESOLVE-TIMELINE` ⇒ **同一根因（D1）**；
+- 读面 1 条：`LB-C4-NEGATIVE-SIZE`（D3）；
+- 涉钱精度 2 条：`LB-PREC-02` 与 `LB-REF-B03` ⇒ **同一缺陷（D2）**（前者是精度三连的②，后者是同一现象在金额边界组里的独立复现）。
 
-| id | 形态 | N×轮 | 逐轮结局（状态码序列） | DB 终态 | 重叠证据 | 判定 |
+**2 条 skip（未覆盖，永不记 pass）**：`LB-AS-CREATE-03`（判据对象错层：AS-010 的幂等回放属 **agent 工具面**，`POST /api/admin/after-sales` 未接 `ClientRequestIdService`）、`LB-C4-BULK-READ-1000`（本租户最大面 < 1000 行）。
+
+**并发族单列**（每项都带 `N` / `rounds[3]` / 逐请求结局 / `overlapEvidence`，原始读数见 `out/SUMMARY.json` 的 `items[].concurrency`）：
+
+| id | 形态 | N×轮 | 逐轮结局 | DB 终态 | 重叠证据 | 判定 |
 |---|---|---|---|---|---|---|
-| `LB-C1-CONCURRENT-REFUND` | 同一订单并发退款（防双花） | 8×3 | `[200×3, 422×5]`×3 | `refund_amount=300.00`（= 实收）/ 流水 3 行合计 300.00 | 三轮均真重叠 | **pass** |
-| `LB-C1-REDPROOF` | C1 判别力红证（摘守卫 vs 加守卫） | 8 | 无守卫 ⇒ 终值 800（泄漏）；有守卫 ⇒ 300（守住） | — | 真并发（8 独立 psql 进程） | **pass** |
-| `LB-C2-CONCURRENT-RESOLVE` | 同工单并发完结（双重副作用） | 4×3 | `[200,200,200,200]`×3 | 库存 98→**106**；台账 **4 行**；时间线 5 行；退款 300（封顶未破） | 三轮均真重叠（最大逐对重叠 987ms） | **fail(产品)** |
-| `LB-C21-CONCURRENT-SAME-TARGET` | 并发打**同一目标**（pending→processing） | 4×3 | `[200,200,200,200]`×3 | 时间线 **4 行**（应 1） | 三轮均真重叠 | **fail(产品)** |
-| `LB-C22-CONCURRENT-CONFLICT` | 并发**分歧**（processing vs closed） | 2×3 | `[200,200]`×3 | 终态 ∈ {processing, closed}（合法） | 三轮均真重叠 | **fail(产品)**（两个都成 ⇒ 无赢家语义） |
-| `LB-C23-CONCURRENT-RESOLVE-TIMELINE` | 并发 resolved ⇒ 审计重复 | 4×3 | `[200,200,200,200]`×3 | timeline「→resolved」**4 行**（应 1） | 三轮均真重叠 | **fail(产品)** |
-| `LB-C23-ROWCOUNT-REDPROOF` | 行数读数的判别力红证 | 4 / 1 | 4 次写 ⇒ 4 行；1 次写 ⇒ 1 行 | — | — | **pass** |
-| `LB-C3-CONCURRENT-STOCK` | 同 SKU 并发扣减 / 超卖 / 负数 | 8×3 | 并发扣减终值 `[0,0,0]`；超卖请求 `[422,422,422]` | SKU 保持 3.0（超卖未扣）；并发收款后 98.0（恰一次） | 三轮均真重叠 | **pass** |
-| `LB-CTRL-ORDER-STATUS-CAS` | **正对照**：订单侧并发改状态 | 4×3 | `[422,422,422,200]` 型（恰 1 个 200） | 终态 producing | 三轮均真重叠 | **pass** |
-| `LB-CTRL-CAS-SQL` | 正对照 SQL 层量化 | 4 | 有谓词 w=1；无谓词 w=4 | — | — | **pass** |
-| `LB-C4-BULK-READ` | 大批量读（size 钳制 / 跨页求和） | — | ledger `size=5000 ⇒ size=500 total=652 rows=500`，`page2 ⇒ 152`，**跨页求和 652 == total 652** | 无 5xx | — | **pass** |
-| `LB-C4-NEGATIVE-SIZE` | `size<0` ⇒ 总数与行数不自洽 | — | 三端点 `size=-5 ⇒ 200 / total=0 / rows=整页` | — | — | **fail(产品)** |
-| `LB-C4-BULK-READ-1000` | 「>1000 行」档 | — | 本租户最大面 652 行 < 1000 | — | — | **skip(未覆盖)** |
+| `LB-C1-CONCURRENT-REFUND` | 同一订单并发退款（防双花） | 8×3 | `[200×3, 422×5]`×3 | `refund_amount=300.00`（= 实收）；流水 3 行合计 300.00 | 三轮真重叠（最大逐对 987ms） | **pass** |
+| `LB-C1-REDPROOF` | C1 判别力红证（摘/加守卫） | 8 | 无守卫 ⇒ 终值 800（泄漏）；有守卫 ⇒ 300（守住） | — | 8 个独立 psql 进程真并发 | **pass** |
+| `LB-C2-CONCURRENT-RESOLVE` | 同工单并发完结（双重副作用） | 4×3 | `[200,200,200,200]`×3 | 库存 98→**106**；台账 **4 行**；时间线 5 行；退款 300（**未翻倍 = 正对照**） | 三轮真重叠 | **fail(产品)** |
+| `LB-C21-CONCURRENT-SAME-TARGET` | 并发打**同一目标**（pending→processing） | 4×3 | `[200,200,200,200]`×3 | 时间线 **4 行**（应 1） | 三轮真重叠（最大逐对 305/273/258ms） | **fail(产品)** |
+| `LB-C22-CONCURRENT-CONFLICT` | 并发**分歧**（processing vs closed） | 2×3 | `[200,200]`×3 | 终态 `[processing, closed, processing]`（合法，但两路都成 ⇒ 无赢家语义） | 三轮真重叠（最大逐对 199/197/212ms） | **fail(产品)** |
+| `LB-C23-CONCURRENT-RESOLVE-TIMELINE` | 并发 resolved ⇒ 审计重复 | 4×3 | `[200,200,200,200]`×3 | timeline「→resolved」**4 行**（应 1） | 三轮真重叠（最大逐对 295/304/367ms） | **fail(产品)** |
+| `LB-C23-ROWCOUNT-REDPROOF` | 「行数」读数的判别力红证 | 4 / 1 | 4 次写 ⇒ 4 行；1 次写 ⇒ 1 行 | — | — | **pass** |
+| `LB-C3-CONCURRENT-STOCK` | 同 SKU 并发扣减 / 超卖 / 负数 | 8×3 | 并发扣减终值 `[0,0,0]`；超卖请求 `[422,422,422]` | SKU 保持 3.0；并发收款后 98.0（恰一次） | 三轮真重叠 | **pass** |
+| `LB-C5-DISPATCH-SERIAL` | **同一单据并发派工**（pooled 缺省=逐单派） | 4×3 | HTTP `[200×4]`×3；**业务成功数 `[1,1,1]`**（其余 3 个 `success=false` + `VALIDATION_ERROR`「已有加工单 … 请勿重复生成」） | 活跃加工单 **1**；工序实例 **10 行**（无重复 id / 无撞 seq） | 三轮真重叠（最大逐对 818/987/668ms） | **pass** |
+| `LB-C5-DISPATCH-POOLED` | **同一单据并发派工**（pooled=true 跨单成组） | 4×3 | 同上：HTTP `[200×4]`；**业务成功数 `[1,1,1]`** | 活跃加工单 **1**；工序实例 **10 行** | 三轮真重叠（最大逐对 929/744/607ms） | **pass** |
+| `LB-C5-REDPROOF` | C5 判别力红证（摘/加唯一约束） | 4 | 无唯一约束 ⇒ **4 行**；有约束（产品同形 partial unique index）⇒ **1 行** | — | 4 个独立 psql 进程真并发 | **pass** |
+| `LB-CTRL-ORDER-STATUS-CAS` | **正对照**：订单侧并发改状态 | 4×3 | `[422,422,422,200]` 型（**恰 1 个 200**）×3 | 终态 producing | 三轮真重叠 | **pass** |
+| `LB-CTRL-CAS-SQL` | 正对照 SQL 层量化 | 4 | 有谓词 w=**1**；无谓词 w=**4** | — | — | **pass** |
+| `LB-C4-BULK-READ` | 大批量读（size 钳制 / 跨页求和） | — | ledger `size=5000 ⇒ size=500 total=652 rows=500`；`page2 ⇒ 152`；**跨页求和 652 == total 652** | 无 5xx | — | **pass** |
+| `LB-C4-NEGATIVE-SIZE` | `size<0` ⇒ 总数与行数不自洽 | — | `orders/stock-ledger/after-sales` 三端点 `size=-5 ⇒ 200 / total=0 / rows=整页` | — | — | **fail(产品)** |
+| `LB-C4-BULK-READ-1000` | 「>1000 行」档 | — | 本租户最大面 < 1000 行 | — | — | **skip(未覆盖)** |
 
----
+> **C5 的兜底物（交叉验证）**：`pg_indexes` 里
+> `uk_processing_orders_active ON processing_orders(order_id) WHERE deleted=0 AND status IN ('generated','issued','in_processing','completed')`
+> ⇒ 是**库级部分唯一索引**（不是应用层判重）。主会话已独立从 `pg_indexes` 核过同一对象；本包读数（业务成功数恰 1 / 活跃加工单恰 1 / 工序实例不重复）与之自洽。
+> ⇒ 射程项「**同一单据并发派工**」**已覆盖**（`LB-C5-DISPATCH-SERIAL` + `-POOLED` + `-REDPROOF`）。
 
 ## 2. 真缺陷清单（逐条：级别 / 逐字读数 / 最小复现 / 会红的判据）
 
@@ -72,7 +96,7 @@ LB-C2  R1/R2/R3：逐请求状态码 [200,200,200,200]（N=4）
           {"from":"processing","to":"resolved"}]
        订单 refund_amount=300.00（= 实收）⇒ **退款侧被守卫挡住，未翻倍**
 LB-C21 三轮：N=4 并发打 pending→processing，4/4 全 200，时间线 4 行（应 1 行）
-LB-C22 三轮：N=2 并发（processing vs closed），2/2 全 200 ⇒ 不存在「一个赢家」
+LB-C22 三轮：N=2 并发（processing vs closed），2/2 全 200；终态 [processing, closed, processing]（合法但**两路都成**）⇒ 不存在「一个赢家」的语义
 LB-C23 三轮：N=4 并发打 processing→resolved，4/4 全 200，timeline「→resolved」4 行（应 1 行）
 ```
 
@@ -106,7 +130,7 @@ SEGMENTS=p0,p8,p1,p3 API_BASE=http://127.0.0.1:8080 node run-all.mjs   # 只跑�
 **边界**：只在工单从 `processing` 并发打 `resolved` 时出现（`pending→resolved` 本就不合法）；
 影响面 = 任何「同一张退货/退款工单被重复提交完结」的路径（客服连点、客户端重试、网络重放）。
 
-### D2（P2 · 涉钱精度）`refund_amount=0.001` ⇒ **HTTP 200 但退款金额静默归零**（`LB-PREC-02`、`LB-REF-B03`）
+### D2（P2 · 涉钱精度）`refund_amount=0.001` ⇒ **HTTP 200 但退款金额静默归零**（`LB-REF-B03` 首次发现 / `LB-PREC-02` 精度三连②独立复现）
 
 **逐字读数**（`out/B5-refund-precision.json`、`out/B5-col-types.json`）：
 
@@ -181,6 +205,7 @@ GET /api/admin/after-sales?page=1&size=-5   ⇒ 200 / total=0 / page=1 / size=50
 ## 3. 假红与自身 harness 缺陷（自曝）
 
 > 判据纪律要求：**判据的缺陷与产品的缺陷必须分开报**。以下每条都是本包**自己**的错，已修并重跑（修完的真读数即上文）。
+> ⚠️ **假绿三连（H8 / H11 / 早期 Z-02）单列在此**：它们不是「没测到」，而是「**判据在真值缺失时仍然变绿**」—— 本轮最值钱的 harness 教训。
 
 | # | 现象（逐字） | 归因 | 处置 |
 |---|---|---|---|
@@ -191,12 +216,33 @@ GET /api/admin/after-sales?page=1&size=-5   ⇒ 200 / total=0 / page=1 / size=50
 | H5 | 订单停留 `pending`、库存不扣、台账 0 行 | 我调了 `POST /api/admin/orders/{id}/confirm-payment`（**该端点不存在**） | 正确端点是 `PUT /api/admin/orders/{id}/payment` |
 | H6 | `LB-AS-RESTOCK-ON/OFF` 422「工单状态不允许从 [待处理] 变更为 [已解决]」 | 我让工单 `pending` 直跳 `resolved`；`STATUS_TRANSITIONS` 里 `pending` 的允许目标是 `{processing, rejected, closed}` | 改走 `pending → processing → resolved` 两步（⇒ 两条判据由假红转 **pass**） |
 | H7 | `LB-REF-07` 404「/api/admin/orders/**undefined**/refund」 | 建单请求同样 422（缺 subtotal）⇒ `orderId` 未取到 | 补 subtotal（⇒ 转 **pass**） |
-| H8 | `LB-C4` 曾判 **pass**，读数却是 `total=undefined rows=null 2ms` | 响应路径取错（本仓是 `data.items`/`data.total`，不是 `records`/`list`/`content`）⇒ **取不到真值仍判绿 = 假绿** | 改判：取不到真值 ⇒ **fail**；并新增 `typeof total === 'number'` 真值断言（同类假绿见复盘教训） |
+| **H8** | `LB-C4` 曾判 **pass**，读数却是 `total=undefined rows=null 2ms` | 响应路径取错（本仓是 `data.items`/`data.total`，不是 `records`/`list`/`content`）⇒ **取不到真值仍判绿 = 假绿** | 改判：取不到真值 ⇒ **fail**；并新增 `typeof total === 'number'` 真值断言（同类假绿见复盘教训） |
 | H9 | `LB-AS-RESTOCK-ON/OFF` 曾把期望写死成 `98 → 100` | 夹具被上一轮回补过 ⇒ 基线漂移 ⇒ 假红 | 期望改为**运行时取基线 + 独立算式增量**（不写死数字） |
 | H10 | `LB-CTRL-CAS-SQL` 第一版：有谓词组的终值也是 4（"守卫失效"） | **我的 SQL 没改写谓词列**：`SET w=w+1 WHERE … AND status='confirmed'` —— `status` 一直没变 ⇒ 谓词恒真（PG 只在等锁后**重算**谓词，谓词列不变就每次都通过） | 改为 `SET w=w+1, status='producing' WHERE … AND status='confirmed'`（与产品 `set(status,newStatus)` 同形）⇒ 有谓词 w=1 / 无谓词 w=4 |
-| H11 | `LB0-02` 时钟自检打印「差 **NaNs**」 | `Date` 解析裸 `YYYY-MM-DD HH:MM:SS` 串（无偏移）不可靠 | 两侧统一按 `+08:00` 显式解析后取毫秒（修后差 0s） |
+| **H11** | `LB0-02` 时钟自检打印「差 **NaNs**」 | `Date` 解析裸 `YYYY-MM-DD HH:MM:SS` 串（无偏移）不可靠 | 两侧统一按 `+08:00` 显式解析后取毫秒（修后差 0s） |
 | H12 | `size=-5` 的读数曾同时拉红 `LB-C4-BULK-READ` 与 `LB-C4-NEGATIVE-SIZE` | 同一现象落在两条判据的域内（判据重叠） | 把负 size 移出主判据域，独立成条（**判据分离 ⇒ 证据不混**） |
 | H13 | 16:15 那版 `:8080` **未加载** `SMS_BYPASS_CODE` ⇒ 万能码 401 | 主会话环境失误（已由其带 `.env` 重启修复） | 本包 `LB0-05` 重跑为 **pass**（via=sms-bypass-code）；期间用「`POST /api/auth/sms/send` + 只读 Redis 读回码」的用户等价路径过渡（未绕过鉴权） |
+| **H14** | **`LB-C4` 曾把 `total=undefined rows=null 2ms` 判成 `pass`** | **响应路径取错**（本仓是 `data.items`/`data.total`，我取了 `records`/`list`/`content`）⇒ **真值根本没取到，判据却"通过"** —— 这是本轮**假绿三连**之一（另两处：`LB0-02` 时钟 `差 NaNs`、早期 `LB-Z-02` 拿历史快照比现快照） | 已改判：**取不到真值 ⇒ fail**；并加 `typeof total === number && Array.isArray(items)` 真值断言。**教训：判据必须自证"真值取到了"**（与「假绿＝判据比它声称的宽」同族） |
+| **H15** | `零残留=false`、残留 **448 行**（`products 64 / orders 61 / processingOrders 18 / positionOperations 180`） | 清理器**只按命名前缀清**，而 p10 新增的对象（`LB-DISP-*` 商品、「探针订单-派工并发」订单、加工单/工序实例）不在旧谓词与旧表清单里 ⇒ **"清理段跑过了，但没清到新东西"**（静默漏清）。另有一处硬错误：`stock_batch_consumptions` **没有** `processing_order_id` 列（按 `processing_order_no` 寻址），该句报错即中断后续删除（`ON_ERROR_STOP=1`） | 改成**探针注册表**形状：建对象时 `registerProbe(kind,id)` 登记（`out/probe-registry.json`），**清理按注册表 + 前缀兜底**（新增段自动被清，不再靠命名推断归属）；按 `information_schema` 现取的 FK 依赖清单补齐子表（`order_logistics` / `processing_order_sets` / `production_work_logs` / `worker_report_audits` / `processing_set_part_tokens` / `production_instance_repricing_logs` / `ticket_notes` 等）；每条删除**逐条 try + 记录错误**（不再"一句错、全线停"）。修后复读：**逐表全 0** |
+| **H16** | `LB-AS-CREATE-03` 曾被记成 `fail` | **判据对象错层**：AS-010 的「同键回放」是 **agent 工具面**（`aftersale_create`）的能力，`POST /api/admin/after-sales` **未接** `ClientRequestIdService` ⇒ 在 admin-api 直连面上 `replayed=true` 不可能成立（实测第 2 次被 **dup-guard** 拒 422） | 改记 **skip（未覆盖）+ 逐字读数**（既不是 pass 也不是产品 fail）；登记：admin-api 售后建单**无幂等键接线**，同键重发由 dup-guard 兜住 |
+
+---
+
+## 3.5 每条关键断言的红证索引（**没有红证 = 空断言**）
+
+| 判据 | 红证（注入方式，**全在自建临时表上**） | 红证读数 | 会不会红 |
+|---|---|---|---|
+| `LB-C1-CONCURRENT-REFUND`（并发退款封顶） | `lb_gp_redproof`：8 个独立 psql 进程并发跑同一 `UPDATE`，一轮**摘掉 WHERE 上限**、一轮**加回** | 无守卫 ⇒ 终值 **800**（> 上限 300，泄漏）；有守卫 ⇒ **300**（守住） | 会（摘掉必红） |
+| `LB-C2/C21/C22/C23`（工单状态机 + 副作用） | `lb_gp_timeline`：N 次「到达」是否 N 行（判「行数」读数是否空断言） | 4 次写 ⇒ **4 行**；1 次写 ⇒ **1 行** | 会（读数对写入次数敏感） |
+| `LB-C3-CONCURRENT-STOCK`（扣减不为负） | `lb_gp_stock`：初值 3.0，8 个独立进程并发各扣 1.0 | 终值 **0.0**（`GREATEST(...,0)` 夹住，不为负） | 会（去掉 GREATEST 必为负） |
+| `LB-C4-BULK-READ`（分页真值） | **自曝红证**：上一版取数路径错（`records`）时 `total=undefined rows=null` 仍判 pass ⇒ 已改判为「取不到真值 ⇒ fail」 | 见 §3 的 **H14** | 会（真值缺失即红） |
+| `LB-C5-DISPATCH-*`（加工单唯一） | `lb_gp_dispatch`：4 个独立进程并发同键 INSERT，一轮**无唯一约束**、一轮**有 partial unique index**（产品同形） | 无约束 ⇒ **4 行**；有约束 ⇒ **1 行** | 会（摘掉约束必红） |
+| `LB-PREC-01/02`（退款精度准入） | `0.01` 正对照（最小可表示，逐字落 0.01）⇄ `0.001` 现状 200 且归零 | 见 §2 D2 | 会（正对照绿 + 越界红） |
+| `LB-CTRL-ORDER-STATUS-CAS`（正对照） | `lb_gp_orderstatus`：4 进程并发，谓词列**被本次 UPDATE 改写**；一轮有谓词、一轮无 | 有谓词 **w=1**；无谓词 **w=4** | 会（本条本身就是「换实现必变号」的证据） |
+| `LB-Z-01/Z-02`（零残留） | 逐表计数 + **段内紧邻**前后逐行 diff（假红教训见 §3 H15 与 §6 注释） | 全 0 / 0-0-0 | 会（残留非 0 即红） |
+
+> ⚠️ 注入纪律：以上临时表一律 `lb_gp_*` 且**用后即 drop**（逐表残留计数含 `tempTables` 一项，终态 0）；
+> **未改任何产品源码 / 测试 / 用例**，**未提交任何东西**。
 
 ---
 
@@ -207,7 +253,7 @@ GET /api/admin/after-sales?page=1&size=-5   ⇒ 200 / total=0 / page=1 / size=50
 | **「>1000 行真实数据量」的列表/看板读**（截断、响应时间） | 本租户**没有任何面 ≥1000 行**；自灌 1000+ 探针行会污染活库计数（跨包隔离铁律）⇒ 如实记 `skip` | 现查 `count(*)`：`orders=~500` / `stock_ledger_entries=~650` / `finance_transactions=~570` / `after_sales_tickets=~70`（最大 ~650） |
 | **>500 行面的「跨页总计」只覆盖 ledger**（真跨页） | orders/after-sales 的总数 ≤500 ⇒ 单页即可取全，跨页求和未在该两面构成真实考验 | ledger：`size=5000 ⇒ size=500 total=652 rows=500`；`page2 ⇒ 152`；**跨页求和 652 == total** |
 | **并发下单导致超卖**（真实 API 面） | 下单流程**不扣库存**（扣减发生在确认收款）⇒ 真实面的并发扣减考验在 `PUT /orders/{id}/payment`；本包以「并发确认收款（真 API）+ 扣减守卫同形 SQL 真并发」两路覆盖，**未覆盖**「并发下单 + 并发确认」的混合形态 | `LB-C3` 三轮：并发扣减终值 0.0；超卖请求 422 且库存保持 3.0；并发收款后 SKU 恰 98.0 |
-| **并发派工 / 并发分配同一工序** | 属线A 已占的 `/api/worker/**` 与派工写面（任务书 §2.B3 明确分工）⇒ 本线不重复；本线以「订单/工单并发改状态」近似形态覆盖（`LB-C22`、`LB-CTRL-ORDER-STATUS-CAS`） | 见并发族表 |
+| ~~**并发派工 / 并发分配同一工序**~~ ⇒ **已覆盖**（17:0x 补测） | — | `LB-C5-DISPATCH-SERIAL` / `-POOLED`（4×3，业务成功恰 1、活跃加工单恰 1、工序实例 10 行不重复）+ `LB-C5-REDPROOF`（摘约束 ⇒ 4 行 / 加约束 ⇒ 1 行）；兜底物 = 库级 partial unique index `uk_processing_orders_active` |
 | **「服务端已落库但客户端超时」的真实故障注入** | 需要故障注入能力（当前环境无） | 与 `AS-010`/`OR-049` 同族的形态缺口，如实登记 |
 | **agent 工具面（米宝）的售后写路径** | 本轮 B1 以 admin-api 直连面为准；AI-TDD 纪律禁止真实 LLM 评测（#4262） | `ai-agent-service:8001` 探活 = 405（内部工具入口需 POST），未做工具级判据 |
 | **最坏竞争强度（N ≫ 8、跨进程/跨实例）** | 单机单实例、N≤8；跨实例竞争需多副本部署 | 本包已给「摘守卫 ⇒ 必红」的判别力红证，量化了守卫的作用而非竞争强度的上界 |
@@ -256,10 +302,17 @@ GET /api/admin/after-sales?page=1&size=-5   ⇒ 200 / total=0 / page=1 / size=50
 - 探针命名域：名称前缀 **`线B验收`**、id/键前缀 **`lb`**、工单号前缀 `LB-AS-`（本包自建）。
 - 清理器：`harness/lib.mjs` 的 `cleanupProbe()`（只按本包前缀匹配：订单 `remark`、工单 `description`、商品 `name`/`sku_code`、
   台账按探针 product/sku 关联、`finance_transactions` 按探针订单关联、`client_request_keys` 的 `lb-` 前缀、临时表 `lb_gp_*`）。
-- 终态读数：`out/SUMMARY.json` 的 `residue` + `out/Z-residue.json` + `out/B9-residue.json`（逐表计数全 0）。
-- 存量行零改动：`out/B9-stock-before.json`（前）vs `out/B9-residue.json`（后）的 sha256 对照。
-  ⚠️ 台账/流水两表参与对照，而同租户**线A 并发包**也在写 ⇒ 若 sha 不一致，先**按行内容归因**（本包行已删；外来行 ⇒ 记 `skip` 并说明）。
-- **涉钱面处置**：全程只用**本包自建探针订单**；对存量订单只做过**一次只读退款探针**（`cancelled` 态被拒），前后行 sha 对照零改动（`LB-REF-06` 早期版本），后续版本改为自建 cancelled 单，**不再触碰存量订单**。
+- 终态读数（**采集时刻 = 2026-10-03 17:05:32 +08**，最后一次全量跑收尾；另于 16:56:34 +08 单独复读一次同为 0）：
+  逐表 **全 0** —— `{"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}`
+  ⇒ `out/SUMMARY.json` 的 `residue` + `out/Z-residue.json` + `out/B9-residue.json`。
+- **清理器形状已升级（消灭「新段漏清」）**：建对象时 `registerProbe(kind,id)` 登记到 `out/probe-registry.json`，`cleanupProbe()` 按**注册表 + 命名前缀兜底**清理（归属由注册表定义、不由命名推断）⇒ 新增段**自动**被清；逐条删除带 try + 错误登记。教训原文见 §3 的 **H15**。
+- 存量行零改动（**判据 = 本段内紧邻的前后逐行 diff**；`LB-Z-02` = **pass**）：
+  `orders: added=0 removed=0 changed=0`；`after_sales_tickets: added=0 removed=0 changed=0`。
+  ⚠️ **踩过的坑（假红）**：最初拿 p8 的历史快照与 p9 的现快照比，读到 `orders removed=55` —— 那 55 行是
+  **线A 的探针订单**（id 前缀 `laord…`）被**它自己**在两次快照之间清掉了 ⇒ 外来变化被读成本包的问题。
+  按跨包隔离铁律改为**本段内紧邻前后快照**后为 0/0/0。
+  另：`stock_ledger_entries` / `finance_transactions` 是**流水表、只增不减**，同租户线A 也在写
+  （实测两次对照之间 +28 行）⇒ 这两张表**只登记行数、不参与判据**；`LB-Z-02` 的 sha 粗指标曾因此误报过一次。
 
 ---
 

@@ -1,68 +1,79 @@
 {
   "at": {
-    "cst": "2026-10-03 16:53:52 +08",
-    "utc": "2026-10-03T08:53:52.972Z"
+    "cst": "2026-10-03 17:04:20 +08",
+    "utc": "2026-10-03T09:04:20.579Z"
   },
   "counts": {
-    "orders": 463,
-    "ledger": 472,
-    "finance": 437,
-    "tickets": 24
+    "orders": 441,
+    "ledger": 554,
+    "finance": 498,
+    "tickets": 36
   },
   "readings": [
     {
       "label": "ledger-size5000",
       "path": "/api/admin/stock-ledger?page=1&size=5000",
       "status": 200,
-      "total": 472,
+      "total": 554,
       "page": 1,
       "size": 500,
-      "rows": 472,
-      "ms": 175,
+      "rows": 500,
+      "ms": 113,
       "truthy": true
     },
     {
       "label": "ledger-page2",
       "path": "/api/admin/stock-ledger?page=2&size=500",
       "status": 200,
-      "total": 472,
+      "total": 554,
       "page": 2,
       "size": 500,
-      "rows": 0,
-      "ms": 51,
+      "rows": 54,
+      "ms": 75,
       "truthy": true
     },
     {
       "label": "ledger-page3",
       "path": "/api/admin/stock-ledger?page=3&size=500",
       "status": 200,
-      "total": 472,
+      "total": 554,
       "page": 3,
       "size": 500,
       "rows": 0,
-      "ms": 50,
+      "ms": 128,
+      "truthy": true
+    },
+    {
+      "label": "ledger-page2-sum",
+      "path": "/api/admin/stock-ledger?page=2&size=500",
+      "status": 200,
+      "total": 554,
+      "page": 2,
+      "size": 500,
+      "rows": 54,
+      "ms": 74,
       "truthy": true
     },
     {
       "label": "orders-size5000",
       "path": "/api/admin/orders?page=1&size=5000",
       "status": 200,
-      "total": 456,
+      "total": 434,
       "page": 1,
       "size": 500,
-      "rows": 456,
-      "ms": 342,
+      "rows": 434,
+      "ms": 724,
       "truthy": true
     },
     {
       "label": "after-sales-size5000",
       "path": "/api/admin/after-sales?page=1&size=5000",
       "status": 200,
-      "total": 24,
+      "total": 36,
       "page": 1,
       "size": 500,
-      "rows": 24,
-      "ms": 79,
+      "rows": 36,
+      "ms": 109,
       "truthy": true
     },
     {
@@ -72,33 +83,33 @@
       "total": 0,
       "page": 1,
       "size": 500,
-      "rows": 456,
-      "ms": 544,
+      "rows": 434,
+      "ms": 564,
       "truthy": true
     },
     {
       "label": "orders-size-zero",
       "path": "/api/admin/orders?page=1&size=0",
       "status": 200,
-      "total": 456,
+      "total": 434,
       "page": 1,
       "size": 0,
       "rows": 0,
-      "ms": 52,
+      "ms": 147,
       "truthy": true
     },
     {
       "label": "orders-size-100000",
       "path": "/api/admin/orders?page=1&size=100000",
       "status": 200,
-      "total": 456,
+      "total": 434,
       "page": 1,
       "size": 500,
-      "rows": 456,
-      "ms": 386,
+      "rows": 434,
+      "ms": 509,
       "truthy": true
     }
   ],
-  "crossPageSum": 472,
-  "ledgerTotalAtRead": 472
+  "crossPageSum": 554,
+  "ledgerTotalAtRead": 554
 }

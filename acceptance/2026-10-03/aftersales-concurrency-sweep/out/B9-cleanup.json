@@ -4,15 +4,15 @@
       "id": "LB-Z-01",
       "name": "零残留：本包探针域逐表计数 = 0",
       "status": "pass",
-      "detail": "清理前 0 行 → 清理后 0 行；逐表={\"products\":0,\"productSkus\":0,\"orders\":0,\"orderItems\":0,\"tickets\":0,\"ticketTimeline\":0,\"ledger\":0,\"finance\":0,\"clientKeys\":0,\"tempTables\":0,\"processingOrders\":0,\"positionOperations\":0,\"workLogs\":0}",
+      "detail": "清理前 889 行 → 清理后 0 行；逐表={\"products\":0,\"productSkus\":0,\"orders\":0,\"orderItems\":0,\"tickets\":0,\"ticketTimeline\":0,\"ledger\":0,\"finance\":0,\"clientKeys\":0,\"tempTables\":0,\"processingOrders\":0,\"positionOperations\":0,\"workLogs\":0}",
       "evidence": [
         "清理器: 本包 lib.mjs 的 cleanupProbe()（**仅**本包命名域：订单 remark 前缀「线B验收」/ 工单 description 前缀 / 商品 name·sku_code 前缀 / 台账 product·sku 关联 / finance 经订单关联 / client_request_keys 的 lb- 前缀）",
         "跨包隔离: 同时段线A 在同租户 20 写入（实测 38 行 remark=「线A验收扫码闭环夹具」）—— **按行内容归因**，本清理器绝不触及",
         "清理报错（若有）: 无",
-        "原始读数: {\"preCleanupResidue\":{\"counts\":{\"products\":0,\"productSkus\":0,\"orders\":0,\"orderItems\":0,\"tickets\":0,\"ticketTimeline\":0,\"ledger\":0,\"finance\":0,\"clientKeys\":0,\"tempTables\":0,\"processingOrders\":0,\"positionOperations\":0,\"workLogs\":0},\"total\":0},\"residue2\":{\"counts\":{\"products\":0,\"productSkus\":0,\"orders\":0,\"orderItems\":0,\"tickets\":0,\"ticketTimeline\":0,\"ledger\":0,\"finance\":0,\"clientKeys\":0,\"tempTables\":0,\"processingOrders\":0,\"positionOperations\":0,\"workLogs\":0},\"total\":0}}"
+        "原始读数: {\"preCleanupResidue\":{\"counts\":{\"products\":91,\"productSkus\":91,\"orders\":88,\"orderItems\":88,\"tickets\":31,\"ticketTimeline\":100,\"ledger\":193,\"finance\":141,\"clientKeys\":0,\"tempTables\":0,\"processingOrders\":6,\"positionOperations\":60,\"workLogs\":0},\"total\":889},\"residue2\":{\"counts\":{\"products\":0,\"productSkus\":0,\"orders\":0,\"orderItems\":0,\"tickets\":0,\"ticketTimeline\":0,\"ledger\":0,\"finance\":0,\"clientKeys\":0,\"tempTables\":0,\"processingOrders\":0,\"positionOperations\":0,\"workLogs\":0},\"total\":0}}"
       ],
-      "at": "2026-10-03 16:56:34 +08",
-      "atUtc": "2026-10-03T08:56:34.513Z"
+      "at": "2026-10-03 17:05:27 +08",
+      "atUtc": "2026-10-03T09:05:27.006Z"
     },
     {
       "id": "LB-Z-02",
@@ -27,8 +27,8 @@
         "粗指标（不作判据）: before sha=059e5bf5d74317b1… / after sha=059e5bf5d74317b1…",
         "⚠️ 已知边界: stock_ledger_entries / finance_transactions 是**流水表、只增不减**，且同租户的线A 并发包也在写 ⇒ 只登记行数、不参与判据"
       ],
-      "at": "2026-10-03 16:56:34 +08",
-      "atUtc": "2026-10-03T08:56:34.515Z"
+      "at": "2026-10-03 17:05:27 +08",
+      "atUtc": "2026-10-03T09:05:27.010Z"
     }
   ],
   "summary": {

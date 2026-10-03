@@ -81,7 +81,7 @@ const src = (p, sym) => `源码 ${p} 的 ${sym}`
     [`期望来源: .github/cases/aftersales.yml 的 AS-010（db_verify[after_sales_by_client_request_id] expect_rows=1 + expect_replayed=true）」`,
      `幂等键 = X-Client-Request-Id: ${key}（服务端口径见 backend/admin-api/src/main/java/com/migao/admin/service/ClientRequestIdService.java 的 HEADER）`,
      `第1次响应: ${k1.text.slice(0, 300)}`, `第2次响应: ${k2.text.slice(0, 300)}`,
-     `⇒ **skip 理由（判据对象错层）**：本条判的是 agent 工具面（`aftersale_create`）的同键回放能力，而 admin-api 直连面**未接**该服务`,
+     `⇒ **skip 理由（判据对象错层）**：本条判的是 agent 工具面（aftersale_create）的同键回放能力，而 admin-api 直连面**未接**该服务`,
      `   （接线只在这些端点：WorkerProductionController / WorkerShipmentController / ProductionController / Agent*Controller），`,
      `   故本判据在 **admin-api 直连面** 上很可能不如 AS-010 那样成立 —— 该用例判的是 **agent 工具面**。读数即为结论，不作推断。`],
     { key, httpStatus1: k1.status, httpStatus2: k2.status, rows: rowsForKey.length, raw2: k2.text.slice(0, 400) })

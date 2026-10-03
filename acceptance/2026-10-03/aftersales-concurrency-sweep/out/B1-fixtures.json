@@ -1,7 +1,7 @@
 {
   "at": {
-    "cst": "2026-10-03 16:56:44 +08",
-    "utc": "2026-10-03T08:56:44.323Z"
+    "cst": "2026-10-03 17:02:24 +08",
+    "utc": "2026-10-03T09:02:24.242Z"
   },
   "via": "sms-bypass-code",
   "fixtures": {
@@ -11,20 +11,20 @@
       "allowRestock": true,
       "product": {
         "ok": true,
-        "productId": "355a594936ccd703d6a47081640a2fcc",
-        "skuId": "2106307453551251457",
-        "skuCode": "LB-RESTOCKON-MUS5RACKAXH7-01-28",
+        "productId": "5b320f61dd2cb49ee085ebde14e9cbbc",
+        "skuId": "2106308878863831042",
+        "skuCode": "LB-RESTOCKON-MUS5YKMQGUPW-01-28",
         "stock": 100,
         "price": 100,
-        "name": "线B验收商品-RESTOCKON-mus5rackaxh7",
-        "colorId": "2106307453467365378",
+        "name": "线B验收商品-RESTOCKON-mus5ykmqgupw",
+        "colorId": "2106308878800916482",
         "productSkuRows": [
           {
-            "id": "2106307453551251457",
-            "sku_code": "LB-RESTOCKON-MUS5RACKAXH7-01-28",
+            "id": "2106308878863831042",
+            "sku_code": "LB-RESTOCKON-MUS5YKMQGUPW-01-28",
             "stock": 100,
             "price": 100,
-            "color_id": "2106307453467365378"
+            "color_id": "2106308878800916482"
           }
         ],
         "resp": {
@@ -32,8 +32,8 @@
           "json": {
             "success": true,
             "data": {
-              "id": "355a594936ccd703d6a47081640a2fcc",
-              "name": "线B验收商品-RESTOCKON-mus5rackaxh7",
+              "id": "5b320f61dd2cb49ee085ebde14e9cbbc",
+              "name": "线B验收商品-RESTOCKON-mus5ykmqgupw",
               "categoryId": "dae835d8ae5f68bdb7cd191f29d2e827",
               "categoryName": "POC-窗帘面料",
               "basePrice": 100,
@@ -42,7 +42,7 @@
               "status": "on_shelf",
               "stock": 100,
               "stockWarningThreshold": 10,
-              "skuCode": "LB-RESTOCKON-MUS5RACKAXH7",
+              "skuCode": "LB-RESTOCKON-MUS5YKMQGUPW",
               "unit": "米",
               "pricingType": "per_meter",
               "stockDeductionMode": "on_order",
@@ -54,13 +54,13 @@
               "allowReturnRestock": true,
               "colors": [
                 {
-                  "id": "2106307453467365378",
-                  "productId": "355a594936ccd703d6a47081640a2fcc",
-                  "colorName": "线B验收色-mus5rackaxh7",
+                  "id": "2106308878800916482",
+                  "productId": "5b320f61dd2cb49ee085ebde14e9cbbc",
+                  "colorName": "线B验收色-mus5ykmqgupw",
                   "mainColorHex": "#AABBCC",
                   "sortOrder": 0,
-                  "createdAt": "2026-10-03 16:56:44",
-                  "updatedAt": "2026-10-03 16:56:44"
+                  "createdAt": "2026-10-03 17:02:24",
+                  "updatedAt": "2026-10-03 17:02:24"
                 }
               ],
               "sellingMethods": [
@@ -72,33 +72,33 @@
               ],
               "skus": [
                 {
-                  "id": "2106307453551251457",
-                  "productId": "355a594936ccd703d6a47081640a2fcc",
-                  "colorId": "2106307453467365378",
-                  "colorName": "线B验收色-mus5rackaxh7",
+                  "id": "2106308878863831042",
+                  "productId": "5b320f61dd2cb49ee085ebde14e9cbbc",
+                  "colorId": "2106308878800916482",
+                  "colorName": "线B验收色-mus5ykmqgupw",
                   "doorWidth": "2.8m",
                   "price": 100,
                   "stock": 100,
-                  "skuCode": "LB-RESTOCKON-MUS5RACKAXH7-01-28",
-                  "createdAt": "2026-10-03 16:56:44",
-                  "updatedAt": "2026-10-03 16:56:44"
+                  "skuCode": "LB-RESTOCKON-MUS5YKMQGUPW-01-28",
+                  "createdAt": "2026-10-03 17:02:24",
+                  "updatedAt": "2026-10-03 17:02:24"
                 }
               ],
               "detailImages": [],
               "editedBy": "13870217889",
-              "editedAt": "2026-10-03 16:56:44",
-              "createdAt": "2026-10-03 16:56:44",
-              "updatedAt": "2026-10-03 16:56:44",
+              "editedAt": "2026-10-03 17:02:24",
+              "createdAt": "2026-10-03 17:02:24",
+              "updatedAt": "2026-10-03 17:02:24",
               "price": 100
             },
-            "requestId": "req_7d388c3bc6ba4837",
-            "timestamp": 1791017805
+            "requestId": "req_c6ee355a07bd44cd",
+            "timestamp": 1791018145
           },
-          "text": "{\"success\":true,\"data\":{\"id\":\"355a594936ccd703d6a47081640a2fcc\",\"name\":\"线B验收商品-RESTOCKON-mus5rackaxh7\",\"categoryId\":\"dae835d8ae5f68bdb7cd191f29d2e827\",\"categoryName\":\"POC-窗帘面料\",\"basePrice\":100.00,\"description\":\"线B验收（线B 售后退款/并发探针，用后自清）\",\"images\":[],\"status\":\"on_shelf\",\"stock\":100.0,\"stockWarningThreshold\":10,\"skuCode\":\"LB-RESTOCKON-MUS5RACKAXH7\",\"unit\":\"米\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":1,\"totalStock\":100.0,\"salesCount\":0.0,\"salesAmount\":0.00,\"recommended\":false,\"allowReturnRestock\":true,\"colors\":[{\"id\":\"2106307453467365378\",\"productId\":\"355a594936ccd703d6a47081640a2fcc\",\"colorName\":\"线B验收色-mus5rackaxh7\",\"mainColorHex\":\"#AABBCC\",\"sortOrder\":0,\"createdAt\":\"2026-10-03 16:56:44\",\"updatedAt\":\"2026-10-03 16:56:44\"}],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"doorWidths\":[\"2.8m\"],\"skus\":[{\"id\":\"2106307453551251457\",\"productId\":\"355a594936ccd703d6a47081640a2fcc\",\"colorId\":\"2106307453467365378\",\"colorName\":\"线B验收色-mus5rackaxh7\",\"doorWidth\":\"2.8m\",\"price\":100.00,\"stock\":100.0,\"skuCode\":\"LB-RESTOCKON-MUS5RACKAXH7-01-28\",\"createdAt\":\"2026-10-03 16:56:44\",\"updatedAt\":\"2026-10-03 16:56:44\"}],\"detailImages\":[],\"editedBy\":\"13870217889\",\"editedAt\":\"2026-10-03 16:56:44\",\"createdAt\":\"2026-10-03 16:56:44\",\"updatedAt\":\"2026-10-03 16:56:44\",\"price\":100.00},\"requestId\":\"req_7d388c3bc6ba4837\",\"timestamp\":1791017805}",
+          "text": "{\"success\":true,\"data\":{\"id\":\"5b320f61dd2cb49ee085ebde14e9cbbc\",\"name\":\"线B验收商品-RESTOCKON-mus5ykmqgupw\",\"categoryId\":\"dae835d8ae5f68bdb7cd191f29d2e827\",\"categoryName\":\"POC-窗帘面料\",\"basePrice\":100.00,\"description\":\"线B验收（线B 售后退款/并发探针，用后自清）\",\"images\":[],\"status\":\"on_shelf\",\"stock\":100.0,\"stockWarningThreshold\":10,\"skuCode\":\"LB-RESTOCKON-MUS5YKMQGUPW\",\"unit\":\"米\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":1,\"totalStock\":100.0,\"salesCount\":0.0,\"salesAmount\":0.00,\"recommended\":false,\"allowReturnRestock\":true,\"colors\":[{\"id\":\"2106308878800916482\",\"productId\":\"5b320f61dd2cb49ee085ebde14e9cbbc\",\"colorName\":\"线B验收色-mus5ykmqgupw\",\"mainColorHex\":\"#AABBCC\",\"sortOrder\":0,\"createdAt\":\"2026-10-03 17:02:24\",\"updatedAt\":\"2026-10-03 17:02:24\"}],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"doorWidths\":[\"2.8m\"],\"skus\":[{\"id\":\"2106308878863831042\",\"productId\":\"5b320f61dd2cb49ee085ebde14e9cbbc\",\"colorId\":\"2106308878800916482\",\"colorName\":\"线B验收色-mus5ykmqgupw\",\"doorWidth\":\"2.8m\",\"price\":100.00,\"stock\":100.0,\"skuCode\":\"LB-RESTOCKON-MUS5YKMQGUPW-01-28\",\"createdAt\":\"2026-10-03 17:02:24\",\"updatedAt\":\"2026-10-03 17:02:24\"}],\"detailImages\":[],\"editedBy\":\"13870217889\",\"editedAt\":\"2026-10-03 17:02:24\",\"createdAt\":\"2026-10-03 17:02:24\",\"updatedAt\":\"2026-10-03 17:02:24\",\"price\":100.00},\"requestId\":\"req_c6ee355a07bd44cd\",\"timestamp\":1791018145}",
           "ok": true,
           "data": {
-            "id": "355a594936ccd703d6a47081640a2fcc",
-            "name": "线B验收商品-RESTOCKON-mus5rackaxh7",
+            "id": "5b320f61dd2cb49ee085ebde14e9cbbc",
+            "name": "线B验收商品-RESTOCKON-mus5ykmqgupw",
             "categoryId": "dae835d8ae5f68bdb7cd191f29d2e827",
             "categoryName": "POC-窗帘面料",
             "basePrice": 100,
@@ -107,7 +107,7 @@
             "status": "on_shelf",
             "stock": 100,
             "stockWarningThreshold": 10,
-            "skuCode": "LB-RESTOCKON-MUS5RACKAXH7",
+            "skuCode": "LB-RESTOCKON-MUS5YKMQGUPW",
             "unit": "米",
             "pricingType": "per_meter",
             "stockDeductionMode": "on_order",
@@ -119,13 +119,13 @@
             "allowReturnRestock": true,
             "colors": [
               {
-                "id": "2106307453467365378",
-                "productId": "355a594936ccd703d6a47081640a2fcc",
-                "colorName": "线B验收色-mus5rackaxh7",
+                "id": "2106308878800916482",
+                "productId": "5b320f61dd2cb49ee085ebde14e9cbbc",
+                "colorName": "线B验收色-mus5ykmqgupw",
                 "mainColorHex": "#AABBCC",
                 "sortOrder": 0,
-                "createdAt": "2026-10-03 16:56:44",
-                "updatedAt": "2026-10-03 16:56:44"
+                "createdAt": "2026-10-03 17:02:24",
+                "updatedAt": "2026-10-03 17:02:24"
               }
             ],
             "sellingMethods": [
@@ -137,29 +137,29 @@
             ],
             "skus": [
               {
-                "id": "2106307453551251457",
-                "productId": "355a594936ccd703d6a47081640a2fcc",
-                "colorId": "2106307453467365378",
-                "colorName": "线B验收色-mus5rackaxh7",
+                "id": "2106308878863831042",
+                "productId": "5b320f61dd2cb49ee085ebde14e9cbbc",
+                "colorId": "2106308878800916482",
+                "colorName": "线B验收色-mus5ykmqgupw",
                 "doorWidth": "2.8m",
                 "price": 100,
                 "stock": 100,
-                "skuCode": "LB-RESTOCKON-MUS5RACKAXH7-01-28",
-                "createdAt": "2026-10-03 16:56:44",
-                "updatedAt": "2026-10-03 16:56:44"
+                "skuCode": "LB-RESTOCKON-MUS5YKMQGUPW-01-28",
+                "createdAt": "2026-10-03 17:02:24",
+                "updatedAt": "2026-10-03 17:02:24"
               }
             ],
             "detailImages": [],
             "editedBy": "13870217889",
-            "editedAt": "2026-10-03 16:56:44",
-            "createdAt": "2026-10-03 16:56:44",
-            "updatedAt": "2026-10-03 16:56:44",
+            "editedAt": "2026-10-03 17:02:24",
+            "createdAt": "2026-10-03 17:02:24",
+            "updatedAt": "2026-10-03 17:02:24",
             "price": 100
           }
         },
         "body": {
-          "name": "线B验收商品-RESTOCKON-mus5rackaxh7",
-          "skuCode": "LB-RESTOCKON-MUS5RACKAXH7",
+          "name": "线B验收商品-RESTOCKON-mus5ykmqgupw",
+          "skuCode": "LB-RESTOCKON-MUS5YKMQGUPW",
           "categoryId": "dae835d8ae5f68bdb7cd191f29d2e827",
           "unit": "米",
           "pricingType": "per_meter",
@@ -171,7 +171,7 @@
           "allowReturnRestock": true,
           "colors": [
             {
-              "colorName": "线B验收色-mus5rackaxh7",
+              "colorName": "线B验收色-mus5ykmqgupw",
               "mainColorHex": "#AABBCC"
             }
           ],
@@ -182,8 +182,8 @@
       },
       "order": {
         "ok": true,
-        "orderId": "8402c1571ff867a5d62e0f73cc2ab236",
-        "orderNo": "20261003510180350",
+        "orderId": "26fab1eace11c3bb36844c4398e4ea02",
+        "orderNo": "20261003134320429",
         "total": 200,
         "actual": 200,
         "resp": {
@@ -191,10 +191,10 @@
           "json": {
             "success": true,
             "data": {
-              "id": "8402c1571ff867a5d62e0f73cc2ab236",
-              "orderNo": "20261003510180350",
-              "customerName": "线B验收客户-RESTOCKON-mus5rbbbc0bf",
-              "customerPhone": "13988154374",
+              "id": "26fab1eace11c3bb36844c4398e4ea02",
+              "orderNo": "20261003134320429",
+              "customerName": "线B验收客户-RESTOCKON-mus5yljjk6gy",
+              "customerPhone": "13916538954",
               "customerAddress": "线B验收地址（探针）",
               "logisticsType": "express",
               "logisticsCompany": "线B验收物流",
@@ -209,18 +209,18 @@
               "createdByName": "王小明",
               "items": [
                 {
-                  "id": "de07cd3bca468190a8b3eb4024fe201c",
-                  "productId": "355a594936ccd703d6a47081640a2fcc",
-                  "productName": "线B验收商品-RESTOCKON-mus5rackaxh7",
-                  "skuCode": "LB-RESTOCKON-MUS5RACKAXH7",
+                  "id": "e0562b761842dc974cfad906203111e8",
+                  "productId": "5b320f61dd2cb49ee085ebde14e9cbbc",
+                  "productName": "线B验收商品-RESTOCKON-mus5ykmqgupw",
+                  "skuCode": "LB-RESTOCKON-MUS5YKMQGUPW",
                   "quantity": 2,
                   "unitPrice": 100,
                   "width": 2.8,
                   "height": 2,
                   "processingInfo": {
-                    "skuId": "2106307453551251457",
-                    "colorId": "2106307453467365378",
-                    "skuCode": "LB-RESTOCKON-MUS5RACKAXH7-01-28",
+                    "skuId": "2106308878863831042",
+                    "colorId": "2106308878800916482",
+                    "skuCode": "LB-RESTOCKON-MUS5YKMQGUPW-01-28",
                     "doorWidth": "2.8m",
                     "processingFeeDetail": {
                       "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
@@ -252,23 +252,23 @@
                     "special_options_total": 0,
                     "mixed_color_surcharge_per_meter": 2.4
                   },
-                  "createdAt": "2026-10-03T16:56:45.834768+08:00"
+                  "createdAt": "2026-10-03T17:02:25.750758+08:00"
                 }
               ],
               "processingItems": [],
-              "createdAt": "2026-10-03T16:56:45.796968+08:00",
-              "updatedAt": "2026-10-03T16:56:45.797035+08:00"
+              "createdAt": "2026-10-03T17:02:25.715693+08:00",
+              "updatedAt": "2026-10-03T17:02:25.715761+08:00"
             },
-            "requestId": "req_8d3eddad07d74136",
-            "timestamp": 1791017805
+            "requestId": "req_2a4137f5215d44ec",
+            "timestamp": 1791018145
           },
-          "text": "{\"success\":true,\"data\":{\"id\":\"8402c1571ff867a5d62e0f73cc2ab236\",\"orderNo\":\"20261003510180350\",\"customerName\":\"线B验收客户-RESTOCKON-mus5rbbbc0bf\",\"customerPhone\":\"13988154374\",\"customerAddress\":\"线B验收地址（探针）\",\"logisticsType\":\"express\",\"logisticsCompany\":\"线B验收物流\",\"totalAmount\":200.00,\"actualAmount\":200.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"线B验收（线B 探针订单，用后自清）\",\"isUrgent\":false,\"createdByName\":\"王小明\",\"items\":[{\"id\":\"de07cd3bca468190a8b3eb4024fe201c\",\"productId\":\"355a594936ccd703d6a47081640a2fcc\",\"productName\":\"线B验收商品-RESTOCKON-mus5rackaxh7\",\"skuCode\":\"LB-RESTOCKON-MUS5RACKAXH7\",\"quantity\":2.00,\"unitPrice\":100.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106307453551251457\",\"colorId\":\"2106307453467365378\",\"skuCode\":\"LB-RESTOCKON-MUS5RACKAXH7-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":200.00,\"amount\":200.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-03T16:56:45.834768+08:00\"}],\"processingItems\":[],\"createdAt\":\"2026-10-03T16:56:45.796968+08:00\",\"updatedAt\":\"2026-10-03T16:56:45.797035+08:00\"},\"requestId\":\"req_8d3eddad07d74136\",\"timestamp\":1791017805}",
+          "text": "{\"success\":true,\"data\":{\"id\":\"26fab1eace11c3bb36844c4398e4ea02\",\"orderNo\":\"20261003134320429\",\"customerName\":\"线B验收客户-RESTOCKON-mus5yljjk6gy\",\"customerPhone\":\"13916538954\",\"customerAddress\":\"线B验收地址（探针）\",\"logisticsType\":\"express\",\"logisticsCompany\":\"线B验收物流\",\"totalAmount\":200.00,\"actualAmount\":200.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"线B验收（线B 探针订单，用后自清）\",\"isUrgent\":false,\"createdByName\":\"王小明\",\"items\":[{\"id\":\"e0562b761842dc974cfad906203111e8\",\"productId\":\"5b320f61dd2cb49ee085ebde14e9cbbc\",\"productName\":\"线B验收商品-RESTOCKON-mus5ykmqgupw\",\"skuCode\":\"LB-RESTOCKON-MUS5YKMQGUPW\",\"quantity\":2.00,\"unitPrice\":100.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106308878863831042\",\"colorId\":\"2106308878800916482\",\"skuCode\":\"LB-RESTOCKON-MUS5YKMQGUPW-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":200.00,\"amount\":200.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-03T17:02:25.750758+08:00\"}],\"processingItems\":[],\"createdAt\":\"2026-10-03T17:02:25.715693+08:00\",\"updatedAt\":\"2026-10-03T17:02:25.715761+08:00\"},\"requestId\":\"req_2a4137f5215d44ec\",\"timestamp\":1791018145}",
           "ok": true,
           "data": {
-            "id": "8402c1571ff867a5d62e0f73cc2ab236",
-            "orderNo": "20261003510180350",
-            "customerName": "线B验收客户-RESTOCKON-mus5rbbbc0bf",
-            "customerPhone": "13988154374",
+            "id": "26fab1eace11c3bb36844c4398e4ea02",
+            "orderNo": "20261003134320429",
+            "customerName": "线B验收客户-RESTOCKON-mus5yljjk6gy",
+            "customerPhone": "13916538954",
             "customerAddress": "线B验收地址（探针）",
             "logisticsType": "express",
             "logisticsCompany": "线B验收物流",
@@ -283,18 +283,18 @@
             "createdByName": "王小明",
             "items": [
               {
-                "id": "de07cd3bca468190a8b3eb4024fe201c",
-                "productId": "355a594936ccd703d6a47081640a2fcc",
-                "productName": "线B验收商品-RESTOCKON-mus5rackaxh7",
-                "skuCode": "LB-RESTOCKON-MUS5RACKAXH7",
+                "id": "e0562b761842dc974cfad906203111e8",
+                "productId": "5b320f61dd2cb49ee085ebde14e9cbbc",
+                "productName": "线B验收商品-RESTOCKON-mus5ykmqgupw",
+                "skuCode": "LB-RESTOCKON-MUS5YKMQGUPW",
                 "quantity": 2,
                 "unitPrice": 100,
                 "width": 2.8,
                 "height": 2,
                 "processingInfo": {
-                  "skuId": "2106307453551251457",
-                  "colorId": "2106307453467365378",
-                  "skuCode": "LB-RESTOCKON-MUS5RACKAXH7-01-28",
+                  "skuId": "2106308878863831042",
+                  "colorId": "2106308878800916482",
+                  "skuCode": "LB-RESTOCKON-MUS5YKMQGUPW-01-28",
                   "doorWidth": "2.8m",
                   "processingFeeDetail": {
                     "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
@@ -326,44 +326,44 @@
                   "special_options_total": 0,
                   "mixed_color_surcharge_per_meter": 2.4
                 },
-                "createdAt": "2026-10-03T16:56:45.834768+08:00"
+                "createdAt": "2026-10-03T17:02:25.750758+08:00"
               }
             ],
             "processingItems": [],
-            "createdAt": "2026-10-03T16:56:45.796968+08:00",
-            "updatedAt": "2026-10-03T16:56:45.797035+08:00"
+            "createdAt": "2026-10-03T17:02:25.715693+08:00",
+            "updatedAt": "2026-10-03T17:02:25.715761+08:00"
           }
         },
         "confirmResp": {
           "status": 200,
           "json": {
             "success": true,
-            "requestId": "req_3965145a0fa04b96",
-            "timestamp": 1791017806
+            "requestId": "req_05344dc5fa554b07",
+            "timestamp": 1791018146
           },
-          "text": "{\"success\":true,\"requestId\":\"req_3965145a0fa04b96\",\"timestamp\":1791017806}",
+          "text": "{\"success\":true,\"requestId\":\"req_05344dc5fa554b07\",\"timestamp\":1791018146}",
           "ok": true
         },
         "body": {
-          "customerName": "线B验收客户-RESTOCKON-mus5rbbbc0bf",
-          "customerPhone": "13988154374",
+          "customerName": "线B验收客户-RESTOCKON-mus5yljjk6gy",
+          "customerPhone": "13916538954",
           "customerAddress": "线B验收地址（探针）",
           "logisticsType": "express",
           "logisticsCompany": "线B验收物流",
           "remark": "线B验收（线B 探针订单，用后自清）",
           "items": [
             {
-              "productId": "355a594936ccd703d6a47081640a2fcc",
-              "productName": "线B验收商品-RESTOCKON-mus5rackaxh7",
+              "productId": "5b320f61dd2cb49ee085ebde14e9cbbc",
+              "productName": "线B验收商品-RESTOCKON-mus5ykmqgupw",
               "quantity": 2,
               "unitPrice": 100,
               "subtotal": "200.000",
               "width": 2.8,
               "height": 2,
               "processingInfo": {
-                "skuId": "2106307453551251457",
-                "skuCode": "LB-RESTOCKON-MUS5RACKAXH7-01-28",
-                "colorId": "2106307453467365378",
+                "skuId": "2106308878863831042",
+                "skuCode": "LB-RESTOCKON-MUS5YKMQGUPW-01-28",
+                "colorId": "2106308878800916482",
                 "doorWidth": "2.8m"
               }
             }
@@ -371,9 +371,9 @@
         }
       },
       "orderRow": {
-        "id": "8402c1571ff867a5d62e0f73cc2ab236",
+        "id": "26fab1eace11c3bb36844c4398e4ea02",
         "tenant_id": 20,
-        "order_no": "20261003510180350",
+        "order_no": "20261003134320429",
         "status": "confirmed",
         "total_amount": 200,
         "actual_amount": 200,
@@ -382,7 +382,7 @@
         "deleted": 0
       },
       "skuAfter": {
-        "id": "2106307453551251457",
+        "id": "2106308878863831042",
         "stock": 98,
         "sales_count": 2
       },
@@ -395,20 +395,20 @@
       "allowRestock": false,
       "product": {
         "ok": true,
-        "productId": "d18e210d34f9e1b64c8c88c445e7e1ab",
-        "skuId": "2106307462820663297",
-        "skuCode": "LB-RESTOCKOFF-MUS5RC9X5UJS-01-28",
+        "productId": "8ac3fb6e311847ed2e9f84af46ea5f00",
+        "skuId": "2106308890087788546",
+        "skuCode": "LB-RESTOCKOFF-MUS5YMMM55YJ-01-28",
         "stock": 100,
         "price": 100,
-        "name": "线B验收商品-RESTOCKOFF-mus5rc9x5ujs",
-        "colorId": "2106307462782914561",
+        "name": "线B验收商品-RESTOCKOFF-mus5ymmm55yj",
+        "colorId": "2106308890045845505",
         "productSkuRows": [
           {
-            "id": "2106307462820663297",
-            "sku_code": "LB-RESTOCKOFF-MUS5RC9X5UJS-01-28",
+            "id": "2106308890087788546",
+            "sku_code": "LB-RESTOCKOFF-MUS5YMMM55YJ-01-28",
             "stock": 100,
             "price": 100,
-            "color_id": "2106307462782914561"
+            "color_id": "2106308890045845505"
           }
         ],
         "resp": {
@@ -416,8 +416,8 @@
           "json": {
             "success": true,
             "data": {
-              "id": "d18e210d34f9e1b64c8c88c445e7e1ab",
-              "name": "线B验收商品-RESTOCKOFF-mus5rc9x5ujs",
+              "id": "8ac3fb6e311847ed2e9f84af46ea5f00",
+              "name": "线B验收商品-RESTOCKOFF-mus5ymmm55yj",
               "categoryId": "dae835d8ae5f68bdb7cd191f29d2e827",
               "categoryName": "POC-窗帘面料",
               "basePrice": 100,
@@ -426,7 +426,7 @@
               "status": "on_shelf",
               "stock": 100,
               "stockWarningThreshold": 10,
-              "skuCode": "LB-RESTOCKOFF-MUS5RC9X5UJS",
+              "skuCode": "LB-RESTOCKOFF-MUS5YMMM55YJ",
               "unit": "米",
               "pricingType": "per_meter",
               "stockDeductionMode": "on_order",
@@ -438,13 +438,13 @@
               "allowReturnRestock": false,
               "colors": [
                 {
-                  "id": "2106307462782914561",
-                  "productId": "d18e210d34f9e1b64c8c88c445e7e1ab",
-                  "colorName": "线B验收色-mus5rc9x5ujs",
+                  "id": "2106308890045845505",
+                  "productId": "8ac3fb6e311847ed2e9f84af46ea5f00",
+                  "colorName": "线B验收色-mus5ymmm55yj",
                   "mainColorHex": "#AABBCC",
                   "sortOrder": 0,
-                  "createdAt": "2026-10-03 16:56:47",
-                  "updatedAt": "2026-10-03 16:56:47"
+                  "createdAt": "2026-10-03 17:02:27",
+                  "updatedAt": "2026-10-03 17:02:27"
                 }
               ],
               "sellingMethods": [
@@ -456,33 +456,33 @@
               ],
               "skus": [
                 {
-                  "id": "2106307462820663297",
-                  "productId": "d18e210d34f9e1b64c8c88c445e7e1ab",
-                  "colorId": "2106307462782914561",
-                  "colorName": "线B验收色-mus5rc9x5ujs",
+                  "id": "2106308890087788546",
+                  "productId": "8ac3fb6e311847ed2e9f84af46ea5f00",
+                  "colorId": "2106308890045845505",
+                  "colorName": "线B验收色-mus5ymmm55yj",
                   "doorWidth": "2.8m",
                   "price": 100,
                   "stock": 100,
-                  "skuCode": "LB-RESTOCKOFF-MUS5RC9X5UJS-01-28",
-                  "createdAt": "2026-10-03 16:56:47",
-                  "updatedAt": "2026-10-03 16:56:47"
+                  "skuCode": "LB-RESTOCKOFF-MUS5YMMM55YJ-01-28",
+                  "createdAt": "2026-10-03 17:02:27",
+                  "updatedAt": "2026-10-03 17:02:27"
                 }
               ],
               "detailImages": [],
               "editedBy": "13870217889",
-              "editedAt": "2026-10-03 16:56:47",
-              "createdAt": "2026-10-03 16:56:47",
-              "updatedAt": "2026-10-03 16:56:47",
+              "editedAt": "2026-10-03 17:02:27",
+              "createdAt": "2026-10-03 17:02:27",
+              "updatedAt": "2026-10-03 17:02:27",
               "price": 100
             },
-            "requestId": "req_828b77c49d6f4a3c",
-            "timestamp": 1791017807
+            "requestId": "req_62efd3b2702e4261",
+            "timestamp": 1791018147
           },
-          "text": "{\"success\":true,\"data\":{\"id\":\"d18e210d34f9e1b64c8c88c445e7e1ab\",\"name\":\"线B验收商品-RESTOCKOFF-mus5rc9x5ujs\",\"categoryId\":\"dae835d8ae5f68bdb7cd191f29d2e827\",\"categoryName\":\"POC-窗帘面料\",\"basePrice\":100.00,\"description\":\"线B验收（线B 售后退款/并发探针，用后自清）\",\"images\":[],\"status\":\"on_shelf\",\"stock\":100.0,\"stockWarningThreshold\":10,\"skuCode\":\"LB-RESTOCKOFF-MUS5RC9X5UJS\",\"unit\":\"米\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":1,\"totalStock\":100.0,\"salesCount\":0.0,\"salesAmount\":0.00,\"recommended\":false,\"allowReturnRestock\":false,\"colors\":[{\"id\":\"2106307462782914561\",\"productId\":\"d18e210d34f9e1b64c8c88c445e7e1ab\",\"colorName\":\"线B验收色-mus5rc9x5ujs\",\"mainColorHex\":\"#AABBCC\",\"sortOrder\":0,\"createdAt\":\"2026-10-03 16:56:47\",\"updatedAt\":\"2026-10-03 16:56:47\"}],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"doorWidths\":[\"2.8m\"],\"skus\":[{\"id\":\"2106307462820663297\",\"productId\":\"d18e210d34f9e1b64c8c88c445e7e1ab\",\"colorId\":\"2106307462782914561\",\"colorName\":\"线B验收色-mus5rc9x5ujs\",\"doorWidth\":\"2.8m\",\"price\":100.00,\"stock\":100.0,\"skuCode\":\"LB-RESTOCKOFF-MUS5RC9X5UJS-01-28\",\"createdAt\":\"2026-10-03 16:56:47\",\"updatedAt\":\"2026-10-03 16:56:47\"}],\"detailImages\":[],\"editedBy\":\"13870217889\",\"editedAt\":\"2026-10-03 16:56:47\",\"createdAt\":\"2026-10-03 16:56:47\",\"updatedAt\":\"2026-10-03 16:56:47\",\"price\":100.00},\"requestId\":\"req_828b77c49d6f4a3c\",\"timestamp\":1791017807}",
+          "text": "{\"success\":true,\"data\":{\"id\":\"8ac3fb6e311847ed2e9f84af46ea5f00\",\"name\":\"线B验收商品-RESTOCKOFF-mus5ymmm55yj\",\"categoryId\":\"dae835d8ae5f68bdb7cd191f29d2e827\",\"categoryName\":\"POC-窗帘面料\",\"basePrice\":100.00,\"description\":\"线B验收（线B 售后退款/并发探针，用后自清）\",\"images\":[],\"status\":\"on_shelf\",\"stock\":100.0,\"stockWarningThreshold\":10,\"skuCode\":\"LB-RESTOCKOFF-MUS5YMMM55YJ\",\"unit\":\"米\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":1,\"totalStock\":100.0,\"salesCount\":0.0,\"salesAmount\":0.00,\"recommended\":false,\"allowReturnRestock\":false,\"colors\":[{\"id\":\"2106308890045845505\",\"productId\":\"8ac3fb6e311847ed2e9f84af46ea5f00\",\"colorName\":\"线B验收色-mus5ymmm55yj\",\"mainColorHex\":\"#AABBCC\",\"sortOrder\":0,\"createdAt\":\"2026-10-03 17:02:27\",\"updatedAt\":\"2026-10-03 17:02:27\"}],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"doorWidths\":[\"2.8m\"],\"skus\":[{\"id\":\"2106308890087788546\",\"productId\":\"8ac3fb6e311847ed2e9f84af46ea5f00\",\"colorId\":\"2106308890045845505\",\"colorName\":\"线B验收色-mus5ymmm55yj\",\"doorWidth\":\"2.8m\",\"price\":100.00,\"stock\":100.0,\"skuCode\":\"LB-RESTOCKOFF-MUS5YMMM55YJ-01-28\",\"createdAt\":\"2026-10-03 17:02:27\",\"updatedAt\":\"2026-10-03 17:02:27\"}],\"detailImages\":[],\"editedBy\":\"13870217889\",\"editedAt\":\"2026-10-03 17:02:27\",\"createdAt\":\"2026-10-03 17:02:27\",\"updatedAt\":\"2026-10-03 17:02:27\",\"price\":100.00},\"requestId\":\"req_62efd3b2702e4261\",\"timestamp\":1791018147}",
           "ok": true,
           "data": {
-            "id": "d18e210d34f9e1b64c8c88c445e7e1ab",
-            "name": "线B验收商品-RESTOCKOFF-mus5rc9x5ujs",
+            "id": "8ac3fb6e311847ed2e9f84af46ea5f00",
+            "name": "线B验收商品-RESTOCKOFF-mus5ymmm55yj",
             "categoryId": "dae835d8ae5f68bdb7cd191f29d2e827",
             "categoryName": "POC-窗帘面料",
             "basePrice": 100,
@@ -491,7 +491,7 @@
             "status": "on_shelf",
             "stock": 100,
             "stockWarningThreshold": 10,
-            "skuCode": "LB-RESTOCKOFF-MUS5RC9X5UJS",
+            "skuCode": "LB-RESTOCKOFF-MUS5YMMM55YJ",
             "unit": "米",
             "pricingType": "per_meter",
             "stockDeductionMode": "on_order",
@@ -503,13 +503,13 @@
             "allowReturnRestock": false,
             "colors": [
               {
-                "id": "2106307462782914561",
-                "productId": "d18e210d34f9e1b64c8c88c445e7e1ab",
-                "colorName": "线B验收色-mus5rc9x5ujs",
+                "id": "2106308890045845505",
+                "productId": "8ac3fb6e311847ed2e9f84af46ea5f00",
+                "colorName": "线B验收色-mus5ymmm55yj",
                 "mainColorHex": "#AABBCC",
                 "sortOrder": 0,
-                "createdAt": "2026-10-03 16:56:47",
-                "updatedAt": "2026-10-03 16:56:47"
+                "createdAt": "2026-10-03 17:02:27",
+                "updatedAt": "2026-10-03 17:02:27"
               }
             ],
             "sellingMethods": [
@@ -521,29 +521,29 @@
             ],
             "skus": [
               {
-                "id": "2106307462820663297",
-                "productId": "d18e210d34f9e1b64c8c88c445e7e1ab",
-                "colorId": "2106307462782914561",
-                "colorName": "线B验收色-mus5rc9x5ujs",
+                "id": "2106308890087788546",
+                "productId": "8ac3fb6e311847ed2e9f84af46ea5f00",
+                "colorId": "2106308890045845505",
+                "colorName": "线B验收色-mus5ymmm55yj",
                 "doorWidth": "2.8m",
                 "price": 100,
                 "stock": 100,
-                "skuCode": "LB-RESTOCKOFF-MUS5RC9X5UJS-01-28",
-                "createdAt": "2026-10-03 16:56:47",
-                "updatedAt": "2026-10-03 16:56:47"
+                "skuCode": "LB-RESTOCKOFF-MUS5YMMM55YJ-01-28",
+                "createdAt": "2026-10-03 17:02:27",
+                "updatedAt": "2026-10-03 17:02:27"
               }
             ],
             "detailImages": [],
             "editedBy": "13870217889",
-            "editedAt": "2026-10-03 16:56:47",
-            "createdAt": "2026-10-03 16:56:47",
-            "updatedAt": "2026-10-03 16:56:47",
+            "editedAt": "2026-10-03 17:02:27",
+            "createdAt": "2026-10-03 17:02:27",
+            "updatedAt": "2026-10-03 17:02:27",
             "price": 100
           }
         },
         "body": {
-          "name": "线B验收商品-RESTOCKOFF-mus5rc9x5ujs",
-          "skuCode": "LB-RESTOCKOFF-MUS5RC9X5UJS",
+          "name": "线B验收商品-RESTOCKOFF-mus5ymmm55yj",
+          "skuCode": "LB-RESTOCKOFF-MUS5YMMM55YJ",
           "categoryId": "dae835d8ae5f68bdb7cd191f29d2e827",
           "unit": "米",
           "pricingType": "per_meter",
@@ -555,7 +555,7 @@
           "allowReturnRestock": false,
           "colors": [
             {
-              "colorName": "线B验收色-mus5rc9x5ujs",
+              "colorName": "线B验收色-mus5ymmm55yj",
               "mainColorHex": "#AABBCC"
             }
           ],
@@ -566,8 +566,8 @@
       },
       "order": {
         "ok": true,
-        "orderId": "1121b5f50bf747751194ac896fa277f3",
-        "orderNo": "20261003527670351",
+        "orderId": "f89aac43e2c0ffe8d82bb3530d525136",
+        "orderNo": "20261003873670430",
         "total": 200,
         "actual": 200,
         "resp": {
@@ -575,10 +575,10 @@
           "json": {
             "success": true,
             "data": {
-              "id": "1121b5f50bf747751194ac896fa277f3",
-              "orderNo": "20261003527670351",
-              "customerName": "线B验收客户-RESTOCKOFF-mus5rcxj2dhn",
-              "customerPhone": "13905332831",
+              "id": "f89aac43e2c0ffe8d82bb3530d525136",
+              "orderNo": "20261003873670430",
+              "customerName": "线B验收客户-RESTOCKOFF-mus5ynmuf2xu",
+              "customerPhone": "13946857595",
               "customerAddress": "线B验收地址（探针）",
               "logisticsType": "express",
               "logisticsCompany": "线B验收物流",
@@ -593,18 +593,18 @@
               "createdByName": "王小明",
               "items": [
                 {
-                  "id": "4a123a0b307d54bf518a78b643f65c7f",
-                  "productId": "d18e210d34f9e1b64c8c88c445e7e1ab",
-                  "productName": "线B验收商品-RESTOCKOFF-mus5rc9x5ujs",
-                  "skuCode": "LB-RESTOCKOFF-MUS5RC9X5UJS",
+                  "id": "0d7865be3c2020528736e9c976a03aa2",
+                  "productId": "8ac3fb6e311847ed2e9f84af46ea5f00",
+                  "productName": "线B验收商品-RESTOCKOFF-mus5ymmm55yj",
+                  "skuCode": "LB-RESTOCKOFF-MUS5YMMM55YJ",
                   "quantity": 2,
                   "unitPrice": 100,
                   "width": 2.8,
                   "height": 2,
                   "processingInfo": {
-                    "skuId": "2106307462820663297",
-                    "colorId": "2106307462782914561",
-                    "skuCode": "LB-RESTOCKOFF-MUS5RC9X5UJS-01-28",
+                    "skuId": "2106308890087788546",
+                    "colorId": "2106308890045845505",
+                    "skuCode": "LB-RESTOCKOFF-MUS5YMMM55YJ-01-28",
                     "doorWidth": "2.8m",
                     "processingFeeDetail": {
                       "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
@@ -636,23 +636,23 @@
                     "special_options_total": 0,
                     "mixed_color_surcharge_per_meter": 2.4
                   },
-                  "createdAt": "2026-10-03T16:56:48.203139+08:00"
+                  "createdAt": "2026-10-03T17:02:28.36256+08:00"
                 }
               ],
               "processingItems": [],
-              "createdAt": "2026-10-03T16:56:48.162031+08:00",
-              "updatedAt": "2026-10-03T16:56:48.162139+08:00"
+              "createdAt": "2026-10-03T17:02:28.327358+08:00",
+              "updatedAt": "2026-10-03T17:02:28.327374+08:00"
             },
-            "requestId": "req_0c7d29a34edd4d2b",
-            "timestamp": 1791017808
+            "requestId": "req_4e01ebb295004502",
+            "timestamp": 1791018148
           },
-          "text": "{\"success\":true,\"data\":{\"id\":\"1121b5f50bf747751194ac896fa277f3\",\"orderNo\":\"20261003527670351\",\"customerName\":\"线B验收客户-RESTOCKOFF-mus5rcxj2dhn\",\"customerPhone\":\"13905332831\",\"customerAddress\":\"线B验收地址（探针）\",\"logisticsType\":\"express\",\"logisticsCompany\":\"线B验收物流\",\"totalAmount\":200.00,\"actualAmount\":200.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"线B验收（线B 探针订单，用后自清）\",\"isUrgent\":false,\"createdByName\":\"王小明\",\"items\":[{\"id\":\"4a123a0b307d54bf518a78b643f65c7f\",\"productId\":\"d18e210d34f9e1b64c8c88c445e7e1ab\",\"productName\":\"线B验收商品-RESTOCKOFF-mus5rc9x5ujs\",\"skuCode\":\"LB-RESTOCKOFF-MUS5RC9X5UJS\",\"quantity\":2.00,\"unitPrice\":100.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106307462820663297\",\"colorId\":\"2106307462782914561\",\"skuCode\":\"LB-RESTOCKOFF-MUS5RC9X5UJS-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":200.00,\"amount\":200.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-03T16:56:48.203139+08:00\"}],\"processingItems\":[],\"createdAt\":\"2026-10-03T16:56:48.162031+08:00\",\"updatedAt\":\"2026-10-03T16:56:48.162139+08:00\"},\"requestId\":\"req_0c7d29a34edd4d2b\",\"timestamp\":1791017808}",
+          "text": "{\"success\":true,\"data\":{\"id\":\"f89aac43e2c0ffe8d82bb3530d525136\",\"orderNo\":\"20261003873670430\",\"customerName\":\"线B验收客户-RESTOCKOFF-mus5ynmuf2xu\",\"customerPhone\":\"13946857595\",\"customerAddress\":\"线B验收地址（探针）\",\"logisticsType\":\"express\",\"logisticsCompany\":\"线B验收物流\",\"totalAmount\":200.00,\"actualAmount\":200.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"线B验收（线B 探针订单，用后自清）\",\"isUrgent\":false,\"createdByName\":\"王小明\",\"items\":[{\"id\":\"0d7865be3c2020528736e9c976a03aa2\",\"productId\":\"8ac3fb6e311847ed2e9f84af46ea5f00\",\"productName\":\"线B验收商品-RESTOCKOFF-mus5ymmm55yj\",\"skuCode\":\"LB-RESTOCKOFF-MUS5YMMM55YJ\",\"quantity\":2.00,\"unitPrice\":100.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106308890087788546\",\"colorId\":\"2106308890045845505\",\"skuCode\":\"LB-RESTOCKOFF-MUS5YMMM55YJ-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":200.00,\"amount\":200.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-03T17:02:28.36256+08:00\"}],\"processingItems\":[],\"createdAt\":\"2026-10-03T17:02:28.327358+08:00\",\"updatedAt\":\"2026-10-03T17:02:28.327374+08:00\"},\"requestId\":\"req_4e01ebb295004502\",\"timestamp\":1791018148}",
           "ok": true,
           "data": {
-            "id": "1121b5f50bf747751194ac896fa277f3",
-            "orderNo": "20261003527670351",
-            "customerName": "线B验收客户-RESTOCKOFF-mus5rcxj2dhn",
-            "customerPhone": "13905332831",
+            "id": "f89aac43e2c0ffe8d82bb3530d525136",
+            "orderNo": "20261003873670430",
+            "customerName": "线B验收客户-RESTOCKOFF-mus5ynmuf2xu",
+            "customerPhone": "13946857595",
             "customerAddress": "线B验收地址（探针）",
             "logisticsType": "express",
             "logisticsCompany": "线B验收物流",
@@ -667,18 +667,18 @@
             "createdByName": "王小明",
             "items": [
               {
-                "id": "4a123a0b307d54bf518a78b643f65c7f",
-                "productId": "d18e210d34f9e1b64c8c88c445e7e1ab",
-                "productName": "线B验收商品-RESTOCKOFF-mus5rc9x5ujs",
-                "skuCode": "LB-RESTOCKOFF-MUS5RC9X5UJS",
+                "id": "0d7865be3c2020528736e9c976a03aa2",
+                "productId": "8ac3fb6e311847ed2e9f84af46ea5f00",
+                "productName": "线B验收商品-RESTOCKOFF-mus5ymmm55yj",
+                "skuCode": "LB-RESTOCKOFF-MUS5YMMM55YJ",
                 "quantity": 2,
                 "unitPrice": 100,
                 "width": 2.8,
                 "height": 2,
                 "processingInfo": {
-                  "skuId": "2106307462820663297",
-                  "colorId": "2106307462782914561",
-                  "skuCode": "LB-RESTOCKOFF-MUS5RC9X5UJS-01-28",
+                  "skuId": "2106308890087788546",
+                  "colorId": "2106308890045845505",
+                  "skuCode": "LB-RESTOCKOFF-MUS5YMMM55YJ-01-28",
                   "doorWidth": "2.8m",
                   "processingFeeDetail": {
                     "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
@@ -710,44 +710,44 @@
                   "special_options_total": 0,
                   "mixed_color_surcharge_per_meter": 2.4
                 },
-                "createdAt": "2026-10-03T16:56:48.203139+08:00"
+                "createdAt": "2026-10-03T17:02:28.36256+08:00"
               }
             ],
             "processingItems": [],
-            "createdAt": "2026-10-03T16:56:48.162031+08:00",
-            "updatedAt": "2026-10-03T16:56:48.162139+08:00"
+            "createdAt": "2026-10-03T17:02:28.327358+08:00",
+            "updatedAt": "2026-10-03T17:02:28.327374+08:00"
           }
         },
         "confirmResp": {
           "status": 200,
           "json": {
             "success": true,
-            "requestId": "req_67457e712f174e75",
-            "timestamp": 1791017808
+            "requestId": "req_8a196944eb144f4e",
+            "timestamp": 1791018148
           },
-          "text": "{\"success\":true,\"requestId\":\"req_67457e712f174e75\",\"timestamp\":1791017808}",
+          "text": "{\"success\":true,\"requestId\":\"req_8a196944eb144f4e\",\"timestamp\":1791018148}",
           "ok": true
         },
         "body": {
-          "customerName": "线B验收客户-RESTOCKOFF-mus5rcxj2dhn",
-          "customerPhone": "13905332831",
+          "customerName": "线B验收客户-RESTOCKOFF-mus5ynmuf2xu",
+          "customerPhone": "13946857595",
           "customerAddress": "线B验收地址（探针）",
           "logisticsType": "express",
           "logisticsCompany": "线B验收物流",
           "remark": "线B验收（线B 探针订单，用后自清）",
           "items": [
             {
-              "productId": "d18e210d34f9e1b64c8c88c445e7e1ab",
-              "productName": "线B验收商品-RESTOCKOFF-mus5rc9x5ujs",
+              "productId": "8ac3fb6e311847ed2e9f84af46ea5f00",
+              "productName": "线B验收商品-RESTOCKOFF-mus5ymmm55yj",
               "quantity": 2,
               "unitPrice": 100,
               "subtotal": "200.000",
               "width": 2.8,
               "height": 2,
               "processingInfo": {
-                "skuId": "2106307462820663297",
-                "skuCode": "LB-RESTOCKOFF-MUS5RC9X5UJS-01-28",
-                "colorId": "2106307462782914561",
+                "skuId": "2106308890087788546",
+                "skuCode": "LB-RESTOCKOFF-MUS5YMMM55YJ-01-28",
+                "colorId": "2106308890045845505",
                 "doorWidth": "2.8m"
               }
             }
@@ -755,9 +755,9 @@
         }
       },
       "orderRow": {
-        "id": "1121b5f50bf747751194ac896fa277f3",
+        "id": "f89aac43e2c0ffe8d82bb3530d525136",
         "tenant_id": 20,
-        "order_no": "20261003527670351",
+        "order_no": "20261003873670430",
         "status": "confirmed",
         "total_amount": 200,
         "actual_amount": 200,
@@ -766,7 +766,7 @@
         "deleted": 0
       },
       "skuAfter": {
-        "id": "2106307462820663297",
+        "id": "2106308890087788546",
         "stock": 98,
         "sales_count": 2
       },
@@ -779,20 +779,20 @@
       "allowRestock": false,
       "product": {
         "ok": true,
-        "productId": "19db9a791d822bad45973a1880383b72",
-        "skuId": "2106307473277063170",
-        "skuCode": "LB-REFUND-MUS5RE5G7BQB-01-28",
+        "productId": "014bb0fe5e346df399d4ac7b30dd01bf",
+        "skuId": "2106308900716154881",
+        "skuCode": "LB-REFUND-MUS5YONWGJP4-01-28",
         "stock": 100,
         "price": 150,
-        "name": "线B验收商品-REFUND-mus5re5g7bqb",
-        "colorId": "2106307473239314433",
+        "name": "线B验收商品-REFUND-mus5yonwgjp4",
+        "colorId": "2106308900678406146",
         "productSkuRows": [
           {
-            "id": "2106307473277063170",
-            "sku_code": "LB-REFUND-MUS5RE5G7BQB-01-28",
+            "id": "2106308900716154881",
+            "sku_code": "LB-REFUND-MUS5YONWGJP4-01-28",
             "stock": 100,
             "price": 150,
-            "color_id": "2106307473239314433"
+            "color_id": "2106308900678406146"
           }
         ],
         "resp": {
@@ -800,8 +800,8 @@
           "json": {
             "success": true,
             "data": {
-              "id": "19db9a791d822bad45973a1880383b72",
-              "name": "线B验收商品-REFUND-mus5re5g7bqb",
+              "id": "014bb0fe5e346df399d4ac7b30dd01bf",
+              "name": "线B验收商品-REFUND-mus5yonwgjp4",
               "categoryId": "dae835d8ae5f68bdb7cd191f29d2e827",
               "categoryName": "POC-窗帘面料",
               "basePrice": 150,
@@ -810,7 +810,7 @@
               "status": "on_shelf",
               "stock": 100,
               "stockWarningThreshold": 10,
-              "skuCode": "LB-REFUND-MUS5RE5G7BQB",
+              "skuCode": "LB-REFUND-MUS5YONWGJP4",
               "unit": "米",
               "pricingType": "per_meter",
               "stockDeductionMode": "on_order",
@@ -822,13 +822,13 @@
               "allowReturnRestock": false,
               "colors": [
                 {
-                  "id": "2106307473239314433",
-                  "productId": "19db9a791d822bad45973a1880383b72",
-                  "colorName": "线B验收色-mus5re5g7bqb",
+                  "id": "2106308900678406146",
+                  "productId": "014bb0fe5e346df399d4ac7b30dd01bf",
+                  "colorName": "线B验收色-mus5yonwgjp4",
                   "mainColorHex": "#AABBCC",
                   "sortOrder": 0,
-                  "createdAt": "2026-10-03 16:56:49",
-                  "updatedAt": "2026-10-03 16:56:49"
+                  "createdAt": "2026-10-03 17:02:29",
+                  "updatedAt": "2026-10-03 17:02:29"
                 }
               ],
               "sellingMethods": [
@@ -840,33 +840,33 @@
               ],
               "skus": [
                 {
-                  "id": "2106307473277063170",
-                  "productId": "19db9a791d822bad45973a1880383b72",
-                  "colorId": "2106307473239314433",
-                  "colorName": "线B验收色-mus5re5g7bqb",
+                  "id": "2106308900716154881",
+                  "productId": "014bb0fe5e346df399d4ac7b30dd01bf",
+                  "colorId": "2106308900678406146",
+                  "colorName": "线B验收色-mus5yonwgjp4",
                   "doorWidth": "2.8m",
                   "price": 150,
                   "stock": 100,
-                  "skuCode": "LB-REFUND-MUS5RE5G7BQB-01-28",
-                  "createdAt": "2026-10-03 16:56:49",
-                  "updatedAt": "2026-10-03 16:56:49"
+                  "skuCode": "LB-REFUND-MUS5YONWGJP4-01-28",
+                  "createdAt": "2026-10-03 17:02:29",
+                  "updatedAt": "2026-10-03 17:02:29"
                 }
               ],
               "detailImages": [],
               "editedBy": "13870217889",
-              "editedAt": "2026-10-03 16:56:49",
-              "createdAt": "2026-10-03 16:56:49",
-              "updatedAt": "2026-10-03 16:56:49",
+              "editedAt": "2026-10-03 17:02:29",
+              "createdAt": "2026-10-03 17:02:29",
+              "updatedAt": "2026-10-03 17:02:29",
               "price": 150
             },
-            "requestId": "req_3252369f6954488f",
-            "timestamp": 1791017809
+            "requestId": "req_5047002893534a8e",
+            "timestamp": 1791018150
           },
-          "text": "{\"success\":true,\"data\":{\"id\":\"19db9a791d822bad45973a1880383b72\",\"name\":\"线B验收商品-REFUND-mus5re5g7bqb\",\"categoryId\":\"dae835d8ae5f68bdb7cd191f29d2e827\",\"categoryName\":\"POC-窗帘面料\",\"basePrice\":150.00,\"description\":\"线B验收（线B 售后退款/并发探针，用后自清）\",\"images\":[],\"status\":\"on_shelf\",\"stock\":100.0,\"stockWarningThreshold\":10,\"skuCode\":\"LB-REFUND-MUS5RE5G7BQB\",\"unit\":\"米\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":1,\"totalStock\":100.0,\"salesCount\":0.0,\"salesAmount\":0.00,\"recommended\":false,\"allowReturnRestock\":false,\"colors\":[{\"id\":\"2106307473239314433\",\"productId\":\"19db9a791d822bad45973a1880383b72\",\"colorName\":\"线B验收色-mus5re5g7bqb\",\"mainColorHex\":\"#AABBCC\",\"sortOrder\":0,\"createdAt\":\"2026-10-03 16:56:49\",\"updatedAt\":\"2026-10-03 16:56:49\"}],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"doorWidths\":[\"2.8m\"],\"skus\":[{\"id\":\"2106307473277063170\",\"productId\":\"19db9a791d822bad45973a1880383b72\",\"colorId\":\"2106307473239314433\",\"colorName\":\"线B验收色-mus5re5g7bqb\",\"doorWidth\":\"2.8m\",\"price\":150.00,\"stock\":100.0,\"skuCode\":\"LB-REFUND-MUS5RE5G7BQB-01-28\",\"createdAt\":\"2026-10-03 16:56:49\",\"updatedAt\":\"2026-10-03 16:56:49\"}],\"detailImages\":[],\"editedBy\":\"13870217889\",\"editedAt\":\"2026-10-03 16:56:49\",\"createdAt\":\"2026-10-03 16:56:49\",\"updatedAt\":\"2026-10-03 16:56:49\",\"price\":150.00},\"requestId\":\"req_3252369f6954488f\",\"timestamp\":1791017809}",
+          "text": "{\"success\":true,\"data\":{\"id\":\"014bb0fe5e346df399d4ac7b30dd01bf\",\"name\":\"线B验收商品-REFUND-mus5yonwgjp4\",\"categoryId\":\"dae835d8ae5f68bdb7cd191f29d2e827\",\"categoryName\":\"POC-窗帘面料\",\"basePrice\":150.00,\"description\":\"线B验收（线B 售后退款/并发探针，用后自清）\",\"images\":[],\"status\":\"on_shelf\",\"stock\":100.0,\"stockWarningThreshold\":10,\"skuCode\":\"LB-REFUND-MUS5YONWGJP4\",\"unit\":\"米\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":1,\"totalStock\":100.0,\"salesCount\":0.0,\"salesAmount\":0.00,\"recommended\":false,\"allowReturnRestock\":false,\"colors\":[{\"id\":\"2106308900678406146\",\"productId\":\"014bb0fe5e346df399d4ac7b30dd01bf\",\"colorName\":\"线B验收色-mus5yonwgjp4\",\"mainColorHex\":\"#AABBCC\",\"sortOrder\":0,\"createdAt\":\"2026-10-03 17:02:29\",\"updatedAt\":\"2026-10-03 17:02:29\"}],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"doorWidths\":[\"2.8m\"],\"skus\":[{\"id\":\"2106308900716154881\",\"productId\":\"014bb0fe5e346df399d4ac7b30dd01bf\",\"colorId\":\"2106308900678406146\",\"colorName\":\"线B验收色-mus5yonwgjp4\",\"doorWidth\":\"2.8m\",\"price\":150.00,\"stock\":100.0,\"skuCode\":\"LB-REFUND-MUS5YONWGJP4-01-28\",\"createdAt\":\"2026-10-03 17:02:29\",\"updatedAt\":\"2026-10-03 17:02:29\"}],\"detailImages\":[],\"editedBy\":\"13870217889\",\"editedAt\":\"2026-10-03 17:02:29\",\"createdAt\":\"2026-10-03 17:02:29\",\"updatedAt\":\"2026-10-03 17:02:29\",\"price\":150.00},\"requestId\":\"req_5047002893534a8e\",\"timestamp\":1791018150}",
           "ok": true,
           "data": {
-            "id": "19db9a791d822bad45973a1880383b72",
-            "name": "线B验收商品-REFUND-mus5re5g7bqb",
+            "id": "014bb0fe5e346df399d4ac7b30dd01bf",
+            "name": "线B验收商品-REFUND-mus5yonwgjp4",
             "categoryId": "dae835d8ae5f68bdb7cd191f29d2e827",
             "categoryName": "POC-窗帘面料",
             "basePrice": 150,
@@ -875,7 +875,7 @@
             "status": "on_shelf",
             "stock": 100,
             "stockWarningThreshold": 10,
-            "skuCode": "LB-REFUND-MUS5RE5G7BQB",
+            "skuCode": "LB-REFUND-MUS5YONWGJP4",
             "unit": "米",
             "pricingType": "per_meter",
             "stockDeductionMode": "on_order",
@@ -887,13 +887,13 @@
             "allowReturnRestock": false,
             "colors": [
               {
-                "id": "2106307473239314433",
-                "productId": "19db9a791d822bad45973a1880383b72",
-                "colorName": "线B验收色-mus5re5g7bqb",
+                "id": "2106308900678406146",
+                "productId": "014bb0fe5e346df399d4ac7b30dd01bf",
+                "colorName": "线B验收色-mus5yonwgjp4",
                 "mainColorHex": "#AABBCC",
                 "sortOrder": 0,
-                "createdAt": "2026-10-03 16:56:49",
-                "updatedAt": "2026-10-03 16:56:49"
+                "createdAt": "2026-10-03 17:02:29",
+                "updatedAt": "2026-10-03 17:02:29"
               }
             ],
             "sellingMethods": [
@@ -905,29 +905,29 @@
             ],
             "skus": [
               {
-                "id": "2106307473277063170",
-                "productId": "19db9a791d822bad45973a1880383b72",
-                "colorId": "2106307473239314433",
-                "colorName": "线B验收色-mus5re5g7bqb",
+                "id": "2106308900716154881",
+                "productId": "014bb0fe5e346df399d4ac7b30dd01bf",
+                "colorId": "2106308900678406146",
+                "colorName": "线B验收色-mus5yonwgjp4",
                 "doorWidth": "2.8m",
                 "price": 150,
                 "stock": 100,
-                "skuCode": "LB-REFUND-MUS5RE5G7BQB-01-28",
-                "createdAt": "2026-10-03 16:56:49",
-                "updatedAt": "2026-10-03 16:56:49"
+                "skuCode": "LB-REFUND-MUS5YONWGJP4-01-28",
+                "createdAt": "2026-10-03 17:02:29",
+                "updatedAt": "2026-10-03 17:02:29"
               }
             ],
             "detailImages": [],
             "editedBy": "13870217889",
-            "editedAt": "2026-10-03 16:56:49",
-            "createdAt": "2026-10-03 16:56:49",
-            "updatedAt": "2026-10-03 16:56:49",
+            "editedAt": "2026-10-03 17:02:29",
+            "createdAt": "2026-10-03 17:02:29",
+            "updatedAt": "2026-10-03 17:02:29",
             "price": 150
           }
         },
         "body": {
-          "name": "线B验收商品-REFUND-mus5re5g7bqb",
-          "skuCode": "LB-REFUND-MUS5RE5G7BQB",
+          "name": "线B验收商品-REFUND-mus5yonwgjp4",
+          "skuCode": "LB-REFUND-MUS5YONWGJP4",
           "categoryId": "dae835d8ae5f68bdb7cd191f29d2e827",
           "unit": "米",
           "pricingType": "per_meter",
@@ -939,7 +939,7 @@
           "allowReturnRestock": false,
           "colors": [
             {
-              "colorName": "线B验收色-mus5re5g7bqb",
+              "colorName": "线B验收色-mus5yonwgjp4",
               "mainColorHex": "#AABBCC"
             }
           ],
@@ -950,8 +950,8 @@
       },
       "order": {
         "ok": true,
-        "orderId": "58e5f39b2a7186db82f93fb3b03532c8",
-        "orderNo": "20261003317220352",
+        "orderId": "d16f3e060ccdc02ceaf2209112e4e271",
+        "orderNo": "20261003551170431",
         "total": 300,
         "actual": 300,
         "resp": {
@@ -959,10 +959,10 @@
           "json": {
             "success": true,
             "data": {
-              "id": "58e5f39b2a7186db82f93fb3b03532c8",
-              "orderNo": "20261003317220352",
-              "customerName": "线B验收客户-REFUND-mus5rew33p0b",
-              "customerPhone": "13991374511",
+              "id": "d16f3e060ccdc02ceaf2209112e4e271",
+              "orderNo": "20261003551170431",
+              "customerName": "线B验收客户-REFUND-mus5ypfil75s",
+              "customerPhone": "13943159965",
               "customerAddress": "线B验收地址（探针）",
               "logisticsType": "express",
               "logisticsCompany": "线B验收物流",
@@ -977,18 +977,18 @@
               "createdByName": "王小明",
               "items": [
                 {
-                  "id": "4033af1d80fe8542d86755ca10ab6602",
-                  "productId": "19db9a791d822bad45973a1880383b72",
-                  "productName": "线B验收商品-REFUND-mus5re5g7bqb",
-                  "skuCode": "LB-REFUND-MUS5RE5G7BQB",
+                  "id": "10fc38d1ed3e909f32d0651d3f345f9f",
+                  "productId": "014bb0fe5e346df399d4ac7b30dd01bf",
+                  "productName": "线B验收商品-REFUND-mus5yonwgjp4",
+                  "skuCode": "LB-REFUND-MUS5YONWGJP4",
                   "quantity": 2,
                   "unitPrice": 150,
                   "width": 2.8,
                   "height": 2,
                   "processingInfo": {
-                    "skuId": "2106307473277063170",
-                    "colorId": "2106307473239314433",
-                    "skuCode": "LB-REFUND-MUS5RE5G7BQB-01-28",
+                    "skuId": "2106308900716154881",
+                    "colorId": "2106308900678406146",
+                    "skuCode": "LB-REFUND-MUS5YONWGJP4-01-28",
                     "doorWidth": "2.8m",
                     "processingFeeDetail": {
                       "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
@@ -1020,23 +1020,23 @@
                     "special_options_total": 0,
                     "mixed_color_surcharge_per_meter": 2.4
                   },
-                  "createdAt": "2026-10-03T16:56:50.484672+08:00"
+                  "createdAt": "2026-10-03T17:02:30.623646+08:00"
                 }
               ],
               "processingItems": [],
-              "createdAt": "2026-10-03T16:56:50.355898+08:00",
-              "updatedAt": "2026-10-03T16:56:50.35593+08:00"
+              "createdAt": "2026-10-03T17:02:30.58874+08:00",
+              "updatedAt": "2026-10-03T17:02:30.58875+08:00"
             },
-            "requestId": "req_fc4cfa85eed54597",
-            "timestamp": 1791017810
+            "requestId": "req_a9a153e673bd42a0",
+            "timestamp": 1791018150
           },
-          "text": "{\"success\":true,\"data\":{\"id\":\"58e5f39b2a7186db82f93fb3b03532c8\",\"orderNo\":\"20261003317220352\",\"customerName\":\"线B验收客户-REFUND-mus5rew33p0b\",\"customerPhone\":\"13991374511\",\"customerAddress\":\"线B验收地址（探针）\",\"logisticsType\":\"express\",\"logisticsCompany\":\"线B验收物流\",\"totalAmount\":300.00,\"actualAmount\":300.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"线B验收（线B 探针订单，用后自清）\",\"isUrgent\":false,\"createdByName\":\"王小明\",\"items\":[{\"id\":\"4033af1d80fe8542d86755ca10ab6602\",\"productId\":\"19db9a791d822bad45973a1880383b72\",\"productName\":\"线B验收商品-REFUND-mus5re5g7bqb\",\"skuCode\":\"LB-REFUND-MUS5RE5G7BQB\",\"quantity\":2.00,\"unitPrice\":150.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106307473277063170\",\"colorId\":\"2106307473239314433\",\"skuCode\":\"LB-REFUND-MUS5RE5G7BQB-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":300.00,\"amount\":300.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-03T16:56:50.484672+08:00\"}],\"processingItems\":[],\"createdAt\":\"2026-10-03T16:56:50.355898+08:00\",\"updatedAt\":\"2026-10-03T16:56:50.35593+08:00\"},\"requestId\":\"req_fc4cfa85eed54597\",\"timestamp\":1791017810}",
+          "text": "{\"success\":true,\"data\":{\"id\":\"d16f3e060ccdc02ceaf2209112e4e271\",\"orderNo\":\"20261003551170431\",\"customerName\":\"线B验收客户-REFUND-mus5ypfil75s\",\"customerPhone\":\"13943159965\",\"customerAddress\":\"线B验收地址（探针）\",\"logisticsType\":\"express\",\"logisticsCompany\":\"线B验收物流\",\"totalAmount\":300.00,\"actualAmount\":300.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"线B验收（线B 探针订单，用后自清）\",\"isUrgent\":false,\"createdByName\":\"王小明\",\"items\":[{\"id\":\"10fc38d1ed3e909f32d0651d3f345f9f\",\"productId\":\"014bb0fe5e346df399d4ac7b30dd01bf\",\"productName\":\"线B验收商品-REFUND-mus5yonwgjp4\",\"skuCode\":\"LB-REFUND-MUS5YONWGJP4\",\"quantity\":2.00,\"unitPrice\":150.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106308900716154881\",\"colorId\":\"2106308900678406146\",\"skuCode\":\"LB-REFUND-MUS5YONWGJP4-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":300.00,\"amount\":300.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-03T17:02:30.623646+08:00\"}],\"processingItems\":[],\"createdAt\":\"2026-10-03T17:02:30.58874+08:00\",\"updatedAt\":\"2026-10-03T17:02:30.58875+08:00\"},\"requestId\":\"req_a9a153e673bd42a0\",\"timestamp\":1791018150}",
           "ok": true,
           "data": {
-            "id": "58e5f39b2a7186db82f93fb3b03532c8",
-            "orderNo": "20261003317220352",
-            "customerName": "线B验收客户-REFUND-mus5rew33p0b",
-            "customerPhone": "13991374511",
+            "id": "d16f3e060ccdc02ceaf2209112e4e271",
+            "orderNo": "20261003551170431",
+            "customerName": "线B验收客户-REFUND-mus5ypfil75s",
+            "customerPhone": "13943159965",
             "customerAddress": "线B验收地址（探针）",
             "logisticsType": "express",
             "logisticsCompany": "线B验收物流",
@@ -1051,18 +1051,18 @@
             "createdByName": "王小明",
             "items": [
               {
-                "id": "4033af1d80fe8542d86755ca10ab6602",
-                "productId": "19db9a791d822bad45973a1880383b72",
-                "productName": "线B验收商品-REFUND-mus5re5g7bqb",
-                "skuCode": "LB-REFUND-MUS5RE5G7BQB",
+                "id": "10fc38d1ed3e909f32d0651d3f345f9f",
+                "productId": "014bb0fe5e346df399d4ac7b30dd01bf",
+                "productName": "线B验收商品-REFUND-mus5yonwgjp4",
+                "skuCode": "LB-REFUND-MUS5YONWGJP4",
                 "quantity": 2,
                 "unitPrice": 150,
                 "width": 2.8,
                 "height": 2,
                 "processingInfo": {
-                  "skuId": "2106307473277063170",
-                  "colorId": "2106307473239314433",
-                  "skuCode": "LB-REFUND-MUS5RE5G7BQB-01-28",
+                  "skuId": "2106308900716154881",
+                  "colorId": "2106308900678406146",
+                  "skuCode": "LB-REFUND-MUS5YONWGJP4-01-28",
                   "doorWidth": "2.8m",
                   "processingFeeDetail": {
                     "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
@@ -1094,44 +1094,44 @@
                   "special_options_total": 0,
                   "mixed_color_surcharge_per_meter": 2.4
                 },
-                "createdAt": "2026-10-03T16:56:50.484672+08:00"
+                "createdAt": "2026-10-03T17:02:30.623646+08:00"
               }
             ],
             "processingItems": [],
-            "createdAt": "2026-10-03T16:56:50.355898+08:00",
-            "updatedAt": "2026-10-03T16:56:50.35593+08:00"
+            "createdAt": "2026-10-03T17:02:30.58874+08:00",
+            "updatedAt": "2026-10-03T17:02:30.58875+08:00"
           }
         },
         "confirmResp": {
           "status": 200,
           "json": {
             "success": true,
-            "requestId": "req_6aedbc799b5a4015",
-            "timestamp": 1791017811
+            "requestId": "req_967f78f5af2d47ac",
+            "timestamp": 1791018151
           },
-          "text": "{\"success\":true,\"requestId\":\"req_6aedbc799b5a4015\",\"timestamp\":1791017811}",
+          "text": "{\"success\":true,\"requestId\":\"req_967f78f5af2d47ac\",\"timestamp\":1791018151}",
           "ok": true
         },
         "body": {
-          "customerName": "线B验收客户-REFUND-mus5rew33p0b",
-          "customerPhone": "13991374511",
+          "customerName": "线B验收客户-REFUND-mus5ypfil75s",
+          "customerPhone": "13943159965",
           "customerAddress": "线B验收地址（探针）",
           "logisticsType": "express",
           "logisticsCompany": "线B验收物流",
           "remark": "线B验收（线B 探针订单，用后自清）",
           "items": [
             {
-              "productId": "19db9a791d822bad45973a1880383b72",
-              "productName": "线B验收商品-REFUND-mus5re5g7bqb",
+              "productId": "014bb0fe5e346df399d4ac7b30dd01bf",
+              "productName": "线B验收商品-REFUND-mus5yonwgjp4",
               "quantity": 2,
               "unitPrice": 150,
               "subtotal": "300.000",
               "width": 2.8,
               "height": 2,
               "processingInfo": {
-                "skuId": "2106307473277063170",
-                "skuCode": "LB-REFUND-MUS5RE5G7BQB-01-28",
-                "colorId": "2106307473239314433",
+                "skuId": "2106308900716154881",
+                "skuCode": "LB-REFUND-MUS5YONWGJP4-01-28",
+                "colorId": "2106308900678406146",
                 "doorWidth": "2.8m"
               }
             }
@@ -1139,9 +1139,9 @@
         }
       },
       "orderRow": {
-        "id": "58e5f39b2a7186db82f93fb3b03532c8",
+        "id": "d16f3e060ccdc02ceaf2209112e4e271",
         "tenant_id": 20,
-        "order_no": "20261003317220352",
+        "order_no": "20261003551170431",
         "status": "confirmed",
         "total_amount": 300,
         "actual_amount": 300,
@@ -1150,7 +1150,7 @@
         "deleted": 0
       },
       "skuAfter": {
-        "id": "2106307473277063170",
+        "id": "2106308900716154881",
         "stock": 98,
         "sales_count": 2
       },

@@ -1,7 +1,7 @@
 {
   "at": {
-    "cst": "2026-10-03 16:53:13 +08",
-    "utc": "2026-10-03T08:53:13.099Z"
+    "cst": "2026-10-03 17:03:38 +08",
+    "utc": "2026-10-03T09:03:38.114Z"
   },
   "readings": [
     {
@@ -10,7 +10,7 @@
       "size": 20,
       "status": 401,
       "rows": null,
-      "ms": 2,
+      "ms": 5,
       "ok": false,
       "consistent": false
     },
@@ -30,7 +30,7 @@
       "size": 200,
       "status": 401,
       "rows": null,
-      "ms": 4,
+      "ms": 6,
       "ok": false,
       "consistent": false
     },
@@ -50,7 +50,7 @@
       "size": 2000,
       "status": 401,
       "rows": null,
-      "ms": 3,
+      "ms": 5,
       "ok": false,
       "consistent": false
     },
@@ -70,7 +70,7 @@
       "size": 5000,
       "status": 401,
       "rows": null,
-      "ms": 3,
+      "ms": 4,
       "ok": false,
       "consistent": false
     },
@@ -80,7 +80,7 @@
       "size": 5000,
       "status": 401,
       "rows": null,
-      "ms": 2,
+      "ms": 3,
       "ok": false,
       "consistent": false
     }
