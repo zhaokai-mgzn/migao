@@ -1,0 +1,91 @@
+{
+  "schema": "aftersales-sideeffect-concurrency/1.0",
+  "why": "issue #6220 的形态是「同一事务里的多个副作用，只保护了其中一个」：退款联动有 DB 原子条件更新（正对照：并发下 refundOver=false），库存回补零保护（并发数 = 回补次数）。这份台账把「@Transactional + 状态写 + ≥2 处副作用调用」的写面逐个登记，未登记即红 —— 让下一个人在别处新加同类形态时当场撞红，而不是等下一次深度测试才发现。",
+  "scan": {
+    "root": "src/main/java/com/migao/admin/service",
+    "shape": "@Transactional 方法 ∧ 体内出现 setStatus( ∧ ≥2 处 `<x>Mapper|Service>.<insert|updateById|update|delete|deleteById|save|restoreStock|deductStock>(` 调用",
+    "note": "形态判据不做 AST 解析（只认「注解 + 方法窗口 + 文本标记」），换措辞可绕过 —— 真实防线仍是各自的实例判据（见 coverage_boundary）。"
+  },
+  "entries": [
+    {
+      "method": "AfterSalesTicketService#updateTicketStatus",
+      "verdict": "guarded",
+      "guard": "状态流转 = DB 原子条件更新（WHERE id + tenant_id + status=读到的旧状态）；受影响行数 0 ⇒ 409「已被他人变更」，退款联动 / 库存回补 / 时间线写入**只在条件更新成功的那一次**执行",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java::.eq(\"status\", currentStatus)",
+      "case_ids": ["AS-011"]
+    }
+  ],
+  "unverified": [
+    {
+      "method": "AfterSalesTicketService#createTicket",
+      "reason": "建单是**插入新对象**（新 id，无共享行可被覆盖）⇒ 同一事务内的两处写不构成「读-判-写」；重复提交的入口拦截面（幂等键 / 同订单同类型 dup-guard 422）本单未核验",
+      "issue": "#6220",
+      "restart_condition": "若建单路径新增「对已有行的账目级写」（自动补退款 / 改库存）⇒ 重评；或核验入口重复提交面后回填结论"
+    },
+    {
+      "method": "AgentSessionService#assignSession",
+      "reason": "会话占用写（setStatus active + 站内消息）：无涉钱 / 库存账目，并发重复写同值不产生账目差异",
+      "issue": "#6220",
+      "restart_condition": "若会话路径新增涉钱 / 库存 / 计费副作用 ⇒ 重评"
+    },
+    {
+      "method": "AgentSessionService#sendMessage",
+      "reason": "消息落库 + 回写会话状态：并发重复的是**消息**（去重属消息面），不产生账目差异",
+      "issue": "#6220",
+      "restart_condition": "若消息落库改为唯一键插入或引入计费 ⇒ 重评"
+    },
+    {
+      "method": "AgentSessionService#endSession",
+      "reason": "同 assignSession：状态 + 系统消息，无账目副作用",
+      "issue": "#6220",
+      "restart_condition": "同 assignSession"
+    },
+    {
+      "method": "InboundOrderService#post",
+      "reason": "⚠️ **疑似同类形态（涉库存）**：入库过账=无条件置 POSTED + 逐行 insert `stock_batches` ⇒ 并发重复过账可能重复建批次 / 重复入库；**本单未核验**（范围外，需独立判据）",
+      "issue": "#6220（本单登记为观察项）",
+      "restart_condition": "开单核验入库过账并发面（重复批次行 / 重复库存增量）后回填结论；未开单前不得当成「已保护」"
+    },
+    {
+      "method": "ProcessingFeeCombinationCommandService#upsertFromOrderOverride",
+      "reason": "加工费组合 upsert（updateById 命中则改、否则 insert）：唯一性靠业务键约束兜；并发重复插入面本单未核验",
+      "issue": "#6220",
+      "restart_condition": "若该表无唯一键约束 ⇒ 升格为必修"
+    },
+    {
+      "method": "ProductService#updateProduct",
+      "reason": "商品字段无条件覆盖（last-write-wins），SKU 同步走条件 wrapper：无**插入型**账目副作用 ⇒ 不产生重复账",
+      "issue": "#6220",
+      "restart_condition": "若商品更新引入库存 / 账目**增量**写（+N）⇒ 重评"
+    },
+    {
+      "method": "ProductionOperationCommandService#update",
+      "reason": "⚠️ **涉钱面**：价格版本**追加 insert** + 可选状态写 ⇒ 并发重复提交可能重复追加版本行；本单未核验",
+      "issue": "#6220（本单登记为观察项）",
+      "restart_condition": "开单核验「价格版本追加」的并发幂等（同键唯一 / 条件插入）后回填结论"
+    },
+    {
+      "method": "RegistrationService#approveApplication",
+      "reason": "入驻审批（状态写 + 域内落库）：并发重复审批面本单未核验",
+      "issue": "#6220",
+      "restart_condition": "核验重复审批是否会重复建租户 / 重复授权后回填结论"
+    }
+  ],
+  "unverified_baseline": [
+    "AfterSalesTicketService#createTicket",
+    "AgentSessionService#assignSession",
+    "AgentSessionService#sendMessage",
+    "AgentSessionService#endSession",
+    "InboundOrderService#post",
+    "ProcessingFeeCombinationCommandService#upsertFromOrderOverride",
+    "ProductService#updateProduct",
+    "ProductionOperationCommandService#update",
+    "RegistrationService#approveApplication"
+  ],
+  "coverage_boundary": [
+    "射程 = `src/main/java/com/migao/admin/service/*.java` 里**逐字匹配**上述形态的方法；用别的写法（自研 mapper 方法名、`this.xxx()` 间接写、字符串拼接）绕过扫描器的形态本守卫看不见。",
+    "本守卫只保证「登记存在且兑现」，**不保证** entries 里声称的保护真的有效 —— 那是实例判据的事（AS-011 = AfterSalesConcurrentResolveRealDbTest）。",
+    "unverified 是**豁免台账**：只许缩短（新增豁免 ⇒ 红），缩短 = 把该条移进 entries 并给出兑现锚。",
+    "扫描器不做 AST 解析，方法名取自「@Transactional 之后到方法体 `{` 之间」的签名文本。"
+  ]
+}

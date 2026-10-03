@@ -34,6 +34,7 @@ import com.migao.admin.mapper.StockLedgerMapper;
 import com.migao.admin.mapper.TicketTimelineMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -303,7 +304,7 @@ class StockLedgerTest {
 
         // 回补场景：return 工单完结、商品允许回补；真实 OrderService.restoreStockForReturn 内部 +2
         when(afterSalesTicketMapper.selectById("ticket-1")).thenReturn(ticket());
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(orderItem()));
         when(productMapper.selectBatchIds(anyCollection())).thenReturn(List.of(
@@ -329,7 +330,7 @@ class StockLedgerTest {
     void afterSalesRestockWithoutChangeWritesNothing() {
         skuStore.put(SKU_ID, sku(SKU_ID, BigDecimal.valueOf(30)));
         when(afterSalesTicketMapper.selectById("ticket-1")).thenReturn(ticket());
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         // 订单明细不带 SKU 规格（既有分支：matchSkuId 返回 null ⇒ 无 SKU 级库存调整）
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(orderItemWithoutSkuSpec()));
@@ -349,7 +350,7 @@ class StockLedgerTest {
     void afterSalesRestockDisabledWritesNothing() {
         skuStore.put(100L, sku(100L, BigDecimal.valueOf(30)));
         when(afterSalesTicketMapper.selectById("ticket-1")).thenReturn(ticket());
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(orderItem()));
         when(productMapper.selectBatchIds(anyCollection())).thenReturn(List.of(
                 Product.builder().id(PRODUCT_ID).allowReturnRestock(false).build()));
@@ -371,7 +372,7 @@ class StockLedgerTest {
         skuStore.put(SKU_ID, sku(SKU_ID, BigDecimal.valueOf(30)));
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(orderItem()));
         when(afterSalesTicketMapper.selectById("ticket-1")).thenReturn(ticket());
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(productMapper.selectBatchIds(anyCollection())).thenReturn(List.of(
                 Product.builder().id(PRODUCT_ID).allowReturnRestock(true).build()));
 

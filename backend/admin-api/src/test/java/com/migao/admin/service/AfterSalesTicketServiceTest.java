@@ -1,4 +1,4 @@
-// case_ids: AS-001, AS-002, AS-003, AS-004, AS-005, AS-006
+// case_ids: AS-001, AS-002, AS-003, AS-004, AS-005, AS-006, AS-011
 
 package com.migao.admin.service;
 
@@ -590,14 +590,14 @@ class AfterSalesTicketServiceTest {
         request.setStatus("processing");
 
         when(afterSalesTicketMapper.selectById("ticket-001")).thenReturn(testTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         afterSalesTicketService.updateTicketStatus("ticket-001", request);
 
         // then
-        verify(afterSalesTicketMapper).updateById(argThat(
-                (AfterSalesTicket t) -> "processing".equals(t.getStatus())));
+        verify(afterSalesTicketMapper).update(argThat(
+                (AfterSalesTicket t) -> "processing".equals(t.getStatus())), any(UpdateWrapper.class));
     }
 
     @Test
@@ -609,16 +609,16 @@ class AfterSalesTicketServiceTest {
         request.setRemark("不符合售后条件");
 
         when(afterSalesTicketMapper.selectById("ticket-001")).thenReturn(testTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         afterSalesTicketService.updateTicketStatus("ticket-001", request);
 
         // then
-        verify(afterSalesTicketMapper).updateById(argThat((AfterSalesTicket t) ->
+        verify(afterSalesTicketMapper).update(argThat((AfterSalesTicket t) ->
                 "rejected".equals(t.getStatus())
                         && t.getClosedAt() != null
-                        && "不符合售后条件".equals(t.getCloseReason())));
+                        && "不符合售后条件".equals(t.getCloseReason())), any(UpdateWrapper.class));
     }
 
     @Test
@@ -630,16 +630,16 @@ class AfterSalesTicketServiceTest {
         request.setRemark("误建工单，线下已处理");
 
         when(afterSalesTicketMapper.selectById("ticket-001")).thenReturn(testTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         afterSalesTicketService.updateTicketStatus("ticket-001", request);
 
         // then: 落库状态为 closed，且写入关闭时间与关闭原因（closeReason = request.remark）
-        verify(afterSalesTicketMapper).updateById(argThat((AfterSalesTicket t) ->
+        verify(afterSalesTicketMapper).update(argThat((AfterSalesTicket t) ->
                 "closed".equals(t.getStatus())
                         && t.getClosedAt() != null
-                        && "误建工单，线下已处理".equals(t.getCloseReason())));
+                        && "误建工单，线下已处理".equals(t.getCloseReason())), any(UpdateWrapper.class));
     }
 
     @Test
@@ -675,14 +675,14 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-002")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         afterSalesTicketService.updateTicketStatus("ticket-002", request);
 
         // then
-        verify(afterSalesTicketMapper).updateById(argThat(
-                (AfterSalesTicket t) -> "resolved".equals(t.getStatus())));
+        verify(afterSalesTicketMapper).update(argThat(
+                (AfterSalesTicket t) -> "resolved".equals(t.getStatus())), any(UpdateWrapper.class));
     }
 
     @Test
@@ -699,16 +699,16 @@ class AfterSalesTicketServiceTest {
         request.setRemark("客户撤销申请");
 
         when(afterSalesTicketMapper.selectById("ticket-003")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         afterSalesTicketService.updateTicketStatus("ticket-003", request);
 
         // then
-        verify(afterSalesTicketMapper).updateById(argThat((AfterSalesTicket t) ->
+        verify(afterSalesTicketMapper).update(argThat((AfterSalesTicket t) ->
                 "closed".equals(t.getStatus())
                         && t.getClosedAt() != null
-                        && "客户撤销申请".equals(t.getCloseReason())));
+                        && "客户撤销申请".equals(t.getCloseReason())), any(UpdateWrapper.class));
     }
 
     @Test
@@ -792,6 +792,8 @@ class AfterSalesTicketServiceTest {
     void updateTicketStatus_SavesInternalNotes() {
         // given
         when(afterSalesTicketMapper.selectById("ticket-test-001")).thenReturn(testTicket);
+        // #6220：状态流转改为条件更新（update(entity, wrapper)）⇒ 必须显式给出受影响行数 1
+        when(afterSalesTicketMapper.update(eq(testTicket), any(UpdateWrapper.class))).thenReturn(1);
 
         AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
         request.setStatus("processing");
@@ -805,7 +807,7 @@ class AfterSalesTicketServiceTest {
         assertThat(testTicket.getInternalNotes()).contains("待处理 → 处理中");
         assertThat(testTicket.getInternalNotes()).doesNotContain("pending → processing");
         assertThat(testTicket.getStatus()).isEqualTo("processing");
-        verify(afterSalesTicketMapper).updateById(testTicket);
+        verify(afterSalesTicketMapper).update(eq(testTicket), any(UpdateWrapper.class));
         // 验证timeline被写入
         verify(ticketTimelineMapper).insert(any(TicketTimeline.class));
     }
@@ -815,6 +817,8 @@ class AfterSalesTicketServiceTest {
     void updateTicketStatus_WritesTimelineOnStatusChange() {
         // given
         when(afterSalesTicketMapper.selectById("ticket-test-001")).thenReturn(testTicket);
+        // #6220：状态流转改为条件更新（update(entity, wrapper)）⇒ 必须显式给出受影响行数 1
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
 
         AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
         request.setStatus("processing");
@@ -825,6 +829,40 @@ class AfterSalesTicketServiceTest {
 
         // then: timeline应包含 from=pending, to=processing, remark
         verify(ticketTimelineMapper).insert(org.mockito.ArgumentMatchers.<TicketTimeline>any());
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus — 并发落败（条件更新 0 行）⇒ 409 且**一个副作用都不跑**（issue #6220）")
+    void updateTicketStatus_LostTransitionRace_ThrowsConflictAndSkipsSideEffects() {
+        // given: 已 processing 的 return 工单（有退款金额 ⇒ 修前会一路跑完退款联动 + 库存回补两条副作用）
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-race")
+                .tenantId(1L)
+                .ticketNo("AS-RACE-001")
+                .orderId("order-001")
+                .ticketType("return")
+                .status("processing")
+                .refundAmount(new BigDecimal("300.00"))
+                .build();
+        when(afterSalesTicketMapper.selectById("ticket-race")).thenReturn(processingTicket);
+        // 另一个并发请求已先改掉状态 ⇒ 本请求的条件更新命中 0 行（真库侧读数见 AfterSalesConcurrentResolveRealDbTest）
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(0);
+
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        // when / then: 409 + 可行动中文提示（不是静默成功、也不是 500）
+        assertThatThrownBy(() -> afterSalesTicketService.updateTicketStatus("ticket-race", request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已被他人变更")
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
+
+        // 副作用一个都不许跑：修前（无条件覆盖）这五条**全都会被执行** ⇒ 本判据在修前必红
+        verify(ticketTimelineMapper, never()).insert(any(TicketTimeline.class));
+        verify(orderMapper, never()).update(any(), any(UpdateWrapper.class));
+        verify(financeService, never()).recordRefund(any(), any(), any());
+        verify(orderService, never()).restoreStockForReturn(any());
+        verify(notificationService, never()).triggerByEvent(any(), any(), any());
     }
 
     // ======================== 售后完结联动订单 + 财务 ========================
@@ -847,7 +885,7 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-r1")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
@@ -882,7 +920,7 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-r2")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
@@ -914,7 +952,7 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-r3")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         afterSalesTicketService.updateTicketStatus("ticket-r3", request);
@@ -942,7 +980,7 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-r4")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         afterSalesTicketService.updateTicketStatus("ticket-r4", request);
@@ -971,7 +1009,7 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-r5")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
@@ -1211,7 +1249,7 @@ class AfterSalesTicketServiceTest {
                 .updatedAt(OffsetDateTime.now())
                 .build();
         when(afterSalesTicketMapper.selectById("ticket-001")).thenReturn(ticket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(ticketTimelineMapper.insert(any(TicketTimeline.class))).thenReturn(1);
 
         Order orderWithUser = Order.builder()
@@ -1293,7 +1331,7 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-rs1")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(buildOrderItem("prod-1"), buildOrderItem("prod-2")));
         when(productMapper.selectBatchIds(anyCollection()))
@@ -1324,7 +1362,7 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-rs1")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(buildOrderItem("prod-1")));
         when(productMapper.selectBatchIds(anyCollection()))
@@ -1363,7 +1401,7 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-rs5")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(buildOrderItem("prod-1")));
         when(productMapper.selectBatchIds(anyCollection()))
@@ -1403,7 +1441,7 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-rs2")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(buildOrderItem("prod-1")));
         when(productMapper.selectBatchIds(anyCollection()))
@@ -1432,7 +1470,7 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-rs3")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(buildOrderItem("prod-1"), buildOrderItem("prod-2")));
         when(productMapper.selectBatchIds(anyCollection()))
@@ -1463,7 +1501,7 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-rs4")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
         // when
@@ -1490,7 +1528,7 @@ class AfterSalesTicketServiceTest {
         request.setStatus("resolved");
 
         when(afterSalesTicketMapper.selectById("ticket-rs5")).thenReturn(processingTicket);
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         afterSalesTicketService.updateTicketStatus("ticket-rs5", request);
