@@ -294,6 +294,13 @@ public class ProductionOperationCommandService {
                 .deleted(0)
                 .build());
         Map<String, Object> view = productionOperationQueryService.operationView(op);
+        // 🔴 写面告警（issue #6117）：该工序不在算料目录内 ⇒ 派工应做数量**按 1 计**
+        // （`qty_source=fallback`）⇒ 计件工资按 1 计量。改前这件事在写面**完全静默**（建完没有任何提示）。
+        // 口径**一字不改**（用户 2026-10-03 裁定：保留兜底 1，只做「写面告警 + 读面标记」）。
+        // `qty_rule_missing` 已由 operationView（读面同一份键）给出；此处只补「可读文案」。
+        if (Boolean.TRUE.equals(view.get(ProductionOperationQueryService.QTY_RULE_MISSING_KEY))) {
+            view.put("qty_rule_hint", ProductionOperationQueryService.QTY_RULE_MISSING_HINT);
+        }
         if (positions != null) {
             // 新增路径：该逻辑工序此前**没有任何行** ⇒ 兜底价 = 本次填的工序库价（既有正确行为，见 attachPositions）
             Map<String, Integer> counts = attachPositions(tenantId, op, positions, existingRows, null);

@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-020, PG-034, PG-039
+// case_ids: PG-020, PG-034, PG-039, PP-012
 
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPosition;
@@ -314,6 +314,47 @@ class ProductionOperationCommandServiceTest {
         assertThat(version.getValue().getOperationId()).as("版本行必须挂在刚建的工序上").isEqualTo(op.getValue().getId());
         assertThat(version.getValue().getUnitPrice()).isEqualByComparingTo("0.6");
         assertThat(result.get("name")).isEqualTo("罗马帘穿杆");
+    }
+
+    // ══════════════════ 数量口径缺口的**写面告警**（issue #6117）══════════════════
+    //
+    // 缺陷（涉钱 · 静默）：商家自建工序不在算料引擎的工序目录（`routing.py::OPERATION_CATALOG`）里
+    // ⇒ 派工应做数量走「引擎不认识的工序 ⇒ 兜底 1」分支（`qty_source=fallback`）⇒ 报工与计件工资
+    // **按 1 计量**（实测 0.9 元/m 的工序，一单 12.3 m 只算 0.9 元），而商家侧**没有任何提示**。
+    // 裁定（用户 2026-10-03）：**保留兜底 1**（数量口径一字不改）+ 写面告警 + 读面标记。
+    // ⚠️ 两条用例**必须能分别变红**（把告警判定摘掉 ⇒ 各自红）：改前两条都红（键根本不存在）。
+
+    @Test
+    @DisplayName("#6117 写面告警：目录外工序（商家自建）⇒ qty_rule_missing=true + 可读文案")
+    void createWarnsWhenOperationIsOutsideTheQtyCatalog() {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+
+        Map<String, Object> result = service().create(Map.of(
+                "name", "验收探针工序-6117", "group_name", "其他", "unit", "米", "unit_price", 0.9), TENANT);
+
+        assertThat(result.get(ProductionOperationQueryService.QTY_RULE_MISSING_KEY))
+                .as("目录外 ⇒ 写面必须告警（改前该键不存在 ⇒ 建完完全静默）")
+                .isEqualTo(true);
+        assertThat(result.get("qty_rule_hint"))
+                .as("可读文案必须逐字可用（商家据此知道派工数量会按 1 计）")
+                .isEqualTo(ProductionOperationQueryService.QTY_RULE_MISSING_HINT);
+    }
+
+    @Test
+    @DisplayName("#6117 写面不误报：目录内工序（外帘装袋 / 打包）⇒ qty_rule_missing=false 且无告警文案")
+    void createDoesNotWarnForCatalogOperations() {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+
+        // `外帘装袋` / `打包` 都在引擎数量目录里（后者是 Java 侧表的增量两道之一）⇒ 不得告警。
+        // 没有这一条，「一律告警」也能让上一条绿（永远绿 = 空断言）。
+        for (String name : List.of("外帘装袋", "打包")) {
+            Map<String, Object> result = service().create(Map.of(
+                    "name", name, "group_name", "后道", "unit", "套", "unit_price", 1.0), TENANT);
+            assertThat(result.get(ProductionOperationQueryService.QTY_RULE_MISSING_KEY))
+                    .as("`%s` 在目录内 ⇒ 不得被标成缺口径", name)
+                    .isEqualTo(false);
+            assertThat(result).as("目录内 ⇒ 不得出现告警文案").doesNotContainKey("qty_rule_hint");
+        }
     }
 
     @Test

@@ -83,6 +83,78 @@ public class ProductionOperationQueryService {
     private static final Map<String, String> OPERATION_LOGICAL_NAMES = withSheerVariants(logicalNamePairs());
 
     /**
+     * **引擎数量目录的 Java 侧增量**（issue #6117）—— 见 {@link #ENGINE_QTY_OPERATIONS}。
+     *
+     * <p>逐条写出（不用「去后缀」推导）。⚠️ 本常量是「Java 表 = 引擎目录」的**唯一差额**，
+     * 由 {@code tests/unit_ci_workflows/test_production_catalog_seed.py} 的
+     * {@code test_java_engine_qty_catalog_matches_python_catalog} 双向钉住。</p>
+     */
+    private static final List<String> ENGINE_QTY_OPERATIONS_EXTRA = List.of("配料", "打包");
+
+    /**
+     * 🔴 <b>引擎数量目录（= 算料引擎 {@code routing.py::OPERATION_CATALOG} 的键集）的 Java 侧单一份</b>
+     * （issue #6117）—— 回答「这道工序**有没有**数量口径」。没有 ⇒ 派工应做数量走兜底 1
+     * （{@code qty_source=fallback}），商家面前必须**可见**（本单治的就是它的静默），
+     * **口径本身一字不改**（用户 2026-10-03 裁定「保留兜底 1，但写面告警 + 读面标记」）。
+     *
+     * <p><b>为什么不能另造第二份清单</b>：{@link #OPERATION_LOGICAL_NAMES} 的**键集**本就是引擎目录
+     * 的键集减 {@link #ENGINE_QTY_OPERATIONS_EXTRA 两道}——实测：{@code OPERATION_CATALOG} 41 键 =
+     * 该表 39 键 + {@code 配料} / {@code 打包}，且该表键集与 {@code OPERATION_CATALOG} 键集**无差**。
+     * 而该表已由 {@code ProductionOperationQueryServiceTest#logicalNameTableMatchesTruthSource}
+     * **逐条双向**对着 {@code routing.py::_LOGICAL_NAME_PAIRS} 钉住（Java 无法 import Python ⇒
+     * 逐字解析真值源文本是唯一可失败的同源判据）。故此处只增加「差额 + 判定」，
+     * 不复制 39 条字面量；差额本身由 Python 侧
+     * {@code test_production_catalog_seed.py::test_java_engine_qty_catalog_matches_python_catalog}
+     * 对着 {@code OPERATION_CATALOG} 双向钉住 ⇒ **两语言任一侧漂移都有一处会红**。</p>
+     */
+    public static final Set<String> ENGINE_QTY_OPERATIONS = engineQtyOperations();
+
+    private static Set<String> engineQtyOperations() {
+        Set<String> out = new LinkedHashSet<>(OPERATION_LOGICAL_NAMES.keySet());
+        out.addAll(ENGINE_QTY_OPERATIONS_EXTRA);
+        return Set.copyOf(out);
+    }
+
+    /**
+     * 引擎数量目录的**读面字段名**（issue #6117）：读面（工序库目录 / 工艺项）与写面
+     * （新增/更新工序的响应）**同一个键**—— 沿用既有读面形态，不新造第二套（用户裁定第 2 条）。
+     * 值语义：{@code true} = 该工序不在算料目录内 ⇒ 派工应做数量按 1 计。
+     */
+    public static final String QTY_RULE_MISSING_KEY = "qty_rule_missing";
+
+    /**
+     * 写面告警的可读文案（issue #6117；仅在该工序不在算料目录内时出现，其余情况为 {@code null}）。
+     */
+    public static final String QTY_RULE_MISSING_HINT =
+            "该工序不在算料目录内，派工应做数量将按 1 计";
+
+    /**
+     * 该工序名**有没有**数量口径（issue #6117）—— 「动工单时送给算料引擎的那个名」是否为
+     * {@link #ENGINE_QTY_OPERATIONS} 的成员。
+     *
+     * <p>两侧共用本方法（读面 {@link #operationView} / 写面
+     * {@code ProductionOperationCommandService#create}）⇒ 判定只有一份，不会两边分叉。</p>
+     */
+    public static boolean hasQtyRule(String operationName) {
+        return operationName != null && ENGINE_QTY_OPERATIONS.contains(operationName);
+    }
+
+    /**
+     * 该工序名是否**缺**数量口径：{@code true} ⇒ 派工应做数量按 1 计（{@code qty_source=fallback}）。
+     *
+     * <p>比 {@link #hasQtyRule} 宽一档的合理折衷：商家新建时可能直接填**逻辑工序名**
+     * （用户裁定举的「目录内」例子就是 {@code 韩褶}）—— 引擎侧的目录键是变体名 {@code 韩褶-布} /
+     * {@code 韩褶-纱}。只认变体名会把商家建的 {@code 韩褶} 误标成缺口径（误报 = 另一种误导），
+     * 故**逻辑名同样算「目录内」**（该逻辑名确实有变体在目录里 ⇒ 它的数量口径存在）。</p>
+     */
+    public static boolean qtyRuleMissing(String operationName) {
+        if (operationName == null) {
+            return true;
+        }
+        return !hasQtyRule(operationName) && !OPERATION_LOGICAL_NAMES.containsValue(operationName);
+    }
+
+    /**
      * {@link #OPERATION_LOGICAL_NAMES} 的合成入口：{@link #logicalNamePairs()}（**35 条**，被
      * {@code ProductionOperationQueryServiceTest#logicalNameTableMatchesTruthSource} 逐条冻结）
      * + **4 条纱帘变体**（issue #4937）。
@@ -995,6 +1067,11 @@ public class ProductionOperationQueryService {
         // provenance（V62，issue #4361）：单价是占位值/行业推算值这件事必须**在界面上可见**
         // （用户裁定：「照铺，但 provenance 必须可见，不许静默」）。NULL = 来源未知，不冒充已知。
         view.put("source", op.getSource());
+        // 🔴 数量口径缺口的**读面标记**（issue #6117）：该工序不在算料目录内 ⇒ 派工应做数量走
+        // **兜底 1**（`qty_source=fallback`，额度按 1 计量 ⇒ 计件工资按 1 算）。改前这件事**完全静默**
+        // （商家侧看不到任何提示）。口径本身**一字不改**（保留兜底 1）；本键只让它可见。
+        // 判定 = `qtyRuleMissing(...)`（与写面告警**同一个方法**、同一份 `ENGINE_QTY_OPERATIONS`）。
+        view.put(QTY_RULE_MISSING_KEY, qtyRuleMissing(op.getName()));
         return view;
     }
 
