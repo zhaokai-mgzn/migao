@@ -5221,7 +5221,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6200）：订单列表的日期筛选窗口由 UTC 日改为业务日（+08）。根因 = OrderService.getOrderPage 用日期串 + UTC 日界拼窗口；正确单源 = 同仓既有的 BusinessClock.startOfDay（右界改半开区间 `lt(D+1 00:00+08)`，不再漏掉最后一秒的亚秒部分）。 ｜ tags: order, time-window, admin-api, read-surface
 
-## 加工项域（25 case）
+## 加工项域（26 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -5611,6 +5611,18 @@
 ```
 真值: processing-manage.worker-page-config
 溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
+
+### PG-059. 裁高读面 - 明细 product_id 为空时 brand 如实回 null 而不是 500（不可变表 get(null) 抛 NPE；单测覆盖，非 LLM 行为） 🔵
+```
+你: 这张水洗唛的订单明细没填商品，扫它还能算出裁高吗？
+期望: direct_reply
+数据: 明细 product_id 为空 ⇒ GET /api/worker/production/cutting-height 仍 200，且该行 brand=null（**不得 5xx**）；该行其余键与裁高照常给出（一个部位缺品牌不拖垮整屏）
+数据: 回归对照：product_id 非空 ⇒ brand 取 product_attributes 的 brand 属性值；属性缺失 ⇒ null（修前修后逐字不变）
+数据: 🔴 类级形态：`Map.of()` / `Map.copyOf()` 是 ImmutableCollections，`get(null)` **抛 NPE**（`Collections.emptyMap()` / `LinkedHashMap` 返 null）⇒ 「返回空不可变表的方法」其调用方**必须**显式短路空键或改用容忍空键的读法；未登记即红（判据 = backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightNullProductIdTest.java 的同族守卫 + 台账）
+跳过: [backend-contract] 本条只登记「裁高读面空值容忍 + 不可变表空键索引」这一层**确定性契约**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightNullProductIdTest.java）⇒ 不进 agent-eval 冒烟（同 PG-045 / PG-046 惯例）。
+```
+真值: processing-manage.worker-cutting-height-terminal
+溯源: 2026-10-03 新增（第三轮深度测试 C23 / issue #6219）：`order_items.product_id` 为空时 `positionRow` 对 `brands()` 的空集分支（`Map.of()`）做 `get(null)` ⇒ `ImmutableCollections$MapN.get` 抛 NPE ⇒ 端点 500（线上栈与单测栈逐字同源）。修法取最少代码：调用点显式短路空键 + 空集分支返回**可索引**的 LinkedHashMap（同文件 `itemsOf()` 既有范式），**不改查询语义、不改只读契约、不写机器**。⚠️ 同族存量（`getCategoryNameMap` / `loadOrders` 的调用点未判空）**不在本包文件族内** ⇒ 已另开 issue #6226。 ｜ tags: processing, cutting_height, scan, backend-contract, null_safety
 
 ## 加工单域（58 case）
 
@@ -9218,8 +9230,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：641（活跃 134，跳过 507）
-- tier 分布：smoke 12 / normal 595 / adversarial 32
+- 用例总数：642（活跃 134，跳过 508）
+- tier 分布：smoke 12 / normal 596 / adversarial 32
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -9238,7 +9250,7 @@
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：56
-- 加工项域：25
+- 加工项域：26
 - 加工单域：58
 - 商品域：109
 - 工具注册器域：1
