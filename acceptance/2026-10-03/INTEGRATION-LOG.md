@@ -899,3 +899,28 @@ PUT /api/admin/orders/{id}/logistics 收 Map<String,String>，后端只读 logis
 
 **`#6248` 派单时我给的技术起点（主会话读码，供包少走弯路）**：`InboundOrderService:274` 逐行取号 → `:658 generateBatchNo()` 用**进程内** `BATCH_SEQ` 计数器 `% 10_000` → `:671 nextFreeBatchNo()` 是 **check-then-insert**（`exists` 假即返回，重试 20 次，耗尽 `409 BATCH_NO_EXHAUSTED`）；唯一索引 `uk_stock_batches_no = UNIQUE (tenant_id, batch_no)`。
 ⇒ **要它逐条回答**：①同进程 N=4 不同单并发是否真会撞（计数器原子递增 ⇒ 通常不撞，**要读数证实**）；②可达路径（`%10_000` 回绕 / 多实例或重启后**同号重复**）下，`exists`→`insert` 窗口能否被另一事务插入；撞索引时用户侧看到 **500 还是被重试吸收**（**重试覆盖的是"生成时已存在"，不覆盖"插入时被抢"**）；③`409` 的语义与文案。
+
+### 19.36 🔴 本轮最严重的一处基建事故（主会话自查发现并当场修）：**main 生成物陈旧 ⇒ 所有 PR 的 Case Contract 全红**
+
+**怎么发现的**：承载体 `#6229` 与在飞 `#6249` **同时**在 `Case Contract (truths_ref)` 红（20s / 26s 快速失败）⇒ 一看红因是**同一个** ⇒ 不是两个包各自的问题，而是 **main 的问题**。
+
+**现取复算（`origin/main` 干净检出，不看工作树）**
+```
+git checkout --detach origin/main && git log --oneline -1   ⇒ d45b7ff39 (#6242)
+python3 .github/render_cases.py --cases .github/cases --out-md /tmp/md_check.md   # rc=0
+diff docs/testing/mibao-verification-cases.md /tmp/md_check.md
+9405,9406c9405,9406
+< - 用例总数：653（活跃 134，跳过 519）      < - tier 分布：smoke 12 / normal 601 / adversarial 32
+--- 
+> - 用例总数：654（活跃 134，跳过 520）      > - tier 分布：smoke 12 / normal 602 / adversarial 32
+```
+CI 逐字（`#6229` 的 job `111189462391`）：`##[error]生成物新鲜度：1 个产物与 .github/cases/** 不同步 —— docs/testing/mibao-verification-cases.md（提交版 9638 行 / 现取 9638 行，不同 2 行）`。
+
+**根因（推断，已写进 issue 待核实）**：`#6241`(18:55) 与 `#6242`(18:57) 两分钟内接连合并 ⇒ 后合者的重渲染产物基于**它自己的旧 base** ⇒ squash 把前一个 PR 的产物行盖回去；**每个 PR 自己的 CI 在当时 base 上都是新鲜的** ⇒ **断点在"合并交界"，main 上没有东西兜**。
+
+**处置**
+1. **立即修**：主会话直接做（机械动作 + 阻塞全仓）：worktree `migao-wt/main-artifact-freshness`、分支 `fix/main-artifact-freshness`，`render_cases.py` **重渲染**（只动 2 行汇总读数；`eval_cases.py` 零改动），本地 `generated_artifacts_freshness.py` ⇒ `verdict=fresh` ⇒ **PR #6257**（`Closes #6255` 第 1 项）。
+2. **别复发**：开 **#6255** 并**已派包**（worktree `migao-wt/main-freshness-guard`）：给 **main 侧**加轻量兜底（`push` 触发 `generated_artifacts_freshness.py` 或让 `Case Contract` 也在 `push` 上跑）；**成本红线 = 不重（不拉整目录 pytest、不拿重活锁）**；判据要求"陈旧 ⇒ 红 / 新鲜 ⇒ 不红且不被拖成重活"双向自证。
+3. **通知在飞包**：`#6249`（#6238）与 `#6253`（#6250）都已收到"红因非本包、等 #6257 合入后 rebase"的口径。
+
+**为什么值得单独记一节**：这是本轮**唯一一处"全仓级"故障**（其他 7 次 CI 红都只影响单个包）；它的形态——**PR 级判据全绿而 main 级不一致**——与"两个在飞 PR 各自 claim 同一用例号、两边都绿"（`#6245`）**同族**：**判据只在 PR 面上跑，就看不见任何"合并交界"的破损**。
