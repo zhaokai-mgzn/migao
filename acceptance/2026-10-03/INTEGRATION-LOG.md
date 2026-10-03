@@ -1181,3 +1181,17 @@ Case Contract 逐字：生成物新鲜度：1 个产物与 .github/cases/** 不�
 
 **🔴 一个必须先说清的机制事实（我现取核实）**：**自动验收链路早已停用** —— `.github/workflows/verify-trigger.yml` 头部逐字（#4262，用户 2026-09-18 裁定「不要自动进行验证，都是重复的验证，白白消耗成本」「手动集中跑一次即可」）：删除 `schedule`、删除 `pull_request_target: [opened, reopened]` 与 `pull_request: [closed]`，**验收改为人工显式发起（`workflow_dispatch`）**；代价已接受 = **合并 PR 不再自动入 `ai-verify/*` 队列**。
 ⇒ 因此 `needs-verification` 单**不会自动进入验收队列**；**处置按用户口径**：本轮**不在每单上重复跑验收**，改为**末尾"集中一次"批次**跑第二 AI 交叉复核（覆盖所有 `needs-verification` 单），并在每单的关单评论里写明"复核已排入集中批次；**若复核推翻则按归因纪律当场改正并重开**"。#6248 的关单评论已按此写。
+
+### 19.51 `#6262`（发货后 N 天自动完成）已合并 —— **单机/集群要求达标**；N 缺省 7 天待人工确认；又开一张既有缺陷单 **#6276**
+
+**合并**：PR `#6267` → main **`42e7dc9d4`**，CI 27 pass / 0 fail。main 侧 L1 自证：`AutoCompleteShippedScanService.java` 在场 · `V148__add_order_shipped_at.sql` 在场（**迁移头注释逐字写着"不是按惯例加列，是现取读数逼出来的"**，与包报的读数一致）· `schema.sql` 含 `shipped_at`（4 处）· 两条发货路写锚点（`OrderService:1072` 注释"同一条 UPDATE 里写 shipped_at"、`OrderShipmentService:128` "业务时钟（#3802）是 `orders.shipped_at`（V148，#6262）的**唯一**取值来源"）· 配置项 `migao.order.auto-complete-scan-cron` + `migao.order.auto-complete-days` 各只有一处缺省 · 用例 **OR-061** · 锚点 **122**（实测）。
+
+**① 锚点定夺（读数驱动，非惯例）**：新增 **`orders.shipped_at`（V148）** 而非复用物流/发货单的时间列 —— 因为复用会**静默漏单**：`shipped` 21 条里 `order_logistics.shipped_at` 非空仅 **15**、`order_shipments.shipped_at` 仅 **1**、`delivered` **0**；根因 = 该列**只在 insert 分支写**。锚点由**两条发货路各自的条件 UPDATE** 写（状态流转与发货时刻**同一条语句** ⇒ 不会脱节）。**存量回填只搬已有事实（15 条）**；其余 **6 条保持 NULL ⇒ 不参与自动完成**（同 V142/V147「不猜」先例）。
+
+**② ⭐ 单机/集群要求（用户硬要求）**：**同一套代码、无开关、无 leader 选举、未引入 Quartz/ShedLock/advisory lock** —— 幂等来自**那条带谓词 UPDATE 的行锁 + 谓词重估**，另一侧 **0 行即静默**；**站内信只对 `RETURNING` 的行发**（集群下不会每实例各发一遍）。真库两条独立连接同跑 12 行 ⇒ **行不重叠、合计恰 12**、慢的一侧 0 行静默；幂等三轮只第一轮有行、站内信**恰一封**。**与 `§19.42` 我给的形态要求逐条对上。**
+
+**③ 注入式红证三条（双向）**：A 摘「满 N 天」⇒ `Failures: 3`；B 摘「仅 shipped」⇒ `Failures: 3`（含**并发判据**：packed 行被两实例重复改）；C 摘两条发货路的 `shipped_at` 写入 ⇒ `Failures: 1`（`bothShipPathsWriteShippedAtAtomically`）；撤回均绿。
+
+**④ 开销与边界**：本包跑了 `./verify-all.sh gate --allow-package-heavy`（**GATE-EXIT=0**，已在台账记 override）——**比本批其它包的"只跑定点"更重**，但此刻机器无并行重活（锁空、`java` 进程 0）；如实登记。**未覆盖**：(a) **N=7 天缺省值待人工确认**（已做成可配置 ⇒ 改值不改码）；(b) 存量 6 条不追溯完成；(c) 租户级 N 有意不做（重启条件已登记）；(d) `order_logistics.shipped_at` 的 update 分支不补写 —— **本单只绕开**；(e) 一次不可复现的 JaCoCo `MethodTooLargeException`（观察项）；(f) 本包取号**撞号两次**（`OR-059→060→061`）⇒ 终态 **OR-061**。
+
+**⑤ 新开 `#6276`（P3·数据质量）**：把 (d) 的**根因**立成单 —— `OrderLogisticsWriter.upsert` 的 `shipped_at` **只在 insert 分支写** ⇒ `order_logistics` 29 行仅 16 行非空、`order_shipments` 9 行仅 1 行非空 ⇒ **"列在、值不在"**（同族于"声明存在 ≠ 可达"，但形态是**生产者只覆盖一半路径**）。单里要求**先量清 + 先定口径**（"首次发货时刻"还是"最近改物流时刻"决定该"补写"还是"回填"），**不许直接补写**，并给了注入式判据与边界。
