@@ -168,7 +168,7 @@
 数据: **副作用只执行一次**（同一判据的另外三条读数）：`product_skus.stock` 增量 == 单次回补量（订单明细数量，独立算式，不得用被测读面当期望）；`stock_ledger_entries` 该 ref_no 恰 1 行；`ticket_timeline` 的 status_change 恰 2 行（pending→processing + processing→resolved）。修前读数 = 成功数 4 / 库存 98→106 / 台账 4 行 / 时间线 5 行。
 数据: **正对照（护栏不误杀）**：单个请求串行完结必须成功（199 谓词里的 tenant_id 非空、正常流转不被 409 误杀）；同一事务里的退款联动（linkRefundToOrderAndFinance）修前修后都 == 单次金额 300（证明判据有判别力，不是什么都判不出来）。
 数据: **行为契约不回退**：pending→{processing,rejected,closed}、processing→{resolved,closed}、终态不可变、pending→closed（#3541）、closed/rejected 记 closed_at、internal_notes 追加不覆盖、中文业务文案 —— 由 AfterSalesTicketServiceTest 同批守住。
-跳过: 本用例判的是 **admin-api 服务层的并发写面**（B 端 HTTP 直连 PUT /api/admin/after-sales/{id}/status，不经米宝 Agent）；而 after_sales_manage 的写 action 已于 #5247（用户裁定 2026-09-23 B 端只读化）从源码删除 ⇒ **Agent 面没有可跑的写路径**，评测栈里无法复现「两个管理员同时完结」。机器判据改由 admin-api 真库并发单测承载（traces.tests，CI job `admin-api-test`，重复 3 轮）：见 AfterSalesConcurrentResolveRealDbTest（case_ids: AS-011）。**这不是「没有判据」** —— 该单测先跑出修前红（成功数 4 / 库存 98→106 / 台账 4 行 / 时间线 5 行）再跑出修后绿（成功数 1 / +2 / 1 行 / 2 行），成对读数见 PR body。
+跳过: [backend-contract] 本用例判的是 **admin-api 服务层的并发写面**（B 端 HTTP 直连 PUT /api/admin/after-sales/{id}/status，不经米宝 Agent）；而 after_sales_manage 的写 action 已于 #5247（用户裁定 2026-09-23 B 端只读化）从源码删除 ⇒ **Agent 面没有可跑的写路径**，评测栈里无法复现「两个管理员同时完结」。机器判据改由 admin-api 真库并发单测承载（traces.tests，CI job `admin-api-test`，重复 3 轮）：见 AfterSalesConcurrentResolveRealDbTest（case_ids: AS-011）。**这不是「没有判据」** —— 该单测先跑出修前红（成功数 4 / 库存 98→106 / 台账 4 行 / 时间线 5 行）再跑出修后绿（成功数 1 / +2 / 1 行 / 2 行），成对读数见 PR body。
 ```
 真值: aftersales-flow.return-restock-switch, aftersales-flow.status-enums
 溯源: 2026-10-03 新增（issue #6220 第三轮深度测试 P1·涉钱/库存）：`updateTicketStatus` 的读-判-写无并发保护 ⇒ 并发数 = 副作用次数（库存被回补 4 次、台账 4 行、时间线 5 行）。修复 = 状态流转改 DB 原子条件更新（WHERE id + tenant_id + status=读到的旧值），update==0 ⇒ 409 且副作用只在成功分支执行；判据 = 真库并发单测（N=4 × 3 轮）+ 类级元守卫 AfterSalesSideEffectConcurrencyMetaGuardTest（AS-012）。 ｜ tags: update, status, concurrency
@@ -181,7 +181,7 @@
 数据: **豁免台账只许缩短 + 条数现取**：`unverified` 必须是冻结基线 `unverified_baseline` 的子集（新增豁免 ⇒ 红）；条数不写死在测试代码里（读数打印在守卫输出上：现取候选=10 / 已保护=1 / 豁免=9 / 豁免基线=9）。
 数据: **登记必须兑现**：`entries[].evidence` = `<仓库相对全路径>::<文本锚>`，锚必须在该文件里逐字存在 ⇒ 把条件更新退回无条件 updateById 时本判据与 AS-011 同时红（不许留假章）。
 数据: **判别力自证**：合成语料上「未登记 / 未兑现 / 新增豁免 / 豁免缺理由 / 扫描器失明」五种坏形态各自判红、合规语料判绿（防「判据恒绿」与「判据有效」在输出上分不开）。
-跳过: 研发侧类级守卫（源码形态扫描 + 台账判定），**没有 Agent 面可跑**（不吃 user_inputs、也不产生对话行为）；承载体 = admin-api 单测 AfterSalesSideEffectConcurrencyMetaGuardTest（case_ids: AS-012，CI job `admin-api-test`）。形态判据不做 AST 解析（换措辞可绕过）⇒ 真实防线仍是 AS-011 的行为面，本守卫只保证「同类形态进来时当场撞红」。
+跳过: [backend-contract] 研发侧类级守卫（源码形态扫描 + 台账判定），**没有 Agent 面可跑**（不吃 user_inputs、也不产生对话行为）；承载体 = admin-api 单测 AfterSalesSideEffectConcurrencyMetaGuardTest（case_ids: AS-012，CI job `admin-api-test`）。形态判据不做 AST 解析（换措辞可绕过）⇒ 真实防线仍是 AS-011 的行为面，本守卫只保证「同类形态进来时当场撞红」。
 ```
 真值: aftersales-flow.status-enums
 溯源: 2026-10-03 新增（issue #6220 的类级固化，铁律 8）：修一个缺陷只修这一处 = 没修 —— #6220 的形态就是「同一事务里退款联动有原子护栏、库存回补没有」。台账 = backend/admin-api/src/test/resources/after-sales-sideeffect-concurrency-ledger.json（1 条已保护 + 9 条豁免，其中 InboundOrderService#post（重复建库存批次）/ ProductionOperationCommandService#update（追加价格版本）标为疑似同类形态的观察项）。 ｜ tags: status, concurrency, meta_guard
