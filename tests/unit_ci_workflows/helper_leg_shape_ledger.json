@@ -7,7 +7,7 @@
   "enforced_by": "tests/unit_ci_workflows/conftest.py::helper_leg_shape_problems（会话收口时的 fail-closed 判定）",
   "consumption_marker": "helper_leg_shape_problems",
   "shape": {
-    "parallel_workers": 4,
+    "parallel_workers": 8,
     "parallel_flag": "-n",
     "source": {
       "ci": ".github/workflows/pr-check.yml",

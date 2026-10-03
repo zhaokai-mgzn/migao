@@ -244,6 +244,13 @@ jobs:
           # `-n` 是**唯一不削断言**的提速手段。`-n 4` 对应托管 runner 的 4 vCPU
           # （`Standard_DS2_v2`）—— 与 `verify-all.sh` 的本地腿**逐字同款**
           # （同源契约判据 = tests/unit_ci_workflows/test_ci_helper_leg.py）。
+          # 🔴 **实验档 `-n 8`（issue #6164 的第一件读数）**：本套件**不是 CPU 绑定**——
+          #   实测 281 处 `subprocess.*`（每次 `fork`/`exec` 后父进程都在**等子进程**）⇒ worker
+          #   数可以超过 vCPU 数。本机（8 核）实测 -n 4 → 679s / -n 8 → 544s（**−20%**，
+          #   6471 passed / 2 skipped **两次逐值相同**）。**CI 侧才是真值环境**（4 vCPU、不同 I/O），
+          #   故本 PR 就是那次 CI 实测：若本 PR 的 `Run ci workflow helper tests` 一步**不比
+          #   -n 4 的分布快**（现取最近 25 个全量档 run：step 中位 500s / p90 ~570s），
+          #   就把本 PR **关掉**（不合并），把读数写回 issue #6164。
           # 🔴 不许用"少跑"换快：库存 / skip 上限 / 形态三重判定 =
           # `tests/unit_ci_workflows/test_helper_leg_execution_shape.py` +
           # `tests/unit_ci_workflows/helper_leg_shape_ledger.json`（消费点 =
@@ -262,7 +269,7 @@ jobs:
             echo "⏭️ 未命中研发面 ⇒ 只跑 always-run 判据；**dev-only 判据未跑**：$(python3 scripts/ci_helper_scope.py --count) 条（这不是「通过」）"
             python3 scripts/ci_helper_scope.py --run-narrow
           else
-            python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4
+            python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 8
           fi
 
 

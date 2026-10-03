@@ -613,10 +613,10 @@ ci_helper_leg() {
   # 与 CI 的 `Run ci workflow helper tests` **同一条 pytest 命令**（argv 逐字一致；
   # 判据 = tests/unit_ci_workflows/test_ci_helper_leg.py 现取 pr-check.yml 比对）。
   # 本机未装 pytest ⇒ 非零 ⇒ 记 ❌（fail-closed：命中面时不许静默绿）。
-  # `-n 4`（issue #5814）：与 CI **同一个并行度** —— 只改一边 ⇒ 同源契约判红
-  # （tests/unit_ci_workflows/test_ci_helper_leg.py）；改了没同步形态台账 ⇒
-  # tests/unit_ci_workflows/test_helper_leg_execution_shape.py 判红。
-  python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4
+  # `-n 8`（issue #6164 的实验档；原为 `-n 4`，issue #5814）：与 CI **同一个并行度** ——
+  # 只改一边 ⇒ 同源契约判红（tests/unit_ci_workflows/test_ci_helper_leg.py）；
+  # 改了没同步形态台账 ⇒ tests/unit_ci_workflows/test_helper_leg_execution_shape.py 判红。
+  python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 8
 }
 
 # ── 模块触发面（快循环档 fail-closed 的**单一实现**，#5707 的 FM-E10 收口）───────────────────
