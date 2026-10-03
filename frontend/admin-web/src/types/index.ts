@@ -1143,6 +1143,18 @@ export interface CatalogOperation {
   is_start_marker: boolean
   /** 来源可信度（#4361；缺省 = 老实例，不渲染徽标） */
   source?: ProductionSource | null
+  /**
+   * **数量口径缺口**（issue #6117，读面标记）：`true` = 这道工序**不在算料目录内**
+   * ⇒ 派工应做数量走**兜底 1**（`qty_source=fallback` ⇒ 计件工资按 1 计）。
+   *
+   * <p>值**逐字取自读面**（`ProductionOperationQueryService#operationView` 的 `qty_rule_missing`，
+   * 判定 = `qtyRuleMissing(name)`）—— 前端**不写第二份判定**（另造一份目录清单 = 与引擎目录分叉，
+   * 漂移后界面标记与实际算料不一致）。</p>
+   *
+   * <p>口径本身**一字不改**（用户 2026-10-03 裁定「保留兜底 1，但**写面告警 + 读面标记**」）：
+   * 本键只让这件事**可见**。缺省（老实例未升级）**不渲染标记** —— 静默 = 未知，不得冒充已知。</p>
+   */
+  qty_rule_missing?: boolean | null
 }
 
 export interface CatalogGroup {
@@ -1568,7 +1580,17 @@ export interface OperationPositionsAttachResult {
  */
 export interface RouteOperationCreateResult
   extends CatalogOperation,
-    OperationPositionsAttachResult {}
+    OperationPositionsAttachResult {
+  /**
+   * **写面告警**（issue #6117）：**仅**当新建的这道工序不在算料目录内时出现，文案由后端给
+   * （`ProductionOperationQueryService.QTY_RULE_MISSING_HINT` = 「该工序不在算料目录内，派工应做
+   * 数量将按 1 计」）；其余情况**键不存在**（不是 `null`、不是空串）。
+   *
+   * <p>语义 = **提示，不是失败** —— 工序照建、响应照 2xx（口径保留兜底 1）；渲染方**不得**把它
+   * 当成错误弹窗 / `toast.error` 的素材（issue #6128 判据 1）。</p>
+   */
+  qty_rule_hint?: string | null
+}
 
 /** 缺口语义（GET /api/admin/production/routing-gaps）：两类缺口**语义不同**，不得混渲 */
 export interface RoutingGapOperation {
