@@ -227,12 +227,13 @@ def test_probe_key_is_declared_in_probe_ready():
     )
 
 
-def _leg_harness(root: Path, probe_exit: int) -> str:
+def _leg_harness(root: Path, probe_exit: int, *, venv: bool = True) -> str:
     """最小 harness：假 ROOT（venv 占位可执行 + 桩探针）+ 脚本里**真实的**三态包装。"""
-    venv = root / "backend" / "ai-agent-service" / ".venv" / "bin" / "python"
-    venv.parent.mkdir(parents=True, exist_ok=True)
-    venv.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    venv.chmod(0o755)
+    venv_path = root / "backend" / "ai-agent-service" / ".venv" / "bin" / "python"
+    if venv:
+        venv_path.parent.mkdir(parents=True, exist_ok=True)
+        venv_path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        venv_path.chmod(0o755)
     stub = root / "scripts" / "ai-agent-e2e-readiness.py"
     stub.parent.mkdir(parents=True, exist_ok=True)
     stub.write_text(f"import sys\nprint('桩探针读数')\nsys.exit({probe_exit})\n", encoding="utf-8")
@@ -264,3 +265,13 @@ def test_wiring_maps_probe_exit_code_to_the_three_states(tmp_path, probe_exit, m
     assert marker in reading.stdout, f"exit={probe_exit} 没有落到「{marker}」那一态"
     if probe_exit == 1:
         assert "准备：" in reading.stdout, "未就绪必须给出**可行动**的一行「准备」"
+
+
+def test_missing_venv_still_reports_not_ready_with_the_venv_hint(tmp_path):
+    """**既有形态不许改坏**：worktree 缺 `.venv` ⇒ 仍是 ⏭️ + 建 venv 的准备命令（不是 ❌）。"""
+    reading = subprocess.run(["bash", "-c", _leg_harness(tmp_path / "root", 0, venv=False)],
+                             capture_output=True, text=True)
+    print(f"[接线·缺 venv]：\n{reading.stdout}{reading.stderr}")
+    assert "COUNTERS PASS=0 FAIL=0 READY=1" in reading.stdout, "缺 venv 必须记「未就绪」而不是「通过」"
+    assert "❌" not in reading.stdout, "缺 venv 被记成 ❌（假红）—— 环境缺依赖不是缺陷"
+    assert "python3 -m venv .venv" in reading.stdout, "未就绪必须给出建 venv 的准备命令"
