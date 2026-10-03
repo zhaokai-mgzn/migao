@@ -1,0 +1,83 @@
+{
+  "setPoints": [
+    {
+      "file": "security/JwtAuthenticationFilter.java:112",
+      "what": "TenantContext.setTenantId(claims.tenantId)（仅当 tenantId!=null 且 !=-1）"
+    },
+    {
+      "file": "security/ServiceTokenFilter.java:104",
+      "what": "TenantContext.setTenantId(X-Tenant-Id)（合法 service token ∧ SecurityContext 空）"
+    },
+    {
+      "file": "service/AuthService.java:196,449,524,739",
+      "what": "登录链路内显式 setTenantId"
+    },
+    {
+      "file": "controller/WorkerAuthController.java:60-71,92-101",
+      "what": "保存 previous 后 setTenantId，finally 还原/清理"
+    },
+    {
+      "file": "worker/WorkerSessionService.java:318-331",
+      "what": "同上（保存 previous → set → finally 还原/清理）"
+    },
+    {
+      "file": "service/DailyBriefingService.java:345-353,1424-1442",
+      "what": "调度线程显式 setTenantId（previous 还原/清理）"
+    },
+    {
+      "file": "service/RegistrationService.java:414-440",
+      "what": "入驻链路显式 setTenantId（previous 还原/清理）"
+    },
+    {
+      "file": "service/AutoBatchDueScanService.java:110-166",
+      "what": "调度线程显式 setTenantId（previous 还原/清理）"
+    }
+  ],
+  "clearPoints": [
+    {
+      "file": "security/JwtAuthenticationFilter.java:165-168",
+      "what": "doFilterInternal finally → TenantContext.clear()（无条件）"
+    },
+    {
+      "file": "security/JwtAuthenticationFilter.java:171-178",
+      "what": "doFilterNestedErrorDispatch finally → clear()（ERROR 派发）"
+    },
+    {
+      "file": "security/ServiceTokenFilter.java:174-181",
+      "what": "filterChain 之后 finally → clear()（仅当本过滤器设置过）"
+    },
+    {
+      "file": "security/WorkerSessionFilter.java:76,85,129",
+      "what": "工人会话路径 clear()"
+    }
+  ],
+  "readPoints": [
+    {
+      "file": "config/MybatisPlusConfig.java:69-87",
+      "what": "getTenantId()：tenantId==null ⇒ 若主体是 super_admin 跳过过滤，否则抛 \"Tenant context not initialized\""
+    }
+  ],
+  "threadBoundaries": [
+    {
+      "boundary": "Tomcat 请求线程池 (server.tomcat.threads.max=200, accept-count=100)",
+      "contextPropagation": "无（每请求 finally clear ⇒ 复用安全）",
+      "evidence": "probe.mjs P1/P3/P5 并发读数 + application.yml"
+    },
+    {
+      "boundary": "@Async SessionDistillListener.onSessionEnded (listener/SessionDistillListener.java:27)",
+      "contextPropagation": "不传播（@EnableAsync 无 AsyncConfigurer/TaskDecorator；Spring Boot 默认 ApplicationTaskExecutor）",
+      "note": "回调内 distillSession(event.tenantId(), …) 显式传参，不依赖 TenantContext；需真实结束会话才能触发 ⇒ 本轮未行使"
+    },
+    {
+      "boundary": "@Async AuditLogService.recordLogAsync (service/AuditLogService.java:72)",
+      "contextPropagation": "不传播",
+      "note": "异步线程内 auditLogMapper.insert(tenantId=显式参数)；TenantLineInnerInterceptor 会为 audit_logs 追加 tenant_id = TenantContext.getTenantId() ⇒ 异步线程为 null ⇒ 抛 \"Tenant context not initialized\"（被 catch 吞掉，仅 ERROR 日志）",
+      "evidence": "probe-async.mjs A1/A2 读数 + 日志窗口切片"
+    },
+    {
+      "boundary": "Servlet ERROR 派发",
+      "contextPropagation": "同一请求线程（doFilterNestedErrorDispatch 已补 clear）",
+      "evidence": "security/JwtAuthenticationFilter.java:171-178"
+    }
+  ]
+}

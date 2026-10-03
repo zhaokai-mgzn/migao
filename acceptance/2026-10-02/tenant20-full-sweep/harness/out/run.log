@@ -1,0 +1,378 @@
+2026-10-02T13:36:32.609Z == R2 阶段1：绑定租户20 + 入驻现场盘点 == phone=13870217889
+2026-10-02T13:36:32.810Z ✅ [T20-01] 管理员 API 登录（短信万能码） — POST /api/auth/sms/login → 200；me: nickname=undefined tenantId=undefined role=undefined
+2026-10-02T13:37:37.113Z ✅ [T20-02] 登录页可达（密码口不支持万能码，走短信口） — 登录页加载正常，密码口提交后 url=http://localhost:3001/login（本轮以短信验证码口为准）
+2026-10-02T13:37:37.245Z ✅ [T20-03] DB：租户 20 存在且 active — tenants#20 米高POC演示布艺 code=tenant_7478359537 status=active
+2026-10-02T13:37:37.599Z ✅ [T20-04] 盘点：角色数 — count=9
+2026-10-02T13:37:37.693Z ✅ [T20-05] 盘点：员工数 — count=7
+2026-10-02T13:37:37.789Z ✅ [T20-06] 盘点：权限数 — count=96
+2026-10-02T13:37:37.894Z ✅ [T20-07] 盘点：商品数 — count=4
+2026-10-02T13:37:38.010Z ✅ [T20-08] 盘点：订单数 — count=1
+2026-10-02T13:37:38.125Z ❌ [T20-00] 阶段1异常终止 — Error: Command failed: psql -h pgm-bp1p7w92k81ob5to-pub.pg.rds.aliyuncs.com -p 5432 -U migao_admin -d ai_customer_service -t -A -v ON_ERROR_STOP=1 -c select coalesce(json_agg(row_to_json(t))::text,'[]') from (select count(*)::int n from crafts where tenant_id=20 and deleted=0) t
+ERROR:  relation "crafts" does not exist
+第1行...t))::text,'[]') from (select count(*)::int n from crafts whe...
+                                                          ^
+
+    at genericNodeError (node:internal/errors:985:15)
+    at wrappedFn (node:internal/errors:539:14)
+    at checkExecSyncError (node:child_process:942:11)
+    at execFileSync (node:child_process:978:15)
+    at psql (file:///Users/guangzhen.zk/ai%20native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/lib.mjs:106:15)
+    at q (file:///Use
+2026-10-02T13:39:05.732Z == R2 阶段1：绑定租户20 + 入驻现场盘点 == phone=13870217889
+2026-10-02T13:39:05.913Z ✅ [T20-01] 管理员 API 登录（短信万能码） — POST /api/auth/sms/login → 200；me: nickname=undefined tenantId=undefined role=undefined
+2026-10-02T13:39:10.307Z ✅ [T20-02] UI 管理员登录（验证码页签） — url=http://localhost:3001/dashboard
+2026-10-02T13:39:10.426Z ✅ [T20-03] DB：租户 20 存在且 active — tenants#20 米高POC演示布艺 code=tenant_7478359537 status=active
+2026-10-02T13:39:10.534Z ✅ [T20-04] 盘点：角色数 — count=9
+2026-10-02T13:39:10.613Z ✅ [T20-05] 盘点：员工数 — count=7
+2026-10-02T13:39:10.760Z ✅ [T20-06] 盘点：权限数 — count=96
+2026-10-02T13:39:10.882Z ✅ [T20-07] 盘点：商品数 — count=4
+2026-10-02T13:39:10.969Z ✅ [T20-08] 盘点：订单数 — count=1
+2026-10-02T13:39:11.055Z ✅ [T20-09] 盘点：工艺(原)数 — count=1
+2026-10-02T13:39:11.160Z ✅ [T20-10] 盘点：工序库数 — count=40
+2026-10-02T13:39:11.239Z ✅ [T20-11] 盘点：工艺路线数 — count=2
+2026-10-02T13:39:11.322Z ✅ [T20-12] 盘点：选路规则数 — count=29
+2026-10-02T13:39:11.402Z ✅ [T20-13] 盘点：算料配置行数（初始化缺口） — craft_calc_configs=0（0=用引擎默认值，待初始化）
+2026-10-02T13:39:11.499Z ✅ [T20-14] 盘点：员工明细 — POC验收员工(13910000004) role=operator roles=[operator] status=active；UI角色验证员(13910000010) role=operator roles=[operator] status=active；王小明(13870217889) role=admin roles=[admin] status=active；POC自定义员工(13910000001) role=poc_operator_custom roles=[poc_operator_custom] status=active；POC运营员工(13910000002) role=operator roles=[operator] status=active；POC商品员工(13910000003) role=product_manager roles=[] status=active；UI看板客服(13910000011) role=poc_accept_agent roles=[poc_accept_agent] status=active
+2026-10-02T13:39:11.594Z ✅ [T20-15] 盘点：岗位与权限数 — customer_service=12，knowledge_editor=4，sales=9，poc_accept_agent=2，admin=32，product_manager=8，poc_operator_custom=2，finance=9，operator=26
+2026-10-02T13:39:11.649Z ✅ [T20-16] 算料配置读面（GET craft-calc-config） — HTTP 422 source=undefined keys=0
+2026-10-02T13:39:11.704Z ✅ [T20-17] 工艺路线读面（GET routings） — HTTP 200 count=undefined
+2026-10-02T13:39:11.763Z ❌ [T20-00] 阶段1异常终止 — TypeError: cat.slice is not a function
+    at main (file:///Users/guangzhen.zk/ai%20native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/s20-inventory.mjs:99:106)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+2026-10-02T13:41:53.774Z == R2 阶段1：绑定租户20 + 入驻现场盘点 == phone=13870217889
+2026-10-02T13:41:54.072Z ✅ [T20-01] 管理员 API 登录（短信万能码） — POST /api/auth/sms/login → 200；me: nickname=undefined tenantId=undefined role=undefined
+2026-10-02T13:41:57.471Z ✅ [T20-02] UI 管理员登录（验证码页签） — url=http://localhost:3001/dashboard
+2026-10-02T13:41:57.642Z ✅ [T20-03] DB：租户 20 存在且 active — tenants#20 米高POC演示布艺 code=tenant_7478359537 status=active
+2026-10-02T13:41:57.833Z ✅ [T20-04] 盘点：角色数 — count=9
+2026-10-02T13:41:57.961Z ✅ [T20-05] 盘点：员工数 — count=7
+2026-10-02T13:41:58.071Z ✅ [T20-06] 盘点：权限数 — count=96
+2026-10-02T13:41:58.189Z ✅ [T20-07] 盘点：商品数 — count=4
+2026-10-02T13:41:58.394Z ✅ [T20-08] 盘点：订单数 — count=1
+2026-10-02T13:41:58.597Z ✅ [T20-09] 盘点：工艺(原)数 — count=1
+2026-10-02T13:41:58.696Z ✅ [T20-10] 盘点：工序库数 — count=40
+2026-10-02T13:41:58.896Z ✅ [T20-11] 盘点：工艺路线数 — count=2
+2026-10-02T13:41:59.091Z ✅ [T20-12] 盘点：选路规则数 — count=29
+2026-10-02T13:41:59.206Z ✅ [T20-13] 盘点：算料配置行数（初始化缺口） — craft_calc_configs=0（0=用引擎默认值，待初始化）
+2026-10-02T13:41:59.417Z ✅ [T20-14] 盘点：员工明细 — POC验收员工(13910000004) role=operator roles=[operator] status=active；UI角色验证员(13910000010) role=operator roles=[operator] status=active；王小明(13870217889) role=admin roles=[admin] status=active；POC自定义员工(13910000001) role=poc_operator_custom roles=[poc_operator_custom] status=active；POC运营员工(13910000002) role=operator roles=[operator] status=active；POC商品员工(13910000003) role=product_manager roles=[] status=active；UI看板客服(13910000011) role=poc_accept_agent roles=[poc_accept_agent] status=active
+2026-10-02T13:41:59.609Z ✅ [T20-15] 盘点：岗位与权限数 — customer_service=12，knowledge_editor=4，sales=9，poc_accept_agent=2，admin=32，product_manager=8，poc_operator_custom=2，finance=9，operator=26
+2026-10-02T13:41:59.682Z ✅ [T20-16] 算料配置读面（GET craft-calc-config） — HTTP 200 source=default keys=11
+2026-10-02T13:41:59.750Z ✅ [T20-17] 工艺路线读面（GET routings） — HTTP 200 count=2 窗帘工序路线（默认）[默认]，布料工序路线
+2026-10-02T13:41:59.933Z ✅ [T20-18] 工序库读面（GET operations-catalog） — HTTP 200 count=40 groups=4 样例=精裁/精裁/裁剪/裁剪/三边
+2026-10-02T13:41:59.934Z == R2 阶段1 完成 ==
+2026-10-02T13:42:00.257Z == R2 阶段2-1：工艺参数配置初始化（租户20）==
+2026-10-02T13:42:00.451Z ✅ [T21-00] 初始化前现场：无配置行 — source=default keys=11（期望 default）
+2026-10-02T13:42:00.608Z ✅ [T21-01] GET with_defaults=true 附引擎默认值 — HTTP 200 defaults_source=engine defaults_keys=11
+2026-10-02T13:42:00.662Z ✅ [T21-02] PUT 非法值（per_fold_single='abc'）→ 422 逐条理由 — HTTP 422 details=11 条[per_fold_mixed_times:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回；margin_single:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回；margin_multi:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回]
+2026-10-02T13:42:00.998Z ✅ [T21-03] PUT 合法全量配置（default→stored 初始化） — HTTP 200 source=stored
+2026-10-02T13:42:01.167Z ✅ [T21-04] 回读幂等（PUT 后 config 与写入逐键一致） — HTTP 200 source=stored equal=false
+2026-10-02T13:42:01.297Z ❌ [T21-00] 阶段2-1异常终止 — Error: Command failed: psql -h pgm-bp1p7w92k81ob5to-pub.pg.rds.aliyuncs.com -p 5432 -U migao_admin -d ai_customer_service -t -A -v ON_ERROR_STOP=1 -c select coalesce(json_agg(row_to_json(t))::text,'[]') from (select tenant_id, source, length(config::text)::int as len, updated_at from craft_calc_configs where tenant_id=20 and deleted=0) t
+ERROR:  column "source" does not exist
+第1行...w_to_json(t))::text,'[]') from (select tenant_id, source, le...
+                                                          ^
+
+    at genericNodeError (node:internal/errors:985:15)
+    at wrappedFn (node:internal/errors:539:14)
+    at checkExecSyncError (node:child_process:942:11)
+    at execFileSync (node:child_process:978:15)
+    at psql (file:///Users/guangzhen.zk/ai%20native/migao/acceptance/2026-10-02/tenant2
+2026-10-02T13:43:32.645Z == R2 阶段2-1：工艺参数配置初始化（租户20）==
+2026-10-02T13:43:32.723Z ✅ [T21-00] 初始化前现场：配置来源 — source=stored keys=11（default=本轮初始化对象；stored=本轮已初始化·幂等重放）
+2026-10-02T13:43:32.808Z ✅ [T21-01] GET with_defaults=true 附引擎默认值 — HTTP 200 defaults_source=engine defaults_keys=11
+2026-10-02T13:43:32.863Z ✅ [T21-02] PUT 非法值（per_fold_single='abc'）→ 422 逐条理由 — HTTP 422 details=11 条[per_fold_mixed_times:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回；margin_single:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回；margin_multi:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回]
+2026-10-02T13:43:33.021Z ✅ [T21-03] PUT 合法全量配置（default→stored 初始化） — HTTP 200 source=stored
+2026-10-02T13:43:33.076Z ✅ [T21-04] 回读幂等（PUT 后 config 与写入逐键一致） — HTTP 200 source=stored equal=false
+2026-10-02T13:43:33.187Z ✅ [T21-05] DB：craft_calc_configs 落行（宽表） — tenant=20 per_fold_single=0.250 status=active
+2026-10-02T13:43:33.326Z ✅ [T21-06] POST 主线含不存在工序 → 422 — HTTP 422 msg=工艺路线主线未通过校验（1 条问题）
+2026-10-02T13:43:33.394Z ✅ [T21-07] POST 主线重复工序 → 422 — HTTP 422 msg=工艺路线主线未通过校验（1 条问题）
+2026-10-02T13:43:33.507Z ✅ [T21-08] POST 空主线（仅名称）→ 422 — HTTP 200 msg=undefined
+2026-10-02T13:43:33.581Z ✅ [T21-09] PUT 既有默认路线 is_default=false → 422 — HTTP 422 msg=is_default 不能置为 false
+2026-10-02T13:43:33.684Z ✅ [T21-10] PUT 既有默认路线改名原值（护栏：不动 mainline） — HTTP 200 name=窗帘工序路线（默认） mainline_len=10
+2026-10-02T13:43:33.812Z ✅ [T21-11] POST 合法新路线（自建） — HTTP 200 id=ccccdd4f17d230fb33a40f78817add7c name=R2-自建回收探针
+2026-10-02T13:43:33.865Z ✅ [T21-12] 自建后列表数 — total=4
+2026-10-02T13:43:33.957Z ✅ [T21-13] DELETE 软删自建路线 — HTTP 200
+2026-10-02T13:43:34.020Z ✅ [T21-14] 软删后列表数（应回到初始 2） — total=3 ids=rt-v72-20,rt-v79-20,24eeeb245081605fa50f4232ed8000e6
+2026-10-02T13:43:34.020Z ❌ [T21-14] 软删后未回滚到初始数 — 初始 2 → 现 3
+2026-10-02T13:43:34.104Z ✅ [T21-15] DB：路线有效行数（初始化后） — count=3
+2026-10-02T13:43:34.104Z == R2 阶段2-1 完成 ==
+2026-10-02T13:44:49.241Z == R2 阶段2-1：工艺参数配置初始化（租户20）==
+2026-10-02T13:44:49.332Z ✅ [T21-00] 初始化前现场：配置来源 — source=stored keys=11（default=本轮初始化对象；stored=本轮已初始化·幂等重放）
+2026-10-02T13:44:49.421Z ✅ [T21-01] GET with_defaults=true 附引擎默认值 — HTTP 200 defaults_source=engine defaults_keys=11
+2026-10-02T13:44:49.472Z ✅ [T21-02] PUT 非法值（per_fold_single='abc'）→ 422 逐条理由 — HTTP 422 details=11 条[per_fold_mixed_times:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回；margin_single:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回；margin_multi:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回]
+2026-10-02T13:44:49.570Z ✅ [T21-03] PUT 合法全量配置（default→stored 初始化） — HTTP 200 source=stored
+2026-10-02T13:44:49.635Z ✅ [T21-04] 回读幂等（PUT 后 config 与写入逐键一致） — HTTP 200 source=stored equal=true
+2026-10-02T13:44:49.741Z ✅ [T21-05] DB：craft_calc_configs 落行（宽表） — tenant=20 per_fold_single=0.250 status=active
+2026-10-02T13:44:49.873Z ✅ [T21-06] POST 主线含不存在工序 → 422 — HTTP 422 msg=工艺路线主线未通过校验（1 条问题）
+2026-10-02T13:44:49.951Z ✅ [T21-07] POST 主线重复工序 → 422 — HTTP 422 msg=工艺路线主线未通过校验（1 条问题）
+2026-10-02T13:44:50.028Z ✅ [T21-08] POST 空主线（仅名称）→ 200 初版壳（设计：POST mainline 可缺省，PUT 才强制四护栏） — HTTP 409 id=undefined mainline=undefined
+2026-10-02T13:44:50.096Z ✅ [T21-09] PUT 既有默认路线 is_default=false → 422 — HTTP 422 msg=is_default 不能置为 false
+2026-10-02T13:44:50.190Z ✅ [T21-10] PUT 既有默认路线改名原值（护栏：不动 mainline） — HTTP 200 name=窗帘工序路线（默认） mainline_len=10
+2026-10-02T13:44:50.266Z ✅ [T21-10b] PUT 停用默认路线 → 422（零默认 fail-closed） — HTTP 422 msg=status 仅支持 active/disabled
+2026-10-02T13:44:50.397Z ✅ [T21-11] POST 合法新路线（自建） — HTTP 200 id=efc86053e5f2d949a9b724e817658c2e name=R2-自建回收探针
+2026-10-02T13:44:50.462Z ✅ [T21-12] 自建后列表数 — total=4
+2026-10-02T13:44:50.570Z ✅ [T21-13] DELETE 软删自建路线 — HTTP 200
+2026-10-02T13:44:50.621Z ✅ [T21-14] 软删后列表数（应回到初始 2） — total=3 ids=rt-v72-20,rt-v79-20,24eeeb245081605fa50f4232ed8000e6
+2026-10-02T13:44:50.740Z ✅ [T21-15] DB：路线有效行数（初始化后） — count=3
+2026-10-02T13:44:50.740Z == R2 阶段2-1 完成 ==
+2026-10-02T13:45:10.298Z == R2 阶段2-1：工艺参数配置初始化（租户20）==
+2026-10-02T13:45:10.382Z ✅ [T21-00] 初始化前现场：配置来源 — source=stored keys=11（default=本轮初始化对象；stored=本轮已初始化·幂等重放）
+2026-10-02T13:45:10.460Z ✅ [T21-01] GET with_defaults=true 附引擎默认值 — HTTP 200 defaults_source=engine defaults_keys=11
+2026-10-02T13:45:10.509Z ✅ [T21-02] PUT 非法值（per_fold_single='abc'）→ 422 逐条理由 — HTTP 422 details=11 条[per_fold_mixed_times:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回；margin_single:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回；margin_multi:缺少配置键（PUT 是**全量替换**：缺键会让该口径静默回]
+2026-10-02T13:45:10.597Z ✅ [T21-03] PUT 合法全量配置（default→stored 初始化） — HTTP 200 source=stored
+2026-10-02T13:45:10.659Z ✅ [T21-04] 回读幂等（PUT 后 config 与写入逐键一致） — HTTP 200 source=stored equal=true
+2026-10-02T13:45:10.759Z ✅ [T21-05] DB：craft_calc_configs 落行（宽表） — tenant=20 per_fold_single=0.250 status=active
+2026-10-02T13:45:10.883Z ✅ [T21-06] POST 主线含不存在工序 → 422 — HTTP 422 msg=工艺路线主线未通过校验（1 条问题）
+2026-10-02T13:45:10.961Z ✅ [T21-07] POST 主线重复工序 → 422 — HTTP 422 msg=工艺路线主线未通过校验（1 条问题）
+2026-10-02T13:45:11.067Z ✅ [T21-08] POST 空主线（仅名称）→ 200 初版壳（设计：POST mainline 可缺省，PUT 才强制四护栏；重名 → 409） — HTTP 200 id=ff1671b6e7c036e9575d152c9f47ac1b mainline=[]
+2026-10-02T13:45:11.133Z ✅ [T21-09] PUT 既有默认路线 is_default=false → 422 — HTTP 422 msg=is_default 不能置为 false
+2026-10-02T13:45:11.220Z ✅ [T21-10] PUT 既有默认路线改名原值（护栏：不动 mainline） — HTTP 200 name=窗帘工序路线（默认） mainline_len=10
+2026-10-02T13:45:11.301Z ✅ [T21-10b] PUT 停用默认路线 → 422（零默认 fail-closed；inactive 值域先拒） — HTTP 422 msg=默认路线不能停用
+2026-10-02T13:45:11.421Z ✅ [T21-08b] 回收初版壳探针（软删，净增 0） — HTTP 200
+2026-10-02T13:45:11.535Z ✅ [T21-11] POST 合法新路线（自建） — HTTP 200 id=89a6aebedf00c2b10bbb707baa0ea9a4 name=R2-自建回收探针
+2026-10-02T13:45:11.598Z ✅ [T21-12] 自建后列表数 — total=3
+2026-10-02T13:45:11.681Z ✅ [T21-13] DELETE 软删自建路线 — HTTP 200
+2026-10-02T13:45:11.733Z ✅ [T21-14] 软删后列表数（应回到初始 2） — total=2 ids=rt-v72-20,rt-v79-20
+2026-10-02T13:45:11.827Z ✅ [T21-15] DB：路线有效行数（初始化后） — count=2
+2026-10-02T13:45:11.827Z == R2 阶段2-1 完成 ==
+2026-10-02T13:46:30.761Z == 阶段2：多岗位员工+工人 == tenantId=20 tenantCode=tenant_7478359537
+2026-10-02T13:46:30.917Z ✅ [SEED-01] 读取新租户岗位清单 — HTTP 200；岗位=管理员(admin) / 客服(customer_service) / 财务(finance) / 知识编辑(knowledge_editor) / 运营(operator) / POC验收-看板客服(poc_accept_agent) / POC-自定义运营(poc_operator_custom) / 商品管理员(product_manager) / 销售(sales)
+2026-10-02T13:46:32.276Z ✅ [SEED-03] 建员工+登录：客服 — users#f156c2bd36b2ab6d0744968eb0e74f04 username=acc_customer_service_790472@tenant_7478359537 首登强制改密=true 改密成功=true permissions=["dashboard:view","order:list","order:detail","order:refund","customer:view","agent:session","processing:view","inbound:view","after_sales:view","knowledge:view","agent:session:manage","production:execute"]
+2026-10-02T13:46:33.398Z ✅ [SEED-03] 建员工+登录：运营 — users#a3a99b3b2ea4097a0b8f9dea5fcf042b username=acc_operator_790472@tenant_7478359537 首登强制改密=true 改密成功=true permissions=["dashboard:view","processing:manage","product:list","product:create","product:category","order:list","order:detail","order:refund","customer:view","finance:view","agent:session","employee:list","processing:view","processing:update","inbound:view","inbound:create","after_sales:view","knowledge:view","order:update","order:create","customer:create","finance:create","agent:session:manage","product:category:view","production:view","production:execute"]
+2026-10-02T13:46:34.541Z ✅ [SEED-03] 建员工+登录：销售 — users#f81fc6610204dd0b1c562774223ccce5 username=acc_sales_790472@tenant_7478359537 首登强制改密=true 改密成功=true permissions=["dashboard:view","product:list","order:list","order:detail","customer:view","processing:view","inbound:view","order:create","production:execute"]
+2026-10-02T13:46:35.674Z ✅ [SEED-03] 建员工+登录：财务 — users#7b1b85689b6c1db0f20ccead04f59b56 username=acc_finance_790472@tenant_7478359537 首登强制改密=true 改密成功=true permissions=["dashboard:view","order:list","order:detail","customer:view","finance:view","processing:view","inbound:view","finance:create","production:execute"]
+2026-10-02T13:46:36.880Z ✅ [SEED-03] 建员工+登录：商品管理员 — users#aea3c24443a11210ee466c7c4b98020e username=acc_product_manager_790472@tenant_7478359537 首登强制改密=true 改密成功=true permissions=["dashboard:view","processing:manage","product:list","product:create","product:category","processing:view","product:category:view","production:view"]
+2026-10-02T13:46:38.028Z ✅ [SEED-03] 建员工+登录：知识编辑 — users#8d17d199ce60d3d4b55db5a4702c6dc4 username=acc_knowledge_editor_790472@tenant_7478359537 首登强制改密=true 改密成功=true permissions=["dashboard:view","knowledge:manage","product:list","knowledge:view"]
+2026-10-02T13:46:38.459Z ✅ [SEED-04] 自定义岗位创建（岗位权限页能力） — roles#25ac5184e0fd8bf0626af13a7939e739 name=验收临时岗790472 落库权限=["dashboard:view","order:list"]
+2026-10-02T13:46:39.607Z ✅ [SEED-05] 自定义岗位员工创建+登录 — users#92351dfad718ad68642c7314143bab15 username=acc_custom_790472@tenant_7478359537 permissions=["dashboard:view","order:list"]
+2026-10-02T13:46:39.837Z ✅ [SEED-06] 工人档案创建（工号+PIN） — users#5733402a3df85cbc16ccb0dafcdc028a workerNo=W790472 name=验收工人790472 role=worker；响应不含口令字段=true
+2026-10-02T13:46:39.953Z ✅ [SEED-07] 工人工号唯一性校验 — 重复工号 → HTTP 409（期望 409/400，非 500）
+2026-10-02T13:46:40.004Z ✅ [SEED-08] 工人建号缺 PIN 校验 — 缺 PIN → HTTP 422
+2026-10-02T13:46:40.118Z ✅ [SEED-09] DB：员工落库 — 15 名用户（含管理员）：管理员/admin poc_operator_custom/poc_operator_custom operator/operator product_manager/product_manager poc_accept_agent/operator 商品专员/operator 客服专员/poc_accept_agent 客服/customer_service 运营/operator 销售/sales 财务/finance 商品管理员/product_manager 知识编辑/knowledge_editor 验收临时岗790472/acc_custom_790472 null/worker
+2026-10-02T13:46:40.118Z ✅ [SEED-10] DB 权限快照 = 岗位默认权限：客服 — users.permissions(12) == role_permissions(12)：after_sales:view,agent:session,agent:session:manage,customer:view,dashboard:view,inbound:view,knowledge:view,order:detail,order:list,order:refund,processing:view,production:execute
+2026-10-02T13:46:40.119Z ✅ [SEED-10] DB 权限快照 = 岗位默认权限：运营 — users.permissions(26) == role_permissions(26)：after_sales:view,agent:session,agent:session:manage,customer:create,customer:view,dashboard:view,employee:list,finance:create,finance:view,inbound:create,inbound:view,knowledge:view,order:create,order:detail,order:list,order:refund,order:update,processing:manage,processing:update,processing:view,product:category,product:category:view,product:create,product:list,production:execute,production:view
+2026-10-02T13:46:40.119Z ✅ [SEED-10] DB 权限快照 = 岗位默认权限：销售 — users.permissions(9) == role_permissions(9)：customer:view,dashboard:view,inbound:view,order:create,order:detail,order:list,processing:view,product:list,production:execute
+2026-10-02T13:46:40.119Z ✅ [SEED-10] DB 权限快照 = 岗位默认权限：财务 — users.permissions(9) == role_permissions(9)：customer:view,dashboard:view,finance:create,finance:view,inbound:view,order:detail,order:list,processing:view,production:execute
+2026-10-02T13:46:40.120Z ✅ [SEED-10] DB 权限快照 = 岗位默认权限：商品管理员 — users.permissions(8) == role_permissions(8)：dashboard:view,processing:manage,processing:view,product:category,product:category:view,product:create,product:list,production:view
+2026-10-02T13:46:40.120Z ✅ [SEED-10] DB 权限快照 = 岗位默认权限：知识编辑 — users.permissions(4) == role_permissions(4)：dashboard:view,knowledge:manage,knowledge:view,product:list
+2026-10-02T13:46:40.120Z ✅ [SEED-10] DB 权限快照 = 岗位默认权限：验收临时岗790472 — users.permissions(2) == role_permissions(2)：dashboard:view,order:list
+2026-10-02T13:46:43.628Z ✅ [SEED-11] 页面：员工管理列表渲染新建员工 — 命中 7/7 名员工姓名（页面文本 1220 字符）
+2026-10-02T13:46:43.629Z ✅ [SEED-12] 页面：员工管理含工人入口/标签 — 页面文本含「工人」=true
+2026-10-02T13:46:43.796Z ✅ [SEED-13] 服务器日志：建号链路可追溯 — 命中 10 行，示例：2026-10-02 17:21:15.737 [http-nio-8080-exec-132] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash
+2026-10-02T13:46:43.798Z == 阶段2 完成：pass=23 fail=0 skip=0
+2026-10-02T13:47:32.709Z == 阶段3：RBAC 多岗位验收 == tenantId=20
+2026-10-02T13:47:34.739Z ✅ [RBAC-API] API 权限矩阵：admin(管理员) — 探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=allow /api/admin/roles/all=allow
+2026-10-02T13:47:52.051Z ✅ [RBAC-UI] 页面权限矩阵：admin(管理员) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 0，不符 0
+2026-10-02T13:47:53.337Z ❌ [RBAC-API] API 权限矩阵：客服(customer_service) — 探针 20 条：匹配 17，不符 3｜不符=W01(/api/admin/orders 期望deny 实际allow HTTP422); W02(/api/admin/products 期望deny 实际allow HTTP422); W05(/api/admin/finance/transactions 期望deny 实际allow HTTP422)｜权限快照与 DB 一致=false
+2026-10-02T13:48:08.765Z ✅ [RBAC-UI] 页面权限矩阵：客服(customer_service) — 菜单可见 2 项 [经营看板/通知中心]｜路由 16 条：拒绝 8，不符 0
+2026-10-02T13:48:10.448Z ✅ [RBAC-API] API 权限矩阵：运营(operator) — 探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=false｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=allow
+2026-10-02T13:48:25.158Z ✅ [RBAC-UI] 页面权限矩阵：运营(operator) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 2，不符 0
+2026-10-02T13:48:26.515Z ❌ [RBAC-API] API 权限矩阵：销售(sales) — 探针 20 条：匹配 17，不符 3｜不符=W02(/api/admin/products 期望deny 实际allow HTTP422); W04(/api/admin/after-sales 期望deny 实际allow HTTP422); W05(/api/admin/finance/transactions 期望deny 实际allow HTTP422)｜权限快照与 DB 一致=false
+2026-10-02T13:48:41.435Z ✅ [RBAC-UI] 页面权限矩阵：销售(sales) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 10，不符 0
+2026-10-02T13:48:42.841Z ❌ [RBAC-API] API 权限矩阵：财务(finance) — 探针 20 条：匹配 17，不符 3｜不符=W01(/api/admin/orders 期望deny 实际allow HTTP422); W02(/api/admin/products 期望deny 实际allow HTTP422); W04(/api/admin/after-sales 期望deny 实际allow HTTP422)｜权限快照与 DB 一致=false
+2026-10-02T13:48:57.718Z ✅ [RBAC-UI] 页面权限矩阵：财务(finance) — 菜单可见 2 项 [经营看板/通知中心]｜路由 16 条：拒绝 10，不符 0
+2026-10-02T13:48:58.909Z ❌ [RBAC-API] API 权限矩阵：商品管理员(product_manager) — 探针 20 条：匹配 17，不符 3｜不符=W01(/api/admin/orders 期望deny 实际allow HTTP422); W04(/api/admin/after-sales 期望deny 实际allow HTTP422); W05(/api/admin/finance/transactions 期望deny 实际allow HTTP422)｜权限快照与 DB 一致=false
+2026-10-02T13:49:13.605Z ✅ [RBAC-UI] 页面权限矩阵：商品管理员(product_manager) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 10，不符 0
+2026-10-02T13:49:14.923Z ❌ [RBAC-API] API 权限矩阵：知识编辑(knowledge_editor) — 探针 20 条：匹配 16，不符 4｜不符=W01(/api/admin/orders 期望deny 实际allow HTTP422); W02(/api/admin/products 期望deny 实际allow HTTP422); W04(/api/admin/after-sales 期望deny 实际allow HTTP422); W05(/api/admin/finance/transactions 期望deny 实际allow HTTP422)｜权限快照与 DB 一致=false
+2026-10-02T13:49:29.673Z ✅ [RBAC-UI] 页面权限矩阵：知识编辑(knowledge_editor) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 12，不符 0
+2026-10-02T13:49:30.919Z ❌ [RBAC-API] API 权限矩阵：验收临时岗790472(acc_custom_790472) — 探针 20 条：匹配 16，不符 4｜不符=W01(/api/admin/orders 期望deny 实际allow HTTP422); W02(/api/admin/products 期望deny 实际allow HTTP422); W04(/api/admin/after-sales 期望deny 实际allow HTTP422); W05(/api/admin/finance/transactions 期望deny 实际allow HTTP422)｜权限快照与 DB 一致=false
+2026-10-02T13:49:45.695Z ✅ [RBAC-UI] 页面权限矩阵：验收临时岗790472(acc_custom_790472) — 菜单可见 2 项 [经营看板/通知中心]｜路由 16 条：拒绝 13，不符 0
+2026-10-02T13:49:45.875Z ✅ [RBAC-W1] 工人端登录（工号+PIN） — HTTP 200；sessionId=056c94d0444e… 角色=undefined
+2026-10-02T13:49:46.050Z ✅ [RBAC-W2] 工人端错误 PIN 拒绝 — 错误 PIN → HTTP 401（工号或 PIN 不正确）
+2026-10-02T13:49:46.093Z ✅ [RBAC-W3] 工人身份访问商家后台被拒（垂直越权防护） — GET /api/admin/orders with X-Worker-Session-Id → HTTP 403
+2026-10-02T13:49:46.188Z ✅ [RBAC-W4] 工人端自身端点可达 — GET /api/worker/me → HTTP 200
+2026-10-02T13:49:46.192Z ✅ [RBAC-SUM] RBAC 矩阵汇总 — 共 160 格（8 身份 × 20 端点），不符 20 格；明细见 out/s3-rbac-matrix.json
+2026-10-02T13:49:46.346Z ✅ [RBAC-LOG] 服务器日志：403 拒绝留痕 — 命中 6 行，示例：2026-10-02 17:04:21.851 [http-nio-8080-exec-140] WARN  c.m.a.config.GlobalExceptionHandler - 权限不足: 权限不足，需要权限: inbound:view (requiredPermissi
+2026-10-02T13:49:46.346Z == 阶段3 完成：pass=16 fail=6 skip=0｜矩阵 160 格，不符 20
+2026-10-02T13:49:46.693Z == 阶段3b：RBAC 复核（第二轮）==
+2026-10-02T13:49:46.724Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：客服 — 客服(customer_service) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态
+2026-10-02T13:49:46.739Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：运营 — 运营(operator) 持 order:create=true → HTTP 422｜判定=有码应放行｜其它状态
+2026-10-02T13:49:46.753Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：销售 — 销售(sales) 持 order:create=true → HTTP 422｜判定=有码应放行｜其它状态
+2026-10-02T13:49:46.768Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：财务 — 财务(finance) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态
+2026-10-02T13:49:46.783Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：商品管理员 — 商品管理员(product_manager) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态
+2026-10-02T13:49:46.798Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：知识编辑 — 知识编辑(knowledge_editor) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态
+2026-10-02T13:49:46.813Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：验收临时岗790472 — 验收临时岗790472(acc_custom_790472) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态
+2026-10-02T13:49:46.813Z ✅ [RBAC2-02] 越权检测汇总 — 共 7 个岗位身份，真实越权 0 例；无码身份收到的状态=customer_service:422 finance:422 product_manager:422 knowledge_editor:422 acc_custom_790472:422；有码身份=operator:422 sales:422
+2026-10-02T13:49:46.844Z ✅ [RBAC2-03] @Valid 短路对照：客服 — 空 body → HTTP 422（参数校验先返回）；合法 body → HTTP 422｜结论=需人工判读
+2026-10-02T13:49:46.883Z ✅ [RBAC2-03] @Valid 短路对照：运营 — 空 body → HTTP 422（参数校验先返回）；合法 body → HTTP 422｜结论=需人工判读
+2026-10-02T13:49:46.914Z ✅ [RBAC2-03] @Valid 短路对照：销售 — 空 body → HTTP 422（参数校验先返回）；合法 body → HTTP 422｜结论=需人工判读
+2026-10-02T13:49:47.540Z ✅ [RBAC2-04] 修正写探针矩阵：admin(管理员) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP404 W02(employee:create) ✓ HTTP422 W03(inbound:create) ✓ HTTP422 W04(system:manage) ✓ HTTP404 W05(employee:create) ✓ HTTP404 W06(customer:create) ✓ HTTP404 W07(product:create) ✓ HTTP200
+2026-10-02T13:49:47.928Z ✅ [RBAC2-04] 修正写探针矩阵：客服(customer_service) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403
+2026-10-02T13:49:48.382Z ✅ [RBAC2-04] 修正写探针矩阵：运营(operator) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP404 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP422 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP404 W07(product:create) ✓ HTTP200
+2026-10-02T13:49:48.777Z ✅ [RBAC2-04] 修正写探针矩阵：销售(sales) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403
+2026-10-02T13:49:49.153Z ✅ [RBAC2-04] 修正写探针矩阵：财务(finance) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403
+2026-10-02T13:49:49.546Z ✅ [RBAC2-04] 修正写探针矩阵：商品管理员(product_manager) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP200
+2026-10-02T13:49:49.920Z ✅ [RBAC2-04] 修正写探针矩阵：知识编辑(knowledge_editor) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403
+2026-10-02T13:49:50.234Z ✅ [RBAC2-04] 修正写探针矩阵：验收临时岗790472(acc_custom_790472) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403
+2026-10-02T13:49:50.334Z ✅ [RBAC2-05] 菜单权限矩阵：admin(管理员) — 菜单可见 22 项，无越权项；可见=/dashboard,/briefing,/products,/agent-workspace/human-sessions,/customers,/knowledge,/after-sales,/orders,/finance,/production,/production/pool,/production/processing,/production/routings,/production/piecework,/inbound-orders,/shipments,/production/remnants,/production/saving-board,/employees,/roles,/settings,/notifications
+2026-10-02T13:49:50.433Z ✅ [RBAC2-05] 菜单权限矩阵：客服(customer_service) — 菜单可见 11 项，无越权项；可见=/dashboard,/briefing,/agent-workspace/human-sessions,/customers,/knowledge,/after-sales,/orders,/production/pool,/inbound-orders,/shipments,/notifications
+2026-10-02T13:49:50.545Z ✅ [RBAC2-05] 菜单权限矩阵：运营(operator) — 菜单可见 20 项，无越权项；可见=/dashboard,/briefing,/products,/agent-workspace/human-sessions,/customers,/knowledge,/after-sales,/orders,/finance,/production,/production/pool,/production/processing,/production/routings,/production/piecework,/inbound-orders,/shipments,/production/remnants,/production/saving-board,/employees,/notifications
+2026-10-02T13:49:50.678Z ✅ [RBAC2-05] 菜单权限矩阵：销售(sales) — 菜单可见 10 项，无越权项；可见=/dashboard,/briefing,/products,/customers,/orders,/production/pool,/inbound-orders,/shipments,/production/saving-board,/notifications
+2026-10-02T13:49:50.777Z ✅ [RBAC2-05] 菜单权限矩阵：财务(finance) — 菜单可见 9 项，无越权项；可见=/dashboard,/briefing,/customers,/orders,/finance,/production/pool,/inbound-orders,/shipments,/notifications
+2026-10-02T13:49:50.875Z ✅ [RBAC2-05] 菜单权限矩阵：商品管理员(product_manager) — 菜单可见 11 项，无越权项；可见=/dashboard,/briefing,/products,/production,/production/pool,/production/processing,/production/routings,/production/piecework,/production/remnants,/production/saving-board,/notifications
+2026-10-02T13:49:51.015Z ✅ [RBAC2-05] 菜单权限矩阵：知识编辑(knowledge_editor) — 菜单可见 6 项，无越权项；可见=/dashboard,/briefing,/products,/knowledge,/production/saving-board,/notifications
+2026-10-02T13:49:51.142Z ✅ [RBAC2-05] 菜单权限矩阵：验收临时岗790472(acc_custom_790472) — 菜单可见 5 项，无越权项；可见=/dashboard,/briefing,/orders,/shipments,/notifications
+2026-10-02T13:49:57.144Z ❌ [RBAC2-06] 页面守卫缺口：/inbound-orders（商品管理员 无 inbound:view） — 直达页面未被 403 页拦截（403 页可见=true）；页面文本片段=🔒 无权访问该页面  当前账号缺少权限 inbound:view， 如需开通请联系管理员在「员工管理」中调整权限。；后端接口调用=未捕获；疑似数据泄露=false
+2026-10-02T13:49:57.166Z ✅ [RBAC2-SUM] 复核矩阵汇总 — 修正写探针 56 格，不符 0 格；越权检测 0 例
+2026-10-02T13:49:57.166Z == 阶段3b 完成：pass=28 fail=1
+2026-10-02T13:49:57.535Z == 阶段3c：RBAC 收口 ==
+2026-10-02T13:49:57.552Z ✅ [RBAC3-01] 建单载荷探测：v1 姓名+电话+地址+明细 — HTTP 422｜参数校验失败
+2026-10-02T13:49:57.567Z ✅ [RBAC3-01] 建单载荷探测：v2 明细补 productId — HTTP 422｜参数校验失败
+2026-10-02T13:49:57.582Z ✅ [RBAC3-01] 建单载荷探测：v3 加 userId/金额 — HTTP 422｜参数校验失败
+2026-10-02T13:49:57.582Z ❌ [RBAC3-02] 命中合法载荷 — 三种载荷均未通过校验，无法做判别性实验；各载荷报错见上
+2026-10-02T13:50:01.052Z ✅ [RBAC3-04] 路由守卫：/inbound-orders — 商品管理员（缺 inbound:view）被 403 页拦截（提示缺 inbound:view）
+2026-10-02T13:50:05.017Z ✅ [RBAC3-04] 路由守卫：/agent-workspace/human-sessions — 销售（缺 agent:session）被 403 页拦截（提示缺 agent:session）
+2026-10-02T13:50:05.039Z ⏭️ [RBAC3-04] 路由守卫缺口实测：/notifications — 无「缺 null」的样本身份
+2026-10-02T13:50:05.039Z == 阶段3c 完成：pass=5 fail=1 skip=1
+2026-10-02T13:55:16.124Z == 阶段3：RBAC 多岗位验收 == tenantId=20
+2026-10-02T13:55:18.122Z ✅ [RBAC-API] API 权限矩阵：admin(管理员) — 探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=allow /api/admin/roles/all=allow
+2026-10-02T13:55:35.875Z ✅ [RBAC-UI] 页面权限矩阵：admin(管理员) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 0，不符 0
+2026-10-02T13:55:37.269Z ❌ [RBAC-API] API 权限矩阵：客服(customer_service) — 探针 20 条：匹配 17，不符 3｜不符=W01(/api/admin/orders 期望deny 实际allow HTTP422); W02(/api/admin/products 期望deny 实际allow HTTP422); W05(/api/admin/finance/transactions 期望deny 实际allow HTTP422)｜权限快照与 DB 一致=true
+2026-10-02T13:55:53.105Z ✅ [RBAC-UI] 页面权限矩阵：客服(customer_service) — 菜单可见 2 项 [经营看板/通知中心]｜路由 16 条：拒绝 8，不符 0
+2026-10-02T13:55:54.790Z ✅ [RBAC-API] API 权限矩阵：运营(operator) — 探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=allow
+2026-10-02T13:56:10.553Z ✅ [RBAC-UI] 页面权限矩阵：运营(operator) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 2，不符 0
+2026-10-02T13:56:11.861Z ❌ [RBAC-API] API 权限矩阵：销售(sales) — 探针 20 条：匹配 17，不符 3｜不符=W02(/api/admin/products 期望deny 实际allow HTTP422); W04(/api/admin/after-sales 期望deny 实际allow HTTP422); W05(/api/admin/finance/transactions 期望deny 实际allow HTTP422)｜权限快照与 DB 一致=true
+2026-10-02T13:56:27.545Z ✅ [RBAC-UI] 页面权限矩阵：销售(sales) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 10，不符 0
+2026-10-02T13:56:28.887Z ❌ [RBAC-API] API 权限矩阵：财务(finance) — 探针 20 条：匹配 17，不符 3｜不符=W01(/api/admin/orders 期望deny 实际allow HTTP422); W02(/api/admin/products 期望deny 实际allow HTTP422); W04(/api/admin/after-sales 期望deny 实际allow HTTP422)｜权限快照与 DB 一致=true
+2026-10-02T13:56:44.620Z ✅ [RBAC-UI] 页面权限矩阵：财务(finance) — 菜单可见 2 项 [经营看板/通知中心]｜路由 16 条：拒绝 10，不符 0
+2026-10-02T13:56:46.013Z ❌ [RBAC-API] API 权限矩阵：商品管理员(product_manager) — 探针 20 条：匹配 17，不符 3｜不符=W01(/api/admin/orders 期望deny 实际allow HTTP422); W04(/api/admin/after-sales 期望deny 实际allow HTTP422); W05(/api/admin/finance/transactions 期望deny 实际allow HTTP422)｜权限快照与 DB 一致=true
+2026-10-02T13:57:01.840Z ✅ [RBAC-UI] 页面权限矩阵：商品管理员(product_manager) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 10，不符 0
+2026-10-02T13:57:03.126Z ❌ [RBAC-API] API 权限矩阵：知识编辑(knowledge_editor) — 探针 20 条：匹配 16，不符 4｜不符=W01(/api/admin/orders 期望deny 实际allow HTTP422); W02(/api/admin/products 期望deny 实际allow HTTP422); W04(/api/admin/after-sales 期望deny 实际allow HTTP422); W05(/api/admin/finance/transactions 期望deny 实际allow HTTP422)｜权限快照与 DB 一致=true
+2026-10-02T13:57:18.800Z ✅ [RBAC-UI] 页面权限矩阵：知识编辑(knowledge_editor) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 12，不符 0
+2026-10-02T13:57:20.074Z ❌ [RBAC-API] API 权限矩阵：验收临时岗790472(acc_custom_790472) — 探针 20 条：匹配 16，不符 4｜不符=W01(/api/admin/orders 期望deny 实际allow HTTP422); W02(/api/admin/products 期望deny 实际allow HTTP422); W04(/api/admin/after-sales 期望deny 实际allow HTTP422); W05(/api/admin/finance/transactions 期望deny 实际allow HTTP422)｜权限快照与 DB 一致=true
+2026-10-02T13:57:36.020Z ✅ [RBAC-UI] 页面权限矩阵：验收临时岗790472(acc_custom_790472) — 菜单可见 2 项 [经营看板/通知中心]｜路由 16 条：拒绝 13，不符 0
+2026-10-02T13:57:36.291Z ✅ [RBAC-W1] 工人端登录（工号+PIN） — HTTP 200；sessionId=44e7775e52c7… 角色=undefined
+2026-10-02T13:57:36.552Z ✅ [RBAC-W2] 工人端错误 PIN 拒绝 — 错误 PIN → HTTP 401（工号或 PIN 不正确）
+2026-10-02T13:57:36.594Z ✅ [RBAC-W3] 工人身份访问商家后台被拒（垂直越权防护） — GET /api/admin/orders with X-Worker-Session-Id → HTTP 403
+2026-10-02T13:57:36.706Z ✅ [RBAC-W4] 工人端自身端点可达 — GET /api/worker/me → HTTP 200
+2026-10-02T13:57:36.710Z ✅ [RBAC-SUM] RBAC 矩阵汇总 — 共 160 格（8 身份 × 20 端点），不符 20 格；明细见 out/s3-rbac-matrix.json
+2026-10-02T13:57:36.978Z ✅ [RBAC-LOG] 服务器日志：403 拒绝留痕 — 命中 6 行，示例：2026-10-02 17:04:21.851 [http-nio-8080-exec-140] WARN  c.m.a.config.GlobalExceptionHandler - 权限不足: 权限不足，需要权限: inbound:view (requiredPermissi
+2026-10-02T13:57:36.979Z == 阶段3 完成：pass=16 fail=6 skip=0｜矩阵 160 格，不符 20
+2026-10-02T13:57:37.563Z == 阶段3b：RBAC 复核（第二轮）==
+2026-10-02T13:57:37.596Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：客服 — 客服(customer_service) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态
+2026-10-02T13:57:37.614Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：运营 — 运营(operator) 持 order:create=true → HTTP 422｜判定=有码应放行｜其它状态
+2026-10-02T13:57:37.633Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：销售 — 销售(sales) 持 order:create=true → HTTP 422｜判定=有码应放行｜其它状态
+2026-10-02T13:57:37.653Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：财务 — 财务(finance) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态
+2026-10-02T13:57:37.669Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：商品管理员 — 商品管理员(product_manager) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态
+2026-10-02T13:57:37.689Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：知识编辑 — 知识编辑(knowledge_editor) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态
+2026-10-02T13:57:37.711Z ✅ [RBAC2-01] 越权检测（合法载荷打建单）：验收临时岗790472 — 验收临时岗790472(acc_custom_790472) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态
+2026-10-02T13:57:37.712Z ✅ [RBAC2-02] 越权检测汇总 — 共 7 个岗位身份，真实越权 0 例；无码身份收到的状态=customer_service:422 finance:422 product_manager:422 knowledge_editor:422 acc_custom_790472:422；有码身份=operator:422 sales:422
+2026-10-02T13:57:37.745Z ✅ [RBAC2-03] @Valid 短路对照：客服 — 空 body → HTTP 422（参数校验先返回）；合法 body → HTTP 422｜结论=需人工判读
+2026-10-02T13:57:37.784Z ✅ [RBAC2-03] @Valid 短路对照：运营 — 空 body → HTTP 422（参数校验先返回）；合法 body → HTTP 422｜结论=需人工判读
+2026-10-02T13:57:37.822Z ✅ [RBAC2-03] @Valid 短路对照：销售 — 空 body → HTTP 422（参数校验先返回）；合法 body → HTTP 422｜结论=需人工判读
+2026-10-02T13:57:38.472Z ✅ [RBAC2-04] 修正写探针矩阵：admin(管理员) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP404 W02(employee:create) ✓ HTTP422 W03(inbound:create) ✓ HTTP422 W04(system:manage) ✓ HTTP404 W05(employee:create) ✓ HTTP404 W06(customer:create) ✓ HTTP404 W07(product:create) ✓ HTTP200
+2026-10-02T13:57:38.822Z ✅ [RBAC2-04] 修正写探针矩阵：客服(customer_service) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403
+2026-10-02T13:57:39.254Z ✅ [RBAC2-04] 修正写探针矩阵：运营(operator) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP404 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP422 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP404 W07(product:create) ✓ HTTP200
+2026-10-02T13:57:39.601Z ✅ [RBAC2-04] 修正写探针矩阵：销售(sales) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403
+2026-10-02T13:57:39.951Z ✅ [RBAC2-04] 修正写探针矩阵：财务(finance) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403
+2026-10-02T13:57:40.300Z ✅ [RBAC2-04] 修正写探针矩阵：商品管理员(product_manager) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP200
+2026-10-02T13:57:40.704Z ✅ [RBAC2-04] 修正写探针矩阵：知识编辑(knowledge_editor) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403
+2026-10-02T13:57:41.039Z ✅ [RBAC2-04] 修正写探针矩阵：验收临时岗790472(acc_custom_790472) — 全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403
+2026-10-02T13:57:41.162Z ✅ [RBAC2-05] 菜单权限矩阵：admin(管理员) — 菜单可见 22 项，无越权项；可见=/dashboard,/briefing,/products,/agent-workspace/human-sessions,/customers,/knowledge,/after-sales,/orders,/finance,/production,/production/pool,/production/processing,/production/routings,/production/piecework,/inbound-orders,/shipments,/production/remnants,/production/saving-board,/employees,/roles,/settings,/notifications
+2026-10-02T13:57:41.320Z ✅ [RBAC2-05] 菜单权限矩阵：客服(customer_service) — 菜单可见 11 项，无越权项；可见=/dashboard,/briefing,/agent-workspace/human-sessions,/customers,/knowledge,/after-sales,/orders,/production/pool,/inbound-orders,/shipments,/notifications
+2026-10-02T13:57:41.499Z ✅ [RBAC2-05] 菜单权限矩阵：运营(operator) — 菜单可见 20 项，无越权项；可见=/dashboard,/briefing,/products,/agent-workspace/human-sessions,/customers,/knowledge,/after-sales,/orders,/finance,/production,/production/pool,/production/processing,/production/routings,/production/piecework,/inbound-orders,/shipments,/production/remnants,/production/saving-board,/employees,/notifications
+2026-10-02T13:57:41.650Z ✅ [RBAC2-05] 菜单权限矩阵：销售(sales) — 菜单可见 10 项，无越权项；可见=/dashboard,/briefing,/products,/customers,/orders,/production/pool,/inbound-orders,/shipments,/production/saving-board,/notifications
+2026-10-02T13:57:41.813Z ✅ [RBAC2-05] 菜单权限矩阵：财务(finance) — 菜单可见 9 项，无越权项；可见=/dashboard,/briefing,/customers,/orders,/finance,/production/pool,/inbound-orders,/shipments,/notifications
+2026-10-02T13:57:41.933Z ✅ [RBAC2-05] 菜单权限矩阵：商品管理员(product_manager) — 菜单可见 11 项，无越权项；可见=/dashboard,/briefing,/products,/production,/production/pool,/production/processing,/production/routings,/production/piecework,/production/remnants,/production/saving-board,/notifications
+2026-10-02T13:57:42.101Z ✅ [RBAC2-05] 菜单权限矩阵：知识编辑(knowledge_editor) — 菜单可见 6 项，无越权项；可见=/dashboard,/briefing,/products,/knowledge,/production/saving-board,/notifications
+2026-10-02T13:57:42.257Z ✅ [RBAC2-05] 菜单权限矩阵：验收临时岗790472(acc_custom_790472) — 菜单可见 5 项，无越权项；可见=/dashboard,/briefing,/orders,/shipments,/notifications
+2026-10-02T13:57:49.433Z ✅ [RBAC2-06] 页面守卫复核：/inbound-orders（商品管理员 无 inbound:view） — 首轮缺口已闭合：直达页面被 403 页拦截且无数据泄露｜403 页可见=true；疑似数据泄露=false；页面文本片段=🔒 无权访问该页面  当前账号缺少权限 inbound:view， 如需开通请联系管理员在「员工管理」中调整权限。；后端接口调用=未捕获
+2026-10-02T13:57:49.472Z ✅ [RBAC2-SUM] 复核矩阵汇总 — 修正写探针 56 格，不符 0 格；越权检测 0 例
+2026-10-02T13:57:49.472Z == 阶段3b 完成：pass=29 fail=0
+2026-10-02T13:57:50.147Z == 阶段3c：RBAC 收口 ==
+2026-10-02T13:57:50.309Z ✅ [RBAC3-01] 建单载荷探测：v1 姓名+电话+地址+明细 — HTTP 422｜参数校验失败
+2026-10-02T13:57:50.330Z ✅ [RBAC3-01] 建单载荷探测：v2 明细补 productId — HTTP 422｜参数校验失败
+2026-10-02T13:57:50.348Z ✅ [RBAC3-01] 建单载荷探测：v3 加 userId/金额 — HTTP 422｜参数校验失败
+2026-10-02T13:57:50.673Z ✅ [RBAC3-01] 建单载荷探测：v4 真实商品完整载荷（s6 同款） — HTTP 200｜{"success":true,"data":{"id":"9b409c9fa04c91efb62d2ebbb8aef4f2","orderNo":"20261002130190001","customerName":"权限探测客户70147","customerPhone":"13000000000","custom
+2026-10-02T13:57:50.795Z ✅ [RBAC3-02] 命中合法载荷：v4 真实商品完整载荷（s6 同款） — HTTP 200 建成订单（已清理）；后端受理 ⇒ 该载荷可作判别性实验输入
+2026-10-02T13:57:51.240Z ✅ [RBAC3-03] 判别性实验：管理员（恒全权） — 合法载荷 → HTTP 200（期望 200）
+2026-10-02T13:57:51.294Z ✅ [RBAC3-03] 判别性实验：客服 — 持 order:create=false → HTTP 403 ⇒ 与权限码一致
+2026-10-02T13:57:51.626Z ✅ [RBAC3-03] 判别性实验：运营 — 持 order:create=true → HTTP 200（建成，已清理） ⇒ 与权限码一致
+2026-10-02T13:57:51.992Z ✅ [RBAC3-03] 判别性实验：销售 — 持 order:create=true → HTTP 200（建成，已清理） ⇒ 与权限码一致
+2026-10-02T13:57:52.054Z ✅ [RBAC3-03] 判别性实验：财务 — 持 order:create=false → HTTP 403 ⇒ 与权限码一致
+2026-10-02T13:57:52.095Z ✅ [RBAC3-03] 判别性实验：商品管理员 — 持 order:create=false → HTTP 403 ⇒ 与权限码一致
+2026-10-02T13:57:52.137Z ✅ [RBAC3-03] 判别性实验：知识编辑 — 持 order:create=false → HTTP 403 ⇒ 与权限码一致
+2026-10-02T13:57:52.185Z ✅ [RBAC3-03] 判别性实验：验收临时岗790472 — 持 order:create=false → HTTP 403 ⇒ 与权限码一致
+2026-10-02T13:57:56.482Z ✅ [RBAC3-04] 路由守卫：/inbound-orders — 商品管理员（缺 inbound:view）被 403 页拦截（提示缺 inbound:view）
+2026-10-02T13:58:01.057Z ✅ [RBAC3-04] 路由守卫：/agent-workspace/human-sessions — 销售（缺 agent:session）被 403 页拦截（提示缺 agent:session）
+2026-10-02T13:58:01.085Z ⏭️ [RBAC3-04] 路由守卫缺口实测：/notifications — 无「缺 null」的样本身份
+2026-10-02T13:58:01.086Z == 阶段3c 完成：pass=15 fail=0 skip=1
+2026-10-02T14:53:57.311Z == 阶段3：RBAC 多岗位验收 == tenantId=20
+2026-10-02T14:53:59.906Z ✅ [RBAC-API] API 权限矩阵：admin(管理员) — 探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=allow /api/admin/roles/all=allow
+2026-10-02T14:54:14.737Z ✅ [RBAC-UI] 页面权限矩阵：admin(管理员) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 0，不符 0
+2026-10-02T14:54:16.225Z ✅ [RBAC-API] API 权限矩阵：客服(customer_service) — 探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=deny
+2026-10-02T14:54:30.705Z ✅ [RBAC-UI] 页面权限矩阵：客服(customer_service) — 菜单可见 2 项 [经营看板/通知中心]｜路由 16 条：拒绝 8，不符 0
+2026-10-02T14:54:32.600Z ✅ [RBAC-API] API 权限矩阵：运营(operator) — 探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=allow
+2026-10-02T14:54:46.935Z ✅ [RBAC-UI] 页面权限矩阵：运营(operator) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 2，不符 0
+2026-10-02T14:54:48.357Z ✅ [RBAC-API] API 权限矩阵：销售(sales) — 探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=deny
+2026-10-02T14:55:02.984Z ✅ [RBAC-UI] 页面权限矩阵：销售(sales) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 10，不符 0
+2026-10-02T14:55:04.851Z ✅ [RBAC-API] API 权限矩阵：财务(finance) — 探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=deny
+2026-10-02T14:55:19.599Z ✅ [RBAC-UI] 页面权限矩阵：财务(finance) — 菜单可见 2 项 [经营看板/通知中心]｜路由 16 条：拒绝 10，不符 0
+2026-10-02T14:55:21.157Z ✅ [RBAC-API] API 权限矩阵：商品管理员(product_manager) — 探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=deny
+2026-10-02T14:55:36.021Z ✅ [RBAC-UI] 页面权限矩阵：商品管理员(product_manager) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 10，不符 0
+2026-10-02T14:55:37.321Z ✅ [RBAC-API] API 权限矩阵：知识编辑(knowledge_editor) — 探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=deny
+2026-10-02T14:55:43.647Z == 阶段4：功能单据逐项验收 == tenantId=20
+2026-10-02T14:55:43.696Z ✅ [DOC-PRD-1] 商品创建·空提交校验（R1） — HTTP 422｜参数校验失败 | name:商品名称不能为空
+2026-10-02T14:55:44.102Z ✅ [DOC-PRD-2] 商品创建·正向 + DB 核验（R1） — products#6b5c91e1fc5f5195bfb1dae45d6e3bfe name=验收商品R1-943449 base_price=88.50 status=draft tenant_id=20（页面/接口与库一致）
+2026-10-02T14:55:44.212Z ✅ [DOC-PRD-3] 商品 SKU 落库（R1） — product_skus 1 行：ACC-943449-R1/2.8m/¥88.50/库存100.0
+2026-10-02T14:55:44.276Z ✅ [DOC-PRD-1] 商品创建·空提交校验（R2） — HTTP 422｜参数校验失败 | name:商品名称不能为空
+2026-10-02T14:55:44.646Z ✅ [DOC-PRD-2] 商品创建·正向 + DB 核验（R2） — products#6b5dfbbd87a0e01f7657e4d54e520987 name=验收商品R2-943449 base_price=88.50 status=draft tenant_id=20（页面/接口与库一致）
+2026-10-02T14:55:44.743Z ✅ [DOC-PRD-3] 商品 SKU 落库（R2） — product_skus 1 行：ACC-943449-R2/2.8m/¥88.50/库存100.0
+2026-10-02T14:55:44.789Z ✅ [DOC-ORD-1] 订单创建·空提交校验（R1） — HTTP 422｜参数校验失败 | customerPhone:客户电话不能为空；customerName:客户姓名不能为空；items:订单明细不能为空
+2026-10-02T14:55:44.889Z ✅ [DOC-ORD-2] 订单创建·缺物流必填校验（R1） — HTTP 422｜常用物流/快递不能为空 | logisticsType:常用物流/快递不能为空；logisticsCompany:常用物流公司不能为空 | 请补齐收货信息（收货地址 / 常用物流 / 常用物流公司）后重试
+2026-10-02T14:55:44.956Z ✅ [DOC-ORD-3] 订单创建·手机号格式校验（R1） — HTTP 422｜参数校验失败 | customerPhone:手机号格式不正确，请输入11位中国大陆手机号
+2026-10-02T14:55:45.018Z ✅ [DOC-ORD-4] 订单创建·空明细校验（R1） — HTTP 422｜参数校验失败 | items:订单明细不能为空
+2026-10-02T14:55:45.424Z ✅ [DOC-ORD-5] 订单创建·正向 + DB 核验（R1） — orders#20261002331370001 客户=验收客户R1943449 电话=13100000001 状态=pending 金额=300.00；明细行数=1 数量合计=3.00
+2026-10-02T14:55:45.835Z ✅ [DOC-ORD-7] 订单状态流转 待付款→已确认（R1） — HTTP 200；DB status=confirmed
+2026-10-02T14:55:45.965Z ✅ [DOC-ORD-6] 订单加备注（order:update）（R1） — HTTP 200（POST /api/admin/orders/{id}/remark）｜success
+2026-10-02T14:55:46.016Z ✅ [DOC-ORD-1] 订单创建·空提交校验（R2） — HTTP 422｜参数校验失败 | customerName:客户姓名不能为空；items:订单明细不能为空；customerPhone:客户电话不能为空
+2026-10-02T14:55:46.092Z ✅ [DOC-ORD-2] 订单创建·缺物流必填校验（R2） — HTTP 422｜常用物流/快递不能为空 | logisticsType:常用物流/快递不能为空；logisticsCompany:常用物流公司不能为空 | 请补齐收货信息（收货地址 / 常用物流 / 常用物流公司）后重试
+2026-10-02T14:55:46.149Z ✅ [DOC-ORD-3] 订单创建·手机号格式校验（R2） — HTTP 422｜参数校验失败 | customerPhone:手机号格式不正确，请输入11位中国大陆手机号
+2026-10-02T14:55:46.194Z ✅ [DOC-ORD-4] 订单创建·空明细校验（R2） — HTTP 422｜参数校验失败 | items:订单明细不能为空
+2026-10-02T14:55:46.628Z ✅ [DOC-ORD-5] 订单创建·正向 + DB 核验（R2） — orders#20261002424830002 客户=验收客户R2943449 电话=13100000001 状态=pending 金额=300.00；明细行数=1 数量合计=3.00
+2026-10-02T14:55:46.998Z ✅ [DOC-ORD-7] 订单状态流转 待付款→已确认（R2） — HTTP 200；DB status=confirmed
+2026-10-02T14:55:47.105Z ✅ [DOC-ORD-6] 订单加备注（order:update）（R2） — HTTP 200（POST /api/admin/orders/{id}/remark）｜success
+2026-10-02T14:55:47.174Z ✅ [DOC-AS-1] 售后建单·空提交校验（R1） — HTTP 422｜参数校验失败 | ticketType:售后类型不能为空；description:问题描述不能为空
+2026-10-02T14:55:47.509Z ✅ [DOC-AS-2] 售后建单·正向 + DB 核验（R1） — after_sales_tickets#AS-20261002-0001 type=return status=pending
+2026-10-02T14:55:47.556Z ✅ [DOC-AS-1] 售后建单·空提交校验（R2） — HTTP 422｜参数校验失败 | description:问题描述不能为空；ticketType:售后类型不能为空
+2026-10-02T14:55:47.965Z ✅ [DOC-AS-2] 售后建单·正向 + DB 核验（R2） — after_sales_tickets#AS-20261002-0002 type=complaint status=pending
+2026-10-02T14:55:48.014Z ✅ [DOC-FIN-1] 财务登记·空提交校验（R1） — HTTP 422｜参数校验失败 | type:收支类型不能为空；amount:金额不能为空
+2026-10-02T14:55:48.064Z ✅ [DOC-FIN-2] 财务登记·金额下限校验（R1） — amount=0 → HTTP 422｜参数校验失败 | amount:金额必须大于 0
+2026-10-02T14:55:48.250Z ✅ [DOC-FIN-3] 财务登记·正向 + DB 核验（R1） — finance_transactions#04d8d9d3271d47af2808d8b77bb44e26 type=income amount=88.50 方式=cash
+2026-10-02T14:55:48.296Z ✅ [DOC-FIN-1] 财务登记·空提交校验（R2） — HTTP 422｜参数校验失败 | type:收支类型不能为空；amount:金额不能为空
+2026-10-02T14:55:48.341Z ✅ [DOC-FIN-2] 财务登记·金额下限校验（R2） — amount=0 → HTTP 422｜参数校验失败 | amount:金额必须大于 0
+2026-10-02T14:55:48.528Z ✅ [DOC-FIN-3] 财务登记·正向 + DB 核验（R2） — finance_transactions#bd34edcff77c46fe4087e5ba61bf0d27 type=income amount=88.50 方式=cash
+2026-10-02T14:55:48.593Z ✅ [DOC-INB-1] 入库单·空提交校验（R1） — HTTP 422｜入库单至少要有 1 行明细 | 请检查必填字段是否完整，字段格式是否正确
+2026-10-02T14:55:48.888Z ✅ [DOC-INB-2] 入库单·正向 + DB 核验（R1） — inbound_orders#RK-20261002-0001 供应商=验收供应商943449 状态=draft
+2026-10-02T14:55:48.960Z ✅ [DOC-INB-1] 入库单·空提交校验（R2） — HTTP 422｜入库单至少要有 1 行明细 | 请检查必填字段是否完整，字段格式是否正确
+2026-10-02T14:55:49.263Z ✅ [DOC-INB-2] 入库单·正向 + DB 核验（R2） — inbound_orders#RK-20261002-0002 供应商=验收供应商943449 状态=draft
+2026-10-02T14:55:49.757Z ✅ [DOC-CNT] 列表计数 = DB 计数：商品 — 接口 total=6，DB products=6
+2026-10-02T14:55:50.001Z ✅ [DOC-CNT] 列表计数 = DB 计数：订单 — 接口 total=3，DB orders=3
+2026-10-02T14:55:50.286Z ✅ [DOC-CNT] 列表计数 = DB 计数：售后 — 接口 total=3，DB after_sales_tickets=3
+2026-10-02T14:55:50.461Z ✅ [DOC-CNT] 列表计数 = DB 计数：财务 — 接口 total=7，DB finance_transactions=7
+2026-10-02T14:55:50.628Z ✅ [DOC-CNT] 列表计数 = DB 计数：入库单 — 接口 total=2，DB inbound_orders=2
+2026-10-02T14:55:50.826Z ✅ [DOC-LOG] 服务器日志：单据操作链路留痕 — 命中 8 行，示例：2026-10-02 12:21:43.447 [http-nio-8080-exec-125] INFO  c.migao.admin.service.ProductService - 创建商品成功: id=d62b517c7c995a0b3c98ceeac90ed44c, name=UI闭环商品898419
+2026-10-02T14:55:50.826Z == 阶段4 完成：pass=40 fail=0
+2026-10-02T14:55:51.640Z ✅ [RBAC-UI] 页面权限矩阵：知识编辑(knowledge_editor) — 菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 12，不符 0
+2026-10-02T14:55:52.940Z ✅ [RBAC-API] API 权限矩阵：验收临时岗790472(acc_custom_790472) — 探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=deny
+2026-10-02T14:56:07.412Z ✅ [RBAC-UI] 页面权限矩阵：验收临时岗790472(acc_custom_790472) — 菜单可见 2 项 [经营看板/通知中心]｜路由 16 条：拒绝 13，不符 0
+2026-10-02T14:56:07.588Z ✅ [RBAC-W1] 工人端登录（工号+PIN） — HTTP 200；sessionId=42a7cca8e3ed… 角色=undefined
+2026-10-02T14:56:07.761Z ✅ [RBAC-W2] 工人端错误 PIN 拒绝 — 错误 PIN → HTTP 401（工号或 PIN 不正确）
+2026-10-02T14:56:07.810Z ✅ [RBAC-W3] 工人身份访问商家后台被拒（垂直越权防护） — GET /api/admin/orders with X-Worker-Session-Id → HTTP 403
+2026-10-02T14:56:07.913Z ✅ [RBAC-W4] 工人端自身端点可达 — GET /api/worker/me → HTTP 200
+2026-10-02T14:56:07.916Z ✅ [RBAC-SUM] RBAC 矩阵汇总 — 共 160 格（8 身份 × 20 端点），不符 0 格；明细见 out/s3-rbac-matrix.json
+2026-10-02T14:56:08.056Z ✅ [RBAC-LOG] 服务器日志：403 拒绝留痕 — 命中 6 行，示例：2026-10-02 17:04:21.851 [http-nio-8080-exec-140] WARN  c.m.a.config.GlobalExceptionHandler - 权限不足: 权限不足，需要权限: inbound:view (requiredPermissi
+2026-10-02T14:56:08.056Z == 阶段3 完成：pass=22 fail=0 skip=0｜矩阵 160 格，不符 0
+2026-10-02T15:04:23.375Z ❌ [M-FATAL] 阶段7 致命错误 — Error: ENOENT: no such file or directory, open '/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/permission-surface-main.json'
+2026-10-02T15:09:51.237Z == 阶段7：全量 RBAC 矩阵（坐标 main@b7fd8fa4bb） == 端点 125 个 / 权限码 23 个
+2026-10-02T15:09:55.075Z ✅ [M-00] 身份就绪（管理员 + 岗位员工） — 管理员(admin):1码｜客服(customer_service):12码｜运营(operator):26码｜销售(sales):9码｜财务(finance):9码｜商品管理员(product_manager):8码｜知识编辑(knowledge_editor):4码｜验收临时岗790472(acc_custom_790472):2码｜快照可用=true
+2026-10-02T15:10:58.930Z ✅ [M-00b] 探针自证：矩阵运行期间**未改动任何真实对象** — 跑前跑后一致：用户(在用 15/软删 0)、岗位名、订单 7、商品 6、发货单 0
+2026-10-02T15:10:58.931Z ❌ [M-01] 全量矩阵：发现 33 处违规 — 非持有者放行：undefined /api/admin/users（需 employee:create）→ 运营(operator)；非持有者放行：undefined /api/admin/users/{id}（需 employee:create）→ 运营(operator)；非持有者放行：undefined /api/admin/users/{id}（需 employee:create）→ 运营(operator)；非持有者放行：undefined /api/admin/workers（需 employee:create）→ 运营(operator)；非持有者放行：undefined /api/admin/customers/{id}（需 customer:create）→ 客服(customer_service)；非持有者放行：undefined /api/admin/customers/{id}（需 customer:create）→ 销售(sales)；非持有者放行：undefined /api/admin/customers/{id}（需 customer:create）→ 财务(finance)；非持有者放行：undefined /api/admin/customers/{id}（需 customer:create）→ 客服(customer_service)；非持有者放行：undefined /api/admin/customers/{id}（需 customer:create）→ 销售(sales)；非持有者放行：undefined /api/admin/customers/{id}（需 customer:create）→ 财务(finance)；非持有者放行：undefined /api/admin/customer-tags（需 customer:create）→ 客服(customer_service)；非持有者放行：undefined /api/admin/customer-tags（需 customer:create）→ 销售(sales)
+2026-10-02T15:10:58.931Z ✅ [M-02] 反证覆盖度：每行是否有「非持有者被 403」的对照 — 63/125 行有反证；62 行无（逐条列出，便于人工复核是否全员有码）
+2026-10-02T15:10:59.084Z ✅ [M-03] 服务器日志：拒绝留痕 — 命中 5 行；示例：2026-10-02 17:04:21.851 [http-nio-8080-exec-140] WARN  c.m.a.config.GlobalExceptionHandler - 权限不足: 权限不足，需要权限: inbound:view (requiredPermissi
+2026-10-02T15:10:59.085Z == 阶段7 完成：pass=4 fail=1｜矩阵 1000 格：allow=209 deny=303 无法判定=488
+2026-10-02T15:19:32.628Z == 阶段7：全量 RBAC 矩阵（坐标 main@b7fd8fa4bb） == 端点 115 个 / 权限码 23 个
+2026-10-02T15:19:36.504Z ✅ [M-00] 身份就绪（管理员 + 岗位员工） — 管理员(admin):1码｜客服(customer_service):12码｜运营(operator):26码｜销售(sales):9码｜财务(finance):9码｜商品管理员(product_manager):8码｜知识编辑(knowledge_editor):4码｜验收临时岗790472(acc_custom_790472):2码｜快照可用=true
+2026-10-02T15:20:55.570Z ✅ [M-00b] 探针自证：矩阵运行期间**未改动任何真实对象** — 跑前跑后一致：用户(在用 15/软删 0)、岗位名、订单 7、商品 6、发货单 0
+2026-10-02T15:20:55.571Z ✅ [M-01] 全量矩阵：115 端点 × 8 身份 = 920 格，**零违规** — allow=326 deny=570 无法判定=24（无法判定的格子已逐条列在 out/s7-matrix.json）
+2026-10-02T15:20:55.571Z ✅ [M-02] 反证覆盖度：每行是否有「非持有者被 403」的对照 — 109/115 行有反证；6 行无（逐条列出，便于人工复核是否全员有码）
+2026-10-02T15:20:55.730Z ✅ [M-03] 服务器日志：拒绝留痕 — 命中 5 行；示例：2026-10-02 17:04:21.851 [http-nio-8080-exec-140] WARN  c.m.a.config.GlobalExceptionHandler - 权限不足: 权限不足，需要权限: inbound:view (requiredPermissi
+2026-10-02T15:20:55.730Z == 阶段7 完成：pass=5 fail=0｜矩阵 920 格：allow=326 deny=570 无法判定=24

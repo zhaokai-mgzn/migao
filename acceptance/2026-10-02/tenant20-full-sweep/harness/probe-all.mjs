@@ -1,0 +1,18 @@
+import { createRequire } from 'node:module';
+const { chromium } = createRequire('/Users/guangzhen.zk/ai native/migao/tests/package.json')('playwright');
+const b = await chromium.launch();
+const pg = await b.newPage();
+const started = new Map(), done = new Set(), cons = [];
+pg.on('request', r => started.set(r.url(), r.method()));
+pg.on('requestfinished', r => done.add(r.url()));
+pg.on('requestfailed', r => done.add(r.url()));
+pg.on('console', m => { if (m.type() === 'error' && !m.text().includes('_next/hmr')) cons.push(m.text().slice(0,200)); });
+pg.on('pageerror', e => cons.push('PAGEERROR ' + String(e).slice(0,200)));
+await pg.goto('http://127.0.0.1:3001/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+await pg.waitForTimeout(10000);
+const pend = [...started.keys()].filter(u => !done.has(u));
+const reqs = [...started.entries()].map(([u,m]) => (done.has(u)?'✓ ':'…PENDING ') + m + ' ' + u.slice(0,110));
+console.log('== 全部请求(前15) ==\n' + reqs.slice(0,15).join('\n'));
+console.log('== PENDING 未返回 ==\n' + (pend.length ? pend.map(u=>started.get(u)+' '+u.slice(0,110)).join('\n') : '（无）'));
+console.log('== console/pageerror ==\n' + (cons.length ? [...new Set(cons)].slice(0,8).join('\n') : '（无）'));
+await b.close();

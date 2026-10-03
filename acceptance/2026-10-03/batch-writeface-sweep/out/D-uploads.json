@@ -1,0 +1,194 @@
+{
+  "records": [
+    {
+      "id": "D1.1",
+      "name": "成功路径 /files/upload：200 + 返回 URL + size 与源文件一致",
+      "status": "pass",
+      "detail": "期望 HTTP 200，data.url 非空，data.size=69 == 实测 HTTP 200 url=https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/b8027d2342e1486cab0557ae6971de0d.png size=69",
+      "evidence": [
+        "期望来源: UploadController#uploadFile → FileStorageService#upload；UploadedFileInfo{id,url,name,size,type,createdAt}",
+        "期望: HTTP 200，data.url 非空，data.size=69",
+        "实得: HTTP 200 url=https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/b8027d2342e1486cab0557ae6971de0d.png size=69",
+        "响应: {\"success\":true,\"data\":{\"id\":\"87e253b513004f5a867599f4b33f4ca4\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/b8027d2342e1486cab0557ae6971de0d.png\",\"name\":\"线②验收图.png\",\"size\":69,\"type\":\"image/png\",\"createdAt\":\"2026-10-03T13:55:21.907171\"},\"requestId\":\"req"
+      ],
+      "at": "2026-10-03 13:55:21 +08",
+      "atUtc": "2026-10-03T05:55:21.985Z"
+    },
+    {
+      "id": "D1.2",
+      "name": "成功路径：返回的 URL **可访问**且字节数与源文件一致",
+      "status": "pass",
+      "detail": "期望 URL GET 返回 200 且 字节数=69 == 实测 HTTP 200，字节数=69",
+      "evidence": [
+        "期望来源: 上传语义：返回的 URL 必须真能取回同一份内容（否则\"上传成功\"是纸面成功）",
+        "期望: URL GET 返回 200 且 字节数=69",
+        "实得: HTTP 200，字节数=69",
+        "URL: https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/b8027d2342e1486cab0557ae6971de0d.png"
+      ],
+      "at": "2026-10-03 13:55:21 +08",
+      "atUtc": "2026-10-03T05:55:21.986Z"
+    },
+    {
+      "id": "D1.3",
+      "name": "兼容端点 /upload/image 正对照：200 + url",
+      "status": "pass",
+      "detail": "期望 HTTP 200 且 data.url 非空 == 实测 HTTP 200 url=https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/7ec1ae523356417bacecadcaf48523cf.png",
+      "evidence": [
+        "期望来源: UploadController#uploadImage（兼容旧接口）返回 Map.of(\"url\", …)",
+        "期望: HTTP 200 且 data.url 非空",
+        "实得: HTTP 200 url=https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/7ec1ae523356417bacecadcaf48523cf.png",
+        "响应: {\"success\":true,\"data\":{\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/7ec1ae523356417bacecadcaf48523cf.png\"},\"requestId\":\"req_2b12a3e0485c4649\",\"timestamp"
+      ],
+      "at": "2026-10-03 13:55:22 +08",
+      "atUtc": "2026-10-03T05:55:22.065Z"
+    },
+    {
+      "id": "D1.4",
+      "name": "批量端点 /files/upload-batch 与 /upload/images 正对照：各返回 N 条 url",
+      "status": "pass",
+      "detail": "期望 upload-batch HTTP 200 且 2 条；upload/images HTTP 200 且 1 条 == 实测 upload-batch HTTP 200 条数=2；upload/images HTTP 200 条数=1",
+      "evidence": [
+        "期望来源: UploadController#uploadFiles（最多 10）/#uploadImages",
+        "期望: upload-batch HTTP 200 且 2 条；upload/images HTTP 200 且 1 条",
+        "实得: upload-batch HTTP 200 条数=2；upload/images HTTP 200 条数=1",
+        "upload-batch: {\"success\":true,\"data\":[{\"id\":\"f07797bca00f4536bb0bec033609b713\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/f0593fb6e31c43b4917ac6803c446b6e.png\",\"name\":\"线②验收批1.png\",\"size\":69,\"type\":\"image/png\",\"creat",
+        "upload/images: {\"success\":true,\"data\":{\"urls\":[\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/aa0bc9b18da248169545477133160ed0.png\"]},\"requestId\":\"req_3752f1686cd44979\",\"timest"
+      ],
+      "at": "2026-10-03 13:55:22 +08",
+      "atUtc": "2026-10-03T05:55:22.254Z"
+    },
+    {
+      "id": "D2.1",
+      "name": "空文件 ⇒ 明确拒绝（4xx）",
+      "status": "pass",
+      "detail": "期望 HTTP 4xx == 实测 HTTP 422 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"请选择要上传的文件\"},\"requestId\":\"req_6372d0ccc9c340b6\",\"timestamp\":1791006922,\"suggestion\":\"请检查必填字段是否完整，字",
+      "evidence": [
+        "期望来源: FileStorageService#validateFile: file.isEmpty() ⇒ validationError(\"请选择要上传的文件\")",
+        "期望: HTTP 4xx",
+        "实得: HTTP 422 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"请选择要上传的文件\"},\"requestId\":\"req_6372d0ccc9c340b6\",\"timestamp\":1791006922,\"suggestion\":\"请检查必填字段是否完整，字",
+        "响应: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"请选择要上传的文件\"},\"requestId\":\"req_6372d0ccc9c340b6\",\"timestamp\":1791006922,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+      ],
+      "at": "2026-10-03 13:55:26 +08",
+      "atUtc": "2026-10-03T05:55:26.268Z"
+    },
+    {
+      "id": "D2.2",
+      "name": "伪造扩展名 .exe ⇒ 明确拒绝（4xx）",
+      "status": "pass",
+      "detail": "期望 HTTP 4xx == 实测 HTTP 422 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"不支持的文件类型，仅支持 JPG、JPEG、PNG、GIF、WebP、PDF、XLSX、DOCX 格式\"},\"requestId\":\"req_cddb555ba1cf457b\",\"timesta",
+      "evidence": [
+        "期望来源: ALLOWED_EXTENSIONS 白名单（jpg/jpeg/png/gif/webp/pdf/xlsx/docx）",
+        "期望: HTTP 4xx",
+        "实得: HTTP 422 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"不支持的文件类型，仅支持 JPG、JPEG、PNG、GIF、WebP、PDF、XLSX、DOCX 格式\"},\"requestId\":\"req_cddb555ba1cf457b\",\"timesta",
+        "响应: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"不支持的文件类型，仅支持 JPG、JPEG、PNG、GIF、WebP、PDF、XLSX、DOCX 格式\"},\"requestId\":\"req_cddb555ba1cf457b\",\"timestamp\":1791006922,\"suggestion\":\"请检查必填字段是否完整"
+      ],
+      "at": "2026-10-03 13:55:26 +08",
+      "atUtc": "2026-10-03T05:55:26.269Z"
+    },
+    {
+      "id": "D2.3",
+      "name": "超限：6MB 的 .png（>5MB 图片上限）⇒ 明确拒绝",
+      "status": "pass",
+      "detail": "期望 HTTP 4xx == 实测 HTTP 422 bytes=6291525 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"文件大小不能超过 5MB\"},\"requestId\":\"req_e81b1d7666a844d8\",\"timestamp\":1791006922,\"suggestion\":\"请检查必填字段是否完",
+      "evidence": [
+        "期望来源: MAX_IMAGE_SIZE = 5MB（OssService/LocalFileStorageService 同值）",
+        "期望: HTTP 4xx",
+        "实得: HTTP 422 bytes=6291525 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"文件大小不能超过 5MB\"},\"requestId\":\"req_e81b1d7666a844d8\",\"timestamp\":1791006922,\"suggestion\":\"请检查必填字段是否完",
+        "响应: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"文件大小不能超过 5MB\"},\"requestId\":\"req_e81b1d7666a844d8\",\"timestamp\":1791006922,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+      ],
+      "at": "2026-10-03 13:55:26 +08",
+      "atUtc": "2026-10-03T05:55:26.270Z"
+    },
+    {
+      "id": "D2.4",
+      "name": "非图片内容 + .png 扩展名（内容嗅探缺失？）⇒ 实测口径登记",
+      "status": "pass",
+      "detail": "期望 HTTP 200 表示**仅按扩展名**放行（无内容嗅探）；4xx 表示有内容校验 == 实测 HTTP 200 body={\"success\":true,\"data\":{\"id\":\"45119223fc3b45cc84679728ea85767a\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/40017b28cf3546e4a02657fbe335b229.png\",\"name\"",
+      "evidence": [
+        "期望来源: validateFile 只校验扩展名 + 大小 + contentType，不做魔数校验（源码逐字）；故按实测登记",
+        "期望: HTTP 200 表示**仅按扩展名**放行（无内容嗅探）；4xx 表示有内容校验",
+        "实得: HTTP 200 body={\"success\":true,\"data\":{\"id\":\"45119223fc3b45cc84679728ea85767a\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/40017b28cf3546e4a02657fbe335b229.png\",\"name\"",
+        "伪 PNG 内容（30 字节纯文本）⇒ HTTP 200，url=https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/40017b28cf3546e4a02657fbe335b229.png",
+        "🔴 若 200：任意内容可伪装 .png 上传并公开可取（登记项，非本包判红）"
+      ],
+      "at": "2026-10-03 13:55:26 +08",
+      "atUtc": "2026-10-03T05:55:26.270Z"
+    },
+    {
+      "id": "D2.5",
+      "name": "伪 Content-Type 绕过图片 5MB 上限（.png + application/pdf + 19MB）",
+      "status": "fail",
+      "detail": "期望 4xx（不许用客户端自报的 Content-Type 放宽上限）或 200（登记为绕过） ≠ 实测 HTTP 200 bytes=19922953 body={\"success\":true,\"data\":{\"id\":\"46a2522434a54729998e593422635cef\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/cfee60b8965342a8b0fa87f5",
+      "evidence": [
+        "期望来源: OssService#validateFile：isImageType(file.getContentType()) ⇒ 上限 20MB；**Content-Type 是客户端可控** ⇒ 若 200 即上限绕过",
+        "期望: 4xx（不许用客户端自报的 Content-Type 放宽上限）或 200（登记为绕过）",
+        "实得: HTTP 200 bytes=19922953 body={\"success\":true,\"data\":{\"id\":\"46a2522434a54729998e593422635cef\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/cfee60b8965342a8b0fa87f5",
+        "响应: {\"success\":true,\"data\":{\"id\":\"46a2522434a54729998e593422635cef\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/cfee60b8965342a8b0fa87f560bdaec1.png\",\"name\":\"big19.png\",\"size\":19922953,\"type\":\"application/p"
+      ],
+      "at": "2026-10-03 13:55:26 +08",
+      "atUtc": "2026-10-03T05:55:26.271Z"
+    },
+    {
+      "id": "D3.1",
+      "name": "文件名穿越 ../../l2evil.png：不得写到 uploads 之外（存储名走 UUID）",
+      "status": "pass",
+      "detail": "期望 落盘文件名不含 `..`；uploads 目录内无逃逸文件 == 实测 HTTP 200 返回 name=../../l2evil.png url=https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/8f131db0197b42a7bd179e72c125928d.png；逃逸文件=[]",
+      "evidence": [
+        "期望来源: LocalFileStorageService：storedFilename = UUID + ext（用户文件名只进 name 字段）；OssService：objectKey 亦为 UUID",
+        "期望: 落盘文件名不含 `..`；uploads 目录内无逃逸文件",
+        "实得: HTTP 200 返回 name=../../l2evil.png url=https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/8f131db0197b42a7bd179e72c125928d.png；逃逸文件=[]",
+        "新落盘文件: []"
+      ],
+      "at": "2026-10-03 13:55:26 +08",
+      "atUtc": "2026-10-03T05:55:26.432Z"
+    },
+    {
+      "id": "D3.2",
+      "name": "directory 参数穿越 ../../l2evil：存储实现必须拦住（本地实现 safeResolve / OSS 实现无校验）",
+      "status": "fail",
+      "detail": "期望 HTTP 4xx（干净拒绝，本地实现是 422 \"非法文件路径\"） ≠ 实测 HTTP 500 url=undefined body={\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestId\":\"req_eea03c71fba445f0\",\"timestamp\":1791006926}",
+      "evidence": [
+        "期望来源: LocalFileStorageService#safeResolve：normalize 后必须 startsWith(uploads 根) 否则 validationError(\"非法文件路径\")；**OssService#generateObjectKey 无此校验**（源码逐字）",
+        "期望: HTTP 4xx（干净拒绝，本地实现是 422 \"非法文件路径\"）",
+        "实得: HTTP 500 url=undefined body={\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestId\":\"req_eea03c71fba445f0\",\"timestamp\":1791006926}",
+        "响应: {\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestId\":\"req_eea03c71fba445f0\",\"timestamp\":1791006926}"
+      ],
+      "at": "2026-10-03 13:55:26 +08",
+      "atUtc": "2026-10-03T05:55:26.433Z"
+    },
+    {
+      "id": "D4.1",
+      "name": "批量部分失败（第 2 个非法）：第 1 个是否已落库/落盘 —— 如实登记语义",
+      "status": "pass",
+      "detail": "期望 若 HTTP 4xx/5xx 但第 1 个已落盘 ⇒ 「无事务的逐文件循环」语义（登记）；若整体回滚 ⇒ 零残留 == 实测 HTTP 422 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"不支持的文件类型，仅支持 JPG、JPEG、PNG、GIF、WebP、PDF、XLSX、DOCX 格式\"},\"requestId\":\"req_88b1e5e6f8da45e4\",\"timestamp\":1791006926,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}；新落盘文件=[]",
+      "evidence": [
+        "期望来源: UploadController#uploadFiles：for 循环逐个 upload（**无事务**，源码逐字）⇒ 预期\"先成功的已落盘\"",
+        "期望: 若 HTTP 4xx/5xx 但第 1 个已落盘 ⇒ 「无事务的逐文件循环」语义（登记）；若整体回滚 ⇒ 零残留",
+        "实得: HTTP 422 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"不支持的文件类型，仅支持 JPG、JPEG、PNG、GIF、WebP、PDF、XLSX、DOCX 格式\"},\"requestId\":\"req_88b1e5e6f8da45e4\",\"timestamp\":1791006926,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}；新落盘文件=[]",
+        "🔴 若 HTTP 4xx 而第 1 个已落盘 ⇒ 部分成功无语义反馈（登记项）"
+      ],
+      "at": "2026-10-03 13:55:26 +08",
+      "atUtc": "2026-10-03T05:55:26.566Z"
+    },
+    {
+      "id": "D5.1",
+      "name": "存储隔离：上传落点不得是公共根（本地落 uploads/{directory}/，远端落 {directory}/日期/uuid）",
+      "status": "pass",
+      "detail": "期望 每个 URL 都含 directory 段（images/…），不是裸文件名 == 实测 样本 URL: [\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/b8027d2342e1486cab0557ae6971de0d.png\",\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/7ec1ae523356417bacecadcaf48523cf.png\",\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/f0593fb6e31c43b4917ac6803c446b6e.png\",\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/e028c5c3b9824c50a71cf3fe3b07f444.png\",\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/aa0bc9b18da248169545477133160ed0.png\"]",
+      "evidence": [
+        "期望来源: OssService#generateObjectKey = `{directory}/{yyyy/MM/dd}/{uuid}{ext}`；LocalFileStorageService url = /api/files/static/{directory}/{uuid}{ext}",
+        "期望: 每个 URL 都含 directory 段（images/…），不是裸文件名",
+        "实得: 样本 URL: [\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/b8027d2342e1486cab0557ae6971de0d.png\",\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/7ec1ae523356417bacecadcaf48523cf.png\",\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/f0593fb6e31c43b4917ac6803c446b6e.png\",\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/e028c5c3b9824c50a71cf3fe3b07f444.png\",\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/aa0bc9b18da248169545477133160ed0.png\"]",
+        "共 8 个 URL"
+      ],
+      "at": "2026-10-03 13:55:26 +08",
+      "atUtc": "2026-10-03T05:55:26.567Z"
+    }
+  ],
+  "summary": {
+    "pass": 11,
+    "fail": 2,
+    "skip": 0,
+    "total": 13
+  }
+}

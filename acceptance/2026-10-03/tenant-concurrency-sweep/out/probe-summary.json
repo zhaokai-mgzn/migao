@@ -1,0 +1,15 @@
+{
+  "flip": false,
+  "n": 120,
+  "conc": 60,
+  "pass": 4,
+  "fail": 0,
+  "skip": 0,
+  "total": 4,
+  "sweep": {
+    "leaked": 0,
+    "nonOk": 0,
+    "checked": 4106,
+    "n": 114
+  }
+}

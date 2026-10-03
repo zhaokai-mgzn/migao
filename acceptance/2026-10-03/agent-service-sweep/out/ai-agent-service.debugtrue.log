@@ -1,0 +1,240 @@
+2026-10-03 13:44:18.187 | INFO     | app.utils.database:<module>:32 - Database engine created with NullPool (development mode)
+2026-10-03 13:44:21.220 | INFO     | app.agents.agent_config:register_agent:85 - [AgentConfig] Registered: mibao (米宝) | skills=['order', 'product', 'aftersales', 'customer', 'staff', 'data', 'knowledge'] fallback=general roles=10
+2026-10-03 13:44:21.220 | INFO     | app.agents.agent_config:register_agent:85 - [AgentConfig] Registered: xiaobu (小布) | skills=['customer_order', 'customer_product', 'customer_quote', 'customer_aftersales', 'customer_knowledge'] fallback=customer_general roles=1
+2026-10-03 13:44:21.336 | INFO     | app.log_config:setup_logging:43 - Logging system initialized (debug=True)
+2026-10-03 13:44:21.338 | INFO     | app.main:create_app:179 - CORS allowed origins: ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://localhost:5173', 'http://127.0.0.1:5173']
+INFO:     Started server process [60599]
+INFO:     Waiting for application startup.
+2026-10-03 13:44:21.400 | INFO     | app.main:lifespan:91 - Starting ai-agent-service v1.0.0
+2026-10-03 13:44:21.401 | INFO     | app.main:lifespan:92 - Environment: development
+2026-10-03 13:44:21,483 INFO sqlalchemy.engine.Engine select pg_catalog.version()
+2026-10-03 13:44:21,484 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-10-03 13:44:21,521 INFO sqlalchemy.engine.Engine select current_schema()
+2026-10-03 13:44:21,521 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-10-03 13:44:21,565 INFO sqlalchemy.engine.Engine show standard_conforming_strings
+2026-10-03 13:44:21,565 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-10-03 13:44:21,598 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-10-03 13:44:21,600 INFO sqlalchemy.engine.Engine SELECT 1
+2026-10-03 13:44:21,600 INFO sqlalchemy.engine.Engine [generated in 0.00064s] ()
+2026-10-03 13:44:21,633 INFO sqlalchemy.engine.Engine COMMIT
+2026-10-03 13:44:21.659 | INFO     | app.utils.database:init_db:96 - Database connection initialized successfully
+2026-10-03 13:44:21.659 | INFO     | app.main:lifespan:97 - Database connection initialized
+2026-10-03 13:44:21.739 | INFO     | app.utils.redis_client:init_redis:45 - [redis] Connected to Redis | url=redis://:Redis2026Migao!Secure@r-bp162hozkjd55e18rbpd.redis.rds.aliyuncs.com:6379/0
+2026-10-03 13:44:21.739 | INFO     | app.main:lifespan:106 - Redis connection initialized
+2026-10-03 13:44:21.739 | INFO     | app.main:lifespan:113 - AI Agent Service started successfully
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+INFO:     127.0.0.1:62177 - "GET /health HTTP/1.1" 200 OK
+2026-10-03 13:44:30,438 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-10-03 13:44:30,438 INFO sqlalchemy.engine.Engine SELECT 1
+2026-10-03 13:44:30,438 INFO sqlalchemy.engine.Engine [cached since 8.839s ago] ()
+2026-10-03 13:44:30,475 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:     127.0.0.1:62178 - "GET /ready HTTP/1.1" 200 OK
+2026-10-03 13:44:30.527 | INFO     | app.middleware.logging_middleware:dispatch:39 - [dd23977d] GET /api/chat/nonexistent-endpoint-xyz started | client=127.0.0.1
+2026-10-03 13:44:30.530 | INFO     | app.middleware.logging_middleware:dispatch:48 - [dd23977d] GET /api/chat/nonexistent-endpoint-xyz completed | status=404 | duration=2.2ms
+INFO:     127.0.0.1:62177 - "GET /api/chat/nonexistent-endpoint-xyz HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62178 - "DELETE /health HTTP/1.1" 405 Method Not Allowed
+2026-10-03 13:44:30.565 | INFO     | app.middleware.logging_middleware:dispatch:39 - [993228eb] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:30.585 | WARNING  | app.utils.auth:get_current_user:342 - No auth token in DEBUG mode, using CUSTOMER identity (xiaobu)
+2026-10-03 13:44:30.586 | DEBUG    | app.api.chat:list_sessions:2413 - [chat/sessions] Listing | tenant=1 user=debug_customer_1 page=1 size=20
+2026-10-03 13:44:30,660 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-10-03 13:44:30,664 INFO sqlalchemy.engine.Engine 
+                    SELECT 
+                        s.id, s.tenant_id, s.customer_id, s.metadata,
+                        s.created_at, s.updated_at,
+                        COUNT(m.id) as message_count,
+                        s.status,
+                        (
+                            SELECT SUBSTRING(sm.content FROM 1 FOR 100)
+                            FROM session_messages sm
+                            WHERE sm.session_id = s.id
+                            ORDER BY sm.created_at DESC
+                            LIMIT 1
+                        ) as last_message,
+                        u.nickname as customer_name
+                    FROM sessions s
+                    LEFT JOIN session_messages m ON s.id = m.session_id
+                    LEFT JOIN users u ON s.customer_id = u.id
+                    WHERE s.tenant_id = $1 AND s.customer_id = $2
+                    
+                    GROUP BY s.id, s.tenant_id, s.customer_id, s.metadata,
+                             s.created_at, s.updated_at, s.status, u.nickname
+                    ORDER BY s.updated_at DESC
+                    LIMIT $3 OFFSET $4
+                
+2026-10-03 13:44:30,664 INFO sqlalchemy.engine.Engine [generated in 0.00049s] (1, 'debug_customer_1', 20, 0)
+2026-10-03 13:44:30,721 INFO sqlalchemy.engine.Engine ROLLBACK
+2026-10-03 13:44:30.752 | INFO     | app.middleware.logging_middleware:dispatch:48 - [993228eb] GET /api/chat/sessions completed | status=200 | duration=186.7ms
+INFO:     127.0.0.1:62177 - "GET /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:30.759 | INFO     | app.middleware.logging_middleware:dispatch:39 - [2a34914d] GET /api/chat/sessions/latest started | client=127.0.0.1
+2026-10-03 13:44:30.760 | WARNING  | app.utils.auth:get_current_user:342 - No auth token in DEBUG mode, using CUSTOMER identity (xiaobu)
+2026-10-03 13:44:30,823 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-10-03 13:44:30,824 INFO sqlalchemy.engine.Engine 
+                    SELECT 
+                        s.id, s.tenant_id, s.customer_id, s.metadata,
+                        s.created_at, s.updated_at,
+                        COUNT(m.id) as message_count,
+                        s.status,
+                        (
+                            SELECT SUBSTRING(sm.content FROM 1 FOR 100)
+                            FROM session_messages sm
+                            WHERE sm.session_id = s.id
+                            ORDER BY sm.created_at DESC
+                            LIMIT 1
+                        ) as last_message,
+                        u.nickname as customer_name
+                    FROM sessions s
+                    LEFT JOIN session_messages m ON s.id = m.session_id
+                    LEFT JOIN users u ON s.customer_id = u.id
+                    WHERE s.tenant_id = $1 AND s.customer_id = $2
+                     AND s.status = $3
+                    GROUP BY s.id, s.tenant_id, s.customer_id, s.metadata,
+                             s.created_at, s.updated_at, s.status, u.nickname
+                    ORDER BY s.updated_at DESC
+                    LIMIT $4 OFFSET $5
+                
+2026-10-03 13:44:30,824 INFO sqlalchemy.engine.Engine [generated in 0.00018s] (1, 'debug_customer_1', 'active', 1, 0)
+2026-10-03 13:44:30,869 INFO sqlalchemy.engine.Engine ROLLBACK
+2026-10-03 13:44:30.893 | INFO     | app.middleware.logging_middleware:dispatch:48 - [2a34914d] GET /api/chat/sessions/latest completed | status=200 | duration=133.4ms
+INFO:     127.0.0.1:62178 - "GET /api/chat/sessions/latest HTTP/1.1" 200 OK
+2026-10-03 13:44:30.901 | INFO     | app.middleware.logging_middleware:dispatch:39 - [4f214a0f] GET /api/chat/quick-actions started | client=127.0.0.1
+2026-10-03 13:44:30.903 | WARNING  | app.utils.auth:get_current_user:342 - No auth token in DEBUG mode, using CUSTOMER identity (xiaobu)
+2026-10-03 13:44:30.903 | DEBUG    | app.api.chat:get_quick_actions:2695 - [chat/quick-actions] Fetching | tenant=1
+2026-10-03 13:44:30.904 | INFO     | app.middleware.logging_middleware:dispatch:48 - [4f214a0f] GET /api/chat/quick-actions completed | status=200 | duration=2.2ms
+INFO:     127.0.0.1:62177 - "GET /api/chat/quick-actions HTTP/1.1" 200 OK
+2026-10-03 13:44:30.910 | INFO     | app.middleware.logging_middleware:dispatch:39 - [53ef8c8c] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:30.917 | WARNING  | app.utils.auth:verify_jwt_token:260 - JWT verification failed: invalid token - Invalid header padding
+2026-10-03 13:44:30.920 | INFO     | app.middleware.logging_middleware:dispatch:48 - [53ef8c8c] GET /api/chat/sessions completed | status=401 | duration=9.5ms
+INFO:     127.0.0.1:62178 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:44:31.327 | INFO     | app.middleware.logging_middleware:dispatch:39 - [95a3aacd] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:31.333 | WARNING  | app.utils.auth:verify_jwt_token:248 - JWT verification failed: token has expired
+2026-10-03 13:44:31.334 | INFO     | app.middleware.logging_middleware:dispatch:48 - [95a3aacd] GET /api/chat/sessions completed | status=401 | duration=6.4ms
+INFO:     127.0.0.1:62177 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:44:31.764 | INFO     | app.middleware.logging_middleware:dispatch:39 - [9b5fbd3b] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:31.766 | WARNING  | app.utils.auth:verify_jwt_token:260 - JWT verification failed: invalid token - Signature verification failed
+2026-10-03 13:44:31.766 | INFO     | app.middleware.logging_middleware:dispatch:48 - [9b5fbd3b] GET /api/chat/sessions completed | status=401 | duration=1.8ms
+INFO:     127.0.0.1:62178 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:44:32.174 | INFO     | app.middleware.logging_middleware:dispatch:39 - [7182dbc2] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:32.176 | WARNING  | app.utils.auth:verify_jwt_token:260 - JWT verification failed: invalid token - Audience doesn't match: expected 'migao', got ['not-migao']
+2026-10-03 13:44:32.176 | INFO     | app.middleware.logging_middleware:dispatch:48 - [7182dbc2] GET /api/chat/sessions completed | status=401 | duration=2.2ms
+INFO:     127.0.0.1:62177 - "GET /api/chat/sessions HTTP/1.1" 401 Unauthorized
+2026-10-03 13:44:32.566 | INFO     | app.middleware.logging_middleware:dispatch:39 - [2dc3792f] GET /api/chat/sessions started | client=127.0.0.1
+2026-10-03 13:44:32.572 | DEBUG    | app.api.chat:list_sessions:2413 - [chat/sessions] Listing | tenant=20 user=probe_line1_pos page=1 size=20
+2026-10-03 13:44:32,659 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-10-03 13:44:32,662 INFO sqlalchemy.engine.Engine 
+                    SELECT 
+                        s.id, s.tenant_id, s.customer_id, s.metadata,
+                        s.created_at, s.updated_at,
+                        COUNT(m.id) as message_count,
+                        s.status,
+                        (
+                            SELECT SUBSTRING(sm.content FROM 1 FOR 100)
+                            FROM session_messages sm
+                            WHERE sm.session_id = s.id
+                            ORDER BY sm.created_at DESC
+                            LIMIT 1
+                        ) as last_message,
+                        u.nickname as customer_name
+                    FROM sessions s
+                    LEFT JOIN session_messages m ON s.id = m.session_id
+                    LEFT JOIN users u ON s.customer_id = u.id
+                    WHERE s.tenant_id = $1 AND s.customer_id = $2
+                    
+                    GROUP BY s.id, s.tenant_id, s.customer_id, s.metadata,
+                             s.created_at, s.updated_at, s.status, u.nickname
+                    ORDER BY s.updated_at DESC
+                    LIMIT $3 OFFSET $4
+                
+2026-10-03 13:44:32,662 INFO sqlalchemy.engine.Engine [cached since 1.998s ago] (20, 'probe_line1_pos', 20, 0)
+2026-10-03 13:44:32,717 INFO sqlalchemy.engine.Engine ROLLBACK
+2026-10-03 13:44:32.752 | INFO     | app.middleware.logging_middleware:dispatch:48 - [2dc3792f] GET /api/chat/sessions completed | status=200 | duration=185.1ms
+INFO:     127.0.0.1:62178 - "GET /api/chat/sessions HTTP/1.1" 200 OK
+2026-10-03 13:44:32.761 | INFO     | app.middleware.logging_middleware:dispatch:39 - [516c1025] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:44:32.769 | WARNING  | app.utils.auth:verify_service_token:130 - Service token authentication failed: missing X-Service-Token header
+2026-10-03 13:44:32.770 | INFO     | app.middleware.logging_middleware:dispatch:48 - [516c1025] GET /api/internal/tools completed | status=401 | duration=8.8ms
+INFO:     127.0.0.1:62177 - "GET /api/internal/tools HTTP/1.1" 401 Unauthorized
+2026-10-03 13:44:32.774 | INFO     | app.middleware.logging_middleware:dispatch:39 - [90f2675c] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:44:32.775 | WARNING  | app.utils.auth:verify_service_token:163 - Service token authentication failed: invalid token provided
+2026-10-03 13:44:32.776 | INFO     | app.middleware.logging_middleware:dispatch:48 - [90f2675c] GET /api/internal/tools completed | status=401 | duration=1.8ms
+INFO:     127.0.0.1:62178 - "GET /api/internal/tools HTTP/1.1" 401 Unauthorized
+2026-10-03 13:44:32.782 | INFO     | app.middleware.logging_middleware:dispatch:39 - [89099ead] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: product_search
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: product_detail
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: logistics_track
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: customer_logistics_track
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: knowledge_search
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: order_query
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: customer_order_query
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: customer_address_query
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: order_manage
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: order_create
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: processing_order_generate
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: processing_order_query
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: processing_order_update
+2026-10-03 13:44:32.784 | INFO     | app.tools.registry:register:358 - Tool registered: product_manage
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: inventory_manage
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: processing_item_query
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: customer_manage
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: employee_manage
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: role_manage
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: dashboard_stats
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: finance_api
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: after_sales_manage
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: aftersale_create
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: aftersale_query
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: notification_manage
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: settings_manage
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: session_manage
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: category_manage
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: processing_item_manage
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: product_update
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: product_batch_update
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: sku_update
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: interact
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: validate_input
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: curtain_calc
+2026-10-03 13:44:32.785 | INFO     | app.tools.registry:register:358 - Tool registered: production_progress_query
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: piecework_query
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: production_worklog_query
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: payment_qrcode_query
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: batch_stock_query
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: stock_ledger_query
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: inbound_order_query
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: operation_catalog_query
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: briefing_query
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: craft_calc_config_query
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: processing_order_set_query
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: craft_config_query
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: image_recognize
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:register:358 - Tool registered: nav_guide
+2026-10-03 13:44:32.786 | INFO     | app.tools.registry:create_default_registry:807 - Default registry created with 49 tools
+2026-10-03 13:44:32.791 | INFO     | app.middleware.logging_middleware:dispatch:48 - [89099ead] GET /api/internal/tools completed | status=200 | duration=8.1ms
+INFO:     127.0.0.1:62177 - "GET /api/internal/tools HTTP/1.1" 200 OK
+2026-10-03 13:44:32.799 | INFO     | app.middleware.logging_middleware:dispatch:39 - [b91ddc34] POST /api/internal/tools/execute started | client=127.0.0.1
+2026-10-03 13:44:32.804 | INFO     | app.middleware.logging_middleware:dispatch:48 - [b91ddc34] POST /api/internal/tools/execute completed | status=403 | duration=4.4ms
+INFO:     127.0.0.1:62178 - "POST /api/internal/tools/execute HTTP/1.1" 403 Forbidden
+2026-10-03 13:44:32.810 | INFO     | app.middleware.logging_middleware:dispatch:39 - [fe884bb7] POST /api/internal/tools/execute started | client=127.0.0.1
+2026-10-03 13:44:32.811 | INFO     | app.middleware.logging_middleware:dispatch:48 - [fe884bb7] POST /api/internal/tools/execute completed | status=404 | duration=1.2ms
+INFO:     127.0.0.1:62177 - "POST /api/internal/tools/execute HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62178 - "GET /health HTTP/1.1" 200 OK
+2026-10-03 13:44:32,901 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-10-03 13:44:32,902 INFO sqlalchemy.engine.Engine SELECT 1
+2026-10-03 13:44:32,902 INFO sqlalchemy.engine.Engine [cached since 11.3s ago] ()
+2026-10-03 13:44:32,946 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:     127.0.0.1:62177 - "GET /ready HTTP/1.1" 200 OK
+2026-10-03 13:44:33.017 | INFO     | app.middleware.logging_middleware:dispatch:39 - [e7885cde] GET /openapi.json started | client=127.0.0.1
+2026-10-03 13:44:33.245 | INFO     | app.middleware.logging_middleware:dispatch:48 - [e7885cde] GET /openapi.json completed | status=200 | duration=227.4ms
+INFO:     127.0.0.1:62178 - "GET /openapi.json HTTP/1.1" 200 OK
+2026-10-03 13:44:33.269 | INFO     | app.middleware.logging_middleware:dispatch:39 - [02ad1a39] GET /api/internal/tools started | client=127.0.0.1
+2026-10-03 13:44:33.270 | WARNING  | app.utils.auth:verify_service_token:163 - Service token authentication failed: invalid token provided
+2026-10-03 13:44:33.271 | INFO     | app.middleware.logging_middleware:dispatch:48 - [02ad1a39] GET /api/internal/tools completed | status=401 | duration=1.9ms
+INFO:     127.0.0.1:62177 - "GET /api/internal/tools HTTP/1.1" 401 Unauthorized
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-10-03 13:44:51.095 | INFO     | app.main:lifespan:128 - Shutting down AI Agent Service
+2026-10-03 13:44:51.097 | INFO     | app.utils.redis_client:close_redis:62 - Redis connection pool closed
+2026-10-03 13:44:51.097 | INFO     | app.main:lifespan:133 - Redis connection closed
+2026-10-03 13:44:51.100 | INFO     | app.utils.database:close_db:109 - Database connection closed
+2026-10-03 13:44:51.100 | INFO     | app.main:lifespan:140 - Database connection closed
+INFO:     Application shutdown complete.
+INFO:     Finished server process [60599]

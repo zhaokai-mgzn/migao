@@ -1,0 +1,83 @@
+2026-10-03T03:45:41.790Z [subject] A phone=13870217889 tenantId=20 tenantName=米高POC演示布艺 role=admin user.id=9068a79a939c9be846a605dc78dc30b6
+2026-10-03T03:45:41.949Z [subject] B phone=13797101248 tenantId=21 tenantName=POC彩排5605 role=admin user.id=2047a4f6803b8bc14b11c77d8c20b4cd
+2026-10-03T03:45:42.045Z [subject] P phone=13456800919 tenantId=-1 tenantName=米高平台管理 role=super_admin user.id=super-admin-001
+2026-10-03T03:45:42.183Z [subject] C phone=13800138000 tenantId=1 tenantName=词元通达 role=admin user.id=user_admin_001
+2026-10-03T03:45:42.183Z ✅ [PC-0] 主体登录 — A(20/13870217889) B(21/13797101248) P(-1/13456800919) C(1/13800138000) 均登录成功
+2026-10-03T03:45:59.278Z ✅ [INV] 资源面枚举 — 枚举 27 个有 tenant 维度的资源（A=20 有数据 21，B=21 有数据 14）
+2026-10-03T03:46:01.145Z ✅ [R-products] 跨租户读·商品 — 2 例全部拒绝（404/404），无 B 数据泄漏；正对照 200
+2026-10-03T03:46:01.945Z ✅ [R-customers] 跨租户读·客户 — 2 例全部拒绝（404/404），无 B 数据泄漏；正对照 200
+2026-10-03T03:46:02.476Z ⏭️ [R-customer_tags] 跨租户读·客户标签 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-customer_tags）+ 列表越界（L-customer_tags）覆盖
+2026-10-03T03:46:03.002Z ⏭️ [R-categories] 跨租户读·商品分类 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-categories）+ 列表越界（L-categories）覆盖
+2026-10-03T03:46:03.543Z ⏭️ [R-operations] 跨租户读·工序库 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-operations）+ 列表越界（L-operations）覆盖
+2026-10-03T03:46:04.103Z ⏭️ [R-routings] 跨租户读·工艺路线 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-routings）+ 列表越界（L-routings）覆盖
+2026-10-03T03:46:04.660Z ⏭️ [R-route_rules] 跨租户读·路线规则 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-route_rules）+ 列表越界（L-route_rules）覆盖
+2026-10-03T03:46:05.087Z ⏭️ [R-op_positions] 跨租户读·价目矩阵行 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-op_positions）+ 列表越界（L-op_positions）覆盖
+2026-10-03T03:46:05.540Z ⏭️ [R-fee_combos] 跨租户读·加工费组合 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-fee_combos）+ 列表越界（L-fee_combos）覆盖
+2026-10-03T03:46:06.359Z ✅ [R-processing_items] 跨租户读·加工项 — 3 例全部拒绝（404/404/404），无 B 数据泄漏；正对照 200
+2026-10-03T03:46:07.213Z ✅ [R-processing_categories] 跨租户读·加工分类 — 3 例全部拒绝（404/404/404），无 B 数据泄漏；正对照 200
+2026-10-03T03:46:07.962Z ✅ [R-orders] 跨租户读·订单 — 2 例全部拒绝（404/404），无 B 数据泄漏；正对照 200
+2026-10-03T03:46:08.449Z ⏭️ [R-processing_orders] 跨租户读·加工单 — 租户21（B）该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段
+2026-10-03T03:46:08.672Z ✅ [R-processing_orders] 跨租户读·加工单 — 1 例全部拒绝（404），无 B 数据泄漏；正对照 200
+2026-10-03T03:46:09.123Z ⏭️ [R-inbound_orders] 跨租户读·入库单 — 租户21（B）该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段
+2026-10-03T03:46:09.308Z ✅ [R-inbound_orders] 跨租户读·入库单 — 1 例全部拒绝（404），无 B 数据泄漏；正对照 200
+2026-10-03T03:46:09.802Z ⏭️ [R-shipments] 跨租户读·发货单 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-shipments）+ 列表越界（L-shipments）覆盖
+2026-10-03T03:46:10.255Z ⏭️ [R-stock_batches] 跨租户读·库存批次 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-stock_batches）+ 列表越界（L-stock_batches）覆盖
+2026-10-03T03:46:10.770Z ⏭️ [R-stock_ledger] 跨租户读·库存流水 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-stock_ledger）+ 列表越界（L-stock_ledger）覆盖
+2026-10-03T03:46:11.295Z ⏭️ [R-finance_tx] 跨租户读·财务流水 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-finance_tx）+ 列表越界（L-finance_tx）覆盖
+2026-10-03T03:46:11.770Z ⏭️ [R-notif_templates] 跨租户读·通知模板 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-notif_templates）+ 列表越界（L-notif_templates）覆盖
+2026-10-03T03:46:12.412Z ⏭️ [R-notif_rules] 跨租户读·通知规则 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-notif_rules）+ 列表越界（L-notif_rules）覆盖
+2026-10-03T03:46:12.986Z ⏭️ [R-knowledge_cards] 跨租户读·知识卡片 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-knowledge_cards）+ 列表越界（L-knowledge_cards）覆盖
+2026-10-03T03:46:13.860Z ✅ [R-roles] 跨租户读·角色 — 3 例全部拒绝（404/404/404），无 B 数据泄漏；正对照 200
+2026-10-03T03:46:15.396Z ✅ [R-after_sales] 跨租户读·售后工单 — 2 例全部拒绝（404/404），无 B 数据泄漏；正对照 200
+2026-10-03T03:46:16.364Z ✅ [R-users] 跨租户读·员工用户 — 3 例全部拒绝（404/404/404），无 B 数据泄漏；正对照 200
+2026-10-03T03:46:16.890Z ⏭️ [R-agent_sessions] 跨租户读·客服会话 — 租户21（B）该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段
+2026-10-03T03:46:16.890Z ⏭️ [R-agent_sessions] 跨租户读·客服会话 — 🔶探针失效跳过：正对照（A 打自己 id=无）未返回 200，实测 undefined ⇒ 本资源读面**不可判**（不记为通过）
+2026-10-03T03:46:17.379Z ⏭️ [R-employees] 跨租户读·客服员工 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-employees）+ 列表越界（L-employees）覆盖
+2026-10-03T03:46:18.026Z ⏭️ [R-remnants] 跨租户读·布头余料 — 该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-remnants）+ 列表越界（L-remnants）覆盖
+2026-10-03T03:46:19.927Z ✅ [L-products] 列表越界·商品 — A 列表 ∩ B 全量 = ∅（A 侧 35 条 vs B 侧 1 条）
+2026-10-03T03:46:20.291Z ✅ [L-customers] 列表越界·客户 — A 列表 ∩ B 全量 = ∅（A 侧 16 条 vs B 侧 1 条）
+2026-10-03T03:46:20.729Z ✅ [L-customer_tags] 列表越界·客户标签 — A 列表 ∩ B 全量 = ∅（A 侧 1 条 vs B 侧 0 条）
+2026-10-03T03:46:21.095Z ✅ [L-categories] 列表越界·商品分类 — A 列表 ∩ B 全量 = ∅（A 侧 32 条 vs B 侧 2 条）
+2026-10-03T03:46:21.558Z ✅ [L-operations] 列表越界·工序库 — A 列表 ∩ B 全量 = ∅（A 侧 40 条 vs B 侧 40 条）
+2026-10-03T03:46:21.985Z ✅ [L-routings] 列表越界·工艺路线 — A 列表 ∩ B 全量 = ∅（A 侧 2 条 vs B 侧 2 条）
+2026-10-03T03:46:22.409Z ✅ [L-route_rules] 列表越界·路线规则 — A 列表 ∩ B 全量 = ∅（A 侧 26 条 vs B 侧 26 条）
+2026-10-03T03:46:22.760Z ✅ [L-op_positions] 列表越界·价目矩阵行 — A 列表 ∩ B 全量 = ∅（A 侧 29 条 vs B 侧 29 条）
+2026-10-03T03:46:23.223Z ✅ [L-fee_combos] 列表越界·加工费组合 — A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱
+2026-10-03T03:46:23.640Z ✅ [L-processing_items] 列表越界·加工项 — A 列表 ∩ B 全量 = ∅（A 侧 17 条 vs B 侧 17 条）
+2026-10-03T03:46:24.090Z ✅ [L-processing_categories] 列表越界·加工分类 — A 列表 ∩ B 全量 = ∅（A 侧 3 条 vs B 侧 2 条）
+2026-10-03T03:46:25.051Z ✅ [L-orders] 列表越界·订单 — A 列表 ∩ B 全量 = ∅（A 侧 359 条 vs B 侧 1 条）
+2026-10-03T03:46:25.457Z ✅ [L-processing_orders] 列表越界·加工单 — A 列表 ∩ B 全量 = ∅（A 侧 100 条 vs B 侧 0 条）
+2026-10-03T03:46:25.829Z ✅ [L-inbound_orders] 列表越界·入库单 — A 列表 ∩ B 全量 = ∅（A 侧 5 条 vs B 侧 0 条）
+2026-10-03T03:46:26.350Z ✅ [L-shipments] 列表越界·发货单 — A 列表 ∩ B 全量 = ∅（A 侧 1 条 vs B 侧 0 条）
+2026-10-03T03:46:26.776Z ✅ [L-stock_batches] 列表越界·库存批次 — A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱
+2026-10-03T03:46:27.205Z ✅ [L-stock_ledger] 列表越界·库存流水 — A 列表 ∩ B 全量 = ∅（A 侧 385 条 vs B 侧 0 条）
+2026-10-03T03:46:27.822Z ✅ [L-finance_tx] 列表越界·财务流水 — A 列表 ∩ B 全量 = ∅（A 侧 376 条 vs B 侧 1 条）
+2026-10-03T03:46:28.188Z ✅ [L-notif_templates] 列表越界·通知模板 — A 列表 ∩ B 全量 = ∅（A 侧 4 条 vs B 侧 0 条）
+2026-10-03T03:46:28.863Z ✅ [L-notif_rules] 列表越界·通知规则 — A 列表 ∩ B 全量 = ∅（A 侧 4 条 vs B 侧 0 条）
+2026-10-03T03:46:29.328Z ✅ [L-knowledge_cards] 列表越界·知识卡片 — A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱
+2026-10-03T03:46:29.874Z ✅ [L-roles] 列表越界·角色 — A 列表 ∩ B 全量 = ∅（A 侧 10 条 vs B 侧 7 条）
+2026-10-03T03:46:30.352Z ✅ [L-after_sales] 列表越界·售后工单 — A 列表 ∩ B 全量 = ∅（A 侧 5 条 vs B 侧 1 条）
+2026-10-03T03:46:31.669Z ✅ [L-users] 列表越界·员工用户 — A 列表 ∩ B 全量 = ∅（A 侧 14 条 vs B 侧 2 条）
+2026-10-03T03:46:32.095Z ✅ [L-agent_sessions] 列表越界·客服会话 — A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱
+2026-10-03T03:46:32.516Z ✅ [L-employees] 列表越界·客服员工 — A 列表 ∩ B 全量 = ∅（A 侧 1 条 vs B 侧 0 条）
+2026-10-03T03:46:32.938Z ✅ [L-remnants] 列表越界·布头余料 — A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱
+2026-10-03T03:46:34.556Z ✅ [WT-products] 跨租户写·商品 — 拒绝 404，且库行逐字段未变（unchanged=true）
+2026-10-03T03:46:36.385Z ✅ [WT-customers] 跨租户写·客户 — 拒绝 404，且库行逐字段未变（unchanged=true）
+2026-10-03T03:46:37.013Z ⏭️ [WT-customer_tags] 跨租户写·客户标签 — B 侧无存活行 ⇒ 无对象可打
+2026-10-03T03:46:38.529Z ✅ [WT-categories] 跨租户写·商品分类 — 拒绝 404，且库行逐字段未变（unchanged=true）
+2026-10-03T03:46:40.020Z ✅ [WT-operations] 跨租户写·工序库 — 拒绝 404，且库行逐字段未变（unchanged=true）
+2026-10-03T03:46:41.885Z ✅ [WT-routings] 跨租户写·工艺路线 — 拒绝 404，且库行逐字段未变（unchanged=true）
+2026-10-03T03:46:43.344Z ✅ [WT-route_rules] 跨租户写·路线规则 — 拒绝 404，且库行逐字段未变（unchanged=true）
+2026-10-03T03:46:45.008Z ✅ [WT-op_positions] 跨租户写·价目矩阵行 — 拒绝 404，且库行逐字段未变（unchanged=true）
+2026-10-03T03:46:45.662Z ⏭️ [WT-fee_combos] 跨租户写·加工费组合 — B 侧无存活行 ⇒ 无对象可打
+2026-10-03T03:46:47.069Z ✅ [WT-processing_items] 跨租户写·加工项 — 拒绝 404，且库行逐字段未变（unchanged=true）
+2026-10-03T03:46:48.645Z ✅ [WT-processing_categories] 跨租户写·加工分类 — 拒绝 404，且库行逐字段未变（unchanged=true）
+2026-10-03T03:46:50.280Z ✅ [WT-orders] 跨租户写·订单 — 拒绝 404，且库行逐字段未变（unchanged=true）
+2026-10-03T03:46:50.847Z ⏭️ [WT-processing_orders] 跨租户写·加工单 — B 侧无存活行 ⇒ 无对象可打
+2026-10-03T03:46:51.530Z ⏭️ [WT-inbound_orders] 跨租户写·入库单 — B 侧无存活行 ⇒ 无对象可打
+2026-10-03T03:46:52.219Z ⏭️ [WT-notif_templates] 跨租户写·通知模板 — B 侧无存活行 ⇒ 无对象可打
+2026-10-03T03:46:52.736Z ⏭️ [WT-notif_rules] 跨租户写·通知规则 — B 侧无存活行 ⇒ 无对象可打
+2026-10-03T03:46:53.441Z ⏭️ [WT-knowledge_cards] 跨租户写·知识卡片 — B 侧无存活行 ⇒ 无对象可打
+2026-10-03T03:46:55.191Z ✅ [WT-roles] 跨租户写·角色 — 拒绝 404，且库行逐字段未变（unchanged=true）
+2026-10-03T03:46:57.185Z ✅ [WT-users] 跨租户写·员工用户 — 拒绝 404，且库行逐字段未变（unchanged=true）
+2026-10-03T03:46:57.187Z === 阶段读数（主跑）：pass=51 fail=0 skip=27 total=78

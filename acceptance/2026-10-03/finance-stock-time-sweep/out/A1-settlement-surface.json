@@ -1,0 +1,50 @@
+[
+  {
+    "m": "GET",
+    "p": "/api/admin/finance/settlements",
+    "status": 404,
+    "code": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/finance/settlements?period=2026-09",
+    "status": 404,
+    "code": "NOT_FOUND"
+  },
+  {
+    "m": "POST",
+    "p": "/api/admin/finance/settlements",
+    "status": 404,
+    "code": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/production/piecework/settlements",
+    "status": 404,
+    "code": "NOT_FOUND"
+  },
+  {
+    "m": "POST",
+    "p": "/api/admin/production/piecework/settlements",
+    "status": 404,
+    "code": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/production/settlements",
+    "status": 404,
+    "code": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/settlements",
+    "status": 404,
+    "code": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/piecework/settlements",
+    "status": 404,
+    "code": "NOT_FOUND"
+  }
+]

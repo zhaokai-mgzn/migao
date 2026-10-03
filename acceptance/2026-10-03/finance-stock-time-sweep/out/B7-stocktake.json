@@ -1,0 +1,74 @@
+{
+  "at": {
+    "cst": "2026-10-03 13:49:16 +08",
+    "utc": "2026-10-03T05:49:16.582Z"
+  },
+  "runId": "c3stmurz23h2",
+  "batchesBefore": [
+    {
+      "id": 20,
+      "batch_no": "PC-20261003-0007",
+      "quantity": 60.5
+    },
+    {
+      "id": 21,
+      "batch_no": "PC-20261003-0008",
+      "quantity": 39.5
+    },
+    {
+      "id": 22,
+      "batch_no": "PC-20261003-0009",
+      "quantity": 10
+    }
+  ],
+  "status": 200,
+  "body": {
+    "runId": "c3stmurz23h2",
+    "productId": "c3prodmurz23h2000000000000",
+    "changedCount": 3,
+    "unchangedCount": 0,
+    "replayedCount": 0,
+    "totalDelta": 5,
+    "lines": [
+      {
+        "batchId": 20,
+        "batchNo": "PC-20261003-0007",
+        "skuId": 39,
+        "skuCode": "c3skumurz23h2",
+        "beforeMeters": 60.5,
+        "actualMeters": 55,
+        "delta": -5.5,
+        "afterMeters": 55,
+        "status": "applied"
+      },
+      {
+        "batchId": 21,
+        "batchNo": "PC-20261003-0008",
+        "skuId": 39,
+        "skuCode": "c3skumurz23h2",
+        "beforeMeters": 39.5,
+        "actualMeters": 30,
+        "delta": -9.5,
+        "afterMeters": 30,
+        "status": "applied"
+      },
+      {
+        "batchId": 22,
+        "batchNo": "PC-20261003-0009",
+        "skuId": 39,
+        "skuCode": "c3skumurz23h2",
+        "beforeMeters": 10,
+        "actualMeters": 30,
+        "delta": 20,
+        "afterMeters": 30,
+        "status": "applied"
+      }
+    ]
+  },
+  "ledgerDelta": 3,
+  "consDelta": 3,
+  "skuAfterSt": {
+    "stock": 100,
+    "avg_cost": 11.6113
+  }
+}

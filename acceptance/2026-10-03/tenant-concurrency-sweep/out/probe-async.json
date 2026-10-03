@@ -1,0 +1,183 @@
+[
+  {
+    "id": "A1-异步审计不丢行",
+    "name": "@Async 审计落库：请求 200 后表里必须有行",
+    "status": "pass",
+    "detail": "12 次 PUT briefing/config 全 12/12 → 200；audit_logs(action=update,resource_type=briefing_config) 增量 A=6 B=6（合计 12）",
+    "evidence": [
+      {
+        "case": "A0-触发",
+        "statuses": [
+          200,
+          200,
+          200,
+          200,
+          200,
+          200,
+          200,
+          200,
+          200,
+          200,
+          200,
+          200
+        ],
+        "head": "{\"success\":true,\"data\":{\"generateTime\":\"09:00\",\"enabled\":false},\"requestId\":\"req_aa0ec944021244c2\",\"timestamp\":1790997141}"
+      },
+      {
+        "case": "A1-审计行增量",
+        "before": {
+          "20": 12,
+          "21": 12
+        },
+        "after": {
+          "20": 18,
+          "21": 18
+        },
+        "delta": {
+          "20": 6,
+          "21": 6
+        },
+        "expected": 6
+      },
+      {
+        "case": "A2-日志窗口",
+        "lines": [
+          "2026-10-03 11:12:21.581 [http-nio-8080-exec-239] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+          "2026-10-03 11:12:21.585 [http-nio-8080-exec-420] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+          "2026-10-03 11:12:21.596 [http-nio-8080-exec-433] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+          "2026-10-03 11:12:21.596 [http-nio-8080-exec-259] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+          "2026-10-03 11:12:21.600 [http-nio-8080-exec-465] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+          "2026-10-03 11:12:21.601 [http-nio-8080-exec-317] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+          "2026-10-03 11:12:21.601 [http-nio-8080-exec-239] INFO  c.m.a.service.DailyBriefingService - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+          "2026-10-03 11:12:21.602 [http-nio-8080-exec-486] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+          "2026-10-03 11:12:21.605 [http-nio-8080-exec-440] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+          "2026-10-03 11:12:21.606 [http-nio-8080-exec-176] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+          "2026-10-03 11:12:21.606 [http-nio-8080-exec-399] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+          "2026-10-03 11:12:21.610 [http-nio-8080-exec-407] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=21 enabled=false generateTime=08:30"
+        ]
+      },
+      {
+        "case": "A2-近 10 分钟行",
+        "rows": [
+          {
+            "tenant_id": 21,
+            "resource_id": "21",
+            "created_at": "2026-10-03T11:12:21.774808+08:00"
+          },
+          {
+            "tenant_id": 21,
+            "resource_id": "21",
+            "created_at": "2026-10-03T11:12:21.745236+08:00"
+          },
+          {
+            "tenant_id": 20,
+            "resource_id": "20",
+            "created_at": "2026-10-03T11:12:21.739859+08:00"
+          },
+          {
+            "tenant_id": 21,
+            "resource_id": "21",
+            "created_at": "2026-10-03T11:12:21.724222+08:00"
+          },
+          {
+            "tenant_id": 20,
+            "resource_id": "20",
+            "created_at": "2026-10-03T11:12:21.711576+08:00"
+          },
+          {
+            "tenant_id": 21,
+            "resource_id": "21",
+            "created_at": "2026-10-03T11:12:21.697452+08:00"
+          },
+          {
+            "tenant_id": 20,
+            "resource_id": "20",
+            "created_at": "2026-10-03T11:12:21.681147+08:00"
+          },
+          {
+            "tenant_id": 21,
+            "resource_id": "21",
+            "created_at": "2026-10-03T11:12:21.671771+08:00"
+          },
+          {
+            "tenant_id": 20,
+            "resource_id": "20",
+            "created_at": "2026-10-03T11:12:21.660624+08:00"
+          },
+          {
+            "tenant_id": 21,
+            "resource_id": "21",
+            "created_at": "2026-10-03T11:12:21.64992+08:00"
+          }
+        ],
+        "misattr": []
+      }
+    ],
+    "at": "2026-10-03T03:12:21.992Z"
+  },
+  {
+    "id": "A2-异步审计不串号",
+    "name": "@Async 并发下审计行的 tenant_id 与调用租户一致",
+    "status": "pass",
+    "detail": "近 10 分钟 briefing_config 审计行 无错租户（resource_id 自述与 tenant_id 列一致）",
+    "evidence": [
+      {
+        "case": "A2-近 10 分钟行",
+        "rows": [
+          {
+            "tenant_id": 21,
+            "resource_id": "21",
+            "created_at": "2026-10-03T11:12:21.774808+08:00"
+          },
+          {
+            "tenant_id": 21,
+            "resource_id": "21",
+            "created_at": "2026-10-03T11:12:21.745236+08:00"
+          },
+          {
+            "tenant_id": 20,
+            "resource_id": "20",
+            "created_at": "2026-10-03T11:12:21.739859+08:00"
+          },
+          {
+            "tenant_id": 21,
+            "resource_id": "21",
+            "created_at": "2026-10-03T11:12:21.724222+08:00"
+          },
+          {
+            "tenant_id": 20,
+            "resource_id": "20",
+            "created_at": "2026-10-03T11:12:21.711576+08:00"
+          },
+          {
+            "tenant_id": 21,
+            "resource_id": "21",
+            "created_at": "2026-10-03T11:12:21.697452+08:00"
+          },
+          {
+            "tenant_id": 20,
+            "resource_id": "20",
+            "created_at": "2026-10-03T11:12:21.681147+08:00"
+          },
+          {
+            "tenant_id": 21,
+            "resource_id": "21",
+            "created_at": "2026-10-03T11:12:21.671771+08:00"
+          },
+          {
+            "tenant_id": 20,
+            "resource_id": "20",
+            "created_at": "2026-10-03T11:12:21.660624+08:00"
+          },
+          {
+            "tenant_id": 21,
+            "resource_id": "21",
+            "created_at": "2026-10-03T11:12:21.64992+08:00"
+          }
+        ],
+        "misattr": []
+      }
+    ],
+    "at": "2026-10-03T03:12:22.102Z"
+  }
+]

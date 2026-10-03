@@ -1,0 +1,28 @@
+[
+  {
+    "id": "P11-01",
+    "name": "UI 现在发的 `status:'disabled'` 在真库上被受理且状态真的翻转（P2/#6105 的对象侧）",
+    "status": "pass",
+    "detail": "PUT {status:'disabled'} → HTTP 200；库内 active → disabled",
+    "evidence": [
+      "PUT /api/admin/production/operations/op-v91-20-26 {status:'disabled'}"
+    ],
+    "at": "2026-10-02T23:45:06.335Z"
+  },
+  {
+    "id": "P11-02",
+    "name": "旧错值 `status:'inactive'` 在真库上仍被拒（= F1 病根，修的是 UI 侧）",
+    "status": "pass",
+    "detail": "PUT {status:'inactive'} → HTTP 422：status 仅支持 active/disabled；库内仍 disabled",
+    "evidence": [],
+    "at": "2026-10-02T23:45:06.343Z"
+  },
+  {
+    "id": "P11-03",
+    "name": "还原到原状态",
+    "status": "pass",
+    "detail": "PUT {status:'active'} → HTTP 200；库内 active",
+    "evidence": [],
+    "at": "2026-10-02T23:45:06.343Z"
+  }
+]

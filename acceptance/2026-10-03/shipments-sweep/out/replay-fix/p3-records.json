@@ -1,0 +1,137 @@
+[
+  {
+    "id": "M1-OVER",
+    "name": "🔴 超发防护：实发 999 > 订单 10 ⇒ 必须被拒（4xx）",
+    "status": "pass",
+    "detail": "期望 4xx ∧ Σ已发 ≤ 10.00 ∧ items=0 == 实测 HTTP 422 ∧ Σ=0.000 ∧ items=0",
+    "evidence": [
+      "期望来源: 独立算式：order_items.quantity=10（夹具给定）− 已发合计 0 ⇒ 上限 10；实发 999 ⇒ 越界 0.000",
+      "POST body: {\"items\":[{\"order_item_id\":\"fbf2a3a1446df4641330fc\",\"product_name\":\"发货验收牛仔布M1\",\"shipped_quantity\":999,\"unit\":\"米\",\"set_count\":null,\"roll_count\":null}]}",
+      "resp(422): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"实发数量不合法（累计实发上限）被拒绝，共 1 处：\\n· 累计实发超过订单量：该订单行下单 10，累计已发（含本次）999，超出 989 —— 一次发货请求里同一订单行的多行按**合计**计算，不接受超发\\n（本次请求未写入任何数据；请修正后重试）\"},\"requestId\":\"req_9f634945bc584939\",\"timestamp\":1791006295,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+      "SQL: select shipped_quantity from order_shipment_items where order_id='fa1162747d84ac5a4d5252' → []"
+    ],
+    "at": "2026-10-03 21:44:55 +08"
+  },
+  {
+    "id": "M2-EXACT",
+    "name": "边界：实发 == 订单量（12.5）⇒ 接受且数量逐分一致",
+    "status": "pass",
+    "detail": "期望 2xx ∧ Σ=12.50 == 实测 HTTP 200 ∧ Σ=12.500",
+    "evidence": [
+      "期望来源: 独立算式：上限 = 订单量 12.5（本包给定）；等号是合法边界",
+      "resp: {\"success\":true,\"data\":{\"order_id\":\"fab11c871d7336334a453e\",\"status\":\"shipped\",\"shipment_no\":\"SH202610031344565806\",\"source\":\"worker\",\"tracking_no\":\"SF-PROBE-M2\",\"shipped_items\":[{\"order_item_id\":\"fb9",
+      "SQL 原始列: [{\"order_item_id\":\"fb9b9fd14e2b299cc933ab\",\"shipped_quantity\":12.5,\"unit\":\"米\"}]"
+    ],
+    "at": "2026-10-03 21:44:56 +08"
+  },
+  {
+    "id": "M3-M3a",
+    "name": "边界：0 件 ⇒ 必须 4xx 且不落明细",
+    "status": "pass",
+    "detail": "期望 4xx ∧ items=0 == 实测 HTTP 422 ∧ Σ=0.000 ∧ items=0",
+    "evidence": [
+      "期望来源: doParseDetails: qty==null ∨ qty<=0 ⇒ 422；>0 一律放行；落库再由列精度 numeric(10,2) 决定（期望按该精度独立算）",
+      "body.items[0]={\"order_item_id\":\"fbecd0d135d2e2313ce021\",\"product_name\":\"发货验收牛仔布M3a\",\"shipped_quantity\":0,\"unit\":\"米\",\"set_count\":null,\"roll_count\":null}",
+      "resp(422): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"实发数量必须是正数（识别不确定时请手工填写，系统不替你猜）\"},\"requestId\":\"req_733fe3467e724520\",\"timestamp\":1791006296,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    ],
+    "at": "2026-10-03 21:44:57 +08"
+  },
+  {
+    "id": "M3-M3b",
+    "name": "边界：负数量 -3 ⇒ 必须 4xx 且不落明细",
+    "status": "pass",
+    "detail": "期望 4xx ∧ items=0 == 实测 HTTP 422 ∧ Σ=0.000 ∧ items=0",
+    "evidence": [
+      "期望来源: doParseDetails: qty==null ∨ qty<=0 ⇒ 422；>0 一律放行；落库再由列精度 numeric(10,2) 决定（期望按该精度独立算）",
+      "body.items[0]={\"order_item_id\":\"fb1db4f2424c510d015265\",\"product_name\":\"发货验收牛仔布M3b\",\"shipped_quantity\":-3,\"unit\":\"米\",\"set_count\":null,\"roll_count\":null}",
+      "resp(422): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"实发数量必须是正数（识别不确定时请手工填写，系统不替你猜）\"},\"requestId\":\"req_ccbfad1fdaae486a\",\"timestamp\":1791006297,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    ],
+    "at": "2026-10-03 21:44:57 +08"
+  },
+  {
+    "id": "M3-M3c",
+    "name": "边界：缺 shipped_quantity ⇒ 必须 4xx 且不落明细",
+    "status": "pass",
+    "detail": "期望 4xx ∧ items=0 == 实测 HTTP 422 ∧ Σ=0.000 ∧ items=0",
+    "evidence": [
+      "期望来源: doParseDetails: qty==null ∨ qty<=0 ⇒ 422；>0 一律放行；落库再由列精度 numeric(10,2) 决定（期望按该精度独立算）",
+      "body.items[0]={\"order_item_id\":\"fb5dd2cfcecf2ae94f2256\",\"product_name\":\"发货验收牛仔布M3c\",\"unit\":\"米\",\"set_count\":null,\"roll_count\":null}",
+      "resp(422): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"实发数量必须是正数（识别不确定时请手工填写，系统不替你猜）\"},\"requestId\":\"req_955faf0704ff4a18\",\"timestamp\":1791006298,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    ],
+    "at": "2026-10-03 21:44:58 +08"
+  },
+  {
+    "id": "M3-M3d",
+    "name": "边界：0.001（越界精度：列只到 2 位）⇒ **新契约：必须 4xx 且不落明细** ⇒ 必须 4xx 且不落明细",
+    "status": "pass",
+    "detail": "期望 4xx ∧ items=0 == 实测 HTTP 422 ∧ Σ=0.000 ∧ items=0",
+    "evidence": [
+      "期望来源: doParseDetails: qty==null ∨ qty<=0 ⇒ 422；>0 一律放行；落库再由列精度 numeric(10,2) 决定（期望按该精度独立算）",
+      "body.items[0]={\"order_item_id\":\"fb62ba1c8880ce34479ef9\",\"product_name\":\"发货验收牛仔布M3d\",\"shipped_quantity\":0.001,\"unit\":\"米\",\"set_count\":null,\"roll_count\":null}",
+      "resp(422): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"实发数量不合法被拒绝，共 1 处：\\n· 实发数量超出列精度（3 位小数 > 2 位）：系统按 0.00 存会把它变成 另一个数（0.001 会变成 0.00 = 「已发货但实发 0」）⇒ 拒绝而不是静默改数\\n（本次请求未写入任何数据；请修正后重试）\"},\"requestId\":\"req_0ee7992f9d8"
+    ],
+    "at": "2026-10-03 21:44:59 +08"
+  },
+  {
+    "id": "M3d2-ZERO-ROW",
+    "name": "🔴 越界精度 0.001 ⇒ 必须 4xx 且零写（不再出现「接受但实发 0」）",
+    "status": "pass",
+    "detail": "期望 4xx ∧ 行数=0 ∧ Σ=0 ∧ 订单**不**流转 shipped == 实测 HTTP 422 ∧ 状态=confirmed ∧ Σ=0.000 ∧ 行数=0",
+    "evidence": [
+      "期望来源: 新契约（S1/#6157）：numeric(10,2) 列容不下的精度 ⇒ 写库前拒绝（4xx）+ 零写；旧行为「接受并落 0.00」已废",
+      "列精度（information_schema）: numeric(10,2)",
+      "resp(422); SQL: select shipped_quantity from order_shipment_items → []",
+      "影响面（旧行为）：totals() 汇总得 0 ⇒ 下游\"少发/错发可核\"在极小数量上失真；且订单已 shipped（不可再发、不可撤销）",
+      "一句话判据：POST /ship 收 shipped_quantity=0.001 ⇒ 4xx 且 order_shipment_items 零行、orders.status 不变"
+    ],
+    "at": "2026-10-03 21:44:59 +08"
+  },
+  {
+    "id": "M4-DUP-LINE",
+    "name": "边界：同一 order_item 在**同一请求里写两行**（6+6 > 订单量 10）⇒ 不得放行超量",
+    "status": "pass",
+    "detail": "期望 4xx ∧ Σ ≤ 10.00 == 实测 HTTP 422 ∧ Σ=0.000 ∧ 行数=0",
+    "evidence": [
+      "期望来源: 独立算式：同一次发货对同一订单行的实发合计 ≤ 订单量 10；6+6=12 越界",
+      "resp(422): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"实发数量不合法（累计实发上限）被拒绝，共 1 处：\\n· 累计实发超过订单量：该订单行下单 10，累计已发（含本次）12，超出 2 —— 一次发货请求里同一订单行的多行按**合计**计算，不接受超发\\n（本次请求未写入任何数据；请修正后重试）\"},\"requestId\":\"req_45298c28eeb44e70\",\"timestamp\":1791006300,\"suggestion\":\"请",
+      "SQL: []",
+      "DDL 依据：order_shipment_items 唯一约束只有主键（无 (shipment_id, order_item_id) 唯一）"
+    ],
+    "at": "2026-10-03 21:45:00 +08"
+  },
+  {
+    "id": "M5-CONC-OVER",
+    "name": "🔴 并发超发：两路各发满量 ⇒ 不得双记（Σ ≤ 10.00 ∧ 单据 ≤ 1）",
+    "status": "pass",
+    "detail": "期望 Σ ≤ 10.00 ∧ shipments ≤ 1 ∧ 恰一路 2xx == 实测 Σ=10.000 ∧ shipments=1 ∧ HTTP=[200,422] ∧ 519ms",
+    "evidence": [
+      "期望来源: 独立算式上限 10（订单量）；并发下也须成立（状态机原子流转 + 唯一幂等键）",
+      "A(200): {\"success\":true,\"data\":{\"order_id\":\"fa4b22821e218da00254d8\",\"status\":\"shipped\",\"shipment_no\":\"SH202610031345012255\",\"source\":\"worker\",\"tracking_no\":\"SF-PROBE-M5a\",\"shipped_items\":[{\"order_item_id\":\"fb",
+      "B(422): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"订单状态已并发变更，请刷新后重试\"},\"requestId\":\"req_49689efb25a94f1d\",\"timestamp\":1791006301,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+      "SQL: [{\"order_item_id\":\"fbc43e5ccd9224531e1456\",\"shipped_quantity\":10,\"unit\":\"米\"}]"
+    ],
+    "at": "2026-10-03 21:45:01 +08"
+  },
+  {
+    "id": "M6-REMAIN",
+    "name": "多行部分发货：逐行未发量 == 订单量 − 已发（独立算式，逐行）",
+    "status": "pass",
+    "detail": "期望 A未发=6.000 B未发=0.000 == 实测 A未发=6.000 B未发=0.000",
+    "evidence": [
+      "期望来源: 独立算式：逐行 order_items.quantity − Σ order_shipment_items.shipped_quantity（decimal，BigInt 分）",
+      "SQL 原始列: [{\"order_item_id\":\"fbd86fb4c5faf6e152e5f7\",\"shipped_quantity\":4,\"unit\":\"米\"},{\"order_item_id\":\"fb74af3a6fe76e4158bdc6\",\"shipped_quantity\":7.25,\"unit\":\"米\"}]"
+    ],
+    "at": "2026-10-03 21:45:02 +08"
+  },
+  {
+    "id": "M7-DECIMAL",
+    "name": "decimal 语义：12.5 原样落库为 12.500（不丢精度、不做浮点截断）",
+    "status": "pass",
+    "detail": "期望 [{\"q\":\"12.500\",\"u\":\"米\"},{\"q\":\"0.000\",\"u\":\"件\"}]（按列精度 numeric(10,2) 解析：0.001 → 0） == 实测 [{\"q\":\"12.500\",\"raw\":\"12.5\",\"u\":\"米\"}]",
+    "evidence": [
+      "期望来源: decimal 语义：numeric(10,2) 列按十进制读回；期望 = 原文经该精度解析（12.5 → 12.500，0.001 → 0.000）",
+      "SQL: select shipped_quantity::text, unit from order_shipment_items where order_id='fa943f8b233d4fd3f58fa4' → [\"12.5\"]"
+    ],
+    "at": "2026-10-03 21:45:02 +08"
+  }
+]

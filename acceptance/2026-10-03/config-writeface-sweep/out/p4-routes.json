@@ -1,0 +1,293 @@
+[
+  {
+    "id": "W4-L0",
+    "name": "清场：历史残留同前缀对象",
+    "status": "pass",
+    "detail": "清理 8 条：fee:写面横切组合料405227(HTTP 200→disabled) | fee:写面横切组合料384160(HTTP 200→disabled) | fee:写面横切组合料668012(HTTP 200→disabled) | fee:写面横切组合料764045(HTTP 200→disabled) | fee:写面横切组合料857105(HTTP 200→disabled) | fee:写面横切组合料955206(HTTP 200→disabled) | fee:写面横切组合料172510(HTTP 200→disabled) | fee:写面横切组合料030585(HTTP 200→disabled)",
+    "evidence": [],
+    "at": "2026-10-03T01:05:14.718Z"
+  },
+  {
+    "id": "W4-00",
+    "name": "自建探针夹具：两道工序（供路线主线引用）",
+    "status": "pass",
+    "detail": "op1=写面横切路线甲512415(6e4a212ec0c8ca020fe72a150b9f911d) op2=写面横切路线乙512415(6bb66e36b16a2e1ad8e5811c582d7416)；默认路线（只读，不碰）=[{\"id\":\"rt-v79-20\",\"is_default\":false,\"name\":\"布料工序路线\",\"status\":\"active\"},{\"id\":\"rt-v72-20\",\"is_default\":true,\"name\":\"窗帘工序路线（默认）\",\"status\":\"active\"}]",
+    "evidence": [],
+    "at": "2026-10-03T01:05:15.492Z"
+  },
+  {
+    "id": "W4-01",
+    "name": "路线写面：POST /routings 新建（自建自清）",
+    "status": "pass",
+    "detail": "HTTP 200；id=dcb04c3d76c6abb4fde77f9991d288de；name=写面横切路线甲512415；mainline=[\"写面横切路线甲512415\", \"写面横切路线乙512415\"]；positions=[\"布帘\"]",
+    "evidence": [],
+    "at": "2026-10-03T01:05:15.896Z"
+  },
+  {
+    "id": "W4-02",
+    "name": "路线写面：只改 name（改名）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_route_templates.name\",\"production_route_templates.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/routings/dcb04c3d76c6abb4fde77f9991d288de body={\"name\":\"写面横切路线甲改512415\"}（payload 键数=1）",
+      "payload 键=[name]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.name: \"写面横切路线甲512415\" → \"写面横切路线甲改512415\" [field] | production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.updated_at: \"2026-10-03T09:05:15.588345+08:00\" → \"2026-10-03T09:05:16.373486+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:05:16.686Z"
+  },
+  {
+    "id": "W4-02-restore",
+    "name": "路线写面：只改 name（改名） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: name='写面横切路线甲512415',updated_at='2026-10-03T09:05:15.588345+08:00'[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:17.522Z"
+  },
+  {
+    "id": "W4-03",
+    "name": "路线写面：只改 mainline（调序：甲乙 → 乙甲）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_route_templates.mainline\",\"production_route_templates.updated_at\",\"production_routing_versions.*(row-added)\"]",
+    "evidence": [
+      "PUT /api/admin/production/routings/dcb04c3d76c6abb4fde77f9991d288de body={\"mainline\":[\"写面横切路线乙512415\",\"写面横切路线甲512415\"]}（payload 键数=1）",
+      "payload 键=[mainline]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.mainline: [\"写面横切路线甲512415\",\"写面横切路线乙512415\"] → [\"写面横切路线乙512415\",\"写面横切路线甲512415\"] [field] | production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.updated_at: \"2026-10-03T09:05:15.588345+08:00\" → \"2026-10-03T09:05:17.856195+08:00\" [field] | production_routing_versions.de7db6b2d8264abfcfb8404db30d1bf6.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]",
+      "审计/版本面（显式声明副账，不计越界）: production_routing_versions.de7db6b2d8264abfcfb8404db30d1bf6.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]"
+    ],
+    "at": "2026-10-03T01:05:18.222Z"
+  },
+  {
+    "id": "W4-03-restore",
+    "name": "路线写面：只改 mainline（调序：甲乙 → 乙甲） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=2（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=1 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: mainline='[\"写面横切路线甲512415\",\"写面横切路线乙512415\"]'::jsonb,updated_at='2026-10-03T09:05:15.588345+08:00'[affected=1] ;; SOFT_DELETED_NEW_ROW[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:19.236Z"
+  },
+  {
+    "id": "W4-04",
+    "name": "路线写面：只改 mainline（删一道：甲乙 → 甲）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_route_templates.mainline\",\"production_route_templates.updated_at\",\"production_routing_versions.*(row-added)\"]",
+    "evidence": [
+      "PUT /api/admin/production/routings/dcb04c3d76c6abb4fde77f9991d288de body={\"mainline\":[\"写面横切路线甲512415\"]}（payload 键数=1）",
+      "payload 键=[mainline]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.mainline: [\"写面横切路线甲512415\",\"写面横切路线乙512415\"] → [\"写面横切路线甲512415\"] [field] | production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.updated_at: \"2026-10-03T09:05:15.588345+08:00\" → \"2026-10-03T09:05:19.727819+08:00\" [field] | production_routing_versions.62220380344078099e4aae52fd5611a3.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]",
+      "审计/版本面（显式声明副账，不计越界）: production_routing_versions.62220380344078099e4aae52fd5611a3.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]"
+    ],
+    "at": "2026-10-03T01:05:20.062Z"
+  },
+  {
+    "id": "W4-04-restore",
+    "name": "路线写面：只改 mainline（删一道：甲乙 → 甲） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=2（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=1 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: mainline='[\"写面横切路线甲512415\",\"写面横切路线乙512415\"]'::jsonb,updated_at='2026-10-03T09:05:15.588345+08:00'[affected=1] ;; SOFT_DELETED_NEW_ROW[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:21.231Z"
+  },
+  {
+    "id": "W4-05",
+    "name": "路线写面：只改 mainline（加回：甲 → 甲乙）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_route_templates.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/routings/dcb04c3d76c6abb4fde77f9991d288de body={\"mainline\":[\"写面横切路线甲512415\",\"写面横切路线乙512415\"]}（payload 键数=1）",
+      "payload 键=[mainline]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.updated_at: \"2026-10-03T09:05:15.588345+08:00\" → \"2026-10-03T09:05:21.609201+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:05:21.888Z"
+  },
+  {
+    "id": "W4-05-restore",
+    "name": "路线写面：只改 mainline（加回：甲 → 甲乙） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: updated_at='2026-10-03T09:05:15.588345+08:00'[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:22.858Z"
+  },
+  {
+    "id": "W4-06",
+    "name": "路线写面：只改 positions（适用帘种 布帘 → 布帘+纱帘）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_route_templates.positions\",\"production_route_templates.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/routings/dcb04c3d76c6abb4fde77f9991d288de body={\"positions\":[\"布帘\",\"纱帘\"]}（payload 键数=1）",
+      "payload 键=[positions]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.positions: [\"布帘\"] → [\"布帘\",\"纱帘\"] [field] | production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.updated_at: \"2026-10-03T09:05:15.588345+08:00\" → \"2026-10-03T09:05:23.213568+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:05:23.532Z"
+  },
+  {
+    "id": "W4-06-restore",
+    "name": "路线写面：只改 positions（适用帘种 布帘 → 布帘+纱帘） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: positions='[\"布帘\"]'::jsonb,updated_at='2026-10-03T09:05:15.588345+08:00'[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:24.412Z"
+  },
+  {
+    "id": "W4-07",
+    "name": "路线写面：只改 status（active → disabled，停用）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_route_templates.status\",\"production_route_templates.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/routings/dcb04c3d76c6abb4fde77f9991d288de body={\"status\":\"disabled\"}（payload 键数=1）",
+      "payload 键=[status]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.status: \"active\" → \"disabled\" [field] | production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.updated_at: \"2026-10-03T09:05:15.588345+08:00\" → \"2026-10-03T09:05:24.770185+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:05:25.011Z"
+  },
+  {
+    "id": "W4-07-restore",
+    "name": "路线写面：只改 status（active → disabled，停用） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: status='active',updated_at='2026-10-03T09:05:15.588345+08:00'[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:25.926Z"
+  },
+  {
+    "id": "W4-08",
+    "name": "路线写面：只改 status（disabled → active，启用）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_route_templates.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/routings/dcb04c3d76c6abb4fde77f9991d288de body={\"status\":\"active\"}（payload 键数=1）",
+      "payload 键=[status]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.updated_at: \"2026-10-03T09:05:15.588345+08:00\" → \"2026-10-03T09:05:26.254142+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:05:26.537Z"
+  },
+  {
+    "id": "W4-08-restore",
+    "name": "路线写面：只改 status（disabled → active，启用） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: updated_at='2026-10-03T09:05:15.588345+08:00'[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:27.420Z"
+  },
+  {
+    "id": "W4-09",
+    "name": "路线写面：is_default=false（契约声明 422：零默认不可）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[]",
+    "evidence": [
+      "PUT /api/admin/production/routings/dcb04c3d76c6abb4fde77f9991d288de body={\"is_default\":false}（payload 键数=1）",
+      "payload 键=[is_default]；HTTP 422 / {\"code\":\"VALIDATION_ERROR\",\"message\":\"is_default 不能置为 false\",\"details\":[{\"field\":\"is_default\",\"message\":\"取消默认会让该租户没有默认路线 ⇒ 缺信号订单建单全部 fail-closed；改默认请对另一条路线置 is_default=true（它会自动把当前默认降级）\"}]}",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: （空）",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:05:27.992Z"
+  },
+  {
+    "id": "W4-09-restore",
+    "name": "路线写面：is_default=false（契约声明 422：零默认不可） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:28.723Z"
+  },
+  {
+    "id": "W4-10",
+    "name": "路线写面：is_default=true（设默认）——**本轮不测**",
+    "status": "skip",
+    "detail": "原因：会把商家现有默认路线降级（改动既有生产配置，非自建对象）⇒ 按纪律不碰。当前默认=[{\"id\":\"rt-v72-20\",\"is_default\":true,\"name\":\"窗帘工序路线（默认）\",\"status\":\"active\"}]",
+    "evidence": [],
+    "at": "2026-10-03T01:05:28.849Z"
+  },
+  {
+    "id": "W4-11",
+    "name": "路线写面：DELETE /routings/{id}（软删）",
+    "status": "pass",
+    "detail": "HTTP 200；changed=[\"production_route_templates.deleted\",\"production_route_templates.updated_at\"]",
+    "evidence": [
+      "DELETE /api/admin/production/routings/dcb04c3d76c6abb4fde77f9991d288de",
+      "diff=production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.deleted: 0 → 1 [field] | production_route_templates.dcb04c3d76c6abb4fde77f9991d288de.updated_at: \"2026-10-03T09:05:15.588345+08:00\" → \"2026-10-03T09:05:29.277734+08:00\" [field]"
+    ],
+    "at": "2026-10-03T01:05:29.645Z"
+  },
+  {
+    "id": "W4-11b",
+    "name": "路线软删还原自证",
+    "status": "pass",
+    "detail": "我的行主面残留=0；还原动作=1(no-op=0)；软删回收=0；非我的行=0；（无残留）",
+    "evidence": [],
+    "at": "2026-10-03T01:05:30.625Z"
+  },
+  {
+    "id": "W4-98",
+    "name": "零残留读数：前缀对象存活数 = 0",
+    "status": "pass",
+    "detail": "存活明细=0（ops/pos/routes/rules/fees 全部 deleted=1 或不存在）",
+    "evidence": [],
+    "at": "2026-10-03T01:05:33.785Z"
+  },
+  {
+    "id": "W4-99",
+    "name": "既有默认路线未被触碰（还原自证：只读比对）",
+    "status": "pass",
+    "detail": "当前活跃路线 = [{\"id\":\"rt-v79-20\",\"is_default\":false,\"name\":\"布料工序路线\",\"status\":\"active\"},{\"id\":\"rt-v72-20\",\"is_default\":true,\"name\":\"窗帘工序路线（默认）\",\"status\":\"active\"}]",
+    "evidence": [],
+    "at": "2026-10-03T01:05:33.878Z"
+  },
+  {
+    "id": "W4-90",
+    "name": "时间戳（+08 口径）",
+    "status": "pass",
+    "detail": "开始 2026-10-03 17:05:12 +08 / 结束 2026-10-03 17:05:33 +08（UTC: 2026-10-03T01:05:12.636Z → 2026-10-03T01:05:33.879Z）",
+    "evidence": [],
+    "at": "2026-10-03T01:05:33.879Z"
+  }
+]

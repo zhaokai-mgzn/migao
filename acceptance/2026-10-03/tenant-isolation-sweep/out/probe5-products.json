@@ -1,0 +1,31 @@
+{
+ "row": {
+  "id": "e292e7fd91eb5d5725e86ee02fc7b1c4",
+  "name": "工序验收商品084340",
+  "unit": "米",
+  "base_price": 68,
+  "status": "on_shelf",
+  "category_id": "3e94e8f34ead8dd4d86ad31b1a73a975",
+  "pricing_type": "fixed"
+ },
+ "recs": [
+  {
+   "label": "仅 name",
+   "status": 200,
+   "body": "{\"success\":true,\"data\":{\"id\":\"e292e7fd91eb5d5725e86ee02fc7b1c4\",\"name\":\"工序验收商品084340\",\"categoryId\":\"3e94e8f34ead8dd4d86ad31b1a73a975\",\"categoryName\":\"工序验收分类084340\",\"basePrice\":68,\"images\":[],\"status\":\"on_shelf\",\"stock\":99954,\"stockWarningThreshold\":10,\"unit\":\"米\",\"pricingType\":\"fixed\",\"stockDeduction",
+   "dbSame": true
+  },
+  {
+   "label": "name+unit+basePrice+status",
+   "status": 422,
+   "body": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"分类ID不能为空\"},\"requestId\":\"req_60b464917e404d87\",\"timestamp\":1790995437,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+   "dbSame": true
+  },
+  {
+   "label": "+categoryId+pricingType",
+   "status": 200,
+   "body": "{\"success\":true,\"data\":{\"id\":\"e292e7fd91eb5d5725e86ee02fc7b1c4\",\"name\":\"工序验收商品084340\",\"categoryId\":\"3e94e8f34ead8dd4d86ad31b1a73a975\",\"categoryName\":\"工序验收分类084340\",\"basePrice\":68,\"images\":[],\"status\":\"on_shelf\",\"stock\":99954,\"stockWarningThreshold\":10,\"unit\":\"米\",\"pricingType\":\"fixed\",\"stockDeduction",
+   "dbSame": true
+  }
+ ]
+}

@@ -1,0 +1,21 @@
+{
+  "from": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "sha": "d1c09d02f",
+    "subject": "chore(ci): flaky 台账追加（run 37096947254） (#6183)",
+    "adminApiStart": "2026-10-03 13:09:45 +08",
+    "pid": 99086
+  },
+  "to": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "sha": "7e9f66ce5",
+    "subject": "fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)",
+    "adminApiStart": "六 10月/ 3 13:44:16 2026",
+    "pid": "60585"
+  },
+  "switchAt": "2026-10-03 13:44:16 +08",
+  "observedAt": {
+    "cst": "2026-10-03 13:56:27 +08",
+    "utc": "2026-10-03T05:56:27.850Z"
+  }
+}

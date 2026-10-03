@@ -1,0 +1,42 @@
+[
+  {
+    "id": "UI-01",
+    "name": "工序管理页渲染出全部逻辑工序与全部路线",
+    "status": "pass",
+    "detail": "页面含 29/29 道逻辑工序、2/2 条路线（默认=「窗帘工序路线（默认）」）",
+    "evidence": [
+      "GET http://localhost:3001/production/routings",
+      "截图 out/screenshots/p5-01-routings.png"
+    ],
+    "at": "2026-10-02T23:08:15.525Z"
+  },
+  {
+    "id": "UI-02",
+    "name": "「管理▸」抽屉可打开（目标工序「质检」）",
+    "status": "pass",
+    "detail": "抽屉 [data-testid=operations-manage-drawer] 已渲染",
+    "evidence": [
+      "截图 out/screenshots/p5-02-manage-drawer.png"
+    ],
+    "at": "2026-10-02T23:08:15.734Z"
+  },
+  {
+    "id": "UI-03",
+    "name": "「停用工序」按钮端到端可用（UI 词表 ↔ 后端受理词表一致）",
+    "status": "fail",
+    "detail": "点击后库里 status 仍 = active（改前 active）；页面理由 = 「status 仅支持 active/disabled」⇒ 按钮点了不生效",
+    "evidence": [
+      "截图 out/screenshots/p5-03-disable-result.png",
+      "SQL: select status from production_operations where name='质检'"
+    ],
+    "at": "2026-10-02T23:08:18.606Z"
+  },
+  {
+    "id": "UI-04",
+    "name": "页面控制台错误（观察项，不阻塞）",
+    "status": "pass",
+    "detail": "1 条：Failed to load resource: the server responded with a status of 422 ()",
+    "evidence": [],
+    "at": "2026-10-02T23:08:18.607Z"
+  }
+]

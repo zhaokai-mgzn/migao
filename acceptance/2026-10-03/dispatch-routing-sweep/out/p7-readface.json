@@ -1,0 +1,122 @@
+[
+  {
+    "id": "RF-JG-20261003-6274",
+    "name": "读面==落库（按部位逐道 + 顺序一致）",
+    "status": "pass",
+    "detail": "部位 S3-0 本白/S3-1 本白；共 16 道",
+    "evidence": [
+      "GET /api/admin/production/orders/b6f77409b4bd3f1f9c876c1eb36999d5/operations"
+    ],
+    "at": "2026-10-02T23:14:15.446Z"
+  },
+  {
+    "id": "RF-JG-20261003-6273",
+    "name": "读面==落库（按部位逐道 + 顺序一致）",
+    "status": "pass",
+    "detail": "部位 S2-0 本白/S2-1 本白；共 16 道",
+    "evidence": [
+      "GET /api/admin/production/orders/4ee3c73fe5cf7a05fc970b7b6a44b7a0/operations"
+    ],
+    "at": "2026-10-02T23:14:15.825Z"
+  },
+  {
+    "id": "RF-JG-20261003-6272",
+    "name": "读面==落库（按部位逐道 + 顺序一致）",
+    "status": "pass",
+    "detail": "部位 S1-0 本白/S1-1 本白；共 17 道",
+    "evidence": [
+      "GET /api/admin/production/orders/422a78d0efb2185476b40911b64f84b1/operations"
+    ],
+    "at": "2026-10-02T23:14:16.251Z"
+  },
+  {
+    "id": "RF-JG-20261003-6271",
+    "name": "读面==落库（按部位逐道 + 顺序一致）",
+    "status": "pass",
+    "detail": "部位 S0-0 本白/S0-1 本白；共 16 道",
+    "evidence": [
+      "GET /api/admin/production/orders/c5a1442d6a6ccc7d9592b00f5dbcd8fd/operations"
+    ],
+    "at": "2026-10-02T23:14:16.649Z"
+  },
+  {
+    "id": "RF-JG-20261003-6270",
+    "name": "读面==落库（按部位逐道 + 顺序一致）",
+    "status": "pass",
+    "detail": "部位 R4-420181 本白；共 10 道",
+    "evidence": [
+      "GET /api/admin/production/orders/9ea9357c713f7b243433cb0459d96872/operations"
+    ],
+    "at": "2026-10-02T23:14:17.028Z"
+  },
+  {
+    "id": "RF-JG-20261003-6269",
+    "name": "读面==落库（按部位逐道 + 顺序一致）",
+    "status": "pass",
+    "detail": "部位 R3-420181 本白；共 10 道",
+    "evidence": [
+      "GET /api/admin/production/orders/35b5ee56c24e0b9e2263fc3dd18af5f8/operations"
+    ],
+    "at": "2026-10-02T23:14:17.464Z"
+  },
+  {
+    "id": "RF-JG-20261003-6268",
+    "name": "读面==落库（按部位逐道 + 顺序一致）",
+    "status": "pass",
+    "detail": "部位 R2-420181 本白；共 10 道",
+    "evidence": [
+      "GET /api/admin/production/orders/1a440b40d5c18fe09de29f1b19e0b86b/operations"
+    ],
+    "at": "2026-10-02T23:14:17.888Z"
+  },
+  {
+    "id": "RF-JG-20261003-6267",
+    "name": "读面==落库（按部位逐道 + 顺序一致）",
+    "status": "pass",
+    "detail": "部位 R1-420181 本白；共 9 道",
+    "evidence": [
+      "GET /api/admin/production/orders/153f9ec882d65ed57a6d079bb452921c/operations"
+    ],
+    "at": "2026-10-02T23:14:18.299Z"
+  },
+  {
+    "id": "RF-JG-20261003-6266",
+    "name": "读面==落库（按部位逐道 + 顺序一致）",
+    "status": "pass",
+    "detail": "部位 R0-420181 本白；共 10 道",
+    "evidence": [
+      "GET /api/admin/production/orders/e76c0aad51ab674b090bb90e22f8b3fd/operations"
+    ],
+    "at": "2026-10-02T23:14:18.721Z"
+  },
+  {
+    "id": "RF-JG-20261003-6265",
+    "name": "读面==落库（按部位逐道 + 顺序一致）",
+    "status": "pass",
+    "detail": "部位 W03b-382359 本白；共 12 道",
+    "evidence": [
+      "GET /api/admin/production/orders/96cd38db41ec5d77fc423efd44e16b04/operations"
+    ],
+    "at": "2026-10-02T23:14:19.139Z"
+  },
+  {
+    "id": "RF-JG-20261003-6264",
+    "name": "读面==落库（按部位逐道 + 顺序一致）",
+    "status": "pass",
+    "detail": "部位 W03a-382359 本白；共 11 道",
+    "evidence": [
+      "GET /api/admin/production/orders/b399b02996ab84ccde33e3c8d6779be6/operations"
+    ],
+    "at": "2026-10-02T23:14:19.576Z"
+  },
+  {
+    "id": "RF-JG-20261003-6263",
+    "name": "读面==落库（按部位逐道 + 顺序一致）",
+    "status": "pass",
+    "detail": "部位 W02c-382359 本白；共 13 道",
+    "evidence": [
+      "GET /api/admin/production/orders/07445983532799a7b34b61fbfbfe3860/operations"
+    ],
+    "at": "2026-10-02T23:14:20.013Z"
+  }
+]

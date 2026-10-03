@@ -1,0 +1,612 @@
+{
+  "at": "2026-10-03T00:46:28.945Z",
+  "note": "读数 = out/run.log 中每条断言的最后一次；同名 id 的重跑覆盖旧值（被覆盖的首轮失败列在 supersededFails）",
+  "totals": {
+    "pass": 57,
+    "fail": 14,
+    "skip": 4,
+    "total": 75,
+    "supersededFailCount": 11
+  },
+  "supersededFails": [
+    {
+      "id": "M8-01R",
+      "earlier": [
+        "fail@2026-10-03T00:36:18.146Z"
+      ]
+    },
+    {
+      "id": "F8-02",
+      "earlier": [
+        "fail@2026-10-03T00:36:19.736Z"
+      ]
+    },
+    {
+      "id": "F8E-01",
+      "earlier": [
+        "fail@2026-10-03T00:38:53.792Z",
+        "fail@2026-10-03T00:39:03.893Z"
+      ]
+    },
+    {
+      "id": "F8X-02",
+      "earlier": [
+        "fail@2026-10-03T00:40:27.436Z"
+      ]
+    },
+    {
+      "id": "F8Z-00",
+      "earlier": [
+        "fail@2026-10-03T00:41:25.675Z",
+        "fail@2026-10-03T00:41:37.888Z"
+      ]
+    },
+    {
+      "id": "F8Z-02",
+      "earlier": [
+        "fail@2026-10-03T00:41:57.094Z",
+        "fail@2026-10-03T00:42:17.806Z"
+      ]
+    },
+    {
+      "id": "F8Z-03",
+      "earlier": [
+        "fail@2026-10-03T00:41:57.281Z",
+        "fail@2026-10-03T00:42:18.005Z"
+      ]
+    },
+    {
+      "id": "F8Z-04",
+      "earlier": [
+        "fail@2026-10-03T00:41:59.084Z",
+        "fail@2026-10-03T00:42:19.671Z"
+      ]
+    },
+    {
+      "id": "F8Z-05",
+      "earlier": [
+        "fail@2026-10-03T00:41:59.623Z",
+        "fail@2026-10-03T00:42:20.210Z"
+      ]
+    },
+    {
+      "id": "F8Z-01",
+      "earlier": [
+        "fail@2026-10-03T00:42:15.734Z"
+      ]
+    },
+    {
+      "id": "P10b-01",
+      "earlier": [
+        "fail@2026-10-03T00:44:09.460Z"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "at": "2026-10-03T00:38:22.096Z",
+      "status": "pass",
+      "id": "E-00",
+      "name": "判别性实验前置：逻辑工序「打包」的活跃价目行读数",
+      "detail": "布帘行=1 活跃行总数=2；行明细=[[\"布帘\",\"0.00\"],[\"通用\",null]]"
+    },
+    {
+      "at": "2026-10-03T00:38:23.874Z",
+      "status": "fail",
+      "id": "E-01",
+      "name": "【判别性】把活跃 布帘 行价改为 3.33 后，**新实例**不得取该列价（既有有效价=未定价 ⇒ 必须 NULL）",
+      "detail": "新实例单价=3.33；基线价 布帘=0.00 通用=NULL"
+    },
+    {
+      "at": "2026-10-03T00:38:24.178Z",
+      "status": "pass",
+      "id": "E-02",
+      "name": "实验注入已还原为原读数（零残留）",
+      "detail": "还原后行=[[\"布帘\",\"0.00\"]]；活跃行=[[\"布帘\",\"0.00\"],[\"通用\",null]]"
+    },
+    {
+      "at": "2026-10-03T00:36:35.091Z",
+      "status": "pass",
+      "id": "F8-01",
+      "name": "【F8 正对照】一次普通设置保存（body 只带 scope）后，探针实例单价必须逐字不变",
+      "detail": "保存前 NULL(未定价) → 保存后 NULL(未定价)"
+    },
+    {
+      "at": "2026-10-03T00:36:35.091Z",
+      "status": "pass",
+      "id": "F8-02",
+      "name": "【F8 正对照】一次普通设置保存后，该逻辑工序的价目矩阵行（部位×价×软删）必须逐字不变",
+      "detail": "14 行逐字一致"
+    },
+    {
+      "at": "2026-10-03T00:36:35.092Z",
+      "status": "pass",
+      "id": "F8-03",
+      "name": "【F8 正对照·工资侧】保存后工资读面仍 == 独立算式（口径自洽）",
+      "detail": "读面 17.6 vs 独立算式 17.60"
+    },
+    {
+      "at": "2026-10-03T00:36:35.092Z",
+      "status": "pass",
+      "id": "F8-04",
+      "name": "【F8 正对照·钱链红线】保存后未定价工序不得静默变 0 元工资",
+      "detail": "per_operation 中 打包 的 0 元行=[]；新报工快照价=NULL(未定价)；unpriced 块=5"
+    },
+    {
+      "at": "2026-10-03T00:36:35.091Z",
+      "status": "pass",
+      "id": "F8-05",
+      "name": "【F8 正对照】一次普通保存后，读面有效价（catalog + 部位价目矩阵）必须逐字不变",
+      "detail": "{\"catalogRows\":[[\"打包\",null,0]],\"layerRows\":[]}"
+    },
+    {
+      "at": "2026-10-03T00:39:10.318Z",
+      "status": "pass",
+      "id": "F8E-00",
+      "name": "前置：存在「有 通用 行、无活跃 布帘 行」的逻辑工序（F8 可复现的前提）",
+      "detail": "26 道：logo条,三边,上车布,外帘发货,外帘打卷,外帘装袋,定型,帘头制作,打孔,扣环,抱枕,拼1次,拼2次,拼3次,接高,熨烫,立边,精裁,绑带,腰靠垫,花边,裁剪,车被,铅坠,防翘扣,韩褶"
+    },
+    {
+      "at": "2026-10-03T00:39:11.966Z",
+      "status": "skip",
+      "id": "F8E-01",
+      "name": "前置②：探针单该工序实例为**未定价**（NULL）",
+      "detail": "探针单没有「logo条」的实例；实例=精裁-布,布三边,熨烫-布,定型-布,复烫-布,布帘车被,外帘打卷,打包,外帘装袋,外帘发货（登记为未覆盖）"
+    },
+    {
+      "at": "2026-10-03T00:39:04.452Z",
+      "status": "fail",
+      "id": "F8E-02",
+      "name": "【F8·钱链】一次与价格无关的保存后，原「未定价」实例价必须仍为 NULL",
+      "detail": "保存前 0.35 → 保存后 0.35；新出现活跃 布帘 行=[\"0.35\"]；工序库价=0.35"
+    },
+    {
+      "at": "2026-10-03T00:39:04.773Z",
+      "status": "fail",
+      "id": "F8E-03",
+      "name": "【F8·钱链】保存后**新报工**的单价快照必须仍为 NULL 且 price_state=unpriced（未定价不得被静默定价）",
+      "detail": "快照 unit_price=0.35 price_state=priced；读数={\"id\":\"6ee8d28f9bff6fa7e48dea13250a77aa\",\"operation_name\":\"复烫-布\",\"unit_price\":\"0.35\",\"price_state\":\"priced\",\"qualified_qty\":\"3.00\"}"
+    },
+    {
+      "at": "2026-10-03T00:39:04.892Z",
+      "status": "fail",
+      "id": "F8E-04",
+      "name": "【F8·钱链红线】该工序的报工不得以「0 元/库价」进入计件金额（必须走 unpriced 维度）",
+      "detail": "per_operation 中 复烫-布 的行=[{\"amount\":1.05,\"operation\":\"复烫-布\"}]；在 unpriced 清单=false；工资合计=1.05"
+    },
+    {
+      "at": "2026-10-03T00:39:04.892Z",
+      "status": "fail",
+      "id": "F8E-05",
+      "name": "【缺失≠0】该未定价工序必须在 unpriced 块列出（商家可据此定价，而不是看到 0 元）",
+      "detail": "unpriced.operations=[]"
+    },
+    {
+      "at": "2026-10-03T00:40:49.262Z",
+      "status": "pass",
+      "id": "F8X-00",
+      "name": "前置：工序库存在逻辑工序「定型-布」",
+      "detail": "id=op-v91-20-21 库价=0.40 scope=position"
+    },
+    {
+      "at": "2026-10-03T00:40:51.103Z",
+      "status": "pass",
+      "id": "F8X-01",
+      "name": "前置②：显式 positions(unit_price=null) 实例化 ⇒ 实例价 = NULL（未定价）",
+      "detail": "实例 定型-布 unit_price=NULL；instantiate HTTP 200；实例行数 1"
+    },
+    {
+      "at": "2026-10-03T00:40:51.299Z",
+      "status": "pass",
+      "id": "F8X-02",
+      "name": "【F8 受控】一次普通保存不得新建任何价目行",
+      "detail": "新行=[]；保存后活跃行=[[\"布帘\",\"0.40\"],[\"通用\",\"0.40\"]]"
+    },
+    {
+      "at": "2026-10-03T00:40:53.251Z",
+      "status": "pass",
+      "id": "F8X-03",
+      "name": "【F8 受控·钱链】一次普通保存之后新建的实例单价**必须仍为未定价**（不得变成工序库价）",
+      "detail": "保存前 X=NULL → 保存后 Y=NULL；instantiate HTTP 200；工序库价=0.40；保存后活跃行=[[\"布帘\",\"0.40\"],[\"通用\",\"0.40\"]]"
+    },
+    {
+      "at": "2026-10-03T00:40:53.677Z",
+      "status": "pass",
+      "id": "F8X-04",
+      "name": "【F8 受控·钱链】未定价工序的报工不得进入 per_operation 金额（必须只在 unpriced 块）",
+      "detail": "per_operation 命中=[]；unpriced={\"qty\":3,\"operations\":[{\"operation\":\"定型-布\",\"logical_name\":\"定型\",\"qty\":3}],\"hint\":\"以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。\"}；合计=0"
+    },
+    {
+      "at": "2026-10-03T00:43:00.455Z",
+      "status": "pass",
+      "id": "F8Z-00",
+      "name": "前置：存在该逻辑工序的库行与活跃 `通用` 价目行（可造出「未定价」前置）",
+      "detail": "选中「复烫」（库价 0.35，原通用价 0.35）；活跃行=[[\"通用\",\"0.35\"]]"
+    },
+    {
+      "at": "2026-10-03T00:43:02.597Z",
+      "status": "fail",
+      "id": "F8Z-01",
+      "name": "基线读数 X：活跃 通用 行价 = 库价时，自然派工实例价 = 0.35",
+      "detail": "X=NULL；generate HTTP 200；活跃行=[[\"通用\",null]]"
+    },
+    {
+      "at": "2026-10-03T00:43:04.750Z",
+      "status": "pass",
+      "id": "F8Z-02",
+      "name": "读数 Y（有效价口径自证）：自然派工必须取\"有效价\" 1.11",
+      "detail": "Y=1.11；generate HTTP 200；活跃行=[[\"通用\",\"1.11\"]]"
+    },
+    {
+      "at": "2026-10-03T00:43:04.944Z",
+      "status": "fail",
+      "id": "F8Z-03",
+      "name": "【F8】一次普通保存**不得**新建任何活跃价目行",
+      "detail": "新行=[[\"布帘\",\"0.35\",0]]；活跃行=[[\"布帘\",\"0.35\"],[\"通用\",\"1.11\"]]"
+    },
+    {
+      "at": "2026-10-03T00:43:06.788Z",
+      "status": "fail",
+      "id": "F8Z-04",
+      "name": "【F8·钱链】一次普通保存后，实例价必须仍 = 有效价 1.11（不得变成工序库价 0.35）",
+      "detail": "保存前 Y=1.11 → 保存后 Z=0.35（工序库价=0.35）；活跃行=[[\"布帘\",\"0.35\"],[\"通用\",\"1.11\"]]"
+    },
+    {
+      "at": "2026-10-03T00:43:07.363Z",
+      "status": "fail",
+      "id": "F8Z-05",
+      "name": "【F8·工资侧】保存后新报工的单价快照必须 = 有效价 1.11，金额 = 3 × 1.11",
+      "detail": "快照价=0.35 价态=priced；计件明细={\"amount\":1.05,\"operation\":\"复烫-布\"}（独立算式 3.33）；合计=1.05"
+    },
+    {
+      "at": "2026-10-03T00:34:37.129Z",
+      "status": "pass",
+      "id": "M1-01",
+      "name": "【逐分】per_operation 明细 == 独立算式（数量 × 快照单价，逐笔取整）",
+      "detail": "3 道逐分相符"
+    },
+    {
+      "at": "2026-10-03T00:34:38.878Z",
+      "status": "pass",
+      "id": "M10-01",
+      "name": "【改价口径】实例改价后历史报工仍按**报工快照价**（不追溯）",
+      "detail": "改价前独立算式 13.20；改价后读面 13.2"
+    },
+    {
+      "at": "2026-10-03T00:34:39.390Z",
+      "status": "fail",
+      "id": "M10-02",
+      "name": "【改价口径·反向】还原价后新报工按还原价快照（逐笔可追溯）",
+      "detail": "新报工快照 unit_price=0.40（期望 0.40）；独立算式 13.20"
+    },
+    {
+      "at": "2026-10-03T00:34:42.086Z",
+      "status": "pass",
+      "id": "M11-01",
+      "name": "【跨单】同一工人多张单 ⇒ 报表合计 == 该工人两单独立算式之和",
+      "detail": "报表 20.7 vs 独立算式 20.70"
+    },
+    {
+      "at": "2026-10-03T00:34:42.346Z",
+      "status": "pass",
+      "id": "M11-02",
+      "name": "【按人隔离】换一个工人 ⇒ 报表合计只含该工人的报工",
+      "detail": "报表 5 vs 独立算式 5.00"
+    },
+    {
+      "at": "2026-10-03T00:34:42.346Z",
+      "status": "pass",
+      "id": "M12-01",
+      "name": "【口径】返工不计件（独立算式排除后与读数逐分一致）",
+      "detail": "返工行 1 条；报表 20.7 == 独立算式 20.70"
+    },
+    {
+      "at": "2026-10-03T00:34:42.790Z",
+      "status": "pass",
+      "id": "M13-01",
+      "name": "【日期边界】work_date 移出本期 ⇒ 报表按 work_date 区间精确过滤（+08 业务时钟落本地日）",
+      "detail": "移出后报表 13.2 vs 独立算式（仅本期行）13.20；被移行原 date=2026-10-03"
+    },
+    {
+      "at": "2026-10-03T00:34:43.123Z",
+      "status": "pass",
+      "id": "M14-01",
+      "name": "【边界】qty=0 报工被拒且不落 0 元行",
+      "detail": "HTTP 422；库里 qty=0 行数 0"
+    },
+    {
+      "at": "2026-10-03T00:34:43.535Z",
+      "status": "pass",
+      "id": "M15-01",
+      "name": "【作废】软删的报工行不计件（读面 == 剩余行独立算式）",
+      "detail": "软删 1 行后读面 10 vs 独立算式 10.00"
+    },
+    {
+      "at": "2026-10-03T00:34:43.675Z",
+      "status": "skip",
+      "id": "M16-01",
+      "name": "【F8 正对照】",
+      "detail": "工序库读面找不到逻辑工序「定型」⇒ 无法执行该注入（登记为未覆盖）"
+    },
+    {
+      "at": "2026-10-03T00:34:43.675Z",
+      "status": "skip",
+      "id": "M16-02",
+      "name": "【F8 正对照】",
+      "detail": "同上"
+    },
+    {
+      "at": "2026-10-03T00:34:37.129Z",
+      "status": "pass",
+      "id": "M2-01",
+      "name": "【逐分】per-order total == 独立算式合计",
+      "detail": "读面 11.2 vs 独立算式 11.20"
+    },
+    {
+      "at": "2026-10-03T00:34:37.129Z",
+      "status": "pass",
+      "id": "M3-01",
+      "name": "【逐分】per_worker 之和 == total（无二次兜底）",
+      "detail": "Σ=11.20 total=11.2"
+    },
+    {
+      "at": "2026-10-03T00:34:37.129Z",
+      "status": "pass",
+      "id": "M4-per_position",
+      "name": "【逐分】per_position 合计 == total",
+      "detail": "Σ=11.20 total=11.2"
+    },
+    {
+      "at": "2026-10-03T00:34:37.129Z",
+      "status": "pass",
+      "id": "M4-per_set",
+      "name": "【逐分】per_set 合计 == total",
+      "detail": "Σ=11.20 total=11.2"
+    },
+    {
+      "at": "2026-10-03T00:34:37.690Z",
+      "status": "pass",
+      "id": "M5-01",
+      "name": "【逐分】期间报表（按探针工人下钻）total == 独立算式合计",
+      "detail": "报表 11.2 vs 独立算式 11.20"
+    },
+    {
+      "at": "2026-10-03T00:34:37.691Z",
+      "status": "pass",
+      "id": "M5-02",
+      "name": "【逐分】报表 per_worker 合计 == 报表 total",
+      "detail": "Σ=11.20 total=11.2"
+    },
+    {
+      "at": "2026-10-03T00:34:37.691Z",
+      "status": "pass",
+      "id": "M5-03",
+      "name": "【逐分】报表 per_operation 合计 == 报表 total",
+      "detail": "Σ=11.20 total=11.2"
+    },
+    {
+      "at": "2026-10-03T00:34:37.691Z",
+      "status": "pass",
+      "id": "M5-per_position",
+      "name": "【逐分】报表 per_position 合计 == total",
+      "detail": "Σ=11.20 total=11.2"
+    },
+    {
+      "at": "2026-10-03T00:34:37.691Z",
+      "status": "pass",
+      "id": "M5-per_set",
+      "name": "【逐分】报表 per_set 合计 == total",
+      "detail": "Σ=11.20 total=11.2"
+    },
+    {
+      "at": "2026-10-03T00:34:37.930Z",
+      "status": "pass",
+      "id": "M6-01",
+      "name": "三端点同源恒等：per-order == 报表(同人) == agent worklog",
+      "detail": "per-order=11.2 报表=11.2 worklog=11.2"
+    },
+    {
+      "at": "2026-10-03T00:34:37.931Z",
+      "status": "pass",
+      "id": "M7-01",
+      "name": "【缺失≠0】未定价工序在 unpriced 块显式可见且数量正确",
+      "detail": "unpriced=[{\"operation\":\"定型-布\",\"logical_name\":\"定型\",\"qty\":5}]；独立算式未定价数量=5.00"
+    },
+    {
+      "at": "2026-10-03T00:34:37.931Z",
+      "status": "pass",
+      "id": "M7-02",
+      "name": "【缺失≠0】未定价工序不得以「0 元」混进 per_operation 金额",
+      "detail": "per_operation 中 定型-布 的读数: []"
+    },
+    {
+      "at": "2026-10-03T00:34:37.931Z",
+      "status": "pass",
+      "id": "M7-03",
+      "name": "【三态】显式定价 0 元 ≠ 未定价（0 元进金额、不进 unpriced 清单）",
+      "detail": "熨烫-布: per_operation={\"amount\":0,\"operation\":\"熨烫-布\"}；在 unpriced 清单=false"
+    },
+    {
+      "at": "2026-10-03T00:34:38.374Z",
+      "status": "fail",
+      "id": "M8-01",
+      "name": "【双付】同 X-Client-Request-Id 重放：报工行数不增 + replayed=true",
+      "detail": "行数 5→5；replayed=undefined；HTTP 422"
+    },
+    {
+      "at": "2026-10-03T00:36:33.389Z",
+      "status": "pass",
+      "id": "M8-01R",
+      "name": "【双付·重跑】同 X-Client-Request-Id：首次落一条、**第二次不再落**且 replayed=true",
+      "detail": "行数 9（前）→10（首次后）→10（重放后）；replayed=true；HTTP 200/200"
+    },
+    {
+      "at": "2026-10-03T00:36:33.494Z",
+      "status": "skip",
+      "id": "M8-02",
+      "name": "【双付·重跑】失败键可重试",
+      "detail": "登记为观察项（见 out/p3-f8-redproof.json .failThenRetry）"
+    },
+    {
+      "at": "2026-10-03T00:34:38.578Z",
+      "status": "fail",
+      "id": "M9-01",
+      "name": "【边界】超应做数量 ⇒ 422 拒绝（不得静默截断/丢明细）",
+      "detail": "HTTP 200"
+    },
+    {
+      "at": "2026-10-03T00:36:33.790Z",
+      "status": "pass",
+      "id": "M9-01R",
+      "name": "【边界·重跑】超应做数量 ⇒ 422 拒绝，且不落明细",
+      "detail": "剩余 3，报 4 ⇒ HTTP 422「报工数量超上限：本次合格 4 + 累计已报 17 = 21 超过应做 20（剩余 3），本次未落库」"
+    },
+    {
+      "at": "2026-10-03T00:31:42.450Z",
+      "status": "pass",
+      "id": "P0-01",
+      "name": "读面 /piecework/summary 在场且返回冻结契约键",
+      "detail": "HTTP 200；keys=period,total,per_worker,per_operation,per_position,per_set,unpriced"
+    },
+    {
+      "at": "2026-10-03T00:31:42.451Z",
+      "status": "pass",
+      "id": "P0-02",
+      "name": "期间报表可用",
+      "detail": "HTTP 200"
+    },
+    {
+      "at": "2026-10-03T00:31:42.451Z",
+      "status": "pass",
+      "id": "P0-03",
+      "name": "单张单计件读面在场",
+      "detail": "HTTP 200 keys=total,per_worker,per_operation,per_position,per_set,unpriced"
+    },
+    {
+      "at": "2026-10-03T00:31:42.451Z",
+      "status": "pass",
+      "id": "P0-04",
+      "name": "下游结算面**由 OpenAPI 全量枚举**（不是人肉猜）",
+      "detail": "HTTP 200；paths=244；关键词筛中 11 条"
+    },
+    {
+      "at": "2026-10-03T00:31:42.451Z",
+      "status": "pass",
+      "id": "P0-05",
+      "name": "报工明细表（计件唯一凭证）结构可读",
+      "detail": "16 列"
+    },
+    {
+      "at": "2026-10-03T00:31:42.452Z",
+      "status": "pass",
+      "id": "P0-06",
+      "name": "并发干扰基线已落盘（非自建行值快照）",
+      "detail": "工序库 40 行 / 价目 30 行"
+    },
+    {
+      "at": "2026-10-03T00:34:35.696Z",
+      "status": "pass",
+      "id": "P1-01",
+      "name": "探针单 A 自建（分类/商品/订单/加工单）",
+      "detail": "order=ed5105c7… po=JG-20261003-6401"
+    },
+    {
+      "at": "2026-10-03T00:34:35.802Z",
+      "status": "pass",
+      "id": "P1-02",
+      "name": "探针单 A 已实例化工序",
+      "detail": "10 道：精裁-布 → 布三边 → 熨烫-布 → 定型-布 → 复烫-布 → 布帘车被 → 外帘打卷 → 打包 → 外帘装袋 → 外帘发货"
+    },
+    {
+      "at": "2026-10-03T00:34:35.997Z",
+      "status": "pass",
+      "id": "P1-03",
+      "name": "探针定型：有价 0.40 / 显式 0 元 / 未定价(NULL) 三态可区分",
+      "detail": "精裁-布=0.40 · 熨烫-布=0.00 · 定型-布=null"
+    },
+    {
+      "at": "2026-10-03T00:34:36.896Z",
+      "status": "pass",
+      "id": "P1-04",
+      "name": "报工落库（部分报工 / 报满 / 显式 0 元 / 未定价 / 返工）",
+      "detail": "{\"r1\":200,\"r2\":200,\"r3\":200,\"r4\":200,\"r5\":200}"
+    },
+    {
+      "at": "2026-10-03T00:43:36.528Z",
+      "status": "fail",
+      "id": "P10-01",
+      "name": "探针存活残留 = 0（直连 RDS 计数）",
+      "detail": "合计 11；明细={\"probe_worklogs_by_worker\":0,\"probe_worklogs_by_po\":0,\"probe_audits\":0,\"probe_orders_alive\":3,\"probe_pos_alive\":0,\"probe_instances_alive\":0,\"probe_products_alive\":4,\"probe_categories_alive\":4,\"probe_routes_alive\":0,\"probe_position_rows\":0,\"probe_library_ops\":0}"
+    },
+    {
+      "at": "2026-10-03T00:44:25.289Z",
+      "status": "fail",
+      "id": "P10b-01",
+      "name": "探针存活残留 = 0（直连 RDS，10 个域）",
+      "detail": "合计 11；{\"probe_worklogs\":0,\"probe_audits\":0,\"probe_orders\":3,\"probe_pos\":0,\"probe_products\":4,\"probe_categories\":4,\"probe_routes\":0,\"probe_position_rows\":0,\"probe_library_ops\":0,\"probe_instances\":0}"
+    },
+    {
+      "at": "2026-10-03T00:46:24.373Z",
+      "status": "pass",
+      "id": "P10c-01",
+      "name": "探针存活残留 = 0（直连 RDS，8 个域，按前缀兜底）",
+      "detail": "合计 0；{\"probe_worklogs\":0,\"probe_orders_alive\":0,\"probe_products_alive\":0,\"probe_categories_alive\":0,\"probe_routes_alive\":0,\"probe_position_rows\":0,\"probe_library_ops\":0,\"probe_processing_orders_alive\":0}"
+    },
+    {
+      "at": "2026-10-03T00:34:43.624Z",
+      "status": "pass",
+      "id": "RED-01",
+      "name": "【红证·注入式】未定价混进明细 ⇒ M7-02 判据必红",
+      "detail": "注入读数下判据=false（期望 false）；干净读数下=true（期望 true）"
+    },
+    {
+      "at": "2026-10-03T00:34:43.625Z",
+      "status": "pass",
+      "id": "RED-02",
+      "name": "【红证·注入式】差一分 ⇒ M2-01 逐分判据必红",
+      "detail": "差一分读数下判据=false（期望 false）"
+    },
+    {
+      "at": "2026-10-03T00:34:43.625Z",
+      "status": "pass",
+      "id": "RED-03",
+      "name": "【红证·注入式】漏一道工序明细 ⇒ M1-01 必红",
+      "detail": "漏行读数下 diffs=[\"精裁-布: 独立算式 3.20，读面缺该行\"]"
+    },
+    {
+      "at": "2026-10-03T00:36:50.291Z",
+      "status": "pass",
+      "id": "U-01",
+      "name": "计件工资页可达（HTTP 探活）",
+      "detail": "HTTP 200 location=-"
+    },
+    {
+      "at": "2026-10-03T00:36:50.492Z",
+      "status": "pass",
+      "id": "U-02",
+      "name": "【缺失≠0·UI 承接面】未定价时读面给出 unpriced 块（页面据此渲染提示而非「暂无数据」）",
+      "detail": "total=17.6 per_worker={\"工资验收工人甲674096\":16,\"未分配\":1.6} unpriced.qty=5 operations=[\"定型-布\"]"
+    },
+    {
+      "at": "2026-10-03T00:36:50.612Z",
+      "status": "pass",
+      "id": "U-03",
+      "name": "agent 侧计件读面（按人+期间）在场且返回同源金额",
+      "detail": "HTTP 200 total=0"
+    },
+    {
+      "at": "2026-10-03T00:36:50.646Z",
+      "status": "pass",
+      "id": "U-04",
+      "name": "【下游枚举】计件链**没有任何结算/发放/导出写端点**（工资 = 只读报表，无二次兜底）",
+      "detail": "命中 0 条写端点（关键词 piecework|wage|payroll|salary|settle）；全量 paths=244"
+    },
+    {
+      "at": "2026-10-03T00:36:35.279Z",
+      "status": "pass",
+      "id": "X-01",
+      "name": "并发干扰核对（非自建行两次读之间是否变过）",
+      "detail": "**疑似并发干扰 2 处** ⇒ {\"operations\":[[\"op-v91-20-32\",\"unit_price=0.12|scope=position|status=active\",\"unit_price=0.60|scope=position|status=active\",\"both\"]],\"positionPrices\":[],\"added\":[[\"fd9f56514d599a9429433529dd5156e1\",\"{\\\"id\\\":\\\"fd9f56514d599a9429433529dd5156e1\\\",\\\"logical_name\\\":\\\"打包\\\",\\\"position\\\":\\\"布帘\\\",\\\"unit_price\\\":\\\"0.00\\\"}\"]]}（附时间戳 2026-10-03T00:31:39.674Z → 2026-10-03T00:36:35.278Z，不作为缺陷）"
+    }
+  ]
+}

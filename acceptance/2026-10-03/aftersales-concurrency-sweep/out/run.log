@@ -1,0 +1,968 @@
+2026-10-03 16:20:07 +08 构建点：43ca70322（pid 55553，启动 六 10月/ 3 16:15:52 2026）origin/main=43ca70322
+2026-10-03 16:20:07 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 16:20:14 +08 构建点：43ca70322（pid 55553，启动 六 10月/ 3 16:15:52 2026）origin/main=43ca70322
+2026-10-03 16:20:14 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 16:20:31 +08 构建点：43ca70322（pid 55553，启动 六 10月/ 3 16:15:52 2026）origin/main=43ca70322
+2026-10-03 16:20:31 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 16:21:12 +08 构建点：43ca70322（pid 55553，启动 六 10月/ 3 16:15:52 2026）origin/main=43ca70322
+2026-10-03 16:21:12 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 16:21:12 +08 [PASS] [LB0-02] 时钟自检（JS +08 vs SQL Asia/Shanghai） — JS=2026-10-03 16:21:12 / SQL=2026-10-03 16:21:12（差 NaNs）
+2026-10-03 16:21:12 +08 [PASS] [LB0-03] 端点可达性 GET /api/admin/after-sales?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:21:12 +08 [PASS] [LB0-04] 端点可达性 GET /api/admin/orders?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:21:12 +08 [FAIL] [LB0-05] 管理员登录（短信万能码） — 登录失败 401: {"success":false,"error":{"code":"AUTH_FAILED","message":"短信验证码错误或已过期"},"requestId":"req_8fff0127b6054297","timestamp":1791015672}
+2026-10-03 16:21:13 +08 [PASS] [LB0-06] 租户 20 存量基线（外来行归因用） — [{"orders":366,"tickets":5,"ledger":385,"finance":376,"products":39}]
+2026-10-03 16:21:13 +08 p0 完成：{"pass":5,"fail":1,"skip":0,"falseRed":0,"total":6}
+2026-10-03 16:22:12 +08 构建点：43ca70322（pid 55553，启动 六 10月/ 3 16:15:52 2026）origin/main=43ca70322
+2026-10-03 16:22:12 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 16:22:12 +08 [PASS] [LB0-02] 时钟自检（JS +08 vs SQL Asia/Shanghai） — JS=2026-10-03 16:22:12 / SQL=2026-10-03 16:22:12（差 NaNs）
+2026-10-03 16:22:12 +08 [PASS] [LB0-03] 端点可达性 GET /api/admin/after-sales?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:22:12 +08 [PASS] [LB0-04] 端点可达性 GET /api/admin/orders?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:22:12 +08 [FAIL] [LB0-05] 管理员登录 — 登录失败：万能码被拒且 Redis 无 sms:code（:8080 未加载 SMS_BYPASS_CODE）
+2026-10-03 16:22:12 +08 [PASS] [LB0-06] 租户 20 存量基线（外来行归因用） — [{"orders":366,"tickets":5,"ledger":385,"finance":376,"products":39}]
+2026-10-03 16:22:12 +08 p0 完成：{"pass":5,"fail":1,"skip":0,"falseRed":0,"total":6}
+2026-10-03 16:22:38 +08 鉴权成功（via=redis-readback-code）
+2026-10-03 16:22:38 +08 [FAIL] [LB1-SETUP-restockOn] 夹具 restockOn — 建夹失败于 product: 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"分类ID不能为空"},"requestId":"req_276de1a333884c4b","timestamp":1791015758,"suggestion":"请检查必填字段是否完整，字段格式是否正确"}
+2026-10-03 16:22:38 +08 [FAIL] [LB1-SETUP-restockOff] 夹具 restockOff — 建夹失败于 product: 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"分类ID不能为空"},"requestId":"req_1c587d1c556c4ac5","timestamp":1791015758,"suggestion":"请检查必填字段是否完整，字段格式是否正确"}
+2026-10-03 16:22:38 +08 [FAIL] [LB1-SETUP-refund] 夹具 refund — 建夹失败于 product: 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"分类ID不能为空"},"requestId":"req_787cb26fafc545f1","timestamp":1791015758,"suggestion":"请检查必填字段是否完整，字段格式是否正确"}
+2026-10-03 16:22:38 +08 p1-setup 完成：{"pass":0,"fail":3,"skip":0,"falseRed":0,"total":3}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:23:59 +08 构建点：43ca70322（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=43ca70322
+2026-10-03 16:23:59 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 16:23:59 +08 [PASS] [LB0-02] 时钟自检（JS +08 vs SQL Asia/Shanghai） — JS=2026-10-03 16:23:59 / SQL=2026-10-03 16:23:59（差 0s）
+2026-10-03 16:23:59 +08 [PASS] [LB0-03] 端点可达性 GET /api/admin/after-sales?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:23:59 +08 [PASS] [LB0-04] 端点可达性 GET /api/admin/orders?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:23:59 +08 [PASS] [LB0-05] 管理员登录 — 取到 token（长度 774），取得方式 = sms-bypass-code
+2026-10-03 16:24:00 +08 [PASS] [LB0-06] 租户 20 存量基线（外来行归因用） — [{"orders":366,"tickets":5,"ledger":385,"finance":376,"products":39}]
+2026-10-03 16:24:00 +08 p0 完成：{"pass":6,"fail":0,"skip":0,"falseRed":0,"total":6}
+2026-10-03 16:24:00 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:24:05 +08 [FAIL] [LB1-SETUP-restockOn] 夹具 restockOn — 建夹失败于 order: 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"参数校验失败","details":[{"field":"items[0].subtotal","message":"小计不能为空"}]},"requestId":"req_8b280b15a5d94555","timestamp":1791015841}
+2026-10-03 16:24:05 +08 [FAIL] [LB1-SETUP-restockOff] 夹具 restockOff — 建夹失败于 order: 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"参数校验失败","details":[{"field":"items[0].subtotal","message":"小计不能为空"}]},"requestId":"req_a63b93dde75a459e","timestamp":1791015843}
+2026-10-03 16:24:05 +08 [FAIL] [LB1-SETUP-refund] 夹具 refund — 建夹失败于 order: 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"参数校验失败","details":[{"field":"items[0].subtotal","message":"小计不能为空"}]},"requestId":"req_0ad4157f03c14767","timestamp":1791015845}
+2026-10-03 16:24:05 +08 p1-setup 完成：{"pass":0,"fail":3,"skip":0,"falseRed":0,"total":3}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:24:11 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:24:14 +08 [FAIL] [LB1-SETUP-restockOn] 夹具 restockOn — 建夹失败于 order: 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"商品「线B验收商品-RESTOCKON-mus4lflgaa35」的本次规格无法定位到 SKU（下单）：已声明 skuCode=LB-RESTOCKON-MUS4LFLGAA35-01-28, colorId=2106299261744189400, doorWidth=2
+2026-10-03 16:24:14 +08 [FAIL] [LB1-SETUP-restockOff] 夹具 restockOff — 建夹失败于 order: 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"商品「线B验收商品-RESTOCKOFF-mus4lg92fl0r」的本次规格无法定位到 SKU（下单）：已声明 skuCode=LB-RESTOCKOFF-MUS4LG92FL0R-01-28, colorId=2106299265363873800, doorWidth
+2026-10-03 16:24:14 +08 [FAIL] [LB1-SETUP-refund] 夹具 refund — 建夹失败于 order: 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"商品「线B验收商品-REFUND-mus4lgx2jnlv」的本次规格无法定位到 SKU（下单）：已声明 skuCode=LB-REFUND-MUS4LGX2JNLV-01-28, colorId=2106299269021307000, doorWidth=2.8m。无法
+2026-10-03 16:24:14 +08 p1-setup 完成：{"pass":0,"fail":3,"skip":0,"falseRed":0,"total":3}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:24:24 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:24:26 +08 [FAIL] [LB1-SETUP-restockOn] 夹具 restockOn — 建夹失败于 order: 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"商品「线B验收商品-RESTOCKON-mus4lpeefr3l」的本次规格无法定位到 SKU（下单）：已声明 skuCode=LB-RESTOCKON-MUS4LPEEFR3L-01-28, colorId=2106299315204788200, doorWidth=2
+2026-10-03 16:24:26 +08 [FAIL] [LB1-SETUP-restockOff] 夹具 restockOff — 建夹失败于 order: 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"商品「线B验收商品-RESTOCKOFF-mus4lq37i6jz」的本次规格无法定位到 SKU（下单）：已声明 skuCode=LB-RESTOCKOFF-MUS4LQ37I6JZ-01-28, colorId=2106299318975467500, doorWidth
+2026-10-03 16:24:26 +08 [FAIL] [LB1-SETUP-refund] 夹具 refund — 建夹失败于 order: 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"商品「线B验收商品-REFUND-mus4lqrm78lf」的本次规格无法定位到 SKU（下单）：已声明 skuCode=LB-REFUND-MUS4LQRM78LF-01-28, colorId=2106299322666455000, doorWidth=2.8m。无法
+2026-10-03 16:24:26 +08 p1-setup 完成：{"pass":0,"fail":3,"skip":0,"falseRed":0,"total":3}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:24:48 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:24:53 +08 [FAIL] [LB1-SETUP-restockOn] 夹具 restockOn（商品+已确认订单） — orderNo=20261003863230001 status=pending 实收=200 总额=200 明细后 SKU 库存=100
+2026-10-03 16:24:53 +08 [FAIL] [LB1-SETUP-restockOff] 夹具 restockOff（商品+已确认订单） — orderNo=20261003518050002 status=pending 实收=200 总额=200 明细后 SKU 库存=100
+2026-10-03 16:24:53 +08 [FAIL] [LB1-SETUP-refund] 夹具 refund（商品+已确认订单） — orderNo=20261003697640003 status=pending 实收=300 总额=300 明细后 SKU 库存=100
+2026-10-03 16:24:53 +08 [FAIL] [LB1-SETUP-ledger] 确认收款落扣减台账（order 腿） — 台账行数=0 delta=undefined before=undefined after=undefined ref_no=undefined
+2026-10-03 16:24:53 +08 p1-setup 完成：{"pass":0,"fail":4,"skip":0,"falseRed":0,"total":4}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:25:12 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:25:18 +08 [PASS] [LB1-SETUP-restockOn] 夹具 restockOn（商品+已确认订单） — orderNo=20261003433900004 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:25:18 +08 [PASS] [LB1-SETUP-restockOff] 夹具 restockOff（商品+已确认订单） — orderNo=20261003069500005 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:25:18 +08 [PASS] [LB1-SETUP-refund] 夹具 refund（商品+已确认订单） — orderNo=20261003720680006 status=confirmed 实收=300 总额=300 明细后 SKU 库存=98
+2026-10-03 16:25:18 +08 [PASS] [LB1-SETUP-ledger] 确认收款落扣减台账（order 腿） — 台账行数=1 delta=-2 before=100 after=98 ref_no=20261003433900004
+2026-10-03 16:25:18 +08 p1-setup 完成：{"pass":4,"fail":0,"skip":0,"falseRed":0,"total":4}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:25:22 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:25:22 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 16:25:23 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 16:25:24 +08 [FAIL] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 16:25:24 +08 [PASS] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing == 实测 200 / DB=processing
+2026-10-03 16:25:24 +08 [PASS] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing == 实测 422 工单状态不允许从 [处理中] 变更为 [已拒绝] / DB=processing
+2026-10-03 16:25:25 +08 [PASS] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved == 实测 200 / DB=resolved
+2026-10-03 16:25:25 +08 [PASS] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved == 实测 422 工单状态不允许从 [已解决] 变更为 [处理中] / DB=resolved
+2026-10-03 16:25:25 +08 [PASS] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） == 实测 422 VALIDATION_ERROR 参数校验失败
+2026-10-03 16:25:25 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T16:25:25.787271+08:00
+2026-10-03 16:25:26 +08 [PASS] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） == 实测 200 / DB status=rejected closed_at=2026-10-03T16:25:26.266939+08:00
+2026-10-03 16:25:27 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 16:25:29 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 16:25:31 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 16:25:32 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:25:34 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 16:25:34 +08 [SKIP] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝 — 库中无 tenant=20 的 cancelled 订单可作只读探针
+2026-10-03 16:25:35 +08 [FAIL] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null ≠ 实测 404 请求的资源不存在: /api/admin/orders/undefined/refund；refund_amount=undefined
+2026-10-03 16:25:37 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 16:25:38 +08 [FAIL] [LB-AS-RESTOCK-ON] 回补开关**开**（allow_return_restock=true）：退货完结 ⇒ 库存回补 + 落 aftersales 台账 — 期望 200 + SKU 库存 98.00 → 100.00（回补 2.00）+ stock_ledger_entries 恰 1 行 reason=aftersales delta=+2.000 ref_no=AS-20261003-0005 + 订单 refund_amount=200.00 ≠ 实测 status=422；SKU 98 → 98；台账 0 行 []；订单 refund_amount=0
+2026-10-03 16:25:39 +08 [FAIL] [LB-AS-RESTOCK-OFF] 回补开关**关**（allow_return_restock=false，默认）：退货完结 ⇒ 库存零变化 — 期望 200 + SKU 库存 98.00 → 98.00（零变化）+ ref_no=AS-20261003-0006 的台账 0 行 + 退款仍照记（refund_amount=200.00） ≠ 实测 status=422；SKU 98 → 98；台账 0 行；订单 refund_amount=0
+2026-10-03 16:25:39 +08 p2 完成：{"pass":14,"fail":4,"skip":1,"falseRed":0,"total":20}
+2026-10-03 16:26:00 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:26:05 +08 [PASS] [LB1-SETUP-restockOn] 夹具 restockOn（商品+已确认订单） — orderNo=20261003721560013 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:26:05 +08 [PASS] [LB1-SETUP-restockOff] 夹具 restockOff（商品+已确认订单） — orderNo=20261003189650014 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:26:05 +08 [PASS] [LB1-SETUP-refund] 夹具 refund（商品+已确认订单） — orderNo=20261003951840015 status=confirmed 实收=300 总额=300 明细后 SKU 库存=98
+2026-10-03 16:26:05 +08 [PASS] [LB1-SETUP-ledger] 确认收款落扣减台账（order 腿） — 台账行数=1 delta=-2 before=100 after=98 ref_no=20261003721560013
+2026-10-03 16:26:05 +08 p1-setup 完成：{"pass":4,"fail":0,"skip":0,"falseRed":0,"total":4}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:26:05 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:26:05 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 16:26:06 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 16:26:06 +08 [FAIL] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 16:26:07 +08 [PASS] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing == 实测 200 / DB=processing
+2026-10-03 16:26:07 +08 [PASS] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing == 实测 422 工单状态不允许从 [处理中] 变更为 [已拒绝] / DB=processing
+2026-10-03 16:26:07 +08 [PASS] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved == 实测 200 / DB=resolved
+2026-10-03 16:26:08 +08 [PASS] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved == 实测 422 工单状态不允许从 [已解决] 变更为 [处理中] / DB=resolved
+2026-10-03 16:26:08 +08 [PASS] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） == 实测 422 VALIDATION_ERROR 参数校验失败
+2026-10-03 16:26:09 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T16:26:08.832233+08:00
+2026-10-03 16:26:09 +08 [PASS] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） == 实测 200 / DB status=rejected closed_at=2026-10-03T16:26:09.422024+08:00
+2026-10-03 16:26:11 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 16:26:14 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 16:26:16 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 16:26:19 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:26:21 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 16:26:21 +08 [SKIP] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝 — 库中无 tenant=20 的 cancelled 订单可作只读探针
+2026-10-03 16:26:22 +08 [FAIL] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null ≠ 实测 404 请求的资源不存在: /api/admin/orders/undefined/refund；refund_amount=undefined
+2026-10-03 16:26:23 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 16:26:24 +08 [PASS] [LB-AS-RESTOCK-ON] 回补开关**开**（allow_return_restock=true）：退货完结 ⇒ 库存回补 + 落 aftersales 台账 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98.00 → 100.00（回补 2.00）+ stock_ledger_entries 恰 1 行 reason=aftersales delta=+2.000 ref_no=AS-20261003-0005 + 订单 refund_amount=200.00 == 实测 status=200；SKU 98 → 100；台账 1 行 [[2,98,100,"aftersales"]]；订单 refund_amount=200
+2026-10-03 16:26:26 +08 [PASS] [LB-AS-RESTOCK-OFF] 回补开关**关**（allow_return_restock=false，默认）：退货完结 ⇒ 库存零变化 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98.00 → 98.00（零变化）+ ref_no=AS-20261003-0006 的台账 0 行 + 退款仍照记（refund_amount=200.00） == 实测 status=200；SKU 98 → 98；台账 0 行；订单 refund_amount=200
+2026-10-03 16:26:26 +08 p2 完成：{"pass":16,"fail":2,"skip":1,"falseRed":0,"total":20}
+2026-10-03 16:26:43 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:26:43 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 16:26:43 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 16:26:43 +08 [FAIL] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 422 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 16:26:44 +08 [PASS] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing == 实测 200 / DB=processing
+2026-10-03 16:26:44 +08 [PASS] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing == 实测 422 工单状态不允许从 [处理中] 变更为 [已拒绝] / DB=processing
+2026-10-03 16:26:44 +08 [PASS] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved == 实测 200 / DB=resolved
+2026-10-03 16:26:45 +08 [PASS] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved == 实测 422 工单状态不允许从 [已解决] 变更为 [处理中] / DB=resolved
+2026-10-03 16:26:45 +08 [PASS] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） == 实测 422 VALIDATION_ERROR 参数校验失败
+2026-10-03 16:26:45 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T16:26:45.330823+08:00
+2026-10-03 16:26:45 +08 [PASS] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） == 实测 200 / DB status=rejected closed_at=2026-10-03T16:26:45.78078+08:00
+2026-10-03 16:26:47 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 16:26:49 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 16:26:50 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 16:26:52 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:26:54 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 16:26:56 +08 [PASS] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动 — 期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0
+2026-10-03 16:26:56 +08 [FAIL] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null ≠ 实测 404 请求的资源不存在: /api/admin/orders/undefined/refund；refund_amount=undefined
+2026-10-03 16:26:58 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 16:26:59 +08 [FAIL] [LB-AS-RESTOCK-ON] 回补开关**开**（allow_return_restock=true）：退货完结 ⇒ 库存回补 + 落 aftersales 台账 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98.00 → 100.00（回补 2.00）+ stock_ledger_entries 恰 1 行 reason=aftersales delta=+2.000 ref_no=AS-20261003-0010 + 订单 refund_amount=200.00 ≠ 实测 status=200；SKU 100 → 102；台账 1 行 [[2,100,102,"aftersales"]]；订单 refund_amount=200
+2026-10-03 16:27:00 +08 [PASS] [LB-AS-RESTOCK-OFF] 回补开关**关**（allow_return_restock=false，默认）：退货完结 ⇒ 库存零变化 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98.00 → 98.00（零变化）+ ref_no=AS-20261003-0011 的台账 0 行 + 退款仍照记（refund_amount=200.00） == 实测 status=200；SKU 98 → 98；台账 0 行；订单 refund_amount=200
+2026-10-03 16:27:00 +08 p2 完成：{"pass":16,"fail":3,"skip":0,"falseRed":0,"total":20}
+2026-10-03 16:27:05 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:27:05 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 16:27:05 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 16:27:05 +08 [FAIL] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 422 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 16:27:06 +08 [PASS] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing == 实测 200 / DB=processing
+2026-10-03 16:27:06 +08 [PASS] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing == 实测 422 工单状态不允许从 [处理中] 变更为 [已拒绝] / DB=processing
+2026-10-03 16:27:06 +08 [PASS] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved == 实测 200 / DB=resolved
+2026-10-03 16:27:06 +08 [PASS] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved == 实测 422 工单状态不允许从 [已解决] 变更为 [处理中] / DB=resolved
+2026-10-03 16:27:06 +08 [PASS] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） == 实测 422 VALIDATION_ERROR 参数校验失败
+2026-10-03 16:27:07 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T16:27:07.202339+08:00
+2026-10-03 16:27:07 +08 [PASS] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） == 实测 200 / DB status=rejected closed_at=2026-10-03T16:27:07.589705+08:00
+2026-10-03 16:27:09 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 16:27:11 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 16:27:12 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 16:27:14 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:27:16 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 16:27:18 +08 [PASS] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动 — 期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0
+2026-10-03 16:27:19 +08 [PASS] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null == 实测 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0
+2026-10-03 16:27:21 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 16:27:22 +08 [FAIL] [LB-AS-RESTOCK-ON] 回补开关**开**（allow_return_restock=true）：退货完结 ⇒ 库存回补 + 落 aftersales 台账 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98.00 → 100.00（回补 2.00）+ stock_ledger_entries 恰 1 行 reason=aftersales delta=+2.000 ref_no=AS-20261003-0015 + 订单 refund_amount=200.00 ≠ 实测 status=200；SKU 102 → 104；台账 1 行 [[2,102,104,"aftersales"]]；订单 refund_amount=200
+2026-10-03 16:27:24 +08 [PASS] [LB-AS-RESTOCK-OFF] 回补开关**关**（allow_return_restock=false，默认）：退货完结 ⇒ 库存零变化 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98.00 → 98.00（零变化）+ ref_no=AS-20261003-0016 的台账 0 行 + 退款仍照记（refund_amount=200.00） == 实测 status=200；SKU 98 → 98；台账 0 行；订单 refund_amount=200
+2026-10-03 16:27:24 +08 p2 完成：{"pass":17,"fail":2,"skip":0,"falseRed":0,"total":20}
+2026-10-03 16:28:44 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:28:52 +08 [PASS] [LB-C1-CONCURRENT-REFUND] C1 同一订单并发退款 N=8×3 轮：成功数×金额 ≤ 实收，DB refund_amount 终值 ≤ 实收 — 三轮成功数=[3,3,3]（期望各 3）；refund_amount 终值=[300,300,300]（期望各 300.00 = 实收）；流水行数=[3,3,3] 合计=["300.000","300.000","300.000"]
+2026-10-03 16:28:54 +08 [PASS] [LB-C1-REDPROOF] C1 判别力红证（注入）：把 WHERE 上限摘掉 ⇒ 必红；同一装置加回守卫 ⇒ 绿 — 无守卫 ⇒ 终值 800（上限 300.00，泄漏=true）；有守卫（产品同形复刻）⇒ 终值 300（守住=true）
+2026-10-03 16:29:07 +08 [FAIL] [LB-C2-CONCURRENT-RESOLVE] C2 同一工单并发完结（processing→resolved）N=4×3 轮：副作用不得翻倍 — 三轮结论=[{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}}]
+2026-10-03 16:29:14 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:29:20 +08 [PASS] [LB-C1-CONCURRENT-REFUND] C1 同一订单并发退款 N=8×3 轮：成功数×金额 ≤ 实收，DB refund_amount 终值 ≤ 实收 — 三轮成功数=[3,3,3]（期望各 3）；refund_amount 终值=[300,300,300]（期望各 300.00 = 实收）；流水行数=[3,3,3] 合计=["300.000","300.000","300.000"]
+2026-10-03 16:29:22 +08 [PASS] [LB-C1-REDPROOF] C1 判别力红证（注入）：把 WHERE 上限摘掉 ⇒ 必红；同一装置加回守卫 ⇒ 绿 — 无守卫 ⇒ 终值 800（上限 300.00，泄漏=true）；有守卫（产品同形复刻）⇒ 终值 300（守住=true）
+2026-10-03 16:29:34 +08 [FAIL] [LB-C2-CONCURRENT-RESOLVE] C2 同一工单并发完结（processing→resolved）N=4×3 轮：副作用不得翻倍 — 三轮结论=[{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}}]
+2026-10-03 16:29:49 +08 [PASS] [LB-C3-CONCURRENT-STOCK] C3 同一 SKU 并发扣减 N=8×3 轮：超卖拒绝 / 库存不为负 / 台账守恒 — 三轮：并发扣减终值=[0,0,0]（期望 0.0）；超卖请求结局=[[422,3],[422,3],[422,3]]（期望 [422, 3.0]）；并发收款后 SKU=[98,98,98]（期望 98.0）
+2026-10-03 16:29:49 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：分页上限 / 总数与行数一致性 / 响应时间（机器读数） — orders size=5000 ⇒ total=undefined rows=null 2ms；after-sales size=5000 ⇒ total=undefined rows=null 2ms
+2026-10-03 16:29:49 +08 p3 完成：{"pass":4,"fail":1,"skip":0,"falseRed":0,"total":5}
+2026-10-03 16:30:08 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:30:15 +08 [PASS] [LB-C1-CONCURRENT-REFUND] C1 同一订单并发退款 N=8×3 轮：成功数×金额 ≤ 实收，DB refund_amount 终值 ≤ 实收 — 三轮成功数=[3,3,3]（期望各 3）；refund_amount 终值=[300,300,300]（期望各 300.00 = 实收）；流水行数=[3,3,3] 合计=["300.000","300.000","300.000"]
+2026-10-03 16:30:17 +08 [PASS] [LB-C1-REDPROOF] C1 判别力红证（注入）：把 WHERE 上限摘掉 ⇒ 必红；同一装置加回守卫 ⇒ 绿 — 无守卫 ⇒ 终值 800（上限 300.00，泄漏=true）；有守卫（产品同形复刻）⇒ 终值 300（守住=true）
+2026-10-03 16:30:32 +08 [FAIL] [LB-C2-CONCURRENT-RESOLVE] C2 同一工单并发完结（processing→resolved）N=4×3 轮：副作用不得翻倍 — 三轮结论=[{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}}]
+2026-10-03 16:30:43 +08 [PASS] [LB-C3-CONCURRENT-STOCK] C3 同一 SKU 并发扣减 N=8×3 轮：超卖拒绝 / 库存不为负 / 台账守恒 — 三轮：并发扣减终值=[0,0,0]（期望 0.0）；超卖请求结局=[[422,3],[422,3],[422,3]]（期望 [422, 3.0]）；并发收款后 SKU=[98,98,98]（期望 98.0）
+2026-10-03 16:30:43 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：分页上限 / 总数与行数一致性 / 响应时间（机器读数） — orders size=5000 ⇒ total=undefined rows=null 2ms；after-sales size=5000 ⇒ total=undefined rows=null 2ms
+2026-10-03 16:30:43 +08 p3 完成：{"pass":4,"fail":1,"skip":0,"falseRed":0,"total":5}
+2026-10-03 16:31:52 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:31:54 +08 [PASS] [LB-REF-B01] 退款金额：科学计数法 "1e2" 的接受/拒绝口径（如实读数） — 200  ；DB refund_amount=100
+2026-10-03 16:31:55 +08 [PASS] [LB-REF-B02] 退款金额：空串 "" ⇒ 视为未传（全额退款）的口径登记 — 200；refund_amount=300 实收=300
+2026-10-03 16:31:57 +08 [FAIL] [LB-REF-B03] 退款金额：最小正数 0.001（三位小数）⇒ 接受且落库不截断 — 200；orders.refund_amount=0；流水 1 行 0
+2026-10-03 16:32:00 +08 [PASS] [LB-REF-B04] 退款累计封顶：6×100.00 vs 实收 300.00 ⇒ 恰 3 次成功、DB 与流水合计都恰 300.00 — 期望 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000 == 实测 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:32:02 +08 [PASS] [LB-REF-B05] 三方自洽：工单 refund_amount 120.00 ⇒ orders.refund_amount=120.00 + refund_at 非空 + 流水 1 行 120.00 — 期望 orders.refund_amount=120.00、refund_at 非空；工单 status=resolved、refund_amount=120.00；finance_transactions 恰 1 行 120.00 == 实测 orders.refund_amount=120 refund_at=set；工单 status=resolved refund_amount=120 refund_method=null；流水 1 行 120
+2026-10-03 16:32:23 +08 [FAIL] [LB-C21-CONCURRENT-SAME-TARGET] C21 同一工单并发打同一目标（pending→processing×4）：恰一个赢家 — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["processing","processing","processing"]；时间线读数=[4,4,4]
+2026-10-03 16:32:23 +08 [FAIL] [LB-C22-CONCURRENT-CONFLICT] C22 同一工单并发分歧（processing vs closed）：终态合法且至多一个赢家 — 三轮：成功数=[2,2,2]；逐轮状态码=[[200,200],[200,200],[200,200]]；DB 终态=["closed","processing","processing"]；时间线读数=[null,null,null]
+2026-10-03 16:32:23 +08 [FAIL] [LB-C23-CONCURRENT-RESOLVE-TIMELINE] C23 同一工单并发 resolved：时间线「→resolved」恰 1 行（重复写审计） — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["resolved","resolved","resolved"]；时间线读数=[4,4,4]
+2026-10-03 16:32:24 +08 [PASS] [LB-C23-ROWCOUNT-REDPROOF] C23 判别力红证：N 次「到达」⇒ 时间线 N 行（1 次 ⇒ 1 行）—— 行数读数确实会变 — 4 次并发写 ⇒ 读到 4 行（期望 4）；1 次写 ⇒ 读到 1 行（期望 1）⇒ 该读数对「几次写到达」敏感（有判别力）
+2026-10-03 16:32:24 +08 [FAIL] [LB-C4-BULK-READ] C4 大批量读：size 超上限被夹到 500（`MybatisPlusConfig.maxLimit`）/ total 与行数一致 / 无 5xx — orders size=5000 ⇒ status=401 total=undefined size=undefined rows=null 3ms；size=2000 ⇒ total=undefined size=undefined rows=null；page=100 ⇒ rows=null；after-sales size=5000 ⇒ total=undefined size=undefined rows=null；size=-5 ⇒ 401/size=undefined/rows=null；size=0 ⇒ 401/size=undefined/rows=null
+2026-10-03 16:32:24 +08 [SKIP] [LB-C4-BULK-READ-1000] C4+ 「>1000 行真实数据量」的列表/看板读（截断与总数一致性） — 本租户最大可读面行数 = 557（orders=466 / stock_ledger_entries=557 / after_sales_tickets=40）< 1000 ⇒ **未覆盖**（不得用空读充数）
+2026-10-03 16:32:24 +08 p4 完成：{"pass":5,"fail":5,"skip":1,"falseRed":0,"total":11}
+2026-10-03 16:33:07 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:33:09 +08 [PASS] [LB-PREC-01] 精度①：refund_amount=0.01（最小可表示）⇒ 成功且**逐字**落 0.01 — 期望 200；orders.refund_amount=0.01；finance_transactions 恰 1 行 amount=0.01；两者**相等** == 实测 200；orders.refund_amount=0.01；流水 1 行 amount=0.01
+2026-10-03 16:33:11 +08 [FAIL] [LB-PREC-02] 精度②：refund_amount=0.001（小于最小可表示）⇒ 应 4xx 显式拒绝；现状 200 静默归零 — 200；orders.refund_amount=0；流水 1 行 amount=0；refund_at=set
+2026-10-03 16:33:17 +08 [PASS] [LB-PREC-03] 精度③：0.004 / 0.005 / 0.009 的舍入方向（口径登记，不判缺陷） — 逐字读数：["0.004 ⇒ 200 / 订单 0 / 流水 0","0.005 ⇒ 200 / 订单 0.01 / 流水 0.01","0.009 ⇒ 200 / 订单 0.01 / 流水 0.01"]
+2026-10-03 16:33:17 +08 p5 完成：{"pass":1,"fail":1,"skip":0,"falseRed":0,"total":3}
+2026-10-03 16:33:51 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:33:53 +08 [PASS] [LB-REF-B01] 退款金额：科学计数法 "1e2" 的接受/拒绝口径（如实读数） — 200  ；DB refund_amount=100
+2026-10-03 16:33:55 +08 [PASS] [LB-REF-B02] 退款金额：空串 "" ⇒ 视为未传（全额退款）的口径登记 — 200；refund_amount=300 实收=300
+2026-10-03 16:33:58 +08 [FAIL] [LB-REF-B03] 退款金额：最小正数 0.001（三位小数）⇒ 接受且落库不截断 — 200；orders.refund_amount=0；流水 1 行 0
+2026-10-03 16:34:00 +08 [PASS] [LB-REF-B04] 退款累计封顶：6×100.00 vs 实收 300.00 ⇒ 恰 3 次成功、DB 与流水合计都恰 300.00 — 期望 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000 == 实测 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:34:03 +08 [PASS] [LB-REF-B05] 三方自洽：工单 refund_amount 120.00 ⇒ orders.refund_amount=120.00 + refund_at 非空 + 流水 1 行 120.00 — 期望 orders.refund_amount=120.00、refund_at 非空；工单 status=resolved、refund_amount=120.00；finance_transactions 恰 1 行 120.00 == 实测 orders.refund_amount=120 refund_at=set；工单 status=resolved refund_amount=120 refund_method=null；流水 1 行 120
+2026-10-03 16:34:31 +08 [FAIL] [LB-C21-CONCURRENT-SAME-TARGET] C21 同一工单并发打同一目标（pending→processing×4）：恰一个赢家 — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["processing","processing","processing"]；时间线读数=[4,4,4]
+2026-10-03 16:34:31 +08 [FAIL] [LB-C22-CONCURRENT-CONFLICT] C22 同一工单并发分歧（processing vs closed）：终态合法且至多一个赢家 — 三轮：成功数=[2,2,2]；逐轮状态码=[[200,200],[200,200],[200,200]]；DB 终态=["closed","closed","closed"]；时间线读数=[null,null,null]
+2026-10-03 16:34:31 +08 [FAIL] [LB-C23-CONCURRENT-RESOLVE-TIMELINE] C23 同一工单并发 resolved：时间线「→resolved」恰 1 行（重复写审计） — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["resolved","resolved","resolved"]；时间线读数=[4,4,4]
+2026-10-03 16:34:32 +08 [PASS] [LB-C23-ROWCOUNT-REDPROOF] C23 判别力红证：N 次「到达」⇒ 时间线 N 行（1 次 ⇒ 1 行）—— 行数读数确实会变 — 4 次并发写 ⇒ 读到 4 行（期望 4）；1 次写 ⇒ 读到 1 行（期望 1）⇒ 该读数对「几次写到达」敏感（有判别力）
+2026-10-03 16:34:35 +08 [FAIL] [LB-C4-BULK-READ] C4 大批量读：size 钳到全局上限 500 / total 诚实 / 跨页求和可达（= total）/ 无 5xx — ledger size=5000 ⇒ status=200 size=500 total=595 rows=500 210ms；page2 ⇒ rows=95；跨页求和=595 / 读取时刻 total=595 / 现查 count(*)=595（写库并发 ⇒ 允许 ≤2 行漂移）；orders size=5000 ⇒ total=478 size=500 rows=478 434ms；after-sales ⇒ total=50 size=500 rows=50；size=100000 ⇒ size=500；size=-5 ⇒ total=0/rows=478；size=0 ⇒ total=478/rows=0
+2026-10-03 16:34:35 +08 [SKIP] [LB-C4-BULK-READ-1000] C4+ 「>1000 行真实数据量」的列表/看板读（截断与总数一致性） — 本租户最大可读面行数 = 595（orders=485 / ledger=595 / finance=530 / tickets=50）< 1000 ⇒ **未覆盖**
+2026-10-03 16:34:35 +08 p4 完成：{"pass":5,"fail":5,"skip":1,"falseRed":0,"total":11}
+2026-10-03 16:35:15 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:35:17 +08 [PASS] [LB-REF-B01] 退款金额：科学计数法 "1e2" 的接受/拒绝口径（如实读数） — 200  ；DB refund_amount=100
+2026-10-03 16:35:19 +08 [PASS] [LB-REF-B02] 退款金额：空串 "" ⇒ 视为未传（全额退款）的口径登记 — 200；refund_amount=300 实收=300
+2026-10-03 16:35:21 +08 [FAIL] [LB-REF-B03] 退款金额：最小正数 0.001（三位小数）⇒ 接受且落库不截断 — 200；orders.refund_amount=0；流水 1 行 0
+2026-10-03 16:35:25 +08 [PASS] [LB-REF-B04] 退款累计封顶：6×100.00 vs 实收 300.00 ⇒ 恰 3 次成功、DB 与流水合计都恰 300.00 — 期望 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000 == 实测 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:35:29 +08 [PASS] [LB-REF-B05] 三方自洽：工单 refund_amount 120.00 ⇒ orders.refund_amount=120.00 + refund_at 非空 + 流水 1 行 120.00 — 期望 orders.refund_amount=120.00、refund_at 非空；工单 status=resolved、refund_amount=120.00；finance_transactions 恰 1 行 120.00 == 实测 orders.refund_amount=120 refund_at=set；工单 status=resolved refund_amount=120 refund_method=null；流水 1 行 120
+2026-10-03 16:35:52 +08 [FAIL] [LB-C21-CONCURRENT-SAME-TARGET] C21 同一工单并发打同一目标（pending→processing×4）：恰一个赢家 — 三轮：成功数=[3,4,4]；逐轮状态码=[[200,200,200,422],[200,200,200,200],[200,200,200,200]]；DB 终态=["processing","processing","processing"]；时间线读数=[3,4,4]
+2026-10-03 16:35:52 +08 [FAIL] [LB-C22-CONCURRENT-CONFLICT] C22 同一工单并发分歧（processing vs closed）：终态合法且至多一个赢家 — 三轮：成功数=[2,2,2]；逐轮状态码=[[200,200],[200,200],[200,200]]；DB 终态=["processing","closed","closed"]；时间线读数=[null,null,null]
+2026-10-03 16:35:52 +08 [FAIL] [LB-C23-CONCURRENT-RESOLVE-TIMELINE] C23 同一工单并发 resolved：时间线「→resolved」恰 1 行（重复写审计） — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["resolved","resolved","resolved"]；时间线读数=[4,4,4]
+2026-10-03 16:35:53 +08 [PASS] [LB-C23-ROWCOUNT-REDPROOF] C23 判别力红证：N 次「到达」⇒ 时间线 N 行（1 次 ⇒ 1 行）—— 行数读数确实会变 — 4 次并发写 ⇒ 读到 4 行（期望 4）；1 次写 ⇒ 读到 1 行（期望 1）⇒ 该读数对「几次写到达」敏感（有判别力）
+2026-10-03 16:35:55 +08 [FAIL] [LB-C4-BULK-READ] C4 大批量读：size 钳到全局上限 500 / total 诚实 / 跨页求和可达（= total）/ 无 5xx — ledger size=5000 ⇒ status=200 size=500 total=624 rows=500 141ms；page2 ⇒ rows=124；跨页求和=624 / 读取时刻 total=624 / 现查 count(*)=624（写库并发 ⇒ 允许 ≤2 行漂移）；orders size=5000 ⇒ total=492 size=500 rows=492 453ms；after-sales ⇒ total=60 size=500 rows=60；size=100000 ⇒ size=500；size=-5 ⇒ total=0/rows=492；size=0 ⇒ total=492/rows=0
+2026-10-03 16:35:56 +08 [FAIL] [LB-C4-NEGATIVE-SIZE] C4 同族：size 为负数 ⇒ HTTP 200 但 **total=0 而仍返回整页行**（总数与行数不自洽） — 三个列表端点 size=-5 的读数：[{"label":"orders","status":200,"total":0,"size":500,"rows":492},{"label":"stock-ledger","status":200,"total":0,"size":500,"rows":500},{"label":"after-sales","status":200,"total":0,"size":500,"rows":60}]；不自洽（rows > total）的点数=3
+2026-10-03 16:35:56 +08 [SKIP] [LB-C4-BULK-READ-1000] C4+ 「>1000 行真实数据量」的列表/看板读（截断与总数一致性） — 本租户最大可读面行数 = 624（orders=499 / ledger=624 / finance=551 / tickets=60）< 1000 ⇒ **未覆盖**
+2026-10-03 16:35:56 +08 p4 完成：{"pass":5,"fail":6,"skip":1,"falseRed":0,"total":12}
+2026-10-03 16:36:07 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:36:09 +08 [PASS] [LB-REF-B01] 退款金额：科学计数法 "1e2" 的接受/拒绝口径（如实读数） — 200  ；DB refund_amount=100
+2026-10-03 16:36:11 +08 [PASS] [LB-REF-B02] 退款金额：空串 "" ⇒ 视为未传（全额退款）的口径登记 — 200；refund_amount=300 实收=300
+2026-10-03 16:36:14 +08 [FAIL] [LB-REF-B03] 退款金额：最小正数 0.001（三位小数）⇒ 接受且落库不截断 — 200；orders.refund_amount=0；流水 1 行 0
+2026-10-03 16:36:17 +08 [PASS] [LB-REF-B04] 退款累计封顶：6×100.00 vs 实收 300.00 ⇒ 恰 3 次成功、DB 与流水合计都恰 300.00 — 期望 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000 == 实测 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:36:21 +08 [PASS] [LB-REF-B05] 三方自洽：工单 refund_amount 120.00 ⇒ orders.refund_amount=120.00 + refund_at 非空 + 流水 1 行 120.00 — 期望 orders.refund_amount=120.00、refund_at 非空；工单 status=resolved、refund_amount=120.00；finance_transactions 恰 1 行 120.00 == 实测 orders.refund_amount=120 refund_at=set；工单 status=resolved refund_amount=120 refund_method=null；流水 1 行 120
+2026-10-03 16:36:49 +08 [FAIL] [LB-C21-CONCURRENT-SAME-TARGET] C21 同一工单并发打同一目标（pending→processing×4）：恰一个赢家 — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["processing","processing","processing"]；时间线读数=[4,4,4]
+2026-10-03 16:36:49 +08 [FAIL] [LB-C22-CONCURRENT-CONFLICT] C22 同一工单并发分歧（processing vs closed）：终态合法且至多一个赢家 — 三轮：成功数=[2,2,2]；逐轮状态码=[[200,200],[200,200],[200,200]]；DB 终态=["closed","closed","processing"]；时间线读数=[null,null,null]
+2026-10-03 16:36:49 +08 [FAIL] [LB-C23-CONCURRENT-RESOLVE-TIMELINE] C23 同一工单并发 resolved：时间线「→resolved」恰 1 行（重复写审计） — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["resolved","resolved","resolved"]；时间线读数=[4,4,4]
+2026-10-03 16:36:50 +08 [PASS] [LB-C23-ROWCOUNT-REDPROOF] C23 判别力红证：N 次「到达」⇒ 时间线 N 行（1 次 ⇒ 1 行）—— 行数读数确实会变 — 4 次并发写 ⇒ 读到 4 行（期望 4）；1 次写 ⇒ 读到 1 行（期望 1）⇒ 该读数对「几次写到达」敏感（有判别力）
+2026-10-03 16:36:53 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：size 钳到全局上限 500 / total 诚实 / 跨页求和可达（= total）/ 无 5xx — ledger size=5000 ⇒ status=200 size=500 total=652 rows=500 178ms；page2 ⇒ rows=152；跨页求和=652 / 读取时刻 total=652 / 现查 count(*)=652（写库并发 ⇒ 允许 ≤2 行漂移）；orders size=5000 ⇒ total=508 size=500 rows=500 708ms；after-sales ⇒ total=70 size=500 rows=70；size=100000 ⇒ size=500；size=-5 ⇒ total=0/rows=500；size=0 ⇒ total=508/rows=0
+2026-10-03 16:36:53 +08 [FAIL] [LB-C4-NEGATIVE-SIZE] C4 同族：size 为负数 ⇒ HTTP 200 但 **total=0 而仍返回整页行**（总数与行数不自洽） — 三个列表端点 size=-5 的读数：[{"label":"orders","status":200,"total":0,"size":500,"rows":500},{"label":"stock-ledger","status":200,"total":0,"size":500,"rows":500},{"label":"after-sales","status":200,"total":0,"size":500,"rows":70}]；不自洽（rows > total）的点数=3
+2026-10-03 16:36:53 +08 [SKIP] [LB-C4-BULK-READ-1000] C4+ 「>1000 行真实数据量」的列表/看板读（截断与总数一致性） — 本租户最大可读面行数 = 652（orders=515 / ledger=652 / finance=572 / tickets=70）< 1000 ⇒ **未覆盖**
+2026-10-03 16:36:53 +08 p4 完成：{"pass":6,"fail":5,"skip":1,"falseRed":0,"total":12}
+2026-10-03 16:37:13 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:37:19 +08 [PASS] [LB-CTRL-ORDER-STATUS-CAS] 正对照：订单侧并发改状态（confirmed→producing）N=4×3 轮 ⇒ 恰 1 个赢家（DB 谓词守卫在位） — 三轮成功数=[1,1,1]；逐轮状态码=[[422,200,422,422],[422,200,422,422],[200,422,422,422]]；DB 终态=["producing","producing","producing"]
+2026-10-03 16:37:21 +08 [FAIL] [LB-CTRL-CAS-SQL] 正对照的 SQL 层量化：同一并发下「有状态谓词」写 1 次、「无谓词」写 N 次 — N=4 并发：有谓词 ⇒ 终值 w=4（期望 1）；无谓词 ⇒ 终值 w=4（期望 4）
+2026-10-03 16:37:21 +08 p6 完成：{"pass":1,"fail":1,"skip":0,"falseRed":0,"total":2}
+2026-10-03 16:37:31 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:37:39 +08 [PASS] [LB-CTRL-ORDER-STATUS-CAS] 正对照：订单侧并发改状态（confirmed→producing）N=4×3 轮 ⇒ 恰 1 个赢家（DB 谓词守卫在位） — 三轮成功数=[1,1,1]；逐轮状态码=[[422,422,422,200],[200,422,422,422],[200,422,422,422]]；DB 终态=["producing","producing","producing"]
+2026-10-03 16:37:41 +08 [PASS] [LB-CTRL-CAS-SQL] 正对照的 SQL 层量化：同一并发下「有状态谓词且谓词列被改写」写 1 次、「无谓词」写 N 次 — N=4 并发：有谓词 ⇒ w=1 status=producing（期望 w=1）；无谓词 ⇒ w=4 status=producing（期望 w=4）
+2026-10-03 16:37:41 +08 p6 完成：{"pass":2,"fail":0,"skip":0,"falseRed":0,"total":2}
+2026-10-03 16:38:17 +08 构建点：main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:38:17 +08 ▶ 运行 p0-env
+2026-10-03 16:38:17 +08 构建点：43ca70322（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:38:17 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 16:38:18 +08 [PASS] [LB0-02] 时钟自检（JS +08 vs SQL Asia/Shanghai） — JS=2026-10-03 16:38:17 / SQL=2026-10-03 16:38:18（差 1s）
+2026-10-03 16:38:18 +08 [PASS] [LB0-03] 端点可达性 GET /api/admin/after-sales?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:38:18 +08 [PASS] [LB0-04] 端点可达性 GET /api/admin/orders?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:38:18 +08 [PASS] [LB0-05] 管理员登录 — 取到 token（长度 774），取得方式 = sms-bypass-code
+2026-10-03 16:38:18 +08 [PASS] [LB0-06] 租户 20 存量基线（外来行归因用） — [{"orders":524,"tickets":70,"ledger":664,"finance":578,"products":162}]
+2026-10-03 16:38:18 +08 p0 完成：{"pass":6,"fail":0,"skip":0,"falseRed":0,"total":6}
+2026-10-03 16:38:18 +08 ◀ p0-env ok
+2026-10-03 16:38:18 +08 ▶ 运行 p8-stock-before
+2026-10-03 16:38:19 +08 存量行基线快照已记录：sha256=c9ff51aed2f933aa…（orders/tickets 逐行 + 台账/退款流水 count·sum）
+2026-10-03 16:38:19 +08 ◀ p8-stock-before ok
+2026-10-03 16:38:19 +08 ▶ 运行 p1-setup
+2026-10-03 16:38:19 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:38:25 +08 [PASS] [LB1-SETUP-restockOn] 夹具 restockOn（商品+已确认订单） — orderNo=20261003555200128 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:38:25 +08 [PASS] [LB1-SETUP-restockOff] 夹具 restockOff（商品+已确认订单） — orderNo=20261003022550129 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:38:25 +08 [PASS] [LB1-SETUP-refund] 夹具 refund（商品+已确认订单） — orderNo=20261003180270130 status=confirmed 实收=300 总额=300 明细后 SKU 库存=98
+2026-10-03 16:38:25 +08 [PASS] [LB1-SETUP-ledger] 确认收款落扣减台账（order 腿） — 台账行数=1 delta=-2 before=100 after=98 ref_no=20261003555200128
+2026-10-03 16:38:25 +08 p1-setup 完成：{"pass":4,"fail":0,"skip":0,"falseRed":0,"total":4}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:38:25 +08 ◀ p1-setup ok
+2026-10-03 16:38:25 +08 ▶ 运行 p2-b1-serial
+2026-10-03 16:38:25 +08 ◀ p2-b1-serial exit 1
+2026-10-03 16:38:25 +08 ▶ 运行 p3-b2-concurrency
+2026-10-03 16:38:26 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:38:32 +08 [PASS] [LB-C1-CONCURRENT-REFUND] C1 同一订单并发退款 N=8×3 轮：成功数×金额 ≤ 实收，DB refund_amount 终值 ≤ 实收 — 三轮成功数=[3,3,3]（期望各 3）；refund_amount 终值=[300,300,300]（期望各 300.00 = 实收）；流水行数=[3,3,3] 合计=["300.000","300.000","300.000"]
+2026-10-03 16:38:34 +08 [PASS] [LB-C1-REDPROOF] C1 判别力红证（注入）：把 WHERE 上限摘掉 ⇒ 必红；同一装置加回守卫 ⇒ 绿 — 无守卫 ⇒ 终值 800（上限 300.00，泄漏=true）；有守卫（产品同形复刻）⇒ 终值 300（守住=true）
+2026-10-03 16:38:47 +08 [FAIL] [LB-C2-CONCURRENT-RESOLVE] C2 同一工单并发完结（processing→resolved）N=4×3 轮：副作用不得翻倍 — 三轮结论=[{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}}]
+2026-10-03 16:39:04 +08 [PASS] [LB-C3-CONCURRENT-STOCK] C3 同一 SKU 并发扣减 N=8×3 轮：超卖拒绝 / 库存不为负 / 台账守恒 — 三轮：并发扣减终值=[0,0,0]（期望 0.0）；超卖请求结局=[[422,3],[422,3],[422,3]]（期望 [422, 3.0]）；并发收款后 SKU=[98,98,98]（期望 98.0）
+2026-10-03 16:39:04 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：分页上限 / 总数与行数一致性 / 响应时间（机器读数） — orders size=5000 ⇒ total=undefined rows=null 0ms；after-sales size=5000 ⇒ total=undefined rows=null 2ms
+2026-10-03 16:39:04 +08 p3 完成：{"pass":4,"fail":1,"skip":0,"falseRed":0,"total":5}
+2026-10-03 16:39:04 +08 ◀ p3-b2-concurrency ok
+2026-10-03 16:39:04 +08 ▶ 运行 p4-probe-batch
+2026-10-03 16:39:05 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:39:07 +08 [PASS] [LB-REF-B01] 退款金额：科学计数法 "1e2" 的接受/拒绝口径（如实读数） — 200  ；DB refund_amount=100
+2026-10-03 16:39:08 +08 [PASS] [LB-REF-B02] 退款金额：空串 "" ⇒ 视为未传（全额退款）的口径登记 — 200；refund_amount=300 实收=300
+2026-10-03 16:39:11 +08 [FAIL] [LB-REF-B03] 退款金额：最小正数 0.001（三位小数）⇒ 接受且落库不截断 — 200；orders.refund_amount=0；流水 1 行 0
+2026-10-03 16:39:14 +08 [PASS] [LB-REF-B04] 退款累计封顶：6×100.00 vs 实收 300.00 ⇒ 恰 3 次成功、DB 与流水合计都恰 300.00 — 期望 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000 == 实测 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:39:21 +08 构建点：main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:39:21 +08 ▶ 运行 p0-env
+2026-10-03 16:39:21 +08 构建点：43ca70322（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:39:21 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 16:39:21 +08 [PASS] [LB0-02] 时钟自检（JS +08 vs SQL Asia/Shanghai） — JS=2026-10-03 16:39:21 / SQL=2026-10-03 16:39:21（差 0s）
+2026-10-03 16:39:21 +08 [PASS] [LB0-03] 端点可达性 GET /api/admin/after-sales?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:39:21 +08 [PASS] [LB0-04] 端点可达性 GET /api/admin/orders?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:39:21 +08 [PASS] [LB0-05] 管理员登录 — 取到 token（长度 774），取得方式 = sms-bypass-code
+2026-10-03 16:39:22 +08 [PASS] [LB0-06] 租户 20 存量基线（外来行归因用） — [{"orders":541,"tickets":74,"ledger":713,"finance":613,"products":182}]
+2026-10-03 16:39:22 +08 p0 完成：{"pass":6,"fail":0,"skip":0,"falseRed":0,"total":6}
+2026-10-03 16:39:22 +08 ◀ p0-env ok
+2026-10-03 16:39:22 +08 ▶ 运行 p8-stock-before
+2026-10-03 16:39:22 +08 存量行基线快照已记录：sha256=47e4df729208c469…（orders/tickets 逐行 + 台账/退款流水 count·sum）
+2026-10-03 16:39:22 +08 ◀ p8-stock-before ok
+2026-10-03 16:39:22 +08 ▶ 运行 p1-setup
+2026-10-03 16:39:22 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:39:29 +08 [PASS] [LB1-SETUP-restockOn] 夹具 restockOn（商品+已确认订单） — orderNo=20261003481640145 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:39:29 +08 [PASS] [LB1-SETUP-restockOff] 夹具 restockOff（商品+已确认订单） — orderNo=20261003370720146 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:39:29 +08 [PASS] [LB1-SETUP-refund] 夹具 refund（商品+已确认订单） — orderNo=20261003793870147 status=confirmed 实收=300 总额=300 明细后 SKU 库存=98
+2026-10-03 16:39:29 +08 [PASS] [LB1-SETUP-ledger] 确认收款落扣减台账（order 腿） — 台账行数=1 delta=-2 before=100 after=98 ref_no=20261003481640145
+2026-10-03 16:39:29 +08 p1-setup 完成：{"pass":4,"fail":0,"skip":0,"falseRed":0,"total":4}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:39:29 +08 ◀ p1-setup ok
+2026-10-03 16:39:29 +08 ▶ 运行 p2-b1-serial
+2026-10-03 16:39:29 +08 ◀ p2-b1-serial exit 1
+2026-10-03 16:39:29 +08 ▶ 运行 p3-b2-concurrency
+2026-10-03 16:39:29 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:39:36 +08 [PASS] [LB-C1-CONCURRENT-REFUND] C1 同一订单并发退款 N=8×3 轮：成功数×金额 ≤ 实收，DB refund_amount 终值 ≤ 实收 — 三轮成功数=[3,3,3]（期望各 3）；refund_amount 终值=[300,300,300]（期望各 300.00 = 实收）；流水行数=[3,3,3] 合计=["300.000","300.000","300.000"]
+2026-10-03 16:39:38 +08 [PASS] [LB-C1-REDPROOF] C1 判别力红证（注入）：把 WHERE 上限摘掉 ⇒ 必红；同一装置加回守卫 ⇒ 绿 — 无守卫 ⇒ 终值 800（上限 300.00，泄漏=true）；有守卫（产品同形复刻）⇒ 终值 300（守住=true）
+2026-10-03 16:39:51 +08 [FAIL] [LB-C2-CONCURRENT-RESOLVE] C2 同一工单并发完结（processing→resolved）N=4×3 轮：副作用不得翻倍 — 三轮结论=[{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}}]
+2026-10-03 16:40:02 +08 [PASS] [LB-C3-CONCURRENT-STOCK] C3 同一 SKU 并发扣减 N=8×3 轮：超卖拒绝 / 库存不为负 / 台账守恒 — 三轮：并发扣减终值=[0,0,0]（期望 0.0）；超卖请求结局=[[422,3],[422,3],[422,3]]（期望 [422, 3.0]）；并发收款后 SKU=[98,98,98]（期望 98.0）
+2026-10-03 16:40:02 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：分页上限 / 总数与行数一致性 / 响应时间（机器读数） — orders size=5000 ⇒ total=undefined rows=null 2ms；after-sales size=5000 ⇒ total=undefined rows=null 2ms
+2026-10-03 16:40:02 +08 p3 完成：{"pass":4,"fail":1,"skip":0,"falseRed":0,"total":5}
+2026-10-03 16:40:02 +08 ◀ p3-b2-concurrency ok
+2026-10-03 16:40:02 +08 ▶ 运行 p4-probe-batch
+2026-10-03 16:40:03 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:40:05 +08 [PASS] [LB-REF-B01] 退款金额：科学计数法 "1e2" 的接受/拒绝口径（如实读数） — 200  ；DB refund_amount=100
+2026-10-03 16:40:07 +08 [PASS] [LB-REF-B02] 退款金额：空串 "" ⇒ 视为未传（全额退款）的口径登记 — 200；refund_amount=300 实收=300
+2026-10-03 16:40:09 +08 [FAIL] [LB-REF-B03] 退款金额：最小正数 0.001（三位小数）⇒ 接受且落库不截断 — 200；orders.refund_amount=0；流水 1 行 0
+2026-10-03 16:40:13 +08 [PASS] [LB-REF-B04] 退款累计封顶：6×100.00 vs 实收 300.00 ⇒ 恰 3 次成功、DB 与流水合计都恰 300.00 — 期望 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000 == 实测 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:40:16 +08 [PASS] [LB-REF-B05] 三方自洽：工单 refund_amount 120.00 ⇒ orders.refund_amount=120.00 + refund_at 非空 + 流水 1 行 120.00 — 期望 orders.refund_amount=120.00、refund_at 非空；工单 status=resolved、refund_amount=120.00；finance_transactions 恰 1 行 120.00 == 实测 orders.refund_amount=120 refund_at=set；工单 status=resolved refund_amount=120 refund_method=null；流水 1 行 120
+2026-10-03 16:40:42 +08 [FAIL] [LB-C21-CONCURRENT-SAME-TARGET] C21 同一工单并发打同一目标（pending→processing×4）：恰一个赢家 — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["processing","processing","processing"]；时间线读数=[4,4,4]
+2026-10-03 16:40:42 +08 [FAIL] [LB-C22-CONCURRENT-CONFLICT] C22 同一工单并发分歧（processing vs closed）：终态合法且至多一个赢家 — 三轮：成功数=[2,2,2]；逐轮状态码=[[200,200],[200,200],[200,200]]；DB 终态=["closed","closed","closed"]；时间线读数=[null,null,null]
+2026-10-03 16:40:42 +08 [FAIL] [LB-C23-CONCURRENT-RESOLVE-TIMELINE] C23 同一工单并发 resolved：时间线「→resolved」恰 1 行（重复写审计） — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["resolved","resolved","resolved"]；时间线读数=[4,4,4]
+2026-10-03 16:40:44 +08 [PASS] [LB-C23-ROWCOUNT-REDPROOF] C23 判别力红证：N 次「到达」⇒ 时间线 N 行（1 次 ⇒ 1 行）—— 行数读数确实会变 — 4 次并发写 ⇒ 读到 4 行（期望 4）；1 次写 ⇒ 读到 1 行（期望 1）⇒ 该读数对「几次写到达」敏感（有判别力）
+2026-10-03 16:40:46 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：size 钳到全局上限 500 / total 诚实 / 跨页求和可达（= total）/ 无 5xx — ledger size=5000 ⇒ status=200 size=500 total=780 rows=500 129ms；page2 ⇒ rows=280；跨页求和=780 / 读取时刻 total=780 / 现查 count(*)=780（写库并发 ⇒ 允许 ≤2 行漂移）；orders size=5000 ⇒ total=561 size=500 rows=500 362ms；after-sales ⇒ total=87 size=500 rows=87；size=100000 ⇒ size=500；size=-5 ⇒ total=0/rows=500；size=0 ⇒ total=561/rows=0
+2026-10-03 16:40:46 +08 [FAIL] [LB-C4-NEGATIVE-SIZE] C4 同族：size 为负数 ⇒ HTTP 200 但 **total=0 而仍返回整页行**（总数与行数不自洽） — 三个列表端点 size=-5 的读数：[{"label":"orders","status":200,"total":0,"size":500,"rows":500},{"label":"stock-ledger","status":200,"total":0,"size":500,"rows":500},{"label":"after-sales","status":200,"total":0,"size":500,"rows":87}]；不自洽（rows > total）的点数=3
+2026-10-03 16:40:46 +08 [SKIP] [LB-C4-BULK-READ-1000] C4+ 「>1000 行真实数据量」的列表/看板读（截断与总数一致性） — 本租户最大可读面行数 = 780（orders=568 / ledger=780 / finance=658 / tickets=87）< 1000 ⇒ **未覆盖**
+2026-10-03 16:40:46 +08 p4 完成：{"pass":6,"fail":5,"skip":1,"falseRed":0,"total":12}
+2026-10-03 16:40:46 +08 ◀ p4-probe-batch ok
+2026-10-03 16:40:46 +08 ▶ 运行 p5-refund-precision
+2026-10-03 16:40:47 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:40:49 +08 [PASS] [LB-PREC-01] 精度①：refund_amount=0.01（最小可表示）⇒ 成功且**逐字**落 0.01 — 期望 200；orders.refund_amount=0.01；finance_transactions 恰 1 行 amount=0.01；两者**相等** == 实测 200；orders.refund_amount=0.01；流水 1 行 amount=0.01
+2026-10-03 16:40:51 +08 [FAIL] [LB-PREC-02] 精度②：refund_amount=0.001（小于最小可表示）⇒ 应 4xx 显式拒绝；现状 200 静默归零 — 200；orders.refund_amount=0；流水 1 行 amount=0；refund_at=set
+2026-10-03 16:40:58 +08 [PASS] [LB-PREC-03] 精度③：0.004 / 0.005 / 0.009 的舍入方向（口径登记，不判缺陷） — 逐字读数：["0.004 ⇒ 200 / 订单 0 / 流水 0","0.005 ⇒ 200 / 订单 0.01 / 流水 0.01","0.009 ⇒ 200 / 订单 0.01 / 流水 0.01"]
+2026-10-03 16:40:58 +08 p5 完成：{"pass":1,"fail":1,"skip":0,"falseRed":0,"total":3}
+2026-10-03 16:40:58 +08 ◀ p5-refund-precision ok
+2026-10-03 16:40:58 +08 ▶ 运行 p6-order-status-control
+2026-10-03 16:40:58 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:41:04 +08 [PASS] [LB-CTRL-ORDER-STATUS-CAS] 正对照：订单侧并发改状态（confirmed→producing）N=4×3 轮 ⇒ 恰 1 个赢家（DB 谓词守卫在位） — 三轮成功数=[1,1,1]；逐轮状态码=[[422,200,422,422],[200,422,422,422],[200,422,422,422]]；DB 终态=["producing","producing","producing"]
+2026-10-03 16:41:05 +08 [PASS] [LB-CTRL-CAS-SQL] 正对照的 SQL 层量化：同一并发下「有状态谓词且谓词列被改写」写 1 次、「无谓词」写 N 次 — N=4 并发：有谓词 ⇒ w=1 status=producing（期望 w=1）；无谓词 ⇒ w=4 status=producing（期望 w=4）
+2026-10-03 16:41:05 +08 p6 完成：{"pass":2,"fail":0,"skip":0,"falseRed":0,"total":2}
+2026-10-03 16:41:05 +08 ◀ p6-order-status-control ok
+2026-10-03 16:41:05 +08 ▶ 运行 p9-cleanup
+2026-10-03 16:41:10 +08 [PASS] [LB-Z-01] 零残留：本包探针域逐表计数 = 0 — 清理前 1834 行 → 清理后 0 行；逐表={"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0}
+2026-10-03 16:41:10 +08 [FAIL] [LB-Z-02] 存量行零改动（非探针域内容 sha256 前后对照） — before sha256=47e4df729208c469… / after=f1acfa475cfc8990… ⇒ **不一致**
+2026-10-03 16:41:10 +08 p9 完成：{"pass":1,"fail":1,"skip":0,"falseRed":0,"total":2}；残留=0
+2026-10-03 16:41:10 +08 ◀ p9-cleanup ok
+2026-10-03 16:41:13 +08 汇总：counts={"pass":41,"fail":10,"skip":1,"falseRed":0,"total":54}；零残留=true（{"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0}）
+2026-10-03 16:41:13 +08 产物：out/SUMMARY.json（54 条判据）
+2026-10-03 16:41:59 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:41:59 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 16:41:59 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 16:42:01 +08 [FAIL] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 16:42:02 +08 [FAIL] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing ≠ 实测 404 / DB=undefined
+2026-10-03 16:42:02 +08 [FAIL] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing ≠ 实测 404 售后工单不存在 / DB=undefined
+2026-10-03 16:42:02 +08 [FAIL] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved ≠ 实测 404 / DB=undefined
+2026-10-03 16:42:02 +08 [FAIL] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved ≠ 实测 404 售后工单不存在 / DB=undefined
+2026-10-03 16:42:02 +08 [FAIL] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） ≠ 实测 404 NOT_FOUND 售后工单不存在
+2026-10-03 16:42:03 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T16:42:02.99164+08:00
+2026-10-03 16:42:03 +08 [FAIL] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） ≠ 实测 404 / DB status=undefined closed_at=undefined
+2026-10-03 16:42:05 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 16:42:07 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 16:42:09 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 16:42:11 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:42:13 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 16:42:15 +08 [PASS] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动 — 期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0
+2026-10-03 16:42:17 +08 [PASS] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null == 实测 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0
+2026-10-03 16:42:19 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 16:42:25 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:42:25 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 16:42:26 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 16:42:28 +08 [FAIL] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 16:42:28 +08 [FAIL] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing ≠ 实测 404 / DB=undefined
+2026-10-03 16:42:28 +08 [FAIL] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing ≠ 实测 404 售后工单不存在 / DB=undefined
+2026-10-03 16:42:29 +08 [FAIL] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved ≠ 实测 404 / DB=undefined
+2026-10-03 16:42:29 +08 [FAIL] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved ≠ 实测 404 售后工单不存在 / DB=undefined
+2026-10-03 16:42:29 +08 [FAIL] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） ≠ 实测 404 NOT_FOUND 售后工单不存在
+2026-10-03 16:42:29 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T16:42:29.678838+08:00
+2026-10-03 16:42:30 +08 [FAIL] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） ≠ 实测 404 / DB status=undefined closed_at=undefined
+2026-10-03 16:42:31 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 16:42:34 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 16:42:35 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 16:42:38 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:42:41 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 16:42:44 +08 [PASS] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动 — 期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0
+2026-10-03 16:42:46 +08 [PASS] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null == 实测 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0
+2026-10-03 16:42:48 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 16:43:01 +08 构建点：main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:43:01 +08 ▶ 运行 p0-env
+2026-10-03 16:43:01 +08 构建点：43ca70322（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:43:01 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 16:43:01 +08 [PASS] [LB0-02] 时钟自检（JS +08 vs SQL Asia/Shanghai） — JS=2026-10-03 16:43:01 / SQL=2026-10-03 16:43:01（差 0s）
+2026-10-03 16:43:01 +08 [PASS] [LB0-03] 端点可达性 GET /api/admin/after-sales?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:43:01 +08 [PASS] [LB0-04] 端点可达性 GET /api/admin/orders?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:43:02 +08 [PASS] [LB0-05] 管理员登录 — 取到 token（长度 774），取得方式 = sms-bypass-code
+2026-10-03 16:43:02 +08 [PASS] [LB0-06] 租户 20 存量基线（外来行归因用） — [{"orders":429,"tickets":9,"ledger":422,"finance":404,"products":57}]
+2026-10-03 16:43:02 +08 p0 完成：{"pass":6,"fail":0,"skip":0,"falseRed":0,"total":6}
+2026-10-03 16:43:02 +08 ◀ p0-env ok
+2026-10-03 16:43:02 +08 ▶ 运行 p8-stock-before
+2026-10-03 16:43:02 +08 存量行基线快照已记录：sha256=709bd108654887d6…（orders/tickets 逐行 + 台账/退款流水 count·sum）
+2026-10-03 16:43:03 +08 ◀ p8-stock-before ok
+2026-10-03 16:43:03 +08 ▶ 运行 p1-setup
+2026-10-03 16:43:03 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:43:09 +08 [PASS] [LB1-SETUP-restockOn] 夹具 restockOn（商品+已确认订单） — orderNo=20261003476910197 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:43:09 +08 [PASS] [LB1-SETUP-restockOff] 夹具 restockOff（商品+已确认订单） — orderNo=20261003691030198 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:43:09 +08 [PASS] [LB1-SETUP-refund] 夹具 refund（商品+已确认订单） — orderNo=20261003575820199 status=confirmed 实收=300 总额=300 明细后 SKU 库存=98
+2026-10-03 16:43:10 +08 [PASS] [LB1-SETUP-ledger] 确认收款落扣减台账（order 腿） — 台账行数=1 delta=-2 before=100 after=98 ref_no=20261003476910197
+2026-10-03 16:43:10 +08 p1-setup 完成：{"pass":4,"fail":0,"skip":0,"falseRed":0,"total":4}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:43:10 +08 ◀ p1-setup ok
+2026-10-03 16:43:10 +08 ▶ 运行 p2-b1-serial
+2026-10-03 16:43:10 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:43:10 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 16:43:11 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 16:43:13 +08 [FAIL] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 16:43:14 +08 [PASS] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing == 实测 200 / DB=processing
+2026-10-03 16:43:15 +08 [PASS] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing == 实测 422 工单状态不允许从 [处理中] 变更为 [已拒绝] / DB=processing
+2026-10-03 16:43:15 +08 [PASS] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved == 实测 200 / DB=resolved
+2026-10-03 16:43:15 +08 [PASS] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved == 实测 422 工单状态不允许从 [已解决] 变更为 [处理中] / DB=resolved
+2026-10-03 16:43:15 +08 [PASS] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） == 实测 422 VALIDATION_ERROR 参数校验失败
+2026-10-03 16:43:16 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T16:43:15.899588+08:00
+2026-10-03 16:43:16 +08 [PASS] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） == 实测 200 / DB status=rejected closed_at=2026-10-03T16:43:16.373395+08:00
+2026-10-03 16:43:18 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 16:43:20 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 16:43:22 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 16:43:24 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:43:26 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 16:43:29 +08 [PASS] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动 — 期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0
+2026-10-03 16:43:30 +08 [PASS] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null == 实测 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0
+2026-10-03 16:43:32 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 16:43:34 +08 [PASS] [LB-AS-RESTOCK-ON] 回补开关**开**（allow_return_restock=true）：退货完结 ⇒ 库存回补 + 落 aftersales 台账 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98.000 → 100.000（回补 2.000，= 基线 + 明细数量）+ stock_ledger_entries 恰 1 行 reason=aftersales delta=+2.000 ref_no=AS-20261003-0009 + 订单 refund_amount=200.00 == 实测 status=200；SKU 98 → 100；台账 1 行 [[2,98,100,"aftersales"]]；订单 refund_amount=200
+2026-10-03 16:43:35 +08 [PASS] [LB-AS-RESTOCK-OFF] 回补开关**关**（allow_return_restock=false，默认）：退货完结 ⇒ 库存零变化 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98 → 98（零变化）+ ref_no=AS-20261003-0010 的台账 0 行 + 退款仍照记（refund_amount=200.00） == 实测 status=200；SKU 98 → 98；台账 0 行；订单 refund_amount=200
+2026-10-03 16:43:35 +08 p2 完成：{"pass":18,"fail":1,"skip":0,"falseRed":0,"total":20}
+2026-10-03 16:43:35 +08 ◀ p2-b1-serial ok
+2026-10-03 16:43:35 +08 ▶ 运行 p3-b2-concurrency
+2026-10-03 16:43:35 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:43:42 +08 [PASS] [LB-C1-CONCURRENT-REFUND] C1 同一订单并发退款 N=8×3 轮：成功数×金额 ≤ 实收，DB refund_amount 终值 ≤ 实收 — 三轮成功数=[3,3,3]（期望各 3）；refund_amount 终值=[300,300,300]（期望各 300.00 = 实收）；流水行数=[3,3,3] 合计=["300.000","300.000","300.000"]
+2026-10-03 16:43:44 +08 [PASS] [LB-C1-REDPROOF] C1 判别力红证（注入）：把 WHERE 上限摘掉 ⇒ 必红；同一装置加回守卫 ⇒ 绿 — 无守卫 ⇒ 终值 800（上限 300.00，泄漏=true）；有守卫（产品同形复刻）⇒ 终值 300（守住=true）
+2026-10-03 16:43:56 +08 [FAIL] [LB-C2-CONCURRENT-RESOLVE] C2 同一工单并发完结（processing→resolved）N=4×3 轮：副作用不得翻倍 — 三轮结论=[{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}}]
+2026-10-03 16:44:10 +08 [PASS] [LB-C3-CONCURRENT-STOCK] C3 同一 SKU 并发扣减 N=8×3 轮：超卖拒绝 / 库存不为负 / 台账守恒 — 三轮：并发扣减终值=[0,0,0]（期望 0.0）；超卖请求结局=[[422,3],[422,3],[422,3]]（期望 [422, 3.0]）；并发收款后 SKU=[98,98,98]（期望 98.0）
+2026-10-03 16:44:10 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：分页上限 / 总数与行数一致性 / 响应时间（机器读数） — orders size=5000 ⇒ total=undefined rows=null 2ms；after-sales size=5000 ⇒ total=undefined rows=null 2ms
+2026-10-03 16:44:10 +08 p3 完成：{"pass":4,"fail":1,"skip":0,"falseRed":0,"total":5}
+2026-10-03 16:44:10 +08 ◀ p3-b2-concurrency ok
+2026-10-03 16:44:10 +08 ▶ 运行 p4-probe-batch
+2026-10-03 16:44:10 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:44:13 +08 [PASS] [LB-REF-B01] 退款金额：科学计数法 "1e2" 的接受/拒绝口径（如实读数） — 200  ；DB refund_amount=100
+2026-10-03 16:44:14 +08 [PASS] [LB-REF-B02] 退款金额：空串 "" ⇒ 视为未传（全额退款）的口径登记 — 200；refund_amount=300 实收=300
+2026-10-03 16:44:17 +08 [FAIL] [LB-REF-B03] 退款金额：最小正数 0.001（三位小数）⇒ 接受且落库不截断 — 200；orders.refund_amount=0；流水 1 行 0
+2026-10-03 16:44:23 +08 [PASS] [LB-REF-B04] 退款累计封顶：6×100.00 vs 实收 300.00 ⇒ 恰 3 次成功、DB 与流水合计都恰 300.00 — 期望 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000 == 实测 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:44:26 +08 [PASS] [LB-REF-B05] 三方自洽：工单 refund_amount 120.00 ⇒ orders.refund_amount=120.00 + refund_at 非空 + 流水 1 行 120.00 — 期望 orders.refund_amount=120.00、refund_at 非空；工单 status=resolved、refund_amount=120.00；finance_transactions 恰 1 行 120.00 == 实测 orders.refund_amount=120 refund_at=set；工单 status=resolved refund_amount=120 refund_method=null；流水 1 行 120
+2026-10-03 16:44:50 +08 [FAIL] [LB-C21-CONCURRENT-SAME-TARGET] C21 同一工单并发打同一目标（pending→processing×4）：恰一个赢家 — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["processing","processing","processing"]；时间线读数=[4,4,4]
+2026-10-03 16:44:50 +08 [FAIL] [LB-C22-CONCURRENT-CONFLICT] C22 同一工单并发分歧（processing vs closed）：终态合法且至多一个赢家 — 三轮：成功数=[2,2,2]；逐轮状态码=[[200,200],[200,200],[200,200]]；DB 终态=["closed","closed","processing"]；时间线读数=[null,null,null]
+2026-10-03 16:44:50 +08 [FAIL] [LB-C23-CONCURRENT-RESOLVE-TIMELINE] C23 同一工单并发 resolved：时间线「→resolved」恰 1 行（重复写审计） — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["resolved","resolved","resolved"]；时间线读数=[4,4,4]
+2026-10-03 16:44:52 +08 [PASS] [LB-C23-ROWCOUNT-REDPROOF] C23 判别力红证：N 次「到达」⇒ 时间线 N 行（1 次 ⇒ 1 行）—— 行数读数确实会变 — 4 次并发写 ⇒ 读到 4 行（期望 4）；1 次写 ⇒ 读到 1 行（期望 1）⇒ 该读数对「几次写到达」敏感（有判别力）
+2026-10-03 16:44:54 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：size 钳到全局上限 500 / total 诚实 / 跨页求和可达（= total）/ 无 5xx — ledger size=5000 ⇒ status=200 size=500 total=508 rows=500 100ms；page2 ⇒ rows=8；跨页求和=508 / 读取时刻 total=508 / 现查 count(*)=508（写库并发 ⇒ 允许 ≤2 行漂移）；orders size=5000 ⇒ total=458 size=500 rows=458 428ms；after-sales ⇒ total=28 size=500 rows=28；size=100000 ⇒ size=500；size=-5 ⇒ total=0/rows=458；size=0 ⇒ total=458/rows=0
+2026-10-03 16:44:55 +08 [FAIL] [LB-C4-NEGATIVE-SIZE] C4 同族：size 为负数 ⇒ HTTP 200 但 **total=0 而仍返回整页行**（总数与行数不自洽） — 三个列表端点 size=-5 的读数：[{"label":"orders","status":200,"total":0,"size":500,"rows":458},{"label":"stock-ledger","status":200,"total":0,"size":500,"rows":500},{"label":"after-sales","status":200,"total":0,"size":500,"rows":28}]；不自洽（rows > total）的点数=3
+2026-10-03 16:44:55 +08 [SKIP] [LB-C4-BULK-READ-1000] C4+ 「>1000 行真实数据量」的列表/看板读（截断与总数一致性） — 本租户最大可读面行数 = 508（orders=465 / ledger=508 / finance=465 / tickets=28）< 1000 ⇒ **未覆盖**
+2026-10-03 16:44:55 +08 p4 完成：{"pass":6,"fail":5,"skip":1,"falseRed":0,"total":12}
+2026-10-03 16:44:55 +08 ◀ p4-probe-batch ok
+2026-10-03 16:44:55 +08 ▶ 运行 p5-refund-precision
+2026-10-03 16:44:55 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:44:58 +08 [PASS] [LB-PREC-01] 精度①：refund_amount=0.01（最小可表示）⇒ 成功且**逐字**落 0.01 — 期望 200；orders.refund_amount=0.01；finance_transactions 恰 1 行 amount=0.01；两者**相等** == 实测 200；orders.refund_amount=0.01；流水 1 行 amount=0.01
+2026-10-03 16:45:00 +08 [FAIL] [LB-PREC-02] 精度②：refund_amount=0.001（小于最小可表示）⇒ 应 4xx 显式拒绝；现状 200 静默归零 — 200；orders.refund_amount=0；流水 1 行 amount=0；refund_at=set
+2026-10-03 16:45:06 +08 [PASS] [LB-PREC-03] 精度③：0.004 / 0.005 / 0.009 的舍入方向（口径登记，不判缺陷） — 逐字读数：["0.004 ⇒ 200 / 订单 0 / 流水 0","0.005 ⇒ 200 / 订单 0.01 / 流水 0.01","0.009 ⇒ 200 / 订单 0.01 / 流水 0.01"]
+2026-10-03 16:45:06 +08 p5 完成：{"pass":1,"fail":1,"skip":0,"falseRed":0,"total":3}
+2026-10-03 16:45:06 +08 ◀ p5-refund-precision ok
+2026-10-03 16:45:06 +08 ▶ 运行 p6-order-status-control
+2026-10-03 16:45:06 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:45:12 +08 [PASS] [LB-CTRL-ORDER-STATUS-CAS] 正对照：订单侧并发改状态（confirmed→producing）N=4×3 轮 ⇒ 恰 1 个赢家（DB 谓词守卫在位） — 三轮成功数=[1,1,1]；逐轮状态码=[[422,422,422,200],[200,422,422,422],[200,422,422,422]]；DB 终态=["producing","producing","producing"]
+2026-10-03 16:45:14 +08 [PASS] [LB-CTRL-CAS-SQL] 正对照的 SQL 层量化：同一并发下「有状态谓词且谓词列被改写」写 1 次、「无谓词」写 N 次 — N=4 并发：有谓词 ⇒ w=1 status=producing（期望 w=1）；无谓词 ⇒ w=4 status=producing（期望 w=4）
+2026-10-03 16:45:14 +08 p6 完成：{"pass":2,"fail":0,"skip":0,"falseRed":0,"total":2}
+2026-10-03 16:45:14 +08 ◀ p6-order-status-control ok
+2026-10-03 16:45:14 +08 ▶ 运行 p7-refund-negative
+2026-10-03 16:45:14 +08 ◀ p7-refund-negative exit 1
+2026-10-03 16:45:14 +08 ▶ 运行 p9-cleanup
+2026-10-03 16:45:19 +08 [PASS] [LB-Z-01] 零残留：本包探针域逐表计数 = 0 — 清理前 596 行 → 清理后 0 行；逐表={"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0}
+2026-10-03 16:45:19 +08 [FAIL] [LB-Z-02] 存量行零改动（非探针域内容 sha256 前后对照） — before sha256=709bd108654887d6… / after=191566a35e53ab2d… ⇒ **不一致**
+2026-10-03 16:45:19 +08 p9 完成：{"pass":1,"fail":1,"skip":0,"falseRed":0,"total":2}；残留=0
+2026-10-03 16:45:19 +08 ◀ p9-cleanup ok
+2026-10-03 16:45:23 +08 汇总：counts={"pass":42,"fail":9,"skip":1,"falseRed":0,"total":54}；零残留=true（{"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0}）
+2026-10-03 16:45:23 +08 产物：out/SUMMARY.json（54 条判据）
+2026-10-03 16:46:28 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:46:37 +08 [PASS] [LB-C5-DISPATCH-SERIAL] C5 并发派工（pooled 缺省=逐单派）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复 — pooled=false 三轮：成功数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]
+2026-10-03 16:46:43 +08 [PASS] [LB-C5-DISPATCH-POOLED] C5 并发派工（pooled=true 跨单成组）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复 — pooled=true 三轮：成功数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]
+2026-10-03 16:46:45 +08 [PASS] [LB-C5-REDPROOF] C5 判别力红证：摘掉唯一约束 ⇒ N 行；加回 ⇒ 1 行（并发窗口真实存在、判据会红） — N=4 独立 psql 进程并发 INSERT：无唯一约束 ⇒ 4 行（期望 4）；有唯一约束（产品同形）⇒ 1 行（期望 1）
+2026-10-03 16:46:45 +08 p10 完成：{"pass":3,"fail":0,"skip":0,"falseRed":0,"total":3}
+2026-10-03 16:47:03 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:47:10 +08 [PASS] [LB-C5-DISPATCH-SERIAL] C5 并发派工（pooled 缺省=逐单派）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复 — pooled=false 三轮：**业务成功数**=[1,1,1]（期望各 1）/ HTTP 200 数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]
+2026-10-03 16:47:17 +08 [PASS] [LB-C5-DISPATCH-POOLED] C5 并发派工（pooled=true 跨单成组）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复 — pooled=true 三轮：**业务成功数**=[1,1,1]（期望各 1）/ HTTP 200 数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]
+2026-10-03 16:47:19 +08 [PASS] [LB-C5-REDPROOF] C5 判别力红证：摘掉唯一约束 ⇒ N 行；加回 ⇒ 1 行（并发窗口真实存在、判据会红） — N=4 独立 psql 进程并发 INSERT：无唯一约束 ⇒ 4 行（期望 4）；有唯一约束（产品同形）⇒ 1 行（期望 1）
+2026-10-03 16:47:19 +08 p10 完成：{"pass":3,"fail":0,"skip":0,"falseRed":0,"total":3}
+2026-10-03 16:47:37 +08 构建点：main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:47:37 +08 ▶ 运行 p0-env
+2026-10-03 16:47:38 +08 构建点：43ca70322（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:47:38 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 16:47:38 +08 [PASS] [LB0-02] 时钟自检（JS +08 vs SQL Asia/Shanghai） — JS=2026-10-03 16:47:38 / SQL=2026-10-03 16:47:38（差 0s）
+2026-10-03 16:47:38 +08 [PASS] [LB0-03] 端点可达性 GET /api/admin/after-sales?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:47:38 +08 [PASS] [LB0-04] 端点可达性 GET /api/admin/orders?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:47:38 +08 [PASS] [LB0-05] 管理员登录 — 取到 token（长度 774），取得方式 = sms-bypass-code
+2026-10-03 16:47:38 +08 [PASS] [LB0-06] 租户 20 存量基线（外来行归因用） — [{"orders":426,"tickets":5,"ledger":410,"finance":388,"products":51}]
+2026-10-03 16:47:38 +08 p0 完成：{"pass":6,"fail":0,"skip":0,"falseRed":0,"total":6}
+2026-10-03 16:47:38 +08 ◀ p0-env ok
+2026-10-03 16:47:38 +08 ▶ 运行 p8-stock-before
+2026-10-03 16:47:39 +08 存量行基线快照已记录：sha256=85ff58efe32369c0…（orders/tickets 逐行 + 台账/退款流水 count·sum）
+2026-10-03 16:47:39 +08 ◀ p8-stock-before ok
+2026-10-03 16:47:39 +08 ▶ 运行 p1-setup
+2026-10-03 16:47:39 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:47:45 +08 [PASS] [LB1-SETUP-restockOn] 夹具 restockOn（商品+已确认订单） — orderNo=20261003353250252 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:47:45 +08 [PASS] [LB1-SETUP-restockOff] 夹具 restockOff（商品+已确认订单） — orderNo=20261003641250253 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:47:45 +08 [PASS] [LB1-SETUP-refund] 夹具 refund（商品+已确认订单） — orderNo=20261003637810254 status=confirmed 实收=300 总额=300 明细后 SKU 库存=98
+2026-10-03 16:47:45 +08 [PASS] [LB1-SETUP-ledger] 确认收款落扣减台账（order 腿） — 台账行数=1 delta=-2 before=100 after=98 ref_no=20261003353250252
+2026-10-03 16:47:45 +08 p1-setup 完成：{"pass":4,"fail":0,"skip":0,"falseRed":0,"total":4}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:47:45 +08 ◀ p1-setup ok
+2026-10-03 16:47:45 +08 ▶ 运行 p2-b1-serial
+2026-10-03 16:47:46 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:47:46 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 16:47:46 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 16:47:49 +08 [FAIL] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 16:47:49 +08 [PASS] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing == 实测 200 / DB=processing
+2026-10-03 16:47:50 +08 [PASS] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing == 实测 422 工单状态不允许从 [处理中] 变更为 [已拒绝] / DB=processing
+2026-10-03 16:47:50 +08 [PASS] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved == 实测 200 / DB=resolved
+2026-10-03 16:47:50 +08 [PASS] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved == 实测 422 工单状态不允许从 [已解决] 变更为 [处理中] / DB=resolved
+2026-10-03 16:47:50 +08 [PASS] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） == 实测 422 VALIDATION_ERROR 参数校验失败
+2026-10-03 16:47:51 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T16:47:51.043435+08:00
+2026-10-03 16:47:51 +08 [PASS] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） == 实测 200 / DB status=rejected closed_at=2026-10-03T16:47:51.67442+08:00
+2026-10-03 16:47:54 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 16:47:57 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 16:47:59 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 16:48:01 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:48:04 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 16:48:07 +08 [PASS] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动 — 期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0
+2026-10-03 16:48:09 +08 [PASS] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null == 实测 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0
+2026-10-03 16:48:11 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 16:48:13 +08 [PASS] [LB-AS-RESTOCK-ON] 回补开关**开**（allow_return_restock=true）：退货完结 ⇒ 库存回补 + 落 aftersales 台账 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98.000 → 100.000（回补 2.000，= 基线 + 明细数量）+ stock_ledger_entries 恰 1 行 reason=aftersales delta=+2.000 ref_no=AS-20261003-0005 + 订单 refund_amount=200.00 == 实测 status=200；SKU 98 → 100；台账 1 行 [[2,98,100,"aftersales"]]；订单 refund_amount=200
+2026-10-03 16:48:16 +08 [PASS] [LB-AS-RESTOCK-OFF] 回补开关**关**（allow_return_restock=false，默认）：退货完结 ⇒ 库存零变化 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98 → 98（零变化）+ ref_no=AS-20261003-0006 的台账 0 行 + 退款仍照记（refund_amount=200.00） == 实测 status=200；SKU 98 → 98；台账 0 行；订单 refund_amount=200
+2026-10-03 16:48:16 +08 p2 完成：{"pass":18,"fail":1,"skip":0,"falseRed":0,"total":20}
+2026-10-03 16:48:16 +08 ◀ p2-b1-serial ok
+2026-10-03 16:48:16 +08 ▶ 运行 p3-b2-concurrency
+2026-10-03 16:48:16 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:48:24 +08 [PASS] [LB-C1-CONCURRENT-REFUND] C1 同一订单并发退款 N=8×3 轮：成功数×金额 ≤ 实收，DB refund_amount 终值 ≤ 实收 — 三轮成功数=[3,3,3]（期望各 3）；refund_amount 终值=[300,300,300]（期望各 300.00 = 实收）；流水行数=[3,3,3] 合计=["300.000","300.000","300.000"]
+2026-10-03 16:48:27 +08 [PASS] [LB-C1-REDPROOF] C1 判别力红证（注入）：把 WHERE 上限摘掉 ⇒ 必红；同一装置加回守卫 ⇒ 绿 — 无守卫 ⇒ 终值 800（上限 300.00，泄漏=true）；有守卫（产品同形复刻）⇒ 终值 300（守住=true）
+2026-10-03 16:48:39 +08 [FAIL] [LB-C2-CONCURRENT-RESOLVE] C2 同一工单并发完结（processing→resolved）N=4×3 轮：副作用不得翻倍 — 三轮结论=[{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}}]
+2026-10-03 16:48:51 +08 [PASS] [LB-C3-CONCURRENT-STOCK] C3 同一 SKU 并发扣减 N=8×3 轮：超卖拒绝 / 库存不为负 / 台账守恒 — 三轮：并发扣减终值=[0,0,0]（期望 0.0）；超卖请求结局=[[422,3],[422,3],[422,3]]（期望 [422, 3.0]）；并发收款后 SKU=[98,98,98]（期望 98.0）
+2026-10-03 16:48:51 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：分页上限 / 总数与行数一致性 / 响应时间（机器读数） — orders size=5000 ⇒ total=undefined rows=null 3ms；after-sales size=5000 ⇒ total=undefined rows=null 4ms
+2026-10-03 16:48:51 +08 p3 完成：{"pass":4,"fail":1,"skip":0,"falseRed":0,"total":5}
+2026-10-03 16:48:51 +08 ◀ p3-b2-concurrency ok
+2026-10-03 16:48:51 +08 ▶ 运行 p4-probe-batch
+2026-10-03 16:48:52 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:48:54 +08 [PASS] [LB-REF-B01] 退款金额：科学计数法 "1e2" 的接受/拒绝口径（如实读数） — 200  ；DB refund_amount=100
+2026-10-03 16:48:56 +08 [PASS] [LB-REF-B02] 退款金额：空串 "" ⇒ 视为未传（全额退款）的口径登记 — 200；refund_amount=300 实收=300
+2026-10-03 16:48:58 +08 [FAIL] [LB-REF-B03] 退款金额：最小正数 0.001（三位小数）⇒ 接受且落库不截断 — 200；orders.refund_amount=0；流水 1 行 0
+2026-10-03 16:49:02 +08 [PASS] [LB-REF-B04] 退款累计封顶：6×100.00 vs 实收 300.00 ⇒ 恰 3 次成功、DB 与流水合计都恰 300.00 — 期望 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000 == 实测 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:49:06 +08 [PASS] [LB-REF-B05] 三方自洽：工单 refund_amount 120.00 ⇒ orders.refund_amount=120.00 + refund_at 非空 + 流水 1 行 120.00 — 期望 orders.refund_amount=120.00、refund_at 非空；工单 status=resolved、refund_amount=120.00；finance_transactions 恰 1 行 120.00 == 实测 orders.refund_amount=120 refund_at=set；工单 status=resolved refund_amount=120 refund_method=null；流水 1 行 120
+2026-10-03 16:49:33 +08 [FAIL] [LB-C21-CONCURRENT-SAME-TARGET] C21 同一工单并发打同一目标（pending→processing×4）：恰一个赢家 — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["processing","processing","processing"]；时间线读数=[4,4,4]
+2026-10-03 16:49:33 +08 [FAIL] [LB-C22-CONCURRENT-CONFLICT] C22 同一工单并发分歧（processing vs closed）：终态合法且至多一个赢家 — 三轮：成功数=[2,2,2]；逐轮状态码=[[200,200],[200,200],[200,200]]；DB 终态=["closed","processing","closed"]；时间线读数=[null,null,null]
+2026-10-03 16:49:33 +08 [FAIL] [LB-C23-CONCURRENT-RESOLVE-TIMELINE] C23 同一工单并发 resolved：时间线「→resolved」恰 1 行（重复写审计） — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["resolved","resolved","resolved"]；时间线读数=[4,4,4]
+2026-10-03 16:49:35 +08 [PASS] [LB-C23-ROWCOUNT-REDPROOF] C23 判别力红证：N 次「到达」⇒ 时间线 N 行（1 次 ⇒ 1 行）—— 行数读数确实会变 — 4 次并发写 ⇒ 读到 4 行（期望 4）；1 次写 ⇒ 读到 1 行（期望 1）⇒ 该读数对「几次写到达」敏感（有判别力）
+2026-10-03 16:49:37 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：size 钳到全局上限 500 / total 诚实 / 跨页求和可达（= total）/ 无 5xx — ledger size=5000 ⇒ status=200 size=500 total=496 rows=496 222ms；page2 ⇒ rows=0；跨页求和=496 / 读取时刻 total=496 / 现查 count(*)=496（写库并发 ⇒ 允许 ≤2 行漂移）；orders size=5000 ⇒ total=457 size=500 rows=457 425ms；after-sales ⇒ total=24 size=500 rows=24；size=100000 ⇒ size=500；size=-5 ⇒ total=0/rows=457；size=0 ⇒ total=457/rows=0
+2026-10-03 16:49:37 +08 [FAIL] [LB-C4-NEGATIVE-SIZE] C4 同族：size 为负数 ⇒ HTTP 200 但 **total=0 而仍返回整页行**（总数与行数不自洽） — 三个列表端点 size=-5 的读数：[{"label":"orders","status":200,"total":0,"size":500,"rows":457},{"label":"stock-ledger","status":200,"total":0,"size":500,"rows":496},{"label":"after-sales","status":200,"total":0,"size":500,"rows":24}]；不自洽（rows > total）的点数=3
+2026-10-03 16:49:37 +08 [SKIP] [LB-C4-BULK-READ-1000] C4+ 「>1000 行真实数据量」的列表/看板读（截断与总数一致性） — 本租户最大可读面行数 = 496（orders=464 / ledger=496 / finance=449 / tickets=24）< 1000 ⇒ **未覆盖**
+2026-10-03 16:49:37 +08 p4 完成：{"pass":6,"fail":5,"skip":1,"falseRed":0,"total":12}
+2026-10-03 16:49:37 +08 ◀ p4-probe-batch ok
+2026-10-03 16:49:37 +08 ▶ 运行 p5-refund-precision
+2026-10-03 16:49:38 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:49:40 +08 [PASS] [LB-PREC-01] 精度①：refund_amount=0.01（最小可表示）⇒ 成功且**逐字**落 0.01 — 期望 200；orders.refund_amount=0.01；finance_transactions 恰 1 行 amount=0.01；两者**相等** == 实测 200；orders.refund_amount=0.01；流水 1 行 amount=0.01
+2026-10-03 16:49:44 +08 [FAIL] [LB-PREC-02] 精度②：refund_amount=0.001（小于最小可表示）⇒ 应 4xx 显式拒绝；现状 200 静默归零 — 200；orders.refund_amount=0；流水 1 行 amount=0；refund_at=set
+2026-10-03 16:49:51 +08 [PASS] [LB-PREC-03] 精度③：0.004 / 0.005 / 0.009 的舍入方向（口径登记，不判缺陷） — 逐字读数：["0.004 ⇒ 200 / 订单 0 / 流水 0","0.005 ⇒ 200 / 订单 0.01 / 流水 0.01","0.009 ⇒ 200 / 订单 0.01 / 流水 0.01"]
+2026-10-03 16:49:51 +08 p5 完成：{"pass":1,"fail":1,"skip":0,"falseRed":0,"total":3}
+2026-10-03 16:49:51 +08 ◀ p5-refund-precision ok
+2026-10-03 16:49:51 +08 ▶ 运行 p6-order-status-control
+2026-10-03 16:49:51 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:49:58 +08 [PASS] [LB-CTRL-ORDER-STATUS-CAS] 正对照：订单侧并发改状态（confirmed→producing）N=4×3 轮 ⇒ 恰 1 个赢家（DB 谓词守卫在位） — 三轮成功数=[1,1,1]；逐轮状态码=[[422,422,422,200],[200,422,422,422],[200,422,422,422]]；DB 终态=["producing","producing","producing"]
+2026-10-03 16:50:00 +08 [PASS] [LB-CTRL-CAS-SQL] 正对照的 SQL 层量化：同一并发下「有状态谓词且谓词列被改写」写 1 次、「无谓词」写 N 次 — N=4 并发：有谓词 ⇒ w=1 status=producing（期望 w=1）；无谓词 ⇒ w=4 status=producing（期望 w=4）
+2026-10-03 16:50:00 +08 p6 完成：{"pass":2,"fail":0,"skip":0,"falseRed":0,"total":2}
+2026-10-03 16:50:00 +08 ◀ p6-order-status-control ok
+2026-10-03 16:50:00 +08 ▶ 运行 p7-refund-negative
+2026-10-03 16:50:00 +08 ◀ p7-refund-negative exit 1
+2026-10-03 16:50:00 +08 ▶ 运行 p10-dispatch-concurrency
+2026-10-03 16:50:00 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:50:09 +08 [PASS] [LB-C5-DISPATCH-SERIAL] C5 并发派工（pooled 缺省=逐单派）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复 — pooled=false 三轮：**业务成功数**=[1,1,1]（期望各 1）/ HTTP 200 数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]
+2026-10-03 16:50:22 +08 [PASS] [LB-C5-DISPATCH-POOLED] C5 并发派工（pooled=true 跨单成组）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复 — pooled=true 三轮：**业务成功数**=[1,1,1]（期望各 1）/ HTTP 200 数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]
+2026-10-03 16:50:25 +08 [PASS] [LB-C5-REDPROOF] C5 判别力红证：摘掉唯一约束 ⇒ N 行；加回 ⇒ 1 行（并发窗口真实存在、判据会红） — N=4 独立 psql 进程并发 INSERT：无唯一约束 ⇒ 4 行（期望 4）；有唯一约束（产品同形）⇒ 1 行（期望 1）
+2026-10-03 16:50:25 +08 p10 完成：{"pass":3,"fail":0,"skip":0,"falseRed":0,"total":3}
+2026-10-03 16:50:25 +08 ◀ p10-dispatch-concurrency ok
+2026-10-03 16:50:25 +08 ▶ 运行 p9-cleanup
+2026-10-03 16:50:40 +08 [FAIL] [LB-Z-01] 零残留：本包探针域逐表计数 = 0 — 清理前 774 行 → 清理后 448 行；逐表={"products":64,"productSkus":64,"orders":61,"orderItems":61,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":18,"positionOperations":180,"workLogs":0}
+2026-10-03 16:50:40 +08 [FAIL] [LB-Z-02] 存量行零改动（非探针域内容 sha256 前后对照） — before sha256=85ff58efe32369c0… / after=5ca0e2476b6ff86d… ⇒ **不一致**
+2026-10-03 16:50:40 +08 p9 完成：{"pass":0,"fail":2,"skip":0,"falseRed":0,"total":2}；残留=448
+2026-10-03 16:50:40 +08 ◀ p9-cleanup ok
+2026-10-03 16:50:45 +08 汇总：counts={"pass":44,"fail":10,"skip":1,"falseRed":0,"total":57}；零残留=false（{"products":64,"productSkus":64,"orders":61,"orderItems":61,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":18,"positionOperations":180,"workLogs":0}）
+2026-10-03 16:50:45 +08 产物：out/SUMMARY.json（57 条判据）
+2026-10-03 16:51:54 +08 构建点：main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:51:54 +08 ▶ 运行 p0-env
+2026-10-03 16:51:54 +08 构建点：43ca70322（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:51:54 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 16:51:54 +08 [PASS] [LB0-02] 时钟自检（JS +08 vs SQL Asia/Shanghai） — JS=2026-10-03 16:51:54 / SQL=2026-10-03 16:51:54（差 0s）
+2026-10-03 16:51:54 +08 [PASS] [LB0-03] 端点可达性 GET /api/admin/after-sales?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:51:54 +08 [PASS] [LB0-04] 端点可达性 GET /api/admin/orders?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:51:55 +08 [PASS] [LB0-05] 管理员登录 — 取到 token（长度 774），取得方式 = sms-bypass-code
+2026-10-03 16:51:55 +08 [PASS] [LB0-06] 租户 20 存量基线（外来行归因用） — [{"orders":421,"tickets":5,"ledger":386,"finance":376,"products":39}]
+2026-10-03 16:51:55 +08 p0 完成：{"pass":6,"fail":0,"skip":0,"falseRed":0,"total":6}
+2026-10-03 16:51:55 +08 ◀ p0-env ok
+2026-10-03 16:51:55 +08 ▶ 运行 p8-stock-before
+2026-10-03 16:51:56 +08 存量行基线快照已记录：sha256=fe5be1f60842190e…（orders/tickets 逐行 + 台账/退款流水 count·sum）
+2026-10-03 16:51:56 +08 ◀ p8-stock-before ok
+2026-10-03 16:51:56 +08 ▶ 运行 p1-setup
+2026-10-03 16:51:56 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:52:05 +08 [PASS] [LB1-SETUP-restockOn] 夹具 restockOn（商品+已确认订单） — orderNo=20261003168450301 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:52:05 +08 [PASS] [LB1-SETUP-restockOff] 夹具 restockOff（商品+已确认订单） — orderNo=20261003318140302 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:52:05 +08 [PASS] [LB1-SETUP-refund] 夹具 refund（商品+已确认订单） — orderNo=20261003067820303 status=confirmed 实收=300 总额=300 明细后 SKU 库存=98
+2026-10-03 16:52:05 +08 [PASS] [LB1-SETUP-ledger] 确认收款落扣减台账（order 腿） — 台账行数=1 delta=-2 before=100 after=98 ref_no=20261003168450301
+2026-10-03 16:52:05 +08 p1-setup 完成：{"pass":4,"fail":0,"skip":0,"falseRed":0,"total":4}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:52:05 +08 ◀ p1-setup ok
+2026-10-03 16:52:05 +08 ▶ 运行 p2-b1-serial
+2026-10-03 16:52:06 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:52:06 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 16:52:06 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 16:52:09 +08 [FAIL] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 16:52:10 +08 [PASS] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing == 实测 200 / DB=processing
+2026-10-03 16:52:11 +08 [PASS] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing == 实测 422 工单状态不允许从 [处理中] 变更为 [已拒绝] / DB=processing
+2026-10-03 16:52:11 +08 [PASS] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved == 实测 200 / DB=resolved
+2026-10-03 16:52:11 +08 [PASS] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved == 实测 422 工单状态不允许从 [已解决] 变更为 [处理中] / DB=resolved
+2026-10-03 16:52:11 +08 [PASS] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） == 实测 422 VALIDATION_ERROR 参数校验失败
+2026-10-03 16:52:12 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T16:52:12.19743+08:00
+2026-10-03 16:52:12 +08 [PASS] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） == 实测 200 / DB status=rejected closed_at=2026-10-03T16:52:12.72414+08:00
+2026-10-03 16:52:15 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 16:52:17 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 16:52:19 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 16:52:22 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:52:24 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 16:52:27 +08 [PASS] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动 — 期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0
+2026-10-03 16:52:29 +08 [PASS] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null == 实测 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0
+2026-10-03 16:52:31 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 16:52:33 +08 [PASS] [LB-AS-RESTOCK-ON] 回补开关**开**（allow_return_restock=true）：退货完结 ⇒ 库存回补 + 落 aftersales 台账 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98.000 → 100.000（回补 2.000，= 基线 + 明细数量）+ stock_ledger_entries 恰 1 行 reason=aftersales delta=+2.000 ref_no=AS-20261003-0005 + 订单 refund_amount=200.00 == 实测 status=200；SKU 98 → 100；台账 1 行 [[2,98,100,"aftersales"]]；订单 refund_amount=200
+2026-10-03 16:52:35 +08 [PASS] [LB-AS-RESTOCK-OFF] 回补开关**关**（allow_return_restock=false，默认）：退货完结 ⇒ 库存零变化 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98 → 98（零变化）+ ref_no=AS-20261003-0006 的台账 0 行 + 退款仍照记（refund_amount=200.00） == 实测 status=200；SKU 98 → 98；台账 0 行；订单 refund_amount=200
+2026-10-03 16:52:35 +08 p2 完成：{"pass":19,"fail":1,"skip":0,"falseRed":0,"total":20}
+2026-10-03 16:52:35 +08 ◀ p2-b1-serial ok
+2026-10-03 16:52:35 +08 ▶ 运行 p3-b2-concurrency
+2026-10-03 16:52:35 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:52:43 +08 [PASS] [LB-C1-CONCURRENT-REFUND] C1 同一订单并发退款 N=8×3 轮：成功数×金额 ≤ 实收，DB refund_amount 终值 ≤ 实收 — 三轮成功数=[3,3,3]（期望各 3）；refund_amount 终值=[300,300,300]（期望各 300.00 = 实收）；流水行数=[3,3,3] 合计=["300.000","300.000","300.000"]
+2026-10-03 16:52:45 +08 [PASS] [LB-C1-REDPROOF] C1 判别力红证（注入）：把 WHERE 上限摘掉 ⇒ 必红；同一装置加回守卫 ⇒ 绿 — 无守卫 ⇒ 终值 800（上限 300.00，泄漏=true）；有守卫（产品同形复刻）⇒ 终值 300（守住=true）
+2026-10-03 16:52:58 +08 [FAIL] [LB-C2-CONCURRENT-RESOLVE] C2 同一工单并发完结（processing→resolved）N=4×3 轮：副作用不得翻倍 — 三轮结论=[{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}}]
+2026-10-03 16:53:13 +08 [PASS] [LB-C3-CONCURRENT-STOCK] C3 同一 SKU 并发扣减 N=8×3 轮：超卖拒绝 / 库存不为负 / 台账守恒 — 三轮：并发扣减终值=[0,0,0]（期望 0.0）；超卖请求结局=[[422,3],[422,3],[422,3]]（期望 [422, 3.0]）；并发收款后 SKU=[98,98,98]（期望 98.0）
+2026-10-03 16:53:13 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：分页上限 / 总数与行数一致性 / 响应时间（机器读数） — orders size=5000 ⇒ total=undefined rows=null 3ms；after-sales size=5000 ⇒ total=undefined rows=null 2ms
+2026-10-03 16:53:13 +08 p3 完成：{"pass":4,"fail":1,"skip":0,"falseRed":0,"total":5}
+2026-10-03 16:53:13 +08 ◀ p3-b2-concurrency ok
+2026-10-03 16:53:13 +08 ▶ 运行 p4-probe-batch
+2026-10-03 16:53:13 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:53:16 +08 [PASS] [LB-REF-B01] 退款金额：科学计数法 "1e2" 的接受/拒绝口径（如实读数） — 200  ；DB refund_amount=100
+2026-10-03 16:53:18 +08 [PASS] [LB-REF-B02] 退款金额：空串 "" ⇒ 视为未传（全额退款）的口径登记 — 200；refund_amount=300 实收=300
+2026-10-03 16:53:20 +08 [FAIL] [LB-REF-B03] 退款金额：最小正数 0.001（三位小数）⇒ 接受且落库不截断 — 200；orders.refund_amount=0；流水 1 行 0
+2026-10-03 16:53:23 +08 [PASS] [LB-REF-B04] 退款累计封顶：6×100.00 vs 实收 300.00 ⇒ 恰 3 次成功、DB 与流水合计都恰 300.00 — 期望 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000 == 实测 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:53:27 +08 [PASS] [LB-REF-B05] 三方自洽：工单 refund_amount 120.00 ⇒ orders.refund_amount=120.00 + refund_at 非空 + 流水 1 行 120.00 — 期望 orders.refund_amount=120.00、refund_at 非空；工单 status=resolved、refund_amount=120.00；finance_transactions 恰 1 行 120.00 == 实测 orders.refund_amount=120 refund_at=set；工单 status=resolved refund_amount=120 refund_method=null；流水 1 行 120
+2026-10-03 16:53:49 +08 [FAIL] [LB-C21-CONCURRENT-SAME-TARGET] C21 同一工单并发打同一目标（pending→processing×4）：恰一个赢家 — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["processing","processing","processing"]；时间线读数=[4,4,4]
+2026-10-03 16:53:49 +08 [FAIL] [LB-C22-CONCURRENT-CONFLICT] C22 同一工单并发分歧（processing vs closed）：终态合法且至多一个赢家 — 三轮：成功数=[2,2,2]；逐轮状态码=[[200,200],[200,200],[200,200]]；DB 终态=["processing","closed","processing"]；时间线读数=[null,null,null]
+2026-10-03 16:53:49 +08 [FAIL] [LB-C23-CONCURRENT-RESOLVE-TIMELINE] C23 同一工单并发 resolved：时间线「→resolved」恰 1 行（重复写审计） — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["resolved","resolved","resolved"]；时间线读数=[4,4,4]
+2026-10-03 16:53:51 +08 [PASS] [LB-C23-ROWCOUNT-REDPROOF] C23 判别力红证：N 次「到达」⇒ 时间线 N 行（1 次 ⇒ 1 行）—— 行数读数确实会变 — 4 次并发写 ⇒ 读到 4 行（期望 4）；1 次写 ⇒ 读到 1 行（期望 1）⇒ 该读数对「几次写到达」敏感（有判别力）
+2026-10-03 16:53:52 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：size 钳到全局上限 500 / total 诚实 / 跨页求和可达（= total）/ 无 5xx — ledger size=5000 ⇒ status=200 size=500 total=472 rows=472 175ms；page2 ⇒ rows=0；跨页求和=472 / 读取时刻 total=472 / 现查 count(*)=472（写库并发 ⇒ 允许 ≤2 行漂移）；orders size=5000 ⇒ total=456 size=500 rows=456 342ms；after-sales ⇒ total=24 size=500 rows=24；size=100000 ⇒ size=500；size=-5 ⇒ total=0/rows=456；size=0 ⇒ total=456/rows=0
+2026-10-03 16:53:53 +08 [FAIL] [LB-C4-NEGATIVE-SIZE] C4 同族：size 为负数 ⇒ HTTP 200 但 **total=0 而仍返回整页行**（总数与行数不自洽） — 三个列表端点 size=-5 的读数：[{"label":"orders","status":200,"total":0,"size":500,"rows":456},{"label":"stock-ledger","status":200,"total":0,"size":500,"rows":472},{"label":"after-sales","status":200,"total":0,"size":500,"rows":24}]；不自洽（rows > total）的点数=3
+2026-10-03 16:53:53 +08 [SKIP] [LB-C4-BULK-READ-1000] C4+ 「>1000 行真实数据量」的列表/看板读（截断与总数一致性） — 本租户最大可读面行数 = 472（orders=463 / ledger=472 / finance=437 / tickets=24）< 1000 ⇒ **未覆盖**
+2026-10-03 16:53:53 +08 p4 完成：{"pass":6,"fail":5,"skip":1,"falseRed":0,"total":12}
+2026-10-03 16:53:53 +08 ◀ p4-probe-batch ok
+2026-10-03 16:53:53 +08 ▶ 运行 p5-refund-precision
+2026-10-03 16:53:53 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:53:57 +08 [PASS] [LB-PREC-01] 精度①：refund_amount=0.01（最小可表示）⇒ 成功且**逐字**落 0.01 — 期望 200；orders.refund_amount=0.01；finance_transactions 恰 1 行 amount=0.01；两者**相等** == 实测 200；orders.refund_amount=0.01；流水 1 行 amount=0.01
+2026-10-03 16:53:59 +08 [FAIL] [LB-PREC-02] 精度②：refund_amount=0.001（小于最小可表示）⇒ 应 4xx 显式拒绝；现状 200 静默归零 — 200；orders.refund_amount=0；流水 1 行 amount=0；refund_at=set
+2026-10-03 16:54:10 +08 [PASS] [LB-PREC-03] 精度③：0.004 / 0.005 / 0.009 的舍入方向（口径登记，不判缺陷） — 逐字读数：["0.004 ⇒ 200 / 订单 0 / 流水 0","0.005 ⇒ 200 / 订单 0.01 / 流水 0.01","0.009 ⇒ 200 / 订单 0.01 / 流水 0.01"]
+2026-10-03 16:54:10 +08 p5 完成：{"pass":2,"fail":1,"skip":0,"falseRed":0,"total":3}
+2026-10-03 16:54:10 +08 ◀ p5-refund-precision ok
+2026-10-03 16:54:10 +08 ▶ 运行 p6-order-status-control
+2026-10-03 16:54:10 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:54:19 +08 [PASS] [LB-CTRL-ORDER-STATUS-CAS] 正对照：订单侧并发改状态（confirmed→producing）N=4×3 轮 ⇒ 恰 1 个赢家（DB 谓词守卫在位） — 三轮成功数=[1,1,1]；逐轮状态码=[[422,200,422,422],[200,422,422,422],[200,422,422,422]]；DB 终态=["producing","producing","producing"]
+2026-10-03 16:54:21 +08 [PASS] [LB-CTRL-CAS-SQL] 正对照的 SQL 层量化：同一并发下「有状态谓词且谓词列被改写」写 1 次、「无谓词」写 N 次 — N=4 并发：有谓词 ⇒ w=1 status=producing（期望 w=1）；无谓词 ⇒ w=4 status=producing（期望 w=4）
+2026-10-03 16:54:21 +08 p6 完成：{"pass":2,"fail":0,"skip":0,"falseRed":0,"total":2}
+2026-10-03 16:54:21 +08 ◀ p6-order-status-control ok
+2026-10-03 16:54:21 +08 ▶ 运行 p7-refund-negative
+2026-10-03 16:54:21 +08 ◀ p7-refund-negative exit 1
+2026-10-03 16:54:21 +08 ▶ 运行 p10-dispatch-concurrency
+2026-10-03 16:54:21 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:54:30 +08 [PASS] [LB-C5-DISPATCH-SERIAL] C5 并发派工（pooled 缺省=逐单派）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复 — pooled=false 三轮：**业务成功数**=[1,1,1]（期望各 1）/ HTTP 200 数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]
+2026-10-03 16:54:39 +08 [PASS] [LB-C5-DISPATCH-POOLED] C5 并发派工（pooled=true 跨单成组）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复 — pooled=true 三轮：**业务成功数**=[1,1,1]（期望各 1）/ HTTP 200 数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]
+2026-10-03 16:54:40 +08 [PASS] [LB-C5-REDPROOF] C5 判别力红证：摘掉唯一约束 ⇒ N 行；加回 ⇒ 1 行（并发窗口真实存在、判据会红） — N=4 独立 psql 进程并发 INSERT：无唯一约束 ⇒ 4 行（期望 4）；有唯一约束（产品同形）⇒ 1 行（期望 1）
+2026-10-03 16:54:40 +08 p10 完成：{"pass":3,"fail":0,"skip":0,"falseRed":0,"total":3}
+2026-10-03 16:54:40 +08 ◀ p10-dispatch-concurrency ok
+2026-10-03 16:54:40 +08 ▶ 运行 p9-cleanup
+2026-10-03 16:54:49 +08 [PASS] [LB-Z-01] 零残留：本包探针域逐表计数 = 0 — 清理前 558 行 → 清理后 0 行；逐表={"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}
+2026-10-03 16:54:49 +08 [FAIL] [LB-Z-02] 存量行零改动（非探针域内容 sha256 前后对照） — before sha256=fe5be1f60842190e… / after=1e4af1d8bb0342e0… ⇒ **不一致**
+2026-10-03 16:54:49 +08 p9 完成：{"pass":1,"fail":1,"skip":0,"falseRed":0,"total":2}；残留=0
+2026-10-03 16:54:49 +08 ◀ p9-cleanup ok
+2026-10-03 16:54:54 +08 汇总：counts={"pass":47,"fail":9,"skip":1,"falseRed":0,"total":57}；零残留=true（{"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}）
+2026-10-03 16:54:54 +08 产物：out/SUMMARY.json（57 条判据）
+2026-10-03 16:55:29 +08 构建点：main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:55:34 +08 汇总：counts={"pass":47,"fail":9,"skip":1,"falseRed":0,"total":57}；零残留=true（{"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}）
+2026-10-03 16:55:34 +08 产物：out/SUMMARY.json（57 条判据）
+2026-10-03 16:55:44 +08 构建点：main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:55:53 +08 汇总：counts={"pass":47,"fail":9,"skip":1,"falseRed":0,"total":57}；零残留=true（{"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}）
+2026-10-03 16:55:53 +08 产物：out/SUMMARY.json（57 条判据）
+2026-10-03 16:56:08 +08 [PASS] [LB-Z-01] 零残留：本包探针域逐表计数 = 0 — 清理前 0 行 → 清理后 0 行；逐表={"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}
+2026-10-03 16:56:08 +08 [FAIL] [LB-Z-02] 存量行零改动（**非探针域逐行 diff**：orders / after_sales_tickets） — orders: added=0 removed=55 changed=0；after_sales_tickets: added=0 removed=0 changed=0
+2026-10-03 16:56:08 +08 p9 完成：{"pass":1,"fail":1,"skip":0,"falseRed":0,"total":2}；残留=0
+2026-10-03 16:56:34 +08 [PASS] [LB-Z-01] 零残留：本包探针域逐表计数 = 0 — 清理前 0 行 → 清理后 0 行；逐表={"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}
+2026-10-03 16:56:34 +08 [PASS] [LB-Z-02] 存量行零改动（**非探针域逐行 diff**：orders / after_sales_tickets） — orders: added=0 removed=0 changed=0；after_sales_tickets: added=0 removed=0 changed=0
+2026-10-03 16:56:34 +08 p9 完成：{"pass":2,"fail":0,"skip":0,"falseRed":0,"total":2}；残留=0
+2026-10-03 16:56:40 +08 构建点：main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:56:40 +08 ▶ 运行 p0-env
+2026-10-03 16:56:40 +08 构建点：43ca70322（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=4f8f4903f
+2026-10-03 16:56:40 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 16:56:40 +08 [PASS] [LB0-02] 时钟自检（JS +08 vs SQL Asia/Shanghai） — JS=2026-10-03 16:56:40 / SQL=2026-10-03 16:56:40（差 0s）
+2026-10-03 16:56:40 +08 [PASS] [LB0-03] 端点可达性 GET /api/admin/after-sales?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:56:40 +08 [PASS] [LB0-04] 端点可达性 GET /api/admin/orders?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 16:56:41 +08 [PASS] [LB0-05] 管理员登录 — 取到 token（长度 774），取得方式 = sms-bypass-code
+2026-10-03 16:56:41 +08 [PASS] [LB0-06] 租户 20 存量基线（外来行归因用） — [{"orders":366,"tickets":5,"ledger":387,"finance":376,"products":39}]
+2026-10-03 16:56:41 +08 p0 完成：{"pass":6,"fail":0,"skip":0,"falseRed":0,"total":6}
+2026-10-03 16:56:41 +08 ◀ p0-env ok
+2026-10-03 16:56:41 +08 ▶ 运行 p8-stock-before
+2026-10-03 16:56:43 +08 存量行基线快照已记录：sha256=c06f664ba70740d6…（orders/tickets 逐行 + 台账/退款流水 count·sum）
+2026-10-03 16:56:43 +08 ◀ p8-stock-before ok
+2026-10-03 16:56:43 +08 ▶ 运行 p1-setup
+2026-10-03 16:56:44 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:56:51 +08 [PASS] [LB1-SETUP-restockOn] 夹具 restockOn（商品+已确认订单） — orderNo=20261003510180350 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:56:51 +08 [PASS] [LB1-SETUP-restockOff] 夹具 restockOff（商品+已确认订单） — orderNo=20261003527670351 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 16:56:51 +08 [PASS] [LB1-SETUP-refund] 夹具 refund（商品+已确认订单） — orderNo=20261003317220352 status=confirmed 实收=300 总额=300 明细后 SKU 库存=98
+2026-10-03 16:56:52 +08 [PASS] [LB1-SETUP-ledger] 确认收款落扣减台账（order 腿） — 台账行数=1 delta=-2 before=100 after=98 ref_no=20261003510180350
+2026-10-03 16:56:52 +08 p1-setup 完成：{"pass":4,"fail":0,"skip":0,"falseRed":0,"total":4}；夹具已落 out/B1-fixtures.json
+2026-10-03 16:56:52 +08 ◀ p1-setup ok
+2026-10-03 16:56:52 +08 ▶ 运行 p2-b1-serial
+2026-10-03 16:56:52 +08 ◀ p2-b1-serial exit 1
+2026-10-03 16:56:52 +08 ▶ 运行 p3-b2-concurrency
+2026-10-03 16:56:52 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:57:02 +08 [PASS] [LB-C1-CONCURRENT-REFUND] C1 同一订单并发退款 N=8×3 轮：成功数×金额 ≤ 实收，DB refund_amount 终值 ≤ 实收 — 三轮成功数=[3,3,3]（期望各 3）；refund_amount 终值=[300,300,300]（期望各 300.00 = 实收）；流水行数=[3,3,3] 合计=["300.000","300.000","300.000"]
+2026-10-03 16:57:05 +08 [PASS] [LB-C1-REDPROOF] C1 判别力红证（注入）：把 WHERE 上限摘掉 ⇒ 必红；同一装置加回守卫 ⇒ 绿 — 无守卫 ⇒ 终值 800（上限 300.00，泄漏=true）；有守卫（产品同形复刻）⇒ 终值 300（守住=true）
+2026-10-03 16:57:25 +08 [FAIL] [LB-C2-CONCURRENT-RESOLVE] C2 同一工单并发完结（processing→resolved）N=4×3 轮：副作用不得翻倍 — 三轮结论=[{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}}]
+2026-10-03 16:57:47 +08 [PASS] [LB-C3-CONCURRENT-STOCK] C3 同一 SKU 并发扣减 N=8×3 轮：超卖拒绝 / 库存不为负 / 台账守恒 — 三轮：并发扣减终值=[0,0,0]（期望 0.0）；超卖请求结局=[[422,3],[422,3],[422,3]]（期望 [422, 3.0]）；并发收款后 SKU=[98,98,98]（期望 98.0）
+2026-10-03 16:57:48 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：分页上限 / 总数与行数一致性 / 响应时间（机器读数） — orders size=5000 ⇒ total=undefined rows=null 129ms；after-sales size=5000 ⇒ total=undefined rows=null 6ms
+2026-10-03 16:57:48 +08 p3 完成：{"pass":4,"fail":1,"skip":0,"falseRed":0,"total":5}
+2026-10-03 16:57:48 +08 ◀ p3-b2-concurrency ok
+2026-10-03 16:57:48 +08 ▶ 运行 p4-probe-batch
+2026-10-03 16:57:48 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:57:51 +08 [PASS] [LB-REF-B01] 退款金额：科学计数法 "1e2" 的接受/拒绝口径（如实读数） — 200  ；DB refund_amount=100
+2026-10-03 16:57:54 +08 [PASS] [LB-REF-B02] 退款金额：空串 "" ⇒ 视为未传（全额退款）的口径登记 — 200；refund_amount=300 实收=300
+2026-10-03 16:57:58 +08 [FAIL] [LB-REF-B03] 退款金额：最小正数 0.001（三位小数）⇒ 接受且落库不截断 — 200；orders.refund_amount=0；流水 1 行 0
+2026-10-03 16:58:01 +08 [PASS] [LB-REF-B04] 退款累计封顶：6×100.00 vs 实收 300.00 ⇒ 恰 3 次成功、DB 与流水合计都恰 300.00 — 期望 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000 == 实测 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 16:58:04 +08 [PASS] [LB-REF-B05] 三方自洽：工单 refund_amount 120.00 ⇒ orders.refund_amount=120.00 + refund_at 非空 + 流水 1 行 120.00 — 期望 orders.refund_amount=120.00、refund_at 非空；工单 status=resolved、refund_amount=120.00；finance_transactions 恰 1 行 120.00 == 实测 orders.refund_amount=120 refund_at=set；工单 status=resolved refund_amount=120 refund_method=null；流水 1 行 120
+2026-10-03 16:58:33 +08 [FAIL] [LB-C21-CONCURRENT-SAME-TARGET] C21 同一工单并发打同一目标（pending→processing×4）：恰一个赢家 — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["processing","processing","processing"]；时间线读数=[4,4,4]
+2026-10-03 16:58:33 +08 [FAIL] [LB-C22-CONCURRENT-CONFLICT] C22 同一工单并发分歧（processing vs closed）：终态合法且至多一个赢家 — 三轮：成功数=[2,2,2]；逐轮状态码=[[200,200],[200,200],[200,200]]；DB 终态=["closed","closed","closed"]；时间线读数=[null,null,null]
+2026-10-03 16:58:33 +08 [FAIL] [LB-C23-CONCURRENT-RESOLVE-TIMELINE] C23 同一工单并发 resolved：时间线「→resolved」恰 1 行（重复写审计） — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["resolved","resolved","resolved"]；时间线读数=[4,4,4]
+2026-10-03 16:58:35 +08 [PASS] [LB-C23-ROWCOUNT-REDPROOF] C23 判别力红证：N 次「到达」⇒ 时间线 N 行（1 次 ⇒ 1 行）—— 行数读数确实会变 — 4 次并发写 ⇒ 读到 4 行（期望 4）；1 次写 ⇒ 读到 1 行（期望 1）⇒ 该读数对「几次写到达」敏感（有判别力）
+2026-10-03 16:58:37 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：size 钳到全局上限 500 / total 诚实 / 跨页求和可达（= total）/ 无 5xx — ledger size=5000 ⇒ status=200 size=500 total=455 rows=455 149ms；page2 ⇒ rows=0；跨页求和=455 / 读取时刻 total=455 / 现查 count(*)=455（写库并发 ⇒ 允许 ≤2 行漂移）；orders size=5000 ⇒ total=396 size=500 rows=396 637ms；after-sales ⇒ total=18 size=500 rows=18；size=100000 ⇒ size=500；size=-5 ⇒ total=0/rows=396；size=0 ⇒ total=396/rows=0
+2026-10-03 16:58:38 +08 [FAIL] [LB-C4-NEGATIVE-SIZE] C4 同族：size 为负数 ⇒ HTTP 200 但 **total=0 而仍返回整页行**（总数与行数不自洽） — 三个列表端点 size=-5 的读数：[{"label":"orders","status":200,"total":0,"size":500,"rows":396},{"label":"stock-ledger","status":200,"total":0,"size":500,"rows":455},{"label":"after-sales","status":200,"total":0,"size":500,"rows":18}]；不自洽（rows > total）的点数=3
+2026-10-03 16:58:38 +08 [SKIP] [LB-C4-BULK-READ-1000] C4+ 「>1000 行真实数据量」的列表/看板读（截断与总数一致性） — 本租户最大可读面行数 = 455（orders=403 / ledger=455 / finance=421 / tickets=18）< 1000 ⇒ **未覆盖**
+2026-10-03 16:58:38 +08 p4 完成：{"pass":6,"fail":5,"skip":1,"falseRed":0,"total":12}
+2026-10-03 16:58:38 +08 ◀ p4-probe-batch ok
+2026-10-03 16:58:38 +08 ▶ 运行 p5-refund-precision
+2026-10-03 16:58:38 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:58:41 +08 [PASS] [LB-PREC-01] 精度①：refund_amount=0.01（最小可表示）⇒ 成功且**逐字**落 0.01 — 期望 200；orders.refund_amount=0.01；finance_transactions 恰 1 行 amount=0.01；两者**相等** == 实测 200；orders.refund_amount=0.01；流水 1 行 amount=0.01
+2026-10-03 16:58:44 +08 [FAIL] [LB-PREC-02] 精度②：refund_amount=0.001（小于最小可表示）⇒ 应 4xx 显式拒绝；现状 200 静默归零 — 200；orders.refund_amount=0；流水 1 行 amount=0；refund_at=set
+2026-10-03 16:58:51 +08 [PASS] [LB-PREC-03] 精度③：0.004 / 0.005 / 0.009 的舍入方向（口径登记，不判缺陷） — 逐字读数：["0.004 ⇒ 200 / 订单 0 / 流水 0","0.005 ⇒ 200 / 订单 0.01 / 流水 0.01","0.009 ⇒ 200 / 订单 0.01 / 流水 0.01"]
+2026-10-03 16:58:51 +08 p5 完成：{"pass":2,"fail":1,"skip":0,"falseRed":0,"total":3}
+2026-10-03 16:58:51 +08 ◀ p5-refund-precision ok
+2026-10-03 16:58:51 +08 ▶ 运行 p6-order-status-control
+2026-10-03 16:58:51 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:58:58 +08 [PASS] [LB-CTRL-ORDER-STATUS-CAS] 正对照：订单侧并发改状态（confirmed→producing）N=4×3 轮 ⇒ 恰 1 个赢家（DB 谓词守卫在位） — 三轮成功数=[1,1,1]；逐轮状态码=[[422,422,200,422],[422,422,200,422],[200,422,422,422]]；DB 终态=["producing","producing","producing"]
+2026-10-03 16:59:00 +08 [PASS] [LB-CTRL-CAS-SQL] 正对照的 SQL 层量化：同一并发下「有状态谓词且谓词列被改写」写 1 次、「无谓词」写 N 次 — N=4 并发：有谓词 ⇒ w=1 status=producing（期望 w=1）；无谓词 ⇒ w=4 status=producing（期望 w=4）
+2026-10-03 16:59:00 +08 p6 完成：{"pass":2,"fail":0,"skip":0,"falseRed":0,"total":2}
+2026-10-03 16:59:00 +08 ◀ p6-order-status-control ok
+2026-10-03 16:59:00 +08 ▶ 运行 p7-refund-negative
+2026-10-03 16:59:00 +08 ◀ p7-refund-negative exit 1
+2026-10-03 16:59:00 +08 ▶ 运行 p10-dispatch-concurrency
+2026-10-03 16:59:00 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:59:11 +08 [PASS] [LB-C5-DISPATCH-SERIAL] C5 并发派工（pooled 缺省=逐单派）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复 — pooled=false 三轮：**业务成功数**=[1,1,1]（期望各 1）/ HTTP 200 数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]
+2026-10-03 16:59:19 +08 [PASS] [LB-C5-DISPATCH-POOLED] C5 并发派工（pooled=true 跨单成组）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复 — pooled=true 三轮：**业务成功数**=[1,1,1]（期望各 1）/ HTTP 200 数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]
+2026-10-03 16:59:21 +08 [PASS] [LB-C5-REDPROOF] C5 判别力红证：摘掉唯一约束 ⇒ N 行；加回 ⇒ 1 行（并发窗口真实存在、判据会红） — N=4 独立 psql 进程并发 INSERT：无唯一约束 ⇒ 4 行（期望 4）；有唯一约束（产品同形）⇒ 1 行（期望 1）
+2026-10-03 16:59:21 +08 p10 完成：{"pass":3,"fail":0,"skip":0,"falseRed":0,"total":3}
+2026-10-03 16:59:21 +08 ◀ p10-dispatch-concurrency ok
+2026-10-03 16:59:21 +08 ▶ 运行 p9-cleanup
+2026-10-03 16:59:30 +08 [PASS] [LB-Z-01] 零残留：本包探针域逐表计数 = 0 — 清理前 467 行 → 清理后 0 行；逐表={"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}
+2026-10-03 16:59:30 +08 [FAIL] [LB-Z-02] 存量行零改动（**非探针域逐行 diff**：orders / after_sales_tickets） — orders: added=0 removed=12 changed=0；after_sales_tickets: added=0 removed=0 changed=0
+2026-10-03 16:59:30 +08 p9 完成：{"pass":1,"fail":1,"skip":0,"falseRed":0,"total":2}；残留=0
+2026-10-03 16:59:30 +08 ◀ p9-cleanup ok
+2026-10-03 16:59:36 +08 汇总：counts={"pass":47,"fail":9,"skip":1,"falseRed":0,"total":57}；零残留=true（{"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}）
+2026-10-03 16:59:36 +08 产物：out/SUMMARY.json（57 条判据）
+2026-10-03 16:59:54 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 16:59:54 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 16:59:55 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 16:59:57 +08 [SKIP] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 16:59:57 +08 [FAIL] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing ≠ 实测 404 / DB=undefined
+2026-10-03 16:59:57 +08 [FAIL] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing ≠ 实测 404 售后工单不存在 / DB=undefined
+2026-10-03 16:59:58 +08 [FAIL] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved ≠ 实测 404 / DB=undefined
+2026-10-03 16:59:58 +08 [FAIL] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved ≠ 实测 404 售后工单不存在 / DB=undefined
+2026-10-03 16:59:58 +08 [FAIL] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） ≠ 实测 404 NOT_FOUND 售后工单不存在
+2026-10-03 16:59:58 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T16:59:58.798727+08:00
+2026-10-03 16:59:59 +08 [FAIL] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） ≠ 实测 404 / DB status=undefined closed_at=undefined
+2026-10-03 17:00:01 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 17:00:04 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 17:00:06 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 17:00:09 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 17:00:11 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 17:00:14 +08 [PASS] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动 — 期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0
+2026-10-03 17:00:16 +08 [PASS] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null == 实测 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0
+2026-10-03 17:00:17 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 17:00:24 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 17:00:24 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 17:00:25 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 17:00:28 +08 [SKIP] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 17:00:28 +08 [FAIL] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing ≠ 实测 404 / DB=undefined
+2026-10-03 17:00:29 +08 [FAIL] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing ≠ 实测 404 售后工单不存在 / DB=undefined
+2026-10-03 17:00:29 +08 [FAIL] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved ≠ 实测 404 / DB=undefined
+2026-10-03 17:00:29 +08 [FAIL] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved ≠ 实测 404 售后工单不存在 / DB=undefined
+2026-10-03 17:00:30 +08 [FAIL] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） ≠ 实测 404 NOT_FOUND 售后工单不存在
+2026-10-03 17:00:30 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T17:00:30.453753+08:00
+2026-10-03 17:00:31 +08 [FAIL] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） ≠ 实测 404 / DB status=undefined closed_at=undefined
+2026-10-03 17:00:34 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 17:00:36 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 17:00:38 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 17:00:40 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 17:00:42 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 17:00:44 +08 [PASS] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动 — 期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0
+2026-10-03 17:00:46 +08 [PASS] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null == 实测 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0
+2026-10-03 17:00:47 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 17:00:52 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 17:00:53 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 17:00:53 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 17:00:56 +08 [SKIP] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 17:00:56 +08 [FAIL] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing ≠ 实测 404 / DB=undefined
+2026-10-03 17:00:56 +08 [FAIL] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing ≠ 实测 404 售后工单不存在 / DB=undefined
+2026-10-03 17:00:57 +08 [FAIL] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved ≠ 实测 404 / DB=undefined
+2026-10-03 17:00:57 +08 [FAIL] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved ≠ 实测 404 售后工单不存在 / DB=undefined
+2026-10-03 17:00:57 +08 [FAIL] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） ≠ 实测 404 NOT_FOUND 售后工单不存在
+2026-10-03 17:00:57 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T17:00:57.778428+08:00
+2026-10-03 17:00:58 +08 [FAIL] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） ≠ 实测 404 / DB status=undefined closed_at=undefined
+2026-10-03 17:01:01 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 17:01:04 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 17:01:06 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 17:01:09 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 17:01:12 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 17:01:14 +08 [PASS] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动 — 期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0
+2026-10-03 17:01:16 +08 [PASS] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null == 实测 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0
+2026-10-03 17:01:19 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 17:01:40 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 17:01:48 +08 [PASS] [LB1-SETUP-restockOn] 夹具 restockOn（商品+已确认订单） — orderNo=20261003209310417 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 17:01:48 +08 [PASS] [LB1-SETUP-restockOff] 夹具 restockOff（商品+已确认订单） — orderNo=20261003221250418 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 17:01:48 +08 [PASS] [LB1-SETUP-refund] 夹具 refund（商品+已确认订单） — orderNo=20261003461940419 status=confirmed 实收=300 总额=300 明细后 SKU 库存=98
+2026-10-03 17:01:49 +08 [PASS] [LB1-SETUP-ledger] 确认收款落扣减台账（order 腿） — 台账行数=1 delta=-2 before=100 after=98 ref_no=20261003209310417
+2026-10-03 17:01:49 +08 p1-setup 完成：{"pass":4,"fail":0,"skip":0,"falseRed":0,"total":4}；夹具已落 out/B1-fixtures.json
+2026-10-03 17:01:49 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 17:01:49 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 17:01:50 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 17:01:52 +08 [SKIP] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 17:01:53 +08 [PASS] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing == 实测 200 / DB=processing
+2026-10-03 17:01:53 +08 [PASS] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing == 实测 422 工单状态不允许从 [处理中] 变更为 [已拒绝] / DB=processing
+2026-10-03 17:01:53 +08 [PASS] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved == 实测 200 / DB=resolved
+2026-10-03 17:01:53 +08 [PASS] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved == 实测 422 工单状态不允许从 [已解决] 变更为 [处理中] / DB=resolved
+2026-10-03 17:01:53 +08 [PASS] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） == 实测 422 VALIDATION_ERROR 参数校验失败
+2026-10-03 17:01:54 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T17:01:54.289635+08:00
+2026-10-03 17:01:55 +08 [PASS] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） == 实测 200 / DB status=rejected closed_at=2026-10-03T17:01:54.97515+08:00
+2026-10-03 17:01:57 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 17:02:00 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 17:02:02 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 17:02:04 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 17:02:06 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 17:02:08 +08 [PASS] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动 — 期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0
+2026-10-03 17:02:10 +08 [PASS] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null == 实测 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0
+2026-10-03 17:02:12 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 17:02:14 +08 [PASS] [LB-AS-RESTOCK-ON] 回补开关**开**（allow_return_restock=true）：退货完结 ⇒ 库存回补 + 落 aftersales 台账 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98.000 → 100.000（回补 2.000，= 基线 + 明细数量）+ stock_ledger_entries 恰 1 行 reason=aftersales delta=+2.000 ref_no=AS-20261003-0011 + 订单 refund_amount=200.00 == 实测 status=200；SKU 98 → 100；台账 1 行 [[2,98,100,"aftersales"]]；订单 refund_amount=200
+2026-10-03 17:02:15 +08 [PASS] [LB-AS-RESTOCK-OFF] 回补开关**关**（allow_return_restock=false，默认）：退货完结 ⇒ 库存零变化 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98 → 98（零变化）+ ref_no=AS-20261003-0012 的台账 0 行 + 退款仍照记（refund_amount=200.00） == 实测 status=200；SKU 98 → 98；台账 0 行；订单 refund_amount=200
+2026-10-03 17:02:15 +08 p2 完成：{"pass":19,"fail":0,"skip":1,"falseRed":0,"total":20}
+2026-10-03 17:02:22 +08 构建点：main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=cf9a45c3c
+2026-10-03 17:02:22 +08 ▶ 运行 p0-env
+2026-10-03 17:02:22 +08 构建点：43ca70322（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=cf9a45c3c
+2026-10-03 17:02:22 +08 [PASS] [LB0-01] 被测构建点自证 — main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）
+2026-10-03 17:02:22 +08 [PASS] [LB0-02] 时钟自检（JS +08 vs SQL Asia/Shanghai） — JS=2026-10-03 17:02:22 / SQL=2026-10-03 17:02:22（差 0s）
+2026-10-03 17:02:22 +08 [PASS] [LB0-03] 端点可达性 GET /api/admin/after-sales?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 17:02:22 +08 [PASS] [LB0-04] 端点可达性 GET /api/admin/orders?page=1&size=1 — 未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）
+2026-10-03 17:02:22 +08 [PASS] [LB0-05] 管理员登录 — 取到 token（长度 774），取得方式 = sms-bypass-code
+2026-10-03 17:02:23 +08 [PASS] [LB0-06] 租户 20 存量基线（外来行归因用） — [{"orders":414,"tickets":17,"ledger":468,"finance":437,"products":78}]
+2026-10-03 17:02:23 +08 p0 完成：{"pass":6,"fail":0,"skip":0,"falseRed":0,"total":6}
+2026-10-03 17:02:23 +08 ◀ p0-env ok
+2026-10-03 17:02:23 +08 ▶ 运行 p8-stock-before
+2026-10-03 17:02:24 +08 存量行基线快照已记录：sha256=8acf5309aaa6f18b…（orders/tickets 逐行 + 台账/退款流水 count·sum）
+2026-10-03 17:02:24 +08 ◀ p8-stock-before ok
+2026-10-03 17:02:24 +08 ▶ 运行 p1-setup
+2026-10-03 17:02:24 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 17:02:31 +08 [PASS] [LB1-SETUP-restockOn] 夹具 restockOn（商品+已确认订单） — orderNo=20261003134320429 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 17:02:31 +08 [PASS] [LB1-SETUP-restockOff] 夹具 restockOff（商品+已确认订单） — orderNo=20261003873670430 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98
+2026-10-03 17:02:31 +08 [PASS] [LB1-SETUP-refund] 夹具 refund（商品+已确认订单） — orderNo=20261003551170431 status=confirmed 实收=300 总额=300 明细后 SKU 库存=98
+2026-10-03 17:02:31 +08 [PASS] [LB1-SETUP-ledger] 确认收款落扣减台账（order 腿） — 台账行数=1 delta=-2 before=100 after=98 ref_no=20261003134320429
+2026-10-03 17:02:31 +08 p1-setup 完成：{"pass":4,"fail":0,"skip":0,"falseRed":0,"total":4}；夹具已落 out/B1-fixtures.json
+2026-10-03 17:02:31 +08 ◀ p1-setup ok
+2026-10-03 17:02:31 +08 ▶ 运行 p2-b1-serial
+2026-10-03 17:02:32 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 17:02:32 +08 [PASS] [LB-AS-CREATE-01] 建单：关联订单不存在 ⇒ 拒绝（不得落库） — 期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在
+2026-10-03 17:02:32 +08 [PASS] [LB-AS-CREATE-02] 建单：他人租户订单（tenant 1）跨域复用 ⇒ 拒绝且不得落库 — 期望 非 2xx 且 tenant 20 下 order_id=<tenant1 订单> 的工单 0 行 == 实测 422 VALIDATION_ERROR 关联订单不存在；tenant20 落库行数=0
+2026-10-03 17:02:35 +08 [SKIP] [LB-AS-CREATE-03] 建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径） — 第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1
+2026-10-03 17:02:36 +08 [PASS] [LB-AS-SM-01] 状态机合法流转 pending → processing — 期望 200 + DB after_sales_tickets.status=processing == 实测 200 / DB=processing
+2026-10-03 17:02:36 +08 [PASS] [LB-AS-SM-02] 状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变 — 期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing == 实测 422 工单状态不允许从 [处理中] 变更为 [已拒绝] / DB=processing
+2026-10-03 17:02:36 +08 [PASS] [LB-AS-SM-03] 状态机合法流转 processing → resolved — 期望 200 + DB status=resolved == 实测 200 / DB=resolved
+2026-10-03 17:02:37 +08 [PASS] [LB-AS-SM-04] 状态机非法流转：终态回退 resolved → processing ⇒ 拒绝 — 期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved == 实测 422 工单状态不允许从 [已解决] 变更为 [处理中] / DB=resolved
+2026-10-03 17:02:37 +08 [PASS] [LB-AS-SM-05] 状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern） — 期望 422 + 校验失败（不得 5xx） == 实测 422 VALIDATION_ERROR 参数校验失败
+2026-10-03 17:02:37 +08 [PASS] [LB-AS-SM-06] 状态机：pending → closed（#3541 裁定允许直关） — 期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-03T17:02:37.395355+08:00
+2026-10-03 17:02:38 +08 [PASS] [LB-AS-SM-07] 状态机：pending → rejected — 期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） == 实测 200 / DB status=rejected closed_at=2026-10-03T17:02:37.851418+08:00
+2026-10-03 17:02:40 +08 [PASS] [LB-REF-01] 退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致 — 期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100
+2026-10-03 17:02:42 +08 [PASS] [LB-REF-02] 退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入 — 期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行
+2026-10-03 17:02:44 +08 [PASS] [LB-REF-03] 退款：负数 −50.00 ⇒ 拒绝 — 期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0
+2026-10-03 17:02:46 +08 [PASS] [LB-REF-04] 退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300 — 期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 17:02:49 +08 [PASS] [LB-REF-05] 退款：不传 refund_amount ⇒ 全额退款（= 实收） — 期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300
+2026-10-03 17:02:52 +08 [PASS] [LB-REF-06] 退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动 — 期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0
+2026-10-03 17:02:53 +08 [PASS] [LB-REF-07] 退款：不可退状态（pending，未确认收款）⇒ 拒绝 — 期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null == 实测 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0
+2026-10-03 17:02:56 +08 [PASS] [LB-REF-08] 退款：金额格式非法（"abc"）⇒ 422 而非 500 — 期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确
+2026-10-03 17:02:57 +08 [PASS] [LB-AS-RESTOCK-ON] 回补开关**开**（allow_return_restock=true）：退货完结 ⇒ 库存回补 + 落 aftersales 台账 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98.000 → 100.000（回补 2.000，= 基线 + 明细数量）+ stock_ledger_entries 恰 1 行 reason=aftersales delta=+2.000 ref_no=AS-20261003-0017 + 订单 refund_amount=200.00 == 实测 status=200；SKU 98 → 100；台账 1 行 [[2,98,100,"aftersales"]]；订单 refund_amount=200
+2026-10-03 17:02:59 +08 [PASS] [LB-AS-RESTOCK-OFF] 回补开关**关**（allow_return_restock=false，默认）：退货完结 ⇒ 库存零变化 — 期望 200（pending→processing→resolved 两步）+ SKU 库存 98 → 98（零变化）+ ref_no=AS-20261003-0018 的台账 0 行 + 退款仍照记（refund_amount=200.00） == 实测 status=200；SKU 98 → 98；台账 0 行；订单 refund_amount=200
+2026-10-03 17:02:59 +08 p2 完成：{"pass":19,"fail":0,"skip":1,"falseRed":0,"total":20}
+2026-10-03 17:02:59 +08 ◀ p2-b1-serial ok
+2026-10-03 17:02:59 +08 ▶ 运行 p3-b2-concurrency
+2026-10-03 17:02:59 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 17:03:07 +08 [PASS] [LB-C1-CONCURRENT-REFUND] C1 同一订单并发退款 N=8×3 轮：成功数×金额 ≤ 实收，DB refund_amount 终值 ≤ 实收 — 三轮成功数=[3,3,3]（期望各 3）；refund_amount 终值=[300,300,300]（期望各 300.00 = 实收）；流水行数=[3,3,3] 合计=["300.000","300.000","300.000"]
+2026-10-03 17:03:10 +08 [PASS] [LB-C1-REDPROOF] C1 判别力红证（注入）：把 WHERE 上限摘掉 ⇒ 必红；同一装置加回守卫 ⇒ 绿 — 无守卫 ⇒ 终值 800（上限 300.00，泄漏=true）；有守卫（产品同形复刻）⇒ 终值 300（守住=true）
+2026-10-03 17:03:24 +08 [FAIL] [LB-C2-CONCURRENT-RESOLVE] C2 同一工单并发完结（processing→resolved）N=4×3 轮：副作用不得翻倍 — 三轮结论=[{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}},{"成功数":4,"工单终态":"resolved","退款":300,"库存":"98→106","台账行":4,"时间线行":5,"流水行":1,"泄漏":{"stockOver":true,"ledgerOver":true,"refundOver":false}}]
+2026-10-03 17:03:38 +08 [PASS] [LB-C3-CONCURRENT-STOCK] C3 同一 SKU 并发扣减 N=8×3 轮：超卖拒绝 / 库存不为负 / 台账守恒 — 三轮：并发扣减终值=[0,0,0]（期望 0.0）；超卖请求结局=[[422,3],[422,3],[422,3]]（期望 [422, 3.0]）；并发收款后 SKU=[98,98,98]（期望 98.0）
+2026-10-03 17:03:38 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：分页上限 / 总数与行数一致性 / 响应时间（机器读数） — orders size=5000 ⇒ total=undefined rows=null 4ms；after-sales size=5000 ⇒ total=undefined rows=null 3ms
+2026-10-03 17:03:38 +08 p3 完成：{"pass":4,"fail":1,"skip":0,"falseRed":0,"total":5}
+2026-10-03 17:03:38 +08 ◀ p3-b2-concurrency ok
+2026-10-03 17:03:38 +08 ▶ 运行 p4-probe-batch
+2026-10-03 17:03:38 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 17:03:40 +08 [PASS] [LB-REF-B01] 退款金额：科学计数法 "1e2" 的接受/拒绝口径（如实读数） — 200  ；DB refund_amount=100
+2026-10-03 17:03:42 +08 [PASS] [LB-REF-B02] 退款金额：空串 "" ⇒ 视为未传（全额退款）的口径登记 — 200；refund_amount=300 实收=300
+2026-10-03 17:03:44 +08 [FAIL] [LB-REF-B03] 退款金额：最小正数 0.001（三位小数）⇒ 接受且落库不截断 — 200；orders.refund_amount=0；流水 1 行 0
+2026-10-03 17:03:47 +08 [PASS] [LB-REF-B04] 退款累计封顶：6×100.00 vs 实收 300.00 ⇒ 恰 3 次成功、DB 与流水合计都恰 300.00 — 期望 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000 == 实测 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000
+2026-10-03 17:03:49 +08 [PASS] [LB-REF-B05] 三方自洽：工单 refund_amount 120.00 ⇒ orders.refund_amount=120.00 + refund_at 非空 + 流水 1 行 120.00 — 期望 orders.refund_amount=120.00、refund_at 非空；工单 status=resolved、refund_amount=120.00；finance_transactions 恰 1 行 120.00 == 实测 orders.refund_amount=120 refund_at=set；工单 status=resolved refund_amount=120 refund_method=null；流水 1 行 120
+2026-10-03 17:04:16 +08 [FAIL] [LB-C21-CONCURRENT-SAME-TARGET] C21 同一工单并发打同一目标（pending→processing×4）：恰一个赢家 — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["processing","processing","processing"]；时间线读数=[4,4,4]
+2026-10-03 17:04:16 +08 [FAIL] [LB-C22-CONCURRENT-CONFLICT] C22 同一工单并发分歧（processing vs closed）：终态合法且至多一个赢家 — 三轮：成功数=[2,2,2]；逐轮状态码=[[200,200],[200,200],[200,200]]；DB 终态=["processing","closed","processing"]；时间线读数=[null,null,null]
+2026-10-03 17:04:16 +08 [FAIL] [LB-C23-CONCURRENT-RESOLVE-TIMELINE] C23 同一工单并发 resolved：时间线「→resolved」恰 1 行（重复写审计） — 三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=["resolved","resolved","resolved"]；时间线读数=[4,4,4]
+2026-10-03 17:04:17 +08 [PASS] [LB-C23-ROWCOUNT-REDPROOF] C23 判别力红证：N 次「到达」⇒ 时间线 N 行（1 次 ⇒ 1 行）—— 行数读数确实会变 — 4 次并发写 ⇒ 读到 4 行（期望 4）；1 次写 ⇒ 读到 1 行（期望 1）⇒ 该读数对「几次写到达」敏感（有判别力）
+2026-10-03 17:04:20 +08 [PASS] [LB-C4-BULK-READ] C4 大批量读：size 钳到全局上限 500 / total 诚实 / 跨页求和可达（= total）/ 无 5xx — ledger size=5000 ⇒ status=200 size=500 total=554 rows=500 113ms；page2 ⇒ rows=54；跨页求和=554 / 读取时刻 total=554 / 现查 count(*)=554（写库并发 ⇒ 允许 ≤2 行漂移）；orders size=5000 ⇒ total=434 size=500 rows=434 724ms；after-sales ⇒ total=36 size=500 rows=36；size=100000 ⇒ size=500；size=-5 ⇒ total=0/rows=434；size=0 ⇒ total=434/rows=0
+2026-10-03 17:04:21 +08 [FAIL] [LB-C4-NEGATIVE-SIZE] C4 同族：size 为负数 ⇒ HTTP 200 但 **total=0 而仍返回整页行**（总数与行数不自洽） — 三个列表端点 size=-5 的读数：[{"label":"orders","status":200,"total":0,"size":500,"rows":434},{"label":"stock-ledger","status":200,"total":0,"size":500,"rows":500},{"label":"after-sales","status":200,"total":0,"size":500,"rows":36}]；不自洽（rows > total）的点数=3
+2026-10-03 17:04:21 +08 [SKIP] [LB-C4-BULK-READ-1000] C4+ 「>1000 行真实数据量」的列表/看板读（截断与总数一致性） — 本租户最大可读面行数 = 554（orders=441 / ledger=554 / finance=498 / tickets=36）< 1000 ⇒ **未覆盖**
+2026-10-03 17:04:21 +08 p4 完成：{"pass":6,"fail":5,"skip":1,"falseRed":0,"total":12}
+2026-10-03 17:04:21 +08 ◀ p4-probe-batch ok
+2026-10-03 17:04:21 +08 ▶ 运行 p5-refund-precision
+2026-10-03 17:04:22 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 17:04:25 +08 [PASS] [LB-PREC-01] 精度①：refund_amount=0.01（最小可表示）⇒ 成功且**逐字**落 0.01 — 期望 200；orders.refund_amount=0.01；finance_transactions 恰 1 行 amount=0.01；两者**相等** == 实测 200；orders.refund_amount=0.01；流水 1 行 amount=0.01
+2026-10-03 17:04:28 +08 [FAIL] [LB-PREC-02] 精度②：refund_amount=0.001（小于最小可表示）⇒ 应 4xx 显式拒绝；现状 200 静默归零 — 200；orders.refund_amount=0；流水 1 行 amount=0；refund_at=set
+2026-10-03 17:04:38 +08 [PASS] [LB-PREC-03] 精度③：0.004 / 0.005 / 0.009 的舍入方向（口径登记，不判缺陷） — 逐字读数：["0.004 ⇒ 200 / 订单 0 / 流水 0","0.005 ⇒ 200 / 订单 0.01 / 流水 0.01","0.009 ⇒ 200 / 订单 0.01 / 流水 0.01"]
+2026-10-03 17:04:38 +08 p5 完成：{"pass":2,"fail":1,"skip":0,"falseRed":0,"total":3}
+2026-10-03 17:04:38 +08 ◀ p5-refund-precision ok
+2026-10-03 17:04:38 +08 ▶ 运行 p6-order-status-control
+2026-10-03 17:04:38 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 17:04:47 +08 [PASS] [LB-CTRL-ORDER-STATUS-CAS] 正对照：订单侧并发改状态（confirmed→producing）N=4×3 轮 ⇒ 恰 1 个赢家（DB 谓词守卫在位） — 三轮成功数=[1,1,1]；逐轮状态码=[[422,422,200,422],[200,422,422,422],[422,200,422,422]]；DB 终态=["producing","producing","producing"]
+2026-10-03 17:04:51 +08 [PASS] [LB-CTRL-CAS-SQL] 正对照的 SQL 层量化：同一并发下「有状态谓词且谓词列被改写」写 1 次、「无谓词」写 N 次 — N=4 并发：有谓词 ⇒ w=1 status=producing（期望 w=1）；无谓词 ⇒ w=4 status=producing（期望 w=4）
+2026-10-03 17:04:51 +08 p6 完成：{"pass":2,"fail":0,"skip":0,"falseRed":0,"total":2}
+2026-10-03 17:04:51 +08 ◀ p6-order-status-control ok
+2026-10-03 17:04:51 +08 ▶ 运行 p7-refund-negative
+2026-10-03 17:04:51 +08 ◀ p7-refund-negative exit 1
+2026-10-03 17:04:51 +08 ▶ 运行 p10-dispatch-concurrency
+2026-10-03 17:04:51 +08 鉴权成功（via=sms-bypass-code）
+2026-10-03 17:05:03 +08 [PASS] [LB-C5-DISPATCH-SERIAL] C5 并发派工（pooled 缺省=逐单派）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复 — pooled=false 三轮：**业务成功数**=[1,1,1]（期望各 1）/ HTTP 200 数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]
+2026-10-03 17:05:14 +08 [PASS] [LB-C5-DISPATCH-POOLED] C5 并发派工（pooled=true 跨单成组）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复 — pooled=true 三轮：**业务成功数**=[1,1,1]（期望各 1）/ HTTP 200 数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]
+2026-10-03 17:05:17 +08 [PASS] [LB-C5-REDPROOF] C5 判别力红证：摘掉唯一约束 ⇒ N 行；加回 ⇒ 1 行（并发窗口真实存在、判据会红） — N=4 独立 psql 进程并发 INSERT：无唯一约束 ⇒ 4 行（期望 4）；有唯一约束（产品同形）⇒ 1 行（期望 1）
+2026-10-03 17:05:17 +08 p10 完成：{"pass":3,"fail":0,"skip":0,"falseRed":0,"total":3}
+2026-10-03 17:05:17 +08 ◀ p10-dispatch-concurrency ok
+2026-10-03 17:05:17 +08 ▶ 运行 p9-cleanup
+2026-10-03 17:05:27 +08 [PASS] [LB-Z-01] 零残留：本包探针域逐表计数 = 0 — 清理前 889 行 → 清理后 0 行；逐表={"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}
+2026-10-03 17:05:27 +08 [PASS] [LB-Z-02] 存量行零改动（**非探针域逐行 diff**：orders / after_sales_tickets） — orders: added=0 removed=0 changed=0；after_sales_tickets: added=0 removed=0 changed=0
+2026-10-03 17:05:27 +08 p9 完成：{"pass":2,"fail":0,"skip":0,"falseRed":0,"total":2}；残留=0
+2026-10-03 17:05:27 +08 ◀ p9-cleanup ok
+2026-10-03 17:05:32 +08 汇总：counts={"pass":48,"fail":7,"skip":2,"falseRed":0,"total":57}；零残留=true（{"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}）
+2026-10-03 17:05:32 +08 产物：out/SUMMARY.json（57 条判据）
+2026-10-03 17:07:34 +08 构建点：main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=cf9a45c3c
+2026-10-03 17:07:40 +08 汇总：counts={"pass":48,"fail":7,"skip":2,"falseRed":0,"total":57}；零残留=true（{"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}）
+2026-10-03 17:07:40 +08 产物：out/SUMMARY.json（57 条判据）

@@ -1,0 +1,73 @@
+{
+  "startedAt": {
+    "cst": "2026-10-03 20:31:38 +08",
+    "utc": "2026-10-03T04:31:38.303Z"
+  },
+  "finishedAt": {
+    "cst": "2026-10-03 20:32:32 +08",
+    "utc": "2026-10-03T04:32:32.082Z"
+  },
+  "wallMs": 49839,
+  "buildPoint": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "sha": "829fb61a7",
+    "shaFull": "829fb61a7ab79b6ee797fc3d762d6c0b38609c2a",
+    "subject": "fix(6171): 商家发货路产出可查的发货单（实发数量 = 订单未发余量）+ 类级判据 (#6177)",
+    "commitTime": "2026-10-03T04:29:24Z",
+    "adminApiStart": "六 10月/ 3 12:31:25 2026",
+    "observedAt": {
+      "cst": "2026-10-03 20:31:38 +08",
+      "utc": "2026-10-03T04:31:38.509Z"
+    }
+  },
+  "perScript": {
+    "p1-ship-protection": {
+      "pass": 20,
+      "fail": 0,
+      "skip": 0,
+      "total": 20
+    },
+    "p2-state-machine": {
+      "pass": 16,
+      "fail": 0,
+      "skip": 0,
+      "total": 16
+    },
+    "p3-independent-math": {
+      "pass": 11,
+      "fail": 0,
+      "skip": 0,
+      "total": 11
+    },
+    "p4-writeface-equivalence": {
+      "pass": 8,
+      "fail": 0,
+      "skip": 1,
+      "total": 9
+    },
+    "p5-stock-and-print": {
+      "pass": 1,
+      "fail": 4,
+      "skip": 3,
+      "total": 8
+    },
+    "p6-redproof": {
+      "pass": 11,
+      "fail": 1,
+      "skip": 0,
+      "total": 12
+    },
+    "p7-noresidue": {
+      "pass": 2,
+      "fail": 0,
+      "skip": 0,
+      "total": 2
+    }
+  },
+  "total": {
+    "pass": 69,
+    "fail": 5,
+    "skip": 4,
+    "all": 78
+  }
+}

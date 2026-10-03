@@ -1,0 +1,263 @@
+[
+  {
+    "id": "RBAC2-01",
+    "name": "越权检测（合法载荷打建单）：客服",
+    "status": "pass",
+    "detail": "客服(customer_service) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:37.596Z"
+  },
+  {
+    "id": "RBAC2-01",
+    "name": "越权检测（合法载荷打建单）：运营",
+    "status": "pass",
+    "detail": "运营(operator) 持 order:create=true → HTTP 422｜判定=有码应放行｜其它状态",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:37.614Z"
+  },
+  {
+    "id": "RBAC2-01",
+    "name": "越权检测（合法载荷打建单）：销售",
+    "status": "pass",
+    "detail": "销售(sales) 持 order:create=true → HTTP 422｜判定=有码应放行｜其它状态",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:37.633Z"
+  },
+  {
+    "id": "RBAC2-01",
+    "name": "越权检测（合法载荷打建单）：财务",
+    "status": "pass",
+    "detail": "财务(finance) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:37.653Z"
+  },
+  {
+    "id": "RBAC2-01",
+    "name": "越权检测（合法载荷打建单）：商品管理员",
+    "status": "pass",
+    "detail": "商品管理员(product_manager) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:37.669Z"
+  },
+  {
+    "id": "RBAC2-01",
+    "name": "越权检测（合法载荷打建单）：知识编辑",
+    "status": "pass",
+    "detail": "知识编辑(knowledge_editor) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:37.689Z"
+  },
+  {
+    "id": "RBAC2-01",
+    "name": "越权检测（合法载荷打建单）：验收临时岗790472",
+    "status": "pass",
+    "detail": "验收临时岗790472(acc_custom_790472) 持 order:create=false → HTTP 422｜判定=无码应 403｜其它状态",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:37.711Z"
+  },
+  {
+    "id": "RBAC2-02",
+    "name": "越权检测汇总",
+    "status": "pass",
+    "detail": "共 7 个岗位身份，真实越权 0 例；无码身份收到的状态=customer_service:422 finance:422 product_manager:422 knowledge_editor:422 acc_custom_790472:422；有码身份=operator:422 sales:422",
+    "evidence": [
+      "out/s3b-rbac2.json"
+    ],
+    "at": "2026-10-02T13:57:37.712Z"
+  },
+  {
+    "id": "RBAC2-03",
+    "name": "@Valid 短路对照：客服",
+    "status": "pass",
+    "detail": "空 body → HTTP 422（参数校验先返回）；合法 body → HTTP 422｜结论=需人工判读",
+    "evidence": [
+      "POST /api/admin/orders {} (422)",
+      "POST /api/admin/orders 合法 (422)"
+    ],
+    "at": "2026-10-02T13:57:37.745Z"
+  },
+  {
+    "id": "RBAC2-03",
+    "name": "@Valid 短路对照：运营",
+    "status": "pass",
+    "detail": "空 body → HTTP 422（参数校验先返回）；合法 body → HTTP 422｜结论=需人工判读",
+    "evidence": [
+      "POST /api/admin/orders {} (422)",
+      "POST /api/admin/orders 合法 (422)"
+    ],
+    "at": "2026-10-02T13:57:37.784Z"
+  },
+  {
+    "id": "RBAC2-03",
+    "name": "@Valid 短路对照：销售",
+    "status": "pass",
+    "detail": "空 body → HTTP 422（参数校验先返回）；合法 body → HTTP 422｜结论=需人工判读",
+    "evidence": [
+      "POST /api/admin/orders {} (422)",
+      "POST /api/admin/orders 合法 (422)"
+    ],
+    "at": "2026-10-02T13:57:37.822Z"
+  },
+  {
+    "id": "RBAC2-04",
+    "name": "修正写探针矩阵：admin(管理员)",
+    "status": "pass",
+    "detail": "全部匹配（7 条）｜W01(order:update) ✓ HTTP404 W02(employee:create) ✓ HTTP422 W03(inbound:create) ✓ HTTP422 W04(system:manage) ✓ HTTP404 W05(employee:create) ✓ HTTP404 W06(customer:create) ✓ HTTP404 W07(product:create) ✓ HTTP200",
+    "evidence": [],
+    "at": "2026-10-02T13:57:38.472Z"
+  },
+  {
+    "id": "RBAC2-04",
+    "name": "修正写探针矩阵：客服(customer_service)",
+    "status": "pass",
+    "detail": "全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403",
+    "evidence": [],
+    "at": "2026-10-02T13:57:38.822Z"
+  },
+  {
+    "id": "RBAC2-04",
+    "name": "修正写探针矩阵：运营(operator)",
+    "status": "pass",
+    "detail": "全部匹配（7 条）｜W01(order:update) ✓ HTTP404 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP422 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP404 W07(product:create) ✓ HTTP200",
+    "evidence": [],
+    "at": "2026-10-02T13:57:39.254Z"
+  },
+  {
+    "id": "RBAC2-04",
+    "name": "修正写探针矩阵：销售(sales)",
+    "status": "pass",
+    "detail": "全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403",
+    "evidence": [],
+    "at": "2026-10-02T13:57:39.601Z"
+  },
+  {
+    "id": "RBAC2-04",
+    "name": "修正写探针矩阵：财务(finance)",
+    "status": "pass",
+    "detail": "全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403",
+    "evidence": [],
+    "at": "2026-10-02T13:57:39.951Z"
+  },
+  {
+    "id": "RBAC2-04",
+    "name": "修正写探针矩阵：商品管理员(product_manager)",
+    "status": "pass",
+    "detail": "全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP200",
+    "evidence": [],
+    "at": "2026-10-02T13:57:40.300Z"
+  },
+  {
+    "id": "RBAC2-04",
+    "name": "修正写探针矩阵：知识编辑(knowledge_editor)",
+    "status": "pass",
+    "detail": "全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403",
+    "evidence": [],
+    "at": "2026-10-02T13:57:40.704Z"
+  },
+  {
+    "id": "RBAC2-04",
+    "name": "修正写探针矩阵：验收临时岗790472(acc_custom_790472)",
+    "status": "pass",
+    "detail": "全部匹配（7 条）｜W01(order:update) ✓ HTTP403 W02(employee:create) ✓ HTTP403 W03(inbound:create) ✓ HTTP403 W04(system:manage) ✓ HTTP403 W05(employee:create) ✓ HTTP403 W06(customer:create) ✓ HTTP403 W07(product:create) ✓ HTTP403",
+    "evidence": [],
+    "at": "2026-10-02T13:57:41.039Z"
+  },
+  {
+    "id": "RBAC2-05",
+    "name": "菜单权限矩阵：admin(管理员)",
+    "status": "pass",
+    "detail": "菜单可见 22 项，无越权项；可见=/dashboard,/briefing,/products,/agent-workspace/human-sessions,/customers,/knowledge,/after-sales,/orders,/finance,/production,/production/pool,/production/processing,/production/routings,/production/piecework,/inbound-orders,/shipments,/production/remnants,/production/saving-board,/employees,/roles,/settings,/notifications",
+    "evidence": [],
+    "at": "2026-10-02T13:57:41.162Z"
+  },
+  {
+    "id": "RBAC2-05",
+    "name": "菜单权限矩阵：客服(customer_service)",
+    "status": "pass",
+    "detail": "菜单可见 11 项，无越权项；可见=/dashboard,/briefing,/agent-workspace/human-sessions,/customers,/knowledge,/after-sales,/orders,/production/pool,/inbound-orders,/shipments,/notifications",
+    "evidence": [],
+    "at": "2026-10-02T13:57:41.320Z"
+  },
+  {
+    "id": "RBAC2-05",
+    "name": "菜单权限矩阵：运营(operator)",
+    "status": "pass",
+    "detail": "菜单可见 20 项，无越权项；可见=/dashboard,/briefing,/products,/agent-workspace/human-sessions,/customers,/knowledge,/after-sales,/orders,/finance,/production,/production/pool,/production/processing,/production/routings,/production/piecework,/inbound-orders,/shipments,/production/remnants,/production/saving-board,/employees,/notifications",
+    "evidence": [],
+    "at": "2026-10-02T13:57:41.499Z"
+  },
+  {
+    "id": "RBAC2-05",
+    "name": "菜单权限矩阵：销售(sales)",
+    "status": "pass",
+    "detail": "菜单可见 10 项，无越权项；可见=/dashboard,/briefing,/products,/customers,/orders,/production/pool,/inbound-orders,/shipments,/production/saving-board,/notifications",
+    "evidence": [],
+    "at": "2026-10-02T13:57:41.650Z"
+  },
+  {
+    "id": "RBAC2-05",
+    "name": "菜单权限矩阵：财务(finance)",
+    "status": "pass",
+    "detail": "菜单可见 9 项，无越权项；可见=/dashboard,/briefing,/customers,/orders,/finance,/production/pool,/inbound-orders,/shipments,/notifications",
+    "evidence": [],
+    "at": "2026-10-02T13:57:41.813Z"
+  },
+  {
+    "id": "RBAC2-05",
+    "name": "菜单权限矩阵：商品管理员(product_manager)",
+    "status": "pass",
+    "detail": "菜单可见 11 项，无越权项；可见=/dashboard,/briefing,/products,/production,/production/pool,/production/processing,/production/routings,/production/piecework,/production/remnants,/production/saving-board,/notifications",
+    "evidence": [],
+    "at": "2026-10-02T13:57:41.933Z"
+  },
+  {
+    "id": "RBAC2-05",
+    "name": "菜单权限矩阵：知识编辑(knowledge_editor)",
+    "status": "pass",
+    "detail": "菜单可见 6 项，无越权项；可见=/dashboard,/briefing,/products,/knowledge,/production/saving-board,/notifications",
+    "evidence": [],
+    "at": "2026-10-02T13:57:42.101Z"
+  },
+  {
+    "id": "RBAC2-05",
+    "name": "菜单权限矩阵：验收临时岗790472(acc_custom_790472)",
+    "status": "pass",
+    "detail": "菜单可见 5 项，无越权项；可见=/dashboard,/briefing,/orders,/shipments,/notifications",
+    "evidence": [],
+    "at": "2026-10-02T13:57:42.257Z"
+  },
+  {
+    "id": "RBAC2-06",
+    "name": "页面守卫复核：/inbound-orders（商品管理员 无 inbound:view）",
+    "status": "pass",
+    "detail": "首轮缺口已闭合：直达页面被 403 页拦截且无数据泄露｜403 页可见=true；疑似数据泄露=false；页面文本片段=🔒 无权访问该页面  当前账号缺少权限 inbound:view， 如需开通请联系管理员在「员工管理」中调整权限。；后端接口调用=未捕获",
+    "evidence": [
+      "screenshots/s3b-inbound-orders-no-permission.png"
+    ],
+    "at": "2026-10-02T13:57:49.433Z"
+  },
+  {
+    "id": "RBAC2-SUM",
+    "name": "复核矩阵汇总",
+    "status": "pass",
+    "detail": "修正写探针 56 格，不符 0 格；越权检测 0 例",
+    "evidence": [
+      "out/s3b-write-matrix.json"
+    ],
+    "at": "2026-10-02T13:57:49.472Z"
+  }
+]

@@ -1,0 +1,422 @@
+[
+  {
+    "id": "DOC-PRD-1",
+    "name": "商品创建·空提交校验（R1）",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败 | name:商品名称不能为空",
+    "evidence": [
+      "POST /api/admin/products {}"
+    ],
+    "at": "2026-10-02T14:55:43.696Z"
+  },
+  {
+    "id": "DOC-PRD-2",
+    "name": "商品创建·正向 + DB 核验（R1）",
+    "status": "pass",
+    "detail": "products#6b5c91e1fc5f5195bfb1dae45d6e3bfe name=验收商品R1-943449 base_price=88.50 status=draft tenant_id=20（页面/接口与库一致）",
+    "evidence": [
+      "POST /api/admin/products {name:'验收商品R1-943449'}",
+      "SQL: select * from products where id='6b5c91e1fc5f5195bfb1dae45d6e3bfe'"
+    ],
+    "at": "2026-10-02T14:55:44.102Z"
+  },
+  {
+    "id": "DOC-PRD-3",
+    "name": "商品 SKU 落库（R1）",
+    "status": "pass",
+    "detail": "product_skus 1 行：ACC-943449-R1/2.8m/¥88.50/库存100.0",
+    "evidence": [
+      "SQL: select * from product_skus where product_id='6b5c91e1fc5f5195bfb1dae45d6e3bfe'"
+    ],
+    "at": "2026-10-02T14:55:44.212Z"
+  },
+  {
+    "id": "DOC-PRD-1",
+    "name": "商品创建·空提交校验（R2）",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败 | name:商品名称不能为空",
+    "evidence": [
+      "POST /api/admin/products {}"
+    ],
+    "at": "2026-10-02T14:55:44.276Z"
+  },
+  {
+    "id": "DOC-PRD-2",
+    "name": "商品创建·正向 + DB 核验（R2）",
+    "status": "pass",
+    "detail": "products#6b5dfbbd87a0e01f7657e4d54e520987 name=验收商品R2-943449 base_price=88.50 status=draft tenant_id=20（页面/接口与库一致）",
+    "evidence": [
+      "POST /api/admin/products {name:'验收商品R2-943449'}",
+      "SQL: select * from products where id='6b5dfbbd87a0e01f7657e4d54e520987'"
+    ],
+    "at": "2026-10-02T14:55:44.646Z"
+  },
+  {
+    "id": "DOC-PRD-3",
+    "name": "商品 SKU 落库（R2）",
+    "status": "pass",
+    "detail": "product_skus 1 行：ACC-943449-R2/2.8m/¥88.50/库存100.0",
+    "evidence": [
+      "SQL: select * from product_skus where product_id='6b5dfbbd87a0e01f7657e4d54e520987'"
+    ],
+    "at": "2026-10-02T14:55:44.743Z"
+  },
+  {
+    "id": "DOC-ORD-1",
+    "name": "订单创建·空提交校验（R1）",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败 | customerPhone:客户电话不能为空；customerName:客户姓名不能为空；items:订单明细不能为空",
+    "evidence": [
+      "POST /api/admin/orders {}"
+    ],
+    "at": "2026-10-02T14:55:44.789Z"
+  },
+  {
+    "id": "DOC-ORD-2",
+    "name": "订单创建·缺物流必填校验（R1）",
+    "status": "pass",
+    "detail": "HTTP 422｜常用物流/快递不能为空 | logisticsType:常用物流/快递不能为空；logisticsCompany:常用物流公司不能为空 | 请补齐收货信息（收货地址 / 常用物流 / 常用物流公司）后重试",
+    "evidence": [
+      "POST /api/admin/orders（缺 logisticsType/logisticsCompany）"
+    ],
+    "at": "2026-10-02T14:55:44.889Z"
+  },
+  {
+    "id": "DOC-ORD-3",
+    "name": "订单创建·手机号格式校验（R1）",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败 | customerPhone:手机号格式不正确，请输入11位中国大陆手机号",
+    "evidence": [
+      "POST /api/admin/orders customerPhone=12345"
+    ],
+    "at": "2026-10-02T14:55:44.956Z"
+  },
+  {
+    "id": "DOC-ORD-4",
+    "name": "订单创建·空明细校验（R1）",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败 | items:订单明细不能为空",
+    "evidence": [
+      "POST /api/admin/orders items=[]"
+    ],
+    "at": "2026-10-02T14:55:45.018Z"
+  },
+  {
+    "id": "DOC-ORD-5",
+    "name": "订单创建·正向 + DB 核验（R1）",
+    "status": "pass",
+    "detail": "orders#20261002331370001 客户=验收客户R1943449 电话=13100000001 状态=pending 金额=300.00；明细行数=1 数量合计=3.00",
+    "evidence": [
+      "POST /api/admin/orders",
+      "SQL: select * from orders where id='a1ed6b2d75e22ab0a8c8ec362d1c012b'",
+      "SQL: select * from order_items where order_id='a1ed6b2d75e22ab0a8c8ec362d1c012b'"
+    ],
+    "at": "2026-10-02T14:55:45.424Z"
+  },
+  {
+    "id": "DOC-ORD-7",
+    "name": "订单状态流转 待付款→已确认（R1）",
+    "status": "pass",
+    "detail": "HTTP 200；DB status=confirmed",
+    "evidence": [
+      "PUT /api/admin/orders/{id}/status {status:'confirmed'}",
+      "SQL: select status from orders where id='a1ed6b2d75e22ab0a8c8ec362d1c012b'"
+    ],
+    "at": "2026-10-02T14:55:45.835Z"
+  },
+  {
+    "id": "DOC-ORD-6",
+    "name": "订单加备注（order:update）（R1）",
+    "status": "pass",
+    "detail": "HTTP 200（POST /api/admin/orders/{id}/remark）｜success",
+    "evidence": [
+      "POST /api/admin/orders/{id}/remark {content}"
+    ],
+    "at": "2026-10-02T14:55:45.965Z"
+  },
+  {
+    "id": "DOC-ORD-1",
+    "name": "订单创建·空提交校验（R2）",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败 | customerName:客户姓名不能为空；items:订单明细不能为空；customerPhone:客户电话不能为空",
+    "evidence": [
+      "POST /api/admin/orders {}"
+    ],
+    "at": "2026-10-02T14:55:46.016Z"
+  },
+  {
+    "id": "DOC-ORD-2",
+    "name": "订单创建·缺物流必填校验（R2）",
+    "status": "pass",
+    "detail": "HTTP 422｜常用物流/快递不能为空 | logisticsType:常用物流/快递不能为空；logisticsCompany:常用物流公司不能为空 | 请补齐收货信息（收货地址 / 常用物流 / 常用物流公司）后重试",
+    "evidence": [
+      "POST /api/admin/orders（缺 logisticsType/logisticsCompany）"
+    ],
+    "at": "2026-10-02T14:55:46.092Z"
+  },
+  {
+    "id": "DOC-ORD-3",
+    "name": "订单创建·手机号格式校验（R2）",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败 | customerPhone:手机号格式不正确，请输入11位中国大陆手机号",
+    "evidence": [
+      "POST /api/admin/orders customerPhone=12345"
+    ],
+    "at": "2026-10-02T14:55:46.149Z"
+  },
+  {
+    "id": "DOC-ORD-4",
+    "name": "订单创建·空明细校验（R2）",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败 | items:订单明细不能为空",
+    "evidence": [
+      "POST /api/admin/orders items=[]"
+    ],
+    "at": "2026-10-02T14:55:46.194Z"
+  },
+  {
+    "id": "DOC-ORD-5",
+    "name": "订单创建·正向 + DB 核验（R2）",
+    "status": "pass",
+    "detail": "orders#20261002424830002 客户=验收客户R2943449 电话=13100000001 状态=pending 金额=300.00；明细行数=1 数量合计=3.00",
+    "evidence": [
+      "POST /api/admin/orders",
+      "SQL: select * from orders where id='cb0bb3a30d4ad7d9026ee804445b3cb6'",
+      "SQL: select * from order_items where order_id='cb0bb3a30d4ad7d9026ee804445b3cb6'"
+    ],
+    "at": "2026-10-02T14:55:46.628Z"
+  },
+  {
+    "id": "DOC-ORD-7",
+    "name": "订单状态流转 待付款→已确认（R2）",
+    "status": "pass",
+    "detail": "HTTP 200；DB status=confirmed",
+    "evidence": [
+      "PUT /api/admin/orders/{id}/status {status:'confirmed'}",
+      "SQL: select status from orders where id='cb0bb3a30d4ad7d9026ee804445b3cb6'"
+    ],
+    "at": "2026-10-02T14:55:46.998Z"
+  },
+  {
+    "id": "DOC-ORD-6",
+    "name": "订单加备注（order:update）（R2）",
+    "status": "pass",
+    "detail": "HTTP 200（POST /api/admin/orders/{id}/remark）｜success",
+    "evidence": [
+      "POST /api/admin/orders/{id}/remark {content}"
+    ],
+    "at": "2026-10-02T14:55:47.105Z"
+  },
+  {
+    "id": "DOC-AS-1",
+    "name": "售后建单·空提交校验（R1）",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败 | ticketType:售后类型不能为空；description:问题描述不能为空",
+    "evidence": [
+      "POST /api/admin/after-sales {}"
+    ],
+    "at": "2026-10-02T14:55:47.174Z"
+  },
+  {
+    "id": "DOC-AS-2",
+    "name": "售后建单·正向 + DB 核验（R1）",
+    "status": "pass",
+    "detail": "after_sales_tickets#AS-20261002-0001 type=return status=pending",
+    "evidence": [
+      "SQL: select * from after_sales_tickets where id='8d162a8f874a0a889d77b0b1bc7fc26e'"
+    ],
+    "at": "2026-10-02T14:55:47.509Z"
+  },
+  {
+    "id": "DOC-AS-1",
+    "name": "售后建单·空提交校验（R2）",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败 | description:问题描述不能为空；ticketType:售后类型不能为空",
+    "evidence": [
+      "POST /api/admin/after-sales {}"
+    ],
+    "at": "2026-10-02T14:55:47.556Z"
+  },
+  {
+    "id": "DOC-AS-2",
+    "name": "售后建单·正向 + DB 核验（R2）",
+    "status": "pass",
+    "detail": "after_sales_tickets#AS-20261002-0002 type=complaint status=pending",
+    "evidence": [
+      "SQL: select * from after_sales_tickets where id='173a9e8f54a51c0ecfe705ef29ccc659'"
+    ],
+    "at": "2026-10-02T14:55:47.965Z"
+  },
+  {
+    "id": "DOC-FIN-1",
+    "name": "财务登记·空提交校验（R1）",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败 | type:收支类型不能为空；amount:金额不能为空",
+    "evidence": [
+      "POST /api/admin/finance/transactions {}"
+    ],
+    "at": "2026-10-02T14:55:48.014Z"
+  },
+  {
+    "id": "DOC-FIN-2",
+    "name": "财务登记·金额下限校验（R1）",
+    "status": "pass",
+    "detail": "amount=0 → HTTP 422｜参数校验失败 | amount:金额必须大于 0",
+    "evidence": [
+      "POST /api/admin/finance/transactions amount=0"
+    ],
+    "at": "2026-10-02T14:55:48.064Z"
+  },
+  {
+    "id": "DOC-FIN-3",
+    "name": "财务登记·正向 + DB 核验（R1）",
+    "status": "pass",
+    "detail": "finance_transactions#04d8d9d3271d47af2808d8b77bb44e26 type=income amount=88.50 方式=cash",
+    "evidence": [
+      "SQL: select * from finance_transactions where id='04d8d9d3271d47af2808d8b77bb44e26'"
+    ],
+    "at": "2026-10-02T14:55:48.250Z"
+  },
+  {
+    "id": "DOC-FIN-1",
+    "name": "财务登记·空提交校验（R2）",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败 | type:收支类型不能为空；amount:金额不能为空",
+    "evidence": [
+      "POST /api/admin/finance/transactions {}"
+    ],
+    "at": "2026-10-02T14:55:48.296Z"
+  },
+  {
+    "id": "DOC-FIN-2",
+    "name": "财务登记·金额下限校验（R2）",
+    "status": "pass",
+    "detail": "amount=0 → HTTP 422｜参数校验失败 | amount:金额必须大于 0",
+    "evidence": [
+      "POST /api/admin/finance/transactions amount=0"
+    ],
+    "at": "2026-10-02T14:55:48.341Z"
+  },
+  {
+    "id": "DOC-FIN-3",
+    "name": "财务登记·正向 + DB 核验（R2）",
+    "status": "pass",
+    "detail": "finance_transactions#bd34edcff77c46fe4087e5ba61bf0d27 type=income amount=88.50 方式=cash",
+    "evidence": [
+      "SQL: select * from finance_transactions where id='bd34edcff77c46fe4087e5ba61bf0d27'"
+    ],
+    "at": "2026-10-02T14:55:48.528Z"
+  },
+  {
+    "id": "DOC-INB-1",
+    "name": "入库单·空提交校验（R1）",
+    "status": "pass",
+    "detail": "HTTP 422｜入库单至少要有 1 行明细 | 请检查必填字段是否完整，字段格式是否正确",
+    "evidence": [
+      "POST /api/admin/inbound-orders {}"
+    ],
+    "at": "2026-10-02T14:55:48.593Z"
+  },
+  {
+    "id": "DOC-INB-2",
+    "name": "入库单·正向 + DB 核验（R1）",
+    "status": "pass",
+    "detail": "inbound_orders#RK-20261002-0001 供应商=验收供应商943449 状态=draft",
+    "evidence": [
+      "SQL: select * from inbound_orders where id='b4892f780e8d13a29b36b3d911acdcc6'"
+    ],
+    "at": "2026-10-02T14:55:48.888Z"
+  },
+  {
+    "id": "DOC-INB-1",
+    "name": "入库单·空提交校验（R2）",
+    "status": "pass",
+    "detail": "HTTP 422｜入库单至少要有 1 行明细 | 请检查必填字段是否完整，字段格式是否正确",
+    "evidence": [
+      "POST /api/admin/inbound-orders {}"
+    ],
+    "at": "2026-10-02T14:55:48.960Z"
+  },
+  {
+    "id": "DOC-INB-2",
+    "name": "入库单·正向 + DB 核验（R2）",
+    "status": "pass",
+    "detail": "inbound_orders#RK-20261002-0002 供应商=验收供应商943449 状态=draft",
+    "evidence": [
+      "SQL: select * from inbound_orders where id='489d4f362b372b49f72c79d3ed8a930e'"
+    ],
+    "at": "2026-10-02T14:55:49.263Z"
+  },
+  {
+    "id": "DOC-CNT",
+    "name": "列表计数 = DB 计数：商品",
+    "status": "pass",
+    "detail": "接口 total=6，DB products=6",
+    "evidence": [
+      "GET /api/admin/products?page=1&size=100",
+      "SQL: select count(*) from products where tenant_id=20"
+    ],
+    "at": "2026-10-02T14:55:49.756Z"
+  },
+  {
+    "id": "DOC-CNT",
+    "name": "列表计数 = DB 计数：订单",
+    "status": "pass",
+    "detail": "接口 total=3，DB orders=3",
+    "evidence": [
+      "GET /api/admin/orders?page=1&size=100",
+      "SQL: select count(*) from orders where tenant_id=20"
+    ],
+    "at": "2026-10-02T14:55:50.001Z"
+  },
+  {
+    "id": "DOC-CNT",
+    "name": "列表计数 = DB 计数：售后",
+    "status": "pass",
+    "detail": "接口 total=3，DB after_sales_tickets=3",
+    "evidence": [
+      "GET /api/admin/after-sales?page=1&size=100",
+      "SQL: select count(*) from after_sales_tickets where tenant_id=20"
+    ],
+    "at": "2026-10-02T14:55:50.286Z"
+  },
+  {
+    "id": "DOC-CNT",
+    "name": "列表计数 = DB 计数：财务",
+    "status": "pass",
+    "detail": "接口 total=7，DB finance_transactions=7",
+    "evidence": [
+      "GET /api/admin/finance/transactions?page=1&size=100",
+      "SQL: select count(*) from finance_transactions where tenant_id=20"
+    ],
+    "at": "2026-10-02T14:55:50.461Z"
+  },
+  {
+    "id": "DOC-CNT",
+    "name": "列表计数 = DB 计数：入库单",
+    "status": "pass",
+    "detail": "接口 total=2，DB inbound_orders=2",
+    "evidence": [
+      "GET /api/admin/inbound-orders?page=1&size=100",
+      "SQL: select count(*) from inbound_orders where tenant_id=20"
+    ],
+    "at": "2026-10-02T14:55:50.628Z"
+  },
+  {
+    "id": "DOC-LOG",
+    "name": "服务器日志：单据操作链路留痕",
+    "status": "pass",
+    "detail": "命中 8 行，示例：2026-10-02 12:21:43.447 [http-nio-8080-exec-125] INFO  c.migao.admin.service.ProductService - 创建商品成功: id=d62b517c7c995a0b3c98ceeac90ed44c, name=UI闭环商品898419",
+    "evidence": [
+      "L226061: 2026-10-02 12:12:46.349 [http-nio-8080-exec-110] INFO  c.m.a.controller.ProductController - 创建商品: name=UI闭环商品362387, tenantId=24",
+      "L226096: 2026-10-02 12:12:46.622 [http-nio-8080-exec-110] INFO  c.migao.admin.service.ProductService - 创建商品成功: id=a674c929e72a78d5ebf0caa61107a869, name=UI闭环商品362387",
+      "L227831: 2026-10-02 12:15:52.934 [http-nio-8080-exec-104] INFO  c.m.a.controller.ProductController - 创建商品: name=UI闭环商品549290, tenantId=24",
+      "L227866: 2026-10-02 12:15:53.217 [http-nio-8080-exec-104] INFO  c.migao.admin.service.ProductService - 创建商品成功: id=34d4cf5016f2bbc9984158dc813783ac, name=UI闭环商品549290",
+      "L229047: 2026-10-02 12:18:43.539 [http-nio-8080-exec-118] INFO  c.m.a.controller.ProductController - 创建商品: name=UI闭环商品719918, tenantId=24",
+      "L229082: 2026-10-02 12:18:43.709 [http-nio-8080-exec-118] INFO  c.migao.admin.service.ProductService - 创建商品成功: id=333db06697bc4da320d7c11efa9d3e4d, name=UI闭环商品719918",
+      "L230399: 2026-10-02 12:21:43.192 [http-nio-8080-exec-125] INFO  c.m.a.controller.ProductController - 创建商品: name=UI闭环商品898419, tenantId=24",
+      "L230434: 2026-10-02 12:21:43.447 [http-nio-8080-exec-125] INFO  c.migao.admin.service.ProductService - 创建商品成功: id=d62b517c7c995a0b3c98ceeac90ed44c, name=UI闭环商品898419"
+    ],
+    "at": "2026-10-02T14:55:50.826Z"
+  }
+]

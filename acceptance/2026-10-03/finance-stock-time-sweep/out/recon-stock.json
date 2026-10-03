@@ -1,0 +1,14 @@
+{
+  "products": 35,
+  "skus": 36,
+  "skus_with_avg": 2,
+  "batches": 2,
+  "consumptions": 1,
+  "ledger": 385,
+  "remnants": 0,
+  "inbound": 5,
+  "txns": 376,
+  "worklogs": 15,
+  "briefings": 0,
+  "orders": 359
+}

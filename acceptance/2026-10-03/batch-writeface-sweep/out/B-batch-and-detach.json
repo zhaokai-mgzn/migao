@@ -1,0 +1,254 @@
+{
+  "records": [
+    {
+      "id": "B1.1",
+      "name": "负例：draft 批量上架 ⇒ 如实拒绝 + DB 零状态变更（不是「静默成功」）",
+      "status": "pass",
+      "detail": "期望 success=0 failed=3；errors[] 每条含「不允许上架」；3 行 status 仍为 draft == 实测 success=0 failed=3 errors=[{\"id\":\"4ecf2c2c68f1bfbebad05afbc67eff0e\",\"message\":\"当前状态[草稿]不允许上架\"},{\"id\":\"0fbbef4b125e356d7b03c39d51dae312\",\"message\":\"当前状态[草稿]不允许上架\"},{\"id\":\"898092b774152959f915b994f63be877\",\"message\":\"当前状态[草稿]不允许上架\"}] 状态={\"4ecf2c2c68f1bfbebad05afbc67eff0e\":\"draft\",\"0fbbef4b125e356d7b03c39d51dae312\":\"draft\",\"898092b774152959f915b994f63be877\":\"draft\"}",
+      "evidence": [
+        "期望来源: ProductService#batchOnShelf 白名单 Set.of(\"off_sale\") + 注释「只有 off_sale/in_warehouse 状态的商品可上架」；DB 逐行前后同一",
+        "期望: success=0 failed=3；errors[] 每条含「不允许上架」；3 行 status 仍为 draft",
+        "实得: success=0 failed=3 errors=[{\"id\":\"4ecf2c2c68f1bfbebad05afbc67eff0e\",\"message\":\"当前状态[草稿]不允许上架\"},{\"id\":\"0fbbef4b125e356d7b03c39d51dae312\",\"message\":\"当前状态[草稿]不允许上架\"},{\"id\":\"898092b774152959f915b994f63be877\",\"message\":\"当前状态[草稿]不允许上架\"}] 状态={\"4ecf2c2c68f1bfbebad05afbc67eff0e\":\"draft\",\"0fbbef4b125e356d7b03c39d51dae312\":\"draft\",\"898092b774152959f915b994f63be877\":\"draft\"}",
+        "响应: {\"success\":true,\"data\":{\"success\":0,\"failed\":3,\"errors\":[{\"id\":\"4ecf2c2c68f1bfbebad05afbc67eff0e\",\"message\":\"当前状态[草稿]不允许上架\"},{\"id\":\"0fbbef4b125e356d7b03c39d51dae312\",\"message\":\"当前状态[草稿]不允许上架\"},{\"id\":\"898092b774152959f915b994f63be877\",\"message\":\"当前状态[草稿]不允许上架\"}]},\"requestId\":\"req_af27141df6d747c7\",\"timestamp\":1791006909}"
+      ],
+      "at": "2026-10-03 13:55:09 +08",
+      "atUtc": "2026-10-03T05:55:09.866Z"
+    },
+    {
+      "id": "B1.2",
+      "name": "同 payload 连发 batch 两次：结果集合不漂移（零漂移 = 幂等）",
+      "status": "pass",
+      "detail": "期望 第二次 failed/success 与第一次相同（0/3）且 DB 状态逐行不变 == 实测 第2次 success=0 failed=3；状态={\"4ecf2c2c68f1bfbebad05afbc67eff0e\":\"draft\",\"0fbbef4b125e356d7b03c39d51dae312\":\"draft\",\"898092b774152959f915b994f63be877\":\"draft\"}",
+      "evidence": [
+        "期望来源: 幂等判据：同一 payload 重复调用 ⇒ 结果集合与 DB 状态均不漂移（不新增、不改坏）",
+        "期望: 第二次 failed/success 与第一次相同（0/3）且 DB 状态逐行不变",
+        "实得: 第2次 success=0 failed=3；状态={\"4ecf2c2c68f1bfbebad05afbc67eff0e\":\"draft\",\"0fbbef4b125e356d7b03c39d51dae312\":\"draft\",\"898092b774152959f915b994f63be877\":\"draft\"}",
+        "第二次响应: {\"success\":true,\"data\":{\"success\":0,\"failed\":3,\"errors\":[{\"id\":\"4ecf2c2c68f1bfbebad05afbc67eff0e\",\"message\":\"当前状态[草稿]不允许上架\"},{\"id\":\"0fbbef4b125e356d7b03c39d51dae312\",\"message\":\"当前状态[草稿]不允许上架\"},{\"id\":\"898092b774152959f915b994f63be877\",\"message\":\"当前状态[草稿]不允许上架\"}]},\"requestId\":\"req_3e7eaf25b4ae42fd\",\"t"
+      ],
+      "at": "2026-10-03 13:55:10 +08",
+      "atUtc": "2026-10-03T05:55:10.366Z"
+    },
+    {
+      "id": "B1.3",
+      "name": "正对照前置：draft →(PUT /{id}/status) on_sale 成功（状态机路径可达，面非空）",
+      "status": "pass",
+      "detail": "期望 2 行 status=on_sale（HTTP 200/200） == 实测 {\"c08eff1ecc6187ebf748f54de2d7256b\":\"on_sale\",\"bb46af2464b791082c4bb43d09250d31\":\"on_sale\"}（HTTP 200/200）",
+      "evidence": [
+        "期望来源: STATUS_TRANSITIONS: draft→[under_review, on_sale]（ProductService 静态块）；DB 核对",
+        "期望: 2 行 status=on_sale（HTTP 200/200）",
+        "实得: {\"c08eff1ecc6187ebf748f54de2d7256b\":\"on_sale\",\"bb46af2464b791082c4bb43d09250d31\":\"on_sale\"}（HTTP 200/200）",
+        "PUT 响应: {\"success\":true,\"requestId\":\"req_20dd68bbeee744d9\",\"timestamp\":1791006911}"
+      ],
+      "at": "2026-10-03 13:55:11 +08",
+      "atUtc": "2026-10-03T05:55:11.609Z"
+    },
+    {
+      "id": "B1.4",
+      "name": "正对照：batch/off-shelf 真能成功（2/2，DB 落 off_sale）",
+      "status": "pass",
+      "detail": "期望 success=2 failed=0；2 行 status=off_sale == 实测 success=2 failed=0 状态={\"c08eff1ecc6187ebf748f54de2d7256b\":\"off_sale\",\"bb46af2464b791082c4bb43d09250d31\":\"off_sale\"}",
+      "evidence": [
+        "期望来源: ProductService#batchOffShelf 白名单 {on_sale}；DB 逐行核对（migao-acceptance 反假绿：先证面真的能用）",
+        "期望: success=2 failed=0；2 行 status=off_sale",
+        "实得: success=2 failed=0 状态={\"c08eff1ecc6187ebf748f54de2d7256b\":\"off_sale\",\"bb46af2464b791082c4bb43d09250d31\":\"off_sale\"}",
+        "响应: {\"success\":true,\"data\":{\"success\":2,\"failed\":0,\"errors\":[]},\"requestId\":\"req_f25b33480fdf4131\",\"timestamp\":1791006911}"
+      ],
+      "at": "2026-10-03 13:55:11 +08",
+      "atUtc": "2026-10-03T05:55:11.931Z"
+    },
+    {
+      "id": "B1.5",
+      "name": "正对照：off_sale → batch/on-shelf 真能成功 ⇒ 证明 draft 被拒是**准入集合**而非端点故障",
+      "status": "pass",
+      "detail": "期望 success=2 failed=0；2 行 status=on_sale == 实测 success=2 failed=0 状态={\"c08eff1ecc6187ebf748f54de2d7256b\":\"on_sale\",\"bb46af2464b791082c4bb43d09250d31\":\"on_sale\"}",
+      "evidence": [
+        "期望来源: ProductService#batchOnShelf 白名单 {off_sale}；同端点在同一批商品上 off_sale 成功、draft 失败 ⇒ 判别性对照",
+        "期望: success=2 failed=0；2 行 status=on_sale",
+        "实得: success=2 failed=0 状态={\"c08eff1ecc6187ebf748f54de2d7256b\":\"on_sale\",\"bb46af2464b791082c4bb43d09250d31\":\"on_sale\"}",
+        "响应: {\"success\":true,\"data\":{\"success\":2,\"failed\":0,\"errors\":[]},\"requestId\":\"req_2e9f336aeb90466c\",\"timestamp\":1791006912}",
+        "前序 off-shelf: success=2"
+      ],
+      "at": "2026-10-03 13:55:12 +08",
+      "atUtc": "2026-10-03T05:55:12.333Z"
+    },
+    {
+      "id": "B2.1",
+      "name": "部分失败：如实报告失败项（不存在的 id + 他租户 id 各进 errors[]）",
+      "status": "pass",
+      "detail": "期望 failed = 2（ghost + 他租户）且 errors[] 覆盖这两个 id == 实测 success=2 failed=2 errors=[{\"id\":\"l2ghostf498220f16c3d913958f\",\"message\":\"商品不存在\"},{\"id\":\"caa4b914ff80bb3fdac746929a421560\",\"message\":\"商品不存在\"}]",
+      "evidence": [
+        "期望来源: ProductService#batchDelete：selectById==null ⇒ result.addError(id,\"商品不存在\")；BatchOperationResult{success,failed,errors[{id,message}]}",
+        "期望: failed = 2（ghost + 他租户）且 errors[] 覆盖这两个 id",
+        "实得: success=2 failed=2 errors=[{\"id\":\"l2ghostf498220f16c3d913958f\",\"message\":\"商品不存在\"},{\"id\":\"caa4b914ff80bb3fdac746929a421560\",\"message\":\"商品不存在\"}]",
+        "响应原文: {\"success\":true,\"data\":{\"success\":2,\"failed\":2,\"errors\":[{\"id\":\"l2ghostf498220f16c3d913958f\",\"message\":\"商品不存在\"},{\"id\":\"caa4b914ff80bb3fdac746929a421560\",\"message\":\"商品不存在\"}]},\"requestId\":\"req_369038437dca4cd7\",\"timestamp\":1791006913}"
+      ],
+      "at": "2026-10-03 13:55:14 +08",
+      "atUtc": "2026-10-03T05:55:14.062Z"
+    },
+    {
+      "id": "B2.2",
+      "name": "部分失败：合法的 2 个 id 真删了（原子的边界 = 逐项报告，非整包回滚）",
+      "status": "pass",
+      "detail": "期望 products(d0cd3ad26d26b2f10d3557dc9ab3768b) 与 products(16a13a8d96d07c979b92cc0e28350637) 均 deleted=1（或行已不存在） == 实测 p4={\"id\":\"d0cd3ad26d26b2f10d3557dc9ab3768b\",\"tenant_id\":20,\"status\":\"draft\",\"deleted\":1} p5={\"id\":\"16a13a8d96d07c979b92cc0e28350637\",\"tenant_id\":20,\"status\":\"draft\",\"deleted\":1}",
+      "evidence": [
+        "期望来源: DB 逐行前后快照（readings 走独立 SQL，不看响应体）；契约 = 逐项报告（非整包回滚）",
+        "期望: products(d0cd3ad26d26b2f10d3557dc9ab3768b) 与 products(16a13a8d96d07c979b92cc0e28350637) 均 deleted=1（或行已不存在）",
+        "实得: p4={\"id\":\"d0cd3ad26d26b2f10d3557dc9ab3768b\",\"tenant_id\":20,\"status\":\"draft\",\"deleted\":1} p5={\"id\":\"16a13a8d96d07c979b92cc0e28350637\",\"tenant_id\":20,\"status\":\"draft\",\"deleted\":1}",
+        "before: {\"d0cd3ad26d26b2f10d3557dc9ab3768b\":{\"id\":\"d0cd3ad26d26b2f10d3557dc9ab3768b\",\"tenant_id\":20,\"status\":\"draft\",\"deleted\":0},\"16a13a8d96d07c979b92cc0e28350637\":{\"id\":\"16a13a8d96d07c979b92cc0e28350637\",\"tenant_id\":20,\"status\":\"draft\",\"deleted\":0}}",
+        "after: {\"d0cd3ad26d26b2f10d3557dc9ab3768b\":{\"id\":\"d0cd3ad26d26b2f10d3557dc9ab3768b\",\"tenant_id\":20,\"status\":\"draft\",\"deleted\":1},\"16a13a8d96d07c979b92cc0e28350637\":{\"id\":\"16a13a8d96d07c979b92cc0e28350637\",\"tenant_id\":20,\"status\":\"draft\",\"deleted\":1}}"
+      ],
+      "at": "2026-10-03 13:55:14 +08",
+      "atUtc": "2026-10-03T05:55:14.063Z"
+    },
+    {
+      "id": "B2.3",
+      "name": "他租户 id 零写（跨租户删除被拒）",
+      "status": "pass",
+      "detail": "期望 租户 21 的商品 caa4b914ff80bb3fdac746929a421560 在调用后 deleted=0 且行仍在 == 实测 {\"id\":\"caa4b914ff80bb3fdac746929a421560\",\"tenant_id\":21,\"status\":\"on_sale\",\"deleted\":0}",
+      "evidence": [
+        "期望来源: 多租户隔离（TenantContext）；DB 行前后同一",
+        "期望: 租户 21 的商品 caa4b914ff80bb3fdac746929a421560 在调用后 deleted=0 且行仍在",
+        "实得: {\"id\":\"caa4b914ff80bb3fdac746929a421560\",\"tenant_id\":21,\"status\":\"on_sale\",\"deleted\":0}",
+        "他租户商品: {\"id\":\"caa4b914ff80bb3fdac746929a421560\",\"tenant_id\":21}"
+      ],
+      "at": "2026-10-03 13:55:14 +08",
+      "atUtc": "2026-10-03T05:55:14.063Z"
+    },
+    {
+      "id": "B3.0",
+      "name": "正对照：探针商品确实有 SKU 子行（闭包判据才有意义）",
+      "status": "pass",
+      "detail": "期望 product_skus(product_id=99d382a84dd2dc4d5f8e22f3913a456c) ≥ 1 == 实测 子行数 = 1",
+      "evidence": [
+        "期望来源: 独立 SQL；无子行 ⇒ 孤儿判据是空断言（migao-acceptance 反假绿）",
+        "期望: product_skus(product_id=99d382a84dd2dc4d5f8e22f3913a456c) ≥ 1",
+        "实得: 子行数 = 1",
+        "子行: [{\"id\":2106261774711877600,\"product_id\":\"99d382a84dd2dc4d5f8e22f3913a456c\"}]"
+      ],
+      "at": "2026-10-03 13:55:14 +08",
+      "atUtc": "2026-10-03T05:55:14.557Z"
+    },
+    {
+      "id": "B3.1",
+      "name": "软删语义：parent 行仍在（deleted=1）⇒ 子行不构成孤儿（判据纠正后的正确期望）",
+      "status": "pass",
+      "detail": "期望 products(99d382a84dd2dc4d5f8e22f3913a456c).deleted=1 且行仍存在；子行保留（审计/历史） == 实测 product={\"id\":\"99d382a84dd2dc4d5f8e22f3913a456c\",\"tenant_id\":20,\"status\":\"draft\",\"deleted\":1} 子行={\"skus\":1,\"colors\":1,\"ledger\":1}",
+      "evidence": [
+        "期望来源: MP 逻辑删除（软删）语义：行保留 + deleted=1；`stock_ledger_entries_product_id_fkey` 等 8 条 FK 由 DB 保证引用完整性",
+        "期望: products(99d382a84dd2dc4d5f8e22f3913a456c).deleted=1 且行仍存在；子行保留（审计/历史）",
+        "实得: product={\"id\":\"99d382a84dd2dc4d5f8e22f3913a456c\",\"tenant_id\":20,\"status\":\"draft\",\"deleted\":1} 子行={\"skus\":1,\"colors\":1,\"ledger\":1}",
+        "删除响应: {\"success\":true,\"data\":{\"success\":1,\"failed\":0,\"errors\":[]},\"requestId\":\"req_97ef01cc60654416\",\"timestamp\":1791006914}"
+      ],
+      "at": "2026-10-03 13:55:15 +08",
+      "atUtc": "2026-10-03T05:55:15.206Z"
+    },
+    {
+      "id": "B3.2",
+      "name": "真孤儿扫描：8 张引用表逐列找「parent 不存在」的行 ⇒ 必须为 0",
+      "status": "pass",
+      "detail": "期望 8 个 (表,列) 组合的真孤儿数全为 0（DB 有 8 条 FK 指向 products，属结构保证） == 实测 真孤儿={\"product_skus.product_id\":0,\"product_colors.product_id\":0,\"product_attributes.product_id\":0,\"stock_ledger_entries.product_id\":0,\"stock_batches.product_id\":0,\"stock_batch_consumptions.product_id\":0,\"inbound_order_items.product_id\":0,\"fabric_remnants.product_id\":0}；指向 products 的 FK 数=8",
+      "evidence": [
+        "期望来源: 孤儿定义 = 引用列非空且 parent 行不存在；pg_constraint 现查 FK 数（不硬编码）",
+        "期望: 8 个 (表,列) 组合的真孤儿数全为 0（DB 有 8 条 FK 指向 products，属结构保证）",
+        "实得: 真孤儿={\"product_skus.product_id\":0,\"product_colors.product_id\":0,\"product_attributes.product_id\":0,\"stock_ledger_entries.product_id\":0,\"stock_batches.product_id\":0,\"stock_batch_consumptions.product_id\":0,\"inbound_order_items.product_id\":0,\"fabric_remnants.product_id\":0}；指向 products 的 FK 数=8",
+        "表清单: product_skus.product_id, product_colors.product_id, product_attributes.product_id, stock_ledger_entries.product_id, stock_batches.product_id, stock_batch_consumptions.product_id, inbound_order_items.product_id, fabric_remnants.product_id"
+      ],
+      "at": "2026-10-03 13:55:16 +08",
+      "atUtc": "2026-10-03T05:55:16.261Z"
+    },
+    {
+      "id": "B3.3",
+      "name": "软删后读面可达性：商品/SKU 不得再被单独读回（子行随之不可见）",
+      "status": "pass",
+      "detail": "期望 GET /{id} 不返回该商品（404 或 success=false）；列表 keyword=L2-BATCH-MURZ9X2E total=0；导出该货号 0 行 == 实测 GET=404/false 列表total=0 导出行=0；子行总数={\"skus\":1,\"colors\":1,\"ledger\":1}",
+      "evidence": [
+        "期望来源: 软删（deleted=1）后读面必须过滤（getProducts wrapper 带 deleted 条件）；子行无 deleted 列 ⇒ 只能随父行不可见",
+        "期望: GET /{id} 不返回该商品（404 或 success=false）；列表 keyword=L2-BATCH-MURZ9X2E total=0；导出该货号 0 行",
+        "实得: GET=404/false 列表total=0 导出行=0；子行总数={\"skus\":1,\"colors\":1,\"ledger\":1}",
+        "GET 响应: {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_478b7161ea1f4302\",\"timestamp\":1791006917,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+        "列表响应: {\"success\":true,\"data\":{\"total\":0,\"page\":1,\"size\":100,\"items\":[]},\"requestId\":\"req_1b0d6e786f9c4b86\",\"timestamp\":1791006917}"
+      ],
+      "at": "2026-10-03 13:55:17 +08",
+      "atUtc": "2026-10-03T05:55:17.439Z"
+    },
+    {
+      "id": "C1.0",
+      "name": "正对照：探针工序已落库（面非空）",
+      "status": "pass",
+      "detail": "期望 31e6225688db87eaee337dbede3b9649 在 production_operations 且 deleted=0 == 实测 {\"id\":\"31e6225688db87eaee337dbede3b9649\",\"name\":\"线②验收工序917440\",\"deleted\":0,\"tenant_id\":20}",
+      "evidence": [
+        "期望来源: 独立 SQL 核对（先证面有数据才谈删除语义）",
+        "期望: 31e6225688db87eaee337dbede3b9649 在 production_operations 且 deleted=0",
+        "实得: {\"id\":\"31e6225688db87eaee337dbede3b9649\",\"name\":\"线②验收工序917440\",\"deleted\":0,\"tenant_id\":20}",
+        "建工序响应: {\"success\":true,\"data\":{\"id\":\"31e6225688db87eaee337dbede3b9649\",\"name\":\"线②验收工序917440\",\"library_name\":\"线②验收工序917440\",\"group\":\"线②验收组\",\"position\":\"线②验收部位\",\"scope\":\"position\",\"unit\":\"米\",\"unit_price\":12.5,\"is_must_finish\":false,\"is_start_marker\":false,\"qty_rule_missing\":true,\"qty_rule_hint\":\"该工序不在算料目录内，派"
+      ],
+      "at": "2026-10-03 13:55:17 +08",
+      "atUtc": "2026-10-03T05:55:17.784Z"
+    },
+    {
+      "id": "C1.1",
+      "name": "跨租户 id ⇒ 404 且零写",
+      "status": "pass",
+      "detail": "期望 HTTP 404；他租户工序 deleted 与 updated_at 不变 == 实测 HTTP 404 body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"工序不存在\"},\"requestId\":\"req_0ca05c1cb2db4cb3\",\"timestamp\":1791006918,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}；他租户行={\"id\":\"op-v79-1-02\",\"deleted\":0,\"tenant_id\":1,\"updated_at\":\"2026-09-20T10:46:47.855574+08:00\"}",
+      "evidence": [
+        "期望来源: ProductionOperationCommandService#deleteDetaching：op==null || !tenantId.equals(op.getTenantId()) ⇒ BusinessException.notFound(\"工序\")",
+        "期望: HTTP 404；他租户工序 deleted 与 updated_at 不变",
+        "实得: HTTP 404 body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"工序不存在\"},\"requestId\":\"req_0ca05c1cb2db4cb3\",\"timestamp\":1791006918,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}；他租户行={\"id\":\"op-v79-1-02\",\"deleted\":0,\"tenant_id\":1,\"updated_at\":\"2026-09-20T10:46:47.855574+08:00\"}",
+        "跨租户工序: {\"id\":\"op-v79-1-02\"}",
+        "调用后: {\"id\":\"op-v79-1-02\",\"deleted\":0,\"tenant_id\":1,\"updated_at\":\"2026-09-20T10:46:47.855574+08:00\"}"
+      ],
+      "at": "2026-10-03 13:55:18 +08",
+      "atUtc": "2026-10-03T05:55:18.240Z"
+    },
+    {
+      "id": "C1.2",
+      "name": "一键删除成功 ⇒ 工序软删 + 矩阵格级联（detached/deleted_positions 如实报数）",
+      "status": "pass",
+      "detail": "期望 HTTP 200；operation.deleted=1；格 applicable=false（detached_positions≥1）或格被软删（deleted=1） == 实测 HTTP 200 body={\"success\":true,\"data\":{\"id\":\"31e6225688db87eaee337dbede3b9649\",\"deleted\":true,\"detached_positions\":2,\"deleted_positions\":2},\"requestId\":\"req_080309afcf0943a1\",\"timestamp\":1791006918}；格 after={\"id\":\"l2pos506ddd33a920558bc0b3\",\"tenant_id\":20,\"logical_name\":\"线②验收工序917440\",\"position\":\"线②验收部位\",\"unit_price\":null,\"applicable\":false,\"status\":\"active\",\"created_at\":\"2026-10-03T13:55:17.995223+08:00\",\"updated_at\":\"2026-10-03T13:55:18.529919+08:00\",\"deleted\":1}",
+      "evidence": [
+        "期望来源: Controller 注释：同一事务里先摘格（applicable=false + 价清空）再软删工序 + 级联软删矩阵行",
+        "期望: HTTP 200；operation.deleted=1；格 applicable=false（detached_positions≥1）或格被软删（deleted=1）",
+        "实得: HTTP 200 body={\"success\":true,\"data\":{\"id\":\"31e6225688db87eaee337dbede3b9649\",\"deleted\":true,\"detached_positions\":2,\"deleted_positions\":2},\"requestId\":\"req_080309afcf0943a1\",\"timestamp\":1791006918}；格 after={\"id\":\"l2pos506ddd33a920558bc0b3\",\"tenant_id\":20,\"logical_name\":\"线②验收工序917440\",\"position\":\"线②验收部位\",\"unit_price\":null,\"applicable\":false,\"status\":\"active\",\"created_at\":\"2026-10-03T13:55:17.995223+08:00\",\"updated_at\":\"2026-10-03T13:55:18.529919+08:00\",\"deleted\":1}",
+        "detached_positions=2 deleted_positions=2",
+        "格 before={\"id\":\"l2pos506ddd33a920558bc0b3\",\"tenant_id\":20,\"logical_name\":\"线②验收工序917440\",\"position\":\"线②验收部位\",\"unit_price\":12.5,\"applicable\":true,\"status\":\"active\",\"created_at\":\"2026-10-03T13:55:17.995223+08:00\",\"updated_at\":\"2026-10-03T13:55:17.995223+08:00\",\"deleted\":0}"
+      ],
+      "at": "2026-10-03 13:55:18 +08",
+      "atUtc": "2026-10-03T05:55:18.853Z"
+    },
+    {
+      "id": "C1.3",
+      "name": "删除后依赖闭包：活跃引用数必须为 0（矩阵格/路线规则/主线）+ 价目账读面不得再暴露",
+      "status": "pass",
+      "detail": "期望 4 个 (表,列) 组合的活跃命中数全为 0；无活跃路线主线含它；operations-catalog 不含它 == 实测 dangling={\"production_operation_positions.logical_name\":0,\"production_operation_price_versions.operation_id\":0,\"production_route_rules.operation\":0,\"production_route_rules.after_operation\":0} routeRefs=[] catalog含它=false 价目账行=[{\"id\":\"94e6926198573f2b652281ada7a0517d\",\"operation_id\":\"31e6225688db87eaee337dbede3b9649\",\"unit_price\":12.5,\"deleted\":0}]",
+      "evidence": [
+        "期望来源: Controller/Service 注释「删工序要删干净」；列名以 information_schema 实测为准；价目版本账按 Service 注释**有意保留**（审计），故只判读面暴露",
+        "期望: 4 个 (表,列) 组合的活跃命中数全为 0；无活跃路线主线含它；operations-catalog 不含它",
+        "实得: dangling={\"production_operation_positions.logical_name\":0,\"production_operation_price_versions.operation_id\":0,\"production_route_rules.operation\":0,\"production_route_rules.after_operation\":0} routeRefs=[] catalog含它=false 价目账行=[{\"id\":\"94e6926198573f2b652281ada7a0517d\",\"operation_id\":\"31e6225688db87eaee337dbede3b9649\",\"unit_price\":12.5,\"deleted\":0}]",
+        "表清单: production_operation_positions.logical_name, production_operation_price_versions.operation_id, production_route_rules.operation, production_route_rules.after_operation",
+        "价目账（有意保留）: [{\"id\":\"94e6926198573f2b652281ada7a0517d\",\"operation_id\":\"31e6225688db87eaee337dbede3b9649\",\"unit_price\":12.5,\"deleted\":0}]"
+      ],
+      "at": "2026-10-03 13:55:19 +08",
+      "atUtc": "2026-10-03T05:55:19.592Z"
+    },
+    {
+      "id": "C1.4",
+      "name": "二次调用幂等：**不得 500**（404 或 200-no-op 都可接受，崩溃不可接受）",
+      "status": "pass",
+      "detail": "期望 HTTP ∈ {200,404}（均非 5xx）且 deleted 仍为 1 == 实测 HTTP 404 body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"工序不存在\"},\"requestId\":\"req_6fb336b1b0904570\",\"timestamp\":1791006919,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}；deleted=1",
+      "evidence": [
+        "期望来源: Service 注释「已软删 ⇒ 200 幂等 no-op（不报 404）」——**实测是 404**（契约偏差，登记 §7；但两次都非 5xx ⇒ 幂等性本身成立）",
+        "期望: HTTP ∈ {200,404}（均非 5xx）且 deleted 仍为 1",
+        "实得: HTTP 404 body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"工序不存在\"},\"requestId\":\"req_6fb336b1b0904570\",\"timestamp\":1791006919,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}；deleted=1",
+        "updated_at: 2026-10-03T13:55:18.529919+08:00 → 2026-10-03T13:55:18.529919+08:00"
+      ],
+      "at": "2026-10-03 13:55:19 +08",
+      "atUtc": "2026-10-03T05:55:19.801Z"
+    }
+  ],
+  "summary": {
+    "pass": 17,
+    "fail": 0,
+    "skip": 0,
+    "total": 17
+  }
+}

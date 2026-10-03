@@ -1,0 +1,57 @@
+[
+  {
+    "id": "R-01",
+    "name": "新建路线三态：建得出（读面可见）· 删得掉（软删生效）",
+    "status": "pass",
+    "detail": "POST → 200（id=a5d9c1fbc00a0b22feb92efed7b2aad6，读面可见=true）；DELETE → 200，库内 deleted=1",
+    "evidence": [
+      "POST /api/admin/production/routings",
+      "GET /api/admin/production/routings",
+      "DELETE /api/admin/production/routings/a5d9c1fbc00a0b22feb92efed7b2aad6"
+    ],
+    "at": "2026-10-02T23:16:45.358Z"
+  },
+  {
+    "id": "R-05",
+    "name": "路线「适用帘种」受闭词表保护（未知部位被拒）",
+    "status": "fail",
+    "detail": "POST positions=['火星帘'] → **HTTP 200**，库内落库 positions=[\"火星帘\"] ⇒ 可建出**永不可能被选中**的路线（部位值域是闭的：布帘/纱帘/帘头/布料）；同一维度在**规则**写面受闭词表保护（`POSITION_LIMIT_VOCABULARY` 达到 422），路线写面却没有 ⇒ 静默死配置",
+    "evidence": [
+      "POST /api/admin/production/routings {positions:['火星帘']}",
+      "SQL: select positions from production_route_templates where id='1beac2ef3a87ae31744ee40ac0107f10'"
+    ],
+    "at": "2026-10-02T23:16:45.693Z"
+  },
+  {
+    "id": "R-02",
+    "name": "路线改名 → 新加工单 route_key 跟随；还原后回到原名",
+    "status": "pass",
+    "detail": "改名 → 加工单 JG-20261003-6279 route_key=「窗帘工序路线（验收改名004286）」；还原 → route_key=「窗帘工序路线（默认）」",
+    "evidence": [
+      "PUT /api/admin/production/routings/rt-v72-20 {name}",
+      "SQL: select route_key from processing_orders where id='9fc437bd5fb840a430f9601b8c76804f'"
+    ],
+    "at": "2026-10-02T23:16:49.009Z"
+  },
+  {
+    "id": "R-03",
+    "name": "编辑主线顺序 → 加工单工序顺序逐字跟随；还原后回到基线顺序",
+    "status": "pass",
+    "detail": "注入后 mainline=[\"精裁\", \"三边\", \"熨烫\", \"复烫\", \"定型\", \"车被\", \"外帘打卷\", \"打包\", \"外帘装袋\", \"外帘发货\"] ⇒ 派工 精裁-布 → 布三边 → 熨烫-布 → 复烫-布 → 定型-布 → 布帘车被 → 外帘打卷 → 打包 → 外帘装袋 → 外帘发货；还原 ⇒ 与基线 10 道逐字相同",
+    "evidence": [
+      "PUT /api/admin/production/routings/rt-v72-20 {mainline 对调 定型/复烫}",
+      "SQL: select mainline from production_route_templates where id='rt-v72-20'"
+    ],
+    "at": "2026-10-02T23:16:52.426Z"
+  },
+  {
+    "id": "R-04",
+    "name": "主线写面三条护栏（空主线 / 重复工序 / 引用不存在工序）全部 422 且不改库",
+    "status": "pass",
+    "detail": "空主线 422｜重复 422｜幽灵 422；库内 mainline 未被改坏（[\"精裁\", \"三边\", \"熨烫\", \"定型\", \"复烫\", \"车被\", \"外帘打卷\", \"打包\", \"外帘装袋\", \"…）",
+    "evidence": [
+      "PUT /api/admin/production/routings/rt-v72-20（三种非法 mainline）"
+    ],
+    "at": "2026-10-02T23:16:52.876Z"
+  }
+]

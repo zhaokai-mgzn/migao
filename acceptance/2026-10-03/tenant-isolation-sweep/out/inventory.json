@@ -1,0 +1,336 @@
+[
+ {
+  "key": "products",
+  "label": "商品",
+  "table": "products",
+  "list": "/api/admin/products?page=1&size=1000",
+  "read": "/api/admin/products/:id",
+  "write": "PUT",
+  "A_ids": 35,
+  "B_ids": 1,
+  "B_sample": [
+   "caa4b914ff80bb3fdac746929a421560"
+  ]
+ },
+ {
+  "key": "customers",
+  "label": "客户",
+  "table": "customer_profiles",
+  "list": "/api/admin/customers?page=1&size=1000",
+  "read": "/api/admin/customers/:id",
+  "write": "PUT",
+  "A_ids": 16,
+  "B_ids": 1,
+  "B_sample": [
+   "1f665c78c0282799d31e56f959404ee6"
+  ]
+ },
+ {
+  "key": "customer_tags",
+  "label": "客户标签",
+  "table": "customer_tags",
+  "list": "/api/admin/customer-tags",
+  "read": null,
+  "write": "PUT",
+  "A_ids": 1,
+  "B_ids": 0,
+  "B_sample": []
+ },
+ {
+  "key": "categories",
+  "label": "商品分类",
+  "table": "categories",
+  "list": "/api/admin/categories",
+  "read": null,
+  "write": "PUT",
+  "A_ids": 32,
+  "B_ids": 2,
+  "B_sample": [
+   "8506a1ee8f20f61fc09a0651137547e9",
+   "39a54e9c1db5eabe0bd6770fed2078a0"
+  ]
+ },
+ {
+  "key": "operations",
+  "label": "工序库",
+  "table": "production_operations",
+  "list": "/api/admin/production/operations-catalog?page=1&size=1000",
+  "read": null,
+  "write": "PUT",
+  "A_ids": 40,
+  "B_ids": 40,
+  "B_sample": [
+   "op-v79-21-02",
+   "op-v91-21-01"
+  ]
+ },
+ {
+  "key": "routings",
+  "label": "工艺路线",
+  "table": "production_route_templates",
+  "list": "/api/admin/production/routings",
+  "read": null,
+  "write": "PUT",
+  "A_ids": 2,
+  "B_ids": 2,
+  "B_sample": [
+   "rt-v79-21",
+   "rt-v72-21"
+  ]
+ },
+ {
+  "key": "route_rules",
+  "label": "路线规则",
+  "table": "production_route_rules",
+  "list": "/api/admin/production/route-rules",
+  "read": null,
+  "write": "DELETE",
+  "A_ids": 26,
+  "B_ids": 26,
+  "B_sample": [
+   "rr-v93-21-02",
+   "rr-v93-21-01"
+  ]
+ },
+ {
+  "key": "op_positions",
+  "label": "价目矩阵行",
+  "table": "production_operation_positions",
+  "list": "/api/admin/production/operation-positions",
+  "read": null,
+  "write": "PUT",
+  "A_ids": 30,
+  "B_ids": 29,
+  "B_sample": [
+   "opp-v72-21-logo条-布帘",
+   "opp-v72-21-三边-布帘"
+  ]
+ },
+ {
+  "key": "fee_combos",
+  "label": "加工费组合",
+  "table": "processing_fee_combinations",
+  "list": "/api/admin/production/processing-fee-combinations",
+  "read": null,
+  "write": "PUT",
+  "A_ids": 9,
+  "B_ids": 0,
+  "B_sample": []
+ },
+ {
+  "key": "processing_items",
+  "label": "加工项",
+  "table": "processing_items",
+  "list": "/api/admin/processing-items?query=&page=1&size=1000",
+  "read": "/api/admin/processing-items/:id",
+  "write": "PUT",
+  "A_ids": 17,
+  "B_ids": 17,
+  "B_sample": [
+   "b8a89a836baa4d58eaabc2bb05ccf3d7",
+   "485a9626dd8bdc5a7ceea2303b5ecafe"
+  ]
+ },
+ {
+  "key": "processing_categories",
+  "label": "加工分类",
+  "table": "processing_categories",
+  "list": "/api/admin/processing-categories",
+  "read": "/api/admin/processing-categories/:id",
+  "write": "PUT",
+  "A_ids": 3,
+  "B_ids": 2,
+  "B_sample": [
+   "a48ff42ce0a034a26c6e8e8fb04199da",
+   "pc-v83-21-fee"
+  ]
+ },
+ {
+  "key": "orders",
+  "label": "订单",
+  "table": "orders",
+  "list": "/api/admin/orders?page=1&size=1000",
+  "read": "/api/admin/orders/:id",
+  "write": "PUT",
+  "A_ids": 359,
+  "B_ids": 1,
+  "B_sample": [
+   "fed91dedfe07a56620ab4bc8ec2a4972"
+  ]
+ },
+ {
+  "key": "processing_orders",
+  "label": "加工单",
+  "table": "processing_orders",
+  "list": "/api/admin/processing-orders",
+  "read": "/api/admin/processing-orders/:id",
+  "write": "PATCH",
+  "A_ids": 268,
+  "B_ids": 0,
+  "B_sample": []
+ },
+ {
+  "key": "inbound_orders",
+  "label": "入库单",
+  "table": "inbound_orders",
+  "list": "/api/admin/inbound-orders",
+  "read": "/api/admin/inbound-orders/:id",
+  "write": "PATCH",
+  "A_ids": 5,
+  "B_ids": 0,
+  "B_sample": []
+ },
+ {
+  "key": "shipments",
+  "label": "发货单",
+  "table": "order_shipments",
+  "list": "/api/admin/shipments",
+  "read": null,
+  "write": null,
+  "A_ids": 1,
+  "B_ids": 0,
+  "B_sample": []
+ },
+ {
+  "key": "stock_batches",
+  "label": "库存批次",
+  "table": "stock_batches",
+  "list": "/api/admin/batch-stock/batches",
+  "read": null,
+  "write": null,
+  "A_ids": 2,
+  "B_ids": 0,
+  "B_sample": []
+ },
+ {
+  "key": "stock_ledger",
+  "label": "库存流水",
+  "table": "stock_ledger_entries",
+  "list": "/api/admin/stock-ledger?page=1&size=1000",
+  "read": null,
+  "write": null,
+  "A_ids": 385,
+  "B_ids": 0,
+  "B_sample": []
+ },
+ {
+  "key": "finance_tx",
+  "label": "财务流水",
+  "table": "finance_transactions",
+  "list": "/api/admin/finance/transactions?page=1&size=1000",
+  "read": null,
+  "write": null,
+  "A_ids": 376,
+  "B_ids": 1,
+  "B_sample": [
+   "c1723526156f871233f6cc360cdce121"
+  ]
+ },
+ {
+  "key": "notif_templates",
+  "label": "通知模板",
+  "table": "notification_templates",
+  "list": "/api/admin/notification-templates?page=1&size=1000",
+  "read": null,
+  "write": "PUT",
+  "A_ids": 0,
+  "B_ids": 0,
+  "B_sample": []
+ },
+ {
+  "key": "notif_rules",
+  "label": "通知规则",
+  "table": "notification_rules",
+  "list": "/api/admin/notification-rules?page=1&size=1000",
+  "read": null,
+  "write": "PUT",
+  "A_ids": 0,
+  "B_ids": 0,
+  "B_sample": []
+ },
+ {
+  "key": "knowledge_cards",
+  "label": "知识卡片",
+  "table": "knowledge_cards",
+  "list": "/api/admin/knowledge/cards?page=1&size=1000",
+  "read": null,
+  "write": "PUT",
+  "A_ids": 0,
+  "B_ids": 0,
+  "B_sample": []
+ },
+ {
+  "key": "roles",
+  "label": "角色",
+  "table": "roles",
+  "list": "/api/admin/roles?page=1&size=1000",
+  "read": "/api/admin/roles/:id",
+  "write": "PUT",
+  "A_ids": 10,
+  "B_ids": 7,
+  "B_sample": [
+   "33debb9b-c19b-451e-851a-f2187ca11f87",
+   "55324b14-b809-492c-af0e-fab3c36326b8"
+  ]
+ },
+ {
+  "key": "after_sales",
+  "label": "售后工单",
+  "table": "after_sales_tickets",
+  "list": "/api/admin/after-sales?page=1&size=1000",
+  "read": "/api/admin/after-sales/:id",
+  "write": null,
+  "A_ids": 5,
+  "B_ids": 1,
+  "B_sample": [
+   "0d4971b436584c5c245c515268b41101"
+  ]
+ },
+ {
+  "key": "users",
+  "label": "员工用户",
+  "table": "users",
+  "list": "/api/admin/users?page=1&size=1000",
+  "read": "/api/admin/users/:id",
+  "write": "PUT",
+  "A_ids": 15,
+  "B_ids": 2,
+  "B_sample": [
+   "2047a4f6803b8bc14b11c77d8c20b4cd",
+   "5cee15c2abd5c93da0c5ddb80e202411"
+  ]
+ },
+ {
+  "key": "agent_sessions",
+  "label": "客服会话",
+  "table": "agent_sessions",
+  "list": "/api/admin/agent-sessions?page=1&size=1000",
+  "read": "/api/admin/agent-sessions/:id",
+  "write": null,
+  "A_ids": 0,
+  "B_ids": 0,
+  "B_sample": []
+ },
+ {
+  "key": "employees",
+  "label": "客服员工",
+  "table": "agent_employees",
+  "list": "/api/admin/workers?page=1&size=1000",
+  "read": null,
+  "write": null,
+  "A_ids": 0,
+  "B_ids": 0,
+  "B_sample": []
+ },
+ {
+  "key": "remnants",
+  "label": "布头余料",
+  "table": "fabric_remnants",
+  "list": "/api/admin/production/remnants",
+  "read": null,
+  "write": null,
+  "A_ids": 0,
+  "B_ids": 0,
+  "B_sample": []
+ }
+]

@@ -1,0 +1,234 @@
+[
+  {
+    "id": "RBAC-API",
+    "name": "API 权限矩阵：admin(管理员)",
+    "status": "pass",
+    "detail": "探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=allow /api/admin/roles/all=allow",
+    "evidence": [
+      "表：out/s3-rbac-routes.json / 见 s3-rbac.json 的 matrix"
+    ],
+    "at": "2026-10-02T14:53:59.906Z"
+  },
+  {
+    "id": "RBAC-UI",
+    "name": "页面权限矩阵：admin(管理员)",
+    "status": "pass",
+    "detail": "菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 0，不符 0",
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-admin管理员-sidebar.png"
+    ],
+    "at": "2026-10-02T14:54:14.737Z"
+  },
+  {
+    "id": "RBAC-API",
+    "name": "API 权限矩阵：客服(customer_service)",
+    "status": "pass",
+    "detail": "探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=deny",
+    "evidence": [
+      "表：out/s3-rbac-routes.json / 见 s3-rbac.json 的 matrix"
+    ],
+    "at": "2026-10-02T14:54:16.225Z"
+  },
+  {
+    "id": "RBAC-UI",
+    "name": "页面权限矩阵：客服(customer_service)",
+    "status": "pass",
+    "detail": "菜单可见 2 项 [经营看板/通知中心]｜路由 16 条：拒绝 8，不符 0",
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-客服customer_service-sidebar.png",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-客服customer_service-denied-products.png"
+    ],
+    "at": "2026-10-02T14:54:30.705Z"
+  },
+  {
+    "id": "RBAC-API",
+    "name": "API 权限矩阵：运营(operator)",
+    "status": "pass",
+    "detail": "探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=allow",
+    "evidence": [
+      "表：out/s3-rbac-routes.json / 见 s3-rbac.json 的 matrix"
+    ],
+    "at": "2026-10-02T14:54:32.600Z"
+  },
+  {
+    "id": "RBAC-UI",
+    "name": "页面权限矩阵：运营(operator)",
+    "status": "pass",
+    "detail": "菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 2，不符 0",
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-运营operator-sidebar.png",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-运营operator-denied-roles.png"
+    ],
+    "at": "2026-10-02T14:54:46.935Z"
+  },
+  {
+    "id": "RBAC-API",
+    "name": "API 权限矩阵：销售(sales)",
+    "status": "pass",
+    "detail": "探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=deny",
+    "evidence": [
+      "表：out/s3-rbac-routes.json / 见 s3-rbac.json 的 matrix"
+    ],
+    "at": "2026-10-02T14:54:48.357Z"
+  },
+  {
+    "id": "RBAC-UI",
+    "name": "页面权限矩阵：销售(sales)",
+    "status": "pass",
+    "detail": "菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 10，不符 0",
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-销售sales-sidebar.png",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-销售sales-denied-categories.png"
+    ],
+    "at": "2026-10-02T14:55:02.984Z"
+  },
+  {
+    "id": "RBAC-API",
+    "name": "API 权限矩阵：财务(finance)",
+    "status": "pass",
+    "detail": "探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=deny",
+    "evidence": [
+      "表：out/s3-rbac-routes.json / 见 s3-rbac.json 的 matrix"
+    ],
+    "at": "2026-10-02T14:55:04.851Z"
+  },
+  {
+    "id": "RBAC-UI",
+    "name": "页面权限矩阵：财务(finance)",
+    "status": "pass",
+    "detail": "菜单可见 2 项 [经营看板/通知中心]｜路由 16 条：拒绝 10，不符 0",
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-财务finance-sidebar.png",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-财务finance-denied-products.png"
+    ],
+    "at": "2026-10-02T14:55:19.599Z"
+  },
+  {
+    "id": "RBAC-API",
+    "name": "API 权限矩阵：商品管理员(product_manager)",
+    "status": "pass",
+    "detail": "探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=deny",
+    "evidence": [
+      "表：out/s3-rbac-routes.json / 见 s3-rbac.json 的 matrix"
+    ],
+    "at": "2026-10-02T14:55:21.157Z"
+  },
+  {
+    "id": "RBAC-UI",
+    "name": "页面权限矩阵：商品管理员(product_manager)",
+    "status": "pass",
+    "detail": "菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 10，不符 0",
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-商品管理员product_manager-sidebar.png",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-商品管理员product_manager-denied-orders.png"
+    ],
+    "at": "2026-10-02T14:55:36.021Z"
+  },
+  {
+    "id": "RBAC-API",
+    "name": "API 权限矩阵：知识编辑(knowledge_editor)",
+    "status": "pass",
+    "detail": "探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=deny",
+    "evidence": [
+      "表：out/s3-rbac-routes.json / 见 s3-rbac.json 的 matrix"
+    ],
+    "at": "2026-10-02T14:55:37.321Z"
+  },
+  {
+    "id": "RBAC-UI",
+    "name": "页面权限矩阵：知识编辑(knowledge_editor)",
+    "status": "pass",
+    "detail": "菜单可见 3 项 [经营看板/商品管理/通知中心]｜路由 16 条：拒绝 12，不符 0",
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-知识编辑knowledge_editor-sidebar.png",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-知识编辑knowledge_editor-denied-orders.png"
+    ],
+    "at": "2026-10-02T14:55:51.640Z"
+  },
+  {
+    "id": "RBAC-API",
+    "name": "API 权限矩阵：验收临时岗790472(acc_custom_790472)",
+    "status": "pass",
+    "detail": "探针 20 条：匹配 20，不符 0｜权限快照与 DB 一致=true｜无注解审计项：/api/admin/roles=deny /api/admin/roles/all=deny",
+    "evidence": [
+      "表：out/s3-rbac-routes.json / 见 s3-rbac.json 的 matrix"
+    ],
+    "at": "2026-10-02T14:55:52.940Z"
+  },
+  {
+    "id": "RBAC-UI",
+    "name": "页面权限矩阵：验收临时岗790472(acc_custom_790472)",
+    "status": "pass",
+    "detail": "菜单可见 2 项 [经营看板/通知中心]｜路由 16 条：拒绝 13，不符 0",
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-验收临时岗790472acc_custom_790472-sidebar.png",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3-验收临时岗790472acc_custom_790472-denied-products.png"
+    ],
+    "at": "2026-10-02T14:56:07.412Z"
+  },
+  {
+    "id": "RBAC-W1",
+    "name": "工人端登录（工号+PIN）",
+    "status": "pass",
+    "detail": "HTTP 200；sessionId=42a7cca8e3ed… 角色=undefined",
+    "evidence": [
+      "POST /api/worker/login"
+    ],
+    "at": "2026-10-02T14:56:07.588Z"
+  },
+  {
+    "id": "RBAC-W2",
+    "name": "工人端错误 PIN 拒绝",
+    "status": "pass",
+    "detail": "错误 PIN → HTTP 401（工号或 PIN 不正确）",
+    "evidence": [
+      "POST /api/worker/login 错误 PIN"
+    ],
+    "at": "2026-10-02T14:56:07.761Z"
+  },
+  {
+    "id": "RBAC-W3",
+    "name": "工人身份访问商家后台被拒（垂直越权防护）",
+    "status": "pass",
+    "detail": "GET /api/admin/orders with X-Worker-Session-Id → HTTP 403",
+    "evidence": [
+      "SecurityConfig ADMIN_API_REJECTED_ROLES"
+    ],
+    "at": "2026-10-02T14:56:07.810Z"
+  },
+  {
+    "id": "RBAC-W4",
+    "name": "工人端自身端点可达",
+    "status": "pass",
+    "detail": "GET /api/worker/me → HTTP 200",
+    "evidence": [
+      "GET /api/worker/me"
+    ],
+    "at": "2026-10-02T14:56:07.913Z"
+  },
+  {
+    "id": "RBAC-SUM",
+    "name": "RBAC 矩阵汇总",
+    "status": "pass",
+    "detail": "共 160 格（8 身份 × 20 端点），不符 0 格；明细见 out/s3-rbac-matrix.json",
+    "evidence": [
+      "out/s3-rbac-matrix.json"
+    ],
+    "at": "2026-10-02T14:56:07.916Z"
+  },
+  {
+    "id": "RBAC-LOG",
+    "name": "服务器日志：403 拒绝留痕",
+    "status": "pass",
+    "detail": "命中 6 行，示例：2026-10-02 17:04:21.851 [http-nio-8080-exec-140] WARN  c.m.a.config.GlobalExceptionHandler - 权限不足: 权限不足，需要权限: inbound:view (requiredPermissi",
+    "evidence": [
+      "L268587: 2026-10-02 17:04:21.851 [http-nio-8080-exec-140] WARN  c.m.a.config.GlobalExceptionHandler - 权限不足: 权限不足，需要权限: inbound:view (requiredPermission=inbound:view)",
+      "L269643: 2026-10-02 17:04:36.403 [http-nio-8080-exec-141] DEBUG c.m.a.m.S.selectDashboardSessionStats - ==>  Preparing: SELECT COUNT(*) FILTER (WHERE updated_at >= ?) AS active_sessions, COUNT(*) FILTER (WHERE",
+      "L269644: 2026-10-02 17:04:36.403 [http-nio-8080-exec-141] DEBUG c.m.a.m.S.selectDashboardSessionStats - ==> Parameters: 2026-10-02T16:34:36.402801+08:00(OffsetDateTime), 2026-10-02T16:34:36.402801+08:00(Offset",
+      "L269925: 2026-10-02 17:06:39.403 [http-nio-8080-exec-133] DEBUG c.m.a.m.P.countLowStockSkus - ==>  Preparing: SELECT COUNT(*) FROM product_skus ps JOIN products p ON ps.product_id = p.id AND p.tenant_id = 24 W",
+      "L269926: 2026-10-02 17:06:39.403 [http-nio-8080-exec-133] DEBUG c.m.a.m.P.countLowStockSkus - ==> Parameters: 24(Long), 100(Integer)",
+      "L269927: 2026-10-02 17:06:39.403 [http-nio-8080-exec-128] DEBUG c.m.a.m.ProductMapper.selectCount - ==>  Preparing: SELECT COUNT(*) AS total FROM products WHERE deleted = 0 AND (tenant_id = ?) AND tenant_id = "
+    ],
+    "at": "2026-10-02T14:56:08.056Z"
+  }
+]

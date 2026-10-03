@@ -1,0 +1,120 @@
+{
+  "env": {
+    "tenantId": 20,
+    "adminApiSha": "402be478b",
+    "evaluatedAt": "2026-10-03 06:56~07:11 +08",
+    "originMainAtCheck": "f3e49752f"
+  },
+  "assertions": {
+    "bySuite": {
+      "p0-surface": {
+        "pass": 8
+      },
+      "p2-matrix": {
+        "pass": 44
+      },
+      "p3-writes": {
+        "pass": 8,
+        "fail": 2
+      },
+      "p4-redproof": {
+        "pass": 4
+      },
+      "p4b-judge-redproof": {
+        "pass": 2
+      },
+      "p5-ui": {
+        "pass": 3,
+        "fail": 1
+      },
+      "p6-settings": {
+        "pass": 2
+      },
+      "p7-readface": {
+        "pass": 12
+      },
+      "p8-routes": {
+        "pass": 4,
+        "fail": 1
+      },
+      "p9-price-drift": {
+        "fail": 2,
+        "pass": 1
+      },
+      "p10-drift": {
+        "pass": 5
+      }
+    },
+    "total": {
+      "pass": 93,
+      "fail": 6
+    },
+    "sum": 99
+  },
+  "deterministic": {
+    "python_test_production": "646 passed",
+    "java_targeted": "112 passed (5 classes)"
+  },
+  "coverage": {
+    "dispatched": 37,
+    "catalog": 40,
+    "unreached": [
+      "裁剪-纱",
+      "质检",
+      "腰靠垫"
+    ]
+  },
+  "findings": [
+    {
+      "id": "F8",
+      "level": "P1(涉钱/静默)",
+      "title": "保存一次工序设置就改写计件单价（未定价→0 元 / 商家改价被回退）",
+      "evidence": [
+        "p9-price-drift P9-01/P9-03"
+      ]
+    },
+    {
+      "id": "F1",
+      "level": "P1",
+      "title": "「停用工序」按钮 100% 失效（前端发 inactive / 后端只收 active|disabled）"
+    },
+    {
+      "id": "F2",
+      "level": "P2",
+      "title": "自建工序应做数量恒为 1（单位=米也一样，qty_source=fallback）"
+    },
+    {
+      "id": "F3",
+      "level": "P2",
+      "title": "路线缺口清单 22 条中 20 条被活跃规则消费（误报）+ 裁剪-纱 漏报"
+    },
+    {
+      "id": "F4",
+      "level": "P2",
+      "title": "默认配置下纱帘单勾选 9 个特殊选项之一 ⇒ 整单生成失败"
+    },
+    {
+      "id": "F5",
+      "level": "P3",
+      "title": "工序库改价（PUT /operations unit_price）不影响派工取价（读矩阵格价）"
+    },
+    {
+      "id": "F6",
+      "level": "P3",
+      "title": "默认配置下 裁剪-纱 不可达"
+    },
+    {
+      "id": "F7",
+      "level": "P3",
+      "title": "路线「适用帘种」写面无闭词表校验（规则部位维有）",
+      "evidence": [
+        "p8-routes R-05"
+      ]
+    }
+  ],
+  "zeroDrift": {
+    "suite": "p10-drift",
+    "result": "5/5 pass",
+    "baseline": "out/surface.json (07:00 +08)"
+  }
+}

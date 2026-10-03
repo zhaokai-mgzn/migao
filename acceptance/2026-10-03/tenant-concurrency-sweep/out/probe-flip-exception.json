@@ -1,0 +1,57 @@
+[
+  {
+    "case": "X1-非法id",
+    "triggerStatus": 404,
+    "triggerHead": "{\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"请求的资源不存在: /api/admin/orders/not-a-uuid-@@@\"},\"requestId\":\"req_3f",
+    "afterStatus": 200,
+    "afterTenant": 21,
+    "foreign": [],
+    "idsSample": [
+      "fed91dedfe07a56620ab4bc8ec2a4972"
+    ]
+  },
+  {
+    "case": "X2-超大body",
+    "triggerStatus": 422,
+    "triggerHead": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"customerName\",\"message\":\"客户姓",
+    "afterStatus": 200,
+    "afterTenant": 21,
+    "foreign": [],
+    "idsSample": [
+      "fed91dedfe07a56620ab4bc8ec2a4972"
+    ]
+  },
+  {
+    "case": "X3-删除中读",
+    "triggerStatus": 404,
+    "triggerHead": "{\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_9184b92398b84ebb\",\"timestamp\":179099699",
+    "afterStatus": 200,
+    "afterTenant": 21,
+    "foreign": [],
+    "idsSample": [
+      "fed91dedfe07a56620ab4bc8ec2a4972"
+    ]
+  },
+  {
+    "case": "X4-无token",
+    "triggerStatus": 401,
+    "triggerHead": "{\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+    "afterStatus": 200,
+    "afterTenant": 21,
+    "foreign": [],
+    "idsSample": [
+      "fed91dedfe07a56620ab4bc8ec2a4972"
+    ]
+  },
+  {
+    "case": "X5-篡改token",
+    "triggerStatus": 401,
+    "triggerHead": "{\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+    "afterStatus": 200,
+    "afterTenant": 21,
+    "foreign": [],
+    "idsSample": [
+      "fed91dedfe07a56620ab4bc8ec2a4972"
+    ]
+  }
+]

@@ -1,0 +1,79 @@
+{
+  "at": "2026-10-03T00:38:21.915Z",
+  "run": "901745",
+  "probe": "打包",
+  "injectedPrice": "3.33",
+  "activeRowsBefore": [
+    {
+      "id": "fd9f56514d599a9429433529dd5156e1",
+      "position": "布帘",
+      "unit_price": "0.00",
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "opp-v79-20-打包-布帘",
+      "position": "通用",
+      "unit_price": null,
+      "applicable": true,
+      "deleted": 0
+    }
+  ],
+  "beforeVerdict": {
+    "br": 1,
+    "total": 2
+  },
+  "baselinePrices": {
+    "布帘": "0.00",
+    "通用": null,
+    "布帘RowId": "fd9f56514d599a9429433529dd5156e1"
+  },
+  "injected": {
+    "id": "fd9f56514d599a9429433529dd5156e1",
+    "position": "布帘",
+    "unit_price": "3.33"
+  },
+  "readFaceAfterInject": [],
+  "probeOrder": {
+    "tag": "E",
+    "catId": "894fc7419998f2ba1f3ea9497f112ebb",
+    "productId": "866425433c5345c6e7be23a0bfd1b372",
+    "skuId": "2106182034013487105",
+    "orderId": "0ba0e09faea0c33f8567b0893943b7a9",
+    "poId": "e7dfa8980bb79476798b46ea33420240",
+    "poNo": "JG-20261003-6403"
+  },
+  "newInstance": [
+    {
+      "id": "c6d98f871f796925e613359fa1dc727d",
+      "operation_name": "打包",
+      "unit_price": "3.33",
+      "qty": "1.00"
+    }
+  ],
+  "verdict": "未修（布帘列优先 ⇒ F8 取价口径可达）",
+  "verdictAt": "2026-10-03T00:38:23.874Z",
+  "restoredRows": [
+    {
+      "id": "fd9f56514d599a9429433529dd5156e1",
+      "position": "布帘",
+      "unit_price": "0.00"
+    }
+  ],
+  "activeRowsAfter": [
+    {
+      "id": "fd9f56514d599a9429433529dd5156e1",
+      "position": "布帘",
+      "unit_price": "0.00",
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "opp-v79-20-打包-布帘",
+      "position": "通用",
+      "unit_price": null,
+      "applicable": true,
+      "deleted": 0
+    }
+  ]
+}

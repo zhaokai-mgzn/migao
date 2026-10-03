@@ -1,0 +1,73 @@
+{
+  "startedAt": {
+    "cst": "2026-10-03 21:46:40 +08",
+    "utc": "2026-10-03T05:46:40.903Z"
+  },
+  "finishedAt": {
+    "cst": "2026-10-03 21:47:40 +08",
+    "utc": "2026-10-03T05:47:40.864Z"
+  },
+  "wallMs": 57242,
+  "buildPoint": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "sha": "7e9f66ce5",
+    "shaFull": "7e9f66ce57915ce17f6e949e3dc23d53bae291eb",
+    "subject": "fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)",
+    "commitTime": "2026-10-03T05:42:36Z",
+    "adminApiStart": "六 10月/ 3 13:44:16 2026",
+    "observedAt": {
+      "cst": "2026-10-03 21:46:41 +08",
+      "utc": "2026-10-03T05:46:41.185Z"
+    }
+  },
+  "perScript": {
+    "p1-ship-protection": {
+      "pass": 20,
+      "fail": 0,
+      "skip": 0,
+      "total": 20
+    },
+    "p2-state-machine": {
+      "pass": 16,
+      "fail": 0,
+      "skip": 0,
+      "total": 16
+    },
+    "p3-independent-math": {
+      "pass": 11,
+      "fail": 0,
+      "skip": 0,
+      "total": 11
+    },
+    "p4-writeface-equivalence": {
+      "pass": 8,
+      "fail": 0,
+      "skip": 1,
+      "total": 9
+    },
+    "p5-stock-and-print": {
+      "pass": 6,
+      "fail": 0,
+      "skip": 3,
+      "total": 9
+    },
+    "p6-redproof": {
+      "pass": 11,
+      "fail": 1,
+      "skip": 0,
+      "total": 12
+    },
+    "p7-noresidue": {
+      "pass": 2,
+      "fail": 0,
+      "skip": 0,
+      "total": 2
+    }
+  },
+  "total": {
+    "pass": 74,
+    "fail": 1,
+    "skip": 4,
+    "all": 79
+  }
+}

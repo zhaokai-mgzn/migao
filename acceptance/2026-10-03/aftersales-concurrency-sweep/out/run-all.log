@@ -1,0 +1,52 @@
+2026-10-03 17:02:22 +08 构建点：main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（pid 61739，启动 六 10月/ 3 16:22:58 2026）origin/main=cf9a45c3c
+2026-10-03 17:02:22 +08 ▶ 运行 p0-env
+2026-10-03 17:02:23 +08 ◀ p0-env ok
+2026-10-03 17:02:23 +08 ▶ 运行 p8-stock-before
+2026-10-03 17:02:24 +08 ◀ p8-stock-before ok
+2026-10-03 17:02:24 +08 ▶ 运行 p1-setup
+2026-10-03 17:02:31 +08 ◀ p1-setup ok
+2026-10-03 17:02:31 +08 ▶ 运行 p2-b1-serial
+2026-10-03 17:02:59 +08 ◀ p2-b1-serial ok
+2026-10-03 17:02:59 +08 ▶ 运行 p3-b2-concurrency
+NOTICE:  table "lb_gp_redproof" does not exist, skipping
+NOTICE:  table "lb_gp_stock" does not exist, skipping
+NOTICE:  table "lb_gp_stock" does not exist, skipping
+NOTICE:  table "lb_gp_stock" does not exist, skipping
+2026-10-03 17:03:38 +08 ◀ p3-b2-concurrency ok
+2026-10-03 17:03:38 +08 ▶ 运行 p4-probe-batch
+NOTICE:  table "lb_gp_timeline" does not exist, skipping
+NOTICE:  table "lb_gp_timeline" does not exist, skipping
+2026-10-03 17:04:21 +08 ◀ p4-probe-batch ok
+2026-10-03 17:04:21 +08 ▶ 运行 p5-refund-precision
+2026-10-03 17:04:38 +08 ◀ p5-refund-precision ok
+2026-10-03 17:04:38 +08 ▶ 运行 p6-order-status-control
+NOTICE:  table "lb_gp_orderstatus" does not exist, skipping
+NOTICE:  table "lb_gp_orderstatus" does not exist, skipping
+2026-10-03 17:04:51 +08 ◀ p6-order-status-control ok
+2026-10-03 17:04:51 +08 ▶ 运行 p7-refund-negative
+file:///Users/guangzhen.zk/ai%20native/migao/acceptance/2026-10-03/aftersales-concurrency-sweep/harness/p7-refund-negative.mjs:49
+    [`期望来源: 源码 OrderController —— `amount.toString().isBlank()` ⇒ 不改 refundAmount ⇒ 全额`,
+                                   ^^^^^^
+
+SyntaxError: Unexpected identifier 'amount'
+    at compileSourceTextModule (node:internal/modules/esm/utils:318:16)
+    at ModuleLoader.moduleStrategy (node:internal/modules/esm/translators:89:18)
+    at #translate (node:internal/modules/esm/loader:434:20)
+    at afterLoad (node:internal/modules/esm/loader:502:29)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:507:12)
+    at #getOrCreateModuleJobAfterResolve (node:internal/modules/esm/loader:560:36)
+    at afterResolve (node:internal/modules/esm/loader:607:52)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:613:12)
+    at node:internal/modules/esm/loader:632:32
+    at TracingChannel.tracePromise (node:diagnostics_channel:362:14)
+
+Node.js v24.19.0
+2026-10-03 17:04:51 +08 ◀ p7-refund-negative exit 1
+2026-10-03 17:04:51 +08 ▶ 运行 p10-dispatch-concurrency
+NOTICE:  table "lb_gp_dispatch" does not exist, skipping
+NOTICE:  table "lb_gp_dispatch" does not exist, skipping
+2026-10-03 17:05:17 +08 ◀ p10-dispatch-concurrency ok
+2026-10-03 17:05:17 +08 ▶ 运行 p9-cleanup
+2026-10-03 17:05:27 +08 ◀ p9-cleanup ok
+2026-10-03 17:05:32 +08 汇总：counts={"pass":48,"fail":7,"skip":2,"falseRed":0,"total":57}；零残留=true（{"products":0,"productSkus":0,"orders":0,"orderItems":0,"tickets":0,"ticketTimeline":0,"ledger":0,"finance":0,"clientKeys":0,"tempTables":0,"processingOrders":0,"positionOperations":0,"workLogs":0}）
+2026-10-03 17:05:32 +08 产物：out/SUMMARY.json（57 条判据）

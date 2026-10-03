@@ -1,0 +1,141 @@
+[
+  {
+    "id": "R0-VACUOUS-CONTROL",
+    "name": "判据非空自证：故意写一条必然为假的期望 ⇒ 必须 FAIL",
+    "status": "fail",
+    "detail": "期望 99（故意错） ≠ 实测 1",
+    "evidence": [
+      "期望来源: 自证用（期望与真值故意不符）—— 若这条不红，说明 judge() 坏了，后面所有红证都不可信",
+      "本例证明 Recorder/judge 的 FAIL 侧可达"
+    ],
+    "at": "2026-10-03 19:41:00 +08"
+  },
+  {
+    "id": "R0-VACUOUS-PROOF",
+    "name": "判据非空自证：上面那条确实落了 FAIL（不是空跑）",
+    "status": "pass",
+    "detail": "records 里可见 R0-VACUOUS-CONTROL.status=fail",
+    "evidence": [
+      "见 out/p6-redproof-records.json 的 R0-VACUOUS-CONTROL 条目"
+    ],
+    "at": "2026-10-03 19:41:00 +08"
+  },
+  {
+    "id": "R1-POS-CTRL",
+    "name": "正对照（干净世界）：正常发一次货 ⇒ ①恰 1 张 ②不超发 **都绿**",
+    "status": "pass",
+    "detail": "期望 ①pass ∧ ②pass ∧ HTTP 2xx == 实测 ①true(n=1) ②true HTTP 200",
+    "evidence": [
+      "期望来源: 两侧夹住的正侧：夹具 10 全发，判据必须绿（否则判据恒红 = 什么都没测）",
+      "resp: {\"success\":true,\"data\":{\"order_id\":\"faa229d14cf17ca0e56b0c\",\"status\":\"shipped\",\"shipment_no\":\"SH202610031141012236\",\"source\":\"worker\",\"tracking_no\":\"SF-PROBE-R1",
+      "① 读数 [{\"id\":\"5eebb0c62d66f8ca534c610e22417ce5\",\"shipment_no\":\"SH202610031141012236\",\"shipped_at\":\"2026-10-03T11:41:01.45297+08:00\"}]",
+      "② 读数 [[\"fb016a5940c49bed2b525a\",\"10.000\"]]"
+    ],
+    "at": "2026-10-03 19:41:01 +08"
+  },
+  {
+    "id": "R2-INJECT-APPLIED",
+    "name": "注入**真的生效**（内容指纹自证，不用 mtime/size）",
+    "status": "pass",
+    "detail": "期望 注入前后 shipped_quantity 指纹不同 ∧ 读数 999 == 实测 0e71c9d61a801b86 → 7f9ccbdf4907f11e ∧ [\"999\"]",
+    "evidence": [
+      "期望来源: 注入式红证的**前置**：注入未生效 ⇒ 后续\"判据红了\"不构成红证（假红）",
+      "SQL: update order_shipment_items set shipped_quantity=999 where order_id='fae8d6bcf6b2054a021118'"
+    ],
+    "at": "2026-10-03 19:41:03 +08"
+  },
+  {
+    "id": "R2-REDPROOF",
+    "name": "🔴 注入式红证：已发量被改大 ⇒ 「Σ已发 ≤ 订单量」判据**当场红**（并报出超发量）",
+    "status": "pass",
+    "detail": "期望 注入前 pass=true，注入后 pass=false 且 over=989.000 == 实测 注入前 pass=true；注入后 pass=false violations=[{\"orderItemId\":\"fbfe16fef87c37344cd53b\",\"sum\":\"999.000\",\"limit\":\"10.000\",\"over\":\"989.000\"}]",
+    "evidence": [
+      "期望来源: 同一条判据两侧夹住（干净绿 / 改坏红）；期望来源 = 独立算式 10 vs 999",
+      "violations: [{\"orderItemId\":\"fbfe16fef87c37344cd53b\",\"sum\":\"999.000\",\"limit\":\"10.000\",\"over\":\"989.000\"}]",
+      "判定用读数: [\"999\"]"
+    ],
+    "at": "2026-10-03 19:41:03 +08"
+  },
+  {
+    "id": "R2-CROSSFACE",
+    "name": "交叉面：被改大的数量在**系统读面**上同样读得到（证明判据读的是真值）",
+    "status": "pass",
+    "detail": "期望 GET /orders/{id}/shipments 的 shipped_totals.by_unit.米 = 999.000 == 实测 {\"set_count\":0,\"roll_count\":0,\"by_unit\":{\"米\":999}}",
+    "evidence": [
+      "期望来源: ⚠️ 此处**故意**读系统读面：不是拿它当期望，而是证明\"我改的就是系统看到的那个东西\"",
+      "GET /api/worker/shipment/orders/fae8d6bcf6b2054a021118"
+    ],
+    "at": "2026-10-03 19:41:03 +08"
+  },
+  {
+    "id": "R2-RESTORED",
+    "name": "还原**真的生效** ⇒ 判据回到绿（两侧都夹住，证明红不是恒红）",
+    "status": "pass",
+    "detail": "期望 还原后 pass=true ∧ 读数 6 == 实测 pass=true 读数=[\"6\"]",
+    "evidence": [
+      "期望来源: 两侧夹住：红侧（999）与绿侧（6）都由同一条判据判出",
+      "SQL: update ... set shipped_quantity=6"
+    ],
+    "at": "2026-10-03 19:41:04 +08"
+  },
+  {
+    "id": "R3-INJECT-APPLIED",
+    "name": "注入**真的生效**：库里出现第二张带 shipped_at 的发货单",
+    "status": "pass",
+    "detail": "期望 注入后 rowCount=2 ∧ valid=2 == 实测 注入前 rowCount=1 → 注入后 rowCount=2（valid=2）",
+    "evidence": [
+      "期望来源: 注入式红证的前置自证（指纹式：行数 + shipment_no 集合）",
+      "dupId=fsprobe-dup-muruhcnd",
+      "① 读数 [\"SH202610031141048618\",\"SH202610031141048618-DUP\"]"
+    ],
+    "at": "2026-10-03 19:41:05 +08"
+  },
+  {
+    "id": "R3-REDPROOF",
+    "name": "🔴 注入式红证：出现第二张有效发货单 ⇒ 「恰一张」判据**当场红**",
+    "status": "pass",
+    "detail": "期望 注入前 pass=true，注入后 pass=false（actual=2） == 实测 注入前 pass=true；注入后 pass=false actual=2",
+    "evidence": [
+      "期望来源: 同一条判据两侧夹住；本注入形态 = 真实的「双发」缺陷产物（第二张有效发货单）",
+      "注入前: [\"SH202610031141048618\"]",
+      "注入后: [\"SH202610031141048618\",\"SH202610031141048618-DUP\"]"
+    ],
+    "at": "2026-10-03 19:41:05 +08"
+  },
+  {
+    "id": "R3-LISTFACE",
+    "name": "交叉面（实读）：发货单列表命中 2 行（注入可见，证明落在被测真值上）",
+    "status": "pass",
+    "detail": "期望 2 == 实测 2",
+    "evidence": [
+      "期望来源: ⚠️ 只作交叉核对（证明注入的真值被系统读面看到），不作任何期望来源",
+      "GET /api/admin/shipments?keyword=FS99886421364 → HTTP 200",
+      "命中行: [{\"no\":\"SH202610031141048618-DUP\",\"orderNo\":\"FS99886421364\"},{\"no\":\"SH202610031141048618\",\"orderNo\":\"FS99886421364\"}]"
+    ],
+    "at": "2026-10-03 19:41:05 +08"
+  },
+  {
+    "id": "R4-REDPROOF",
+    "name": "🔴 注入式红证：世界被改成「已发货」后再次发货 ⇒ 必须 4xx 且**零写**",
+    "status": "pass",
+    "detail": "期望 注入前 status=packed，注入后 4xx ∧ shipments 仍 0 ∧ items 仍 0 == 实测 注入后 status=shipped ∧ HTTP 422 ∧ shipments=0 ∧ items=0",
+    "evidence": [
+      "期望来源: 状态机守卫：shipped ∉ SHIPPABLE_FROM ⇒ 422；且校验发生在**任何写之前** ⇒ 零写",
+      "注入前 shipments=0",
+      "resp(422): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"当前状态（已发货）不可发货：仅 [已确认, 生产中, 已打包] 可发货\"},\"requestId\":\"req_8bfe714ae1a046e4\",\"timestamp\":1790998866,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    ],
+    "at": "2026-10-03 19:41:06 +08"
+  },
+  {
+    "id": "R5-1",
+    "name": "注入「含加工项 + 无完成加工单」⇒ 发货必须被拒且零写（运费守卫不可绕过）",
+    "status": "pass",
+    "detail": "期望 4xx ∧ shipments=0 ∧ items=0 == 实测 HTTP 422 ∧ shipments=0 ∧ items=0",
+    "evidence": [
+      "期望来源: OrderShipGuard.assertProcessingCompletedBeforeShip（#3340），调用点在**任何写之前**",
+      "注入后 processing_info={\"processingItems\":[{\"id\":\"probe-op-r5\",\"name\":\"发货验收加工项R5\",\"quantity\":1}]}",
+      "resp(422): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"订单含加工项，须先完成加工单后再发货（可在订单详情或让米宝生成/更新加工单）\"},\"requestId\":\"req_b9ca6de4a4ca4da9\",\"timestamp\":1790998867,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    ],
+    "at": "2026-10-03 19:41:08 +08"
+  }
+]

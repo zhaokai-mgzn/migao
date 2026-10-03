@@ -1,0 +1,37 @@
+2026-10-03T01:58:52.198Z === P1 开始 2026-10-03 17:58:52 +08（UTC 2026-10-03T01:58:52.197Z）tenant=20 run=731493 ===
+2026-10-03T01:58:52.291Z ✅ [W0-00] 构建点自证（本包全部读数对应的部署点） — main-live HEAD=1233b8a42（fix(production): #6126 工序设置写面不再凭空新建价目行（连空 payload {} 也建、只增不减） (#6129)）；编译产物 mtime=2026-10-03 09:58:35；Java 进程启动=六 10月/ 3 09:58:21 2026
+2026-10-03T01:58:52.291Z ✅ [W0-00b] 构建点**含** #6102 修复 ⇒ F8 的「静默改价」形态预期**已修**（判决由 W1-03 给出） — merge-base --is-ancestor 1d1fe5e55 HEAD ⇒ YES（构建点 1233b8a42）
+2026-10-03T01:58:52.847Z [snapshot inject-before] 2026-10-03T01:58:52.387Z rows=747 tables=17
+2026-10-03T01:58:53.187Z [snapshot inject-after] 2026-10-03T01:58:52.926Z rows=747 tables=17
+2026-10-03T01:58:53.190Z ✅ [W0-01] 注入式红证：判据能看见「外部直连 RDS 的改动」（证明 diff 有判别力） — 手工 update production_operations.id=op-v91-20-32（logo条-布）unit_price 0.60 → 0.1234；diff 命中=true；判据越界=["production_operations.unit_price"]
+2026-10-03T01:58:53.405Z [snapshot restore-pass1] 2026-10-03T01:58:53.191Z rows=747 tables=17
+2026-10-03T01:58:53.793Z [snapshot restore-pass2] 2026-10-03T01:58:53.514Z rows=747 tables=17
+2026-10-03T01:58:54.061Z [snapshot verify-clean] 2026-10-03T01:58:53.793Z rows=747 tables=17
+2026-10-03T01:58:54.063Z ✅ [W0-02] 注入还原自证：还原后逐字段 == 注入前（主面残留 = 0） — victim=op-v91-20-32；还原动作=1（no-op=0）；主面残留=0
+2026-10-03T01:58:56.104Z [leftovers] 清理 9 条：fee:写面横切组合料405227(HTTP 200→disabled) | fee:写面横切组合料384160(HTTP 200→disabled) | fee:写面横切组合料544870(HTTP 200→disabled) | fee:写面横切组合料668012(HTTP 200→disabled) | fee:写面横切组合料764045(HTTP 200→disabled) | fee:写面横切组合料857105(HTTP 200→disabled) | fee:写面横切组合料955206(HTTP 200→disabled) | fee:写面横切组合料172510(HTTP 200→disabled) | fee:写面横切组合料030585(HTTP 200→disabled)；复核：前缀存活矩阵行=0
+2026-10-03T01:58:56.104Z ✅ [W1-L0] 清场：清理历史残留的同前缀探针对象（此前被中断的运行） — 清理 9 条：fee:写面横切组合料405227(HTTP 200→disabled) | fee:写面横切组合料384160(HTTP 200→disabled) | fee:写面横切组合料544870(HTTP 200→disabled) | fee:写面横切组合料668012(HTTP 200→disabled) | fee:写面横切组合料764045(HTTP 200→disabled) | fee:写面横切组合料857105(HTTP 200→disabled) | fee:写面横切组合料955206(HTTP 200→disabled) | fee:写面横切组合料172510(HTTP 200→disabled) | fee:写面横切组合料030585(HTTP 200→disabled)；前缀存活矩阵行清空读数=alive=0
+2026-10-03T01:58:56.413Z [build] 写面横切正对照731493 HTTP 200 id=0a77c3cff61c052bb8f153f790e01ec9 scope=position 库价=0.55 价目行=[{"applicable":true,"id":"d90dfd5780731a82aa57fb70e4cc36d2","p":"0.55","position":"通用"}]
+2026-10-03T01:58:56.414Z ✅ [W1-00] 自建探针工序（前缀「写面横切」；前置：矩阵里**没有**布帘行 —— F8 的触发条件） — POST /operations HTTP 200；id=0a77c3cff61c052bb8f153f790e01ec9；name=写面横切正对照731493；scope=position；库价=0.55；价目行=[{"applicable":true,"id":"d90dfd5780731a82aa57fb70e4cc36d2","p":"0.55","position":"通用"}]
+2026-10-03T01:58:56.824Z [snapshot W1-01-before] 2026-10-03T01:58:56.567Z rows=750 tables=17
+2026-10-03T01:58:57.121Z [snapshot W1-01-after] 2026-10-03T01:58:56.902Z rows=750 tables=17
+2026-10-03T01:58:57.132Z ✅ [W1-01] 🔴 正对照（F8 形态）：自建工序上一次「只改 scope」的保存 ⇒ 判据当场红 — 越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=["production_operations.scope","production_operations.updated_at"]
+2026-10-03T01:58:57.344Z [snapshot restore-pass1] 2026-10-03T01:58:57.132Z rows=750 tables=17
+2026-10-03T01:58:57.760Z [snapshot restore-pass2] 2026-10-03T01:58:57.450Z rows=750 tables=17
+2026-10-03T01:58:58.017Z [snapshot verify-clean] 2026-10-03T01:58:57.761Z rows=750 tables=17
+2026-10-03T01:58:58.019Z ✅ [W1-01-restore] 🔴 正对照（F8 形态）：自建工序上一次「只改 scope」的保存 ⇒ 判据当场红 · 还原自证 — 逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0
+2026-10-03T01:58:58.179Z ❌ [W1-02] 🔴 正对照未红 ⇒ 判据是空断言（先修判据再继续） — F8 形态未复现：越界=[]；读面 0.55 → 0.55
+2026-10-03T01:58:58.179Z ✅ [W1-03] 正对照的**严重度**判定（当前构建点） — 有效价 0.55 → 0.55；存活价目行集合变化=false ⇒ **—**（= #6102 修复**已生效**：新行继承有效价 ⇒ 不再静默改价）
+2026-10-03T01:58:58.260Z ✅ [W0-03-pre] 负对照前置自证：矩阵里此刻**没有**布帘行（F8 触发条件在） — 存活价目行=[{"applicable":true,"id":"d90dfd5780731a82aa57fb70e4cc36d2","p":"0.55","position":"通用"}]；布帘行=不在 ✅
+2026-10-03T01:58:58.524Z [snapshot W0-03-before] 2026-10-03T01:58:58.260Z rows=750 tables=17
+2026-10-03T01:58:58.817Z [snapshot W0-03-after] 2026-10-03T01:58:58.599Z rows=750 tables=17
+2026-10-03T01:58:58.819Z ✅ [W0-03] 负对照：空 payload（{}，一个键都不带）的等价保存 ⇒ 允许集合应为空（除审计） — 越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=["production_operations.updated_at"]
+2026-10-03T01:58:59.083Z [snapshot restore-pass1] 2026-10-03T01:58:58.819Z rows=750 tables=17
+2026-10-03T01:58:59.505Z [snapshot restore-pass2] 2026-10-03T01:58:59.180Z rows=750 tables=17
+2026-10-03T01:58:59.717Z [snapshot verify-clean] 2026-10-03T01:58:59.506Z rows=750 tables=17
+2026-10-03T01:58:59.718Z ✅ [W0-03-restore] 负对照：空 payload（{}，一个键都不带）的等价保存 ⇒ 允许集合应为空（除审计） · 还原自证 — 逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0
+2026-10-03T01:58:59.718Z ✅ [W0-03b] 负对照判定：空 payload 的允许变化集合 = 空（除审计列） — 越界 = 0；changed=["production_operations.updated_at"]
+2026-10-03T01:59:00.516Z [remove-op] 0a77c3cff61c052bb8f153f790e01ec9(写面横切正对照731493) via=detach-and-delete HTTP 200 del: 0→1；该工序矩阵行存活 1→0（兜底扫 0）；最终存活=0；resp={"id":"0a77c3cff61c052bb8f153f790e01ec9","deleted":true,"detached_positions":1,"deleted_positions":1}
+2026-10-03T01:59:00.516Z ✅ [W1-98] 探针自清：自建工序已软删 **且** 该工序矩阵行全部软删（级联生效） — via=detach-and-delete HTTP 200；deleted 0 → undefined；该工序矩阵行存活 1 → 0（兜底扫 0）；最终存活=0
+2026-10-03T01:59:00.978Z ✅ [W1-99] 零残留读数：「写面横切」前缀对象存活数 = 0 — 存活明细=0（ops/pos/routes/rules/fees 全部 deleted=1 或不存在）
+2026-10-03T01:59:00.978Z ✅ [W0-07] 时间戳（+08 口径） — 开始 2026-10-03 17:58:52 +08 / 结束 2026-10-03 17:59:00 +08（UTC: 2026-10-03T01:58:52.197Z → 2026-10-03T01:59:00.978Z）
+2026-10-03T01:59:00.978Z P1 summary={"pass":16,"fail":1,"skip":0,"total":17} at 2026-10-03 17:59:00 +08

@@ -1,0 +1,30 @@
+{
+  "posOk": 32,
+  "posTot": 32,
+  "negRejected": 32,
+  "negTot": 32,
+  "leak": 0,
+  "skippedNoRows": [
+    {
+      "note": "正对照不可达：attacker 侧该表无行",
+      "r": "inbound_orders",
+      "attacker": 21
+    },
+    {
+      "note": "正对照不可达：attacker 侧该表无行",
+      "r": "inbound_orders",
+      "attacker": 21
+    },
+    {
+      "note": "正对照不可达：attacker 侧该表无行",
+      "r": "inbound_orders",
+      "attacker": 21
+    },
+    {
+      "note": "正对照不可达：attacker 侧该表无行",
+      "r": "inbound_orders",
+      "attacker": 21
+    }
+  ],
+  "ev": []
+}

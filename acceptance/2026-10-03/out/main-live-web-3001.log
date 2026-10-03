@@ -1,0 +1,17 @@
+▲ Next.js 16.3.5 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.2.110:3001
+- Environments: .env.local
+✓ Ready in 287ms
+✓ Running next.config.mjs took 17ms
+
+ GET /production/routings 200 in 660ms (next.js: 257ms, proxy.ts: 138ms, application-code: 265ms)
+ GET /production/routings 200 in 28ms (next.js: 5ms, proxy.ts: 3ms, application-code: 19ms)
+ GET /production/routings 200 in 19ms (next.js: 1.4ms, proxy.ts: 1.6ms, application-code: 16ms)
+ GET /production/routings 200 in 26ms (next.js: 4ms, proxy.ts: 4ms, application-code: 19ms)
+ GET /production/routings 200 in 21ms (next.js: 3ms, proxy.ts: 1.9ms, application-code: 16ms)
+ GET /production/routings 200 in 21ms (next.js: 2ms, proxy.ts: 1.7ms, application-code: 17ms)
+ GET /production/routings 200 in 23ms (next.js: 1.8ms, proxy.ts: 2ms, application-code: 19ms)
+ GET /production/routings 200 in 17ms (next.js: 1.2ms, proxy.ts: 1.6ms, application-code: 14ms)
+ GET /production/routings 200 in 23ms (next.js: 1.7ms, proxy.ts: 2ms, application-code: 19ms)
+ GET / 200 in 193ms (next.js: 78ms, proxy.ts: 9ms, application-code: 106ms)

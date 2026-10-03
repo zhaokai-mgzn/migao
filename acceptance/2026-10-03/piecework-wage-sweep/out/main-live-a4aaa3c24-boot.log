@@ -1,0 +1,77 @@
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::               (v3.5.16)
+
+2026-10-03 08:47:46.888 [main] INFO  com.migao.admin.AdminApiApplication - Starting AdminApiApplication using Java 21.0.12 with PID 38429 (/Users/guangzhen.zk/migao-wt/main-live/backend/admin-api/target/classes started by guangzhen.zk in /Users/guangzhen.zk/migao-wt/main-live/backend/admin-api)
+2026-10-03 08:47:46.889 [main] INFO  com.migao.admin.AdminApiApplication - No active profile set, falling back to 1 default profile: "default"
+2026-10-03 08:47:47.620 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Multiple Spring Data modules found, entering strict repository configuration mode
+2026-10-03 08:47:47.621 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2026-10-03 08:47:47.648 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Finished Spring Data repository scanning in 18 ms. Found 0 Redis repository interfaces.
+2026-10-03 08:47:48.143 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat initialized with port 8080 (http)
+2026-10-03 08:47:48.154 [main] INFO  o.a.catalina.core.StandardService - Starting service [Tomcat]
+2026-10-03 08:47:48.154 [main] INFO  o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/10.1.55]
+2026-10-03 08:47:48.188 [main] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring embedded WebApplicationContext
+2026-10-03 08:47:48.188 [main] INFO  o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 1275 ms
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+2026-10-03 08:47:48.200 [main] INFO  c.m.admin.security.JwtTokenProvider - RSA 密钥加载成功（RS256）
+2026-10-03 08:47:48.200 [main] INFO  c.m.admin.security.JwtTokenProvider - JWT 使用 RS256 (RSA) 算法
+ _ _   |_  _ _|_. ___ _ |    _ 
+| | |\/|_)(_| | |_\  |_)||_|_\ 
+     /               |         
+                        3.5.16 
+2026-10-03 08:47:48.825 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter jwtFilterRegistration was not registered (disabled)
+2026-10-03 08:47:48.825 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter passwordChangeRequiredFilterRegistration was not registered (disabled)
+2026-10-03 08:47:48.825 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter workerSessionFilterRegistration was not registered (disabled)
+2026-10-03 08:47:48.825 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter serviceTokenFilterRegistration was not registered (disabled)
+2026-10-03 08:47:49.951 [main] INFO  com.migao.admin.config.OssConfig - 初始化 OSS 客户端: endpoint=oss-cn-hangzhou.aliyuncs.com, bucket=, permanentBucket=ai-customer-service-admin-dev, temporaryBucket=
+2026-10-03 08:47:50.494 [main] INFO  o.s.b.a.e.web.EndpointLinksResolver - Exposing 3 endpoints beneath base path '/actuator'
+2026-10-03 08:47:50.526 [main] INFO  o.s.s.c.a.a.c.InitializeAuthenticationProviderBeanManagerConfigurer$InitializeAuthenticationProviderManagerConfigurer - Global AuthenticationManager configured with AuthenticationProvider bean with name authenticationProvider
+2026-10-03 08:47:50.526 [main] WARN  o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer - Global AuthenticationManager configured with an AuthenticationProvider bean. UserDetailsService beans will not be used by Spring Security for automatically configuring username/password login. Consider removing the AuthenticationProvider bean. Alternatively, consider using the UserDetailsService in a manually instantiated DaoAuthenticationProvider. If the current configuration is intentional, to turn off this warning, increase the logging level of 'org.springframework.security.config.annotation.authentication.configuration.InitializeUserDetailsBeanManagerConfigurer' to ERROR
+2026-10-03 08:47:50.688 [main] INFO  c.b.m.e.s.MybatisPlusApplicationContextAware - Register ApplicationContext instances org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext@58ffcbd7
+2026-10-03 08:47:51.021 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port 8080 (http) with context path '/'
+2026-10-03 08:47:51.034 [main] INFO  com.migao.admin.AdminApiApplication - Started AdminApiApplication in 4.393 seconds (process running for 4.591)
+2026-10-03 08:47:51.075 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Starting...
+2026-10-03 08:47:51.192 [main] INFO  com.zaxxer.hikari.pool.HikariPool - HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@20dc2df1
+2026-10-03 08:47:51.196 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Start completed.
+2026-10-03 08:47:51.223 [main] INFO  c.migao.admin.config.MigrationRunner - ⏭️ 跳过基线 schema.sql：台账已有该键（幂等）
+2026-10-03 08:47:51.236 [main] INFO  c.m.a.c.PlatformAdminInitializer - 未配置 platform.admin.phone，跳过平台管理员初始化
+2026-10-03 08:47:51.237 [main] WARN  o.s.c.events.SpringDocAppInitializer - SpringDoc /v3/api-docs endpoint is enabled by default. To disable it in production, set the property 'springdoc.api-docs.enabled=false'
+2026-10-03 08:47:51.237 [main] WARN  o.s.c.events.SpringDocAppInitializer - SpringDoc /swagger-ui.html endpoint is enabled by default. To disable it in production, set the property 'springdoc.swagger-ui.enabled=false'
+2026-10-03 08:47:51.760 [http-nio-8080-exec-1] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-10-03 08:47:51.760 [http-nio-8080-exec-1] INFO  o.s.web.servlet.DispatcherServlet - Initializing Servlet 'dispatcherServlet'
+2026-10-03 08:47:51.761 [http-nio-8080-exec-1] INFO  o.s.web.servlet.DispatcherServlet - Completed initialization in 1 ms
+2026-10-03 08:47:52.177 [http-nio-8080-exec-2] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 08:47:52.180 [http-nio-8080-exec-2] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 08:47:52.253 [http-nio-8080-exec-2] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 08:47:52.365 [http-nio-8080-exec-6] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 08:47:52.365 [http-nio-8080-exec-6] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 08:47:52.382 [http-nio-8080-exec-6] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 08:47:52.907 [http-nio-8080-exec-2] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 08:47:52.907 [http-nio-8080-exec-2] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 08:47:52.924 [http-nio-8080-exec-2] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 08:47:53.027 [http-nio-8080-exec-6] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 08:47:53.027 [http-nio-8080-exec-6] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 08:47:53.044 [http-nio-8080-exec-6] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 08:48:00.106 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 08:48:00.117 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 08:48:00.132 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 08:48:51.944 [http-nio-8080-exec-2] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 08:48:51.949 [http-nio-8080-exec-2] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 08:48:51.965 [http-nio-8080-exec-2] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 08:48:52.060 [http-nio-8080-exec-6] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 08:48:52.060 [http-nio-8080-exec-6] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 08:48:52.075 [http-nio-8080-exec-6] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 08:49:00.024 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 08:49:00.026 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 08:49:00.040 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 08:49:15.018 [SpringApplicationShutdownHook] INFO  o.s.b.w.e.tomcat.GracefulShutdown - Commencing graceful shutdown. Waiting for active requests to complete
+2026-10-03 08:49:15.024 [tomcat-shutdown] INFO  o.s.b.w.e.tomcat.GracefulShutdown - Graceful shutdown complete
+2026-10-03 08:49:15.054 [SpringApplicationShutdownHook] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown initiated...
+2026-10-03 08:49:15.056 [SpringApplicationShutdownHook] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown completed.

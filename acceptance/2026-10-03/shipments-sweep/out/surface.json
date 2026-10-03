@@ -1,0 +1,1546 @@
+{
+  "enumeratedAt": {
+    "cst": "2026-10-03 18:34:55 +08",
+    "utc": "2026-10-03T02:34:55.498Z"
+  },
+  "tenantId": 20,
+  "openapiPaths": 244,
+  "endpoints": [
+    {
+      "method": "PATCH",
+      "path": "/api/admin/agent/products/{id}/stock",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/batch-stock/batches",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/batch-stock/candidates",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/batch-stock/consumptions",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/batch-stock/distribution",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/batch-stock/reconcile",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/batch-stock/saving-board",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/batch-stock/saving-trend",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/batch-stock/stocktake",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/dashboard/pending-shipment-count",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/dashboard/processing-shipment-count",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/orders/{id}/logistics",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/orders/{id}/shipments",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/production/orders/{orderId}/print",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/production/orders/{orderId}/ship",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/products/export",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/products/low-stock-by-color",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/shipments",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/stock-ledger",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/worker/inbound/labels/{shortCode}/print",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/worker/shipment/orders/{orderId}/pack",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/worker/shipment/orders/{orderId}/ship",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/worker/shipment/orders/{orderId}/unpack",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/worker/shipment/orders/{orderId}",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/worker/shipment/recognize",
+      "summary": "",
+      "requestBodyKeys": [],
+      "responses": [
+        "200"
+      ]
+    }
+  ],
+  "javaFiles": {
+    "./controller/OrderController.java": {
+      "lines": 453,
+      "mappings": [
+        "@PutMapping(\"/{id:[0-9a-fA-F-]+}/content\")",
+        "@GetMapping(\"/statistics\")",
+        "@GetMapping(\"/follow-status/stats\")",
+        "@GetMapping(\"/{id:[0-9a-fA-F-]+}\")",
+        "@GetMapping(\"/{id:[0-9a-fA-F-]+}/shipments\")",
+        "@PutMapping(\"/{id:[0-9a-fA-F-]+}/status\")",
+        "@PutMapping(\"/{id:[0-9a-fA-F-]+}/payment\")",
+        "@PutMapping(\"/{id:[0-9a-fA-F-]+}/cancel\")",
+        "@PostMapping(\"/{id:[0-9a-fA-F-]+}/remark\")",
+        "@PutMapping(\"/{id:[0-9a-fA-F-]+}/refund\")",
+        "@GetMapping(\"/{id:[0-9a-fA-F-]+}/follow-status\")",
+        "@PutMapping(\"/{id:[0-9a-fA-F-]+}/follow-status\")",
+        "@PutMapping(\"/{id:[0-9a-fA-F-]+}/urgency\")",
+        "@DeleteMapping(\"/{id:[0-9a-fA-F-]+}\")",
+        "@PutMapping(\"/{id:[0-9a-fA-F-]+}/logistics\")"
+      ],
+      "transitions": false
+    },
+    "./controller/ShipmentController.java": {
+      "lines": 64,
+      "mappings": [],
+      "transitions": false
+    },
+    "./controller/WorkerShipmentController.java": {
+      "lines": 149,
+      "mappings": [
+        "@PostMapping(\"/recognize\")",
+        "@PostMapping(\"/orders/{orderId}/pack\")",
+        "@PostMapping(\"/orders/{orderId}/ship\")",
+        "@PostMapping(\"/orders/{orderId}/unpack\")",
+        "@GetMapping(\"/orders/{orderId}\")"
+      ],
+      "transitions": false
+    },
+    "./dto/ShipmentListRow.java": {
+      "lines": 64,
+      "mappings": [],
+      "transitions": false
+    },
+    "./entity/OrderShipment.java": {
+      "lines": 94,
+      "mappings": [],
+      "transitions": false
+    },
+    "./entity/OrderShipmentItem.java": {
+      "lines": 68,
+      "mappings": [],
+      "transitions": false
+    },
+    "./mapper/OrderShipmentItemMapper.java": {
+      "lines": 58,
+      "mappings": [],
+      "transitions": false
+    },
+    "./mapper/OrderShipmentMapper.java": {
+      "lines": 39,
+      "mappings": [],
+      "transitions": false
+    },
+    "./mapper/OrderShipmentQueryMapper.java": {
+      "lines": 73,
+      "mappings": [],
+      "transitions": false
+    },
+    "./service/OrderLogisticsWriter.java": {
+      "lines": 79,
+      "mappings": [],
+      "transitions": false
+    },
+    "./service/OrderService.java": {
+      "lines": 2963,
+      "mappings": [],
+      "transitions": true
+    },
+    "./service/OrderShipGuard.java": {
+      "lines": 294,
+      "mappings": [],
+      "transitions": false
+    },
+    "./service/OrderShipmentService.java": {
+      "lines": 660,
+      "mappings": [],
+      "transitions": true
+    },
+    "./service/OrderStatusTransitions.java": {
+      "lines": 133,
+      "mappings": [],
+      "transitions": true
+    }
+  },
+  "tables": {
+    "orders": {
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "tenant_id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "order_no",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "customer_name",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "customer_phone",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "customer_address",
+          "data_type": "text",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "total_amount",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "status",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "follow_status",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "remark",
+          "data_type": "text",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "deleted",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "close_reason",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "actual_amount",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "refund_amount",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "refund_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "discount_amount",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "user_id",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "logistics_type",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "logistics_company",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "is_urgent",
+          "data_type": "boolean",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "required_delivery_date",
+          "data_type": "date",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_by",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_by_name",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        }
+      ],
+      "uniqueIndexes": [
+        {
+          "indexname": "orders_pkey",
+          "indexdef": "CREATE UNIQUE INDEX orders_pkey ON public.orders USING btree (id)"
+        },
+        {
+          "indexname": "orders_order_no_key",
+          "indexdef": "CREATE UNIQUE INDEX orders_order_no_key ON public.orders USING btree (order_no)"
+        }
+      ]
+    },
+    "order_items": {
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "tenant_id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "order_id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "product_id",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "product_name",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "quantity",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "unit_price",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "width",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "height",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "processing_info",
+          "data_type": "jsonb",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "subtotal",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "deleted",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "curtain_type",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "craft",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "open_count",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "cutting_mode",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "is_shaped",
+          "data_type": "boolean",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "fullness",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "fullness_actual",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "pleat_spacing",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "pleat_count",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "has_pattern",
+          "data_type": "boolean",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "corner",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "selling_method",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "roll_count",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "roll_length_m",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        }
+      ],
+      "uniqueIndexes": [
+        {
+          "indexname": "order_items_pkey",
+          "indexdef": "CREATE UNIQUE INDEX order_items_pkey ON public.order_items USING btree (id)"
+        }
+      ]
+    },
+    "order_shipments": {
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "tenant_id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "order_id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "order_no",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "shipment_no",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "source",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "photo_refs",
+          "data_type": "jsonb",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "recognition",
+          "data_type": "jsonb",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "packed_by_worker_id",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "packed_by_worker_name",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "packed_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "shipped_by_worker_id",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "shipped_by_worker_name",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "shipped_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "tracking_no",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "logistics_company",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "client_request_id",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "unpacked_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "unpacked_by_worker_id",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "unpacked_by_worker_name",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "unpack_reason",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "deleted",
+          "data_type": "smallint",
+          "is_nullable": "NO"
+        }
+      ],
+      "uniqueIndexes": [
+        {
+          "indexname": "order_shipments_pkey",
+          "indexdef": "CREATE UNIQUE INDEX order_shipments_pkey ON public.order_shipments USING btree (id)"
+        },
+        {
+          "indexname": "uk_order_shipments_idem",
+          "indexdef": "CREATE UNIQUE INDEX uk_order_shipments_idem ON public.order_shipments USING btree (tenant_id, client_request_id) WHERE ((client_request_id IS NOT NULL) AND (deleted = 0))"
+        }
+      ]
+    },
+    "order_shipment_items": {
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "tenant_id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "shipment_id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "order_id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "order_item_id",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "product_name",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "shipped_quantity",
+          "data_type": "numeric",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "unit",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "set_count",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "roll_count",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "deleted",
+          "data_type": "smallint",
+          "is_nullable": "NO"
+        }
+      ],
+      "uniqueIndexes": [
+        {
+          "indexname": "order_shipment_items_pkey",
+          "indexdef": "CREATE UNIQUE INDEX order_shipment_items_pkey ON public.order_shipment_items USING btree (id)"
+        }
+      ]
+    },
+    "order_logistics": {
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "tenant_id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "order_id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "logistics_company",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "tracking_no",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "status",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "tracking_info",
+          "data_type": "jsonb",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "shipped_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "delivered_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "deleted",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "shipper_name",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "logistics_type",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        }
+      ],
+      "uniqueIndexes": [
+        {
+          "indexname": "order_logistics_pkey",
+          "indexdef": "CREATE UNIQUE INDEX order_logistics_pkey ON public.order_logistics USING btree (id)"
+        }
+      ]
+    },
+    "stock_ledger_entries": {
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "tenant_id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "product_id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "sku_id",
+          "data_type": "bigint",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "sku_code",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "delta",
+          "data_type": "numeric",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "before_qty",
+          "data_type": "numeric",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "after_qty",
+          "data_type": "numeric",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "reason",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "ref_no",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "note",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "operator",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "deleted",
+          "data_type": "integer",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "unit_cost",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "cost_amount",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "avg_cost_before",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "avg_cost_after",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        }
+      ],
+      "uniqueIndexes": [
+        {
+          "indexname": "stock_ledger_entries_pkey",
+          "indexdef": "CREATE UNIQUE INDEX stock_ledger_entries_pkey ON public.stock_ledger_entries USING btree (id)"
+        }
+      ]
+    },
+    "stock_batches": {
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "tenant_id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "batch_no",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "product_id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "sku_id",
+          "data_type": "bigint",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "sku_code",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "inbound_order_id",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "inbound_item_id",
+          "data_type": "bigint",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "inbound_no",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "quantity",
+          "data_type": "numeric",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "unit_cost",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "amount",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "dye_lot",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "roll_length_m",
+          "data_type": "numeric",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "supplier",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "warehouse",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "received_date",
+          "data_type": "date",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "remark",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "deleted",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "legacy_batch_no",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        }
+      ],
+      "uniqueIndexes": [
+        {
+          "indexname": "stock_batches_pkey",
+          "indexdef": "CREATE UNIQUE INDEX stock_batches_pkey ON public.stock_batches USING btree (id)"
+        },
+        {
+          "indexname": "uk_stock_batches_no",
+          "indexdef": "CREATE UNIQUE INDEX uk_stock_batches_no ON public.stock_batches USING btree (tenant_id, batch_no)"
+        }
+      ]
+    },
+    "inbound_orders": {
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "tenant_id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "inbound_no",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "supplier",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "supplier_doc_no",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "warehouse",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "inbound_date",
+          "data_type": "date",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "status",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "total_amount",
+          "data_type": "numeric",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "remark",
+          "data_type": "text",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "posted_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "posted_by",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "cancelled_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "cancelled_by",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "cancelled_reason",
+          "data_type": "text",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_by",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "deleted",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "import_run_id",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "source",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        }
+      ],
+      "uniqueIndexes": [
+        {
+          "indexname": "uk_inbound_orders_no",
+          "indexdef": "CREATE UNIQUE INDEX uk_inbound_orders_no ON public.inbound_orders USING btree (tenant_id, inbound_no) WHERE (deleted = 0)"
+        },
+        {
+          "indexname": "uk_inbound_orders_tenant_import_run",
+          "indexdef": "CREATE UNIQUE INDEX uk_inbound_orders_tenant_import_run ON public.inbound_orders USING btree (tenant_id, import_run_id) WHERE ((import_run_id IS NOT NULL) AND (deleted = 0))"
+        },
+        {
+          "indexname": "inbound_orders_pkey",
+          "indexdef": "CREATE UNIQUE INDEX inbound_orders_pkey ON public.inbound_orders USING btree (id)"
+        }
+      ]
+    },
+    "client_request_keys": {
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "tenant_id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "client_request_id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "endpoint",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "response_payload",
+          "data_type": "jsonb",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        }
+      ],
+      "uniqueIndexes": [
+        {
+          "indexname": "client_request_keys_pkey",
+          "indexdef": "CREATE UNIQUE INDEX client_request_keys_pkey ON public.client_request_keys USING btree (id)"
+        },
+        {
+          "indexname": "client_request_keys_tenant_id_client_request_id_key",
+          "indexdef": "CREATE UNIQUE INDEX client_request_keys_tenant_id_client_request_id_key ON public.client_request_keys USING btree (tenant_id, client_request_id)"
+        }
+      ]
+    },
+    "users": {
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "tenant_id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "phone",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "password_hash",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "nickname",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "avatar",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "role",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "session_ttl",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "status",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "deleted",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "position",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "permissions",
+          "data_type": "text",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "worker_no",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "username",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "must_change_password",
+          "data_type": "boolean",
+          "is_nullable": "NO"
+        }
+      ],
+      "uniqueIndexes": [
+        {
+          "indexname": "users_pkey",
+          "indexdef": "CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)"
+        },
+        {
+          "indexname": "uk_users_tenant_worker_no",
+          "indexdef": "CREATE UNIQUE INDEX uk_users_tenant_worker_no ON public.users USING btree (tenant_id, worker_no) WHERE ((worker_no IS NOT NULL) AND (deleted = 0))"
+        },
+        {
+          "indexname": "uk_users_tenant_username",
+          "indexdef": "CREATE UNIQUE INDEX uk_users_tenant_username ON public.users USING btree (tenant_id, username) WHERE ((username IS NOT NULL) AND (deleted = 0))"
+        }
+      ]
+    },
+    "worker_sessions": {
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "tenant_id",
+          "data_type": "bigint",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "worker_id",
+          "data_type": "character varying",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "worker_no",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "worker_name",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "device_label",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "started_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "last_seen_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "idle_expires_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "ended_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "end_reason",
+          "data_type": "character varying",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "deleted",
+          "data_type": "integer",
+          "is_nullable": "NO"
+        }
+      ],
+      "uniqueIndexes": [
+        {
+          "indexname": "worker_sessions_pkey",
+          "indexdef": "CREATE UNIQUE INDEX worker_sessions_pkey ON public.worker_sessions USING btree (id)"
+        }
+      ]
+    }
+  },
+  "uiFiles": [
+    "app/(dashboard)/customers/[id]/CustomerDetail.tsx",
+    "app/(dashboard)/dashboard/page.tsx",
+    "app/(dashboard)/finance/page.tsx",
+    "app/(dashboard)/layout.tsx",
+    "app/(dashboard)/orders/[id]/OrderDetail.tsx",
+    "app/(dashboard)/orders/[id]/ship/ShipOrder.tsx",
+    "app/(dashboard)/orders/new/page.tsx",
+    "app/(dashboard)/orders/page.tsx",
+    "app/(dashboard)/production/routings/page.tsx",
+    "app/(dashboard)/shipments/page.tsx",
+    "components/chat/CustomerPanel.tsx",
+    "components/chat/SessionInsight.tsx",
+    "components/chat/ToolResultCard.tsx",
+    "components/dashboard/TodayOverviewBar.tsx",
+    "components/layout/Header.tsx",
+    "components/orders/LogisticsForm.tsx",
+    "components/orders/OrderItemList.tsx",
+    "components/orders/OrderProgressSteps.tsx",
+    "components/orders/OrderTable.tsx",
+    "components/orders/OrderTimeline.tsx",
+    "components/orders/ProcessingDoc.tsx",
+    "components/orders/ProcessingOrderBlock.tsx",
+    "components/orders/QuotationDoc.tsx",
+    "components/orders/SalesDoc.tsx",
+    "components/orders/ShipmentDoc.tsx",
+    "components/production/TaskCardPrint.tsx",
+    "components/products/ProductForm.tsx",
+    "components/settings/WorkerPageConfigPanel.tsx"
+  ],
+  "statusMachine": {
+    "transitions": {
+      "pending": [
+        "confirmed",
+        "cancelled"
+      ],
+      "confirmed": [
+        "producing",
+        "packed",
+        "shipped",
+        "cancelled"
+      ],
+      "producing": [
+        "packed",
+        "shipped",
+        "cancelled"
+      ],
+      "packed": [
+        "shipped"
+      ],
+      "shipped": [
+        "completed"
+      ],
+      "completed": [],
+      "cancelled": []
+    },
+    "shippableFrom": [
+      "confirmed",
+      "producing",
+      "packed"
+    ],
+    "packedIsItsOwnState": true
+  },
+  "notes": [
+    "发货有两个写入口：工人面 POST /api/worker/shipment/orders/{orderId}/ship（记实发明细）与商家/生产面 POST /api/admin/production/orders/{orderId}/ship（只记物流+流转状态，不写 order_shipment_items）",
+    "发货单实体只有两张表：order_shipments（单据头）+ order_shipment_items（逐行实发）",
+    "唯一约束：order_shipments 只有 (tenant_id, client_request_id) WHERE client_request_id IS NOT NULL AND deleted=0；order_shipment_items 无任何唯一约束"
+  ]
+}

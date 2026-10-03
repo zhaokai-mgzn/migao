@@ -1,0 +1,183 @@
+[
+  {
+    "id": "T20-01",
+    "name": "管理员 API 登录（短信万能码）",
+    "status": "pass",
+    "detail": "POST /api/auth/sms/login → 200；me: nickname=undefined tenantId=undefined role=undefined",
+    "evidence": [
+      "POST /api/auth/sms/login",
+      "GET /api/auth/me"
+    ],
+    "at": "2026-10-02T13:41:54.071Z"
+  },
+  {
+    "id": "T20-02",
+    "name": "UI 管理员登录（验证码页签）",
+    "status": "pass",
+    "detail": "url=http://localhost:3001/dashboard",
+    "evidence": [
+      "screenshots/s20-login-ui.png"
+    ],
+    "at": "2026-10-02T13:41:57.471Z"
+  },
+  {
+    "id": "T20-03",
+    "name": "DB：租户 20 存在且 active",
+    "status": "pass",
+    "detail": "tenants#20 米高POC演示布艺 code=tenant_7478359537 status=active",
+    "evidence": [
+      "SQL: tenants"
+    ],
+    "at": "2026-10-02T13:41:57.642Z"
+  },
+  {
+    "id": "T20-04",
+    "name": "盘点：角色数",
+    "status": "pass",
+    "detail": "count=9",
+    "evidence": [
+      "SQL: select count(*)::int n from roles where tenant_id=20 and deleted=0"
+    ],
+    "at": "2026-10-02T13:41:57.833Z"
+  },
+  {
+    "id": "T20-05",
+    "name": "盘点：员工数",
+    "status": "pass",
+    "detail": "count=7",
+    "evidence": [
+      "SQL: select count(*)::int n from users where tenant_id=20 and deleted=0"
+    ],
+    "at": "2026-10-02T13:41:57.961Z"
+  },
+  {
+    "id": "T20-06",
+    "name": "盘点：权限数",
+    "status": "pass",
+    "detail": "count=96",
+    "evidence": [
+      "SQL: select count(*)::int n from permissions"
+    ],
+    "at": "2026-10-02T13:41:58.071Z"
+  },
+  {
+    "id": "T20-07",
+    "name": "盘点：商品数",
+    "status": "pass",
+    "detail": "count=4",
+    "evidence": [
+      "SQL: select count(*)::int n from products where tenant_id=20 and deleted=0"
+    ],
+    "at": "2026-10-02T13:41:58.189Z"
+  },
+  {
+    "id": "T20-08",
+    "name": "盘点：订单数",
+    "status": "pass",
+    "detail": "count=1",
+    "evidence": [
+      "SQL: select count(*)::int n from orders where tenant_id=20 and deleted=0"
+    ],
+    "at": "2026-10-02T13:41:58.394Z"
+  },
+  {
+    "id": "T20-09",
+    "name": "盘点：工艺(原)数",
+    "status": "pass",
+    "detail": "count=1",
+    "evidence": [
+      "SQL: select count(*)::int n from production_crafts where tenant_id=20 and deleted=0"
+    ],
+    "at": "2026-10-02T13:41:58.597Z"
+  },
+  {
+    "id": "T20-10",
+    "name": "盘点：工序库数",
+    "status": "pass",
+    "detail": "count=40",
+    "evidence": [
+      "SQL: select count(*)::int n from production_operations where tenant_id=20 and deleted=0"
+    ],
+    "at": "2026-10-02T13:41:58.696Z"
+  },
+  {
+    "id": "T20-11",
+    "name": "盘点：工艺路线数",
+    "status": "pass",
+    "detail": "count=2",
+    "evidence": [
+      "SQL: select count(*)::int n from production_route_templates where tenant_id=20 and deleted=0"
+    ],
+    "at": "2026-10-02T13:41:58.896Z"
+  },
+  {
+    "id": "T20-12",
+    "name": "盘点：选路规则数",
+    "status": "pass",
+    "detail": "count=29",
+    "evidence": [
+      "SQL: select count(*)::int n from production_route_rules where tenant_id=20"
+    ],
+    "at": "2026-10-02T13:41:59.091Z"
+  },
+  {
+    "id": "T20-13",
+    "name": "盘点：算料配置行数（初始化缺口）",
+    "status": "pass",
+    "detail": "craft_calc_configs=0（0=用引擎默认值，待初始化）",
+    "evidence": [
+      "SQL: craft_calc_configs"
+    ],
+    "at": "2026-10-02T13:41:59.206Z"
+  },
+  {
+    "id": "T20-14",
+    "name": "盘点：员工明细",
+    "status": "pass",
+    "detail": "POC验收员工(13910000004) role=operator roles=[operator] status=active；UI角色验证员(13910000010) role=operator roles=[operator] status=active；王小明(13870217889) role=admin roles=[admin] status=active；POC自定义员工(13910000001) role=poc_operator_custom roles=[poc_operator_custom] status=active；POC运营员工(13910000002) role=operator roles=[operator] status=active；POC商品员工(13910000003) role=product_manager roles=[] status=active；UI看板客服(13910000011) role=poc_accept_agent roles=[poc_accept_agent] status=active",
+    "evidence": [
+      "SQL: users join user_roles"
+    ],
+    "at": "2026-10-02T13:41:59.417Z"
+  },
+  {
+    "id": "T20-15",
+    "name": "盘点：岗位与权限数",
+    "status": "pass",
+    "detail": "customer_service=12，knowledge_editor=4，sales=9，poc_accept_agent=2，admin=32，product_manager=8，poc_operator_custom=2，finance=9，operator=26",
+    "evidence": [
+      "SQL: roles left join role_permissions"
+    ],
+    "at": "2026-10-02T13:41:59.609Z"
+  },
+  {
+    "id": "T20-16",
+    "name": "算料配置读面（GET craft-calc-config）",
+    "status": "pass",
+    "detail": "HTTP 200 source=default keys=11",
+    "evidence": [
+      "GET /api/admin/production/craft-calc-config"
+    ],
+    "at": "2026-10-02T13:41:59.682Z"
+  },
+  {
+    "id": "T20-17",
+    "name": "工艺路线读面（GET routings）",
+    "status": "pass",
+    "detail": "HTTP 200 count=2 窗帘工序路线（默认）[默认]，布料工序路线",
+    "evidence": [
+      "GET /api/admin/production/routings"
+    ],
+    "at": "2026-10-02T13:41:59.750Z"
+  },
+  {
+    "id": "T20-18",
+    "name": "工序库读面（GET operations-catalog）",
+    "status": "pass",
+    "detail": "HTTP 200 count=40 groups=4 样例=精裁/精裁/裁剪/裁剪/三边",
+    "evidence": [
+      "GET /api/admin/production/operations-catalog"
+    ],
+    "at": "2026-10-02T13:41:59.933Z"
+  }
+]

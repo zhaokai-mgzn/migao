@@ -1,0 +1,14 @@
+{
+  "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+  "pid": "99086",
+  "sha": "d1c09d02f",
+  "shaFull": "d1c09d02f027adc7f2cf449c78cc2debb98a6dec",
+  "subject": "chore(ci): flaky 台账追加（run 37096947254） (#6183)",
+  "commitTime": "2026-10-03T05:01:54Z",
+  "originMain": "d877f19ef",
+  "adminApiStart": "六 10月/ 3 13:09:45 2026",
+  "observedAt": {
+    "cst": "2026-10-03 21:40:44 +08",
+    "utc": "2026-10-03T05:40:44.606Z"
+  }
+}

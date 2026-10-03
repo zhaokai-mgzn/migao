@@ -1,0 +1,236 @@
+[
+  {
+    "id": "A1-1",
+    "name": "/health 存活语义",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 body.status==\"healthy\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: main.py::health_check 契约（返回 status/service/version）",
+      "HTTP/读数: {\"status\":200,\"body\":{\"status\":\"healthy\",\"service\":\"ai-agent-service\",\"version\":\"1.0.0\"}}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:02 +08",
+    "atUtc": "2026-10-03T05:43:02.913Z"
+  },
+  {
+    "id": "A1-2",
+    "name": "/ready 就绪语义（fail-closed）",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 body.status==\"ready\"（DB+Redis 均通时） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: main.py::ready_check 契约（check_readiness 失败 ⇒ 503 not_ready）",
+      "HTTP/读数: {\"status\":200,\"body\":{\"status\":\"ready\",\"service\":\"ai-agent-service\"}}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:03 +08",
+    "atUtc": "2026-10-03T05:43:03.015Z"
+  },
+  {
+    "id": "A1-3",
+    "name": "未注册路径不得 500",
+    "status": "pass",
+    "detail": "期望 HTTP 404 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: FastAPI 路由契约（未注册 ⇒ 404，不得 500/502）",
+      "HTTP/读数: {\"status\":404,\"body\":\"{\\\"detail\\\":\\\"Not Found\\\"}\"}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:03 +08",
+    "atUtc": "2026-10-03T05:43:03.020Z"
+  },
+  {
+    "id": "A1-4",
+    "name": "错误方法不得 500",
+    "status": "pass",
+    "detail": "期望 HTTP 405 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: HTTP 语义（方法不允许 ⇒ 405）",
+      "HTTP/读数: {\"status\":405}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:03 +08",
+    "atUtc": "2026-10-03T05:43:03.026Z"
+  },
+  {
+    "id": "A2-notoken-_api_chat_sessions",
+    "name": "无 token 调 /api/chat/sessions [X-Debug-Role=none, DEBUG=false]",
+    "status": "pass",
+    "detail": "期望 HTTP 401 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::get_current_user —— DEBUG=false 时无 token 必 401（X-Debug-Role 不构成旁路）",
+      "HTTP/读数: {\"status\":401,\"body\":{\"detail\":{\"success\":false,\"error\":{\"code\":\"AUTH_REQUIRED\",\"message\":\"Authentication required\"}}}}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:03 +08",
+    "atUtc": "2026-10-03T05:43:03.033Z"
+  },
+  {
+    "id": "A2-notoken-_api_chat_sessions_latest",
+    "name": "无 token 调 /api/chat/sessions/latest [X-Debug-Role=none, DEBUG=false]",
+    "status": "pass",
+    "detail": "期望 HTTP 401 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::get_current_user —— DEBUG=false 时无 token 必 401（X-Debug-Role 不构成旁路）",
+      "HTTP/读数: {\"status\":401,\"body\":{\"detail\":{\"success\":false,\"error\":{\"code\":\"AUTH_REQUIRED\",\"message\":\"Authentication required\"}}}}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:03 +08",
+    "atUtc": "2026-10-03T05:43:03.039Z"
+  },
+  {
+    "id": "A2-notoken-_api_chat_quick_actions",
+    "name": "无 token 调 /api/chat/quick-actions [X-Debug-Role=none, DEBUG=false]",
+    "status": "pass",
+    "detail": "期望 HTTP 401 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::get_current_user —— DEBUG=false 时无 token 必 401（X-Debug-Role 不构成旁路）",
+      "HTTP/读数: {\"status\":401,\"body\":{\"detail\":{\"success\":false,\"error\":{\"code\":\"AUTH_REQUIRED\",\"message\":\"Authentication required\"}}}}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:03 +08",
+    "atUtc": "2026-10-03T05:43:03.043Z"
+  },
+  {
+    "id": "A2-badtoken",
+    "name": "畸形 Bearer token 被拒",
+    "status": "pass",
+    "detail": "期望 HTTP 401 且 error.code ∈ {TOKEN_INVALID,AUTH_REQUIRED} == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_jwt_token 契约（解析失败 ⇒ 401 TOKEN_INVALID）",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_INVALID\"}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:03 +08",
+    "atUtc": "2026-10-03T05:43:03.049Z"
+  },
+  {
+    "id": "A2-expired",
+    "name": "过期 JWT 被拒（TOKEN_EXPIRED）",
+    "status": "pass",
+    "detail": "期望 HTTP 401 且 error.code==\"TOKEN_EXPIRED\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_jwt_token —— ExpiredSignatureError ⇒ 401 TOKEN_EXPIRED",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_EXPIRED\",\"body\":{\"detail\":{\"success\":false,\"error\":{\"code\":\"TOKEN_EXPIRED\",\"message\":\"Token has expired\"}}}}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:03 +08",
+    "atUtc": "2026-10-03T05:43:03.257Z"
+  },
+  {
+    "id": "A2-foreignkey",
+    "name": "异钥签名的 JWT 被拒",
+    "status": "pass",
+    "detail": "期望 HTTP 401 且 error.code==\"TOKEN_INVALID\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_jwt_token —— RS256 公钥验签失败 ⇒ InvalidTokenError ⇒ 401",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_INVALID\"}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:03 +08",
+    "atUtc": "2026-10-03T05:43:03.595Z"
+  },
+  {
+    "id": "A2-aud",
+    "name": "aud 不含 migao 的 JWT 被拒",
+    "status": "pass",
+    "detail": "期望 HTTP 401 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_jwt_token —— 手动校验 aud 含 \"migao\"，否则 InvalidTokenError",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_INVALID\"}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:03 +08",
+    "atUtc": "2026-10-03T05:43:03.929Z"
+  },
+  {
+    "id": "A2-positive",
+    "name": "正对照：合法 RS256 token 放行",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 success==true == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 正对照（缺它则 A2 各条可能只是「一律 401」的空断言）",
+      "HTTP/读数: {\"status\":200,\"success\":true}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:04 +08",
+    "atUtc": "2026-10-03T05:43:04.306Z"
+  },
+  {
+    "id": "A3-1",
+    "name": "内部面无 Service Token ⇒ 401",
+    "status": "pass",
+    "detail": "期望 HTTP 401 且 code==\"AUTH_REQUIRED\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_service_token —— 缺头 ⇒ 401 AUTH_REQUIRED",
+      "HTTP/读数: {\"status\":401,\"code\":\"AUTH_REQUIRED\"}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:04 +08",
+    "atUtc": "2026-10-03T05:43:04.310Z"
+  },
+  {
+    "id": "A3-2",
+    "name": "内部面错误 Service Token ⇒ 401（不得 500）",
+    "status": "pass",
+    "detail": "期望 HTTP 401 且 code==\"AUTH_REQUIRED\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_service_token —— compare_digest 不等 ⇒ 401",
+      "HTTP/读数: {\"status\":401,\"code\":\"AUTH_REQUIRED\"}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:04 +08",
+    "atUtc": "2026-10-03T05:43:04.315Z"
+  },
+  {
+    "id": "A3-3",
+    "name": "正对照：正确 Service Token 放行且工具集非空",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 tools.length>0 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 正对照 + auth.py::verify_service_token 通过分支",
+      "HTTP/读数: {\"status\":200,\"count\":49,\"sample\":[\"product_search\",\"product_detail\",\"logistics_track\",\"customer_logistics_track\",\"knowledge_search\"]}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:04 +08",
+    "atUtc": "2026-10-03T05:43:04.326Z"
+  },
+  {
+    "id": "A3-4",
+    "name": "内部面拒写工具（order_create）",
+    "status": "pass",
+    "detail": "期望 HTTP 403 且 code==\"WRITE_TOOL_FORBIDDEN\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: internal.py::execute_tool —— read_only=False ⇒ 403 WRITE_TOOL_FORBIDDEN",
+      "HTTP/读数: {\"status\":403,\"code\":\"WRITE_TOOL_FORBIDDEN\",\"body\":{\"detail\":{\"success\":false,\"error\":{\"code\":\"WRITE_TOOL_FORBIDDEN\",\"message\":\"Tool 'order_create' 是写操作，禁止通过内部接口执行\"}}}}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:04 +08",
+    "atUtc": "2026-10-03T05:43:04.334Z"
+  },
+  {
+    "id": "A3-5",
+    "name": "内部面未知工具 ⇒ 404 TOOL_NOT_FOUND",
+    "status": "pass",
+    "detail": "期望 HTTP 404 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: internal.py::execute_tool —— registry.get_tool 为 None ⇒ 404",
+      "HTTP/读数: {\"status\":404,\"code\":\"TOOL_NOT_FOUND\"}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:04 +08",
+    "atUtc": "2026-10-03T05:43:04.340Z"
+  },
+  {
+    "id": "A4-1",
+    "name": "SERVICE_TOKEN 不在无鉴权/错误响应中回显",
+    "status": "pass",
+    "detail": "期望 0 处命中 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 机密不回显（只读判定：扫描 health/ready/openapi 与 401 响应体）",
+      "HTTP/读数: {\"leaked\":[],\"tokenLen\":65}",
+      "构建点: worktree=/Users/guangzhen.zk/migao-wt/line1-agent sha=d877f19efabb6993c6d29652e8c949e1fcb173c8 subject=fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180) procStart=六 10月/ 3 13:41:37 2026 dirty=\"\""
+    ],
+    "at": "2026-10-03 13:43:04 +08",
+    "atUtc": "2026-10-03T05:43:04.445Z"
+  }
+]

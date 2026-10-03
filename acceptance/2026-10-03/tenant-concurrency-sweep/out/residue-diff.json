@@ -1,0 +1,23 @@
+{
+  "tables": 79,
+  "tenants": 3,
+  "cells": 237,
+  "changed": [
+    {
+      "table": "audit_logs",
+      "tenant": 20,
+      "before": 12,
+      "after": 18,
+      "countDelta": 6,
+      "fpChanged": true
+    },
+    {
+      "table": "audit_logs",
+      "tenant": 21,
+      "before": 12,
+      "after": 18,
+      "countDelta": 6,
+      "fpChanged": true
+    }
+  ]
+}

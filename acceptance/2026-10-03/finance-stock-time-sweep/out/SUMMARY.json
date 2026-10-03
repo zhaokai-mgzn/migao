@@ -1,0 +1,675 @@
+{
+  "pkg": "line3-finance-stock-time-sweep",
+  "startedAt": {
+    "cst": "2026-10-03 13:49:06 +08",
+    "utc": "2026-10-03T05:49:06.700Z"
+  },
+  "finishedAt": {
+    "cst": "2026-10-03 13:49:27 +08",
+    "utc": "2026-10-03T05:49:27.012Z"
+  },
+  "buildPoint": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "sha": "7e9f66ce5",
+    "shaFull": "7e9f66ce57915ce17f6e949e3dc23d53bae291eb",
+    "subject": "fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)",
+    "commitTime": "2026-10-03T05:42:36Z",
+    "adminApiPid": "60585",
+    "adminApiStart": "六 10月/ 3 13:44:16 2026",
+    "jvmTz": "user.timezone=Asia/Shanghai",
+    "observedAt": {
+      "cst": "2026-10-03 13:49:07 +08",
+      "utc": "2026-10-03T05:49:07.479Z"
+    }
+  },
+  "fatal": null,
+  "summary": {
+    "pass": 31,
+    "fail": 9,
+    "skip": 7,
+    "total": 47
+  },
+  "byFamily": {
+    "T": 2,
+    "A": 6,
+    "B": 16,
+    "C": 20,
+    "Z": 3
+  },
+  "residue": {
+    "products": 0,
+    "skus": 0,
+    "inbound": 0,
+    "inbound_items": 0,
+    "batches": 0,
+    "consumptions": 0,
+    "ledger": 0,
+    "txns": 0,
+    "orders": 0
+  },
+  "residueTotal": 0,
+  "stockSnapshot": {
+    "before": {
+      "products": {
+        "sha256": "b5af3840a6c2d73f2f9ce020541fb8898b9204bd59e954374aec169a8ac0bc55",
+        "n": 35
+      },
+      "product_skus": {
+        "sha256": "505f8451e4f874ec84820deb8d132a88ea484a644a0a1a9d3f3feb98ea7cb2dc",
+        "n": 36
+      },
+      "stock_batches": {
+        "sha256": "051d927596248333526c1fa225a60644283b7a2fd8c36551f6a3fccfba020c2f",
+        "n": 2
+      },
+      "stock_ledger_entries": {
+        "sha256": "2d0111a7b078287b5dc3beaf45c14a777d39af41e3109aa3e779f08e8f4857a8",
+        "n": 356
+      },
+      "stock_batch_consumptions": {
+        "sha256": "2b495d6bd91beaa942ec87b91fb0a5ce0815bd81b6c8f912ab6fcac491b50e04",
+        "n": 1
+      },
+      "finance_transactions": {
+        "sha256": "d027aaec2ee070fcc87c9e1dc2ae5fef6f488f2e21493aa26bb66c0250134988",
+        "n": 376
+      },
+      "inbound_orders": {
+        "sha256": "cac4e74a2ac409807b0c84806f0710d5f4b425c6c6b257b05c194321f54c0591",
+        "n": 5
+      },
+      "inbound_order_items": {
+        "sha256": "5a9475953df23829002bdf12d81021a6cbd39a7a0327a86a5ff790d48a686bbe",
+        "n": 5
+      },
+      "fabric_remnants": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "n": 0
+      },
+      "daily_briefings": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "n": 0
+      },
+      "orders": {
+        "sha256": "dfb848bf655fbba5936841cd6eb1593de166487926c3af12add1c0e455a5c191",
+        "n": 359
+      }
+    },
+    "after": {
+      "products": {
+        "sha256": "b5af3840a6c2d73f2f9ce020541fb8898b9204bd59e954374aec169a8ac0bc55",
+        "n": 35
+      },
+      "product_skus": {
+        "sha256": "505f8451e4f874ec84820deb8d132a88ea484a644a0a1a9d3f3feb98ea7cb2dc",
+        "n": 36
+      },
+      "stock_batches": {
+        "sha256": "051d927596248333526c1fa225a60644283b7a2fd8c36551f6a3fccfba020c2f",
+        "n": 2
+      },
+      "stock_ledger_entries": {
+        "sha256": "2d0111a7b078287b5dc3beaf45c14a777d39af41e3109aa3e779f08e8f4857a8",
+        "n": 356
+      },
+      "stock_batch_consumptions": {
+        "sha256": "2b495d6bd91beaa942ec87b91fb0a5ce0815bd81b6c8f912ab6fcac491b50e04",
+        "n": 1
+      },
+      "finance_transactions": {
+        "sha256": "d027aaec2ee070fcc87c9e1dc2ae5fef6f488f2e21493aa26bb66c0250134988",
+        "n": 376
+      },
+      "inbound_orders": {
+        "sha256": "cac4e74a2ac409807b0c84806f0710d5f4b425c6c6b257b05c194321f54c0591",
+        "n": 5
+      },
+      "inbound_order_items": {
+        "sha256": "5a9475953df23829002bdf12d81021a6cbd39a7a0327a86a5ff790d48a686bbe",
+        "n": 5
+      },
+      "fabric_remnants": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "n": 0
+      },
+      "daily_briefings": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "n": 0
+      },
+      "orders": {
+        "sha256": "dfb848bf655fbba5936841cd6eb1593de166487926c3af12add1c0e455a5c191",
+        "n": 359
+      }
+    },
+    "changedAll": [],
+    "changedWritten": [],
+    "changedForeign": []
+  },
+  "records": [
+    {
+      "id": "T1",
+      "name": "harness 时钟自检：nowCST().cst 与 SQL(+08) 一致（秒级 ≤5s）",
+      "status": "pass",
+      "detail": "期望 与 SQL 2026-10-03 13:49:09 相差 ≤5s == 实测 harness=2026-10-03 13:49:09 +08 node本地=2026-10-03 13:49:09 差=0s",
+      "evidence": [
+        "期望来源: 独立时钟源：SQL `now() at time zone 'Asia/Shanghai'`（DB 侧）—— 与被测系统 BusinessClock 同一时区口径。若 harness 用「本地 getter + 手动偏移」，此判据会立刻红（实测偏差恰 8h=28800s）。",
+        "harness cst=2026-10-03 13:49:09 +08",
+        "harness utc=2026-10-03T05:49:09.511Z",
+        "SQL +08=2026-10-03 13:49:09",
+        "自洽性: cst − utc 应 = 8h"
+      ],
+      "at": "2026-10-03 13:49:09 +08"
+    },
+    {
+      "id": "T2",
+      "name": "harness 时钟自洽：cst 与同结构的 utc 相差恰 8 小时（防\"同文件自相矛盾\"）",
+      "status": "pass",
+      "detail": "期望 8.000h == 实测 8.000h",
+      "evidence": [
+        "期望来源: cst 是 +08 墙钟、utc 是 UTC ⇒ 同刻两者必差 8h。这一条正是原 bug 的现场（原实现差 16h：21:40 vs 05:40）。",
+        "cst=2026-10-03 13:49:09 +08",
+        "utc=2026-10-03T05:49:09.511Z"
+      ],
+      "at": "2026-10-03 13:49:09 +08"
+    },
+    {
+      "id": "A0a",
+      "name": "计件工资报表总额 = 独立 SQL 重算（逐笔 round 到分后求和）",
+      "status": "pass",
+      "detail": "期望 36.33 == 实测 36.33",
+      "evidence": [
+        "期望来源: 独立算式：SUM(round(qualified_qty*unit_price,2)) over production_work_logs(tenant=20, period=2026-10, work_type='normal')。未采用接口任何读数作期望。",
+        "GET /api/admin/production/piecework/summary?period=2026-10 → HTTP 200",
+        "独立 SQL 逐人: [{\"worker_name\":\"冒烟工人\",\"amount\":0.8,\"qty\":2},{\"worker_name\":\"工资验收工人戊567249\",\"amount\":3.33,\"qty\":3},{\"worker_name\":\"验收工人790472\",\"amount\":32.2,\"qty\":76}]",
+        "接口 per_worker: [{\"worker_name\":\"验收工人790472\",\"amount\":32.2,\"qty\":76},{\"worker_name\":\"冒烟工人\",\"amount\":0.8,\"qty\":2},{\"worker_name\":\"工资验收工人戊567249\",\"amount\":3.33,\"qty\":3}]"
+      ],
+      "at": "2026-10-03 13:49:10 +08"
+    },
+    {
+      "id": "A0b",
+      "name": "计件工资逐人金额 = 独立 SQL 重算（逐行比对）",
+      "status": "pass",
+      "detail": "期望 逐人一致（3 人） == 实测 逐人一致",
+      "evidence": [
+        "期望来源: 同 A0a 的独立 SQL，按 worker_name 分组逐行比对接口 per_worker。",
+        "不一致行: []"
+      ],
+      "at": "2026-10-03 13:49:10 +08"
+    },
+    {
+      "id": "A1",
+      "name": "计件结算单（按人/月/工序汇总生成 + 金额独立算式 + 结算冻结）",
+      "status": "skip",
+      "detail": "面不存在 ⇒ 无法执行任何断言。实测 8 个候选面**全部 HTTP 404**：GET /api/admin/finance/settlements=404; GET /api/admin/finance/settlements?period=2026-09=404; POST /api/admin/finance/settlements=404; GET /api/admin/production/piecework/settlements=404; POST /api/admin/production/piecework/settlements=404; GET /api/admin/production/settlements=404; GET /api/admin/settlements=404; GET /api/admin/piecework/settlements=404。skip（不是 pass）—— 未覆盖，且这正是 open issue #5653「今天能算不能结」的实得形态。",
+      "evidence": [],
+      "at": "2026-10-03 13:49:11 +08"
+    },
+    {
+      "id": "A2",
+      "name": "发放留痕（发放额 ≤ 结算额 / 重复发放被拒 / 发放台账可查）",
+      "status": "skip",
+      "detail": "面不存在 ⇒ 断言不可达。实测候选面全 404：GET /api/admin/finance/payouts=404; POST /api/admin/finance/payouts=404; GET /api/admin/production/payouts=404; GET /api/admin/finance/wage-payouts=404; GET /api/admin/finance/disbursements=404。发放金额与结算金额的「≤」关系、重复发放拒绝、发放台账 —— 三者**一条都没有可执行面**。",
+      "evidence": [],
+      "at": "2026-10-03 13:49:11 +08"
+    },
+    {
+      "id": "A3",
+      "name": "导出（行/列/金额与读面逐字一致；空结果不输出畸形文件）",
+      "status": "skip",
+      "detail": "导出面不存在 ⇒ 无文件可校验。实测候选面全 404：GET /api/admin/finance/export=404; GET /api/admin/finance/transactions/export=404; GET /api/admin/production/piecework/export=404; GET /api/admin/production/export=404; GET /api/admin/finance/reconciliation/export=404; GET /api/admin/export/finance=404; GET /api/admin/production/piecework/summary/export=404。「空结果不输出畸形文件」这条**因此连红证都造不出来**（没有可注入的对象）。",
+      "evidence": [],
+      "at": "2026-10-03 13:49:11 +08"
+    },
+    {
+      "id": "A4",
+      "name": "结构性归因（结算/发放/导出在仓内的存在性）",
+      "status": "skip",
+      "detail": "证据见 REPORT.md §5：FinanceController 仅 4 个端点（summary/transactions GET+POST/reconciliation）；全 admin-api `src/main` 内 `结算|发放|settle|payout|disburse` 命中仅 2 处，且皆为**注释/文档**（AuthService.java:1358 权限码注释、ProductionService.java:1566 系数 doc），无任何端点、实体、表。",
+      "evidence": [],
+      "at": "2026-10-03 13:49:11 +08"
+    },
+    {
+      "id": "B1",
+      "name": "首次入库（无库存）⇒ 移动加权平均 = 行进价",
+      "status": "pass",
+      "detail": "期望 stock=60.5, avg_cost=12.5 == 实测 stock=60.5, avg_cost=12.5",
+      "evidence": [
+        "期望来源: 独立 SQL: (case when 0 <= 0 or null is null then 12.5::numeric\n            else round((null::numeric * 0::numeric + 12.5::numeric * 60.5::numeric)\n                       / (0::numeric + 60.5::numeric), 4) end)（口径抄自 InboundOrderService.movingAverage doc：before_qty=0 ⇒ after=unit_cost）",
+        "PATCH /api/admin/inbound-orders/c3inbAmurz23h2 {action:post} → HTTP 200",
+        "入库前: stock=0 avg=null"
+      ],
+      "at": "2026-10-03 13:49:12 +08"
+    },
+    {
+      "id": "B2",
+      "name": "二次入库 ⇒ 移动加权平均 = SQL 独立重算（HALF_UP 4 位）",
+      "status": "pass",
+      "detail": "期望 stock=100.0, avg_cost=11.6113 == 实测 stock=100, avg_cost=11.6113",
+      "evidence": [
+        "期望来源: 独立 SQL: (case when 60.5 <= 0 or 12.5 is null then 10.25::numeric\n            else round((12.5::numeric * 60.5::numeric + 10.25::numeric * 39.5::numeric)\n                       / (60.5::numeric + 39.5::numeric), 4) end) —— 完全不用接口读数",
+        "PATCH → HTTP 200",
+        "期望中间值 = (60.5*12.5 + 39.5*10.25)/100 = 11.61125"
+      ],
+      "at": "2026-10-03 13:49:13 +08"
+    },
+    {
+      "id": "B3",
+      "name": "未记单价的入库 ⇒ 只加数量、均价保持原值（不抹掉也不凭空造）",
+      "status": "pass",
+      "detail": "期望 stock=110.0, avg_cost=11.6113（不变） == 实测 stock=110, avg_cost=11.6113",
+      "evidence": [
+        "期望来源: 口径：movingAverage(uc==null) ⇒ 返回 beforeAvg（doc 明写「未记单价的入库不得把已有均价抹掉，也不得凭空造一个」）。期望均价 = 上一步实测的 B2 值。",
+        "PATCH → HTTP 200"
+      ],
+      "at": "2026-10-03 13:49:14 +08"
+    },
+    {
+      "id": "B4",
+      "name": "库存台账条数 = 变动次数（3 次入库 ⇒ 恰 3 条，不多不少；无 delta=0 噪声行）",
+      "status": "pass",
+      "detail": "期望 3 == 实测 3",
+      "evidence": [
+        "期望来源: 前后计数差（本包独立算）：ledgerCount(后)=3 − ledgerCount(前)=0。变动次数由本包执行的 3 次过账决定，不由接口决定。",
+        "台账行: [{\"id\":521,\"delta\":60.5,\"before_qty\":0,\"after_qty\":60.5,\"avg_cost_before\":null,\"avg_cost_after\":12.5,\"unit_cost\":12.5,\"cost_amount\":756.25,\"note\":\"入库单过账（缸号 c3DYE）\"},{\"id\":522,\"delta\":39.5,\"before_qty\":60.5,\"after_qty\":100,\"avg_cost_before\":12.5,\"avg_cost_after\":11.6113,\"unit_cost\":10.25,\"cost_amount\":404.875,\"note\":\"入库单过账（缸号 c3DYE2）\"},{\"id\":523,\"delta\":10,\"before_qty\":100,\"after_qty\":110,\"avg_cost_before\":11.6113,\"avg_cost_after\":11.6113,\"unit_cost\":null,\"cost_amount\":null,\"note\":\"入库单过账（缸号 c3DYE3）\"}]"
+      ],
+      "at": "2026-10-03 13:49:14 +08"
+    },
+    {
+      "id": "B5",
+      "name": "台账链条首尾相接：after_qty[i] == before_qty[i+1] 且 delta == after − before",
+      "status": "pass",
+      "detail": "期望 全部相接且 delta 自洽 == 实测 相接且自洽",
+      "evidence": [
+        "期望来源: 独立不变式：台账是追加写的因果链 —— 相邻行必须首尾相接，且每行 delta 必须等于 after−before。不看接口。",
+        "链条: [{\"id\":521,\"before_qty\":0,\"after_qty\":60.5,\"delta\":60.5},{\"id\":522,\"before_qty\":60.5,\"after_qty\":100,\"delta\":39.5},{\"id\":523,\"before_qty\":100,\"after_qty\":110,\"delta\":10}]"
+      ],
+      "at": "2026-10-03 13:49:14 +08"
+    },
+    {
+      "id": "B6a",
+      "name": "人工调账（调减 110→95）后移动加权均价**不变**（标准语义）",
+      "status": "pass",
+      "detail": "期望 avg_cost=11.6113（不变） == 实测 avg_cost=11.6113, stock=95",
+      "evidence": [
+        "期望来源: 口径（StockLedgerService.recordChangesAgainstSnapshot 注释）：回补/扣减都不改移动加权均价 ⇒ unitCost = 变更时均价、before == after。期望 = 调账前实测均价。",
+        "PATCH /api/admin/agent/products/c3prodmurz23h2000000000000/stock {adjustment:-15,reason:'线③验收探针调账'} → HTTP 200"
+      ],
+      "at": "2026-10-03 13:49:15 +08"
+    },
+    {
+      "id": "B6b",
+      "name": "调账台账条数 = 1 次变动 ⇒ 恰 1 条（且 delta = −15.0）",
+      "status": "pass",
+      "detail": "期望 1 条, delta=-15.0 == 实测 1 条",
+      "evidence": [
+        "期望来源: 前后计数差 4−3；变动次数 = 1（本包主动调账一次）。",
+        "台账末行: [{\"delta\":-15,\"before_qty\":110,\"after_qty\":95,\"reason\":\"manual\",\"avg_cost_before\":null,\"avg_cost_after\":null}]"
+      ],
+      "at": "2026-10-03 13:49:15 +08"
+    },
+    {
+      "id": "B7a",
+      "name": "盘点后批次余量 = 实盘值（读面 = DB 一致）",
+      "status": "pass",
+      "detail": "期望 batch[0] remaining=55.0（实盘） == 实测 [{\"batch_no\":\"PC-20261003-0007\",\"quantity\":60.5},{\"batch_no\":\"PC-20261003-0008\",\"quantity\":39.5},{\"batch_no\":\"PC-20261003-0009\",\"quantity\":10}]",
+      "evidence": [
+        "期望来源: 盘点实盘值由本包指定（55.0 / 30.0）；此处登记批次表读数，具体比对见 B7b（批次余量是对账读面）。",
+        "回执: {\"runId\":\"c3stmurz23h2\",\"productId\":\"c3prodmurz23h2000000000000\",\"changedCount\":3,\"unchangedCount\":0,\"replayedCount\":0,\"totalDelta\":5,\"lines\":[{\"batchId\":20,\"batchNo\":\"PC-20261003-0007\",\"skuId\":39,\"skuCode\":\"c3skumurz23h2\",\"beforeMeters\":60.5,\"actualMeters\":55,\"delta\":-5.5,\"afterMeters\":55,\"status\":\"applied\"},{\"batchId\":21,\"batchNo\":\"PC-20261003-0008\",\"skuId\":39,\"skuCode\":\"c3skumurz23h2\",\"beforeMe"
+      ],
+      "at": "2026-10-03 13:49:16 +08"
+    },
+    {
+      "id": "B7b",
+      "name": "盘点台账条数 = 实际变化的批次数（不多不少）",
+      "status": "pass",
+      "detail": "期望 台账增量 == 实际变化批次数 == 实测 台账增量=3, 批次分录增量=3",
+      "evidence": [
+        "期望来源: 不变式：每一次 SKU 库存变动恰对应一条台账行、一条批次分录（同一事务）。两增量必须相等 —— 不等即「台账条数 ≠ 变动次数」。",
+        "盘点回执 status: [{\"batchId\":20,\"batchNo\":\"PC-20261003-0007\",\"skuId\":39,\"skuCode\":\"c3skumurz23h2\",\"beforeMeters\":60.5,\"actualMeters\":55,\"delta\":-5.5,\"afterMeters\":55,\"status\":\"applied\"},{\"batchId\":21,\"batchNo\":\"PC-20261003-0008\",\"skuId\":39,\"skuCode\":\"c3skumurz23h2\",\"beforeMeters\":39.5,\"actualMeters\":30,\"delta\":-9.5,\"afterMeters\":30,\"status\":\"applied\"},{\"batchId\":22,\"batchNo\":\"PC-20261003-0009\",\"skuId\":39,\"skuCode\""
+      ],
+      "at": "2026-10-03 13:49:16 +08"
+    },
+    {
+      "id": "B7c",
+      "name": "盘点**不**改移动加权均价（均价语义与盘点解耦）",
+      "status": "pass",
+      "detail": "期望 avg_cost=11.6113（不变） == 实测 avg_cost=11.6113",
+      "evidence": [
+        "期望来源: 口径：盘点是对数量的事实修正，不引入新的采购价格 ⇒ 移动加权均价不得变。期望 = 盘点前实测均价。"
+      ],
+      "at": "2026-10-03 13:49:16 +08"
+    },
+    {
+      "id": "B8",
+      "name": "批次余量读面 = DB 独立重算（inboundMeters − Σconsumed）",
+      "status": "pass",
+      "detail": "期望 3 个批次全部一致 == 实测 全部一致",
+      "evidence": [
+        "期望来源: 独立算式（口径=remaining() 的 rest = inbound + used）：batch.quantity + Σ(delta)（**有符号**）。DB 读数=[{\"batch_id\":\"20\",\"batch_no\":\"PC-20261003-0007\",\"quantity\":60.5,\"delta_sum\":-5.5,\"expect_remaining\":55},{\"batch_id\":\"21\",\"batch_no\":\"PC-20261003-0008\",\"quantity\":39.5,\"delta_sum\":-9.5,\"expect_remaining\":30},{\"batch_id\":\"22\",\"batch_no\":\"PC-20261003-0009\",\"quantity\":10,\"delta_sum\":20,\"expect_remaining\":30}]；接口读数=[{\"batchId\":20,\"batchNo\":\"PC-20261003-0007\",\"productId\":\"c3prodmurz23h2000000000000\",\"skuId\":39,\"skuCode\":\"c3skumurz23h2\",\"inboundNo\":\"c3RKAmurz23h2\",\"dyeLot\":\"c3DYE\",\"receivedDate\":\"2026-10-03\",\"unitCost\":12.5,\"inboundMeters\":60.5,\"consumedMeters\":5.5,\"remainingMeters\":55},{\"batchId\":21,\"batchNo\":\"PC-20261003-0008\",\"productId\":\"c3prodmurz23h2000000000000\",\"skuId\":39,\"skuCode\":\"c3skumurz23h2\",\"inboundNo\":\"c3RKBmurz23h2\",\"dyeLot\":\"c3DYE2\",\"receivedDate\":\"2026-10-03\",\"unitCost\":10.25,\"inboundMeters\":39.5,\"consumedMeters\":9.5,\"remainingMeters\":30},{\"batchId\":22,\"batchNo\":\"PC-20261003-0009\",\"productId\":\"c3prodmurz23h2000000000000\",\"skuId\":39,\"skuCode\":\"c3skumurz23h2\",\"inboundNo\":\"c3RKCmurz23h2\",\"dyeLot\":\"c3DYE3\",\"receivedDate\":\"2026-10-03\",\"inboundMeters\":10,\"consumedMeters\":-20,\"remainingMeters\":30}]。",
+        "不一致: []"
+      ],
+      "at": "2026-10-03 13:49:16 +08"
+    },
+    {
+      "id": "B9",
+      "name": "残料（remnant）读面 total = DB 行数（只读面一致性）",
+      "status": "pass",
+      "detail": "期望 0 == 实测 0",
+      "evidence": [
+        "期望来源: 独立 SQL: select count(*) from fabric_remnants where tenant_id=20 and deleted=0 ⇒ 0。",
+        "DB: {\"n\":0,\"area\":0}",
+        "summary: {\"availableCount\":0,\"usedCount\":0,\"scrappedCount\":0,\"customerTakenCount\":0,\"availableMeters\":0,\"recoveredMetersTotal\":0,\"scrappedMetersTotal\":0,\"recoveredAmountTotal\":0,\"issuedCostTotal\":416.125,\"recoveryRate\":0}"
+      ],
+      "at": "2026-10-03 13:49:17 +08"
+    },
+    {
+      "id": "B9b",
+      "name": "残料写面（recover/scrap）路径断言",
+      "status": "skip",
+      "detail": "本租户 fabric_remnants 现存 0 行 ⇒ **无残料可回收/报废**，写面端点（POST /{id}/recover、/{id}/scrap）的可达性与语义**未覆盖**（造残料需驱动加工单产生余料，超本包体量）。如实登记为未覆盖。",
+      "evidence": [],
+      "at": "2026-10-03 13:49:17 +08"
+    },
+    {
+      "id": "B10",
+      "name": "saving-board 批次数 = DB 批次数（cohorts 合计）",
+      "status": "pass",
+      "detail": "期望 5 == 实测 5",
+      "evidence": [
+        "期望来源: 独立 SQL: select count(distinct id) from stock_batches where tenant_id=20 and deleted=0 ⇒ 5。（本包探针批次亦计入两侧 ⇒ 判据与探针无关，是纯一致性核对。）",
+        "接口 cohorts: [{\"cohort\":\"purchase\",\"batchCount\":5},{\"cohort\":\"opening\",\"batchCount\":0},{\"cohort\":\"unknown\",\"batchCount\":0}]",
+        "timezone 声明=Asia/Shanghai"
+      ],
+      "at": "2026-10-03 13:49:17 +08"
+    },
+    {
+      "id": "B11",
+      "name": "POST /api/admin/batch-stock 语义核实（是否幂等 / 是否产生台账）",
+      "status": "pass",
+      "detail": "期望 该路径在 StockBatchController 无方法映射 ⇒ 不得接受写入 == 实测 HTTP 404 \"NOT_FOUND\"",
+      "evidence": [
+        "期望来源: 结构性期望：StockBatchController（@RequestMapping(\"/api/admin/batch-stock\")）的**唯一** POST 是 /stocktake（源码逐行核过）。根路径无映射 ⇒ 404 是正确行为（不是缺陷）。",
+        "源码坐标: backend/admin-api/src/main/java/com/migao/admin/controller/StockBatchController.java:47(@RequestMapping) + 唯一 @PostMapping(\"/stocktake\")",
+        "实得: {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"请求的资源不存在: /api/admin/batch-stock\"},\"requestId\":\"req_aa99076a6ea34e26\",\"timestamp\":1791006557}"
+      ],
+      "at": "2026-10-03 13:49:17 +08"
+    },
+    {
+      "id": "C1-A",
+      "name": "跨月/跨年归属：occurred_at=2026-09-30 23:59:59+08（跨月边界·9月最后1秒）落在 2026-09-30",
+      "status": "pass",
+      "detail": "期望 GET startDate=endDate=2026-09-30 应包含 c3refmurz286nA == 实测 HTTP 200，包含=true（该日共 3 行 / total=3）",
+      "evidence": [
+        "期望来源: 期望由本包按 **+08 墙钟日历**直接给出：occurred_at 字面量 '2026-09-30 23:59:59+08' 的日期部分即 2026-09-30（显式 +08 偏移，无歧义）。不使用接口任何读数作期望。",
+        "注入行: order_no=c3refmurz286nA, occurred_at='2026-09-30 23:59:59+08'",
+        "实测接口: /api/admin/finance/transactions?startDate=2026-09-30&endDate=2026-09-30"
+      ],
+      "at": "2026-10-03 13:49:18 +08"
+    },
+    {
+      "id": "C1-B",
+      "name": "跨月/跨年归属：occurred_at=2026-10-01 00:00:00+08（跨月边界·10月第1秒）落在 2026-10-01",
+      "status": "fail",
+      "detail": "期望 GET startDate=endDate=2026-10-01 应包含 c3refmurz286nB ≠ 实测 HTTP 200，包含=false（该日共 0 行 / total=0）",
+      "evidence": [
+        "期望来源: 期望由本包按 **+08 墙钟日历**直接给出：occurred_at 字面量 '2026-10-01 00:00:00+08' 的日期部分即 2026-10-01（显式 +08 偏移，无歧义）。不使用接口任何读数作期望。",
+        "注入行: order_no=c3refmurz286nB, occurred_at='2026-10-01 00:00:00+08'",
+        "实测接口: /api/admin/finance/transactions?startDate=2026-10-01&endDate=2026-10-01"
+      ],
+      "at": "2026-10-03 13:49:18 +08"
+    },
+    {
+      "id": "C1-C",
+      "name": "跨月/跨年归属：occurred_at=2026-10-01 02:00:00+08（**判别探针**·+08属10-01 / UTC属09-30）落在 2026-10-01",
+      "status": "fail",
+      "detail": "期望 GET startDate=endDate=2026-10-01 应包含 c3refmurz286nC ≠ 实测 HTTP 200，包含=false（该日共 0 行 / total=0）",
+      "evidence": [
+        "期望来源: 期望由本包按 **+08 墙钟日历**直接给出：occurred_at 字面量 '2026-10-01 02:00:00+08' 的日期部分即 2026-10-01（显式 +08 偏移，无歧义）。不使用接口任何读数作期望。",
+        "注入行: order_no=c3refmurz286nC, occurred_at='2026-10-01 02:00:00+08'",
+        "实测接口: /api/admin/finance/transactions?startDate=2026-10-01&endDate=2026-10-01"
+      ],
+      "at": "2026-10-03 13:49:18 +08"
+    },
+    {
+      "id": "C1-D",
+      "name": "跨月/跨年归属：occurred_at=2025-12-31 23:59:00+08（跨年边界·12月最后一分钟）落在 2025-12-31",
+      "status": "pass",
+      "detail": "期望 GET startDate=endDate=2025-12-31 应包含 c3refmurz286nD == 实测 HTTP 200，包含=true（该日共 2 行 / total=2）",
+      "evidence": [
+        "期望来源: 期望由本包按 **+08 墙钟日历**直接给出：occurred_at 字面量 '2025-12-31 23:59:00+08' 的日期部分即 2025-12-31（显式 +08 偏移，无歧义）。不使用接口任何读数作期望。",
+        "注入行: order_no=c3refmurz286nD, occurred_at='2025-12-31 23:59:00+08'",
+        "实测接口: /api/admin/finance/transactions?startDate=2025-12-31&endDate=2025-12-31"
+      ],
+      "at": "2026-10-03 13:49:18 +08"
+    },
+    {
+      "id": "C1-E",
+      "name": "跨月/跨年归属：occurred_at=2026-01-01 00:01:00+08（跨年边界·1月第一分钟）落在 2026-01-01",
+      "status": "fail",
+      "detail": "期望 GET startDate=endDate=2026-01-01 应包含 c3refmurz286nE ≠ 实测 HTTP 200，包含=false（该日共 0 行 / total=0）",
+      "evidence": [
+        "期望来源: 期望由本包按 **+08 墙钟日历**直接给出：occurred_at 字面量 '2026-01-01 00:01:00+08' 的日期部分即 2026-01-01（显式 +08 偏移，无歧义）。不使用接口任何读数作期望。",
+        "注入行: order_no=c3refmurz286nE, occurred_at='2026-01-01 00:01:00+08'",
+        "实测接口: /api/admin/finance/transactions?startDate=2026-01-01&endDate=2026-01-01"
+      ],
+      "at": "2026-10-03 13:49:18 +08"
+    },
+    {
+      "id": "C2-2025-12",
+      "name": "月度窗口（+08）：2025-12 的探针应被 summary 窗口覆盖（独立 SQL 计 1 笔 / 1.01）",
+      "status": "pass",
+      "detail": "期望 窗口 startDate=2025-12-01&endDate=2025-12-31 的 incomeCount ≥ 1（且该月探针金额可被独立重算） == 实测 HTTP 200 incomeCount=2；无窗口 incomeCount=380；独立 SQL: 1 笔 1.01",
+      "evidence": [
+        "期望来源: 独立 SQL（+08）: select count(*) from finance_transactions where transaction_no like 'c3ref%' and to_char(occurred_at at time zone 'Asia/Shanghai','YYYY-MM')='2025-12' ⇒ 1 笔。窗口若能覆盖 +08 日历月，则 incomeCount 至少含这 1 笔。",
+        "该月窗口探针数(独立)=1，本月窗口读数=2，无窗口读数=380",
+        "非本月探针数=4（若被错误纳入本窗口，会体现在 C1 的逐笔判据里）"
+      ],
+      "at": "2026-10-03 13:49:19 +08"
+    },
+    {
+      "id": "C2-2026-01",
+      "name": "月度窗口（+08）：2026-01 的探针应被 summary 窗口覆盖（独立 SQL 计 1 笔 / 1.01）",
+      "status": "fail",
+      "detail": "期望 窗口 startDate=2026-01-01&endDate=2026-01-31 的 incomeCount ≥ 1（且该月探针金额可被独立重算） ≠ 实测 HTTP 200 incomeCount=0；无窗口 incomeCount=380；独立 SQL: 1 笔 1.01",
+      "evidence": [
+        "期望来源: 独立 SQL（+08）: select count(*) from finance_transactions where transaction_no like 'c3ref%' and to_char(occurred_at at time zone 'Asia/Shanghai','YYYY-MM')='2026-01' ⇒ 1 笔。窗口若能覆盖 +08 日历月，则 incomeCount 至少含这 1 笔。",
+        "该月窗口探针数(独立)=1，本月窗口读数=0，无窗口读数=380",
+        "非本月探针数=4（若被错误纳入本窗口，会体现在 C1 的逐笔判据里）"
+      ],
+      "at": "2026-10-03 13:49:19 +08"
+    },
+    {
+      "id": "C2-2026-09",
+      "name": "月度窗口（+08）：2026-09 的探针应被 summary 窗口覆盖（独立 SQL 计 1 笔 / 1.01）",
+      "status": "pass",
+      "detail": "期望 窗口 startDate=2026-09-01&endDate=2026-09-30 的 incomeCount ≥ 1（且该月探针金额可被独立重算） == 实测 HTTP 200 incomeCount=5；无窗口 incomeCount=380；独立 SQL: 1 笔 1.01",
+      "evidence": [
+        "期望来源: 独立 SQL（+08）: select count(*) from finance_transactions where transaction_no like 'c3ref%' and to_char(occurred_at at time zone 'Asia/Shanghai','YYYY-MM')='2026-09' ⇒ 1 笔。窗口若能覆盖 +08 日历月，则 incomeCount 至少含这 1 笔。",
+        "该月窗口探针数(独立)=1，本月窗口读数=5，无窗口读数=380",
+        "非本月探针数=4（若被错误纳入本窗口，会体现在 C1 的逐笔判据里）"
+      ],
+      "at": "2026-10-03 13:49:19 +08"
+    },
+    {
+      "id": "C2-2026-10",
+      "name": "月度窗口（+08）：2026-10 的探针应被 summary 窗口覆盖（独立 SQL 计 2 笔 / 2.02）",
+      "status": "pass",
+      "detail": "期望 窗口 startDate=2026-10-01&endDate=2026-10-31 的 incomeCount ≥ 2（且该月探针金额可被独立重算） == 实测 HTTP 200 incomeCount=373；无窗口 incomeCount=380；独立 SQL: 2 笔 2.02",
+      "evidence": [
+        "期望来源: 独立 SQL（+08）: select count(*) from finance_transactions where transaction_no like 'c3ref%' and to_char(occurred_at at time zone 'Asia/Shanghai','YYYY-MM')='2026-10' ⇒ 2 笔。窗口若能覆盖 +08 日历月，则 incomeCount 至少含这 2 笔。",
+        "该月窗口探针数(独立)=2，本月窗口读数=373，无窗口读数=380",
+        "非本月探针数=3（若被错误纳入本窗口，会体现在 C1 的逐笔判据里）"
+      ],
+      "at": "2026-10-03 13:49:20 +08"
+    },
+    {
+      "id": "C3",
+      "name": "反假绿控制：5 条时间探针确实落库且可被 SQL 读回",
+      "status": "pass",
+      "detail": "期望 5 == 实测 5",
+      "evidence": [
+        "期望来源: 探针构造清单写死 5 条（跨月 3 + 跨年 2），由独立 SQL 读回计数。夹具不存在则 C1 的\"未命中\"无判别力。",
+        "读回: [{\"order_no\":\"c3refmurz286nA\",\"occurred_at\":\"2026-09-30T23:59:59+08:00\"},{\"order_no\":\"c3refmurz286nB\",\"occurred_at\":\"2026-10-01T00:00:00+08:00\"},{\"order_no\":\"c3refmurz286nC\",\"occurred_at\":\"2026-10-01T02:00:00+08:00\"},{\"order_no\":\"c3refmurz286nD\",\"occurred_at\":\"2025-12-31T23:59:00+08:00\"},{\"order_no\":\"c3refmurz286nE\",\"occurred_at\":\"2026-01-01T00:01:00+08:00\"}]"
+      ],
+      "at": "2026-10-03 13:49:20 +08"
+    },
+    {
+      "id": "C7-A",
+      "name": "窗口唯一性：c3refmurz286nA（occurred_at=2026-09-30 23:59:59+08）恰落在 [2026-09-30] 一个日窗口",
+      "status": "pass",
+      "detail": "期望 [2026-09-30] == 实测 [\"2026-09-30\"]",
+      "evidence": [
+        "期望来源: 独立期望：+08 墙钟日历日就是『唯一应有的窗口』（区间扫描 −2..+2 天，逐窗调用同一读面）。**不是**真值主张（不断言\"缺陷存在\"）：修好后此条自然转绿。",
+        "扫描窗口(±2天): [\"2026-09-30\"]",
+        "occurred_at 字面量=2026-09-30 23:59:59+08"
+      ],
+      "at": "2026-10-03 13:49:20 +08"
+    },
+    {
+      "id": "C7-C",
+      "name": "窗口唯一性：c3refmurz286nC（occurred_at=2026-10-01 02:00:00+08）恰落在 [2026-10-01] 一个日窗口",
+      "status": "fail",
+      "detail": "期望 [2026-10-01] ≠ 实测 [\"2026-09-30\"]",
+      "evidence": [
+        "期望来源: 独立期望：+08 墙钟日历日就是『唯一应有的窗口』（区间扫描 −2..+2 天，逐窗调用同一读面）。**不是**真值主张（不断言\"缺陷存在\"）：修好后此条自然转绿。",
+        "扫描窗口(±2天): [\"2026-09-30\"]",
+        "occurred_at 字面量=2026-10-01 02:00:00+08"
+      ],
+      "at": "2026-10-03 13:49:21 +08"
+    },
+    {
+      "id": "C7-E",
+      "name": "窗口唯一性：c3refmurz286nE（occurred_at=2026-01-01 00:01:00+08）恰落在 [2026-01-01] 一个日窗口",
+      "status": "fail",
+      "detail": "期望 [2026-01-01] ≠ 实测 [\"2025-12-31\"]",
+      "evidence": [
+        "期望来源: 独立期望：+08 墙钟日历日就是『唯一应有的窗口』（区间扫描 −2..+2 天，逐窗调用同一读面）。**不是**真值主张（不断言\"缺陷存在\"）：修好后此条自然转绿。",
+        "扫描窗口(±2天): [\"2025-12-31\"]",
+        "occurred_at 字面量=2026-01-01 00:01:00+08"
+      ],
+      "at": "2026-10-03 13:49:21 +08"
+    },
+    {
+      "id": "C4",
+      "name": "红证（必红控制项）：把**当前为绿**的 A 探针挪出所属日窗口 ⇒ 同一判据当场红",
+      "status": "pass",
+      "detail": "前置绿(2026-09-30 命中=true) → 注入后红(命中=false) ⇒ 判据**会红**，C1/C7 非空断言得证",
+      "evidence": [
+        "注入: occurred_at '2026-09-30 23:59:59+08' → '2026-10-05 12:00:00+08'",
+        "内容指纹（sha256，禁用 mtime/size）: 5ebcfe6e0282c5a7ca161141ef92270da6b5a9b6714fb802c8574fe96cd58bf6 → c0815a28789d3d9c734cb48c18298f3609f0a0bf79af565b20eb4f4c81de94b5（变=true）",
+        "同一判据复跑: 注入前 hit=true / 注入后 hit=false（期望 true → false）"
+      ],
+      "at": "2026-10-03 13:49:21 +08"
+    },
+    {
+      "id": "C5",
+      "name": "红证还原：逐字段还原后指纹回到注入前，且同一判据回绿",
+      "status": "pass",
+      "detail": "期望 sha256 == 5ebcfe6e0282c5a7ca161141ef92270da6b5a9b6714fb802c8574fe96cd58bf6 且 2026-09-30 窗口重新命中 == 实测 sha256=5ebcfe6e0282c5a7ca161141ef92270da6b5a9b6714fb802c8574fe96cd58bf6（相等=true），2026-09-30 命中=true",
+      "evidence": [
+        "期望来源: 还原正确性 = 内容指纹逐字节相等（sha256，非 mtime/size）+ 同一判据复跑回绿。",
+        "还原后行: {\"id\":\"c3tbmurz286na\",\"tenant_id\":20,\"transaction_no\":\"c3refmurz286nA\",\"order_id\":null,\"order_no\":\"c3refmurz286nA\",\"type\":\"income\",\"amount\":1.01,\"payment_method\":\"other\",\"status\":\"success\",\"operator\":\"线③验收探针\",\"occurred_at\":\"2026-09-30T23:59:59+08:00\",\"remark\":\"线③验收时间口径探针 跨月边界·9月最后1秒\",\"created_at\":\"2026-10-03T13:49:17.771572+08:00\",\"updated_at\":\"2026-10-03T13:49:17.771572+08:00\",\"deleted\":0}"
+      ],
+      "at": "2026-10-03 13:49:22 +08"
+    },
+    {
+      "id": "C8a",
+      "name": "边界夹逼·下界：北京 2026-10-01 08:00:00（= 2026-10-01T00:00:00Z）落在 10-01 窗口",
+      "status": "pass",
+      "detail": "期望 包含（两种口径在此点一致 ⇒ 正对照） == 实测 包含=true",
+      "evidence": [
+        "期望来源: 该时刻 = UTC 窗口的**含入下界**，也 ≥ +08 日界 ⇒ UTC 与 +08 两种口径都应收录。作为**正对照**证明过滤链路本身在工作（不是\"窗口不生效\"）。",
+        "occurred_at=2026-10-01 08:00:00+08",
+        "UTC 值=2026-10-01T00:00:00Z"
+      ],
+      "at": "2026-10-03 13:49:22 +08"
+    },
+    {
+      "id": "C8b",
+      "name": "🔴 边界夹逼·错位：北京 2026-10-01 07:59:59（= 2026-09-30T23:59:59Z）**应**落在 10-01 窗口",
+      "status": "fail",
+      "detail": "期望 包含（+08 口径） ≠ 实测 包含=false",
+      "evidence": [
+        "期望来源: 口径 = 产品意图 +08（依据见上「口径声明」：BusinessClock 是仓内声明的业务时间单点，Dashboard 亦用它）。北京 10-01 07:59:59 在 +08 日历上**明确属于 10-01** ⇒ 必须命中。UTC 口径下它是 09-30T23:59:59Z，落进 09-30 的 UTC 窗口 ⇒ 即**整体后移 8 小时**。",
+        "occurred_at=2026-10-01 07:59:59+08 = 2026-09-30T23:59:59Z",
+        "这是本族**决定性红证**：同一条判据在 +08 口径下必绿、在 UTC 口径下必红 ⇒ 判据有判别力"
+      ],
+      "at": "2026-10-03 13:49:22 +08"
+    },
+    {
+      "id": "C8c",
+      "name": "🔴 错位归属：北京 10-01 的流水**不得**落进 09-30 窗口",
+      "status": "fail",
+      "detail": "期望 不包含（+08 口径） ≠ 实测 09-30 窗口包含=true",
+      "evidence": [
+        "期望来源: 同一笔（北京 10-01 07:59:59）在 +08 口径下属 10-01 ⇒ 出现在 09-30 窗口即**归错月份**（跨月时是真实的账期错报）。",
+        "09-30 窗口读数 hit=true",
+        "对应 UTC 值 2026-09-30T23:59:59Z 恰在 09-30 的 UTC 窗口内"
+      ],
+      "at": "2026-10-03 13:49:22 +08"
+    },
+    {
+      "id": "C9",
+      "name": "🔴 跨端点口径不自洽：同一笔「北京今日凌晨」订单，Dashboard 按 +08 收录 / 订单列表按 UTC 排除",
+      "status": "fail",
+      "detail": "期望 两端口径一致（列表也应收录该单） ≠ 实测 Dashboard order-trend[2026-10-03] orders=351；列表 startDate=endDate=2026-10-03 total=9 收录探针=false",
+      "evidence": [
+        "期望来源: 口径声明同上（+08）。**不需要外部裁定**：DashboardController.getOrderTrend 用 businessClock.startOfDay(today-6)（+08），而 OrderController.getOrders 的 startDate/endDate 走 OrderService 的 `T00:00:00Z`（UTC）——**同一仓内两个端点对同一时刻给出不同日期归属** ⇒ 至少一侧必错，且 BusinessClock 是仓内声明的单点 ⇒ 判 UTC 侧为缺陷。",
+        "探针 created_at=2026-10-03 02:00:00+08（北京 2026-10-03 凌晨 02:00）",
+        "Dashboard order-trend 该日: {\"date\":\"2026-10-03\",\"orders\":351,\"amount\":24656}",
+        "订单列表 startDate=endDate=2026-10-03: HTTP 200, total=9, 收录=false",
+        "源码坐标: OrderService.java:208-211 (T00:00:00Z / T23:59:59Z 字面量) vs DashboardController.java:190-193 businessClock.startOfDay"
+      ],
+      "at": "2026-10-03 13:49:22 +08"
+    },
+    {
+      "id": "C6",
+      "name": "#6185 物流缓存（缓存键/档位/失败不缓存）",
+      "status": "skip",
+      "detail": "前置：:8080 构建点 = main-live @ 7e9f66ce5，**不含 #6185**（实证：该构建里 `grep -rl \"logisticsCache|物流缓存\" src/main/java` 无命中；见 REPORT.md §1 的 git show 级证据）⇒ 按任务书「若 :8080 构建点不含它 ⇒ 只做当前行为登记，不判缺陷」处理：本条**不作 pass/fail**，当前行为登记 = 无缓存层可观察（未做 Redis 读/写断言，因对象不在运行构建内）。",
+      "evidence": [],
+      "at": "2026-10-03 13:49:23 +08"
+    },
+    {
+      "id": "Z1",
+      "name": "零残留：本包探针全部自清（逐表计数=0）",
+      "status": "pass",
+      "detail": "{\"products\":0,\"skus\":0,\"inbound\":0,\"inbound_items\":0,\"batches\":0,\"consumptions\":0,\"ledger\":0,\"txns\":0,\"orders\":0}",
+      "evidence": [
+        "逐表计数见 out/residue.json"
+      ],
+      "at": "2026-10-03 13:49:24 +08"
+    },
+    {
+      "id": "Z2",
+      "name": "存量真实数据零改动（**本包写过的表**：既有非探针行逐字段 sha256 前后相等）",
+      "status": "pass",
+      "detail": "9 张写过的表：既有行**零字段变化、零消失**（另见 Z4 的并发新增登记）",
+      "evidence": [
+        "逐表指纹: {\"products\":\"b5af3840a6c2==b5af3840a6c2\",\"product_skus\":\"505f8451e4f8==505f8451e4f8\",\"inbound_orders\":\"cac4e74a2ac4==cac4e74a2ac4\",\"inbound_order_items\":\"5a9475953df2==5a9475953df2\",\"stock_batches\":\"051d92759624==051d92759624\",\"stock_ledger_entries\":\"2d0111a7b078==2d0111a7b078\",\"stock_batch_consumptions\":\"2b495d6bd91b==2b495d6bd91b\",\"finance_transactions\":\"d027aaec2ee0==d027aaec2ee0\",\"orders\":\"dfb848bf655f==dfb848bf655f\"}",
+        "既有行变化数=0"
+      ],
+      "at": "2026-10-03 13:49:26 +08"
+    },
+    {
+      "id": "Z4",
+      "name": "并发写入登记（非本包新增行）",
+      "status": "skip",
+      "detail": "本次窗口内未观测到其它包的并发新增",
+      "evidence": [],
+      "at": "2026-10-03 13:49:26 +08"
+    },
+    {
+      "id": "B0",
+      "name": "构建点自证：测量期间构建点/进程未变（协议红线）",
+      "status": "pass",
+      "detail": "全程 7e9f66ce5（pid 60585，进程启动 六 10月/ 3 13:44:16 2026）；窗口 2026-10-03 13:49:06 +08 → 2026-10-03 13:49:27 +08",
+      "evidence": [
+        "worktree=/Users/guangzhen.zk/migao-wt/main-live",
+        "subject=fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)",
+        "jvmTz=user.timezone=Asia/Shanghai"
+      ],
+      "at": "2026-10-03 13:49:27 +08"
+    }
+  ]
+}

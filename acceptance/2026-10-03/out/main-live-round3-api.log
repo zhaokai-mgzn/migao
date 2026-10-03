@@ -1,0 +1,173 @@
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::               (v3.5.16)
+
+2026-10-03 16:15:52.874 [main] INFO  com.migao.admin.AdminApiApplication - Starting AdminApiApplication using Java 21.0.12 with PID 55553 (/Users/guangzhen.zk/migao-wt/main-live/backend/admin-api/target/classes started by guangzhen.zk in /Users/guangzhen.zk/migao-wt/main-live/backend/admin-api)
+2026-10-03 16:15:52.875 [main] INFO  com.migao.admin.AdminApiApplication - No active profile set, falling back to 1 default profile: "default"
+2026-10-03 16:15:53.592 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Multiple Spring Data modules found, entering strict repository configuration mode
+2026-10-03 16:15:53.593 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2026-10-03 16:15:53.618 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Finished Spring Data repository scanning in 17 ms. Found 0 Redis repository interfaces.
+2026-10-03 16:15:54.083 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat initialized with port 8080 (http)
+2026-10-03 16:15:54.093 [main] INFO  o.a.catalina.core.StandardService - Starting service [Tomcat]
+2026-10-03 16:15:54.094 [main] INFO  o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/10.1.55]
+2026-10-03 16:15:54.132 [main] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring embedded WebApplicationContext
+2026-10-03 16:15:54.133 [main] INFO  o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 1237 ms
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+2026-10-03 16:15:54.145 [main] INFO  c.m.admin.security.JwtTokenProvider - RSA 密钥加载成功（RS256）
+2026-10-03 16:15:54.145 [main] INFO  c.m.admin.security.JwtTokenProvider - JWT 使用 RS256 (RSA) 算法
+ _ _   |_  _ _|_. ___ _ |    _ 
+| | |\/|_)(_| | |_\  |_)||_|_\ 
+     /               |         
+                        3.5.16 
+2026-10-03 16:15:54.754 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter jwtFilterRegistration was not registered (disabled)
+2026-10-03 16:15:54.755 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter passwordChangeRequiredFilterRegistration was not registered (disabled)
+2026-10-03 16:15:54.755 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter workerSessionFilterRegistration was not registered (disabled)
+2026-10-03 16:15:54.755 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter serviceTokenFilterRegistration was not registered (disabled)
+2026-10-03 16:15:55.797 [main] INFO  com.migao.admin.config.OssConfig - 初始化 OSS 客户端: endpoint=oss-cn-hangzhou.aliyuncs.com, bucket=, permanentBucket=ai-customer-service-admin-dev, temporaryBucket=
+2026-10-03 16:15:56.293 [main] INFO  o.s.b.a.e.web.EndpointLinksResolver - Exposing 3 endpoints beneath base path '/actuator'
+2026-10-03 16:15:56.321 [main] INFO  o.s.s.c.a.a.c.InitializeAuthenticationProviderBeanManagerConfigurer$InitializeAuthenticationProviderManagerConfigurer - Global AuthenticationManager configured with AuthenticationProvider bean with name authenticationProvider
+2026-10-03 16:15:56.321 [main] WARN  o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer - Global AuthenticationManager configured with an AuthenticationProvider bean. UserDetailsService beans will not be used by Spring Security for automatically configuring username/password login. Consider removing the AuthenticationProvider bean. Alternatively, consider using the UserDetailsService in a manually instantiated DaoAuthenticationProvider. If the current configuration is intentional, to turn off this warning, increase the logging level of 'org.springframework.security.config.annotation.authentication.configuration.InitializeUserDetailsBeanManagerConfigurer' to ERROR
+2026-10-03 16:15:56.481 [main] INFO  c.b.m.e.s.MybatisPlusApplicationContextAware - Register ApplicationContext instances org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext@58ffcbd7
+2026-10-03 16:15:56.767 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port 8080 (http) with context path '/'
+2026-10-03 16:15:56.779 [main] INFO  com.migao.admin.AdminApiApplication - Started AdminApiApplication in 4.136 seconds (process running for 4.307)
+2026-10-03 16:15:56.813 [main] INFO  c.m.a.c.PlatformAdminInitializer - 未配置 platform.admin.phone，跳过平台管理员初始化
+2026-10-03 16:15:56.815 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Starting...
+2026-10-03 16:15:57.043 [main] INFO  com.zaxxer.hikari.pool.HikariPool - HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@4951c45f
+2026-10-03 16:15:57.046 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Start completed.
+2026-10-03 16:15:57.093 [main] INFO  c.migao.admin.config.MigrationRunner - ⏭️ 跳过基线 schema.sql：台账已有该键（幂等）
+2026-10-03 16:15:57.117 [main] WARN  o.s.c.events.SpringDocAppInitializer - SpringDoc /v3/api-docs endpoint is enabled by default. To disable it in production, set the property 'springdoc.api-docs.enabled=false'
+2026-10-03 16:15:57.117 [main] WARN  o.s.c.events.SpringDocAppInitializer - SpringDoc /swagger-ui.html endpoint is enabled by default. To disable it in production, set the property 'springdoc.swagger-ui.enabled=false'
+2026-10-03 16:15:58.759 [http-nio-8080-exec-1] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-10-03 16:15:58.759 [http-nio-8080-exec-1] INFO  o.s.web.servlet.DispatcherServlet - Initializing Servlet 'dispatcherServlet'
+2026-10-03 16:15:58.761 [http-nio-8080-exec-1] INFO  o.s.web.servlet.DispatcherServlet - Completed initialization in 1 ms
+2026-10-03 16:16:00.145 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 16:16:00.154 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 16:16:00.174 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 16:17:00.135 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 16:17:00.144 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 16:17:00.160 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 16:18:00.038 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 16:18:00.042 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 16:18:00.060 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 16:19:00.034 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 16:19:00.036 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 16:19:00.052 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 16:20:00.056 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 16:20:00.060 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 16:20:00.077 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 16:21:00.033 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 16:21:00.035 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 16:21:00.049 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 16:21:01.355 [http-nio-8080-exec-5] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 16:21:01.376 [http-nio-8080-exec-5] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 16:21:01.747 [http-nio-8080-exec-5] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 16:21:12.765 [http-nio-8080-exec-10] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 16:21:12.868 [http-nio-8080-exec-10] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 16:21:12.905 [http-nio-8080-exec-10] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 16:21:27.995 [http-nio-8080-exec-3] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 16:21:28.161 [http-nio-8080-exec-3] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 16:21:28.269 [http-nio-8080-exec-3] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 16:21:28.302 [http-nio-8080-exec-4] INFO  c.m.admin.controller.SmsController - 发送短信验证码请求: phone=13870217889
+2026-10-03 16:21:28.379 [http-nio-8080-exec-4] WARN  com.migao.admin.service.SmsService - [测试模式] 短信发送已 bypass，请使用万能验证码 (未启用) 完成校验。phone=138****7889
+2026-10-03 16:21:35.596 [http-nio-8080-exec-6] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 16:21:35.610 [http-nio-8080-exec-6] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 16:21:35.654 [http-nio-8080-exec-6] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 16:21:35.668 [http-nio-8080-exec-8] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 16:21:35.668 [http-nio-8080-exec-8] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 16:21:35.705 [http-nio-8080-exec-8] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 16:21:46.807 [http-nio-8080-exec-10] INFO  c.m.admin.controller.SmsController - 发送短信验证码请求: phone=13870217889
+2026-10-03 16:21:46.831 [http-nio-8080-exec-10] WARN  c.m.a.config.GlobalExceptionHandler - 非法状态: 发送过于频繁，请 60 秒后重试
+2026-10-03 16:21:50.184 [http-nio-8080-exec-1] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 16:21:50.198 [http-nio-8080-exec-1] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 16:21:50.243 [http-nio-8080-exec-1] INFO  com.migao.admin.service.SmsService - 验证码校验通过: phone=138****7889
+2026-10-03 16:21:50.269 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, phone, password_hash, nickname, avatar, status, last_login_at, created_at, updated_at FROM platform_admins WHERE (phone = ?)
+2026-10-03 16:21:50.270 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 13870217889(String)
+2026-10-03 16:21:50.286 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 0
+2026-10-03 16:21:50.286 [http-nio-8080-exec-1] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - ==>  Preparing: SELECT id, tenant_id, phone, username, password_hash, nickname, avatar, role, worker_no, session_ttl, status, must_change_password, created_at, updated_at, deleted FROM users WHERE phone = ? AND deleted = 0 AND status = 'active' ORDER BY updated_at DESC
+2026-10-03 16:21:50.287 [http-nio-8080-exec-1] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - ==> Parameters: 13870217889(String)
+2026-10-03 16:21:50.307 [http-nio-8080-exec-1] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - <==      Total: 1
+2026-10-03 16:21:50.311 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 16:21:50.311 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 16:21:50.325 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 16:21:50.407 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.TenantMapper.selectById - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE id = ? AND deleted = 0
+2026-10-03 16:21:50.408 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.TenantMapper.selectById - ==> Parameters: 20(Long)
+2026-10-03 16:21:50.425 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.TenantMapper.selectById - <==      Total: 1
+2026-10-03 16:21:50.430 [http-nio-8080-exec-1] DEBUG c.m.a.m.T.selectList - ==>  Preparing: SELECT id, tenant_id, bot_name, greeting_template, business_hours, timezone, auto_handoff_keywords, emotion_handoff, ai_fallback_handoff, ai_fallback_threshold, after_hours_mode, after_hours_message, recommend_strategy, recommend_count, recommend_trigger, quick_replies, channel_configs, created_at, updated_at, deleted FROM tenant_ai_configs WHERE deleted = 0 AND (tenant_id = ?) AND tenant_id = 20 LIMIT 1
+2026-10-03 16:21:50.430 [http-nio-8080-exec-1] DEBUG c.m.a.m.T.selectList - ==> Parameters: 20(Long)
+2026-10-03 16:21:50.445 [http-nio-8080-exec-1] DEBUG c.m.a.m.T.selectList - <==      Total: 1
+2026-10-03 16:21:58.161 [http-nio-8080-exec-3] WARN  c.m.a.s.JwtAuthenticationFilter - Token 类型不正确，不是 Access Token
+2026-10-03 16:21:58.178 [http-nio-8080-exec-5] WARN  c.m.a.s.JwtAuthenticationFilter - Token 类型不正确，不是 Access Token
+2026-10-03 16:22:00.057 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE deleted = 0 AND (briefing_enabled = ?)
+2026-10-03 16:22:00.058 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - ==> Parameters: true(Boolean)
+2026-10-03 16:22:00.072 [scheduling-1] DEBUG c.m.a.mapper.TenantMapper.selectList - <==      Total: 0
+2026-10-03 16:22:12.253 [http-nio-8080-exec-9] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 16:22:12.273 [http-nio-8080-exec-9] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 16:22:12.296 [http-nio-8080-exec-9] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 16:22:12.301 [http-nio-8080-exec-10] INFO  c.m.admin.controller.SmsController - 发送短信验证码请求: phone=13870217889
+2026-10-03 16:22:12.312 [http-nio-8080-exec-10] WARN  c.m.a.config.GlobalExceptionHandler - 非法状态: 发送过于频繁，请 60 秒后重试
+2026-10-03 16:22:13.289 [http-nio-8080-exec-2] INFO  c.m.admin.controller.SmsController - 发送短信验证码请求: phone=13870217889
+2026-10-03 16:22:13.352 [http-nio-8080-exec-2] WARN  c.m.a.config.GlobalExceptionHandler - 非法状态: 发送过于频繁，请 60 秒后重试
+2026-10-03 16:22:23.222 [http-nio-8080-exec-3] WARN  c.m.a.config.GlobalExceptionHandler - 参数校验失败: 登录标识不能为空
+2026-10-03 16:22:23.242 [http-nio-8080-exec-5] WARN  c.m.a.config.GlobalExceptionHandler - 参数校验失败: 登录标识不能为空
+2026-10-03 16:22:23.258 [http-nio-8080-exec-7] WARN  c.m.a.config.GlobalExceptionHandler - 参数校验失败: 登录标识不能为空
+2026-10-03 16:22:23.274 [http-nio-8080-exec-9] WARN  c.m.a.config.GlobalExceptionHandler - 参数校验失败: 登录标识不能为空
+2026-10-03 16:22:23.289 [http-nio-8080-exec-1] WARN  c.m.a.config.GlobalExceptionHandler - 参数校验失败: 登录标识不能为空
+2026-10-03 16:22:23.307 [http-nio-8080-exec-3] WARN  c.m.a.config.GlobalExceptionHandler - 参数校验失败: 登录标识不能为空
+2026-10-03 16:22:23.324 [http-nio-8080-exec-5] WARN  c.m.a.config.GlobalExceptionHandler - 参数校验失败: 登录标识不能为空
+2026-10-03 16:22:23.339 [http-nio-8080-exec-7] WARN  c.m.a.config.GlobalExceptionHandler - 参数校验失败: 登录标识不能为空
+2026-10-03 16:22:37.407 [http-nio-8080-exec-9] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 16:22:37.494 [http-nio-8080-exec-9] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 16:22:37.516 [http-nio-8080-exec-9] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [AUTH_FAILED] 短信验证码错误或已过期 suggestion=null
+2026-10-03 16:22:37.608 [http-nio-8080-exec-10] INFO  c.m.admin.controller.SmsController - 发送短信验证码请求: phone=13870217889
+2026-10-03 16:22:37.668 [http-nio-8080-exec-10] WARN  com.migao.admin.service.SmsService - [测试模式] 短信发送已 bypass，请使用万能验证码 (未启用) 完成校验。phone=138****7889
+2026-10-03 16:22:38.055 [http-nio-8080-exec-1] INFO  c.m.admin.controller.AuthController - 短信验证码登录请求: phone=13870217889
+2026-10-03 16:22:38.070 [http-nio-8080-exec-1] INFO  com.migao.admin.service.AuthService - 短信验证码登录: phone=13870217889
+2026-10-03 16:22:38.117 [http-nio-8080-exec-1] INFO  com.migao.admin.service.SmsService - 验证码校验通过: phone=138****7889
+2026-10-03 16:22:38.129 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==>  Preparing: SELECT id, phone, password_hash, nickname, avatar, status, last_login_at, created_at, updated_at FROM platform_admins WHERE (phone = ?)
+2026-10-03 16:22:38.130 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - ==> Parameters: 13870217889(String)
+2026-10-03 16:22:38.145 [http-nio-8080-exec-1] DEBUG c.m.a.m.P.selectList - <==      Total: 0
+2026-10-03 16:22:38.146 [http-nio-8080-exec-1] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - ==>  Preparing: SELECT id, tenant_id, phone, username, password_hash, nickname, avatar, role, worker_no, session_ttl, status, must_change_password, created_at, updated_at, deleted FROM users WHERE phone = ? AND deleted = 0 AND status = 'active' ORDER BY updated_at DESC
+2026-10-03 16:22:38.147 [http-nio-8080-exec-1] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - ==> Parameters: 13870217889(String)
+2026-10-03 16:22:38.163 [http-nio-8080-exec-1] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - <==      Total: 1
+2026-10-03 16:22:38.168 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 16:22:38.168 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 16:22:38.183 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 16:22:38.229 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.TenantMapper.selectById - ==>  Preparing: SELECT id, name, code, industry, status, logo, notification_enabled, notification_email, briefing_enabled, briefing_generate_time, auth_config, bailian_config, created_at, updated_at, deleted FROM tenants WHERE id = ? AND deleted = 0
+2026-10-03 16:22:38.229 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.TenantMapper.selectById - ==> Parameters: 20(Long)
+2026-10-03 16:22:38.324 [http-nio-8080-exec-1] DEBUG c.m.a.mapper.TenantMapper.selectById - <==      Total: 1
+2026-10-03 16:22:38.332 [http-nio-8080-exec-1] DEBUG c.m.a.m.T.selectList - ==>  Preparing: SELECT id, tenant_id, bot_name, greeting_template, business_hours, timezone, auto_handoff_keywords, emotion_handoff, ai_fallback_handoff, ai_fallback_threshold, after_hours_mode, after_hours_message, recommend_strategy, recommend_count, recommend_trigger, quick_replies, channel_configs, created_at, updated_at, deleted FROM tenant_ai_configs WHERE deleted = 0 AND (tenant_id = ?) AND tenant_id = 20 LIMIT 1
+2026-10-03 16:22:38.333 [http-nio-8080-exec-1] DEBUG c.m.a.m.T.selectList - ==> Parameters: 20(Long)
+2026-10-03 16:22:38.349 [http-nio-8080-exec-1] DEBUG c.m.a.m.T.selectList - <==      Total: 1
+2026-10-03 16:22:38.520 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 16:22:38.520 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 16:22:38.535 [http-nio-8080-exec-2] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 16:22:38.551 [http-nio-8080-exec-2] INFO  c.m.a.controller.ProductController - 创建商品: name=线B验收商品-RESTOCKON-mus4jfohx0a, tenantId=20
+2026-10-03 16:22:38.552 [http-nio-8080-exec-2] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [VALIDATION_ERROR] 分类ID不能为空 suggestion=null
+2026-10-03 16:22:38.570 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 16:22:38.570 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 16:22:38.584 [http-nio-8080-exec-3] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 16:22:38.585 [http-nio-8080-exec-3] INFO  c.m.a.controller.ProductController - 创建商品: name=线B验收商品-RESTOCKOFF-mus4jftlctpk, tenantId=20
+2026-10-03 16:22:38.585 [http-nio-8080-exec-3] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [VALIDATION_ERROR] 分类ID不能为空 suggestion=null
+2026-10-03 16:22:38.603 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 20
+2026-10-03 16:22:38.603 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - ==> Parameters: 9068a79a939c9be846a605dc78dc30b6(String)
+2026-10-03 16:22:38.618 [http-nio-8080-exec-4] DEBUG c.m.a.mapper.UserMapper.selectById - <==      Total: 1
+2026-10-03 16:22:38.619 [http-nio-8080-exec-4] INFO  c.m.a.controller.ProductController - 创建商品: name=线B验收商品-REFUND-mus4jfuialud, tenantId=20
+2026-10-03 16:22:38.619 [http-nio-8080-exec-4] WARN  c.m.a.config.GlobalExceptionHandler - 业务异常: [VALIDATION_ERROR] 分类ID不能为空 suggestion=null
+2026-10-03 16:22:55.295 [SpringApplicationShutdownHook] INFO  o.s.b.w.e.tomcat.GracefulShutdown - Commencing graceful shutdown. Waiting for active requests to complete
+2026-10-03 16:22:55.300 [tomcat-shutdown] INFO  o.s.b.w.e.tomcat.GracefulShutdown - Graceful shutdown complete
+2026-10-03 16:22:55.334 [SpringApplicationShutdownHook] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown initiated...
+2026-10-03 16:22:55.336 [SpringApplicationShutdownHook] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown completed.
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:3.5.16:run (default-cli) on project admin-api: Process terminated with exit code: 143 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

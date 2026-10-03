@@ -1,0 +1,73 @@
+{
+  "startedAt": {
+    "cst": "2026-10-03 19:40:05 +08",
+    "utc": "2026-10-03T03:40:05.128Z"
+  },
+  "finishedAt": {
+    "cst": "2026-10-03 19:41:13 +08",
+    "utc": "2026-10-03T03:41:13.025Z"
+  },
+  "wallMs": 64021,
+  "buildPoint": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "sha": "9170d691a",
+    "shaFull": "9170d691a1fedf2b8a148d1fac2588c57180021e",
+    "subject": "fix(6157): 发货写面立起两条不变式 + 商家路接幂等键 + unpack 真清空 (#6165)",
+    "commitTime": "2026-10-03T03:27:53Z",
+    "adminApiStart": "六 10月/ 3 11:39:53 2026",
+    "observedAt": {
+      "cst": "2026-10-03 19:40:05 +08",
+      "utc": "2026-10-03T03:40:05.349Z"
+    }
+  },
+  "perScript": {
+    "p1-ship-protection": {
+      "pass": 20,
+      "fail": 0,
+      "skip": 0,
+      "total": 20
+    },
+    "p2-state-machine": {
+      "pass": 16,
+      "fail": 0,
+      "skip": 0,
+      "total": 16
+    },
+    "p3-independent-math": {
+      "pass": 8,
+      "fail": 3,
+      "skip": 0,
+      "total": 11
+    },
+    "p4-writeface-equivalence": {
+      "pass": 8,
+      "fail": 0,
+      "skip": 1,
+      "total": 9
+    },
+    "p5-stock-and-print": {
+      "pass": 5,
+      "fail": 0,
+      "skip": 3,
+      "total": 8
+    },
+    "p6-redproof": {
+      "pass": 11,
+      "fail": 1,
+      "skip": 0,
+      "total": 12
+    },
+    "p7-noresidue": {
+      "pass": 2,
+      "fail": 0,
+      "skip": 0,
+      "total": 2
+    }
+  },
+  "total": {
+    "pass": 70,
+    "fail": 4,
+    "skip": 4,
+    "all": 78
+  }
+}

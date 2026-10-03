@@ -1,0 +1,106 @@
+[
+  {
+    "id": "W-01",
+    "name": "新建工序 → 进工序库/工艺项 → 挂进默认路线 → 派工必出现且单价正确",
+    "status": "pass",
+    "detail": "op=dfdde79775f9688d0e5222e9d7275165；加工单 JG-20261003-6261 第 13 道 = 验收探针工序382359 1.00米@0.90",
+    "evidence": [
+      "POST /api/admin/production/operations",
+      "PUT /api/admin/production/routings/rt-v72-20",
+      "POST /api/admin/processing-orders/generate"
+    ],
+    "at": "2026-10-02T23:06:25.481Z"
+  },
+  {
+    "id": "W-01b",
+    "name": "自建工序（单位=米）应做数量 == 用料米数 12.3",
+    "status": "fail",
+    "detail": "实测 qty=1.00米（qty_source=fallback）—— 单位是「米」却按兜底 1 计；派工侧数量口径对该工序失效（报工/计件按 1 米而非 12.3 米）",
+    "evidence": [
+      "SQL: select operation_name,qty,unit,qty_source from processing_position_operations where processing_order_id='f2f398986a3f5447dfeb6b0c12195473'"
+    ],
+    "at": "2026-10-02T23:06:25.482Z"
+  },
+  {
+    "id": "W-02",
+    "name": "工艺项矩阵格改价 0.9→1.75 → 新派工实例单价跟随（UI 改价入口有效）",
+    "status": "pass",
+    "detail": "PUT /operation-positions/3ed8cd41eac2ac094d521af301bd5a01 HTTP 200；加工单 JG-20261003-6262 单价=1.75",
+    "evidence": [
+      "PUT /api/admin/production/operation-positions/3ed8cd41eac2ac094d521af301bd5a01"
+    ],
+    "at": "2026-10-02T23:06:27.278Z"
+  },
+  {
+    "id": "W-02c",
+    "name": "两本账分叉登记：工序库改价（PUT /operations）是否影响派工取价",
+    "status": "pass",
+    "detail": "工序库价 2.50（HTTP 200）／矩阵格价 1.75／派工实例价 1.75 —— 派工取的是**矩阵格价**，工序库改价不影响计件（两账分叉，UI 不暴露该写入 ⇒ 观察项）",
+    "evidence": [
+      "PUT /api/admin/production/operations/dfdde79775f9688d0e5222e9d7275165",
+      "SQL: select unit_price from production_operations where id='dfdde79775f9688d0e5222e9d7275165'",
+      "SQL: select unit_price from production_operation_positions where id='3ed8cd41eac2ac094d521af301bd5a01'"
+    ],
+    "at": "2026-10-02T23:06:29.362Z"
+  },
+  {
+    "id": "W-05",
+    "name": "删除仍挂在主线上的工序 → 护栏拦下并给出可行动出口",
+    "status": "pass",
+    "detail": "HTTP 422：删除工序未通过校验（2 条问题）；出口=",
+    "evidence": [
+      "DELETE /api/admin/production/operations/dfdde79775f9688d0e5222e9d7275165"
+    ],
+    "at": "2026-10-02T23:06:29.559Z"
+  },
+  {
+    "id": "W-06",
+    "name": "主线写面引用工序库里不存在的工序 → 422 拦下",
+    "status": "pass",
+    "detail": "HTTP 422：工艺路线主线未通过校验（1 条问题）",
+    "evidence": [
+      "PUT /api/admin/production/routings/rt-v72-20"
+    ],
+    "at": "2026-10-02T23:06:29.666Z"
+  },
+  {
+    "id": "W-07",
+    "name": "默认路线不可取消默认 / 不可删除（422 双护栏）",
+    "status": "pass",
+    "detail": "PUT is_default=false → 422；DELETE → 422；库内 is_default=true deleted=0",
+    "evidence": [],
+    "at": "2026-10-02T23:06:29.984Z"
+  },
+  {
+    "id": "W-08",
+    "name": "UI「停用工序」按钮可用（前端发的 status 值被后端受理）",
+    "status": "fail",
+    "detail": "前端 routings/page.tsx 的 disableOpByName 逐字发送 {status:'inactive'}，后端 STATUSES={active,disabled} ⇒ HTTP 422：status 仅支持 active/disabled ⇒ **「停用工序」按钮 100% 失效**（库里仍是 active）",
+    "evidence": [
+      "PUT /api/admin/production/operations/op-v91-20-06 {status:'inactive'}",
+      "SQL: select status from production_operations where id='op-v91-20-06'"
+    ],
+    "at": "2026-10-02T23:06:30.433Z"
+  },
+  {
+    "id": "W-03",
+    "name": "适用条件加「部位维」→ 纱帘单照常派工（不再整单卡死）、布帘单照旧插花边",
+    "status": "pass",
+    "detail": "新规则 d6ce2a9609a3b04e0323fb318343980b（option 加花边，position=布帘）；纱帘单 11 道且无花边；布帘单含 花边-布",
+    "evidence": [
+      "POST /api/admin/production/route-rules {trigger_kind:'option', trigger_value:'加花边', position:'布帘'}",
+      "POST /api/admin/processing-orders/generate"
+    ],
+    "at": "2026-10-02T23:06:34.058Z"
+  },
+  {
+    "id": "W-04",
+    "name": "写面拒绝「部位维规则缺 position」（规则永不生效的黑洞进不来）",
+    "status": "pass",
+    "detail": "HTTP 422：trigger_value 不能为空",
+    "evidence": [
+      "POST /api/admin/production/route-rules {trigger_kind:'position'（缺 trigger_value/position）}"
+    ],
+    "at": "2026-10-02T23:06:34.300Z"
+  }
+]
