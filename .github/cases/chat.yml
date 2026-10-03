@@ -2493,3 +2493,41 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: CH-045
+    legacy_id: ""
+    title: "B 端米宝页面上下文（族 4）登记扩面（issue #6215）：新增页面走**登记表**注入 + 精确条目优先于通配 + **未登记页面仍默认拒绝**（豁免 ≠ 放行）+ 登记面只许扩"
+    domains:
+      - chat
+      - ai
+    tier: normal
+    tags:
+      - page-context
+      - injection-surface
+      - default-deny
+      - role-trim
+    truths_ref:
+      - ai-chat.context-memory
+    user_inputs:
+      - "商家在**经营看板**（/dashboard）问「这个 AI 接待占比是怎么算的 / 哪些卡片为什么没显示」⇒ 米宝的回答必须基于**登记的真值源**（本页 = 经营看板指标卡登记表），并写明来源标注"
+    expectations:
+      - tool: direct_reply
+    # ⚠️ 真值暂缺（[backend-contract] 形态，与本文件既有 backend-contract 用例同口径）：
+    # 本用例的机器判据 = `backend/ai-agent-service/tests/test_page_context.py`（注入面：登记 ⇒ 注入真值源与
+    # 必写标注；未登记 ⇒ 常量降级提示且 route 一个字都不进上下文；按角色裁剪）。它是**纯函数 + 入口级**
+    # 判据（零 LLM），不进 agent-eval 冒烟 —— 「米宝是否真的照真值源解释」属行为面，按用户裁定
+    # (#4262 / #4974) **手动集中跑一次**，本轮不自动派发真实 LLM 评测。
+    data_checks:
+      - "**登记 ⇒ 注入**：`build_page_context(\"/dashboard\", …, permissions=[\"dashboard:view\"])` 返回的上下文里 `truthSource` = 该页登记的真值源；注入文本含该真值源的 `label` / `path` 与**必写来源标注**。执行点 = backend/ai-agent-service/tests/test_page_context.py 的 `TestPageContextField` 与 `test_truth_source_reaches_context_with_citation`。"
+      - "**精确 > 通配**：`/orders/new` 与 `/orders/*` 同时登记时，`/orders/new` 必须命中**精确**条目（页面级码 `order:create`，而非列表页的 `order:list`）。执行点 = 同文件 `test_longer_prefix_wins_over_order_field`。"
+      - "🔴 **未登记仍默认拒绝（豁免 ≠ 放行）**：进豁免台账的真实页面（如 `/knowledge` / `/customers/12345` / `/settings` / `/after-sales`）与根本不存在的路径 ⇒ 一律**不注入**，且注入文本 == 常量降级提示（route 一个字都不进）。执行点 = 同文件 `problems_default_deny` / `test_unregistered_route_renders_constant_notice`。"
+      - "**登记面只许扩 + 登记自证**：条数不写死（现取 10），只与冻结地板比；每条登记的真值源在册且 `path` 真实存在、权限码真实存在、route 对应真实页面（通配条目跳过目录核）。执行点 = 同文件 `test_registry_does_not_shrink_below_expanded_floor` / `test_registry_routes_match_real_pages` / `problems_truth_source_registered` / `problems_permission_codes`。"
+      - "**覆盖面（漏登记 / 悬挂 / 真值源与权限码 / 只许缩短）**由元守卫判，**不在本用例重复**：tests/unit_ci_workflows/test_page_context_registry_coverage.py（用例 MC-075）。"
+    skip_reason: "[backend-contract] 注入面判据是**纯函数 + 入口级**（登记表 + 会话权限入参；零 LLM、零网络）由 backend/ai-agent-service/tests/test_page_context.py 验证；「米宝是否真的照真值源解释」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测"
+    merge_log: "2026-10-03 新增（issue #6215）：族 4 登记面 6 → 10 条 route（真值源 3 → 7 条），未确证的 12 个菜单页进豁免台账（只许缩短）。取号 = `scripts/next_case_id.py CH` 给的是历史空档 **CH-029**，但该号**已在 `.github/skip-exemption-baseline.json` 里且已被 #5951 整条退役**（`.github/cases/chat.yml` 有逐字注记）⇒ **不采用**，改为现取最大号 + 1 = **CH-045**（与 MC-070 不采用历史空档 MC-049 的先例同口径）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_page_context.py"
+      ci:
+        - pr-check.yml
+      verifies: []

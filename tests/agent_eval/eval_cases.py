@@ -2432,6 +2432,24 @@ _CASE_CH_044 = EvalCase(
     precondition='本用例依赖的图片资产 https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png 可被抓取（本机可达是必要不充分条件；vision 供应商侧能否抓取不在本仓可观测范围）。前置不成立时失败表现为「图片分析暂时无法完成」（命中 forbidden_text 或 must_succeed 失败），与它真正要守的「米宝发出 image_recognize 调用」**同名不同因** —— 此时该用例的红**不可归因于 agent**。',
 )
 
+# ── CH-045 [NORMAL] B 端米宝页面上下文（族 4）登记扩面（issue #6215）：新增页面走**登记表**注入 + 精确条目优先于通配 + **未登记页面仍默认拒绝**（豁免 ≠ 放行）+ 登记面只许扩（源: cases/chat.yml）──
+_CASE_CH_045 = EvalCase(
+    id='CH-045',
+    legacy_id='',
+    title='B 端米宝页面上下文（族 4）登记扩面（issue #6215）：新增页面走**登记表**注入 + 精确条目优先于通配 + **未登记页面仍默认拒绝**（豁免 ≠ 放行）+ 登记面只许扩',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家在**经营看板**（/dashboard）问「这个 AI 接待占比是怎么算的 / 哪些卡片为什么没显示」⇒ 米宝的回答必须基于**登记的真值源**（本页 = 经营看板指标卡登记表），并写明来源标注'],
+    expectations=['direct_reply'],
+    data_checks=['**登记 ⇒ 注入**：`build_page_context("/dashboard", …, permissions=["dashboard:view"])` 返回的上下文里 `truthSource` = 该页登记的真值源；注入文本含该真值源的 `label` / `path` 与**必写来源标注**。执行点 = backend/ai-agent-service/tests/test_page_context.py 的 `TestPageContextField` 与 `test_truth_source_reaches_context_with_citation`。', '**精确 > 通配**：`/orders/new` 与 `/orders/*` 同时登记时，`/orders/new` 必须命中**精确**条目（页面级码 `order:create`，而非列表页的 `order:list`）。执行点 = 同文件 `test_longer_prefix_wins_over_order_field`。', '🔴 **未登记仍默认拒绝（豁免 ≠ 放行）**：进豁免台账的真实页面（如 `/knowledge` / `/customers/12345` / `/settings` / `/after-sales`）与根本不存在的路径 ⇒ 一律**不注入**，且注入文本 == 常量降级提示（route 一个字都不进）。执行点 = 同文件 `problems_default_deny` / `test_unregistered_route_renders_constant_notice`。', '**登记面只许扩 + 登记自证**：条数不写死（现取 10），只与冻结地板比；每条登记的真值源在册且 `path` 真实存在、权限码真实存在、route 对应真实页面（通配条目跳过目录核）。执行点 = 同文件 `test_registry_does_not_shrink_below_expanded_floor` / `test_registry_routes_match_real_pages` / `problems_truth_source_registered` / `problems_permission_codes`。', '**覆盖面（漏登记 / 悬挂 / 真值源与权限码 / 只许缩短）**由元守卫判，**不在本用例重复**：tests/unit_ci_workflows/test_page_context_registry_coverage.py（用例 MC-075）。'],
+    skip_reason='[backend-contract] 注入面判据是**纯函数 + 入口级**（登记表 + 会话权限入参；零 LLM、零网络）由 backend/ai-agent-service/tests/test_page_context.py 验证；「米宝是否真的照真值源解释」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测',
+    tags=['page-context', 'injection-surface', 'default-deny', 'role-trim'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -5346,6 +5364,24 @@ _CASE_MC_074 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     precondition='本用例是 [backend-contract] 的**仓内静态守卫契约**（不进 agent-eval 冒烟）：两条 `user_inputs` 是对**同一个守卫**的两条断言（要能红 / 不设要 skip），**不是两次会话**。前置 = 守卫脚本 + 判据文件在位（`.github/plaintext_credential_guard.py` 与 `tests/unit_ci_workflows/test_plaintext_credential_guard.py`）—— 前置不成立（脚本被删 / 扫描面塌缩）时判据**当场红**，不会表现为「agent 不干活」。',
+)
+
+# ── MC-075 [NORMAL] B 端米宝页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）（源: cases/misc.yml）──
+_CASE_MC_075 = EvalCase(
+    id='MC-075',
+    legacy_id='',
+    title='B 端米宝页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 `frontend/admin-web/src/config/menu.ts` 新增一个菜单页而既没登记进 PAGE_REGISTRY、也没进豁免台账时；或登记表/台账里出现一条挂不到任何菜单项的 route 时；或某条登记引用了未登记的真值源 / 真值源 path 不存在 / 权限码不在 admin-api 权限目录里时；或有人往豁免台账**加**一条时 —— 必须有判据**具名**报出该 route / 真值源 / 权限码。'],
+    expectations=['direct_reply'],
+    data_checks=['**病（issue #6215 现取读数）**：族 4 的 `route → 真值源` 登记表只有 **6** 条 route，而 `menu.ts` 有 **22** 个菜单页 ⇒ 用户在其余 16 页问「这一页是干什么的 / 这个数怎么算的」时 `build_page_context` 走**默认拒绝**（安全默认是对的），而**覆盖面没有任何东西在管**：漏登记的形态是**沉默**（少一条登记 ⇒ 零判据变红）；反方向（登记不存在的 route / 引用不存在的真值源）也没有覆盖面判据。', '**判据 1（漏登记即红，本单的牙齿）**：菜单 route 有、`PAGE_REGISTRY` 与豁免台账**都没有** ⇒ 红并具名报出该 route。执行点 = tests/unit_ci_workflows/test_page_context_registry_coverage.py 的 `problems_coverage`。', '**判据 2（多登记 / 悬挂即红）**：登记表或台账里有、**挂不到任何菜单项**的 route ⇒ 红（登记一条不存在的页面 = 猜错页面）。同一函数，`covers()` 口径 = 精确相等 / 通配整族（`/orders/*` ↔ `/orders`）/ 子路由（`/orders/new`、`/production/routings` 挂在菜单项之下）。', '**判据 3/4（豁免台账只许缩短）**：同一条 route 既登记又豁免 ⇒ 红；`exempt_routes_frozen` 冻结快照 ⇄ 现取条目**逐项相等**、条数 == `baseline_frozen` 且 ≤ 判据侧 `EXEMPT_COUNT_MAX` ⇒ 新增豁免必须同批改三处且 `baseline_frozen` 只许变小。', '**判据 5/6/7（登记项自证）**：`truth_source` ∈ `TRUTH_SOURCES`（否则该条**不生效**）、真值源 `path` **真实存在**、页面级/对象级权限码在 admin-api 权限目录（**复用** `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `parse_catalog`，不造第二套解析器）。', '**判据 8/9（缺口不许匿名存在）**：豁免每条必须带 `route` + `reason`（为什么不登记）+ `restart_condition`（补哪一份**具名**口径文档才能重启）；`coverage_boundary` 每条带 `face`/`reason`/`recompute`，条数冻结（`coverage_boundary_frozen`）且只许缩短。', '**判别力自证（注入式红证，全部内存构造、不动仓内文件）**：① 摘掉一条已登记 route（`/production/piecework`）⇒ 判红且**具名**；② 往台账加一条 ⇒ 判红（只许缩短）；③ 造悬挂 route ⇒ 红；④ 幽灵真值源 id / 幽灵 path ⇒ 红；⑤ 幽灵权限码 ⇒ 红；⑥ 豁免缺 `reason`/`restart_condition` ⇒ 逐条红；⑦ 删一条覆盖面登记 ⇒ 红；⑧ **对照读数**：只给登记项加无关元数据键 / 只给台账加说明键 ⇒ **不红**。执行点 = 同文件 7 条 `test_red_proof_*` + `test_control_comment_only_change_is_green`。', '**纯静态自证**：本判据零 ai-agent 依赖（AST 取 import 名）+ 禁 pytest 的 skip / importorskip（针脚**拼出来** —— 判据自身出现这两个字面量会扫到自己 ⇒ 永远红）。执行点 = 同文件 `test_this_judgement_is_pure_static_and_never_skips`。', '🔴 **覆盖边界（显式登记）**：① 「这份文档真的是这一页的口径」是**判断**不是判据 —— 锚点逐条写在 PR body（`<仓库相对路径>::<符号>`），台账的 `reason`/`restart_condition` 是**自述**；② 判不了「米宝真的按真值源解释了这一页」（行为面在 `backend/ai-agent-service/tests/test_page_context.py`，LLM 面按 issue #4262 本轮不跑评测）；③ `page_registry.py` 是 **AST 静态解析**，登记表被改写成非字面量形态 ⇒ fail-closed 判红；④ 本判据**不改**任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 纯静态仓内守卫（只读 menu.ts / page_registry.py / admin-api 权限目录 / 豁免台账；零真库、零网络、零 LLM、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_page_context_registry_coverage.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ai-agent', 'page-context', 'coverage', 'exemption-ledger', 'shrink-only', 'default-deny', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
 )
 
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
@@ -12124,6 +12160,7 @@ ALL_CASES = (
     _CASE_CH_042,
     _CASE_CH_043,
     _CASE_CH_044,
+    _CASE_CH_045,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
@@ -12282,6 +12319,7 @@ ALL_CASES = (
     _CASE_MC_072,
     _CASE_MC_073,
     _CASE_MC_074,
+    _CASE_MC_075,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

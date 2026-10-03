@@ -1091,7 +1091,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `delete` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[interact(confirm), category_manage(action=delete)]` 改判为 `direct_reply`（如实说明 + 引导去后台商品分类页面：删除**没有存活的只读路径**），`must_succeed[category_manage(action=delete)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的写路径断言（「二次确认后才执行删除」+ 写面前置）改判为只读/如实说明口径（原第 1 条文本已并入新第 1 条保留为历史）。 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（43 case）
+## 对话边界域（44 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -1790,6 +1790,20 @@
 ```
 真值: ai-chat.route-actions
 溯源: 2026-10-03 新增（issue #6090）：销 `.github/eval-coverage-baseline.yml` 的 image_recognize 阻塞条目（登记于 2026-09-24 / issue #5368 包 2，跟踪单 #4941）。用例 = 「发图 → 米宝调 image_recognize → 同页填表」，断言 = 工具调用 + must_succeed + 参数契约（target_type/images）+ 不推诿禁令。**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）—— 真实读数由 #5966 那次 B 端集中跑批给出。 ｜ tags: multimodal, image, vision, image_recognize, mibao, capability
+
+### CH-045. B 端米宝页面上下文（族 4）登记扩面（issue #6215）：新增页面走**登记表**注入 + 精确条目优先于通配 + **未登记页面仍默认拒绝**（豁免 ≠ 放行）+ 登记面只许扩 🔵
+```
+你: 商家在**经营看板**（/dashboard）问「这个 AI 接待占比是怎么算的 / 哪些卡片为什么没显示」⇒ 米宝的回答必须基于**登记的真值源**（本页 = 经营看板指标卡登记表），并写明来源标注
+期望: direct_reply
+数据: **登记 ⇒ 注入**：`build_page_context("/dashboard", …, permissions=["dashboard:view"])` 返回的上下文里 `truthSource` = 该页登记的真值源；注入文本含该真值源的 `label` / `path` 与**必写来源标注**。执行点 = backend/ai-agent-service/tests/test_page_context.py 的 `TestPageContextField` 与 `test_truth_source_reaches_context_with_citation`。
+数据: **精确 > 通配**：`/orders/new` 与 `/orders/*` 同时登记时，`/orders/new` 必须命中**精确**条目（页面级码 `order:create`，而非列表页的 `order:list`）。执行点 = 同文件 `test_longer_prefix_wins_over_order_field`。
+数据: 🔴 **未登记仍默认拒绝（豁免 ≠ 放行）**：进豁免台账的真实页面（如 `/knowledge` / `/customers/12345` / `/settings` / `/after-sales`）与根本不存在的路径 ⇒ 一律**不注入**，且注入文本 == 常量降级提示（route 一个字都不进）。执行点 = 同文件 `problems_default_deny` / `test_unregistered_route_renders_constant_notice`。
+数据: **登记面只许扩 + 登记自证**：条数不写死（现取 10），只与冻结地板比；每条登记的真值源在册且 `path` 真实存在、权限码真实存在、route 对应真实页面（通配条目跳过目录核）。执行点 = 同文件 `test_registry_does_not_shrink_below_expanded_floor` / `test_registry_routes_match_real_pages` / `problems_truth_source_registered` / `problems_permission_codes`。
+数据: **覆盖面（漏登记 / 悬挂 / 真值源与权限码 / 只许缩短）**由元守卫判，**不在本用例重复**：tests/unit_ci_workflows/test_page_context_registry_coverage.py（用例 MC-075）。
+跳过: [backend-contract] 注入面判据是**纯函数 + 入口级**（登记表 + 会话权限入参；零 LLM、零网络）由 backend/ai-agent-service/tests/test_page_context.py 验证；「米宝是否真的照真值源解释」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测
+```
+真值: ai-chat.context-memory
+溯源: 2026-10-03 新增（issue #6215）：族 4 登记面 6 → 10 条 route（真值源 3 → 7 条），未确证的 12 个菜单页进豁免台账（只许缩短）。取号 = `scripts/next_case_id.py CH` 给的是历史空档 **CH-029**，但该号**已在 `.github/skip-exemption-baseline.json` 里且已被 #5951 整条退役**（`.github/cases/chat.yml` 有逐字注记）⇒ **不采用**，改为现取最大号 + 1 = **CH-045**（与 MC-070 不采用历史空档 MC-049 的先例同口径）。 ｜ tags: page-context, injection-surface, default-deny, role-trim
 
 ## 跨域（3 case）
 
@@ -2935,7 +2949,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（74 case）
+## 杂项域（75 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4021,6 +4035,23 @@
 跳过: [backend-contract] 仓内静态守卫（零 LLM、零网络、只读真源码）由 tests/unit_ci_workflows/test_plaintext_credential_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-03 新增（issue #6172，用户 2026-10-03 逐字「有问题就立马派单修 … 不要留尾巴」）：把两处明文 service token 改成环境注入（形态逐字照抄 PR #6170 的 `MIGAO_SERVICE_TOKEN`）+ 落仓内守卫（gitleaks 只扫新增行 ⇒ 存量明文永不报警）。取号 MC-074（现取 `.github/cases` ∪ 全部 `origin/*` refs 的最大号 = MC-073 ⇒ 取 MC-074）。⚠️ 未固化项照实登记：不判「名字不叫 token 的随机串」（噪声上千条）；不判具体值；被禁形态在守卫自己的文档字符串里 ⇒ 逐字排除守卫自己（非目录白名单）。 ｜ tags: security, credential, guard, red-proof
+
+### MC-075. B 端米宝页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据） 🔵
+```
+你: 当 `frontend/admin-web/src/config/menu.ts` 新增一个菜单页而既没登记进 PAGE_REGISTRY、也没进豁免台账时；或登记表/台账里出现一条挂不到任何菜单项的 route 时；或某条登记引用了未登记的真值源 / 真值源 path 不存在 / 权限码不在 admin-api 权限目录里时；或有人往豁免台账**加**一条时 —— 必须有判据**具名**报出该 route / 真值源 / 权限码。
+期望: direct_reply
+数据: **病（issue #6215 现取读数）**：族 4 的 `route → 真值源` 登记表只有 **6** 条 route，而 `menu.ts` 有 **22** 个菜单页 ⇒ 用户在其余 16 页问「这一页是干什么的 / 这个数怎么算的」时 `build_page_context` 走**默认拒绝**（安全默认是对的），而**覆盖面没有任何东西在管**：漏登记的形态是**沉默**（少一条登记 ⇒ 零判据变红）；反方向（登记不存在的 route / 引用不存在的真值源）也没有覆盖面判据。
+数据: **判据 1（漏登记即红，本单的牙齿）**：菜单 route 有、`PAGE_REGISTRY` 与豁免台账**都没有** ⇒ 红并具名报出该 route。执行点 = tests/unit_ci_workflows/test_page_context_registry_coverage.py 的 `problems_coverage`。
+数据: **判据 2（多登记 / 悬挂即红）**：登记表或台账里有、**挂不到任何菜单项**的 route ⇒ 红（登记一条不存在的页面 = 猜错页面）。同一函数，`covers()` 口径 = 精确相等 / 通配整族（`/orders/*` ↔ `/orders`）/ 子路由（`/orders/new`、`/production/routings` 挂在菜单项之下）。
+数据: **判据 3/4（豁免台账只许缩短）**：同一条 route 既登记又豁免 ⇒ 红；`exempt_routes_frozen` 冻结快照 ⇄ 现取条目**逐项相等**、条数 == `baseline_frozen` 且 ≤ 判据侧 `EXEMPT_COUNT_MAX` ⇒ 新增豁免必须同批改三处且 `baseline_frozen` 只许变小。
+数据: **判据 5/6/7（登记项自证）**：`truth_source` ∈ `TRUTH_SOURCES`（否则该条**不生效**）、真值源 `path` **真实存在**、页面级/对象级权限码在 admin-api 权限目录（**复用** `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `parse_catalog`，不造第二套解析器）。
+数据: **判据 8/9（缺口不许匿名存在）**：豁免每条必须带 `route` + `reason`（为什么不登记）+ `restart_condition`（补哪一份**具名**口径文档才能重启）；`coverage_boundary` 每条带 `face`/`reason`/`recompute`，条数冻结（`coverage_boundary_frozen`）且只许缩短。
+数据: **判别力自证（注入式红证，全部内存构造、不动仓内文件）**：① 摘掉一条已登记 route（`/production/piecework`）⇒ 判红且**具名**；② 往台账加一条 ⇒ 判红（只许缩短）；③ 造悬挂 route ⇒ 红；④ 幽灵真值源 id / 幽灵 path ⇒ 红；⑤ 幽灵权限码 ⇒ 红；⑥ 豁免缺 `reason`/`restart_condition` ⇒ 逐条红；⑦ 删一条覆盖面登记 ⇒ 红；⑧ **对照读数**：只给登记项加无关元数据键 / 只给台账加说明键 ⇒ **不红**。执行点 = 同文件 7 条 `test_red_proof_*` + `test_control_comment_only_change_is_green`。
+数据: **纯静态自证**：本判据零 ai-agent 依赖（AST 取 import 名）+ 禁 pytest 的 skip / importorskip（针脚**拼出来** —— 判据自身出现这两个字面量会扫到自己 ⇒ 永远红）。执行点 = 同文件 `test_this_judgement_is_pure_static_and_never_skips`。
+数据: 🔴 **覆盖边界（显式登记）**：① 「这份文档真的是这一页的口径」是**判断**不是判据 —— 锚点逐条写在 PR body（`<仓库相对路径>::<符号>`），台账的 `reason`/`restart_condition` 是**自述**；② 判不了「米宝真的按真值源解释了这一页」（行为面在 `backend/ai-agent-service/tests/test_page_context.py`，LLM 面按 issue #4262 本轮不跑评测）；③ `page_registry.py` 是 **AST 静态解析**，登记表被改写成非字面量形态 ⇒ fail-closed 判红；④ 本判据**不改**任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 纯静态仓内守卫（只读 menu.ts / page_registry.py / admin-api 权限目录 / 豁免台账；零真库、零网络、零 LLM、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_page_context_registry_coverage.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-03 新增（issue #6215，用户 2026-10-03 裁定「先做 4，这个更有价值」）。落地 = ① `backend/ai-agent-service/app/context/page_registry.py` 登记面 6 → **10** 条 route、真值源 3 → **7** 条（新增 `curtain-production-rules` / `dashboard-cards` / `order-amount` / `sales-shipment` 四条真值源）；② 新增豁免台账 `tests/unit_ci_workflows/page_context_exemptions_ledger.json`（**13** 条，只许缩短，每条带 reason + 具名重启条件）；③ 新增元守卫 `tests/unit_ci_workflows/test_page_context_registry_coverage.py`（双向相等 + 登记项自证 + 8 条注入式红证）；④ `backend/ai-agent-service/tests/test_page_context.py` 同步更新未登记语料（`/dashboard` 等已登记 ⇒ 换成仍在豁免台账里的真实页面 + 两个不存在的路径）并新增「精确 > 通配」「登记面只许扩」两条判据。取号 MC-075（`scripts/next_case_id.py MC` ⇒ main:001-074 ⇒ 最小空闲 MC-075）。⚠️ 未固化（照实登记）：不判「该页真值源是否为该页口径」这一判断本身；不跑真实 LLM 评测。 ｜ tags: ai-agent, page-context, coverage, exemption-ledger, shrink-only, default-deny, red-proof
 
 ## 商家入驻域（5 case）
 
@@ -9187,15 +9218,15 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：639（活跃 134，跳过 505）
-- tier 分布：smoke 12 / normal 593 / adversarial 32
+- 用例总数：641（活跃 134，跳过 507）
+- tier 分布：smoke 12 / normal 595 / adversarial 32
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
 - 登录认证域：11
 - B 端小程序域：31
 - 分类域：3
-- 对话边界域：43
+- 对话边界域：44
 - 跨域：3
 - 客户域：11
 - 数据域：21
@@ -9203,7 +9234,7 @@
 - 财务对账域：5
 - 人事域：13
 - 知识问答域：7
-- 杂项域：74
+- 杂项域：75
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：56
@@ -9307,6 +9338,7 @@
 - MC-072: 机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线）
 - MC-073: 重活锁准入/溢出台账：五类 kind + stats 读出口径 + 槽满出声（蓝图 P2 测量面）
 - MC-074: 凭据字面量不得进仓：明文 service token 一律走环境注入（不设 ⇒ 未就绪 / 不带该头），由仓内守卫按**现取**扫真源码判红（gitleaks 只扫新增行 ⇒ 存量明文它看不见）
+- MC-075: B 端米宝页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
