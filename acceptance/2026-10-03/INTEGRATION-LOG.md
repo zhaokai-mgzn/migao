@@ -1013,3 +1013,21 @@ CI 逐字（`#6229` 的 job `111189462391`）：`##[error]生成物新鲜度：1
 ③ 已核查：验收 harness（线 A/B）**没有**用 `timeout`（grep 无命中）⇒ 那两条线的读数不受此影响。
 
 **③ 顺带排除一个"看起来像缺陷"的东西**：前端 `types/index.ts:461 OrderStatus = 'pending_payment'|'pending_shipment'|'shipped'|'completed'|'closed'|'refund'` 与库内词表（`pending/confirmed/producing/shipped/cancelled/completed`）**不一致**，但 **有双向映射**：`toBackendStatusParam('pending_shipment') = 'confirmed,producing'`、`confirmed/producing → pending_shipment`（`:484/:490/:500/:501`）⇒ 是**UI 词表 vs 后端词表**，**不是** `#6224`/`#6239` 那类"声明存在但无实现" ⇒ **不开单**（记录备查，免得别人重复"发现"）。
+
+### 19.42 🔴 用户新增硬要求（**验收条件级**）：**凡我设计的 scheduler 必须同时支持单机与集群部署**
+
+**用户原话**：「**你设计的 scheduler 任务都要支持单机部署和集群部署的情况**」。
+
+**本仓既有立场（现取核实，不是我的偏好）**：
+- `AutoBatchDueScanScheduler` 类注释逐字：**不引入新的调度基础设施（不加 Quartz / 不加 ShedLock / 不新增 workflow）**；
+- 集群安全 = **DB 约束 + 条件更新**，且**已落成判据**：`AutoBatchDueScanService.java:39-44`「**多实例 / 并发（判据 3）** … `uk_processing_orders_active` + `uk_batch_consumption_line` ⇒ 并发的第二路**派不出去也扣不动**（它记一条失败痕迹，不重复派、不重复扣）」；
+- 另一条腿：`BriefingScheduler`（每分钟）→ `daily_briefings` 有 **`uk_daily_briefings_tenant_date UNIQUE (tenant_id, biz_date)`** ⇒ 多实例重复生成撞唯一键。
+⇒ 结论：**本仓的正确形态是"按构造成立"（谓词/唯一键），不是"加一把锁"**；单机与集群共用同一套代码同一套判据。
+
+**对 `#6262`（发货后 N 天自动完成）的落地要求（已发指令 + 已写进 issue 评论）**：
+1. 用**带谓词的原子更新 + `RETURNING id`**（例：`UPDATE orders SET status='completed' WHERE tenant_id=? AND status='shipped' AND <锚点> <= <deadline> RETURNING id`）⇒ 多实例并跑天然只生效一次，另一侧 0 行**静默**；
+2. **副作用绑定"真正改了行"**：站内信只对 `RETURNING` 的 id 发（**这是集群下最容易踩的坑**：每实例各发一遍），须有判据证明"只完成一次 + 只发一封"；
+3. 若确需"只有一个实例扫描" ⇒ 用 **PG advisory lock** 并说明为什么谓词不够；**不许**引 ShedLock/Quartz；
+4. **PR body 必须有"单机与集群下的行为"一节**（含判据名）——**验收条件**。
+
+**口径外推**：本条对**本轮及以后所有 scheduler 类改动**生效（含将来"物流签收回写""自动对账"这类新定时腿）。
