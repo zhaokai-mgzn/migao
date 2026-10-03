@@ -827,3 +827,17 @@ PUT /api/admin/orders/{id}/logistics 收 Map<String,String>，后端只读 logis
 理由 = **本轮刚落过同类事故**：有人顺手把 `page<1` 也拒了（对"现状被宽容但无害"的取值做拒绝）⇒ 被我裁定撤回（`§19.25`）。**"显式拒绝"只能覆盖"有缺陷证据的取值"**，否则必须先开单 + 兼容性说明。
 
 **派包**：worktree `migao-wt/6239-shipping-method-wiring`，分支 `fix/6239-shipping-method-wiring`；agent 已起。
+
+### 19.30 `#6246` 两条红腿已修、CI 全绿（26 pass / 0 fail）+ 新开 `#6250`（定点清单缺两条"必然要动"的冻结台账）
+
+**① 我预判错了，包诊断对了**（记录在案，别把预判当结论）：我给的三个预判（`REALDB_FILES` 逐字一致 / 台账元守卫 9→8 / `OR-057` 的 `traces.tests`）**全部 pass**；真红因是另外两个**只在全量档才跑到**的冻结台账：
+| 红腿 | 判据 | 逐字红因 |
+|---|---|---|
+| `admin-api unit tests`（3940 run / 1 fail） | `BusinessClockTestSourceGuardTest.outOfScopeSpellingsPresenceIsFrozen` | `Expecting empty but was: ["覆盖外拼写 \`System.nanoTime(\` 登记 presentInTree=false 而现取=true"]` —— 它用 `nanoTime` 记 4 个并发请求区间作「真重叠」证据，把"今天 0 处"的拼写变成"树里有" |
+| `ci workflow helper（后半）`（1 failed / 3312 passed） | `test_case_machine_fail_channel.py::test_i3_anchor_matches_reality_and_is_only_shrinking` | 实测 `backend_contract_scoring_zero = 117` vs 锚点 `116` —— OR-057 是 `[backend-contract]` 且 `expectations: []` ⇒ +1（合法新增，真债务 `no_channel_total` 仍 0） |
+**修法都按判据自带协议、没绕过**：① 把 `System.nanoTime(` 登记 `presentInTree=true` + 写明"计时括号、非业务基准读取点"（同守卫 `familyRulesSeparateBusinessBasisFromDurationBrackets` 已认定的族；备选 `currentTimeMillis` 在该守卫里是 FORBIDDEN）；② 按 `_how_to_regen` 追加 `history` 行 + `entries` 对齐 117。
+**复跑**：`BusinessClockTestSourceGuardTest` `12/0/0`；`test_case_machine_fail_channel` `20 passed`；CI `admin-api unit tests` pass 2m55s、helper 两片 pass ⇒ **26 pass / 0 fail**；新 head **`0dd06dcde`**（同一 PR）。
+
+**② 新开 `#6250`（P3·研发流程）**：这两条判据对"**改 Java 测试文件 / 新增用例**"是**必然要动**的，却长期落在定点集之外 ⇒ 只有 CI 才暴露（本轮 4 次：#6231 / #6226 / #6224 / #6237）。建议加一个**包级定点清单入口**（如 `./scripts/pkg-narrow-check.sh --java-tests --new-cases`），并把"改 Java 测试或新增用例的包必须跑它"写进派单口径；判据含"无变更即跳过"的反向对照（别把轻量包拖成重活）。**不改任何门禁**（那两条判据本身是对的）。
+
+**③ 本轮"CI 红 → 定位 → 修"的完整清单（7 次，全部闭环）**：真库冻结清单（#6220 第 1 次）· skip 类别前缀（#6220 第 2 次）· 锚点 111→113（#6221）· `CASE-TRUST-STALE-LINE-REF` JDK 栈帧行号（#6226，**本地就拦住**）· `skip_reason` 前缀（#6230）· 墙钟拼写台账（#6246）· 锚点 116→117（#6246）。
