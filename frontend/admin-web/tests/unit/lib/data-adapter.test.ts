@@ -9,8 +9,9 @@
  *
  * 这些转换如果出错，数据会静默损坏——后端收到错误值或前端展示错误状态。
  */
-// case_ids: OR-003, OR-004, OR-005, UI-040, UI-047, PR-042, PR-043, PR-044, OR-046, OR-058
+// case_ids: OR-003, OR-004, OR-005, UI-040, UI-047, PR-042, PR-043, PR-044, OR-046, OR-058, OR-059
 
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import {
   FrontendToBackendStatus,
@@ -21,6 +22,7 @@ import {
   buildLogisticsPayload,
   buildCloseOrderPayload,
   buildRefundPayload,
+  shippingMethodForEdit,
 } from '@/lib/data-adapter'
 import type {
   ProductFormData,
@@ -257,13 +259,54 @@ describe('buildLogisticsPayload', () => {
     expect(none.shippingMethod).toBe('none')
   })
 
-  it('shippingMethod 缺失时兜底成 logistics（与订单详情回填口径一致，不写假值 none）', () => {
+  // ── 未采集（NULL）不许被静默写成 logistics（issue #6254）────────────────────
+  // 改前：`shippingMethod: data.shippingMethod || 'logistics'` ⇒ 「库里没采集过」与「采集到
+  // logistics」在请求体里**不可区分**，后端据此把一个 NULL 记录**凭空写成** `logistics`（造数据）。
+  // 改后：未采集 ⇒ **省略该键** ⇒ 后端按「不传 = 不改」保留原值（与 OR-058 判据 5② 同一条口径）。
+  it('shippingMethod 未采集 ⇒ 不下发该键（不再兜底成 logistics，issue #6254）', () => {
     const payload = buildLogisticsPayload({
       company: '顺丰速运',
       trackingNo: 'SF1',
-      shippingMethod: undefined as unknown as 'logistics' | 'none',
+      shippingMethod: undefined,
+    })
+    expect(payload.shippingMethod).toBeUndefined()
+    // 「不下发」的可核形态 = **序列化后的请求体里没有这个键**（undefined 不会被 JSON.stringify 写出）
+    expect(JSON.stringify(payload)).not.toContain('shippingMethod')
+  })
+
+  // 反向对照：**真**采集到 logistics 的取值照旧下发（证明上面那条不是「一律不下发」）
+  it('正对照：真 shippingMethod=logistics ⇒ 照旧下发 logistics', () => {
+    const payload = buildLogisticsPayload({
+      company: '顺丰速运',
+      trackingNo: 'SF1',
+      shippingMethod: 'logistics',
     })
     expect(payload.shippingMethod).toBe('logistics')
+  })
+})
+
+// ===================================================================
+// 订单详情「编辑物流」弹窗的发货方式回填（issue #6254）
+// ===================================================================
+
+describe('shippingMethodForEdit', () => {
+  it('未采集（undefined / null）⇒ undefined = 未记录（**不再读成 logistics**）', () => {
+    expect(shippingMethodForEdit(undefined)).toBeUndefined()
+    expect(shippingMethodForEdit(null)).toBeUndefined()
+  })
+
+  it('已采集的取值原样透传（正/反向对照：none 与 logistics 都不被改写）', () => {
+    expect(shippingMethodForEdit('none')).toBe('none')
+    expect(shippingMethodForEdit('logistics')).toBe('logistics')
+  })
+
+  // 🔴 接线判据（issue #6254）：口径本体被测到 ≠ **它接在真回填点上了**（同 `migao-dev-flow` §28.2）。
+  // 订单详情必须**真的**用它、且不得再出现改前那条「NULL 兜底成 logistics」的表达式 ——
+  // 谁哪天把兜底改回去，这一条当场红。
+  it('接线：订单详情回填点真的走本函数，且不再有「NULL 当 logistics」的兜底表达式', () => {
+    const src = readFileSync('src/app/(dashboard)/orders/[id]/OrderDetail.tsx', 'utf8')
+    expect(src).toContain('shippingMethodForEdit(order.logistics?.shippingMethod)')
+    expect(src).not.toContain("=== 'none' ? 'none' : 'logistics'")
   })
 
   // ---- 物流类型（issue #4419 / UI-047）----

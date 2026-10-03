@@ -26,6 +26,9 @@ import { RollAllocationNote } from '@/components/orders/OrderItemList'
 // 发货读面（issue #5651）：销售单的数量列消费**实发**，判定在 lib 里
 import type { OrderShipmentRead } from '@/lib/sales-shipment'
 import { cn } from '@/lib/utils'
+// 发货方式回填（issue #6254）：判定在 lib 里（本页只接线），口径 = 只透传**真采集到**的取值、
+// 未采集（NULL）返回 undefined = 未记录
+import { shippingMethodForEdit } from '@/lib/data-adapter'
 
 // 格式化金额（含千分位+两位小数）
 function formatAmount(amount?: number): string {
@@ -491,7 +494,10 @@ export default function OrderDetailPage() {
           initialData={{
             company: order.logistics?.logisticsCompany || '',
             trackingNo: order.logistics?.trackingNo || '',
-            shippingMethod: order.logistics?.shippingMethod === 'none' ? 'none' : 'logistics',
+            // 🔴 未采集（NULL）**不再被读成 `logistics`**（issue #6254）：改前这里是一条
+            // 「非 `none` ⇒ `logistics`」的兜底表达式，把「没采集过」静默解释成它的反面语义
+            // ⇒ 弹窗保存时会把一条 NULL 记录凭空写成 `logistics`（造数据）。
+            shippingMethod: shippingMethodForEdit(order.logistics?.shippingMethod),
             // 发货人可在此纠正（存量订单为空时填上；不动则后端保留原值，不会被编辑人顶替）
             shipperName: order.logistics?.shipperName || '',
           }}

@@ -1993,7 +1993,15 @@ export interface OrderStatusUpdateParams {
 export interface LogisticsFormData {
   company: string
   trackingNo: string
-  shippingMethod: 'logistics' | 'none'
+  /**
+   * 发货方式（issue #6239）：`logistics` 物流发货 / `none` 无需物流。
+   *
+   * ⚠️ **可缺席**（issue #6254）：缺席 = 这条记录**没有采集过**发货方式
+   * （`order_logistics.shipping_method` 为 NULL —— 工人 / 商家 / 生产 / 智能体那几条发货写面
+   * 从不写这一列，且它们**结构性不产生「无需物流」语义**）⇒ 下发时**省略该键**，
+   * 后端按「不传 = 不改」保留原值，**不把它静默写成 `logistics`**。
+   */
+  shippingMethod?: 'logistics' | 'none'
   /** 发货人（发货单「经手人」，issue #3768）：默认预填当前登录人姓名，可改成实际发货人 */
   shipperName?: string
   /** 物流类型：express 快递 / logistics 物流专线（issue #4419；后端 order_logistics.logistics_type，V47） */

@@ -42,23 +42,43 @@ export function buildProductPayload(
  *   由后端按列默认值 express 兜底
  * - shippingMethod 透传（issue #6239）：logistics 物流发货 / none 无需物流。
  *   用户在发货页做的这个选择此前**被前端丢掉**（后端从不读取）⇒「无需物流」与
- *   「物流发货但没填单号」在库里不可区分。缺省兜底成 'logistics' = 与订单详情回填口径一致
- *   （存量数据未采集时也判成 'logistics'）。
+ *   「物流发货但没填单号」在库里不可区分。
+ *   ⚠️ **未采集（undefined）= 不下发该键**（issue #6254）：改前这里兜底成 `'logistics'`，
+ *   于是「库里没采集过」与「采集到 logistics」在请求体里**不可区分**，后端据此把一条
+ *   NULL 记录**凭空写成** `logistics`（造数据）；省略该键则后端按「不传 = 不改」保留原值
+ *   （口径同 OR-058 判据 5②）。
  */
 export function buildLogisticsPayload(data: LogisticsFormData): {
   logisticsCompany: string
   trackingNo: string
   shipperName?: string
   logisticsType?: string
-  shippingMethod: 'logistics' | 'none'
+  shippingMethod?: 'logistics' | 'none'
 } {
   return {
     logisticsCompany: data.company,
     trackingNo: data.trackingNo,
     shipperName: data.shipperName?.trim() || undefined,
     logisticsType: data.logisticsType || undefined,
-    shippingMethod: data.shippingMethod || 'logistics',
+    shippingMethod: data.shippingMethod,
   }
+}
+
+/**
+ * 订单详情「编辑物流」弹窗的**发货方式回填**（issue #6254）。
+ *
+ * <p>口径：只透传记录里**真实采集到**的取值（`logistics` / `none`）；
+ * `NULL`（未采集 —— 工人 / 商家 / 生产 / 智能体那几条发货写面从不写这一列，
+ * 且它们**结构性不产生「无需物流」语义**）⇒ 返回 `undefined` = **未记录**，
+ * 由 {@link buildLogisticsPayload} 省略该键 ⇒ 后端保留原值。</p>
+ *
+ * <p>🔴 改前这里是「非 `none` ⇒ `logistics`」的兜底表达式
+ * —— 把「未采集」静默解释成它的**反面语义**（物流发货）。</p>
+ */
+export function shippingMethodForEdit(
+  shippingMethod: 'logistics' | 'none' | null | undefined,
+): 'logistics' | 'none' | undefined {
+  return shippingMethod === 'logistics' || shippingMethod === 'none' ? shippingMethod : undefined
 }
 
 /**

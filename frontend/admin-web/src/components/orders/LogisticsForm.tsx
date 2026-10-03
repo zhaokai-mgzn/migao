@@ -35,7 +35,12 @@ export default function LogisticsForm({ open, onClose, onSubmit, initialData }: 
       await onSubmit({
         company: company.trim(),
         trackingNo: trackingNo.trim(),
-        shippingMethod: 'logistics',
+        // 🔴 发货方式**回填什么提交什么**（issue #6254）：这里改前**硬编码** `'logistics'`，
+        // `initialData.shippingMethod` 一字不读（死 prop）⇒ ① 记录里存的是 `none`（无需物流，
+        // 用户在发货页选的）会被**静默改成** `logistics`；② 记录里是 NULL（未采集：工人/商家发货
+        // 写面从不写这一列）会被**凭空写成** `logistics`（造数据）。
+        // 未采集（undefined）⇒ 下发时省略该键 ⇒ 后端「不传 = 不改」⇒ 仍是未采集。
+        shippingMethod: initialData?.shippingMethod,
         shipperName: shipperName.trim(),
       })
       onClose()
