@@ -5,8 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.dto.ShipmentListRow;
-import com.migao.admin.entity.Order;
-import com.migao.admin.entity.OrderItem;
+import com.migao.admin.entity.Product;
 import com.migao.admin.entity.OrderShipment;
 import com.migao.admin.entity.OrderShipmentItem;
 import com.migao.admin.exception.BusinessException;
@@ -17,6 +16,7 @@ import com.migao.admin.mapper.OrderShipmentItemMapper;
 import com.migao.admin.mapper.OrderShipmentMapper;
 import com.migao.admin.mapper.OrderShipmentQueryMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
+import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.worker.WorkerIdentity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -80,12 +80,34 @@ public class OrderShipmentService {
     public static final String SOURCE_WORKER_PHOTO = "worker_photo";
     /** 发货单来源：工人手工录入（识别不确定/没拍照时的兜底，**不是降级**）。 */
     public static final String SOURCE_WORKER = "worker";
+    /**
+     * 发货单来源：商家/生产发货路（issue #6171）。取值是 {@code db/init/schema.sql} 里
+     * {@code order_shipments.source} 注释**逐字预留**的 {@code admin}（本单之前全仓零代码写它）
+     * —— **不新造取值、不改 schema**。
+     */
+    public static final String SOURCE_ADMIN = "admin";
+
+    /**
+     * 商家路实发数量的**单位兜底**：订单行没有可查单位的商品货号（商品被删/无 product_id）时用它。
+     *
+     * <p>为什么这个字面量可以编：它与列默认值**同值**（{@code products.unit VARCHAR(32) DEFAULT '件'}，
+     * 见 {@code db/init/schema.sql} 的 products 表）—— 即「商品不存在时的单位」在库里就是这个值，
+     * 不是本单新造的语义。取不到单位就拒绝发货会挡住一张本来能发的单，代价大于收益；
+     * 而**默认值不可达**（有 product_id 就查得到）时本兜底不生效。</p>
+     */
+    public static final String UNIT_FALLBACK = "件";
 
     /** 幂等回放的标记键（调用方据此区分「首次执行」与「同键回放」）。 */
     public static final String REPLAYED_KEY = "replayed";
 
-    /** 允许发起工人发货的起始状态（{@code packed} 是正常路径；另两条 = 车间里一步到底的小单）。 */
-    private static final List<String> SHIPPABLE_FROM = List.of("confirmed", "producing", "packed");
+    /**
+     * 允许发起工人发货的起始状态（{@code packed} 是正常路径；另两条 = 车间里一步到底的小单）。
+     *
+     * <p>🔴 <b>商家/生产发货路共用同一份</b>（issue #6171）：{@link OrderService#shipWithLogistics}
+     * 的状态前置此前把这四个字面量抄了一遍 —— 抄两份就会漂移（一条路加了状态、另一条没加），
+     * 而两条路都会把订单置 {@code shipped}。现在只有这一份。</p>
+     */
+    public static final List<String> SHIPPABLE_FROM = List.of("confirmed", "producing", "packed");
 
     /** 撤销打包理由上限（与 {@code orders.close_reason} 同量级）。 */
     private static final int MAX_UNPACK_REASON = 500;
@@ -107,6 +129,8 @@ public class OrderShipmentService {
     private final ClientRequestIdService clientRequestIdService;
     private final ImageRecognitionClient imageRecognitionClient;
     private final ObjectMapper objectMapper;
+    /** 商品货号的**计价单位**（{@code products.unit}）—— 商家路实发数量的单位来源（issue #6171）。 */
+    private final ProductMapper productMapper;
     /** 发货单**列表**聚合读面（issue #5939）。⚠️ 声明在最后：Lombok 生成的位置参数构造器按字段序。 */
     private final OrderShipmentQueryMapper orderShipmentQueryMapper;
 
@@ -305,6 +329,146 @@ public class OrderShipmentService {
         log.info("[发货] 完成: orderId={}, shipmentNo={}, trackingNo={}, worker={}, 明细行={}",
                 orderId, shipment.getShipmentNo(), trackingNo, identity.workerName(), details.size());
         return resultOf(orderId, tenantId, "shipped", shipment, details);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // 发货（商家/生产）—— 商家路也在发货单链上留痕（issue #6171）
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 <b>商家/生产发货路落可查的发货单</b>（issue #6171，用户 2026-10-03 裁定「要建」）。
+     *
+     * <h2>为什么加在这里（而不是在 {@code OrderService} 里另写一份）</h2>
+     * <p>「发货明细（实发套/件/卷）」真值的 owner 是 {@link OrderShipmentService} + 它背后那两张表
+     * （见类注释）。第二条路要落发货单，就**只能**经 owner 的写面走 —— 在 {@code OrderService} 里
+     * 再拼一次 {@code order_shipments} / {@code order_shipment_items} 的列，就是「同一真值两处投影」，
+     * 两处迟早对不上（那正是本单要补的漏单形态的成因）。</p>
+     *
+     * <h2>实发数量 = 订单未发余量（该端点请求体没有数量）</h2>
+     * <p>{@code POST /api/admin/production/orders/{orderId}/ship} 的 body 只有
+     * {@code trackingNo} / {@code logisticsCompany} ⇒ 逐 {@code order_item} 记
+     * {@code 订单量 − 已发合计}（判定本体 = {@link ShipmentInvariants#remainingLines}，
+     * 与「累计已发 ≤ 订单量」共用同一份累计口径）。余量为 0 的订单行 ⇒ <b>整笔 4xx 且零写</b>
+     * （不静默建一张空单 —— 「已发货但实发 0」是 #6157 明令拒绝的形态）。</p>
+     *
+     * <h2>调用位置是契约的一部分：必须在订单**流转成功之后**调</h2>
+     * <p>{@code ProductionController.ship} 的写序 = ① 校验订单可发货（状态 + 归属）②
+     * {@link OrderService#shipWithLogistics}（记物流 + 原子流转 {@code shipped}）③ <b>本方法</b>。
+     * 放在②之后意味着：订单到不了 {@code shipped}（并发变更 / 状态前置不满足）⇒ 本方法根本不被调用
+     * ⇒ <b>结构上</b>不会出现「有发货单但订单没发货」（判据：本类实例判据的「订单已 shipped
+     * 不再建第二张」，以及 {@code MerchantShipmentDocGuardTest} 的接线台账）。</p>
+     *
+     * <p>⚠️ 本方法**不做** worker 身份判定也不做状态流转：状态流转与守卫（含加工单守卫）在
+     * {@link OrderService#shipWithLogistics} 内部，本方法只负责「把已发生的发货记成一张可查的单」。
+     * 单位取自订单行的商品货号（{@code products.unit}，缺 ⇒ {@link #UNIT_FALLBACK}）；
+     * 数量/精度两条不变式与工人路**同一份**判定本体。</p>
+     *
+     * @param orderId   已在 ② 步流转为 {@code shipped} 的订单
+     * @param trackingNo / logisticsCompany：原样落发货单（与物流面同值）
+     * @return 新落/复用的那张发货单（供路由把 {@code shipment_no} 放进响应）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public OrderShipment recordMerchantShipment(String orderId, String trackingNo,
+                                                String logisticsCompany, Long tenantId) {
+        Order order = loadOrder(orderId, tenantId);
+        // 🔴 只有**真的发生了 confirmed|producing|packed → shipped** 才建单。
+        // 订单已经 shipped 时 shipWithLogistics 不会流转（它只更新物流）⇒ 这里建单就是凭空多一张
+        // （用户裁定「同键两次恰一张」之外的第二道防线：不同幂等键的重复调用同样建不出第二张）。
+        if (!SHIPPABLE_FROM.contains(order.getStatus())) {
+            throw BusinessException.validationError(String.format(
+                    "当前状态（%s）已不在可发货状态，本次未新增发货单（订单发货状态未变更）",
+                    OrderStatusTransitions.label(order.getStatus())));
+        }
+
+        List<OrderItem> orderItems = OrderShipGuard.loadOrderItems(orderItemMapper, orderId, tenantId);
+        List<OrderShipmentItem> alreadyShipped = orderShipmentItemMapper.selectByOrderId(orderId, tenantId);
+        Map<String, BigDecimal> remaining =
+                ShipmentInvariants.remainingLines(List.of(), alreadyShipped, orderItems);
+        if (remaining.isEmpty()) {
+            throw BusinessException.validationError(
+                    "该订单没有可发货的订单行（订单量未知或订单行缺失），无法产出发货单");
+        }
+        List<ShipmentInvariants.ShipmentLine> lines = new ArrayList<>();
+        List<BigDecimal> nothingLeft = new ArrayList<>();
+        for (OrderItem item : orderItems) {
+            BigDecimal left = remaining.get(item.getId());
+            if (left == null) {
+                continue;
+            }
+            if (left.compareTo(BigDecimal.ZERO) <= 0) {
+                nothingLeft.add(left);
+                continue;
+            }
+            lines.add(new ShipmentInvariants.ShipmentLine(item.getId(), left,
+                    unitOf(item), null, null));
+        }
+        if (!nothingLeft.isEmpty()) {
+            throw BusinessException.validationError(String.format(
+                    "订单未发余量为 0（%d 个订单行已发满）：本次不再建发货单（不静默建空单）—— "
+                            + "若要改运单号请用物流改单入口，那不等于再发一次货",
+                    nothingLeft.size()));
+        }
+        // 与工人路**同一份**两条不变式（判定本体 = ShipmentInvariants，本方法只取数 + 翻 4xx）。
+        List<OrderShipmentItem> details = detailsOf(orderId, tenantId, orderItems, lines);
+        assertQuantities(orderId, tenantId, orderItems, details);
+
+        OrderShipment shipment = activeShipment(orderId, tenantId)
+                .orElseGet(() -> newShipment(order, SOURCE_ADMIN));
+        shipment.setSource(SOURCE_ADMIN);
+        shipment.setTrackingNo(trackingNo);
+        shipment.setLogisticsCompany(logisticsCompany);
+        shipment.setShippedAt(OffsetDateTime.now());
+        persist(shipment);
+
+        for (OrderShipmentItem detail : details) {
+            detail.setShipmentId(shipment.getId());
+            orderShipmentItemMapper.insert(detail);
+        }
+        log.info("[发货] 商家路落发货单: orderId={}, shipmentNo={}, trackingNo={}, 明细行={}",
+                orderId, shipment.getShipmentNo(), trackingNo, details.size());
+        return shipment;
+    }
+
+    /**
+     * 把「未发余量」行翻成待落库的实发明细（{@code unit} / 商品名快照都从订单行取，
+     * 与工人路同形状 —— **不自造第二套列口径**）。
+     */
+    private List<OrderShipmentItem> detailsOf(String orderId, Long tenantId, List<OrderItem> orderItems,
+                                              List<ShipmentInvariants.ShipmentLine> lines) {
+        Map<String, OrderItem> byId = new LinkedHashMap<>();
+        for (OrderItem item : orderItems) {
+            byId.put(item.getId(), item);
+        }
+        List<OrderShipmentItem> details = new ArrayList<>();
+        for (ShipmentInvariants.ShipmentLine line : lines) {
+            OrderItem item = byId.get(line.orderItemId());
+            details.add(OrderShipmentItem.builder()
+                    .tenantId(tenantId)
+                    .orderId(orderId)
+                    .orderItemId(line.orderItemId())
+                    .productName(item == null ? null : item.getProductName())
+                    .shippedQuantity(line.shippedQuantity())
+                    .unit(line.unit())
+                    // 缺值不填 0（与工人路同口径）：商家路的 body 没有套/卷数，
+                    // 订单行上的 roll_count 是**下单时的整卷分配**、不是「实发卷数」⇒ 不得搬过来冒充。
+                    .setCount(null)
+                    .rollCount(null)
+                    .build());
+        }
+        return details;
+    }
+
+    /**
+     * 订单行的**单位** = 该行商品的计价单位（{@code products.unit}；商品查不到 ⇒
+     * {@link #UNIT_FALLBACK}，与列默认值同值 —— 见该常量的理由）。
+     */
+    private String unitOf(OrderItem item) {
+        if (item == null || !StringUtils.hasText(item.getProductId())) {
+            return UNIT_FALLBACK;
+        }
+        Product product = productMapper.selectById(item.getProductId());
+        return product == null || !StringUtils.hasText(product.getUnit())
+                ? UNIT_FALLBACK : product.getUnit().trim();
     }
 
     // ══════════════════════════════════════════════════════════════════════════════
