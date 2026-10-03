@@ -248,7 +248,7 @@
       "note": "issue #6221（第三轮深度测试 P2·涉钱·精度：退款金额 `0.001` 被接受却在写库时被静默舍成 `0`）新增 2 条 `[backend-contract]` 用例（AS-013 / AS-014）—— 它们按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +2）。本次重锚的基线是**已含 main 侧** `backend_contract_scoring_zero: 112` 的那一行（112 里已含 #6234 的 PG-069；本分支 rebase 到 `644e98dc6` 后**实测**值 = 112 + 2 = **114**，不是按号从 111 推算）。机器判红通道 = `traces.tests` 的三个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/service/MoneyScaleTest.java`：准入本体 5 条（≤2 位合法且**原样返回** / 按**有效**小数位判（`2.700`、`0.010` 合法）/ 3 位 ⇒ 422 可行动文案 / `null` 不归一成 0 / PG 半进位方向登记）；`backend/admin-api/src/test/java/com/migao/admin/service/OrderRefundMoneyPrecisionTest.java`：7 条（`0.001` 与 `0.004`/`0.005`/`0.009` ⇒ 422 且**订单与资金流水零写入**、`refund_at` 不写；HTTP 入口同判据；`0.01` 正对照两侧逐字相等；累计封顶与状态白名单正对照）；`backend/admin-api/src/test/java/com/migao/admin/service/MoneyEntryPrecisionMetaGuardTest.java`：11 条（全仓金额入口台账 19 文件 / 39 处写面 + 6 类注入式判别力自证 + 反向对照 + DEBT 现取 ≤ 冻结上限）），三者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 114}` vs 锚点 112 —— **不是**按号推算。⚠️ 先后顺序：本 PR rebase 期间 main 连续前进（#6233 / #6234 / #6236），本行取的是**当时实测**；若 #6230（其新增 AS-011 / AS-012 亦为同类用例）先合入 main，main 会变成 114，本 PR 再同步后实测将是 116，届时**按那时的实测值**再追加一行（不预判别人的号）。"
     },
     {
-      "sha": "pending-pr-6224",
+      "sha": "pending-pr-6240",
       "date": "2026-10-03",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 116,
