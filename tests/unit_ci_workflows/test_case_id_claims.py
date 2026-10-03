@@ -78,6 +78,9 @@ MC-067 已进用例库）落 main 之后，**下一个 PR 一律被判红** ⇒ 
   （见 `list_changed_case_files` / `corpus_face_problems`）。
 - ❌ **语料面的 base 口径是有意取舍**：main 侧基线取**本工作树**的 `repo_used_ids()`（口径与理由见
   `corpus_face_problems` 的 docstring）⇒ 方向是**可能漏**（不是误红）；**不额外拉 main 全库**（那会让
+  ⚠️ **2026-10-03 修假红（#6275/#6229 实测被卡）**：语料面**不再**要求「本 PR 在 claims 台账里有条目」——
+  那条前置把与语料无关的 PR（`chore` / `acceptance/**`）一律判红；现口径 = 只比**本 PR 新增的号**
+  ∩ 在飞面的号（详见 `corpus_face_problems` 的 docstring）。
   每个 PR 多拉 26 个文件）。漏的形态 = 本 PR 落后 main 且它新增的号恰被 main 上另一个 PR 先合并。
 - ❌ **判不了「生成物新鲜度 / 用例库文本冲突」**（那是 issue #6255 的面）。
 - ❌ **不是互斥锁**：两个包在**同一瞬间**开 PR 时仍是「两边都红」而不是「后开的那个被挡住」——
@@ -888,20 +891,27 @@ def corpus_face_problems(claims: list[Claim], current: int | None, fetch: object
     **不会把「本 PR 新增的号」误判成 main 侧已有**（方向是**漏**而不是误红；漏的形态 =
     本 PR 落后 main、且它新增的号恰好已被 main 另一个 PR 合并 —— 那一档由判据 3 的 rebase 兜住）。
     🔴 **不额外拉 main 全库**（那会让每个 PR 多拉 26 个文件）⇒ 这是「便宜换穷举」的取舍。
+
+    🔴 **本 PR 无 claim ⇒ 不再一律判红（假红删除，2026-10-03 实测）**：判据 7 的语料面**不依赖**
+    本 PR 在 claims 台账里有没有条目 —— 它自己那两面都从**在飞面取数**拿（`OpenPrClaims.ids` /
+    `OpenPrClaims.added_ids`，后者由 `list_changed_case_files` 的 **patch 的 `+` 行**算出）。
+    旧前置把「本 PR 无 claim」读成「判定不了」⇒ **每一个「有 claim 的号不是最大」的 PR 一律判红**，
+    无论它有没有动语料。**实测（同一份语料 + 同一取数面）**：
+    - 红（假红）：`#6275`（`chore(ci): flaky 台账滚动追加`，改动面 = `.github/flaky-ledger.json`，
+      **零** `.github/cases/**`）与 `#6229`（改动面 = `acceptance/**`，**零** `.github/cases/**`）
+      —— 两者 max claim = `6267` < 自己的 PR 号 ⇒ `any(c.pr == current)` 恒 False ⇒ 恒红，
+      而 `ci workflow helper unit tests` **在 required 集合里**（= 卡合并）；
+    - 绿（对照）：`#6213` / `#6139` / `#6141` / `#6142` —— max claim ≥ 自己的号 ⇒ 前置从未触发。
+    ⇒ 现口径 = **与判据 7 的判据体同一条谓词**（本 PR **新增的号** ∩ 在飞面的号）；
+    本 PR **不新增号** ⇒ **没有可撞的号** ⇒ 不报（**不是**「判定不了」）。
+    ⛔ **不放宽任何真撞号面**：「本 PR 新增号却没写 claim」照旧红（真撞号仍由
+    `cross_pr_claims_problems` 用 `added_ids - main_ids` 判），去掉的只是**与语料无关的前置**。
     """
     fetch = fetch_open_pr_claims if fetch is None else fetch
     if current is None:
         return []
     used = repo_used_ids()
-    problems: list[str] = []
-    if not any(c.pr == current for c in claims):
-        problems.append(
-            f"判定不了：本 PR #{current} 在本地 claims 台账里没有自己的条目 ⇒ 语料面基线不可信，"
-            f"**跨在飞 PR 的语料重号这一轮没判**（**不是「没有重号」**）"
-        )
-        return problems
-    problems.extend(cross_pr_claims_problems(claims, current, fetch, set(used)))
-    return problems
+    return cross_pr_claims_problems(claims, current, fetch, set(used))
 
 
 def test_repo_case_id_claims_are_clean() -> None:
@@ -1143,19 +1153,63 @@ def test_control_corpus_inherited_ids_from_main_are_not_new_ids(tmp_path: Path) 
     assert cross_pr_claims_problems(claims, 6259, lambda: (open_prs, []), {"MC-076", "MC-077"}) == []
 
 
-def test_red_proof_corpus_face_without_a_local_claim_is_fail_closed(monkeypatch, tmp_path: Path) -> None:
-    """**fail-closed（语料面）**：本 PR 在本地 claims 台账里**没有自己的条目** ⇒ 基线不可信 ⇒ 红且写明
-    「判定不了」（不许读成「没有重号」）。**零外呼**（桩不被念到）。"""
-    monkeypatch.setenv(PR_ENV, "6259")
+def test_control_corpus_face_without_a_local_claim_is_not_a_false_positive() -> None:
+    """**反向对照（语料面，假红删除）**：本 PR 在本地 claims 台账里**没有自己的条目**、且**不新增语料号**
+    ⇒ **不报**（旧口径在这里判红 = issue #6275/#6229 被卡住的形态）。
+
+    判据 7 的语料面**不看**本 PR 有没有 claim —— 它比的是「本 PR **新增的号** ∩ 在飞面的号」，
+    没有新增号 ⇒ 没有可撞的号 ⇒ 空列表（**不是**「判定不了」）。取数面**照常读一次**
+    （「本 PR 新增了哪些号」只能从在飞面读数拿；旧前置用一次假红换掉的正是这个读数）。"""
     called: list[int] = []
 
     def probe() -> tuple[list[OpenPrClaims], list[str]]:
         called.append(1)
-        return [], []
+        return [OpenPrClaims(pr=6259, ids=frozenset(), added_ids=frozenset())], []
 
-    problems = corpus_face_problems([], 6259, probe)
-    assert called == [], "没有本地 claim 条目时不该发起取数（零外呼）"
-    assert len(problems) == 1 and "判定不了" in problems[0] and "6259" in problems[0], problems
+    assert corpus_face_problems([], 6259, probe) == [], "本 PR 无新增语料号 ⇒ 不许报「判定不了」"
+    assert called == [1], "本 PR 新增了哪些号只能从在飞面读数拿 ⇒ 取数面必须被念到一次"
+
+
+def test_red_proof_corpus_face_without_a_local_claim_still_names_the_collision(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """🔴 **红证（语料面，端到端 · §28.1 出口 ④）**：本 PR **没有 claim 条目** + **确实新增了语料号**、
+    该号与另一个在飞 PR 相同 ⇒ **仍然红且点名**。
+
+    这就是「删掉假红前置」与「放宽判据」的分界：删的是**与语料无关的前置**（本 PR 有没有 claim），
+    **不是**真撞号面。取数面走**真 HTTP**（本机替身服务器）⇒ 与 `#6263/#6264` 真实形态同源。
+    """
+    pulls = [{"number": 7001, "head": {"sha": "sha-a"}}, {"number": 7002, "head": {"sha": "sha-b"}}]
+    pr_files = {
+        7001: [{"filename": ".github/cases/order.yml", "sha": "blob-a"}],
+        7002: [{"filename": ".github/cases/order.yml", "sha": "blob-b"}],
+    }
+    stub = _ApiStub(
+        pulls,
+        {"sha-a/" + CLAIMS_API_PATH: [], "sha-b/" + CLAIMS_API_PATH: []},
+        200,
+        {"blob-a": "cases:\n  - id: OR-900\n", "blob-b": "cases:\n  - id: OR-900\n"},
+        pr_files=pr_files,
+    )
+    base = _serve_api(monkeypatch, stub)
+    _api_env(monkeypatch, base)
+    try:
+        fetched = fetch_open_pr_claims()
+        assert fetched is not None and fetched[1] == [], f"取数面读数/问题异常：{fetched!r}"
+        open_prs, _ = fetched
+        assert {p.pr: sorted(p.added_ids or ()) for p in open_prs} == {
+            7001: ["OR-900"],
+            7002: ["OR-900"],
+        }, open_prs
+        # `claims` 故意为空：本 PR **没有**自己的 claim 条目 ⇒ 新口径下仍须报出真撞号
+        problems = corpus_face_problems([], 7001, lambda: (open_prs, []))
+        joined = "\n".join(problems)
+        assert "OR-900" in joined and "#7002" in joined, joined
+        # 反向对照（同一取数面）：在飞面里**没有同号** ⇒ 不报（去掉的只是前置，不是判别力）
+        alone = [OpenPrClaims(pr=7001, ids=frozenset(), added_ids=frozenset({"OR-900"}))]
+        assert corpus_face_problems([], 7001, lambda: (alone, [])) == []
+    finally:
+        _release(stub)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
