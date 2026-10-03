@@ -129,13 +129,19 @@ REPO_ENV = "GITHUB_REPOSITORY"
 #: 单请求超时（秒）+ 整轮总预算（秒）：**不把 CI 拖重**的机械保证（超预算即停 ⇒ 判「无法判定」）。
 #: ⚠️ 读数（本机 2026-10-03 实测，见 PR body）：**串行** + 逐 claim 文件下载 ⇒ 9 个 open PR 读到
 #: **31.1s**（撞当时的 30s 预算 ⇒ 一个**合法** PR 会因预算变红 = fail-closed 误伤）。
-#: ⇒ 三条一起上：① 两个阶段都**并行**（`FETCH_CONCURRENCY` 路，纯 stdlib 线程池）；
-#: ② 逐 PR claim 文件按**内容 SHA 去重**（git 对象：同 SHA ⇒ 同字节 ⇒ 只下载一次；
-#: 现取 11 个 open PR 有大量重复 claim 文件）；③ 预算按「并行 + 去重后」定，留一倍余量。
-HTTP_TIMEOUT_S = 5.0
+#: ⇒ 四条一起上：① 两个阶段都**并行**（`FETCH_CONCURRENCY` 路，纯 stdlib 线程池）；
+#: ② 逐 PR claim 文件按**内容 SHA 去重**（git 对象：同 SHA ⇒ 同字节 ⇒ 只下载一次）；
+#: ③ **瞬时失败重试一次**（`RETRY_STATUSES` + 连接/读超时）—— 实测本机一次读超时会把
+#: **所有引用同一 blob 的 PR** 一起判「读不到」（去重的反作用面）⇒ 不重试的话，同一个瞬时抖动
+#: 会放大成整面不可判（红）。⚠️ 重试**不加退避等待**：等 = 白付墙钟，而 CI 上 5xx/超时本就是瞬时态；
+#: 最坏 2 轮 × 并发 4 ⇒ 仍有界（`BUDGET_S` 兜底）。
+#: ④ 预算按「并行 + 去重 + 重试」定，留一倍余量。
+HTTP_TIMEOUT_S = 8.0
 BUDGET_S = 60.0
 #: 读在飞面的**并发度**（上限受任务数收敛；纯网络 IO ⇒ 不占 CPU、不影响同 job 的其它判据）。
 FETCH_CONCURRENCY = 4
+#: 值得重试一次的 HTTP 状态（限流 / 服务端瞬时态）；**4xx 业务错不重试**（重试也不会变）。
+RETRY_STATUSES = (429, 500, 502, 503, 504)
 #: open PR 的取数上限（`per_page` 的硬上限）。命中上限 ⇒ **无法判定**（宁红不绿：可能还有下一页）。
 PR_LIST_LIMIT = 100
 #: 远端 claims 目录（判据 7 只读这个路径；不拉整库、不拉语料）。
@@ -336,6 +342,30 @@ def _api_get(url: str, token: str, timeout: float) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
+def _api_get_retrying(url: str, token: str, timeout: float, attempts: int = 2) -> str:
+    """`_api_get` + **瞬时失败重试一次**（连接/读超时、`RETRY_STATUSES`）。
+
+    🔴 为什么必须重试：去重后**一个 blob 被多个 PR 共用** ⇒ 那一次读一抖，就会把**所有**引用它的
+    PR 一起判成「读不到」⇒ 一个瞬时抖动被放大成整面不可判（红）。重试**不加退避等待**
+    （等待 = 白付墙钟；CI 上 5xx / 超时本就是瞬时态），最坏 `attempts` 轮 ⇒ 仍有界。
+    4xx（401/403/404 等）**不重试**（重试也不会变，只会白等）。
+    """
+    last: Exception | None = None
+    for attempt in range(max(1, attempts)):
+        try:
+            return _api_get(url, token, timeout)
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code not in RETRY_STATUSES:
+                raise
+        except urllib.error.URLError as e:
+            last = e
+        except OSError as e:
+            last = e
+    assert last is not None
+    raise last
+
+
 def _short(text: str) -> str:
     """报错文本截断（防整页 HTML 淹没红证）。"""
     flat = " ".join(str(text).split())
@@ -343,9 +373,9 @@ def _short(text: str) -> str:
 
 
 def _api_json(url: str, token: str, timeout: float) -> tuple[object, str]:
-    """`_api_get` + JSON 解析 ⇒ `(值, 错误文本)`（二者恰一有值 —— 不许静默吞）。"""
+    """`_api_get_retrying` + JSON 解析 ⇒ `(值, 错误文本)`（二者恰一有值 —— 不许静默吞）。"""
     try:
-        return json.loads(_api_get(url, token, timeout)), ""
+        return json.loads(_api_get_retrying(url, token, timeout)), ""
     except urllib.error.HTTPError as e:
         return None, f"HTTP {e.code}"
     except urllib.error.URLError as e:
@@ -926,11 +956,13 @@ class _ApiStub:
     """
 
     def __init__(self, pulls: list[dict], contents: dict[str, object], status: int,
-                 blobs: dict[str, str] | None = None) -> None:
+                 blobs: dict[str, str] | None = None, fail_first_status: int | None = None) -> None:
         self.pulls = pulls
         self.contents = contents
         self.status = status
         self.blobs = blobs or {}
+        self.fail_first_status = fail_first_status
+        self.seen_paths: set[str] = set()
         self.requests: list[str] = []
 
     def snapshot(self) -> tuple[int, list[str]]:
@@ -939,10 +971,14 @@ class _ApiStub:
     def handle(self, method: str, path: str, query: str, authorized: bool
                ) -> tuple[int, object, str]:
         self.requests.append(f"{method} {path}")
+        first_hit = path not in self.seen_paths
+        self.seen_paths.add(path)
         if method != "GET":
             return 405, {"message": "Method Not Allowed"}, ""
         if not authorized:
             return 401, {"message": "Requires authentication"}, ""
+        if self.fail_first_status is not None and first_hit and "/git/blobs/" in path:
+            return self.fail_first_status, {"message": "transient"}, ""
         if path.endswith("/pulls"):
             return self.status, self.pulls, ""
         if "/git/blobs/" in path:
@@ -1074,6 +1110,37 @@ def test_http_full_path_names_the_other_in_flight_pr(monkeypatch) -> None:
         _release(stub)
 
 
+def test_http_transient_500_is_retried_once_then_succeeds(monkeypatch) -> None:
+    """**稳定性（瞬时重试）**：blob 第一次 **503**、第二次 200 ⇒ **不判「判定不了」**，读数正常。
+
+    🔴 为什么值得一条判据：去重后一个 blob 被多个 PR 共用 ⇒ 一次瞬时抖动会把**所有**引用它的 PR
+    一起判「读不到」⇒ 放大成整面红。没有这条重试，「合法 PR 因网络抖动变红」就是常态。
+    同时自证**重试有界**：同一路径**恰好** 2 次（不是无限）。
+    """
+    claim = json.dumps({"id": "MC-952", "pr": 7001, "title": "示范", "claimed_at": "2026-10-03"})
+    stub = _ApiStub(
+        [{"number": 7001, "head": {"sha": "sha-a"}}],
+        {"sha-a/" + CLAIMS_API_PATH: [{"name": "7001-MC-952.json", "sha": "blob-retry"}]},
+        200,
+        {"blob-retry": claim},
+        fail_first_status=503,
+    )
+    base = _serve_api(monkeypatch, stub)
+    _api_env(monkeypatch, base)
+    monkeypatch.setattr("time.sleep", lambda _s: None)  # 重试不付等待（判据自己的时间不被偷）
+    try:
+        fetched = fetch_open_pr_claims()
+        assert fetched is not None and fetched[1] == [], fetched
+        assert {p.pr: p.ids for p in fetched[0]} == {7001: frozenset({"MC-952"})}, fetched[0]
+        blob_reads = [r for r in stub.snapshot()[1] if "/git/blobs/" in r]
+        assert blob_reads == [
+            "GET /repos/acme/demo/git/blobs/blob-retry",
+            "GET /repos/acme/demo/git/blobs/blob-retry",
+        ], blob_reads
+    finally:
+        _release(stub)
+
+
 def test_http_identical_claim_blob_is_downloaded_once(monkeypatch) -> None:
     """**成本红线（去重）**：三个 open PR 里**逐字节相同**的 claim 文件（同内容 SHA）⇒ 只下载 **1 次**。
 
@@ -1119,7 +1186,7 @@ def test_http_timeout_is_fail_closed_and_bounded(monkeypatch) -> None:
     _api_env(monkeypatch, "http://127.0.0.1:1")
     monkeypatch.setattr("time.monotonic", lambda: 0.0)
     result = fetch_open_pr_claims()
-    assert calls == [HTTP_TIMEOUT_S], calls
+    assert calls == [HTTP_TIMEOUT_S, HTTP_TIMEOUT_S], calls  # 恰好 2 次（瞬时重试一次，有界）
     assert result is not None and len(result[1]) == 1, result
     assert "判定不了" in result[1][0] and "open PR" in result[1][0], result[1]
 
