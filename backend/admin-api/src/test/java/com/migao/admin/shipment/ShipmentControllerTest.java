@@ -84,12 +84,14 @@ class ShipmentControllerTest {
     @Mock private ProcessingOrderMapper processingOrderMapper;
     @Mock private ClientRequestIdService clientRequestIdService;
     @Mock private ImageRecognitionClient imageRecognitionClient;
+    /** issue #6171：商家发货路的单位来源（本类不测它，但构造器按字段序要求它在场）。 */
+    @Mock private com.migao.admin.mapper.ProductMapper productMapper;
 
     private OrderShipmentService service() {
         return new OrderShipmentService(orderMapper, orderItemMapper, orderLogisticsMapper,
                 orderShipmentMapper, orderShipmentItemMapper, processingOrderMapper,
                 clientRequestIdService, imageRecognitionClient, new ObjectMapper(),
-                orderShipmentQueryMapper);
+                productMapper, orderShipmentQueryMapper);
     }
 
     private ShipmentListRow row(String id, String shipmentNo) {
