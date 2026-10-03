@@ -447,7 +447,7 @@ public class OrderShipmentService {
      * 那个谓词<b>区分不了</b>「是我们刚把订单流转成 {@code shipped} 的」与「订单本来就已 {@code shipped}」：
      * 调用方（{@link OrderService#shipWithLogistics}）先流转、再调本方法，于是本方法读到的
      * {@code order.getStatus()} 必然已是 {@code shipped} ⇒ <b>必然 4xx</b>，而流转与物流**已经写下去了**
-     * ⇒ 「状态已变 + 返回错误 + 单没建」，而那句错误文案还声称「订单发货状态未变更」——与事实相反。</p>
+     * ⇒ 「状态已变 + 返回错误 + 单没建」，而错误文案还声称订单状态没变 —— 与事实相反。</p>
      * <p>修法（issue #6181 要求 2）：调用方把「本次是否真的发生了 {@code →shipped} 流转」当
      * <b>参数</b>传进来 —— 那是<u>发生过的动作</u>，不是能被后续写覆盖的<u>状态快照</u>。
      * {@code transitioned=false} ⇒ 本次没有可记的发货（订单本来就已发货 / 只是纠正运单号）⇒ 拒绝并
