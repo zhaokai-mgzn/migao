@@ -319,8 +319,14 @@ public class OrderDetailResponse {
         /**
          * 发货方式（issue #6239，V147）：{@code logistics} 物流发货 / {@code none} 无需物流。
          *
-         * <p>未采集（存量行 / 老客户端）时为 {@code null} —— 前端据此兜底成 {@code 'logistics'}
-         * 的现行口径<b>保持不变</b>：本字段只让「无需物流」这个已经做出的选择回吐出来。</p>
+         * <p>未采集（存量行 / 老客户端 / 不经本字段采集的写面）时为 {@code null} —— 前端
+         * <b>不再</b>据此兜底成 {@code 'logistics'}（该兜底已由 issue #6254 收口）：回填口径的
+         * 单一实现点是 {@code frontend/admin-web/src/lib/data-adapter.ts::shippingMethodForEdit}，
+         * {@code null} / {@code undefined} ⇒ {@code undefined}（=「未记录」，不猜）。</p>
+         *
+         * <p>⚠️ 本段曾写作「前端据此兜底成 'logistics' 的现行口径保持不变」，与 #6254 收口后的
+         * 实际行为<b>直接矛盾</b>（注释漂移 = 假绿来源，见 {@code migao-acceptance}）。改口径时
+         * 必须同步改本注释。</p>
          */
         private String shippingMethod;
 
