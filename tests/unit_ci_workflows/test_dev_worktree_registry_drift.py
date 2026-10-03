@@ -512,8 +512,10 @@ def test_static_judgement_has_teeth_in_memory() -> None:
     )
     try:
         function_body(single, "cmd_absent")
-    except AssertionError:
-        pass
+    except AssertionError as exc:
+        assert "cmd_absent" in str(exc), (
+            f"定位不到函数时报出的错必须**具名**（fail-closed 且可归因）：{exc}"
+        )
     else:
         raise AssertionError("定位不到函数时必须 fail-closed 抛错，不许静默返回空串")
 
