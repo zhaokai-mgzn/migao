@@ -517,3 +517,25 @@ select count(*), min(created_at), max(created_at) from orders
    - **性质**：**观察项（dev 库卫生）**，不是产品缺陷，也**不是本轮引入**；
    - **不自动清理**：按铁律 10 的裁定，删除类动作不做无人值守执行 ⇒ 建议做成**显式入参的一次性命令**（人手动跑、跑前打印将删清单）；
    - **重启条件**：若下一轮还要在同一租户跑大范围断言、被这些存量干扰（例如"存量零改动"指纹口径），就先跑一次人工清理。
+
+### 19.13 记录更正：用例号是**全仓唯一**，不是"单文件唯一"（主会话的判据不完整，由修复包当场纠正）
+
+**我犯的错**（归因纪律：改记录，不掩盖）：给 F-6226 的改号指令里我写"**PG-060 空闲**"，依据只是
+`git show origin/main:.github/cases/processing.yml | grep -c "id: PG-060"` ⇒ `0`。
+**实际**：`PG-060` 就在**同域的另一个文件** `.github/cases/processing-order.yml:2281`（同一 `processing` 域被拆成多个 `*.yml`），
+⇒ 照我的号改会**当场撞号**。修复包当场用下面两条纠正了我：
+```bash
+# ① 跨同域全部 cases 文件查
+for f in $(git ls-tree --name-only origin/main .github/cases/ | grep '\.yml$'); do
+  git show origin/main:$f | grep -n "id: PG-060" | sed "s|^|$f |"; done
+# ⇒ .github/cases/processing-order.yml 2281:  - id: PG-060
+# ② 跨 main + 全部本地/远端 ref（含在飞 PR 分支）查候选号
+git grep -n "id: PG-069" $(git for-each-ref --format='%(refname)' refs/heads refs/remotes/origin) -- .github/cases   # ⇒ 0 命中
+python3 scripts/next_case_id.py PG    # 权威取号：main:001-058,060-067 · PR #6233:059 · PR #6227:068 ⇒ 069（约 100s，需联网 ⇒ 丢后台跑）
+```
+⇒ 最终取 **PG-069**，落 `.github/cases/processing-order.yml`（与 #6233 的 `processing.yml` **不同文件** ⇒ 号段与文件双双不撞）。
+
+**修正后的派单口径（§19.9 / §19.10 的补充，后续轮次直接照用）**：
+1. **取号由 `next_case_id.py` 说了算**（它会看 main + 在飞 PR），**它慢（~100s）但必须等它** —— 不要用"60s 超时"当失败，也不要用单文件 grep 代替；
+2. 手工复核时**必须跨"同域全部 cases 文件" + "全部 refs（含远端 PR 分支）"**两维；
+3. 同域被拆成多文件时（`processing.yml` / `processing-order.yml` / …），**"不同文件"也可能共享号段** —— 判断撞不撞，看**号**，不看文件名。
