@@ -794,6 +794,14 @@ _REF_EXEMPT_FILES: frozenset[str] = frozenset({
     ".github/case-trust-redproof.md",
     "tests/unit_ci_workflows/test_case_trust_gate.py",
 })
+# 规则 G 的**证据面前缀豁免**（issue #6186，2026-10-03）：
+# `acceptance/**` 是**验收证据留档**（台账 / REPORT / harness / 逐条读数）。其中的 `path:NNN`
+# 是**运行那一刻的快照** —— 引用纪律（dev-flow §16.7）要求「活锚」的对象是**用例条目**，
+# 不是历史证据；要求证据里的快照**今天仍在 `origin/main` 上命中**，等于要求证据**随代码漂移被改写**
+# ⇒ **篡改记录**。（且对**新增**文件，规则 G 必然全量命中：`old is None` ⇒ 无「旧行」可比 ⇒ 每行都算本 PR 新增。）
+# 🔴 这不是放宽：豁免**只**覆盖 `acceptance/` 前缀 —— `.github/cases/**`、`.github/templates/**`、
+#    生成物与源码**照旧判定**（两侧夹住的判据见 `test_evidence_archive_is_exempt_from_ref_freshness`）。
+_REF_EXEMPT_PREFIXES: tuple[str, ...] = ("acceptance/",)
 # 明显不是仓库引用路径的形态（夹具/占位符）—— 只在**无法解析**时才用来降噪
 _PLACEHOLDER_PATH_RE = re.compile(
     r"^(no/such|a/b\.py|x/y|foo/bar|path/to|\.\.\.|<)", re.IGNORECASE)
@@ -929,7 +937,7 @@ def check_reference_freshness_in_diff(files: list[str], base: str = "origin/main
         if not p.exists():
             continue
         scanned.append(rel)
-        if rel in _REF_EXEMPT_FILES:
+        if rel in _REF_EXEMPT_FILES or rel.startswith(_REF_EXEMPT_PREFIXES):
             continue
         text = _read_text_or_none(p)
         if text is None:

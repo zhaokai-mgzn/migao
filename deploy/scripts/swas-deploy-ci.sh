@@ -109,6 +109,13 @@ fi
 CLI_TIMEOUT_SECONDS=${SWAS_CLI_TIMEOUT_SECONDS:-60}
 # POLL_INTERVAL_SECONDS：轮询间隔（线上 20s；守卫测试调小以免空耗）。
 POLL_INTERVAL_SECONDS=${SWAS_POLL_INTERVAL_SECONDS:-20}
+# COMMAND_CONTENT_LIMIT_BYTES：SWAS `RunCommand` 的**命令内容字节上限**（issue #6124 的类级固化）。
+#   出处（**保守值**，与三条 H5 发布腿引同一份文档与同一个数）：
+#   SWAS Open RunCommand 的 `CommandContent` 与自定义参数在 base64 编码后综合长度 ≤ 16 KB
+#   —— https://help.aliyun.com/zh/simple-application-server/developer-reference/api-swas-open-2020-06-01-runcommand
+#   ⚠️ 冲突登记（照实）：ECS 侧同族 API 的文档口径是 64 KB，而本仓既有实测把上限读成 43.8~50.7 KB
+#   ⇒ 取三者中**最保守**的 16384 当闸值。判据 = tests/unit_ci_workflows/test_swas_command_content_limit.py。
+COMMAND_CONTENT_LIMIT_BYTES=${H5_COMMAND_CONTENT_LIMIT_BYTES:-16384}
 # RETRY_PAUSE_SECONDS：两次尝试之间的间隔（线上 10s；守卫测试调小以免空耗）。
 RETRY_PAUSE_SECONDS=${SWAS_RETRY_PAUSE_SECONDS:-10}
 DEADLINE=$(( $(date +%s) + DEPLOY_TIMEOUT_SECONDS ))
@@ -479,7 +486,30 @@ deploy_attempt() {
       DEPLOY_RC=3
       return 0 ;;
   esac
-  echo "  本次尝试：tag=${tag} / ALLOW_DOWNGRADE=${allow}"
+  # 🔴 **命令内容字节前置断言**（issue #6124 的类级固化；与三条 H5 发布腿同口径）：
+  #   本节（`BOOTSTRAP`）是**模板**、每次尝试各自渲染 ⇒ 断言必须打在**渲染后**的 `$bootstrap` 上
+  #   （打在模板上会漏掉替换进长值的那次）。超限就在这里**本机判红**（具名读数 + 出处），
+  #   而不是云上冒一个 `SDKError 400 / CmdContent.ExceedLimit` —— 后者只在**部署那一刻**可见。
+  #   上限出处（**保守值**）：SWAS Open RunCommand 的 `CommandContent` 与自定义参数在 base64 编码后
+  #   综合长度 ≤ 16 KB（https://help.aliyun.com/zh/simple-application-server/developer-reference/api-swas-open-2020-06-01-runcommand）；
+  #   本仓既有实测把上限读成 43.8~50.7 KB（ECS 侧同族 API 的文档口径是 64 KB）⇒ 取三者中**最保守**的 16 KB。
+  #   修法：新增的部署逻辑加进远端执行体 `deploy/swas/deploy.sh`（不占命令内容）；**不许**把
+  #   远端脚本整份内联进 `BOOTSTRAP`。判据 = tests/unit_ci_workflows/test_swas_command_content_limit.py。
+  local bootstrap_bytes
+  # ⚠️ 闸值在**函数内自带默认**：本函数会被判据
+  #    （tests/unit_ci_workflows/test_swas_deploy_no_downgrade.py）**原样抽出来单独跑**
+  #    （只抽函数体、不带脚本顶部的常量）⇒ 只引用顶层变量会在那个宿主里 unbound、
+  #    并让那 8 条判据报「探针非预期失败」（实测：本包第一轮 CI 就是这么红的）。
+  COMMAND_CONTENT_LIMIT_BYTES=${COMMAND_CONTENT_LIMIT_BYTES:-16384}
+  bootstrap_bytes=$(printf '%s' "$bootstrap" | wc -c | tr -d ' \n')
+  if [ "$bootstrap_bytes" -ge "$COMMAND_CONTENT_LIMIT_BYTES" ]; then
+    echo "❌ SWAS 命令内容超限：命令内容 ${bootstrap_bytes} 字节 / 上限 ${COMMAND_CONTENT_LIMIT_BYTES} 字节 —— 拒绝发起云调用（tag=${tag}）。"
+    echo "   上限出处：SWAS Open RunCommand CommandContent base64 后 ≤ 16 KB —— help.aliyun.com/zh/simple-application-server/developer-reference/api-swas-open-2020-06-01-runcommand"
+    echo "   修法：把新增逻辑加进远端执行体 deploy/swas/deploy.sh（不占命令内容），不要内联进 BOOTSTRAP。"
+    DEPLOY_RC=3
+    return 0
+  fi
+  echo "  本次尝试：tag=${tag} / ALLOW_DOWNGRADE=${allow} / 命令内容 ${bootstrap_bytes} 字节（上限 ${COMMAND_CONTENT_LIMIT_BYTES}）"
 
   # RunCommand 可能被阿里云 API 限流（并发触发时 Throttling），重试 3 次
   local INVOKE="" INVOKE_ID="" attempt

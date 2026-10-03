@@ -35,16 +35,10 @@ import java.util.Map;
  * </ol>
  *
  * <h2>它盖到哪几条发货路（台账在 {@code ShipmentInvariantGuardTest}，未登记即红）</h2>
- * <p>工人路（{@code OrderShipmentService.ship}）**带**这两条不变式；商家/生产路
- * （{@code ProductionController.ship} → {@code OrderShipmentService.recordMerchantShipment}）
- * 自 <b>issue #6171</b> 起也落了 {@code order_shipment_items}（数量 = {@link #remainingLines} 的未发余量）
- * ⇒ 同样带这两条不变式。🔴 <b>裸状态路</b>（{@code PUT /orders/{id}/status} 的
- * {@code confirmed|producing → shipped}）**不带数量**（请求体只有 status）⇒ 结构上无法承载第一条 ——
- * 它那条缺口（订单置 {@code shipped} 后在发货单链上不可见 = 漏单）由台账逐条具名登记
- * 「接受的缺口 + 重启条件」，**不**在这里静默放过。</p>
- * <p>⚠️ issue #6171 未收口的那一半（如实登记，不粉饰）：余量为 {@code 0} 的**部分发货**订单
- * （工人路先发一部分 ⇒ 订单已 {@code shipped}）再调商家路 ⇒ 状态前置即 4xx，**不建单**；
- * 「一张订单多张发货单」的部分发货闭环不在本单射程（重启条件见台账条目）。</p>
+ * <p>工人路（{@code OrderShipmentService.ship}）**带**这两条不变式；商家/生产路与裸状态路
+ * （{@code PUT /orders/{id}/status}）**不带数量**（它们不落 {@code order_shipment_items}）⇒
+ * 结构上无法承载第一条 —— 那两条的缺口（订单置 {@code shipped} 后在发货单链上不可见 = 漏单）
+ * 由台账逐条具名登记「接受的缺口 + 重启条件」，**不**在这里静默放过。</p>
  *
  * <h2>为什么是 static 而不是 {@code @Component}</h2>
  * <p>与 {@link OrderShipGuard} 同一取舍：{@code OrderService} 是 16 依赖的
@@ -267,13 +261,26 @@ public final class ShipmentInvariants {
     }
 
     /**
+     * 累计已发的**读面**（不判、只报）：把「该订单行已发了多少」变成可读的读数，
+     * 供路由把「上限与已发」放进结果快照（发第二张发货单时前端/纸面要知道还剩多少）。
+     */
+    public static Map<String, Object> cumulativeView(List<ShipmentLine> requestLines,
+                                                     List<OrderShipmentItem> alreadyShipped) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        for (Map.Entry<String, BigDecimal> row : cumulativeByOrderItem(requestLines, alreadyShipped).entrySet()) {
+            view.put(row.getKey(), row.getValue());
+        }
+        return view;
+    }
+
+    /**
      * 🔴 <b>订单未发余量</b>（issue #6171）—— 「还剩多少没发」，逐 {@code order_item_id}。
      *
-     * <p>为什么在这里而不是在路由里：商家/生产发货路（{@code POST /api/admin/production/orders/{orderId}/ship}）
-     * 的请求体**只有运单号 / 承运商、没有数量** ⇒ 它的「实发数量」只有一个不编造的来源 =
-     * {@code 订单量 − 已发合计}，也就是 {@link #assertWithinOrderQuantity} 的另一半
-     * （S1 立的是「不许超」，这里取的是「还剩多少」，同一份累计口径 {@link #cumulativeByOrderItem}
-     * ⇒ 两处不可能分叉）。</p>
+     * <p>为什么在这里而不是在路由里：商家/生产发货路
+     * （{@code POST /api/admin/production/orders/{orderId}/ship}）的请求体**只有运单号 / 承运商、
+     * 没有数量** ⇒ 它的「实发数量」只有一个不编造的来源 = {@code 订单量 − 已发合计}，也就是
+     * {@link #assertWithinOrderQuantity} 的另一半（一处立「不许超」，这里取「还剩多少」，
+     * 共用同一份累计口径 {@link #cumulativeByOrderItem} ⇒ 两处不可能分叉）。</p>
      *
      * <p>口径（逐条可判，供商家路的实例判据直接消费）：</p>
      * <ul>
@@ -304,19 +311,6 @@ public final class ShipmentInvariants {
             remaining.put(item.getId(), left.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : left);
         }
         return remaining;
-    }
-
-    /**
-     * 累计已发的**读面**（不判、只报）：把「该订单行已发了多少」变成可读的读数，
-     * 供路由把「上限与已发」放进结果快照（发第二张发货单时前端/纸面要知道还剩多少）。
-     */
-    public static Map<String, Object> cumulativeView(List<ShipmentLine> requestLines,
-                                                     List<OrderShipmentItem> alreadyShipped) {
-        Map<String, Object> view = new LinkedHashMap<>();
-        for (Map.Entry<String, BigDecimal> row : cumulativeByOrderItem(requestLines, alreadyShipped).entrySet()) {
-            view.put(row.getKey(), row.getValue());
-        }
-        return view;
     }
 
     // ══════════════════════════════════════════════════════════════════════════════

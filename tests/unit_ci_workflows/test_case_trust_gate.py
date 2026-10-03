@@ -1069,6 +1069,39 @@ class TestReferenceFreshness:
             "规则 G 未做「只扫新增行」过滤 —— 会把存量过期引用算到无关 PR 头上（假红）"
         )
 
+    def test_evidence_archive_is_exempt_from_ref_freshness(self, tmp_path, monkeypatch):
+        """规则 G 的**证据面豁免**（issue #6186）：`acceptance/**` 的行号是**运行时刻的快照**。
+
+        病根（PR #6184 实证）：把当日全部验收承载体入仓（132 个文件，只新增 `acceptance/**`）⇒
+        CI 的 Case Trust Gate 判红一片 `CASE-TRUST-STALE-LINE-REF`（`OrderController.java:239` /
+        `page.tsx:2349` / `SecurityTokenFilter.java:104` 行号漂移 …）。那些引用是**采集当时的快照**，
+        要求它们"今天仍在 origin/main 命中"等于要求证据**随代码漂移被改写** = 篡改记录。
+
+        🔴 **两侧夹住**（缺任一条都不算修好）：
+          ① **豁免面**（`acceptance/` 前缀）里的过期引用 ⇒ **不进判定**；
+          ② **非豁免面**（同一次调用里的普通 `.md`）的同一条引用 ⇒ **照旧**进判定 ⇒ 证明豁免没有把真判据一起吞掉；
+          ③ 豁免面文件仍出现在 `scanned_files` 里（**可见的登记**，不是静默丢弃）。
+        """
+        gate = _gate_module()
+        monkeypatch.setattr(gate, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(gate, "_ORIGIN_LINES_CACHE", {})
+
+        body = "见 `probe_target_6186.py:4242` 处的实现（快照，不要求今天仍命中）\n"
+        ev_rel = "acceptance/2026-10-03/probe-evidence-6186.md"
+        other_rel = "docs/probe-other-6186.md"
+        for rel in (ev_rel, other_rel):
+            pth = tmp_path / rel
+            pth.parent.mkdir(parents=True, exist_ok=True)
+            pth.write_text(body, encoding="utf-8")
+
+        res = gate.check_reference_freshness_in_diff([ev_rel, other_rel], base="origin/main")
+
+        assert ev_rel in res["scanned_files"] and other_rel in res["scanned_files"], (
+            f"两个文件都应被登记为 scanned（豁免必须是**可见的登记**，不是静默丢弃）：{res['scanned_files']}")
+        assert res["ref_count"] == 1, (
+            "证据面豁免未生效（应为 1：只有非豁免面那条进判定）或被放宽成"
+            f"吞真判据（应为 1）：ref_count={res['ref_count']}")
+
     def test_binary_file_in_diff_does_not_crash_the_gate(self, tmp_path, monkeypatch):
         """红证（issue #4210）：改动集含**二进制文件** ⇒ 规则 G 不得崩溃，且必须**显式登记跳过**。
 

@@ -169,6 +169,13 @@ jobs:
         env:
           AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          # 🔴 **执行体 ref**（issue #6124）：引导**按它**从 codeload 取回
+          #    `deploy/swas/bmini-h5-publish-remote.sh` 并执行；发布逻辑**不进** SWAS 命令内容
+          #    （命令内容只留极小引导 ⇒ 与远端脚本大小解耦，不再逼近 16 KB 墙；病根见 issue #6095）。
+          #    = 本 workflow 跑的那个 commit ⇒ 它的 tarball 必定含远端执行体；**不是** main 的最新
+          #    （取最新会让「远端执行的那份」与「本次 CI 审过的 commit」漂移）。
+          #    ⚠️ 与第 5 参数（**产物** ref = ACR 镜像 tag）是两件事：镜像是产物、git ref 只有这一个。
+          H5_PUBLISHED_COMMIT: ${{ github.sha }}
         run: |
           bash deploy/scripts/bmini-h5-publish-ci.sh \
             "${{ env.SWAS_INSTANCE_ID }}" "${{ env.SWAS_REGION }}" "$AK" "$SK" "sha-${GITHUB_SHA::7}"

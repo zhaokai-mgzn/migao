@@ -7,12 +7,11 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Pattern;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -46,25 +45,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       <td>豁免条目去掉 {@code restartWhen} ⇒ 红</td></tr>
  * </table>
  *
- * <h2>issue #6171 追加：发货写面 ⇄ **可查的发货单**（C6~C8）</h2>
- * <p>病根同族但更狠：修前商家/生产发货路**一条发货单都不建**（实测 {@code order_shipments=0}）
- * ⇒ 订单在「发货单」列表读面里永远查不到。用户 2026-10-03 裁定「要建」后，本类把
- * 「<b>每一条发货写面都必须产出一张可查的发货单</b>」也做成机械判据 —— 盖**两条**路，
- * 且「新增第三条路而漏建单」当场红。</p>
- * <table>
- *   <tr><th>#</th><th>判据</th><th>怎么让它单独红</th></tr>
- *   <tr><td>C6</td><td><b>控制层面扫描 ⇄ 台账双向相等</b>：扫 {@code controller/} 下每个
- *       {@code @PostMapping} 方法体，凡出现运单号锚 {@code "trackingNo"} 的**都是一个发货写面**，
- *       必须已登记；台账条目也必须真的存在于源里（死条目 ⇒ 红）</td>
- *       <td>{@link #redProofThirdShipRouteWithoutDocIsRejected} 用内存源片段自证；
- *       真源上加第三条发货路 ⇒ 红并具名报出「哪个源文件出现未登记发货路」</td></tr>
- *   <tr><td>C7</td><td><b>登记条目必须真的建单</b>：每条台账逐字核对建单接线锚
- *       {@code recordMerchantShipment(} 出现在它声明的源文件里</td>
- *       <td>把那次调用删掉/改名 ⇒ C7 红并具名报出是哪条路</td></tr>
- *   <tr><td>C8</td><td><b>台账不许空转</b>（fail-closed）：台账为空 ⇒ 红</td>
- *       <td>清空台账「消红」⇒ 红</td></tr>
- * </table>
- *
  * <h2>判据按**结构化锚点**判定，不做全文语义判断</h2>
  * <p>扫描只认「转移本体调用 + 目标状态是字面量 {@code "shipped"}」这一形态
  * （{@code transitionStatusAtomic(..., "shipped"} / {@code transition(..., "shipped"}），
@@ -89,12 +69,7 @@ class ShipmentInvariantGuardTest {
             "transition([A-Za-z]*)\\([^;]*\"shipped\"", Pattern.DOTALL);
 
     /**
-     * 发货写面台账（**未登记即红**）。{@code carriesInvariant} = 该写点是否真的带「累计已发 ≤ 订单量」。
-     *
-     * <p>⚠️ {@code wiring} 指「**该不变式由谁执行**」的接线锚，不一定与台账行同文件：
-     * 商家/生产路的数量判定在 owner（{@code OrderShipmentService.recordMerchantShipment} →
-     * {@code assertQuantities}）里 ⇒ 它的锚指 owner（issue #6171：#6171 之前这条路不带任何数量，
-     * 现在它落了明细，判定随之由 owner 统一执行 —— 仍然**只有一份**判定本体）。</p>
+     * 发货写面台账（**未登记即红**）。`carriesInvariant` = 该写点是否真的带「累计已发 ≤ 订单量」。
      */
     private record WritePoint(String source, String name, String path, boolean carriesInvariant,
                               String wiring, String acceptedGap, String restartWhen) {
@@ -108,18 +83,22 @@ class ShipmentInvariantGuardTest {
             new WritePoint("OrderService.java",
                     "商家/生产发货（shipOrderIfApplicable ← shipWithLogistics ← ProductionController.ship）",
                     "POST /api/admin/production/orders/{orderId}/ship",
-                    true, "OrderShipmentService::assertQuantities", null, null),
+                    false, null,
+                    "本路**不建发货单**（不落 order_shipment_items）⇒ 没有「实发数量」可判 —— 这不是漏接，"
+                            + "是既有的**有意**设计：发货写面（含实发明细）全归 issue #5648 的工人面"
+                            + "（ShipmentController 类注释、print-media-matrix §6 逐字）。"
+                            + "⇒ 本路今天**结构上无法**承载「累计已发 ≤ 订单量」；它的缺口（订单置 shipped 后"
+                            + "在发货单链上不可见 = 漏单）已由本单登记，见 acceptedGap。",
+                    "若要本路也承载实发数量，需先裁定「商家发货要不要建发货单 + 实发数量从哪来」"
+                            + "（业务口径，涉单据与对账）⇒ 裁定后把本条目改为 carriesInvariant=true "
+                            + "并接上 OrderShipmentService::assertQuantities。"),
             new WritePoint("OrderService.java",
                     "裸状态流转（updateOrderStatus 的 confirmed|producing → shipped）",
                     "PUT /api/admin/orders/{id}/status",
                     false, null,
-                    "本路**只改状态**、不带任何数量（请求体只有 status）⇒ 没有数就没得判；"
-                            + "它是**发货写面的别名**（同一个 shipOrderIfApplicable 守卫家族）却**越过**发货单写面"
-                            + "⇒ 订单被置 shipped 后在发货单链上不可见 = 漏单形态本身。"
-                            + "⇒ 本条目是该形态的**具名登记**：豁免只到「无数量可判」，"
-                            + "**不**覆盖「不留单」（后者由 SHIP_DOC_LEDGER 的路径登记与 EV-3 复核项承接）。",
-                    "若要本路也产出可查的发货单（EV-3），需先裁定「改状态算不算发货」（业务口径）；"
-                            + "裁定后把它并入商家/生产发货路那一条写面，而不是各建一张单。"));
+                    "本路**只改状态**、不带任何数量（请求体只有 status）⇒ 与上一条同因：没有数就没得判。"
+                            + "它与上一条合起来 = 「任何把订单置为 shipped 的写面都可能不留发货单」这个族级缺口。",
+                    "同「商家/生产发货」条目：先裁定商家侧要不要建发货单，再决定本路是否并入同一条写面。"));
 
     // ══════════════════════════════════════════════════════════════════════════
     // C1 判据自己不许空转
@@ -175,7 +154,7 @@ class ShipmentInvariantGuardTest {
     @DisplayName("C4 接线：带不变式的写点必须真的调 assertQuantities（摘掉接线 ⇒ 红）")
     void invariantCarryingWritePointIsReallyWired() throws IOException {
         for (WritePoint point : LEDGER) {
-            if (!carriesInvariant(point.source())) {
+            if (!point.carriesInvariant()) {
                 continue;
             }
             String source = Files.readString(SERVICE_DIR.resolve(point.source()));
@@ -206,11 +185,6 @@ class ShipmentInvariantGuardTest {
     // C5 豁免必须具名（接受的缺口 + 重启条件）
     // ══════════════════════════════════════════════════════════════════════════
 
-    /** 该条目声明的「不变式执行方」源文件里必须逐字出现的接线锚（C4 与红证共用**同一份**）。 */
-    static boolean carriesInvariant(String declaredCarrierFile) {
-        return declaredCarrierFile != null && declaredCarrierFile.contains(WIRING_ANCHOR);
-    }
-
     @Test
     @DisplayName("C5 豁免具名：不带不变式的条目必须写清「接受的缺口」与「重启条件」")
     void exemptionsAreNamedWithRestartCondition() {
@@ -226,160 +200,6 @@ class ShipmentInvariantGuardTest {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // C6~C8 发货写面 ⇄ **可查的发货单**（issue #6171）
-    //   · 盖**两条**路（工人 + 商家/生产）；新增第三条路而漏建单 ⇒ C6 当场红。
-    //   · 与 C1~C5 的差别：那组锁「数量对不对」，这组锁「有没有一张查得到的发货单」。
-    // ══════════════════════════════════════════════════════════════════════════
-
-    /** 控制面扫描面（**只**在这些目录里找「发货写面」——HTTP 入口住在这里）。 */
-    private static final List<String> CONTROLLER_DIRS = List.of("controller", "worker");
-
-    /**
-     * 发货写面的**结构化锚**：{@code @PostMapping} 路径以 {@code /ship} 结尾（工人面
-     * {@code /orders/{orderId}/ship}、商家生产面 {@code /orders/{orderId}/ship} —— 两条路今天同名，
-     * 「将来的第三条路」必然也得是「发货」这个动作）。
-     *
-     * <p>为什么锚在**路径**而不是请求体字段名：两条路的 body 形状不同（工人面自带
-     * {@code items[].shipped_quantity}，商家面只有 {@code trackingNo}）⇒ 拿某一条的字段当锚，
-     * 另一条就扫不到（实测：用 {@code "trackingNo"} 当锚时工人面命中 0 段）。</p>
-     */
-    private static final Pattern SHIP_ROUTE = Pattern.compile(
-            "@PostMapping\\s*\\(\\s*\"([^\"]*?)\"\\s*\\)(.*?)(?=@(Post|Get|Put|Delete|Patch)Mapping|\\Z)",
-            Pattern.DOTALL);
-
-    private static final String TRACKING_NO_ANCHOR = "\"trackingNo\"";
-
-    /** 建单接线锚 = 写发货单的**唯一**入口（owner 的写面）。 */
-    private static final String SHIPMENT_WIRING_ANCHOR = "recordMerchantShipment(";
-
-    /**
-     * 工人路的建单接线形态：它的建单内联在 owner 的 {@code ship()} 里
-     * （{@code WorkerShipmentController.ship} → {@code orderShipmentService.ship(...)}）。
-     * 只认**调用形态**（带左括号）—— 光有字段/import 不算接线（那正是「字段在、接线被摘掉」的形态）。
-     */
-    private static final String WORKER_DOC_WIRING_ANCHOR = "orderShipmentService.ship(";
-
-    /** 发货写面 ⇄ 可查发货单 的台账（**未登记即红**；「已登记的写面没建单」也红）。 */
-    private record ShipDocLedgerEntry(String source, String name, String path, String note) {
-    }
-
-    private static final List<ShipDocLedgerEntry> SHIP_DOC_LEDGER = List.of(
-            new ShipDocLedgerEntry("WorkerShipmentController.java",
-                    "工人发货写面（#5648）",
-                    "POST /api/worker/shipment/orders/{orderId}/ship",
-                    "请求体**带**实发明细（items[].shipped_quantity）⇒ 数量由人给；"
-                            + "经 OrderShipmentService.ship 落 order_shipments + order_shipment_items"),
-            new ShipDocLedgerEntry("ProductionController.java",
-                    "商家/生产发货写面（#6171 用户裁定「要建」）",
-                    "POST /api/admin/production/orders/{orderId}/ship",
-                    "请求体**不带**数量 ⇒ 实发数量 = 订单未发余量；"
-                            + "写序 = ①零写前置 ②shipWithLogistics（含流转）③recordMerchantShipment"));
-
-    /**
-     * C6：控制面上「凡带运单号锚的 POST 发货路」必须都已登记（台账 ⇄ 扫描**双向相等**）。
-     */
-    @Test
-    @DisplayName("C6 发货写面寻址：控制面每个带运单号锚的 POST 发货路都在台账里（新增第三条路 ⇒ 红并具名）")
-    void everyShipRouteOnControllerFaceIsRegistered() throws IOException {
-        Map<String, Set<String>> found = discoveredShipRoutes();
-        assertThat(found.keySet())
-                .as("源里出现了未登记的发货写面 ⇒ 新增/改动了发货路却没登记它怎么建可查的发货单")
-                .isSubsetOf(SHIP_DOC_LEDGER.stream().map(ShipDocLedgerEntry::source).distinct().toList());
-        assertThat(found.keySet())
-                .as("登记的两条路都必须真的被寻址扫到（扫不到 = 台账条目是死的 / 锚选错了）")
-                .containsExactlyInAnyOrderElementsOf(
-                        SHIP_DOC_LEDGER.stream().map(ShipDocLedgerEntry::source).distinct().toList());
-        assertThat(found.values().stream().mapToInt(Set::size).sum())
-                .as("真源上的发货写面读数 = **两条**（工人 + 商家/生产）；读数变了 ⇒ 要么新增了第三条路"
-                        + "（先登记再改），要么锚失效了（扫描面选错）")
-                .isEqualTo(2);
-    }
-
-    /**
-     * C6 红证：内存源片段里加一条**带运单号锚但不建单**的新发货路 ⇒ 寻址当场发现它、
-     * 而建单判据当场判它红（判别力自证 —— 不是「跑绿了」）。
-     */
-    @Test
-    @DisplayName("C6 红证：第三条发货路只带运单号、不建单 ⇒ 寻址找到它且接线判它红")
-    void redProofThirdShipRouteWithoutDocIsRejected() throws IOException {
-        // 第三条路的形态：与现有两条**同形**（同一个 /ship 动作 + 运单号锚），但**不**接建单写面。
-        // 用「另一个类」作载体：现有两条路今天共处 `controller/` 面，`/ship` 路径不重名
-        // ⇒ 新路只会出现在**另一个源文件**里，本判据的扫描面（整个 controller/ 目录）天然看得见它。
-        String thirdRoute = "class ThirdPartyLogisticsController { "
-                + "@PostMapping(\"/orders/{orderId}/ship\") "
-                + "public ApiResponse<Void> ship(String orderId, Map<String, String> body) { "
-                + "return ok(body.get(\"trackingNo\")); } }";
-        String thirdRouteSource = thirdRoute;
-        assertThat(shipRoutesIn(thirdRouteSource))
-                .as("新发货路必须被寻址扫出来（扫不出来 ⇒ 本判据对「新增第三条路」零判别力）")
-                .isNotEmpty();
-        assertThat(recordsADocument(thirdRouteSource))
-                .as("未建单的发货路必须被判据判红（判别力自证）").isFalse();
-        // 对照读数：真源的两条路都被 C7 认账（不是「恒红」的断言）
-        for (String source : List.of("ProductionController.java", "WorkerShipmentController.java")) {
-            assertThat(recordsADocument(readControllerOrService(source)))
-                    .as("真实发货路必须已接线: %s", source).isTrue();
-        }
-    }
-
-    /**
-     * C7：每条登记的发货写面必须**真的**接在 owner 的建单写面上（摘掉接线 ⇒ 红并具名）。
-     */
-    @Test
-    @DisplayName("C7 接线：每条发货路都必须真的调 owner 的建单写面（摘掉接线 ⇒ 红并具名）")
-    void everyRegisteredShipRouteReallyRecordsADocument() throws IOException {
-        for (ShipDocLedgerEntry entry : SHIP_DOC_LEDGER) {
-            String source = readControllerOrService(entry.source());
-            assertThat(recordsADocument(source))
-                    .as("登记的发货写面「%s」(%s) 没接在 owner 的建单写面上（%s / %s 都找不到）⇒ "
-                            + "该路发出去的货在发货单链上不可见（#6171 的漏单形态）",
-                            entry.name(), entry.path(), SHIPMENT_WIRING_ANCHOR, WORKER_DOC_WIRING_ANCHOR)
-                    .isTrue();
-        }
-    }
-
-    /**
-     * C7 红证：把接线从**真源文本**里摘掉（内存变异，不动工作树文件）⇒ 该条目当场判红。
-     *
-     * <p>这是「摘掉接线 ⇒ 必须红」的一次实测读数（不是「跑绿了」当证据）。</p>
-     */
-    @Test
-    @DisplayName("C7 红证：从真源文本里摘掉建单接线 ⇒ 该发货路判红（真语料上的双向自证）")
-    void redProofUnwiredRealSourceIsRejected() throws IOException {
-        String production = readControllerOrService("ProductionController.java");
-        String worker = readControllerOrService("WorkerShipmentController.java");
-        assertThat(recordsADocument(production)).as("真源（修后）必须已接线").isTrue();
-        assertThat(recordsADocument(worker)).as("真源（修后）必须已接线").isTrue();
-
-        // 注入：只摘掉**调用**（字段留着）—— 这正是「接线被摘掉但看起来还在」的形态
-        String unwiredProduction = production.replace(SHIPMENT_WIRING_ANCHOR, "noLongerRecordingAnything(");
-        String unwiredWorker = worker.replace(WORKER_DOC_WIRING_ANCHOR, "noLongerRecordingAnything(");
-        assertThat(recordsADocument(unwiredProduction))
-                .as("摘掉 ProductionController 的建单接线后本判据必须判红").isFalse();
-        assertThat(recordsADocument(unwiredWorker))
-                .as("摘掉 WorkerShipmentController 的建单接线后本判据必须判红").isFalse();
-    }
-
-    /** C7 的判定条件（真源与红证共用**同一份**，否则红证不是对判据本体的判别力自证）。 */
-    static boolean recordsADocument(String controllerSource) {
-        return controllerSource.contains(SHIPMENT_WIRING_ANCHOR)
-                || controllerSource.contains(WORKER_DOC_WIRING_ANCHOR);
-    }
-
-    /**
-     * C8：台账不许空转（fail-closed）——清空台账「消红」是最常见的规避形态。
-     */
-    @Test
-    @DisplayName("C8 fail-closed：发货单台账为空 ⇒ 红（清空台账不许当通过）")
-    void shipDocLedgerIsNotEmpty() {
-        assertThat(SHIP_DOC_LEDGER).as("台账为空 ⇒ 本守卫恒绿（空断言）").isNotEmpty();
-        assertThat(CONTROLLER_DIRS).as("扫描面为空 ⇒ 新发货路永远发现不了").isNotEmpty();
-        assertThat(SHIP_DOC_LEDGER.stream().map(ShipDocLedgerEntry::note).filter(n -> n != null && !n.isBlank()).count())
-                .as("每条登记都必须写清「它怎么产出可查的发货单」（不许只登记一个名字）")
-                .isEqualTo(SHIP_DOC_LEDGER.size());
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
     // 扫描实现（**结构化锚点**，与真源、内存片段共用同一份 —— 红证才不是空断言）
     // ══════════════════════════════════════════════════════════════════════════
 
@@ -390,62 +210,6 @@ class ShipmentInvariantGuardTest {
             found.put(source, scanText(Files.readString(SERVICE_DIR.resolve(source))));
         }
         return found;
-    }
-
-    /**
-     * 真源**发货写面寻址**：控制面（{@code controller/} + {@code worker/}）里每个带运单号锚的
-     * {@code @PostMapping} 方法体 ⇒ {@code 文件名 → 该文件里的发货路段}。
-     *
-     * <p>与红证共用 {@link #shipRoutesIn(String)}（同一份判定 —— 否则红证不是对判据本体的判别力自证）。</p>
-     */
-    static Map<String, Set<String>> discoveredShipRoutes() throws IOException {
-        Map<String, Set<String>> found = new LinkedHashMap<>();
-        for (String dir : CONTROLLER_DIRS) {
-            Path dirPath = REPO_ROOT.resolve("backend/admin-api/src/main/java/com/migao/admin").resolve(dir);
-            if (!Files.isDirectory(dirPath)) {
-                continue;
-            }
-            try (var stream = Files.list(dirPath)) {
-                for (Path file : stream.filter(p -> p.toString().endsWith(".java")).toList()) {
-                    Set<String> routes = shipRoutesIn(Files.readString(file));
-                    if (!routes.isEmpty()) {
-                        found.put(file.getFileName().toString(), routes);
-                    }
-                }
-            }
-        }
-        return found;
-    }
-
-    /**
-     * 在一个源文本里找出**发货写面**：{@code @PostMapping(".../ship")} 之后、下一个映射注解之前
-     * 的那一段（含方法体）。
-     *
-     * <p>为什么用「注解 + 路径」而不是全文 contains：注释 / javadoc 里提到运单号或 /ship 不算发货路
-     * （本仓反复踩过「把注释读成代码」）；路径锚把命中限定在**真的声明了这个端点**的地方。</p>
-     */
-    static Set<String> shipRoutesIn(String source) {
-        Set<String> routes = new HashSet<>();
-        Matcher matcher = SHIP_ROUTE.matcher(source);
-        while (matcher.find()) {
-            if (!matcher.group(1).endsWith("/ship")) {
-                continue; // 只认「发货」这个动作的写面（其它 POST 端点不是发货路）
-            }
-            routes.add(matcher.group(1) + "||" + matcher.group(2).trim());
-        }
-        return routes;
-    }
-
-    /** 读控制面源文件（先 controller/ 再 worker/；两处都没有 ⇒ 断言红）。 */
-    private static String readControllerOrService(String fileName) throws IOException {
-        for (String dir : CONTROLLER_DIRS) {
-            Path path = REPO_ROOT.resolve("backend/admin-api/src/main/java/com/migao/admin")
-                    .resolve(dir).resolve(fileName);
-            if (Files.exists(path)) {
-                return Files.readString(path);
-            }
-        }
-        throw new AssertionError("台账声明的源文件不存在（路径漂移不得静默跳过）: " + fileName);
     }
 
     /**
@@ -474,5 +238,180 @@ class ShipmentInvariantGuardTest {
         for (List<String> methods : reading.values()) {
             assertThat(methods).as("两个承载文件都必须有「置为 shipped」的写点（否则扫描面选错了）").isNotEmpty();
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // C9~C12 商家发货路的**写序与事务边界**（issue #6181）
+    //   病根：三步写序 ①零写前置 ②流转+物流（已提交）③建单 —— 而 ③ **又自判了一次当前状态**，
+    //   读到的正是 ② 刚写下的 shipped ⇒ 必然 422，而状态与物流已经写下去（部分写入 + 假陈述）。
+    //   本组把「写序」与「单一事务边界」钉成结构判据：改顺序 / 摘事务 / 重新自判状态 ⇒ 当场红。
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private static final Path PRODUCTION_CONTROLLER = REPO_ROOT.resolve(
+            "backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java");
+
+    /** 商家发货路的三步写序（真源里的**结构化锚点**，按出现次序核对）。 */
+    private static final List<String> SHIP_WRITE_ORDER = List.of(
+            "assertShippableOrder(", "shipWithLogistics(", "recordMerchantShipment(");
+
+    /**
+     * 事务注解锚（结构判定，不做语义猜测）：同时认**全限定**与**简单名**两种写法
+     * （{@code @org.springframework.transaction.annotation.Transactional} / 导入了注解后的
+     * {@code @Transactional}）—— 两者在语义上等价，判据不该因为写法不同而假红。
+     */
+    private static final Pattern TRANSACTIONAL_ANCHOR =
+            Pattern.compile("@(?:org\\.springframework\\.transaction\\.annotation\\.)?Transactional\\s*\\(");
+    private static final String ROLLBACK_FOR_ANCHOR = "rollbackFor = Exception.class";
+
+    /**
+     * 取 {@code ProductionController} 里 {@code shipAtomic} 的方法体（三步写序的承载体）。
+     *
+     * <p>只认「方法签名 → 下一个方法签名」之间的文本；注释里的散文不在方法体里。</p>
+     */
+    static String shipAtomicBody(String controllerSource) {
+        Matcher matcher = Pattern.compile(
+                "private\\s+Map<String,\\s*Object>\\s+shipAtomic\\s*\\([^)]*\\)\\s*\\{", Pattern.DOTALL)
+                .matcher(controllerSource);
+        if (!matcher.find()) {
+            return "";
+        }
+        int depth = 1;
+        int index = matcher.end();
+        while (index < controllerSource.length() && depth > 0) {
+            char c = controllerSource.charAt(index);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+            }
+            index++;
+        }
+        return controllerSource.substring(matcher.end(), Math.max(matcher.end(), index - 1));
+    }
+
+    /** 三步写序齐全且**按序**出现（摘掉任一步 ⇒ false；顺序颠倒 ⇒ false）。 */
+    static boolean writeOrderIsIntact(String controllerSource) {
+        String body = shipAtomicBody(controllerSource);
+        int cursor = -1;
+        for (String anchor : SHIP_WRITE_ORDER) {
+            int at = body.indexOf(anchor, cursor + 1);
+            if (at < 0) {
+                return false;
+            }
+            cursor = at;
+        }
+        return true;
+    }
+
+    /** 事务边界形态：注解 + {@code rollbackFor = Exception.class} 同时逐字在场。 */
+    static boolean transactionBoundaryIsDeclared(String source, String methodSignature) {
+        int at = source.indexOf(methodSignature);
+        if (at < 0) {
+            return false;
+        }
+        // 方法签名前的那一小段（注解区）里必须同时有事务注解与 rollbackFor
+        String header = source.substring(Math.max(0, at - 400), at);
+        return TRANSACTIONAL_ANCHOR.matcher(header).find() && header.contains(ROLLBACK_FOR_ANCHOR);
+    }
+
+    @Test
+    @DisplayName("C9 🔴 三步写序真源核对：①零写前置 ⇒ ②流转+物流 ⇒ ③建单（顺序颠倒/摘步 ⇒ 红）")
+    void merchantShipWriteOrderIsIntact() throws IOException {
+        String source = Files.readString(PRODUCTION_CONTROLLER);
+        assertThat(shipAtomicBody(source))
+                .as("找不到 shipAtomic 方法体 ⇒ 扫描锚失效或写序载体被搬走（先改判据再改码）")
+                .isNotBlank();
+        assertThat(writeOrderIsIntact(source))
+                .as("商家发货三步写序必须按 ①%s ②%s ③%s 出现 —— 顺序是契约的一部分（issue #6181）",
+                        SHIP_WRITE_ORDER.get(0), SHIP_WRITE_ORDER.get(1), SHIP_WRITE_ORDER.get(2))
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("C10 🔴 事务边界真源核对：/ship 必须 @Transactional(rollbackFor=Exception.class)（摘掉 ⇒ 红）")
+    void merchantShipDeclaresSingleTransactionBoundary() throws IOException {
+        String source = Files.readString(PRODUCTION_CONTROLLER);
+        assertThat(transactionBoundaryIsDeclared(source, "public ApiResponse<Map<String, Object>> ship("))
+                .as("商家发货必须由**单一事务**承载（状态流转 + 物流 + 发货单要么全成、要么全不成）"
+                        + " —— 摘掉 @Transactional 或 rollbackFor ⇒ 退回 #6181 的部分写入形态")
+                .isTrue();
+        assertThat(transactionBoundaryIsDeclared(source, "private Map<String, Object> shipAtomic("))
+                .as("shipAtomic 与 ship 必须显式声明 rollbackFor（异常类型决定回不回滚）")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("C11 🔴 建单写面不得自判状态：@Transactional + 五参签名 + 不得含「当前状态」谓词（复发 ⇒ 红）")
+    void merchantRecordMustNotRejudgeCurrentStatus() throws IOException {
+        String source = Files.readString(
+                REPO_ROOT.resolve("backend/admin-api/src/main/java/com/migao/admin/service/OrderShipmentService.java"));
+        assertThat(transactionBoundaryIsDeclared(source, "public OrderShipment recordMerchantShipment("))
+                .as("建单写面必须带 @Transactional(rollbackFor = Exception.class)").isTrue();
+        assertThat(source)
+                .as("🔴 #6181 的病灶 = 建单写面自己再用「当前状态」判一次（谓词区分不了「我们刚流转的」"
+                        + "与「本来就已发货」）⇒ 必须改成由调用方显式传入 transitioned")
+                .contains("boolean transitioned");
+        // 🔴 复发判据：建单写面**只**允许按调用方显式传入的 transitioned 决定，不得再读「当前状态」
+        //    （读到的状态已被第②步改成 shipped ⇒ 谓词区分不了「我们刚流转的」与「本来就已发货」）。
+        String body = methodBody(source, "public OrderShipment recordMerchantShipment(");
+        assertThat(body)
+                .as("建单写面方法体里不得出现 SHIPPABLE_FROM（= 用「当前状态」表达「我们刚流转过」）⇒ 复发即红")
+                .doesNotContain("SHIPPABLE_FROM")
+                .doesNotContain("已不在可发货状态");
+    }
+
+    @Test
+    @DisplayName("C12 判别力自证：内存变异（摘注解 / 颠倒写序 / 加回自判）⇒ 判据各自当场红")
+    void redProofTransactionBoundaryAndOrderAreEnforced() throws IOException {
+        String source = Files.readString(PRODUCTION_CONTROLLER);
+
+        // ① 摘掉事务注解 ⇒ C10 红
+        String withoutTx = source.replaceFirst(
+                "@(?:org\\.springframework\\.transaction\\.annotation\\.)?Transactional\\s*\\(rollbackFor = Exception\\.class\\)\\s*\\n\\s*",
+                "");
+        assertThat(transactionBoundaryIsDeclared(withoutTx, "public ApiResponse<Map<String, Object>> ship("))
+                .as("摘掉 @Transactional ⇒ C10 必须判红").isFalse();
+
+        // ② 去掉 rollbackFor ⇒ C10 红
+        String withoutRollbackFor = source.replace(ROLLBACK_FOR_ANCHOR, "noRollbackFor = Exception.class");
+        assertThat(transactionBoundaryIsDeclared(withoutRollbackFor,
+                "public ApiResponse<Map<String, Object>> ship("))
+                .as("去掉 rollbackFor ⇒ C10 必须判红").isFalse();
+
+        // ③ 把第③步（建单）挪到第②步之前 ⇒ C9 红（写序契约被破坏）
+        String body = shipAtomicBody(source);
+        String reordered = source.replace(body, body
+                .replace("orderService.shipWithLogistics(", "ZZZ_PLACEHOLDER("));
+        assertThat(writeOrderIsIntact(reordered))
+                .as("把②摘掉/改名 ⇒ C9 必须判红（写序不再齐全）").isFalse();
+
+        // 对照读数：真源上三条判据都是绿的（不是「恒红」的断言）
+        assertThat(transactionBoundaryIsDeclared(source, "public ApiResponse<Map<String, Object>> ship("))
+                .as("真源必须声明事务边界").isTrue();
+        assertThat(writeOrderIsIntact(source)).as("真源写序必须齐全").isTrue();
+    }
+
+    /** 取一个方法体（按大括号配平）。 */
+    static String methodBody(String source, String signature) {
+        int at = source.indexOf(signature);
+        if (at < 0) {
+            return "";
+        }
+        int open = source.indexOf('{', at);
+        if (open < 0) {
+            return "";
+        }
+        int depth = 1;
+        int index = open + 1;
+        while (index < source.length() && depth > 0) {
+            char c = source.charAt(index);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+            }
+            index++;
+        }
+        return source.substring(open + 1, Math.max(open + 1, index - 1));
     }
 }

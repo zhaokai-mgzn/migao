@@ -29,6 +29,7 @@
 #   ./scripts/preset-anchor-check.sh --fetch            # 先 fetch 活锚检出到预设仓 main 再核（取不到远端 ⇒ 3）
 #   ./scripts/preset-anchor-check.sh --anchor <路径>     # 核指定路径（**显式 ⇒ 一律判定**）
 #   ./scripts/preset-anchor-check.sh --repo <基线仓> --ref <ref>
+#   ./scripts/preset-anchor-check.sh --anchor-base ''      # 基线仓 = 预设仓（仓根就是 preset 目录）
 #   MIGAO_PRESET_LIVE=<路径> ./scripts/preset-anchor-check.sh
 #   MIGAO_PRESET_MIRROR=<路径> ./scripts/preset-anchor-check.sh
 #   MIGAO_PRESET_REPO_URL=<url|路径> ./scripts/preset-anchor-check.sh
@@ -36,7 +37,8 @@
 # 🔴 **按拓扑自动选判定**（判定本体 = `scripts/agent-presets-guard.py` 的 `anchor` 子命令，口径只放一处）：
 #   · **拓扑 A**（活锚 = 预设仓检出的**仓根**，= 换链后的当前形态）：判 ① 形态（`preset.yml` + `skills/`
 #     缺一即红）② 工作树**干净**（读不到状态 ⇒ `3`）③ HEAD == **活锚自己的** `origin/main`
-#     （取不到远端 ⇒ `3`；不同 ⇒ 红）+ 打印两个技能 version 供人眼核对；
+#     （取不到远端 ⇒ `3`；不同 ⇒ 红）④ **比对面解析出 0 个文件 ⇒ `3`**（issue #6178：空比对
+#     证不了任何字节，**不许**报绿）+ 打印两个技能 version 供人眼核对；
 #   · **拓扑 B**（活锚仍是基线仓里的 `.agent-presets/migao` 子树，兼容窗口）：历史口径（内容逐字节比对）；
 #   · **拓扑 C**（拓扑 B 形态且基线仓该前缀**空集**）：`⏭️ 未跑判定` + **`3`** —— 「基线仓已无该前缀
 #     ⇒ 这条比对本就不适用」。**绝不**输出「✅ 新鲜（0 个文件）」：空集比空集恒等 = **假绿**。
@@ -61,6 +63,9 @@ MIRROR="${MIGAO_PRESET_MIRROR:-$HOME/migao-dev-preset-anchor}"
 REPO="${MIGAO_PRESET_BASELINE:-$MIRROR}"
 REPO_URL="${MIGAO_PRESET_REPO_URL:-git@github.com:zhaokai-mgzn/migao-agent-presets.git}"
 REF="origin/main"
+#: 预设内容相对**基线仓根**的路径（`""` = 预设仓口径：仓根**就是** preset 目录；S4 / issue #6020）。
+#: 默认给判定本体自己的默认值；`preset-anchor-refresh.sh` 为**拓扑 A 的自检**显式传 `--anchor-base=`。
+ANCHOR_BASE=".agent-presets/migao"
 FETCH=0
 
 while [ $# -gt 0 ]; do
@@ -69,6 +74,7 @@ while [ $# -gt 0 ]; do
     --anchor) [ $# -ge 2 ] || { echo "❌ --anchor 缺参数（用法见脚本头部）" >&2; exit 2; }; ANCHOR="$2"; shift 2 ;;
     --repo)   [ $# -ge 2 ] || { echo "❌ --repo 缺参数（用法见脚本头部）" >&2; exit 2; };   REPO="$2";   shift 2 ;;
     --ref)    [ $# -ge 2 ] || { echo "❌ --ref 缺参数（用法见脚本头部）" >&2; exit 2; };    REF="$2";    shift 2 ;;
+    --anchor-base) [ $# -ge 2 ] || { echo "❌ --anchor-base 缺参数（用法见脚本头部；预设仓口径传空串：--anchor-base=）" >&2; exit 2; }; ANCHOR_BASE="$2"; shift 2 ;;
     -h|--help) sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^preset-anchor-check.sh/,/^====/p'; exit 0 ;;
     *) echo "❌ 未知参数：$1（用法见脚本头部）" >&2; exit 2 ;;
   esac
@@ -108,10 +114,11 @@ if git -C "${REPO}" rev-parse --git-dir >/dev/null 2>&1; then
 fi
 
 # `--anchor` 一律显式传给判定本体：显式 ⇒ **一律判定**（不因「与基线仓不同源」跳过）
-# `--anchor-base ''`：S4 起预设内容在**预设仓仓根**（不再有 `.agent-presets/migao` 这一层）。
+# `--anchor-base`：preset 内容相对**基线仓根**的路径 —— 默认 `.agent-presets/migao`（旧业务仓口径，
+#   兼容窗口）；S4 换链后传 `""`（基线仓 = 预设仓，**仓根就是 preset 目录**）。
 exec "${PY}" "${GUARD}" --repo "${REPO}" anchor \
   --anchor "${ANCHOR}" \
-  --anchor-base "" \
+  --anchor-base "${ANCHOR_BASE}" \
   --ref "${REF}" \
   --expected-remote "${REPO_URL}" \
   ${FETCH_ARGS[@]+"${FETCH_ARGS[@]}"} \

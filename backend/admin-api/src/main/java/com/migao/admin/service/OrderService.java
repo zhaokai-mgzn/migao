@@ -2816,16 +2816,15 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @param trackingNo       货运单号（**必填** —— 没有单号的「发货」在车间不可核对）
      * @param logisticsCompany 承运商；为空则保留既有值（工人端只填单号，承运商来自客户常用物流档案）
      * @return 本次发货的结果快照（{@code order_id} / {@code status} / {@code tracking_no} /
-     *         {@code logistics_company}）—— <b>幂等回放的载体</b>（issue #6157）：端点拿它当
+     *         {@code logistics_company}）＋ 一个**显式**的「本次是否真的发生了 {@code →shipped} 流转」标志
+     *         —— <b>幂等回放的载体</b>（issue #6157）：端点拿 {@link OrderShipmentOutcome#result()} 当
      *         {@code ClientRequestIdService.complete} 的快照，同键第二次到达时**逐字回放**同一份。
-     *         ⚠️ 返回值**不含实发明细**：本方法只管**物流 + 状态流转**；发货单（实发数量）由
-     *         {@code OrderShipmentService.recordMerchantShipment} 在**流转成功之后**落 ——
-     *         调用方（{@code ProductionController.ship}）负责按序调用，写序见该方法的注释。
-     *         <b>issue #6171</b> 起商家路**也建发货单**（用户 2026-10-03 裁定「要建」），
-     *         此前「本路不建发货单」的登记缺口随之销账。
+     *         ⚠️ {@code result} **不含实发明细**：发货单由
+     *         {@code OrderShipmentService.recordMerchantShipment} 落，调用方按
+     *         {@link OrderShipmentOutcome#transitioned()} 决定要不要建单（issue #6181）。
      */
     @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> shipWithLogistics(String orderId, String trackingNo, String logisticsCompany) {
+    public OrderShipmentOutcome shipWithLogistics(String orderId, String trackingNo, String logisticsCompany) {
         if (!StringUtils.hasText(trackingNo)) {
             throw BusinessException.validationError("货运单号不能为空");
         }
@@ -2849,13 +2848,32 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // 记物流（发货人 = 当前登录人；工人扫码端登录的就是工人本人）
         upsertLogistics(orderId, company, trackingNo.trim(), null);
         // 原子流转 shipped —— **守卫在这一步内**（含加工项订单必须有 completed 加工单）
-        shipOrderIfApplicable(orderId);
+        boolean transitioned = shipOrderIfApplicable(orderId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order_id", orderId);
         result.put("status", "shipped");
         result.put("tracking_no", trackingNo.trim());
         result.put("logistics_company", company);
-        return result;
+        // 🔴 issue #6181：把「本次是否真的流转了」**显式**交给调用方。调用方随后要调建单写面，而建单
+        // 写面**不许**再用「当前状态」重新推断这件事（那时状态已被本方法改成 shipped，谓词区分不了
+        // 「我们刚改的」与「本来就已发货」）—— 实测后果是「发货一律 422，而状态与物流已写入」。
+        return new OrderShipmentOutcome(result, transitioned);
+    }
+
+    /**
+     * 商家/工人发货路的**结果 ＋ 本次是否真的发生了流转**（issue #6181）。
+     *
+     * <p>为什么要有第二个字段（而不是让调用方读结果快照里的 {@code status}）：那里的
+     * {@code status} 是**文案常量**（本路对「补记物流」也回 {@code shipped}），它回答不了
+     * 「这一步有没有发生状态变更」；而这一步的**下游**（建发货单）必须知道答案 —— 否则就会
+     * 「订单本来就已发货」时凭空多建一张单，或用「订单状态」这个**会被自己写脏的谓词**去猜
+     * （#6181 的根因形态）。</p>
+     *
+     * @param result       结果快照（幂等回放载体，进 {@code ClientRequestIdService}）
+     * @param transitioned 本次调用是否真的把订单从 {@code confirmed|producing} 流转成 {@code shipped}；
+     *                     {@code false} = 订单本来就已是 {@code shipped}（本路只补记/纠正物流）
+     */
+    public record OrderShipmentOutcome(Map<String, Object> result, boolean transitioned) {
     }
 
     /** 既有物流记录的承运商（工人端只填单号时用它兜底；无既有记录 ⇒ null）。 */
@@ -2871,11 +2889,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     /**
      * 发货联动：confirmed/producing 状态的订单在记录物流后原子流转为 shipped。
      * 已 shipped/completed 保持原状态（仅更新物流）；pending/cancelled 不强制流转。
+     *
+     * @return 本次是否**真的**发生了 {@code →shipped} 的流转（issue #6181：调用方据此决定要不要建
+     *         发货单 —— 见 {@link OrderShipmentOutcome#transitioned()}）。{@code rows == 0}
+     *         （并发下别人先流转了）⇒ 抛，**不**返回 {@code false}：那是「本来就已发货」的语义，
+     *         两者混同会让并发场景静默丢单。
      */
-    private void shipOrderIfApplicable(String orderId) {
+    private boolean shipOrderIfApplicable(String orderId) {
         Order order = orderMapper.selectById(orderId);
         if (order == null) {
-            return;
+            return false;
         }
         String currentStatus = order.getStatus();
         if ("confirmed".equals(currentStatus) || "producing".equals(currentStatus)) {
@@ -2886,7 +2909,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             if (rows == 0) {
                 throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
             }
+            return true;
         }
+        return false;
     }
 
     /**

@@ -61,6 +61,11 @@
       "kind": "mentions",
       "issue": "#6132",
       "reason": "**只点名**：C 端 H5 发布腿的判据（MC-046）。它在一条 docstring 里点名「类级判据 6 的射程 = 全仓受控 `*.sh`」（说明那条反引号判据抓到了本腿文案里的同类形态）—— 它**不枚举、不扫描** `*.sh` 语料，扫的是本腿那三个具名文件（`c-end-h5-publish-ci.sh` / `c-end-h5-dist-push.sh` / `c-end-h5-publish-remote.sh`）⇒ 按 exit ② 以 mentions 入册，不假装是 kind=scans。"
+    },
+    "tests/unit_ci_workflows/test_swas_command_content_limit.py": {
+      "kind": "mentions",
+      "issue": "#6124",
+      "reason": "SWAS 命令内容契约的类级元守卫：它的射程是 `deploy/scripts/**` 的**子集**（含活行 `--command-content` 且被 workflow 调用者），**不是**全仓 `*.sh` 语料⇒ 按 mentions 入册（`kind=scans` 的契约是「GUARD_SCOPE == 全语料普查」= 全仓，本模块**刻意只扫发布/部署腿所在的子目录**，故不满足它）。全仓 `*.sh` 的射程守卫 = tests/unit_ci_workflows/test_scripts_bash32_var_brace.py。"
     }
   }
 }

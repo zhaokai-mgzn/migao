@@ -113,18 +113,19 @@ public class ProductionController {
      * （{@code order_shipments} + {@code order_shipment_items}，实发数量 = 订单未发余量）。
      *
      * <p>为什么经 owner 而不是在本类里拼列：{@code order_shipment_items} 的真值 owner 是
-     * {@link OrderShipmentService}（见其类注释）—— 第二条路自己拼一次列 = 同一真值两处投影。
-     * 用**字段注入**的理由与上面几条同款（不动既有 6 参构造，见 {@code ProductionControllerTest}
-     * 的 standaloneSetup 装配）。</p>
+     * {@link OrderShipmentService}（见其类注释）—— 第二条路自己拼一次列 = 同一真值两处投影。</p>
+     *
+     * <p>用字段注入而不是构造参数：同 {@link #clientRequestIdService} 的理由（不动既有 6 参构造，
+     * 否则 {@code ProductionControllerTest} 的每一处装配都要改）。</p>
      */
     @org.springframework.beans.factory.annotation.Autowired
     private OrderShipmentService orderShipmentService;
 
     /**
-     * 订单读面（**只读**，issue #6171）：{@link #assertShippableOrder} 用它取「订单在不在 / 属不属于
-     * 本租户 / 处在什么状态」—— 发货的**零写前置**必须在任何写之前判，故这里要一个只读入口。
+     * 订单读面（**只读**，issue #6171）：{@link #assertShippableOrder} 用它取「订单在不在 /
+     * 属不属于本租户 / 处不处于可发货状态」—— 这三条要在**任何写之前**判掉（零写前置）。
      *
-     * <p>字段注入的理由与上面几条同款（不动既有 6 参构造 + 不让既有装配全改一遍）。</p>
+     * <p>只注入 Mapper（**不**注入服务）：本类只做一次只读的 {@code selectById}。</p>
      */
     @org.springframework.beans.factory.annotation.Autowired
     private com.migao.admin.mapper.OrderMapper orderMapper;
@@ -267,19 +268,19 @@ public class ProductionController {
      * 修法 = <b>复用</b> {@link ClientRequestIdService}（工人侧那条路同一份实现、同一张表，
      * **不新造第二套**）：占位在调服务**之前**、成功写快照、失败丢弃占位（否则一次失败会把该键占死）。</p>
      *
-     * <p>🔴 <b>本路也产出发货单（issue #6171，用户 2026-10-03 裁定「要建」）</b>：修前实测
-     * {@code order_shipments=0} ⇒ 该订单在「发货单」列表（{@code GET /api/admin/shipments}）里
-     * **永远查不到**、无实发数量（#5939 新功能的漏单形态）。现在本端点把这次发货记成一张
-     * {@code source='admin'} 的发货单，实发数量逐 {@code order_item} = {@code 订单量 − 已发合计}
-     * （该端点 body 只有运单号 / 承运商、**没有数量** ⇒ 未发余量是唯一不编造的来源）。</p>
-     *
-     * <p>⚠️ <b>写序是契约的一部分</b>（本方法的三步必须按这个次序）：
-     * ① {@link #assertShippableOrder}（订单存在 + 归属本租户 + 处于可发货状态，**零写**）；
-     * ② {@code shipWithLogistics}（记物流 + 原子流转 {@code shipped}）；
-     * ③ {@code recordMerchantShipment}（记发货单）。
-     * ③ 在 ② 之后 ⇒ 订单流转不成功时**根本不会建单**，「有发货单但订单没发货」在结构上不可能出现；
-     * ① 在最前 ⇒ 拒绝分支在**任何写之前**（字段级快照判据：被拒请求不落库）。</p>
+     * <p>🔴 <b>写序与事务边界是契约的一部分（issue #6181）</b>：本端点是商家发货**整条路**的事务 owner，
+     * 三步 = ① {@link #assertShippableOrder}（订单存在 / 归属本租户 / 处于可发货状态 —— <b>零写</b>）
+     * ② {@link OrderService#shipWithLogistics}（记物流 + 原子流转 {@code shipped}）
+     * ③ {@link OrderShipmentService#recordMerchantShipment}（落可查的发货单，数量 = 未发余量，
+     * 且**由 ② 的返回值显式告知本次是否真的流转过**）。</p>
+     * <p>⚠️ <b>为什么本方法必须 {@code @Transactional}</b>：② 与 ③ 若各自成事务，③ 抛错时 ② 已提交
+     * ⇒ 留下「订单已 {@code shipped} + 物流已写 + 单没建 + 返回错误」的部分写入。历史实测（issue #6181）
+     * 正是这个形态：③ 自己又用「当前状态是否可发货」判了一次，而那时状态已被 ② 改成 {@code shipped}
+     * ⇒ 发货**一律 422**，状态与物流却已经写下去了。⇒ 单一事务边界是**原子性的唯一承载**：
+     * 状态流转 + 物流 + 发货单要么全成、要么全不成（判据见
+     * {@code com.migao.admin.shipment.ShipmentInvariantGuardTest} 的「事务边界 ⇄ 三步写序」组）。</p>
      */
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
     @PostMapping("/orders/{orderId}/ship")
     @RequirePermission("production:execute")
     public ApiResponse<Map<String, Object>> ship(
@@ -293,17 +294,7 @@ public class ProductionController {
         }
         Map<String, Object> result;
         try {
-            // ① 零写前置（订单存在 / 归属本租户 / 可发货状态）—— 被拒请求不落任何一行
-            assertShippableOrder(orderId, tenantId);
-            // ② 记物流 + 原子流转 shipped（加工单守卫在服务内部，与状态端点同一份）
-            result = orderService.shipWithLogistics(orderId,
-                    body == null ? null : body.get("trackingNo"),
-                    body == null ? null : body.get("logisticsCompany"));
-            // ③ 发货单（只在订单**真的**流转成功后建）：实发数量 = 订单未发余量
-            com.migao.admin.entity.OrderShipment shipment = orderShipmentService.recordMerchantShipment(
-                    orderId, text(result, "tracking_no"), text(result, "logistics_company"), tenantId);
-            result.put("shipment_no", shipment.getShipmentNo());
-            result.put("shipment_source", shipment.getSource());
+            result = new java.util.LinkedHashMap<>(shipAtomic(orderId, body, tenantId));
         } catch (RuntimeException e) {
             // 失败必须释放占位，否则该键被永久占死（此后所有重试都被误判为「重复」）
             clientRequestIdService.discard(tenantId, clientRequestId);
@@ -314,31 +305,60 @@ public class ProductionController {
     }
 
     /**
-     * 商家发货路的**零写前置**（issue #6171 ③ 之前）：订单必须存在、属于当前租户、且处于
-     * 可发货状态（{@link OrderShipmentService#SHIPPABLE_FROM}，与工人路**同一份**状态集合）。
+     * 商家发货的**三步写序**（issue #6181）—— 由 {@link #ship} 在**同一个事务**里调用。
      *
-     * <p>为什么要在调服务之前先判一次：订单还没流转就该 4xx 的请求，若让它先落一张发货单
-     * （而 {@code shipWithLogistics} 随后才抛），就会留下「有发货单但订单没发货」——
-     * 验收判据 4（拒绝请求**不落库**，字段级快照）正是要夹住它。</p>
+     * <p>顺序本身是契约：① 零写前置 ⇒ ② 流转 + 物流 ⇒ ③ 建发货单。把 ③ 放在 ② 之后是**有意**的
+     * ——「有发货单但订单没发货」在结构上不可能出现；而 ③ 抛错会把 ② 一起回滚（同一事务）。</p>
      *
-     * <p>本方法**不**复制业务判定本体：可发货状态集合取
-     * {@link OrderShipmentService#SHIPPABLE_FROM} 这一份；加工单守卫 / 物流 / 状态流转仍在服务层。</p>
+     * @return 交给 {@code ClientRequestIdService} 的结果快照（含 {@code shipment_no} / {@code shipment_source}）
+     */
+    private Map<String, Object> shipAtomic(String orderId, Map<String, String> body, Long tenantId) {
+        // ① 零写前置：订单存在 / 归属本租户 / 处于可发货状态 —— 任何写之前判掉
+        assertShippableOrder(orderId, tenantId);
+        // ② 记物流 + 原子流转 shipped（加工单守卫在服务内部，与状态端点同一份）
+        OrderService.OrderShipmentOutcome outcome = orderService.shipWithLogistics(orderId,
+                body == null ? null : body.get("trackingNo"),
+                body == null ? null : body.get("logisticsCompany"));
+        Map<String, Object> result = outcome.result();
+        // ③ 落可查的发货单 —— 🔴 传的是 ② **本次是否真的流转过**（issue #6181 要求 2），
+        //    不是「当前状态」（状态已被 ② 写成 shipped，谓词区分不了「刚流转的」与「本来就已发货」）。
+        com.migao.admin.entity.OrderShipment shipment = orderShipmentService.recordMerchantShipment(
+                orderId, body == null ? null : body.get("trackingNo"),
+                body == null ? null : body.get("logisticsCompany"),
+                tenantId, outcome.transitioned());
+        result.put("shipment_no", shipment.getShipmentNo());
+        result.put("shipment_source", shipment.getSource());
+        return result;
+    }
+
+    /**
+     * 商家发货的**零写前置**（issue #6171）：订单存在 + 归属本租户 + 处于可发货/已发货状态
+     * （{@link OrderShipmentService#SHIPPABLE_FROM}，与工人路**同一份**状态集合）。
+     *
+     * <p>为什么要在控制器里先判一次：这一步负责把「订单不存在 / 跨租户 / 状态不可发货」变成
+     * **任何写之前**的 4xx；否则会先写物流再被服务层拒绝 —— 在单事务下虽然会回滚，
+     * 但「拒绝 = 零写」这条口径就不再有结构保证。加工单守卫 / 物流 / 状态流转仍在服务层
+     * （本方法**不复制**它们，只读一次订单）。</p>
+     *
+     * <p>🔴 <b>{@code shipped} 也在放行之列</b>（与 {@code OrderService.shipWithLogistics} 逐字同口径）：
+     * 已发货后本路是**补记 / 纠正物流**的合法路径（不流转状态）。若这里把 {@code shipped} 拦掉，
+     * issue #6181 要求 ② 的「换新幂等键重复调用**不得**出现『状态变了却 422』」就会以另一种形式复发
+     * —— 重复调用拿到 422，而订单确实已经发货。⇒ 拦的是**真正不可发货**的状态
+     * （pending / cancelled / completed 等），不是「已经发过货」。</p>
      */
     private void assertShippableOrder(String orderId, Long tenantId) {
         com.migao.admin.entity.Order order = orderMapper.selectById(orderId);
         if (order == null || tenantId == null || !tenantId.equals(order.getTenantId())) {
             throw com.migao.admin.exception.BusinessException.notFound("订单");
         }
-        if (!OrderShipmentService.SHIPPABLE_FROM.contains(order.getStatus())) {
+        String status = order.getStatus();
+        if (!OrderShipmentService.SHIPPABLE_FROM.contains(status) && !"shipped".equals(status)) {
             throw com.migao.admin.exception.BusinessException.validationError(String.format(
-                    "仅已确认/生产中/已打包状态可发货，当前状态: %s", order.getStatus()));
+                    "当前状态（%s）不可发货：仅 %s 可发货",
+                    com.migao.admin.service.OrderStatusTransitions.label(status),
+                    OrderShipmentService.SHIPPABLE_FROM.stream()
+                            .map(com.migao.admin.service.OrderStatusTransitions::label).toList()));
         }
-    }
-
-    /** 结果快照里的字符串取值（{@code null} 安全）。 */
-    private static String text(Map<String, Object> source, String key) {
-        Object value = source == null ? null : source.get(key);
-        return value == null ? null : String.valueOf(value);
     }
 
     /**
