@@ -71,7 +71,7 @@ class TenantOwnedWriteEndpointGuardTest {
      * 冻结上限（判据 3）：台账条数**现取**打印，本值只许**往下**改。
      * 修掉一个存量端点 ⇒ 同批删掉对应条目并下调本值。
      */
-    private static final int FROZEN_MAX_LEDGER_ENTRIES = 2;
+    private static final int FROZEN_MAX_LEDGER_ENTRIES = 0;
 
     // ──────────────────────────── 面：现取 ────────────────────────────
 
@@ -258,7 +258,7 @@ class TenantOwnedWriteEndpointGuardTest {
     void annotatedKeysExistInRegistry() {
         // 认定表本体：**显式**调一次登记（生产上由 @PostConstruct 调；这里没有容器）
         TenantResourceOwnership ownership = new TenantResourceOwnership(
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         ownership.registerChecks();
         Set<String> registered = ownership.registeredResources();
         Set<String> annotated = new LinkedHashSet<>();
@@ -342,7 +342,8 @@ class TenantOwnedWriteEndpointGuardTest {
                 .as("台账里的端点不该被判红")
                 .isEmpty();
 
-        // 台账条数判定也要有判别力：2 条不超上限、3 条超上限
-        assertThat(2 <= FROZEN_MAX_LEDGER_ENTRIES).isTrue();
+        // 台账条数判定也要有判别力：0 条不超上限（#6167 已把台账清零）、1 条就超上限
+        assertThat(0 <= FROZEN_MAX_LEDGER_ENTRIES).isTrue();
+        assertThat(1 <= FROZEN_MAX_LEDGER_ENTRIES).as("上限必须随台账清零一起降到 0（只许缩短）").isFalse();
     }
 }

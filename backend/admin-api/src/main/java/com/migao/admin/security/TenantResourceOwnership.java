@@ -6,6 +6,8 @@ import com.migao.admin.mapper.CategoryMapper;
 import com.migao.admin.mapper.ProcessingCategoryMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductMapper;
+import com.migao.admin.service.NotificationRuleService;
+import com.migao.admin.service.NotificationTemplateService;
 import com.migao.admin.service.OrderService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +41,12 @@ public class TenantResourceOwnership {
     private final ProcessingCategoryMapper processingCategoryMapper;
     private final AfterSalesTicketMapper afterSalesTicketMapper;
     private final OrderService orderService;
+    /**
+     * 通知模板 / 规则的服务（issue #6167）—— 这两张表在 {@code IGNORE_TENANT_TABLES} 里，
+     * 归属语义**不与其余租户域资源同源**（见 {@link #registerChecks()} 的登记说明）。
+     */
+    private final NotificationTemplateService notificationTemplateService;
+    private final NotificationRuleService notificationRuleService;
 
     /**
      * 资源键 → 归属认定（认定不过 ⇒ 抛 {@code NOT_FOUND}，与既有 404 路径同一份异常与文案）。
@@ -46,6 +54,16 @@ public class TenantResourceOwnership {
      * <p>{@code LinkedHashMap}：登记顺序 = 判据/报错时列出的顺序（人可读）。</p>
      */
     private final Map<String, OwnerCheck> checks = new LinkedHashMap<>();
+
+    /**
+     * 资源键 → **可写**认定（issue #6167）—— 只对「可读面比可写面宽」的资源登记
+     * （现取：{@code tenant_id=0} 的系统内置行**可读不可写**的混合表）。
+     *
+     * <p>不登记的资源键没有这项检查：它们的「可见」与「可写」是同一个集合（租户插件自动追加
+     * {@code tenant_id = 当前租户}），认过可见即认定可写 —— 这正是 T1（issue #6158）的形态，
+     * 本单**不重判**它。</p>
+     */
+    private final Map<String, OwnerCheck> writableChecks = new LinkedHashMap<>();
 
     /** 归属认定：目标 id 属于当前租户 ⇒ 正常返回；否则抛 {@code NOT_FOUND}。 */
     @FunctionalInterface
@@ -100,6 +118,39 @@ public class TenantResourceOwnership {
                 throw BusinessException.notFound("售后工单");
             }
         });
+        // ─────────── issue #6167：混合表（可读面比可写面宽）───────────
+        // notification_templates / notification_rules 在 MybatisPlusConfig.IGNORE_TENANT_TABLES 里
+        // ⇒ 租户插件**不**给它们追加 tenant_id 过滤 ⇒ 「带租户过滤的按 id 查询」不像其余资源那样天然存在。
+        // durable 依据（MybatisPlusConfig 注释逐字）：「查询条件 (tenant_id = 当前租户 OR tenant_id = 0)
+        // 已在业务层显式过滤」⇒ 归属语义是**两条**：
+        //   · 可读 = (tenant_id = 当前租户 OR tenant_id = 0)   ← 既有查询与 service 的 assertTenantOwned 组合出来
+        //   · 可写 =  tenant_id = 当前租户                     ← service 的 assertTenantOwned 精确谓词
+        // 本单只把「可写」这一条接入认定（读面一字不动 ⇒ 系统内置行仍可读）；
+        // 认定用的查询复用 service 里那两条方法，**不**在安全层重写第二份谓词。
+        checks.put("notification-template", id -> {
+            if (!notificationTemplateService.existsForCurrentTenant(id)) {
+                throw BusinessException.notFound("通知模板");
+            }
+        });
+        writableChecks.put("notification-template", id -> {
+            if (!notificationTemplateService.isWritableByCurrentTenant(id)) {
+                // 可读而不可写 ⇒ 现存实现给 422 + 「系统内置…不允许修改」（不是 404——
+                // 行对当前租户是可见的，用 404 会谎报不存在）。这里只用它区分「可见但不可写」。
+                throw BusinessException.validationError(
+                        "系统内置模板不允许修改，可复制后新建自定义模板");
+            }
+        });
+        checks.put("notification-rule", id -> {
+            if (!notificationRuleService.existsForCurrentTenant(id)) {
+                throw BusinessException.notFound("通知规则");
+            }
+        });
+        writableChecks.put("notification-rule", id -> {
+            if (!notificationRuleService.isWritableByCurrentTenant(id)) {
+                throw BusinessException.validationError(
+                        "系统内置规则不允许修改，可复制后新建自定义规则");
+            }
+        });
     }
 
     /**
@@ -126,6 +177,26 @@ public class TenantResourceOwnership {
                     "未登记的租户域资源键: " + resource + "（已登记 = " + checks.keySet()
                             + "）；请在 TenantResourceOwnership.registerChecks() 里补上认定");
         }
+        // 顺序是**语义要求**，不是偏好（issue #6167）：
+        //   先「可见」—— 不可见（他租户行 / 行不存在）⇒ 404，与 T1（#6158）同源；
+        //   后「可写」—— 可见但不可写 ⇒ 系统内置行（tenant_id=0），仍走既有 422 路径。
+        // 若把可写判定放前面，他租户行会被读成 422 ⇒ 跨租户读数被污染（本单实例判据当场红）。
         check.assertOwned(id);
+
+        // 「可见」不等于「可写」：混合表里 tenant_id=0 的系统内置行可读不可写。
+        // 未登记可写认定的资源键 ⇒ 跳过（可见与可写同集合，由租户插件保证），不重判 T1 的形态。
+        OwnerCheck writable = writableChecks.get(resource);
+        if (writable != null) {
+            writable.assertOwned(id);
+        }
+    }
+
+    /**
+     * 已登记**可写**认定的资源键（issue #6167，**现取**）—— 判据用它自证覆盖面。
+     *
+     * @return 资源键集合（登记顺序）
+     */
+    public Set<String> writableResources() {
+        return writableChecks.keySet();
     }
 }

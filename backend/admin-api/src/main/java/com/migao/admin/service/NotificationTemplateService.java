@@ -1,5 +1,6 @@
 package com.migao.admin.service;
 
+import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.NotificationRuleDTO;
 import com.migao.admin.dto.NotificationTemplateDTO;
 import com.migao.admin.dto.PageResponse;
@@ -41,16 +42,56 @@ public class NotificationTemplateService {
      */
     public PageResponse<NotificationTemplateDTO> queryTemplates(long page, long size, Long tenantId) {
         Page<NotificationTemplate> p = new Page<>(page, size);
-        LambdaQueryWrapper<NotificationTemplate> wrapper = new LambdaQueryWrapper<>();
-        wrapper.and(w -> w.eq(NotificationTemplate::getTenantId, tenantId)
-                        .or().eq(NotificationTemplate::getTenantId, 0L))
-                .orderByDesc(NotificationTemplate::getUpdatedAt);
+        LambdaQueryWrapper<NotificationTemplate> wrapper = visibleToCurrentTenant(tenantId);
+        wrapper.orderByDesc(NotificationTemplate::getUpdatedAt);
 
         IPage<NotificationTemplate> result = templateMapper.selectPage(p, wrapper);
         List<NotificationTemplateDTO> dtos = result.getRecords().stream()
                 .map(this::toDTO)
                 .collect(Collectors.toList());
         return PageResponse.of(result.getTotal(), result.getCurrent(), result.getSize(), dtos);
+    }
+
+    /**
+     * 归属认定（issue #6167）：该模板在**当前租户**下可见吗。
+     *
+     * <p>「可见」= 可读面，与 {@link #queryTemplates} **同一份谓词**
+     * （{@code tenant_id = 当前租户 OR tenant_id = 0}）—— 本次登记把它从查询里提出来复用，
+     * 语义一字未改。写归属判定要在**载荷校验之前**跑（见 {@code TenantOwnershipInterceptor}），
+     * 那时控制器还没执行，所以查询必须由本服务提供。</p>
+     *
+     * @param id 模板ID
+     * @return 当前租户可读（含系统内置行）⇒ true
+     */
+    public boolean existsForCurrentTenant(String id) {
+        return templateMapper.selectCount(visibleToCurrentTenant(TenantContext.getTenantId())
+                .eq(NotificationTemplate::getId, id)) > 0;
+    }
+
+    /**
+     * 归属认定（issue #6167）：该模板**可写**吗 ——
+     * {@code tenant_id = 当前租户}（**不含** {@code tenant_id=0} 的系统内置行，它只读）。
+     *
+     * <p>这是 {@link #assertTenantOwned} 的精确谓词那一半（与 {@link #updateTemplate} 的
+     * {@code selectById} + 比较租户同一份判定），**不**新造第二套语义、不抛异常（调用方决定状态码）。</p>
+     *
+     * @param id 模板ID
+     * @return 属于当前租户的自定义模板 ⇒ true
+     */
+    public boolean isWritableByCurrentTenant(String id) {
+        NotificationTemplate existing = templateMapper.selectById(id);
+        return existing != null && TenantContext.getTenantId().equals(existing.getTenantId());
+    }
+
+    /**
+     * 可读面谓词：本租户 + 系统内置（{@code tenant_id=0}）。**唯一出处** ——
+     * {@link #queryTemplates} 与 {@link #existsForCurrentTenant} 共用，避免两份漂移。
+     */
+    private static LambdaQueryWrapper<NotificationTemplate> visibleToCurrentTenant(Long tenantId) {
+        long tenant = tenantId == null ? 0L : tenantId;
+        return new LambdaQueryWrapper<NotificationTemplate>()
+                .and(w -> w.eq(NotificationTemplate::getTenantId, tenant)
+                        .or().eq(NotificationTemplate::getTenantId, 0L));
     }
 
     /**

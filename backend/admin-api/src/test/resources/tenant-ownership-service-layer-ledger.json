@@ -1,0 +1,172 @@
+{
+  "$comment": [
+    "issue #6167 残余台账 —— 「写端点（PUT/PATCH）+ 路径变量 + **无** @Valid 请求体」这一形态里",
+    "**已认定但本单不修**的租户域写端点（T1 / issue #6158 body 存疑② 指向的那半边）。",
+    "判据 = backend/admin-api/src/test/java/com/migao/admin/controller/ServiceLayerValidatedWriteEndpointGuardTest.java",
+    "语义（只许缩短）：处置掉一个存量端点（加 @TenantOwnedResource）⇒ 同批删掉它的条目",
+    "并下调 ServiceLayerValidatedWriteEndpointGuardTest.FROZEN_MAX_RESIDUAL_ENTRIES（现取打印）。",
+    "为什么这一形态与 T1 的面不同：T1 的面只取「控制器方法上带 @Valid 请求体」的写端点（现取 10 条）。",
+    "本形态的载荷校验在**方法体 / 服务层**（如 PUT /api/admin/products/{id}/status 的签名是",
+    "@RequestBody Map<String, String>，状态机校验在 ProductService）⇒ 它不在 T1 的反射面内。",
+    "为什么形态上风险更低：这类端点的载荷解析**极少**在参数解析阶段失败（Map/无注解 DTO 不触发",
+    "Bean Validation），校验发生在控制器方法体里 ⇒ 归属判定与校验的先后差异通常不改变响应码。",
+    "这不构成「不用管」：跨租户写仍然不该拿到 200，且新端点一落地就可能改变这个判断。"
+  ],
+  "residual_scope": [
+    "覆盖面 = 全部 @RestController 的 PUT/PATCH 方法中「路由含 { 路径变量 } 且没有 @Valid @RequestBody」。",
+    "本单已处置（标注 @TenantOwnedResource('product')）：PUT /api/admin/products/{id}/status、",
+    "PUT /api/admin/products/{id}/recommend —— 这两条是本单的**增量**（不碰 T1 已改的 5+3 条）。",
+    "其余在册条目的归属语义**未被本单重判**：它们的租户归属由各自服务层的带租户过滤查询承担，",
+    "而本单不新造第二套判定（最少代码阶梯 / 铁律 5）。"
+  ],
+  "restart_condition": [
+    "重启条件（任一命中 ⇒ 该条目必须重新裁定，不许继续躺在台账里）：",
+    "① 该端点改为「参数解析阶段可失败」的载荷形态（加 @Valid、枚举/日期类型字段、@RequestParam 必填等）",
+    "   ⇒ 跨租户 + 非法载荷会先拿 400/422，T1 的次序缺陷当场复活；",
+    "② 该端点的服务层写路径**去掉**了带租户过滤的按 id 查询（含改成 selectById 直取他租户行）；",
+    "③ 该资源被纳入 IaC/种子数据变成「系统内置(tenant_id=0) + 租户自定义」混合表（同 #6167 §一 的形态）；",
+    "④ 用户/集成方在真栈重放里观察到该端点的跨租户写返回码由载荷合法性决定。"
+  ],
+  "residual_entries": [
+    {
+      "endpoint": "PUT /api/super-admin/registrations/{id}/approve",
+      "controller": "RegistrationController#/api/super-admin/registrations/{id}/approve",
+      "reason": "非租户域资源（平台/用户/角色等管理面）：其 id 不是租户域资源键，跨租户语义不适用。重启条件：一旦该资源被纳入租户域（新增 tenant_id 列并按租户隔离），按 restart_condition ① 重新裁定。"
+    },
+    {
+      "endpoint": "PUT /api/super-admin/registrations/{id}/reject",
+      "controller": "RegistrationController#/api/super-admin/registrations/{id}/reject",
+      "reason": "非租户域资源（平台/用户/角色等管理面）：其 id 不是租户域资源键，跨租户语义不适用。重启条件：一旦该资源被纳入租户域（新增 tenant_id 列并按租户隔离），按 restart_condition ① 重新裁定。"
+    },
+    {
+      "endpoint": "PATCH /api/admin/processing-orders/{id}",
+      "controller": "ProcessingOrderController#/api/admin/processing-orders/{id}",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    },
+    {
+      "endpoint": "PUT /api/admin/orders/{id:[0-9a-fA-F-]+}/payment",
+      "controller": "OrderController#/api/admin/orders/{id:[0-9a-fA-F-]+}/payment",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    },
+    {
+      "endpoint": "PUT /api/admin/orders/{id:[0-9a-fA-F-]+}/cancel",
+      "controller": "OrderController#/api/admin/orders/{id:[0-9a-fA-F-]+}/cancel",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    },
+    {
+      "endpoint": "PUT /api/admin/orders/{id:[0-9a-fA-F-]+}/refund",
+      "controller": "OrderController#/api/admin/orders/{id:[0-9a-fA-F-]+}/refund",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    },
+    {
+      "endpoint": "PUT /api/admin/orders/{id:[0-9a-fA-F-]+}/urgency",
+      "controller": "OrderController#/api/admin/orders/{id:[0-9a-fA-F-]+}/urgency",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    },
+    {
+      "endpoint": "PUT /api/admin/orders/{id:[0-9a-fA-F-]+}/logistics",
+      "controller": "OrderController#/api/admin/orders/{id:[0-9a-fA-F-]+}/logistics",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    },
+    {
+      "endpoint": "PUT /api/admin/settings/payment-qrcodes/{type}",
+      "controller": "SettingsController#/api/admin/settings/payment-qrcodes/{type}",
+      "reason": "非租户域资源（平台/用户/角色等管理面）：其 id 不是租户域资源键，跨租户语义不适用。重启条件：一旦该资源被纳入租户域（新增 tenant_id 列并按租户隔离），按 restart_condition ① 重新裁定。"
+    },
+    {
+      "endpoint": "PUT /api/admin/roles/{id}",
+      "controller": "AdminRoleController#/api/admin/roles/{id}",
+      "reason": "非租户域资源（平台/用户/角色等管理面）：其 id 不是租户域资源键，跨租户语义不适用。重启条件：一旦该资源被纳入租户域（新增 tenant_id 列并按租户隔离），按 restart_condition ① 重新裁定。"
+    },
+    {
+      "endpoint": "PUT /api/admin/notifications/{id}/read",
+      "controller": "NotificationController#/api/admin/notifications/{id}/read",
+      "reason": "自身的租户过滤语义与租户域资源不同源（如通知已读：notifications 表保留租户过滤；settings 的 {type} 不是 id 资源键）。重启条件：形态改为 @Valid 请求体或加 @RequestParam 必填 ⇒ 按 restart_condition ① 重新裁定。"
+    },
+    {
+      "endpoint": "PATCH /api/admin/agent/products/{productId}/skus/{skuId}",
+      "controller": "AgentProductController#/api/admin/agent/products/{productId}/skus/{skuId}",
+      "reason": "Agent 侧 PATCH：调用方是 Agent 服务令牌（ServiceTokenFilter），租户由令牌绑定；载荷校验在服务层。重启条件：改为控制器 @Valid 形态或开放给普通管理端调用 ⇒ 重新裁定。"
+    },
+    {
+      "endpoint": "PATCH /api/admin/agent/products/{productId}/skus/price",
+      "controller": "AgentProductController#/api/admin/agent/products/{productId}/skus/price",
+      "reason": "Agent 侧 PATCH：调用方是 Agent 服务令牌（ServiceTokenFilter），租户由令牌绑定；载荷校验在服务层。重启条件：改为控制器 @Valid 形态或开放给普通管理端调用 ⇒ 重新裁定。"
+    },
+    {
+      "endpoint": "PATCH /api/admin/agent/products/{id}",
+      "controller": "AgentProductController#/api/admin/agent/products/{id}",
+      "reason": "Agent 侧 PATCH：调用方是 Agent 服务令牌（ServiceTokenFilter），租户由令牌绑定；载荷校验在服务层。重启条件：改为控制器 @Valid 形态或开放给普通管理端调用 ⇒ 重新裁定。"
+    },
+    {
+      "endpoint": "PATCH /api/admin/agent/products/{id}/stock",
+      "controller": "AgentProductController#/api/admin/agent/products/{id}/stock",
+      "reason": "Agent 侧 PATCH：调用方是 Agent 服务令牌（ServiceTokenFilter），租户由令牌绑定；载荷校验在服务层。重启条件：改为控制器 @Valid 形态或开放给普通管理端调用 ⇒ 重新裁定。"
+    },
+    {
+      "endpoint": "PATCH /api/admin/agent/orders/{id}",
+      "controller": "AgentOrderController#/api/admin/agent/orders/{id}",
+      "reason": "Agent 侧 PATCH：调用方是 Agent 服务令牌（ServiceTokenFilter），租户由令牌绑定；载荷校验在服务层。重启条件：改为控制器 @Valid 形态或开放给普通管理端调用 ⇒ 重新裁定。"
+    },
+    {
+      "endpoint": "PUT /api/admin/customers/{id}",
+      "controller": "CustomerController#/api/admin/customers/{id}",
+      "reason": "自身的租户过滤语义与租户域资源不同源（如通知已读：notifications 表保留租户过滤；settings 的 {type} 不是 id 资源键）。重启条件：形态改为 @Valid 请求体或加 @RequestParam 必填 ⇒ 按 restart_condition ① 重新裁定。"
+    },
+    {
+      "endpoint": "PUT /api/admin/customer-tags/{id}",
+      "controller": "CustomerController#/api/admin/customer-tags/{id}",
+      "reason": "自身的租户过滤语义与租户域资源不同源（如通知已读：notifications 表保留租户过滤；settings 的 {type} 不是 id 资源键）。重启条件：形态改为 @Valid 请求体或加 @RequestParam 必填 ⇒ 按 restart_condition ① 重新裁定。"
+    },
+    {
+      "endpoint": "PUT /api/admin/production/route-rules/{id}/customer-unit-price",
+      "controller": "ProductionController#/api/admin/production/route-rules/{id}/customer-unit-price",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    },
+    {
+      "endpoint": "PUT /api/admin/production/processing-fee-combinations/{id}",
+      "controller": "ProductionController#/api/admin/production/processing-fee-combinations/{id}",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    },
+    {
+      "endpoint": "PUT /api/admin/production/operation-positions/{id}",
+      "controller": "ProductionController#/api/admin/production/operation-positions/{id}",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    },
+    {
+      "endpoint": "PUT /api/admin/production/routings/{id}",
+      "controller": "ProductionController#/api/admin/production/routings/{id}",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    },
+    {
+      "endpoint": "PUT /api/admin/production/operations/{id}",
+      "controller": "ProductionController#/api/admin/production/operations/{id}",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    },
+    {
+      "endpoint": "PUT /api/admin/knowledge/cards/{id}",
+      "controller": "KnowledgeCardController#/api/admin/knowledge/cards/{id}",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    },
+    {
+      "endpoint": "PUT /api/admin/users/{id}",
+      "controller": "AdminUserController#/api/admin/users/{id}",
+      "reason": "非租户域资源（平台/用户/角色等管理面）：其 id 不是租户域资源键，跨租户语义不适用。重启条件：一旦该资源被纳入租户域（新增 tenant_id 列并按租户隔离），按 restart_condition ① 重新裁定。"
+    },
+    {
+      "endpoint": "PUT /api/admin/users/{id}/reset-password",
+      "controller": "AdminUserController#/api/admin/users/{id}/reset-password",
+      "reason": "非租户域资源（平台/用户/角色等管理面）：其 id 不是租户域资源键，跨租户语义不适用。重启条件：一旦该资源被纳入租户域（新增 tenant_id 列并按租户隔离），按 restart_condition ① 重新裁定。"
+    },
+    {
+      "endpoint": "PUT /api/admin/users/{id}/status",
+      "controller": "AdminUserController#/api/admin/users/{id}/status",
+      "reason": "非租户域资源（平台/用户/角色等管理面）：其 id 不是租户域资源键，跨租户语义不适用。重启条件：一旦该资源被纳入租户域（新增 tenant_id 列并按租户隔离），按 restart_condition ① 重新裁定。"
+    },
+    {
+      "endpoint": "PATCH /api/admin/inbound-orders/{id}",
+      "controller": "InboundOrderController#/api/admin/inbound-orders/{id}",
+      "reason": "租户域资源的写端点；载荷校验/状态机在方法体或服务层，归属由该服务层带租户过滤的按 id 查询承担（本单不重判 T1 的形态）。重启条件见本文件 restart_condition ①②③④。"
+    }
+  ]
+}
