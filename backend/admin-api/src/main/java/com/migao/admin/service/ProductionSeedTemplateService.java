@@ -131,6 +131,26 @@ public class ProductionSeedTemplateService {
     private static final List<String> CRAFT_VOCABULARY = List.of("韩褶", "打孔", "穿杆", "平幔");
 
     /**
+     * 特殊选项条件工序规则的**规则级部位限定**（issue #6114）：{@code '布帘'}。
+     *
+     * <p>这 16 条规则引用的工序**只有布帘变体**（工序库 `op-v54-13..18` / `op-v56-02..05` 无 `-纱` 行
+     * —— 真值源 `CODEX`/`routing.py::OPERATION_CATALOG` 同款；例外只有 {@code 纱绑带 → 绑带}，
+     * 而 {@code 绑带-纱} 确实在库里 ⇒ 它不限部位也解析得到）。不限定部位时，同一份规则会在
+     * **纱帘单**上命中 ⇒ {@code variantNameOf(逻辑名, '纱帘', catalog)} 返回 {@code null}
+     * ⇒ 该逻辑名进 {@code missing_operations} ⇒ 整张加工单 fail-closed
+     * （实测报错：「工艺路线「窗帘工序路线（默认）」（产品形态「纱帘」）引用的工序 [花边]
+     * 在工序库中不存在，无法实例化工序」）。</p>
+     *
+     * <p>口径来源 = 用户 2026-09-21 的裁定「如果有一些工序只能布帘有或者纱帘有，可以在**适用条件**上设置」
+     * （{@code production_route_rules.position} 就是那个适用条件；{@link ProductionOperationQueryService}
+     * 的 {@code POSITION_LIMIT_VOCABULARY} 含本值）—— 本处**不是**发明新工序，只是把「这批工序只有布帘变体」
+     * 这件事实写进规则的适用条件。</p>
+     *
+     * <p>⛔ 不给这些工序补 {@code -纱} 变体：那是发明新工序（会进工人计件口径），不是配置修正。</p>
+     */
+    private static final String OPTION_OPERATION_POSITION = "布帘";
+
+    /**
      * 规范工艺变体规则（7 条）：{@code {trigger_value, position|NULL, action, operation, after|NULL}}。
      *
      * <p>与 {@code routing.py::ROUTE_RULES} 的 {@code trigger_kind='craft'} 部分逐条同源
@@ -573,7 +593,7 @@ public class ProductionSeedTemplateService {
         for (JsonNode node : template.path("option_routings")) {
             priority += 10;
             addRule(plan, existing, available, tenantId, "option", node.path("option_name").asText(),
-                    null, "insert", logicalName(node.path("operation_name").asText()),
+                    OPTION_OPERATION_POSITION, "insert", logicalName(node.path("operation_name").asText()),
                     logicalName(node.path("after_operation").asText()), priority, null);
         }
         // ③ 加工项触发（issue #4577：3 条，与 V84 逐条同值）—— 排在选项之后、系数档之前，

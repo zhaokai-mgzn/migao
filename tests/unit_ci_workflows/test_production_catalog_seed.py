@@ -1,4 +1,4 @@
-# case_ids: PG-018
+# case_ids: PG-018, PG-066
 """工序库 / 工艺路线种子**多源**收敛守卫（issue #4116 P0-2；#4230 扩为多源）。
 
 ⚠️ 本文件的用例声明行**必须**在文件前 50 行内（`.github/growth_gate.py` 的
@@ -98,6 +98,10 @@ _VERSION_RE = re.compile(r"^V(\d+)__")
 TEMPLATES_ROOT = REPO / "backend/admin-api/src/main/resources/production-templates"
 TEMPLATE_INDEX = TEMPLATES_ROOT / "index.json"
 TEMPLATE_SEED = TEMPLATES_ROOT / "curtain/seed.json"
+# 开租播种（**今天新开租户真正被应用的那块种子**，issue #6114）—— `RegistrationService` 调它，
+# `schema.sql` 的逐租户块只在**首次建库**跑一次（`MigrationRunner` 按文件名记账）⇒ 新租户走不到它。
+SEED_TEMPLATE_SERVICE = (REPO / "backend/admin-api/src/main/java/com/migao/admin/service"
+                         / "ProductionSeedTemplateService.java")
 
 
 def version_key(name: str):
@@ -1330,7 +1334,114 @@ POSITION_SEED_SQLS = values_sources_for("production_operation_positions")
 TEMPLATE_SEED_SQLS = values_sources_for("production_route_templates")
 RULE_SEED_SQLS = values_sources_for("production_route_rules")
 
-#: 7 组「部位变体」（旧工序名 → 同一道逻辑工序）—— 同组内 group_name / unit / scope 必须一致
+#: 开租播种特殊选项规则的**部位限定**锚点（issue #6114）。
+#: 钉的是 `addRule(...)` 在**特殊选项分支**里传的 `position` 实参形态，以及那个实参背后常量的值
+#: —— 两者都由正则**现取**（不写死行号、不写死具体常量名）。
+_PLAN_RULE_OPTION_CALL_RE = re.compile(
+    r"""addRule\([^;]*?"option"\s*,\s*node\.path\("option_name"\)\.asText\(\),\s*(?P<pos>[^,]+),"""
+    r"""\s*"insert"\s*,\s*logicalName\(node\.path\("operation_name"\)\.asText\(\)\)""",
+    re.S)
+_PLAN_RULE_POSITION_CONST_RE = re.compile(
+    r'String\s+(?P<name>[A-Z_][A-Z0-9_]*)\s*=\s*"(?P<value>[^"]*)"\s*;')
+
+
+def option_rule_position_guard(java_src: str, constant="布帘") -> list:
+    """issue #6114 的**类级守卫**：开租播种的特殊选项规则必须带部位限定 `'布帘'`。
+
+    归因（实测）：这 16 条规则引用的逻辑工序**只有布帘变体**（`花边-布` 有、`花边-纱` 没有）
+    ⇒ `position` 为空（= 不限部位）时，规则在**纱帘单**上照样命中 ⇒
+    `variantNameOf(逻辑名, '纱帘', catalog)` 返回 null ⇒ 该逻辑名进 `missing_operations`
+    ⇒ `ProcessingOrderService.resolveRoute` fail-closed，整张加工单生成失败（issue #6114 原始报错）。
+
+    **为什么判据在 Python 侧、对象却是 Java 源码**：本判据要钉的是「**播种动作**真的写了那个值」，
+    而播种在 `backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java`
+    的 `planRouteRules` 里 —— 这是**零成本**的那一半（读生产源码本身，不起 Spring 上下文）。
+    行为面（真播种 → 真实例化）由 Java 侧
+    `backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedOptionRulePositionTest.java` 承担。
+
+    判据（任一不成立即返回违规清单，非空 ⇒ 调用方断言红）：
+      ① 特殊选项分支的 `position` 实参**不得**是 `null`（= issue #6114 的缺陷形态）；
+      ② 该实参必须是一个**命名常量**（字面量硬编码会让「值」与「闭词表」两处口径分开漂移）；
+      ③ 该常量必须**逐字** = `'布帘'`（= `POSITION_LIMIT_VOCABULARY` 里的布帘部位）。
+    """
+    match = _PLAN_RULE_OPTION_CALL_RE.search(java_src)
+    if not match:
+        return ["`planRouteRules` 的特殊选项分支里找不到 "
+                "`addRule(..., \"option\", node.path(\"option_name\")..., <position>, \"insert\", "
+                "logicalName(node.path(\"operation_name\")...))` 形态 ⇒ 要么播种不再显式给"
+                " `position`（= issue #6114 回归），要么本解析器与生产代码脱节"]
+    raw = match.group("pos").strip()
+    if raw == "null":
+        return [f"特殊选项分支的 `position` 实参 = `null`（= 不限部位）⇒ 这批规则会在**纱帘单**上命中，"
+                f"而它们引用的工序只有布帘变体 ⇒ 整张加工单 fail-closed（issue #6114）。"
+                f"实测源码片段：{match.group(0)[:120]!r}"]
+    if not re.fullmatch(r"[A-Z_][A-Z0-9_]*", raw):
+        return [f"特殊选项分支的 `position` 实参是字面量 / 表达式 `{raw}`（不是命名常量）"
+                f"⇒ 「值」与「闭词表」两处口径会分开漂移"]
+
+    declared = {m.group("name"): m.group("value")
+                for m in _PLAN_RULE_POSITION_CONST_RE.finditer(java_src)}
+    if raw not in declared:
+        return [f"`position` 实参用的是常量 `{raw}`，但在同一个生产文件里找不到它的声明"
+                f"（声明被删 / 改名 ⇒ 判据会空跑，`javac` 之外没有任何东西会红）"]
+    if declared[raw] != constant:
+        return [f"开租播种的部位限定常量 `{raw}` = `{declared[raw]}`，期望逐字 `{constant}`"]
+    return []
+
+
+def test_option_rule_position_guard_detects_regression():
+    """注入式自证（判别力）：摘回 `null` / 换字面量 / 改值 / 删声明 / 形态消失 ⇒ 判据必非空。"""
+    good = ('    private static final String OPTION_OPERATION_POSITION = "布帘";\n'
+            '        addRule(plan, existing, available, tenantId, "option", '
+            'node.path("option_name").asText(),\n'
+            '                OPTION_OPERATION_POSITION, "insert", '
+            'logicalName(node.path("operation_name").asText()),\n'
+            '                logicalName(node.path("after_operation").asText()), priority, null);\n')
+    assert option_rule_position_guard(good) == [], \
+        "合规输入被误判 ⇒ 判据不可信（下面的红证也就是空断言）"
+
+    assert option_rule_position_guard(
+        good.replace('OPTION_OPERATION_POSITION, "insert"', 'null, "insert"')), \
+        "把部位限定摘回 `null`（= issue #6114 的缺陷形态）未被识别 ⇒ 判据是空断言"
+    assert option_rule_position_guard(
+        good.replace('OPTION_OPERATION_POSITION, "insert"', '"布帘", "insert"')), \
+        "把部位限定换成字面量未被识别 ⇒ 判据是空断言"
+    assert option_rule_position_guard(good.replace('= "布帘"', '= "纱帘"')), \
+        "部位限定常量改值未被识别 ⇒ 判据是空断言"
+    assert option_rule_position_guard(
+        good.replace('    private static final String OPTION_OPERATION_POSITION = "布帘";\n', '')), \
+        "常量声明被删未被识别 ⇒ 判据是空断言"
+    assert option_rule_position_guard("class X {}"), \
+        "生产代码形态完全消失未被识别 ⇒ 判据是空断言"
+
+
+def test_option_rule_position_is_cloth_in_the_new_tenant_seed(template_json, python_catalog):
+    """🔴 **issue #6114 内容腿**（Python 侧）：`planRouteRules` 的特殊选项规则必须带 `position='布帘'`。
+
+    **为什么要这条（与 schema.sql 镜像无关）**：`backend/admin-api/src/main/resources/db/init/schema.sql`
+    的逐租户种子块只在**首次建库**跑一次（`MigrationRunner` 按**文件名**记账 ⇒ 今天新开的租户走不到它）；
+    今天新开租户的规则来自 `RegistrationService.applyProductionSeedTemplate`
+    → `ProductionSeedTemplateService.applyTemplate` ⇒ 部位限定必须落在**那条路径**上，本判据就钉它。
+
+    红证：把 `OPTION_OPERATION_POSITION` 换成 `null`（或摘掉该实参）⇒ 本判据与
+    `ProductionSeedOptionRulePositionTest` 同时红。
+    """
+    source = SEED_TEMPLATE_SERVICE.read_text(encoding="utf-8")
+    errors = option_rule_position_guard(source)
+    assert errors == [], "\n".join(errors)
+
+    # 自证（防「判据空跑」）：模板里**确实**有引用了「只有布帘变体」的工序的特殊选项规则。
+    catalog_names = set(python_catalog[0].keys())
+    logicals = {route["operation_name"][:-2] if route["operation_name"].endswith(("-布", "-纱"))
+                else route["operation_name"] for route in template_json["option_routings"]}
+    assert logicals, "模板 option_routings 解析不出任何选项 ⇒ 上面的判据是空跑"
+    cloth_only = sorted(op for op in logicals if f"{op}-纱" not in catalog_names)
+    assert cloth_only, (
+        "模板的特殊选项里没有任何「只有布帘变体」的工序 ⇒ issue #6114 的归因前提不成立"
+        "（若库里新增了纱帘变体，本判据与那条 issue 都要重新评估）")
+
+
+
 VARIANT_GROUPS = {
     "精裁": ("精裁-布", "精裁-纱"),
     "裁剪": ("裁剪-布", "裁剪-纱"),

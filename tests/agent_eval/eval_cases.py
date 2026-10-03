@@ -7632,6 +7632,24 @@ _CASE_PG_064 = EvalCase(
     must_succeed=[{'tool': 'processing_order_set_query'}],
 )
 
+# ── PG-066 [NORMAL] 开工单默认配置 - 纱帘单勾任一特殊选项不再整单失败（规则级部位限定落在开租种子；issue #6114）（源: cases/processing-order.yml）──
+_CASE_PG_066 = EvalCase(
+    id='PG-066',
+    legacy_id='',
+    title='开工单默认配置 - 纱帘单勾任一特殊选项不再整单失败（规则级部位限定落在开租种子；issue #6114）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=["判据 1·**内容腿**（新租户会应用的那块种子）：开租播种（RegistrationService → ProductionSeedTemplateService.applyTemplate）落库的**特殊选项规则**（trigger_kind=option + action=insert）**逐条** position='布帘'（`production_route_rules.position`，取值落在 ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY 内）；模板 JSON 的 16 条 option_routings 一条不漏。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedOptionRulePositionTest.java（optionRulesCarryClothPosition / positionValueIsInsideTheClosedVocabulary）+ tests/unit_ci_workflows/test_production_catalog_seed.py（test_option_rule_position_is_cloth_in_the_new_tenant_seed 读生产源码的 planRouteRules 特殊选项分支）", '判据 2·**行为腿·纱帘侧**：同一批规则喂给真实实例化路径（ProcessingOrderService.derivePositionPayload），**纱帘单**勾选「引用了只有布帘变体的工序」的全部特殊选项（拼1次/拼2次/拼3次/加花边/加铅块/接高/加logo条/加立边/扣环/防翘扣）⇒ **能派工**（不抛 PRODUCTION_OPERATION_NOT_FOUND）、工序序列里**不出现**这些逻辑工序（`花边` / `拼1次` / `接高` … 一律不插，更不得落 `花边-布`），且仍按纱帘变体实例化（`精裁` → `精裁-纱`）。证据：ProductionSeedOptionRulePositionTest.sheerOrderInstantiatesWithoutClothVariants / singleClothOnlyOptionAlsoInstantiatesOnSheer（后者是最小复现面：只勾 `接高`）', '判据 3·**行为腿·布帘侧（防「规则没生效也判绿」）**：同一配置的**布帘单**照旧插入对应布帘变体（`加花边` → `花边-布`、`拼1次` → `拼1次-布`、`接高` → `接高-布`、`扣环` → `扣环-布`、`铅坠` → `铅坠-布`），且序列里不出现纱帘变体。证据：ProductionSeedOptionRulePositionTest.clothOrderStillGetsClothVariants', '🔴 **红证（本机实跑，2026-10-03）**：把 backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java 的 planRouteRules 特殊选项分支里那个 position 实参改回 `null` ⇒ 本用例三条判据同时红，读数逐字 —— **行为腿**：`Tests run: 3, Failures: 0, Errors: 2`，报错与 issue #6114 的原始报错**逐字同形**「工艺路线「窗帘工序路线（默认）」（产品形态「纱帘」）引用的工序 [接高, 防翘扣, 扣环, 立边, logo条, 铅坠, 花边, 拼3次, 拼2次, 拼1次] 在工序库中不存在，无法实例化工序」；单选项面同款「…引用的工序 [接高] …」；**内容腿**：`Tests run: 3, Failures: 1, Errors: 1`（optionRulesCarryClothPosition 判「position=null（期望 布帘）」）。还原该实参 ⇒ 6/6 全绿。', '**未固化 / 边界（如实登记）**：① 本 PR **不写存量租户数据迁移** ⇒ 存量租户（含租户 20）的既有规则 position 仍为 NULL，**仍会卡单** —— 这是**有意接受**的缺口，重启条件 = 存量租户提出该问题 / 出现通用数据迁移窗口（口径来源见 PR body）；② 带部位限定的规则只在**逐字匹配**的实例化部位生效 —— 若将来给这批工序补了真正的纱帘变体（`花边-纱`），本限定会变成「纱帘单少一道该做的工序」⇒ 那时要连同本用例一起改判（见判据 1 的自证断言）。'],
+    skip_reason='[backend-contract] 后端契约用例（开租种子 + 路线实例化，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionSeedOptionRulePositionTest 执行（Java），另有零成本的那一半 tests/unit_ci_workflows/test_production_catalog_seed.py::test_option_rule_position_is_cloth_in_the_new_tenant_seed 读生产源码',
+    tags=['processing-order', 'production', 'route-rules', 'seed', 'sheer-curtain'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -12309,6 +12327,7 @@ ALL_CASES = (
     _CASE_PG_062,
     _CASE_PG_063,
     _CASE_PG_064,
+    _CASE_PG_066,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
