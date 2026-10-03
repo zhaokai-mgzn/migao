@@ -12,21 +12,28 @@
       "verdict": "guarded",
       "guard": "状态流转 = DB 原子条件更新（WHERE id + tenant_id + status=读到的旧状态）；受影响行数 0 ⇒ 409「已被他人变更」，退款联动 / 库存回补 / 时间线写入**只在条件更新成功的那一次**执行",
       "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java::.eq(\"status\", currentStatus)",
-      "case_ids": ["AS-011"]
+      "case_ids": [
+        "AS-011"
+      ]
     },
     {
       "method": "InboundOrderService#post",
       "verdict": "guarded",
-      "guard": "过账权 = DB 原子条件更新（`InboundOrderMapper#markPosted`：`UPDATE inbound_orders SET status='posted' … WHERE id=? AND tenant_id=? AND status='draft' AND deleted=0`，按影响行数判谁抢到过账权）；影响行数 0 ⇒ 409「只有草稿可以过账」，且这道闸位于**任何库存写入之前**（其后才是逐行 `receiveStock` + `stock_ledger_entries` + `stock_batches.insert`）⇒ 并发的第二个请求到不了库存写入。叠加的 DB 对象：`batch_no VARCHAR(32) NOT NULL` + 唯一索引 `uk_stock_batches_no (tenant_id, batch_no)`（真库实测在场）",
-      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/InboundOrderMapper.java::AND status = 'draft' AND deleted = 0",
-      "case_ids": ["OR-057"]
+      "guard": "过账权 = DB 原子条件更新（`InboundOrderMapper#markPosted`：`UPDATE inbound_orders SET status='posted' … WHERE id=? AND tenant_id=? AND status='draft' AND deleted=0`，按影响行数判谁抢到过账权）；影响行数 0 ⇒ 409「只有草稿可以过账」，且这道闸位于**任何库存写入之前**（其后才是逐行 `receiveStock` + `stock_ledger_entries` + `stock_batches.insert`）⇒ 并发的第二个请求到不了库存写入。叠加的 DB 对象：`batch_no VARCHAR(32) NOT NULL` + 唯一索引 `uk_stock_batches_no (tenant_id, batch_no)`（真库实测在场） ｜ #6248 追加：批次号的「判占用 + 占用」= **一条语句** `StockBatchMapper#update(`（候选随行插入 + `ON CONFLICT (tenant_id, batch_no) DO NOTHING`，按受影响行数 1/0 判号归谁，冲突时同一事务内换号重试）—— 承接 `uk_stock_batches_no` 在插入那一刻的原子判定；该取号循环与 `inboundOrderItemMapper.updateById(patch)`（行上回写批次号）同处 `post` 方法体内 ⇒ 兑现锚 = 后者（写法稳定、不随 mapper 方法名变化）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java::inboundOrderItemMapper.updateById(patch)",
+      "case_ids": [
+        "OR-057",
+        "OR-060"
+      ]
     },
     {
       "method": "ProductionOperationCommandService#update",
       "verdict": "guarded",
       "guard": "改价 = 「读旧价 → 判「价变了吗」 → 条件追加版本行」的读-判-写（**涉钱、追加型不可逆**）。修前实测：N=4 并发提交**同一次**调价（旧价 100 → 新价 200）⇒ 4 个请求全成功、版本账**追加 4 行**（总 5 行），且该表除主键外**无唯一约束**（`pg_indexes` 实测 + 「直接插两行同 (operation_id, unit_price) 被库接受」的反向自证）⇒ DDL 零兜底。修法 = **进入事务后先取工序行的排他锁**（`ProductionOperationMapper#lockById`：`SELECT id FROM production_operations WHERE id=#{id} AND deleted=0 FOR UPDATE`，锁持有到提交）**再读** —— 顺序即语义：锁后的普通 SELECT 在 READ COMMITTED 下读到最新**已提交**版本 ⇒ 同价重复提交退化为既有的「价没变 ⇒ 不追加」幂等空操作（**不是冲突 ⇒ 不 409**：请求意图「价 = 新价」已达成），异价并发两次变更各自成行且 `created_at` 顺序与提交顺序一致 ⇒「当前价 = 最新版本行」契约在并发下仍成立。修后实测：N=4 × 3 轮 ⇒ 版本账恰追加 **1** 行（总 2 行 = 基线 1 + 追加 1）、4 个请求全 200；注入红证（摘掉 `FOR UPDATE`）⇒ 3 轮全部回到 4 行、判据红。为什么不用 CAS + 409：CAS 会**静默丢弃**后写者的改价（他拿到成功而价仍是别人的值），对涉钱配置面不可接受。",
       "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java::productionOperationMapper.lockById(id);",
-      "case_ids": ["PP-022"]
+      "case_ids": [
+        "PP-022"
+      ]
     }
   ],
   "unverified": [
@@ -89,8 +96,9 @@
     "本守卫只保证「登记存在且兑现」，**不保证** entries 里声称的保护真的有效 —— 那是实例判据的事（AS-011 = AfterSalesConcurrentResolveRealDbTest）。",
     "unverified 是**豁免台账**：只许缩短（新增豁免 ⇒ 红），缩短 = 把该条移进 entries 并给出兑现锚。",
     "扫描器不做 AST 解析，方法名取自「@Transactional 之后到方法体 `{` 之间」的签名文本。",
-    "#6237 回填（2026-10-03）：`InboundOrderService#post` 原在 unverified 的观察项逐字称「无条件置 POSTED + 逐行 insert stock_batches ⇒ 并发重复过账可能重复建批次 / 重复入库」。核验结论 = **不真（该主张在当前代码上不成立）**：issue #5148（V117）已把过账改成 DB 原子条件更新，闸在任何库存写入之前。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/InboundPostConcurrentRealDbTest.java`（N=4 × 3 轮并发过账同一 draft 单 ⇒ 成功数恰 1 / 库存 +5.0 / 批次 2 行 / 台账 2 行 / 终态 posted；另带「串行正对照」与「带 Idempotency-Key 的并发入口」两条）。它**不**覆盖的：HTTP 层（PATCH action=post 是薄转发）、`nextFreeBatchNo` 的跨请求批次号竞争（不同单并发取号撞 `uk_stock_batches_no` ⇒ 那会**显式失败并回滚**，不是重复入库 —— 本单只登记该边界，未开单核验其重试语义）。",
+    "#6237 回填（2026-10-03）：`InboundOrderService#post` 原在 unverified 的观察项逐字称「无条件置 POSTED + 逐行 insert stock_batches ⇒ 并发重复过账可能重复建批次 / 重复入库」。核验结论 = **不真（该主张在当前代码上不成立）**：issue #5148（V117）已把过账改成 DB 原子条件更新，闸在任何库存写入之前。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/InboundPostConcurrentRealDbTest.java`（N=4 × 3 轮并发过账同一 draft 单 ⇒ 成功数恰 1 / 库存 +5.0 / 批次 2 行 / 台账 2 行 / 终态 posted；另带「串行正对照」与「带 Idempotency-Key 的并发入口」两条）。它**不**覆盖的：HTTP 层（PATCH action=post 是薄转发）、`nextFreeBatchNo` 的跨请求批次号竞争（不同单并发取号撞 `uk_stock_batches_no` ⇒ 那会**显式失败并回滚**，不是重复入库 —— 该边界已由 #6248 核验并修复（结论 = 真/部分真：单实例不可达、多实例/重启可达 ⇒ 撞唯一索引 ⇒ 用户侧 500；修法 = `update(` 原子取号）—— 见本列表的 #6248 回填条目）。",
     "unverified_baseline 是**冻结快照**（只作「新增豁免 ⇒ 红」的上界）：条目落进 entries 后**有意保留**在基线里（子集关系仍成立）；本单证的是「豁免只许缩短」，不是「基线必须同步收缩到与现取集合逐一相等」。",
-    "#6238 回填（2026-10-03）：`ProductionOperationCommandService#update` 原在 unverified 的观察项逐字称「⚠️ **涉钱面**：价格版本**追加 insert** + 可选状态写 ⇒ 并发重复提交可能重复追加版本行」。核验结论 = **真（该主张在当前代码上成立）**，且**本单已修**（不是只登记）。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java`（N=4 × 3 轮并发提交同一次调价 ⇒ 版本账恰追加 1 行 / 当前价「200.00」= 最新版本行；另带「串行正对照 + 同价重复提交幂等」与「库层零兜底实测（除主键外无唯一约束）」两条）。它**不**覆盖的：① HTTP 薄转发层（`PUT /api/admin/production/operations/{id}`）；② 同一工序并发**异价**提交（A 改 200 / B 改 300）只在修法说明里登记语义、判据未逐值断言；③ 本端点**没有** `Idempotency-Key` 入口（判据里已实测登记）⇒ 重复提交的唯一防线就是本方法自身的闸；④ `ProductionSeedTemplateService#applyTemplateNode` 另有一条 `priceVersionMapper.insert`，它插的是**新建**工序的首行版本账（新 id、无共享行）⇒ 不构成读-判-写，本单未开单核验。"
+    "#6238 回填（2026-10-03）：`ProductionOperationCommandService#update` 原在 unverified 的观察项逐字称「⚠️ **涉钱面**：价格版本**追加 insert** + 可选状态写 ⇒ 并发重复提交可能重复追加版本行」。核验结论 = **真（该主张在当前代码上成立）**，且**本单已修**（不是只登记）。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java`（N=4 × 3 轮并发提交同一次调价 ⇒ 版本账恰追加 1 行 / 当前价「200.00」= 最新版本行；另带「串行正对照 + 同价重复提交幂等」与「库层零兜底实测（除主键外无唯一约束）」两条）。它**不**覆盖的：① HTTP 薄转发层（`PUT /api/admin/production/operations/{id}`）；② 同一工序并发**异价**提交（A 改 200 / B 改 300）只在修法说明里登记语义、判据未逐值断言；③ 本端点**没有** `Idempotency-Key` 入口（判据里已实测登记）⇒ 重复提交的唯一防线就是本方法自身的闸；④ `ProductionSeedTemplateService#applyTemplateNode` 另有一条 `priceVersionMapper.insert`，它插的是**新建**工序的首行版本账（新 id、无共享行）⇒ 不构成读-判-写，本单未开单核验。",
+    "#6248 回填（2026-10-03）：`#6237` 登记的边界「`nextFreeBatchNo` 的跨请求批次号竞争（本单只登记该边界、未开单核验其重试语义）」已核验（**结论 = 真 / 部分真**）：① **同进程并发不可达** —— `AtomicInteger.incrementAndGet()` 保证候选两两不同（N=4 不同单并发过账 ×3 轮，库内零重号组）；② **可达路径 = 多实例 / 重启** —— 计数器是进程内的，两执行体从同一位置起步 ⇒ 同一候选 ⇒ 两边 `exists` 都为假 ⇒ 后到的 insert 撞 `uk_stock_batches_no`；③ **撞了之后用户侧是 500**（`stockBatchMapper.insert` 抛的 `DuplicateKeyException` 在 `post` 里无 catch；旧重试只覆盖「生成时已存在」，**不覆盖「插入时被抢」**）；④ 20 次耗尽 ⇒ 显式 409 `BATCH_NO_EXHAUSTED`（语义正确、不静默重用号；文案只覆盖「号段被占满」这一成因）。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/BatchNoTakeRaceRealDbTest.java`（六条，含会合点注入的双向对照：修前 500×2 / 修后 200×2）+ 廉价正向判据 `InboundOrderServiceTest#postRetriesWhenCandidateIsSnatchedBetweenCheckAndInsert`。修法 = 把「判占用 + 占用」并成一条语句 `StockBatchMapper#update(`（`ON CONFLICT (tenant_id, batch_no) DO NOTHING`，按受影响行数换号重试，同一事务内安全）。**仍未覆盖**：① 同一形态的兄弟 `nextFreeInboundNo`（建单取号）本单**未核验** —— 它靠`uk_inbound_orders_no` 兜底且 `DuplicateKeyException` 已 catch 成 409，但窗口可被利用时那一单会**永久停在 draft**（账号级 draft 列表不带分页 ⇒ 可能翻不到），待核验；② 本判据打服务层 + 真库，不证 HTTP 层（`PATCH action=post` 是薄转发）。"
   ]
 }

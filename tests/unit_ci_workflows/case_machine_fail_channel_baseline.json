@@ -288,6 +288,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 120,
       "note": "issue #6254（P3·发货方式 shippingMethod **半接线**收口：工人/商家发货写面 `shipping_method` 恒为 NULL，而前端兜底把 NULL 当 `logistics`）新增 **1** 条 `[backend-contract]` 用例（OR-059）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 119 + 1 = **120**）。机器判红通道 = `traces.tests` 的两个真测试文件，均非空且真实存在：`frontend/admin-web/tests/unit/lib/data-adapter.test.ts`（未采集 ⇒ 不下发该键 / 正对照真 logistics 仍下发 / `shippingMethodForEdit` 的 NULL ⇒ undefined 与 none·logistics 原样透传 / 接线判据（订单详情回填点真走本函数且不再有旧兜底表达式））与 `frontend/admin-web/tests/unit/components/LogisticsForm.test.tsx`（未采集 ⇒ 省略该键 / 已记录 none ⇒ 仍 none / 正对照 logistics ⇒ 仍 logistics）；`traces.ci` = `pr-check.yml` 的 `admin-web typecheck + unit tests`（真跑这两个 vitest）。修前红实测 = `6 failed / 41 passed`（两个文件），修后绿 = `111 passed`（4 个文件）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 120}` vs 锚点 119 —— **不是**按号推算。"
+    },
+    {
+      "sha": "pending-pr-6248",
+      "date": "2026-10-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": null,
+      "note": "issue #6248（P3·涉库存核验包：入库批次号 `nextFreeBatchNo` 跨请求取号竞争）新增 1 条 `[backend-contract]` 用例（OR-060）—— 它按设计**不进 agent-eval**（无 LLM 写路径：入库过账不经米宝 Agent 工具，B 端 PATCH action=post 与工人入口都是 admin-api 服务层；`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的两个真测试文件：`backend/admin-api/src/test/java/com/migao/admin/service/BatchNoTakeRaceRealDbTest.java`（真 PG 六条：单实例并发 4×3 轮零重号 / 串行正对照 / 重启落在已占头部 fail-closed 409 / 会合点注入双向（修前 500×2、修后 200×2）/ 号段耗尽 409 / 零注入对照）与 `backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderServiceTest.java`（写号被抢 ⇒ 换号取下一个候选、最终号三处同源同值），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**：本机跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': <实测值>}` —— 以该实测值为准（不按号推算，CI 是权威）。"
     }
   ]
 }
