@@ -266,6 +266,42 @@ _CASE_AS_010 = EvalCase(
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
+# ── AS-013 [EDGE] 涉钱入口退款金额超 2 位小数 ⇒ 4xx 显式拒绝（不静默取整）：订单与资金流水零写入、refund_at 不写（源: cases/aftersales.yml）──
+_CASE_AS_013 = EvalCase(
+    id='AS-013',
+    legacy_id='',
+    title='涉钱入口退款金额超 2 位小数 ⇒ 4xx 显式拒绝（不静默取整）：订单与资金流水零写入、refund_at 不写',
+    skill=Skill.AFTERSALES,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['PUT /api/admin/orders/{id}/refund body {refund_amount:0.001}（子分级金额）'],
+    expectations=[],
+    data_checks=['**0.001 ⇒ 4xx 显式拒绝**（机器断言 = `backend/admin-api/src/test/java/com/migao/admin/service/OrderRefundMoneyPrecisionTest.java` 的 refundOrder_threeDecimals_isRejectedWithNoWrites / refundEndpoint_threeDecimals_is4xx）：HTTP 422 + 文案含「最多支持 2 位小数」。修前实测 = 200 且库内被 PG 舍成 0。', '**零写入**（同上两条断言）：拒绝时 `orders` 不落 refund_amount / refund_at、`finance_transactions` 零新增 —— 修前是「订单与流水两处同时静默归零、refund_at 却已写入」。', '**正对照 0.01 不退化**（断言 = refundOrder_oneCent_succeedsWithBothSidesLiterallyEqual）：200 且订单侧写库字面量与流水侧金额**逐字相等**（`0.01` 就是 `0.01`）。', '**既有两个守卫未回退**（断言 = refundOrder_accumulatedCapUnchanged / refundOrder_statusWhitelistUnchanged）：累计退款封顶实收、状态白名单（confirmed/producing/shipped/completed）一字未动。', '**舍入方向登记（不作缺陷判据）**：PG `numeric(·,2)` 是半进位，修前实测 0.004⇒0 / 0.005⇒0.01 / 0.009⇒0.01（issue #6221 逐字读数）；这三个值修后一律被拒（断言 = MoneyScaleTest.registeredRoundingDirection_isPgHalfUp_andSubCentValuesAreNowRejected）。'],
+    skip_reason='[backend-contract] 涉钱金额小数位准入由 Java 单测验证（MoneyScaleTest / OrderRefundMoneyPrecisionTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['refund', 'money-precision', 'fail-closed', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AS-014 [EDGE] 类级：全仓金额入口小数位准入台账（金额写面未登记即红、豁免台账只许缩短）（源: cases/aftersales.yml）──
+_CASE_AS_014 = EvalCase(
+    id='AS-014',
+    legacy_id='',
+    title='类级：全仓金额入口小数位准入台账（金额写面未登记即红、豁免台账只许缩短）',
+    skill=Skill.AFTERSALES,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['在未登记的文件里新增一处写入 NUMERIC(·,2) 金额列的写面（或新增一个金额列）'],
+    expectations=[],
+    data_checks=['**未登记即红**（机器断言 = `backend/admin-api/src/test/java/com/migao/admin/service/MoneyEntryPrecisionMetaGuardTest.java` 的 everyMoneyEntryIsRegisteredAndBacked）：发现规则（实体 BigDecimal 金额字段的 setter 调用点 + 金额实体 builder 调用点）扫出的每一处写面都必须在入口台账里 ⇒ 新写面未登记即具名红。', '**台账不许空转**（断言 = redproof_staleLedgerEntry）：登记的写面被删/改名 ⇒ 红（防「台账留着好看、写面早没了」）。', '**登记未被兑现即红**（断言 = redproof_gatedClaimWithoutGateText）：登记为已过准入但文件里没有 MoneyScale 调用文本 ⇒ 红。', '**豁免只许缩短**（断言 = redproof_debtGrowth / liveDebtCountDoesNotExceedFrozenBaseline）：无准入的写面登记为债务且必须带跟进 issue 号，条数现取 ≤ 冻结上限；新增缺口只能落准入、不能塞进台账。', '**判别力自证 + 反向对照**（断言 = redproof_* 七条 + cleanFixture_hasNoViolation）：六种坏形态各自在内存里判红；同一夹具不注入 ⇒ 零违规（证明红由注入引起）。', '**扫描面非空**（断言 = scanSurfaceIsNotEmpty / redproof_emptyScanFailsClosed）：发现规则失效（扫不到任何金额写面）⇒ fail-closed 红，不许「空跑成绿」。'],
+    skip_reason='[backend-contract] 类级元守卫是纯源码扫描 + 内存注入判据，由 Java 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['money-precision', 'meta-guard', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── AG-001 [NORMAL] AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离（源: cases/agents.yml）──
 _CASE_AG_001 = EvalCase(
     id='AG-001',
@@ -12080,6 +12116,8 @@ ALL_CASES = (
     _CASE_AS_008,
     _CASE_AS_009,
     _CASE_AS_010,
+    _CASE_AS_013,
+    _CASE_AS_014,
     _CASE_AG_001,
     _CASE_AG_002,
     _CASE_AG_003,

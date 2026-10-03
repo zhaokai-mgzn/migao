@@ -4,7 +4,7 @@
 > 单一源：`.github/cases/`（本仓唯一源）。
 > 启动服务后按序执行；每轮 Case 独立。tier：🟢 smoke / 🔵 normal / 🔴 adversarial。
 
-## 售后域（10 case）
+## 售后域（12 case）
 
 ### AS-001. 售后工单列表 🟢
 ```
@@ -159,6 +159,33 @@
 ```
 真值: aftersales-flow.create-order-required, aftersales-flow.dup-guard, aftersales-flow.ticket-format
 溯源: 2026-09-26 新增（issue #4074 第 2 条「同步覆盖售后路径」）：售后建单（C 端 aftersale_create，B 端 after_sales_manage 自 #5247 起只读、无 create）与下单**对称**地走同一套幂等实现（同 `ClientRequestIdService`，键只差操作维度 op=aftersale）。断言四件套：must_succeed[min_successes=2]（可达性）+ output_verify[last]（回放可见）+ db_verify[after_sales_by_client_request_id]（同会话 + 一次回放 + 恰好一张）+ order_before（confirm 卡先行）。persona 显式标注 xiaobu。 ｜ tags: aftersale_create, idempotency, retry
+
+### AS-013. 涉钱入口退款金额超 2 位小数 ⇒ 4xx 显式拒绝（不静默取整）：订单与资金流水零写入、refund_at 不写 🟡
+```
+你: PUT /api/admin/orders/{id}/refund body {refund_amount:0.001}（子分级金额）
+数据: **0.001 ⇒ 4xx 显式拒绝**（机器断言 = `backend/admin-api/src/test/java/com/migao/admin/service/OrderRefundMoneyPrecisionTest.java` 的 refundOrder_threeDecimals_isRejectedWithNoWrites / refundEndpoint_threeDecimals_is4xx）：HTTP 422 + 文案含「最多支持 2 位小数」。修前实测 = 200 且库内被 PG 舍成 0。
+数据: **零写入**（同上两条断言）：拒绝时 `orders` 不落 refund_amount / refund_at、`finance_transactions` 零新增 —— 修前是「订单与流水两处同时静默归零、refund_at 却已写入」。
+数据: **正对照 0.01 不退化**（断言 = refundOrder_oneCent_succeedsWithBothSidesLiterallyEqual）：200 且订单侧写库字面量与流水侧金额**逐字相等**（`0.01` 就是 `0.01`）。
+数据: **既有两个守卫未回退**（断言 = refundOrder_accumulatedCapUnchanged / refundOrder_statusWhitelistUnchanged）：累计退款封顶实收、状态白名单（confirmed/producing/shipped/completed）一字未动。
+数据: **舍入方向登记（不作缺陷判据）**：PG `numeric(·,2)` 是半进位，修前实测 0.004⇒0 / 0.005⇒0.01 / 0.009⇒0.01（issue #6221 逐字读数）；这三个值修后一律被拒（断言 = MoneyScaleTest.registeredRoundingDirection_isPgHalfUp_andSubCentValuesAreNowRejected）。
+跳过: [backend-contract] 涉钱金额小数位准入由 Java 单测验证（MoneyScaleTest / OrderRefundMoneyPrecisionTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: aftersales-flow.refund-money-scale, finance.txn-types
+溯源: 2026-10-03 新增（issue #6221，第三轮深度测试缺陷 · 线B LB-PREC-02）：退款金额只校 >=0 与 <=实收、不校小数位 ⇒ 0.001 得 200 后写库被 PG 舍成 0.00（订单 + 资金流水两处静默归零，refund_at 仍被写入）。修法是显式拒绝（单点准入 = backend/admin-api/src/main/java/com/migao/admin/service/MoneyScale.java），同 StockQuantity.requireOneDecimal / InboundOrderService.requireItemNumbers「超位显式拒绝、不静默取整」的既有范式。 ｜ tags: refund, money-precision, fail-closed, backend-contract
+
+### AS-014. 类级：全仓金额入口小数位准入台账（金额写面未登记即红、豁免台账只许缩短） 🟡
+```
+你: 在未登记的文件里新增一处写入 NUMERIC(·,2) 金额列的写面（或新增一个金额列）
+数据: **未登记即红**（机器断言 = `backend/admin-api/src/test/java/com/migao/admin/service/MoneyEntryPrecisionMetaGuardTest.java` 的 everyMoneyEntryIsRegisteredAndBacked）：发现规则（实体 BigDecimal 金额字段的 setter 调用点 + 金额实体 builder 调用点）扫出的每一处写面都必须在入口台账里 ⇒ 新写面未登记即具名红。
+数据: **台账不许空转**（断言 = redproof_staleLedgerEntry）：登记的写面被删/改名 ⇒ 红（防「台账留着好看、写面早没了」）。
+数据: **登记未被兑现即红**（断言 = redproof_gatedClaimWithoutGateText）：登记为已过准入但文件里没有 MoneyScale 调用文本 ⇒ 红。
+数据: **豁免只许缩短**（断言 = redproof_debtGrowth / liveDebtCountDoesNotExceedFrozenBaseline）：无准入的写面登记为债务且必须带跟进 issue 号，条数现取 ≤ 冻结上限；新增缺口只能落准入、不能塞进台账。
+数据: **判别力自证 + 反向对照**（断言 = redproof_* 七条 + cleanFixture_hasNoViolation）：六种坏形态各自在内存里判红；同一夹具不注入 ⇒ 零违规（证明红由注入引起）。
+数据: **扫描面非空**（断言 = scanSurfaceIsNotEmpty / redproof_emptyScanFailsClosed）：发现规则失效（扫不到任何金额写面）⇒ fail-closed 红，不许「空跑成绿」。
+跳过: [backend-contract] 类级元守卫是纯源码扫描 + 内存注入判据，由 Java 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: aftersales-flow.refund-money-scale
+溯源: 2026-10-03 新增（issue #6221，铁律 8 类级固化）：修一处只修一处 = 没修 —— 同形态缺口在别的金额入口（建单/改价、收款、售后联动、入库单价、加工费/计件单价…）原样成立。逐处读数落在 MoneyEntryPrecisionMetaGuardTest 的台账里，无准入者登记为债务并跟单 #6228。 ｜ tags: money-precision, meta-guard, backend-contract
 
 ## Agent 核心域（7 case）
 
@@ -9241,9 +9268,9 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：643（活跃 134，跳过 509）
+- 用例总数：645（活跃 134，跳过 511）
 - tier 分布：smoke 12 / normal 597 / adversarial 32
-- 售后域：10
+- 售后域：12
 - Agent 核心域：7
 - API 层域：21
 - 登录认证域：11

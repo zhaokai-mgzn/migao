@@ -1769,7 +1769,15 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         BigDecimal actual = effectiveActualAmount(order);
-        BigDecimal refund = refundAmount != null ? refundAmount : actual;
+        // 金额精度准入（issue #6221）：退款金额最多 2 位小数（列 NUMERIC(12,2)）。
+        // 超位**显式拒绝**（422），不静默取整 —— 否则 `0.001` 会被 PG 舍成 `0.00`：
+        // 订单 refund_amount 与资金流水 amount 两处同时归零、refund_at 却已写入（"退了一笔 0 元"）。
+        // 口径本体在 MoneyScale（金额链路的单点准入，同 StockQuantity 的范式）；
+        // `null` 语义 = 「全额退」，由 OrNull 原样透传（**不得**归一成 0）。
+        BigDecimal refund = MoneyScale.requireTwoDecimalsOrNull(refundAmount, "退款金额");
+        if (refund == null) {
+            refund = actual;
+        }
         if (refund.compareTo(BigDecimal.ZERO) < 0) {
             throw BusinessException.validationError("退款金额不能为负数");
         }

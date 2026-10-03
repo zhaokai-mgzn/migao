@@ -48,6 +48,25 @@
 - 同族存量（**本包文件族外，未改**）：`ProcessingItemService.getCategoryNameMap`
   与 `ProcessingOrderService.loadOrders` 的调用点同样未对空键判空 ⇒ 已另开 issue #6226。
 
+### 退款金额超 2 位小数现在被明确拒绝，不再「退款成功却一分未落」（2026-10-03，issue #6221）
+
+- 以前：`PUT /api/admin/orders/{id}/refund` 的 `refund_amount` 只校「≥ 0、≤ 实收」，**不校小数位**；
+  传 `0.001` 得 **200**，写库时被 PG 的 `numeric(12,2)` 舍成 `0.00` ⇒ **订单 `refund_amount` 与
+  资金流水 `amount` 两处同时静默归零**，而 `refund_at` 已写入（看起来像「退了一笔 0 元」）。
+- 现在：金额**最多 2 位小数**（按**有效**小数位判，`2.70` / `0.010` 合法），超位 **422 显式拒绝**
+  （中文文案说明「金额按分记账、最多 2 位小数」）且**零写入** —— 不写退款额、不写 `refund_at`、
+  不新增资金流水。口径单点在 `backend/admin-api/src/main/java/com/migao/admin/service/MoneyScale.java`，
+  同库存侧 `StockQuantity.requireOneDecimal` / `InboundOrderService.requireItemNumbers`
+  「超位**显式拒绝**、不静默取整」的既有范式。
+- 不改的：退款封顶（累计 ≤ 实收）、状态白名单（confirmed/producing/shipped/completed）、
+  `refund_amount = null` 表示**全额退款** —— 三个口径一字未动；`0.01` 仍 200 且订单与资金流水**两侧逐字相等**。
+- 舍入方向登记（**不作缺陷判据**）：PG `numeric(·,2)` 是半进位，修前实测 `0.004 ⇒ 0`、`0.005 ⇒ 0.01`、
+  `0.009 ⇒ 0.01`（issue #6221 逐字读数）—— 修后这些子分级值在应用层就被拒，到不了库。
+- 边界（如实登记）：同形态缺口在**其它**金额入口（建单/改价、收款、入库单价、售后工单
+  `refund_amount`、加工费/计件单价…）**仍在**，已逐处登记并跟单 #6228（本包不改它们）；
+  类级元守卫 = `backend/admin-api/src/test/java/com/migao/admin/service/MoneyEntryPrecisionMetaGuardTest.java`
+  （未登记即红 / 豁免只许缩短）。
+
 ### 日期筛选的「一天」现在按北京时间算，北京 00:00–08:00 的订单与流水归到正确的那一天/月/年（2026-10-03，issue #6200）
 
 - 以前：订单列表与财务（流水 / 收支汇总 / 应收对账）的 `startDate`~`endDate` 窗口按 **UTC 日**开合
