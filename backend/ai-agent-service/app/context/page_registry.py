@@ -33,6 +33,22 @@ B 端最贵的成本是**培训成本**（「这个字段什么意思」「这�
 - **不做实体内容读取**：本模块只带 `id` 引用；实体内容由服务端既有读取面（工具/端点）
   **按该角色权限**再取一次。**复用既有读取面，不新开**。
 - **不做知识库构建**（`knowledge_search` 已有）、**不做跨页面/跨实体追问**（属族 5 与对话层）。
+
+## 登记面的覆盖面受元守卫约束（issue #6215）
+
+登记表从 #5371 的 6 条扩到 10 条时，**覆盖面本身成了会红的东西**（在此之前漏登记是**沉默**的）：
+
+- **双向相等**：`frontend/admin-web/src/config/menu.ts` 的每个菜单 route ⇄
+  `PAGE_REGISTRY ∪ 豁免台账` —— 漏登记 / 多登记（悬挂）/ 两边都有 ⇒ 逐条判红；
+- **豁免台账** = `tests/unit_ci_workflows/page_context_exemptions_ledger.json`
+  （每条带 `reason` + **具名**重启条件；**只许缩短**：存量冻结 + 新增即红）；
+- **登记项自证**：`truth_source` 必须在册、真值源 `path` 必须真实存在、权限码必须在
+  admin-api 权限目录里（复用既有解析器）；真值源**没有**登记项引用 ⇒ 也判红（死条目）；
+- 判据 = `tests/unit_ci_workflows/test_page_context_registry_coverage.py`（用例 MC-075，
+  **纯静态、零 ai-agent 依赖**）。
+
+🔴 **不许编口径**：确证不了「这份文件就是这一页的口径」的页面 ⇒ **进豁免台账，不进登记表**
+（宁可少登记，也不许让 LLM 拿一份不相关的文档解释这一页）。
 """
 
 from __future__ import annotations
@@ -96,6 +112,22 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         citation="依据：本店加工工序与工艺路线标准",
         path="docs/curtain-production-process-standard.md",
     ),
+    # ── issue #6215 扩面新增（登记面 6 → 10 条）：每条都指到「**确为该页口径**」的文件 ──
+    "curtain-production-rules": TruthSource(
+        label="窗帘生产与计件规则清单（生产 · 工序 · 计件）",
+        citation="依据：本店生产与计件规则清单",
+        path="docs/curtain-production-rules.md",
+    ),
+    "dashboard-cards": TruthSource(
+        label="经营看板指标卡登记表（口径与显隐）",
+        citation="依据：经营看板指标卡登记表",
+        path="frontend/admin-web/src/lib/dashboard-cards.ts",
+    ),
+    "sales-shipment": TruthSource(
+        label="发货数量口径（下单数量 vs 实发数量，各归其 owner）",
+        citation="依据：本店发货数量口径说明",
+        path="frontend/admin-web/src/lib/sales-shipment.ts",
+    ),
 }
 
 
@@ -151,6 +183,38 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         truth_source="curtain-production-process-standard",
         page_permissions=("processing:manage",),
         entity_permissions=("processing:manage",),
+    ),
+    # ── issue #6215 扩面（6 → 10 条）：只登记「真值源**确为该页口径**」的页；确证不了的进豁免台账
+    #    `tests/unit_ci_workflows/page_context_exemptions_ledger.json`（**只许缩短**），绝不硬塞 ──
+    # ⚠️ 上面的 `/orders/*` 是**通配整族**：登记面把它读作「`/orders` 这一族」（含列表页本身，
+    #    与既有的 `/products/*` 同式）；`/orders/new`（上面的精确条目）**优先于**它被命中。
+    PageEntry(
+        # 经营看板：卡片口径与显隐规则（能力位 gating）
+        route="/dashboard",
+        truth_source="dashboard-cards",
+        page_permissions=("dashboard:view",),
+        entity_permissions=(),
+    ),
+    PageEntry(
+        # 生产看板（= 加工单唯一入口，issue #4357）：订单 → 加工单的形态与粒度
+        route="/production",
+        truth_source="curtain-production-rules",
+        page_permissions=("production:view",),
+        entity_permissions=(),
+    ),
+    PageEntry(
+        # 计件工资：计件口径与「个 / 件」数量兜底
+        route="/production/piecework",
+        truth_source="curtain-production-rules",
+        page_permissions=("production:view",),
+        entity_permissions=(),
+    ),
+    PageEntry(
+        # 发货单（issue #5939）：数量口径（实发 vs 下单数量，各自 owner；「没这个数」不印 0）
+        route="/shipments",
+        truth_source="sales-shipment",
+        page_permissions=("order:list",),
+        entity_permissions=(),
     ),
 )
 
