@@ -18,7 +18,9 @@
     - agent_type 由后端 JWT 角色自动决定（admin → mibao）
     - 多轮对话历史由服务端按 session_id 自动管理，无需在请求体中传 chat_history
 """
+# case_ids: OR-013
 import json
+import os
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -47,17 +49,21 @@ class SSEEvent:
 
 
 BASE_URL = "http://localhost:8001"
-HEADERS = {
-    "Content-Type": "application/json",
-    "X-Service-Token": "f4ac825ebdf8900b7b2fbcc13af93b29f352264823a3bf9a8098e7155a6961a8b",
-    "X-Tenant-Id": "1",
-}
+# 🔴 凭据**不进代码**（issue #6172）：契约形状不变（仍是 `HEADERS` 里的 `X-Service-Token` 头），
+#    但值由环境注入（形态照抄 issue #6170 的 `MIGAO_SERVICE_TOKEN`）—— 不设 ⇒ **不带该头**。
+SERVICE_TOKEN = os.environ.get("MIGAO_SERVICE_TOKEN", "")
+HEADERS = {"Content-Type": "application/json", "X-Tenant-Id": "1"}
+if SERVICE_TOKEN:
+    HEADERS["X-Service-Token"] = SERVICE_TOKEN
 CHAT_ENDPOINT = f"{BASE_URL}/api/chat/send"
 
 
 # === 服务可用性检查 ===
 
 def _is_service_available() -> bool:
+    # 没凭据 ⇒ 探不通（服务 fail-closed）⇒ 按**未就绪**处理（skip），不是失败（issue #6172）。
+    if not SERVICE_TOKEN:
+        return False
     try:
         import socket
         with socket.create_connection(("localhost", 8001), timeout=2):
@@ -68,7 +74,7 @@ def _is_service_available() -> bool:
 SERVICE_AVAILABLE = _is_service_available()
 _skip_if_no_service = pytest.mark.skipif(
     not SERVICE_AVAILABLE,
-    reason="AI Agent Service 未在 localhost:8001 运行",
+    reason="AI Agent Service 未在 localhost:8001 运行，或未注入 MIGAO_SERVICE_TOKEN（未就绪）",
 )
 
 

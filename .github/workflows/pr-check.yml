@@ -230,6 +230,24 @@ jobs:
           fi
           echo "✅ PG 二进制存在 —— Python 侧真库判据能真跑"
 
+      # ── 凭据字面量进仓守卫（issue #6172）───────────────────────────────────────────
+      # 为什么需要：gitleaks 只扫 **diff 的新增行** ⇒ 存量明文凭据**永不报警**（实证：
+      #   `backend/ai-agent-service/tests/contracts/conftest.py` 里那枚内部 service token
+      #   在 main 上躺了很久，只因为没被碰过就一直是绿的）。本步按**现取**扫真源码补这一半。
+      # 三态：0 = 零命中；1 = 命中（逐条具名 + 给出「该改用什么」）；3 = 扫描面不存在（无法判定）
+      #   ⇒ 非 0 一律 fail，本 job 是 required 检查 ⇒ 判红即卡合并。
+      # 判据（L0，含注入式红证与反向对照）=
+      #   tests/unit_ci_workflows/test_plaintext_credential_guard.py（在本 job 的套件里跑）。
+      - name: Plaintext credential guard（凭据字面量不得进仓，issue #6172）
+        run: |
+          rc=0
+          python3 .github/plaintext_credential_guard.py || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::凭据字面量进仓守卫判红（退出码 $rc）—— 真凭据请走环境注入，"
+            echo "::error::形态逐字照抄 issue #6170：SERVICE_TOKEN = os.environ.get(\"MIGAO_SERVICE_TOKEN\", \"\")"
+            exit "$rc"
+          fi
+
       - name: Run ci workflow helper tests
         env:
           # 缺 PG ⇒ `pg_cluster.require_pg()` 判 **FAIL**（不是 skip）：CI 上「没跑」绝不能是绿。

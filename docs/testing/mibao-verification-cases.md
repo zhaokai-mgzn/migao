@@ -2921,7 +2921,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（73 case）
+## 杂项域（74 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3981,6 +3981,23 @@
 跳过: [backend-contract] 本机研发机具（机器级重活锁的准入/溢出台账）的行为与读出口径由 tests/unit_ci_workflows/ 的 pytest 单测验证（真锁脚本 + 临时锁面/台账面 + 固定夹具），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-03 新增（issue #6091：蓝图 P2 的「测量那一半」—— 分档准入与批次粒度都需要「到底溢出多少次 / 等多久 / 谁在抢」这份读数，而当时**完全没有台账**）。本包把事实记下来（JSONL 只追加、本机路径）并把「槽满」变成出声，**不做**分档准入本身。实测踩过并固化的两处：① `printf` 多一个实参 ⇒ 格式串重启 ⇒ 每条记录后多一行残缺 JSON（准入判定毫发无损 ⇒ 极难察觉）⇒ 判据 = 顶层实参计数；② `--abbrev-ref HEAD` 在无提交的仓里 `fatal` 并截断 argv ⇒ 排在后面的 `--git-path` 被静默吞掉（批次面判成 single）⇒ 顺序改成 `--git-path` 最前（判据 = `::TestBatchSurface` 的自建仓）。取号 MC-073（让号记实）：起草时现取本分支 + 全部 `origin/*` refs 的 `- id:` 最大号 = MC-072 ⇒ 取 MC-073。 ｜ tags: ci, heavy-lock, ledger, observability
+
+### MC-074. 凭据字面量不得进仓：明文 service token 一律走环境注入（不设 ⇒ 未就绪 / 不带该头），由仓内守卫按**现取**扫真源码判红（gitleaks 只扫新增行 ⇒ 存量明文它看不见） 🔵
+```
+你: 测试代码里再写明文 service token 必须**能红**（gitleaks 只扫新增行 ⇒ 存量明文永不报警）
+你: 不设环境变量时必须按**未就绪（skip）**处理，不许变成失败
+期望: direct_reply
+数据: **病（issue #6172 现取读数）**：`grep -rn '<64位十六进制>' backend/ai-agent-service/tests/` 命中 2 处明文（`tests/contracts/conftest.py` 的 `SERVICE_TOKEN = …` 与 `tests/test_e2e_mibao_scenarios.py` 的 `X-Service-Token` 头）。`gitleaks` 只扫 **diff 新增行** ⇒ 存量明文**永不报警**（「能红的地方看不见它」）。该 token 是内部服务凭据（`:8001` 内部面）：实测它**足以**指定任意租户读数据 ⇒ 拿到它 = 能跨租户读（写面另被 403 拦）。
+数据: **修法（形态逐字照抄 issue #6170，不写第二套）**：`SERVICE_TOKEN = os.environ.get("MIGAO_SERVICE_TOKEN", "")` + `headers = {...} if SERVICE_TOKEN else {}`；不设 ⇒ **不带该头** / 按**未就绪**处理（skip），**不许**变成失败。两处落地：contracts 的 `_fetch`（无凭据 ⇒ 直接走缓存快照，CI 本来就这条路）+ e2e 场景的 `_is_service_available`（无凭据 ⇒ 未就绪）。
+数据: **判据（本单重点）** = `.github/plaintext_credential_guard.py`（**现取**扫真源码，不钉手抄清单）；三态 `0` 干净 / `1` 命中（逐条具名 `文件:行号` + 规则 + **该改用什么**）/ `3` 扫描面不存在（无法判定，不得当 0 读）。两条规则：**R1** 凭据命名的键 = 字面量取值且取值够像凭据；**R2** `X-Service-Token` 头的字面量取值。消费点 = `pr-check.yml` 的 `ci workflow helper unit tests` job 新步 + `tests/unit_ci_workflows/test_plaintext_credential_guard.py`（L0，随该 job 套件跑）。
+数据: **有意不做（照实登记）**：不判「随机字符串但名字不叫 token/secret」（会误伤哈希 / 订单号 / 迁移指纹 —— 实测整仓那类噪声上千条）；不判「这个值**是不是**那枚 dev token」（本仓**不许**再出现该值 ⇒ 判的是**形态**，不是**具体值**）；曾试过「头引用凭据命名的常量」那一条，实测在真仓命中 **17 处全是有意的注入形态**（参数化夹具 / `settings.SERVICE_TOKEN` / `os.environ`）⇒ **有意不做**（判红会逼人把正确代码改坏）。
+数据: **豁免通道**：行内 `# noqa: plaintext-credential :: <原因>`（与被豁免对象同生共死，不留会漂移的路径台账）；真凭据**不许**豁免；当前仓内**零**条（判据正向核）。
+数据: **红证（注入式，实跑）**：在 `backend/ai-agent-service/tests/contracts/conftest.py` 末行注入一行 `INJECTED_SERVICE_TOKEN = "<64位十六进制>"` ⇒ ① `python3 .github/plaintext_credential_guard.py` **exit 1**，逐字报 `backend/ai-agent-service/tests/contracts/conftest.py:<行号>: [R1-credential-literal] SERVICE_TOKEN`；② `pytest tests/unit_ci_workflows/test_plaintext_credential_guard.py -k real_repo_is_clean` **1 failed**（报出同一行）；撤掉注入 ⇒ **exit 0 / 31 passed**。注入物**不落进本仓**（跑完即撤），复算 = 同两条命令。
+数据: **轮换不在本单自动做**（改云 dev `.env` + 重启服务属外部动作）：PR body 写清「轮换建议 + 谁来做 + 不轮换的风险接受」，等人工定（用户裁定 2026-10-03）。
+前置: 本用例是 [backend-contract] 的**仓内静态守卫契约**（不进 agent-eval 冒烟）：两条 `user_inputs` 是对**同一个守卫**的两条断言（要能红 / 不设要 skip），**不是两次会话**。前置 = 守卫脚本 + 判据文件在位（`.github/plaintext_credential_guard.py` 与 `tests/unit_ci_workflows/test_plaintext_credential_guard.py`）—— 前置不成立（脚本被删 / 扫描面塌缩）时判据**当场红**，不会表现为「agent 不干活」。
+跳过: [backend-contract] 仓内静态守卫（零 LLM、零网络、只读真源码）由 tests/unit_ci_workflows/test_plaintext_credential_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-03 新增（issue #6172，用户 2026-10-03 逐字「有问题就立马派单修 … 不要留尾巴」）：把两处明文 service token 改成环境注入（形态逐字照抄 PR #6170 的 `MIGAO_SERVICE_TOKEN`）+ 落仓内守卫（gitleaks 只扫新增行 ⇒ 存量明文永不报警）。取号 MC-074（现取 `.github/cases` ∪ 全部 `origin/*` refs 的最大号 = MC-073 ⇒ 取 MC-074）。⚠️ 未固化项照实登记：不判「名字不叫 token 的随机串」（噪声上千条）；不判具体值；被禁形态在守卫自己的文档字符串里 ⇒ 逐字排除守卫自己（非目录白名单）。 ｜ tags: security, credential, guard, red-proof
 
 ## 商家入驻域（5 case）
 
@@ -9135,8 +9152,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：636（活跃 134，跳过 502）
-- tier 分布：smoke 12 / normal 590 / adversarial 32
+- 用例总数：637（活跃 134，跳过 503）
+- tier 分布：smoke 12 / normal 591 / adversarial 32
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -9151,7 +9168,7 @@
 - 财务对账域：4
 - 人事域：13
 - 知识问答域：7
-- 杂项域：73
+- 杂项域：74
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：55
@@ -9254,6 +9271,7 @@
 - MC-071: nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）
 - MC-072: 机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线）
 - MC-073: 重活锁准入/溢出台账：五类 kind + stats 读出口径 + 槽满出声（蓝图 P2 测量面）
+- MC-074: 凭据字面量不得进仓：明文 service token 一律走环境注入（不设 ⇒ 未就绪 / 不带该头），由仓内守卫按**现取**扫真源码判红（gitleaks 只扫新增行 ⇒ 存量明文它看不见）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
