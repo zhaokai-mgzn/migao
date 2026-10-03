@@ -1,0 +1,19 @@
+{
+  "at": {
+    "cst": "2026-10-03 17:02:23 +08",
+    "utc": "2026-10-03T09:02:23.321Z"
+  },
+  "summary": {
+    "pass": 18,
+    "fail": 0,
+    "skip": 1,
+    "total": 19
+  },
+  "probe": {
+    "skuId": "2095281075309326338",
+    "productId": "9d0b9bb4086cdfd360c76db910894bc6",
+    "draftId": "b93a6b9d590ca55cabba36cf57efe9c8",
+    "draftB": "68949e41c10ff8dfcb1b8cd659d197b4",
+    "shortCode": "WXF951S6"
+  }
+}

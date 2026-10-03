@@ -1,0 +1,80 @@
+{
+  "records": [
+    {
+      "id": "LB1-SETUP-restockOn",
+      "name": "夹具 restockOn（商品+已确认订单）",
+      "status": "pass",
+      "detail": "orderNo=20261003134320429 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 单价 100 × 数量 2 = 200.000；库存 100 − 2 = 98.000",
+        "确认收款响应: {\"success\":true,\"requestId\":\"req_05344dc5fa554b07\",\"timestamp\":1791018146}",
+        "产品侧商品 id=5b320f61dd2cb49ee085ebde14e9cbbc skuId=2106308878863831042 allow_return_restock=true",
+        "订单 id=26fab1eace11c3bb36844c4398e4ea02 幂等键域: 无（本夹具不经幂等层）"
+      ],
+      "at": "2026-10-03 17:02:31 +08",
+      "atUtc": "2026-10-03T09:02:31.638Z",
+      "fixture": "restockOn",
+      "orderId": "26fab1eace11c3bb36844c4398e4ea02",
+      "orderNo": "20261003134320429",
+      "productId": "5b320f61dd2cb49ee085ebde14e9cbbc",
+      "skuId": "2106308878863831042"
+    },
+    {
+      "id": "LB1-SETUP-restockOff",
+      "name": "夹具 restockOff（商品+已确认订单）",
+      "status": "pass",
+      "detail": "orderNo=20261003873670430 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 单价 100 × 数量 2 = 200.000；库存 100 − 2 = 98.000",
+        "确认收款响应: {\"success\":true,\"requestId\":\"req_8a196944eb144f4e\",\"timestamp\":1791018148}",
+        "产品侧商品 id=8ac3fb6e311847ed2e9f84af46ea5f00 skuId=2106308890087788546 allow_return_restock=false",
+        "订单 id=f89aac43e2c0ffe8d82bb3530d525136 幂等键域: 无（本夹具不经幂等层）"
+      ],
+      "at": "2026-10-03 17:02:31 +08",
+      "atUtc": "2026-10-03T09:02:31.639Z",
+      "fixture": "restockOff",
+      "orderId": "f89aac43e2c0ffe8d82bb3530d525136",
+      "orderNo": "20261003873670430",
+      "productId": "8ac3fb6e311847ed2e9f84af46ea5f00",
+      "skuId": "2106308890087788546"
+    },
+    {
+      "id": "LB1-SETUP-refund",
+      "name": "夹具 refund（商品+已确认订单）",
+      "status": "pass",
+      "detail": "orderNo=20261003551170431 status=confirmed 实收=300 总额=300 明细后 SKU 库存=98",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 单价 150 × 数量 2 = 300.000；库存 100 − 2 = 98.000",
+        "确认收款响应: {\"success\":true,\"requestId\":\"req_967f78f5af2d47ac\",\"timestamp\":1791018151}",
+        "产品侧商品 id=014bb0fe5e346df399d4ac7b30dd01bf skuId=2106308900716154881 allow_return_restock=false",
+        "订单 id=d16f3e060ccdc02ceaf2209112e4e271 幂等键域: 无（本夹具不经幂等层）"
+      ],
+      "at": "2026-10-03 17:02:31 +08",
+      "atUtc": "2026-10-03T09:02:31.639Z",
+      "fixture": "refund",
+      "orderId": "d16f3e060ccdc02ceaf2209112e4e271",
+      "orderNo": "20261003551170431",
+      "productId": "014bb0fe5e346df399d4ac7b30dd01bf",
+      "skuId": "2106308900716154881"
+    },
+    {
+      "id": "LB1-SETUP-ledger",
+      "name": "确认收款落扣减台账（order 腿）",
+      "status": "pass",
+      "detail": "台账行数=1 delta=-2 before=100 after=98 ref_no=20261003134320429",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 确认收款扣 2 米 ⇒ 台账恰一行 delta = −2.000（before 100 → after 98）",
+        "原始行: [{\"id\":1616,\"delta\":-2,\"before_qty\":100,\"after_qty\":98,\"reason\":\"order\",\"ref_no\":\"20261003134320429\"}]"
+      ],
+      "at": "2026-10-03 17:02:31 +08",
+      "atUtc": "2026-10-03T09:02:31.829Z"
+    }
+  ],
+  "summary": {
+    "pass": 4,
+    "fail": 0,
+    "skip": 0,
+    "falseRed": 0,
+    "total": 4
+  }
+}

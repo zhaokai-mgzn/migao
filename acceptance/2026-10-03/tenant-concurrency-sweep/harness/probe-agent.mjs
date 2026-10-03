@@ -101,7 +101,7 @@ function foreignOf(resIds, ownT, otherSets) {
 {
   const p = (token, extra = {}) => api('GET', '/api/chat/products/new-arrivals?size=6', { base: AGENT, token, headers: extra })
   const [realA, realB, bad, noTok, noTenant] = await Promise.all([
-    p(a.token), p(b.token), p('garbage.token.value'), p(undefined), p('eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ4In0.AAAA'),
+    p(a.token), p(b.token), p('garbage.token.value'), p(undefined), p('<REDACTED-JWT>'),
   ])
   ev.push({ case: 'G4-realA', status: realA.status, got: prodIds(realA) })
   ev.push({ case: 'G4-realB', status: realB.status, got: prodIds(realB) })

@@ -1,0 +1,36 @@
+{
+  "at": {
+    "cst": "2026-10-03 17:03:59 +08",
+    "utc": "2026-10-03T09:03:59.376Z"
+  },
+  "status": 200,
+  "workerId": "b77e4945ae37f8386dfce3f3e4c71e99",
+  "requestBody": {
+    "workerNo": "LA239123",
+    "name": "线A验收工人239123",
+    "pin": "246810"
+  },
+  "response": {
+    "success": true,
+    "data": {
+      "id": "b77e4945ae37f8386dfce3f3e4c71e99",
+      "workerNo": "LA239123",
+      "name": "线A验收工人239123",
+      "role": "worker",
+      "status": "active",
+      "createdAt": "2026-10-03T17:03:59.299125+08:00"
+    },
+    "requestId": "req_1c337fe1a1c8454d",
+    "timestamp": 1791018239
+  },
+  "dbRow": [
+    {
+      "id": "b77e4945ae37f8386dfce3f3e4c71e99",
+      "worker_no": "LA239123",
+      "nickname": "线A验收工人239123",
+      "role": "worker",
+      "status": "active",
+      "tenant_id": 20
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "phone": "13870217889",
+  "via": "sms-bypass-code",
+  "raw": {
+    "user": {
+      "id": "9068a79a939c9be846a605dc78dc30b6",
+      "nickname": "王小明",
+      "role": "admin",
+      "identityType": "sms",
+      "roles": [
+        "admin"
+      ],
+      "tenantId": 20,
+      "tenantName": "米高POC演示布艺",
+      "botName": "小布",
+      "mustChangePassword": false
+    },
+    "accessToken": "<REDACTED-JWT>",
+    "expiresIn": 7200
+  }
+}
