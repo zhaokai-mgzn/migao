@@ -5511,6 +5511,24 @@ _CASE_MC_076 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-077 [NORMAL] worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）（源: cases/misc.yml）──
+_CASE_MC_077 = EvalCase(
+    id='MC-077',
+    legacy_id='',
+    title='worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 `git worktree list` 登记了某个 worktree、但它的目录在磁盘上已经不存在时（该分支被判「已被该 worktree 占用」⇒ `git worktree add` 直接 fatal，而 `git worktree prune` 与 `git worktree remove --force` 都可能无效）；或有人想删掉一个落点在 `.git/worktrees/` 之外的目录时；或新增了一个会动 worktree 存量的命令函数却没过前置断言时 —— 必须有判据具名报出、且删除落点在白名单外一律拒绝。'],
+    expectations=['direct_reply'],
+    data_checks=['**病（2026-10-03 修复包 F-6219 实测撞见，主会话已核实）**：`git worktree list` 把某个 worktree 登记在册而它的目录**在磁盘上不存在** ⇒ ① 该分支被判「已被该 worktree 占用」，`git worktree add <path> <branch>` 直接 `fatal: … is already used by worktree at …`；② `git worktree prune` 与 `git worktree remove --force` **都可能无效**。代价 = 每个撞上的包**白花 3~4 轮**手工诊断，而**没有任何东西会因此变红**（与铁律 11「声明存在 ≠ 可达」同族）。', '**本机 git 2.54.0 实测的三种顽固形态（判据 1 逐条钉住）**：**A `locked` 形态**（`worktree lock` 后删目录）⇒ `prune -v` **rc=0 且什么都不删**（静默）、`remove --force` 报 `cannot remove a locked working tree`；**B 未锁 + 目录消失** ⇒ `prune` 真会删掉（故**主判据用 A 取红证**）、`remove --force` 报 `not a working tree`；**C 目录残留 + `$wt/.git` 已没** ⇒ `prune` 不动、`add` 报 `already exists`。唯一有效修法 = 清掉 `.git/worktrees/<name>` 再 `prune`。', '**判据 1（旧行为红证，先证明判据不是空断言）**：形态 A 下 `git worktree add` 必须复现 `missing but locked worktree`；`prune -v` 必须 **rc=0 且 stdout 为空**；`remove --force` 必须失败。三条读数都是 git 自己打的（本判据不复制任何 git 逻辑）。判据 = tests/unit_ci_workflows/test_dev_worktree_registry_drift.py 的 `test_old_behaviour_reproduces_the_reported_symptom`。', '**判据 2（新行为：只读判红 + 自愈）**：`doctor`（默认只读）在 A/B/C-空残留 上 exit=1、**逐条具名**（条目名 + 登记路径）、且登记目录**一字未动**；`doctor --heal` 自愈成功（**先打印将删清单** + 复检绿读数）⇒ 随后 `git worktree add` 成功。形态 C 的**非空残留**另有判据：只清登记条目 + **具名交代残留** + 给出显式入参的人工出口 `rm -rf -- <path>`，**绝不**替操作者删那个非空目录（里面可能有别人未提交的改动）。判据 = 同文件 `test_doctor_is_read_only_and_red_on_drift` / `test_doctor_heal_repairs_and_unblocks_add` / `test_nonempty_residue_is_named_and_never_deleted`。', '**判据 3/4（入口前置断言 + 类级元守卫）**：`add` / `rm` / `rebase` 三个命令函数都必须有**可执行**的 `wt_registry_assert_for_entry` 调用（写在注释里不算）；`add` 在漂移存在时自愈后仍把工作区建出来（`工作区就绪`）；`rm <健康工作区>` 在**另有漂移**时先自愈再动手、本操作照常完成。元守卫 = 脚本里**每个命令函数**要么过断言、要么在只读名单里写明理由（双向核：新增命令 / 只读名单陈旧都判红）。判据 = 同文件 `test_add_preflight_self_heals_then_creates_the_worktree` / `test_rm_entry_also_goes_through_the_assertion` / `test_rebase_entry_also_goes_through_the_assertion` / `test_static_judgement_has_teeth_in_memory`。', '**判据 6/7（安全护栏：白名单 + fail-closed）**：`rm -rf` 的落点**只允许** `<common git dir>/worktrees/<name>`；`…/migao-wt/<name>`、`…/migao-dev/<name>`、`$HOME` 前缀、本仓 worktree 根目录 / `.git` 本身、`..` 越界、以及**经软链逃逸**的条目**逐个拒绝并打印原因**；混合调用（1 允许 + 1 越界）整体**仍判红**（fail-closed）。**注入式红证**：把登记条目换成指向仓外的软链 ⇒ 守卫拒绝且软链与目标逐字节完好。判据 = 同文件 `test_guard_rejects_every_allowlist_outside_landing_zone` / `test_guard_allows_only_the_registry_landing_zone`。', '**判据 5（反向对照，防「为了自愈把正常条目删了」）**：健康登记表下 `doctor` exit=0、绿色读数、登记条目与 `gitdir` 字节不变、工作区目录仍在。判据 = 同文件 `test_healthy_registry_is_green_and_unchanged_and_untouched`。', '🔴 **覆盖边界（照实登记）**：① 只治「登记了但磁盘没有」**一个方向**；「磁盘有、git 不认」（`$wt/.git` 被换成别的仓库的 `.git` 等）是 issue #6235 的**观察项**，不在射程内；② 判不了「过去已建好的漂移」的追溯修复 —— 本包拦的是**下一次**（下次 `add` 开工即自愈），存量要人跑一次 `doctor --heal`；③ 判定口径 = 「登记路径的目录 + 其中的 `.git` 都在」，一个目录+`.git` 都在但内容被换成别的东西的工作区会被判健康（git 自己也认它，靠 `prune` 的 `prunable` 标记，本判据不重复判）；④ 本判据守的消费点是 shell 脚本 ⇒ 登记不进 §28.2.1 的 `wiring_claims_ledger.json`（其判据 3 要求 `::` 左边以 `.py` 结尾），缺口照实登记、**不放宽**那个门禁；⑤ 只跑定点判据，不跑 `verify-all.sh gate` / 全量 pytest（重活串行）。'],
+    skip_reason='[backend-contract] 真 fixture 行为 + 纯静态控制流守卫（在 tmp_path 里真 `git init` + 真 worktree，造「登记存在、磁盘没有」的三种形态；只读仓内脚本；零真库、零网络、零 LLM、不碰任何真实工作区）由 tests/unit_ci_workflows/test_dev_worktree_registry_drift.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'dev-tooling', 'worktree', 'registry-drift', 'fail-closed', 'allowlist', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -12527,6 +12545,7 @@ ALL_CASES = (
     _CASE_MC_074,
     _CASE_MC_075,
     _CASE_MC_076,
+    _CASE_MC_077,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

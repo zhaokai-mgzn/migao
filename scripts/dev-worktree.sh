@@ -15,6 +15,7 @@
 #   ./scripts/dev-worktree.sh rebase <分支|路径>    # rebase origin/main（+ 顺带把活锚镜像带到预设仓 main）
 #   ./scripts/dev-worktree.sh preset-guard [--source both|index|worktree]  # 提交路径守卫（版本下降 / 同号不同内容撞车 / 活锚落后即非零退出）
 #   ./scripts/dev-worktree.sh prune --dry-run       # worktree 存量体检（只打印清单，不删除）
+#   ./scripts/dev-worktree.sh doctor [--heal]       # 登记表 × 磁盘一致性自检（--heal：显式修复；默认只读）
 #   ./scripts/preset-anchor-check.sh                # 活锚新鲜度自检（红就停；开工第一件事）
 #   ./scripts/preset-anchor-refresh.sh              # 活锚自愈：只读镜像（预设仓）→ 预设仓 main（自检转绿）
 #
@@ -68,6 +69,27 @@
 #       tests/unit_ci_workflows/test_dev_worktree_symlink_safety.py（控制流判据 + PATH 垫片见证
 #       「删除那一刻 worktree 里还有没有软链」+ 真 fixture 上断言外部目标逐字节完好）。
 #
+# 地雷 D：**登记表 × 磁盘不一致**（v1.15，2026-10-03，issue #6235）：
+#   `git worktree list` **登记**了某个 worktree，但它的目录**在磁盘上不存在**。此时
+#   ① 该分支被判「已被该 worktree 占用」⇒ `git worktree add <path> <branch>` 直接
+#      `fatal: … is already used by worktree at …`；
+#   ② **`git worktree prune` 与 `git worktree remove --force` 都可能无效**（实测两种顽固形态：
+#      a) `.git/worktrees/<name>/locked` 存在且目录已消失 ⇒ prune 静默**什么都删不掉**、remove 报
+#         `cannot remove a locked working tree`；b) 目录还在但 `.git` 已没 ⇒ prune 静默不动、add 报
+#         `already exists`。两种都**没有任何东西会因此变红** ⇒ 每个撞上的包白花 3~4 轮手工诊断
+#      —— 与铁律 11「声明存在 ≠ 可达」同族）。
+#   ⇒ 本脚本把「**登记表里的每个路径在磁盘上真的存在**」变成一条**断言**：
+#      · 每个入口（`add` / `rebuild` / `rm` / `rebase`）前置自查：命中漂移 ⇒ 打印**将删清单** →
+#        自愈（先 `git worktree prune`，仍残留的按白名单删除 `.git/worktrees/<name>` 后复跑 prune）
+#        → 复检；**仍红则 fail-closed 拒绝继续**；
+#      · `doctor`（只读）/ `doctor --heal`（显式入参修复）随时可单跑；
+#      · 🔴 **安全护栏**：删除落点**只允许** `.git/worktrees/<name>`（git 元数据），
+#        `…/migao-wt/<name>` / `…/migao-dev/<name>` / `$HOME` / **本仓 worktree 根目录** / 任何
+#        越界或**经软链逃逸**的路径**一律拒绝**并打印原因（`wt_registry_guard`）；
+#        删除类动作**不做无人值守**：`doctor --heal` 要显式入参，任何删除前都**先打印将删清单**。
+#      · 判据 = tests/unit_ci_workflows/test_dev_worktree_registry_drift.py（红证：造「登记存在、
+#        磁盘没有」的 fixture ⇒ 旧行为下 add 复现「already used by worktree」；新行为下自愈后 add 成功）。
+#
 # 会话锁（v1.3，2026-09-04 新增）：
 #   多 DSH 会话并行开发防踩脚 —— add 时自动在 $REPO_ROOT/.git/sessions/ 登记会话锁
 #   （进程 PID + 时间戳），同一分支已有活跃锁时拒绝重复建工作区；
@@ -88,6 +110,7 @@
 # 环境变量：
 #   MIGAO_WT_BASE=...  # 覆盖工作区根目录（默认仓库父目录下的 migao-wt/）
 #   FORCE_LOCK=1       # 忽略会话锁强制建工作区（危险，仅确认无活跃会话时用）
+#   MIGAO_WT_PY=...    # 覆盖用于「登记表 × 磁盘」自查的 python3（默认 python3.11 || python3；判据注入点）
 #
 # 注意：本脚本需兼容 macOS 自带 bash 3.2 —— `$var` 后紧跟非 ASCII 字符会被
 # 并入变量名（如 `$path（` → `path<0xE3>` 报 unbound variable），
@@ -97,8 +120,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # v1.6（issue #2933）：归一化到主仓库根 —— --git-common-dir 总是指向主仓库 .git
-# （在 worktree 内执行时亦然），git 命令/会话锁/默认 worktree 目录都基于它
-REPO_ROOT="$(cd "$(git -C "$ROOT" rev-parse --git-common-dir 2>/dev/null || echo "$ROOT/.git")/.." && pwd)"
+# （在 worktree 内执行时亦然），git 命令/会话锁/默认 worktree 目录都基于它。
+# ⚠️ issue #6235 修正：`git rev-parse --git-common-dir` 常返回**相对路径**（`.git`），而
+# `cd .git/..` 是相对**当前工作目录**解析的 —— 从别处调用本脚本（`bash <repo>/scripts/…`）
+# 时那个路径不存在 ⇒ `cd` 失败（`set -e` 下更糟）。先用 `git -C "$ROOT"` 把主仓库根解成绝对路径。
+REPO_ROOT="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+REPO_ROOT="$(cd "$(dirname "${REPO_ROOT:-$ROOT/.git}")" && pwd)"
 WT_BASE="${MIGAO_WT_BASE:-$REPO_ROOT/../migao-wt}"
 LOCK_DIR="$REPO_ROOT/.git/sessions"
 mkdir -p "$LOCK_DIR"
@@ -109,12 +136,222 @@ usage() {
   # v1.10（issue #4026）：用法块 +2 行（活锚自检/自愈脚本）⇒ 上限再 +2
   # v1.14（issue #5930）：新增「地雷 C：删除不许穿过软链」段（文件头 +18 行）⇒ 上限 46 → 80
   # S4（issue #6020）：文件头重写（预设迁出业务仓）⇒ 头部现 95 行，上限 80 → 100
-  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -100
+  # v1.15（issue #6235）：新增「地雷 D：登记表 × 磁盘不一致」段（文件头 +20 行）⇒ 上限 100 → 120
+  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -120
   exit 1
 }
 
 # 分支名 → 工作区目录名：feat/xiaobu-voice-holdtalk → xiaobu-voice-holdtalk
 slug() { echo "$1" | sed -E 's#^(feat|fix|chore|docs|test|refactor)/##; s#/#-#g'; }
+
+# ── 地雷 D（issue #6235）：worktree **登记表 × 磁盘**一致性自查 / 自愈 ──────────────
+# 登记条目 = `<common git dir>/worktrees/<name>`，其 `gitdir` 文件写的是该工作区里
+# `.git` 的绝对路径 ⇒ 断言 = 「那个目录在磁盘上真的存在」（铁律 11：声明存在 ≠ 可达）。
+# 判定与删除**全在下面这段 python 里**（pathlib 大小写/软链归一化比 bash 3.2 可靠得多），
+# 出口码三态：`0` 无漂移 / `1` 有漂移（未自愈或存在被拒的落点）/ `2` 用法错 / `3` 无法判定。
+GIT_COMMON_DIR="$(git -C "$REPO_ROOT" rev-parse --git-common-dir 2>/dev/null || echo ".git")"
+case "${GIT_COMMON_DIR}" in
+  /*) : ;;
+  *)  GIT_COMMON_DIR="${REPO_ROOT}/${GIT_COMMON_DIR}" ;;
+esac
+PY_BIN="${MIGAO_WT_PY:-$(command -v python3.11 || command -v python3 || true)}"
+#: 登记表根（**删除落点白名单的唯一前缀**）。
+WT_REGISTRY_DIR="${GIT_COMMON_DIR}/worktrees"
+
+# ── 安全护栏：删除落点的白名单判定（守 `wt_registry_doctor --heal` 的**每一个**删除候选）──
+# 只允许 `<common git dir>/worktrees/<name>`（git 元数据）。拒绝：
+#   · 越界（`…/migao-wt/<name>` / `…/migao-dev/<name>` / `$HOME` / 本仓 worktree 根目录…）
+#   · `<name>` 带路径分隔符或 `..` / `.`（`rm -rf .git/worktrees/../../..` 这种）
+#   · 登记表目录或候选本身是**软链**（`rm -rf` 不跟随，但守卫路径必须 fail-closed）
+#   · 落点本该是空目录却不是（防把有内容的目录当"残留"删掉）
+# 入参：`<allow-empty-true|false>` + 候选绝对路径。逐条打印判定；任一被拒 ⇒ 非零退出。
+wt_registry_guard() {
+  [ -n "${PY_BIN}" ] || { echo "❌ 找不到 python3 —— 无法判定删除落点白名单（fail-closed）"; return 1; }
+  "${PY_BIN}" - "$WT_REGISTRY_DIR" "$@" <<'PY'
+import os, sys
+from pathlib import Path
+
+registry = sys.argv[1]
+allow_empty = sys.argv[2] == "true"
+
+
+def norm(p: str) -> Path:
+    """归一化：软链展开 + `..`/`.` 折叠（比较前一律过这一道，防"看着在里面、实际在外面"）。"""
+    return Path(os.path.realpath(p))
+
+
+reg_n = norm(registry)
+print("🛡️  白名单校验（删除落点**只允许** " + str(reg_n) + "/<name> —— git 元数据路径）：")
+bad = 0
+for arg in sys.argv[3:]:
+    p = Path(arg)
+    why = ""
+    if not p.is_absolute():
+        why = "不是绝对路径"
+    elif p.is_symlink():
+        why = "候选**本身是软链**（不跟随删除 = 拒绝，防落点被引到仓外）"
+    else:
+        n = norm(arg)
+        name = n.name
+        if name in ("", ".", ".."):
+            why = f"落点名非法：{name!r}"
+        elif n.parent != reg_n:
+            why = f"落点不在白名单内：父目录 {n.parent} ≠ {reg_n}"
+        elif name != p.name:
+            why = f"名称经解析后变化：{p.name!r} → {name!r}"
+        else:
+            full = n / "gitdir"
+            if not full.exists():
+                pass  # 已消失的登记条目（无 gitdir）⇒ 允许
+            elif not (n / "gitdir").is_file():
+                why = "gitdir 不是普通文件"
+            elif name == (registry.split("/")[-1] if registry.split("/") else "") or name in ("worktrees",):
+                why = "名称与登记表根同名（越界形态）"
+            elif not (n / "commondir").exists():
+                pass  # 旧版 git 可无 commondir ⇒ 不作拒绝理由
+            if not why and allow_empty and n.exists() and n.is_dir() and any(n.iterdir()):
+                why = "落点是**非空目录** —— 只在它确系本登记条目残留时才允许删除"
+    if why:
+        bad += 1
+        print(f"   ⛔ 拒绝删除：{arg}")
+        print(f"      原因：{why}")
+    else:
+        print(f"   ✅ 允许删除（在 .git/worktrees 白名单内）：{arg}")
+print(f"🛡️  白名单校验结果：允许 {len(sys.argv) - 3 - bad} / 拒绝 {bad}")
+sys.exit(1 if bad else 0)
+PY
+}
+
+# ── 登记表自查 / 自愈（地雷 D 的判定本体）────────────────────────────────────
+# `_wt_registry_scan`：**只读**扫一遍登记表（`<name>\t<登记路径>\t<说明>\t<drift|indeterminate>`），
+# 出口 0 = 无漂移 / 1 = 有漂移 / 3 = 无法判定。它**不做任何删除**（删除全在 `wt_registry_doctor --heal`）。
+_wt_registry_scan() {
+  [ -n "${PY_BIN}" ] || return 3
+  "${PY_BIN}" - "$WT_REGISTRY_DIR" <<'PY'
+import os, sys
+from pathlib import Path
+
+reg = Path(sys.argv[1])
+print(f"[登记表] {reg}")
+if not reg.is_dir():
+    print("  （无登记表：本仓没有任何 link 出来的 worktree）")
+print("[漂移]")
+found = 0
+for name in sorted(p.name for p in reg.glob("*") if p.is_dir()):
+    gd = reg / name / "gitdir"
+    if not gd.is_file():
+        continue
+    raw = gd.read_text(encoding="utf-8", errors="replace").strip()
+    if not raw:
+        print(f"  {name}\t?\t（gitdir 为空 ⇒ 无法判定该条目指向哪里，不猜、不删）\tindeterminate")
+        continue
+    wt = Path(os.path.realpath(raw)).parent
+    locked = (reg / name / "locked").exists()
+    if not wt.is_dir():
+        found += 1
+        print(f"  {name}\t{wt}\t登记目录在磁盘上不存在（locked={str(locked).lower()}）\tdrift")
+    elif not (wt / ".git").exists():
+        found += 1
+        print(f"  {name}\t{wt}\t登记目录存在但其中的 .git 没了 ⇒ git 不认它是工作树\tdrift")
+print(f"[汇总] 漂移 {found} 条")
+sys.exit(1 if found else 0)
+PY
+}
+
+# `wt_registry_doctor [--heal|--dry-run]`；配合 `wt_registry_guard` 使用：
+# 第一阶段（python）**只报不删** → 第二阶段（bash + guard）**先打印将删清单再删** →
+# 第三阶段（python）复检。这样「删了什么」永远先打印、且落点逐个过白名单。
+wt_registry_doctor() {
+  local mode="${1:---dry-run}"
+  if [ -z "${PY_BIN}" ]; then
+    echo "⚠️  找不到 python3 —— 无法自查「worktree 登记表 × 磁盘」一致性（无法判定，exit 3）"
+    return 3
+  fi
+  local out="" rc=0
+  out="$(_wt_registry_scan)" || rc=$?
+  if [ "${rc}" = "0" ]; then
+    if [ "${mode}" = "--heal" ]; then
+      echo "🧭 登记表 × 磁盘一致：无漂移（无需自愈；issue #6235）"
+    else
+      echo "✅ 登记表 × 磁盘一致：无漂移（worktree 登记表里的每个路径都在磁盘上，issue #6235）"
+    fi
+    return 0
+  fi
+  printf '%s\n' "${out}"
+  if [ "${rc}" != "1" ]; then
+    echo "⚠️  自查未能完成（exit ${rc}）—— 无法判定，不当成通过"
+    return 3
+  fi
+  # ── 漂移存在：默认只读；`--heal` 才进入修复（且逐个落点过白名单）──
+  if [ "${mode}" != "--heal" ]; then
+    echo "🔴 命中漂移（worktree 登记表 × 磁盘不一致，issue #6235）："
+    echo "   · 该分支会被判「已被该 worktree 占用」⇒ git worktree add 报 already used by worktree；"
+    echo "   · git worktree prune / worktree remove --force **可能都无效**（locked 形态 / 目录残留形态）。"
+    echo "   修：./scripts/dev-worktree.sh doctor --heal   # 先打印将删清单，再按白名单删除 + prune + 复检"
+    return 1
+  fi
+  echo "🔧 --heal：开始修复（顺序 = 先 prune，再对仍残留的条目按白名单删除）"
+  local prune_out; prune_out="$(git -C "$REPO_ROOT" worktree prune -v 2>&1 || true)"
+  if [ -n "${prune_out}" ]; then printf '%s\n' "${prune_out}" | sed 's/^/   prune: /'; else echo "   prune: （无动作 —— 常见于 locked 形态：prune 会静默什么都不删）"; fi
+  local stale="" line name path reason
+  while IFS= read -r line; do
+    case "${line}" in "[漂移]"*) stale=1; continue ;; "[汇总]"*) stale=0; continue ;; esac
+    [ "${stale:-0}" = "1" ] || continue
+    case "${line}" in "  "*) : ;; *) continue ;; esac
+    name="$(printf '%s' "${line#  }" | cut -f1)"
+    path="$(printf '%s' "${line#  }" | cut -f2)"
+    reason="$(printf '%s' "${line#  }" | cut -f4)"
+    [ "${reason}" = "drift" ] || continue
+    [ -n "${name}" ] && [ "${name}" != "?" ] || { echo "   ⚠️  条目名无法判定 ⇒ 跳过（不猜、不删）：${line}"; continue; }
+    echo "   🧹 将删除登记条目：${WT_REGISTRY_DIR}/${name}（登记指向 ${path}）"
+    if ! wt_registry_guard false "${WT_REGISTRY_DIR}/${name}"; then
+      echo "   ⛔ 落点未通过白名单 ⇒ **拒绝删除**（issue #6235 要求：落点在白名单外一律拒绝并打印原因）"
+    else
+      rm -rf -- "${WT_REGISTRY_DIR}/${name}"
+      echo "      ✅ 已删除登记条目 ${name}"
+    fi
+    [ -n "${path}" ] && [ -d "${path}" ] && [ ! -e "${path}/.git" ] && {
+      if rmdir -- "${path}" 2>/dev/null; then
+        echo "      ✅ 顺带清掉残留的空目录 ${path}"
+      else
+        echo "      ⚠️  登记目录的**残留还在**（非空，绝不删）：${path}"
+        echo "         里面还有 $(find "${path}" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ') 个条目（如 $(find "${path}" -mindepth 1 -maxdepth 1 2>/dev/null | head -1)）"
+        echo "         ⇒ 登记条目已清（分支不再被判占用）；但这个路径还在，git worktree add ${path} 会报 already exists。"
+        echo "           确认里面没有你要的东西后自己处理：rm -rf -- \"${path}\""
+      fi
+    }
+  done <<EOF
+${out}
+EOF
+  # ── 复检（自愈后仍红 ⇒ 不许当成已修）──
+  local verify="" verify_rc=0
+  verify="$(_wt_registry_scan)" || verify_rc=$?
+  printf '%s\n' "${verify}"
+  if [ "${verify_rc}" != "0" ]; then
+    echo "⛔ 修复后**复检仍红**（exit ${verify_rc}）—— 漂移还在，不许当成已修："
+    echo "   请人工看上面 [漂移] 清单（落点被白名单拒绝的条目尤其要看：它多半不在 .git/worktrees 里）。"
+    return 1
+  fi
+  echo "✅ 登记表 × 磁盘已一致（复检绿）—— 分支不再被判「被该 worktree 占用」（issue #6235）。"
+  return 0
+}
+
+# ── 各入口的前置断言（地雷 D；issue #6235 要求「所有入口路径都过这道断言」）──────
+# 命中漂移 ⇒ **打印将删清单 → 自愈 → 复检**；仍红 ⇒ fail-closed 拒绝继续。
+wt_registry_assert_for_entry() {
+  local entry="$1" rc=0
+  [ -n "${PY_BIN}" ] || { echo "⚠️  ${entry}：找不到 python3 ⇒ 无法自查登记表 × 磁盘（不当成通过）"; return 3; }
+  echo "🧭 前置自查（worktree 登记表 × 磁盘；issue #6235）：${entry}"
+  wt_registry_doctor --heal || rc=$?
+  if [ "${rc}" != "0" ]; then
+    echo "❌ ${entry} 拒绝继续：worktree 登记表与磁盘仍不一致（issue #6235）。"
+    echo "   手工出口：./scripts/dev-worktree.sh doctor        # 只读看清单"
+    echo "             ./scripts/dev-worktree.sh doctor --heal # 显式修复（打印将删清单后按白名单删除）"
+    echo "   边界：本自查只治「登记了但磁盘没有」；「磁盘有、git 不认」的反向形态见 issue #6235 的观察项。"
+    return 1
+  fi
+  return 0
+}
 
 # ── 会话锁（v1.3）：锁文件 = .git/sessions/<slug>.lock，内容 "PID|时间戳|分支|工作区路径"
 lock_path() { echo "$LOCK_DIR/$(slug "$1").lock"; }
@@ -218,6 +455,10 @@ cmd_rebase() {
   fi
   [ -n "$path" ] || { echo "❌ 无法解析工作区路径：${target}"; exit 1; }
 
+  # 🔴 地雷 D（issue #6235）：任何入口都过这道断言 —— rebase 前先确认登记表 × 磁盘一致
+  #    （漂移时 `git -C <path> rebase` 会以 "not a working tree" 之类的方式失败，且原因不显眼）。
+  wt_registry_assert_for_entry "rebase ${branch:-$target}" || exit 1
+
   echo "🔄 rebase origin/main：${path}（分支 ${branch:-detached}）"
   if ! git -C "$path" rebase origin/main; then
     echo "❌ rebase 未完成（上面是 git 原始输出）。冲突需你自行解决，然后："
@@ -245,6 +486,10 @@ cmd_add() {
     /*) : ;;
     *)  path="${REPO_ROOT}/${path}" ;;
   esac
+
+  # 🔴 地雷 D（issue #6235）：**前置断言** —— 登记表里的每个路径必须在磁盘上真的存在；
+  #    命中漂移 ⇒ 打印将删清单 → 自愈 → 复检；仍红则 fail-closed（见 wt_registry_assert_for_entry）。
+  wt_registry_assert_for_entry "add ${branch}" || exit 1
 
   # 会话锁检查（v1.3）：同一分支已有活跃会话锁 → 拒绝重复建工作区（防多会话踩脚）
   if lock_alive "$branch" && [ "${FORCE_LOCK:-0}" != "1" ]; then
@@ -379,6 +624,10 @@ cmd_rm() {
   local delete_branch=0
   for a in "$@"; do [ "$a" = "--delete-branch" ] && delete_branch=1; done
 
+  # 🔴 地雷 D（issue #6235）：入口断言 —— 漂移时 `rm <分支>` 会解析到一个已被登记、但磁盘上
+  #    并不存在的条目，`worktree remove` 会报 `not a working tree`（现象极具误导性）。
+  wt_registry_assert_for_entry "rm ${target}" || exit 1
+
   local path=""
   local branch=""
   if [ -d "$target" ]; then
@@ -464,6 +713,20 @@ case "${1:-}" in
     [ -f "${guard}" ] || { echo "❌ 守卫脚本缺失：${guard}"; exit 1; }
     # 存量体检看的是**全部工作区**（common git dir 权威），故用 $REPO_ROOT
     exec "${PY}" "${guard}" --repo "$REPO_ROOT" prune "$@"
+    ;;
+  doctor)
+    # 🔴 地雷 D（issue #6235，2026-10-03）：worktree **登记表 × 磁盘**一致性自查。
+    # 默认**只读**（有漂移 ⇒ exit 1，红就停）；`--heal` 才进入修复，且：
+    #   ① 任何删除前**先打印将删清单**；② 每个删除落点逐个过 `wt_registry_guard` 白名单
+    #   （只允许 `<common git dir>/worktrees/<name>`；落点在白名单外 ⇒ **拒绝并打印原因**）；
+    #   ③ 修完**复检**，仍红则非零退出（不许"删了就算修好了"）。
+    # 「删除类动作不做无人值守」在这里的落法 = **显式入参** `--heal`（没有默认修复、没有后台修复）。
+    shift
+    case "${1:-}" in
+      --heal)  wt_registry_doctor --heal ;;
+      --dry-run|"") wt_registry_doctor --dry-run ;;
+      *) echo "用法：./scripts/dev-worktree.sh doctor [--heal|--dry-run]"; exit 2 ;;
+    esac
     ;;
   lock)
     shift
