@@ -642,7 +642,21 @@ ci_helper_leg() {
   # `-n 4`（issue #5814）：与 CI **同一个并行度** —— 只改一边 ⇒ 同源契约判红
   # （tests/unit_ci_workflows/test_ci_helper_leg.py）；改了没同步形态台账 ⇒
   # tests/unit_ci_workflows/test_helper_leg_execution_shape.py 判红。
-  python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4
+  # ── **分片**（issue #6164，2026-10-03）─────────────────────────────────────────────
+  # CI 把这条腿拆成两片**并行 job**（matrix + `MIGAO_CI_HELPER_SHARD`）；本地按**同一分片规则**
+  # **顺序**跑两片：本机是**一台共用 CPU 的机器**，两片并行只会互相抢核（CI 上两片是两台 runner，
+  # 那才叫并行）⇒ 顺序跑完的**并集**与 CI 完全一致。
+  # 分片选择走**环境变量** ⇒ 命令行逐字未改（同源契约照旧成立；`-n 4` 也照旧）。
+  # 判据：tests/unit_ci_workflows/test_helper_leg_execution_shape.py 现取本函数 —— 必须看到
+  # **恰好两片**，且片名与 CI matrix / 台账 `shape.shards` **三方一致**（少一片 ⇒ 本地覆盖缩水 ⇒ 红）。
+  # ⚠️ 两片**逐片显式**写出，不写成 `for` 循环：循环里可以塞任意东西 ⇒ 「到底跑的是哪两片」
+  #    在文本上不可读（判据也就只能猜）。显式写下 = 判据能逐字现取。
+  local ci_helper_rc=0
+  MIGAO_CI_HELPER_SHARD=1/2 \
+    python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 || ci_helper_rc=1
+  MIGAO_CI_HELPER_SHARD=2/2 \
+    python3 -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4 || ci_helper_rc=1
+  return "$ci_helper_rc"
 }
 
 # ── 模块触发面（快循环档 fail-closed 的**单一实现**，#5707 的 FM-E10 收口）───────────────────

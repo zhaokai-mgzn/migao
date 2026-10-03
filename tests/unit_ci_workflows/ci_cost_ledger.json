@@ -450,10 +450,24 @@
         "p90_seconds": 751.0,
         "max_seconds": 760.0
       },
-      "measure_status": "ok",
+      "measure_status": "ok；⚠️ #6164 拆腿后本行对应**第一片**（同名保留的那条 required）；第二片见 id 尾号 #2",
       "budget_seconds": 751,
       "budget_status": "已裁定：预算 = 实测 p90（向上取整）",
-      "budget_basis": "budget = ceil(measured.p90_seconds=751.0) @ 2026-09-26T04:16:13Z"
+      "budget_basis": "budget = ceil(measured.p90_seconds=751.0) @ 2026-09-26T04:16:13Z；⚠️ 该读数是**拆腿前**的形态（2026-09-26 冻结）：#6164 起本腿只是两片中的一片，关键路径读数已由 ~500s 降到 ~330s；预算**刻意不手改**（预算是读数的函数 ⇒ 等下一次 --measure 复算）"
+    },
+    {
+      "id": "pr-check.yml::ci-workflow-tests#2",
+      "workflow": "pr-check.yml",
+      "job": "ci-workflow-tests",
+      "check_name": "ci workflow helper unit tests（后半）",
+      "hard_kill_seconds": 1200,
+      "hard_kill_source": "workflow `timeout-minutes: 20`",
+      "required": true,
+      "measured": null,
+      "measure_status": "拆腿新增的第二片（issue #6164，2026-10-03）：**尚无 ≥3 次历史读数** ⇒ 按判据 3 不登记为 measured（单次读数不足以成分布）。现取首轮 CI 的单次读数只作证据、不入 measured：job 322s / step 292s（run 37099748568）。`required: true` 与分支保护**同批**生效（2026-10-03T05:45Z 已把该检查名加进 main 的 required_status_checks，现取 16 条；snapshot 同批刷新 —— 顺序不可换：**先有上报、再设 required**）。",
+      "budget_seconds": null,
+      "budget_status": "无读数：不编预算（显式留白）",
+      "budget_basis": null
     },
     {
       "id": "pr-check.yml::clear-needs-changes",

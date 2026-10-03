@@ -81,8 +81,27 @@ def _code_lines(text: str) -> str:
     )
 
 
+#: pytest 的**正常收集汇总**行。两种形态都要认（issue #6164）：
+#:   ① 不切片：`6528 tests collected in 12.88s`
+#:   ② **切片**（`MIGAO_CI_HELPER_SHARD` 设着）：`3273/6528 tests collected (3255 deselected) in 4.11s`
+#: ⚠️ 只认 ① ⇒ 本文件在**分片腿里**（CI 上每条腿都带片号）会把「走到了收集」误判成
+#: 「根本没走到收集」= **假红**（本包第一轮 CI 实测踩到，读数逐字记在 PR body）。
+_COLLECTED_RE = re.compile(r"(?:\d+/)?\d+ tests? collected\b[^\n]*? in \d")
+
+
+def _reached_collection(out: str) -> bool:
+    """输出里有没有出现**正常收集汇总**（子进程真的走到了收集，而不是被拦/崩在更早处）。"""
+    return bool(_COLLECTED_RE.search(out or ""))
+
+
 def _child_env(lock_file: Path, extra: dict | None = None) -> dict:
-    """子进程环境：清掉继承来的 `CI` / `MIGAO_HEAVY_LOCK_HELD`，锁与射程都指到临时面。"""
+    """子进程环境：清掉继承来的 `CI` / `MIGAO_HEAVY_LOCK_HELD`，锁与射程都指到临时面。
+
+    ⚠️ **刻意不剥 `MIGAO_CI_HELPER_SHARD`**（issue #6164 起）：本文件断言的是「锁有没有被拿」
+    「子进程有没有走到收集」，与子进程跑**整目录还是某一半**无关；而把片号透传下去，正好让
+    「分片形态下这些判据仍然成立」也被**实测**到（CI 上父进程带着片号 ⇒ 子进程也带）。
+    ⇒ 代价是子进程的**被测面变小**（只一半判据），这一点**登记在此**，别读成「跑到了一整套」。
+    """
     env = {k: v for k, v in os.environ.items()
            if k not in ("CI", "MIGAO_HEAVY_LOCK_HELD", "MIGAO_HEAVY_LOCK_FILE",
                         "MIGAO_HEAVY_ROOTS", "MIGAO_HEAVY_WAIT")}
@@ -182,7 +201,7 @@ class TestWiringReallyRefuses:
         assert r.returncode == 0, (
             f"锁空闲时直连整目录**必须照常跑**（不误伤）：rc={r.returncode}\n{out[-2000:]}"
         )
-        assert "tests collected in" in out, (
+        assert _reached_collection(out), (
             f"空闲锁下没有出现正常收集汇总 ⇒ 可能根本没走到收集（判据会假绿）：\n{out[-2000:]}"
         )
         assert not lock.exists(), (
@@ -571,7 +590,7 @@ class TestNeverHangsWhenAnAncestorHoldsTheLock:
         assert r.returncode == 0, (
             f"带标记（= 祖先已正确接线）时**不得**被拦、更不得挂死：rc={r.returncode}\n{out[-1500:]}"
         )
-        assert "tests collected in" in out, f"没有走到收集（判据会假绿）：\n{out[-1500:]}"
+        assert _reached_collection(out), f"没有走到收集（判据会假绿）：\n{out[-1500:]}"
 
     def test_lock_script_that_never_returns_still_yields_a_bounded_refusal(self, tmp_path):
         """**反向**：锁脚本自己永不返回 ⇒ 仍必须在预算内 fail-closed（不得空等）。
