@@ -253,6 +253,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 116,
       "note": "issue #6224（P3·售后：`refundMethod` 是零生产者字段 —— DB 列无写点、响应里只有「实体 getter → DTO setter」直通；用户 2026-10-03 逐字裁定「退款方式 不用记」⇒ 下线该字段）新增 2 条 `[backend-contract]` 用例（AS-015 实例判据 / MC-076 类级元守卫）—— 它们按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 114 + 2 = **116**）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/controller/AfterSalesRefundMethodRetiredTest.java`：3 条（三个 Java 载体上 refundMethod 字段/getter/setter 全无 + 列表响应体无该键 + 详情响应体无该键，两条响应判据各带正对照）；`backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java`：12 条（语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 + 真语料注入红证 + 6 类内存注入红证 + 反向对照 + 扫描面 fail-closed + 台账只许缩短）），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 116}` vs 锚点 114 —— **不是**按号推算。"
+    },
+    {
+      "sha": "pending-pr-6242",
+      "date": "2026-10-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 117,
+      "note": "issue #6222（P3·读面：列表端点 `size < 0` ⇒ `total=0` 却返回整页行，自相矛盾）新增 **1** 条 `[backend-contract]` 用例（PG-070）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 116 + 1 = **117**）。机器判红通道 = `traces.tests` 的四个真测试文件：`backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateTest.java`（判定本体：size<0 ⇒ 400 与 `error.details[0].field=size`、非整数形态 ⇒ 400、**正向钉子** `nonPositivePage_isAccepted` / `zeroSize_isAccepted`、白名单外不判、参数集入口）；`backend/admin-api/src/test/java/com/migao/admin/controller/PaginationParamGateEndpointTest.java`（真 MVC 分发链：三个端点 size=-5 ⇒ 400 + service 零调用、正对照 size=20/0/无参数 ⇒ 200、摘线对照，10 条）；`backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateWiringTest.java`（接线：WebConfig 注册 + 排在授权/归属之后，2 条）；`backend/admin-api/src/test/java/com/migao/admin/security/PermissionPreHandleGateTest.java`（类级注册判据同批扩到三条闸）；四者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 117}` vs 锚点 116 —— **不是**按号推算。"
     }
     ,{
       "sha": "pending-pr-6246",
