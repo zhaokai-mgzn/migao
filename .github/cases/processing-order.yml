@@ -2610,3 +2610,44 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: PG-068
+    legacy_id: ""
+    title: "生产交付风险视图：processing_order_query(delivery_risk) 的跨单聚合与披露纪律（issue #6217）"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    tags:
+      - query
+      - tool
+      - cross-domain
+      - delivery-risk
+      - disclosure
+    persona: mibao
+    truths_ref: []
+    user_inputs:
+      - "哪些单快到交期还卡着工序"
+      - "卡在哪个工序最多"
+    expectations:
+      - tool: processing_order_query
+        args:
+          action: delivery_risk
+    data_checks:
+      - "只读且不回归：delivery_risk 在 VALID_ACTIONS 与 read_only_actions 里；**不传 action 时仍是旧的 query 行为**（默认值不许被新 action 改掉）；未知 action ⇒ 无效操作类型（不猜）"
+      - "取数面 = **两条既有只读端点**（不新开端点）：GET /api/admin/processing-orders 与 GET /api/admin/agent/production/progress?order_no=… —— 端点字面量在 client.get 的**调用点**，两者与 ProcessingOrderController / AgentProductionController 的类级 @RequestMapping + 方法级 @GetMapping 拼出的真路径逐字相同；权限码 production:view（两条端点方法级 @RequirePermission 同码）"
+      - "🔴 跨单聚合（本视图存在的理由，也是生产页单任务视图结构上做不到的）：「卡在哪个工序最多」= stuck_top（卡点工序 → 卡在该工序的加工单数，降序）；卡点 = 逐单进度里**第一个未完成**的工序名（端点给了 current_operation 就用它，没给则取有序 pending_operations 的第一项 —— 同一口径）；聚合用**全量行**而非截断后的前 N 行（否则读数会随视图行数上限变化）"
+      - "🔴「未知」≠「0」：没填交期的加工单 ⇒ days_to_deadline / risk_band 一律 null / unknown（**不是 0 天** —— 0 天 = 今天到期，会把没填交期的单排进最紧急的一批）；逐单工序进度**没取到** ⇒ pending_operations=null + unwired（**不得填 []** —— 空数组 = 「没有卡着的工序」= 真结论）；工序全完成（端点给空数组）⇒ 真 0 道待完工序、unwired 为空；总工序数为 0 ⇒ 进度**未知**（不折算成 0%）。注入式红证：把「交期未知」填成 0 天 ⇒ 分层与同一断言必红"
+      - "🔴 大批量时有界：逐单进度取数**上限 50 张、并发 8**（一条 progress 调用对应一张单 ⇒ 不设上限会把一个对话回合变成 N 次串行 HTTP）；超出 / 取数失败的单**不被静默吞掉** —— missing_progress 计数 + 消息点名 + 相关字段落 incomplete（「没取到进度」**不是**「没有卡点」）"
+      - "🔴 具名披露「未接线」：声明**无真值**的字段（scheduled_delivery_date 排产交期 / promised_ship_date 承诺发货日）逐条点名并说清一律「未知」（既有端点里只有一个 expectedDeliveryDate，没有第二个交期列、也没有承诺发货日）——**不得与 expected_delivery_date 混为一谈、更不得回填当天**"
+      - "逐字段三态（视图侧）：每个声明字段输出 status ∈ wired / not_wired / incomplete，不变式 reason is None ⟺ status == wired；声明无真值 ⇒ not_wired + 证据化原因；装配层未接线（快照缺数组 / 该字段不在行里）⇒ not_wired + 点名缺什么；行数被上限截断、逐单进度缺口、交期为空 ⇒ incomplete + 原因（**有界不许变成静默少报**）；口径同源：行里读的每个键都必须在 FIELD_SOURCES 里声明过（AST 机械判据）"
+      - "失败可归因 + 确定性：加工单列表面失败 ⇒ fail-closed（cross_domain_fetch_failed + 点名 production:view + 可行动 suggestion）；**单张**进度失败 ⇒ 只把该张的卡点/进度落「未知」，其余照常出结论；同一快照 ⇒ 逐字相同输出（as_of 由调用方传入；视图模块内不出现 date.today / datetime.now）；行序 = 交付风险降序（overdue → critical → soon → safe → unknown）；租户由调用方传入并原样回显"
+    precondition: "本用例是 [backend-contract] 的**视图契约**用例（不进 agent-eval 冒烟）：两条 user_inputs 是**同一能力**的两种问法（「哪些单快到交期还卡着工序」/「卡在哪个工序最多」），不是两次会话。前置 = 两条既有只读端点可用且当前账号持 production:view（加工单列表读不到 ⇒ 工具 fail-closed 并点名该码；单张工序进度读不到 ⇒ 只把该单的卡点落「未知」）。该前置由 backend/ai-agent-service/tests/test_tools_processing_order_query.py 的 TestDeliveryRiskAction 直接构造并断言（列表面失败 / 单张进度失败两种形态各一条）⇒ 前置不成立（端点 / 权限码改名）时单测直接红，不会表现为「agent 不干活」"
+    skip_reason: "[backend-contract] 视图语义由 ai-agent 单测验证（backend/ai-agent-service/tests/test_briefing_delivery_risk.py 的逐字段三态 / 未知≠0 / 跨单聚合 / 注入式红证），工具面由 backend/ai-agent-service/tests/test_tools_processing_order_query.py 的 TestDeliveryRiskAction 验证（action 白名单 / 两条端点字面量归属 / 有界取数 / fail-closed / 披露纪律），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-03 新增（issue #6217 / 族 3 · 包 4 / V2）：生产页是**单任务视图**（一次一张加工单），结构上答不出「哪些单快到交期还卡着工序」「卡在哪个工序最多」——本条目为该**跨单聚合**视图的专属用例。⚠️ 不并进简报表快照（权限面不同 ⇒ 复用即越权）；落点是既有加工单查询工具的一个新 action，不新开工具、不新开端点。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_briefing_delivery_risk.py"
+        - "backend/ai-agent-service/tests/test_tools_processing_order_query.py"
+      ci:
+        - pr-check.yml
+      verifies: []

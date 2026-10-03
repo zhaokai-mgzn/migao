@@ -299,6 +299,10 @@
     "profile_view": {
      "dynamic": true,
      "keys": []
+    },
+    "value_view": {
+     "dynamic": true,
+     "keys": []
     }
    },
    "dynamic": true,
@@ -328,7 +332,7 @@
     "data=dict(result)",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "7b5b9c51cab6890ffeec930c5aaaa67b1f1628797f3378c70d759e7b5916e9a4"
+   "source_sha256": "149f941370629c17dad75105cf90003ff71286eb46eb06a2476ac4d8dfbd51f3"
   },
   "customer_order_query": {
    "actions": null,
@@ -964,8 +968,16 @@
    "source_sha256": "764579235de50706fde2cb69e1ff238dac3724f705bd97ae2f23fd9b33216b9d"
   },
   "processing_order_query": {
-   "actions": null,
-   "dynamic": false,
+   "actions": {
+    "delivery_risk": {
+     "dynamic": true,
+     "keys": []
+    }
+   },
+   "actions_unattributed": [
+    "query"
+   ],
+   "dynamic": true,
    "file": "backend/ai-agent-service/app/tools/processing_order_query.py",
    "keys": [
     "list"
@@ -973,7 +985,10 @@
    "literal_keys": [
     "list"
    ],
-   "source_sha256": "f3045fc57c52eb0701291c088192b97ca8cdb5854cda2e91979e9be3e6a6a90a"
+   "shape_notes": [
+    "data=dict(result)"
+   ],
+   "source_sha256": "1c8d53198a6bbd6ca1e5a0d6251d2ed5821f26ba5324c72abcd0a112f2c977ef"
   },
   "processing_order_set_query": {
    "actions": null,
