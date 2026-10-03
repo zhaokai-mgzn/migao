@@ -4,7 +4,7 @@
   "what": "`tests/unit_ci_workflows/**`（CI job `ci workflow helper unit tests`，required）的**执行形态**登记：并行度（pytest-xdist `-n`）必须与 CI 和本地腿**同时**声明的那一个值一致；「跑起来的判据库存」不得低于冻结基线；skip 读数必须**逐值等于**冻结读数（不许变多，也不许悄悄变少）。",
   "why": "这条腿是 PR 反馈时长的**唯一关键路径**：2026-09-30 实测 run `36689037058` 该 job **997s**，其中 `Run ci workflow helper tests` 一步 **989s**，而同 run 其余 14 个 job **全部 < 60s**（最长 41s）⇒ PR 反馈 ≈ 该 job 时长。它此前是**单进程**跑整套判据（纯 CPU / 子进程绑定：281 处 `subprocess.*`、无网络、无 DB 服务）⇒ 并行化是唯一不削断言、不减覆盖面的提速手段。",
   "judged_by": "tests/unit_ci_workflows/test_helper_leg_execution_shape.py",
-  "enforced_by": "tests/unit_ci_workflows/conftest.py::helper_leg_shape_problems（会话收口时的 fail-closed 判定）",
+  "enforced_by": "tests/unit_ci_workflows/conftest.py::collection_floor_problems（**运行期**：会话收口时按**逐片**冻结基线判本轮收集数，缺本片基线 fail-closed 判红；不设分片时按整套基线） ＋ tests/unit_ci_workflows/test_helper_leg_execution_shape.py（**静态**：并行度/分片三方一致/全划分/消费点在位/两态 skip 读数自洽）",
   "consumption_marker": "helper_leg_shape_problems",
   "shape": {
     "parallel_workers": 4,
@@ -33,7 +33,7 @@
           "2/2": 170
         },
         "bytes_skew": 0.0008,
-        "tests_recompute": "MIGAO_CI_HELPER_SHARD=1/2 python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -1（本机实测 3252 / 3273，合计 6525 == 整套）",
+        "tests_recompute": "MIGAO_CI_HELPER_SHARD=1/2 python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -1（**最终**读数：本机 3255 / 3273，合计 **6528** == 整套；CI 首轮汇总行逐字 `3255/6528` 与 `3273/6528` ⇒ 两边一致）",
         "note": "字节量只作**粗略**工作量代理：真正的平衡读数（两片墙钟）在 PR body 里，且**刻意不进判据**（§23 G6：降成本的固化禁挂墙钟）。",
         "ci_first_round": {
           "at": "2026-10-03T05:12Z（= 13:12 +08）",
@@ -51,7 +51,21 @@
           "pre_split_step_median": 500,
           "reading": "关键路径 500s → **319s（−36%）**；两片并不等重（319 vs 209）⇒ 若平衡到等重 ≈ 264s（−47%）。",
           "why_not_balanced": "盐是按**字节量**选的（0.08% 偏斜），而墙钟由少数重判据的**子进程等待**主导 ⇒ 字节量不是好代理。⚠️ **刻意不用本机逐判据耗时去调盐**：本机 8 核（且常被别的会话占着）≠ runner 4 vCPU —— 「本机 −20% 没迁移到 CI」这一课刚在 #6164 的第一件读数里上过。⇒ 重平衡要用 **CI 自己的读数**，留作后续杠杆（机制已在位：改 `salt` + 复算本台账的两个读数，判据会强制两边同步）。"
-        }
+        },
+        "readings_history": [
+          {
+            "at": "2026-10-03T13:00+08",
+            "commit": "0595f4762",
+            "per_shard": "3252 / 3273（合计 6525）",
+            "why_stale": "那时**分片判据本身还没写进去**（本包在同一天先后两次测量）；差 3 条 = 后来加入 test_helper_leg_execution_shape.py 的 3 条分片判据（都落在 1/2 片）"
+          },
+          {
+            "at": "2026-10-03T13:20+08",
+            "commit": "65d04584",
+            "per_shard": "3255 / 3273（合计 6528）",
+            "why_final": "= 冻结基线所依据的那次读数（CI 与本机逐值相同）"
+          }
+        ]
       },
       "coverage_rule": "`crc32` 是全函数 ⇒ 每个 `test_*.py` **恰好**落进一片（并集 == 目录全集、两两不相交）；判据按**现取语料**复算（test_helper_leg_execution_shape.py），不写死清单 ⇒ 新增判据文件自动进面、不可能「不属于任何片」。",
       "boundary": [
@@ -59,7 +73,10 @@
         "两片**互相看不到对方跑了什么** ⇒ 「并集 == 全集」由**规则**保证（现取语料复算），不是由运行期读数相加保证。",
         "分片**只覆盖 `test_*.py`**（与 `_current_test_files()` 同口径）：目录里的共享实现（`conftest.py` / `pg_cluster.py` / `_*.py`）与台账 JSON **不是判据文件**，两片都要加载它们 ⇒ 刻意不切片。",
         "「跑子集不判库存」这条研发日常口径**不变**（不设 env ⇒ 应当覆盖全部）：所以一次**被截断的整套运行**在结构上仍会被判成「子集」⇒ 那一形态的兜底仍是**冻结库存下界**（与拆腿前同口径）。",
-        "两片**不等重**是已知的、有读数的边界（见 balance_measured.ci_first_round）：拆腿拿到的是 −36% 而不是 −47%，差在分配不均；重平衡的机制已就位（盐 + 台账读数），但**必须用 CI 的读数**去调，不许拿本机逐判据耗时猜。"
+        "两片**不等重**是已知的、有读数的边界（见 balance_measured.ci_first_round）：拆腿拿到的是 −36% 而不是 −47%，差在分配不均；重平衡的机制已就位（盐 + 台账读数），但**必须用 CI 的读数**去调，不许拿本机逐判据耗时猜。",
+        "**skip 读数不逐片**（照实登记的缺口，别读成已覆盖）：`frozen_inventory.skipped_reading` 是**整套**口径，运行期的收口判定（`conftest.collection_floor_problems`）只判**逐片库存**、**不判 skip**；`helper_leg_shape_problems` 里的「skip 逐值相等」这条不变式**运行时没有消费点**（全仓只有 test_helper_leg_execution_shape.py 用**注入值**调它）。⇒ 而且它在分片形态下**结构上不可能同时成立**：冻结的整套 skip = 1，而那条 skip 只由片 2/2 里的文件产生（片 1/2 的 skip = 0）。要真接上，必须先把读数改成「逐片 × 逐环境」的表 —— 本包**没做**，登记为缺口。",
+        "**本地腿的墙钟≈翻倍**（同一套件跑两遍，两个进程各付一次启动 / xdist 启动）：这是拆腿的**本机成本**，换的是 CI 上关键路径减半与本机「一次跑完两片 == 覆盖全部判据」。（CI 的总 runner 秒数也没降 —— 见 ci_first_round。）",
+        "**跨片进程状态**：判据面里专门有 test_sys_modules_cross_file_independence.py 守「跨文件借用 sys.modules 注入」；它的射程**前提**在拆腿后已更正（跨片不再共享进程 ⇒ 借用会在**某一半**里 fail-loud，而不是静默绿）。射程本身是目录级的 ⇒ 不变。"
       ],
       "names": [
         "1/2",
@@ -99,6 +116,7 @@
     "并行化带来的**非确定性**（同一份代码两次运行，测试到 worker 的分配可能不同）不在面内：判据只钉「库存 / skip 读数 / 形态」，不钉分配。",
     "xdist 下**资源竞争**（真库族的临时集群）只判「隔离手段在位」（各模块自己的 `sockdir` / `datadir` / `_free_port()`），不判竞争概率。",
     "`-n` 的**收益**（墙钟）刻意不进判据：降成本的固化禁挂钟（§23 G6），判据只钉与负载无关的工作量读数。",
-    "fail-closed 的**真值侧**：判定跑在 xdist 的 worker 进程里（控制器按设计不收集用例，读不到库存）⇒ 若某轮**一个 worker 都没启动**，该轮没有任何进程会判红 —— 这种形态由 `pytest` 自身的退出码承接（worker 起不来 = 非零），不在本台账的射程内。"
+    "fail-closed 的**真值侧**：判定跑在 xdist 的 worker 进程里（控制器按设计不收集用例，读不到库存）⇒ 若某轮**一个 worker 都没启动**，该轮没有任何进程会判红 —— 这种形态由 `pytest` 自身的退出码承接（worker 起不来 = 非零），不在本台账的射程内。",
+    "`helper_leg_shape_problems`（含「skip 读数逐值相等」这条不变式）**只有静态消费点**：运行期收口钩子调的是 `collection_floor_problems`。旧文案把它写成语义上的「会话收口判定」**言过其实**，本行照实更正（#6164 收尾）。"
   ]
 }

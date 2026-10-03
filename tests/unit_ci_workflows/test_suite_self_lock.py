@@ -95,7 +95,13 @@ def _reached_collection(out: str) -> bool:
 
 
 def _child_env(lock_file: Path, extra: dict | None = None) -> dict:
-    """子进程环境：清掉继承来的 `CI` / `MIGAO_HEAVY_LOCK_HELD`，锁与射程都指到临时面。"""
+    """子进程环境：清掉继承来的 `CI` / `MIGAO_HEAVY_LOCK_HELD`，锁与射程都指到临时面。
+
+    ⚠️ **刻意不剥 `MIGAO_CI_HELPER_SHARD`**（issue #6164 起）：本文件断言的是「锁有没有被拿」
+    「子进程有没有走到收集」，与子进程跑**整目录还是某一半**无关；而把片号透传下去，正好让
+    「分片形态下这些判据仍然成立」也被**实测**到（CI 上父进程带着片号 ⇒ 子进程也带）。
+    ⇒ 代价是子进程的**被测面变小**（只一半判据），这一点**登记在此**，别读成「跑到了一整套」。
+    """
     env = {k: v for k, v in os.environ.items()
            if k not in ("CI", "MIGAO_HEAVY_LOCK_HELD", "MIGAO_HEAVY_LOCK_FILE",
                         "MIGAO_HEAVY_ROOTS", "MIGAO_HEAVY_WAIT")}

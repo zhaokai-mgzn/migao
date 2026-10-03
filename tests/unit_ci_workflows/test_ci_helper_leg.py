@@ -76,10 +76,23 @@ def _ci_pytest_argv(ci_text: str) -> str:
 
 
 def _local_pytest_argv(verify_text: str) -> str:
-    """现取本地腿里的 pytest 命令行（同样只取 argv）。"""
+    """现取本地腿里的 pytest 命令行（同样只取 argv）—— 只取**第一条**（= 第一片）。"""
     body = _extract_function(verify_text, "ci_helper_leg")
     m = re.search(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", body)
     return _argv_only(m.group(0)) if m else ""
+
+
+def _local_pytest_argv_all(verify_text: str) -> list[str]:
+    """现取本地腿里**全部** pytest 命令行（issue #6164 拆腿后本地是**两片** ⇒ 两行）。
+
+    🔴 为什么必须取**全部**（本文件 2026-10-03 的一处真实退化）：拆腿后本地腿里有两行 argv，
+    而 `re.search` 只拿**第一条** ⇒ 只改第二片（比如把片 2 的 `-n 4` 改成 `-n 8`）时
+    **判据毫无反应** —— 并行度同源契约被钉住的只剩两片中的一片。
+    「逐条都要逐字相同」才是原契约的意思（拆腿只该改**跑多少**，不该改**怎么跑**）。
+    """
+    body = _extract_function(verify_text, "ci_helper_leg")
+    return [_argv_only(m.group(0))
+            for m in re.finditer(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", body)]
 
 
 def _gate_branch(verify_text: str) -> str:
@@ -96,18 +109,22 @@ def leg_problems(verify_text: str, ci_text: str) -> list[str]:
     """四条判据的**纯函数**实现（红证可在内存里构造，不必改真文件）。"""
     bad: list[str] = []
 
-    # 判据 1：argv 逐字相同
+    # 判据 1：argv 逐字相同 —— **本地腿的每一条**（拆腿后 = 每一片）都必须与 CI 逐字相同
     ci_argv = _ci_pytest_argv(ci_text)
-    local_argv = _local_pytest_argv(verify_text)
+    local_all = _local_pytest_argv_all(verify_text)
+    local_argv = local_all[0] if local_all else ""
     if not ci_argv:
         bad.append(f"CI 侧现取失败：在 {CI_REL} 的 `{CI_JOB_NAME}` 里找不到 `-m pytest {PYTEST_TARGET} …`")
-    if not local_argv:
+    if not local_all:
         bad.append(f"本地腿现取失败：{VERIFY_REL} 的 `ci_helper_leg()` 里找不到 `-m pytest {PYTEST_TARGET} …`")
-    if ci_argv and local_argv and ci_argv != local_argv:
-        bad.append(
-            "本地腿与 CI 的 pytest argv 不再逐字相同（同源契约破了）——"
-            f"\n    CI   = {ci_argv}\n    本地 = {local_argv}"
-        )
+    if ci_argv and local_all:
+        drifted = [a for a in local_all if a != ci_argv]
+        if drifted:
+            bad.append(
+                f"本地腿与 CI 的 pytest argv 不再逐字相同（同源契约破了）—— 本地 {len(local_all)} 条里 "
+                f"{len(drifted)} 条不一致（**每一条都要比**：只比第一条 ⇒ 只改第二片就没人拦）"
+                f"\n    CI   = {ci_argv}\n    不一致 = {drifted}"
+            )
 
     # 判据 2：触发面覆盖
     face = _extract_function(verify_text, "ci_helper_face_paths")
@@ -146,6 +163,39 @@ def test_red_proof_argv_drift() -> None:
     assert mutated != verify_text, "变异没生效（注入点漂移）"
     problems = leg_problems(mutated, ci_text)
     assert any("argv" in p for p in problems), problems
+
+
+def test_red_proof_second_shard_argv_drift() -> None:
+    """🔴 红证（内存构造）：**只改第二片**那行 argv ⇒ 判据 1 必须报红（#6164 补的真退化）。
+
+    拆腿后本地腿有两行 argv；`re.search` 只取第一条 ⇒ 「只比第一条」的写法**放走了**
+    「只改第二片」（实测：`-n 4 → -n 8` 只动第二片时判据毫无反应）。
+    本红证就是那条退化的守门人：真语料下必须能报出**两片里有一片不一致**，且**点名**。
+    """
+    verify_text = (REPO / VERIFY_REL).read_text(encoding="utf-8")
+    ci_text = (REPO / CI_REL).read_text(encoding="utf-8")
+    all_local = _local_pytest_argv_all(verify_text)
+    assert len(all_local) == 2, (
+        f"本地腿现取到的 pytest 行数 = {len(all_local)}（拆腿后应为 2）⇒ 本红证无对象；先核对分片形态"
+    )
+    assert all_local[0] == all_local[1], "两片的 argv 本来就不一致 ⇒ 真语料已经红了（先修语料）"
+    # **只动第二片**：先把 `ci_helper_leg()` 函数体里**真正那两条** pytest 行找出来（不能用裸
+    # 字符串 `-n 4` 找 —— 注释里也写着 `-n 4`，会改错行），再改第二条的 `-n`。
+    idx = verify_text.find("ci_helper_leg()")
+    assert idx >= 0, "找不到本地腿函数（注入点漂移）"
+    body = verify_text[idx:]
+    matches = list(re.finditer(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", body))
+    assert len(matches) == 2, f"本地腿里现取到 {len(matches)} 条 pytest 行（应为 2）"
+    second = matches[1]
+    at = second.start() + second.group(0).rfind("-n 4")
+    assert at > second.start(), f"第二条 pytest 行里找不到 `-n 4`：{second.group(0)!r}"
+    mutated = verify_text[:idx] + body[:at] + "-n 8" + body[at + len("-n 4"):]
+    hit = _local_pytest_argv_all(mutated)
+    assert hit[0] == all_local[0] and hit[1] != all_local[0], f"变异点没命中第二片：{hit}"
+    problems = leg_problems(mutated, ci_text)
+    assert any("argv" in p for p in problems), (
+        "只改第二片的 argv ⇒ 没有报红 ⇒ 并行度/同源契约只钉住了两片中的一片（#6164 的真退化）"
+    )
 
 
 def test_red_proof_face_fragment_removed() -> None:
