@@ -61,19 +61,19 @@
     "note": "`collected_total` 是判据**库存**（收集面），与负载无关 ⇒ 它是这条腿「有没有悄悄少跑」的机械读数：**只许涨**（新增判据文件必然抬高它；低于它 = 收集面被截断 / worker 崩 / 整批判据消失）。\n`skipped_reading` 按当前环境选键：`MIGAO_REQUIRE_REALDB` 为真（= CI 的形态，见 `tests/unit_ci_workflows/test_realdb_failclosed.py`）⇒ **1**，否则 ⇒ **1**（两条读数本机实测相同：本机有 PG 二进制 ⇒ 真库族两个形态都真跑；那 1 条是本机的 `test_roundtrip_report.py::test_zstd_frame_without_decompressor_is_not_silent`，本机装了 `zstandard` ⇒ 走不到「无解压器」分支，CI 无该模块 ⇒ 那里真跑）。判定要求 skip 读数**逐值相等**：变多 = 静默跳过（真库族退回 skip 一族）；变少 = 有判据没被收集（同上）。\n基线时点 = `56db10be8`（`origin/main`）+ 本用例文件新增的 **7** 条判据（`test_helper_leg_execution_shape.py`）；改前（不含该文件）实测 **5760**。复算口径里的「+7」= 该文件的贡献（其中 2 条是 `-n` / 控制器早退正在接线上的补充）。",
     "shards": {
       "1/2": {
-        "collected_total": 3212,
-        "measured_at": "2026-10-03T13:00+08",
-        "measured_reading": 3252,
+        "collected_total": 3245,
+        "measured_at": "2026-10-03T13:20+08",
+        "measured_reading": 3255,
         "recompute": "MIGAO_CI_HELPER_SHARD=1/2 python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -1"
       },
       "2/2": {
-        "collected_total": 3233,
-        "measured_at": "2026-10-03T13:00+08",
+        "collected_total": 3263,
+        "measured_at": "2026-10-03T13:20+08",
         "measured_reading": 3273,
         "recompute": "MIGAO_CI_HELPER_SHARD=2/2 python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -1"
       }
     },
-    "shards_note": "**分片的冻结基线**（issue #6164）：运行期牙齿按**本片**的下界判（`conftest.collection_floor_problems` → `_frozen_floor`），不是拿整套的 5767 去撞每一片（那样两片**都**会红）。`collected_total`（整套）仍然保留、语义不变（不设 env 时的下界）。🔴 **本片基线=实测读数 − 40**：本机实测 3252 / 3273，而 CI 与本地历史上存在 ~0.35% 的收集面差异（实测 6490 vs 6467，疑为 runner 缺可选依赖导致模块级 importorskip 少收）⇒ 留 40 条余量避免**假红**；CI 首轮跑出来的真实每片读数会用来**收紧**这两个值（收紧 = 改本字段，同一 PR 内可见）。分片形态下**没有**本片基线 ⇒ `collection_floor_problems` **fail-closed 判红**（不静默放过）。"
+    "shards_note": "**分片的冻结基线**（issue #6164）：运行期牙齿按**本片**的下界判（`conftest.collection_floor_problems` → `_frozen_floor`），不是拿整套的 5767 去撞每一片（那样两片**都**会红）。`collected_total`（整套）仍然保留、语义不变（不设 env 时的下界）。🟢 **本片基线 = 实测读数 − 10**：**CI 首轮的真实读数**就是 3255 / 3273（`--collect-only` 汇总行逐字：`3255/6528` 与 `3273/6528`），本机分片实跑同样落在 3255 / 3273 ⇒ 两边一致、无需再留大余量（首轮 CI 之前临时用的 −40 余量已按现取读数收紧；CI 与本地历史上那点差异属**执行/跳过**面，不在收集面）。分片形态下**没有**本片基线 ⇒ `collection_floor_problems` **fail-closed 判红**（不静默放过）。"
   },
   "confidence_boundary": [
     "只裁**本腿的执行形态**：不判任何一条断言的覆盖面，也不为存量判据的安全性背书。",
