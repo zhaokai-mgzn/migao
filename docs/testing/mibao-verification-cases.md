@@ -5528,7 +5528,7 @@
 真值: processing-manage.worker-page-config
 溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
 
-## 加工单域（57 case）
+## 加工单域（58 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -6274,6 +6274,17 @@
 跳过: [backend-contract] 后端契约用例（开租种子 + 路线实例化，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionSeedOptionRulePositionTest 执行（Java），另有零成本的那一半 tests/unit_ci_workflows/test_production_catalog_seed.py::test_option_rule_position_is_cloth_in_the_new_tenant_seed 读生产源码
 ```
 溯源: 2026-10-03 新增（issue #6114）：默认配置下纱帘单勾任一特殊选项 ⇒ 整张加工单 fail-closed。**归因不是 fail-closed 错，而是默认配置缺部位限定**：这 16 条特殊选项规则引用的逻辑工序只有布帘变体（有 `花边-布`、无 `花边-纱`），position=NULL（= 不限部位）⇒ 规则在纱帘单上照样命中 ⇒ variantNameOf(逻辑名,'纱帘',catalog)=null ⇒ 该逻辑名进 missing_operations ⇒ resolveRoute fail-closed。修法 = **只改种子**（开租播种给这 16 条规则写 position='布帘'，口径 = 用户 2026-09-21 裁定「如果有一些工序只能布帘有或者纱帘有，可以在适用条件上设置」）；⛔ 不发明 `-纱` 变体（那是造新工序，会进工人计件口径）。假定对象的更正（本包开工时发现）：原单假定「改 schema.sql 的逐租户种子块」，实测 schema.sql 只在首次建库跑一次（MigrationRunner 按文件名记账），今天新开租户走的是 Java applyTemplate ⇒ 修在 Java 那条路径上，schema.sql 镜像无需改动（三源/冻结判据原样绿，见 PR body）。 ｜ tags: processing-order, production, route-rules, seed, sheer-curtain
+
+### PG-067. 开工单默认配置 - 纱帘单带加工项（花边/扣环/接高）不再整单失败（规则级部位限定落在开租种子；issue #6123） 🔵
+```
+数据: 判据 1·**内容腿**（新租户会应用的那块种子）：开租播种（RegistrationService → ProductionSeedTemplateService.applyTemplate）落库的**加工项规则**（trigger_kind=processing_item）**逐条** position='布帘'（取值落在 ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY 内；3 条一条不漏）。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedProcessingItemRulePositionTest.java（processingItemRulesCarryClothPosition / positionValueIsInsideTheClosedVocabulary）+ tests/unit_ci_workflows/test_processing_item_rule_position.py（test_processing_item_rule_carries_cloth_position 读生产源码的 planRouteRules 加工项分支）
+数据: 判据 2·**行为腿·两侧夹住**：把**真实播种产出的规则**喂给真实实例化路径（ProcessingOrderService.derivePositionPayload）—— ① **纱帘单**带全部加工项触发值（花边/扣环/接高）⇒ **能派工**（不抛 PRODUCTION_OPERATION_NOT_FOUND）、序列里不出现这些逻辑工序（更不得落 `花边-布`）、且仍按纱帘变体实例化（`精裁` → `精裁-纱`）；② 同一配置的**布帘单** ⇒ 照旧插 `花边-布` / `扣环-布` / `接高-布`，且不出现纱帘变体。证据：ProductionSeedProcessingItemRulePositionTest.sheerOrderWithProcessingItemsInstantiatesWithoutClothVariants / clothOrderStillGetsClothVariants
+数据: 判据 3·**类级判据（本单重点）**：**种子来源的每条规则**（带工序名的）其 (operation, position) 在其**适用形态**（ProductionOperationQueryService.BASELINE_POSITIONS ∩ 该规则的部位限定）下都必须解析出变体 —— 同时罩住 `option` 与 `processing_item` **两条触发维**；另一条自证判据断言种子里的触发维**确实**含这两维（防「只罩了 option」的假绿）。证据：ProductionSeedProcessingItemRulePositionTest.everySeedRuleResolvesInEveryApplicableForm / bothTriggerDimensionsAreInScope（Java）+ tests/unit_ci_workflows/test_processing_item_rule_position.py::test_every_seed_rule_dimension_is_nailed_by_a_guard（生产源码两条触发维都必须带命名常量部位限定）
+数据: 🔴 **红证（本机实跑，2026-10-03）**：把 backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java 的 planRouteRules 加工项分支里 `PROCESSING_ITEM_POSITION` 改回 `null` ⇒ 本用例判据 1/2/3 同时红，读数逐字 —— **Java 侧**：`Tests run: 6, Failures: 3, Errors: 1`（内容腿 2/2 红：`["花边 → position=null（期望 布帘）", "扣环 → position=null（期望 布帘）", "接高 → position=null（期望 布帘）"]`；行为腿 ① 抛 `BusinessException: 工艺路线「窗帘工序路线（默认）」（产品形态「纱帘」）引用的工序 [接高, 扣环, 花边] 在工序库中不存在，无法实例化工序`；行为腿 ② 仍绿 —— 缺陷形态不误伤布帘单；类级判据报「processing_item×花边 → 工序 `花边` 在形态「纱帘」解析不出变体（规则会在该形态命中 ⇒ 整单 fail-closed）」等三条）；**Python 侧**：`tests/unit_ci_workflows/test_processing_item_rule_position.py` `2 failed, 1 passed`（内容腿报「加工项触发分支的 `position` 实参 = `null`…」；类级判据报「这些触发维的部位限定实参不是命名常量 `布帘`：{'processing_item': 'null'}」）。还原 `PROCESSING_ITEM_POSITION` ⇒ Java `Tests run: 6, Failures: 0, Errors: 0` / Python `3 passed` 全绿。
+数据: **未固化 / 边界（如实登记）**：① 本 PR **不改归档迁移**（V84 / backend/admin-api/src/main/resources/db/init/schema.sql 都在冻结面）⇒ **存量租户**既有加工项规则的 position 仍是 NULL，**仍会卡单**（与 #6114 同款、有意接受的缺口；重启条件 = 存量租户提出该问题 / 出现通用数据迁移窗口）；② 带部位限定的规则只在**逐字匹配**的实例化部位生效 —— 若将来给这批工序补了真正的纱帘变体（`花边-纱`），限定会变成「纱帘单少一道该做的工序」⇒ 那时要连同本用例与类级判据一起改判。
+跳过: [backend-contract] 后端契约用例（开租种子 + 路线实例化，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionSeedProcessingItemRulePositionTest 执行（Java），另有零成本的那一半 tests/unit_ci_workflows/test_processing_item_rule_position.py 读生产源码
+```
+溯源: 2026-10-03 新增（issue #6123）：#6114（PR #6119，已合并 c22514360）只给**特殊选项**维补了规则级部位限定，**加工项触发**维是同一事实的另一半 —— 这 3 条规则（花边/扣环/接高，V84 逐条同值）引用的工序同样只有布帘变体（有 `花边-布`、无 `花边-纱`），position=NULL ⇒ 带这些加工项的**纱帘单**在 buildRoute 命中 ⇒ variantNameOf(逻辑名,'纱帘',catalog)=null ⇒ missing_operations ⇒ 整单 fail-closed（本机复现报错逐字见判据 4）。修法 = 只改种子（开租播种写 position='布帘'，与 #6114 同一手法；口径 = 用户 2026-09-21 裁定「如果有一些工序只能布帘有或者纱帘有，可以在适用条件上设置」）；⛔ 不发明 `-纱` 变体。**类级固化**：判据 3 把「每条种子规则的 (operation, position) 在其适用形态下必须解析出变体」钉成一条判据，一次罩住两条触发维 —— #6114 的守卫只读 option 分支，本单新增的守卫按**维度集合**现取式判定（将来再加按订单行触发的维度也会被点名）。 ｜ tags: processing-order, production, route-rules, seed, sheer-curtain, processing-item
 
 ## 商品域（109 case）
 
@@ -9122,8 +9133,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：635（活跃 134，跳过 501）
-- tier 分布：smoke 12 / normal 589 / adversarial 32
+- 用例总数：636（活跃 134，跳过 502）
+- tier 分布：smoke 12 / normal 590 / adversarial 32
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -9143,7 +9154,7 @@
 - 领域本体域：4
 - 订单域：55
 - 加工项域：25
-- 加工单域：57
+- 加工单域：58
 - 商品域：109
 - 工具注册器域：1
 - 设置域：10
@@ -9311,6 +9322,7 @@
 - PG-062: 批次消耗台账的真库守卫——账实逐值自洽 + V121 符号约束 + 反向对称与幂等 + 跨 SKU 零落账 + 分布/对账可复算
 - PG-063: 卖布行（`saleForm=布料`、**无** `processingItems`）⇒ 走布料基础路线并实例化出工序；算料米数取订单行数量（不得兜底 1）
 - PG-066: 开工单默认配置 - 纱帘单勾任一特殊选项不再整单失败（规则级部位限定落在开租种子；issue #6114）
+- PG-067: 开工单默认配置 - 纱帘单带加工项（花边/扣环/接高）不再整单失败（规则级部位限定落在开租种子；issue #6123）
 - PP-007: 米宝加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）
