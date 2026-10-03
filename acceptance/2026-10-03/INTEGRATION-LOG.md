@@ -497,3 +497,23 @@ if (!SHIPPABLE_FROM.contains(order.getStatus())) { throw …「当前状态（%s
 | **三个修复 PR 的合并** | 未合并（`mergeStateStatus=BLOCKED`，`fail=0`） | 合并需要人工评审面（本机无该权限）；仓内 auto-merge 只对 safe classes 开放 | 由人类按顺序合：**#6230 → #6233 → #6231 → #6226**（后两个与前面同改 `aftersales.yml` / `processing.yml` 与生成物，合前各自 `./scripts/sync-main.sh --rebase` + **重渲染** 消冲突） |
 | **`true-reload` / 其它跨租户读面** | skip（未覆盖） | 线A：租户 21 无合法夹具（写面已用"服务端零写入"侧证） | 需要一套租户 21 的只读夹具；重启条件 = 后续轮次建夹具时一并做 |
 | **`>1000 行` 大批量读档** | skip（未覆盖） | 本租户最大面 652 行（不往活库灌数据） | 重启条件 = 有独立压测库或可从快照克隆；届时把 `C4-BULK-READ-1000` 从 skip 转实测 |
+
+### 19.12 全轮"零残留"独立复核（按**时间归属**切分本轮 vs 历史遗留）
+
+主会话在两条线各自自证之外，**另行**用"创建时间归属"复核（因为共享云 dev 库里混着历轮数据，按名字前缀查会把**别人的遗留**算到自己头上）：
+
+```sql
+-- ① 本轮探针域（前缀 LA-/LB-，含 SKU / 用户 / 订单）
+select count(*) from product_skus where sku_code like 'LA-%' or sku_code like 'LB-%';           -- ⇒ 0  ✅
+select count(*), min(created_at), max(created_at) from users
+  where deleted=0 and (nickname like '%验收%' or nickname like '%探针%');                        -- ⇒ 10 行，2026-08-27 ~ 2026-10-02 21:46
+select count(*), min(created_at), max(created_at) from orders
+  where deleted=0 and (remark like '%验收%' or remark like '%探针%');                            -- ⇒ 2 行，2026-10-02 22:55
+```
+
+**判定**：
+1. **本轮（2026-10-03 16:00~17:07 +08）零残留** —— 本轮探针 SKU 全为 0；两条线自证的探针域（线A 12 张表、线B 逐表）亦为 0，且**我此前已独立复读**（`orders/products/skus/tickets/ledger` 五个面全 0，见本轮早前读数）；
+2. **历史遗留（不是本轮的）**：10 个验收/探针用户 + 2 张验收订单，创建时间落在 **2026-08-27 / 09-03 / 10-02**（其中 9 个是 10-02 的「验收<角色>790472」角色权限族探针）⇒ 属**历轮验收包未清干净**的存量。
+   - **性质**：**观察项（dev 库卫生）**，不是产品缺陷，也**不是本轮引入**；
+   - **不自动清理**：按铁律 10 的裁定，删除类动作不做无人值守执行 ⇒ 建议做成**显式入参的一次性命令**（人手动跑、跑前打印将删清单）；
+   - **重启条件**：若下一轮还要在同一租户跑大范围断言、被这些存量干扰（例如"存量零改动"指纹口径），就先跑一次人工清理。
