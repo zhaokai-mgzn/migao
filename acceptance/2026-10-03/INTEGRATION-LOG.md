@@ -553,3 +553,20 @@ git -C <worktree> reflog -3 | cut -c1-80   # 头两条若是 rebase (start)/(con
 ```
 三次同类（F-6219 的 `git stash` 窗口、F-6220 的置备期、F-6226 的 `rebase` 窗口）**代价都是我这边白绕一圈**；
 根因不是包做错，而是**我把"某个瞬间的树"当成了"它的交付状态"**。⇒ 判据只在"树静止"时取；静止的定义 = 无 stash / 无 rebase / 无 uncommitted 待提交。
+
+### 19.15 首单已合入 main（#6233 / #6219）—— 按铁律 9 在 **main 上自证**（不看 CI 绿）
+
+现取事实：
+```
+gh pr view 6233 --json state,mergedAt      ⇒ {"state":"MERGED","mergedAt":"2026-10-03T09:22:54Z"}（= 17:22:54 +08）
+git log --oneline origin/main -1           ⇒ 24b7381d1 fix(一体机): #6219 裁高读面明细 product_id 为空不再 500… (#6233)
+```
+**main 侧内容级自证**（铁律 9：`pr-check` 只在 pull_request 触发 ⇒ main 上的破坏没有任何 run 会报，必须自己在 main 上复算）：
+```bash
+git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java | sed -n '277,284p'
+# ⇒ if (productIds.isEmpty()) { …注释… return new LinkedHashMap<>(); }   ✅ 修复确实在 main 上
+```
+**连带效应（已同步相关包）**：
+- 合并顺序的既定第一步（#6233 先合）**已满足** ⇒ 后续按 `#6226 → #6230/#6231` 的依赖各自 `sync-main.sh --rebase` + **重渲染生成物**消冲突；
+- `PG-059` 现在是 **main 上真实存在的用例号**（= #6233 的），后到的包（F-6226 取 `PG-069`）不受影响 —— 我再核过 main 全 `cases/*.yml` 域 `id: PG-069` **0 命中**。
+- 分支状态：`#6230 OPEN`、`#6231 OPEN（DIRTY，main 前进 ⇒ 待 rebase）`、`#6229 承载体 OPEN/ready`。
