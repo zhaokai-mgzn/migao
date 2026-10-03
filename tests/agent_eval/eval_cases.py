@@ -2794,6 +2794,25 @@ _CASE_CU_011 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── CU-012 [NORMAL] 客户价值分层 / 流失预警视图：customer_manage(value_view) 的跨域取数面与披露纪律（issue #6217）（源: cases/customer.yml）──
+_CASE_CU_012 = EvalCase(
+    id='CU-012',
+    legacy_id='',
+    title='客户价值分层 / 流失预警视图：customer_manage(value_view) 的跨域取数面与披露纪律（issue #6217）',
+    skill=Skill.CUSTOMER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['哪些老客户最近不下单了', '谁最值得维护'],
+    expectations=['customer_manage(action=value_view)'],
+    data_checks=['只读且免确认：value_view 在 VALID_ACTIONS 与 read_only_actions 里（与 list / detail / list_tags / profile_view 同列），工具 read_only=True ⇒ 不弹确认卡（_requires_confirmation 为 False）', '取数面 = **三条既有只读端点**（不新开端点、不扩 /api/admin/briefing/snapshot）：GET /api/admin/customers、GET /api/admin/orders、GET /api/admin/after-sales —— 端点字面量在 client.get 的**调用点**（静态归属机具只认调用点字面量），参数恒为 page=1&size=200 并带 tenant_id / user_id；三条并发取数，**任一条失败即 fail-closed**（不拿半份数据出结论）且点名失败面 + 所需权限码（customer:view / order:list / after_sales:view，与控制器 @RequirePermission 逐字对齐）', '🔴「未知」≠「0」（本视图的核心口径）：窗口内**没有订单行**的客户 ⇒ order_count / days_since_last_order / total_consumption / avg_order_amount / return_rate 一律 **null** + 行内 *_basis=no_orders（**不是 0 单、不是 0 天、不是 0 元** —— 0 天会把从未下单的客户排成最活跃）；窗口外有行而窗口内 0 行 ⇒ order_count **真 0**（那是一个真结论）；退货率**无分母** ⇒ null（不是「0% 退货」）。注入式红证：把 _row 的未知格填成 0 ⇒ 同一断言必红', '🔴 分层未知 ≠ 活跃、也 ≠ 已流失：没有任何订单行的客户落 risk_band=unknown（unknown 分层），消息里**明说**「分层未知 = 不知道」，不得被读成「活跃」或「已流失」；行序 = 流失风险降序（lost → at_risk → active → unknown）再按距上次下单天数倒序（本视图的用途就是「谁最值得维护」，不改序等于把问题丢给模型；口径写在 basis.row_order 里可复算）', '归并主键 = 手机号（既有订单读面不含客户 id —— OrderListResponse 只有 customerName / customerPhone，这是唯一可用联接键）：客户档案里**被打码**的手机号（含 * ）不参与归并（打码号经数字提炼会变成一个看似合法的数字串 ⇒ 不拦就是把「读不出」当「读到了」）；订单行手机号缺失 ⇒ 该行落不可归属并计数（unattributed_orders），受影响的指标字段落 incomplete（**不得静默偏低**）', '🔴 具名披露「未接线」：声明**无真值**的字段（outstanding_amount 欠款 / avg_ticket_amount 客单价 / recent_days 最近活跃天数）逐条点名并说清一律「未知」，附**逐条原因**（既有只读端点里没有这个列：订单列表无已收/未收金额、售后**列表**无金额列、客户档案无「最近活跃」列）—— 消息是模型的唯一输入源，不写这句模型会把 null 讲成「欠款 0 元」', '逐字段三态（视图侧）：每个声明字段输出 status ∈ wired / not_wired / incomplete，不变式 reason is None ⟺ status == wired；声明无真值 ⇒ not_wired + 证据化原因；装配层未接线（快照缺数组 / 该字段不在行里）⇒ not_wired + 点名缺什么；行数被上限截断或有行整行缺键 ⇒ incomplete + 原因（**有界不许变成静默少报**）；口径同源：行里读的每个键都必须在 FIELD_SOURCES 里声明过（AST 机械判据）', '确定性 + 有界 + 租户：同一快照 ⇒ 逐字相同输出（纯函数、不联网；as_of 由调用方传入 —— 视图模块内不出现 date.today / datetime.now，注入式判据扫描源码）；默认上限 50 行、工具侧每面取数上限 200 行（截断由 row_meta.truncated 显式声明）；租户由调用方传入并原样回显（不由行数据反推）'],
+    skip_reason='[backend-contract] 视图语义由 ai-agent 单测验证（backend/ai-agent-service/tests/test_briefing_customer_value.py 的逐字段三态 / 未知≠0 / 口径同源 / 五条注入式红证），工具面由 backend/ai-agent-service/tests/test_customer_manage.py 的 TestCustomerValueAction 验证（action 白名单 / 三条端点字面量三处同源 / 任一面失败 fail-closed / 披露纪律），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['query', 'tool', 'cross-domain', 'disclosure', 'churn'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 的**视图契约**用例（不进 agent-eval 冒烟）：两条 user_inputs 是**同一能力**的两种问法（「哪些老客户最近不下单了」/「谁最值得维护」），不是两次会话。前置 = 三条既有只读端点可用且当前账号同持 customer:view + order:list + after_sales:view（缺任一面 ⇒ 工具 fail-closed 并点名缺哪个码）。该前置由 backend/ai-agent-service/tests/test_customer_manage.py 的 TestCustomerValueAction 逐面构造并断言（三面各失败一次都必须 cross_domain_fetch_failed + 点名权限码）⇒ 前置不成立（端点 / 权限码改名）时单测直接红，不会表现为「agent 不干活」',
+)
+
 # ── DA-001 [NORMAL] 经营概览（源: cases/data.yml）──
 _CASE_DA_001 = EvalCase(
     id='DA-001',
@@ -12287,6 +12306,7 @@ ALL_CASES = (
     _CASE_CU_009,
     _CASE_CU_010,
     _CASE_CU_011,
+    _CASE_CU_012,
     _CASE_DA_001,
     _CASE_DA_002,
     _CASE_DA_003,
