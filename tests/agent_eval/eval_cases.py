@@ -5692,6 +5692,24 @@ _CASE_ON_004 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-058 [NORMAL] 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）（源: cases/order.yml）──
+_CASE_OR_058 = EvalCase(
+    id='OR-058',
+    legacy_id='',
+    title='发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-03 裁定（issue #6239）：发货页选了「物流发货 / 无需物流」，而系统把它丢掉 —— 裁定**接线**（不再裁业务口径）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**落库 + 回吐**：POST 侧 `PUT /api/admin/orders/{id}/logistics` 带 `shippingMethod=none` ⇒ `order_logistics.shipping_method` 落 `none`，且订单详情响应的 `logistics.shippingMethod` 回吐 `none`（改前 `dto/OrderDetailResponse.java` 的内部类 LogisticsInfo 根本没有这个字段 ⇒ 编辑弹窗 initialData 永远复位成 `logistics`）。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/OrderControllerTest.java 的 persistsNoneShippingMethodOnCreate。', '判据 2·**非法值显式拒绝、不静默兜底、不写库**：`shippingMethod` 为**非空**且 ∉ {logistics, none}（如 express）⇒ 422；`verify(never()).save/updateById` 钉「无写入」。⚠️ 缺席 / 空串**不拒绝**（老客户端不发这个键 ⇒ 「没这句话」≠「说了个坏值」，宽容且无害的取值不做破坏性拒绝）。执行点 = 同文件 rejectsInvalidShippingMethodWithoutWriting。', "判据 3·🔴 **服务端权威（本单的意义）**：显式 `shippingMethod=logistics` 且本次请求生效后运单号为空 ⇒ 422 **且无写入** —— 这条校验改前**只活在前端**（`orders/[id]/ship/ShipOrder.tsx` 的 `if (shippingMethod === 'logistics' && !trackingNo.trim())`），直调 API 可绕过。执行点 = 同文件 rejectsLogisticsWithoutTrackingNoAndWritesNothing。", '判据 4·**正对照**：`shippingMethod=logistics` + 有运单号 ⇒ 成功、落库并回吐 `logistics`（证明判据 3 不是「一律拒绝」）。执行点 = 同文件 acceptsLogisticsWithTrackingNo。', '判据 5·🔴 **兼容性钉子（别人收紧规则时会当场红）**：① `editLogisticsDialogPathStillSucceeds` —— 订单详情「编辑物流」弹窗路径（存量行 `shippingMethod=null` 未采集 + 带非空运单号）必须仍成功；② `legacyCallersWithoutShippingMethodKeepWorking` —— 老客户端 / 智能体补单号**不发** `shippingMethod` 键时，白名单与规则**一律不触发**，且「不传 = 不改」（原值 `none` 不被清成 null）。', '判据 6·**类级元守卫（让同类进不来）**：`LogisticsInfo.shippingMethod` 原登记在 backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java 的零生产者台账（BACKEND_ABSENT_DEBT），本单补齐生产者后按台账自带协议**删除**该条目、冻结上限 2→1（只许缩短）⇒ 若将来有人把这条缺口重新塞回台账或改大上限，判据 7（幽灵条目）/ 判据 10/12（上限）当场红。'],
+    skip_reason='[backend-contract] 纯后端写面接线（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 OrderControllerTest 的 UpdateLogistics 嵌套类 + FrontendUnionFieldProducerMetaGuardTest 执行',
+    tags=['order', 'logistics', 'shipping-method', 'admin-api', 'write-surface', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
 _CASE_OR_001 = EvalCase(
     id='OR-001',
@@ -12573,6 +12591,7 @@ ALL_CASES = (
     _CASE_ON_002,
     _CASE_ON_003,
     _CASE_ON_004,
+    _CASE_OR_058,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,

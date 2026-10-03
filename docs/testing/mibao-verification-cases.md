@@ -4293,7 +4293,21 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（57 case）
+## 订单域（58 case）
+
+### OR-058. 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239） 🔵
+```
+你: 用户 2026-10-03 裁定（issue #6239）：发货页选了「物流发货 / 无需物流」，而系统把它丢掉 —— 裁定**接线**（不再裁业务口径）
+期望: direct_reply
+数据: 判据 1·**落库 + 回吐**：POST 侧 `PUT /api/admin/orders/{id}/logistics` 带 `shippingMethod=none` ⇒ `order_logistics.shipping_method` 落 `none`，且订单详情响应的 `logistics.shippingMethod` 回吐 `none`（改前 `dto/OrderDetailResponse.java` 的内部类 LogisticsInfo 根本没有这个字段 ⇒ 编辑弹窗 initialData 永远复位成 `logistics`）。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/OrderControllerTest.java 的 persistsNoneShippingMethodOnCreate。
+数据: 判据 2·**非法值显式拒绝、不静默兜底、不写库**：`shippingMethod` 为**非空**且 ∉ {logistics, none}（如 express）⇒ 422；`verify(never()).save/updateById` 钉「无写入」。⚠️ 缺席 / 空串**不拒绝**（老客户端不发这个键 ⇒ 「没这句话」≠「说了个坏值」，宽容且无害的取值不做破坏性拒绝）。执行点 = 同文件 rejectsInvalidShippingMethodWithoutWriting。
+数据: 判据 3·🔴 **服务端权威（本单的意义）**：显式 `shippingMethod=logistics` 且本次请求生效后运单号为空 ⇒ 422 **且无写入** —— 这条校验改前**只活在前端**（`orders/[id]/ship/ShipOrder.tsx` 的 `if (shippingMethod === 'logistics' && !trackingNo.trim())`），直调 API 可绕过。执行点 = 同文件 rejectsLogisticsWithoutTrackingNoAndWritesNothing。
+数据: 判据 4·**正对照**：`shippingMethod=logistics` + 有运单号 ⇒ 成功、落库并回吐 `logistics`（证明判据 3 不是「一律拒绝」）。执行点 = 同文件 acceptsLogisticsWithTrackingNo。
+数据: 判据 5·🔴 **兼容性钉子（别人收紧规则时会当场红）**：① `editLogisticsDialogPathStillSucceeds` —— 订单详情「编辑物流」弹窗路径（存量行 `shippingMethod=null` 未采集 + 带非空运单号）必须仍成功；② `legacyCallersWithoutShippingMethodKeepWorking` —— 老客户端 / 智能体补单号**不发** `shippingMethod` 键时，白名单与规则**一律不触发**，且「不传 = 不改」（原值 `none` 不被清成 null）。
+数据: 判据 6·**类级元守卫（让同类进不来）**：`LogisticsInfo.shippingMethod` 原登记在 backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java 的零生产者台账（BACKEND_ABSENT_DEBT），本单补齐生产者后按台账自带协议**删除**该条目、冻结上限 2→1（只许缩短）⇒ 若将来有人把这条缺口重新塞回台账或改大上限，判据 7（幽灵条目）/ 判据 10/12（上限）当场红。
+跳过: [backend-contract] 纯后端写面接线（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 OrderControllerTest 的 UpdateLogistics 嵌套类 + FrontendUnionFieldProducerMetaGuardTest 执行
+```
+溯源: 2026-10-03 新增（issue #6239）：发货方式 shippingMethod 从「前端采集后丢弃」改为「落库 + 回吐 + 服务端权威」。存储 = V147 加可空列 shipping_method（存量 NULL = 未采集，不猜不回填）；接收 = 端点继续用 Map<String,String> 显式取值（最少代码，不抽 DTO）；服务端 = 白名单 fail-closed + 「物流发货 ⇒ 运单号必填」；回吐 = OrderDetailResponse.LogisticsInfo 补字段。兼容形态 = 仅在**显式**给非空 shippingMethod 且生效后运单号为空时拒绝（保护老客户端 / 编辑弹窗 / 无需物流三条路径）。 ｜ tags: order, logistics, shipping-method, admin-api, write-surface, fail-closed
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -9402,8 +9416,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：653（活跃 134，跳过 519）
-- tier 分布：smoke 12 / normal 601 / adversarial 32
+- 用例总数：655（活跃 134，跳过 521）
+- tier 分布：smoke 12 / normal 603 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9421,7 +9435,7 @@
 - 杂项域：77
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：57
+- 订单域：58
 - 加工项域：26
 - 加工单域：61
 - 商品域：109
@@ -9526,6 +9540,7 @@
 - MC-075: B 端米宝页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）
 - MC-076: 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed
 - MC-077: worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）
+- OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

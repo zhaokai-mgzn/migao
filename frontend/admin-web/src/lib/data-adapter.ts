@@ -40,19 +40,24 @@ export function buildProductPayload(
  * - shipperName 透传（发货单「经手人」，issue #3768）；留空则不下发，由后端按当前登录用户兜底
  * - logisticsType 透传（express 快递 / logistics 物流专线，issue #4419）；留空则不下发，
  *   由后端按列默认值 express 兜底
- * - shippingMethod 不下发（后端不需要）
+ * - shippingMethod 透传（issue #6239）：logistics 物流发货 / none 无需物流。
+ *   用户在发货页做的这个选择此前**被前端丢掉**（后端从不读取）⇒「无需物流」与
+ *   「物流发货但没填单号」在库里不可区分。缺省兜底成 'logistics' = 与订单详情回填口径一致
+ *   （存量数据未采集时也判成 'logistics'）。
  */
 export function buildLogisticsPayload(data: LogisticsFormData): {
   logisticsCompany: string
   trackingNo: string
   shipperName?: string
   logisticsType?: string
+  shippingMethod: 'logistics' | 'none'
 } {
   return {
     logisticsCompany: data.company,
     trackingNo: data.trackingNo,
     shipperName: data.shipperName?.trim() || undefined,
     logisticsType: data.logisticsType || undefined,
+    shippingMethod: data.shippingMethod || 'logistics',
   }
 }
 

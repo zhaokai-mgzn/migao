@@ -1168,6 +1168,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             logisticsInfo.setLogisticsCompany(logistics.getLogisticsCompany());
             logisticsInfo.setTrackingNo(logistics.getTrackingNo());
             logisticsInfo.setLogisticsType(logistics.getLogisticsType());
+            // 发货方式（issue #6239）：回吐「用户当时选了什么」；null = 未采集（存量行）
+            logisticsInfo.setShippingMethod(logistics.getShippingMethod());
             logisticsInfo.setStatus(logistics.getStatus());
             logisticsInfo.setTrackingInfo(logistics.getTrackingInfo());
             logisticsInfo.setShipperName(logistics.getShipperName());
