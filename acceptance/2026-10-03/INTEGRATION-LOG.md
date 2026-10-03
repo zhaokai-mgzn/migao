@@ -875,3 +875,14 @@ PUT /api/admin/orders/{id}/logistics 收 Map<String,String>，后端只读 logis
 4. 合并后**必须**跑 `case_trust_gate --base origin/main` + 该 block 相关判据（本条正是被 `traces.ci` 抓住的 —— **判据在这里就是兜底网**）。
 
 **主线进度**：`origin/main` 已到 `ea65540f6`（本轮已并入 `#6230` / `#6240` / `#6246` 等）。
+
+### 19.33 `#6235`（worktree 登记漂移）已合并 + 兜底关单（本轮第 3 次同因）
+
+**合并**：PR `#6241` → main **`14eb33212`**（18:55 +08）。main 侧内容级自证：`scripts/dev-worktree.sh` 命中 **21 处**新符号（`wt_registry_assert_for_entry` / `doctor` 分派 / `--path-format=absolute`）· `.github/cases/misc.yml` 含 **MC-077** · 新测试文件首行 `# case_ids: MC-077`。
+**兜底关单**：`Closes #6235` 已在 body 首行且 `Check Closes` 绿，但 close-on-merge 是**异步 best-effort** ⇒ issue 停在 open ⇒ 已按铁律 9 复算后关单（本轮第 3 次同因：`#6226` / `#6221` / `#6235`；`#6220` 由其包自行兜底）。
+**修前红→修后绿（真 fixture）**：`git worktree add` → `fatal: … is a missing but locked worktree` rc=128；`git worktree prune -v` → **无输出 rc=0（静默、什么都没删）**；`remove --force` → `fatal: cannot remove a locked working tree` rc=128 ⇒ 修后 `doctor` rc=1 具名判红 → 自愈 `✅ 工作区就绪` rc=0。
+**安全护栏**：落点白名单 `= <common git dir>/worktrees/<name>`；注入 **8 类落点 ⇒ 5 拒 1 允**，逐条具名 + 打印原因；混合调用整体 rc=1（fail-closed）；软链与其仓外目标逐字节完好；`doctor` 默认只读、修复需显式 `--heal`。
+**包如实登记的失误**：消解 rebase 冲突时只取本包 hunk ⇒ 丢掉 main 侧 `MC-076` 的 `ci:`/`verifies:` 行，被 CI 抓出后逐字补回（→ 纪律已落 `§19.32`）。
+
+### 19.34 一条**流程观察**（不开单，登记备查）：close-on-merge 的兜底频率
+本轮 6 个已合并修复 PR 中，**4 个**的 issue 需要人工/兜底关闭（`#6220` 由包自兜、`#6226`/`#6221`/`#6235` 由主会话兜）—— 本仓已把该行为写进铁律 4（异步 best-effort + 定时对账，且对账被节流 2~5.5h），**属已知形态**，故**不开单**；但值得记一条口径：**"PR 合并"≠"issue 关闭"，收口清单里必须显式包含"兜底关单"这一步**（否则会留下悬挂 issue）。
