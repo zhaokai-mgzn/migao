@@ -120,4 +120,51 @@ class StockQuantityTest {
             assertThat(StockQuantity.orZero(null)).isEqualTo(BigDecimal.ZERO);
         }
     }
+
+    @Nested
+    @DisplayName("PR-048 库存**绝对值**的非负准入（issue #6199：只校精度不校符号 = 漏了一处）")
+    class RequireNonNegativeOrNull {
+
+        @Test
+        @DisplayName("null = 「本字段未传」⇒ 原样返回 null（不得把「这一项不改」变成 0）")
+        void nullStaysNull() {
+            assertThat(StockQuantity.requireNonNegativeOrNull(null, "库存 stock")).isNull();
+        }
+
+        @Test
+        @DisplayName("0 / 60.5 / 2.70 合法且**原值返回**（0 是合法库存 —— 实物可以为 0 米）")
+        void nonNegativeValuesPassUnchanged() {
+            assertThat(StockQuantity.requireNonNegativeOrNull(BigDecimal.ZERO, "库存 stock"))
+                    .isEqualTo(BigDecimal.ZERO);
+            assertThat(StockQuantity.requireNonNegativeOrNull(new BigDecimal("60.5"), "库存 stock"))
+                    .isEqualByComparingTo("60.5");
+            assertThat(StockQuantity.requireNonNegativeOrNull(new BigDecimal("2.70"), "库存 stock"))
+                    .isEqualByComparingTo("2.7");
+        }
+
+        @Test
+        @DisplayName("负数一律拒绝（-0.1 / -5 走符号维度；-2.755 先被精度维度拦下）")
+        void negativeValuesRejected() {
+            for (String raw : new String[]{"-0.1", "-5"}) {
+                assertThatThrownBy(() -> StockQuantity.requireNonNegativeOrNull(new BigDecimal(raw), "库存 stock"))
+                        .as("绝对值 %s 必须被拒（实物米数没有负数）", raw)
+                        .isInstanceOf(BusinessException.class)
+                        .hasMessageContaining("不能为负");
+            }
+            // -2.755 同时踩两个维度：判据顺序 = **先精度、后符号**（任一维度都 fail-closed 拒绝；
+            // 文案如实说清是哪一维 —— 「超精度」比「不能为负」更靠前，因为它先被判出来）
+            assertThatThrownBy(() -> StockQuantity.requireNonNegativeOrNull(new BigDecimal("-2.755"), "库存 stock"))
+                    .as("超精度的负值同样被拒（由精度维度拦下）")
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("1 位小数");
+        }
+
+        @Test
+        @DisplayName("非负收口**不吞**精度口径（2.755 仍按「1 位小数」拒 —— 两个维度都还在）")
+        void precisionStillEnforced() {
+            assertThatThrownBy(() -> StockQuantity.requireNonNegativeOrNull(new BigDecimal("2.755"), "库存 stock"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("1 位小数");
+        }
+    }
 }
