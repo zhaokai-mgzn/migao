@@ -5311,6 +5311,25 @@ _CASE_MC_073 = EvalCase(
     precondition='本用例是 [backend-contract] 的**研发机具契约**（不进 agent-eval 冒烟）：两条 `user_inputs` 是对**同一个台账机制**的两条断言（要有读数 / 槽满要出声），**不是两次会话**。前置 = 机器级锁脚本 + 台账接口在位（`scripts/machine-heavy-lock.sh` 的 `acquire`/`release`/`stats` 与 `MIGAO_HEAVY_LEDGER` 注入口），由 `tests/unit_ci_workflows/test_machine_heavy_lock_ledger.py` 在 `tmp_path` 上直接构造锁面/台账面并断言 —— 前置不成立（脚本/函数/字段被摘掉）时那条 pytest **当场红**，不会表现为「agent 不干活」。',
 )
 
+# ── MC-074 [NORMAL] 凭据字面量不得进仓：明文 service token 一律走环境注入（不设 ⇒ 未就绪 / 不带该头），由仓内守卫按**现取**扫真源码判红（gitleaks 只扫新增行 ⇒ 存量明文它看不见）（源: cases/misc.yml）──
+_CASE_MC_074 = EvalCase(
+    id='MC-074',
+    legacy_id='',
+    title='凭据字面量不得进仓：明文 service token 一律走环境注入（不设 ⇒ 未就绪 / 不带该头），由仓内守卫按**现取**扫真源码判红（gitleaks 只扫新增行 ⇒ 存量明文它看不见）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['测试代码里再写明文 service token 必须**能红**（gitleaks 只扫新增行 ⇒ 存量明文永不报警）', '不设环境变量时必须按**未就绪（skip）**处理，不许变成失败'],
+    expectations=['direct_reply'],
+    data_checks=["**病（issue #6172 现取读数）**：`grep -rn '<64位十六进制>' backend/ai-agent-service/tests/` 命中 2 处明文（`tests/contracts/conftest.py` 的 `SERVICE_TOKEN = …` 与 `tests/test_e2e_mibao_scenarios.py` 的 `X-Service-Token` 头）。`gitleaks` 只扫 **diff 新增行** ⇒ 存量明文**永不报警**（「能红的地方看不见它」）。该 token 是内部服务凭据（`:8001` 内部面）：实测它**足以**指定任意租户读数据 ⇒ 拿到它 = 能跨租户读（写面另被 403 拦）。", '**修法（形态逐字照抄 issue #6170，不写第二套）**：`SERVICE_TOKEN = os.environ.get("MIGAO_SERVICE_TOKEN", "")` + `headers = {...} if SERVICE_TOKEN else {}`；不设 ⇒ **不带该头** / 按**未就绪**处理（skip），**不许**变成失败。两处落地：contracts 的 `_fetch`（无凭据 ⇒ 直接走缓存快照，CI 本来就这条路）+ e2e 场景的 `_is_service_available`（无凭据 ⇒ 未就绪）。', '**判据（本单重点）** = `.github/plaintext_credential_guard.py`（**现取**扫真源码，不钉手抄清单）；三态 `0` 干净 / `1` 命中（逐条具名 `文件:行号` + 规则 + **该改用什么**）/ `3` 扫描面不存在（无法判定，不得当 0 读）。两条规则：**R1** 凭据命名的键 = 字面量取值且取值够像凭据；**R2** `X-Service-Token` 头的字面量取值。消费点 = `pr-check.yml` 的 `ci workflow helper unit tests` job 新步 + `tests/unit_ci_workflows/test_plaintext_credential_guard.py`（L0，随该 job 套件跑）。', '**有意不做（照实登记）**：不判「随机字符串但名字不叫 token/secret」（会误伤哈希 / 订单号 / 迁移指纹 —— 实测整仓那类噪声上千条）；不判「这个值**是不是**那枚 dev token」（本仓**不许**再出现该值 ⇒ 判的是**形态**，不是**具体值**）；曾试过「头引用凭据命名的常量」那一条，实测在真仓命中 **17 处全是有意的注入形态**（参数化夹具 / `settings.SERVICE_TOKEN` / `os.environ`）⇒ **有意不做**（判红会逼人把正确代码改坏）。', '**豁免通道**：行内 `# noqa: plaintext-credential :: <原因>`（与被豁免对象同生共死，不留会漂移的路径台账）；真凭据**不许**豁免；当前仓内**零**条（判据正向核）。', '**红证（注入式，实跑）**：在 `backend/ai-agent-service/tests/contracts/conftest.py` 末行注入一行 `INJECTED_SERVICE_TOKEN = "<64位十六进制>"` ⇒ ① `python3 .github/plaintext_credential_guard.py` **exit 1**，逐字报 `backend/ai-agent-service/tests/contracts/conftest.py:<行号>: [R1-credential-literal] SERVICE_TOKEN`；② `pytest tests/unit_ci_workflows/test_plaintext_credential_guard.py -k real_repo_is_clean` **1 failed**（报出同一行）；撤掉注入 ⇒ **exit 0 / 31 passed**。注入物**不落进本仓**（跑完即撤），复算 = 同两条命令。', '**轮换不在本单自动做**（改云 dev `.env` + 重启服务属外部动作）：PR body 写清「轮换建议 + 谁来做 + 不轮换的风险接受」，等人工定（用户裁定 2026-10-03）。'],
+    skip_reason='[backend-contract] 仓内静态守卫（零 LLM、零网络、只读真源码）由 tests/unit_ci_workflows/test_plaintext_credential_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['security', 'credential', 'guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 的**仓内静态守卫契约**（不进 agent-eval 冒烟）：两条 `user_inputs` 是对**同一个守卫**的两条断言（要能红 / 不设要 skip），**不是两次会话**。前置 = 守卫脚本 + 判据文件在位（`.github/plaintext_credential_guard.py` 与 `tests/unit_ci_workflows/test_plaintext_credential_guard.py`）—— 前置不成立（脚本被删 / 扫描面塌缩）时判据**当场红**，不会表现为「agent 不干活」。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -12225,6 +12244,7 @@ ALL_CASES = (
     _CASE_MC_071,
     _CASE_MC_072,
     _CASE_MC_073,
+    _CASE_MC_074,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
