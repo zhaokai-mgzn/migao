@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Pattern;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -237,5 +238,180 @@ class ShipmentInvariantGuardTest {
         for (List<String> methods : reading.values()) {
             assertThat(methods).as("两个承载文件都必须有「置为 shipped」的写点（否则扫描面选错了）").isNotEmpty();
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // C9~C12 商家发货路的**写序与事务边界**（issue #6181）
+    //   病根：三步写序 ①零写前置 ②流转+物流（已提交）③建单 —— 而 ③ **又自判了一次当前状态**，
+    //   读到的正是 ② 刚写下的 shipped ⇒ 必然 422，而状态与物流已经写下去（部分写入 + 假陈述）。
+    //   本组把「写序」与「单一事务边界」钉成结构判据：改顺序 / 摘事务 / 重新自判状态 ⇒ 当场红。
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private static final Path PRODUCTION_CONTROLLER = REPO_ROOT.resolve(
+            "backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java");
+
+    /** 商家发货路的三步写序（真源里的**结构化锚点**，按出现次序核对）。 */
+    private static final List<String> SHIP_WRITE_ORDER = List.of(
+            "assertShippableOrder(", "shipWithLogistics(", "recordMerchantShipment(");
+
+    /**
+     * 事务注解锚（结构判定，不做语义猜测）：同时认**全限定**与**简单名**两种写法
+     * （{@code @org.springframework.transaction.annotation.Transactional} / 导入了注解后的
+     * {@code @Transactional}）—— 两者在语义上等价，判据不该因为写法不同而假红。
+     */
+    private static final Pattern TRANSACTIONAL_ANCHOR =
+            Pattern.compile("@(?:org\\.springframework\\.transaction\\.annotation\\.)?Transactional\\s*\\(");
+    private static final String ROLLBACK_FOR_ANCHOR = "rollbackFor = Exception.class";
+
+    /**
+     * 取 {@code ProductionController} 里 {@code shipAtomic} 的方法体（三步写序的承载体）。
+     *
+     * <p>只认「方法签名 → 下一个方法签名」之间的文本；注释里的散文不在方法体里。</p>
+     */
+    static String shipAtomicBody(String controllerSource) {
+        Matcher matcher = Pattern.compile(
+                "private\\s+Map<String,\\s*Object>\\s+shipAtomic\\s*\\([^)]*\\)\\s*\\{", Pattern.DOTALL)
+                .matcher(controllerSource);
+        if (!matcher.find()) {
+            return "";
+        }
+        int depth = 1;
+        int index = matcher.end();
+        while (index < controllerSource.length() && depth > 0) {
+            char c = controllerSource.charAt(index);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+            }
+            index++;
+        }
+        return controllerSource.substring(matcher.end(), Math.max(matcher.end(), index - 1));
+    }
+
+    /** 三步写序齐全且**按序**出现（摘掉任一步 ⇒ false；顺序颠倒 ⇒ false）。 */
+    static boolean writeOrderIsIntact(String controllerSource) {
+        String body = shipAtomicBody(controllerSource);
+        int cursor = -1;
+        for (String anchor : SHIP_WRITE_ORDER) {
+            int at = body.indexOf(anchor, cursor + 1);
+            if (at < 0) {
+                return false;
+            }
+            cursor = at;
+        }
+        return true;
+    }
+
+    /** 事务边界形态：注解 + {@code rollbackFor = Exception.class} 同时逐字在场。 */
+    static boolean transactionBoundaryIsDeclared(String source, String methodSignature) {
+        int at = source.indexOf(methodSignature);
+        if (at < 0) {
+            return false;
+        }
+        // 方法签名前的那一小段（注解区）里必须同时有事务注解与 rollbackFor
+        String header = source.substring(Math.max(0, at - 400), at);
+        return TRANSACTIONAL_ANCHOR.matcher(header).find() && header.contains(ROLLBACK_FOR_ANCHOR);
+    }
+
+    @Test
+    @DisplayName("C9 🔴 三步写序真源核对：①零写前置 ⇒ ②流转+物流 ⇒ ③建单（顺序颠倒/摘步 ⇒ 红）")
+    void merchantShipWriteOrderIsIntact() throws IOException {
+        String source = Files.readString(PRODUCTION_CONTROLLER);
+        assertThat(shipAtomicBody(source))
+                .as("找不到 shipAtomic 方法体 ⇒ 扫描锚失效或写序载体被搬走（先改判据再改码）")
+                .isNotBlank();
+        assertThat(writeOrderIsIntact(source))
+                .as("商家发货三步写序必须按 ①%s ②%s ③%s 出现 —— 顺序是契约的一部分（issue #6181）",
+                        SHIP_WRITE_ORDER.get(0), SHIP_WRITE_ORDER.get(1), SHIP_WRITE_ORDER.get(2))
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("C10 🔴 事务边界真源核对：/ship 必须 @Transactional(rollbackFor=Exception.class)（摘掉 ⇒ 红）")
+    void merchantShipDeclaresSingleTransactionBoundary() throws IOException {
+        String source = Files.readString(PRODUCTION_CONTROLLER);
+        assertThat(transactionBoundaryIsDeclared(source, "public ApiResponse<Map<String, Object>> ship("))
+                .as("商家发货必须由**单一事务**承载（状态流转 + 物流 + 发货单要么全成、要么全不成）"
+                        + " —— 摘掉 @Transactional 或 rollbackFor ⇒ 退回 #6181 的部分写入形态")
+                .isTrue();
+        assertThat(transactionBoundaryIsDeclared(source, "private Map<String, Object> shipAtomic("))
+                .as("shipAtomic 与 ship 必须显式声明 rollbackFor（异常类型决定回不回滚）")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("C11 🔴 建单写面不得自判状态：@Transactional + 五参签名 + 不得含「当前状态」谓词（复发 ⇒ 红）")
+    void merchantRecordMustNotRejudgeCurrentStatus() throws IOException {
+        String source = Files.readString(
+                REPO_ROOT.resolve("backend/admin-api/src/main/java/com/migao/admin/service/OrderShipmentService.java"));
+        assertThat(transactionBoundaryIsDeclared(source, "public OrderShipment recordMerchantShipment("))
+                .as("建单写面必须带 @Transactional(rollbackFor = Exception.class)").isTrue();
+        assertThat(source)
+                .as("🔴 #6181 的病灶 = 建单写面自己再用「当前状态」判一次（谓词区分不了「我们刚流转的」"
+                        + "与「本来就已发货」）⇒ 必须改成由调用方显式传入 transitioned")
+                .contains("boolean transitioned");
+        // 🔴 复发判据：建单写面**只**允许按调用方显式传入的 transitioned 决定，不得再读「当前状态」
+        //    （读到的状态已被第②步改成 shipped ⇒ 谓词区分不了「我们刚流转的」与「本来就已发货」）。
+        String body = methodBody(source, "public OrderShipment recordMerchantShipment(");
+        assertThat(body)
+                .as("建单写面方法体里不得出现 SHIPPABLE_FROM（= 用「当前状态」表达「我们刚流转过」）⇒ 复发即红")
+                .doesNotContain("SHIPPABLE_FROM")
+                .doesNotContain("已不在可发货状态");
+    }
+
+    @Test
+    @DisplayName("C12 判别力自证：内存变异（摘注解 / 颠倒写序 / 加回自判）⇒ 判据各自当场红")
+    void redProofTransactionBoundaryAndOrderAreEnforced() throws IOException {
+        String source = Files.readString(PRODUCTION_CONTROLLER);
+
+        // ① 摘掉事务注解 ⇒ C10 红
+        String withoutTx = source.replaceFirst(
+                "@(?:org\\.springframework\\.transaction\\.annotation\\.)?Transactional\\s*\\(rollbackFor = Exception\\.class\\)\\s*\\n\\s*",
+                "");
+        assertThat(transactionBoundaryIsDeclared(withoutTx, "public ApiResponse<Map<String, Object>> ship("))
+                .as("摘掉 @Transactional ⇒ C10 必须判红").isFalse();
+
+        // ② 去掉 rollbackFor ⇒ C10 红
+        String withoutRollbackFor = source.replace(ROLLBACK_FOR_ANCHOR, "noRollbackFor = Exception.class");
+        assertThat(transactionBoundaryIsDeclared(withoutRollbackFor,
+                "public ApiResponse<Map<String, Object>> ship("))
+                .as("去掉 rollbackFor ⇒ C10 必须判红").isFalse();
+
+        // ③ 把第③步（建单）挪到第②步之前 ⇒ C9 红（写序契约被破坏）
+        String body = shipAtomicBody(source);
+        String reordered = source.replace(body, body
+                .replace("orderService.shipWithLogistics(", "ZZZ_PLACEHOLDER("));
+        assertThat(writeOrderIsIntact(reordered))
+                .as("把②摘掉/改名 ⇒ C9 必须判红（写序不再齐全）").isFalse();
+
+        // 对照读数：真源上三条判据都是绿的（不是「恒红」的断言）
+        assertThat(transactionBoundaryIsDeclared(source, "public ApiResponse<Map<String, Object>> ship("))
+                .as("真源必须声明事务边界").isTrue();
+        assertThat(writeOrderIsIntact(source)).as("真源写序必须齐全").isTrue();
+    }
+
+    /** 取一个方法体（按大括号配平）。 */
+    static String methodBody(String source, String signature) {
+        int at = source.indexOf(signature);
+        if (at < 0) {
+            return "";
+        }
+        int open = source.indexOf('{', at);
+        if (open < 0) {
+            return "";
+        }
+        int depth = 1;
+        int index = open + 1;
+        while (index < source.length() && depth > 0) {
+            char c = source.charAt(index);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+            }
+            index++;
+        }
+        return source.substring(open + 1, Math.max(open + 1, index - 1));
     }
 }
