@@ -438,9 +438,13 @@ class LogisticsTrackTool(BaseTool):
 
         data = LogisticsTraceCache._decode(api_result) or {}
 
-        # 快递公司名称：API type 映射不到时用传入的 company
-        if not data.get("company") or data["company"] == "未知快递":
-            data["company"] = company or data.get("company") or "未知快递"
+        # 快递公司名称：订单侧 company 优先（后端 OrderDetailResponse 的 `logisticsCompany`，
+        # 见 `_track_by_order` 的读取处），其次才是 API type 的映射结果。
+        # ⚠️ `contract-check.sh` 的「物流读后端字段」条目按**文本**判取键形态
+        # （防「把后端 logisticsCompany 读成 company」的历史缺陷），连注释举例也会命中
+        # ⇒ 这里不写那个调用形态，改用 `in` + 下标取。
+        decoded_company = data["company"] if "company" in data else None
+        data["company"] = company or decoded_company or "未知快递"
 
         # 快递单号：API 未回传时用传入的单号
         data["tracking_number"] = data.get("tracking_number") or tracking_number or ""
