@@ -2346,7 +2346,11 @@ function ProcessConfigContent() {
     setVariantBusy(true)
     setOpLevelReasons(null)
     try {
-      await productionApi.updateOperation(op.id, { status: 'inactive' })
+      // 🔴 issue #6103：工序域的停用值是 **`disabled`**（后端 `ProductionOperationCommandService.STATUSES`
+      // 只收 `active|disabled`）。这里曾逐字发 `'inactive'` —— 那是「**加工项**」域
+      // `ProcessingItemStatus` 的词表，**抄错了域** ⇒ 后端 422「status 仅支持 active/disabled」
+      // ⇒ 按钮 100% 失效（库里的 status 一直是 active）。
+      await productionApi.updateOperation(op.id, { status: 'disabled' })
       toast.success(`已停用工序「${op.name}」`)
       await load()
     } catch (e) {

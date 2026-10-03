@@ -1640,7 +1640,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     )
     // 停用：入口在抽屉 footer（issue #4947：逐行那一对与 footer 逐字重复 ⇒ 退场，写面只剩这一处）
     await userEvent.click(screen.getByTestId('operations-manage-disable'))
-    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { status: 'inactive' }))
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { status: 'disabled' }))
 
     // ③ 这一屏**没有任何**写请求带 `scope` 键（退场的是**用户动作**，不是请求契约）
     expect(mockUpdateOperation.mock.calls.length).toBeGreaterThan(0)
@@ -1847,7 +1847,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     // 停用走既有写面（`PUT /operations/{id}` 的 `status`）—— issue #4947：入口已**统一到抽屉 footer**
     // （逐行那一对与 footer 重复 ⇒ 去重退场；判据见 #4947-①）
     await userEvent.click(screen.getByTestId('operations-manage-disable'))
-    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { status: 'inactive' }))
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { status: 'disabled' }))
   })
 
 
@@ -1874,7 +1874,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
     // ③ 停用 / ④ 删除：入口已**统一到抽屉 footer**（issue #4947：逐行那一对与 footer 逐字重复 ⇒ 退场）
     await userEvent.click(screen.getByTestId('operations-manage-disable'))
-    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith(id, { status: 'inactive' }))
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith(id, { status: 'disabled' }))
 
     // ④ 删除：二次确认后才发 `DELETE /operations/{id}`（逐条护栏理由的就地展示见 ⑰-⑬）
     await userEvent.click(screen.getByTestId('operations-manage-delete'))
@@ -1884,6 +1884,33 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await waitFor(() =>
       expect(mockDeleteOperation).toHaveBeenCalledWith(id, { detachPositions: true }),
     )
+  })
+
+  it('#6103 抽屉「停用」发出的 payload.status 落在**后端受理词表**内（断言 payload，不断言文案）', async () => {
+    // 病根（issue #6103）：这一行曾逐字发 `'inactive'` —— 那是**加工项**域
+    // `ProcessingItemStatus` 的词表，**抄错了域**；工序域只收 `active|disabled`
+    // ⇒ 后端 422「status 仅支持 active/disabled」⇒ 按钮 100% 失效（库里 status 一直是 active）。
+    // 本判据的**观测面 = 真实发出的 payload**（不是 toast、不是红字文案 —— 文案绿了而请求仍被拒，
+    // 正是这个缺陷原来的形态）。
+    //
+    // ⚠️ 词表在这里**故意重新写一遍**（不从源码 import）：与后端 `STATUSES` 的一致性由
+    // `tests/unit_ci_workflows/test_operation_status_vocab_parity.py` 机械守（后端加/删一个值而前端没跟 ⇒ 当场红）。
+    // 判据若从被测对象自己取词表，就会退化成恒真。
+    const BACKEND_ACCEPTED = ['active', 'disabled']
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
+    await openManage('车被')
+
+    await userEvent.click(screen.getByTestId('operations-manage-disable'))
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalled())
+
+    const call = mockUpdateOperation.mock.calls.at(-1)!
+    expect(call[0]).toBe('op-车被')
+    expect(Object.keys(call[1] as object)).toEqual(['status'])
+    const sent = (call[1] as { status?: unknown }).status
+    expect(sent).toBe('disabled')
+    expect(BACKEND_ACCEPTED).toContain(sent)
+    // 反向：`inactive`（加工项域的词表）**不得**再从这里发出
+    expect(sent).not.toBe('inactive')
   })
 
   it('㉖-⑤ 抽屉标题/说明改成商家语言：以**逻辑工序名**为主标识，不出现「变体 / 工人扫码时看到的工序」', async () => {
@@ -2044,7 +2071,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await openManage('测试22')
 
     await userEvent.click(screen.getByTestId('operations-manage-disable'))
-    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-test22', { status: 'inactive' }))
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-test22', { status: 'disabled' }))
   })
 
   it('㉙-⑦ 抽屉层写面被拒：理由**逐条**就地展示（不吞成一句「操作失败」）', async () => {
@@ -2097,7 +2124,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('variant-row-op-b')).toBeInTheDocument()
 
     await userEvent.click(screen.getByTestId('operations-manage-disable'))
-    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-b', { status: 'inactive' }))
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-b', { status: 'disabled' }))
     // 反向：**不得**动按逻辑名取的首行（改前那条「两把尺」：footer 说 A、读面指 B）
     expect(mockUpdateOperation).not.toHaveBeenCalledWith('op-a', expect.anything())
 
@@ -4100,7 +4127,7 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(deleteBtn).not.toBeDisabled()
     await userEvent.click(disableBtn)
     await waitFor(() =>
-      expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-04', { status: 'inactive' }),
+      expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-04', { status: 'disabled' }),
     )
     // 删除：二次确认弹框里点确认 ⇒ **真的**走删除。
     // 🔴 #4913 合并后本行**有价目行**（改前该夹具把它摘空了）⇒ 走的是 #4692 的
