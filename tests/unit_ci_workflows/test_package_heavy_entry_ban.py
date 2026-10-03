@@ -42,20 +42,28 @@ r"""**子包 worktree 不许直跑全量**的角色判定判据（issue #6084）
 ## 边界（照实登记，§19.1）
 
 - 角色判定读的是 **`git rev-parse` 的现取输出 + 标记文件**：`git` 不可用 / 工作树外 ⇒ 判 `unknown`
-  ⇒ **拒绝**（fail-closed）；这一形态的**行为面**（真在非 git 目录里跑脚本）**未固化**（登记在
-  PR body 的「未固化 / 边界」）；
+  ⇒ **拒绝**（fail-closed）。🔴 这一形态的**行为面**原本**未固化**，本包把它固化了，并**因此修掉
+  一个真实缺陷**（判据 19~20）：
+  ① `package_heavy_role` 原先**两次独立**调用 `git rev-parse` ⇒ 两次失败都返回空串 ⇒
+     `[ "" = "" ]` 判真 ⇒ 非 git 目录被算成 `primary`（**放行**）；
+  ② 角色守卫原先排在**「禁空跑」判定之后** ⇒ 非 git 目录里 `origin/main` 也不存在 ⇒ 变更集为空
+     ⇒ 先 `exit 3`（「无变更」）早退 ⇒ **永远走不到拒绝分支**（文档承诺的 `exit 5` 是空头支票）。
+  实测：修前 `cwd=/tmp` 跑 `quick` 得 **rc=3**；修后 **rc=5** + 三点报文 + 台账记一条
+  `role=unknown`。修法 = 取值口 `_git_rev_parse`（退出码 / 空输出收进同一条判据）
+  + 守卫**前移**到「禁空跑」之前（顺序即语义：**能不能跑**优先于**跑什么**）；
 - 判据**不保证**有人不用 `verify-all.sh`（直连 `pytest tests/unit_ci_workflows`）—— 那一路由
   `tests/unit_ci_workflows/conftest.py` 的套件自带准入 + `test_suite_self_lock.py` 承担；
 - 判据**不判**「批次粒度优化该不该重启」（那是 `docs/wiki/Dev-Mode-Balance.md` §10 的裁定；
   本台账只提供它的读数）；
 - 标记文件是**可删的**（删了就被当成子包 worktree 拒绝）—— 这是**有意**的 fail-closed 方向；
+- **夹具已抽成共享 harness**：`tests/unit_ci_workflows/heavy_entry_sandbox.py`（本文件不再自带
+  那份自足临时仓夹具；血泪教训逐条在它的模块 docstring 里）。**新写同类判据请 import 它，
+  不要再抄一份** —— 抄一份 = 第二份判定，真实现改了副本不改，判据会静默假绿；
 - 本判据**不改**任何门禁的通过条件、不新增豁免。
 """
 
 from __future__ import annotations
 
-import json
-import os
 import pathlib
 import re
 import shutil
@@ -64,267 +72,48 @@ import uuid
 
 import pytest
 
-REPO = pathlib.Path(__file__).resolve().parents[2]
-VERIFY = REPO / "verify-all.sh"
-BATCH = REPO / "scripts" / "batch-gate.sh"
-LEDGER_SH = REPO / "scripts" / "package-heavy-entry-ledger.sh"
-MARKER = "migao-package-heavy-entry-allow"
 
-#: `PATH` **审计桩**：记下每个被查过的可执行名。用来证明「拒绝发生在任何重活之前」
-#: （没有任何 `pytest*` 被查过 ⇒ 没有起过测试进程）。
-#: ⚠️ 转发用**解析出来的绝对路径**（`__REAL_MAP__`，生成时按 `AUDIT_TOOLS` 现取），
-#:    而不是「把 PATH 还原后再 `exec <name>`」—— 后者会让**子进程**继承被改过的 `PATH`
-#:    ⇒ 树里之后每一次工具查找都绕过审计桩（审计**静默漏记**，判据变成空断言）；
-#:    也不是「把桩目录再前置一次」—— 那会让 `PATH` 指数增长（实测第 5 层就
-#:    `env: bash: Argument list too long`、退出码 126，而审计日志**空**）。
-AUDIT_SHIM = """#!/bin/bash
-name="${0##*/}"
-{ printf '%s\\n' "$name" >> "$MIGAO_AUDIT_LOG"; } 2>/dev/null || true
-case "$name" in
-__REAL_MAP__
-  *) echo "audit shim: 没有对应的真实命令：$name" >&2; exit 127 ;;
-esac
-"""
+# ── 共享沙箱夹具（issue #6085 的后续包）──────────────────────────────────────
+# 本文件**不再自带**那份自足临时仓夹具：它已抽成可 import 的共享 harness
+# `tests/unit_ci_workflows/heavy_entry_sandbox.py`（`test_batch_gate.py` 当年抄了第二份）。
+# 为什么必须共享（血泪教训逐条写在 harness 的模块 docstring 里）：**仓根那份 `verify-all.sh`
+# 必须是桩** —— 放真脚本会让每次 `batch-gate.sh` 都去跑一次真 gate ⇒ 互等机器级重活锁 ⇒
+# 180s 超时（`#6085` 首轮 CI 实测；修后同一条腿 0:35）。判据一多，这个坑就会被抄进第二份副本。
+from unit_ci_workflows import heavy_entry_sandbox as hs   # noqa: E402
 
-#: 审计桩需要转发给**真命令**的那些（脚本跑到守卫之前会用到）。
-AUDIT_TOOLS = ("git", "bash", "sh", "env", "date", "sed", "grep", "awk", "printf", "sort",
-               "tr", "cut", "head", "tail", "cat", "rm", "mkdir", "mktemp", "chmod", "ls",
-               "dirname", "basename", "uname", "ps", "kill", "python3", "wc")
+REPO = hs.REPO
+VERIFY = hs.VERIFY
+BATCH = hs.BATCH
+LEDGER_SH = str(hs.LEDGER_SH)
+MARKER = hs.MARKER
 
-#: 会拉起重活的运行器名（审计日志里出现任何一个 ⇒ 「拒绝先于重活」当场红）。
-#: ⚠️ **不含裸 `node`**：`node` 不是本脚本任何一档的入口（真正会拉起重活的是 `node_modules/.bin/*`
-#: 下的 `vitest` / `tsc` 与 `npx`）——把裸 `node` 算进来只会让判定吃「脚本内部任何 node 调用」
-#: 这种噪声（假红方向：判据自己把自己喂红）。
-TEST_RUNNER_PREFIXES = ("pytest", "py.test", "vitest", "jest", "playwright", "mvn", "mvnw",
-                        "npm", "npx")
-
-
-# ── 自足临时仓库（与 test_batch_gate.py 同形态）────────────────────────────────
-
-def _run(cmd, cwd=None, env=None, timeout=180):
-    return subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True,
-                          env=env, timeout=timeout)
+_run = hs.run            # 带**显式 timeout** 的子进程调用（本机没有 `timeout(1)`）
 
 
 def _env(**extra) -> dict:
-    """干净的子进程环境：清掉会干扰判定的继承变量，再叠加 `extra`。"""
-    env = {k: v for k, v in os.environ.items()
-           if k not in ("CI", "MIGAO_HEAVY_LOCK_HELD", "MIGAO_HEAVY_LOCK_FILE",
-                        "MIGAO_HEAVY_ROOTS", "MIGAO_HEAVY_WAIT", "MIGAO_ROLE_LEDGER_ID",
-                        "MIGAO_PACKAGE_HEAVY_LEDGER", "MIGAO_AUDIT_LOG",
-                        "GIT_DIR", "GIT_WORK_TREE")}
-    env.update({"GIT_AUTHOR_NAME": "guard@test.invalid", "GIT_AUTHOR_EMAIL": "guard@test.invalid",
-                "GIT_COMMITTER_NAME": "guard@test.invalid",
-                "GIT_COMMITTER_EMAIL": "guard@test.invalid"})
-    env.update({k: str(v) for k, v in extra.items()})
-    return env
+    """干净子进程环境，锁 / 台账一律落在 `tmp_path`（`hs.clean_env` 的**结构保证**）。
 
-
-def _commit(root: pathlib.Path, msg: str) -> None:
-    _run(["git", "add", "-A"], root, _env())
-    _run(["git", "commit", "-q", "-m", msg], root, _env())
-
-
-def _build_sandbox(root: pathlib.Path, verify_text: str | None = None) -> pathlib.Path:
-    """造一个自足临时仓库：真 `verify-all.sh`（可注入变异体）+ 真 `scripts/` + 桩三把工具。
-
-    ⚠️ 与 `test_batch_gate.py` 同一取舍：**桩**掉的是「本判据不判的那一面」（UI 回退 / 一个批次
-    全量），留下的是**真** `verify-all.sh` 的角色守卫与真 `scripts/package-heavy-entry-ledger.sh`
-    ⇒ 判的是「接线在不在 + 拒绝发生在重活之前」，不是「gate 档的通过条件」。
+    `tmp_path` 取本判据自己那本的目录（显式传了 `MIGAO_PACKAGE_HEAVY_LEDGER` 时按它的父目录，
+    否则落 `tests/unit_ci_workflows/`）—— 两者都**不在 `$HOME` 下**，因此**不可能**是真锁 /
+    真台账（真锁 = `$HOME/.migao-heavy.lock`）。判据只认 `extra` 里显式给的那条路径。
     """
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "scripts").mkdir(exist_ok=True)
-    shutil.copy2(REPO / "scripts" / "machine-heavy-lock.sh", root / "scripts" / "machine-heavy-lock.sh")
-    shutil.copy2(LEDGER_SH, root / "scripts" / "package-heavy-entry-ledger.sh")
-    # ⚠️ **仓根**那份 `verify-all.sh` 一律是**桩**（`exit 0`）：它只被**真 `batch-gate.sh`** 当
-    #    「那一次 gate」调用（判据 13）。放**真**脚本在这里会让每次 `batch-gate.sh` 都去跑
-    #    「一次 gate」—— 在 `-p no:randomly` / 与随机化顺序下会**互相等机器级锁** ⇒ 挂到超时
-    #    （实测：CI 之外的本地组合运行里 180s `TimeoutExpired`）。
-    #    要判**真脚本**的用例（1/2/6/5 的第二半）一律用 `script_in(wt)` 把它放进**被测的那个
-    #    工作树**（真脚本的 `ROOT` 由自己所在位置算出 —— 放仓根是**测不到**子包形态的）。
-    #    `verify_text` 非 None 时 = 内存里的**变异体**（§28.1 出口①），与真对象同一条构建路径。
-    stub = '#!/usr/bin/env bash\nif [ -n "${BATCH_GATE_STUB_LOG:-}" ]; then echo "gate" >> "$BATCH_GATE_STUB_LOG"; fi\nexit 0\n'
-    (root / "verify-all.sh").write_text(verify_text if verify_text is not None else stub,
-                                        encoding="utf-8")
-    (root / "scripts" / "batch-gate.sh").write_text(BATCH.read_text(encoding="utf-8"), encoding="utf-8")
-    for name, body in (("check-ui-regression.sh", "#!/usr/bin/env bash\nexit 0\n"),
-                       ("contract-check.sh", "#!/usr/bin/env bash\nexit 0\n")):
-        (root / name).write_text(body, encoding="utf-8")
-    for p in [root / "verify-all.sh", root / "scripts" / "batch-gate.sh",
-              root / "scripts" / "machine-heavy-lock.sh",
-              root / "scripts" / "package-heavy-entry-ledger.sh",
-              root / "check-ui-regression.sh", root / "contract-check.sh"]:
-        os.chmod(p, 0o755)
-    (root / "README.md").write_text("sandbox\n", encoding="utf-8")
-    assert _run(["git", "init", "-q", "-b", "main"], root, _env()).returncode == 0
-    _commit(root, "base")
-    # 一个包分支：让 `verify-all.sh` 的「禁空跑」与「变更集」判定在这棵树上有东西可算。
-    assert _run(["git", "checkout", "-q", "-b", "pkg", "main"], root, _env()).returncode == 0
-    (root / "pkg.txt").write_text("pkg\n", encoding="utf-8")
-    _commit(root, "pkg change")
-    # ⚠️ `origin/main` **必须**存在：`verify-all.sh` 的变更集判据是 `origin/main...HEAD`，
-    #    没有这个 ref 时它算不出 diff ⇒ 脚本会先走「无变更 ⇒ exit 3」那条早退**而根本走不到守卫**
-    #    （实测：红证会变成「任何变异体都 rc=3」的假绿）。用**本地路径 remote**（不联网）。
-    bare = root.parent / f"origin-{uuid.uuid4().hex}.git"
-    assert _run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], root, _env()).returncode == 0
-    assert _run(["git", "remote", "add", "origin", str(bare)], root, _env()).returncode == 0
-    assert _run(["git", "push", "-q", "origin", "main", "pkg"], root, _env()).returncode == 0
-    assert _run(["git", "fetch", "-q", "origin"], root, _env()).returncode == 0
-    return root
+    explicit = extra.get("MIGAO_PACKAGE_HEAVY_LEDGER")
+    tmp = pathlib.Path(explicit).parent if explicit else         pathlib.Path(__file__).resolve().parent
+    return hs.clean_env(tmp, **extra)
 
 
 def _verify_text() -> str:
-    return VERIFY.read_text(encoding="utf-8")
+    return hs.real_verify_text()
 
 
-def _make_worktree(root: pathlib.Path, name: str) -> pathlib.Path:
-    """给 sandbox 建一个 linked worktree（= 「子包 worktree」形态），返回它的路径。"""
-    wt = root.parent / f"wt-{name}-{uuid.uuid4().hex}"
-    r = _run(["git", "worktree", "add", "--detach", str(wt), "pkg"], root, _env())
-    assert r.returncode == 0, r.stdout + r.stderr
-    return wt
+def _mutated(rel: str, mut) -> str:
+    """把变异**真的写到一个真对象**上（`rel` = 注入面），返回变异后的全文。"""
+    _surface, _label, old, new, _expect = mut
+    return hs.mutate(rel, old, new)
 
 
-def _audit_bin(tmp_path: pathlib.Path) -> tuple[pathlib.Path, dict[str, str]]:
-    """造 `PATH` 审计桩目录：每个名字 → 记一行 + 转发**绝对路径**的真命令。
-
-    返回 `(桩目录, {名字: 真实绝对路径})`。`__REAL_MAP__` 在**生成时**填好（现取 `shutil.which`），
-    因此桩转发后子进程看到的 `PATH` 一字未改 ⇒ 树里每一次工具查找都照旧经过审计桩。
-    """
-    bindir = tmp_path / f"auditbin-{uuid.uuid4().hex}"
-    bindir.mkdir()
-    real: dict[str, str] = {}
-    for tool in AUDIT_TOOLS:
-        found = shutil.which(tool)
-        if found:
-            real[tool] = str(pathlib.Path(found).resolve())
-    table = "\n".join(f'  {name}) exec "{path}" "$@" ;;' for name, path in real.items())
-    shim = bindir / "_shim"
-    shim.write_text(AUDIT_SHIM.replace("__REAL_MAP__", table), encoding="utf-8")
-    os.chmod(shim, 0o755)
-    for name in real:
-        (bindir / name).symlink_to(shim)
-    return bindir, real
-
-
-class Verdict:
-    """一次真运行的读数（退出码 + 输出 + 审计日志 + 锁文件 + 台账）。"""
-
-    def __init__(self, proc, audit_log: pathlib.Path, lock_file: pathlib.Path,
-                 ledger: pathlib.Path):
-        self.proc = proc
-        self.out = proc.stdout + proc.stderr
-        self.audit = audit_log.read_text(encoding="utf-8").splitlines() if audit_log.exists() else []
-        self.lock_exists = lock_file.exists()
-        self.ledger = [json.loads(ln) for ln in ledger.read_text(encoding="utf-8").splitlines()
-                       if ln.strip().startswith('{"id"')] if ledger.exists() else []
-
-    @property
-    def rc(self) -> int:
-        return self.proc.returncode
-
-    def heavy_calls(self) -> list[str]:
-        """审计日志里**会拉起重活**的可执行名（空 ⇒ 没有起过测试进程）。"""
-        return [n for n in self.audit
-                if any(n == p or n.startswith(p) for p in TEST_RUNNER_PREFIXES)]
-
-
-def run_verify(sandbox: pathlib.Path, cwd: pathlib.Path, tmp_path: pathlib.Path, *args,
-               tier: str = "quick", audit: bool = True, env_extra: dict | None = None,
-               ledger_id: str | None = None, script: pathlib.Path | None = None) -> Verdict:
-    """在 `cwd` 里跑**真** `verify-all.sh`（可挂 PATH 审计桩）。
-
-    ⚠️ `script` 必须指向**本工作树里**的那份副本（`script_in(wt)`）—— 真脚本的 `ROOT` 是
-    `"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"`：拿主检出那份副本去 worktree 里跑，
-    `ROOT` 仍指主检出 ⇒ 角色算出 `primary` ⇒ 判据**假绿**（实测踩过）。
-    `MIGAO_HEAVY_LOCK_FILE` 与台账都指到 `tmp_path`（**绝不碰共享检出**）。
-    """
-    audit_log = tmp_path / f"audit-{uuid.uuid4().hex}.log"
-    ledger = tmp_path / f"ledger-{uuid.uuid4().hex}.jsonl"
-    lock_file = tmp_path / f"lock-{uuid.uuid4().hex}"
-    extra = {"MIGAO_HEAVY_LOCK_FILE": str(lock_file)}
-    if audit:
-        bindir, _real = _audit_bin(tmp_path)
-        extra.update({"MIGAO_AUDIT_LOG": str(audit_log),
-                      "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}"})
-    if env_extra:
-        extra.update(env_extra)
-    env = _env(**extra)
-    # ⚠️ 台账路径**必须**在 tmp_path（否则判据会往仓库里写记录）。
-    env["MIGAO_PACKAGE_HEAVY_LEDGER"] = str(ledger)
-    if ledger_id is not None:
-        env["MIGAO_ROLE_LEDGER_ID"] = ledger_id
-    target = script if script is not None else (sandbox / "verify-all.sh")
-    proc = _run(["bash", str(target), tier, *args], cwd, env)
-    return Verdict(proc, audit_log, lock_file, ledger)
-
-
-# ── ① 让脚本真跑起来的最小 harness（抽**真实的**函数与真实的调用行）────────────
-
-def _guard_harness(script: str) -> str:
-    """从 `verify-all.sh` 的**真文本**里抽：辅助函数 + 角色块 + **那句真实的守卫调用**。
-
-    为什么抽出而不是「照抄一份」：复制一份就是**第二份判定**（本仓反复踩过的形态）——
-    真实现改了而副本不改，判据照样绿。这里抽的是真行、真调用，**守卫一被摘掉这段就抽不到**
-    （`_guard_harness` 找不到调用行 ⇒ 抛 `StopIteration` ⇒ 判据当场红）。
-    """
-    lines = script.split("\n")
-    call_at = next(i for i, ln in enumerate(lines)
-                   if ln.startswith("package_heavy_guard ") and "$@" in ln)
-    # ⚠️ 起点取 `MARKER_NAME=` 那一行**之前**的块首注释：`MARKER_NAME` / `LEDGER_SCRIPT` /
-    #    `MIGAO_ROLE_LEDGER_ID` 都定义在 `_env_truthy()` **之前** —— 从 `_env_truthy()` 起抽会
-    #    把它们漏在面外（实测：harness 里 `MARKER_NAME: unbound variable` ⇒ 假红）。
-    marker_at = next(i for i, ln in enumerate(lines) if ln.startswith("MARKER_NAME="))
-    start = marker_at
-    while start > 0 and lines[start - 1].startswith("#"):
-        start -= 1                                     # 连同它的说明注释一起带走（可读性）
-    start -= 1                                         # 上一个 `# ====` 分隔行
-    assert start < call_at, "角色块的函数定义出现在调用之后（脚本结构变了）"
-    out = list(lines[start:call_at])              # **到调用点为止**（不含 `PKG_RC=$?` / `if`）
-    out.append(lines[call_at])                    # 真调用行
-    out.append('PKG_RC=$?')
-    out.append('echo "RC=${PKG_RC}"')
-    out.append("exit 0")
-    return "\n".join(out)
-
-
-def script_in(root: pathlib.Path, name: str = "verify-all.sh",
-              text: str | None = None) -> pathlib.Path:
-    """把一个**真** `verify-all.sh` 副本放进 `root`，返回脚本路径。
-
-    🔴 为什么必须这样（本判据第一版就是在这里错的）：`verify-all.sh` 的 `ROOT` 是
-    `"$(cd "$(dirname "$0")" && pwd)"` —— **由脚本自己所在位置**推出来的。因此「在子包
-    worktree 里跑」这件事**不能**用「在 worktree 里执行主检出那份副本」来模拟：那样 `ROOT`
-    仍指主检出、角色算出 `primary`，而判据会得到**假绿**（实测：真跑出来的角色是 primary）。
-    脚本文件必须**物理落在**被判的那个工作树里。
-    """
-    dst = root / name
-    dst.write_text(_verify_text() if text is None else text, encoding="utf-8")
-    os.chmod(dst, 0o755)
-    return dst
-
-
-def run_guard(sandbox: pathlib.Path, cwd: pathlib.Path, tmp_path: pathlib.Path, *args,
-              script: str | None = None, env_extra: dict | None = None) -> tuple[int, str]:
-    """在 `cwd` 里 source 抽取出来的守卫 + **它那句真实调用**，返回 `(rc, 输出)`。
-
-    `ROOT` 指到 `sandbox`（= 与真脚本 `ROOT="$(cd "$(dirname "$0")" && pwd)"` 同口径）：
-    判据跑的是**真函数 + 真调用行**，只是不在 `case "$MODE"` 那一大段上花时间。
-    """
-    harness = tmp_path / f"guard-{uuid.uuid4().hex}.sh"
-    # ⚠️ `ROOT` 是 `verify-all.sh` 顶层的变量（抽取面**之前**）⇒ 这里必须补上，否则
-    #    `record_verdict`（用 `$ROOT/$LEDGER_SCRIPT`）会 `unbound variable` ⇒ **台账静默不记**
-    #    （判据 6/7 会变成假绿：拒绝发生了、账上却什么都没有）。
-    harness.write_text("set -uo pipefail\nROOT='" + str(sandbox) + "'\n"
-                       + _guard_harness(script if script is not None else _verify_text()) + "\n",
-                       encoding="utf-8")
-    env = _env(**{"MIGAO_PACKAGE_HEAVY_LEDGER": str(tmp_path / "harness-ledger.jsonl")})
-    if env_extra:
-        env.update(env_extra)
-    proc = _run(["bash", str(harness), *args], cwd, env)
-    m = re.search(r"^RC=(\d+)$", proc.stdout, re.M)
-    assert m, f"harness 没有产出 RC 读数（抽取失效？）：\n{proc.stdout}\n{proc.stderr}"
-    return int(m.group(1)), proc.stdout + proc.stderr
+def _mutated_verify(mut) -> str:
+    return _mutated("verify-all.sh", mut)
 
 
 # ══════════════════════════════════════════════════════════════════════════════════════
@@ -334,10 +123,10 @@ def run_guard(sandbox: pathlib.Path, cwd: pathlib.Path, tmp_path: pathlib.Path, 
 class TestPackageWorktreeIsRefused:
     def test_package_worktree_is_refused_with_a_named_verdict(self, tmp_path):
         """判据 1：真 `verify-all.sh` 在 linked worktree（子包形态）里 ⇒ 非零 + 报文三点齐全。"""
-        sb = _build_sandbox(tmp_path / "repo")
-        wt = _make_worktree(sb, "pkg")
-        script = script_in(wt)
-        v = run_verify(sb, wt, tmp_path, script=script)
+        sb = hs.build(tmp_path / "repo")
+        wt = hs.build_worktree(sb, "pkg")
+        script = hs.install_real_script(wt)
+        v = hs.run_verify(sb, wt, tmp_path, script=script)
         assert v.rc == 5, f"子包 worktree 里跑全量应被拒（exit 5），实得 {v.rc}：\n{v.out}"
         assert "拒绝" in v.out, v.out
         # 三点：为什么 / 替代 / 怎么显式跑
@@ -352,10 +141,10 @@ class TestPackageWorktreeIsRefused:
         ⚠️ 先自证桩**真的生效**（审计日志里有转发过的命令）—— 否则「日志里没有 pytest」
         可能只是「桩根本没挂上」（本仓反复踩过的**空断言**形态）。
         """
-        sb = _build_sandbox(tmp_path / "repo")
-        wt = _make_worktree(sb, "pkg")
-        script = script_in(wt)
-        v = run_verify(sb, wt, tmp_path, script=script)
+        sb = hs.build(tmp_path / "repo")
+        wt = hs.build_worktree(sb, "pkg")
+        script = hs.install_real_script(wt)
+        v = hs.run_verify(sb, wt, tmp_path, script=script)
         assert v.rc == 5, f"前置：应被拒（exit 5），实得 {v.rc}：\n{v.out}"
         assert v.audit, "PATH 审计桩**没生效**（日志为空）⇒ 下面那条断言会是空断言"
         assert any(n == "git" for n in v.audit), f"审计桩没记到 git（桩没挂对）：{v.audit[:10]}"
@@ -378,26 +167,26 @@ class TestRoleVerdicts:
         ⚠️ 工作区名字**刻意不叫** `batch-*`（`wt-batch-…` 之外一律用随机名）——
         「按名字前缀判」的坏实现会在这里**放行一个未授权的子包 worktree** ⇒ 本判据当场红。
         """
-        sb = _build_sandbox(tmp_path / "repo")
-        wt = _make_worktree(sb, "integration-integration")     # 名字里没有 `batch`
+        sb = hs.build(tmp_path / "repo")
+        wt = hs.build_worktree(sb, "integration-integration")     # 名字里没有 `batch`
         # 反例工作区：名字**故意**取成 batch-*（名字前缀不是判据）
 
         # 标记位置由 git 现取（判据**不写死**路径 —— 写死就成了第二份约定的副本）
-        marker_path = _run(["git", "rev-parse", "--git-path", MARKER], wt, _env()).stdout.strip()
+        marker_path = hs.run(["git", "rev-parse", "--git-path", MARKER], wt, _env()).stdout.strip()
         marker_file = pathlib.Path(marker_path)
         assert marker_file.is_absolute(), f"git-path 没给出绝对路径：{marker_path}"
         marker_file.write_text("batch-integration\n", encoding="utf-8")
-        rc_with, out_with = run_guard(sb, wt, tmp_path)
+        rc_with, out_with = hs.run_guard(sb, wt, tmp_path)
         assert rc_with == 0, f"带标记的批次集成工作区应**放行**，实得 rc={rc_with}：\n{out_with}"
         marker_file.unlink()
-        rc_without, out_without = run_guard(sb, wt, tmp_path)
+        rc_without, out_without = hs.run_guard(sb, wt, tmp_path)
         assert rc_without == 5, (
             "**摘掉标记**后应被拒（判别必须读标记，而不是名字前缀 / 环境变量）："
             f"实得 rc={rc_without}\n{out_without}"
         )
         # 反向自证：名字里带 `batch-` 但**没有**标记 ⇒ 也必须拒（名字前缀不是判据）
-        wt_named = _make_worktree(sb, "batch-991231-000000")
-        rc_named, out_named = run_guard(sb, wt_named, tmp_path)
+        wt_named = hs.build_worktree(sb, "batch-991231-000000")
+        rc_named, out_named = hs.run_guard(sb, wt_named, tmp_path)
         assert rc_named == 5, (
             "工作区**名字**叫 `batch-*` 但没有标记 ⇒ 必须拒绝（名字前缀会漂、任何人手建一个就有）："
             f"实得 rc={rc_named}\n{out_named}"
@@ -409,28 +198,28 @@ class TestRoleVerdicts:
         `run_guard`（不是真跑脚本）：判的是**角色判定**这一层，不跑 gate 档的重活
         （真跑全量的时序/退出码由上面判据 1~2 与 `test_machine_heavy_lock.py` 承担）。
         """
-        sb = _build_sandbox(tmp_path / "repo")
-        rc, out = run_guard(sb, sb, tmp_path)
+        sb = hs.build(tmp_path / "repo")
+        rc, out = hs.run_guard(sb, sb, tmp_path)
         assert rc == 0, f"主检出应放行，实得 rc={rc}：\n{out}"
         assert "拒绝" not in out, out
 
     def test_ci_environment_is_unaffected(self, tmp_path):
         """判据 5：`CI` 为真 ⇒ 本块整段不适用（托管 runner 不占本机资源）。"""
-        sb = _build_sandbox(tmp_path / "repo")
-        wt = _make_worktree(sb, "pkg")
-        rc, out = run_guard(sb, wt, tmp_path, env_extra={"CI": "true"})
+        sb = hs.build(tmp_path / "repo")
+        wt = hs.build_worktree(sb, "pkg")
+        rc, out = hs.run_guard(sb, wt, tmp_path, env_extra={"CI": "true"})
         assert rc == 0, f"CI 上不得被拦（否则整目录那条腿在 CI 上永远红），实得 rc={rc}：\n{out}"
         assert "CI 为真" in out, f"「未跑」必须说出来（否则读者以为判过了）：\n{out}"
         # 真脚本这条路的读数：CI 为真时也不得出现 exit 5（把真脚本放进 worktree 跑一次）
-        script = script_in(wt)
-        v = run_verify(sb, wt, tmp_path, script=script, env_extra={"CI": "true"})
+        script = hs.install_real_script(wt)
+        v = hs.run_verify(sb, wt, tmp_path, script=script, env_extra={"CI": "true"})
         assert v.rc != 5, f"CI 为真时真脚本仍被角色守卫拦下：rc={v.rc}\n{v.out}"
 
     def test_explicit_flag_allows_and_prints_a_loud_line(self, tmp_path):
         """判据 6：**显式 flag ⇒ 放行** + 醒目一行 + 台账记一条 `override`。"""
-        sb = _build_sandbox(tmp_path / "repo")
-        wt = _make_worktree(sb, "pkg")
-        rc, out = run_guard(sb, wt, tmp_path, "--allow-package-heavy")
+        sb = hs.build(tmp_path / "repo")
+        wt = hs.build_worktree(sb, "pkg")
+        rc, out = hs.run_guard(sb, wt, tmp_path, "--allow-package-heavy")
         assert rc == 0, f"显式 flag 应放行，实得 rc={rc}：\n{out}"
         assert "绕过了批次口径" in out, f"放行必须**醒目**地说出绕过了什么：\n{out}"
         assert "⚠️" in out, f"放行行必须醒目（带警示符）：\n{out}"
@@ -441,10 +230,10 @@ class TestRoleVerdicts:
         sh = "bash"
         ledger_sh = str(LEDGER_SH)
         env = _env(MIGAO_PACKAGE_HEAVY_LEDGER=str(ledger), MIGAO_ROLE_LEDGER_ID="a.1")
-        assert _run([sh, ledger_sh, "append", "package", "refused", "子包直跑"], env=env).returncode == 0
+        assert hs.run([sh, ledger_sh, "append", "package", "refused", "子包直跑"], env=env).returncode == 0
         env2 = _env(MIGAO_PACKAGE_HEAVY_LEDGER=str(ledger), MIGAO_ROLE_LEDGER_ID="a.2")
-        assert _run([sh, ledger_sh, "append", "package", "override", "flag"], env=env2).returncode == 0
-        got = _run([sh, ledger_sh, "count"], env=_env(MIGAO_PACKAGE_HEAVY_LEDGER=str(ledger)))
+        assert hs.run([sh, ledger_sh, "append", "package", "override", "flag"], env=env2).returncode == 0
+        got = hs.run([sh, ledger_sh, "count"], env=_env(MIGAO_PACKAGE_HEAVY_LEDGER=str(ledger)))
         assert got.returncode == 0, got.stdout + got.stderr
         assert "refused=1" in got.stdout, f"拒绝计数取不出来：{got.stdout!r}"
         assert "override=1" in got.stdout, f"放行计数取不出来：{got.stdout!r}"
@@ -455,8 +244,8 @@ class TestRoleVerdicts:
         sh = "bash"
         ledger_sh = str(LEDGER_SH)
         env = _env(MIGAO_PACKAGE_HEAVY_LEDGER=str(ledger), MIGAO_ROLE_LEDGER_ID="same.42")
-        first = _run([sh, ledger_sh, "append", "package", "refused", "第一次"], env=env)
-        second = _run([sh, ledger_sh, "append", "package", "refused", "第二次"], env=env)
+        first = hs.run([sh, ledger_sh, "append", "package", "refused", "第一次"], env=env)
+        second = hs.run([sh, ledger_sh, "append", "package", "refused", "第二次"], env=env)
         assert first.returncode == 0 and second.returncode == 0, first.stdout + second.stdout
         assert "dup" in second.stdout, f"重复调用没有走幂等分支：{second.stdout!r}"
         records = [ln for ln in ledger.read_text(encoding="utf-8").splitlines()
@@ -464,16 +253,16 @@ class TestRoleVerdicts:
         assert len(records) == 1, f"同一次调用被记了 {len(records)} 笔（应为 1）：{records}"
         # 反向自证：换一个 id（= 另一次调用）⇒ 照旧能记账（幂等不是「台账只记一笔」）
         env2 = _env(MIGAO_PACKAGE_HEAVY_LEDGER=str(ledger), MIGAO_ROLE_LEDGER_ID="other.43")
-        _run([sh, ledger_sh, "append", "package", "refused", "另一次"], env=env2)
+        hs.run([sh, ledger_sh, "append", "package", "refused", "另一次"], env=env2)
         assert len([ln for ln in ledger.read_text(encoding="utf-8").splitlines()
                     if ln.strip().startswith('{"id"')]) == 2, "换 id 后没记上 ⇒ 台账成了写不进的死账"
 
     def test_the_refusal_itself_is_recorded(self, tmp_path):
         """判据 6 的另一半：**不加 flag 的拒绝**必须记一条 `refused`（不许静默）。"""
-        sb = _build_sandbox(tmp_path / "repo")
-        wt = _make_worktree(sb, "pkg")
-        script = script_in(wt)
-        v = run_verify(sb, wt, tmp_path, script=script)
+        sb = hs.build(tmp_path / "repo")
+        wt = hs.build_worktree(sb, "pkg")
+        script = hs.install_real_script(wt)
+        v = hs.run_verify(sb, wt, tmp_path, script=script)
         assert v.rc == 5, v.out
         assert v.ledger, f"拒绝没有被记账（静默！）：\n{v.out}"
         assert [r["decision"] for r in v.ledger] == ["refused"], v.ledger
@@ -487,17 +276,17 @@ class TestRoleVerdicts:
 class TestEscapeHatchAndExitCodes:
     def test_escape_hatch_is_command_line_only(self, tmp_path):
         """判据 9：逃生口只认**命令行 flag**；环境变量**不得**成为逃生口（#6056 的口径）。"""
-        sb = _build_sandbox(tmp_path / "repo")
-        wt = _make_worktree(sb, "pkg")
+        sb = hs.build(tmp_path / "repo")
+        wt = hs.build_worktree(sb, "pkg")
         for var in ("MIGAO_ALLOW_PACKAGE_HEAVY", "MIGAO_PACKAGE_HEAVY_SKIP",
                     "MIGAO_BATCH_GATE_SKIP_READY", "MIGAO_PACKAGE_HEAVY_ENTRY_BAN_SKIP"):
-            rc, out = run_guard(sb, wt, tmp_path, env_extra={var: "1"})
+            rc, out = hs.run_guard(sb, wt, tmp_path, env_extra={var: "1"})
             assert rc == 5, (
                 f"环境变量 {var}=1 竟然绕过了角色守卫 —— 逃生口必须是**命令行可见**的"
                 f"（本仓刚按 #6056 删掉一个不可见的环境变量逃生口）：rc={rc}\n{out}"
             )
         # 反向自证：同一次 setUp 下真 flag 必须仍然有效（否则上面那条恒真）
-        rc_flag, _ = run_guard(sb, wt, tmp_path, "--allow-package-heavy")
+        rc_flag, _ = hs.run_guard(sb, wt, tmp_path, "--allow-package-heavy")
         assert rc_flag == 0, "反向自证失败：真 flag 也不放行 ⇒ 上面那组断言是恒真的空断言"
 
     def test_exit_code_five_is_distinct_from_three_and_four(self):
@@ -575,21 +364,6 @@ MUTATIONS = [
     ),
 ]
 
-
-def _mutated(rel: str, mut) -> str:
-    """把变异**真的写到一个真对象**上（`rel` = 注入面），返回变异后的全文。"""
-    _surface, _label, old, new, _expect = mut
-    src = (REPO / rel).read_text(encoding="utf-8")
-    hits = src.count(old)
-    assert hits == 1, f"变异没生效（命中 {hits} 次，应为 1）：{old!r} ⇒ 红证会变成空断言"
-    assert new != old, "变异体与原文逐字相同"
-    return src.replace(old, new, 1)
-
-
-def _mutated_verify(mut) -> str:
-    return _mutated("verify-all.sh", mut)
-
-
 @pytest.mark.parametrize("mut", MUTATIONS, ids=[m[1] for m in MUTATIONS])
 def test_injected_mutations_turn_it_red(tmp_path, mut):
     """判据 11：**注入式红证** —— 每处变异必须让对应读数**真的变**（不是「看起来不绿」）。
@@ -609,7 +383,7 @@ def test_injected_mutations_turn_it_red(tmp_path, mut):
         ledger = tmp_path / f"mut-ledger-{uuid.uuid4().hex}.jsonl"
         env = _env(MIGAO_PACKAGE_HEAVY_LEDGER=str(ledger), MIGAO_ROLE_LEDGER_ID="same.99")
         for _ in range(2):
-            assert _run(["bash", str(mutated_sh), "append", "package", "refused", "x"],
+            assert hs.run(["bash", str(mutated_sh), "append", "package", "refused", "x"],
                         env=env).returncode == 0
         n = len([ln for ln in ledger.read_text(encoding="utf-8").splitlines()
                  if ln.strip().startswith('{"id"')])
@@ -620,18 +394,18 @@ def test_injected_mutations_turn_it_red(tmp_path, mut):
         real_ledger = tmp_path / f"real-ledger-{uuid.uuid4().hex}.jsonl"
         env_real = _env(MIGAO_PACKAGE_HEAVY_LEDGER=str(real_ledger), MIGAO_ROLE_LEDGER_ID="same.99")
         for _ in range(2):
-            _run(["bash", str(LEDGER_SH), "append", "package", "refused", "x"], env=env_real)
+            hs.run(["bash", str(LEDGER_SH), "append", "package", "refused", "x"], env=env_real)
         n_real = len([ln for ln in real_ledger.read_text(encoding="utf-8").splitlines()
                       if ln.strip().startswith('{"id"')])
         assert n_real == 1, f"对照读数错：真脚本下同 id 应记 1 笔（实得 {n_real}）"
         return
 
-    sb = _build_sandbox(tmp_path / f"mut-{uuid.uuid4().hex}", verify_text=_mutated_verify(mut))
+    sb = hs.build(tmp_path / f"mut-{uuid.uuid4().hex}", verify_text=_mutated_verify(mut))
     if expect in ("guard_rejects_removed", "guard_call_removed"):
-        wt = _make_worktree(sb, "pkg")
+        wt = hs.build_worktree(sb, "pkg")
         # ⚠️ 变异脚本必须**物理落在这个 worktree 里**（真脚本的 ROOT 由自己所在位置算出）
-        mut_script = script_in(wt, text=_mutated_verify(mut))
-        v = run_verify(sb, wt, tmp_path, script=mut_script)
+        mut_script = hs.install_real_script(wt, text=_mutated_verify(mut))
+        v = hs.run_verify(sb, wt, tmp_path, script=mut_script)
         assert v.rc != 5, f"变异「{label}」**没被抓住**（仍被守卫拒绝）：rc={v.rc}\n{v.out}"
         assert "套件内全量入口被**拒绝**" not in v.out, (
             f"变异「{label}」仍打出了拒绝报文（只是退出码碰巧不是 5）⇒ 红证没抓住真对象：\n{v.out}"
@@ -651,8 +425,8 @@ def test_injected_mutations_turn_it_red(tmp_path, mut):
         )
         # 对照：真脚本在同一形态下 rc=5 且**不**创建锁（上面 TestPackageWorktreeIsRefused 已钉）
     elif expect == "env_escape_hatch_added":
-        wt = _make_worktree(sb, "pkg")
-        rc, out = run_guard(sb, wt, tmp_path, script=_mutated_verify(mut),
+        wt = hs.build_worktree(sb, "pkg")
+        rc, out = hs.run_guard(sb, wt, tmp_path, script=_mutated_verify(mut),
                             env_extra={"MIGAO_ALLOW_PACKAGE_HEAVY": "1"})
         assert rc == 0, (
             f"变异「{label}」没被抓住（环境变量仍绕不过去）⇒ 判据 9 对这条形态是空断言：rc={rc}\n{out}"
@@ -690,7 +464,7 @@ class TestBatchGateLeavesTheMarker:
     def _run_batch(self, sb: pathlib.Path, tmp_path: pathlib.Path, *args) -> subprocess.CompletedProcess:
         log = tmp_path / f"stub-{uuid.uuid4().hex}.log"
         env = _env(BATCH_GATE_STUB_LOG=str(log), BATCH_GATE_STUB_RC="0")
-        return _run([str(sb / "scripts" / "batch-gate.sh"), "--base", "main", *args], sb, env)
+        return hs.run([str(sb / "scripts" / "batch-gate.sh"), "--base", "main", *args], sb, env)
 
     def test_marker_is_really_written_by_the_real_script(self, tmp_path):
         """真脚本跑一次批次（`--keep` 保留工作区）⇒ 工作区里**真出现**标记文件。
@@ -699,20 +473,20 @@ class TestBatchGateLeavesTheMarker:
         `test_batch_gate.py`，**一字不重判**）⇒ 不拿它的退出码当读数（那一次 gate 在沙箱里
         因为缺依赖必然非零，与标记无关）。
         """
-        sb = _build_sandbox(tmp_path / "repo")
-        assert _run(["git", "checkout", "-q", "main"], sb, _env()).returncode == 0
+        sb = hs.build(tmp_path / "repo")
+        assert hs.run(["git", "checkout", "-q", "main"], sb, _env()).returncode == 0
         proc = self._run_batch(sb, tmp_path, "--no-require-ready", "--keep", "pkg")
         out = proc.stdout + proc.stderr
         assert "已留批次标记" in out, f"真脚本没有打印「留标记」那一步：\n{out}"
         # 工作区从 git 自己那本账里取（**不**按目录名 glob —— 判据不该假设路径约定）
-        listing = _run(["git", "-C", str(sb), "worktree", "list", "--porcelain"],
+        listing = hs.run(["git", "-C", str(sb), "worktree", "list", "--porcelain"],
                        sb, _env()).stdout
         mirs = [ln.split(" ", 1)[1] for ln in listing.splitlines() if ln.startswith("worktree ")]
         wts = [pathlib.Path(w) for w in mirs if w != str(sb)]
         assert wts, f"批次没留下集成工作区（--keep）：\n{out}"
         found = []
         for w in wts:
-            r = _run(["git", "-C", str(w), "rev-parse", "--git-path", MARKER], sb, _env())
+            r = hs.run(["git", "-C", str(w), "rev-parse", "--git-path", MARKER], sb, _env())
             mp = r.stdout.strip()
             if mp and pathlib.Path(mp).is_file():
                 found.append((w, pathlib.Path(mp)))
@@ -723,10 +497,380 @@ class TestBatchGateLeavesTheMarker:
         wt, marker_file = found[0]
         assert wt.name.startswith("batch-") or "batch-" in str(wt), f"非预期的工作区名：{wt}"
         # **端到端**：那个带标记的工作区里，角色守卫必须放行（标记 → 判定 的接线在）
-        script_in(wt)
-        rc, gout = run_guard(sb, wt, tmp_path)
+        hs.install_real_script(wt)
+        rc, gout = hs.run_guard(sb, wt, tmp_path)
         assert rc == 0, f"带标记的集成工作区应放行，实得 rc={rc}：\n{gout}"
         # 摘掉标记 ⇒ 立刻拒绝（同一工作区，唯一变量就是标记）
         marker_file.unlink()
-        rc2, gout2 = run_guard(sb, wt, tmp_path)
+        rc2, gout2 = hs.run_guard(sb, wt, tmp_path)
         assert rc2 == 5, f"摘掉标记后应拒绝，实得 rc={rc2}：\n{gout2}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════
+# 判据 19~21：非 git 目录 / `git` 不可用 ⇒ `unknown` ⇒ 拒绝（**行为面**；issue #6084 未固化项）
+# ══════════════════════════════════════════════════════════════════════════════════════
+
+#: 注入点：把角色判定换成「算不出角色也当 `primary`」——**这正是本包修掉的那个真实缺陷形态**
+#: （两次 `git rev-parse` 都失败 ⇒ 两个空串相等 ⇒ 误判 `primary` ⇒ **fail-open**）。
+#: 命中数 ≠ 1 ⇒ 判红 = 变异没生效（红证会变成空断言）。
+ROLE_MUTATIONS = [
+    (
+        "unknown_became_primary",
+        """package_heavy_role() {
+  local abs common
+  #: `git` 不可用 / 工作树外 ⇒ **unknown**（调用方 fail-closed 拒绝）。
+  abs="$(_git_rev_parse --absolute-git-dir)" || { echo unknown; return 0; }
+  common="$(_git_rev_parse --path-format=absolute --git-common-dir)" || { echo unknown; return 0; }""",
+        """package_heavy_role() {
+  local abs common
+  abs="$(_git_rev_parse --absolute-git-dir)" || { echo primary; return 0; }
+  common="$(_git_rev_parse --path-format=absolute --git-common-dir)" || { echo primary; return 0; }""",
+    ),
+]
+
+
+def _non_git_dir(tmp_path: pathlib.Path, script_text: str | None = None) -> pathlib.Path:
+    """造一个**非 git 目录**（`tmp_path` 下），把真 `verify-all.sh` + 真 `scripts/` 放进去。
+
+    ⚠️ 脚本必须**物理落在这个目录里**（真脚本的 `ROOT` 由自己所在位置算出，且它一开始就
+    `cd "$ROOT"`）—— 否则那个 `cd` 会把它带**回真仓库**，于是跑出来的是**真仓库**的读数，
+    「非 git 目录」这个形态根本走不到（实测：拿真仓那份副本 + `cwd=/tmp` 跑，脚本 cd 回仓库、
+    角色算成 `package` ⇒ 判的是**另一种**形态；这正是 harness docstring「血泪教训 2」那条坑）。
+    真 `scripts/` 一并放进去：这样「拒绝被记一笔」这一半也能在**真台账脚本**上判。
+    """
+    d = tmp_path / "not-a-repo"
+    d.mkdir(exist_ok=True)
+    shutil.copytree(REPO / "scripts", d / "scripts", dirs_exist_ok=True)
+    hs.install_real_script(d, text=script_text)
+    return d
+
+
+def _run_non_git(d: pathlib.Path, tmp_path: pathlib.Path, *args: str, tier: str = "quick",
+                 extra_env: dict | None = None, path: str | None = None):
+    """在非 git 目录里跑真脚本；返回 `(CompletedProcess, ctx)`（`ctx` 里有锁 / 台账路径读数）。"""
+    lock = tmp_path / f"ng-lock-{uuid.uuid4().hex}"
+    ledger = tmp_path / f"ng-ledger-{uuid.uuid4().hex}.jsonl"
+    env = _env(MIGAO_HEAVY_LOCK_FILE=str(lock), MIGAO_PACKAGE_HEAVY_LEDGER=str(ledger))
+    if extra_env:
+        env.update({k: str(v) for k, v in extra_env.items()})
+    if path is not None:
+        env["PATH"] = path
+    # ⚠️ 用**绝对路径**的 bash 起（PATH 桩那一路可能没有 `bash` ⇒ 否则死在「找不到 bash」上，
+    #    而不是死在角色判定上 = 读数指错对象）。
+    proc = subprocess.run([shutil.which("bash") or "/bin/bash", str(d / "verify-all.sh"),
+                           tier, *args], cwd=str(d), capture_output=True, text=True,
+                          env=env, timeout=180)
+    return proc, {"lock": lock, "ledger": ledger}
+
+
+class TestNonGitFailsClosed:
+    """判据 19：**行为面**——非 git 目录 / `git` 不可用 ⇒ 角色 `unknown` ⇒ **拒绝**（fail-closed）。
+
+    ⚠️ 这条判据守的是「**文档承诺 = 代码行为**」：`docs/wiki/Development.md` 与
+    `test_package_heavy_entry_ban.py` 的边界段都写着「`git` 不可用 ⇒ 判 `unknown` ⇒ **拒绝**
+    （fail-closed）」，但**修前**实测是 `rc=3`（「无变更」）—— 因为两个取值点各自 `git rev-parse`，
+    失败都返回空串 ⇒ `[ "" = "" ]` 判真 ⇒ 算成 `primary`（**放行**）。⇒ 本包两处一起修：
+    ① `verify-all.sh` 的 `_git_rev_parse` 把「退出码 / 空输出」收进同一条判据；
+    ② 角色守卫**前移到「禁空跑」判定之前**（否则非 git 目录里变更集也算不出来 ⇒ 先 `exit 3` 早退，
+    仍然走不到拒绝分支）。
+    """
+
+    def test_plain_non_git_directory_is_refused(self, tmp_path):
+        """非 git 目录（`git` 可用、但 cwd 不是工作树）⇒ 非零（5）+ 三点报文 + 台账记一笔。"""
+        d = _non_git_dir(tmp_path)
+        proc, ctx = _run_non_git(d, tmp_path)
+        out = proc.stdout + proc.stderr
+        assert proc.returncode == 5, (
+            f"非 git 目录里跑全量必须 fail-closed 拒绝（exit 5），实得 {proc.returncode}：\n{out}"
+        )
+        assert "没有跑" in out, f"「没跑」必须长得像「没跑」：\n{out}"
+        # 三点：为什么 / 替代 / 怎么显式跑（与判据 1 同口径，**不写死文案**）
+        # ⚠️ 「为什么」必须是 **unknown 的**措辞（issue #6101：这里原先断言的是 `package` 的
+        #    「子包 worktree」—— 那正是**归因错**的形态被写成判据的样子）。
+        assert "不可用" in out, f"报文没写清**为什么**（不是 git 仓库 / git 不可用）：\n{out}"
+        assert "batch-gate.sh" in out, f"报文没给**替代**（批次入口）：\n{out}"
+        assert "--allow-package-heavy" in out, f"报文没给**怎么显式跑**：\n{out}"
+        assert not ctx["lock"].exists(), (
+            "拒绝之前拿了机器级锁 —— 守卫必须在 `macquire` 之前（拿锁本身就是重活面）"
+        )
+
+    def test_the_unknown_refusal_is_recorded_as_unknown(self, tmp_path):
+        """这一半是**台账口径**：非 git 目录的拒绝按 `role=unknown` 记，不许混进 `package`。
+
+        （修前这一形态**根本走不到**守卫 ⇒ 账上一条都没有 —— 台账读不出「有人在工作树外跑全量」。）
+        """
+        d = _non_git_dir(tmp_path)
+        proc, ctx = _run_non_git(d, tmp_path)
+        assert proc.returncode == 5, proc.stdout + proc.stderr
+        records = hs.ledger_records(ctx["ledger"].read_text(encoding="utf-8"))
+        assert [r["role"] for r in records] == ["unknown"], (
+            f"非 git 目录的拒绝没有按 role=unknown 记一笔：{records}"
+        )
+        assert [r["decision"] for r in records] == ["refused"], records
+
+    def test_git_missing_from_path_is_refused(self, tmp_path):
+        """变体：`PATH` 里**没有 `git`**（PATH 桩驱动）⇒ 同样 fail-closed（`exit 5`）+ 记一笔。
+
+        ⚠️ 这条路**只能**靠 PATH 桩驱动 —— 靠环境「碰巧没有 git」写断言在开发机 / CI 上
+        **永远走不到**（空断言形态）。故先自证桩生效。
+        """
+        d = _non_git_dir(tmp_path)
+        slim = hs.slim_path(tmp_path, ("bash", "sh", "env", "date", "sed", "grep", "awk", "sort",
+                                       "tr", "cut", "head", "tail", "cat", "rm", "mkdir",
+                                       "mktemp", "chmod", "ls", "dirname", "basename", "uname",
+                                       "printf", "wc", "python3"))
+        assert shutil.which("git", path=slim) is None, f"PATH 桩失效（还能找到 git）：{slim}"
+        proc, ctx = _run_non_git(d, tmp_path, path=slim)
+        out = proc.stdout + proc.stderr
+        assert proc.returncode == 5, (
+            f"`git` 不在 PATH 时必须 fail-closed（exit 5），实得 {proc.returncode}：\n{out}"
+        )
+        assert "不可用" in out and "batch-gate.sh" in out, f"三点报文不全：\n{out}"
+        assert "--allow-package-heavy" in out, out
+        assert not ctx["lock"].exists(), "拒绝之前拿了机器级锁（守卫顺序错了）"
+        records = hs.ledger_records(ctx["ledger"].read_text(encoding="utf-8"))
+        assert [r["role"] for r in records] == ["unknown"], (
+            f"`git` 不可用 ⇒ 角色应是 unknown：{records}"
+        )
+
+
+#: 归因拆分的注入点（issue #6101 复核发现：`unknown` 曾用 `package` 的措辞与台账原因）。
+#: 变异 = **把两种角色的归因合并回一套**，两种坏形态各自必须被**对应**的判据抓住：
+#:   · 把 `package` 那句主因换成 `unknown` 的 ⇒ `TestRefusalAttributionIsSplit::test_package_...` 红；
+#:   · 把 `unknown` 那句主因换成 `package` 的 ⇒ 同类的 `test_unknown_...` 红。
+#: 命中数 ≠ 1 ⇒ `hs.mutate` 当场判红（红证会变成空断言）。
+#: 两种角色的「为什么」主因行 —— **现取真脚本**（不抄文案：措辞一变，本判据自动跟上；
+#: 也避免「抄错反引号 ⇒ 命中 0 次 ⇒ 红证变成空断言」，本包就实测踩过一次）。
+_WHY_LINES = [ln for ln in hs.real_verify_text().split("\n")
+              if '   为什么  ：' in ln]
+assert len(_WHY_LINES) == 2, (
+    f"应当**恰好两条**主因行（package / unknown 各一条），实得 {len(_WHY_LINES)}：{_WHY_LINES}"
+)
+
+
+def _role_why_line(role: str) -> str:
+    """取某个角色的主因行（`package` = 子包 worktree / `unknown` = 非 git 仓库 / git 不可用）。"""
+    want_git_missing = role == "unknown"
+    hits = [ln for ln in _WHY_LINES if ("不是 git 仓库" in ln) == want_git_missing]
+    assert len(hits) == 1, f"角色 {role} 的主因行取不到（命中 {len(hits)} 条）：{hits}"
+    return hits[0]
+
+
+ATTRIBUTION_MUTATIONS = {
+    "package": [
+        (
+            "package_blames_git_missing",
+            _role_why_line("package"),
+            _role_why_line("unknown"),
+            '    record_verdict "$role" refused "子包 worktree 直跑全量（无批次标记）"',
+            '    record_verdict "$role" refused "判不出角色（非 git 仓库 / git 不可用）"',
+        ),
+    ],
+    "unknown": [
+        (
+            "unknown_blames_package_worktree",
+            _role_why_line("unknown"),
+            _role_why_line("package"),
+            '    record_verdict "$role" refused "判不出角色（非 git 仓库 / git 不可用）"',
+            '    record_verdict "$role" refused "子包 worktree 直跑全量（无批次标记）"',
+        ),
+    ],
+}
+
+
+class TestRefusalAttributionIsSplit:
+    """判据 22：**两种角色的报文与台账原因必须各自独立**（issue #6101 复核发现）。
+
+    形态（复核实测）：`package` 与 `unknown` 共用一套措辞 ⇒ 非 git 目录里跑脚本，报的是
+    「当前工作区是**子包 worktree**」、台账记的是「**子包 worktree** 直跑全量」—— 行为（rc=5）
+    没错，但**归因错**；而这条台账正是角色读数的仪表 ⇒ 归因错会污染后续裁定
+    （`docs/wiki/Development.md` 的表格本来就把 `unknown` 定义成「git 不可用 / 工作树外」）。
+    """
+
+    def _deny(self, tmp_path, sb, cwd, *args, script=None, env_extra=None):
+        """在 `cwd` 跑**真脚本**并返回 `(rc, 输出, 台账记录, 锁路径)`（锁 / 台账都在 tmp_path）。"""
+        lock = tmp_path / f"attr-lock-{uuid.uuid4().hex}"
+        ledger = tmp_path / f"attr-ledger-{uuid.uuid4().hex}.jsonl"
+        env = _env(MIGAO_HEAVY_LOCK_FILE=str(lock), MIGAO_PACKAGE_HEAVY_LEDGER=str(ledger))
+        if env_extra:
+            env.update({k: str(v) for k, v in env_extra.items()})
+        target = pathlib.Path(script) if script is not None else pathlib.Path(cwd) / "verify-all.sh"
+        proc = subprocess.run([shutil.which("bash") or "/bin/bash", str(target), "quick", *args],
+                              cwd=str(cwd), capture_output=True, text=True, env=env, timeout=180)
+        records = (hs.ledger_records(ledger.read_text(encoding="utf-8"))
+                   if ledger.exists() else [])
+        return proc.returncode, proc.stdout + proc.stderr, records, lock
+
+    def test_package_refusal_keeps_its_own_wording_and_reason(self, tmp_path):
+        """`package`（linked worktree、无标记）⇒ 报文与台账原因**仍是**子包 worktree 那套。"""
+        sb = hs.build(tmp_path / "repo")
+        wt = hs.build_worktree(sb, "pkg")
+        rc, out, records, lock = self._deny(tmp_path, sb, wt, script=hs.install_real_script(wt))
+        assert rc == 5, f"子包 worktree 应被拒（exit 5），实得 {rc}：\n{out}"
+        assert "子包 worktree" in out, f"package 的**为什么**不见了：\n{out}"
+        assert "git 不可用" not in out, (
+            f"package 场景误用了 `unknown` 的措辞（两种角色被合并）：\n{out}"
+        )
+        assert not lock.exists(), "拒绝之前拿了机器级锁（守卫顺序错了）"
+        assert [r["role"] for r in records] == ["package"], records
+        assert "子包 worktree" in records[0]["why"], (
+            f"package 的台账原因被改成了别的归因：{records[0]['why']!r}"
+        )
+
+    def test_unknown_refusal_keeps_its_own_wording_and_reason(self, tmp_path):
+        """`unknown`（非 git 目录）⇒ 报文说「**不是 git 仓库 / `git` 不可用**」，且台账原因独立。"""
+        d = _non_git_dir(tmp_path)
+        rc, out, records, lock = self._deny(tmp_path, None, d)
+        assert rc == 5, f"非 git 目录应被拒（exit 5），实得 {rc}：\n{out}"
+        # 三点齐全（替代 / 真要跑两行两种角色都要有）
+        assert "batch-gate.sh" in out, f"报文没给**替代**（批次入口）：\n{out}"
+        assert "--allow-package-heavy" in out, f"报文没给**怎么显式跑**：\n{out}"
+        assert "没有跑" in out, f"「没跑」必须长得像「没跑」：\n{out}"
+        # 归因：必须是 unknown 的措辞，且**不得**串到 package 的措辞上
+        assert "不可用" in out, f"`unknown` 没写清是「不是 git 仓库 / git 不可用」：\n{out}"
+        assert "子包 worktree" not in out, (
+            f"**归因错了**（issue #6101 复核发现的形态）：非 git 目录用了 `package` 的措辞：\n{out}"
+        )
+        assert not lock.exists(), "拒绝之前拿了机器级锁（守卫顺序错了）"
+        assert len(records) == 1, f"应恰好记 1 条：{records}"
+        assert records[0]["role"] == "unknown", records
+        assert records[0]["decision"] == "refused", records
+        assert "子包 worktree" not in records[0]["why"], (
+            f"**台账原因归错**了（记了一条但原因错 ⇒ 不能当通过）：{records[0]['why']!r}"
+        )
+        assert "git" in records[0]["why"], f"台账原因没说清是判不出角色：{records[0]['why']!r}"
+
+    def test_allow_flag_also_allows_unknown(self, tmp_path):
+        """`--allow-package-heavy` 在 `unknown` 场景**也放行**（与 `package` 同权）——钉住这一条。
+
+        ⚠️ 脚本的实现是 `case`-fall-through + 顶部 flag 分支 ⇒ 两种角色都放行；本判据把它钉成
+        **契约**：逃生口是「命令行可见的显式动作」，不该因为「为什么判不出角色」而少一个出口
+        （否则非 git 目录里连显式放行的路都没有）。
+        """
+        d = _non_git_dir(tmp_path)
+        rc, out, records, lock = self._deny(tmp_path, None, d, "--allow-package-heavy")
+        assert "绕过了批次口径" in out, f"`unknown` 场景显式 flag **没有放行**：\n{out}"
+        assert "⚠️" in out, f"放行行必须醒目（带警示符）：\n{out}"
+        # ⚠️ 放行**不等于** rc=0：这里是非 git 目录，放行之后脚本继续往下走，随即收在既有的
+        #    「无变更 ⇒ exit 3」（`origin/main` 都没有 ⇒ 变更集为空）—— 那是**放行之后**的读数，
+        #    与角色判定无关。若 rc 仍是 5，说明 flag 根本没被认。
+        assert rc != 5, f"flag 未被识别（仍被角色守卫拒绝 rc=5）：\n{out}"
+        assert "无变更 ⇒ 未执行任何检查" in out, (
+            f"放行后没有继续往下走（读数太弱，说明不了「放行」）：\n{out}"
+        )
+        assert not lock.exists(), "角色判定阶段不该拿锁（放行后脚本随即早退）"
+        assert [r["decision"] for r in records] == ["override"], f"放行要记一条 override：{records}"
+        assert records[0]["role"] == "unknown", records
+
+    @pytest.mark.parametrize("role", ["package", "unknown"],
+                             ids=["package-措辞被换成-unknown", "unknown-措辞被换成-package"])
+    def test_merged_attribution_is_caught(self, tmp_path, role):
+        """判据 22 的**注入式红证**：把两种角色的归因合并回一套 ⇒ 对应的那条判据必红。"""
+        label, old_why, new_why, old_led, new_led = ATTRIBUTION_MUTATIONS[role][0]
+        # 两处变异（措辞 + 台账原因）都落在**同一份真文本**上：第一处由 `hs.mutate` 保证命中数 == 1，
+        # 第二处自己再自证一次（命中数 ≠ 1 ⇒ 红证会变成空断言）。
+        src = hs.mutate("verify-all.sh", old_why, new_why)
+        hits = src.count(old_led)
+        assert hits == 1, f"台账原因锚点命中 {hits} 次（应为 1）⇒ 变异没生效"
+        mutated = src.replace(old_led, new_led, 1)
+        if role == "package":
+            sb = hs.build(tmp_path / "repo")
+            wt = hs.build_worktree(sb, "pkg")
+            script = hs.install_real_script(wt, text=mutated)
+            rc, out, records, _lock = self._deny(tmp_path, sb, wt, script=script)
+            assert rc == 5, f"变异体仍应拒绝（只是归因错），实得 {rc}：\n{out}"
+            assert "不可用" in out, (
+                f"变异「{label}」**没被抓住**（package 场景仍没串到 unknown 的措辞）：\n{out}"
+            )
+            assert "子包 worktree" not in records[0]["why"], (
+                f"变异「{label}」**没被抓住**（台账原因仍是对的）：{records[0]['why']!r}"
+            )
+        else:
+            d = _non_git_dir(tmp_path, script_text=mutated)
+            rc, out, records, _lock = self._deny(tmp_path, None, d)
+            assert rc == 5, f"变异体仍应拒绝（只是归因错），实得 {rc}：\n{out}"
+            assert "子包 worktree" in out, (
+                f"变异「{label}」**没被抓住**（unknown 场景仍没串到 package 的措辞）：\n{out}"
+            )
+            assert "子包 worktree" in records[0]["why"], (
+                f"变异「{label}」**没被抓住**（台账原因仍是对的）：{records[0]['why']!r}"
+            )
+
+
+class TestUnknownRoleInjectionIsCaught:
+    """判据 20：**注入式红证** —— 把「`unknown` ⇒ 拒绝」这一支换成「当 `primary`」⇒ 上面必红。"""
+
+    def test_unknown_as_primary_is_caught(self, tmp_path):
+        """变异体 = 「算不出角色也当 `primary`」（**修前的真实缺陷形态**）⇒ 本判据当场抓住。
+
+        判红读数（三条**互相独立**，缺一条这条红证就是空的）：
+        ① 退出码**不再是 5**（守卫放行了）；
+        ② 脚本**继续往下走** —— 打出了「无变更 ⇒ exit 3」那句早退报文（= 它真的进了后续流程）；
+        ③ 台账里**没有** `role=unknown` 的拒绝记录。
+        """
+        _label, old, new = ROLE_MUTATIONS[0]
+        mutated = hs.mutate("verify-all.sh", old, new)      # 命中数 ≠ 1 ⇒ 这里就判红
+        d = _non_git_dir(tmp_path, script_text=mutated)
+        proc, ctx = _run_non_git(d, tmp_path)
+        out = proc.stdout + proc.stderr
+        assert proc.returncode != 5, (
+            f"变异「unknown 当 primary」**没被抓住**（仍被守卫拒绝）：rc={proc.returncode}\n{out}"
+        )
+        assert "套件内全量入口被**拒绝**" not in out, (
+            f"变异体仍打出了拒绝报文（只是退出码碰巧不是 5）⇒ 红证没抓住真对象：\n{out}"
+        )
+        assert "无变更 ⇒ 未执行任何检查" in out, (
+            f"变异体**没走到**后续流程（读数太弱：既没拒绝、也没继续）—— 这条红证证明不了判别力：\n{out}"
+        )
+        assert not ctx["lock"].exists(), (
+            "变异体在非 git 目录里仍走到了 `macquire`？—— 那说明它进了重活面（与「继续往下走」一致）"
+        )
+        # 台账在 fail-open 路径下可能**根本没被创建**（没有拒绝要记）——「不存在」与「空」都算没记。
+        records = (hs.ledger_records(ctx["ledger"].read_text(encoding="utf-8"))
+                   if ctx["ledger"].exists() else [])
+        assert records == [], f"变异体下不该有 unknown 拒绝记录（它是 fail-open 的）：{records}"
+
+    def test_control_real_script_has_no_role_mutation_marker(self):
+        """对照读数：真脚本里没有变异痕迹，且**真有**那句 fail-closed 的 `unknown` 分支。"""
+        src = _verify_text()
+        for _label, old, new in ROLE_MUTATIONS:
+            assert old in src, f"真脚本里找不到变异锚点（红证失效）：{old!r}"
+            assert new not in src, f"真脚本里出现了变异后的文本：{new!r}"
+        assert "_git_rev_parse" in src and "echo unknown" in src, (
+            "真脚本里没有 fail-closed 的 unknown 分支（判据 19 会变成空断言）"
+        )
+
+
+class TestHarnessKeepsOffSharedFiles:
+    """判据 21：**隔离保证的形状** —— 真锁 / 真台账在跑完本文件那几条真跑判据后**原封不动**。
+
+    为什么是「形状」而不是「纪律」：`hs.clean_env` 把 `MIGAO_HEAVY_LOCK_FILE` /
+    `MIGAO_PACKAGE_HEAVY_LEDGER` 收口到 `tmp_path`（`setdefault` + 显式路径也必须过
+    `unscoped_tmp_root`）⇒ 判据**结构上**拿不到真锁 / 真台账的路径。本判据是那次结构设计的
+    **读数**：跑一遍真跑形态（真 `verify-all.sh` + 真 `scripts/`），真锁与真台账必须一字未动。
+
+    ⚠️ 本判据**不创建**真锁 / 真台账：只在「不存在」与「未变（mtime / size / inode）」两个方向上断言。
+    """
+
+    def test_real_lock_and_ledger_are_untouched_by_a_real_run(self, tmp_path):
+        """跑一次真跑形态 ⇒ 真 `~/.migao-heavy.lock` 与真台账的存在性 / stat 三项逐项相同。"""
+        before = hs.true_and_ledger_states()
+        sb = hs.build(tmp_path / "repo")
+        wt = hs.build_worktree(sb, "pkg")
+        v = hs.run_verify(sb, wt, tmp_path, script=hs.install_real_script(wt))
+        assert v.rc == 5, f"前置：子包 worktree 里应被拒（exit 5），实得 {v.rc}：\n{v.out}"
+        rc, out = hs.run_guard(sb, wt, tmp_path)
+        assert rc == 5, f"前置：守卫应拒绝，实得 {rc}：\n{out}"
+        hs.assert_nothing_touched(before, hs.true_and_ledger_states(),
+                                  what="跑完真跑形态之后")
+
+    def test_harness_env_pins_lock_and_ledger_under_tmp(self, tmp_path):
+        """结构性自证：`hs.clean_env` 的两个落点**必在 `$HOME` 之外**，且显式路径也受同一约束。
+
+        反向对照：显式把锁指到 `$HOME` 下 ⇒ `clean_env` **拒绝**（否则「结构保证」只是口号）。
+        """
+        env = hs.clean_env(tmp_path)
+        for key in ("MIGAO_HEAVY_LOCK_FILE", "MIGAO_PACKAGE_HEAVY_LEDGER"):
+            hs.unscoped_tmp_root(env[key])          # 不在 $HOME 下 ⇒ 不可能是真锁 / 真台账
+        with pytest.raises(AssertionError):
+            hs.clean_env(tmp_path, MIGAO_HEAVY_LOCK_FILE=str(hs.DEFAULT_REAL_LOCK))

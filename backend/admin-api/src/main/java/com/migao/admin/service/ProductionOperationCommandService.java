@@ -181,7 +181,10 @@ public class ProductionOperationCommandService {
         }
         Map<String, Object> view = productionOperationQueryService.operationView(op);
         if (positions != null) {
-            Map<String, Integer> counts = attachPositions(tenantId, op, positions, existingRows);
+            // issue #6102：更新既有工序时，兜底新建的行**继承该逻辑工序的既有有效价**
+            // （不是 `production_operations.unit_price` —— 那会盖掉商家改过的价 / 把「未定价」变成 0.00）；
+            // 该逻辑工序**一行都没有**（存量孤儿接入）⇒ 退回工序库价，与 {@link #create} 同口径。
+            Map<String, Integer> counts = attachPositions(tenantId, op, positions, existingRows, existingRows);
             view.put("created_positions", counts.get("created"));
             view.put("skipped_positions", counts.get("skipped"));
             log.info("存量工序接入部位: tenantId={}, operationId={}, name={}, positions={}, created={}, skipped={}",
@@ -292,7 +295,8 @@ public class ProductionOperationCommandService {
                 .build());
         Map<String, Object> view = productionOperationQueryService.operationView(op);
         if (positions != null) {
-            Map<String, Integer> counts = attachPositions(tenantId, op, positions, existingRows);
+            // 新增路径：该逻辑工序此前**没有任何行** ⇒ 兜底价 = 本次填的工序库价（既有正确行为，见 attachPositions）
+            Map<String, Integer> counts = attachPositions(tenantId, op, positions, existingRows, null);
             view.put("created_positions", counts.get("created"));
             view.put("skipped_positions", counts.get("skipped"));
         }
@@ -310,16 +314,44 @@ public class ProductionOperationCommandService {
      * （{@code null} 就落 {@code null} = 「做但未定价」，商家在「工艺项」表里就地定价；
      * **不发明单价** —— 猜出来的价会直接算成工人工资）。</p>
      *
+     * <p>🔴 <b>issue #6102：新建行的价按「该逻辑工序**已有**的行」分两种来源</b>
+     * （{@code priceSourceRows != null} 只由 {@link #update} 传入）——</p>
+     * <ul>
+     *   <li>{@link #create}（{@code null}，该逻辑工序此前没有任何行）⇒ 用
+     *       {@code production_operations.unit_price}（既有正确行为，**勿改**）；</li>
+     *   <li>{@link #update}（传 {@code existingRows}）⇒ 用 {@code collapseToLogical} 对该工序**自己那几行**
+     *       折出的**有效价**（读面/实例化同一个出处）：已有行是「未定价」⇒ 新行**也必须未定价**；
+     *       已有行已改价 X ⇒ 新行 X。若不这样，新建的 {@code 布帘} 行会在布帘列优先的收敛里
+     *       **盖住**种子期 {@code position='通用'} 的既有行 ⇒ 保存一次设置就静默改写计件单价
+     *       （未定价 ⇒ 0.00、改价 ⇒ 回退工序库价）。<b>该工序一行都没有</b>（存量孤儿接入）⇒ 退回工序库价。</li>
+     * </ul>
+     *
      * @return {@code {created, skipped}}（如实报数，供响应与 toast 直接引用，前端不自行推算）
+     * @param priceSourceRows 取价来源行：{@code null} = 新建工序（用工序库价）；非 null = 更新既有工序
+     *                        （用该工序已有行折出的有效价）—— 见方法 javadoc 的 issue #6102 一段
      */
     private Map<String, Integer> attachPositions(Long tenantId, ProductionOperation op,
                                                  List<String> positions,
-                                                 List<ProductionOperationPosition> existingRows) {
+                                                 List<ProductionOperationPosition> existingRows,
+                                                 List<ProductionOperationPosition> priceSourceRows) {
         String logicalName = productionOperationQueryService.normalizeOperationName(op.getName());
         Set<String> already = new LinkedHashSet<>();
         for (ProductionOperationPosition row : existingRows) {
             if (logicalName.equals(row.getLogicalName())) {
                 already.add(row.getPosition());
+            }
+        }
+        // issue #6102：更新路径的兜底价 = 该逻辑工序既有行经**读面同一份收敛**折出的有效价
+        // （`null` = 未定价 ⇒ 新行同样未定价，不得落工序库价）。`collapseToLogical` 只按 logical_name
+        // 分组 ⇒ 直接取本工序那一行，不需要先过滤出租户里其它工序的行。
+        BigDecimal fallbackPrice = op.getUnitPrice();
+        if (priceSourceRows != null) {
+            for (ProductionOperationPosition row : ProductionOperationQueryService
+                    .collapseToLogical(priceSourceRows)) {
+                if (logicalName.equals(row.getLogicalName())) {
+                    fallbackPrice = row.getUnitPrice();
+                    break;
+                }
             }
         }
         int created = 0;
@@ -334,7 +366,7 @@ public class ProductionOperationCommandService {
                     .tenantId(tenantId)
                     .logicalName(logicalName)
                     .position(position)
-                    .unitPrice(op.getUnitPrice())
+                    .unitPrice(fallbackPrice)
                     .applicable(true)
                     .status("active")
                     .createdAt(OffsetDateTime.now())

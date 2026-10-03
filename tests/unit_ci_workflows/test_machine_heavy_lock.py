@@ -685,9 +685,21 @@ class TestVerifyAllWiring:
             + marker_consumer,
             encoding="utf-8",
         )
-        env = {**os.environ, "MIGAO_HEAVY_LOCK_FILE": str(lock),
-                 "MIGAO_HEAVY_LEDGER": str(lock.parent / "heavy-lock-ledger.jsonl"),
-               "MIGAO_HEAVY_ROOTS": str(lock.parent / "no-roots-here")}
+        # 🔴 **把本判据自己运行环境里的那个标记剔掉**（issue #6112）—— 否则注入式红证退化成空断言：
+        # `verify-all.sh` 拿锁成功后**会** `export MIGAO_HEAVY_LOCK_HELD=1`（= 本判据要守的**正确行为**），
+        # 而本判据恰恰常跑在它下面（`./verify-all.sh gate` / `scripts/batch-gate.sh`）⇒ 该变量已在
+        # `os.environ` 里；原样 `{**os.environ}` 继承下去，子进程**无论** `macquire` 写的是 `export`
+        # 还是普通赋值都看得见 `=1` ⇒ **两者不可区分**，下面 `--no-export` 那条必红
+        # （实测 gate 日志：`assert 'CHILD_SEES=<unset>' in '…CHILD_SEES=1\n'`）。
+        # 剔除**只加强**判别力、不改被测行为：拿锁腿从此只能靠 `macquire` 自己的 `export` 让子进程
+        # 看见 `=1`；注入腿则在**无该变量**的前提下断言 `<unset>`。仓库内同口径既有实现见
+        # `heavy_entry_sandbox._ENV_DROP` / `test_suite_self_lock._child_env`。
+        env = {k: v for k, v in os.environ.items() if k != "MIGAO_HEAVY_LOCK_HELD"}
+        env.update({
+            "MIGAO_HEAVY_LOCK_FILE": str(lock),
+            "MIGAO_HEAVY_LEDGER": str(lock.parent / "heavy-lock-ledger.jsonl"),
+            "MIGAO_HEAVY_ROOTS": str(lock.parent / "no-roots-here"),
+        })
         try:
             good = subprocess.run(["bash", str(harness)], capture_output=True, text=True, env=env)
             assert good.returncode == 0, f"成功路径必须过：{good.stdout}\n{good.stderr}"
