@@ -1,3 +1,4 @@
+# case_ids: OR-013
 """
 米宝机器人全场景 E2E 集成测试
 ================================
@@ -11,9 +12,14 @@
     - AI Agent Service 运行在 localhost:8001（DEBUG=true，默认 admin 用户 → mibao agent）
     - DashScope API Key 已配置
     - PostgreSQL 和 Redis 可用
+    - **凭据能被服务接受**：`/api/chat/send` 走的是 `get_current_user`，它**不认**
+      `X-Service-Token` —— DEBUG=true 的服务要显式 `X-Debug-Role`（或 JWT，P0-3 加固后
+      「无 token 无调试头」一律 401 fail-closed）。凭据不被接受时本文件**整体 skip**
+      （未就绪，不是失败，见下面的「服务就绪检查」）。
 
 实现适配说明：
-    - 实际接口为 POST /api/chat/send（非 /api/v1/chat），由 X-Service-Token + DEBUG 模式自动注入 admin 用户
+    - 实际接口为 POST /api/chat/send（非 /api/v1/chat），身份由 JWT 或 DEBUG 下的
+      `X-Debug-Role` 注入（admin → mibao agent）；`X-Service-Token` 只对内部 API 有效
     - SSE data 字段为 JSON 编码（如 {"content": "..."}），需 json.loads 解析
     - agent_type 由后端 JWT 角色自动决定（admin → mibao）
     - 多轮对话历史由服务端按 session_id 自动管理，无需在请求体中传 chat_history
@@ -26,6 +32,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 import pytest
+
+from tests.live_service_readiness import not_ready_reason
 
 
 # === SSE 解析辅助 ===
@@ -48,33 +56,42 @@ class SSEEvent:
         return f"SSEEvent({self.event_type}, {self.data[:60]}...)"
 
 
+# 前置就绪探针的**契约**（issue #6160）：探哪个端点、用什么凭据 —— **唯一来源**。
+# ⚠️ 必须是**字面量**：`scripts/ai-agent-e2e-readiness.py` 用 `ast` 现取它（既不执行本文件的
+#    代码，也不需要 venv / httpx）⇒ 本文件的 skip 判定与 verify-all.sh 的「未就绪」前置
+#    读的是**同一份事实**（两处各写一份必然漂移）。
+# 🔴 凭据**不进代码**（issue #6172）：字面量里留空串（契约形状与 `ast` 现取都不变），真值由
+#    环境注入 `MIGAO_SERVICE_TOKEN`；不设 ⇒ 不带该头（探针判未就绪，不是失败）。
+LIVE_SERVICE_PROBE = {
+    "endpoint": "http://localhost:8001/api/chat/send",
+    "headers": {
+        "Content-Type": "application/json",
+        "X-Service-Token": "",
+        "X-Tenant-Id": "1",
+    },
+}
+if os.environ.get("MIGAO_SERVICE_TOKEN"):
+    LIVE_SERVICE_PROBE["headers"]["X-Service-Token"] = os.environ["MIGAO_SERVICE_TOKEN"]
 BASE_URL = "http://localhost:8001"
-# 🔴 凭据**不进代码**（issue #6172）：契约形状不变（仍是 `HEADERS` 里的 `X-Service-Token` 头），
-#    但值由环境注入（形态照抄 issue #6170 的 `MIGAO_SERVICE_TOKEN`）—— 不设 ⇒ **不带该头**。
-SERVICE_TOKEN = os.environ.get("MIGAO_SERVICE_TOKEN", "")
-HEADERS = {"Content-Type": "application/json", "X-Tenant-Id": "1"}
-if SERVICE_TOKEN:
-    HEADERS["X-Service-Token"] = SERVICE_TOKEN
-CHAT_ENDPOINT = f"{BASE_URL}/api/chat/send"
+CHAT_ENDPOINT = LIVE_SERVICE_PROBE["endpoint"]
+HEADERS = dict(LIVE_SERVICE_PROBE["headers"])
 
 
-# === 服务可用性检查 ===
-
-def _is_service_available() -> bool:
-    # 没凭据 ⇒ 探不通（服务 fail-closed）⇒ 按**未就绪**处理（skip），不是失败（issue #6172）。
-    if not SERVICE_TOKEN:
-        return False
-    try:
-        import socket
-        with socket.create_connection(("localhost", 8001), timeout=2):
-            return True
-    except (socket.timeout, ConnectionRefusedError, OSError):
-        return False
-
-SERVICE_AVAILABLE = _is_service_available()
+# === 服务就绪检查（外部服务 + 凭据）===
+# 本面需要**本机在跑的 ai-agent-service** + **它接受的凭据**。两种「没准备好」都判
+# **未就绪（skip）**、而不是**失败**（issue #6160）：
+#   ① 服务不在跑（连不上）；② 服务在跑但**不认这套凭据**（HTTP 401 AUTH_REQUIRED）。
+# 后者实测把 20 条用例报成 failed（`chat 接口返回非 200：401, detail={"code":"AUTH_REQUIRED"}`，
+# 2.79s），且同一读数在主检出上逐字复现 ⇒ 那是**本地环境红**，不是代码回归。
+#
+# 判定本体 = `tests/live_service_readiness.py::not_ready_reason()`（单一实现，stdlib-only）：
+# 它**真去探**一次 chat 端点（空体 POST，鉴权先于请求体校验 ⇒ 不触发 LLM）；verify-all.sh 的
+# `ai-agent-e2e` 前置用的是同一个函数 ⇒ 用例的 skip 与门禁的「未就绪」不会各说各话。
+# 🔴 探针**只看探通不通**：探得通之后本文件照常跑、照常判红绿 —— 真失败仍红，不许被吞掉。
+READINESS_REASON = not_ready_reason(CHAT_ENDPOINT, HEADERS)
 _skip_if_no_service = pytest.mark.skipif(
-    not SERVICE_AVAILABLE,
-    reason="AI Agent Service 未在 localhost:8001 运行，或未注入 MIGAO_SERVICE_TOKEN（未就绪）",
+    bool(READINESS_REASON),
+    reason=f"ai-agent e2e 未就绪（需本机服务 + 凭据）；准备：{READINESS_REASON}",
 )
 
 
