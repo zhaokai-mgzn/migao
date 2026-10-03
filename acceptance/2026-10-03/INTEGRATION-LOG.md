@@ -666,3 +666,20 @@ git show origin/main:.../ProcessingOrderService.java  ⇒ 残留 "return Map.of(
 ⇒ `gh issue close 6226` + 证据评论（mergedAt / merge commit / main 侧内容级读数 / 修前红-修后绿 / latent 与射程边界）。关闭时刻 **2026-10-03T09:40:05Z = 17:40:05 +08**。
 
 **本轮合并与关单总账（截至 17:40 +08）**：已合 `#6233`(#6219) · `#6234`(#6226) —— 对应 issue **均已 CLOSED**；未合 `#6230`(#6220) · `#6231`(#6221) —— issue 保持 open（正确）；承载体 `#6229` 待评审。
+
+### 19.22 合并后兜底（续）+ 批次组成的一条纪律
+
+**① `#6221` 已兜底关单**（与 `#6226` 同因：`close-linked-issues` 对该 PR 的运行发生在**合并之前**）
+```
+gh pr view 6231 ⇒ MERGED 2026-10-03T09:47:24Z（17:47:24 +08）  origin/main 顶端 = 9bd8d4301 (#6231)
+main 侧内容级：MoneyScale.java 存在 · OrderService 含 MoneyScale.requireTwoDecimalsOrNull（接线在）
+              · aftersales.yml 含 AS-013/AS-014 · 锚点 history 末行 = 114
+```
+⇒ `gh issue close 6221` + 证据评论（合并事实 / main 侧内容与判据读数 / 修前 `0.001 ⇒ 200 静默归零` → 修后 `422` 且**拒绝在任何写之前** / 未起真库腿与元守卫射程边界）。
+**本轮合并总账（截至 17:48 +08）**：已合 `#6233`(#6219) · `#6234`(#6226) · `#6231`(#6221) —— **三个 issue 均已 CLOSED**；未合 `#6230`(#6220)（issue 保持 open，正确）；承载体 `#6229` 待评审。
+
+**② 纪律：批次 `batch-gate` 的组成 = **仅未合并的包****（本轮踩了两次、自我纠错两次）
+- 首版我把 **已合并**的 `fix/6226` 放进批次 ⇒ 就绪判定会去查一个 `MERGED` 的 PR（本仓就绪判定按 PR 的 check 面判），大概率白等一轮 CI；
+- 第二次把 **刚合并**的 `fix/6221` 留在列表里 ⇒ 同样问题；
+- ⇒ 现状批次 = **只剩 `fix/6220-aftersales-concurrency` 一个包**（其 CI 收敛后自动跑），日志 `out/batch-gate-round3c.log`。
+**判据（可机械判）**：入批前对每个分支跑一次 `gh pr view <该分支的 PR> --json state`，**`state != OPEN` 的包一律不入批**（它的代码已在 main，集成工作区从 main 开始 ⇒ 天然被覆盖）。
