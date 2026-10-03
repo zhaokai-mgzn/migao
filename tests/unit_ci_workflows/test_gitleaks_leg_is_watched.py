@@ -44,9 +44,11 @@
   （`gitleaks/gitleaks-action` 自带二进制）照样成立。
 - ✅ **额外旁证（真事件，非构造）**：本 PR 第一次 `git push` 被 GitHub **push protection**
   以 `GH013 Push cannot contain secrets` **拒绝**，命中的正是本文件里那行 Slack webhook 形态的
-  **假**凭据（`locations: tests/unit_ci_workflows/test_gitleaks_leg_is_watched.py:288`）
-  ⇒ **扫描链真的会拦**（连假凭据都不许进仓）。故本用例的凭据形态改为**运行时拼接构造**
+  **假**凭据（报错的 `locations:` 指到本文件里那行伪造凭据字面量）⇒ **扫描链真的会拦**
+  （连假凭据都不许进仓）。故本用例的凭据形态改为**运行时拼接构造**
   （仓里不留可命中的字面量），并实测确认拼出来的串仍被 `gitleaks` 命中。
+  （此处**有意不写行号**：本文件是新增文件、行号随时会动，且对 `origin/main` 而言该文件不存在
+  —— 写 `文件名:行号` 会被 Case Trust Gate 的规则 G 判 `CASE-TRUST-STALE-LINE-REF`，实测踩到。）
 - ⚠️ **两个实测坑（写进判据防复发）**：
   ① 第一版塞 AWS 官方文档示例键（`AKIA…EXAMPLE`）⇒ gitleaks 自带 allowlist 判 noise ⇒
      `no leaks found` ⇒ **红证当场变成空断言**；
