@@ -3034,7 +3034,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（76 case）
+## 杂项域（77 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4152,6 +4152,22 @@
 跳过: [backend-contract] 纯源码扫描 + 内存注入判据（只读 types/index.ts / admin-api 源码 / 迁移 SQL / ai-agent 源码；零真库、零网络、零 LLM），由 Java 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-03 新增（issue #6224，铁律 8 类级固化）：修一处只修一处 = 没修 —— refundMethod 的形态（声明在前端 types、后端零生产者、线上恒不下发）在别的联合类型字段上照样成立，而没有任何东西会红。本守卫把「凡前端 types 里的联合类型字段，必须有后端生产者、否则登记」变成机械判据；真语料注入证明它真能抓住本包修的那个字段（把 refundMethod 加回 types ⇒ 具名 UNREGISTERED 红）。取号 MC-076（python3 scripts/next_case_id.py MC ⇒ main:001-075 ⇒ 最小空闲 MC-076）。⚠️ 未固化（照实登记）：非联合类型字段不在射程内；P3 宽松项会漏掉名字通用的字段。 ｜ tags: meta-guard, dead-field, frontend-types, shrink-only, backend-contract
+
+### MC-077. worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸） 🔵
+```
+你: 当 `git worktree list` 登记了某个 worktree、但它的目录在磁盘上已经不存在时（该分支被判「已被该 worktree 占用」⇒ `git worktree add` 直接 fatal，而 `git worktree prune` 与 `git worktree remove --force` 都可能无效）；或有人想删掉一个落点在 `.git/worktrees/` 之外的目录时；或新增了一个会动 worktree 存量的命令函数却没过前置断言时 —— 必须有判据具名报出、且删除落点在白名单外一律拒绝。
+期望: direct_reply
+数据: **病（2026-10-03 修复包 F-6219 实测撞见，主会话已核实）**：`git worktree list` 把某个 worktree 登记在册而它的目录**在磁盘上不存在** ⇒ ① 该分支被判「已被该 worktree 占用」，`git worktree add <path> <branch>` 直接 `fatal: … is already used by worktree at …`；② `git worktree prune` 与 `git worktree remove --force` **都可能无效**。代价 = 每个撞上的包**白花 3~4 轮**手工诊断，而**没有任何东西会因此变红**（与铁律 11「声明存在 ≠ 可达」同族）。
+数据: **本机 git 2.54.0 实测的三种顽固形态（判据 1 逐条钉住）**：**A `locked` 形态**（`worktree lock` 后删目录）⇒ `prune -v` **rc=0 且什么都不删**（静默）、`remove --force` 报 `cannot remove a locked working tree`；**B 未锁 + 目录消失** ⇒ `prune` 真会删掉（故**主判据用 A 取红证**）、`remove --force` 报 `not a working tree`；**C 目录残留 + `$wt/.git` 已没** ⇒ `prune` 不动、`add` 报 `already exists`。唯一有效修法 = 清掉 `.git/worktrees/<name>` 再 `prune`。
+数据: **判据 1（旧行为红证，先证明判据不是空断言）**：形态 A 下 `git worktree add` 必须复现 `missing but locked worktree`；`prune -v` 必须 **rc=0 且 stdout 为空**；`remove --force` 必须失败。三条读数都是 git 自己打的（本判据不复制任何 git 逻辑）。判据 = tests/unit_ci_workflows/test_dev_worktree_registry_drift.py 的 `test_old_behaviour_reproduces_the_reported_symptom`。
+数据: **判据 2（新行为：只读判红 + 自愈）**：`doctor`（默认只读）在 A/B/C-空残留 上 exit=1、**逐条具名**（条目名 + 登记路径）、且登记目录**一字未动**；`doctor --heal` 自愈成功（**先打印将删清单** + 复检绿读数）⇒ 随后 `git worktree add` 成功。形态 C 的**非空残留**另有判据：只清登记条目 + **具名交代残留** + 给出显式入参的人工出口 `rm -rf -- <path>`，**绝不**替操作者删那个非空目录（里面可能有别人未提交的改动）。判据 = 同文件 `test_doctor_is_read_only_and_red_on_drift` / `test_doctor_heal_repairs_and_unblocks_add` / `test_nonempty_residue_is_named_and_never_deleted`。
+数据: **判据 3/4（入口前置断言 + 类级元守卫）**：`add` / `rm` / `rebase` 三个命令函数都必须有**可执行**的 `wt_registry_assert_for_entry` 调用（写在注释里不算）；`add` 在漂移存在时自愈后仍把工作区建出来（`工作区就绪`）；`rm <健康工作区>` 在**另有漂移**时先自愈再动手、本操作照常完成。元守卫 = 脚本里**每个命令函数**要么过断言、要么在只读名单里写明理由（双向核：新增命令 / 只读名单陈旧都判红）。判据 = 同文件 `test_add_preflight_self_heals_then_creates_the_worktree` / `test_rm_entry_also_goes_through_the_assertion` / `test_rebase_entry_also_goes_through_the_assertion` / `test_static_judgement_has_teeth_in_memory`。
+数据: **判据 6/7（安全护栏：白名单 + fail-closed）**：`rm -rf` 的落点**只允许** `<common git dir>/worktrees/<name>`；`…/migao-wt/<name>`、`…/migao-dev/<name>`、`$HOME` 前缀、本仓 worktree 根目录 / `.git` 本身、`..` 越界、以及**经软链逃逸**的条目**逐个拒绝并打印原因**；混合调用（1 允许 + 1 越界）整体**仍判红**（fail-closed）。**注入式红证**：把登记条目换成指向仓外的软链 ⇒ 守卫拒绝且软链与目标逐字节完好。判据 = 同文件 `test_guard_rejects_every_allowlist_outside_landing_zone` / `test_guard_allows_only_the_registry_landing_zone`。
+数据: **判据 5（反向对照，防「为了自愈把正常条目删了」）**：健康登记表下 `doctor` exit=0、绿色读数、登记条目与 `gitdir` 字节不变、工作区目录仍在。判据 = 同文件 `test_healthy_registry_is_green_and_unchanged_and_untouched`。
+数据: 🔴 **覆盖边界（照实登记）**：① 只治「登记了但磁盘没有」**一个方向**；「磁盘有、git 不认」（`$wt/.git` 被换成别的仓库的 `.git` 等）是 issue #6235 的**观察项**，不在射程内；② 判不了「过去已建好的漂移」的追溯修复 —— 本包拦的是**下一次**（下次 `add` 开工即自愈），存量要人跑一次 `doctor --heal`；③ 判定口径 = 「登记路径的目录 + 其中的 `.git` 都在」，一个目录+`.git` 都在但内容被换成别的东西的工作区会被判健康（git 自己也认它，靠 `prune` 的 `prunable` 标记，本判据不重复判）；④ 本判据守的消费点是 shell 脚本 ⇒ 登记不进 §28.2.1 的 `wiring_claims_ledger.json`（其判据 3 要求 `::` 左边以 `.py` 结尾），缺口照实登记、**不放宽**那个门禁；⑤ 只跑定点判据，不跑 `verify-all.sh gate` / 全量 pytest（重活串行）。
+跳过: [dev-tooling] 真 fixture 行为 + 纯静态控制流守卫（在 tmp_path 里真 `git init` + 真 worktree，造「登记存在、磁盘没有」的三种形态；只读仓内脚本；零真库、零网络、零 LLM、不碰任何真实工作区）由 tests/unit_ci_workflows/test_dev_worktree_registry_drift.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-03 新增（issue #6235，由本轮修复包 F-6219 实测撞见、主会话核实后派包）。落地 = ① `scripts/dev-worktree.sh` 新增 `_wt_registry_scan`（只读扫描）/ `wt_registry_guard`（删除落点白名单，含软链逃逸拒绝）/ `wt_registry_doctor`（默认只读判红、`--heal` 打印将删清单后按白名单删除 + prune + 复检）/ `wt_registry_assert_for_entry`（入口前置断言，`add`/`rm`/`rebase` 全接）；② 顺带修正 `REPO_ROOT` 解析 —— 原实现 `cd .git/..` 相对**调用者 cwd** 解析，从别处调用本脚本时 `cd` 失败（`set -e` 下更糟），改用 `git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir` + 回退；③ 新增元守卫 tests/unit_ci_workflows/test_dev_worktree_registry_drift.py（9 条判据 + 注入式红证）。取号 MC-076 → **改判 MC-077**（原 MC-076 与**已合并的 #6224**（PR #6240，squash 69f98cfe7）撞号 ⇒ 按主会话跨 refs 复核的空闲号顺延；`scripts/next_case_id.py MC` 现取当时读数 = main:001-075 ⇒ 最小空闲 MC-076）。⚠️ **未固化 / 有意不做（照实登记）**：不治「磁盘有、git 不认」的反向形态；不做存量追溯修复；不加 schedule/cron（铁律 10）；`dev-worktree.sh list` 在**存在会话锁**时 rc=1 的既有缺陷（main 上已存在、非本包引入）改由 issue #6235 观察项登记、本包不动它。 ｜ tags: ci, dev-tooling, worktree, registry-drift, fail-closed, allowlist, red-proof
 
 ## 商家入驻域（5 case）
 
@@ -9374,8 +9390,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：652（活跃 134，跳过 518）
-- tier 分布：smoke 12 / normal 600 / adversarial 32
+- 用例总数：653（活跃 134，跳过 519）
+- tier 分布：smoke 12 / normal 601 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9390,7 +9406,7 @@
 - 财务对账域：5
 - 人事域：13
 - 知识问答域：7
-- 杂项域：76
+- 杂项域：77
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：57
@@ -9497,6 +9513,7 @@
 - MC-074: 凭据字面量不得进仓：明文 service token 一律走环境注入（不设 ⇒ 未就绪 / 不带该头），由仓内守卫按**现取**扫真源码判红（gitleaks 只扫新增行 ⇒ 存量明文它看不见）
 - MC-075: B 端米宝页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）
 - MC-076: 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed
+- MC-077: worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
