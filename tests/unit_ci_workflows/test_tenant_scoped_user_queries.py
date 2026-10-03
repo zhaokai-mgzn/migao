@@ -27,7 +27,10 @@
 `UserMapper.selectActiveUsersByPhoneIgnoreTenant`（短信登录）**必须**跨租户查：
 手机号是登录标识，同号可能存在于多个租户 —— 加了 `tenant_id` 谓词会让多租户下**查不到人**。
 它的补偿控制是显式的：命中多个租户且未指定租户时**拒绝登录**（审计 07 P1-2），
-绝不静默 `LIMIT 1` 落错租户。
+绝不静默 `LIMIT 1` 落错租户；**并且**（issue #6159）指定了 `tenantId` 之后同一租户内命中
+**多于一条**同样拒绝 —— `users.phone` 在租户内**没有**唯一约束（建库脚本里 users 只有
+非唯一的 `idx_users_phone`），所以「多行」是可达状态，`findFirst()` 会让「谁被登进去」
+由返回顺序决定。⇒ 本台账的豁免**只有在这两条拒绝口径都在**的前提下才成立。
 """
 from __future__ import annotations
 
@@ -164,6 +167,35 @@ def test_username_unique_index_is_tenant_scoped():
             "「不同企业可同名」（AU-008）当场失效：\n    " + normalized[:200])
         assert ("WHERE username IS NOT NULL AND deleted = 0" in normalized), (
             f"{label} 的用户名唯一索引丢了部分索引谓词 ⇒ 存量 NULL 行会互相冲突（且软删行会占位）")
+
+
+# ── 判据 ⑤：本豁免的**补偿控制必须真的在**（issue #6159）──
+
+def test_exempt_phone_query_compensating_control_is_present():
+    """豁免台账的 `compensating_control` 不是注释 —— 它宣称的两条拒绝口径必须在生产码里可达。
+
+    issue #6159 的形态：`users.phone` 在租户内**没有**唯一约束 ⇒ 指定了 `tenantId` 之后同一租户内
+    命中**多行**是可达状态，而 `.findFirst()` 会让「谁被登进去」由返回顺序决定。⇒ 本判据把
+    「豁免的正当性」钉在**两份发起端源码**上（不另写第二份判定）：任一条被摘掉 ⇒ 当场红。
+    """
+    auth = (REPO / "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java"
+            ).read_text(encoding="utf-8")
+    mapper = (REPO / "backend/admin-api/src/main/java/com/migao/admin/mapper/UserMapper.java"
+              ).read_text(encoding="utf-8")
+
+    assert "selectActiveUsersByPhoneIgnoreTenant" in mapper, "越权查询方法已改名 ⇒ 本判据的射程失效，请复核"
+    assert "ORDER BY updated_at DESC" not in auth, (
+        "AuthService 里出现了按 updated_at 排序兜底 —— 「谁被登进去」又被绑到一个与账号身份无关的"
+        "列上（不可复现的病照旧，只是更隐蔽）：issue #6159 要求的是**歧义即拒绝**")
+
+    normalized = " ".join(auth.split())
+    assert "关联多个租户账号" in normalized, (
+        "跨租户歧义的 fail-closed 分支不见了 ⇒ 豁免台账的 ① 号补偿控制失效（审计 07 P1-2 回退）")
+    assert "inTenant.size() > 1" in normalized, (
+        "同租户内**多行**的 fail-closed 分支不见了（issue #6159）⇒ 回到「按返回顺序静默选一条」，"
+        "登录主体重新变得不可复现")
+    assert "该手机号在本企业内对应多个账号，无法确定登录身份" in normalized, (
+        "同租户歧义的用户可见文案不见了 —— 判据要能证明「拒绝的是歧义」而不是别的病因")
 
 
 # ── 自证：注入一个未登记的同形方法 ⇒ 判据 ① 必须红（否则上面的绿是空断言）──

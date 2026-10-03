@@ -5,7 +5,7 @@
     {
       "method": "selectActiveUsersByPhoneIgnoreTenant",
       "reason": "短信登录的服务端查找键是**手机号**（登录标识，天然跨租户）：同号可能存在于多个租户，加 tenant_id 谓词会让多租户下的管理员查不到人。",
-      "compensating_control": "① 命中多个租户且未指定 tenantId ⇒ **拒绝登录**（审计 07 P1-2，禁止静默 LIMIT 1 落错租户）；② role 门禁（issue #5485 不变式 I2）：只对 users.role='admin' 签发，非管理员一律 401 并引导员工登录入口；③ 平台超管路径走 platform_admins 表，不经过本查询。红证：AuthServiceTest 的多租户歧义三条 + SmsLoginRoleGateTest 的四条拒绝用例。",
+      "compensating_control": "① 命中多个租户且未指定 tenantId ⇒ **拒绝登录**（审计 07 P1-2，禁止静默 LIMIT 1 落错租户）；② **同一租户内命中多于一条**（`users.phone` 在租户内没有唯一约束，见 issue #6159）⇒ 同样**拒绝登录**（不 `findFirst()`、不按 updated_at 排序兜底）；③ role 门禁（issue #5485 不变式 I2）：只对 users.role='admin' 签发，非管理员一律 401 并引导员工登录入口；④ 平台超管路径走 platform_admins 表，不经过本查询。红证：AuthServiceTest 的多租户歧义三条 + SmsLoginRoleGateTest 的拒绝用例（含 #6159 的顺序无关两轮夹住）。",
       "registered_by": "issue #5485"
     }
   ]
