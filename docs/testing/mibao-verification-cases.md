@@ -4,7 +4,7 @@
 > 单一源：`.github/cases/`（本仓唯一源）。
 > 启动服务后按序执行；每轮 Case 独立。tier：🟢 smoke / 🔵 normal / 🔴 adversarial。
 
-## 售后域（14 case）
+## 售后域（15 case）
 
 ### AS-001. 售后工单列表 🟢
 ```
@@ -212,6 +212,18 @@
 ```
 真值: aftersales-flow.refund-money-scale
 溯源: 2026-10-03 新增（issue #6221，铁律 8 类级固化）：修一处只修一处 = 没修 —— 同形态缺口在别的金额入口（建单/改价、收款、售后联动、入库单价、加工费/计件单价…）原样成立。逐处读数落在 MoneyEntryPrecisionMetaGuardTest 的台账里，无准入者登记为债务并跟单 #6228。 ｜ tags: money-precision, meta-guard, backend-contract
+
+### AS-015. 售后工单详情/列表响应不再携带恒空的 refundMethod 键（三个 Java 载体上字段/getter/setter 全无；键不存在而非值为 null） 🟡
+```
+你: GET /api/admin/after-sales（列表）与 GET /api/admin/after-sales/{id}（详情）—— 响应体里不得出现 refundMethod 键
+数据: **形状判据（加回去即红）**（机器断言 = backend/admin-api/src/test/java/com/migao/admin/controller/AfterSalesRefundMethodRetiredTest.java 的 refundMethodIsGoneFromEveryJavaCarrier）：实体 AfterSalesTicket + 列表/详情两个响应 DTO 上不得再有 refundMethod 字段，也不得有 getRefundMethod / setRefundMethod。反射判据与 Jackson 的 null 策略无关 ⇒ 把字段加回去 ⇒ 当场红。
+数据: **线上响应判据（键不存在，不是值为 null）**（断言 = listResponseCarriesNoRefundMethodKey / detailResponseCarriesNoRefundMethodKey）：真走一次列表与详情（MockMvc + mock 服务）⇒ 响应体里不得出现 refundMethod 键；同时给正对照（同一份响应里 ticketNo / refundAmount 在），证明读到的是那份真响应而不是空壳。
+数据: **修后实测读数**：本包落库时该测试类 Tests run: 3, Failures: 0, Errors: 0；修前红用注入式红证取（把 refundMethod 加回 types + 三个 Java 载体 ⇒ 形状判据与元守卫同时具名红）。
+数据: **类级元守卫（铁律 8）**：本字段所属的「前端 types 声明、后端零生产者」族由 backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java 承担（未登记即红 / 台账只许缩短 / 扫描面为空 fail-closed）。
+数据: **射程边界（照实登记）**：MockMvc 走 standaloneSetup ⇒ 默认 Jackson 会序列化 null，比线上（spring.jackson.default-property-inclusion: non_null）更严；本判据不断言 DB 列被删（列无写者无读者即无害，删列是破坏性迁移，不在本包内）。
+跳过: [backend-contract] 售后响应契约下线由 Java 单测验证（AfterSalesRefundMethodRetiredTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-03 新增（issue #6224，用户 2026-10-03 逐字裁定「退款方式 不用记」⇒ 执行选项 2 下线该字段）。修前实测：refundMethod 是零生产者字段（DB 列 after_sales_tickets.refund_method 全仓无 INSERT/UPDATE、无 setter 实参写入，响应里只有「实体 getter → DTO setter」直通）⇒ 线上恒不下发（NON_NULL）而前端 types 却声明了它。修法 = 移除实体/列表响应/详情响应三处字段声明 + 服务里两处直通 + frontend/admin-web/src/types/index.ts 的声明（保留 DB 列）。取号 AS-015（python3 scripts/next_case_id.py AS ⇒ main:001-010,013-014 + 在飞 PR #6230:011-012 ⇒ 最小空闲 AS-015）。 ｜ tags: refund, dead-field, response-contract, backend-contract
 
 ## Agent 核心域（7 case）
 
@@ -3022,7 +3034,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（75 case）
+## 杂项域（76 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4125,6 +4137,21 @@
 跳过: [backend-contract] 纯静态仓内守卫（只读 menu.ts / page_registry.py / admin-api 权限目录 / 豁免台账；零真库、零网络、零 LLM、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_page_context_registry_coverage.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-03 新增（issue #6215，用户 2026-10-03 裁定「先做 4，这个更有价值」）。落地 = ① `backend/ai-agent-service/app/context/page_registry.py` 登记面 6 → **10** 条 route、真值源 3 → **7** 条（新增 `curtain-production-rules` / `dashboard-cards` / `order-amount` / `sales-shipment` 四条真值源）；② 新增豁免台账 `tests/unit_ci_workflows/page_context_exemptions_ledger.json`（**13** 条，只许缩短，每条带 reason + 具名重启条件）；③ 新增元守卫 `tests/unit_ci_workflows/test_page_context_registry_coverage.py`（双向相等 + 登记项自证 + 8 条注入式红证）；④ `backend/ai-agent-service/tests/test_page_context.py` 同步更新未登记语料（`/dashboard` 等已登记 ⇒ 换成仍在豁免台账里的真实页面 + 两个不存在的路径）并新增「精确 > 通配」「登记面只许扩」两条判据。取号 MC-075（`scripts/next_case_id.py MC` ⇒ main:001-074 ⇒ 最小空闲 MC-075）。⚠️ 未固化（照实登记）：不判「该页真值源是否为该页口径」这一判断本身；不跑真实 LLM 评测。 ｜ tags: ai-agent, page-context, coverage, exemption-ledger, shrink-only, default-deny, red-proof
+
+### MC-076. 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed 🔵
+```
+你: 在 frontend/admin-web/src/types/index.ts 的任一 interface 里新增一个「字符串字面量并集」类型字段（如 'a' | 'b'），而后端没有任何写点（无 setter 实参写入 / 不在 *Request 或 *Params / 无线上键字面量 / 无 SQL 写入 / ai-agent 无写入）—— 必须有判据具名报出该字段。
+数据: **未登记即红**（机器断言 = backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java 的 everyZeroProducerFieldIsRegisteredAndBacked）：语料 = types/index.ts 里 export interface 内部的字符串字面量并集字段（现取 19 个）；逐字段跑生产者判定 P1~P5（setter 实参写入 / *Request 或 *Params 里的声明 / Java 里的线上键字面量 / SQL INSERT 或 UPDATE / ai-agent 字典键写入；P1 排除 x.setFoo(y.getFoo()) 直通形态）⇒ 零生产者且未登记 ⇒ 具名红。
+数据: **台账不许空转（幽灵条目即红）**（断言 = redproof_ghostEntryFieldVanished / redproof_staleEntryAfterProducerAppears）：登记的字段已从 types 删掉 ⇒ 红；或该字段已获得后端生产者（缺口已修却还挂着）⇒ 红 —— 台账只许缩短。
+数据: **豁免必须可追**（断言 = redproof_debtWithoutIssueReference / redproof_exemptionWithoutReason）：登记为债务（BACKEND_ABSENT_DEBT）必须带跟进 issue 号；每条必须写 why，不许空口说「不是缺口」。
+数据: **只许缩短**（断言 = redproof_baselineGrew / liveBaselineDoesNotExceedFrozenBaseline）：台账条数现取 2 ≤ 冻结上限 2；长过上限 ⇒ 红。
+数据: **扫描面为空 fail-closed**（断言 = scanSurfaceIsNotEmpty / redproof_emptyScanFailsClosed）：发现规则扫不到任何联合类型字段（或 types 单一源被改名/搬走）⇒ 红，不许「扫不到 ⇒ 变绿」。
+数据: **判别力自证 + 反向对照（注入式红证）**：真语料注入（把 AfterSalesTicket.refundMethod 加回 types）⇒ 具名判红（redproof_realCorpusCatchesRefundMethod，证明本守卫真能抓住本包修的那个字段）；内存注入 5 类坏形态各自判红；同一夹具不注入 ⇒ 零违规（cleanFixture_hasNoViolation）。
+数据: **现取读数（2026-10-03 本包落库）**：语料 19；零生产者 2 = LogisticsFormData.shippingMethod（FRONTEND_ONLY：前端发货表单状态）+ LogisticsInfo.shippingMethod（BACKEND_ABSENT_DEBT：后端恒不下发、前端在 OrderDetail.tsx 真有消费者 ⇒ 恒 undefined，已开单 #6239 待人工裁业务口径）。
+数据: 🔴 **射程边界（照实登记）**：① 只覆盖「字符串字面量并集」字段，非联合类型字段（string/number/对象）与 types/ 之外的 TS 文件不在面内；② 「有生产者」判定含宽松项 P3（Java 里出现「字段名」加英文双引号的字面量即算）⇒ 名字越通用越容易被兜成「有生产者」，宁可漏不可误；③ 归类（FRONTEND_ONLY / BACKEND_ABSENT_DEBT）是人读 + 代码证据的判定，每条 why 给锚点，评审可逐条质疑；④ 判不了「有人把冻结上限改大」（落在 diff 评审里）。
+跳过: [backend-contract] 纯源码扫描 + 内存注入判据（只读 types/index.ts / admin-api 源码 / 迁移 SQL / ai-agent 源码；零真库、零网络、零 LLM），由 Java 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-03 新增（issue #6224，铁律 8 类级固化）：修一处只修一处 = 没修 —— refundMethod 的形态（声明在前端 types、后端零生产者、线上恒不下发）在别的联合类型字段上照样成立，而没有任何东西会红。本守卫把「凡前端 types 里的联合类型字段，必须有后端生产者、否则登记」变成机械判据；真语料注入证明它真能抓住本包修的那个字段（把 refundMethod 加回 types ⇒ 具名 UNREGISTERED 红）。取号 MC-076（python3 scripts/next_case_id.py MC ⇒ main:001-075 ⇒ 最小空闲 MC-076）。⚠️ 未固化（照实登记）：非联合类型字段不在射程内；P3 宽松项会漏掉名字通用的字段。 ｜ tags: meta-guard, dead-field, frontend-types, shrink-only, backend-contract
 
 ## 商家入驻域（5 case）
 
@@ -9345,9 +9372,9 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：650（活跃 134，跳过 516）
-- tier 分布：smoke 12 / normal 600 / adversarial 32
-- 售后域：14
+- 用例总数：652（活跃 134，跳过 518）
+- tier 分布：smoke 12 / normal 601 / adversarial 32
+- 售后域：15
 - Agent 核心域：7
 - API 层域：21
 - 登录认证域：11
@@ -9361,7 +9388,7 @@
 - 财务对账域：5
 - 人事域：13
 - 知识问答域：7
-- 杂项域：75
+- 杂项域：76
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：56
@@ -9375,6 +9402,7 @@
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
+- AS-015: 售后工单详情/列表响应不再携带恒空的 refundMethod 键（三个 Java 载体上字段/getter/setter 全无；键不存在而非值为 null）
 - API-013: 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）
 - API-014: 提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051）
 - API-015: 知识知识卡片 CRUD + 状态机 - 创建/编辑/发布/归档/删除（LLM WIKI 板块 #3051）
@@ -9466,6 +9494,7 @@
 - MC-073: 重活锁准入/溢出台账：五类 kind + stats 读出口径 + 槽满出声（蓝图 P2 测量面）
 - MC-074: 凭据字面量不得进仓：明文 service token 一律走环境注入（不设 ⇒ 未就绪 / 不带该头），由仓内守卫按**现取**扫真源码判红（gitleaks 只扫新增行 ⇒ 存量明文它看不见）
 - MC-075: B 端米宝页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）
+- MC-076: 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
