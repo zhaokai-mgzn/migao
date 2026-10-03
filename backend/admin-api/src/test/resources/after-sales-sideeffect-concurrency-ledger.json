@@ -13,6 +13,13 @@
       "guard": "状态流转 = DB 原子条件更新（WHERE id + tenant_id + status=读到的旧状态）；受影响行数 0 ⇒ 409「已被他人变更」，退款联动 / 库存回补 / 时间线写入**只在条件更新成功的那一次**执行",
       "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java::.eq(\"status\", currentStatus)",
       "case_ids": ["AS-011"]
+    },
+    {
+      "method": "InboundOrderService#post",
+      "verdict": "guarded",
+      "guard": "过账权 = DB 原子条件更新（`InboundOrderMapper#markPosted`：`UPDATE inbound_orders SET status='posted' … WHERE id=? AND tenant_id=? AND status='draft' AND deleted=0`，按影响行数判谁抢到过账权）；影响行数 0 ⇒ 409「只有草稿可以过账」，且这道闸位于**任何库存写入之前**（其后才是逐行 `receiveStock` + `stock_ledger_entries` + `stock_batches.insert`）⇒ 并发的第二个请求到不了库存写入。叠加的 DB 对象：`batch_no VARCHAR(32) NOT NULL` + 唯一索引 `uk_stock_batches_no (tenant_id, batch_no)`（真库实测在场）",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/InboundOrderMapper.java::AND status = 'draft' AND deleted = 0",
+      "case_ids": ["OR-057"]
     }
   ],
   "unverified": [
@@ -39,12 +46,6 @@
       "reason": "同 assignSession：状态 + 系统消息，无账目副作用",
       "issue": "#6220",
       "restart_condition": "同 assignSession"
-    },
-    {
-      "method": "InboundOrderService#post",
-      "reason": "⚠️ **疑似同类形态（涉库存）**：入库过账=无条件置 POSTED + 逐行 insert `stock_batches` ⇒ 并发重复过账可能重复建批次 / 重复入库；**本单未核验**（范围外，需独立判据）",
-      "issue": "#6220（本单登记为观察项）",
-      "restart_condition": "开单核验入库过账并发面（重复批次行 / 重复库存增量）后回填结论；未开单前不得当成「已保护」"
     },
     {
       "method": "ProcessingFeeCombinationCommandService#upsertFromOrderOverride",
@@ -86,6 +87,8 @@
     "射程 = `src/main/java/com/migao/admin/service/*.java` 里**逐字匹配**上述形态的方法；用别的写法（自研 mapper 方法名、`this.xxx()` 间接写、字符串拼接）绕过扫描器的形态本守卫看不见。",
     "本守卫只保证「登记存在且兑现」，**不保证** entries 里声称的保护真的有效 —— 那是实例判据的事（AS-011 = AfterSalesConcurrentResolveRealDbTest）。",
     "unverified 是**豁免台账**：只许缩短（新增豁免 ⇒ 红），缩短 = 把该条移进 entries 并给出兑现锚。",
-    "扫描器不做 AST 解析，方法名取自「@Transactional 之后到方法体 `{` 之间」的签名文本。"
+    "扫描器不做 AST 解析，方法名取自「@Transactional 之后到方法体 `{` 之间」的签名文本。",
+    "#6237 回填（2026-10-03）：`InboundOrderService#post` 原在 unverified 的观察项逐字称「无条件置 POSTED + 逐行 insert stock_batches ⇒ 并发重复过账可能重复建批次 / 重复入库」。核验结论 = **不真（该主张在当前代码上不成立）**：issue #5148（V117）已把过账改成 DB 原子条件更新，闸在任何库存写入之前。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/InboundPostConcurrentRealDbTest.java`（N=4 × 3 轮并发过账同一 draft 单 ⇒ 成功数恰 1 / 库存 +5.0 / 批次 2 行 / 台账 2 行 / 终态 posted；另带「串行正对照」与「带 Idempotency-Key 的并发入口」两条）。它**不**覆盖的：HTTP 层（PATCH action=post 是薄转发）、`nextFreeBatchNo` 的跨请求批次号竞争（不同单并发取号撞 `uk_stock_batches_no` ⇒ 那会**显式失败并回滚**，不是重复入库 —— 本单只登记该边界，未开单核验其重试语义）。",
+    "unverified_baseline 是**冻结快照**（只作「新增豁免 ⇒ 红」的上界）：条目落进 entries 后**有意保留**在基线里（子集关系仍成立）；本单证的是「豁免只许缩短」，不是「基线必须同步收缩到与现取集合逐一相等」。"
   ]
 }

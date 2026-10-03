@@ -4277,7 +4277,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（56 case）
+## 订单域（57 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -5320,6 +5320,20 @@
 跳过: [backend-contract] 纯后端日期窗口判据（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 BusinessDayWindowTest + BusinessClockSourceGuardTest 执行
 ```
 溯源: 2026-10-03 新增（issue #6200）：订单列表的日期筛选窗口由 UTC 日改为业务日（+08）。根因 = OrderService.getOrderPage 用日期串 + UTC 日界拼窗口；正确单源 = 同仓既有的 BusinessClock.startOfDay（右界改半开区间 `lt(D+1 00:00+08)`，不再漏掉最后一秒的亚秒部分）。 ｜ tags: order, time-window, admin-api, read-surface
+
+### OR-057. 入库过账并发面核验（N=4 并发过账同一 draft 单）：恰一个赢家、库存恰加一次、批次/台账各恰 2 行（issue #6237） 🟡
+```
+你: 两个管理员（或一个人在慢网络下双击）同时点了同一张草稿入库单的「过账」
+数据: **核验结论 = 不真**（台账 after-sales-sideeffect-concurrency-ledger.json 的 unverified 观察项逐字称「入库过账 = 无条件置 POSTED + 逐行 insert stock_batches ⇒ 并发重复过账可能重复建批次 / 重复入库」）：该主张在当前代码上不成立 —— issue #5148（V117）已把过账改成 DB 原子条件更新，且闸位于任何库存写入之前。
+数据: **恰一个赢家**（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/InboundPostConcurrentRealDbTest.java 的 concurrentPostHasExactlyOneWinnerAndOneStockIncrease）：N=4 并发过账同一 draft 单 ⇒ 成功数恰 1，其余 3 个返回 409（「只有草稿可以过账」）；重复 3 轮，且逐轮打印「真重叠」证据（4 个请求的时间区间逐对求交 + 并集跨度 < 各历时之和）。
+数据: **库存/批次/台账恰一份**（同一判据的落库读数，主判据取库内事实）：product_skus.stock 增量 == 独立算式（明细两行 3.0 + 2.0 = 5.0）；stock_batches 该单恰 2 行（一个 SKU 行 = 一个批次）+ 明细行回写批次号恰 2 行；stock_ledger_entries 的 ref_no = 本单号 ∧ reason = 'inbound' 恰 2 行；单据终态 posted 且 posted_by = 那一个赢家。重复入库 ⇒ 会读到 +20.0 / 8 行 / 8 行。
+数据: **正对照（护栏不误杀）**：单请求串行过账必须成功（条件更新谓词里的 tenant_id / status 非空 ⇒ 正常请求不被 409 误杀）—— 断言 = 同文件 serialPostStillSucceeds。
+数据: **带 Idempotency-Key 的入口也核验**：工人过账入口（WorkerInboundService#postDraft）的幂等键闸（client_request_keys 的 UNIQUE (tenant_id, client_request_id) + ON CONFLICT DO NOTHING）并发同键调用 ⇒ 库存仍恰加一次、批次/台账各恰 1 行、幂等键恰 1 行，全部落败都是显式 409（不是 500 / 不是静默成功）—— 断言 = 同文件 concurrentPostWithSharedIdempotencyKeyAlsoAddsStockOnce。
+数据: **DB 对象（实测在场，不是从代码推断）**：uk_stock_batches_no = UNIQUE (tenant_id, batch_no) 且 batch_no 为 NOT NULL（schema.sql 的 bootstrap 终态）⇒ 单张单内重复建批次会撞唯一索引，跨单并发取号撞索引则**显式失败并回滚**（不是重复入库）。
+数据: **判别力（红证，注入式 · 双向）**：把 InboundOrderMapper#markPosted 的 `AND status = 'draft'` 谓词摘掉（= 退回「无条件置 POSTED」形态）⇒ 本判据必红，实测读数 = 成功数 4 / 库存 +20.0 / 批次 8 行 / 台账 8 行；注入撤回后复绿。注入方式与成对读数见 PR body（注入是手动、一次性动作，不落成常驻判据）。
+跳过: [backend-contract] 纯后端并发落库判据（无 LLM 写路径：入库过账不经米宝 Agent 工具，B 端 PATCH action=post 与工人入口都是 admin-api 服务层）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 InboundPostConcurrentRealDbTest 执行
+```
+溯源: 2026-10-03 新增（issue #6237，第三轮深度测试的核验包）：台账 #6220 的 unverified 观察项「入库过账无条件置 POSTED ⇒ 并发重复建批次 / 重复入库」核验为**不真** —— issue #5148 的 CAS 闸（markPosted）已在任何库存写入之前，且批次号唯一索引 uk_stock_batches_no 兜底。本单**未改生产代码**（核验型交付）：交付物 = 真库并发判据（N=4 × 3 轮 + 串行正对照 + 带幂等键入口）+ 台账 unverified → entries 回填。 ｜ tags: inbound, stock, concurrency, backend-contract
 
 ## 加工项域（26 case）
 
@@ -9360,7 +9374,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：651（活跃 134，跳过 517）
+- 用例总数：652（活跃 134，跳过 518）
 - tier 分布：smoke 12 / normal 600 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
@@ -9379,7 +9393,7 @@
 - 杂项域：76
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：56
+- 订单域：57
 - 加工项域：26
 - 加工单域：60
 - 商品域：109
@@ -9500,6 +9514,7 @@
 - OR-049: 同会话同键重试下单 —— 第二次是幂等回放（replayed=true），落库订单恰好一张
 - OR-050: 合法复购负例 —— 同会话第二笔**内容不同**的订单必须新建（不得被当重试吞掉）
 - OR-027: 订单列表 startDate/endDate 窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 下单的单归错天/月/年）
+- OR-057: 入库过账并发面核验（N=4 并发过账同一 draft 单）：恰一个赢家、库存恰加一次、批次/台账各恰 2 行（issue #6237）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

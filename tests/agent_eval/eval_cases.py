@@ -6818,6 +6818,24 @@ _CASE_OR_027 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-057 [EDGE] 入库过账并发面核验（N=4 并发过账同一 draft 单）：恰一个赢家、库存恰加一次、批次/台账各恰 2 行（issue #6237）（源: cases/order.yml）──
+_CASE_OR_057 = EvalCase(
+    id='OR-057',
+    legacy_id='',
+    title='入库过账并发面核验（N=4 并发过账同一 draft 单）：恰一个赢家、库存恰加一次、批次/台账各恰 2 行（issue #6237）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['两个管理员（或一个人在慢网络下双击）同时点了同一张草稿入库单的「过账」'],
+    expectations=[],
+    data_checks=['**核验结论 = 不真**（台账 after-sales-sideeffect-concurrency-ledger.json 的 unverified 观察项逐字称「入库过账 = 无条件置 POSTED + 逐行 insert stock_batches ⇒ 并发重复过账可能重复建批次 / 重复入库」）：该主张在当前代码上不成立 —— issue #5148（V117）已把过账改成 DB 原子条件更新，且闸位于任何库存写入之前。', '**恰一个赢家**（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/InboundPostConcurrentRealDbTest.java 的 concurrentPostHasExactlyOneWinnerAndOneStockIncrease）：N=4 并发过账同一 draft 单 ⇒ 成功数恰 1，其余 3 个返回 409（「只有草稿可以过账」）；重复 3 轮，且逐轮打印「真重叠」证据（4 个请求的时间区间逐对求交 + 并集跨度 < 各历时之和）。', "**库存/批次/台账恰一份**（同一判据的落库读数，主判据取库内事实）：product_skus.stock 增量 == 独立算式（明细两行 3.0 + 2.0 = 5.0）；stock_batches 该单恰 2 行（一个 SKU 行 = 一个批次）+ 明细行回写批次号恰 2 行；stock_ledger_entries 的 ref_no = 本单号 ∧ reason = 'inbound' 恰 2 行；单据终态 posted 且 posted_by = 那一个赢家。重复入库 ⇒ 会读到 +20.0 / 8 行 / 8 行。", '**正对照（护栏不误杀）**：单请求串行过账必须成功（条件更新谓词里的 tenant_id / status 非空 ⇒ 正常请求不被 409 误杀）—— 断言 = 同文件 serialPostStillSucceeds。', '**带 Idempotency-Key 的入口也核验**：工人过账入口（WorkerInboundService#postDraft）的幂等键闸（client_request_keys 的 UNIQUE (tenant_id, client_request_id) + ON CONFLICT DO NOTHING）并发同键调用 ⇒ 库存仍恰加一次、批次/台账各恰 1 行、幂等键恰 1 行，全部落败都是显式 409（不是 500 / 不是静默成功）—— 断言 = 同文件 concurrentPostWithSharedIdempotencyKeyAlsoAddsStockOnce。', '**DB 对象（实测在场，不是从代码推断）**：uk_stock_batches_no = UNIQUE (tenant_id, batch_no) 且 batch_no 为 NOT NULL（schema.sql 的 bootstrap 终态）⇒ 单张单内重复建批次会撞唯一索引，跨单并发取号撞索引则**显式失败并回滚**（不是重复入库）。', "**判别力（红证，注入式 · 双向）**：把 InboundOrderMapper#markPosted 的 `AND status = 'draft'` 谓词摘掉（= 退回「无条件置 POSTED」形态）⇒ 本判据必红，实测读数 = 成功数 4 / 库存 +20.0 / 批次 8 行 / 台账 8 行；注入撤回后复绿。注入方式与成对读数见 PR body（注入是手动、一次性动作，不落成常驻判据）。"],
+    skip_reason='[backend-contract] 纯后端并发落库判据（无 LLM 写路径：入库过账不经米宝 Agent 工具，B 端 PATCH action=post 与工人入口都是 admin-api 服务层）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 InboundPostConcurrentRealDbTest 执行',
+    tags=['inbound', 'stock', 'concurrency', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -12574,6 +12592,7 @@ ALL_CASES = (
     _CASE_OR_054,
     _CASE_OR_056,
     _CASE_OR_027,
+    _CASE_OR_057,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
