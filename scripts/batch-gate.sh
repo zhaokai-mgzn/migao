@@ -30,7 +30,10 @@
 #     ① **无冲突**（离线可判，必做）：`git merge-tree --write-tree <base> <head>`
 #        （**只读**：不落工作区、不改索引）。有冲突 ⇒ 提示先同步主线。
 #     ② **required 全绿**（需 `gh` + 网络）：`gh pr list --head <branch> --state open` 取 PR 号，
-#        再 `gh pr checks <PR> --json name,state,bucket`；有 `fail` / `pending` ⇒ 提示等 CI 或先修红；
+#        再 `gh pr checks <PR> --json name,state,bucket`；有 `fail` / `cancel` / `pending`
+#        ⇒ 提示等 CI 或先修红；**`skipping` 不算红**（本仓 CI 按变更面**有意跳过**无关腿，
+#        见 #6160/#6170；把它当红会让单模块包**恒不就绪** ⇒ 本条修的是 issue #6216），
+#        但 skipping **只计数、不静默**（输出里显式写「另有 N 条 skipping」）；
 #        **找不到对应 PR** ⇒ 提示先开 PR。
 #
 #   三态口径（**不许糊**）：
@@ -208,15 +211,24 @@ if len(sys.argv) > 1 and sys.argv[1] == "numbers":
 else:
     if not data:
         print("EMPTY"); raise SystemExit(0)
+    # ⚠️ `skipping` **不是红**（issue #6216）：本仓 CI 按变更面**有意跳过**无关腿
+    # （`E2E 面判定` / `bmini H5 面判定` / `mini-app 面判定`，见 #6160/#6170）——
+    # 任何只动单一模块的包都必然带 skipping，把它当红 ⇒ 该包**恒不就绪** ⇒ 「一批一次全量」
+    # （D 口径、issue #6012）**永远启动不了**。头注释（第 33 行）与引入该判定的 PR #6056 说明
+    # 都只写 `fail`/`pending` ⇒ 判定式里的 `"skipping"` 是引入笔误。
+    # 但 skipping 也**不许静默变绿**（「没跑」必须长得像「没跑」）⇒ 只计入读数、不参与红判定。
     fail = [i.get("name", "?") for i in data
-            if (i.get("bucket") or "") in ("fail", "cancel", "cancelled", "skipping")]
+            if (i.get("bucket") or "") in ("fail", "cancel", "cancelled")]
     pend = [i.get("name", "?") for i in data if (i.get("bucket") or "") == "pending"]
+    skip = [i.get("name", "?") for i in data if (i.get("bucket") or "") == "skipping"]
+    skipnote = ("（另有 " + str(len(skip)) + " 条 skipping："
+                + "、".join(skip[:6]) + "）") if skip else ""
     if fail:
-        print("FAIL " + str(len(data)) + " 条 check；红：" + "、".join(fail[:6]))
+        print("FAIL " + str(len(data)) + " 条 check；红：" + "、".join(fail[:6]) + skipnote)
     elif pend:
-        print("PENDING " + str(len(data)) + " 条 check；未完成：" + "、".join(pend[:6]))
+        print("PENDING " + str(len(data)) + " 条 check；未完成：" + "、".join(pend[:6]) + skipnote)
     else:
-        print("OK " + str(len(data)) + " 条 check 全绿")
+        print("OK " + str(len(data)) + " 条 check 全绿" + skipnote)
 ' "$@"
 }
 
