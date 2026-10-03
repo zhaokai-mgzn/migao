@@ -107,6 +107,9 @@ class WorkerInboundServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 批次号取号（issue #6248）= `stockBatchMapper.update(...)` 的**受影响行数**（1 = 号归我）。
+        // Mockito 对 int 返回**默认 0** ⇒ 不桩这一句会被读成「号每次都被别人抢走」⇒ 20 次耗尽 409。
+        when(stockBatchMapper.update(any(StockBatch.class))).thenReturn(1);
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Product.class);

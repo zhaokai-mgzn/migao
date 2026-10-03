@@ -268,26 +268,16 @@ public class InboundOrderService {
             BigDecimal afterAvg = movingAverage(beforeQty, beforeAvg, quantity, unitCost);
             BigDecimal afterQty = beforeQty.add(quantity);
 
-            // ① 批次号**逐行生成**（一个 SKU 行 = 一个批次，V111 裁定）：整单共用一个号时，
-            //    第 2 行插 stock_batches 会撞 uk_stock_batches_no = UNIQUE (tenant_id, batch_no)
-            //    ⇒ 整个事务回滚（≥2 行的入库单必然过账失败，issue #5141）
-            String batchNo = nextFreeBatchNo(tenantId);
-            batchNos.add(batchNo);
-
-            // ② 加库存 + 写均价/成本金额/最近批次号（一条 SQL 内完成，避免「加了数量没写成本」的中间态）
-            //    均价用本服务算出的 afterAvg（与下面台账里的 avg_cost_after **同源同值**）
-            productSkuMapper.receiveStock(sku.getId(), quantity, afterAvg, batchNo);
-
-            // ③ 落库存台账（reason=inbound；成本快照一并落，使「库存/成本为什么变了」在同一张账上可对账）
-            stockLedgerService.record(tenantId, line.getProductId(), sku.getId(), sku.getSkuCode(),
-                    beforeQty, afterQty, StockLedger.REASON_INBOUND, order.getInboundNo(),
-                    "入库单过账" + (line.getDyeLot() != null ? "（缸号 " + line.getDyeLot() + "）" : ""),
-                    unitCost, beforeAvg, afterAvg);
-
-            // ④ 批次台账（缸号随批次可见；批次行不可改，冲销走新单据）
-            stockBatchMapper.insert(StockBatch.builder()
+            // ① 批次台账 + **原子取号**（issue #6248）：一个 SKU 行 = 一个批次（V111 裁定）——
+            //    整单共用一个号时，第 2 行插 stock_batches 会撞 uk_stock_batches_no
+            //    = UNIQUE (tenant_id, batch_no) ⇒ 整个事务回滚（≥2 行的入库单必然过账失败，#5141）。
+            //    ⚠️ 取号与占用必须是**一条语句**（`update(` = 候选随行插入 + ON CONFLICT DO NOTHING）：
+            //    改前「exists 判假 ⇒ 返回候选 ⇒ **之后**才 insert」的窗口在多实例 / 重启下可被利用
+            //    （两实例的进程内计数器从同一位置起步 ⇒ 同一候选 ⇒ 两边 exists 都为假）
+            //    ⇒ 后到的 insert 撞唯一索引抛 DuplicateKeyException ⇒ 用户侧 500。
+            //    ⇒ 候选必须先落库、后使用：号归不归我由唯一索引在插入那一刻裁（受影响行数 1/0）。
+            StockBatch batch = StockBatch.builder()
                     .tenantId(tenantId)
-                    .batchNo(batchNo)
                     .productId(line.getProductId())
                     .skuId(sku.getId())
                     .skuCode(sku.getSkuCode())
@@ -306,9 +296,50 @@ public class InboundOrderService {
                     .warehouse(order.getWarehouse())
                     .receivedDate(order.getInboundDate())
                     .remark(line.getRemark())
-                    .build());
+                    .build();
+            //    取号循环**留在本方法体内**（issue #6248）：这道闸 = 本方法里那次 `update(`
+            //    （受影响行数 1 = 号归我、0 = 刚被抢 ⇒ 换候选重来），与 `uk_stock_batches_no`
+            //    在同一事务内完成；台账 `after-sales-sideeffect-concurrency-ledger.json` 把它连同
+            //    过账 CAS 一起登记为 `InboundOrderService#post` 的并发保护。
+            String batchNo = null;
+            for (int attempt = 0; attempt < BATCH_NO_ATTEMPTS && batchNo == null; attempt++) {
+                String candidate = generateBatchNo();
+                batch.setBatchNo(candidate);
+                // 测试探针（issue #6248）：把「候选已定 → 交给 DB 裁」之间的窗口拉长（生产恒为 0，
+                // 无分支成本），用于证明「读-判-写」窗口可被利用；见 BatchNoTakeRaceRealDbTest。
+                if (BATCH_NO_PROBE_PAUSE_MILLIS > 0) {
+                    try {
+                        Thread.sleep(BATCH_NO_PROBE_PAUSE_MILLIS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw BusinessException.conflict("批次号取号被中断，请重试",
+                                "过账未完成，单据仍是草稿；请重新发起过账");
+                    }
+                }
+                if (stockBatchMapper.update(batch) == 1) {
+                    batchNo = candidate;
+                } else {
+                    log.warn("批次号刚被占用，重新生成: tenant={}, candidate={}", tenantId, candidate);
+                }
+            }
+            if (batchNo == null) {
+                throw new BusinessException("BATCH_NO_EXHAUSTED",
+                        "批次号连续 " + BATCH_NO_ATTEMPTS + " 次生成失败（当天号段疑似被占满或与库内已用号重叠），"
+                                + "请稍后重试或联系管理员", 409);
+            }
+            batchNos.add(batchNo);
 
-            // ⑤ 行上回写批次号（草稿态为 NULL；过账后才有 —— 批次号 = 「真的收货了」）
+            // ② 加库存 + 写均价/成本金额/最近批次号（一条 SQL 内完成，避免「加了数量没写成本」的中间态）
+            //    均价用本服务算出的 afterAvg（与下面台账里的 avg_cost_after **同源同值**）
+            productSkuMapper.receiveStock(sku.getId(), quantity, afterAvg, batchNo);
+
+            // ③ 落库存台账（reason=inbound；成本快照一并落，使「库存/成本为什么变了」在同一张账上可对账）
+            stockLedgerService.record(tenantId, line.getProductId(), sku.getId(), sku.getSkuCode(),
+                    beforeQty, afterQty, StockLedger.REASON_INBOUND, order.getInboundNo(),
+                    "入库单过账" + (line.getDyeLot() != null ? "（缸号 " + line.getDyeLot() + "）" : ""),
+                    unitCost, beforeAvg, afterAvg);
+
+            // ④ 行上回写批次号（草稿态为 NULL；过账后才有 —— 批次号 = 「真的收货了」）
             InboundOrderItem patch = new InboundOrderItem();
             patch.setId(line.getId());
             patch.setBatchNo(batchNo);
@@ -674,29 +705,37 @@ public class InboundOrderService {
     }
 
     /**
-     * 取一个**库内未被占用**的批次号（租户内）。
+     * 批次号取号的**重试上限**（issue #6248）：候选号在写入那一刻被别的事务抢走（受影响行数 0）
+     * ⇒ 换候选重来；连续 {@value} 次全被抢 ⇒ 显式抛 {@code BATCH_NO_EXHAUSTED}(409)，
+     * <b>不静默用一个可能重复的号</b>。
      *
-     * <p>为什么不能只靠原子计数器：计数器是**进程内**的，服务重启后从 0 开始 ⇒ 当天已用过
-     * 的 {@code PC-<今天>-0001} 会被再次生成，撞 {@code uk_stock_batches_no} 唯一索引
-     * ⇒ **整张单过账失败**（事务回滚）。批次号是印在卷标上的追溯标识，不能靠「重启得够少」。</p>
-     *
-     * <p>重试上限 20 次（远超「同一天重启 20 次且每次都恰好撞上」的实际情况）；
-     * 耗尽则显式抛错 —— 不静默用一个可能重复的号。</p>
+     * <p>为什么是 20（同族口径，见 {@code InboundOrderService#nextFreeInboundNo}）：远超
+     * 「同一天重启 20 次且每次都恰好撞上」的实际情况。<b>已知代价</b>（如实登记）：当天已用号 ≥ 20 时
+     * 重启后的第一批过账会被显式拒绝（回 409、零副作用），而不是静默重号 —— 判据见
+     * {@code BatchNoTakeRaceRealDbTest} 判据 ③。</p>
      */
-    private String nextFreeBatchNo(Long tenantId) {
-        for (int i = 0; i < 20; i++) {
-            String candidate = generateBatchNo();
-            boolean taken = stockBatchMapper.exists(new LambdaQueryWrapper<StockBatch>()
-                    .eq(StockBatch::getTenantId, tenantId)
-                    .eq(StockBatch::getBatchNo, candidate));
-            if (!taken) {
-                return candidate;
-            }
-            log.warn("批次号已被占用，重新生成: tenant={}, candidate={}", tenantId, candidate);
-        }
-        throw new BusinessException("BATCH_NO_EXHAUSTED",
-                "批次号连续 20 次生成失败（当天号段疑似被占满），请稍后重试或联系管理员", 409);
+    private static final int BATCH_NO_ATTEMPTS = 20;
+
+    /**
+     * <b>测试探针</b>（issue #6248，生产恒为 {@code 0}）：在「候选已定 → 交给 DB 判占用」之间暂停
+     * 指定毫秒。
+     *
+     * <p><b>为什么需要它</b>：窗口注入是竞态类缺陷的<b>唯一可信证据</b>形态
+     * （{@code migao-dev-flow} §28.1：跑绿不是证据、必须注入放大 + 双向对照）——判据要在
+     * 「注入 ⇒ 必红 / 撤回 ⇒ 复绿」两侧各跑一次。窗口本身只有微秒级，不注入就只能靠碰运气，
+     * 判据会退化成 flake。</p>
+     *
+     * <p><b>为什么放在这里而不是只放测试侧</b>：窗口在 {@link #post} 的取号循环里，测试侧
+     * 无法在「候选已定、尚未落库」那一刻插进一段延时（除非用 {@code mock()} 替换真 mapper ——
+     * 那会把唯一的 DB 原子判据换成 mock 的恒真返回，判据当场失去意义）。故留这条窄缝，
+     * 且只在包内可见（{@code BatchNoTakeRaceRealDbTest} 与生产同类同包）。</p>
+     */
+    static void setBatchNoProbePauseMillisForTest(long millis) {
+        BATCH_NO_PROBE_PAUSE_MILLIS = millis;
     }
+
+    /** 测试探针时长（默认 0 = 不暂停）；见 {@link #setBatchNoProbePauseMillisForTest}。 */
+    private static volatile long BATCH_NO_PROBE_PAUSE_MILLIS = 0L;
 
     /**
      * 移动加权平均：{@code (before_qty * before_avg + in_qty * unit_cost) / (before_qty + in_qty)}。

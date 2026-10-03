@@ -4334,7 +4334,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（59 case）
+## 订单域（60 case）
 
 ### OR-058. 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239） 🔵
 ```
@@ -5418,6 +5418,21 @@
 跳过: [backend-contract] 纯后端并发落库判据（无 LLM 写路径：入库过账不经米宝 Agent 工具，B 端 PATCH action=post 与工人入口都是 admin-api 服务层）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 InboundPostConcurrentRealDbTest 执行
 ```
 溯源: 2026-10-03 新增（issue #6237，第三轮深度测试的核验包）：台账 #6220 的 unverified 观察项「入库过账无条件置 POSTED ⇒ 并发重复建批次 / 重复入库」核验为**不真** —— issue #5148 的 CAS 闸（markPosted）已在任何库存写入之前，且批次号唯一索引 uk_stock_batches_no 兜底。本单**未改生产代码**（核验型交付）：交付物 = 真库并发判据（N=4 × 3 轮 + 串行正对照 + 带幂等键入口）+ 台账 unverified → entries 回填。 ｜ tags: inbound, stock, concurrency, backend-contract
+
+### OR-060. 入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409 🟡
+```
+你: 两家门店/两个管理员分别在不同入库单上点「过账」（服务重启后或部署了多个实例时，两边的取号计数器都从同一位置开始）
+数据: **核验结论 = 真（部分真）**：`uk_stock_batches_no` 的撞号**确实可达**，但**只在多实例 / 重启**（进程内计数器各自从同一位置起步）时可达；**同进程并发不可达**（`AtomicInteger.incrementAndGet()` 保证候选两两不同）。撞号时用户侧看到的是 **500**（`DuplicateKeyException` 无 catch），旧重试只覆盖「生成时已存在」、**不覆盖「插入时被抢」**。
+数据: **同进程并发（不可达路径的读数）**（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/BatchNoTakeRaceRealDbTest.java 的 singleProcessConcurrentPostAlwaysPicksDistinctBatchNo）：N=4 个**不同**入库单、同租户、同时过账 × 3 轮 ⇒ 全部 200、库内 `count(DISTINCT batch_no)` == 行数 == 4、全租户零重号组、库存增量 == 4 × 每单量；逐轮打印「真重叠」证据（4 个请求的时间区间逐对求交 + 并集跨度 < 各历时之和）。
+数据: **可达路径（真实形态）**：进程内计数器在**服务重启 / 新副本**后从 0 开始 ⇒ 两个执行体的计数器从同一位置起步 ⇒ 同一个候选号 ⇒ 两边 `exists` 都为假 ⇒ 后提交的 insert 撞唯一索引。判据 ④ 用「取号前会合点」把两边拿到同一候选这件事做出来（真实形态下由两个进程各自的计数器提供），并注入「检查到写入之间被抢」的窗口。**修前**：成功数 0 / 两个请求都是 500（PersistenceException）/ 批次 0 行 / 两个单都停在 draft；**修后**：成功数 2 / 200,200 / 批次 2 行 / 两个单都 posted。
+数据: **重启落在「当天号段头部已被占」时**（判据 ③）：先占满当天 0001..0020（一天的入库行数破 20 太容易），再把计数器归零（= 重启）⇒ **20 次重试耗尽 ⇒ 显式 409 `BATCH_NO_EXHAUSTED`**、零批次落库、单据回到 draft、已占号数不变（**不静默用一个可能重复的号**）。
+数据: **20 次耗尽语义（判据 ⑤）**：错误码 `BATCH_NO_EXHAUSTED` + HTTP 409 + 文案说明「连续 20 次生成失败」并给出下一步；拒绝时零副作用（事务回滚）。文案只覆盖『号段被占满』这一成因，不区分『多实例与库内已用号重叠』—— 已在 PR 的未覆盖项如实登记。
+数据: **修复（生产代码）**：把「判占用 + 占用」并成一条语句（`StockBatchMapper#insertIfFree` = 候选随行插入 + `ON CONFLICT (tenant_id, batch_no) DO NOTHING`，按受影响行数 1/0 判号归谁）⇒ 不再有可被插队的第二条语句；冲突时 PG 事务**不进 aborted** ⇒ 同一事务内换号重试安全（用捕获 `DuplicateKeyException` 则必须开新事务，那会把批次行提前提交、后续失败会留下『有批次、没库存』的残行）。`ON CONFLICT DO NOTHING` 在正常情况下不改变行为：候选落库仍是一行批次、库存/台账/明细回写全部照旧。
+数据: **廉价正向判据**：`InboundOrderServiceTest#postRetriesWhenCandidateIsSnatchedBetweenCheckAndInsert`（写号被抢 ⇒ 换号并取**下一个**候选、最终号三处同源同值）。
+数据: **DB 对象（实测在场）**：`uk_stock_batches_no = UNIQUE (tenant_id, batch_no)` 且 `batch_no` 为 NOT NULL（schema.sql 的 bootstrap 终态）—— 跨单并发取号撞索引会让**整张单过账失败并回滚**（不是重复入库）。
+跳过: [backend-contract] 纯后端并发取号判据（无 LLM 写路径：入库过账不经米宝 Agent 工具，B 端 PATCH action=post 与工人入口都是 admin-api 服务层）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 BatchNoTakeRaceRealDbTest 执行
+```
+溯源: 2026-10-03 新增（issue #6248，第三轮深度测试的核验包）：#6237 只登记边界的 `nextFreeBatchNo` 跨请求取号竞争，本单核验为**真（部分真）** —— 单实例并发不可达（原子计数器），多实例/重启可达且**用户侧 500**（重试只覆盖「生成时已存在」）。**已修**：取号与占用并成 `insertIfFree`（ON CONFLICT DO NOTHING + 换号重试），语义仍 fail-closed（20 次耗尽 = 409 BATCH_NO_EXHAUSTED）。交付物 = 真库并发判据（6 条：单实例 / 正对照 / 重启饱和 / 会合点注入双向 / 耗尽 409 / 零注入对照）+ 真库登记 + 台账回填。 ｜ tags: inbound, stock, concurrency, backend-contract
 
 ## 加工项域（27 case）
 
@@ -9484,7 +9499,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：660（活跃 134，跳过 526）
+- 用例总数：661（活跃 134，跳过 527）
 - tier 分布：smoke 12 / normal 607 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
@@ -9503,7 +9518,7 @@
 - 杂项域：79
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：59
+- 订单域：60
 - 加工项域：27
 - 加工单域：61
 - 商品域：109
@@ -9630,6 +9645,7 @@
 - OR-050: 合法复购负例 —— 同会话第二笔**内容不同**的订单必须新建（不得被当重试吞掉）
 - OR-027: 订单列表 startDate/endDate 窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 下单的单归错天/月/年）
 - OR-057: 入库过账并发面核验（N=4 并发过账同一 draft 单）：恰一个赢家、库存恰加一次、批次/台账各恰 2 行（issue #6237）
+- OR-060: 入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

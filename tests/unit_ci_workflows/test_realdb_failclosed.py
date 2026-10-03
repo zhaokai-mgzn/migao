@@ -92,6 +92,14 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "BatchAssignmentRuleRealDbTest.java": "direct",
     _SVC + "BatchConsumptionCuttingPlanRealDbTest.java": "direct",
     _SVC + "BatchConsumptionLedgerRealDbTest.java": "direct",
+    # issue #6248：入库批次号**跨请求取号**的真库判据（单实例并发不撞 / 多实例同起点撞唯一索引 /
+    # 20 次重试耗尽 409 / 重启落在已占头部 fail-closed）。为什么必须真 PG：缺陷是**读-判-写**
+    # （`exists` 判假 ⇒ 返回候选 ⇒ **之后**才 insert），窗口的可利用性只来自真 PG 的两件事 ——
+    # ① 唯一索引在插入那一刻的原子判定（`uk_stock_batches_no`）、② 未提交行对并发事务的可见性规则
+    # （B 的 SELECT 看不见 A 未提交的行 ⇒ 两边 exists 都为假）。mock 面上 `exists` 恒返回 false、
+    # `insert` 恒成功 ⇒「窗口能不能被利用」**结构上不可见**；而「撞了之后库存 / 批次行 / 单终态
+    # 变成什么样」也只能从真库读。
+    _SVC + "BatchNoTakeRaceRealDbTest.java": "direct",
     # issue #5865：按批次盘点的**真库**判据 —— 四条只真 PG 能证的事：
     # ① `stock_batches.quantity` 盘点前后**逐值相同**（红线「不原地改批次行」是**读数**，不是「没调 updateById」）；
     # ② 第 2 个批次**写入途中**失败 ⇒ 第 1 个也不落（注入式触发器 + 无事务对照读数）；
