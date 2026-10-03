@@ -680,10 +680,12 @@
    ],
    "literal_keys": [],
    "shape_notes": [
+    "**cached",
     "data ← self._transform_api_response(api_result, tracking_number, co",
+    "data=await get_logistics_trace_cache().get(context.tenant_id, tra",
     "data=self._transform_api_response(api_result, tracking_number, co"
    ],
-   "source_sha256": "206bfecde86632297de4323a4711e7773ded7f4becb74f82a4db3190282c169c"
+   "source_sha256": "cfbde6ef43bdaf165b6fdbd448cdff038a278aa3a212f620c96434507560474f"
   },
   "nav_guide": {
    "actions": null,

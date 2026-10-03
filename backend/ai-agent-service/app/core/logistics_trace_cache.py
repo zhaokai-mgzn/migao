@@ -21,10 +21,14 @@ TTL 口径（用户 2026-10-03 裁定：分档，每档在原建议值上 +1 小
 
 **不缓存**：调用失败（超时 / 异常 / 其它非 0 状态）—— 不把故障状态钉住。
 
-**本模块同时是「第三方响应 → 标准格式」解析与「轨迹 → 状态」推断的唯一实现**：
-实时查询路径（`LogisticsTrackTool._transform_api_response` / `_infer_status_from_traces`）
-只是薄转发。理由：两条路径各写一份解析，一旦漂移就会出现「实时查是已签收 / 命中缓存是在途」，
-而 TTL 分档正建立在状态之上 ⇒ 分歧会静默改变缓存时长。
+**本模块同时是「第三方响应 → 标准格式」解析的唯一实现**：实时查询路径
+（`LogisticsTrackTool._transform_api_response`）只是薄转发 —— 两条路径各写一份解析，一旦漂移就会出现
+「实时查是已签收 / 命中缓存是在途」，而 TTL 分档正建立在状态之上 ⇒ 分歧会静默改变缓存时长。
+
+**刻意不放在本模块的**：「轨迹 → 状态」的推断（中文关键词表）留在
+`LogisticsTrackTool._infer_status_from_traces` —— 那正是 `.github/tool-input-contract-baseline.json`
+按 R5 盯着的「中文措辞当判据」站点（只在它原有的文件里计 1 次，搬到新文件即顶穿逐文件基线）。
+⇒ 调用方通过 `infer` 参数注入推断函数，本模块不复制第二份关键词表。
 
 设计原则（与 `app/core/admin_api_cache.py` 同口径）：
 - 任何 Redis 异常都不抛给上游，缓存层不能拖垮主流程；
@@ -60,30 +64,6 @@ STATUS_TEXT_MAP = {
     "returned": "已退回",
 }
 
-# 中文物流状态关键词 → 内部状态
-CN_STATUS_MAP = {
-    "签收": "delivered",
-    "已签收": "delivered",
-    "签收人": "delivered",   # 如「送货上门，签收人：家门口」
-    "送达": "delivered",     # 如「快件已送达（上门服务）」
-    "派送成功": "delivered",  # 如「您的快件已派送成功（家门口）」
-    "派送": "out_for_delivery",
-    "派件": "out_for_delivery",
-    "正在派送": "out_for_delivery",
-    "揽收": "picked",
-    "已揽收": "picked",
-    "揽件": "picked",
-    "退回": "returned",
-    "退件": "returned",
-    "异常": "exception",
-    "问题件": "exception",
-    "到达": "in_transit",
-    "在途": "in_transit",
-    "发往": "in_transit",
-    "运输": "in_transit",
-    "转运": "in_transit",
-}
-
 # 快递公司编码(大写) → 中文名称
 COMPANY_NAME_MAP = {
     "SF": "顺丰速运",
@@ -116,29 +96,21 @@ TTL_NO_INFO = 120      # 2 分钟：API status=205（计费但无信息）
 _TERMINAL_STATUSES = frozenset({"delivered", "returned"})
 
 
-def ttl_for_status(status: Optional[str]) -> int:
-    """按轨迹状态给出缓存 TTL（秒）。
+def ttl_for_trace(api_result: Dict[str, Any], status: Optional[str]) -> int:
+    """按第三方响应与**调用方推断出的**状态给出缓存 TTL（秒）。
 
-    终态（已签收 / 已退回）走长 TTL；其余（在途 / 异常 / 未知）走兜底档。
+    - `status=205`（计费但无信息）⇒ 最短档：它在「刚发货查不到」阶段会被反复重查；
+    - 终态（已签收 / 已退回）⇒ 长 TTL（轨迹不再变化）；
+    - 其余（在途 / 异常 / 未知）⇒ 兜底档。
+
+    状态由**调用方**传入（`LogisticsTrackTool._infer_status_from_traces`）：状态推断是
+    「中文措辞当判据」的站点，按 R5 口径归属 Tool 层，本模块不复制第二份。
     """
+    if str(api_result.get("status")) == "205":
+        return TTL_NO_INFO
     if status in _TERMINAL_STATUSES:
         return TTL_TERMINAL
     return TTL_TRANSIT
-
-
-def infer_status_from_traces(traces: list) -> str:
-    """从物流轨迹推断当前状态（最新在前，最多看 3 条）
-
-    轨迹为空时**不得**推断成终态 —— 刚发货的运单会被缓存 90 分钟。
-    """
-    if not traces:
-        return "in_transit"
-    for trace in traces[:3]:
-        content = trace.get("content", "")
-        for keyword, status in CN_STATUS_MAP.items():
-            if keyword in content:
-                return status
-    return "in_transit"
 
 
 def _hash_phone(phone_tail: Optional[str]) -> str:
@@ -180,11 +152,16 @@ class LogisticsTraceCache:
         return redis_async.Redis(connection_pool=pool)
 
     @staticmethod
-    def _decode(api_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _decode(api_result: Dict[str, Any], infer) -> Optional[Dict[str, Any]]:
         """第三方 API 响应 → 标准格式（与 `_transform_api_response` 逐字同构）
 
         `status=205`（无信息）**必须**映射成「成功 + 空轨迹」：它是「查到了、但暂无轨迹」，
         不是调用失败 —— 返回 None 会把调用方推给 mock 降级（假轨迹）。
+
+        Args:
+            api_result: 第三方原始响应
+            infer: `(traces) -> internal status` 的推断函数，由调用方注入
+                （Tool 层持有唯一实现；本模块刻意不复制一份中文关键词表）
         """
         result_data = api_result.get("result") or {}
         if not isinstance(result_data, dict):
@@ -202,7 +179,7 @@ class LogisticsTraceCache:
                 "content": item.get("context") or item.get("status") or "",
             })
 
-        status = infer_status_from_traces(traces)
+        status = infer(traces)
         latest = traces[0] if traces else {
             "time": "",
             "content": "暂无物流信息",
@@ -254,19 +231,25 @@ class LogisticsTraceCache:
         company_code: Optional[str],
         phone_tail: Optional[str],
         api_result: Dict[str, Any],
+        *,
+        infer,
+        ttl: Optional[int] = None,
     ) -> bool:
         """缓存第三方响应；返回是否写入成功。
 
         只应传入 **status ∈ {0, 205}** 的响应（调用失败由调用方拦住，不缓存）。
+
+        Args:
+            infer: 状态推断函数（由 Tool 层注入；见 `_decode` 的说明）
+            ttl: 缓存时长（秒）；缺省按 `ttl_for_trace(api_result, 推断出的状态)` 现算
         """
-        decoded = self._decode(api_result)
+        decoded = self._decode(api_result, infer)
         if decoded is None:
             return False
         decoded["tracking_number"] = decoded["tracking_number"] or (tracking_number or "")
 
-        ttl = TTL_NO_INFO if str(api_result.get("status")) == "205" else ttl_for_status(
-            decoded["status"]
-        )
+        if ttl is None:
+            ttl = ttl_for_trace(api_result, decoded["status"])
         key = make_logistics_track_key(tenant_id, tracking_number, company_code, phone_tail)
 
         client = self._get_client()

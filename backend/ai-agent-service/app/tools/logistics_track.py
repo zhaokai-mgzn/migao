@@ -17,17 +17,47 @@ from app.config import settings
 # 第三方轨迹 API 结果缓存（issue #6185：该 API 按次计费）。
 # 顶层导入，便于测试用 patch 把它替换成 fake —— 与 `get_admin_api_client` 同款接缝。
 from app.core.logistics_trace_cache import (
-    CN_STATUS_MAP,
     COMPANY_NAME_MAP,
     STATUS_TEXT_MAP,
     get_logistics_trace_cache,
+    ttl_for_trace,
 )
 
-# 说明（issue #6185）：上面三张表与「轨迹 → 状态」推断的**唯一实现**现在都在
-# `app/core/logistics_trace_cache.py` —— 实时查询与缓存命中必须共用同一份解析，
-# 各写一份一旦漂移就会出现「实时查是已签收 / 命中缓存是在途」的分歧（TTL 分档也跟着错）。
+# 说明（issue #6185）：`COMPANY_NAME_MAP` / `STATUS_TEXT_MAP` 两张**纯数据表**与
+# 「响应 → 标准格式」解析的**唯一实现**都在 `app/core/logistics_trace_cache.py` ——
+# 实时查询与缓存命中必须共用同一份解析，各写一份一旦漂移就会出现
+# 「实时查是已签收 / 命中缓存是在途」，而 TTL 分档正建立在状态之上。
 # 这里按原样 re-export，保持既有对外符号（`tests/test_tools_logistics_track.py`
 # 直接从本模块 import `STATUS_TEXT_MAP`）不破。
+#
+# ⚠️ **中文关键词表刻意留在本模块**（下面 `CN_STATUS_MAP` + `_infer_status_from_traces`）：
+# 「中文措辞当判据」是 `.github/tool-input-contract-baseline.json` 按 R5 盯着的站点，
+# 逐文件计数只许缩短 ⇒ 把它搬到新文件等于在那边**新增**一个站点、当场判红。
+# ⇒ 缓存层通过 `infer=` 参数接收本模块的推断函数，不复制第二份关键词表。
+
+# 中文物流状态关键词 → 内部状态
+CN_STATUS_MAP = {
+    "签收": "delivered",
+    "已签收": "delivered",
+    "签收人": "delivered",   # 如「送货上门，签收人：家门口」
+    "送达": "delivered",     # 如「快件已送达（上门服务）」
+    "派送成功": "delivered",  # 如「您的快件已派送成功（家门口）」
+    "派送": "out_for_delivery",
+    "派件": "out_for_delivery",
+    "正在派送": "out_for_delivery",
+    "揽收": "picked",
+    "已揽收": "picked",
+    "揽件": "picked",
+    "退回": "returned",
+    "退件": "returned",
+    "异常": "exception",
+    "问题件": "exception",
+    "到达": "in_transit",
+    "在途": "in_transit",
+    "发往": "in_transit",
+    "运输": "in_transit",
+    "转运": "in_transit",
+}
 
 # 需要手机号后4位的快递公司
 PHONE_REQUIRED_COMPANIES = {"SF", "SFEXPRESS", "ZTO", "STO"}
@@ -306,9 +336,12 @@ class LogisticsTrackTool(BaseTool):
                     data = self._transform_api_response(
                         api_result, tracking_number, company, order_id
                     )
-                    # 成功响应写回缓存（含 status=205「无信息」，它同样按次计费）
+                    # 成功响应写回缓存（含 status=205「无信息」，它同样按次计费）；
+                    # TTL 由状态分档决定 —— 状态沿用本模块的推断（缓存层不复制中文关键词表）
                     await get_logistics_trace_cache().set(
-                        context.tenant_id, tracking_number, com_code, phone, api_result
+                        context.tenant_id, tracking_number, com_code, phone, api_result,
+                        infer=self._infer_status_from_traces,
+                        ttl=ttl_for_trace(api_result, data["status"]),
                     )
                     return ToolResult(
                         success=True,
@@ -436,7 +469,7 @@ class LogisticsTrackTool(BaseTool):
         # 延迟导入：本模块在 import 期被缓存模块导入（避免循环导入）
         from app.core.logistics_trace_cache import LogisticsTraceCache
 
-        data = LogisticsTraceCache._decode(api_result) or {}
+        data = LogisticsTraceCache._decode(api_result, self._infer_status_from_traces) or {}
 
         # 快递公司名称：订单侧 company 优先（后端 OrderDetailResponse 的 `logisticsCompany`，
         # 见 `_track_by_order` 的读取处），其次才是 API type 的映射结果。
@@ -455,9 +488,12 @@ class LogisticsTrackTool(BaseTool):
     def _infer_status_from_traces(traces: list[dict]) -> str:
         """从物流轨迹中推断当前状态
 
-        实现已迁到 `app/core/logistics_trace_cache.py::infer_status_from_traces`
-        （issue #6185）：缓存 TTL 分档与 Tool 显示必须用同一份关键词表，否则同一段轨迹会
-        出现「显示已签收 / 按在途计 TTL」的分歧。本方法保留为薄转发，不改变既有调用点。
+        检查最新几条轨迹的内容，匹配中文关键词判断状态。
+
+        ⚠️ **本方法是该推断的唯一实现**（issue #6185）：缓存层通过 `infer=` 参数接收它来给
+        TTL 分档 —— 两边各写一份，一旦漂移就会出现「实时查是已签收 / 命中缓存按在途计 65 分钟」。
+        它同时是 `.github/tool-input-contract-baseline.json` 登记的「中文措辞当判据」站点，
+        计数只许缩短 ⇒ 不要把它挪出本模块。
 
         Args:
             traces: 物流轨迹列表（最新在前）
@@ -465,9 +501,17 @@ class LogisticsTrackTool(BaseTool):
         Returns:
             内部状态字符串
         """
-        from app.core.logistics_trace_cache import infer_status_from_traces
+        if not traces:
+            return "in_transit"
 
-        return infer_status_from_traces(traces)
+        # 优先看最新的几条（最多看3条）
+        for trace in traces[:3]:
+            content = trace.get("content", "")
+            for keyword, status in CN_STATUS_MAP.items():
+                if keyword in content:
+                    return status
+
+        return "in_transit"
     
     def _get_company_code(self, company: str) -> Optional[str]:
         """将快递公司名称或编码转换为 API 所需的公司编码（大写）
