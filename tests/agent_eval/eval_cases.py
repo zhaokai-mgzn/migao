@@ -266,6 +266,42 @@ _CASE_AS_010 = EvalCase(
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
+# ── AS-011 [EDGE] 售后工单并发完结（N=4 同一 processing 工单）—— 恰一个赢家、库存只回补一次、台账恰 1 行（issue #6220）（源: cases/aftersales.yml）──
+_CASE_AS_011 = EvalCase(
+    id='AS-011',
+    legacy_id='',
+    title='售后工单并发完结（N=4 同一 processing 工单）—— 恰一个赢家、库存只回补一次、台账恰 1 行（issue #6220）',
+    skill=Skill.AFTERSALES,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['两个管理员同时点了「完结」（或一个人在慢网络下双击）：把 AS-6220-R1 这张退货工单完结掉'],
+    expectations=['after_sales_manage(action=detail)'],
+    data_checks=['**并发完结恰一个赢家**（机器断言 = admin-api 真库并发单测 AfterSalesConcurrentResolveRealDbTest，CI job `admin-api-test`）：N=4 并发同一 processing 工单 → 成功数 1，其余 3 个返回 409「工单状态已被他人变更」；重复 3 轮三轮都必须成立（缺陷时序敏感，单轮会因调度侥幸变绿）。', '**副作用只执行一次**（同一判据的另外三条读数）：`product_skus.stock` 增量 == 单次回补量（订单明细数量，独立算式，不得用被测读面当期望）；`stock_ledger_entries` 该 ref_no 恰 1 行；`ticket_timeline` 的 status_change 恰 2 行（pending→processing + processing→resolved）。修前读数 = 成功数 4 / 库存 98→106 / 台账 4 行 / 时间线 5 行。', '**正对照（护栏不误杀）**：单个请求串行完结必须成功（199 谓词里的 tenant_id 非空、正常流转不被 409 误杀）；同一事务里的退款联动（linkRefundToOrderAndFinance）修前修后都 == 单次金额 300（证明判据有判别力，不是什么都判不出来）。', '**行为契约不回退**：pending→{processing,rejected,closed}、processing→{resolved,closed}、终态不可变、pending→closed（#3541）、closed/rejected 记 closed_at、internal_notes 追加不覆盖、中文业务文案 —— 由 AfterSalesTicketServiceTest 同批守住。'],
+    skip_reason='[backend-contract] 本用例判的是 **admin-api 服务层的并发写面**（B 端 HTTP 直连 PUT /api/admin/after-sales/{id}/status，不经米宝 Agent）；而 after_sales_manage 的写 action 已于 #5247（用户裁定 2026-09-23 B 端只读化）从源码删除 ⇒ **Agent 面没有可跑的写路径**，评测栈里无法复现「两个管理员同时完结」。机器判据改由 admin-api 真库并发单测承载（traces.tests，CI job `admin-api-test`，重复 3 轮）：见 AfterSalesConcurrentResolveRealDbTest（case_ids: AS-011）。**这不是「没有判据」** —— 该单测先跑出修前红（成功数 4 / 库存 98→106 / 台账 4 行 / 时间线 5 行）再跑出修后绿（成功数 1 / +2 / 1 行 / 2 行），成对读数见 PR body。',
+    tags=['update', 'status', 'concurrency'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AS-012 [EDGE] 类级元守卫：同一事务里「状态写 + 多个副作用」的方法必须逐个登记并发保护（未登记即红）（源: cases/aftersales.yml）──
+_CASE_AS_012 = EvalCase(
+    id='AS-012',
+    legacy_id='',
+    title='类级元守卫：同一事务里「状态写 + 多个副作用」的方法必须逐个登记并发保护（未登记即红）',
+    skill=Skill.AFTERSALES,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['（无 Agent 面输入 —— 本用例是研发侧类级守卫，防「同一事务里只保护了其中一个副作用」的形态再进来）'],
+    expectations=['after_sales_manage(action=detail)'],
+    data_checks=['**未登记即红**（机器断言 = AfterSalesSideEffectConcurrencyMetaGuardTest，CI job `admin-api-test`）：`src/main/java/com/migao/admin/service/*.java` 里满足「@Transactional ∧ 体内 setStatus( ∧ ≥2 处 mapper/service 副作用调用」的方法（现取 10 个）必须逐个出现在台账 `entries`（已保护 + 兑现锚）或 `unverified`（豁免 + 理由 + 重启条件）里。', '**豁免台账只许缩短 + 条数现取**：`unverified` 必须是冻结基线 `unverified_baseline` 的子集（新增豁免 ⇒ 红）；条数不写死在测试代码里（读数打印在守卫输出上：现取候选=10 / 已保护=1 / 豁免=9 / 豁免基线=9）。', '**登记必须兑现**：`entries[].evidence` = `<仓库相对全路径>::<文本锚>`，锚必须在该文件里逐字存在 ⇒ 把条件更新退回无条件 updateById 时本判据与 AS-011 同时红（不许留假章）。', '**判别力自证**：合成语料上「未登记 / 未兑现 / 新增豁免 / 豁免缺理由 / 扫描器失明」五种坏形态各自判红、合规语料判绿（防「判据恒绿」与「判据有效」在输出上分不开）。'],
+    skip_reason='[backend-contract] 研发侧类级守卫（源码形态扫描 + 台账判定），**没有 Agent 面可跑**（不吃 user_inputs、也不产生对话行为）；承载体 = admin-api 单测 AfterSalesSideEffectConcurrencyMetaGuardTest（case_ids: AS-012，CI job `admin-api-test`）。形态判据不做 AST 解析（换措辞可绕过）⇒ 真实防线仍是 AS-011 的行为面，本守卫只保证「同类形态进来时当场撞红」。',
+    tags=['status', 'concurrency', 'meta_guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── AS-013 [EDGE] 涉钱入口退款金额超 2 位小数 ⇒ 4xx 显式拒绝（不静默取整）：订单与资金流水零写入、refund_at 不写（源: cases/aftersales.yml）──
 _CASE_AS_013 = EvalCase(
     id='AS-013',
@@ -12116,6 +12152,8 @@ ALL_CASES = (
     _CASE_AS_008,
     _CASE_AS_009,
     _CASE_AS_010,
+    _CASE_AS_011,
+    _CASE_AS_012,
     _CASE_AS_013,
     _CASE_AS_014,
     _CASE_AG_001,

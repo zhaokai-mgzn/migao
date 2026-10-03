@@ -78,6 +78,12 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "ShipmentListQueryRealDbTest.java": "direct",
     # issue #5388：改价审计读面（JSONB 真值 / 脱敏期历史行 / 工具筛选 / 窗口 / 租户）
     _SVC + "AuditLogPriceChangeRealDbTest.java": "direct",
+    # issue #6220：售后工单**并发完结**的真库判据（N=4 同一 processing 工单 ⇒ 恰一个赢家 + 回补恰一次）。
+    # 为什么必须真 PG：缺陷是**读-判-写**（`selectById` → 应用层校验 → 无条件 `updateById`）——
+    # 「条件更新（`WHERE ... AND status=旧值`）是否真的只放一个赢家过去」靠的是**行锁 + 条件重估**，
+    # mock 面结构上不可见（mock 的 `updateById` 恒返回 1、也不会因 WHERE 不满足而返回 0）；
+    # 而「一个赢家 ⇒ 库存只回补一次 / 台账恰 1 行 / 时间线恰 2 行」是**并发下的落库读数**。
+    _SVC + "AfterSalesConcurrentResolveRealDbTest.java": "direct",
     # issue #5327：批量批次（agent_batches / agent_batch_items）的跨租户隔离判据 ——
     # 起一次性真 PG 集群、用**生产拦截器 bean** 装配，逐条走收口方法 `PgCluster.startOrAbort()`。
     _SVC + "AgentBatchCrossTenantRealDbTest.java": "direct",

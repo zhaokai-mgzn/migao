@@ -31,6 +31,19 @@
   豁免台账**只许缩短**（存量冻结 + 新增即红）。
 - 边界（如实登记）：本次**不新写**领域口径文档（补哪份文档逐条写在豁免台账的「重启条件」里）；
   不新增注入字段、不放宽任何 fail-closed 判据、不改前端注入协议。
+### 售后工单并发完结由「重复回补库存」变成「一次生效 + 明确提示」（2026-10-03，issue #6220）
+
+- 以前：两个管理员同时点「完结」（或一个人在慢网络下**双击**）⇒ 同一张 `processing` 工单被写 4 次状态、
+  **整单库存回补 4 次** —— 实测库存 `98→106`、`stock_ledger_entries` 4 行、`ticket_timeline` 5 行
+  （同一次深度测试的对照读数：同一事务里的**退款联动**因为有 DB 原子条件更新，并发下**没有**翻倍）。
+- 现在：状态流转改为 **DB 原子条件更新**（把读到的旧状态放进 `WHERE`）⇒ 并发完结**恰一个请求生效**，
+  其余 **409「工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效」**；
+  库存只回补一次、台账恰 1 行、时间线恰 2 行。
+- 行为契约一字未动：`pending→{processing,rejected,closed}`、`processing→{resolved,closed}`、终态不可变、
+  `pending→closed`（#3541）、`closed`/`rejected` 记 `closed_at`、`internal_notes` **追加**不覆盖、中文业务文案。
+- 边界（如实登记）：本次只覆盖「售后工单完结」这一条链；`InboundOrderService#post`（入库过账疑似重复建库存批次）
+  与 `ProductionOperationCommandService#update`（疑似重复追加价格版本）已作为**疑似同类形态的观察项**登记进
+  类级台账（`backend/admin-api/src/test/resources/after-sales-sideeffect-concurrency-ledger.json`，**未核验**）。
 
 ### 一体机裁高读面：明细没填商品不再整屏 500，该行品牌如实显示「—」（2026-10-03，issue #6219）
 

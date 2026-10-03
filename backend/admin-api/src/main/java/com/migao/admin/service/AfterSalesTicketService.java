@@ -468,6 +468,13 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
      * 遵循状态流转规则：pending -> processing/rejected/closed, processing -> resolved/closed
      * （resolved/rejected/closed 为终态，不允许再变更；pending -> closed 见 #3541）
      *
+     * <p><b>并发语义（issue #6220）</b>：状态流转是**读-判-写**，落库必须是
+     * <b>DB 原子条件更新</b>（把读到的旧状态放进 {@code WHERE}）—— 无条件覆盖会让 N 个并发请求
+     * （两个管理员同时点「完结」、或慢网络下双击）全部通过校验：同一张工单被写 N 次，
+     * 而每个请求各跑一遍副作用（重复回补库存：实测 98→106、台账 4 行、时间线 5 行）。
+     * 范式与订单侧同源（{@code OrderService} 的并发改状态/退款都是「条件更新 + 判受影响行数」）。
+     * 受影响行为 0 ⇒ 409「状态已被他人变更」，<b>副作用只在条件更新成功的那一次执行</b>。</p>
+     *
      * @param id      工单ID
      * @param request 状态更新请求
      */
@@ -523,7 +530,21 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
             }
         }
 
-        afterSalesTicketMapper.updateById(ticket);
+        // 状态流转 = DB 原子条件更新（issue #6220）：把「读到的旧状态」放进 WHERE，只有真正抢到这次
+        // 流转的请求能改到行；并发请求受影响行数 = 0 ⇒ 409，且**不会**往下跑副作用。
+        // ⚠️ 不要退回 updateById（无条件覆盖）：那等于「并发数 = 副作用执行次数」。
+        UpdateWrapper<AfterSalesTicket> transition = new UpdateWrapper<>();
+        transition.eq("id", id)
+                .eq("tenant_id", ticket.getTenantId())
+                .eq("status", currentStatus);
+        int transitioned = afterSalesTicketMapper.update(ticket, transition);
+        if (transitioned == 0) {
+            // 行数 0 的唯一含义：读到旧状态之后、写之前，库里的状态已被另一个请求改掉（并发完结 / 双击）
+            String activeLabel = TICKET_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+            throw BusinessException.conflict(
+                    String.format("工单状态已被他人变更（本请求基于「%s」，库中已不是该状态），本次操作未生效", activeLabel),
+                    "请刷新工单详情，确认当前状态后再操作");
+        }
 
         // 完结联动：refund/return 工单 resolved 且有退款金额时，累加订单退款并登记退款流水
         if ("resolved".equals(newStatus)
