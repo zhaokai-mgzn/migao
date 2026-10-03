@@ -5377,7 +5377,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6237，第三轮深度测试的核验包）：台账 #6220 的 unverified 观察项「入库过账无条件置 POSTED ⇒ 并发重复建批次 / 重复入库」核验为**不真** —— issue #5148 的 CAS 闸（markPosted）已在任何库存写入之前，且批次号唯一索引 uk_stock_batches_no 兜底。本单**未改生产代码**（核验型交付）：交付物 = 真库并发判据（N=4 × 3 轮 + 串行正对照 + 带幂等键入口）+ 台账 unverified → entries 回填。 ｜ tags: inbound, stock, concurrency, backend-contract
 
-## 加工项域（26 case）
+## 加工项域（27 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -5779,6 +5779,20 @@
 ```
 真值: processing-manage.worker-cutting-height-terminal
 溯源: 2026-10-03 新增（第三轮深度测试 C23 / issue #6219）：`order_items.product_id` 为空时 `positionRow` 对 `brands()` 的空集分支（`Map.of()`）做 `get(null)` ⇒ `ImmutableCollections$MapN.get` 抛 NPE ⇒ 端点 500（线上栈与单测栈逐字同源）。修法取最少代码：调用点显式短路空键 + 空集分支返回**可索引**的 LinkedHashMap（同文件 `itemsOf()` 既有范式），**不改查询语义、不改只读契约、不写机器**。⚠️ 同族存量（`getCategoryNameMap` / `loadOrders` 的调用点未判空）**不在本包文件族内** ⇒ 已另开 issue #6226。 ｜ tags: processing, cutting_height, scan, backend-contract, null_safety
+
+### PP-022. 工序改价并发面核验（N=4 并发提交同一工序的同一次调价）：价格版本账恰追加 1 行、当前价 = 最新版本行（issue #6238） 🟡
+```
+你: 商家在「工艺配置」页改了工序单价，手抖点了两次保存（或两个管理员同时点了保存）
+数据: **核验结论 = 真**（台账 after-sales-sideeffect-concurrency-ledger.json 的 unverified 观察项逐字称「⚠️ **涉钱面**：价格版本**追加 insert** + 可选状态写 ⇒ 并发重复提交可能重复追加版本行」）：该主张**在当前代码上成立** —— 修前 N=4 并发提交同一次调价（旧价 100.00 → 新价 200.00）**3 轮全部**读到「版本账总行数 5 / 其中新价行 4」，即同一次调价被记了 4 次。
+数据: **主判据（取库内事实）**：并发提交后 `unit_price = 新价` 的版本行恰 1 行，总行数 == 独立算式（基线 1 + 追加 1 = 2）；断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java 的 concurrentSamePriceSubmissionAppendsExactlyOneVersionRow（N=4 × 3 轮，逐轮打印「真重叠」证据：4 个请求的时间区间逐对求交 6/6 + 并集跨度 < 各历时之和）。
+数据: **账目自洽**：`production_operations.unit_price` == 新价，且 `created_at` 最新那行版本账的价 == 当前价（「当前价 = 最新版本行」这条冻结契约在并发下仍成立）。
+数据: **库层零兜底（可复核判据）**：`production_operation_price_versions` 除主键外**无唯一约束**（`pg_indexes` 实测 + 「同一个未提交事务里直接插两行同 (operation_id, unit_price) 被库接受」的反向自证，事务回滚零残留）⇒ 重复记账不可能由 DDL 挡住。若将来加了唯一索引，本判据转红（撞约束是 500 还是 409 须重新裁定）。
+数据: **正对照（闸不误杀）**：单请求串行改价真追加 1 行；随后**同价重复提交**仍是 1 行（既有的「价没变 ⇒ 不追加」幂等路径没被改坏）—— 断言 = 同文件 serialPriceChangeStillAppendsExactlyOneRow。
+数据: **入口面（实测登记）**：`PUT /api/admin/production/operations/{id}` **没有** Idempotency-Key 请求头 ⇒ 并发 / 重复提交的唯一防线就是服务层自己的闸（断言 = 同文件 updateEndpointOffersNoIdempotencyKeyEntry）。
+数据: **判别力（红证，注入式 · 双向）**：把 `ProductionOperationMapper#lockById` 的 SQL 里的 `FOR UPDATE` 摘掉（= 退回「不加锁读旧价」的修前形态）⇒ 本判据 3 轮全部必红，实测读数 = 成功数 4 / 版本账总行数 5 / 其中新价行 4；注入撤回后复绿。注入方式与成对读数见 PR body（注入是手动、一次性动作，不落成常驻判据）。
+跳过: [backend-contract] 纯后端并发落库判据（无 LLM 写路径：工序改价走 admin-api 服务层的 PUT /api/admin/production/operations/{id}，不经米宝 Agent 工具）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 ProductionOperationPriceVersionConcurrentRealDbTest 执行
+```
+溯源: 2026-10-03 新增（issue #6238，第三轮深度测试的核验包 · 涉钱面）：台账 #6220 的 unverified 观察项核验为**真**并**当场修复** —— 修法 = 进入事务后先取工序行排他锁（`ProductionOperationMapper#lockById` 的 `SELECT … FOR UPDATE`）**再读**旧价（顺序即语义），使「价是否真变了」建立在库内已提交事实上 ⇒ 同价重复提交退化为既有的幂等空分支（照常 200，**不是** 409：请求意图已达成）；异价并发两次变更各自成行、created_at 顺序与提交顺序一致。为什么不用 CAS + 409：CAS 会**静默丢弃**后写者的改价，对涉钱配置面不可接受。交付物 = 真库并发判据（N=4 × 3 轮 + 串行/同价重复正对照 + 库层零兜底实测 + 入口面无幂等键）+ 台账 unverified → entries 回填 + REALDB_FILES 登记。取号 PP-022：库内 PP-001~PP-021（PP-001 是**已退役**的旧用例号、PP-002/003/004/005 为历史空号 ⇒ 按 PP-015 / PP-016 先例「不复用已发布的号段」取 max+1，**不**用分配器给的最小空闲号 PP-001）；PP-022 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: production, price-version, concurrency, backend-contract
 
 ## 加工单域（61 case）
 
@@ -9428,7 +9442,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：656（活跃 134，跳过 522）
+- 用例总数：657（活跃 134，跳过 523）
 - tier 分布：smoke 12 / normal 604 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
@@ -9448,7 +9462,7 @@
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：58
-- 加工项域：26
+- 加工项域：27
 - 加工单域：61
 - 商品域：109
 - 工具注册器域：1
@@ -9637,6 +9651,7 @@
 - PG-040: 加工费组合定价 - 组合→单价（元/米）写面五条护栏 + composition_key 归一化 + 版本账 + 未定价缺口可见
 - PG-042: 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项；人工改价 ⇒ manual + 建单回写组合）
 - PG-043: 特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目
+- PP-022: 工序改价并发面核验（N=4 并发提交同一工序的同一次调价）：价格版本账恰追加 1 行、当前价 = 最新版本行（issue #6238）
 - PR-083: 渲染腿**转义解码**：生成物取值与真值（`yaml.safe_load`）逐值相等（修前 33 处不同 / 163 个多余转义）
 - PR-084: 渲染腿比较器**落库**（唯一实现）+ **「0 条」必须判红**（比较器坏了 ≠ 没有差异）
 - PR-085: 渲染腿保真度的**边界登记与死亡条件**（修好的形态必须移出登记表；未覆盖的不许说成已覆盖）
