@@ -232,10 +232,15 @@ export function guardedWrite(sql) {
     { env: { ...process.env, PGPASSWORD: c.password }, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
 }
 
-/** 独立性守卫：任何写操作前，目标必须命中探针命名域。 */
+/** 独立性守卫：任何写操作前，目标必须命中探针命名域。
+ *  两个命名域都算本包：① 中文前缀 `线①验收`（人类可读对象，如卡片标题）
+ *  ② 机器可判前缀 `probe_line1_`（会话 customer_id / user_id —— 与线④的 `probe_line1_`
+ *  历史前缀**同形**，故本包清理时以 `probe_line1_` + 本包 tag 双条件收窄）。 */
 export function assertProbe(...vals) {
   const s = vals.filter((v) => v !== null && v !== undefined).join(' ')
-  if (!s.includes(PROBE_PREFIX)) throw new Error(`拒绝操作非探针对象（缺前缀「${PROBE_PREFIX}」）: ${s}`)
+  if (!s.includes(PROBE_PREFIX) && !s.includes('probe_line1_')) {
+    throw new Error(`拒绝操作非探针对象（缺前缀「${PROBE_PREFIX}」或「probe_line1_」）: ${s}`)
+  }
 }
 
 /** 行内容指纹（写前/写后自证用）。 */

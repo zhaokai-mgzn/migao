@@ -82,7 +82,9 @@ if (!agentSessionId) {
   })
 
   // ── F3 列表读面（本租户可见 / 他租户不可见）────────────────────
-  const list = await adminApi('GET', `/api/admin/agent-sessions?page=1&size=100&status=waiting&keyword=probe_line1`, { token: tokA })
+  // ⚠️ 不用 keyword 过滤：keyword 命中的是 name/phone 一类展示字段（探针 customerId 不在其中）
+  // —— 用它会把「列表确实按租户返回」误判成红（本包首轮即踩，见 REPORT §7 假红自查）
+  const list = await adminApi('GET', `/api/admin/agent-sessions?page=1&size=100&status=waiting`, { token: tokA })
   const items = list.data?.records || list.data?.list || list.data?.items || []
   const mine = items.filter((x) => x.id === agentSessionId)
   judge(R, {
@@ -92,7 +94,7 @@ if (!agentSessionId) {
     expectSource: 'getSessionPage(..., tenantId=TenantContext) ⇒ 列表按租户过滤', evidence: EV,
   })
   if (tokB) {
-    const listB = await adminApi('GET', `/api/admin/agent-sessions?page=1&size=100&keyword=probe_line1`, { token: tokB })
+    const listB = await adminApi('GET', `/api/admin/agent-sessions?page=1&size=100`, { token: tokB })
     const itemsB = listB.data?.records || listB.data?.list || listB.data?.items || []
     const leaked = itemsB.filter((x) => x.id === agentSessionId)
     judge(R, {
@@ -117,8 +119,14 @@ if (!agentSessionId) {
   }
 
   // ── F4 接管（assign）→ 状态机 ────────────────────────────────
-  const emp = one(`select id, nickname, phone from users where tenant_id=${TENANT_A} and role<>'customer' and deleted=0 limit 1`)
-  const empId = emp?.id
+  // 员工夹具：`agent_employees` 在云 dev 里**全表为空** ⇒ 无任何存量员工可用（实测 count=0）
+  // ⇒ 自建 1 个本租户探针员工 + 1 个他租户探针员工（后者用于跨租户分配判据），用后自清
+  const empId = `l1emp${TAG}a`, empIdB = `l1emp${TAG}b`
+  assertProbe(`${PROBE_PREFIX}员工`)
+  guardedWrite(`-- probe-ok
+    insert into agent_employees (id, tenant_id, user_id, name, status, max_concurrent_sessions, created_at, updated_at, deleted)
+    values ('${empId}', ${TENANT_A}, null, '${PROBE_PREFIX}员工A', 'online', 5, now(), now(), 0),
+           ('${empIdB}', ${TENANT_B}, null, '${PROBE_PREFIX}员工B', 'online', 5, now(), now(), 0);`)
   if (empId) {
     const r = await adminApi('POST', `/api/admin/agent-sessions/${agentSessionId}/assign`, { token: tokA, body: { employeeId: empId } })
     const row2 = one(`select status, employee_id from agent_sessions where id='${agentSessionId}'`)
@@ -147,8 +155,26 @@ if (!agentSessionId) {
       pass: again.status >= 400 && again.status < 500,
       expectSource: 'assignSession 校验「校验会话状态必须为 waiting」⇒ 非法流转拒', evidence: EV,
     })
-  } else {
-    R.skip('F4-*', '接管与状态流转', '租户 20 无可用员工夹具 ⇒ 未覆盖')
+    // F4-4 跨租户分配：把**他租户**员工分配给本租户会话 ⇒ 必须拒（员工归属判据）
+    const h2 = await adminApi('POST', '/api/admin/agent-sessions', {
+      token: tokA,
+      body: { aiSessionId, customerId: aiCust, reason: `${PROBE_PREFIX}跨租户分配夹具-${TAG}`, aiContextMessages: [] },
+    })
+    const sid2 = h2.data?.id
+    if (sid2) {
+      const crossAssign = await adminApi('POST', `/api/admin/agent-sessions/${sid2}/assign`, { token: tokA, body: { employeeId: empIdB } })
+      const rowX = one(`select status, employee_id, tenant_id from agent_sessions where id='${sid2}'`)
+      judge(R, {
+        id: 'F4-4', name: '跨租户分配员工（租户 B 员工 → 租户 A 会话）⇒ 必须拒',
+        expect: 'HTTP 4xx 且 DB employee_id 仍为空、status 仍 waiting',
+        actual: { status: crossAssign.status, body: String(crossAssign.text).slice(0, 200), dbStatus: rowX?.status, employee_id: rowX?.employee_id },
+        pass: crossAssign.status >= 400 && crossAssign.status < 500 && rowX?.employee_id == null && rowX?.status === 'waiting',
+        expectSource: 'assignSession 的租户隔离校验（会话归属）+ 员工必须属本租户；不然后果 = 他租户员工接管本租户会话',
+        evidence: [...EV, `POST assign employeeId=${empIdB}(tenant ${TENANT_B}) → session ${sid2}(tenant ${TENANT_A})`],
+      })
+      // 收尾：结束该夹具会话（避免留 waiting 会话影响其他读数）
+      await adminApi('POST', `/api/admin/agent-sessions/${sid2}/end`, { token: tokA })
+    }
   }
 
   // ── F5 结束会话 → ended ──────────────────────────────────────
@@ -177,7 +203,7 @@ if (!agentSessionId) {
   {
     const since = new Date(Date.now() - 5 * 60 * 1000).toISOString()
     let rows = []
-    const deadline = Date.now() + 45000
+    const deadline = Date.now() + 20000
     while (Date.now() < deadline) {
       rows = psql(`select id, tenant_id, source_type, source_ref, status, created_at from knowledge_candidates where source_ref like '%${agentSessionId}%' or source_ref like '%probe_line1%' order by created_at desc limit 20`)
       if (rows.length) break

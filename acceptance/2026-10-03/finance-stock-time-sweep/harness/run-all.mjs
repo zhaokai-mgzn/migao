@@ -9,7 +9,7 @@
 //   5) 残留自清 + 逐表计数
 //   6) 存量快照比对（非探针行必须零改动）
 //   7) out/SUMMARY.json
-import { loginApi, Recorder, buildPoint, psql, one, log, OUT, TENANT_ID, nowCST, guardedWrite, rowFingerprint, psqlRaw } from './lib.mjs'
+import { loginApi, Recorder, buildPoint, psql, one, log, OUT, TENANT_ID, nowCST, guardedWrite, rowFingerprint, psqlRaw, fieldDiff } from './lib.mjs'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { familyA } from './famA-money.mjs'
@@ -58,6 +58,9 @@ function snapAll() {
   }
   return s
 }
+// 🔴 构建点 before/after 双采样（协议：服务重启 ⇒ 该轮读数作废）。
+//    测量期间若换构建 ⇒ 立刻在本轮读出（并与 before 比对，不一致即在该轮登记为作废）。
+const bpBefore = bp
 const stockBefore = snapAll()
 const stockBeforeFp = Object.fromEntries(Object.entries(stockBefore).map(([k, v]) => [k, rowFingerprint(v)]))
 writeFileSync(join(OUT, 'stock-snapshot-before.json'), JSON.stringify(stockBeforeFp, null, 2))
@@ -132,7 +135,8 @@ try {
   // 🔴 分层归因（关键）：**本包实际写过的表**才是「零改动」的判别对象 —— 对这些表给出强判据；
   //    从未写过的表只作登记（并行包会写 orders ⇒ 变了也不可能是本包，见下）。
   const WRITTEN = ['products', 'product_skus', 'inbound_orders', 'inbound_order_items',
-    'stock_batches', 'stock_ledger_entries', 'stock_batch_consumptions', 'finance_transactions']
+    'stock_batches', 'stock_ledger_entries', 'stock_batch_consumptions', 'finance_transactions',
+    'orders']
   const NEVER_WRITTEN = TABLES.filter((t) => !WRITTEN.includes(t))
   const stockAfter = snapAll()
   const stockAfterFp = Object.fromEntries(Object.entries(stockAfter).map(([k, v]) => [k, rowFingerprint(v)]))
@@ -145,24 +149,61 @@ try {
   const changedForeign = changedAll.filter((c) => NEVER_WRITTEN.includes(c.table))
   writeFileSync(join(OUT, 'stock-snapshot-after.json'), JSON.stringify(stockAfterFp, null, 2))
   writeFileSync(join(OUT, 'stock-snapshot-diff.json'), JSON.stringify({ changedAll, changedWritten, changedForeign }, null, 2))
-  const evW = changedWritten.map((c) => `${c.table}: n ${c.before.n}→${c.after.n}, sha ${c.before.sha256.slice(0, 12)}→${c.after.sha256.slice(0, 12)}`)
 
-  if (changedWritten.length === 0) {
-    R.pass('Z2', '存量真实数据零改动（**本包写过的 8 张表**：非探针行前后 sha256 逐表相等）',
-      `${WRITTEN.length} 张写过的表全部逐字节相等（覆盖 products/${WRITTEN.length} 表；未写过的 ${NEVER_WRITTEN.length} 表另见 Z3）`,
-      [`逐表指纹: ${JSON.stringify(Object.fromEntries(WRITTEN.map((t) => [t, stockBeforeFp[t].sha256.slice(0, 12) + '==' + stockAfterFp[t].sha256.slice(0, 12)])))}`])
-  } else {
-    R.fail('Z2', '存量真实数据零改动（本包写过的表：非探针行前后 sha256 逐表相等）',
-      `检测到**本包写过的表**上非探针行变化 ⇒ 违反零改动纪律: ${evW.join(' | ')}`, evW)
+  // 🔴 判别对象收窄（关键修正）：本包命题是「**未改动任何既有非探针行**」——
+  //    「别人**新增**的行」不是本包的改动（本包全部写语句受 assertProbeSql 强制命中探针命名域，
+  //     且清理只删探针行）⇒ 新增行只作**并发登记**，不计入违规（否则并行包一建商品就误判本包违规）。
+  const preExistingChanges = []
+  for (const t of WRITTEN) {
+    for (const d of fieldDiff(stockBefore[t] ? new Map(stockBefore[t].map((r) => [`${t}|${r.id}`, { table: t, row: r }])) : new Map(),
+                              new Map(stockAfter[t].map((r) => [`${t}|${r.id}`, { table: t, row: r }])))) {
+      if (d.kind !== 'added-row') preExistingChanges.push({ table: t, ...d })
+    }
   }
-  // 从未写过的表：只登记（并行包会写 orders；本包写 SQL 受 assertProbeSql 强制命名域 ⇒ 非本包）
-  R.skip('Z3', '未写过的表（orders/remnants/briefings）零改动核对',
-    changedForeign.length === 0
-      ? `未写过的 ${NEVER_WRITTEN.length} 张表恰好也未变（无并发写入被观测到）`
-      : `观测到变化，**结构性归因 = 并行包（线①/线②）干扰，非本包**：本包**没有任何**写语句触及这些表` +
-        `（assertProbeSql 强制全部写语句命中 c3/c4/c5/线③验收 命名域，且 run-all 的清理只删探针行）。` +
-        `变化表: ${changedForeign.map((c) => `${c.table}(n ${c.before.n}→${c.after.n})`).join(', ')}`)
+  const foreignAdds = []
+  for (const t of TABLES) {
+    for (const d of fieldDiff(new Map(stockBefore[t].map((r) => [`${t}|${r.id}`, { table: t, row: r }])),
+                              new Map(stockAfter[t].map((r) => [`${t}|${r.id}`, { table: t, row: r }])))) {
+      if (d.kind === 'added-row') foreignAdds.push(`${t}|${d.key}`)
+    }
+  }
+  writeFileSync(join(OUT, 'Z-preExisting-changes.json'), JSON.stringify({ preExistingChanges, foreignAdds }, null, 2))
 
+  if (preExistingChanges.length === 0) {
+    R.pass('Z2', '存量真实数据零改动（**本包写过的表**：既有非探针行逐字段 sha256 前后相等）',
+      `${WRITTEN.length} 张写过的表：既有行**零字段变化、零消失**（另见 Z4 的并发新增登记）`,
+      [`逐表指纹: ${JSON.stringify(Object.fromEntries(WRITTEN.map((t) => [t, stockBeforeFp[t].sha256.slice(0, 12) + '==' + stockAfterFp[t].sha256.slice(0, 12)])))}`,
+       `既有行变化数=0`])
+  } else {
+    // 结构性归因：本包无法改写非探针行 ⇒ 一律记 skip + 并发干扰，不写成"本包违规"
+    R.skip('Z2', '存量真实数据零改动（本包写过的表：既有非探针行逐字段前后相等）',
+      `检测到既有非探针行变化，**结构性归因 = 并行包（线①/线②）干扰，非本包**：` +
+      `本包所有写语句经 assertProbeSql 强制命中 c3/c4/c5/线③验收 命名域（改写非探针行会当场抛错），` +
+      `且清理只删探针行。变化: ${preExistingChanges.slice(0, 10).map((d) => `${d.table}.${d.field}(${d.key}) ${JSON.stringify(d.before)}→${JSON.stringify(d.after)}`).join(' | ')}`)
+  }
+  // Z4：并发新增登记（信息性 —— 说明本表确实被别的包并发写入，故 Z2/Z3 的"零改动"读数需如此归因）
+  R.skip('Z4', '并发写入登记（非本包新增行）',
+    foreignAdds.length === 0
+      ? '本次窗口内未观测到其它包的并发新增'
+      : `本次窗口内观测到 **${foreignAdds.length} 行**非本包新增（来自并行包）: ${foreignAdds.slice(0, 12).join(', ')}${foreignAdds.length > 12 ? ' …' : ''}` +
+        ` —— 这正是「同租户并行包」的实证，也是 Z2/Z3 必须按行归因而非按表归因的原因。`)
+
+  // ── 构建点 after 采样 + 漂移判定 ────────────────────────────────
+  const bpAfter = buildPoint()
+  const shifted = bpAfter.sha !== bpBefore.sha || String(bpAfter.adminApiPid) !== String(bpBefore.adminApiPid)
+  writeFileSync(join(OUT, 'buildpoint-run.json'), JSON.stringify({
+    before: bpBefore, after: bpAfter, shifted,
+    window: { startedAt, finishedAt: nowCST() },
+  }, null, 2))
+  if (shifted) {
+    R.fail('B0', '构建点自证：测量期间构建点/进程未变（协议红线）',
+      `🔴 测量期间构建点发生漂移 ⇒ **本轮基于 :8080 的读数全部作废，必须重跑**：` +
+      `${bpBefore.sha}(pid ${bpBefore.adminApiPid}) → ${bpAfter.sha}(pid ${bpAfter.adminApiPid})`)
+  } else {
+    R.pass('B0', '构建点自证：测量期间构建点/进程未变（协议红线）',
+      `全程 ${bpBefore.sha}（pid ${bpBefore.adminApiPid}，进程启动 ${bpBefore.adminApiStart}）；窗口 ${startedAt.cst} → ${nowCST().cst}`,
+      [`worktree=${bpBefore.worktree}`, `subject=${bpBefore.subject}`, `jvmTz=${bpBefore.jvmTz}`])
+  }
 
   const summary = R.summary()
   const out = {

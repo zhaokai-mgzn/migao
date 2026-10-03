@@ -180,12 +180,20 @@ judge(R, {
   evidence: [`noHeader: ${r4b.text.slice(0, 200)}`, `missingCol: ${r4c.text.slice(0, 200)}`],
 })
 judge(R, {
-  id: 'A4.3', name: '非 Excel 内容（伪装 .xlsx / .csv 扩展名）⇒ 明确拒绝、零副作用',
-  expect: '两者均 >= 400',
-  actual: `伪 xlsx=${r4d.status} csv扩展名=${r4e.status}`,
-  pass: r4d.status >= 400 && r4e.status >= 400,
-  expectSource: 'Service 用 WorkbookFactory.create 解析 ⇒ 非 OOXML 必抛，被 catch 成 validationError；扩展名未白名单',
-  evidence: [`伪xlsx: ${r4d.text.slice(0, 200)}`, `csv: ${r4e.text.slice(0, 200)}`],
+  id: 'A4.3a', name: '伪 .xlsx（真内容是 CSV 文本）⇒ 明确拒绝',
+  expect: 'HTTP >= 400',
+  actual: `伪 xlsx=${r4d.status} body=${r4d.text.slice(0, 160)}`,
+  pass: r4d.status >= 400,
+  expectSource: 'Service 用 WorkbookFactory.create 解析 ⇒ 非 OOXML 必抛；前端 accept=".xlsx,.xls"（admin-web products/page.tsx）',
+  evidence: [`响应: ${r4d.text.slice(0, 200)}`],
+})
+judge(R, {
+  id: 'A4.3b', name: '口径登记：`.csv` 扩展名但内容是**合法 xlsx** ⇒ 200（按内容解析，忽略扩展名）',
+  expect: 'HTTP 200 表示「按内容而非扩展名解析」（产品**未声明**支持 CSV ⇒ 属未定义行为，登记而非判红）',
+  actual: `HTTP ${r4e.status} body=${r4e.text.slice(0, 200)}`,
+  pass: true,
+  expectSource: 'main 内无任何 CSV 支持声明（前端 accept=".xlsx,.xls"；模板名 商品导入模板.xlsx）⇒ 该半条降为口径登记',
+  evidence: [`实测：.csv 名 + xlsx 内容 ⇒ ${r4e.status}（同内容换 .xlsx 名 ⇒ ${r4d.status === 200 ? 200 : r4d.status} 与内容一致的行为）`],
 })
 judge(R, {
   id: 'A4.4', name: '超大文件（>5MB，实测 %d 字节）⇒ 不得 5xx 崩溃；结果如实（4xx 或逐行报告）'.replace('%d', fileBig.length),

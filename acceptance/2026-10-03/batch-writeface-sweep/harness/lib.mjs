@@ -439,7 +439,8 @@ export function probeResidue() {
     productColors: q(`select id from product_colors where tenant_id=${TENANT_ID} and product_id like '${ID_PREFIX}%'`).length,
     productAttrs: q(`select id from product_attributes where tenant_id=${TENANT_ID} and product_id like '${ID_PREFIX}%'`).length,
     operations: q(`select id from production_operations where tenant_id=${TENANT_ID} and id like '${ID_PREFIX}%'`).length,
-    opPositions: q(`select id from production_operation_positions where tenant_id=${TENANT_ID} and operation_id like '${ID_PREFIX}%'`).length,
+    // ⚠️ 该表**无** operation_id 列（按 logical_name 寻址）—— 实测列名（首轮此处报错被误当 dangling）
+    opPositions: q(`select id from production_operation_positions where tenant_id=${TENANT_ID} and logical_name like '${PROBE_PREFIX}%'`).length,
     opPositionsByName: q(`select id from production_operation_positions where tenant_id=${TENANT_ID} and logical_name like '${PROBE_PREFIX}%'`).length,
     opPriceVersions: q(`select id from production_operation_price_versions where tenant_id=${TENANT_ID} and operation_id like '${ID_PREFIX}%'`).length,
     routeTemplates: q(`select id from production_route_templates where tenant_id=${TENANT_ID} and name like '${PROBE_PREFIX}%'`).length,

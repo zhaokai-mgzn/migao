@@ -10,7 +10,7 @@
 // 为什么用「02:00 +08」这个时刻作为主探针：
 //   它在 +08 口径下**明确属于 10-01**，但在 **UTC 日切**下属于 09-30 18:00。
 //   两条口径对同一笔给出**不同**归属 ⇒ 这是唯一能区分两种实现的时刻选择。
-import { loginApi, api, psql, one, judge, log, OUT, TENANT_ID, nowCST, guardedWrite, rowFingerprint, psqlRaw, hexId } from './lib.mjs'
+import { loginApi, api, psql, one, judge, log, OUT, TENANT_ID, nowCST, guardedWrite, rowFingerprint, psqlRaw, hexId, buildPoint } from './lib.mjs'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -294,7 +294,8 @@ export async function familyC(R, { token }) {
 
   // ── C6 #6185 物流缓存：构建点不含 ⇒ 只做当前行为登记 ───────────────
   R.skip('C6', '#6185 物流缓存（缓存键/档位/失败不缓存）',
-    '前置：:8080 构建点 = main-live @ d1c09d02f，**不含 #6185**（#6185 在 origin/main 上，见 REPORT.md §1 的 git show 级证据）' +
+    `前置：:8080 构建点 = main-live @ ${buildPoint().sha}，**不含 #6185**` +
+    '（实证：该构建里 `grep -rl "logisticsCache\|物流缓存" src/main/java` 无命中；见 REPORT.md §1 的 git show 级证据）' +
     '⇒ 按任务书「若 :8080 构建点不含它 ⇒ 只做当前行为登记，不判缺陷」处理：本条**不作 pass/fail**，' +
     '当前行为登记 = 无缓存层可观察（未做 Redis 读/写断言，因对象不在运行构建内）。')
 
