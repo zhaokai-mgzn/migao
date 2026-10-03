@@ -1109,3 +1109,19 @@ order_logistics.status 分布：in_transit 29
 ⇒ **而正因为它是常态，"未采集"才更正确**：该弹窗不是发货方式采集面，用户的这一格**确实没被采集过**；默认成 `logistics` = 每天把几百条**从未采集**的记录写成"已采集" —— **这正是本单要修的形态本身**。
 ⇒ 用户那句"新租户的订单不会出现物流缺失"我按**发货后**理解（`shipped 21/21` 均有记录，与新流程一致）；**发货前**无记录属设计如此。
 ⇒ 已要求 `#6254` 包：把这组读数写进 PR body 边界一节（说明"该路径是常态、但未采集语义仍正确"），`OR-059` **保留**（按"先开者保留"），锚点按 rebase 后**实测**对齐。
+
+### 19.47 `#6248` 改号四步完成（`OR-060`）+ `#6263` 的 fail=4 已定性为**分支侧陈旧**（非 main）
+
+**`#6248`（PR #6264）改号收口（包回报逐字）**：`OR-059 → OR-060`（`order.yml` id + 测试头部 `// case_ids: OR-060` + 按惯例补 `.github/cases/claims/6264-OR-060.json`）；`grep` 复核全库 `OR-06` 唯一；两份 claims 守卫 **29 passed**；重渲染 **659 条**并提交；**锚点按 rebase 后实测 = 120**（main 侧 119 + 本单 1 条；它先前报的 119 已作废，note 写明"rebase 后实测、旧 base 读数作废"+ 撞号经过）；rebase 冲突 3 个文件（两份台账 + CHANGELOG）按"保留 main 条目 + 追加本单条目"合并；force-push `ca487926f → c6100ad0b`；复跑真库 6 条判据绿（`重启落已占头部 ⇒ 409 批次0 draft`；`会合点注入(修后) ⇒ 成功2 [200,200] 批次2 号不同`）。
+⇒ **"先开者保留"的裁定闭环**：`#6263` 留 `OR-059`、`#6264` 用 `OR-060`。
+
+**`#6263` 的 4 条红腿定性（主会话查证）**：
+```
+fail=4：Case Contract (truths_ref) · ci workflow helper unit tests（两片）· Flaky Ledger Reconcile
+Case Contract 逐字：生成物新鲜度：1 个产物与 .github/cases/** 不同步 —— docs/testing/mibao-verification-cases.md
+  （提交版 9709 行 / 现取 9709 行，不同 2 行）
+```
+**关键区分（避免误判成 main 又坏了）**：主会话在干净检出上跑 `origin/main`（现 `5631fb537`）⇒ **`verdict=fresh`** ⇒ **main 是新鲜的**，陈旧在 `#6263` **自己的分支**（从较旧 main 起步，期间 main 并入 `#6258` 的 MC-078 等）⇒ 收口动作 = `sync-main.sh --rebase` + **重渲染并提交** + **锚点按 rebase 后实测重锚**（main 侧现 **119**）+ 复跑。
+⇒ **口径沉淀**：同一条 `Case Contract` 红，**先跑 `generated_artifacts_freshness.py` 在 `origin/main` 上**（或 `--base-probe origin/main`）**再决定"修 main 还是修分支"** —— 本轮两种情形都出现过（`#6255` 是 main 陈旧、`#6263` 是分支陈旧），**判据一样、处置相反**。
+
+**另外**：main 已被两条自动 `chore(ci): flaky 台账追加`（`#6256` / `#6265`）推进到 `5631fb537`；承载体 `#6229` 仍只差 1~2 条 pending。
