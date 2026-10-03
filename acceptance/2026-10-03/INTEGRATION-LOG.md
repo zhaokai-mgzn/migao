@@ -707,3 +707,29 @@ main 侧内容级：MoneyScale.java 存在 · OrderService 含 MoneyScale.requir
 cd "/Users/guangzhen.zk/ai native/migao-wt/batchgate-run" && git fetch -q origin && git checkout -q --detach origin/main
 MIGAO_HEAVY_WAIT=2700 ./scripts/batch-gate.sh fix/6220-aftersales-concurrency
 ```
+
+### 19.24 四个修复包**全部合并并关单** + 批次 `batch-gate` 的终局（**对象消失，判据 moot**）+ 又开两张待核验单
+
+**① 本轮修复面终态（现取）**
+```
+#6233 #6219 → CLOSED    #6234 #6226 → CLOSED    #6231 #6221 → CLOSED    #6230 #6220 → CLOSED
+origin/main 顶端 = dacac7471 fix(aftersales): #6220 …（#6230 的 squash 提交）
+#6230 CI 整轮 = 26 pass / 0 fail / 2 skipping（含两次打红过的 `ci workflow helper unit tests` 两片）
+```
+四个包**各自**都在合并前跑过完整 CI（含最重的 `ci workflow helper unit tests` 两片），且每个都在 main 上被**内容级自证**过（`git show origin/main:<path>`：修复语句 / 新测试文件 / 台账 / 用例都在）。
+
+**② `batch-gate` 终局：批次**已空**，判据失去对象 —— 这是"对象消失"，不是"跳过"**
+最后一次尝试（17:58 前后）的拒绝理由**逐字**：
+```
+❌ fix/6220-aftersales-concurrency（不就绪）：没有对应的 open PR
+   （gh pr list --head fix/6220-aftersales-concurrency --state open 为空）｜下一步：先开 PR
+```
+⇒ 真因 = **#6230 就在那一刻合并了**（`mergedAt=2026-10-03T09:58:24Z`）。至此 `#6012` 想治的形态（"N 个包各自跑一遍全量"）**已无对象**：四个包全在 main，集成工作区从 main 起 ⇒ 它们天然被覆盖。
+**替代证据链（不弱于一次批次全量）**：① 每包合并前的 CI 含**最重腿**且全 pass（#6230 的两片就是前两次打红的那两条腿）；② 每包合并后**main 侧内容级自证**（铁律 9）；③ 四次的合并提交都在 main 上可复核。⇒ 本条**结案为 moot**，重启条件（"CI 无 pending 再重跑"）**不再适用**；若将来再出现"N 个未合并包"，命令与纪律仍留在 `§19.19/§19.22`。
+
+**③ 又开两张单（按铁律 12(a) 发现即派单）**：#6220 的类级豁免台账里两条 `unverified` 观察项已落成核验单 ——
+- **#6237**（P2·待核验·**涉库存**）`InboundOrderService#post`：无条件置 POSTED + 逐行 insert `stock_batches` ⇒ 疑似重复建批次/重复入库；
+- **#6238**（P2·待核验·**涉钱**）`ProductionOperationCommandService#update`：价格版本**追加 insert** ⇒ 疑似重复追加版本行。
+两单都写明"**未核验前不得当成已保护**"（台账原话）与核验配方（N=4 并发 ×≥3 轮 + 四件套判定 + 串行正对照 + 双向注入红证 + 结论回填台账）。
+
+**④ 在飞/排队**：在飞 3 个包（`#6224` 退款方式下线 · `#6222` 负 size 读面 · `#6235` worktree 登记漂移）＝并发上限；**排队**：`#6228`（金额入口债务 17 处）、`#6237`、`#6238`（额度一空即派）。
