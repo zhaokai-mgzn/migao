@@ -475,3 +475,16 @@ if (!SHIPPABLE_FROM.contains(order.getStatus())) { throw …「当前状态（%s
 修复包 F-6220（#6230）与 F-6221（#6231）**各自独立取号，都新增了 `AS-011` / `AS-012`**（同一文件 `.github/cases/aftersales.yml`）⇒ 谁后合谁撞车。
 处置：**合并顺序 = 先 #6230 后 #6231**；F-6221 改号为 **`AS-013` / `AS-014`** 并重跑 `render_cases.py` + 四项 case 门禁后重推。
 ⇒ **教训（派单侧）**：同一轮派多个会改同一 `cases/*.yml` 的包时，**必须在派单时划号段**（不是等撞车再改）。
+
+### 19.10 派单侧教训：本仓有**两份冻结台账**，修复包新增用例/新增真库判据时必须同 PR 重锚
+
+本轮 4 个修复包（#6220/#6221/#6226 已在跑，另见 #6219）里，**前两个都被 CI 同一类门禁打红**，两次都不是实现问题而是"登记/锚点"的收尾动作：
+
+| 门禁 | 文件 | 触发条件 | 实测失败逐字 | 正确处置 |
+|---|---|---|---|---|
+| **真库判据冻结清单** | `tests/unit_ci_workflows/test_realdb_failclosed.py` 的 `REALDB_FILES`/`FIXTURE_FILE` | 新增**需要真 PG** 的判据 | `AssertionError: 真库判据集合与冻结常量不一致 … 只在实际集合里（未登记/改名）：['…/AfterSalesConcurrentResolveRealDbTest.java']` | 同 PR 按**字母块位置**登记（附"为什么必须真 PG"的注释）；窄跑 `python3 -m pytest tests/unit_ci_workflows/test_realdb_failclosed.py -q` |
+| **用例机判红通道锚点** | `tests/unit_ci_workflows/case_machine_fail_channel_baseline.json` | 新增 `[backend-contract]` 类用例（`expectations: []` ⇒ `scoring_assertion_count == 0`） | `AssertionError: 实测读数 {'no_channel_total': 0, 'backend_contract_scoring_zero': 113} 与锚点 {'…': 111} 不一致 ⇒ 必须在同一 PR 里重锚` | 同 PR **追加一行 history**（`no_channel_total` 只许 0；`note` 写清来源 + `traces.tests` 的真实测试文件 + `no_channel_total` 仍 0 + "实测重锚，不是按号推算"）；窄跑单文件复验 |
+
+**两条元规则（下一轮派单时直接写进任务书）**：
+1. **新增真库判据 ⇒ 必须登记冻结清单**；**新增 `[backend-contract]` 用例 ⇒ 必须重锚机判红通道**（都是"判据不许悄悄消失/悄悄增加"的设计，登记本身就是闭环的一环）；
+2. **多包同改一份共享台账 ⇒ 派单时定顺序**：第 N 个包的锚点值 = **它自己分支当下的实测值**（不是预判别包号）；后合者 rebase 后按当时实测值再对齐一次。本轮 `AS-011/012`（#6230）与 `AS-013/014`（#6231）的撞号、以及两份台账的先后重锚，都是这条规则的实例。
