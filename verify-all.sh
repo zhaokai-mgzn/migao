@@ -36,6 +36,9 @@
 #                  故既不是通过也不是失败；会打印「缺什么 + 实测可跑通的准备命令」。
 #                  先例（日志原文）：`bash: .venv/bin/python: No such file or directory`（exit 127）、
 #                  `Cannot find module 'vitest/config'`（exit 1）—— 旧版把二者记成 ❌ = **假红**。
+#                  ⚠️ **「服务在跑但鉴权不过」同属未就绪**（issue #6160）：`ai-agent-e2e` 前置会
+#                  **真去探** chat 端点（401 / 连不上 ⇒ 未就绪 + 一行准备；探得通 ⇒ 该面照常跑
+#                  并判红绿）—— 此前这类**环境**问题被记成 ❌，读者会以为那是代码回归（实测）。
 # 另有第三类**失败**形态（不占 ✅/⏭️）：
 #   ❌ 假绿（检查未生效）—— **跑了**却**什么都没检查**还退出 0。先例：无 node_modules 时
 #                  `npx tsc --noEmit` 从 npm 拉到**同名占位包** `tsc`，打印
@@ -139,6 +142,29 @@ probe_ready() {
         READY_MISSING="缺 $ROOT/backend/ai-agent-service/.venv/bin/python（未建 venv；实测报错：bash: .venv/bin/python: No such file or directory）"
         READY_HINT="cd '$ROOT/backend/ai-agent-service' && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
         return 1
+      fi
+      ;;
+    ai-agent-e2e)
+      # 「需要外部服务 + 凭据」的 e2e 面（issue #6160）：服务在跑、但**鉴权不过**（401）此前被
+      # 报成 ❌ 失败（实测：ai-agent 腿 20 failed / 2.79s，逐字
+      # `chat 接口返回非 200：401, detail={"code":"AUTH_REQUIRED"}`），读者会以为那是代码回归。
+      # 本 key 把这类**环境**问题落到「未就绪（跳过）」+ 一行可行动文案。
+      # 判定**不在这里**（就绪判定单一实现 = 测试面自己声明的契约，由
+      # scripts/ai-agent-e2e-readiness.py 现取面清单并**真去探**）—— 本分支只把它映射成三态。
+      # ⚠️ 先探 venv：该面要靠 ai-agent 腿真跑，没 venv 就跑不起来 ⇒ 未就绪（「没跑」不是「就绪」）。
+      # ⚠️ 探针**只**判「探得通不通」：探得通 ⇒ 该面照常跑、照常判红绿（真失败仍 ❌，不许被吞）。
+      probe_ready ai-agent || return $?
+      local probe_out probe_rc=0
+      probe_out="$(python3 "$ROOT/scripts/ai-agent-e2e-readiness.py" 2>&1)" || probe_rc=$?
+      if [ "$probe_rc" -eq 1 ]; then
+        READY_MISSING="${probe_out}"
+        READY_HINT="按上面的读数把本机服务与用例的凭据对齐后重跑（探针与用例是同一个判定）"
+        return 1
+      fi
+      if [ "$probe_rc" -ne 0 ]; then
+        READY_MISSING="就绪探针**无法判定**（exit ${probe_rc}）：${probe_out}"
+        READY_HINT="检查 $ROOT/scripts/ai-agent-e2e-readiness.py 能否在本机跑通（判不了 ≠ 通过）"
+        return 2
       fi
       ;;
     admin-web-vitest)
@@ -985,6 +1011,12 @@ case "$MODE" in
   quick)
     echo "========== MIGAO 快速验证 =========="
     report_gated admin-api admin_api_face_paths "admin-api 单测"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test -q"
+    # ai-agent e2e 前置就绪（issue #6160）：本面需要**本机在跑的 ai-agent-service + 它能接受的凭据**
+    # （tests/test_e2e_mibao_scenarios.py 直打 http://localhost:8001/api/chat/send）。未就绪
+    # （服务不在跑 / 凭据被拒 401）⇒ 未就绪（跳过）+ 一行可行动文案，**不是**失败 —— 此前这形态被
+    # 报成 ai-agent 腿 20 条 failed（实测 2.79s），读者会以为那是代码回归。
+    # 就绪 ⇒ ✅；该面随后在下面那条 ai-agent 腿内**真跑并判红绿**（探针只看探通不通，不看断言）。
+    report_env ai-agent-e2e "ai-agent e2e 前置就绪（米宝全场景：需本机服务 + 凭据）" bash -c "python3 '$ROOT/scripts/ai-agent-e2e-readiness.py'"
     report_gated ai-agent ai_agent_face_paths "ai-agent 单测"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     report_gated admin-web-vitest admin_web_face_paths "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report_gated admin-web-tsc admin_web_face_paths "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
@@ -997,6 +1029,12 @@ case "$MODE" in
   full)
     echo "========== MIGAO 全量验证 =========="
     report_gated admin-api admin_api_face_paths "admin-api 全量"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test"
+    # ai-agent e2e 前置就绪（issue #6160）：本面需要**本机在跑的 ai-agent-service + 它能接受的凭据**
+    # （tests/test_e2e_mibao_scenarios.py 直打 http://localhost:8001/api/chat/send）。未就绪
+    # （服务不在跑 / 凭据被拒 401）⇒ 未就绪（跳过）+ 一行可行动文案，**不是**失败 —— 此前这形态被
+    # 报成 ai-agent 腿 20 条 failed（实测 2.79s），读者会以为那是代码回归。
+    # 就绪 ⇒ ✅；该面随后在下面那条 ai-agent 腿内**真跑并判红绿**（探针只看探通不通，不看断言）。
+    report_env ai-agent-e2e "ai-agent e2e 前置就绪（米宝全场景：需本机服务 + 凭据）" bash -c "python3 '$ROOT/scripts/ai-agent-e2e-readiness.py'"
     report_gated ai-agent ai_agent_face_paths "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     report_gated admin-web-vitest admin_web_face_paths "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report_gated admin-web-tsc admin_web_face_paths "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
@@ -1015,6 +1053,12 @@ case "$MODE" in
     report_gated admin-api admin_api_face_paths "admin-api 全量"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test"
     ;;
   agent)
+    # ai-agent e2e 前置就绪（issue #6160）：本面需要**本机在跑的 ai-agent-service + 它能接受的凭据**
+    # （tests/test_e2e_mibao_scenarios.py 直打 http://localhost:8001/api/chat/send）。未就绪
+    # （服务不在跑 / 凭据被拒 401）⇒ 未就绪（跳过）+ 一行可行动文案，**不是**失败 —— 此前这形态被
+    # 报成 ai-agent 腿 20 条 failed（实测 2.79s），读者会以为那是代码回归。
+    # 就绪 ⇒ ✅；该面随后在下面那条 ai-agent 腿内**真跑并判红绿**（探针只看探通不通，不看断言）。
+    report_env ai-agent-e2e "ai-agent e2e 前置就绪（米宝全场景：需本机服务 + 凭据）" bash -c "python3 '$ROOT/scripts/ai-agent-e2e-readiness.py'"
     report_gated ai-agent ai_agent_face_paths "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     ;;
   gate)
