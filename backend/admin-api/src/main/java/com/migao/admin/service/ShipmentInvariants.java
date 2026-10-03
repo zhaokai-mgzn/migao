@@ -35,16 +35,10 @@ import java.util.Map;
  * </ol>
  *
  * <h2>它盖到哪几条发货路（台账在 {@code ShipmentInvariantGuardTest}，未登记即红）</h2>
- * <p>工人路（{@code OrderShipmentService.ship}）**带**这两条不变式；商家/生产路
- * （{@code ProductionController.ship} → {@code OrderShipmentService.recordMerchantShipment}）
- * 自 <b>issue #6171</b> 起也落了 {@code order_shipment_items}（数量 = {@link #remainingLines} 的未发余量）
- * ⇒ 同样带这两条不变式。🔴 <b>裸状态路</b>（{@code PUT /orders/{id}/status} 的
- * {@code confirmed|producing → shipped}）**不带数量**（请求体只有 status）⇒ 结构上无法承载第一条 ——
- * 它那条缺口（订单置 {@code shipped} 后在发货单链上不可见 = 漏单）由台账逐条具名登记
- * 「接受的缺口 + 重启条件」，**不**在这里静默放过。</p>
- * <p>⚠️ issue #6171 未收口的那一半（如实登记，不粉饰）：余量为 {@code 0} 的**部分发货**订单
- * （工人路先发一部分 ⇒ 订单已 {@code shipped}）再调商家路 ⇒ 状态前置即 4xx，**不建单**；
- * 「一张订单多张发货单」的部分发货闭环不在本单射程（重启条件见台账条目）。</p>
+ * <p>工人路（{@code OrderShipmentService.ship}）**带**这两条不变式；商家/生产路与裸状态路
+ * （{@code PUT /orders/{id}/status}）**不带数量**（它们不落 {@code order_shipment_items}）⇒
+ * 结构上无法承载第一条 —— 那两条的缺口（订单置 {@code shipped} 后在发货单链上不可见 = 漏单）
+ * 由台账逐条具名登记「接受的缺口 + 重启条件」，**不**在这里静默放过。</p>
  *
  * <h2>为什么是 static 而不是 {@code @Component}</h2>
  * <p>与 {@link OrderShipGuard} 同一取舍：{@code OrderService} 是 16 依赖的
@@ -264,46 +258,6 @@ public final class ShipmentInvariants {
         }
         message.append("\n（本次请求未写入任何数据；请修正后重试）");
         throw BusinessException.validationError(message.toString());
-    }
-
-    /**
-     * 🔴 <b>订单未发余量</b>（issue #6171）—— 「还剩多少没发」，逐 {@code order_item_id}。
-     *
-     * <p>为什么在这里而不是在路由里：商家/生产发货路（{@code POST /api/admin/production/orders/{orderId}/ship}）
-     * 的请求体**只有运单号 / 承运商、没有数量** ⇒ 它的「实发数量」只有一个不编造的来源 =
-     * {@code 订单量 − 已发合计}，也就是 {@link #assertWithinOrderQuantity} 的另一半
-     * （S1 立的是「不许超」，这里取的是「还剩多少」，同一份累计口径 {@link #cumulativeByOrderItem}
-     * ⇒ 两处不可能分叉）。</p>
-     *
-     * <p>口径（逐条可判，供商家路的实例判据直接消费）：</p>
-     * <ul>
-     *   <li>只对**有订单行 id**的行回答（手写/配件行没有上限，不属于本读面）——与
-     *       {@link #cumulativeByOrderItem} 同一条跳过规则；</li>
-     *   <li>{@code 订单量}为空（存量脏数据）⇒ 该行**不入表**（无法判定 ⇒ 不编一个数 ——
-     *       调用方据此**拒绝**而不是记 {@code 0}）；</li>
-     *   <li>负余量（已发 &gt; 订单量的存量脏数据）⇒ 夹到 {@code 0}（本读面只回答「还能发多少」，
-     *       负数没有业务含义；「超发」这件事本身由 {@link #assertWithinOrderQuantity} 判）；</li>
-     *   <li>返回顺序 = 订单行顺序（{@code orderItems} 的次序），便于逐行核对。</li>
-     * </ul>
-     *
-     * @param requestLines   本次请求要发的行（商家路 = 空表：数量就是「全部余量」）
-     * @param alreadyShipped 该订单**已经落库**的实发明细（跨全部发货单）
-     * @param orderItems     该订单的订单行（上限来源 = {@code order_items.quantity}）
-     * @return {@code order_item_id → 未发余量}（无法判定的行不出现）
-     */
-    public static Map<String, BigDecimal> remainingLines(List<ShipmentLine> requestLines,
-                                                         List<OrderShipmentItem> alreadyShipped,
-                                                         List<OrderItem> orderItems) {
-        Map<String, BigDecimal> cumulative = cumulativeByOrderItem(requestLines, alreadyShipped);
-        Map<String, BigDecimal> remaining = new LinkedHashMap<>();
-        for (OrderItem item : orderItems == null ? List.<OrderItem>of() : orderItems) {
-            if (item == null || item.getId() == null || item.getQuantity() == null) {
-                continue;
-            }
-            BigDecimal left = item.getQuantity().subtract(amount(cumulative.get(item.getId())));
-            remaining.put(item.getId(), left.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : left);
-        }
-        return remaining;
     }
 
     /**
