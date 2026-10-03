@@ -653,3 +653,16 @@ MIGAO_HEAVY_WAIT=2700 ./scripts/batch-gate.sh \
 2. **`batch-gate` 未跑成**：两次均被**就绪前置判定**正当拒绝（见 `§19.19`：第一次真因是我跑了过期脚本、第二次是 CI 仍在跑）。**重启条件 = 三个 PR 的 `gh pr checks` 无 pending**；命令已写定。
 3. **三个修复 PR 未合并**（`BLOCKED`/`fail=0`，等 CI + 人工评审面）；合并顺序 **#6230 → #6226 → #6231**（后两者与前者同改 `aftersales.yml`/生成物，合前各自 `sync-main.sh --rebase` + 重渲染）。
 4. `#6224`（`refund_method` 零生产者字段）的处置口径是**产品口径**，按 §30 交人工（不裁时的安全默认 = 下线该字段）。
+
+### 19.21 合并后兜底（铁律 4 的 close-on-merge 补偿路径）：#6226 已关
+
+**形态**：`Closes #6226` 写在 PR #6234 body 里，但 `close-linked-issues` 的最近一次 run（09:26:42Z）**早于**本次合并（09:37:54Z）⇒ 异步补偿未即时生效，issue 停在 `open`（本仓已知 best-effort 形态，非包遗漏）。
+**主会话兜底**（按铁律 9 先自证再关）：
+```bash
+gh pr view 6234  ⇒ MERGED 2026-10-03T09:37:54Z  commit=91a4e65e9240d230b4c03c15e705ed9910c5b1f8
+git show origin/main:.../ProcessingItemService.java   ⇒ :219 return new HashMap<>();   残留 "return Map.of()" = 0
+git show origin/main:.../ProcessingOrderService.java  ⇒ 残留 "return Map.of()" = 0
+```
+⇒ `gh issue close 6226` + 证据评论（mergedAt / merge commit / main 侧内容级读数 / 修前红-修后绿 / latent 与射程边界）。关闭时刻 **2026-10-03T09:40:05Z = 17:40:05 +08**。
+
+**本轮合并与关单总账（截至 17:40 +08）**：已合 `#6233`(#6219) · `#6234`(#6226) —— 对应 issue **均已 CLOSED**；未合 `#6230`(#6220) · `#6231`(#6221) —— issue 保持 open（正确）；承载体 `#6229` 待评审。
