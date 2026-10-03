@@ -600,6 +600,31 @@ class ProductionRoutingReadControllerTest {
     }
 
     @Test
+    @DisplayName("🔴 issue #6127：PUT /operation-positions/{id} 收到未知/不可写键 `position` ⇒ 422（改前 200 静默 no-op）")
+    void updateOperationPositionRejectsUnknownKeys() throws Exception {
+        // 病（③ 线横切扫描 W3 实测）：body `{"position":"纱帘"}` ⇒ **HTTP 200**，字段级 diff 只有
+        // `updated_at` 变 —— 商家以为改了部位归属，实际什么都没发生。本判据钉的就是那条 200 口径。
+        when(productionOperationPositionMapper.selectById("opp-三边-布帘"))
+                .thenReturn(position("三边", "布帘", "0.40", true));
+        // ⚠️ 让「写成功」这条路**真的可达**：护栏一旦被摘掉，读数就是 **HTTP 200**（线上 W3 的
+        //    逐字形态），而不是被 404 挡住 —— 否则红证会被误读成「另一个分支拦住了」。
+        when(productionOperationPositionMapper.updateUnitPrice(
+                any(), any(), any(), any())).thenReturn(1);
+
+        mockMvc.perform(put("/api/admin/production/operation-positions/opp-三边-布帘")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"position\":\"纱帘\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.details[0].field").value("position"))
+                .andExpect(jsonPath("$.error.details[0].message").value(
+                        org.hamcrest.Matchers.containsString("合法键")));
+        // 🔴 状态码之外还要「没落库」的读数（写库前拦截）
+        verify(productionOperationPositionMapper, never()).updateUnitPrice(
+                any(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("矩阵写面端点声明 processing:manage（与 PUT /operations/{id} 同码）")
     void updateOperationPositionDeclaresManagePermission() throws Exception {
         Method method = ProductionController.class.getMethod("updateOperationPosition",

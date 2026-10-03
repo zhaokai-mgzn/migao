@@ -15,8 +15,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 部位价目矩阵**写面**（issue #4587 ② = 母单 #4586 包A）：
@@ -33,10 +35,16 @@ import java.util.Map;
  * 它**只看代码**（扫描前做 Java 词法级去注释，字符串字面量保留）⇒ 文档里写清列名是安全的
  * （issue #4595 修准了该判据；此前它是裸子串扫描，会把注释里的提及误判成越界读取）。</p>
  *
- * <p><b>状态（issue #4937 / O1 之后的终态）</b>：可写面**只剩 `unit_price` 一列** ——
- * {@code applicable}（部位适用性）已**退场**，收到该字段一律 **422 + 可行动 hint**（<b>拒绝</b>，
- * 不静默忽略）。价的两态仍在：显式传 {@code unit_price=null} ⇒ 「<b>未定价</b>」（<b>≠ 0 元</b>）；
- * 传数值 ⇒ 有价（{@code 0} 就是<b>有价 0 元</b>，与「未定价」在数据上可区分）。</p>
+ * <p><b>状态（issue #4937 / O1 之后的终态；issue #6127 推广到整个可写键集合）</b>：可写面**只剩
+ * `unit_price` 一列**，且它是**显式枚举**的（{@link #WRITABLE_KEYS}）—— 词表外的键（含已退场的
+ * {@code applicable}，以及拼错的键 / 只有读面才有的键如 {@code position}）一律 **422 + 可行动 hint**
+ * （<b>拒绝</b>，不静默忽略）。价的两态仍在：显式传 {@code unit_price=null} ⇒ 「<b>未定价</b>」
+ * （<b>≠ 0 元</b>）；传数值 ⇒ 有价（{@code 0} 就是<b>有价 0 元</b>，与「未定价」在数据上可区分）。</p>
+ *
+ * <p>⚠️ <b>读面键集 ≠ 写面可写键集</b>（issue #6127）：{@code GET /operation-positions} 的行里有
+ * {@code position} / {@code applicable} / {@code group} 等键，客户端把它们**回传**到写面是常见误用
+ * —— 回传在这里不是「部分更新」而是**协议外输入**，必须拒绝：否则商家以为改了部位归属，
+ * 实际库里一字未动（静默 no-op），而这正是最忌的形态。</p>
  *
  * <p><b>留痕（不许静默）</b>：价<b>真的变了</b>才同事务向
  * {@code production_operation_position_price_versions}（V86）追加一行 —— 本仓既有契约是
@@ -54,6 +62,27 @@ public class ProductionOperationPositionCommandService {
 
     /** 单价小数位（列是 {@code NUMERIC(10,2)}）：超两位**拒绝**，不静默四舍五入。 */
     private static final int PRICE_SCALE = 2;
+
+    /**
+     * 写面**可写键的显式枚举**（issue #6127）—— 词表外一律 422，不静默忽略。
+     *
+     * <p>形态复用本仓既有的「未知键即 422」口径（{@code WorkerPageConfigService} /
+     * {@code CuttingHeightConfigService} / {@code CraftCalcConfigService} 的 {@code validate}
+     * 里同一句：「拼错的键会被静默忽略 ⇒ 商家以为改了却没改；合法键：…」）。⚠️ 本端点是**部分更新**
+     * （只写 body 里出现的键），故**不**照抄那三处的「缺键也拒」那一半（那是全量替换语义）——
+     * 只取「未知键即拒」。</p>
+     *
+     * <p>为什么是**枚举**而不是「按实体/DTO 反推」：白名单必须能被 grep 到、能被判据**逐键打靶**
+     * （见 {@code ProductionOperationPositionCommandServiceTest} 的类级判据）；这里一旦放宽成通配，
+     * 那次改动必须在源码里留痕。</p>
+     */
+    static final Set<String> WRITABLE_KEYS = new LinkedHashSet<>(List.of("unit_price"));
+
+    /**
+     * **已退场**字段（issue #4937 / O1）：收到即拒，但文案与「未知键」**分开** —— 它是退场了、
+     * 不是拼错；说清这点调用方才知道该改**契约**而不是改拼写。
+     */
+    private static final Set<String> RETIRED_KEYS = new LinkedHashSet<>(List.of("applicable"));
 
     private final ProductionOperationPositionMapper productionOperationPositionMapper;
     private final ProductionOperationPositionPriceVersionMapper priceVersionMapper;
@@ -75,8 +104,15 @@ public class ProductionOperationPositionCommandService {
      * 随该字段主体**一并退休** —— 判据的输入已经不复存在（且「能解析出变体」这件事已由
      * 实例化侧的 {@code missing_operations} 兜底）。</p>
      *
-     * @param body 只可含 {@code unit_price}（number|null）；
-     *             {@code null} 的价 = 显式改回**未定价**（≠ 0 元）
+     * <p>🔴 <b>issue #6127：把上面这条从「只钉 {@code applicable} 一个词」推广到
+     * {@link #WRITABLE_KEYS} 整个词表</b> —— 改前 {@code {"position":"纱帘"}} 是 <b>HTTP 200、
+     * 字段级 diff 只有 {@code updated_at} 变</b>（静默 no-op，商家以为改了部位归属）；
+     * 现在词表外的键一律 <b>422 逐键点名 + 给出合法键</b>，且**写库前拦截**（details 非空就抛，
+     * 改价与版本账一行都不落）。判据 =
+     * {@code ProductionOperationPositionCommandServiceTest#unknownKeysAreRejectedBeforeAnyWrite}。</p>
+     *
+     * @param body 只可含 {@code unit_price}（number|null）；**词表外的键一律 422**（不是静默忽略）
+     *             —— {@code null} 的价 = 显式改回**未定价**（≠ 0 元）
      * @return 更新后的矩阵格（形态与 {@code GET /operation-positions} 的**单行同构**）
      */
     @Transactional(rollbackFor = Exception.class)
@@ -91,11 +127,25 @@ public class ProductionOperationPositionCommandService {
         BigDecimal previousPrice = row.getUnitPrice();
         BigDecimal newPrice = previousPrice;
         List<ApiResponse.ErrorDetail> details = new ArrayList<>();
-        // ⛔ **显式拒绝**（不是静默忽略）：部位适用性已退场，不再受理该字段（issue #4937 / O1）。
-        if (body != null && body.containsKey("applicable")) {
-            details.add(BusinessException.detail("applicable",
-                    "部位适用性已退场，不再受理该字段 —— 矩阵格只承载「这道逻辑工序的计件单价」；"
-                            + "请只传 unit_price（不传 applicable）"));
+        // ⛔ **显式拒绝**（不是静默忽略）：词表外一律 422 —— issue #6127 把 #4937 的「只钉
+        // `applicable` 一个词」推广到**整个可写键集合**（`WRITABLE_KEYS`）；文案形态照抄本仓既有的
+        // 「未知键即 422」口径（WorkerPageConfigService / CuttingHeightConfigService /
+        // CraftCalcConfigService 的 validate 里同一句）—— 静默 no-op 是「商家以为改了却没改」的载体。
+        if (body != null) {
+            for (String key : body.keySet()) {
+                if (WRITABLE_KEYS.contains(key)) {
+                    continue;
+                }
+                if (RETIRED_KEYS.contains(key)) {
+                    details.add(BusinessException.detail(key,
+                            "部位适用性已退场，不再受理该字段 —— 矩阵格只承载「这道逻辑工序的计件单价」；"
+                                    + "请只传 unit_price（不传 applicable）"));
+                } else {
+                    details.add(BusinessException.detail(key,
+                            "不是部位价目写面的可写键（未知/不可写键会被静默忽略 ⇒ 商家以为改了却没改；"
+                                    + "合法键：" + WRITABLE_KEYS + "）"));
+                }
+            }
         }
         if (body != null && body.containsKey("unit_price")) {
             newPrice = price(body.get("unit_price"), details);
@@ -104,7 +154,8 @@ public class ProductionOperationPositionCommandService {
             // 违规**一次报全**（不是报第一条就返回）；失败一律不落库
             throw BusinessException.validationError(
                     "部位价目更新未通过校验（" + details.size() + " 条问题）", details,
-                    "单价填 ≥ 0 且最多两位小数的金额；要表示「未定价」请传 null，**不要**传 0");
+                    "可写键只有 " + WRITABLE_KEYS + "（词表外的键一律拒绝，不静默忽略）；"
+                            + "单价填 ≥ 0 且最多两位小数的金额；要表示「未定价」请传 null，**不要**传 0");
         }
         int rows = productionOperationPositionMapper.updateUnitPrice(
                 row.getId(), tenantId, newPrice, OffsetDateTime.now());
