@@ -26,6 +26,8 @@ r"""批次统一验证入口 `scripts/batch-gate.sh` 的实例判据（issue #60
 | 6 | 跑完不残留 worktree（本命令自建的那份自己收） | 临时集成 worktree 堆积 ⇒ 红 |
 | 7 | 包与 base **有冲突（DIRTY）** ⇒ 拒绝（exit 3）、**没跑** gate、给同步出口 | 不判冲突就把它拉进批次（#6003/#6005 的形态）⇒ 红 |
 | 8 | PR 有 `fail` / `pending` ⇒ 拒绝（exit 3）、**没跑** gate | 把「CI 未绿」当就绪 ⇒ 红 |
+| 11 | **`skipping` 不是红** ⇒ 该包仍就绪、那一次全量照跑（且只跑一次） | 把 `skipping` 并回红（#6216 的形态）⇒ 单模块包**恒不就绪** ⇒ 红 |
+| 11' | **`cancel` 与 `fail` 同侧** ⇒ 拒绝（exit 3）、**没跑** gate | 顺手把 `cancel` 也放行（「一律放行」的假修）⇒ 红 |
 | 9 | **没有对应的 open PR** ⇒ 拒绝（exit 3）、**没跑** gate | 把「没开 PR」当就绪 ⇒ 红 |
 | 10 | `gh` **在**但调用失败（无凭据/断网）⇒ **fail-closed 拒绝**（exit 3）+ 具名「无法判定 ≠ 就绪」 | 把「取不到 PR 状态」静默当就绪（fail-open）⇒ 红 |
 | 10' | `gh` **不在 PATH**（PATH 桩驱动）⇒ 同上，且走「gh 不存在」具名分支 | 只有环境「碰巧没有 gh」才成立 ⇒ CI 上永远走不到（空断言）⇒ 红 |
@@ -113,6 +115,10 @@ fi
 if [ "${1:-}" = "pr" ] && [ "${2:-}" = "checks" ]; then
   case "$mode" in
     fail)    printf '[{"name":"ci workflow helper 判据集","state":"FAILURE","bucket":"fail"},{"name":"QA Growth Gate","state":"SUCCESS","bucket":"pass"}]\n' ;;
+    cancel)  printf '[{"name":"Post-Merge Verify (定向跑判据面)","state":"CANCELLED","bucket":"cancel"},{"name":"QA Growth Gate","state":"SUCCESS","bucket":"pass"}]\n' ;;
+    # 真实形态（issue #6216 的现场取数：#6213 实际 = 26 pass / 6 skipping / 1 cancel）：
+    # 本仓 CI 按变更面**有意跳过**无关腿（`E2E 面判定`/`bmini H5 面判定`/`mini-app 面判定`）。
+    skipping) printf '[{"name":"QA Growth Gate","state":"SUCCESS","bucket":"pass"},{"name":"admin-api unit tests","state":"SUCCESS","bucket":"pass"},{"name":"E2E quality gate","state":"SKIPPED","bucket":"skipping"},{"name":"xiaobu H5 visual regression","state":"SKIPPED","bucket":"skipping"},{"name":"bmini-app build (h5 + weapp)","state":"SKIPPED","bucket":"skipping"}]\n' ;;
     pending) printf '[{"name":"ci workflow helper 判据集","state":"PENDING","bucket":"pending"}]\n' ;;
     none)    printf '[]\n' ;;
     nonjson) printf 'not json at all\n' ;;
@@ -379,6 +385,36 @@ def test_pending_checks_are_refused_before_the_gate(sandbox):
     assert "未完成" in out, f"没有说清 pending：{out}"
 
 
+def test_skipped_checks_are_not_red_and_do_not_block_the_batch(sandbox):
+    """判据 11（issue #6216）：`skipping` **不是红** ⇒ 该包仍然就绪，那一次全量照跑。
+
+    为什么必须有这条：本仓 CI 按变更面**有意跳过**无关腿（`E2E 面判定`/`bmini H5 面判定`/
+    `mini-app 面判定`，见 #6160/#6170）⇒ 任何只动单一模块的包都必然带 `skipping`。
+    判定式若把 `skipping` 与 `fail` 并列，该包就**恒不就绪** ⇒ 「一批一次全量」
+    （D 口径、issue #6012）**永远启动不了**（实测 #6213：26 pass / 6 skipping / 0 fail 被拒）。
+
+    ⚠️ 断言只吃**语义 + 三态**，不吃环境特定措辞。
+    """
+    proc, calls, _ = run_batch(sandbox, "pkg-a", gh_mode="skipping")
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, f"skipping 不该导致不就绪（这就是 #6216 的形态）：{out}"
+    assert len(calls) == 1, f"就绪 ⇒ 那一次全量必须跑（且只跑一次），实得 {calls}"
+    assert "skipping" in out, f"skipping 不许静默（「没跑」必须长得像「没跑」）：{out}"
+
+
+def test_cancelled_check_is_refused_before_the_gate(sandbox):
+    """判据 11'：`cancel` 与 `fail` 同侧 ⇒ 拒绝（exit 3）、没跑 gate。
+
+    负向对照（与判据 11 成对）：证明本单**只**把 `skipping` 拿掉，没有把「一律放行」当修法 ——
+    把某条 check 改成 cancel 必须立刻恢复拒绝。
+    """
+    proc, calls, _ = run_batch(sandbox, "pkg-a", gh_mode="cancel")
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 3, out
+    assert calls == [], f"不就绪时不该跑 gate，实得 {calls}"
+    assert "Post-Merge Verify" in out, f"没有具名到那条 cancel 的 check：{out}"
+
+
 def test_missing_pr_is_refused_before_the_gate(sandbox):
     """判据 9：找不到对应 open PR ⇒ 拒绝（exit 3）、没跑 gate、提示先开 PR。"""
     proc, calls, _ = run_batch(sandbox, "pkg-a", gh_mode="no-pr")
@@ -550,6 +586,14 @@ MUTATIONS = [
         "pkg-a",
         None,        # 走 run_batch 的默认：显式 `--no-require-ready`
     ),
+    (
+        "把 skipping 重新并回红（#6216 的形态：恒不就绪 ⇒ 那一次全量永远跑不了）",
+        'if (i.get("bucket") or "") in ("fail", "cancel", "cancelled")]',
+        'if (i.get("bucket") or "") in ("fail", "cancel", "cancelled", "skipping")]',
+        "skipping_became_red",
+        "pkg-a",
+        "skipping",
+    ),
 ]
 
 
@@ -589,6 +633,14 @@ def test_mutations_turn_the_suite_red(sandbox, tmp_path, label, old, new, expect
     # 变异体一律「看起来绿」⇒ 这组红证就成了空断言（这不是假设：本判据第一版正是如此被抓出来的）。
     proc, calls, _ = run_batch(mutant, branch, gh_mode=gh_mode)
     out = proc.stdout + proc.stderr
+    # `skipping_became_red` 是**唯一一个「变严」方向的变异**（issue #6216）：其余变异都让判定**更宽松**
+    # （共同读数 = 「⛔ 有包未通过就绪判定」消失），而这条让判定**恒拒绝** —— 症状是**相反**的
+    # （「就绪的包被判不就绪」）。⇒ 单独分流，不与那条共同读数混着断（混着断必然自相矛盾）。
+    if expect == "skipping_became_red":
+        assert "⛔ 有包未通过就绪判定" in out, f"变异「{label}」没被抓住（恒拒绝这个症状没出现）：\n{out}"
+        assert calls == [], f"变异「{label}」没被抓住（那一次全量竟然跑了）：{calls}"
+        assert "skipping" in out, f"变异「{label}」没被抓住（没有具名到 skipping 那些腿）：\n{out}"
+        return
     # 共同读数：就绪判定**没有再拒绝**（那句「⛔ 有包未通过就绪判定」不见了）——
     # 三条变异都会让它消失，而**正常脚本**下判据 7~10 正是靠它变红的。
     assert "⛔ 有包未通过就绪判定" not in out, f"变异「{label}」**没被抓住**（就绪判定仍拒绝了）：\n{out}"
