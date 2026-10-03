@@ -4132,7 +4132,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: OR-059
+  - id: OR-060
     legacy_id: ""
     title: "入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409"
     domains:

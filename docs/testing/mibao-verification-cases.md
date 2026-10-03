@@ -2723,7 +2723,7 @@
 真值: ai-chat.permission-layers
 溯源: 2026-10-02 新增（R2 商家后台全量重测发现 F3，issue #6063）：PermissionInterceptor 原为 AOP @Around，晚于 @RequestParam 参数解析 ⇒ 无权限 GET 缺必填参数返回 422（阶段3 矩阵 6 角色 × W01/W02/W04/W05 共 20 格 422≠403）。修复：preHandle 复用 public requirePermission（同一份授权语义）+ WebConfig 注册 /api/**，AOP 保留双保险。 ｜ tags: defense, rbac, prehandle, info-leak
 
-## 财务对账域（5 case）
+## 财务对账域（6 case）
 
 ### FN-001. 资金流水查询（只读；原「登记线下收款」随 #5247 写能力下线改判） 🔵
 ```
@@ -2780,6 +2780,18 @@
 ```
 真值: finance.summary
 溯源: 2026-10-03 新增（issue #6200）：财务 / 订单的日期筛选窗口由 UTC 日改为业务日（+08）。根因 = FinanceService.parseDateStart/parseDateEnd 与 OrderService.getOrderPage 用 `date + "T00:00:00Z"` / `"T23:59:59Z"` 拼窗口；正确单源 = 同仓既有的 BusinessClock.startOfDay（看板 / 简报 / 订单趋势早已在用）⇒ 本单不是新口径，而是把窗口口径收敛到既定单源。 ｜ tags: finance, time-window, admin-api, read-surface
+
+### FN-006. 涉钱入口的小数位准入：超 2 位有效小数显式拒绝、不静默四舍五入（issue #6228） 🔵
+```
+你: 用户 2026-10-03 派单（issue #6228）：#6221 只修了订单退款一处，其余金额入口仍会把超精度金额静默交给 PG 四舍五入
+期望: direct_reply
+数据: 判据 1·**显式拒绝 + 零写入**：17 处金额入口（建单/改单的 setTotalAmount / setActualAmount / setDiscountAmount / setUnitPrice、售后 setRefundAmount、商品 setPrice / setBasePrice、批量改价 setBasePrice、入库 InboundOrderItem.builder() / setUnitCost、期初导入 setUnitCost、工人面 setUnitCost、加工费组合 setUnitPrice / builder、工序计件 setUnitPrice / builder、财务 FinanceTransaction.builder()）传 3 位有效小数（0.005 / 1.005 / 「积」1.5×0.01=0.015）⇒ 显式拒绝（常规 422、工人面 400）+ **写面零调用**（insert=never / updateById=never / updateProductForAgent=never）。执行点 = 各 service 单测（OrderServiceTest / InboundOrderServiceTest / FinanceServiceTest / AfterSalesTicketServiceTest / AgentBatchServiceTest / ProductServiceTest / OpeningRegisterImportServiceTest / WorkerInboundServiceTest / ProcessingFeeCombinationCommandServiceTest / ProductionOperationCommandServiceTest）。
+数据: 判据 2·**正对照（合法值逐字落库）**：2 位以内**有效**小数的值（0.01 = 1 分 / 12.50 / 31.250）**原样**落库（按 `toPlainString()` 逐字比对）；`null` 语义不变（退款金额未传 = 全额退，不得归一成 0）。
+数据: 判据 3·**类级固化（让同类进不来）**：backend/admin-api/src/test/java/com/migao/admin/service/MoneyEntryPrecisionMetaGuardTest.java 的入口台账现取 DEBT = 0（冻结上限 0）—— 新金额写面未登记 / 债务条数增长 / 声称 GATED 但文件里没有 `MoneyScale.requireTwoDecimals` 文本 ⇒ 当场红并具名；台账条目空转（写面被删 / 改名）同样红。
+跳过: [backend-contract] 纯后端金额精度准入（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 MoneyEntryPrecisionMetaGuardTest + 10 个 service 单测执行
+```
+真值: finance.txn-types
+溯源: 2026-10-03 新增（issue #6228）：金额入口小数位准入补齐。根因 = 金额列 NUMERIC(·,2) 而 PG 对超 scale 的写入只四舍五入、不报错；应用层不校小数位 ⇒ 接口 200、库内值被静默改掉（涉钱面「成功」但与请求值不等）。#6221 已落单点准入 MoneyScale，本单把其余 17 处入口逐处接上（16 处 → GATED、1 处常量写面改判为不引入新输入源），DEBT 17 → 0。 ｜ tags: finance, money-precision, admin-api, write-surface
 
 ## 人事域（13 case）
 
@@ -3034,7 +3046,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（77 case）
+## 杂项域（78 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -3506,11 +3518,11 @@
 ```
 溯源: 2026-09-27 新增（跟踪单 #5699 的 P2 阶段；设计真值源 §1.4 的 A7 补登注与 §6 第 7 条）：P2 的第一步是**取证**而不是改行为 —— 取证结论 = A7 的四个码在**判定面**只有声明本体自己（无任何授权判定读它们）、`getRolePermissions` 的唯一调用方是 `loadUserByUsername`、而该授予面在仓内**不可达**（全仓无 `AuthenticationManager.authenticate` 调用）、C 端/工人端身份面一律按**角色**判。**人类据此裁定「退役」**（2026-09-27）⇒ 同批落地 6 处（`UserService` 的 `switch` 删两个 `case` / 清单 `roles.login` / 两张台账 **4→0** 与 **2→0** / `rbac/sources.json` 销账 2 条陈旧登记 + 命中数 4→2 / `TenantIsolationTest` 夹具），并在 `rbac/sources.json` 与判据里留下**再引入绊线**（这四个码一旦重新出现在判定面/测试面即红）。落码 = 判定面零容忍 + 退役已生效 + 机制存活读数 + 注入式红证 + 「只改注释 ⇒ 不红」对照 + 未取证项登记（**A7 的运行时授予值**）。取号 MC-030：本 PR 同批占用 MC-029，本号在其后顺延。 ｜ tags: rbac, a7, forensics, retirement, red-proof, fail-closed
 
-### MC-031. main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch，判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令） 🔵
+### MC-031. main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch + 对账面（pull_request_target: [opened,reopened]），判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令） 🔵
 ```
 你: 改了 .github/cases/** 却没提交生成物（漂移直接落在 main 上）时，必须有东西在 **main 侧当场**判红，且报错要具名到「哪个产物、差多少、怎么复算」；把 schedule 摘掉、把 fail-closed 换成「跳过」、把判定换成恒绿、把报错改成不具名的一句话时，都必须有东西变红
 期望: direct_reply
-数据: 守护腿 = .github/workflows/main-freshness-guard.yml（on 含 push:main + schedule + workflow_dispatch；**刻意不挂 pull_request** —— 判定基准是 main 的当前状态，挂 PR 面会把红重新显示在无辜 PR 上而它并不拦任何东西）；判定本体 = scripts/generated_artifacts_freshness.py（三态 0 新鲜 / 1 陈旧 / 3 无法判定，**没有「跳过」这一态**）；调用面 = pr-check 的 Verify generated artifacts fresh 步 / 本腿的判定步 / verify-all.sh gate 的 cases 面门禁（**三处同一个脚本**，本地↔CI parity 由 tests/unit_ci_workflows/test_verify_all_gate_parity.py 继续钉住）
+数据: 守护腿 = .github/workflows/main-freshness-guard.yml（on 含 push:main + schedule + workflow_dispatch + **对账面** `pull_request_target: [opened, reopened]`（#6255 第 2 项补，见 MC-078）；**不挂 `pull_request`** —— 判定基准是 main 的当前状态，对账面只在对账时机量一次 main 的现状、不进 required）；判定本体 = scripts/generated_artifacts_freshness.py（三态 0 新鲜 / 1 陈旧 / 3 无法判定，**没有「跳过」这一态**）；调用面 = pr-check 的 Verify generated artifacts fresh 步 / 本腿的判定步 / verify-all.sh gate 的 cases 面门禁（**三处同一个脚本**，本地↔CI parity 由 tests/unit_ci_workflows/test_verify_all_gate_parity.py 继续钉住）
 数据: 判定对象 = tests/agent_eval/eval_cases.py 与 docs/testing/mibao-verification-cases.md 相对 .github/cases/** 的新鲜度；逐个**行为级**验证（只弄脏一个 ⇒ 只有它被具名报出），且登记表与判定本体的 ARTIFACTS **双向相等**（多一条 / 少一条都红）
 数据: 判红输出必须具名：产物名 + 差量（提交版 vs 现取的行数 + 首个差异的两侧原文）+ 可复制的复算/重渲染命令；漂移候选区间**只给读数、不下断言**（用提交级读数下断言正是本单要治的归因错误）
 数据: 告警面三件齐全：::error:: 注解 + $GITHUB_STEP_SUMMARY 落笔（失败也要有）+ 非零退出；判红出口 = P1 值班 issue（定时腿没有 PR 对象，block/merge 无处施加）；读数步 = job 最后一步且 if: always()，并登记进 scripts/mechanism-registry.json（含 schedule + 写作用域 ⇒ 未登记即红）
@@ -3521,6 +3533,20 @@
 跳过: [backend-contract] main 侧 CI 守护腿的结构与判定由 tests/unit_ci_workflows/test_main_freshness_guard.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-27 新增（关联 #5687；残余的登记处 = tests/unit_ci_workflows/test_casebook_summary_is_derived.py 边界节逐字写着『不覆盖 main 侧』）：当天两次 CI 红都红在生成物新鲜度，其中一次归因被指到无关 PR 并被写进公开记录，每次代价 = 一个包白烧一轮 CI + 一次归因指错方向。落码 = 新增 main 侧守护腿（push + schedule + workflow_dispatch；schedule 的理由 = push 会被 auto-merge 吞掉，issue #3113/#5001）+ 把 pr-check 面与 verify-all.sh gate 的内联 render+diff **全部**收敛到单一实现 scripts/generated_artifacts_freshness.py（parity 守卫的锚点同批改准）+ 具名报错（产物/差量/复算命令/候选区间只给读数）+ 九条判据（含 fail-closed 红证、恒绿反转红证、坏渲染器边界的行为级证明）。取号 MC-031（rebase 让号，记实）：起草 MC-029，每次 rebase 都被新并入的判据占用 ⇒ 顺延到 MC-031（main 上 MC-001~MC-030 已占用） ｜ tags: ci, freshness, main-side-guard, red-proof, fail-closed
+
+### MC-078. main 侧生成物新鲜度守护腿的**对账面**：`pull_request_target: [opened, reopened]`（bot 合并后唯一可靠的对账时机）—— 只检出 main、不翻 required、不折进 pr-check 🔵
+```
+你: 改了 .github/cases/** 却没提交生成物、且漂移随 bot 合并落到 main（不产生 push/closed 事件）时，必须有东西在**下一个 PR 打开/重开**的那一刻把 main 的现状量出来并具名判红；把对账面换成 `pull_request` / `[closed]` / `[synchronize]`、把判定基准从 main 换成 PR head、或把本腿翻成 required 时，都必须有东西变红
+期望: direct_reply
+数据: 对账面 = .github/workflows/main-freshness-guard.yml 的 `on.pull_request_target`，且**恰好** `types: [opened, reopened]` + `branches: [main]`（`closed` 对 bot 合并 100% 不触发 —— issue #3585，挂了等于没有；`synchronize` 会让每个 PR 的每次 push 都跑一遍 = 纯噪声）；判定基准仍是 main（checkout **恰好** `ref: main`，**永不**检出 PR head ⇒ 不引入 pwn-request 面）
+数据: **这一面不把本腿变成门禁**：仍报告型 —— 不进 required 集合、不折进 pr-check.yml（检查名也不得出现）、不带 `paths:` 过滤；判红出口仍是 P1 值班 issue
+数据: 为什么必须有这一面（实测读数，可复算）：本腿 `push` 面对 2026-10-03 的两个 merge sha（14eb33212 / d45b7ff39）**零 run**（`gh run list --workflow=main-freshness-guard.yml --json headSha,event`）；`schedule` 实测投递 4~5 次/日、相邻最长 8.9h（`gh api repos/{owner}/{repo}/actions/workflows/368111215/runs?per_page=100&event=schedule`）⇒ 只靠这两面时 main 的漂移可静默近 9h
+数据: **残余边界（照实登记，不粉饰）**：对账面也只在**事件**上跑 —— 若漂移落地后长时间没有任何新 PR 打开/重开，本腿仍只剩 `schedule`（4~5 次/日）⇒ 静默窗口仍可能达数小时。登记在 tests/unit_ci_workflows/test_main_freshness_guard.py 的 UNCOVERED_FACES 第 4 条（带 restart 条件）
+数据: 判据 8 v2 的四条新约束各配注入式红证（`pull_request` / `[closed]` / `[synchronize]` / `branches: [dev]` / 检出 PR head），且每条红证**必须归因到注入点**（判红信息里出现该注入的自证锚 —— 防「别的原因红」冒充本次红证）
+跳过: [backend-contract] main 侧 CI 守护腿的对账面结构由 tests/unit_ci_workflows/test_main_freshness_guard.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-10-03 新增（issue #6255 第 2 项；第 1 项『立即重渲染』由 PR #6257 承担，本单不重复）。订正的事实：main 侧**并非没有兜底** —— .github/workflows/main-freshness-guard.yml 自 PR #5704 起就在跑（push + schedule + workflow_dispatch，判定本体 = scripts/generated_artifacts_freshness.py，正确且已开过 P1 值班 issue #6078/#5866/#5741）。真正的缺口是**投递**：① `push` 面对 bot 合并零 run（实测 14eb33212/d45b7ff39 两个 merge sha 零 push run，复算见 workflow 头部）；② `schedule` 被 GitHub 节流到 4~5 次/日（名义 24 次/日），相邻最长 8.9h ⇒ 漂移可静默近 9h。本条补 `pull_request_target: [opened, reopened]`（bot 合并后唯一可靠的对账时机；范式同 post-merge-verify / deploy-reconcile / close-linked-issues）。同一 PR 还订正了判据 8 的口径：旧实现只查 `on.pull_request`（压根没看 `pull_request_target`）⇒ 新增 4 条约束把它收紧到「只许当对账时机 + 基准恒为 main」，并给每条配可归因的注入式红证。取号 MC-078（现取：python3 scripts/next_case_id.py MC ⇒ main 001-077 已占、无空档，返回 078） ｜ tags: ci, freshness, main-side-guard, red-proof
 
 ### MC-032. RBAC 单一真值源 P3：由清单 pages[] 派生的「页面 → 码」（C1/C2/C3/C4 码列 + 第一屏读码 + 可见性投影）与现值逐值相等 🔵
 ```
@@ -4293,7 +4319,21 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（58 case）
+## 订单域（59 case）
+
+### OR-058. 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239） 🔵
+```
+你: 用户 2026-10-03 裁定（issue #6239）：发货页选了「物流发货 / 无需物流」，而系统把它丢掉 —— 裁定**接线**（不再裁业务口径）
+期望: direct_reply
+数据: 判据 1·**落库 + 回吐**：POST 侧 `PUT /api/admin/orders/{id}/logistics` 带 `shippingMethod=none` ⇒ `order_logistics.shipping_method` 落 `none`，且订单详情响应的 `logistics.shippingMethod` 回吐 `none`（改前 `dto/OrderDetailResponse.java` 的内部类 LogisticsInfo 根本没有这个字段 ⇒ 编辑弹窗 initialData 永远复位成 `logistics`）。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/OrderControllerTest.java 的 persistsNoneShippingMethodOnCreate。
+数据: 判据 2·**非法值显式拒绝、不静默兜底、不写库**：`shippingMethod` 为**非空**且 ∉ {logistics, none}（如 express）⇒ 422；`verify(never()).save/updateById` 钉「无写入」。⚠️ 缺席 / 空串**不拒绝**（老客户端不发这个键 ⇒ 「没这句话」≠「说了个坏值」，宽容且无害的取值不做破坏性拒绝）。执行点 = 同文件 rejectsInvalidShippingMethodWithoutWriting。
+数据: 判据 3·🔴 **服务端权威（本单的意义）**：显式 `shippingMethod=logistics` 且本次请求生效后运单号为空 ⇒ 422 **且无写入** —— 这条校验改前**只活在前端**（`orders/[id]/ship/ShipOrder.tsx` 的 `if (shippingMethod === 'logistics' && !trackingNo.trim())`），直调 API 可绕过。执行点 = 同文件 rejectsLogisticsWithoutTrackingNoAndWritesNothing。
+数据: 判据 4·**正对照**：`shippingMethod=logistics` + 有运单号 ⇒ 成功、落库并回吐 `logistics`（证明判据 3 不是「一律拒绝」）。执行点 = 同文件 acceptsLogisticsWithTrackingNo。
+数据: 判据 5·🔴 **兼容性钉子（别人收紧规则时会当场红）**：① `editLogisticsDialogPathStillSucceeds` —— 订单详情「编辑物流」弹窗路径（存量行 `shippingMethod=null` 未采集 + 带非空运单号）必须仍成功；② `legacyCallersWithoutShippingMethodKeepWorking` —— 老客户端 / 智能体补单号**不发** `shippingMethod` 键时，白名单与规则**一律不触发**，且「不传 = 不改」（原值 `none` 不被清成 null）。
+数据: 判据 6·**类级元守卫（让同类进不来）**：`LogisticsInfo.shippingMethod` 原登记在 backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java 的零生产者台账（BACKEND_ABSENT_DEBT），本单补齐生产者后按台账自带协议**删除**该条目、冻结上限 2→1（只许缩短）⇒ 若将来有人把这条缺口重新塞回台账或改大上限，判据 7（幽灵条目）/ 判据 10/12（上限）当场红。
+跳过: [backend-contract] 纯后端写面接线（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 OrderControllerTest 的 UpdateLogistics 嵌套类 + FrontendUnionFieldProducerMetaGuardTest 执行
+```
+溯源: 2026-10-03 新增（issue #6239）：发货方式 shippingMethod 从「前端采集后丢弃」改为「落库 + 回吐 + 服务端权威」。存储 = V147 加可空列 shipping_method（存量 NULL = 未采集，不猜不回填）；接收 = 端点继续用 Map<String,String> 显式取值（最少代码，不抽 DTO）；服务端 = 白名单 fail-closed + 「物流发货 ⇒ 运单号必填」；回吐 = OrderDetailResponse.LogisticsInfo 补字段。兼容形态 = 仅在**显式**给非空 shippingMethod 且生效后运单号为空时拒绝（保护老客户端 / 编辑弹窗 / 无需物流三条路径）。 ｜ tags: order, logistics, shipping-method, admin-api, write-surface, fail-closed
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -5351,7 +5391,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6237，第三轮深度测试的核验包）：台账 #6220 的 unverified 观察项「入库过账无条件置 POSTED ⇒ 并发重复建批次 / 重复入库」核验为**不真** —— issue #5148 的 CAS 闸（markPosted）已在任何库存写入之前，且批次号唯一索引 uk_stock_batches_no 兜底。本单**未改生产代码**（核验型交付）：交付物 = 真库并发判据（N=4 × 3 轮 + 串行正对照 + 带幂等键入口）+ 台账 unverified → entries 回填。 ｜ tags: inbound, stock, concurrency, backend-contract
 
-### OR-059. 入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409 🟡
+### OR-060. 入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409 🟡
 ```
 你: 两家门店/两个管理员分别在不同入库单上点「过账」（服务重启后或部署了多个实例时，两边的取号计数器都从同一位置开始）
 数据: **核验结论 = 真（部分真）**：`uk_stock_batches_no` 的撞号**确实可达**，但**只在多实例 / 重启**（进程内计数器各自从同一位置起步）时可达；**同进程并发不可达**（`AtomicInteger.incrementAndGet()` 保证候选两两不同）。撞号时用户侧看到的是 **500**（`DuplicateKeyException` 无 catch），旧重试只覆盖「生成时已存在」、**不覆盖「插入时被抢」**。
@@ -5366,7 +5406,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6248，第三轮深度测试的核验包）：#6237 只登记边界的 `nextFreeBatchNo` 跨请求取号竞争，本单核验为**真（部分真）** —— 单实例并发不可达（原子计数器），多实例/重启可达且**用户侧 500**（重试只覆盖「生成时已存在」）。**已修**：取号与占用并成 `insertIfFree`（ON CONFLICT DO NOTHING + 换号重试），语义仍 fail-closed（20 次耗尽 = 409 BATCH_NO_EXHAUSTED）。交付物 = 真库并发判据（6 条：单实例 / 正对照 / 重启饱和 / 会合点注入双向 / 耗尽 409 / 零注入对照）+ 真库登记 + 台账回填。 ｜ tags: inbound, stock, concurrency, backend-contract
 
-## 加工项域（26 case）
+## 加工项域（27 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -5768,6 +5808,20 @@
 ```
 真值: processing-manage.worker-cutting-height-terminal
 溯源: 2026-10-03 新增（第三轮深度测试 C23 / issue #6219）：`order_items.product_id` 为空时 `positionRow` 对 `brands()` 的空集分支（`Map.of()`）做 `get(null)` ⇒ `ImmutableCollections$MapN.get` 抛 NPE ⇒ 端点 500（线上栈与单测栈逐字同源）。修法取最少代码：调用点显式短路空键 + 空集分支返回**可索引**的 LinkedHashMap（同文件 `itemsOf()` 既有范式），**不改查询语义、不改只读契约、不写机器**。⚠️ 同族存量（`getCategoryNameMap` / `loadOrders` 的调用点未判空）**不在本包文件族内** ⇒ 已另开 issue #6226。 ｜ tags: processing, cutting_height, scan, backend-contract, null_safety
+
+### PP-022. 工序改价并发面核验（N=4 并发提交同一工序的同一次调价）：价格版本账恰追加 1 行、当前价 = 最新版本行（issue #6238） 🟡
+```
+你: 商家在「工艺配置」页改了工序单价，手抖点了两次保存（或两个管理员同时点了保存）
+数据: **核验结论 = 真**（台账 after-sales-sideeffect-concurrency-ledger.json 的 unverified 观察项逐字称「⚠️ **涉钱面**：价格版本**追加 insert** + 可选状态写 ⇒ 并发重复提交可能重复追加版本行」）：该主张**在当前代码上成立** —— 修前 N=4 并发提交同一次调价（旧价 100.00 → 新价 200.00）**3 轮全部**读到「版本账总行数 5 / 其中新价行 4」，即同一次调价被记了 4 次。
+数据: **主判据（取库内事实）**：并发提交后 `unit_price = 新价` 的版本行恰 1 行，总行数 == 独立算式（基线 1 + 追加 1 = 2）；断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java 的 concurrentSamePriceSubmissionAppendsExactlyOneVersionRow（N=4 × 3 轮，逐轮打印「真重叠」证据：4 个请求的时间区间逐对求交 6/6 + 并集跨度 < 各历时之和）。
+数据: **账目自洽**：`production_operations.unit_price` == 新价，且 `created_at` 最新那行版本账的价 == 当前价（「当前价 = 最新版本行」这条冻结契约在并发下仍成立）。
+数据: **库层零兜底（可复核判据）**：`production_operation_price_versions` 除主键外**无唯一约束**（`pg_indexes` 实测 + 「同一个未提交事务里直接插两行同 (operation_id, unit_price) 被库接受」的反向自证，事务回滚零残留）⇒ 重复记账不可能由 DDL 挡住。若将来加了唯一索引，本判据转红（撞约束是 500 还是 409 须重新裁定）。
+数据: **正对照（闸不误杀）**：单请求串行改价真追加 1 行；随后**同价重复提交**仍是 1 行（既有的「价没变 ⇒ 不追加」幂等路径没被改坏）—— 断言 = 同文件 serialPriceChangeStillAppendsExactlyOneRow。
+数据: **入口面（实测登记）**：`PUT /api/admin/production/operations/{id}` **没有** Idempotency-Key 请求头 ⇒ 并发 / 重复提交的唯一防线就是服务层自己的闸（断言 = 同文件 updateEndpointOffersNoIdempotencyKeyEntry）。
+数据: **判别力（红证，注入式 · 双向）**：把 `ProductionOperationMapper#lockById` 的 SQL 里的 `FOR UPDATE` 摘掉（= 退回「不加锁读旧价」的修前形态）⇒ 本判据 3 轮全部必红，实测读数 = 成功数 4 / 版本账总行数 5 / 其中新价行 4；注入撤回后复绿。注入方式与成对读数见 PR body（注入是手动、一次性动作，不落成常驻判据）。
+跳过: [backend-contract] 纯后端并发落库判据（无 LLM 写路径：工序改价走 admin-api 服务层的 PUT /api/admin/production/operations/{id}，不经米宝 Agent 工具）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 ProductionOperationPriceVersionConcurrentRealDbTest 执行
+```
+溯源: 2026-10-03 新增（issue #6238，第三轮深度测试的核验包 · 涉钱面）：台账 #6220 的 unverified 观察项核验为**真**并**当场修复** —— 修法 = 进入事务后先取工序行排他锁（`ProductionOperationMapper#lockById` 的 `SELECT … FOR UPDATE`）**再读**旧价（顺序即语义），使「价是否真变了」建立在库内已提交事实上 ⇒ 同价重复提交退化为既有的幂等空分支（照常 200，**不是** 409：请求意图已达成）；异价并发两次变更各自成行、created_at 顺序与提交顺序一致。为什么不用 CAS + 409：CAS 会**静默丢弃**后写者的改价，对涉钱配置面不可接受。交付物 = 真库并发判据（N=4 × 3 轮 + 串行/同价重复正对照 + 库层零兜底实测 + 入口面无幂等键）+ 台账 unverified → entries 回填 + REALDB_FILES 登记。取号 PP-022：库内 PP-001~PP-021（PP-001 是**已退役**的旧用例号、PP-002/003/004/005 为历史空号 ⇒ 按 PP-015 / PP-016 先例「不复用已发布的号段」取 max+1，**不**用分配器给的最小空闲号 PP-001）；PP-022 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: production, price-version, concurrency, backend-contract
 
 ## 加工单域（61 case）
 
@@ -9417,8 +9471,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：655（活跃 134，跳过 521）
-- tier 分布：smoke 12 / normal 602 / adversarial 32
+- 用例总数：659（活跃 134，跳过 525）
+- tier 分布：smoke 12 / normal 605 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9430,14 +9484,14 @@
 - 客户域：12
 - 数据域：21
 - 防御域：24
-- 财务对账域：5
+- 财务对账域：6
 - 人事域：13
 - 知识问答域：7
-- 杂项域：77
+- 杂项域：78
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：58
-- 加工项域：26
+- 订单域：59
+- 加工项域：27
 - 加工单域：61
 - 商品域：109
 - 工具注册器域：1
@@ -9498,7 +9552,8 @@
 - MC-047: 铁律 10 的窄例外有机械承载体：全仓新增 `on.schedule` 未登记即红（存量 14 条冻结快照只许缩短 + 具名实例带三个可解析证据锚；在飞实例放 `pending` 且一落地即须升格），规则本体（禁令 + 2026-09-21 / 2026-09-27 两个裁定日期）不许被删，具名与台账双向
 - MC-029: RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等
 - MC-030: A7（登录面 getRolePermissions）消费面取证与退役：判定面零容忍目录外码、授予面在仓内不可达（机制存活读数）、身份面按角色判
-- MC-031: main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch，判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）
+- MC-031: main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch + 对账面（pull_request_target: [opened,reopened]），判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）
+- MC-078: main 侧生成物新鲜度守护腿的**对账面**：`pull_request_target: [opened, reopened]`（bot 合并后唯一可靠的对账时机）—— 只检出 main、不翻 required、不折进 pr-check
 - MC-032: RBAC 单一真值源 P3：由清单 pages[] 派生的「页面 → 码」（C1/C2/C3/C4 码列 + 第一屏读码 + 可见性投影）与现值逐值相等
 - MC-033: RBAC P3：一页多码与 6 条菜单残留**不被压平**（码集逐值冻结、只许缩短）+ 逐页 visibility_rule 默认 all（fail-closed）与 4 条 gap 具名
 - MC-034: RBAC P3：M1/M2 覆盖面扩到「页面 → 码」（三个新形态面 25 处命中）——未登记即红、陈旧亦红、hits 涨跌都红、台账只许缩短，且锚条数冻结 + 改名必红（内存自证）
@@ -9541,6 +9596,7 @@
 - MC-075: B 端米宝页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）
 - MC-076: 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed
 - MC-077: worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）
+- OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
@@ -9559,7 +9615,7 @@
 - OR-050: 合法复购负例 —— 同会话第二笔**内容不同**的订单必须新建（不得被当重试吞掉）
 - OR-027: 订单列表 startDate/endDate 窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 下单的单归错天/月/年）
 - OR-057: 入库过账并发面核验（N=4 并发过账同一 draft 单）：恰一个赢家、库存恰加一次、批次/台账各恰 2 行（issue #6237）
-- OR-059: 入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409
+- OR-060: 入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）
@@ -9626,6 +9682,7 @@
 - PG-040: 加工费组合定价 - 组合→单价（元/米）写面五条护栏 + composition_key 归一化 + 版本账 + 未定价缺口可见
 - PG-042: 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项；人工改价 ⇒ manual + 建单回写组合）
 - PG-043: 特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目
+- PP-022: 工序改价并发面核验（N=4 并发提交同一工序的同一次调价）：价格版本账恰追加 1 行、当前价 = 最新版本行（issue #6238）
 - PR-083: 渲染腿**转义解码**：生成物取值与真值（`yaml.safe_load`）逐值相等（修前 33 处不同 / 163 个多余转义）
 - PR-084: 渲染腿比较器**落库**（唯一实现）+ **「0 条」必须判红**（比较器坏了 ≠ 没有差异）
 - PR-085: 渲染腿保真度的**边界登记与死亡条件**（修好的形态必须移出登记表；未覆盖的不许说成已覆盖）

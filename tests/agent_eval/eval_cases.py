@@ -6944,9 +6944,9 @@ _CASE_OR_057 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── OR-059 [EDGE] 入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409（源: cases/order.yml）──
-_CASE_OR_059 = EvalCase(
-    id='OR-059',
+# ── OR-060 [EDGE] 入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409（源: cases/order.yml）──
+_CASE_OR_060 = EvalCase(
+    id='OR-060',
     legacy_id='',
     title='入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409',
     skill=Skill.ORDER,
@@ -12761,7 +12761,7 @@ ALL_CASES = (
     _CASE_OR_056,
     _CASE_OR_027,
     _CASE_OR_057,
-    _CASE_OR_059,
+    _CASE_OR_060,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
