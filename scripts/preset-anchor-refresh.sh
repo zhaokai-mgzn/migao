@@ -29,7 +29,8 @@
 # 用法：
 #   ./scripts/preset-anchor-refresh.sh                  # 刷新默认镜像 ~/migao-dev-preset-anchor
 #   MIGAO_PRESET_MIRROR=<路径> ./scripts/preset-anchor-refresh.sh
-#   ./scripts/preset-anchor-refresh.sh --repo <基线仓>   # 指定刷新后自检的基线仓（默认：镜像自身）
+#   ./scripts/preset-anchor-refresh.sh --repo <基线仓>   # **仅拓扑 B（兼容窗口）**：自检的基线仓
+#                                                        # （拓扑 A 下自检的对照恒 = 镜像自身，见 ⑤.6）
 #   ./scripts/preset-anchor-refresh.sh --ref <ref>       # 指定基线 ref（默认 origin/main）
 #   ./scripts/preset-anchor-refresh.sh --no-check        # 只刷新、不自检（默认**必须**自检）
 #   MIGAO_PRESET_REPO_URL=<url|路径> ./scripts/preset-anchor-refresh.sh
@@ -44,12 +45,13 @@ LIVE="${MIGAO_PRESET_LIVE:-$HOME/.dsh/.agent-presets/migao}"
 # 预设仓（权威源）。镜像已经建好的机器上以其自身 remote 为准（它才是真正被跟随的上游）。
 REPO_URL="${MIGAO_PRESET_REPO_URL:-git@github.com:zhaokai-mgzn/migao-agent-presets.git}"
 BASELINE="${MIRROR}"
+BASELINE_FROM_FLAG=0
 REF="origin/main"
 RUN_CHECK=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --repo)   [ $# -ge 2 ] || { echo "❌ --repo 缺参数" >&2; exit 2; };   BASELINE="$2"; shift 2 ;;
+    --repo)   [ $# -ge 2 ] || { echo "❌ --repo 缺参数" >&2; exit 2; };   BASELINE="$2"; BASELINE_FROM_FLAG=1; shift 2 ;;
     --mirror) [ $# -ge 2 ] || { echo "❌ --mirror 缺参数" >&2; exit 2; }; MIRROR="$2";   shift 2 ;;
     --ref)    [ $# -ge 2 ] || { echo "❌ --ref 缺参数" >&2; exit 2; };    REF="$2";      shift 2 ;;
     --no-check) RUN_CHECK=0; shift ;;
@@ -159,12 +161,31 @@ case "${RESOLVED}" in
      echo "      目标是 \`${MIRROR}\` 这个**仓根**，不是 \`<镜像>/.agent-presets/migao\`）。" ;;
 esac
 
+# ⑤.6 🔴 自检的**对照对象按拓扑选**（issue #6178 —— 本单病灶：空比对报绿）。
+#      活锚目标 = **预设仓检出**（`preset.yml` 在仓根；= 当前拓扑 A）时，对照**必须是预设仓的
+#      `${REF}`（= 镜像自身，它刚被刷到预设仓 main）**：此时 `--repo <业务仓>` 只会解析出 **0 个文件**
+#      （业务仓已不再承载 `.agent-presets/**`，`git ls-tree -r origin/main --name-only .agent-presets`
+#      = 0）⇒ 比对面是**空集** ⇒ 任何内容都能过 ⇒ 一个**永远绿的空检查**（本单实测：
+#      `✅ 活锚新鲜：内容与 origin/main 逐字节一致（0 个文件）` + `✅ 自检绿` + exit 0）。
+#      ⇒ 拓扑 A 下**不看 `--repo`**（显式给了也**出声**说明被忽略，不静默改写人的参数）。
+#      拓扑 B（活锚仍是业务仓里的 preset 子树，兼容窗口）保持历史口径：对照 = `--repo`（默认镜像）。
+CHECK_BASELINE="${BASELINE}"
+if [ -f "${MIRROR%/}/preset.yml" ]; then
+  CHECK_BASELINE="${MIRROR}"
+  if [ "${BASELINE_FROM_FLAG}" = "1" ] && [ "${BASELINE%/}" != "${MIRROR%/}" ]; then
+    echo "ℹ️  自检对照按拓扑选：镜像（${MIRROR}）的仓根**就是** preset 目录 ⇒ 拓扑 A，"
+    echo "    对照 ref = 预设仓的 \`${REF}\`（镜像自身）；`--repo ${BASELINE}` 这一项**不参与比对**"
+    echo "    （拿业务仓当对照会解析出空比对面 ⇒ 恒绿 = 假绿，issue #6178；要比它请显式跑"
+    echo "    \`scripts/preset-anchor-check.sh --repo <仓> --anchor-base <前缀>\`）。"
+  fi
+fi
+
 # ⑤.5 基线仓先 fetch：自检读的是**基线仓的** `${REF}` —— 拿**未 fetch 的旧 ref** 自检，会把
 #      「刚合并的预设改动」读成「活锚落后」（2026-09-28 实测：`land` 的 ⑦ 步因此判红，
 #      而活锚其实只差一次 fetch）。fetch 非破坏性；失败只降级为「可能对着旧 ref 判」，不静默。
 if [ "${RUN_CHECK}" = "1" ]; then
-  if ! git -C "${BASELINE}" fetch --quiet origin "${REF#origin/}" 2>/dev/null; then
-    echo "⚠️  基线仓（${BASELINE}）fetch ${REF} 失败（离线 / 无权限？）⇒ 下面的自检可能对着**旧** ref 判"
+  if ! git -C "${CHECK_BASELINE}" fetch --quiet origin "${REF#origin/}" 2>/dev/null; then
+    echo "⚠️  基线仓（${CHECK_BASELINE}）fetch ${REF} 失败（离线 / 无权限？）⇒ 下面的自检可能对着**旧** ref 判"
   fi
 fi
 
@@ -174,7 +195,9 @@ if [ "${RUN_CHECK}" = "1" ]; then
   CHECK="${ROOT}/scripts/preset-anchor-check.sh"
   [ -x "${CHECK}" ] || { echo "❌ 自检脚本不可执行：${CHECK}" >&2; exit 2; }
   set +e
-  "${CHECK}" --anchor "${LIVE}" --repo "${BASELINE}" --ref "${REF}"
+  # `--anchor-base` 这里按**历史默认值**传：判定本体在拓扑 A 下会把它归位到**仓根**（issue #6178），
+  # 拓扑 B（兼容窗口）则照旧用 `.agent-presets/migao`。口径只放判定本体一处，本脚本不复制。
+  "${CHECK}" --anchor "${LIVE}" --repo "${CHECK_BASELINE}" --ref "${REF}" --anchor-base ".agent-presets/migao"
   rc=$?
   set -e
   if [ "${rc}" != "0" ]; then
@@ -184,5 +207,5 @@ if [ "${RUN_CHECK}" = "1" ]; then
     exit 1
   fi
   echo
-  echo "✅ 活锚自愈完成：镜像已跟随 ${REF}，且自检绿。"
+  echo "✅ 活锚自愈完成：镜像已跟随 ${REF}，且自检绿（对照 = 预设仓 ${REF}，非空比对面）。"
 fi
