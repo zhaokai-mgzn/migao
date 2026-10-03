@@ -84,7 +84,7 @@ public class FinanceService extends ServiceImpl<FinanceTransactionMapper, Financ
             wrapper.ge(FinanceTransaction::getOccurredAt, parseDateStart(startDate));
         }
         if (StringUtils.hasText(endDate)) {
-            wrapper.le(FinanceTransaction::getOccurredAt, parseDateEnd(endDate));
+            wrapper.lt(FinanceTransaction::getOccurredAt, parseDateEnd(endDate));
         }
         if (StringUtils.hasText(keyword)) {
             wrapper.and(w -> w.like(FinanceTransaction::getTransactionNo, keyword)
@@ -195,7 +195,7 @@ public class FinanceService extends ServiceImpl<FinanceTransactionMapper, Financ
             wrapper.ge(FinanceTransaction::getOccurredAt, parseDateStart(startDate));
         }
         if (StringUtils.hasText(endDate)) {
-            wrapper.le(FinanceTransaction::getOccurredAt, parseDateEnd(endDate));
+            wrapper.lt(FinanceTransaction::getOccurredAt, parseDateEnd(endDate));
         }
         List<FinanceTransaction> txns = financeTransactionMapper.selectList(wrapper);
 
@@ -291,7 +291,7 @@ public class FinanceService extends ServiceImpl<FinanceTransactionMapper, Financ
             wrapper.ge(Order::getCreatedAt, parseDateStart(startDate));
         }
         if (StringUtils.hasText(endDate)) {
-            wrapper.le(Order::getCreatedAt, parseDateEnd(endDate));
+            wrapper.lt(Order::getCreatedAt, parseDateEnd(endDate));
         }
         if (StringUtils.hasText(keyword)) {
             wrapper.and(w -> w.like(Order::getOrderNo, keyword)
@@ -427,12 +427,28 @@ public class FinanceService extends ServiceImpl<FinanceTransactionMapper, Financ
         return time != null ? time.toLocalDate().toString() : "";
     }
 
+    /**
+     * 日期窗口的**左界**：该业务日（+08）的 00:00:00（含）。
+     *
+     * <p>issue #6200：原写法把日期串直接拼成 <b>UTC 日</b>的 00:00 再解析 ⇒ 取的是 <b>UTC 日</b>边界
+     * ⇒ 北京 00:00–08:00 的数据被归到前一天 / 月 / 年，且与走 {@link BusinessClock} 的看板 / 趋势
+     * <b>互相矛盾</b>（同一笔北京凌晨的单：看板收录、列表不收录）。日界一律走
+     * {@link BusinessClock#startOfDay(java.time.LocalDate)}（+08 唯一单源）。</p>
+     */
     private OffsetDateTime parseDateStart(String date) {
-        return OffsetDateTime.parse(date + "T00:00:00Z");
+        return businessClock.startOfDay(java.time.LocalDate.parse(date));
     }
 
+    /**
+     * 日期窗口的**右界**：业务日 {@code date} 的次日 00:00:00（<b>不含</b>）。
+     *
+     * <p>issue #6200：原写法把右界拼成 <b>UTC 日的最后一秒</b>，在 +08 口径下同样是错的 —— 它既漏掉当天
+     * 北京 08:00 之后的数据，又把次日凌晨 8 小时算了进来。正确的右界语义 = <b>次日业务日零点</b>：
+     * 半开区间 {@code [D 00:00+08, D+1 00:00+08)} 才是「D 一整天」，也不像 {@code 23:59:59} 那样
+     * 漏掉最后一秒的亚秒部分。</p>
+     */
     private OffsetDateTime parseDateEnd(String date) {
-        return OffsetDateTime.parse(date + "T23:59:59Z");
+        return businessClock.startOfDay(java.time.LocalDate.parse(date).plusDays(1));
     }
 
     private OffsetDateTime parseOccurredAt(String value) {

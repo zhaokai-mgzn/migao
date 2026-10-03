@@ -3613,6 +3613,24 @@ _CASE_FN_004 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── FN-005 [NORMAL] 财务 / 订单日期窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 的数据归错天/月/年）（源: cases/finance.yml）──
+_CASE_FN_005 = EvalCase(
+    id='FN-005',
+    legacy_id='',
+    title='财务 / 订单日期窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 的数据归错天/月/年）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-03 报告（issue #6200）：日期查询窗口按 UTC 日界而不是 +08，北京 00:00–08:00 的数据归到错误的天/月/年'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**窗口 = 业务日整天**：`startDate=endDate=2026-10-03` 的两个查询参数必须恰好是 `2026-10-02T16:00Z`（= 北京 10-03 00:00）与 `2026-10-03T16:00Z`（= 北京 10-04 00:00，不含）—— 库列是 `timestamptz`，MyBatis-Plus 参数**惰性绑定** ⇒ 断言前必须先触发 `getSqlSegment()`（否则 `paramNameValuePairs` 恒为空 = 假绿）。执行点 = backend/admin-api/src/test/java/com/migao/admin/time/BusinessDayWindowTest.java 的 financeTxnWindowIsTheBusinessDayItself / financeSummaryWindowIsTheBusinessDayItself / orderListWindowIsTheBusinessDayItself。红证（改前实测）：实际绑成 `2026-10-03T00:00Z` … `2026-10-03T23:59:59Z`（UTC 日）⇒ 该三条判据全红（读数 `Tests run: 8, Failures: 5`）。', '判据 2·**跨端点自洽（同系统内不得自相矛盾）**：同一笔「北京今日凌晨」记录，列表窗口起点必须等于 `BusinessClock.startOfDay(业务日)`（看板 / 订单趋势 / 简报用的同一只钟）。执行点 = 同文件 financeTxnWindowAgreesWithBusinessClock。实证档（只读）= acceptance/2026-10-03/finance-stock-time-sweep/out/C9-cross-endpoint.json：同一笔 `ordAt=2026-10-03 02:00+08` 的订单，看板 dashboardTodayOrders=351 收录而订单列表 listTotal=9 不收录（listHit=false）。', '判据 3·**跨月 / 跨年边界各落对月份**：`2026-10-01 00:00+08` 落 10 月、`2026-09-30 23:59:59+08` 落 9 月、`2026-01-01 00:01+08` 落 2026-01（改前会落进 2025-12-31）。执行点 = 同文件 monthEndToMonthStartFallsInTheRightMonths / yearBoundaryRecordFallsInTheNewYear（两条都带**缺陷形态自证**：同一时刻在 UTC 窗下判红 ⇒ 红的来源是日界本身，不是别的）。', '判据 4·**夹住边界 + 右界语义**：北京 `07:59:59` 与 `08:00:00` **同属当日**（都在业务日窗口内）；`endDate=D` 覆盖 D 当天整日（含 `23:59:59.999999999+08`），右界 = 次日业务日零点（不含）。执行点 = 同文件 boundaryPairIsInsideAndOutsideTheSameDay / windowCoversTheWholeDayNotToTheSecondBefore。红证：`T23:59:59Z` 在 +08 口径下等于「次日 07:59:59」⇒ 既漏掉当天 08:00 之后、又把次日凌晨 8 小时算进来（该自证断言改前为红）。', '判据 5·**类级固化（让同类进不来）**：admin-api/src/main 下出现 `T00:00:00Z` / `T23:59:59Z` 字面量、或日界形态的 `ZoneOffset.UTC` ⇒ 守卫判红（放行口径 = `now(ZoneOffset.UTC)` 这种「打时刻」拼写，闭括号紧邻）。执行点 = backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockSourceGuardTest.java 的 onlyTheClockComponentReadsBusinessTimeFromMain + rulesHaveDiscriminatingPower（每条新禁则必须能命中一个坏样本 ⇒ 不会退化成空断言）。'],
+    skip_reason='[backend-contract] 纯后端日期窗口判据（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 BusinessDayWindowTest + BusinessClockSourceGuardTest 执行',
+    tags=['finance', 'time-window', 'admin-api', 'read-surface'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── HR-001 [SMOKE] 员工列表（源: cases/hr.yml）──
 _CASE_HR_001 = EvalCase(
     id='HR-001',
@@ -6613,6 +6631,24 @@ _CASE_OR_056 = EvalCase(
     data_checks=['判据 1·**面存在且路径自成一域**：GET /api/admin/shipments（脱离订单子资源 —— 发货单是**流水型单据**，按单号/订单号/客户检索才是它的正经入口）。执行点 = backend/admin-api/src/test/java/com/migao/admin/shipment/ShipmentControllerTest.java 的 listFaceExistsOnItsOwnPath。红证：删掉端点 ⇒ 该判据具名报出「发货单列表页没有读端点」。', "判据 2·🔴 **权限码 = order:list（复用既有码，不新造 shipment:view）**：与同域读面 GET /api/admin/orders/{id}/shipments、订单详情**逐字同码** ⇒ 零授权 delta；新造码今天没有任何岗位持有 ⇒ 菜单节点对**所有人**不可见（#4203 同族坑）。执行点 = 同文件 listFaceCarriesTheExistingOrderListCode + tests/unit_ci_workflows/test_agent_permission_parity.py 判据 12（节点码 ≡ 该页第一屏读端点码，锚点 MENU_READ_ENDPOINT_ANCHORS['/shipments']）。红证：去掉 @RequirePermission ⇒ 两条判据同时红（判据 8 未注解端点必须登记）。", "判据 3·**只读**：该路径上只有 GET 一个动词（🔴 **2026-10-03 订正**：发货单**写面不再「全归工人面」** —— admin 端发货动作 `POST /api/admin/production/orders/{id}/ship` 现已产出 `source='admin'` 的发货单（issue #6171，用户裁定「要建」）；本列表读面仍**只读**，写面统一在 owner `OrderShipmentService`；⚠️ **2026-10-03 事实更新**：#6171 的建单实现因 **P1 回归（issue #6181：商家发货一律 422 且订单已改 shipped）****已于同日 revert**（`revert/6181-merchant-ship-doc`）⇒ 「admin 发货动作产出 `source='admin'` 发货单」**当前不成立**，重做落地后本条再更新）。执行点 = ShipmentControllerTest.listFaceIsReadOnly。", '判据 4·🔴 **实发汇总与按单读面同源**：shippedTotals 的三个键（set_count / roll_count / by_unit）由 OrderShipmentService 的**同一份** totals() 给出，且「空值不参与求和」（null ≠ 0）。执行点 = ShipmentControllerTest.shippedTotalsComeFromTheSameProjection + shipmentWithoutItemsStillHasTotalsShape。红证：另算一套（例如把 null 当 0）⇒ 该判据红。', '判据 5·🔴 **租户隔离 + 软删不计 + 上限**（手写 SQL 的三条不会被类型系统挡住的约束）：真库判据 backend/admin-api/src/test/java/com/migao/admin/service/ShipmentListQueryRealDbTest.java（跨租户查不到 + 反向自证对方租户自己读得到 / 软删明细不计进 itemCount / 客户名取自 orders 的连接 / 未发货按打包时间参与排序 / LIMIT 生效）+ 文本契约 backend/admin-api/src/test/java/com/migao/admin/mapper/OrderShipmentQueryMapperTest.java（tenant_id 外层与聚合子查询都有、deleted = 0、LIMIT、ILIKE 三列、别名 ⇄ DTO 双向相等）。红证：去掉 s.tenant_id ⇒ 真库判据红；聚合子查询去掉 deleted = 0 ⇒ 软删判据红。', '判据 6·**既有面零回归**：按单读面（AdminOrderShipmentReadTest 7 条）与工人面（WorkerShipmentControllerTest / OrderShipmentServiceTest）一字不改；本单只加**第三面读面**，共用同一份汇总实现。'],
     skip_reason='[backend-contract] 纯后端读面（无 LLM 环节，不进 agent-eval 冒烟）：由 admin-api 单测（ShipmentControllerTest / OrderShipmentQueryMapperTest / ShipmentListQueryRealDbTest）执行',
     tags=['order', 'shipment', 'admin-api', 'read-surface', 'tenant-isolation', 'menu'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OR-027 [NORMAL] 订单列表 startDate/endDate 窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 下单的单归错天/月/年）（源: cases/order.yml）──
+_CASE_OR_027 = EvalCase(
+    id='OR-027',
+    legacy_id='',
+    title='订单列表 startDate/endDate 窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 下单的单归错天/月/年）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-03 报告（issue #6200）：订单列表按 startDate/endDate 筛选时用的是 UTC 日界而不是 +08，北京 00:00–08:00 下单的订单归到错误的天/月/年'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**窗口 = 业务日整天**：`GET /orders?startDate=endDate=2026-10-03` 对应 `OrderService.getOrderPage` 的两个包装器参数必须恰好是 `2026-10-02T16:00Z`（= 北京 10-03 00:00，含）与 `2026-10-03T16:00Z`（= 北京 10-04 00:00，不含）；上界由 `le(UTC 日最后一秒)` 改为半开区间 `lt(次日业务日零点)`。执行点 = backend/admin-api/src/test/java/com/migao/admin/time/BusinessDayWindowTest.java 的 orderListWindowIsTheBusinessDayItself。红证（改前实测）：实际绑成 `2026-10-03T00:00Z` … `2026-10-03T23:59:59Z`（UTC 日）⇒ 该判据红（读数为 BusinessDayWindowTest `Tests run: 8, Failures: 5`；订单列表那条的元素差集逐字为 actual `[2026-10-03T23:59:59Z, 2026-10-03T00:00Z]` vs expected `[2026-10-02T16:00Z, 2026-10-03T16:00Z]`）。', '判据 2·**跨端点自洽（同系统内不得自相矛盾）**：同一笔「北京今日凌晨」下单的订单，订单列表窗口起点必须等于 `BusinessClock.startOfDay(业务日)` —— 即与 dashboard/stats、order-trend（走 businessClock）同源。执行点 = 同文件 financeTxnWindowAgreesWithBusinessClock（同一断言里同时钉财务窗口与订单窗口）。实证档（只读）= acceptance/2026-10-03/finance-stock-time-sweep/out/C9-cross-endpoint.json：同一笔 `ordAt=2026-10-03 02:00+08` 的订单，看板 dashboardTodayOrders=351 收录而订单列表 listTotal=9 不收录（listHit=false）。', '判据 3·**类级固化（让同类进不来）**：admin-api/src/main 下出现 `T00:00:00Z` / `T23:59:59Z` 字面量、或日界形态的 `ZoneOffset.UTC` ⇒ 守卫判红（放行口径 = `now(ZoneOffset.UTC)` 这种「打时刻」整参形态）。执行点 = backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockSourceGuardTest.java 的 onlyTheClockComponentReadsBusinessTimeFromMain（改前实测逐条报出 OrderService 的两处窗口行）+ detectsInjectedViolationInIsolatedTree（隔离目录注入 8 条违规逐条具名报出，且「打时刻」形态不误伤）。'],
+    skip_reason='[backend-contract] 纯后端日期窗口判据（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 BusinessDayWindowTest + BusinessClockSourceGuardTest 执行',
+    tags=['order', 'time-window', 'admin-api', 'read-surface'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -12151,6 +12187,7 @@ ALL_CASES = (
     _CASE_FN_002,
     _CASE_FN_003,
     _CASE_FN_004,
+    _CASE_FN_005,
     _CASE_HR_001,
     _CASE_HR_002,
     _CASE_HR_003,
@@ -12309,6 +12346,7 @@ ALL_CASES = (
     _CASE_OR_055,
     _CASE_OR_054,
     _CASE_OR_056,
+    _CASE_OR_027,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

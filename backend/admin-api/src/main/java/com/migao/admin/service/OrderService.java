@@ -203,12 +203,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             wrapper.eq(Order::getFollowStatus, followStatus);
         }
 
-        // 时间范围筛选
+        // 时间范围筛选（issue #6200：日界 = 业务日 +08，不是 UTC 日）
+        // 半开区间 [D 00:00+08, D+1 00:00+08)：原写法把两端拼成 UTC 日的 00:00 与 23:59:59，把
+        // 北京 00:00–08:00 的单归错天 / 月 / 年，且与走 businessClock 的看板 / 趋势互相矛盾。
         if (StringUtils.hasText(startDate)) {
-            wrapper.ge(Order::getCreatedAt, OffsetDateTime.parse(startDate + "T00:00:00Z"));
+            wrapper.ge(Order::getCreatedAt, businessClock.startOfDay(LocalDate.parse(startDate)));
         }
         if (StringUtils.hasText(endDate)) {
-            wrapper.le(Order::getCreatedAt, OffsetDateTime.parse(endDate + "T23:59:59Z"));
+            wrapper.lt(Order::getCreatedAt, businessClock.startOfDay(LocalDate.parse(endDate).plusDays(1)));
         }
 
         // 订单ID精确搜索

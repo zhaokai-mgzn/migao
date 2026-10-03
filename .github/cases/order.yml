@@ -3988,3 +3988,36 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: OR-027
+    legacy_id: ""
+    title: "订单列表 startDate/endDate 窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 下单的单归错天/月/年）"
+    domains:
+      - order
+      - api
+      - backend
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - time-window
+      - admin-api
+      - read-surface
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-03 报告（issue #6200）：订单列表按 startDate/endDate 筛选时用的是 UTC 日界而不是 +08，北京 00:00–08:00 下单的订单归到错误的天/月/年"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**窗口 = 业务日整天**：`GET /orders?startDate=endDate=2026-10-03` 对应 `OrderService.getOrderPage` 的两个包装器参数必须恰好是 `2026-10-02T16:00Z`（= 北京 10-03 00:00，含）与 `2026-10-03T16:00Z`（= 北京 10-04 00:00，不含）；上界由 `le(UTC 日最后一秒)` 改为半开区间 `lt(次日业务日零点)`。执行点 = backend/admin-api/src/test/java/com/migao/admin/time/BusinessDayWindowTest.java 的 orderListWindowIsTheBusinessDayItself。红证（改前实测）：实际绑成 `2026-10-03T00:00Z` … `2026-10-03T23:59:59Z`（UTC 日）⇒ 该判据红（读数为 BusinessDayWindowTest `Tests run: 8, Failures: 5`；订单列表那条的元素差集逐字为 actual `[2026-10-03T23:59:59Z, 2026-10-03T00:00Z]` vs expected `[2026-10-02T16:00Z, 2026-10-03T16:00Z]`）。"
+      - "判据 2·**跨端点自洽（同系统内不得自相矛盾）**：同一笔「北京今日凌晨」下单的订单，订单列表窗口起点必须等于 `BusinessClock.startOfDay(业务日)` —— 即与 dashboard/stats、order-trend（走 businessClock）同源。执行点 = 同文件 financeTxnWindowAgreesWithBusinessClock（同一断言里同时钉财务窗口与订单窗口）。实证档（只读）= acceptance/2026-10-03/finance-stock-time-sweep/out/C9-cross-endpoint.json：同一笔 `ordAt=2026-10-03 02:00+08` 的订单，看板 dashboardTodayOrders=351 收录而订单列表 listTotal=9 不收录（listHit=false）。"
+      - "判据 3·**类级固化（让同类进不来）**：admin-api/src/main 下出现 `T00:00:00Z` / `T23:59:59Z` 字面量、或日界形态的 `ZoneOffset.UTC` ⇒ 守卫判红（放行口径 = `now(ZoneOffset.UTC)` 这种「打时刻」整参形态）。执行点 = backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockSourceGuardTest.java 的 onlyTheClockComponentReadsBusinessTimeFromMain（改前实测逐条报出 OrderService 的两处窗口行）+ detectsInjectedViolationInIsolatedTree（隔离目录注入 8 条违规逐条具名报出，且「打时刻」形态不误伤）。"
+    skip_reason: "[backend-contract] 纯后端日期窗口判据（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 BusinessDayWindowTest + BusinessClockSourceGuardTest 执行"
+    merge_log: "2026-10-03 新增（issue #6200）：订单列表的日期筛选窗口由 UTC 日改为业务日（+08）。根因 = OrderService.getOrderPage 用日期串 + UTC 日界拼窗口；正确单源 = 同仓既有的 BusinessClock.startOfDay（右界改半开区间 `lt(D+1 00:00+08)`，不再漏掉最后一秒的亚秒部分）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/time/BusinessDayWindowTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockSourceGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
