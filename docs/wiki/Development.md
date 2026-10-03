@@ -374,6 +374,8 @@ pytest -q --durations=20    # 单用例 >2s 即可疑
 
 - 包内（开发阶段）**只跑定点判据**（子集运行 ⇒ 不拿锁、可与其它包并行）；**不跑** `gate` / `quick`
   —— 两者都是全量档、都要拿机器级锁，逐包跑 = 墙钟 ×N。
+  ⇒ 「定点要跑哪些」有**入口**了：改 Java 测试 / 新增用例的包跑 `./scripts/pkg-narrow-check.sh`
+  （自动探测两条**必然项**，见下面「包级定点清单」节）。
 - **归因是面级映射**（这个包碰没碰失败腿的触发面），面内多于一个包时**不**指认唯一真凶；
   整合冲突 / 读不到分支 ⇒ **不跑**且非零（「没跑」必须长得像「没跑」）。
 - 判据 = `tests/unit_ci_workflows/test_batch_gate.py`（N 个包 ⇒ 那次全量**恰好被调用 1 次**；
@@ -445,6 +447,55 @@ PR `#6077` = `cbd0b9173`，套件自带准入现在「祖先持锁 ⇒ 立即拒
 （`PATH` 审计桩证明没有起过测试进程）/ 摘掉标记 ⇒ 拒绝 / 逃生口只在命令行 / 台账幂等与分类计数 /
 **四条注入式红证** / `batch-gate.sh` 真接线留下标记 / **非 git 目录与 `git` 不可用的端到端
 fail-closed**（含其注入式红证）/ **真锁与真台账未被碰**）。
+
+## 包级定点清单：两条**必然项**不许等 CI（2026-10-03 固化，issue #6250）
+
+**病（本轮实测 4 次）**：有两类改动会**必然**顶穿两条冻结台账，而它们此前只在**全量档**
+（`verify-all.sh gate` / `full`）跑到 ⇒ 并行修复包按「只跑定点」的纪律（上一节）**必然漏掉**，
+直到 CI 才红，且红因指向**包自己的 diff**（看起来像本包引入的缺陷）：
+
+| 触发改动 | 会红的判据 | 逐字红因（实例） |
+|---|---|---|
+| **新增 / 修改 Java 测试** | `BusinessClockTestSourceGuardTest.outOfScopeSpellingsPresenceIsFrozen` | `Expecting empty but was: ["覆盖外拼写 \`System.nanoTime(\` 登记 presentInTree=false 而现取=true"]`（#6237） |
+| **新增 `[backend-contract]` 用例且 `expectations: []`** | `tests/unit_ci_workflows/test_case_machine_fail_channel.py::test_i3_anchor_matches_reality_and_is_only_shrinking` | `实测 backend_contract_scoring_zero=117 与锚点 116 不一致`（#6231 / #6226 / #6224 / #6237 各一次） |
+
+**口径（改 Java 测试 / 新增用例的包，必须跑）**：
+
+```bash
+./scripts/pkg-narrow-check.sh            # 自动探测（默认开）：按下面的触发面带出必然项
+./scripts/pkg-narrow-check.sh --java-tests   # 显式强制带上第 ① 条
+./scripts/pkg-narrow-check.sh --new-cases    # 显式强制带上第 ② 条
+./scripts/pkg-narrow-check.sh --dry-run      # 只打印「会跑什么 / 跳过什么 / 为什么」
+```
+
+- **自动探测（机械判定，不靠人记得加开关 —— 判据现取 `git diff --name-only <base>...HEAD` ∪ 工作区未提交改动）**：
+  出现 `src/test/**/*.java` ⇒ 自动带上 `--java-tests`；出现 `.github/cases/**` 或 `claims/**` ⇒ 自动带上 `--new-cases`。
+  ⚠️ 探测只看**路径**（宁滥勿缺）：命中 ⇒ 多跑一条；**不命中 ⇒ 不跑，并显式打印「未跑 + 触发面 + 依据」**
+  （「没跑」必须长得像「没跑」）。显式关掉探测用 `--no-auto`（逃生口只在命令行上可见）。
+- **无开关时只跑三条轻量门禁**（秒级、都不拿机器级重活锁）：`case_trust_gate --base origin/main` /
+  `scripts/generated_artifacts_freshness.py` / `tests/unit_ci_workflows/test_realdb_failclosed.py`。
+  ⛔ **本入口不做全量** —— 全量属于批次（见上两节）；也**不改**任何 CI 侧门禁的判据逻辑，**不替代 CI**。
+- **它只读**：只跑测试，**不写任何文件**（判据 = 整跑一遍后工作树快照**逐字节相同**）。
+- **退出码**：`0` = 该跑的都绿；`1` = 有腿真跑且非零；`2` = 用法错误；
+  **`3` = 无法判定 ⇒ fail-closed**（基准 ref 取不到 / 变更集为空）—— `3` **不得当 `0` 读**。
+
+**两条必然项的窄跑命令（逐字，便于单独复算 / 定位）**：
+
+```bash
+cd backend/admin-api && MIGAO_REQUIRE_REALDB=1 ./mvnw -q -Dtest=BusinessClockTestSourceGuardTest test
+MIGAO_REQUIRE_REALDB=1 python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:cacheprovider
+```
+
+> 第 ② 条红了怎么办：按 `tests/unit_ci_workflows/case_machine_fail_channel_baseline.json` 的 `_how_to_regen`
+> —— **同一 PR 内**追加一行 `history`（`no_channel_total` 只许为 0；`backend_contract_scoring_zero`
+> 变化须写 `note` 说明来由）+ 把 `entries` 对齐到新末行。
+
+**判据**：`tests/unit_ci_workflows/test_pkg_narrow_check.py`（真脚本跑在沙箱里 + runner 桩：
+自动探测双向自证「该跑会跑 / 不该跑不跑」/ 未跑不许静默 / 只跑三条轻量门禁且不拉全量 / fail-closed
+三态 / **只读** / 判别力自证（摘掉自动探测 ⇒ 当场红））。
+
+**边界（照实登记）**：自动探测只看**路径**，非 `src/test` 的传统 Java 测试目录不在面内
+（`--java-tests` 是那条例外口）；本入口**不替代** CI，只把两条必然项**提前到本地**。
 
 ### 夹具复用：写同类判据请 import 这个 harness（2026-10-03，issue #6085 的后续）
 
