@@ -75,6 +75,24 @@
   窄跑必须绿）；实例判据 = 真库并发判据
   `backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java`
   （case_ids **PP-022**），并同批登记进 `tests/unit_ci_workflows/test_realdb_failclosed.py` 的 `REALDB_FILES`。
+### 入库过账的批次号取号改为原子化：多实例 / 重启下不再把「并发过账」变成 500（2026-10-03，issue #6248）
+
+- 以前：批次号 `PC-yyyyMMdd-NNNN` 由**进程内**计数器生成，再用「先查库内有没有、没有就返回」
+  挑号，**之后**才写批次行。计数器是进程内的 ⇒ 服务重启 / 多副本时两个实例从**同一位置**起步
+  ⇒ 同一个候选号、两边都查到「没人占」⇒ 后写的那次撞 `uk_stock_batches_no`
+  ⇒ `DuplicateKeyException` 一路冒到用户侧：**整单过账 500**（旧的重试只覆盖「生成时已经存在」，
+  **不覆盖「写入那一刻被抢」**）。
+- 现在：把「判占用 + 占用」并成**一条语句**（候选号随批次行一起插入，
+  `ON CONFLICT (tenant_id, batch_no) DO NOTHING`，按受影响行数判号归谁）—— 号被抢就换号重试。
+  正常路径逐字不变（一个 SKU 行 = 一个批次，库存 / 台账 / 明细行回写全照旧）；
+  并发偶发抢号从「500 且无关单据」变成「自动换号、两单都成功」。
+- 边界（如实登记）：① 仍**显式拒绝**而非静默重号 —— 连续 20 次都抢不到 ⇒ `409 BATCH_NO_EXHAUSTED`；
+  ② 已知代价：当天已用号 ≥ 20（一天破 20 行很容易）时**重启后的第一批过账**会被显式拒绝（409），
+  不是静默重号，也不再是 500；③ 计数器的 `% 10_000` 回绕与本改动无关，仍由这句原子写兜底。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/BatchNoTakeRaceRealDbTest.java`
+  （真 PG 六条：单实例并发零重号 / 串行正对照 / 重启落在已占头部 fail-closed / 会合点注入双向
+  —— 修前 500×2、修后 200×2 / 20 次耗尽 409 / 零注入对照）+
+  `InboundOrderServiceTest#postRetriesWhenCandidateIsSnatchedBetweenCheckAndInsert`（换号取下一个候选）。
 
 ### 售后工单详情 / 列表不再返回「退款方式」这个恒空的字段（2026-10-03，issue #6224）
 
