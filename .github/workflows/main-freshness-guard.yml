@@ -18,20 +18,41 @@ name: Main Freshness Guard（main 侧生成物新鲜度）
 # ⇒ 改口径只有一处可改（同一事实两处实现 = 本单要治的那个病）。
 # 渲染器仍是 `.github/render_cases.py`（既有单一源，本腿不重写渲染）。
 
-# ── 触发面：为什么**必须**含 `schedule`（这是本腿存在的技术理由）──────────────────────
+# ── 触发面：**三面**，每一面都有实测理由（issue #6255 第 2 项按实测订正了原「小时级」前提）──
 # `push` 是"当场"的那一面：漂移随合并落到 main，push 触发本腿 ⇒ 当场红。
-# **但它会被吞**（实测，不是推断）：被 `GITHUB_TOKEN` 合并的 auto-merge **不产生 push 事件**
-# —— issue **#3113「push 被吞」**、`#5001`（`worker-h5-publish` 的兜底理由）、
-# `deploy-reconcile.yml` 头部（"近 15 次 deploy run 全是 workflow_dispatch，零 push"）。
+# **但它会被吞，而且 bot 合并是本仓常态**（实测，不是推断）：
+#   · 2026-10-03 的两个 merge sha（`14eb33212` #6241 10:55Z / `d45b7ff39` #6242 10:57Z）
+#     **零 `push` run** —— 本腿的 push 面一次都没跑
+#     （复算：`gh run list --workflow=main-freshness-guard.yml --json headSha,event,createdAt`）；
+#   · 同根因的既有记录：issue **#3113「push 被吞」**、`#5001`、`verify-trigger.yml` 头部
+#     （`pull_request: [closed]` 对 bot 合并 **100% 不触发** ⇒ issue **#3585**）、`close-linked-issues.yml`。
 # ⇒ 只挂 `push` 的守护腿 = **多数合并根本不会跑**（"机制静默失效"，本仓点名的形态）。
-# ⇒ 照既有范式补**免疫那一面的 `schedule`**：对账由定时触发，**不受 push 抑制影响**
-#   （`deploy-reconcile.yml` 就是为此存在的）。这正是"为什么不是只写 push"的逐字理由。
-# ⚠️ **刻意不加 `pull_request`**：本腿判的是 **main 的当前状态**，而 PR 只是"下一个撞上它的
-#   无辜 PR"。挂 PR 面会把红重新显示在那个无辜 PR 上（本单要消灭的观感），却拦不住任何东西
-#   （本腿是报告型 + 值班型，不翻 required）。⇒ 让 main 自己红：`push` 当场 + `schedule` 兜底。
-# ⚠️ 周期取**每小时**（错开整点与其它 cron：`*/20`(deploy-reconcile) / `19:17`(post-merge-verify)
-#   / `20:37`(mechanism-liveness)）：本腿成本 = 检出 + 一次渲染（秒级），
-#   而漂移的暴露窗口 = 一个 cron 周期 ⇒ 取"小时级"而不是"天级"。
+#
+# 🔴 **本单订正（原设计的前提被实测推翻）**：本腿原先只补了 `schedule`，逐字理由是
+#   「本腿成本 = 检出 + 一次渲染（秒级），而漂移的暴露窗口 = 一个 cron 周期 ⇒ 取"小时级"」。
+#   **实测：小时级并不成立** —— GitHub 对本仓 `schedule` 的投递被节流到 **4~5 次/日**
+#   （`43 * * * *` 名义 24 次/日）：09-27 **4** / 09-28 **4** / 09-29 **4** / 09-30 **5** /
+#   10-01 **4** / 10-02 **5** / 10-03 2
+#   （复算：`gh api repos/{owner}/{repo}/actions/workflows/368111215/runs?per_page=100&event=schedule`
+#     后按 `created_at[0:10]` 聚合），相邻两次实测最长间隔 **8.9h**。
+#   ⇒ 漂移能在 main 上**静默近 9 小时**，而这期间**每个 PR** 的 required 检查
+#     `Case Contract (truths_ref)` 都在红 —— 这正是 issue #6255 的现场
+#     （main @ `d45b7ff39` 陈旧 1 条，#6229 与 #6249 各红一次）。
+#
+# ⇒ 对 bot 合并，**唯一可靠的"对账时机"= 新 PR 打开 / 重开**（照既有范式，勿另发明）：
+#   `post-merge-verify.yml` / `deploy-reconcile.yml` / `close-linked-issues.yml` 三条腿用的
+#   都是这一面，理由逐字同源 ——「新 PR 打开必触发，**恰好就是破坏爆在全队列的那一刻**」。
+#   故补 `pull_request_target: [opened, reopened]`：
+#     · 用 `pull_request_target`（**不是** `pull_request`）—— 本腿判的是 **main 的当前状态**，
+#       且判红出口要 `issues: write`（fork PR 上 `pull_request` 拿到的是只读 token）；
+#     · 判定步**只检出 `ref: main`**、**永不检出 PR head** ⇒ 不引入 "pwn request" 面；
+#     · ⛔ 不挂 `pull_request_target: [closed]`（bot 合并不触发它，挂了等于没有 —— #3585），
+#       也不挂 `: [synchronize]`（每个 PR 的每次 push 都跑一遍 = 纯噪声）。
+# ⚠️ **这一面不把本腿变成 PR 门禁**（`tests/unit_ci_workflows/test_main_freshness_guard.py` 的
+#   判据 8 逐条钉住）：仍是**报告型**、不进 required 集合、不折进 `pr-check.yml`、不带 `paths:`
+#   过滤 —— 它只负责**在对账时机把 main 的现状量一遍**，不替任何 PR 背书。
+# ⚠️ 残余边界（**照实登记，不粉饰**）：对账面也只在**事件**上跑 —— 若漂移落地后长时间
+#   **没有任何新 PR 打开/重开**，本腿仍只剩 `schedule`（4~5 次/日）⇒ 静默窗口仍可能达数小时。
 
 # ── 判红时说什么（判据 = `scripts/generated_artifacts_freshness.py` 的输出）──────────
 # **具名**：哪个产物（仓库相对全路径）/ 差多少（提交版 vs 现取的行数与不同行数 + 首个差异原文）
@@ -50,14 +71,20 @@ name: Main Freshness Guard（main 侧生成物新鲜度）
 # 登记项 = `scripts/mechanism-registry.json` 的 `main-freshness-guard`）。
 
 # ── 本腿**不翻 required**（§2.2 的两条前置）────────────────────────────────────────
-# ① 它**没有** `pull_request` 的稳定判定面（判定基准是 main 的当前状态）⇒ 翻 required 会让
-#    所有 PR 永久 `BLOCKED`（"Expected — waiting for status to be reported"）；
+# ① 它**没有**"每个 PR 都上报"的稳定判定面 —— 判定基准是 **main 的当前状态**，
+#    `pull_request_target: [opened, reopened]` 只是**对账时机**（不随每个 PR 的每次 push 上报）
+#    ⇒ 翻 required 会让不碰本面的 PR 永久 `BLOCKED`（"Expected — waiting for status to be reported"）；
 # ② 判定含 `git` 历史（候选区间）等**环境依赖**。
 # ⇒ 形态 = **报告型 + 判红走值班 issue**。⛔ 本 PR **不动** `pr-check.yml` 的判定语义与
 #   required 集合（只把那一侧的内联命令收敛到**同一个脚本**）。
 
 on:
   push:
+    branches: [main]
+  # bot 合并后**唯一可靠的对账时机**（见上「触发面」）：新 PR 打开 / 重开必触发。
+  # ⚠️ 判定基准仍是 **main**（下面 checkout 显式 `ref: main`），不是触发它的那个 PR。
+  pull_request_target:
+    types: [opened, reopened]
     branches: [main]
   schedule:
     # 每小时的第 43 分（UTC；= 每小时 :43 CST）—— 错开整点与其它 cron 的分钟位
