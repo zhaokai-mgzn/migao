@@ -278,6 +278,16 @@ jobs:
           esac
   # ── bot 安全路径（2026-09-22 新增，关联 #5077）────────────────────────────────
   # 与既有 job 同一组护栏，只把作者类型换成 bot（两条路径互斥 ⇒ 任一 PR 只可能走一条）。
+  #
+  # 🔴 **口径：本 job 判「绿」≠「已 arm」**（2026-10-03，CI 审计 issue #6144 的 P2）——
+  #    `main()` 在 bot-safe 判「不安全」时走 `note({...})` + `print("未 arm（fail-closed）")` 后
+  #    **正常返回** ⇒ 本 check 仍是**绿**；`gh pr merge --auto` 失败（`MERGE_CMD_FAILED`）同样只写
+  #    `note(...)` 后返回 ⇒ 也是绿。**这是有意的**（fail-closed 不表达成红），但后果是
+  #    「Enable auto-merge (bot, safe classes only)」**绿 + 没 arm** 与「已 arm」长得一模一样。
+  #    ⇒ 要判断 arm 没 arm，看 `gh pr view <PR> --json autoMergeRequest`（非空 = 已 arm），
+  #      **不许看本腿颜色**；唯一兜底 = 同文件的 `detect-dangling-prs`（`schedule`，现取小时级
+  #      `7 * * * *`；窗口 ≥60min，且**只报警不补 arm**）。
+  #    口径全文（单一来源）= docs/wiki/CI-CD.md 的「口径：几条绿色腿不是它名字读起来的意思」§①。
   enable-auto-merge-bot-safe:
     name: Enable auto-merge (bot, safe classes only)
     runs-on: ubuntu-latest
