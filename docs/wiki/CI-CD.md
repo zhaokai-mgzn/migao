@@ -189,6 +189,92 @@ bad = workflow_structure_violations(mutant)              # 判据吃的是**当�
 两条发布腿各自补 `schedule` 兜底面 + 落静态形状判据）。🔴 **口径订正**：判据语义是 **`现取 ≤ 上限`**（只许缩短）⇒
 「把上限抬到高于现取条数」**本身不会红**；「上限 == 现取」靠**销账时同批降上限**这个动作，不是靠判据。）
 
+## 口径：几条绿色腿**不是**它名字读起来的意思（2026-10-03 固化，CI 审计 issue #6144 的 P2）
+
+> **为什么单开一节**：下面每条的**绿**都与「这条链真的跑通了」长得一模一样，而**没有任何东西
+> 会因此变红** —— 同族见上节 `FM-A*`：**判据没错，错在它证明的东西被读大了**。
+> 本节是这几条腿的**口径单一来源**，各 workflow 的**注释指回这里**（不在 workflow 里复制第二份口径）。
+> 读法：每一行给的是「**该看什么才算数**」，不是「这条腿坏了」。
+
+| 链路 / 位置 | 绿 ≠ 什么 | 需要判断时要看什么（可复制） |
+|---|---|---|
+| `.github/workflows/automerge.yml` 的 job `Enable auto-merge (bot, safe classes only)` | **绿 ≠ 已 arm** | `gh pr view <PR> --json autoMergeRequest`（非空 = 真 arm 了） |
+| `.github/workflows/verify-trigger.yml` 的「API 预算闸」 | **绿 ≠ 本轮跑过**（**有意 fail-open**） | 该 step 日志的「`GITHUB_TOKEN` 剩余额度：N / 小时」+ 有没有 `⏭️` 那行；或 run 页面 **Summary** 的汇总行在不在 |
+
+### ① `Auto Merge (bot, safe classes only)` 绿 **不等于**「已 arm」
+
+这条腿只对 **bot 作者 + 安全类别**的 PR 走这条路径。它在**三种**情况下都会**判绿**：
+
+1. **真 arm 了** —— job 里 `gh pr merge --auto --squash --delete-branch` 返回 0；
+2. **判「不安全」而 fail-closed** —— 类别 / checks 判定不过时，job 写一条 `note({...})` 注解，
+   打印「未 arm（fail-closed）—— 该 PR 保持人工处置」，然后**正常返回** ⇒ **该 check 是绿的**；
+3. **arm 命令本身失败** —— `MERGE_CMD_FAILED` 同样只写 `note(...)` 后返回 ⇒ 绿。
+
+⇒ **要判断某个 PR 到底 arm 没 arm，不许看这条腿的颜色**，看：
+
+```bash
+gh pr view <PR> --json autoMergeRequest --jq '.autoMergeRequest'   # 非空对象 = 已 arm；null = 没 arm
+```
+
+**唯一兜底 = `detect-dangling-prs`**（同文件）：它扫「**open、长时间没变红、也没合入**」的 PR，
+判红并打 `::error::` ⇒ 走定时腿开 P1 值班 issue。⇒ **绿到兜底响之间有 ≥60 分钟的窗口**
+（入口是 `schedule`，现取 `7 * * * *` = **小时级**；且 GitHub 对本仓 cron 有节流，实测 2~5.5h 并不罕见）。
+它**只报警、不补 arm**。
+
+### ② `verify-trigger` 的 API 预算闸 **有意 fail-open**
+
+`.github/workflows/verify-trigger.yml` 的「API 预算闸」步：`gh api rate_limit` 取不到核心额度时按 `9999`
+兜底；剩余 `< 150` ⇒ 写 `skip_run=true` ⇒ **后续所有步都被 `if: env.skip_run != 'true'` 跳过 ⇒ job 绿**。
+
+- **这是有意的**（该步日志自带「fail-open：不半途而废，下次 run 继续」），**不是缺陷**。
+  理由：绝不在限额边缘跑长循环，避免「跑到一半被限流 ⇒ 后半段静默失败」。同一形态在本链路里有两处：
+  ① 预算闸（run 开头，`< 150` 整轮不跑）；② 逐 PR 循环内每 10 个候选复核一次，`< 150` ⇒ `break`。
+- **代价（照实登记）**：**高负载时这条链静默不跑**，「合并 → 自动评审触发」延后到下一次 run
+  （触发面现取 `pull_request_target: opened/reopened` 对账 + `schedule` + `workflow_dispatch`），
+  而**该轮的绿不携带这个信息**。
+- **人怎么发现**（读数沿用本仓既有形态：**每轮一行、含零动作**，见 `scripts/mechanism-registry.json`
+  的 `reading_grammar` —— 本链路**没有**独立发射器，**它自己的汇总行就是读数**）：
+
+| 形态 | 去哪看 | 逐字特征 |
+|---|---|---|
+| 预算闸整轮跳过 | 该 run 的 job 日志里「API 预算闸」步 | `⚠️  剩余额度 < 150，本次退出（fail-open：不半途而废，下次 run 继续）` |
+| 循环中途停 | 「处理候选 PR」步日志 + 该 run 的 **Summary** | `⚠️  额度剩 N < 150，停止本轮（已处理 M 个候选，其余留给下次 run）`；Summary 表头仍在，但 `候选 PR` 与各计数**停在 M** |
+| 正常跑完 | 该 run 的 **Summary** | `mode=… posted=N idempotent_skip=N guard_skip=N no_linked_issue=N failed=N` |
+
+🔴 判别口诀：**「没跑」必须长得像「没跑」**。`posted=0` **且汇总行在** = 真零动作；
+**汇总行不在** = 没跑到那一步（被闸跳过），**不许**把后者读成「今天没有要触发的」。
+
+### ③ `npm audit` 装饰步（已按审计结论**删除**，2026-10-03）
+
+`pr-check.yml` 的 `admin-web-test` 步列里曾有一步
+`npm audit --production --audit-level=high` + `continue-on-error: true` ⇒ 它**既不出声也不拦**：
+即使审计失败该步也不让 job 变红，**而 required 腿的绿会被读成「依赖面有人看」**。
+2026-10-03 按 CI 审计（issue #6144）的裁定：**删除**（**不**改成 blocking —— 那会让无关 CVE 新闻随机卡住
+所有 PR；也**不**另建报告腿 —— 本仓**没有**消费这条信号的面，见下）。
+
+**这个信号以后去哪看**：**本仓目前没有依赖漏洞通道** —— 现取（2026-10-03）
+`gh api repos/zhaokai-mgzn/migao/vulnerability-alerts` ⇒ `404 Vulnerability alerts are disabled`
+（Dependabot 安全告警未开）；`code-scanning/alerts` ⇒ `no analysis found`。
+`.github/dependabot.yml` 只在做**版本更新 PR**，**不是**漏洞告警。
+⇒ 想恢复这个信号 = **显式开一个通道**（开 Dependabot 安全告警，或另接 pip-audit / trivy），
+**不要**再把一条 `continue-on-error` 的步当成它已有。
+
+（登记面同步：`tests/unit_ci_workflows/declaration_gate_registry.json` 的
+`pr-check-admin-web-tests.gated_steps` 同批删掉该步骤名 —— 它按**步骤名**逐字校验，判据 =
+`tests/unit_ci_workflows/test_gate_coverage_and_same_source.py`
+的 `test_registry_entries_are_live_and_verbatim`；`docs/wiki/gate-exemption-ledger.md` 的
+`continue-on-error` 条目同批复核。）
+
+### ④ `mechanism-liveness.yml` 的 `watchdog` 死门控（2026-10-03 删除）
+
+该 workflow 的 `on:` **只有** `schedule` + `workflow_dispatch`（`pull_request` 面已于 #5814 去掉，
+且 `tests/unit_ci_workflows/test_ci_trigger_surface_slimming.py` 的 `mechanism_liveness_problems`
+**逐字要求它不许长回 PR 面**）⇒ `watchdog.if: github.event_name != 'pull_request'` 是**恒真死条件**，
+会让人误以为 PR 上会跑到它。**处置：删掉该 `if:`**，并把上下文注释改成「本 workflow 无 PR 面，
+此 `if:` 曾是历史残留」。三张登记面的影响读数见 PR body（`ci_trigger_gate_ledger` **不涉**：
+它只裁 `on.workflow_run` 消费面，本文件无该面；`schedule_scope_ledger` **不涉**：它只核
+`on.schedule` 声明 ⇄ 现取的 cron；`test_ci_trigger_surface_slimming.py` **不涉**：它只读 `on:` 块）。
+
 ## 部署目标（2026-08-14 起：SAE → SWAS；当前 SWAS 为**测试环境**）
 
 | 服务 | 目标 | 技术 |

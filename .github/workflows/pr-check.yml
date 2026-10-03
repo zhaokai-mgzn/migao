@@ -367,11 +367,17 @@ jobs:
         working-directory: frontend/admin-web
         run: npx vitest run
 
-      - name: Security audit (deps)
-        if: steps.detect_aw.outputs.run_web == 'true'
-        working-directory: frontend/admin-web
-        run: npm audit --production --audit-level=high
-        continue-on-error: true
+      # ── 这里原有一步 `Security audit (deps)`（`npm audit --production --audit-level=high`）──
+      # 已于 2026-10-03 按 CI 审计（issue #6144 的 P2 ③）**删除**。删除理由（三选一里选了「删」）：
+      #   · 它带 `continue-on-error: true` ⇒ **永不让本腿变红**（纯装饰：既不出声也不拦），
+      #     而 required 腿的绿会被读成「依赖面有人看」；
+      #   · **不**改成 blocking：无关 CVE 新闻会随机卡住所有 PR（审计已排除该选项）；
+      #   · **不**另建独立报告腿：本仓**没有**消费这条信号的面（现取：Dependabot 安全告警
+      #     `disabled`、code-scanning `no analysis found`；`.github/dependabot.yml` 只做版本更新 PR）
+      #     ⇒ 报告腿也只会长出第二个无人看的假信号。
+      #   ⇒ **这个信号以后去哪看 = 目前没有通道**；要恢复须**显式开一个通道**（Dependabot 安全告警 /
+      #     pip-audit / trivy），**不要**把一条 `continue-on-error` 的步当成它已有。
+      #   口径全文（单一来源）= docs/wiki/CI-CD.md 的「口径：几条绿色腿不是它名字读起来的意思」§③。
 
   # ── 共用的面判定（本 workflow 的**单一来源**）────────────────────────────────────
   # 为什么单独一个 job（issue #6051）：`e2e-quality-gate` 是**非 required** 腿，此前靠**步骤级**

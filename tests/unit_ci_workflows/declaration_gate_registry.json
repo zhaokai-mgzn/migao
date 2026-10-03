@@ -231,8 +231,7 @@
         "TypeScript type check",
         "ESLint",
         "Production build (Next-only checks)",
-        "Run unit tests",
-        "Security audit (deps)"
+        "Run unit tests"
       ]
     },
     {

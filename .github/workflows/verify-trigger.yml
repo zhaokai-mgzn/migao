@@ -125,6 +125,18 @@ jobs:
           fi
           echo "✅ 事件 $EVENT_NAME 通过护栏"
 
+      # 🔴 **口径：本步 fail-open 是「有意」，不是缺陷**（2026-10-03，CI 审计 issue #6144 的 P2）。
+      #   额度不足（`< 150`）⇒ 写 `skip_run=true` ⇒ 后续每一步都被 `if: env.skip_run != 'true'` 跳过
+      #   ⇒ **job 绿**，而**这一轮的绿完全不代表这条链跑过**（同形第二处 = 下面「处理候选 PR」步里
+      #   每 10 个候选复核一次额度、不足即 `break`）。**代价（照实登记）**：高负载时这条链**静默不跑**，
+      #   「合并 → 自动评审触发」延后到下一次 run（触发面 `pull_request_target: opened/reopened`
+      #   对账 + `schedule` + `workflow_dispatch`）。
+      #   **人怎么发现**（读数沿用本仓既有形态：每轮一行、含零动作；本链路没有独立发射器，
+      #   它自己的汇总行就是读数）：① 本步日志 `⚠️  剩余额度 < 150，本次退出（fail-open：…
+      #   ⇒ 整轮跳过；② 循环内 `⚠️  额度剩 N < 150，停止本轮（已处理 M 个候选，其余留给下次 run）`
+      #   ⇒ 中途停；③ **正常跑完**才在 run 的 Summary 里出现 `posted=… idempotent_skip=…` 汇总行 ——
+      #   **`posted=0` 且汇总行在 = 真零动作；汇总行不在 = 没跑到那一步（被闸跳过）**。
+      #   口径全文（单一来源）= docs/wiki/CI-CD.md 的「口径：几条绿色腿不是它名字读起来的意思」§②。
       - name: API 预算闸（防跑到一半被限流）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
