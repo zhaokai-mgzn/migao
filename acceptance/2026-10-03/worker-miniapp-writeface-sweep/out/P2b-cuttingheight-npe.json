@@ -1,0 +1,79 @@
+{
+  "records": [
+    {
+      "id": "N1.cutting-height-null-product",
+      "name": "🔴 cutting-height：订单行 product_id 为 NULL ⇒ **HTTP 500**（NPE at positionRow）",
+      "status": "fail",
+      "detail": "期望 设计期望（源码类注释逐字）：缺值 ⇒ 该行进 missing[] + 页面显示「—」，**三条失败路径都显式、没有一条静默按 0**；即 200 或 4xx，不得 500 ≠ 实测 product_id=NULL ⇒ HTTP 500 / 前置同一码(HAS product_id)=HTTP 200 / body={\"granularity\":\"set_position\",\"scanned\":{\"order_item_id\":\"laitmmus5oyo0qj\",\"position_kind\":\"布帘\"},\"order\":{\"order_id\":\"laordmus5oyo0qj\",\"order_no\":\"LA-ORD-MUS5OY",
+      "evidence": [
+        "期望来源: WorkerCuttingHeightService.positionRow 第 149 行 `brands.get(item.getProductId())`：`brands` 在该批产品零命中时返回 `Map.of()`（不可变）⇒ 以 NULL 建键 ⇒ `ImmutableCollections$MapN.get` NPE",
+        "期望: 设计期望（源码类注释逐字）：缺值 ⇒ 该行进 missing[] + 页面显示「—」，**三条失败路径都显式、没有一条静默按 0**；即 200 或 4xx，不得 500",
+        "实得: product_id=NULL ⇒ HTTP 500 / 前置同一码(HAS product_id)=HTTP 200 / body={\"granularity\":\"set_position\",\"scanned\":{\"order_item_id\":\"laitmmus5oyo0qj\",\"position_kind\":\"布帘\"},\"order\":{\"order_id\":\"laordmus5oyo0qj\",\"order_no\":\"LA-ORD-MUS5OY",
+        "栈（/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-03/out/main-live-round3-api-envfix.log 第 6605~6610 行）: java.lang.NullPointerException at ImmutableCollections$MapN.get … WorkerCuttingHeightService.positionRow",
+        "夹具 order_items.id=laitmmus5oyo0qj product_id=NULL（本包自建行）",
+        "只读面零副作用自证：ops 前后=true logs=0→0"
+      ],
+      "at": "2026-10-03 16:54:58 +08",
+      "atUtc": "2026-10-03T08:54:58.703Z"
+    },
+    {
+      "id": "N2.single-variable-control",
+      "name": "单变量对照：仅把 product_id 由 NULL 改回一个真实商品 ⇒ 同码恢复（归因锁定到该列）",
+      "status": "pass",
+      "detail": "期望 HTTP 200 == 实测 HTTP 200 keys=[\"granularity\",\"scanned\",\"order\",\"positions\"]",
+      "evidence": [
+        "期望来源: 单变量对照（改一个列 ⇒ 结果翻转）⇒ 500 的归因是 product_id=NULL，而非夹具其它字段",
+        "期望: HTTP 200",
+        "实得: HTTP 200 keys=[\"granularity\",\"scanned\",\"order\",\"positions\"]"
+      ],
+      "at": "2026-10-03 16:54:59 +08",
+      "atUtc": "2026-10-03T08:54:59.407Z"
+    },
+    {
+      "id": "N3.no-brand-attr",
+      "name": "商品存在但无品牌属性（brands() 走 selectList 空结果分支）⇒ 仍 200（证明触发条件含 `product_id IS NULL`）",
+      "status": "pass",
+      "detail": "期望 HTTP 200（若这里也 500 ⇒ 触发面更宽，需一并登记） == 实测 HTTP 200",
+      "evidence": [
+        "期望来源: brands() 的 selectList 分支返回 LinkedHashMap（可容 NULL 键）⇒ 只有 `productIds.isEmpty()` 的 Map.of() 分支才 NPE",
+        "期望: HTTP 200（若这里也 500 ⇒ 触发面更宽，需一并登记）",
+        "实得: HTTP 200"
+      ],
+      "at": "2026-10-03 16:55:00 +08",
+      "atUtc": "2026-10-03T08:55:00.173Z"
+    },
+    {
+      "id": "N4.scan-unaffected",
+      "name": "对照：同一夹具下 `GET /production/scan`（同一份 resolve）不受影响 ⇒ 缺陷**只在** cutting-height 那一层",
+      "status": "pass",
+      "detail": "期望 HTTP 200（scan 不读 brands()） == 实测 HTTP 200 granularity=set_position",
+      "evidence": [
+        "期望来源: ProductionScanService.setPositionView 不调 brands()；WorkerCuttingHeightService.read 才调 ⇒ 归因层级 = 一体机读面",
+        "期望: HTTP 200（scan 不读 brands()）",
+        "实得: HTTP 200 granularity=set_position"
+      ],
+      "at": "2026-10-03 16:55:00 +08",
+      "atUtc": "2026-10-03T08:55:00.775Z"
+    },
+    {
+      "id": "N5.brands-null-key",
+      "name": "单变量三步对照（有/无 product_id/还原）⇒ 归因：`brands.get(item.getProductId())` 以 NULL 建键",
+      "status": "pass",
+      "detail": "期望 有 product_id ⇒ 200；置 NULL ⇒ 500；还原 ⇒ 200 == 实测 有=200 → 置NULL=500 → 还原=200（该商品 brand 属性行数=0）",
+      "evidence": [
+        "期望来源: brands() 第 275~277 行：`productIds.isEmpty() ⇒ Map.of()`（不可变）；positionRow 第 149 行以 NULL 调 List.of().get ⇒ ImmutableCollections$MapN NPE",
+        "期望: 有 product_id ⇒ 200；置 NULL ⇒ 500；还原 ⇒ 200",
+        "实得: 有=200 → 置NULL=500 → 还原=200（该商品 brand 属性行数=0）",
+        "N1 的 okOnFullItem 前置也是 500 ⇒ 触发面比「product_id IS NULL」更宽（凡是**本单订单行的 product_id 全为空**就必然命中）"
+      ],
+      "at": "2026-10-03 16:55:04 +08",
+      "atUtc": "2026-10-03T08:55:04.334Z"
+    }
+  ],
+  "summary": {
+    "pass": 4,
+    "fail": 1,
+    "skip": 0,
+    "total": 5
+  }
+}

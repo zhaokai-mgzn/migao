@@ -1,0 +1,67 @@
+{
+  "at": {
+    "cst": "2026-10-03 16:56:09 +08",
+    "utc": "2026-10-03T08:56:09.640Z"
+  },
+  "cleanupError": null,
+  "residue": {
+    "counts": {
+      "probeUsers": 0,
+      "probeSessions": 0,
+      "probeOrders": 0,
+      "probeProcessingOrders": 0,
+      "probeSets": 0,
+      "probeItems": 0,
+      "probePositionOps": 0,
+      "probePartTokens": 0,
+      "probeWorkLogs": 0,
+      "probeAudits": 0,
+      "probeIdemKeys": 0,
+      "probeInboundItems": 0,
+      "probeInboundLabels": 0
+    },
+    "total": 0
+  },
+  "clean": true,
+  "ledgerBefore": {
+    "hash": "61f3fe98fa716249e02ebdcbf8e7b089d1d4521ac977b0434d2bea6aa35d629e",
+    "parts": [
+      "orders=af4692733e8aae2ccb2fedd43a2c2ae9#411",
+      "processing_orders=946f05abbce855205677ce47aa70ad73#273",
+      "processing_position_operations=374c481a2eb48bd9827d2e1efbaf512d#3041",
+      "processing_set_part_tokens=eb85170138a446f1efc07f64fe1dedc8#289",
+      "production_work_logs=1c6ef171f116d056f8634c54b5f944f9#15",
+      "worker_report_audits=0d09663149db13d7da5349963be445bd#15",
+      "users=14d02ea9d6e7684c1ec75f5898159e7e#20",
+      "worker_sessions=a3c06d857734dea114efa73cdb4c5e29#9",
+      "inbound_labels=8553f2d315b98d60f3f67a74122b70c5#1",
+      "client_request_keys=177353d4b11c3227889a6797f8350ffe#37"
+    ]
+  },
+  "ledgerAfter": {
+    "hash": "b460637ce5e3ad27355563410c3a5c581f566e8d26904105ecc143e5194c8f35",
+    "parts": [
+      "orders=143409ccb900afd77be6b06dc8cb84fe#366",
+      "processing_orders=62aaa224f1327833739b18cc8fe26696#271",
+      "processing_position_operations=bc193b93f04e37c3da317b9c0ef559bf#3021",
+      "processing_set_part_tokens=559b66cac18417c5df0bac1ae07d9a8c#287",
+      "production_work_logs=1c6ef171f116d056f8634c54b5f944f9#15",
+      "worker_report_audits=0d09663149db13d7da5349963be445bd#15",
+      "users=d248ac6f28fd5ca3004795fb1708eda3#19",
+      "worker_sessions=9b6255dbbbe166e4a529926606b57c50#8",
+      "inbound_labels=5d7fd457d47102fd75b0e92f49521193#2",
+      "client_request_keys=03854dda640a63ce43875bf2d9f97033#38"
+    ]
+  },
+  "ledgerUnchanged": false,
+  "tableCounts": {
+    "orders": 366,
+    "processingOrders": 271,
+    "positionOps": 3021,
+    "partTokens": 287,
+    "workLogs": 15,
+    "users": 19,
+    "inboundOrders": 15,
+    "inboundLabels": 2
+  }
+}

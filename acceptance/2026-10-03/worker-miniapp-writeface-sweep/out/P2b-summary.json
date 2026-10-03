@@ -1,0 +1,17 @@
+{
+  "at": {
+    "cst": "2026-10-03 16:55:04 +08",
+    "utc": "2026-10-03T08:55:04.335Z"
+  },
+  "summary": {
+    "pass": 4,
+    "fail": 1,
+    "skip": 0,
+    "total": 5
+  },
+  "repro": {
+    "itemId": "laitmmus5oyo0qj",
+    "token": "lamus5oyo0qjffffffffffffffffffff",
+    "poId": "lapomus5oyo0qj"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "records": [
+    {
+      "id": "A1.A.create",
+      "name": "建探针工人(A)：POST /api/admin/workers",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + users 行落库(role=worker,status=active) == 实测 HTTP 200 id=6c19347c034f7387e01c5024120e0109 row={\"id\":\"6c19347c034f7387e01c5024120e0109\",\"worker_no\":\"LAA49595\",\"nickname\":\"线A验收工人849595\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60}",
+      "evidence": [
+        "期望来源: AdminWorkerController.createWorker + WorkerAdminService（API 建行的终态由 DB 独立复读）",
+        "期望: HTTP 200 + users 行落库(role=worker,status=active)",
+        "实得: HTTP 200 id=6c19347c034f7387e01c5024120e0109 row={\"id\":\"6c19347c034f7387e01c5024120e0109\",\"worker_no\":\"LAA49595\",\"nickname\":\"线A验收工人849595\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60}",
+        "{\"workerNo\":\"LAA49595\",\"name\":\"线A验收工人849595\",\"pin\":\"246810\"}",
+        "DB row: {\"id\":\"6c19347c034f7387e01c5024120e0109\",\"worker_no\":\"LAA49595\",\"nickname\":\"线A验收工人849595\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":20,\"is_worker\":true,\"hash_len\":60}"
+      ],
+      "at": "2026-10-03 16:57:30 +08",
+      "atUtc": "2026-10-03T08:57:30.242Z"
+    }
+  ],
+  "summary": {
+    "pass": 1,
+    "fail": 0,
+    "skip": 0,
+    "total": 1
+  }
+}

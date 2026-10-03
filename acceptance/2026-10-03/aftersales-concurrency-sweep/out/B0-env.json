@@ -1,0 +1,86 @@
+{
+  "records": [
+    {
+      "id": "LB0-01",
+      "name": "被测构建点自证",
+      "status": "pass",
+      "detail": "main-live HEAD=43ca703221a714e143c468ff0b29c4a46e67a88f（期望 43ca703221a714e143c468ff0b29c4a46e67a88f）",
+      "evidence": [
+        "取证方式: git -C /Users/guangzhen.zk/migao-wt/main-live rev-parse HEAD",
+        "subject: test(acceptance): 2026-10-03 承载体第三批（收尾）—— 全档读数/两个 override 留档/#6202 判据腐化与修复 (#6214)",
+        "commitTime(UTC): 2026-10-03T08:15:11Z",
+        "admin-api pid=61739 启动=六 10月/ 3 16:22:58 2026",
+        "env-round3.json: {\n  \"preparedAt\": \"2026-10-03 16:15:58 +0800\",\n  \"mainLiveBefore\": \"cd0a7fd54270d1dda036aef0ce1b5e5371976292\",\n  \"mainLiveAfter\": \"43ca703221a714e143c468ff0b29c4a46e67a88f\",\n  \"originMain\": \"43ca70322"
+      ],
+      "at": "2026-10-03 16:56:40 +08",
+      "atUtc": "2026-10-03T08:56:40.570Z"
+    },
+    {
+      "id": "LB0-02",
+      "name": "时钟自检（JS +08 vs SQL Asia/Shanghai）",
+      "status": "pass",
+      "detail": "JS=2026-10-03 16:56:40 / SQL=2026-10-03 16:56:40（差 0s）",
+      "evidence": [
+        "取值口径: nowCST() 走 Intl timeZone=Asia/Shanghai；SQL 走 now() at time zone 'Asia/Shanghai'",
+        "两侧均按 '+08:00' 显式解析后比较（不依赖进程 TZ）"
+      ],
+      "at": "2026-10-03 16:56:40 +08",
+      "atUtc": "2026-10-03T08:56:40.801Z"
+    },
+    {
+      "id": "LB0-03",
+      "name": "端点可达性 GET /api/admin/after-sales?page=1&size=1",
+      "status": "pass",
+      "detail": "未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）",
+      "evidence": [
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}"
+      ],
+      "at": "2026-10-03 16:56:40 +08",
+      "atUtc": "2026-10-03T08:56:40.839Z"
+    },
+    {
+      "id": "LB0-04",
+      "name": "端点可达性 GET /api/admin/orders?page=1&size=1",
+      "status": "pass",
+      "detail": "未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）",
+      "evidence": [
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}"
+      ],
+      "at": "2026-10-03 16:56:40 +08",
+      "atUtc": "2026-10-03T08:56:40.843Z"
+    },
+    {
+      "id": "LB0-05",
+      "name": "管理员登录",
+      "status": "pass",
+      "detail": "取到 token（长度 774），取得方式 = sms-bypass-code",
+      "evidence": [
+        "⚠️ 环境事实（superseded）：16:15 那版 :8080 进程**未加载** SMS_BYPASS_CODE ⇒ 万能码被拒（401）；16:22 主会话带 .env 重启后本判据转 pass",
+        "   16:22 之前的、依赖 API 的读数以**运行期环境注入**变化为由标记 superseded（构建点 43ca70322 未变）",
+        "回落路径 = POST /api/auth/sms/send（服务端生成并落 Redis sms:code:<phone>）+ 只读 Redis 读回 ⇒ 与「用户收到短信后输入」等价，未绕过鉴权",
+        "响应 data 键: user,accessToken,expiresIn",
+        "tenantId=20 role=admin"
+      ],
+      "at": "2026-10-03 16:56:41 +08",
+      "atUtc": "2026-10-03T08:56:41.080Z"
+    },
+    {
+      "id": "LB0-06",
+      "name": "租户 20 存量基线（外来行归因用）",
+      "status": "pass",
+      "detail": "[{\"orders\":366,\"tickets\":5,\"ledger\":387,\"finance\":376,\"products\":39}]",
+      "evidence": [
+        "只读；供清理后逐表比对"
+      ],
+      "at": "2026-10-03 16:56:41 +08",
+      "atUtc": "2026-10-03T08:56:41.277Z"
+    }
+  ],
+  "summary": {
+    "pass": 6,
+    "fail": 0,
+    "skip": 0,
+    "falseRed": 0,
+    "total": 6
+  }
+}

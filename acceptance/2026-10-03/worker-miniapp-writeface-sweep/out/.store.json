@@ -1,0 +1,32 @@
+{
+  "workerA": {
+    "workerNo": "LAA49595",
+    "workerId": "6c19347c034f7387e01c5024120e0109",
+    "name": "线A验收工人849595",
+    "pin": "246810",
+    "createdStatus": 200,
+    "row": {
+      "id": "6c19347c034f7387e01c5024120e0109",
+      "worker_no": "LAA49595",
+      "nickname": "线A验收工人849595",
+      "role": "worker",
+      "status": "active",
+      "tenant_id": 20,
+      "is_worker": true,
+      "hash_len": 60
+    },
+    "response": {
+      "success": true,
+      "data": {
+        "id": "6c19347c034f7387e01c5024120e0109",
+        "workerNo": "LAA49595",
+        "name": "线A验收工人849595",
+        "role": "worker",
+        "status": "active",
+        "createdAt": "2026-10-03T16:57:29.900993+08:00"
+      },
+      "requestId": "req_875d6643446a4b71",
+      "timestamp": 1791017850
+    }
+  }
+}

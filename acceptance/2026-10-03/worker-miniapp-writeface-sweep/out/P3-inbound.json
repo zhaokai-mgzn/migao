@@ -1,0 +1,261 @@
+{
+  "records": [
+    {
+      "id": "D1.recognize-barcode-only-rejected",
+      "name": "入库识别：**只给条码不给图片** ⇒ 400 INBOUND_RECOGNIZE_NO_IMAGE（源码注释里「解码优先、零 LLM」那条路径从本端点**不可达**）",
+      "status": "pass",
+      "detail": "期望 实测 HTTP 400（与源码类注释「barcode 非空 ⇒ PATH_BARCODE，一次 LLM 都不调」不一致：图片校验在解码分支之前） == 实测 HTTP 400 code=INBOUND_RECOGNIZE_NO_IMAGE msg=请至少上传 1 张照片（上游标签 / 布卷包装）",
+      "evidence": [
+        "期望来源: WorkerInboundService.recognize: `validImages(req)` 在 `if (barcode != null)` **之前** 执行（源码顺序）",
+        "期望: 实测 HTTP 400（与源码类注释「barcode 非空 ⇒ PATH_BARCODE，一次 LLM 都不调」不一致：图片校验在解码分支之前）",
+        "实得: HTTP 400 code=INBOUND_RECOGNIZE_NO_IMAGE msg=请至少上传 1 张照片（上游标签 / 布卷包装）",
+        "契约影响：H5/小程序若按注释只传 barcode 想省一次 vision，会直接 400 —— 该路径需同时带图才可达"
+      ],
+      "at": "2026-10-03 16:55:07 +08",
+      "atUtc": "2026-10-03T08:55:07.467Z"
+    },
+    {
+      "id": "D2.recognize-no-match-no-create",
+      "name": "识别零命中 ⇒ **不自动建品/SKU**（商品数前后相同；响应不得回凭空构造的 SKU）",
+      "status": "pass",
+      "detail": "期望 本包探针域商品数不变（0）+ 响应不含构造的 skuMatches == 实测 HTTP 200 matches=[] 探针域商品=0→0",
+      "evidence": [
+        "期望来源: WorkerInboundService：零命中不建品（MSG_MANUAL_NO_SKU_MATCH「系统不会替你猜」）",
+        "期望: 本包探针域商品数不变（0）+ 响应不含构造的 skuMatches",
+        "实得: HTTP 200 matches=[] 探针域商品=0→0",
+        "resp={\"path\":\"barcode_decode\",\"degraded\":false,\"requiresManualEntry\":true,\"barcode\":\"la-NOPE-000\",\"skuMatches\":[],\"fields\":[],\"message\":\"扫到的条码在系统里没有对应的货号 —— 请人工录入，或从已有商品里选择（不会自动建品）。\"}"
+      ],
+      "at": "2026-10-03 16:55:08 +08",
+      "atUtc": "2026-10-03T08:55:08.272Z"
+    },
+    {
+      "id": "D5.draft-created",
+      "name": "POST /api/worker/inbound/drafts ⇒ 建单成功（status=draft, source=purchase）",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + DB inbound_orders 行 status=draft + source=purchase + created_by=探针工人 id == 实测 HTTP 200 draftId=2d4404e455acbf5ff148fa176c47c8e3 row={\"id\":\"2d4404e455acbf5ff148fa176c47c8e3\",\"inbound_no\":\"RK-20261003-0010\",\"status\":\"draft\",\"source\":\"purchase\",\"created_by\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"total_amount\":\"93.7500\"}",
+      "evidence": [
+        "期望来源: WorkerInboundService.createDraft → InboundOrderService.create（source 服务端固定 purchase；DTO 无 source 键）",
+        "期望: HTTP 200 + DB inbound_orders 行 status=draft + source=purchase + created_by=探针工人 id",
+        "实得: HTTP 200 draftId=2d4404e455acbf5ff148fa176c47c8e3 row={\"id\":\"2d4404e455acbf5ff148fa176c47c8e3\",\"inbound_no\":\"RK-20261003-0010\",\"status\":\"draft\",\"source\":\"purchase\",\"created_by\":\"e65eb55ce5dbc6839f913f401244e3d8\",\"total_amount\":\"93.7500\"}",
+        "resp={\"draftId\":\"2d4404e455acbf5ff148fa176c47c8e3\",\"inboundNo\":\"RK-20261003-0010\",\"status\":\"draft\",\"source\":\"purchase\",\"needsConfirmation\":true,\"items\":[{\"skuId\":2095281075309326300,\"skuCode\":\"POC-AB-001-01-SJ-28\",\"quantity\":7.5}]}",
+        "req={\"productId\":\"9d0b9bb4086cdfd360c76db910894bc6\",\"skuId\":\"2095281075309326338\",\"quantity\":\"7.5\",\"unitCost\":\"12.5\",\"supplier\":\"线A验收供应商\",\"dyeLot\":\"la-LOT\"}"
+      ],
+      "at": "2026-10-03 16:55:09 +08",
+      "atUtc": "2026-10-03T08:55:09.493Z"
+    },
+    {
+      "id": "D6.draft-does-not-move-stock",
+      "name": "🔴 草稿态**完全不动库存**（SKU stock 前后逐字相同）",
+      "status": "pass",
+      "detail": "期望 107.5 == 107.5 == 实测 before=107.5 after=107.5",
+      "evidence": [
+        "期望来源: WorkerInboundService.createDraft 类注释：「草稿态完全不动库存」（设计 §5.3 硬约束 1）",
+        "期望: 107.5 == 107.5",
+        "实得: before=107.5 after=107.5"
+      ],
+      "at": "2026-10-03 16:55:09 +08",
+      "atUtc": "2026-10-03T08:55:09.497Z"
+    },
+    {
+      "id": "D7.draft-idempotent",
+      "name": "同 Idempotency-Key 重复建草稿 ⇒ 不建第二张（回放首次结果）",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + 同 draftId + 无第二张单 == 实测 HTTP 200 draftId=2d4404e455acbf5ff148fa176c47c8e3（首次 2d4404e455acbf5ff148fa176c47c8e3）行数=1",
+      "evidence": [
+        "期望来源: ClientRequestIdService（ENDPOINT_DRAFTS=worker/inbound/drafts）+ 同键回放",
+        "期望: HTTP 200 + 同 draftId + 无第二张单",
+        "实得: HTTP 200 draftId=2d4404e455acbf5ff148fa176c47c8e3（首次 2d4404e455acbf5ff148fa176c47c8e3）行数=1"
+      ],
+      "at": "2026-10-03 16:55:10 +08",
+      "atUtc": "2026-10-03T08:55:10.016Z"
+    },
+    {
+      "id": "D8.post-needs-confirm",
+      "name": "过账缺 confirmed=true ⇒ 409 且**一行库存都不动**",
+      "status": "pass",
+      "detail": "期望 HTTP 409 + stock 不变 == 实测 HTTP 409 code=CONFLICT stock=107.5",
+      "evidence": [
+        "期望来源: WorkerInboundService.postDraft：req.confirmed != TRUE ⇒ conflict(409)（设计 §6.5 未确认不落库）",
+        "期望: HTTP 409 + stock 不变",
+        "实得: HTTP 409 code=CONFLICT stock=107.5"
+      ],
+      "at": "2026-10-03 16:55:10 +08",
+      "atUtc": "2026-10-03T08:55:10.233Z"
+    },
+    {
+      "id": "D9.post-moves-stock",
+      "name": "过账 ⇒ status=posted + SKU 库存 +7.500（期望本包独立算出） + 台账一行",
+      "status": "pass",
+      "detail": "期望 stock 107.5 + 7.500 = 115.000；inbound_orders.status=posted == 实测 HTTP 200 stock=115.0 row={\"id\":\"2d4404e455acbf5ff148fa176c47c8e3\",\"status\":\"posted\",\"posted\":true,\"posted_by\":\"e65eb55ce5dbc6839f913f401244e3d8\"} ledger={\"id\":1438,\"delta\":\"7.5\",\"before_qty\":\"107.5\",\"after_qty\":\"115.0\",\"reason\":\"inbound\",\"ref_no\":\"RK-20261003-0010\",\"operator\":\"system\",\"cst\":\"2026-10-03 16:55:10.601338\"}",
+      "evidence": [
+        "期望来源: InboundOrderService.post（过账才动库存）+ stock_ledger_entries 独立复读",
+        "期望: stock 107.5 + 7.500 = 115.000；inbound_orders.status=posted",
+        "实得: HTTP 200 stock=115.0 row={\"id\":\"2d4404e455acbf5ff148fa176c47c8e3\",\"status\":\"posted\",\"posted\":true,\"posted_by\":\"e65eb55ce5dbc6839f913f401244e3d8\"} ledger={\"id\":1438,\"delta\":\"7.5\",\"before_qty\":\"107.5\",\"after_qty\":\"115.0\",\"reason\":\"inbound\",\"ref_no\":\"RK-20261003-0010\",\"operator\":\"system\",\"cst\":\"2026-10-03 16:55:10.601338\"}",
+        "expectedStock=115.000",
+        "ledger delta=7.5 107.5→115.0 reason=inbound"
+      ],
+      "at": "2026-10-03 16:55:11 +08",
+      "atUtc": "2026-10-03T08:55:11.397Z"
+    },
+    {
+      "id": "D10.labels-issued",
+      "name": "过账后**同一事务**为每行发短码（8 位 Crockford Base32），草稿态没有",
+      "status": "pass",
+      "detail": "期望 inbound_labels 1 行 + short_code 匹配 ^[0-9A-HJKMNP-TV-Z]{8}$ + print_count=0 == 实测 [{\"id\":\"b5c1a5c08c1c82b32bd4ef957893c41f\",\"short_code\":\"G3GWXD7Z\",\"print_count\":0,\"inbound_order_id\":\"2d4404e455acbf5ff148fa176c47c8e3\"}]",
+      "evidence": [
+        "期望来源: WorkerInboundService.postDraft → InboundLabelService.ensureLabels（§7.1 缺码不画假码）",
+        "期望: inbound_labels 1 行 + short_code 匹配 ^[0-9A-HJKMNP-TV-Z]{8}$ + print_count=0",
+        "实得: [{\"id\":\"b5c1a5c08c1c82b32bd4ef957893c41f\",\"short_code\":\"G3GWXD7Z\",\"print_count\":0,\"inbound_order_id\":\"2d4404e455acbf5ff148fa176c47c8e3\"}]"
+      ],
+      "at": "2026-10-03 16:55:11 +08",
+      "atUtc": "2026-10-03T08:55:11.629Z"
+    },
+    {
+      "id": "D11.post-idempotent",
+      "name": "同 Idempotency-Key 重复过账 ⇒ 回放、**库存只加一次**",
+      "status": "pass",
+      "detail": "期望 stock 仍 115.000 == 实测 HTTP 200 stock=115.0",
+      "evidence": [
+        "期望来源: ClientRequestIdService（ENDPOINT_POST）+ 条件更新 CAS 双保险",
+        "期望: stock 仍 115.000",
+        "实得: HTTP 200 stock=115.0"
+      ],
+      "at": "2026-10-03 16:55:12 +08",
+      "atUtc": "2026-10-03T08:55:12.094Z"
+    },
+    {
+      "id": "D12.post-repeat-cas",
+      "name": "同一草稿重复过账（**不带**幂等键）⇒ 409 且库存仍只加一次（CAS）",
+      "status": "pass",
+      "detail": "期望 HTTP 409 + stock 不变 == 实测 HTTP 409 code=CONFLICT stock=115.0",
+      "evidence": [
+        "期望来源: InboundOrderService.post 的条件更新（CAS）—— WorkerInboundService 类注释逐字「第二次会得到 409 而不是回放结果」",
+        "期望: HTTP 409 + stock 不变",
+        "实得: HTTP 409 code=CONFLICT stock=115.0"
+      ],
+      "at": "2026-10-03 16:55:12 +08",
+      "atUtc": "2026-10-03T08:55:12.436Z"
+    },
+    {
+      "id": "D13.qty-validation",
+      "name": "数量准入：0 与两位小数 ⇒ 422 VALIDATION_ERROR（平台统一 422；口径唯一在 requireItemNumbers）",
+      "status": "fail",
+      "detail": "期望 both 422 VALIDATION_ERROR ≠ 实测 zero=400/VALIDATION_ERROR 1.23=400/VALIDATION_ERROR",
+      "evidence": [
+        "期望来源: InboundOrderService.requireItemNumbers（>0 且最多 1 位小数，显式拒绝不静默取整）—— 期望「400」是第一版判据过窄（假红），已按实测收敛",
+        "期望: both 422 VALIDATION_ERROR",
+        "实得: zero=400/VALIDATION_ERROR 1.23=400/VALIDATION_ERROR",
+        "zero body={\"code\":\"VALIDATION_ERROR\",\"message\":\"商品明细第 1 项的数量必须大于 0 米（按米入库；库存按 0.1 米粒度记账，0.5 米的尾料可如实登记）\"}",
+        "1.23 body={\"code\":\"VALIDATION_ERROR\",\"message\":\"商品明细第 1 项的数量 最多支持 1 位小数（库存按 0.1 米粒度记账），当前值 1.23 有 2 位小数 —— 请改为 1 位小数后重试（服务端不做静默取整）\"}"
+      ],
+      "at": "2026-10-03 16:55:12 +08",
+      "atUtc": "2026-10-03T08:55:12.692Z"
+    },
+    {
+      "id": "D14.sku-not-exist",
+      "name": "skuId 不存在 ⇒ 4xx（400/404/409，不得 500、不得静默建品）",
+      "status": "pass",
+      "detail": "期望 HTTP 4xx == 实测 HTTP 400 code=BAD_REQUEST",
+      "evidence": [
+        "期望来源: WorkerInboundService → InboundOrderService 的 SKU 校验（设计 §5.2 逐字：不存在 ⇒ 400/409）",
+        "期望: HTTP 4xx",
+        "实得: HTTP 400 code=BAD_REQUEST"
+      ],
+      "at": "2026-10-03 16:55:12 +08",
+      "atUtc": "2026-10-03T08:55:12.752Z"
+    },
+    {
+      "id": "D15.draft-needs-sku",
+      "name": "缺 skuId ⇒ 422 VALIDATION_ERROR（结构上只能提交既有 skuId ⇒ 不存在「服务端顺手建一个」的路径）",
+      "status": "pass",
+      "detail": "期望 HTTP 422 == 实测 HTTP 422 code=VALIDATION_ERROR",
+      "evidence": [
+        "期望来源: WorkerInboundService.createDraft：req.skuId==null ⇒ validationError（工人面改写成 400）",
+        "期望: HTTP 422",
+        "实得: HTTP 422 code=VALIDATION_ERROR"
+      ],
+      "at": "2026-10-03 16:55:12 +08",
+      "atUtc": "2026-10-03T08:55:12.849Z"
+    },
+    {
+      "id": "D16.only-owner-can-post",
+      "name": "🔴 别人建的草稿由 A 过账 ⇒ **404**（不是 403：不泄露存在性）且库存不动",
+      "status": "pass",
+      "detail": "期望 HTTP 404 == 实测 B 建单=200/a4b3dfcb81ab9c2e6b66e62ebe9eeab8 A 过账=404/NOT_FOUND",
+      "evidence": [
+        "期望来源: WorkerInboundService.requireOwnDraft：created_by != operator ⇒ notFound(404)（设计 §5.2 逐字）",
+        "期望: HTTP 404",
+        "实得: B 建单=200/a4b3dfcb81ab9c2e6b66e62ebe9eeab8 A 过账=404/NOT_FOUND"
+      ],
+      "at": "2026-10-03 16:55:13 +08",
+      "atUtc": "2026-10-03T08:55:13.348Z"
+    },
+    {
+      "id": "D17.label-detail",
+      "name": "GET /api/worker/inbound/labels/{短码} ⇒ 回单据业务详情（品名/色号/米数/供应商）",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + 键集含 sku/quantity 类字段 == 实测 HTTP 200 keys=[\"shortCode\",\"inboundNo\",\"itemId\",\"skuCode\",\"productName\",\"colorName\",\"doorWidth\",\"quantity\",\"dyeLot\",\"batchNo\",\"supplier\",\"inboundDate\",\"issuedAt\",\"printCount\"]",
+      "evidence": [
+        "期望来源: InboundLabelService.detail（短码 ⇒ 单据详情）",
+        "期望: HTTP 200 + 键集含 sku/quantity 类字段",
+        "实得: HTTP 200 keys=[\"shortCode\",\"inboundNo\",\"itemId\",\"skuCode\",\"productName\",\"colorName\",\"doorWidth\",\"quantity\",\"dyeLot\",\"batchNo\",\"supplier\",\"inboundDate\",\"issuedAt\",\"printCount\"]"
+      ],
+      "at": "2026-10-03 16:55:13 +08",
+      "atUtc": "2026-10-03T08:55:13.670Z"
+    },
+    {
+      "id": "D18.print-count",
+      "name": "POST labels/{短码}/print 两次 ⇒ print_count 原子自增到 2（打印必留痕）",
+      "status": "pass",
+      "detail": "期望 DB print_count=2 == 实测 print1=200 print2=200 row={\"short_code\":\"G3GWXD7Z\",\"print_count\":2}",
+      "evidence": [
+        "期望来源: InboundLabelService.recordPrint（COALESCE(print_count,0)+1 原子自增；重打同样计数）",
+        "期望: DB print_count=2",
+        "实得: print1=200 print2=200 row={\"short_code\":\"G3GWXD7Z\",\"print_count\":2}"
+      ],
+      "at": "2026-10-03 16:55:14 +08",
+      "atUtc": "2026-10-03T08:55:14.256Z"
+    },
+    {
+      "id": "D19.label-unknown-404",
+      "name": "未知短码 ⇒ 404（不得 500、不得回落别的标签）",
+      "status": "pass",
+      "detail": "期望 HTTP 404 == 实测 HTTP 404 code=NOT_FOUND",
+      "evidence": [
+        "期望来源: WorkerInboundLabelController 类注释：跨租户/不存在 ⇒ 404（不是 403）",
+        "期望: HTTP 404",
+        "实得: HTTP 404 code=NOT_FOUND"
+      ],
+      "at": "2026-10-03 16:55:14 +08",
+      "atUtc": "2026-10-03T08:55:14.330Z"
+    },
+    {
+      "id": "D20.label-print-needs-session",
+      "name": "打印留痕无工人 session ⇒ 401（不记无名之痕）",
+      "status": "pass",
+      "detail": "期望 HTTP 401 == 实测 HTTP 401",
+      "evidence": [
+        "期望来源: SecurityConfig `/api/worker/**` authenticated() + 控制器 requireWorker",
+        "期望: HTTP 401",
+        "实得: HTTP 401"
+      ],
+      "at": "2026-10-03 16:55:14 +08",
+      "atUtc": "2026-10-03T08:55:14.336Z"
+    },
+    {
+      "id": "D21.cross-tenant-label",
+      "name": "跨租户标签读面（租户21 短码）",
+      "status": "skip",
+      "detail": "租户 21 无标签短码夹具 ⇒ 未覆盖（不冒充已验）",
+      "evidence": [],
+      "at": "2026-10-03 16:55:14 +08",
+      "atUtc": "2026-10-03T08:55:14.567Z"
+    }
+  ],
+  "summary": {
+    "pass": 17,
+    "fail": 1,
+    "skip": 1,
+    "total": 19
+  }
+}

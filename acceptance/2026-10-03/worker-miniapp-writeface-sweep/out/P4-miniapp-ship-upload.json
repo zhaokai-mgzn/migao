@@ -1,0 +1,274 @@
+{
+  "records": [
+    {
+      "id": "E1.mini-login-needs-cred",
+      "name": "小程序登录：空 body ⇒ 4xx（不得 200、不得建匿名会话）",
+      "status": "pass",
+      "detail": "期望 both 4xx == 实测 mini=422/VALIDATION_ERROR bmini=422/VALIDATION_ERROR",
+      "evidence": [
+        "期望来源: AuthController.miniProgramLogin / bminiLogin（微信 code 交换，无 code ⇒ 拒绝）",
+        "期望: both 4xx",
+        "实得: mini=422/VALIDATION_ERROR bmini=422/VALIDATION_ERROR"
+      ],
+      "at": "2026-10-03 16:55:15 +08",
+      "atUtc": "2026-10-03T08:55:15.107Z"
+    },
+    {
+      "id": "E2.mini-login-fake-code",
+      "name": "小程序登录：伪造 code ⇒ 4xx（不换取 token）",
+      "status": "pass",
+      "detail": "期望 HTTP 4xx == 实测 HTTP 400 code=WECHAT_API_ERROR msg=code 无效（可能已使用或过期）",
+      "evidence": [
+        "期望来源: AuthService 微信 code2session 失败 ⇒ 拒绝（不签发 token）",
+        "期望: HTTP 4xx",
+        "实得: HTTP 400 code=WECHAT_API_ERROR msg=code 无效（可能已使用或过期）",
+        "本机 wx 未配置时该链必然失败 ⇒ 只作「失败面必须拒绝」判据，成功链**未覆盖**（登记见 REPORT）"
+      ],
+      "at": "2026-10-03 16:55:15 +08",
+      "atUtc": "2026-10-03T08:55:15.593Z"
+    },
+    {
+      "id": "E3.password-change-needs-auth",
+      "name": "改密端点无凭证 ⇒ 401（不得匿名改密）",
+      "status": "pass",
+      "detail": "期望 HTTP 401 == 实测 HTTP 401",
+      "evidence": [
+        "期望来源: /api/auth/password/change 非 permitAll（SecurityConfig permitAll 清单只有 login/sms 等）",
+        "期望: HTTP 401",
+        "实得: HTTP 401"
+      ],
+      "at": "2026-10-03 16:55:15 +08",
+      "atUtc": "2026-10-03T08:55:15.600Z"
+    },
+    {
+      "id": "E4.sms-login-bad-code",
+      "name": "短信登录：错误验证码 ⇒ 401 AUTH_FAILED（不签发 token）",
+      "status": "pass",
+      "detail": "期望 HTTP 401 == 实测 HTTP 401 code=AUTH_FAILED",
+      "evidence": [
+        "期望来源: AuthService.smsLogin：验证码校验失败 ⇒ authFailed",
+        "期望: HTTP 401",
+        "实得: HTTP 401 code=AUTH_FAILED"
+      ],
+      "at": "2026-10-03 16:55:15 +08",
+      "atUtc": "2026-10-03T08:55:15.639Z"
+    },
+    {
+      "id": "E5.shipment-recognize-empty",
+      "name": "发货拍照识别：空图片列表 ⇒ 不得 500（拒绝或空候选）",
+      "status": "pass",
+      "detail": "期望 HTTP 200（空候选）或 4xx；不得 5xx == 实测 HTTP 422 code=IMAGE_RECOGNITION_UNAVAILABLE data={}",
+      "evidence": [
+        "期望来源: WorkerShipmentController.recognize: images 空 ⇒ List.of()（**不调用视觉链** —— 因此本条不消耗真实 LLM）",
+        "期望: HTTP 200（空候选）或 4xx；不得 5xx",
+        "实得: HTTP 422 code=IMAGE_RECOGNITION_UNAVAILABLE data={}"
+      ],
+      "at": "2026-10-03 16:55:17 +08",
+      "atUtc": "2026-10-03T08:55:17.013Z"
+    },
+    {
+      "id": "E6.shipment-state-machine",
+      "name": "发货状态机：pack 走**声明的**迁移（confirmed→producing）+ 单据留痕；ship 无实发明细 ⇒ 4xx",
+      "status": "pass",
+      "detail": "期望 pack=200 且订单**离开起始态**（confirmed→{packed,producing}）+ order_shipments 行 source=worker 且记录打包人；ship=4xx（探针单无实发明细） == 实测 pack=200 ship=422/VALIDATION_ERROR unpack=200 终态 orders.status=producing shipments=[{\"id\":\"d4d8fddbabd42a5ae63caa7062c11a39\",\"source\":\"worker\",\"packed\":false,\"shipped\":false,\"packed_by_worker_id\":null}]",
+      "evidence": [
+        "期望来源: OrderShipmentService.doPack（OrderStatusTransitions.assertTransitionAllowed(current,\"packed\")）+ WorkerShipmentController.unpack 注释「packed → producing」",
+        "期望: pack=200 且订单**离开起始态**（confirmed→{packed,producing}）+ order_shipments 行 source=worker 且记录打包人；ship=4xx（探针单无实发明细）",
+        "实得: pack=200 ship=422/VALIDATION_ERROR unpack=200 终态 orders.status=producing shipments=[{\"id\":\"d4d8fddbabd42a5ae63caa7062c11a39\",\"source\":\"worker\",\"packed\":false,\"shipped\":false,\"packed_by_worker_id\":null}]",
+        "🔴 判据修正留档（两次）：① 第一版写「三个端点全 4xx」= 假红（判据是**订单**状态，confirmed 是合法起点）；② 第二版要求 `packed_at IS NOT NULL` 也过严 —— `unpack` 把 `packed → producing` 时会**清掉**打包标记，故终态读 `packed=false` 属正常（改为断言 source=worker + 打包人列存在）。",
+        "夹具订单状态轨迹：confirmed --pack--> producing（unpack 把 packed 退回 producing）⇒ 与源码声明的迁移一致"
+      ],
+      "at": "2026-10-03 16:55:17 +08",
+      "atUtc": "2026-10-03T08:55:17.991Z"
+    },
+    {
+      "id": "E7.unpack-needs-reason",
+      "name": "撤销打包**必带理由**（body 空 ⇒ 4xx，不得静默留痕）",
+      "status": "pass",
+      "detail": "期望 HTTP 4xx == 实测 HTTP 422 code=VALIDATION_ERROR",
+      "evidence": [
+        "期望来源: WorkerShipmentController.unpack body {reason}（类注释逐字「必带理由 + 留痕」）",
+        "期望: HTTP 4xx",
+        "实得: HTTP 422 code=VALIDATION_ERROR"
+      ],
+      "at": "2026-10-03 16:55:18 +08",
+      "atUtc": "2026-10-03T08:55:18.070Z"
+    },
+    {
+      "id": "E8.shipment-needs-session",
+      "name": "发货面无工人 session ⇒ 401",
+      "status": "pass",
+      "detail": "期望 HTTP 401 == 实测 HTTP 401",
+      "evidence": [
+        "期望来源: SecurityConfig `/api/worker/**` authenticated()",
+        "期望: HTTP 401",
+        "实得: HTTP 401"
+      ],
+      "at": "2026-10-03 16:55:18 +08",
+      "atUtc": "2026-10-03T08:55:18.072Z"
+    },
+    {
+      "id": "E9.pool-write-negative",
+      "name": "生产池 preview/dispatch：空入参 ⇒ 4xx（不得 500、不得建空派工）",
+      "status": "pass",
+      "detail": "期望 both 4xx（4xx 不限 422） == 实测 preview=422/VALIDATION_ERROR dispatch=422/VALIDATION_ERROR",
+      "evidence": [
+        "期望来源: ProductionPoolController（preview/dispatch 的参数校验；本线**不测**闭环与并发 —— 归线B）",
+        "期望: both 4xx（4xx 不限 422）",
+        "实得: preview=422/VALIDATION_ERROR dispatch=422/VALIDATION_ERROR"
+      ],
+      "at": "2026-10-03 16:55:18 +08",
+      "atUtc": "2026-10-03T08:55:18.258Z"
+    },
+    {
+      "id": "E10.after-sales-status-negative",
+      "name": "售后状态更新：不存在的工单 ⇒ 404（**不测闭环/并发**，归线B）",
+      "status": "pass",
+      "detail": "期望 HTTP 404 == 实测 HTTP 404 code=NOT_FOUND",
+      "evidence": [
+        "期望来源: AfterSalesController（工单不存在 ⇒ NOT_FOUND）—— 与线B 的分工见 BRIEF §A2",
+        "期望: HTTP 404",
+        "实得: HTTP 404 code=NOT_FOUND"
+      ],
+      "at": "2026-10-03 16:55:18 +08",
+      "atUtc": "2026-10-03T08:55:18.422Z"
+    },
+    {
+      "id": "E11.after-sales-needs-auth",
+      "name": "售后状态更新无凭证 ⇒ 401",
+      "status": "pass",
+      "detail": "期望 HTTP 401 == 实测 HTTP 401",
+      "evidence": [
+        "期望来源: /api/admin/** ⇒ authenticated() + 权限码",
+        "期望: HTTP 401",
+        "实得: HTTP 401"
+      ],
+      "at": "2026-10-03 16:55:18 +08",
+      "atUtc": "2026-10-03T08:55:18.426Z"
+    },
+    {
+      "id": "E12.agent-session-needs-auth",
+      "name": "会话 assign/end 无凭证 ⇒ 401（两个端点）",
+      "status": "pass",
+      "detail": "期望 both 401 == 实测 assign=401 end=401",
+      "evidence": [
+        "期望来源: /api/admin/** ⇒ authenticated()",
+        "期望: both 401",
+        "实得: assign=401 end=401"
+      ],
+      "at": "2026-10-03 16:55:18 +08",
+      "atUtc": "2026-10-03T08:55:18.432Z"
+    },
+    {
+      "id": "E13.admin-ship-negative",
+      "name": "管理面发货：不存在的加工单 ⇒ 404（不得 500）",
+      "status": "pass",
+      "detail": "期望 HTTP 404 == 实测 HTTP 404 code=NOT_FOUND",
+      "evidence": [
+        "期望来源: ProductionController.ship（加工单不存在 ⇒ NOT_FOUND）",
+        "期望: HTTP 404",
+        "实得: HTTP 404 code=NOT_FOUND"
+      ],
+      "at": "2026-10-03 16:55:18 +08",
+      "atUtc": "2026-10-03T08:55:18.503Z"
+    },
+    {
+      "id": "E14.upload-needs-token",
+      "name": "C 端图片上传：无凭证 ⇒ 401（不得 200、不得落存储）",
+      "status": "pass",
+      "detail": "期望 HTTP 401 == 实测 HTTP 401 body={\"detail\":{\"success\":false,\"error\":{\"code\":\"AUTH_REQUIRED\",\"message\":\"Authentication required\"}}}",
+      "evidence": [
+        "期望来源: app/api/upload.py::upload_chat_image 依赖 get_current_user（UserIdentity）",
+        "期望: HTTP 401",
+        "实得: HTTP 401 body={\"detail\":{\"success\":false,\"error\":{\"code\":\"AUTH_REQUIRED\",\"message\":\"Authentication required\"}}}"
+      ],
+      "at": "2026-10-03 16:55:18 +08",
+      "atUtc": "2026-10-03T08:55:18.897Z"
+    },
+    {
+      "id": "E15.upload-bad-token",
+      "name": "C 端图片上传：伪造 token ⇒ 401（签名不可验）",
+      "status": "pass",
+      "detail": "期望 HTTP 401 == 实测 HTTP 401",
+      "evidence": [
+        "期望来源: get_current_user 的 JWT 验签（RS256）",
+        "期望: HTTP 401",
+        "实得: HTTP 401"
+      ],
+      "at": "2026-10-03 16:55:18 +08",
+      "atUtc": "2026-10-03T08:55:18.902Z"
+    },
+    {
+      "id": "E16.upload-too-big",
+      "name": "C 端图片上传：>5MB（MIME 伪装成 image/png）⇒ 400 FILE_TOO_LARGE（大小按**字节**判，不信客户端声明）",
+      "status": "pass",
+      "detail": "期望 HTTP 400 + code=FILE_TOO_LARGE == 实测 HTTP 400 body={\"detail\":{\"success\":false,\"error\":{\"code\":\"FILE_TOO_LARGE\",\"message\":\"文件大小超过限制（最大 5MB），当前: 6.0MB\"}}}",
+      "evidence": [
+        "期望来源: app/api/upload.py::_check_file_size（MAX_IMAGE_SIZE=5MB，按读到的字节数判）",
+        "期望: HTTP 400 + code=FILE_TOO_LARGE",
+        "实得: HTTP 400 body={\"detail\":{\"success\":false,\"error\":{\"code\":\"FILE_TOO_LARGE\",\"message\":\"文件大小超过限制（最大 5MB），当前: 6.0MB\"}}}"
+      ],
+      "at": "2026-10-03 16:55:18 +08",
+      "atUtc": "2026-10-03T08:55:18.957Z"
+    },
+    {
+      "id": "E17.upload-fake-image",
+      "name": "C 端图片上传：文本内容 + 伪装 image/png ⇒ 400（magic number 校验，不只看 Content-Type）",
+      "status": "pass",
+      "detail": "期望 HTTP 400 == 实测 HTTP 400 body={\"detail\":{\"success\":false,\"error\":{\"code\":\"FILE_CONTENT_MISMATCH\",\"message\":\"文件内容与声明类型不匹配\"}}}",
+      "evidence": [
+        "期望来源: app/api/upload.py::_sniff_image_type（文件头签名比对 declared_type）",
+        "期望: HTTP 400",
+        "实得: HTTP 400 body={\"detail\":{\"success\":false,\"error\":{\"code\":\"FILE_CONTENT_MISMATCH\",\"message\":\"文件内容与声明类型不匹配\"}}}"
+      ],
+      "at": "2026-10-03 16:55:18 +08",
+      "atUtc": "2026-10-03T08:55:18.966Z"
+    },
+    {
+      "id": "E18.upload-max-3",
+      "name": "C 端图片上传：一次 4 张 ⇒ 400 TOO_MANY_FILES（上限 3）",
+      "status": "pass",
+      "detail": "期望 HTTP 400 + TOO_MANY_FILES == 实测 HTTP 400 body={\"detail\":{\"success\":false,\"error\":{\"code\":\"TOO_MANY_FILES\",\"message\":\"单次最多上传 3 张图片，当前: 4 张\"}}}",
+      "evidence": [
+        "期望来源: app/api/upload.py::MAX_FILES_PER_REQUEST=3",
+        "期望: HTTP 400 + TOO_MANY_FILES",
+        "实得: HTTP 400 body={\"detail\":{\"success\":false,\"error\":{\"code\":\"TOO_MANY_FILES\",\"message\":\"单次最多上传 3 张图片，当前: 4 张\"}}}"
+      ],
+      "at": "2026-10-03 16:55:18 +08",
+      "atUtc": "2026-10-03T08:55:18.972Z"
+    },
+    {
+      "id": "E20.upload-valid-image",
+      "name": "C 端图片上传：合法凭证 + 合法 PNG ⇒ 过校验（200 或下游存储类错误；不得是 400 校验类拒）",
+      "status": "pass",
+      "detail": "期望 状态 ∈ {200, 5xx-存储类} 且 **不是** INVALID_FILE_TYPE/FILE_TOO_LARGE 这类校验拒绝 == 实测 HTTP 200 body={\"success\":true,\"data\":{\"files\":[{\"id\":\"93f174fdf07940909328842817cd287a\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/chat/20/2026/10/03/9cb5f6796e174fa198d98a3552b0cf33.",
+      "evidence": [
+        "期望来源: app/api/upload.py：校验顺序 = 张数 → MIME/扩展名 → 读字节大小 → magic number → 代理 admin-api",
+        "期望: 状态 ∈ {200, 5xx-存储类} 且 **不是** INVALID_FILE_TYPE/FILE_TOO_LARGE 这类校验拒绝",
+        "实得: HTTP 200 body={\"success\":true,\"data\":{\"files\":[{\"id\":\"93f174fdf07940909328842817cd287a\",\"url\":\"https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/chat/20/2026/10/03/9cb5f6796e174fa198d98a3552b0cf33."
+      ],
+      "at": "2026-10-03 16:55:19 +08",
+      "atUtc": "2026-10-03T08:55:19.251Z"
+    },
+    {
+      "id": "E19.upload-doc-path-mismatch",
+      "name": "观察项（非产品缺陷）：源码 docstring 写 `POST /upload-image`，实际挂载为 `/api/chat/upload-image` ⇒ 文档路径 404",
+      "status": "pass",
+      "detail": "期望 登记即可：实际路由 = openapi 的 /api/chat/upload-image（唯一真值） == 实测 GET/POST /upload-image = 404；openapi paths 含 /api/chat/upload-image",
+      "evidence": [
+        "期望来源: ai-agent-service openapi.json 的 paths（运行时真值）vs app/api/upload.py 模块 docstring",
+        "期望: 登记即可：实际路由 = openapi 的 /api/chat/upload-image（唯一真值）",
+        "实得: GET/POST /upload-image = 404；openapi paths 含 /api/chat/upload-image",
+        "影响面：客户端照 docstring 拼路径会 404（前端 mini-app 用的是实际路径，故仅供文档修正）"
+      ],
+      "at": "2026-10-03 16:55:19 +08",
+      "atUtc": "2026-10-03T08:55:19.255Z"
+    }
+  ],
+  "summary": {
+    "pass": 20,
+    "fail": 0,
+    "skip": 0,
+    "total": 20
+  }
+}

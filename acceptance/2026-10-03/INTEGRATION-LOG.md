@@ -383,3 +383,65 @@ if (!SHIPPABLE_FROM.contains(order.getStatus())) { throw …「当前状态（%s
 
 ⚠️ 同一次跑里工具**如实打印**了一条覆盖面提示：`gate 预检未覆盖未提交改动（工作区有未提交改动 ⇒ 缺测/case_ids 追溯按已提交 diff 扫描）`
 —— 那是**我自己**写进仓树的部署日志（`out/main-live-*-api.log`）造成的，工具没有把它吞掉 ⇒ 这就是"没跑必须长得像没跑"的正确形态。
+
+---
+
+## 十九、第三轮深度测试：① 工人端 + 小程序写面 ② 售后退款闭环 + 并发竞态（2026-10-03 16:1x~，构建点 `43ca70322`）
+
+**本轮射程**（用户裁定「这几个模块再做一次深度测试验证」，取两个组合 + 一条方法学缺口）：
+① 工人端 + 小程序写面（此前**零覆盖**、却是真实生产写路径）；② 售后退款闭环 + **并发竞态**（涉钱/不可逆 + 并发方法学 + 大批量读）。
+
+**构建点自证**：`main-live` HEAD = **`43ca70322`**（16:15:11 +08 = 当刻 origin/main，含 #6204）；admin-api pid **61739**（16:22:55 起，**注入了 `.env`**）；worker-h5 `:3100` pid 55439。
+承载体：`env/env-round3.json`、`env/env-round3-envfix.json`、`env/login-proof.json`。
+
+### 19.1 🔴 环境事故（3 小时内**第二次**）：`:8080` 未加载 `.env` ⇒ 万能码登录 401
+
+`./mvnw spring-boot:run` 直起不注入 `backend/admin-api/.env` ⇒ `sms.bypass-code` 为空，日志逐字
+`[测试模式] 短信发送已 bypass，请使用万能验证码 (未启用)`，两条线**同时**在登录处 401 停摆。
+修法：`set -a; . ./.env; set +a; ./mvnw -q spring-boot:run`（`env/fix-api-env.sh`，修复后 `login-proof.json` = `{"success":true,…,"nickname":"王小明","role":"admin"}`）。
+**待修承载体**：`docs/wiki/Quick-Start.md:38` 的直起命令 + 一条 `.env` 自检（避免第三次）——本轮为保机器安静**延后**。
+
+### 19.2 读数规模与四态
+
+| 线 | 承载体 | 末次全量读数 |
+|---|---|---|
+| 线A 工人端 + 小程序写面 | `worker-miniapp-writeface-sweep/`（BRIEF + harness 8 段 + out/*.json） | 分组见 `out/SUMMARY.json`（P1 鉴权 14/14、P2 扫码写面 20/2/1、P2b NPE 复现、P3 入库与标签 17/1/1、P4 C 端上传 19/1、P5 UI 8 条） |
+| 线B 售后退款 + 并发 | `aftersales-concurrency-sweep/`（BRIEF + harness 11 段 + `REPORT.md` 300 行） | `counts={"pass":42,"fail":9,"skip":1,"falseRed":0,"total":54}` + 补段 p10 派工并发 3/0/0；**零残留 = true**（逐表 0） |
+
+### 19.3 五张发现单（全部 AI 依 durable 证据自裁）
+
+| issue | 级别 | 一句话 | 关键证据 |
+|---|---|---|---|
+| **#6219** | P2·一体机 | 裁高读面 500：明细 `product_id` 为空 ⇒ 对**不可变空表** `Map.of()` 做 `get(null)` ⇒ NPE | API 日志 `positionRow(:149)` + `javap` 行号表 + **JDK21 实跑** `Map.of().get(null)` ⇒ NPE |
+| **#6220** | **P1·涉钱/库存** | 售后工单**并发完结** ⇒ 库存被回补 4 次（同一事务里**退款侧有护栏、回补侧没有**） | 线B `LB-C2/C21/C22/C23` N=4×3 轮 + **主会话独立 DB 复核**（台账各 4 行 `98→100→102→104→106`、时间线 5 行、串行正对照 2 行） |
+| **#6221** | P2·涉钱·精度 | 退款 `0.001` ⇒ 200 但**静默归零**（订单与流水两处都 0，`refund_at` 仍写） | 线B `LB-PREC-01/02/03` + 主会话现查列类型（`numeric(12,2)`） |
+| **#6222** | P3·读面 | `size<0` ⇒ `total=0` 而 `items` 返回整页（同一响应自相矛盾） | 线B `LB-C4-NEGATIVE-SIZE` + **主会话独立复现**（`size=-5 ⇒ total=0/rows=478`） |
+| **#6224** | P3·售后 | `refund_method` 是**零生产者字段**（DB 列/API 响应/前端三值枚举都在，全仓 **0 写点**）⇒ 能力恒为空 | 主会话生产者扫描（仅 2 处"实体→响应"读）+ 线B `LB-REF-B05` 全程 `null` |
+
+### 19.4 主会话独立复核（不转述，都自己跑过）
+
+- **并发缺陷复现**：直接查云 dev 库 `stock_ledger_entries` / `ticket_timeline`（见 #6220 的两条评论，含可复制 SQL）；
+- **NPE 机制**：`javap -c` 行号表 `:149 → 偏移 152` = `brands → getProductId() → Map.get`；JDK21 语义实跑；
+- **大批量读**：`/api/admin/orders` 响应路径 = `data.items/total`；租户 20 各面行数（最大 652）⇒ **>1000 行档如实记 SKIP**；`stock-ledger?size=5000` ⇒ `size` 钳 500、`total` 诚实、**跨页求和 == total**；
+- **清障（4 处，全是包内夹具问题而非产品缺陷）**：入库草稿 `400 请求体格式错误`（`skuId` 必须 `bigint`、`productId` 是 varchar，**别倒过来**）、C 端上传真实路径 `POST /api/chat/upload-image`（挂载 `/chat` + `API_PREFIX=/api`）、UI 登录被 **CORS** 挡（`.env` 只放行 `localhost:3000/3001`）、手机页**没有 token 深链**且 `#wh5-report` 只在扫码成功后渲染。
+
+### 19.5 🔴 假绿形态（本轮**连续三次**，已回灌口径）
+
+| 载体 | 表象 | 真值 | 形态 |
+|---|---|---|---|
+| 线A `C23` | 判 pass | `HTTP 500` | `pass` 分支写成 `status >= 400` ⇒ **吞掉 5xx** |
+| 线B `LB-C4` | 判 pass | `total=undefined rows=null` | 取数路径错（`records` vs `items`）⇒ **取不到真值仍判绿** |
+| 线A `D6` | 判 pass | `undefined == undefined` | 两边都是 `undefined` 就"相等" |
+
+⇒ **口径**：任何"4xx 可接受"的期望必须写 `>=400 && <500`；任何 `undefined/null` 读数**不得**支撑 pass（判据底座 fail-closed）。
+
+### 19.6 修复包（§30 发现即派；并发 ≤3）
+
+| 包 | issue | 分支 | 状态 |
+|---|---|---|---|
+| F-6220 | #6220 | `fix/6220-aftersales-concurrency` | 在飞（真库并发 Red 测试 + 条件更新 + 元守卫） |
+| F-6219 | #6219 | `fix/6219-cutting-height-npe` | 在飞（已改源码 + 全仓同族扫描脚本） |
+| F-6221 | #6221 | `fix/6221-money-precision` | 在飞（金额入口小数位准入 + 全仓金额入口扫描） |
+| F-6222 | #6222 | 待派 | 待槽位（并发预算腾出后） |
+
+任务书：`fix-briefs/ROUND3-FIX-BRIEFS.md`（根因逐字 / 会红判据 / 注入式红证 / 类级固化 / 边界 / 交付物）。
