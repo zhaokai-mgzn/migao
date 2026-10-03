@@ -146,6 +146,15 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "ProductUpdatePruneScopeRealDbTest.java": "direct",
     # 类名不含 `RealDb`（`*RealMappingTest`）—— 判据①**不能**只扫 `*RealDbTest` 通配，
     # 否则这一类判据的改名/删除扫不出来（本守卫正是按「谁真去连真 PG」定义集合）。
+    # issue #6238：工序**改价的并发面核验**（N=4 并发提交同一工序的同一次调价 ⇒ 价格版本账恰追加 1 行）。
+    # 为什么必须真 PG：缺陷是**读-判-写**（`selectById` 读旧价 → 应用层判「价变了吗」→ 条件追加版本行）——
+    # 「行锁 + READ COMMITTED 下锁后重读」是**数据库语义**：`SELECT … FOR UPDATE` 命中行的锁持有到事务
+    # 提交、后到者阻塞到前者提交后按新版本行重估，mock 面**结构上不可见**（mock 的 `selectById` 恒返回
+    # 同一份夹具对象 ⇒ 判据会恒绿）；而「几行版本账落库」本身就是并发下的落库读数。另有两条只真库能证：
+    # ① `production_operation_price_versions` 除主键外**无唯一约束**（`pg_indexes` 实测 + 「直接插两行同
+    # (operation_id, unit_price) 被库接受」的反向自证）⇒ DDL 零兜底，应用层的闸是唯一防线；
+    # ② 并发下的 `created_at` 顺序与「当前价」是否自洽，只能从库内事实读。
+    _SVC + "ProductionOperationPriceVersionConcurrentRealDbTest.java": "direct",
     _SVC + "ProductionPartCodeRealMappingTest.java": "direct",
     _SVC + "ProductionScanClaimRealDbTest.java": "direct",
     _SVC + "RemnantRecoveryRealDbTest.java": "direct",
