@@ -1,6 +1,6 @@
 {
   "id": "PK-001",
-  "pr": 6251,
+  "pr": 6253,
   "title": "包级定点清单入口（issue #6250）：两条必然项按 diff 路径自动带上 / 不改测试不加用例则不跑 / fail-closed（[backend-contract]，判据 = tests/unit_ci_workflows/test_pkg_narrow_check.py）",
   "claimed_at": "2026-10-03"
 }
