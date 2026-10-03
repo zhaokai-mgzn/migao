@@ -89,6 +89,15 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "AgentBatchCrossTenantRealDbTest.java": "direct",
     _SVC + "AutoBatchDispatchRealDbTest.java": "direct",
     _SVC + "AutoBatchDueScanRealDbTest.java": "direct",
+    # issue #6262：发货后 N 天自动完成的真库判据 —— 四条只真 PG 能证的事：
+    # ① 谓词**按行**判定（`status='shipped' AND shipped_at <= 死线`）：mock 的 mapper 恒返回
+    #    stub 的东西 ⇒「未满期那一行真的没被改」在 mock 面上不可证（那是 SQL 的行为）；
+    # ② `shipped_at IS NOT NULL` 的**三值逻辑**：锚点为 NULL 的行不满足任何比较 ⇒ 不参与自动完成
+    #    （只能人工确认收货）—— mock 面完全不体现；
+    # ③ `RETURNING id` 的影响集 == 返回集：它是「副作用（站内信）只发一次」的唯一依据；
+    # ④ **集群并发**：两条独立连接同时跑同一条 UPDATE（同一批行）⇒ 行不重叠、合计恰满、慢的一侧 0 行
+    #    —— 走的是**行锁 + 谓词重估**，单连接与 mock 都测不出来（#5141/#5148/#5182/#6220 同族）。
+    _SVC + "AutoCompleteShippedRealDbTest.java": "direct",
     _SVC + "BatchAssignmentRuleRealDbTest.java": "direct",
     _SVC + "BatchConsumptionCuttingPlanRealDbTest.java": "direct",
     _SVC + "BatchConsumptionLedgerRealDbTest.java": "direct",

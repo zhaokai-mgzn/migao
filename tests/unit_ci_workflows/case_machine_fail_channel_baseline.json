@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 121
+    "backend_contract_scoring_zero": 122
   },
   "history": [
     {
@@ -295,6 +295,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 121,
       "note": "issue #6248（P3·涉库存核验包：入库批次号 `nextFreeBatchNo` 跨请求取号竞争）新增 1 条 `[backend-contract]` 用例（OR-060）—— 它按设计**不进 agent-eval**（无 LLM 写路径：入库过账不经米宝 Agent 工具，B 端 PATCH action=post 与工人入口都是 admin-api 服务层；`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的两个真测试文件：`backend/admin-api/src/test/java/com/migao/admin/service/BatchNoTakeRaceRealDbTest.java`（真 PG 六条：单实例并发 4×3 轮零重号 / 串行正对照 / 重启落在已占头部 fail-closed 409 / 会合点注入双向（修前 500×2、修后 200×2）/ 号段耗尽 409 / 零注入对照）与 `backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderServiceTest.java`（写号被抢 ⇒ 换号取下一个候选、最终号三处同源同值），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**：rebase 到 main（`674a56f02`，`#6263` 合入后其读数为 **120**）之后跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ **6 passed**，`entries` 与实测读数同为 **121**（= rebase 后 main 的 120 + 本单新增的这 1 条；不按号推算，CI 是权威）。⚠️ 本单的用例号原取 **OR-060** 之前曾与在飞 PR #6263（`fix/6254-shipment-path-wiring`）**同占 OR-059** ⇒ 按「PR 号小 / 先开者保留」裁定（#6263 createdAt 11:48:13Z 早于 #6264 的 12:00:51Z），本单改用 **OR-060**（全 refs 复核空闲）。"
+    },
+    {
+      "sha": "pending-pr-6267",
+      "date": "2026-10-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 122,
+      "note": "issue #6262（P3·订单流：发货后 N 天自动完成订单，用户 2026-10-03 逐字裁定 B）新增 1 条 `[backend-contract]` 用例（**OR-061**）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 121 + 1 = **122**）。机器判红通道 = `traces.tests` 的三个真测试文件，均非空且真实存在：`backend/admin-api/src/test/java/com/migao/admin/service/AutoCompleteShippedScanServiceTest.java`（12 条判定本体：死线/静默/幂等/隔离/副作用绑定 RETURNING/可观测/失败显式）、`backend/admin-api/src/test/java/com/migao/admin/service/OrderAutoCompleteSqlGuardTest.java`（5 条结构判据：单条带谓词 SQL + RETURNING + 两条发货路都写 shipped_at）、`backend/admin-api/src/test/java/com/migao/admin/service/AutoCompleteShippedRealDbTest.java`（6 条真库：满期才完成/未满不动/非 shipped 不动/逐租户隔离 + 反向对照/集群双连接并发只生效一次/幂等）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 122}` vs 锚点 121 —— **不是**按号推算。⚠️ **跨 refs 撞号两次（本单实测，逐条登记）**：本包 19:45 取号时 main 侧最大为 OR-058 ⇒ 分配器给 **OR-059**；20:31 main 的 #6263 也取了 OR-059 ⇒ 让号改 **OR-060**；21:12 起 `.github/cases/claims/6264-OR-060.json`（#6264）显示 OR-060 也已被占 ⇒ 再让号为 **OR-061**（origin/main 用例库与 claim 台账均 0 命中；在飞 PR 面手工核过：无任何 open PR 的 claim 目录或 order.yml 提到 OR-061）。"
     }
   ]
 }

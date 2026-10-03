@@ -1069,6 +1069,13 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 用条件 UPDATE（WHERE id=? AND status=expected）替代 select→check→update，
      * 防止并发下重复扣减/恢复库存（TOCTOU）。
      *
+     * <p>🔴 {@code newStatus = shipped} 时**同一条 UPDATE** 里写 {@code shipped_at}
+     * （issue #6262，V148）：它是「发货后 N 天自动完成」定时腿的判定锚点，而锚点必须
+     * <b>与状态流转同一个原子动作</b>——分两条语句写就会造出「状态是 shipped 而发货时刻为空」
+     * 的静默漏单形态（那条腿按「满 N 天」取行，NULL 不满足任何比较 ⇒ 永不完成）。
+     * 商家侧三条发货入口（{@code PUT /orders/{id}/status} / {@code order_manage(update_logistics)} /
+     * {@code shipWithLogistics}）都经本方法 ⇒ 一处写、三条路都写。</p>
+     *
      * @return 受影响行数（0 表示订单不存在或状态已并发变更）
      */
     private int transitionStatusAtomic(String id, String expectedStatus, String newStatus, String closeReason) {
@@ -1076,6 +1083,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         wrapper.eq(Order::getId, id)
                 .eq(Order::getStatus, expectedStatus)
                 .set(Order::getStatus, newStatus);
+        if ("shipped".equals(newStatus)) {
+            wrapper.set(Order::getShippedAt, businessClock.nowOffset());
+        }
         if (closeReason != null && !closeReason.isBlank()) {
             wrapper.set(Order::getCloseReason, closeReason);
         }
