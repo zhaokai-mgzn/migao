@@ -42,14 +42,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       </ul></li>
  * </ol>
  * ⇒ 有人在前端类型里新增一个「没有任何后端生产者」的联合类型字段 ⇒ **当场红并具名**（判据 5）。
- * 现取读数：语料 **19** / 零生产者 **2**（本包落库时，判据 1 现场打印）。
+ * 现取读数：语料 **19** / 零生产者 **0**（issue #6239 起由 2 一路缩短到 0；判据 1 现场打印）。
  *
  * <h2>台账两态（每条 = 字段 :: 类别 :: why）</h2>
  * <ul>
  *   <li>{@code FRONTEND_ONLY} —— 该字段的生产者**就是前端自己**（表单状态 / 派生化），后端本就不该下发；</li>
  *   <li>{@code BACKEND_ABSENT_DEBT} —— 后端**恒不下发**而前端**有消费者**（或本应下发）⇒ 缺口，
- *       必须带**跟进 issue 号**，且台账条数**只许缩短**。</li>
+ *       必须带**跟进 issue 号**，且台账条数**只许缩短**。
+ *       <p>2026-10-03（issue #6239）该类别**当前 0 条** —— 原唯一成员 {@code LogisticsInfo.shippingMethod}
+ *       已按人工裁定「接线」补齐后端生产者，按协议**删除**登记（不是改类别，也不是改大冻结上限）。</p></li>
  * </ul>
+ * <p>📌 两类**当前都是 0 条**（台账现取 = 0）⇒ 「未登记即红」这条判据仍然成立且更严：
+ * 此后任何新增的零生产者联合类型字段都**没有任何豁免额度**可用。</p>
  *
  * <h2>红证（判别力自证，判据 3~11）</h2>
  * 真语料注入（把 {@code refundMethod} 加回 types）⇒ 具名红（判据 3，证明本守卫真能抓住本包修的那个字段）；
@@ -91,7 +95,7 @@ class FrontendUnionFieldProducerMetaGuardTest {
      * 台账**冻结上限**（只许缩短）：本包落库时的现取条数（判据 12 现场复核）。
      * 🔴 将来**只许改小**；改大 = 把新缺口塞进豁免（评审可见，判据 11 会给出具名读数）。
      */
-    private static final int FROZEN_BASELINE = 2;
+    private static final int FROZEN_BASELINE = 0;
 
     // ════════════════════════════ 台账（本包现取读数）════════════════════════════
 
@@ -112,24 +116,32 @@ class FrontendUnionFieldProducerMetaGuardTest {
     }
 
     /**
-     * **零生产者字段台账**（本包现取读数 = 2 条）。
+     * **零生产者字段台账**（现取读数 = **0 条**；issue #6239 起由 2 → 1 → **0**，只许缩短）。
      *
      * <p>读法：该字段在前端 types 里声明，而 {@code discover} 的 P1~P5 生产者判定全部未命中 ⇒ 它必须在这里。</p>
+     *
+     * <p>📉 <b>缩短沿革（issue #6239，2026-10-03）</b>：本台账原有两条，**两条同名**（都叫
+     * {@code shippingMethod}）而分属两个前端类型：
+     * <ul>
+     *   <li>{@code LogisticsInfo.shippingMethod} —— 原 {@code BACKEND_ABSENT_DEBT}（后端恒不下发、前端在
+     *       {@code app/(dashboard)/orders/[id]/OrderDetail.tsx} 有消费者）。该口径经人工裁定为「**接线**」后，
+     *       后端已获得生产者（{@code entity/OrderLogistics.java} + {@code controller/OrderController.java} 的
+     *       {@code updateLogistics} + {@code dto/OrderDetailResponse.java} 回吐）⇒ **缺口已修**，再挂着就是幽灵条目。</li>
+     *   <li>{@code LogisticsFormData.shippingMethod} —— 原 {@code FRONTEND_ONLY}。本包让
+     *       {@code lib/data-adapter.ts} 开始**下发**这个选择（此前它被前端丢掉、后端从未读取）⇒ 它同样
+     *       **获得了后端生产者**（判定面上：P1 {@code setShippingMethod(...)} + P3 线上键字面量
+     *       {@code "shippingMethod"}）。</li>
+     * </ul>
+     * ⇒ 两条都按台账自带协议**删除**（而不是改类别 / 改大冻结上限）—— 这正是「只许缩短」的机械半边。
+     * 本台账现取 **0 条**：语料里 19 个联合类型字段**全部**有后端生产者。</p>
+     *
+     * <p>⚠️ <b>为什么这次两条会一起被判定为「已有生产者」（如实登记，不是巧合）</b>：P3 的判定面是
+     * <b>字段名</b>（{@code "shippingMethod"} 字面量），**不是**「哪个类型」——两个同名前端字段共享同一份
+     * 判定面。本条不影响判据的判别力（P1 的 {@code setShippingMethod} 是真实生产者），也不必为此改宽松项；
+     * 但它是对本守卫既有取舍（类注释「射程」一节：名字越通用越容易被兜成有生产者）的一次**实测印证**。</p>
      */
     static List<Entry> registry() {
-        return List.of(
-                entry("LogisticsFormData.shippingMethod", Kind.FRONTEND_ONLY,
-                        "前端发货表单的**状态**字段（`orders/[id]/ship/ShipOrder.tsx` 的 useState；"
-                                + "`components/orders/LogisticsForm.tsx` 置 'logistics'）—— 生产者 = 用户在前端的单选，"
-                                + "`lib/data-adapter.ts` 同口径注明「shippingMethod 不下发（后端不需要）」⇒ 零生产者是**设计**"),
-                entry("LogisticsInfo.shippingMethod", Kind.BACKEND_ABSENT_DEBT,
-                        "🔴 后端**恒不下发**（`dto/OrderDetailResponse.java` 的内部类 LogisticsInfo 无此字段；"
-                                + "admin-api `src/main` 全仓 grep `shippingMethod|shipping_method` = 0 命中），"
-                                + "而前端**有消费者**：`app/(dashboard)/orders/[id]/OrderDetail.tsx` 用它派生装运表单初值 "
-                                + "`order.logistics?.shippingMethod === 'none' ? 'none' : 'logistics'` ⇒ 字段恒 undefined ⇒ 恒判成 'logistics'。"
-                                + "与 refundMethod **同族**（声明在 types、零生产者、且会被读取），但修法要先裁业务口径"
-                                + "（「无需物流」是否要持久化 / 回显）⇒ 交人工裁定，跟单 #6239")
-        );
+        return List.of();
     }
 
     // ════════════════════════════ 判据 1~2（真实树）════════════════════════════
@@ -179,7 +191,8 @@ class FrontendUnionFieldProducerMetaGuardTest {
     @Test
     @DisplayName("判据 4：夹具不注入 ⇒ 零违规（反向对照：证明红由注入引起，不是夹具本身红）")
     void cleanFixture_hasNoViolation() {
-        assertThat(validate(cleanCorpus(), cleanZeroProducer(), cleanRegistry())).isEmpty();
+        assertThat(validate(cleanCorpus(), cleanZeroProducer(), cleanRegistry(), cleanRegistry().size()))
+                .isEmpty();
     }
 
     @Test
@@ -200,7 +213,7 @@ class FrontendUnionFieldProducerMetaGuardTest {
         Set<String> zero = new TreeSet<>(cleanZeroProducer());
         zero.remove("Demo.status");
 
-        assertThat(validate(corpus, zero, cleanRegistry()))
+        assertThat(validate(corpus, zero, cleanRegistry(), cleanRegistry().size()))
                 .anySatisfy(v -> assertThat(v)
                         .contains("STALE-LEDGER")
                         .contains("已不在前端 types 里")
@@ -210,7 +223,7 @@ class FrontendUnionFieldProducerMetaGuardTest {
     @Test
     @DisplayName("判据 7：条目已获得生产者（缺口已修却还挂在台账）⇒ 红（只许缩短）")
     void redproof_staleEntryAfterProducerAppears() {
-        assertThat(validate(cleanCorpus(), new TreeSet<>(), cleanRegistry()))
+        assertThat(validate(cleanCorpus(), new TreeSet<>(), cleanRegistry(), cleanRegistry().size()))
                 .anySatisfy(v -> assertThat(v).contains("STALE-LEDGER").contains("已有后端生产者"));
     }
 
@@ -274,6 +287,14 @@ class FrontendUnionFieldProducerMetaGuardTest {
         return new TreeSet<>(Set.of("Demo.status"));
     }
 
+    /**
+     * 内存夹具台账（**与生产台账当前条数无关**：判据 10/12 的「只许缩短」只裁**生产**台账）。
+     *
+     * <p>它始终恰好 1 条 —— 夹具自己的上限由调用方显式传 {@code cleanRegistry().size()}
+     * （见 {@link #validate} 的 {@code budget} 参数）。issue #6239 前，这里曾隐式依赖
+     * 「生产上限 ≥ 1」，而生产台账现取 **0 条**（两条 {@code shippingMethod} 都有了生产者）
+     * ⇒ 那个隐含耦合会让判据 4/6/7 三条反向对照**假红**。夹具与生产台账是两个独立事实。</p>
+     */
     private static List<Entry> cleanRegistry() {
         return List.of(entry("Demo.status", Kind.FRONTEND_ONLY, "前端表单状态（生产者 = 用户输入）"));
     }
@@ -374,8 +395,21 @@ class FrontendUnionFieldProducerMetaGuardTest {
         return false;
     }
 
-    /** 台账校验（纯函数，便于内存注入红证）：返回**违规清单**（空 = 通过）。 */
+    /**
+     * 台账校验（纯函数，便于内存注入红证）：返回**违规清单**（空 = 通过）。
+     *
+     * @param budget 「只许缩短」的上限。**生产判据传 {@link #FROZEN_BASELINE}**；内存夹具传
+     *               {@code cleanRegistry().size()} —— 夹具与生产台账是两个独立事实，
+     *               夹具不该因为生产台账缩短到 0 而被自己的上限判红
+     *               （issue #6239 实证：生产上限改 0 后，判据 4/6/7 三条反向对照当场假红）。
+     *               判据 10「长过上限 ⇒ 红」仍用 {@link #FROZEN_BASELINE} 自证判别力。
+     */
     static List<String> validate(Set<String> corpus, Set<String> zeroProducer, List<Entry> registry) {
+        return validate(corpus, zeroProducer, registry, FROZEN_BASELINE);
+    }
+
+    static List<String> validate(Set<String> corpus, Set<String> zeroProducer, List<Entry> registry,
+                                 int budget) {
         List<String> violations = new ArrayList<>();
         if (corpus.isEmpty()) {
             violations.add("SCAN-EMPTY：扫描面没扫到任何联合类型字段 ⇒ 守卫在空跑（fail-closed）");
@@ -417,8 +451,8 @@ class FrontendUnionFieldProducerMetaGuardTest {
         }
 
         // ④ 只许缩短（条数现取）
-        if (registry.size() > FROZEN_BASELINE) {
-            violations.add("BASELINE-GREW：台账条数现取 = " + registry.size() + "，冻结上限 = " + FROZEN_BASELINE
+        if (registry.size() > budget) {
+            violations.add("BASELINE-GREW：台账条数现取 = " + registry.size() + "，冻结上限 = " + budget
                     + "（只许缩短；新增零生产者字段请修字段或补生产者，不要塞进台账）");
         }
         return violations;

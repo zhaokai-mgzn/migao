@@ -755,6 +755,7 @@ CREATE TABLE order_logistics (
     tracking_no VARCHAR(128) NOT NULL,
     shipper_name VARCHAR(64),                 -- 发货人（发货单纸面「经手人」，V46 迁移；存量 NULL）
     logistics_type VARCHAR(16) DEFAULT 'express',  -- 物流类型：express 快递 / logistics 物流专线（四季安等，V47 迁移；issue #3984）
+    shipping_method VARCHAR(16),              -- 发货方式（V147 迁移；issue #6239）：logistics 物流发货 / none 无需物流；NULL = 未采集（存量行 + 老客户端不发该字段，不猜、不回填）
     status VARCHAR(32) DEFAULT 'in_transit',  -- in_transit / delivered / returned
     tracking_info JSONB DEFAULT '[]',  -- 物流轨迹
     shipped_at TIMESTAMP WITH TIME ZONE,

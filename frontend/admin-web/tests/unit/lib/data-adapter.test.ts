@@ -9,7 +9,7 @@
  *
  * 这些转换如果出错，数据会静默损坏——后端收到错误值或前端展示错误状态。
  */
-// case_ids: OR-003, OR-004, OR-005, UI-040, UI-047, PR-042, PR-043, PR-044, OR-046
+// case_ids: OR-003, OR-004, OR-005, UI-040, UI-047, PR-042, PR-043, PR-044, OR-046, OR-058
 
 import { describe, it, expect } from 'vitest'
 import {
@@ -221,6 +221,7 @@ describe('buildLogisticsPayload', () => {
     expect(payload).toEqual({
       logisticsCompany: '顺丰速运',
       trackingNo: 'SF1234567890',
+      shippingMethod: 'logistics',
     })
   })
 
@@ -234,17 +235,35 @@ describe('buildLogisticsPayload', () => {
     expect(payload).toEqual({
       logisticsCompany: '',
       trackingNo: '',
+      shippingMethod: 'none',
     })
   })
 
-  it('does NOT include shippingMethod in payload (not sent to backend)', () => {
-    const data: LogisticsFormData = {
+  // issue #6239：用户做的这个选择此前**被丢掉**（后端从不读取 shippingMethod）⇒
+  // 「无需物流」与「物流发货但没填单号」在库里不可区分。现在必须下发。
+  it('下发 shippingMethod（issue #6239：物流发货 / 无需物流 开始被后端记录）', () => {
+    const logistics = buildLogisticsPayload({
       company: '中通快递',
       trackingNo: 'ZTO9876543210',
       shippingMethod: 'logistics',
-    }
-    const payload = buildLogisticsPayload(data)
-    expect((payload as any).shippingMethod).toBeUndefined()
+    })
+    expect(logistics.shippingMethod).toBe('logistics')
+
+    const none = buildLogisticsPayload({
+      company: '',
+      trackingNo: '',
+      shippingMethod: 'none',
+    })
+    expect(none.shippingMethod).toBe('none')
+  })
+
+  it('shippingMethod 缺失时兜底成 logistics（与订单详情回填口径一致，不写假值 none）', () => {
+    const payload = buildLogisticsPayload({
+      company: '顺丰速运',
+      trackingNo: 'SF1',
+      shippingMethod: undefined as unknown as 'logistics' | 'none',
+    })
+    expect(payload.shippingMethod).toBe('logistics')
   })
 
   // ---- 物流类型（issue #4419 / UI-047）----
