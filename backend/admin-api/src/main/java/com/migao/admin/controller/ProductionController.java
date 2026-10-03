@@ -875,9 +875,14 @@ public class ProductionController {
      * PUT /api/admin/production/operation-positions/{id}
      * body: {unit_price?: number|null}
      *
-     * <p><b>部分更新</b>：只写 body 里出现的键。可写面**只剩 `unit_price`**：
+     * <p><b>部分更新</b>：只写 body 里出现的键；**可写键是显式枚举的**（当前只有 `unit_price`），
+     * 词表外的键一律 <b>422 逐键点名 + 给出合法键</b>，且**写库前**拦截（issue #6127）：
      * 显式 {@code unit_price=null} = 改回「**未定价**」（**≠ 0 元**）；数值 = 有价
      * （{@code 0} 就是**有价 0 元**，与「未定价」在数据上可区分）。</p>
+     *
+     * <p>⚠️ <b>读面键集 ≠ 写面可写键集</b>（issue #6127）：客户端把 {@code GET /operation-positions}
+     * 行里的键（{@code position} / {@code applicable} / {@code group} …）**回传**到写面是常见误用 ——
+     * 改前那是 <b>HTTP 200 + 静默 no-op</b>（商家以为改了部位归属，而库里一字未动），现在一律 422。</p>
      *
      * <p>🔴 <b>{@code applicable} 已退场</b>（部位适用性，issue #4937 / O1）：body 里出现该字段
      * ⇒ <b>422 + 可行动 hint</b>（「部位适用性已退场，不再受理该字段」），<b>拒绝</b>而**不静默忽略**
@@ -888,7 +893,8 @@ public class ProductionController {
      * —— 对客那两本账在别处：基础加工费 = 加工项组合费用（元/米），特殊选项 =
      * {@code PUT /route-rules/{id}/customer-unit-price}（元/套）。三本账不得互读、不得混。</p>
      *
-     * <p>校验失败 ⇒ 422 + {@code error.details} 逐条（负价 / 超两位小数 / 含已退场字段）；
+     * <p>校验失败 ⇒ 422 + {@code error.details} 逐条（负价 / 超两位小数 / 含已退场字段 /
+     * **可写词表外的键**）；
      * 行不存在 / 跨租户 / 已软删 ⇒ 404。价**真的变了**才同事务向 V86 账表追加一行（改价必须留痕）。
      * 响应与 {@code GET /operation-positions} 的**单行同构**（前端同一个类型渲染）。</p>
      */

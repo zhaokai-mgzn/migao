@@ -28,8 +28,10 @@ import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -61,6 +63,8 @@ import static org.mockito.Mockito.when;
  *       裸逻辑名 → {@code null}）；解析不到 ⇒ 422 + {@code details} 且**不落库**。
  *       去掉护栏 ⇒ 写库成功（红），而 {@code ProcessingOrderService.buildRoute} 会把它记进
  *       {@code missing_operations} ⇒ 下单 **422 整单中止**（「配好了、用不了」）。</li>
+ *   <li><b>写面可写键 = 显式枚举，词表外一律 422</b>（issue #6127）：未知 / 不可写键收到即拒
+ *       （与合法价同传 ⇒ 整份拒绝），且**写库前**拦截；打靶面取**读面真键集**，不手抄词表。</li>
  * </ol>
  */
 @ExtendWith(MockitoExtension.class)
@@ -358,5 +362,101 @@ class ProductionOperationPositionCommandServiceTest {
                 .isInstanceOf(BusinessException.class);
         verify(productionOperationPositionMapper, never())
                 .updateUnitPrice(any(), any(), any(), any());
+    }
+
+    // ── 判据 6（issue #6127）：写面可写键集合**是显式枚举的**，词表外一律 422 且**写库前**拦截 ──
+    //
+    // 病（改前实测，验收线 ③ 横切扫描 W3）：`PUT /operation-positions/{id}` body `{"position":"纱帘"}`
+    // ⇒ **HTTP 200**，字段级 diff 只有 `updated_at` 变 —— 未知键被**静默忽略**，商家以为改了部位归属，
+    // 实际什么都没发生；而同一端点对已退场的 `applicable` 却是 422（同系统两套口径）。
+    // 红证（注入式，见 PR body）：把 `update` 里的键词表校验摘掉 ⇒ 本组用例得
+    // 「Expected BusinessException but nothing was thrown」且 `updateUnitPrice` 被调用（= 真落库）。
+
+    @Test
+    @DisplayName("🔴 issue #6127：未知键 `position` ⇒ 422 点名该键 + 给出合法键，且**写库前**拦截")
+    void unknownKeysAreRejectedBeforeAnyWrite() {
+        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
+        // ⚠️ 让「写成功」这条路**真的可达**：护栏一旦被摘掉，本用例的读数就是**没有异常** =
+        //    静默 no-op（而不是被别的分支以 404 挡住）—— 红证读数才与线上形态同源。
+        stubUpdateSucceeds();
+
+        assertThatThrownBy(() -> service().update(ROW_ID, body("position", "纱帘"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("未通过校验")
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(be.getHttpStatus())
+                            .as("未知键必须 422（改前是 200 静默 no-op）").isEqualTo(422);
+                    assertThat(be.getDetails())
+                            .as("逐键点名 + 可行动（哪些键可写）")
+                            .anySatisfy(d -> {
+                                assertThat(d.getField()).isEqualTo("position");
+                                assertThat(d.getMessage())
+                                        .contains("不是部位价目写面的可写键")
+                                        .contains("unit_price");
+                            });
+                });
+        // 🔴 关键读数：**写库前**拦截 —— 改价与版本账一行都不落（不只看状态码）
+        verify(productionOperationPositionMapper, never())
+                .updateUnitPrice(any(), any(), any(), any());
+        verify(priceVersionMapper, never())
+                .insert(any(ProductionOperationPositionPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("🔴 issue #6127：未知键与合法价**同传** ⇒ 整份拒绝（价也不落库，不留半完成态）")
+    void unknownKeyRejectsTheWholeRequest() {
+        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
+        stubUpdateSucceeds();   // 同 unknownKeysAreRejectedBeforeAnyWrite：让「写成功」真可达
+
+        assertThatThrownBy(() -> service().update(ROW_ID,
+                body("unit_price", "0.55", "position", "纱帘"), TENANT))
+                .isInstanceOf(BusinessException.class);
+        verify(productionOperationPositionMapper, never())
+                .updateUnitPrice(any(), any(), any(), any());
+        verify(priceVersionMapper, never())
+                .insert(any(ProductionOperationPositionPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("🔴 issue #6127 · 类级：可写键 = **显式枚举**，**词表外每一个键**都 422（不是只钉 `position`）")
+    void everyKeyOutsideTheExplicitVocabularyIsRejected() {
+        // ① 词表必须**显式枚举**且当前契约只收 `unit_price` —— 有人把它放宽成通配 / 直通 ⇒ 本行红
+        assertThat(ProductionOperationPositionCommandService.WRITABLE_KEYS)
+                .as("写面可写键集合必须是显式枚举（放宽 = 静默面重新打开）")
+                .containsExactly("unit_price");
+
+        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
+        stubUpdateSucceeds();
+        stubCatalog();
+        // ② 打靶面**取自被测系统自己的读面**（不是手抄一份词表）：`GET /operation-positions` 的单行
+        //    是调用方唯一能看到的「字段名证据」⇒ 回传那些键就是最可能的误用形态。读面若新增键，
+        //    它自动进打靶面（手抄一份必然漂移）。
+        Set<String> nonWritable = new LinkedHashSet<>(
+                service().update(ROW_ID, body("unit_price", "0.40"), TENANT).keySet());
+        assertThat(nonWritable).as("读面单行 10 键（issue #4622 口径）").hasSize(10);
+        nonWritable.removeAll(ProductionOperationPositionCommandService.WRITABLE_KEYS);
+        // ③ 再补实体列名与**合法键的拼错** —— 「下次换个拼错的键又静默」这条路径也要被拦
+        nonWritable.addAll(List.of("unit_prcie", "logical_name", "tenant_id", "status", "deleted",
+                "created_at", "updated_at", "logicalName", "unitPrice"));
+        assertThat(nonWritable)
+                .as("打靶面必须覆盖读面**每一个**非可写键（空面 = 空断言）")
+                .contains("position", "applicable", "id", "operation", "group", "scope",
+                        "unit", "is_must_finish", "variant_operation_id");
+
+        // 上面那次合法改价调过一次 updateUnitPrice ⇒ 先清记录：下面判的是**拒绝路径一次都没写**
+        org.mockito.Mockito.clearInvocations(productionOperationPositionMapper, priceVersionMapper);
+        for (String key : nonWritable) {
+            assertThatThrownBy(() -> service().update(ROW_ID, body(key, "纱帘"), TENANT))
+                    .as("词表外的键 `%s` 必须 422，不得静默 no-op", key)
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).getDetails())
+                            .as("`%s` 必须被逐键点名", key)
+                            .anySatisfy(d -> assertThat(d.getField()).isEqualTo(key)));
+        }
+        verify(productionOperationPositionMapper, never())
+                .updateUnitPrice(any(), any(), any(), any());
+        verify(priceVersionMapper, never())
+                .insert(any(ProductionOperationPositionPriceVersion.class));
     }
 }

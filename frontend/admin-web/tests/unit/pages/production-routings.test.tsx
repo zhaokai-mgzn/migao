@@ -415,26 +415,32 @@ import ProcessConfigPage from '@/app/(dashboard)/production/routings/page'
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
 /** 工序库（库口径）：含 作用域 / provenance / 必完 / 首工序 —— 工艺项 tab 的次区（明细） */
+/**
+ * ⚠️ issue #6128：本夹具**补上读面新键 `qty_rule_missing`**（issue #6117 起
+ * `ProductionOperationQueryService#operationView` 逐行给）—— 缺它 = 夹具与真读面不同形，
+ * 「目录内工序不得出现任何标记」这条判据会在夹具上**空跑通过**（假绿）。
+ * 取值按真口径给：目录内（`精裁` / `韩褶` / `外帘装袋`）⇒ `false`；`裁剪` 这一行按目录外造（正例）。
+ */
 const CATALOG = {
   total: 4,
   groups: [
     {
       group: '裁剪',
       operations: [
-        { id: 'op-v54-01', name: '精裁', group: '裁剪', position: '布帘', scope: 'position', unit: '套', unit_price: 8.5, is_must_finish: true, is_start_marker: true, source: '占位待确认' },
-        { id: 'op-v54-02', name: '裁剪', group: '裁剪', position: '布帘', scope: 'position', unit: '套', unit_price: 7, is_must_finish: false, is_start_marker: true },
+        { id: 'op-v54-01', name: '精裁', group: '裁剪', position: '布帘', scope: 'position', unit: '套', unit_price: 8.5, is_must_finish: true, is_start_marker: true, source: '占位待确认', qty_rule_missing: false },
+        { id: 'op-v54-02', name: '裁剪', group: '裁剪', position: '布帘', scope: 'position', unit: '套', unit_price: 7, is_must_finish: false, is_start_marker: true, qty_rule_missing: true },
       ],
     },
     {
       group: '车位',
       operations: [
-        { id: 'op-v54-03', name: '韩褶', group: '车位', position: '布帘', scope: 'position', unit: '米', unit_price: 1.2, is_must_finish: false, is_start_marker: false },
+        { id: 'op-v54-03', name: '韩褶', group: '车位', position: '布帘', scope: 'position', unit: '米', unit_price: 1.2, is_must_finish: false, is_start_marker: false, qty_rule_missing: false },
       ],
     },
     {
       group: '后道',
       operations: [
-        { id: 'op-v54-04', name: '外帘装袋', group: '后道', position: '外帘', scope: 'set', unit: '件', unit_price: 0.4, is_must_finish: true, is_start_marker: false },
+        { id: 'op-v54-04', name: '外帘装袋', group: '后道', position: '外帘', scope: 'set', unit: '件', unit_price: 0.4, is_must_finish: true, is_start_marker: false, qty_rule_missing: true },
       ],
     },
   ],
@@ -4182,5 +4188,144 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(step).toHaveAttribute('data-state', 'done')
     expect(step).toHaveTextContent('基础路线 2/2 条')
     expect(step).not.toHaveTextContent('缺 ')
+  })
+})
+
+/**
+ * 数量口径兜底（**沿用既有用例 UI-050**：同一页、同一张工序表的行为变更 —— 不新增 case_id）。
+ *
+ * issue #6117（后端已合并）给了两个字段：写面 `qty_rule_hint`（新建响应体）+ 读面
+ * `qty_rule_missing`（工序库每行）；**改前 web 面一字未改** ⇒ 商家界面仍然毫无提示
+ * （静默只是从「系统没说」变成「接口给了字段但没人渲染」）—— issue #6128 治的就是这后半段。
+ *
+ * 口径**一字不改**（用户 2026-10-03 裁定「保留兜底 1，但**写面告警 + 读面标记**」）：
+ * 目录外工序照建（不阻断、不 422），只是**数量按 1 计**这件事必须看得见。
+ *
+ * 红证（注入式，实跑读数见 PR body）：
+ * ① 摘掉写面提示的渲染（`{qtyRuleNotice && …}` ⇒ 删/恒假）⇒ ㉜-① 红（`Unable to find an element
+ *    by: [data-testid="qty-rule-hint"]`）；
+ * ② 让读面判定恒假（`qtyRuleMissingOf` 恒 `false`）⇒ ㉜-③ / ㉜-⑤ 红（找不到 `matrix-qty-fallback-*`）。
+ */
+describe('数量口径缺口可见（issue #6117 字段 / #6128 渲染）', () => {
+  /** 后端写面文案**逐字**（`ProductionOperationQueryService.QTY_RULE_MISSING_HINT`）—— 断言用的是它，不是前端副本 */
+  const BACKEND_QTY_RULE_HINT = '该工序不在算料目录内，派工应做数量将按 1 计'
+
+  beforeEach(() => {
+    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS))
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
+    mockGetOperationPositions.setDefault(POSITIONS)
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES))
+    mockGetRouteRuleOptions.mockReset().mockResolvedValue(ok(RULE_TRIGGER_OPTIONS))
+    // ⚠️ 就绪度第 ④ / ⑤ 步的读面在**首屏**就发（issue #5858）—— 不给替身 ⇒ 页面走「读取失败」分支
+    // 并 `toast.error('算料配置加载失败')` ⇒ 下面「**没有** toast.error」那条断言会**假红**
+    //（红的是别人的面，与本包的判据无关）。
+    mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
+    mockGetCuttingHeightConfig
+      .mockReset()
+      .mockResolvedValue(ok({ source: 'default', config: { items: [], rounding: { mode: 'none', digits: 2 } } }))
+    vi.mocked(toast.success).mockClear()
+    vi.mocked(toast.error).mockClear()
+  })
+
+  /** 打开「新增」对话框 → 填一道工序 → 提交（返回时请求已发出） */
+  const createOperation = async (name: string) => {
+    await renderOperations()
+    await userEvent.click(screen.getByTestId('routings-new-operation'))
+    await userEvent.type(screen.getByTestId('routings-create-op-name'), name)
+    await userEvent.type(screen.getByTestId('routings-create-op-unit_price'), '3')
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+    await waitFor(() => expect(mockCreateOperation).toHaveBeenCalledTimes(1))
+  }
+
+  it('㉜-① 写面提示可见：建**目录外**工序 ⇒ 页面出现提示（文案逐字 = 接口的 `qty_rule_hint`），且**不阻断创建**', async () => {
+    mockCreateOperation.mockReset().mockResolvedValue(
+      ok({
+        id: 'op-self-02',
+        name: '自建花边条',
+        qty_rule_missing: true,
+        qty_rule_hint: BACKEND_QTY_RULE_HINT,
+        created_positions: 1,
+        skipped_positions: 0,
+      }),
+    )
+    await createOperation('自建花边条')
+
+    // ① 提示**在页面上**（不是转瞬即逝的 toast）—— 文案逐字取接口的 `qty_rule_hint`
+    const hint = await screen.findByTestId('qty-rule-hint')
+    expect(hint).toHaveTextContent(BACKEND_QTY_RULE_HINT)
+
+    // ② **不阻断创建**：对话框照常关闭（提示 ≠ 错误弹窗），且**没有** `toast.error`
+    expect(screen.queryByTestId('routings-create-op-name')).toBeNull()
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(toast.success).toHaveBeenCalled()
+  })
+
+  it('㉜-② 反向护栏：建**目录内**工序（响应**没有** `qty_rule_hint` 键）⇒ **不出现**任何提示（防一律提示）', async () => {
+    mockCreateOperation
+      .mockReset()
+      .mockResolvedValue(ok({ id: 'op-new', name: '熨烫', qty_rule_missing: false, created_positions: 1, skipped_positions: 0 }))
+    await createOperation('熨烫')
+
+    await waitFor(() => expect(screen.queryByTestId('routings-create-op-name')).toBeNull())
+    expect(screen.queryByTestId('qty-rule-hint')).toBeNull()
+  })
+
+  it('㉜-③ 读面标记可见（行 = **无价目行**的库行）：目录外工序在表里**有可辨认的标记**，title = 与接口同一句文案', async () => {
+    await renderOperations()
+
+    // `裁剪` 在工序库里有行、在价目读面里**没有行** ⇒ 以「无价目行」的行进表（#5875）；
+    // 它在 CATALOG 里 `qty_rule_missing=true` ⇒ 行首必须有标记。
+    const badge = await screen.findByTestId('matrix-qty-fallback-裁剪')
+    expect(badge).toHaveTextContent('数量按 1 计')
+    expect(badge).toHaveAttribute('title', BACKEND_QTY_RULE_HINT)
+  })
+
+  it('㉜-④ 两侧夹住：目录内工序（`韩褶`）⇒ **不出现**任何标记（防「一律提示」这种永远绿的实现）', async () => {
+    await renderOperations()
+
+    // 行在场（否则「没标记」是**因为整行不存在** = 空跑通过）
+    expect(screen.getByTestId('matrix-row-韩褶')).toBeInTheDocument()
+    expect(screen.queryByTestId('matrix-qty-fallback-韩褶')).toBeNull()
+    // 目录内、**有**价目行的另一道工序同样不得误报
+    expect(screen.queryByTestId('matrix-qty-fallback-精裁')).toBeNull()
+  })
+
+  it('㉜-⑤ 读面标记可见（行 = **有价目行**的工序）：目录外工序照样有标记（两种行来源都要覆盖）', async () => {
+    await renderOperations()
+
+    // `外帘装袋` 在价目读面里**有行**（`pos-外帘装袋-布帘`）⇒ 走 `matrixRows` 那条分支；
+    // 它 `qty_rule_missing=true` ⇒ 行首**同样必须**有标记（只覆盖孤儿行 = 漏掉主路径）。
+    expect(screen.getByTestId('matrix-row-外帘装袋')).toBeInTheDocument()
+    expect(await screen.findByTestId('matrix-qty-fallback-外帘装袋')).toHaveTextContent('数量按 1 计')
+  })
+
+  it('㉜-⑥ 反向护栏：读面**没给**该键（老实例）⇒ 不渲染标记（静默 = 未知，不冒充已知）', async () => {
+    const catalogWithoutKey = {
+      total: CATALOG.total,
+      groups: CATALOG.groups.map((g) => ({
+        ...g,
+        operations: g.operations.map(({ qty_rule_missing: _omit, ...rest }) => rest),
+      })),
+    }
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(catalogWithoutKey))
+    await renderOperations()
+
+    expect(screen.getByTestId('matrix-row-裁剪')).toBeInTheDocument()
+    expect(screen.queryByTestId('matrix-qty-fallback-裁剪')).toBeNull()
+  })
+
+  it('㉜-⑦ 抽屉里把**后果**写全：打开目录外工序的「管理▸」⇒ 说明行 + 文案逐字 = 读面同一句', async () => {
+    await openManage('裁剪')
+
+    expect(await screen.findByTestId('operations-manage-qty-fallback')).toHaveTextContent(
+      BACKEND_QTY_RULE_HINT,
+    )
+  })
+
+  it('㉜-⑧ 反向护栏：打开**目录内**工序的抽屉 ⇒ 说明行**不在**（防一律提示）', async () => {
+    await openManage('韩褶')
+
+    expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument()
+    expect(screen.queryByTestId('operations-manage-qty-fallback')).toBeNull()
   })
 })

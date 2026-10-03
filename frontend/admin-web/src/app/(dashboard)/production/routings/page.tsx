@@ -529,6 +529,37 @@ function SourceBadge({
   return <span data-testid={testId} className={className}>{meta.label}</span>
 }
 
+/**
+ * 数量口径缺口的**读面文案**（issue #6117 / #6128）。
+ *
+ * 🔴 **逐字取自后端** `ProductionOperationQueryService.QTY_RULE_MISSING_HINT`（写面 `qty_rule_hint`
+ * 用的就是它）。为什么前端要持有一份**副本**：读面只给布尔 `qty_rule_missing`
+ * （`operationView` **不带**文案键），而「不在算料目录内 ⇒ 派工应做数量按 1 计」这件事**必须写清楚**
+ * （只说「缺口径」等于没说后果）。⇒ 唯一一处字面量，**只**用于读面徽标的 `title`；
+ * 写面一律用**响应体里的 `qty_rule_hint`**（后端说了算），不再抄第二遍。
+ * 待后端把该文案也放进读面时，本常量应随之删除（改为读面直取）。
+ */
+const QTY_RULE_MISSING_HINT = '该工序不在算料目录内，派工应做数量将按 1 计'
+
+/**
+ * **读面标记**：这道工序不在算料目录内（`qty_rule_missing === true`）⇒ 派工应做数量走**兜底 1**。
+ *
+ * 视觉语言**沿用本页既有徽标形态**（同 {@link SourceBadge}：`rounded px-1.5 py-0.5 text-[11px]`），
+ * 但换 amber —— 它是**后果提示**（计件工资按 1 计），不是 provenance 那种中性标注。
+ * 缺省（键缺失 / 非 `true`）⇒ **不渲染**：静默 = 未知，不得冒充已知。
+ */
+function QtyFallbackBadge({ testId }: { testId: string }) {
+  return (
+    <span
+      data-testid={testId}
+      title={QTY_RULE_MISSING_HINT}
+      className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700"
+    >
+      数量按 1 计
+    </span>
+  )
+}
+
 type ReadinessState = 'done' | 'todo' | 'unknown'
 
 /**
@@ -1038,6 +1069,16 @@ function ProcessConfigContent() {
   /** 新增**工序**的**就地**理由（本地预检；照 {@link newOptionReasons} 那套形态逐条展示） */
   const [newOpReasons, setNewOpReasons] = useState<string[]>([])
   /**
+   * 建完一道**目录外**工序后的**写面提示**（issue #6117 的 `qty_rule_hint` / #6128 的渲染面）。
+   *
+   * 🔴 语义 = **提示，不是失败**：工序**已经建好了**（响应 2xx、对话框照常关闭）—— 只是派工应做
+   * 数量会走**兜底 1**（计件工资按 1 计），商家必须看得见。⇒ 渲染成**常驻的页内提示条**
+   * （`toast.success` 会自己消失 = 又变回静默；`toast.error` 是**错**的语义 = 「建失败了」）。
+   * 文案**逐字用响应体里的 `qty_rule_hint`**（后端说了算，前端不写第二份判定）。
+   * `null` = 没有提示（目录内工序 / 还没建过）⇒ 不渲染。
+   */
+  const [qtyRuleNotice, setQtyRuleNotice] = useState<string | null>(null)
+  /**
    * 「新增」对话框的**类型二选一**（issue #4570，用户裁定：「只要能新增工序项就行了，并可以设置为
    * 特殊选项或者工序，也支持设置单价」）。默认 `operation`（工序 —— 既有链路逐字不变）。
    */
@@ -1237,6 +1278,22 @@ function ProcessConfigContent() {
    * 当未知名 ⇒ **同一件事两边判得不一样**。
    */
   const matrixOps = useMemo(() => new Set(matrix.map((c) => c.operation)), [matrix])
+
+  /**
+   * **数量口径缺口**（issue #6117 的读面标记 / #6128 的渲染面）—— 表里这一行的工序在**工序库那一行**
+   * 上的 `qty_rule_missing` 是否为 `true`（`true` = 不在算料目录内 ⇒ 派工应做数量走**兜底 1**）。
+   *
+   * 🔴 **为什么必须按工序名去工序库查**：`qty_rule_missing` 只长在工序库读面
+   * （`ProductionOperationQueryService#operationView`）上；价目读面（`GET /operation-positions` 的
+   * `positionView`）**没有这个键** ⇒ 表里那道工序的标记只能从工序库那一行取。两边的键都是
+   * **逻辑工序名**（`operationView` 的 `name` 已归一、矩阵行的 `operation` 也是逻辑名）⇒ 按名索引
+   * 是同一把尺。**判定只有后端一份**（`qtyRuleMissing`）—— 前端**不写第二份目录清单**。
+   * `undefined` / 缺行 / 库读面失败 ⇒ **不渲染标记**（静默 = 未知，不得冒充已知）。
+   */
+  const qtyRuleMissingOf = useCallback(
+    (operation: string): boolean => libraryByName.get(operation)?.qty_rule_missing === true,
+    [libraryByName],
+  )
 
   /**
    * **孤儿工序**（issue #4614 范围补口）：工序库里有、但**没有任何价目行指向它**。
@@ -2032,12 +2089,22 @@ function ProcessConfigContent() {
     setNewOpReasons([])
     setBusy(true)
     try {
-      await productionApi.createOperation({
+      const res = await productionApi.createOperation({
         name,
         group_name: newOp.group_name.trim() || undefined,
         unit: newOp.unit.trim() || undefined,
         unit_price: price,
       })
+      /**
+       * 🔴 **写面提示**（issue #6117 提供字段 / #6128 渲染它）：该工序不在算料目录内 ⇒
+       * 派工应做数量按 **1** 计（口径**一字不改**，用户 2026-10-03 裁定「保留兜底 1，但写面告警 +
+       * 读面标记」）。改前这件事**完全静默**：接口给了字段，商家界面一字未变。
+       *
+       * 文案**逐字用后端给的 `qty_rule_hint`**（前端不抄第二份）；目录内工序**没有该键** ⇒ 清掉。
+       * ⚠️ 这是**提示**：不阻断创建（这里在 `await` 成功之后）、**不是** `toast.error`。
+       */
+      const hint = res?.data?.data?.qty_rule_hint
+      setQtyRuleNotice(typeof hint === 'string' && hint.trim() !== '' ? hint : null)
       toast.success(`已新增工序「${name}」`)
       setNewOpOpen(false)
       setNewOp({ name: '', group_name: '', unit: '', unit_price: '' })
@@ -2581,6 +2648,26 @@ function ProcessConfigContent() {
                 ⇒ 行尾只剩 `分组 · 单位` + 单价 + 「管理▸」。 */}
             {tab === 'process' && (
               <div className="space-y-4" data-testid="craft-operations-panel">
+                {/* 写面提示（issue #6117 / #6128）：刚建的工序不在算料目录内 ⇒ 数量按 1 计。
+                    **提示条**（amber，不是红 = 不是失败）+ 可关闭；对话框已经关了、工序也建好了。 */}
+                {qtyRuleNotice && (
+                  <p
+                    role="status"
+                    data-testid="qty-rule-hint"
+                    className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                  >
+                    {qtyRuleNotice}
+                    <button
+                      type="button"
+                      data-testid="qty-rule-hint-dismiss"
+                      aria-label="关闭提示"
+                      onClick={() => setQtyRuleNotice(null)}
+                      className="ml-2 text-xs text-amber-700 underline decoration-dotted hover:text-amber-900"
+                    >
+                      知道了
+                    </button>
+                  </p>
+                )}
                 <section className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="operation-price-matrix">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-baseline gap-2">
@@ -2687,8 +2774,12 @@ function ProcessConfigContent() {
                                    >
                                      <td className="py-2.5 pr-4 align-top">
                                        {/* 行首只显示**逻辑工序名**（issue #4622 / #4886）：行 = 一道工序，
-                                           变体名（`布三边` / `logo条-布`）不出现在任何界面位置。 */}
+                                           变体名（`布三边` / `logo条-布`）不出现在任何界面位置。
+                                           🔴 行首标记（issue #6117 读面 / #6128 渲染）：目录外工序 ⇒ 数量按 1 计。 */}
                                        <div className="text-neutral-900">{row.operation}</div>
+                                       {qtyRuleMissingOf(row.operation) && (
+                                         <QtyFallbackBadge testId={`matrix-qty-fallback-${row.operation}`} />
+                                       )}
                                      </td>
                                      {/* **一道工序一个价**（issue #4886）：就地可改的**唯一**单价 —— 未定价照显示
                                          「未定价」，**绝不**回落 ¥0.00，也**绝不**回落工序库单价（历史 P0 #4696）。 */}
@@ -3495,6 +3586,18 @@ function ProcessConfigContent() {
             这道工序的设置。<strong>分组</strong>与<strong>单位</strong>决定报工口径；
             下方「适用条件」决定它<strong>什么情况下做</strong>。
           </p>
+          {/* 读面标记（issue #6117 / #6128）：这道工序不在算料目录内 ⇒ 派工应做数量按 1 计。
+              与表行徽标**同一份判定**（`qtyRuleMissingOf`；判定只有后端一份）——
+              徽标只说「数量按 1 计」，这里把**后果**写全（计件工资按 1 计 ⇒ 这道工序的收入）。
+              原文**逐字取后端**（`QTY_RULE_MISSING_HINT`，前端只此一份副本、只用于读面）。 */}
+          {manageOp && qtyRuleMissingOf(manageOp) && (
+            <p
+              className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              data-testid="operations-manage-qty-fallback"
+            >
+              {QTY_RULE_MISSING_HINT}
+            </p>
+          )}
           {/* 抽屉层写面被拒：逐条理由就地展示（不吞成一句「操作失败」） */}
           {opLevelReasons && (
             <ul className="space-y-0.5 text-xs text-red-600" data-testid="operations-manage-op-reasons">
