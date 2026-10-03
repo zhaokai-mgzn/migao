@@ -466,6 +466,25 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
+     * 订单在**当前租户**下是否可见（issue #6158）。
+     *
+     * <p>语义 = {@link #getOrderById} 的 404 那一半（同一条 {@code orderMapper.selectById}，由
+     * MyBatis-Plus 租户拦截器按 {@link com.migao.admin.config.TenantContext} 追加
+     * {@code tenant_id} 条件）—— 本单只做归属认定，**不**顺手带状态闸门
+     * （那是 {@code OrderStatusTransitions} 在写路径上的职责，多判一次 = 第二套判定）。</p>
+     *
+     * <p>存在理由：该认定要在 {@code PUT /api/admin/orders/{id}/content} 的**参数解析之前**
+     * 执行（见 {@code TenantOwnershipInterceptor}），而写路径自己的 {@code selectById}
+     * 发生在参数解析之后。</p>
+     *
+     * @param id 订单ID
+     * @return 当前租户下可见 ⇒ true
+     */
+    public boolean existsForCurrentTenant(String id) {
+        return orderMapper.selectById(id) != null;
+    }
+
+    /**
      * 创建订单
      *
      * @param request  创建请求

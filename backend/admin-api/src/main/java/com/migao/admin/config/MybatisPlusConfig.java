@@ -68,17 +68,21 @@ public class MybatisPlusConfig {
             @Override
             public Expression getTenantId() {
                 Long tenantId = TenantContext.getTenantId();
-                // tenantId=-1 表示平台管理员，跳过租户过滤
+                // 平台管理员（tenantId == -1）跳过的是**过滤条件注入**（不追加 tenant_id 条件）。
+                // 🔴 这不代表业务层存在跨租户读通道：平台侧资源（商品/订单/客户等租户域资源）
+                // 按 id 读仍会 404（由业务/控制层给出），这是**有意的能力边界**
+                // （用户 2026-10-03 对线② F-2 的裁定：平台侧只做租户/配置，不读商家业务数据；
+                // 证据见 acceptance/2026-10-03/tenant-isolation-sweep/REPORT.md §F-2）。
                 if (tenantId != null && tenantId == -1L) {
                     return null;
                 }
                 if (tenantId == null) {
-                    // 平台管理员（super_admin）不注入租户过滤条件
+                    // 同上：super_admin 只是不注入过滤条件，不构成跨租户读通道
                     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
                     if (auth != null && auth.getPrincipal() instanceof SecurityUser) {
                         SecurityUser user = (SecurityUser) auth.getPrincipal();
                         if (user.getRoles() != null && user.getRoles().contains("super_admin")) {
-                            return null; // 跳过租户过滤
+                            return null; // 跳过的是过滤条件注入（非跨租户读通道，见上）
                         }
                     }
                     throw new RuntimeException("Tenant context not initialized - possible unauthenticated access");

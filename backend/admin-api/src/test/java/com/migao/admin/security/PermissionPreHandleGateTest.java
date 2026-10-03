@@ -126,18 +126,41 @@ class PermissionPreHandleGateTest {
     }
 
     @Test
-    @DisplayName("类级元守卫：WebConfig 必须把 PermissionInterceptor 注册进 MVC 链（删注册即红）")
+    @DisplayName("类级元守卫：WebConfig 必须把 PermissionInterceptor 与归属认定拦截器都注册进 MVC 链")
     void webConfig_registersPreHandleInterceptor() {
-        WebConfig webConfig = new WebConfig(new PermissionInterceptor(Mockito.mock(RoleService.class)));
+        PermissionInterceptor permissionInterceptor =
+                new PermissionInterceptor(Mockito.mock(RoleService.class));
+        TenantOwnershipInterceptor tenantOwnershipInterceptor = new TenantOwnershipInterceptor();
+        WebConfig webConfig = new WebConfig(permissionInterceptor, tenantOwnershipInterceptor);
         SpyRegistry registry = new SpyRegistry();
         webConfig.webMvcConfigurer().addInterceptors(registry);
         assertThat(registry.interceptorCount()).as("F3 #6063：/api/** 拦截器注册不可消失").isGreaterThan(0);
+        // issue #6158：两条「判定先于参数解析」的拦截器都必须真在注册表里（少一条即红）
+        assertThat(registry.registeredInterceptors())
+                .as("#6063 授权拦截器 + #6158 归属拦截器都必须进 MVC 链")
+                .contains(permissionInterceptor, tenantOwnershipInterceptor);
     }
 
-    /** getInterceptors() 是 protected —— 测试子类暴露只读计数（不改变注册行为）。 */
+    /** getInterceptors() 是 protected —— 测试子类暴露只读计数与只读清单（不改变注册行为）。 */
     static class SpyRegistry extends InterceptorRegistry {
         int interceptorCount() {
             return getInterceptors().size();
+        }
+
+        /**
+         * {@code getInterceptors()} 登记的是 {@code MappedInterceptor}（薄包装：带 include/exclude 模式）
+         * ⇒ 读它的 {@code getInterceptor()} 拿回拦截器本体（只读，不改变注册）。
+         */
+        java.util.List<Object> registeredInterceptors() {
+            java.util.List<Object> interceptors = new java.util.ArrayList<>();
+            for (Object item : getInterceptors()) {
+                if (item instanceof org.springframework.web.servlet.handler.MappedInterceptor mapped) {
+                    interceptors.add(mapped.getInterceptor());
+                } else {
+                    interceptors.add(item);
+                }
+            }
+            return interceptors;
         }
     }
 
