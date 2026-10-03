@@ -385,14 +385,25 @@ def test_skill_anchor_commit_lag_judged_by_content_not_count(tmp_path):
     assert any("未改" in n and "仍是最新" in n for n in chk2["notes"]), out2
 
 
-def test_skill_anchor_missing_is_unknown_not_pass(tmp_path):
-    """活锚未安装 ⇒ 显式『未知』，**不得**当成通过（"未安装"与"没漂移"是两件事）。"""
+def test_skill_anchor_missing_is_not_applicable_not_pass(tmp_path):
+    """活锚未安装 ⇒ **具名 `not_applicable`**，**不得**当成通过（"未安装"与"没漂移"是两件事）。
+
+    #6144 §1-C1 改判：这里**曾经**断言 `status == "unknown"`。`unknown` 的语义是「对象在、
+    这次没读出结论（先修判据）」，而活锚未安装是「**判定对象在本环境里不存在**」⇒ 正确三态是
+    `not_applicable`（`evaluated=0` + 报告末尾具名清单 + 计数声明，`--fail-on-unknown` 不折它）。
+    本断言**加严**：既不许当 `ok`、也不许退回 `unknown`，且必须**具名**（谁 / 为什么 / 怎么处置）。
+    """
     repo = _anchor_repo(tmp_path)
     rc, out, rep = run(repo, "--live-anchor", str(tmp_path / "nope"), "--check",
                        "--only", "skill-anchor")
     chk = check_of(rep, "skill-anchor")
-    assert chk["status"] == "unknown", out
-    assert any("未安装" in n for n in chk["notes"]), out
+    assert chk["status"] == "not_applicable", out
+    assert chk["evaluated"] == 0, chk
+    assert any("未安装" in n and "not_applicable" in n for n in chk["notes"]), chk["notes"]
+    # 具名清单 + 计数声明（不是静默跳过）
+    assert "not_applicable 1 条" in out, out
+    assert rep["summary"]["not_applicable_checks"] == ["skill-anchor"], rep["summary"]
+    assert rc == 0, out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
