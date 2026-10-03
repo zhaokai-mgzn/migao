@@ -403,10 +403,13 @@ if (!SHIPPABLE_FROM.contains(order.getStatus())) { throw …「当前状态（%s
 
 ### 19.2 读数规模与四态
 
-| 线 | 承载体 | 末次全量读数 |
+| 线 | 承载体 | 终稿读数（四态） |
 |---|---|---|
-| 线A 工人端 + 小程序写面 | `worker-miniapp-writeface-sweep/`（BRIEF + harness 8 段 + out/*.json） | 分组见 `out/SUMMARY.json`（P1 鉴权 14/14、P2 扫码写面 20/2/1、P2b NPE 复现、P3 入库与标签 17/1/1、P4 C 端上传 19/1、P5 UI 8 条） |
-| 线B 售后退款 + 并发 | `aftersales-concurrency-sweep/`（BRIEF + harness 11 段 + `REPORT.md` 300 行） | `counts={"pass":42,"fail":9,"skip":1,"falseRed":0,"total":54}` + 补段 p10 派工并发 3/0/0；**零残留 = true**（逐表 0） |
+| 线A 工人端 + 小程序写面 | `worker-miniapp-writeface-sweep/{REPORT.md, BRIEF.md, harness/(p0~p6,run-all), out/**}` | **`pass 91 / fail(产品) 1 / skip 2 / falseRed 1 / total 95`**；`fail 1` = **#6219**（裁高 500，已开单在修）；`falseRed 1` = `U6` 故意失效控制项；零残留 12 表全 0（17:05:26 +08 复读） |
+| 线B 售后退款 + 并发 | `aftersales-concurrency-sweep/{REPORT.md(353 行), BRIEF.md, harness/(p0~p10,run-all), out/**(28 json)}` | **`pass 48 / fail(产品) 7 / skip 2 / falseRed 0 / total 57`**（采集 **17:05:32 +08**，残留 17:07:40 复读）；`fail 7` = 并发状态机 4（同一根因 **D1**）+ 读面 1（**D3**）+ 涉钱精度 2（**D2** 两处独立复现）；零残留逐表 0 + 存量行逐行 diff **0/0/0** |
+
+**报告路径**：`acceptance/2026-10-03/{worker-miniapp-writeface-sweep,aftersales-concurrency-sweep}/REPORT.md`；
+**承载体 PR = #6229**（含 `out/**` 结构化读数与 UI 截图，**首次入库** —— 见 §19.8）；**修复包 PR = #6230（#6220）/ #6231（#6221）**。
 
 ### 19.3 五张发现单（全部 AI 依 durable 证据自裁）
 
@@ -445,3 +448,30 @@ if (!SHIPPABLE_FROM.contains(order.getStatus())) { throw …「当前状态（%s
 | F-6222 | #6222 | 待派 | 待槽位（并发预算腾出后） |
 
 任务书：`fix-briefs/ROUND3-FIX-BRIEFS.md`（根因逐字 / 会红判据 / 注入式红证 / 类级固化 / 边界 / 交付物）。
+
+### 19.7 主会话裁定：线A 的 `D-B`（入库识别「条码优先」路径从工人端点不可达）**不是缺陷，是口径与措辞**
+
+线A REPORT §2 提的第二条「真缺陷（待裁定）」逐字：`只给 barcode ⇒ 400 INBOUND_RECOGNIZE_NO_IMAGE`（源码图片校验在解码分支之前）。
+主会话读 `origin/main` 后的裁定（**依据可复算**）：
+- `WorkerInboundService.validImages(...)`：**空图片列表被刻意拒绝**，异常文案自带设计理由，逐字「请至少上传 1 张照片（上游标签 / 布卷包装）……**系统不会拿空列表去问模型**（那只会白烧一次 vision 调用）」；
+- `barcode` 分支确实存在（`PATH_BARCODE = "barcode_decode"`、`FIELD_BARCODE`），其语义是「**请求里已带图**、前端又已解出条码 ⇒ 走解码、不调模型」——
+  即"零 LLM"是**在合法请求内部**的路径选择，不是"可以不上图"。
+⇒ **判决**：端点契约 = **必须至少 1 张图**；"条码优先" 是图内优化。线A 的读数正确、结论需改判为**观察项**（措辞易误读），**不开缺陷单**。
+- **产品口径（交人工）**：是否允许「仅条码、不拍照」建入库单（扫码枪场景）？**不裁时的安全默认** = 维持现状（强制拍照，且 400 文案已显式解释），只把类注释措辞改清楚。
+- 与线A 的另一条观察项同族（`/upload-image` docstring vs 实际 `/api/chat/upload-image`）：**都是"注释/文案 ≠ 可达路径"**，处置 = 改注释，不判缺陷。
+
+### 19.8 收口时修掉的两处基建缺口（都已进 #6229）
+
+| # | 缺口 | 实测证据 | 处置 |
+|---|---|---|---|
+| ① | **`.gitignore` 的 `out/` 规则把验收证据整片吞掉** | `git ls-tree -r origin/main acceptance/2026-10-03 \| grep out/` ⇒ **空**（前几批承载体在 main 上一条 `out/` 文件都没有）⇒ 每轮的"结构化读数 JSON + UI 截图"从未入库，只活在机器上 | #6229 加 `!acceptance/**/out/` + `!acceptance/**/out/**`，并**首次**把 `out/**`（53 个读数文件 + 6 张截图）入库 |
+| ② | **证据文件里带着真凭证** | `Secret Scan (gitleaks)` 把 #6229 首版打红；本地 `gitleaks detect --log-opts origin/main..HEAD` 定位到 `out/.token`、`out/.session.json`、`out/B0-auth.json`、`out/run.log` 内的**真签名 JWT** 与 `session_id` 明文；复扫又抓到 2 条 `generic-api-key` 假阳性（探针幂等键 `"key":"lb-…"`） | 删纯凭证文件；JWT ⇒ `<REDACTED-JWT>`、会话 ⇒ `<REDACTED-SESSION>`、幂等键值 ⇒ `<PROBE-IDEMPOTENCY-KEY>`；**4 次 `--force-with-lease` 重写分支**；本地复扫 `no leaks found`、CI 转绿。**未**放宽扫描器覆盖（安全护栏不减），**未**改 `.gitleaksignore`（fingerprint 含提交 sha，amend 期间自指不可解） |
+| ③ | （同一批的越界自纠）脱敏脚本误改**已在 main 的合法测试夹具** `acceptance/2026-10-03/tenant-concurrency-sweep/harness/probe-agent.mjs`（其中的 `eyJ…` 是**假 JWT 测试向量**） | `git grep -l -E "eyJ…" origin/main` ⇒ 全仓 **0 命中**（main 无真 token） | 该文件已从 `origin/main` 还原；`git diff origin/main -- acceptance/2026-10-03/tenant-concurrency-sweep` ⇒ 空 |
+
+**派生建议（留给后续轮次）**：harness 落盘前**先脱敏**（或把"写 `out/**` ⇒ 过一遍脱敏"做成一条命令）；否则 `out/**` 一旦入库，每一轮都会打红 secret scan。
+
+### 19.9 跨包写面冲突（合并前拦下）
+
+修复包 F-6220（#6230）与 F-6221（#6231）**各自独立取号，都新增了 `AS-011` / `AS-012`**（同一文件 `.github/cases/aftersales.yml`）⇒ 谁后合谁撞车。
+处置：**合并顺序 = 先 #6230 后 #6231**；F-6221 改号为 **`AS-013` / `AS-014`** 并重跑 `render_cases.py` + 四项 case 门禁后重推。
+⇒ **教训（派单侧）**：同一轮派多个会改同一 `cases/*.yml` 的包时，**必须在派单时划号段**（不是等撞车再改）。
