@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 116
+    "backend_contract_scoring_zero": 117
   },
   "history": [
     {
@@ -253,6 +253,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 116,
       "note": "issue #6224（P3·售后：`refundMethod` 是零生产者字段 —— DB 列无写点、响应里只有「实体 getter → DTO setter」直通；用户 2026-10-03 逐字裁定「退款方式 不用记」⇒ 下线该字段）新增 2 条 `[backend-contract]` 用例（AS-015 实例判据 / MC-076 类级元守卫）—— 它们按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 114 + 2 = **116**）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/controller/AfterSalesRefundMethodRetiredTest.java`：3 条（三个 Java 载体上 refundMethod 字段/getter/setter 全无 + 列表响应体无该键 + 详情响应体无该键，两条响应判据各带正对照）；`backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java`：12 条（语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 + 真语料注入红证 + 6 类内存注入红证 + 反向对照 + 扫描面 fail-closed + 台账只许缩短）），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 116}` vs 锚点 114 —— **不是**按号推算。"
+    }
+    ,{
+      "sha": "pending-pr-6246",
+      "date": "2026-10-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 117,
+      "note": "issue #6237（P2·待核验·涉库存：核验 #6220 台账观察项『入库过账无条件置 POSTED ⇒ 并发重复建批次 / 重复入库』）新增 1 条 `[backend-contract]` 用例（OR-057）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 116 + 1 = **117**）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/service/InboundPostConcurrentRealDbTest.java`：3 条真库并发判据（N=4 并发过账同一 draft 单 ⇒ 恰一个赢家 / 库存恰加一次 / 批次与台账各恰 2 行，另带串行正对照与带 Idempotency-Key 的工人入口）；`backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesSideEffectConcurrencyMetaGuardTest.java`：类级元守卫，本单把 `InboundOrderService#post` 从豁免改成在册且兑现），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `MIGAO_REQUIRE_REALDB=1 python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:cacheprovider` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 117}` vs 锚点 116 —— **不是**按号推算。"
     }
   ]
 }
