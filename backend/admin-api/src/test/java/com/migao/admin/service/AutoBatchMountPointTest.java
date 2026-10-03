@@ -10,6 +10,7 @@ import com.migao.admin.entity.InboundOrder;
 import com.migao.admin.entity.InboundOrderItem;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
+import com.migao.admin.entity.StockBatch;
 import com.migao.admin.entity.ProductSku;
 import com.migao.admin.mapper.FinanceTransactionMapper;
 import com.migao.admin.mapper.InboundOrderItemMapper;
@@ -111,6 +112,9 @@ class AutoBatchMountPointTest {
 
     @BeforeEach
     void setUp() {
+        // 批次号取号（issue #6248）= `stockBatchMapper.update(...)` 的**受影响行数**（1 = 号归我）。
+        // Mockito 对 int 返回**默认 0** ⇒ 不桩这一句会被读成「号每次都被别人抢走」⇒ 20 次耗尽 409。
+        when(stockBatchMapper.update(any(StockBatch.class))).thenReturn(1);
         TenantContext.setTenantId(TENANT);
         // MyBatis-Plus 的 lambda 缓存：LambdaUpdateWrapper 的 Order::getId 等方法引用要能解析
         MybatisConfiguration conf = new MybatisConfiguration();
