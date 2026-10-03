@@ -1363,6 +1363,10 @@ def option_rule_position_guard(java_src: str, constant="布帘") -> list:
       ① 特殊选项分支的 `position` 实参**不得**是 `null`（= issue #6114 的缺陷形态）；
       ② 该实参必须是一个**命名常量**（字面量硬编码会让「值」与「闭词表」两处口径分开漂移）；
       ③ 该常量必须**逐字** = `'布帘'`（= `POSITION_LIMIT_VOCABULARY` 里的布帘部位）。
+
+    ⚠️ **射程边界（如实登记）**：本函数只读**这一个生产文件** ⇒ 「值是否真在闭词表内」由 Java 侧
+    `ProductionSeedOptionRulePositionTest.positionValueIsInsideTheClosedVocabulary` 直接调生产常量判
+    （不在这里做第二份文本比对 —— 那是第二份口径）。
     """
     match = _PLAN_RULE_OPTION_CALL_RE.search(java_src)
     if not match:

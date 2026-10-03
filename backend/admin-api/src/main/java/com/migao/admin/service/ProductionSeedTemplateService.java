@@ -133,9 +133,9 @@ public class ProductionSeedTemplateService {
     /**
      * 特殊选项条件工序规则的**规则级部位限定**（issue #6114）：{@code '布帘'}。
      *
-     * <p>这 16 条规则引用的工序**只有布帘变体**（工序库 `op-v54-13..18` / `op-v56-02..05` 无 `-纱` 行
-     * —— 真值源 `CODEX`/`routing.py::OPERATION_CATALOG` 同款；例外只有 {@code 纱绑带 → 绑带}，
-     * 而 {@code 绑带-纱} 确实在库里 ⇒ 它不限部位也解析得到）。不限定部位时，同一份规则会在
+     * <p>这 16 条规则引用的工序**只有布帘变体**（工序库 `op-v54-13` ~ `op-v54-18` / `op-v56-02` ~ `op-v56-05`
+     * 都没有 `-纱` 行 —— 真值源 `backend/ai-agent-service/app/production/routing.py::OPERATION_CATALOG` 同款；
+     * 例外只有 {@code 纱绑带 → 绑带}，而 {@code 绑带-纱} 确实在库里 ⇒ 它不限部位也解析得到）。不限定部位时，同一份规则会在
      * **纱帘单**上命中 ⇒ {@code variantNameOf(逻辑名, '纱帘', catalog)} 返回 {@code null}
      * ⇒ 该逻辑名进 {@code missing_operations} ⇒ 整张加工单 fail-closed
      * （实测报错：「工艺路线「窗帘工序路线（默认）」（产品形态「纱帘」）引用的工序 [花边]
