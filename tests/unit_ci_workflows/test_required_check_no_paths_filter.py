@@ -23,6 +23,95 @@ GitHub 的分支保护按「**检查名**」要 required 状态。若提供该�
 | 1 | **凡上报 required 检查名的 workflow，其 `on.pull_request` 不得有 `paths` / `paths-ignore`** | 往 `.github/workflows/mini-app.yml` 的 `on.pull_request` 加一行 `paths: ['frontend/mini-app/**']` ⇒ 必红（红证实跑记录见 PR body） |
 | 2 | **snapshot 的每个 required 名都必须真被某个 PR 触发 job 上报**（陈旧检测：job 改名 / 删除 / 从未上报 ⇒ 红） | 把 snapshot 里某个名改一个字 ⇒ 必红 |
 | 3 | **snapshot 与成本台账的 `required` 口径必须一致**（两个数据文件不许各说各话） | 把 `ci_cost_ledger.json` 里某条 `required` 翻转 ⇒ 必红 |
+| 5 | **凡上报 required 检查名的 job，一律不得带 job 级 `needs:`**（依赖面 ⇒ 上游被跳过 / 取消时它整层不跑） | 往 `pr-check.yml::ui-regression-check` 的 `name:` 下插一行 `needs: detect` ⇒ 必红 |
+| 6 | **凡上报 required 检查名的 job，其 job 级 `if:` 只许写「恒真」形态**（无条件 / `always()` / 常量比较）—— 任何引用 `github.*` / `needs.*` / `steps.*` / `env.*` / `vars.*` / `secrets.*` 的谓词一律判红 | 往同一条 required 腿加 `if: github.event_name == 'schedule'` ⇒ 必红 |
+
+> 判据 5/6 与判据 1 是**同一形态的姊妹**（本包 P1-5，关联 #6144；承 #6051 的窄口径）：
+> 判据 1 防**workflow 级** `paths:`（整个 workflow 不触发），5/6 防 **job 级** `needs` / `if`
+> （该 job 被整层跳过）—— 三者的后果**逐字相同**：required context **永不到来** ⇒ PR 永久
+> `BLOCKED`，**没有任何东西变红**。判据 5/6 的允许形态与理由见下一节。
+
+## 为什么 required 腿只能**步骤级**门控（issue #6099 / #6052 实测）
+
+GitHub 对**被 job 级 `if` 跳过**的 job **不创建/不上报**该 context（只有 job 真创建了才上报；
+**步骤**级 `if` 跳过照旧上报 `success`）⇒ required 腿一旦挂上 job 级门控，在不命中该面的 PR 上
+该检查**永不出现**，页面只剩 `Expected — waiting for status to be reported`。
+
+- **实证（#6099）**：15 条 required 腿现取**没有一条**用 job 级 `if` 跳过 —— 这不是「运气」，
+  是「一旦如此就**永久 BLOCK 且无红信号**」；而窗口内 required 的缺席**全部**来自「并发取消
+  （`cancel-in-progress`）导致 job 未创建」，**不是** job 级跳过 ⇒ **风险尚未发生，但此前没有判据拦它**。
+- **实证（#6052 / issue #6051）**：`E2E quality gate` / `xiaobu H5 visual regression` /
+  `bmini-app build (h5 + weapp)` / `bmini H5 tabBar geometry (e2e)` 这 **4 条非 required** 重腿
+  被改成 `needs: <面判定 job>` + `if: … needs.<job>.outputs.run == 'true'` ⇒ 被跳过时 **context
+  根本不创建**（实测 65 条新格式 run 里 **17 条被跳 = 26.2%**）。那是**有意**的（它们**不是**
+  required，且面判定 job 会播报「未跑」）⇒ 本判据**只对 required 名生效，不许误伤它们**。
+- ⇒ **required 腿的门控必须写在 step 上**（`if: steps.detect_xx.outputs.run == 'true'`，job 照常创建、
+  照常上报 `success`），范式见 `pr-check.yml` 的 `Detect admin-web changes` 一族；口径与登记册见
+  `docs/wiki/CI-CD.md`「变更门控」与 `tests/unit_ci_workflows/declaration_gate_registry.json`。
+
+## job 级 `if:` 的**逐条口径**（允许 / 禁止）
+
+- ✅ **允许**：**完全没有** job 级 `if`；`always()` / `'always()'` / `true` / `'true'` / `''`（空 ⇒ 恒真）；
+  两侧都是**字符串字面量**的比较（`'a' == 'a'`，GH Actions 里**非 `${{ }}` 包裹的 `if:` 是表达式**，
+  所以 `'a' == 'a'` 求值为真）；`always() && 'a' == 'a'` 这类**不引用任何上下文**的布尔组合。
+- ⛔ **禁止**：任何引用 `needs.*` / `steps.*` / `env.*` / `vars.*` / `secrets.*` / `runner.*` /
+  `strategy.*` / `matrix.*` / `job.*` / `inputs.*` 的谓词 —— 典型禁形 = **面判定输出**
+  （`needs.detect.outputs.run == 'true'`）、**actor / 标签 / 草稿态**（`github.actor != 'x'`）
+  ⇒ 它们**可能是假** ⇒ 为假时该 job 不创建 ⇒ required context 永不到来。
+- ⛔ **`event_name` 白名单（`if: github.event_name == '<事件>'` 一族）单独一条规则**：
+  **唯一**的安全条件 = 「该 workflow 声明的**每一个自动触发面**都出现在白名单字符串里」
+  （判定式 = `自动触发面 ⊆ 白名单字面量集`）。`on:` 是**唯一真值** —— 这条是**静态可判**的。
+  - **人为触发面**（`workflow_dispatch` / `workflow_call`）**不**计入覆盖面：它们不会自动落到
+    PR / main 上（现取实测：`pr-check.yml` 的 9 条 required 腿 + 它的 `workflow_dispatch` 若计入就是**假红**）。
+  - 典型禁形 = 白名单**没覆盖**某个自动触发面（含**新加触发面却没同步改谓词**这一形态）；
+    也含“白名单里的那个事件**根本不在** `on:` 里”这种恒假谓词（`if: github.event_name == 'schedule'`
+    写在只有 `pull_request` 的 workflow 里 ⇒ job 永远不创建）。
+  - 🔴 **读不出 `on:` ⇒ 判红（fail-closed）**，不许当成「没有要覆盖的触发面」。
+
+## job 级 `needs:` 的**逐条口径**
+
+- ⛔ **禁止任何** job 级 `needs:`（不区分上游是不是面判定 job）。理由 = 「上游被跳过 / 取消 ⇒
+  本 job 不跑」是**运行期**行为，静态 YAML **判不了** ⇒ 对 required 腿只能禁掉整个依赖面。
+  现取：15 条 required 腿**一条 `needs` 都没有** ⇒ 这条禁令**零误伤**。
+- ✅ **允许**：`.`（没有 `needs`）。步骤级依赖（`if: steps.x.outputs.y == 'true'`）**照旧允许**
+  —— 那是**步骤**被跳过，job 仍创建、仍上报 `success`，required 永不悬空。
+- ⛔ **禁止**：**任何** job 级 `needs:`（不区分上游是不是面判定 job）。理由 = 判据 5 的判定逻辑：
+  `needs` 是**依赖面**，「上游被跳过 / 取消 ⇒ 本 job 不跑」是**运行期行为**（本判据读的是静态 YAML，
+  **判不了**上游会不会被跳）⇒ 对 required 腿**只能禁掉整个依赖面**，不能靠"上游看起来稳定"放行。
+  （现取：15 条 required 腿**一条 `needs` 都没有**，所以这条禁令**零误伤**。）
+- 🔴 **「今天恒真」≠「永远恒真」—— 这一类本判据**判红**（照实登记）**：`pr-check.yml` 里 9 条
+  required 腿带 `if: github.event_name == 'pull_request'`。`pr-check` 现取的**自动**触发面只有
+  `pull_request`（另有 `workflow_dispatch`，属人为触发面、不计入覆盖面）⇒ 现在**是绿的**。
+  **但这不是豁免**：往里加**任何自动触发面**（`push` / `schedule` / `merge_group` / `pull_request_target` …）
+  而不同步改这些谓词，就会让这 9 条 context 在**那条触发面**上永久不到来 —— 而**没有任何东西会红**。
+  本判据的判定式 = 「`event_name` 白名单 ⊇ 该 workflow 的**全部自动**触发面」，**静态可判**，
+  所以「今天恒真」与「永远恒真」在这里被**分开**了（加自动触发面的那一刻当场红）。
+  ⚠️ **同一条规则的第二个方向**也在面内：把白名单换成**不在 `on:` 里**的事件
+  （如给 required 腿写 `if: github.event_name == 'schedule'`）⇒ **恒假** ⇒ 同样当场红。
+
+## required 集合 + context → workflow/job 映射（**取法，不许硬编码名单**）
+
+- **首选（attended / 本机）：现取 API** ——
+  `gh api repos/<owner>/<repo>/branches/main/protection`（复用 `scripts/merge_gate.py` 的
+  `gh_repo` / `fetch_required`，**不另写一套读法**）。现取成功时与 snapshot **逐字比对**：
+  不一致 ⇒ **红**（判据 4，逼你刷新 snapshot），并打印可复制的刷新命令。
+- **退路（CI）：checked-in snapshot** —— `ci workflow tests` job **读不到**该 API：
+  `GET /branches/main/protection` **需 admin**，而 CI 只有 `secrets.GITHUB_TOKEN`
+  （该事实在本仓 `tests/unit_ci_workflows/test_automerge_bot_safe_path.py` 与
+  `.github/workflows/automerge.yml` 里都已实测登记）。此时退回
+  `required_status_snapshot.json`，并**大字打印**「当前走的是 snapshot 形态」+ 捕获时间 +
+  年龄 + 刷新命令。
+- **映射方法（现取，不写名单）**：对 `.github/workflows/*.yml` 逐个 `yaml.safe_load`，取
+  **`on.pull_request` 存在的** workflow 的每个 job，把 `job.get("name") or <job id>` 当**上报的
+  检查名**（GitHub 的上报名是 job 的 `display name`；本仓现取**逐字** = 该 `name:`，无 workflow
+  前缀 —— 由判据 2「每个 required 名都能被某个 PR 触发 job 上报」当场核，对不上就红）⇒
+  得到 `检查名 → [(workflow 文件, job id, job 定义)]`。**required 集合里的每个名字**经这张表反查
+  到它的 job；查不到 = 判据 2 红（陈旧 / 非 PR 触发面），**不是**在这里静默跳过。
+- **读的是哪一份 workflow 文本（自证坐标）**：默认读**工作树**（CI = 该 PR 的 merge ref，
+  与 GitHub 实际执行的那份**同一份**）；可用环境变量 **`MIGAO_WORKFLOW_REF=<git ref>`** 指定读
+  `git show <ref>:<path>`（本机主检出落后 `origin/main` 时，用它拿到线上真值）。每次运行都打印
+  **来源 + 文件字节哈希** —— 「我读到的那个东西，是不是它声称的那个对象？」（AGENTS.md 铁律 11）。
+  ⚠️ 本仓 `.agent-presets/**` 已迁出业务仓，故本文件**不**读它。
 
 ## required 集合从哪来（**取法选择与边界，照实登记**）
 
@@ -62,6 +151,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOWS_DIR = REPO / ".github" / "workflows"
@@ -78,6 +168,42 @@ REFRESH_CMD = f"python3 {SELF_REL} --refresh"
 #: （`needs.<job>.outputs.<名>`）。这种 job 会被**整层跳过**，而 GitHub 对**被 job 级 `if` 跳过**
 #: 的 job **不上报**该 context ⇒ 若该 job 提供 required 检查，该检查在非命中面的 PR 上永不到来。
 JOB_GATE_RE = re.compile(r"needs\.[A-Za-z0-9_-]+\.outputs\.[A-Za-z0-9_-]+")
+
+#: job 级 `if:` 里**引用任何运行时上下文**的形态（issue #6144 P1-5，本包加严）。
+#: 代价 = 该 job 被**整层跳过** ⇒ 它上报的 required context **不创建** ⇒ 永久 `Expected — waiting…`。
+#: 口径见 docstring「job 级 `if:` 的逐条口径」：**允许** = 无条件 / `always()` / 常量比较；
+#: **禁止** = 任何 `github.*` / `needs.*` / `steps.*` / `env.*` / `vars.*` / `secrets.*` 引用。
+CONTEXT_REF_RE = re.compile(
+    r"\b(github|needs|steps|env|vars|secrets|runner|strategy|matrix|job|inputs)\."
+)
+
+#: 「恒真」`if:` 的**全部**允许形态（先剥行注释、再剥字符串字面量，剩下的必须是其中之一）。
+_VACUOUS_IF_FORMS = {"", "always()", "true", "success()"}
+#: 「两侧都是字符串字面量」的常量比较（`'a' == 'a'`）。⚠️ 收紧到**只许两侧** —— 否则
+#: `'false() && 'a' == 'a'` 这类「表达式 + 常量比较」会被误判为恒真（实测过的抓法）。
+_CONST_COMPARISON_RE = re.compile(r"^''\s*==\s*''$")
+#: `event_name` 白名单：**唯一**因「触发面」而可能为假的谓词，故单独一条规则（见 `_if_verdict`）。
+EVENT_NAME_RE = re.compile(r"\bgithub\.event_name\b")
+_STRING_LITERAL_RE = re.compile(r"'([^']*)'")
+
+
+def _declared_events(doc: dict) -> set[str]:
+    """该 workflow 的**全部**触发面（事件名集合）—— 唯一真值 = `on:` 的键（不按文案猜）。"""
+    on = doc.get("on") if isinstance(doc.get("on"), dict) else doc.get(True)
+    if isinstance(on, str):          # `on: push` 这一形态（YAML 里 `on` 是字符串）
+        return {on}
+    if isinstance(on, list):
+        return {str(k) for k in on}
+    if not isinstance(on, dict):     # `on:` 缺失 / 读不出来 ⇒ 返回空集（下游判红，fail-closed）
+        return set()
+    return {str(k) for k in on}
+
+
+#: **人为**触发面（`workflow_dispatch` / `workflow_call`）—— 它们**不会自动落到 main / PR**，
+#: 故对「required 腿会不会在 PR 闸门上缺席」无贡献 ⇒ `event_name` 白名单**只**须覆盖**自动**触发面。
+#: （现取实测：`pr-check.yml` 9 条 required 腿带 `if: github.event_name == 'pull_request'` 而该 workflow
+#:  另有 `workflow_dispatch` ⇒ 把 `workflow_dispatch` 算进覆盖面就是**假红**；实测的 `gap` 正是它。）
+_MANUAL_EVENTS = {"workflow_dispatch", "workflow_call"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -117,6 +243,198 @@ def _pr_config(doc: dict) -> dict | None:
 
 def _workflows() -> dict[str, dict]:
     return {p.name: yaml.safe_load(p.read_text(encoding="utf-8")) for p in sorted(WORKFLOWS_DIR.glob("*.yml"))}
+
+
+# ── workflow 文本的**来源自证**（AGENTS.md 铁律 11：先问「我读到的是不是它声称的那个对象」）──
+# 默认读**工作树**：CI 里它就是该 PR 的 merge ref（与 GitHub 实际执行的那份同一份）；
+# 配 `MIGAO_WORKFLOW_REF=<git ref>` 则读 `git show <ref>:<path>` —— 本机主检出落后 `origin/main`
+# 时用它拿线上真值（本仓 #6144 审计现场就是这个坑）。两种来源都在读数里具名 + 打哈希。
+WORKFLOW_READ_REF = os.environ.get("MIGAO_WORKFLOW_REF", "").strip()
+
+
+def _workflow_texts() -> dict[str, str]:
+    """→ {workflow 文件名: YAML 文本}（来源见 `WORKFLOW_READ_REF`；读不到即抛，fail-closed）。"""
+    if not WORKFLOW_READ_REF:
+        return {p.name: p.read_text(encoding="utf-8") for p in sorted(WORKFLOWS_DIR.glob("*.yml"))}
+    listing = subprocess.run(
+        ["git", "-C", str(REPO), "ls-tree", "--name-only", f"{WORKFLOW_READ_REF}:.github/workflows"],
+        capture_output=True, text=True,
+    )
+    if listing.returncode != 0:
+        raise RuntimeError(
+            f"读不到 `{WORKFLOW_READ_REF}:.github/workflows`（{listing.stderr.strip()}）"
+            " ⇒ 拒绝静默退回工作树（那正是「读的东西不是它声称的对象」）"
+        )
+    out: dict[str, str] = {}
+    for name in listing.stdout.split():
+        if not name.endswith((".yml", ".yaml")):
+            continue
+        blob = subprocess.run(
+            ["git", "-C", str(REPO), "show", f"{WORKFLOW_READ_REF}:.github/workflows/{name}"],
+            capture_output=True, text=True,
+        )
+        if blob.returncode != 0:
+            raise RuntimeError(f"读不到 `{WORKFLOW_READ_REF}:.github/workflows/{name}`：{blob.stderr.strip()}")
+        out[name] = blob.stdout
+    return out
+
+
+def _workflow_docs(texts: dict[str, str] | None = None) -> dict[str, dict]:
+    """→ {workflow 文件名: 解析后的 YAML}（不按文件名 / 文案清单枚举；判据 5/6 与判别力试验共用）。"""
+    src = _workflow_texts() if texts is None else texts
+    return {name: yaml.safe_load(text) for name, text in sorted(src.items())}
+
+
+def _describe_source(texts: dict[str, str]) -> str:
+    """读数自证：来源标注 + 每个文件的字节哈希（「我读到的那个东西，是不是它声称的对象」）。"""
+    import hashlib
+
+    where = f"`git show {WORKFLOW_READ_REF}:…`" if WORKFLOW_READ_REF else "工作树（CI = 该 PR 的 merge ref）"
+    total = sum(len(t) for t in texts.values())
+    digest = hashlib.sha256("".join(f"{n}:{hashlib.sha256(t.encode()).hexdigest()}"
+                                    for n, t in sorted(texts.items())).encode()).hexdigest()[:12]
+    return f"workflow 读源 = {where}；{len(texts)} 个文件 / {total} 字节 / 集合哈希 {digest}"
+
+
+# ── 「job 级门控」的静态判定（判据 5/6 的唯一判定本体；判别力试验直接调它，不写第二份）──
+
+
+def _strip_quoted_spans(line: str) -> str:
+    """剥掉单引号字面量（GH Actions 表达式里的字符串**只能用单引号**）。
+
+    目的：让两条判定都**不把字符串内容当代码** —— ① 注释识别（`echo "# …"` 里的 `#`）
+    ② 上下文引用识别（`github.sha == 'github.ref'` 是常量比较，不是引用）。
+    """
+    out, i = [], 0
+    while i < len(line):
+        if line[i] == "'":
+            j = i + 1
+            while j < len(line) and line[j] != "'":
+                j += 1
+            if j >= len(line):  # 单数个引号（异常形态）⇒ 余下全是字面量，不越界
+                out.append("''")
+                break
+            out.append("''")  # 保留一个字面量占位符 ⇒ 常量比较形态仍可判
+            i = j + 1
+        else:
+            out.append(line[i])
+            i += 1
+    return "".join(out)
+
+
+def _condition_code(cond: object) -> str:
+    """job 级 `if:` 的**代码面**：逐行剥尾注释 + 剥字符串字面量、再把空白归一成单空格。
+
+    ⚠️ `None`（**没有 `if:`**）必须归到空串 —— 写成 `str(None)` 会让「无条件」被判成
+    非法形态（'None'），那是**假红**（写完当场实测抓到的）。
+    """
+    if cond is None:
+        return ""
+    kept = []
+    for raw in str(cond).splitlines():
+        line = _strip_quoted_spans(raw)
+        pos = line.find("#")
+        if pos != -1:
+            line = line[:pos]
+        kept.append(line)
+    return " ".join(" ".join(kept).split())
+
+
+def _condition_text_no_comments(cond: object) -> str:
+    """同 `_condition_code`，但**保留字符串字面量**（只剥行注释）—— 取白名单 / 常量比对的字面量用。"""
+    if cond is None:
+        return ""
+    kept = []
+    for raw in str(cond).splitlines():
+        line = _strip_quoted_spans(raw)
+        pos = line.find("#")
+        kept.append(raw[: pos] if pos != -1 else raw)
+    return " ".join(" ".join(kept).split())
+
+
+def _literal_pair(text: str) -> tuple[str, str] | None:
+    """`'a' == 'b'` 形态 ⇒ `('a', 'b')`；不是两侧字面量 ⇒ `None`。"""
+    m = re.fullmatch(r"'([^']*)'\s*==\s*'([^']*)'", text.strip())
+    return (m.group(1), m.group(2)) if m else None
+
+
+def _if_verdict(cond: object, declared_events: set[str]) -> tuple[bool, str]:
+    """job 级 `if:` 是否**恒真** ⇒ (允许?, 归因)。形态口径见 docstring；**fail-closed**（判不了 ⇒ 不许）。
+
+    `declared_events` = 该 workflow 的**全部**触发面（事件名集合）；只有 `event_name` 白名单
+    需要它 —— 那条规则的**唯一**安全条件 = 「每个声明触发面都出现在白名单里」，
+    交付期是**静态可判**的（这正是本判据能把「今天恒真」与「永远恒真」分开的地方）。
+    """
+    code = _condition_code(cond)
+    if code in _VACUOUS_IF_FORMS:
+        return True, ""
+    if _CONST_COMPARISON_RE.fullmatch(code):
+        # 两侧都是字符串字面量（`'a' == 'a'`）⇒ 恒真；`'a' == 'b'` ⇒ 恒假（fail-closed）。
+        pair = _literal_pair(_condition_text_no_comments(cond))
+        if pair and pair[0] == pair[1]:
+            return True, ""
+        return False, f"常量比较两侧不相等（{code!r}）⇒ 恒假 ⇒ job 永不创建"
+    if EVENT_NAME_RE.search(code):
+        # ⚠️ 白名单字面量要从不剥字符串的版本里取（`_condition_code` 把字面量换成了占位符）。
+        whitelist = {m.group(1).strip() for m in _STRING_LITERAL_RE.finditer(_condition_text_no_comments(cond))}
+        # 只有**自动**触发面需要被白名单覆盖（人为触发面不会自己落到主线上；见 `_MANUAL_EVENTS`）。
+        auto_events = declared_events - _MANUAL_EVENTS
+        gap = sorted(auto_events - whitelist)
+        if gap:
+            return False, (
+                f"`event_name` 白名单没覆盖**自动**触发面 {gap}"
+                f"（白名单={sorted(whitelist)}，自动触发面={sorted(auto_events)}）"
+                " —— 换成这些触发面时该 job 不创建 ⇒ context 永不到来"
+            )
+        if not declared_events:
+            return False, "读不出 `on:` 触发面 ⇒ 无法判定白名单是否覆盖（fail-closed）"
+        return True, ""
+    hit = CONTEXT_REF_RE.search(code)
+    if hit:
+        return False, f"引用运行时上下文 `{hit.group(0)}`（可能为假 ⇒ job 被整层跳过 ⇒ context 不创建）"
+    return False, f"形态不在允许清单内（{code!r}）—— required 腿只许恒真形态"
+
+
+def _job_gating_offenders(
+    required: set[str],
+    docs: dict[str, dict] | None = None,
+) -> tuple[list[str], int, int]:
+    """→ (违规定位清单, PR 触发 workflow 数, **非 required** 但带 job 级门控的 job 数)。
+
+    只对**现取 required 名字**生效；非 required 腿的 job 级门控是**有意**的（#6051/#6052）⇒ 只计数、不判红。
+    """
+    docs = _workflow_docs() if docs is None else docs
+    offenders: list[str] = []
+    pr_workflows = 0
+    non_required_gated = 0
+    for wf, doc in sorted(docs.items()):
+        if _pr_config(doc) is None:
+            continue
+        pr_workflows += 1
+        events = _declared_events(doc)
+        for jid, job in (doc.get("jobs") or {}).items():
+            if not isinstance(job, dict):
+                continue
+            check = str(job.get("name") or jid)
+            if check not in required:
+                # **非 required** 腿：job 级门控是**有意**的（#6051/#6052 的 4 条重腿）⇒ 不判红。
+                if job.get("needs") or str(job.get("if") or "").strip():
+                    non_required_gated += 1
+                continue
+            needs = job.get("needs")
+            if needs:
+                upstream = [needs] if isinstance(needs, str) else list(needs)
+                offenders.append(
+                    f"{wf}::{jid}（{check}）：job 级 `needs: {needs!r}` —— 依赖上游 {upstream}"
+                    "（上游被跳过 / 取消 ⇒ 本 required context **不创建**）"
+                )
+            ok, why = _if_verdict(job.get("if"), events)
+            if not ok:
+                offenders.append(
+                    f"{wf}::{jid}（{check}）：job 级 `if: {job.get('if')!r}` —— {why}"
+                    f"（声明触发面={sorted(events)}）"
+                )
+    return offenders, pr_workflows, non_required_gated
 
 
 def _pr_reported_checks() -> tuple[dict[str, set[str]], dict[str, list[str]]]:
@@ -198,50 +516,160 @@ def test_no_pr_paths_filter_on_a_workflow_reporting_a_required_check() -> None:
     )
 
 
-def test_no_job_level_gate_on_a_workflow_reporting_a_required_check() -> None:
-    """🔴 承重判据（issue #6051）：required 检查不得被 **job 级 `if:`** 门控遮住。
+def test_no_job_level_needs_on_a_job_reporting_a_required_check() -> None:
+    """🔴 承重判据 5（issue #6144 P1-5）：required 腿**不得**带 job 级 `needs:`（依赖面）。
 
-    与判据 1 是**同一形态的姊妹**，只是遮法不同：
-
-    | 形态 | 结果 |
-    |---|---|
-    | workflow 级 `paths:`（判据 1） | 该 workflow **整个不触发** ⇒ 检查不上报 |
-    | **job 级 `if:`（本条）** | 该 job 被跳过；GitHub 对**被 job 级 `if` 跳过**的 job **不上报**该 context（只有 job 创建了才上报，步骤级跳过照旧上报 `success`）⇒ 检查同样不上报 |
-
-    两条的后果逐字相同：不命中该面的 PR 上该 required 检查**永不到来** ⇒ PR 永久
-    `BLOCKED`（`Expected — waiting for status to be reported`），而**没有任何检查会变红**。
+    `needs` 是**依赖面**：上游 job 被跳过 / 取消 / 失败时它整层不跑 ⇒ 该 context **不创建**
+    ⇒ PR 永久 `Expected — waiting for status to be reported`，而**没有任何东西会红**。
+    「上游看起来稳定」**不是**豁免理由（上游会不会被跳是**运行期**行为，静态 YAML 判不了）
+    ⇒ 对 required 腿只能禁掉整个依赖面。现取：15 条 required 腿**一条 `needs` 都没有**（零误伤）。
     """
     required = set(_snapshot_contexts())
-    offenders: list[str] = []
-    gated_seen = 0
-    for wf, doc in sorted(_workflows().items()):
-        if _pr_config(doc) is None:
-            continue
-        jobs = doc.get("jobs") or {}
-        for jid, job in jobs.items():
-            if not isinstance(job, dict):
-                continue
-            cond = str(job.get("if") or "")
-            if not JOB_GATE_RE.search(cond):
-                continue
-            gated_seen += 1
-            name = str(job.get("name") or jid)
-            if name in required:
-                offenders.append(f"{wf}::{jid}（{name}）：`if: {cond}`")
-    print(f"扫到 job 级面门控 {gated_seen} 条；其中撞 required 名的={len(offenders)} 条"
-          f"（snapshot required 名 {len(required)} 条）")
-    assert gated_seen > 0, (
-        "一条 job 级面门控都没扫到 ⇒ 读法失效（本判据会静默空跑成绿）。"
-        "若确实已无 job 级门控，须同时删掉本条判据（并说明理由）—— 不许让它空跑。"
+    texts = _workflow_texts()
+    docs = _workflow_docs(texts)
+    offenders, pr_workflows, non_required_gated = _job_gating_offenders(required, docs)
+    needs_offenders = [o for o in offenders if "job 级 `needs" in o]
+    # fail-closed 哨兵（承 #6051 的窄口径）：真语料里**必须**还存在「面判定输出」形态的门控
+    # （4 条非 required 重腿）。它一旦消失 ⇒ 本文件的语料假设漂移 ⇒ 让**这里**红，
+    # 而不是让任何断言在空语料上静默恒绿。
+    output_gated = [
+        f"{wf}::{jid}"
+        for wf, doc in docs.items()
+        for jid, job in (doc.get("jobs") or {}).items()
+        if isinstance(job, dict) and JOB_GATE_RE.search(str(job.get("if") or ""))
+    ]
+    print(f"{_describe_source(texts)}；PR 触发 workflow={pr_workflows} 个；required 名={len(required)} 条；"
+          f"required 腿带 `needs` 的={len(needs_offenders)} 条；"
+          f"（对照）非 required 腿带 job 级门控={non_required_gated} 条 —— **有意**，不判红；"
+          f"语料里「面判定输出」形态={len(output_gated)} 条 {output_gated}")
+    assert pr_workflows > 0 and required, "一个 PR 触发 workflow / 一条 required 都没读到 ⇒ 读法失效（会静默空跑成绿）"
+    assert output_gated, (
+        "真语料里一条「`needs.<job>.outputs.<名>`」形态的 job 级门控都没有 ⇒ 语料漂移（#6051/#6052 的 4 条"
+        "非 required 重腿或已消失/改名）⇒ 本文件的读法假设需要重新核对；**不许**让判据在空语料上静默恒绿。"
     )
-    assert not offenders, (
-        "**required 检查被 job 级 `if` 门控** —— 不命中该面的 PR 上该检查**永不到来** ⇒ PR 永久 BLOCKED"
-        "且无红信号（issue #6051；与 #3507 ① / #4786 / #5101 同族）：\n"
-        + "\n".join("  " + o for o in offenders)
+    assert not needs_offenders, (
+        "**required 腿被 job 级 `needs` 门控** —— 上游被跳过 / 取消 ⇒ 该 context 不创建 ⇒ PR 永久 BLOCKED"
+        "且无红信号（issue #6144 P1-5；与 #3507 ① / #4786 / #5101 / #6051 同族）：\n"
+        + "\n".join("  " + o for o in needs_offenders)
         + "\n修法（二选一）：① required 腿改用**步骤级**门控（job 保持创建、结论照常上报，口径见"
-        " pr-check.yml 的 `Detect admin-web changes` 一族）；② 从分支保护里撤掉该 required（顺序不可换："
-        "**先改门控、再改分支保护**，见 docs/wiki/CI-CD.md「变更门控」）。"
+        " pr-check.yml 的 `Detect admin-web changes` 一族；登记册 ="
+        " tests/unit_ci_workflows/declaration_gate_registry.json）；② 从分支保护里撤掉该 required"
+        "（顺序不可换：**先改门控、再改分支保护**，见 docs/wiki/CI-CD.md「变更门控」）。"
     )
+
+
+def test_no_context_dependent_if_on_a_job_reporting_a_required_check() -> None:
+    """🔴 承重判据 6（issue #6144 P1-5）：required 腿的 job 级 `if:` 只许**恒真**形态。
+
+    允许 = 无条件 / `always()` / `'true'` / 两侧都是字符串字面量的常量比较；
+    禁止 = 任何引用 `github.*` / `needs.*` / `steps.*` / `env.*` / `vars.*` / `secrets.*` 的谓词
+    （面判定输出、`event_name` 白名单、分支名、actor / 标签 / 草稿态 … 它们**都可能是假**）。
+
+    为什么这条比「当前是否恒真」更严：`pr-check.yml` 的 9 条 required 腿带
+    `if: github.event_name == 'pull_request'`，而该 workflow 现取只有 `pull_request` + `workflow_dispatch`
+    ⇒ **今天恒真、无害**；但**换任何触发面就会让这 9 条 context 永久不到来**。
+    「现在恒真」≠「永远恒真」，后者此前没有任何东西会红 —— 这正是本判据要拦的形态。
+    """
+    required = set(_snapshot_contexts())
+    texts = _workflow_texts()
+    offenders, _, _ = _job_gating_offenders(required, _workflow_docs(texts))
+    if_offenders = [o for o in offenders if "job 级 `if" in o]
+    print(f"{_describe_source(texts)}；required 名={len(required)} 条；"
+          f"job 级 `if:` 非恒真的 required 腿={len(if_offenders)} 条")
+    assert required, "一条 required 都没读到 ⇒ 读法失效（会静默空跑成绿）"
+    assert not if_offenders, (
+        "**required 腿的 job 级 `if:` 不是恒真形态** —— 它为假时该 job 不创建 ⇒ context 永不到来"
+        " ⇒ PR 永久 BLOCKED 且无红信号（issue #6144 P1-5；#6052 实测：被跳过的 job **context 不创建**）：\n"
+        + "\n".join("  " + o for o in if_offenders)
+        + "\n修法：① required 腿删掉 job 级 `if:`，把门控**下沉到步骤**（`if: steps.detect_xx.outputs.run == 'true'`，"
+        "job 照常创建 ⇒ 照常上报 success）；② 或从分支保护里撤掉该 required"
+        "（顺序不可换：**先改门控、再改分支保护**，见 docs/wiki/CI-CD.md「变更门控」）。"
+    )
+
+
+#: 判别力试验的**注入点**（在真实 workflow 文本上做行级变异；三条各只让对应的一条判红）。
+#: `(用例名, 语料文件, 锚行, 注入的 YAML 行, 期望的坏形态, 该形态必须命中, 该形态必须不命中)`
+_INJECTION_CASES = (
+    ("required_needs_gate_red", "pr-check.yml", "name: UI Regression Check",
+     "needs: detect", "needs", ("UI Regression Check",), ("E2E quality gate",)),
+    ("required_event_whitelist_red", "pr-check.yml", "name: UI Regression Check",
+     "if: github.event_name == 'schedule'", "if", ("UI Regression Check",), ("E2E quality gate",)),
+    ("non_required_gate_control_green", "pr-check.yml", "name: E2E quality gate",
+     "if: github.event_name == 'schedule'", "if", (), ("E2E quality gate",)),
+)
+
+
+@pytest.mark.parametrize(
+    "case_id,corpus,anchor,injection,shape,must_hit,must_miss",
+    _INJECTION_CASES,
+    ids=[c[0] for c in _INJECTION_CASES],
+)
+def test_discriminating_power_on_injected_job_gates(
+    case_id: str, corpus: str, anchor: str, injection: str, shape: str,
+    must_hit: tuple[str, ...], must_miss: tuple[str, ...],
+) -> None:
+    """判据 7：**注入式判别力自证** —— 在真语料文本上注入门控，只有对应那条判红。
+
+    三条（真实读数见 PR body）：① required 腿加 `needs: <面判定 job>` ⇒ 判据 5 **必红**；
+    ② required 腿加 `if: github.event_name == 'schedule'` ⇒ 判据 6 **必红**；
+    ③ 对照：**非 required** 腿（`E2E quality gate`，它的 job 级门控是**有意**的）加同样的 `if:` ⇒
+    **必须仍然绿**（防误伤 —— 这正是本包不改任何 workflow 的证明面）。
+    """
+    texts = _workflow_texts()
+    base = _workflow_docs(texts)
+    required = set(_snapshot_contexts())
+    # 自证注入生效：按「job 的 `name:` 行」插入（该行在真实语料里唯一 ⇒ 只命中一条腿）
+    lines = texts[corpus].splitlines(keepends=True)
+    hits = [i for i, ln in enumerate(lines) if ln.strip() == anchor]
+    assert len(hits) == 1, (
+        f"注入点 `{anchor}` 在 .github/workflows/{corpus} 里命中 {len(hits)} 处（必须恰好 1 处）"
+        " ⇒ 语料漂移，本判别力试验会静默失效（先修注入点，别把「没注入」读成「判据没判别力」）"
+    )
+    at = hits[0]
+    # ⚠️ **就地替换**该 job 自己的 `if:`（含 `>-` 折行块），不能「插一行」——两种空跑都实测到了：
+    #   ① YAML 重复键里 PyYAML 取**后者** ⇒ 原地插入被原 `if:` 吃掉；
+    #   ② 插在 `name:` 之后时，会被紧随的 `if: >-` **折行块**当成它自己的一行吃掉。
+    # job 块边界 = 下一个**顶格两空格**的 job 键（不能用「下一个非缩进行」——`needs:` 就在那之前）。
+    end = next((j for j in range(at + 1, len(lines)) if re.fullmatch(r"  [A-Za-z0-9_-]+:\s*", lines[j])),
+               len(lines))
+    key = next((j for j in range(at + 1, end) if lines[j].startswith("    if:")), None)
+    mutated = list(lines)
+    if key is not None:
+        stop = key + 1
+        while stop < end and (not lines[stop].strip() or lines[stop].startswith("      ")):
+            stop += 1
+        mutated = mutated[:key] + [f"    {injection}\n"] + mutated[stop:]
+    else:
+        mutated = mutated[: at + 1] + [f"    {injection}\n"] + mutated[at + 1:]
+    mutated_text = "".join(mutated)
+    assert mutated_text != texts[corpus], f"注入未改变 {corpus} 的文本（锚点 `{anchor}` 处没插进去）⇒ 本试验是空跑"
+    docs = dict(base)
+    docs[corpus] = yaml.safe_load(mutated_text)
+    injected = docs[corpus] != base[corpus]
+    assert injected, (
+        f"注入改变了 {corpus} 的文本但**没改变解析结果** ⇒ 注入落到了无效位置（本试验是空跑）\n"
+        f"   注入行：{injection!r}；锚点行：{lines[at]!r}；既有 `if:` 起始行={key}"
+    )
+    # 反向对照：未注入的语料必须**干净**（否则「红」分不清是注入还是存量）
+    clean, _, _ = _job_gating_offenders(required, base)
+    assert not [o for o in clean if f"job 级 `{shape}" in o], (
+        f"未注入的真语料上已存在 job 级 `{shape}` 违规 ⇒ 本试验的对照不成立：\n" + "\n".join("  " + o for o in clean)
+    )
+    offenders, _, _ = _job_gating_offenders(required, docs)
+    shaped = [o for o in offenders if f"job 级 `{shape}" in o]
+    print(f"[{case_id}] 注入 .github/workflows/{corpus} 的 `{anchor}` 后 +{injection!r} ⇒ "
+          f"命中 `{shape}` 违规 {len(shaped)} 条：{shaped}")
+    for check in must_hit:
+        assert any(check in o for o in shaped), (
+            f"注入后 `{check}` **没有**被判红 ⇒ 判据 5/6 对这个形态无判别力（空断言）：{shaped}"
+        )
+    for check in must_miss:
+        assert not any(check in o for o in shaped), (
+            f"`{check}` **被误伤** —— 非 required 腿的 job 级门控是**有意**的"
+            f"（#6051/#6052），本判据只对 required 名生效：{shaped}"
+        )
+    if not must_hit:  # 对照用例：整份语料在注入后必须**零**违规
+        assert not offenders, "对照用例（非 required 腿）竟判红 ⇒ 判据射程越界：\n" + "\n".join("  " + o for o in offenders)
 
 
 def test_every_snapshot_context_is_reported_by_a_pr_triggered_job() -> None:
