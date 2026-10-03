@@ -152,15 +152,19 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
         verifyNoInteractions(notificationService);
     }
 
-    // ────────────────────────── ② page<1 ⇒ 400（同族非法下界） ──────────────────────────
+    // ────────────────────────── ② page<1 **有意不拒**（观察项） ──────────────────────────
 
     @Test
-    @DisplayName("🔴 GET /api/admin/orders?page=-1&size=20 ⇒ 400，field=page")
-    void orders_nonPositivePage_isBadRequest() throws Exception {
+    @DisplayName("✅ GET /api/admin/orders?page=-1&size=20 ⇒ 200（裁定 2026-10-03：MP 已钳到第 1 页）")
+    void orders_nonPositivePage_isAccepted() throws Exception {
+        stubEmptyPages();
+        // 依据（主会话在未修复构建 :8080 现取）：page=0 / page=1 / page=-1 三条 ⇒ 同一页首行
+        // ⇒ page<1 只是「宽容」不是缺陷；拒它会让 0 基分页调用方从「能拿第 1 页」变报错。
         mockMvc.perform(get("/api/admin/orders").param("page", "-1").param("size", "20"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.details[0].field").value("page"));
-        verifyNoInteractions(orderService);
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        verify(orderService).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

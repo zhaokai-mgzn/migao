@@ -62,17 +62,22 @@ public final class PaginationParamGate {
     /**
      * 判定单个分页参数：合法 ⇒ 什么都不做；非法 ⇒ 抛出 400 {@code VALIDATION_ERROR}。
      *
-     * <p>非法 = ① 非整数（含空白 / 空串）② 越界：{@code size < 0} 或 {@code page < 1}（含负数与 0）。
-     * 出参形状复用**既有**信封：{@code error.code=VALIDATION_ERROR} +
+     * <p>非法 = ① 非整数（含空白 / 空串 / {@code +5} / 小数 / 溢出）② **越界：只有
+     * {@code size < 0}**。出参形状复用**既有**信封：{@code error.code=VALIDATION_ERROR} +
      * {@code error.details:[{field,message}]}（同 {@code GlobalExceptionHandler} 的
      * 400/422 家族与 {@code PermissionDeniedResponse}）。</p>
      *
-     * <p>{@code size=0} 仍合法（不返回任何行、{@code total} 仍是真总数 ⇒ 语义自洽，不产生
-     * 「有数据却显示为空」）。注意 {@code Long.parseLong} 对 {@code "+5"} 会成功 ⇒ 显式拒掉
-     * 符号前缀，保证「只有十进制数字面量」这一条口径。</p>
+     * <p><b>{@code page < 1} 有意不拒</b>（主会话 2026-10-03 在未修复构建 :8080 现取读数后裁定）：
+     * {@code page=0} / {@code page=-1} / {@code page=1} **返回同一页首行**（MP 已钳到第 1 页）
+     * ⇒ 它**不是本单的缺陷**，只是「宽容」；改成 400 会让**任何 0 基分页调用方**从「能正常拿第 1 页」
+     * 变成报错 = 没有缺陷证据支撑的破坏性变更 ⇒ 登记为**观察项**（严格 1 基化要另开单 + 兼容性说明）。
+     * {@code page} 仍**要过「是十进制整数」**这一关（非整数本来就是 400，属契约收口，不新增状态码）。</p>
+     *
+     * <p>{@code size=0} 也仍合法（主会话同批读数：{@code total=359} + 0 行 ⇒ 空页 + 诚实 total，
+     * 语义自洽）—— 即本闸的越界口径 = {@code size < 0} **一个**条件。</p>
      *
      * @param name  参数名（{@code page} / {@code size}，大小写不限）
-     * @param value 原始参数值（Servle 层的字符串形态）
+     * @param value 原始参数值（Servlet 层的字符串形态）
      * @throws BusinessException 非法入参 ⇒ 400 {@code VALIDATION_ERROR}
      */
     public static void requireValid(String name, String value) {
@@ -81,11 +86,10 @@ public final class PaginationParamGate {
             return;
         }
         Long parsed = parseDecimal(name, value);
+        // 唯一越界条件：负数 size（MP 的「不分页」信号 ⇒ 整页行 + total=0，本单实测病根）。
+        // page 不设下界（见方法注释的实测读数与裁定）。
         if (SIZE.equalsIgnoreCase(name) && parsed < 0) {
             throw reject(name, value, "size 不能为负数（会静默返回整页且 total=0，请传 size >= 0）");
-        }
-        if (PAGE.equalsIgnoreCase(name) && parsed < 1) {
-            throw reject(name, value, "page 必须 >= 1");
         }
     }
 

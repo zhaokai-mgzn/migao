@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * 其它参数名（{@code othersize} / {@code pageSize} / {@code fileSize}）**必须不被判定**
  * —— 否则任何带 "size" 字样的业务参数都会被误拒（新的假红）。</p>
  */
-@DisplayName("#6222 分页入参准入：size<0 / page<1 / 非整数 ⇒ 400，白名单之外不判")
+@DisplayName("#6222 分页入参准入：size<0 / 非整数 ⇒ 400；page<1 有意不拒；白名单之外不判")
 class PaginationParamGateTest {
 
     // ────────────────────────── ① 红：非法入参必须被拒 ──────────────────────────
@@ -46,18 +46,15 @@ class PaginationParamGateTest {
     }
 
     @Test
-    @DisplayName("🔴 page=0 / page=-1 ⇒ 400（同族非法下界；-1 在 MyBatis-Plus 是 offset 基）")
-    void nonPositivePage_isRejectedWith400() {
-        for (String bad : new String[]{"0", "-1", "-5"}) {
-            assertThatThrownBy(() -> PaginationParamGate.requireValid("page", bad))
-                    .as("page=%s", bad)
-                    .isInstanceOf(BusinessException.class)
-                    .satisfies(thrown -> {
-                        BusinessException e = (BusinessException) thrown;
-                        assertThat(e.getCode()).isEqualTo("VALIDATION_ERROR");
-                        assertThat(e.getHttpStatus()).isEqualTo(400);
-                        assertThat(e.getDetails().get(0).getField()).isEqualTo("page");
-                    });
+    @DisplayName("✅ page<1 **有意不拒**（裁定 2026-10-03）：page=0 / -1 / **page=1 返回同一页** ⇒ 不是本单缺陷")
+    void nonPositivePage_isAccepted() {
+        // 依据（主会话在未修复构建 :8080 现取）：
+        //   page=0&size=3 / page=1&size=3 / page=-1&size=3 ⇒ 三条 200 · total=359 · rows=3 · **同一首行 id**
+        // ⇒ MP 已把 page<1 钳到第 1 页（只是宽容，不是缺陷）；拒它会让 0 基分页调用方从「能拿第 1 页」变报错。
+        for (String ok : new String[]{"0", "-1", "-5"}) {
+            assertThatCode(() -> PaginationParamGate.requireValid("page", ok))
+                    .as("page=%s 必须放行（观察项，不在本单射程）", ok)
+                    .doesNotThrowAnyException();
         }
     }
 
@@ -109,14 +106,14 @@ class PaginationParamGateTest {
     }
 
     @Test
-    @DisplayName("参数名大小写不敏感（?SIZE=-5 同样被拒 —— Servlet 取参大小写不敏感）")
+    @DisplayName("参数名大小写不敏感（?SIZE=-5 同样被拒；?Page=-1 放行 —— page 无下界）")
     void paramNameIsCaseInsensitive() {
         assertThat(PaginationParamGate.isPaginationParamName("SIZE")).isTrue();
         assertThat(PaginationParamGate.isPaginationParamName("Page")).isTrue();
         assertThatThrownBy(() -> PaginationParamGate.requireValid("SIZE", "-5"))
                 .isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> PaginationParamGate.requireValid("Page", "0"))
-                .isInstanceOf(BusinessException.class);
+        assertThatCode(() -> PaginationParamGate.requireValid("Page", "-1"))
+                .doesNotThrowAnyException();
     }
 
     // ────────────────────────── ④ 整参数集入口（拦截器直接复用这一条） ──────────────────────────
