@@ -3046,7 +3046,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（79 case）
+## 杂项域（80 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4209,6 +4209,20 @@
 跳过: [backend-contract] 取号台账的仓内判据（本地 claims 目录 + 同仓 open PR 的 claims 目录；零 LLM、零真库；唯一外部面 = GitHub REST 只读，有超时/预算/无凭据 fail-closed）由 tests/unit_ci_workflows/test_case_id_claims.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-03 新增（issue #6245，P3·CI）。病：两个在飞 PR 各自 claim 同一个号 ⇒ 两边 CI 都绿（本轮实测 3 次：AS-011/012、PG-059/069、MC-076，全靠人工跨 refs 核对才发现）。落地 = ① `tests/unit_ci_workflows/test_case_id_claims.py` 新增**判据 7**（`fetch_open_pr_claims` + `cross_pr_claims_problems`，接进 `all_problems` / `repo_problems` 常驻出口）；② 判据 7 的红证/对照/接线/真 HTTP 面共 13 条（其中 `test_cross_pr_check_is_wired_into_the_repo_exit` 专防「判据绿但接线不在」）；③ `.github/workflows/pr-check.yml` 的 `ci workflow helper unit tests` 步骤补 `GITHUB_TOKEN`（没有它 ⇒ 那一侧判据 7 只能记「判定不了」）。判据⑨口径 = 「本 PR ↔ 另一个在飞 PR」**只**这一面，与判据 3（本 PR ↔ main）互补。取号 MC-079（`scripts/next_case_id.py MC` ⇒ main:001-078（**MC-078 已被 #6258 占**）+ 全部 open PR 逐条目 ⇒ 最小空闲 MC-079）。⚠️ 未固化（照实登记）：不做抢占式取号（方案 ② 需共享登记写面）；不判生成物新鲜度（#6255）；本机（无凭据）不发起判定 ⇒ 本机看不到跨在飞 PR 的重号。 ｜ tags: ci, case-id-claims, cross-pr, fail-closed, red-proof, no-new-dependency
+
+### PK-001. 包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们） 🔵
+```
+你: 并行修复包按「只跑定点」的纪律干活时，新增/修改 Java 测试、或新增 `[backend-contract]`（`expectations: []`）用例 —— 这两类改动必须**自动**带出它们各自那条必然判据，不靠人记得加开关；不改测试也不加用例的包则**不许**跑它们，也不许把全量档拖进来。
+数据: **只读 + 只跑测试**（判据 = tests/unit_ci_workflows/test_pkg_narrow_check.py::TestReadOnly::test_entry_writes_nothing）：整跑一遍（两条必然项**都**触发）后工作树快照**逐字节相同** ⇒ 任何写盘 / 改文件即红。
+数据: **自动探测（机械判定，不靠人记得加开关）**（判据 = test_java_test_file_auto_enables_wall_clock_leg / test_case_or_claim_change_auto_enables_anchor_leg）：变更集（`git diff --name-only <base>...HEAD` ∪ 工作区未提交，`-uall`）里出现 `src/test/**/*.java` ⇒ 自动带上 `--java-tests`，出现 `.github/cases/**` 或 `claims/**` ⇒ 自动带上 `--new-cases`；两条都由**真 runner 的调用记录**证明（不只是打印）。
+数据: **反向对照（不该跑就不跑）**（判据 = test_neither_inevitable_leg_runs_when_nothing_triggers / test_lightweight_gates_run_and_no_full_suite_is_pulled）：只有一条无关文件变动时，两条必然项都 `⏭️ 未跑` 且 `mvnw-probe` / `test_case_machine_fail_channel.py` 都不在调用记录里；无开关时**只**跑三条轻量门禁（`case_trust_gate --base origin/main` / `generated_artifacts_freshness.py` / `test_realdb_failclosed.py`），调用记录里没有整目录 pytest。
+数据: **不许静默跳过**（判据 = test_skips_are_never_silent）：未跑的腿必须打印「未跑 + 触发面 + 依据」三样；`--no-auto` 必须打印「已按 --no-auto 关闭」（与「没命中」分开措辞）。
+数据: **fail-closed（无法判定 ⇒ 非零）**（判据 = TestFailClosed）：基准 ref 取不到 ⇒ `rc=3`；零 diff 树 ⇒ `rc=3`；有腿真红 ⇒ `rc=1`；`--dry-run` 只打印计划且不执行任何腿。三种都**不得**出现「该跑的腿全部通过」。
+数据: **判别力自证 + 注入式红证**（判据 = TestMutationProvesDiscrimination，含内存变异体）：把 `AUTO_JAVA=1` / `AUTO_CASES=1` 从脚本里摘掉 ⇒ 同一夹具、同一注入下该腿不再被带上 ⇒ 判据当场红（§28.1 出口①）。
+数据: **落点与出口（人可照做）**：`docs/wiki/Development.md` 新增「包级定点清单」节（并从上节「批次统一验证」交叉链接），写明「改 Java 测试 / 新增用例的包，必须跑 `./scripts/pkg-narrow-check.sh`」，把两条必然项的**窄跑命令逐字**与第 ② 条红了的重锚出口（`_how_to_regen`）一并写进文档。
+跳过: [backend-contract] 纯离线判据（零 LLM、零真库、零网络；沙箱里跑**真脚本** + runner 桩）：由 tests/unit_ci_workflows/test_pkg_narrow_check.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-03 新增（issue #6250）：把「新增测试 / 新增用例就必然要动的两条冻结台账」并入包级定点清单。触发 4 次实测：#6237（`src/test` 里 `System.nanoTime(` ⇒ BusinessClockTestSourceGuardTest 的 presentInTree 冻结判红）、#6231/#6226/#6224/#6237（各一次新增 `[backend-contract]` + `expectations: []` ⇒ backend_contract_scoring_zero 读数 +1 而锚点没动）。本单只加**包级定点入口**（scripts/pkg-narrow-check.sh，只读、只跑测试、不做全量），**不改**任何既有门禁的判据逻辑。取号 PK-001（python3 scripts/next_case_id.py PK ⇒ 候选集 main ∪ 全部在飞 PR ∪ 工作区均无 PK 前缀 ⇒ 最小空闲 PK-001；另经 `git log --all -S PK-001` + `git grep PK- origin/main` 跨 refs 复核：全新前缀、无退役号）。⚠️ 未固化（照实登记）：自动探测只看**路径**，非 `src/test` 的传统 Java 测试目录不在面内（`--java-tests` 是那条例外口）。 ｜ tags: dev-flow, narrow-check, auto-detect, fail-closed, read-only
 
 ## 商家入驻域（5 case）
 
@@ -9514,8 +9528,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：662（活跃 134，跳过 528）
-- tier 分布：smoke 12 / normal 608 / adversarial 32
+- 用例总数：663（活跃 134，跳过 529）
+- tier 分布：smoke 12 / normal 609 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9530,7 +9544,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：7
-- 杂项域：79
+- 杂项域：80
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：61
@@ -9640,6 +9654,7 @@
 - MC-076: 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed
 - MC-077: worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）
 - MC-079: 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI
+- PK-001: 包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

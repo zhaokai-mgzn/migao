@@ -2957,9 +2957,6 @@ cases:
   - id: MC-077
     legacy_id: ""
     title: "worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）"
-  - id: PK-001
-    legacy_id: ""
-    title: "包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）"
     domains:
       - misc
       - ci
@@ -3030,6 +3027,16 @@ cases:
     traces:
       tests:
         - tests/unit_ci_workflows/test_case_id_claims.py
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: PK-001
+    legacy_id: ""
+    title: "包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）"
+    domains:
+      - misc
+      - ci
+    tier: normal
     tags: [dev-flow, narrow-check, auto-detect, fail-closed, read-only]
     truths_ref: []
     user_inputs:

@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 122
+    "backend_contract_scoring_zero": 123
   },
   "history": [
     {
@@ -302,6 +302,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 122,
       "note": "issue #6262（P3·订单流：发货后 N 天自动完成订单，用户 2026-10-03 逐字裁定 B）新增 1 条 `[backend-contract]` 用例（**OR-061**）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 121 + 1 = **122**）。机器判红通道 = `traces.tests` 的三个真测试文件，均非空且真实存在：`backend/admin-api/src/test/java/com/migao/admin/service/AutoCompleteShippedScanServiceTest.java`（12 条判定本体：死线/静默/幂等/隔离/副作用绑定 RETURNING/可观测/失败显式）、`backend/admin-api/src/test/java/com/migao/admin/service/OrderAutoCompleteSqlGuardTest.java`（5 条结构判据：单条带谓词 SQL + RETURNING + 两条发货路都写 shipped_at）、`backend/admin-api/src/test/java/com/migao/admin/service/AutoCompleteShippedRealDbTest.java`（6 条真库：满期才完成/未满不动/非 shipped 不动/逐租户隔离 + 反向对照/集群双连接并发只生效一次/幂等）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 122}` vs 锚点 121 —— **不是**按号推算。⚠️ **跨 refs 撞号两次（本单实测，逐条登记）**：本包 19:45 取号时 main 侧最大为 OR-058 ⇒ 分配器给 **OR-059**；20:31 main 的 #6263 也取了 OR-059 ⇒ 让号改 **OR-060**；21:12 起 `.github/cases/claims/6264-OR-060.json`（#6264）显示 OR-060 也已被占 ⇒ 再让号为 **OR-061**（origin/main 用例库与 claim 台账均 0 命中；在飞 PR 面手工核过：无任何 open PR 的 claim 目录或 order.yml 提到 OR-061）。"
+    },
+    {
+      "sha": "pending-pr-6253",
+      "date": "2026-10-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 123,
+      "note": "包级定点清单包（issue #6250，本 PR #6253，rebase 到含 #6267 的 main 后实测）新增 1 条 `[backend-contract]` 用例 **PK-001**（`scripts/pkg-narrow-check.sh` 的判据；`expectations: []` ⇒ 按设计**不进 agent-eval**），机器判红通道 = `traces.tests` 里的 `tests/unit_ci_workflows/test_pkg_narrow_check.py`（真脚本 + runner 桩，双向自证 + 只读 + fail-closed）⇒ 读数 122 → **123** 是**合法新增**（同上一行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = 本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 123}`（**不是**按号推算）。"
     }
   ]
 }
