@@ -150,7 +150,17 @@ describe('工序「作用域」写面退场（issue #4960；原 #4384 A1 / #4588
 
     // 停用 / 删除：入口在抽屉 footer（issue #4947：逐行那一对与 footer 逐字重复 ⇒ 退场）
     await userEvent.click(screen.getByTestId('operations-manage-disable'))
-    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-24', { status: 'inactive' }))
+    // 🔴 2026-10-03 改判（issue #6103）：原断言逐字钉 `{status:'inactive'}` —— 那是**加工项**域
+    // `ProcessingItemStatus` 的词表，**抄错了域**：工序域后端只收 `active|disabled`
+    // ⇒ 422「status 仅支持 active/disabled」⇒ 按钮 100% 失效。**改判的是被钉的值，不是放宽** ——
+    // 下面补了反向断言：「工序写面**不得**再发出 `inactive`」。
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-24', { status: 'disabled' }))
+
+    // 反向护栏（#6103）：**任何**工序写请求都不得再带加工项域的值
+    expect(mockUpdateOperation.mock.calls.length).toBeGreaterThan(0)
+    for (const call of mockUpdateOperation.mock.calls) {
+      expect((call[1] as { status?: unknown }).status).not.toBe('inactive')
+    }
 
     // 删除入口仍在（二次确认那一套见 production-routings.test.tsx ⑰-⑬）
     expect(screen.getByTestId('operations-manage-delete')).toBeInTheDocument()

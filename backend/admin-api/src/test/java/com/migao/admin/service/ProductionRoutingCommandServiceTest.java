@@ -35,9 +35,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -716,6 +720,228 @@ class ProductionRoutingCommandServiceTest {
         assertThat(updated.getValue().getId()).isEqualTo("rt-1");
         assertThat(updated.getValue().getIsDefault()).isEqualTo(false);
     }
+
+    // ══════════ 判据：路线「适用帘种」（positions）值域护栏（PG-032 / PG-053；issue #6115）══════════
+    //
+    // 病根（实测，租户 20 / 云 dev）：`POST /routings {positions:["火星帘"]}` ⇒ **200 且原样落库**。
+    // 而选路 = `ProductionOperationQueryService#routeTemplateFor` 按部位**逐字**匹配，实例化侧只可能传
+    // 闭词表里的 4 个部位 ⇒ 这条路线**永不可能被选中**（商家以为配好了，实际一条单都不走它），
+    // 且没有任何读面/提示会说它是死配置。同维度另一写面（规则部位维）已有同款护栏。
+    //
+    // 判据 = **同一份** `POSITION_LIMIT_VOCABULARY`（规则部位维用的就是它，见 `createRouteRule`）。
+
+    @Test
+    @DisplayName("#6115 POST /routings：positions 含词表外值 ⇒ 422 且**写库前**拦截（零 insert / 零降级）")
+    void createRoutingRejectsPositionOutsideVocabularyBeforeWriting() {
+        // ⚠️ 带 `is_default=true`：`demoteCurrentDefault` 是本方法的**唯一**写库动作 ⇒
+        // 它没被调用才证明「校验在写库之前」（否则会先降级既有默认、再抛 422 = 半成品）。
+        assertThatThrownBy(() -> service.createRouting(
+                body("name", "火星路线", "positions", List.of("火星帘"), "is_default", true), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException rejected = (BusinessException) e;
+                    assertThat(rejected.getHttpStatus()).isEqualTo(422);
+                    assertThat(detailFields(rejected)).containsOnly("positions");
+                    assertThat(detailMessages(rejected).get(0))
+                            .as("理由必须给出**可行动出口**（列出合法值域）—— 只说「非法」商家无从下手")
+                            .contains("火星帘")
+                            .contains(String.join(" / ",
+                                    ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY));
+                });
+        verify(productionRouteTemplateMapper, never()).insert(any(ProductionRouteTemplate.class));
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
+    }
+
+    @Test
+    @DisplayName("#6115 PUT /routings/{id}：positions 含词表外值 ⇒ 422 且库内不变（零 updateById）")
+    void updateRoutingRejectsPositionOutsideVocabularyBeforeWriting() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边")));
+
+        assertThatThrownBy(() -> service.updateRouting("rt-1",
+                body("positions", List.of("布帘", "火星帘")), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException rejected = (BusinessException) e;
+                    assertThat(rejected.getHttpStatus()).isEqualTo(422);
+                    assertThat(detailFields(rejected)).containsOnly("positions");
+                });
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
+    }
+
+    @Test
+    @DisplayName("#6115 合法值（闭词表全表 / 子集组合）⇒ 照旧落库（两侧夹住：不得误伤）")
+    void vocabularyPositionsAreAcceptedAndStored() {
+        List<String> all = ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY;
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
+        service.createRouting(body("name", "全帘种路线", "positions", all), TENANT);
+        ArgumentCaptor<ProductionRouteTemplate> inserted =
+                ArgumentCaptor.forClass(ProductionRouteTemplate.class);
+        verify(productionRouteTemplateMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getPositions())
+                .as("合法值照旧落库（值域**现取**，不写死 4 个）").isEqualTo(all);
+
+        List<String> subset = List.of(all.get(0), all.get(all.size() - 1));
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边")));
+        service.updateRouting("rt-1", body("positions", subset), TENANT);
+        ArgumentCaptor<ProductionRouteTemplate> stored =
+                ArgumentCaptor.forClass(ProductionRouteTemplate.class);
+        verify(productionRouteTemplateMapper).updateById(stored.capture());
+        assertThat(stored.getValue().getPositions()).isEqualTo(subset);
+    }
+
+    @Test
+    @DisplayName("#6115 空 positions 的既有语义**钉在判据里**：POST 显式空数组 = 缺省（回落默认）；PUT 空数组照旧 422")
+    void emptyPositionsKeepsItsExistingSemantics() {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
+        service.createRouting(body("name", "空数组路线", "positions", List.of()), TENANT);
+        ArgumentCaptor<ProductionRouteTemplate> inserted =
+                ArgumentCaptor.forClass(ProductionRouteTemplate.class);
+        verify(productionRouteTemplateMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getPositions())
+                .as("POST 空数组 = **缺省**语义（不是拒绝、也不是清空）—— 本次改动不得误伤")
+                .isEqualTo(ProductionOperationQueryService.BASELINE_POSITIONS);
+
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边")));
+        assertThatThrownBy(() -> service.updateRouting("rt-1", body("positions", List.of()), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException rejected = (BusinessException) e;
+                    assertThat(rejected.getHttpStatus()).isEqualTo(422);
+                    assertThat(rejected.getMessage()).contains("positions 不能为空");
+                });
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
+    }
+
+    /**
+     * <b>元守卫（类级，issue #6115）</b>：路线 {@code positions} 的值域与规则**部位维**的值域必须来自
+     * <b>同一份字面量来源</b>（{@code ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY}
+     * = {@code BASELINE_POSITIONS} ∪ {@code ProcessingOrderService.FABRIC_POSITION}）。
+     *
+     * <p><b>红证</b>：在 {@code ProductionRoutingCommandService} 里就地复刻一份部位列表
+     * （= 来源词表改了它也不跟 ⇒ 两处值域漂移）⇒ 判据 ①/② 当场红。</p>
+     *
+     * <p><b>边界（如实登记）</b>：判的是**路线写面这一个文件**的代码形态 + 词表的**定义处唯一**；
+     * 它不保证「别的地方不会另开一份写面」（那由实例判据 + 该文件被复用同一份词表来承担）。</p>
+     */
+    @Test
+    @DisplayName("#6115 元守卫（类级）：路线 positions 与规则部位维取自**同一份**字面量来源（第二份词表 ⇒ 红）")
+    void positionsVocabularyComesFromTheSingleLiteralSource() throws Exception {
+        Path serviceFile = mainSourceRoot().resolve(
+                "com/migao/admin/service/ProductionRoutingCommandService.java");
+        assertThat(Files.exists(serviceFile))
+                .as("被测对象必须存在：%s", serviceFile.toAbsolutePath()).isTrue();
+        String code = stripComments(Files.readString(serviceFile));
+
+        // ① 本文件**不得**出现任何部位字面量：出现即「第二份词表」——来源词表改了它也不会跟（漂移）。
+        for (String position : ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY) {
+            assertThat(code)
+                    .as("路线写面不得就地复刻部位「%s」—— 第二份词表 = 与规则部位维漂移（issue #6115）", position)
+                    .doesNotContain("\"" + position + "\"");
+        }
+        // ② 路线侧的校验**真的接线**在同一份词表上（§28.2：判据本体绿 ≠ 接线在）——
+        //    只数「文件里出现过几次」会被规则侧那几处喂饱；必须锚在**路线 positions 校验方法**上。
+        String anchorText = "validatePositions(List<String> positions)";
+        int anchor = code.indexOf(anchorText);
+        assertThat(anchor)
+                .as("路线写面必须有 positions 值域校验方法（接线锚 %s）—— 摘掉它 ⇒ 本判据红", anchorText)
+                .isGreaterThanOrEqualTo(0);
+        int memberEnd = code.indexOf("\n    private ", anchor + 1);
+        String methodBody = code.substring(anchor, memberEnd < 0 ? code.length() : memberEnd);
+        assertThat(methodBody)
+                .as("路线 positions 校验必须取自 ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY"
+                        + "（第二份词表 / 摘掉引用 ⇒ 红）")
+                .contains("ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY");
+        // ③ 该词表在全 main 源树里**只有一处定义**（单一字面量来源）。
+        List<String> definers = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(mainSourceRoot())) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
+                if (stripComments(Files.readString(file))
+                        .matches("(?s).*\\bPOSITION_LIMIT_VOCABULARY\\s*=.*")) {
+                    definers.add(mainSourceRoot().relativize(file).toString());
+                }
+            }
+        }
+        assertThat(definers)
+                .as("词表必须只有一处定义（单一字面量来源）")
+                .containsExactly("com/migao/admin/service/ProductionOperationQueryService.java");
+    }
+
+    /** main 源码根（同 GlobalExceptionHandlerCoverageTest：兼容 surefire 的两种工作目录）。 */
+    private static Path mainSourceRoot() {
+        for (String candidate : List.of("src/main/java", "backend/admin-api/src/main/java")) {
+            Path path = Path.of(candidate);
+            if (Files.isDirectory(path)) {
+                return path;
+            }
+        }
+        throw new IllegalStateException("找不到 admin-api 主源码根（试过 src/main/java 与 backend/admin-api/src/main/java）");
+    }
+
+    /**
+     * 剥注释（**引号感知**：字符串里的 {@code //} / {@code /*} 不是注释起点）——
+     * 元守卫读的是**代码**，注释里提及部位名不算「第二份词表」。
+     */
+    private static String stripComments(String text) {
+        StringBuilder out = new StringBuilder(text.length());
+        boolean inLine = false;
+        boolean inBlock = false;
+        boolean inString = false;
+        boolean inChar = false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            char next = i + 1 < text.length() ? text.charAt(i + 1) : '\0';
+            if (inLine) {
+                if (c == '\n') {
+                    inLine = false;
+                    out.append(c);
+                }
+                continue;
+            }
+            if (inBlock) {
+                if (c == '*' && next == '/') {
+                    inBlock = false;
+                    i++;
+                } else if (c == '\n') {
+                    out.append(c);
+                }
+                continue;
+            }
+            if (inString || inChar) {
+                out.append(c);
+                if (c == '\\' && i + 1 < text.length()) {
+                    out.append(text.charAt(++i));
+                    continue;
+                }
+                if (inString && c == '"') {
+                    inString = false;
+                } else if (inChar && c == '\'') {
+                    inChar = false;
+                }
+                continue;
+            }
+            if (c == '/' && next == '/') {
+                inLine = true;
+                i++;
+                continue;
+            }
+            if (c == '/' && next == '*') {
+                inBlock = true;
+                i++;
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+            } else if (c == '\'') {
+                inChar = true;
+            }
+            out.append(c);
+        }
+        return out.toString();
+    }
+
     // ══════════ 判据：信号映射写面**已退役**（PG-033；issue #4452）══════════
 
     /**

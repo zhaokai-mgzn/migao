@@ -1731,10 +1731,26 @@ export interface PieceworkReport {
  * `OperationPosition` / `OperationLayerDeliveryRow`）—— 读面契约键一字不动。
  * `scope` **可写键保留**：它仍是后端契约键，且本包只删商家写面（本仓当前无调用点发它）。
  */
+/**
+ * **工序**状态取值域（`production_operations.status`）。
+ *
+ * 🔴 真值源 = `backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java`
+ * 的 `STATUSES`（`Set.of("active","disabled")`，与路线域 `ProductionRoutingCommandService.STATUSES`
+ * 同一份词表）—— 后端受理的就这两个值，别的一律 **422**。
+ *
+ * ⚠️ **别把它与「加工项」的词表混起来**（issue #6103 的病根）：`ProcessingItemStatus = 'active' | 'inactive'`
+ * （`processing_items` 域）**不是**工序域的词表 —— 工序域**没有** `inactive`，写它必被拒
+ * （实测 `PUT /api/admin/production/operations/{id}` `{"status":"inactive"}` ⇒ **422**「status 仅支持 active/disabled」）。
+ * 写成**联合类型**（不是裸 `string`）就是为了让这类「抄错域」的值在**编译期**当场红
+ * （`tsc` 认得出，裸 `string` 认不出）；跨端一致性由
+ * `tests/unit_ci_workflows/test_operation_status_vocab_parity.py` 机械判红。
+ */
+export type ProductionOperationStatus = 'active' | 'disabled'
+
 export interface ProductionOperationUpdateParams {
   unit_price?: number
   is_start_marker?: boolean
-  status?: string
+  status?: ProductionOperationStatus
   unit?: string
   group_name?: string
   sort_order?: number

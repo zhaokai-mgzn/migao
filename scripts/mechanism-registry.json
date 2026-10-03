@@ -7,16 +7,16 @@
   "reading_grammar": "::notice::MECHANISM-LIVENESS mech=<id> run=<run_id> rc=<n> seen=<n|unknown> acted=<n|unknown> why=<单行>（发射器：.github/scripts/mechanism_liveness.sh）",
   "mechanisms": [
     {
-        "id": "main-freshness-guard",
-        "name": "main 侧生成物新鲜度守护（渲染 + 逐字节比对；判定本体与 PR 面同一份）",
-        "workflow": ".github/workflows/main-freshness-guard.yml",
-        "job": "freshness",
-        "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数（job 最后一步、if: always()），含 seen=<检查的产物数> acted=<陈旧产物数>；零动作（全部新鲜）时 acted=0 且 why 写明 verdict=fresh。",
-        "criterion": "看门人断言：main 上最近一次**已完成** run 的注解里存在**绑定该 run id** 的 MECHANISM-LIVENESS 行；缺失 / 绑定旧 run / rc 与结论矛盾 ⇒ 红（只用 run 归属与结论，不用挂钟时长）。",
-        "consumer": "值班（mechanism-liveness.yml 定时腿 ⇒ P1 值班 issue）；本腿**自身**判红时另开/更 P1 值班 issue（同一形态，不新造第二套约定）。",
-        "reading": "instrumented",
-        "unfixed": [],
-        "reading_site": "emitter"
+      "id": "main-freshness-guard",
+      "name": "main 侧生成物新鲜度守护（渲染 + 逐字节比对；判定本体与 PR 面同一份）",
+      "workflow": ".github/workflows/main-freshness-guard.yml",
+      "job": "freshness",
+      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数（job 最后一步、if: always()），含 seen=<检查的产物数> acted=<陈旧产物数>；零动作（全部新鲜）时 acted=0 且 why 写明 verdict=fresh。",
+      "criterion": "看门人断言：main 上最近一次**已完成** run 的注解里存在**绑定该 run id** 的 MECHANISM-LIVENESS 行；缺失 / 绑定旧 run / rc 与结论矛盾 ⇒ 红（只用 run 归属与结论，不用挂钟时长）。",
+      "consumer": "值班（mechanism-liveness.yml 定时腿 ⇒ P1 值班 issue）；本腿**自身**判红时另开/更 P1 值班 issue（同一形态，不新造第二套约定）。",
+      "reading": "instrumented",
+      "unfixed": [],
+      "reading_site": "emitter"
     },
     {
       "id": "automerge",
@@ -209,7 +209,13 @@
       "reading": "instrumented"
     }
   ],
-  "exempt": [],
+  "exempt": [
+    {
+      "workflow": ".github/workflows/c-end-h5-publish.yml",
+      "reason": "**无人值守档不写盘**：本腿的 `schedule`（`53 18 * * *`）与 `push` 一律走 `notify` 模式（只跑 `scripts/h5_freshness_guard.py` 报告线上产物是否落后），**绝不发布** —— 写盘步与 dist 推送步的 `if` 都逐字要求 `workflow_dispatch` + `inputs.publish == 'true'`（后者默认 `false`）。它被结构规则（无人值守触发面 × 写作用域）识别，只因 #6095 第三层给 workflow 加了 `permissions: contents: write`（那个 `write` **只在人手动授权时**用来推 `h5-dist` 承载 CI 构建产物，不是无人值守路径）⇒ 它不是「新的无人值守写盘机制」，不需要存活读数步；它的失败面由 deploy-reconcile.yml 的 `c-end-h5` 对账腿 + publish_leg_fallback_ledger.json 的兜底面 + notify 步判红承接。",
+      "issue": "#6109"
+    }
+  ],
   "reading_sites": "`emitter` = 调共享发射器（常规）；`inline` = 内联**同一语法**（唯一合法场景：本 job **不得 checkout** ⇒ 取不到发射器文件）—— 内联必须带 `reading_site_reason`，且由 tests/unit_ci_workflows/test_mechanism_liveness.py 的`test_inline_emission_is_grammar_equivalent_to_the_emitter` **真跑内联文本**并逐字段比对。",
   "unfixed_budget": {
     "max_mechanisms": 0,

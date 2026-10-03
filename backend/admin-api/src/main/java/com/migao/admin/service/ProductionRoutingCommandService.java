@@ -134,6 +134,9 @@ public class ProductionRoutingCommandService {
         // 都污染不了主线 —— 主线一旦存变体名，实例化按逻辑名建键就查不到 ⇒ 该道工序被**静默丢掉**。
         List<String> mainline = normalizeMainline(stringList(body == null ? null : body.get("mainline")));
         List<String> positions = stringList(body == null ? null : body.get("positions"));
+        // 适用帘种值域护栏（issue #6115）：必须在**任何写库之前** —— 下面 `demoteCurrentDefault`
+        // 也是一次写库（否则会先降级既有默认、再抛 422 = 半成品）。
+        validatePositions(positions);
         if (!mainline.isEmpty()) {
             validateMainline(mainline, tenantId);
         }
@@ -209,6 +212,8 @@ public class ProductionRoutingCommandService {
             if (positions.isEmpty()) {
                 throw BusinessException.validationError("positions 不能为空（一条路线至少要说明它适用哪些帘种）");
             }
+            // 与 createRouting 共用**同一份**值域护栏（issue #6115）—— 校验先于下面的任何写库。
+            validatePositions(positions);
             template.setPositions(positions);
         }
         if (body.containsKey("is_default")) {
@@ -587,6 +592,37 @@ public class ProductionRoutingCommandService {
                     + "目录里没有就永远不命中，请先在「加工项管理」建这个加工项", triggerValue);
         }
         return String.format("触发值「%s」不可用", triggerValue);
+    }
+
+    /**
+     * 路线写面「适用帘种」（{@code positions}）的**值域**护栏（issue #6115）。
+     *
+     * <p>判据 = **同一份**闭词表 {@link ProductionOperationQueryService#POSITION_LIMIT_VOCABULARY}
+     * —— 规则部位维（本类 {@code createRouteRule} 的 {@code position} 键）用的就是它，**不新造第二份**。
+     * 越界值 = 一条**永不可能被选中**的路线：选路
+     * （{@code ProductionOperationQueryService#routeTemplateFor}）按部位**逐字**匹配，而实例化侧
+     * 只可能传这四个部位 ⇒ 商家以为配好了，实际一条单都不走它（同「规则落库但永不生效」的黑洞形态）。</p>
+     *
+     * <p>必须在**任何写库之前**调用（改默认那条分支 {@code demoteCurrentDefault} 也是写库）。
+     * 空列表**不是**越界：既有语义里 {@code POST} 的空数组 = 缺省（回落默认三部位），
+     * {@code PUT} 的空数组由调用点单独拒（「positions 不能为空」）—— 本方法不改这两条语义。</p>
+     */
+    private static void validatePositions(List<String> positions) {
+        String vocabulary = String.join(" / ", ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY);
+        List<String> unknown = positions.stream()
+                .filter(position -> !ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY.contains(position))
+                .distinct()
+                .toList();
+        if (unknown.isEmpty()) {
+            return;
+        }
+        throw BusinessException.validationError(
+                "适用帘种未通过校验（" + unknown.size() + " 项）",
+                unknown.stream().map(position -> BusinessException.detail("positions", String.format(
+                        "「%s」不是可用帘种：选路按部位**逐字**匹配，实例化只会传 %s —— 写别的值这条路线"
+                                + "**永远不会被选中**（商家以为配好了，实际一条单都不走它）",
+                        position, vocabulary))).toList(),
+                "把 positions 改成可用帘种的组合：" + vocabulary);
     }
 
     private static String actionText(String action) {

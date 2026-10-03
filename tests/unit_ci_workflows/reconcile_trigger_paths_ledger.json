@@ -2,8 +2,8 @@
   "schema": "reconcile-trigger-paths-ledger/v1",
   "what": "「触发面有、对账面没有」的**存量缺口台账**（关联 #5001）。触发面 = 各 deploy/发布 workflow 的 `on.push.paths` 正向项；对账面 = `deploy-reconcile.yml` 里该服务那条 `reconcile_one` 腿的 pathspec。落在触发面却没落在对账面上的路径 ⇒ 该路径的改动一旦 push 触发被吞，就**静默不部署/不发布**（本台账把存量逐条点名，新出现的缺口**未登记即红**）。",
   "why_not_fixed": "本单（用户逐字裁定 A）只把 `deploy/swas/**` 接进 `deploy-admin-api` 一处；另 4 条腿的判定语义按裁定**原样不动** ⇒ 它们已有的缺口如实登记在此，不静默、不粉饰。",
-  "frozen_max": 12,
-  "_frozen_max_note": "只许缩短：新增缺口必须先登记（改这个数 + 加条目），而**任何**新增都会被逐条比对(条目必须逐字等于现取缺口) ⇒ 涨跌都红。｜2026-09-27 由 issue #4184 从 10 抬到 12：新增第三条静态落地面腿 `c-end-h5`，其发布链路自身的两个文件落在触发面之外（**有意**：该腿的 `on.push.paths` 只允许命中 `frontend/mini-app/**`，首次发布由人手动触发）⇒ 逐条标 `never_in_trigger`。",
+  "frozen_max": 13,
+  "_frozen_max_note": "只许缩短：新增缺口必须先登记（改这个数 + 加条目），而**任何**新增都会被逐条比对(条目必须逐字等于现取缺口) ⇒ 涨跌都红。｜2026-09-27 由 issue #4184 从 10 抬到 12：新增第三条静态落地面腿 `c-end-h5`，其发布链路自身的两个文件落在触发面之外（**有意**：该腿的 `on.push.paths` 只允许命中 `frontend/mini-app/**`，首次发布由人手动触发）⇒ 逐条标 `never_in_trigger`。｜2026-10-03 由 issue #6095 从 12 抬到 13：第三层修复新增链路面文件 `deploy/scripts/c-end-h5-dist-push.sh`（把 CI 构建的 dist 推成不可变 sha），同因标 `never_in_trigger`。",
   "entries": [
     {
       "svc": "worker-h5",
@@ -78,6 +78,13 @@
       "path": ".github/workflows/c-end-h5-publish.yml",
       "never_in_trigger": true,
       "why": "同 `deploy/scripts/c-end-h5-publish-ci.sh`（发布链路自身的定义文件）。同因标 `never_in_trigger`。"
+    },
+    {
+      "svc": "c-end-h5",
+      "wf": "c-end-h5-publish.yml",
+      "path": "deploy/scripts/c-end-h5-dist-push.sh",
+      "never_in_trigger": true,
+      "why": "发布链路自身（CI 侧把 Build H5 的 dist 推成 h5-dist 上的孤儿单提交 ⇒ 远端按不可变 sha 取回；issue #6095 第三层）。改它而 push 被吞时不自动补发布；**不能**靠加进触发面消账：本腿的 `on.push.paths` 只允许 `frontend/mini-app/**`（用户裁定 B）⇒ 标 `never_in_trigger`。"
     }
   ],
   "_never_in_trigger": "`never_in_trigger: true` = 「这条缺口**永远不许**靠把路径加进 `on.push.paths` 来消账」（出口被明文禁止，而不是被忘掉）。判据：标了却出现在触发面里 ⇒ 红。"
