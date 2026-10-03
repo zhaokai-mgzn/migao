@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 109
+    "backend_contract_scoring_zero": 110
   },
   "history": [
     {
@@ -219,6 +219,12 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 109,
       "note": "issue #6090（图片能力 A 档补齐：B 端 image_recognize 用例销账 + 恒真式期望收缩 + 设计文档回填）—— 读数 +1（108 → 109）的**唯一**来源是 **CH-023**：它的恒真式期望 `product_search or interact or direct_reply` 被删除后，`expectations: []` 且无机器计分型 `data_check` ⇒ `scoring_assertion_count` 1 → 0。CH-023 **按设计不进 agent-eval**（`skip_reason` 以 `[backend-contract]` 开头；`traces.tests` 非空且逐条真实存在：`backend/ai-agent-service/tests/test_graph_skills.py`（TestVisionGroundedGuide 契约断言）+ `backend/ai-agent-service/tests/test_clarify_grounded.py`（关键词提取纯函数））⇒ 机器判红通道 = `traces.tests` 豁免通道，**不是**真债务（真债务 `no_channel_total` 仍为 **0**）。本 PR 另两条改动**不进**本读数：CH-021 收缩后 `scoring_assertion_count` 仍为 1（保留 1 条机器计分型 data_check：发图轮 `success=true`），CH-044 非 `[backend-contract]`（`scoring_assertion_count` ≥ 1）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机按 CI 读数复算 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 109}`（CI run 37073342290 的 `ci workflow helper unit tests` 首轮报 109 vs 锚点 108）——**不是**按号推算。"
+    },
+    {
+      "date": "2026-10-03",
+      "backend_contract_scoring_zero": 110,
+      "no_channel_total": 0,
+      "note": "issue #6114（默认配置下纱帘单勾任一特殊选项整单 fail-closed：开租种子的规则级部位限定缺口）新增 1 条 `[backend-contract]` 用例（PG-066）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，109 → 110）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedOptionRulePositionTest.java`：内容腿 3 条 + 行为腿 3 条，覆盖「开租种子逐条 position='布帘'」「纱帘单能派工且不出布帘变体」「布帘单照旧插花边-布」；`tests/unit_ci_workflows/test_production_catalog_seed.py`：类级元守卫读生产源码 planRouteRules 的特殊选项分支 + 注入式判别力自证），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `test_i3_anchor_matches_reality_and_is_only_shrinking` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 110}` vs 锚点 109（并用 `assertion_taxonomy.scoring_assertion_count` 逐条复算：PG-066 = 0）——**不是**按号推算。"
     }
   ]
 }
