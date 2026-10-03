@@ -6,6 +6,7 @@ import com.migao.admin.security.RequirePermission;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderService;
+import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
 import com.migao.admin.service.ProductionOperationPositionCommandService;
@@ -93,6 +94,19 @@ public class ProductionController {
     private final ProductionRoutingCommandService productionRoutingCommandService;
     private final ProcessingOrderService processingOrderService;
     private final OrderService orderService;
+
+    /**
+     * 幂等键单一实现（issue #6157）：本控制器的 {@code /ship} 与工人侧三条写面**共用**它
+     * （同一张 {@code client_request_keys} 表，不新造第二套）。
+     *
+     * <p>与下面几条同款用**字段注入而不是构造参数**：本类构造签名被
+     * {@code ProductionControllerTest} / {@code ProductionRoutingReadControllerTest} 显式装配，
+     * 加参数会把既有测试的装配都改一遍 —— 而本单的改动面**不应**扩到那里
+     * （同 #4308 / #4500 / #4587 的「不复制第二份装配」口径）。Spring 生产装配下该依赖一定非 null
+     * （同包 {@code @Service}）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private ClientRequestIdService clientRequestIdService;
 
     /**
      * 加工费组合定价（V68，issue #4386）：读面（列表 / 缺口）+ 写面（新建 / 改价 / 停用）。
@@ -224,15 +238,58 @@ public class ProductionController {
      * <p><b>守卫不复制</b>：含加工项订单必须有 completed 加工单这条判定在
      * {@link OrderService#shipWithLogistics} 内部（与 {@code updateOrderStatus} 路径**同一份**），
      * 本端点只做转发。</p>
+     *
+     * <p>🔴 <b>幂等（issue #6157）</b>：本端点此前**完全不认</b> {@code X-Client-Request-Id}
+     * —— 同键两次调用**都生效**、运单号被第二次 payload 覆写（实测 7777 → 8888 → 9999），
+     * 而 {@code client_request_keys} **0 行**。发货是**涉物流凭证**的写动作，客户端超时重试
+     * （HTTP 25s / 工具 30s 窗口客观存在，正是 issue #4037 的立项理由）会把单号静默改写。
+     * 修法 = <b>复用</b> {@link ClientRequestIdService}（工人侧那条路同一份实现、同一张表，
+     * **不新造第二套**）：占位在调服务**之前**、成功写快照、失败丢弃占位（否则一次失败会把该键占死）。</p>
      */
     @PostMapping("/orders/{orderId}/ship")
     @RequirePermission("production:execute")
-    public ApiResponse<Map<String, Object>> ship(@PathVariable String orderId,
-                                                 @RequestBody Map<String, String> body) {
-        orderService.shipWithLogistics(orderId,
-                body == null ? null : body.get("trackingNo"),
-                body == null ? null : body.get("logisticsCompany"));
-        return ApiResponse.success(Map.of("order_id", orderId, "status", "shipped"));
+    public ApiResponse<Map<String, Object>> ship(
+            @PathVariable String orderId,
+            @RequestBody Map<String, String> body,
+            @RequestHeader(value = ClientRequestIdService.HEADER, required = false) String clientRequestId) {
+        Long tenantId = TenantContext.getTenantId();
+        if (!clientRequestIdService.claim(tenantId, clientRequestId,
+                OrderShipmentService.ENDPOINT_SHIP_ADMIN)) {
+            return ApiResponse.success(replayIfCompleted(tenantId, clientRequestId));
+        }
+        Map<String, Object> result;
+        try {
+            result = orderService.shipWithLogistics(orderId,
+                    body == null ? null : body.get("trackingNo"),
+                    body == null ? null : body.get("logisticsCompany"));
+        } catch (RuntimeException e) {
+            // 失败必须释放占位，否则该键被永久占死（此后所有重试都被误判为「重复」）
+            clientRequestIdService.discard(tenantId, clientRequestId);
+            throw e;
+        }
+        clientRequestIdService.complete(tenantId, clientRequestId, result);
+        return ApiResponse.success(result);
+    }
+
+    /**
+     * 同键第二次请求的回放（issue #6157）：回放首次成功的结果快照 + 打 {@code replayed} 标记。
+     *
+     * <p>占位在飞（首次执行未提交完）时 {@code replay} 自带 fail-closed 语义（异常 + 可行动提示），
+     * 不返回空结果、也不静默当首次 —— 与工人侧同口径。</p>
+     */
+    private Map<String, Object> replayIfCompleted(Long tenantId, String clientRequestId) {
+        Map<String, Object> snapshot = clientRequestIdService
+                .replay(tenantId, clientRequestId, Map.class)
+                .orElseThrow(() -> new com.migao.admin.exception.BusinessException(
+                        "REQUEST_IN_PROGRESS",
+                        "同一 X-Client-Request-Id 的发货请求正在处理中，本次未重复发货",
+                        409,
+                        "请勿重复提交；请稍后刷新本单发货状态确认是否已发货"));
+        Map<String, Object> replayable = new java.util.LinkedHashMap<>(snapshot);
+        replayable.put(OrderShipmentService.REPLAYED_KEY, Boolean.TRUE);
+        log.info("[发货幂等] 商家路同键重复请求：跳过执行，回放首次结果 orderId={}",
+                replayable.get("order_id"));
+        return replayable;
     }
 
     /**

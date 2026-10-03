@@ -32,6 +32,7 @@ import com.migao.admin.mapper.ProductionWorkLogMapper;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderService;
+import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
 import com.migao.admin.service.ProductionRoutingCommandService;
@@ -58,6 +59,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -201,6 +203,9 @@ class ProductionControllerTest {
                         processingItemMapper, feeQueryService);
         ProductionController controller = new ProductionController(productionService, queryService, commandService,
                 routingCommandService, processingOrderService, orderService);
+        // issue #6157：/ship 的幂等键 = 字段注入（不动既有 6 参构造）⇒ 这里显式装配同一个 @Mock
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,
+                "clientRequestIdService", clientRequestIdService);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
                 "processingFeeQueryService", feeQueryService);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
@@ -2219,5 +2224,77 @@ class ProductionControllerTest {
                 .as("生产概览是生产口径读面 ⇒ 必须方法级 production:view（类级 order:list 覆盖不了该语义）")
                 .isNotNull();
         assertThat(annotation.value()).isEqualTo("production:view");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 🔴 商家/生产发货路的幂等（issue #6157）
+    //    修前实测：同键两次**都生效**、运单号被覆写 SF-FIRST-7777 → SF-SECOND-8888 →
+    //    SF-THIRD-9999，而 client_request_keys **0 行**（该端点从未接幂等键）
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("🔴 同 X-Client-Request-Id 第二次 ⇒ 跳过执行、回放首次结果（运单号不被覆写）")
+    void sameClientRequestIdReplaysWithoutSecondSideEffect() throws Exception {
+        when(orderService.shipWithLogistics(eq(ORDER_ID), eq("SF-FIRST-7777"), eq("顺丰")))
+                .thenReturn(new LinkedHashMap<>(Map.of(
+                        "order_id", ORDER_ID, "status", "shipped",
+                        "tracking_no", "SF-FIRST-7777", "logistics_company", "顺丰")));
+        String url = "/api/admin/production/orders/" + ORDER_ID + "/ship";
+        String body = "{\"trackingNo\":\"SF-FIRST-7777\",\"logisticsCompany\":\"顺丰\"}";
+
+        // ① 首次：占位成功 + 结果快照落库
+        mockMvc.perform(post(url).contentType(MediaType.APPLICATION_JSON).content(body)
+                        .header(ClientRequestIdService.HEADER, "req-inv-6157-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tracking_no").value("SF-FIRST-7777"))
+                .andExpect(jsonPath("$.data.replayed").doesNotExist());
+        verify(clientRequestIdService).claim(TENANT, "req-inv-6157-1",
+                OrderShipmentService.ENDPOINT_SHIP_ADMIN);
+        verify(clientRequestIdService).complete(eq(TENANT), eq("req-inv-6157-1"), any());
+
+        // ② 同键第二次（第二次 payload 带**不同**单号 8888）⇒ 必须回放首次结果
+        when(clientRequestIdService.claim(TENANT, "req-inv-6157-1",
+                OrderShipmentService.ENDPOINT_SHIP_ADMIN)).thenReturn(false);
+        when(clientRequestIdService.replay(TENANT, "req-inv-6157-1", Map.class))
+                .thenReturn(java.util.Optional.of(new LinkedHashMap<>(Map.of(
+                        "order_id", ORDER_ID, "status", "shipped",
+                        "tracking_no", "SF-FIRST-7777", "logistics_company", "顺丰"))));
+        mockMvc.perform(post(url).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trackingNo\":\"SF-SECOND-8888\",\"logisticsCompany\":\"顺丰\"}")
+                        .header(ClientRequestIdService.HEADER, "req-inv-6157-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tracking_no").value("SF-FIRST-7777"))
+                .andExpect(jsonPath("$.data.replayed").value(true));
+        // 第二次**零副作用**：不再调一次服务（= 不再 upsert 物流 / 不再流转状态）
+        verify(orderService, times(1)).shipWithLogistics(any(), any(), any());
+        verify(clientRequestIdService, never()).discard(any(), any());
+    }
+
+    @Test
+    @DisplayName("🔴 首次执行失败 ⇒ 释放占位（否则该键被永久占死，重试全被误判为「重复」）")
+    void failedShipDiscardsPlaceholder() throws Exception {
+        when(orderService.shipWithLogistics(any(), any(), any()))
+                .thenThrow(com.migao.admin.exception.BusinessException.validationError("货运单号不能为空"));
+
+        mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/ship")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}")
+                        .header(ClientRequestIdService.HEADER, "req-inv-6157-fail"))
+                .andExpect(status().isUnprocessableEntity());
+        verify(clientRequestIdService).discard(TENANT, "req-inv-6157-fail");
+        verify(clientRequestIdService, never()).complete(eq(TENANT), eq("req-inv-6157-fail"), any());
+    }
+
+    @Test
+    @DisplayName("🔴 无幂等键 ⇒ 老客户端路径不变（不 claim 也不回放，正常发货）")
+    void absentClientRequestIdKeepsLegacyPath() throws Exception {
+        when(orderService.shipWithLogistics(any(), any(), any())).thenReturn(new LinkedHashMap<>(Map.of(
+                "order_id", ORDER_ID, "status", "shipped", "tracking_no", "SF-9")));
+
+        mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/ship")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trackingNo\":\"SF-9\",\"logisticsCompany\":\"顺丰\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tracking_no").value("SF-9"));
+        verify(clientRequestIdService, never()).replay(any(), any(), any());
     }
 }
