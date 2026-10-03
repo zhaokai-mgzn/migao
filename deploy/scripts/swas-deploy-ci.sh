@@ -496,6 +496,11 @@ deploy_attempt() {
   #   修法：新增的部署逻辑加进远端执行体 `deploy/swas/deploy.sh`（不占命令内容）；**不许**把
   #   远端脚本整份内联进 `BOOTSTRAP`。判据 = tests/unit_ci_workflows/test_swas_command_content_limit.py。
   local bootstrap_bytes
+  # ⚠️ 闸值在**函数内自带默认**：本函数会被判据
+  #    （tests/unit_ci_workflows/test_swas_deploy_no_downgrade.py）**原样抽出来单独跑**
+  #    （只抽函数体、不带脚本顶部的常量）⇒ 只引用顶层变量会在那个宿主里 unbound、
+  #    并让那 8 条判据报「探针非预期失败」（实测：本包第一轮 CI 就是这么红的）。
+  COMMAND_CONTENT_LIMIT_BYTES=${COMMAND_CONTENT_LIMIT_BYTES:-16384}
   bootstrap_bytes=$(printf '%s' "$bootstrap" | wc -c | tr -d ' \n')
   if [ "$bootstrap_bytes" -ge "$COMMAND_CONTENT_LIMIT_BYTES" ]; then
     echo "❌ SWAS 命令内容超限：命令内容 ${bootstrap_bytes} 字节 / 上限 ${COMMAND_CONTENT_LIMIT_BYTES} 字节 —— 拒绝发起云调用（tag=${tag}）。"
