@@ -570,3 +570,19 @@ git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/Wor
 - 合并顺序的既定第一步（#6233 先合）**已满足** ⇒ 后续按 `#6226 → #6230/#6231` 的依赖各自 `sync-main.sh --rebase` + **重渲染生成物**消冲突；
 - `PG-059` 现在是 **main 上真实存在的用例号**（= #6233 的），后到的包（F-6226 取 `PG-069`）不受影响 —— 我再核过 main 全 `cases/*.yml` 域 `id: PG-069` **0 命中**。
 - 分支状态：`#6230 OPEN`、`#6231 OPEN（DIRTY，main 前进 ⇒ 待 rebase）`、`#6229 承载体 OPEN/ready`。
+
+### 19.16 会话收口前的"尾巴"清点（铁律 12(d)：不留未推送提交 / 半成品 worktree / 只在上下文里的规格）
+
+清点时刻 **2026-10-03 17:27 +08**（`git worktree list` + 逐树 `status -sb`）：
+
+| worktree | 分支 | 状态 | 处置 |
+|---|---|---|---|
+| `migao-wt/acceptance-2026-10-03-round3` | `test/acceptance-2026-10-03-round3` | 干净、与上游一致 | ✅ 承载体 PR **#6229**（ready） |
+| `ai native/migao-wt/6220-aftersales-concurrency` | `fix/6220-…` | 干净、与上游一致 | ✅ PR **#6230** |
+| `ai native/migao-wt/6221-money-precision` | `fix/6221-…` | **ahead 4 / behind 2**（rebase 后待 `--force-with-lease`） | ⏳ 包在跑，收尾动作 = force-push（已同步要求） |
+| `ai native/migao-wt/6226-mapof-null-key-siblings` | `fix/6226-…` | **ahead 1**（对齐新 main 后待 push） | ⏳ 包在跑，收尾动作 = push（已同步要求） |
+| `migao-wt/6219-cutting-height-npe` | `fix/6219-…` | 干净 | ✅ **已合并**（#6233 → main `24b7381d1`） |
+| `migao-wt/main-live` | detached（冻结构建点） | 1 处未提交 = `tests/unit_ci_workflows/package_heavy_entry_ledger.jsonl` | 属**重活锁台账**的自动追加（工具行为），非本轮产物；不并入任何 PR |
+
+⇒ **"只在上下文里的规格"= 0**：本轮所有口径都已落成 `§19.7~§19.16` 或 PR/issue 评论；**未推送提交只剩两个正在收尾的包**（它们的 PR 已存在，push 后即闭合）。
+⇒ 另有两个**别的会话**的 worktree 有未推送/未提交（`migao-dev/6200` ahead 1、`migao-dev/6198` 未提交 1）—— **不属于本轮**，登记备查、不越界处置。
