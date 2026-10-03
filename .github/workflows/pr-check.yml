@@ -150,8 +150,39 @@ jobs:
 
   # ============ CI workflow 辅助工具单测（CI workflow 逻辑，曾长期无人运行）============
   ci-workflow-tests:
-    name: ci workflow helper unit tests
+    # ── **拆腿**（issue #6164，2026-10-03）：一条 required 腿 → **两条并行腿**（matrix）──────
+    # 病（现取读数，不是估算）：这条 job 是 PR 反馈的**唯一关键路径** —— 全量档 job 中位 **514s**
+    #   （最近 60 个已完成的 `pull_request` run 里 52 个走全量档），而同 run 其余腿全部 < 60s。
+    #   「调 `-n`」「挪慢判据」「扩 dev_only」三条更便宜的路**都已实测到顶**（依次为：CI 上 -n 8
+    #   反而 548s > 中位 500s；前 30 条慢判据只占 23% 工作量；dev_only 只作用于 13% 的让出档 PR
+    #   ⇒ 加权上界 12s/PR）—— 读数与裁定见 issue #6164。
+    # 治法 = **同一条 job 起两个 matrix 分片**，各跑 `tests/unit_ci_workflows` 的一半：
+    #   分片规则 = `conftest.shard_of`（哈希，成员关系稳定），由 `MIGAO_CI_HELPER_SHARD` 选片
+    #   ⇒ **pytest 命令行一字不改**（保住「CI ⇄ 本地 argv 逐字相同」与「全量命令只许出现一次」
+    #   两条既有契约）。关键路径 ≈ **减半**。
+    # 🔴 **两条腿的名字不是随便起的**：第一条**逐字保留** `ci workflow helper unit tests`
+    #   （= 分支保护里**已有**的那个 required 名）—— 改名会让**所有在飞的 PR** 卡在
+    #   `Expected — waiting for status to be reported` 且**不会变红**（顺序铁律见
+    #   docs/wiki/CI-CD.md 的「变更门控」节）。第二条是新名字，**合并后**才加进分支保护
+    #   （顺序不可换：**先有上报、再设 required**）。
+    # 🔴 **不许用「少跑」换快**：分片只切**收集面**，一条断言都不削。「并集 == 全集」「每片库存
+    #   不低于**该片**冻结基线」都有判据：tests/unit_ci_workflows/test_helper_leg_execution_shape.py
+    #   + conftest 的 `expected_test_files()` / `collection_floor_problems()`
+    #   （分片最容易出的坏形态就是「每条腿天然只覆盖一半 ⇒ 旧的整套判定把**每条腿**都判成子集
+    #   运行 ⇒ 早退 ⇒ 牙齿全掉」，那一处已按分片感知改写）。
+    name: ci workflow helper unit tests${{ matrix.shard_suffix }}
     runs-on: ubuntu-latest
+    strategy:
+      # 两片**各自独立报告**：一片红不得让另一片被 cancel（否则红因只剩一半信息）
+      fail-fast: false
+      matrix:
+        include:
+          # ⚠️ 第一片的 `shard_suffix` **必须为空串**：它决定分支保护里那条**已有** required 名的
+          #    逐字形态（见上）。改它 = 改 required 名 = 卡住在飞的 PR。
+          - shard: "1/2"
+            shard_suffix: ""
+          - shard: "2/2"
+            shard_suffix: "（后半）"
     # ── 超时上限（当前 20 分钟）：口径 = **追认合法**，判据 = 本段，裁定载体 = issue #5365 ──
     # 沿革（历史事实，不改写）：3 → 8（#4793，2026-09-20）→ 12（#5203，2026-09-23）
     #   → **20**（#5534，2026-09-25。依据：该类 job 近 7 次 success = 7:59 / 8:19 / 11:02 /
@@ -252,6 +283,10 @@ jobs:
         env:
           # 缺 PG ⇒ `pg_cluster.require_pg()` 判 **FAIL**（不是 skip）：CI 上「没跑」绝不能是绿。
           MIGAO_REQUIRE_REALDB: "1"
+          # **本片**（issue #6164）：值形如 `N/2` ⇒ `conftest` 只收集本片的判据文件
+          # （切片走 `pytest_deselected`，**不是** skip —— skip 会把「这一轮不负责它」伪装成
+          # 「跑了但跳过」，`[realdb-summary]` 的读数就不诚实了）。
+          MIGAO_CI_HELPER_SHARD: ${{ matrix.shard }}
         run: |
           pip install -q pytest pytest-xdist pyyaml
           # ── 并行度 `-n 4`（issue #5814，2026-09-30）────────────────────────────────

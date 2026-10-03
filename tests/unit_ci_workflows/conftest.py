@@ -27,6 +27,7 @@ import pickle
 import re
 import subprocess
 import sys
+import zlib
 from pathlib import Path
 
 import pytest
@@ -321,6 +322,127 @@ install_corpus_memo()
 # 区分口径是**结构性的、不是启发式的**：本轮收集里**有没有覆盖目录下全部的 `test_*.py`**。
 # 只要有一份判据文件没进来（= 收集面被截断的形态），判定就**不早退**、照旧按基线判 —— fail-closed。
 # 真值（"目录下有哪些判据文件"）**现取**，不写死清单（新增文件 ⇒ 自动进面）。
+# ══════════════════════════════════════════════════════════════════════════════════════
+# **分片**（issue #6164）：把这一条腿拆成 N 条**并行 job**，每条只跑「本片那一半」判据
+# ══════════════════════════════════════════════════════════════════════════════════════
+# ## 为什么是「环境变量选片」而不是「每条腿写自己的 pytest 命令行」
+#
+# 那条 pytest argv 背**两条既有契约**：① 本地 `verify-all.sh` 与 CI **逐字相同**
+# （判据 = `test_ci_helper_leg.py`）② 全量命令在 `pr-check.yml` 里**只许出现一次**
+# （判据 = `test_ci_execution_scope.py`）。把分片写进命令行 ⇒ 两条腿的 argv 必然不同 ⇒
+# 两条契约都得改。而分片是**执行面**的事（跑哪些**已收集到的**用例），不是**收集面**的事
+# （跑哪些入口）⇒ 它天然属于环境变量：CI 用 matrix 给每条腿注入 `MIGAO_CI_HELPER_SHARD`，
+# 命令行**一字不改** ⇒ 那两条契约一格都不用动。
+#
+# ## 分片规则（**单一实现** = `shard_of()`；台账只登记它的参数与实测读数）
+#
+# `shard_of(文件名) = crc32("salt<N>:" + 文件名) % 片数 + 1`（1-based）。
+# 选**哈希**而不是「按排序名次的奇偶」：哈希的成员关系**稳定** —— 新增一个判据文件只会让
+# **它自己**落进某一半，**不会把已有文件在两半之间搬家**（奇偶法会：中间插入一个文件就翻转
+# 它之后全部文件的归属）⇒ 各片冻结的库存基线不会因无关新增而失效。
+# 盐 `N`（现取 74）：342 个判据文件实测分成 **172 / 170**，字节量偏斜 **0.08%**。
+# 🔴 盐是**分片规则的一部分**：改它 = 改分片 ⇒ 必须同步台账 `shape.shards.salt` 并复算读数
+# （判据 = `test_helper_leg_execution_shape.py`，两边逐字比）。
+#
+# ## 🔴 分片最容易出的坏形态：「**整套**」判定跟着失效（本包的主要风险）
+#
+# 运行期牙齿（`collection_floor_problems`）判的是「本轮有没有覆盖目录下**全部** `test_*.py`」，
+# **只覆盖时才**按冻结基线判库存。分片以后每一半**天然只覆盖一半** ⇒ 那个判定会把**每条腿**都
+# 判成「子集运行」⇒ **早退 ⇒ 牙齿全掉**（「变快」重新变成「少跑」也看不出来）。
+# ⇒「本轮**应当**覆盖哪些判据文件」必须**分片感知**：`expected_test_files()`。
+# 「跑子集（`pytest <某个文件>`）不判」这条研发日常**保持原样**（不设环境变量 ⇒ 应当覆盖全部）。
+#
+# ## 边界（照实登记）
+#
+# - 分片**只影响收集面**（哪些用例进本轮），不改变任何一条断言的覆盖面；
+# - xdist 的 worker 分配仍然非确定（各片内部照旧 `-n 4`）；
+# - 两片**互相不知道对方跑了什么** ⇒ 「并集 == 全集」由**规则**保证（`shard_of` 是全函数，
+#   每个文件恰好落进一片），判据在 `test_helper_leg_execution_shape.py` 里按**现取语料**复算。
+SHARD_ENV = "MIGAO_CI_HELPER_SHARD"
+#: 分片盐（与台账 `shape.shards.salt` 逐字相等；判据两边比）
+SHARD_SALT = 74
+
+
+def shard_of(name: str, count: int = 2) -> int:
+    """判据文件 `name` 归属第几片（**1-based**）。全函数 ⇒ 每个文件恰好一片（并集 == 全集）。"""
+    return zlib.crc32(f"salt{SHARD_SALT}:{name}".encode("utf-8")) % int(count) + 1
+
+
+def parse_shard(value: str | None) -> tuple[int, int] | None:
+    """`"2/3"` → `(2, 3)`；空 / 非法（0 片、序号越界、不是整数）⇒ `None`（= 不切片）。"""
+    if not value:
+        return None
+    text = str(value).strip()
+    if text.count("/") != 1:
+        return None
+    left, right = text.split("/")
+    if not (left.isdigit() and right.isdigit()):
+        return None
+    index, count = int(left), int(right)
+    if count < 1 or not (1 <= index <= count):
+        return None
+    return index, count
+
+
+def active_shard() -> tuple[int, int] | None:
+    """本轮的分片（读 `MIGAO_CI_HELPER_SHARD`）；不设 / 非法 ⇒ `None`（= 整套形态）。"""
+    return parse_shard(os.environ.get(SHARD_ENV))
+
+
+def expected_test_files() -> set[str]:
+    """本轮**应当**被收集到的判据文件名集合（分片感知的「整套」真值）。
+
+    不设分片 ⇒ 目录下**全部** `test_*.py`（与分片前**逐字同口径**）；
+    设了 ⇒ **本片那一半**。用途 = `is_subset_run` / 运行期库存判据的早退条件。
+    """
+    census = _current_test_files()
+    shard = active_shard()
+    if shard is None:
+        return census
+    index, count = shard
+    return {n for n in census if shard_of(n, count) == index}
+
+
+def _item_file(item) -> str:
+    """pytest item 所属的判据文件名（`nodeid` 的第一段）。取不到 ⇒ 空串。"""
+    return (getattr(item, "nodeid", "") or "").split("::", 1)[0].rsplit("/", 1)[-1]
+
+
+def pytest_collection_modifyitems(config, items):  # noqa: ARG001 —— 只用 items
+    """**切片**（issue #6164）：把不属于本片的用例从本轮收集里去掉。
+
+    ⚠️ 顺序是承重的：pytest 在**本钩子之后**才把 `session.testscollected = len(items)`
+    （`_pytest/main.py::Session.perform_collect`），所以切片后的条数才是运行期库存读数 ——
+    各片的冻结基线（台账 `frozen_inventory.shards`）按**切片后**的读数冻结。
+
+    去掉的用例走 `pytest_deselected`（**不是** skip）：skip 是「跑了但跳过」，会让
+    `[realdb-summary]` 的 skip 读数变多、把「没跑」伪装成「跑了」。去掉才是「这一轮不负责它」。
+    """
+    shard = active_shard()
+    if shard is None or not items:
+        return
+    index, count = shard
+    keep, dropped = [], []
+    for item in items:
+        (keep if shard_of(_item_file(item), count) == index else dropped).append(item)
+    if not dropped:
+        return
+    items[:] = keep
+    config.hook.pytest_deselected(items=dropped)
+
+
+def _frozen_floor(inv: dict, shard: tuple[int, int] | None) -> int:
+    """本轮的**冻结库存基线**：整套 ⇒ `collected_total`；分片 ⇒ 该片的 `collected_total`。
+
+    取不到该片的基线 ⇒ `0`（调用方按「无对象可判」处置 ⇒ fail-closed 判红，不许静默放过）。
+    """
+    if shard is None:
+        return int(inv.get("collected_total") or 0)
+    table = inv.get("shards") or {}
+    entry = table.get(f"{shard[0]}/{shard[1]}") or {}
+    return int((entry or {}).get("collected_total") or 0)
+
+
 _LEDGER_PATH = Path(__file__).parent / "helper_leg_shape_ledger.json"
 
 #: 台账 `consumption_marker` 必须逐字等于**判定本体**的函数名（删了 / 改名 ⇒ 判据红）。
@@ -379,9 +501,10 @@ def helper_leg_shape_problems(collected: int, skipped: int, ledger: dict | None 
             "执行形态台账缺 `shape.parallel_workers` 或 `frozen_inventory` ⇒ 无对象可判"
             f"（issue #5814）：shape={shape} / frozen_inventory={inv}"
         ]
-    floor = int(inv.get("collected_total") or 0)
+    floor = _frozen_floor(inv, active_shard())
     if floor <= 0:
-        return [f"冻结基线的 `collected_total` 未填（= {floor}）⇒ 判据是空断言（issue #5814）"]
+        return [f"冻结基线的 `collected_total` 未填（= {floor}；本轮分片 {active_shard()}）"
+                f"⇒ 判据是空断言（issue #5814 / 分片见 #6164）"]
     if require_realdb is None:
         require_realdb = pg_cluster.require_realdb()
     frozen_skips = _frozen_skip_reading(inv, bool(require_realdb))
@@ -390,10 +513,10 @@ def helper_leg_shape_problems(collected: int, skipped: int, ledger: dict | None 
             "冻结台账里取不到本环境的 `skipped_reading`（键 = `MIGAO_REQUIRE_REALDB` / `default`）"
             f"⇒ 无对象可判，fail-closed 判红（issue #5814）：{inv.get('skipped_reading')!r}"
         ]
-    # 这一轮跑的是不是**整套**：结构判据 = 收集面覆盖了目录下全部判据文件（现取真值）
+    # 这一轮跑的是不是**整套**：结构判据 = 收集面覆盖了**本轮应当覆盖**的判据文件（分片感知，现取真值）
     if collected_names is None:
-        collected_names = _current_test_files()
-    missing_files = _current_test_files() - set(collected_names)
+        collected_names = expected_test_files()
+    missing_files = expected_test_files() - set(collected_names)
     whole_suite = not missing_files
     if not whole_suite:
         return []
@@ -422,9 +545,8 @@ def is_subset_run(session) -> bool:
     145 条）越过启发式门、而钩子仍按结构性早退 ⇒ 该测试拿到 `DID NOT RAISE` 的**假红**。
     ⇒ 判定只允许写在这里一处，两边都调它。
     """
-    names = {(getattr(item, "nodeid", "") or "").split("::", 1)[0].rsplit("/", 1)[-1]
-             for item in list(getattr(session, "items", []) or [])}
-    return bool(_current_test_files() - names)
+    names = {_item_file(item) for item in list(getattr(session, "items", []) or [])}
+    return bool(expected_test_files() - names)
 
 
 def collection_floor_problems(session, ledger: dict | None = None) -> list[str]:
@@ -437,8 +559,18 @@ def collection_floor_problems(session, ledger: dict | None = None) -> list[str]:
     """
     book = _helper_leg_ledger() if ledger is None else ledger
     inv = (book.get("frozen_inventory") or {})
-    floor = int(inv.get("collected_total") or 0)
+    shard = active_shard()
+    floor = _frozen_floor(inv, shard)
     if floor <= 0:
+        if shard is not None:
+            # 🔴 分片形态下「台账里没有本片的基线」**不许**静默放过：那等于本片没有牙齿
+            # （与整套形态的处置刻意不同 —— 整套没填基线是「台账还没建」，本处是「建了台账
+            #  却漏了这一片」⇒ 后者是**本次拆腿最可能出的坏形态**）。
+            return [
+                f"本轮是分片 {shard[0]}/{shard[1]}，但台账里**没有该片的冻结基线**"
+                f"（`frozen_inventory.shards[\"{shard[0]}/{shard[1]}\"].collected_total`）"
+                "⇒ 分片形态下库存判据无对象可判（fail-closed 判红；issue #6164）"
+            ]
         return []
     if is_subset_run(session):
         return []                      # 子集运行（或本文件自己被筛掉）：库存判据不适用（口径见 is_subset_run）
