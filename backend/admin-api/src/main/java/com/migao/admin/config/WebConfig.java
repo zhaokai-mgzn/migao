@@ -1,5 +1,6 @@
 package com.migao.admin.config;
 
+import com.migao.admin.security.PaginationParamInterceptor;
 import com.migao.admin.security.PermissionInterceptor;
 import com.migao.admin.security.TenantOwnershipInterceptor;
 
@@ -23,6 +24,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * 422/400，认定不过时不进入参数解析。两个拦截器的**相对顺序**不敏感：一个判授权、
  * 一个判归属，任一不过都应在参数解析之前结束请求（`@RequirePermission` 与
  * `@TenantOwnedResource` 可同时标注，两者都抛异常 ⇒ 谁先谁后都是「先拒绝」）。</p>
+ *
+ * <p>issue #6222：{@code PaginationParamInterceptor} 是**分页入参的单点准入**
+ * （非法 `page`/`size` ⇒ 400，不再出现「`total=0` 却返回整页」）。它**必须排在最后** ——
+ * 授权先于入参（#6063 F3 的 403-before-400 契约）⇒ 无权限 + `size=-5` 仍是 403，
+ * 不因这道新闸变成 400（顺序判据见 `PaginationParamGateWiringTest`）。</p>
  */
 @Configuration
 public class WebConfig {
@@ -32,10 +38,15 @@ public class WebConfig {
     /** 归属认定拦截器（issue #6158）—— 构造注入：漏装配 ⇒ 启动期/判据当场红，不静默少一条闸。 */
     private final TenantOwnershipInterceptor tenantOwnershipInterceptor;
 
+    /** 分页入参闸（issue #6222）—— 同款构造注入：漏装配 ⇒ 判据当场红。 */
+    private final PaginationParamInterceptor paginationParamInterceptor;
+
     public WebConfig(PermissionInterceptor permissionInterceptor,
-                     TenantOwnershipInterceptor tenantOwnershipInterceptor) {
+                     TenantOwnershipInterceptor tenantOwnershipInterceptor,
+                     PaginationParamInterceptor paginationParamInterceptor) {
         this.permissionInterceptor = permissionInterceptor;
         this.tenantOwnershipInterceptor = tenantOwnershipInterceptor;
+        this.paginationParamInterceptor = paginationParamInterceptor;
     }
 
     @Bean
@@ -47,6 +58,9 @@ public class WebConfig {
                         .addPathPatterns("/api/**");
                 // issue #6158：归属认定先于载荷校验（同一条次序纪律的第二个实例）
                 registry.addInterceptor(tenantOwnershipInterceptor)
+                        .addPathPatterns("/api/**");
+                // issue #6222：分页入参闸**排在最后** —— 授权/归属判定先于入参判定（F3 #6063 的次序纪律）
+                registry.addInterceptor(paginationParamInterceptor)
                         .addPathPatterns("/api/**");
             }
 

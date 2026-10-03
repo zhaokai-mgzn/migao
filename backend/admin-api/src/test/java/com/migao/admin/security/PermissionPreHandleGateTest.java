@@ -1,4 +1,4 @@
-// case_ids: DF-025
+// case_ids: DF-025, PG-070
 package com.migao.admin.security;
 
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -126,19 +126,23 @@ class PermissionPreHandleGateTest {
     }
 
     @Test
-    @DisplayName("类级元守卫：WebConfig 必须把 PermissionInterceptor 与归属认定拦截器都注册进 MVC 链")
+    @DisplayName("类级元守卫：WebConfig 必须把 PermissionInterceptor / 归属认定 / 分页入参闸都注册进 MVC 链")
     void webConfig_registersPreHandleInterceptor() {
         PermissionInterceptor permissionInterceptor =
                 new PermissionInterceptor(Mockito.mock(RoleService.class));
         TenantOwnershipInterceptor tenantOwnershipInterceptor = new TenantOwnershipInterceptor();
-        WebConfig webConfig = new WebConfig(permissionInterceptor, tenantOwnershipInterceptor);
+        // issue #6222：第三条闸也是**构造注入**（漏装配 = 编译期红，不是静默少一条）
+        PaginationParamInterceptor paginationParamInterceptor = new PaginationParamInterceptor();
+        WebConfig webConfig = new WebConfig(permissionInterceptor, tenantOwnershipInterceptor,
+                paginationParamInterceptor);
         SpyRegistry registry = new SpyRegistry();
         webConfig.webMvcConfigurer().addInterceptors(registry);
         assertThat(registry.interceptorCount()).as("F3 #6063：/api/** 拦截器注册不可消失").isGreaterThan(0);
         // issue #6158：两条「判定先于参数解析」的拦截器都必须真在注册表里（少一条即红）
+        // issue #6222：分页入参闸同款（本单的接线判据；顺序判据见 PaginationParamGateWiringTest）
         assertThat(registry.registeredInterceptors())
-                .as("#6063 授权拦截器 + #6158 归属拦截器都必须进 MVC 链")
-                .contains(permissionInterceptor, tenantOwnershipInterceptor);
+                .as("#6063 授权 + #6158 归属 + #6222 分页入参闸 都必须进 MVC 链")
+                .contains(permissionInterceptor, tenantOwnershipInterceptor, paginationParamInterceptor);
     }
 
     /** getInterceptors() 是 protected —— 测试子类暴露只读计数与只读清单（不改变注册行为）。 */

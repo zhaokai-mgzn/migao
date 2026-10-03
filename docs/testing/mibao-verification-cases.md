@@ -5754,7 +5754,7 @@
 真值: processing-manage.worker-cutting-height-terminal
 溯源: 2026-10-03 新增（第三轮深度测试 C23 / issue #6219）：`order_items.product_id` 为空时 `positionRow` 对 `brands()` 的空集分支（`Map.of()`）做 `get(null)` ⇒ `ImmutableCollections$MapN.get` 抛 NPE ⇒ 端点 500（线上栈与单测栈逐字同源）。修法取最少代码：调用点显式短路空键 + 空集分支返回**可索引**的 LinkedHashMap（同文件 `itemsOf()` 既有范式），**不改查询语义、不改只读契约、不写机器**。⚠️ 同族存量（`getCategoryNameMap` / `loadOrders` 的调用点未判空）**不在本包文件族内** ⇒ 已另开 issue #6226。 ｜ tags: processing, cutting_height, scan, backend-contract, null_safety
 
-## 加工单域（60 case）
+## 加工单域（61 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -6542,6 +6542,18 @@
 跳过: [backend-contract] 视图语义由 ai-agent 单测验证（backend/ai-agent-service/tests/test_briefing_delivery_risk.py 的逐字段三态 / 未知≠0 / 跨单聚合 / 注入式红证），工具面由 backend/ai-agent-service/tests/test_tools_processing_order_query.py 的 TestDeliveryRiskAction 验证（action 白名单 / 两条端点字面量归属 / 有界取数 / fail-closed / 披露纪律），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-03 新增（issue #6217 / 族 3 · 包 4 / V2）：生产页是**单任务视图**（一次一张加工单），结构上答不出「哪些单快到交期还卡着工序」「卡在哪个工序最多」——本条目为该**跨单聚合**视图的专属用例。⚠️ 不并进简报表快照（权限面不同 ⇒ 复用即越权）；落点是既有加工单查询工具的一个新 action，不新开工具、不新开端点。 ｜ tags: query, tool, cross-domain, delivery-risk, disclosure
+
+### PG-070. 列表端点非法分页入参（size<0 / 非整数）⇒ 400 显式拒绝，不再 200 + total=0 + 整页行（issue #6222；page<1 按裁定有意不拒） 🔵
+```
+数据: 判据 1·**判定本体**：`page` / `size` 的非法值必须被**显式拒绝** —— `size<0` ⇒ 400 `VALIDATION_ERROR` 且 `error.details[0].field=size`；非十进制整数（`abc` / `` / `1.5` / `+5` / 溢出）⇒ 400（**不**落兜底 500）。`size=0` 仍合法（零行 + 真 total ⇒ 语义自洽，不是本次要拒的形态）。🔻 **`page<1` 有意不拒（主会话裁定 2026-10-03）**：现取读数 `page=0&size=3` / `page=1&size=3` / `page=-1&size=3` ⇒ 三条均 200 · total=359 · rows=3 · **同一页首行 id** ⇒ MP 已把 page<1 钳到第 1 页，它只是「宽容」不是缺陷；改成 400 会让任何 0 基分页调用方从「能正常拿第 1 页」变报错（无缺陷证据支撑的破坏性变更）⇒ 登记为**观察项**（严格 1 基化要另开单 + 兼容性说明）；`page` 仍要过「是十进制整数」这一关（非整数本来就是 400，属契约收口）。白名单**先于**解析：`othersize=-5` / `pageSize=-5` / `fileSize=-5` **一律不判**（判了就是新的假红）。断言 = backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateTest.java（纯函数判据，17 条）
+数据: 判据 2·**端到端（真 MVC 分发链 + 真拦截器 + 真 @RestControllerAdvice）**：`GET /api/admin/orders?page=1&size=-5`、`GET /api/admin/stock-ledger?page=1&size=-5`、`GET /api/admin/notifications?page=1&size=-5` 三条各取一个族代表 ⇒ **400** + `error.details[0].field=size`，且对应 service **零调用**（`verifyNoInteractions` = 「拒绝了 ⇒ 没进查询」的行为等价读数）；正对照 = 同一端点 `size=20` / `size=0` / 不带分页参数 ⇒ **200** 且 service 真被调用（证明不是「什么都拒」）；`?SIZE=-5`（大写）同样 400（Servlet 取参大小写不敏感）。断言 = backend/admin-api/src/test/java/com/migao/admin/controller/PaginationParamGateEndpointTest.java（10 条）
+数据: 判据 3·**接线判据（判据本体绿 ≠ 接线在）**：真 `WebConfig.webMvcConfigurer().addInterceptors(...)` 给出的注册清单里**必须**含分页入参闸，且它**排在** PermissionInterceptor / TenantOwnershipInterceptor **之后**（注册序 = 执行序）⇒ 无权限 + `size=-5` 仍是 403，不破坏 F3 #6063 的 403-before-400 契约。断言 = backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateWiringTest.java（2 条）+ backend/admin-api/src/test/java/com/migao/admin/security/PermissionPreHandleGateTest.java 的类级注册判据（同批扩到三条闸）
+数据: 判据 4·**类级元守卫（本单重点）**：`backend/admin-api/src/main/java/com/migao/admin/controller/**` 里凡按 `page`/`size` 分页的控制器方法（`@RequestParam` 字面量族 **22** 个 + 查询 DTO 族 **3** 个 = 现取 **25** 条）必须逐条登记在 tests/unit_ci_workflows/pagination_param_gate_ledger.json。六条判据：(a) **扫描面为空 ⇒ fail-closed**（空集比空集是恒等，那种绿是假绿）；(b) **未登记即红**；(c) **台账不许有幽灵条目**（条目被删/改名 ⇒ 红，只许缩短）；(d) 每条必须写 `source` + `why`，且 `source` 指向 DTO 的条目必须**机械可核**（DTO 文件真存在 + 真有 `private Long size` 声明）；(e) **接线不许消失**：三个 `gated_by` 锚（闸本体 / 拦截器 / WebConfig 注册行）的 `requires` 文本必须逐字存在；(f) **判别力自证 5 种坏形态**（新增未登记入口 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 ⇒ 各自判红）+ 只改措辞**不红**（对照读数）。断言 = tests/unit_ci_workflows/test_pagination_param_gate.py
+数据: 🔴 **红证（注入式，本机实跑，2026-10-03）**：把 `backend/admin-api/src/main/java/com/migao/admin/config/WebConfig.java` 里的分页入参闸注册行（`registry.addInterceptor(paginationParamInterceptor).addPathPatterns("/api/**");`）临时摘掉后，`./mvnw -Dtest='PaginationParamGateEndpointTest,PaginationParamGateWiringTest' test` ⇒ `Tests run: 12, Failures: 2`，两条具名：`PaginationParamGateWiringTest.webConfig_registersPaginationGate:48 [#6222：分页入参闸必须进 /api/** 的 MVC 链]`、`PaginationParamGateWiringTest.gateIsRegisteredAfterAuthorization:64 [闸必须排在授权拦截器之后（注册序 = 执行序）]`（同批 `PaginationParamGateEndpointTest` 的 10 条**仍绿** —— 正是「实例判据自己调 addInterceptors ⇒ 摘掉生产接线它们照样绿」的形态，故判据 3 不可省）。恢复该行后 ⇒ `PaginationParamGateTest 16 / PaginationParamGateEndpointTest 10 / PaginationParamGateWiringTest 2 / PermissionPreHandleGateTest 6` = **34 passed / 0 failed**。
+数据: **未固化 / 边界（如实登记）**：① 闸在 **HTTP 参数取参层**（`preHandle`），因此**不覆盖**「不经 HTTP 层直接调 service」的内部调用（审计 / 定时任务 / 内部 recompute）—— 那属另一条兜底线，不在本单射程；② 元守卫只认**字面形态**（`@RequestParam(...) page/size` 含跨行注解 + 已知分页查询 DTO 形参），注解被注释掉 / 常量拼接 / 自定义 `HandlerMethodArgumentResolver` 造成的参数名探测不到（会漏报、不会误报）；③ `source` 指向的 DTO 字段与 HTTP 参数名的一致性**不在此机械判**（实测 `ProductQueryRequest.productId` 对 `@RequestParam productCode` ⇒ 属性名≠参数名的形态真实存在），HTTP 参数名一侧由单点闸在取参层兜住、与 DTO 如何绑无关；④ 本包**不起真库 / 不起 :8085 短命实例**：行为面由真 MVC 分发链（standalone MockMvc，装配与 WebConfig 同构）取到，`total` 与行数**自洽性**的 DB 面读数沿用主会话在未修复构建 :8080 上的逐字复现（上面的 359/5/389），真机复探属集成侧。
+跳过: [backend-contract] 后端契约用例（分页入参准入 + 类级源码元守卫，无 LLM 环节，不进 agent-eval 冒烟）：断言由 PaginationParamGateTest / PaginationParamGateEndpointTest / PaginationParamGateWiringTest（Java，standalone MockMvc + Mockito，不连真库）与 tests/unit_ci_workflows/test_pagination_param_gate.py（读生产源码的类级元守卫 + 判别力自证）执行
+```
+溯源: 2026-10-03 新增（issue #6222，P3·读面）：主会话在未修复构建 :8080 上逐字复现 —— `GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行（after-sales 5 / stock-ledger 389 同款）。机制：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（`pageSize < 0` 直接 return ⇒ 不追加 LIMIT、**不执行 count 查询**）⇒ 拦截器只填 `records`、`total` 停在默认 0；被 `setMaxLimit(500)` 约束的只是**正数** size ⇒ 行数不设上界。危害：`total=0` 让客户端分页器立刻认为已到末页 ⇒ 「有数据却显示为空 / 翻不动页」。**口径裁定 = 显式拒绝（400）而非钳到合法下界**，三条理由：① 病根是「非法入参**不静默**」，钳位仍是静默（把「静默给错数据」换成「静默改口径」）；② 本仓已有同族显式拒绝范式（`StockQuantity.requireOneDecimal` / `MoneyScale.requireTwoDecimals`(#6221) / 负数数量 ⇒ 400）；③ 钳位会掩盖调用方（含 Agent / 前端）的真实缺陷。**为什么这样选单点**（最少代码阶梯）：分页入口有两个族（`@RequestParam long size` 控制器方法现取 22 个 + 自带 page/size 字段的查询 DTO 三个、**无共同基类**），且 DTO 属性名不保证等于 HTTP 参数名（`ProductQueryRequest.productId` 对 `@RequestParam productCode`）⇒ DTO 侧做准入要么靠 `WebDataBinder` 名字启发（会漏）、要么按属性名校验（对不上）；两族**都必须**经同一个 HTTP 参数集 ⇒ 唯一真正单点 = Servlet 层参数闸（`prehandle` 取参 + `PaginationParamGate` 判定），并在 WebConfig 注册（排在授权/归属之后，沿用 F3 #6063 与 #6158 的次序纪律）。**类级固化**：台账 25 条分页入口 + 6 条判据 + 5 种坏形态判别力自证（未登记即红 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 + 只改措辞不红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-070（origin/main@dacac7471:001-067,069 · PR #6227:068 ⇒ 最小空闲 070）。 ｜ tags: api, pagination, fail-closed, backend-contract, negative-size
 
 ## 商品域（109 case）
 
@@ -9411,7 +9423,7 @@
 - 领域本体域：4
 - 订单域：57
 - 加工项域：26
-- 加工单域：60
+- 加工单域：61
 - 商品域：109
 - 工具注册器域：1
 - 设置域：10
@@ -9589,6 +9601,7 @@
 - PG-067: 开工单默认配置 - 纱帘单带加工项（花边/扣环/接高）不再整单失败（规则级部位限定落在开租种子；issue #6123）
 - PG-069: 加工项/加工单列表：该页键全为空时不再 500（Map.of() 空表 + 未判空的空键索引；issue #6226）
 - PG-068: 生产交付风险视图：processing_order_query(delivery_risk) 的跨单聚合与披露纪律（issue #6217）
+- PG-070: 列表端点非法分页入参（size<0 / 非整数）⇒ 400 显式拒绝，不再 200 + total=0 + 整页行（issue #6222；page<1 按裁定有意不拒）
 - PP-007: 米宝加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）
