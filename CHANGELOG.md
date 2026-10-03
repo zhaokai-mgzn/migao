@@ -40,6 +40,27 @@
   直接拼 SQL 的金额写面（`setSql("... amount = ...")`，订单退款本身就是走它写的）、
   非实体 POJO 的金额字段、**ai-agent 侧与前端**。
 
+### 工序改价在并发下不再重复记账（同一次调价只留一行价格版本）（2026-10-03，issue #6238）
+
+- 以前：一个人双击「保存」、或在慢网络下两次提交**同一次**改价（旧价 100 → 新价 200），
+  会往 `production_operation_price_versions` 里**各追加一行** —— 实测 N=4 并发同价提交
+  ⇒ 版本账一次性多出 **4 行**（该表除主键外**没有唯一约束**，数据库层兜不住）。
+  单价本身是对的（最终都是 200），错的是**调价账**：同一次调价被记了 4 次。
+- 现在：改价先取该工序行的**排他锁**再读旧价 ⇒ 同一道工序的并发改价被串行到提交，
+  后到者读到的是**已提交**的新价 ⇒ 命中既有的「价没变就不追加」分支
+  （幂等空操作，**请求照常成功**，不是报错）。修后实测 N=4 × 3 轮：版本账恰追加 **1** 行，
+  4 个请求全部 200。并发改**不同**的价（A 改 200、B 改 300）时两次变更各自成行，
+  「当前价 = 最新版本行」这条契约在并发下仍然成立。
+- 边界（如实登记）：本次**只**改这一处写入路径。`PUT /api/admin/production/operations/{id}`
+  **没有幂等键入口**（判据里已实测）⇒ 重复提交的防线就是服务层自己这一道；
+  HTTP 层与「并发改不同价」的逐值语义不在本次判据的断言面内。
+- 类级固化（铁律 8）：台账 `backend/admin-api/src/test/resources/after-sales-sideeffect-concurrency-ledger.json`
+  该条由 `unverified` 移入 `entries`（豁免只许缩短，元守卫
+  `backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesSideEffectConcurrencyMetaGuardTest.java`
+  窄跑必须绿）；实例判据 = 真库并发判据
+  `backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java`
+  （case_ids **PP-022**），并同批登记进 `tests/unit_ci_workflows/test_realdb_failclosed.py` 的 `REALDB_FILES`。
+
 ### 售后工单详情 / 列表不再返回「退款方式」这个恒空的字段（2026-10-03，issue #6224）
 
 - 以前：售后响应里有 `refundMethod`（前端类型也声明了它），而**全仓没有任何写点** ——

@@ -8493,6 +8493,24 @@ _CASE_PG_059 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PP-022 [EDGE] 工序改价并发面核验（N=4 并发提交同一工序的同一次调价）：价格版本账恰追加 1 行、当前价 = 最新版本行（issue #6238）（源: cases/processing.yml）──
+_CASE_PP_022 = EvalCase(
+    id='PP-022',
+    legacy_id='',
+    title='工序改价并发面核验（N=4 并发提交同一工序的同一次调价）：价格版本账恰追加 1 行、当前价 = 最新版本行（issue #6238）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['商家在「工艺配置」页改了工序单价，手抖点了两次保存（或两个管理员同时点了保存）'],
+    expectations=[],
+    data_checks=['**核验结论 = 真**（台账 after-sales-sideeffect-concurrency-ledger.json 的 unverified 观察项逐字称「⚠️ **涉钱面**：价格版本**追加 insert** + 可选状态写 ⇒ 并发重复提交可能重复追加版本行」）：该主张**在当前代码上成立** —— 修前 N=4 并发提交同一次调价（旧价 100.00 → 新价 200.00）**3 轮全部**读到「版本账总行数 5 / 其中新价行 4」，即同一次调价被记了 4 次。', '**主判据（取库内事实）**：并发提交后 `unit_price = 新价` 的版本行恰 1 行，总行数 == 独立算式（基线 1 + 追加 1 = 2）；断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java 的 concurrentSamePriceSubmissionAppendsExactlyOneVersionRow（N=4 × 3 轮，逐轮打印「真重叠」证据：4 个请求的时间区间逐对求交 6/6 + 并集跨度 < 各历时之和）。', '**账目自洽**：`production_operations.unit_price` == 新价，且 `created_at` 最新那行版本账的价 == 当前价（「当前价 = 最新版本行」这条冻结契约在并发下仍成立）。', '**库层零兜底（可复核判据）**：`production_operation_price_versions` 除主键外**无唯一约束**（`pg_indexes` 实测 + 「同一个未提交事务里直接插两行同 (operation_id, unit_price) 被库接受」的反向自证，事务回滚零残留）⇒ 重复记账不可能由 DDL 挡住。若将来加了唯一索引，本判据转红（撞约束是 500 还是 409 须重新裁定）。', '**正对照（闸不误杀）**：单请求串行改价真追加 1 行；随后**同价重复提交**仍是 1 行（既有的「价没变 ⇒ 不追加」幂等路径没被改坏）—— 断言 = 同文件 serialPriceChangeStillAppendsExactlyOneRow。', '**入口面（实测登记）**：`PUT /api/admin/production/operations/{id}` **没有** Idempotency-Key 请求头 ⇒ 并发 / 重复提交的唯一防线就是服务层自己的闸（断言 = 同文件 updateEndpointOffersNoIdempotencyKeyEntry）。', '**判别力（红证，注入式 · 双向）**：把 `ProductionOperationMapper#lockById` 的 SQL 里的 `FOR UPDATE` 摘掉（= 退回「不加锁读旧价」的修前形态）⇒ 本判据 3 轮全部必红，实测读数 = 成功数 4 / 版本账总行数 5 / 其中新价行 4；注入撤回后复绿。注入方式与成对读数见 PR body（注入是手动、一次性动作，不落成常驻判据）。'],
+    skip_reason='[backend-contract] 纯后端并发落库判据（无 LLM 写路径：工序改价走 admin-api 服务层的 PUT /api/admin/production/operations/{id}，不经米宝 Agent 工具）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 ProductionOperationPriceVersionConcurrentRealDbTest 执行',
+    tags=['production', 'price-version', 'concurrency', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
 _CASE_PR_001 = EvalCase(
     id='PR-001',
@@ -12755,6 +12773,7 @@ ALL_CASES = (
     _CASE_PG_047,
     _CASE_PG_065,
     _CASE_PG_059,
+    _CASE_PP_022,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

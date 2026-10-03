@@ -95,6 +95,15 @@ public class ProductionOperationCommandService {
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> update(String id, Map<String, Object> body, Long tenantId) {
+        // 🔴 issue #6238：本方法是**读-判-写**（读旧价 → 判「价变了吗」 → 条件追加版本行），
+        // 必须先**取工序行的排他锁**再读，否则两个并发请求都读到提交前快照的旧价 ⇒ 都判「价变了」
+        // ⇒ **同一次调价被重复记账**（实测 N=4 并发同价提交 ⇒ 版本账 4 行；该表除主键外无唯一约束，
+        // DDL 兜不住）。**顺序即语义：先锁后读**（锁后的普通 SELECT 在 READ COMMITTED 下读到最新已提交
+        // 版本），颠倒顺序等于没修。行锁把同一工序的并发改价串行化到提交 ⇒ 同价重复提交退化为
+        // 「价没变 ⇒ 不追加」（幂等空操作，不是冲突 ⇒ 不 409），异价并发则两次变更各自成行、
+        // created_at 顺序与提交顺序一致（「当前价 = 最新版本行」仍成立）。
+        // 判据见 ProductionOperationPriceVersionConcurrentRealDbTest（case_ids PP-022）。
+        productionOperationMapper.lockById(id);
         ProductionOperation op = productionOperationMapper.selectById(id);
         if (op == null || !tenantId.equals(op.getTenantId()) || !Integer.valueOf(0).equals(op.getDeleted())) {
             throw BusinessException.notFound("工序");
