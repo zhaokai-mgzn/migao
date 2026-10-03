@@ -2567,7 +2567,8 @@ cases:
         - pr-check.yml
       verifies: []
 
-  # ===================================================================  # PG-069（issue #6226，P3·读面）：`Map.of()` 空表 + **未经判空的空键索引** ⇒ 列表页 500。
+  # ==========================================================================
+  # PG-069（issue #6226，P3·读面）：`Map.of()` 空表 + **未经判空的空键索引** ⇒ 列表页 500。
   # 同族存量两处（修复包 F-6219 的全仓普查撞见、主会话按 origin/main 逐字复核）：
   #   · ProcessingItemService.getCategoryNameMap ⇒ 加工项列表
   #   · ProcessingOrderService.loadOrders      ⇒ 加工单列表
@@ -2606,7 +2607,9 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingItemServiceTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
         - "tests/unit_ci_workflows/test_mapof_family_null_key_index.py"
-=======
+      ci:
+        - pr-check.yml
+      verifies: []
   - id: PG-068
     legacy_id: ""
     title: "生产交付风险视图：processing_order_query(delivery_risk) 的跨单聚合与披露纪律（issue #6217）"

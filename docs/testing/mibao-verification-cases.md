@@ -5697,7 +5697,7 @@
 真值: processing-manage.worker-cutting-height-terminal
 溯源: 2026-10-03 新增（第三轮深度测试 C23 / issue #6219）：`order_items.product_id` 为空时 `positionRow` 对 `brands()` 的空集分支（`Map.of()`）做 `get(null)` ⇒ `ImmutableCollections$MapN.get` 抛 NPE ⇒ 端点 500（线上栈与单测栈逐字同源）。修法取最少代码：调用点显式短路空键 + 空集分支返回**可索引**的 LinkedHashMap（同文件 `itemsOf()` 既有范式），**不改查询语义、不改只读契约、不写机器**。⚠️ 同族存量（`getCategoryNameMap` / `loadOrders` 的调用点未判空）**不在本包文件族内** ⇒ 已另开 issue #6226。 ｜ tags: processing, cutting_height, scan, backend-contract, null_safety
 
-## 加工单域（59 case）
+## 加工单域（60 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -6466,6 +6466,25 @@
 跳过: [backend-contract] 后端契约用例（列表读面 + 类级源码元守卫，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingItemServiceTest / ProcessingOrderServiceTest（Java，纯 Mockito 单测、不连真库）与 tests/unit_ci_workflows/test_mapof_family_null_key_index.py（读生产源码的类级元守卫 + 判别力自证）执行
 ```
 溯源: 2026-10-03 新增（issue #6226，P3·读面）：第三轮深度测试的修复包 F-6219 做全仓同族普查时撞见、主会话按 origin/main 逐字复核。形态 = `Map.of()`（`ImmutableCollections.MapN`，`get(null)` 先 requireNonNull ⇒ NPE）的空集分支 + 调用方**未经判空**地用**可能为 null 的键**索引 ⇒ 「该页/该批所有键都为空」这条路径必然 500。两处站点：backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java 的 getCategoryNameMap（加工项列表）/ backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java 的 loadOrders（加工单列表）。修法取**最少代码**：两处空集分支由 `Map.of()` 改为 `new HashMap<>()` —— 与各自**非空分支的类型契约一致**（前者非空分支是 `Collectors.toMap(...)`、后者是同一方法里 `new HashMap<>()` 建的 `byId`），比换 `LinkedHashMap` / `Collections.emptyMap()` 更贴「复用同文件既有范式」，且不引入第二份类型语义。**类级固化**：新增类级元守卫（未登记即红 / 台账只许缩短 / 条数现取 / 已修站点回归锁 / 6 条判别力自证），射程**只裁 `Map.of`/`Map.copyOf` 族**（`Collections.emptyMap()` / `unmodifiableMap` / `LinkedHashMap` / `HashMap` 的 `get(null)` 返 null 不抛 ⇒ 一律不判，避免新假红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-069（main:001-058,060-067 · PR #6233:059 · PR #6227:068）。 ｜ tags: processing-order, processing, backend-contract, null-key, map-of
+
+### PG-068. 生产交付风险视图：processing_order_query(delivery_risk) 的跨单聚合与披露纪律（issue #6217） 🔵
+```
+你: 哪些单快到交期还卡着工序
+你: 卡在哪个工序最多
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: processing_order_query(action=delivery_risk)
+数据: 只读且不回归：delivery_risk 在 VALID_ACTIONS 与 read_only_actions 里；**不传 action 时仍是旧的 query 行为**（默认值不许被新 action 改掉）；未知 action ⇒ 无效操作类型（不猜）
+数据: 取数面 = **两条既有只读端点**（不新开端点）：GET /api/admin/processing-orders 与 GET /api/admin/agent/production/progress?order_no=… —— 端点字面量在 client.get 的**调用点**，两者与 ProcessingOrderController / AgentProductionController 的类级 @RequestMapping + 方法级 @GetMapping 拼出的真路径逐字相同；权限码 production:view（两条端点方法级 @RequirePermission 同码）
+数据: 🔴 跨单聚合（本视图存在的理由，也是生产页单任务视图结构上做不到的）：「卡在哪个工序最多」= stuck_top（卡点工序 → 卡在该工序的加工单数，降序）；卡点 = 逐单进度里**第一个未完成**的工序名（端点给了 current_operation 就用它，没给则取有序 pending_operations 的第一项 —— 同一口径）；聚合用**全量行**而非截断后的前 N 行（否则读数会随视图行数上限变化）
+数据: 🔴「未知」≠「0」：没填交期的加工单 ⇒ days_to_deadline / risk_band 一律 null / unknown（**不是 0 天** —— 0 天 = 今天到期，会把没填交期的单排进最紧急的一批）；逐单工序进度**没取到** ⇒ pending_operations=null + unwired（**不得填 []** —— 空数组 = 「没有卡着的工序」= 真结论）；工序全完成（端点给空数组）⇒ 真 0 道待完工序、unwired 为空；总工序数为 0 ⇒ 进度**未知**（不折算成 0%）。注入式红证：把「交期未知」填成 0 天 ⇒ 分层与同一断言必红
+数据: 🔴 大批量时有界：逐单进度取数**上限 50 张、并发 8**（一条 progress 调用对应一张单 ⇒ 不设上限会把一个对话回合变成 N 次串行 HTTP）；超出 / 取数失败的单**不被静默吞掉** —— missing_progress 计数 + 消息点名 + 相关字段落 incomplete（「没取到进度」**不是**「没有卡点」）
+数据: 🔴 具名披露「未接线」：声明**无真值**的字段（scheduled_delivery_date 排产交期 / promised_ship_date 承诺发货日）逐条点名并说清一律「未知」（既有端点里只有一个 expectedDeliveryDate，没有第二个交期列、也没有承诺发货日）——**不得与 expected_delivery_date 混为一谈、更不得回填当天**
+数据: 逐字段三态（视图侧）：每个声明字段输出 status ∈ wired / not_wired / incomplete，不变式 reason is None ⟺ status == wired；声明无真值 ⇒ not_wired + 证据化原因；装配层未接线（快照缺数组 / 该字段不在行里）⇒ not_wired + 点名缺什么；行数被上限截断、逐单进度缺口、交期为空 ⇒ incomplete + 原因（**有界不许变成静默少报**）；口径同源：行里读的每个键都必须在 FIELD_SOURCES 里声明过（AST 机械判据）
+数据: 失败可归因 + 确定性：加工单列表面失败 ⇒ fail-closed（cross_domain_fetch_failed + 点名 production:view + 可行动 suggestion）；**单张**进度失败 ⇒ 只把该张的卡点/进度落「未知」，其余照常出结论；同一快照 ⇒ 逐字相同输出（as_of 由调用方传入；视图模块内不出现 date.today / datetime.now）；行序 = 交付风险降序（overdue → critical → soon → safe → unknown）；租户由调用方传入并原样回显
+前置: 本用例是 [backend-contract] 的**视图契约**用例（不进 agent-eval 冒烟）：两条 user_inputs 是**同一能力**的两种问法（「哪些单快到交期还卡着工序」/「卡在哪个工序最多」），不是两次会话。前置 = 两条既有只读端点可用且当前账号持 production:view（加工单列表读不到 ⇒ 工具 fail-closed 并点名该码；单张工序进度读不到 ⇒ 只把该单的卡点落「未知」）。该前置由 backend/ai-agent-service/tests/test_tools_processing_order_query.py 的 TestDeliveryRiskAction 直接构造并断言（列表面失败 / 单张进度失败两种形态各一条）⇒ 前置不成立（端点 / 权限码改名）时单测直接红，不会表现为「agent 不干活」
+跳过: [backend-contract] 视图语义由 ai-agent 单测验证（backend/ai-agent-service/tests/test_briefing_delivery_risk.py 的逐字段三态 / 未知≠0 / 跨单聚合 / 注入式红证），工具面由 backend/ai-agent-service/tests/test_tools_processing_order_query.py 的 TestDeliveryRiskAction 验证（action 白名单 / 两条端点字面量归属 / 有界取数 / fail-closed / 披露纪律），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-03 新增（issue #6217 / 族 3 · 包 4 / V2）：生产页是**单任务视图**（一次一张加工单），结构上答不出「哪些单快到交期还卡着工序」「卡在哪个工序最多」——本条目为该**跨单聚合**视图的专属用例。⚠️ 不并进简报表快照（权限面不同 ⇒ 复用即越权）；落点是既有加工单查询工具的一个新 action，不新开工具、不新开端点。 ｜ tags: query, tool, cross-domain, delivery-risk, disclosure
 
 ## 商品域（109 case）
 
@@ -9314,8 +9333,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：647（活跃 134，跳过 513）
-- tier 分布：smoke 12 / normal 597 / adversarial 32
+- 用例总数：649（活跃 134，跳过 515）
+- tier 分布：smoke 12 / normal 599 / adversarial 32
 - 售后域：14
 - Agent 核心域：7
 - API 层域：21
@@ -9335,7 +9354,7 @@
 - 领域本体域：4
 - 订单域：56
 - 加工项域：26
-- 加工单域：59
+- 加工单域：60
 - 商品域：109
 - 工具注册器域：1
 - 设置域：10
@@ -9508,6 +9527,7 @@
 - PG-066: 开工单默认配置 - 纱帘单勾任一特殊选项不再整单失败（规则级部位限定落在开租种子；issue #6114）
 - PG-067: 开工单默认配置 - 纱帘单带加工项（花边/扣环/接高）不再整单失败（规则级部位限定落在开租种子；issue #6123）
 - PG-069: 加工项/加工单列表：该页键全为空时不再 500（Map.of() 空表 + 未判空的空键索引；issue #6226）
+- PG-068: 生产交付风险视图：processing_order_query(delivery_risk) 的跨单聚合与披露纪律（issue #6217）
 - PP-007: 米宝加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）
