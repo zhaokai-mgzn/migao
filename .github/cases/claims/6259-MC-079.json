@@ -1,0 +1,7 @@
+{
+  "id": "MC-079",
+  "pr": 6259,
+  "title": "跨在飞 PR 的重号判据（issue #6245）：本 PR 的 claim 号 ∩ 另一个 open PR 的 claim 号 ⇒ 红并点名对方 PR 号（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」；纯静态自证 + 真 HTTP 取数面（零新依赖）",
+  "claimed_at": "2026-10-03",
+  "closes_issue": 6245
+}
