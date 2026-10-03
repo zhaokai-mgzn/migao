@@ -462,9 +462,9 @@
       "check_name": "ci workflow helper unit tests（后半）",
       "hard_kill_seconds": 1200,
       "hard_kill_source": "workflow `timeout-minutes: 20`",
-      "required": false,
+      "required": true,
       "measured": null,
-      "measure_status": "拆腿新增的第二片（issue #6164，2026-10-03）：**尚无 ≥3 次历史读数** ⇒ 按判据 3 不登记为 measured（单次读数不足以成分布）。现取首轮 CI 的单次读数只作证据、不入 measured：job 322s / step 292s（run 37099748568）。`required: false` 是**过渡态**：本条腿合并后随分支保护一起翻成 true（连同 required_status_snapshot.json 的刷新 —— 顺序不可换：**先有上报、再设 required**）。",
+      "measure_status": "拆腿新增的第二片（issue #6164，2026-10-03）：**尚无 ≥3 次历史读数** ⇒ 按判据 3 不登记为 measured（单次读数不足以成分布）。现取首轮 CI 的单次读数只作证据、不入 measured：job 322s / step 292s（run 37099748568）。`required: true` 与分支保护**同批**生效（2026-10-03T05:45Z 已把该检查名加进 main 的 required_status_checks，现取 16 条；snapshot 同批刷新 —— 顺序不可换：**先有上报、再设 required**）。",
       "budget_seconds": null,
       "budget_status": "无读数：不编预算（显式留白）",
       "budget_basis": null
