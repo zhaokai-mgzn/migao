@@ -683,3 +683,27 @@ main 侧内容级：MoneyScale.java 存在 · OrderService 含 MoneyScale.requir
 - 第二次把 **刚合并**的 `fix/6221` 留在列表里 ⇒ 同样问题；
 - ⇒ 现状批次 = **只剩 `fix/6220-aftersales-concurrency` 一个包**（其 CI 收敛后自动跑），日志 `out/batch-gate-round3c.log`。
 **判据（可机械判）**：入批前对每个分支跑一次 `gh pr view <该分支的 PR> --json state`，**`state != OPEN` 的包一律不入批**（它的代码已在 main，集成工作区从 main 开始 ⇒ 天然被覆盖）。
+
+### 19.23 批次 `batch-gate` 第三次尝试：**就绪判定给出了可行动的冲突清单**（仍未跑全量，如实记录）
+
+第三次（17:50，基线 `origin/main@9bd8d4301`）不再"白拒"，而是**逐字点名冲突路径**：
+```
+❌ fix/6220-aftersales-concurrency（不就绪）：与基准 origin/main 有冲突（git merge-tree --write-tree 退出码 1；
+   冲突路径：.github/cases/aftersales.yml  docs/testing/mibao-verification-cases.md  tests/agent_eval/eval_cases.py）
+   ｜下一步：./scripts/sync-main.sh --rebase
+```
+**真因（可复核）**：`#6231` 于 17:47:24 +08 合入（`9bd8d4301`，`AS-013/AS-014` + 两份重渲染生成物）⇒ 与 `#6230` 的 `AS-011/AS-012` **同文件同生成物**冲突 —— 这正是 `§19.9` 预警的那一处，只是**第一次被机械判据点名**。
+**关键观察**：此时 `gh pr checks 6230` 是 **0 fail**（CI 全绿）—— **冲突只有就绪判定看得出来** ⇒ 这条前置判定的价值在此实证（否则会拿一个"CI 绿"的分支去 merge，撞出一个没人预料的冲突）。
+
+**三次尝试的完整链条（全程"没跑 ≠ 通过"）**
+| 次 | 时刻 | 拒绝理由 | 真因归属 |
+|---|---|---|---|
+| ① | 17:30:45 | 两条 `skipping` 被判红 | **我跑了过期脚本**（主检出早于 #6218）——主会话问题 |
+| ② | 17:31:47 | 三个包 CI 仍有 pending | 正当（等 CI） |
+| ③ | 17:50:19 | 与基准冲突（点名三个路径） | 正当（`#6231` 先合 ⇒ `#6230` 需 rebase） |
+
+**重启条件**：`#6230` 完成第 4 次 `sync-main.sh --rebase` 并推送后重跑（批次现只剩它一个包）：
+```bash
+cd "/Users/guangzhen.zk/ai native/migao-wt/batchgate-run" && git fetch -q origin && git checkout -q --detach origin/main
+MIGAO_HEAVY_WAIT=2700 ./scripts/batch-gate.sh fix/6220-aftersales-concurrency
+```
