@@ -8221,6 +8221,24 @@ _CASE_PG_065 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-059 [NORMAL] 裁高读面 - 明细 product_id 为空时 brand 如实回 null 而不是 500（不可变表 get(null) 抛 NPE；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_059 = EvalCase(
+    id='PG-059',
+    legacy_id='',
+    title='裁高读面 - 明细 product_id 为空时 brand 如实回 null 而不是 500（不可变表 get(null) 抛 NPE；单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这张水洗唛的订单明细没填商品，扫它还能算出裁高吗？'],
+    expectations=['direct_reply'],
+    data_checks=['明细 product_id 为空 ⇒ GET /api/worker/production/cutting-height 仍 200，且该行 brand=null（**不得 5xx**）；该行其余键与裁高照常给出（一个部位缺品牌不拖垮整屏）', '回归对照：product_id 非空 ⇒ brand 取 product_attributes 的 brand 属性值；属性缺失 ⇒ null（修前修后逐字不变）', '🔴 类级形态：`Map.of()` / `Map.copyOf()` 是 ImmutableCollections，`get(null)` **抛 NPE**（`Collections.emptyMap()` / `LinkedHashMap` 返 null）⇒ 「返回空不可变表的方法」其调用方**必须**显式短路空键或改用容忍空键的读法；未登记即红（判据 = backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightNullProductIdTest.java 的同族守卫 + 台账）'],
+    skip_reason='[backend-contract] 本条只登记「裁高读面空值容忍 + 不可变表空键索引」这一层**确定性契约**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightNullProductIdTest.java）⇒ 不进 agent-eval 冒烟（同 PG-045 / PG-046 惯例）。',
+    tags=['processing', 'cutting_height', 'scan', 'backend-contract', 'null_safety'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
 _CASE_PR_001 = EvalCase(
     id='PR-001',
@@ -12468,6 +12486,7 @@ ALL_CASES = (
     _CASE_PG_046,
     _CASE_PG_047,
     _CASE_PG_065,
+    _CASE_PG_059,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

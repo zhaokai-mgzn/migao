@@ -14,6 +14,22 @@
 - 边界（如实登记）：本次**不新写**领域口径文档（补哪份文档逐条写在豁免台账的「重启条件」里）；
   不新增注入字段、不放宽任何 fail-closed 判据、不改前端注入协议。
 
+### 一体机裁高读面：明细没填商品不再整屏 500，该行品牌如实显示「—」（2026-10-03，issue #6219）
+
+- 以前：订单明细的 `product_id` 为空时，扫一次部位级水洗唛 ⇒ `GET /api/worker/production/cutting-height`
+  回 **500 INTERNAL_ERROR**（整屏什么都看不到）。根因是 `positionRow` 拿**空键**去索引品牌表，
+  而该表在「本单没有任何明细带商品」时返回 `Map.of()` —— **`Map.of()` 是 `ImmutableCollections`，
+  `get(null)` 抛 NPE**（实跑读数；`new LinkedHashMap<>()` / `Collections.emptyMap()` 的 `get(null)` 返 `null`）。
+- 现在：该行 `brand` 如实为 `null`（页面显示「—」），**同屏其它部位照常算出裁高** ——
+  与该方法 javadoc 既有的口径一致：**缺 ⇒ `null`，不猜**，缺值不上升成 500。
+- 边界：`product_id` 非空时的行为**逐字不变**（属性存在 ⇒ 取属性值；属性缺失 ⇒ `null`）；
+  查询语义（`attr_key='brand'` + `tenant_id` 过滤）与「只读、不写机器」裁定一字未动。
+- 类级固化：`Map.of()` 族（`Map.of` / `Map.copyOf`）的返回值是**不可索引空键**的表 ⇒
+  「返回空不可变表的方法 + 其调用方的索引点」全部进台账，**未登记即红**
+  （判据 = `WorkerCuttingHeightNullProductIdTest` 的同族守卫）。
+- 同族存量（**本包文件族外，未改**）：`ProcessingItemService.getCategoryNameMap`
+  与 `ProcessingOrderService.loadOrders` 的调用点同样未对空键判空 ⇒ 已另开 issue #6226。
+
 ### 日期筛选的「一天」现在按北京时间算，北京 00:00–08:00 的订单与流水归到正确的那一天/月/年（2026-10-03，issue #6200）
 
 - 以前：订单列表与财务（流水 / 收支汇总 / 应收对账）的 `startDate`~`endDate` 窗口按 **UTC 日**开合
