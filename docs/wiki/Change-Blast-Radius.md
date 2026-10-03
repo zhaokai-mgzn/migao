@@ -113,7 +113,7 @@ main 在你的 merge-base 之后进了新用例 ⇒ **你分支上"自己新鲜"
 ③ **本 PR 自己的** claim 与已占号相撞 ⇒ 红（请让号；作用域 = `claim.pr == 当前 PR`）
 ④ 他人的 claim（含**已落地**的历史 claim）**一律不报**（累积台账；判据 ③/④ 的分界线就是这条作用域）
 ⑤ 占位不得超额（每条 claim 必须对应一条真用例）；**没有 claim 时一条都不报**（新增可选面，不误伤不用的包）。
-全量命令与上表同形：`python3 -m pytest tests/unit_ci_workflows -q -n 4`。
+全量命令与上表同形：`python3 -m pytest tests/unit_ci_workflows -q -n 4`（**分片腿**：加 `MIGAO_CI_HELPER_SHARD=1/2` / `=2/2` 各跑一半 —— `#6164` 后 CI 与 `verify-all.sh` 都按这个形态跑，命令行本身不变）。
 
 **兜底仍是「后合入者让号」**：台账是主路径（先占位、零冲突），让号是**补救**出口 —— 判据 ②/③ 把该让号的那一个
 **具名**指出来（谁后合入谁让；改号时同步改 claim 文件名与内容里的 `id`）。
@@ -123,7 +123,7 @@ main 在你的 merge-base 之后进了新用例 ⇒ **你分支上"自己新鲜"
 `origin/main` —— CI 的 `actions/checkout` 是 `fetch-depth: 1`）⇒「已进 main」以**合并态近似**表达。
 | 跨模块 / 跨端契约 | `./contract-check.sh` |
 | 改 web 页面 | `./check-ui-regression.sh` + 上表 `web` 行的多模态验收 |
-| 改 `.github/growth_gate.py`（**本页的宿主**） | `python3 -m pytest tests/unit_ci_workflows -q -n 4`（与 CI job `ci workflow helper unit tests` 同参数） |
+| 改 `.github/growth_gate.py`（**本页的宿主**） | `python3 -m pytest tests/unit_ci_workflows -q -n 4`（与 CI job `ci workflow helper unit tests` 同参数；`#6164` 起该腿是 **matrix 两片** ⇒ 加 `MIGAO_CI_HELPER_SHARD=1/2` / `=2/2` 各跑一半，命令行本身不变） |
 
 ## 红证（7 行实测：故意破坏 ⇒ 必红；还原 ⇒ 绿）
 

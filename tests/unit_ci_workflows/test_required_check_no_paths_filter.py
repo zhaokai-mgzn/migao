@@ -437,6 +437,50 @@ def _job_gating_offenders(
     return offenders, pr_workflows, non_required_gated
 
 
+def _matrix_values(matrix: dict | None) -> dict[str, list[str]]:
+    """`strategy.matrix` → `{键: [取值…]}`（`include` 里的键值也收；`exclude` 不收）。"""
+    out: dict[str, list[str]] = {}
+    for key, val in (matrix or {}).items():
+        if key == "include":
+            for entry in val or []:
+                if not isinstance(entry, dict):
+                    continue
+                for k, v in entry.items():
+                    out.setdefault(str(k), [])
+                    if str(v) not in out[str(k)]:
+                        out[str(k)].append(str(v))
+        elif key == "exclude":
+            continue
+        elif isinstance(val, list):
+            out[str(key)] = [str(v) for v in val]
+    return out
+
+
+def job_check_names(job: dict, jid: str) -> list[str]:
+    """该 job 在 PR 事件上**会上报的检查名**（**matrix 展开**，issue #6164）。
+
+    一个 job id 可以上报**多个**检查名：`name:` 里的 `${{ matrix.<键> }}` 由 GitHub 按 matrix
+    每个取值各渲染一次。现取：拆腿后的 `ci-workflow-tests` 有 2 片 ⇒ 两个名
+    （`ci workflow helper unit tests` / `ci workflow helper unit tests（后半）`）。
+    不展开 ⇒ snapshot 里第二片那个名会「找不到上报它的 job」⇒ 被判成陈旧（**假红**）。
+    """
+    raw = str(job.get("name") or jid)
+    keys = re.findall(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}", raw)
+    if not keys:
+        return [raw]
+    values = _matrix_values((job.get("strategy") or {}).get("matrix") or {})
+    parts = re.split(r"\$\{\{\s*matrix\.[A-Za-z0-9_-]+\s*\}\}", raw)
+    names = [parts[0]]
+    for i, key in enumerate(keys):
+        choices = values.get(key) or [""]
+        names = [n + v + parts[i + 1] for n in names for v in choices]
+    seen: list[str] = []
+    for n in names:
+        if n not in seen:
+            seen.append(n)
+    return seen
+
+
 def _pr_reported_checks() -> tuple[dict[str, set[str]], dict[str, list[str]]]:
     """→ (workflow 文件 → 它在 PR 事件上**会上报**的检查名集合, 检查名 → 上报它的 `workflow::job` 清单)。"""
     by_workflow: dict[str, set[str]] = {}
@@ -448,9 +492,9 @@ def _pr_reported_checks() -> tuple[dict[str, set[str]], dict[str, list[str]]]:
         for jid, job in (doc.get("jobs") or {}).items():
             if not isinstance(job, dict):
                 continue
-            check = str(job.get("name") or jid)
-            names.add(check)
-            by_check.setdefault(check, []).append(f"{name}::{jid}")
+            for check in job_check_names(job, jid):
+                names.add(check)
+                by_check.setdefault(check, []).append(f"{name}::{jid}")
         by_workflow[name] = names
     return by_workflow, by_check
 

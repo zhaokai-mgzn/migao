@@ -48,6 +48,20 @@ def _extract_function(text: str, name: str) -> str:
     return m.group(0) if m else ""
 
 
+#: argv 之后的 **shell 控制尾巴**（`|| rc=1` / `&& …` / `; …`）**不是 argv 的一部分**。
+#: 拆腿（issue #6164）后本地每片都写成
+#: `MIGAO_CI_HELPER_SHARD=N/M python3 -m pytest … -n 4 || ci_helper_rc=1`
+#: —— 片号**必须走环境变量**（两条既有契约：argv 逐字同源 + 全量命令只许出现一次）、
+#: 每片的退出码**必须逐片收集**（一片红不许把另一片的结论吃掉）⇒ 比对前剥掉这条尾巴。
+#: ⚠️ 剥的**只有**控制符之后的部分：argv 本身（含 `-n 4`）仍然逐字比。
+_SHELL_TAIL_RE = re.compile(r"\s*(?:\|\||&&|;).*$")
+
+
+def _argv_only(line: str) -> str:
+    """去掉 shell 控制尾巴后的 argv 原文。"""
+    return _SHELL_TAIL_RE.sub("", line or "").strip()
+
+
 def _ci_pytest_argv(ci_text: str) -> str:
     """现取 CI 那条 job 里的 pytest 命令行（只取 argv，去掉解释器名）。
 
@@ -58,14 +72,14 @@ def _ci_pytest_argv(ci_text: str) -> str:
         return ""
     segment = ci_text[idx:]
     m = re.search(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", segment)
-    return m.group(0).strip() if m else ""
+    return _argv_only(m.group(0)) if m else ""
 
 
 def _local_pytest_argv(verify_text: str) -> str:
     """现取本地腿里的 pytest 命令行（同样只取 argv）。"""
     body = _extract_function(verify_text, "ci_helper_leg")
     m = re.search(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", body)
-    return m.group(0).strip() if m else ""
+    return _argv_only(m.group(0)) if m else ""
 
 
 def _gate_branch(verify_text: str) -> str:
