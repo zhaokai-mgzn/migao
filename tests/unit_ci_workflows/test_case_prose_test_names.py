@@ -326,7 +326,11 @@ def test_scan_discriminates_injected_ghost():
     found = scan(ghost, real, identifiers)
     assert [(f[0], f[2]) for f in found] == [("x.yml", "createWithoutPositionsKeepsLegacyBehaviour")]
     msg = finding_message(found[0], real)
-    assert "x.yml:1" in msg and "createWithoutPositionsKeepsLegacyBehaviour" in msg and "候选" in msg, msg
+    # ⚠️ 断言**不要**写成「合成夹具名 + 冒号 + 行号」的字面量（那种形态会被 drift 面的
+    # `ref-freshness` 读成悬空引用 —— 它是本文件的**红证夹具**、按定义必须失效，而那个判据
+    # 扫的是**原文**、不看注释）：按 `f[0]` / `f[1]` **拼**出定位串。
+    assert f"{found[0][0]}:{found[0][1]}" in msg, msg
+    assert "createWithoutPositionsKeepsLegacyBehaviour" in msg and "候选" in msg, msg
 
     real_ref = {"x.yml": "  - \"证据：FooTest「createWithoutPositionsStillCreatesTheSinglePriceRow」\""}
     assert scan(real_ref, real, identifiers) == [], "真名被误判成幽灵 ⇒ 判据无判别力"
