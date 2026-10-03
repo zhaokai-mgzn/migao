@@ -36,7 +36,7 @@ python3 -c "import sys;sys.path.insert(0,'.github');from yaml_light import load_
 
 # C5 workflow 侧的静默面
 grep -ro '|| true' .github/workflows/*.yml | wc -l
-grep -rn 'continue-on-error: true' .github/workflows/*.yml | wc -l
+grep -rn 'continue-on-error: true' .github/workflows/*.yml | grep -vE ':[0-9]+:\s*#' | wc -l   # 剥注释（否则注释里提到该字样会被数进来）
 
 # C6 规则源规模（缺测门禁的判据来源）
 python3 -c "import sys;sys.path.insert(0,'.github');import growth_gate as G;from yaml_light import load_file;t=load_file('.github/tech-stack.yml');e=[];print('rules',len(G.compile_rules(t.get('modules') or [],t.get('test_commands') or {},e)),'编译失败',len(e))"
