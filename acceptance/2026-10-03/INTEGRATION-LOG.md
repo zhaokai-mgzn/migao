@@ -279,3 +279,54 @@ if (!SHIPPABLE_FROM.contains(order.getStatus())) { throw …「当前状态（%s
 | CHANGELOG 改准（删掉"已产生可查发货单"那条假账，S1 条目的边界改成「含回退事实」） | 集成方批次 PR（未推） | 已改好待推 |
 
 **用户裁定仍有效**：商家发货要建发货单 —— 只是实现必须在干净地基上重做，落地后再重放（目标 `K3-1` 2xx、`K3-2/K3-3` 绿）。
+
+## 十七、收尾（2026-10-03 14:3x）
+
+### ① 本批的「一次全量」为什么**没有在本机跑**（留档，不是静默跳过）
+
+从子包 worktree（`migao-wt/main-live`）直跑全档被**按机制拒绝**，逐字读数：
+
+```
+⛔ 套件内全量入口被**拒绝**（exit 5）—— 本次**没有跑**任何检查（这不是「通过」）
+   为什么：当前工作区是**子包 worktree**（linked worktree 且没有批次标记）…
+           D 口径 = **一批只跑一次**全量，那一次属于**批次集成**…
+   替代  ：① 包内只跑**定点判据**  ② 一批（多包）的那一次全量 ⇒ ./scripts/batch-gate.sh <分支...>
+           ③ 单包的一整套 ⇒ 交给 CI（每 PR 并行，仍是权威）
+```
+
+本批的形态落在**替代 ③**：所有包都**已经过 PR 合入 main**（远端分支在合并后被自动删除）⇒
+`batch-gate.sh` 的"合并 N 个包"这一步**无对象**（其入口要的是**未合入**的分支）；
+而集成层这一次"合起来之后跑一遍"的正当入口只有 `batch-gate.sh`（它会打批次标记、不触发上面的拒绝）。
+⇒ **如实登记**：本批**没有**一份"集成后合跑"的本机全量读数；权威判定 = **CI**（每个 PR 的 required legs，
+其中 `ci workflow helper unit tests` 就是**整目录** `tests/unit_ci_workflows`）+ 集成方的两次**真库重放**（§十一/§十四/§十六）。
+现场另有一把机器级重活锁被别的会话持有（`6164-durations`），也未去抢。
+
+**重启条件**：下一批若能在合并前拿到"未合入的分支清单"，就用 `./scripts/batch-gate.sh <branch...>` 跑那**一次**（这才是它设计的用法）。
+
+### ② 前端回归（`check-ui-regression.sh`）
+
+在 `main-live`（= 最新 main）上跑：**读数见本节末**（该脚本判"工作区/HEAD 是否把 main 上已验收的 UI token 覆盖回旧版"）。
+本批**没有任何前端改动**（变更集 = 后端不变量/404 语义/台账/用例/CI 门禁/验收产物），故此项是"确认没有意外回退"，不是"新 UI 的验证"。
+
+**读数（`main-live` @ `72831715d`）**：`✅ UI 无回退（worktree），关键文件与 main token 一致或为正常新增`，`rc=0`。
+
+### ③ 清理
+
+已合并的 5 个包 worktree（`6178-anchor-refresh-vacuous` / `6181-merchant-ship-atomic` / `acceptance-20261003` /
+`changelog-batch2` / `revert-6181`）已不在 worktree 列表；对应远端分支是**合并后自动删除**（仓库设置）⇒
+内容均在 main（逐条内容级自证见各节），**没有丢东西**。保留 `6160-full-tier-readiness`（#6170 未合）与 `carriers-2`（#6194 未合）。
+⚠️ 主检出 `/Users/guangzhen.zk/ai native/migao` 当日**被其它会话切到 `feat/logistics-track-cache`**（仓内并发会话）—— 未干预。
+
+### ④ 收尾时新发现并已派修的一条（与产品代码无关）
+
+`tests/unit_ci_workflows/test_reconcile_no_silent_skip.py::test_pre_fix_pipeline_dies_with_sigpipe_under_pipefail`
+**前提腐化**（重跑后依旧红 ⇒ 非随机 flake）：它在 `shallow_repo` **夹具仓**里跑
+`git log --oneline -10 --name-only origin/main | grep -qE "^backend/"` 并要求 **141（SIGPIPE）**，
+但 141 只在"producer 还没写完、consumer 已退出"时发生 ⇒ 取决于**这一次的输出量**；输出小到装进管道缓冲区就变 **0** ⇒ 红。
+**该腿（`ci workflow helper unit tests（后半）`）是 required** ⇒ 它会挡**任何** PR（今天就挡了 #6194，而 #6194 只新增 `acceptance/**`）。
+⇒ 已开单 **#6202** 并**派修复包**（要求：红证前提确定性化 + **两侧夹住** + 不许改 skip/软失败 + 顺手核同族）。
+
+**当前未收口（如实列，不藏）**：
+- **#6194**（承载体第二批）：唯一红 = 上述 #6202 那条；等 #6202 修复落地后自然可合（已 armed）。
+- **#6170**（`full` 档就绪探针）：检查全绿、已 armed，等 GitHub 结算（其重放 = 一次 `full` 档跑出"未就绪"而非 20 条失败，**待它合并后另跑**）。
+- **本批"集成后合跑一次全量"未在本机发生**（见 ① 的逐字拒绝与重启条件）—— 权威判定 = CI + 两次真库重放。
