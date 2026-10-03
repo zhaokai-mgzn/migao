@@ -126,6 +126,9 @@ class BatchNoTakeRaceRealDbTest {
     private static final BigDecimal QTY = new BigDecimal("3.0");
 
     private static final int CONCURRENCY = 4;
+    /** 期望成功的判据的计数器起点：远离判据 ③ 占满的 {@code 0001..0020}，让 20 次重试预算真的可用。 */
+    private static final int SAFE_START = 5000;
+
     private static final int ROUNDS = 3;
 
     /** 窗口注入的时长：把「{@code exists} 判定 → insert」之间的窗口拉长到必然可被另一事务利用。 */
@@ -251,6 +254,8 @@ class BatchNoTakeRaceRealDbTest {
     @Test
     @DisplayName("① 单实例 N=4 个**不同**入库单并发过账（3 轮）：全部成功、批次号两两不同、库里零重复")
     void singleProcessConcurrentPostAlwaysPicksDistinctBatchNo() throws Exception {
+        // 起点远离判据 ③ 会占满的头部（见 SAFE_START 的注释）：本判据期望**全部成功**。
+        resetBatchSeq(SAFE_START);
         for (int round = 1; round <= ROUNDS; round++) {
             BigDecimal stockBefore = skuStock();
             List<Outcome> outcomes = runConcurrently(
@@ -374,7 +379,8 @@ class BatchNoTakeRaceRealDbTest {
         // 注入（**纯测试侧，不改被测语义**）：① `exists` 恒答「没人占」（= 窗口被利用的那一瞬间）；
         //   ② 写号那一步延时 400ms（让「一边已提交、另一边才写」必然发生，否则窗口只有微秒级、
         //   判据会退化成碰运气的 flake）。同一份注入对两条路径的读数见 PR body 的成对表。
-        resetBatchSeq();
+        // 起点远离判据 ③ 会占满的头部：两侧各要让出重试预算（都取自同一个计数器）。
+        resetBatchSeq(SAFE_START);
         String orderA = newOrder(1);
         String orderB = newOrder(1);
         List<Outcome> outcomes;
@@ -462,7 +468,8 @@ class BatchNoTakeRaceRealDbTest {
         // ⇒ 是否撞唯一索引取决于「一边提交、另一边还没 insert」这个微秒级窗口 ⇒ 本轮里可能偶尔变绿。
         // 故本判据的**主判据**仍是判据 4（注入式、双向可复算）；本条只在修前红对照时给出
         // 「同一份装置、不注入也能撞」的读数（见 PR body 的成对读数）。
-        resetBatchSeq();
+        // 起点远离判据 ③ 会占满的头部（否则 20 次重试全耗在被占的头上 ⇒ 假红）。
+        resetBatchSeq(SAFE_START);
         List<Integer> allStatuses = new ArrayList<>();
         for (int round = 1; round <= 3; round++) {
             String orderC = newOrder(1);
@@ -614,10 +621,23 @@ class BatchNoTakeRaceRealDbTest {
 
     /** 静态计数器归零 = 模拟「服务重启 / 新副本从 0 开始」（进程内计数器，issue #6248 主张的核心）。 */
     private static void resetBatchSeq() {
+        resetBatchSeq(0);
+    }
+
+    /**
+     * 把进程内计数器设到指定起点（"重启到某个位置"）。
+     *
+     * <p>⚠️ <b>期望成功的判据必须用 {@link #SAFE_START} 而不是 0</b>（本判据在 CI 上就是这样红过的）：
+     * 判据 ③ 会把当天头部 {@code 0001..0020} 占满，而重试上限恰好是 20 ⇒ 从 0 起步的请求会把
+     * 20 次重试**全部**耗在被占的头上 ⇒ 显式 409。起点与「头部被占多深」的耦合会让判据变成
+     * **执行顺序依赖**（本机过 / CI 红就是同一份代码的两种顺序）。取一个远离头部的位置，
+     * 判据就与执行顺序无关。</p>
+     */
+    private static void resetBatchSeq(int ordinal) {
         try {
             Field seq = InboundOrderService.class.getDeclaredField("BATCH_SEQ");
             seq.setAccessible(true);
-            ((AtomicInteger) seq.get(null)).set(0);
+            ((AtomicInteger) seq.get(null)).set(ordinal);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("BATCH_SEQ 计数器读取失败（字段被改名 ⇒ 判据必须一起改）", e);
         }
