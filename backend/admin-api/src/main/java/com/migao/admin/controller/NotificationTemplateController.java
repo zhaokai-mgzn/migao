@@ -6,6 +6,7 @@ import com.migao.admin.dto.NotificationTemplateDTO;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.SaveNotificationTemplateRequest;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import com.migao.admin.service.NotificationTemplateService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -61,7 +62,12 @@ public class NotificationTemplateController {
 
     /**
      * PUT /api/admin/notification-templates/{id}
+     *
+     * <p>issue #6167：本表在 {@code IGNORE_TENANT_TABLES} 里，归属语义是「可读 = 本租户 OR 系统内置、
+     * 可写 = 仅本租户」⇒ 认定键在本单登记（{@code notification-template}），
+     * 使跨租户写（无论载荷合法与否）先拿 404，而不是 422。</p>
      */
+    @TenantOwnedResource("notification-template")
     @PutMapping("/{id}")
     public ApiResponse<NotificationTemplateDTO> updateTemplate(
             @PathVariable String id,

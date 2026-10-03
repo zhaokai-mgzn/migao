@@ -70,6 +70,8 @@ public class TenantOwnershipInterceptor implements HandlerInterceptor {
 
         log.debug("归属认定（先于载荷校验）: resource={}, id={}, tenantId={}",
                 resource, id, com.migao.admin.config.TenantContext.getTenantId());
+        // 「可见」+「可写」两项认定都在这里（issue #6167）：认定的查询由资源侧提供（见
+        // TenantResourceOwnership），本拦截器只负责在参数解析之前调用它 —— 不重写任何谓词。
         ownership.check(resource, id);
         return true;
     }

@@ -6,6 +6,7 @@ import com.migao.admin.dto.NotificationRuleDTO;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.SaveNotificationRuleRequest;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import com.migao.admin.service.NotificationRuleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -62,7 +63,11 @@ public class NotificationRuleController {
 
     /**
      * PUT /api/admin/notification-rules/{id}
+     *
+     * <p>issue #6167：与模板同族（{@code IGNORE_TENANT_TABLES} 混合表）——
+     * 可读 = 本租户 OR 系统内置、可写 = 仅本租户，认定键 {@code notification-rule}。</p>
      */
+    @TenantOwnedResource("notification-rule")
     @PutMapping("/{id}")
     public ApiResponse<NotificationRuleDTO> updateRule(
             @PathVariable String id,
