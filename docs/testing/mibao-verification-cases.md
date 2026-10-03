@@ -4195,7 +4195,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6235，由本轮修复包 F-6219 实测撞见、主会话核实后派包）。落地 = ① `scripts/dev-worktree.sh` 新增 `_wt_registry_scan`（只读扫描）/ `wt_registry_guard`（删除落点白名单，含软链逃逸拒绝）/ `wt_registry_doctor`（默认只读判红、`--heal` 打印将删清单后按白名单删除 + prune + 复检）/ `wt_registry_assert_for_entry`（入口前置断言，`add`/`rm`/`rebase` 全接）；② 顺带修正 `REPO_ROOT` 解析 —— 原实现 `cd .git/..` 相对**调用者 cwd** 解析，从别处调用本脚本时 `cd` 失败（`set -e` 下更糟），改用 `git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir` + 回退；③ 新增元守卫 tests/unit_ci_workflows/test_dev_worktree_registry_drift.py（9 条判据 + 注入式红证）。取号 MC-076 → **改判 MC-077**（原 MC-076 与**已合并的 #6224**（PR #6240，squash 69f98cfe7）撞号 ⇒ 按主会话跨 refs 复核的空闲号顺延；`scripts/next_case_id.py MC` 现取当时读数 = main:001-075 ⇒ 最小空闲 MC-076）。⚠️ **未固化 / 有意不做（照实登记）**：不治「磁盘有、git 不认」的反向形态；不做存量追溯修复；不加 schedule/cron（铁律 10）；`dev-worktree.sh list` 在**存在会话锁**时 rc=1 的既有缺陷（main 上已存在、非本包引入）改由 issue #6235 观察项登记、本包不动它。 ｜ tags: ci, dev-tooling, worktree, registry-drift, fail-closed, allowlist, red-proof
 
-### MC-078. 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI 🔵
+### MC-079. 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI 🔵
 ```
 你: 当两个**同时在飞**的 PR 各自 claim 同一个用例号时（本轮实测 3 次：AS-011/012、PG-059/069、MC-076）；或取数面读不到（无凭据 / 离线 / 某个 PR 的 claim 读不了）时 —— 必须有判据在**开 PR 时**（不是合并时）判红，并**点名对方 PR 号**；判定不了时必须写明「判定不了」，不许静默变绿。
 期望: direct_reply
@@ -4208,7 +4208,7 @@
 数据: 🔴 **覆盖边界（显式登记）**：① **只看 claims 号面** —— 判不了生成物新鲜度 / 用例库文本冲突（那是 issue #6255 的面）；② **非互斥锁**：两个包**同一瞬间**开 PR 仍是「两边都红」而不是「后开者被挡住」—— 它把发现从「合并时人工核对」提前到「**开 PR 时就红**」，**不**做抢占；③ fork PR 的对象可能读不到 ⇒ 记「判定不了」（红），**不**当成「它没 claim」；④ 本判决**不改**任何门禁的通过条件、不新增豁免。
 跳过: [backend-contract] 取号台账的仓内判据（本地 claims 目录 + 同仓 open PR 的 claims 目录；零 LLM、零真库；唯一外部面 = GitHub REST 只读，有超时/预算/无凭据 fail-closed）由 tests/unit_ci_workflows/test_case_id_claims.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-03 新增（issue #6245，P3·CI）。病：两个在飞 PR 各自 claim 同一个号 ⇒ 两边 CI 都绿（本轮实测 3 次：AS-011/012、PG-059/069、MC-076，全靠人工跨 refs 核对才发现）。落地 = ① `tests/unit_ci_workflows/test_case_id_claims.py` 新增**判据 7**（`fetch_open_pr_claims` + `cross_pr_claims_problems`，接进 `all_problems` / `repo_problems` 常驻出口）；② 判据 7 的红证/对照/接线/真 HTTP 面共 13 条（其中 `test_cross_pr_check_is_wired_into_the_repo_exit` 专防「判据绿但接线不在」）；③ `.github/workflows/pr-check.yml` 的 `ci workflow helper unit tests` 步骤补 `GITHUB_TOKEN`（没有它 ⇒ 那一侧判据 7 只能记「判定不了」）。判据⑨口径 = 「本 PR ↔ 另一个在飞 PR」**只**这一面，与判据 3（本 PR ↔ main）互补。取号 MC-078（`scripts/next_case_id.py MC` ⇒ main:001-077 + 全部 11 个 open PR 逐条目 ⇒ 最小空闲 MC-078）。⚠️ 未固化（照实登记）：不做抢占式取号（方案 ② 需共享登记写面）；不判生成物新鲜度（#6255）；本机（无凭据）不发起判定 ⇒ 本机看不到跨在飞 PR 的重号。 ｜ tags: ci, case-id-claims, cross-pr, fail-closed, red-proof, no-new-dependency
+溯源: 2026-10-03 新增（issue #6245，P3·CI）。病：两个在飞 PR 各自 claim 同一个号 ⇒ 两边 CI 都绿（本轮实测 3 次：AS-011/012、PG-059/069、MC-076，全靠人工跨 refs 核对才发现）。落地 = ① `tests/unit_ci_workflows/test_case_id_claims.py` 新增**判据 7**（`fetch_open_pr_claims` + `cross_pr_claims_problems`，接进 `all_problems` / `repo_problems` 常驻出口）；② 判据 7 的红证/对照/接线/真 HTTP 面共 13 条（其中 `test_cross_pr_check_is_wired_into_the_repo_exit` 专防「判据绿但接线不在」）；③ `.github/workflows/pr-check.yml` 的 `ci workflow helper unit tests` 步骤补 `GITHUB_TOKEN`（没有它 ⇒ 那一侧判据 7 只能记「判定不了」）。判据⑨口径 = 「本 PR ↔ 另一个在飞 PR」**只**这一面，与判据 3（本 PR ↔ main）互补。取号 MC-079（`scripts/next_case_id.py MC` ⇒ main:001-078（**MC-078 已被 #6258 占**）+ 全部 open PR 逐条目 ⇒ 最小空闲 MC-079）。⚠️ 未固化（照实登记）：不做抢占式取号（方案 ② 需共享登记写面）；不判生成物新鲜度（#6255）；本机（无凭据）不发起判定 ⇒ 本机看不到跨在飞 PR 的重号。 ｜ tags: ci, case-id-claims, cross-pr, fail-closed, red-proof, no-new-dependency
 
 ## 商家入驻域（5 case）
 
@@ -9609,7 +9609,7 @@
 - MC-075: B 端米宝页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）
 - MC-076: 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed
 - MC-077: worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）
-- MC-078: 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI
+- MC-079: 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离

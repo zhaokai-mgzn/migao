@@ -71,7 +71,15 @@ MC-067 已进用例库）落 main 之后，**下一个 PR 一律被判红** ⇒ 
 - ❌ **本机（无 `GITHUB_TOKEN` / 无 `GITHUB_EVENT_PATH`）不发起判定**：本地跑与 CI 跑读数不同，
   本判据**只**承诺 CI 面。⇒ 本机**看不到**「两个在飞 PR 撞号」—— 那是**声明过的**缺口，
   不是「本机绿 ⇒ 没问题」（本机绿只说明判据 1~6 干净）。
-- ❌ **只看 claim 面**：判不了「生成物新鲜度 / 用例库文本冲突」（那是 issue #6255 的面）。
+- ❌ **只看 claim 面这一条已作废（2026-10-03 现取订正）**：现实里**大量 PR 只在 `cases/*.yml` 里取号、
+  **不写 claim 文件** —— 逐 ref 实测：#6263 与 #6264 **各自在 `order.yml` 新增了 `OR-059`**，而
+  **两边都没有 claim 文件** ⇒ 「只读 claims 目录」的取数面**看不见这条真实撞号**。
+  ⇒ 判据 7 的取数面**扩到两面**：claim 台账 **+** 该 PR **改过**的语料文件里**相对 main 新增**的号
+  （见 `list_changed_case_files` / `corpus_face_problems`）。
+- ❌ **语料面的 base 口径是有意取舍**：main 侧基线取**本工作树**的 `repo_used_ids()`（口径与理由见
+  `corpus_face_problems` 的 docstring）⇒ 方向是**可能漏**（不是误红）；**不额外拉 main 全库**（那会让
+  每个 PR 多拉 26 个文件）。漏的形态 = 本 PR 落后 main 且它新增的号恰被 main 上另一个 PR 先合并。
+- ❌ **判不了「生成物新鲜度 / 用例库文本冲突」**（那是 issue #6255 的面）。
 - ❌ **不是互斥锁**：两个包在**同一瞬间**开 PR 时仍是「两边都红」而不是「后开的那个被挡住」——
   它把**发现**从「合并时人工核对」提前到「**开 PR 时就红**」，但**不**做抢占。
 - ❌ **fork PR 的对象可能读不到**（`contents` API 对 fork 头 ref 的可见性受 token 权限限制）⇒ 那种 PR 是
@@ -103,7 +111,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 #: 「用例号」的解析口径**复用仓内唯一实现**（不自写第二把尺子）：
 #: `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::case_id_lines`（它只依赖 stdlib + pyyaml ⇒ CI 装得上）。
 from test_dev_mode_failure_modes import case_id_lines  # noqa: E402
-
 CASES_REL = ".github/cases"
 CLAIMS_REL = ".github/cases/claims"
 #: 目录里允许存在的**非 claim** 文件（台账目录不是收破烂的 ⇒ 其余非 `*.json` 一律判红）。
@@ -144,8 +151,12 @@ FETCH_CONCURRENCY = 4
 RETRY_STATUSES = (429, 500, 502, 503, 504)
 #: open PR 的取数上限（`per_page` 的硬上限）。命中上限 ⇒ **无法判定**（宁红不绿：可能还有下一页）。
 PR_LIST_LIMIT = 100
-#: 远端 claims 目录（判据 7 只读这个路径；不拉整库、不拉语料）。
+#: 单个 PR 的「改动文件清单」取数上限（`GET /pulls/{n}/files`）。命中上限 ⇒ **无法判定**（同上）。
+PR_FILES_LIMIT = 300
+#: 远端 claims 目录（判据 7 的**第一面**：取号台账的正门；只读这一层）。
 CLAIMS_API_PATH = ".github/cases/claims"
+#: 语料文件形态（判据 7 的**第二面**：该 PR **改过**的 `.github/cases/*.yml`）。
+CASES_FILE_RE = re.compile(r"^\.github/cases/[^/]+\.ya?ml$")
 #: 报错文本的截断长度（防替身 / 代理返回一整页 HTML 把红证淹没）。
 ERR_MAX = 200
 
@@ -300,14 +311,17 @@ def duplicate_problems(claims: list[Claim]) -> list[str]:
 # ─────────────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class OpenPrClaims:
-    """一个 open PR 的 claim 读数。
+    """一个 open PR 的取号面读数（**两面**：claim 台账 + 改动语料）。
 
-    `ids is None` ⇒ **读不到**（网络 / 凭据 / 该 ref 的 claims 目录读不了）⇒ 判定不了（fail-closed）。
+    `ids is None` ⇒ **读不到**（网络 / 凭据 / 该 ref 读不了）⇒ 判定不了（fail-closed）。
     `ids == frozenset()` ⇒ **读得到、且它一条 claim 都没有**（合法：claim 面是可选台账）。
+    `corpus_ids` = 该 PR **改过**的语料文件里出现的号（**含从 main 继承的**；比对时再扣 main 侧，
+    见 `cross_pr_claims_problems`）。现实里大量 PR 只在语料里取号、**不写 claim 文件**。
     """
 
     pr: int
     ids: frozenset[str] | None
+    corpus_ids: frozenset[str] | None = None
 
 
 def token_value(env: dict[str, str] | None = None) -> str | None:
@@ -430,17 +444,43 @@ def list_claim_files(base: str, repo: str, token: str, number: int, sha: str
     return out, ""
 
 
-def read_one_open_pr(base: str, repo: str, token: str, number: int, sha: str
-                     ) -> tuple[list[tuple[str, str]], str]:
-    """读**一个** open PR 的 claims 目录 ⇒ `([(文件名, 内容 SHA)], 错误文本)`（判据 7 的取数单元）。"""
-    return list_claim_files(base, repo, token, number, sha)
+def list_changed_case_files(base: str, repo: str, token: str, number: int, sha: str
+                            ) -> tuple[list[tuple[str, str]], str]:
+    """读一个 open PR **改过的** `.github/cases/*.yml` ⇒ `([(路径, 内容 SHA)], 错误文本)`。
+
+    🔴 为什么必须读这一面（**真实命中，不是假想**）：现取两个在飞 PR **各自在 `order.yml` 新增了
+    `OR-059`**（#6263 / #6264，2026-10-03 20:1x +08 逐 ref 实测），而**两边都没写 claim 文件** ⇒
+    「只读 claims 目录」的取数面**看不见这条真实的撞号**（只有 claims 目录的判据会**假绿**）。
+    口径与 `next_case_id.py` 的「在飞面」同源：只取该 PR **改过**的语料文件（未改的部分与 main 同源）。
+
+    成本护栏：`GET /pulls/{n}/files` 一次拿到改动清单（含 `sha` = blob SHA）⇒ **零改动 ⇒ 零下载**
+    （现取 10 个 open PR 里只有 ~3 个改了语料）。
+    """
+    entries, err = _api_json(
+        f"{base}/repos/{repo}/pulls/{number}/files?per_page={PR_FILES_LIMIT}", token, HTTP_TIMEOUT_S
+    )
+    if err or not isinstance(entries, list):
+        return [], err or "响应不是数组"
+    if len(entries) >= PR_FILES_LIMIT:
+        return [], f"改动文件数达到取数上限 {PR_FILES_LIMIT} ⇒ 可能还有下一页，语料面不完整"
+    out: list[tuple[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        name, blob = entry.get("filename"), entry.get("sha")
+        if not isinstance(name, str) or not CASES_FILE_RE.match(name):
+            continue
+        if not isinstance(blob, str) or not blob:
+            return [], f"改动清单里的 `{name}` 没有内容 SHA"
+        out.append((name, blob))
+    return out, ""
 
 
 def read_blob(base: str, repo: str, token: str, blob_sha: str) -> tuple[str, str]:
     """按**内容 SHA** 读一个 git blob ⇒ `(文本, 错误文本)`。
 
     🔴 用 blob 而**不是**路径：git 对象按内容寻址 ⇒ **同 SHA = 同字节** ⇒ 多个 PR 里**逐字节相同**
-    的 claim 文件只下载一次（现取 11 个 open PR 有大量重复 claim 文件 ⇒ 请求数 30+ → 12）。
+    的文件（含 claims 与语料）只下载一次。
     """
     raw, err = _api_json(f"{base}/repos/{repo}/git/blobs/{blob_sha}", token, HTTP_TIMEOUT_S)
     if err or not isinstance(raw, dict) or not isinstance(raw.get("content"), str):
@@ -469,14 +509,19 @@ def _parallel_map(jobs: list, work, concurrency: int = FETCH_CONCURRENCY) -> lis
 
 
 def fetch_open_pr_claims(env: dict[str, str] | None = None) -> tuple[list[OpenPrClaims], list[str]] | None:
-    """列**同仓 open PR** + 并行读各 PR 的 claims（**按内容 SHA 去重**）。
+    """列**同仓 open PR** + 并行读每个 PR 的两面取号面（**按内容 SHA 去重**）。
+
+    两面（**缺一即假绿**）：
+    1. `.github/cases/claims/*.json` —— 取号台账的**正门**；
+    2. 该 PR **改过**的 `.github/cases/*.yml` 里**相对 main 新增**的用例号 —— 现实里大量 PR
+       只在语料里取号、**不写 claim 文件**（现取 #6263/#6264 的 `OR-059` 就是这一形态）。
 
     返回 `None` ⇒ **不发起判定**（非 Actions 环境；见下与 `cross_pr_claims_problems`）。
     返回 `(读数, 问题)` ⇒ 覆盖度问题（凭据缺 / 列不出 / 读不到）逐条具名 ⇒ 判据 7 判红（fail-closed）。
 
-    成本（**不拖重 CI** 的机械保证）：1 次列 PR + 每 PR 1 次读目录 + **每个唯一 blob 1 次**
-    （阶段内并行 4 路），逐请求 `HTTP_TIMEOUT_S` 超时、整轮 `BUDGET_S` 预算，超预算即停 ⇒ 判「无法判定」。
-    **不拉整库、不跑重活、不装依赖**（纯 stdlib）。读数与三次提速的实测见 `BUDGET_S` 上方注释。
+    成本（**不拖重 CI** 的机械保证）：1 次列 PR + 每 PR 1 次 claims 目录 + 每 PR 1 次「改动清单」
+    + **每个唯一 blob 1 次**（阶段内并行 4 路），逐请求 `HTTP_TIMEOUT_S` 超时、整轮 `BUDGET_S` 预算，
+    超预算即停 ⇒ 判「无法判定」。**不拉整库、不跑重活、不装依赖**（纯 stdlib）。
     """
     env = os.environ if env is None else env
     base = (env.get(API_ENV) or "https://api.github.com").rstrip("/")
@@ -491,7 +536,7 @@ def fetch_open_pr_claims(env: dict[str, str] | None = None) -> tuple[list[OpenPr
     if not token:
         return [], [
             f"判定不了：没有 API 凭据（环境变量 {'/'.join(TOKEN_ENVS)} 都为空）"
-            f" ⇒ 看不到其他在飞 PR 的 claim（**这不是「没有重号」**）"
+            f" ⇒ 看不到其他在飞 PR 的取号面（**这不是「没有重号」**）"
         ]
     started = time.monotonic()
     listing, err = _api_json(
@@ -524,35 +569,48 @@ def fetch_open_pr_claims(env: dict[str, str] | None = None) -> tuple[list[OpenPr
             f"（**判据不把 CI 拖重**；这一轮没判完）"
         )
         return [], problems
-    # 阶段 1：并行读各 PR 的 claims 目录（只拿文件名 + 内容 SHA，不下载内容）
-    listings = _parallel_map(targets, lambda t: read_one_open_pr(base, repo, token, t[0], t[1]))
-    per_pr: list[tuple[int, list[tuple[str, str]] | None]] = []
-    for (number, _sha), (files, why) in zip(targets, listings):
-        if files is None or why:
+    # 阶段 1a：并行读各 PR 的 claims 目录（只拿文件名 + 内容 SHA，不下载内容）
+    claim_listings = _parallel_map(targets, lambda t: list_claim_files(base, repo, token, t[0], t[1]))
+    # 阶段 1b：并行读各 PR **改过**的语料文件（同上，只拿路径 + 内容 SHA）
+    corpus_listings = _parallel_map(targets, lambda t: list_changed_case_files(base, repo, token, t[0], t[1]))
+    seen_blobs: dict[str, int] = {}          # blob SHA → 归属 PR（供报错点名）
+    per_pr: list[tuple[int, list[tuple[str, str]] | None, list[tuple[str, str]] | None]] = []
+    for (number, _sha), (cl, cwerr), (cf, fwerr) in zip(targets, claim_listings, corpus_listings):
+        claims_ok = cl is not None and not cwerr
+        corpus_ok = cf is not None and not fwerr
+        if not claims_ok:
             problems.append(
-                f"判定不了：读 PR #{number} 的 `{CLAIMS_API_PATH}` 失败（{why or '未知'}）"
+                f"判定不了：读 PR #{number} 的 `{CLAIMS_API_PATH}` 失败（{cwerr or '未知'}）"
                 f" ⇒ 看不到它 claim 了什么"
             )
-            per_pr.append((number, None))
-            continue
-        per_pr.append((number, files))
+        if not corpus_ok:
+            problems.append(
+                f"判定不了：读 PR #{number} 的**改动语料清单**失败（{fwerr or '未知'}）"
+                f" ⇒ 看不到它在语料里新增了什么号"
+            )
+        for name, blob in (cl or []) + (cf or []):
+            seen_blobs.setdefault(blob, number)
+        per_pr.append((number, cl if claims_ok else None, cf if corpus_ok else None))
     # 阶段 2：每个**唯一 blob** 只下载一次（同 SHA ⇒ 同字节），并行读内容
-    unique = sorted({blob for _n, files in per_pr if files for _name, blob in files})
+    unique = sorted(seen_blobs)
     blobs = _parallel_map(unique, lambda b: read_blob(base, repo, token, b))
     texts: dict[str, str] = {}
     for blob, (text, why) in zip(unique, blobs):
         if text:
             texts[blob] = text
         else:
-            problems.append(f"判定不了：读 claim 内容（blob {blob[:8]}）失败（{why or '未知'}）")
+            problems.append(
+                f"判定不了：读内容（PR #{seen_blobs[blob]} 的 blob {blob[:8]}）失败（{why or '未知'}）"
+            )
     out: list[OpenPrClaims] = []
-    for number, files in per_pr:
-        if files is None:
+    for number, claim_files, corpus_files in per_pr:
+        if claim_files is None or corpus_files is None:
             out.append(OpenPrClaims(pr=number, ids=None))
             continue
         ids: set[str] = set()
+        corpus_ids: set[str] = set()
         readable = True
-        for name, blob in files:
+        for name, blob in claim_files:
             text = texts.get(blob)
             if text is None:
                 readable = False
@@ -563,7 +621,19 @@ def fetch_open_pr_claims(env: dict[str, str] | None = None) -> tuple[list[OpenPr
                 readable = False
                 continue
             ids |= found
-        out.append(OpenPrClaims(pr=number, ids=frozenset(ids) if readable else None))
+        for path, blob in corpus_files:
+            text = texts.get(blob)
+            if text is None:
+                readable = False
+                continue
+            corpus_ids |= set(case_id_lines(text))
+        out.append(
+            OpenPrClaims(
+                pr=number,
+                ids=frozenset(ids) if readable else None,
+                corpus_ids=frozenset(corpus_ids) if readable else None,
+            )
+        )
     out.sort(key=lambda p: p.pr)
     problems.sort()
     if time.monotonic() - started > BUDGET_S:
@@ -578,11 +648,17 @@ def cross_pr_claims_problems(
     claims: list[Claim],
     current: int | None,
     fetch: object | None = None,
+    main_ids: set[str] | None = None,
 ) -> list[str]:
     """判据 7：**本 PR** 的号 ∩ **其他 open PR** 的号 ⇒ 红并点名。
 
     🔴 **语义只跟「别的 open PR」比**，**不**跟 main 侧比（那是判据 3 的面）—— 两件事：
     「本 PR ↔ main 已合入」（判据 3，rebase 即可见）与「本 PR ↔ 另一个在飞 PR」（判据 7，本轮才治）。
+
+    **「号」有两面**（缺一即假绿，真实命中见 `list_changed_case_files` 的 docstring）：
+    ① 本 PR 的 claim 台账声明的号；② 本 PR **改过**的语料文件里**相对 main 新增**的号
+    （`corpus_ids - main_ids` —— 扣 main 是为了不把「从 main 继承的号」读成「本 PR 占的号」，
+    否则每个还没 rebase 的 PR 都会被误红）。
 
     - 当前 PR 不可判定（非 PR 上下文）⇒ **不发起**判定 ⇒ `[]`（判据 7 整条不适用）；
     - 取数面返回 `None`（非 Actions 环境 ⇒ 不发起）⇒ `[]`；
@@ -599,19 +675,37 @@ def cross_pr_claims_problems(
     open_prs, problems = result
     out = list(problems)
     for p in open_prs:
-        if p.ids is None:
+        if p.ids is None or p.corpus_ids is None:
             out.append(
-                f"判定不了：读不到在飞 PR #{p.pr} 的 claim（网络 / 权限 / 该 ref 读不了）"
+                f"判定不了：读不到在飞 PR #{p.pr} 的取号面（网络 / 权限 / 该 ref 读不了）"
                 f" ⇒ 它的号**这一轮没纳入比对**（**不是「它没占号」**）"
             )
-    live_ids = {c.cid for c in claims if c.pr == current}
+    live_claims = {c.cid for c in claims if c.pr == current}
     seen = {p.pr for p in open_prs}
     if seen and current not in seen:
         out.append(
             f"判定不了：本 PR #{current} 不在 open PR 列表里（现取 {sorted(seen)}）⇒ 在飞面读数不可信"
         )
+    mine = open_prs and next((p for p in open_prs if p.pr == current), None)
+    live_corpus: set[str] = set()
+    if current in seen and mine is not None and mine.corpus_ids is not None and main_ids is not None:
+        # 本 PR **相对 main** 新增的语料号；`main_ids` 不可得 ⇒ 语料面**不在本函数内**判
+        # （严格版常驻出口 = `corpus_face_problems`，那里**恒**传 main 侧号集；判据 1~6 的
+        # 红证也继续走这条「不传 main」的窄口径 ⇒ 一词不改）
+        live_corpus = set(mine.corpus_ids) - main_ids
+    live_ids = live_claims | live_corpus
     for cid in sorted(live_ids):
-        others = sorted({p.pr for p in open_prs if p.pr != current and cid in (p.ids or frozenset())})
+        others = sorted(
+            {
+                p.pr
+                for p in open_prs
+                if p.pr != current
+                and (
+                    cid in (p.ids or frozenset())
+                    or (main_ids is not None and cid in ((p.corpus_ids or frozenset()) - main_ids))
+                )
+            }
+        )
         if not others:
             continue
         out.append(
@@ -702,7 +796,11 @@ def all_problems(
         + duplicate_problems(claims)
         + collision_problems(claims, used, current, injected)
         + quota_problems(claims, used)
-        + (cross_pr_claims_problems(claims, current, cross_fetch) if cross_fetch is not None else [])
+        + (
+            cross_pr_claims_problems(claims, current, cross_fetch, injected)
+            if cross_fetch is not None
+            else []
+        )
     )
 
 
@@ -760,13 +858,49 @@ def repo_problems(cross_fetch: object | None = None) -> list[str]:
     )
 
 
+def corpus_face_problems(claims: list[Claim], current: int | None, fetch: object | None = None
+                         ) -> list[str]:
+    """判据 7 的**语料面**常驻出口（真实命中 #6263/#6264 的 `OR-059` 那一形态）。
+
+    ⚠️ **base 口径（有意取舍，照实登记）**：main 侧基线取自**本工作树**的 `repo_used_ids()` ——
+    本仓的强制动作是「开工先 rebase 到最新 main」⇒ 本树的号集 ⊇ main 的号集，用它当基线
+    **不会把「本 PR 新增的号」误判成 main 侧已有**（方向是**漏**而不是误红；漏的形态 =
+    本 PR 落后 main、且它新增的号恰好已被 main 另一个 PR 合并 —— 那一档由判据 3 的 rebase 兜住）。
+    🔴 **不额外拉 main 全库**（那会让每个 PR 多拉 26 个文件）⇒ 这是「便宜换穷举」的取舍。
+    """
+    fetch = fetch_open_pr_claims if fetch is None else fetch
+    if current is None:
+        return []
+    used = repo_used_ids()
+    problems: list[str] = []
+    if not any(c.pr == current for c in claims):
+        problems.append(
+            f"判定不了：本 PR #{current} 在本地 claims 台账里没有自己的条目 ⇒ 语料面基线不可信，"
+            f"**跨在飞 PR 的语料重号这一轮没判**（**不是「没有重号」**）"
+        )
+        return problems
+    problems.extend(cross_pr_claims_problems(claims, current, fetch, set(used)))
+    return problems
+
+
 def test_repo_case_id_claims_are_clean() -> None:
     """仓内七条判据的**常驻出口**：当前树上的 claim 台账必须干净（没有 claim 时天然全绿）。
 
-    CI 面这里**真的**会去读同仓 open PR 的 claims（判据 7）；读不到 ⇒ 判红且写明「判定不了」。
+    CI 面这里**真的**会去读同仓 open PR 的取号面（判据 7）；读不到 ⇒ 判红且写明「判定不了」。
     """
     problems = repo_problems()
     assert problems == [], "取号登记台账判据报红：\n" + "\n".join(f"  - {p}" for p in problems)
+
+
+def test_repo_corpus_face_is_clean() -> None:
+    """**语料面**常驻出口（判据 7 的第二面）：本 PR 在 `cases/*.yml` 里新增的号，别的在飞 PR 也不许有。
+
+    与上面那条**同源、不同面**：上面只查 claim 台账，这条查语料（真实命中 #6263/#6264 的 `OR-059`）。
+    """
+    entries, _ = repo_claims()
+    claims = parse_claims(entries)
+    problems = corpus_face_problems(claims, current_pr(claims))
+    assert problems == [], "跨在飞 PR 的语料取号面判红：\n" + "\n".join(f"  - {p}" for p in problems)
 
 
 def test_cross_pr_check_is_wired_into_the_repo_exit() -> None:
@@ -943,6 +1077,67 @@ def test_merge_state_approximation_does_not_flag_another_prs_landed_claim(tmp_pa
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 判据 7 的**语料面**红证（真实命中：#6263/#6264 各自在 order.yml 新增 `OR-059`，两边都没 claim 文件）
+# ─────────────────────────────────────────────────────────────────────────────
+def test_red_proof_two_in_flight_prs_take_the_same_id_in_the_corpus_without_claim_files(
+    tmp_path: Path,
+) -> None:
+    """🔴 **红证（语料面，本单**第二面**的牙）**：两个 PR **都没写 claim 文件**，各自在 `cases/*.yml`
+    里新增了**同一个号** ⇒ 仍然**红且点名**。
+
+    复刻的现实形态（逐 ref 实测 2026-10-03 20:1x +08）：#6263 与 #6264 在 `order.yml` 里各写了一份
+    `OR-059`，`.github/cases/claims/` 里**两边都没有文件** ⇒ 「只读 claims 目录」的判据在这里**假绿**。
+    ⚠️ 夹具用**合成号** `OR-900`（不写真实的 `OR-059`）：后者**随后已由 #6263 合入 main**，
+    写死它会让这条判据**随仓内状态漂移**（实测：rebase 到新 main 后它当场从红变绿 = 空跑）。
+    """
+    _write_claim(tmp_path, "6259-MC-079.json", pr=6259, id="MC-079")
+    claims = parse_claims(scan_claims(tmp_path)[0])
+    open_prs = [
+        OpenPrClaims(pr=6259, ids=frozenset(), corpus_ids=frozenset({"OR-058", "OR-900"})),
+        OpenPrClaims(pr=6263, ids=frozenset(), corpus_ids=frozenset({"OR-900"})),
+    ]
+    problems = cross_pr_claims_problems(claims, 6259, lambda: (open_prs, []), {"OR-058"})
+    joined = "\n".join(problems)
+    assert len(problems) == 1, problems
+    assert "OR-900" in joined and "#6259" in joined and "#6263" in joined, joined
+    # 判别力自证：**同一条**号若已在 main 侧 ⇒ 两名都不算「新增」⇒ 不报（防误红）
+    assert cross_pr_claims_problems(claims, 6259, lambda: (open_prs, []), {"OR-058", "OR-900"}) == []
+    # 对照：对方只占 main 已合的号（`OR-058`）⇒ 也不报
+    only_old = [
+        OpenPrClaims(pr=6259, ids=frozenset(), corpus_ids=frozenset({"OR-058"})),
+        OpenPrClaims(pr=6263, ids=frozenset(), corpus_ids=frozenset({"OR-058"})),
+    ]
+    assert cross_pr_claims_problems(claims, 6259, lambda: (only_old, []), {"OR-058"}) == []
+
+
+def test_control_corpus_inherited_ids_from_main_are_not_new_ids(tmp_path: Path) -> None:
+    """**反向对照（语料面的关键）**：两个 PR 的语料**都含** `MC-076`，但 `MC-076` **已在 main**
+    ⇒ 那不是「本 PR 新增的号」⇒ **不许误红**（否则每个还没 rebase 的 PR 都会被判重号）。"""
+    _write_claim(tmp_path, "6259-MC-079.json", pr=6259, id="MC-079")
+    claims = parse_claims(scan_claims(tmp_path)[0])
+    open_prs = [
+        OpenPrClaims(pr=6259, ids=frozenset({"MC-079"}), corpus_ids=frozenset({"MC-076", "MC-077"})),
+        OpenPrClaims(pr=6263, ids=frozenset(), corpus_ids=frozenset({"MC-076", "MC-077"})),
+    ]
+    assert cross_pr_claims_problems(claims, 6259, lambda: (open_prs, []), {"MC-076", "MC-077"}) == []
+
+
+def test_red_proof_corpus_face_without_a_local_claim_is_fail_closed(monkeypatch, tmp_path: Path) -> None:
+    """**fail-closed（语料面）**：本 PR 在本地 claims 台账里**没有自己的条目** ⇒ 基线不可信 ⇒ 红且写明
+    「判定不了」（不许读成「没有重号」）。**零外呼**（桩不被念到）。"""
+    monkeypatch.setenv(PR_ENV, "6259")
+    called: list[int] = []
+
+    def probe() -> tuple[list[OpenPrClaims], list[str]]:
+        called.append(1)
+        return [], []
+
+    problems = corpus_face_problems([], 6259, probe)
+    assert called == [], "没有本地 claim 条目时不该发起取数（零外呼）"
+    assert len(problems) == 1 and "判定不了" in problems[0] and "6259" in problems[0], problems
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 判据 7 的红证（issue #6245）：跨在飞 PR 重号
 #   取数面一律用**桩**（`fetch` 参数）⇒ 纯函数面**零网络、零时钟**；
 #   真网络面只有一条**直连**判据（`test_live_probe_*`，两态都自证读了什么）。
@@ -958,12 +1153,14 @@ class _ApiStub:
     """
 
     def __init__(self, pulls: list[dict], contents: dict[str, object], status: int,
-                 blobs: dict[str, str] | None = None, fail_first_status: int | None = None) -> None:
+                 blobs: dict[str, str] | None = None, fail_first_status: int | None = None,
+                 pr_files: dict[int, list[dict]] | None = None) -> None:
         self.pulls = pulls
         self.contents = contents
         self.status = status
         self.blobs = blobs or {}
         self.fail_first_status = fail_first_status
+        self.pr_files = pr_files or {}
         self.seen_paths: set[str] = set()
         self.requests: list[str] = []
 
@@ -983,6 +1180,9 @@ class _ApiStub:
             return self.fail_first_status, {"message": "transient"}, ""
         if path.endswith("/pulls"):
             return self.status, self.pulls, ""
+        if "/pulls/" in path and path.endswith("/files"):
+            number = int(path.rsplit("/pulls/", 1)[-1].split("/")[0])
+            return 200, self.pr_files.get(number, []), ""
         if "/git/blobs/" in path:
             content = self.blobs.get(path.rsplit("/git/blobs/", 1)[-1])
             if content is None:
@@ -1196,6 +1396,77 @@ def test_http_timeout_is_fail_closed_and_bounded(monkeypatch) -> None:
     assert "判定不了" in result[1][0] and "open PR" in result[1][0], result[1]
 
 
+def test_http_corpus_face_reads_only_changed_case_files(monkeypatch) -> None:
+    """**真 HTTP 面（语料面 + 成本）**：`GET /pulls/{n}/files` ⇒ 只读**改过的语料**（未改的不下载）。
+
+    桩给两个改动：一个 `cases/order.yml`（含合成号 `OR-900`）、一个**非语料**文件（`README.md`）⇒
+    取数面必须只把 `OR-900` 读出来；且**不产生**对非语料文件的 blob 请求。
+    """
+    pulls = [{"number": 7001, "head": {"sha": "sha-a"}}]
+    pr_files = {
+        7001: [
+            {"filename": ".github/cases/order.yml", "sha": "blob-order"},
+            {"filename": "README.md", "sha": "blob-readme"},
+        ]
+    }
+    corpus = "cases:\n  - id: OR-058\n  - id: OR-900\n"
+    stub = _ApiStub(pulls, {"sha-a/" + CLAIMS_API_PATH: []}, 200,
+                    {"blob-order": corpus, "blob-readme": "别读我"}, pr_files=pr_files)
+    base = _serve_api(monkeypatch, stub)
+    _api_env(monkeypatch, base)
+    try:
+        fetched = fetch_open_pr_claims()
+        assert fetched is not None and fetched[1] == [], f"取数面读数/问题异常：{fetched!r}"
+        open_prs, problems = fetched
+        assert problems == [], problems
+        assert {p.pr: p.corpus_ids for p in open_prs} == {7001: frozenset({"OR-058", "OR-900"})}, open_prs
+        blob_reads = [r for r in stub.snapshot()[1] if "/git/blobs/" in r]
+        assert blob_reads == ["GET /repos/acme/demo/git/blobs/blob-order"], blob_reads
+        assert any(r.endswith("/pulls/7001/files") for r in stub.snapshot()[1]), stub.snapshot()[1]
+    finally:
+        _release(stub)
+
+
+def test_red_proof_http_corpus_collision_is_named(monkeypatch, tmp_path: Path) -> None:
+    """🔴 **红证（真 HTTP 面 + 语料面，端到端）**：两个 open PR 各自在 `order.yml` 新增同一个号、
+    **都没 claim 文件** ⇒ 真取数路径把它读出来，判决**点名 #7002**（复刻 #6263/#6264 的真实形态；
+    夹具用合成号 `OR-900`，理由见上一条）。"""
+    pulls = [{"number": 7001, "head": {"sha": "sha-a"}}, {"number": 7002, "head": {"sha": "sha-b"}}]
+    pr_files = {
+        7001: [{"filename": ".github/cases/order.yml", "sha": "blob-a"}],
+        7002: [{"filename": ".github/cases/order.yml", "sha": "blob-b"}],
+    }
+    stub = _ApiStub(
+        pulls,
+        {"sha-a/" + CLAIMS_API_PATH: [], "sha-b/" + CLAIMS_API_PATH: []},
+        200,
+        {
+            "blob-a": "cases:\n  - id: OR-058\n  - id: OR-900\n",      # 7001 继承 OR-058 + 新增 OR-900
+            "blob-b": "cases:\n  - id: OR-900\n",                        # 7002 也新增 OR-900
+        },
+        pr_files=pr_files,
+    )
+    base = _serve_api(monkeypatch, stub)
+    _api_env(monkeypatch, base)
+    try:
+        fetched = fetch_open_pr_claims()
+        assert fetched is not None and fetched[1] == [], f"取数面读数/问题异常：{fetched!r}"
+        open_prs, _ = fetched
+        assert {p.pr: sorted(p.corpus_ids or ()) for p in open_prs} == {
+            7001: ["OR-058", "OR-900"],
+            7002: ["OR-900"],
+        }, open_prs
+        _write_claim(tmp_path, "7001-MC-079.json", pr=7001, id="MC-079")
+        claims = parse_claims(scan_claims(tmp_path)[0])
+        problems = corpus_face_problems(claims, 7001, lambda: (open_prs, []))
+        # ⚠️ `corpus_face_problems` 的 main 侧基线 = **本工作树**（这里含 MC-079 等号，不含 OR-058/OR-059）
+        joined = "\n".join(problems)
+        assert "OR-900" in joined and "#7002" in joined, joined
+        assert "OR-058" not in joined, joined
+    finally:
+        _release(stub)
+
+
 def test_budget_stops_reading_the_in_flight_face(monkeypatch) -> None:
     """**成本红线（预算）**：读在飞面**到点即停**（记得住地判「无法判定」），不许把 CI 拖长。
 
@@ -1221,7 +1492,8 @@ def _stub(calls: list[int], **readings: frozenset[str] | None):
 
     def fetch() -> tuple[list[OpenPrClaims], list[str]]:
         calls.append(1)
-        return [OpenPrClaims(pr=int(k[1:]), ids=v) for k, v in sorted(readings.items())], []
+        # `corpus_ids` 同给 ⇒ 桩把「声明的号」同时算进两面（语料面另有专门红证）
+        return [OpenPrClaims(pr=int(k[1:]), ids=v, corpus_ids=v) for k, v in sorted(readings.items())], []
 
     return fetch
 

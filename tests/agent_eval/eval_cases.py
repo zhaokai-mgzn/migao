@@ -5565,9 +5565,9 @@ _CASE_MC_077 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-078 [NORMAL] 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI（源: cases/misc.yml）──
-_CASE_MC_078 = EvalCase(
-    id='MC-078',
+# ── MC-079 [NORMAL] 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI（源: cases/misc.yml）──
+_CASE_MC_079 = EvalCase(
+    id='MC-079',
     legacy_id='',
     title='跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI',
     skill=Skill.GENERAL,
@@ -12674,7 +12674,7 @@ ALL_CASES = (
     _CASE_MC_075,
     _CASE_MC_076,
     _CASE_MC_077,
-    _CASE_MC_078,
+    _CASE_MC_079,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
