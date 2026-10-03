@@ -139,6 +139,25 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * 分页查询商品列表
      */
     public PageResponse<ProductResponse> getProducts(ProductQueryRequest query, Long tenantId) {
+        LambdaQueryWrapper<Product> wrapper = buildProductQueryWrapper(query);
+
+        // 执行分页查询
+        Page<Product> page = new Page<>(query.getPage(), query.getSize());
+        Page<Product> productPage = productMapper.selectPage(page, wrapper);
+
+        return PageResponse.of(productPage.getTotal(), productPage.getCurrent(), productPage.getSize(),
+                toProductResponses(productPage.getRecords()));
+    }
+
+    /**
+     * 构造商品列表的查询条件（**列表读面与导出读面共用的单一源**，issue #6198）。
+     *
+     * <p>为什么抽出来单独一个方法：导出必须与列表**同筛选、同排序** ——
+     * 「导出行数 == 同筛选条件下列表的 {@code total}」这条判据正是拿它当靶子。
+     * 两处各写一份条件迟早分叉（导出漏掉一个筛选条件而没人发现），
+     * 而「导出 == 列表」是本仓对导出唯一的真值定义。</p>
+     */
+    private LambdaQueryWrapper<Product> buildProductQueryWrapper(ProductQueryRequest query) {
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
 
         // 关键词搜索（名称 + 货号）
@@ -219,18 +238,20 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             wrapper.orderByDesc(Product::getCreatedAt);
         }
 
-        // 执行分页查询
-        Page<Product> page = new Page<>(query.getPage(), query.getSize());
-        Page<Product> productPage = productMapper.selectPage(page, wrapper);
+        return wrapper;
+    }
 
+    /**
+     * 商品行 → 响应 DTO（**列表与导出共用的单一源**）：附加 colorCount 与总库存
+     * （总库存以 SKU 汇总为准，覆盖 {@code product.stock} 可能为 0 的情况）。
+     */
+    private List<ProductResponse> toProductResponses(List<Product> records) {
         // 获取分类名称映射
-        Map<String, String> categoryNameMap = getCategoryNameMap(productPage.getRecords());
-
+        Map<String, String> categoryNameMap = getCategoryNameMap(records);
         // 转换为响应 DTO，附加 colorCount 和 totalStock
-        List<ProductResponse> responses = productPage.getRecords().stream()
+        return records.stream()
                 .map(product -> {
                     ProductResponse response = convertToResponse(product, categoryNameMap.get(product.getCategoryId()));
-                    // 附加颜色数和总库存（总库存以 SKU 汇总为准，覆盖 product.stock 可能为 0 的情况）
                     response.setColorCount(getColorCount(product.getId()));
                     BigDecimal totalStock = getTotalStock(product.getId());
                     response.setTotalStock(totalStock);
@@ -238,8 +259,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     return response;
                 })
                 .collect(Collectors.toList());
-
-        return PageResponse.of(productPage.getTotal(), productPage.getCurrent(), productPage.getSize(), responses);
     }
 
     /**
@@ -349,8 +368,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     public ProductResponse createProduct(ProductCreateRequest request, Long tenantId) {
         // issue #5063（V115）：库存是 1 位小数口径（0.1 米粒度）⇒ **超过 1 位小数显式拒绝**
         // （fail-closed；静默取整 = 账面与实物不符且无人发现，正是本单要治的形态）。
-        // 判据单点在 StockQuantity；这里只做入口归一，不在 Service 里另写一套小数位判断。
-        request.setStock(StockQuantity.requireOneDecimalOrNull(request.getStock(), "库存 stock"));
+        // issue #6199：`products.stock` 是**绝对值**（实物米数）⇒ 同一次准入**还要拒负数**
+        // （改前这里只过 `requireOneDecimalOrNull`：只校精度、不校符号 ⇒ 传 -5 得 200 且落库）。
+        // 判据单点在 StockQuantity；这里只做入口归一，不在 Service 里另写一套小数位/符号判断。
+        request.setStock(StockQuantity.requireNonNegativeOrNull(request.getStock(), "库存 stock"));
 
         // 空分类归一化（#3665 冒烟 B1）：前端草稿发的是 ''（DEFAULT_FORM.categoryId）而非缺省 null。
         // 若原样透传：validateCategory 因 hasText('')==false 跳过校验 → BeanUtils 把 '' 写进实体
@@ -416,8 +437,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse updateProduct(String id, ProductUpdateRequest request, Long tenantId) {
-        // issue #5063（V115）：同 createProduct —— 库存输入最多 1 位小数，超过即显式拒绝
-        request.setStock(StockQuantity.requireOneDecimalOrNull(request.getStock(), "库存 stock"));
+        // issue #5063（V115）：同 createProduct —— 库存输入最多 1 位小数，超过即显式拒绝。
+        // issue #6199：同 createProduct —— 绝对值准入必须同时拒负数（本行是改品/批量库存
+        // `updateProductForAgent` 的共同入口，负值会一路写进 products.stock 与 product_skus.stock）。
+        request.setStock(StockQuantity.requireNonNegativeOrNull(request.getStock(), "库存 stock"));
 
         Product product = productMapper.selectById(id);
         if (product == null) {
@@ -559,11 +582,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                                     List<ProductSkuInput> skuInputs,
                                     boolean pruneMissing) {
         // issue #5063（V115）：SKU 库存是库存链路的**权威列**，逐行准入（最多 1 位小数）——
-        // 这里是所有建品/改品路径（表单 / Agent / 矩阵式生成）写 SKU stock 的**唯一收口**
+        // 这里是所有建品/改品路径（表单 / Agent / 矩阵式生成）写 SKU stock 的**唯一收口**；
+        // issue #6199：同一次准入还要拒**负数**（SKU 库存也是绝对值）。
         if (skuInputs != null) {
             for (ProductSkuInput input : skuInputs) {
                 if (input != null) {
-                    input.setStock(StockQuantity.requireOneDecimalOrNull(input.getStock(), "SKU 库存 stock"));
+                    input.setStock(StockQuantity.requireNonNegativeOrNull(input.getStock(), "SKU 库存 stock"));
                 }
             }
         }
@@ -1388,7 +1412,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         // issue #5063（V115）：库存是 1 位小数口径（0.1 米粒度）⇒ 复用 StockQuantity 的准入判据，
         // **不在这里另写一套小数位判断**；超过 1 位小数显式拒绝（禁止静默取整/截断）。
-        parsedRow.stock = StockQuantity.requireOneDecimalOrNull(
+        // issue #6199：导入的库存列同样是**绝对值** ⇒ 负数一并拒绝（导入面此前与改品面同款漏了符号）。
+        parsedRow.stock = StockQuantity.requireNonNegativeOrNull(
                 readCellNumber(row, header.get("库存"), "库存", rowNo), "第 " + rowNo + " 行库存");
 
         parsedRow.colorName = normalizeBlankToNull(cellByHeader(row, header, "颜色"));
@@ -1598,11 +1623,19 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * 导出商品
      */
     public void exportProducts(ProductQueryRequest query, Long tenantId, HttpServletResponse response) throws IOException {
-        // 查询商品列表（不分页，全量导出）
-        query.setPage(1L);
-        query.setSize(10000L);
-        PageResponse<ProductResponse> pageResult = getProducts(query, tenantId);
-        List<ProductResponse> products = pageResult.getItems();
+        // 🔴 全量导出**不得**走分页入口（issue #6198）：全局分页上限
+        // （MybatisPlusConfig 的 `paginationInnerInterceptor().setMaxLimit(500L)`）会把页大小夹回去
+        // ⇒ 旧实现 `setSize(10000L)` 实际只导出 **500 行**、且**没有任何提示**
+        //（实测：列表 `total=989` 而导出 500 行）。
+        //
+        // 口径 = **不带 `IPage` 的 `selectList`**：分页拦截器只作用于 `IPage` 参数，不截断它；
+        // 且它是一条 SQL 一次取回、条件与列表同源（{@link #buildProductQueryWrapper}）⇒
+        // 「导出行数 == 同筛选条件下列表的 total」恒成立，也不存在「翻页期间数据变动导致漏行/重行」
+        // 的顺序稳定性问题。内存 = 本租户 + 当前筛选条件命中的全部行
+        //（旧实现本就打算一次取 10000 行，量级未变）。
+        // ⛔ 不许改成放开全局 `setMaxLimit` —— 那会放开**所有**列表的分页护栏（降护栏）。
+        List<ProductResponse> products = toProductResponses(
+                productMapper.selectList(buildProductQueryWrapper(query)));
 
         // 设置响应头
         String filename = URLEncoder.encode("商品列表.xlsx", StandardCharsets.UTF_8);
