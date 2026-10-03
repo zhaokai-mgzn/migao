@@ -1,0 +1,56 @@
+{
+  "schema": "swas-command-content-legs/v1",
+  "issue": "#6124",
+  "what": "把东西送上 SWAS 的**每一条 CI 腿**的**命令内容契约**登记：命令内容必须只做「按**不可变 sha** 取回远端执行体并执行」，**不许**把仓内文件内容（尤其远端执行体整份）内联进来；且发起云调用**之前**必须在本机断言字节数 < 上限。",
+  "why": "SWAS `RunCommand` 的 `CommandContent` 有**大小墙**，而**内联**会让命令内容随远端脚本一起长 ⇒ 某天在云上原地 `SDKError 400 / CmdContent.ExceedLimit`，而它**只在发布那一刻**可见（PR 里看不见）⇒ 潜伏期极长、线上产物静默变陈旧（#6095 实测陈旧 33 天；#6124 是同一族的另两条腿：worker-h5 ≈9.2 KB、bmini ≈10.8 KB，距 16384 只剩 ~7 KB / ~5.5 KB）。",
+  "judged_by": "tests/unit_ci_workflows/test_swas_command_content_limit.py",
+  "scope_rule": "射程 = `deploy/scripts/**/*.sh` 中含**活代码行** `--command-content`、且其**文件名出现在某个 `.github/workflows/*.yml` 里**的脚本（= CI 腿）。理由：这条判据治的是 **CI 无人值守发起**的云调用；人跑的一次性向导由自己的交互面兜。射程**机械可判**（见 `_scope_paths()`），不是手写白名单 ⇒ 「把人跑的脚本塞进射程」或「把 CI 腿移出射程」都会让登记集合与现取集合不等而判红。",
+  "limit_bytes": 16384,
+  "limit_source": "https://help.aliyun.com/zh/simple-application-server/developer-reference/api-swas-open-2020-06-01-runcommand",
+  "limit_source_note": "官方口径 = `CommandContent` 与自定义参数在 **base64 编码后**综合长度 ≤ **16 KB**。⚠️ 冲突登记（照实）：ECS 侧同族 API 的文档口径是 64 KB，而本仓既有实测把上限读成 43.8~50.7 KB（`tests/unit_ci_workflows/test_swas_server_side_build.py` 的读数）⇒ **取三者中最保守的 16384** 当闸值。",
+  "legs": [
+    {
+      "id": "deploy",
+      "path": "deploy/scripts/swas-deploy-ci.sh",
+      "what": "admin-api / ai-agent / frontend 的部署腿（`deploy-*.yml`）：命令内容 = 渲染后的 `$bootstrap`（取 `deploy/swas/deploy.sh` 并执行）。",
+      "command_content_source": "$bootstrap（由 BOOTSTRAP 模板 render_bootstrap() 每次尝试渲染）",
+      "bootstrap_mode": "fetch-by-ref（`__BOOTSTRAP_REF__` 由镜像 tag 推导，取不到即 fail-closed）",
+      "byte_guard_since": "#6124（本包新增：此前**没有**字节前置断言）",
+      "ref_kind": "与镜像 tag 同源的 commit（不是 main 的最新；issue #5120）"
+    },
+    {
+      "id": "worker-h5",
+      "path": "deploy/scripts/swas-h5-publish-ci.sh",
+      "what": "工人端 H5 发布腿（`w/` 子树）。",
+      "command_content_source": "$COMMAND_CONTENT（env 前缀 + `$REMOTE_FETCH`）",
+      "bootstrap_mode": "fetch-by-ref（codeload `tar.gz/$SCRIPT_SHA` ⇒ `deploy/swas/h5-publish-remote.sh`）",
+      "byte_guard_since": "#6124（本包新增）",
+      "ref_kind": "**与产物 ref 天然同一个**：本腿产物就是源码树（`frontend/worker-h5/` 零构建），`$SHA` 一个 commit 同时当两者。"
+    },
+    {
+      "id": "bmini-h5",
+      "path": "deploy/scripts/bmini-h5-publish-ci.sh",
+      "what": "B 端商家端 H5 发布腿（`b/` 子树）。",
+      "command_content_source": "$COMMAND_CONTENT（env 前缀 + `$REMOTE_FETCH`）",
+      "bootstrap_mode": "fetch-by-ref（codeload `tar.gz/$SCRIPT_SHA` ⇒ `deploy/swas/bmini-h5-publish-remote.sh`）",
+      "byte_guard_since": "#6124（本包新增）",
+      "ref_kind": "`SCRIPT_SHA` = `H5_PUBLISHED_COMMIT`（CI 里 = `github.sha`）；产物是 ACR 镜像（不是 git ref）⇒ git 侧只有这一个 ref。"
+    },
+    {
+      "id": "c-end-h5",
+      "path": "deploy/scripts/c-end-h5-publish-ci.sh",
+      "what": "C 端小布 H5 发布腿（静态根**本身**）。",
+      "command_content_source": "$COMMAND_CONTENT（env 前缀 + `$REMOTE_FETCH --apply`）",
+      "bootstrap_mode": "fetch-by-ref（codeload `tar.gz/$SCRIPT_SHA` ⇒ `deploy/swas/c-end-h5-publish-remote.sh`）",
+      "byte_guard_since": "#6095（本单之前已修）",
+      "ref_kind": "**两个 ref**：产物 ref（`h5-dist` 孤儿单提交的 sha）≠ 执行体 ref（含远端脚本的源码 commit）—— 混用即 #6095 第五层。"
+    }
+  ],
+  "coverage_boundary": [
+    "本表只锁**登记 + 结构（形态/出处/不许内联）**；**读数层**（真跑组装段、真实字节数、注入式红证）在各腿自己的判据文件里：tests/unit_ci_workflows/test_c_end_h5_hosting.py、test_worker_h5_hosting.py、test_bmini_h5_hosting.py。",
+    "`deploy/scripts/wx-mini-test-env-setup.sh` 也有人跑的 `--command-content` 调用，但它是**人交互的一次性向导**（`server_run()` 逐条执行人工写的短命令），**不被任何 workflow 调用** ⇒ 出射程。它若**将来被接进 workflow**，`_scope_paths()` 会把它算进取 ⇒ **未登记即红**（这就是射程可判的价值）。",
+    "`.github/workflows/**` 里若有人**直接在 YAML 里**写一条 `RunCommand` 命令内容，本文件看不见（射程 = `deploy/scripts/**`）。C 端那条 workflow 由 tests/unit_ci_workflows/test_c_end_h5_hosting.py 的 workflow 面覆盖。",
+    "本表**不判**命令内容里各 env 前缀的语义是否齐全（那是各腿自己的语义断言），也不判远端脚本的发布逻辑是否正确。",
+    "`limit_bytes` 的**出处是文档 + 本仓既有实测的保守取值**，不是本仓能自己复现的云侧读数（本机没有 SWAS）；真值永远在云侧 —— 本表只保证「不越过最保守的那条线」。"
+  ]
+}
