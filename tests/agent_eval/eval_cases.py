@@ -5565,6 +5565,24 @@ _CASE_MC_077 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-078 [NORMAL] 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI（源: cases/misc.yml）──
+_CASE_MC_078 = EvalCase(
+    id='MC-078',
+    legacy_id='',
+    title='跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当两个**同时在飞**的 PR 各自 claim 同一个用例号时（本轮实测 3 次：AS-011/012、PG-059/069、MC-076）；或取数面读不到（无凭据 / 离线 / 某个 PR 的 claim 读不了）时 —— 必须有判据在**开 PR 时**（不是合并时）判红，并**点名对方 PR 号**；判定不了时必须写明「判定不了」，不许静默变绿。'],
+    expectations=['direct_reply'],
+    data_checks=['**病（issue #6245，现取读数）**：用例号是全局唯一登记键，而 claim 台账（`.github/cases/claims/` + `tests/unit_ci_workflows/test_case_id_claims.py`）的 `CLAIMS_REL` 只看**本地工作树** ⇒ 它能看见「本 PR ↔ main 已合入」（一 rebase 就红），**看不见另一个还没合并的在飞 PR 的 claim** ⇒ **两个 PR 同时绿**，要等其中一个合入 / 另一个 rebase 才暴露。代价 = 每轮撞号一次「定位 + 改号 + 重渲染 + 复跑 + 强推」。', '**判据 7（跨在飞 PR 重号 ⇒ 红，本单的牙）**：GitHub REST 列同仓 **open PR**（`state=open`）⇒ 逐 PR 读它那个 ref 的 `.github/cases/claims/*.json` ⇒ 取「**本 PR** 的号 ∩ **别的 open PR** 的号」，非空即红并**点名对方 PR 号** + 给让号出口（陷阱 3「后合入者让号」）。🔴 **只跟别的 open PR 比**，**不**跟 main 比 —— 那一档（本 PR ↔ main）是既有判据 3 的面，两条互不重复。执行点 = `tests/unit_ci_workflows/test_case_id_claims.py` 的 `cross_pr_claims_problems` / `fetch_open_pr_claims`。', '**成本与稳定性红线（机械保证）**：① 唯一联网面，**只在**「当前 PR 号可判定 + Actions 环境」时发起（本机 `pytest` 零外呼）；② 只拉 `.github/cases/claims`（**不拉整库 / 不拉语料**）、逐请求 5s 超时、整轮 60s 预算（并行 4 路 + 逐 claim 文件按内容 SHA 去重），**到点即停**；③ **零新依赖**（stdlib `urllib`；CI 那个 job 只装 pytest + pyyaml）；④ **不拿机器级重活锁、不跑重活**。', '**fail-closed 且可读（本仓口径：❓ 不许读成 ✅）**：Actions 环境里没凭据 / 列不出 open PR / 读不到某个 PR 的 claim / open PR 数达取数上限 / 超预算 ⇒ 逐条**具名判红**，文本**写明「判定不了」**并说明「它的号这一轮没纳入比对（**不是「它没占号」**）」。非 Actions 环境（无 `GITHUB_REPOSITORY`）⇒ **不发起**判定（判据 7 整条不适用）—— 这条缺口**照实登记**：本机读不到跨在飞 PR 的重号。', "**判别力自证 / 双向对照（注入式红证，全部内存 + 本机 HTTP 替身；桩用 fetch 参数注入，纯函数面零网络零时钟）**：① 桩造「另一个 open PR 占同一个号」⇒ 红且**点名 #6061**；② **对照 1**：本 PR 内部跨域两条 claim（形如仓内真语料 `6223-CH-045` + `6223-MC-075`）⇒ **不红**、且取数面**确实被调用过**；③ **对照 2**：对方 PR 已合并 / 已关闭 ⇒ 不在 `state=open` 列表 ⇒ **不红**（同一夹具把它放回 open ⇒ 立刻红，判别力自证）；④ **对照 3**：`ids=None`（读不到）/ 取数面自报无凭据 / 本 PR 不在 open 列表 ⇒ 各自判红且带「判定不了」；⑤ 真 HTTP 面（本机替身服务器，真 `urllib`/真状态码）：401 ⇒ 判定不了、完整路径 ⇒ 读出两个 PR 同号并点名、必拒连端口 ⇒ 超时值**真被传下去**（`calls == [HTTP_TIMEOUT_S]`）且 fail-closed；⑥ 预算注入（`time.monotonic`）⇒ 第一个 PR 不读就停（`requests == ['GET /repos/.../pulls']`）；⑦ **接线判据**：`repo_problems()` 必须**真的**调用判据 7（桩被念到）—— 防「实现正确但没接进常驻出口」这种「判据绿但病原样复发」。执行点 = 同文件 `test_red_proof_two_in_flight_prs_claim_the_same_id` / `test_control_*`（3 条）/ `test_red_proof_unreadable_*` / `test_http_*`（4 条）/ `test_budget_*` / `test_cross_pr_check_is_wired_into_the_repo_exit`。", '**纯静态自证（不许 skip 型假绿）**：判据本体**零** ai-agent 依赖（AST 取 import 名，`FORBIDDEN_IMPORTS` 含 `app`）+ **禁** `pytest.skip` / `except ImportError`（三条都在同一函数里逐条判红）。执行点 = 同文件 `test_this_judgement_is_pure_static_and_never_skips`。', '🔴 **覆盖边界（显式登记）**：① **只看 claims 号面** —— 判不了生成物新鲜度 / 用例库文本冲突（那是 issue #6255 的面）；② **非互斥锁**：两个包**同一瞬间**开 PR 仍是「两边都红」而不是「后开者被挡住」—— 它把发现从「合并时人工核对」提前到「**开 PR 时就红**」，**不**做抢占；③ fork PR 的对象可能读不到 ⇒ 记「判定不了」（红），**不**当成「它没 claim」；④ 本判决**不改**任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 取号台账的仓内判据（本地 claims 目录 + 同仓 open PR 的 claims 目录；零 LLM、零真库；唯一外部面 = GitHub REST 只读，有超时/预算/无凭据 fail-closed）由 tests/unit_ci_workflows/test_case_id_claims.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'case-id-claims', 'cross-pr', 'fail-closed', 'red-proof', 'no-new-dependency'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -12656,6 +12674,7 @@ ALL_CASES = (
     _CASE_MC_075,
     _CASE_MC_076,
     _CASE_MC_077,
+    _CASE_MC_078,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

@@ -287,6 +287,17 @@ jobs:
           # （切片走 `pytest_deselected`，**不是** skip —— skip 会把「这一轮不负责它」伪装成
           # 「跑了但跳过」，`[realdb-summary]` 的读数就不诚实了）。
           MIGAO_CI_HELPER_SHARD: ${{ matrix.shard }}
+          # 🔴 跨在飞 PR 的取号重号判据（issue #6245）的**唯一**外部读数：判据 7 用它列同仓
+          #   open PR 并读各 PR 的 `.github/cases/claims/*.json`（`tests/unit_ci_workflows/
+          #   test_case_id_claims.py::fetch_open_pr_claims`）。
+          #   ① 不给 ⇒ 那一侧只能记「**判定不了**」⇒ **fail-closed 判红**（不是静默变绿）；
+          #   ② 只读（`permissions: contents: read` 足够；不写、不打标签、不改远端）；
+          #   ③ 显式给 `GITHUB_REPOSITORY` ⇒ 不依赖「runner 默认注入」这条假设（§18.6 环境静默即缺陷）。
+          #   ⚠️ 顺带修正本段下文「无网络」的旧口径：本 job **仍是纯 CPU 判据套件**，
+          #   网络只发生在「本 PR 号可判定 + Actions 环境」时（1 次列 PR + 每个 open PR 1 次读目录，
+          #   逐请求 8s 超时 + 整轮 30s 预算，超预算即停 ⇒ 判「无法判定」，**不拖重 CI**）。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           pip install -q pytest pytest-xdist pyyaml
           # ── 并行度 `-n 4`（issue #5814，2026-09-30）────────────────────────────────
