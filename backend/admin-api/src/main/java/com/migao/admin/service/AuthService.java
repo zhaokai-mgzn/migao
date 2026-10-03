@@ -413,6 +413,13 @@ public class AuthService {
         }
 
         // 3.1 同手机号多租户歧义处理（审计 07 P1-2：禁止静默 LIMIT 1 落错租户）
+        //
+        // 🔴 issue #6159：**指定了 tenantId 之后仍可能命中同一租户的多行** —— 手机号在租户内
+        // **没有**唯一约束（建库脚本里 users 只有非唯一的 `idx_users_phone`；应用层唯一校验只覆盖
+        // `UserService.createUser` / `updateUser`，挡不住并发，也挡不住不走该路径的写面）。
+        // 此前 `.findFirst()` 静默取一条 ⇒ 「谁被登进去」由返回顺序决定（开发库租户 1 的
+        // 13800138000 同时命中 user_admin_001 与 user_superadmin）⇒ 登录主体不可复现、
+        // 权限判定与审计归属都可能指向错误账号。口径与多租户歧义**同一份**：歧义一律 fail-closed。
         User user;
         if (users.size() == 1) {
             user = users.get(0);
@@ -422,8 +429,19 @@ public class AuthService {
                 throw BusinessException.authFailed(
                         "该手机号关联多个租户账号，请通过对应租户入口登录或指定租户后重试");
             }
-            user = users.stream()
+            List<User> inTenant = users.stream()
                     .filter(u -> tenantId.equals(u.getTenantId()))
+                    .toList();
+            if (inTenant.size() > 1) {
+                // 逐字口径：只要**多于一条**就拒绝 —— 不取第一条，也**不**按 updated_at 排序兜底
+                // （排序只是把「谁登录」从「返回顺序」换成「另一个与账号身份无关的列」，
+                //  不可复现的病照旧，只是变得更隐蔽）。
+                log.warn("短信登录失败，同一租户内手机号命中多个账号: phone={}, tenantId={}, hits={}",
+                        maskPhone(phone), tenantId, inTenant.size());
+                throw BusinessException.authFailed(
+                        "该手机号在本企业内对应多个账号，无法确定登录身份，请联系企业管理员核对账号手机号");
+            }
+            user = inTenant.stream()
                     .findFirst()
                     .orElseThrow(() -> BusinessException.authFailed("该手机号在该租户下未注册"));
         }
