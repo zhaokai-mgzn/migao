@@ -994,3 +994,22 @@ CI 逐字（`#6229` 的 job `111189462391`）：`##[error]生成物新鲜度：1
 - `§19.40` 里写的「新开 **`#6259`**（`issue_lifecycle.py finish` 删 cwd）」**实际单号是 `#6261`**（我给包发消息时也写过 `#6259`，已当场发更正）。
 - 同理 `§19.39` 的 TOCTOU 单 **实际是 `#6260`**（我在给包的消息里先写成 `#6259`，也已当场更正）。
 ⇒ **口径**：**开单后必须回读 GitHub 返回的编号再写记录**（本轮我在同一天犯两次同类"转述未核实"）；承载体台账的可复原性依赖这个动作。
+
+### 19.41 回答"发货单 ↔ 订单状态能否联动"（现取核实）+ 一处**我自己的方法学失误**更正
+
+**① 联动关系（逐条带证据，全部现取）**
+| 动作 | 是否改订单状态 | 证据 |
+|---|---|---|
+| **发货**（工人拍照发货 `OrderShipmentService.ship`） | ✅ **同事务 CAS → `shipped`** | `:335 int rows = transition(orderId, current, "shipped")`；`:855 transition()` = `UPDATE orders SET status=? WHERE id=? AND status=?`；`:110` 注释逐字「两条路都会把订单置 `shipped`。现在只有这一份。」 |
+| 打包 `packed` | ❌ 只改**发货单自己**的状态 | `order_shipments` 的闭环，不推订单 |
+| 物流 `delivered` | ❌ **完全不动订单**（只写 `order_logistics.status` + `delivered_at`） | `OrderLogisticsService` 内无订单写点；**库内实证**：`order_status=completed ∧ logistics_status=in_transit` **7 条** |
+| 后台改物流 `PUT /orders/{id}/logistics` | ❌ 不搬状态（只要求订单 ∈ `shipped`/`confirmed`/`producing`） | `OrderController:406` 起 |
+| 订单 → `completed` | ✅ 但有**唯一入口** `PUT /orders/{id}/status` | `OrderService:962 updateOrderStatus`：**`OrderStatusTransitions.assertTransitionAllowed`（唯一实现，issue #5648 抽出）** + **加工单联动守卫（#3340：含加工项必须加工完工才能发货）** + `confirmed/cancelled` 走带库存副作用路径（`confirmPayment`/`cancelOrder`）+ 状态变更发站内信 |
+⇒ **一句话**：**发货 → 订单 `shipped` 是强联动（原子、共用一张流转表）；物流签收 → 订单完成不是自动联动**（要人/前端调 `updateOrderStatus`）。DB 实测：物流已签收行 0 条、而"订单已完成 + 物流在途" 7 条 ⇒ 二者独立。
+
+**② 🔴 我自己的方法学失误（必须记）**：我先前用 `timeout 30 /tmp/pg.sh "…"` 查库，**而本机没有 `timeout` 命令**（`bash: timeout: command not found`）⇒ **那条命令从未执行**，我却把**空输出读成了"库里没有 shipping 列"**。
+今天不套 `timeout` 重跑：`information_schema` 里 shipping* 列确实为 **0** ⇒ **结论没被推翻，但证据路径是坏的**。
+⇒ **口径（立即生效）**：① 本机**禁用 `timeout` 前缀**（macOS 无该命令；需要超时用别的方式）；② **任何"空输出"必须先确认命令真的跑过**（看 `[exit code: N]` / 显式 `echo rc=$?`）—— 这正是铁律 11「转述即未核实」的另一面：**空结果也是一种结论，必须证明它是"真的空"**。
+③ 已核查：验收 harness（线 A/B）**没有**用 `timeout`（grep 无命中）⇒ 那两条线的读数不受此影响。
+
+**③ 顺带排除一个"看起来像缺陷"的东西**：前端 `types/index.ts:461 OrderStatus = 'pending_payment'|'pending_shipment'|'shipped'|'completed'|'closed'|'refund'` 与库内词表（`pending/confirmed/producing/shipped/cancelled/completed`）**不一致**，但 **有双向映射**：`toBackendStatusParam('pending_shipment') = 'confirmed,producing'`、`confirmed/producing → pending_shipment`（`:484/:490/:500/:501`）⇒ 是**UI 词表 vs 后端词表**，**不是** `#6224`/`#6239` 那类"声明存在但无实现" ⇒ **不开单**（记录备查，免得别人重复"发现"）。
