@@ -595,3 +595,21 @@ git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/Wor
 **唯一有效修法**：`rm -rf .git/worktrees/<name> && git worktree prune -v && git worktree add <path> <branch>`。
 **代价**：每个撞上的包白花 **3~4 轮往返**手工诊断，且**没有任何东西会因此变红**（与铁律 11「声明存在 ≠ 可达」同族）。
 ⇒ 已开 **#6235（P3·研发工具）**，建议把"路径真的存在"的断言与自愈放进 `scripts/dev-worktree.sh add`（派活前校验），附会红的判据（构造"登记存在/目录不存在"fixture）。
+
+### 19.18 记录更正（主会话）：**读数类预警必须带"分支归属"，不能跨包传值** —— F-6220 当场拒绝了我的错值
+
+**我发的错**：给 F-6220 的预警里我写「你也会读到 **113**（同 #6231）」并建议"若不一致就重锚到 113"。
+**它实测反驳（durable 读数）**：
+```
+锚点 entries = {'no_channel_total': 0, 'backend_contract_scoring_zero': 111}
+本分支实测   = {'no_channel_total': 0, 'backend_contract_scoring_zero': 111}   ⇒ 一致，无需重锚
+AS-011 scoring_assertion_count = 1 | expectations = [{'tool':'after_sales_manage','args':{'action':'detail'}}]
+AS-012 scoring_assertion_count = 1 | 同上
+```
+⇒ **它照 AS-006 模板给两条用例写了"一条只读 expectation"（不是 `expectations: []`）** ⇒ 不进 `scoring_assertion_count == 0` 桶 ⇒ 读数**仍 111**；
+而 #6231 的 AS-013/014 是 `expectations: []` ⇒ 才 +2 = **113**。**若它按我的 113 重锚，反而会把 `test_i3` 判红**（它明确拒绝了，豁免台账未改）。
+
+**收敛成口径**（补进 §19.10 的元规则）：
+1. **锚点/读数一律"以本分支实测为准"**；跨包只传**方法与口径**，**绝不传数值**（数值取决于该包自己的用例形态：`expectations` 是否为空、是否计分型）；
+2. 判断"该不该 +1/+2"，看**该用例的 `scoring_assertion_count`**（计分型 expectation 或机器计分型 `data_check` ⇒ ≥1 ⇒ 不进桶），不是看"新增了几条用例"；
+3. 我给预警时**必须同时给出"如何自测得出该值"的命令**（而非给一个数）—— 这次它自己用 `scoring_assertion_count` 逐条复算裁定，是本轮**第 3 次**由包纠正主会话的记录（前两次见 §19.13 / §19.14）。
