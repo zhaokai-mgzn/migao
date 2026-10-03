@@ -942,3 +942,14 @@ CI 逐字（`#6229` 的 job `111189462391`）：`##[error]生成物新鲜度：1
 - **"必须等 #6257"不成立**：#6238 自己的 rebase + 重渲染就让 `Case Contract` 绿了（它的分支带着新鲜产物）⇒ 我的指令**过保守**（对**不改用例产物**的 PR（如承载体 `#6229`）才需要等 main 被治好）。
 
 **⑤ 承载体 `#6229` 已 rebase 到新 main 并强推**（`bdc20fc73`），现 `OPEN/BLOCKED`（CI 重跑中）。
+
+### 19.38 `#6228`（金额入口准入）已合并并关单 —— **DEBT 17 → 0**（类级固化升级成"零容忍"）
+
+**合并**：PR `#6251` → main **`b0187dbef`**（19:22 +08）。main 侧内容级自证：`MoneyScale.precisionProblemOrNull` 命中 2 处 · `MoneyEntryPrecisionMetaGuardTest:95 FROZEN_DEBT_BASELINE = 0` · `.github/cases/finance.yml` 含 `FN-006`。
+**处置**：17 处 DEBT 全部落地（16 → GATED、1 处改判 `NO_NEW_INPUT_SOURCE`），**另新扫出 1 处**（`InboundOrderService` 的 DTO 写面，**元守卫自己抓到**）并 GATED ⇒ **`文件 19 / 写面 40；DEBT = 0`**；一律复用单点 `MoneyScale`（只加了 `precisionProblemOrNull` 供"收集式校验"复用，**判定未复制第二份**）。
+**逐字读数**：注入式红 `Tests run: 176, Failures: 8`（8 条**具名**：Order×4 / Inbound×2 / Finance×2）；绿 11 类 `451/0/0`、宽跑 25 类 `604/0/0`、rebase 后 14 类 `474/0/0`；每处**正对照**（`0.01`/`12.50`/`31.250` 逐字 `toPlainString()` 落库）。
+⇒ **`FROZEN_DEBT_BASELINE` 17 → 0**：类级判据从"只许缩短"升级为"**任何 DEBT 即红**"。
+**边界（照实）**：直接拼 SQL 写面 / 非实体 POJO / ai-agent / 前端仍不在射程；纯 mock 单测 ⇒ 未改 `REALDB_FILES`；「冻结上限被改大」机械判不了（落 diff 评审）。
+**一处连带（CI 抓到）**：`WorkerCuttingHeightNullProductIdTest` 把 `FinanceService|refundMap` 索引点**钉行号 315**，本包加 8 行 ⇒ 变 **323**，已按其出口更新（该台账钉行号是本仓既有设计，本包不改设计）。
+
+**本轮"已修 + 已合 + 已关"10 单**：`#6219` · `#6220` · `#6221` · `#6224` · `#6226` · `#6222` · `#6235` · `#6237`(核验=不真) · `#6239` · **`#6228`**。
