@@ -5624,7 +5624,7 @@
 真值: processing-manage.worker-cutting-height-terminal
 溯源: 2026-10-03 新增（第三轮深度测试 C23 / issue #6219）：`order_items.product_id` 为空时 `positionRow` 对 `brands()` 的空集分支（`Map.of()`）做 `get(null)` ⇒ `ImmutableCollections$MapN.get` 抛 NPE ⇒ 端点 500（线上栈与单测栈逐字同源）。修法取最少代码：调用点显式短路空键 + 空集分支返回**可索引**的 LinkedHashMap（同文件 `itemsOf()` 既有范式），**不改查询语义、不改只读契约、不写机器**。⚠️ 同族存量（`getCategoryNameMap` / `loadOrders` 的调用点未判空）**不在本包文件族内** ⇒ 已另开 issue #6226。 ｜ tags: processing, cutting_height, scan, backend-contract, null_safety
 
-## 加工单域（58 case）
+## 加工单域（59 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -6382,6 +6382,17 @@
 跳过: [backend-contract] 后端契约用例（开租种子 + 路线实例化，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionSeedProcessingItemRulePositionTest 执行（Java），另有零成本的那一半 tests/unit_ci_workflows/test_processing_item_rule_position.py 读生产源码
 ```
 溯源: 2026-10-03 新增（issue #6123）：#6114（PR #6119，已合并 c22514360）只给**特殊选项**维补了规则级部位限定，**加工项触发**维是同一事实的另一半 —— 这 3 条规则（花边/扣环/接高，V84 逐条同值）引用的工序同样只有布帘变体（有 `花边-布`、无 `花边-纱`），position=NULL ⇒ 带这些加工项的**纱帘单**在 buildRoute 命中 ⇒ variantNameOf(逻辑名,'纱帘',catalog)=null ⇒ missing_operations ⇒ 整单 fail-closed（本机复现报错逐字见判据 4）。修法 = 只改种子（开租播种写 position='布帘'，与 #6114 同一手法；口径 = 用户 2026-09-21 裁定「如果有一些工序只能布帘有或者纱帘有，可以在适用条件上设置」）；⛔ 不发明 `-纱` 变体。**类级固化**：判据 3 把「每条种子规则的 (operation, position) 在其适用形态下必须解析出变体」钉成一条判据，一次罩住两条触发维 —— #6114 的守卫只读 option 分支，本单新增的守卫按**维度集合**现取式判定（将来再加按订单行触发的维度也会被点名）。 ｜ tags: processing-order, production, route-rules, seed, sheer-curtain, processing-item
+
+### PG-069. 加工项/加工单列表：该页键全为空时不再 500（Map.of() 空表 + 未判空的空键索引；issue #6226） 🔵
+```
+数据: 判据 1·**加工项列表**：该页**所有**加工项的 `category_id` 为空/NULL ⇒ 列表端点必须 **200**、缺值渲染 `categoryName=null`（不得 5xx、也不得凭空造一个分类名）。触发链（逐字）：`getCategoryNameMap` 先把 `categoryId` 过 `StringUtils::hasText` 后收集，过滤后为空 ⇒ 走空集分支；而调用点 `categoryNameMap.get(item.getCategoryId())` 的键**未过同一道过滤** ⇒ 修前 `Map.of()`（不可变空表）的 `get(null)` 先 `requireNonNull` ⇒ NPE。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingItemServiceTest.java 的 getProcessingItems_AllCategoryIdsBlank_RendersInsteadOf500（夹具 = 构造式：两行加工项，`category_id` 分别为 null 与 空串；断言 = 两条响应的 categoryName 均为 null，且 processingCategoryMapper.selectList **零调用** —— 修复不得顺手多发一次 IN 查询）
+数据: 判据 2·**加工单列表**：该批加工单的 `order_id` **全为空** ⇒ 列表端点必须 **200**、`order_no`/客户信息渲染为 null（不得 5xx）。触发链（逐字）：`loadOrders` 只收集非空 `orderId`，一个都没有 ⇒ 走空集分支；而调用点 `orders.get(po.getOrderId())` **未判空** ⇒ 修前 `Map.of()` 的 `get(null)` 抛 NPE。行为面与 issue #6219 的实测一致（那边是租户 20 恰有 1 行空 `product_id` ⇒ 真 500）；本条第 1/2 条同理，只是 #6226 两处站点当前**没有**带病数据（latent，见「未固化 / 边界」）。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java 的 listWithAllNullOrderIdsRendersInsteadOfFiveHundred（夹具 = 构造式：一行加工单 `order_id=null`；断言 = 单条响应的 orderId/orderNo 均为 null，且 orderMapper.selectBatchIds / selectById **零调用**）
+数据: 判据 3·**类级元守卫（本单重点）**：src/main 内凡**返回 `Map.of()` / `Map.copyOf()` 族**的方法，其返回值若被同文件同方法内 `<var>.get(可能为 null 的键)` 索引 ⇒ 红。承载体 = tests/unit_ci_workflows/test_mapof_family_null_key_index.py + 台账 tests/unit_ci_workflows/mapof_family_null_key_index_ledger.json（**条数一律现取**，台账不写计数常量）。五条判据：(a) **未登记即红**；(b) **台账只许缩短**（幽灵条目即红）；(c) 台账不许空转、每条必须带 why，且 `disposition=safe-literal` 的声明必须**机械为真**（索引实参全是字符串字面量）；(d) **修复回归锁**：`tolerant_fixes` 里每个已修方法的**方法体不得再出现** `Map.of`/`Map.copyOf` 族返回（谁把空集分支改回去，当场红）；(e) **判别力自证 6 条**（两处真站点各自在内存里退回 `Map.of()` ⇒ 逐条判红并具名 / 新增未登记候选点 / 幽灵条目 / 假 `safe-literal` 声明 / 只改注释**不**红）。⚠️ **射程只裁 `Map.of`/`Map.copyOf` 族**（只有这两个族对 null 键 `requireNonNull`）：`Collections.emptyMap()` / `Collections.unmodifiableMap(new LinkedHashMap<>())` / `new LinkedHashMap<>()` / `new HashMap<>()` 的 `get(null)` **返 null 不抛** ⇒ 一律**不判**（判了就是新的假红，口径实跑已证）。
+数据: 🔴 **红证（本机实跑，2026-10-03）**：夹具为构造式（内存实体 + mock mapper，**不写库、零残留**），在未修复的 HEAD 上：`./mvnw -Dtest='ProcessingItemServiceTest#getProcessingItems_AllCategoryIdsBlank_RendersInsteadOf500,ProcessingOrderServiceTest#listWithAllNullOrderIdsRendersInsteadOfFiveHundred' test` ⇒ `Tests run: 2, Failures: 0, Errors: 2, Skipped: 0`，两条各自报同一个 NPE 形态（逐字）：`java.lang.NullPointerException at java.base/java.util.Objects.requireNonNull(Objects.java:233) at java.base/java.util.ImmutableCollections$MapN.get(ImmutableCollections.java:1239) at com.migao.admin.service.ProcessingItemService.lambda$getProcessingItems$0`（另一条落在 `com.migao.admin.service.ProcessingOrderService.list` 的 `orders.get(...)`）—— 即 `ImmutableCollections$MapN.get` 的 `requireNonNull`，与 issue #6219 的线上 500 根因同族。修后（空集分支改 `new HashMap<>()`）同一命令 ⇒ `Tests run: 132, Failures: 0, Errors: 0, Skipped: 0` / `BUILD SUCCESS`（两个测试类整类跑）。元守卫侧：把任一已修站点的空集分支在内存里退回 `Map.of()` ⇒ tests/unit_ci_workflows/test_mapof_family_null_key_index.py 的判据 (a)/(d) 同时判红并**具名**报出该站点。
+数据: **未固化 / 边界（如实登记）**：① 本包**不写库、不造 SQL 探针**（红证全部由构造式夹具取到）⇒ 与「当前生产数据不带病」并存：主会话实测在 `origin/main` 上 `processing_items.category_id` 空行 **0/39**、`processing_orders.order_id` 空行 **0/268**、`GET /api/admin/processing-items?page=1&size=50` ⇒ **200 / total=17** ⇒ 本缺陷是 **latent**（静态触发条件成立：空表分支 + 未判空空键索引；出现 1 行空键就把**整页**打成 500 —— #6219 正是这么爆的）⇒「能不能复现」不靠运气、靠夹具，故 P3 也修。② 元守卫射程 = 「同文件 + 同方法」的局部变量族（本单两处站点都在此族内）；**跨方法传参族不在射程内**（把 map 当形参传给另一个方法后再 `get(null)`，形态见 backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java 的 `brands(...)` → `positionRow(...)`，即 issue #6219 的站点）⇒ 与 #6219 的守卫是**互补**关系、不是重复。③ **不动** backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java 的同名方法（空集返回 `new HashMap<>()`，已是安全形态；它是本族「同族不一致」的实证）。④ 元守卫只读源码文本、**不跑** Java 测试 ⇒ 不替代判据 1/2（行为面）。
+跳过: [backend-contract] 后端契约用例（列表读面 + 类级源码元守卫，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingItemServiceTest / ProcessingOrderServiceTest（Java，纯 Mockito 单测、不连真库）与 tests/unit_ci_workflows/test_mapof_family_null_key_index.py（读生产源码的类级元守卫 + 判别力自证）执行
+```
+溯源: 2026-10-03 新增（issue #6226，P3·读面）：第三轮深度测试的修复包 F-6219 做全仓同族普查时撞见、主会话按 origin/main 逐字复核。形态 = `Map.of()`（`ImmutableCollections.MapN`，`get(null)` 先 requireNonNull ⇒ NPE）的空集分支 + 调用方**未经判空**地用**可能为 null 的键**索引 ⇒ 「该页/该批所有键都为空」这条路径必然 500。两处站点：backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java 的 getCategoryNameMap（加工项列表）/ backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java 的 loadOrders（加工单列表）。修法取**最少代码**：两处空集分支由 `Map.of()` 改为 `new HashMap<>()` —— 与各自**非空分支的类型契约一致**（前者非空分支是 `Collectors.toMap(...)`、后者是同一方法里 `new HashMap<>()` 建的 `byId`），比换 `LinkedHashMap` / `Collections.emptyMap()` 更贴「复用同文件既有范式」，且不引入第二份类型语义。**类级固化**：新增类级元守卫（未登记即红 / 台账只许缩短 / 条数现取 / 已修站点回归锁 / 6 条判别力自证），射程**只裁 `Map.of`/`Map.copyOf` 族**（`Collections.emptyMap()` / `unmodifiableMap` / `LinkedHashMap` / `HashMap` 的 `get(null)` 返 null 不抛 ⇒ 一律不判，避免新假红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-069（main:001-058,060-067 · PR #6233:059 · PR #6227:068）。 ｜ tags: processing-order, processing, backend-contract, null-key, map-of
 
 ## 商品域（109 case）
 
@@ -9230,8 +9241,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：642（活跃 134，跳过 508）
-- tier 分布：smoke 12 / normal 596 / adversarial 32
+- 用例总数：643（活跃 134，跳过 509）
+- tier 分布：smoke 12 / normal 597 / adversarial 32
 - 售后域：10
 - Agent 核心域：7
 - API 层域：21
@@ -9251,7 +9262,7 @@
 - 领域本体域：4
 - 订单域：56
 - 加工项域：26
-- 加工单域：58
+- 加工单域：59
 - 商品域：109
 - 工具注册器域：1
 - 设置域：10
@@ -9423,6 +9434,7 @@
 - PG-063: 卖布行（`saleForm=布料`、**无** `processingItems`）⇒ 走布料基础路线并实例化出工序；算料米数取订单行数量（不得兜底 1）
 - PG-066: 开工单默认配置 - 纱帘单勾任一特殊选项不再整单失败（规则级部位限定落在开租种子；issue #6114）
 - PG-067: 开工单默认配置 - 纱帘单带加工项（花边/扣环/接高）不再整单失败（规则级部位限定落在开租种子；issue #6123）
+- PG-069: 加工项/加工单列表：该页键全为空时不再 500（Map.of() 空表 + 未判空的空键索引；issue #6226）
 - PP-007: 米宝加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）

@@ -3684,7 +3684,11 @@ public class ProcessingOrderService {
             }
         }
         if (orderIds.isEmpty()) {
-            return Map.of();
+            // #6226：空集分支**必须**返回容忍空键的表。此前是 `Map.of()`（不可变空表）—— 它的
+            // `get(null)` 会抛 NPE，而调用点 `orders.get(po.getOrderId())` 的键**未判空**
+            // ⇒ 该批加工单只要 `order_id` 全为空就整页 500。下面非空分支返回的是
+            // `new HashMap<>()`（同族、`get(null)` 返 null）⇒ 这里取同一形态，两个分支契约一致。
+            return new HashMap<>();
         }
         List<Order> orders = orderMapper.selectBatchIds(orderIds);
         Map<String, Order> byId = new HashMap<>();
