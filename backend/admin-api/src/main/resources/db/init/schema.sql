@@ -704,6 +704,8 @@ CREATE TABLE orders (
     is_urgent BOOLEAN NOT NULL DEFAULT FALSE,       -- 订单级加急标记：true = 插队、不进池、立刻单派（pooled=false）；与售后工单 priority 不共享来源、不联动（用户裁定「加急不能跟售后工单绑定」）。NOT NULL ⇒ 无第三态，「未标加急」与「明确不加急」同值
     required_delivery_date DATE,                    -- 客户要求到货日；NULL = 未指定（不猜、不回填）。DATE 而非 TIMESTAMP —— 只有日期精度的事实不该带时刻。消费者 = 池看板排序（到货日升序、NULL 排最后）
     remark TEXT,                                     -- 备注
+    -- 来自 V148__add_order_shipped_at.sql（issue #6262，用户 2026-10-03 逐字裁定 B）
+    shipped_at TIMESTAMP WITH TIME ZONE,             -- 发货时刻 = 该单最近一次 →shipped 流转发生的时刻；由两条发货路各自的条件 UPDATE 写入（OrderService.transitionStatusAtomic / OrderShipmentService.transition）。用途 = 「发货后 N 天自动完成」定时腿的判定锚点。NULL = 未采集（存量回填不全 / 从未发货）⇒ **不参与**自动完成，只能人工确认收货。不是 updated_at（会被后续编辑刷新）、也不是 created_at（那是下单时刻）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0

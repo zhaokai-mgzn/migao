@@ -19,9 +19,11 @@ import com.migao.admin.mapper.OrderShipmentMapper;
 import com.migao.admin.mapper.OrderShipmentQueryMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProductMapper;
+import com.migao.admin.time.BusinessClock;
 import com.migao.admin.worker.WorkerIdentity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -121,6 +123,21 @@ public class OrderShipmentService {
     public static final int LIST_LIMIT = 200;
 
     private static final DateTimeFormatter SHIPMENT_NO_TS = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+
+    /**
+     * 业务时钟（issue #3802）：发货时刻 {@code orders.shipped_at}（V148，issue #6262）的**唯一**取值来源。
+     *
+     * <p>🔴 <b>可选注入 + 默认实例，与 {@code OrderService} 同款</b>（那里也是
+     * {@code @Autowired(required=false) private BusinessClock businessClock = new BusinessClock()}）：
+     * 本类的构造签名被多处测试显式装配，把时钟塞进构造器会把那些装配全改一遍；而默认实例同为
+     * +08 口径（{@code BusinessClock.BUSINESS_ZONE}）⇒ 行为一致，不因引入它让任何既有上下文启动失败。</p>
+     *
+     * <p>为什么不能在这里写 {@code OffsetDateTime.now()}：本仓 {@code BusinessClockTestSourceGuardTest}
+     * 把无参的「今天 / 现在」读取（日期、日期时间、时刻三种）与业务时区字面量判为 FORBIDDEN ——
+     * 「发货时刻」正是那种「同一概念两处口径」的入口（它会被拿去和业务「现在」相减算 N 天）。</p>
+     */
+    @Autowired(required = false)
+    private BusinessClock businessClock = new BusinessClock();
 
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
@@ -851,12 +868,23 @@ public class OrderShipmentService {
         return v == null ? null : String.valueOf(v);
     }
 
-    /** 原子状态流转（以读取到的状态为条件，防并发重复流转）。 */
+    /**
+     * 原子状态流转（以读取到的状态为条件，防并发重复流转）。
+     *
+     * <p>🔴 {@code target = shipped} 时**同一条 UPDATE** 里写 {@code orders.shipped_at}
+     * （issue #6262，V148）：工人扫码发货路与商家路（{@code OrderService.transitionStatusAtomic}）
+     * 是本列的两个写入点，两条路各有一份「真的写了」的判据
+     * （{@code OrderShippedAtWriteGuardTest}）—— 漏写任何一条，自动完成那条腿就永远扫不到这些单，
+     * 而**不会有别的东西变红**（静默漏单）。</p>
+     */
     private int transition(String orderId, String expected, String target) {
         LambdaUpdateWrapper<Order> wrapper = new LambdaUpdateWrapper<>();
         wrapper.eq(Order::getId, orderId)
                 .eq(Order::getStatus, expected)
                 .set(Order::getStatus, target);
+        if ("shipped".equals(target)) {
+            wrapper.set(Order::getShippedAt, businessClock.nowOffset());
+        }
         return orderMapper.update(null, wrapper);
     }
 

@@ -4334,7 +4334,22 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（60 case）
+## 订单域（61 case）
+
+### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
+```
+你: 用户 2026-10-03 裁定（issue #6262，四选项中选 B）：发货后 N 天自动完成，保留人工「确认收货」提前完成
+数据: 判据 1·**未满 N 天 ⇒ 不动**（钉住，防误杀）：死线 = 业务「现在」− N 天，谓词 `shipped_at <= 死线`；真库实测「早于死线」完成、「死线 + 1 秒」与「死线 + 1 分钟」逐值不动（边界精确到秒，不是按天粗判）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/AutoCompleteShippedRealDbTest.java 的 onlyOverdueShippedOrdersAreCompleted / deadlineBoundaryIsExact。
+数据: 判据 2·**满 N 天 ⇒ 自动 completed**，且**只动 shipped**：谓词写死 `status = 'shipped'` ⇒ `packed` / `completed` 与锚点为 NULL 的行一律不动（NULL 不满足任何比较 ⇒ 只能人工确认收货）。执行点 = 同文件 onlyOverdueShippedOrdersAreCompleted + backend/admin-api/src/test/java/com/migao/admin/service/OrderAutoCompleteSqlGuardTest.java 的 predicateKeepsOnlyShippedAndOnlyOverdueRows（谓词结构判据）。
+数据: 判据 3·🔴 **并发只生效一次 + 另一侧静默**：人工「确认收货」与自动扫描（**以及集群里 N 个实例**）同时发生 ⇒ 每行只有一个事务能改到。真库判据 = 两条独立连接同时跑同一条 UPDATE（12 行）⇒ 合计恰 12 行被改、**较弱的一侧 0 行**、最终状态逐行 completed；mock 判据 = 写面回 0 行时**不抛 / 不告警 / 不发站内信**。执行点 = AutoCompleteShippedRealDbTest.concurrentInstancesCompleteEachOrderExactlyOnce + AutoCompleteShippedScanServiceTest.losingSideOfConcurrencyIsSilent。
+数据: 判据 4·**多租户隔离**：写面显式 `tenant_id = #{tenantId}` + 逐租户设置/还原租户上下文。真库判据两条：① 每个租户各自一轮完成自己的满期单、站内信按 `recipientId` 各发各的（跨租户串信会当场现形）；② **反向对照**＝把上下文设成另一个租户后对本租户调写面，本租户的单仍只动本租户、另一租户的单逐值不动（证明隔离靠的是这条 SQL 的显式条件，不是「碰巧上下文对了」）。执行点 = AutoCompleteShippedRealDbTest.eachTenantCompletesOnlyItsOwnOverdueOrders / wrongTenantContextTouchesNothing + AutoCompleteShippedScanServiceTest.eachTenantIsScannedWithItsOwnExplicitContext。
+数据: 判据 5·**幂等 + 副作用只绑定 RETURNING 的行**：同一批满期单连跑三轮 ⇒ 只第一轮有行、站内信恰一封（集群下每个实例各跑一轮同形）。执行点 = AutoCompleteShippedRealDbTest.repeatedRoundsAreIdempotent + AutoCompleteShippedScanServiceTest.secondRoundIsIdempotentAndSideEffectsFollowReturnedRows。
+数据: 判据 6·**时间源走 businessClock**：死线由 `BusinessClock` + 可配置 N 逐值算出（注入固定时钟 ⇒ 死线可复算）；生产路径零墙钟拼写（`OrderAutoCompleteSqlGuardTest` 的 scanServiceKeepsTheSingleStateMachineAndBusinessClock 把「出现墙钟拼写」判红）。执行点 = AutoCompleteShippedScanServiceTest.deadlineComesFromBusinessClockAndConfiguredDays。
+数据: 判据 7·**可观测 + 失败显式**：每轮 INFO 读数含「扫描租户数 / 自动完成张数 / 失败条数 / N / 死线」（痕迹 `AUTO_COMPLETE_SHIPPED_ORDERS`）；逐租户失败记 `INCIDENT_AUTO_COMPLETE_SHIPPED_FAILED` + ERROR 且**其余租户照扫、整轮不抛**。执行点 = AutoCompleteShippedScanServiceTest.eachRoundLeavesAReadableTrace / tenantFailureIsRecordedAndOtherTenantsContinue。
+数据: 判据 8·**两条发货路都写锚点**（静默漏单的防线）：`orders.shipped_at` 由商家路（`OrderService.transitionStatusAtomic`）与工人路（`OrderShipmentService.transition`）在**同一条条件 UPDATE** 里写入；摘掉任何一条 ⇒ 那条路上的单永远不会自动完成而不会有别的东西变红 ⇒ 由结构判据逐条钉住。执行点 = OrderAutoCompleteSqlGuardTest.bothShipPathsWriteShippedAtAtomically。
+跳过: [backend-contract] 纯后端定时腿 + 写面（无 LLM 环节 ⇒ 不进 agent-eval）：由 admin-api 单测 AutoCompleteShippedScanServiceTest / OrderAutoCompleteSqlGuardTest 与真库 AutoCompleteShippedRealDbTest 执行
+```
+溯源: 2026-10-03 新增（issue #6262，用户裁定 B）：发货后 N 天自动完成订单。锚点 = 新增 orders.shipped_at（V148，两条发货路各写一次；**不复用** order_logistics.shipped_at —— 现取真库 21 条在架 shipped 里只有 15 条非空，拿它当锚点会静默漏单）。并发安全 = 一条带谓词的原子 UPDATE ... RETURNING（包在 WITH done AS (...) SELECT 里 —— MyBatis 的 @Update 不支持 List 返回类型，实测撞过后改 @Select+CTE，仍只有一条 SQL）（单机与集群**同一套代码**，不引 Quartz/ShedLock/advisory lock，无 leader 选举）；副作用只对 RETURNING 的行发。N 可配置（migao.order.auto-complete-days，缺省 7 天，**待人工确认**）；cron 形态复用本仓 @Scheduled 薄壳 + 逐租户循环。存量回填 = 从 order_logistics.shipped_at 搬已有事实（覆盖 15 条），其余保持 NULL ⇒ **不参与自动完成、只能人工确认收货**（后果已显式登记）。 ｜ tags: order, auto-complete, scheduler, concurrency, cluster, backend-contract
 
 ### OR-058. 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239） 🔵
 ```
@@ -9499,8 +9514,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：661（活跃 134，跳过 527）
-- tier 分布：smoke 12 / normal 607 / adversarial 32
+- 用例总数：662（活跃 134，跳过 528）
+- tier 分布：smoke 12 / normal 608 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9518,7 +9533,7 @@
 - 杂项域：79
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：60
+- 订单域：61
 - 加工项域：27
 - 加工单域：61
 - 商品域：109
@@ -9625,6 +9640,7 @@
 - MC-076: 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed
 - MC-077: worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）
 - MC-079: 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI
+- OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
