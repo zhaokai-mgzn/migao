@@ -69,6 +69,12 @@ public class OrderShipmentService {
     public static final String ENDPOINT_PACK = "POST /api/worker/shipment/orders/{orderId}/pack";
     public static final String ENDPOINT_SHIP = "POST /api/worker/shipment/orders/{orderId}/ship";
     public static final String ENDPOINT_UNPACK = "POST /api/worker/shipment/orders/{orderId}/unpack";
+    /**
+     * 商家/生产发货路（issue #6157）。这条路的幂等判定在 {@code ProductionController.ship}
+     * （它才是端点 owner），**复用**同一份 {@link ClientRequestIdService} 与同一张
+     * {@code client_request_keys} 表 —— 不新造第二套幂等机制。
+     */
+    public static final String ENDPOINT_SHIP_ADMIN = "POST /api/admin/production/orders/{orderId}/ship";
 
     /** 发货单来源：工人拍照识别生成。 */
     public static final String SOURCE_WORKER_PHOTO = "worker_photo";
@@ -253,6 +259,12 @@ public class OrderShipmentService {
         List<OrderItem> orderItems = OrderShipGuard.loadOrderItems(orderItemMapper, orderId, tenantId);
         List<OrderShipmentItem> details = parseDetails(body, orderId, tenantId, orderItems);
 
+        // 🔴 两条发货写面不变式（issue #6157）——**在任何写之前**（判定本体 = ShipmentInvariants，路由只取数）：
+        // ① 累计已发 ≤ 订单量：按 order_item_id **聚合后**比较（同一行在一个请求里出现两次 = 合计语义，
+        //    不是两次独立校验 —— 实测 6+6 对上限 10 曾被放行）；两侧夹住：恰好发满放行、超一分拒绝；
+        // ② 列精度不容吃数据：0.001 被 numeric(10,2) 吃成 0.00 且仍 200 = 「已发货但实发 0」⇒ 拒绝。
+        assertQuantities(orderId, tenantId, orderItems, details);
+
         // 🔴 加工单守卫（issue #3340）——**在任何写之前**。判定本体与商家侧那条路同一份实现。
         OrderShipGuard.assertProcessingCompletedBeforeShip(
                 orderItemMapper, processingOrderMapper, objectMapper, order);
@@ -347,11 +359,24 @@ public class OrderShipmentService {
         shipment.setUnpackedByWorkerId(identity.workerId());
         shipment.setUnpackedByWorkerName(identity.workerName());
         shipment.setUnpackReason(reason);
-        // 撤销后这一张发货单回到「未打包」——把 packed_* 清掉，让状态与留痕一致
+        // 撤销后这一张发货单回到「未打包」——把 packed_* 清掉，让状态与留痕一致。
+        // 🔴 issue #6157：**必须走显式 UPDATE SET 列 = NULL**，不能用 updateById ——
+        // MyBatis-Plus 默认更新策略跳过 null 字段（本仓 application.yml 未声明
+        // update-strategy，也无 @TableField(updateStrategy=IGNORED)）⇒ 这三处置空**静默无效**
+        // （实测 fixes：撤销后仍标着 packed_at / 打包人 = 「状态与留痕不一致」）。
+        orderShipmentMapper.update(null, new LambdaUpdateWrapper<OrderShipment>()
+                .eq(OrderShipment::getId, shipment.getId())
+                .set(OrderShipment::getUnpackedAt, shipment.getUnpackedAt())
+                .set(OrderShipment::getUnpackedByWorkerId, shipment.getUnpackedByWorkerId())
+                .set(OrderShipment::getUnpackedByWorkerName, shipment.getUnpackedByWorkerName())
+                .set(OrderShipment::getUnpackReason, shipment.getUnpackReason())
+                .set(OrderShipment::getPackedAt, null)
+                .set(OrderShipment::getPackedByWorkerId, null)
+                .set(OrderShipment::getPackedByWorkerName, null));
+        // 内存态一并对齐：readShipment / resultOf 直接读这些 getter，留着旧值会让**响应**仍报已打包
         shipment.setPackedAt(null);
         shipment.setPackedByWorkerId(null);
         shipment.setPackedByWorkerName(null);
-        orderShipmentMapper.updateById(shipment);
 
         // 🔴 目标状态 producing 是**有意**不在 STATUS_TRANSITIONS 里的（见方法注释）
         int rows = transition(orderId, "packed", "producing");
@@ -548,7 +573,32 @@ public class OrderShipmentService {
         }
     }
 
-    /** 来源：带了照片引用 ⇒ 拍照生成；否则工人手工录入（两者都是正常路径，无优劣）。 */
+    /**
+     * 🔴 <b>发货写面的两条不变式</b>（issue #6157）—— 判定本体在 {@link ShipmentInvariants}（**唯一一份**），
+     * 本方法只做「取数 → 判 → 把拒绝翻成 4xx」。
+     *
+     * <p>取数来源 = 本服务自己的 Mapper：订单行（上限）+ 该订单**已落库**的实发明细（跨全部发货单，
+     * 已发过第二张单时也要算进累计）+ 本次请求行。⇒ 累计口径 = 已落库 ∪ 本次（按
+     * {@code order_item_id} 聚合后比较）。</p>
+     *
+     * <p>⚠️ <b>位置必须在任何写之前</b>：与加工单守卫同批（见 {@code doShip}）——
+     * 判据写在写之后 = 拒绝也要回滚，而回滚失败就是脏数据。</p>
+     */
+    void assertQuantities(String orderId, Long tenantId, List<OrderItem> orderItems,
+                          List<OrderShipmentItem> details) {
+        List<ShipmentInvariants.ShipmentLine> lines = details.stream()
+                .map(d -> new ShipmentInvariants.ShipmentLine(
+                        d.getOrderItemId(), d.getShippedQuantity(), d.getUnit(),
+                        d.getSetCount(), d.getRollCount()))
+                .toList();
+        List<OrderShipmentItem> alreadyShipped = orderShipmentItemMapper.selectByOrderId(orderId, tenantId);
+        ShipmentInvariants.assertClean("实发数量不合法",
+                ShipmentInvariants.verdict(lines, alreadyShipped, orderItems));
+    }
+
+    /**
+     * 来源：带了照片引用 ⇒ 拍照生成；否则工人手工录入（两者都是正常路径，无优劣）。
+     */
     private String sourceOf(Map<String, Object> body) {
         Object refs = body == null ? null : body.get("photoRefs");
         boolean hasPhoto = refs instanceof List<?> list && !list.isEmpty();
@@ -639,6 +689,11 @@ public class OrderShipmentService {
         result.put("shipment_no", shipment.getShipmentNo());
         result.put("source", shipment.getSource());
         result.put("tracking_no", shipment.getTrackingNo());
+        // 撤销留痕也进快照（issue #6157）：否则「撤销打包」的**幂等回放**只会回一个
+        // 没有理由/没有时刻的 status，与首次响应形状不一致（回放要逐字回放首次结果）
+        result.put("unpacked_at", shipment.getUnpackedAt());
+        result.put("unpacked_by", shipment.getUnpackedByWorkerName());
+        result.put("unpack_reason", shipment.getUnpackReason());
         result.put("shipped_items", details.stream().map(OrderShipmentService::itemView).toList());
         result.put("shipped_totals", totals(details));
         return result;

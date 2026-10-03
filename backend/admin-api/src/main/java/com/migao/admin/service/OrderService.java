@@ -2815,9 +2815,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @param orderId          订单 UUID
      * @param trackingNo       货运单号（**必填** —— 没有单号的「发货」在车间不可核对）
      * @param logisticsCompany 承运商；为空则保留既有值（工人端只填单号，承运商来自客户常用物流档案）
+     * @return 本次发货的结果快照（{@code order_id} / {@code status} / {@code tracking_no} /
+     *         {@code logistics_company}）—— <b>幂等回放的载体</b>（issue #6157）：端点拿它当
+     *         {@code ClientRequestIdService.complete} 的快照，同键第二次到达时**逐字回放**同一份。
+     *         ⚠️ 返回值**不含实发明细** —— 本路不建发货单（见 {@code OrderShipmentService} 的
+     *         「能力保留、载体分离」注释；issue #6157 的 F4 已按「有意设计」登记）。
      */
     @Transactional(rollbackFor = Exception.class)
-    public void shipWithLogistics(String orderId, String trackingNo, String logisticsCompany) {
+    public Map<String, Object> shipWithLogistics(String orderId, String trackingNo, String logisticsCompany) {
         if (!StringUtils.hasText(trackingNo)) {
             throw BusinessException.validationError("货运单号不能为空");
         }
@@ -2840,6 +2845,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         upsertLogistics(orderId, company, trackingNo.trim(), null);
         // 原子流转 shipped —— **守卫在这一步内**（含加工项订单必须有 completed 加工单）
         shipOrderIfApplicable(orderId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("order_id", orderId);
+        result.put("status", "shipped");
+        result.put("tracking_no", trackingNo.trim());
+        result.put("logistics_company", company);
+        return result;
     }
 
     /** 既有物流记录的承运商（工人端只填单号时用它兜底；无既有记录 ⇒ null）。 */
