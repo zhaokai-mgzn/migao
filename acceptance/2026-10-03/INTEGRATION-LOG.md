@@ -1125,3 +1125,26 @@ Case Contract 逐字：生成物新鲜度：1 个产物与 .github/cases/** 不�
 ⇒ **口径沉淀**：同一条 `Case Contract` 红，**先跑 `generated_artifacts_freshness.py` 在 `origin/main` 上**（或 `--base-probe origin/main`）**再决定"修 main 还是修分支"** —— 本轮两种情形都出现过（`#6255` 是 main 陈旧、`#6263` 是分支陈旧），**判据一样、处置相反**。
 
 **另外**：main 已被两条自动 `chore(ci): flaky 台账追加`（`#6256` / `#6265`）推进到 `5631fb537`；承载体 `#6229` 仍只差 1~2 条 pending。
+
+### 19.48 🧪 `#6254` 的**双 AI 验收**（按 `migao-acceptance` 协议执行）—— 结论「**有条件接受**」+ 3 条条件已成单 `#6272`
+
+**为什么走验收协议**：`#6254` 带 `needs-verification`（= "需要 AI 自动验收的 issue"），其包明确把它留给我按验收口径处置。
+
+**主验收（主会话，L1 + 可达性三问，全部现取 `origin/main`）**
+| 交付物可达性三问（`migao-acceptance` v1.11） | 读数 |
+|---|---|
+| **谁发射** | 写面：`OrderController:427`（读 body）/`:428-431` 白名单 /`:452-455` logistics+空单号拒绝 /`:464` setShippingMethod /`:478` 新建记录；**读面回吐**：`OrderService:1191 logisticsInfo.setShippingMethod(logistics.getShippingMethod())`；实体 `OrderLogistics:49`；DTO `OrderDetailResponse:325` |
+| **哪个入口可达** | 发货页 `ShipOrder.tsx:77/403/408`（单选 + 提交带 shippingMethod）；订单详情「编辑物流」弹窗 `OrderDetail.tsx:500 → shippingMethodForEdit` |
+| **有测试钉住** | `tests/unit/lib/data-adapter.test.ts` + `tests/unit/components/LogisticsForm.test.tsx` 引用 shippingMethod；`OrderControllerTest:515 .shippingMethod("none")`；用例 **OR-059** 五条判据（判据 3「回填口径本体」/ 判据 5「接线：必须走 `shippingMethodForEdit` 且源码不再出现『非 none ⇒ logistics』兜底」） |
+⇒ 三问**全答得上** ⇒ 不属"文件在 main 但永不渲染"（`v1.11` 反模式）。
+
+**复核验收（GLM-5.3-Flash，不同模型族；只看证据不看 spec）** —— 它在**干净 worktree @`674a56f02`** 上**独立复跑**（不是采信自报）：
+- 绿侧 `Test Files 4 passed / Tests 111 passed` ⇒ **与开发包自报逐位一致**；
+- 库内读数 `order_logistics 29 行 / 非空运单号 29 / confirmed 无物流 374 / producing 无物流 58` ⇒ **逐位一致**；
+- 红侧独立构造（最小注入改前两行 + 改前父提交的源码断言红-by-construction）⇒ 判据 1/4/5 的判别力**独立成立**（并如实指出自报"6 红"中 2 条构成未能逐条复现，差异不损判别力）；
+- **结论：有条件接受**，条件 = ① `OrderDetailResponse:322-323` **注释漂移**（说"前端仍兜底 logistics"，与本 PR 收口后的行为**直接矛盾**）② 库内读数未注明环境（`.env` 库 **V147 未应用**，`order_logistics` 无该列）③ 非阻塞建议：后端「新建 ⇒ 落 NULL」缺直接断言钉子、前端 DOM 级「开弹窗→保存→断言 payload」缺口（开发者已自认）。
+
+**处置**：3 条条件开单 **`#6272`**；条件 ① **主会话当场修**（**纯注释、零行为变更**）⇒ PR **`#6273`**（`Closes #6272` 的第一条；`./mvnw -o -q compile -DskipTests` ⇒ **rc=0**）；②③ 留在 `#6272` 待派包。`#6254` 暂**不关**（有条件接受 ⇒ 条件落地后再关，避免"有意不做被读成已解决"）。
+
+**🔴 本轮第 3 次「负结论不能从被截断/失败的命令推断」（我自己犯的，必须记）**：我先前用 `git grep … | head -12` 看 `shippingMethod` 的生产点，输出截断后**没看到** `OrderService:1191`，一度准备判「响应字段是零生产者」；补一条无截断的 `git grep -n "setShippingMethod"` 才看到它**在**。同族：`timeout` 缺失导致空输出被读成"库里没有该列"（`§19.41`）。
+⇒ **口径**：**凡"某处不存在"的结论，必须用不截断、不被过滤、且已自证执行成功的命令产出**（必要时打印命中总数）；`head`/管道过滤后的空输出**不构成否定证据**。
