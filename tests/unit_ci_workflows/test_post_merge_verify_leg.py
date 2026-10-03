@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import copy
 import os
 import re
 import subprocess
@@ -657,6 +658,44 @@ def test_judging_step_fails_loudly_when_the_interpreter_lacks_pytest():
 
 # ── main 侧漂移兜底（2026-09-25 实测缺口）────────────────────────────────────
 
+def _drift_backstop_problems(doc: dict) -> list[str]:
+    """纯函数：漂移兜底步的结构问题清单（空 = 成立）。变异样本据此判红（`#6144 §1-C1`）。
+
+    判据的要点（顺序即重要性）：
+      ① 恰好一步（缺 ⇒ 没兜底；多 ⇒ 判据要同步）；
+      ② `scripts/drift_audit.py` 在位；
+      ③ 🔴 **必须带 `--check`** —— 这是本单的主诉：`drift_audit.py` 的 `tri_state()` 第一行
+         是 `if not check: return 0` ⇒ **不带 `--check` 时该脚本永远 exit 0**（模块头自述）
+         ⇒ 本步**永不失败**（「跑了但不判」= 死步）。旧断言只查 `exit ${RC}` 在位，
+         而 `exit 0` 同样满足它 ⇒ **空断言**（本条就是被那个空断言放过去的）。
+      ④ 退出码要带出去（`exit ${RC}`）。
+    顺序与「在判定步之前」由调用方另行断言。
+    """
+    problems: list[str] = []
+    steps = (doc.get("jobs") or {}).get("verify", {}).get("steps") or []
+    hits = [s for s in steps if s.get("name") and "漂移" in str(s["name"])]
+    if len(hits) != 1:
+        return [f"「漂移审计兜底」步必须**恰好一个**，实测 {len(hits)} 个"]
+    run = str(hits[0].get("run") or "")
+    if "scripts/drift_audit.py" not in run:
+        problems.append(f"该步没跑漂移审计：{run[:200]}")
+    # `--check` 必须是**真参数**（行内出现 `--check`），不是注释里的字样：
+    # 用 `re.search` 找 `drift_audit.py` 那一行的参数串。
+    cmd_lines = [ln for ln in run.split("\n") if "drift_audit.py" in ln]
+    if not any(re.search(r"--check(?![-\w])", ln) for ln in cmd_lines):
+        problems.append(
+            "该步**没有**真传 `--check` ⇒ `drift_audit.py` 的 `tri_state()` 在 "
+            "`if not check: return 0` 处直接返回 0 ⇒ **本步永不失败**（死步，#6144 §1-C1）："
+            + run[:200]
+        )
+    if "exit ${RC}" not in run and "exit $RC" not in run:
+        problems.append(
+            "该步必须把 drift_audit 的**退出码**带出去（非 0 ⇒ 本步失败），否则等于「跑了但不判」："
+            + run[:200]
+        )
+    return problems
+
+
 def test_main_side_has_a_drift_audit_backstop():
     """本腿必须带**漂移审计兜底**步（否则"PR 带进 main 的漂移"没有 CI 兜底）。
 
@@ -664,29 +703,57 @@ def test_main_side_has_a_drift_audit_backstop():
     ::test_real_repo_audit_is_green_on_current_tree` 在 **CI 的浅检出**里**自己 skip**
     （`origin/main` 不可解析）⇒ 一次合并在 main 上带进了**面内阻塞**漂移，**只在有人本机跑时才发现**。
     本腿全历史检出 ⇒ 这一步能真判，且**非 0 退出码要带出去**（0 通过 / 1 判红 / 3 不可判）。
-    """
-    import yaml
-    from pathlib import Path
 
+    🔴 `#6144 §1-C1` 加严：**必须真传 `--check`**。旧断言（只查 `exit ${RC}`）是**空断言** ——
+    不带 `--check` 的形态同样满足它，而那种形态下 `drift_audit.py` **永远 exit 0**（`tri_state()`
+    第一条 `if not check: return 0`）⇒ 本步永不失败。红证见
+    `test_red_proof_dropping_check_makes_it_red`。
+    """
     wf = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "post-merge-verify.yml"
-    steps = yaml.safe_load(wf.read_text(encoding="utf-8"))["jobs"]["verify"]["steps"]
-    hits = [s for s in steps if s.get("name") and "漂移" in str(s["name"])]
-    # ⚠️ 不用「存在性」弱断言（只证明"有东西"）——本仓的弱断言账本判据会当场判红（本 PR 第一版就是这么被
-    # 自己的 gate 抓到的）。改成对**结构结论**断言：缺步 / 多步都报出来。
-    assert [len(hits)] == [1], (
-        "本腿的「漂移审计兜底」步必须**恰好一个**（缺 ⇒ PR 带进 main 的漂移没有 CI 兜底；"
-        f"多 ⇒ 判据需同步）：实测命中 {len(hits)} 个"
-    )
-    step = hits[0]
-    run = str(step.get("run") or "")
-    assert "scripts/drift_audit.py" in run, f"该步没跑漂移审计：{run[:200]}"
-    assert "exit ${RC}" in run or "exit $RC" in run, (
-        "该步必须把 drift_audit 的**退出码**带出去（非 0 ⇒ 本步失败），否则等于「跑了但不判」：" + run[:200]
-    )
+    doc = yaml.safe_load(wf.read_text(encoding="utf-8"))
+    problems = _drift_backstop_problems(doc)
+    assert problems == [], "漂移兜底步结构不成立：\n" + "\n".join(f"  · {p}" for p in problems)
+    steps = doc["jobs"]["verify"]["steps"]
+    step = [s for s in steps if s.get("name") and "漂移" in str(s["name"])][0]
     names = [str(s.get("name") or "") for s in steps]
     assert names.index(str(step["name"])) < names.index("判定（定向跑判据面）"), (
         "漂移兜底应排在「判定（定向跑判据面）」**之前**（先做便宜的全局兜底，再跑定向判据面）"
     )
+
+
+def test_red_proof_dropping_check_makes_it_red():
+    """注入红证（`#6144 §1-C1`）：把 `--check` 摘掉 ⇒ 判据**必红**。
+
+    这正是修前形态（`python3 scripts/drift_audit.py` + `exit ${RC}`）：它满足旧断言、
+    而本步永不失败。注入必须**真命中**（命中数 ≠ 1 就断言失败，防「变异没生效」的空断言）。
+    """
+    doc = copy.deepcopy(yaml.safe_load(WORKFLOW.read_text(encoding="utf-8")))
+    steps = doc["jobs"]["verify"]["steps"]
+    hit = 0
+    for s in steps:
+        run = str(s.get("run") or "")
+        if "scripts/drift_audit.py --check" in run:
+            s["run"] = run.replace("scripts/drift_audit.py --check", "scripts/drift_audit.py")
+            hit += 1
+    assert hit == 1, f"注入点命中 {hit} 处（应为 1）—— 变异没生效，红证失效"
+    problems = _drift_backstop_problems(doc)
+    assert any("--check" in p for p in problems), (
+        f"摘掉 `--check` 后判据未变红 ⇒ 该断言是空断言：{problems!r}"
+    )
+
+
+def test_red_proof_dropping_exit_rc_makes_it_red():
+    """注入红证②：把 `exit ${RC}` 摘掉 ⇒ 判据必红（「跑了但不带退出码」也等于不判）。"""
+    doc = copy.deepcopy(yaml.safe_load(WORKFLOW.read_text(encoding="utf-8")))
+    hit = 0
+    for s in doc["jobs"]["verify"]["steps"]:
+        run = str(s.get("run") or "")
+        if "scripts/drift_audit.py" in run:  # 只钉漂移兜底那一步（别的步也有 exit ${RC}）
+            s["run"] = run.replace("exit ${RC}", "exit 0")
+            hit += 1
+    assert hit == 1, f"注入点命中 {hit} 处（应为 1）—— 变异没生效，红证失效"
+    problems = _drift_backstop_problems(doc)
+    assert any("退出码" in p for p in problems), f"应判红却得到 {problems!r}"
 
 
 # ── 类级固化：凡跑 `gh` 的步都必须带 token（2026-09-25 自伤实证）────────────────

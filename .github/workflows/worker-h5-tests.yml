@@ -90,7 +90,18 @@ jobs:
         id: detect
         run: |
           if [ ! -d frontend/worker-h5/tests ]; then
-            echo "⏭️ frontend/worker-h5/tests/ 不存在（历史 ref / 目录被移除）—— 本腿**未跑**"
+            # 🔴 fail-closed（issue #6144 §1-C2）：**pull_request 事件**下该目录不存在 =
+            # 测试全没了（目录被删/改名）⇒ 必须红。旧形态是 `echo found=false` + `exit 0`
+            # ⇒ 下游 `node --test` 步被 `if` 跳过 ⇒ **整腿静默绿**（"测试全没了"与
+            # "测试全过了"在 check 列表上长得一样 = 本仓最忌的假绿）。
+            # `workflow_dispatch` 保留旧口径（可在**任意历史 ref** 上手动跑，那里目录
+            # 本来就可能不存在）⇒ 未跑必须长得像未跑，不能红出与被测代码无关的红。
+            # 事件判定用现成的 `github.event_name`，**不新增触发面**。
+            if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+              echo "::error::frontend/worker-h5/tests/ 不存在，但本 workflow 由 pull_request 触发（paths 已命中 frontend/worker-h5/**）⇒ 测试用例整体消失，阻塞（不做「未跑即通过」的 fail-open）"
+              exit 1
+            fi
+            echo "⏭️ frontend/worker-h5/tests/ 不存在（非 pull_request：历史 ref 的手动派发）—— 本腿**未跑**"
             echo "found=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi

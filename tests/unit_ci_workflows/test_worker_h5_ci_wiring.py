@@ -43,6 +43,9 @@
 在 CI 上给出（PR 的 `worker-h5 unit tests (node --test)` check 绿 = 29 pass）。
 """
 import copy
+import os
+import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -57,6 +60,9 @@ NODE_STEP = "Run worker-h5 unit tests (node --test)"
 DETECT_STEP = "Verify test files exist"
 WORKER_H5_GLOB = "frontend/worker-h5/**"
 TEST_GLOB = "frontend/worker-h5/tests/*.test.mjs"
+#: PR 形态下目录缺失必须 fail-closed（`#6144 §1-C2`）—— 行为判据用的事件名。
+PR_EVENT = "pull_request"
+DISPATCH_EVENT = "workflow_dispatch"
 
 
 def _load() -> dict:
@@ -128,7 +134,12 @@ def _problems(wf: dict) -> list:
     steps = _steps(job)
 
     # ③ 存在 `node --test` 步且指向该目录的 *.test.mjs
-    runner = [s for s in steps if "node --test" in (s.get("run") or "")]
+    # ⚠️ 「跑 `node --test` 的步」必须按**命令首行**判，不能按「run 文本里含 `node --test`」
+    # 判：存在性步的 run 里只要**提到** `node --test`（#6144 的 fail-closed 注释就提到它），
+    # 旧口径就把它也算成一个 runner ⇒ 它的文本（含字面量 `*.test.mjs`）被拼进 `cmd`
+    # ⇒ 「glob 被收窄」的注入红证**静默失效**（实测被抓到）。语义上这条判据问的是
+    # 「哪一步**执行** node --test」，故按首行判。
+    runner = [s for s in steps if (s.get("run") or "").strip().startswith("node --test")]
     if not runner:
         problems.append(
             "没有任何 step 执行 `node --test` —— worker-h5 的测试在 CI 里退回「死文件」"
@@ -169,6 +180,24 @@ def _problems(wf: dict) -> list:
             )
         if "GITHUB_OUTPUT" not in (detect[0].get("run") or ""):
             problems.append(f"`{DETECT_STEP}` 没写 GITHUB_OUTPUT ⇒ 下游 if 永远拿不到值")
+        # ⑤b **pull_request 形态下目录缺失必须 fail-closed**（issue #6144 §1-C2）：
+        # `paths: frontend/worker-h5/**` 命中而 `frontend/worker-h5/tests/` 不存在 =
+        # 测试被整体删除/改名。旧形态 `exit 0` + `found=false` ⇒ 下游 `node --test` 步被
+        # `if` 跳过 ⇒ **整腿静默绿**（"测试全没了"与"测试全过了"在 check 列表上同形）。
+        # 判两半（缺一不可）：① 存在性步必须**按事件分支**（引用 `GITHUB_EVENT_NAME`）；
+        # ② 该分支必须 `exit 1` —— 只判①会被"读了事件名但照样 exit 0"绕过（红证②专治）。
+        if detect:
+            detect_run = str(detect[0].get("run") or "")
+            if "GITHUB_EVENT_NAME" not in detect_run:
+                problems.append(
+                    f"`{DETECT_STEP}` 不按 `GITHUB_EVENT_NAME` 分支 ⇒ pull_request 下目录缺失"
+                    f"仍走 fail-open（整腿静默绿，#6144 §1-C2）"
+                )
+            elif "exit 1" not in detect_run:
+                problems.append(
+                    f"`{DETECT_STEP}` 读了事件名但没有 `exit 1` ⇒ 目录缺失时不阻塞"
+                    f"（fail-open 仍在，#6144 §1-C2）"
+                )
 
     # ⑥ Node 版本必须钉住（本腿依赖 `node --test` 的行为）
     setup_node = [
@@ -370,3 +399,133 @@ def test_checker_is_not_vacuous():
     """判据非空壳：空 workflow 必须被判红（否则上面所有「判红」都可能是恒绿）。"""
     problems = _problems({})
     assert problems, "空 workflow 竟判绿 —— 判据是空壳（恒真），红证全部无效"
+
+
+# ── 第 2 层（**行为**面）：把 run 块抽出来在临时目录里**真跑**（issue #6144 §1-C2）──────
+# 为什么不能只做静态判据：静态只证明「文本里有 `exit 1`」——「读了事件名但照样 exit 0」
+# 这类形态要靠**真退出码**才判得动（本仓的「判据绿 ≠ 接线在」口径，dev-flow §28.2）。
+# 夹具体例沿用 `test_scripts_bash32_var_brace.py` / `heavy_entry_sandbox.py` 的先例：
+# 造一个**自足 tmp 目录**、在它里面跑真脚本，不碰真仓库文件、不起网络。
+def _run_detect_in_sandbox(tmp_path: Path, *, event: str, tests_dir_exists: bool) -> subprocess.CompletedProcess:
+    """把 `Verify test files exist` 的 run 块放进 `tmp_path` 真跑，返回 `CompletedProcess`。"""
+    job = _job(_load())
+    run = str(_by_name(job, DETECT_STEP).get("run") or "")
+    assert run.strip(), f"`{DETECT_STEP}` 的 run 为空（本行为判据无从执行）"
+    if tests_dir_exists:
+        d = tmp_path / "frontend" / "worker-h5" / "tests"
+        d.mkdir(parents=True)
+        (d / "worker-h5-api.test.mjs").write_text("// fixture\n", encoding="utf-8")
+    out = tmp_path / "github_output"
+    out.write_text("", encoding="utf-8")
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": str(tmp_path),
+        "GITHUB_EVENT_NAME": event,
+        "GITHUB_OUTPUT": str(out),
+    }
+    # `bash -c` 显式指定解释器（与 GitHub runner 的 shell 一致），不依赖 shebang。
+    return subprocess.run(["bash", "-c", run], cwd=tmp_path, env=env,
+                          capture_output=True, text=True, timeout=60)
+
+
+def test_pr_shape_fails_closed_when_tests_dir_is_gone(tmp_path):
+    """**PR 形态 + 目录不存在 ⇒ 该步必须非零退出**（本单 §1-C2 的病灶本身）。
+
+    修前（`echo found=false` + `exit 0`）实测 rc=**0** ⇒ 下游 `node --test` 被 `if` 跳过
+    ⇒ 整腿静默绿；修后必须 rc≠0（`::error::` 可见）。
+    """
+    r = _run_detect_in_sandbox(tmp_path, event=PR_EVENT, tests_dir_exists=False)
+    assert r.returncode != 0, (
+        "PR 形态下 `frontend/worker-h5/tests/` 不存在却**零退出** ⇒ 整腿静默绿（fail-open）：\n"
+        f"rc={r.returncode}\nstdout={r.stdout}\nstderr={r.stderr}"
+    )
+    assert "::error::" in (r.stdout + r.stderr), (
+        f"非零退出了但没有 `::error::` 注解（不可归因）：{r.stdout!r} {r.stderr!r}"
+    )
+
+
+def test_dispatch_shape_keeps_unrun_semantics(tmp_path):
+    """`workflow_dispatch`（历史 ref）**保留未跑语义**：rc=0 且 `found=false`。
+
+    这是 fail-closed 的**边界**：手动在任意 ref 上跑时目录本来就可能不存在，
+    那里红=与被测代码无关的红（原口径不能丢）。
+    """
+    r = _run_detect_in_sandbox(tmp_path, event=DISPATCH_EVENT, tests_dir_exists=False)
+    assert r.returncode == 0, (
+        f"workflow_dispatch 下目录缺失不该红（历史 ref 合法形态）：rc={r.returncode}\n{r.stderr}"
+    )
+    assert "found=false" in (tmp_path / "github_output").read_text(encoding="utf-8"), (
+        "workflow_dispatch 下应写 `found=false`（下游据此标「未跑」）"
+    )
+
+
+def test_present_dir_still_passes_and_declares_found(tmp_path):
+    """反向对照：目录存在 ⇒ rc=0 且 `found=true`（证明上面两条不是在判一段恒错的脚本）。"""
+    r = _run_detect_in_sandbox(tmp_path, event=PR_EVENT, tests_dir_exists=True)
+    assert r.returncode == 0, f"目录存在却判红：rc={r.returncode}\n{r.stdout}\n{r.stderr}"
+    assert "found=true" in (tmp_path / "github_output").read_text(encoding="utf-8")
+
+
+# ── 红证（第 2 层，注入式）：把修复改回坏形态 ⇒ **行为判据必红** ─────────────────
+def test_red_proof_pr_shape_fail_open(tmp_path):
+    """注入红证①：把 `--` 目录缺失分支的 `exit 1` 改回 `exit 0`（= 修前形态）⇒ 行为判据必红。
+
+    注入方式是**内存文本替换**后真跑，命中数必须为 1（防「注入没生效」的空断言）。
+    """
+    job = _job(_load())
+    run = str(_by_name(job, DETECT_STEP).get("run") or "")
+    # 只改「PR 分支那一句 `exit 1`」→ `exit 0`；先定位那段 `::error::` 文案所在行、
+    # 再改它的**下一行**（比逐字片段/正则复算缩进稳 —— YAML 块标量会把公共缩进剥掉）。
+    # 定位不到 ⇒ 直接 assert 报错（注入失配必须**出声**，不许静默跳过）。
+    lines = run.split("\n")
+    idx = [i for i, ln in enumerate(lines) if "的 fail-open）" in ln]
+    assert len(idx) == 1, f"定位 PR 分支文案失败（命中 {len(idx)} 行）—— 红证失效，不是判据无效"
+    assert lines[idx[0] + 1].strip() == "exit 1", (
+        f"PR 分支的下一行不是 `exit 1`（实为 {lines[idx[0] + 1]!r}）—— 注入点变了"
+    )
+    lines[idx[0] + 1] = lines[idx[0] + 1].replace("exit 1", "exit 0")
+    mutated = "\n".join(lines)
+    assert mutated != run, "注入没生效（红证失效，不是判据无效）"
+    d = tmp_path / "frontend" / "worker-h5" / "tests"
+    assert not d.exists(), "本用例的前提是目录不存在"
+    out = tmp_path / "github_output"
+    out.write_text("", encoding="utf-8")
+    r = subprocess.run(
+        ["bash", "-c", mutated], cwd=tmp_path,
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(tmp_path),
+             "GITHUB_EVENT_NAME": PR_EVENT, "GITHUB_OUTPUT": str(out)},
+        capture_output=True, text=True, timeout=60,
+    )
+    assert r.returncode == 0, (
+        f"注入后的坏脚本竟仍非零退出（注入不对）：rc={r.returncode}\n{r.stderr}"
+    )
+
+
+def test_red_proof_fail_open_shape_is_caught_by_static_guard():
+    """注入红证②：把 `exit 1` 摘掉（保留 `GITHUB_EVENT_NAME`）⇒ **静态判据必红**。
+
+    这一半专治「读了事件名但照样放行」——只判「引用了 GITHUB_EVENT_NAME」会被它绕过。
+    """
+    def mut(wf):
+        for s in wf["jobs"][JOB]["steps"]:
+            if s.get("name") == DETECT_STEP:
+                s["run"] = str(s["run"]).replace("exit 1", "exit 0")
+
+    problems = _mutate(mut)
+    assert any("exit 1" in p for p in problems), f"应判红却得到 {problems!r}"
+
+
+def test_red_proof_event_branch_removed_is_caught():
+    """注入红证③：把事件分支整段摘掉（回到修前 `exit 0` 形态）⇒ 静态判据必红。"""
+    def mut(wf):
+        for s in wf["jobs"][JOB]["steps"]:
+            if s.get("name") == DETECT_STEP:
+                s["run"] = (
+                    "if [ ! -d frontend/worker-h5/tests ]; then\n"
+                    "  echo \"found=false\" >> \"$GITHUB_OUTPUT\"\n"
+                    "  exit 0\n"
+                    "fi\n"
+                )
+
+    problems = _mutate(mut)
+    assert any("GITHUB_EVENT_NAME" in p for p in problems), f"应判红却得到 {problems!r}"
