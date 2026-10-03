@@ -1,4 +1,4 @@
-// case_ids: PR-007, PR-010
+// case_ids: PR-007, PR-010, FN-006
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -786,6 +786,47 @@ class AgentBatchServiceTest {
 
             assertThat(ex.getCode()).isEqualTo("NOT_FOUND");
             verify(itemMapper, never()).selectList(any());
+        }
+    }
+
+    // ════════════════ issue #6228：改后价小数位准入（超 2 位有效小数 ⇒ 拒绝 + 零写商品）════════════════
+
+    @Nested
+    @DisplayName("#6228 批量改价的精度准入（单点复用 MoneyScale）")
+    class MoneyScaleAdmission {
+
+        @Test
+        @DisplayName("改后价 1.005（3 位有效小数）⇒ 逐条拒绝、productService **零调用**（不静默舍成 1.00/1.01）")
+        void rejectsSubCentPriceAtExecute() {
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
+            when(itemMapper.selectList(any())).thenReturn(List.of(
+                    item(P1, "10.00", "1.005", AgentBatchService.ITEM_PENDING)));
+
+            AgentBatchViews.Batch view = batchService.execute(TENANT, BATCH_ID);
+
+            assertThat(view.getStatus()).isEqualTo(AgentBatchService.STATUS_PARTIAL);
+            assertThat(view.getFailCount()).isEqualTo(1);
+            assertThat(view.getResults()).singleElement()
+                    .satisfies(r -> assertThat(r.getError()).contains("2 位小数"));
+            verify(productService, never()).updateProductForAgent(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("正对照 改后价 12.50（2 位小数）⇒ 执行成功并逐字写入 12.50")
+        void acceptsTwoDecimalPrice() {
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
+            when(itemMapper.selectList(any())).thenReturn(List.of(
+                    item(P1, "10.00", "12.50", AgentBatchService.ITEM_PENDING)));
+            when(productService.updateProductForAgent(eq(P1), any(), eq(TENANT)))
+                    .thenReturn(product("12.50", "on_sale"));
+
+            AgentBatchViews.Batch view = batchService.execute(TENANT, BATCH_ID);
+
+            ArgumentCaptor<AgentProductUpdateRequest> req =
+                    ArgumentCaptor.forClass(AgentProductUpdateRequest.class);
+            verify(productService).updateProductForAgent(eq(P1), req.capture(), eq(TENANT));
+            assertThat(req.getValue().getBasePrice().toPlainString()).isEqualTo("12.50");
+            assertThat(view.getSuccessCount()).isEqualTo(1);
         }
     }
 }

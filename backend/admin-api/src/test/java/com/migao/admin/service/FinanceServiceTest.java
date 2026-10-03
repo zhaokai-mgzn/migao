@@ -1,6 +1,5 @@
 package com.migao.admin.service;
-// case_ids: FN-001, FN-002, FN-003
-
+// case_ids: FN-001, FN-002, FN-003, FN-006
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -231,5 +230,52 @@ class FinanceServiceTest {
         PageResponse<ReceivableReconciliationResponse> result = financeService.getReconciliation(1, 20, null, null, null, 1L);
 
         assertThat(result.getItems().get(0).getDifference()).isEqualByComparingTo("50.00");
+    }
+
+    // ════════════════ issue #6228：金额入口小数位准入（超 2 位有效小数 ⇒ 422 + 零写入）════════════════
+
+    @Test
+    @DisplayName("#6228 登记金额 0.005（3 位有效小数）⇒ 422，finance_transactions **零写入**")
+    void createTransaction_amountOverScale_isRejectedWithNoInsert() {
+        FinanceTransactionCreateRequest req = new FinanceTransactionCreateRequest();
+        req.setType("income");
+        req.setAmount(new BigDecimal("0.005"));
+
+        assertThatThrownBy(() -> financeService.createTransaction(req, 1L, "admin"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("2 位小数")
+                .hasMessageContaining("0.005");
+
+        verify(financeTransactionMapper, never()).insert(any(FinanceTransaction.class));
+    }
+
+    @Test
+    @DisplayName("#6228 recordRefund 侧同样准入：0.005 ⇒ 422 且零写入（换调用方不会静默舍入）")
+    void recordRefund_amountOverScale_isRejectedWithNoInsert() {
+        Order order = Order.builder().id("o1").tenantId(1L).orderNo("NO1").build();
+
+        assertThatThrownBy(() -> financeService.recordRefund(order, new BigDecimal("0.005"), "售后"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("2 位小数");
+
+        verify(financeTransactionMapper, never()).insert(any(FinanceTransaction.class));
+    }
+
+    @Test
+    @DisplayName("#6228 正对照 0.01（1 分）⇒ 登记成功且落库值逐字 0.01")
+    void createTransaction_oneCent_persistsLiterally() {
+        FinanceTransactionCreateRequest req = new FinanceTransactionCreateRequest();
+        req.setType("income");
+        req.setAmount(new BigDecimal("0.01"));
+        req.setPaymentMethod("cash");
+        when(financeTransactionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(financeTransactionMapper.insert(any(FinanceTransaction.class))).thenReturn(1);
+
+        financeService.createTransaction(req, 1L, "admin");
+
+        org.mockito.ArgumentCaptor<FinanceTransaction> captor =
+                org.mockito.ArgumentCaptor.forClass(FinanceTransaction.class);
+        verify(financeTransactionMapper).insert(captor.capture());
+        assertThat(captor.getValue().getAmount().toPlainString()).isEqualTo("0.01");
     }
 }

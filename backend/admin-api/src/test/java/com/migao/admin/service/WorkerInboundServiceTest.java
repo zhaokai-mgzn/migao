@@ -1,4 +1,4 @@
-// case_ids: PR-029, PR-030, PR-031, PR-032, PR-110, PR-111, PR-112
+// case_ids: PR-029, PR-030, PR-031, PR-032, PR-110, PR-111, PR-112, FN-006
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -516,5 +516,39 @@ class WorkerInboundServiceTest {
         WorkerInboundPostRequest req = new WorkerInboundPostRequest();
         req.setConfirmed(value);
         return req;
+    }
+
+    // ════════════════ issue #6228：工人面入库单价小数位准入（超 2 位有效小数 ⇒ 拒绝 + 零写入）════════════
+
+    @Test
+    @DisplayName("#6228 入库单价 0.005（3 位有效小数）⇒ 400 且 inbound_orders **零写入**（不静默舍成 0.01）")
+    void subCentUnitCostIsRejectedWithoutWrites() {
+        WorkerInboundDraftRequest req = draftRequest("60.5");
+        req.setUnitCost(new BigDecimal("0.005"));
+
+        assertThatThrownBy(() -> service.createDraft(req, TENANT, WORKER_ID, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("2 位小数")
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus())
+                        .as("工人面参数类拒绝的状态码是 400（口径本体仍是 MoneyScale 那一处）")
+                        .isEqualTo(400));
+
+        verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+        verify(inboundOrderItemMapper, never()).insert(any(InboundOrderItem.class));
+    }
+
+    @Test
+    @DisplayName("#6228 正对照 入库单价 12.50（2 位小数）⇒ 建草稿成功且行单价逐字 12.50")
+    void twoDecimalUnitCostIsAccepted() {
+        WorkerInboundDraftRequest req = draftRequest("60.5");
+        req.setUnitCost(new BigDecimal("12.50"));
+
+        WorkerInboundDraftView view = service.createDraft(req, TENANT, WORKER_ID, null);
+
+        assertThat(view.getItems()).hasSize(1);
+        org.mockito.ArgumentCaptor<InboundOrderItem> captor =
+                org.mockito.ArgumentCaptor.forClass(InboundOrderItem.class);
+        verify(inboundOrderItemMapper).insert(captor.capture());
+        assertThat(captor.getValue().getUnitCost().toPlainString()).isEqualTo("12.50");
     }
 }

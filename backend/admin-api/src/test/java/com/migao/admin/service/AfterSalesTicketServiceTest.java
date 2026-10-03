@@ -1,5 +1,4 @@
-// case_ids: AS-001, AS-002, AS-003, AS-004, AS-005, AS-006, AS-011
-
+// case_ids: AS-001, AS-002, AS-003, AS-004, AS-005, AS-006, AS-011, FN-006
 package com.migao.admin.service;
 
 import com.migao.admin.dto.*;
@@ -1536,5 +1535,56 @@ class AfterSalesTicketServiceTest {
         // then: repair 工单不触发库存回补
         verify(orderItemMapper, never()).selectList(any(LambdaQueryWrapper.class));
         verify(orderService, never()).restoreStockForReturn(anyString());
+    }
+
+    // ════════════════ issue #6228：退款金额小数位准入（超 2 位有效小数 ⇒ 422 + 零写入）════════════════
+
+    @Test
+    @DisplayName("#6228 建单退款金额 0.005（3 位有效小数）⇒ 422，after_sales_tickets **零写入**")
+    void createTicket_refundAmountOverScale_isRejectedWithNoInsert() {
+        AfterSalesCreateRequest request = new AfterSalesCreateRequest();
+        request.setTicketType("complaint");
+        request.setDescription("服务投诉");
+        request.setRefundAmount(new BigDecimal("0.005"));
+
+        assertThatThrownBy(() -> afterSalesTicketService.createTicket(request, 1L, "test-user"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("退款金额")
+                .hasMessageContaining("2 位小数");
+
+        verify(afterSalesTicketMapper, never()).insert(any(AfterSalesTicket.class));
+    }
+
+    @Test
+    @DisplayName("#6228 正对照 0.01（1 分）⇒ 建单成功且 refund_amount 落库逐字 0.01")
+    void createTicket_oneCentRefund_persistsLiterally() {
+        AfterSalesCreateRequest request = new AfterSalesCreateRequest();
+        request.setTicketType("complaint");
+        request.setDescription("服务投诉");
+        request.setRefundAmount(new BigDecimal("0.01"));
+
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(invocation -> {
+            AfterSalesTicket t = invocation.getArgument(0);
+            t.setId("ticket-cent");
+            return 1;
+        });
+        when(afterSalesTicketMapper.selectById("ticket-cent")).thenReturn(AfterSalesTicket.builder()
+                .id("ticket-cent")
+                .tenantId(1L)
+                .ticketNo("AS-CENT-0001")
+                .ticketType("complaint")
+                .customerId("投诉用户")
+                .status("pending")
+                .refundAmount(new BigDecimal("0.01"))
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .build());
+
+        afterSalesTicketService.createTicket(request, 1L, "test-user");
+
+        org.mockito.ArgumentCaptor<AfterSalesTicket> captor =
+                org.mockito.ArgumentCaptor.forClass(AfterSalesTicket.class);
+        verify(afterSalesTicketMapper).insert(captor.capture());
+        assertThat(captor.getValue().getRefundAmount().toPlainString()).isEqualTo("0.01");
     }
 }

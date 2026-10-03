@@ -522,7 +522,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // （#4308「静默回落」同族纪律：静默 = 算错钱且无人知道）。
         // 逐行结果按**下标**与 request.items 对齐（此刻明细行还没 id）。
         List<ProcessingFeeCalculator.Fee> itemFees = priceItems(request.getItems(), tenantId);
-        BigDecimal totalAmount = computeItemsTotal(request.getItems(), itemFees);
+        // 金额精度准入（issue #6228）：总额 = Σ(单价×数量) + Σ 行加工费，是**计算值**（"积"）——
+        // 单价与数量各自合法不代表积合法（`2.8 × 1.005` 出 3 位小数）⇒ 必须在写之前落一次准入。
+        // 判在这里、且在下方任何写（syncProcessingFeeCombinations / insert）之前。
+        BigDecimal totalAmount = MoneyScale.requireTwoDecimalsOrNull(
+                computeItemsTotal(request.getItems(), itemFees), "订单总额");
 
         // ── 建单同步回加工费组合配置（issue #4872）──
         // 用户原话「当订单创建成功后，同步新增加工费组合&单价到加工费配置中」。
@@ -533,16 +537,22 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         syncProcessingFeeCombinations(itemFees, tenantId);
 
         // 优惠金额（默认 0）；若提供了实收款，校验 应收 - 优惠 ≈ 实收（容差 0.01）
-        BigDecimal discountAmount = request.getDiscountAmount() != null ? request.getDiscountAmount() : BigDecimal.ZERO;
+        // 金额精度准入（issue #6228）：`orders.discount_amount` / `orders.actual_amount` 均 NUMERIC(10,2)，
+        // 超 2 位有效小数会被 PG 静默四舍五入 ⇒ 在**任何写之前**显式拒绝（不静默取整、不归一成 0）。
+        BigDecimal discountAmount = MoneyScale.requireTwoDecimalsOrNull(request.getDiscountAmount(), "优惠金额");
+        if (discountAmount == null) {
+            discountAmount = BigDecimal.ZERO;
+        }
         if (discountAmount.compareTo(BigDecimal.ZERO) < 0) {
             throw BusinessException.validationError("优惠金额不能为负数");
         }
-        if (request.getActualAmount() != null) {
+        BigDecimal requestedActual = MoneyScale.requireTwoDecimalsOrNull(request.getActualAmount(), "实收金额");
+        if (requestedActual != null) {
             BigDecimal expected = totalAmount.subtract(discountAmount);
-            if (expected.subtract(request.getActualAmount()).abs().compareTo(new BigDecimal("0.01")) > 0) {
+            if (expected.subtract(requestedActual).abs().compareTo(new BigDecimal("0.01")) > 0) {
                 throw BusinessException.validationError(
                         String.format("实收金额与应收不一致：应收 %s - 优惠 %s = %s，实收 %s（容差 0.01）",
-                                totalAmount, discountAmount, expected, request.getActualAmount()));
+                                totalAmount, discountAmount, expected, requestedActual));
             }
         }
 
@@ -560,7 +570,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         order.setCustomerAddress(request.getCustomerAddress());
         order.setTotalAmount(totalAmount);
         // 实收款：用户输入值，未输入时默认等于订单总额
-        order.setActualAmount(request.getActualAmount() != null ? request.getActualAmount() : totalAmount);
+        order.setActualAmount(requestedActual != null ? requestedActual : totalAmount);
         // 优惠金额落库
         order.setDiscountAmount(discountAmount);
         order.setStatus("pending");
@@ -648,6 +658,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 throw BusinessException.validationError(
                         String.format("商品明细第 %d 项的单价必须大于 0", i + 1));
             }
+            // 金额精度准入（issue #6228）：`order_items.unit_price` 是 NUMERIC(·,2)，
+            // 超 2 位有效小数会被 PG **静默四舍五入**（接口 200、库内值与请求值不等）。
+            // 判在本方法 = 建单/改单**唯一共享入口**，且在 `persistOrderItems` 任何写之前。
+            itemRequest.setUnitPrice(MoneyScale.requireTwoDecimalsOrNull(
+                    itemRequest.getUnitPrice(), String.format("商品明细第 %d 项的单价", i + 1)));
         }
     }
 
@@ -885,18 +900,22 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         List<OrderCreateRequest.OrderItemRequest> items = toCreateItems(request.getItems());
         assertItemAmountsValid(items);
         List<ProcessingFeeCalculator.Fee> itemFees = priceItems(items, tenantId);
-        BigDecimal totalAmount = computeItemsTotal(items, itemFees);
+        // 金额精度准入（issue #6228）：总额是计算值（"积"），合法单价×合法数量仍可出 3 位小数。
+        BigDecimal totalAmount = MoneyScale.requireTwoDecimalsOrNull(computeItemsTotal(items, itemFees), "订单总额");
         syncProcessingFeeCombinations(itemFees, tenantId);
 
         // ④ 优惠 / 实收：未传 ⇒ **沿用原值**（不清零、不猜）；随后照建单同口径校验
-        BigDecimal discountAmount = request.getDiscountAmount() != null
-                ? request.getDiscountAmount()
+        // 金额精度准入（issue #6228）：只有**请求带来的**值需要准入 —— 沿用值来自库列 NUMERIC(10,2) 回读。
+        BigDecimal requestedDiscount = MoneyScale.requireTwoDecimalsOrNull(request.getDiscountAmount(), "优惠金额");
+        BigDecimal discountAmount = requestedDiscount != null
+                ? requestedDiscount
                 : (order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO);
         if (discountAmount.compareTo(BigDecimal.ZERO) < 0) {
             throw BusinessException.validationError("优惠金额不能为负数");
         }
-        BigDecimal actualAmount = request.getActualAmount() != null
-                ? request.getActualAmount()
+        BigDecimal requestedActual = MoneyScale.requireTwoDecimalsOrNull(request.getActualAmount(), "实收金额");
+        BigDecimal actualAmount = requestedActual != null
+                ? requestedActual
                 : (order.getActualAmount() != null
                         ? order.getActualAmount()
                         : totalAmount.subtract(discountAmount));

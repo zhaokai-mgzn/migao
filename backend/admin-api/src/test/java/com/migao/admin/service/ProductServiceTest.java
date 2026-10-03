@@ -1,4 +1,4 @@
-// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PR-007, PR-008, PR-017, PR-019, PR-021, OR-014
+// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PR-007, PR-008, PR-017, PR-019, PR-021, OR-014, FN-006
 // 加工项解耦（issue #4371）：商品不再持有加工项 ⇒ 本文件原有的「商品-加工项关联」测试
 // （PP-006 一族：getProductProcessingItems / fillProcessingItemConfigs / 商品级自定义价落库）
 // 随被删代码一并删除（原声明的 PR-020「建品加工项价格落库盯防」即该落库用例，
@@ -2011,5 +2011,85 @@ class ProductServiceTest {
             dir = dir.getParent();
         }
         throw new IllegalStateException("找不到 ProductService.java（静态不变式无法校验）");
+    }
+
+    // ════════════════ issue #6228：金额入口小数位准入（超 2 位有效小数 ⇒ 422 + 零写入）════════════════
+
+    @Test
+    @DisplayName("#6228 建品 basePrice 0.005（3 位有效小数）⇒ 422 且 productMapper **零写入**")
+    void createProduct_subCentBasePriceIsRejectedWithoutWrites() {
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("新商品");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("0.005"));
+
+        assertThatThrownBy(() -> productService.createProduct(request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("商品基础价")
+                .hasMessageContaining("2 位小数");
+
+        verify(productMapper, never()).insert(any(Product.class));
+        verify(productSkuMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("#6228 改品 basePrice 0.005 ⇒ 422 且 products / product_skus **零写入**（不静默舍成 0.01）")
+    void updateProduct_subCentBasePriceIsRejectedWithoutWrites() {
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setBasePrice(new BigDecimal("0.005"));
+
+        assertThatThrownBy(() -> productService.updateProduct("prod-001", request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("商品基础价")
+                .hasMessageContaining("2 位小数");
+
+        verify(productMapper, never()).updateById(any(Product.class));
+        verify(productSkuMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("#6228 SKU 级价 0.005 ⇒ 422 且零写入（建品入口与收口同一条准入）")
+    void createProduct_subCentSkuPriceIsRejectedWithoutWrites() {
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("新商品");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("199.00"));
+        ProductSkuInput sku = new ProductSkuInput();
+        sku.setColorName("米白");
+        sku.setDoorWidth("2.8");
+        sku.setPrice(new BigDecimal("0.005"));
+        request.setSkus(List.of(sku));
+
+        assertThatThrownBy(() -> productService.createProduct(request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("SKU 价格")
+                .hasMessageContaining("2 位小数");
+
+        verify(productMapper, never()).insert(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("#6228 正对照 basePrice 0.01（1 分）⇒ 建品成功且落库值逐字 0.01")
+    void createProduct_oneCentBasePrice_persistsLiterally() {
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("一分钱商品");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("0.01"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.insert(any(Product.class))).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-cent");
+            return 1;
+        });
+        when(productMapper.selectById("prod-cent")).thenReturn(Product.builder()
+                .id("prod-cent").tenantId(1L).name("一分钱商品")
+                .categoryId("cat-001").basePrice(new BigDecimal("0.01")).status("draft").build());
+
+        productService.createProduct(request, 1L);
+
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productMapper).insert(captor.capture());
+        assertThat(captor.getValue().getBasePrice().toPlainString()).isEqualTo("0.01");
     }
 }

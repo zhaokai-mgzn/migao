@@ -3758,6 +3758,24 @@ _CASE_FN_005 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── FN-006 [NORMAL] 涉钱入口的小数位准入：超 2 位有效小数显式拒绝、不静默四舍五入（issue #6228）（源: cases/finance.yml）──
+_CASE_FN_006 = EvalCase(
+    id='FN-006',
+    legacy_id='',
+    title='涉钱入口的小数位准入：超 2 位有效小数显式拒绝、不静默四舍五入（issue #6228）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-03 派单（issue #6228）：#6221 只修了订单退款一处，其余金额入口仍会把超精度金额静默交给 PG 四舍五入'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**显式拒绝 + 零写入**：17 处金额入口（建单/改单的 setTotalAmount / setActualAmount / setDiscountAmount / setUnitPrice、售后 setRefundAmount、商品 setPrice / setBasePrice、批量改价 setBasePrice、入库 InboundOrderItem.builder() / setUnitCost、期初导入 setUnitCost、工人面 setUnitCost、加工费组合 setUnitPrice / builder、工序计件 setUnitPrice / builder、财务 FinanceTransaction.builder()）传 3 位有效小数（0.005 / 1.005 / 「积」1.5×0.01=0.015）⇒ 显式拒绝（常规 422、工人面 400）+ **写面零调用**（insert=never / updateById=never / updateProductForAgent=never）。执行点 = 各 service 单测（OrderServiceTest / InboundOrderServiceTest / FinanceServiceTest / AfterSalesTicketServiceTest / AgentBatchServiceTest / ProductServiceTest / OpeningRegisterImportServiceTest / WorkerInboundServiceTest / ProcessingFeeCombinationCommandServiceTest / ProductionOperationCommandServiceTest）。', '判据 2·**正对照（合法值逐字落库）**：2 位以内**有效**小数的值（0.01 = 1 分 / 12.50 / 31.250）**原样**落库（按 `toPlainString()` 逐字比对）；`null` 语义不变（退款金额未传 = 全额退，不得归一成 0）。', '判据 3·**类级固化（让同类进不来）**：backend/admin-api/src/test/java/com/migao/admin/service/MoneyEntryPrecisionMetaGuardTest.java 的入口台账现取 DEBT = 0（冻结上限 0）—— 新金额写面未登记 / 债务条数增长 / 声称 GATED 但文件里没有 `MoneyScale.requireTwoDecimals` 文本 ⇒ 当场红并具名；台账条目空转（写面被删 / 改名）同样红。'],
+    skip_reason='[backend-contract] 纯后端金额精度准入（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-api 单测 MoneyEntryPrecisionMetaGuardTest + 10 个 service 单测执行',
+    tags=['finance', 'money-precision', 'admin-api', 'write-surface'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── HR-001 [SMOKE] 员工列表（源: cases/hr.yml）──
 _CASE_HR_001 = EvalCase(
     id='HR-001',
@@ -12485,6 +12503,7 @@ ALL_CASES = (
     _CASE_FN_003,
     _CASE_FN_004,
     _CASE_FN_005,
+    _CASE_FN_006,
     _CASE_HR_001,
     _CASE_HR_002,
     _CASE_HR_003,

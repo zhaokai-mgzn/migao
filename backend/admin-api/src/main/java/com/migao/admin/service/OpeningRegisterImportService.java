@@ -323,6 +323,10 @@ public class OpeningRegisterImportService {
         try {
             // 数值判据**只有一处**（`InboundOrderService.requireItemNumbers`）：下限 > 0 米 +
             // 最多 1 位小数（超 1 位小数**显式拒绝**）+ 单价 > 0。这里不复制任何一条口径。
+            // 金额精度准入（issue #6228）：Excel 的「入库单价」是**外部表格输入**，入库单价列是
+            // NUMERIC(·,2) ⇒ 超 2 位有效小数会被 PG 静默四舍五入。判在 try 内 ⇒ 拒绝落到
+            // **本行标红**（不中断整份报告），且早于任何写。
+            unitCost = MoneyScale.requireTwoDecimalsOrNull(unitCost, "第 " + rowNo + " 行入库单价");
             out.setQuantity(InboundOrderService.requireItemNumbers(quantity, unitCost,
                     "第 " + rowNo + " 行剩余米数", "第 " + rowNo + " 行入库单价"));
         } catch (BusinessException e) {

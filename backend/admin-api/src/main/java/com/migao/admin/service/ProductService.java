@@ -372,6 +372,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // （改前这里只过 `requireOneDecimalOrNull`：只校精度、不校符号 ⇒ 传 -5 得 200 且落库）。
         // 判据单点在 StockQuantity；这里只做入口归一，不在 Service 里另写一套小数位/符号判断。
         request.setStock(StockQuantity.requireNonNegativeOrNull(request.getStock(), "库存 stock"));
+        // 金额精度准入（issue #6228）：`products.base_price` / `product_skus.price` 是 NUMERIC(·,2)，
+        // 超 2 位有效小数会被 PG 静默四舍五入。**判在入口**（本方法会先 insert `products` 行、
+        // 之后才走 saveColorsAndSkus 收口）⇒ 这样"拒绝"才发生在任何写之前。`null` = 不改，透传。
+        request.setBasePrice(MoneyScale.requireTwoDecimalsOrNull(request.getBasePrice(), "商品基础价 basePrice"));
+        requireSkuPrices(request.getSkus());
 
         // 空分类归一化（#3665 冒烟 B1）：前端草稿发的是 ''（DEFAULT_FORM.categoryId）而非缺省 null。
         // 若原样透传：validateCategory 因 hasText('')==false 跳过校验 → BeanUtils 把 '' 写进实体
@@ -441,6 +446,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // issue #6199：同 createProduct —— 绝对值准入必须同时拒负数（本行是改品/批量库存
         // `updateProductForAgent` 的共同入口，负值会一路写进 products.stock 与 product_skus.stock）。
         request.setStock(StockQuantity.requireNonNegativeOrNull(request.getStock(), "库存 stock"));
+        // 金额精度准入（issue #6228）：同 createProduct —— 判在**入口**（本方法先 updateById `products`
+        // 行、之后才走 saveColorsAndSkus 收口）⇒「超精度 ⇒ 零写入」才成立。`null` = 不改，透传。
+        request.setBasePrice(MoneyScale.requireTwoDecimalsOrNull(request.getBasePrice(), "商品基础价 basePrice"));
+        requireSkuPrices(request.getSkus());
 
         Product product = productMapper.selectById(id);
         if (product == null) {
@@ -519,6 +528,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             //
             // 显式带 `skus`（前端表单逐 SKU 定价）时走上面的分支、SKU 级价优先，本分支不参与。
             ProductSku priceSync = new ProductSku();
+            // 精度已在 updateProduct 入口准入（issue #6228）⇒ 这里原样写，不再判第二遍
             priceSync.setPrice(request.getBasePrice());
             productSkuMapper.update(priceSync, new LambdaQueryWrapper<ProductSku>()
                     .eq(ProductSku::getProductId, id)
@@ -573,6 +583,22 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * 2. 仅删除本次请求中"缺失"的旧行（缺失才删）；
      * 3. create 场景无现有行，等价于全量插入，行为与旧实现一致。
      */
+    /**
+     * 逐条 SKU 价的精度准入（issue #6228）：`product_skus.price` 是 NUMERIC(·,2)，超 2 位有效小数
+     * 会被 PG 静默四舍五入。建品/改品的**入口**各调一次（判在任何写之前）；`saveColorsAndSkus` 收口
+     * 再兜一次 —— 导入行的价不经入口，只经收口。`null` = 未填，原样透传（不归一成 0）。
+     */
+    private static void requireSkuPrices(List<ProductSkuInput> skus) {
+        if (skus == null) {
+            return;
+        }
+        for (ProductSkuInput sku : skus) {
+            if (sku != null) {
+                sku.setPrice(MoneyScale.requireTwoDecimalsOrNull(sku.getPrice(), "SKU 价格 price"));
+            }
+        }
+    }
+
     private void saveColorsAndSkus(String productId, String productSkuCode, Long tenantId,
                                     List<ProductColorInput> colorInputs,
                                     List<String> sellingMethods,
@@ -581,6 +607,13 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                                     BigDecimal stock,
                                     List<ProductSkuInput> skuInputs,
                                     boolean pruneMissing) {
+        // 金额精度准入（issue #6228）：`products.base_price` / `product_skus.price` 是 NUMERIC(·,2)，
+        // 超 2 位有效小数会被 PG **静默四舍五入**（接口 200、库内价与请求价不等，而 SKU 价正是
+        // 下单取价的权威列）⇒ 在本收口显式拒绝、不静默取整。
+        // 判在本方法开头 = 本方法内任何写（含库存台账 / SKU upsert）之前；
+        // 这里是建品/改品/导入/Agent 四条路径写 SKU 价的**唯一收口**，判在这里才无死角。
+        basePrice = MoneyScale.requireTwoDecimalsOrNull(basePrice, "商品基础价 basePrice");
+        requireSkuPrices(skuInputs);
         // issue #5063（V115）：SKU 库存是库存链路的**权威列**，逐行准入（最多 1 位小数）——
         // 这里是所有建品/改品路径（表单 / Agent / 矩阵式生成）写 SKU stock 的**唯一收口**；
         // issue #6199：同一次准入还要拒**负数**（SKU 库存也是绝对值）。
@@ -1533,6 +1566,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     private void upsertImportedProduct(List<ImportedRow> group, Long tenantId, ProductImportResult result) {
         ImportedRow head = group.get(0);
+        // 金额精度准入（issue #6228）：Excel 导入的价格是**外部表格输入**，而
+        // `products.base_price` / `product_skus.price` 是 NUMERIC(·,2) ⇒ 超 2 位有效小数会被 PG
+        // 静默四舍五入。判在本方法开头 = 本方法的任何写（productMapper.insert/updateById）之前。
+        head.price = MoneyScale.requireTwoDecimalsOrNull(head.price, "导入行价格");
         boolean groupHasSku = group.stream().anyMatch(r -> r.hasSku);
 
         // 幂等键查询：命中 ⇒ 原地更新（不新建行）；未命中 ⇒ 新建
@@ -2271,6 +2308,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     public void updateSkuPrice(String productId, String color,
                                 String doorWidth, java.math.BigDecimal price,
                                 java.math.BigDecimal beforePrice, Long tenantId) {
+        // 金额精度准入（issue #6228）：`product_skus.price` 是 NUMERIC(·,2) —— 先于任何读/写。
+        price = MoneyScale.requireTwoDecimalsOrNull(price, "SKU 价格 price");
         java.util.List<ProductSku> candidates =
                 selectSkuCandidatesForPriceUpdate(productId, color, doorWidth, tenantId);
         if (candidates.isEmpty()) {
@@ -2367,6 +2406,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (price.signum() < 0) {
             throw BusinessException.validationError("价格不能为负数");
         }
+        // 金额精度准入（issue #6228）：`product_skus.price` 是 NUMERIC(·,2) —— 先于任何写。
+        price = MoneyScale.requireTwoDecimalsOrNull(price, "SKU 价格 price");
         ProductSku sku = productSkuMapper.selectOne(
                 new LambdaQueryWrapper<ProductSku>()
                         .eq(ProductSku::getId, skuId)

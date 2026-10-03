@@ -345,7 +345,9 @@ public class AgentBatchService {
     private void apply(Long tenantId, AgentBatchItem item, String value) {
         AgentProductUpdateRequest update = new AgentProductUpdateRequest();
         if (FIELD_BASE_PRICE.equals(item.getField())) {
-            update.setBasePrice(new BigDecimal(value));
+            // 金额精度准入（issue #6228）：批次值来自**外部输入**（Excel/表格），`products.base_price`
+            // 是 NUMERIC(·,2) ⇒ 超 2 位有效小数会被 PG 静默四舍五入。判在下游单条写路径之前。
+            update.setBasePrice(MoneyScale.requireTwoDecimalsOrNull(new BigDecimal(value), "商品价格 price"));
         } else if (FIELD_STOCK.equals(item.getField())) {
             update.setStock(new BigDecimal(value));
         } else {
