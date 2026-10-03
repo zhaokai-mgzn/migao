@@ -539,3 +539,17 @@ python3 scripts/next_case_id.py PG    # 权威取号：main:001-058,060-067 · P
 1. **取号由 `next_case_id.py` 说了算**（它会看 main + 在飞 PR），**它慢（~100s）但必须等它** —— 不要用"60s 超时"当失败，也不要用单文件 grep 代替；
 2. 手工复核时**必须跨"同域全部 cases 文件" + "全部 refs（含远端 PR 分支）"**两维；
 3. 同域被拆成多文件时（`processing.yml` / `processing-order.yml` / …），**"不同文件"也可能共享号段** —— 判断撞不撞，看**号**，不看文件名。
+
+### 19.14 主会话纪律（本轮我自己踩到的第三个"窗口误读"）：读别人的工作树前先确认它**不在变更窗口**
+
+本轮我在 F-6226 的工作树里读 `git show --stat HEAD`，拿到的却是**另一个包（#6233 / F-6219）的文件清单** ——
+一度怀疑它 rebase 污染了分支。**实查后确认是误读**：当时它正在 `rebase` 中途（`git reflog` 里前后两条是
+`rebase (start)/(finish)`），HEAD 处于过渡态；`origin/main..HEAD` 的**真实** diff 干净、**0 处**含另一个包的文件。
+
+⇒ **纪律（三次同类误读的收敛）**：读包工作树取证据前，先花一行确认它**不在变更窗口**：
+```bash
+git -C <worktree> status -sb | head -1     # 有 "rebase in progress"/"interactive rebase" 就别读
+git -C <worktree> reflog -3 | cut -c1-80   # 头两条若是 rebase (start)/(continue) ⇒ 等它跑完再读
+```
+三次同类（F-6219 的 `git stash` 窗口、F-6220 的置备期、F-6226 的 `rebase` 窗口）**代价都是我这边白绕一圈**；
+根因不是包做错，而是**我把"某个瞬间的树"当成了"它的交付状态"**。⇒ 判据只在"树静止"时取；静止的定义 = 无 stash / 无 rebase / 无 uncommitted 待提交。
