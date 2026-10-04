@@ -1,5 +1,19 @@
 ## [Unreleased]
 
+### 工人端 H5 / 一体机页在云测试环境不再整页白屏：`.mjs` 以 JS MIME 发出，且三条发布自检腿各补一条 MIME 判据（2026-10-04，issue #6293）
+
+- 以前：`https://app.migaozn.com/w/src/*.mjs` 被 nginx 以 **`application/octet-stream`** 发出
+  （基础 `mime.types` 只有 `js`、没有 `mjs` ⇒ 落到 `default_type`）⇒ 浏览器按 HTML 规范
+  **拒绝执行 module script** ⇒ 工人端报工页（`/w/`）与一体机机台页（`/w/machine.html`）**整页白屏**。
+  而 `HTTP 200` 与字节哈希同刻全部正确 ⇒ **发布自检腿当时全绿**（它们只判状态码与字节，**一条都不判 MIME**）。
+- 现在：`/w/` 有了自己的 location，把**本命名空间**的兜底类型设为 `application/javascript`
+  （`default_type` **只在「扩展名不在 types 表里」时**才生效 ⇒ 刻意**不用**会替换继承表的 `types {}`；
+  `.css` → `text/css`、`.js` → `application/javascript` 的映射一字未动）；三条 `*-verify-served.sh`
+  各补一条 MIME 判据（入口 / 模块脚本的 Content-Type 必须 ∈ **JS MIME 白名单**），MIME 坏掉时该腿**必红**。
+- 边界（如实登记）：本包**不含部署与线上复验**（由主会话在三线收口后统一重发布，并逐条复验
+  `.css` / `.js` / `.mjs` 四种资源的 Content-Type）；`/w/<不存在>` 的兜底由根 `index.html` 改为
+  `/w/index.html`（不再跨应用回落到 C 端页面）。
+
 ### 官网（企业站）整体重构：织物质感视觉 + 四个页面文案按系统真实能力重写（2026-10-04，issue #6291）
 
 - 以前：官网通篇是 `blue-600 → indigo-800` 的通用蓝色渐变模板，文案只讲「商品 / 订单 / 知识库」三件事；

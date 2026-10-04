@@ -635,11 +635,12 @@ def _make_static_root(tmp_path: Path) -> Path:
     (root / "css" / "app.css").write_text(".c-end{}", encoding="utf-8")
     (root / "w" / "src").mkdir(parents=True)
     shutil.copy(WORKER_H5_DIR / "index.html", root / "w" / "index.html")
-    shutil.copy(WORKER_H5_DIR / "src" / "app.mjs", root / "w" / "src" / "app.mjs")
-    # 机台页（母单 #5161）：worker-h5 落地面断言新增 ④/⑤ 段（machine.html / src/machine.mjs）
-    # ⇒ 「正确落地」的夹具必须含这两个文件，否则是**夹具造的假红**（2026-09-29 实证：漏改此处 ⇒ helper 腿红）。
+    # 机台页（母单 #5161）：worker-h5 落地面断言有 ④/⑤ 段（machine.html / src/machine.mjs）
     shutil.copy(WORKER_H5_DIR / "machine.html", root / "w" / "machine.html")
-    shutil.copy(WORKER_H5_DIR / "src" / "machine.mjs", root / "w" / "src" / "machine.mjs")
+    # `src/**` **整棵**铺（issue #6293）：该腿 ⑥ 对**每一个** `.mjs` 逐条断言 MIME ⇒
+    # 少铺一个就是**夹具造的假红**（与上面机台页同因）。
+    for f in sorted((WORKER_H5_DIR / "src").iterdir()):
+        shutil.copy(f, root / "w" / "src" / f.name)
     (tmp_path / "sentinel-outside.txt").write_text("静态根之外的文件，任何情况下都不该被动", encoding="utf-8")
     return root
 
@@ -765,6 +766,19 @@ def test_sandbox_refuses_product_that_escapes_its_namespace(tmp_path):
 
 # ── 落地面断言脚本自身的红/绿两面（防空断言）────────────────────────────────
 
+def _content_type_for(path: str, bad_js_mime: bool = False) -> str:
+    """按扩展名给 Content-Type（issue #6293）。
+
+    `bad_js_mime=True` 注入**线上实测的坏形态**：`.js`/`.mjs` 以 `application/octet-stream` 发出
+    ⇒ 浏览器拒绝执行 module script ⇒ 整页白屏（而身份 / 字节全对）。
+    """
+    if path.endswith((".js", ".mjs")):
+        return "application/octet-stream" if bad_js_mime else "text/javascript"
+    if path.endswith(".css"):
+        return "text/css"
+    return "text/html; charset=utf-8"
+
+
 class _NginxishServer:
     """一个**只实现本单用到的 nginx 语义**的本地 server（前缀 location + try_files + index）。
 
@@ -775,6 +789,7 @@ class _NginxishServer:
       · ``stale_b``       —— `/b/` 上是**旧产物**（不是本仓库这次构建）
       · ``w_broken``      —— worker-h5 的 `/w/` 坏了
       · ``i_falls_back``  —— nginx 少了 `location /i/`（入库标签的码静默回落到根页 = C 端小布）
+      · ``bad_js_mime``   —— 入口脚本（`.js`/`.mjs`）被发成 `application/octet-stream`（issue #6293）
     """
 
     def __init__(self, served_root: Path, mode: str = "ok"):
@@ -794,6 +809,11 @@ class _NginxishServer:
                 return '<!doctype html><title>米高窗帘 · 小布智能助手</title><script>// 旧产物</script>'.encode("utf-8")
             if path in (f"/{SUBDIR}/", f"/{SUBDIR}/index.html"):
                 return bmini
+            # 子资源（`/b/js/**` 等）在静态根上真实存在 ⇒ 按文件伺候（⑥ 要判它们的 MIME，issue #6293）；
+            # 其余（不存在的子路由）仍走 fallback 回 bmini 自己的 index（判据 ② 的对象）。
+            f = root / path.lstrip("/")
+            if f.is_file():
+                return f.read_bytes()
             return bmini  # 有 fallback ⇒ 子路由也回 bmini index
         if path.startswith("/w/"):
             if self.mode == "w_broken":
@@ -829,7 +849,10 @@ class _NginxishServer:
             else:
                 code = 200
             self.send_response(code)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header(
+                "Content-Type",
+                _content_type_for(path, bad_js_mime=getattr(self.server, "mode", "ok") == "bad_js_mime"),
+            )
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -838,6 +861,8 @@ class _NginxishServer:
         outer = self
 
         class _Server(http.server.ThreadingHTTPServer):
+            mode = outer.mode  # handler 要能看见 bad_js_mime 注入（issue #6293 的红证）
+
             def route(self, path):
                 return outer._route(path)
 
@@ -892,6 +917,9 @@ def test_verify_served_is_green_on_correct_landing(tmp_path):
         # 本单（PR-117）：`/i/` 面少了 nginx 登记 ⇒ 探针必须判红，且**指名**是 SPA fallback
         # （红得不具体 = 排查时看不出是哪条判据；照 #5668 的口径）。
         ("i_falls_back", "落到了 location / 的 SPA fallback"),
+        # issue #6293：入口脚本被发成 octet-stream ⇒ 浏览器拒绝执行 module script ⇒ 整页白屏，
+        # 而身份 / 串端 / 字节全对（所以 ①~⑤ 会全绿）⇒ 必须由 ⑥ 判红。
+        ("bad_js_mime", "∉ JS MIME 白名单"),
     ],
 )
 def test_verify_served_is_red_on_broken_landings(tmp_path, mode, marker):

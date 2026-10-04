@@ -23,6 +23,9 @@
 #      落到 `location /` 的 SPA fallback（200 + C 端小布首页；2026-09-27 线上实测正是这一形态）。
 #      ⚠️ 判据**不是**「状态码是 302」（未知短码本来就 404）—— 判据是「**到了 admin-api**」与
 #      「**落到了 SPA**」可判：落 SPA 时 body 与 `GET /` 同哈希。
+#   ⑥ **入口脚本的 MIME**（issue #6293）：`dist/index.html` 引用的入口脚本的 Content-Type 必须 ∈
+#      **JS MIME 白名单**（`.mjs` 被发成 `application/octet-stream` ⇒ 浏览器拒绝执行 module script ⇒
+#      白屏，而身份 / 串端 / 字节全对 ⇒ ①~⑤ 会全绿）。判据 = 「属于白名单」而**不是**等于某个字面量。
 #
 # 用法: bmini-h5-verify-served.sh [BASE_URL] [DIST_DIR]
 #   默认 https://app.migaozn.com 与 frontend/bmini-app/dist
@@ -78,6 +81,25 @@ file_sha256() {
 fetch() {
   local url=$1 out=$2
   curl -sS -m 20 -H 'Cache-Control: no-cache' -o "$out" -w '%{http_code}' "$url" 2>"$TMPDIR_RUN/curl.err"
+}
+
+# ── JS MIME 白名单判据（issue #6293）────────────────────────────────────────────
+# 病灶（云测试环境实测 2026-10-04）：`.mjs` **不在** nginx 的 `mime.types` 里 ⇒ 落到 `default_type`
+# （本镜像 = application/octet-stream）⇒ 浏览器按 HTML 规范**拒绝执行 module script**
+# （Strict MIME type checking is enforced for module scripts）⇒ 页面**整页白屏**。
+# 🔴 而**状态码 200 与字节哈希全部正确** ⇒ 本脚本 ①~⑤ 全绿（它们只判身份与串端，**一条都不判 MIME**）。
+# 判据形态 = 「Content-Type **属于 JS MIME 白名单**」，**不是**等于某个字面量：
+#   `text/javascript` 与 `application/javascript` 都是 WHATWG 认可的 JS MIME（不同 nginx / 发行版
+#   给哪个都合法）⇒ 写死其一会在**正确**的部署上误红，逼人改判据而不是改配置（那是降门禁，不是修缺陷）。
+JS_MIME_RE='^(application|text)/(x-)?(java|ecma)script([0-9.]+)?$'
+js_mime_ok() {   # $1 = Content-Type 原文（可带 `; charset=…`）
+  local ct
+  ct="$(printf '%s' "${1%%;*}" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+  [[ "$ct" =~ $JS_MIME_RE ]]
+}
+# 取一个 URL 的 Content-Type（与 issue #6293 的复现命令同形：GET + 丢弃 body；HEAD 不是同一回事）
+content_type_of() {
+  curl -sS -m 20 -H 'Cache-Control: no-cache' -o /dev/null -w '%{content_type}' "$1" 2>"$TMPDIR_RUN/curl.err" || true
 }
 
 echo "== bmini h5 落地面身份 + 不串端断言 =="
@@ -210,8 +232,34 @@ else
 fi
 echo ""
 
+# ── ⑥ 入口脚本的 MIME（issue #6293）────────────────────────────────────────────
+# 判据对象 = 本地产物 `dist/index.html` 里 `<script src=…>` 引用的**入口脚本**（现取 ⇒ 产物从 `.js`
+# 换成 `.mjs` 时判据自动跟上，不写死路径）。为什么必须单列一段：①~⑤ 判的是身份与串端，
+# 而**字节全对也照样白屏** —— 浏览器对 module script 先做 MIME 检查（octet-stream ⇒ 拒绝执行）。
+# 取不到任何入口引用 ⇒ 判红（fail-closed）：「没跑」必须长得像「没跑」，不许当通过。
+echo "⑥ 入口脚本的 MIME（Content-Type 必须 ∈ JS MIME 白名单）"
+ENTRY_REFS="$(grep -oE '<script[^>]*src="[^"]+"' "$LOCAL_INDEX" 2>/dev/null | sed -E 's/.*src="([^"]+)".*/\1/' | sort -u)"
+if [ -z "$ENTRY_REFS" ]; then
+  bad "本地产物 ${LOCAL_INDEX} 里取不到 <script src=…> —— MIME 判据会空跑（不许当通过）"
+fi
+while IFS= read -r ref; do
+  [ -n "$ref" ] || continue
+  case "$ref" in
+    http*://*) url="$ref" ;;
+    /*)        url="$BASE$ref" ;;
+    *)         url="$BASE/${SUBDIR}/${ref#./}" ;;
+  esac
+  ct="$(content_type_of "$url")"
+  if js_mime_ok "$ct"; then
+    ok "GET $url → Content-Type ${ct}（∈ JS MIME 白名单）"
+  else
+    bad "GET $url → Content-Type ${ct:-（空）} 【∉ JS MIME 白名单】—— 浏览器会拒绝执行 module script ⇒ 页面整页白屏（HTTP 200 / 字节哈希一致都救不了）"
+  fi
+done <<< "$ENTRY_REFS"
+echo ""
+
 if [ "$FAILURES" -gt 0 ]; then
   echo "❌ bmini h5 落地面断言**失败 ${FAILURES} 条**：$BASE/${SUBDIR}/ 的落地面不符合本仓库产物 / 或串了端"
   exit 1
 fi
-echo "✅ 全部通过：$BASE/${SUBDIR}/ = 本仓库 frontend/bmini-app/dist（含子路由 fallback）、根仍是 C 端、worker-h5 零回归、/i/ 面到了 admin-api"
+echo "✅ 全部通过：$BASE/${SUBDIR}/ = 本仓库 frontend/bmini-app/dist（含子路由 fallback）、根仍是 C 端、worker-h5 零回归、/i/ 面到了 admin-api、入口脚本 Content-Type ∈ JS MIME 白名单"
