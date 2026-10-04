@@ -100,13 +100,11 @@ def parse_checklist(checklist_text: str) -> list[dict]:
     解析不到任何条目 ⇒ 抛 AssertionError（fail-closed：格式漂移不许静默变绿）。
     """
     constants = dict(_STRING_CONST_RE.findall(checklist_text))
-    field = None
     m = re.search(re.escape(CHECKLIST_FIELD) + r"\s*=\s*List\.of\((.*?)\);", checklist_text, re.DOTALL)
-    if m:
-        field = m.group(1)
-    assert field is not None, (
+    assert m, (
         f"`{CHECKLIST.name}` 里找不到 `{CHECKLIST_FIELD} = List.of(...);` —— 必需初始数据清单被删/改名了？"
         "（本判据的真值源就是它；清单空了 ⇒ 本判据 fail-closed 判红）")
+    field = m.group(1)
     items = []
     for key_const, anchor, enforced in _ITEM_RE.findall(field):
         key = constants.get(key_const)
