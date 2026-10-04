@@ -175,6 +175,15 @@ REALDB_FILES: dict[str, str] = {
     # ③ `@InterceptorIgnore(tenantLine)` + 显式 `tenant_id` 谓词是「CTE 里的 UPDATE 能否过拦截器」的
     # **真栈行为**（MyBatis-Plus 3.5.16 对 CTE 里的 UPDATE 抛 ClassCastException），mock 面完全不可见。
     _SVC + "InboundPostLedgerChainRaceRealDbTest.java": "direct",
+    # issue #6295：**开租即种默认商品分类**的真库判据 —— 只真 PG 能证的四条：
+    # ① 入驻链路（真 approveApplication + 真 mapper + 真 Service）真的把 1 行写进 `categories`
+    #    （行数 + 名字 = 单一来源常量 OnboardingInitialData.DEFAULT_PRODUCT_CATEGORY_NAME）；
+    # ② 那一行的 id 真的能当外键被 `products.category_id`（`REFERENCES categories(id)`）接受
+    #    ⇒ 开箱首建商品成功（mock 面只证明「调了 insert」，外键与落库读数结构上不可见）；
+    # ③ 注入式**双向**红证：把种子摘掉（spy no-op）⇒ 分类 0 行 ⇒ 首建商品**逐字** 422
+    #    「分类ID不能为空」（证明主判据的绿有判别力）；只摘种子、保留后置条件 ⇒ 入驻当场 fail-closed；
+    # ④ 幂等读的是**行数**（再调播种 ⇒ 返回 0 且仍 1 行）。
+    _SVC + "NewTenantOnboardingCategoryRealDbTest.java": "direct",
     # issue #6299：库存 10 米 / 两单各 8 米**并发**确认收款 ⇒ 恰一个赢家 + 不超卖 + 台账链相接。
     # 为什么必须真 PG：超卖的机制是「无条件 / 无下限谓词 `UPDATE` 被两个事务各改一次」，而
     # 「`COALESCE(stock,0) >= #{quantity}` 的下限谓词在**并发**下真的只放一个请求过去」靠的是

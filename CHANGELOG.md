@@ -1,5 +1,29 @@
 ## [Unreleased]
 
+### 新租户开箱即可建商品：入驻时自动种一个默认商品分类「窗帘成品」（2026-10-04，issue #6295）
+
+- 以前：通过入驻流程新开的租户 `categories` 表是**空的**，而建商品（非草稿）要求分类非空
+  ⇒ 新商家第一次建商品必撞 **422「分类ID不能为空」**（实测 tenant 25：建分类前 `catsBefore: []`）。
+  开租种子此前只种了行业生产工序/路线模板（#4361）—— 「下单 → 生成加工单」这条链的前置被照顾到了，
+  **唯独**更靠前的「建商品」这条链漏了分类。
+- 现在：入驻（AI 自动开通与超管人工兜底两条入口共用 `RegistrationService.approveApplication`）
+  会为新租户种一个**具名、可编辑**的默认分类「窗帘成品」（租户管理员可在「商品 → 管理分类」里
+  改名/增删）。默认值是**单一来源**常量
+  `backend/admin-api/src/main/java/com/migao/admin/service/OnboardingInitialData.java`；
+  播种**幂等**（该租户已有分类即不种，重复开通/重试不会种出第二个）。
+- 固化（类级，本单最重要的一条）：开租「必需初始数据清单」落成代码常量
+  （`OnboardingInitialData.REQUIRED`），并有两层守卫 —— ① **运行期后置条件**：开租收尾逐条**现取**校验
+  清单里必需项，缺一即 fail-closed（`ONBOARDING_REQUIRED_DATA_MISSING`，整个开租事务回滚），
+  从此「漏种」从**静默产出不可用的租户**变成**开租当场失败**；② **研发期元守卫**
+  `tests/unit_ci_workflows/test_onboarding_required_seed_guard.py`（用例 MC-083）：清单⇄入驻链路双向对账，
+  清单里有而链路里没种 ⇒ 红、链路里出现**未登记**的种子调用 ⇒ 红（未登记即红）、
+  豁免台账只许缩短、默认值字面量必须单一来源。
+- 实例判据（会红）：`backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java`
+  （真 PG）—— 空库真跑入驻 ⇒ 分类恰 1 行 ⇒ 用它的 id 走真 `ProductService.createProduct` **首建商品成功**；
+  注入式双向红证：把种子那步摘掉 ⇒ 分类 0 行 ⇒ 首建商品**逐字** 422「分类ID不能为空」。
+- ⚠️ 口径（有意，如实登记）：**既有租户不自动补种** —— 本单不做数据回填迁移（存量租户走自助路径：
+  建商品页「管理分类 → 添加分类」，需 `product:category` 权限；重启条件见 PR）。存量租户与其分类表**一字未动**。
+
 ### 工人端主页 `/w/` 与一体机页 `/w/machine.html` 第二次白屏修复：共享模块迁进发布集（树内），并在发布自检腿补一条 module **闭包加载**判据（2026-10-04，issue #6306）
 
 - 以前：修好 `.mjs` 的 MIME（issue #6293）之后两页**仍整页白屏** —— 真浏览器读数 `bodyText=""`、
