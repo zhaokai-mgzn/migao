@@ -1,0 +1,24 @@
+{
+ "at": "2026-10-04 10:34:49 +0800",
+ "method": "FK 拓扑序（子表优先）对 65 张 tenant_id 表反复 pass 至收敛；保留租户本体/账号/角色权限/岗位/工序-部位-路线种子",
+ "tenants": {
+  "count": 1,
+  "ids": "25"
+ },
+ "business_rows": {
+  "products": 0,
+  "skus": 0,
+  "orders": 0,
+  "order_items": 0,
+  "tickets": 0,
+  "ticket_timeline": 0,
+  "finance_transactions": 0,
+  "stock_ledger_entries": 0,
+  "processing_orders": 0,
+  "inbound_orders": 0,
+  "inbound_labels": 0,
+  "stock_batches": 0,
+  "client_request_keys": 0
+ },
+ "note": "本文件是**收尾清盘之后**的现取读数（durable 取证锚）；此前任何 Z-residue.json / run.log 里的非零读数都是清盘前的中间态快照。"
+}

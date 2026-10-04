@@ -1,0 +1,103 @@
+{
+  "workerA": {
+    "workerNo": "LAA70898",
+    "workerId": "4217f340c7047f8467cf9cec46ed15c5",
+    "name": "线A验收工人870898",
+    "pin": "246810",
+    "createdStatus": 200,
+    "row": {
+      "id": "4217f340c7047f8467cf9cec46ed15c5",
+      "worker_no": "LAA70898",
+      "nickname": "线A验收工人870898",
+      "role": "worker",
+      "status": "active",
+      "tenant_id": 25,
+      "is_worker": true,
+      "hash_len": 60
+    },
+    "response": {
+      "success": true,
+      "data": {
+        "id": "4217f340c7047f8467cf9cec46ed15c5",
+        "workerNo": "LAA70898",
+        "name": "线A验收工人870898",
+        "role": "worker",
+        "status": "active",
+        "createdAt": "2026-10-04T12:41:11.260368662+08:00"
+      },
+      "requestId": "req_8f82406e4f3b4cca",
+      "timestamp": 1791088871
+    },
+    "sessionId": "2762ebd8b9c1439a8cb4c69962f24a49",
+    "workerName": "线A验收工人870898",
+    "switchedToB": true
+  },
+  "workerB": {
+    "workerNo": "LAB71192",
+    "workerId": "c3b15ce5d8bf60c77f0c5f7196407bb1",
+    "name": "线A验收工人871192",
+    "pin": "246810",
+    "createdStatus": 200,
+    "row": {
+      "id": "c3b15ce5d8bf60c77f0c5f7196407bb1",
+      "worker_no": "LAB71192",
+      "nickname": "线A验收工人871192",
+      "role": "worker",
+      "status": "active",
+      "tenant_id": 25,
+      "is_worker": true,
+      "hash_len": 60
+    },
+    "response": {
+      "success": true,
+      "data": {
+        "id": "c3b15ce5d8bf60c77f0c5f7196407bb1",
+        "workerNo": "LAB71192",
+        "name": "线A验收工人871192",
+        "role": "worker",
+        "status": "active",
+        "createdAt": "2026-10-04T12:41:11.520195875+08:00"
+      },
+      "requestId": "req_613ecee95d5346ab",
+      "timestamp": 1791088871
+    },
+    "sessionId": "1d81d37debb34f56b2a60ce842f57d60",
+    "workerName": "线A验收工人871192"
+  },
+  "fixtures": {
+    "P5UI": {
+      "tag": "P5UI",
+      "qty": "2.00",
+      "uniq": "mutc2m9c8l",
+      "orderId": "laordmutc2m9c8l",
+      "orderNo": "LA-ORD-MUTC2M9C8L",
+      "poId": "lapomutc2m9c8l",
+      "poNo": "LA-JG-MUTC2M9C8L",
+      "setId": "lasetmutc2m9c8l",
+      "itemId": "laitmmutc2m9c8l",
+      "token": "lamutc2m9c8lffffffffffffffffffff",
+      "langId": "lalabmutc2m9c8l",
+      "opIds": [
+        "laopmutc2m9c8l"
+      ],
+      "opId": "laopmutc2m9c8l"
+    },
+    "P5M": {
+      "tag": "P5M",
+      "qty": "3.00",
+      "uniq": "mutc3ckz8d",
+      "orderId": "laordmutc3ckz8d",
+      "orderNo": "LA-ORD-MUTC3CKZ8D",
+      "poId": "lapomutc3ckz8d",
+      "poNo": "LA-JG-MUTC3CKZ8D",
+      "setId": "lasetmutc3ckz8d",
+      "itemId": "laitmmutc3ckz8d",
+      "token": "lamutc3ckz8dffffffffffffffffffff",
+      "langId": "lalabmutc3ckz8d",
+      "opIds": [
+        "laopmutc3ckz8d"
+      ],
+      "opId": "laopmutc3ckz8d"
+    }
+  }
+}

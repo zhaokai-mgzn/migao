@@ -1,0 +1,15 @@
+{
+  "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+  "pid": "61739",
+  "sha": "43ca70322",
+  "shaFull": "43ca703221a714e143c468ff0b29c4a46e67a88f",
+  "subject": "test(acceptance): 2026-10-03 承载体第三批（收尾）—— 全档读数/两个 override 留档/#6202 判据腐化与修复 (#6214)",
+  "commitTime": "2026-10-03T08:15:11Z",
+  "originMain": "6838a0533",
+  "adminApiStart": "六 10月/ 3 16:22:58 2026",
+  "observedAt": {
+    "cst": "2026-10-04 09:19:27 +08",
+    "utc": "2026-10-04T01:19:27.915Z"
+  },
+  "note": "本地旧构建点（LIVE_WORKTREE），非被测面"
+}

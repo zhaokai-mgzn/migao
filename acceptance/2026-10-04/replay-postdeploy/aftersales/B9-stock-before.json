@@ -1,0 +1,19 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:31:01 +08",
+    "utc": "2026-10-04T01:31:01.326Z"
+  },
+  "sha": "d176bf5052e03cde12b6fe094609eaf3cb31589a4a33de08f8ab04a7f4e5b33b",
+  "sizes": [
+    626,
+    2,
+    11,
+    11
+  ],
+  "parts": [
+    "[{\"id\":\"1dbc5c1219bc30cf6d4e3ff23da9a3ac\",\"status\":\"confirmed\",\"refund_amount\":\"0.00\",\"actual_amount\":\"168.00\",\"deleted\":\"0\"},{\"id\":\"3ec294b8276efef669879fe23e4c3623\",\"status\":\"confirmed\",\"refund_amount\":\"0.00\",\"actual_amount\":\"168.00\",\"deleted\":\"0\"},{\"id\":\"72a07466a514db4acaa6e4fa313b72ff\",\"status\":\"confirmed\",\"refund_amount\":\"0.00\",\"actual_amount\":\"168.00\",\"deleted\":\"0\"},{\"id\":\"a801e22207defb7eed8469cfb76d6756\",\"status\":\"confirmed\",\"refund_amount\":\"0.00\",\"actual_amount\":\"300.00\",\"deleted\":\"0\"},{\"id\":\"f7bf251066fd5a5df2dc38bde9b41866\",\"status\":\"confirmed\",\"refund_amount\":\"0.00\",\"actual_amount\":\"168.00\",\"deleted\":\"0\"}]",
+    "[]",
+    "[{\"c\":\"5\"}]",
+    "[{\"c\":\"0\"}]"
+  ]
+}

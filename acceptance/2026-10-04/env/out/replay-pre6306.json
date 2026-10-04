@@ -1,0 +1,78 @@
+{
+  "at": {
+    "cst": "2026-10-04 12:06:25 +08",
+    "utc": "2026-10-04T04:06:25.960Z"
+  },
+  "phase": "pre6306",
+  "apiBase": "https://api.migaozn.com",
+  "tenant": 25,
+  "checks": [
+    {
+      "id": "R1",
+      "name": ".mjs 必须是 JS MIME（#6293）**且入口的依赖闭包取得到（#6306）**",
+      "expect": "两个入口 .mjs = application/javascript；.css=text/css；对照 .js=JS MIME；闭包 src/shared/operation-display.mjs = 200 + JS MIME",
+      "actual": "{\"入口 app.mjs\":\"200 application/javascript\",\"入口 machine.mjs\":\"200 application/javascript\",\"对照 styles.css\":\"200 text/css\",\"对照 bmini app.js\":\"200 application/javascript\",\"闭包 src/shared/operation-display.mjs\":\"200 text/html\"}",
+      "verdict": "fail",
+      "evidence": [
+        "HEAD 实测；坏形态①`: application/octet-stream（浏览器拒绝执行 module script，= #6293）",
+        "坏形态②：闭包内的依赖取不到（404→SPA 兜底 text/html），入口 MIME 再对页面也白屏（= #6306）"
+      ]
+    },
+    {
+      "id": "R2",
+      "name": "并发完结：恰 1 个赢家 + 台账 1 行（#6220）",
+      "expect": "成功数=1（其余 409「状态已被他人变更」）；台账恰 1 行；库存 98→100",
+      "actual": "codes=[409,200,409,409] okCount=1 台账=1 行 库存 98→100 工单终态=resolved",
+      "verdict": "pass",
+      "evidence": [
+        "重叠证据: {\"barrierAt\":1791086790699,\"barrierAtCST\":\"2026-10-04 12:06:30 +08\",\"perRequest\":[{\"i\":0,\"t0\":1791086790699,\"t1\":1791086791200,\"durMs\":501},{\"i\":1,\"t0\":17910867",
+        "工单 AS-20261004-0001"
+      ]
+    },
+    {
+      "id": "R3",
+      "name": "退款精度准入（#6228）",
+      "expect": "0.001 ⇒ 4xx 且库内不变；0.01 ⇒ 200 且 refund_amount 逐字 = 0.01",
+      "actual": "0.001→422（refund_amount=0）｜0.01→200（refund_amount=0.01）",
+      "verdict": "pass",
+      "evidence": [
+        "响应原文(0.001): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"退款金额 最多支持 2 位小数（金额按「分」记账，列精度 NUMERIC(·,2)），当前值 0.001 有 3 位小数 —— 请改为最多 2 位小数后重试（服务端不做静默取整/四舍五入）\"},\"requestId\":\"req_7d74380e5e114a14\",\"time",
+        "响应原文(0.01): {\"success\":true,\"requestId\":\"req_6533ca766f314187\",\"timestamp\":1791086792}"
+      ]
+    },
+    {
+      "id": "R4",
+      "name": "size<0 必须显式拒绝（#6222）",
+      "expect": "400（可行动文案）；不得 200 且 total=0 却回整页",
+      "actual": "400 total=undefined rows=0 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"分页参数不合法: size=-5\",\"details\":[{\"field\":\"size\",\"message\":\"size 不能为负数（会静默返回整页且 total=0，请传 size >= 0）",
+      "verdict": "pass",
+      "evidence": [
+        "坏形态：200 + total=0 + rows>0（总数与行数不自洽）"
+      ]
+    },
+    {
+      "id": "R5",
+      "name": "超长 skuCode 必须 4xx 而非 500（#6302）",
+      "expect": "长度>30 的 skuCode ⇒ 4xx + 可行动文案（不得 500 INTERNAL_ERROR）；正对照 = 同脚本正常长度夹具建品成功",
+      "actual": "skuCode.len=44 ⇒ HTTP 422：{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"商品货号 skuCode 最长 30 个字符（库列 varchar(30)），当前 44 个字符 —— 请缩短到 30 个字符以内后重",
+      "verdict": "pass",
+      "evidence": [
+        "坏形态：500 INTERNAL_ERROR（value too long for type character varying(30)）",
+        "正对照：p/p2 夹具（正常长度）已建成 ⇒ ok=true/true"
+      ]
+    }
+  ],
+  "cleanup": {
+    "errors": [],
+    "residue": {
+      "orders": 0,
+      "products": 0,
+      "categories": 0,
+      "tickets": 0
+    }
+  },
+  "counts": {
+    "fail": 1,
+    "pass": 4
+  }
+}

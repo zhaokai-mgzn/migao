@@ -1,0 +1,101 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:32:08 +08",
+    "utc": "2026-10-04T01:32:08.245Z"
+  },
+  "counts": {
+    "orders": 40,
+    "ledger": 82,
+    "finance": 100,
+    "tickets": 20
+  },
+  "readings": [
+    {
+      "label": "ledger-size5000",
+      "path": "/api/admin/stock-ledger?page=1&size=5000",
+      "status": 200,
+      "total": 82,
+      "page": 1,
+      "size": 500,
+      "rows": 82,
+      "ms": 96,
+      "truthy": true
+    },
+    {
+      "label": "ledger-page2",
+      "path": "/api/admin/stock-ledger?page=2&size=500",
+      "status": 200,
+      "total": 82,
+      "page": 2,
+      "size": 500,
+      "rows": 0,
+      "ms": 50,
+      "truthy": true
+    },
+    {
+      "label": "ledger-page3",
+      "path": "/api/admin/stock-ledger?page=3&size=500",
+      "status": 200,
+      "total": 82,
+      "page": 3,
+      "size": 500,
+      "rows": 0,
+      "ms": 52,
+      "truthy": true
+    },
+    {
+      "label": "orders-size5000",
+      "path": "/api/admin/orders?page=1&size=5000",
+      "status": 200,
+      "total": 40,
+      "page": 1,
+      "size": 500,
+      "rows": 40,
+      "ms": 125,
+      "truthy": true
+    },
+    {
+      "label": "after-sales-size5000",
+      "path": "/api/admin/after-sales?page=1&size=5000",
+      "status": 200,
+      "total": 20,
+      "page": 1,
+      "size": 500,
+      "rows": 20,
+      "ms": 101,
+      "truthy": true
+    },
+    {
+      "label": "orders-size-negative",
+      "path": "/api/admin/orders?page=1&size=-5",
+      "status": 400,
+      "rows": null,
+      "ms": 69,
+      "truthy": false
+    },
+    {
+      "label": "orders-size-zero",
+      "path": "/api/admin/orders?page=1&size=0",
+      "status": 200,
+      "total": 40,
+      "page": 1,
+      "size": 0,
+      "rows": 0,
+      "ms": 100,
+      "truthy": true
+    },
+    {
+      "label": "orders-size-100000",
+      "path": "/api/admin/orders?page=1&size=100000",
+      "status": 200,
+      "total": 40,
+      "page": 1,
+      "size": 500,
+      "rows": 40,
+      "ms": 136,
+      "truthy": true
+    }
+  ],
+  "crossPageSum": 82,
+  "ledgerTotalAtRead": 82
+}

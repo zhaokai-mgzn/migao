@@ -1,0 +1,11 @@
+{
+  "key": "<IDEM-KEY-1>",
+  "k1": "{\"success\":true,\"data\":{\"id\":\"d707b85c945eaac4623ad976e0ac03ac\",\"ticketNo\":\"AS-20261004-0001\",\"orderId\":\"759a1b9547aafd6f114a55a3fa804399\",\"orderNo\":\"20261004225040157\",\"customerId\":\"线B验收客户-IDEM-mut4py429div\",\"customerName\":\"线B验收客户-IDEM-mut4py429div\",\"customerPhone\":\"13951532153\",\"ticketType\":\"refund\",\"status\":\"pending\",\"description\":\"线B验收工单-幂等\",\"images\":[],\"source\":\"merchant\",\"priority\":\"normal\",\"refundAmount\":100.00,\"evidenceImages\":[],\"statusHistory\":[{\"status\":\"pending\",\"time\":\"2026-10-04T01:15:29.038016Z\",\"operator\":\"13800138000\",\"remark\":\"工单创建\"}],\"createdAt\":\"2026-10-04T09:15:29.038016+08:00\",\"updatedAt\":\"2026-10-04T09:15:29.038046+08:00\"},\"requestId\":\"req_4c219c3e78714073\",\"timestamp\":1791076529}",
+  "k2": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已有 退款 类型的活跃工单（AS-20261004-0001），请先处理后再创建\"},\"requestId\":\"req_475bb97d484f4d62\",\"timestamp\":1791076529,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+  "rowsForKey": [
+    {
+      "id": "d707b85c945eaac4623ad976e0ac03ac",
+      "ticket_no": "AS-20261004-0001"
+    }
+  ]
+}

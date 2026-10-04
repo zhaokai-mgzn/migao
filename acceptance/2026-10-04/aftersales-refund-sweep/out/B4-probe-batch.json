@@ -1,0 +1,1213 @@
+{
+  "records": [
+    {
+      "id": "LB-REF-B01",
+      "name": "退款金额：科学计数法 \"1e2\" 的接受/拒绝口径（如实读数）",
+      "status": "pass",
+      "detail": "200  ；DB refund_amount=100",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 若接受，则 BigDecimal(\"1e2\")=100 ⇒ refund_amount 应恰为 100.00；若拒绝应为 422（不得 500、不得静默按 1 元记）",
+        "响应原文: {\"success\":true,\"requestId\":\"req_5b1f956dfe26445e\",\"timestamp\":1791076569}",
+        "源码: backend/admin-api/src/main/java/com/migao/admin/controller/OrderController.java 的 refundOrder 用 new BigDecimal(amount.toString().trim()) ⇒ 语法上接受 \"1e2\"",
+        "⚠️ 形态说明: 本条是**口径登记**（接受=100 或拒绝=422 都算自洽），只有「非 100 且非 422」才判 fail"
+      ],
+      "at": "2026-10-04 09:16:09 +08",
+      "atUtc": "2026-10-04T01:16:09.313Z",
+      "extra": {
+        "status": 200,
+        "refundAmount": 100
+      }
+    },
+    {
+      "id": "LB-REF-B02",
+      "name": "退款金额：空串 \"\" ⇒ 视为未传（全额退款）的口径登记",
+      "status": "pass",
+      "detail": "200；refund_amount=300 实收=300",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/controller/OrderController.java —— refund_amount 为 null/空白 ⇒ refundAmount 保持 null ⇒ service 侧「null = 全额退款」",
+        "响应原文: {\"success\":true,\"requestId\":\"req_f7cf09873a7c44f7\",\"timestamp\":1791076570}"
+      ],
+      "at": "2026-10-04 09:16:10 +08",
+      "atUtc": "2026-10-04T01:16:10.445Z",
+      "extra": {
+        "status": 200,
+        "refundAmount": 300,
+        "actual": 300
+      }
+    },
+    {
+      "id": "LB-REF-B03",
+      "name": "退款金额：最小正数 0.001（三位小数）⇒ 接受且落库不截断",
+      "status": "fail",
+      "detail": "200；orders.refund_amount=0；流水 1 行 0",
+      "evidence": [
+        "期望来源: 本包独立算式 —— refund=0.001 > 0 且 ≤ 实收 300 ⇒ 应接受，orders.refund_amount 与流水金额都应恰为 0.001（NUMERIC 不截断）",
+        "⚠️ 若 DB 列为 NUMERIC(12,2) ⇒ 会**静默变 0.00**（订单看起来退过款、金额却是 0）—— 这正是本条要辨的两侧",
+        "响应原文: {\"success\":true,\"requestId\":\"req_db82060a5de3463e\",\"timestamp\":1791076571}",
+        "DB orders: {\"id\":\"248197cbc16f352dbba0829057cdc537\",\"tenant_id\":25,\"order_no\":\"20261004955280189\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":0,\"refund_at\":\"2026-10-04T09:16:11.407726+08:00\",\"deleted\":0}",
+        "DB 流水: [{\"id\":\"e6ec8c9cdca904f8669a279447a6e9e0\",\"type\":\"refund\",\"amount\":0,\"status\":\"success\",\"occurred_at\":\"2026-10-04T09:16:11.426231+08:00\",\"remark\":\"订单退款: 线B验收边界退款\"}]"
+      ],
+      "at": "2026-10-04 09:16:11 +08",
+      "atUtc": "2026-10-04T01:16:11.584Z",
+      "extra": {
+        "status": 200,
+        "refundAmount": 0,
+        "finance": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "LB-REF-B04",
+      "name": "退款累计封顶：6×100.00 vs 实收 300.00 ⇒ 恰 3 次成功、DB 与流水合计都恰 300.00",
+      "status": "pass",
+      "detail": "期望 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000 == 实测 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000",
+      "evidence": [
+        "期望来源: 本包独立算式：每次 applied = min(100.00, 实收300.00 − 已退)；第 4 次起 applied ≤ 0 ⇒ 422；成功 3 次 ⇒ 累计恰 300.00",
+        "期望: 逐次结局 = [200,200,200,422,422,422]；orders.refund_amount=300.000；流水 3 行合计 300.000",
+        "实得: 结局=[200,200,200,422,422,422]；refund_amount=300；流水 3 行合计 300.000",
+        "逐次响应: [\"200:ok\",\"200:ok\",\"200:ok\",\"422:该订单已全额退款，无需重复退款\",\"422:该订单已全额退款，无需重复退款\",\"422:该订单已全额退款，无需重复退款\"]",
+        "DB orders: {\"id\":\"b924fc8aef0e53ac9113254bdeb4d381\",\"tenant_id\":25,\"order_no\":\"20261004425670190\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":300,\"refund_at\":\"2026-10-04T09:16:12.602353+08:00\",\"deleted\":0}",
+        "流水原始行: [{\"amount\":100,\"remark\":\"订单退款: 线B验收边界退款\"},{\"amount\":100,\"remark\":\"订单退款: 线B验收边界退款\"},{\"amount\":100,\"remark\":\"订单退款: 线B验收边界退款\"}]"
+      ],
+      "at": "2026-10-04 09:16:12 +08",
+      "atUtc": "2026-10-04T01:16:12.987Z",
+      "perRequest": [
+        {
+          "round": 1,
+          "status": 200
+        },
+        {
+          "round": 2,
+          "status": 200
+        },
+        {
+          "round": 3,
+          "status": 200
+        },
+        {
+          "round": 4,
+          "status": 422,
+          "msg": "该订单已全额退款，无需重复退款"
+        },
+        {
+          "round": 5,
+          "status": 422,
+          "msg": "该订单已全额退款，无需重复退款"
+        },
+        {
+          "round": 6,
+          "status": 422,
+          "msg": "该订单已全额退款，无需重复退款"
+        }
+      ]
+    },
+    {
+      "id": "LB-REF-B05",
+      "name": "三方自洽：工单 refund_amount 120.00 ⇒ orders.refund_amount=120.00 + refund_at 非空 + 流水 1 行 120.00",
+      "status": "pass",
+      "detail": "期望 orders.refund_amount=120.00、refund_at 非空；工单 status=resolved、refund_amount=120.00；finance_transactions 恰 1 行 120.00 == 实测 orders.refund_amount=120 refund_at=set；工单 status=resolved refund_amount=120 refund_method=null；流水 1 行 120",
+      "evidence": [
+        "期望来源: 本包独立算式：工单携带退款额 120.00（建单请求值）⇒ 完结时订单累计 = 120.00（无其他退款）⇒ 流水恰 1 行 120.00",
+        "期望: orders.refund_amount=120.00、refund_at 非空；工单 status=resolved、refund_amount=120.00；finance_transactions 恰 1 行 120.00",
+        "实得: orders.refund_amount=120 refund_at=set；工单 status=resolved refund_amount=120 refund_method=null；流水 1 行 120",
+        "工单建单响应: {\"success\":true,\"data\":{\"id\":\"5e4953321239af3a14d8d6a4f4c9eec4\",\"ticketNo\":\"AS-20261004-0010\",\"orderId\":\"4956db4d2341e738b7a4a96d2996c0ab\",\"orderNo\":\"20261004889970191\",\"customerId\":\"线B验收客户-E5-mut4qwz",
+        "完结响应: {\"success\":true,\"requestId\":\"req_00586141c98345e2\",\"timestamp\":1791076574}",
+        "DB orders: {\"id\":\"4956db4d2341e738b7a4a96d2996c0ab\",\"tenant_id\":25,\"order_no\":\"20261004889970191\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":120,\"refund_at\":\"2026-10-04T09:16:14.209535+08:00\",\"deleted\":0}",
+        "DB 工单: {\"id\":\"5e4953321239af3a14d8d6a4f4c9eec4\",\"tenant_id\":25,\"ticket_no\":\"AS-20261004-0010\",\"order_id\":\"4956db4d2341e738b7a4a96d2996c0ab\",\"ticket_type\":\"refund\",\"status\":\"resolved\",\"refund_amount\":120,\"refund_method\":null,\"source\":\"merchant\",\"closed_at\":null,\"close_reason\":null,\"deleted\":0}",
+        "DB 流水: [{\"id\":\"0e0a04883aa9eb46061e8985cb865acc\",\"type\":\"refund\",\"amount\":120,\"status\":\"success\",\"occurred_at\":\"2026-10-04T09:16:14.222549+08:00\",\"remark\":\"售后工单退款: AS-20261004-0010\"}]",
+        "⚠️ 登记：工单 refund_method 当前为 null（该列在本路径上未被写入 —— 见 REPORT 未覆盖/观察项）"
+      ],
+      "at": "2026-10-04 09:16:14 +08",
+      "atUtc": "2026-10-04T01:16:14.590Z",
+      "orderRefund": 120,
+      "ticketRefund": 120,
+      "refundMethod": null,
+      "finance": [
+        120
+      ]
+    },
+    {
+      "id": "LB-C21-CONCURRENT-SAME-TARGET",
+      "name": "C21 同一工单并发打同一目标（pending→processing×4）：恰一个赢家",
+      "status": "fail",
+      "detail": "三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=[\"processing\",\"processing\",\"processing\"]；时间线读数=[4,4,4]",
+      "evidence": [
+        "期望来源: 本包独立算式 —— N 路并发对同一 (from,to) ⇒ 只应有 1 次 200（其余 422「不允许从 [处理中] 变更为 [处理中]」）；timeline 恰 1 行",
+        "源码: backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java 的 updateTicketStatus —— 状态机校验基于 selectById 读到的**旧值**，落库 updateById(ticket) 的 WHERE 仅 id（**无状态谓词**）",
+        "重叠证据: R1: 真重叠：最大逐对重叠 112ms（并集 131ms < 各历时之和 398ms） ｜ R2: 真重叠：最大逐对重叠 118ms（并集 142ms < 各历时之和 427ms） ｜ R3: 真重叠：最大逐对重叠 105ms（并集 201ms < 各历时之和 455ms）",
+        "⚠️ 判据的独立性: 时间线行数 / 状态码分布是**数据库与响应层的事实**，不依赖请求是否重叠 —— 重叠证据只用来判「这轮绿算不算数」"
+      ],
+      "at": "2026-10-04 09:16:27 +08",
+      "atUtc": "2026-10-04T01:16:27.716Z",
+      "extra": {
+        "N": 4,
+        "rounds": [
+          {
+            "round": 1,
+            "N": 4,
+            "okCount": 4,
+            "statuses": [
+              200,
+              200,
+              200,
+              200
+            ],
+            "timelineRows": 4,
+            "dbStatus": "processing",
+            "expectation": "恰好 1 次 200（其余 422）；timeline 恰 1 行；DB status=processing",
+            "pass": false,
+            "overlapEvidence": {
+              "barrierAt": 1791076575694,
+              "barrierAtCST": "2026-10-04 09:16:15 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791076575694,
+                  "t1": 1791076575806,
+                  "durMs": 112
+                },
+                {
+                  "i": 1,
+                  "t0": 1791076575694,
+                  "t1": 1791076575825,
+                  "durMs": 131
+                },
+                {
+                  "i": 2,
+                  "t0": 1791076575695,
+                  "t1": 1791076575760,
+                  "durMs": 65
+                },
+                {
+                  "i": 3,
+                  "t0": 1791076575695,
+                  "t1": 1791076575785,
+                  "durMs": 90
+                }
+              ],
+              "unionMs": 131,
+              "sumMs": 398,
+              "maxPairOverlapMs": 112,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 112ms（并集 131ms < 各历时之和 398ms）"
+            },
+            "ticketId": "6b1fb854366b24d2b5a1115944fd8f30"
+          },
+          {
+            "round": 2,
+            "N": 4,
+            "okCount": 4,
+            "statuses": [
+              200,
+              200,
+              200,
+              200
+            ],
+            "timelineRows": 4,
+            "dbStatus": "processing",
+            "expectation": "恰好 1 次 200（其余 422）；timeline 恰 1 行；DB status=processing",
+            "pass": false,
+            "overlapEvidence": {
+              "barrierAt": 1791076579874,
+              "barrierAtCST": "2026-10-04 09:16:19 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791076579874,
+                  "t1": 1791076580016,
+                  "durMs": 142
+                },
+                {
+                  "i": 1,
+                  "t0": 1791076579875,
+                  "t1": 1791076579993,
+                  "durMs": 118
+                },
+                {
+                  "i": 2,
+                  "t0": 1791076579875,
+                  "t1": 1791076579947,
+                  "durMs": 72
+                },
+                {
+                  "i": 3,
+                  "t0": 1791076579875,
+                  "t1": 1791076579970,
+                  "durMs": 95
+                }
+              ],
+              "unionMs": 142,
+              "sumMs": 427,
+              "maxPairOverlapMs": 118,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 118ms（并集 142ms < 各历时之和 427ms）"
+            },
+            "ticketId": "ed248966169020a728078f9ce5a87010"
+          },
+          {
+            "round": 3,
+            "N": 4,
+            "okCount": 4,
+            "statuses": [
+              200,
+              200,
+              200,
+              200
+            ],
+            "timelineRows": 4,
+            "dbStatus": "processing",
+            "expectation": "恰好 1 次 200（其余 422）；timeline 恰 1 行；DB status=processing",
+            "pass": false,
+            "overlapEvidence": {
+              "barrierAt": 1791076584199,
+              "barrierAtCST": "2026-10-04 09:16:24 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791076584199,
+                  "t1": 1791076584400,
+                  "durMs": 201
+                },
+                {
+                  "i": 1,
+                  "t0": 1791076584200,
+                  "t1": 1791076584305,
+                  "durMs": 105
+                },
+                {
+                  "i": 2,
+                  "t0": 1791076584200,
+                  "t1": 1791076584264,
+                  "durMs": 64
+                },
+                {
+                  "i": 3,
+                  "t0": 1791076584201,
+                  "t1": 1791076584286,
+                  "durMs": 85
+                }
+              ],
+              "unionMs": 201,
+              "sumMs": 455,
+              "maxPairOverlapMs": 105,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 105ms（并集 201ms < 各历时之和 455ms）"
+            },
+            "ticketId": "684efdbb9f55f8bbb37bf4e55df6b297"
+          }
+        ],
+        "overlapEvidence": [
+          {
+            "barrierAt": 1791076575694,
+            "barrierAtCST": "2026-10-04 09:16:15 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791076575694,
+                "t1": 1791076575806,
+                "durMs": 112
+              },
+              {
+                "i": 1,
+                "t0": 1791076575694,
+                "t1": 1791076575825,
+                "durMs": 131
+              },
+              {
+                "i": 2,
+                "t0": 1791076575695,
+                "t1": 1791076575760,
+                "durMs": 65
+              },
+              {
+                "i": 3,
+                "t0": 1791076575695,
+                "t1": 1791076575785,
+                "durMs": 90
+              }
+            ],
+            "unionMs": 131,
+            "sumMs": 398,
+            "maxPairOverlapMs": 112,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 112ms（并集 131ms < 各历时之和 398ms）"
+          },
+          {
+            "barrierAt": 1791076579874,
+            "barrierAtCST": "2026-10-04 09:16:19 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791076579874,
+                "t1": 1791076580016,
+                "durMs": 142
+              },
+              {
+                "i": 1,
+                "t0": 1791076579875,
+                "t1": 1791076579993,
+                "durMs": 118
+              },
+              {
+                "i": 2,
+                "t0": 1791076579875,
+                "t1": 1791076579947,
+                "durMs": 72
+              },
+              {
+                "i": 3,
+                "t0": 1791076579875,
+                "t1": 1791076579970,
+                "durMs": 95
+              }
+            ],
+            "unionMs": 142,
+            "sumMs": 427,
+            "maxPairOverlapMs": 118,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 118ms（并集 142ms < 各历时之和 427ms）"
+          },
+          {
+            "barrierAt": 1791076584199,
+            "barrierAtCST": "2026-10-04 09:16:24 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791076584199,
+                "t1": 1791076584400,
+                "durMs": 201
+              },
+              {
+                "i": 1,
+                "t0": 1791076584200,
+                "t1": 1791076584305,
+                "durMs": 105
+              },
+              {
+                "i": 2,
+                "t0": 1791076584200,
+                "t1": 1791076584264,
+                "durMs": 64
+              },
+              {
+                "i": 3,
+                "t0": 1791076584201,
+                "t1": 1791076584286,
+                "durMs": 85
+              }
+            ],
+            "unionMs": 201,
+            "sumMs": 455,
+            "maxPairOverlapMs": 105,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 105ms（并集 201ms < 各历时之和 455ms）"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LB-C22-CONCURRENT-CONFLICT",
+      "name": "C22 同一工单并发分歧（processing vs closed）：终态合法且至多一个赢家",
+      "status": "fail",
+      "detail": "三轮：成功数=[2,2,2]；逐轮状态码=[[200,200],[200,200],[200,200]]；DB 终态=[\"processing\",\"closed\",\"closed\"]；时间线读数=[null,null,null]",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 两路分别打不同目标 ⇒ 终态必须合法（processing/closed），不得出现非法中间态",
+        "源码: backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java 的 updateTicketStatus —— 状态机校验基于 selectById 读到的**旧值**，落库 updateById(ticket) 的 WHERE 仅 id（**无状态谓词**）",
+        "重叠证据: R1: 真重叠：最大逐对重叠 65ms（并集 87ms < 各历时之和 152ms） ｜ R2: 真重叠：最大逐对重叠 72ms（并集 92ms < 各历时之和 164ms） ｜ R3: 真重叠：最大逐对重叠 106ms（并集 207ms < 各历时之和 313ms）",
+        "⚠️ 判据的独立性: 时间线行数 / 状态码分布是**数据库与响应层的事实**，不依赖请求是否重叠 —— 重叠证据只用来判「这轮绿算不算数」"
+      ],
+      "at": "2026-10-04 09:16:27 +08",
+      "atUtc": "2026-10-04T01:16:27.718Z",
+      "extra": {
+        "N": 4,
+        "rounds": [
+          {
+            "round": 1,
+            "N": 2,
+            "okCount": 2,
+            "statuses": [
+              200,
+              200
+            ],
+            "dbStatus": "processing",
+            "expectation": "至多 1 次 200（其余 422）；终态 ∈ {processing, closed}",
+            "pass": false,
+            "overlapEvidence": {
+              "barrierAt": 1791076577211,
+              "barrierAtCST": "2026-10-04 09:16:17 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791076577211,
+                  "t1": 1791076577298,
+                  "durMs": 87
+                },
+                {
+                  "i": 1,
+                  "t0": 1791076577211,
+                  "t1": 1791076577276,
+                  "durMs": 65
+                }
+              ],
+              "unionMs": 87,
+              "sumMs": 152,
+              "maxPairOverlapMs": 65,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 65ms（并集 87ms < 各历时之和 152ms）"
+            },
+            "ticketId": "843859690369dcc3c8d00432939fffa5"
+          },
+          {
+            "round": 2,
+            "N": 2,
+            "okCount": 2,
+            "statuses": [
+              200,
+              200
+            ],
+            "dbStatus": "closed",
+            "expectation": "至多 1 次 200（其余 422）；终态 ∈ {processing, closed}",
+            "pass": false,
+            "overlapEvidence": {
+              "barrierAt": 1791076581414,
+              "barrierAtCST": "2026-10-04 09:16:21 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791076581414,
+                  "t1": 1791076581487,
+                  "durMs": 73
+                },
+                {
+                  "i": 1,
+                  "t0": 1791076581415,
+                  "t1": 1791076581506,
+                  "durMs": 91
+                }
+              ],
+              "unionMs": 92,
+              "sumMs": 164,
+              "maxPairOverlapMs": 72,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 72ms（并集 92ms < 各历时之和 164ms）"
+            },
+            "ticketId": "1db402a82f93e7504b07c1c19f4d74fd"
+          },
+          {
+            "round": 3,
+            "N": 2,
+            "okCount": 2,
+            "statuses": [
+              200,
+              200
+            ],
+            "dbStatus": "closed",
+            "expectation": "至多 1 次 200（其余 422）；终态 ∈ {processing, closed}",
+            "pass": false,
+            "overlapEvidence": {
+              "barrierAt": 1791076585765,
+              "barrierAtCST": "2026-10-04 09:16:25 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791076585765,
+                  "t1": 1791076585871,
+                  "durMs": 106
+                },
+                {
+                  "i": 1,
+                  "t0": 1791076585765,
+                  "t1": 1791076585972,
+                  "durMs": 207
+                }
+              ],
+              "unionMs": 207,
+              "sumMs": 313,
+              "maxPairOverlapMs": 106,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 106ms（并集 207ms < 各历时之和 313ms）"
+            },
+            "ticketId": "5bcbd6ba92f402cc6cb2c8fc3885ec42"
+          }
+        ],
+        "overlapEvidence": [
+          {
+            "barrierAt": 1791076577211,
+            "barrierAtCST": "2026-10-04 09:16:17 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791076577211,
+                "t1": 1791076577298,
+                "durMs": 87
+              },
+              {
+                "i": 1,
+                "t0": 1791076577211,
+                "t1": 1791076577276,
+                "durMs": 65
+              }
+            ],
+            "unionMs": 87,
+            "sumMs": 152,
+            "maxPairOverlapMs": 65,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 65ms（并集 87ms < 各历时之和 152ms）"
+          },
+          {
+            "barrierAt": 1791076581414,
+            "barrierAtCST": "2026-10-04 09:16:21 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791076581414,
+                "t1": 1791076581487,
+                "durMs": 73
+              },
+              {
+                "i": 1,
+                "t0": 1791076581415,
+                "t1": 1791076581506,
+                "durMs": 91
+              }
+            ],
+            "unionMs": 92,
+            "sumMs": 164,
+            "maxPairOverlapMs": 72,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 72ms（并集 92ms < 各历时之和 164ms）"
+          },
+          {
+            "barrierAt": 1791076585765,
+            "barrierAtCST": "2026-10-04 09:16:25 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791076585765,
+                "t1": 1791076585871,
+                "durMs": 106
+              },
+              {
+                "i": 1,
+                "t0": 1791076585765,
+                "t1": 1791076585972,
+                "durMs": 207
+              }
+            ],
+            "unionMs": 207,
+            "sumMs": 313,
+            "maxPairOverlapMs": 106,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 106ms（并集 207ms < 各历时之和 313ms）"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LB-C23-CONCURRENT-RESOLVE-TIMELINE",
+      "name": "C23 同一工单并发 resolved：时间线「→resolved」恰 1 行（重复写审计）",
+      "status": "fail",
+      "detail": "三轮：成功数=[4,4,4]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]；DB 终态=[\"resolved\",\"resolved\",\"resolved\"]；时间线读数=[4,4,4]",
+      "evidence": [
+        "期望来源: 本包独立算式 —— N 路并发 →resolved ⇒ 只应 1 次 200（其余 422「不允许从 [已解决] 变更为 [已解决]」）；timeline「→resolved」恰 1 行（1 次合法变更 = 1 行审计）",
+        "源码: backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java 的 updateTicketStatus —— 状态机校验基于 selectById 读到的**旧值**，落库 updateById(ticket) 的 WHERE 仅 id（**无状态谓词**）",
+        "重叠证据: R1: 真重叠：最大逐对重叠 108ms（并集 132ms < 各历时之和 456ms） ｜ R2: 真重叠：最大逐对重叠 153ms（并集 172ms < 各历时之和 585ms） ｜ R3: 真重叠：最大逐对重叠 113ms（并集 134ms < 各历时之和 407ms）",
+        "⚠️ 判据的独立性: 时间线行数 / 状态码分布是**数据库与响应层的事实**，不依赖请求是否重叠 —— 重叠证据只用来判「这轮绿算不算数」"
+      ],
+      "at": "2026-10-04 09:16:27 +08",
+      "atUtc": "2026-10-04T01:16:27.719Z",
+      "extra": {
+        "N": 4,
+        "rounds": [
+          {
+            "round": 1,
+            "N": 4,
+            "okCount": 4,
+            "statuses": [
+              200,
+              200,
+              200,
+              200
+            ],
+            "timelineRowsTotal": 5,
+            "timelineResolvedTo": 4,
+            "dbStatus": "resolved",
+            "expectation": "恰好 1 次 200；timeline 中「→ resolved」恰 1 行（每次合法状态变更 1 行）",
+            "pass": false,
+            "overlapEvidence": {
+              "barrierAt": 1791076578526,
+              "barrierAtCST": "2026-10-04 09:16:18 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791076578526,
+                  "t1": 1791076578635,
+                  "durMs": 109
+                },
+                {
+                  "i": 1,
+                  "t0": 1791076578527,
+                  "t1": 1791076578635,
+                  "durMs": 108
+                },
+                {
+                  "i": 2,
+                  "t0": 1791076578527,
+                  "t1": 1791076578635,
+                  "durMs": 108
+                },
+                {
+                  "i": 3,
+                  "t0": 1791076578527,
+                  "t1": 1791076578658,
+                  "durMs": 131
+                }
+              ],
+              "unionMs": 132,
+              "sumMs": 456,
+              "maxPairOverlapMs": 108,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 108ms（并集 132ms < 各历时之和 456ms）"
+            },
+            "ticketId": "c01a520e46563031ae49c3f0adedd1c5",
+            "timelineRaw": [
+              {
+                "content": {
+                  "to": "processing",
+                  "from": "pending",
+                  "remark": "线B验收：受理"
+                },
+                "at": "2026-10-04T09:16:18.521905+08:00"
+              },
+              {
+                "content": {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-1"
+                },
+                "at": "2026-10-04T09:16:18.638454+08:00"
+              },
+              {
+                "content": {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-1"
+                },
+                "at": "2026-10-04T09:16:18.659558+08:00"
+              },
+              {
+                "content": {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-1"
+                },
+                "at": "2026-10-04T09:16:18.679138+08:00"
+              },
+              {
+                "content": {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-1"
+                },
+                "at": "2026-10-04T09:16:18.699523+08:00"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "N": 4,
+            "okCount": 4,
+            "statuses": [
+              200,
+              200,
+              200,
+              200
+            ],
+            "timelineRowsTotal": 5,
+            "timelineResolvedTo": 4,
+            "dbStatus": "resolved",
+            "expectation": "恰好 1 次 200；timeline 中「→ resolved」恰 1 行（每次合法状态变更 1 行）",
+            "pass": false,
+            "overlapEvidence": {
+              "barrierAt": 1791076582699,
+              "barrierAtCST": "2026-10-04 09:16:22 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791076582699,
+                  "t1": 1791076582853,
+                  "durMs": 154
+                },
+                {
+                  "i": 1,
+                  "t0": 1791076582700,
+                  "t1": 1791076582871,
+                  "durMs": 171
+                },
+                {
+                  "i": 2,
+                  "t0": 1791076582700,
+                  "t1": 1791076582828,
+                  "durMs": 128
+                },
+                {
+                  "i": 3,
+                  "t0": 1791076582700,
+                  "t1": 1791076582832,
+                  "durMs": 132
+                }
+              ],
+              "unionMs": 172,
+              "sumMs": 585,
+              "maxPairOverlapMs": 153,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 153ms（并集 172ms < 各历时之和 585ms）"
+            },
+            "ticketId": "01ee0a3cba151bb85b2dd42cc2b3f6ae",
+            "timelineRaw": [
+              {
+                "content": {
+                  "to": "processing",
+                  "from": "pending",
+                  "remark": "线B验收：受理"
+                },
+                "at": "2026-10-04T09:16:22.690448+08:00"
+              },
+              {
+                "content": {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-2"
+                },
+                "at": "2026-10-04T09:16:22.852741+08:00"
+              },
+              {
+                "content": {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-2"
+                },
+                "at": "2026-10-04T09:16:22.874295+08:00"
+              },
+              {
+                "content": {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-2"
+                },
+                "at": "2026-10-04T09:16:22.894227+08:00"
+              },
+              {
+                "content": {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-2"
+                },
+                "at": "2026-10-04T09:16:22.914984+08:00"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "N": 4,
+            "okCount": 4,
+            "statuses": [
+              200,
+              200,
+              200,
+              200
+            ],
+            "timelineRowsTotal": 5,
+            "timelineResolvedTo": 4,
+            "dbStatus": "resolved",
+            "expectation": "恰好 1 次 200；timeline 中「→ resolved」恰 1 行（每次合法状态变更 1 行）",
+            "pass": false,
+            "overlapEvidence": {
+              "barrierAt": 1791076587252,
+              "barrierAtCST": "2026-10-04 09:16:27 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791076587252,
+                  "t1": 1791076587386,
+                  "durMs": 134
+                },
+                {
+                  "i": 1,
+                  "t0": 1791076587252,
+                  "t1": 1791076587322,
+                  "durMs": 70
+                },
+                {
+                  "i": 2,
+                  "t0": 1791076587253,
+                  "t1": 1791076587343,
+                  "durMs": 90
+                },
+                {
+                  "i": 3,
+                  "t0": 1791076587253,
+                  "t1": 1791076587366,
+                  "durMs": 113
+                }
+              ],
+              "unionMs": 134,
+              "sumMs": 407,
+              "maxPairOverlapMs": 113,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 113ms（并集 134ms < 各历时之和 407ms）"
+            },
+            "ticketId": "8065ef92fba60f755710365ce0936c1e",
+            "timelineRaw": [
+              {
+                "content": {
+                  "to": "processing",
+                  "from": "pending",
+                  "remark": "线B验收：受理"
+                },
+                "at": "2026-10-04T09:16:27.246057+08:00"
+              },
+              {
+                "content": {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-3"
+                },
+                "at": "2026-10-04T09:16:27.366615+08:00"
+              },
+              {
+                "content": {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-3"
+                },
+                "at": "2026-10-04T09:16:27.387061+08:00"
+              },
+              {
+                "content": {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-3"
+                },
+                "at": "2026-10-04T09:16:27.408001+08:00"
+              },
+              {
+                "content": {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-3"
+                },
+                "at": "2026-10-04T09:16:27.428409+08:00"
+              }
+            ]
+          }
+        ],
+        "overlapEvidence": [
+          {
+            "barrierAt": 1791076578526,
+            "barrierAtCST": "2026-10-04 09:16:18 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791076578526,
+                "t1": 1791076578635,
+                "durMs": 109
+              },
+              {
+                "i": 1,
+                "t0": 1791076578527,
+                "t1": 1791076578635,
+                "durMs": 108
+              },
+              {
+                "i": 2,
+                "t0": 1791076578527,
+                "t1": 1791076578635,
+                "durMs": 108
+              },
+              {
+                "i": 3,
+                "t0": 1791076578527,
+                "t1": 1791076578658,
+                "durMs": 131
+              }
+            ],
+            "unionMs": 132,
+            "sumMs": 456,
+            "maxPairOverlapMs": 108,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 108ms（并集 132ms < 各历时之和 456ms）"
+          },
+          {
+            "barrierAt": 1791076582699,
+            "barrierAtCST": "2026-10-04 09:16:22 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791076582699,
+                "t1": 1791076582853,
+                "durMs": 154
+              },
+              {
+                "i": 1,
+                "t0": 1791076582700,
+                "t1": 1791076582871,
+                "durMs": 171
+              },
+              {
+                "i": 2,
+                "t0": 1791076582700,
+                "t1": 1791076582828,
+                "durMs": 128
+              },
+              {
+                "i": 3,
+                "t0": 1791076582700,
+                "t1": 1791076582832,
+                "durMs": 132
+              }
+            ],
+            "unionMs": 172,
+            "sumMs": 585,
+            "maxPairOverlapMs": 153,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 153ms（并集 172ms < 各历时之和 585ms）"
+          },
+          {
+            "barrierAt": 1791076587252,
+            "barrierAtCST": "2026-10-04 09:16:27 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791076587252,
+                "t1": 1791076587386,
+                "durMs": 134
+              },
+              {
+                "i": 1,
+                "t0": 1791076587252,
+                "t1": 1791076587322,
+                "durMs": 70
+              },
+              {
+                "i": 2,
+                "t0": 1791076587253,
+                "t1": 1791076587343,
+                "durMs": 90
+              },
+              {
+                "i": 3,
+                "t0": 1791076587253,
+                "t1": 1791076587366,
+                "durMs": 113
+              }
+            ],
+            "unionMs": 134,
+            "sumMs": 407,
+            "maxPairOverlapMs": 113,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 113ms（并集 134ms < 各历时之和 407ms）"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LB-C23-ROWCOUNT-REDPROOF",
+      "name": "C23 判别力红证：N 次「到达」⇒ 时间线 N 行（1 次 ⇒ 1 行）—— 行数读数确实会变",
+      "status": "pass",
+      "detail": "4 次并发写 ⇒ 读到 4 行（期望 4）；1 次写 ⇒ 读到 1 行（期望 1）⇒ 该读数对「几次写到达」敏感（有判别力）",
+      "evidence": [
+        "注入方式: **不改产品源码** —— 在本包自建临时表 lb_gp_timeline 上跑与产品同形的 INSERT（4 个独立 psql 进程并发 / 1 个进程）",
+        "该实验回答的问题: 「时间线行数」这个观测是否可能**恒为 1**（那样它就是空断言）—— 实测 4 次到达得 4 行 ⇒ 不是空断言",
+        "注: 该实验只自证**观测的判别力**；C2（库存 98→106、台账 4 行）的泄漏事实由**库内终值**直接读出，不经本实验"
+      ],
+      "at": "2026-10-04 09:16:29 +08",
+      "atUtc": "2026-10-04T01:16:29.186Z",
+      "extra": {
+        "n4": 4,
+        "n1": 1
+      }
+    },
+    {
+      "id": "LB-C4-BULK-READ",
+      "name": "C4 大批量读：size 钳到全局上限 500 / total 诚实 / 跨页求和可达（= total）/ 无 5xx",
+      "status": "pass",
+      "detail": "ledger size=5000 ⇒ status=200 size=500 total=162 rows=162 86ms；page2 ⇒ rows=0；跨页求和=162 / 读取时刻 total=162 / 现查 count(*)=162（写库并发 ⇒ 允许 ≤2 行漂移）；orders size=5000 ⇒ total=82 size=500 rows=82 122ms；after-sales ⇒ total=19 size=500 rows=19；size=100000 ⇒ size=500；size=-5 ⇒ total=0/rows=82；size=0 ⇒ total=82/rows=0",
+      "evidence": [
+        "期望来源: 端点契约 + 源码 backend/admin-api/src/main/java/com/migao/admin/config/MybatisPlusConfig.java 的 PaginationInnerInterceptor(setMaxLimit(500))",
+        "  ⇒ ① 请求 size > 500 必须被**钳到 500**（响应 data.size=500）；② data.total 为真实总数；③ **跨页求和可达 total**（无静默丢行）",
+        "⚠️ 上一版**假绿自曝**：行数原取自 data.records/list/content ⇒ 全部 undefined，却仍判 pass ⇒ 已改判（取不到真值 ⇒ fail）",
+        "⚠️ 响应时间**只作机器读数登记**，不设主观阈值（任务书 §2.B2-4）；5xx / 截断 / 总数与行数不符 = 真缺陷",
+        "机器读数全表: [{\"label\":\"ledger-size5000\",\"path\":\"/api/admin/stock-ledger?page=1&size=5000\",\"status\":200,\"total\":162,\"page\":1,\"size\":500,\"rows\":162,\"ms\":86,\"truthy\":true},{\"label\":\"ledger-page2\",\"path\":\"/api/admin/stock-ledger?page=2&size=500\",\"status\":200,\"total\":162,\"page\":2,\"size\":500,\"rows\":0,\"ms\":39,\"truthy\":true},{\"label\":\"ledger-page3\",\"path\":\"/api/admin/stock-ledger?page=3&size=500\",\"status\":200,\"total\":162,\"page\":3,\"size\":500,\"rows\":0,\"ms\":42,\"truthy\":true},{\"label\":\"orders-size5000\",\"path\":\"/api/admin/orders?page=1&size=5000\",\"status\":200,\"total\":82,\"page\":1,\"size\":500,\"rows\":82,\"ms\":122,\"truthy\":true},{\"label\":\"after-sales-size5000\",\"path\":\"/api/admin/after-sales?page=1&size=5000\",\"status\":200,\"total\":19,\"page\":1,\"size\":500,\"rows\":19,\"ms\":51,\"truthy\":true},{\"label\":\"orders-size-negative\",\"path\":\"/api/admin/orders?page=1&size=-5\",\"status\":200,\"total\":0,\"page\":1,\"size\":500,\"rows\":82,\"ms\":210,\"truthy\":true},{\"label\":\"orders-size-zero\",\"path\":\"/api/admin/orders?page=1&size=0\",\"status\":200,\"total\":82,\"page\":1,\"size\":0,\"rows\":0,\"ms\":39,\"truthy\":true},{\"label\":\"orders-size-100000\",\"path\":\"/api/admin/orders?page=1&size=100000\",\"status\":200,\"total\":82,\"page\":1,\"size\":500,\"rows\":82,\"ms\":95,\"truthy\":true}]",
+        "真值断言: 坏读数（total/rows 非 number，或 rows > total）=0（期望 0）；5xx=0（期望 0）；size 钳制成立=true；跨页求和 162 vs total 162",
+        "说明: 负 size 的不一致另有独立条目 LB-C4-NEGATIVE-SIZE（判据分离 ⇒ 证据与红证不混）",
+        "数据量真值（现取）: {\"orders\":82,\"ledger\":162,\"finance\":96,\"tickets\":19}"
+      ],
+      "at": "2026-10-04 09:16:29 +08",
+      "atUtc": "2026-10-04T01:16:29.997Z",
+      "extra": {
+        "counts": {
+          "orders": 82,
+          "ledger": 162,
+          "finance": 96,
+          "tickets": 19
+        },
+        "readings": [
+          {
+            "label": "ledger-size5000",
+            "path": "/api/admin/stock-ledger?page=1&size=5000",
+            "status": 200,
+            "total": 162,
+            "page": 1,
+            "size": 500,
+            "rows": 162,
+            "ms": 86,
+            "truthy": true
+          },
+          {
+            "label": "ledger-page2",
+            "path": "/api/admin/stock-ledger?page=2&size=500",
+            "status": 200,
+            "total": 162,
+            "page": 2,
+            "size": 500,
+            "rows": 0,
+            "ms": 39,
+            "truthy": true
+          },
+          {
+            "label": "ledger-page3",
+            "path": "/api/admin/stock-ledger?page=3&size=500",
+            "status": 200,
+            "total": 162,
+            "page": 3,
+            "size": 500,
+            "rows": 0,
+            "ms": 42,
+            "truthy": true
+          },
+          {
+            "label": "orders-size5000",
+            "path": "/api/admin/orders?page=1&size=5000",
+            "status": 200,
+            "total": 82,
+            "page": 1,
+            "size": 500,
+            "rows": 82,
+            "ms": 122,
+            "truthy": true
+          },
+          {
+            "label": "after-sales-size5000",
+            "path": "/api/admin/after-sales?page=1&size=5000",
+            "status": 200,
+            "total": 19,
+            "page": 1,
+            "size": 500,
+            "rows": 19,
+            "ms": 51,
+            "truthy": true
+          },
+          {
+            "label": "orders-size-negative",
+            "path": "/api/admin/orders?page=1&size=-5",
+            "status": 200,
+            "total": 0,
+            "page": 1,
+            "size": 500,
+            "rows": 82,
+            "ms": 210,
+            "truthy": true
+          },
+          {
+            "label": "orders-size-zero",
+            "path": "/api/admin/orders?page=1&size=0",
+            "status": 200,
+            "total": 82,
+            "page": 1,
+            "size": 0,
+            "rows": 0,
+            "ms": 39,
+            "truthy": true
+          },
+          {
+            "label": "orders-size-100000",
+            "path": "/api/admin/orders?page=1&size=100000",
+            "status": 200,
+            "total": 82,
+            "page": 1,
+            "size": 500,
+            "rows": 82,
+            "ms": 95,
+            "truthy": true
+          }
+        ],
+        "crossPageSum": 162,
+        "ledgerTotalAtRead": 162
+      }
+    },
+    {
+      "id": "LB-C4-NEGATIVE-SIZE",
+      "name": "C4 同族：size 为负数 ⇒ HTTP 200 但 **total=0 而仍返回整页行**（总数与行数不自洽）",
+      "status": "fail",
+      "detail": "三个列表端点 size=-5 的读数：[{\"label\":\"orders\",\"status\":200,\"total\":0,\"size\":500,\"rows\":82},{\"label\":\"stock-ledger\",\"status\":200,\"total\":0,\"size\":500,\"rows\":162},{\"label\":\"after-sales\",\"status\":200,\"total\":0,\"size\":500,\"rows\":19}]；不自洽（rows > total）的点数=3",
+      "evidence": [
+        "期望来源: 端点契约 —— 分页响应里 total = **总记录数**、items = 当前页行 ⇒ 任意 200 响应都必须满足 items.length ≤ total；",
+        "   若 size 非法，应 **4xx 显式拒绝** 或回退默认值（20），**不得**给出 total=0 却返回整页数据的自相矛盾响应",
+        "源码: backend/admin-api/src/main/java/com/migao/admin/controller/OrderController.java 的 getOrders（@RequestParam(defaultValue=\"1\") long size —— **无下限校验**）；",
+        "   分页插件: backend/admin-api/src/main/java/com/migao/admin/config/MybatisPlusConfig.java 的 PaginationInnerInterceptor(setMaxLimit(500)) 只设上限",
+        "影响（机器可判）: 按 total 做翻页/分页器的调用方会以为「0 条」而**静默停在第 1 页**（或显示空列表），数据在响应里却真实存在",
+        "对照组（正例）: size=0 ⇒ total=真实总数、rows=0（自洽）；size=-5 ⇒ total=0、rows=整页（不自洽）⇒ 说明是负数的特殊分支，而不是「size 一律被忽略」",
+        "原始读数: [{\"label\":\"orders\",\"status\":200,\"total\":0,\"size\":500,\"rows\":82},{\"label\":\"stock-ledger\",\"status\":200,\"total\":0,\"size\":500,\"rows\":162},{\"label\":\"after-sales\",\"status\":200,\"total\":0,\"size\":500,\"rows\":19}]"
+      ],
+      "at": "2026-10-04 09:16:30 +08",
+      "atUtc": "2026-10-04T01:16:30.311Z",
+      "extra": {
+        "negProbe": [
+          {
+            "label": "orders",
+            "status": 200,
+            "total": 0,
+            "size": 500,
+            "rows": 82
+          },
+          {
+            "label": "stock-ledger",
+            "status": 200,
+            "total": 0,
+            "size": 500,
+            "rows": 162
+          },
+          {
+            "label": "after-sales",
+            "status": 200,
+            "total": 0,
+            "size": 500,
+            "rows": 19
+          }
+        ]
+      }
+    },
+    {
+      "id": "LB-C4-BULK-READ-1000",
+      "name": "C4+ 「>1000 行真实数据量」的列表/看板读（截断与总数一致性）",
+      "status": "skip",
+      "detail": "本租户最大可读面行数 = 162（orders=82 / ledger=162 / finance=96 / tickets=19）< 1000 ⇒ **未覆盖**",
+      "evidence": [
+        "边界依据（现查 count(*)）: {\"orders\":82,\"ledger\":162,\"finance\":96,\"tickets\":19}",
+        "说明: 分页上限、total 诚实性与跨页可达性已由 LB-C4-BULK-READ 覆盖（ledger 面 >500 行 ⇒ 真跨页）；本条的缺口仅是「>1000 行下的响应时间与截断」",
+        "为什么不自灌: 会污染活库计数（跨包隔离铁律）且成本高 ⇒ 如实记未覆盖，交主会话裁定是否单开环境"
+      ],
+      "at": "2026-10-04 09:16:30 +08",
+      "atUtc": "2026-10-04T01:16:30.313Z"
+    }
+  ],
+  "summary": {
+    "pass": 6,
+    "fail": 5,
+    "skip": 1,
+    "falseRed": 0,
+    "total": 12
+  }
+}

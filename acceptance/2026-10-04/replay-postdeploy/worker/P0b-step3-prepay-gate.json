@@ -1,0 +1,27 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:55:01 +08",
+    "utc": "2026-10-04T01:55:01.561Z"
+  },
+  "endpoint": "POST /api/admin/processing-orders/generate",
+  "requestBody": {
+    "orderIds": [
+      "51be62261d3732363cc340c3e6bb747a"
+    ]
+  },
+  "httpStatus": 200,
+  "response": {
+    "success": true,
+    "data": [
+      {
+        "orderRef": "51be62261d3732363cc340c3e6bb747a",
+        "success": false,
+        "message": "订单 20261004481830067 当前状态 [pending] 不允许生成加工单，须为已确认",
+        "code": "VALIDATION_ERROR"
+      }
+    ],
+    "requestId": "req_32bcb54d4b6942ae",
+    "timestamp": 1791078901
+  },
+  "dbProcessingOrders": null
+}

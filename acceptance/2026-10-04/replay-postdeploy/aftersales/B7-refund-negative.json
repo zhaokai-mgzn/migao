@@ -1,0 +1,63 @@
+{
+  "records": [
+    {
+      "id": "LB-REF-C01",
+      "name": "退款：refund_amount=null（显式 null，非缺键）⇒ 等价未传 = 全额退款",
+      "status": "pass",
+      "detail": "200；refund_amount=300 实收=300；流水 1 行 300",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/controller/OrderController.java —— body.containsKey(\"refund_amount\") 且值为 null ⇒ 不改 refundAmount（保持 null）⇒ service 侧「null = 全额」",
+        "响应原文: {\"success\":true,\"requestId\":\"req_719cba92ed4b4b89\",\"timestamp\":1791077541}",
+        "DB orders: {\"id\":\"89fb7a37b7ace4d9b966cb2c6d8ff968\",\"tenant_id\":25,\"order_no\":\"20261004446980046\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":300,\"refund_at\":\"2026-10-04T09:32:21.172102+08:00\",\"deleted\":0}"
+      ],
+      "at": "2026-10-04 09:32:21 +08",
+      "atUtc": "2026-10-04T01:32:21.416Z",
+      "extra": {
+        "status": 200,
+        "refundAmount": 300,
+        "actual": 300
+      }
+    },
+    {
+      "id": "LB-REF-C02",
+      "name": "退款：非法字符串（\"一百元\"）⇒ 422 且零写入（不得 500）",
+      "status": "pass",
+      "detail": "422 VALIDATION_ERROR 退款金额格式不正确；refund_amount=0",
+      "evidence": [
+        "期望来源: 源码 OrderController.refundOrder 的 NumberFormatException ⇒ BusinessException.validationError(\"退款金额格式不正确\")",
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"退款金额格式不正确\"},\"requestId\":\"req_dd55db1301c6489f\",\"timestamp\":1791077542,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+      ],
+      "at": "2026-10-04 09:32:22 +08",
+      "atUtc": "2026-10-04T01:32:22.649Z",
+      "extra": {
+        "status": 422,
+        "refundAmount": 0
+      }
+    },
+    {
+      "id": "LB-REF-C03",
+      "name": "退款：空白字符串 \"   \" ⇒ 视为未传（全额）的口径登记",
+      "status": "pass",
+      "detail": "200；refund_amount=300 实收=300",
+      "evidence": [
+        "期望来源: 源码 OrderController —— amount.toString().isBlank() ⇒ 不改 refundAmount ⇒ 全额",
+        "⚠️ 底座同名文件此处为语法错误（模板串内嵌未转义反引号 ⇒ 整段 SyntaxError、B7 产物不生成）；overlay 只修语法、判据逐字不变",
+        "响应原文: {\"success\":true,\"requestId\":\"req_2dc5a9935eaa4f22\",\"timestamp\":1791077543}"
+      ],
+      "at": "2026-10-04 09:32:23 +08",
+      "atUtc": "2026-10-04T01:32:23.962Z",
+      "extra": {
+        "status": 200,
+        "refundAmount": 300,
+        "actual": 300
+      }
+    }
+  ],
+  "summary": {
+    "pass": 3,
+    "fail": 0,
+    "skip": 0,
+    "falseRed": 0,
+    "total": 3
+  }
+}

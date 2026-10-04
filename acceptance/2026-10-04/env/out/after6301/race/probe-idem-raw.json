@@ -1,0 +1,220 @@
+{
+  "stamp": "20261004042712",
+  "tenant": 25,
+  "header": "X-Client-Request-Id",
+  "cases": {
+    "I1": {
+      "key": "<IDEM-KEY-71842e>",
+      "endpoint": "POST /api/admin/agent/orders",
+      "statuses": {
+        "200": 6
+      },
+      "window": {
+        "requests": 6,
+        "overlappedPairs": 15,
+        "issueSpanMs": 2,
+        "wallMs": 386,
+        "spans": [
+          [
+            0,
+            422
+          ],
+          [
+            1,
+            425
+          ],
+          [
+            2,
+            424
+          ],
+          [
+            2,
+            421
+          ],
+          [
+            2,
+            420
+          ],
+          [
+            2,
+            386
+          ]
+        ]
+      },
+      "distinctOrderNos": [
+        "20261004099780480"
+      ],
+      "dbOrdersWithRemark": 1,
+      "claimRows": 1,
+      "bodies": [
+        "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"82b80cb93c48fd2f109ed5f4326397ec\",\"orderNo\":\"20261004099780480\",\"customerName\":\"race-sweep-幂等-",
+        "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"82b80cb93c48fd2f109ed5f4326397ec\",\"orderNo\":\"20261004099780480\",\"customerName\":\"race-sweep-幂等-",
+        "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"82b80cb93c48fd2f109ed5f4326397ec\",\"orderNo\":\"20261004099780480\",\"customerName\":\"race-sweep-幂等-",
+        "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"82b80cb93c48fd2f109ed5f4326397ec\",\"orderNo\":\"20261004099780480\",\"customerName\":\"race-sweep-幂等-",
+        "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"82b80cb93c48fd2f109ed5f4326397ec\",\"orderNo\":\"20261004099780480\",\"customerName\":\"race-sweep-幂等-",
+        "{\"success\":true,\"data\":{\"id\":\"82b80cb93c48fd2f109ed5f4326397ec\",\"orderNo\":\"20261004099780480\",\"customerName\":\"race-sweep-幂等-I1\",\"customerPho"
+      ]
+    },
+    "I2": {
+      "endpoint": "POST /api/admin/agent/orders",
+      "statuses": [
+        200,
+        200,
+        200
+      ],
+      "window": {
+        "requests": 3,
+        "overlappedPairs": 3,
+        "issueSpanMs": 0,
+        "wallMs": 448,
+        "spans": [
+          [
+            0,
+            335
+          ],
+          [
+            0,
+            237
+          ],
+          [
+            0,
+            448
+          ]
+        ]
+      },
+      "dbOrdersWithRemark": 3
+    },
+    "I3": {
+      "key": "<IDEM-KEY-0c956d>",
+      "statuses": [
+        200,
+        200
+      ],
+      "window": {
+        "requests": 2,
+        "overlappedPairs": 1,
+        "issueSpanMs": 1,
+        "wallMs": 224,
+        "spans": [
+          [
+            215,
+            463
+          ],
+          [
+            216,
+            439
+          ]
+        ]
+      },
+      "ordersFirstBody": 0,
+      "ordersSecondBody": 1,
+      "distinctOrderNos": [
+        "20261004942180484"
+      ],
+      "bodies": [
+        "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"24bf0172146736bed80390e92cb2bd2e\",\"orderNo\":\"20261004942180484\",\"customerName\":\"race-sweep-幂等-I31\",\"customerPhone\"",
+        "{\"success\":true,\"data\":{\"id\":\"24bf0172146736bed80390e92cb2bd2e\",\"orderNo\":\"20261004942180484\",\"customerName\":\"race-sweep-幂等-I31\",\"customerPhone\":\"13900000000\",\""
+      ]
+    },
+    "I4": {
+      "key": "<IDEM-KEY-40bdae>",
+      "sequential": true,
+      "statuses": [
+        200,
+        200
+      ],
+      "orderNos": [
+        "20261004606030485",
+        "20261004606030485"
+      ],
+      "sameOrderNo": true,
+      "dbOrdersWithRemark": 1,
+      "gapMs": 0,
+      "bodies": [
+        "{\"success\":true,\"data\":{\"id\":\"1e37f5d861adc083b3bc9e3a28fc4546\",\"orderNo\":\"20261004606030485\",\"customerName\":\"race-sweep-幂等-I4\",\"customerPhone\":\"13900000000\",\"c",
+        "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"1e37f5d861adc083b3bc9e3a28fc4546\",\"orderNo\":\"20261004606030485\",\"customerName\":\"race-sweep-幂等-I4\",\"customerPhone\":"
+      ]
+    },
+    "I5": {
+      "key": "<IDEM-KEY-3867c9>",
+      "endpoint": "POST /api/admin/orders（商家表单面）",
+      "statuses": [
+        200,
+        200,
+        200
+      ],
+      "window": {
+        "requests": 3,
+        "overlappedPairs": 3,
+        "issueSpanMs": 2,
+        "wallMs": 327,
+        "spans": [
+          [
+            0,
+            243
+          ],
+          [
+            1,
+            411
+          ],
+          [
+            2,
+            327
+          ]
+        ]
+      },
+      "dbOrdersWithRemark": 3,
+      "claimRows": 0,
+      "bodies": [
+        "{\"success\":true,\"data\":{\"id\":\"cbf1248ae77435642b5af5f5d775ffd5\",\"orderNo\":\"20261004947830486\",\"customerName\":\"race-sweep-幂等-I5\",\"customerPhone\":\"13900000000\",\"c",
+        "{\"success\":true,\"data\":{\"id\":\"b2a451ee23f53507d8289308f71379ff\",\"orderNo\":\"20261004254730487\",\"customerName\":\"race-sweep-幂等-I5\",\"customerPhone\":\"13900000000\",\"c",
+        "{\"success\":true,\"data\":{\"id\":\"dec36234fdc460b40cc695e0612ca179\",\"orderNo\":\"20261004744140488\",\"customerName\":\"race-sweep-幂等-I5\",\"customerPhone\":\"13900000000\",\"c"
+      ]
+    },
+    "I6": {
+      "key": "<IDEM-KEY-41f709>",
+      "orderId": "bd29dbd913b0b330050b819bb1e59eb4",
+      "payStatus": 200,
+      "statusAfterPay": "confirmed",
+      "statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "window": {
+        "requests": 4,
+        "overlappedPairs": 6,
+        "issueSpanMs": 1,
+        "wallMs": 264,
+        "spans": [
+          [
+            0,
+            279
+          ],
+          [
+            1,
+            248
+          ],
+          [
+            1,
+            270
+          ],
+          [
+            1,
+            264
+          ]
+        ]
+      },
+      "claimRows": 1,
+      "orderStatus": "shipped",
+      "shipments": 1,
+      "bodies": [
+        "{\"success\":true,\"data\":{\"status\":\"shipped\",\"order_id\":\"bd29dbd913b0b330050b819bb1e59eb4\",\"shipment_no\":\"SH202610041227268797\",\"tracking_no\":\"race-sweep-TN-zyzeh7\",\"shipment_source\":\"admin\",\"logistics_",
+        "{\"success\":true,\"data\":{\"order_id\":\"bd29dbd913b0b330050b819bb1e59eb4\",\"status\":\"shipped\",\"tracking_no\":\"race-sweep-TN-zyzeh7\",\"logistics_company\":\"race-sweep-物流\",\"shipment_no\":\"SH202610041227268797\",\"",
+        "{\"success\":true,\"data\":{\"status\":\"shipped\",\"order_id\":\"bd29dbd913b0b330050b819bb1e59eb4\",\"shipment_no\":\"SH202610041227268797\",\"tracking_no\":\"race-sweep-TN-zyzeh7\",\"shipment_source\":\"admin\",\"logistics_",
+        "{\"success\":true,\"data\":{\"status\":\"shipped\",\"order_id\":\"bd29dbd913b0b330050b819bb1e59eb4\",\"shipment_no\":\"SH202610041227268797\",\"tracking_no\":\"race-sweep-TN-zyzeh7\",\"shipment_source\":\"admin\",\"logistics_"
+      ]
+    }
+  }
+}

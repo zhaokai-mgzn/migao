@@ -1,0 +1,100 @@
+{
+  "records": [
+    {
+      "id": "LB-PREC-01",
+      "name": "精度①：refund_amount=0.01（最小可表示）⇒ 成功且**逐字**落 0.01",
+      "status": "pass",
+      "detail": "期望 200；orders.refund_amount=0.01；finance_transactions 恰 1 行 amount=0.01；两者**相等** == 实测 200；orders.refund_amount=0.01；流水 1 行 amount=0.01",
+      "evidence": [
+        "期望来源: 本包独立算式：请求值 0.01 = 列可表示的最小正数（列类型现查见 B5-col-types.json）⇒ 两处都必须逐字 0.01",
+        "期望: 200；orders.refund_amount=0.01；finance_transactions 恰 1 行 amount=0.01；两者**相等**",
+        "实得: 200；orders.refund_amount=0.01；流水 1 行 amount=0.01",
+        "响应原文: {\"success\":true,\"requestId\":\"req_c173db15380a4e89\",\"timestamp\":1791077529}",
+        "DB orders: {\"id\":\"0f64ad2572425af4d3b31b579295d727\",\"tenant_id\":25,\"order_no\":\"20261004480520038\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":0.01,\"refund_at\":\"2026-10-04T09:32:09.69006+08:00\",\"deleted\":0}",
+        "DB 流水: [{\"id\":\"b8eda2b33f0344bc96d8b709fcc04703\",\"type\":\"refund\",\"amount\":0.01,\"status\":\"success\",\"occurred_at\":\"2026-10-04T09:32:09.709437+08:00\",\"remark\":\"订单退款: 线B验收精度探针\"}]",
+        "列类型: [{\"col\":\"after_sales_tickets.refund_amount\",\"typ\":\"numeric(10,2)\"},{\"col\":\"finance_transactions.amount\",\"typ\":\"numeric(12,2)\"},{\"col\":\"orders.actual_amount\",\"typ\":\"numeric(10,2)\"},{\"col\":\"orders.refund_amount\",\"typ\":\"numeric(12,2)\"}]"
+      ],
+      "at": "2026-10-04 09:32:09 +08",
+      "atUtc": "2026-10-04T01:32:09.854Z",
+      "orderRefund": 0.01,
+      "finance": [
+        0.01
+      ],
+      "httpStatus": 200
+    },
+    {
+      "id": "LB-PREC-02",
+      "name": "精度②：refund_amount=0.001（小于最小可表示）⇒ 应 4xx 显式拒绝；现状 200 静默归零",
+      "status": "pass",
+      "detail": "422；orders.refund_amount=0；流水 0 行 amount=；refund_at=null",
+      "evidence": [
+        "期望来源: 本仓**类级范式**（同系统内的既有口径）—— 精度不足必须**显式拒绝、不静默取整**：",
+        "   · backend/admin-api/src/main/java/com/migao/admin/service/StockQuantity.java 的 requireOneDecimal（库存数量超 1 位小数 ⇒ 直接拒）",
+        "   · backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java 的 requireItemNumbers（逐字「超 1 位小数显式拒绝、不静默取整」）",
+        "   金额侧**没有**对应准入（源码 backend/admin-api/src/main/java/com/migao/admin/controller/OrderController.java 只 new BigDecimal(…) ⇒ 任意精度进入；",
+        "   而 orders.refund_amount / finance_transactions.amount 皆为 numeric(…,2) ⇒ 库内四舍五入）",
+        "⇒ 请求被「成功」接受（HTTP 200 + refund_at 落笔）而退款金额**一分未落**（订单与资金流水两处都 0.00）",
+        "红线断言: orders.refund_amount 与 finance_transactions.amount 必须相等 —— 实测 两者相等=false（相等则无「一侧 0 一侧非 0」的更重证据）",
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"退款金额 最多支持 2 位小数（金额按「分」记账，列精度 NUMERIC(·,2)），当前值 0.001 有 3 位小数 —— 请改为最多 2 位小数后重试（服务端不做静默取整/四舍五入）\"},\"requestId\":\"req_7ec5163ba28d40e0\",\"timestamp\":1791077530,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+        "DB orders: {\"id\":\"1a1d4f4749fca83678219bbf566a5bf6\",\"tenant_id\":25,\"order_no\":\"20261004847410039\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":0,\"refund_at\":null,\"deleted\":0}",
+        "DB 流水: []",
+        "列类型: [{\"col\":\"after_sales_tickets.refund_amount\",\"typ\":\"numeric(10,2)\"},{\"col\":\"finance_transactions.amount\",\"typ\":\"numeric(12,2)\"},{\"col\":\"orders.actual_amount\",\"typ\":\"numeric(10,2)\"},{\"col\":\"orders.refund_amount\",\"typ\":\"numeric(12,2)\"}]"
+      ],
+      "at": "2026-10-04 09:32:10 +08",
+      "atUtc": "2026-10-04T01:32:10.991Z",
+      "extra": {
+        "status": 422,
+        "orderRefund": 0,
+        "refundAt": null,
+        "finance": [],
+        "silentZero": false,
+        "twoSidesEqual": false
+      }
+    },
+    {
+      "id": "LB-PREC-03",
+      "name": "精度③：0.004 / 0.005 / 0.009 的舍入方向（口径登记，不判缺陷）",
+      "status": "pass",
+      "detail": "逐字读数：[\"0.004 ⇒ 422 / 订单 0 / 流水 \",\"0.005 ⇒ 422 / 订单 0 / 流水 \",\"0.009 ⇒ 422 / 订单 0 / 流水 \"]",
+      "evidence": [
+        "期望来源: **只登记口径**（任务书纪律：不设主观阈值、不判性能/口径偏好）",
+        "关注点: 0.005 的舍入方向（PG numeric 为「四舍五入、.005 进位」）与「订单侧 = 流水侧」的一致性",
+        "原始读数: [{\"requested\":\"0.004\",\"status\":422,\"orderRefund\":0,\"finance\":[],\"equal\":null},{\"requested\":\"0.005\",\"status\":422,\"orderRefund\":0,\"finance\":[],\"equal\":null},{\"requested\":\"0.009\",\"status\":422,\"orderRefund\":0,\"finance\":[],\"equal\":null}]"
+      ],
+      "at": "2026-10-04 09:32:14 +08",
+      "atUtc": "2026-10-04T01:32:14.993Z",
+      "extra": {
+        "rows": [
+          {
+            "requested": "0.004",
+            "status": 422,
+            "orderRefund": 0,
+            "finance": [],
+            "equal": null
+          },
+          {
+            "requested": "0.005",
+            "status": 422,
+            "orderRefund": 0,
+            "finance": [],
+            "equal": null
+          },
+          {
+            "requested": "0.009",
+            "status": 422,
+            "orderRefund": 0,
+            "finance": [],
+            "equal": null
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "pass": 3,
+    "fail": 0,
+    "skip": 0,
+    "falseRed": 0,
+    "total": 3
+  }
+}

@@ -1,0 +1,232 @@
+[
+  {
+    "id": "I1-同键并发建单恰一个副作用",
+    "name": "同 X-Client-Request-Id 6 并发建单 ⇒ 恰 1 张单、恰 1 个占位、其余回放同单号",
+    "status": "pass",
+    "detail": "同键 6 并发建单（issueSpan=2ms、重叠对=15）：状态 {\"200\":6}；回放同一单号 [\"20261004099780480\"]；库侧该备注订单行 1（应 1）、client_request_keys 1 行（应 1）",
+    "evidence": [
+      {
+        "key": "<IDEM-KEY-71842e>",
+        "endpoint": "POST /api/admin/agent/orders",
+        "statuses": {
+          "200": 6
+        },
+        "window": {
+          "requests": 6,
+          "overlappedPairs": 15,
+          "issueSpanMs": 2,
+          "wallMs": 386,
+          "spans": [
+            [
+              0,
+              422
+            ],
+            [
+              1,
+              425
+            ],
+            [
+              2,
+              424
+            ],
+            [
+              2,
+              421
+            ],
+            [
+              2,
+              420
+            ],
+            [
+              2,
+              386
+            ]
+          ]
+        },
+        "distinctOrderNos": [
+          "20261004099780480"
+        ],
+        "dbOrdersWithRemark": 1,
+        "claimRows": 1,
+        "bodies": [
+          "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"82b80cb93c48fd2f109ed5f4326397ec\",\"orderNo\":\"20261004099780480\",\"customerName\":\"race-sweep-幂等-",
+          "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"82b80cb93c48fd2f109ed5f4326397ec\",\"orderNo\":\"20261004099780480\",\"customerName\":\"race-sweep-幂等-",
+          "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"82b80cb93c48fd2f109ed5f4326397ec\",\"orderNo\":\"20261004099780480\",\"customerName\":\"race-sweep-幂等-",
+          "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"82b80cb93c48fd2f109ed5f4326397ec\",\"orderNo\":\"20261004099780480\",\"customerName\":\"race-sweep-幂等-",
+          "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"82b80cb93c48fd2f109ed5f4326397ec\",\"orderNo\":\"20261004099780480\",\"customerName\":\"race-sweep-幂等-",
+          "{\"success\":true,\"data\":{\"id\":\"82b80cb93c48fd2f109ed5f4326397ec\",\"orderNo\":\"20261004099780480\",\"customerName\":\"race-sweep-幂等-I1\",\"customerPho"
+        ]
+      }
+    ],
+    "at": "2026-10-04T04:27:22.209Z"
+  },
+  {
+    "id": "I2-无键并发对照（不去重）",
+    "name": "无幂等键时 3 并发同体 ⇒ 落 3 张单（证明 I1 的「恰 1」来自幂等键而非全局串行）",
+    "status": "pass",
+    "detail": "无幂等键 3 并发同体建单（issueSpan=0ms、重叠对=3）：库侧该备注订单行 3（对照期望 3 —— 不去重）",
+    "evidence": [
+      {
+        "endpoint": "POST /api/admin/agent/orders",
+        "statuses": [
+          200,
+          200,
+          200
+        ],
+        "window": {
+          "requests": 3,
+          "overlappedPairs": 3,
+          "issueSpanMs": 0,
+          "wallMs": 448,
+          "spans": [
+            [
+              0,
+              335
+            ],
+            [
+              0,
+              237
+            ],
+            [
+              0,
+              448
+            ]
+          ]
+        },
+        "dbOrdersWithRemark": 3
+      }
+    ],
+    "at": "2026-10-04T04:27:22.896Z"
+  },
+  {
+    "id": "I3-同键不同体并发只认首次",
+    "name": "同键 + 不同请求体并发 ⇒ 只落一张单（首次受理者），另一体不回放也不落库",
+    "status": "pass",
+    "detail": "同键不同体 2 并发（issueSpan=1ms、重叠对=1）：状态 [200,200]；库侧两体订单行 0/1（合计应 1）；回放单号 [\"20261004942180484\"]",
+    "evidence": [
+      {
+        "key": "<IDEM-KEY-0c956d>",
+        "statuses": [
+          200,
+          200
+        ],
+        "window": {
+          "requests": 2,
+          "overlappedPairs": 1,
+          "issueSpanMs": 1,
+          "wallMs": 224,
+          "spans": [
+            [
+              215,
+              463
+            ],
+            [
+              216,
+              439
+            ]
+          ]
+        },
+        "ordersFirstBody": 0,
+        "ordersSecondBody": 1,
+        "distinctOrderNos": [
+          "20261004942180484"
+        ],
+        "bodies": [
+          "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"24bf0172146736bed80390e92cb2bd2e\",\"orderNo\":\"20261004942180484\",\"customerName\":\"race-sweep-幂等-I31\",\"customerPhone\"",
+          "{\"success\":true,\"data\":{\"id\":\"24bf0172146736bed80390e92cb2bd2e\",\"orderNo\":\"20261004942180484\",\"customerName\":\"race-sweep-幂等-I31\",\"customerPhone\":\"13900000000\",\""
+        ]
+      }
+    ],
+    "at": "2026-10-04T04:27:23.871Z"
+  },
+  {
+    "id": "I4-同键顺序重放（判别对照）",
+    "name": "同键顺序两次 ⇒ 第二次回放首次单号、不新增订单（证明「回放」不是并发窗口的副产品）",
+    "status": "pass",
+    "detail": "同键**顺序**两次（间隔 0ms，判别对照：无并发重叠）：状态 [200,200]；单号 [\"20261004606030485\",\"20261004606030485\"]（应相同）；库侧 1 行",
+    "evidence": [
+      {
+        "key": "<IDEM-KEY-40bdae>",
+        "sequential": true,
+        "statuses": [
+          200,
+          200
+        ],
+        "orderNos": [
+          "20261004606030485",
+          "20261004606030485"
+        ],
+        "sameOrderNo": true,
+        "dbOrdersWithRemark": 1,
+        "gapMs": 0,
+        "bodies": [
+          "{\"success\":true,\"data\":{\"id\":\"1e37f5d861adc083b3bc9e3a28fc4546\",\"orderNo\":\"20261004606030485\",\"customerName\":\"race-sweep-幂等-I4\",\"customerPhone\":\"13900000000\",\"c",
+          "{\"success\":true,\"data\":{\"replayed\":true,\"id\":\"1e37f5d861adc083b3bc9e3a28fc4546\",\"orderNo\":\"20261004606030485\",\"customerName\":\"race-sweep-幂等-I4\",\"customerPhone\":"
+        ]
+      }
+    ],
+    "at": "2026-10-04T04:27:24.436Z"
+  },
+  {
+    "id": "I5-商家表单建单面幂等键",
+    "name": "POST /api/admin/orders 是否消费 X-Client-Request-Id",
+    "status": "skip",
+    "detail": "如实登记：该端点**不消费**幂等键（3 并发落 3 单、占位 0 行）⇒ 幂等覆盖面仅 Agent 面/工人面/发货面",
+    "evidence": [],
+    "at": "2026-10-04T04:27:25.232Z"
+  },
+  {
+    "id": "I6-发货面同键并发幂等",
+    "name": "同键并发发货 ⇒ 占位 1 行、发货单 1 张、订单流转 shipped 恰一次",
+    "status": "pass",
+    "detail": "发货面同键 4 并发（issueSpan=1ms、重叠对=6）：状态 [200,200,200,200]；占位 1 行（应 1）、发货单 1 行（应 1）、订单状态 shipped",
+    "evidence": [
+      {
+        "key": "<IDEM-KEY-41f709>",
+        "orderId": "bd29dbd913b0b330050b819bb1e59eb4",
+        "payStatus": 200,
+        "statusAfterPay": "confirmed",
+        "statuses": [
+          200,
+          200,
+          200,
+          200
+        ],
+        "window": {
+          "requests": 4,
+          "overlappedPairs": 6,
+          "issueSpanMs": 1,
+          "wallMs": 264,
+          "spans": [
+            [
+              0,
+              279
+            ],
+            [
+              1,
+              248
+            ],
+            [
+              1,
+              270
+            ],
+            [
+              1,
+              264
+            ]
+          ]
+        },
+        "claimRows": 1,
+        "orderStatus": "shipped",
+        "shipments": 1,
+        "bodies": [
+          "{\"success\":true,\"data\":{\"status\":\"shipped\",\"order_id\":\"bd29dbd913b0b330050b819bb1e59eb4\",\"shipment_no\":\"SH202610041227268797\",\"tracking_no\":\"race-sweep-TN-zyzeh7\",\"shipment_source\":\"admin\",\"logistics_",
+          "{\"success\":true,\"data\":{\"order_id\":\"bd29dbd913b0b330050b819bb1e59eb4\",\"status\":\"shipped\",\"tracking_no\":\"race-sweep-TN-zyzeh7\",\"logistics_company\":\"race-sweep-物流\",\"shipment_no\":\"SH202610041227268797\",\"",
+          "{\"success\":true,\"data\":{\"status\":\"shipped\",\"order_id\":\"bd29dbd913b0b330050b819bb1e59eb4\",\"shipment_no\":\"SH202610041227268797\",\"tracking_no\":\"race-sweep-TN-zyzeh7\",\"shipment_source\":\"admin\",\"logistics_",
+          "{\"success\":true,\"data\":{\"status\":\"shipped\",\"order_id\":\"bd29dbd913b0b330050b819bb1e59eb4\",\"shipment_no\":\"SH202610041227268797\",\"tracking_no\":\"race-sweep-TN-zyzeh7\",\"shipment_source\":\"admin\",\"logistics_"
+        ]
+      }
+    ],
+    "at": "2026-10-04T04:27:26.618Z"
+  }
+]

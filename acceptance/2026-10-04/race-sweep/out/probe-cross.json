@@ -1,0 +1,370 @@
+[
+  {
+    "id": "C1-并发交错列表不串号",
+    "name": "A/B token 并发交错打商品列表 ⇒ 响应中本线对象必属本租户",
+    "status": "pass",
+    "detail": "120 并发交错列表读（issueSpan=35ms、重叠对=7140）：逐响应核对本线探针对象 2160 次 ⇒ 跨租户 0 次；非 200 0",
+    "evidence": [
+      {
+        "n": 120,
+        "window": {
+          "requests": 120,
+          "overlappedPairs": 7140,
+          "issueSpanMs": 35,
+          "wallMs": 3548,
+          "spans": [
+            [
+              0,
+              3659
+            ],
+            [
+              0,
+              640
+            ],
+            [
+              1,
+              7696
+            ],
+            [
+              1,
+              636
+            ],
+            [
+              2,
+              8269
+            ],
+            [
+              2,
+              2544
+            ],
+            [
+              3,
+              8157
+            ],
+            [
+              3,
+              2674
+            ],
+            [
+              3,
+              8979
+            ],
+            [
+              6,
+              2348
+            ],
+            [
+              7,
+              8560
+            ],
+            [
+              7,
+              2662
+            ]
+          ]
+        },
+        "checkedProbeObjects": 2160,
+        "badCount": 0,
+        "bad": []
+      }
+    ],
+    "at": "2026-10-04T01:19:20.616Z"
+  },
+  {
+    "id": "C2-并发跨租户按 id 读被拒",
+    "name": "A 用 B 的 id（反向亦然）并发读 ⇒ 一律 403/404，绝不返回对方对象",
+    "status": "pass",
+    "detail": "跨租户按 id 读 9 个并发（issueSpan=2ms、重叠对=36）：被拒 9、越权成功/异常态 0",
+    "evidence": [
+      {
+        "pairs": 9,
+        "window": {
+          "requests": 9,
+          "overlappedPairs": 36,
+          "issueSpanMs": 2,
+          "wallMs": 82,
+          "spans": [
+            [
+              0,
+              85
+            ],
+            [
+              0,
+              85
+            ],
+            [
+              1,
+              79
+            ],
+            [
+              1,
+              40
+            ],
+            [
+              1,
+              77
+            ],
+            [
+              1,
+              38
+            ],
+            [
+              1,
+              82
+            ],
+            [
+              1,
+              50
+            ],
+            [
+              2,
+              82
+            ]
+          ]
+        },
+        "rejected": [
+          {
+            "id": "3b2758af012bffabf279cd2741512afa",
+            "status": 404
+          },
+          {
+            "id": "ecdc7282c9a6d3c352088243aa479a82",
+            "status": 404
+          },
+          {
+            "id": "5b5a090af4fdde6dfb42a164213ca8e1",
+            "status": 404
+          },
+          {
+            "id": "960c0a965a80febf0e2515cf6ab83eb6",
+            "status": 404
+          },
+          {
+            "id": "6bc93e5287ab849e60746dcca2edb4e3",
+            "status": 404
+          },
+          {
+            "id": "ff71f9114ed78298dc4d638968eef445",
+            "status": 404
+          },
+          {
+            "id": "8c8352d150df948eda7e3a438481830c",
+            "status": 404
+          },
+          {
+            "id": "fc61ffb0e5dc8ed978bab473e1c5a98a",
+            "status": 404
+          },
+          {
+            "id": "b7f77b3417909a4350df81b645067695",
+            "status": 404
+          }
+        ],
+        "leak": [],
+        "statuses": [
+          404,
+          404,
+          404,
+          404,
+          404,
+          404,
+          404,
+          404,
+          404
+        ]
+      }
+    ],
+    "at": "2026-10-04T01:19:20.702Z"
+  },
+  {
+    "id": "C3-伪造 X-Tenant-Id 无效",
+    "name": "带伪造 X-Tenant-Id（对方租户/-1/超大）并发读 ⇒ 归属仍由 JWT 决定",
+    "status": "pass",
+    "detail": "4 条伪造头并发（issueSpan=1ms）：状态 [200,200,200,200]；越租户 0",
+    "evidence": [
+      {
+        "spoofs": [
+          "A+伪造 B 的 X-Tenant-Id",
+          "B+伪造 A 的 X-Tenant-Id",
+          "A+伪造 X-Tenant-Id=-1",
+          "A+伪造超大 X-Tenant-Id"
+        ],
+        "statuses": [
+          200,
+          200,
+          200,
+          200
+        ],
+        "window": {
+          "requests": 4,
+          "overlappedPairs": 6,
+          "issueSpanMs": 1,
+          "wallMs": 652,
+          "spans": [
+            [
+              0,
+              611
+            ],
+            [
+              1,
+              91
+            ],
+            [
+              1,
+              579
+            ],
+            [
+              1,
+              652
+            ]
+          ]
+        },
+        "bad": []
+      }
+    ],
+    "at": "2026-10-04T01:19:21.354Z"
+  },
+  {
+    "id": "C4-并发混合读写不串号",
+    "name": "A/B 并发：各建各的商品 + 各读对方 id + 各读列表",
+    "status": "pass",
+    "detail": "并发混合（issueSpan=1ms、重叠对=15）：状态 [200,200,404,404,200,200]；跨租户读状态 [404,404]（应 403/404）；写入各自命名空间 {\"A\":1,\"B\":1}；串号 0",
+    "evidence": [
+      {
+        "window": {
+          "requests": 6,
+          "overlappedPairs": 15,
+          "issueSpanMs": 1,
+          "wallMs": 97,
+          "spans": [
+            [
+              0,
+              142
+            ],
+            [
+              0,
+              140
+            ],
+            [
+              1,
+              39
+            ],
+            [
+              1,
+              38
+            ],
+            [
+              1,
+              643
+            ],
+            [
+              1,
+              97
+            ]
+          ]
+        },
+        "statuses": [
+          200,
+          200,
+          404,
+          404,
+          200,
+          200
+        ],
+        "crossReadStatuses": [
+          404,
+          404
+        ],
+        "crossReadRequestedIds": {
+          "aReadsB": "3b2758af012bffabf279cd2741512afa",
+          "bReadsA": "960c0a965a80febf0e2515cf6ab83eb6"
+        },
+        "positiveControlOwnRead": [
+          200,
+          200
+        ],
+        "leakList": [],
+        "newRows": {
+          "A": 1,
+          "B": 1
+        },
+        "writeStatuses": [
+          200,
+          200
+        ]
+      }
+    ],
+    "at": "2026-10-04T01:19:22.557Z"
+  },
+  {
+    "id": "C5-超并发交错不串号",
+    "name": "并发 160（> Tomcat 线程数）下 A/B 交错读的归属不漂移",
+    "status": "pass",
+    "detail": "160 并发交错（issueSpan=42ms、重叠对=12720）：核对探针对象 2880 次、异常/串号 0 次",
+    "evidence": [
+      {
+        "n": 160,
+        "window": {
+          "requests": 160,
+          "overlappedPairs": 12720,
+          "issueSpanMs": 42,
+          "wallMs": 3533,
+          "spans": [
+            [
+              0,
+              11348
+            ],
+            [
+              0,
+              2532
+            ],
+            [
+              0,
+              11056
+            ],
+            [
+              0,
+              2619
+            ],
+            [
+              1,
+              11954
+            ],
+            [
+              1,
+              2821
+            ],
+            [
+              1,
+              11930
+            ],
+            [
+              1,
+              3141
+            ],
+            [
+              1,
+              11340
+            ],
+            [
+              1,
+              3536
+            ],
+            [
+              2,
+              11931
+            ],
+            [
+              2,
+              3441
+            ]
+          ]
+        },
+        "checkedProbeObjects": 2880,
+        "bad": 0,
+        "ev": []
+      }
+    ],
+    "at": "2026-10-04T01:19:34.738Z"
+  }
+]

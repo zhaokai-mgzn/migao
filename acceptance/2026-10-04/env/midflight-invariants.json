@@ -1,0 +1,7 @@
+{
+  "at": "2026-10-04 09:08:10 CST",
+  "note": "集成侧独立读数（只读）；不采信三线自述",
+  "deploy_window": "最后一次 success = ff655a06c @ 2026-10-03T21:47:10Z（= 05:47+08）；其后 00:30:01Z failure；测量窗口内被测面未变",
+  "tenant25_invariants": {"orders":16,"proc_orders":1,"sets":1,"ops_inst":2,"tokens":1,"items_with_product":16,"items_total":16},
+  "orphans": {"orphan_po":0,"orphan_ops":0}
+}

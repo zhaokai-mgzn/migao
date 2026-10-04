@@ -1,0 +1,114 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:55:01 +08",
+    "utc": "2026-10-04T01:55:01.042Z"
+  },
+  "requestBody": {
+    "categoryId": "91cc731c2bbfa5d32281b8d2054f6204",
+    "name": "线A验收布-mut64sa0vl",
+    "skuCode": "LAC-P-MUT64SA0VL",
+    "unit": "米",
+    "pricingType": "per_meter",
+    "basePrice": 30.5,
+    "status": "active",
+    "stock": 200,
+    "stockWarningThreshold": 5,
+    "description": "线A验收冷启动夹具（空租户首个商品）",
+    "sellingMethods": [
+      "bulk_cut",
+      "full_roll"
+    ],
+    "rollLengthM": 60,
+    "doorWidths": [
+      "2.8"
+    ],
+    "colors": [
+      {
+        "colorName": "线A验收米白"
+      }
+    ],
+    "skus": [
+      {
+        "colorName": "线A验收米白",
+        "doorWidth": "2.8",
+        "price": 168,
+        "stock": 200,
+        "skuCode": "LAC-S-MUT64SA0VL"
+      }
+    ]
+  },
+  "httpStatus": 200,
+  "response": {
+    "success": true,
+    "data": {
+      "id": "b8c0d1a597fc5190f7d3fc1f61f579c4",
+      "name": "线A验收布-mut64sa0vl",
+      "categoryId": "91cc731c2bbfa5d32281b8d2054f6204",
+      "categoryName": "线A验收分类-mut64sa0vl",
+      "basePrice": 30.5,
+      "description": "线A验收冷启动夹具（空租户首个商品）",
+      "images": [],
+      "status": "active",
+      "stock": 200,
+      "stockWarningThreshold": 10,
+      "skuCode": "LAC-P-MUT64SA0VL",
+      "unit": "米",
+      "pricingType": "per_meter",
+      "stockDeductionMode": "on_order",
+      "colorCount": 1,
+      "totalStock": 200,
+      "salesCount": 0,
+      "salesAmount": 0,
+      "recommended": false,
+      "allowReturnRestock": false,
+      "colors": [
+        {
+          "id": "2106563708642160642",
+          "productId": "b8c0d1a597fc5190f7d3fc1f61f579c4",
+          "colorName": "线A验收米白",
+          "sortOrder": 0,
+          "createdAt": "2026-10-04 09:55:00",
+          "updatedAt": "2026-10-04 09:55:00"
+        }
+      ],
+      "sellingMethods": [
+        "bulk_cut",
+        "full_roll"
+      ],
+      "rollLengthM": 60,
+      "doorWidths": [
+        "2.8"
+      ],
+      "skus": [
+        {
+          "id": "2106563708675715074",
+          "productId": "b8c0d1a597fc5190f7d3fc1f61f579c4",
+          "colorId": "2106563708642160642",
+          "colorName": "线A验收米白",
+          "doorWidth": "2.8",
+          "price": 168,
+          "stock": 200,
+          "skuCode": "LAC-S-MUT64SA0VL",
+          "createdAt": "2026-10-04 09:55:00",
+          "updatedAt": "2026-10-04 09:55:00"
+        }
+      ],
+      "detailImages": [],
+      "editedBy": "13800138000",
+      "editedAt": "2026-10-04 09:55:00",
+      "createdAt": "2026-10-04 09:55:00",
+      "updatedAt": "2026-10-04 09:55:00",
+      "price": 30.5
+    },
+    "requestId": "req_273a67f802e04f1e",
+    "timestamp": 1791078901
+  },
+  "dbSkus": [
+    {
+      "id": "2106563708675715074",
+      "door_width": "2.8",
+      "color_name": "线A验收米白",
+      "price": "168.00"
+    }
+  ]
+}

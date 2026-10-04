@@ -1,0 +1,34 @@
+{
+  "at": {
+    "cst": "2026-10-04 12:41:07 +08",
+    "utc": "2026-10-04T04:41:07.663Z"
+  },
+  "endpoint": "POST /api/admin/categories",
+  "requestBody": {
+    "name": "线A验收分类-mutc2evhi1",
+    "level": 1,
+    "sort": 1,
+    "status": "active"
+  },
+  "httpStatus": 200,
+  "response": {
+    "success": true,
+    "data": {
+      "id": "76d07358882b0e5022b429aeaae19c53",
+      "name": "线A验收分类-mutc2evhi1",
+      "level": 1,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-10-04 12:41:07",
+      "updatedAt": "2026-10-04 12:41:07",
+      "sort": 1
+    },
+    "requestId": "req_26a190a3e73342c2",
+    "timestamp": 1791088867
+  },
+  "dbRow": {
+    "id": "76d07358882b0e5022b429aeaae19c53",
+    "name": "线A验收分类-mutc2evhi1",
+    "tenant_id": 25
+  }
+}
