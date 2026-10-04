@@ -72,6 +72,11 @@ _MAP = "backend/admin-api/src/test/java/com/migao/admin/mapper/"
 #                         issue #5146）—— 夹具内部收口，故这三个类**不直接**出现 `PgCluster`，
 #                         这就是本表要**显式登记**的例外（不登记 = 判据②会把它判红）。
 REALDB_FILES: dict[str, str] = {
+    # issue #6302：商品文本入参**长度准入**的类级元守卫 —— 真值源是**现取**的
+    # `information_schema.columns.character_maximum_length`（真 PG 跑 `schema.sql` 终态后读），
+    # 再与「DTO 字段台账」和「ProductService 写面收口上限」三方对账（列长度改了而收口没跟 ⇒
+    # `LENGTH-DRIFT` 判红）。列元数据在 mock 面上不存在 ⇒ 这份判据的真值**只有**真 PG 能给。
+    _SVC + "ProductTextColumnAdmissionMetaGuardTest.java": "direct",
     # issue #5939：发货单**列表**读面（GET /api/admin/shipments）的真库判据 —— 只真 PG 能证的四条：
     # 跨租户不可见（+ 反向自证对方租户自己读得到）/ 软删明细不计进 itemCount / 客户名取自 orders 连接 /
     # 未发货按 packed_at 参与排序，以及 LIMIT 生效。
@@ -115,6 +120,12 @@ REALDB_FILES: dict[str, str] = {
     # ③ 来源族列形状互斥与盘点幂等闸是 **DB 对象**（回滚事务里摘掉 ⇒ 同一行坏数据当场能落库）；
     # ④ `reconcile` 差额由两条腿各自聚合 ⇒ 只有真库能证「盘点后差额不增大」。
     _SVC + "BatchStocktakeRealDbTest.java": "direct",
+    # issue #6301：同一 run id 的盘点请求**并发**（6 次）必须拿幂等回执而不是 500 —— 只真 PG 能证的三条：
+    # ① 唯一索引在**插入那一刻**的原子判定（`uk_batch_consumption_stocktake`）与「未提交行对并发事务
+    #    不可见」共同构成 TOCTOU 窗口：mock 的 `selectList` 恒返回空、`insert` 恒成功 ⇒ 窗口**结构上不存在**；
+    # ② `ON CONFLICT … DO NOTHING` 的**影响行数**（1 = 本次生效 / 0 = 已记过）是「谁先到」的唯一依据；
+    # ③ 「阈退的批次不再重复动 SKU 库存」是**并发下的落库读数**（库存链恰好一条 `60.0→58.5`）。
+    _SVC + "BatchStocktakeConcurrentRealDbTest.java": "direct",
     # issue #4945 处 1：算料租户配置的**真栈半边**（真 PG + 真 `craft_calc_configs` 行 + 真 mapper +
     # 真 `toConfigMap()` + 真 `CraftCalcClient` 出参逐值）。为什么必须真库：这条判据的三跳
     # （谓词/列名/软删过滤能否读回行 · JSONB 能否解成引擎吃的 config · config 是否真的进了请求体）

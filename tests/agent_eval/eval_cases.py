@@ -5583,6 +5583,24 @@ _CASE_MC_079 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-081 [NORMAL] 唯一键 / 幂等键写入点的类级元守卫（issue #6301）：全仓「写带唯一约束的表」的写入点 ⇄ 冻结台账双向相等 —— 未登记即红、登记即须属实（处理摘掉即红）、台账为空 / 扫描零命中即 fail-closed；#6301 那一处必须带 ON CONFLICT 原子闸（改回朴素 insert 即具名判红）（源: cases/misc.yml）──
+_CASE_MC_081 = EvalCase(
+    id='MC-081',
+    legacy_id='',
+    title='唯一键 / 幂等键写入点的类级元守卫（issue #6301）：全仓「写带唯一约束的表」的写入点 ⇄ 冻结台账双向相等 —— 未登记即红、登记即须属实（处理摘掉即红）、台账为空 / 扫描零命中即 fail-closed；#6301 那一处必须带 ON CONFLICT 原子闸（改回朴素 insert 即具名判红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当同一个幂等键（如盘点的 runId）被并发提交、或网络重试把同一请求发两遍时，唯一索引本来会拒掉第二次写入；但如果代码里没有任何冲突处理，那次「拒绝」就变成用户侧的 500 —— 必须有判据在**新增这类写入点时就红**，而不是等下一个并发现场。'],
+    expectations=[],
+    data_checks=['**病（issue #6301 的形态，已在 main 复现）**：服务层「先查是否已记 → 再插入」是**非原子读**（TOCTOU）；并发时多个同 runId 的请求同时判定「未记」，随后争抢部分唯一索引 `uk_batch_consumption_stocktake` ⇒ 抛 `DuplicateKeyException` ⇒ 未映射成幂等回执 ⇒ 5 条 HTTP 500（探针 W5 读数 `[200,500,500,500,500,500]`，两个构建点都红）。数据本身正确（分录 1 行、库存 Δ 正确）⇒ 缺陷在**错误映射 / 回执语义**。', '**判据 1（未登记即红）**：全仓「服务/控制层里 `<XxxMapper 字段>.insert*(`，且该 mapper 经 `extends BaseMapper<实体>` → 实体的 `@TableName` 指向 schema.sql 里带 `CREATE UNIQUE INDEX` 的表」的写入点，必须**逐条**登记进 `tests/unit_ci_workflows/unique_write_ledger.json`（现取 26 处：9 处有处理、17 处是 `handling: none` 的已登记缺口）。多出来的 ⇒ **点名报出**该文件 / 字段 / 表，并给出口（补原子写 / 冲突映射，或按缺口登记）。判据 = `tests/unit_ci_workflows/test_idempotent_unique_write_guard.py::test_every_unique_write_site_is_registered`。', '**判据 2（登记即须属实，双向）**：台账说某文件在处理而该文件**没有**处理 ⇒ 红（唯一冲突会重新冒泡成 5xx）；台账说 `handling: none`（缺口）而语料里现在**有**处理 ⇒ 红（陈旧登记，台账**只许缩短**）；台账 / 现取的表名漂移 ⇒ 红。**逐方法判**（不是「文件里有 ON CONFLICT 就行」）—— 这是本判据的判别力来源：把 `insertStocktakeIfAbsent` 的 `ON CONFLICT … DO NOTHING` 摘掉 ⇒ 具名判红。', '**判据 3（#6301 那一处的具体形态）**：`StockBatchConsumptionMapper::insertStocktakeIfAbsent` 必须在场，且该方法的 SQL 里必须有 `ON CONFLICT`（在语句内部消解冲突 ⇒ 并发不再抛异常、事务不进 aborted 态）；盘点落账的写入点必须**不是** `handling: none`。判据 = 同文件 `test_the_stocktake_write_point_uses_an_atomic_conflict_handler`。', '**判据 4（fail-closed）**：台账为空 ⇒ 红；扫描**零命中**（一个写入点都找不到）⇒ 红（判据自己失效必须自曝，不许静默绿）；schema 解析出的唯一约束表少于 20 张 ⇒ 红（解析口径坏了）；mapper→表 一条都解析不出来 ⇒ 红。', '**判据 5（判别力自证，随判据常驻）**：八条坏形态在**内存语料**上各自判红（新增未登记写入点 / 台账清空 / 零命中 / 处理被摘掉 / 台账陈旧 / 表漂移 / 注释里的 `insert(` 不算写入点 / 无唯一约束的表不在射程），两条**对照读数**不红。判据 = 同文件 `test_injected_bad_corpora_are_named`。', '🔴 **覆盖边界（照实登记）**：① 只认**仓内文本形态**（`.` insert 调用 + `BaseMapper` 泛型 + `@TableName`）—— 裸 SQL / `JdbcTemplate` / 反射写这些表、或 mapper 不经 `BaseMapper` 声明的代码**不在射程内**；② 「处理」的判定是**形态学**的（服务文件出现 `DuplicateKeyException`，或该 mapper 被调用的插入方法带 `ON CONFLICT`）—— 它判不了「那条处理真的被调用 / 真的在并发下有效」（行为面由 `BatchStocktakeConcurrentRealDbTest` 承担）；③ `handling: none` 的 17 条是**已登记的观测缺口**，本判据**不为它们的安全性背书**，缺口的修复是各自独立的包；④ 它不判「某个写入点该不该用幂等键」（业务口径）。'],
+    skip_reason='[backend-contract] 纯静态判据（零 LLM、零真库、零网络、零时钟；只读 Java 源码 + schema.sql + 台账 JSON）由 tests/unit_ci_workflows/test_idempotent_unique_write_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'idempotency', 'unique-key', 'fail-closed', 'red-proof', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PK-001 [NORMAL] 包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）（源: cases/misc.yml）──
 _CASE_PK_001 = EvalCase(
     id='PK-001',
@@ -10672,6 +10690,24 @@ _CASE_PR_121 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-122 [NORMAL] 商品/SKU 超长文本入参（货号 >30 等）⇒ 422 可行动文案（不是 500）—— DTO/库列长度准入 + 类级元守卫（源: cases/product.yml）──
+_CASE_PR_122 = EvalCase(
+    id='PR-122',
+    legacy_id='',
+    title='商品/SKU 超长文本入参（货号 >30 等）⇒ 422 可行动文案（不是 500）—— DTO/库列长度准入 + 类级元守卫',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['建品 / 改品 / Excel 导入时填了超过库列上限的货号（如 31 个字符）'],
+    expectations=['direct_reply'],
+    data_checks=['**病（实测，2026-10-04）**：`POST /api/admin/products` 传 31 字符 `skuCode`（库列 `products.sku_code` = `varchar(30)`）⇒ PG 报 `ERROR: value too long for type character varying(30)` @ `ProductMapper.insert` ⇒ HTTP 500 `INTERNAL_ERROR`「服务器内部错误」——用户无法自救（不知道哪一列、该改多长）。修前 DTO **零长度准入**（`ProductCreateRequest.skuCode` 无任何注解），Service 层也未见校验。', '**判据 1（表单路径 4xx + 可行动文案 + 零写入）**：`POST /api/admin/products` 传 31 字符货号 ⇒ **422**、`$.error.code = VALIDATION_ERROR`、文案含「最长 30 个字符」「当前 31 个字符」「请缩短」，且 `productMapper.insert` **一次都没被调用**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductSkuCodeLengthAdmissionTest.java 的 `overlongProductSkuCodeIsRejectedWithActionableMessage`。', '**判据 2（边界）**：长度 = 列上限是**合法**输入（30 字符 ⇒ 放行到写面；`PUT` 路径 30 字符 ⇒ 落到「商品不存在」= 闸门之后的下一步，而不是被长度准入拦下）—— 准入不得挡掉合法边界值。执行点 = 同文件 `productSkuCodeAtColumnLimitPassesTheLengthGate` / `updateProductUsesTheSameGate`。', '**判据 3（同族写面同源拒绝）**：SKU 级 `skus[].skuCode` > 50、`skus[].doorWidth` > 20、`colors[].colorName` > 30 各自被同一收口拒绝（SKU / 颜色表零写入）。执行点 = 同文件 `skuFaceOverlongFieldsAreRejectedFromOneGate`。', '**判据 4（家族覆盖：不走 Bean Validation 的路径）**：agent 路径手工 `new ProductCreateRequest` + 直调 `ProductService#createProduct`（即 `createProductForAgent` 的形态）同样 422 + 可行动文案 —— 只给 DTO 加 `@Size` 会漏掉它；Excel 导入行（`upsertImportedProduct` → `saveColorsAndSkus`）走同一收口。执行点 = 同文件 `agentPathIsGatedTooEvenThoughItSkipsBeanValidation`。', '**判据 5（类级元守卫 = 真值现取 + 未登记即红）**：写面收口的**上限字面量**必须等于**现取** `information_schema.columns.character_maximum_length`（真 PG 跑 `schema.sql` 终态）；四个商品入参 DTO 的每个 String 字段必须登记；未登记 / 台账空转 / 有界列被登记成无界 / 无收口 / 上限漂移 / 豁免增长 / 扫描面为空 ⇒ 各自判红；豁免台账冻结上限 = **0**、条数现取。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductTextColumnAdmissionMetaGuardTest.java。', '**判据 6（真库边界读数）**：现取 `products.sku_code` = `varchar(30)`；真库直插 30 字符**成功**、31 字符报 SQLState `22001`（string_data_right_truncation = `value too long for type character varying(30)`）。执行点 = 同文件 `realDbBoundaryReadingMatchesLiveColumn`。'],
+    skip_reason='[backend-contract] 入参健壮性 + DTO↔库列长度对账（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（元守卫走一次性真 PG，PgCluster.startOrAbort() 收口）',
+    tags=['product', 'backend-contract', 'input-robustness', 'realdb', 'text-length'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -12766,6 +12802,7 @@ ALL_CASES = (
     _CASE_MC_076,
     _CASE_MC_077,
     _CASE_MC_079,
+    _CASE_MC_081,
     _CASE_PK_001,
     _CASE_MC_080,
     _CASE_OB_001,
@@ -13035,6 +13072,7 @@ ALL_CASES = (
     _CASE_PR_119,
     _CASE_PR_120,
     _CASE_PR_121,
+    _CASE_PR_122,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
