@@ -7,8 +7,9 @@ vi.mock('next/link', () => ({
 }))
 
 import AboutPage from '@/app/(corporate)/about/page'
+import { findColloquialMarkers } from './copy-voice-banlist'
 
-describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实，issue #6291）', () => {
+describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实，issue #6291 / #6326）', () => {
   it('renders page header', () => {
     render(<AboutPage />)
     expect(screen.getByRole('heading', { level: 1, name: '关于米高' })).toBeInTheDocument()
@@ -30,11 +31,11 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
 
   it('renders 产品原则（不编造 / 价格不由模型定 / 敏感事项不做决定 / 边界写明）', () => {
     render(<AboutPage />)
-    expect(screen.getByText('我们怎么理解「让 AI 做客服」')).toBeInTheDocument()
-    expect(screen.getByText('答不出的，明说答不出')).toBeInTheDocument()
-    expect(screen.getByText('价格这件事，不由模型说了算')).toBeInTheDocument()
-    expect(screen.getByText('敏感事项不做决定')).toBeInTheDocument()
-    expect(screen.getByText('能力边界写在明处')).toBeInTheDocument()
+    expect(screen.getByText('米高的产品原则')).toBeInTheDocument()
+    expect(screen.getByText('数据之外不作答')).toBeInTheDocument()
+    expect(screen.getByText('定价权归属商品库')).toBeInTheDocument()
+    expect(screen.getByText('敏感事项不由 AI 决定')).toBeInTheDocument()
+    expect(screen.getByText('能力边界公开标注')).toBeInTheDocument()
   })
 
   it('renders core values section 与四条价值观', () => {
@@ -48,7 +49,7 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
   it('renders timeline section 与五个里程碑', () => {
     render(<AboutPage />)
     expect(screen.getByText('发展历程')).toBeInTheDocument()
-    for (const title of ['项目启动', '核心引擎开发', '平台上线', '多渠道接入', '能力进化']) {
+    for (const title of ['项目启动', '核心引擎开发', '平台上线', '多渠道接入', '能力扩展']) {
       expect(screen.getByText(title)).toBeInTheDocument()
     }
     expect(screen.getByText(/生产工序、仓储批次、财务对账与计件工资陆续上线/)).toBeInTheDocument()
@@ -73,5 +74,13 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
     const { container } = render(<AboutPage />)
     expect(container.innerHTML).not.toContain('from-blue-600')
     expect(container.innerHTML).not.toContain('to-indigo-800')
+  })
+
+  // ── 文案口吻（issue #6326：去 AI 口语，改「能力陈述型」书面语）──
+
+  it('文案口吻：关于我们页渲染文本不含 AI 口语词表', () => {
+    const { container } = render(<AboutPage />)
+    const hits = findColloquialMarkers(container.textContent ?? '')
+    expect(hits, `关于我们页渲染文本出现 AI 口语词：${hits.join(' / ')}`).toEqual([])
   })
 })

@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     template: '%s — 米高',
   },
   description:
-    '杭州词元通达科技有限公司出品的米高平台：面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧小布 7×24 接待咨询、算料报价、下单与售后；经营侧米宝打理商品、订单、生产、库存与财务。',
+    '杭州词元通达科技有限公司出品的米高平台：面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧小布 7×24 小时接待咨询、算料报价、下单与售后；经营侧米宝覆盖商品、订单、生产、库存与财务。',
   keywords: [
     '米高',
     'AI 智能客服',
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     siteName: '米高 MIGAO',
     title: '米高 — 布艺行业的 AI 经营平台',
     description:
-      '两个 AI，把一间窗帘店从询价管到发货：小布接待顾客，米宝打理经营，四位终端共用同一套业务数据。',
+      '两位 AI 助手，一套经营平台：小布承接顾客服务，米宝承接门店经营，四个终端共用同一套业务数据。',
     images: [
       {
         url: 'https://www.migaozn.com/og-image.png',
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: '米高 — 布艺行业的 AI 经营平台',
     description:
-      '两个 AI，把一间窗帘店从询价管到发货：小布接待顾客，米宝打理经营，四位终端共用同一套业务数据。',
+      '两位 AI 助手，一套经营平台：小布承接顾客服务，米宝承接门店经营，四个终端共用同一套业务数据。',
   },
   robots: {
     index: true,

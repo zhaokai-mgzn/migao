@@ -31,9 +31,9 @@ import {
 } from '@/components/corporate/capability-map'
 
 export const metadata: Metadata = {
-  title: '米高 — 布艺行业的 AI 经营平台：小布接客，米宝管店',
+  title: '米高 — 布艺行业 AI 经营平台：顾客服务与门店经营',
   description:
-    '米高是面向布艺 / 窗帘商家的多租户 AI 经营平台：小布 7×24 接待顾客，能算料报价、下单、查物流、受理售后；米宝打理商品、订单、生产、库存与财务，问一句就答。AI 自动甄别、秒级开通，人机协同机制参考 GB/T 47746-2026 设计。',
+    '米高是面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧由小布提供 7×24 智能客服，覆盖算料报价、下单、物流查询与售后受理；经营侧由米宝覆盖商品、订单、生产、库存与财务。入驻申请 AI 自动甄别，通过后秒级开通；人机协同机制参考 GB/T 47746-2026 设计。',
 }
 
 /** Hero 事实标签：每一条都能在代码或文档里找到出处，不写形容词 */
@@ -49,25 +49,25 @@ const agents = [
     icon: Bot,
     name: '米宝',
     role: '企业智能工作助手',
-    brief: '面向店里的人：把商品、订单、生产、库存、财务的日常问题，变成一句问话。',
+    brief: '面向门店经营：以自然语言问答交付商品、订单、生产、库存与财务的日常经营信息。',
     highlights: [
       '经营看板与每日简报：订单量、销售额、环比、待处理事项',
       '商品与 SKU：批量改价、批量上下架（可撤销）、分类与资料维护',
-      '订单与加工单：一句话查订单、物流、加工单进度与报工明细',
+      '订单与加工单：订单查询、物流、加工单进度与报工明细',
       '库存与入库：批次库存、库存台账、入库单与批次成本',
       '生产与计件：工序库、工艺路线、计件工资报表',
       '财务与客户：资金流水 / 收支汇总 / 应收对账问答，客户档案与售后工单',
     ],
     boundary:
-      '写操作只有三类：改价、批量上下架、批量库存调整。改价必须带改前价并点确认卡；建单、建品 AI 不做。',
+      '写操作只有三类：改价、批量上下架、批量库存调整。改价须携带改前价并经确认卡二次确认；AI 不创建订单与商品。',
   },
   {
     icon: MessageSquare,
     name: '小布',
     role: 'AI 智能客服',
-    brief: '面向顾客的人：7×24 在店里接待，从问规格到下单、查物流、报售后。',
+    brief: '面向终端顾客：7×24 小时在线接待，覆盖规格咨询、下单、物流查询与售后受理。',
     highlights: [
-      '商品咨询：颜色、门幅、加工项，按店内已上架商品回答',
+      '商品咨询：颜色、门幅、加工项，按店内已上架商品作答',
       '窗帘算料报价：按尺寸与工艺算用料，给出估算报价',
       '下单：短信验证码校验后下单，单价取商品库权威价',
       '订单与物流：订单进度、物流轨迹、收货地址',
@@ -86,14 +86,14 @@ const orderJourney = [
     icon: Ruler,
     title: '询价与算料',
     description:
-      '按尺寸、褶皱与工艺算用料，给出估算报价；加工项与加工费组合（元 / 米）单独定价，未定价项会单独标出。',
+      '按尺寸、褶皱与工艺计算用料并给出估算报价；加工项与加工费组合（元 / 米）单独定价，未定价项单独提示。',
   },
   {
     step: '02',
     icon: ShoppingBag,
     title: '下单',
     description:
-      '规格覆盖颜色 × 售卖方式 × 门幅；下单需短信验证码校验，成交单价取商品库权威价，AI 不自行定价。',
+      '规格覆盖颜色 × 售卖方式 × 门幅；下单须通过短信验证码校验，成交单价取商品库权威价，AI 不自行定价。',
   },
   {
     step: '03',
@@ -107,7 +107,7 @@ const orderJourney = [
     icon: PackageOpen,
     title: '入库',
     description:
-      '入库单先建草稿（不动库存），过账后自动生成批次号、增加库存并按移动加权平均记成本；期初建账支持 Excel 批量导入并逐行给出校验报告。',
+      '入库单先建草稿（不动库存）；过账后自动生成批次号、增加库存，并按移动加权平均记成本。期初建账支持 Excel 批量导入，逐行给出校验报告。',
   },
   {
     step: '05',
@@ -121,7 +121,7 @@ const orderJourney = [
     icon: Calculator,
     title: '售后与对账',
     description:
-      '售后工单分退货 / 换货 / 维修 / 退款 / 投诉 / 其他六类并带超时下钻；财务这边是三张账：资金流水、收支汇总、应收对账。',
+      '售后工单分退货 / 换货 / 维修 / 退款 / 投诉 / 其他六类，支持超时下钻；财务侧提供资金流水、收支汇总、应收对账三张账。',
   },
 ]
 
@@ -130,17 +130,17 @@ const platformGuarantees = [
     icon: BadgeCheck,
     title: 'AI 自动合规甄别',
     description:
-      '入驻申请由 AI 自动审查：敏感信息与非法内容先过规则层，再给出结论；通过后自动开通租户与管理员账号。',
+      '入驻申请由 AI 自动审查：敏感信息与非法内容先经规则层过滤，再给出结论；通过后自动开通租户与管理员账号。',
   },
   {
     icon: ShieldCheck,
     title: '租户级数据隔离',
-    description: '租户身份只来自登录凭证，查询自动按租户过滤；跨租户访问一律 404。',
+    description: '租户身份仅取自登录凭证，查询自动按租户过滤；跨租户访问一律返回 404。',
   },
   {
     icon: Landmark,
     title: '正规运营主体',
-    description: '杭州词元通达科技有限公司，为您提供长期稳定的产品服务。',
+    description: '由杭州词元通达科技有限公司提供，保障产品与服务的长期稳定。',
   },
   {
     icon: ClipboardList,
@@ -155,17 +155,17 @@ const platformGuarantees = [
   },
   {
     icon: Zap,
-    title: '多渠道同一套数据',
+    title: '多渠道统一数据',
     description:
-      '管理后台、顾客小程序、商家小程序、员工端 H5 共用同一套业务数据，AI 看到的就是店里真实的账。',
+      '管理后台、顾客小程序、商家小程序、员工端 H5 共用同一套业务数据，AI 读取的即门店真实数据。',
   },
 ]
 
 const industries = [
-  { icon: Factory, name: '布艺纺织', note: '定制规格多，询价与算料繁琐' },
-  { icon: Sofa, name: '家居建材', note: '产品参数多，需专业应答' },
-  { icon: Shirt, name: '服装服饰', note: '上新快、退换咨询高频' },
-  { icon: ShoppingBag, name: '电商零售', note: '私域询单集中，需统一管理' },
+  { icon: Factory, name: '布艺纺织', note: '定制规格多，询价与算料环节繁琐' },
+  { icon: Sofa, name: '家居建材', note: '产品参数多，需要专业应答' },
+  { icon: Shirt, name: '服装服饰', note: '上新频繁，退换咨询高频' },
+  { icon: ShoppingBag, name: '电商零售', note: '私域询单集中，需要统一管理' },
 ]
 
 const steps = [
@@ -173,7 +173,7 @@ const steps = [
     icon: FileText,
     step: '01',
     title: '提交申请',
-    description: '填写企业信息并完成手机验证，全程仅需几分钟。',
+    description: '填写企业信息并完成手机验证，全程约几分钟。',
   },
   {
     icon: Zap,
@@ -185,7 +185,7 @@ const steps = [
     icon: Rocket,
     step: '03',
     title: '即刻开通',
-    description: '开通即获得管理后台与两位 AI，小布与米宝立即在岗。',
+    description: '开通后即获得管理后台与两位 AI 助手，小布与米宝同步上线。',
   },
 ]
 
@@ -194,7 +194,7 @@ const handoffSteps: Array<[string, string]> = [
   ['小布 AI 应答', '商品、订单、物流、售后实时应答'],
   ['自动转人工', '识别复杂诉求，或顾客主动要求转人工'],
   ['人工接续', '自动创建会话与工单，上下文同步，无需重复描述'],
-  ['留言兜底', '非营业时间留言，人工上班后接续处理'],
+  ['留言受理', '非营业时间留言，人工上线后接续处理'],
 ]
 
 const gbPoints = [
@@ -202,24 +202,24 @@ const gbPoints = [
     icon: Sparkles,
     title: '自动识别复杂诉求转人工',
     description:
-      '情绪化、多轮未解决、涉赔偿 / 法律等超范围诉求，AI 自动建议或直接转接人工客服 —— 先 AI 应答，人工兜底。',
+      '情绪化表达、多轮未解决、涉及赔偿或法律等超范围诉求，AI 自动建议或直接转接人工客服，由人工承接。',
   },
   {
     icon: Zap,
     title: '转人工规则可配置',
-    description: '顾客可直接提出转人工，商家还可自定义触发关键词，转接规则随业务灵活调整。',
+    description: '顾客可直接提出转人工，商家亦可自定义触发关键词，转接规则可随业务调整。',
   },
   {
     icon: MessageSquare,
     title: '转人工即同步上下文',
     description:
-      '转人工后自动创建人工会话与工单并通知坐席，顾客与 AI 的沟通记录同步给人工客服，无需重复描述；原对话即可继续沟通（非营业时间自动转为留言）。',
+      '转人工后自动创建人工会话与工单并通知坐席，顾客与 AI 的沟通记录同步给人工客服，无需重复描述；原对话可直接继续沟通，非营业时间自动转为留言。',
   },
   {
     icon: ShieldCheck,
-    title: 'AI 严格承诺边界',
+    title: 'AI 承诺边界明确',
     description:
-      '涉及价格、折扣、退款金额等敏感事项，AI 只做规则解释与材料收集，申请类动作一律待人工客服或规范流程审核确认。',
+      '涉及价格、折扣、退款金额等敏感事项，AI 只做规则解释与材料收集；申请类动作一律待人工客服或规范流程审核确认。',
   },
 ]
 
@@ -243,17 +243,17 @@ export default function HomePage() {
               </div>
 
               <h1 className="mt-7 text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl lg:text-[3.4rem]">
-                两个 AI，把一间窗帘店
+                两位 AI 助手，一套经营平台
                 <br />
                 <span className="bg-gradient-to-r from-[#f6d27a] via-[#e8b04b] to-accent-300 bg-clip-text text-transparent">
-                  从询价管到发货
+                  覆盖布艺经营的全流程
                 </span>
               </h1>
 
               <p className="mt-6 max-w-2xl text-base leading-relaxed text-neutral-300 sm:text-lg">
-                小布接待顾客：应答咨询、算料报价、下单、查物流、受理售后；
-                米宝打理经营：商品、订单、生产、库存、财务，老板问一句就答。
-                两位 AI 共用同一套业务数据，谁都不会答出一个店里不存在的数。
+                顾客侧由小布承接：咨询应答、算料报价、下单、物流查询与售后受理；
+                经营侧由米宝承接：商品、订单、生产、库存与财务，以自然语言问答交付。
+                两位 AI 共用同一套业务数据，回答内容与后台数据保持一致。
               </p>
 
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
@@ -268,7 +268,7 @@ export default function HomePage() {
                   href="/services"
                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/25 px-7 py-3.5 text-base font-semibold text-white transition-colors hover:bg-white/10"
                 >
-                  看完整能力
+                  查看产品能力
                 </Link>
               </div>
 
@@ -316,8 +316,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="双 AI 分工"
-            title="一位打理店内经营，一位接待您的顾客"
-            lead="两位 AI 都基于大语言模型理解业务意图，7×24 在岗，共用同一业务数据后台；能力边界写在明处，做不到的事 AI 会直说。"
+            title="一位面向经营，一位面向顾客"
+            lead="两位 AI 均基于大语言模型理解业务意图，7×24 小时在线，共用同一业务数据底座；能力边界在页面中明确标注，超出范围的请求由 AI 直接说明。"
           />
           <div className="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-6 md:grid-cols-2">
             {agents.map((agent) => (
@@ -361,8 +361,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="行业纵深"
-            title="一条窗帘订单，跑完这六步"
-            lead="通用客服只答「有没有货、什么时候到」；布艺生意的难点在算料、工序、批次与计件 —— 这六步，米高每一步都有对应模块。"
+            title="一张窗帘订单的六个环节"
+            lead="布艺经营的核心难点集中在算料、工序、批次与计件；以下六个环节，米高均有对应功能模块支撑。"
           />
           <div className="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {orderJourney.map((item) => (
@@ -401,8 +401,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="管理后台"
-            title="一个后台，六个能力域"
-            lead="商品、客户、交易、生产、仓储、组织，全部长在同一套数据上 —— 这也是两位 AI 能答得准的原因。"
+            title="一套后台，六个能力域"
+            lead="商品、客户、交易、生产、仓储、组织六个能力域共用同一套数据，这也是两位 AI 答复准确的基础。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {capabilityDomains.map((domain) => (
@@ -448,8 +448,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="人机协同"
-            title="AI 先应答，人工来兜底"
-            lead="日常咨询由小布直接解决；复杂诉求自动转人工，会话记录与上下文随行，顾客无需重复描述。（协同机制参考推荐性国标 GB/T 47746-2026 设计）"
+            title="AI 优先应答，人工按规则接续"
+            lead="日常咨询由小布直接处理；复杂诉求按规则转接人工，会话记录与上下文同步至坐席，顾客无需重复描述。（协同机制参考推荐性国标 GB/T 47746-2026 设计）"
           />
 
           <div className="mt-14 grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -493,7 +493,7 @@ export default function HomePage() {
           <div className="mt-12 rounded-2xl border border-neutral-200 bg-neutral-50/60 p-8 sm:p-10">
             <SectionHeading
               kicker="遵循国家标准"
-              title="让人工与智能客服协同更可靠"
+              title="人工与智能客服协同，机制有据可依"
               lead={
                 <>
                   对标推荐性国标{' '}
@@ -516,8 +516,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="平台保障"
-            title="正规运营，数据隔离，每一步可追溯"
-            lead="把生意交给 AI 之前，先把边界交代清楚。"
+            title="正规运营，数据隔离，全程可追溯"
+            lead="平台的合规、隔离与审计能力逐项说明如下。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {platformGuarantees.map((point) => (
@@ -545,8 +545,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="适合行业"
-            title="适合这些行业的商家"
-            lead="行业属性可按需配置，最适合服务咨询高频、规格复杂的商家。"
+            title="适用行业"
+            lead="行业属性可按需配置，适用于咨询高频、规格复杂的商家。"
           />
           <div className="mx-auto mt-14 grid max-w-5xl grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {industries.map((industry) => (
@@ -570,7 +570,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="开始使用"
-            title="三步，开始使用"
+            title="三步开通"
             lead="提交申请 → AI 自动核验 → 即刻开通，全程无需等待人工审核。"
           />
           <div className="mx-auto mt-14 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
@@ -601,10 +601,10 @@ export default function HomePage() {
         </div>
         <div className="relative mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
           <h2 className="text-2xl font-bold tracking-tight sm:text-4xl">
-            几分钟开通，两位 AI 即刻开始工作
+            数分钟内完成开通，两位 AI 同步上线
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-neutral-300">
-            AI 自动甄别秒级返回结果；开通后即可使用管理后台，小布与米宝立即在岗，共用店里同一套业务数据。
+            入驻申请经 AI 自动甄别后秒级返回结果；开通后即可使用管理后台，小布与米宝共用同一套业务数据。
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link

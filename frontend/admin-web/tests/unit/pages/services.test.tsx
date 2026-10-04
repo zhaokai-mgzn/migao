@@ -7,8 +7,9 @@ vi.mock('next/link', () => ({
 }))
 
 import ServicesPage from '@/app/(corporate)/services/page'
+import { findColloquialMarkers } from './copy-voice-banlist'
 
-describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能力域，issue #6291）', () => {
+describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能力域，issue #6291 / #6326）', () => {
   // ── 页头 ──
 
   it('renders page title 与定位副标', () => {
@@ -16,7 +17,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
     expect(
       screen.getByRole('heading', {
         level: 1,
-        name: '能干活的两个 AI，和它们背后的整个后台',
+        name: '两位 AI 助手与全链路经营平台',
       })
     ).toBeInTheDocument()
     expect(screen.getByText(/四个终端共用同一套数据/)).toBeInTheDocument()
@@ -36,14 +37,14 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
     render(<ServicesPage />)
     expect(screen.getByText('小布 · AI 智能客服')).toBeInTheDocument()
     expect(screen.getByText('米宝 · 企业智能工作助手')).toBeInTheDocument()
-    expect(screen.getByText('顾客侧：从问规格到下单、查物流、报售后')).toBeInTheDocument()
-    expect(screen.getByText('经营侧：一句话查账、查单、查进度')).toBeInTheDocument()
+    expect(screen.getByText('顾客侧：从规格咨询到下单、物流查询与售后受理')).toBeInTheDocument()
+    expect(screen.getByText('经营侧：以自然语言查询账目、订单与进度')).toBeInTheDocument()
   })
 
   it('renders 小布的能力点（含算料报价与售后受理）', () => {
     render(<ServicesPage />)
     expect(
-      screen.getByText('按尺寸与工艺算用料并给出估算报价，如实说明是估算而非成交价')
+      screen.getByText('按尺寸与工艺计算用料并给出估算报价，明确说明为估算而非成交价')
     ).toBeInTheDocument()
     expect(
       screen.getByText('售后咨询与申请受理，工单恒为「待商家审核」')
@@ -129,7 +130,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
 
   it('renders 行业纵深四块', () => {
     render(<ServicesPage />)
-    expect(screen.getByText('布艺生意里最难的四件事')).toBeInTheDocument()
+    expect(screen.getByText('布艺经营的四项核心能力')).toBeInTheDocument()
     for (const title of ['算料与报价', '多规格 SKU', '工序与计件', '批次与余料']) {
       expect(screen.getByText(title)).toBeInTheDocument()
     }
@@ -167,5 +168,13 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
     expect(screen.queryByText(/拼版/)).not.toBeInTheDocument()
     expect(screen.queryByText(/毫秒级/)).not.toBeInTheDocument()
     expect(screen.queryByText(/自动学习/)).not.toBeInTheDocument()
+  })
+
+  // ── 文案口吻（issue #6326：去 AI 口语，改「能力陈述型」书面语）──
+
+  it('文案口吻：产品与服务页渲染文本不含 AI 口语词表', () => {
+    const { container } = render(<ServicesPage />)
+    const hits = findColloquialMarkers(container.textContent ?? '')
+    expect(hits, `产品与服务页渲染文本出现 AI 口语词：${hits.join(' / ')}`).toEqual([])
   })
 })
