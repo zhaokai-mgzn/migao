@@ -55,7 +55,7 @@ DEFAULT_NAME_CONSTANT = "DEFAULT_PRODUCT_CATEGORY_NAME"
 _ITEM_RE = re.compile(
     r"new\s+Item\(\s*(\w+)\s*,\s*\"(?:[^\"\\]|\\.)*\"\s*,\s*\"([^\"]+)\"\s*,\s*(true|false)\s*\)")
 _STRING_CONST_RE = re.compile(r'public\s+static\s+final\s+String\s+(\w+)\s*=\s*"([^"]*)"')
-#: 链路里的种子协作者接收者（`productCategorySeedService.seedDefaultCategory(` 的接收者部分）。
+#: 链路里的种子协作者接收者（锚 `productCategorySeedService.seedDefaultCategory` 的接收者部分）。
 #: 命名约定 = `*Seed*Service`（见 `OnboardingInitialData` 的「约定」段）—— 覆盖面**故意收窄**：
 #: 全仓还有 `redisTemplate` / `smsService` 这类与「开租必需初始数据」无关的协作者，
 #: 宽松判据会把它们误判成「未登记的种子」。

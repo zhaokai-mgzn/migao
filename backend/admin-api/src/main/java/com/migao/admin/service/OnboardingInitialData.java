@@ -27,7 +27,7 @@ import java.util.List;
  * 入驻链路里任何名字形如 {@code *Seed*Service} 的播种协作者的调用（本仓现有形态：
  * `productCategorySeedService.seedDefaultCategory(...)` / `productionSeedTemplateService.applyTemplate(...)`）
  * <b>必须</b>在本清单登记一条 {@link Item}：写明 {@code key}、{@code description}、
- * {@code seedAnchor}（= 调用点里逐字出现的 `<接收者>.<方法>(`），并声明是否 {@code enforced}。
+ * {@code seedAnchor}（= 调用点里逐字出现的 `<接收者>.<方法>`），并声明是否 {@code enforced}。
  * 非 enforced（尽力而为）项必须在
  * `tests/unit_ci_workflows/onboarding_required_seed_ledger.json` 的 {@code best_effort} 里
  * 写明理由 + 重启条件（豁免台账<b>只许缩短</b>）。
@@ -53,7 +53,7 @@ public final class OnboardingInitialData {
      *
      * @param key         稳定键（进报错文案与台账，不随实现改名）
      * @param description 这项数据「不种会怎样」（写清后果，便于判红时归因）
-     * @param seedAnchor  入驻链路里<b>逐字</b>出现的播种调用锚（`<接收者>.<方法>(`，**不写行号**）
+     * @param seedAnchor  入驻链路里<b>逐字</b>出现的播种调用锚（`<接收者>.<方法>`，**不写行号**）
      * @param enforced    {@code true} = 无条件必需（后置条件校验 + 判据都按硬约束判）；
      *                    {@code false} = 尽力而为（有合法不种的分支 ⇒ 必须在豁免台账写明理由）
      */

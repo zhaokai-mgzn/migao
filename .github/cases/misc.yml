@@ -3206,6 +3206,7 @@ cases:
     traces:
       tests:
         - "tests/unit_ci_workflows/test_onboarding_required_seed_guard.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OnboardingInitialDataTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java"
       ci:
         - pr-check.yml
