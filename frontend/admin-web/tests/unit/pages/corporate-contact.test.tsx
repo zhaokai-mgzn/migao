@@ -2,6 +2,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
 vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
@@ -90,5 +92,36 @@ describe('CorporateContactPage（官网联系页 v4：只保留在线留言 + �
     const { container } = render(<ContactPage />)
     expect(container.innerHTML).not.toContain('from-blue-600')
     expect(container.innerHTML).not.toContain('to-indigo-800')
+  })
+
+  // ── 服务端组件契约（issue #6307） ─────────────────────────────
+  // 这一页必须是服务端组件：声明 'use client' 会让它在 SSR 阶段整段不渲染，
+  // 正文进不了初始 HTML（SEO / 无 JS 环境读到空壳），而浏览器里看起来完全正常。
+  // 形态类判据在 corporate-pages-server-component-guard.test.ts；这里是**本页**的实例判据。
+
+  it("page.tsx 是服务端组件：不声明 'use client'，而是把交互部分 import 成同目录子组件", () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/app/(corporate)/contact/page.tsx'),
+      'utf-8',
+    ).replace(/^\uFEFF/, '')
+    const firstStatement = src
+      .split(/\r?\n/)
+      .find((l) => l.trim() !== '' && !/^\s*(\/\/|\/\*|\*)/.test(l))
+    expect(firstStatement?.trim(), 'contact 页必须是服务端组件（否则正文进不了初始 HTML）').not.toMatch(
+      /^['"]use client['"]/,
+    )
+    // 反向自证：交互态确实被拆出去了（不是把 'use client' 删掉就完事）
+    expect(src).toMatch(/import\s+ContactForm\s+from\s+['"]\.\/ContactForm['"]/)
+  })
+
+  it('表单校验口径不变：空白提交逐字段报错，且不出现成功反馈', async () => {
+    const user = userEvent.setup()
+    render(<ContactPage />)
+    await user.click(screen.getByText('提交留言'))
+    expect(await screen.findByText('请输入您的姓名')).toBeInTheDocument()
+    expect(screen.getByText('请输入您的联系电话')).toBeInTheDocument()
+    expect(screen.getByText('请输入您的电子邮箱')).toBeInTheDocument()
+    expect(screen.getByText('请输入留言内容')).toBeInTheDocument()
+    expect(screen.queryByText('留言提交成功')).not.toBeInTheDocument()
   })
 })
