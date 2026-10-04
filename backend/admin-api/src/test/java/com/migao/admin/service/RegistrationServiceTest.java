@@ -43,7 +43,7 @@ import static org.mockito.Mockito.*;
  * 覆盖：AI 通过/驳回/系统繁忙降级、蜜罐、频率限制、手机号/企业名查重、驳回冷却、
  * 审批副作用（租户+管理员）、审核元数据落库
  */
-// case_ids: OB-001, OB-002, OB-003, HR-006
+// case_ids: OB-001, OB-002, OB-003, OB-006, HR-006
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("RegistrationService 入驻申请服务测试（AI 自动甄别）")
