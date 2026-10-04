@@ -1,5 +1,32 @@
 ## [Unreleased]
 
+### 工人端主页 `/w/` 与一体机页 `/w/machine.html` 第二次白屏修复：共享模块迁进发布集（树内），并在发布自检腿补一条 module **闭包加载**判据（2026-10-04，issue #6306）
+
+- 以前：修好 `.mjs` 的 MIME（issue #6293）之后两页**仍整页白屏** —— 真浏览器读数 `bodyText=""`、
+  `rootChildren=0`、console 逐字 `Failed to load module script: … MIME type of "text/html"`。
+  坏点 = **`/shared/operation-display.mjs`**（工序显示名的唯一口径，`render.mjs` / `machine.mjs` 静态 import 它）：
+  该模块住在**仓根** `frontend/shared/`，而发布集只有 `index.html` + `machine.html` + `src/**`
+  ⇒ 线上那个 URL 上什么都没有，被 nginx `location /` 的 `try_files $uri $uri/ /index.html`
+  接成 **`200` + C 端 index.html** ⇒ 浏览器按 HTML 规范拒绝执行 module script。
+  **与 #6293 是两个独立缺陷**：修好 MIME 后页面照旧白屏（同一时刻实测）。
+  （起始时间不同：`/w/` 自 2026-09-21、`/w/machine.html` 自 2026-09-29。）
+- 现在：模块**树内迁移**到 `frontend/worker-h5/src/shared/operation-display.mjs`，两处 import 改
+  `./shared/operation-display.mjs`；说明符落在发布集内 ⇒ 发布自动覆盖、`location /w/` 的 JS MIME 也跟着覆盖。
+  **零 nginx 改动、零发布腿红线放宽**（发布腿的「TARGET == `<静态根>/w`」断言一字未动），
+  也没有在站根制造不受任何腿托管/清理的孤儿顶层条目。
+- 固化（类级，本单最重要的一条）：`deploy/scripts/worker-h5-verify-served.sh` **⑦ module 闭包加载判据** ——
+  起点 = **发布集内每个 `*.html` 入口**（`index.html` 与 `machine.html` **两个都要**：只从 index 出发会漏掉
+  `machine.mjs` 那条链），沿**静态 `import … from` + 动态 `import('…')` 字面量**递归取依赖，
+  逐个断 `200`（MIME 面由上一条 ⑥ 覆盖，闭包新增 URL 全部落在 `src/**` 内）；
+  **闭包空集判红**；另断入口 `<link rel="stylesheet" href>` = 200（顺带补的**正向盲区**：CSS 404 时
+  页面无样式而 module 闭包照样全绿）。元守卫 =
+  `tests/unit_ci_workflows/test_worker_h5_module_closure_guard.py`（按**现取腿集合**判：每条腿要么带判据、
+  要么在 `tests/unit_ci_workflows/served_leg_module_closure_ledger.json` 里具名豁免且**只许缩短**；
+  四组锚各有注入式红证；本地静态服务上真跑绿/红两面）。
+- 边界（如实登记）：本判据只覆盖 **worker-h5 树**（两个入口 + `src/**`）；`bmini` / C 端是打包产物
+  （仓内无 `dist/`）⇒ 「闭包可从仓库状态确定性导出」不成立，两条腿在台账里**具名豁免**并写明重启条件
+  （真浏览器懒加载面另开旅程判据）。`src/shipment.mjs` 是仓内无人 import 的**孤儿模块**，但它属发布集
+  ⇒ 由 ⑥ 的现取文件清单兜、不进闭包（口径写在脚本注释里）。
 ### 同一 runId 的盘点请求并发提交不再报 500：其余请求拿幂等回执（replayed + 200），库存只动一次（2026-10-04，issue #6301）
 
 - 以前：同一个 `runId` 的批量盘点请求**并发 6 次** ⇒ 回执 `[200, 500, 500, 500, 500, 500]`。

@@ -13,11 +13,18 @@
 //   ④ 报工回执（`scan/complete`）⇒ 屏上只认回执给的「下一道 / 本套已完成」（#4792），
 //      前端**不**自己猜下一道工序（猜错 = 把下一笔计件记到错的工序上）。
 //
-// 工序显示名走**唯一**口径（issue #4963）：`frontend/shared/operation-display.mjs` 的
+// 工序显示名走**唯一**口径（issue #4963）：`src/shared/operation-display.mjs` 的
 // `operationDisplayName` —— 本文件此前自拼 `${logical_name} · ${position ?? 部位}`，与
 // admin-web 的 `frontend/admin-web/src/lib/operation-display.ts` 在「缺 logical_name」
 // 「键值带空白」「全缺」三种输入下渲染不同（各拼一份必然漂移，而漂移的那一份不会变红）。
-import { operationDisplayName } from '../../shared/operation-display.mjs'
+//
+// 🔴 issue #6306：该模块原先住在**仓根** `frontend/shared/`（发布集之外）⇒ 线上这个相对
+// 说明符解析成 `/shared/operation-display.mjs` —— 它**没随发布落地**，被 nginx 的 SPA 兜底
+// 接成 `200 text/html` ⇒ 浏览器按 HTML 规范拒绝执行 module script ⇒ 工人端整页白屏
+// （真浏览器读数 `bodyText=""` / `rootChildren=0`）。修法 = **树内迁移**（模块搬进
+// `src/shared/`）：说明符落在发布集 `src/**` 内，发布与 `location /w/` 的 JS MIME 自动覆盖，
+// 无需改 nginx、无需放宽发布腿红线。
+import { operationDisplayName } from './shared/operation-display.mjs'
 
 /** 初始态：未登录。 */
 export function initialState() {

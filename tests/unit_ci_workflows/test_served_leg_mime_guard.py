@@ -67,7 +67,15 @@ from test_swas_nginx_rate_limit import (  # noqa: E402
 _H5_SUBDIR_RE = re.compile(r"^\s*H5_SUBDIR:\s*(?P<sub>[A-Za-z0-9._-]+)\s*$", re.M)
 _JS_MIME_DECL_RE = re.compile(r"""^JS_MIME_RE=['"](?P<pattern>.+?)['"]\s*$""", re.M)
 _JS_MIME_CALL_RE = re.compile(r"""\bjs_mime_ok\s+["']""")
-_EMPTY_GUARD_RE = re.compile(r"""if \[ -z [^\]]*\]; then\s*\n\s*bad\s+["']""")
+#: 「取不到就判红」的 fail-closed 分支（结构 + **它判的是哪个变量**）。
+#: 🔴 为什么要连变量一起抓（issue #6306 订正）：原口径只认「有**任一条** `-z` 空集分支」⇒
+#: 同一条腿里**别的**判据的空集分支（#6306 新增的起点 `ENTRY_HTML`）会把这个判据喂绿 ——
+#: 删掉 MIME 那条之后它仍报「分支在」（红证失败，实测）。现在取**该腿 `fail_closed_vars` 声明
+#: 的那些变量**（每条腿自带声明，见各腿内的同名字段）：MIME 判据自己的空集分支是哪个，判据自己说。
+_EMPTY_GUARD_RE = re.compile(r"""if \[ -z "\$(?P<var>[A-Za-z_]\w*)" \]; then\s*\n\s*bad\s+["']""")
+#: 腿内声明自己的 fail-closed 变量（`FAIL_CLOSED_VARS="A B"`）——未声明 ⇒ 退化成旧口径？
+#: 不：**未声明或取不到 ⇒ 判红**（fail-closed），否则「声明」就成了可绕过项。
+_FAIL_CLOSED_DECL_RE = re.compile(r"""^\s*FAIL_CLOSED_VARS=['"](?P<vars>[A-Za-z0-9_ ]*)['"]\s*$""", re.M)
 
 
 # ── 第 1/2 条：发布自检腿必须自带 MIME 判据（现取集合，未带即红）────────────────
@@ -101,10 +109,29 @@ def leg_problems(name: str, text: str) -> list[str]:
         bad.append(
             f"{name}: 声明了白名单但**没有任何调用点**（`js_mime_ok \"$ct\"`）⇒ 判据没接在断言流程上"
         )
-    if _EMPTY_GUARD_RE.search(text) is None:
+    # fail-closed 面（issue #6306 订正）：判据锚在**本腿声明的那些变量**上，逐变量核「真的有那条分支」。
+    decl_vars = _FAIL_CLOSED_DECL_RE.search(text)
+    if decl_vars is None:
         bad.append(
-            f"{name}: 没有「取不到就判红」的 fail-closed 分支（`if [ -z … ]; then bad \"…\"`）⇒ "
-            "判据可能**空跑却全绿**（这正是本单的病根形态）"
+            f"{name}: 没有声明 `FAIL_CLOSED_VARS=\"…\"`（本腿依赖的 fail-closed 空集分支落在哪些变量上）"
+            " ⇒ 无法把「取不到就判红」绑到 MIME 判据自己那条分支上"
+            "（别的判据的空集分支会把它喂绿 —— 那正是 issue #6306 修掉的红证失败形态）"
+        )
+        return bad
+    declared = (decl_vars.group("vars") or "").split()
+    if not declared:
+        bad.append(f"{name}: `FAIL_CLOSED_VARS` 声明为空 ⇒ 该腿没有 fail-closed 面可核（不许空转）")
+        return bad
+    live_vars = set(_EMPTY_GUARD_RE.findall(text))
+    for var in declared:
+        if var not in live_vars:
+            bad.append(
+                f"{name}: 声明的 fail-closed 变量 `{var}` **没有**对应的空集判红分支"
+                f"（`if [ -z \"${var}\" ]; then … bad …`）⇒ 该判据可能**空跑却全绿**"
+            )
+    if not (set(declared) & live_vars):
+        bad.append(
+            f"{name}: 声明的 fail-closed 变量一条都没落地 ⇒ MIME 判据的空集分支名存实亡"
         )
     return bad
 

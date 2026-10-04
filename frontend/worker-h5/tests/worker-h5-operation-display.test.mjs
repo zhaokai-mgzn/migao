@@ -10,15 +10,16 @@
 // 另有一处**独立缺陷**：`doneNotice` 的「下一道：」只拼 `logical_name` ⇒ **丢部位**
 // （`打卷 · 布帘` 显示成 `打卷`），而回执的 `next_operation` 本来就带 `position`。
 //
-// 判据：本文件直接**执行**共享模块 `frontend/shared/operation-display.mjs`（worker-h5 的
-// `render.mjs` import 的就是它）+ 端到端断言渲染出来的 HTML。
+// 判据：本文件直接**执行**共享模块 `frontend/worker-h5/src/shared/operation-display.mjs`
+// （worker-h5 的 `render.mjs` import 的就是它 —— 位置由 issue #6306 的树内迁移确定）
+// + 端到端断言渲染出来的 HTML。
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { operationDisplayName } from '../../shared/operation-display.mjs'
+import { operationDisplayName } from '../src/shared/operation-display.mjs'
 import { doneNotice, initialState, reduce, renderPage } from '../src/render.mjs'
 
 /** 一屏（主屏）夹具：布帘的「定型」，部位由 `position` 给出。 */
@@ -145,7 +146,7 @@ test('render.mjs 引用共享模块（自拼一份回来 ⇒ 本判据必红）'
   const src = readFileSync(fileURLToPath(new URL('../src/render.mjs', import.meta.url)), 'utf8')
   assert.match(
     src,
-    /from '\.\.\/\.\.\/shared\/operation-display\.mjs'/,
+    /from '\.\/shared\/operation-display\.mjs'/,
     '工序显示名必须 import 共享模块（各拼一份必然漂移，而漂移的那一份不会变红）',
   )
   // 红证形态：自拼 `${...logical_name} · ${...position...}` 会命中这条

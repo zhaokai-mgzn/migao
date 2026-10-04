@@ -571,15 +571,18 @@ def _run_verify(base_url: str):
 def _copy_worker_tree(dest: Path) -> None:
     """铺一份「已正确发布」的 `w/` 子树 = 远端发布集：index.html + machine.html + `src/**`。
 
-    ⚠️ `src/**` 必须**整棵**铺（不再只铺 2 个文件）：`deploy/scripts/worker-h5-verify-served.sh` ⑥
-    对**每一个** `.mjs` 逐条断言 MIME（issue #6293）⇒ 少铺一个就是**夹具造的假红**
-    （与 ④/⑤ 段「机台页必须在夹具里」同因，2026-09-29 已实证过同一个坑）。
+    ⚠️ `src/**` 必须**整棵递归**铺（不再只铺顶层文件）：`deploy/scripts/worker-h5-verify-served.sh`
+    ⑥ 对**每一个** `.mjs` 逐条断言 MIME（issue #6293），⑦ 还沿 import 闭包取每个依赖
+    （issue #6306 起树内有 `src/shared/operation-display.mjs`）⇒ 少铺一个（尤其**子目录**里的那个）
+    就是**夹具造的假红**（与 ④/⑤ 段「机台页必须在夹具里」同因，2026-09-29 已实证过同一个坑）。
     """
     (dest / SUBDIR / "src").mkdir(parents=True, exist_ok=True)
     (dest / SUBDIR / "index.html").write_bytes(WORKER_INDEX.read_bytes())
     (dest / SUBDIR / "machine.html").write_bytes(WORKER_MACHINE.read_bytes())
-    for f in sorted((WORKER_H5_DIR / "src").iterdir()):
-        (dest / SUBDIR / "src" / f.name).write_bytes(f.read_bytes())
+    subprocess.run(
+        ["cp", "-R", str(WORKER_H5_DIR / "src") + "/.", str(dest / SUBDIR / "src")],
+        check=True, capture_output=True,
+    )
 
 
 def test_verify_served_is_green_on_real_worker_h5(tmp_path):

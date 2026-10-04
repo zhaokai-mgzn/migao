@@ -60,7 +60,7 @@
         "predicate_fn": "worker_h5_face_paths",
         "fail_closed": true
       },
-      "note": "零依赖：Node 内置 --test，无 node_modules（#4716）。本单（#5707 的 FM-E10 收口）加触发面：命中的**还包括 frontend/shared/**（它是本腿的跨目录输入，现取 = `frontend/shared/operation-display.mjs`，被 `frontend/worker-h5/src/render.mjs` 与测试执行）⇒ 缺 node 时那条间接覆盖也算「没跑」"
+      "note": "零依赖：Node 内置 --test，无 node_modules（#4716）。本单（#5707 的 FM-E10 收口）加触发面：命中的**还包括 frontend/shared/**（它是本腿的跨目录输入，现取 = `frontend/shared/operation-display.mjs`，被 `frontend/worker-h5/src/render.mjs` 与测试执行）⇒ 缺 node 时那条间接覆盖也算「没跑」。🔴 issue #6306：该跨目录输入**已消失** —— 共享模块迁进树内 `frontend/worker-h5/src/shared/operation-display.mjs`（住发布集之外会让线上说明符落到 SPA 兜底 ⇒ 白屏），`frontend/shared/` 目录已删 ⇒ 触发面只剩 `frontend/worker-h5/**`。"
     },
     "frontend/bmini-app": {
       "tiers": ["gate"],
@@ -74,14 +74,6 @@
         "fail_closed": true
       },
       "note": "本单新增：只在 gate 档（merge gate），按变更集命中触发面时派发；缺依赖 ⇒ fail-closed 记 ❌（不走 ⏭️），四件命令与 CI bmini-app.yml 两条腿逐字一致"
-    },
-    "frontend/shared": {
-      "tiers": ["quick", "full", "frontend"],
-      "leg_names": ["worker-h5 页面测试（Node 内置 runner）"],
-      "forms": ["单测"],
-      "indirect": true,
-      "consumed_by": ["frontend/worker-h5/src/render.mjs"],
-      "note": "间接覆盖：本模块（operation-display.mjs）没有独立腿，被 worker-h5 的 Node 测试**执行**（该测试直接跑这个共享模块）⇒ 靠 worker-h5 腿兜；consumed_by 的 import 由判据逐个核对。⚠️ 与 CI 侧不同：CI 的 worker-h5 workflow 是 **workflow 级 paths**（只认 frontend/worker-h5/**）⇒ 只改共享模块在 CI **不触发**那条腿（该缺口已登记在 declaration_gate_registry.json 的 gates[worker-h5 unit tests].uncovered，issue #4177）；本地腿在 quick/full/frontend 档是**固定跑**的（无 path 门控）⇒ 本地这一面是覆盖的。"
     }
   },
   "uncovered_modules": {

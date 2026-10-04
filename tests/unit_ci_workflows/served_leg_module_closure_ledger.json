@@ -1,0 +1,30 @@
+{
+  "schema": "migao.served_leg_module_closure.v1",
+  "issue": "#6306",
+  "_what": "发布自检腿（`deploy/scripts/*-verify-served.sh`）的 **module 闭包加载判据** 登记册：每条腿要么**带**判据，要么在这里**具名豁免**（带原因 + 单号 + owner）。**未登记即红** —— 新增第四条腿（或给现有腿换形态）而不在此表态 ⇒ `tests/unit_ci_workflows/test_worker_h5_module_closure_guard.py` 判红。",
+  "_judged_by": "tests/unit_ci_workflows/test_worker_h5_module_closure_guard.py",
+  "_why_this_shape": "「按**现取腿集合**判」= 本判据的腿清单由 `deploy/scripts/*-verify-served.sh` 现取（`glob`），**不写死**；本册只登记**豁免**，且豁免条目与实际形态**双向**核对（豁免的腿真没带判据 / 带判据的腿不在豁免册里）—— 台账**只许缩短**。",
+  "criteria_markers": {
+    "_what": "判据的**结构锚**（认结构、不认注释文案）：一条腿「带 module 闭包判据」= 下列四组片段**逐字都在**（由 `closure_problems()` 核）。",
+    "_why_four": "四组分别对应判据的四个必要面：① 起点 = 发布集内每个 `*.html` 入口（**不是**写死 index.html）；② 模块说明符 = 静态 `import` + 动态 `import()` 字面量（**不是**只认 `from`）；③ 空集判红（fail-closed）；④ 入口样式表 `<link rel=stylesheet href>` 断 200（正向盲区）。",
+    "entry_glob": "find \"$ROOT/frontend/worker-h5\" -maxdepth 1 -name '*.html' -type f",
+    "import_scan": "import\\s*\\(?\\s*",
+    "empty_set_fail_closed": "module 闭包集合为空",
+    "stylesheet_check": "SHEET_QUEUE=\"$TMPDIR_RUN/closure.sheets\""
+  },
+  "exemptions": {
+    "bmini-h5-verify-served.sh": {
+      "reason": "bmini 端的**发布物是打包产物**（Taro `build:h5`：`index.html` + `js/app.js` + 哈希 chunk + `css/app.css`），仓内没有 `dist/`（构造出来的，`git ls-files frontend/bmini-app/dist` = 0）⇒ 「模块闭包可从**仓库状态**确定性导出」这个前提不成立：入口脚本的 import 面是 webpack runtime 与**构建时**生成的 chunk 映射，静态扫描既扫不出真实 chunk 清单、扫出来的也不是线上会取的那一份。bmini 侧**已有**的是入口脚本 MIME 判据（⑥）与不串端 / 身份判据；真浏览器懒加载面另开旅程判据（本单边界，见 PR body 的「未固化项」）。",
+      "issue": "#6306",
+      "owner": "bmini-h5 owner（+ CI 门禁 owner）",
+      "restart_condition": "bmini 的 h5 产物改成**零构建 ESM 目录**（同 worker-h5 形态），或引入一份「构建产物清单」可作发布集真值时 ⇒ 销掉本条豁免、把同一套判据接进该腿。"
+    },
+    "c-end-h5-verify-served.sh": {
+      "reason": "同 bmini：C 端（`frontend/mini-app`）也是 Taro h5 打包产物、仓内无 `dist/` ⇒ 静态闭包不可从仓库状态导出。该腿已有入口脚本 MIME 判据（⑤）与身份 / 不串端判据。",
+      "issue": "#6306",
+      "owner": "C 端 H5 owner（+ CI 门禁 owner）",
+      "restart_condition": "同 bmini（改成零构建 ESM 目录，或给出可作真值的产物清单）。"
+    }
+  },
+  "_boundary": "本册机械保证的是「**每条现取腿都被显式裁定**」+「豁免条目双向活着（不陈旧、也不与已落判据冲突）」+「worker-h5 腿的四组结构锚逐字在位」。它**不保证**判据在真环境里跑得对（那是 `test_worker_h5_hosting.py` 真跑腿的活体读数 + 线上 CI 的面），也**不保证**豁免的判据面不复存在（那是各自 restart_condition 与 owner 的事）。本册**不改**任何门禁的通过条件、不新增豁免以外的放宽。"
+}
