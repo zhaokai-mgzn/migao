@@ -1,0 +1,20 @@
+{
+ "at": "2026-10-04 11:53 +08",
+ "why": "gitleaks generic-api-key 把探针自造的**幂等键**判成密钥（22 条，阻塞必需检查 Secret Scan）",
+ "scheme": "按值做确定性映射（同值→同占位符，保留同键/异键的区分）；原始键值**不落盘**",
+ "map": {
+  "<IDEM-KEY-1>": null,
+  "<IDEM-KEY-2>": null,
+  "<IDEM-KEY-3>": null,
+  "<IDEM-KEY-4>": null,
+  "<IDEM-KEY-5>": null,
+  "<IDEM-KEY-6>": null,
+  "<IDEM-KEY-7>": null,
+  "<IDEM-KEY-8>": null,
+  "<IDEM-KEY-9>": null,
+  "<IDEM-KEY-10>": null,
+  "<IDEM-KEY-11>": null,
+  "<IDEM-KEY-12>": null
+ },
+ "note": "首版把明文值写进了映射表本身 ⇒ 该文件自己成了泄点；第二版只按结构化字段脱敏 ⇒ 自由文本里的副本漏网（`幂等键 = X-Client-Request-Id: <值>`）。两处教训见 method-notes N9。"
+}

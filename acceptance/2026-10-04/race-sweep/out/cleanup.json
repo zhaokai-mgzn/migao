@@ -1,0 +1,66 @@
+{
+  "at": "2026-10-04T01:21:34.808Z",
+  "tenantA": 25,
+  "tenantB": 26,
+  "dry": false,
+  "before": {
+    "tenantA": {
+      "products": 34,
+      "orders": 55,
+      "inbounds": 0,
+      "keys": 0,
+      "ledger": 0
+    },
+    "tenantB": {
+      "tenantRow": [
+        {
+          "id": 26,
+          "name": "米高测试环境-隔离对照",
+          "code": "shop-4c53",
+          "status": "active"
+        }
+      ],
+      "perTable": {}
+    }
+  },
+  "after": {
+    "tenantA": {
+      "deleted": {},
+      "total": 0,
+      "readback": {
+        "products": 34,
+        "orders": 55,
+        "inbounds": 0,
+        "keys": 0,
+        "ledger": 0
+      }
+    },
+    "tenantB": {
+      "deleted": {},
+      "totalDeletedRows": 0,
+      "usersDeleted": 0,
+      "tenantsDeleted": 1,
+      "leftovers": [],
+      "tenantRow": []
+    }
+  },
+  "steps": [
+    {
+      "label": "tenantA",
+      "round": 1,
+      "deletedThisRound": 0
+    },
+    {
+      "label": "tenantB",
+      "round": 1,
+      "deletedThisRound": 0
+    }
+  ],
+  "errors": [],
+  "tenantsAfter": [
+    {
+      "id": 25,
+      "name": "米高测试环境"
+    }
+  ]
+}

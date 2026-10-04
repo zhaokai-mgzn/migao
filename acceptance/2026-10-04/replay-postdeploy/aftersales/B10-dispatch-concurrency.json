@@ -1,0 +1,863 @@
+{
+  "records": [
+    {
+      "id": "LB-C5-DISPATCH-SERIAL",
+      "name": "C5 并发派工（pooled 缺省=逐单派）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复",
+      "status": "pass",
+      "detail": "pooled=false 三轮：**业务成功数**=[1,1,1]（期望各 1）/ HTTP 200 数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]",
+      "evidence": [
+        "期望来源: 本包独立算式 + 源码 ——",
+        "   · 「一单一加工单」：DB partial unique index `uk_processing_orders_active`（注释见 backend/admin-api/src/main/java/com/migao/admin/controller/ProductionPoolController.java 的 dispatch）+ 应用层幂等闸（backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java 的 prepare ⇒ selectActiveByOrderId ⇒ 「已有加工单 … 请勿重复生成」）",
+        "   · 工序实例：单次派工的行数由 processing_position_operations 决定；并发不得产生重复 id / 撞 seq",
+        "   · 工人归属：同一工序只能有一个 worker（不得同日两派）",
+        "结局形态判据: **业务层**恰 1 个 success=true，其余 N−1 个 success=false + code=VALIDATION_ERROR（「已有加工单 … 请勿重复生成」）；",
+        "   HTTP 层恒 200（逐单成败在信封 data[0] 内）⇒ 本判据取**业务层**读数，不拿 HTTP 码当成败",
+        "   若出现 **5xx**（DB 唯一约束冲突被透传）或业务成功数 >1 ⇒ 真缺陷",
+        "重叠证据: R1: 真重叠：最大逐对重叠 1714ms（并集 1714ms < 各历时之和 6294ms） ｜ R2: 真重叠：最大逐对重叠 440ms（并集 441ms < 各历时之和 1752ms） ｜ R3: 真重叠：最大逐对重叠 553ms（并集 555ms < 各历时之和 2205ms）",
+        "逐请求结局: [[[200,\"VALIDATION_ERROR\",\"订单 20261004508530049 加工单已生成（并发操作），请刷新后重试\"],[200,\"VALIDATION_ERROR\",\"订单 20261004508530049 加工单已生成（并发操作），请刷新后重试\"],[200,null,\"ok\"],[200,\"VALIDATION_ERROR\",\"订单 20261004508530049 加工单已生成（并发操作），请刷新后重试\"]],[[200,null,\"ok\"],[200,\"VALIDATION_ERROR\",\"订单 20261004016730050 加工单已生成（并发操作），请刷新后重试\"],[200,\"VALIDATION_ERROR\",\"订单 20261004016730050 加工单已生成（并发操作），请刷新后重试\"],[200,\"VALIDATION_ERROR\",\"订单 20261004016730050 加工单已生成（并发操作），请刷新后重试\"]],[[200,\"VALIDATION_ERROR\",\"订单 20261004718370051 加工单已生成（并发操作），请刷新后重试\"],[200,\"VALIDATION_ERROR\",\"订单 20261004718370051 加工单已生成（并发操作），请刷新后重试\"],[200,\"VALIDATION_ERROR\",\"订单 20261004718370051 加工单已生成（并发操作），请刷新后重试\"],[200,null,\"ok\"]]]"
+      ],
+      "at": "2026-10-04 09:32:30 +08",
+      "atUtc": "2026-10-04T01:32:30.325Z",
+      "extra": {
+        "N": 4,
+        "pooled": false,
+        "rounds": [
+          {
+            "round": 1,
+            "N": 4,
+            "pooled": false,
+            "orderId": "3767620c122cf4cbaa16655a10960789",
+            "okCount": 4,
+            "bizOkCount": 1,
+            "bizFailCount": 3,
+            "s5xx": 0,
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004508530049 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 1714
+              },
+              {
+                "i": 1,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004508530049 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 1714
+              },
+              {
+                "i": 2,
+                "status": 200,
+                "msg": "ok",
+                "bizOk": true,
+                "durMs": 1154
+              },
+              {
+                "i": 3,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004508530049 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 1712
+              }
+            ],
+            "dbFinal": {
+              "activeProcessingOrders": 1,
+              "processingOrderNos": [
+                "JG-20261004-5561"
+              ],
+              "positionRows": 10,
+              "distinctPositionIds": 10,
+              "seqDup": false,
+              "distinctWorkers": [
+                "-/-"
+              ],
+              "statuses": [
+                "pending"
+              ]
+            },
+            "expectation": "业务成功恰 1 个（其余 N−1 被幂等闸拒）；活跃加工单恰 1 张；工序实例行数 = 单次派工行数（同 id 不重复、seq 不撞）；同一工序只归一个工人；无 5xx",
+            "overlapEvidence": {
+              "barrierAt": 1791077545083,
+              "barrierAtCST": "2026-10-04 09:32:25 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077545083,
+                  "t1": 1791077546797,
+                  "durMs": 1714
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077545083,
+                  "t1": 1791077546797,
+                  "durMs": 1714
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077545084,
+                  "t1": 1791077546238,
+                  "durMs": 1154
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077545084,
+                  "t1": 1791077546796,
+                  "durMs": 1712
+                }
+              ],
+              "unionMs": 1714,
+              "sumMs": 6294,
+              "maxPairOverlapMs": 1714,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 1714ms（并集 1714ms < 各历时之和 6294ms）"
+            },
+            "pass": true
+          },
+          {
+            "round": 2,
+            "N": 4,
+            "pooled": false,
+            "orderId": "e74f2550d25d1b9b553eba1df52c7f31",
+            "okCount": 4,
+            "bizOkCount": 1,
+            "bizFailCount": 3,
+            "s5xx": 0,
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 200,
+                "msg": "ok",
+                "bizOk": true,
+                "durMs": 433
+              },
+              {
+                "i": 1,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004016730050 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 440
+              },
+              {
+                "i": 2,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004016730050 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 441
+              },
+              {
+                "i": 3,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004016730050 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 438
+              }
+            ],
+            "dbFinal": {
+              "activeProcessingOrders": 1,
+              "processingOrderNos": [
+                "JG-20261004-5564"
+              ],
+              "positionRows": 10,
+              "distinctPositionIds": 10,
+              "seqDup": false,
+              "distinctWorkers": [
+                "-/-"
+              ],
+              "statuses": [
+                "pending"
+              ]
+            },
+            "expectation": "业务成功恰 1 个（其余 N−1 被幂等闸拒）；活跃加工单恰 1 张；工序实例行数 = 单次派工行数（同 id 不重复、seq 不撞）；同一工序只归一个工人；无 5xx",
+            "overlapEvidence": {
+              "barrierAt": 1791077548006,
+              "barrierAtCST": "2026-10-04 09:32:28 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077548006,
+                  "t1": 1791077548439,
+                  "durMs": 433
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077548006,
+                  "t1": 1791077548446,
+                  "durMs": 440
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077548006,
+                  "t1": 1791077548447,
+                  "durMs": 441
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077548007,
+                  "t1": 1791077548445,
+                  "durMs": 438
+                }
+              ],
+              "unionMs": 441,
+              "sumMs": 1752,
+              "maxPairOverlapMs": 440,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 440ms（并集 441ms < 各历时之和 1752ms）"
+            },
+            "pass": true
+          },
+          {
+            "round": 3,
+            "N": 4,
+            "pooled": false,
+            "orderId": "22ac65a81a01f103f41916f8c394e011",
+            "okCount": 4,
+            "bizOkCount": 1,
+            "bizFailCount": 3,
+            "s5xx": 0,
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004718370051 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 555
+              },
+              {
+                "i": 1,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004718370051 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 553
+              },
+              {
+                "i": 2,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004718370051 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 553
+              },
+              {
+                "i": 3,
+                "status": 200,
+                "msg": "ok",
+                "bizOk": true,
+                "durMs": 544
+              }
+            ],
+            "dbFinal": {
+              "activeProcessingOrders": 1,
+              "processingOrderNos": [
+                "JG-20261004-5568"
+              ],
+              "positionRows": 10,
+              "distinctPositionIds": 10,
+              "seqDup": false,
+              "distinctWorkers": [
+                "-/-"
+              ],
+              "statuses": [
+                "pending"
+              ]
+            },
+            "expectation": "业务成功恰 1 个（其余 N−1 被幂等闸拒）；活跃加工单恰 1 张；工序实例行数 = 单次派工行数（同 id 不重复、seq 不撞）；同一工序只归一个工人；无 5xx",
+            "overlapEvidence": {
+              "barrierAt": 1791077549545,
+              "barrierAtCST": "2026-10-04 09:32:29 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077549545,
+                  "t1": 1791077550100,
+                  "durMs": 555
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077549545,
+                  "t1": 1791077550098,
+                  "durMs": 553
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077549545,
+                  "t1": 1791077550098,
+                  "durMs": 553
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077549546,
+                  "t1": 1791077550090,
+                  "durMs": 544
+                }
+              ],
+              "unionMs": 555,
+              "sumMs": 2205,
+              "maxPairOverlapMs": 553,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 553ms（并集 555ms < 各历时之和 2205ms）"
+            },
+            "pass": true
+          }
+        ],
+        "overlapEvidence": [
+          {
+            "barrierAt": 1791077545083,
+            "barrierAtCST": "2026-10-04 09:32:25 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077545083,
+                "t1": 1791077546797,
+                "durMs": 1714
+              },
+              {
+                "i": 1,
+                "t0": 1791077545083,
+                "t1": 1791077546797,
+                "durMs": 1714
+              },
+              {
+                "i": 2,
+                "t0": 1791077545084,
+                "t1": 1791077546238,
+                "durMs": 1154
+              },
+              {
+                "i": 3,
+                "t0": 1791077545084,
+                "t1": 1791077546796,
+                "durMs": 1712
+              }
+            ],
+            "unionMs": 1714,
+            "sumMs": 6294,
+            "maxPairOverlapMs": 1714,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 1714ms（并集 1714ms < 各历时之和 6294ms）"
+          },
+          {
+            "barrierAt": 1791077548006,
+            "barrierAtCST": "2026-10-04 09:32:28 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077548006,
+                "t1": 1791077548439,
+                "durMs": 433
+              },
+              {
+                "i": 1,
+                "t0": 1791077548006,
+                "t1": 1791077548446,
+                "durMs": 440
+              },
+              {
+                "i": 2,
+                "t0": 1791077548006,
+                "t1": 1791077548447,
+                "durMs": 441
+              },
+              {
+                "i": 3,
+                "t0": 1791077548007,
+                "t1": 1791077548445,
+                "durMs": 438
+              }
+            ],
+            "unionMs": 441,
+            "sumMs": 1752,
+            "maxPairOverlapMs": 440,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 440ms（并集 441ms < 各历时之和 1752ms）"
+          },
+          {
+            "barrierAt": 1791077549545,
+            "barrierAtCST": "2026-10-04 09:32:29 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077549545,
+                "t1": 1791077550100,
+                "durMs": 555
+              },
+              {
+                "i": 1,
+                "t0": 1791077549545,
+                "t1": 1791077550098,
+                "durMs": 553
+              },
+              {
+                "i": 2,
+                "t0": 1791077549545,
+                "t1": 1791077550098,
+                "durMs": 553
+              },
+              {
+                "i": 3,
+                "t0": 1791077549546,
+                "t1": 1791077550090,
+                "durMs": 544
+              }
+            ],
+            "unionMs": 555,
+            "sumMs": 2205,
+            "maxPairOverlapMs": 553,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 553ms（并集 555ms < 各历时之和 2205ms）"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LB-C5-DISPATCH-POOLED",
+      "name": "C5 并发派工（pooled=true 跨单成组）同一订单 N=4×3 轮：加工单唯一 + 工序实例不重复",
+      "status": "pass",
+      "detail": "pooled=true 三轮：**业务成功数**=[1,1,1]（期望各 1）/ HTTP 200 数=[4,4,4]；5xx 数=[0,0,0]；活跃加工单=[1,1,1]（期望各 1）；工序实例行=[10,10,10]；逐轮状态码=[[200,200,200,200],[200,200,200,200],[200,200,200,200]]",
+      "evidence": [
+        "期望来源: 本包独立算式 + 源码 ——",
+        "   · 「一单一加工单」：DB partial unique index `uk_processing_orders_active`（注释见 backend/admin-api/src/main/java/com/migao/admin/controller/ProductionPoolController.java 的 dispatch）+ 应用层幂等闸（backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java 的 prepare ⇒ selectActiveByOrderId ⇒ 「已有加工单 … 请勿重复生成」）",
+        "   · 工序实例：单次派工的行数由 processing_position_operations 决定；并发不得产生重复 id / 撞 seq",
+        "   · 工人归属：同一工序只能有一个 worker（不得同日两派）",
+        "结局形态判据: **业务层**恰 1 个 success=true，其余 N−1 个 success=false + code=VALIDATION_ERROR（「已有加工单 … 请勿重复生成」）；",
+        "   HTTP 层恒 200（逐单成败在信封 data[0] 内）⇒ 本判据取**业务层**读数，不拿 HTTP 码当成败",
+        "   若出现 **5xx**（DB 唯一约束冲突被透传）或业务成功数 >1 ⇒ 真缺陷",
+        "重叠证据: R1: 真重叠：最大逐对重叠 679ms（并集 681ms < 各历时之和 2710ms） ｜ R2: 真重叠：最大逐对重叠 508ms（并集 510ms < 各历时之和 2032ms） ｜ R3: 真重叠：最大逐对重叠 552ms（并集 554ms < 各历时之和 2201ms）",
+        "逐请求结局: [[[200,null,\"ok\"],[200,\"VALIDATION_ERROR\",\"订单 20261004884970052 加工单已生成（并发操作），请刷新后重试\"],[200,\"VALIDATION_ERROR\",\"订单 20261004884970052 加工单已生成（并发操作），请刷新后重试\"],[200,\"VALIDATION_ERROR\",\"订单 20261004884970052 加工单已生成（并发操作），请刷新后重试\"]],[[200,\"VALIDATION_ERROR\",\"订单 20261004768840053 加工单已生成（并发操作），请刷新后重试\"],[200,\"VALIDATION_ERROR\",\"订单 20261004768840053 加工单已生成（并发操作），请刷新后重试\"],[200,null,\"ok\"],[200,\"VALIDATION_ERROR\",\"订单 20261004768840053 加工单已生成（并发操作），请刷新后重试\"]],[[200,null,\"ok\"],[200,\"VALIDATION_ERROR\",\"订单 20261004439730054 加工单已生成（并发操作），请刷新后重试\"],[200,\"VALIDATION_ERROR\",\"订单 20261004439730054 加工单已生成（并发操作），请刷新后重试\"],[200,\"VALIDATION_ERROR\",\"订单 20261004439730054 加工单已生成（并发操作），请刷新后重试\"]]]"
+      ],
+      "at": "2026-10-04 09:32:35 +08",
+      "atUtc": "2026-10-04T01:32:35.683Z",
+      "extra": {
+        "N": 4,
+        "pooled": true,
+        "rounds": [
+          {
+            "round": 1,
+            "N": 4,
+            "pooled": true,
+            "orderId": "3e7ab2d3c3c58c0fdfd31c09e4055207",
+            "okCount": 4,
+            "bizOkCount": 1,
+            "bizFailCount": 3,
+            "s5xx": 0,
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 200,
+                "msg": "ok",
+                "bizOk": true,
+                "durMs": 672
+              },
+              {
+                "i": 1,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004884970052 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 679
+              },
+              {
+                "i": 2,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004884970052 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 681
+              },
+              {
+                "i": 3,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004884970052 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 678
+              }
+            ],
+            "dbFinal": {
+              "activeProcessingOrders": 1,
+              "processingOrderNos": [
+                "JG-20261004-5571"
+              ],
+              "positionRows": 10,
+              "distinctPositionIds": 10,
+              "seqDup": false,
+              "distinctWorkers": [
+                "-/-"
+              ],
+              "statuses": [
+                "pending"
+              ]
+            },
+            "expectation": "业务成功恰 1 个（其余 N−1 被幂等闸拒）；活跃加工单恰 1 张；工序实例行数 = 单次派工行数（同 id 不重复、seq 不撞）；同一工序只归一个工人；无 5xx",
+            "overlapEvidence": {
+              "barrierAt": 1791077551430,
+              "barrierAtCST": "2026-10-04 09:32:31 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077551431,
+                  "t1": 1791077552103,
+                  "durMs": 672
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077551431,
+                  "t1": 1791077552110,
+                  "durMs": 679
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077551431,
+                  "t1": 1791077552112,
+                  "durMs": 681
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077551431,
+                  "t1": 1791077552109,
+                  "durMs": 678
+                }
+              ],
+              "unionMs": 681,
+              "sumMs": 2710,
+              "maxPairOverlapMs": 679,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 679ms（并集 681ms < 各历时之和 2710ms）"
+            },
+            "pass": true
+          },
+          {
+            "round": 2,
+            "N": 4,
+            "pooled": true,
+            "orderId": "e2d45841e5b055f8da66f31fc38b5d36",
+            "okCount": 4,
+            "bizOkCount": 1,
+            "bizFailCount": 3,
+            "s5xx": 0,
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004768840053 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 508
+              },
+              {
+                "i": 1,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004768840053 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 508
+              },
+              {
+                "i": 2,
+                "status": 200,
+                "msg": "ok",
+                "bizOk": true,
+                "durMs": 506
+              },
+              {
+                "i": 3,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004768840053 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 510
+              }
+            ],
+            "dbFinal": {
+              "activeProcessingOrders": 1,
+              "processingOrderNos": [
+                "JG-20261004-5575"
+              ],
+              "positionRows": 10,
+              "distinctPositionIds": 10,
+              "seqDup": false,
+              "distinctWorkers": [
+                "-/-"
+              ],
+              "statuses": [
+                "pending"
+              ]
+            },
+            "expectation": "业务成功恰 1 个（其余 N−1 被幂等闸拒）；活跃加工单恰 1 张；工序实例行数 = 单次派工行数（同 id 不重复、seq 不撞）；同一工序只归一个工人；无 5xx",
+            "overlapEvidence": {
+              "barrierAt": 1791077553216,
+              "barrierAtCST": "2026-10-04 09:32:33 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077553216,
+                  "t1": 1791077553724,
+                  "durMs": 508
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077553216,
+                  "t1": 1791077553724,
+                  "durMs": 508
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077553216,
+                  "t1": 1791077553722,
+                  "durMs": 506
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077553216,
+                  "t1": 1791077553726,
+                  "durMs": 510
+                }
+              ],
+              "unionMs": 510,
+              "sumMs": 2032,
+              "maxPairOverlapMs": 508,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 508ms（并集 510ms < 各历时之和 2032ms）"
+            },
+            "pass": true
+          },
+          {
+            "round": 3,
+            "N": 4,
+            "pooled": true,
+            "orderId": "a67d3b781d6e15f818730a56641f4337",
+            "okCount": 4,
+            "bizOkCount": 1,
+            "bizFailCount": 3,
+            "s5xx": 0,
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 200,
+                "msg": "ok",
+                "bizOk": true,
+                "durMs": 547
+              },
+              {
+                "i": 1,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004439730054 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 549
+              },
+              {
+                "i": 2,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004439730054 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 553
+              },
+              {
+                "i": 3,
+                "status": 200,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单 20261004439730054 加工单已生成（并发操作），请刷新后重试",
+                "bizOk": false,
+                "durMs": 552
+              }
+            ],
+            "dbFinal": {
+              "activeProcessingOrders": 1,
+              "processingOrderNos": [
+                "JG-20261004-5579"
+              ],
+              "positionRows": 10,
+              "distinctPositionIds": 10,
+              "seqDup": false,
+              "distinctWorkers": [
+                "-/-"
+              ],
+              "statuses": [
+                "pending"
+              ]
+            },
+            "expectation": "业务成功恰 1 个（其余 N−1 被幂等闸拒）；活跃加工单恰 1 张；工序实例行数 = 单次派工行数（同 id 不重复、seq 不撞）；同一工序只归一个工人；无 5xx",
+            "overlapEvidence": {
+              "barrierAt": 1791077554881,
+              "barrierAtCST": "2026-10-04 09:32:34 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077554881,
+                  "t1": 1791077555428,
+                  "durMs": 547
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077554882,
+                  "t1": 1791077555431,
+                  "durMs": 549
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077554882,
+                  "t1": 1791077555435,
+                  "durMs": 553
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077554883,
+                  "t1": 1791077555435,
+                  "durMs": 552
+                }
+              ],
+              "unionMs": 554,
+              "sumMs": 2201,
+              "maxPairOverlapMs": 552,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 552ms（并集 554ms < 各历时之和 2201ms）"
+            },
+            "pass": true
+          }
+        ],
+        "overlapEvidence": [
+          {
+            "barrierAt": 1791077551430,
+            "barrierAtCST": "2026-10-04 09:32:31 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077551431,
+                "t1": 1791077552103,
+                "durMs": 672
+              },
+              {
+                "i": 1,
+                "t0": 1791077551431,
+                "t1": 1791077552110,
+                "durMs": 679
+              },
+              {
+                "i": 2,
+                "t0": 1791077551431,
+                "t1": 1791077552112,
+                "durMs": 681
+              },
+              {
+                "i": 3,
+                "t0": 1791077551431,
+                "t1": 1791077552109,
+                "durMs": 678
+              }
+            ],
+            "unionMs": 681,
+            "sumMs": 2710,
+            "maxPairOverlapMs": 679,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 679ms（并集 681ms < 各历时之和 2710ms）"
+          },
+          {
+            "barrierAt": 1791077553216,
+            "barrierAtCST": "2026-10-04 09:32:33 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077553216,
+                "t1": 1791077553724,
+                "durMs": 508
+              },
+              {
+                "i": 1,
+                "t0": 1791077553216,
+                "t1": 1791077553724,
+                "durMs": 508
+              },
+              {
+                "i": 2,
+                "t0": 1791077553216,
+                "t1": 1791077553722,
+                "durMs": 506
+              },
+              {
+                "i": 3,
+                "t0": 1791077553216,
+                "t1": 1791077553726,
+                "durMs": 510
+              }
+            ],
+            "unionMs": 510,
+            "sumMs": 2032,
+            "maxPairOverlapMs": 508,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 508ms（并集 510ms < 各历时之和 2032ms）"
+          },
+          {
+            "barrierAt": 1791077554881,
+            "barrierAtCST": "2026-10-04 09:32:34 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077554881,
+                "t1": 1791077555428,
+                "durMs": 547
+              },
+              {
+                "i": 1,
+                "t0": 1791077554882,
+                "t1": 1791077555431,
+                "durMs": 549
+              },
+              {
+                "i": 2,
+                "t0": 1791077554882,
+                "t1": 1791077555435,
+                "durMs": 553
+              },
+              {
+                "i": 3,
+                "t0": 1791077554883,
+                "t1": 1791077555435,
+                "durMs": 552
+              }
+            ],
+            "unionMs": 554,
+            "sumMs": 2201,
+            "maxPairOverlapMs": 552,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 552ms（并集 554ms < 各历时之和 2201ms）"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LB-C5-REDPROOF",
+      "name": "C5 判别力红证：摘掉唯一约束 ⇒ N 行；加回 ⇒ 1 行（并发窗口真实存在、判据会红）",
+      "status": "pass",
+      "detail": "N=4 独立 psql 进程并发 INSERT：无唯一约束 ⇒ 4 行（期望 4）；有唯一约束（产品同形）⇒ 1 行（期望 1）",
+      "evidence": [
+        "注入方式: **不改产品源码** —— 本包自建临时表 lb_gp_dispatch；有约束那轮建 partial unique index（与 products 侧 uk_processing_orders_active 同形）",
+        "该红证证明: ① N 路并发确实能同时到达 INSERT（否则无约束那轮也不会得 N 行）；② 「活跃加工单恰 1 张」这条判据会红",
+        "读数: 无约束=4 / 有约束=1"
+      ],
+      "at": "2026-10-04 09:32:36 +08",
+      "atUtc": "2026-10-04T01:32:36.885Z",
+      "extra": {
+        "N": 4,
+        "noUniq": 4,
+        "withUniq": 1
+      }
+    }
+  ],
+  "summary": {
+    "pass": 3,
+    "fail": 0,
+    "skip": 0,
+    "falseRed": 0,
+    "total": 3
+  }
+}

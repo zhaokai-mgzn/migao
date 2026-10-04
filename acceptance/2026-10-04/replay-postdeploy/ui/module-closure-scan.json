@@ -1,0 +1,36 @@
+{
+ "at": "2026-10-04 10:45 +08",
+ "entry": [
+  "/w/src/app.mjs",
+  "/w/src/machine.mjs",
+  "/w/src/machine-app.mjs",
+  "/w/src/shipment.mjs"
+ ],
+ "scanned": [
+  "/shared/operation-display.mjs",
+  "/w/src/api.mjs",
+  "/w/src/app.mjs",
+  "/w/src/machine-app.mjs",
+  "/w/src/machine.mjs",
+  "/w/src/render.mjs",
+  "/w/src/scan-input.mjs",
+  "/w/src/shipment.mjs"
+ ],
+ "bad": [
+  {
+   "path": "/shared/operation-display.mjs",
+   "status": 200,
+   "content_type": "text/html"
+  }
+ ],
+ "importers_of_bad": [
+  {
+   "from": "/w/src/render.mjs",
+   "to": "/shared/operation-display.mjs"
+  },
+  {
+   "from": "/w/src/machine.mjs",
+   "to": "/shared/operation-display.mjs"
+  }
+ ]
+}

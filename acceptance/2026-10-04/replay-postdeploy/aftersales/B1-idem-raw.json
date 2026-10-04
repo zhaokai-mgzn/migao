@@ -1,0 +1,11 @@
+{
+  "key": "<IDEM-KEY-2>",
+  "k1": "{\"success\":true,\"data\":{\"id\":\"0f26533498dbfdd015b103d7cbcb6be0\",\"ticketNo\":\"AS-20261004-0002\",\"orderId\":\"f82255cd1fefd34d824ffda9c1c76e85\",\"orderNo\":\"20261004648400006\",\"customerId\":\"ZR客户-IDEM-mut5a2gkidt4\",\"customerName\":\"ZR客户-IDEM-mut5a2gkidt4\",\"customerPhone\":\"13934442625\",\"ticketType\":\"refund\",\"status\":\"pending\",\"description\":\"ZR工单-幂等\",\"images\":[],\"source\":\"merchant\",\"priority\":\"normal\",\"refundAmount\":100.00,\"evidenceImages\":[],\"statusHistory\":[{\"status\":\"pending\",\"time\":\"2026-10-04T01:31:07.845890Z\",\"operator\":\"13800138000\",\"remark\":\"工单创建\"}],\"createdAt\":\"2026-10-04T09:31:07.84589+08:00\",\"updatedAt\":\"2026-10-04T09:31:07.845936+08:00\"},\"requestId\":\"req_d1ddc18f9aba429b\",\"timestamp\":1791077467}",
+  "k2": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已有 退款 类型的活跃工单（AS-20261004-0002），请先处理后再创建\"},\"requestId\":\"req_6fb07f61d1c84bf3\",\"timestamp\":1791077467,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+  "rowsForKey": [
+    {
+      "id": "0f26533498dbfdd015b103d7cbcb6be0",
+      "ticket_no": "AS-20261004-0002"
+    }
+  ]
+}

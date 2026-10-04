@@ -1,0 +1,98 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:55:35 +08",
+    "utc": "2026-10-04T01:55:35.273Z"
+  },
+  "probePrefix": "la",
+  "residue": {
+    "counts": {
+      "probeUsers": 3,
+      "probeSessions": 6,
+      "probeOrders": 10,
+      "probeProcessingOrders": 10,
+      "probeSets": 10,
+      "probeItems": 10,
+      "probePositionOps": 12,
+      "probePartTokens": 10,
+      "probeWorkLogs": 4,
+      "probeAudits": 4,
+      "probeIdemKeys": 4,
+      "probeInboundItems": 0,
+      "probeInboundLabels": 0,
+      "probeProducts": 1,
+      "probeSkus": 0,
+      "probeCategories": 1
+    },
+    "total": 85
+  },
+  "residueClean": false,
+  "tableCounts": {
+    "orders": 28,
+    "processingOrders": 14,
+    "positionOps": 20,
+    "partTokens": 14,
+    "workLogs": 4,
+    "users": 4,
+    "inboundOrders": 6,
+    "inboundLabels": 3
+  },
+  "ledgerExisting": {
+    "hash": "96949477ceab50cf443667469c5c976cd4ea227f9918cc259e06d7f299712782",
+    "parts": [
+      "orders=3ec1460a67488a51b684b0c488efaa8b#18",
+      "processing_orders=ce899f3848d1368bf7d9da75c42134a9#4",
+      "processing_position_operations=7f0f08c404b5602e59e7aa3f03c8d3d9#8",
+      "processing_set_part_tokens=0cede8b09319be889a20b5108babf2fa#4",
+      "production_work_logs=da4cf6685844f714fb26fd722c562cc5#4",
+      "worker_report_audits=c045a74e89022a312e69c87b4ef5ebde#4",
+      "users=0738e30c85d8c9aa1d268f938517840d#4",
+      "worker_sessions=c3f45d51729cf4688a1103027f933120#6",
+      "inbound_labels=edbb936998c789afb60880bd7847b3ee#3",
+      "client_request_keys=d5fae8c789b3bb2da0d435d01dac2d46#6"
+    ],
+    "excludeProbe": true
+  },
+  "perTable": {
+    "orders": {
+      "probe": 10,
+      "existing": 18
+    },
+    "processing_orders": {
+      "probe": 10,
+      "existing": 4
+    },
+    "processing_position_operations": {
+      "probe": 12,
+      "existing": 8
+    },
+    "processing_set_part_tokens": {
+      "probe": 10,
+      "existing": 4
+    },
+    "production_work_logs": {
+      "probe": 0,
+      "existing": 4
+    },
+    "worker_report_audits": {
+      "probe": 0,
+      "existing": 4
+    },
+    "users": {
+      "probe": 0,
+      "existing": 4
+    },
+    "worker_sessions": {
+      "probe": 0,
+      "existing": 6
+    },
+    "inbound_labels": {
+      "probe": 0,
+      "existing": 3
+    },
+    "client_request_keys": {
+      "probe": 0,
+      "existing": 6
+    }
+  },
+  "probeAllZero": false
+}

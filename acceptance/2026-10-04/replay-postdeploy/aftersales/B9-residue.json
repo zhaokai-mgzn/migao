@@ -1,0 +1,76 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:32:42 +08",
+    "utc": "2026-10-04T01:32:42.965Z"
+  },
+  "preCleanupResidue": {
+    "counts": {
+      "products": 55,
+      "productSkus": 55,
+      "orders": 52,
+      "orderItems": 52,
+      "tickets": 7,
+      "ticketTimeline": 16,
+      "ledger": 111,
+      "finance": 80,
+      "clientKeys": 0,
+      "tempTables": 0,
+      "processingOrders": 6,
+      "positionOperations": 60,
+      "workLogs": 0
+    },
+    "total": 494
+  },
+  "residue": {
+    "counts": {
+      "products": 0,
+      "productSkus": 0,
+      "orders": 0,
+      "orderItems": 0,
+      "tickets": 0,
+      "ticketTimeline": 0,
+      "ledger": 0,
+      "finance": 0,
+      "clientKeys": 0,
+      "tempTables": 0,
+      "processingOrders": 0,
+      "positionOperations": 0,
+      "workLogs": 0
+    },
+    "total": 0
+  },
+  "residue2": {
+    "counts": {
+      "products": 0,
+      "productSkus": 0,
+      "orders": 0,
+      "orderItems": 0,
+      "tickets": 0,
+      "ticketTimeline": 0,
+      "ledger": 0,
+      "finance": 0,
+      "clientKeys": 0,
+      "tempTables": 0,
+      "processingOrders": 0,
+      "positionOperations": 0,
+      "workLogs": 0
+    },
+    "total": 0
+  },
+  "cleanupError": null,
+  "stockBeforeSha": "2432253e86958b9c487015ddd1a6ac21739a57bfd0285bd768f1fec1f2c15084",
+  "stockAfterSha": "2432253e86958b9c487015ddd1a6ac21739a57bfd0285bd768f1fec1f2c15084",
+  "rowDiff": {
+    "orders": {
+      "added": [],
+      "removed": [],
+      "changed": []
+    },
+    "after_sales_tickets": {
+      "added": [],
+      "removed": [],
+      "changed": []
+    }
+  },
+  "stockUnchanged": true
+}

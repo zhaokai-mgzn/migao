@@ -1,0 +1,1161 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:15:23 +08",
+    "utc": "2026-10-04T01:15:23.800Z"
+  },
+  "via": "sms-bypass-code",
+  "fixtures": {
+    "restockOn": {
+      "ok": true,
+      "tag": "RESTOCKON",
+      "allowRestock": true,
+      "product": {
+        "ok": true,
+        "productId": "947c9c231cfab16cbd485d2146d8fcdb",
+        "skuId": "2106553739276472321",
+        "skuCode": "LB-RESTOCKON-MUT4PUL4CELV-01-28",
+        "stock": 100,
+        "price": 100,
+        "name": "线B验收商品-RESTOCKON-mut4pul4celv",
+        "colorId": "2106553739247112194",
+        "productSkuRows": [
+          {
+            "id": "2106553739276472321",
+            "sku_code": "LB-RESTOCKON-MUT4PUL4CELV-01-28",
+            "stock": 100,
+            "price": 100,
+            "color_id": "2106553739247112194"
+          }
+        ],
+        "resp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "data": {
+              "id": "947c9c231cfab16cbd485d2146d8fcdb",
+              "name": "线B验收商品-RESTOCKON-mut4pul4celv",
+              "categoryId": "74e699b83324e8d26de3f0c470645455",
+              "categoryName": "线B验收分类-mut4pufyjnbv",
+              "basePrice": 100,
+              "description": "线B验收（线B 售后退款/并发探针，用后自清）",
+              "images": [],
+              "status": "on_shelf",
+              "stock": 100,
+              "stockWarningThreshold": 10,
+              "skuCode": "LB-RESTOCKON-MUT4PUL4CELV",
+              "unit": "米",
+              "pricingType": "per_meter",
+              "stockDeductionMode": "on_order",
+              "colorCount": 1,
+              "totalStock": 100,
+              "salesCount": 0,
+              "salesAmount": 0,
+              "recommended": false,
+              "allowReturnRestock": true,
+              "colors": [
+                {
+                  "id": "2106553739247112194",
+                  "productId": "947c9c231cfab16cbd485d2146d8fcdb",
+                  "colorName": "线B验收色-mut4pul4celv",
+                  "mainColorHex": "#AABBCC",
+                  "sortOrder": 0,
+                  "createdAt": "2026-10-04 09:15:23",
+                  "updatedAt": "2026-10-04 09:15:23"
+                }
+              ],
+              "sellingMethods": [
+                "bulk_cut",
+                "full_roll"
+              ],
+              "doorWidths": [
+                "2.8m"
+              ],
+              "skus": [
+                {
+                  "id": "2106553739276472321",
+                  "productId": "947c9c231cfab16cbd485d2146d8fcdb",
+                  "colorId": "2106553739247112194",
+                  "colorName": "线B验收色-mut4pul4celv",
+                  "doorWidth": "2.8m",
+                  "price": 100,
+                  "stock": 100,
+                  "skuCode": "LB-RESTOCKON-MUT4PUL4CELV-01-28",
+                  "createdAt": "2026-10-04 09:15:23",
+                  "updatedAt": "2026-10-04 09:15:23"
+                }
+              ],
+              "detailImages": [],
+              "editedBy": "13800138000",
+              "editedAt": "2026-10-04 09:15:23",
+              "createdAt": "2026-10-04 09:15:23",
+              "updatedAt": "2026-10-04 09:15:23",
+              "price": 100
+            },
+            "requestId": "req_08c1ca7d7fa0435a",
+            "timestamp": 1791076524
+          },
+          "text": "{\"success\":true,\"data\":{\"id\":\"947c9c231cfab16cbd485d2146d8fcdb\",\"name\":\"线B验收商品-RESTOCKON-mut4pul4celv\",\"categoryId\":\"74e699b83324e8d26de3f0c470645455\",\"categoryName\":\"线B验收分类-mut4pufyjnbv\",\"basePrice\":100.00,\"description\":\"线B验收（线B 售后退款/并发探针，用后自清）\",\"images\":[],\"status\":\"on_shelf\",\"stock\":100.0,\"stockWarningThreshold\":10,\"skuCode\":\"LB-RESTOCKON-MUT4PUL4CELV\",\"unit\":\"米\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":1,\"totalStock\":100.0,\"salesCount\":0.0,\"salesAmount\":0.00,\"recommended\":false,\"allowReturnRestock\":true,\"colors\":[{\"id\":\"2106553739247112194\",\"productId\":\"947c9c231cfab16cbd485d2146d8fcdb\",\"colorName\":\"线B验收色-mut4pul4celv\",\"mainColorHex\":\"#AABBCC\",\"sortOrder\":0,\"createdAt\":\"2026-10-04 09:15:23\",\"updatedAt\":\"2026-10-04 09:15:23\"}],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"doorWidths\":[\"2.8m\"],\"skus\":[{\"id\":\"2106553739276472321\",\"productId\":\"947c9c231cfab16cbd485d2146d8fcdb\",\"colorId\":\"2106553739247112194\",\"colorName\":\"线B验收色-mut4pul4celv\",\"doorWidth\":\"2.8m\",\"price\":100.00,\"stock\":100.0,\"skuCode\":\"LB-RESTOCKON-MUT4PUL4CELV-01-28\",\"createdAt\":\"2026-10-04 09:15:23\",\"updatedAt\":\"2026-10-04 09:15:23\"}],\"detailImages\":[],\"editedBy\":\"13800138000\",\"editedAt\":\"2026-10-04 09:15:23\",\"createdAt\":\"2026-10-04 09:15:23\",\"updatedAt\":\"2026-10-04 09:15:23\",\"price\":100.00},\"requestId\":\"req_08c1ca7d7fa0435a\",\"timestamp\":1791076524}",
+          "ok": true,
+          "data": {
+            "id": "947c9c231cfab16cbd485d2146d8fcdb",
+            "name": "线B验收商品-RESTOCKON-mut4pul4celv",
+            "categoryId": "74e699b83324e8d26de3f0c470645455",
+            "categoryName": "线B验收分类-mut4pufyjnbv",
+            "basePrice": 100,
+            "description": "线B验收（线B 售后退款/并发探针，用后自清）",
+            "images": [],
+            "status": "on_shelf",
+            "stock": 100,
+            "stockWarningThreshold": 10,
+            "skuCode": "LB-RESTOCKON-MUT4PUL4CELV",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 1,
+            "totalStock": 100,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": true,
+            "colors": [
+              {
+                "id": "2106553739247112194",
+                "productId": "947c9c231cfab16cbd485d2146d8fcdb",
+                "colorName": "线B验收色-mut4pul4celv",
+                "mainColorHex": "#AABBCC",
+                "sortOrder": 0,
+                "createdAt": "2026-10-04 09:15:23",
+                "updatedAt": "2026-10-04 09:15:23"
+              }
+            ],
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "doorWidths": [
+              "2.8m"
+            ],
+            "skus": [
+              {
+                "id": "2106553739276472321",
+                "productId": "947c9c231cfab16cbd485d2146d8fcdb",
+                "colorId": "2106553739247112194",
+                "colorName": "线B验收色-mut4pul4celv",
+                "doorWidth": "2.8m",
+                "price": 100,
+                "stock": 100,
+                "skuCode": "LB-RESTOCKON-MUT4PUL4CELV-01-28",
+                "createdAt": "2026-10-04 09:15:23",
+                "updatedAt": "2026-10-04 09:15:23"
+              }
+            ],
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-04 09:15:23",
+            "createdAt": "2026-10-04 09:15:23",
+            "updatedAt": "2026-10-04 09:15:23",
+            "price": 100
+          }
+        },
+        "body": {
+          "name": "线B验收商品-RESTOCKON-mut4pul4celv",
+          "skuCode": "LB-RESTOCKON-MUT4PUL4CELV",
+          "categoryId": "74e699b83324e8d26de3f0c470645455",
+          "unit": "米",
+          "pricingType": "per_meter",
+          "basePrice": 100,
+          "price": 100,
+          "stock": 100,
+          "status": "on_shelf",
+          "description": "线B验收（线B 售后退款/并发探针，用后自清）",
+          "allowReturnRestock": true,
+          "colors": [
+            {
+              "colorName": "线B验收色-mut4pul4celv",
+              "mainColorHex": "#AABBCC"
+            }
+          ],
+          "doorWidths": [
+            "2.8m"
+          ]
+        }
+      },
+      "order": {
+        "ok": true,
+        "orderId": "d6a2dc3268b75da9356372c554bb55e8",
+        "orderNo": "20261004377350154",
+        "total": 200,
+        "actual": 200,
+        "resp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "data": {
+              "id": "d6a2dc3268b75da9356372c554bb55e8",
+              "orderNo": "20261004377350154",
+              "customerName": "线B验收客户-RESTOCKON-mut4pv019di5",
+              "customerPhone": "13942131895",
+              "customerAddress": "线B验收地址（探针）",
+              "logisticsType": "express",
+              "logisticsCompany": "线B验收物流",
+              "totalAmount": 200,
+              "actualAmount": 200,
+              "discountAmount": 0,
+              "refundAmount": 0,
+              "processingFee": 0,
+              "status": "pending",
+              "remark": "线B验收（线B 探针订单，用后自清）",
+              "isUrgent": false,
+              "createdByName": "米高测试",
+              "items": [
+                {
+                  "id": "f7cfcea453cf2424f27e2f1a816e090f",
+                  "productId": "947c9c231cfab16cbd485d2146d8fcdb",
+                  "productName": "线B验收商品-RESTOCKON-mut4pul4celv",
+                  "skuCode": "LB-RESTOCKON-MUT4PUL4CELV",
+                  "quantity": 2,
+                  "unitPrice": 100,
+                  "width": 2.8,
+                  "height": 2,
+                  "processingInfo": {
+                    "skuId": "2106553739276472321",
+                    "colorId": "2106553739247112194",
+                    "skuCode": "LB-RESTOCKON-MUT4PUL4CELV-01-28",
+                    "doorWidth": "2.8m",
+                    "processingFeeDetail": {
+                      "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                      "items": [],
+                      "amount": 0,
+                      "set_key": "#0",
+                      "fee_source": "unpriced",
+                      "composition": "",
+                      "special_options": [],
+                      "mixed_color_options": [],
+                      "mixed_color_surcharge": 0,
+                      "special_options_total": 0,
+                      "mixed_color_surcharge_per_meter": 2.4
+                    }
+                  },
+                  "subtotal": 200,
+                  "amount": 200,
+                  "processingFee": 0,
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  },
+                  "createdAt": "2026-10-04T09:15:24.487912+08:00"
+                }
+              ],
+              "processingItems": [],
+              "createdAt": "2026-10-04T09:15:24.471836+08:00",
+              "updatedAt": "2026-10-04T09:15:24.471871+08:00"
+            },
+            "requestId": "req_9f8983c0ca154344",
+            "timestamp": 1791076524
+          },
+          "text": "{\"success\":true,\"data\":{\"id\":\"d6a2dc3268b75da9356372c554bb55e8\",\"orderNo\":\"20261004377350154\",\"customerName\":\"线B验收客户-RESTOCKON-mut4pv019di5\",\"customerPhone\":\"13942131895\",\"customerAddress\":\"线B验收地址（探针）\",\"logisticsType\":\"express\",\"logisticsCompany\":\"线B验收物流\",\"totalAmount\":200.00,\"actualAmount\":200.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"线B验收（线B 探针订单，用后自清）\",\"isUrgent\":false,\"createdByName\":\"米高测试\",\"items\":[{\"id\":\"f7cfcea453cf2424f27e2f1a816e090f\",\"productId\":\"947c9c231cfab16cbd485d2146d8fcdb\",\"productName\":\"线B验收商品-RESTOCKON-mut4pul4celv\",\"skuCode\":\"LB-RESTOCKON-MUT4PUL4CELV\",\"quantity\":2.00,\"unitPrice\":100.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106553739276472321\",\"colorId\":\"2106553739247112194\",\"skuCode\":\"LB-RESTOCKON-MUT4PUL4CELV-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":200.00,\"amount\":200.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-04T09:15:24.487912+08:00\"}],\"processingItems\":[],\"createdAt\":\"2026-10-04T09:15:24.471836+08:00\",\"updatedAt\":\"2026-10-04T09:15:24.471871+08:00\"},\"requestId\":\"req_9f8983c0ca154344\",\"timestamp\":1791076524}",
+          "ok": true,
+          "data": {
+            "id": "d6a2dc3268b75da9356372c554bb55e8",
+            "orderNo": "20261004377350154",
+            "customerName": "线B验收客户-RESTOCKON-mut4pv019di5",
+            "customerPhone": "13942131895",
+            "customerAddress": "线B验收地址（探针）",
+            "logisticsType": "express",
+            "logisticsCompany": "线B验收物流",
+            "totalAmount": 200,
+            "actualAmount": 200,
+            "discountAmount": 0,
+            "refundAmount": 0,
+            "processingFee": 0,
+            "status": "pending",
+            "remark": "线B验收（线B 探针订单，用后自清）",
+            "isUrgent": false,
+            "createdByName": "米高测试",
+            "items": [
+              {
+                "id": "f7cfcea453cf2424f27e2f1a816e090f",
+                "productId": "947c9c231cfab16cbd485d2146d8fcdb",
+                "productName": "线B验收商品-RESTOCKON-mut4pul4celv",
+                "skuCode": "LB-RESTOCKON-MUT4PUL4CELV",
+                "quantity": 2,
+                "unitPrice": 100,
+                "width": 2.8,
+                "height": 2,
+                "processingInfo": {
+                  "skuId": "2106553739276472321",
+                  "colorId": "2106553739247112194",
+                  "skuCode": "LB-RESTOCKON-MUT4PUL4CELV-01-28",
+                  "doorWidth": "2.8m",
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  }
+                },
+                "subtotal": 200,
+                "amount": 200,
+                "processingFee": 0,
+                "processingFeeDetail": {
+                  "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                  "items": [],
+                  "amount": 0,
+                  "set_key": "#0",
+                  "fee_source": "unpriced",
+                  "composition": "",
+                  "special_options": [],
+                  "mixed_color_options": [],
+                  "mixed_color_surcharge": 0,
+                  "special_options_total": 0,
+                  "mixed_color_surcharge_per_meter": 2.4
+                },
+                "createdAt": "2026-10-04T09:15:24.487912+08:00"
+              }
+            ],
+            "processingItems": [],
+            "createdAt": "2026-10-04T09:15:24.471836+08:00",
+            "updatedAt": "2026-10-04T09:15:24.471871+08:00"
+          }
+        },
+        "confirmResp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "requestId": "req_08b3a4f92bf9417c",
+            "timestamp": 1791076524
+          },
+          "text": "{\"success\":true,\"requestId\":\"req_08b3a4f92bf9417c\",\"timestamp\":1791076524}",
+          "ok": true
+        },
+        "body": {
+          "customerName": "线B验收客户-RESTOCKON-mut4pv019di5",
+          "customerPhone": "13942131895",
+          "customerAddress": "线B验收地址（探针）",
+          "logisticsType": "express",
+          "logisticsCompany": "线B验收物流",
+          "remark": "线B验收（线B 探针订单，用后自清）",
+          "items": [
+            {
+              "productId": "947c9c231cfab16cbd485d2146d8fcdb",
+              "productName": "线B验收商品-RESTOCKON-mut4pul4celv",
+              "quantity": 2,
+              "unitPrice": 100,
+              "subtotal": "200.000",
+              "width": 2.8,
+              "height": 2,
+              "processingInfo": {
+                "skuId": "2106553739276472321",
+                "skuCode": "LB-RESTOCKON-MUT4PUL4CELV-01-28",
+                "colorId": "2106553739247112194",
+                "doorWidth": "2.8m"
+              }
+            }
+          ]
+        }
+      },
+      "orderRow": {
+        "id": "d6a2dc3268b75da9356372c554bb55e8",
+        "tenant_id": 25,
+        "order_no": "20261004377350154",
+        "status": "confirmed",
+        "total_amount": 200,
+        "actual_amount": 200,
+        "refund_amount": 0,
+        "refund_at": null,
+        "deleted": 0
+      },
+      "skuAfter": {
+        "id": "2106553739276472321",
+        "stock": 98,
+        "sales_count": 2
+      },
+      "qty": 2,
+      "unitPrice": 100
+    },
+    "restockOff": {
+      "ok": true,
+      "tag": "RESTOCKOFF",
+      "allowRestock": false,
+      "product": {
+        "ok": true,
+        "productId": "a64e76c350cb145438f9a87e2321fbd8",
+        "skuId": "2106553743701463041",
+        "skuCode": "LB-RESTOCKOFF-MUT4PVFBGGCZ-01-28",
+        "stock": 100,
+        "price": 100,
+        "name": "线B验收商品-RESTOCKOFF-mut4pvfbggcz",
+        "colorId": "2106553743676297218",
+        "productSkuRows": [
+          {
+            "id": "2106553743701463041",
+            "sku_code": "LB-RESTOCKOFF-MUT4PVFBGGCZ-01-28",
+            "stock": 100,
+            "price": 100,
+            "color_id": "2106553743676297218"
+          }
+        ],
+        "resp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "data": {
+              "id": "a64e76c350cb145438f9a87e2321fbd8",
+              "name": "线B验收商品-RESTOCKOFF-mut4pvfbggcz",
+              "categoryId": "74e699b83324e8d26de3f0c470645455",
+              "categoryName": "线B验收分类-mut4pufyjnbv",
+              "basePrice": 100,
+              "description": "线B验收（线B 售后退款/并发探针，用后自清）",
+              "images": [],
+              "status": "on_shelf",
+              "stock": 100,
+              "stockWarningThreshold": 10,
+              "skuCode": "LB-RESTOCKOFF-MUT4PVFBGGCZ",
+              "unit": "米",
+              "pricingType": "per_meter",
+              "stockDeductionMode": "on_order",
+              "colorCount": 1,
+              "totalStock": 100,
+              "salesCount": 0,
+              "salesAmount": 0,
+              "recommended": false,
+              "allowReturnRestock": false,
+              "colors": [
+                {
+                  "id": "2106553743676297218",
+                  "productId": "a64e76c350cb145438f9a87e2321fbd8",
+                  "colorName": "线B验收色-mut4pvfbggcz",
+                  "mainColorHex": "#AABBCC",
+                  "sortOrder": 0,
+                  "createdAt": "2026-10-04 09:15:25",
+                  "updatedAt": "2026-10-04 09:15:25"
+                }
+              ],
+              "sellingMethods": [
+                "bulk_cut",
+                "full_roll"
+              ],
+              "doorWidths": [
+                "2.8m"
+              ],
+              "skus": [
+                {
+                  "id": "2106553743701463041",
+                  "productId": "a64e76c350cb145438f9a87e2321fbd8",
+                  "colorId": "2106553743676297218",
+                  "colorName": "线B验收色-mut4pvfbggcz",
+                  "doorWidth": "2.8m",
+                  "price": 100,
+                  "stock": 100,
+                  "skuCode": "LB-RESTOCKOFF-MUT4PVFBGGCZ-01-28",
+                  "createdAt": "2026-10-04 09:15:25",
+                  "updatedAt": "2026-10-04 09:15:25"
+                }
+              ],
+              "detailImages": [],
+              "editedBy": "13800138000",
+              "editedAt": "2026-10-04 09:15:24",
+              "createdAt": "2026-10-04 09:15:24",
+              "updatedAt": "2026-10-04 09:15:25",
+              "price": 100
+            },
+            "requestId": "req_bf7af63add57451b",
+            "timestamp": 1791076525
+          },
+          "text": "{\"success\":true,\"data\":{\"id\":\"a64e76c350cb145438f9a87e2321fbd8\",\"name\":\"线B验收商品-RESTOCKOFF-mut4pvfbggcz\",\"categoryId\":\"74e699b83324e8d26de3f0c470645455\",\"categoryName\":\"线B验收分类-mut4pufyjnbv\",\"basePrice\":100.00,\"description\":\"线B验收（线B 售后退款/并发探针，用后自清）\",\"images\":[],\"status\":\"on_shelf\",\"stock\":100.0,\"stockWarningThreshold\":10,\"skuCode\":\"LB-RESTOCKOFF-MUT4PVFBGGCZ\",\"unit\":\"米\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":1,\"totalStock\":100.0,\"salesCount\":0.0,\"salesAmount\":0.00,\"recommended\":false,\"allowReturnRestock\":false,\"colors\":[{\"id\":\"2106553743676297218\",\"productId\":\"a64e76c350cb145438f9a87e2321fbd8\",\"colorName\":\"线B验收色-mut4pvfbggcz\",\"mainColorHex\":\"#AABBCC\",\"sortOrder\":0,\"createdAt\":\"2026-10-04 09:15:25\",\"updatedAt\":\"2026-10-04 09:15:25\"}],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"doorWidths\":[\"2.8m\"],\"skus\":[{\"id\":\"2106553743701463041\",\"productId\":\"a64e76c350cb145438f9a87e2321fbd8\",\"colorId\":\"2106553743676297218\",\"colorName\":\"线B验收色-mut4pvfbggcz\",\"doorWidth\":\"2.8m\",\"price\":100.00,\"stock\":100.0,\"skuCode\":\"LB-RESTOCKOFF-MUT4PVFBGGCZ-01-28\",\"createdAt\":\"2026-10-04 09:15:25\",\"updatedAt\":\"2026-10-04 09:15:25\"}],\"detailImages\":[],\"editedBy\":\"13800138000\",\"editedAt\":\"2026-10-04 09:15:24\",\"createdAt\":\"2026-10-04 09:15:24\",\"updatedAt\":\"2026-10-04 09:15:25\",\"price\":100.00},\"requestId\":\"req_bf7af63add57451b\",\"timestamp\":1791076525}",
+          "ok": true,
+          "data": {
+            "id": "a64e76c350cb145438f9a87e2321fbd8",
+            "name": "线B验收商品-RESTOCKOFF-mut4pvfbggcz",
+            "categoryId": "74e699b83324e8d26de3f0c470645455",
+            "categoryName": "线B验收分类-mut4pufyjnbv",
+            "basePrice": 100,
+            "description": "线B验收（线B 售后退款/并发探针，用后自清）",
+            "images": [],
+            "status": "on_shelf",
+            "stock": 100,
+            "stockWarningThreshold": 10,
+            "skuCode": "LB-RESTOCKOFF-MUT4PVFBGGCZ",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 1,
+            "totalStock": 100,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": false,
+            "colors": [
+              {
+                "id": "2106553743676297218",
+                "productId": "a64e76c350cb145438f9a87e2321fbd8",
+                "colorName": "线B验收色-mut4pvfbggcz",
+                "mainColorHex": "#AABBCC",
+                "sortOrder": 0,
+                "createdAt": "2026-10-04 09:15:25",
+                "updatedAt": "2026-10-04 09:15:25"
+              }
+            ],
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "doorWidths": [
+              "2.8m"
+            ],
+            "skus": [
+              {
+                "id": "2106553743701463041",
+                "productId": "a64e76c350cb145438f9a87e2321fbd8",
+                "colorId": "2106553743676297218",
+                "colorName": "线B验收色-mut4pvfbggcz",
+                "doorWidth": "2.8m",
+                "price": 100,
+                "stock": 100,
+                "skuCode": "LB-RESTOCKOFF-MUT4PVFBGGCZ-01-28",
+                "createdAt": "2026-10-04 09:15:25",
+                "updatedAt": "2026-10-04 09:15:25"
+              }
+            ],
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-04 09:15:24",
+            "createdAt": "2026-10-04 09:15:24",
+            "updatedAt": "2026-10-04 09:15:25",
+            "price": 100
+          }
+        },
+        "body": {
+          "name": "线B验收商品-RESTOCKOFF-mut4pvfbggcz",
+          "skuCode": "LB-RESTOCKOFF-MUT4PVFBGGCZ",
+          "categoryId": "74e699b83324e8d26de3f0c470645455",
+          "unit": "米",
+          "pricingType": "per_meter",
+          "basePrice": 100,
+          "price": 100,
+          "stock": 100,
+          "status": "on_shelf",
+          "description": "线B验收（线B 售后退款/并发探针，用后自清）",
+          "allowReturnRestock": false,
+          "colors": [
+            {
+              "colorName": "线B验收色-mut4pvfbggcz",
+              "mainColorHex": "#AABBCC"
+            }
+          ],
+          "doorWidths": [
+            "2.8m"
+          ]
+        }
+      },
+      "order": {
+        "ok": true,
+        "orderId": "07e7b69ccf056964d6ac7db5bb6d40e0",
+        "orderNo": "20261004245010155",
+        "total": 200,
+        "actual": 200,
+        "resp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "data": {
+              "id": "07e7b69ccf056964d6ac7db5bb6d40e0",
+              "orderNo": "20261004245010155",
+              "customerName": "线B验收客户-RESTOCKOFF-mut4pvsva9o6",
+              "customerPhone": "13937091492",
+              "customerAddress": "线B验收地址（探针）",
+              "logisticsType": "express",
+              "logisticsCompany": "线B验收物流",
+              "totalAmount": 200,
+              "actualAmount": 200,
+              "discountAmount": 0,
+              "refundAmount": 0,
+              "processingFee": 0,
+              "status": "pending",
+              "remark": "线B验收（线B 探针订单，用后自清）",
+              "isUrgent": false,
+              "createdByName": "米高测试",
+              "items": [
+                {
+                  "id": "92e0de53710eda039b9f9d849c927c4f",
+                  "productId": "a64e76c350cb145438f9a87e2321fbd8",
+                  "productName": "线B验收商品-RESTOCKOFF-mut4pvfbggcz",
+                  "skuCode": "LB-RESTOCKOFF-MUT4PVFBGGCZ",
+                  "quantity": 2,
+                  "unitPrice": 100,
+                  "width": 2.8,
+                  "height": 2,
+                  "processingInfo": {
+                    "skuId": "2106553743701463041",
+                    "colorId": "2106553743676297218",
+                    "skuCode": "LB-RESTOCKOFF-MUT4PVFBGGCZ-01-28",
+                    "doorWidth": "2.8m",
+                    "processingFeeDetail": {
+                      "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                      "items": [],
+                      "amount": 0,
+                      "set_key": "#0",
+                      "fee_source": "unpriced",
+                      "composition": "",
+                      "special_options": [],
+                      "mixed_color_options": [],
+                      "mixed_color_surcharge": 0,
+                      "special_options_total": 0,
+                      "mixed_color_surcharge_per_meter": 2.4
+                    }
+                  },
+                  "subtotal": 200,
+                  "amount": 200,
+                  "processingFee": 0,
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  },
+                  "createdAt": "2026-10-04T09:15:25.52372+08:00"
+                }
+              ],
+              "processingItems": [],
+              "createdAt": "2026-10-04T09:15:25.508445+08:00",
+              "updatedAt": "2026-10-04T09:15:25.508466+08:00"
+            },
+            "requestId": "req_44fbb68a252545a5",
+            "timestamp": 1791076525
+          },
+          "text": "{\"success\":true,\"data\":{\"id\":\"07e7b69ccf056964d6ac7db5bb6d40e0\",\"orderNo\":\"20261004245010155\",\"customerName\":\"线B验收客户-RESTOCKOFF-mut4pvsva9o6\",\"customerPhone\":\"13937091492\",\"customerAddress\":\"线B验收地址（探针）\",\"logisticsType\":\"express\",\"logisticsCompany\":\"线B验收物流\",\"totalAmount\":200.00,\"actualAmount\":200.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"线B验收（线B 探针订单，用后自清）\",\"isUrgent\":false,\"createdByName\":\"米高测试\",\"items\":[{\"id\":\"92e0de53710eda039b9f9d849c927c4f\",\"productId\":\"a64e76c350cb145438f9a87e2321fbd8\",\"productName\":\"线B验收商品-RESTOCKOFF-mut4pvfbggcz\",\"skuCode\":\"LB-RESTOCKOFF-MUT4PVFBGGCZ\",\"quantity\":2.00,\"unitPrice\":100.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106553743701463041\",\"colorId\":\"2106553743676297218\",\"skuCode\":\"LB-RESTOCKOFF-MUT4PVFBGGCZ-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":200.00,\"amount\":200.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-04T09:15:25.52372+08:00\"}],\"processingItems\":[],\"createdAt\":\"2026-10-04T09:15:25.508445+08:00\",\"updatedAt\":\"2026-10-04T09:15:25.508466+08:00\"},\"requestId\":\"req_44fbb68a252545a5\",\"timestamp\":1791076525}",
+          "ok": true,
+          "data": {
+            "id": "07e7b69ccf056964d6ac7db5bb6d40e0",
+            "orderNo": "20261004245010155",
+            "customerName": "线B验收客户-RESTOCKOFF-mut4pvsva9o6",
+            "customerPhone": "13937091492",
+            "customerAddress": "线B验收地址（探针）",
+            "logisticsType": "express",
+            "logisticsCompany": "线B验收物流",
+            "totalAmount": 200,
+            "actualAmount": 200,
+            "discountAmount": 0,
+            "refundAmount": 0,
+            "processingFee": 0,
+            "status": "pending",
+            "remark": "线B验收（线B 探针订单，用后自清）",
+            "isUrgent": false,
+            "createdByName": "米高测试",
+            "items": [
+              {
+                "id": "92e0de53710eda039b9f9d849c927c4f",
+                "productId": "a64e76c350cb145438f9a87e2321fbd8",
+                "productName": "线B验收商品-RESTOCKOFF-mut4pvfbggcz",
+                "skuCode": "LB-RESTOCKOFF-MUT4PVFBGGCZ",
+                "quantity": 2,
+                "unitPrice": 100,
+                "width": 2.8,
+                "height": 2,
+                "processingInfo": {
+                  "skuId": "2106553743701463041",
+                  "colorId": "2106553743676297218",
+                  "skuCode": "LB-RESTOCKOFF-MUT4PVFBGGCZ-01-28",
+                  "doorWidth": "2.8m",
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  }
+                },
+                "subtotal": 200,
+                "amount": 200,
+                "processingFee": 0,
+                "processingFeeDetail": {
+                  "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                  "items": [],
+                  "amount": 0,
+                  "set_key": "#0",
+                  "fee_source": "unpriced",
+                  "composition": "",
+                  "special_options": [],
+                  "mixed_color_options": [],
+                  "mixed_color_surcharge": 0,
+                  "special_options_total": 0,
+                  "mixed_color_surcharge_per_meter": 2.4
+                },
+                "createdAt": "2026-10-04T09:15:25.52372+08:00"
+              }
+            ],
+            "processingItems": [],
+            "createdAt": "2026-10-04T09:15:25.508445+08:00",
+            "updatedAt": "2026-10-04T09:15:25.508466+08:00"
+          }
+        },
+        "confirmResp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "requestId": "req_c97eb3502fca4192",
+            "timestamp": 1791076525
+          },
+          "text": "{\"success\":true,\"requestId\":\"req_c97eb3502fca4192\",\"timestamp\":1791076525}",
+          "ok": true
+        },
+        "body": {
+          "customerName": "线B验收客户-RESTOCKOFF-mut4pvsva9o6",
+          "customerPhone": "13937091492",
+          "customerAddress": "线B验收地址（探针）",
+          "logisticsType": "express",
+          "logisticsCompany": "线B验收物流",
+          "remark": "线B验收（线B 探针订单，用后自清）",
+          "items": [
+            {
+              "productId": "a64e76c350cb145438f9a87e2321fbd8",
+              "productName": "线B验收商品-RESTOCKOFF-mut4pvfbggcz",
+              "quantity": 2,
+              "unitPrice": 100,
+              "subtotal": "200.000",
+              "width": 2.8,
+              "height": 2,
+              "processingInfo": {
+                "skuId": "2106553743701463041",
+                "skuCode": "LB-RESTOCKOFF-MUT4PVFBGGCZ-01-28",
+                "colorId": "2106553743676297218",
+                "doorWidth": "2.8m"
+              }
+            }
+          ]
+        }
+      },
+      "orderRow": {
+        "id": "07e7b69ccf056964d6ac7db5bb6d40e0",
+        "tenant_id": 25,
+        "order_no": "20261004245010155",
+        "status": "confirmed",
+        "total_amount": 200,
+        "actual_amount": 200,
+        "refund_amount": 0,
+        "refund_at": null,
+        "deleted": 0
+      },
+      "skuAfter": {
+        "id": "2106553743701463041",
+        "stock": 98,
+        "sales_count": 2
+      },
+      "qty": 2,
+      "unitPrice": 100
+    },
+    "refund": {
+      "ok": true,
+      "tag": "REFUND",
+      "allowRestock": false,
+      "product": {
+        "ok": true,
+        "productId": "273483db5d92a2fe5c33f5c6bf672824",
+        "skuId": "2106553747790909442",
+        "skuCode": "LB-REFUND-MUT4PW67JVWW-01-28",
+        "stock": 100,
+        "price": 150,
+        "name": "线B验收商品-REFUND-mut4pw67jvww",
+        "colorId": "2106553747761549313",
+        "productSkuRows": [
+          {
+            "id": "2106553747790909442",
+            "sku_code": "LB-REFUND-MUT4PW67JVWW-01-28",
+            "stock": 100,
+            "price": 150,
+            "color_id": "2106553747761549313"
+          }
+        ],
+        "resp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "data": {
+              "id": "273483db5d92a2fe5c33f5c6bf672824",
+              "name": "线B验收商品-REFUND-mut4pw67jvww",
+              "categoryId": "74e699b83324e8d26de3f0c470645455",
+              "categoryName": "线B验收分类-mut4pufyjnbv",
+              "basePrice": 150,
+              "description": "线B验收（线B 售后退款/并发探针，用后自清）",
+              "images": [],
+              "status": "on_shelf",
+              "stock": 100,
+              "stockWarningThreshold": 10,
+              "skuCode": "LB-REFUND-MUT4PW67JVWW",
+              "unit": "米",
+              "pricingType": "per_meter",
+              "stockDeductionMode": "on_order",
+              "colorCount": 1,
+              "totalStock": 100,
+              "salesCount": 0,
+              "salesAmount": 0,
+              "recommended": false,
+              "allowReturnRestock": false,
+              "colors": [
+                {
+                  "id": "2106553747761549313",
+                  "productId": "273483db5d92a2fe5c33f5c6bf672824",
+                  "colorName": "线B验收色-mut4pw67jvww",
+                  "mainColorHex": "#AABBCC",
+                  "sortOrder": 0,
+                  "createdAt": "2026-10-04 09:15:26",
+                  "updatedAt": "2026-10-04 09:15:26"
+                }
+              ],
+              "sellingMethods": [
+                "bulk_cut",
+                "full_roll"
+              ],
+              "doorWidths": [
+                "2.8m"
+              ],
+              "skus": [
+                {
+                  "id": "2106553747790909442",
+                  "productId": "273483db5d92a2fe5c33f5c6bf672824",
+                  "colorId": "2106553747761549313",
+                  "colorName": "线B验收色-mut4pw67jvww",
+                  "doorWidth": "2.8m",
+                  "price": 150,
+                  "stock": 100,
+                  "skuCode": "LB-REFUND-MUT4PW67JVWW-01-28",
+                  "createdAt": "2026-10-04 09:15:26",
+                  "updatedAt": "2026-10-04 09:15:26"
+                }
+              ],
+              "detailImages": [],
+              "editedBy": "13800138000",
+              "editedAt": "2026-10-04 09:15:25",
+              "createdAt": "2026-10-04 09:15:25",
+              "updatedAt": "2026-10-04 09:15:26",
+              "price": 150
+            },
+            "requestId": "req_6ea95fc83a604d20",
+            "timestamp": 1791076526
+          },
+          "text": "{\"success\":true,\"data\":{\"id\":\"273483db5d92a2fe5c33f5c6bf672824\",\"name\":\"线B验收商品-REFUND-mut4pw67jvww\",\"categoryId\":\"74e699b83324e8d26de3f0c470645455\",\"categoryName\":\"线B验收分类-mut4pufyjnbv\",\"basePrice\":150.00,\"description\":\"线B验收（线B 售后退款/并发探针，用后自清）\",\"images\":[],\"status\":\"on_shelf\",\"stock\":100.0,\"stockWarningThreshold\":10,\"skuCode\":\"LB-REFUND-MUT4PW67JVWW\",\"unit\":\"米\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":1,\"totalStock\":100.0,\"salesCount\":0.0,\"salesAmount\":0.00,\"recommended\":false,\"allowReturnRestock\":false,\"colors\":[{\"id\":\"2106553747761549313\",\"productId\":\"273483db5d92a2fe5c33f5c6bf672824\",\"colorName\":\"线B验收色-mut4pw67jvww\",\"mainColorHex\":\"#AABBCC\",\"sortOrder\":0,\"createdAt\":\"2026-10-04 09:15:26\",\"updatedAt\":\"2026-10-04 09:15:26\"}],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"doorWidths\":[\"2.8m\"],\"skus\":[{\"id\":\"2106553747790909442\",\"productId\":\"273483db5d92a2fe5c33f5c6bf672824\",\"colorId\":\"2106553747761549313\",\"colorName\":\"线B验收色-mut4pw67jvww\",\"doorWidth\":\"2.8m\",\"price\":150.00,\"stock\":100.0,\"skuCode\":\"LB-REFUND-MUT4PW67JVWW-01-28\",\"createdAt\":\"2026-10-04 09:15:26\",\"updatedAt\":\"2026-10-04 09:15:26\"}],\"detailImages\":[],\"editedBy\":\"13800138000\",\"editedAt\":\"2026-10-04 09:15:25\",\"createdAt\":\"2026-10-04 09:15:25\",\"updatedAt\":\"2026-10-04 09:15:26\",\"price\":150.00},\"requestId\":\"req_6ea95fc83a604d20\",\"timestamp\":1791076526}",
+          "ok": true,
+          "data": {
+            "id": "273483db5d92a2fe5c33f5c6bf672824",
+            "name": "线B验收商品-REFUND-mut4pw67jvww",
+            "categoryId": "74e699b83324e8d26de3f0c470645455",
+            "categoryName": "线B验收分类-mut4pufyjnbv",
+            "basePrice": 150,
+            "description": "线B验收（线B 售后退款/并发探针，用后自清）",
+            "images": [],
+            "status": "on_shelf",
+            "stock": 100,
+            "stockWarningThreshold": 10,
+            "skuCode": "LB-REFUND-MUT4PW67JVWW",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 1,
+            "totalStock": 100,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": false,
+            "colors": [
+              {
+                "id": "2106553747761549313",
+                "productId": "273483db5d92a2fe5c33f5c6bf672824",
+                "colorName": "线B验收色-mut4pw67jvww",
+                "mainColorHex": "#AABBCC",
+                "sortOrder": 0,
+                "createdAt": "2026-10-04 09:15:26",
+                "updatedAt": "2026-10-04 09:15:26"
+              }
+            ],
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "doorWidths": [
+              "2.8m"
+            ],
+            "skus": [
+              {
+                "id": "2106553747790909442",
+                "productId": "273483db5d92a2fe5c33f5c6bf672824",
+                "colorId": "2106553747761549313",
+                "colorName": "线B验收色-mut4pw67jvww",
+                "doorWidth": "2.8m",
+                "price": 150,
+                "stock": 100,
+                "skuCode": "LB-REFUND-MUT4PW67JVWW-01-28",
+                "createdAt": "2026-10-04 09:15:26",
+                "updatedAt": "2026-10-04 09:15:26"
+              }
+            ],
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-04 09:15:25",
+            "createdAt": "2026-10-04 09:15:25",
+            "updatedAt": "2026-10-04 09:15:26",
+            "price": 150
+          }
+        },
+        "body": {
+          "name": "线B验收商品-REFUND-mut4pw67jvww",
+          "skuCode": "LB-REFUND-MUT4PW67JVWW",
+          "categoryId": "74e699b83324e8d26de3f0c470645455",
+          "unit": "米",
+          "pricingType": "per_meter",
+          "basePrice": 150,
+          "price": 150,
+          "stock": 100,
+          "status": "on_shelf",
+          "description": "线B验收（线B 售后退款/并发探针，用后自清）",
+          "allowReturnRestock": false,
+          "colors": [
+            {
+              "colorName": "线B验收色-mut4pw67jvww",
+              "mainColorHex": "#AABBCC"
+            }
+          ],
+          "doorWidths": [
+            "2.8m"
+          ]
+        }
+      },
+      "order": {
+        "ok": true,
+        "orderId": "0394da8401a4dab8603c4ef241896f51",
+        "orderNo": "20261004949570156",
+        "total": 300,
+        "actual": 300,
+        "resp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "data": {
+              "id": "0394da8401a4dab8603c4ef241896f51",
+              "orderNo": "20261004949570156",
+              "customerName": "线B验收客户-REFUND-mut4pwjkdftz",
+              "customerPhone": "13979503482",
+              "customerAddress": "线B验收地址（探针）",
+              "logisticsType": "express",
+              "logisticsCompany": "线B验收物流",
+              "totalAmount": 300,
+              "actualAmount": 300,
+              "discountAmount": 0,
+              "refundAmount": 0,
+              "processingFee": 0,
+              "status": "pending",
+              "remark": "线B验收（线B 探针订单，用后自清）",
+              "isUrgent": false,
+              "createdByName": "米高测试",
+              "items": [
+                {
+                  "id": "2d0b58b2015f76854715b9a4b5733ef6",
+                  "productId": "273483db5d92a2fe5c33f5c6bf672824",
+                  "productName": "线B验收商品-REFUND-mut4pw67jvww",
+                  "skuCode": "LB-REFUND-MUT4PW67JVWW",
+                  "quantity": 2,
+                  "unitPrice": 150,
+                  "width": 2.8,
+                  "height": 2,
+                  "processingInfo": {
+                    "skuId": "2106553747790909442",
+                    "colorId": "2106553747761549313",
+                    "skuCode": "LB-REFUND-MUT4PW67JVWW-01-28",
+                    "doorWidth": "2.8m",
+                    "processingFeeDetail": {
+                      "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                      "items": [],
+                      "amount": 0,
+                      "set_key": "#0",
+                      "fee_source": "unpriced",
+                      "composition": "",
+                      "special_options": [],
+                      "mixed_color_options": [],
+                      "mixed_color_surcharge": 0,
+                      "special_options_total": 0,
+                      "mixed_color_surcharge_per_meter": 2.4
+                    }
+                  },
+                  "subtotal": 300,
+                  "amount": 300,
+                  "processingFee": 0,
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  },
+                  "createdAt": "2026-10-04T09:15:26.48406+08:00"
+                }
+              ],
+              "processingItems": [],
+              "createdAt": "2026-10-04T09:15:26.467524+08:00",
+              "updatedAt": "2026-10-04T09:15:26.467571+08:00"
+            },
+            "requestId": "req_b0bd9e445beb45be",
+            "timestamp": 1791076526
+          },
+          "text": "{\"success\":true,\"data\":{\"id\":\"0394da8401a4dab8603c4ef241896f51\",\"orderNo\":\"20261004949570156\",\"customerName\":\"线B验收客户-REFUND-mut4pwjkdftz\",\"customerPhone\":\"13979503482\",\"customerAddress\":\"线B验收地址（探针）\",\"logisticsType\":\"express\",\"logisticsCompany\":\"线B验收物流\",\"totalAmount\":300.00,\"actualAmount\":300.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"线B验收（线B 探针订单，用后自清）\",\"isUrgent\":false,\"createdByName\":\"米高测试\",\"items\":[{\"id\":\"2d0b58b2015f76854715b9a4b5733ef6\",\"productId\":\"273483db5d92a2fe5c33f5c6bf672824\",\"productName\":\"线B验收商品-REFUND-mut4pw67jvww\",\"skuCode\":\"LB-REFUND-MUT4PW67JVWW\",\"quantity\":2.00,\"unitPrice\":150.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106553747790909442\",\"colorId\":\"2106553747761549313\",\"skuCode\":\"LB-REFUND-MUT4PW67JVWW-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":300.00,\"amount\":300.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-04T09:15:26.48406+08:00\"}],\"processingItems\":[],\"createdAt\":\"2026-10-04T09:15:26.467524+08:00\",\"updatedAt\":\"2026-10-04T09:15:26.467571+08:00\"},\"requestId\":\"req_b0bd9e445beb45be\",\"timestamp\":1791076526}",
+          "ok": true,
+          "data": {
+            "id": "0394da8401a4dab8603c4ef241896f51",
+            "orderNo": "20261004949570156",
+            "customerName": "线B验收客户-REFUND-mut4pwjkdftz",
+            "customerPhone": "13979503482",
+            "customerAddress": "线B验收地址（探针）",
+            "logisticsType": "express",
+            "logisticsCompany": "线B验收物流",
+            "totalAmount": 300,
+            "actualAmount": 300,
+            "discountAmount": 0,
+            "refundAmount": 0,
+            "processingFee": 0,
+            "status": "pending",
+            "remark": "线B验收（线B 探针订单，用后自清）",
+            "isUrgent": false,
+            "createdByName": "米高测试",
+            "items": [
+              {
+                "id": "2d0b58b2015f76854715b9a4b5733ef6",
+                "productId": "273483db5d92a2fe5c33f5c6bf672824",
+                "productName": "线B验收商品-REFUND-mut4pw67jvww",
+                "skuCode": "LB-REFUND-MUT4PW67JVWW",
+                "quantity": 2,
+                "unitPrice": 150,
+                "width": 2.8,
+                "height": 2,
+                "processingInfo": {
+                  "skuId": "2106553747790909442",
+                  "colorId": "2106553747761549313",
+                  "skuCode": "LB-REFUND-MUT4PW67JVWW-01-28",
+                  "doorWidth": "2.8m",
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  }
+                },
+                "subtotal": 300,
+                "amount": 300,
+                "processingFee": 0,
+                "processingFeeDetail": {
+                  "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                  "items": [],
+                  "amount": 0,
+                  "set_key": "#0",
+                  "fee_source": "unpriced",
+                  "composition": "",
+                  "special_options": [],
+                  "mixed_color_options": [],
+                  "mixed_color_surcharge": 0,
+                  "special_options_total": 0,
+                  "mixed_color_surcharge_per_meter": 2.4
+                },
+                "createdAt": "2026-10-04T09:15:26.48406+08:00"
+              }
+            ],
+            "processingItems": [],
+            "createdAt": "2026-10-04T09:15:26.467524+08:00",
+            "updatedAt": "2026-10-04T09:15:26.467571+08:00"
+          }
+        },
+        "confirmResp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "requestId": "req_a68362f318ba4073",
+            "timestamp": 1791076526
+          },
+          "text": "{\"success\":true,\"requestId\":\"req_a68362f318ba4073\",\"timestamp\":1791076526}",
+          "ok": true
+        },
+        "body": {
+          "customerName": "线B验收客户-REFUND-mut4pwjkdftz",
+          "customerPhone": "13979503482",
+          "customerAddress": "线B验收地址（探针）",
+          "logisticsType": "express",
+          "logisticsCompany": "线B验收物流",
+          "remark": "线B验收（线B 探针订单，用后自清）",
+          "items": [
+            {
+              "productId": "273483db5d92a2fe5c33f5c6bf672824",
+              "productName": "线B验收商品-REFUND-mut4pw67jvww",
+              "quantity": 2,
+              "unitPrice": 150,
+              "subtotal": "300.000",
+              "width": 2.8,
+              "height": 2,
+              "processingInfo": {
+                "skuId": "2106553747790909442",
+                "skuCode": "LB-REFUND-MUT4PW67JVWW-01-28",
+                "colorId": "2106553747761549313",
+                "doorWidth": "2.8m"
+              }
+            }
+          ]
+        }
+      },
+      "orderRow": {
+        "id": "0394da8401a4dab8603c4ef241896f51",
+        "tenant_id": 25,
+        "order_no": "20261004949570156",
+        "status": "confirmed",
+        "total_amount": 300,
+        "actual_amount": 300,
+        "refund_amount": 0,
+        "refund_at": null,
+        "deleted": 0
+      },
+      "skuAfter": {
+        "id": "2106553747790909442",
+        "stock": 98,
+        "sales_count": 2
+      },
+      "qty": 2,
+      "unitPrice": 150
+    }
+  }
+}

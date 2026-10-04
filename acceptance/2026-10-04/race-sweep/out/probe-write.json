@@ -1,0 +1,546 @@
+[
+  {
+    "id": "W1-入库单并发过账恰一个赢家",
+    "name": "同草稿入库单 8 并发过账 ⇒ 恰 1 个 200、库存只加一次、台账恰一行",
+    "status": "pass",
+    "detail": "8 个并发过账（同一草稿单 RK-20261004-0021，issueSpan=2ms、重叠对=28）：200 响应 1/8（状态码 200,409,409,409,409,409,409,409）；库侧 status=posted；库存 90.0→110.0（Δ20）；本单号台账行 1",
+    "evidence": [
+      {
+        "inboundNo": "RK-20261004-0021",
+        "inboundId": "7c5d2558ef99da398cb403d9eeaae042",
+        "statuses": [
+          200,
+          409,
+          409,
+          409,
+          409,
+          409,
+          409,
+          409
+        ],
+        "successBodies": 1,
+        "window": {
+          "requests": 8,
+          "overlappedPairs": 28,
+          "issueSpanMs": 2,
+          "wallMs": 254,
+          "spans": [
+            [
+              1791076691109,
+              1791076691306
+            ],
+            [
+              1791076691110,
+              1791076691350
+            ],
+            [
+              1791076691110,
+              1791076691341
+            ],
+            [
+              1791076691110,
+              1791076691321
+            ],
+            [
+              1791076691110,
+              1791076691318
+            ],
+            [
+              1791076691110,
+              1791076691329
+            ],
+            [
+              1791076691111,
+              1791076691373
+            ],
+            [
+              1791076691111,
+              1791076691363
+            ]
+          ]
+        },
+        "dbStatus": "posted",
+        "stockBefore": "90.0",
+        "stockAfter": "110.0",
+        "ledgerRowsForThisRef": 1,
+        "ledger": [
+          {
+            "id": 2244,
+            "sku_id": "2106551085519360002",
+            "delta": "20.0",
+            "before_qty": "90.0",
+            "after_qty": "110.0",
+            "reason": "inbound",
+            "ref_no": "RK-20261004-0021",
+            "note": "入库单过账（缸号 race-sweep-lot）",
+            "created_at": "2026-10-04T09:18:11.948485+08:00"
+          }
+        ],
+        "batchCountAfter": 7
+      }
+    ],
+    "at": "2026-10-04T01:18:12.474Z"
+  },
+  {
+    "id": "W2-过账×作废交叉竞态",
+    "name": "同一草稿单同时 post 与 cancel ⇒ 库侧状态与响应/库存/台账三者自洽，不出现「状态被覆盖」或「幽灵入库」",
+    "status": "pass",
+    "detail": "过账×作废 严格同时起跑（issueSpan=0ms、重叠对=1，状态码 409,200）⇒ 库侧最终 status=cancelled；库存 110.0→110.0；台账行 0；不一致 0 条",
+    "evidence": [
+      {
+        "inboundNo": "RK-20261004-0022",
+        "statuses": [
+          409,
+          200
+        ],
+        "window": {
+          "requests": 2,
+          "overlappedPairs": 1,
+          "issueSpanMs": 0,
+          "wallMs": 74,
+          "spans": [
+            [
+              1791076691109,
+              1791076691196
+            ],
+            [
+              1791076691109,
+              1791076691183
+            ]
+          ]
+        },
+        "dbStatus": "cancelled",
+        "stockBefore": "110.0",
+        "stockAfter": "110.0",
+        "ledgerForRef": 0,
+        "inconsistent": []
+      }
+    ],
+    "at": "2026-10-04T01:18:13.061Z"
+  },
+  {
+    "id": "W3-同 SKU 并发过账净增量",
+    "name": "同一 SKU 两张草稿单并发过账 ⇒ 两次增量都落地（净增量 = Σdelta）",
+    "status": "pass",
+    "detail": "两草稿单并发过账（issueSpan=1ms、重叠对=1）：200 响应 2/2；库存 65.0→90.0（窗口增量 25，台账 Σdelta 25，应 25）；台账两行 before/after = [\"65.0→75.0\",\"65.0→80.0\"]；链不一致 1 处、同基并发读=true",
+    "evidence": [
+      {
+        "inboundNos": [
+          "RK-20261004-0023",
+          "RK-20261004-0024"
+        ],
+        "statuses": [
+          200,
+          200
+        ],
+        "window": {
+          "requests": 2,
+          "overlappedPairs": 1,
+          "issueSpanMs": 1,
+          "wallMs": 186,
+          "spans": [
+            [
+              1791076691109,
+              1791076691240
+            ],
+            [
+              1791076691110,
+              1791076691295
+            ]
+          ]
+        },
+        "stockBefore": "65.0",
+        "stockAfter": "90.0",
+        "observedDelta": 25,
+        "sumOfOps": 25,
+        "ledgerMine": [
+          {
+            "id": 2245,
+            "delta": "10.0",
+            "before": "65.0",
+            "after": "75.0",
+            "ref_no": "RK-20261004-0023"
+          },
+          {
+            "id": 2246,
+            "delta": "15.0",
+            "before": "65.0",
+            "after": "80.0",
+            "ref_no": "RK-20261004-0024"
+          }
+        ],
+        "chainBad": [
+          {
+            "at": 2246,
+            "prevAfter": "75.0",
+            "curBefore": "65.0"
+          }
+        ],
+        "sameBaseConcurrentRead": true
+      }
+    ],
+    "at": "2026-10-04T01:18:13.729Z"
+  },
+  {
+    "id": "W3b-并发过账台账链首尾相接",
+    "name": "同一 SKU 并发过账的台账行必须 before==前一行 after 且首行 before==窗口前库存",
+    "status": "fail",
+    "detail": "🔴 两草稿单并发过账（issueSpan=1ms、重叠对=1）：200 响应 2/2；库存 65.0→90.0（窗口增量 25，台账 Σdelta 25，应 25）；台账两行 before/after = [\"65.0→75.0\",\"65.0→80.0\"]；链不一致 1 处、同基并发读=true ⇒ 台账链断裂（首尾相接不变式不成立）",
+    "evidence": [
+      {
+        "inboundNos": [
+          "RK-20261004-0023",
+          "RK-20261004-0024"
+        ],
+        "statuses": [
+          200,
+          200
+        ],
+        "window": {
+          "requests": 2,
+          "overlappedPairs": 1,
+          "issueSpanMs": 1,
+          "wallMs": 186,
+          "spans": [
+            [
+              1791076691109,
+              1791076691240
+            ],
+            [
+              1791076691110,
+              1791076691295
+            ]
+          ]
+        },
+        "stockBefore": "65.0",
+        "stockAfter": "90.0",
+        "observedDelta": 25,
+        "sumOfOps": 25,
+        "ledgerMine": [
+          {
+            "id": 2245,
+            "delta": "10.0",
+            "before": "65.0",
+            "after": "75.0",
+            "ref_no": "RK-20261004-0023"
+          },
+          {
+            "id": 2246,
+            "delta": "15.0",
+            "before": "65.0",
+            "after": "80.0",
+            "ref_no": "RK-20261004-0024"
+          }
+        ],
+        "chainBad": [
+          {
+            "at": 2246,
+            "prevAfter": "75.0",
+            "curBefore": "65.0"
+          }
+        ],
+        "sameBaseConcurrentRead": true
+      }
+    ],
+    "at": "2026-10-04T01:18:13.730Z"
+  },
+  {
+    "id": "W4-并发确认收款不超卖",
+    "name": "库存 10 米、两张各 8 米的订单并发确认收款",
+    "status": "fail",
+    "detail": "🔴 洁净 SKU（建品库存 10.0 米，RACEW42C99WK-01-28）两单各要 8 米并发确认收款（issueSpan=0ms、重叠对=1）：200 响应 2/2；库存 10.0→0.0（扣减 10）；台账 2 行、链不一致 1",
+    "evidence": [
+      {
+        "skuId": "2106554451842584578",
+        "skuCode": "RACEW42C99WK-01-28",
+        "orderNos": [
+          "20261004028330230",
+          "20261004086990231"
+        ],
+        "statuses": [
+          200,
+          200
+        ],
+        "window": {
+          "requests": 2,
+          "overlappedPairs": 1,
+          "issueSpanMs": 0,
+          "wallMs": 153,
+          "spans": [
+            [
+              1791076691109,
+              1791076691310
+            ],
+            [
+              1791076691109,
+              1791076691262
+            ]
+          ]
+        },
+        "stockBefore": "10.0",
+        "stockAfter": "0.0",
+        "ledgerMine": [
+          {
+            "id": 2248,
+            "delta": "-8.0",
+            "before": "10.0",
+            "after": "2.0",
+            "ref_no": "20261004086990231"
+          },
+          {
+            "id": 2249,
+            "delta": "-10.0",
+            "before": "10.0",
+            "after": "0.0",
+            "ref_no": "20261004028330230"
+          }
+        ],
+        "chainBad": [
+          {
+            "at": 2249,
+            "prevAfter": "2.0",
+            "curBefore": "10.0"
+          }
+        ],
+        "rejectedBodies": []
+      }
+    ],
+    "at": "2026-10-04T01:18:14.769Z"
+  },
+  {
+    "id": "W5-批次盘点同 runId 并发重复提交的回执",
+    "name": "同 runId 重复提交必须给可读回执（replayed），不得 500",
+    "status": "fail",
+    "detail": "🔴 同 runId 6 并发盘点（batch PC-20261004-0001，issueSpan=1ms、重叠对=15）：200 响应 1/6（replayed 回执 0）、5xx 5；库侧该 runId 分录 1 行（应 1）、库存 110.0→107.0（Δ-3，应 -3）",
+    "evidence": [
+      {
+        "runId": "race-sweep-run-20261004010446-47cx99",
+        "batchId": 27,
+        "batchNo": "PC-20261004-0001",
+        "remainingBefore": 5,
+        "actual": "2.0",
+        "statuses": [
+          500,
+          500,
+          500,
+          500,
+          200,
+          500
+        ],
+        "window": {
+          "requests": 6,
+          "overlappedPairs": 15,
+          "issueSpanMs": 1,
+          "wallMs": 97,
+          "spans": [
+            [
+              1791076691109,
+              1791076691205
+            ],
+            [
+              1791076691109,
+              1791076691204
+            ],
+            [
+              1791076691110,
+              1791076691206
+            ],
+            [
+              1791076691110,
+              1791076691206
+            ],
+            [
+              1791076691110,
+              1791076691198
+            ],
+            [
+              1791076691110,
+              1791076691206
+            ]
+          ]
+        },
+        "bodyStatuses": [
+          "{\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestI",
+          "{\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestI",
+          "{\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestI",
+          "{\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestI",
+          "{\"success\":true,\"data\":{\"runId\":\"race-sweep-run-20261004010446-47cx99\",\"productI",
+          "{\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestI"
+        ],
+        "stockBefore": "110.0",
+        "stockAfter": "107.0",
+        "consumptionsForRun": 1,
+        "cons": [
+          {
+            "id": 42,
+            "batch_id": 27,
+            "delta": "-3.0",
+            "before_qty": "5.0",
+            "after_qty": "2.0",
+            "reason": "stocktake",
+            "stocktake_run_id": "race-sweep-run-20261004010446-47cx99"
+          }
+        ],
+        "ledgerForRun": 0
+      }
+    ],
+    "at": "2026-10-04T01:18:15.525Z"
+  },
+  {
+    "id": "W6-状态流转并发终态自洽",
+    "name": "同一商品并发交叉上下架 ⇒ 无 5xx、库侧终态合法且与回执自洽",
+    "status": "pass",
+    "detail": "探针商品先经 /status 推到 on_sale，再并发 8 次交叉下架/上架（issueSpan=0ms、重叠对=28）：状态码 [200,200,200,200,200,200,200,200]、5xx 0；回执 success=[1,0,1,0,1,0,1,0]、errors=[[],[\"当前状态[出售中]不允许上架\"],[],[\"当前状态[出售中]不允许上架\"],[],[\"当前状态[出售中]不允许上架\"],[],[\"当前状态[出售中]不允许上架\"]]；库侧终态=off_sale",
+    "evidence": [
+      {
+        "productId": "e3ac488227213e214fef7b553344bacd",
+        "skuCode": "RACEW6KG31C9-01-28",
+        "statusAfterManualOnSale": "on_sale",
+        "statuses": [
+          200,
+          200,
+          200,
+          200,
+          200,
+          200,
+          200,
+          200
+        ],
+        "window": {
+          "requests": 8,
+          "overlappedPairs": 28,
+          "issueSpanMs": 0,
+          "wallMs": 50,
+          "spans": [
+            [
+              1791076691109,
+              1791076691164
+            ],
+            [
+              1791076691109,
+              1791076691157
+            ],
+            [
+              1791076691109,
+              1791076691173
+            ],
+            [
+              1791076691109,
+              1791076691156
+            ],
+            [
+              1791076691109,
+              1791076691169
+            ],
+            [
+              1791076691109,
+              1791076691154
+            ],
+            [
+              1791076691109,
+              1791076691177
+            ],
+            [
+              1791076691109,
+              1791076691159
+            ]
+          ]
+        },
+        "successEntries": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0
+        ],
+        "errorEntries": [
+          [],
+          [
+            "当前状态[出售中]不允许上架"
+          ],
+          [],
+          [
+            "当前状态[出售中]不允许上架"
+          ],
+          [],
+          [
+            "当前状态[出售中]不允许上架"
+          ],
+          [],
+          [
+            "当前状态[出售中]不允许上架"
+          ]
+        ],
+        "dbStatusAfter": "off_sale",
+        "c5xx": 0
+      }
+    ],
+    "at": "2026-10-04T01:18:16.096Z"
+  },
+  {
+    "id": "W7-洁净 SKU 并发过账（收敛控）",
+    "name": "新建 SKU（库存 0）两草稿单并发过账 ⇒ 净增量与台账链同时对",
+    "status": "fail",
+    "detail": "🔴 洁净 SKU（建品库存 0，RACEA3TI7922-01-28）两草稿单并发过账（issueSpan=0ms、重叠对=1）：200 响应 2/2；库存 100.0→125.0（Δ25，应 25）；台账 [\"15.0:100.0→115.0\",\"10.0:100.0→110.0\"]；链不一致 1 处",
+    "evidence": [
+      {
+        "productId": "a091a9c1953a60a53853f84dee65866e",
+        "skuId": "2106554461766307841",
+        "skuCode": "RACEA3TI7922-01-28",
+        "inboundNos": [
+          "RK-20261004-0025",
+          "RK-20261004-0026"
+        ],
+        "statuses": [
+          200,
+          200
+        ],
+        "window": {
+          "requests": 2,
+          "overlappedPairs": 1,
+          "issueSpanMs": 0,
+          "wallMs": 129,
+          "spans": [
+            [
+              1791076691109,
+              1791076691299
+            ],
+            [
+              1791076691109,
+              1791076691238
+            ]
+          ]
+        },
+        "stockBefore": "100.0",
+        "stockAfter": "125.0",
+        "ledgerMine": [
+          {
+            "id": 2253,
+            "delta": "15.0",
+            "before": "100.0",
+            "after": "115.0",
+            "ref_no": "RK-20261004-0026"
+          },
+          {
+            "id": 2254,
+            "delta": "10.0",
+            "before": "100.0",
+            "after": "110.0",
+            "ref_no": "RK-20261004-0025"
+          }
+        ],
+        "chainBad": [
+          {
+            "at": 2254,
+            "prevAfter": "115.0",
+            "curBefore": "100.0"
+          }
+        ]
+      }
+    ],
+    "at": "2026-10-04T01:18:17.054Z"
+  }
+]

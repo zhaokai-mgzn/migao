@@ -1,0 +1,18 @@
+{
+  "expected": "ff655a06c",
+  "declaredSha": "",
+  "lastSuccessSha": "ff655a06c",
+  "lastSuccessAtUtc": "2026-10-03T21:47:10Z",
+  "deployRunsRaw": "2026-10-04T00:30:01Z|failure|ebf4203212c5ffe73901811daca3418f41e6e6a4\n2026-10-03T21:47:10Z|success|ff655a06cdaf4793902c5fb4b0b5bfaa3e3037f2\n2026-10-03T18:38:49Z|failure|ff655a06cdaf4793902c5fb4b0b5bfaa3e3037f2\n2026-10-03T14:55:45Z|success|42e7dc9d4778d231d7aa21287dcb494093b33800\n2026-10-03T14:53:55Z|failure|42e7dc9d4778d231d7aa21287dcb494093b33800\n2026-10-03T13:26:06Z|failure|d0e965f64dd9f44390e182c19ea5f6a887dc0c19\n2026-10-03T12:52:11Z|failure|a7816ea4d5c68d0fd48285609b562aaa0f41adfb\n2026-10-03T12:08:30Z|failure|fa18709c60cea403ab587741217fcc2d6bec88d3\n2026-10-03T11:48:43Z|failure|3047f627d4181cf9b073fe759476f27e8f5133f6\n2026-10-03T11:07:30Z|failure|d45b7ff3929891e38d4d5f53f925e9b7d8b641e1\n2026-10-03T10:55:08Z|failure|4477fd5638738563bee69e03227950775ed82f45\n2026-10-03T10:45:38Z|failure|1fe26840d9d620a4a26b30ba058e8369c660d1ac",
+  "localWorktree": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "sha": "43ca70322",
+    "shaFull": "43ca703221a714e143c468ff0b29c4a46e67a88f",
+    "note": "本地旧构建点，非被测面；读数不取自它"
+  },
+  "probeUrl": "https://api.migaozn.com/api/admin/after-sales",
+  "observedAt": {
+    "cst": "2026-10-04 09:15:22 +08",
+    "utc": "2026-10-04T01:15:22.015Z"
+  }
+}

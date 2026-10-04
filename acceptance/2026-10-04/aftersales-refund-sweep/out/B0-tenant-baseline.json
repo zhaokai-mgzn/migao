@@ -1,0 +1,16 @@
+{
+  "tenant": 25,
+  "at": {
+    "cst": "2026-10-04 09:15:22 +08",
+    "utc": "2026-10-04T01:15:22.550Z"
+  },
+  "base": {
+    "orders": 32,
+    "tickets": 0,
+    "ledger": 54,
+    "finance": 12,
+    "products": 31,
+    "active_categories": 1,
+    "users": 4
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "at": {
+    "cst": "2026-10-04 12:41:55 +08",
+    "utc": "2026-10-04T04:41:55.405Z"
+  },
+  "summary": {
+    "pass": 9,
+    "fail": 1,
+    "skip": 0,
+    "total": 10
+  },
+  "shots": [
+    "U1-login-view.png",
+    "U2-bad-pin.png",
+    "U3-logged-in.png",
+    "U4-scan-view.png",
+    "U5-after-report.png"
+  ]
+}

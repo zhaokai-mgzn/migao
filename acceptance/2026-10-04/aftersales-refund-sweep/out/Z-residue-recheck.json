@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-04T01:13:52.029Z",
+  "probeDomain": {
+    "products_lb": [],
+    "orders_lb": [],
+    "tickets_lb": [],
+    "categories_lb": [],
+    "ledger_by_probe_sku": [],
+    "temp_tables": [],
+    "client_keys": []
+  },
+  "tenantLevelReadout": {
+    "products": 34,
+    "orders": 15,
+    "tickets": 0,
+    "ledger": 51,
+    "finance": 6,
+    "categories": 5
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "at": "2026-10-04 12:08:53 +08",
+  "url": "https://app.migaozn.com/b/",
+  "steps": [
+    {
+      "id": "U1",
+      "name": "工人端小程序登录页渲染",
+      "expect": "路由含 auth/login，且管理员 tab 可切（表单变手机号/验证码）",
+      "actual": "href=https://app.migaozn.com/b/#/pages/auth/login/index",
+      "verdict": "pass",
+      "evidence": [
+        "shots/bmini-U1-login.png"
+      ]
+    },
+    {
+      "id": "U2",
+      "name": "切「管理员登录」tab",
+      "expect": "表单形态变为「手机号 / 验证码」",
+      "actual": "inputs=[\"请输入管理员手机号\",\"请输入验证码\"]",
+      "verdict": "pass",
+      "evidence": []
+    },
+    {
+      "id": "U3",
+      "name": "点「获取验证码」并观察真实反馈（限流则等窗口重试一次）",
+      "expect": "UI 给出可见反馈（倒计时「Ns 后重发」或明确限流文案）；`POST /api/auth/sms/send` 记原始状态码",
+      "actual": "send 状态码=200；倒计时=true；限流文案=\"\"",
+      "verdict": "pass",
+      "evidence": [
+        "shots/bmini-U1-login.png",
+        "consoleErrors=[]"
+      ]
+    },
+    {
+      "id": "U4",
+      "name": "管理员登录成功并落到首屏（真实旅程的 UA 判据）",
+      "expect": "离开登录页 + `POST /api/auth/sms/login` = 200 + 首屏显示租户身份",
+      "actual": "href=https://app.migaozn.com/b/#/pages/chat/index/index；text=\"米宝\\nAI\\n米高测试环境 · 商家经营助手\\n🔄 新对话\\n布\\n你好，我是米宝\\n你的商家经营助手 查订单、查库存、算料报价、售后与物流，都可以问我\\n您可以试试以下问题\\n🧮\\n算料报价\\n📦\\n查订单\\n📊\\n查库存\\n🔍\\n找产品\\n🤝\\n售后咨询\\n\"",
+      "verdict": "pass",
+      "evidence": [
+        "shots/bmini-U4-home.png"
+      ]
+    },
+    {
+      "id": "U5",
+      "name": "进入「数据」页并渲染真实业务读数",
+      "expect": "路由含 dashboard 且页面含「概览/今日/待处理」等真实内容（首版断言误写 /data/ ⇒ 假红，已改）",
+      "actual": "href=https://app.migaozn.com/b/#/pages/dashboard/index/index；text=\"米高测试，今日生产概览\\n数据来自米宝 · 每 30 分钟自动刷新\\n今天要处理的事\\n今天没有待处理\\n在制工序进度\\n今天要处理的 0 件：待排产 0 · 卡在哪 0 · 待发货 0\\n没开工 0\\n做了一半 0\\n已完成 0\\n「做了一半」只作进度提示，不作催办（无可靠完工信号，拿它当卡点会误报正在干的活）\\n卡在哪判据：上道做完后\"",
+      "verdict": "pass",
+      "evidence": [
+        "shots/bmini-U5-dashboard.png"
+      ]
+    },
+    {
+      "id": "U6",
+      "name": "「我的」页显示已登录身份与功能入口",
+      "expect": "不再显示「请先登录」，且出现账号身份与企业名",
+      "actual": "href=https://app.migaozn.com/b/#/pages/profile/index/index；text=\"米\\n米高测试\\n企业管理员\\n米高测试环境\\n扫码报工\\n›\\n拍照入库\\n›\\n补打入库标签\\n›\\n智能派单\\n›\\n入库过账\\n›\\n售后处理\\n›\\n计件工资报表\\n›\\n关于我们\\n›\\n隐私协议\\n›\\n退出登录\\n问米宝\\n数据\\n坐席\\n我的\"",
+      "verdict": "pass",
+      "evidence": [
+        "shots/bmini-U6-profile.png"
+      ]
+    }
+  ],
+  "consoleErrors": [
+    "NotFoundError: Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.\n    at ad"
+  ],
+  "apiCalls": [
+    {
+      "path": "/api/auth/sms/send",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "path": "/api/auth/sms/login",
+      "method": "POST",
+      "status": 200
+    }
+  ],
+  "counts": {
+    "pass": 6
+  },
+  "consoleErrorsTotal": 1
+}

@@ -1,0 +1,90 @@
+{
+  "provenance": {
+    "note": "重建文件（非原始落盘）：原 out/cleanup-tenantA.json 被一次 --dry 运行覆盖；dry 现在改写 cleanup-tenantA-dry.json（已修）",
+    "durable_evidence": "out/run-all.log 中 `阻塞表 Top=[...]` 行（该日志未被覆盖）",
+    "rebuilt_from": "本轮会话对原 cleanup-tenantA.json 的逐字段读数（blocked 20 条 = 10 表 × 2 轮）+ run-all.log 的 Top 行",
+    "at": "2026-10-04T01:54+00:00 / 09:54 +08"
+  },
+  "blocked_total": 20,
+  "blocked_unique": [
+    {
+      "table": "inbound_orders",
+      "kind": "sql_error",
+      "msg": "ERROR:  column \"dye_lot\" does not exist  ← 谓词 tenant_id=25 and (supplier like ... or remark like ... or dye_lot is not null and supplier like ...)——dye_lot 在 stock_batches/inbound_order_items 上，不在 inbound_orders",
+      "rounds": 2
+    },
+    {
+      "table": "inbound_labels",
+      "kind": "sql_error",
+      "msg": "ERROR:  column \"dye_lot\" does not exist ← 子查询引用了 inbound_orders 的坏谓词（闭包传播）",
+      "rounds": 2
+    },
+    {
+      "table": "finance_transactions",
+      "kind": "sql_error",
+      "msg": "ERROR:  column \"ref_no\" does not exist ← 谓词用 ref_no；真实列为 order_no/order_id/transaction_no/remark",
+      "rounds": 2
+    },
+    {
+      "table": "processing_orders",
+      "kind": "sql_error",
+      "msg": "ERROR:  column \"order_no\" does not exist ← 谓词用 coalesce(order_no,'')；真实列为 processing_order_no/order_id",
+      "rounds": 2
+    },
+    {
+      "table": "production_instance_repricing_logs",
+      "kind": "sql_error",
+      "msg": "ERROR:  column \"order_no\" does not exist ← 闭包继承 processing_orders 的坏谓词",
+      "rounds": 2
+    },
+    {
+      "table": "processing_position_operations",
+      "kind": "sql_error",
+      "msg": "ERROR:  column \"order_no\" does not exist ← 闭包继承 processing_orders 的坏谓词",
+      "rounds": 2
+    },
+    {
+      "table": "processing_order_sets",
+      "kind": "sql_error",
+      "msg": "ERROR:  column \"order_no\" does not exist ← 闭包继承 processing_orders 的坏谓词",
+      "rounds": 2
+    },
+    {
+      "table": "production_work_logs",
+      "kind": "sql_error",
+      "msg": "ERROR:  column \"order_no\" does not exist ← 闭包继承 processing_orders 的坏谓词",
+      "rounds": 2
+    },
+    {
+      "table": "processing_set_part_tokens",
+      "kind": "sql_error",
+      "msg": "ERROR:  column \"order_no\" does not exist ← 闭包继承 processing_orders 的坏谓词",
+      "rounds": 2
+    },
+    {
+      "table": "worker_report_audits",
+      "kind": "sql_error",
+      "msg": "ERROR:  column \"order_no\" does not exist ← 闭包继承 processing_orders 的坏谓词",
+      "rounds": 2
+    }
+  ],
+  "fk_blocked_total": 0,
+  "errors_field_was": [],
+  "objection_1_verdict": "成立：20 条 blocked 全部是谓词列名错误（sql_error），不是 FK 阻塞；且 inbound_orders/inbound_labels 是本线根表（当时租户 25 探针入库单 24 行），不是其他线对象。cleanup-a.mjs 谓词已按真实 schema 修正，并加 --dry 谓词校验（现 errors=[]）。",
+  "delete_results_actual": {
+    "cleanup_mjs_tenantA_run": "含有效谓词的 inbound_orders/orders/client_request_keys/stock_ledger_entries 被删净（该轮进程在 60s 被 SIGTERM）",
+    "cleanup_a_rounds": [
+      127,
+      51,
+      37
+    ],
+    "final_residue_at_012346Z": {
+      "products": 0,
+      "orders": 0,
+      "inbounds": 0,
+      "keys": 0,
+      "ledger": 0,
+      "consumptions": 0
+    }
+  }
+}

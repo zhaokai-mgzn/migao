@@ -1,0 +1,338 @@
+{
+  "records": [
+    {
+      "id": "C1.scan-resolves",
+      "name": "GET /api/worker/production/scan（新码）⇒ 解析出套×部位 + 推断出唯一工序",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + granularity=set_position + set_no 与本夹具一致 + operation.operation_id == 夹具唯一待做工序 == 实测 HTTP 200 granularity=set_position set_no=LA-JG-MUT651EJZM-001 op=laopmut651ejzm determined_by=inferred",
+      "evidence": [
+        "期望来源: ProductionScanService.findPartToken + setPositionView（工序由系统推断 = min(seq) 唯一那道）",
+        "期望: HTTP 200 + granularity=set_position + set_no 与本夹具一致 + operation.operation_id == 夹具唯一待做工序",
+        "实得: HTTP 200 granularity=set_position set_no=LA-JG-MUT651EJZM-001 op=laopmut651ejzm determined_by=inferred",
+        "set_overview.positions=[{\"item\":\"laitmmut651ejzm\",\"ops\":1}]"
+      ],
+      "at": "2026-10-04 09:55:13 +08",
+      "atUtc": "2026-10-04T01:55:13.174Z"
+    },
+    {
+      "id": "C2.scan-is-readonly",
+      "name": "scan 是**只读**面：工序实例与报工明细零变化",
+      "status": "pass",
+      "detail": "期望 before == after（processing_position_operations 与 production_work_logs 逐字相同） == 实测 ops: true / logs: 0→0",
+      "evidence": [
+        "期望来源: ProductionScanService 类注释「本切片是只读面，不写库、不落痕」",
+        "期望: before == after（processing_position_operations 与 production_work_logs 逐字相同）",
+        "实得: ops: true / logs: 0→0",
+        "beforeOps=[{\"id\":\"laopmut651ejzm\",\"seq\":1,\"status\":\"pending\",\"done_qty\":\"0.00\",\"qty\":\"12.30\",\"worker_id\":null,\"worker_name\":null,\"position_name\":\"线A验收布-mut64sa0vl\",\"has_done_at\":false,\"has_started_at\":false,\"started_at_cst\":null,\"done_at_cst\":null}]",
+        "afterOps=[{\"id\":\"laopmut651ejzm\",\"seq\":1,\"status\":\"pending\",\"done_qty\":\"0.00\",\"qty\":\"12.30\",\"worker_id\":null,\"worker_name\":null,\"position_name\":\"线A验收布-mut64sa0vl\",\"has_done_at\":false,\"has_started_at\":false,\"started_at_cst\":null,\"done_at_cst\":null}]"
+      ],
+      "at": "2026-10-04 09:55:13 +08",
+      "atUtc": "2026-10-04T01:55:13.175Z"
+    },
+    {
+      "id": "C3.complete-writes",
+      "name": "POST scan/complete ⇒ HTTP 200 + 落 1 行 production_work_logs",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + work_logs 恰好 1 行（operation_id=夹具工序） == 实测 HTTP 200 logs=1 [{\"id\":\"caf5ef26a81099bd19655eae6540ba7b\",\"operation_id\":\"laopmut651ejzm\",\"operation_name\":\"裁剪-布\",\"worker_id\":\"0db8b090fb0eff46408a66438278e8c1\",\"worker_name\":\"线A验收工人909158\",\"qty\":\"12.30\",\"qualified_qty\":\"12.30\",\"work_type\":\"normal\",\"unit_price\":\"0.40\",\"factor\":null,\"work_date\":\"2026-10-04\",\"created_at_cst\":\"2026-10-04 09:55:13.42307\"}]",
+      "evidence": [
+        "期望来源: ProductionScanCompleteService.complete → ProductionService.applyScanComplete（一次事务）",
+        "期望: HTTP 200 + work_logs 恰好 1 行（operation_id=夹具工序）",
+        "实得: HTTP 200 logs=1 [{\"id\":\"caf5ef26a81099bd19655eae6540ba7b\",\"operation_id\":\"laopmut651ejzm\",\"operation_name\":\"裁剪-布\",\"worker_id\":\"0db8b090fb0eff46408a66438278e8c1\",\"worker_name\":\"线A验收工人909158\",\"qty\":\"12.30\",\"qualified_qty\":\"12.30\",\"work_type\":\"normal\",\"unit_price\":\"0.40\",\"factor\":null,\"work_date\":\"2026-10-04\",\"created_at_cst\":\"2026-10-04 09:55:13.42307\"}]",
+        "resp={\"operation_id\":\"laopmut651ejzm\",\"done_qty\":12.3,\"status\":\"done\",\"order_completed\":true,\"worker_id\":\"0db8b090fb0eff46408a66438278e8c1\",\"worker_name\":\"线A验收工人909158\",\"identity_source\":\"server_session\",\"set_no\":\"LA-JG-MUT651EJZM-001\",\"position\":{\"order_item_id\":\"laitmmut651ejzm\",\"position_kind\":\"布帘\",\"position_name\":\"线A验收布-mut64sa0vl\"},\"set_overview\":{\"set_no\":\"LA-JG-MUT651EJZM-001\",\"set_index\":1,\"pos"
+      ],
+      "at": "2026-10-04 09:55:13 +08",
+      "atUtc": "2026-10-04T01:55:13.801Z"
+    },
+    {
+      "id": "C4.log-qty-and-worker",
+      "name": "落库数量/合格数/工人绑定与请求一致（期望本包独立算出）",
+      "status": "pass",
+      "detail": "期望 qty=12.30 qualified=12.30 worker_id=0db8b090fb0eff46408a66438278e8c1 worker_name=线A验收工人909158 == 实测 qty=12.30 qualified=12.30 worker_id=0db8b090fb0eff46408a66438278e8c1 worker_name=线A验收工人909158",
+      "evidence": [
+        "期望来源: 缺省 qty = 剩余应做(12.30)；worker 由 X-Worker-Session-Id 解（#4733：body 同名字段不读）",
+        "期望: qty=12.30 qualified=12.30 worker_id=0db8b090fb0eff46408a66438278e8c1 worker_name=线A验收工人909158",
+        "实得: qty=12.30 qualified=12.30 worker_id=0db8b090fb0eff46408a66438278e8c1 worker_name=线A验收工人909158"
+      ],
+      "at": "2026-10-04 09:55:13 +08",
+      "atUtc": "2026-10-04T01:55:13.801Z"
+    },
+    {
+      "id": "C5.op-advanced-and-stamped",
+      "name": "工序实例被推进：done_qty=12.30 + done_at/started_at + 领活人 = 本次工人",
+      "status": "pass",
+      "detail": "期望 done_qty=12.30 + has_done_at + has_started_at + worker_id=本次工人 == 实测 done_qty=12.30 done_at=true started_at=true worker_id=0db8b090fb0eff46408a66438278e8c1 started_cst=2026-10-04 09:55:13.431652",
+      "evidence": [
+        "期望来源: applyScanComplete：CAS 推进 done_qty + done_at + started_at/worker_id（#4967 领活语义）",
+        "期望: done_qty=12.30 + has_done_at + has_started_at + worker_id=本次工人",
+        "实得: done_qty=12.30 done_at=true started_at=true worker_id=0db8b090fb0eff46408a66438278e8c1 started_cst=2026-10-04 09:55:13.431652"
+      ],
+      "at": "2026-10-04 09:55:13 +08",
+      "atUtc": "2026-10-04T01:55:13.802Z"
+    },
+    {
+      "id": "C6.audit-identity-source",
+      "name": "身份旁路账：identity_source=server_session（body 不能自称工人）",
+      "status": "pass",
+      "detail": "期望 worker_report_audits 行数 ≥1 且 identity_source=server_session + session_id 为本次 == 实测 [{\"id\":\"feb050ddc6471aa837f26fd912f2b12b\",\"work_log_id\":\"caf5ef26a81099bd19655eae6540ba7b\",\"operation_id\":\"laopmut651ejzm\",\"worker_id\":\"0db8b090fb0eff46408a66438278e8c1\",\"worker_name\":\"线A验收工人909158\",\"worker_session_id\":\"de81ae9f03a945258c0ac0a6835ab473\",\"identity_source\":\"server_session\"}]",
+      "evidence": [
+        "期望来源: WorkerReportAudit（V98 旁路账：server_session 权威 / client_body 显式降级）",
+        "期望: worker_report_audits 行数 ≥1 且 identity_source=server_session + session_id 为本次",
+        "实得: [{\"id\":\"feb050ddc6471aa837f26fd912f2b12b\",\"work_log_id\":\"caf5ef26a81099bd19655eae6540ba7b\",\"operation_id\":\"laopmut651ejzm\",\"worker_id\":\"0db8b090fb0eff46408a66438278e8c1\",\"worker_name\":\"线A验收工人909158\",\"worker_session_id\":\"de81ae9f03a945258c0ac0a6835ab473\",\"identity_source\":\"server_session\"}]"
+      ],
+      "at": "2026-10-04 09:55:13 +08",
+      "atUtc": "2026-10-04T01:55:13.802Z"
+    },
+    {
+      "id": "C7.idempotent-replay",
+      "name": "同 X-Client-Request-Id 重复提交 ⇒ 回放首次结果、**不重复计件**",
+      "status": "pass",
+      "detail": "期望 work_logs 仍恰好 1 行 + 第二次响应 replayed=true + client_request_keys 有快照 == 实测 logs=1（第二次 HTTP 200）第二次响应={\"set_no\":\"LA-JG-MUT651EJZM-001\",\"status\":\"done\",\"done_qty\":12.3,\"position\":{\"order_item_id\":\"laitmmut651ejzm\",\"position_kind\":\"布帘\",\"position_name\":\"线A验收布-mut64sa0vl\"},\"rerouted\":false,\"worker_id\":\"0d idemRow={\"tenant_id\":25,\"client_request_id\":\"la-p2complete-mut6528n-0\",\"endpoint\":\"POST /api/worker/production/scan/complete\",\"has_snapshot\":true,\"created_at_cst\":\"2026-10-04 09:55:13.313249\"}",
+      "evidence": [
+        "期望来源: ClientRequestIdService.claim/complete（同租户同键唯一 + 响应快照回放，issue #4037）",
+        "期望: work_logs 仍恰好 1 行 + 第二次响应 replayed=true + client_request_keys 有快照",
+        "实得: logs=1（第二次 HTTP 200）第二次响应={\"set_no\":\"LA-JG-MUT651EJZM-001\",\"status\":\"done\",\"done_qty\":12.3,\"position\":{\"order_item_id\":\"laitmmut651ejzm\",\"position_kind\":\"布帘\",\"position_name\":\"线A验收布-mut64sa0vl\"},\"rerouted\":false,\"worker_id\":\"0d idemRow={\"tenant_id\":25,\"client_request_id\":\"la-p2complete-mut6528n-0\",\"endpoint\":\"POST /api/worker/production/scan/complete\",\"has_snapshot\":true,\"created_at_cst\":\"2026-10-04 09:55:13.313249\"}",
+        "op done_qty=12.30（不得被再加一次）"
+      ],
+      "at": "2026-10-04 09:55:14 +08",
+      "atUtc": "2026-10-04T01:55:14.170Z"
+    },
+    {
+      "id": "C8.repeat-complete-rejected",
+      "name": "同一码重复开工（无幂等键）⇒ 拒绝（409/422）且不写第二行、不加数量",
+      "status": "pass",
+      "detail": "期望 HTTP 4xx + work_logs 仍 1 行 + done_qty 仍 12.30 == 实测 HTTP 409 code=SET_ALREADY_COMPLETED logs=1 done_qty=12.30",
+      "evidence": [
+        "期望来源: ProductionScanCompleteService：plannedRemaining<=0 ⇒ OPERATION_ALREADY_ADVANCED(409) / 推断 completed",
+        "期望: HTTP 4xx + work_logs 仍 1 行 + done_qty 仍 12.30",
+        "实得: HTTP 409 code=SET_ALREADY_COMPLETED logs=1 done_qty=12.30",
+        "body={\"code\":\"SET_ALREADY_COMPLETED\",\"message\":\"本套（LA-JG-MUT651EJZM-001）的工序都已完成，没有可报的工序（本次未记账）\"}"
+      ],
+      "at": "2026-10-04 09:55:14 +08",
+      "atUtc": "2026-10-04T01:55:14.495Z"
+    },
+    {
+      "id": "C9a.receipt-shape",
+      "name": "回执含「本套进度 + 本道结果」（set_no/position/set_overview/set_progress/set_completed 必在）",
+      "status": "pass",
+      "detail": "期望 上述五键都在（值可空；受全局 non_null 影响 ⇒ 非空才有键） == 实测 keys=[\"operation_id\",\"done_qty\",\"status\",\"order_completed\",\"worker_id\",\"worker_name\",\"identity_source\",\"set_no\",\"position\",\"set_overview\",\"rerouted\",\"set_progress\",\"set_completed\"]",
+      "evidence": [
+        "期望来源: ProductionScanCompleteService.doComplete（成功/异常两条路径都写 set_progress/set_completed/next_operation）+ application.yml 的 `spring.jackson.default-property-inclusion: non_null`",
+        "期望: 上述五键都在（值可空；受全局 non_null 影响 ⇒ 非空才有键）",
+        "实得: keys=[\"operation_id\",\"done_qty\",\"status\",\"order_completed\",\"worker_id\",\"worker_name\",\"identity_source\",\"set_no\",\"position\",\"set_overview\",\"rerouted\",\"set_progress\",\"set_completed\"]",
+        "观察项：值为 null 的键被全局序列化口径丢弃 ⇒ 对外契约是「**非空才有该键**」，客户端不得用 hasOwnProperty 判「有没有下一道」"
+      ],
+      "at": "2026-10-04 09:55:14 +08",
+      "atUtc": "2026-10-04T01:55:14.495Z"
+    },
+    {
+      "id": "C9b.next-operation-present",
+      "name": "🔴 还有下一道时：回执**必须**含 next_operation，且指向本套剩下的那道（与 DB 独立读数对齐）",
+      "status": "pass",
+      "detail": "期望 next_operation 存在且其 operation_id == \"laopmut6539cew_1\"（= 本包独立从 DB 读出的剩余工序） == 实测 keys=[\"operation_id\",\"done_qty\",\"status\",\"order_completed\",\"worker_id\",\"worker_name\",\"identity_source\",\"set_no\",\"position\",\"set_overview\",\"rerouted\",\"set_progress\",\"set_completed\",\"next_operation\"] next={\"operation_id\":\"laopmut6539cew_1\",\"logical_name\":\"裁剪\",\"position\":\"布帘\",\"group_name\":\"裁剪\",\"unit\":\"米\",\"qty\":5,\"qty_source\":\"fabric_meters\",\"unit_price\":0.4,\"seq\":2,\"status\":\"pending\",\"determined_by\":\"inferred\",\"rerouted\":false} 剩余工序=[\"laopmut6539cew_1\"]",
+      "evidence": [
+        "期望来源: ProductionScanCompleteService 的 next_operation（报工提交后**再解析一次**，尽力而为）+ DB 独立复读剩余工序",
+        "期望: next_operation 存在且其 operation_id == \"laopmut6539cew_1\"（= 本包独立从 DB 读出的剩余工序）",
+        "实得: keys=[\"operation_id\",\"done_qty\",\"status\",\"order_completed\",\"worker_id\",\"worker_name\",\"identity_source\",\"set_no\",\"position\",\"set_overview\",\"rerouted\",\"set_progress\",\"set_completed\",\"next_operation\"] next={\"operation_id\":\"laopmut6539cew_1\",\"logical_name\":\"裁剪\",\"position\":\"布帘\",\"group_name\":\"裁剪\",\"unit\":\"米\",\"qty\":5,\"qty_source\":\"fabric_meters\",\"unit_price\":0.4,\"seq\":2,\"status\":\"pending\",\"determined_by\":\"inferred\",\"rerouted\":false} 剩余工序=[\"laopmut6539cew_1\"]",
+        "首道=laopmut6539cew_0 已报满；剩余=1 道"
+      ],
+      "at": "2026-10-04 09:55:15 +08",
+      "atUtc": "2026-10-04T01:55:15.798Z"
+    },
+    {
+      "id": "C10.ambiguous-operation",
+      "name": "同 seq 多道待做工序 ⇒ 422 OPERATION_AMBIGUOUS（scan 与 complete 都拒绝）",
+      "status": "pass",
+      "detail": "期望 scan 422 + complete 422 + code=OPERATION_AMBIGUOUS == 实测 scan=422/OPERATION_AMBIGUOUS complete=422/OPERATION_AMBIGUOUS",
+      "evidence": [
+        "期望来源: ProductionScanService.setPositionView：ties>1 ⇒ OPERATION_AMBIGUOUS（不静默取第一道）",
+        "期望: scan 422 + complete 422 + code=OPERATION_AMBIGUOUS",
+        "实得: scan=422/OPERATION_AMBIGUOUS complete=422/OPERATION_AMBIGUOUS"
+      ],
+      "at": "2026-10-04 09:55:17 +08",
+      "atUtc": "2026-10-04T01:55:17.024Z"
+    },
+    {
+      "id": "C11.ambiguous-no-write",
+      "name": "🔴 红证：工序未确定时**一个字节都不写**（work_logs=0 且两道工序 done_qty 都还是 0）",
+      "status": "pass",
+      "detail": "期望 work_logs=0 + 两道工序 done_qty 全 0 + status 全 pending == 实测 logs=0 ops=[[\"t654sx\",\"0.00\",\"pending\"],[\"54bsdx\",\"0.00\",\"pending\"]]",
+      "evidence": [
+        "期望来源: ProductionScanCompleteService 类注释③「未确定工序 ⇒ 拒绝记账，一个字节都不写 production_work_logs」",
+        "期望: work_logs=0 + 两道工序 done_qty 全 0 + status 全 pending",
+        "实得: logs=0 ops=[[\"t654sx\",\"0.00\",\"pending\"],[\"54bsdx\",\"0.00\",\"pending\"]]"
+      ],
+      "at": "2026-10-04 09:55:17 +08",
+      "atUtc": "2026-10-04T01:55:17.025Z"
+    },
+    {
+      "id": "C12.foreign-operation",
+      "name": "显式指定**别的部位**的工序 ⇒ 422 OPERATION_NOT_IN_SCAN_TARGET（跨部位报工被拒）",
+      "status": "pass",
+      "detail": "期望 scan 422 + complete 422 + 零写入 == 实测 scan=422/OPERATION_NOT_IN_SCAN_TARGET complete=422/OPERATION_NOT_IN_SCAN_TARGET logs=0",
+      "evidence": [
+        "期望来源: ProductionScanService：operationId 必须属于本次扫码的部位/套（防呆④）",
+        "期望: scan 422 + complete 422 + 零写入",
+        "实得: scan=422/OPERATION_NOT_IN_SCAN_TARGET complete=422/OPERATION_NOT_IN_SCAN_TARGET logs=0"
+      ],
+      "at": "2026-10-04 09:55:17 +08",
+      "atUtc": "2026-10-04T01:55:17.979Z"
+    },
+    {
+      "id": "C13.over-qty",
+      "name": "超量报工（qty 99 > 应做 3.00）⇒ 拒绝且零写入",
+      "status": "pass",
+      "detail": "期望 HTTP 4xx + work_logs=0 + 工序 done_qty 仍 0 == 实测 HTTP 422 code=REPORT_QTY_EXCEEDS_PLANNED logs=0 done=0.00",
+      "evidence": [
+        "期望来源: assertWithinPlannedQty（#4116 §5-3：超上限拒绝不 clamp）",
+        "期望: HTTP 4xx + work_logs=0 + 工序 done_qty 仍 0",
+        "实得: HTTP 422 code=REPORT_QTY_EXCEEDS_PLANNED logs=0 done=0.00",
+        "body={\"code\":\"REPORT_QTY_EXCEEDS_PLANNED\",\"message\":\"报工数量超上限：本次合格 99 + 累计已报 0 = 99 超过应做 3（剩余 3），本次未落库\"}"
+      ],
+      "at": "2026-10-04 09:55:18 +08",
+      "atUtc": "2026-10-04T01:55:18.547Z"
+    },
+    {
+      "id": "C14.nonpositive-qty",
+      "name": "qty ≤ 0 ⇒ 422 VALIDATION_ERROR（负数 / 零各一条）",
+      "status": "pass",
+      "detail": "期望 both 422 == 实测 neg=422/VALIDATION_ERROR zero=422/VALIDATION_ERROR",
+      "evidence": [
+        "期望来源: ProductionScanCompleteService：qty.signum()<=0 ⇒ validationError(\"qty 必须大于 0\")",
+        "期望: both 422",
+        "实得: neg=422/VALIDATION_ERROR zero=422/VALIDATION_ERROR"
+      ],
+      "at": "2026-10-04 09:55:18 +08",
+      "atUtc": "2026-10-04T01:55:18.955Z"
+    },
+    {
+      "id": "C15.bad-token",
+      "name": "不存在的码 ⇒ 404（既有的「订单不存在」行为）且零写入",
+      "status": "pass",
+      "detail": "期望 HTTP 404 + code=NOT_FOUND == 实测 HTTP 404 code=NOT_FOUND msg=订单不存在",
+      "evidence": [
+        "期望来源: ProductionScanService.degradedView → ProductionService.resolveOrder（四形态全不命中 ⇒ 404）",
+        "期望: HTTP 404 + code=NOT_FOUND",
+        "实得: HTTP 404 code=NOT_FOUND msg=订单不存在"
+      ],
+      "at": "2026-10-04 09:55:19 +08",
+      "atUtc": "2026-10-04T01:55:19.121Z"
+    },
+    {
+      "id": "C16.empty-token",
+      "name": "token 空白 ⇒ 422 VALIDATION_ERROR（不得 500）",
+      "status": "pass",
+      "detail": "期望 HTTP 422 == 实测 HTTP 422 code=VALIDATION_ERROR",
+      "evidence": [
+        "期望来源: ProductionScanCompleteService.doComplete：token 缺失 ⇒ validationError",
+        "期望: HTTP 422",
+        "实得: HTTP 422 code=VALIDATION_ERROR"
+      ],
+      "at": "2026-10-04 09:55:19 +08",
+      "atUtc": "2026-10-04T01:55:19.169Z"
+    },
+    {
+      "id": "C17.cross-tenant-object",
+      "name": "跨租户对象写入（对照租户的部位码）",
+      "status": "skip",
+      "detail": "库内**没有第二个租户**（旧租户 20/1/21 已清空，对照租户由线③临时创建且会被其删除）⇒ 无对照对象，本判定未覆盖",
+      "evidence": [],
+      "at": "2026-10-04 09:55:19 +08",
+      "atUtc": "2026-10-04T01:55:19.268Z"
+    },
+    {
+      "id": "C18.spoof-identity-ignored",
+      "name": "🔴 body 塞别人的 worker_id/worker_name ⇒ 仍记在**登录者**头上",
+      "status": "pass",
+      "detail": "期望 worker_id=0db8b090fb0eff46408a66438278e8c1（不是 e9360bafa416c21ff029541e4fd4177f） == 实测 HTTP 200 log.worker_id=0db8b090fb0eff46408a66438278e8c1 worker_name=线A验收工人909158",
+      "evidence": [
+        "期望来源: WorkerProductionController 类注释：body 的 worker_id/worker_name「一个字节都不读」（#4733 工资凭证）",
+        "期望: worker_id=0db8b090fb0eff46408a66438278e8c1（不是 e9360bafa416c21ff029541e4fd4177f）",
+        "实得: HTTP 200 log.worker_id=0db8b090fb0eff46408a66438278e8c1 worker_name=线A验收工人909158"
+      ],
+      "at": "2026-10-04 09:55:20 +08",
+      "atUtc": "2026-10-04T01:55:20.319Z"
+    },
+    {
+      "id": "C19.report-endpoint",
+      "name": "POST …/operations/{op}/report（工人 session）⇒ 落库并记在登录者头上",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + work_logs 1 行 qty=4.00 worker=A == 实测 HTTP 200 logs=1 qty=4.00 worker=0db8b090fb0eff46408a66438278e8c1",
+      "evidence": [
+        "期望来源: WorkerProductionController.report → ProductionService.report（identity 来自 session）",
+        "期望: HTTP 200 + work_logs 1 行 qty=4.00 worker=A",
+        "实得: HTTP 200 logs=1 qty=4.00 worker=0db8b090fb0eff46408a66438278e8c1"
+      ],
+      "at": "2026-10-04 09:55:21 +08",
+      "atUtc": "2026-10-04T01:55:21.474Z"
+    },
+    {
+      "id": "C20.report-idempotent",
+      "name": "report 同 X-Client-Request-Id 重放 ⇒ 不重复计件（仍 1 行）",
+      "status": "pass",
+      "detail": "期望 work_logs 仍 1 行 == 实测 HTTP 200 logs=1",
+      "evidence": [
+        "期望来源: ClientRequestIdService（与 scan/complete 同一套幂等实现，同一张表）",
+        "期望: work_logs 仍 1 行",
+        "实得: HTTP 200 logs=1"
+      ],
+      "at": "2026-10-04 09:55:21 +08",
+      "atUtc": "2026-10-04T01:55:21.747Z"
+    },
+    {
+      "id": "C21.report-needs-session",
+      "name": "report 无工人 session ⇒ 401（不降级到 body 口径）",
+      "status": "pass",
+      "detail": "期望 HTTP 401 == 实测 HTTP 401",
+      "evidence": [
+        "期望来源: WorkerProductionController.report：identity==null ⇒ authFailed（工人路径上「谁报的」没有第二条来源）",
+        "期望: HTTP 401",
+        "实得: HTTP 401"
+      ],
+      "at": "2026-10-04 09:55:21 +08",
+      "atUtc": "2026-10-04T01:55:21.762Z"
+    },
+    {
+      "id": "C22.report-tenant-binding",
+      "name": "会话工人 + 请求头 X-Tenant-Id:<对照租户> 报本租户的单 ⇒ 对照租户侧零写入",
+      "status": "skip",
+      "detail": "库内没有第二个租户 ⇒ 无对照面，本判定未覆盖",
+      "evidence": [],
+      "at": "2026-10-04 09:55:22 +08",
+      "atUtc": "2026-10-04T01:55:22.350Z"
+    },
+    {
+      "id": "C23.cutting-height",
+      "name": "GET /api/worker/production/cutting-height ⇒ 只读一屏（200 有 base/cutting_height）或 4xx（数据不足）；**5xx 一律判红**",
+      "status": "pass",
+      "detail": "期望 200 且含 base/cutting_height 键 / 或 4xx；不得 5xx == 实测 HTTP 200 keys=[\"granularity\",\"scanned\",\"order\",\"positions\"] positions[0]={\"order_item_id\":\"laitmmut657r4rd\",\"position_kind\":\"布帘\",\"position_name\":\"线A验收布-mut64sa0vl\",\"scanned\":true,\"product_name\":\"线A验收布\",\"width\":3,\"height\":2.5,\"craft\":\"线A验收工艺\",\"curtain_type\":\"布帘\",\"base\":2.5,\"cutting_height\":2.5",
+      "evidence": [
+        "期望来源: WorkerCuttingHeightService.read（只读；#5161「不写机器」）+ 类注释「缺值 ⇒ 显式缺失，不静默」",
+        "期望: 200 且含 base/cutting_height 键 / 或 4xx；不得 5xx",
+        "实得: HTTP 200 keys=[\"granularity\",\"scanned\",\"order\",\"positions\"] positions[0]={\"order_item_id\":\"laitmmut657r4rd\",\"position_kind\":\"布帘\",\"position_name\":\"线A验收布-mut64sa0vl\",\"scanned\":true,\"product_name\":\"线A验收布\",\"width\":3,\"height\":2.5,\"craft\":\"线A验收工艺\",\"curtain_type\":\"布帘\",\"base\":2.5,\"cutting_height\":2.5",
+        "夹具工序/报工数：ops=1 logs=1（只读面零副作用）"
+      ],
+      "at": "2026-10-04 09:55:22 +08",
+      "atUtc": "2026-10-04T01:55:22.728Z"
+    },
+    {
+      "id": "C23b.cutting-height-null-product",
+      "name": "🔴 cutting-height：本夹具订单行 product_id 为 NULL 时的读数（真缺陷复现见 P2b）",
+      "status": "pass",
+      "detail": "期望 不得 5xx（设计：缺值 ⇒ 进 missing[]，不静默、不 500） == 实测 本夹具 product_id={\"product_id\":\"b8c0d1a597fc5190f7d3fc1f61f579c4\"}；端点 HTTP 200",
+      "evidence": [
+        "期望来源: WorkerCuttingHeightService.positionRow:149 `brands.get(item.getProductId())` + brands():276 `Map.of()` ⇒ NULL 建键 NPE",
+        "期望: 不得 5xx（设计：缺值 ⇒ 进 missing[]，不静默、不 500）",
+        "实得: 本夹具 product_id={\"product_id\":\"b8c0d1a597fc5190f7d3fc1f61f579c4\"}；端点 HTTP 200",
+        "独立复现（自建夹具 + 单变量对照）见 P2b/N1~N5 与 out/P2b-cuttingheight-npe.json"
+      ],
+      "at": "2026-10-04 09:55:22 +08",
+      "atUtc": "2026-10-04T01:55:22.832Z"
+    }
+  ],
+  "summary": {
+    "pass": 23,
+    "fail": 0,
+    "skip": 2,
+    "total": 25
+  }
+}

@@ -1,0 +1,241 @@
+{
+  "workerA": {
+    "workerNo": "LAA09158",
+    "workerId": "0db8b090fb0eff46408a66438278e8c1",
+    "name": "线A验收工人909158",
+    "pin": "246810",
+    "createdStatus": 200,
+    "row": {
+      "id": "0db8b090fb0eff46408a66438278e8c1",
+      "worker_no": "LAA09158",
+      "nickname": "线A验收工人909158",
+      "role": "worker",
+      "status": "active",
+      "tenant_id": 25,
+      "is_worker": true,
+      "hash_len": 60
+    },
+    "response": {
+      "success": true,
+      "data": {
+        "id": "0db8b090fb0eff46408a66438278e8c1",
+        "workerNo": "LAA09158",
+        "name": "线A验收工人909158",
+        "role": "worker",
+        "status": "active",
+        "createdAt": "2026-10-04T09:55:09.441416884+08:00"
+      },
+      "requestId": "req_2f8f8a12faa04e69",
+      "timestamp": 1791078909
+    },
+    "sessionId": "de81ae9f03a945258c0ac0a6835ab473",
+    "workerName": "线A验收工人909158",
+    "switchedToB": true
+  },
+  "workerB": {
+    "workerNo": "LAB09463",
+    "workerId": "e9360bafa416c21ff029541e4fd4177f",
+    "name": "线A验收工人909463",
+    "pin": "246810",
+    "createdStatus": 200,
+    "row": {
+      "id": "e9360bafa416c21ff029541e4fd4177f",
+      "worker_no": "LAB09463",
+      "nickname": "线A验收工人909463",
+      "role": "worker",
+      "status": "active",
+      "tenant_id": 25,
+      "is_worker": true,
+      "hash_len": 60
+    },
+    "response": {
+      "success": true,
+      "data": {
+        "id": "e9360bafa416c21ff029541e4fd4177f",
+        "workerNo": "LAB09463",
+        "name": "线A验收工人909463",
+        "role": "worker",
+        "status": "active",
+        "createdAt": "2026-10-04T09:55:09.673420728+08:00"
+      },
+      "requestId": "req_34bfe70938f84177",
+      "timestamp": 1791078909
+    },
+    "sessionId": "d25603bed6f34bc594d1a4291236dc14",
+    "workerName": "线A验收工人909463"
+  },
+  "fixtures": {
+    "P2": {
+      "tag": "P2",
+      "qty": "12.30",
+      "uniq": "mut651ejzm",
+      "orderId": "laordmut651ejzm",
+      "orderNo": "LA-ORD-MUT651EJZM",
+      "poId": "lapomut651ejzm",
+      "poNo": "LA-JG-MUT651EJZM",
+      "setId": "lasetmut651ejzm",
+      "itemId": "laitmmut651ejzm",
+      "token": "lamut651ejzmffffffffffffffffffff",
+      "langId": "lalabmut651ejzm",
+      "opIds": [
+        "laopmut651ejzm"
+      ],
+      "opId": "laopmut651ejzm"
+    },
+    "P2I": {
+      "tag": "P2I",
+      "qty": "5.00",
+      "uniq": "mut6539cew",
+      "orderId": "laordmut6539cew",
+      "orderNo": "LA-ORD-MUT6539CEW",
+      "poId": "lapomut6539cew",
+      "poNo": "LA-JG-MUT6539CEW",
+      "setId": "lasetmut6539cew",
+      "itemId": "laitmmut6539cew",
+      "token": "lamut6539cewffffffffffffffffffff",
+      "langId": "lalabmut6539cew",
+      "opIds": [
+        "laopmut6539cew_0",
+        "laopmut6539cew_1"
+      ],
+      "opId": "laopmut6539cew_0"
+    },
+    "P2D": {
+      "tag": "P2D",
+      "qty": "5.00",
+      "uniq": "mut654bsdx",
+      "orderId": "laordmut654bsdx",
+      "orderNo": "LA-ORD-MUT654BSDX",
+      "poId": "lapomut654bsdx",
+      "poNo": "LA-JG-MUT654BSDX",
+      "setId": "lasetmut654bsdx",
+      "itemId": "laitmmut654bsdx",
+      "token": "lamut654bsdxffffffffffffffffffff",
+      "langId": "lalabmut654bsdx",
+      "opIds": [
+        "laopmut654bsdx"
+      ],
+      "opId": "laopmut654bsdx",
+      "dupOpId": "ladupP2Dmut654sx"
+    },
+    "P2E": {
+      "tag": "P2E",
+      "qty": "3.00",
+      "uniq": "mut6557lvs",
+      "orderId": "laordmut6557lvs",
+      "orderNo": "LA-ORD-MUT6557LVS",
+      "poId": "lapomut6557lvs",
+      "poNo": "LA-JG-MUT6557LVS",
+      "setId": "lasetmut6557lvs",
+      "itemId": "laitmmut6557lvs",
+      "token": "lamut6557lvsffffffffffffffffffff",
+      "langId": "lalabmut6557lvs",
+      "opIds": [
+        "laopmut6557lvs"
+      ],
+      "opId": "laopmut6557lvs"
+    },
+    "P2F": {
+      "tag": "P2F",
+      "qty": "2.50",
+      "uniq": "mut656xxgp",
+      "orderId": "laordmut656xxgp",
+      "orderNo": "LA-ORD-MUT656XXGP",
+      "poId": "lapomut656xxgp",
+      "poNo": "LA-JG-MUT656XXGP",
+      "setId": "lasetmut656xxgp",
+      "itemId": "laitmmut656xxgp",
+      "token": "lamut656xxgpffffffffffffffffffff",
+      "langId": "lalabmut656xxgp",
+      "opIds": [
+        "laopmut656xxgp"
+      ],
+      "opId": "laopmut656xxgp"
+    },
+    "P2G": {
+      "tag": "P2G",
+      "qty": "4.00",
+      "uniq": "mut657r4rd",
+      "orderId": "laordmut657r4rd",
+      "orderNo": "LA-ORD-MUT657R4RD",
+      "poId": "lapomut657r4rd",
+      "poNo": "LA-JG-MUT657R4RD",
+      "setId": "lasetmut657r4rd",
+      "itemId": "laitmmut657r4rd",
+      "token": "lamut657r4rdffffffffffffffffffff",
+      "langId": "lalabmut657r4rd",
+      "opIds": [
+        "laopmut657r4rd"
+      ],
+      "opId": "laopmut657r4rd"
+    },
+    "P2H": {
+      "tag": "P2H",
+      "qty": "1.00",
+      "uniq": "mut658v7ls",
+      "orderId": "laordmut658v7ls",
+      "orderNo": "LA-ORD-MUT658V7LS",
+      "poId": "lapomut658v7ls",
+      "poNo": "LA-JG-MUT658V7LS",
+      "setId": "lasetmut658v7ls",
+      "itemId": "laitmmut658v7ls",
+      "token": "lamut658v7lsffffffffffffffffffff",
+      "langId": "lalabmut658v7ls",
+      "opIds": [
+        "laopmut658v7ls"
+      ],
+      "opId": "laopmut658v7ls"
+    },
+    "P2N1": {
+      "tag": "P2N1",
+      "qty": "3.00",
+      "uniq": "mut659ty1h",
+      "orderId": "laordmut659ty1h",
+      "orderNo": "LA-ORD-MUT659TY1H",
+      "poId": "lapomut659ty1h",
+      "poNo": "LA-JG-MUT659TY1H",
+      "setId": "lasetmut659ty1h",
+      "itemId": "laitmmut659ty1h",
+      "token": "lamut659ty1hffffffffffffffffffff",
+      "langId": "lalabmut659ty1h",
+      "opIds": [
+        "laopmut659ty1h"
+      ],
+      "opId": "laopmut659ty1h"
+    },
+    "P2N5": {
+      "tag": "P2N5",
+      "qty": "3.00",
+      "uniq": "mut65bkwlr",
+      "orderId": "laordmut65bkwlr",
+      "orderNo": "LA-ORD-MUT65BKWLR",
+      "poId": "lapomut65bkwlr",
+      "poNo": "LA-JG-MUT65BKWLR",
+      "setId": "lasetmut65bkwlr",
+      "itemId": "laitmmut65bkwlr",
+      "token": "lamut65bkwlrffffffffffffffffffff",
+      "langId": "lalabmut65bkwlr",
+      "opIds": [
+        "laopmut65bkwlr"
+      ],
+      "opId": "laopmut65bkwlr"
+    },
+    "P4S": {
+      "tag": "P4S",
+      "qty": "1.00",
+      "uniq": "mut65gqo5l",
+      "orderId": "laordmut65gqo5l",
+      "orderNo": "LA-ORD-MUT65GQO5L",
+      "poId": "lapomut65gqo5l",
+      "poNo": "LA-JG-MUT65GQO5L",
+      "setId": "lasetmut65gqo5l",
+      "itemId": "laitmmut65gqo5l",
+      "token": "lamut65gqo5lffffffffffffffffffff",
+      "langId": "lalabmut65gqo5l",
+      "opIds": [
+        "laopmut65gqo5l"
+      ],
+      "opId": "laopmut65gqo5l"
+    }
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "records": [
+    {
+      "id": "LB1-SETUP-restockOn",
+      "name": "夹具 restockOn（商品+已确认订单）",
+      "status": "pass",
+      "detail": "orderNo=20261004377350154 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 单价 100 × 数量 2 = 200.000；库存 100 − 2 = 98.000",
+        "确认收款响应: {\"success\":true,\"requestId\":\"req_08b3a4f92bf9417c\",\"timestamp\":1791076524}",
+        "产品侧商品 id=947c9c231cfab16cbd485d2146d8fcdb skuId=2106553739276472321 allow_return_restock=true",
+        "订单 id=d6a2dc3268b75da9356372c554bb55e8 幂等键域: 无（本夹具不经幂等层）"
+      ],
+      "at": "2026-10-04 09:15:26 +08",
+      "atUtc": "2026-10-04T01:15:26.990Z",
+      "fixture": "restockOn",
+      "orderId": "d6a2dc3268b75da9356372c554bb55e8",
+      "orderNo": "20261004377350154",
+      "productId": "947c9c231cfab16cbd485d2146d8fcdb",
+      "skuId": "2106553739276472321"
+    },
+    {
+      "id": "LB1-SETUP-restockOff",
+      "name": "夹具 restockOff（商品+已确认订单）",
+      "status": "pass",
+      "detail": "orderNo=20261004245010155 status=confirmed 实收=200 总额=200 明细后 SKU 库存=98",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 单价 100 × 数量 2 = 200.000；库存 100 − 2 = 98.000",
+        "确认收款响应: {\"success\":true,\"requestId\":\"req_c97eb3502fca4192\",\"timestamp\":1791076525}",
+        "产品侧商品 id=a64e76c350cb145438f9a87e2321fbd8 skuId=2106553743701463041 allow_return_restock=false",
+        "订单 id=07e7b69ccf056964d6ac7db5bb6d40e0 幂等键域: 无（本夹具不经幂等层）"
+      ],
+      "at": "2026-10-04 09:15:26 +08",
+      "atUtc": "2026-10-04T01:15:26.991Z",
+      "fixture": "restockOff",
+      "orderId": "07e7b69ccf056964d6ac7db5bb6d40e0",
+      "orderNo": "20261004245010155",
+      "productId": "a64e76c350cb145438f9a87e2321fbd8",
+      "skuId": "2106553743701463041"
+    },
+    {
+      "id": "LB1-SETUP-refund",
+      "name": "夹具 refund（商品+已确认订单）",
+      "status": "pass",
+      "detail": "orderNo=20261004949570156 status=confirmed 实收=300 总额=300 明细后 SKU 库存=98",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 单价 150 × 数量 2 = 300.000；库存 100 − 2 = 98.000",
+        "确认收款响应: {\"success\":true,\"requestId\":\"req_a68362f318ba4073\",\"timestamp\":1791076526}",
+        "产品侧商品 id=273483db5d92a2fe5c33f5c6bf672824 skuId=2106553747790909442 allow_return_restock=false",
+        "订单 id=0394da8401a4dab8603c4ef241896f51 幂等键域: 无（本夹具不经幂等层）"
+      ],
+      "at": "2026-10-04 09:15:26 +08",
+      "atUtc": "2026-10-04T01:15:26.991Z",
+      "fixture": "refund",
+      "orderId": "0394da8401a4dab8603c4ef241896f51",
+      "orderNo": "20261004949570156",
+      "productId": "273483db5d92a2fe5c33f5c6bf672824",
+      "skuId": "2106553747790909442"
+    },
+    {
+      "id": "LB1-SETUP-ledger",
+      "name": "确认收款落扣减台账（order 腿）",
+      "status": "pass",
+      "detail": "台账行数=1 delta=-2 before=100 after=98 ref_no=20261004377350154",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 确认收款扣 2 米 ⇒ 台账恰一行 delta = −2.000（before 100 → after 98）",
+        "原始行: [{\"id\":2090,\"delta\":-2,\"before_qty\":100,\"after_qty\":98,\"reason\":\"order\",\"ref_no\":\"20261004377350154\"}]"
+      ],
+      "at": "2026-10-04 09:15:27 +08",
+      "atUtc": "2026-10-04T01:15:27.124Z"
+    },
+    {
+      "id": "LB1-SETUP-category-gap",
+      "name": "空租户首个商品的前置缺口：本租户**本线命名域内**初始 0 个商品分类 ⇒ `POST /api/admin/products`（categoryId 必填）不可达",
+      "status": "fail",
+      "detail": "本线命名域（前缀「线B验收」）初始 active 分类数=0；经真实 API 补建探针分类后=1（新建 id=74e699b83324e8d26de3f0c470645455，HTTP 200）；同时段**其他线**的分类=1 条（线A验收分类-mut4p1fzas，本线不触碰）",
+      "evidence": [
+        "期望来源: 产品契约 —— `backend/admin-api/src/main/java/com/migao/admin/dto/ProductCreateRequest.java` 的 categoryId 必填；",
+        "   `backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java` 入驻只种角色/权限/岗位（无商品分类种子）；",
+        "实测：`POST /api/admin/products` 缺 categoryId ⇒ 422 VALIDATION_ERROR「分类ID不能为空」（原始响应见 out/B1-fixtures.json 的 fixtures[*].resp）",
+        "库内原始读数（**本线命名域**）: categories(tenant 25) 初始 [] ⇒ 补建后 [{\"id\":\"74e699b83324e8d26de3f0c470645455\",\"name\":\"线B验收分类-mut4pufyjnbv\",\"status\":\"active\"}]",
+        "⚠️ 判据命名空间化（本线自曝的假绿）: 首版查「全租户 active 分类」，当时租户里已有别线留下的 1 条（线A验收分类-mut4p1fzas）⇒ 判据会**无判别力地变绿**；改为只看本线前缀后才是真读数",
+        "⚠️ 跨包隔离: 别线的分类行本线**只登记、不触碰、不删**（清理器只删本线注册表与前缀命中行）",
+        "⚠️ 影响面与归因强度: 只能断言「本租户初始零分类 ⇒ API 建商品缺前置」；**能否**由前端「商品管理」页兜住",
+        "   （即新用户是否可自助建分类）不在本线射程（未做 UI 级验证）⇒ 不写更强归因。"
+      ],
+      "at": "2026-10-04 09:15:27 +08",
+      "atUtc": "2026-10-04T01:15:27.124Z"
+    },
+    {
+      "id": "LB1-SETUP-category",
+      "name": "夹具前置：探针商品 categoryId 可达（本租户 active 分类）",
+      "status": "pass",
+      "detail": "tenant 25 可用分类 id=74e699b83324e8d26de3f0c470645455（active 数=1）",
+      "evidence": [
+        "期望来源: 本包独立读数（只读库）+ 真实 API 建分类响应",
+        "补建响应: {\"requested\":\"线B验收分类-mut4pufyjnbv\",\"status\":200,\"text\":\"{\\\"success\\\":true,\\\"data\\\":{\\\"id\\\":\\\"74e699b83324e8d26de3f0c470645455\\\",\\\"name\\\":\\\"线B验收分类-mut4pufyjnbv\\\",\\\"level\\\":1,\\\"status\\\":\\\"active\\\",\\\"children\\\":[],\\\"createdAt\\\":\\\"2026-10-04 09:15:23\\\",\\\"updatedAt\\\":\\\"2026-10-04 09:15:23\\\",\\\"sort\\\":2},\\\"requestId\\\":\\\"req_0fbb6b0dd3be4128\\\",\\\"timestamp\\\":1791076523}\",\"id\":\"74e699b83324e8d26de3f0c470645455\"}",
+        "库内原始行: [{\"id\":\"74e699b83324e8d26de3f0c470645455\",\"name\":\"线B验收分类-mut4pufyjnbv\",\"status\":\"active\"}]"
+      ],
+      "at": "2026-10-04 09:15:27 +08",
+      "atUtc": "2026-10-04T01:15:27.125Z"
+    }
+  ],
+  "summary": {
+    "pass": 5,
+    "fail": 1,
+    "skip": 0,
+    "falseRed": 0,
+    "total": 6
+  }
+}
