@@ -2165,16 +2165,26 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private void deductSkuStock(OrderItem item, Order order, String ledgerReason) {
         Long skuId = matchSkuId(item, "确认支付");
         if (skuId != null && item.getQuantity() != null) {
-            // 台账：变更前快照（只记真实变化，故快照必须取在写库之前）
-            Map<Long, ProductSku> stockBefore = snapshotForLedger(ledgerReason, item.getProductId());
             // issue #5063（V115）：库存/销量列已同为 NUMERIC(12,1) ⇒ 按**真实米数**扣减。
             // 改前 `item.getQuantity().intValue()` 把 2.7 米扣成 2 米（0.7 米凭空消失）、
             // 0.5 米扣成 0（成交但零变动）。口径与 §8「用料米数向上进位到 0.1」同源，
             // 且与库存前置校验、回补侧**同一个函数**（同笔单净变化恒为 0）。
             BigDecimal deductQty = StockQuantity.toStockScaleByCeiling(item.getQuantity());
-            productSkuMapper.deductStock(skuId, deductQty);
+            // 🔴 issue #6299：扣减是**一条带下限谓词的原子条件更新**，返回 null = 库存不够
+            //（并发下另一个请求刚把库存扣走，或前置校验与扣减之间被别的事务改小）。
+            // 改前的 `GREATEST(..., 0)` 会把这种情况**静默钳到 0**：两单都「成功」、
+            // 库存 10 米只扣了 10（应扣 16）⇒ 超卖 6 米且无任何 4xx。
+            StockChange change = StockChange.from(productSkuMapper.deductStock(skuId, deductQty, order.getTenantId()));
+            if (change == null) {
+                throw BusinessException.validationError(
+                        String.format("商品「%s」库存不足：需要 %s 米，当前库存已被并发订单占用，请先补货后再确认支付",
+                                item.getProductName() != null ? item.getProductName() : skuId,
+                                deductQty.toPlainString()));
+            }
             productSkuMapper.increaseSalesCount(skuId, deductQty);
-            recordStockLedgerRows(ledgerReason, order, stockBefore, "订单确认支付扣减库存");
+            // 台账读数与扣减**同源**（同一条 SQL 的 RETURNING）：并发下 before/after 仍首尾相接
+            recordAtomicStockChange(ledgerReason, order, item.getProductId(), skuId, change,
+                    "订单确认支付扣减库存");
         }
     }
 
@@ -2186,38 +2196,52 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private void restoreSkuStock(OrderItem item, Order order, String ledgerReason) {
         Long skuId = matchSkuId(item, "取消回补");
         if (skuId != null && item.getQuantity() != null) {
-            Map<Long, ProductSku> stockBefore = snapshotForLedger(ledgerReason, item.getProductId());
-            // issue #5063（V115）：与扣减侧**同一个函数、同一口径** ⇒ 扣 2.8 就回补 2.8
-            // （改前回补侧同样 `intValue()` 取整，扣 2 补 2 —— 表面自洽，实则 0.7 米在
-            //   扣减那一步就已经丢了，回补再准也补不回来）。
-            BigDecimal restoreQty = StockQuantity.toStockScaleByCeiling(item.getQuantity());
-            productSkuMapper.restoreStock(skuId, restoreQty);
-            productSkuMapper.decreaseSalesCount(skuId, restoreQty);
-            recordStockLedgerRows(ledgerReason, order, stockBefore, "订单取消/退款回补库存");
+            StockChange change = restoreStockForLedger(skuId, item);
+            productSkuMapper.decreaseSalesCount(skuId, StockQuantity.toStockScaleByCeiling(item.getQuantity()));
+            if (change != null) {
+                recordAtomicStockChange(ledgerReason, order, item.getProductId(), skuId, change,
+                        "订单取消/退款回补库存");
+            }
         }
     }
 
     /**
-     * 台账（issue #4137）：变更前快照 —— 复用 {@link StockLedgerService} 的同一套快照/比对语义
-     * （落账唯一语义点在那边，订单侧不新造第二套比对逻辑）。
+     * 回补侧：与扣减侧**同一个函数、同一口径**（issue #5063）⇒ 扣 2.8 就回补 2.8。
      *
-     * @param ledgerReason {@code null} = 该路径的落账由上游站点负责（售后回补 → aftersales）⇒ 不取快照、零开销
+     * <p>台账读数与扣减同源（issue #6300）：回补的 before 也取<b>回补后</b>的库存减回补量，
+     * 即扣减行的 after —— 两条腿的链在并发取消/确认交错时仍能首尾相接。</p>
      */
-    private Map<Long, ProductSku> snapshotForLedger(String ledgerReason, String productId) {
-        return ledgerReason == null ? Map.of() : stockLedgerService.snapshotSkus(List.of(productId));
+    private StockChange restoreStockForLedger(Long skuId, OrderItem item) {
+        BigDecimal restoreQty = StockQuantity.toStockScaleByCeiling(item.getQuantity());
+        productSkuMapper.restoreStock(skuId, restoreQty);
+        ProductSku after = productSkuMapper.selectById(skuId);
+        if (after == null || after.getStock() == null) {
+            // 读不到 = 回补未真正发生（或库存未知）⇒ 不落行，绝不用假读数污染台账链
+            return null;
+        }
+        // before = 回补**之后**的库存减掉本次回补量 = 扣减行的 after（扣减/回补两腿共用同一张链）
+        return new StockChange(after.getStock().subtract(restoreQty), after.getStock(), after.getSkuCode());
     }
 
     /**
-     * 台账（issue #4137）：变更后按**实际值**比对落账，只记真实变化的 SKU
-     * （delta 由 {@link StockLedgerService} 按 after-before 算出；请求量与实际变化不一致时不落假账）。
+     * 库存台账（issue #4137 / #6300）：按**原子语句给出的**变更前/变更后落一行。
+     *
+     * <p>改前走的是 {@code snapshotForLedger} → {@code recordChangesAgainstSnapshot}：
+     * 先 {@code SELECT stock} 取快照、改库、再读一次比对。并发下两个请求会读到<b>同一个 before</b>
+     * ⇒ 台账两行同基、链断裂（净增量仍对，所以只有查台账链才暴露）。现在读数直接来自
+     * 扣减/回补那条 SQL 的 {@code RETURNING}（{@link StockChange}），<b>类型上没有「从快照构造」的入口</b>。</p>
+     *
+     * <p>{@code ledgerReason == null} = 本次变更的落账由上游站点负责（售后回补 → aftersales），
+     * 这里不落行 —— 同一次变更写两行会让 delta 翻倍。</p>
      */
-    private void recordStockLedgerRows(String ledgerReason, Order order,
-                                       Map<Long, ProductSku> stockBefore, String note) {
-        if (ledgerReason == null || order == null) {
+    private void recordAtomicStockChange(String ledgerReason, Order order, String productId,
+                                         Long skuId, StockChange change, String note) {
+        // atomic-ledger: true —— before/after 来自原子语句的 RETURNING（见 StockChange 的类注释）
+        if (ledgerReason == null || order == null || change == null) {
             return;
         }
-        stockLedgerService.recordChangesAgainstSnapshot(order.getTenantId(), stockBefore,
-                ledgerReason, order.getOrderNo(), note);
+        stockLedgerService.record(order.getTenantId(), productId, skuId, change.skuCode(),
+                change.beforeQuantity(), change.afterQuantity(), ledgerReason, order.getOrderNo(), note);
     }
 
     /**

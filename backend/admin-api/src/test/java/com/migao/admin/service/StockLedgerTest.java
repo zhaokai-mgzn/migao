@@ -157,15 +157,21 @@ class StockLedgerTest {
             }
             return 1;
         });
-        when(productSkuMapper.deductStock(anyLong(), any())).thenAnswer(inv -> {
+        // 与 ProductSkuMapper.deductStock 的 SQL 同口径（issue #6299）：带下限谓词的条件更新，
+        // 并**同时返回变更前/变更后**（真库那条 SQL 的 RETURNING）；扣不动 ⇒ null
+        when(productSkuMapper.deductStock(anyLong(), any(), any())).thenAnswer(inv -> {
             ProductSku stored = skuStore.get(inv.<Long>getArgument(0));
-            if (stored == null) {
-                return 0;
+            BigDecimal qty = inv.getArgument(1);
+            BigDecimal before = StockQuantity.orZero(stored == null ? null : stored.getStock());
+            if (stored == null || before.compareTo(qty) < 0) {
+                return null;
             }
-            // 与 ProductSkuMapper.deductStock 的 SQL 同口径：GREATEST(COALESCE(stock,0)-qty, 0)
-            BigDecimal stock = StockQuantity.orZero(stored.getStock());
-            stored.setStock(stock.subtract(inv.<BigDecimal>getArgument(1)).max(BigDecimal.ZERO));
-            return 1;
+            stored.setStock(before.subtract(qty));
+            Map<String, Object> change = new java.util.LinkedHashMap<>();
+            change.put("skuCode", stored.getSkuCode());
+            change.put("beforeQuantity", before);
+            change.put("afterQuantity", stored.getStock());
+            return change;
         });
         when(productSkuMapper.restoreStock(anyLong(), any())).thenAnswer(inv -> {
             ProductSku stored = skuStore.get(inv.<Long>getArgument(0));

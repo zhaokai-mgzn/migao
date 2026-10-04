@@ -296,7 +296,7 @@ class InboundOrderServiceTest {
             assertThat(line.getDoorWidth()).isEqualTo("2.8");
 
             // 红线：草稿不动库存、不落台账
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
             verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
                     any(), any(), anyString(), any(), any(), any(), any(), any());
             verify(stockBatchMapper, never()).update(any(StockBatch.class));
@@ -323,7 +323,7 @@ class InboundOrderServiceTest {
             // 金额按真实米数算（60.5 × 12.50 = 756.25），不得按取整后的 60 算
             assertThat(itemCap.getValue().getAmount()).isEqualByComparingTo("756.25");
             // 草稿不动库存（与整数场景同一红线）
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         @Test
@@ -509,6 +509,10 @@ class InboundOrderServiceTest {
                     .thenReturn(List.of(l))
                     .thenReturn(List.of(l));
             when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, null));
+            // 过账是原子条件更新，并**同时返回变更前/变更后**（SQL 的 RETURNING，issue #6300）
+            when(productSkuMapper.receiveStock(eq(11L), eq(new BigDecimal("30")), any(), anyString(), any()))
+                    .thenReturn(java.util.Map.of("beforeQuantity", new BigDecimal("5"),
+                            "afterQuantity", new BigDecimal("35")));
 
             service.post("RK-20260923-0001", TENANT, "13800000000");
 
@@ -516,7 +520,7 @@ class InboundOrderServiceTest {
             //    均价传的是 afterAvg（首次入库 = 进价 12.50），不是 unitCost ——
             //    与台账里的 avg_cost_after 同源同值（公式只有 InboundOrderService.movingAverage 一处）
             ArgumentCaptor<String> batchCap = ArgumentCaptor.forClass(String.class);
-            verify(productSkuMapper).receiveStock(eq(11L), eq(BigDecimal.valueOf(30)), eq(new BigDecimal("12.50")), batchCap.capture());
+            verify(productSkuMapper).receiveStock(eq(11L), eq(BigDecimal.valueOf(30)), eq(new BigDecimal("12.50")), batchCap.capture(), any());
             String batchNo = batchCap.getValue();
             assertThat(batchNo).matches("PC-\\d{8}-\\d{4}");
 
@@ -549,7 +553,7 @@ class InboundOrderServiceTest {
             // ⑤ **闸在库存写入之前**（顺序判据）：CAS → 加库存，顺序颠倒 = 互斥发生在伤害之后
             org.mockito.InOrder inOrder = inOrder(inboundOrderMapper, productSkuMapper);
             inOrder.verify(inboundOrderMapper).markPosted(anyString(), anyLong(), any(), any());
-            inOrder.verify(productSkuMapper).receiveStock(anyLong(), any(), any(), anyString());
+            inOrder.verify(productSkuMapper).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         @Test
@@ -563,12 +567,15 @@ class InboundOrderServiceTest {
                     .thenReturn(List.of(l))
                     .thenReturn(List.of(l));
             when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, null));
+            when(productSkuMapper.receiveStock(eq(11L), eq(new BigDecimal("60.5")), any(), anyString(), any()))
+                    .thenReturn(java.util.Map.of("beforeQuantity", new BigDecimal("5"),
+                            "afterQuantity", new BigDecimal("65.5")));
 
             service.post("RK-20260923-0001", TENANT, "13800000000");
 
             // ① 加库存：改前是 int 形参 ⇒ 60.5 只能被截断或根本无法表达
             verify(productSkuMapper).receiveStock(eq(11L), eq(new BigDecimal("60.5")),
-                    eq(new BigDecimal("12.50")), anyString());
+                    eq(new BigDecimal("12.50")), anyString(), any());
 
             // ② 批次台账：与入库行同值（账实一致）
             ArgumentCaptor<StockBatch> batchCap = ArgumentCaptor.forClass(StockBatch.class);
@@ -596,6 +603,10 @@ class InboundOrderServiceTest {
                     .thenReturn(List.of(l));
             // 变更前：库存 5、均价 10.00 ⇒ 移动加权 = (5*10 + 30*12.5)/35 = 425/35 = 12.142857… ⇒ 12.1429
             when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, new BigDecimal("10.00")));
+            // 过账是原子条件更新，并**同时返回变更前/变更后**（SQL 的 RETURNING，issue #6300）
+            when(productSkuMapper.receiveStock(eq(11L), eq(BigDecimal.valueOf(30)), any(), anyString(), any()))
+                    .thenReturn(java.util.Map.of("beforeQuantity", new BigDecimal("5"),
+                            "afterQuantity", new BigDecimal("35")));
 
             service.post("RK-20260923-0001", TENANT, "op");
 
@@ -616,7 +627,7 @@ class InboundOrderServiceTest {
             assertThatThrownBy(() -> service.post("RK-20260923-0001", TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("只有草稿可以过账");
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
             verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
                     any(), any(), anyString(), any(), any(), any(), any(), any());
         }
@@ -647,7 +658,7 @@ class InboundOrderServiceTest {
             assertThatThrownBy(() -> service.post("RK-20260923-0001", TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("SKU 已不存在");
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         // ---------------------------------------------------------- PR-045 多行过账
@@ -695,7 +706,7 @@ class InboundOrderServiceTest {
 
             // ③ 加库存也逐行带各自的批次号（latest_batch_no 不得被同一个号覆盖两次）
             ArgumentCaptor<String> receiveCap = ArgumentCaptor.forClass(String.class);
-            verify(productSkuMapper, times(2)).receiveStock(anyLong(), any(), any(), receiveCap.capture());
+            verify(productSkuMapper, times(2)).receiveStock(anyLong(), any(), any(), receiveCap.capture(), any());
             assertThat(receiveCap.getAllValues()).doesNotHaveDuplicates();
         }
 
@@ -756,7 +767,7 @@ class InboundOrderServiceTest {
             // 落库的就是最终那次尝试的号，且它被用于库存 / 明细行回写（三处同源同值）
             assertThat(lastInsertedBatch.getBatchNo()).isEqualTo(attempted.get(1));
             ArgumentCaptor<String> receiveCap = ArgumentCaptor.forClass(String.class);
-            verify(productSkuMapper).receiveStock(anyLong(), any(), any(), receiveCap.capture());
+            verify(productSkuMapper).receiveStock(anyLong(), any(), any(), receiveCap.capture(), any());
             assertThat(receiveCap.getValue()).isEqualTo(attempted.get(1));
             ArgumentCaptor<InboundOrderItem> patchCap = ArgumentCaptor.forClass(InboundOrderItem.class);
             verify(inboundOrderItemMapper).updateById(patchCap.capture());
@@ -861,7 +872,7 @@ class InboundOrderServiceTest {
                     .hasMessageContaining("只有草稿可以过账");
 
             // 红线：抢不到闸就**一点库存副作用都不许有**（改前两个并发请求各加一遍 ⇒ 库存加两次）
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
             verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
                     any(), any(), anyString(), any(), any(), any(), any(), any());
             verify(stockBatchMapper, never()).update(any(StockBatch.class));

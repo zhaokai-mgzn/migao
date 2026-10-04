@@ -198,7 +198,7 @@ class AutoBatchMountPointTest {
 
         InOrder inOrder = inOrder(inboundOrderMapper, productSkuMapper, poolChangeNotifier);
         inOrder.verify(inboundOrderMapper).markPosted(anyString(), anyLong(), any(), any());
-        inOrder.verify(productSkuMapper).receiveStock(anyLong(), any(), any(), anyString());
+        inOrder.verify(productSkuMapper).receiveStock(anyLong(), any(), any(), anyString(), any());
         inOrder.verify(poolChangeNotifier).notify(TENANT, PoolChangeNotifier.TRIGGER_INBOUND_POSTED);
     }
 
@@ -218,7 +218,7 @@ class AutoBatchMountPointTest {
                 .as("通知点是优化触发 ⇒ 过账的既有行为、异常语义逐字不变")
                 .doesNotThrowAnyException();
 
-        verify(productSkuMapper).receiveStock(eq(11L), any(BigDecimal.class), any(), anyString());
+        verify(productSkuMapper).receiveStock(eq(11L), any(BigDecimal.class), any(), anyString(), any());
         assertThat(draft.getStatus()).isEqualTo(InboundOrder.STATUS_POSTED);
     }
 

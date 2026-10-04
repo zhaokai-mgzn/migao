@@ -4377,7 +4377,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（61 case）
+## 订单域（62 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -5491,6 +5491,19 @@
 跳过: [backend-contract] 纯后端并发取号判据（无 LLM 写路径：入库过账不经米宝 Agent 工具，B 端 PATCH action=post 与工人入口都是 admin-api 服务层）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 BatchNoTakeRaceRealDbTest 执行
 ```
 溯源: 2026-10-03 新增（issue #6248，第三轮深度测试的核验包）：#6237 只登记边界的 `nextFreeBatchNo` 跨请求取号竞争，本单核验为**真（部分真）** —— 单实例并发不可达（原子计数器），多实例/重启可达且**用户侧 500**（重试只覆盖「生成时已存在」）。**已修**：取号与占用并成 `insertIfFree`（ON CONFLICT DO NOTHING + 换号重试），语义仍 fail-closed（20 次耗尽 = 409 BATCH_NO_EXHAUSTED）。交付物 = 真库并发判据（6 条：单实例 / 正对照 / 重启饱和 / 会合点注入双向 / 耗尽 409 / 零注入对照）+ 真库登记 + 台账回填。 ｜ tags: inbound, stock, concurrency, backend-contract
+
+### OR-062. 并发确认收款不得超卖：扣库存改原子条件更新（WHERE … AND COALESCE(stock,0) >= #{quantity}）+ 受影响行数判定 ⇒ 恰一个赢家、库存不为负、台账链相接（issue #6299） 🔵
+```
+你: 库存 10 米的 SKU、两张各 8 米的订单**并发**确认收款（同一 microtask 门控同时 PUT /api/admin/orders/{id}/payment）
+数据: **病（真库并发实测读数）**：并发下两单都 200、库存被钳到 0（应扣 16 米只扣 10）⇒ 超卖 6 米且无任何 4xx；顺序执行则第二单 422「库存不足：需要 8 米，当前仅剩 2.0 米」。生产读数 = acceptance/2026-10-04/replay-postdeploy/race/probe-write-raw.json::cases.W4（statuses=[200,200]、stockBefore=10.0、stockAfter=0.0）；顺序对照 = acceptance/2026-10-04/race-sweep/out/control-seq-oversell.json。根因 = backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java 的 `deductStock` 曾是 `SET stock = GREATEST(COALESCE(stock,0) - #{quantity}, 0) WHERE id = #{skuId}` —— **无下限谓词 + 静默钳 0**。
+数据: **判据 1（恰一个赢家）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/OrderConfirmPaymentStockRaceRealDbTest.java 的 `concurrentConfirmPaymentCannotOversell`（3 轮）：成功数 == 1、落败方必须是 **422**（不是 200 静默成功、不是 500）。执行点同文件。
+数据: **判据 2（不得超卖）**：`stock_after == 初始 − 成功单数量` 且 `stock >= 0`（独立算式，不取被测读面）。**红证（修前实测，main @ de614623d 侧同源装置）**：成功数=2、库存 10.0→0.0。
+数据: **判据 3（台账链式相接）**：`stock_ledger_entries` 本 SKU 的 order 行按 id 升序，每行 `before_qty` == 上一行 `after_qty`，首行 before == 初始库存、末行 after == 当前库存。**红证（修前实测）**：两行 before 都是 10.0（同基）⇒ 当场红。
+数据: **正对照（护栏不误杀）**：同文件 `serialConfirmPaymentStillSucceeds` —— 库存 10 米 / 单张 8 米串行确认收款必须成功、库存 10→2、台账恰 1 行。
+数据: **类级元守卫（铁律 8）**：backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java 的 `everyStockDeductionHasLowerBoundPredicate` —— 现取 mapper 目录全部「`stock = … - …`」写面：必须含下限谓词、不得含 `GREATEST(`、且调用方必须有受影响行数判定；核心对象缺席即红（扫描器失明自证）。
+跳过: [backend-contract] 纯后端真库并发判据 + mapper 形态契约（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）
+```
+溯源: 2026-10-04 新增（issue #6299，P1·库存并发超卖）。取号 = 现取最大号 + 1（OR-062；`scripts/next_case_id.py` 因 PR #6304 diff 超 20000 行读不到而判 `3 无法判定`，按仓内口径手取最大号 +1）。**红→绿（注入式双向对照）**：注入 = 把 `deductStock` 退回 `GREATEST(COALESCE(stock,0) - #{quantity}, 0) WHERE id = #{skuId} AND tenant_id = #{tenantId}`（无下限谓词 + 钳 0）；注入前 `成功数=1 落败=[422] 库存=10.0→2.0 台账=[#1{before=10.0, after=2.0}]` ⇒ 注入后 `成功数=2 落败=[] 库存=10.0→0.0 台账=[#1{before=10.0,after=2.0}, #2{before=8.0,after=0.0}]`（与本 issue 生产探针 W4 的 `statuses=[200,200] / 10.0→0.0` 逐字同形）+ 元守卫 2 条判红（`GREATEST` / 无下限谓词）；`GREATEST` 钳 0 一并删除（它把「扣不动」静默变成「扣到 0」，正是超卖的掩盖物）。 ｜ tags: order, inventory, concurrency, oversell, backend-contract, realdb
 
 ## 加工项域（27 case）
 
@@ -6710,7 +6723,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6222，P3·读面）：主会话在未修复构建 :8080 上逐字复现 —— `GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行（after-sales 5 / stock-ledger 389 同款）。机制：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（`pageSize < 0` 直接 return ⇒ 不追加 LIMIT、**不执行 count 查询**）⇒ 拦截器只填 `records`、`total` 停在默认 0；被 `setMaxLimit(500)` 约束的只是**正数** size ⇒ 行数不设上界。危害：`total=0` 让客户端分页器立刻认为已到末页 ⇒ 「有数据却显示为空 / 翻不动页」。**口径裁定 = 显式拒绝（400）而非钳到合法下界**，三条理由：① 病根是「非法入参**不静默**」，钳位仍是静默（把「静默给错数据」换成「静默改口径」）；② 本仓已有同族显式拒绝范式（`StockQuantity.requireOneDecimal` / `MoneyScale.requireTwoDecimals`(#6221) / 负数数量 ⇒ 400）；③ 钳位会掩盖调用方（含 Agent / 前端）的真实缺陷。**为什么这样选单点**（最少代码阶梯）：分页入口有两个族（`@RequestParam long size` 控制器方法现取 22 个 + 自带 page/size 字段的查询 DTO 三个、**无共同基类**），且 DTO 属性名不保证等于 HTTP 参数名（`ProductQueryRequest.productId` 对 `@RequestParam productCode`）⇒ DTO 侧做准入要么靠 `WebDataBinder` 名字启发（会漏）、要么按属性名校验（对不上）；两族**都必须**经同一个 HTTP 参数集 ⇒ 唯一真正单点 = Servlet 层参数闸（`prehandle` 取参 + `PaginationParamGate` 判定），并在 WebConfig 注册（排在授权/归属之后，沿用 F3 #6063 与 #6158 的次序纪律）。**类级固化**：台账 25 条分页入口 + 6 条判据 + 5 种坏形态判别力自证（未登记即红 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 + 只改措辞不红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-070（origin/main@dacac7471:001-067,069 · PR #6227:068 ⇒ 最小空闲 070）。 ｜ tags: api, pagination, fail-closed, backend-contract, negative-size
 
-## 商品域（110 case）
+## 商品域（111 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -8209,6 +8222,21 @@
 真值: product-sku-stock.create-flow, product-sku-stock.bulk-import
 溯源: 2026-10-04 新增（issue #6302，P3·输入健壮性：超长 skuCode ⇒ 500）。**取号 PR-122**（现取 main 最大 = PR-121；`scripts/next_case_id.py PR` 因在飞 PR #6304 的 diff 超 20000 行读不到 ⇒ 按脚本出口 ③ 手工核号）。**红→绿**：修前 `ProductSkuCodeLengthAdmissionTest` 判据 1 = `Status expected:<422> but was:<500>`（与本单 issue 的服务端 500 同款）、判据 3/5 抛 NPE（无准入 ⇒ 一路写到桩 mapper）、元守卫因源码根定位 bug 未跑（`NoSuchFile`，已修）；修后 `Tests run: 17, Failures: 0`（真库现取 `products.sku_code`=30 / `product_skus.sku_code`=50 / `product_skus.door_width`=20 / `product_colors.color_name`=30；登记 27 条、EXEMPT 现取 = 0）。**注入式红证**：① 删掉 `createProduct` 的货号准入 ⇒ 实例判据红（`Status expected:<422> but was:<404>` —— 请求越过缺失的闸门）；② 把两处货号准入上限 30→300 ⇒ 元守卫红（`LENGTH-DRIFT：ProductCreateRequest#skuCode / ProductUpdateRequest#skuCode → products.sku_code（现取列长度 30，收口上限 [50, 300]）`）。类级固化 = ProductTextColumnAdmissionMetaGuardTest（实例判据 + 类级元守卫 + 判据 3~11 判别力自证）。 ｜ tags: product, backend-contract, input-robustness, realdb, text-length
 
+### PR-123. 并发过账同一 SKU 的入库单：台账 before/after 必须来自同一条原子语句（RETURNING）⇒ 链式相接、禁止同基（issue #6300） 🔵
+```
+你: 两张**同一 SKU** 的草稿入库单（10 米 / 15 米）**同时**过账（同一 microtask 门控同时 PATCH /api/admin/inbound-orders/{id} {action:post}）
+期望: direct_reply
+数据: **病（真库并发实测读数）**：两行台账出现**同一个 before**（同基）、before/after 链断裂；净增量仍对 ⇒ **只看库存查不出来**。生产读数 = acceptance/2026-10-04/race-sweep/out/probe-write-raw.json::cases.W3（两行 [{delta=10, before=65.0, after=75.0}, {delta=15, before=65.0, after=80.0}]、chainBad=[{at:2246, prevAfter=75.0, curBefore=65.0}]、sameBaseConcurrentRead=true）与 W7（100.0→115.0 / 100.0→110.0）；顺序对照 = probe-redproof-raw.json::RP3（台账 1 行、链正常）。根因 = backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java 的 `post` 里 `beforeQty = sku.getStock()` **快照读** → `receiveStock` 原子自增 → `record(beforeQty, afterQty)` 用的是陈旧值。
+数据: **判据 1（净增量，正对照）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/InboundPostLedgerChainRaceRealDbTest.java 的 `concurrentPostKeepsLedgerChainConnected`（3 轮）：两单都过账成功、库存净增量 == 两单数量之和（25）。**这条在修前也是绿的** —— 证明装置有判别力（链断裂不是「什么都判不出来」）。
+数据: **判据 2（链式相接）**：本 SKU 的 inbound 行按 id 升序，每行 before == 上一行 after，首行 before == 初始库存，末行 after == 当前库存，行数 == 2。**红证（修前实测）**：`#2{before=50.0, after=65.0}` 与 `#3{before=50.0, after=60.0}`（两行同基）⇒ 当场红。修后：`#2{before=50.0, after=65.0}` / `#3{before=65.0, after=75.0}`。
+数据: **判据 3（行内自洽）**：每行 `delta == after - before`。
+数据: **正对照（护栏不误杀）**：同文件 `serialPostStillSucceeds` —— 单张草稿单串行过账仍成功、台账 1 行、链成立。
+数据: **类级元守卫（铁律 8）**：backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java 的 `ledgerBeforeAfterComeFromAtomicStatement` —— 现取 OrderService / InboundOrderService 里落台账的库存变更方法：每次 `record(…)` 的实参不得读自快照（`.getStock()`），且所在方法体必须有原子取值锚（`RETURNING` 或逐字 `atomic-ledger: true`）。
+跳过: [backend-contract] 入库过账台账链的**真库并发**判据 + Mapper SQL 形态契约（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-10-04 新增（issue #6300，P2·台账并发同基）。取号 = 现取最大号 + 1（`scripts/next_case_id.py` 因 PR #6304 diff 超 20000 行读不到而判 `3 无法判定`，按仓内口径手取）。⚠️ **跨 refs 撞号（rebase 时实测）**：本单原取 **PR-122**，与已合并的 #6302（PR #6310，`ProductSkuCodeLengthAdmissionTest`）**同占 PR-122** —— 按仓内裁定「PR 号小 / 先开者保留」（#6310 < #6313，且它已在 main）⇒ 本单让号为 **PR-123**（`git grep` 复核 origin/main 与本工作区均无 PR-123 占用）。**红→绿（注入式双向对照）**：注入 = 把 `post` 的台账读数退回 `beforeQty = StockQuantity.orZero(sku.getStock())` / `afterQty = beforeQty.add(quantity)`（快照读 + 陈旧 before/after）；注入前 `#2{before=50.0,after=60.0} / #3{before=60.0,after=75.0}`（链接）⇒ 注入后 `#2{before=50.0,after=60.0} / #3{before=50.0,after=65.0}`（**两行同基**、`assertChain` 判 red，与本 issue 生产探针 W3 的 `[{before=65.0,after=75.0},{before=65.0,after=80.0}]` 同形）。修法 = `receiveStock` 改 `@Select` + CTE + `RETURNING beforeQuantity/afterQuantity`（配 `@InterceptorIgnore(tenantLine)` + 显式 `tenant_id` 谓词 —— MyBatis-Plus 3.5.16 的多租户拦截器进 `processSelect` 后对 CTE 里的 UPDATE 抛 `ClassCastException: ParenthesedUpdate cannot be cast to ParenthesedSelect`，实测撞过），台账读数与改动**同源**。 ｜ tags: inventory, inbound, ledger, concurrency, backend-contract, realdb
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -9589,8 +9617,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：667（活跃 134，跳过 533）
-- tier 分布：smoke 12 / normal 613 / adversarial 32
+- 用例总数：669（活跃 134，跳过 535）
+- tier 分布：smoke 12 / normal 615 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9608,10 +9636,10 @@
 - 杂项域：82
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：61
+- 订单域：62
 - 加工项域：27
 - 加工单域：61
-- 商品域：110
+- 商品域：111
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -9740,6 +9768,7 @@
 - OR-027: 订单列表 startDate/endDate 窗口 = 业务日（+08）整天，不是 UTC 日（issue #6200：北京 00:00–08:00 下单的单归错天/月/年）
 - OR-057: 入库过账并发面核验（N=4 并发过账同一 draft 单）：恰一个赢家、库存恰加一次、批次/台账各恰 2 行（issue #6237）
 - OR-060: 入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409
+- OR-062: 并发确认收款不得超卖：扣库存改原子条件更新（WHERE … AND COALESCE(stock,0) >= #{quantity}）+ 受影响行数判定 ⇒ 恰一个赢家、库存不为负、台账链相接（issue #6299）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

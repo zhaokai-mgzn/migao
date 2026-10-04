@@ -7034,6 +7034,24 @@ _CASE_OR_060 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-062 [NORMAL] 并发确认收款不得超卖：扣库存改原子条件更新（WHERE … AND COALESCE(stock,0) >= #{quantity}）+ 受影响行数判定 ⇒ 恰一个赢家、库存不为负、台账链相接（issue #6299）（源: cases/order.yml）──
+_CASE_OR_062 = EvalCase(
+    id='OR-062',
+    legacy_id='',
+    title='并发确认收款不得超卖：扣库存改原子条件更新（WHERE … AND COALESCE(stock,0) >= #{quantity}）+ 受影响行数判定 ⇒ 恰一个赢家、库存不为负、台账链相接（issue #6299）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['库存 10 米的 SKU、两张各 8 米的订单**并发**确认收款（同一 microtask 门控同时 PUT /api/admin/orders/{id}/payment）'],
+    expectations=[],
+    data_checks=['**病（真库并发实测读数）**：并发下两单都 200、库存被钳到 0（应扣 16 米只扣 10）⇒ 超卖 6 米且无任何 4xx；顺序执行则第二单 422「库存不足：需要 8 米，当前仅剩 2.0 米」。生产读数 = acceptance/2026-10-04/replay-postdeploy/race/probe-write-raw.json::cases.W4（statuses=[200,200]、stockBefore=10.0、stockAfter=0.0）；顺序对照 = acceptance/2026-10-04/race-sweep/out/control-seq-oversell.json。根因 = backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java 的 `deductStock` 曾是 `SET stock = GREATEST(COALESCE(stock,0) - #{quantity}, 0) WHERE id = #{skuId}` —— **无下限谓词 + 静默钳 0**。', '**判据 1（恰一个赢家）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/OrderConfirmPaymentStockRaceRealDbTest.java 的 `concurrentConfirmPaymentCannotOversell`（3 轮）：成功数 == 1、落败方必须是 **422**（不是 200 静默成功、不是 500）。执行点同文件。', '**判据 2（不得超卖）**：`stock_after == 初始 − 成功单数量` 且 `stock >= 0`（独立算式，不取被测读面）。**红证（修前实测，main @ de614623d 侧同源装置）**：成功数=2、库存 10.0→0.0。', '**判据 3（台账链式相接）**：`stock_ledger_entries` 本 SKU 的 order 行按 id 升序，每行 `before_qty` == 上一行 `after_qty`，首行 before == 初始库存、末行 after == 当前库存。**红证（修前实测）**：两行 before 都是 10.0（同基）⇒ 当场红。', '**正对照（护栏不误杀）**：同文件 `serialConfirmPaymentStillSucceeds` —— 库存 10 米 / 单张 8 米串行确认收款必须成功、库存 10→2、台账恰 1 行。', '**类级元守卫（铁律 8）**：backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java 的 `everyStockDeductionHasLowerBoundPredicate` —— 现取 mapper 目录全部「`stock = … - …`」写面：必须含下限谓词、不得含 `GREATEST(`、且调用方必须有受影响行数判定；核心对象缺席即红（扫描器失明自证）。'],
+    skip_reason='[backend-contract] 纯后端真库并发判据 + mapper 形态契约（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）',
+    tags=['order', 'inventory', 'concurrency', 'oversell', 'backend-contract', 'realdb'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -10708,6 +10726,24 @@ _CASE_PR_122 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-123 [NORMAL] 并发过账同一 SKU 的入库单：台账 before/after 必须来自同一条原子语句（RETURNING）⇒ 链式相接、禁止同基（issue #6300）（源: cases/product.yml）──
+_CASE_PR_123 = EvalCase(
+    id='PR-123',
+    legacy_id='',
+    title='并发过账同一 SKU 的入库单：台账 before/after 必须来自同一条原子语句（RETURNING）⇒ 链式相接、禁止同基（issue #6300）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['两张**同一 SKU** 的草稿入库单（10 米 / 15 米）**同时**过账（同一 microtask 门控同时 PATCH /api/admin/inbound-orders/{id} {action:post}）'],
+    expectations=['direct_reply'],
+    data_checks=['**病（真库并发实测读数）**：两行台账出现**同一个 before**（同基）、before/after 链断裂；净增量仍对 ⇒ **只看库存查不出来**。生产读数 = acceptance/2026-10-04/race-sweep/out/probe-write-raw.json::cases.W3（两行 [{delta=10, before=65.0, after=75.0}, {delta=15, before=65.0, after=80.0}]、chainBad=[{at:2246, prevAfter=75.0, curBefore=65.0}]、sameBaseConcurrentRead=true）与 W7（100.0→115.0 / 100.0→110.0）；顺序对照 = probe-redproof-raw.json::RP3（台账 1 行、链正常）。根因 = backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java 的 `post` 里 `beforeQty = sku.getStock()` **快照读** → `receiveStock` 原子自增 → `record(beforeQty, afterQty)` 用的是陈旧值。', '**判据 1（净增量，正对照）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/InboundPostLedgerChainRaceRealDbTest.java 的 `concurrentPostKeepsLedgerChainConnected`（3 轮）：两单都过账成功、库存净增量 == 两单数量之和（25）。**这条在修前也是绿的** —— 证明装置有判别力（链断裂不是「什么都判不出来」）。', '**判据 2（链式相接）**：本 SKU 的 inbound 行按 id 升序，每行 before == 上一行 after，首行 before == 初始库存，末行 after == 当前库存，行数 == 2。**红证（修前实测）**：`#2{before=50.0, after=65.0}` 与 `#3{before=50.0, after=60.0}`（两行同基）⇒ 当场红。修后：`#2{before=50.0, after=65.0}` / `#3{before=65.0, after=75.0}`。', '**判据 3（行内自洽）**：每行 `delta == after - before`。', '**正对照（护栏不误杀）**：同文件 `serialPostStillSucceeds` —— 单张草稿单串行过账仍成功、台账 1 行、链成立。', '**类级元守卫（铁律 8）**：backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java 的 `ledgerBeforeAfterComeFromAtomicStatement` —— 现取 OrderService / InboundOrderService 里落台账的库存变更方法：每次 `record(…)` 的实参不得读自快照（`.getStock()`），且所在方法体必须有原子取值锚（`RETURNING` 或逐字 `atomic-ledger: true`）。'],
+    skip_reason='[backend-contract] 入库过账台账链的**真库并发**判据 + Mapper SQL 形态契约（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）',
+    tags=['inventory', 'inbound', 'ledger', 'concurrency', 'backend-contract', 'realdb'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -12875,6 +12911,7 @@ ALL_CASES = (
     _CASE_OR_027,
     _CASE_OR_057,
     _CASE_OR_060,
+    _CASE_OR_062,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
@@ -13073,6 +13110,7 @@ ALL_CASES = (
     _CASE_PR_120,
     _CASE_PR_121,
     _CASE_PR_122,
+    _CASE_PR_123,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

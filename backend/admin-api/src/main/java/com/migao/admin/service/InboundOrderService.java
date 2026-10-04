@@ -219,6 +219,7 @@ public class InboundOrderService {
      */
     @Transactional(rollbackFor = Exception.class)
     public InboundOrderResponse post(String rawId, Long tenantId, String operator) {
+        // atomic-ledger: true —— 台账的 before/after 取自 receiveStock 的 RETURNING（见 StockChange 类注释）
         InboundOrder order = resolveOrder(rawId, tenantId);
         if (order == null) {
             throw BusinessException.notFound("入库单");
@@ -261,12 +262,8 @@ public class InboundOrderService {
             // issue #5063（V115）：库存列与入库行数量同为 NUMERIC(12,1) ⇒ 全程 BigDecimal
             // （改前 `int beforeQty = sku.getStock()` / `int quantity = line.getQuantity()`
             //  在入库量是 60.5 米时根本走不到这里 —— 校验阶段就显式拒绝了；本单把两侧一起放开）
-            BigDecimal beforeQty = StockQuantity.orZero(sku != null ? sku.getStock() : null);
-            BigDecimal beforeAvg = sku.getAvgCost();
             BigDecimal quantity = StockQuantity.orZero(line.getQuantity());
             BigDecimal unitCost = line.getUnitCost();
-            BigDecimal afterAvg = movingAverage(beforeQty, beforeAvg, quantity, unitCost);
-            BigDecimal afterQty = beforeQty.add(quantity);
 
             // ① 批次台账 + **原子取号**（issue #6248）：一个 SKU 行 = 一个批次（V111 裁定）——
             //    整单共用一个号时，第 2 行插 stock_batches 会撞 uk_stock_batches_no
@@ -330,8 +327,23 @@ public class InboundOrderService {
             batchNos.add(batchNo);
 
             // ② 加库存 + 写均价/成本金额/最近批次号（一条 SQL 内完成，避免「加了数量没写成本」的中间态）
-            //    均价用本服务算出的 afterAvg（与下面台账里的 avg_cost_after **同源同值**）
-            productSkuMapper.receiveStock(sku.getId(), quantity, afterAvg, batchNo);
+            //    + **同时取回变更前/后的库存**（issue #6300）：这两个值来自这条 SQL 的 RETURNING，
+            //    与改动发生在同一行锁下 ⇒ 两张同 SKU 的草稿单并发过账时，台账两行不会「同基」。
+            //    均价仍用本服务算出的 afterAvg（与下面台账里的 avg_cost_after **同源同值**）。
+            BigDecimal beforeAvg = sku.getAvgCost();
+            StockChange change = StockChange.from(productSkuMapper.receiveStock(sku.getId(), quantity,
+                    movingAverage(StockQuantity.orZero(sku.getStock()), beforeAvg, quantity, unitCost), batchNo,
+                    tenantId));
+            if (change == null) {
+                throw BusinessException.validationError(
+                        "SKU 库存行在过账过程中被删除（货号 " + line.getSkuCode() + "），本次过账已中止，请重新过账");
+            }
+            BigDecimal beforeQty = change.beforeQuantity();
+            BigDecimal afterQty = change.afterQuantity();
+            // 均价按**权威的**变更前库存重算（与落库那条 SQL 里算 cost_amount 用的是同一个数）：
+            // 并发下 sku.getStock() 可能是别人改之前的旧快照，用它算会让台账 avg_cost_after 与
+            // SKU 上的 avg_cost 不一致（只在事后对账时看得见的账实不符）。
+            BigDecimal afterAvg = movingAverage(beforeQty, beforeAvg, quantity, unitCost);
 
             // ③ 落库存台账（reason=inbound；成本快照一并落，使「库存/成本为什么变了」在同一张账上可对账）
             stockLedgerService.record(tenantId, line.getProductId(), sku.getId(), sku.getSkuCode(),

@@ -160,7 +160,13 @@ class WorkerInboundServiceTest {
                 .stock(new BigDecimal("10")).build();
         when(productSkuMapper.selectById(SKU_ID)).thenReturn(sku);
         when(productSkuMapper.selectList(any())).thenReturn(List.of(sku));
-        when(productSkuMapper.receiveStock(anyLong(), any(), any(), anyString())).thenReturn(1);
+        when(productSkuMapper.receiveStock(anyLong(), any(), any(), anyString(), any())).thenAnswer(inv -> {
+            BigDecimal q = inv.getArgument(1);
+            Map<String, Object> change = new LinkedHashMap<>();
+            change.put("beforeQuantity", new BigDecimal("10"));
+            change.put("afterQuantity", new BigDecimal("10").add(q));
+            return change;
+        });
 
         Product product = Product.builder().id(PRODUCT_ID).tenantId(TENANT).name(PRODUCT_NAME).build();
         when(productMapper.selectById(PRODUCT_ID)).thenReturn(product);
@@ -311,7 +317,7 @@ class WorkerInboundServiceTest {
             assertThat(resp.isRequiresManualEntry()).isTrue();
             verify(productMapper, never()).insert(any(Product.class));
             verify(productSkuMapper, never()).insert(any(ProductSku.class));
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         @Test
@@ -339,7 +345,7 @@ class WorkerInboundServiceTest {
         void draftNeverTouchesStock() {
             WorkerInboundDraftView view = createDraft("60.5");
 
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
             verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
                     any(), any(), anyString(), anyString(), anyString(), any(), any(), any());
             verify(stockBatchMapper, never()).insert(any(StockBatch.class));
@@ -363,7 +369,7 @@ class WorkerInboundServiceTest {
                                 .isEqualTo(400));
             }
             verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         @Test
@@ -423,7 +429,7 @@ class WorkerInboundServiceTest {
                     draft.getDraftId(), confirmed(), TENANT, WORKER_ID, null);
 
             verify(productSkuMapper, times(1))
-                    .receiveStock(eq(SKU_ID), eq(new BigDecimal("60.5")), eq(new BigDecimal("12.5")), anyString());
+                    .receiveStock(eq(SKU_ID), eq(new BigDecimal("60.5")), eq(new BigDecimal("12.5")), anyString(), any());
             verify(stockLedgerService, times(1)).record(
                     eq(TENANT), eq(PRODUCT_ID), eq(SKU_ID), eq(SKU_CODE),
                     eq(new BigDecimal("10")), eq(new BigDecimal("70.5")),
@@ -449,7 +455,7 @@ class WorkerInboundServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
 
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
             verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
                     any(), any(), anyString(), anyString(), anyString(), any(), any(), any());
             verify(inboundOrderMapper, never()).markPosted(anyString(), anyLong(), anyString(), any());
@@ -472,7 +478,7 @@ class WorkerInboundServiceTest {
             WorkerInboundDraftView second =
                     service.postDraft(draft.getDraftId(), confirmed(), TENANT, WORKER_ID, "pk-1");
 
-            verify(productSkuMapper, times(1)).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, times(1)).receiveStock(anyLong(), any(), any(), anyString(), any());
             verify(stockLedgerService, times(1)).record(anyLong(), anyString(), anyLong(), anyString(),
                     any(), any(), anyString(), anyString(), anyString(), any(), any(), any());
             verify(inboundOrderMapper, times(1)).markPosted(anyString(), anyLong(), anyString(), any());
@@ -489,7 +495,7 @@ class WorkerInboundServiceTest {
             assertThatThrownBy(() -> service.postDraft(draft.getDraftId(), confirmed(), TENANT, WORKER_ID, "pk-2"))
                     .isInstanceOf(BusinessException.class)
                     .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         @Test
@@ -511,7 +517,7 @@ class WorkerInboundServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(404));
 
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
     }
 
