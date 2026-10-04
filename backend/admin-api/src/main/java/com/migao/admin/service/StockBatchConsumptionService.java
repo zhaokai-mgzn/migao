@@ -401,9 +401,10 @@ public class StockBatchConsumptionService {
      * 该盘点运行（run id）**已经落过账**的批次 id 集合 —— 幂等判据的**读**半边。
      *
      * <p>幂等的**写**半边在 DB：部分唯一索引 {@code uk_batch_consumption_stocktake}
-     * （{@code (tenant_id, stocktake_run_id, batch_id) WHERE stocktake_run_id IS NOT NULL AND deleted = 0}）。
-     * 两半边都要：读半边让重放**平静地**返回「已记过」，写半边让并发重放**撞唯一键**而不是记两笔
-     * （同 {@code uk_batch_consumption_line} 的纪律：先查后写有 TOCTOU，唯一索引才是原子闸）。</p>
+     * （{@code (tenant_id, stocktake_run_id, batch_id) WHERE stocktake_run_id IS NOT NULL AND deleted = 0}），
+     * 落账口 = {@link #applyStocktake} 的原子插入 {@code insertStocktakeIfAbsent}。
+     * 本方法（读半边）只让重放**平静地**跳过；它**不是**并发闸 —— 先查后写有 TOCTOU
+     * （issue #6301 的缺陷本体），并发的那一半由写半边的 {@code ON CONFLICT DO NOTHING} 承担。</p>
      */
     public Set<Long> stocktakeRecordedBatchIds(Long tenantId, String runId) {
         Set<Long> ids = new LinkedHashSet<>();
@@ -437,16 +438,23 @@ public class StockBatchConsumptionService {
      *       {@link StockBatchConsumption#getSavedMeters()} 恒为 0（盘点**不产生**省料，不许冒功）。</li>
      * </ol>
      *
-     * @return 落账行数
+     * <p>🔴 <b>写半边是原子闸 {@code insertStocktakeIfAbsent}</b>（issue #6301）：并发/重复的同 run id
+     * 请求**在语句内部**被判出来（{@code ON CONFLICT DO NOTHING} ⇒ 影响 0 行），不抛
+     * {@code DuplicateKeyException} ⇒ 调用方拿到的回执是「幂等回放」而不是 500。</p>
+     *
+     * @return **本次真的新落账**的批次 id 集合（并发/重放时缺席的那些 = 已由并发请求记过 ⇒
+     *         调用方必须按「回放」出回执，**并且不得再动 SKU 库存**）
      */
-    public int applyStocktake(Long tenantId, String runId, List<StocktakeAdjustment> adjustments) {
+    public Set<Long> applyStocktake(Long tenantId, String runId, List<StocktakeAdjustment> adjustments) {
+        Set<Long> recorded = new LinkedHashSet<>();
         if (adjustments == null || adjustments.isEmpty()) {
-            return 0;
+            return recorded;
         }
         for (StocktakeAdjustment a : adjustments) {
             BatchStockViews.BatchRemaining b = a.batch();
             BigDecimal delta = a.delta();
-            consumptionMapper.insert(StockBatchConsumption.builder()
+            // 原子闸（唯一索引 uk_batch_consumption_stocktake）：>0 = 本次生效、0 = 已记过（回放）
+            if (consumptionMapper.insertStocktakeIfAbsent(StockBatchConsumption.builder()
                     .tenantId(tenantId)
                     .batchId(b.batchId())
                     .batchNo(b.batchNo())
@@ -466,12 +474,14 @@ public class StockBatchConsumptionService {
                     .note(String.format("批次盘点：批次 %s 盘前 %s 米 → 实盘 %s 米", b.batchNo(),
                             plain(b.remainingMeters()), plain(b.remainingMeters().add(delta))))
                     .createdAt(OffsetDateTime.now())
-                    .build());
+                    .build()) > 0) {
+                recorded.add(b.batchId());
+            }
         }
-        log.info("批次盘点落账: tenant={}, runId={}, lines={}, delta={}", tenantId, runId,
-                adjustments.size(), plain(StockQuantity.sum(
-                        adjustments.stream().map(StocktakeAdjustment::delta).toList())));
-        return adjustments.size();
+        log.info("批次盘点落账: tenant={}, runId={}, lines={}, replayed={}, delta={}", tenantId, runId,
+                recorded.size(), adjustments.size() - recorded.size(),
+                plain(StockQuantity.sum(adjustments.stream().map(StocktakeAdjustment::delta).toList())));
+        return recorded;
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════

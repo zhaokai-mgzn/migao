@@ -120,6 +120,12 @@ REALDB_FILES: dict[str, str] = {
     # ③ 来源族列形状互斥与盘点幂等闸是 **DB 对象**（回滚事务里摘掉 ⇒ 同一行坏数据当场能落库）；
     # ④ `reconcile` 差额由两条腿各自聚合 ⇒ 只有真库能证「盘点后差额不增大」。
     _SVC + "BatchStocktakeRealDbTest.java": "direct",
+    # issue #6301：同一 run id 的盘点请求**并发**（6 次）必须拿幂等回执而不是 500 —— 只真 PG 能证的三条：
+    # ① 唯一索引在**插入那一刻**的原子判定（`uk_batch_consumption_stocktake`）与「未提交行对并发事务
+    #    不可见」共同构成 TOCTOU 窗口：mock 的 `selectList` 恒返回空、`insert` 恒成功 ⇒ 窗口**结构上不存在**；
+    # ② `ON CONFLICT … DO NOTHING` 的**影响行数**（1 = 本次生效 / 0 = 已记过）是「谁先到」的唯一依据；
+    # ③ 「阈退的批次不再重复动 SKU 库存」是**并发下的落库读数**（库存链恰好一条 `60.0→58.5`）。
+    _SVC + "BatchStocktakeConcurrentRealDbTest.java": "direct",
     # issue #4945 处 1：算料租户配置的**真栈半边**（真 PG + 真 `craft_calc_configs` 行 + 真 mapper +
     # 真 `toConfigMap()` + 真 `CraftCalcClient` 出参逐值）。为什么必须真库：这条判据的三跳
     # （谓词/列名/软删过滤能否读回行 · JSONB 能否解成引擎吃的 config · config 是否真的进了请求体）

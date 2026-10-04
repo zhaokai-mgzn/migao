@@ -3030,6 +3030,42 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-081
+    legacy_id: ""
+    title: "唯一键 / 幂等键写入点的类级元守卫（issue #6301）：全仓「写带唯一约束的表」的写入点 ⇄ 冻结台账双向相等 —— 未登记即红、登记即须属实（处理摘掉即红）、台账为空 / 扫描零命中即 fail-closed；#6301 那一处必须带 ON CONFLICT 原子闸（改回朴素 insert 即具名判红）"
+    domains:
+      - misc
+    tier: normal
+    tags:
+      - backend-contract
+      - idempotency
+      - unique-key
+      - fail-closed
+      - red-proof
+      - class-level-guard
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据**只读仓内文本**（`backend/admin-api/src/main/java/**/*.java` +
+    # schema.sql + 台账 JSON）—— 零 LLM、零真库、零网络、零时钟。
+    user_inputs:
+      - "当同一个幂等键（如盘点的 runId）被并发提交、或网络重试把同一请求发两遍时，唯一索引本来会拒掉第二次写入；但如果代码里没有任何冲突处理，那次「拒绝」就变成用户侧的 500 —— 必须有判据在**新增这类写入点时就红**，而不是等下一个并发现场。"
+    expectations: []
+    data_checks:
+      - "**病（issue #6301 的形态，已在 main 复现）**：服务层「先查是否已记 → 再插入」是**非原子读**（TOCTOU）；并发时多个同 runId 的请求同时判定「未记」，随后争抢部分唯一索引 `uk_batch_consumption_stocktake` ⇒ 抛 `DuplicateKeyException` ⇒ 未映射成幂等回执 ⇒ 5 条 HTTP 500（探针 W5 读数 `[200,500,500,500,500,500]`，两个构建点都红）。数据本身正确（分录 1 行、库存 Δ 正确）⇒ 缺陷在**错误映射 / 回执语义**。"
+      - "**判据 1（未登记即红）**：全仓「服务/控制层里 `<XxxMapper 字段>.insert*(`，且该 mapper 经 `extends BaseMapper<实体>` → 实体的 `@TableName` 指向 schema.sql 里带 `CREATE UNIQUE INDEX` 的表」的写入点，必须**逐条**登记进 `tests/unit_ci_workflows/unique_write_ledger.json`（现取 26 处：9 处有处理、17 处是 `handling: none` 的已登记缺口）。多出来的 ⇒ **点名报出**该文件 / 字段 / 表，并给出口（补原子写 / 冲突映射，或按缺口登记）。判据 = `tests/unit_ci_workflows/test_idempotent_unique_write_guard.py::test_every_unique_write_site_is_registered`。"
+      - "**判据 2（登记即须属实，双向）**：台账说某文件在处理而该文件**没有**处理 ⇒ 红（唯一冲突会重新冒泡成 5xx）；台账说 `handling: none`（缺口）而语料里现在**有**处理 ⇒ 红（陈旧登记，台账**只许缩短**）；台账 / 现取的表名漂移 ⇒ 红。**逐方法判**（不是「文件里有 ON CONFLICT 就行」）—— 这是本判据的判别力来源：把 `insertStocktakeIfAbsent` 的 `ON CONFLICT … DO NOTHING` 摘掉 ⇒ 具名判红。"
+      - "**判据 3（#6301 那一处的具体形态）**：`StockBatchConsumptionMapper::insertStocktakeIfAbsent` 必须在场，且该方法的 SQL 里必须有 `ON CONFLICT`（在语句内部消解冲突 ⇒ 并发不再抛异常、事务不进 aborted 态）；盘点落账的写入点必须**不是** `handling: none`。判据 = 同文件 `test_the_stocktake_write_point_uses_an_atomic_conflict_handler`。"
+      - "**判据 4（fail-closed）**：台账为空 ⇒ 红；扫描**零命中**（一个写入点都找不到）⇒ 红（判据自己失效必须自曝，不许静默绿）；schema 解析出的唯一约束表少于 20 张 ⇒ 红（解析口径坏了）；mapper→表 一条都解析不出来 ⇒ 红。"
+      - "**判据 5（判别力自证，随判据常驻）**：八条坏形态在**内存语料**上各自判红（新增未登记写入点 / 台账清空 / 零命中 / 处理被摘掉 / 台账陈旧 / 表漂移 / 注释里的 `insert(` 不算写入点 / 无唯一约束的表不在射程），两条**对照读数**不红。判据 = 同文件 `test_injected_bad_corpora_are_named`。"
+      - "🔴 **覆盖边界（照实登记）**：① 只认**仓内文本形态**（`.` insert 调用 + `BaseMapper` 泛型 + `@TableName`）—— 裸 SQL / `JdbcTemplate` / 反射写这些表、或 mapper 不经 `BaseMapper` 声明的代码**不在射程内**；② 「处理」的判定是**形态学**的（服务文件出现 `DuplicateKeyException`，或该 mapper 被调用的插入方法带 `ON CONFLICT`）—— 它判不了「那条处理真的被调用 / 真的在并发下有效」（行为面由 `BatchStocktakeConcurrentRealDbTest` 承担）；③ `handling: none` 的 17 条是**已登记的观测缺口**，本判据**不为它们的安全性背书**，缺口的修复是各自独立的包；④ 它不判「某个写入点该不该用幂等键」（业务口径）。"
+    skip_reason: "[backend-contract] 纯静态判据（零 LLM、零真库、零网络、零时钟；只读 Java 源码 + schema.sql + 台账 JSON）由 tests/unit_ci_workflows/test_idempotent_unique_write_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-04 新增（issue #6301，P2·幂等并发）。取号 **MC-081**：`python3 scripts/next_case_id.py MC` 在本机因 PR #6304 的 diff 超 20000 行读取失败而**拒绝取号**（fail-closed 生效）⇒ 按 §26.3 手工核在飞面：`git grep -E 'MC-08[0-9]' $(git for-each-ref refs/remotes/)` ⇒ **MC-080 已被在飞 PR（origin/fix/6294-skip-is-not-success）占用**，MC-081 在 main ∪ 全部在飞 ref ∪ 工作区均无占用 ⇒ 取 MC-081。本单 = 实例判据（真库并发：`BatchStocktakeConcurrentRealDbTest`，3 条：同 runId 并发 6 次全幂等回执 + 顺序重放对照 + 朴素 insert 注入红证）+ 类级元守卫（本用例）+ 台账。⚠️ 未固化（照实登记）：见 data_checks 末条的覆盖边界四条。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_idempotent_unique_write_guard.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/BatchStocktakeConcurrentRealDbTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
   - id: PK-001
     legacy_id: ""
     title: "包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）"
