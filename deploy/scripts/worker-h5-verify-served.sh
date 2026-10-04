@@ -279,7 +279,7 @@ while IFS=$'\t' read -r spec from_dir; do
   if [ -z "$url" ]; then
     # 解析器本身就是判据的**前置**：它空转（Python 不在 / 提前退出）而只打印一行「解析不了」，
     # 会让 ⑦ 在「闭包集合非空」的假象下继续跑 ⇒ 这里直接判红（fail-closed，不静默）。
-    bad "解析不了模块说明符 '$spec'（from $from_dir）—— 闭包判据的解析器没跑起来（fail-closed）"
+    bad "解析不了模块说明符 '$spec'（from ${from_dir}）—— 闭包判据的解析器没跑起来（fail-closed）"
     continue
   fi
   grep -qxF -- "$url" "$SEEN" && continue
