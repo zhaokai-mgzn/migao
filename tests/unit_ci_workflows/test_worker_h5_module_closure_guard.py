@@ -378,3 +378,38 @@ def test_verify_served_is_red_when_the_module_is_served_as_html(tmp_path):
     assert "src/app.mjs" in proc.stdout or "src/machine-app.mjs" in proc.stdout, (
         "判红信息里没有指名入口脚本 URL（红得不具体 = 排查时看不出坏在哪）：\n" + proc.stdout
     )
+
+
+def test_closure_step_itself_goes_red_on_a_dependency_that_only_exists_on_the_served_side(tmp_path):
+    """③ 🔴 **⑦ 这一步本身**必红的直连读数（issue #6306 的确切形态）。
+
+    形态（与生产逐字同形，只是把「仓根 `frontend/shared/`」换成「迁移后的树内路径」）：
+    **发布树里少一份被 import 的模块**，而本仓里它仍存在 ⇒ 线上那个 URL 被 SPA 兜底接成
+    `200 text/html`（= console 里那句 `MIME type of "text/html"` 的来源）。
+    ⚠️ 为什么另立一条：⑥ 对本仓 `src/**` 逐个判 MIME，会把同一份文件**顺带**报红于 ⑥
+    （缺文件 ⇒ SPA 兜底把 `.mjs` 请求接成 C 端 `index.html` ⇒ `text/html`）；本条的断言**落在 ⑦ 的输出段内**，
+    证明「闭包那一步自己会红」—— 去掉那条链上的断言就会退化成空跑（本判据在同一夹具上仍判绿）。
+    """
+    import re as _re
+
+    served = tmp_path / "served"
+    _copy_worker_tree(served)
+    missing = served / "w" / "src" / "shared" / "operation-display.mjs"
+    assert missing.is_file(), "夹具前提不成立：先要有这份模块，才能把它从**发布树**里删掉"
+    missing.unlink()  # 只删发布树里那份；本仓里那份还在（⇒ ⑥ 的面里它仍是一个「合法 URL」）
+    server = _serve(served)  # _QuietHandler：.mjs ⇒ text/javascript；缺文件 ⇒ SPA 兜底 200 text/html
+    try:
+        proc = _run_verify(f"http://127.0.0.1:{server.server_address[1]}")
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert proc.returncode == 1, f"发布树少一份被 import 的模块竟判绿（空断言）：\n{proc.stdout}"
+    closure = proc.stdout.split("⑦ module 闭包加载判据", 1)
+    assert len(closure) == 2, f"输出里没有 ⑦ 段（闭包判据没跑）：\n{proc.stdout}"
+    tail = closure[1]
+    assert "src/shared/operation-display.mjs" in tail, (
+        "⑦ 段里没有点名那份缺席的模块（红得不具体 = 排查时看不出坏在哪）：\n" + tail
+    )
+    assert _re.search(r"❌[^\n]*src/shared/operation-display\.mjs", tail), (
+        "⑦ 段里那份缺席的模块**没有**被判红（闭包那一步在空跑）：\n" + tail
+    )
