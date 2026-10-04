@@ -10672,6 +10672,24 @@ _CASE_PR_121 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-122 [NORMAL] 商品/SKU 超长文本入参（货号 >30 等）⇒ 422 可行动文案（不是 500）—— DTO/库列长度准入 + 类级元守卫（源: cases/product.yml）──
+_CASE_PR_122 = EvalCase(
+    id='PR-122',
+    legacy_id='',
+    title='商品/SKU 超长文本入参（货号 >30 等）⇒ 422 可行动文案（不是 500）—— DTO/库列长度准入 + 类级元守卫',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['建品 / 改品 / Excel 导入时填了超过库列上限的货号（如 31 个字符）'],
+    expectations=['direct_reply'],
+    data_checks=['**病（实测，2026-10-04）**：`POST /api/admin/products` 传 31 字符 `skuCode`（库列 `products.sku_code` = `varchar(30)`）⇒ PG 报 `ERROR: value too long for type character varying(30)` @ `ProductMapper.insert` ⇒ HTTP 500 `INTERNAL_ERROR`「服务器内部错误」——用户无法自救（不知道哪一列、该改多长）。修前 DTO **零长度准入**（`ProductCreateRequest.skuCode` 无任何注解），Service 层也未见校验。', '**判据 1（表单路径 4xx + 可行动文案 + 零写入）**：`POST /api/admin/products` 传 31 字符货号 ⇒ **422**、`$.error.code = VALIDATION_ERROR`、文案含「最长 30 个字符」「当前 31 个字符」「请缩短」，且 `productMapper.insert` **一次都没被调用**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductSkuCodeLengthAdmissionTest.java 的 `overlongProductSkuCodeIsRejectedWithActionableMessage`。', '**判据 2（边界）**：长度 = 列上限是**合法**输入（30 字符 ⇒ 放行到写面；`PUT` 路径 30 字符 ⇒ 落到「商品不存在」= 闸门之后的下一步，而不是被长度准入拦下）—— 准入不得挡掉合法边界值。执行点 = 同文件 `productSkuCodeAtColumnLimitPassesTheLengthGate` / `updateProductUsesTheSameGate`。', '**判据 3（同族写面同源拒绝）**：SKU 级 `skus[].skuCode` > 50、`skus[].doorWidth` > 20、`colors[].colorName` > 30 各自被同一收口拒绝（SKU / 颜色表零写入）。执行点 = 同文件 `skuFaceOverlongFieldsAreRejectedFromOneGate`。', '**判据 4（家族覆盖：不走 Bean Validation 的路径）**：agent 路径手工 `new ProductCreateRequest` + 直调 `ProductService#createProduct`（即 `createProductForAgent` 的形态）同样 422 + 可行动文案 —— 只给 DTO 加 `@Size` 会漏掉它；Excel 导入行（`upsertImportedProduct` → `saveColorsAndSkus`）走同一收口。执行点 = 同文件 `agentPathIsGatedTooEvenThoughItSkipsBeanValidation`。', '**判据 5（类级元守卫 = 真值现取 + 未登记即红）**：写面收口的**上限字面量**必须等于**现取** `information_schema.columns.character_maximum_length`（真 PG 跑 `schema.sql` 终态）；四个商品入参 DTO 的每个 String 字段必须登记；未登记 / 台账空转 / 有界列被登记成无界 / 无收口 / 上限漂移 / 豁免增长 / 扫描面为空 ⇒ 各自判红；豁免台账冻结上限 = **0**、条数现取。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductTextColumnAdmissionMetaGuardTest.java。', '**判据 6（真库边界读数）**：现取 `products.sku_code` = `varchar(30)`；真库直插 30 字符**成功**、31 字符报 SQLState `22001`（string_data_right_truncation = `value too long for type character varying(30)`）。执行点 = 同文件 `realDbBoundaryReadingMatchesLiveColumn`。'],
+    skip_reason='[backend-contract] 入参健壮性 + DTO↔库列长度对账（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（元守卫走一次性真 PG，PgCluster.startOrAbort() 收口）',
+    tags=['product', 'backend-contract', 'input-robustness', 'realdb', 'text-length'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -13035,6 +13053,7 @@ ALL_CASES = (
     _CASE_PR_119,
     _CASE_PR_120,
     _CASE_PR_121,
+    _CASE_PR_122,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
