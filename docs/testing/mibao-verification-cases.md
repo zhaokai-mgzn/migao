@@ -3046,7 +3046,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（82 case）
+## 杂项域（83 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4224,6 +4224,21 @@
 跳过: [backend-contract] 纯静态判据（零 LLM、零真库、零网络、零时钟；只读 Java 源码 + schema.sql + 台账 JSON）由 tests/unit_ci_workflows/test_idempotent_unique_write_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-04 新增（issue #6301，P2·幂等并发）。取号 **MC-081**：`python3 scripts/next_case_id.py MC` 在本机因 PR #6304 的 diff 超 20000 行读取失败而**拒绝取号**（fail-closed 生效）⇒ 按 §26.3 手工核在飞面：`git grep -E 'MC-08[0-9]' $(git for-each-ref refs/remotes/)` ⇒ **MC-080 已被在飞 PR（origin/fix/6294-skip-is-not-success）占用**，MC-081 在 main ∪ 全部在飞 ref ∪ 工作区均无占用 ⇒ 取 MC-081。本单 = 实例判据（真库并发：`BatchStocktakeConcurrentRealDbTest`，3 条：同 runId 并发 6 次全幂等回执 + 顺序重放对照 + 朴素 insert 注入红证）+ 类级元守卫（本用例）+ 台账。⚠️ 未固化（照实登记）：见 data_checks 末条的覆盖边界四条。 ｜ tags: backend-contract, idempotency, unique-key, fail-closed, red-proof, class-level-guard
+
+### MC-082. 端点级并发判据 + 日志面判据（issue #6318）：「冲突在 mapper 内以原子写消解」的写入点，其**回执契约**必须由**端点级**判据承担（真 MockMvc + 真 PG：同 runId 6 并发 ⇒ 全 2xx、1 applied + 5 replayed、5xx=0），配注入式红证（原子闸换回朴素 insert ⇒ 端点当场 5×500）与日志面判据（端点 500 必须有具名异常 + method/uri/tenant/type 坐标）；类级元守卫按**现取**端点集合判，未登记即红 🔵
+```
+你: 同一个盘点单（同一 runId）被用户连点或网络重试并发提交 6 次时，用户应该看到 6 个**可读回执**（1 条生效 + 5 条「本次已记过」），而不是 5 个「服务器内部错误」；而且万一真的 500 了，运维在应用日志里必须能直接看出**是哪个端点、哪个租户、什么异常**，不用翻全量日志猜。
+数据: **病（issue #6318 的形态：服务级绿、端点级红）**：`#6301` 的修复带的是**服务级**真库并发判据（`BatchStocktakeConcurrentRealDbTest`，调服务方法）—— 它证明「服务层不抛异常」；而用户看到的契约在更高一层：异常 → HTTP 状态的映射（`GlobalExceptionHandler`）与回执体（`data.lines[].status`）。两者之间任何一处走偏，服务级判据照旧全绿，端点上仍是 5 个 500（实测端点级读数 `[500,500,200,500,500,500]`）。⇒ 同一个写入点的回执契约必须有**端点级**判据。
+数据: **判据①（端点级主判据）**：`POST /api/admin/batch-stock/stocktake` 同 runId 6 并发（`CyclicBarrier` 把 6 个请求全部压过「查已记批次」这一步 ⇒ TOCTOU 窗口必现）⇒ 6 个响应 HTTP **全部 2xx**（5xx=0）、回执行恰 1 个 `applied` + 5 个 `replayed`、该 run 分录恰 1 行、库存链恰一条 `60.0->58.5`。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/StockBatchStocktakeEndpointRaceRealDbTest.java::concurrentStocktakeCallsGetIdempotentReceiptsNot500`（真 MockMvc + 真 Controller + 真 Service + 真 GlobalExceptionHandler + **真 PG**）。
+数据: **判据②（注入式红证 · 端点级）**：把生产写入路径换回**朴素 insert**（`Proxy` 只替换 `insertStocktakeIfAbsent`，其余原样转发真 mapper）⇒ **同一端点**在同一份并发注入下当场 `5 × 500`（`INTERNAL_ERROR`）—— 逐字读数 `[500, 200, 500, 500, 500, 500]`。这条读数自证判据①的绿**有判别力**（不是「本来就不撞」），也是「把修复撤回 ⇒ 端点级判据会怎么红」的可执行答案。判据 = 同文件 `naiveInsertWiringTurnsTheEndpointIntoFiveHundreds`。
+数据: **判据③（日志面：端点 500 必须查得到）**：端点 500 必须在应用日志里留下 **ERROR 事件**，且事件文本含 `method` / `uri` / `tenant`，throwable 链里有**具名异常**且消息带唯一索引名（`uk_batch_consumption_stocktake`）—— 「红了但查不到」是判据面缺陷。判据 = 同文件 `endpointFiveHundredCarriesANamedExceptionAndCoordinatesInLog`；落码 = `GlobalExceptionHandler#handleException` 改为记 `method/uri/tenant/type/msg` + 异常本体。
+数据: **类级元守卫（判据 1~6）**：`tests/unit_ci_workflows/test_endpoint_receipt_race_guard.py` + 冻结台账 `tests/unit_ci_workflows/endpoint_receipt_race_ledger.json` —— 真值源 = `unique_write_ledger.json` 里「`handling` 指向 mapper 文件、且该文件里有 `ON CONFLICT`」的写入点（**每次运行现取**，现取 4 条）：① **未登记即红**（新增这类写入点必须挂端点级判据或写 deferred+理由）；② **登记即须属实（双向）**（台账给不存在/已改名的闸盖章 ⇒ 红）；③ **端点必须现取存在**（`sites` 里的 `POST /api/...` 端点串必须在控制器里真取得到）；④ **判据必须在场且是端点级**（`文件::符号` 逐字存在，且该文件里有 `MockMvc` 端点驱动标记 —— 服务级判据不能替端点级契约背书）；⑤ `deferred` 必须写理由 + 重启条件、`case_ids` 必须在用例库里存在；⑥ **fail-closed**（现取集合为空 / `sites` 为空 ⇒ 红）。判别力自证：八条坏形态在**内存语料**上各自判红 + 对照语料不红（同文件 `test_injected_bad_corpora_are_named`）。
+数据: **同批重锚（新增用例 / 新增真库判据必须同批登记）**：新增本用例 ⇒ `tests/unit_ci_workflows/case_machine_fail_channel_baseline.json` 的 `backend_contract_scoring_zero` 124 → **125**（同批追加 history 行，`no_channel_total` 仍为 0）；新增 `StockBatchStocktakeEndpointRaceRealDbTest.java` ⇒ 同批登记进 `tests/unit_ci_workflows/test_realdb_failclosed.py` 的 `REALDB_FILES`。
+数据: 🔴 **覆盖边界（照实登记）**：① 元守卫的「端点」判定是**形态学**的（只认 `@RequestMapping` 类前缀 + 单字符串 `@Post/Put/Patch/DeleteMapping`；注解数组 / 无参映射不在射程）；② 「判据是端点级」用 `MockMvc` 驱动标记判 —— 判不了「那条判据真的断言了状态码」（行为面由判据自己承担）；③ 元守卫只裁**原子闸族**（mapper 内 `ON CONFLICT`），服务侧 `catch DuplicateKeyException` 那一族不在射程（对外语义各不相同）；④ 端点级判据走 MockMvc 栈（真 DispatcherServlet + 真处理器 + 真库），**没有**真 Tomcat 容器与 JWT/权限过滤器 —— 鉴权面由既有 `StockBatchControllerTest` 覆盖；⑤ 真库原始会话不经过 MyBatis-Spring 的异常翻译 ⇒ 判据③里具名异常是 `PersistenceException`（生产是 `DuplicateKeyException`），判据对**异常族**断言；⑥ `deferred` 的三条（入库标签 / 加工单集合 / 工人端取件令牌）是**已登记的缺口**，各自需要先定回执口径。
+跳过: [backend-contract] 端点级判据（真 MockMvc + 真 PG：断言 HTTP 状态码与回执体）+ 元守卫（纯静态，只读 Java 源码 / 台账 JSON / cases yml）：判定层在单测与真库测试，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-10-04 新增（issue #6318）。取号 **MC-082**：`git grep -E 'MC-08[0-9]' $(git for-each-ref refs/remotes/ refs/heads/)` ⇒ MC-080（在飞 #6294 面）/ MC-081（#6301，已在 main）已占用，MC-082 在 main ∪ 全部在飞 ref ∪ 工作区均无占用 ⇒ 取 MC-082。本单 = ① 端点级实例判据（真 MockMvc + 真 PG，3 条：并发幂等回执 / 朴素 insert 注入 ⇒ 端点 5×500 / 端点 500 的日志面）+ ② 类级元守卫（本用例）+ 冻结台账 + ③ 落码（`GlobalExceptionHandler#handleException` 记 `method/uri/tenant/type`）。⚠️ 未固化（照实登记）：见 data_checks 末条覆盖边界六条；`deferred` 三条缺口的**回执口径**不在本包射程。 ｜ tags: backend-contract, idempotency, unique-key, endpoint-level, fail-closed, red-proof, class-level-guard
 
 ### PK-001. 包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们） 🔵
 ```
@@ -9618,8 +9633,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：669（活跃 134，跳过 535）
-- tier 分布：smoke 12 / normal 615 / adversarial 32
+- 用例总数：670（活跃 134，跳过 536）
+- tier 分布：smoke 12 / normal 616 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9634,7 +9649,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：7
-- 杂项域：82
+- 杂项域：83
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：62
@@ -9745,6 +9760,7 @@
 - MC-077: worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）
 - MC-079: 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI
 - MC-081: 唯一键 / 幂等键写入点的类级元守卫（issue #6301）：全仓「写带唯一约束的表」的写入点 ⇄ 冻结台账双向相等 —— 未登记即红、登记即须属实（处理摘掉即红）、台账为空 / 扫描零命中即 fail-closed；#6301 那一处必须带 ON CONFLICT 原子闸（改回朴素 insert 即具名判红）
+- MC-082: 端点级并发判据 + 日志面判据（issue #6318）：「冲突在 mapper 内以原子写消解」的写入点，其**回执契约**必须由**端点级**判据承担（真 MockMvc + 真 PG：同 runId 6 并发 ⇒ 全 2xx、1 applied + 5 replayed、5xx=0），配注入式红证（原子闸换回朴素 insert ⇒ 端点当场 5×500）与日志面判据（端点 500 必须有具名异常 + method/uri/tenant/type 坐标）；类级元守卫按**现取**端点集合判，未登记即红
 - PK-001: 包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）
 - MC-080: 「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（判定本体 = 单份共享库；AK/SK 引用在 job env 只声明一次），`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）

@@ -1,0 +1,6 @@
+{
+  "id": "MC-082",
+  "pr": 6318,
+  "title": "端点级并发判据 + 日志面判据（issue #6318）：「冲突在 mapper 内以原子写消解」的写入点，其回执契约必须由端点级判据承担（真 MockMvc + 真 PG：同 runId 6 并发 ⇒ 全 2xx、1 applied + 5 replayed、5xx=0）+ 注入式红证（原子闸换回朴素 insert ⇒ 端点 5×500）+ 日志面（端点 500 必须有具名异常 + method/uri/tenant/type 坐标）+ 类级元守卫按现取端点集合判（未登记即红）",
+  "claimed_at": "2026-10-04"
+}

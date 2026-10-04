@@ -126,6 +126,12 @@ REALDB_FILES: dict[str, str] = {
     # ② `ON CONFLICT … DO NOTHING` 的**影响行数**（1 = 本次生效 / 0 = 已记过）是「谁先到」的唯一依据；
     # ③ 「阈退的批次不再重复动 SKU 库存」是**并发下的落库读数**（库存链恰好一条 `60.0→58.5`）。
     _SVC + "BatchStocktakeConcurrentRealDbTest.java": "direct",
+    # issue #6318：**端点级**（真 MockMvc 栈）的同 run id 并发判据 —— 只真 PG 能证的两条：
+    # ① TOCTOU 窗口在**端点路径**上同样存在（6 个请求全部越过「查已记批次」后争抢
+    #    `uk_batch_consumption_stocktake`）⇒ 「服务级绿、端点级红」这条差只有真库 + 真栈能照出来；
+    # ② 注入式红证（原子闸换回朴素 insert）下**端点**的状态码必须是 5×500（`[500,200,500,500,500,500]`）
+    #    —— 这条读数自证端点级主判据的绿有判别力，mock 面上 `insert` 恒成功 ⇒ 结构上不可见。
+    _SVC + "StockBatchStocktakeEndpointRaceRealDbTest.java": "direct",
     # issue #4945 处 1：算料租户配置的**真栈半边**（真 PG + 真 `craft_calc_configs` 行 + 真 mapper +
     # 真 `toConfigMap()` + 真 `CraftCalcClient` 出参逐值）。为什么必须真库：这条判据的三跳
     # （谓词/列名/软删过滤能否读回行 · JSONB 能否解成引擎吃的 config · config 是否真的进了请求体）

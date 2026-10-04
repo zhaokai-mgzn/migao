@@ -4,6 +4,7 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.exception.PermissionDeniedException;
 import com.migao.admin.security.PermissionDeniedResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -243,10 +244,22 @@ public class GlobalExceptionHandler {
 
     /**
      * 处理所有其他异常
+     *
+     * <p>🔴 issue #6318：端点 500 必须**在日志里可定位**（「红了但查不到」= 判据面缺陷）——
+     * 先记**请求坐标 + 异常类型**（{@code method / uri / tenant / type}），再记异常本体与堆栈。
+     * 只记 {@code e.getMessage()} 时，500 的日志里既没有异常类型、也没有端点坐标：
+     * 「哪个端点、哪个租户、什么异常」只能靠翻全量日志逐条猜。</p>
+     *
+     * <p>判据 = {@code StockBatchStocktakeEndpointRaceRealDbTest#endpointFiveHundredCarriesANamedExceptionAndCoordinatesInLog}
+     * （把坐标或异常本体从这行里摘掉 ⇒ 端点级判据当场判红）。{@code request} 允许为 null
+     * （非 HTTP 面直接调用本处理器时坐标记 {@code ?}）。</p>
      */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<Void>> handleException(Exception e) {
-        log.error("系统异常: {}", e.getMessage(), e);
+    public ResponseEntity<ApiResponse<Void>> handleException(Exception e, HttpServletRequest request) {
+        log.error("系统异常: method={}, uri={}, tenant={}, type={}, msg={}",
+                request == null ? "?" : request.getMethod(),
+                request == null ? "?" : request.getRequestURI(),
+                TenantContext.getTenantId(), e.getClass().getName(), e.getMessage(), e);
         ApiResponse<Void> response = ApiResponse.error("INTERNAL_ERROR", "服务器内部错误");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
