@@ -35,7 +35,7 @@ pytest tests/smoke/ -v --html=reports/smoke_report.html --self-contained-html
 | `AI_AGENT_URL` | ai-agent-service 地址 | `http://localhost:8001` |
 | `ADMIN_USERNAME` | 管理员用户名 | `admin` |
 | `ADMIN_PASSWORD` | 管理员密码 | `admin123` |
-| `TENANT_ID` | 租户 ID | `1` |
+| `TENANT_ID` | 租户 ID（staging/production = `25`「米高测试环境」，2026-10-04 环境重建；local = `1`） | `25` / `1` |
 | `SERVICE_TOKEN` | 服务间通信 Token | - |
 
 ## 测试分类
