@@ -62,6 +62,33 @@ if ! flock -n 9; then
 fi
 trap 'flock -u 9' EXIT
 
+# ══════════════════════════════════════════════════════════════════════════
+# 0.9 **运行面探测**（issue #6294）：`--probe-running-tag <服务…>` ⇒ 只读打印 `RUNNING_TAG=<svc>:<tag>`
+#
+# 病：`deploy-*.yml` 的 `Skip if already built (schedule reconcile)` 只凭 **run 结论**判「已部署」
+# ⇒ 「跳过部署」的 run 也是 success ⇒ 环境停摆而台账全绿（issue #6294 现场：40 小时）。
+# 出口 = 在**跳过**那条路径上加一条**运行面**读数（部署腿的 `Assert running tag == target` step
+# 消费它，经 `deploy/scripts/swas_deploy_running_tag.sh`）。
+#
+# 🔴 位置**必须在 flock 之前**（两重理由）：① 它是**只读**的（不 build / 不 pull / 不 up），
+#    不需要互斥；② 若放在锁之后，恰恰是「有兄弟部署在跑」时——也就是**最需要读到真实运行态**的
+#    时候——探测会白等最多 `LOCK_WAIT_SECONDS`（1800s）⇒ 自证变成新的挂点。
+# ⚠️ 取 tag 的**唯一实现**是下面的 `running_tag_of()`（本段按同一形态内联：探测要在函数定义之前跑）。
+#    形态漂移由 `tests/unit_ci_workflows/test_deploy_skip_is_not_success.py` 钉住。
+# ══════════════════════════════════════════════════════════════════════════
+if [ "${1:-}" = "--probe-running-tag" ]; then
+  shift
+  cd /opt/migao-deploy 2>/dev/null || true
+  for _s in "$@"; do
+    _cid=$(docker compose -f deploy/swas/docker-compose.yml ps -q "$_s" 2>/dev/null || true)
+    _cid=${_cid%%$'\n'*}
+    _img=""
+    if [ -n "$_cid" ]; then _img=$(docker inspect --format '{{.Config.Image}}' "$_cid" 2>/dev/null || true); fi
+    echo "RUNNING_TAG=${_s}:${_img##*:}"
+  done
+  exit 0
+fi
+
 cd /opt/migao-deploy
 TAG=${1:-latest}
 REGISTRY=${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}

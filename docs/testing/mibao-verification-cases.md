@@ -3046,7 +3046,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（80 case）
+## 杂项域（81 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4223,6 +4223,21 @@
 跳过: [backend-contract] 纯离线判据（零 LLM、零真库、零网络；沙箱里跑**真脚本** + runner 桩）：由 tests/unit_ci_workflows/test_pkg_narrow_check.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-03 新增（issue #6250）：把「新增测试 / 新增用例就必然要动的两条冻结台账」并入包级定点清单。触发 4 次实测：#6237（`src/test` 里 `System.nanoTime(` ⇒ BusinessClockTestSourceGuardTest 的 presentInTree 冻结判红）、#6231/#6226/#6224/#6237（各一次新增 `[backend-contract]` + `expectations: []` ⇒ backend_contract_scoring_zero 读数 +1 而锚点没动）。本单只加**包级定点入口**（scripts/pkg-narrow-check.sh，只读、只跑测试、不做全量），**不改**任何既有门禁的判据逻辑。取号 PK-001（python3 scripts/next_case_id.py PK ⇒ 候选集 main ∪ 全部在飞 PR ∪ 工作区均无 PK 前缀 ⇒ 最小空闲 PK-001；另经 `git log --all -S PK-001` + `git grep PK- origin/main` 跨 refs 复核：全新前缀、无退役号）。⚠️ 未固化（照实登记）：自动探测只看**路径**，非 `src/test` 的传统 Java 测试目录不在面内（`--java-tests` 是那条例外口）。 ｜ tags: dev-flow, narrow-check, auto-detect, fail-closed, read-only
+
+### MC-080. 「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（判定本体 = 单份共享库；AK/SK 引用在 job env 只声明一次），`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed） 🔵
+```
+你: 当 `Skip if already built (schedule reconcile)` 判「已部署」（镜像在 ACR / 同 sha 的 run 结论 success）、`Deploy to SWAS` 与 `Assert server-side build` 被整段跳过时，必须有一条**部署后**的机械判据把「**运行 tag == 目标 tag**」验出来：不一致 ⇒ **具名判红**（服务 / 期望 tag / 实测 tag / 可复制命令），而不是让 run 报绿；探不到就要 fail-closed，不许当成「一致」。
+期望: direct_reply
+数据: **病（现取读数）**：issue #6294 现场（2026-10-04）—— `admin-web` 近 40 次 run 里两条 `success`（run `37156277078` / `37131394391`）**都是**「`Skip if already built (schedule reconcile)` 成功 + `Deploy to SWAS` **skipped**」，而 SWAS 实例上在跑的容器是 `admin-web:sha-877ac15`（40 小时前）、`.last-good-tag` = `sha-6838a05`、main HEAD = `9d82e2e60` ⇒ **环境一次都没换过而台账全绿**。复算：`gh run view <id> --json jobs` / `gh run list --workflow=deploy-frontend.yml`。
+数据: **运行面读数（唯一一份实现）**：`deploy/scripts/swas_deploy_running_tag.sh`（**库**，被 `deploy/scripts/swas-deploy-ci.sh` 的 `--probe-running-tag` 分发段 source；`$@` 只在主脚本解包）经**同一条** SWAS `RunCommand` 通道**只读**取回在跑 tag（远端执行体 `deploy/swas/deploy.sh` 的 `--probe-running-tag` 分支，在远端 `flock` **之前** ⇒ 不被在跑的部署挡住；不 build / 不 pull / 不 up）。判据 = tests/unit_ci_workflows/test_deploy_skip_is_not_success.py::test_running_tag_probe_exists_and_is_a_single_shared_implementation / ::test_probe_runs_read_only_remote_command
+数据: **注入式红证（本单核心）**：期望 `sha-abc1234`、实测 `sha-877ac15`（= 现场读数）⇒ 退出码 **1**，且输出必须含 **服务 / 期望 tag / 实测 tag / 可复制复算命令** 四件 + `::error::`。判据 = 同文件 ::test_diverging_running_tag_is_red_and_named（反向对照 ::test_matching_running_tag_passes 退 0 且不报警）
+数据: **fail-closed 三态三分**：探不到（云调用失败 / 输出无 `RUNNING_TAG=` / 未知服务键）⇒ 退出码 **3**（与「确认不一致」的 1 分开，也与「一致」的 0 分开），文案必须写「探不到」。判据 = 同文件 ::test_unreadable_running_tag_is_fail_closed / ::test_cloud_api_failure_is_fail_closed_not_green / ::test_unknown_service_key_is_rejected；空读数（容器没起）**属不一致**（退 1，必须显式写「实测 tag：（空）」）= ::test_empty_running_tag_counts_as_divergence
+数据: **接线 + 类级元守卫（铁律 8：同源修）**：三条腿（`deploy-frontend.yml` / `deploy-admin-api.yml` / `deploy-ai-agent-service.yml`）都必须把 `Assert running tag == target (skip 不得冒充已部署，issue #6294)` 接在 `Deploy to SWAS (测试环境)` **之后**、只在 `steps.sync.outputs.skip == 'true'` 时跑，且**调用同一份**共享脚本（禁止三份复制；期望 tag 经 env 取 `steps.tag.outputs.IMAGE_TAG`）。**未接线即红**：判据从仓库现取「带 `Skip if already built` 步的腿」⇒ 新加同形腿漏接 ⇒ 当场红。判据 = 同文件 ::test_every_skip_capable_leg_is_wired_to_the_probe / ::test_shared_script_is_referenced_by_exactly_one_path
+数据: **同批落进既有的两条类级台账（未登记即红）**：本库也发 `RunCommand --command-content` ⇒ 必须登记在 tests/unit_ci_workflows/swas_command_content_legs_ledger.json（含字节前置断言 `${…:-16384}` + `-ge` 比较 + 官方出处 URL，且断言位置在云调用**之前**）—— 判据 = tests/unit_ci_workflows/test_swas_command_content_limit.py；三条腿新增跑 `deploy-*.yml` 的 step 后，`run` 正文仍须 ≤ 13250 字符（超限 ⇒ 整份 workflow invalid）—— 判据 = 同文件 ::test_workflow_run_bodies_stay_within_the_github_limit。
+数据: **⚠️ 未覆盖（照实登记）**：`skip=false`（真跑了完整部署）那条路径本判据**不**自证运行 tag —— 它由 `deploy.sh` 自己的健康检查与 `EFFECTIVE_TAG=` 读数承担（`deploy.sh` 的 #4852「不许往回走」闸门在 target 是在跑 tag 的祖先时会跳过**该服务**并打 `DOWNGRADE_SKIPPED=`，那条路径的运行 tag 允许 ≠ target ⇒ 属既有语义、本单不扩）。⚠️ 桩的诚实标注：`aliyun` 是桩 ⇒ 本判据证明的是「脚本在给定输入下会做什么」，**不是**「阿里云真的会回这个读数」（后者只有真跑 CI 才能验证）。
+跳过: [backend-contract] 纯离线判据（零 LLM、零真库、零网络：读仓内文件 + 在 tmp_path 自造沙箱、桩 `aliyun`）：判定层在单测，由 tests/unit_ci_workflows/test_deploy_skip_is_not_success.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-04 新增（issue #6294 的**代码侧假绿**半边；运维半边＝远端磁盘回收/扩容**不在本单**，故 PR **不写 Closes**）。取号 **MC-080**：`python3 scripts/next_case_id.py MC` ⇒ main 现取最大 079 ⇒ 取 080（无历史空档、无在飞撞号）。落码 = ① 新库 `deploy/scripts/swas_deploy_running_tag.sh`（只读运行面探测 + 三态退出码）+ `swas-deploy-ci.sh` 顶部 `--probe-running-tag` 分发；② 远端执行体 `deploy/swas/deploy.sh` 新增 `--probe-running-tag` 分支（在 `flock` 之前，与 `running_tag_of()` 同形态）；③ 三条部署腿各接一条 `Assert running tag == target (skip 不得冒充已部署，issue #6294)` step（`if: always() && steps.sync.outputs.skip == 'true'`）；该 step 的 AK/SK 由 **job env 一处声明**（Danger Scan 把「旧位置删除 + 新位置新增」认作**移动**）⇒ 本 PR 的 danger-scan 为 **0 blocker**（本地复算：`DANGER_BASE=origin/main DANGER_TRUSTED_ACTOR=1 python3 .github/danger_scan.py`）；④ 判据 tests/unit_ci_workflows/test_deploy_skip_is_not_success.py（13 条：静态锚点 + 执行式行为（桩 `aliyun`，真跑分发段）+ 判别力自证）+ 台账 tests/unit_ci_workflows/swas_command_content_legs_ledger.json 新增 running-tag-probe 一条。⚠️ 未固化（照实登记）：① `skip=false` 路径的运行 tag 不自证（见 data_checks 末条）；② 三条腿各多一条 step（判定本体只有一份：共享库；YAML 面无法跨文件复用 step —— GitHub 的 `uses:` 不能调本仓内的 step，`workflow_call` 形态实测会因「新增 secrets 引用」被判 danger-scan blocker）⇒ 由元守卫「带 `Skip if already built` 的腿未接线即红 + 三腿形状必须逐字同源 + 唯一实现不许进 YAML」代替「只有一份」；③ 真云读数（阿里云真的回什么）本地不可得。 ｜ tags: ci, deploy, watchdog, ledger, red-proof, fail-closed
 
 ## 商家入驻域（5 case）
 
@@ -9544,8 +9559,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：664（活跃 134，跳过 530）
-- tier 分布：smoke 12 / normal 610 / adversarial 32
+- 用例总数：665（活跃 134，跳过 531）
+- tier 分布：smoke 12 / normal 611 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9560,7 +9575,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：7
-- 杂项域：80
+- 杂项域：81
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：61
@@ -9671,6 +9686,7 @@
 - MC-077: worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）
 - MC-079: 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI
 - PK-001: 包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）
+- MC-080: 「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（判定本体 = 单份共享库；AK/SK 引用在 job env 只声明一次），`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
