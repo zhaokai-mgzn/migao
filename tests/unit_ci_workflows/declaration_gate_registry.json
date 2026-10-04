@@ -312,14 +312,7 @@
           "reason": "门禁自己住的模块（node --test 的对象）"
         }
       ],
-      "uncovered": [
-        {
-          "path": "frontend/shared",
-          "issue": "#4177",
-          "owner": "frontend/worker-h5 owner（+ CI 门禁 owner）",
-          "reason": "**本包扫描时发现的同族缺口**：worker-h5 的测试与 `src/render.mjs` 都 `import '../../shared/operation-display.mjs'`（现取见证：`frontend/worker-h5/tests/worker-h5-operation-display.test.mjs`），而本 workflow 的 `paths:` 只有 `frontend/worker-h5/**` ⇒ 改共享模块**不会触发**这条腿（它是 workflow 级 paths 过滤 ⇒ 整个 workflow 不跑，check 连出现都不出现）"
-        }
-      ],
+      "uncovered": [],
       "auto_discover_root": null,
       "check_name": "worker-h5 unit tests (node --test)",
       "gated_steps": [
@@ -618,7 +611,7 @@
       "bound": 4,
       "members": [
         "frontend/admin-web/src/lib/operation-display.ts",
-        "frontend/shared/operation-display.mjs",
+        "frontend/worker-h5/src/shared/operation-display.mjs",
         "frontend/bmini-app/src/utils/operationDisplayName.ts",
         "frontend/mini-app/src/components/cards/operationDisplayName.ts"
       ],

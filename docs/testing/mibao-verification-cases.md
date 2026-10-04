@@ -3238,9 +3238,10 @@
 数据: 发布目标限定在 <静态根>/w 子树；静态根（同时承载线上 C 端 H5）不得被任何 --delete/清空/rm -rf 触碰：远端输出自证 PARENT_INDEX_BEFORE_SHA256 == PARENT_INDEX_AFTER_SHA256，且沙箱行为测试断言父目录 index.html 逐字节不变
 数据: 发布后 GET https://app.migaozn.com/w/ 的 body 哈希 == 仓库 frontend/worker-h5/index.html（同样断言 /w/index.html 与 /w/src/app.mjs），body 含 src/app.mjs 且不含 TARO_ / 小布智能助手 —— 修复前 /w/ 已是 200 的 C 端页面，故 200 本身不是判据
 数据: 越界子目录（.. / . / 空 / /etc / a/b）必须拒绝且静态根零改动；连跑两次结果一致（幂等），w/ 子树内的陈旧文件被收敛
+数据: 🔴 module **闭包加载**判据（issue #6306）：起点 = **发布集内每个 `*.html` 入口**（worker 有两个：`index.html → src/app.mjs`；`machine.html → src/machine-app.mjs`，只从 index 出发会漏掉 `machine.mjs` 那条链），沿**静态 `import … from` + 动态 `import('…')` 字面量**递归取每个依赖，逐个断 `200`；闭包**空集判红**；另断入口引用的 `<link rel="stylesheet" href>` = 200 —— 病根是共享模块曾住仓根 `frontend/shared/`（发布集外）⇒ 线上被 nginx SPA 兜底接成 `200 text/html` ⇒ 浏览器拒绝执行 module script ⇒ 整页白屏，而身份 / 字节哈希 / MIME 三面**条条全绿**。判据 = `tests/unit_ci_workflows/test_worker_h5_module_closure_guard.py`（结构元守卫：按现取腿集合判 + 豁免台账只许缩短 + 四组锚的注入式红证 + 本地静态服务上真跑绿/红两面）
 跳过: [backend-contract] 部署 workflow / 发布脚本由 pytest 单测 + 沙箱行为测试验证（tests/unit_ci_workflows/test_worker_h5_hosting.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-09-20 新增（issue #4837）：worker-h5 落位 app.migaozn.com/w/ —— CI 发布 + 身份断言 + 静态根禁删守卫（含注入式红证） ｜ tags: ci, deploy, worker-h5, hosting
+溯源: 2026-09-20 新增（issue #4837）：worker-h5 落位 app.migaozn.com/w/ —— CI 发布 + 身份断言 + 静态根禁删守卫（含注入式红证）；2026-10-04 追加（issue #6306）：加 module **闭包加载**判据（病 = 共享模块住发布集之外 ⇒ 线上 `200 text/html` ⇒ 整页白屏，而身份 / 字节 / MIME 三面全绿）+ 类级元守卫（按现取腿集合判、豁免台账只许缩短、四组锚的注入式红证、本地静态服务上真跑绿/红两面） ｜ tags: ci, deploy, worker-h5, hosting
 
 ### MC-017. 六个红证机具必须真的有人调用（门禁面 = 前提自检 + 登记表只许增） 🔵
 ```

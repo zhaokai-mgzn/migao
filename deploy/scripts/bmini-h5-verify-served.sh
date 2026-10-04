@@ -92,6 +92,9 @@ fetch() {
 #   `text/javascript` 与 `application/javascript` 都是 WHATWG 认可的 JS MIME（不同 nginx / 发行版
 #   给哪个都合法）⇒ 写死其一会在**正确**的部署上误红，逼人改判据而不是改配置（那是降门禁，不是修缺陷）。
 JS_MIME_RE='^(application|text)/(x-)?(java|ecma)script([0-9.]+)?$'
+# 本腿**依赖的** fail-closed 空集分支声明（issue #6306）：MIME 判据的「取不到就判红」锚在
+# `ENTRY_REFS` 上（判据 = tests/unit_ci_workflows/test_served_leg_mime_guard.py）。
+FAIL_CLOSED_VARS="ENTRY_REFS"
 js_mime_ok() {   # $1 = Content-Type 原文（可带 `; charset=…`）
   local ct
   ct="$(printf '%s' "${1%%;*}" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"

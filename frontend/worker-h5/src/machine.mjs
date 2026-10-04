@@ -21,7 +21,9 @@
 //
 // 零依赖、零构建：纯函数（可被 `node --test` 直接钉住，无需 DOM）。
 
-import { operationDisplayName } from '../../shared/operation-display.mjs'
+// 工序显示名走**唯一**口径（issue #4963）；模块位置在 issue #6306 迁进树内（`src/shared/`）——
+// 原先住仓根 `frontend/shared/`（发布集之外）⇒ 线上被 SPA 兜底接成 `200 text/html` ⇒ 整页白屏。
+import { operationDisplayName } from './shared/operation-display.mjs'
 
 /** 缺值显示（**显式**：缺就显示这个，绝不猜 0 —— 给机器的值偏小 = 裁短 = 事故）。 */
 export const EMPTY = '—'
