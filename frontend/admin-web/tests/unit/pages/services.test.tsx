@@ -1,189 +1,171 @@
-// case_ids: DA-005
+// case_ids: UI-082
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
-// ===== Override lucide-react mock to cover all icons used by services page =====
-// Use vi.hoisted to ensure the stub is available at mock hoist time
-const { iconStub } = vi.hoisted(() => {
-  const iconStub = (name: string) => {
-    const Component = (props: any) => {
-      const React = require('react')
-      return React.createElement('span', { 'data-testid': `icon-${name}`, ...props })
-    }
-    Component.displayName = name
-    return Component
-  }
-  return { iconStub }
-})
-
-vi.mock('lucide-react', () => ({
-  MessageSquare: iconStub('message-square'),
-  Wrench: iconStub('wrench'),
-  Zap: iconStub('zap'),
-  Radio: iconStub('radio'),
-  LayoutDashboard: iconStub('layout-dashboard'),
-  ShoppingBag: iconStub('shopping-bag'),
-  Users: iconStub('users'),
-  BarChart3: iconStub('bar-chart3'),
-  Smartphone: iconStub('smartphone'),
-  MessageCircle: iconStub('message-circle'),
-  History: iconStub('history'),
-  TrendingUp: iconStub('trending-up'),
-  UserCheck: iconStub('user-check'),
-  PieChart: iconStub('pie-chart'),
-  Sparkles: iconStub('sparkles'),
-  PackageSearch: iconStub('package-search'),
-  Truck: iconStub('truck'),
-  BookOpen: iconStub('book-open'),
-  Headphones: iconStub('headphones'),
-  MessagesSquare: iconStub('messages-square'),
+vi.mock('next/link', () => ({
+  default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
 }))
 
 import ServicesPage from '@/app/(corporate)/services/page'
 
-describe('ServicesPage', () => {
-  // ── Page header ──
+describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能力域，issue #6291）', () => {
+  // ── 页头 ──
 
-  it('should render page title', () => {
+  it('renders page title 与定位副标', () => {
     render(<ServicesPage />)
-    expect(screen.getByText('产品与服务')).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: '能干活的两个 AI，和它们背后的整个后台',
+      })
+    ).toBeInTheDocument()
+    expect(screen.getByText(/四个终端共用同一套数据/)).toBeInTheDocument()
   })
 
-  it('should render page subtitle', () => {
+  it('renders 页头事实标签（AI 数 / 能力域数 / 终端数 / 行业纵深）', () => {
     render(<ServicesPage />)
-    expect(screen.getByText(/双AI助手 \+ 全链路管理平台/)).toBeInTheDocument()
+    expect(screen.getByText('2 位 AI 助手')).toBeInTheDocument()
+    expect(screen.getByText(/6 个能力域 · \d+ 项功能/)).toBeInTheDocument()
+    expect(screen.getByText('4 个终端')).toBeInTheDocument()
+    expect(screen.getByText('算料 · 工序 · 批次 · 计件')).toBeInTheDocument()
   })
 
-  it('should render header section with gradient background', () => {
+  // ── 两位 AI ──
+
+  it('renders 两位 AI 的产品卡', () => {
     render(<ServicesPage />)
-    const heading = screen.getByRole('heading', { level: 1, name: '产品与服务' })
-    expect(heading).toBeInTheDocument()
+    expect(screen.getByText('小布 · AI 智能客服')).toBeInTheDocument()
+    expect(screen.getByText('米宝 · 企业智能工作助手')).toBeInTheDocument()
+    expect(screen.getByText('顾客侧：从问规格到下单、查物流、报售后')).toBeInTheDocument()
+    expect(screen.getByText('经营侧：一句话查账、查单、查进度')).toBeInTheDocument()
   })
 
-  // ── Products list ──
-
-  it('should render all 5 product sections', () => {
+  it('renders 小布的能力点（含算料报价与售后受理）', () => {
     render(<ServicesPage />)
-    const products = [
-      '米宝 · 企业智能工作助手',
-      '小布 · AI 智能客服',
-      '商家管理后台',
-      '微信小程序客服',
-      '数据分析与报表',
-    ]
-    for (const name of products) {
+    expect(
+      screen.getByText('按尺寸与工艺算用料并给出估算报价，如实说明是估算而非成交价')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('售后咨询与申请受理，工单恒为「待商家审核」')
+    ).toBeInTheDocument()
+    expect(screen.getByText('订单进度、物流轨迹、收货地址查询')).toBeInTheDocument()
+  })
+
+  it('renders 米宝的能力点（含生产计件与财务对账）', () => {
+    render(<ServicesPage />)
+    expect(
+      screen.getByText('生产与计件：工序库、工艺路线、计件工资与报工明细')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('财务与客户：资金流水 / 收支汇总 / 应收对账问答，客户档案与售后工单')
+    ).toBeInTheDocument()
+    expect(screen.getByText('库存与入库：批次库存、库存台账、入库单与批次成本')).toBeInTheDocument()
+  })
+
+  it('renders 能力边界（旧版「批量操作库存 / 退换货处理」等已过期表述不得残留）', () => {
+    render(<ServicesPage />)
+    expect(screen.getByText(/写操作只有三类：改价、批量上下架、批量库存调整/)).toBeInTheDocument()
+    expect(screen.getByText(/不做：改价、取消订单、退款、承诺优惠折扣、报库存数量/)).toBeInTheDocument()
+    expect(screen.queryByText(/批量操作库存/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/智能工单流转/)).not.toBeInTheDocument()
+  })
+
+  // ── 四个终端 ──
+
+  it('renders 四个终端（管理后台 / 顾客小程序 / 商家小程序 / 员工端 H5）', () => {
+    render(<ServicesPage />)
+    for (const name of ['管理后台', '顾客小程序', '商家小程序', '员工端 H5']) {
       expect(screen.getByText(name)).toBeInTheDocument()
     }
+    expect(screen.getByText('扫码报工（合格 / 返工 / 报废）')).toBeInTheDocument()
+    expect(screen.getByText('工人登录、拍照入库、补打标签')).toBeInTheDocument()
   })
 
-  it('should render product descriptions', () => {
+  // ── 六个能力域 ──
+
+  it('renders 六个能力域与独立入口的全部菜单名', () => {
     render(<ServicesPage />)
-    expect(screen.getByText(/面向企业员工的AI工作搭档/)).toBeInTheDocument()
-    expect(screen.getByText(/面向消费者的7×24小时智能客服/)).toBeInTheDocument()
-    expect(screen.getByText(/功能完善的一站式管理平台/)).toBeInTheDocument()
-    expect(screen.getByText(/在微信生态内为消费者提供原生体验/)).toBeInTheDocument()
-    expect(screen.getByText(/全方位数据洞察能力/)).toBeInTheDocument()
-  })
-
-  // ── Product features (米宝) ──
-
-  it('should render mibao features', () => {
-    render(<ServicesPage />)
-    expect(screen.getByText('商品智能管理：语音/文字查询商品、批量操作库存、智能分类推荐')).toBeInTheDocument()
-    expect(screen.getByText('订单全程跟踪：一句话查订单状态、物流追踪、异常订单智能预警')).toBeInTheDocument()
-    expect(screen.getByText('知识即时检索：面料知识、工艺流程、安装指南、售后政策，问即答')).toBeInTheDocument()
-    expect(screen.getByText('售后高效协同：退换货处理、客户投诉跟进、智能工单流转')).toBeInTheDocument()
-    expect(screen.getByText('多轮深度对话：基于上下文理解，支持复杂业务场景的连续交互')).toBeInTheDocument()
-  })
-
-  it('should render xiaobu features', () => {
-    render(<ServicesPage />)
-    expect(screen.getByText('基于大语言模型，精准理解客户意图，应答自然贴切有温度')).toBeInTheDocument()
-    expect(screen.getByText('多轮对话与上下文记忆，像真人客服一样连续沟通')).toBeInTheDocument()
-    expect(screen.getByText('智能工具调用：商品查询、物流追踪、知识检索一键直达')).toBeInTheDocument()
-    expect(screen.getByText('毫秒级流式应答，所见即所得的打字机效果，体验流畅自然')).toBeInTheDocument()
-  })
-
-  it('should render admin backend features', () => {
-    render(<ServicesPage />)
-    expect(screen.getByText('商品中心：商品信息管理、加工项配置、知识库维护，商品运营一站搞定')).toBeInTheDocument()
-    expect(screen.getByText('交易中心：订单管理、售后处理、物流跟踪，全链路把控')).toBeInTheDocument()
-    expect(screen.getByText('客户中心：客户档案、标签管理、行为洞察，精准运营')).toBeInTheDocument()
-    expect(screen.getByText('经营看板：经营数据一览，趋势分析，数据驱动决策')).toBeInTheDocument()
-  })
-
-  it('should render mini app features', () => {
-    render(<ServicesPage />)
-    expect(screen.getByText('微信原生体验，无需额外下载，扫码即用')).toBeInTheDocument()
-    expect(screen.getByText('富媒体消息展示，商品卡片、订单详情直观呈现')).toBeInTheDocument()
-    expect(screen.getByText('完整会话管理，历史记录随时回顾，服务连贯不断线')).toBeInTheDocument()
-  })
-
-  it('should render data analytics features', () => {
-    render(<ServicesPage />)
-    expect(screen.getByText('服务质量监控：响应时长、客户满意度、问题解决率全面追踪')).toBeInTheDocument()
-    expect(screen.getByText('客户行为洞察：访问路径分析、偏好画像、转化漏斗')).toBeInTheDocument()
-    expect(screen.getByText('经营数据统计：订单趋势、营收分析、库存周转一目了然')).toBeInTheDocument()
-  })
-
-  // ── Icons ──
-
-  it('should render product icons in colored containers', () => {
-    render(<ServicesPage />)
-    // Sparkles appears in both the product icon and the badge, use getAllByTestId
-    const sparklesIcons = screen.getAllByTestId('icon-sparkles')
-    expect(sparklesIcons.length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByTestId('icon-message-square')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-layout-dashboard')).toBeInTheDocument()
-    // Smartphone appears twice (product icon + feature icon), use getAllByTestId
-    const smartphoneIcons = screen.getAllByTestId('icon-smartphone')
-    expect(smartphoneIcons.length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByTestId('icon-pie-chart')).toBeInTheDocument()
-  })
-
-  it('should render feature icons in each product card', () => {
-    render(<ServicesPage />)
-    expect(screen.getByTestId('icon-package-search')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-truck')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-book-open')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-headphones')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-messages-square')).toBeInTheDocument()
-  })
-
-  // ── Section structure ──
-
-  it('should have core AI products as featured large cards', () => {
-    const { container } = render(<ServicesPage />)
-    // Core AI products use rounded-3xl for featured styling
-    const coreCards = container.querySelectorAll('.rounded-3xl')
-    expect(coreCards.length).toBe(2)
-  })
-
-  it('should have supporting products as grid cards', () => {
-    const { container } = render(<ServicesPage />)
-    // Supporting product cards have both rounded-2xl and bg-white classes,
-    // while icon containers have rounded-2xl but no bg-white
-    const supportingCards = container.querySelectorAll('[class*="rounded-2xl"][class*="bg-white"]')
-    expect(supportingCards.length).toBeGreaterThanOrEqual(3)
-    // All supporting cards should have white background
-    for (const card of supportingCards) {
-      expect(card.className).toContain('bg-white')
+    for (const domain of ['工作台', '客户服务', '交易管理', '生产管理', '仓储与物料', '组织管理']) {
+      expect(screen.getByText(domain)).toBeInTheDocument()
+    }
+    for (const item of [
+      '经营看板',
+      '每日简报',
+      '在线接待',
+      '客户列表',
+      '知识库',
+      '售后工单',
+      '订单列表',
+      '财务对账',
+      '生产看板',
+      '智能派单',
+      '加工项管理',
+      '工艺配置',
+      '计件工资',
+      '入库单',
+      '发货单',
+      '余料台账',
+      '省料看板',
+      '员工管理',
+      '岗位权限',
+      '企业基础信息',
+      '商品管理',
+      '通知中心',
+    ]) {
+      expect(screen.getByText(item)).toBeInTheDocument()
     }
   })
 
-  // ── Feature cards count ──
-
-  it('should have feature grids for each product', () => {
-    const { container } = render(<ServicesPage />)
-    // 2 core product feature grids + 1 supporting products grid = 3 total
-    const featureCards = container.querySelectorAll('.grid')
-    expect(featureCards.length).toBe(3)
+  it('renders 能力域明细（抽样断言细节文本）', () => {
+    render(<ServicesPage />)
+    expect(
+      screen.getByText(/只有已发布的卡片会被 AI 检索到/)
+    ).toBeInTheDocument()
+    expect(screen.getByText(/过账自动生成批次号、增加库存并按移动加权平均记成本/)).toBeInTheDocument()
+    expect(screen.getByText(/返工与报废不计件，由服务端排除/)).toBeInTheDocument()
   })
 
-  it('should render multiple feature items across all products', () => {
+  // ── 行业纵深 ──
+
+  it('renders 行业纵深四块', () => {
+    render(<ServicesPage />)
+    expect(screen.getByText('布艺生意里最难的四件事')).toBeInTheDocument()
+    for (const title of ['算料与报价', '多规格 SKU', '工序与计件', '批次与余料']) {
+      expect(screen.getByText(title)).toBeInTheDocument()
+    }
+  })
+
+  // ── 交付与开通 ──
+
+  it('renders 交付与开通（AI 秒级开通 / 模板 / 权限 / 价格口径）', () => {
+    render(<ServicesPage />)
+    expect(screen.getByText('AI 自动甄别，秒级开通')).toBeInTheDocument()
+    expect(screen.getByText('行业模板预置')).toBeInTheDocument()
+    expect(screen.getByText('价格与合同另行沟通')).toBeInTheDocument()
+    expect(screen.getByText(/本页面不公示价格/)).toBeInTheDocument()
+  })
+
+  it('renders 底部 CTA', () => {
+    render(<ServicesPage />)
+    expect(screen.getByText('立即入驻')).toBeInTheDocument()
+    expect(screen.getByText('留言咨询')).toBeInTheDocument()
+  })
+
+  // ── 视觉与真实性 ──
+
+  it('视觉口径：不再使用通用蓝色渐变模板', () => {
     const { container } = render(<ServicesPage />)
-    // 5+4+4+3+3 = 19 feature items
-    const featureItems = container.querySelectorAll('.grid > div')
-    expect(featureItems.length).toBeGreaterThanOrEqual(10)
+    expect(container.innerHTML).not.toContain('from-blue-600')
+    expect(container.innerHTML).not.toContain('to-indigo-800')
+  })
+
+  it('宣传真实性：不出现占位联系方式与浮夸表述', () => {
+    render(<ServicesPage />)
+    expect(screen.queryByText(/400-888-8888/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/contact@migao-ai\.com/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/文一西路000号/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/拼版/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/毫秒级/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/自动学习/)).not.toBeInTheDocument()
   })
 })

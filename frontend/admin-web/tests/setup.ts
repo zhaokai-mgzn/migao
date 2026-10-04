@@ -307,4 +307,21 @@ vi.mock('lucide-react', () => ({
   // issue #5191: 「余料台账」菜单项新增图标（漏登记 ⇒ 任何渲染 Sidebar 的用例当场抛
   // `No "Recycle" export is defined on the "lucide-react" mock`，不是静默）
   Recycle: iconStub('recycle'),
+  // issue #6291: 官网企业站重设计（首页 / 产品服务 / 关于 / 联系 + 页脚）新增图标。
+  // 与 #5191 同因：漏登记 ⇒ 任何渲染这些页面的用例当场抛
+  // `No "<Icon>" export is defined on the "lucide-react" mock`（响亮失败，不是静默）。
+  BadgeCheck: iconStub('badge-check'),
+  Globe: iconStub('globe'),
+  Heart: iconStub('heart'),
+  Landmark: iconStub('landmark'),
+  Lock: iconStub('lock'),
+  MessagesSquare: iconStub('messages-square'),
+  Rocket: iconStub('rocket'),
+  ScanLine: iconStub('scan-line'),
+  Shirt: iconStub('shirt'),
+  Smartphone: iconStub('smartphone'),
+  Sofa: iconStub('sofa'),
+  Sprout: iconStub('sprout'),
+  Target: iconStub('target'),
+  Wallet: iconStub('wallet'),
 }))

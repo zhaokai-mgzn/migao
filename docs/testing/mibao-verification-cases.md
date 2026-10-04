@@ -8354,7 +8354,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（81 case）
+## 前端 UI 域（82 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -9499,6 +9499,22 @@
 ```
 溯源: 2026-10-02 新增（issue #5983，P2·权限·UI）：12 格「页面可进 + 按钮可点 + 账号无写权限」的**实例判据**（页 × 无码/有码两条读数，缺一不可）+ 同批类级元守卫 = tests/unit_ci_workflows/test_list_page_write_button_gate.py（MC-063）。**范围后扩一次（链内同修，铁律 12(b)①）**：`/finance` 的「登记收支」同为该形态（页面守卫 `finance:view`，写面 `finance:create`；issue 把它当「正确范式」是**空真** —— 能进该页的岗位恰好都有写码），同 PR 同范式接码并补判据 5（红证 2）。取号 UI-081（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-080）。 ｜ tags: ui, rbac, button-gate, admin-web
 
+### UI-082. 官网企业站整体重构（issue #6291）：四页文案按系统真实能力重写 + 织物质感视觉 + 清退占位联系方式 🔵
+```
+你: 官网四个页面（首页 / 产品与服务 / 关于我们 / 联系我们）加导航 / 页脚，按当前系统真实能力重写文案与视觉（用户 2026-10-04 逐字：「根据我们当前米高整体系统的能力，重构下我们的主页整体设计，每个页面每个文案都重新做整体设计，要体现出我们的产品优势和亮点」）
+期望: direct_reply
+数据: 判据 1·文案=真实能力：首页渲染六个能力域与真实菜单名（经营看板 / 每日简报 / 智能派单 / 计件工资 / 余料台账 / 省料看板 / 岗位权限 / 商品管理 / 通知中心），菜单名与 frontend/admin-web/src/config/menu.ts 同源（共用 frontend/admin-web/src/components/corporate/capability-map.ts）。执行点 = frontend/admin-web/tests/unit/pages/corporate-home.test.tsx「renders 能力地图」
+数据: 判据 2·旧口径不复活：首页与产品服务页不得出现已清退的夸大表述（自动学习 / 越用越懂 / 越用越精准）与未落地术语（拼版 / 质检 / 毫秒级 / 批量操作库存 / 智能工单流转）。执行点 = corporate-home.test.tsx「宣传真实性：不夸大能力」与 services.test.tsx「能力边界」两条
+数据: 判据 3·占位假值清退（本单新增）：四页与页脚均不得出现 400-888-8888 / contact@migao-ai.com / 文一西路000号 / 地铁5号线。执行点 = corporate-home.test.tsx、corporate-contact.test.tsx、CorporateFooter.test.tsx 三条同名判据
+数据: 判据 4·合规宣称不变（OB-005 口径字面保留）：首页仍渲染 GB/T 47746-2026 区块（标准号 + 4 能力点 + 免责小字），且不含「已通过…认证 / 无缝接管」。执行点 = corporate-home.test.tsx「renders GB/T 47746-2026 遵循国家标准区块」
+数据: 判据 5·视觉口径：四页渲染结果的 innerHTML 不含 from-blue-600 / to-indigo-800（旧的通用蓝色渐变模板）。执行点 = 四个页面测试文件各自的「视觉口径」用例
+数据: 🔴 红证（改前实测，2026-10-04）：把这 6 个源文件（四页 + 导航 + 页脚）替换回 origin/main 版本后跑本用例的 5 个测试文件 ⇒ **28 failed / 58**；恢复后 **58 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run --dir tests/unit/pages corporate-home.test services.test corporate-about.test corporate-contact.test` + `npx vitest run --dir tests/unit/components CorporateFooter`（两条合计 52 + 6 = 58；写法用 `--dir` + 文件名过滤，避免在文档里留下包内相对路径字面量 —— M4 只认仓库根相对路径，包内路径会被判成失效路径）
+前置: 本用例是 [backend-contract] 纯前端页面用例：前置 = `(corporate)` 四页源码与 5 个 vitest 文件同时存在、且被 vitest 正常收集；前置由测试自身持有（页面文件缺失 / 改名 / 选择器被摘即直接红，不表现成「agent 不干活」），不依赖共享夹具 ⇒ agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端公开页面（无 LLM 行为）：由 vitest 验证；页面级视觉另有 Playwright 截图 + 多模态读图一轮（migao-dev-flow §15.7 口径），不进入 agent-eval 冒烟
+```
+真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change, frontend-fix.ui-token
+溯源: 2026-10-04 新增（issue #6291）：官网企业站整体重构 —— 视觉改用产品自身的织物质感 token（frontend/admin-web/tailwind.config.ts 的 primary/accent/neutral + Logo 织金），文案按 config/menu.ts 的六个能力域与两位 AI 的真实工具能力重写；联系页占位假值按用户裁定改为「只保留在线留言」。取号 UI-082（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-081）。 ｜ tags: ui, homepage, corporate, copy-truthfulness, admin-web
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -9528,8 +9544,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：663（活跃 134，跳过 529）
-- tier 分布：smoke 12 / normal 609 / adversarial 32
+- 用例总数：664（活跃 134，跳过 530）
+- tier 分布：smoke 12 / normal 610 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9554,7 +9570,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：81
+- 前端 UI 域：82
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
