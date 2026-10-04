@@ -5601,6 +5601,24 @@ _CASE_MC_081 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-082 [NORMAL] 端点级并发判据 + 日志面判据（issue #6318）：「冲突在 mapper 内以原子写消解」的写入点，其**回执契约**必须由**端点级**判据承担（真 MockMvc + 真 PG：同 runId 6 并发 ⇒ 全 2xx、1 applied + 5 replayed、5xx=0），配注入式红证（原子闸换回朴素 insert ⇒ 端点当场 5×500）与日志面判据（端点 500 必须有具名异常 + method/uri/tenant/type 坐标）；类级元守卫按**现取**端点集合判，未登记即红（源: cases/misc.yml）──
+_CASE_MC_082 = EvalCase(
+    id='MC-082',
+    legacy_id='',
+    title='端点级并发判据 + 日志面判据（issue #6318）：「冲突在 mapper 内以原子写消解」的写入点，其**回执契约**必须由**端点级**判据承担（真 MockMvc + 真 PG：同 runId 6 并发 ⇒ 全 2xx、1 applied + 5 replayed、5xx=0），配注入式红证（原子闸换回朴素 insert ⇒ 端点当场 5×500）与日志面判据（端点 500 必须有具名异常 + method/uri/tenant/type 坐标）；类级元守卫按**现取**端点集合判，未登记即红',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一个盘点单（同一 runId）被用户连点或网络重试并发提交 6 次时，用户应该看到 6 个**可读回执**（1 条生效 + 5 条「本次已记过」），而不是 5 个「服务器内部错误」；而且万一真的 500 了，运维在应用日志里必须能直接看出**是哪个端点、哪个租户、什么异常**，不用翻全量日志猜。'],
+    expectations=[],
+    data_checks=['**病（issue #6318 的形态：服务级绿、端点级红）**：`#6301` 的修复带的是**服务级**真库并发判据（`BatchStocktakeConcurrentRealDbTest`，调服务方法）—— 它证明「服务层不抛异常」；而用户看到的契约在更高一层：异常 → HTTP 状态的映射（`GlobalExceptionHandler`）与回执体（`data.lines[].status`）。两者之间任何一处走偏，服务级判据照旧全绿，端点上仍是 5 个 500（实测端点级读数 `[500,500,200,500,500,500]`）。⇒ 同一个写入点的回执契约必须有**端点级**判据。', '**判据①（端点级主判据）**：`POST /api/admin/batch-stock/stocktake` 同 runId 6 并发（`CyclicBarrier` 把 6 个请求全部压过「查已记批次」这一步 ⇒ TOCTOU 窗口必现）⇒ 6 个响应 HTTP **全部 2xx**（5xx=0）、回执行恰 1 个 `applied` + 5 个 `replayed`、该 run 分录恰 1 行、库存链恰一条 `60.0->58.5`。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/StockBatchStocktakeEndpointRaceRealDbTest.java::concurrentStocktakeCallsGetIdempotentReceiptsNot500`（真 MockMvc + 真 Controller + 真 Service + 真 GlobalExceptionHandler + **真 PG**）。', '**判据②（注入式红证 · 端点级）**：把生产写入路径换回**朴素 insert**（`Proxy` 只替换 `insertStocktakeIfAbsent`，其余原样转发真 mapper）⇒ **同一端点**在同一份并发注入下当场 `5 × 500`（`INTERNAL_ERROR`）—— 逐字读数 `[500, 200, 500, 500, 500, 500]`。这条读数自证判据①的绿**有判别力**（不是「本来就不撞」），也是「把修复撤回 ⇒ 端点级判据会怎么红」的可执行答案。判据 = 同文件 `naiveInsertWiringTurnsTheEndpointIntoFiveHundreds`。', '**判据③（日志面：端点 500 必须查得到）**：端点 500 必须在应用日志里留下 **ERROR 事件**，且事件文本含 `method` / `uri` / `tenant`，throwable 链里有**具名异常**且消息带唯一索引名（`uk_batch_consumption_stocktake`）—— 「红了但查不到」是判据面缺陷。判据 = 同文件 `endpointFiveHundredCarriesANamedExceptionAndCoordinatesInLog`；落码 = `GlobalExceptionHandler#handleException` 改为记 `method/uri/tenant/type/msg` + 异常本体。', '**类级元守卫（判据 1~6）**：`tests/unit_ci_workflows/test_endpoint_receipt_race_guard.py` + 冻结台账 `tests/unit_ci_workflows/endpoint_receipt_race_ledger.json` —— 真值源 = `unique_write_ledger.json` 里「`handling` 指向 mapper 文件、且该文件里有 `ON CONFLICT`」的写入点（**每次运行现取**，现取 4 条）：① **未登记即红**（新增这类写入点必须挂端点级判据或写 deferred+理由）；② **登记即须属实（双向）**（台账给不存在/已改名的闸盖章 ⇒ 红）；③ **端点必须现取存在**（`sites` 里的 `POST /api/...` 端点串必须在控制器里真取得到）；④ **判据必须在场且是端点级**（`文件::符号` 逐字存在，且该文件里有 `MockMvc` 端点驱动标记 —— 服务级判据不能替端点级契约背书）；⑤ `deferred` 必须写理由 + 重启条件、`case_ids` 必须在用例库里存在；⑥ **fail-closed**（现取集合为空 / `sites` 为空 ⇒ 红）。判别力自证：八条坏形态在**内存语料**上各自判红 + 对照语料不红（同文件 `test_injected_bad_corpora_are_named`）。', '**同批重锚（新增用例 / 新增真库判据必须同批登记）**：新增本用例 ⇒ `tests/unit_ci_workflows/case_machine_fail_channel_baseline.json` 的 `backend_contract_scoring_zero` 124 → **125**（同批追加 history 行，`no_channel_total` 仍为 0）；新增 `StockBatchStocktakeEndpointRaceRealDbTest.java` ⇒ 同批登记进 `tests/unit_ci_workflows/test_realdb_failclosed.py` 的 `REALDB_FILES`。', '🔴 **覆盖边界（照实登记）**：① 元守卫的「端点」判定是**形态学**的（只认 `@RequestMapping` 类前缀 + 单字符串 `@Post/Put/Patch/DeleteMapping`；注解数组 / 无参映射不在射程）；② 「判据是端点级」用 `MockMvc` 驱动标记判 —— 判不了「那条判据真的断言了状态码」（行为面由判据自己承担）；③ 元守卫只裁**原子闸族**（mapper 内 `ON CONFLICT`），服务侧 `catch DuplicateKeyException` 那一族不在射程（对外语义各不相同）；④ 端点级判据走 MockMvc 栈（真 DispatcherServlet + 真处理器 + 真库），**没有**真 Tomcat 容器与 JWT/权限过滤器 —— 鉴权面由既有 `StockBatchControllerTest` 覆盖；⑤ 真库原始会话不经过 MyBatis-Spring 的异常翻译 ⇒ 判据③里具名异常是 `PersistenceException`（生产是 `DuplicateKeyException`），判据对**异常族**断言；⑥ `deferred` 的三条（入库标签 / 加工单集合 / 工人端取件令牌）是**已登记的缺口**，各自需要先定回执口径。'],
+    skip_reason='[backend-contract] 端点级判据（真 MockMvc + 真 PG：断言 HTTP 状态码与回执体）+ 元守卫（纯静态，只读 Java 源码 / 台账 JSON / cases yml）：判定层在单测与真库测试，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'idempotency', 'unique-key', 'endpoint-level', 'fail-closed', 'red-proof', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PK-001 [NORMAL] 包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）（源: cases/misc.yml）──
 _CASE_PK_001 = EvalCase(
     id='PK-001',
@@ -12839,6 +12857,7 @@ ALL_CASES = (
     _CASE_MC_077,
     _CASE_MC_079,
     _CASE_MC_081,
+    _CASE_MC_082,
     _CASE_PK_001,
     _CASE_MC_080,
     _CASE_OB_001,

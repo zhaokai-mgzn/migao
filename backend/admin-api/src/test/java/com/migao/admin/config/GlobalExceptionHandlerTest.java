@@ -250,8 +250,8 @@ class GlobalExceptionHandlerTest {
         // Given
         RuntimeException ex = new RuntimeException("未知错误");
 
-        // When
-        ResponseEntity<ApiResponse<Void>> response = handler.handleException(ex);
+        // When（#6318：处理器多了一个可空的 HttpServletRequest —— 非 HTTP 面直接调用时传 null）
+        ResponseEntity<ApiResponse<Void>> response = handler.handleException(ex, null);
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
