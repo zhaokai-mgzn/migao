@@ -8,6 +8,9 @@ vi.mock('next/link', () => ({
 
 import HomePage from '@/app/(corporate)/page'
 import { findColloquialMarkers } from './copy-voice-banlist'
+import { AI_ROLES } from '@/config/ai-roles'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
 describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实能力文案 + 能力陈述型口吻，issue #6291 / #6326）', () => {
   // ── Hero ──
@@ -53,9 +56,9 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     render(<HomePage />)
     expect(screen.getByText(/一位面向经营，一位面向顾客/)).toBeInTheDocument()
     expect(screen.getAllByText('米宝').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('企业智能工作助手').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('企业智能生产管家').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('小布').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('AI 智能客服').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('企业智能客服').length).toBeGreaterThanOrEqual(1)
     // 能力规格要点（都对应真实存在的模块 / 工具）
     expect(
       screen.getByText('经营看板与每日简报：订单量、销售额、环比、待处理事项')
@@ -232,5 +235,31 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
       '直说',
     ])
     expect(findColloquialMarkers('两位 AI 助手，一套经营平台')).toEqual([])
+  })
+
+  // ── 双 AI 定位标签的单一源（issue #6330）──
+
+  it('定位标签单一源：口径钉在 config/ai-roles.ts，三个定位面不得硬编码', () => {
+    // 口径本身钉在这里：改词必须同时改这条断言（用户 2026-10-05 裁定）
+    expect([AI_ROLES.mibao, AI_ROLES.xiaobu]).toEqual(['企业智能生产管家', '企业智能客服'])
+    const LABELS = [AI_ROLES.mibao, AI_ROLES.xiaobu]
+    const scan = (src: string) => LABELS.filter((label) => src.includes(label))
+
+    // 判别力自证：硬编码样本必须被检出、合规样本必须零命中（否则本判据是空断言）
+    expect(scan("  role: '企业智能生产管家',")).toEqual(['企业智能生产管家'])
+    expect(scan("import { AI_ROLES } from '@/config/ai-roles'\n  role: AI_ROLES.mibao,")).toEqual([])
+
+    const files = [
+      'src/app/(corporate)/page.tsx',
+      'src/app/(corporate)/services/page.tsx',
+      'src/app/register/page.tsx',
+    ]
+    const offenders = files.flatMap((rel) =>
+      scan(readFileSync(join(process.cwd(), rel), 'utf-8')).map((label) => `${rel} 硬编码「${label}」`),
+    )
+    expect(
+      offenders,
+      `定位标签必须来自单一源 src/config/ai-roles.ts（改词只改那里）；命中：${offenders.join('；')}`,
+    ).toEqual([])
   })
 })

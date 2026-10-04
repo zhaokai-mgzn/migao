@@ -14,6 +14,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import { CallToAction, PageHero, SectionHeading } from '@/components/corporate/CorporateSection'
+import { AI_ROLES } from '@/config/ai-roles'
 import {
   capabilityDomains,
   industryDepth,
@@ -24,12 +25,12 @@ import {
 export const metadata: Metadata = {
   title: '产品与服务 — 两位 AI 助手与全链路经营平台',
   description:
-    '米高产品全景：顾客侧小布 AI 智能客服，经营侧米宝企业智能工作助手；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖商品、客户、交易、生产、仓储、组织六个能力域。',
+    `米高产品全景：顾客侧小布${AI_ROLES.xiaobu}，经营侧米宝${AI_ROLES.mibao}；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖商品、客户、交易、生产、仓储、组织六个能力域。`,
 }
 
 const coreProducts = [
   {
-    title: '小布 · AI 智能客服',
+    title: `小布 · ${AI_ROLES.xiaobu}`,
     icon: MessageSquare,
     tagline: '顾客侧：从规格咨询到下单、物流查询与售后受理',
     features: [
@@ -44,7 +45,7 @@ const coreProducts = [
       '不做：改价、取消订单、退款、承诺优惠折扣、报库存数量。涉及价格与赔偿只解释规则、收集材料，落到工单由商家确认。',
   },
   {
-    title: '米宝 · 企业智能工作助手',
+    title: `米宝 · ${AI_ROLES.mibao}`,
     icon: Bot,
     tagline: '经营侧：以自然语言查询账目、订单与进度',
     features: [

@@ -35,8 +35,8 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
 
   it('renders 两位 AI 的产品卡', () => {
     render(<ServicesPage />)
-    expect(screen.getByText('小布 · AI 智能客服')).toBeInTheDocument()
-    expect(screen.getByText('米宝 · 企业智能工作助手')).toBeInTheDocument()
+    expect(screen.getByText('小布 · 企业智能客服')).toBeInTheDocument()
+    expect(screen.getByText('米宝 · 企业智能生产管家')).toBeInTheDocument()
     expect(screen.getByText('顾客侧：从规格咨询到下单、物流查询与售后受理')).toBeInTheDocument()
     expect(screen.getByText('经营侧：以自然语言查询账目、订单与进度')).toBeInTheDocument()
   })
