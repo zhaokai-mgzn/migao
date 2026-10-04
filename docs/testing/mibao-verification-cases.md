@@ -3046,7 +3046,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（83 case）
+## 杂项域（84 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4269,7 +4269,26 @@
 ```
 溯源: 2026-10-04 新增（issue #6294 的**代码侧假绿**半边；运维半边＝远端磁盘回收/扩容**不在本单**，故 PR **不写 Closes**）。取号 **MC-080**：`python3 scripts/next_case_id.py MC` ⇒ main 现取最大 079 ⇒ 取 080（无历史空档、无在飞撞号）。落码 = ① 新库 `deploy/scripts/swas_deploy_running_tag.sh`（只读运行面探测 + 三态退出码）+ `swas-deploy-ci.sh` 顶部 `--probe-running-tag` 分发；② 远端执行体 `deploy/swas/deploy.sh` 新增 `--probe-running-tag` 分支（在 `flock` 之前，与 `running_tag_of()` 同形态）；③ 三条部署腿各接一条 `Assert running tag == target (skip 不得冒充已部署，issue #6294)` step（`if: always() && steps.sync.outputs.skip == 'true'`）；该 step 的 AK/SK 由 **job env 一处声明**（Danger Scan 把「旧位置删除 + 新位置新增」认作**移动**）⇒ 本 PR 的 danger-scan 为 **0 blocker**（本地复算：`DANGER_BASE=origin/main DANGER_TRUSTED_ACTOR=1 python3 .github/danger_scan.py`）；④ 判据 tests/unit_ci_workflows/test_deploy_skip_is_not_success.py（13 条：静态锚点 + 执行式行为（桩 `aliyun`，真跑分发段）+ 判别力自证）+ 台账 tests/unit_ci_workflows/swas_command_content_legs_ledger.json 新增 running-tag-probe 一条。⚠️ 未固化（照实登记）：① `skip=false` 路径的运行 tag 不自证（见 data_checks 末条）；② 三条腿各多一条 step（判定本体只有一份：共享库；YAML 面无法跨文件复用 step —— GitHub 的 `uses:` 不能调本仓内的 step，`workflow_call` 形态实测会因「新增 secrets 引用」被判 danger-scan blocker）⇒ 由元守卫「带 `Skip if already built` 的腿未接线即红 + 三腿形状必须逐字同源 + 唯一实现不许进 YAML」代替「只有一份」；③ 真云读数（阿里云真的回什么）本地不可得。 ｜ tags: ci, deploy, watchdog, ledger, red-proof, fail-closed
 
-## 商家入驻域（5 case）
+### MC-083. 开租「必需初始数据清单」⇄ 入驻链路播种调用的类级元守卫（issue #6295）：清单里每条必须真的种、链路里每个种子协作者必须已登记（未登记即红）、后置条件校验必须接线在且逐项检查 enforced 项、豁免台账只许缩短、默认值字面量单一来源；判别力在内存语料上自证 🔵
+```
+你: 入驻链路漏种了某一项必需初始数据（例如商品分类）时，不应该等到客户第一次建商品撞 422 才被人发现 —— 作业面必须当场红，而不是靠下一次人工走查。
+你: 以后有人给开租链路再加一项必需初始数据（客户标签 / 工艺 / 岗位…）时，也必须先登记清单，否则同样当场红。
+数据: **病（issue #6295 的形态）**：开租链路种了行业生产种子模板、**唯独漏了商品分类** ⇒ 新租户 categories 表为空 ⇒ 开箱首建商品 422「分类ID不能为空」。这不是一处笔误，是**一族**：「开租必需种什么」只活在人的记忆里 ⇒ 下一次新增域还会再漏一次，且不会有任何东西变红。
+数据: **判据 1（清单里的项，链路里必须真的种）**：OnboardingInitialData.REQUIRED 每条的 seedAnchor 必须逐字出现在 RegistrationService 的**代码**里（剥注释与字符串后判定 ⇒ 「注释里写一句调用」不算）—— 删掉某个播种调用（= #6295 的原始形态）⇒ 具名报出该 key。判据 = tests/unit_ci_workflows/test_onboarding_required_seed_guard.py::test_required_seed_anchors_are_present_in_onboarding。
+数据: **判据 2（未登记即红）**：链路里出现的每个 *Seed*Service 协作者接收者都必须有清单条目认领 ⇒ 新增一个种子服务却忘了登记 ⇒ 具名报出该接收者。判据 = 同文件 test_no_unregistered_seed_collaborators_in_onboarding。
+数据: **判据 3（后置条件校验接线在）**：assertRequiredInitialData( 必须在链路里被调用，且清单中**每个 enforced 项**的键常量必须出现在**该方法体内**（不是「全文提过」）⇒ 删掉校验调用 / 删掉某一项的检查行 ⇒ 具名报出。判据 = 同文件 test_onboarding_postcondition_guard_is_wired。
+数据: **判据 4（豁免台账只许缩短 + 双向对齐）**：非 enforced（尽力而为）项必须在 tests/unit_ci_workflows/onboarding_required_seed_ledger.json 的 best_effort 里写明 reason + reopen_condition；台账里不许有清单中不存在的键；条数不得超过 exemptions_frozen_count（**现取**比对，不是快照断言）。判据 = 同文件 test_exemption_ledger_is_double_sided_and_only_shrinks。
+数据: **判据 5（默认值单一来源）**：DEFAULT_PRODUCT_CATEGORY_NAME 的字面量在整个 admin-api 主源码里**恰出现一次**（只在定义处）⇒ 别处再抄一份字面量（「散落的魔法常量」）⇒ 具名报出文件。判据 = 同文件 test_default_category_name_has_a_single_source。
+数据: **判据 6（判别力自证）**：八种坏形态在**内存语料**上各自判红（注释掉调用 / 摘掉播种调用 / 新增未登记种子协作者 / 摘掉后置条件校验 / 删掉某一 enforced 项的检查行 / 豁免没写理由 / 台账幽灵条目 / 超冻结上限 / 重复字面量），并有一条**对照读数**（只改注释 ⇒ 五条判据全不红）。判据 = 同文件 test_guard_has_discriminating_power_on_mutated_corpus。
+数据: **同批重锚（新增用例 / 新增真库判据必须同批登记）**：新增本用例 ⇒ tests/unit_ci_workflows/case_machine_fail_channel_baseline.json 的 backend_contract_scoring_zero 同批追加 history 行（no_channel_total 仍为 0）；新增 NewTenantOnboardingCategoryRealDbTest.java ⇒ 同批登记进 tests/unit_ci_workflows/test_realdb_failclosed.py 的 REALDB_FILES。
+数据: 🔴 **覆盖边界（照实登记）**：① 判的是**接线锚在不在**（结构面）—— 「那段接线在真库上跑得对不对」由实例判据 backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java 承担（真 PG：入驻 ⇒ 分类恰 1 行 ⇒ 首建商品成功；注入摘掉种子 ⇒ 逐字 422）；② 判据 2 的扫描面 = RegistrationService 一个文件里的 `*Seed*Service` 接收者，命名约定外的播种协作者**不在射程**（覆盖边界写在 data_checks 与守卫 docstring）；③ 本守卫不跑被它引用的 Dev 测试（不嵌套 pytest 跑 Java），否则「未登记即红」会退化成全量套件再跑一遍。
+前置: 本用例是 [backend-contract] 纯静态元守卫用例：前置 = ① backend/admin-api/src/main/java/com/migao/admin/service/OnboardingInitialData.java（必需初始数据清单真值源）与同目录的 RegistrationService.java（入驻链路）在场；② tests/unit_ci_workflows/onboarding_required_seed_ledger.json 在场且含豁免冻结上限 `exemptions_frozen_count`。前置由判据自身持有：文件缺失 / 清单解析出 0 条 / 台账缺冻结上限 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它
+跳过: [backend-contract] 纯静态判据（零 LLM、零真库、零网络、零时钟；只读 3 份 Java/JSON 语料 + admin-api 主源码字面量）由 tests/unit_ci_workflows/test_onboarding_required_seed_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-10-04 新增（issue #6295，P2·新租户开箱缺口）。取号 MC-083：main 上 misc 域为 MC-001~MC-082 ⇒ 取 MC-083。本单 = 类级元守卫（清单 ⇄ 链路双向对账，6 条判据 + 判别力自证）+ 豁免台账（onboarding_required_seed_ledger.json，只许缩短）；实例判据与红证见用例 OB-006。⚠️ 未固化（照实登记）：见 data_checks 末条覆盖边界三条。 ｜ tags: backend-contract, onboarding, required-initial-data, class-level-guard, fail-closed, red-proof
+
+## 商家入驻域（6 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
 ```
@@ -4335,6 +4354,25 @@
 ```
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
 溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787）。2026-09-20（issue #4837 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition（本用例 3 组 user_inputs 实际是**同一页面**的三组断言、非多轮会话，此前被判 CASE-TRUST-NO-PRECONDITION-ASSERTION）——断言面（user_inputs / expectations / data_checks / traces）原样未动、无放宽 ｜ tags: homepage, compliance, gb47746
+
+### OB-006. 开租即种默认商品分类 —— 新租户开箱首建商品不再 422「分类ID不能为空」 🔵
+```
+你: 商家入驻通过（POST /api/auth/register 或超管 PUT /api/super-admin/registrations/{id}/approve）后，管理员第一次建商品不应该先撞 422；他应该开箱就有一个可选的商品分类。
+你: 同一个租户若被重复开通 / 重试，不应该种出两个同名默认分类。
+期望: direct_reply
+数据: **病（issue #6295 的形态，已在云测试环境复现）**：入驻链路（RegistrationService.approveApplication）种了行业生产种子模板，**唯独漏了商品分类** ⇒ 新租户 categories 表 0 行；而 POST /api/admin/products 在非草稿状态要求 categoryId 非空（ProductService.validateRequiredForStatus）⇒ 开箱第一次建商品必撞 422「分类ID不能为空」（实测 tenant 25：catsBefore: []）。
+数据: **判据 1（真库主判据）**：空库上真跑入驻链路 ⇒ 该租户 categories 恰 **1** 行、名字 = 单一来源常量 OnboardingInitialData.DEFAULT_PRODUCT_CATEGORY_NAME、tenant_id = 新租户；随后用该分类 id 走真 ProductService.createProduct（status=on_sale）⇒ **首建商品成功**、products 落 1 行且 category_id = 该分类 id。判据 = backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java::onboardingSeedsDefaultCategoryAndFirstProductSucceeds。
+数据: **判据 2（注入式红证 A · 双向）**：把种子那步摘掉（seedDefaultCategory spy 成 no-op）+ 同时摘掉后置条件探针 ⇒ 入驻「成功」但分类表 0 行 ⇒ 界面唯一能提交的 categoryId 是空 ⇒ 首建商品**逐字**报 422「分类ID不能为空」（读数为 VALIDATION_ERROR / 422）。这条读数自证判据 1 的绿**有判别力**。判据 = 同文件 neuteredSeedWithoutPostconditionGuardReproduces422。
+数据: **判据 3（后置条件元守卫的判别力 · 注入红证 B）**：只把种子摘掉、保留后置条件校验 ⇒ 入驻**当场 fail-closed**（ONBOARDING_REQUIRED_DATA_MISSING）—— 「漏种」从静默变成开租当场红，不许产出「开箱不可用」的租户。判据 = 同文件 neuteredSeedWithPostconditionGuardFailsOnboarding + backend/admin-api/src/test/java/com/migao/admin/service/RegistrationServiceTest.java::failsClosedWhenRequiredInitialDataMissing。
+数据: **判据 4（幂等 · 真库行数）**：入驻已种下 1 行后再对同一租户调播种 ⇒ 返回 0、分类行数仍为 1（重复入驻 / 重试不种出重复分类）。判据 = 同文件 seedingIsIdempotentOnRealDatabase。
+数据: **判据 5（调用点具名断言 · mock 面）**：approveApplication 必须对新租户 id 调 seedDefaultCategory（删掉那一行即红）—— 同 #4430 的教训（调用点没有具名断言 ⇒ 删掉调用 CI 全绿）。判据 = RegistrationServiceTest::successSeedsDefaultProductCategory。
+数据: **类级固化（本用例的元守卫）**：开租「必需初始数据清单」⇄ 入驻链路的播种调用双向对账（未登记即红 / 后置条件接线在 / 豁免台账只许缩短 / 默认值单一来源）—— 判据 = tests/unit_ci_workflows/test_onboarding_required_seed_guard.py（用例 MC-083）。
+数据: 🔴 **未固化 / 边界（照实登记）**：① **既有租户不自动补种**（本单选择「登记式」而非迁移回填，理由与重启条件见 PR body）⇒ tenant 25 这类存量租户仍走自助路径（建商品页「管理分类 → 添加分类」，需 product:category 权限）；② 真库判据用的是**真 PG + 真 mapper + 真 Service**，但**没有**真 HTTP 栈（端点层是否 422 由 ProductServiceTest 与端点既有判据覆盖）；③ 默认分类名是**产品口径**（「窗帘成品」，可编辑），改它不需要动代码之外的东西，但换名会改本用例与判据的常量来源（单一来源 = OnboardingInitialData.DEFAULT_PRODUCT_CATEGORY_NAME）。
+前置: 本用例是 [backend-contract] 纯后端契约用例：前置 = 真 PG 二进制（CI 由 admin-api-test job 的「Assert PostgreSQL binaries exist」保证，缺失即 job 失败）+ bootstrap 终态 schema（backend/admin-api/src/main/resources/db/init/schema.sql）；前置由测试自身持有（PgCluster.startOrAbort 缺 PG 时 CI 判红 / 本机显式 skip），不依赖共享夹具与远端环境 ⇒ 不会表现成「agent 不干活」；agent-eval 栈不跑它
+跳过: [backend-contract] 由 admin-api 单测（真库 NewTenantOnboardingCategoryRealDbTest + mock RegistrationServiceTest / ProductCategorySeedServiceTest）+ 静态元守卫（test_onboarding_required_seed_guard.py）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: registration-approval.required-initial-data, registration-approval.approve-side-effects
+溯源: 2026-10-04 新增（issue #6295，P2·新租户开箱缺口）。取号 OB-006：main 上 onboarding 域为 OB-001~OB-005 ⇒ 取 OB-006。本单 = ① 开租即种默认商品分类（具名/可编辑/幂等，默认值单一来源 OnboardingInitialData.DEFAULT_PRODUCT_CATEGORY_NAME）+ ② 入驻后置条件元守卫（缺必需初始数据 ⇒ 开租 fail-closed）+ ③ 真库实例判据（含双向注入红证：摘掉种子 ⇒ 逐字 422）+ ④ 类级元守卫（清单 ⇄ 链路双向对账，用例 MC-083）。⚠️ 未固化（照实登记）：见 data_checks 末条三条边界（既有租户不自动补种 / 无真 HTTP 栈 / 默认名属产品口径）。 ｜ tags: onboarding, required-initial-data, default-category, idempotent, red-proof, backend-contract
 
 ## 领域本体域（4 case）
 
@@ -9633,8 +9671,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：670（活跃 134，跳过 536）
-- tier 分布：smoke 12 / normal 616 / adversarial 32
+- 用例总数：672（活跃 134，跳过 538）
+- tier 分布：smoke 12 / normal 618 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9649,8 +9687,8 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：7
-- 杂项域：83
-- 商家入驻域：5
+- 杂项域：84
+- 商家入驻域：6
 - 领域本体域：4
 - 订单域：62
 - 加工项域：27
@@ -9763,6 +9801,7 @@
 - MC-082: 端点级并发判据 + 日志面判据（issue #6318）：「冲突在 mapper 内以原子写消解」的写入点，其**回执契约**必须由**端点级**判据承担（真 MockMvc + 真 PG：同 runId 6 并发 ⇒ 全 2xx、1 applied + 5 replayed、5xx=0），配注入式红证（原子闸换回朴素 insert ⇒ 端点当场 5×500）与日志面判据（端点 500 必须有具名异常 + method/uri/tenant/type 坐标）；类级元守卫按**现取**端点集合判，未登记即红
 - PK-001: 包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）
 - MC-080: 「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（判定本体 = 单份共享库；AK/SK 引用在 job env 只声明一次），`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）
+- MC-083: 开租「必需初始数据清单」⇄ 入驻链路播种调用的类级元守卫（issue #6295）：清单里每条必须真的种、链路里每个种子协作者必须已登记（未登记即红）、后置条件校验必须接线在且逐项检查 enforced 项、豁免台账只许缩短、默认值字面量单一来源；判别力在内存语料上自证
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

@@ -3170,3 +3170,43 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-083
+    legacy_id: ""
+    title: "开租「必需初始数据清单」⇄ 入驻链路播种调用的类级元守卫（issue #6295）：清单里每条必须真的种、链路里每个种子协作者必须已登记（未登记即红）、后置条件校验必须接线在且逐项检查 enforced 项、豁免台账只许缩短、默认值字面量单一来源；判别力在内存语料上自证"
+    domains:
+      - misc
+      - onboarding
+    tier: normal
+    tags:
+      - backend-contract
+      - onboarding
+      - required-initial-data
+      - class-level-guard
+      - fail-closed
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "入驻链路漏种了某一项必需初始数据（例如商品分类）时，不应该等到客户第一次建商品撞 422 才被人发现 —— 作业面必须当场红，而不是靠下一次人工走查。"
+      - "以后有人给开租链路再加一项必需初始数据（客户标签 / 工艺 / 岗位…）时，也必须先登记清单，否则同样当场红。"
+    expectations: []
+    data_checks:
+      - "**病（issue #6295 的形态）**：开租链路种了行业生产种子模板、**唯独漏了商品分类** ⇒ 新租户 categories 表为空 ⇒ 开箱首建商品 422「分类ID不能为空」。这不是一处笔误，是**一族**：「开租必需种什么」只活在人的记忆里 ⇒ 下一次新增域还会再漏一次，且不会有任何东西变红。"
+      - "**判据 1（清单里的项，链路里必须真的种）**：OnboardingInitialData.REQUIRED 每条的 seedAnchor 必须逐字出现在 RegistrationService 的**代码**里（剥注释与字符串后判定 ⇒ 「注释里写一句调用」不算）—— 删掉某个播种调用（= #6295 的原始形态）⇒ 具名报出该 key。判据 = tests/unit_ci_workflows/test_onboarding_required_seed_guard.py::test_required_seed_anchors_are_present_in_onboarding。"
+      - "**判据 2（未登记即红）**：链路里出现的每个 *Seed*Service 协作者接收者都必须有清单条目认领 ⇒ 新增一个种子服务却忘了登记 ⇒ 具名报出该接收者。判据 = 同文件 test_no_unregistered_seed_collaborators_in_onboarding。"
+      - "**判据 3（后置条件校验接线在）**：assertRequiredInitialData( 必须在链路里被调用，且清单中**每个 enforced 项**的键常量必须出现在**该方法体内**（不是「全文提过」）⇒ 删掉校验调用 / 删掉某一项的检查行 ⇒ 具名报出。判据 = 同文件 test_onboarding_postcondition_guard_is_wired。"
+      - "**判据 4（豁免台账只许缩短 + 双向对齐）**：非 enforced（尽力而为）项必须在 tests/unit_ci_workflows/onboarding_required_seed_ledger.json 的 best_effort 里写明 reason + reopen_condition；台账里不许有清单中不存在的键；条数不得超过 exemptions_frozen_count（**现取**比对，不是快照断言）。判据 = 同文件 test_exemption_ledger_is_double_sided_and_only_shrinks。"
+      - "**判据 5（默认值单一来源）**：DEFAULT_PRODUCT_CATEGORY_NAME 的字面量在整个 admin-api 主源码里**恰出现一次**（只在定义处）⇒ 别处再抄一份字面量（「散落的魔法常量」）⇒ 具名报出文件。判据 = 同文件 test_default_category_name_has_a_single_source。"
+      - "**判据 6（判别力自证）**：八种坏形态在**内存语料**上各自判红（注释掉调用 / 摘掉播种调用 / 新增未登记种子协作者 / 摘掉后置条件校验 / 删掉某一 enforced 项的检查行 / 豁免没写理由 / 台账幽灵条目 / 超冻结上限 / 重复字面量），并有一条**对照读数**（只改注释 ⇒ 五条判据全不红）。判据 = 同文件 test_guard_has_discriminating_power_on_mutated_corpus。"
+      - "**同批重锚（新增用例 / 新增真库判据必须同批登记）**：新增本用例 ⇒ tests/unit_ci_workflows/case_machine_fail_channel_baseline.json 的 backend_contract_scoring_zero 同批追加 history 行（no_channel_total 仍为 0）；新增 NewTenantOnboardingCategoryRealDbTest.java ⇒ 同批登记进 tests/unit_ci_workflows/test_realdb_failclosed.py 的 REALDB_FILES。"
+      - "🔴 **覆盖边界（照实登记）**：① 判的是**接线锚在不在**（结构面）—— 「那段接线在真库上跑得对不对」由实例判据 backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java 承担（真 PG：入驻 ⇒ 分类恰 1 行 ⇒ 首建商品成功；注入摘掉种子 ⇒ 逐字 422）；② 判据 2 的扫描面 = RegistrationService 一个文件里的 `*Seed*Service` 接收者，命名约定外的播种协作者**不在射程**（覆盖边界写在 data_checks 与守卫 docstring）；③ 本守卫不跑被它引用的 Dev 测试（不嵌套 pytest 跑 Java），否则「未登记即红」会退化成全量套件再跑一遍。"
+    precondition: "本用例是 [backend-contract] 纯静态元守卫用例：前置 = ① backend/admin-api/src/main/java/com/migao/admin/service/OnboardingInitialData.java（必需初始数据清单真值源）与同目录的 RegistrationService.java（入驻链路）在场；② tests/unit_ci_workflows/onboarding_required_seed_ledger.json 在场且含豁免冻结上限 `exemptions_frozen_count`。前置由判据自身持有：文件缺失 / 清单解析出 0 条 / 台账缺冻结上限 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它"
+    skip_reason: "[backend-contract] 纯静态判据（零 LLM、零真库、零网络、零时钟；只读 3 份 Java/JSON 语料 + admin-api 主源码字面量）由 tests/unit_ci_workflows/test_onboarding_required_seed_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-04 新增（issue #6295，P2·新租户开箱缺口）。取号 MC-083：main 上 misc 域为 MC-001~MC-082 ⇒ 取 MC-083。本单 = 类级元守卫（清单 ⇄ 链路双向对账，6 条判据 + 判别力自证）+ 豁免台账（onboarding_required_seed_ledger.json，只许缩短）；实例判据与红证见用例 OB-006。⚠️ 未固化（照实登记）：见 data_checks 末条覆盖边界三条。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_onboarding_required_seed_guard.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -1,0 +1,10 @@
+{
+  "_note": "开租必需初始数据清单（真值源 = backend/admin-api/src/main/java/com/migao/admin/service/OnboardingInitialData.java 的 REQUIRED）里**非 enforced**（尽力而为）项的豁免台账。判据 = tests/unit_ci_workflows/test_onboarding_required_seed_guard.py（用例 MC-083）。\n\n口径：\n- enforced=true 的项**不**进本表（它们由入驻后置条件 + 真库判据硬判）；\n- 每个非 enforced 项必须在此写明 reason（为什么可以合法不种）+ reopen_condition（什么条件下该项要升为 enforced）；\n- 本表**只许缩短**：条目数不得超过 exemptions_frozen_count（现取比对，不是快照断言）；\n- 表里出现清单中不存在的键 ⇒ 红（防「消红式」清空/改名）。",
+  "best_effort": {
+    "production_template": {
+      "reason": "行业生产种子模板按租户 industry 取模板：平台没有该行业预置模板时 ProductionSeedTemplateService.applyTemplate 返回 applied=false + 可读 reason（issue #4361 的显式业务分支），开租照常放行。因此「没种」里有一部分是**合法**的，不能当硬约束。",
+      "reopen_condition": "出现「某行业没有预置模板、但该行业租户仍必须能建单」的裁定（或该行业模板补齐）⇒ 把该行业项升为 enforced，并同批补该行业的必种数据判据。"
+    }
+  },
+  "exemptions_frozen_count": 1
+}
