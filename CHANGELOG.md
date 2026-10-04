@@ -1,5 +1,24 @@
 ## [Unreleased]
 
+### 官网公开页 `/contact` 的正文重新进入初始 HTML（SEO / 无 JS 可见面）（2026-10-04，issue #6307）
+
+- 以前：`/contact` 初始 HTML 里**没有页面正文** —— 只有 layout 层（`<title>` / 导航 / 页脚）加一个
+  「加载中...」全屏骨架（生产实测 22768 字节；`给我们留言` / `在线留言` / `常见问题` 的**字面量与 `\uXXXX`
+  转义都是 0**）。根因：该页首行声明 `'use client'`，而根 layout 的客户端 `AuthProvider` 在 SSR 阶段
+  只渲染 loading 骨架 ⇒ **客户端组件页面整段不参与 SSR**，正文进不了初始 HTML。
+  受影响的只有 **SEO 与无 JS 环境**：爬虫读到空壳、禁用 JS 时只看到骨架；**浏览器里四页都完全正常**
+  （用户可见面不受影响，所以不会有任何异常提醒你）。这是**既有缺陷**，不是 #6291 官网重构引入的回归。
+- 现在：`/contact` 退回**服务端组件**，正文进入初始 HTML（本地 `next build` + `next start` 实测
+  22768 → **34681** 字节，`给我们留言` 命中 **0 → 1**；`/`、`/services`、`/about` 三页读数不变）；
+  表单与全部交互态抽成同目录客户端子组件（`frontend/admin-web/src/app/(corporate)/contact/ContactForm.tsx`），
+  **文案、结构、校验、提交成功反馈与 FAQ 逐字未变**（用户可见行为零变化）。
+- 固化：`(corporate)/**/page.tsx` **不得声明 `'use client'`** —— 类级源码判据
+  `frontend/admin-web/tests/unit/pages/corporate-pages-server-component-guard.test.ts`。
+- 边界（如实登记）：**未改** `AuthProvider` / `AuthGuard` / 根 layout 的鉴权门控（全局鉴权面，
+  含 issue #2757 的登录死循环教训）⇒ **无 JS 环境在骨架之后的可见正文仍受门控影响**；
+  「初始 HTML 必须含正文」目前**没有**端到端常驻判据（那条 `next build` + `curl` 是手动、一次性的）；
+  元守卫只裁 `page.tsx`，`(corporate)/**/layout.tsx` 若声明 `'use client'` 不在其射程内。
+
 ### 工人端 H5 / 一体机页在云测试环境不再整页白屏：`.mjs` 以 JS MIME 发出，且三条发布自检腿各补一条 MIME 判据（2026-10-04，issue #6293）
 
 - 以前：`https://app.migaozn.com/w/src/*.mjs` 被 nginx 以 **`application/octet-stream`** 发出
