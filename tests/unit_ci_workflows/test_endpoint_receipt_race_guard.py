@@ -133,6 +133,9 @@ def problems(ledger: dict, gated: dict, endpoints: set[str], read, case_ids: set
                    "扫描口径已坏或唯一真值源被搬走（拒绝静默绿）")
     if not sites:
         out.append("fail-closed: 台账 `sites` 为空 ⇒ 「已有端点级判据」的登记面失效（拒绝静默绿）")
+    if not case_ids:
+        out.append("fail-closed: `.github/cases/*.yml` 里一条用例 id 都扫不到 ⇒ 用例面扫描口径已坏"
+                   "（否则「case_ids 未登记」这条判据会被静默关掉）")
 
     # 判据 1：未登记即红
     for site in sorted(gated):
@@ -298,8 +301,10 @@ def test_injected_bad_corpora_are_named():
     got = _pr(case_ids={"XX-001"})
     assert any("case_ids 未在用例库登记" in p for p in got), got
 
-    # 坏形态 ⑥：fail-closed（现取空 / 台账 sites 空）
+    # 坏形态 ⑥：fail-closed（现取空 / 台账 sites 空 / 用例库扫描空）
     got = _pr(gated={})
     assert any("fail-closed" in p and "集合为**空**" in p for p in got), got
     got = _pr(ledger={"sites": {}, "deferred": {}})
     assert any("fail-closed" in p and "`sites` 为空" in p for p in got), got
+    got = _pr(case_ids=set())
+    assert any("用例面扫描口径已坏" in p for p in got), got
