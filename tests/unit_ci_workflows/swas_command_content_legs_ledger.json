@@ -44,6 +44,15 @@
       "bootstrap_mode": "fetch-by-ref（codeload `tar.gz/$SCRIPT_SHA` ⇒ `deploy/swas/c-end-h5-publish-remote.sh`）",
       "byte_guard_since": "#6095（本单之前已修）",
       "ref_kind": "**两个 ref**：产物 ref（`h5-dist` 孤儿单提交的 sha）≠ 执行体 ref（含远端脚本的源码 commit）—— 混用即 #6095 第五层。"
+    },
+    {
+      "id": "running-tag-probe",
+      "path": "deploy/scripts/swas_deploy_running_tag.sh",
+      "what": "「跳过部署」的**运行面自证**（issue #6294）：`Skip if already built` 判「已部署」只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账侧断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿。本腿只读取回远端**在跑 tag** 并与目标 tag 比较（不一致 ⇒ 具名判红；探不到 ⇒ fail-closed 退 3）。",
+      "command_content_source": "$REMOTE_PROBE（`running_tag_remote_cmd()` 组装的**只读**脚本：`docker compose ps -q` + `docker inspect .Config.Image`）",
+      "bootstrap_mode": "**内联极小引导**（不取远端执行体：探测必须在部署 exec 体之外独立成立；命令体固定约 400 字节，与远端脚本大小**无关**）",
+      "byte_guard_since": "#6294（本包新增，与 #6124 的既有闸同口径）",
+      "ref_kind": "**无 ref**：探测对象是**运行面**（容器真身），不是任何 git 引用 —— 这正是它比「run 结论」强的地方。"
     }
   ],
   "coverage_boundary": [

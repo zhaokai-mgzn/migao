@@ -5601,6 +5601,24 @@ _CASE_PK_001 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-080 [NORMAL] 「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（共享库只读探测运行面，`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）（源: cases/misc.yml）──
+_CASE_MC_080 = EvalCase(
+    id='MC-080',
+    legacy_id='',
+    title='「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（共享库只读探测运行面，`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 `Skip if already built (schedule reconcile)` 判「已部署」（镜像在 ACR / 同 sha 的 run 结论 success）、`Deploy to SWAS` 与 `Assert server-side build` 被整段跳过时，必须有一条**部署后**的机械判据把「**运行 tag == 目标 tag**」验出来：不一致 ⇒ **具名判红**（服务 / 期望 tag / 实测 tag / 可复制命令），而不是让 run 报绿；探不到就要 fail-closed，不许当成「一致」。'],
+    expectations=['direct_reply'],
+    data_checks=['**病（现取读数）**：issue #6294 现场（2026-10-04）—— `admin-web` 近 40 次 run 里两条 `success`（run `37156277078` / `37131394391`）**都是**「`Skip if already built (schedule reconcile)` 成功 + `Deploy to SWAS` **skipped**」，而 SWAS 实例上在跑的容器是 `admin-web:sha-877ac15`（40 小时前）、`.last-good-tag` = `sha-6838a05`、main HEAD = `9d82e2e60` ⇒ **环境一次都没换过而台账全绿**。复算：`gh run view <id> --json jobs` / `gh run list --workflow=deploy-frontend.yml`。', '**运行面读数（唯一一份实现）**：`deploy/scripts/swas_deploy_running_tag.sh`（**库**，被 `deploy/scripts/swas-deploy-ci.sh` 的 `--probe-running-tag` 分发段 source；`$@` 只在主脚本解包）经**同一条** SWAS `RunCommand` 通道**只读**取回在跑 tag（远端执行体 `deploy/swas/deploy.sh` 的 `--probe-running-tag` 分支，在远端 `flock` **之前** ⇒ 不被在跑的部署挡住；不 build / 不 pull / 不 up）。判据 = tests/unit_ci_workflows/test_deploy_skip_is_not_success.py::test_running_tag_probe_exists_and_is_a_single_shared_implementation / ::test_probe_runs_read_only_remote_command', '**注入式红证（本单核心）**：期望 `sha-abc1234`、实测 `sha-877ac15`（= 现场读数）⇒ 退出码 **1**，且输出必须含 **服务 / 期望 tag / 实测 tag / 可复制复算命令** 四件 + `::error::`。判据 = 同文件 ::test_diverging_running_tag_is_red_and_named（反向对照 ::test_matching_running_tag_passes 退 0 且不报警）', '**fail-closed 三态三分**：探不到（云调用失败 / 输出无 `RUNNING_TAG=` / 未知服务键）⇒ 退出码 **3**（与「确认不一致」的 1 分开，也与「一致」的 0 分开），文案必须写「探不到」。判据 = 同文件 ::test_unreadable_running_tag_is_fail_closed / ::test_cloud_api_failure_is_fail_closed_not_green / ::test_unknown_service_key_is_rejected；空读数（容器没起）**属不一致**（退 1，必须显式写「实测 tag：（空）」）= ::test_empty_running_tag_counts_as_divergence', "**接线 + 类级元守卫（铁律 8：同源修）**：三条腿（`deploy-frontend.yml` / `deploy-admin-api.yml` / `deploy-ai-agent-service.yml`）都必须把 `Assert running tag == target (skip 不得冒充已部署，issue #6294)` 接在 `Deploy to SWAS (测试环境)` **之后**、只在 `steps.sync.outputs.skip == 'true'` 时跑，且**调用同一份**共享脚本（禁止三份复制；期望 tag 经 env 取 `steps.tag.outputs.IMAGE_TAG`）。**未接线即红**：判据从仓库现取「带 `Skip if already built` 步的腿」⇒ 新加同形腿漏接 ⇒ 当场红。判据 = 同文件 ::test_every_skip_capable_leg_is_wired_to_the_probe / ::test_shared_script_is_referenced_by_exactly_one_path", '**同批落进既有的两条类级台账（未登记即红）**：本库也发 `RunCommand --command-content` ⇒ 必须登记在 tests/unit_ci_workflows/swas_command_content_legs_ledger.json（含字节前置断言 `${…:-16384}` + `-ge` 比较 + 官方出处 URL，且断言位置在云调用**之前**）—— 判据 = tests/unit_ci_workflows/test_swas_command_content_limit.py；三条腿新增跑 `deploy-*.yml` 的 step 后，`run` 正文仍须 ≤ 13250 字符（超限 ⇒ 整份 workflow invalid）—— 判据 = 同文件 ::test_workflow_run_bodies_stay_within_the_github_limit。', '**⚠️ 未覆盖（照实登记）**：`skip=false`（真跑了完整部署）那条路径本判据**不**自证运行 tag —— 它由 `deploy.sh` 自己的健康检查与 `EFFECTIVE_TAG=` 读数承担（`deploy.sh` 的 #4852「不许往回走」闸门在 target 是在跑 tag 的祖先时会跳过**该服务**并打 `DOWNGRADE_SKIPPED=`，那条路径的运行 tag 允许 ≠ target ⇒ 属既有语义、本单不扩）。⚠️ 桩的诚实标注：`aliyun` 是桩 ⇒ 本判据证明的是「脚本在给定输入下会做什么」，**不是**「阿里云真的会回这个读数」（后者只有真跑 CI 才能验证）。'],
+    skip_reason='[misc/ci] 纯离线判据（零 LLM、零真库、零网络：读仓内文件 + 在 tmp_path 自造沙箱、桩 `aliyun`）：由 tests/unit_ci_workflows/test_deploy_skip_is_not_success.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'watchdog', 'ledger', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -12749,6 +12767,7 @@ ALL_CASES = (
     _CASE_MC_077,
     _CASE_MC_079,
     _CASE_PK_001,
+    _CASE_MC_080,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

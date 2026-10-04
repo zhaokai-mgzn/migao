@@ -81,6 +81,25 @@ case "$ALLOW_DOWNGRADE" in
   *) ALLOW_DOWNGRADE=0 ;;
 esac
 
+# ── 「跳过部署」的运行面自证模式（issue #6294）──────────────────────────────────
+# 用法：`swas-deploy-ci.sh --probe-running-tag <INSTANCE> <REGION> <AK> <SK> <EXPECTED_TAG> <SVC…>`
+# **只读**：取远端各服务**在跑 tag**（`deploy.sh --probe-running-tag`）并与期望 tag 比较；
+# 一致 ⇒ 0 / 不一致 ⇒ 1（具名判红）/ 探不到 ⇒ 3（fail-closed）。这是判据 1 的「部署后机械判据」。
+# 分发**必须早于** CLI 安装与主流程（本模式自己安装 CLI；主流程是一次完整部署，探测绝不能触发它）。
+# ⚠️ 形态是「库 + 分发」：库（`swas_deploy_running_tag.sh`）**只定义函数**，`$@` 只在**这里**解包
+#    —— `source` 进来的脚本里 `$@` 仍是主脚本的参数（本包第一版读错过，pytest 当场红）。
+if [ "${1:-}" = "--probe-running-tag" ]; then
+  shift
+  if [ -r deploy/scripts/swas_deploy_running_tag.sh ]; then
+    # shellcheck disable=SC1091
+    . deploy/scripts/swas_deploy_running_tag.sh
+  else
+    echo "::error::运行面自证库 deploy/scripts/swas_deploy_running_tag.sh 不在检出里 ⇒ 拒绝在「探不到」下判绿（issue #6294）"
+    exit 3
+  fi
+  running_tag_probe_main "$@"
+fi
+
 # ── 硬超时参数（issue #4767 ①）────────────────────────────────────────────────
 # DEPLOY_TIMEOUT_SECONDS：**一次「发起 SWAS 调用 + 轮询结果」的总墙钟上界**（不是次数上界）。
 # ⚠️ **C′ 下这个预算必须显著变大**（issue #5814）：构建就发生在远端这次 RunCommand 调用**之内**
