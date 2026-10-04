@@ -4210,3 +4210,43 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # OR-062（issue #6299，P1·库存并发）：并发确认收款超卖 ⇒ 原子条件扣减 + 受影响行数判定
+  # ==========================================================================
+  - id: OR-062
+    legacy_id: ""
+    title: "并发确认收款不得超卖：扣库存改原子条件更新（WHERE … AND COALESCE(stock,0) >= #{quantity}）+ 受影响行数判定 ⇒ 恰一个赢家、库存不为负、台账链相接（issue #6299）"
+    domains:
+      - order
+      - inventory
+      - backend
+    tier: normal
+    tags:
+      - order
+      - inventory
+      - concurrency
+      - oversell
+      - backend-contract
+      - realdb
+    truths_ref: []
+    user_inputs:
+      - "库存 10 米的 SKU、两张各 8 米的订单**并发**确认收款（同一 microtask 门控同时 PUT /api/admin/orders/{id}/payment）"
+    expectations: []
+    data_checks:
+      - "**病（真库并发实测读数）**：并发下两单都 200、库存被钳到 0（应扣 16 米只扣 10）⇒ 超卖 6 米且无任何 4xx；顺序执行则第二单 422「库存不足：需要 8 米，当前仅剩 2.0 米」。生产读数 = acceptance/2026-10-04/replay-postdeploy/race/probe-write-raw.json::cases.W4（statuses=[200,200]、stockBefore=10.0、stockAfter=0.0）；顺序对照 = acceptance/2026-10-04/race-sweep/out/control-seq-oversell.json。根因 = backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java 的 `deductStock` 曾是 `SET stock = GREATEST(COALESCE(stock,0) - #{quantity}, 0) WHERE id = #{skuId}` —— **无下限谓词 + 静默钳 0**。"
+      - "**判据 1（恰一个赢家）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/OrderConfirmPaymentStockRaceRealDbTest.java 的 `concurrentConfirmPaymentCannotOversell`（3 轮）：成功数 == 1、落败方必须是 **422**（不是 200 静默成功、不是 500）。执行点同文件。"
+      - "**判据 2（不得超卖）**：`stock_after == 初始 − 成功单数量` 且 `stock >= 0`（独立算式，不取被测读面）。**红证（修前实测，main @ de614623d 侧同源装置）**：成功数=2、库存 10.0→0.0。"
+      - "**判据 3（台账链式相接）**：`stock_ledger_entries` 本 SKU 的 order 行按 id 升序，每行 `before_qty` == 上一行 `after_qty`，首行 before == 初始库存、末行 after == 当前库存。**红证（修前实测）**：两行 before 都是 10.0（同基）⇒ 当场红。"
+      - "**正对照（护栏不误杀）**：同文件 `serialConfirmPaymentStillSucceeds` —— 库存 10 米 / 单张 8 米串行确认收款必须成功、库存 10→2、台账恰 1 行。"
+      - "**类级元守卫（铁律 8）**：backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java 的 `everyStockDeductionHasLowerBoundPredicate` —— 现取 mapper 目录全部「`stock = … - …`」写面：必须含下限谓词、不得含 `GREATEST(`、且调用方必须有受影响行数判定；核心对象缺席即红（扫描器失明自证）。"
+    skip_reason: "[backend-contract] 纯后端真库并发判据 + mapper 形态契约（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）"
+    merge_log: "2026-10-04 新增（issue #6299，P1·库存并发超卖）。取号 = 现取最大号 + 1（OR-062；`scripts/next_case_id.py` 因 PR #6304 diff 超 20000 行读不到而判 `3 无法判定`，按仓内口径手取最大号 +1）。**红→绿（注入式双向对照）**：注入 = 把 `deductStock` 退回 `GREATEST(COALESCE(stock,0) - #{quantity}, 0) WHERE id = #{skuId} AND tenant_id = #{tenantId}`（无下限谓词 + 钳 0）；注入前 `成功数=1 落败=[422] 库存=10.0→2.0 台账=[#1{before=10.0, after=2.0}]` ⇒ 注入后 `成功数=2 落败=[] 库存=10.0→0.0 台账=[#1{before=10.0,after=2.0}, #2{before=8.0,after=0.0}]`（与本 issue 生产探针 W4 的 `statuses=[200,200] / 10.0→0.0` 逐字同形）+ 元守卫 2 条判红（`GREATEST` / 无下限谓词）；`GREATEST` 钳 0 一并删除（它把「扣不动」静默变成「扣到 0」，正是超卖的掩盖物）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderConfirmPaymentStockRaceRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderStockLedgerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

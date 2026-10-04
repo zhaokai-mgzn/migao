@@ -161,6 +161,20 @@ REALDB_FILES: dict[str, str] = {
     # `INSERT … ON CONFLICT (tenant_id, client_request_id) DO NOTHING` 的原子性由 DDL 的 UNIQUE 约束提供；
     # ② `stock_batches.batch_no NOT NULL` + `uk_stock_batches_no` 是 DB 对象（mock 里不存在）。
     _SVC + "InboundPostConcurrentRealDbTest.java": "direct",
+    # issue #6300：两张**同 SKU** 草稿单并发过账 ⇒ 台账 `before_qty/after_qty` 必须首尾相接（禁止同基）。
+    # 为什么必须真 PG：① 缺陷是「先 `SELECT stock` 取快照 → 再原子加 → 用**陈旧快照**记账」，而
+    # 「两条并发语句各自 `RETURNING` 到的前后值是否真的相接」只存在于**行锁 + 同一语句内取值**这条
+    # 生产路径上（mock 面的 `receiveStock` 由 stub 返回、链永远是造的）；② 净增量在缺陷下**仍然正确**
+    # ⇒ 只看库存查不出来，唯一暴露面是台账链的**落库读数**（`stock_ledger_entries` 逐行）；
+    # ③ `@InterceptorIgnore(tenantLine)` + 显式 `tenant_id` 谓词是「CTE 里的 UPDATE 能否过拦截器」的
+    # **真栈行为**（MyBatis-Plus 3.5.16 对 CTE 里的 UPDATE 抛 ClassCastException），mock 面完全不可见。
+    _SVC + "InboundPostLedgerChainRaceRealDbTest.java": "direct",
+    # issue #6299：库存 10 米 / 两单各 8 米**并发**确认收款 ⇒ 恰一个赢家 + 不超卖 + 台账链相接。
+    # 为什么必须真 PG：超卖的机制是「无条件 / 无下限谓词 `UPDATE` 被两个事务各改一次」，而
+    # 「`COALESCE(stock,0) >= #{quantity}` 的下限谓词在**并发**下真的只放一个请求过去」靠的是
+    # **行锁 + 谓词重估**（后到者按新版本行重估 ⇒ 影响行数 0）—— mock 的 `deductStock` 恒返回 stub
+    # 值 ⇒ 结构上不可见、判据会恒绿；且「影响行数 0 ⇒ 422 且库存没被静默钳 0」也是落库读数。
+    _SVC + "OrderConfirmPaymentStockRaceRealDbTest.java": "direct",
     _SVC + "OrderNoSkuIdentityRealDbTest.java": "direct",
     _SVC + "OrderUrgencyRealDbTest.java": "direct",
     _SVC + "PooledDispatchRealDbTest.java": "direct",

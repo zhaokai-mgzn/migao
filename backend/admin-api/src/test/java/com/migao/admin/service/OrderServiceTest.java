@@ -1738,7 +1738,7 @@ class OrderServiceTest {
         assertThatThrownBy(() -> orderService.confirmPayment("order-001"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("库存不足");
-        verify(productSkuMapper, never()).deductStock(anyLong(), any());
+        verify(productSkuMapper, never()).deductStock(anyLong(), any(), any());
         verify(productMapper, never()).increaseSales(anyString(), any(), any(BigDecimal.class));
     }
 
@@ -1759,7 +1759,7 @@ class OrderServiceTest {
         orderService.confirmPayment("order-001");
 
         // then: 正常扣减 SKU 库存 + 商品销量
-        verify(productSkuMapper).deductStock(100L, BigDecimal.valueOf(2));
+        verify(productSkuMapper).deductStock(eq(100L), eq(BigDecimal.valueOf(2)), any());
         verify(productMapper).increaseSales(eq("prod-001"), eq(BigDecimal.valueOf(2)), any(BigDecimal.class));
     }
 
@@ -2494,7 +2494,7 @@ class OrderServiceTest {
 
         orderService.confirmPayment("order-001");
 
-        verify(productSkuMapper).deductStock(COMBO_SKU_ID, BigDecimal.valueOf(2));
+        verify(productSkuMapper).deductStock(eq(COMBO_SKU_ID), eq(BigDecimal.valueOf(2)), any());
         verify(productSkuMapper).increaseSalesCount(COMBO_SKU_ID, BigDecimal.valueOf(2));
     }
 

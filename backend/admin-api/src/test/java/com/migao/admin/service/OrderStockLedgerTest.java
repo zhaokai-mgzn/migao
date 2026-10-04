@@ -51,6 +51,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -133,14 +134,21 @@ class OrderStockLedgerTest {
                 .thenAnswer(inv -> copyOf(skuStore.get(inv.<Long>getArgument(0))));
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenAnswer(inv -> skuStore.values().stream().map(OrderStockLedgerTest::copyOf).toList());
-        when(productSkuMapper.deductStock(anyLong(), any())).thenAnswer(inv -> {
+        // 与 ProductSkuMapper.deductStock 的 SQL 同口径（issue #6299）：带下限谓词的条件更新，
+        // 且**同时返回变更前/变更后**（真库那条 SQL 的 RETURNING）—— 扣不动 ⇒ null
+        when(productSkuMapper.deductStock(anyLong(), any(), any())).thenAnswer(inv -> {
             ProductSku stored = skuStore.get(inv.<Long>getArgument(0));
-            if (stored == null) {
-                return 0;
+            BigDecimal qty = inv.getArgument(1);
+            BigDecimal before = stockOf(stored);
+            if (stored == null || before.compareTo(qty) < 0) {
+                return null;
             }
-            // 与 ProductSkuMapper.deductStock 的 SQL 同口径：GREATEST(COALESCE(stock,0)-qty, 0)
-            stored.setStock(stockOf(stored).subtract(inv.<BigDecimal>getArgument(1)).max(BigDecimal.ZERO));
-            return 1;
+            stored.setStock(before.subtract(qty));
+            Map<String, Object> change = new LinkedHashMap<>();
+            change.put("skuCode", stored.getSkuCode());
+            change.put("beforeQuantity", before);
+            change.put("afterQuantity", stored.getStock());
+            return change;
         });
         when(productSkuMapper.restoreStock(anyLong(), any())).thenAnswer(inv -> {
             ProductSku stored = skuStore.get(inv.<Long>getArgument(0));
@@ -208,18 +216,19 @@ class OrderStockLedgerTest {
     }
 
     @Test
-    @DisplayName("扣减未真正改库（update 命中 0 行）—— 不落行：只记真实发生的变更")
+    @DisplayName("扣减拿 0 行（条件不满 / 行不存在）⇒ 返回 null ⇒ 显式失败，不落假台账行")
     void deductWithoutActualChangeRecordsNothing() {
-        // given: SKU 行不存在/更新命中 0 行（主键漂移后的陈旧 skuId）→ 库存实际没变
+        // given: 扣减拿 0 行（= 条件不满 / 行不存在）⇒ 新形态返回 null ⇒ 订单侧显式失败
         skuStore.put(SKU_ID, sku(BigDecimal.valueOf(30)));
-        when(productSkuMapper.deductStock(anyLong(), any())).thenReturn(0);
+        when(productSkuMapper.deductStock(anyLong(), any(), any())).thenReturn(null);
 
-        // when
-        orderService.confirmPayment(ORDER_ID);
-
-        // then: 请求了扣减但库存没变 ⇒ 台账不能记这条「未发生的变更」
+        // when & then: issue #6299 —— 扣不动**不再静默成功**（改前 `GREATEST(…,0)` 会钳到 0
+        // 并照常落一行台账「未发生的变更」）；显式失败 + 台账不落行
+        assertThatThrownBy(() -> orderService.confirmPayment(ORDER_ID))
+                .isInstanceOf(com.migao.admin.exception.BusinessException.class)
+                .hasMessageContaining("库存不足");
         assertThat(skuStore.get(SKU_ID).getStock()).isEqualTo(BigDecimal.valueOf(30));
-        assertThat(ledger).isEmpty();
+        assertThat(ledger).as("没真正改库就不许出台账行（假变更会把链算错）").isEmpty();
     }
 
     @Test

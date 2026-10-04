@@ -257,6 +257,10 @@ class OrderStockSkuKeyFamilyTest {
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(storedSku()));
         when(productSkuMapper.selectById(SKU_ID)).thenReturn(storedSku());
         when(orderMapper.update(any(), any())).thenReturn(1);
+        // 扣减是原子条件更新，并**同时返回变更前/变更后**（真库那条 SQL 的 RETURNING，issue #6299）
+        when(productSkuMapper.deductStock(eq(SKU_ID), eq(BigDecimal.valueOf(2)), any())).thenReturn(
+                java.util.Map.of("skuCode", "SKU-MB-28",
+                        "beforeQuantity", BigDecimal.valueOf(10), "afterQuantity", BigDecimal.valueOf(8)));
         mockCreatedOrder("confirmed");
 
         // when: 下单成功 → 确认支付
@@ -266,10 +270,12 @@ class OrderStockSkuKeyFamilyTest {
 
         // then: 效果层证据三件套 —— 库存真的减了、销量真的涨了、台账真的落了行
         // （修前这三处一起静默跳过：订单成交但库存不动/销量不涨/台账无行 ⇒ 红）
-        verify(productSkuMapper).deductStock(SKU_ID, BigDecimal.valueOf(2));
+        verify(productSkuMapper).deductStock(eq(SKU_ID), eq(BigDecimal.valueOf(2)), any());
         verify(productSkuMapper).increaseSalesCount(SKU_ID, BigDecimal.valueOf(2));
-        verify(stockLedgerService).recordChangesAgainstSnapshot(
-                eq(1L), anyMap(), eq(StockLedger.REASON_ORDER), eq("ORD-20260918-4090"), anyString());
+        // 台账读数改为来自原子语句的返回值（issue #6300）：before=10、after=8（storedSku() 的库存 10 扣 2）
+        verify(stockLedgerService).record(eq(1L), eq(PRODUCT_ID), eq(SKU_ID), any(),
+                eq(new BigDecimal("10")), eq(new BigDecimal("8")),
+                eq(StockLedger.REASON_ORDER), eq("ORD-20260918-4090"), anyString());
         verify(productMapper).increaseSales(eq(PRODUCT_ID), eq(BigDecimal.valueOf(2)), any(BigDecimal.class));
     }
 
@@ -287,8 +293,11 @@ class OrderStockSkuKeyFamilyTest {
 
         verify(productSkuMapper).restoreStock(SKU_ID, BigDecimal.valueOf(2));
         verify(productSkuMapper).decreaseSalesCount(SKU_ID, BigDecimal.valueOf(2));
-        verify(stockLedgerService).recordChangesAgainstSnapshot(
-                eq(1L), anyMap(), eq(StockLedger.REASON_ORDER), eq("ORD-20260918-4090"), anyString());
+        // 回补腿的 before 由「回补后库存 − 回补量」推出（与扣减行 after 同源同值）
+        // 回补腿的 before 由「回补后库存 − 回补量」推出（与扣减行 after 同源同值）：10 → 8 → 10
+        verify(stockLedgerService).record(eq(1L), eq(PRODUCT_ID), eq(SKU_ID), any(),
+                eq(new BigDecimal("8")), eq(new BigDecimal("10")),
+                eq(StockLedger.REASON_ORDER), eq("ORD-20260918-4090"), anyString());
     }
 
     // ======================== 2. 声明了规格却定位不到 ⇒ 显式失败（fail-closed） ========================
@@ -323,7 +332,7 @@ class OrderStockSkuKeyFamilyTest {
         assertThatThrownBy(() -> orderService.confirmPayment(ORDER_ID))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("SKU");
-        verify(productSkuMapper, never()).deductStock(anyLong(), any());
+        verify(productSkuMapper, never()).deductStock(anyLong(), any(), any());
     }
 
     // ======================== 3. 负例（R2）：无 SKU 身份的合法订单不得被拒 ========================
@@ -349,7 +358,7 @@ class OrderStockSkuKeyFamilyTest {
         orderService.confirmPayment(ORDER_ID);
 
         // 合法跳过：不猜 SKU（不扣减、不记 SKU 销量、不落台账行）——这是设计，不是缺陷
-        verify(productSkuMapper, never()).deductStock(anyLong(), any());
+        verify(productSkuMapper, never()).deductStock(anyLong(), any(), any());
         verify(productSkuMapper, never()).increaseSalesCount(anyLong(), any());
         verify(stockLedgerService, never()).recordChangesAgainstSnapshot(
                 anyLong(), anyMap(), anyString(), anyString(), anyString());

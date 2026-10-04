@@ -4714,6 +4714,45 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ColumnTextLengthTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductSkuCodeLengthAdmissionTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductTextColumnAdmissionMetaGuardTest.java"
+
+  # ==========================================================================
+  # PR-123（issue #6300，P2·台账并发）：并发过账同 SKU ⇒ 台账 before/after 必须同源（原子语句）
+  # ==========================================================================
+  - id: PR-123
+    legacy_id: ""
+    title: "并发过账同一 SKU 的入库单：台账 before/after 必须来自同一条原子语句（RETURNING）⇒ 链式相接、禁止同基（issue #6300）"
+    domains:
+      - product
+      - inventory
+      - backend
+    tier: normal
+    tags:
+      - inventory
+      - inbound
+      - ledger
+      - concurrency
+      - backend-contract
+      - realdb
+    truths_ref:
+      - inbound-order-flow.draft-then-post
+    user_inputs:
+      - "两张**同一 SKU** 的草稿入库单（10 米 / 15 米）**同时**过账（同一 microtask 门控同时 PATCH /api/admin/inbound-orders/{id} {action:post}）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**病（真库并发实测读数）**：两行台账出现**同一个 before**（同基）、before/after 链断裂；净增量仍对 ⇒ **只看库存查不出来**。生产读数 = acceptance/2026-10-04/race-sweep/out/probe-write-raw.json::cases.W3（两行 [{delta=10, before=65.0, after=75.0}, {delta=15, before=65.0, after=80.0}]、chainBad=[{at:2246, prevAfter=75.0, curBefore=65.0}]、sameBaseConcurrentRead=true）与 W7（100.0→115.0 / 100.0→110.0）；顺序对照 = probe-redproof-raw.json::RP3（台账 1 行、链正常）。根因 = backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java 的 `post` 里 `beforeQty = sku.getStock()` **快照读** → `receiveStock` 原子自增 → `record(beforeQty, afterQty)` 用的是陈旧值。"
+      - "**判据 1（净增量，正对照）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/InboundPostLedgerChainRaceRealDbTest.java 的 `concurrentPostKeepsLedgerChainConnected`（3 轮）：两单都过账成功、库存净增量 == 两单数量之和（25）。**这条在修前也是绿的** —— 证明装置有判别力（链断裂不是「什么都判不出来」）。"
+      - "**判据 2（链式相接）**：本 SKU 的 inbound 行按 id 升序，每行 before == 上一行 after，首行 before == 初始库存，末行 after == 当前库存，行数 == 2。**红证（修前实测）**：`#2{before=50.0, after=65.0}` 与 `#3{before=50.0, after=60.0}`（两行同基）⇒ 当场红。修后：`#2{before=50.0, after=65.0}` / `#3{before=65.0, after=75.0}`。"
+      - "**判据 3（行内自洽）**：每行 `delta == after - before`。"
+      - "**正对照（护栏不误杀）**：同文件 `serialPostStillSucceeds` —— 单张草稿单串行过账仍成功、台账 1 行、链成立。"
+      - "**类级元守卫（铁律 8）**：backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java 的 `ledgerBeforeAfterComeFromAtomicStatement` —— 现取 OrderService / InboundOrderService 里落台账的库存变更方法：每次 `record(…)` 的实参不得读自快照（`.getStock()`），且所在方法体必须有原子取值锚（`RETURNING` 或逐字 `atomic-ledger: true`）。"
+    skip_reason: "[backend-contract] 入库过账台账链的**真库并发**判据 + Mapper SQL 形态契约（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）"
+    merge_log: "2026-10-04 新增（issue #6300，P2·台账并发同基）。取号 = 现取最大号 + 1（`scripts/next_case_id.py` 因 PR #6304 diff 超 20000 行读不到而判 `3 无法判定`，按仓内口径手取）。⚠️ **跨 refs 撞号（rebase 时实测）**：本单原取 **PR-122**，与已合并的 #6302（PR #6310，`ProductSkuCodeLengthAdmissionTest`）**同占 PR-122** —— 按仓内裁定「PR 号小 / 先开者保留」（#6310 < #6313，且它已在 main）⇒ 本单让号为 **PR-123**（`git grep` 复核 origin/main 与本工作区均无 PR-123 占用）。**红→绿（注入式双向对照）**：注入 = 把 `post` 的台账读数退回 `beforeQty = StockQuantity.orZero(sku.getStock())` / `afterQty = beforeQty.add(quantity)`（快照读 + 陈旧 before/after）；注入前 `#2{before=50.0,after=60.0} / #3{before=60.0,after=75.0}`（链接）⇒ 注入后 `#2{before=50.0,after=60.0} / #3{before=50.0,after=65.0}`（**两行同基**、`assertChain` 判 red，与本 issue 生产探针 W3 的 `[{before=65.0,after=75.0},{before=65.0,after=80.0}]` 同形）。修法 = `receiveStock` 改 `@Select` + CTE + `RETURNING beforeQuantity/afterQuantity`（配 `@InterceptorIgnore(tenantLine)` + 显式 `tenant_id` 谓词 —— MyBatis-Plus 3.5.16 的多租户拦截器进 `processSelect` 后对 CTE 里的 UPDATE 抛 `ClassCastException: ParenthesedUpdate cannot be cast to ParenthesedSelect`，实测撞过），台账读数与改动**同源**。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/InboundPostLedgerChainRaceRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/ProductSkuMapperTest.java"
       ci:
         - pr-check.yml
       verifies: []
