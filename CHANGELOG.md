@@ -1,5 +1,22 @@
 ## [Unreleased]
 
+### 官网四页文案改为「能力陈述型」书面语：去掉 AI 口语（打理 / 管住 / 接住 / 兜底 / 一句话 等）（2026-10-05，issue #6326）
+
+- 以前：四页文案信息本身真实，但通篇口语化 —— 「两个 AI，把一间窗帘店从询价管到发货」
+  「谁都不会答出一个店里不存在的数」「做不到的事 AI 会直说」「把生意交给 AI 之前，先把边界交代清楚」，
+  一眼可辨 AI 口吻。用户 2026-10-05 逐字反馈「措辞和用词都太AI化了 …… 至少要显得很专业，而不是一眼AI口语」。
+- 现在：主标题短且名词化、正文用名词短语 + 可验证事实、不用第一人称抒情、CTA 收回「立即入驻 / 留言咨询」一类
+  （对齐 B 端官网写法）。**事实口径一字未动**：能力边界（改价须带改前价并经确认卡、小布不改价 / 不取消订单 /
+  不退款 / 不报库存数量）、GB/T 47746-2026 宣称与免责小字、六个能力域 22 项菜单名全部原样保留。
+- 固化（类级）：口语词表单一源 `frontend/admin-web/tests/unit/pages/copy-voice-banlist.ts`，
+  四页各自的「文案口吻」用例扫渲染文本、命中即具名报出（哪个词、在哪一页）；另有**判别力自证**用例
+  （词表必须命中已知口语样本），让「空断言」进不来。用例 UI-082 增判据 6；未固化项：词表只裁「口语词」，
+  不裁「句式」（对举 / 设问 / 破折号金句仍靠人工评审）。
+- 范围：`frontend/admin-web/src/app/(corporate)/**` 四页 + `components/corporate/capability-map.ts` +
+  `components/corporate/CorporateFooter.tsx` + SEO / OG metadata。**未新增路由，零后端改动。**
+- 判据：`npx vitest run tests/unit/pages/corporate-home.test.tsx tests/unit/pages/services.test.tsx tests/unit/pages/corporate-about.test.tsx tests/unit/pages/corporate-contact.test.tsx tests/unit/components/CorporateFooter.test.tsx`
+  ⇒ **65 passed / 65**（改前 58 条 + 本单新增 5 条口吻判据 + 1 条判别力自证，另有既有断言随文案同步）。
+
 ### 新租户开箱即可建商品：入驻时自动种一个默认商品分类「窗帘成品」（2026-10-04，issue #6295）
 
 - 以前：通过入驻流程新开的租户 `categories` 表是**空的**，而建商品（非草稿）要求分类非空

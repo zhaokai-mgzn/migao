@@ -69,7 +69,7 @@ export default function CorporateFooter() {
             <ul className="space-y-2.5 text-sm text-neutral-400">
               <li>提交入驻申请并完成手机验证</li>
               <li>AI 自动核验企业信息与合规性</li>
-              <li>通过后即刻开通管理后台与两位 AI</li>
+              <li>通过后即刻开通管理后台与两位 AI 助手</li>
             </ul>
             <Link
               href="/register"

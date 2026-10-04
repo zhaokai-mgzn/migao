@@ -9626,7 +9626,7 @@
 ```
 溯源: 2026-10-02 新增（issue #5983，P2·权限·UI）：12 格「页面可进 + 按钮可点 + 账号无写权限」的**实例判据**（页 × 无码/有码两条读数，缺一不可）+ 同批类级元守卫 = tests/unit_ci_workflows/test_list_page_write_button_gate.py（MC-063）。**范围后扩一次（链内同修，铁律 12(b)①）**：`/finance` 的「登记收支」同为该形态（页面守卫 `finance:view`，写面 `finance:create`；issue 把它当「正确范式」是**空真** —— 能进该页的岗位恰好都有写码），同 PR 同范式接码并补判据 5（红证 2）。取号 UI-081（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-080）。 ｜ tags: ui, rbac, button-gate, admin-web
 
-### UI-082. 官网企业站整体重构（issue #6291）：四页文案按系统真实能力重写 + 织物质感视觉 + 清退占位联系方式 🔵
+### UI-082. 官网企业站整体重构（issue #6291）：四页文案按系统真实能力重写 + 织物质感视觉 + 清退占位联系方式；文案口吻改为能力陈述型书面语（issue #6326） 🔵
 ```
 你: 官网四个页面（首页 / 产品与服务 / 关于我们 / 联系我们）加导航 / 页脚，按当前系统真实能力重写文案与视觉（用户 2026-10-04 逐字：「根据我们当前米高整体系统的能力，重构下我们的主页整体设计，每个页面每个文案都重新做整体设计，要体现出我们的产品优势和亮点」）
 期望: direct_reply
@@ -9635,12 +9635,13 @@
 数据: 判据 3·占位假值清退（本单新增）：四页与页脚均不得出现 400-888-8888 / contact@migao-ai.com / 文一西路000号 / 地铁5号线。执行点 = corporate-home.test.tsx、corporate-contact.test.tsx、CorporateFooter.test.tsx 三条同名判据
 数据: 判据 4·合规宣称不变（OB-005 口径字面保留）：首页仍渲染 GB/T 47746-2026 区块（标准号 + 4 能力点 + 免责小字），且不含「已通过…认证 / 无缝接管」。执行点 = corporate-home.test.tsx「renders GB/T 47746-2026 遵循国家标准区块」
 数据: 判据 5·视觉口径：四页渲染结果的 innerHTML 不含 from-blue-600 / to-indigo-800（旧的通用蓝色渐变模板）。执行点 = 四个页面测试文件各自的「视觉口径」用例
+数据: 判据 6·文案口吻（issue #6326 新增）：四页渲染文本不得出现 AI 口语词表（打理 / 管住 / 接住 / 折腾 / 摊开 / 跑完 / 直说 / 兜底 / 一句话 / 问一句 / 谁都不会 / 把时间还给 / 说了算 / 答一遍 / 先说说）。词表单一源 = frontend/admin-web/tests/unit/pages/copy-voice-banlist.ts。执行点 = 四个页面测试文件各自的「文案口吻」用例 + corporate-home.test.tsx 的「判别力自证」（词表必须命中已知口语样本，防空断言）
 数据: 🔴 红证（改前实测，2026-10-04）：把这 6 个源文件（四页 + 导航 + 页脚）替换回 origin/main 版本后跑本用例的 5 个测试文件 ⇒ **28 failed / 58**；恢复后 **58 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run --dir tests/unit/pages corporate-home.test services.test corporate-about.test corporate-contact.test` + `npx vitest run --dir tests/unit/components CorporateFooter`（两条合计 52 + 6 = 58；写法用 `--dir` + 文件名过滤，避免在文档里留下包内相对路径字面量 —— M4 只认仓库根相对路径，包内路径会被判成失效路径）
 前置: 本用例是 [backend-contract] 纯前端页面用例：前置 = `(corporate)` 四页源码与 5 个 vitest 文件同时存在、且被 vitest 正常收集；前置由测试自身持有（页面文件缺失 / 改名 / 选择器被摘即直接红，不表现成「agent 不干活」），不依赖共享夹具 ⇒ agent-eval 栈不跑它
 跳过: [backend-contract] 纯前端公开页面（无 LLM 行为）：由 vitest 验证；页面级视觉另有 Playwright 截图 + 多模态读图一轮（migao-dev-flow §15.7 口径），不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change, frontend-fix.ui-token
-溯源: 2026-10-04 新增（issue #6291）：官网企业站整体重构 —— 视觉改用产品自身的织物质感 token（frontend/admin-web/tailwind.config.ts 的 primary/accent/neutral + Logo 织金），文案按 config/menu.ts 的六个能力域与两位 AI 的真实工具能力重写；联系页占位假值按用户裁定改为「只保留在线留言」。取号 UI-082（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-081）。 ｜ tags: ui, homepage, corporate, copy-truthfulness, admin-web
+溯源: 2026-10-04 新增（issue #6291）：官网企业站整体重构 —— 视觉改用产品自身的织物质感 token（frontend/admin-web/tailwind.config.ts 的 primary/accent/neutral + Logo 织金），文案按 config/menu.ts 的六个能力域与两位 AI 的真实工具能力重写；联系页占位假值按用户裁定改为「只保留在线留言」。取号 UI-082（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-081）。2026-10-05 补（issue #6326）：四页文案由口语化改为「能力陈述型」书面语（对齐 B 端官网：短标题 + 名词化正文 + 可验证事实 + 克制的 CTA），事实口径一字未动，新增判据 6（AI 口语词表反回退，含判别力自证）。 ｜ tags: ui, homepage, corporate, copy-truthfulness, admin-web
 
 ## 跨切面工具域（2 case）
 

@@ -10,8 +10,9 @@ vi.mock('next/link', () => ({
 }))
 
 import ContactPage from '@/app/(corporate)/contact/page'
+import { findColloquialMarkers } from './copy-voice-banlist'
 
-describe('CorporateContactPage（官网联系页 v4：只保留在线留言 + 常见问题，issue #6291）', () => {
+describe('CorporateContactPage（官网联系页 v4：只保留在线留言 + 常见问题，issue #6291 / #6326）', () => {
   it('renders page header', () => {
     render(<ContactPage />)
     expect(screen.getByRole('heading', { level: 1, name: '联系我们' })).toBeInTheDocument()
@@ -25,15 +26,15 @@ describe('CorporateContactPage（官网联系页 v4：只保留在线留言 + �
 
   it('renders 留言引导（四类常见诉求）', () => {
     render(<ContactPage />)
-    expect(screen.getByText('想看产品演示')).toBeInTheDocument()
-    expect(screen.getByText('想聊 AI 客服边界')).toBeInTheDocument()
-    expect(screen.getByText('想评估落地成本')).toBeInTheDocument()
-    expect(screen.getByText('想了解合作与代理')).toBeInTheDocument()
+    expect(screen.getByText('了解产品演示')).toBeInTheDocument()
+    expect(screen.getByText('沟通 AI 客服边界')).toBeInTheDocument()
+    expect(screen.getByText('评估落地成本')).toBeInTheDocument()
+    expect(screen.getByText('合作与代理')).toBeInTheDocument()
   })
 
   it('renders 入驻通道（不必等回信，直接提交入驻申请）', () => {
     render(<ContactPage />)
-    const registerLink = screen.getByText('去提交入驻申请').closest('a')
+    const registerLink = screen.getByText('提交入驻申请').closest('a')
     expect(registerLink).toHaveAttribute('href', '/register')
     expect(screen.getAllByText(/通过即自动开通账号/).length).toBeGreaterThanOrEqual(1)
   })
@@ -73,7 +74,7 @@ describe('CorporateContactPage（官网联系页 v4：只保留在线留言 + �
     expect(screen.getByText('开通需要多久？')).toBeInTheDocument()
     expect(screen.getByText('需要我们自己准备服务器吗？')).toBeInTheDocument()
     expect(screen.getByText('AI 会替我做主退款、改价或取消订单吗？')).toBeInTheDocument()
-    expect(screen.getByText('价格在哪里看？')).toBeInTheDocument()
+    expect(screen.getByText('价格在哪里查看？')).toBeInTheDocument()
     expect(screen.getByText(/本页面不公示价格/)).toBeInTheDocument()
   })
 
@@ -123,5 +124,13 @@ describe('CorporateContactPage（官网联系页 v4：只保留在线留言 + �
     expect(screen.getByText('请输入您的电子邮箱')).toBeInTheDocument()
     expect(screen.getByText('请输入留言内容')).toBeInTheDocument()
     expect(screen.queryByText('留言提交成功')).not.toBeInTheDocument()
+  })
+
+  // ── 文案口吻（issue #6326：去 AI 口语，改「能力陈述型」书面语）──
+
+  it('文案口吻：联系我们页渲染文本不含 AI 口语词表', () => {
+    const { container } = render(<ContactPage />)
+    const hits = findColloquialMarkers(container.textContent ?? '')
+    expect(hits, `联系我们页渲染文本出现 AI 口语词：${hits.join(' / ')}`).toEqual([])
   })
 })

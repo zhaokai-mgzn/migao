@@ -22,19 +22,19 @@ import {
 } from '@/components/corporate/capability-map'
 
 export const metadata: Metadata = {
-  title: '产品与服务 — 双 AI 助手 + 全链路管理平台',
+  title: '产品与服务 — 两位 AI 助手与全链路经营平台',
   description:
-    '米高产品全景：小布 AI 智能客服（顾客侧）+ 米宝企业智能工作助手（经营侧），加管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖商品、客户、交易、生产、仓储、组织六个能力域。',
+    '米高产品全景：顾客侧小布 AI 智能客服，经营侧米宝企业智能工作助手；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖商品、客户、交易、生产、仓储、组织六个能力域。',
 }
 
 const coreProducts = [
   {
     title: '小布 · AI 智能客服',
     icon: MessageSquare,
-    tagline: '顾客侧：从问规格到下单、查物流、报售后',
+    tagline: '顾客侧：从规格咨询到下单、物流查询与售后受理',
     features: [
       '按店内已上架商品回答颜色、门幅、加工项，不展示未上架商品',
-      '按尺寸与工艺算用料并给出估算报价，如实说明是估算而非成交价',
+      '按尺寸与工艺计算用料并给出估算报价，明确说明为估算而非成交价',
       '短信验证码校验后下单，成交单价取商品库权威价',
       '订单进度、物流轨迹、收货地址查询',
       '售后咨询与申请受理，工单恒为「待商家审核」',
@@ -46,7 +46,7 @@ const coreProducts = [
   {
     title: '米宝 · 企业智能工作助手',
     icon: Bot,
-    tagline: '经营侧：一句话查账、查单、查进度',
+    tagline: '经营侧：以自然语言查询账目、订单与进度',
     features: [
       '经营看板与每日简报：订单量、销售额、环比、待处理事项',
       '商品与 SKU：批量改价、批量上下架（可撤销）、分类与资料维护',
@@ -56,7 +56,7 @@ const coreProducts = [
       '财务与客户：资金流水 / 收支汇总 / 应收对账问答，客户档案与售后工单',
     ],
     boundary:
-      '写操作只有三类：改价、批量上下架、批量库存调整。改价必须带改前价并点确认卡；建单、建品 AI 不做。',
+      '写操作只有三类：改价、批量上下架、批量库存调整。改价须携带改前价并经确认卡二次确认；AI 不创建订单与商品。',
   },
 ]
 
@@ -65,21 +65,21 @@ const terminals = [
     icon: Globe,
     title: '管理后台',
     audience: '老板 / 运营 / 客服',
-    description: '浏览器打开即用，六个能力域都在这里；右上角通知中心，右下角悬浮米宝随时问。',
+    description: '浏览器打开即用，六个能力域集中在此；右上角通知中心，右下角悬浮米宝随时提问。',
     points: ['经营看板与每日简报', '商品、订单、售后、财务', '生产、仓储、组织与权限'],
   },
   {
     icon: Smartphone,
     title: '顾客小程序',
     audience: '终端消费者',
-    description: '在微信里直接找小布咨询、下单、查物流、报售后，无需额外下载。',
+    description: '在微信内直接咨询小布、下单、查询物流与提交售后，无需额外下载。',
     points: ['7×24 咨询与下单', '订单与物流进度', '售后申请与进度'],
   },
   {
     icon: MessageSquare,
     title: '商家小程序',
-    audience: '老板 / 店长（手机端）',
-    description: '出门在外也能用：问米宝、看数据、处理坐席会话，还有工人登录与拍照入库入口。',
+    audience: '老板 / 店长（移动端）',
+    description: '移动端可用：问米宝、看数据、处理坐席会话，并提供工人登录与拍照入库入口。',
     points: ['问米宝 / 看数据', '坐席会话处理', '工人登录、拍照入库、补打标签'],
   },
   {
@@ -87,7 +87,7 @@ const terminals = [
     title: '员工端 H5',
     audience: '车间工人',
     description:
-      '扫码即开，不用装 App：扫码报工、拍照入库、发货；一体机上还有常驻扫码的机台模式。',
+      '扫码即开，无需安装 App：扫码报工、拍照入库与发货；一体机提供常驻扫码的机台模式。',
     points: ['扫码报工（合格 / 返工 / 报废）', '拍照入库与发货', '断网补传，同一请求不会重复记账'],
   },
 ]
@@ -102,12 +102,12 @@ const delivery = [
   {
     icon: Headphones,
     title: '行业模板预置',
-    description: '布艺行业的通用知识模板已预置，开通后即可套用，再按自家话术补充。',
+    description: '布艺行业通用知识模板已预置，开通后即可套用，再按企业话术补充。',
   },
   {
     icon: Users,
     title: '岗位权限开箱可配',
-    description: '七个岗位开箱可用，员工菜单权限逐人可调，权限树就是后台菜单本身。',
+    description: '七个岗位开箱可用，员工菜单权限逐人可调，权限树即后台菜单本身。',
   },
   {
     icon: Wallet,
@@ -122,8 +122,8 @@ export default function ServicesPage() {
     <>
       <PageHero
         kicker="产品与服务"
-        title="能干活的两个 AI，和它们背后的整个后台"
-        lead="米高不是「接一个客服机器人」：顾客侧有小布，经营侧有米宝，背后是商品、客户、交易、生产、仓储、组织六个能力域，四个终端共用同一套数据。"
+        title="两位 AI 助手与全链路经营平台"
+        lead="顾客侧由小布承接服务，经营侧由米宝承接管理；后端由商品、客户、交易、生产、仓储、组织六个能力域支撑，四个终端共用同一套数据。"
         chips={[
           '2 位 AI 助手',
           `6 个能力域 · ${menuItemCount} 项功能`,
@@ -138,7 +138,7 @@ export default function ServicesPage() {
           <SectionHeading
             kicker="核心 AI 产品"
             title="一位对内提效，一位对外服务"
-            lead="两位 AI 共用同一套业务数据：顾客问到的商品、订单、库存，和老板在后台看到的完全是同一份。"
+            lead="两位 AI 共用同一套业务数据：顾客问到的商品、订单与库存，与经营者在后台看到的完全一致。"
           />
 
           <div className="mt-14 space-y-8">
@@ -183,8 +183,8 @@ export default function ServicesPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="四个终端"
-            title="老板、顾客、店长、工人，各看各的那一面"
-            lead="同一个租户、同一套数据，按角色给出不同入口与权限 —— 不必让车间工人去学管理后台。"
+            title="四类角色，四个入口"
+            lead="同一租户、同一套数据，按角色提供不同入口与权限，车间工人无需使用管理后台。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {terminals.map((terminal) => (
@@ -219,8 +219,8 @@ export default function ServicesPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="能力清单"
-            title="六个能力域，逐项摊开"
-            lead="下面每一项都是后台里能点开的功能，不是能力清单上的形容词。"
+            title="六个能力域，逐项展开"
+            lead="以下每一项都是后台中可打开的功能入口。"
           />
           <div className="mt-14 space-y-6">
             {capabilityDomains.map((domain) => (
@@ -274,8 +274,8 @@ export default function ServicesPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="行业纵深"
-            title="布艺生意里最难的四件事"
-            lead="这四件事决定了「通用客服机器人」在窗帘店里用不起来 —— 米高是照着它们长出来的。"
+            title="布艺经营的四项核心能力"
+            lead="通用客服机器人难以覆盖这四项能力，而它们正是米高产品设计的起点。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {industryDepth.map((item) => (
@@ -299,8 +299,8 @@ export default function ServicesPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="交付与开通"
-            title="开通这件事，我们尽量让它不折腾"
-            lead="不用装服务器、不用招 IT：提交申请、AI 自动甄别、即刻开通，行业模板与岗位权限都已备好。"
+            title="开通流程简单，无需自建基础设施"
+            lead="无需自备服务器与 IT 人员：提交申请、AI 自动甄别、即刻开通，行业模板与岗位权限均已预置。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {delivery.map((item) => (
@@ -318,8 +318,8 @@ export default function ServicesPage() {
       </section>
 
       <CallToAction
-        title="想看清楚它能不能接住你的生意？"
-        lead="提交入驻申请，AI 自动甄别后即刻开通；也可以先留言说明业务场景，我们按你的流程给你演示一遍。"
+        title="了解米高是否适配您的业务"
+        lead="提交入驻申请，AI 自动甄别后即刻开通；也可先留言说明业务场景，我们将按您的流程安排演示。"
         primary={
           <Link
             href="/register"

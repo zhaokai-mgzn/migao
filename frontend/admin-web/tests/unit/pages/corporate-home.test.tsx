@@ -7,14 +7,15 @@ vi.mock('next/link', () => ({
 }))
 
 import HomePage from '@/app/(corporate)/page'
+import { findColloquialMarkers } from './copy-voice-banlist'
 
-describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 按系统真实能力重写文案，issue #6291）', () => {
+describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实能力文案 + 能力陈述型口吻，issue #6291 / #6326）', () => {
   // ── Hero ──
 
   it('renders hero：布艺行业经营平台定位 + 双 AI 主标', () => {
     render(<HomePage />)
-    expect(screen.getByText(/两个 AI，把一间窗帘店/)).toBeInTheDocument()
-    expect(screen.getByText(/从询价管到发货/)).toBeInTheDocument()
+    expect(screen.getByText(/两位 AI 助手，一套经营平台/)).toBeInTheDocument()
+    expect(screen.getByText(/覆盖布艺经营的全流程/)).toBeInTheDocument()
   })
 
   it('renders company name and 布艺行业 AI 经营平台 positioning in hero badge', () => {
@@ -26,9 +27,9 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 按系�
   it('renders hero description：两位 AI 的分工规格句', () => {
     render(<HomePage />)
     expect(
-      screen.getByText(/小布接待顾客：应答咨询、算料报价、下单、查物流、受理售后/)
+      screen.getByText(/顾客侧由小布承接：咨询应答、算料报价、下单、物流查询与售后受理/)
     ).toBeInTheDocument()
-    expect(screen.getByText(/米宝打理经营：商品、订单、生产、库存、财务/)).toBeInTheDocument()
+    expect(screen.getByText(/经营侧由米宝承接：商品、订单、生产、库存与财务/)).toBeInTheDocument()
   })
 
   it('renders hero 事实标签（可核实的四条）', () => {
@@ -42,7 +43,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 按系�
   it('renders CTA links', () => {
     render(<HomePage />)
     expect(screen.getAllByText('立即入驻')).toHaveLength(2)
-    expect(screen.getByText('看完整能力')).toBeInTheDocument()
+    expect(screen.getByText('查看产品能力')).toBeInTheDocument()
     expect(screen.getByText('留言咨询')).toBeInTheDocument()
   })
 
@@ -50,7 +51,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 按系�
 
   it('renders 双 AI 区块：能力清单 + 能力边界', () => {
     render(<HomePage />)
-    expect(screen.getByText(/一位打理店内经营，一位接待您的顾客/)).toBeInTheDocument()
+    expect(screen.getByText(/一位面向经营，一位面向顾客/)).toBeInTheDocument()
     expect(screen.getAllByText('米宝').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('企业智能工作助手').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('小布').length).toBeGreaterThanOrEqual(1)
@@ -73,7 +74,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 按系�
 
   it('renders 「一条窗帘订单跑完六步」的行业纵深链路', () => {
     render(<HomePage />)
-    expect(screen.getByText('一条窗帘订单，跑完这六步')).toBeInTheDocument()
+    expect(screen.getByText('一张窗帘订单的六个环节')).toBeInTheDocument()
     for (const title of ['询价与算料', '下单', '生产', '入库', '发货', '售后与对账']) {
       expect(screen.getByText(title)).toBeInTheDocument()
     }
@@ -95,7 +96,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 按系�
 
   it('renders 能力地图：六个能力域与独立入口（菜单名与 config/menu.ts 一致）', () => {
     render(<HomePage />)
-    expect(screen.getByText('一个后台，六个能力域')).toBeInTheDocument()
+    expect(screen.getByText('一套后台，六个能力域')).toBeInTheDocument()
     for (const domain of ['工作台', '客户服务', '交易管理', '生产管理', '仓储与物料', '组织管理']) {
       expect(screen.getAllByText(domain).length).toBeGreaterThanOrEqual(1)
     }
@@ -120,12 +121,12 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 按系�
   it('renders 人机协同流程（AI 先应答，人工来兜底）', () => {
     render(<HomePage />)
     expect(screen.getByText('人机协同')).toBeInTheDocument()
-    expect(screen.getByText(/AI 先应答，人工来兜底/)).toBeInTheDocument()
+    expect(screen.getByText(/AI 优先应答，人工按规则接续/)).toBeInTheDocument()
     expect(screen.getByText('客户咨询')).toBeInTheDocument()
     expect(screen.getByText('小布 AI 应答')).toBeInTheDocument()
     expect(screen.getByText('自动转人工')).toBeInTheDocument()
     expect(screen.getByText('人工接续')).toBeInTheDocument()
-    expect(screen.getByText('留言兜底')).toBeInTheDocument()
+    expect(screen.getByText('留言受理')).toBeInTheDocument()
   })
 
   // ── 国标宣称（OB-005：标准号 + 4 能力点 + 免责小字）──
@@ -133,13 +134,13 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 按系�
   it('renders GB/T 47746-2026 遵循国家标准区块（标准号 + 4 能力点 + 免责小字）', () => {
     render(<HomePage />)
     expect(screen.getByText('遵循国家标准')).toBeInTheDocument()
-    expect(screen.getByText(/让人工与智能客服协同更可靠/)).toBeInTheDocument()
+    expect(screen.getByText(/人工与智能客服协同，机制有据可依/)).toBeInTheDocument()
     expect(screen.getByText('GB/T 47746-2026')).toBeInTheDocument()
     expect(screen.getByText(/顾客联络服务 人工与智能客户服务协同要求/)).toBeInTheDocument()
     expect(screen.getByText('自动识别复杂诉求转人工')).toBeInTheDocument()
     expect(screen.getByText('转人工规则可配置')).toBeInTheDocument()
     expect(screen.getByText('转人工即同步上下文')).toBeInTheDocument()
-    expect(screen.getByText('AI 严格承诺边界')).toBeInTheDocument()
+    expect(screen.getByText('AI 承诺边界明确')).toBeInTheDocument()
     expect(screen.getByText(/沟通记录同步给人工客服，无需重复描述/)).toBeInTheDocument()
     expect(screen.getByText(/AI 只做规则解释与材料收集/)).toBeInTheDocument()
     expect(screen.getByText(/不构成任何认证、检测或备案结论/)).toBeInTheDocument()
@@ -178,7 +179,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 按系�
   it('renders 三步开始 with AI 智能甄别（不出现人工审核口径）', () => {
     render(<HomePage />)
     expect(screen.getByText('开始使用')).toBeInTheDocument()
-    expect(screen.getByText(/三步，开始使用/)).toBeInTheDocument()
+    expect(screen.getByText(/三步开通/)).toBeInTheDocument()
     expect(screen.getByText('提交申请')).toBeInTheDocument()
     expect(screen.getByText('AI 智能甄别')).toBeInTheDocument()
     expect(screen.getByText('即刻开通')).toBeInTheDocument()
@@ -186,10 +187,10 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 按系�
     expect(screen.queryByText('1-3 个工作日内完成审核')).not.toBeInTheDocument()
   })
 
-  it('renders bottom CTA：几分钟开通，两位 AI 即刻开始工作', () => {
+  it('renders bottom CTA：数分钟内完成开通，两位 AI 同步上线', () => {
     render(<HomePage />)
-    expect(screen.getByText(/几分钟开通，两位 AI 即刻开始工作/)).toBeInTheDocument()
-    expect(screen.getByText(/AI 自动甄别秒级返回结果/)).toBeInTheDocument()
+    expect(screen.getByText(/数分钟内完成开通，两位 AI 同步上线/)).toBeInTheDocument()
+    expect(screen.getByText(/经 AI 自动甄别后秒级返回结果/)).toBeInTheDocument()
   })
 
   // ── 宣传真实性（issue #6291 新增判据）──
@@ -213,5 +214,23 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 按系�
     const { container } = render(<HomePage />)
     expect(container.innerHTML).not.toContain('from-blue-600')
     expect(container.innerHTML).not.toContain('to-indigo-800')
+  })
+
+  // ── 文案口吻（issue #6326：去 AI 口语，改「能力陈述型」书面语）──
+
+  it('文案口吻：首页渲染文本不含 AI 口语词表', () => {
+    const { container } = render(<HomePage />)
+    const hits = findColloquialMarkers(container.textContent ?? '')
+    expect(hits, `首页渲染文本出现 AI 口语词：${hits.join(' / ')}`).toEqual([])
+  })
+
+  it('文案口吻判据自身的判别力自证：词表能命中已知口语样本', () => {
+    // 让「空断言」进不来：样本是 2026-10-04 版本里逐字出现过的措辞。
+    expect(findColloquialMarkers('米宝打理经营，把商品管住，做不到的事 AI 会直说')).toEqual([
+      '打理',
+      '管住',
+      '直说',
+    ])
+    expect(findColloquialMarkers('两位 AI 助手，一套经营平台')).toEqual([])
   })
 })

@@ -57,12 +57,12 @@ export const capabilityDomains: CapabilityDomain[] = [
   {
     key: 'workspace',
     name: '工作台',
-    summary: '开店第一屏：今天生意怎么样，AI 先替你看一遍。',
+    summary: '经营全景入口：当日经营状况与待处理事项一屏可见。',
     items: [
       {
         name: '经营看板',
         detail:
-          '订单量、销售额、环比与待处理事项一屏可见；没有上期可比时显示「—」，不拿 0 冒充。',
+          '订单量、销售额、环比与待处理事项一屏可见；无上期可比数据时显示「—」，不以 0 代替。',
         icon: BarChart3,
       },
       {
@@ -75,7 +75,7 @@ export const capabilityDomains: CapabilityDomain[] = [
   {
     key: 'customer-service',
     name: '客户服务',
-    summary: '顾客从咨询到售后，都在这一组里收口。',
+    summary: '顾客从咨询到售后的全流程管理。',
     items: [
       {
         name: '在线接待',
@@ -102,7 +102,7 @@ export const capabilityDomains: CapabilityDomain[] = [
   {
     key: 'trade-center',
     name: '交易管理',
-    summary: '一张订单的账，从下单记到对账。',
+    summary: '订单与账目从下单记录到对账。',
     items: [
       {
         name: '订单列表',
@@ -119,7 +119,7 @@ export const capabilityDomains: CapabilityDomain[] = [
   {
     key: 'production-center',
     name: '生产管理',
-    summary: '布艺行业最深的一段：加工单、工序、报工与计件。',
+    summary: '布艺行业纵深环节：加工单、工序、报工与计件。',
     items: [
       {
         name: '生产看板',
@@ -151,7 +151,7 @@ export const capabilityDomains: CapabilityDomain[] = [
   {
     key: 'inventory-center',
     name: '仓储与物料',
-    summary: '布料是有批次、有缸号、有边角料的 —— 这一组按布料的真实形态记账。',
+    summary: '按布料的真实形态记账：批次、缸号与余料。',
     items: [
       {
         name: '入库单',
@@ -180,7 +180,7 @@ export const capabilityDomains: CapabilityDomain[] = [
   {
     key: 'org-center',
     name: '组织管理',
-    summary: '谁能看什么、谁能改什么，都在这里配。',
+    summary: '菜单权限与岗位配置。',
     items: [
       {
         name: '员工管理',
@@ -222,12 +222,12 @@ export const industryDepth = [
     icon: Ruler,
     title: '算料与报价',
     description:
-      '按尺寸与工艺算用料、出估算价；服务端不信任模型给的价格，成交单价与商品库权威价严格一致。',
+      '按尺寸与工艺计算用料并给出估算价；成交单价严格取商品库权威价，不采用模型输出的价格。',
   },
   {
     icon: Layers,
     title: '多规格 SKU',
-    description: '颜色 × 售卖方式 × 门幅的 SKU 矩阵，配加工项与加工费组合，规格再复杂也不用客服背。',
+    description: '颜色 × 售卖方式 × 门幅的 SKU 矩阵，配加工项与加工费组合，规格复杂度由系统承载，无需客服记忆。',
   },
   {
     icon: Coins,

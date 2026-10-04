@@ -12541,16 +12541,16 @@ _CASE_UI_081 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── UI-082 [NORMAL] 官网企业站整体重构（issue #6291）：四页文案按系统真实能力重写 + 织物质感视觉 + 清退占位联系方式（源: cases/ui.yml）──
+# ── UI-082 [NORMAL] 官网企业站整体重构（issue #6291）：四页文案按系统真实能力重写 + 织物质感视觉 + 清退占位联系方式；文案口吻改为能力陈述型书面语（issue #6326）（源: cases/ui.yml）──
 _CASE_UI_082 = EvalCase(
     id='UI-082',
     legacy_id='',
-    title='官网企业站整体重构（issue #6291）：四页文案按系统真实能力重写 + 织物质感视觉 + 清退占位联系方式',
+    title='官网企业站整体重构（issue #6291）：四页文案按系统真实能力重写 + 织物质感视觉 + 清退占位联系方式；文案口吻改为能力陈述型书面语（issue #6326）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['官网四个页面（首页 / 产品与服务 / 关于我们 / 联系我们）加导航 / 页脚，按当前系统真实能力重写文案与视觉（用户 2026-10-04 逐字：「根据我们当前米高整体系统的能力，重构下我们的主页整体设计，每个页面每个文案都重新做整体设计，要体现出我们的产品优势和亮点」）'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·文案=真实能力：首页渲染六个能力域与真实菜单名（经营看板 / 每日简报 / 智能派单 / 计件工资 / 余料台账 / 省料看板 / 岗位权限 / 商品管理 / 通知中心），菜单名与 frontend/admin-web/src/config/menu.ts 同源（共用 frontend/admin-web/src/components/corporate/capability-map.ts）。执行点 = frontend/admin-web/tests/unit/pages/corporate-home.test.tsx「renders 能力地图」', '判据 2·旧口径不复活：首页与产品服务页不得出现已清退的夸大表述（自动学习 / 越用越懂 / 越用越精准）与未落地术语（拼版 / 质检 / 毫秒级 / 批量操作库存 / 智能工单流转）。执行点 = corporate-home.test.tsx「宣传真实性：不夸大能力」与 services.test.tsx「能力边界」两条', '判据 3·占位假值清退（本单新增）：四页与页脚均不得出现 400-888-8888 / contact@migao-ai.com / 文一西路000号 / 地铁5号线。执行点 = corporate-home.test.tsx、corporate-contact.test.tsx、CorporateFooter.test.tsx 三条同名判据', '判据 4·合规宣称不变（OB-005 口径字面保留）：首页仍渲染 GB/T 47746-2026 区块（标准号 + 4 能力点 + 免责小字），且不含「已通过…认证 / 无缝接管」。执行点 = corporate-home.test.tsx「renders GB/T 47746-2026 遵循国家标准区块」', '判据 5·视觉口径：四页渲染结果的 innerHTML 不含 from-blue-600 / to-indigo-800（旧的通用蓝色渐变模板）。执行点 = 四个页面测试文件各自的「视觉口径」用例', '🔴 红证（改前实测，2026-10-04）：把这 6 个源文件（四页 + 导航 + 页脚）替换回 origin/main 版本后跑本用例的 5 个测试文件 ⇒ **28 failed / 58**；恢复后 **58 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run --dir tests/unit/pages corporate-home.test services.test corporate-about.test corporate-contact.test` + `npx vitest run --dir tests/unit/components CorporateFooter`（两条合计 52 + 6 = 58；写法用 `--dir` + 文件名过滤，避免在文档里留下包内相对路径字面量 —— M4 只认仓库根相对路径，包内路径会被判成失效路径）'],
+    data_checks=['判据 1·文案=真实能力：首页渲染六个能力域与真实菜单名（经营看板 / 每日简报 / 智能派单 / 计件工资 / 余料台账 / 省料看板 / 岗位权限 / 商品管理 / 通知中心），菜单名与 frontend/admin-web/src/config/menu.ts 同源（共用 frontend/admin-web/src/components/corporate/capability-map.ts）。执行点 = frontend/admin-web/tests/unit/pages/corporate-home.test.tsx「renders 能力地图」', '判据 2·旧口径不复活：首页与产品服务页不得出现已清退的夸大表述（自动学习 / 越用越懂 / 越用越精准）与未落地术语（拼版 / 质检 / 毫秒级 / 批量操作库存 / 智能工单流转）。执行点 = corporate-home.test.tsx「宣传真实性：不夸大能力」与 services.test.tsx「能力边界」两条', '判据 3·占位假值清退（本单新增）：四页与页脚均不得出现 400-888-8888 / contact@migao-ai.com / 文一西路000号 / 地铁5号线。执行点 = corporate-home.test.tsx、corporate-contact.test.tsx、CorporateFooter.test.tsx 三条同名判据', '判据 4·合规宣称不变（OB-005 口径字面保留）：首页仍渲染 GB/T 47746-2026 区块（标准号 + 4 能力点 + 免责小字），且不含「已通过…认证 / 无缝接管」。执行点 = corporate-home.test.tsx「renders GB/T 47746-2026 遵循国家标准区块」', '判据 5·视觉口径：四页渲染结果的 innerHTML 不含 from-blue-600 / to-indigo-800（旧的通用蓝色渐变模板）。执行点 = 四个页面测试文件各自的「视觉口径」用例', '判据 6·文案口吻（issue #6326 新增）：四页渲染文本不得出现 AI 口语词表（打理 / 管住 / 接住 / 折腾 / 摊开 / 跑完 / 直说 / 兜底 / 一句话 / 问一句 / 谁都不会 / 把时间还给 / 说了算 / 答一遍 / 先说说）。词表单一源 = frontend/admin-web/tests/unit/pages/copy-voice-banlist.ts。执行点 = 四个页面测试文件各自的「文案口吻」用例 + corporate-home.test.tsx 的「判别力自证」（词表必须命中已知口语样本，防空断言）', '🔴 红证（改前实测，2026-10-04）：把这 6 个源文件（四页 + 导航 + 页脚）替换回 origin/main 版本后跑本用例的 5 个测试文件 ⇒ **28 failed / 58**；恢复后 **58 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run --dir tests/unit/pages corporate-home.test services.test corporate-about.test corporate-contact.test` + `npx vitest run --dir tests/unit/components CorporateFooter`（两条合计 52 + 6 = 58；写法用 `--dir` + 文件名过滤，避免在文档里留下包内相对路径字面量 —— M4 只认仓库根相对路径，包内路径会被判成失效路径）'],
     skip_reason='[backend-contract] 纯前端公开页面（无 LLM 行为）：由 vitest 验证；页面级视觉另有 Playwright 截图 + 多模态读图一轮（migao-dev-flow §15.7 口径），不进入 agent-eval 冒烟',
     tags=['ui', 'homepage', 'corporate', 'copy-truthfulness', 'admin-web'],
     persona='',

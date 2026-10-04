@@ -13,24 +13,24 @@ import ContactForm from './ContactForm'
 export const helpItems = [
   {
     icon: Sparkles,
-    title: '想看产品演示',
-    description: '按你的业务场景走一遍：算料报价、下单、加工单与报工、入库批次、发货、售后与对账。',
+    title: '了解产品演示',
+    description: '按您的业务场景演示完整链路：算料报价、下单、加工单与报工、入库批次、发货、售后与对账。',
   },
   {
     icon: MessagesSquare,
-    title: '想聊 AI 客服边界',
+    title: '沟通 AI 客服边界',
     description:
-      '哪些交给 AI、哪些留给人工、敏感事项怎么兜底 —— 我们按你的行业与客单价给具体建议，而不是给一张功能表。',
+      '哪些环节交给 AI、哪些保留人工、敏感事项如何处置，我们按您的行业与客单价给出具体建议，而非一张功能表。',
   },
   {
     icon: Users,
-    title: '想评估落地成本',
-    description: '说明门店数量、客服人数与现有流程，我们按你的口径算一遍能省下多少人力与时间。',
+    title: '评估落地成本',
+    description: '提供门店数量、客服人数与现有流程，我们按您的口径测算可节省的人力与时间。',
   },
   {
     icon: Building2,
-    title: '想了解合作与代理',
-    description: '区域合作、行业模板共建、渠道代理等合作事项，请在留言里写明合作形式与所在地区。',
+    title: '合作与代理',
+    description: '区域合作、行业模板共建、渠道代理等合作事项，请在留言中写明合作形式与所在地区。',
   },
 ]
 
@@ -50,7 +50,7 @@ export const faqs = [
       '不会。顾客侧 AI 不改价、不取消订单、不退款、不承诺优惠折扣，也不报库存数量；涉及价格、折扣、退款金额、赔偿与法律诉求，AI 只做规则解释与材料收集，申请类动作待商家或规范流程确认。',
   },
   {
-    question: '价格在哪里看？',
+    question: '价格在哪里查看？',
     answer:
       '本页面不公示价格。请在留言中说明门店规模与希望开通的模块，我们的团队会按你的情况给出方案与报价。',
   },
@@ -62,7 +62,7 @@ export default function ContactPage() {
       <PageHero
         kicker="联系方式"
         title="联系我们"
-        lead="想聊产品、想看演示、想评估成本或谈合作 —— 在下面留言说明你的情况，我们的团队会在工作时间内回复你。"
+        lead="产品咨询、演示预约、成本评估或合作洽谈，请在下方留言说明您的情况，我们将在工作时间内回复。"
         chips={['按业务场景演示', '不公示价格 · 按需报价', 'AI 自动甄别 · 秒级开通']}
       />
 
@@ -73,13 +73,13 @@ export default function ContactPage() {
             {/* 左：我们能帮你什么 */}
             <div>
               <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-600">
-                先说说你的情况
+                常见诉求
               </span>
               <h2 className="mt-3 text-2xl font-bold text-neutral-900 sm:text-3xl">
-                留言前，可以先对一下方向
+                四类常见咨询
               </h2>
               <p className="mt-3 leading-relaxed text-neutral-600">
-                这四类问题我们最常见。留言时写清你的行业、门店规模与现在卡在哪一步，回复会更有针对性。
+                留言时请说明所属行业、门店规模与当前面临的问题，以便我们给出针对性回复。
               </p>
 
               <div className="mt-8 space-y-4">
@@ -103,7 +103,7 @@ export default function ContactPage() {
 
               <div className="mt-8 rounded-2xl border border-primary-100 bg-primary-50/60 p-6">
                 <p className="text-sm font-semibold text-neutral-900">
-                  只想直接开通？不必等我们回信
+                  可直接开通，无需等待回复
                 </p>
                 <p className="mt-2 text-sm leading-relaxed text-neutral-600">
                   提交入驻申请并完成手机验证后，AI 会自动核验企业信息与合规性，通过即自动开通账号。
@@ -112,7 +112,7 @@ export default function ContactPage() {
                   href="/register"
                   className="group mt-5 inline-flex items-center gap-2 rounded-xl bg-primary-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary-700"
                 >
-                  去提交入驻申请
+                  提交入驻申请
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                 </Link>
               </div>
@@ -131,7 +131,7 @@ export default function ContactPage() {
       {/* ── 常见问题 ─────────────────────────────────────────── */}
       <section className="bg-neutral-50 py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <SectionHeading kicker="常见问题" title="留言之前，这几个问题先答一遍" />
+          <SectionHeading kicker="常见问题" title="常见问题解答" />
           <div className="mx-auto mt-14 grid max-w-4xl grid-cols-1 gap-5 md:grid-cols-2">
             {faqs.map((faq) => (
               <div key={faq.question} className="rounded-2xl border border-neutral-200 bg-white p-6">
