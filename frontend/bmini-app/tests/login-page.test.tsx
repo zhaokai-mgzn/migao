@@ -69,7 +69,7 @@ describe('LoginPage', () => {
   it('应渲染品牌、账号密码两个输入框与登录按钮', () => {
     render(<LoginPage />)
 
-    expect(screen.getByText('米宝 · 商家助手')).toBeTruthy()
+    expect(screen.getByText('米宝 · 企业智能生产管家')).toBeTruthy()
     expect(screen.getByText('经营数据 · AI 客服 · 移动坐席')).toBeTruthy()
     expect(screen.getByText('用户名@企业编码')).toBeTruthy()
     expect(screen.getByText('密码')).toBeTruthy()

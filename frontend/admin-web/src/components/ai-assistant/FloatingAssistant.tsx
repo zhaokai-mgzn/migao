@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { X, Bot, Maximize2, Minimize2, Minus, Expand, GripHorizontal, MoveDiagonal } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AI_ROLES } from '@/config/ai-roles'
 import { useChatStore } from '@/store/chat'
 import SessionList from '@/components/chat/SessionList'
 import ChatArea from '@/components/chat/ChatArea'
@@ -279,7 +280,7 @@ export default function FloatingAssistant() {
               >
                 <div className="flex items-center gap-2">
                   <span className="text-lg flex-shrink-0">🤖</span>
-                  <span className="text-sm font-semibold text-white">米宝 · 智能助手</span>
+                  <span className="text-sm font-semibold text-white">{`米宝 · ${AI_ROLES.mibao}`}</span>
                 </div>
                 <div className="flex items-center gap-1">
                   {/* 全屏/退出全屏 */}

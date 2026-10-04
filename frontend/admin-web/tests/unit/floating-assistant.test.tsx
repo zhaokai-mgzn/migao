@@ -54,7 +54,7 @@ describe('FloatingAssistant', () => {
     render(<FloatingAssistant />)
 
     expect(screen.getByTitle('打开米宝')).toBeInTheDocument()
-    expect(screen.queryByText('米宝 · 智能助手')).not.toBeInTheDocument()
+    expect(screen.queryByText('米宝 · 企业智能生产管家')).not.toBeInTheDocument()
   })
 
   it('点击 FAB 打开面板，居中大窗两栏布局', () => {
@@ -63,7 +63,7 @@ describe('FloatingAssistant', () => {
     fireEvent.click(screen.getByTitle('打开米宝'))
 
     // 面板标题可见
-    expect(screen.getByText('米宝 · 智能助手')).toBeInTheDocument()
+    expect(screen.getByText('米宝 · 企业智能生产管家')).toBeInTheDocument()
     // 居中大窗：会话列表 + 聊天区两栏
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
     expect(screen.getByTestId('chat-area')).toBeInTheDocument()
@@ -75,20 +75,20 @@ describe('FloatingAssistant', () => {
     render(<FloatingAssistant />)
 
     fireEvent.click(screen.getByTitle('打开米宝'))
-    expect(screen.getByText('米宝 · 智能助手')).toBeInTheDocument()
+    expect(screen.getByText('米宝 · 企业智能生产管家')).toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('float-assistant-overlay'))
-    expect(screen.queryByText('米宝 · 智能助手')).not.toBeInTheDocument()
+    expect(screen.queryByText('米宝 · 企业智能生产管家')).not.toBeInTheDocument()
   })
 
   it('点击关闭按钮收起面板', () => {
     render(<FloatingAssistant />)
 
     fireEvent.click(screen.getByTitle('打开米宝'))
-    expect(screen.getByText('米宝 · 智能助手')).toBeInTheDocument()
+    expect(screen.getByText('米宝 · 企业智能生产管家')).toBeInTheDocument()
 
     fireEvent.click(screen.getByTitle('关闭'))
-    expect(screen.queryByText('米宝 · 智能助手')).not.toBeInTheDocument()
+    expect(screen.queryByText('米宝 · 企业智能生产管家')).not.toBeInTheDocument()
   })
 
   it('打开面板时自动加载会话列表', () => {

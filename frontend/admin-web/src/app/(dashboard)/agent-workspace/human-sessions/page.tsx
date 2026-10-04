@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Bot, MessageSquare, Send } from 'lucide-react'
 import { agentSessionApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { AI_ROLES } from '@/config/ai-roles'
 import type { AgentMessageItem, AgentSession, AgentSessionDetail } from '@/lib/api'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -212,7 +213,7 @@ export default function HumanAgentSessionsPage() {
                               turn.role === 'assistant' ? 'text-indigo-500' : 'text-neutral-400',
                             )}
                           >
-                            {turn.role === 'assistant' ? '小布 · AI' : '顾客'}
+                            {turn.role === 'assistant' ? `小布 · ${AI_ROLES.xiaobu}` : '顾客'}
                           </div>
                           <div className="whitespace-pre-wrap break-words">{turn.content}</div>
                         </div>

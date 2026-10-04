@@ -23,11 +23,21 @@
  * 硬编码会被 `frontend/admin-web/tests/unit/pages/corporate-home.test.tsx` 的
  * 「定位标签单一源」判据检出（源码级扫描，命中即红且具名）。
  *
- * ⚠️ 覆盖边界（照实登记）：本单一源目前只覆盖**对外介绍的三个定位面**
- * （官网首页 / 产品服务页 / 入驻页）。产品内 UI 的标签
- * （`frontend/admin-web/src/components/ai-assistant/FloatingAssistant.tsx`、
- * `frontend/admin-web/src/components/chat/SessionInsight.tsx`）**尚未纳入** ——
- * 那是已开通商家日常面对的界面，改动面与测试面另议（issue #6330 有登记）。
+ * ## 覆盖边界（照实登记）
+ *
+ * **已覆盖**（admin-web，共 6 个定位面，全部走本模块、硬编码即红）：
+ *   - 对外介绍：官网首页 `app/(corporate)/page.tsx`、产品服务页 `app/(corporate)/services/page.tsx`、入驻页 `app/register/page.tsx`
+ *   - 产品内（#6333 起）：悬浮助手 `components/ai-assistant/FloatingAssistant.tsx`、
+ *     客服工作台 `components/chat/SessionInsight.tsx`、
+ *     人工会话记录 `app/(dashboard)/agent-workspace/human-sessions/page.tsx`
+ *
+ * **未覆盖**（有意，附理由）：
+ *   - 两个**小程序**（`frontend/mini-app` / `frontend/bmini-app`）是**独立工程**，各自本地字面量 +
+ *     各自测试钉值 —— **不建跨 App 共享模块**：`#6306` 的教训是共享模块一旦落在发布集之外 ⇒ 白屏。
+ *   - **功能名 / 页面名**不是 AI 身份，不适用本模块：`米宝 · 今日经营速览`（数据栏标题）、
+ *     `米宝 · 在线对话`（`/chat` 面包屑）。
+ *   - **店铺 / App 描述**不是 AI 角色：`frontend/mini-app/src/utils/brand.ts` 的
+ *     `buildBrandSubtitle` = `{企业名} · 智能购物助手`（C 端导航副标题）。
  */
 
 /** 对内：面向商家的经营侧助手 */
