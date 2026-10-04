@@ -57,7 +57,6 @@ CI_SCRIPT = REPO_ROOT / "deploy" / "scripts" / "swas-deploy-ci.sh"
 REMOTE_SCRIPT = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 
-PROBE_JOB = "probe-running-tag"
 PROBE_STEP = "Assert running tag == target (skip 不得冒充已部署，issue #6294)"
 DEPLOY_STEP = "Deploy to SWAS (测试环境)"
 SKIP_STEP = "Skip if already built (schedule reconcile)"
@@ -312,7 +311,7 @@ def test_empty_running_tag_counts_as_divergence(tmp_path):
 
 def _legs_with_skip_step() -> dict:
     """**真值源现取**：带 `Skip if already built (schedule reconcile)` 步的 deploy 腿
-    ⇒ 返回 `{workflow 文件名: (job 名, 该 job 的 steps, 整个 doc)}`。"""
+    ⇒ `{workflow 文件名: (job 名, 该 job 的 steps)}`。"""
     out = {}
     for wf in sorted(WORKFLOWS_DIR.glob("deploy-*.yml")):
         doc = yaml.safe_load(wf.read_text(encoding="utf-8"))
@@ -321,79 +320,81 @@ def _legs_with_skip_step() -> dict:
                 continue
             names = [s.get("name") for s in (jd.get("steps") or []) if isinstance(s, dict)]
             if SKIP_STEP in names:
-                out[wf.name] = (job, jd.get("steps") or [], doc)
+                out[wf.name] = (job, jd.get("steps") or [])
     return out
 
 
 def test_every_skip_capable_leg_is_wired_to_the_probe():
     """**类级元守卫（未接线即红）**：每条带 `Skip if already built` 的腿都必须接上这条自证，且
-    ① 它是**独立 job**（在部署 job **之后** ⇒ 判据要求「部署后」）
-    ② `if:` 覆盖「本轮跳过部署」这条路径（`needs.<部署 job>.outputs.deployed == 'true'`）
-    ③ **调用同一份可复用 workflow**（禁止三份复制实现 —— 判定本体在
-       `deploy/scripts/swas_deploy_running_tag.sh`，调用面在 `.github/workflows/deploy-probe-running-tag.yml`）
-    ④ 期望 tag 来自该腿自己的 tag 解析（`outputs.image_tag`），不是第二份真相源
-    ⑤ 三条腿**逐字同源**（调用块的 `with/if` 文本一致 ⇒ 不可能有一条腿偷偷走别的口径）。"""
+    ① 位置在 `Deploy to SWAS (测试环境)` **之后**（判据要求「部署后」）
+    ② `if:` 覆盖「本轮跳过部署」这条路径（`steps.sync.outputs.skip == 'true'`）
+    ③ **调用同一份**共享库 `deploy/scripts/swas_deploy_running_tag.sh`（禁止三份复制实现）
+    ④ 期望 tag 来自该腿自己的 tag 解析（`steps.tag.outputs.IMAGE_TAG`），不是第二份真相源
+    ⑤ 三条腿的 step **逐字同源**（`if/env/run` 文本一致 ⇒ 不可能有一条腿偷偷走别的口径）。"""
     legs = _legs_with_skip_step()
     assert len(legs) >= 3, f"反空跑锚点：只找到 {len(legs)} 条带 skip 步的腿（判据已过期）→ {sorted(legs)}"
     shapes = set()
-    for wf, (job, steps, doc) in sorted(legs.items()):
-        jobs = doc.get("jobs") or {}
-        assert PROBE_JOB in jobs, (
-            f"{wf} 漏接「跳过部署自证」job —— 它的 skip 路径仍会把「跳过」计成 success（issue #6294）。"
-            f"现状 jobs：{list(jobs)}"
+    for wf, (job, steps) in sorted(legs.items()):
+        names = [s.get("name") for s in steps]
+        assert PROBE_STEP in names, (
+            f"{wf}（job={job}）漏接「跳过部署自证」步 —— 它的 skip 路径仍会把「跳过」计成 success（issue #6294）。"
+            f"现状步骤：{names}"
         )
-        probe = jobs[PROBE_JOB]
-        assert list(jobs).index(PROBE_JOB) > list(jobs).index(job), (
-            f"{wf}：自证 job 必须在部署 job `{job}` **之后**（判据要求「部署后」）→ {list(jobs)}"
+        assert names.index(PROBE_STEP) > names.index(DEPLOY_STEP), (
+            f"{wf}：自证步必须在 `{DEPLOY_STEP}` **之后**（判据要求「部署后」）→ {names}"
         )
-        assert probe.get("needs") == job, (
-            f"{wf}：自证 job 必须 `needs: {job}`（否则拿不到「本轮是否跳过部署」与目标 tag）→ {probe.get('needs')!r}"
+        step = next(s for s in steps if s.get("name") == PROBE_STEP)
+        cond = str(step.get("if") or "")
+        assert "steps.sync.outputs.skip" in cond and "'true'" in cond, (
+            f"{wf}：自证步的 `if:` 必须只在「本轮跳过部署」时跑，现状 {cond!r}"
         )
-        cond = str(probe.get("if") or "")
-        assert f"needs.{job}.outputs.deployed" in cond and "'true'" in cond, (
-            f"{wf}：自证 job 的 `if:` 必须只在「本轮跳过部署」时跑"
-            f"（`deployed` = `steps.sync.outputs.skip`），现状 {cond!r}"
+        run = step.get("run") or ""
+        assert "swas_deploy_running_tag.sh" in run, (
+            f"{wf}：必须调用**共享库** `deploy/scripts/swas_deploy_running_tag.sh`，"
+            f"不许把实现内联/复制成三份 → {run!r}"
         )
-        uses = str(probe.get("uses") or "")
-        assert uses.endswith("deploy-probe-running-tag.yml"), (
-            f"{wf}：必须调用**同一份**可复用 workflow `.github/workflows/deploy-probe-running-tag.yml`，"
-            f"不许把实现内联/复制成三份 → {uses!r}"
+        env = step.get("env") or {}
+        assert "IMAGE_TAG" in env and "steps.tag.outputs.IMAGE_TAG" in str(env["IMAGE_TAG"]), (
+            f"{wf}：期望 tag 必须取本腿自己的 tag 解析（`steps.tag.outputs.IMAGE_TAG`），"
+            f"否则「期望」是第二份真相源 → {env!r}"
         )
-        with_ = probe.get("with") or {}
-        expect_tag_expr = "${{ needs." + job + ".outputs.image_tag }}"
-        assert with_.get("image_tag") == expect_tag_expr, (
-            f"{wf}：期望 tag 必须取该腿自己的 tag 解析结果（`outputs.image_tag`），"
-            f"否则「期望」是第二份真相源 → {with_.get('image_tag')!r}"
-        )
-        assert with_.get("service"), f"{wf}：必须显式给出服务键 → {with_!r}"
+        # 三条腿的形状逐字同源（用名字/条件/正文骨架比较；正文里的服务键是唯一允许的差异）
         shapes.add(json.dumps({
             "if": cond,
-            "with_keys": sorted(with_),
-            "secrets_keys": sorted((probe.get("secrets") or {})),
+            "env_keys": sorted(env),
+            "run_head": run.split("\n")[0],
+            "calls_shared": "swas_deploy_running_tag.sh" in run,
         }, sort_keys=True))
-        # 期望 tag 的真值源必须在**部署 job 的 outputs** 里现取（不是硬编码）
-        outs = jobs[job].get("outputs") or {}
-        assert "image_tag" in outs and "steps.tag.outputs.IMAGE_TAG" in str(outs["image_tag"]), (
-            f"{wf}：部署 job 必须暴露 `outputs.image_tag`（本腿自己的 tag 解析）→ {outs!r}"
-        )
     assert len(shapes) == 1, (
-        f"三条腿的自证 job **形状必须逐字同源**（同源修，铁律 8）—— 现状出现 {len(shapes)} 种：{shapes}"
+        f"三条腿的自证步**形状必须逐字同源**（同源修，铁律 8）—— 现状出现 {len(shapes)} 种：{shapes}"
     )
-
-
-def test_probe_runner_is_a_single_reusable_implementation():
-    """**唯一实现**：可复用 workflow 在场，且它调的是仓库里那份共享库、自己**不**内联探测逻辑；
-    共享库也不许被复制成多份。"""
-    reusable = read(WORKFLOWS_DIR / "deploy-probe-running-tag.yml")
-    assert "workflow_call" in reusable, "可复用 workflow 必须声明 `on: workflow_call`"
-    assert "swas_deploy_running_tag.sh" in reusable, (
-        "可复用 workflow 必须调用共享库 `deploy/scripts/swas_deploy_running_tag.sh`（不许内联实现）"
-    )
-    # 探测逻辑（读运行面）**只许**出现在共享库里，不许在 workflow YAML 里再写一遍
-    for forbidden in ("docker inspect", "docker compose", "RUNNING_TAG="):
-        assert forbidden not in reusable, (
-            f"可复用 workflow 里出现探测实现 `{forbidden}` ⇒ 唯一实现被复制进了 YAML → {forbidden!r}"
+    # ⚠️ secrets 引用**只许出现在 job env 一处**（Danger Scan 的「移动 vs 新增」口径）：
+    #    逐腿断言 `AK`/`SK` 在 job env 里、且自证 step 自己不重复声明（重复声明 = 新增 secrets ⇒ blocker）
+    for wf, (job, steps) in sorted(legs.items()):
+        doc = yaml.safe_load((WORKFLOWS_DIR / wf).read_text(encoding="utf-8"))
+        job_env = (doc["jobs"][job].get("env") or {})
+        assert "AK" in job_env and "SK" in job_env, (
+            f"{wf}：AK/SK 必须在 job env 里声明一次（Deploy step 与自证 step 共用）→ {sorted(job_env)}"
         )
+        step = next(s for s in steps if s.get("name") == PROBE_STEP)
+        assert "AK" not in (step.get("env") or {}), (
+            f"{wf}：自证 step **不得**重复声明 AK（重复 = danger-scan 判「新增 secrets」⇒ 阻塞合并）"
+        )
+
+
+def test_probe_implementation_is_a_single_shared_library():
+    """**唯一实现**：探测逻辑只许活在共享库里，不许被复制到别处（也没有第二份 workflow）。"""
+    lib = read(REGISTRY)
+    assert "running_tag_probe_main" in lib, "共享库必须导出 `running_tag_probe_main`"
+    for forbidden in ("docker inspect", "docker compose"):
+        assert forbidden in lib, f"共享库必须自己读运行面（缺 `{forbidden}`）"
+    # 探测循环只许出现在库里：workflow YAML 里不许再写一遍（那是「复制实现」的形态）
+    for wf in sorted(WORKFLOWS_DIR.glob("deploy-*.yml")):
+        text = wf.read_text(encoding="utf-8")
+        for forbidden in ("docker inspect", "RUNNING_TAG="):
+            assert forbidden not in text, (
+                f"{wf.name} 里出现探测实现 `{forbidden}` ⇒ 唯一实现被复制进了 YAML"
+            )
     dupes = [p for p in REPO_ROOT.rglob("swas_deploy_running_tag*.sh") if ".git" not in p.parts]
     assert len(dupes) == 1, f"共享库被复制成多份（就是「三份复制」的形态）→ {dupes}"
 
