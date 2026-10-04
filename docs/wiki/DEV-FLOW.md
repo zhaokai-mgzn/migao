@@ -313,7 +313,7 @@ python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守
   curl -s -o /dev/null -w "%{http_code}\n" -X POST https://api.migaozn.com/api/auth/sms-code -H 'Content-Type: application/json' -d '{}'  # admin-api → 401（存活+鉴权）
   ```
 - 冒烟失败若为全量 502/Connection refused 且后续部署已覆盖 → 多为**部署滚动重启瞬态**，以最新一次部署结论为准（见 §7.3 的 mergeStateStatus 思路）。
-- 生产登录：13800138000 / 万能码 123456（短信网关仍 bypass，上线前需接入）。
+- 云测试环境登录：13800138000 / 万能码 123456（短信网关仍 bypass，上线前需接入）；账号属「米高测试环境」（**tenant 25**，2026-10-04 环境重建后经入驻流程新建）——原 tenant 1「词元通达」连同全部数据已清空。
 
 ## 5. 相关文档
 - `migao-dev-flow` 技能（**权威源**，本页只是它的历史节选）— 预设仓 `zhaokai-mgzn/migao-agent-presets` 的 `skills/migao-dev-flow/SKILL.md`（本机经活锚 `~/.dsh/.agent-presets/migao` 读到只读镜像）
