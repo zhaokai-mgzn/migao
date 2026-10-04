@@ -378,6 +378,23 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         request.setBasePrice(MoneyScale.requireTwoDecimalsOrNull(request.getBasePrice(), "商品基础价 basePrice"));
         requireSkuPrices(request.getSkus());
 
+        // 文本列长度准入（issue #6302）：`products.*` 的 varchar 列超长时 PG **不截断、直接报错** ——
+        // `ERROR: value too long for type character varying(30)` @ ProductMapper.insert ⇒ 500
+        // 「服务器内部错误」，用户无法自救（不知道哪一列、该改多长）。判在**入口**、在任何写之前
+        // ⇒ 超长 ⇒ 422 + 可行动文案（「最长 N 个字符…当前 M 个字符…请缩短」）。
+        // 判据单点在 ColumnTextLength；上限 = 现取 information_schema 的**真实列长度**
+        // （对账判据 = ProductTextColumnAdmissionMetaGuardTest：列长度改了而这里没跟 ⇒ 判红）。
+        // 判在这里还覆盖 agent 路径（`createProductForAgent` 手工 new DTO 再调本方法 ⇒ 不走 Bean Validation）。
+        request.setName(ColumnTextLength.requireWithinOrNull(request.getName(), 255, "商品名称 name"));
+        request.setSkuCode(ColumnTextLength.requireWithinOrNull(request.getSkuCode(), 30, "商品货号 skuCode"));
+        request.setUnit(ColumnTextLength.requireWithinOrNull(request.getUnit(), 32, "计价单位 unit"));
+        request.setPricingType(ColumnTextLength.requireWithinOrNull(request.getPricingType(), 30, "计价方式 pricingType"));
+        request.setCategoryId(ColumnTextLength.requireWithinOrNull(request.getCategoryId(), 64, "分类 categoryId"));
+        request.setMainImage(ColumnTextLength.requireWithinOrNull(request.getMainImage(), 512, "主图 mainImage"));
+        request.setKnowledgeBaseId(ColumnTextLength.requireWithinOrNull(
+                request.getKnowledgeBaseId(), 64, "知识库 knowledgeBaseId"));
+        request.setStatus(ColumnTextLength.requireWithinOrNull(request.getStatus(), 32, "商品状态 status"));
+
         // 空分类归一化（#3665 冒烟 B1）：前端草稿发的是 ''（DEFAULT_FORM.categoryId）而非缺省 null。
         // 若原样透传：validateCategory 因 hasText('')==false 跳过校验 → BeanUtils 把 '' 写进实体
         // → insert category_id='' → products_category_id_fkey 违例（500）。表列可空、草稿允许
@@ -450,6 +467,23 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 行、之后才走 saveColorsAndSkus 收口）⇒「超精度 ⇒ 零写入」才成立。`null` = 不改，透传。
         request.setBasePrice(MoneyScale.requireTwoDecimalsOrNull(request.getBasePrice(), "商品基础价 basePrice"));
         requireSkuPrices(request.getSkus());
+
+        // 文本列长度准入（issue #6302）：`products.*` 的 varchar 列超长时 PG **不截断、直接报错** ——
+        // `ERROR: value too long for type character varying(30)` @ ProductMapper.insert ⇒ 500
+        // 「服务器内部错误」，用户无法自救（不知道哪一列、该改多长）。判在**入口**、在任何写之前
+        // ⇒ 超长 ⇒ 422 + 可行动文案（「最长 N 个字符…当前 M 个字符…请缩短」）。
+        // 判据单点在 ColumnTextLength；上限 = 现取 information_schema 的**真实列长度**
+        // （对账判据 = ProductTextColumnAdmissionMetaGuardTest：列长度改了而这里没跟 ⇒ 判红）。
+        // 判在这里还覆盖 agent 路径（`createProductForAgent` 手工 new DTO 再调本方法 ⇒ 不走 Bean Validation）。
+        request.setName(ColumnTextLength.requireWithinOrNull(request.getName(), 255, "商品名称 name"));
+        request.setSkuCode(ColumnTextLength.requireWithinOrNull(request.getSkuCode(), 30, "商品货号 skuCode"));
+        request.setUnit(ColumnTextLength.requireWithinOrNull(request.getUnit(), 32, "计价单位 unit"));
+        request.setPricingType(ColumnTextLength.requireWithinOrNull(request.getPricingType(), 30, "计价方式 pricingType"));
+        request.setCategoryId(ColumnTextLength.requireWithinOrNull(request.getCategoryId(), 64, "分类 categoryId"));
+        request.setMainImage(ColumnTextLength.requireWithinOrNull(request.getMainImage(), 512, "主图 mainImage"));
+        request.setKnowledgeBaseId(ColumnTextLength.requireWithinOrNull(
+                request.getKnowledgeBaseId(), 64, "知识库 knowledgeBaseId"));
+        request.setStatus(ColumnTextLength.requireWithinOrNull(request.getStatus(), 32, "商品状态 status"));
 
         Product product = productMapper.selectById(id);
         if (product == null) {
@@ -621,6 +655,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             for (ProductSkuInput input : skuInputs) {
                 if (input != null) {
                     input.setStock(StockQuantity.requireNonNegativeOrNull(input.getStock(), "SKU 库存 stock"));
+                    // 文本列长度准入（issue #6302）：SKU 行落 `product_skus` 的 varchar 列
+                    // （编码 / 门幅 / 颜色名）。判在本方法开头 = 本方法内任何写之前；Excel 导入与
+                    // agent 路径也经过这条收口（它们同样手工构造 ProductSkuInput）。
+                    input.setSkuCode(ColumnTextLength.requireWithinOrNull(input.getSkuCode(), 50, "SKU 编码 skuCode"));
+                    input.setDoorWidth(ColumnTextLength.requireWithinOrNull(input.getDoorWidth(), 20, "规格尺寸 doorWidth"));
+                    input.setColorName(ColumnTextLength.requireWithinOrNull(input.getColorName(), 64, "SKU 颜色名称 colorName"));
                 }
             }
         }
@@ -673,6 +713,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             int idx = 0;
             for (ProductColorInput input : colorInputs) {
                 if (input == null) continue;
+                // 文本列长度准入（issue #6302）：颜色名 / 主色 HEX / 备注落 `product_colors` 的
+                // varchar 列，判在任何写之前（含下面的 updateById / insert）。
+                input.setColorName(ColumnTextLength.requireWithinOrNull(input.getColorName(), 30, "颜色名称 colorName"));
+                input.setMainColorHex(ColumnTextLength.requireWithinOrNull(input.getMainColorHex(), 7, "主色值 mainColorHex"));
+                input.setRemark(ColumnTextLength.requireWithinOrNull(input.getRemark(), 30, "颜色备注 remark"));
                 ProductColor matched = null;
                 if (input.getId() != null && input.getId() > 0) {
                     matched = colorById.get(input.getId());
@@ -1570,6 +1615,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // `products.base_price` / `product_skus.price` 是 NUMERIC(·,2) ⇒ 超 2 位有效小数会被 PG
         // 静默四舍五入。判在本方法开头 = 本方法的任何写（productMapper.insert/updateById）之前。
         head.price = MoneyScale.requireTwoDecimalsOrNull(head.price, "导入行价格");
+        // 文本列长度准入（issue #6302）：Excel 行是**外部表格输入**，同样判在任何写之前
+        // （本方法会直接 productMapper.insert/updateById）⇒ 超长行 422 + 可行动文案，不是 500。
+        head.name = ColumnTextLength.requireWithinOrNull(head.name, 255, "导入行商品名称 name");
+        head.skuCode = ColumnTextLength.requireWithinOrNull(head.skuCode, 30, "导入行商品货号 skuCode");
+        head.categoryId = ColumnTextLength.requireWithinOrNull(head.categoryId, 64, "导入行分类 categoryId");
         boolean groupHasSku = group.stream().anyMatch(r -> r.hasSku);
 
         // 幂等键查询：命中 ⇒ 原地更新（不新建行）；未命中 ⇒ 新建

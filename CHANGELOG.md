@@ -19,6 +19,22 @@
   「初始 HTML 必须含正文」目前**没有**端到端常驻判据（那条 `next build` + `curl` 是手动、一次性的）；
   元守卫只裁 `page.tsx`，`(corporate)/**/layout.tsx` 若声明 `'use client'` 不在其射程内。
 
+### 商品 / SKU 的超长文本入参不再得到「服务器内部错误」：返回 422 + 指明哪一列超了、上限多少、当前多长（2026-10-04，issue #6302）
+
+- 以前：`POST /api/admin/products` 传 31 个字符的货号（`products.sku_code` 是 `varchar(30)`）⇒
+  数据库报 `value too long for type character varying(30)` ⇒ 接口返 500
+  `{"success":false,"error":{"code":"INTERNAL_ERROR","message":"服务器内部错误"}}` —— 用户**无法自救**：
+  不知道是哪一列、该改多长。而这**不是货号一列的事**：建品 / 改品 / Excel 导入 / agent 建品的每一个
+  短文本入参（货号 / 规格尺寸 / 颜色名 / 商品名称 / 计量单位 / 计价方式 / 分类 / 主图 / 知识库 / 商品状态）
+  都是同一形态（`varchar(n)` 装不下就 500）。
+- 现在：这些写面入口统一过一次**长度准入**（`ColumnTextLength`，判据单点），超长 ⇒ **422
+  `VALIDATION_ERROR`** + 可行动文案「商品货号 skuCode 最长 30 个字符（库列 varchar(30)），当前 31 个字符
+  —— 请缩短到 30 个字符以内后重试（服务端不截断、不静默丢弃超出部分）」；长度 = 列上限（边界值）照常放行。
+- 类级固化：元守卫按**现取** `information_schema.columns.character_maximum_length` 与商品入参 DTO 字段
+  逐一对账 —— 收口上限 ≠ 库列真实长度 ⇒ 判红（照抄 issue / 旧 DDL 就会踩）；新增字段未登记 ⇒ 判红；
+  豁免台账只许缩短（现取条数 = 0）。
+
+
 ### 工人端 H5 / 一体机页在云测试环境不再整页白屏：`.mjs` 以 JS MIME 发出，且三条发布自检腿各补一条 MIME 判据（2026-10-04，issue #6293）
 
 - 以前：`https://app.migaozn.com/w/src/*.mjs` 被 nginx 以 **`application/octet-stream`** 发出

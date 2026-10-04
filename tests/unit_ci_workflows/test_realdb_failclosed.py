@@ -72,6 +72,11 @@ _MAP = "backend/admin-api/src/test/java/com/migao/admin/mapper/"
 #                         issue #5146）—— 夹具内部收口，故这三个类**不直接**出现 `PgCluster`，
 #                         这就是本表要**显式登记**的例外（不登记 = 判据②会把它判红）。
 REALDB_FILES: dict[str, str] = {
+    # issue #6302：商品文本入参**长度准入**的类级元守卫 —— 真值源是**现取**的
+    # `information_schema.columns.character_maximum_length`（真 PG 跑 `schema.sql` 终态后读），
+    # 再与「DTO 字段台账」和「ProductService 写面收口上限」三方对账（列长度改了而收口没跟 ⇒
+    # `LENGTH-DRIFT` 判红）。列元数据在 mock 面上不存在 ⇒ 这份判据的真值**只有**真 PG 能给。
+    _SVC + "ProductTextColumnAdmissionMetaGuardTest.java": "direct",
     # issue #5939：发货单**列表**读面（GET /api/admin/shipments）的真库判据 —— 只真 PG 能证的四条：
     # 跨租户不可见（+ 反向自证对方租户自己读得到）/ 软删明细不计进 itemCount / 客户名取自 orders 连接 /
     # 未发货按 packed_at 参与排序，以及 LIMIT 生效。
