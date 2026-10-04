@@ -367,13 +367,10 @@ PUBLIC_PREFIX_FACES: dict[str, NginxFace] = {
     ),
     "/w/": NginxFace(
         prefix="/w/",
-        kind=FACE_STATIC_UNDER_ROOT,
-        owner="worker-h5 发布腿（.github/workflows/worker-h5-publish.yml，issue #4837）",
-        semantics="工人端报工页（零构建纯 ESM，静态根下的 w/ 子目录）",
-        fallback=(
-            "**没有自己的 location**：由 `location /` 的 root 承载 ⇒ 文件缺失会落到根 index.html（C 端）；"
-            "该面的身份由 deploy/scripts/worker-h5-verify-served.sh 的线上断言兜"
-        ),
+        kind=FACE_STATIC,
+        owner="worker-h5 发布腿（.github/workflows/worker-h5-publish.yml，issue #4837；自有 location 见 issue #6293）",
+        semantics="工人端报工页（零构建纯 ESM，静态根下的 w/ 子目录；自有 location 是为了给 `.mjs` 一个 JS MIME）",
+        fallback="落回自己的 /w/index.html（**不得**落到根 index.html）",
     ),
 }
 

@@ -2104,6 +2104,19 @@ STALE_C_END_PAGE = (
 ).encode("utf-8")
 
 
+def _content_type_for(path: str, bad_js_mime: bool = False) -> str:
+    """按扩展名给 Content-Type（issue #6293）。
+
+    `bad_js_mime=True` 注入**线上实测的坏形态**：`.js`/`.mjs` 以 `application/octet-stream` 发出
+    ⇒ 浏览器拒绝执行 module script ⇒ 整页白屏（而身份 / 字节全对）。
+    """
+    if path.endswith((".js", ".mjs")):
+        return "application/octet-stream" if bad_js_mime else "text/javascript"
+    if path.endswith(".css"):
+        return "text/css"
+    return "text/html; charset=utf-8"
+
+
 class _NginxishServer:
     """一个**只实现本单用到的 nginx 语义**的本地 server（前缀 location + try_files + index）。
 
@@ -2114,6 +2127,7 @@ class _NginxishServer:
       · ``b_overwritten`` —— 根发布把**商家端** `/b/` 覆盖成了 C 端产物（红线）
       · ``root_stray_ref``—— 根 index.html 引用了 `/b/js/app.js`（引用面串端）
       · ``root_falls_to_b`` —— 根级深层路径被 `/b/` 的 fallback 吃掉（路由面串端）
+      · ``bad_js_mime``   —— 入口脚本（`.js`/`.mjs`）被发成 `application/octet-stream`（issue #6293）
     """
 
     def __init__(self, root: Path, built: bytes, mode: str = "ok"):
@@ -2169,7 +2183,10 @@ class _NginxishServer:
             path = self.path.split("?", 1)[0]
             body = self.server.route(path)  # type: ignore[attr-defined]
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header(
+                "Content-Type",
+                _content_type_for(path, bad_js_mime=getattr(self.server, "mode", "ok") == "bad_js_mime"),
+            )
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -2178,6 +2195,8 @@ class _NginxishServer:
         outer = self
 
         class _Server(http.server.ThreadingHTTPServer):
+            mode = outer.mode  # handler 要能看见 bad_js_mime 注入（issue #6293 的红证）
+
             def route(self, path):
                 return outer._route(path)
 
@@ -2237,6 +2256,9 @@ def test_verify_served_is_green_on_correct_landing(tmp_path):
         ("b_overwritten", "/b/ 返回的是"),
         ("root_stray_ref", "别的应用的命名空间"),
         ("root_falls_to_b", "期望回落到**根 index.html**"),
+        # issue #6293：入口脚本被发成 octet-stream ⇒ 浏览器拒绝执行 module script ⇒ 整页白屏，
+        # 而身份 / 串端 / 字节全对（所以 ①~④ 会全绿）⇒ 必须由 ⑤ 判红。
+        ("bad_js_mime", "∉ JS MIME 白名单"),
     ],
 )
 def test_verify_served_is_red_on_broken_landings(tmp_path, mode, marker):

@@ -525,9 +525,28 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args):  # 静音访问日志
         return None
 
+    def guess_type(self, path):  # noqa: A003 - stdlib 的钩子名就是这样
+        """`.mjs` 给 JS MIME（issue #6293）：**本机的 Python `mimetypes` 表不是判据对象**，
+        所以这里显式钉住 —— 否则「Python 版本不同 ⇒ 夹具给的 MIME 不同 ⇒ 判据时红时绿」。"""
+        if str(path).lower().endswith(".mjs"):
+            return "text/javascript"
+        return super().guess_type(path)
 
-def _serve(directory: Path):
-    handler = lambda *a, **kw: _QuietHandler(*a, directory=str(directory), **kw)  # noqa: E731
+
+class _OctetStreamMjsHandler(_QuietHandler):
+    """坏形态夹具：`.mjs` 以 `application/octet-stream` 发出（= 线上实测形态，issue #6293）。
+
+    身份 / 字节**完全正确**，只有响应头错 ⇒ 这条腿必须红 —— 修复前它全绿，正是本单的病根。
+    """
+
+    def guess_type(self, path):  # noqa: A003
+        if str(path).lower().endswith(".mjs"):
+            return "application/octet-stream"
+        return super().guess_type(path)
+
+
+def _serve(directory: Path, handler_cls: type = _QuietHandler):
+    handler = lambda *a, **kw: handler_cls(*a, directory=str(directory), **kw)  # noqa: E731
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -549,14 +568,23 @@ def _run_verify(base_url: str):
     )
 
 
+def _copy_worker_tree(dest: Path) -> None:
+    """铺一份「已正确发布」的 `w/` 子树 = 远端发布集：index.html + machine.html + `src/**`。
+
+    ⚠️ `src/**` 必须**整棵**铺（不再只铺 2 个文件）：`deploy/scripts/worker-h5-verify-served.sh` ⑥
+    对**每一个** `.mjs` 逐条断言 MIME（issue #6293）⇒ 少铺一个就是**夹具造的假红**
+    （与 ④/⑤ 段「机台页必须在夹具里」同因，2026-09-29 已实证过同一个坑）。
+    """
+    (dest / SUBDIR / "src").mkdir(parents=True, exist_ok=True)
+    (dest / SUBDIR / "index.html").write_bytes(WORKER_INDEX.read_bytes())
+    (dest / SUBDIR / "machine.html").write_bytes(WORKER_MACHINE.read_bytes())
+    for f in sorted((WORKER_H5_DIR / "src").iterdir()):
+        (dest / SUBDIR / "src" / f.name).write_bytes(f.read_bytes())
+
+
 def test_verify_served_is_green_on_real_worker_h5(tmp_path):
     served = tmp_path / "served"
-    (served / SUBDIR / "src").mkdir(parents=True)
-    (served / SUBDIR / "index.html").write_bytes(WORKER_INDEX.read_bytes())
-    (served / SUBDIR / "src" / "app.mjs").write_bytes(WORKER_APP.read_bytes())
-    # 「已正确发布」的树里也必须有机台页（母单 #5161）—— 否则 ④/⑤ 段的红是本夹具造的假红
-    (served / SUBDIR / "machine.html").write_bytes(WORKER_MACHINE.read_bytes())
-    (served / SUBDIR / "src" / "machine.mjs").write_bytes(WORKER_MACHINE_APP.read_bytes())
+    _copy_worker_tree(served)
     server = _serve(served)
     try:
         _wait_port("127.0.0.1", server.server_address[1])
@@ -586,6 +614,30 @@ def test_verify_served_is_red_on_c_end_fallback(tmp_path):
     assert proc.returncode == 1, f"C 端回落到 /w/ 时身份断言竟判绿（空断言）：\n{proc.stdout}"
     assert "❌ 落地面身份断言**失败" in proc.stdout
     assert "TARO_" in proc.stdout or "小布智能助手" in proc.stdout
+
+
+def test_verify_served_is_red_on_octet_stream_mjs(tmp_path):
+    """MIME 坏掉（线上实测形态，issue #6293）：**身份与字节全对，这条腿必须红**。
+
+    这是本单的核心红证 —— 「修复前四条腿全绿」正是因为它们只判状态码与字节哈希：
+    字节全对、浏览器照样拒绝执行 module script（`application/octet-stream`）⇒ 整页白屏。
+    """
+    served = tmp_path / "served"
+    _copy_worker_tree(served)
+    server = _serve(served, _OctetStreamMjsHandler)
+    try:
+        _wait_port("127.0.0.1", server.server_address[1])
+        proc = _run_verify(f"http://127.0.0.1:{server.server_address[1]}")
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert proc.returncode == 1, f"`.mjs` 被发成 octet-stream 时竟判绿（= 空断言）：\n{proc.stdout}"
+    # ① 红的必须是 **MIME 判据**（⑥），且带上是哪个头
+    assert "∉ JS MIME 白名单" in proc.stdout, f"没红在 MIME 判据上：\n{proc.stdout}"
+    assert "application/octet-stream" in proc.stdout, f"判红信息里没有实际 Content-Type：\n{proc.stdout}"
+    # ② 对照读数：身份 / 字节那几条**仍然全绿**（证明红只来自 MIME，不是夹具把页面弄坏了）
+    assert "body 哈希 = 仓库 frontend/worker-h5/index.html" in proc.stdout
+    assert "✅ 状态码 200" in proc.stdout
 
 
 # ── 命令内容上限（issue #6124）：真跑**组装段**的读数判据 ────────────────────────
