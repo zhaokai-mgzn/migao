@@ -5601,11 +5601,11 @@ _CASE_PK_001 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-080 [NORMAL] 「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（共享库只读探测运行面，`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）（源: cases/misc.yml）──
+# ── MC-080 [NORMAL] 「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（判定本体 = 单份共享库；AK/SK 引用在 job env 只声明一次），`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）（源: cases/misc.yml）──
 _CASE_MC_080 = EvalCase(
     id='MC-080',
     legacy_id='',
-    title='「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（共享库只读探测运行面，`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）',
+    title='「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（判定本体 = 单份共享库；AK/SK 引用在 job env 只声明一次），`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['当 `Skip if already built (schedule reconcile)` 判「已部署」（镜像在 ACR / 同 sha 的 run 结论 success）、`Deploy to SWAS` 与 `Assert server-side build` 被整段跳过时，必须有一条**部署后**的机械判据把「**运行 tag == 目标 tag**」验出来：不一致 ⇒ **具名判红**（服务 / 期望 tag / 实测 tag / 可复制命令），而不是让 run 报绿；探不到就要 fail-closed，不许当成「一致」。'],
