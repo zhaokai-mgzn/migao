@@ -60,6 +60,7 @@ jobs:
     # 部署对账输出（issue #2935）：schedule 触发时若镜像已存在则 skip=true（本轮未部署）
     outputs:
       deployed: ${{ steps.sync.outputs.skip }}
+      image_tag: ${{ steps.tag.outputs.IMAGE_TAG }}
 
     concurrency:
       group: deploy-ai-agent-service
@@ -371,26 +372,32 @@ jobs:
           bash deploy/scripts/swas-deploy-ci.sh \
             ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P" "$IMAGE_TAG" \
             ai-agent
+  # ── 「跳过部署」的运行面自证（issue #6294，判据 1）──────────────────────────────
+  # 病：上面 `Skip if already built` 判「已部署」**只看 run 结论**（镜像在 ACR / 同 sha 结论 success）
+  # ⇒ 「跳过」那条路径上 `Deploy to SWAS` 整段 skipped，而 **run 结论 = success**；
+  # 对账侧（`deploy-reconcile.yml`）的断路器把 `success` 放进允许名单 ⇒ 不再补部署 ⇒
+  # 环境停摆而台账全绿（现场：SWAS 在跑 `admin-web:sha-877ac15`，main HEAD `9d82e2e60`）。
+  # 出口 = 在**跳过**时读一次运行面（远端在跑 tag），与目标 tag 比较：不一致 ⇒ 具名判红、探不到 ⇒ fail-closed。
+  # ⚠️ 判定本体与调用面都只有一份（可复用 workflow + `deploy/scripts/swas_deploy_running_tag.sh`）；
+  #    本处**不是**第二份实现（三条腿逐字同源，元守卫未接线即红）。
+  # ⚠️ 判红**不**顺手补部署：那是断路器（#4767 ③ / #5814 B）要防的 churn；本 job 只把事实变成可归因的红。
+  # 判据 = tests/unit_ci_workflows/test_deploy_skip_is_not_success.py
+  probe-running-tag:
+    name: Assert running tag == target (skip 不得冒充已部署)
+    needs: build-and-deploy
+    # `deployed` = `steps.sync.outputs.skip` ⇒ `'true'` 即「本轮跳过部署」（本轮未换环境）。
+    # `always()`：部署 job 被跳过时**更要**判（那正是本 job 存在的理由）。
+    if: always() && needs.build-and-deploy.outputs.deployed == 'true'
+    uses: ./.github/workflows/deploy-probe-running-tag.yml
+    with:
+      instance_id: ${{ env.SWAS_INSTANCE_ID }}
+      region: ${{ env.SWAS_REGION }}
+      image_tag: ${{ needs.build-and-deploy.outputs.image_tag }}
+      service: ai-agent
+    secrets:
+      ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+      ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
 
-      # ── 「跳过部署」的运行面自证（issue #6294，判据 1）────────────────────────────
-      # 病：上面 `Skip if already built` 判「已部署」**只看 run 结论**（镜像在 ACR / 同 sha 结论 success）
-      # ⇒ 「跳过」那条路径上 `Deploy to SWAS` 整段 skipped，而 **run 结论 = success**；
-      # 对账侧（`deploy-reconcile.yml`）的断路器把 `success` 放进允许名单 ⇒ 不再补部署 ⇒
-      # 环境停摆而台账全绿（现场：SWAS 在跑 `admin-web:sha-877ac15`，main HEAD `9d82e2e60`）。
-      # 出口 = 在**跳过**时读一次**运行面**（远端在跑 tag），与目标 tag 比较：不一致 ⇒ 具名判红。
-      # ⚠️ 判红**不**顺手补部署：那是断路器（#4767 ③ / #5814 B）要防的 churn；本步只把事实变成可归因的红。
-      # 判据 = tests/unit_ci_workflows/test_deploy_skip_is_not_success.py（含类级元守卫：
-      # 任何带 `Skip if already built` 的腿漏接本步 ⇒ 未接线即红）。
-      - name: "Assert running tag == target (skip 不得冒充已部署，issue #6294)"
-        if: always() && steps.sync.outputs.skip == 'true'
-        env:
-          AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
-          SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
-          IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
-        run: |
-          set -euo pipefail
-          bash deploy/scripts/swas_deploy_running_tag.sh \
-            ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$IMAGE_TAG" ai-agent
   smoke-test:
     name: Post-Deploy Smoke Test
     needs: build-and-deploy
