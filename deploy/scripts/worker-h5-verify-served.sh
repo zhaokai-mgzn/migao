@@ -222,7 +222,8 @@ echo ""
 #   解析面 = **静态 `import … from '…'` + 动态 `import('…')` 字面量**（`app.mjs` 有真实的 `await import('./api.mjs')`）；
 #   规格化 = **发布集内**的相对说明符 + `.js` / `.mjs` / `.cjs` 后缀（`src/shipment.mjs` 是孤儿模块：
 #            仓内无人 import 它，但它是**发布集成员** ⇒ 由 ⑥ 的现取文件清单兜，不进本闭包）；
-#   每个模块 = `200` **且** Content-Type ∈ JS MIME 白名单；**空集判红**（「没跑」必须长得像「没跑」）；
+#   每个模块 = `200`（存在性）**且** Content-Type ∈ JS MIME 白名单（MIME 那一半由 ⑥ 对
+#            本仓 `src/**` 承担，见下方「MIME 判据不重复实现」的注释）；**空集判红**；
 #   另收集入口的 `<link rel="stylesheet" href>` 并断 `200`（**正向盲区**：`.css` 404 时页面无样式
 #           而 module 闭包仍全绿）。
 # 为什么这条只能**活体**判（离线判不了）：坏点的本质是「线上那个 URL 上**是什么**」——
@@ -272,8 +273,8 @@ CLOSURE_MJS=0
 while IFS=$'\t' read -r spec from_dir; do
   [ -n "$spec" ] || continue
   # 说明符**一律在 Python 侧规格化**（`urljoin`）：HTML 里的 `src="…"` 相对的是**文档 URL**，
-# 而模块里的 `import "…"` 相对的是**该模块自己** —— 两套基准不同，混用会把
-# `/w/index.html` 当目录 ⇒ 解析出 `/w/index.html/src/app.mjs`（实测踩过）。
+  # 而模块里的 `import "…"` 相对的是**该模块自己** —— 两套基准不同，混用会把
+  # `/w/index.html` 当目录 ⇒ 解析出 `/w/index.html/src/app.mjs`（实测踩过）。
   url=$(python3 -c "import sys,urllib.parse; print(urllib.parse.urljoin(sys.argv[1], sys.argv[2]))" "$from_dir" "$spec" 2>/dev/null || true)
   if [ -z "$url" ]; then
     # 解析器本身就是判据的**前置**：它空转（Python 不在 / 提前退出）而只打印一行「解析不了」，
