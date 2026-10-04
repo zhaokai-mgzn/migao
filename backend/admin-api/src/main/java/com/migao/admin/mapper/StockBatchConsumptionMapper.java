@@ -3,7 +3,9 @@ package com.migao.admin.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.StockBatchConsumption;
 import lombok.Data;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
@@ -40,6 +42,37 @@ public interface StockBatchConsumptionMapper extends BaseMapper<StockBatchConsum
      * 这里写成字面量是因为注解值必须是编译期常量）。</p>
      */
     String DISPATCH_REASONS_SQL = "'processing_order', 'processing_order_cancelled'";
+
+    /**
+     * **盘点分录的原子落账**（issue #6301）：撞幂等闸
+     * {@code uk_batch_consumption_stocktake (tenant_id, stocktake_run_id, batch_id) WHERE stocktake_run_id IS NOT NULL AND deleted = 0}
+     * ⇒ <b>不插</b>，并在**同一条语句**里把「谁先到」判出来。
+     *
+     * <p>🔴 <b>为什么不是「先查后插 + catch DuplicateKeyException」</b>（缺陷本体，已在 main 复现）：
+     * 服务层的 {@code stocktakeRecordedBatchIds} 是**先查是否已记 → 再插入**的非原子读；并发时多个
+     * 同一 run id 的请求同时判定「未记」，随后争抢上述唯一索引 ⇒ 落库抛 {@code DuplicateKeyException}
+     * ⇒ 直接冒泡成 **HTTP 500**（探针 W5 读数 {@code [200,500,500,500,500,500]}）。
+     * 改成原子写后**冲突在语句内部被消解**：不会抛异常 ⇒ 无需在事务里 catch（而 PG 事务一旦
+     * 因异常进入 aborted 态，同事务内后续读会失败 ⇒ 「catch 后继续用同一事务」本身就是不可行的写法）。</p>
+     *
+     * <p>⚠️ {@code ON CONFLICT} 目标**必须带索引谓词**（部分唯一索引；PG 冲突推断要求谓词匹配 ——
+     * 与 {@code ProcessingSetPartTokenMapper.insertIgnoreConflict} / {@code InboundLabelMapper.insertIgnoreConflict}
+     * 同款，本地 PG 实测）。</p>
+     *
+     * @return 受影响行数：<b>1 = 本次真的落了这一行（本次生效）</b>；
+     *         <b>0 = 同 run × 批次已有一行（幂等回放，调用方不得再动 SKU 库存）</b>
+     */
+    @Insert("INSERT INTO stock_batch_consumptions (tenant_id, batch_id, batch_no, product_id, sku_id, "
+            + "sku_code, delta, before_qty, after_qty, formula_meters, planned_meters, unit_cost, reason, "
+            + "stocktake_run_id, operator, note, created_at, deleted) "
+            + "VALUES (#{c.tenantId}, #{c.batchId}, #{c.batchNo}, #{c.productId}, #{c.skuId}, "
+            + "#{c.skuCode}, #{c.delta}, #{c.beforeQty}, #{c.afterQty}, #{c.formulaMeters}, "
+            + "#{c.plannedMeters}, #{c.unitCost}, #{c.reason}, #{c.stocktakeRunId}, #{c.operator}, "
+            + "#{c.note}, #{c.createdAt}, 0) "
+            + "ON CONFLICT (tenant_id, stocktake_run_id, batch_id) "
+            + "WHERE stocktake_run_id IS NOT NULL AND deleted = 0 DO NOTHING")
+    @Options(useGeneratedKeys = true, keyProperty = "c.id")
+    int insertStocktakeIfAbsent(@Param("c") StockBatchConsumption row);
 
     /**
      * 逐批次汇总消耗（Σdelta；负数 = 净扣减）。

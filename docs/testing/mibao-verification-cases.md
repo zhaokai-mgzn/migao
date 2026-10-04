@@ -3046,7 +3046,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（81 case）
+## 杂项域（82 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4209,6 +4209,20 @@
 跳过: [backend-contract] 取号台账的仓内判据（本地 claims 目录 + 同仓 open PR 的 claims 目录；零 LLM、零真库；唯一外部面 = GitHub REST 只读，有超时/预算/无凭据 fail-closed）由 tests/unit_ci_workflows/test_case_id_claims.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-03 新增（issue #6245，P3·CI）。病：两个在飞 PR 各自 claim 同一个号 ⇒ 两边 CI 都绿（本轮实测 3 次：AS-011/012、PG-059/069、MC-076，全靠人工跨 refs 核对才发现）。落地 = ① `tests/unit_ci_workflows/test_case_id_claims.py` 新增**判据 7**（`fetch_open_pr_claims` + `cross_pr_claims_problems`，接进 `all_problems` / `repo_problems` 常驻出口）；② 判据 7 的红证/对照/接线/真 HTTP 面共 13 条（其中 `test_cross_pr_check_is_wired_into_the_repo_exit` 专防「判据绿但接线不在」）；③ `.github/workflows/pr-check.yml` 的 `ci workflow helper unit tests` 步骤补 `GITHUB_TOKEN`（没有它 ⇒ 那一侧判据 7 只能记「判定不了」）。判据⑨口径 = 「本 PR ↔ 另一个在飞 PR」**只**这一面，与判据 3（本 PR ↔ main）互补。取号 MC-079（`scripts/next_case_id.py MC` ⇒ main:001-078（**MC-078 已被 #6258 占**）+ 全部 open PR 逐条目 ⇒ 最小空闲 MC-079）。⚠️ 未固化（照实登记）：不做抢占式取号（方案 ② 需共享登记写面）；不判生成物新鲜度（#6255）；本机（无凭据）不发起判定 ⇒ 本机看不到跨在飞 PR 的重号。 ｜ tags: ci, case-id-claims, cross-pr, fail-closed, red-proof, no-new-dependency
+
+### MC-081. 唯一键 / 幂等键写入点的类级元守卫（issue #6301）：全仓「写带唯一约束的表」的写入点 ⇄ 冻结台账双向相等 —— 未登记即红、登记即须属实（处理摘掉即红）、台账为空 / 扫描零命中即 fail-closed；#6301 那一处必须带 ON CONFLICT 原子闸（改回朴素 insert 即具名判红） 🔵
+```
+你: 当同一个幂等键（如盘点的 runId）被并发提交、或网络重试把同一请求发两遍时，唯一索引本来会拒掉第二次写入；但如果代码里没有任何冲突处理，那次「拒绝」就变成用户侧的 500 —— 必须有判据在**新增这类写入点时就红**，而不是等下一个并发现场。
+数据: **病（issue #6301 的形态，已在 main 复现）**：服务层「先查是否已记 → 再插入」是**非原子读**（TOCTOU）；并发时多个同 runId 的请求同时判定「未记」，随后争抢部分唯一索引 `uk_batch_consumption_stocktake` ⇒ 抛 `DuplicateKeyException` ⇒ 未映射成幂等回执 ⇒ 5 条 HTTP 500（探针 W5 读数 `[200,500,500,500,500,500]`，两个构建点都红）。数据本身正确（分录 1 行、库存 Δ 正确）⇒ 缺陷在**错误映射 / 回执语义**。
+数据: **判据 1（未登记即红）**：全仓「服务/控制层里 `<XxxMapper 字段>.insert*(`，且该 mapper 经 `extends BaseMapper<实体>` → 实体的 `@TableName` 指向 schema.sql 里带 `CREATE UNIQUE INDEX` 的表」的写入点，必须**逐条**登记进 `tests/unit_ci_workflows/unique_write_ledger.json`（现取 26 处：9 处有处理、17 处是 `handling: none` 的已登记缺口）。多出来的 ⇒ **点名报出**该文件 / 字段 / 表，并给出口（补原子写 / 冲突映射，或按缺口登记）。判据 = `tests/unit_ci_workflows/test_idempotent_unique_write_guard.py::test_every_unique_write_site_is_registered`。
+数据: **判据 2（登记即须属实，双向）**：台账说某文件在处理而该文件**没有**处理 ⇒ 红（唯一冲突会重新冒泡成 5xx）；台账说 `handling: none`（缺口）而语料里现在**有**处理 ⇒ 红（陈旧登记，台账**只许缩短**）；台账 / 现取的表名漂移 ⇒ 红。**逐方法判**（不是「文件里有 ON CONFLICT 就行」）—— 这是本判据的判别力来源：把 `insertStocktakeIfAbsent` 的 `ON CONFLICT … DO NOTHING` 摘掉 ⇒ 具名判红。
+数据: **判据 3（#6301 那一处的具体形态）**：`StockBatchConsumptionMapper::insertStocktakeIfAbsent` 必须在场，且该方法的 SQL 里必须有 `ON CONFLICT`（在语句内部消解冲突 ⇒ 并发不再抛异常、事务不进 aborted 态）；盘点落账的写入点必须**不是** `handling: none`。判据 = 同文件 `test_the_stocktake_write_point_uses_an_atomic_conflict_handler`。
+数据: **判据 4（fail-closed）**：台账为空 ⇒ 红；扫描**零命中**（一个写入点都找不到）⇒ 红（判据自己失效必须自曝，不许静默绿）；schema 解析出的唯一约束表少于 20 张 ⇒ 红（解析口径坏了）；mapper→表 一条都解析不出来 ⇒ 红。
+数据: **判据 5（判别力自证，随判据常驻）**：八条坏形态在**内存语料**上各自判红（新增未登记写入点 / 台账清空 / 零命中 / 处理被摘掉 / 台账陈旧 / 表漂移 / 注释里的 `insert(` 不算写入点 / 无唯一约束的表不在射程），两条**对照读数**不红。判据 = 同文件 `test_injected_bad_corpora_are_named`。
+数据: 🔴 **覆盖边界（照实登记）**：① 只认**仓内文本形态**（`.` insert 调用 + `BaseMapper` 泛型 + `@TableName`）—— 裸 SQL / `JdbcTemplate` / 反射写这些表、或 mapper 不经 `BaseMapper` 声明的代码**不在射程内**；② 「处理」的判定是**形态学**的（服务文件出现 `DuplicateKeyException`，或该 mapper 被调用的插入方法带 `ON CONFLICT`）—— 它判不了「那条处理真的被调用 / 真的在并发下有效」（行为面由 `BatchStocktakeConcurrentRealDbTest` 承担）；③ `handling: none` 的 17 条是**已登记的观测缺口**，本判据**不为它们的安全性背书**，缺口的修复是各自独立的包；④ 它不判「某个写入点该不该用幂等键」（业务口径）。
+跳过: [backend-contract] 纯静态判据（零 LLM、零真库、零网络、零时钟；只读 Java 源码 + schema.sql + 台账 JSON）由 tests/unit_ci_workflows/test_idempotent_unique_write_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-04 新增（issue #6301，P2·幂等并发）。取号 **MC-081**：`python3 scripts/next_case_id.py MC` 在本机因 PR #6304 的 diff 超 20000 行读取失败而**拒绝取号**（fail-closed 生效）⇒ 按 §26.3 手工核在飞面：`git grep -E 'MC-08[0-9]' $(git for-each-ref refs/remotes/)` ⇒ **MC-080 已被在飞 PR（origin/fix/6294-skip-is-not-success）占用**，MC-081 在 main ∪ 全部在飞 ref ∪ 工作区均无占用 ⇒ 取 MC-081。本单 = 实例判据（真库并发：`BatchStocktakeConcurrentRealDbTest`，3 条：同 runId 并发 6 次全幂等回执 + 顺序重放对照 + 朴素 insert 注入红证）+ 类级元守卫（本用例）+ 台账。⚠️ 未固化（照实登记）：见 data_checks 末条的覆盖边界四条。 ｜ tags: backend-contract, idempotency, unique-key, fail-closed, red-proof, class-level-guard
 
 ### PK-001. 包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们） 🔵
 ```
@@ -9575,8 +9589,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：666（活跃 134，跳过 532）
-- tier 分布：smoke 12 / normal 612 / adversarial 32
+- 用例总数：667（活跃 134，跳过 533）
+- tier 分布：smoke 12 / normal 613 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9591,7 +9605,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：7
-- 杂项域：81
+- 杂项域：82
 - 商家入驻域：5
 - 领域本体域：4
 - 订单域：61
@@ -9701,6 +9715,7 @@
 - MC-076: 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed
 - MC-077: worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）
 - MC-079: 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI
+- MC-081: 唯一键 / 幂等键写入点的类级元守卫（issue #6301）：全仓「写带唯一约束的表」的写入点 ⇄ 冻结台账双向相等 —— 未登记即红、登记即须属实（处理摘掉即红）、台账为空 / 扫描零命中即 fail-closed；#6301 那一处必须带 ON CONFLICT 原子闸（改回朴素 insert 即具名判红）
 - PK-001: 包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）
 - MC-080: 「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（判定本体 = 单份共享库；AK/SK 引用在 job env 只声明一次），`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）

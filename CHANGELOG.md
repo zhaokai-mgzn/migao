@@ -1,5 +1,25 @@
 ## [Unreleased]
 
+### 同一 runId 的盘点请求并发提交不再报 500：其余请求拿幂等回执（replayed + 200），库存只动一次（2026-10-04，issue #6301）
+
+- 以前：同一个 `runId` 的批量盘点请求**并发 6 次** ⇒ 回执 `[200, 500, 500, 500, 500, 500]`。
+  服务层「先查是否已记 → 再插入」是**非原子读**，并发时多个请求同时判定「未记」，随后争抢
+  部分唯一索引 `uk_batch_consumption_stocktake` ⇒ 抛 `DuplicateKeyException` 且**未映射成幂等回执**
+  ⇒ 直接冒泡成 500。数据本身是对的（分录 1 行、库存 Δ 正确）—— 坏的是回执语义：客户端无法区分
+  「服务器故障」与「已经处理过了」⇒ **会重试**，放大并发、还往监控里灌噪声。
+- 现在：盘点落账改走**原子闸**（`ON CONFLICT (tenant_id, stocktake_run_id, batch_id) WHERE
+  stocktake_run_id IS NOT NULL AND deleted = 0 DO NOTHING`，按影响行数判「本次生效 / 已记过」）
+  —— 冲突在**语句内部**被消解，不抛异常、事务不进 aborted 态，因此也**不需要**把所有盘点串行化。
+  被判退的批次按**幂等回放**出回执（`replayed`），并**不再重复对齐 SKU 库存 / 写销售台账**
+  ⇒ 同一 runId 并发 6 次 = 1 次生效 + 5 次回放（全 200）、分录 1 行、库存只动一次。
+- 类级固化（铁律 8）：新增元守卫 `tests/unit_ci_workflows/test_idempotent_unique_write_guard.py`
+  + 冻结台账 `tests/unit_ci_workflows/unique_write_ledger.json` —— 全仓「写带唯一约束的表」的写入点
+  与台账**双向相等**（未登记即红、处理被摘掉即红、台账为空 / 扫描零命中即 fail-closed）。
+  台账现取 26 处：9 处有处理、**17 处已登记为缺口**（同族形态，各自需要独立的包，本单不动它们）。
+- 边界（如实登记）：两个**不同** runId 同时盘同一批次的取数口径不在本单射程（既有实现自己登记的
+  边界，本单不改）；真库并发判据跑在服务层 + 真 PG 上，HTTP 层那条「唯一键异常 ⇒ 500」的映射由
+  既有 `BatchNoTakeRaceRealDbTest`（#6248）在同类异常上核过。
+
 ### 官网公开页 `/contact` 的正文重新进入初始 HTML（SEO / 无 JS 可见面）（2026-10-04，issue #6307）
 
 - 以前：`/contact` 初始 HTML 里**没有页面正文** —— 只有 layout 层（`<title>` / 导航 / 页脚）加一个
@@ -33,7 +53,6 @@
 - 类级固化：元守卫按**现取** `information_schema.columns.character_maximum_length` 与商品入参 DTO 字段
   逐一对账 —— 收口上限 ≠ 库列真实长度 ⇒ 判红（照抄 issue / 旧 DDL 就会踩）；新增字段未登记 ⇒ 判红；
   豁免台账只许缩短（现取条数 = 0）。
-
 
 ### 工人端 H5 / 一体机页在云测试环境不再整页白屏：`.mjs` 以 JS MIME 发出，且三条发布自检腿各补一条 MIME 判据（2026-10-04，issue #6293）
 
