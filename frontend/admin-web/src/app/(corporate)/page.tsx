@@ -24,6 +24,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/corporate/CorporateSection'
+import { AI_ROLES } from '@/config/ai-roles'
 import {
   capabilityDomains,
   industryDepth,
@@ -48,7 +49,7 @@ const agents = [
   {
     icon: Bot,
     name: '米宝',
-    role: '企业智能工作助手',
+    role: AI_ROLES.mibao,
     brief: '面向门店经营：以自然语言问答交付商品、订单、生产、库存与财务的日常经营信息。',
     highlights: [
       '经营看板与每日简报：订单量、销售额、环比、待处理事项',
@@ -64,7 +65,7 @@ const agents = [
   {
     icon: MessageSquare,
     name: '小布',
-    role: 'AI 智能客服',
+    role: AI_ROLES.xiaobu,
     brief: '面向终端顾客：7×24 小时在线接待，覆盖规格咨询、下单、物流查询与售后受理。',
     highlights: [
       '商品咨询：颜色、门幅、加工项，按店内已上架商品作答',

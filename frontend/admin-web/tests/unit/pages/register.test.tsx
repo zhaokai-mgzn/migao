@@ -186,8 +186,8 @@ describe('RegisterPage', () => {
     })
     expect(screen.getByText(/企业账号已自动开通/)).toBeInTheDocument()
     expect(screen.getByText('立即登录')).toBeInTheDocument()
-    expect(screen.getByText('米宝 · 企业智能助手')).toBeInTheDocument()
-    expect(screen.getByText('小布 · 智能客服')).toBeInTheDocument()
+    expect(screen.getByText('米宝 · 企业智能生产管家')).toBeInTheDocument()
+    expect(screen.getByText('小布 · 企业智能客服')).toBeInTheDocument()
   })
 
   it('AI 甄别驳回 → 展示驳回原因', async () => {
