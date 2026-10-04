@@ -3211,6 +3211,25 @@ _CASE_DA_021 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-022 [NORMAL] 缺料风险视图：material_shortage（商品级需求 vs SKU 权威库存）的缺口分层与「未知≠0」披露（issue #6280）（源: cases/data.yml）──
+_CASE_DA_022 = EvalCase(
+    id='DA-022',
+    legacy_id='',
+    title='缺料风险视图：material_shortage（商品级需求 vs SKU 权威库存）的缺口分层与「未知≠0」披露（issue #6280）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['哪些商品会被未完成订单吃空', '缺料风险 / 缺口多少米'],
+    expectations=['inventory_manage(action=material_shortage)'],
+    data_checks=['只读且不回归：material_shortage 在 VALID_ACTIONS 与 read_only_actions 里；**不传 action 时仍是旧的 query 行为**（默认值不许被新 action 改掉）；未知 action ⇒ 无效操作类型（不猜）', "取数面 = 只读端点 GET /api/admin/materials/shortage（权限码 product:list）：需求 = SUM(order_items.quantity) WHERE orders.status ∈ statuses **且 products.unit = '米'**（单位真值在**商品档案**，不在 order_items.selling_method）；供给 = **SUM(product_skus.stock) GROUP BY product_id** —— 🔴 **不读** products.stock（派生冗余列，实测与 SKU 合计差 3.3%）；租户闸两侧都在、软删逐表过滤", '🔴「未知 ≠ 0」：单位不可比的商品 ⇒ demand_qty = **null** + risk_band = unknown（**不是 0**）；真 0 需求（有订单行、可比、合计 0）⇒ 照实 0 且与前者**可分**；non_comparable.lines / products 必须披露。红证：把「不可比」填成 0 ⇒ 必红', '🔴「交期未知 ≠ 今天到期」：days_to_deadline = null ⇒ **不得回填 0**；「缺口确定、紧迫性未知」落 short **单列**，**不得并进 critical**。红证：把 null 填成 0 天 ⇒ 分层与同一断言必红（实测 dev 库未完成订单交期填充率 = 0，今天这一档会占满 —— 那是**正确**输出）', '六档分层 blocked / critical / soon / short / safe / unknown（阈值 3 / 7 天进 basis 可复算）；输出行序 = 分层降序 → gap 降序 → product_id 升序 ⇒ 同一快照**逐字相同**；聚合用**全量行**（band_counts / non_comparable 不随 limit 变）；limit 非法值显式 400，truncated ⇒ 每个有真值字段落 incomplete + 可归因读数', '逐字段三态：status ∈ wired / not_wired / incomplete，不变式 **reason is None ⟺ status == wired**。v1 的 rate_per_week / exhaust_date 一律 not_wired + 具名理由（真值存在于台账但装配层未接线：真实周桶深度 2 周 < 要求 8 周）；history_depth.sufficient = false 时**禁止硬算、禁止回填 0**', '披露纪律（工具面）：工具**必须用人话说出**「预测层未启用：历史深度 N 周 < 8 周」与单位不可比计数，**不得**静默省略、**不得**把 null 说成 0；端点失败 ⇒ fail-closed + 点名 product:list + 可行动建议，**不得**用空列表冒充「没有缺料」（「没查」与「没问题」必须可分）'],
+    skip_reason='[backend-contract] 视图语义由 admin-api 单测验证（backend/admin-api/src/test/java/com/migao/admin/service/MaterialShortageServiceTest.java：六档分层 / 未知≠0 注入式红证 / 确定性 / 三态不变式 / 有界），工具面由 backend/ai-agent-service/tests/test_tools_inventory_manage_shortage.py 验证（action 白名单 / 不回归 / fail-closed / 披露纪律），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['query', 'tool', 'cross-domain', 'material-shortage', 'disclosure'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 的**视图契约**用例（不进 agent-eval 冒烟）：两条 user_inputs 是**同一能力**的两种问法，不是两次会话。前置 = 端点可用且当前账号持 product:list。该前置由两侧单测直接构造并断言 ⇒ 前置不成立（端点 / 权限码改名）时单测直接红，不会表现为「agent 不干活」',
+)
+
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
 _CASE_DF_001 = EvalCase(
     id='DF-001',
@@ -12600,6 +12619,7 @@ ALL_CASES = (
     _CASE_DA_019,
     _CASE_DA_020,
     _CASE_DA_021,
+    _CASE_DA_022,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,
