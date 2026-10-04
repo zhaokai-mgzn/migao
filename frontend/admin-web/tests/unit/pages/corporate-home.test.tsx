@@ -2,81 +2,122 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
-// Mock next/link
 vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
 }))
 
-// Mock lucide-react — icons used by corporate home page
-vi.mock('lucide-react', () => {
-  const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
-  return {
-    Bot: stub('bot'),
-    MessageSquare: stub('message-square'),
-    Package: stub('package'),
-    ClipboardList: stub('clipboard-list'),
-    BookOpen: stub('book-open'),
-    Sparkles: stub('sparkles'),
-    Smartphone: stub('smartphone'),
-    ShieldCheck: stub('shield-check'),
-    FileText: stub('file-text'),
-    Zap: stub('zap'),
-    Rocket: stub('rocket'),
-    ArrowRight: stub('arrow-right'),
-    Check: stub('check'),
-    Factory: stub('factory'),
-    Sofa: stub('sofa'),
-    Shirt: stub('shirt'),
-    ShoppingBag: stub('shopping-bag'),
-    Landmark: stub('landmark'),
-    BadgeCheck: stub('badge-check'),
-  }
-})
-
 import HomePage from '@/app/(corporate)/page'
 
-describe('CorporateHomePage（官网主页 v3：云厂商式事实营销，issue #2852，公司杭州词元通达科技有限公司）', () => {
-  it('renders hero heading：事实型主标（7×24 客服在线 / 经营数据一问即答）', () => {
+describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 按系统真实能力重写文案，issue #6291）', () => {
+  // ── Hero ──
+
+  it('renders hero：布艺行业经营平台定位 + 双 AI 主标', () => {
     render(<HomePage />)
-    expect(screen.getByText(/7×24 客服在线/)).toBeInTheDocument()
-    expect(screen.getByText(/经营数据一问即答/)).toBeInTheDocument()
+    expect(screen.getByText(/两个 AI，把一间窗帘店/)).toBeInTheDocument()
+    expect(screen.getByText(/从询价管到发货/)).toBeInTheDocument()
   })
 
-  it('renders company name and 企业级 AI 客服与经营平台 positioning in hero badge', () => {
+  it('renders company name and 布艺行业 AI 经营平台 positioning in hero badge', () => {
     render(<HomePage />)
     expect(screen.getAllByText(/杭州词元通达科技有限公司/).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText(/企业级 AI 客服与经营平台/)).toBeInTheDocument()
+    expect(screen.getByText(/布艺行业 AI 经营平台/)).toBeInTheDocument()
   })
 
-  it('renders hero description：米宝/小布 能力规格句', () => {
+  it('renders hero description：两位 AI 的分工规格句', () => {
     render(<HomePage />)
-    expect(screen.getByText(/米宝——企业 AI 工作助手/)).toBeInTheDocument()
-    expect(screen.getByText(/小布——AI 智能客服/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/小布接待顾客：应答咨询、算料报价、下单、查物流、受理售后/)
+    ).toBeInTheDocument()
+    expect(screen.getByText(/米宝打理经营：商品、订单、生产、库存、财务/)).toBeInTheDocument()
+  })
+
+  it('renders hero 事实标签（可核实的四条）', () => {
+    render(<HomePage />)
+    expect(screen.getByText('AI 自动甄别 · 秒级开通')).toBeInTheDocument()
+    expect(screen.getAllByText('租户级数据隔离').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('微信小程序 + 商家小程序 + 员工端 H5')).toBeInTheDocument()
+    expect(screen.getByText('人机协同机制参考 GB/T 47746-2026 设计')).toBeInTheDocument()
   })
 
   it('renders CTA links', () => {
     render(<HomePage />)
-    // "立即入驻" appears in both hero and bottom CTA sections
-    const ctaLinks = screen.getAllByText('立即入驻')
-    expect(ctaLinks).toHaveLength(2)
-    expect(screen.getByText('了解更多')).toBeInTheDocument()
+    expect(screen.getAllByText('立即入驻')).toHaveLength(2)
+    expect(screen.getByText('看完整能力')).toBeInTheDocument()
+    expect(screen.getByText('留言咨询')).toBeInTheDocument()
   })
 
-  it('renders 产品区：米宝与小布能力清单', () => {
+  // ── 双 AI 分工 ──
+
+  it('renders 双 AI 区块：能力清单 + 能力边界', () => {
     render(<HomePage />)
-    expect(screen.getByText(/一位打理店内经营，一位接待您的客户/)).toBeInTheDocument()
-    expect(screen.getByText('米宝')).toBeInTheDocument()
-    expect(screen.getByText('企业智能工作助手')).toBeInTheDocument()
-    expect(screen.getByText('小布')).toBeInTheDocument()
-    expect(screen.getByText('AI 智能客服')).toBeInTheDocument()
-    // 能力规格要点
-    expect(screen.getByText('订单跟踪与异常提醒')).toBeInTheDocument()
-    expect(screen.getByText('库存盘点与智能预警')).toBeInTheDocument()
-    expect(screen.getByText('订单进度与物流实时查询')).toBeInTheDocument()
-    expect(screen.getByText('复杂诉求自动转人工，上下文随行')).toBeInTheDocument()
+    expect(screen.getByText(/一位打理店内经营，一位接待您的顾客/)).toBeInTheDocument()
+    expect(screen.getAllByText('米宝').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('企业智能工作助手').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('小布').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('AI 智能客服').length).toBeGreaterThanOrEqual(1)
+    // 能力规格要点（都对应真实存在的模块 / 工具）
+    expect(
+      screen.getByText('经营看板与每日简报：订单量、销售额、环比、待处理事项')
+    ).toBeInTheDocument()
+    expect(screen.getByText('生产与计件：工序库、工艺路线、计件工资报表')).toBeInTheDocument()
+    expect(screen.getByText('窗帘算料报价：按尺寸与工艺算用料，给出估算报价')).toBeInTheDocument()
+    expect(screen.getByText('售后受理：售后咨询与申请，工单恒为待商家审核')).toBeInTheDocument()
+    // 能力边界写在明处（不把 AI 说成万能）
+    expect(screen.getByText(/写操作只有三类：改价、批量上下架、批量库存调整/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/不改价、不取消订单、不退款、不承诺优惠折扣，也不报库存数量/)
+    ).toBeInTheDocument()
   })
 
-  it('renders 人机协同流程图（AI 先应答，人工来兜底）', () => {
+  // ── 行业纵深 ──
+
+  it('renders 「一条窗帘订单跑完六步」的行业纵深链路', () => {
+    render(<HomePage />)
+    expect(screen.getByText('一条窗帘订单，跑完这六步')).toBeInTheDocument()
+    for (const title of ['询价与算料', '下单', '生产', '入库', '发货', '售后与对账']) {
+      expect(screen.getByText(title)).toBeInTheDocument()
+    }
+    // 六步里的行业真值：工序三段用行业正名
+    expect(screen.getByText(/裁剪（裁床）→ 车位（缝制）→ 后整（烫工及后整）/)).toBeInTheDocument()
+    // 未落地的术语不得出现（「拼版」全仓无实现；「质检」未进任何工艺路线）
+    expect(screen.queryByText(/拼版/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/质检/)).not.toBeInTheDocument()
+  })
+
+  it('renders 行业纵深四块（算料 / SKU / 工序计件 / 批次余料）', () => {
+    render(<HomePage />)
+    for (const title of ['算料与报价', '多规格 SKU', '工序与计件', '批次与余料']) {
+      expect(screen.getAllByText(title).length).toBeGreaterThanOrEqual(1)
+    }
+  })
+
+  // ── 能力地图 ──
+
+  it('renders 能力地图：六个能力域与独立入口（菜单名与 config/menu.ts 一致）', () => {
+    render(<HomePage />)
+    expect(screen.getByText('一个后台，六个能力域')).toBeInTheDocument()
+    for (const domain of ['工作台', '客户服务', '交易管理', '生产管理', '仓储与物料', '组织管理']) {
+      expect(screen.getAllByText(domain).length).toBeGreaterThanOrEqual(1)
+    }
+    // 真实菜单项抽样（旧版官网只讲「商品 / 订单 / 知识库」三件事）
+    for (const item of [
+      '经营看板',
+      '每日简报',
+      '智能派单',
+      '计件工资',
+      '余料台账',
+      '省料看板',
+      '岗位权限',
+    ]) {
+      expect(screen.getAllByText(item).length).toBeGreaterThanOrEqual(1)
+    }
+    expect(screen.getByText('商品管理')).toBeInTheDocument()
+    expect(screen.getByText('通知中心')).toBeInTheDocument()
+  })
+
+  // ── 人机协同（口径：用户 2026-10-04 裁定保留，能力后续会回归）──
+
+  it('renders 人机协同流程（AI 先应答，人工来兜底）', () => {
     render(<HomePage />)
     expect(screen.getByText('人机协同')).toBeInTheDocument()
     expect(screen.getByText(/AI 先应答，人工来兜底/)).toBeInTheDocument()
@@ -84,56 +125,63 @@ describe('CorporateHomePage（官网主页 v3：云厂商式事实营销，issue
     expect(screen.getByText('小布 AI 应答')).toBeInTheDocument()
     expect(screen.getByText('自动转人工')).toBeInTheDocument()
     expect(screen.getByText('人工接续')).toBeInTheDocument()
+    expect(screen.getByText('留言兜底')).toBeInTheDocument()
   })
 
-  it('renders 对比表：自招客服 vs 普通机器人 vs 米高', () => {
+  // ── 国标宣称（OB-005：标准号 + 4 能力点 + 免责小字）──
+
+  it('renders GB/T 47746-2026 遵循国家标准区块（标准号 + 4 能力点 + 免责小字）', () => {
     render(<HomePage />)
-    expect(screen.getByText(/和自招客服、普通问答机器人差在哪/)).toBeInTheDocument()
-    expect(screen.getByText('自招人工客服')).toBeInTheDocument()
-    expect(screen.getByText('普通客服机器人')).toBeInTheDocument()
-    expect(screen.getByText('7×24，大模型理解业务')).toBeInTheDocument()
-    expect(screen.getByText('自动转人工 + 上下文同步')).toBeInTheDocument()
-    expect(screen.getByText('AI 即问即答')).toBeInTheDocument()
-    expect(screen.getByText('分钟级开通，按年订阅')).toBeInTheDocument()
+    expect(screen.getByText('遵循国家标准')).toBeInTheDocument()
+    expect(screen.getByText(/让人工与智能客服协同更可靠/)).toBeInTheDocument()
+    expect(screen.getByText('GB/T 47746-2026')).toBeInTheDocument()
+    expect(screen.getByText(/顾客联络服务 人工与智能客户服务协同要求/)).toBeInTheDocument()
+    expect(screen.getByText('自动识别复杂诉求转人工')).toBeInTheDocument()
+    expect(screen.getByText('转人工规则可配置')).toBeInTheDocument()
+    expect(screen.getByText('转人工即同步上下文')).toBeInTheDocument()
+    expect(screen.getByText('AI 严格承诺边界')).toBeInTheDocument()
+    expect(screen.getByText(/沟通记录同步给人工客服，无需重复描述/)).toBeInTheDocument()
+    expect(screen.getByText(/AI 只做规则解释与材料收集/)).toBeInTheDocument()
+    expect(screen.getByText(/不构成任何认证、检测或备案结论/)).toBeInTheDocument()
+    // 红线：不得出现「已通过认证 / 备案 / 无缝接管」等误导措辞
+    expect(screen.queryByText(/已通过.*认证/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/无缝接管/)).not.toBeInTheDocument()
   })
 
-  it('renders 平台模块（管理后台）with feature names', () => {
-    render(<HomePage />)
-    expect(screen.getByText('管理后台')).toBeInTheDocument()
-    expect(screen.getByText(/商品、订单、知识库，一个后台统一管理/)).toBeInTheDocument()
-    expect(screen.getByText('商品管理')).toBeInTheDocument()
-    expect(screen.getByText('订单管理')).toBeInTheDocument()
-    expect(screen.getByText('知识库')).toBeInTheDocument()
-  })
+  // ── 平台保障 ──
 
-  it('renders 平台保障（正规运营主体 / 租户隔离 / 多重风控）', () => {
+  it('renders 平台保障（运营主体 / 数据隔离 / 权限 / 可追溯）', () => {
     render(<HomePage />)
     expect(screen.getByText('平台保障')).toBeInTheDocument()
     expect(screen.getByText('AI 自动合规甄别')).toBeInTheDocument()
     expect(screen.getByText('正规运营主体')).toBeInTheDocument()
-    expect(screen.getByText('多重风控防护')).toBeInTheDocument()
+    expect(screen.getByText('操作可追溯')).toBeInTheDocument()
+    expect(screen.getByText('岗位权限可控')).toBeInTheDocument()
+    // 无证据的能力不得宣称（行级数据范围与向量检索都没有实现）
+    expect(screen.queryByText(/数据范围/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/向量检索/)).not.toBeInTheDocument()
   })
 
-  it('renders 适合行业 with 行业名称（不再使用虚构合作品牌）', () => {
+  // ── 适合行业 / 开通 ──
+
+  it('renders 适合行业 with 行业名称（不使用虚构合作品牌）', () => {
     render(<HomePage />)
     expect(screen.getByText('适合行业')).toBeInTheDocument()
     expect(screen.getByText('布艺纺织')).toBeInTheDocument()
     expect(screen.getByText('家居建材')).toBeInTheDocument()
     expect(screen.getByText('服装服饰')).toBeInTheDocument()
     expect(screen.getByText('电商零售')).toBeInTheDocument()
-    // 旧虚构合作品牌不得残留
     expect(screen.queryByText('合作品牌')).not.toBeInTheDocument()
     expect(screen.queryByText('品牌 A')).not.toBeInTheDocument()
   })
 
-  it('renders 三步开始 with AI 智能甄别（不再出现人工 1-3 工作日审核）', () => {
+  it('renders 三步开始 with AI 智能甄别（不出现人工审核口径）', () => {
     render(<HomePage />)
     expect(screen.getByText('开始使用')).toBeInTheDocument()
     expect(screen.getByText(/三步，开始使用/)).toBeInTheDocument()
     expect(screen.getByText('提交申请')).toBeInTheDocument()
     expect(screen.getByText('AI 智能甄别')).toBeInTheDocument()
     expect(screen.getByText('即刻开通')).toBeInTheDocument()
-    // 旧文案不得残留
     expect(screen.queryByText('平台审核')).not.toBeInTheDocument()
     expect(screen.queryByText('1-3 个工作日内完成审核')).not.toBeInTheDocument()
   })
@@ -141,39 +189,29 @@ describe('CorporateHomePage（官网主页 v3：云厂商式事实营销，issue
   it('renders bottom CTA：几分钟开通，两位 AI 即刻开始工作', () => {
     render(<HomePage />)
     expect(screen.getByText(/几分钟开通，两位 AI 即刻开始工作/)).toBeInTheDocument()
-    expect(screen.getByText(/AI 自动甄别秒级通过/)).toBeInTheDocument()
+    expect(screen.getByText(/AI 自动甄别秒级返回结果/)).toBeInTheDocument()
   })
 
-  it('renders GB/T 47746-2026 遵循国家标准区块（标准号 + 4 能力点 + 免责小字，issue #2787）', () => {
-    render(<HomePage />)
-    // 区块标题与标准号
-    expect(screen.getByText('遵循国家标准')).toBeInTheDocument()
-    expect(screen.getByText(/让人工与智能客服协同更可靠/)).toBeInTheDocument()
-    expect(screen.getByText('GB/T 47746-2026')).toBeInTheDocument()
-    expect(screen.getByText(/顾客联络服务 人工与智能客户服务协同要求/)).toBeInTheDocument()
-    // 4 能力点
-    expect(screen.getByText('自动识别复杂诉求转人工')).toBeInTheDocument()
-    expect(screen.getByText('转人工规则可配置')).toBeInTheDocument()
-    expect(screen.getByText('转人工即同步上下文')).toBeInTheDocument()
-    expect(screen.getByText('AI 严格承诺边界')).toBeInTheDocument()
-    // 关键证据句（能力点描述）
-    expect(screen.getByText(/沟通记录同步给人工客服，无需重复描述/)).toBeInTheDocument()
-    expect(screen.getByText(/AI 只做规则解释与材料收集/)).toBeInTheDocument()
-    // 免责小字（无认证/备案结论）
-    expect(screen.getByText(/不构成任何认证、检测或备案结论/)).toBeInTheDocument()
-    // 红线：不得出现「已通过认证/备案」等误导措辞
-    expect(screen.queryByText(/已通过.*认证/)).not.toBeInTheDocument()
-  })
+  // ── 宣传真实性（issue #6291 新增判据）──
 
-  it('宣传真实性：不夸大 AI 自学习/知识库检索能力（RAG POC 未开放，issue #2807）', () => {
+  it('宣传真实性：不夸大能力（禁「AI 自动学习 / 越用越懂 / 精准应答」复活）', () => {
     render(<HomePage />)
-    // 复杂诉求转人工能力仍在（小布能力清单与对比表）
-    expect(screen.getByText('复杂诉求自动转人工，上下文随行')).toBeInTheDocument()
-    expect(screen.getByText(/AI 应答基于实时业务数据，不编造事实/)).toBeInTheDocument()
-    // 旧夸大表述不得残留
     expect(screen.queryByText(/自动学习/)).not.toBeInTheDocument()
     expect(screen.queryByText(/越用越懂/)).not.toBeInTheDocument()
     expect(screen.queryByText(/越用越精准/)).not.toBeInTheDocument()
     expect(screen.queryByText(/基于企业知识库精准应答/)).not.toBeInTheDocument()
+  })
+
+  it('宣传真实性：官网不得出现占位联系方式（电话 / 邮箱 / 地址）', () => {
+    render(<HomePage />)
+    expect(screen.queryByText(/400-888-8888/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/contact@migao-ai\.com/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/文一西路000号/)).not.toBeInTheDocument()
+  })
+
+  it('视觉口径：不再使用通用蓝色渐变模板（改用织物质感 token）', () => {
+    const { container } = render(<HomePage />)
+    expect(container.innerHTML).not.toContain('from-blue-600')
+    expect(container.innerHTML).not.toContain('to-indigo-800')
   })
 })
