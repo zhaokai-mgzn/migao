@@ -12,7 +12,8 @@
     "`GET /api/admin/roles/{id}` 必须要求 `system:view`（岗位权限页回显，页面守卫即该码）",
     "全部生效码必须在权限目录（`RegistrationService` 种子）里（拼错 ⇒ 该端点对所有角色恒 403）"
   ],
-  "admin_scope_unannotated_count": 10,
+  "admin_scope_unannotated_count": 11,
+ "_admin_scope_unannotated_count_note": "10 → 11（issue #6367 包 P2，2026-10-05）：新增 POST /api/admin/image-recognition/interpret（与既有 POST /api/admin/image-recognition 同族，命令式 requirePermission 动态校验）⇒ 按注解口径实打实 +1；修法（让判据认得动态校验、读数退回 10）见 issue #6378。",
   "_admin_scope_unannotated_count_what": "对照读数（只报告、不判对错）：`/api/admin/**` 面上「无任何生效码」的端点**总数**（判据侧现取）。它只许**缩短**——增长说明新增了沉默放行而没有登记。复算：`python3 -c \"import importlib.util,sys;from pathlib import Path;R=Path('.').resolve();spec=importlib.util.spec_from_file_location('t',R/'backend/ai-agent-service/tests/tool_http_attribution.py');m=importlib.util.module_from_spec(spec);sys.modules['t']=m;spec.loader.exec_module(m);J=R/'backend/admin-api/src/main/java/com/migao/admin/controller';srcs={f'com/migao/admin/controller/{p.relative_to(J).as_posix()}':p.read_text(encoding='utf8') for p in J.rglob('*.java')};idx=m.JavaEndpointIndex(java_sources=srcs);print(sum(1 for eps in idx.endpoints().values() for e in eps if e.permission is None and e.path.startswith('/api/admin')))\"`",
   "entries": [
     {
