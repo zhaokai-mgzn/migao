@@ -14,6 +14,16 @@
   写入方**未登记即红**（判据 = `tests/unit_ci_workflows/test_product_status_single_source.py`）；
   实例判据 = `ProductStatusAdmissionTest`（参数化：非法值 4xx）。
 - 边界：存量死状态行的回填口径待人工裁定；issue #6347 的 Part B（快照三态口径 / 米宝话术）**不在本单**。
+### 刷新后台页面后聊天不再「创建会话失败」：会话恢复先经 /api/auth/refresh 换回 accessToken（2026-10-05，issue #6352）
+
+- 以前：整页加载后 store 只跑 `GET /api/auth/me` 恢复会话，而该接口**不下发 accessToken**（键集实测 = `user/roles/permissions/menus/capabilities`）
+  ⇒ 内存 token 为空；聊天面直连 ai-agent 用的是**裸 fetch + Bearer**（不走 axios、没有 401 重试）
+  ⇒ 点「新建对话」恒报「创建会话失败，请稍后重试」，而其它走 axios 的页面全部正常（现象极具误导性）。
+- 现在：`initialize()` 在无内存 token 时**先**调 `refreshAccessToken()`（HttpOnly refresh cookie 轮换）**再**拉 `/me`
+  ⇒ 刷新页面后聊天、悬浮助手等直连面照常可用。
+- 固化：类级守卫 `tests/unit_ci_workflows/test_admin_web_token_restore_guard.py`（「裸 fetch + Bearer」面逐项冻结 + `initialize` 必须换 token）
+  + 实例判据 `frontend/admin-web/tests/unit/store/auth.test.ts`（用例 AU-012）。
+- ⚠️ 未覆盖（照实登记）：token **中途过期**时裸 fetch 面仍无自动重试 —— 本次只治「整页加载后从未取回」这一条。
 
 ### 右上角用户卡片「点外部即收起」真正生效：改用文档级监听，并拦住同类「fixed 遮罩落在 backdrop-blur 祖先内」缺陷（2026-10-05，issue #6339）
 

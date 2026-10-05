@@ -193,7 +193,8 @@ export const useAuthStore = create<AuthState>()((set, get) => {
       }
     },
 
-    // 应用启动时恢复会话：无内存 token → 依赖 HttpOnly cookie 调 /api/auth/me 校验（审计 07 P1-F1）
+    // 应用启动时恢复会话：无内存 token → 先用 HttpOnly refresh_token cookie 换一枚新 accessToken，
+    // 再用 /api/auth/me 补齐用户/权限（审计 07 P1-F1 / issue #6352）
     initialize: async () => {
       const { accessToken, isAuthenticated } = get()
 
@@ -208,7 +209,12 @@ export const useAuthStore = create<AuthState>()((set, get) => {
         return
       }
 
-      // 无内存 token：尝试用 cookie 恢复会话（后端 HttpOnly cookie 自动携带）
+      // 无内存 token：**先换 token 再拉 /me**，顺序不可换（issue #6352）——
+      // `GET /api/auth/me` **从不下发 accessToken**（token 一律由 HttpOnly cookie 承载），
+      // 只跑 /me 会得到「isAuthenticated=true 但 accessToken=null」；
+      // 而聊天面是**裸 fetch + Bearer**（直连 ai-agent，不走 axios ⇒ 没有 401 重试）
+      // ⇒ 整页加载后「创建会话失败，请稍后重试」，其它走 axios 的页面照常（现象极具误导性）。
+      await get().refreshAccessToken()
       try {
         await get().fetchUserInfo()
       } catch (e) {

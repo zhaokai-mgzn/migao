@@ -1,4 +1,4 @@
-// case_ids: AU-001, AU-002, AU-006, API-010, UI-037
+// case_ids: AU-001, AU-002, AU-006, AU-012, API-010, UI-037
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act } from '@testing-library/react'
 
@@ -339,6 +339,55 @@ describe('useAuthStore (Zustand auth store)', () => {
       expect(result).toBeNull()
       expect(useAuthStore.getState().accessToken).toBeNull()
       expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    })
+  })
+
+  // ==================== 会话恢复（issue #6352 / AU-012）====================
+  describe('initialize — 整页加载后把 accessToken 装回内存', () => {
+    it('AU-012 无内存 token ⇒ 先经 /api/auth/refresh 换回 accessToken，再拉 /me（顺序不可换）', async () => {
+      const calls: string[] = []
+      mockRefreshToken.mockImplementation(async () => {
+        calls.push('refresh')
+        return { data: { data: { accessToken: 'restored-access' } } }
+      })
+      mockGetUserInfo.mockImplementation(async () => {
+        calls.push('me')
+        return {
+          data: {
+            data: {
+              user: { id: 'u1', nickname: '运营小王' },
+              roles: ['admin'],
+              permissions: ['*'],
+              menus: [],
+              capabilities: { mibaoChat: true },
+            },
+          },
+        }
+      })
+
+      await act(async () => {
+        await useAuthStore.getState().initialize()
+      })
+
+      // ① 靶心：内存里真的装上了 token —— 聊天面是**裸 fetch + Bearer**，没有它就 401
+      expect(useAuthStore.getState().accessToken).toBe('restored-access')
+      // ② 顺序：/me 不下发 token ⇒「先 /me 后 /refresh」等于白跑（改前实测正是「只跑 /me」）
+      expect(calls).toEqual(['refresh', 'me'])
+      expect(useAuthStore.getState().isAuthenticated).toBe(true)
+      expect(useAuthStore.getState().isLoading).toBe(false)
+    })
+
+    it('AU-012 无 cookie（未登录）⇒ refresh 失败不抛异常，保持未认证', async () => {
+      mockRefreshToken.mockRejectedValue(new Error('401'))
+      mockGetUserInfo.mockRejectedValue(new Error('401'))
+
+      await act(async () => {
+        await useAuthStore.getState().initialize()
+      })
+
+      expect(useAuthStore.getState().accessToken).toBeNull()
+      expect(useAuthStore.getState().isAuthenticated).toBe(false)
+      expect(useAuthStore.getState().isLoading).toBe(false)
     })
   })
 
