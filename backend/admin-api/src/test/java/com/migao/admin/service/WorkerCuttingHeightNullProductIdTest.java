@@ -393,7 +393,7 @@ class WorkerCuttingHeightNullProductIdTest {
                                 "itemId 来自扫描结果可能为 null ⇒ `itemId == null ? null : items.get(itemId)` 短路")),
                 // ── 存量：读法本身与表可变性无关（getOrDefault / containsKey） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/DailyBriefingService.java|skusByProduct",
-                        new IndexSite("skusByProduct", "costSkusByProduct", "line.getProductId()", "line.getProductId()", 975,
+                        new IndexSite("skusByProduct", "costSkusByProduct", "line.getProductId()", "line.getProductId()", 1022,
                                 Verdict.READ_IS_NULL_TOLERANT, "getOrDefault(line.getProductId(), List.of()) ⇒ 空键安全")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/FinanceService.java|refundMap",
                         new IndexSite("refundMap", "sumRefundByOrder", "o.getId()", "o.getId()", 323,

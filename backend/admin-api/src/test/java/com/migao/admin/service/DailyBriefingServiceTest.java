@@ -1339,6 +1339,98 @@ class DailyBriefingServiceTest {
         }
 
         @Test
+        @DisplayName("有 SKU 但商品不在售 ⇒ 过滤事实经 row_meta.skus 透出（issue #6347 Part B：不许静默空数组）")
+        void filteredSkusDiscloseTheFilterFact() {
+            stubRows();
+            // 注入真实形态（issue #6347 读数 ③）：10 行 SKU 落在 8 个**状态机死行**商品（active）下。
+            List<ProductSku> skus = new java.util.ArrayList<>();
+            for (int i = 1; i <= 10; i++) {
+                skus.add(ProductSku.builder().id((long) i).tenantId(1L)
+                        .productId("DEAD-" + ((i - 1) % 8 + 1)).stock(new BigDecimal(i)).build());
+            }
+            when(productSkuMapper.selectList(any())).thenReturn(skus);
+            // `productMapper.selectList` = 在售商品名查询：8 个商品都不是 on_sale ⇒ 一行都不返回
+            when(productMapper.selectList(any())).thenReturn(List.of());
+            for (int i = 1; i <= 8; i++) {
+                when(productMapper.selectById("DEAD-" + i)).thenReturn(Product.builder()
+                        .id("DEAD-" + i).tenantId(1L).name("死行-" + i).status("active").build());
+            }
+
+            Map<String, Object> snapshot = service.aggregateSnapshot(1L);
+
+            assertThat((List<?>) snapshot.get("skus")).isEmpty();
+            Map<String, Object> meta = metaOf(snapshot, "skus");
+            assertThat(meta).containsEntry("count", 0)
+                    .containsEntry("rows_before_filter", 10)
+                    .containsEntry("filtered_out", 10)
+                    .containsEntry("filtered_by_status", Map.of("active", 10));
+            @SuppressWarnings("unchecked")
+            List<String> filteredIds = (List<String>) meta.get("filtered_product_ids");
+            assertThat(filteredIds).as("被排除的商品 id（有界）").hasSize(8)
+                    .contains("DEAD-1", "DEAD-8");
+            // 🔴 「过滤前 10 / 过滤后 0」这个差值就是引擎侧把「有 SKU 却看不见」说出来的唯一依据：
+            // 没有它，空数组在引擎那里与「表里真的没有 SKU」**不可分**（本单的误归因根源）。
+            assertThat((Integer) meta.get("rows_before_filter") - (Integer) meta.get("count"))
+                    .isEqualTo(meta.get("filtered_out"));
+        }
+
+        @Test
+        @DisplayName("🔴 直连真接线（§28.2）：把**线上那份**快照 JSON 落盘，供跨语言判据原样消费")
+        void dumpSnapshotForTheCrossLanguageWiringJudge() throws Exception {
+            // 为什么要有这条：判据本体绿 ≠ 接线在。Python 侧的判据必须吃**服务端真正吐出的 JSON**
+            // （键名 / 嵌套形态 / 值类型），而不是在 Python 里手写的夹具 —— 两处各写一份必然分叉
+            // （issue #6347 Part B 的过滤事实正是这种跨语言契约）。
+            // 产物落在 `target/snapshot-dump/skus-filtered-out.json`（target/ 不入库，只是取文件的路径）；
+            // 被固化下来的是 `backend/ai-agent-service/tests/fixtures/snapshot_skus_filtered_out.json`
+            // （由本用例的产物**原样**拷过去，见该文件的 _how_to_refresh）。
+            stubRows();
+            List<ProductSku> skus = new java.util.ArrayList<>();
+            for (int i = 1; i <= 10; i++) {
+                skus.add(ProductSku.builder().id((long) i).tenantId(1L)
+                        .productId("DEAD-" + ((i - 1) % 8 + 1)).stock(new BigDecimal(i)).build());
+            }
+            when(productSkuMapper.selectList(any())).thenReturn(skus);
+            when(productMapper.selectList(any())).thenReturn(List.of());
+            for (int i = 1; i <= 8; i++) {
+                when(productMapper.selectById("DEAD-" + i)).thenReturn(Product.builder()
+                        .id("DEAD-" + i).tenantId(1L).name("死行-" + i).status("active").build());
+            }
+
+            Map<String, Object> snapshot = service.aggregateSnapshot(1L);
+            String json = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler
+                    .getObjectMapper().writeValueAsString(snapshot);
+            JsonNode meta = objectMapper.readTree(json).path("row_meta").path("skus");
+
+            assertThat(meta.path("rows_before_filter").asInt()).isEqualTo(10);
+            assertThat(meta.path("filtered_out").asInt()).isEqualTo(10);
+            assertThat(meta.path("filtered_by_status").path("active").asInt()).isEqualTo(10);
+            assertThat(meta.path("filtered_product_ids")).hasSize(8);
+            // 行数组本身**照旧为空**（过滤是对的，不许为了让判据好看而放开过滤）
+            assertThat(objectMapper.readTree(json).path("skus")).isEmpty();
+
+            // 产物落在 `target/snapshot-dump/skus-filtered-out.json`（target/ 不入库，只是取文件的路径）：
+            //   MIGAO 里固化的是 `backend/ai-agent-service/tests/fixtures/snapshot_skus_filtered_out.json`
+            //   （本用例产物**原样**拷过去；刷新说明写在该 fixture 里）。
+            java.nio.file.Path dump = java.nio.file.Path.of("target", "snapshot-dump",
+                    "skus-filtered-out.json");
+            java.nio.file.Files.createDirectories(dump.getParent());
+            java.nio.file.Files.writeString(dump, json);
+        }
+
+        @Test
+        @DisplayName("过滤事实：过滤前行数恒在（0 也是有意义的值），空集合不挂进 row_meta")
+        void filterFactsAreAbsentWhenNothingWasFiltered() {
+            stubRows();   // productMapper 返回一条 on_sale 的 P-1 ⇒ SKU 一行都不被排除
+
+            Map<String, Object> meta = metaOf(service.aggregateSnapshot(1L), "skus");
+
+            assertThat(meta).containsEntry("count", 1)
+                    .containsEntry("truncated", false)
+                    .containsEntry("rows_before_filter", 1)
+                    .doesNotContainKeys("filtered_by_status", "filtered_product_ids", "filtered_out");
+        }
+
+        @Test
         @DisplayName("退货率两端：分子复用退货行的商品归属、分母来自订单行数；0 是**真 0**")
         void productReturnStatsMergesBothEnds() {
             stubRows();

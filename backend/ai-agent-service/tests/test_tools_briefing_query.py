@@ -328,6 +328,25 @@ VIEW_SNAPSHOT = {
     "product_return_stats": [{"product_id": "P-1", "return_tickets": 1, "order_lines": 4}],
 }
 
+#: 🔴 issue #6347 Part B 的**真实形态**（照 2026-10-05 租户 25 的读数）：`skus` 数组空，
+#: 但 `row_meta.skus` 透出「过滤前 10 行 / 被 active 状态的商品排除」⇒ 这个空**不是**「没有 SKU」。
+FILTERED_SNAPSHOT = {
+    "row_fields": dict(VIEW_SNAPSHOT["row_fields"]),
+    "row_meta": {
+        **{k: v for k, v in VIEW_SNAPSHOT["row_meta"].items() if k != "skus"},
+        "skus": {"limit": 500, "count": 0, "truncated": False, "rows_before_filter": 10,
+                 "filtered_out": 10, "filtered_by_status": {"active": 10},
+                 "filtered_product_ids": [f"DEAD-{i}" for i in range(1, 9)]},
+    },
+    "skus": [],
+    "returns": list(VIEW_SNAPSHOT["returns"]),
+    "product_return_stats": list(VIEW_SNAPSHOT["product_return_stats"]),
+}
+
+#: 本单用户原话点名的**归因错误**表述（模型一次都不许从这条消息里学到）
+MISATTRIBUTIONS = ("SKU 记录数 = 0", "SKU 记录数为 0", "SKU 层是空的", "SKU 层为空",
+                   "建议检查商品规格", "建议先确认商品规格", "没有 SKU", "没有任何 SKU")
+
 
 class TestOnDemandProductHealthView:
     """族 3 · 包 2（issue #5369）：具名视图 `product_health` 的**按需**消费入口。
@@ -471,6 +490,57 @@ class TestOnDemandProductHealthView:
         assert '@GetMapping("/today")' in java
         assert SNAPSHOT_ENDPOINT == "/api/admin/briefing/snapshot"
         assert TODAY_ENDPOINT == "/api/admin/briefing/today"
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_filtered_skus_are_attributed_to_product_status_not_to_missing_specs(
+        self, mock_get_client
+    ):
+        """🔴 issue #6347 Part B 的**消费面**判据：有 SKU 却被过滤 ⇒ 消息必须指向商品状态。
+
+        这是用户真实遭遇的那条回复（「SKU 记录数 = 0 / SKU 层是空的 / 建议先确认商品规格…」）
+        在**消息层**的反面：消息是模型的**唯一**输入源，禁用表述一次都不许出现，原因与出路必须齐备。
+        """
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={"success": True, "data": FILTERED_SNAPSHOT})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED, view="product_health")
+        message = result.message or ""
+
+        assert result.success is True
+        assert result.data["count"] == 0
+        assert result.data["fields"]["stock"]["status"] == "not_on_sale"
+        assert result.data["fields"]["return_rate"]["status"] == "wired", (
+            "退货率的来源是另一对行数组 ⇒ 不受 SKU 过滤影响（逐字段可分）"
+        )
+        assert result.data["not_on_sale"]["rows_before_filter"] == 10
+        # 用户口径 1：说清「有 N 个 SKU（M 个商品）因未上架未纳入」
+        for needle in ("10 个 SKU", "8 个商品", "商品未上架", "过滤前"):
+            assert needle in message, f"消息缺少「{needle}」：{message}"
+        # 用户口径 2：点出可执行出路（状态非法 ⇒ 先改回 off_sale/draft 再上架）
+        for needle in ("active", "上架动作会被拒", "off_sale", "draft"):
+            assert needle in message, f"消息缺少出路「{needle}」：{message}"
+        # 用户口径 3：禁用表述一律不得出现
+        for forbidden in MISATTRIBUTIONS:
+            assert forbidden not in message, f"消息出现归因错误表述「{forbidden}」：{message}"
+        # 反空跑：这条消息里**确实**有一段归因（否则上面的「不含」全是空断言）
+        assert result.data["not_on_sale"]["message"] in message
+
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_empty_skus_without_filter_fact_stays_unwired_not_filtered(self, mock_get_client):
+        """对照读数（**没有**过滤事实的空）⇒ 不许改写成「被过滤」：老快照/真无数据退回旧口径。"""
+        snapshot = dict(VIEW_SNAPSHOT, skus=[], row_meta={
+            **VIEW_SNAPSHOT["row_meta"], "skus": {"limit": 500, "count": 0, "truncated": False}})
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={"success": True, "data": snapshot})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED, view="product_health")
+        message = result.message or ""
+
+        assert result.data["not_on_sale"]["available"] is False
+        assert result.data["fields"]["stock"]["status"] != "not_on_sale"
+        assert "未上架" not in message and "被过滤" not in message, message
 
 
 class TestNotWiredDisclosure:
