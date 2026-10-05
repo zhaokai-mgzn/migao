@@ -54,11 +54,24 @@ describe('图片识别 · 端点路径三端同步 (#5321)', () => {
     expect(front).toContain(`'${controllerPath}'`)
   })
 
-  it('控制器只暴露一个 POST 入口，且不带子路径（避免「前端打 /x、后端挂 /x/y」）', () => {
+  it('控制器暴露的 POST 入口与前端调用面逐一对应（避免「前端打 /x、后端挂 /x/y」）', () => {
     const java = read(CONTROLLER)
-    const mappings = [...java.matchAll(/@(Post|Get|Put|Delete|Patch)Mapping\b(\([^)]*\))?/g)]
+
+    // 先剥掉注释再匹配（issue #6386）：类级 javadoc 里也会**提到** `{@code @PostMapping}`，
+    // 不剥就会把「文本提及」误当成「声明」—— 实测 3 个命中里有 1 个是 javadoc。
+    const stripComments = (src: string) =>
+      src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+
+    // 判别力自证：javadoc 里的提及必须被剥掉、真声明必须留下（否则本判据是空断言）
+    expect(stripComments('/** 与 {@code @PostMapping} 同族 */\n@PostMapping\n@PostMapping("/interpret")')).toBe(
+      '\n@PostMapping\n@PostMapping("/interpret")',
+    )
+
+    const mappings = [...stripComments(java).matchAll(/@(Post|Get|Put|Delete|Patch)Mapping\b(\([^)]*\))?/g)]
       .map((m) => `${m[1]}Mapping${m[2] ?? ''}`)
-    expect(mappings).toEqual(['PostMapping'])
+    // 现取两个端点（#6376 起）：类级 `@PostMapping`（recognize）+ `@PostMapping("/interpret")`。
+    // 用**穷举**而不是 `toContain`：本判据要防的正是"多出一个没跟前端对齐的入口"。
+    expect(mappings).toEqual(['PostMapping', 'PostMapping("/interpret")'])
   })
 
   it('对内路径：admin-api 客户端 === ai-agent 内部端点（含 /api 前缀）', () => {
