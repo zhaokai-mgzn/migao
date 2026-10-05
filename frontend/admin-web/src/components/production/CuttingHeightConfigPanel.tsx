@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { AlertCircle } from 'lucide-react'
 
+import { formatDraft } from '@/components/ui/NumberInput'
 import { cuttingHeightApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
@@ -201,7 +202,7 @@ export function CuttingHeightConfigPanel() {
                         <input
                           className={inputCls}
                           aria-label={`取值-${index}`}
-                          value={item.value === null ? '' : String(item.value)}
+                          value={formatDraft(item.value)}
                           placeholder="留空 = 有项无值"
                           onChange={(e) =>
                             patchItem(index, { value: e.target.value.trim() === '' ? null : Number(e.target.value) })

@@ -42,7 +42,20 @@
  * - ⑥ `typeof` 白名单：`typeof m === 'string' && m ? m : null` 与 `typeof x === 'number' ? x : null`
  *   都是**正确**写法（前者仓库里真有：`frontend/admin-web/src/lib/production-guard-reasons.ts`）；
  * - ⑦ 负例：合法写法一律不判红（`??`、字符串兜底、文本控件上的 `|| ''`、条件≠真分支）；
- * - ⑧ 全仓（admin-web / mini-app / bmini-app 的 `src/**`）真扫零命中。
+ * - ⑧ 全仓（admin-web / mini-app / bmini-app 的 `src/**`）真扫零命中；
+ * - ⑩ **「只判 `null` 的字符串化」形态**（姊妹判据，见下）：`value={x === null ? '' : String(x)}`
+ *   在 JSX `value=` / `defaultValue=` 接线上必须被扫出；`x != null` / `=== undefined || === null`
+ *   两种**正确**写法不得判红（`==` 与双判都覆盖了 `undefined`）。
+ *
+ * ## 姊妹形态：「只判 `null` 的字符串化」（2026-10-05 新增，实测缺陷）
+ *
+ * `spring.jackson.default-property-inclusion: non_null` 会把**值为 `null` 的键整个丢掉**
+ * （同族先例 = `backend/admin-api/src/test/java/com/migao/admin/controller/CustomerProfileWireKeyParityTest.java`）
+ * ⇒ 前端拿到的是 `undefined`，而 `x === null ? '' : String(x)` 只认 `null` ⇒ 输入框里直接上屏
+ * 字面量 **`undefined`**（商家实测：裁高配置的「画线」一行取值显示 `undefined`）。
+ * 全仓实测（三个端 `src/**`）：该形态在 JSX `value=` 接线上 **0 处**（唯一一处同类三元
+ * `frontend/bmini-app/src/utils/inbound/deepLink.ts` **不在接线面上**，且它前面已显式
+ * `value === undefined ⇒ ABSENT` 收窄 ⇒ 正确写法）⇒ 收紧为 0 容忍、无假红。
  *
  * ## 已知不覆盖（**显式登记，不许留白**）
  *
@@ -146,6 +159,30 @@ export function findFalsyWiring(code: string): string[] {
     if (!inNumericValueWiring(src, at)) continue
     if (typeofGuarded(src, at)) continue
     hits.push(m[0].trim())
+  }
+  return hits
+}
+
+/**
+ * 「只判 `null` 的字符串化」（见文件头「姊妹形态」）—— **只在 JSX `value=` / `defaultValue=` 接线上判红**：
+ * `x === null ? '' : String(x)`（与镜像 `x !== null ? String(x) : ''`）只认 `null`，而线上报文里
+ * `null` 的键会被 `non_null` 丢掉 ⇒ 拿到的 `undefined` 被 `String()` 上屏成字面量 `undefined`。
+ * `x != null` / `x === null || x === undefined` 都覆盖了 `undefined` ⇒ **正确写法**，不判红。
+ */
+const STRICT_NULL_STRINGIFY_RES = [
+  new RegExp(`(${EXPR})\\s*===\\s*null\\s*\\?\\s*(${EMPTY})\\s*:\\s*String\\(\\s*\\1\\s*\\)`, 'g'),
+  new RegExp(`(${EXPR})\\s*!==\\s*null\\s*\\?\\s*String\\(\\s*\\1\\s*\\)\\s*:\\s*(${EMPTY})`, 'g'),
+]
+
+export function findStrictNullStringify(code: string): string[] {
+  const src = stripComments(code)
+  const hits: string[] = []
+  for (const re of STRICT_NULL_STRINGIFY_RES) {
+    for (const m of src.matchAll(re)) {
+      const attr = attrNameAt(src, m.index ?? 0)
+      if (attr !== 'value' && attr !== 'defaultValue') continue
+      hits.push(m[0].trim())
+    }
   }
   return hits
 }
@@ -274,6 +311,36 @@ describe('静态扫描：数值接线的 falsy 兜底（issue #5218 判据 6 / i
     const bad = roots.flatMap((root) =>
       sourceFiles(root).flatMap((f) =>
         findFalsyWiring(readFileSync(f, 'utf8')).map((hit) => `${f}: ${hit}`)
+      )
+    )
+    expect(bad).toEqual([])
+  })
+
+  // ── 姊妹形态：「只判 null 的字符串化」（2026-10-05，实测缺陷：线上形态显示 undefined）──
+
+  it('⑩ 红证样本：`x === null ? <空> : String(x)` 与镜像形态必须被扫出', () => {
+    expect(
+      findStrictNullStringify("<input value={item.value === null ? '' : String(item.value)} onChange={f} />")
+    ).toEqual(["item.value === null ? '' : String(item.value)"])
+    expect(
+      findStrictNullStringify('<NumberInput defaultValue={a.b !== null ? String(a.b) : ""} />')
+    ).toEqual(['a.b !== null ? String(a.b) : ""'])
+  })
+
+  it('⑩ 负例：覆盖了 `undefined` 的正确写法 / 非接线面 一律不判红', () => {
+    expect(findStrictNullStringify("<input value={x != null ? String(x) : ''} onChange={f} />")).toEqual([])
+    expect(
+      findStrictNullStringify("<input value={x === null || x === undefined ? '' : String(x)} onChange={f} />")
+    ).toEqual([])
+    // 全仓唯一一处同类三元就在这个位置（deepLink.ts：前面已显式 `value === undefined ⇒ ABSENT`）
+    expect(findStrictNullStringify("const raw = value === null ? '' : String(value)")).toEqual([])
+  })
+
+  it('⑩ 全仓（admin-web / mini-app / bmini-app 的 src）JSX value= 接线上零命中', () => {
+    const roots = ['src', '../mini-app/src', '../bmini-app/src'].map((d) => join(process.cwd(), d))
+    const bad = roots.flatMap((root) =>
+      sourceFiles(root).flatMap((f) =>
+        findStrictNullStringify(readFileSync(f, 'utf8')).map((hit) => `${f}: ${hit}`)
       )
     )
     expect(bad).toEqual([])
