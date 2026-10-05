@@ -14,6 +14,21 @@
   （`backdrop-blur*` / `filter` / `transform` / `translate-*` / `scale-*` / `will-change-*` / `contain-*` …），
   判据 = 静态 AST 扫描 + 判别力自证（`frontend/admin-web/tests/unit/lib/fixed-containing-block.test.ts`）。
 - ⚠️ jsdom **不做布局** ⇒ 这类缺陷此前**没有任何判据会红**（原「点击卡片外收起」是在 jsdom 里点那个遮罩本身）。
+### B 端米宝回复不再「一坨」：后台聊天气泡按换行分段、小程序端 `**` 与列表按样式渲染（2026-10-05，issue #6346）
+
+用户实测截图反馈「这个回复是不是没排版」—— 米宝的能力清单（每行一条、行尾单个换行）在两端各坏一处：
+
+| 面 | 改前 | 改后 |
+|---|---|---|
+| 后台聊天（admin-web） | 多行回复被**折成一整段无分段长文**（CommonMark 把段落内单个换行当软换行 = 空格） | 软换行渲染成真换行（空行照旧分段），加粗/列表语义不变 |
+| 商家小程序（bmini，一端双编译 weapp + h5） | 换行在、但 `**加粗**` 与 `- ` 列表**原样上屏**成星号与短横线 | `**x**` ⇒ 加粗、`- ` / `• ` 开头 ⇒ 列表行；**未闭合 `**` 原样保留**（流式安全） |
+
+- C 端（小布）2026-09-15 已治过同族形态（用例 UI-042），本次是 **B 端两端的补课**（用例 UI-084）。
+- 后端文案（`backend/ai-agent-service/app/agents/agents/mibao.py` 的 `capabilities` 直答）**一字未动** —— 两端渲染各自治，
+  改文案只能治一面（小程序端会露出裸列表标记）。
+- 固化：判据 = `frontend/admin-web/tests/unit/components/chat-soft-breaks.test.tsx`、
+  `frontend/bmini-app/tests/chat-rich-text.test.ts`、`frontend/bmini-app/tests/chat-rich-text-render.test.tsx`；
+  红证 = 把两端渲染文件换回改前版本 ⇒ admin-web 1 红（`<br>` 计数 0 / 期望 3）、bmini 3 红（列表行零命中）。
 
 ### 产品内 AI 角色标签统一：悬浮助手 / 客服工作台 / 人工会话 / 两个小程序登录页（2026-10-05，issue #6333）
 

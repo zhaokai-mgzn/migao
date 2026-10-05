@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import dayjs from 'dayjs'
 import { useState } from 'react'
 import type { ChatMessage, ChatCard } from '@/types'
@@ -329,7 +330,10 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
         // 打字机揭示进度（可见字符数）：只在流式期暴露，供判据读「t 时刻可见 < 全长」（issue #5952）
         {...(message.isStreaming ? { 'data-revealed': visibleContent.length } : {})}
       >
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {/* remark-breaks（issue #6346）：段落内单个 `\n` 在 CommonMark 里是**软换行**（= 空格）
+            ⇒ 米宝的多行回复（能力清单 / 逐条答案）被折成一整段长文（用户 2026-10-05 实测截图）。
+            挂上它 ⇒ 软换行渲染成 `<br>`，与小程序端「换行保留」的口径一致。 */}
+        <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
           {visibleContent}
         </ReactMarkdown>
         {message.isStreaming && (
