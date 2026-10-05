@@ -556,7 +556,7 @@
 真值: employee-role.position-fallback
 溯源: 2026-10-02 新增（issue #5987）：API 建号缺省岗位/角色落到 operator（运营级 26 码含写权限，仅 API 直连可达，页面强制选岗位走不到）⇒ 两处 fail-open 默认（控制器角色兜底 + 服务实体构建处的 role != null ? role : operator）同批收口为 fail-closed（422 + 未落库），并落「缺省角色字面量台账（未登记即红、只许缩短）+ 建号缺省位不得含写权限字面量」类级元守卫 ｜ tags: api, fail-closed, permission
 
-## 登录认证域（11 case）
+## 登录认证域（12 case）
 
 ### AU-001. 员工登录 用户名@企业编码 + 密码 → 成功签发 JWT 🟢
 ```
@@ -696,6 +696,19 @@
 ```
 真值: auth.login-lockout
 溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
+
+### AU-012. 整页加载后的会话恢复必须换回 accessToken —— 只跑 /api/auth/me 会让「裸 fetch + Bearer」面（聊天）静默 401 🔵
+```
+你: 本机实测（issue #6352）：真实登录 → 进 /chat → 点「新建对话」逐字「创建会话失败，请稍后重试」；ai-agent 日志 `Authentication failed: no token provided` + `POST /api/chat/sessions status=401`
+期望: direct_reply
+数据: 判据 1·会话恢复换 token：frontend/admin-web/src/store/auth.ts 的 initialize 在无内存 token 时**先调 refreshAccessToken()**（`POST /api/auth/refresh`，HttpOnly cookie 轮换）再 fetchUserInfo()。执行点 = frontend/admin-web/tests/unit/store/auth.test.ts 的「AU-012 无内存 token ⇒ 先 refresh 再 /me」与「无 cookie ⇒ 不抛、保持未认证」两条
+数据: 判据 2·`GET /api/auth/me` **不下发 accessToken**（实测键集 = user/roles/permissions/menus/capabilities）⇒ 只跑 /me 得到 isAuthenticated=true ∧ accessToken=null；而聊天面是**裸 fetch + Bearer、零 401 重试**（axios 面有 token-refresh-manager 自动重放 ⇒ 业务页面照常，现象极具误导性）
+数据: 🔴 红证（改前实测，migao-dev-flow §28.1 出口① 临时反转）：把 frontend/admin-web/src/store/auth.ts 换回 origin/main 版本再跑 ⇒ `expected null to be 'restored-access'`，**1 failed / 29 passed**；恢复后 **30 passed**。复算 = 在 frontend/admin-web 跑 npx vitest run tests/unit/store/auth.test.ts
+数据: 类级守卫（同批）：tests/unit_ci_workflows/test_admin_web_token_restore_guard.py —— ① `frontend/admin-web/src/**` 里「同时出现 Bearer 与 fetch( 」的文件集合逐项冻结（现取 = lib/api.ts ∪ store/chat.ts，新面即红）② initialize 必须调用 refreshAccessToken()（摘掉即红）③ 判别力自证
+跳过: [backend-contract] 纯前端会话恢复由 vitest 单测 + 类级接线守卫验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
 ## B 端小程序域（32 case）
 
@@ -9744,7 +9757,7 @@
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
-- 登录认证域：11
+- 登录认证域：12
 - B 端小程序域：32
 - 分类域：3
 - 对话边界域：44

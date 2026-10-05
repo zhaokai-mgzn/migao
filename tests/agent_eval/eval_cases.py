@@ -1059,6 +1059,24 @@ _CASE_AU_011 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── AU-012 [NORMAL] 整页加载后的会话恢复必须换回 accessToken —— 只跑 /api/auth/me 会让「裸 fetch + Bearer」面（聊天）静默 401（源: cases/auth.yml）──
+_CASE_AU_012 = EvalCase(
+    id='AU-012',
+    legacy_id='',
+    title='整页加载后的会话恢复必须换回 accessToken —— 只跑 /api/auth/me 会让「裸 fetch + Bearer」面（聊天）静默 401',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本机实测（issue #6352）：真实登录 → 进 /chat → 点「新建对话」逐字「创建会话失败，请稍后重试」；ai-agent 日志 `Authentication failed: no token provided` + `POST /api/chat/sessions status=401`'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·会话恢复换 token：frontend/admin-web/src/store/auth.ts 的 initialize 在无内存 token 时**先调 refreshAccessToken()**（`POST /api/auth/refresh`，HttpOnly cookie 轮换）再 fetchUserInfo()。执行点 = frontend/admin-web/tests/unit/store/auth.test.ts 的「AU-012 无内存 token ⇒ 先 refresh 再 /me」与「无 cookie ⇒ 不抛、保持未认证」两条', '判据 2·`GET /api/auth/me` **不下发 accessToken**（实测键集 = user/roles/permissions/menus/capabilities）⇒ 只跑 /me 得到 isAuthenticated=true ∧ accessToken=null；而聊天面是**裸 fetch + Bearer、零 401 重试**（axios 面有 token-refresh-manager 自动重放 ⇒ 业务页面照常，现象极具误导性）', "🔴 红证（改前实测，migao-dev-flow §28.1 出口① 临时反转）：把 frontend/admin-web/src/store/auth.ts 换回 origin/main 版本再跑 ⇒ `expected null to be 'restored-access'`，**1 failed / 29 passed**；恢复后 **30 passed**。复算 = 在 frontend/admin-web 跑 npx vitest run tests/unit/store/auth.test.ts", '类级守卫（同批）：tests/unit_ci_workflows/test_admin_web_token_restore_guard.py —— ① `frontend/admin-web/src/**` 里「同时出现 Bearer 与 fetch( 」的文件集合逐项冻结（现取 = lib/api.ts ∪ store/chat.ts，新面即红）② initialize 必须调用 refreshAccessToken()（摘掉即红）③ 判别力自证'],
+    skip_reason='[backend-contract] 纯前端会话恢复由 vitest 单测 + 类级接线守卫验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'session-restore', 'token', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── BM-001 [NORMAL] B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配（源: cases/bmini.yml）──
 _CASE_BM_001 = EvalCase(
     id='BM-001',
@@ -12742,6 +12760,7 @@ ALL_CASES = (
     _CASE_AU_009,
     _CASE_AU_010,
     _CASE_AU_011,
+    _CASE_AU_012,
     _CASE_BM_001,
     _CASE_BM_002,
     _CASE_BM_003,
