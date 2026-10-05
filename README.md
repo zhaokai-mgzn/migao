@@ -227,6 +227,10 @@ cd backend/admin-api
 cp .env.example .env
 # 编辑 .env 配置数据库、Redis、JWT 密钥等
 
+# ⚠️ Spring Boot **不读** .env —— 必须先显式导出，否则上面这些键一个都不会进 JVM
+#（实证：不导出时 .env 里的 SMS_BYPASS_CODE 不生效，手机验证码登录恒报「短信验证码错误或已过期」）
+set -a && . ./.env && set +a
+
 ./mvnw spring-boot:run
 # → http://localhost:8080
 ```
