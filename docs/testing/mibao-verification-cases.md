@@ -6836,7 +6836,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6222，P3·读面）：主会话在未修复构建 :8080 上逐字复现 —— `GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行（after-sales 5 / stock-ledger 389 同款）。机制：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（`pageSize < 0` 直接 return ⇒ 不追加 LIMIT、**不执行 count 查询**）⇒ 拦截器只填 `records`、`total` 停在默认 0；被 `setMaxLimit(500)` 约束的只是**正数** size ⇒ 行数不设上界。危害：`total=0` 让客户端分页器立刻认为已到末页 ⇒ 「有数据却显示为空 / 翻不动页」。**口径裁定 = 显式拒绝（400）而非钳到合法下界**，三条理由：① 病根是「非法入参**不静默**」，钳位仍是静默（把「静默给错数据」换成「静默改口径」）；② 本仓已有同族显式拒绝范式（`StockQuantity.requireOneDecimal` / `MoneyScale.requireTwoDecimals`(#6221) / 负数数量 ⇒ 400）；③ 钳位会掩盖调用方（含 Agent / 前端）的真实缺陷。**为什么这样选单点**（最少代码阶梯）：分页入口有两个族（`@RequestParam long size` 控制器方法现取 22 个 + 自带 page/size 字段的查询 DTO 三个、**无共同基类**），且 DTO 属性名不保证等于 HTTP 参数名（`ProductQueryRequest.productId` 对 `@RequestParam productCode`）⇒ DTO 侧做准入要么靠 `WebDataBinder` 名字启发（会漏）、要么按属性名校验（对不上）；两族**都必须**经同一个 HTTP 参数集 ⇒ 唯一真正单点 = Servlet 层参数闸（`prehandle` 取参 + `PaginationParamGate` 判定），并在 WebConfig 注册（排在授权/归属之后，沿用 F3 #6063 与 #6158 的次序纪律）。**类级固化**：台账 25 条分页入口 + 6 条判据 + 5 种坏形态判别力自证（未登记即红 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 + 只改措辞不红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-070（origin/main@dacac7471:001-067,069 · PR #6227:068 ⇒ 最小空闲 070）。 ｜ tags: api, pagination, fail-closed, backend-contract, negative-size
 
-## 商品域（114 case）
+## 商品域（116 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -8393,6 +8393,33 @@
 ```
 溯源: 2026-10-05 新增（issue #6354，P2·图片识别预填）。取号 = 现取最小空闲号（`.github/cases/` 无 PR-020，`scripts/next_case_id.py PR` 判取 PR-020）。红→绿（注入式双向对照）：`git stash` 注入 = 退回改前实现（新测试文件未跟踪仍在）⇒ `tests/unit/lib/image-recognize-color-split.test.ts` **5 failed**（读数逐字见判据 1/2）；`git stash pop` ⇒ 25 passed（本文件 5 + 既有 ImageRecognizePrefill 13 + image-recognize 7）。 ｜ tags: image-recognize, color, frontend, prefill, regression
 
+### PR-124. 米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361） 🔵
+```
+你: 把一张面料图发给米宝并要求「按这张图建商品」⇒ 米宝调 image_recognize 时带 interpretations（含 name/material/craft/color 的贴近结论）
+期望: direct_reply
+数据: **口径（用户 2026-10-05 逐字裁定）**：「不可信没关系，先推理一份贴近的结论」⇒ 商品侧可落值的键 = `name` / `material` / `craft` / `color`（来源一律 `[米宝解读]`）。
+数据: **判据 1（逐字钉住，会红）**：`backend/ai-agent-service/app/vision/deep_channel.py::INTERPRETABLE_KEYS["product"]` 恰为 `("name","material","craft","color","description")`（#6362 追加描述格）；`["order"]` 保持 `()`。判据 = tests/test_vision/test_deep_channel.py。
+数据: **判据 2（涉钱两格不落值，注入式红证）**：`interpretations={"price": {"value": "199", "note": "建议 199 元"}}` ⇒ 该格 `value` **仍为空**、`note` / `note_source` 存在；`door_width` 同。判据 = tests/test_vision/test_deep_channel.py 的注入式用例（把 `_empty_cell` 的 `value=None` 改成写回 ⇒ 当场红）。
+数据: **判据 3（不覆盖）**：内核 `[图片识别]` 已给值的格、以及目录歧义格（有 candidates）**一律不被解读覆盖** —— 既有注入式红证保持绿。
+数据: **判据 4（来源可分辨）**：落值格 `source == "[米宝解读]"` 且 `note_source` 同名；与 `[图片识别]` 不同（商家据此判断该信哪一格）。
+数据: **边界**：内核 `recognizer` 的「只抄写明的内容」铁律**一字未动**（transcription 与 inference 是两层）；本端点**不落库**（TestNoWriteBoundary 保持）。
+跳过: [backend-contract] 确定性契约/机械判据，由 pytest（backend/ai-agent-service/tests/test_vision/test_deep_channel.py、tests/test_tools_image_recognize.py）验证，非 LLM 行为，不进入 agent-eval 冒烟 —— 可落值集合与「不落值」两半都能逐值钉住
+```
+溯源: 2026-10-05 新增（issue #6361，走 PR #6364 合入 main）。取号 = 现取最大号 + 1（本工作区当时最大 PR-123；`scripts/next_case_id.py` 因扫描超时未用）。红→绿：先写判据、实现未动 ⇒ tests/test_vision/test_deep_channel.py + tests/test_tools_image_recognize.py **5 failed / 40 passed**；实现后 56 passed。注入式（§28.1 出口①）：`product` 元组临时改回两格 ⇒ **4 failed / 41 passed**。 ｜ tags: image-recognize, interpretation, backend-contract, regression
+
+### PR-125. 米宝解读额外生成商品描述文案 ⇒ 预填建品页「图文描述」富文本区（来源 [米宝解读]、有值才写键、不覆盖商家内容）（issue #6362） 🔵
+```
+你: 用户 2026-10-05 逐字「然后把商品描述的文案也要生成一份」⇒ 米宝的 interpretations 里带 description（HTML 片段）
+期望: direct_reply
+数据: **判据 1（落值）**：前端 `frontend/admin-web/src/lib/image-recognize.ts::buildProductPrefill` 收到 `{key:'description', value:'<p>…</p>', source:'[米宝解读]'}` ⇒ `initialData.description` **逐字**等于该值、`recognizedFields` 含 `description`。判据 = tests/unit/components/ImageRecognizePrefill.test.tsx。
+数据: **判据 2（空值不写键，会红）**：`value` 为空 / 键缺失 ⇒ `'description' in initialData === false`（**绝不写空串** —— 那会覆盖商家自己写的描述；表单是 `{...prev, ...initialData}` 合并语义）。
+数据: **判据 3（徽标各认各的键）**：描述格在**解读清单**里 ⇒ 渲染 `interpreted-marker-description`（`[米宝解读]`），且**不得**出现 `recognized-marker-description`（`[图片识别]`）。红证：预填了描述却一枚徽标都没有 ⇒ 该断言红。
+数据: **判据 4（字段表登记）**：`backend/ai-agent-service/app/vision/targets.py` 的 product 字段表含 `description`（类级元守卫：前端读的键必须在内核字段表里 —— 不登记即红）。
+数据: **边界（如实登记）**：描述**文案质量**（是否编造、是否贴图）判据红不了，只由字段表 hint 的口径约束（「不得编造图上没有的硬事实」）；徽标的**端到端**可见性只有组件级判据（Playwright 页面验收未落）。
+跳过: [backend-contract] 确定性契约/机械判据，由 vitest（frontend/admin-web/tests/unit/components/ImageRecognizePrefill.test.tsx、tests/unit/lib/image-recognize.test.ts）+ pytest（tests/test_vision/test_targets.py、test_recognizer.py、test_deep_channel.py）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-05 新增（issue #6362）。取号 = 现取最大号 + 1（本工作区当时最大 PR-123 已被 PR-124 占用）。红→绿（注入=判据先落、实现后落）：vitest ImageRecognizePrefill **3 failed / 15 passed** → **20 passed**；类级元守卫 image-recognize.test.ts **1 failed / 6 passed** → 7 passed；后端 test_targets / test_recognizer 各 1 条红 → 绿。 ｜ tags: image-recognize, description, frontend, regression
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -9799,8 +9826,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：681（活跃 134，跳过 547）
-- tier 分布：smoke 12 / normal 627 / adversarial 32
+- 用例总数：683（活跃 134，跳过 549）
+- tier 分布：smoke 12 / normal 629 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9821,7 +9848,7 @@
 - 订单域：63
 - 加工项域：27
 - 加工单域：61
-- 商品域：114
+- 商品域：116
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -10033,6 +10060,8 @@
 - PR-014: 批量库存调整 - 两段确认（多选勾选集合 → 逐条「改前库存 → 改后库存」）→ 执行 → 撤销
 - PR-016: 建品/改品 status 枚举准入：非法值 4xx 且列出合法枚举；状态机死行（active/on_shelf）可改回 off_sale/draft 自救
 - PR-020: 图片识别色号清单拆行：一张色卡的 16 个色号 ⇒ 16 行颜色（改前塞成一格、被 30 字符输入框削断）（issue #6354）
+- PR-124: 米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361）
+- PR-125: 米宝解读额外生成商品描述文案 ⇒ 预填建品页「图文描述」富文本区（来源 [米宝解读]、有值才写键、不覆盖商家内容）（issue #6362）
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序**进表**：`data-state=no_row` + 行尾 `管理▸` 可停用/删除，issue #5875）

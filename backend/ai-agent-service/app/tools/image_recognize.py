@@ -88,13 +88,14 @@ class ImageRecognizeTool(BaseTool):
             "interpretations": {
                 "type": "object",
                 "description": "可选的领域解读：{字段键: {value, note}}。"
-                               "商品侧**可落值**的键：name / material / craft / color"
+                               "商品侧**可落值**的键：name / material / craft / color / description"
                                "（看图 + 品牌常见品类给贴近结论，来源标 [米宝解读]；"
                                "只在图上未写明那一格时才落值，不覆盖已识别 / 歧义格）；"
+                               "description 是**商品描述文案**（HTML 片段，贴近图上信息 + 行业常识，"
+                               "不得编造图上没有的硬事实）⇒ 由你生成一份；"
                                "door_width / price **只写 note 建议、不落值**"
                                "（它们进报价与结算，猜错会算出错的米数与金额）；"
-                               "订单侧只解释不填值",
-            },
+                               "订单侧只解释不填值",            },
         },
         "required": ["target_type", "images"],
     }

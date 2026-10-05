@@ -771,7 +771,17 @@ export default function ProductForm({
 
       {/* ============ 图文描述 ============ */}
       <Section title="图文描述">
-        <FieldRow label="商品描述" alignTop>
+        {/* 商品描述（issue #6362）：米宝解读产生的**文案**（不是图上抄下来的事实）⇒ 挂 `[米宝解读]`
+            徽标提醒复核；空值时不预填、键不出现 ⇒ 商家自己写的描述一个字都不会动。 */}
+        <FieldRow
+          label="商品描述"
+          alignTop
+          badge={
+            interpreted.includes('description') ? (
+              <InterpretedBadge fieldKey="description" />
+            ) : undefined
+          }
+        >
           <RichTextEditor
             value={form.description || ''}
             onChange={(html) => updateField('description', html)}

@@ -10927,6 +10927,42 @@ _CASE_PR_020 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-124 [NORMAL] 米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361）（源: cases/product.yml）──
+_CASE_PR_124 = EvalCase(
+    id='PR-124',
+    legacy_id='',
+    title='米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把一张面料图发给米宝并要求「按这张图建商品」⇒ 米宝调 image_recognize 时带 interpretations（含 name/material/craft/color 的贴近结论）'],
+    expectations=['direct_reply'],
+    data_checks=['**口径（用户 2026-10-05 逐字裁定）**：「不可信没关系，先推理一份贴近的结论」⇒ 商品侧可落值的键 = `name` / `material` / `craft` / `color`（来源一律 `[米宝解读]`）。', '**判据 1（逐字钉住，会红）**：`backend/ai-agent-service/app/vision/deep_channel.py::INTERPRETABLE_KEYS["product"]` 恰为 `("name","material","craft","color","description")`（#6362 追加描述格）；`["order"]` 保持 `()`。判据 = tests/test_vision/test_deep_channel.py。', '**判据 2（涉钱两格不落值，注入式红证）**：`interpretations={"price": {"value": "199", "note": "建议 199 元"}}` ⇒ 该格 `value` **仍为空**、`note` / `note_source` 存在；`door_width` 同。判据 = tests/test_vision/test_deep_channel.py 的注入式用例（把 `_empty_cell` 的 `value=None` 改成写回 ⇒ 当场红）。', '**判据 3（不覆盖）**：内核 `[图片识别]` 已给值的格、以及目录歧义格（有 candidates）**一律不被解读覆盖** —— 既有注入式红证保持绿。', '**判据 4（来源可分辨）**：落值格 `source == "[米宝解读]"` 且 `note_source` 同名；与 `[图片识别]` 不同（商家据此判断该信哪一格）。', '**边界**：内核 `recognizer` 的「只抄写明的内容」铁律**一字未动**（transcription 与 inference 是两层）；本端点**不落库**（TestNoWriteBoundary 保持）。'],
+    skip_reason='[backend-contract] 确定性契约/机械判据，由 pytest（backend/ai-agent-service/tests/test_vision/test_deep_channel.py、tests/test_tools_image_recognize.py）验证，非 LLM 行为，不进入 agent-eval 冒烟 —— 可落值集合与「不落值」两半都能逐值钉住',
+    tags=['image-recognize', 'interpretation', 'backend-contract', 'regression'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-125 [NORMAL] 米宝解读额外生成商品描述文案 ⇒ 预填建品页「图文描述」富文本区（来源 [米宝解读]、有值才写键、不覆盖商家内容）（issue #6362）（源: cases/product.yml）──
+_CASE_PR_125 = EvalCase(
+    id='PR-125',
+    legacy_id='',
+    title='米宝解读额外生成商品描述文案 ⇒ 预填建品页「图文描述」富文本区（来源 [米宝解读]、有值才写键、不覆盖商家内容）（issue #6362）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-05 逐字「然后把商品描述的文案也要生成一份」⇒ 米宝的 interpretations 里带 description（HTML 片段）'],
+    expectations=['direct_reply'],
+    data_checks=["**判据 1（落值）**：前端 `frontend/admin-web/src/lib/image-recognize.ts::buildProductPrefill` 收到 `{key:'description', value:'<p>…</p>', source:'[米宝解读]'}` ⇒ `initialData.description` **逐字**等于该值、`recognizedFields` 含 `description`。判据 = tests/unit/components/ImageRecognizePrefill.test.tsx。", "**判据 2（空值不写键，会红）**：`value` 为空 / 键缺失 ⇒ `'description' in initialData === false`（**绝不写空串** —— 那会覆盖商家自己写的描述；表单是 `{...prev, ...initialData}` 合并语义）。", '**判据 3（徽标各认各的键）**：描述格在**解读清单**里 ⇒ 渲染 `interpreted-marker-description`（`[米宝解读]`），且**不得**出现 `recognized-marker-description`（`[图片识别]`）。红证：预填了描述却一枚徽标都没有 ⇒ 该断言红。', '**判据 4（字段表登记）**：`backend/ai-agent-service/app/vision/targets.py` 的 product 字段表含 `description`（类级元守卫：前端读的键必须在内核字段表里 —— 不登记即红）。', '**边界（如实登记）**：描述**文案质量**（是否编造、是否贴图）判据红不了，只由字段表 hint 的口径约束（「不得编造图上没有的硬事实」）；徽标的**端到端**可见性只有组件级判据（Playwright 页面验收未落）。'],
+    skip_reason='[backend-contract] 确定性契约/机械判据，由 vitest（frontend/admin-web/tests/unit/components/ImageRecognizePrefill.test.tsx、tests/unit/lib/image-recognize.test.ts）+ pytest（tests/test_vision/test_targets.py、test_recognizer.py、test_deep_channel.py）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['image-recognize', 'description', 'frontend', 'regression'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -13341,6 +13377,8 @@ ALL_CASES = (
     _CASE_PR_015,
     _CASE_PR_016,
     _CASE_PR_020,
+    _CASE_PR_124,
+    _CASE_PR_125,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

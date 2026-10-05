@@ -140,7 +140,12 @@ describe('图片识别 · 字段 key 契约同步 (#5321)', () => {
 
   it('内核两个 target 的字段表就是我们承诺的那两份（且两份不同 —— 不是一套字段两个页面填）', () => {
     const keys = targetKeys()
-    expect(keys.product).toEqual(['name', 'color', 'material', 'craft', 'door_width', 'price'])
+    expect(keys.product).toEqual([
+      'name', 'color', 'material', 'craft', 'door_width', 'price',
+      // 2026-10-05（issue #6362）：「商品描述」文案 —— 识别的**第 7 格**，
+      // 落点是建品页既有富文本区（`description`），只允许由 `[米宝解读]` 填值。
+      'description',
+    ])
     expect(keys.order).toEqual([
       'customer_name',
       'customer_phone',
@@ -168,8 +173,8 @@ describe('图片识别 · 字段 key 契约同步 (#5321)', () => {
     // 逐值钉住（不是"非空"）：少读一个键 / 多读一个键都要变红
     expect([...consumed].sort()).toEqual([
       'color', 'craft', 'curtain_height', 'curtain_width', 'customer_address',
-      'customer_name', 'customer_phone', 'door_width', 'items', 'material',
-      'name', 'open_count', 'processing_items', 'quantity', 'style',
+      'customer_name', 'customer_phone', 'description', 'door_width', 'items',
+      'material', 'name', 'open_count', 'processing_items', 'quantity', 'style',
     ])
     expect([...consumed].filter((k) => !known.has(k))).toEqual([])
   })
