@@ -100,6 +100,21 @@ class TestToolDeclaration:
         assert props["target_type"]["enum"] == ["product", "order"]
         assert schema["function"]["parameters"]["required"] == ["target_type", "images"]
 
+    def test_interpretations_description_matches_the_widened_scope(self):
+        """issue #6361：模型看到的参数描述 = **四格可落值 + 两格只建议**（旧的两格口径必须消失）。
+
+        描述是**模型唯一的口径来源** ⇒ 它漂回「只对 material / craft 生效」时这里必须红。
+        """
+        description = ImageRecognizeTool().get_schema()["function"]["parameters"]["properties"][
+            "interpretations"
+        ]["description"]
+        assert "只对 material / craft 生效" not in description
+        for fillable in ("name", "material", "craft", "color"):
+            assert fillable in description, f"可落值的 {fillable} 未写进参数描述"
+        for note_only in ("door_width", "price"):
+            assert note_only in description, f"只建议不落值的 {note_only} 未写进参数描述"
+        assert "不落值" in description or "只写 note" in description
+
 
 class TestExecuteProducesAPageFillPlan:
     @pytest.mark.asyncio

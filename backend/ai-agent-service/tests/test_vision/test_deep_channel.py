@@ -75,6 +75,16 @@ def field_of(plan, key):
     return next(f for f in plan["fields"] if f["key"] == key)
 
 
+def fields_without(*keys):
+    """夹具里把这几格**清空**（模拟「内核没认出来」），其余照旧。"""
+    fields = product_fields()
+    for field in fields:
+        if field["key"] in keys:
+            field["value"] = None
+            field["source"] = None
+    return fields
+
+
 def _load_mutated(source: str, tmp_path: Path, name: str = "deep_channel_mutant"):
     """把变异后的源码当**独立模块**加载（真跑，不是读文本）。"""
     path = tmp_path / f"{name}.py"
@@ -273,6 +283,124 @@ class TestInterpretationIsMarkedAndAsymmetric:
         )
         assert field_of(filled_order, "items")["value"] is None
         assert field_of(filled_order, "items")["source"] is None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# issue #6361：放开「推理值」覆盖范围（名称 / 材质 / 工艺 / 颜色）
+# —— 但**进报价与结算的两格（门幅 / 售价）仍只建议、不落值**
+# ══════════════════════════════════════════════════════════════════════════════
+class TestInterpretableScopeIsWidened:
+    """用户裁定（2026-10-05）：「不可信没关系，先推理一份贴近的结论」。
+
+    放开的是**看图看得出门道、且不直接进结算**的格子（名称 / 材质 / 工艺 / 颜色）；
+    门幅与售价**照旧不落值**（猜错会算出错的米数与金额）—— 它们的推理结论只走 `note`。
+    """
+
+    def test_product_interpretable_keys_are_exactly_the_four_agreed_ones(self):
+        """逐字钉住四格：**改回两项 / 多加一项 / 调换顺序 ⇒ 红**。"""
+        assert INTERPRETABLE_KEYS["product"] == ("name", "material", "craft", "color")
+        assert "door_width" not in INTERPRETABLE_KEYS["product"]
+        assert "price" not in INTERPRETABLE_KEYS["product"]
+
+    def test_order_side_still_interprets_but_never_fills(self):
+        """订单侧口径**不受本单影响**（客户信息错 ⇒ 货发错人）。"""
+        assert INTERPRETABLE_KEYS["order"] == ()
+
+    def test_name_interpretation_fills_an_empty_name_cell(self):
+        plan = build_page_fill(
+            "product",
+            fields_without("name"),
+            interpretations={"name": {"value": "雪尼尔遮光窗帘", "note": "按图上文案推断"}},
+        )
+        name = field_of(plan, "name")
+        assert name["value"] == "雪尼尔遮光窗帘"
+        assert name["source"] == SOURCE_INTERPRETED
+        assert name["note_source"] == SOURCE_INTERPRETED
+
+    def test_color_interpretation_fills_an_empty_color_cell(self):
+        """颜色：图上只给色号、没给颜色名时，推理值可落地。"""
+        plan = build_page_fill(
+            "product",
+            fields_without("color"),
+            interpretations={
+                "color": {"value": "雾霾蓝", "note": "图上色号未给颜色名，按品牌常见色推断"}
+            },
+        )
+        color = field_of(plan, "color")
+        assert color["value"] == "雾霾蓝"
+        assert color["source"] == SOURCE_INTERPRETED
+
+    def test_interpretation_never_overwrites_a_recognised_name_or_color(self):
+        """**不覆盖**内核已写明的值（transcription 优先于 inference，既有规则不动）。"""
+        plan = build_page_fill(
+            "product",
+            product_fields(),
+            interpretations={
+                "name": {"value": "被覆盖的名字", "note": "也许叫这个"},
+                "color": {"value": "被覆盖的颜色", "note": "也许会这个色"},
+            },
+        )
+        name = field_of(plan, "name")
+        color = field_of(plan, "color")
+        assert (name["value"], name["source"]) == ("雪尼尔遮光窗帘", SOURCE_RECOGNIZED)
+        assert (color["value"], color["source"]) == ("雾霾蓝", SOURCE_RECOGNIZED)
+        # 建议仍要看得见（只是没变成值）
+        assert name["note_source"] == SOURCE_INTERPRETED
+        assert color["note_source"] == SOURCE_INTERPRETED
+        assert "被覆盖" not in str([f["value"] for f in plan["fields"]])
+
+    def test_price_interpretation_is_visible_as_a_note_but_never_fills_the_cell(self):
+        """**注入式红证（售价）**：给了 `value` 也必须落不了地 —— 值仍为空、note 仍在。"""
+        plan = build_page_fill(
+            "product",
+            product_fields(),
+            interpretations={"price": {"value": "199", "note": "建议 199 元，图上未写明 —— 未自动填"}},
+        )
+        price = field_of(plan, "price")
+        assert price["value"] is None
+        assert price["source"] is None
+        assert price["note"] == "建议 199 元，图上未写明 —— 未自动填"
+        assert price["note_source"] == SOURCE_INTERPRETED
+        # 值不得从任何一格溜进表单
+        assert "199" not in [f["value"] for f in plan["fields"] if f["value"]]
+
+    def test_door_width_interpretation_is_visible_as_a_note_but_never_fills_the_cell(self):
+        """**注入式红证（门幅）**：门幅进报价，猜错会算出错的米数 ⇒ 只建议不落值。"""
+        plan = build_page_fill(
+            "product",
+            product_fields(),
+            interpretations={
+                "door_width": {"value": "2.8 米", "note": "建议门幅 2.8 米，图上未写明 —— 未自动填"}
+            },
+        )
+        door_width = field_of(plan, "door_width")
+        assert door_width["value"] is None
+        assert door_width["source"] is None
+        assert door_width["note"] == "建议门幅 2.8 米，图上未写明 —— 未自动填"
+        assert door_width["note_source"] == SOURCE_INTERPRETED
+        assert "2.8 米" not in [f["value"] for f in plan["fields"] if f["value"]]
+
+    def test_widened_scope_does_not_leak_into_the_uninterpretable_cells(self):
+        """四格全给推理值 + 两格给建议：**落地的恰好多出这四格**，钱格 / 门幅格纹丝不动。"""
+        plan = build_page_fill(
+            "product",
+            fields_without("name", "material", "color"),
+            interpretations={
+                "name": {"value": "雪尼尔遮光窗帘", "note": "按图上文案推断"},
+                "material": {"value": "雪尼尔", "note": "克重偏厚"},
+                "craft": {"value": "印花", "note": "也许是印花"},
+                "color": {"value": "雾霾蓝", "note": "按品牌常见色推断"},
+                "price": {"value": "199", "note": "建议 199 元"},
+                "door_width": {"value": "2.8 米", "note": "建议门幅 2.8 米"},
+            },
+        )
+        interpreted = {
+            f["key"] for f in plan["fields"] if f["source"] == SOURCE_INTERPRETED and f["value"]
+        }
+        assert interpreted == {"name", "material", "color"}  # craft 内核已给 ⇒ 不覆盖
+        assert field_of(plan, "craft")["source"] == SOURCE_RECOGNIZED
+        assert field_of(plan, "price")["value"] is None
+        assert field_of(plan, "door_width")["value"] is None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
