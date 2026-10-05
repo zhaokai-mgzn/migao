@@ -13,6 +13,7 @@
  * 不再展示工具调用时间线/领域计数等机器语言。
  */
 import { useState, useMemo, useCallback, type ComponentType, type ReactNode } from 'react'
+import { AI_ROLES } from '@/config/ai-roles'
 import {
   X,
   Bot,
@@ -228,7 +229,7 @@ export default function SessionInsight({
                 <Bot className="w-[18px] h-[18px]" />
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-800 leading-tight">米宝 · B端工作助手</p>
+                <p className="text-sm font-semibold text-gray-800 leading-tight">{`米宝 · ${AI_ROLES.mibao}`}</p>
                 <p className="text-[10px] text-gray-400 mt-0.5">商品 · 订单 · 售后 · 客户 · 数据</p>
               </div>
               <span className={cn(

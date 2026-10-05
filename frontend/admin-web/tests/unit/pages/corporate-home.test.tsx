@@ -243,19 +243,35 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     // 口径本身钉在这里：改词必须同时改这条断言（用户 2026-10-05 裁定）
     expect([AI_ROLES.mibao, AI_ROLES.xiaobu]).toEqual(['企业智能生产管家', '企业智能客服'])
     const LABELS = [AI_ROLES.mibao, AI_ROLES.xiaobu]
-    const scan = (src: string) => LABELS.filter((label) => src.includes(label))
+    // 旧标签不许回流（用户 2026-10-05 之前的口径；回流 = 定位又漂了）
+    const BANNED_OLD = [
+      '企业智能工作助手',
+      '企业智能助手',
+      '米宝 · 智能助手',
+      '米宝 · B端工作助手',
+      '小布 · AI',
+    ]
+    const scan = (src: string) => [
+      ...LABELS.filter((label) => src.includes(label)).map((label) => `硬编码「${label}」`),
+      ...BANNED_OLD.filter((old) => src.includes(old)).map((old) => `旧标签回流「${old}」`),
+    ]
 
-    // 判别力自证：硬编码样本必须被检出、合规样本必须零命中（否则本判据是空断言）
-    expect(scan("  role: '企业智能生产管家',")).toEqual(['企业智能生产管家'])
+    // 判别力自证：硬编码样本与旧标签样本都必须被检出、合规样本必须零命中（否则本判据是空断言）
+    expect(scan("  role: '企业智能生产管家',")).toEqual(['硬编码「企业智能生产管家」'])
+    expect(scan('  米宝 · 智能助手')).toEqual(['旧标签回流「米宝 · 智能助手」'])
     expect(scan("import { AI_ROLES } from '@/config/ai-roles'\n  role: AI_ROLES.mibao,")).toEqual([])
 
     const files = [
       'src/app/(corporate)/page.tsx',
       'src/app/(corporate)/services/page.tsx',
       'src/app/register/page.tsx',
+      // #6333 起纳入产品内三处（悬浮助手 / 客服工作台 / 人工会话记录）
+      'src/components/ai-assistant/FloatingAssistant.tsx',
+      'src/components/chat/SessionInsight.tsx',
+      'src/app/(dashboard)/agent-workspace/human-sessions/page.tsx',
     ]
     const offenders = files.flatMap((rel) =>
-      scan(readFileSync(join(process.cwd(), rel), 'utf-8')).map((label) => `${rel} 硬编码「${label}」`),
+      scan(readFileSync(join(process.cwd(), rel), 'utf-8')).map((finding) => `${rel} ${finding}`),
     )
     expect(
       offenders,

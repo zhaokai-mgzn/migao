@@ -143,7 +143,9 @@ export default function LoginPage() {
         <View className='login-brand__icon'>
           <Text className='login-brand__icon-text'>米</Text>
         </View>
-        <Text className='login-brand__title'>米宝 · 商家助手</Text>
+        {/* AI 角色标签口径见 frontend/admin-web/src/config/ai-roles.ts（issue #6330/#6333）；
+            本 App 是独立工程，不跨 App 引共享模块（#6306 教训：落在发布集外 ⇒ 白屏）⇒ 本地字面量 + 测试钉值。 */}
+        <Text className='login-brand__title'>米宝 · 企业智能生产管家</Text>
         <Text className='login-brand__subtitle'>经营数据 · AI 客服 · 移动坐席</Text>
       </View>
 
