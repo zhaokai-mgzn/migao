@@ -85,6 +85,7 @@ export interface ProductPrefill {
  * | 响应 key | 表单字段 | 依据 |
  * |---|---|---|
  * | `name` | `name`（商品标题） | 同名直填 |
+ * | `description` | `description`（图文描述 → 商品描述富文本区，issue #6362） | 同名直填（**文案**不是事实：低可信度，页面上挂 `[米宝解读]` 徽标提醒复核）；`ProductFormData.description` 已存在、提交链路已通 ⇒ **不新增落库字段** |
  * | `material` / `craft` | `specifications.material` / `.craft` | `ProductAttributes` 读的是**英文 key**（`lib/attribute-keys.ts`：表单内部英文 key、提交时 `toChineseSpecKeys` 转中文落库）⇒ 只有英文 key 才**在表单里看得见**，且落库口径仍是「材质 / 工艺」 |
  * | `color` | `colors[].colorName` | `ProductColor` 需要 `id` ⇒ 复用 SkuMatrix「添加颜色」同一条路径的 `nextTempId()` |
  * | `door_width` | `doorWidths[]` | 经 `normalizeDoorWidth` 归一（与门幅下拉选项同口径） |
@@ -98,6 +99,18 @@ export function buildProductPrefill(fields: RecognizedField[]): ProductPrefill {
   if (name) {
     initialData.name = name
     recognizedFields.push('name')
+  }
+
+  // **商品描述文案**（issue #6362）：落点是既有富文本区（`Section title="图文描述"` → `form.description`，
+  // 提交链路已通 ⇒ **不新增落库字段**）。它是**推理产物**（来源 `[米宝解读]`）⇒ 低可信度，
+  // 页面据 `recognizedFields` 挂徽标提醒复核。
+  // 🔴 **有值才写键**：空 / 缺失时键**不出现**（绝不写空串）—— 那会覆盖商家自己写的描述
+  //    （`ProductForm` 的落值是合并式 `setForm(prev => ({...prev, ...initialData}))`，键不在即不动）。
+  // 🔴 **不 trim**：富文本是 HTML 片段，逐字落值；`trim() === ''` 只用来判「有没有值」。
+  const description = pickField(fields, 'description')?.value
+  if (typeof description === 'string' && description.trim() !== '') {
+    initialData.description = description
+    recognizedFields.push('description')
   }
 
   // 规格属性：表单内部英文 key（material / craft），提交时由 ProductForm 转中文落库

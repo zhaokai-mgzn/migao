@@ -102,6 +102,9 @@ class TestExtractFieldsProduct:
             ("craft", "工艺", "遮光", FIELD_MARKER),
             ("door_width", "门幅", None, None),
             ("price", "售价", "128", FIELD_MARKER),
+            # 2026-10-05（issue #6362）：商品描述文案 —— 本夹具没写这一格 ⇒ 整格留空
+            # （`value=None` / `source=None`）；它是**推理产物**，只由 `[米宝解读]` 填值。
+            ("description", "商品描述", None, None),
         ]
 
     def test_uncertain_field_is_left_empty_with_a_reason(self):
@@ -119,6 +122,8 @@ class TestExtractFieldsProduct:
                     '"name": {"value": "帘", "confidence": 0.9}}}')
         assert [f["key"] for f in extract_fields("product", shuffled)] == [
             "name", "color", "material", "craft", "door_width", "price",
+            # 2026-10-05（issue #6362）：描述格是 schema 的**第 7 格**（模型没给 ⇒ 留空）
+            "description",
         ]
 
 

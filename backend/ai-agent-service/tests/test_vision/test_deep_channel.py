@@ -223,6 +223,32 @@ class TestInterpretationIsMarkedAndAsymmetric:
         assert material["source"] == SOURCE_INTERPRETED
         assert material["note_source"] == SOURCE_INTERPRETED
 
+    def test_description_is_an_interpretable_cell_of_product(self):
+        """商品描述文案（issue #6362）：用户逐字「然后把商品描述的文案也要生成一份」。
+
+        描述是**文案**不是事实 ⇒ 与材质 / 工艺同族：走 `[米宝解读]`，一格都不进识别直填
+        （`product_fields()` 里没有这一格 ⇒ 内核不给值，只有解读能把它填上）。
+        """
+        description = "<p>雪尼尔遮光窗帘，面料厚实、垂感好，适合客厅与卧室；可选配韩式褶工艺。</p>"
+        plan = build_page_fill(
+            "product",
+            product_fields(),
+            interpretations={"description": {"value": description, "note": "图上看到雪尼尔面料与遮光工艺"}},
+        )
+        cell = field_of(plan, "description")
+        assert cell["value"] == description
+        assert cell["source"] == SOURCE_INTERPRETED
+        assert cell["note_source"] == SOURCE_INTERPRETED
+        assert "description" in INTERPRETABLE_KEYS["product"]
+
+    def test_description_without_interpretation_stays_empty_with_a_reason(self):
+        """没有解读 ⇒ 描述格**留空且给理由**（绝不凭空生成 / 不写空串覆盖商家内容）。"""
+        plan = build_page_fill("product", product_fields())
+        cell = field_of(plan, "description")
+        assert cell["value"] is None
+        assert cell["source"] is None
+        assert cell["reason"]
+
     def test_product_interpretation_never_overwrites_a_recognised_cell(self):
         plan = build_page_fill(
             "product",
@@ -296,9 +322,11 @@ class TestInterpretableScopeIsWidened:
     门幅与售价**照旧不落值**（猜错会算出错的米数与金额）—— 它们的推理结论只走 `note`。
     """
 
-    def test_product_interpretable_keys_are_exactly_the_four_agreed_ones(self):
-        """逐字钉住四格：**改回两项 / 多加一项 / 调换顺序 ⇒ 红**。"""
-        assert INTERPRETABLE_KEYS["product"] == ("name", "material", "craft", "color")
+    def test_product_interpretable_keys_are_exactly_the_five_agreed_ones(self):
+        """逐字钉住五格（#6361 四格 + #6362 描述）：**改回两项 / 少一项 / 多加一项 / 调换顺序 ⇒ 红**。"""
+        assert INTERPRETABLE_KEYS["product"] == (
+            "name", "material", "craft", "color", "description",
+        )
         assert "door_width" not in INTERPRETABLE_KEYS["product"]
         assert "price" not in INTERPRETABLE_KEYS["product"]
 

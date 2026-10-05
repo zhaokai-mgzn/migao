@@ -59,6 +59,18 @@ TARGET_FIELDS: Dict[str, Tuple[TargetField, ...]] = {
         TargetField("craft", "工艺", "工艺（如遮光、印花、提花）"),
         TargetField("door_width", "门幅", "门幅（米）；只抄图上写明的数字，不推算"),
         TargetField("price", "售价", "售价（元）；只抄图上写明的数字，不推算"),
+        # 2026-10-05（issue #6362）：**商品描述文案** —— 用户逐字「然后把商品描述的文案也要生成一份」。
+        # 落点是建品页**既有**富文本区（`ProductFormData.description`，提交链路已通）⇒ **不新增落库字段**。
+        # 🔴 它是**推理产物**、不是图上的事实：本格**不参与**识别直填，只由 `[米宝解读]` 填值
+        #（见 `deep_channel.INTERPRETABLE_KEYS`）—— hint 据此要求「不得编造图上没有的硬事实」，
+        # 推测性表述必须带「约 / 可选」这类措辞（与 issue #6362 的内容口径同一处）。
+        TargetField(
+            "description",
+            "商品描述",
+            "商品描述文案（HTML 片段）：贴近图上信息 + 行业常识（材质 / 工艺 / 适用场景 / "
+            "清洗与安装提示）；不得编造图上没有的硬事实（价格 / 门幅数字 / 认证 / 产地），"
+            "推测性表述用「约 / 可选」这类措辞",
+        ),
     ),
     "order": (
         TargetField("customer_name", "客户名", "收货人 / 客户姓名，一字不差地抄"),
