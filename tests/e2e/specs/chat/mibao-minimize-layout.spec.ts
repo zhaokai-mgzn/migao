@@ -35,7 +35,8 @@ test.describe('米宝最小化浮窗布局', () => {
 
     // 打开米宝 FAB
     await page.getByTitle('打开米宝').click()
-    await expect(page.getByText('米宝 · 智能助手')).toBeVisible()
+    // 定位标签口径见 frontend/admin-web/src/config/ai-roles.ts（issue #6330/#6333）
+    await expect(page.getByText('米宝 · 企业智能生产管家')).toBeVisible()
 
     // 收起（最小化）— Minus 图标按钮
     await page.locator('button').filter({ has: page.locator('svg.lucide-minus') }).click()

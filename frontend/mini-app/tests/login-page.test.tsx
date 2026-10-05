@@ -2,7 +2,10 @@
  * 登录页面测试
  *
  * 覆盖: 渲染、登录按钮点击、自动登录跳转、loading状态
+ *       + 品牌区标题（C 端 AI 角色标签「小布 · 企业智能客服」，口径见
+ *         frontend/admin-web/src/config/ai-roles.ts；issue #6330/#6333）
  */
+// case_ids: UI-016, UI-018
 import React from 'react'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 
