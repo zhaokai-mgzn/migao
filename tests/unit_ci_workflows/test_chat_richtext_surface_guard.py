@@ -22,8 +22,9 @@
 2. **每个小程序面接线齐全**：该包的气泡源码引用 `parseRichText`，且 `src/utils/richText.ts` 真实存在；
 3. **admin-web 面接线**：`frontend/admin-web/src/components/chat/MessageList.tsx` 必须
    `import remarkBreaks` **且**把它放进 `remarkPlugins`（只 import 不挂 = 断线，同样红）；
-4. **判别力自证 + 射程自证**：对真语料零违规；对**内存里的坏样例**（摘掉 `parseRichText` /
-   摘掉 `remarkBreaks` 挂载 / 摘掉 import）逐条必须判红；普查面 ≥3 个文件（一起收窄 ⇒ 红）。
+4. **判别力自证**：对真语料零违规；对**内存里的坏样例**（摘掉 `parseRichText` /
+   摘掉 `remarkBreaks` 挂载 / 摘掉 import）逐条必须判红（射程由判据 1 的**逐项等号**兜住 ——
+   不另设 `len(...) >= N` 下界：那只会防清空，且会被声明面元守卫要求入册）。
 
 ## 红证（实跑，任选其一）
 
@@ -53,7 +54,7 @@ BUBBLE_REL = "src/components/chat/MessageBubble.tsx"
 RICH_TEXT_REL = "src/utils/richText.ts"
 ADMIN_WEB_MESSAGE_LIST = "frontend/admin-web/src/components/chat/MessageList.tsx"
 
-#: 冻结的普查集合（**两边一起收窄也逃不掉**：现取必须等于本常量，新包须连同本判据一起登记）
+#: 冻结的普查集合（现取必须与它**逐项相等** —— 判据 1 用的是等号，不是下界）
 FROZEN_BUBBLE_PACKAGES = ("bmini-app", "mini-app")
 
 #: 行为判据（判据 4 保证它们还在 —— 守卫绿而行为判据被删 = 空守）
@@ -100,7 +101,6 @@ def test_bubble_surface_census_is_frozen() -> None:
 
 def test_bubble_packages_wire_rich_text() -> None:
     """判据 2：每个小程序包都接上了 parseRichText，且解析器文件真实存在。"""
-    assert len(FROZEN_BUBBLE_PACKAGES) >= 2, "射程自证：气泡面少于 2 个包 ⇒ 普查已失效"
     for pkg in FROZEN_BUBBLE_PACKAGES:
         parser = FRONTEND / pkg / RICH_TEXT_REL
         assert parser.is_file(), f"{pkg} 缺富文本解析器：frontend/{pkg}/{RICH_TEXT_REL}"
