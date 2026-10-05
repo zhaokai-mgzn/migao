@@ -6815,7 +6815,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6222，P3·读面）：主会话在未修复构建 :8080 上逐字复现 —— `GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行（after-sales 5 / stock-ledger 389 同款）。机制：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（`pageSize < 0` 直接 return ⇒ 不追加 LIMIT、**不执行 count 查询**）⇒ 拦截器只填 `records`、`total` 停在默认 0；被 `setMaxLimit(500)` 约束的只是**正数** size ⇒ 行数不设上界。危害：`total=0` 让客户端分页器立刻认为已到末页 ⇒ 「有数据却显示为空 / 翻不动页」。**口径裁定 = 显式拒绝（400）而非钳到合法下界**，三条理由：① 病根是「非法入参**不静默**」，钳位仍是静默（把「静默给错数据」换成「静默改口径」）；② 本仓已有同族显式拒绝范式（`StockQuantity.requireOneDecimal` / `MoneyScale.requireTwoDecimals`(#6221) / 负数数量 ⇒ 400）；③ 钳位会掩盖调用方（含 Agent / 前端）的真实缺陷。**为什么这样选单点**（最少代码阶梯）：分页入口有两个族（`@RequestParam long size` 控制器方法现取 22 个 + 自带 page/size 字段的查询 DTO 三个、**无共同基类**），且 DTO 属性名不保证等于 HTTP 参数名（`ProductQueryRequest.productId` 对 `@RequestParam productCode`）⇒ DTO 侧做准入要么靠 `WebDataBinder` 名字启发（会漏）、要么按属性名校验（对不上）；两族**都必须**经同一个 HTTP 参数集 ⇒ 唯一真正单点 = Servlet 层参数闸（`prehandle` 取参 + `PaginationParamGate` 判定），并在 WebConfig 注册（排在授权/归属之后，沿用 F3 #6063 与 #6158 的次序纪律）。**类级固化**：台账 25 条分页入口 + 6 条判据 + 5 种坏形态判别力自证（未登记即红 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 + 只改措辞不红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-070（origin/main@dacac7471:001-067,069 · PR #6227:068 ⇒ 最小空闲 070）。 ｜ tags: api, pagination, fail-closed, backend-contract, negative-size
 
-## 商品域（113 case）
+## 商品域（114 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -8358,6 +8358,20 @@
 ```
 溯源: 2026-10-05 新增（issue #6347 Part A）：建品/改品对 status 原先只校长度（ColumnTextLength）⇒ active 8 行 / on_shelf 2 行落库成**状态机死行**（不在「在售」口径里 ⇒ 快照静默过滤其 SKU；上架动作被拒 ⇒ 无法自救）。取号 = python3 scripts/next_case_id.py 现取最小空闲号 **PR-016**（历史空档）。Part B（快照三态口径）**不在本单**。 ｜ tags: product, status, validation, backend-contract, meta-guard
 
+### PR-020. 图片识别色号清单拆行：一张色卡的 16 个色号 ⇒ 16 行颜色（改前塞成一格、被 30 字符输入框削断）（issue #6354） 🔵
+```
+你: 建品页「拍照 / 上传识别」喂一张色卡图（识别报告逐字给出 `2699-01、2699-02、…、2699-16`，共 127 字符）
+期望: direct_reply
+数据: **病（用户 2026-10-05 实测读数）**：识别报告面板显示 16 个色号，落到表单「颜色分类」只剩 `2699-01、2699-02、2699-03、` —— 恰好 30 字符（颜色行名称框 maxLength = COLOR_NAME_MAX = 30）⇒ 第 4 个色号被静默削断、SKU 矩阵只出 1 行。根因 = frontend/admin-web/src/lib/image-recognize.ts 的 `buildProductPrefill` 把整串当一个 `colors[0].colorName`。
+数据: **判据 1（实例，改前必红）**：`buildProductPrefill` 收 16 色号 + 门幅 `3.2` ⇒ `colors` 恰 16 行、`skus` 恰 16 行且逐行 colorName 与色号顺序一致；`recognizedFields` 里 `color` 只出现 1 次。红证（修前实测，5 failed）：`expected [ Array(1) ] to deeply equal [ '2699-01', '2699-02', …(14) ]`、`expected [ { id: '-4', …(1) } ] to have a length of 200 but got 1`。
+数据: **判据 2（类级元守卫，铁律 8）**：`buildProductPrefill` 产出的**每一个**颜色名长度必须 ≤ `COLOR_NAME_MAX`（超限即红并具名打印哪个颜色名 / 多长）—— 防「拆了但仍超限」与「上限改小却不同步」。改前红证：`以下颜色名超过表单上限 30，会被输入框静默截断: expected [ Array(1) ] to deeply equal []`。
+数据: **判据 3（口径单一）**：分隔符口径与 `SkuMatrix.tsx::BatchColorInput`（人工「批量输入颜色」）同一套（换行 / 中英文逗号 / 顿号），且上限常量只有一处定义（`lib/product-limits.ts`）—— 组件里再写死一份 ⇒ 红。
+数据: **判据 4（封顶与去重）**：超过 `MAX_COLORS` 的输入 ⇒ 截到 200；逐字重复的名字去重、但**不猜、不改写**颜色名（`2699-01、2699-01、 2699-02 、2699-02` ⇒ `['2699-01','2699-02']`）。
+数据: **边界（如实登记）**：**单个**颜色名本身超过 30 字符时本层不裁剪（那是颜色名不该这么长的表单侧问题）⇒ 由判据 2 具名报出，交给表单校验，不在预填侧猜改；`MAX_SKUS`（600）不在本层裁剪（预填恒 1 个门幅 ⇒ 颜色数即 SKU 数）。
+跳过: [frontend-contract] 确定性前端纯函数判据（vitest，零 LLM 环节），不进入 agent-eval 冒烟 —— 断言的「拆行 + 上限 + 口径单一」全部可在单测里逐值钉住
+```
+溯源: 2026-10-05 新增（issue #6354，P2·图片识别预填）。取号 = 现取最小空闲号（`.github/cases/` 无 PR-020，`scripts/next_case_id.py PR` 判取 PR-020）。红→绿（注入式双向对照）：`git stash` 注入 = 退回改前实现（新测试文件未跟踪仍在）⇒ `tests/unit/lib/image-recognize-color-split.test.ts` **5 failed**（读数逐字见判据 1/2）；`git stash pop` ⇒ 25 passed（本文件 5 + 既有 ImageRecognizePrefill 13 + image-recognize 7）。 ｜ tags: image-recognize, color, frontend, prefill, regression
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -9764,8 +9778,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：679（活跃 134，跳过 545）
-- tier 分布：smoke 12 / normal 625 / adversarial 32
+- 用例总数：680（活跃 134，跳过 546）
+- tier 分布：smoke 12 / normal 626 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9786,7 +9800,7 @@
 - 订单域：63
 - 加工项域：27
 - 加工单域：61
-- 商品域：113
+- 商品域：114
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -9997,6 +10011,7 @@
 - PR-109: 批量更新 - 阈值 N>50 拒绝分批 + batchType 白名单只有两个 + 两段确认结构锁 + 撤销逐条还原（确定性判据，非 LLM 面）
 - PR-014: 批量库存调整 - 两段确认（多选勾选集合 → 逐条「改前库存 → 改后库存」）→ 执行 → 撤销
 - PR-016: 建品/改品 status 枚举准入：非法值 4xx 且列出合法枚举；状态机死行（active/on_shelf）可改回 off_sale/draft 自救
+- PR-020: 图片识别色号清单拆行：一张色卡的 16 个色号 ⇒ 16 行颜色（改前塞成一格、被 30 字符输入框削断）（issue #6354）
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序**进表**：`data-state=no_row` + 行尾 `管理▸` 可停用/删除，issue #5875）

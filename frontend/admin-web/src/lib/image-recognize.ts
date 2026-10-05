@@ -12,10 +12,36 @@
 import type { RecognizedField } from './api'
 import type { ProductColor, ProductFormData } from '@/types'
 import { craftItemKeyOf } from './order-craft-fields'
+import { MAX_COLORS } from './product-limits'
 import { nextTempId, normalizeDoorWidth, rebuildSkus } from './sku-utils'
 
 /** 预填来源标记（与内核返回的 `source` 逐字一致 —— 徽标文案单一事实源，不另写一份） */
 export const RECOGNIZE_SOURCE_TAG = '[图片识别]'
+
+/**
+ * 颜色清单的**分隔口径**（issue #6354）。
+ *
+ * 内核 `TARGET_FIELDS.product.color` 的 hint 是「色号 + 颜色名，**多个用顿号分隔**」⇒ 到前端
+ * 时是一整串（实测：一张色卡 16 个色号 = 127 字符）。**必须拆成多行**，不能塞进一个颜色格：
+ * 颜色行名称框的 `maxLength` 是 `COLOR_NAME_MAX`（30）⇒ 塞进去会被输入框**静默截断**
+ * （实测被削到 `2699-01、2699-02、2699-03、`，第 4 个色号只剩半截），且 SKU 矩阵只出 1 行。
+ *
+ * 分隔符与 `SkuMatrix.tsx::BatchColorInput` 的「批量输入颜色」**同一套**（换行 / 中英文逗号 /
+ * 顿号）—— 人工批量录入与识别预填走同一条口径，不各写一份。
+ */
+export const COLOR_LIST_SEPARATORS = /[\n,，、]+/
+
+/** 识别到的一串颜色原文 → 逐行颜色名（trim + 去空 + **逐字去重** + 封顶 `MAX_COLORS`）。 */
+export function colorNamesOf(raw: string): string[] {
+  const names: string[] = []
+  for (const part of raw.split(COLOR_LIST_SEPARATORS)) {
+    const name = part.trim()
+    if (name === '' || names.includes(name)) continue
+    names.push(name)
+    if (names.length >= MAX_COLORS) break
+  }
+  return names
+}
 
 /** 有值的字段 = 预填候选（`value: null` 的字段**不在其中**，见文件头口径） */
 export function filledFields(fields: RecognizedField[]): RecognizedField[] {
@@ -87,9 +113,10 @@ export function buildProductPrefill(fields: RecognizedField[]): ProductPrefill {
     initialData.specifications = specifications
   }
 
-  const colorName = valueOf(fields, 'color')
+  // 颜色是**清单**字段（内核按顿号给一串）⇒ 拆成多行；塞成一格会被 30 字符输入框削断（issue #6354）
+  const colorNames = colorNamesOf(valueOf(fields, 'color'))
   const doorWidth = normalizedDoorWidth(valueOf(fields, 'door_width'))
-  const colors: ProductColor[] = colorName ? [{ id: nextTempId(), colorName }] : []
+  const colors: ProductColor[] = colorNames.map((colorName) => ({ id: nextTempId(), colorName }))
   const doorWidths: string[] = doorWidth ? [doorWidth] : []
   if (colors.length > 0) {
     initialData.colors = colors
