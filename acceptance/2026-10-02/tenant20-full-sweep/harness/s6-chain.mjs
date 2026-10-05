@@ -87,7 +87,7 @@ async function main() {
     const prod = await api('POST', '/api/admin/products', {
       token, body: {
         name: `链路商品${stamp}`, unit: '米', pricingType: 'fixed', basePrice: 68,
-        status: categoryId ? 'on_shelf' : 'draft', categoryId,
+        status: categoryId ? 'on_sale' : 'draft', categoryId,
         colors: [{ colorName: '本白', mainColorHex: '#FAFAFA', sortOrder: 1 }],
         skus: [{ colorName: '本白', doorWidth: '2.8m', price: 68, stock: 0, skuCode: `CHAIN-${stamp}` }],
       },

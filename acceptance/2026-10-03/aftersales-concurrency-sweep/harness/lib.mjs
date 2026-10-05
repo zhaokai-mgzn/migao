@@ -342,7 +342,7 @@ export async function createProbeProduct(token, { allowRestock = true, stock = 1
     basePrice: price,
     price,
     stock,
-    status: 'on_shelf',
+    status: 'on_sale',
     description: `${PROBE_PREFIX}（线B 售后退款/并发探针，用后自清）`,
     allowReturnRestock: allowRestock,
     colors: [{ colorName: `${PROBE_PREFIX}色-${u}`, mainColorHex: '#AABBCC' }],

@@ -40,7 +40,7 @@ async function main() {
   const prod = await api('POST', '/api/admin/products', {
     token: adminToken, body: {
       name: `岗位验收商品${stamp}`, unit: '米', pricingType: 'fixed', basePrice: 50,
-      status: categoryId ? 'on_shelf' : 'draft', categoryId,
+      status: categoryId ? 'on_sale' : 'draft', categoryId,
       colors: [{ colorName: '米白', mainColorHex: '#FFFFFF', sortOrder: 1 }],
       skus: [{ colorName: '米白', doorWidth: '2.8m', price: 50, stock: 0, skuCode: `POS-${stamp}` }],
     },
@@ -79,7 +79,7 @@ async function main() {
     },
     {
       id: 'ACT-PRODUCT', name: '建商品', code: 'product:create', method: 'POST', url: () => '/api/admin/products',
-      body: (p) => ({ name: `岗位商品${p.roleCode}${stamp}`, unit: '米', pricingType: 'fixed', basePrice: 30, status: categoryId ? 'on_shelf' : 'draft', categoryId }),
+      body: (p) => ({ name: `岗位商品${p.roleCode}${stamp}`, unit: '米', pricingType: 'fixed', basePrice: 30, status: categoryId ? 'on_sale' : 'draft', categoryId }),
       count: () => n(`select count(*)::int as n from products where tenant_id=${T}`),
     },
     {

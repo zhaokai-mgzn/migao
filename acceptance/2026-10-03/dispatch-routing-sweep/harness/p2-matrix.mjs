@@ -172,7 +172,7 @@ async function createProduct(token) {
   const prod = await api('POST', '/api/admin/products', {
     token, body: {
       name: `工序验收商品${RUN}`, unit: '米', pricingType: 'fixed', basePrice: 68,
-      status: cat.json?.data?.id ? 'on_shelf' : 'draft', categoryId: cat.json?.data?.id,
+      status: cat.json?.data?.id ? 'on_sale' : 'draft', categoryId: cat.json?.data?.id,
       colors: [{ colorName: '本白', mainColorHex: '#FAFAFA', sortOrder: 1 }],
       skus: [{ colorName: '本白', doorWidth: '2.8m', price: 68, stock: 100000, skuCode: `DSP-${RUN}` }],
     },

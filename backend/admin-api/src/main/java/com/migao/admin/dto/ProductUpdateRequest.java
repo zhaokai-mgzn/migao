@@ -67,7 +67,8 @@ public class ProductUpdateRequest {
     private String knowledgeBaseId;
 
     /**
-     * 状态：on_sale（上架）、off_sale（下架）
+     * 状态：合法取值 = ProductService.STATUS_TRANSITIONS 的键集
+     * （draft / under_review / on_sale / off_sale；issue #6347 起入口按枚举准入）。
      */
     private String status;
 

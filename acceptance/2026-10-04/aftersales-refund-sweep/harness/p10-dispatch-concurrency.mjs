@@ -29,7 +29,7 @@ async function orderWithProcessing(tag) {
   const cat = psql(`select id from categories where tenant_id=${TENANT_ID} and status='active' order by created_at limit 1`)[0]?.id
   const prod = await api('POST', '/api/admin/products', { token, body: {
     name: `${PROBE_PREFIX}派工商品-${tag}`, unit: '米', pricingType: 'fixed', basePrice: 68,
-    status: 'on_shelf', categoryId: cat, allowReturnRestock: false,
+    status: 'on_sale', categoryId: cat, allowReturnRestock: false,
     colors: [{ colorName: `${PROBE_PREFIX}派工色-${tag}`, mainColorHex: '#FAFAFA', sortOrder: 1 }],
     skus: [{ colorName: `${PROBE_PREFIX}派工色-${tag}`, doorWidth: '2.8m', price: 68, stock: 100000, skuCode: `LB-DISP2-${tag}`.toUpperCase() }],
   } })

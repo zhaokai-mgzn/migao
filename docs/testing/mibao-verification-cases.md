@@ -6802,7 +6802,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6222，P3·读面）：主会话在未修复构建 :8080 上逐字复现 —— `GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行（after-sales 5 / stock-ledger 389 同款）。机制：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（`pageSize < 0` 直接 return ⇒ 不追加 LIMIT、**不执行 count 查询**）⇒ 拦截器只填 `records`、`total` 停在默认 0；被 `setMaxLimit(500)` 约束的只是**正数** size ⇒ 行数不设上界。危害：`total=0` 让客户端分页器立刻认为已到末页 ⇒ 「有数据却显示为空 / 翻不动页」。**口径裁定 = 显式拒绝（400）而非钳到合法下界**，三条理由：① 病根是「非法入参**不静默**」，钳位仍是静默（把「静默给错数据」换成「静默改口径」）；② 本仓已有同族显式拒绝范式（`StockQuantity.requireOneDecimal` / `MoneyScale.requireTwoDecimals`(#6221) / 负数数量 ⇒ 400）；③ 钳位会掩盖调用方（含 Agent / 前端）的真实缺陷。**为什么这样选单点**（最少代码阶梯）：分页入口有两个族（`@RequestParam long size` 控制器方法现取 22 个 + 自带 page/size 字段的查询 DTO 三个、**无共同基类**），且 DTO 属性名不保证等于 HTTP 参数名（`ProductQueryRequest.productId` 对 `@RequestParam productCode`）⇒ DTO 侧做准入要么靠 `WebDataBinder` 名字启发（会漏）、要么按属性名校验（对不上）；两族**都必须**经同一个 HTTP 参数集 ⇒ 唯一真正单点 = Servlet 层参数闸（`prehandle` 取参 + `PaginationParamGate` 判定），并在 WebConfig 注册（排在授权/归属之后，沿用 F3 #6063 与 #6158 的次序纪律）。**类级固化**：台账 25 条分页入口 + 6 条判据 + 5 种坏形态判别力自证（未登记即红 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 + 只改措辞不红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-070（origin/main@dacac7471:001-067,069 · PR #6227:068 ⇒ 最小空闲 070）。 ｜ tags: api, pagination, fail-closed, backend-contract, negative-size
 
-## 商品域（112 case）
+## 商品域（113 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -8331,6 +8331,20 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-23 创建（issue #5904 落码时未单开用例，本行 2026-10-05 补登记，issue #6340）：原语料根只有 frontend/admin-web/src ⇒ bmini-app 不在射程内，工人端 `Number(chosenSku?.skuId)` 一处分都不扣（#6340 实证）。2026-10-05（issue #6340）：语料根**参数化**为两个根（一份规则、不复制第二份实现）+ 逐根反空跑 + 射程自证判据（⑥）；单变量红证实跑：把 bmini 入库页改回 Number() ⇒ 判据 3 具名报出 `frontend/bmini-app/src/pages/worker/inbound/index.tsx` 的建草稿体 `skuId: Number(chosenSku?.skuId)` 那一行。边界如实登记：只认 Number/parseInt/parseFloat 三种显式转换（`+x.id` / `x.id*1` / `BigInt(x.id)` 不在面内）；判源码形态、判不了运行期精度（那一半由页面级实例判据承担）；frontend/mini-app 与 worker-h5 未纳入射程（本轮未清点，不为其背书）。 ｜ tags: snowflake-id, precision, meta-guard, backend-contract
 
+### PR-016. 建品/改品 status 枚举准入：非法值 4xx 且列出合法枚举；状态机死行（active/on_shelf）可改回 off_sale/draft 自救 🔵
+```
+你: （非 LLM 行为：状态准入由 admin-api 服务层单测 + 仓内语料元守卫覆盖，不进 agent-eval 冒烟）
+期望: direct_reply
+数据: 🔴 建品/改品传非法 status（active / on_shelf / in_warehouse / ON_SALE / 含空格 …）⇒ **422 VALIDATION_ERROR**，且文案**列出合法枚举**（draft(草稿)/under_review(审核中)/on_sale(出售中)/off_sale(已下架)）——不是「请检查字段格式是否正确」这种无出路的话
+数据: 🔴 合法集合**单一真值源** = backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java 的 STATUS_TRANSITIONS 键集（PRODUCT_STATUSES 必须是它的派生）；admin-api 主源码里别处不得再定义 ≥3 个状态 token 的集合字面量；createProduct / updateProduct 两个入口都必须走 requireValidStatusOrNull
+数据: 🔴 状态机死行（当前状态不在状态机内，如 active / on_shelf / in_warehouse）⇒ 报错**必须给可执行出路**（改回 off_sale(已下架) 或 draft(草稿) 修正回状态机），**禁止**再出现「允许的目标状态: 无」；且该出路真的走得通（PUT /api/admin/products/{id}/status body={"status":"off_sale"} 成功），但**不允许**从死行直接跳到 on_sale（来历不明的行不得被直接上架）
+数据: 🔴 仓内语料（含 acceptance/** 的 harness）里商品 status 字面量必须全部落在合法集合内：引信 = acceptance/2026-10-04/worker-miniapp-sweep/harness/bootstrap-chain.mjs 原先建品写 status:'active'（另有 19 个 harness 文件、共 20 处写 status:'on_shelf'）
+数据: 🔴 写入方**未登记即红**：tests/unit_ci_workflows/product_status_write_sites.json ⇄ 现取检出集双向相等（新写入方未登记 ⇒ 红；陈旧条目 ⇒ 红，台账只许缩短）
+数据: 判别力自证：注入真语料（把 bootstrap-chain.mjs 的 status:'on_sale' 改回 'active'）⇒ 判据当场红；不改 ⇒ 不报（反向对照）
+跳过: [backend-contract] 商品状态准入是服务层枚举校验（无米宝工具面）⇒ 由 admin-api 单测（ProductStatusAdmissionTest）+ 仓内语料元守卫（tests/unit_ci_workflows/test_product_status_single_source.py）覆盖，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-05 新增（issue #6347 Part A）：建品/改品对 status 原先只校长度（ColumnTextLength）⇒ active 8 行 / on_shelf 2 行落库成**状态机死行**（不在「在售」口径里 ⇒ 快照静默过滤其 SKU；上架动作被拒 ⇒ 无法自救）。取号 = python3 scripts/next_case_id.py 现取最小空闲号 **PR-016**（历史空档）。Part B（快照三态口径）**不在本单**。 ｜ tags: product, status, validation, backend-contract, meta-guard
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -9725,8 +9739,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：676（活跃 134，跳过 542）
-- tier 分布：smoke 12 / normal 622 / adversarial 32
+- 用例总数：677（活跃 134，跳过 543）
+- tier 分布：smoke 12 / normal 623 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9747,7 +9761,7 @@
 - 订单域：63
 - 加工项域：27
 - 加工单域：61
-- 商品域：112
+- 商品域：113
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -9957,6 +9971,7 @@
 - PR-108: 批量改价 - 两段确认（多选勾选集合 → 逐条「改前 → 改后」）→ 执行 → 撤销
 - PR-109: 批量更新 - 阈值 N>50 拒绝分批 + batchType 白名单只有两个 + 两段确认结构锁 + 撤销逐条还原（确定性判据，非 LLM 面）
 - PR-014: 批量库存调整 - 两段确认（多选勾选集合 → 逐条「改前库存 → 改后库存」）→ 执行 → 撤销
+- PR-016: 建品/改品 status 枚举准入：非法值 4xx 且列出合法枚举；状态机死行（active/on_shelf）可改回 off_sale/draft 自救
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序**进表**：`data-state=no_row` + 行尾 `管理▸` 可停用/删除，issue #5875）
