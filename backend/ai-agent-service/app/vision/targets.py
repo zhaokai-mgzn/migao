@@ -49,11 +49,26 @@ class TargetField:
     key: str
     label: str
     hint: str
+    #: 🔴 **图上有这一格吗？**（issue #6386，2026-10-05 真跑验收发现）
+    #:
+    #: `False` = 图上**根本不会有**这类格子（它是**文案**不是**事实**）⇒
+    #: ① vision 的字段表里**不给它**（模型连「可以编这一格」的机会都没有 ——
+    #:    光靠提示词求它「只抄图上写明的」，实测**无效**：模型照样编出
+    #:    `name="常青藤系列窗帘面料色卡"` 与一整段 `description`，还自己给出
+    #:    `reason="图片未给出该字段"` —— 自相矛盾的值）；
+    #: ② 该格的值**只能**由 `[米宝解读]` 给（`deep_channel.INTERPRETABLE_KEYS`），
+    #:    绝不允许 `[图片识别]` 直填（那会把「猜的」标成「抄的」）。
+    #:
+    #: 判据 = `tests/test_vision/test_copy_vs_infer.py`（实例 + 类级元守卫）。
+    recognizable: bool = True
 
 
 TARGET_FIELDS: Dict[str, Tuple[TargetField, ...]] = {
     "product": (
-        TargetField("name", "商品名称", "商品标题；图上有多个名称时取最完整的一个"),
+        # 商品名是**文案**不是图上的事实（真跑实测：模型会编出「常青藤系列窗帘面料色卡」这种
+        # 看起来很合理的标题并顶 `[图片识别]` 标）⇒ 用户 2026-10-05 裁定「B：让米宝推、标 `[米宝解读]`」。
+        TargetField("name", "商品名称", "商品标题；图上有多个名称时取最完整的一个",
+                    recognizable=False),
         TargetField("color", "颜色", "色号 + 颜色名，多个用顿号分隔；只抄图上写明的"),
         TargetField("material", "材质", "面料成分 / 材质（如雪尼尔、棉麻）"),
         TargetField("craft", "工艺", "工艺（如遮光、印花、提花）"),
@@ -70,6 +85,7 @@ TARGET_FIELDS: Dict[str, Tuple[TargetField, ...]] = {
             "商品描述文案（HTML 片段）：贴近图上信息 + 行业常识（材质 / 工艺 / 适用场景 / "
             "清洗与安装提示）；不得编造图上没有的硬事实（价格 / 门幅数字 / 认证 / 产地），"
             "推测性表述用「约 / 可选」这类措辞",
+            recognizable=False,
         ),
     ),
     "order": (

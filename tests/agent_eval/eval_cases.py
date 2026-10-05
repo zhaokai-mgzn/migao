@@ -10963,6 +10963,24 @@ _CASE_PR_125 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-126 [NORMAL] 识别 vs 推理的分工按字段定死：生成类字段（商品名/商品描述）只由 [米宝解读] 给值，识别路径永不许直填（issue #6386）（源: cases/product.yml）──
+_CASE_PR_126 = EvalCase(
+    id='PR-126',
+    legacy_id='',
+    title='识别 vs 推理的分工按字段定死：生成类字段（商品名/商品描述）只由 [米宝解读] 给值，识别路径永不许直填（issue #6386）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户提供真实色卡图，要求「可以实际测试跑这个功能」⇒ 用真模型（deepseek-flash / V4.1-Flash）跑，不给 hint、带 hint 各一次'],
+    expectations=['direct_reply'],
+    data_checks=['**真跑现场（修前，可复算）**：`name` = 「常青藤系列窗帘面料色卡」、`description` = 一段完整文案，两格都被标成 `[图片识别]`（=抄的），而图上根本没有这两段内容 —— 同图同提示词只改 hint，两次 `description` 文案**不同** ⇒ 是**生成**的。来源标记把「猜的」标成「抄的」= 比留空更危险。', '**判据 1（字段表）**：`targets.TARGET_FIELDS["product"]` 里 `name` / `description` 的 `recognizable=False`；`color` / `material` / `craft` / `door_width` / `price` 仍为 `True`。', '**判据 2（不给模型这一格）**：`recognizer._schema_for("product")` 不含 `name` / `description`；而 `deep_channel._schema_for` 仍含它们（页面上要有这两格，否则表单少格）。', '**判据 3（类级元守卫，会红）**：**凡 `recognizable=False` 的字段，`[图片识别]` 直填路径永不产出它的值** —— 把全量字段都摆成「已识别且有值」跑 `build_page_fill`，这些格不得带 `SOURCE_RECOGNIZED`。将来新增同类字段自动受约束。', '**判据 4（自否证的值必须丢）**：模型给值 + `reason` 逐字「图片未给出该字段」⇒ 值丢弃（修前亲见这个自相矛盾组合；`_SELF_DENY_RE` 只认明确缺席表述，`图上第二行` 这类正常依据不受影响）。', '**判据 5（空格理由不自相矛盾）**：这两格的 `reason` 不得是「图片未给出该字段」，而是指向米宝解读。', '**判据 6（真跑复验，读数）**：修后同图同模型 ⇒ `name` = 「常青藤系列 全遮光雪尼尔提花窗帘 卧室客厅定制」（`[米宝解读]`）、`description` = 生成的 HTML 文案（`[米宝解读]`）、`color` 仍 `[图片识别]`（16 个色号未截断）、`price` 值空仅有建议。', '**不变式（未被本单放松）**：`price` / `door_width` 值永不落地（涉钱面）；识别已给值的格不被解读覆盖；零命中仍降级不推理。'],
+    skip_reason='[backend-contract] 确定性契约/机械判据，由 pytest（backend/ai-agent-service/tests/test_vision/test_copy_vs_infer.py 等）验证，非 LLM 行为，不进入 agent-eval 冒烟 —— 「哪一格允许由生成类字段填值」是**逐键白名单**，能逐值钉住；真实 LLM 的那一次真跑按 #4262 由用户显式要求、不自动派发',
+    tags=['image-recognize', 'source-marker', 'backend-contract', 'regression'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -13379,6 +13397,7 @@ ALL_CASES = (
     _CASE_PR_020,
     _CASE_PR_124,
     _CASE_PR_125,
+    _CASE_PR_126,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

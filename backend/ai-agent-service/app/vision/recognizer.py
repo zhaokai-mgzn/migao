@@ -85,6 +85,13 @@ _NEGATIVE_RE = re.compile(r"-\s*\d|负\s*\d")
 
 #: 留空理由：模型没给该字段 / 模型自己说看不清
 _NOT_RECOGNISED = "图片未给出该字段"
+#: 「模型自己说图上没有」的理由形态（issue #6386）：这种理由**配着值一起出现**时，值必是编的。
+#: ⚠️ 只认**明确的缺席表述**：早先写法把 `图上(没有|未写|没写|无)` 写成 `图上(没有…)` 时
+#: 会把「依据：图上第二行」这类**正常抄写理由**也当成自否证（实测：值被误丢）⇒ 收窄成
+#: 「图上」必须紧跟「没/未 + 有/写/标」这类否定。
+_SELF_DENY_RE = re.compile(
+    r"未(给出|识别到|识别出|标注|找到)|图上(没有|未写|没写|无此|不见)|看不清|无法(识别|判断)"
+)
 #: 留空理由：模型没给置信度 —— 按最低处理（宁可留空，不冒错填的风险）
 _NO_CONFIDENCE = "未给出置信度，无法判断把握程度，宁可不填"
 
@@ -199,9 +206,21 @@ async def recognize(
 
 # ── 内部：纯函数分解（便于逐个写死断言）─────────────────────────────────────
 def _schema_for(target_type: str):
+    """**发给 vision 的**字段表 —— 只含 `recognizable=True` 的格子。
+
+    🔴 这条过滤是 issue #6386 的修法核心：`name` / `description` 是**文案**不是图上的事实，
+    真跑实测「光在提示词里求它只抄图上写明的」**无效** —— 模型照样编出
+    `name="常青藤系列窗帘面料色卡"` 与一整段 `description`，还顶 `[图片识别]` 标
+    （把「猜的」标成「抄的」，比留空更危险）。
+    ⇒ **不给它这一格**，比「要求它别编」可靠。这两格的值改由 `[米宝解读]` 给
+    （`deep_channel.INTERPRETABLE_KEYS`）。
+
+    注意：`deep_channel.build_page_fill` 用的是**未过滤**的 `TARGET_FIELDS`
+    （它要按全量字段表出格子，否则这两格会从页面上消失）。
+    """
     if target_type not in TARGET_FIELDS:
         raise ValueError(f"不支持的识别 target: {target_type!r}")
-    return TARGET_FIELDS[target_type]
+    return tuple(f for f in TARGET_FIELDS[target_type] if f.recognizable)
 
 
 def _resolve(
@@ -215,8 +234,14 @@ def _resolve(
         return None, _NOT_RECOGNISED
 
     value = _as_text(entry.get("value"))
+    reason = _as_text(entry.get("reason"))
+    if value and reason and _SELF_DENY_RE.search(reason):
+        # 🔴 自相矛盾：模型一边给值、一边说「图上没有这一格」（issue #6386 真跑亲见 ——
+        # `name` 给了 `常青藤系列窗帘面料色卡` 而 reason 逐字是「图片未给出该字段」）。
+        # 「它自己都说没有」⇒ 这个值**一定是编的**，丢掉（宁可不填）。
+        return None, reason
     if not value:
-        return None, _as_text(entry.get("reason")) or _NOT_RECOGNISED
+        return None, reason or _NOT_RECOGNISED
 
     confidence = entry.get("confidence")
     if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):

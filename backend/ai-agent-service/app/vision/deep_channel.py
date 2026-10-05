@@ -34,7 +34,7 @@ Agent 只补页面做不到的三种，其中前两种的**可判定部分**落�
 - `value` 为空 ⇒ 必有 `reason`（看得懂的理由），`candidates` 只在歧义时非空。
 """
 import difflib
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from app.vision.recognizer import FIELD_MARKER
 from app.vision.targets import TARGET_FIELDS, TargetField
@@ -146,8 +146,12 @@ def build_page_fill(
         if original and resolution and resolution["status"] == "ambiguous":
             cell = _ambiguous_cell(field, original, resolution)
         else:
-            cell = _empty_cell(field, _text(source_field.get("reason")) or "图片未给出该字段")
-            if original:
+            cell = _empty_cell(field, _empty_reason(field, source_field))
+            # 🔴 第二道闸（issue #6386 类级元守卫）：`recognizable=False` 的格子（文案类）
+            # **永不许**走 `[图片识别]` 直填 —— 就算调用方硬塞一个值进来（旧内核 / 别的入口 /
+            # 将来新增的同类字段），也不得把「猜的」标成「抄的」。
+            # 第一道闸在 `recognizer._schema_for`（不给模型这一格）；两道都要，缺一层就会漏。
+            if original and field.recognizable:
                 cell["value"] = original
                 cell["source"] = SOURCE_RECOGNIZED
 
@@ -195,6 +199,19 @@ def _source_field(fields: Sequence[dict], key: str) -> dict:
         if isinstance(field, dict) and field.get("key") == key:
             return field
     return {}
+
+
+def _empty_reason(field: TargetField, source_field: Mapping[str, Any]) -> str:
+    """空格子的理由（**不许自相矛盾**，issue #6386）。
+
+    `recognizable=False` 的格子（`name` / `description`）**不是**「图片没给出」——
+    它在字段表里就被定义为「图上的文案类产物，只由米宝解读给」（见 `targets.TargetField`）。
+    若照抄内核那句「图片未给出该字段」，商家会读成「模型没看清」，而真相是
+    「这一格根本不该从图上抄」—— 两者的处置完全不同（前者该重拍，后者该去看米宝解读）。
+    """
+    if not field.recognizable:
+        return "本格不由图片识别直填（它是文案、不是图上的事实）⇒ 见下方米宝解读"
+    return _text(source_field.get("reason")) or "图片未给出该字段"
 
 
 def _empty_cell(field: TargetField, reason: str) -> Dict[str, Any]:

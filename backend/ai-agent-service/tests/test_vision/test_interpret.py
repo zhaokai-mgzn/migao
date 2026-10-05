@@ -63,19 +63,18 @@ FIELD_KEYS = {
 
 # ── 夹具：钉住 vision（抄写）与文本推理（解读）两次模型调用 ──────────────────
 VISION_PRODUCT = """{"fields": {
-  "name":       {"value": "雪尼尔遮光窗帘", "confidence": 0.95},
-  "color":      {"value": null, "reason": "图片未标注颜色"},
+  "color":      {"value": "常青藤-1# 轻轻茉莉", "confidence": 0.95},
   "material":   {"value": null},
   "craft":      {"value": null, "reason": "图片未标注工艺"},
   "door_width": {"value": null, "reason": "图片未标注门幅"},
-  "price":      {"value": null, "reason": "图上没有价格"},
-  "description": {"value": null, "reason": "图片未给出描述文案"}
+  "price":      {"value": null, "reason": "图上没有价格"}
 }}"""
 
-#: 正常推理结论：五格都给值与依据（`name` 图上有值 ⇒ 不覆盖 → 仍标 `[图片识别]`）
+#: 正常推理结论：**生成类两格（name / description）只能在这里给**（issue #6386），
+#: 识别类几格也各给贴近结论；`door_width` / `price` 只给 note（涉钱两格不落值）。
 INTERPRET_PAYLOAD = """```json
 {"interpretations": {
-  "name":        {"value": "雪尼尔遮光窗帘", "note": "按图上标题与系列推断"},
+  "name":        {"value": "雪尼尔遮光窗帘", "note": "按图上色系与品类给一个贴近的商品名"},
   "material":    {"value": "雪尼尔", "note": "绒面肌理 + 布面反光，按行业常见品类推断"},
   "craft":       {"value": "遮光", "note": "背面涂层发白，可选项"},
   "color":       {"value": "雾霾蓝", "note": "按色卡最接近的一档"},
@@ -165,15 +164,26 @@ class TestInterpretHappyPath:
         plan, _, _ = await self._run()
         cells = _cells(plan)
 
-        # 已识别的 `name` **不覆盖**（来源仍是 `[图片识别]`，解读只挂 note）
-        assert cells["name"]["value"] == "雪尼尔遮光窗帘"
-        assert cells["name"]["source"] == SOURCE_RECOGNIZED
-        assert cells["name"]["source"] == FIELD_MARKER
-        assert cells["name"]["note"] == "按图上标题与系列推断"
-        assert cells["name"]["note_source"] == SOURCE_INTERPRETED
+        # 🔴 issue #6386 契约变更：`name` / `description` 是**文案不是图上的事实**，
+        # vision 的字段表里已经没有它们（真跑实测：给它就是让它编，且会顶 `[图片识别]` 标）
+        # ⇒ 这两格的值**只能**由解读给，来源必须是 `[米宝解读]`。
+        for key in ("name", "description"):
+            assert cells[key]["value"], f"{key} 应由解读填值（它是生成类字段）"
+            assert cells[key]["source"] == SOURCE_INTERPRETED, (
+                f"{key} 不得标成「从图上抄的」：{cells[key]['source']!r}"
+            )
+            assert cells[key]["source"] != FIELD_MARKER
 
-        # 图上没写明的那几格 ⇒ 由解读填值，来源必须可区分
-        for key in ("material", "craft", "color", "description"):
+        # 🔴 「不覆盖已识别格」这条规则用**仍需识别**的格子（`color`）来钉：
+        # 夹具里 vision 认出了 `color`（色卡图真跑也是这个形态）⇒ 它的值**必须**保持
+        # `[图片识别]`，解读只挂 `note`（这正是「识别优先、解读不替商家拍板」）。
+        assert cells["color"]["value"] == "常青藤-1# 轻轻茉莉"
+        assert cells["color"]["source"] == SOURCE_RECOGNIZED
+        assert cells["color"]["source"] == FIELD_MARKER
+        assert cells["color"]["note_source"] == SOURCE_INTERPRETED
+
+        # 图上没写明的那几格 ⇒ 由解读填值
+        for key in ("material", "craft"):
             assert cells[key]["value"], f"{key} 应由解读填值"
             assert cells[key]["source"] == SOURCE_INTERPRETED
             assert cells[key]["source"] != SOURCE_RECOGNIZED
@@ -210,7 +220,10 @@ class TestInterpretHappyPath:
         cells = _cells(plan)
         assert cells["material"]["value"] is None
         assert cells["material"]["reason"] == "图片未给出该字段"
-        assert cells["name"]["value"] == "雪尼尔遮光窗帘"
+        # 🔴 issue #6386：`name` 是**生成类**字段，识别路径不得填它
+        #（它现在的值只能来自 `[米宝解读]`；推理产出非法 JSON ⇒ 整格留空）
+        assert cells["name"]["value"] is None
+        assert cells["name"]["source"] is None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -392,7 +405,8 @@ class TestHintIsContextNeverAnInstruction:
         cells = _cells(plan)
         assert cells["price"]["value"] is None
         assert cells["door_width"]["value"] is None
-        assert cells["name"]["value"] == "雪尼尔遮光窗帘"
+        # 生成类字段不再由识别路径填（issue #6386）；识别类格子的解读照常生效
+        assert cells["name"]["value"] is None
         assert cells["material"]["value"] == "雪尼尔"
 
 

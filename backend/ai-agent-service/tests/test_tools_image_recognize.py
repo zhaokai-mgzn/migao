@@ -132,7 +132,10 @@ class TestExecuteProducesAPageFillPlan:
         assert plan["component"] == "page_fill"
         assert plan["target_type"] == "product"
         by_key = {f["key"]: f for f in plan["fields"]}
-        assert by_key["name"]["source"] == SOURCE_RECOGNIZED
+        # issue #6386：`name` 是生成类字段 ⇒ 识别面不给它值，来源只能靠解读
+        #（本用例的 `interpretations` 只给了 `material` ⇒ `name` 整格留空）
+        assert by_key["name"]["value"] is None
+        assert by_key["name"]["source"] is None
         assert by_key["material"]["source"] == SOURCE_INTERPRETED
         assert by_key["color"]["value"] is None
         assert by_key["color"]["candidates"]
