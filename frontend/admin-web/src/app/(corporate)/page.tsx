@@ -32,7 +32,7 @@ import {
 } from '@/components/corporate/capability-map'
 
 export const metadata: Metadata = {
-  title: '米高 — 布艺行业 AI 经营平台：顾客服务与门店经营',
+  title: '米高 — 布艺行业 AI 经营平台：顾客服务与生产管理',
   description:
     '米高是面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧由小布提供 7×24 智能客服，覆盖算料报价、下单、物流查询与售后受理；经营侧由米宝覆盖商品、订单、生产、库存与财务。入驻申请 AI 自动甄别，通过后秒级开通；人机协同机制参考 GB/T 47746-2026 设计。',
 }
@@ -50,7 +50,7 @@ const agents = [
     icon: Bot,
     name: '米宝',
     role: AI_ROLES.mibao,
-    brief: '面向门店经营：以自然语言问答交付商品、订单、生产、库存与财务的日常经营信息。',
+    brief: '面向企业生产与经营：以自然语言问答交付商品、订单、生产、库存与财务的日常经营信息。',
     highlights: [
       '经营看板与每日简报：订单量、销售额、环比、待处理事项',
       '商品与 SKU：批量改价、批量上下架（可撤销）、分类与资料维护',
@@ -254,7 +254,7 @@ export default function HomePage() {
               <p className="mt-6 max-w-2xl text-base leading-relaxed text-neutral-300 sm:text-lg">
                 顾客侧由小布承接：咨询应答、算料报价、下单、物流查询与售后受理；
                 经营侧由米宝承接：商品、订单、生产、库存与财务，以自然语言问答交付。
-                小布与米宝读取的是门店真实数据，回答与后台记录一致。
+                小布与米宝读取的是真实经营数据，回答与后台记录一致。
               </p>
 
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
@@ -318,7 +318,7 @@ export default function HomePage() {
           <SectionHeading
             kicker="双 AI 分工"
             title="顾客侧服务，经营侧管理"
-            lead="小布与米宝均基于大语言模型理解业务意图，7×24 小时在线，读取门店真实数据；能力边界在页面中明确标注，超出范围的请求由 AI 直接说明。"
+            lead="小布与米宝均基于大语言模型理解业务意图，7×24 小时在线，读取真实经营数据；能力边界在页面中明确标注，超出范围的请求由 AI 直接说明。"
           />
           <div className="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-6 md:grid-cols-2">
             {agents.map((agent) => (
@@ -357,13 +357,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── 订单全流程 ──────────────────────────────────────── */}
+      {/* ── 销售与生产的闭环（原「一条订单跑完全程」；issue #6379 改为能力口径）── */}
       <section className="bg-white py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="行业纵深"
-            title="窗帘订单的六个环节"
-            lead="布艺经营的核心难点集中在算料、工序、批次与计件；以下六个环节，米高均有对应功能模块支撑。"
+            title="销售与生产的闭环"
+            lead="布艺经营的核心难点集中在算料、工序、批次与计件；从询价、下单到生产、入库、发货与售后对账，各环节均有对应功能模块支撑。"
           />
           <div className="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {orderJourney.map((item) => (
