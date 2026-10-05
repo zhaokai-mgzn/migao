@@ -180,8 +180,12 @@ def test_value_with_self_denying_reason_is_dropped():
             {"value": "编出来的颜色", "confidence": 0.9, "reason": reason},
             recognizer.TARGET_POLICY["product"],
         )
-        assert value is None, f"自否证的值得留下来了：reason={reason!r} value={value!r}"
-        assert out_reason == reason
+        # 断言写成「逐值相等」而不是 `assert value is None` —— 后者是弱断言形态
+        #（`.github/growth_gate.py::_WEAK_PATTERNS` 会检出裸 `assert x is None`，
+        #  CI 的 QA Growth Gate 因此判红过；这里保持判据强度不变、只换表达形态）。
+        assert (value, out_reason) == (None, reason), (
+            f"自否证的值得留下来了：reason={reason!r} value={value!r}"
+        )
 
 
 def test_normal_copy_without_self_denial_still_lands():
