@@ -24,6 +24,7 @@ import {
   sizeTargetLineIndex,
 } from '@/lib/image-recognize'
 import type { RecognizedField } from '@/lib/api'
+import { PAGE_FILL_SOURCE_INTERPRETED } from '@/lib/agent-page-fill'
 import ProductForm from '@/components/products/ProductForm'
 
 vi.mock('next/image', () => ({
@@ -379,5 +380,26 @@ describe('ProductForm 的 [图片识别] 徽标 (#5321)', () => {
       (k) => screen.queryByTestId(`recognized-marker-${k}`) !== null,
     )
     expect(badgeKeys).toEqual(['name', 'material', 'craft', 'color', 'door_width'])
+  })
+
+  it('描述格在解读清单里 ⇒ 挂的是 `[米宝解读]` 徽标（两枚徽标各认各的键，不互相静默漏掉）', async () => {
+    // 这条把「预填了描述却一枚徽标都不渲染」这条**静默漏标**钉死：`description` 只可能来自
+    // `[米宝解读]`（内核不产这一格）⇒ 它进的是解读清单，渲染的必须是 `interpreted-marker-*`。
+    render(
+      <ProductForm
+        initialData={{ description: '<p>米宝生成的描述</p>' }}
+        onSubmit={vi.fn()}
+        interpretedFields={['description']}
+      />,
+    )
+    await act(async () => {})
+
+    expect(screen.getByTestId('interpreted-marker-description')).toBeTruthy()
+    // `description` 不在识别清单里 ⇒ 不得出现 `[图片识别]` 徽标（两枚徽标各认各的键）
+    expect(screen.queryByTestId('recognized-marker-description')).toBeNull()
+    // 徽标文案逐字 = 页面解读来源标记（与 `[图片识别]` 不同）
+    expect(screen.getByTestId('interpreted-marker-description').textContent).toBe(
+      PAGE_FILL_SOURCE_INTERPRETED,
+    )
   })
 })
