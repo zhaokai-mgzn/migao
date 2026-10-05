@@ -126,7 +126,7 @@ export default function AboutPage() {
               </div>
               <h2 className="mt-5 text-xl font-bold text-neutral-900">我们的使命</h2>
               <p className="mt-3 leading-relaxed text-neutral-600">
-                把智能化能力的成本与门槛降到中小企业可承受的水平，让布艺商家用得起、也用得上 AI。
+                把智能化的成本与门槛降下来，让布艺商家用得起、也用得上 AI。
               </p>
             </div>
 
@@ -136,7 +136,7 @@ export default function AboutPage() {
               </div>
               <h2 className="mt-5 text-xl font-bold text-neutral-900">我们的愿景</h2>
               <p className="mt-3 leading-relaxed text-neutral-600">
-                让智能化与 AI 走进中小企业。米高从布艺行业做起，把过去只有中大型企业才用得起的经营能力，
+                让智能化与 AI 走进每一家中小企业。米高从布艺行业做起，把大企业才用得起的经营能力，
                 交到中小商家手上。
               </p>
             </div>
