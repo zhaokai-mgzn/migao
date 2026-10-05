@@ -4,3 +4,4 @@
 {"id":"1790961236.84483.19270","ts":"2026-10-02T17:13:56Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/ci-package-heavy-entry-ban","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1790961236.84523.4674","ts":"2026-10-02T17:13:57Z","role":"unknown","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/ci-package-heavy-entry-ban","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791075679.96221.16483","ts":"2026-10-04T01:01:20Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/corporate-site-redesign","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791162879.14763.3670","ts":"2026-10-05T01:14:39Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6346-b-chat-richtext","why":"子包 worktree 直跑全量（无批次标记）"}
