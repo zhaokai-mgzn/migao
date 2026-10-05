@@ -121,7 +121,8 @@ class TestSourceMarkersAreDistinguishable:
             interpretations={"material": {"value": "雪尼尔", "note": "看着是雪尼尔，克重偏厚"}},
         )
         filled = [f for f in plan["fields"] if f["value"]]
-        assert [f["key"] for f in filled] == ["name", "color", "material", "craft"]
+        # issue #6386：`name` 是生成类字段，夹具给它的值**不再**从识别路径落地
+        assert [f["key"] for f in filled] == ["color", "material", "craft"]
         assert {f["source"] for f in filled} == {SOURCE_RECOGNIZED, SOURCE_INTERPRETED}
         assert field_of(plan, "material")["source"] == SOURCE_INTERPRETED
         assert field_of(plan, "craft")["source"] == SOURCE_RECOGNIZED
@@ -166,7 +167,8 @@ class TestAmbiguityGivesCandidatesAndNeverFills:
         assert "宁可不填" in color["reason"]
         # 该值**不得**从任何一格溜进表单（连"降级成其它键"也不行）
         assert "雾霾蓝" not in [f["value"] for f in plan["fields"] if f["value"]]
-        assert [f["key"] for f in plan["fields"] if f["value"]] == ["name", "craft"]
+        # issue #6386：`name` 不再走识别路径 ⇒ 落地值只剩 `craft`
+        assert [f["key"] for f in plan["fields"] if f["value"]] == ["craft"]
 
     def test_ambiguity_is_never_overridden_by_an_interpretation(self):
         """歧义格即使 Agent 给了推荐值，也**必须**由商家选（不得替用户拍板）。"""
@@ -370,12 +372,15 @@ class TestInterpretableScopeIsWidened:
         )
         name = field_of(plan, "name")
         color = field_of(plan, "color")
-        assert (name["value"], name["source"]) == ("雪尼尔遮光窗帘", SOURCE_RECOGNIZED)
+        # 🔴 歧义格（`color`）**必须**由商家选：就算解读给了推荐值也不得覆盖识别值
         assert (color["value"], color["source"]) == ("雾霾蓝", SOURCE_RECOGNIZED)
-        # 建议仍要看得见（只是没变成值）
-        assert name["note_source"] == SOURCE_INTERPRETED
         assert color["note_source"] == SOURCE_INTERPRETED
-        assert "被覆盖" not in str([f["value"] for f in plan["fields"]])
+        # `name` 是**生成类**字段（issue #6386）：识别面给的值不落地 ⇒ 解读值**应当**落地、
+        # 来源标 `[米宝解读]`（这正是用户 2026-10-05 裁定「B」要的形态）。
+        # 同时它也证明「不覆盖」规则的**前提**：识别面根本没给 `name` 值，所以谈不上覆盖。
+        assert (name["value"], name["source"]) == ("被覆盖的名字", SOURCE_INTERPRETED)
+        # 真正被「不覆盖」规则挡住的仍是识别面给了值的格子（`color`，上面已断言）
+        assert "雪尼尔遮光窗帘" not in str([f["value"] for f in plan["fields"]])
 
     def test_price_interpretation_is_visible_as_a_note_but_never_fills_the_cell(self):
         """**注入式红证（售价）**：给了 `value` 也必须落不了地 —— 值仍为空、note 仍在。"""

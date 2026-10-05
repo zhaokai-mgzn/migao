@@ -84,6 +84,10 @@ async def interpret_page_fill(
     hint = _clean_hint(hint)
     result = await recognize(target_type, images, tenant_id=tenant_id)
     fields = result.get("fields") or []
+    # ⚠️ 这里**保持**「识别失败 / 一格都没认出来 ⇒ 降级不推理」的原口径（issue #6367 判据 4）：
+    # 在**零命中**的空基底上让米宝开写，等于凭空生成「商品名 + 描述」（没有任何图上锚点）。
+    # 真跑里正常路径不是这个形态：色卡图至少能认出色号（`color`）⇒ 非零命中 ⇒ 照常推理，
+    # `name` / `description` 由 `[米宝解读]` 给（issue #6386）。
     if result.get("degraded") or not any(f.get("value") for f in fields):
         return _degraded(target_type)
 
@@ -97,6 +101,15 @@ async def interpret_page_fill(
         return _degraded(target_type)
 
     return build_page_fill(target_type, fields, interpretations=interpretations)
+
+
+#: **生成类**字段（issue #6386）：图上是文案、不是事实 ⇒ 必须由解读**给出值**。
+#: 与 `targets.TargetField.recognizable=False` 同一批（这里只是把那段口径写进提示词）。
+_GENERATIVE_KEYS_HINT = (
+    "⚠️ 例外：`name` 与 `description` 是**生成类**字段（图上是文案、不是可抄写的字段）"
+    "⇒ 这两格**必须给 value**（商品名给一个贴近的、描述给一段 HTML 文案）；"
+    "不确定时用「约 / 推测 / 以实物为准 / 可咨询客服」这类措辞，而不是留空。"
+)
 
 
 def build_interpret_prompt(
@@ -135,6 +148,11 @@ def build_interpret_prompt(
         '"note": "<给商家看的解释与依据>"}}}',
         "1. 只给**贴近的结论**，不编造。不确定 / 看不出来 ⇒ **只给 note、不给 value**"
         "（note 里写清你的依据与不确定在哪）。",
+        # 🔴 例外（issue #6386）：**生成类**字段（`name` / `description`）本来就是文案，
+        # 「只给 note 不给 value」等于什么都没交付（用户 2026-10-05 真跑复验时实测到：
+        # 米宝给了一整段「为什么这么推测」的 note，而 `name` 的值仍是空）。
+        # ⇒ 这两格**必须给 value**，不确定就用「约 / 推测 / 可咨询客服」这类措辞写清楚。
+        _GENERATIVE_KEYS_HINT,
         "2. 图上**已经写明**的那几格不要重复申报 value（系统不会用解读覆盖识别结果）。",
         "3. description 是**商品描述文案**：HTML 片段（如 <p>…</p>），"
         "贴近图上信息 + 行业常识（材质 / 工艺 / 适用场景 / 清洗与安装提示）；"

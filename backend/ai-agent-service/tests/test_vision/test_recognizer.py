@@ -95,16 +95,15 @@ class VisionStub:
 class TestExtractFieldsProduct:
     def test_product_fixture_maps_to_an_exact_field_table(self):
         fields = extract_fields("product", PRODUCT_VISION_FIXTURE)
+        # 🔴 issue #6386：`name` / `description` **不再**出现在识别字段表里
+        #（它们是文案、不是图上的事实 ⇒ 改由 `[米宝解读]` 给；真正的守卫在
+        # tests/test_vision/test_copy_vs_infer.py）——所以这张表从 7 格缩到 5 格。
         assert [(f["key"], f["label"], f["value"], f["source"]) for f in fields] == [
-            ("name", "商品名称", "雪尼尔遮光窗帘", FIELD_MARKER),
             ("color", "颜色", "3610-28 奶茶色", FIELD_MARKER),
             ("material", "材质", "雪尼尔", FIELD_MARKER),
             ("craft", "工艺", "遮光", FIELD_MARKER),
             ("door_width", "门幅", None, None),
             ("price", "售价", "128", FIELD_MARKER),
-            # 2026-10-05（issue #6362）：商品描述文案 —— 本夹具没写这一格 ⇒ 整格留空
-            # （`value=None` / `source=None`）；它是**推理产物**，只由 `[米宝解读]` 填值。
-            ("description", "商品描述", None, None),
         ]
 
     def test_uncertain_field_is_left_empty_with_a_reason(self):
@@ -119,11 +118,9 @@ class TestExtractFieldsProduct:
     def test_field_order_is_the_schema_order_not_the_model_order(self):
         # 模型把 price 写在最前面，返回顺序仍必须是 schema 顺序（页面按它逐格填）
         shuffled = ('{"fields": {"price": {"value": "9", "confidence": 0.9}, '
-                    '"name": {"value": "帘", "confidence": 0.9}}}')
+                    '"color": {"value": "帘", "confidence": 0.9}}}')
         assert [f["key"] for f in extract_fields("product", shuffled)] == [
-            "name", "color", "material", "craft", "door_width", "price",
-            # 2026-10-05（issue #6362）：描述格是 schema 的**第 7 格**（模型没给 ⇒ 留空）
-            "description",
+            "color", "material", "craft", "door_width", "price",
         ]
 
 
@@ -149,9 +146,11 @@ class TestExtractFieldsOrder:
     def test_order_side_is_stricter_than_product_side_on_the_same_confidence(self):
         """用户裁定：订单侧「不确定的宁可不填」比商品侧更严格（客户信息错 ⇒ 货发错人）。"""
         payload = '{"fields": {"%s": {"value": "王秀英", "confidence": 0.70}}}'
-        product = extract_fields("product", payload % "name")
+        # ⚠️ issue #6386：商品侧原来拿 `name` 做对照，而 `name` 已不在识别字段表里
+        # ⇒ 改用 `color`（仍在识别面、商品侧阈值较宽），对照关系不变。
+        product = extract_fields("product", payload % "color")
         order = extract_fields("order", payload % "customer_name")
-        assert product[0]["value"] == "王秀英"
+        assert next(f for f in product if f["key"] == "color")["value"] == "王秀英"
         assert order[0]["value"] is None
         assert "置信度" in order[0]["reason"]
 
@@ -263,7 +262,12 @@ class TestExtractFieldsOrderSize:
     def test_product_side_is_untouched_by_the_order_side_size_guard(self):
         """商品侧的 `door_width` 不套这条闸（它的门幅是**商品属性**，不是窗帘成品尺寸）。"""
         payload = '{"fields": {"door_width": {"value": "门幅2.8米", "confidence": 0.9}}}'
-        assert extract_fields("product", payload)[4]["value"] == "门幅2.8米"
+        # 🔴 按 key 取（issue #6386 教训）：原先写死下标 `[4]`，字段表一增删就**指错格子**，
+        # 报错还会伪装成「识别回归」。锁定对象必须用 key，不许用位置。
+        door_width = next(
+            f for f in extract_fields("product", payload) if f["key"] == "door_width"
+        )
+        assert door_width["value"] == "门幅2.8米"
 
 
 class TestCustomerCraftRequestsPassThrough:

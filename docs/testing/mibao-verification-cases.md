@@ -6836,7 +6836,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6222，P3·读面）：主会话在未修复构建 :8080 上逐字复现 —— `GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行（after-sales 5 / stock-ledger 389 同款）。机制：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（`pageSize < 0` 直接 return ⇒ 不追加 LIMIT、**不执行 count 查询**）⇒ 拦截器只填 `records`、`total` 停在默认 0；被 `setMaxLimit(500)` 约束的只是**正数** size ⇒ 行数不设上界。危害：`total=0` 让客户端分页器立刻认为已到末页 ⇒ 「有数据却显示为空 / 翻不动页」。**口径裁定 = 显式拒绝（400）而非钳到合法下界**，三条理由：① 病根是「非法入参**不静默**」，钳位仍是静默（把「静默给错数据」换成「静默改口径」）；② 本仓已有同族显式拒绝范式（`StockQuantity.requireOneDecimal` / `MoneyScale.requireTwoDecimals`(#6221) / 负数数量 ⇒ 400）；③ 钳位会掩盖调用方（含 Agent / 前端）的真实缺陷。**为什么这样选单点**（最少代码阶梯）：分页入口有两个族（`@RequestParam long size` 控制器方法现取 22 个 + 自带 page/size 字段的查询 DTO 三个、**无共同基类**），且 DTO 属性名不保证等于 HTTP 参数名（`ProductQueryRequest.productId` 对 `@RequestParam productCode`）⇒ DTO 侧做准入要么靠 `WebDataBinder` 名字启发（会漏）、要么按属性名校验（对不上）；两族**都必须**经同一个 HTTP 参数集 ⇒ 唯一真正单点 = Servlet 层参数闸（`prehandle` 取参 + `PaginationParamGate` 判定），并在 WebConfig 注册（排在授权/归属之后，沿用 F3 #6063 与 #6158 的次序纪律）。**类级固化**：台账 25 条分页入口 + 6 条判据 + 5 种坏形态判别力自证（未登记即红 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 + 只改措辞不红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-070（origin/main@dacac7471:001-067,069 · PR #6227:068 ⇒ 最小空闲 070）。 ｜ tags: api, pagination, fail-closed, backend-contract, negative-size
 
-## 商品域（116 case）
+## 商品域（117 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -8420,6 +8420,22 @@
 ```
 溯源: 2026-10-05 新增（issue #6362）。取号 = 现取最大号 + 1（本工作区当时最大 PR-123 已被 PR-124 占用）。红→绿（注入=判据先落、实现后落）：vitest ImageRecognizePrefill **3 failed / 15 passed** → **20 passed**；类级元守卫 image-recognize.test.ts **1 failed / 6 passed** → 7 passed；后端 test_targets / test_recognizer 各 1 条红 → 绿。 ｜ tags: image-recognize, description, frontend, regression
 
+### PR-126. 识别 vs 推理的分工按字段定死：生成类字段（商品名/商品描述）只由 [米宝解读] 给值，识别路径永不许直填（issue #6386） 🔵
+```
+你: 用户提供真实色卡图，要求「可以实际测试跑这个功能」⇒ 用真模型（deepseek-flash / V4.1-Flash）跑，不给 hint、带 hint 各一次
+期望: direct_reply
+数据: **真跑现场（修前，可复算）**：`name` = 「常青藤系列窗帘面料色卡」、`description` = 一段完整文案，两格都被标成 `[图片识别]`（=抄的），而图上根本没有这两段内容 —— 同图同提示词只改 hint，两次 `description` 文案**不同** ⇒ 是**生成**的。来源标记把「猜的」标成「抄的」= 比留空更危险。
+数据: **判据 1（字段表）**：`targets.TARGET_FIELDS["product"]` 里 `name` / `description` 的 `recognizable=False`；`color` / `material` / `craft` / `door_width` / `price` 仍为 `True`。
+数据: **判据 2（不给模型这一格）**：`recognizer._schema_for("product")` 不含 `name` / `description`；而 `deep_channel._schema_for` 仍含它们（页面上要有这两格，否则表单少格）。
+数据: **判据 3（类级元守卫，会红）**：**凡 `recognizable=False` 的字段，`[图片识别]` 直填路径永不产出它的值** —— 把全量字段都摆成「已识别且有值」跑 `build_page_fill`，这些格不得带 `SOURCE_RECOGNIZED`。将来新增同类字段自动受约束。
+数据: **判据 4（自否证的值必须丢）**：模型给值 + `reason` 逐字「图片未给出该字段」⇒ 值丢弃（修前亲见这个自相矛盾组合；`_SELF_DENY_RE` 只认明确缺席表述，`图上第二行` 这类正常依据不受影响）。
+数据: **判据 5（空格理由不自相矛盾）**：这两格的 `reason` 不得是「图片未给出该字段」，而是指向米宝解读。
+数据: **判据 6（真跑复验，读数）**：修后同图同模型 ⇒ `name` = 「常青藤系列 全遮光雪尼尔提花窗帘 卧室客厅定制」（`[米宝解读]`）、`description` = 生成的 HTML 文案（`[米宝解读]`）、`color` 仍 `[图片识别]`（16 个色号未截断）、`price` 值空仅有建议。
+数据: **不变式（未被本单放松）**：`price` / `door_width` 值永不落地（涉钱面）；识别已给值的格不被解读覆盖；零命中仍降级不推理。
+跳过: [backend-contract] 确定性契约/机械判据，由 pytest（backend/ai-agent-service/tests/test_vision/test_copy_vs_infer.py 等）验证，非 LLM 行为，不进入 agent-eval 冒烟 —— 「哪一格允许由生成类字段填值」是**逐键白名单**，能逐值钉住；真实 LLM 的那一次真跑按 #4262 由用户显式要求、不自动派发
+```
+溯源: 2026-10-05 新增（issue #6386，真跑验收发现）。取号 = 现取最大号 + 1（承 #6367 的 PR-124/PR-125）。红→绿：先写判据（含类级元守卫）⇒ 12 failed / 9 passed；实现后 21 passed。既有契约判据同步改钉新形态（recognizer 字段表 7 格→5 格、name/description 改由解读填、按 key 取不再按下标）。真跑复验两次（无 hint / 带 hint）读数见 data_checks 判据 6。 ｜ tags: image-recognize, source-marker, backend-contract, regression
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -9826,8 +9842,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：683（活跃 134，跳过 549）
-- tier 分布：smoke 12 / normal 629 / adversarial 32
+- 用例总数：684（活跃 134，跳过 550）
+- tier 分布：smoke 12 / normal 630 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9848,7 +9864,7 @@
 - 订单域：63
 - 加工项域：27
 - 加工单域：61
-- 商品域：116
+- 商品域：117
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -10062,6 +10078,7 @@
 - PR-020: 图片识别色号清单拆行：一张色卡的 16 个色号 ⇒ 16 行颜色（改前塞成一格、被 30 字符输入框削断）（issue #6354）
 - PR-124: 米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361）
 - PR-125: 米宝解读额外生成商品描述文案 ⇒ 预填建品页「图文描述」富文本区（来源 [米宝解读]、有值才写键、不覆盖商家内容）（issue #6362）
+- PR-126: 识别 vs 推理的分工按字段定死：生成类字段（商品名/商品描述）只由 [米宝解读] 给值，识别路径永不许直填（issue #6386）
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序**进表**：`data-state=no_row` + 行尾 `管理▸` 可停用/删除，issue #5875）
