@@ -1,6 +1,18 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { ArrowRight, Eye, Heart, Lightbulb, Lock, Sprout, Target } from 'lucide-react'
+import {
+  ArrowRight,
+  Bot,
+  Eye,
+  Heart,
+  Layers,
+  Lightbulb,
+  Lock,
+  MonitorSmartphone,
+  Sprout,
+  Target,
+  Wrench,
+} from 'lucide-react'
 import { CallToAction, PageHero, SectionHeading } from '@/components/corporate/CorporateSection'
 
 export const metadata: Metadata = {
@@ -32,32 +44,30 @@ const values = [
   },
 ]
 
-const timeline = [
+const techFoundation = [
   {
-    period: '2024 Q1',
-    title: '项目启动',
-    description: '确定产品方向与技术路线：顾客侧与经营侧的 AI 助手，加多租户 SaaS 底座。',
-  },
-  {
-    period: '2024 Q2',
-    title: '核心引擎开发',
-    description: '搭建双 Agent 引擎与业务工具层，两侧助手的技能与工具分工成型。',
-  },
-  {
-    period: '2024 Q3',
-    title: '平台上线',
-    description: '商家管理后台发布，米宝接入后台；商品、订单、售后等基础模块服务首批商家。',
-  },
-  {
-    period: '2024 Q4',
-    title: '多渠道接入',
-    description: '微信小程序上线，顾客可在小程序内完成咨询、下单与售后。',
-  },
-  {
-    period: '2025',
-    title: '能力扩展',
+    icon: Bot,
+    title: '两侧 AI 各自独立配置',
     description:
-      '生产工序、仓储批次、财务对账与计件工资陆续上线，服务更多行业商家。',
+      '小布与米宝是两套独立配置的 Agent：提示词、知识范围与可用工具各不相同，能力边界在页面上逐条标注。',
+  },
+  {
+    icon: Wrench,
+    title: '业务工具层',
+    description:
+      'AI 不直接读写数据库：所有动作经由已登记的业务工具，参数按值校验。可写的只有改价、批量上下架与批量库存调整，改价须携带改前价并经确认卡二次确认。',
+  },
+  {
+    icon: Layers,
+    title: '多租户底座',
+    description:
+      '平台以多租户方式部署，服务多个商家；数据按租户隔离（租户身份仅取自登录凭证，跨租户访问一律返回 404），AI 名称与岗位权限也按租户独立配置。',
+  },
+  {
+    icon: MonitorSmartphone,
+    title: '四个终端，同一数据源',
+    description:
+      '管理后台、顾客小程序、商家小程序与员工端 H5 的数据同源，不各自建账。',
   },
 ]
 
@@ -184,28 +194,28 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* ── 发展历程 ─────────────────────────────────────────── */}
+      {/* ── 技术底座（原「发展历程」：日期早于仓史两年、查无出处，issue #6382 换掉）── */}
       <section className="bg-white py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <SectionHeading kicker="发展历程" title="按业务模块逐步落地" />
+          <SectionHeading
+            kicker="技术底座"
+            title="两侧 AI 与多租户底座"
+            lead="顾客侧与经营侧各由独立引擎驱动，运行在同一业务工具层与多租户底座之上；AI 的动作只经由已登记的工具，调用落库审计。"
+          />
 
-          <div className="mx-auto mt-14 max-w-3xl">
-            <ol className="relative space-y-8 border-l border-neutral-200 pl-8">
-              {timeline.map((item) => (
-                <li key={item.period} className="relative">
-                  <span className="absolute -left-[41px] top-1.5 flex h-5 w-5 items-center justify-center rounded-full border-4 border-white bg-primary-600 ring-1 ring-neutral-200" />
-                  <div className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-6">
-                    <span className="inline-block rounded-full bg-primary-50 px-3 py-1 text-xs font-bold text-primary-700">
-                      {item.period}
-                    </span>
-                    <h3 className="mt-3 text-base font-semibold text-neutral-900">{item.title}</h3>
-                    <p className="mt-1.5 text-sm leading-relaxed text-neutral-600">
-                      {item.description}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ol>
+          <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {techFoundation.map((item) => (
+              <div
+                key={item.title}
+                className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-7"
+              >
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-neutral-200 bg-white">
+                  <item.icon className="h-5 w-5 text-primary-600" />
+                </div>
+                <h3 className="mt-4 text-base font-semibold text-neutral-900">{item.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-neutral-600">{item.description}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
