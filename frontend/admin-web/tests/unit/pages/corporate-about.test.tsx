@@ -50,13 +50,14 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
     }
   })
 
-  it('renders timeline section 与五个里程碑', () => {
+  it('renders 技术底座 section 与四张卡', () => {
     render(<AboutPage />)
-    expect(screen.getByText('发展历程')).toBeInTheDocument()
-    for (const title of ['项目启动', '核心引擎开发', '平台上线', '多渠道接入', '能力扩展']) {
+    expect(screen.getByText('技术底座')).toBeInTheDocument()
+    for (const title of ['两侧 AI 各自独立配置', '业务工具层', '多租户底座', '四个终端，同一数据源']) {
       expect(screen.getByText(title)).toBeInTheDocument()
     }
-    expect(screen.getByText(/生产工序、仓储批次、财务对账与计件工资陆续上线/)).toBeInTheDocument()
+    // 查无出处的年份不得回流（issue #6382：原「发展历程」的 2024 Q1~2025 早于仓史两年）
+    expect(screen.queryByText(/20\d\d/)).not.toBeInTheDocument()
   })
 
   it('renders 底部 CTA', () => {

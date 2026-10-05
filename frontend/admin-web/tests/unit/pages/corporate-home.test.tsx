@@ -375,4 +375,43 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
       `米宝朝向被写成门店视角（应改为「企业生产与经营」/「真实经营数据」）：${offenders.join('；')}`,
     ).toEqual([])
   })
+  it('官网源码不得出现无出处的年份（issue #6382）', () => {
+    // 由来：关于页原「发展历程」写 2024 Q1~2025 五个时间段，而**仓史首个提交是 2026-05-06**
+    // ⇒ 全部早于代码起点约两年、仓里找不到任何出处。官网立的是「每条事实都能找到出处」的人设，
+    // 这类年份正是反例。
+    //
+    // 白名单 = **行级**，每条都写明"为什么这一行的时间不是我们的时间陈述"：
+    //   ① 国标号与其文档路径（`GB/T 47746-2026` / `gb47746-2026-compliance.md`）
+    //   ② 国标实施日期（讲的是标准本身何时生效，不是我们的里程碑）
+    //   ③ 版权年份（`© 2026`，随当前年份走）
+    // 🔴 未固化项（照实登记）：行级白名单是**粗放**口径 —— 同一行里若既有「实施」又藏一个编造年份，
+    //    会漏判。要更严就得逐条给年份配「出处锚」，那是另一个量级的改动，本单不做。
+    const ALLOWED_LINE = /GB\/T|gb47746|实施|©/
+    const yearOffenders = (src: string) =>
+      src.split('\n').filter((line) => /20\d\d/.test(line) && !ALLOWED_LINE.test(line))
+
+    // 判别力自证：病症样本必须被检出、三类白名单样本必须零命中（否则本判据是空断言）
+    expect(yearOffenders("    period: '2024 Q1',")).toEqual(["    period: '2024 Q1',"])
+    expect(yearOffenders('协同机制参考推荐性国标 GB/T 47746-2026 设计')).toEqual([])
+    expect(yearOffenders('《顾客联络服务…》（2026-09-01 实施）')).toEqual([])
+    expect(yearOffenders('<p>© 2026 杭州词元通达科技有限公司</p>')).toEqual([])
+
+    const roots = [
+      'frontend/admin-web/src/app/(corporate)',
+      'frontend/admin-web/src/components/corporate',
+    ]
+    const offenders = execSync(
+      `git grep -n -E '20[0-9]{2}' -- ${roots.map((r) => `'${r}'`).join(' ')} || true`,
+      { cwd: join(process.cwd(), '..', '..'), encoding: 'utf-8' },
+    )
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .filter((line) => yearOffenders(line).length > 0)
+
+    expect(
+      offenders,
+      `官网出现无出处的年份（要么删掉时间陈述，要么进白名单并写明出处）：${offenders.join('；')}`,
+    ).toEqual([])
+  })
 })
