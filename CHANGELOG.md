@@ -94,6 +94,17 @@
 - 🔴 不落库：识别/解读结果只填表，提交（`createProduct`）仍是人点「提交并上架」的动作；
   填充仍只走页面既有的 `applyFields` **一条路径**（按每格 `source` 分流徽标，不新增第二条映射表）。
 - 失败可行动：识别/解读失败或计划零字段 ⇒ 按钮下方给「可重试或手工填写」，**不渲染空卡片**、不静默。
+### 新增 admin-api 端点 `POST /api/admin/image-recognition/interpret`：图 + 可选提示 → 米宝推理的 `page_fill` 计划（2026-10-05，issue #6367）
+
+- **形态**：请求 `{targetType, images[], hint?}`（`hint` 可选、≤200 字，超长 ⇒ 400 + 可行动文案）；
+  响应 `data = {component:"page_fill", target_type, fields:[…]}` —— 与 ai-agent 的 `build_page_fill()`
+  **同一份形状**（字段表原样搬运，`[图片识别]` / `[米宝解读]` 两种来源可区分）。
+- **同族**：与既有 `POST /api/admin/image-recognition` 同权限（按 target 取写码 `product:create` /
+  `order:create`，**不新增权限码**）、同 service token、同 client；既有端点行为**一字未动**。
+- **推理用米宝主模型**（服务端内部分工，本侧只按契约调 `POST /api/internal/vision/interpret`）；
+  因多一次主模型调用，本侧读超时 120s（> 既有识别端点的 75s），不无限等。
+- **不落库**：只回「填哪几格」，提交仍是商家的动作。
+- ⚠️ 建品页表单内的按钮 / 卡片属 #6367 的**前端包**，本条目只登记 admin-api 侧端点。
 
 ### 官网文案去量词排比与拟人量词；关于页使命/愿景改为「把智能化与 AI 带进中小企业」（2026-10-05，issue #6366）
 

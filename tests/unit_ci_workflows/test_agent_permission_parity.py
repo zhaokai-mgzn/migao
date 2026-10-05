@@ -1048,6 +1048,19 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
                                         "`requirePermission(\"order:create\")`，并断言未知 target 时"
                                         "`never()` 调客户端与权限判定。同族形态见 `AgentOrderController` "
                                         "的退款 action 复检（类级读码 + 命令式 `order:refund`）。",
+    "POST /api/admin/image-recognition/interpret": "图片识别 + 米宝推理（issue #6367 包 P2）—— "
+                                        "与上面的 `POST /api/admin/image-recognition` **同族、同一处判定**："
+                                        "权限**有**，只是同样取不到静态注解上（一个入口覆盖两个模块、"
+                                        "两种写码，`@RequirePermission` 表达不了分叉）⇒ 控制器内"
+                                        "`PermissionInterceptor.requirePermission(...)` 命令式断言，"
+                                        "两个方法共用同一个私有判定 `requireTargetPermission`"
+                                        "（`backend/admin-api/src/main/java/com/migao/admin/controller/"
+                                        "ImageRecognitionController.java`）⇒ **不可能**只有新端点悄悄放宽。"
+                                        "机械兜底 = `backend/admin-api/src/test/java/com/migao/admin/controller/"
+                                        "ImageRecognitionInterpretControllerTest.java`：逐 target 断言 "
+                                        "`requirePermission(\"product:create\")` / `requirePermission(\"order:create\")`、"
+                                        "未知 target ⇒ 400 且 `never()` 调客户端与权限判定、权限拒绝 ⇒ 403；"
+                                        "另有注解形态一致性判据（方法级注解组成与 `recognize` 相同、路径 = 它 + `/interpret`）。",
     "GET /api/customer/*": "C 端人工会话面：不走 `/api/admin/**` 门禁，隔离靠业务层 `X-User-Id` 过滤",
     "POST /api/customer/*": "同上",
     "GET /api/worker/*": "工人端身份（#4716 设计 C11 预留）：`ADMIN_API_REJECTED_ROLES` 已把 worker 挡在 `/api/admin/**` 之外",
