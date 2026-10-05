@@ -152,14 +152,18 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * （{@link ColumnTextLength#requireWithinOrNull}）⇒ 任意字符串都能落库，而那些行是
      * **状态机死行**（不在「在售」口径里 ⇒ 快照静默过滤掉它的 SKU；且 PUT /status 全部拒绝 ⇒ 无法自救）。
      * 这里在**入口**（任何写之前）显式拒绝未知取值，文案列出合法枚举（可行动，不是「检查字段格式」）。
+     *
+     * <p>⚠️ **长度准入不藏进本方法**：写面上必须保留
+     * {@code ColumnTextLength.requireWithinOrNull(<x>.getStatus(), 32, "商品状态 status")} 那一行 ——
+     * 它是 {@code ProductTextColumnAdmissionMetaGuardTest}（issue #6302）的文本锚，
+     * 把长度判据包进这里会让那条元守卫判 GATE-MISSING（本 PR 首轮 CI 实测过一次）。</p>
      */
     static String requireValidStatusOrNull(String status, String field) {
-        String normalized = ColumnTextLength.requireWithinOrNull(status, 32, field);
-        if (!StringUtils.hasText(normalized) || PRODUCT_STATUSES.contains(normalized)) {
-            return normalized;
+        if (!StringUtils.hasText(status) || PRODUCT_STATUSES.contains(status)) {
+            return status;
         }
         throw BusinessException.validationError(
-                field + " 取值非法：「" + normalized + "」；合法取值只有 " + productStatusChoices()
+                field + " 取值非法：「" + status + "」；合法取值只有 " + productStatusChoices()
                         + "（本字段按枚举准入，不接受其它字符串）");
     }
 
@@ -449,8 +453,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         request.setMainImage(ColumnTextLength.requireWithinOrNull(request.getMainImage(), 512, "主图 mainImage"));
         request.setKnowledgeBaseId(ColumnTextLength.requireWithinOrNull(
                 request.getKnowledgeBaseId(), 64, "知识库 knowledgeBaseId"));
-        // 枚举准入（issue #6347）：status 是**枚举**字段，原先只校长度 ⇒ 任意字符串落库成「状态机死行」。
-        // 判据单点在 ProductService.STATUS_TRANSITIONS（合法集合）与 requireValidStatusOrNull（准入）。
+        // 文本列长度准入（issue #6302）——**这一行是 ProductTextColumnAdmissionMetaGuardTest 的文本锚，不许挪走/包进别的方法**
+        request.setStatus(ColumnTextLength.requireWithinOrNull(request.getStatus(), 32, "商品状态 status"));
+        // 枚举准入（issue #6347）：status 是**枚举**字段，原先只有上面那行长度准入 ⇒ 任意字符串落库成「状态机死行」。
         request.setStatus(requireValidStatusOrNull(request.getStatus(), "商品状态 status"));
 
         // 空分类归一化（#3665 冒烟 B1）：前端草稿发的是 ''（DEFAULT_FORM.categoryId）而非缺省 null。
@@ -541,6 +546,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         request.setMainImage(ColumnTextLength.requireWithinOrNull(request.getMainImage(), 512, "主图 mainImage"));
         request.setKnowledgeBaseId(ColumnTextLength.requireWithinOrNull(
                 request.getKnowledgeBaseId(), 64, "知识库 knowledgeBaseId"));
+        // 文本列长度准入（issue #6302）——**这一行是 ProductTextColumnAdmissionMetaGuardTest 的文本锚，不许挪走/包进别的方法**
+        request.setStatus(ColumnTextLength.requireWithinOrNull(request.getStatus(), 32, "商品状态 status"));
         // 枚举准入（issue #6347）：与 createProduct 同一入口判据（本方法最终会恢复原状态，不写 status，
         // 但非法取值仍须在此 fail-closed，避免它借由 validateRequiredForStatus 产生误导性报错）。
         request.setStatus(requireValidStatusOrNull(request.getStatus(), "商品状态 status"));
