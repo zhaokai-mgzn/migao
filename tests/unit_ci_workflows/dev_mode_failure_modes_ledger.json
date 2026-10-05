@@ -912,7 +912,7 @@
     {
       "id": "FM-E25",
       "state": "guarded",
-      "symptom": "**「CI 迟迟不来」被读成「在排队」**：PR 与 main `mergeable=CONFLICTING` 时 GitHub **建不出 merge ref** ⇒ **`pull_request` 类工作流根本不触发**，PR 页面上只剩 `pull_request_target` 的辅助腿（**本仓现取 4 条**：`Auto Merge` / `Close Linked Issues on Merge` / `Stale 清理` / `verify-trigger` —— 它们**不需要 merge ref** 所以照跑）⇒ 看着像在排队，**实际一个 required job 都不会来**（无红、无 pending、没有任何东西会报）。实测出处 = 2026-10-01 PR #5922：开成 draft 后 **3 次 push 都没有 `PR Check` run**；`gh pr view 5922 --json mergeable` 显示 `CONFLICTING`/`DIRTY`；用 `./scripts/sync-main.sh --rebase` 解冲突后 push ⇒ `PR Check` / `AI Agent Service Unit Tests` / `Mini-App CI` / `Bmini-App CI` **立即全部排队**。🔴 **本次复核边界（照实登记）**：#5922 现已 MERGED ⇒ `mergeable` 现读 **`UNKNOWN`**（GitHub 只对 open PR 计算）⇒ **那条读数不能事后复算**；可复算的是**机制**（触发面）与**口诀**本身。**顺带登记**：draft 起手 + native auto-merge 的组合下，**`ready` 不是 `pull_request` 工作流的触发面**（`ready_for_review` 只在 `.github/workflows/automerge.yml` 的 `types` 里）⇒ 解冲突后必须 **push**（`synchronize`）才会触发。",
+      "symptom": "**「CI 迟迟不来」被读成「在排队」**：PR 与 main `mergeable=CONFLICTING` 时 GitHub **建不出 merge ref** ⇒ **`pull_request` 类工作流根本不触发**，PR 页面上只剩 `pull_request_target` 的辅助腿（**本仓现取 4 条**：`Auto Merge` / `Close Linked Issues on Merge` / `Stale 清理` / `verify-trigger` —— 它们**不需要 merge ref** 所以照跑）⇒ 看着像在排队，**实际一个 required job 都不会来**（无红、无 pending、没有任何东西会报）。实测出处 = 2026-10-01 PR #5922：开成 draft 后 **3 次 push 都没有 `PR Check` run**；`gh pr view 5922 --json mergeable` 显示 `CONFLICTING`/`DIRTY`；用 `./scripts/sync-main.sh --rebase` 解冲突后 push ⇒ `PR Check` / `AI Agent Service Unit Tests` / `Mini-App CI` / `Bmini-App CI` **立即全部排队**。🔴 **本次复核边界（照实登记）**：#5922 现已 MERGED ⇒ `mergeable` 现读 **`UNKNOWN`**（GitHub 只对 open PR 计算）⇒ **那条读数不能事后复算**；可复算的是**机制**（触发面）与**口诀**本身。**顺带登记**：draft 起手 + native auto-merge 的组合下，**`ready` 不是 `pull_request` 工作流的触发面**（`ready_for_review` 只在 `.github/workflows/automerge.yml` 的 `types` 里）⇒ 解冲突后必须 **push**（`synchronize`）才会触发。🔁 **第二次实证（2026-10-05 PR #6368）**：`opened` / `synchronize`（空提交）/ `reopened`（close→reopen）**三个事件都没能建出 `PR Check` run**（同 head sha 只有 3 条 `pull_request_target` 腿）；`git rebase origin/main` 解掉 `CHANGELOG.md` 冲突后 push ⇒ `PR Check` **立刻出现**、28 项全绿。⛔ **`workflow_dispatch` 不是出路**：`pr-check.yml` 多数 job 带 `if: github.event_name == 'pull_request'`，dispatch 会把它们**全部 skip** ⇒ Required 检查仍然满足不了。",
       "guards": "**判据 = 加载面文本锚（删掉即红）**：`tests/unit_ci_workflows/test_dev_mode_failure_modes.py::conflict_diagnosis_problems` + `::TestConflictDiagnosisAnchor`（在 `migao-dev-flow` §2.2 那一节里逐字要求 `gh pr view` / `--json mergeable` / `CONFLICTING` / `FM-E25` 四个锚；配两条注入红证（删那一行 / 整节标题被改）+ 对照读数（只加一条注释 ⇒ 不红）+ fail-closed（取不到节 ⇒ 红））。**判别动作（一次就能做、可复制）**：`gh pr view <N> --json mergeable` —— 读 `CONFLICTING` ⇒ **先解冲突再 push**（`./scripts/sync-main.sh --rebase`），不要等 CI。🔴 **射程（如实登记，§19.1）**：它证明的是「这条判别动作还在 **agent 每次都看得到的那一面**」，**不证明** GitHub 侧的 merge-ref 行为（那不是仓内内容 ⇒ 无机械判据可加；同 `FM-E15` 的 `CASE_ID_ALLOCATION_BOUNDARY` 形态）。",
       "criteria": [
         "tests/unit_ci_workflows/test_dev_mode_failure_modes.py::conflict_diagnosis_problems",
@@ -925,7 +925,8 @@
       "same_family": "`FM-E17`（触发面失效 ⇒ 静默不跑）· `FM-E2`（静默搁浅）· `FM-E15`（文本锚删掉即红）",
       "refs": [
         "#5922",
-        "#5707"
+        "#5707",
+        "#6368"
       ]
     }
   ],
