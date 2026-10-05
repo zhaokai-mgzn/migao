@@ -54,6 +54,22 @@
 - 判据：`npx vitest run tests/unit/pages/corporate-home.test.tsx tests/unit/pages/services.test.tsx tests/unit/pages/corporate-about.test.tsx tests/unit/pages/corporate-contact.test.tsx tests/unit/components/CorporateFooter.test.tsx`
   ⇒ **65 passed / 65**（改前 58 条 + 本单新增 5 条口吻判据 + 1 条判别力自证，另有既有断言随文案同步）。
 
+### 裁高配置：取值留空的项不再显示 `undefined`（2026-10-05，issue #6337）
+
+- 以前：商家端「工艺配置 → 裁高配置」里，「画线」那一行的**取值**框显示字面量 `undefined`。
+  根因三段合成 —— 默认种子里画线 **有项无值**（`value = null`，用户 2026-09-29 裁定「不替它编数、
+  也不按 0 算」）；后端全局 `spring.jackson.default-property-inclusion: non_null` 把**值为 null 的键整个丢掉**
+  （线上报文里 `value` 键消失 ⇒ 前端拿到的是 `undefined`）；而面板只判了 `=== null` ⇒ `String(undefined)` 上屏。
+- 现在：取值框照旧**留空**（placeholder「留空 = 有项无值」），并改用仓库里既有的单一格式口径
+  `frontend/admin-web/src/components/ui/NumberInput.tsx` 的 `formatDraft`（它同时认 `null` 与 `undefined`）。
+  **算料口径一字未动**：命中而未配置取值的项仍在预演里显式报「未配置取值」、不计入合计、不按 0 算
+  （用户 2026-10-05 选定：只修显示）。
+- 固化（类级）：实例判据 = `frontend/admin-web/tests/unit/components/CuttingHeightConfigPanel.test.tsx` 判据 ⑤
+  （喂**线上形态**报文 —— 剥掉所有 `null` 键 —— 断言取值框留空）；类级元守卫 = 同族文件
+  `frontend/admin-web/tests/unit/components/NumberInputWiring.test.ts` 判据 ⑩
+  （全仓三端 `src/**` 的 JSX `value=` 接线上「只判 `=== null` 再 `String()`」零容忍；`!= null` 与双判
+  两种正确写法不判红）。注入式红证：改回旧形态 ⇒ ⑤ 与 ⑩ 同时红，红证样本/负例仍绿。
+
 ### 新租户开箱即可建商品：入驻时自动种一个默认商品分类「窗帘成品」（2026-10-04，issue #6295）
 
 - 以前：通过入驻流程新开的租户 `categories` 表是**空的**，而建商品（非草稿）要求分类非空

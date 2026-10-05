@@ -24,7 +24,11 @@ function parseComplete(draft: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function formatDraft(value: number | null | undefined): string {
+/**
+ * 可空数 → 输入框字符串的**单一口径**（`undefined` 同样读作空 —— 线上报文经
+ * `spring.jackson.default-property-inclusion: non_null` 后，`null` 值的键会**整个消失**）。
+ */
+export function formatDraft(value: number | null | undefined): string {
   return typeof value === 'number' && Number.isFinite(value) ? String(value) : ''
 }
 
