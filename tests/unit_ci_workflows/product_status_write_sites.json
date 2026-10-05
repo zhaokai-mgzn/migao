@@ -1,0 +1,124 @@
+{
+  "schema": 1,
+  "_what": "商品 `status` 的**写入方登记表**（issue #6347 Part A）：凡在「写入面」（文件含 `POST/PUT /api/admin/products` 端点字面量）里给商品 status 赋**字符串字面量**的仓内文件，都登记在此。守卫 = tests/unit_ci_workflows/test_product_status_single_source.py：① 每条 literals ⊆ ProductService 的合法集合；② **现取**的检出文件集与本表**双向相等**（未登记即红 / 陈旧条目即红 —— 台账只许缩短）。",
+  "_why": "缺陷成因是「建品 status 不校验枚举 + 仓内自己的验收夹具示范非法值（acceptance/2026-10-04/worker-miniapp-sweep/harness/bootstrap-chain.mjs 建品写 status:'active'）」⇒ 落库成状态机死行。只修 API 不够：夹具会继续示范非法值。",
+  "_judged_by": "tests/unit_ci_workflows/test_product_status_single_source.py",
+  "_detector": "文件扩展名 ∈ {.mjs,.js,.ts,.tsx,.py} ∧ 文本含 `/api/admin/products` ∧ 在含商品专属键（pricingType/sellingMethods/doorWidths/rollLengthM/stockDeductionMode/stockWarningThreshold/totalStock/allowReturnRestock）的对象字面量里有 `status: <字面量>`。",
+  "_boundary": "① 只覆盖**可静态检出**的写入面；靠变量/函数参数下传的 status 字面量（如 `mkProduct(name, 'on_shelf')`）不被检出（那类仍由新加的**运行期 fail-closed 准入**兜底：非法值必 4xx）；② 其它语言/端点（Java 侧写入由判据 1 的接线锚 + 参数化单测承担）；③ 不判「字面量之外」的取值来源（DB 存量回填口径另由人工裁定）。",
+  "sites": [
+    {
+      "path": "acceptance/2026-10-02/tenant20-full-sweep/harness/s4-docs.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-02/tenant20-full-sweep/harness/s5-h5.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-02/tenant20-full-sweep/harness/s6-chain.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-02/tenant20-full-sweep/harness/s9-position-jobs.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/aftersales-concurrency-sweep/harness/lib.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/aftersales-concurrency-sweep/harness/p10-dispatch-concurrency.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/batch-writeface-sweep/harness/e1-concurrency.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/batch-writeface-sweep/harness/f1-redproof.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/dispatch-routing-sweep/harness/p1-pilot.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/dispatch-routing-sweep/harness/p2-matrix.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/dispatch-routing-sweep/harness/p3-writes.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/dispatch-routing-sweep/harness/p4-redproof.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/dispatch-routing-sweep/harness/p4b-judge-redproof.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/dispatch-routing-sweep/harness/p6-settings.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/dispatch-routing-sweep/harness/p8-routes.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/dispatch-routing-sweep/harness/p9-price-drift.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/piecework-wage-sweep/harness/p1-p2-matrix.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/piecework-wage-sweep/harness/p6-price-source.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/piecework-wage-sweep/harness/p7-f8-e2e.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/piecework-wage-sweep/harness/p8-f8-controlled.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-03/piecework-wage-sweep/harness/p9-f8-wage-e2e.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/aftersales-refund-sweep/harness/lib.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/aftersales-refund-sweep/harness/p10-dispatch-concurrency.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/race-sweep/harness/_trycreate.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/race-sweep/harness/_trycreate2.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/race-sweep/harness/_trycreate3.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/race-sweep/harness/_trycreate4.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/race-sweep/harness/_trycreate5.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/race-sweep/harness/_trycreate6.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/race-sweep/harness/_trycreate7.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/race-sweep/harness/_trycreate8.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/race-sweep/harness/_trycreate9.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/race-sweep/harness/bootstrap.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/race-sweep/harness/control-seq-oversell.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/race-sweep/harness/probe-cross.mjs"
+    },
+    {
+      "path": "acceptance/2026-10-04/worker-miniapp-sweep/harness/bootstrap-chain.mjs"
+    },
+    {
+      "path": "tests/e2e/specs/products/product-detail.spec.ts"
+    },
+    {
+      "path": "tests/e2e/specs/products/product-edit.spec.ts"
+    }
+  ]
+}

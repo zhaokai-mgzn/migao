@@ -69,7 +69,7 @@ async function buildProbe(token, { tag }) {
   const prod = await api('POST', '/api/admin/products', {
     token, body: {
       name: `${PROBE_PRODUCT}-${tag}`, unit: '米', pricingType: 'fixed', basePrice: 68,
-      status: catId ? 'on_shelf' : 'draft', categoryId: catId,
+      status: catId ? 'on_sale' : 'draft', categoryId: catId,
       colors: [{ colorName: '本白', mainColorHex: '#FAFAFA', sortOrder: 1 }],
       skus: [{ colorName: '本白', doorWidth: '2.8m', price: 68, stock: 100000, skuCode: `WAGE-${RUN}-${tag}` }],
     },

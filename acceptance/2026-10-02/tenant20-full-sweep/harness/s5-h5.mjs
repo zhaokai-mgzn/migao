@@ -68,7 +68,7 @@ async function buildProductionChain(token) {
   // 商品（含颜色 + SKU）
   const prod = await api('POST', '/api/admin/products', {
     token, body: {
-      name: `H5验收商品${stamp}`, unit: '米', pricingType: 'fixed', basePrice: 68, status: 'on_shelf',
+      name: `H5验收商品${stamp}`, unit: '米', pricingType: 'fixed', basePrice: 68, status: 'on_sale',
       colors: [{ colorName: '米白', mainColorHex: '#FFFFFF', sortOrder: 1 }],
       skus: [{ colorName: '米白', doorWidth: '2.8m', price: 68, stock: 200, skuCode: `H5-${stamp}` }],
     },

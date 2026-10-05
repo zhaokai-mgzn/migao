@@ -1,5 +1,20 @@
 ## [Unreleased]
 
+### 商品状态按枚举准入：非法 status 建品/改品直接 4xx；已是「状态机死行」的商品可改回已下架/草稿自救（2026-10-05，issue #6347）
+
+- 以前：建品/改品对 `status` **只校验长度** ⇒ 任意字符串落库（实测 `active` 8 行、`on_shelf` 2 行）。
+  这些行**不在「在售」口径里**（商品健康度快照静默过滤掉它们的 SKU，米宝据此误报「SKU=0」），
+  且 `PUT /api/admin/products/{id}/status` 对它们**全部拒绝**（「允许的目标状态: 无」）⇒ **无法自救**。
+- 现在：① `status` 按**枚举**准入（合法取值只有 `draft` / `under_review` / `on_sale` / `off_sale`；
+  **单一真值源 = `ProductService.STATUS_TRANSITIONS`**），非法值 ⇒ 422 + **列出合法枚举**的可行动文案；
+  ② 未知**当前**状态（历史死行）的报错给出路：改用 `off_sale`（已下架）或 `draft`（草稿）把它
+  **收回状态机**，该出路真的走得通，但**不允许**从死行直接跳到 `on_sale`（来历不明的行不得被直接上架）；
+  上下架 / 删除 / 推荐端点的同类拒绝文案一并补出路。
+- 固化（类级）：仓内语料（含 `acceptance/**` 的 harness）里商品 status 字面量必须全部落在合法集合内 +
+  写入方**未登记即红**（判据 = `tests/unit_ci_workflows/test_product_status_single_source.py`）；
+  实例判据 = `ProductStatusAdmissionTest`（参数化：非法值 4xx）。
+- 边界：存量死状态行的回填口径待人工裁定；issue #6347 的 Part B（快照三态口径 / 米宝话术）**不在本单**。
+
 ### 右上角用户卡片「点外部即收起」真正生效：改用文档级监听，并拦住同类「fixed 遮罩落在 backdrop-blur 祖先内」缺陷（2026-10-05，issue #6339）
 
 - 以前：用户卡片展开后，点页面**内容区**（卡片以外任意位置）**收不回去** —— 只有点卡片内部、

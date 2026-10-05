@@ -81,7 +81,7 @@ const prodBody = {
   unit: '米',
   pricingType: 'per_meter',
   basePrice: 30.5,
-  status: 'active',
+  status: 'on_sale',
   stock: 200,
   stockWarningThreshold: 5,
   description: `${CHAIN_PREFIX}冷启动夹具（空租户首个商品）`,

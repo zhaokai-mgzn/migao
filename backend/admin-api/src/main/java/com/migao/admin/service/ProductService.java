@@ -39,6 +39,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -101,7 +102,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     /**
      * 合法的状态流转映射
      */
-    private static final Map<String, List<String>> STATUS_TRANSITIONS = new HashMap<>();
+    private static final Map<String, List<String>> STATUS_TRANSITIONS = new LinkedHashMap<>();
     static {
         STATUS_TRANSITIONS.put("draft", List.of("under_review", "on_sale"));
         STATUS_TRANSITIONS.put("under_review", List.of("on_sale", "draft"));
@@ -120,6 +121,61 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             "on_sale", "出售中",
             "off_sale", "已下架"
     );
+
+    /**
+     * 商品状态**合法集合**（issue #6347）——**单一真值源** = {@link #STATUS_TRANSITIONS} 的键集
+     * （不另写第二份：写死两份 = 改一处漏一处，正是本单的成因）。
+     *
+     * <p>建品/改品的枚举准入、未知当前状态的「出路」文案，以及元守卫
+     * `tests/unit_ci_workflows/test_product_status_single_source.py` 都取这一处。</p>
+     */
+    static final Set<String> PRODUCT_STATUSES =
+            Collections.unmodifiableSet(new LinkedHashSet<>(STATUS_TRANSITIONS.keySet()));
+
+    /**
+     * 未知当前状态的**修正目标**（issue #6347）：历史非法值（active / on_shelf / in_warehouse …）
+     * 落库形成的「状态机死行」原先无法自救（任何目标状态都被拒）。这里给一条**保守**的恢复边：
+     * 只允许改回 off_sale / draft，**不允许**直接改到 on_sale（来历不明的行不该被直接上架）；
+     * 收回状态机后即可走正常流转（off_sale → on_sale）。
+     */
+    private static final List<String> STATUS_RECOVERY_TARGETS = List.of("off_sale", "draft");
+
+    /** 合法状态的可读枚举清单（错误文案用；顺序 = {@link #STATUS_TRANSITIONS} 的登记顺序）。 */
+    static String productStatusChoices() {
+        return PRODUCT_STATUSES.stream()
+                .map(s -> s + "(" + PRODUCT_STATUS_LABELS.getOrDefault(s, s) + ")")
+                .collect(Collectors.joining(" / "));
+    }
+
+    /**
+     * 商品状态**枚举准入**（issue #6347，fail-closed）：建品/改品原先对 status 只校验长度
+     * （{@link ColumnTextLength#requireWithinOrNull}）⇒ 任意字符串都能落库，而那些行是
+     * **状态机死行**（不在「在售」口径里 ⇒ 快照静默过滤掉它的 SKU；且 PUT /status 全部拒绝 ⇒ 无法自救）。
+     * 这里在**入口**（任何写之前）显式拒绝未知取值，文案列出合法枚举（可行动，不是「检查字段格式」）。
+     */
+    static String requireValidStatusOrNull(String status, String field) {
+        String normalized = ColumnTextLength.requireWithinOrNull(status, 32, field);
+        if (!StringUtils.hasText(normalized) || PRODUCT_STATUSES.contains(normalized)) {
+            return normalized;
+        }
+        throw BusinessException.validationError(
+                field + " 取值非法：「" + normalized + "」；合法取值只有 " + productStatusChoices()
+                        + "（本字段按枚举准入，不接受其它字符串）");
+    }
+
+    /**
+     * 未知当前状态的**行动出路**（issue #6347）；已知状态返回空串（不打扰原有拒绝文案）。
+     */
+    private static String statusRecoveryHint(String currentStatus) {
+        if (STATUS_TRANSITIONS.containsKey(currentStatus)) {
+            return "";
+        }
+        String targets = STATUS_RECOVERY_TARGETS.stream()
+                .map(s -> s + "(" + PRODUCT_STATUS_LABELS.getOrDefault(s, s) + ")")
+                .collect(Collectors.joining(" 或 "));
+        return "；该状态不在商品状态机内（合法状态: " + productStatusChoices()
+                + "），请先把它改为 " + targets + " 修正回状态机";
+    }
 
     /**
      * 库存台账 note（issue #4157）：建品/改品直写 SKU 库存的来源说明。
@@ -393,7 +449,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         request.setMainImage(ColumnTextLength.requireWithinOrNull(request.getMainImage(), 512, "主图 mainImage"));
         request.setKnowledgeBaseId(ColumnTextLength.requireWithinOrNull(
                 request.getKnowledgeBaseId(), 64, "知识库 knowledgeBaseId"));
-        request.setStatus(ColumnTextLength.requireWithinOrNull(request.getStatus(), 32, "商品状态 status"));
+        // 枚举准入（issue #6347）：status 是**枚举**字段，原先只校长度 ⇒ 任意字符串落库成「状态机死行」。
+        // 判据单点在 ProductService.STATUS_TRANSITIONS（合法集合）与 requireValidStatusOrNull（准入）。
+        request.setStatus(requireValidStatusOrNull(request.getStatus(), "商品状态 status"));
 
         // 空分类归一化（#3665 冒烟 B1）：前端草稿发的是 ''（DEFAULT_FORM.categoryId）而非缺省 null。
         // 若原样透传：validateCategory 因 hasText('')==false 跳过校验 → BeanUtils 把 '' 写进实体
@@ -483,7 +541,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         request.setMainImage(ColumnTextLength.requireWithinOrNull(request.getMainImage(), 512, "主图 mainImage"));
         request.setKnowledgeBaseId(ColumnTextLength.requireWithinOrNull(
                 request.getKnowledgeBaseId(), 64, "知识库 knowledgeBaseId"));
-        request.setStatus(ColumnTextLength.requireWithinOrNull(request.getStatus(), 32, "商品状态 status"));
+        // 枚举准入（issue #6347）：与 createProduct 同一入口判据（本方法最终会恢复原状态，不写 status，
+        // 但非法取值仍须在此 fail-closed，避免它借由 validateRequiredForStatus 产生误导性报错）。
+        request.setStatus(requireValidStatusOrNull(request.getStatus(), "商品状态 status"));
 
         Product product = productMapper.selectById(id);
         if (product == null) {
@@ -1079,7 +1139,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
         if (!Set.of("draft", "off_sale").contains(currentStatus)) {
             String statusLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
-            throw BusinessException.validationError("当前状态[" + statusLabel + "]不允许删除，请先下架后再删除");
+            throw BusinessException.validationError(
+                    "当前状态[" + statusLabel + "]不允许删除，请先下架后再删除" + statusRecoveryHint(currentStatus));
         }
 
         productMapper.deleteById(id);
@@ -1136,12 +1197,27 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         }
 
         List<String> allowedTransitions = STATUS_TRANSITIONS.get(currentStatus);
-        if (allowedTransitions == null || !allowedTransitions.contains(status)) {
+        if (allowedTransitions == null) {
+            // 未知当前状态 = 状态机死行（历史非法值：active / on_shelf / in_warehouse …，issue #6347）。
+            // 唯一出路 = 改回 off_sale / draft 收回状态机（**不允许**直接改到 on_sale：
+            // 来历不明的行不该被直接上架；收回后即可走正常流转 off_sale → on_sale）。
+            if (STATUS_RECOVERY_TARGETS.contains(status)) {
+                log.warn("商品状态修正（issue #6347）：当前状态 [{}] 不在状态机内，允许改回 [{}]",
+                        currentStatus, status);
+                return;
+            }
             String currentLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
             String targetLabel = PRODUCT_STATUS_LABELS.getOrDefault(status, status);
-            List<String> allowedLabels = allowedTransitions != null
-                    ? allowedTransitions.stream().map(s -> PRODUCT_STATUS_LABELS.getOrDefault(s, s)).toList()
-                    : List.of();
+            throw BusinessException.validationError(String.format(
+                    "状态流转无效: %s → %s。当前状态「%s」不在商品状态机内（合法状态: %s）%s",
+                    currentLabel, targetLabel, currentStatus, productStatusChoices(),
+                    statusRecoveryHint(currentStatus)));
+        }
+        if (!allowedTransitions.contains(status)) {
+            String currentLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+            String targetLabel = PRODUCT_STATUS_LABELS.getOrDefault(status, status);
+            List<String> allowedLabels = allowedTransitions.stream()
+                    .map(s -> PRODUCT_STATUS_LABELS.getOrDefault(s, s)).toList();
             throw BusinessException.validationError(
                     String.format("状态流转无效: %s → %s，允许的目标状态: %s",
                             currentLabel, targetLabel,
@@ -1177,7 +1253,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             if (!"on_sale".equals(currentStatus)) {
                 String label = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
                 throw BusinessException.validationError(
-                        String.format("仅上架商品可设为推荐，当前状态: %s", label));
+                        String.format("仅上架商品可设为推荐，当前状态: %s", label) + statusRecoveryHint(currentStatus));
             }
         }
         product.setRecommended(recommended);
@@ -1191,7 +1267,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
     /**
      * 批量上架
-     * 只有 off_sale/in_warehouse 状态的商品可上架
+     * 只有 off_sale 状态的商品可上架
      */
     @Transactional(rollbackFor = Exception.class)
     public BatchOperationResult batchOnShelf(List<String> productIds, Long tenantId) {
@@ -1210,7 +1286,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
             if (!allowedStatuses.contains(currentStatus)) {
                 String statusLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
-                result.addError(id, "当前状态[" + statusLabel + "]不允许上架");
+                result.addError(id, "当前状态[" + statusLabel + "]不允许上架" + statusRecoveryHint(currentStatus));
                 continue;
             }
             product.setStatus("on_sale");
@@ -1244,7 +1320,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
             if (!"on_sale".equals(currentStatus)) {
                 String statusLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
-                result.addError(id, "当前状态[" + statusLabel + "]不允许下架");
+                result.addError(id, "当前状态[" + statusLabel + "]不允许下架" + statusRecoveryHint(currentStatus));
                 continue;
             }
             product.setStatus("off_sale");
@@ -1279,7 +1355,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
             if (!allowedStatuses.contains(currentStatus)) {
                 String statusLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
-                result.addError(id, "当前状态[" + statusLabel + "]不允许删除");
+                result.addError(id, "当前状态[" + statusLabel + "]不允许删除" + statusRecoveryHint(currentStatus));
                 continue;
             }
             productMapper.deleteById(id);
