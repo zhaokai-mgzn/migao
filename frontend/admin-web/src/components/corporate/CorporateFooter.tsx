@@ -31,7 +31,7 @@ export default function CorporateFooter() {
             </div>
             <p className="max-w-xs text-sm leading-relaxed text-neutral-400">
               杭州词元通达科技有限公司出品的米高平台：面向布艺 / 窗帘商家的多租户 AI
-              经营平台，顾客侧小布、经营侧米宝，共用同一套业务数据。
+              经营平台，顾客侧小布、经营侧米宝，共用数据底座。
             </p>
           </div>
 
@@ -69,7 +69,7 @@ export default function CorporateFooter() {
             <ul className="space-y-2.5 text-sm text-neutral-400">
               <li>提交入驻申请并完成手机验证</li>
               <li>AI 自动核验企业信息与合规性</li>
-              <li>通过后即刻开通管理后台与两位 AI 助手</li>
+              <li>通过后即刻开通管理后台，小布与米宝同步上线</li>
             </ul>
             <Link
               href="/register"

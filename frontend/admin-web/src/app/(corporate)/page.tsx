@@ -80,7 +80,7 @@ const agents = [
   },
 ]
 
-/** 一条订单跑完全程 —— 布艺行业纵深（每一步都有对应模块或接口） */
+/** 订单全流程 —— 布艺行业纵深（每一步都有对应模块或接口） */
 const orderJourney = [
   {
     step: '01',
@@ -158,7 +158,7 @@ const platformGuarantees = [
     icon: Zap,
     title: '多渠道统一数据',
     description:
-      '管理后台、顾客小程序、商家小程序、员工端 H5 共用同一套业务数据，AI 读取的即门店真实数据。',
+      '管理后台、顾客小程序、商家小程序、员工端 H5 共用数据底座，不各自建账。',
   },
 ]
 
@@ -186,7 +186,7 @@ const steps = [
     icon: Rocket,
     step: '03',
     title: '即刻开通',
-    description: '开通后即获得管理后台与两位 AI 助手，小布与米宝同步上线。',
+    description: '开通后即获得管理后台，小布与米宝同步上线。',
   },
 ]
 
@@ -244,17 +244,17 @@ export default function HomePage() {
               </div>
 
               <h1 className="mt-7 text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl lg:text-[3.4rem]">
-                两位 AI 助手，一套经营平台
+                AI 客服与经营系统
                 <br />
                 <span className="bg-gradient-to-r from-[#f6d27a] via-[#e8b04b] to-accent-300 bg-clip-text text-transparent">
-                  覆盖布艺经营的全流程
+                  覆盖布艺经营全流程
                 </span>
               </h1>
 
               <p className="mt-6 max-w-2xl text-base leading-relaxed text-neutral-300 sm:text-lg">
                 顾客侧由小布承接：咨询应答、算料报价、下单、物流查询与售后受理；
                 经营侧由米宝承接：商品、订单、生产、库存与财务，以自然语言问答交付。
-                两位 AI 共用同一套业务数据，回答内容与后台数据保持一致。
+                小布与米宝读取的是门店真实数据，回答与后台记录一致。
               </p>
 
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
@@ -285,7 +285,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* 右侧：两个 AI 的一句话分工 */}
+            {/* 右侧：小布与米宝的分工 */}
             <div className="space-y-4 lg:col-span-5">
               {agents.map((agent) => (
                 <div
@@ -312,13 +312,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── 两个 AI 的完整分工 ───────────────────────────────── */}
+      {/* ── 小布与米宝的完整分工 ─────────────────────────────── */}
       <section className="bg-neutral-50 py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="双 AI 分工"
-            title="一位面向经营，一位面向顾客"
-            lead="两位 AI 均基于大语言模型理解业务意图，7×24 小时在线，共用同一业务数据底座；能力边界在页面中明确标注，超出范围的请求由 AI 直接说明。"
+            title="顾客侧服务，经营侧管理"
+            lead="小布与米宝均基于大语言模型理解业务意图，7×24 小时在线，读取门店真实数据；能力边界在页面中明确标注，超出范围的请求由 AI 直接说明。"
           />
           <div className="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-6 md:grid-cols-2">
             {agents.map((agent) => (
@@ -357,12 +357,12 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── 一条订单跑完全程 ─────────────────────────────────── */}
+      {/* ── 订单全流程 ──────────────────────────────────────── */}
       <section className="bg-white py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="行业纵深"
-            title="一张窗帘订单的六个环节"
+            title="窗帘订单的六个环节"
             lead="布艺经营的核心难点集中在算料、工序、批次与计件；以下六个环节，米高均有对应功能模块支撑。"
           />
           <div className="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -402,8 +402,8 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="管理后台"
-            title="一套后台，六个能力域"
-            lead="商品、客户、交易、生产、仓储、组织六个能力域共用同一套数据，这也是两位 AI 答复准确的基础。"
+            title="覆盖经营全链路的能力域"
+            lead="商品、客户、交易、生产、仓储、组织六个能力域数据互通，这也是 AI 答复准确的基础。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {capabilityDomains.map((domain) => (
@@ -455,7 +455,7 @@ export default function HomePage() {
 
           <div className="mt-14 grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-7">
-              <h3 className="text-base font-semibold text-neutral-900">一次咨询怎么走完</h3>
+              <h3 className="text-base font-semibold text-neutral-900">从咨询到人工的流转</h3>
               <ol className="mt-5 space-y-4">
                 {handoffSteps.map(([title, description], index) => (
                   <li key={title} className="flex gap-4">
@@ -602,10 +602,10 @@ export default function HomePage() {
         </div>
         <div className="relative mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
           <h2 className="text-2xl font-bold tracking-tight sm:text-4xl">
-            数分钟内完成开通，两位 AI 同步上线
+            数分钟内完成开通，小布与米宝同步上线
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-neutral-300">
-            入驻申请经 AI 自动甄别后秒级返回结果；开通后即可使用管理后台，小布与米宝共用同一套业务数据。
+            入驻申请经 AI 自动甄别后秒级返回结果；开通后即可使用管理后台，小布与米宝随即可用。
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link

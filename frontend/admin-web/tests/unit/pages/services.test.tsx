@@ -7,7 +7,11 @@ vi.mock('next/link', () => ({
 }))
 
 import ServicesPage from '@/app/(corporate)/services/page'
-import { findColloquialMarkers } from './copy-voice-banlist'
+import {
+  findColloquialMarkers,
+  findPersonifiedAi,
+  findQuantifierRhetoric,
+} from './copy-voice-banlist'
 
 describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能力域，issue #6291 / #6326）', () => {
   // ── 页头 ──
@@ -17,23 +21,23 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
     expect(
       screen.getByRole('heading', {
         level: 1,
-        name: '两位 AI 助手与全链路经营平台',
+        name: '小布与米宝，以及全链路经营平台',
       })
     ).toBeInTheDocument()
-    expect(screen.getByText(/四个终端共用同一套数据/)).toBeInTheDocument()
+    expect(screen.getByText(/四个终端共用数据底座/)).toBeInTheDocument()
   })
 
   it('renders 页头事实标签（AI 数 / 能力域数 / 终端数 / 行业纵深）', () => {
     render(<ServicesPage />)
-    expect(screen.getByText('2 位 AI 助手')).toBeInTheDocument()
+    expect(screen.getByText('2 个 AI：小布与米宝')).toBeInTheDocument()
     expect(screen.getByText(/6 个能力域 · \d+ 项功能/)).toBeInTheDocument()
     expect(screen.getByText('4 个终端')).toBeInTheDocument()
     expect(screen.getByText('算料 · 工序 · 批次 · 计件')).toBeInTheDocument()
   })
 
-  // ── 两位 AI ──
+  // ── 小布与米宝 ──
 
-  it('renders 两位 AI 的产品卡', () => {
+  it('renders 小布与米宝的产品卡', () => {
     render(<ServicesPage />)
     expect(screen.getByText('小布 · 企业智能客服')).toBeInTheDocument()
     expect(screen.getByText('米宝 · 企业智能生产管家')).toBeInTheDocument()
@@ -176,5 +180,26 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
     const { container } = render(<ServicesPage />)
     const hits = findColloquialMarkers(container.textContent ?? '')
     expect(hits, `产品与服务页渲染文本出现 AI 口语词：${hits.join(' / ')}`).toEqual([])
+  })
+  // ── 文案质感：量化排比与拟人量词（issue #6366）──
+
+  it('文案质感：产品与服务页渲染文本无量化排比、无拟人量词', () => {
+    const { container } = render(<ServicesPage />)
+    const text = container.textContent ?? ''
+
+    // 判别力自证：病症样本必须被检出、合规样本必须零命中（否则本判据是空断言）
+    expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
+    expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
+    expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
+    expect(findPersonifiedAi('小布与米宝')).toEqual([])
+
+    // 真实语料
+    const quantifiers = findQuantifierRhetoric(text)
+    expect(
+      quantifiers,
+      `产品与服务页渲染文本出现量化排比：${quantifiers.join(' / ')}`,
+    ).toEqual([])
+    const personified = findPersonifiedAi(text)
+    expect(personified, `产品与服务页渲染文本出现拟人量词：${personified.join(' / ')}`).toEqual([])
   })
 })

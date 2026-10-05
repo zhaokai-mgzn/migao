@@ -7,7 +7,11 @@ vi.mock('next/link', () => ({
 }))
 
 import AboutPage from '@/app/(corporate)/about/page'
-import { findColloquialMarkers } from './copy-voice-banlist'
+import {
+  findColloquialMarkers,
+  findPersonifiedAi,
+  findQuantifierRhetoric,
+} from './copy-voice-banlist'
 
 describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实，issue #6291 / #6326）', () => {
   it('renders page header', () => {
@@ -19,8 +23,8 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
   it('renders company intro（布艺行业真实流程 + 双 AI 分工）', () => {
     render(<AboutPage />)
     expect(screen.getByText(/一款窗帘要按颜色 × 售卖方式 × 门幅组合出几十个规格/)).toBeInTheDocument()
-    expect(screen.getByText(/顾客侧是小布/)).toBeInTheDocument()
-    expect(screen.getByText(/经营侧是米宝/)).toBeInTheDocument()
+    expect(screen.getByText(/顾客侧由小布 7×24 小时接待咨询/)).toBeInTheDocument()
+    expect(screen.getByText(/经营侧由米宝以自然语言问答/)).toBeInTheDocument()
   })
 
   it('renders mission and vision', () => {
@@ -82,5 +86,26 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
     const { container } = render(<AboutPage />)
     const hits = findColloquialMarkers(container.textContent ?? '')
     expect(hits, `关于我们页渲染文本出现 AI 口语词：${hits.join(' / ')}`).toEqual([])
+  })
+  // ── 文案质感：量化排比与拟人量词（issue #6366）──
+
+  it('文案质感：关于我们页渲染文本无量化排比、无拟人量词', () => {
+    const { container } = render(<AboutPage />)
+    const text = container.textContent ?? ''
+
+    // 判别力自证：病症样本必须被检出、合规样本必须零命中（否则本判据是空断言）
+    expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
+    expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
+    expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
+    expect(findPersonifiedAi('小布与米宝')).toEqual([])
+
+    // 真实语料
+    const quantifiers = findQuantifierRhetoric(text)
+    expect(
+      quantifiers,
+      `关于我们页渲染文本出现量化排比：${quantifiers.join(' / ')}`,
+    ).toEqual([])
+    const personified = findPersonifiedAi(text)
+    expect(personified, `关于我们页渲染文本出现拟人量词：${personified.join(' / ')}`).toEqual([])
   })
 })

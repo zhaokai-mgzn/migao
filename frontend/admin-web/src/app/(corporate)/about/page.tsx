@@ -36,12 +36,12 @@ const timeline = [
   {
     period: '2024 Q1',
     title: '项目启动',
-    description: '确定产品方向与技术路线：顾客侧与经营侧两位 AI 助手，加多租户 SaaS 底座。',
+    description: '确定产品方向与技术路线：顾客侧与经营侧的 AI 助手，加多租户 SaaS 底座。',
   },
   {
     period: '2024 Q2',
     title: '核心引擎开发',
-    description: '搭建双 Agent 引擎与业务工具层，两位助手的技能与工具分工成型。',
+    description: '搭建双 Agent 引擎与业务工具层，两侧助手的技能与工具分工成型。',
   },
   {
     period: '2024 Q3',
@@ -90,7 +90,7 @@ export default function AboutPage() {
       <PageHero
         kicker="关于我们"
         title="关于米高"
-        lead="米高是杭州词元通达科技有限公司旗下的 AI 经营平台。产品目标明确：由一位 AI 在门店接待顾客，由另一位 AI 协助经营者掌握商品、订单、生产、库存与账目。"
+        lead="米高是杭州词元通达科技有限公司旗下的 AI 经营平台。产品目标明确：由 AI 承接门店接待，并协助经营者掌握商品、订单、生产、库存与账目。"
         chips={['杭州词元通达科技有限公司', '布艺 / 窗帘行业', '多租户 SaaS']}
       />
 
@@ -104,9 +104,9 @@ export default function AboutPage() {
               这些环节一旦依赖 Excel 与微信群接力，信息就会分散在十几个人的手中。
             </p>
             <p>
-              米高把整套流程收进一个平台：一套多租户 SaaS，两位 AI 助手。顾客侧是小布，7×24 小时接待咨询、
-              算料报价、下单、物流查询与售后受理；经营侧是米宝，以自然语言问答查询订单、加工单进度、库存批次、
-              计件工资与应收对账。两位 AI 共用同一套业务数据，与后台所见一致。
+              米高的产品形态是多租户 SaaS 底座，加上顾客侧的小布与经营侧的米宝。顾客侧由小布 7×24 小时接待咨询、
+              算料报价、下单、物流查询与售后受理；经营侧由米宝以自然语言问答查询订单、加工单进度、库存批次、
+              计件工资与应收对账。两侧读取的数据与后台所见一致。
             </p>
             <p>
               米高不将 AI 描述为万能：可查询的查询，可计算的算，可落成工单的落成工单；超出范围的请求，
@@ -126,7 +126,7 @@ export default function AboutPage() {
               </div>
               <h2 className="mt-5 text-xl font-bold text-neutral-900">我们的使命</h2>
               <p className="mt-3 leading-relaxed text-neutral-600">
-                让中小布艺商家以可负担的成本用上完整的经营系统，把客服、订单、生产、库存与账目交给系统与 AI。
+                把智能化能力的成本与门槛降到中小企业可承受的水平，让布艺商家用得起、也用得上 AI。
               </p>
             </div>
 
@@ -136,8 +136,8 @@ export default function AboutPage() {
               </div>
               <h2 className="mt-5 text-xl font-bold text-neutral-900">我们的愿景</h2>
               <p className="mt-3 leading-relaxed text-neutral-600">
-                成为布艺行业最懂业务的 AI 经营平台：通用客服难以覆盖的算料、工序、批次与计件，
-                是米高的核心能力所在。
+                让智能化与 AI 走进中小企业。米高从布艺行业做起，把过去只有中大型企业才用得起的经营能力，
+                交到中小商家手上。
               </p>
             </div>
           </div>

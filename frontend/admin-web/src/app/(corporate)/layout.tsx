@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     siteName: '米高 MIGAO',
     title: '米高 — 布艺行业的 AI 经营平台',
     description:
-      '两位 AI 助手，一套经营平台：小布承接顾客服务，米宝承接门店经营，四个终端共用同一套业务数据。',
+      '布艺行业的 AI 客服与经营平台：小布承接顾客服务，米宝承接门店经营，四个终端共用数据底座。',
     images: [
       {
         url: 'https://www.migaozn.com/og-image.png',
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: '米高 — 布艺行业的 AI 经营平台',
     description:
-      '两位 AI 助手，一套经营平台：小布承接顾客服务，米宝承接门店经营，四个终端共用同一套业务数据。',
+      '布艺行业的 AI 客服与经营平台：小布承接顾客服务，米宝承接门店经营，四个终端共用数据底座。',
   },
   robots: {
     index: true,
