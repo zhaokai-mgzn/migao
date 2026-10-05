@@ -139,7 +139,7 @@ export default function ServicesPage() {
           <SectionHeading
             kicker="核心 AI 产品"
             title="小布服务顾客，米宝管理经营"
-            lead="小布与米宝读取门店真实数据：顾客问到的商品、订单与库存，与经营者在后台看到的完全一致。"
+            lead="小布与米宝读取真实经营数据：顾客问到的商品、订单与库存，与经营者在后台看到的完全一致。"
           />
 
           <div className="mt-14 space-y-8">

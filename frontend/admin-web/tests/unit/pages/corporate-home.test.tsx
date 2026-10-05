@@ -80,9 +80,9 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
 
   // ── 行业纵深 ──
 
-  it('renders 「一条窗帘订单跑完六步」的行业纵深链路', () => {
+  it('renders 「销售与生产的闭环」的行业纵深链路', () => {
     render(<HomePage />)
-    expect(screen.getByText('窗帘订单的六个环节')).toBeInTheDocument()
+    expect(screen.getByText('销售与生产的闭环')).toBeInTheDocument()
     for (const title of ['询价与算料', '下单', '生产', '入库', '发货', '售后与对账']) {
       expect(screen.getByText(title)).toBeInTheDocument()
     }
@@ -344,5 +344,35 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     ).toEqual([])
     const personified = findPersonifiedAi(text)
     expect(personified, `首页渲染文本出现拟人量词：${personified.join(' / ')}`).toEqual([])
+  })
+  it('米宝朝向口径：官网源码不得用「门店」框定米宝或 AI 读取的数据（issue #6379）', () => {
+    // 口径（src/config/ai-roles.ts，用户 2026-10-05 裁定）：米宝 = **企业智能生产管家**，
+    // 朝向是「企业生产与经营侧」。写成「门店经营」等于把它降级成**零售门店视角** ——
+    // 且米宝卡片里 `role` 刚显示「企业智能生产管家」，紧接着 brief 就说「面向门店经营」＝ 同卡自相矛盾。
+    // 这里扫**源码**而不是渲染文本：layout.tsx 的 OG / Twitter 描述不上屏，渲染文本判据扫不到它。
+    const BANNED = ['门店经营', '门店真实数据']
+    const hit = (text: string) => BANNED.filter((phrase) => text.includes(phrase))
+
+    // 判别力自证：病症样本必须命中、合规样本必须零命中（否则本判据是空断言）
+    expect(hit('面向门店经营：以自然语言问答交付商品、订单')).toEqual(['门店经营'])
+    expect(hit('小布与米宝读取门店真实数据')).toEqual(['门店真实数据'])
+    expect(hit('面向企业生产与经营：读取真实经营数据')).toEqual([])
+
+    const roots = [
+      'frontend/admin-web/src/app/(corporate)',
+      'frontend/admin-web/src/components/corporate',
+    ]
+    const offenders = execSync(
+      `git grep -n -F ${BANNED.map((b) => `-e '${b}'`).join(' ')} -- ${roots.map((r) => `'${r}'`).join(' ')} || true`,
+      { cwd: join(process.cwd(), '..', '..'), encoding: 'utf-8' },
+    )
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+
+    expect(
+      offenders,
+      `米宝朝向被写成门店视角（应改为「企业生产与经营」/「真实经营数据」）：${offenders.join('；')}`,
+    ).toEqual([])
   })
 })
