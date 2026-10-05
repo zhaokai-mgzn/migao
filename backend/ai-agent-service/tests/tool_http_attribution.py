@@ -89,7 +89,17 @@ _ANNOTATION_BACK_WINDOW = 400
 
 
 def _strip_java_comments(text: str) -> str:
-    return _JAVA_COMMENT_RE.sub(" ", text)
+    """把 Java 注释替换成**等长空格**（保持每个字符的下标不变）。
+
+    ⚠️ **必须等长**（issue #6367 包 P2 实测的坑）：早先实现是 `.sub(" ", text)`，
+    注释被**压成一个空格** ⇒ 掩码串比原文短得多（实测 7803 → 4528 字节），
+    于是「在掩码串上 `finditer` 拿到 `mm.end()`、再拿去切**原文**」会**整体错位**
+    （切到注释正文里 ⇒ 端点路径解析成空、幽灵端点照旧）。
+    等长掩码后，掩码串的下标与原文**逐位对应**，两类用法都安全：
+    ① 只在窗口内找 token（`_annotations_before` / `_class_permission`）；
+    ② 在掩码串上找注解位置、再用同一位置切原文取参数（`java_endpoints`）。
+    """
+    return _JAVA_COMMENT_RE.sub(lambda m: " " * (m.end() - m.start()), text)
 
 
 def _annotations_before(src: str, idx: int) -> str:
@@ -321,10 +331,16 @@ def java_endpoints(
             continue
         class_permission = _class_permission(src)
         class_base = ""
-        cm = _JavaParse._CLASS_MAPPING_RE.search(src)
-        if cm and cm.start() < src.find("class "):
+        # 🔴 注释必须先剥（**同一份** `_strip_java_comments`；掩码等长 ⇒ `mm.end()` 偏移对原文仍有效）：
+        # javadoc 里逐字写 `{@code @PostMapping("/x")}` 当说明时，不剥会被当成**真注解** ⇒ 同一个方法
+        # 多出**幽灵端点**（issue #6367 包 P2 实测：`ImageRecognitionController` 的类文档提了一句
+        # `{@code @PostMapping}` ⇒ `/api/admin/**` 无码端点现取 9 → 11，把「只许缩短」的台账顶红）。
+        # 与 `_annotations_before` / `_class_permission` 同源：那两处早就剥了，这里此前漏了。
+        masked = _strip_java_comments(src)
+        cm = _JavaParse._CLASS_MAPPING_RE.search(masked)
+        if cm and cm.start() < masked.find("class "):
             class_base = cm.group(1)
-        for mm in _JavaParse._METHOD_RE.finditer(src):
+        for mm in _JavaParse._METHOD_RE.finditer(masked):
             verb = mm.group(1).upper()
             ann_tail = src[mm.end() : mm.end() + 200]
             # 同注解内的 path（`@PostMapping("/x")` / `@PostMapping(value="/x")` /

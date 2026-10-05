@@ -66,7 +66,17 @@ ROLE_READ_ENDPOINTS: dict[str, str] = {
 }
 
 #: `/api/admin/**` 面上「无任何生效码」的端点**总数**现取上限（只许缩短；对照读数写进台账）。
-ADMIN_SCOPE_UNANNOTATED_CEILING = 10
+#:
+#: 10 → 11（issue #6367 包 P2，2026-10-05）：新增 `POST /api/admin/image-recognition/interpret`，
+#: 与既有 `POST /api/admin/image-recognition` **同族**（一个入口覆盖 `product:create` / `order:create`
+#: 两种写码 ⇒ `@RequirePermission` 表达不了分叉 ⇒ 命令式 `PermissionInterceptor.requirePermission(...)`），
+#: 在「按注解统计」的口径下**本条是实打实 +1** —— 已按本判据报错提示登记进既有台账
+#: `test_agent_permission_parity.py::UNANNOTATED_ENDPOINTS`（逐条带理由 + 机械兜底
+#: `ImageRecognitionInterpretControllerTest`），此处只把**读数上限**跟到现值。
+#: 🔴 这是**显式放宽**（diff 里看得见）、不是放宽判定：超出上限照旧红；
+#: 修法（让本判据认得命令式动态校验 ⇒ 这两个端点连同同类能一起从「无码」面里摘出去，
+#: 上限随之退回 10 甚至更低）见 issue #6378；未落地前**不得再涨**。
+ADMIN_SCOPE_UNANNOTATED_CEILING = 11
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 一、共用的静态归属机具（**不造第二套解析器**：issue #3570 的教训）

@@ -59,7 +59,8 @@ class ImageRecognitionClientTest {
 
     /** 无 Spring 上下文 ⇒ `@Value` 字段未注入，测试里显式给（同 Repo 既有做法 ReflectionTestUtils）。 */
     private ImageRecognitionClient client() {
-        ImageRecognitionClient client = new ImageRecognitionClient(restTemplate);
+        // 本文件只判 recognize ⇒ 两条（超时不同的）链路都塞同一个 mock（issue #6367 起构造函数两参）
+        ImageRecognitionClient client = new ImageRecognitionClient(restTemplate, restTemplate);
         ReflectionTestUtils.setField(client, "serviceToken", "test-service-token");
         ReflectionTestUtils.setField(client, "baseUrl", "http://ai-agent:8001");
         return client;
