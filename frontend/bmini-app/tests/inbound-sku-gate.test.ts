@@ -24,8 +24,9 @@ import {
 import { INBOUND_PAGE_SCOPE_FILES } from '../src/utils/inbound/gaps'
 import { BMINI_ROOT } from './helpers/h5PlatformLists'
 
-const SINGLE = { skuId: 9, productId: 'p1', productName: '遮光布', skuCode: 'MG-1001', colorName: '米白' }
-const OTHER = { skuId: 10, productId: 'p2', productName: '遮光布', skuCode: 'MG-1002', colorName: '米白' }
+// skuId 的出参形态是**字符串**（雪花号 > 2^53，issue #6340）⇒ 端侧类型与语料都是 string
+const SINGLE = { skuId: '9', productId: 'p1', productName: '遮光布', skuCode: 'MG-1001', colorName: '米白' }
+const OTHER = { skuId: '10', productId: 'p2', productName: '遮光布', skuCode: 'MG-1002', colorName: '米白' }
 
 /** 与 C2 同口径的纯判定（注入式红证用） */
 function prefillProblems(response: RecognizeLike, out: PrefillResult): string[] {
@@ -138,7 +139,7 @@ describe('SKU 匹配门禁与预填口径', () => {
   })
 
   it('C4 端侧只拦"结构上不可能成功"的：缺 SKU / 缺米数 / 未确认', () => {
-    const base = { productId: 'p1', skuId: 9, confirmed: true }
+    const base = { productId: 'p1', skuId: '9', confirmed: true }
     expect(checkDraftInput({ ...base, quantity: '60.5' }).ok).toBe(true)
     for (const empty of ['', '   ']) {
       const check = checkDraftInput({ ...base, quantity: empty })
@@ -163,7 +164,7 @@ describe('SKU 匹配门禁与预填口径', () => {
   })
 
   it('C4 未勾选「我确认」⇒ 不提交（§6.5 不做免确认）', () => {
-    const check = checkDraftInput({ productId: 'p1', skuId: 9, quantity: '60.5', confirmed: false })
+    const check = checkDraftInput({ productId: 'p1', skuId: '9', quantity: '60.5', confirmed: false })
     expect(check.ok).toBe(false)
     expect(check.message).toContain('我确认')
   })

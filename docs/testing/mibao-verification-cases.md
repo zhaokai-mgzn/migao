@@ -697,7 +697,7 @@
 真值: auth.login-lockout
 溯源: 2026-09-25 新增（issue #5531）：验收发现员工/工人凭据登录无失败计数（与短信侧 MAX_VERIFY_FAILS 不对称） ｜ tags: auth, brute_force, defense
 
-## B 端小程序域（31 case）
+## B 端小程序域（32 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1119,6 +1119,18 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-28 新增（issue #5759）：用户逐字裁定「本仓 bmini 没有 e2e 腿 要补，另一个观察（未修） 修掉」⇒（a）图标：「坐席」改用现成的列表字形、「数据」改用新建的柱状图字形（此前「坐席」与「问米宝」同图、「数据」借用 sessions）；（b）e2e：新增 B 端几何腿（复用 C 端基建与新鲜度护栏），把「底栏是否真的居中」从只能人工复测变成机器判据。边界如实登记：不做像素基线（darwin/linux 双平台基线本机生成不齐全）；iOS 安全区一侧仍靠复测；颜色 / 观感类回归无机器判据。 ｜ tags: bmini, tabbar, icons, e2e, geometry
+
+### BM-032. 工人拍照入库：雪花号 skuId 逐字原样回传（真实量级 2.1e18，> 2^53），端侧类型为 string 🔵
+```
+你: 工人在手机浏览器（bmini H5）拍/扫面料标签 → 识别命中既有 SKU → 核对米数 → 确认过账：提交体里的 skuId 必须与识别结果逐字相同（2.1e18 的雪花号，JS 的 Number 只有 2^53 精度）
+期望: direct_reply
+数据: 判据 1·🔴 实例（#6340 靶心）：frontend/bmini-app/tests/worker-inbound-page.test.tsx 的 C7 用例 —— 识别 mock 返回真实量级 skuId `2106900122848247810`（> 2^53 = 9007199254740991），断言 createInboundDraft 收到的 body.skuId **逐字等于**该字符串（`String(body.skuId)` 同值）；页面写回 `Number(chosenSku?.skuId)` ⇒ 红（末两位被吞成 …800）。玩具 id 测不出来 —— 那正是本洞当初溜过的原因（同 #5904）
+数据: 判据 2·端侧类型 = 字符串：frontend/bmini-app/src/utils/inbound/recognizeGate.ts 的 SkuMatch.skuId / DraftInput.skuId、frontend/bmini-app/src/services/workerInboundService.ts 的 InboundDraftRequest.skuId 均为 string（后端出参形态；类型写回 number ⇒ tsc 报错）
+数据: 判据 3·类级元守卫（同族进不来）：frontend/admin-web/tests/unit/lib/snowflake-id-not-number.test.ts 的语料根已参数化为 admin-web + bmini-app 两个根 —— `Number()/parseInt()/parseFloat()` 作用在 `.id` 形态成员上即红（未登记即红 / 登记陈旧即红 / 逐根反空跑）；单变量红证实跑：把 bmini 入库页那行改回 `Number(chosenSku?.skuId)` ⇒ 具名报出 `frontend/bmini-app/src/pages/worker/inbound/index.tsx`（命中的那一行 = 建草稿体里的 skuId 表达式）
+跳过: [backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/worker-inbound-page.test.tsx / vitest: frontend/admin-web/tests/unit/lib/snowflake-id-not-number.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-10-05 新增（issue #6340）：工人端「拍照入库」建单必失败 —— recognize 出参把雪花 skuId 当 JSON number 发出，页面 JSON.parse 当场丢精度 ⇒ 回传时服务端报「商品明细第 1 项的 SKU 不属于该商品（或不存在）」。根因两层：后端 WorkerInboundSkuMatch.skuId 等 6 处 DTO 字段漏 `@JsonSerialize(using = ToStringSerializer.class)`（同族 #5904 的前端侧已修、工人端与出参契约都还留着）+ bmini 页面写的是 `Number(chosenSku?.skuId)`。修复 = 后端补注解（出参字符串）+ 端侧类型改 string + 去 Number()。边界如实登记：运行时红转绿要**部署后**重放 seed-inbound-t25/probe-worker-skuid.mjs 才算闭环（本用例只覆盖单元/组件层）。 ｜ tags: bmini, inbound, backend-contract
 
 ## 分类域（3 case）
 
@@ -4431,7 +4443,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（62 case）
+## 订单域（63 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -5558,6 +5570,19 @@
 跳过: [backend-contract] 纯后端真库并发判据 + mapper 形态契约（无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：admin-api 单测面（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）
 ```
 溯源: 2026-10-04 新增（issue #6299，P1·库存并发超卖）。取号 = 现取最大号 + 1（OR-062；`scripts/next_case_id.py` 因 PR #6304 diff 超 20000 行读不到而判 `3 无法判定`，按仓内口径手取最大号 +1）。**红→绿（注入式双向对照）**：注入 = 把 `deductStock` 退回 `GREATEST(COALESCE(stock,0) - #{quantity}, 0) WHERE id = #{skuId} AND tenant_id = #{tenantId}`（无下限谓词 + 钳 0）；注入前 `成功数=1 落败=[422] 库存=10.0→2.0 台账=[#1{before=10.0, after=2.0}]` ⇒ 注入后 `成功数=2 落败=[] 库存=10.0→0.0 台账=[#1{before=10.0,after=2.0}, #2{before=8.0,after=0.0}]`（与本 issue 生产探针 W4 的 `statuses=[200,200] / 10.0→0.0` 逐字同形）+ 元守卫 2 条判红（`GREATEST` / 无下限谓词）；`GREATEST` 钳 0 一并删除（它把「扣不动」静默变成「扣到 0」，正是超卖的掩盖物）。 ｜ tags: order, inventory, concurrency, oversell, backend-contract, realdb
+
+### OR-063. 入库出参契约：本族 DTO 的雪花 id（skuId/itemId/明细行 id）序列化为 JSON 字符串，且新漏标进不来 🔵
+```
+你: 后台/工人端读取入库链路的出参（识别命中、草稿、入库单详情、批次、期初导入报告、标签详情）：其中的雪花 id 必须是字符串，JavaScript 侧才不丢精度
+期望: direct_reply
+数据: 判据 1·🔴 实例（参数化，6 个 DTO）：backend/admin-api/src/test/java/com/migao/admin/dto/LongIdSerializationTest.java 的 idLikeFields_above2pow53_shouldSerializeAsString —— WorkerInboundSkuMatch.skuId / WorkerInboundDraftView.Line.skuId / InboundOrderResponse.Item.id+skuId / InboundBatchView.id+skuId / OpeningImportReport.Row.skuId / InboundLabelView.itemId 逐个跑真 Jackson 序列化，断言该字段以**带引号的 JSON 字符串**形态出现（形如 `字段` + 冒号 + 引号 + 值 + 引号）且**不得**同时出现 bare number 形态；实例值用真实量级（2106900122848247810 / 2097126615461462018 > 2^53）
+数据: 判据 2·类级元守卫（新漏标进不来）：同文件 everyIdLikeLongFieldInScopeMustBeAnnotated —— **现取源码面**射程内（ID_LIKE_SCAN_SCOPE 6 个文件）每一个「id 形态（id / *Id / *ID）的 Long 字段」，没有 `@JsonSerialize(using = ToStringSerializer.class)` 即红并具名打印 `文件:行 → 字段`；REGISTERED_EXCEPTIONS 是唯一出口且**只许缩短**（现取为空 ⇒ 一处都不许）
+数据: 判据 3·反空跑 + 判别力自证：scopeMustBeNonEmptyAndAnnotationReallyDetected 断言射程内至少抽到 8 个带注解的 id 形态字段（抽取口径漂移 ⇒ 红，不许静默退化成假绿）；extractorDetectsBothBadShapes 在内存里注入「缺注解 / 注解错位到相邻字段 / 非 id 形态」三种形态，各自给出正确判定
+数据: 判据 4·业务数值不受牵连：stock/quantity 这类业务数值仍是 JSON number（stock_shouldStayNumber + 既有 productSkuId_above2pow53 断言逐字保留）
+跳过: [backend-contract] 确定性 Java 单测（DTO 序列化契约），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-10-05 新增（issue #6340）：本类从「只点名两个 DTO」升级为「实例参数化 + 源码面类级元守卫 + 反空跑 + 判别力自证」——原形态下新 DTO 漏标不会红（#6340 就是这样落进来的）。同 PR 补齐被约束对象 6 个字段。边界如实登记：射程 = 该 6 个文件（issue #6340 清点的同族 + 同一入库读面的 InboundLabelView.itemId）；射程外新增雪花 id DTO 不拦（有意：不做全包枚举以免既有业务 Long 成为噪声），扩射程 = 加一行 + 同 PR 补注解。 ｜ tags: inventory, inbound, backend-contract, serialization
 
 ## 加工项域（27 case）
 
@@ -6777,7 +6802,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6222，P3·读面）：主会话在未修复构建 :8080 上逐字复现 —— `GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行（after-sales 5 / stock-ledger 389 同款）。机制：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（`pageSize < 0` 直接 return ⇒ 不追加 LIMIT、**不执行 count 查询**）⇒ 拦截器只填 `records`、`total` 停在默认 0；被 `setMaxLimit(500)` 约束的只是**正数** size ⇒ 行数不设上界。危害：`total=0` 让客户端分页器立刻认为已到末页 ⇒ 「有数据却显示为空 / 翻不动页」。**口径裁定 = 显式拒绝（400）而非钳到合法下界**，三条理由：① 病根是「非法入参**不静默**」，钳位仍是静默（把「静默给错数据」换成「静默改口径」）；② 本仓已有同族显式拒绝范式（`StockQuantity.requireOneDecimal` / `MoneyScale.requireTwoDecimals`(#6221) / 负数数量 ⇒ 400）；③ 钳位会掩盖调用方（含 Agent / 前端）的真实缺陷。**为什么这样选单点**（最少代码阶梯）：分页入口有两个族（`@RequestParam long size` 控制器方法现取 22 个 + 自带 page/size 字段的查询 DTO 三个、**无共同基类**），且 DTO 属性名不保证等于 HTTP 参数名（`ProductQueryRequest.productId` 对 `@RequestParam productCode`）⇒ DTO 侧做准入要么靠 `WebDataBinder` 名字启发（会漏）、要么按属性名校验（对不上）；两族**都必须**经同一个 HTTP 参数集 ⇒ 唯一真正单点 = Servlet 层参数闸（`prehandle` 取参 + `PaginationParamGate` 判定），并在 WebConfig 注册（排在授权/归属之后，沿用 F3 #6063 与 #6158 的次序纪律）。**类级固化**：台账 25 条分页入口 + 6 条判据 + 5 种坏形态判别力自证（未登记即红 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 + 只改措辞不红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-070（origin/main@dacac7471:001-067,069 · PR #6227:068 ⇒ 最小空闲 070）。 ｜ tags: api, pagination, fail-closed, backend-contract, negative-size
 
-## 商品域（111 case）
+## 商品域（112 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -8291,6 +8316,21 @@
 真值: inbound-order-flow.draft-then-post
 溯源: 2026-10-04 新增（issue #6300，P2·台账并发同基）。取号 = 现取最大号 + 1（`scripts/next_case_id.py` 因 PR #6304 diff 超 20000 行读不到而判 `3 无法判定`，按仓内口径手取）。⚠️ **跨 refs 撞号（rebase 时实测）**：本单原取 **PR-122**，与已合并的 #6302（PR #6310，`ProductSkuCodeLengthAdmissionTest`）**同占 PR-122** —— 按仓内裁定「PR 号小 / 先开者保留」（#6310 < #6313，且它已在 main）⇒ 本单让号为 **PR-123**（`git grep` 复核 origin/main 与本工作区均无 PR-123 占用）。**红→绿（注入式双向对照）**：注入 = 把 `post` 的台账读数退回 `beforeQty = StockQuantity.orZero(sku.getStock())` / `afterQty = beforeQty.add(quantity)`（快照读 + 陈旧 before/after）；注入前 `#2{before=50.0,after=60.0} / #3{before=60.0,after=75.0}`（链接）⇒ 注入后 `#2{before=50.0,after=60.0} / #3{before=50.0,after=65.0}`（**两行同基**、`assertChain` 判 red，与本 issue 生产探针 W3 的 `[{before=65.0,after=75.0},{before=65.0,after=80.0}]` 同形）。修法 = `receiveStock` 改 `@Select` + CTE + `RETURNING beforeQuantity/afterQuantity`（配 `@InterceptorIgnore(tenantLine)` + 显式 `tenant_id` 谓词 —— MyBatis-Plus 3.5.16 的多租户拦截器进 `processSelect` 后对 CTE 里的 UPDATE 抛 `ClassCastException: ParenthesedUpdate cannot be cast to ParenthesedSelect`，实测撞过），台账读数与改动**同源**。 ｜ tags: inventory, inbound, ledger, concurrency, backend-contract, realdb
 
+### PR-015. 雪花号 id 不许经过 Number()：源码面元守卫射程 = admin-web + bmini-app（两个语料根） 🔵
+```
+你: 商家/工人在任何前端面提交带雪花 id 的表单（商品 SKU 选择、入库建单、派工候选）：id 必须逐字原样透传，不得在端侧转成 double
+期望: direct_reply
+数据: 判据 1·正控：检测器对 `Number(sku.id)` / `parseInt(o.productId)` / `parseFloat(x.skuId)` 必须报出（没有这条，「零命中」可能只是检测器瞎了）
+数据: 判据 2·负控：`Number(item.quantity)`（非 id）/ `String(sku.id)`（没转 double）/ `sku.id`（没调用）/ `String(chosenSku?.skuId)`（#6340 修好后的形态）/ 注释里的写法 —— 都不得判违规
+数据: 判据 3·🔴 未登记即红：**两个语料根**（frontend/admin-web/src/** + frontend/bmini-app/src/**）真实语料命中且不在登记表 ⇒ 红并具名打印 `文件:行 → 代码`；登记表当前为空 = 一处都不许
+数据: 判据 4·登记陈旧即红（登记过却已无命中 ⇒ 红，留着会让守卫悄悄放宽）
+数据: 判据 5·反空跑（**逐根**）：每个根的语料文件数必须 > 50（根写错 / 目录改名 ⇒ 红，而不是「那个根 0 命中」的假绿）
+数据: 判据 6·射程自证：射程声明必须恰好是 admin-web + bmini-app 两个根，且 bmini 的入库页确实被扫到
+跳过: [backend-contract] 确定性源码面守卫（vitest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-23 创建（issue #5904 落码时未单开用例，本行 2026-10-05 补登记，issue #6340）：原语料根只有 frontend/admin-web/src ⇒ bmini-app 不在射程内，工人端 `Number(chosenSku?.skuId)` 一处分都不扣（#6340 实证）。2026-10-05（issue #6340）：语料根**参数化**为两个根（一份规则、不复制第二份实现）+ 逐根反空跑 + 射程自证判据（⑥）；单变量红证实跑：把 bmini 入库页改回 Number() ⇒ 判据 3 具名报出 `frontend/bmini-app/src/pages/worker/inbound/index.tsx` 的建草稿体 `skuId: Number(chosenSku?.skuId)` 那一行。边界如实登记：只认 Number/parseInt/parseFloat 三种显式转换（`+x.id` / `x.id*1` / `BigInt(x.id)` 不在面内）；判源码形态、判不了运行期精度（那一半由页面级实例判据承担）；frontend/mini-app 与 worker-h5 未纳入射程（本轮未清点，不为其背书）。 ｜ tags: snowflake-id, precision, meta-guard, backend-contract
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -9685,13 +9725,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：673（活跃 134，跳过 539）
-- tier 分布：smoke 12 / normal 619 / adversarial 32
+- 用例总数：676（活跃 134，跳过 542）
+- tier 分布：smoke 12 / normal 622 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
 - 登录认证域：11
-- B 端小程序域：31
+- B 端小程序域：32
 - 分类域：3
 - 对话边界域：44
 - 跨域：3
@@ -9704,10 +9744,10 @@
 - 杂项域：84
 - 商家入驻域：6
 - 领域本体域：4
-- 订单域：62
+- 订单域：63
 - 加工项域：27
 - 加工单域：61
-- 商品域：111
+- 商品域：112
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4

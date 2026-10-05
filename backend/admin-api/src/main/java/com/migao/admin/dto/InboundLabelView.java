@@ -1,6 +1,8 @@
 package com.migao.admin.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -27,7 +29,8 @@ public class InboundLabelView {
     /** 入库单号 {@code RK-yyyyMMdd-NNNN} */
     private String inboundNo;
 
-    /** 明细行 id（一个 SKU 行 = 一个批次 = 一张标签） */
+    /** 明细行 id（一个 SKU 行 = 一个批次 = 一张标签；雪花号，> 2^53）⇒ 字符串出参（issue #6340）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long itemId;
 
     /** 货号快照 */

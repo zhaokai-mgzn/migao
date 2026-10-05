@@ -1,5 +1,7 @@
 package com.migao.admin.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -17,7 +19,14 @@ import java.math.BigDecimal;
 @Data
 public class WorkerInboundSkuMatch {
 
-    /** SKU ID（库存权威粒度） */
+    /**
+     * SKU ID（库存权威粒度）。
+     *
+     * <p>🔴 雪花号（≈2.1e18）**超过 JS 安全整数 2^53**，序列化为字符串防止前端精度丢失
+     * （本字段是 issue #6340 的主犯：工人端 recognize 出参按 JSON number 发出 ⇒ 页面
+     * {@code JSON.parse} 当场吞掉末两位 ⇒ 回传时服务端查不到该 SKU）。见 {@code LongIdSerializationTest}。</p>
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long skuId;
 
     /** 商品 ID */

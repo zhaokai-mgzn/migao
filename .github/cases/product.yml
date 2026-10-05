@@ -4756,3 +4756,37 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PR-015
+    legacy_id: ""
+    title: "雪花号 id 不许经过 Number()：源码面元守卫射程 = admin-web + bmini-app（两个语料根）"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - snowflake-id
+      - precision
+      - meta-guard
+      - backend-contract
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "商家/工人在任何前端面提交带雪花 id 的表单（商品 SKU 选择、入库建单、派工候选）：id 必须逐字原样透传，不得在端侧转成 double"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·正控：检测器对 `Number(sku.id)` / `parseInt(o.productId)` / `parseFloat(x.skuId)` 必须报出（没有这条，「零命中」可能只是检测器瞎了）"
+      - "判据 2·负控：`Number(item.quantity)`（非 id）/ `String(sku.id)`（没转 double）/ `sku.id`（没调用）/ `String(chosenSku?.skuId)`（#6340 修好后的形态）/ 注释里的写法 —— 都不得判违规"
+      - "判据 3·🔴 未登记即红：**两个语料根**（frontend/admin-web/src/** + frontend/bmini-app/src/**）真实语料命中且不在登记表 ⇒ 红并具名打印 `文件:行 → 代码`；登记表当前为空 = 一处都不许"
+      - "判据 4·登记陈旧即红（登记过却已无命中 ⇒ 红，留着会让守卫悄悄放宽）"
+      - "判据 5·反空跑（**逐根**）：每个根的语料文件数必须 > 50（根写错 / 目录改名 ⇒ 红，而不是「那个根 0 命中」的假绿）"
+      - "判据 6·射程自证：射程声明必须恰好是 admin-web + bmini-app 两个根，且 bmini 的入库页确实被扫到"
+    skip_reason: "[backend-contract] 确定性源码面守卫（vitest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 创建（issue #5904 落码时未单开用例，本行 2026-10-05 补登记，issue #6340）：原语料根只有 frontend/admin-web/src ⇒ bmini-app 不在射程内，工人端 `Number(chosenSku?.skuId)` 一处分都不扣（#6340 实证）。2026-10-05（issue #6340）：语料根**参数化**为两个根（一份规则、不复制第二份实现）+ 逐根反空跑 + 射程自证判据（⑥）；单变量红证实跑：把 bmini 入库页改回 Number() ⇒ 判据 3 具名报出 `frontend/bmini-app/src/pages/worker/inbound/index.tsx` 的建草稿体 `skuId: Number(chosenSku?.skuId)` 那一行。边界如实登记：只认 Number/parseInt/parseFloat 三种显式转换（`+x.id` / `x.id*1` / `BigInt(x.id)` 不在面内）；判源码形态、判不了运行期精度（那一半由页面级实例判据承担）；frontend/mini-app 与 worker-h5 未纳入射程（本轮未清点，不为其背书）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/snowflake-id-not-number.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []

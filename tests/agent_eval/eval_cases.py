@@ -1617,6 +1617,24 @@ _CASE_BM_031 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-032 [NORMAL] 工人拍照入库：雪花号 skuId 逐字原样回传（真实量级 2.1e18，> 2^53），端侧类型为 string（源: cases/bmini.yml）──
+_CASE_BM_032 = EvalCase(
+    id='BM-032',
+    legacy_id='',
+    title='工人拍照入库：雪花号 skuId 逐字原样回传（真实量级 2.1e18，> 2^53），端侧类型为 string',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人在手机浏览器（bmini H5）拍/扫面料标签 → 识别命中既有 SKU → 核对米数 → 确认过账：提交体里的 skuId 必须与识别结果逐字相同（2.1e18 的雪花号，JS 的 Number 只有 2^53 精度）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 实例（#6340 靶心）：frontend/bmini-app/tests/worker-inbound-page.test.tsx 的 C7 用例 —— 识别 mock 返回真实量级 skuId `2106900122848247810`（> 2^53 = 9007199254740991），断言 createInboundDraft 收到的 body.skuId **逐字等于**该字符串（`String(body.skuId)` 同值）；页面写回 `Number(chosenSku?.skuId)` ⇒ 红（末两位被吞成 …800）。玩具 id 测不出来 —— 那正是本洞当初溜过的原因（同 #5904）', '判据 2·端侧类型 = 字符串：frontend/bmini-app/src/utils/inbound/recognizeGate.ts 的 SkuMatch.skuId / DraftInput.skuId、frontend/bmini-app/src/services/workerInboundService.ts 的 InboundDraftRequest.skuId 均为 string（后端出参形态；类型写回 number ⇒ tsc 报错）', '判据 3·类级元守卫（同族进不来）：frontend/admin-web/tests/unit/lib/snowflake-id-not-number.test.ts 的语料根已参数化为 admin-web + bmini-app 两个根 —— `Number()/parseInt()/parseFloat()` 作用在 `.id` 形态成员上即红（未登记即红 / 登记陈旧即红 / 逐根反空跑）；单变量红证实跑：把 bmini 入库页那行改回 `Number(chosenSku?.skuId)` ⇒ 具名报出 `frontend/bmini-app/src/pages/worker/inbound/index.tsx`（命中的那一行 = 建草稿体里的 skuId 表达式）'],
+    skip_reason='[backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/worker-inbound-page.test.tsx / vitest: frontend/admin-web/tests/unit/lib/snowflake-id-not-number.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -7108,6 +7126,24 @@ _CASE_OR_062 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-063 [NORMAL] 入库出参契约：本族 DTO 的雪花 id（skuId/itemId/明细行 id）序列化为 JSON 字符串，且新漏标进不来（源: cases/order.yml）──
+_CASE_OR_063 = EvalCase(
+    id='OR-063',
+    legacy_id='',
+    title='入库出参契约：本族 DTO 的雪花 id（skuId/itemId/明细行 id）序列化为 JSON 字符串，且新漏标进不来',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['后台/工人端读取入库链路的出参（识别命中、草稿、入库单详情、批次、期初导入报告、标签详情）：其中的雪花 id 必须是字符串，JavaScript 侧才不丢精度'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 实例（参数化，6 个 DTO）：backend/admin-api/src/test/java/com/migao/admin/dto/LongIdSerializationTest.java 的 idLikeFields_above2pow53_shouldSerializeAsString —— WorkerInboundSkuMatch.skuId / WorkerInboundDraftView.Line.skuId / InboundOrderResponse.Item.id+skuId / InboundBatchView.id+skuId / OpeningImportReport.Row.skuId / InboundLabelView.itemId 逐个跑真 Jackson 序列化，断言该字段以**带引号的 JSON 字符串**形态出现（形如 `字段` + 冒号 + 引号 + 值 + 引号）且**不得**同时出现 bare number 形态；实例值用真实量级（2106900122848247810 / 2097126615461462018 > 2^53）', '判据 2·类级元守卫（新漏标进不来）：同文件 everyIdLikeLongFieldInScopeMustBeAnnotated —— **现取源码面**射程内（ID_LIKE_SCAN_SCOPE 6 个文件）每一个「id 形态（id / *Id / *ID）的 Long 字段」，没有 `@JsonSerialize(using = ToStringSerializer.class)` 即红并具名打印 `文件:行 → 字段`；REGISTERED_EXCEPTIONS 是唯一出口且**只许缩短**（现取为空 ⇒ 一处都不许）', '判据 3·反空跑 + 判别力自证：scopeMustBeNonEmptyAndAnnotationReallyDetected 断言射程内至少抽到 8 个带注解的 id 形态字段（抽取口径漂移 ⇒ 红，不许静默退化成假绿）；extractorDetectsBothBadShapes 在内存里注入「缺注解 / 注解错位到相邻字段 / 非 id 形态」三种形态，各自给出正确判定', '判据 4·业务数值不受牵连：stock/quantity 这类业务数值仍是 JSON number（stock_shouldStayNumber + 既有 productSkuId_above2pow53 断言逐字保留）'],
+    skip_reason='[backend-contract] 确定性 Java 单测（DTO 序列化契约），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract', 'serialization'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -10800,6 +10836,24 @@ _CASE_PR_123 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-015 [NORMAL] 雪花号 id 不许经过 Number()：源码面元守卫射程 = admin-web + bmini-app（两个语料根）（源: cases/product.yml）──
+_CASE_PR_015 = EvalCase(
+    id='PR-015',
+    legacy_id='',
+    title='雪花号 id 不许经过 Number()：源码面元守卫射程 = admin-web + bmini-app（两个语料根）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/工人在任何前端面提交带雪花 id 的表单（商品 SKU 选择、入库建单、派工候选）：id 必须逐字原样透传，不得在端侧转成 double'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·正控：检测器对 `Number(sku.id)` / `parseInt(o.productId)` / `parseFloat(x.skuId)` 必须报出（没有这条，「零命中」可能只是检测器瞎了）', '判据 2·负控：`Number(item.quantity)`（非 id）/ `String(sku.id)`（没转 double）/ `sku.id`（没调用）/ `String(chosenSku?.skuId)`（#6340 修好后的形态）/ 注释里的写法 —— 都不得判违规', '判据 3·🔴 未登记即红：**两个语料根**（frontend/admin-web/src/** + frontend/bmini-app/src/**）真实语料命中且不在登记表 ⇒ 红并具名打印 `文件:行 → 代码`；登记表当前为空 = 一处都不许', '判据 4·登记陈旧即红（登记过却已无命中 ⇒ 红，留着会让守卫悄悄放宽）', '判据 5·反空跑（**逐根**）：每个根的语料文件数必须 > 50（根写错 / 目录改名 ⇒ 红，而不是「那个根 0 命中」的假绿）', '判据 6·射程自证：射程声明必须恰好是 admin-web + bmini-app 两个根，且 bmini 的入库页确实被扫到'],
+    skip_reason='[backend-contract] 确定性源码面守卫（vitest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['snowflake-id', 'precision', 'meta-guard', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -12701,6 +12755,7 @@ ALL_CASES = (
     _CASE_BM_029,
     _CASE_BM_030,
     _CASE_BM_031,
+    _CASE_BM_032,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
@@ -12990,6 +13045,7 @@ ALL_CASES = (
     _CASE_OR_057,
     _CASE_OR_060,
     _CASE_OR_062,
+    _CASE_OR_063,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
@@ -13189,6 +13245,7 @@ ALL_CASES = (
     _CASE_PR_121,
     _CASE_PR_122,
     _CASE_PR_123,
+    _CASE_PR_015,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
