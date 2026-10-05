@@ -36,3 +36,41 @@ export const COLLOQUIAL_MARKERS = [
 export function findColloquialMarkers(text: string): string[] {
   return COLLOQUIAL_MARKERS.filter((marker) => text.includes(marker))
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * 第二批病症（issue #6366，2026-10-05 用户逐字）
+ *
+ * > 主页文案还是AI味很重，很多一套，一次，一个这种文案，拉低了质感
+ * > 还有一位，两位这种口语化的太多了
+ *
+ * 与第一批的差别：第一批裁的是**词**，这批裁的是**量词用法** ——
+ * 「一 + 量词」当修辞（一套经营平台 / 一次咨询 / 一张订单）会让每个标题共用一个模板；
+ * 用「位」量 AI 是拟人敬语，AI 不是人。两者都是 B 端官网口径的减分项。
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * 「一 + 量词」修辞用法。
+ *
+ * ⚠️ **只裁 `一`**：事实计数（「六个能力域」「4 个终端」「至少10个字符」）量词是 `个`/`项`，
+ * 有信息量、不是排比，不在此表。`一` 才是把标题串成同一个模板的那个字。
+ */
+const QUANTIFIER_RHETORIC_RE = /一[套次个条张名种层台步块份]/g
+
+/** 返回命中（去重、按首次出现序）；空数组 = 合规。 */
+export function findQuantifierRhetoric(text: string): string[] {
+  return Array.from(new Set(text.match(QUANTIFIER_RHETORIC_RE) ?? []))
+}
+
+/**
+ * 拟人量词：拿「位」量 AI（AI 不是人）。
+ *
+ * 用**正则**而非字面量清单：`位` 前面可以是「两 / 一 / 2」等多种写法，
+ * 枚举字面量会互相重叠（`两位 AI 助手` 会同时命中 `两位 AI` 与 `位 AI 助手`）
+ * ⇒ 自证断言没法写死预期值。
+ */
+const PERSONIFIED_AI_RE = /[0-9一两二三四五六七八九十]+\s?位\s?(?:AI|助手)/g
+
+/** 返回命中的拟人量词（去重、按首次出现序）；空数组 = 合规。 */
+export function findPersonifiedAi(text: string): string[] {
+  return Array.from(new Set(text.match(PERSONIFIED_AI_RE) ?? []))
+}

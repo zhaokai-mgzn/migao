@@ -20,7 +20,7 @@ export const helpItems = [
     icon: MessagesSquare,
     title: '沟通 AI 客服边界',
     description:
-      '哪些环节交给 AI、哪些保留人工、敏感事项如何处置，我们按您的行业与客单价给出具体建议，而非一张功能表。',
+      '哪些环节交给 AI、哪些保留人工、敏感事项如何处置，我们按您的行业与客单价给出具体建议，而非功能清单。',
   },
   {
     icon: Users,

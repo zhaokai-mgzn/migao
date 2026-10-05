@@ -10,7 +10,11 @@ vi.mock('next/link', () => ({
 }))
 
 import ContactPage from '@/app/(corporate)/contact/page'
-import { findColloquialMarkers } from './copy-voice-banlist'
+import {
+  findColloquialMarkers,
+  findPersonifiedAi,
+  findQuantifierRhetoric,
+} from './copy-voice-banlist'
 
 describe('CorporateContactPage（官网联系页 v4：只保留在线留言 + 常见问题，issue #6291 / #6326）', () => {
   it('renders page header', () => {
@@ -132,5 +136,26 @@ describe('CorporateContactPage（官网联系页 v4：只保留在线留言 + �
     const { container } = render(<ContactPage />)
     const hits = findColloquialMarkers(container.textContent ?? '')
     expect(hits, `联系我们页渲染文本出现 AI 口语词：${hits.join(' / ')}`).toEqual([])
+  })
+  // ── 文案质感：量化排比与拟人量词（issue #6366）──
+
+  it('文案质感：联系我们页渲染文本无量化排比、无拟人量词', () => {
+    const { container } = render(<ContactPage />)
+    const text = container.textContent ?? ''
+
+    // 判别力自证：病症样本必须被检出、合规样本必须零命中（否则本判据是空断言）
+    expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
+    expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
+    expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
+    expect(findPersonifiedAi('小布与米宝')).toEqual([])
+
+    // 真实语料
+    const quantifiers = findQuantifierRhetoric(text)
+    expect(
+      quantifiers,
+      `联系我们页渲染文本出现量化排比：${quantifiers.join(' / ')}`,
+    ).toEqual([])
+    const personified = findPersonifiedAi(text)
+    expect(personified, `联系我们页渲染文本出现拟人量词：${personified.join(' / ')}`).toEqual([])
   })
 })

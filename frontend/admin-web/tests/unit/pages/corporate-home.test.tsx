@@ -7,7 +7,11 @@ vi.mock('next/link', () => ({
 }))
 
 import HomePage from '@/app/(corporate)/page'
-import { findColloquialMarkers } from './copy-voice-banlist'
+import {
+  findColloquialMarkers,
+  findPersonifiedAi,
+  findQuantifierRhetoric,
+} from './copy-voice-banlist'
 import { AI_ROLES } from '@/config/ai-roles'
 import { readFileSync } from 'fs'
 import { join } from 'path'
@@ -18,8 +22,8 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
 
   it('renders hero：布艺行业经营平台定位 + 双 AI 主标', () => {
     render(<HomePage />)
-    expect(screen.getByText(/两位 AI 助手，一套经营平台/)).toBeInTheDocument()
-    expect(screen.getByText(/覆盖布艺经营的全流程/)).toBeInTheDocument()
+    expect(screen.getByText(/AI 客服与经营系统/)).toBeInTheDocument()
+    expect(screen.getByText(/覆盖布艺经营全流程/)).toBeInTheDocument()
   })
 
   it('renders company name and 布艺行业 AI 经营平台 positioning in hero badge', () => {
@@ -28,7 +32,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     expect(screen.getByText(/布艺行业 AI 经营平台/)).toBeInTheDocument()
   })
 
-  it('renders hero description：两位 AI 的分工规格句', () => {
+  it('renders hero description：小布与米宝的分工规格句', () => {
     render(<HomePage />)
     expect(
       screen.getByText(/顾客侧由小布承接：咨询应答、算料报价、下单、物流查询与售后受理/)
@@ -55,7 +59,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
 
   it('renders 双 AI 区块：能力清单 + 能力边界', () => {
     render(<HomePage />)
-    expect(screen.getByText(/一位面向经营，一位面向顾客/)).toBeInTheDocument()
+    expect(screen.getByText(/顾客侧服务，经营侧管理/)).toBeInTheDocument()
     expect(screen.getAllByText('米宝').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('企业智能生产管家').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('小布').length).toBeGreaterThanOrEqual(1)
@@ -78,7 +82,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
 
   it('renders 「一条窗帘订单跑完六步」的行业纵深链路', () => {
     render(<HomePage />)
-    expect(screen.getByText('一张窗帘订单的六个环节')).toBeInTheDocument()
+    expect(screen.getByText('窗帘订单的六个环节')).toBeInTheDocument()
     for (const title of ['询价与算料', '下单', '生产', '入库', '发货', '售后与对账']) {
       expect(screen.getByText(title)).toBeInTheDocument()
     }
@@ -100,7 +104,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
 
   it('renders 能力地图：六个能力域与独立入口（菜单名与 config/menu.ts 一致）', () => {
     render(<HomePage />)
-    expect(screen.getByText('一套后台，六个能力域')).toBeInTheDocument()
+    expect(screen.getByText('覆盖经营全链路的能力域')).toBeInTheDocument()
     for (const domain of ['工作台', '客户服务', '交易管理', '生产管理', '仓储与物料', '组织管理']) {
       expect(screen.getAllByText(domain).length).toBeGreaterThanOrEqual(1)
     }
@@ -191,9 +195,9 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     expect(screen.queryByText('1-3 个工作日内完成审核')).not.toBeInTheDocument()
   })
 
-  it('renders bottom CTA：数分钟内完成开通，两位 AI 同步上线', () => {
+  it('renders bottom CTA：数分钟内完成开通，小布与米宝同步上线', () => {
     render(<HomePage />)
-    expect(screen.getByText(/数分钟内完成开通，两位 AI 同步上线/)).toBeInTheDocument()
+    expect(screen.getByText(/数分钟内完成开通，小布与米宝同步上线/)).toBeInTheDocument()
     expect(screen.getByText(/经 AI 自动甄别后秒级返回结果/)).toBeInTheDocument()
   })
 
@@ -235,7 +239,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
       '管住',
       '直说',
     ])
-    expect(findColloquialMarkers('两位 AI 助手，一套经营平台')).toEqual([])
+    expect(findColloquialMarkers('AI 客服与经营系统')).toEqual([])
   })
 
   // ── 双 AI 定位标签的单一源（issue #6330）──
@@ -319,5 +323,26 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
       offenders,
       `旧定位标签残留在白名单之外（应改到 AI_ROLES 口径，或说明理由后进白名单）：${offenders.join('、')}`,
     ).toEqual([])
+  })
+  // ── 文案质感：量化排比与拟人量词（issue #6366）──
+
+  it('文案质感：首页渲染文本无量化排比、无拟人量词', () => {
+    const { container } = render(<HomePage />)
+    const text = container.textContent ?? ''
+
+    // 判别力自证：病症样本必须被检出、合规样本必须零命中（否则本判据是空断言）
+    expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
+    expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
+    expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
+    expect(findPersonifiedAi('小布与米宝')).toEqual([])
+
+    // 真实语料
+    const quantifiers = findQuantifierRhetoric(text)
+    expect(
+      quantifiers,
+      `首页渲染文本出现量化排比：${quantifiers.join(' / ')}`,
+    ).toEqual([])
+    const personified = findPersonifiedAi(text)
+    expect(personified, `首页渲染文本出现拟人量词：${personified.join(' / ')}`).toEqual([])
   })
 })

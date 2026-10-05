@@ -23,7 +23,7 @@ import {
 } from '@/components/corporate/capability-map'
 
 export const metadata: Metadata = {
-  title: '产品与服务 — 两位 AI 助手与全链路经营平台',
+  title: '产品与服务 — AI 客服、经营助手与全链路经营平台',
   description:
     `米高产品全景：顾客侧小布${AI_ROLES.xiaobu}，经营侧米宝${AI_ROLES.mibao}；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖商品、客户、交易、生产、仓储、组织六个能力域。`,
 }
@@ -123,23 +123,23 @@ export default function ServicesPage() {
     <>
       <PageHero
         kicker="产品与服务"
-        title="两位 AI 助手与全链路经营平台"
-        lead="顾客侧由小布承接服务，经营侧由米宝承接管理；后端由商品、客户、交易、生产、仓储、组织六个能力域支撑，四个终端共用同一套数据。"
+        title="小布与米宝，以及全链路经营平台"
+        lead="顾客侧由小布承接服务，经营侧由米宝承接管理；后端由商品、客户、交易、生产、仓储、组织六个能力域支撑，四个终端共用数据底座。"
         chips={[
-          '2 位 AI 助手',
+          '2 个 AI：小布与米宝',
           `6 个能力域 · ${menuItemCount} 项功能`,
           '4 个终端',
           '算料 · 工序 · 批次 · 计件',
         ]}
       />
 
-      {/* ── 两位 AI ─────────────────────────────────────────── */}
+      {/* ── 小布与米宝 ──────────────────────────────────────── */}
       <section className="bg-white py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="核心 AI 产品"
-            title="一位对内提效，一位对外服务"
-            lead="两位 AI 共用同一套业务数据：顾客问到的商品、订单与库存，与经营者在后台看到的完全一致。"
+            title="小布服务顾客，米宝管理经营"
+            lead="小布与米宝读取门店真实数据：顾客问到的商品、订单与库存，与经营者在后台看到的完全一致。"
           />
 
           <div className="mt-14 space-y-8">
@@ -185,7 +185,7 @@ export default function ServicesPage() {
           <SectionHeading
             kicker="四个终端"
             title="四类角色，四个入口"
-            lead="同一租户、同一套数据，按角色提供不同入口与权限，车间工人无需使用管理后台。"
+            lead="同一租户、同源数据，按角色提供不同入口与权限，车间工人无需使用管理后台。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {terminals.map((terminal) => (

@@ -138,7 +138,7 @@ export const capabilityDomains: CapabilityDomain[] = [
       },
       {
         name: '工艺配置',
-        detail: '工序库（裁剪 / 车位 / 后整）与工艺路线合并成一个入口；支持行业模板补套。',
+        detail: '工序库（裁剪 / 车位 / 后整）与工艺路线合并为统一入口；支持行业模板补套。',
         icon: Route,
       },
       {
