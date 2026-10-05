@@ -12651,6 +12651,24 @@ _CASE_UI_083 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端用例：前置 = `frontend/admin-web/src/components/layout/Header.tsx` 与两个 vitest 文件同时存在、且被 vitest 正常收集；前置由测试自身持有（文件缺失 / 改名即直接红，不表现成「agent 不干活」），不依赖共享夹具 ⇒ agent-eval 栈不跑它',
 )
 
+# ── UI-084 [NORMAL] B 端米宝回复富文本渲染 — admin-web 软换行不折段 + bmini 粗体/列表不裸符号（用户实测截图，C 端 UI-042 的同族补课）（源: cases/ui.yml）──
+_CASE_UI_084 = EvalCase(
+    id='UI-084',
+    legacy_id='',
+    title='B 端米宝回复富文本渲染 — admin-web 软换行不折段 + bmini 粗体/列表不裸符号（用户实测截图，C 端 UI-042 的同族补课）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-05 实测截图 + 逐字：「这个回复是不是没排版」—— 米宝 capabilities 能力清单（每行一条、末尾单个换行）在 admin-web 聊天气泡里被折成一整段无分段长文；同句文案在小程序端则是 `**` 与 `- ` 裸符号'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·admin-web 软换行：frontend/admin-web/src/components/chat/MessageList.tsx 的 ReactMarkdown 挂 remark-breaks —— 段落内 3 个换行 ⇒ 3 个 <br>（改前实测 0 个）、空行分段 ⇒ 2 个 <p>、**强调** 仍走 <strong>、行内单个 * 不被当强调吞掉。执行点 = frontend/admin-web/tests/unit/components/chat-soft-breaks.test.tsx', '判据 2·bmini 富文本：frontend/bmini-app/src/utils/richText.ts 的 parseRichText（成对 **x** ⇒ bold 段、未闭合 ** 原样保留 = 流式安全、单个 * 不误吞、- 与 • 开头 ⇒ bullet、空行保留）+ frontend/bmini-app/src/components/chat/MessageBubble.tsx 按行渲染（.message-bubble__line / --bullet / --empty / __text-strong；DOM 文本零字面 **）。执行点 = frontend/bmini-app/tests/chat-rich-text.test.ts 与 frontend/bmini-app/tests/chat-rich-text-render.test.tsx', '🔴 红证（改前实测，migao-dev-flow §28.1 出口① 临时反转）：把两端渲染文件换回 origin/main 版本再跑 ⇒ admin-web 4 条里 1 条红（<br> 实测计数 0 / 期望 3）；bmini 13 条里 3 条红（.message-bubble__line 零命中 / 期望 4）。复算 = 在 frontend/admin-web 跑 npx vitest run tests/unit/components/chat-soft-breaks.test.tsx、在 frontend/bmini-app 跑 npx jest tests/chat-rich-text-render.test.tsx（覆盖前先取 origin/main 版本：git show origin/main:<仓库相对路径>）'],
+    skip_reason='[backend-contract] 纯前端渲染由 vitest / jest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'chat', 'rich-text'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -13363,6 +13381,7 @@ ALL_CASES = (
     _CASE_UI_081,
     _CASE_UI_082,
     _CASE_UI_083,
+    _CASE_UI_084,
     _CASE_UT_001,
     _CASE_UT_002,
 )

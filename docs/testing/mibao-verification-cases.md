@@ -8535,7 +8535,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（83 case）
+## 前端 UI 域（84 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -9710,6 +9710,18 @@
 真值: frontend-fix.vitest, frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6339）：右上角用户卡片点击外部收不回去 —— 根因是「`fixed inset-0` 遮罩 × 带 `backdrop-blur-sm` 的 header」（`backdrop-filter` 非 none ⇒ 成为 fixed 后代的包含块 ⇒ 遮罩只盖顶栏 56px），任何纯行为判据都看不见（jsdom 不做布局）⇒ 判据落在**静态 AST** 上：实例判据（文档级 mousedown 收起、卡片内部不收起）+ 类级不变式（`fixed` × 生成包含块的祖先，含 4 条判别力自证/对照）。取号 UI-083（`python3 scripts/next_case_id.py UI`，现取 main 001-082 ⇒ 最小空闲号 UI-083）。 ｜ tags: ui, header, user-card, outside-click, admin-web
 
+### UI-084. B 端米宝回复富文本渲染 — admin-web 软换行不折段 + bmini 粗体/列表不裸符号（用户实测截图，C 端 UI-042 的同族补课） 🔵
+```
+你: 用户 2026-10-05 实测截图 + 逐字：「这个回复是不是没排版」—— 米宝 capabilities 能力清单（每行一条、末尾单个换行）在 admin-web 聊天气泡里被折成一整段无分段长文；同句文案在小程序端则是 `**` 与 `- ` 裸符号
+期望: direct_reply
+数据: 判据 1·admin-web 软换行：frontend/admin-web/src/components/chat/MessageList.tsx 的 ReactMarkdown 挂 remark-breaks —— 段落内 3 个换行 ⇒ 3 个 <br>（改前实测 0 个）、空行分段 ⇒ 2 个 <p>、**强调** 仍走 <strong>、行内单个 * 不被当强调吞掉。执行点 = frontend/admin-web/tests/unit/components/chat-soft-breaks.test.tsx
+数据: 判据 2·bmini 富文本：frontend/bmini-app/src/utils/richText.ts 的 parseRichText（成对 **x** ⇒ bold 段、未闭合 ** 原样保留 = 流式安全、单个 * 不误吞、- 与 • 开头 ⇒ bullet、空行保留）+ frontend/bmini-app/src/components/chat/MessageBubble.tsx 按行渲染（.message-bubble__line / --bullet / --empty / __text-strong；DOM 文本零字面 **）。执行点 = frontend/bmini-app/tests/chat-rich-text.test.ts 与 frontend/bmini-app/tests/chat-rich-text-render.test.tsx
+数据: 🔴 红证（改前实测，migao-dev-flow §28.1 出口① 临时反转）：把两端渲染文件换回 origin/main 版本再跑 ⇒ admin-web 4 条里 1 条红（<br> 实测计数 0 / 期望 3）；bmini 13 条里 3 条红（.message-bubble__line 零命中 / 期望 4）。复算 = 在 frontend/admin-web 跑 npx vitest run tests/unit/components/chat-soft-breaks.test.tsx、在 frontend/bmini-app 跑 npx jest tests/chat-rich-text-render.test.tsx（覆盖前先取 origin/main 版本：git show origin/main:<仓库相对路径>）
+跳过: [backend-contract] 纯前端渲染由 vitest / jest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-05 新增（issue #6346）：C 端 2026-09-15 已治过同族缺陷（UI-042：气泡无 markdown 处理、`**`/列表裸奔），B 端两端都漏课 —— admin-web 侧因 CommonMark 软换行（段落内单个换行 = 空格）把米宝多行回复折成一整段（修法 = 挂 remark-breaks），bmini 侧沿用 C 端最小子集解析器 + 按行渲染（不建跨 App 共享模块，#6306 教训）。取号 UI-084（scripts/next_case_id.py ui：现取 main 最大 = UI-083，被 #6339 的包占用）。 ｜ tags: ui, chat, rich-text
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -9765,7 +9777,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：83
+- 前端 UI 域：84
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
