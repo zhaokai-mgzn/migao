@@ -8,6 +8,9 @@ import { Button, NumberInput, Select } from '@/components/ui'
 import type { ProductColor, ProductSku } from '@/types'
 import { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
 import { rebuildSkus, nextTempId, DOOR_WIDTH_OPTIONS, doorWidthSelectOptions, normalizeDoorWidth, formatDoorWidth, sameDoorWidth } from '@/lib/sku-utils'
+// 三处上限抽到 `lib/product-limits.ts`（issue #6354）：图片识别预填按**同一个数**裁剪识别结果，
+// 不再是「组件里一份、预填侧再写一份」的第二份口径。
+import { COLOR_NAME_MAX, MAX_COLORS, MAX_SKUS } from '@/lib/product-limits'
 
 interface SkuMatrixProps {
   value: {
@@ -36,10 +39,6 @@ interface SkuMatrixProps {
 
 // 门幅选项（值 canonical 裸数值 / 显示带单位）见 @/lib/sku-utils 的 DOOR_WIDTH_OPTIONS
 // （issue #3621：值/显示分离，避免选项值 '2.8米' 与库内 '2.8' 口径不一致）
-
-const COLOR_NAME_MAX = 30
-const MAX_COLORS = 200
-const MAX_SKUS = 600
 
 // 预设颜色（常用窗帘/布艺颜色）
 const PRESET_COLORS: { name: string; hex: string }[] = [

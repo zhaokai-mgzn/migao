@@ -4823,6 +4823,42 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusAdmissionTest.java"
         - "tests/unit_ci_workflows/test_product_status_single_source.py"
+
+  # ==========================================================================
+  # PR-020（issue #6354，P2·图片识别预填）：识别到的色号清单**必须拆成多行颜色**
+  # ==========================================================================
+  - id: PR-020
+    legacy_id: ""
+    title: "图片识别色号清单拆行：一张色卡的 16 个色号 ⇒ 16 行颜色（改前塞成一格、被 30 字符输入框削断）（issue #6354）"
+    domains:
+      - product
+      - recognition
+      - frontend
+    tier: normal
+    tags:
+      - image-recognize
+      - color
+      - frontend
+      - prefill
+      - regression
+    truths_ref: []
+    user_inputs:
+      - "建品页「拍照 / 上传识别」喂一张色卡图（识别报告逐字给出 `2699-01、2699-02、…、2699-16`，共 127 字符）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**病（用户 2026-10-05 实测读数）**：识别报告面板显示 16 个色号，落到表单「颜色分类」只剩 `2699-01、2699-02、2699-03、` —— 恰好 30 字符（颜色行名称框 maxLength = COLOR_NAME_MAX = 30）⇒ 第 4 个色号被静默削断、SKU 矩阵只出 1 行。根因 = frontend/admin-web/src/lib/image-recognize.ts 的 `buildProductPrefill` 把整串当一个 `colors[0].colorName`。"
+      - "**判据 1（实例，改前必红）**：`buildProductPrefill` 收 16 色号 + 门幅 `3.2` ⇒ `colors` 恰 16 行、`skus` 恰 16 行且逐行 colorName 与色号顺序一致；`recognizedFields` 里 `color` 只出现 1 次。红证（修前实测，5 failed）：`expected [ Array(1) ] to deeply equal [ '2699-01', '2699-02', …(14) ]`、`expected [ { id: '-4', …(1) } ] to have a length of 200 but got 1`。"
+      - "**判据 2（类级元守卫，铁律 8）**：`buildProductPrefill` 产出的**每一个**颜色名长度必须 ≤ `COLOR_NAME_MAX`（超限即红并具名打印哪个颜色名 / 多长）—— 防「拆了但仍超限」与「上限改小却不同步」。改前红证：`以下颜色名超过表单上限 30，会被输入框静默截断: expected [ Array(1) ] to deeply equal []`。"
+      - "**判据 3（口径单一）**：分隔符口径与 `SkuMatrix.tsx::BatchColorInput`（人工「批量输入颜色」）同一套（换行 / 中英文逗号 / 顿号），且上限常量只有一处定义（`lib/product-limits.ts`）—— 组件里再写死一份 ⇒ 红。"
+      - "**判据 4（封顶与去重）**：超过 `MAX_COLORS` 的输入 ⇒ 截到 200；逐字重复的名字去重、但**不猜、不改写**颜色名（`2699-01、2699-01、 2699-02 、2699-02` ⇒ `['2699-01','2699-02']`）。"
+      - "**边界（如实登记）**：**单个**颜色名本身超过 30 字符时本层不裁剪（那是颜色名不该这么长的表单侧问题）⇒ 由判据 2 具名报出，交给表单校验，不在预填侧猜改；`MAX_SKUS`（600）不在本层裁剪（预填恒 1 个门幅 ⇒ 颜色数即 SKU 数）。"
+    skip_reason: "[backend-contract] 确定性契约/机械判据，由 vitest（frontend/admin-web/tests/unit/lib/image-recognize-color-split.test.ts、frontend/admin-web/tests/unit/lib/product-limits.test.ts、frontend/admin-web/tests/unit/components/ImageRecognizePrefill.test.tsx）验证，非 LLM 行为，不进入 agent-eval 冒烟 —— 断言的「拆行 + 上限 + 口径单一」全部可在单测里逐值钉住"
+    merge_log: "2026-10-05 新增（issue #6354，P2·图片识别预填）。取号 = 现取最小空闲号（`.github/cases/` 无 PR-020，`scripts/next_case_id.py PR` 判取 PR-020）。红→绿（注入式双向对照）：`git stash` 注入 = 退回改前实现（新测试文件未跟踪仍在）⇒ `tests/unit/lib/image-recognize-color-split.test.ts` **5 failed**（读数逐字见判据 1/2）；`git stash pop` ⇒ 25 passed（本文件 5 + 既有 ImageRecognizePrefill 13 + image-recognize 7）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/image-recognize-color-split.test.ts"
+        - "frontend/admin-web/tests/unit/components/ImageRecognizePrefill.test.tsx"
       ci:
         - pr-check.yml
       verifies: []
