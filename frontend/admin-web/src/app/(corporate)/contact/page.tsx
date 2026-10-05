@@ -25,7 +25,7 @@ export const helpItems = [
   {
     icon: Users,
     title: '评估落地成本',
-    description: '提供门店数量、客服人数与现有流程，我们按您的口径测算可节省的人力与时间。',
+    description: '提供企业规模、客服人数与现有流程，我们按您的口径测算可节省的人力与时间。',
   },
   {
     icon: Building2,
@@ -52,7 +52,7 @@ export const faqs = [
   {
     question: '价格在哪里查看？',
     answer:
-      '本页面不公示价格。请在留言中说明门店规模与希望开通的模块，我们的团队会按你的情况给出方案与报价。',
+      '本页面不公示价格。请在留言中说明企业规模与希望开通的模块，我们的团队会按你的情况给出方案与报价。',
   },
 ]
 
@@ -79,7 +79,7 @@ export default function ContactPage() {
                 四类常见咨询
               </h2>
               <p className="mt-3 leading-relaxed text-neutral-600">
-                留言时请说明所属行业、门店规模与当前面临的问题，以便我们给出针对性回复。
+                留言时请说明所属行业、企业规模与当前面临的问题，以便我们给出针对性回复。
               </p>
 
               <div className="mt-8 space-y-4">

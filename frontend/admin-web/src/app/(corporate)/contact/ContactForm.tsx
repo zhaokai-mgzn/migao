@@ -181,7 +181,7 @@ export default function ContactForm({ kicker, title, lead }: ContactFormProps) {
             rows={5}
             value={form.message}
             onChange={(e) => handleChange('message', e.target.value)}
-            placeholder="行业、门店规模、现在卡在哪一步（至少10个字符）..."
+            placeholder="行业、企业规模、现在卡在哪一步（至少10个字符）..."
             className={`${inputClasses('message')} resize-none`}
           />
           {errors.message && <p className="mt-1 text-xs text-red-500">{errors.message}</p>}
