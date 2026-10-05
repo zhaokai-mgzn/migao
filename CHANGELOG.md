@@ -20,6 +20,22 @@
   的注入式红证（摘掉过滤计数 ⇒ 同类断言必红）。用例 = `DA-023`。
 - 边界：存量死状态行（`on_shelf` 2 行）仍**有意不动**（属别会话夹具，清理口径另议）；
   运行时部署后的真实会话重放由集成侧执行。
+### 图片识别的「米宝解读」从材质/工艺放开为名称/材质/工艺/颜色：门幅与售价仍只给建议、不落值（2026-10-05，issue #6361）
+
+- 以前：Agent 的**推理值**只能落 `material` / `craft` 两格 ⇒ 图上没写商品名 / 颜色名时，米宝只能留空，
+  商家拿到一份「残缺的识别结果」还得逐格自己想。
+- 现在：用户裁定「不可信没关系，先推理一份贴近的结论」⇒ 商品侧可落值的键放开为
+  `name` / `material` / `craft` / `color`（一律标来源 `[米宝解读]`，与图上抄来的 `[图片识别]` 可分辨；
+  **只在图上没写明那一格时**才落地，**不覆盖**内核已识别格与目录歧义格 —— 已有规则不动）；
+  `door_width`（门幅）/ `price`（售价）**仍不落值**（猜错会算出错的米数与金额），
+  但推理结论会写进同格的 `note` 建议（「建议门幅 2.8 米，图上未写明 —— 未自动填，请确认」）
+  ⇒ 建议看得见、系统不拿猜测值算钱。
+- 内核 `recognizer` 的「只抄写明的内容」铁律**一个字未动**（transcription 与 inference 仍是两层、各自有来源标记）。
+- 固化：`tests/test_vision/test_deep_channel.py`（`TestInterpretableScopeIsWidened`，含售价 / 门幅的注入式红证）
+  + `tests/test_tools_image_recognize.py`（`test_interpretations_description_matches_the_widened_scope`，
+  模型看到的参数描述漂回「只对 material / craft 生效」即红）。
+- 边界（照实登记）：前端预填映射 `frontend/admin-web/src/lib/image-recognize.ts` **按 key 映射、本单未改**
+  （`name` / `color` / `material` / `craft` 本就在映射表内，`price` 有意不映射）；推理结果**不落库、不提交**。
 
 ### 商品状态按枚举准入：非法 status 建品/改品直接 4xx；已是「状态机死行」的商品可改回已下架/草稿自救（2026-10-05，issue #6347）
 
