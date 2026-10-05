@@ -1,0 +1,198 @@
+{
+  "_how_to_refresh": "本文件是**服务端真正吐出的快照 JSON**（不是手写夹具）：由 backend/admin-api 的 DailyBriefingServiceTest#dumpSnapshotForTheCrossLanguageWiringJudge 落盘到 <admin-api>/target/snapshot-dump/skus-filtered-out.json，再整体拷到这里（内容零编辑，只加本键）。刷新判据 = cd backend/admin-api && ./mvnw -o -Dtest=DailyBriefingServiceTest -DfailIfNoTests=false test 之后原样复制。消费方 = backend/ai-agent-service/tests/test_briefing_snapshot_wiring.py（issue #6347 Part B 的跨语言接线判据）。",
+  "metrics": {
+    "today_orders": 5,
+    "yesterday_orders": 3,
+    "today_sales": 1000,
+    "yesterday_sales": 800,
+    "month_revenue": 10000,
+    "last_month_revenue": 9000,
+    "pending_ship_orders": 10,
+    "processing_pending_orders": 5,
+    "low_stock_items": 8,
+    "total_tickets": 2,
+    "pending_tickets": 2,
+    "overdue_tickets": 0,
+    "active_sessions": 3,
+    "ai_sessions": 2,
+    "total_customers": 200,
+    "new_customers_today": 10,
+    "orders_change_pct": 66.7,
+    "ai_session_rate_pct": 66.7
+  },
+  "facts": [
+    {
+      "link": "/orders?status=待发货",
+      "type": "order",
+      "title": "10 个订单待发货"
+    },
+    {
+      "link": "/orders?category=含加工订单&status=待发货",
+      "type": "order",
+      "title": "5 个含加工订单待发货"
+    },
+    {
+      "link": "/products?low_stock=true",
+      "type": "product",
+      "title": "8 个商品库存偏低"
+    },
+    {
+      "link": "/after-sales",
+      "type": "ticket",
+      "title": "2 个售后工单待处理"
+    }
+  ],
+  "row_fields": {
+    "orders": [
+      "order_no",
+      "status",
+      "customer_id",
+      "created_at",
+      "shipped_at",
+      "sale_amount",
+      "cost_amount"
+    ],
+    "skus": [
+      "sku_id",
+      "product_id",
+      "product_name",
+      "stock",
+      "sales_count",
+      "price",
+      "avg_cost"
+    ],
+    "product_return_stats": [
+      "product_id",
+      "return_tickets",
+      "order_lines"
+    ],
+    "returns": [
+      "return_no",
+      "customer_id",
+      "product_id",
+      "returned_at",
+      "amount"
+    ],
+    "price_changes": [
+      "change_no",
+      "tool_name",
+      "product_id",
+      "before_price",
+      "new_price",
+      "changed_at"
+    ],
+    "order_discounts": [
+      "order_no",
+      "total_amount",
+      "discount_amount",
+      "created_at"
+    ]
+  },
+  "row_meta": {
+    "orders": {
+      "limit": 500,
+      "count": 1,
+      "truncated": false
+    },
+    "skus": {
+      "limit": 500,
+      "count": 0,
+      "truncated": false,
+      "rows_before_filter": 10,
+      "filtered_by_status": {
+        "active": 10
+      },
+      "filtered_product_ids": [
+        "DEAD-1",
+        "DEAD-2",
+        "DEAD-3",
+        "DEAD-4",
+        "DEAD-5",
+        "DEAD-6",
+        "DEAD-7",
+        "DEAD-8"
+      ],
+      "filtered_out": 10
+    },
+    "returns": {
+      "limit": 500,
+      "count": 2,
+      "truncated": false
+    },
+    "product_return_stats": {
+      "limit": 500,
+      "count": 2,
+      "truncated": false
+    },
+    "price_changes": {
+      "limit": 500,
+      "count": 1,
+      "truncated": false
+    },
+    "order_discounts": {
+      "limit": 500,
+      "count": 1,
+      "truncated": false
+    }
+  },
+  "cost_accounting": true,
+  "audit_tool_logging": true,
+  "orders": [
+    {
+      "order_no": "SO-1",
+      "status": "confirmed",
+      "customer_id": "C-1",
+      "created_at": "2026-09-12T10:00+08:00",
+      "shipped_at": null,
+      "sale_amount": 1200.0,
+      "cost_amount": null
+    }
+  ],
+  "skus": [],
+  "returns": [
+    {
+      "return_no": "RT-1",
+      "customer_id": "C-1",
+      "product_id": "P-1",
+      "returned_at": "2026-09-22T10:00+08:00",
+      "amount": 100.0
+    },
+    {
+      "return_no": "RT-2",
+      "customer_id": "C-1",
+      "product_id": null,
+      "returned_at": "2026-09-22T10:00+08:00",
+      "amount": 100.0
+    }
+  ],
+  "product_return_stats": [
+    {
+      "product_id": "P-1",
+      "return_tickets": 1,
+      "order_lines": 4
+    },
+    {
+      "product_id": "P-2",
+      "return_tickets": 0,
+      "order_lines": 2
+    }
+  ],
+  "price_changes": [
+    {
+      "change_no": "A-product_update",
+      "tool_name": "product_update",
+      "product_id": "P-1",
+      "before_price": 200.0,
+      "new_price": 120.0,
+      "changed_at": "2026-09-22T09:30+08:00"
+    }
+  ],
+  "order_discounts": [
+    {
+      "order_no": "SO-1",
+      "total_amount": 1500.0,
+      "discount_amount": 400.0,
+      "created_at": "2026-09-12T10:00+08:00"
+    }
+  ]
+}

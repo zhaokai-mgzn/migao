@@ -2136,7 +2136,7 @@
 真值: customer-list.profile-view
 溯源: 2026-10-03 新增（issue #6217 / 族 3 · 包 4 / V1）：族 3（跨域具名视图）此前只有 product_health（#5369）与 customer_profile（#5456），本条目为**客户价值分层 / 流失预警**视图的专属用例 —— 它答的是页面结构上做不到的问题（客户列表只有单客户维度，无法按流失风险排序）。⚠️ 不并进简报表快照（先例 #5458 裁定：权限面不同 ⇒ 复用即越权）；取数只用三条既有只读端点。 ｜ tags: query, tool, cross-domain, disclosure, churn
 
-## 数据域（21 case）
+## 数据域（22 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -2378,6 +2378,27 @@
 ```
 真值: dashboard-jump.proactive-status-card, dashboard-jump.proactive-wiring-status
 溯源: 2026-10-02 新增（issue #5955）：日报卡片面 proactive 四态可视化（对话面此前已具备、卡片面零渲染）。取号 DA-021：现取 .github/cases/ 最大号 = DA-020（main ∪ 全部在飞 ref，逐 ref 核过，见 PR body）。**未覆盖面（如实登记）**：Playwright 页面多模态验收（真实登录 + 截图 + AI 读图）由集成方收口，本包不跑；面板在真实浏览器下的排版/对比度不在本单确定性判据面内。 ｜ tags: proactive, briefing, card, ui
+
+### DA-023. 商品健康度的「空」必须归因到商品状态：有 SKU 却被「在售」口径过滤（issue #6347 Part B） 🔵
+```
+你: 商品健康度里是不是没有建 SKU？
+期望: briefing_query(view=product_health)
+数据: 🔴 快照侧的**过滤事实**必须透出（`row_meta.skus`）：`rows_before_filter` = 过滤前本数组查询命中的行数、`filtered_out` = 被排除的行数、`filtered_by_status` = 被排除商品的状态 × SKU 数、`filtered_product_ids` = 被排除的商品 id（有界）。**没有它，空数组在引擎侧与「表里真的没有 SKU」不可分** —— 这正是本单的成因（判据：删掉这些键 ⇒ 引擎断言必红）
+数据: 🔴 引擎侧**两种「空」可分**：过滤前 > 0 且过滤后 = 0 ⇒ 所有 `skus` 来源字段（`sales_count`/`stock`/`gross_margin`）落 **`not_on_sale`**（与 `not_wired`/`incomplete` **并列、不可合并**，`reason` 非 None）；真正未接线（无 `skus` 行数组）仍落 `not_wired`；退货率（另一对行数组）不受影响 ⇒ 逐字段可分
+数据: 原因与出路逐字落地：说清「有 N 个 SKU（M 个商品）**因未上架未纳入**」+ 被排除商品的**状态分布**；状态在状态机内（`off_sale`/`draft`）⇒「上架即可」；状态不在状态机内（如 `active`/`on_shelf`）⇒ 点出**上架动作会被拒**、需先改回 `off_sale`/`draft` 再上架（Part A 已让这条恢复边可走）；装配层读不到商品行（`unknown`）⇒ **不猜**出路，只说先核实
+数据: 🔴 **消息是模型的唯一输入源**：工具消息（`briefing_query` 的 `view=product_health`）必须含上述原因与出路，且**不得**出现任何 `forbidden_text` 表述；对照读数：没有过滤事实的空快照 ⇒ 退回旧口径（`not_wired`），**不得**改写成「被过滤」
+禁词: SKU 记录数 = 0
+禁词: SKU 记录数为 0
+禁词: SKU 层是空的
+禁词: SKU 层为空
+禁词: 建议检查商品规格
+禁词: 建议先确认商品规格
+禁词: 没有 SKU
+禁词: 没有任何 SKU
+跳过: [backend-contract] 快照装配由 admin-api 单测验证（DailyBriefingServiceTest 的 SnapshotRows 两条新判据：过滤事实透出 / 未过滤时不挂空集合）；引擎与工具披露由 ai-agent 单测验证（tests/test_briefing_product_health.py 的 TestFilteredSkusAreNotMisattributed、tests/test_tools_briefing_query.py 的两条），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: dashboard-jump.proactive-wiring-status, dashboard-jump.proactive-unwired-disclosure
+溯源: 2026-10-05 新增（issue #6347 **Part B**，与 Part A「商品 status 枚举准入」同单不同包）：租户 25 有 12 行 product_skus 而「商品健康度视图」返回 0 行 —— 那 10 行 SKU 属 8 个状态为 active 的商品，被快照的 onSaleProductNames 静默过滤；米宝据此答「SKU 记录数 = 0 / SKU 层是空的 / 建议先确认商品规格是否已录入」= **归因错误**，用户被引向徒劳返工。取号 DA-023：现取 .github/cases/ 最大号 = DA-021（main ∪ 全部在飞 ref，逐 ref 核过，见 PR body；DA-022 已被在飞 PR 占用）。**未覆盖面（如实登记）**：真实 LLM 行为面（米宝用这条消息怎么措辞）不在本单判据面内 —— 本单钉的是**载荷**（引擎 + 工具消息）与**快照读数**；运行时部署后的重放由集成侧执行。 ｜ tags: briefing, product_health, attribution, snapshot
 
 ## 防御域（24 case）
 
@@ -9789,7 +9810,7 @@
 - 对话边界域：44
 - 跨域：3
 - 客户域：12
-- 数据域：21
+- 数据域：22
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
