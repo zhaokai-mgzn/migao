@@ -8481,7 +8481,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（82 case）
+## 前端 UI 域（83 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -8960,7 +8960,7 @@
 ```
 你: 点击右上角用户信息，默认展示当前登录用户名称；丰富该区域卡片信息（手机号/岗位/所属企业）；修改企业名称与 Logo 后应在商家后端（侧边栏）即时体现
 期望: direct_reply
-数据: Header 右上角用户按钮默认展示当前登录用户名称（name→nickname→username→管理员 兜底链），点击展开下拉卡片（非 hover 悬停触发），再次点击/点击卡片外收起
+数据: Header 右上角用户按钮默认展示当前登录用户名称（name→nickname→username→管理员 兜底链），点击展开下拉卡片（非 hover 悬停触发），再次点击/点击卡片外收起；🔴 2026-10-05（issue #6339）：「点击卡片外收起」的承载实现已由 header 内的 `fixed inset-0` 透明遮罩改为**文档级 mousedown 监听 + 容器 ref**（同 NotificationBell 范式）—— 原遮罩落在带 `backdrop-blur-sm` 的 header 内，其包含块是顶栏 56px、内容区点击落不到它上面（用户实测收不回去）
 数据: 用户卡片包含：头像（有 avatar 用图片，否则姓名首字）、姓名、账号（email 或 username）、手机号（username=手机号）、岗位（position）、所属企业（tenantName）、退出登录
 数据: fetchUserInfo 解包 /api/auth/me 的 { user, roles, permissions, menus } 包装结构：顶层 nickname/username/position/tenantName/tenantLogo 可读，roles/permissions/menus 保留（侧边栏过滤依赖）——修复右上角恒显「管理员」与侧边栏企业名/Logo 静默失效的根因
 数据: 「企业基础信息」保存成功后立即 fetchUserInfo 刷新，侧边栏企业名/Logo 即时同步（无需刷新页面）；toast「侧边栏将同步展示」与实际行为一致
@@ -8968,7 +8968,7 @@
 跳过: [backend-contract] 纯前端交互 + 后端 DTO 由 vitest 单测与 MockMvc 集成测试验证（Header/auth store/settings/AuthIntegrationTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
-溯源: 2026-09-09 新增（issue #3099）：右上角用户信息卡片优化 — 点击展开 + 姓名默认展示 + 卡片信息丰富（手机号/岗位/所属企业）+ fetchUserInfo 解包修复 + 保存企业信息后即时刷新 ｜ tags: ui, header, user-card, admin-web, settings
+溯源: 2026-09-09 新增（issue #3099）：右上角用户信息卡片优化 — 点击展开 + 姓名默认展示 + 卡片信息丰富（手机号/岗位/所属企业）+ fetchUserInfo 解包修复 + 保存企业信息后即时刷新。｜ 2026-10-05（issue #6339）：「点击卡片外收起」此前是**假绿** —— 承载实现是 header 内的 `fixed inset-0` 透明遮罩，而 header 带 `backdrop-blur-sm`（CSS：`backdrop-filter` 非 none 的元素是 `fixed` 后代的包含块）⇒ 遮罩 `inset-0` 相对的是顶栏 56px 而非视口，内容区点击收不回去；改为文档级 mousedown + 容器 ref（复用 NotificationBell 范式）并删除遮罩（顺带修掉「顶栏那一带被遮罩吃掉点击」）。实例判据 = `frontend/admin-web/tests/unit/components/Header.test.tsx` 的两条 #6339 用例；类级不变式另立 UI-083 ｜ tags: ui, header, user-card, admin-web, settings
 
 ### UI-038. 新增订单表单支持选择已有客户 — 自动回填收货信息（姓名/手机号/省市区），保留手动兜底（#3102） 🔵
 ```
@@ -9643,6 +9643,19 @@
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change, frontend-fix.ui-token
 溯源: 2026-10-04 新增（issue #6291）：官网企业站整体重构 —— 视觉改用产品自身的织物质感 token（frontend/admin-web/tailwind.config.ts 的 primary/accent/neutral + Logo 织金），文案按 config/menu.ts 的六个能力域与两位 AI 的真实工具能力重写；联系页占位假值按用户裁定改为「只保留在线留言」。取号 UI-082（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-081）。2026-10-05 补（issue #6326）：四页文案由口语化改为「能力陈述型」书面语（对齐 B 端官网：短标题 + 名词化正文 + 可验证事实 + 克制的 CTA），事实口径一字未动，新增判据 6（AI 口语词表反回退，含判别力自证）。 ｜ tags: ui, homepage, corporate, copy-truthfulness, admin-web
 
+### UI-083. 右上角用户卡片「点击外部收起」回归修复（issue #6339）：fixed 遮罩落在 backdrop-blur 祖先内 ⇒ 只盖住顶栏 56px；改文档级 mousedown + 类级不变式「fixed 不得落在生成包含块的祖先内」 🔵
+```
+你: 右上角用户信息展开后，点击其他任意区域要能收回去，现在是不行，优化下（用户 2026-10-05 逐字）
+期望: direct_reply
+数据: 展开用户卡片后，`mousedown` 落在卡片容器之外（页面任意区域）⇒ 卡片收起；落在卡片内部 ⇒ **不**收起。执行点 = `frontend/admin-web/tests/unit/components/Header.test.tsx` 的两条 #6339 用例（判别力：修复前跑该文件 ⇒ `expected document not to contain element, found <button` 失败，卡片仍在文档里）
+数据: 类级不变式（本单新增）：`fixed` 元素不得出现在带**生成包含块**类的 JSX 祖先内（`backdrop-blur*` / `filter` / `transform` / `translate-*` / `scale-*` / `rotate-*` / `will-change-*` / `perspective-*` / `contain-*`）—— 此时 `fixed` 的 `inset-0` 相对的是**祖先盒子**、不是视口。执行点 = `frontend/admin-web/tests/unit/lib/fixed-containing-block.test.ts`（6 条：检出面非空 + 真语料零违规 + 4 条判别力自证/对照）
+数据: 🔴 红证（改前实测，2026-10-05，**注入式**）：把 `frontend/admin-web/src/components/layout/Header.tsx` 换回 `origin/main` 版本（注入自证 = 该文件 `fixed inset-0` 遮罩 1 处、`addEventListener` 0 处）⇒ 两个测试文件 **2 failed / 55 passed**；具名读数 = 实例判据 `expected document not to contain element, found <button` + 类级判据 `["frontend/admin-web/src/components/layout/Header.tsx 的遮罩行 ← 祖先 backdrop-blur-sm"] to deeply equal []`；恢复后 **57 passed**（注入方式与复算命令见 PR body）。复算命令（在 `frontend/admin-web` 目录执行；写法用 `--dir` + 文件名过滤，**避免在用例库里留下包内相对路径字面量** —— 机器判据 `tests/unit_ci_workflows/test_recomputable_command_paths.py` 只认仓库根相对路径）= `npx vitest run --dir tests/unit/components Header.test` + `npx vitest run --dir tests/unit/lib fixed-containing-block.test`
+前置: 本用例是 [backend-contract] 纯前端用例：前置 = `frontend/admin-web/src/components/layout/Header.tsx` 与两个 vitest 文件同时存在、且被 vitest 正常收集；前置由测试自身持有（文件缺失 / 改名即直接红，不表现成「agent 不干活」），不依赖共享夹具 ⇒ agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端交互 + 静态不变式：由 vitest 验证；jsdom 不做布局（命中测试类缺陷的机器判据是**静态 AST**）⇒ 真实浏览器另按 migao-dev-flow §15.7 跑一轮 Playwright 截图 + AI 读图，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.vitest, frontend-fix.no-api-change
+溯源: 2026-10-05 新增（issue #6339）：右上角用户卡片点击外部收不回去 —— 根因是「`fixed inset-0` 遮罩 × 带 `backdrop-blur-sm` 的 header」（`backdrop-filter` 非 none ⇒ 成为 fixed 后代的包含块 ⇒ 遮罩只盖顶栏 56px），任何纯行为判据都看不见（jsdom 不做布局）⇒ 判据落在**静态 AST** 上：实例判据（文档级 mousedown 收起、卡片内部不收起）+ 类级不变式（`fixed` × 生成包含块的祖先，含 4 条判别力自证/对照）。取号 UI-083（`python3 scripts/next_case_id.py UI`，现取 main 001-082 ⇒ 最小空闲号 UI-083）。 ｜ tags: ui, header, user-card, outside-click, admin-web
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -9672,8 +9685,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：672（活跃 134，跳过 538）
-- tier 分布：smoke 12 / normal 618 / adversarial 32
+- 用例总数：673（活跃 134，跳过 539）
+- tier 分布：smoke 12 / normal 619 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9698,7 +9711,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：82
+- 前端 UI 域：83
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

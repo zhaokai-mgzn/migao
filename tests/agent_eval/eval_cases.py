@@ -11714,7 +11714,7 @@ _CASE_UI_037 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['点击右上角用户信息，默认展示当前登录用户名称；丰富该区域卡片信息（手机号/岗位/所属企业）；修改企业名称与 Logo 后应在商家后端（侧边栏）即时体现'],
     expectations=['direct_reply'],
-    data_checks=['Header 右上角用户按钮默认展示当前登录用户名称（name→nickname→username→管理员 兜底链），点击展开下拉卡片（非 hover 悬停触发），再次点击/点击卡片外收起', '用户卡片包含：头像（有 avatar 用图片，否则姓名首字）、姓名、账号（email 或 username）、手机号（username=手机号）、岗位（position）、所属企业（tenantName）、退出登录', 'fetchUserInfo 解包 /api/auth/me 的 { user, roles, permissions, menus } 包装结构：顶层 nickname/username/position/tenantName/tenantLogo 可读，roles/permissions/menus 保留（侧边栏过滤依赖）——修复右上角恒显「管理员」与侧边栏企业名/Logo 静默失效的根因', '「企业基础信息」保存成功后立即 fetchUserInfo 刷新，侧边栏企业名/Logo 即时同步（无需刷新页面）；toast「侧边栏将同步展示」与实际行为一致', '后端 /api/auth/me 与 /api/admin/user/info 的 user 内层返回 position（岗位，User 实体字段）'],
+    data_checks=['Header 右上角用户按钮默认展示当前登录用户名称（name→nickname→username→管理员 兜底链），点击展开下拉卡片（非 hover 悬停触发），再次点击/点击卡片外收起；🔴 2026-10-05（issue #6339）：「点击卡片外收起」的承载实现已由 header 内的 `fixed inset-0` 透明遮罩改为**文档级 mousedown 监听 + 容器 ref**（同 NotificationBell 范式）—— 原遮罩落在带 `backdrop-blur-sm` 的 header 内，其包含块是顶栏 56px、内容区点击落不到它上面（用户实测收不回去）', '用户卡片包含：头像（有 avatar 用图片，否则姓名首字）、姓名、账号（email 或 username）、手机号（username=手机号）、岗位（position）、所属企业（tenantName）、退出登录', 'fetchUserInfo 解包 /api/auth/me 的 { user, roles, permissions, menus } 包装结构：顶层 nickname/username/position/tenantName/tenantLogo 可读，roles/permissions/menus 保留（侧边栏过滤依赖）——修复右上角恒显「管理员」与侧边栏企业名/Logo 静默失效的根因', '「企业基础信息」保存成功后立即 fetchUserInfo 刷新，侧边栏企业名/Logo 即时同步（无需刷新页面）；toast「侧边栏将同步展示」与实际行为一致', '后端 /api/auth/me 与 /api/admin/user/info 的 user 内层返回 position（岗位，User 实体字段）'],
     skip_reason='[backend-contract] 纯前端交互 + 后端 DTO 由 vitest 单测与 MockMvc 集成测试验证（Header/auth store/settings/AuthIntegrationTest），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'header', 'user-card', 'admin-web', 'settings'],
     persona='',
@@ -12560,6 +12560,25 @@ _CASE_UI_082 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端页面用例：前置 = `(corporate)` 四页源码与 5 个 vitest 文件同时存在、且被 vitest 正常收集；前置由测试自身持有（页面文件缺失 / 改名 / 选择器被摘即直接红，不表现成「agent 不干活」），不依赖共享夹具 ⇒ agent-eval 栈不跑它',
 )
 
+# ── UI-083 [NORMAL] 右上角用户卡片「点击外部收起」回归修复（issue #6339）：fixed 遮罩落在 backdrop-blur 祖先内 ⇒ 只盖住顶栏 56px；改文档级 mousedown + 类级不变式「fixed 不得落在生成包含块的祖先内」（源: cases/ui.yml）──
+_CASE_UI_083 = EvalCase(
+    id='UI-083',
+    legacy_id='',
+    title='右上角用户卡片「点击外部收起」回归修复（issue #6339）：fixed 遮罩落在 backdrop-blur 祖先内 ⇒ 只盖住顶栏 56px；改文档级 mousedown + 类级不变式「fixed 不得落在生成包含块的祖先内」',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['右上角用户信息展开后，点击其他任意区域要能收回去，现在是不行，优化下（用户 2026-10-05 逐字）'],
+    expectations=['direct_reply'],
+    data_checks=['展开用户卡片后，`mousedown` 落在卡片容器之外（页面任意区域）⇒ 卡片收起；落在卡片内部 ⇒ **不**收起。执行点 = `frontend/admin-web/tests/unit/components/Header.test.tsx` 的两条 #6339 用例（判别力：修复前跑该文件 ⇒ `expected document not to contain element, found <button` 失败，卡片仍在文档里）', '类级不变式（本单新增）：`fixed` 元素不得出现在带**生成包含块**类的 JSX 祖先内（`backdrop-blur*` / `filter` / `transform` / `translate-*` / `scale-*` / `rotate-*` / `will-change-*` / `perspective-*` / `contain-*`）—— 此时 `fixed` 的 `inset-0` 相对的是**祖先盒子**、不是视口。执行点 = `frontend/admin-web/tests/unit/lib/fixed-containing-block.test.ts`（6 条：检出面非空 + 真语料零违规 + 4 条判别力自证/对照）', '🔴 红证（改前实测，2026-10-05，**注入式**）：把 `frontend/admin-web/src/components/layout/Header.tsx` 换回 `origin/main` 版本（注入自证 = 该文件 `fixed inset-0` 遮罩 1 处、`addEventListener` 0 处）⇒ 两个测试文件 **2 failed / 55 passed**；具名读数 = 实例判据 `expected document not to contain element, found <button` + 类级判据 `["frontend/admin-web/src/components/layout/Header.tsx 的遮罩行 ← 祖先 backdrop-blur-sm"] to deeply equal []`；恢复后 **57 passed**（注入方式与复算命令见 PR body）。复算命令（在 `frontend/admin-web` 目录执行；写法用 `--dir` + 文件名过滤，**避免在用例库里留下包内相对路径字面量** —— 机器判据 `tests/unit_ci_workflows/test_recomputable_command_paths.py` 只认仓库根相对路径）= `npx vitest run --dir tests/unit/components Header.test` + `npx vitest run --dir tests/unit/lib fixed-containing-block.test`'],
+    skip_reason='[backend-contract] 纯前端交互 + 静态不变式：由 vitest 验证；jsdom 不做布局（命中测试类缺陷的机器判据是**静态 AST**）⇒ 真实浏览器另按 migao-dev-flow §15.7 跑一轮 Playwright 截图 + AI 读图，不进入 agent-eval 冒烟',
+    tags=['ui', 'header', 'user-card', 'outside-click', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端用例：前置 = `frontend/admin-web/src/components/layout/Header.tsx` 与两个 vitest 文件同时存在、且被 vitest 正常收集；前置由测试自身持有（文件缺失 / 改名即直接红，不表现成「agent 不干活」），不依赖共享夹具 ⇒ agent-eval 栈不跑它',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -13267,6 +13286,7 @@ ALL_CASES = (
     _CASE_UI_080,
     _CASE_UI_081,
     _CASE_UI_082,
+    _CASE_UI_083,
     _CASE_UT_001,
     _CASE_UT_002,
 )

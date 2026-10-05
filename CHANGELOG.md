@@ -1,5 +1,20 @@
 ## [Unreleased]
 
+### 右上角用户卡片「点外部即收起」真正生效：改用文档级监听，并拦住同类「fixed 遮罩落在 backdrop-blur 祖先内」缺陷（2026-10-05，issue #6339）
+
+- 以前：用户卡片展开后，点页面**内容区**（卡片以外任意位置）**收不回去** —— 只有点卡片内部、
+  或再点一次用户按钮才收；点顶栏其它位置（如通知铃铛）虽能收起卡片，但那一次点击被吃掉（铃铛不打开）。
+- 根因：接「点击外部」的是一个 `fixed inset-0` 透明遮罩，而它所在的 `<header>` 带 `backdrop-blur-sm`。
+  CSS 规定 `backdrop-filter` 非 `none` 的元素是 `position: fixed` 后代的**包含块**
+  ⇒ 该遮罩的 `inset-0` 相对的是**顶栏 56px**、不是视口，内容区的点击落不到它上面
+  （承载文件 = `frontend/admin-web/src/components/layout/Header.tsx`）。
+- 现在：改为**文档级 `mousedown` 监听 + 容器 ref**（与通知铃铛同一范式，「点外部」不再依赖遮罩几何），
+  并删除遮罩 ⇒ 内容区任意位置点击即收起，顶栏点击不再被吞。
+- 固化（类级）：`fixed` 元素不得出现在带生成包含块类的 JSX 祖先内
+  （`backdrop-blur*` / `filter` / `transform` / `translate-*` / `scale-*` / `will-change-*` / `contain-*` …），
+  判据 = 静态 AST 扫描 + 判别力自证（`frontend/admin-web/tests/unit/lib/fixed-containing-block.test.ts`）。
+- ⚠️ jsdom **不做布局** ⇒ 这类缺陷此前**没有任何判据会红**（原「点击卡片外收起」是在 jsdom 里点那个遮罩本身）。
+
 ### 产品内 AI 角色标签统一：悬浮助手 / 客服工作台 / 人工会话 / 两个小程序登录页（2026-10-05，issue #6333）
 
 承接 #6330，把**产品内**仍存在的旧标签统一到同一口径（米宝 = **企业智能生产管家**、小布 = **企业智能客服**）：
