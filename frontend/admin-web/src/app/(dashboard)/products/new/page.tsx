@@ -40,9 +40,18 @@ export default function NewProductPage() {
     setInterpretedFields(next.recognizedFields.filter((key) => interpreted.has(key)))
   }, [])
 
-  /** 快通道回调（页面上那个「拍照 / 上传识别」按钮，**不依赖米宝**） */
+  /**
+   * 表单内「识别 + 一次性推理」入口（issue #6367 包 P3）与快通道**共用这一条回调**：
+   * 每格自带 `source` ⇒ 页面在这里按来源分流徽标（不让调用方再传一份键清单，
+   * 也不新增第二条填充路径 —— 填充永远只经 `applyFields`）。
+   * 纯识别链路的格子 `source` 都是 `[图片识别]` ⇒ 分流结果与改前一致（零行为变化）。
+   */
   const handleRecognized = useCallback(
-    (fields: RecognizedField[]) => applyFields(fields, []),
+    (fields: RecognizedField[]) =>
+      applyFields(
+        fields,
+        fields.filter((field) => field.source === PAGE_FILL_SOURCE_INTERPRETED).map((f) => f.key),
+      ),
     [applyFields],
   )
 
@@ -77,7 +86,7 @@ export default function NewProductPage() {
         onSubmit={handleSubmit}
         submitText="提交并上架"
         titleActions={
-          <ImageRecognizeButton targetType="product" onRecognized={handleRecognized} />
+          <ImageRecognizeButton targetType="product" interpret onRecognized={handleRecognized} />
         }
         recognizedFields={recognizedFields}
         interpretedFields={interpretedFields}

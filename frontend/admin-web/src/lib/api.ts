@@ -8,6 +8,9 @@ import {
 import type { RefundOrderParams } from './data-adapter'
 // 发货读面（issue #5651）：真值 owner = `OrderShipmentService.readShipment`，这里只声明形状
 import type { OrderShipmentRead } from './sales-shipment'
+// 「识别 + 一次性推理」端点回的是**同一条字段计划**（issue #6367 包 P3）—— 复用它的形状，
+// 不另造第二份（两份定义迟早让 `source` / `fields` 漂移）。**类型导入**，运行时零依赖。
+import type { PageFillPlan } from './agent-page-fill'
 import type { 
   ApiResponse, 
   PageResponse, 
@@ -807,6 +810,25 @@ export const imageRecognizeApi = {
     request.post<ApiResponse<ImageRecognizeResult>>('/api/admin/image-recognition', {
       targetType,
       images,
+    }),
+
+  /**
+   * 「识别 + **一次性**推理」（issue #6367 包 P3，冻结契约）—— 建品页表单内那个入口。
+   *
+   * 与 `recognize` 的差别只有两点（其余同族：同样先 `uploadApi.uploadImage`、同样**只回字段候选**）：
+   * - 端点 `/api/admin/image-recognition/interpret`（admin-api 代理，服务端复用米宝主模型）；
+   * - 请求体多一个**可选** `hint`（商家的一句话要求，≤200 字，`maxLength` 由输入框限住）：
+   *   **空串 / 缺省 ⇒ 该键不出现**（「没补充」不等于「补充了空字符串」）。
+   *
+   * 响应 = `PageFillPlan`：每格带 `source`（从图上抄的 / 米宝推的）与 `note`（依据），
+   * 前端**只比对字符串做展示**。
+   * 🔴 **不落库**：同 `recognize` —— 结果只填表，提交永远是人的动作。
+   */
+  interpret: (targetType: 'product' | 'order', images: string[], hint?: string) =>
+    request.post<ApiResponse<PageFillPlan>>('/api/admin/image-recognition/interpret', {
+      targetType,
+      images,
+      ...(hint ? { hint } : {}),
     }),
 }
 
