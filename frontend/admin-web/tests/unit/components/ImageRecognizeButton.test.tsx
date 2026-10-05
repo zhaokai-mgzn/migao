@@ -1,4 +1,4 @@
-// case_ids: UI-009, API-004
+// case_ids: UI-009, API-004, PR-008
 /**
  * ImageRecognizeButton（issue #5321 包 1「页面快通道」）
  *
@@ -10,13 +10,14 @@
  * 🔴 硬要求：本组件**永不落库** —— 不调任何 create/update、不发 fetch、不提交任何 form
  * （「识别结果只填表，提交永远是人的动作」）。
  */
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import ImageRecognizeButton from '@/components/image-recognize/ImageRecognizeButton'
 
 const mocks = vi.hoisted(() => ({
   uploadImage: vi.fn(),
   recognize: vi.fn(),
+  interpret: vi.fn(),
   // 存在的写端点：本组件**一个都不许调**（列在这里正是为了能断言「未调用」）
   createProduct: vi.fn(),
   updateProduct: vi.fn(),
@@ -26,7 +27,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/api', () => ({
   uploadApi: { uploadImage: mocks.uploadImage },
-  imageRecognizeApi: { recognize: mocks.recognize },
+  imageRecognizeApi: { recognize: mocks.recognize, interpret: mocks.interpret },
   productApi: { createProduct: mocks.createProduct, updateProduct: mocks.updateProduct },
   orderApi: { createOrder: mocks.createOrder },
 }))
@@ -178,6 +179,172 @@ describe('ImageRecognizeButton (#5321)', () => {
     })
 
     await waitFor(() => expect(onRecognized).toHaveBeenCalledTimes(1))
+    expect(mocks.createProduct).not.toHaveBeenCalled()
+    expect(mocks.updateProduct).not.toHaveBeenCalled()
+    expect(mocks.createOrder).not.toHaveBeenCalled()
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 解读模式（issue #6367 包 P3）：一句可选要求 → 上传 → **一次性**推理 → 内嵌结果卡
+// ══════════════════════════════════════════════════════════════════════════════
+
+const HINT_PLACEHOLDER = '补充一句（可选）：如 客厅用、韩褶、遮光'
+
+/** 与后端计划的字段条目同形（`source` 决定它进卡片哪一段） */
+const PLAN_FIELDS = [
+  {
+    key: 'name',
+    label: '商品名称',
+    value: '雪尼尔遮光窗帘',
+    source: '[图片识别]',
+    reason: null,
+    candidates: [],
+    note: '图上标题栏写着这个',
+    note_source: '[图片识别]',
+  },
+  {
+    key: 'craft',
+    label: '工艺',
+    value: '韩褶',
+    source: '[米宝解读]',
+    reason: null,
+    candidates: [],
+    note: '商家补充了「韩褶」，米宝折成规范工艺名',
+    note_source: '[米宝解读]',
+  },
+]
+
+function interpretResponse(fields: unknown[] = PLAN_FIELDS) {
+  return {
+    data: { success: true, data: { component: 'page_fill', target_type: 'product', fields } },
+  }
+}
+
+describe('解读模式（issue #6367 包 P3）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.uploadImage.mockResolvedValue({ data: { success: true, data: { url: UPLOADED_URL } } })
+    mocks.interpret.mockResolvedValue(interpretResponse())
+  })
+
+  it('① 选图 ⇒ 上传 + 调 interpret（一次；不调 recognize），结果**不自动填表**', async () => {
+    const { onRecognized } = renderAndPickFile({ interpret: true })
+
+    await waitFor(() => expect(mocks.interpret).toHaveBeenCalledTimes(1))
+    expect(mocks.uploadImage).toHaveBeenCalledTimes(1)
+    expect(mocks.uploadImage.mock.calls[0][0]).toBe(IMAGE_FILE)
+    expect(mocks.recognize).not.toHaveBeenCalled()
+    expect(mocks.interpret.mock.calls[0][0]).toBe('product')
+    expect(mocks.interpret.mock.calls[0][1]).toEqual([UPLOADED_URL])
+
+    // 一次性推理 = 结果先落在卡片里，**由商家点「一键填入」**才进表单
+    expect(onRecognized).not.toHaveBeenCalled()
+    expect(screen.getByTestId('form-interpret-card')).toBeInTheDocument()
+  })
+
+  it('①b hint 为空 ⇒ 逐字传空串（由 api 层丢掉该键，见 image-recognize-interpret-api.test.ts）', async () => {
+    renderAndPickFile({ interpret: true })
+
+    await waitFor(() => expect(mocks.interpret).toHaveBeenCalledTimes(1))
+    expect(mocks.interpret.mock.calls[0][2]).toBe('')
+  })
+
+  it('⑥ 输入框 maxLength=200；≤200 字的要求**逐字**透传（不截断、不改写）', async () => {
+    const hint = '客厅雪尼尔，韩褶，遮光'
+    render(<ImageRecognizeButton targetType="product" interpret onRecognized={vi.fn()} />)
+
+    const input = screen.getByTestId('image-recognize-hint') as HTMLInputElement
+    expect(input.getAttribute('maxLength')).toBe('200')
+    expect(input.getAttribute('placeholder')).toBe(HINT_PLACEHOLDER)
+
+    fireEvent.change(input, { target: { value: hint } })
+    fireEvent.change(screen.getByTestId('image-recognize-input'), {
+      target: { files: [IMAGE_FILE] },
+    })
+
+    await waitFor(() => expect(mocks.interpret).toHaveBeenCalledTimes(1))
+    expect(mocks.interpret.mock.calls[0][2]).toBe(hint)
+  })
+
+  it('③ 结果落成内嵌卡片：两段分组（识别 / 解读）+ 各格 note 依据可见', async () => {
+    renderAndPickFile({ interpret: true })
+
+    await waitFor(() => expect(screen.getByTestId('form-interpret-card')).toBeInTheDocument())
+
+    const recognized = screen.getByTestId('form-interpret-group-recognized')
+    expect(recognized.textContent).toContain('[图片识别]')
+    expect(within(recognized).getByTestId('form-interpret-field-name')).toBeInTheDocument()
+    expect(within(recognized).getByTestId('form-interpret-note-name').textContent).toContain(
+      '图上标题栏写着这个',
+    )
+
+    const interpreted = screen.getByTestId('form-interpret-group-interpreted')
+    expect(interpreted.textContent).toContain('[米宝解读]')
+    expect(within(interpreted).getByTestId('form-interpret-field-craft')).toBeInTheDocument()
+    expect(within(interpreted).getByTestId('form-interpret-note-craft').textContent).toContain(
+      '米宝折成规范工艺名',
+    )
+  })
+
+  it('④ 「一键填入」把选中格交给既有 onRecognized —— 只此一条填充路径，且**不落库**', async () => {
+    const { onRecognized } = renderAndPickFile({ interpret: true })
+    await waitFor(() => expect(screen.getByTestId('form-interpret-card')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('form-interpret-fill'))
+
+    expect(onRecognized).toHaveBeenCalledTimes(1)
+    expect(onRecognized.mock.calls[0][0].map((f: { key: string }) => f.key)).toEqual([
+      'name',
+      'craft',
+    ])
+    expect(mocks.createProduct).not.toHaveBeenCalled()
+    expect(mocks.updateProduct).not.toHaveBeenCalled()
+    expect(mocks.createOrder).not.toHaveBeenCalled()
+  })
+
+  it('⑤ 失败态给出**可行动**文案，且不渲染空卡片（不静默）', async () => {
+    mocks.interpret.mockRejectedValue(new Error('interpret boom'))
+    const { onRecognized } = renderAndPickFile({ interpret: true })
+
+    await waitFor(() => expect(screen.getByTestId('image-recognize-failure')).toBeInTheDocument())
+    expect(screen.getByTestId('image-recognize-failure').textContent).toContain('可重试或手工填写')
+    expect(screen.queryByTestId('form-interpret-card')).not.toBeInTheDocument()
+    expect(onRecognized).not.toHaveBeenCalled()
+  })
+
+  it('⑤b 计划里一个字段都没有 ⇒ 同一条可行动文案、不渲染空卡片', async () => {
+    mocks.interpret.mockResolvedValue(interpretResponse([]))
+    const { onRecognized } = renderAndPickFile({ interpret: true })
+
+    await waitFor(() => expect(screen.getByTestId('image-recognize-failure')).toBeInTheDocument())
+    expect(screen.getByTestId('image-recognize-failure').textContent).toContain('可重试或手工填写')
+    expect(screen.queryByTestId('form-interpret-card')).not.toBeInTheDocument()
+    expect(onRecognized).not.toHaveBeenCalled()
+  })
+
+  it('解读模式同样**不落库**：不调 create/update、不发 fetch、不提交所在 form', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    const onSubmit = vi.fn((e: React.FormEvent) => e.preventDefault())
+    const onRecognized = vi.fn()
+
+    render(
+      <form onSubmit={onSubmit}>
+        <ImageRecognizeButton targetType="product" interpret onRecognized={onRecognized} />
+      </form>,
+    )
+    fireEvent.change(screen.getByTestId('image-recognize-input'), {
+      target: { files: [IMAGE_FILE] },
+    })
+    await waitFor(() => expect(screen.getByTestId('form-interpret-card')).toBeInTheDocument())
+
+    // 「一键填入」在表单里 ⇒ 它必须是 `type="button"`（`type` 缺省是 submit）
+    fireEvent.click(screen.getByTestId('form-interpret-fill'))
+    await waitFor(() => expect(onRecognized).toHaveBeenCalledTimes(1))
+
     expect(mocks.createProduct).not.toHaveBeenCalled()
     expect(mocks.updateProduct).not.toHaveBeenCalled()
     expect(mocks.createOrder).not.toHaveBeenCalled()
