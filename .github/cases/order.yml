@@ -4250,3 +4250,35 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: OR-063
+    legacy_id: ""
+    title: "入库出参契约：本族 DTO 的雪花 id（skuId/itemId/明细行 id）序列化为 JSON 字符串，且新漏标进不来"
+    domains:
+      - order
+      - inventory
+    tier: normal
+    tags:
+      - inventory
+      - inbound
+      - backend-contract
+      - serialization
+    truths_ref:
+      - inbound-order-flow.draft-then-post
+    user_inputs:
+      - "后台/工人端读取入库链路的出参（识别命中、草稿、入库单详情、批次、期初导入报告、标签详情）：其中的雪花 id 必须是字符串，JavaScript 侧才不丢精度"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 实例（参数化，6 个 DTO）：backend/admin-api/src/test/java/com/migao/admin/dto/LongIdSerializationTest.java 的 idLikeFields_above2pow53_shouldSerializeAsString —— WorkerInboundSkuMatch.skuId / WorkerInboundDraftView.Line.skuId / InboundOrderResponse.Item.id+skuId / InboundBatchView.id+skuId / OpeningImportReport.Row.skuId / InboundLabelView.itemId 逐个跑真 Jackson 序列化，断言该字段以**带引号的 JSON 字符串**形态出现（形如 `字段` + 冒号 + 引号 + 值 + 引号）且**不得**同时出现 bare number 形态；实例值用真实量级（2106900122848247810 / 2097126615461462018 > 2^53）"
+      - "判据 2·类级元守卫（新漏标进不来）：同文件 everyIdLikeLongFieldInScopeMustBeAnnotated —— **现取源码面**射程内（ID_LIKE_SCAN_SCOPE 6 个文件）每一个「id 形态（id / *Id / *ID）的 Long 字段」，没有 `@JsonSerialize(using = ToStringSerializer.class)` 即红并具名打印 `文件:行 → 字段`；REGISTERED_EXCEPTIONS 是唯一出口且**只许缩短**（现取为空 ⇒ 一处都不许）"
+      - "判据 3·反空跑 + 判别力自证：scopeMustBeNonEmptyAndAnnotationReallyDetected 断言射程内至少抽到 8 个带注解的 id 形态字段（抽取口径漂移 ⇒ 红，不许静默退化成假绿）；extractorDetectsBothBadShapes 在内存里注入「缺注解 / 注解错位到相邻字段 / 非 id 形态」三种形态，各自给出正确判定"
+      - "判据 4·业务数值不受牵连：stock/quantity 这类业务数值仍是 JSON number（stock_shouldStayNumber + 既有 productSkuId_above2pow53 断言逐字保留）"
+    skip_reason: "[backend-contract] 确定性 Java 单测（DTO 序列化契约），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-05 新增（issue #6340）：本类从「只点名两个 DTO」升级为「实例参数化 + 源码面类级元守卫 + 反空跑 + 判别力自证」——原形态下新 DTO 漏标不会红（#6340 就是这样落进来的）。同 PR 补齐被约束对象 6 个字段。边界如实登记：射程 = 该 6 个文件（issue #6340 清点的同族 + 同一入库读面的 InboundLabelView.itemId）；射程外新增雪花 id DTO 不拦（有意：不做全包枚举以免既有业务 Long 成为噪声），扩射程 = 加一行 + 同 PR 补注解。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/dto/LongIdSerializationTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

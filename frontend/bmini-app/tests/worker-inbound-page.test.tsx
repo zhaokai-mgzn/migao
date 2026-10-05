@@ -1,4 +1,4 @@
-// case_ids: BM-018, BM-019
+// case_ids: BM-018, BM-019, BM-032
 /**
  * 工人**拍照入库页**的行为判据（issue #5052 P3；验收判据 10 / 11 + 页面级联调）
  *
@@ -10,6 +10,8 @@
  * | C4 | **过账二次确认**：点取消 ⇒ 一次都不建单；确认 ⇒ 建单 + 过账（不可逆动作的护栏） | 取消也提交 ⇒ 红 |
  * | C5 | 数量非法 ⇒ 端侧先拦（不白跑一次 400），文案取自**同一份**口径真值 | 静默放行 ⇒ 红 |
  * | C6 | 打印组件加载不出来 ⇒ 给「sdk-unavailable」这条**专属**文案（不是一句"打印失败"） | 通用文案 ⇒ 红 |
+ * | C7 | **雪花号 id 逐字原样**（issue #6340）：SKU 选项与建单请求体里的 `skuId` 都是 `2106900122848247810`
+ *        （> 2^53 = 9007199254740991）**字符串**，不得被 `Number()` 吞掉末两位 | 页面写回 `Number(chosenSku?.skuId)` ⇒ 红 |
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -26,6 +28,9 @@ jest.mock('../src/utils/workerSession', () => ({
 jest.mock('../src/utils/inbound/barcodeDecode', () => ({
   decodeBarcodeFromPhoto: jest.fn(async () => ({ text: 'MG-1001', source: 'h5-dom-canvas', hint: '' })),
 }))
+
+/** 🔴 真实量级雪花号（issue #6340 实测值，2.1e18 > 2^53）：玩具 id 测不出精度洞（#5904 的盲区成因） */
+const REAL_SNOWFLAKE_SKU_ID = '2106900122848247810'
 
 jest.mock('../src/utils/inbound/lpapiTransport', () => ({
   loadLpapi: jest.fn(async () => null),
@@ -46,7 +51,7 @@ jest.mock('../src/services/workerInboundService', () => ({
       productName: '遮光布',
       colorName: '米白',
       quantityMeters: '60.5',
-      skuMatches: [{ skuId: 9, productId: 'p1', productName: '遮光布', skuCode: 'MG-1001', colorName: '米白' }],
+      skuMatches: [{ skuId: REAL_SNOWFLAKE_SKU_ID, productId: 'p1', productName: '遮光布', skuCode: 'MG-1001', colorName: '米白' }],
       message: '条码命中已有货号，请核对后填写米数。',
     },
   })),
@@ -106,7 +111,7 @@ describe('工人拍照入库页', () => {
     mockCreateDraft.mockResolvedValue({
       success: true,
       message: '',
-      data: { draftId: 'd1', inboundNo: 'RK-20260927-0001', status: 'draft', items: [{ skuId: 9, shortCode: null }] },
+      data: { draftId: 'd1', inboundNo: 'RK-20260927-0001', status: 'draft', items: [{ skuId: REAL_SNOWFLAKE_SKU_ID, shortCode: null }] },
     })
     mockPostDraft.mockResolvedValue({
       success: true,
@@ -115,7 +120,7 @@ describe('工人拍照入库页', () => {
         draftId: 'd1',
         inboundNo: 'RK-20260927-0001',
         status: 'posted',
-        items: [{ skuId: 9, skuCode: 'MG-1001', quantity: '60.5', shortCode: 'ABCD2345', printCount: 0 }],
+        items: [{ skuId: REAL_SNOWFLAKE_SKU_ID, skuCode: 'MG-1001', quantity: '60.5', shortCode: 'ABCD2345', printCount: 0 }],
       },
     })
     mockGetLabel.mockResolvedValue({
@@ -223,6 +228,9 @@ describe('工人拍照入库页', () => {
       ['dyeLot', 'productId', 'quantity', 'remark', 'skuId', 'supplier', 'supplierDocNo'].sort(),
     )
     expect(body.quantity).toBe('60.5')
+    // C7（#6340 靶心）：雪花号 id **逐字原样字符串**回传；`Number()` 会吞末两位 ⇒ 服务端查不到该 SKU
+    expect(body.skuId).toBe(REAL_SNOWFLAKE_SKU_ID)
+    expect(String(body.skuId)).toBe('2106900122848247810')
     // 短码出现在屏上（人可读，工人可抄）
     expect(screen.getByText(/ABCD2345/)).toBeTruthy()
 

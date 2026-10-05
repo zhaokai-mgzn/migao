@@ -1054,3 +1054,35 @@ cases:
       ci:
         - bmini-app.yml
       verifies: []
+
+  - id: BM-032
+    legacy_id: ""
+    title: "工人拍照入库：雪花号 skuId 逐字原样回传（真实量级 2.1e18，> 2^53），端侧类型为 string"
+    domains:
+      - bmini
+      - inventory
+    tier: normal
+    tags:
+      - bmini
+      - inbound
+      - backend-contract
+    truths_ref:
+      - inbound-order-flow.draft-then-post
+    user_inputs:
+      - "工人在手机浏览器（bmini H5）拍/扫面料标签 → 识别命中既有 SKU → 核对米数 → 确认过账：提交体里的 skuId 必须与识别结果逐字相同（2.1e18 的雪花号，JS 的 Number 只有 2^53 精度）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 实例（#6340 靶心）：frontend/bmini-app/tests/worker-inbound-page.test.tsx 的 C7 用例 —— 识别 mock 返回真实量级 skuId `2106900122848247810`（> 2^53 = 9007199254740991），断言 createInboundDraft 收到的 body.skuId **逐字等于**该字符串（`String(body.skuId)` 同值）；页面写回 `Number(chosenSku?.skuId)` ⇒ 红（末两位被吞成 …800）。玩具 id 测不出来 —— 那正是本洞当初溜过的原因（同 #5904）"
+      - "判据 2·端侧类型 = 字符串：frontend/bmini-app/src/utils/inbound/recognizeGate.ts 的 SkuMatch.skuId / DraftInput.skuId、frontend/bmini-app/src/services/workerInboundService.ts 的 InboundDraftRequest.skuId 均为 string（后端出参形态；类型写回 number ⇒ tsc 报错）"
+      - "判据 3·类级元守卫（同族进不来）：frontend/admin-web/tests/unit/lib/snowflake-id-not-number.test.ts 的语料根已参数化为 admin-web + bmini-app 两个根 —— `Number()/parseInt()/parseFloat()` 作用在 `.id` 形态成员上即红（未登记即红 / 登记陈旧即红 / 逐根反空跑）；单变量红证实跑：把 bmini 入库页那行改回 `Number(chosenSku?.skuId)` ⇒ 具名报出 `frontend/bmini-app/src/pages/worker/inbound/index.tsx`（命中的那一行 = 建草稿体里的 skuId 表达式）"
+    skip_reason: "[backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/worker-inbound-page.test.tsx / vitest: frontend/admin-web/tests/unit/lib/snowflake-id-not-number.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-05 新增（issue #6340）：工人端「拍照入库」建单必失败 —— recognize 出参把雪花 skuId 当 JSON number 发出，页面 JSON.parse 当场丢精度 ⇒ 回传时服务端报「商品明细第 1 项的 SKU 不属于该商品（或不存在）」。根因两层：后端 WorkerInboundSkuMatch.skuId 等 6 处 DTO 字段漏 `@JsonSerialize(using = ToStringSerializer.class)`（同族 #5904 的前端侧已修、工人端与出参契约都还留着）+ bmini 页面写的是 `Number(chosenSku?.skuId)`。修复 = 后端补注解（出参字符串）+ 端侧类型改 string + 去 Number()。边界如实登记：运行时红转绿要**部署后**重放 seed-inbound-t25/probe-worker-skuid.mjs 才算闭环（本用例只覆盖单元/组件层）。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/worker-inbound-page.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/snowflake-id-not-number.test.ts"
+      ci:
+        - bmini-app.yml
+        - pr-check.yml
+      verifies: []

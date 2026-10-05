@@ -280,8 +280,9 @@ export interface InboundOrderLine {
 
 /** 明细行（**一行 = 一个批次**） */
 export interface InboundOrderItem {
-  id?: number | null
-  skuId?: number | null
+  /** 雪花号 id：后端出参是**字符串**（> 2^53，JSON number 会丢精度，issue #6340） */
+  id?: string | null
+  skuId?: string | null
   productId?: string | null
   skuCode?: string | null
   colorName?: string | null
