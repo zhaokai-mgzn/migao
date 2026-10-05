@@ -345,18 +345,22 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     const personified = findPersonifiedAi(text)
     expect(personified, `首页渲染文本出现拟人量词：${personified.join(' / ')}`).toEqual([])
   })
-  it('米宝朝向口径：官网源码不得用「门店」框定米宝或 AI 读取的数据（issue #6379）', () => {
-    // 口径（src/config/ai-roles.ts，用户 2026-10-05 裁定）：米宝 = **企业智能生产管家**，
-    // 朝向是「企业生产与经营侧」。写成「门店经营」等于把它降级成**零售门店视角** ——
-    // 且米宝卡片里 `role` 刚显示「企业智能生产管家」，紧接着 brief 就说「面向门店经营」＝ 同卡自相矛盾。
+  it('企业级口径：官网源码不得出现零售单店视角的「门店」（issue #6379 / #6384）', () => {
+    // 口径（用户 2026-10-05 两次裁定）：
+    //   ① 「米宝不是面向门店经营……是企业级的生产管家」（issue #6379）
+    //   ② 「要去掉，不要出现门店，我们是解决企业的问题」（issue #6384）
+    // 「门店」是**零售单店**视角，而米高是**企业级**平台（企业智能生产管家 + 六个能力域）
+    // ⇒ 用它描述客户的经营形态或 AI 的朝向，都把客户框小了。
+    // 禁用表收窄到**单字**「门店」：前两条（门店经营 / 门店真实数据）被它天然覆盖。
     // 这里扫**源码**而不是渲染文本：layout.tsx 的 OG / Twitter 描述不上屏，渲染文本判据扫不到它。
-    const BANNED = ['门店经营', '门店真实数据']
+    const BANNED = ['门店']
     const hit = (text: string) => BANNED.filter((phrase) => text.includes(phrase))
 
     // 判别力自证：病症样本必须命中、合规样本必须零命中（否则本判据是空断言）
-    expect(hit('面向门店经营：以自然语言问答交付商品、订单')).toEqual(['门店经营'])
-    expect(hit('小布与米宝读取门店真实数据')).toEqual(['门店真实数据'])
+    expect(hit('面向门店经营：以自然语言问答交付商品、订单')).toEqual(['门店'])
+    expect(hit('提供门店数量、客服人数与现有流程')).toEqual(['门店'])
     expect(hit('面向企业生产与经营：读取真实经营数据')).toEqual([])
+    expect(hit('提供企业规模、客服人数与现有流程')).toEqual([])
 
     const roots = [
       'frontend/admin-web/src/app/(corporate)',
@@ -372,7 +376,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
 
     expect(
       offenders,
-      `米宝朝向被写成门店视角（应改为「企业生产与经营」/「真实经营数据」）：${offenders.join('；')}`,
+      `官网出现零售单店视角的「门店」（应改到企业口径，如「企业规模」/「客户接待」）：${offenders.join('；')}`,
     ).toEqual([])
   })
   it('官网源码不得出现无出处的年份（issue #6382）', () => {

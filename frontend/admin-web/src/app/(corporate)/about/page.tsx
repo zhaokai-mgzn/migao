@@ -100,7 +100,7 @@ export default function AboutPage() {
       <PageHero
         kicker="关于我们"
         title="关于米高"
-        lead="米高是杭州词元通达科技有限公司旗下的 AI 经营平台。产品目标明确：由 AI 承接门店接待，并协助经营者掌握商品、订单、生产、库存与账目。"
+        lead="米高是杭州词元通达科技有限公司旗下的 AI 经营平台。产品目标明确：由 AI 承接客户接待，并协助经营者掌握商品、订单、生产、库存与账目。"
         chips={['杭州词元通达科技有限公司', '布艺 / 窗帘行业', '多租户 SaaS']}
       />
 
@@ -221,7 +221,7 @@ export default function AboutPage() {
       </section>
 
       <CallToAction
-        title="了解米高在您的门店如何运行"
+        title="了解米高在您的企业如何运行"
         lead="提交入驻申请，AI 自动甄别后即刻开通；也欢迎先留言说明业务场景，我们将按您的流程安排演示。"
         primary={
           <Link
