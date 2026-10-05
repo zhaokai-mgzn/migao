@@ -10854,6 +10854,24 @@ _CASE_PR_015 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-016 [NORMAL] 建品/改品 status 枚举准入：非法值 4xx 且列出合法枚举；状态机死行（active/on_shelf）可改回 off_sale/draft 自救（源: cases/product.yml）──
+_CASE_PR_016 = EvalCase(
+    id='PR-016',
+    legacy_id='',
+    title='建品/改品 status 枚举准入：非法值 4xx 且列出合法枚举；状态机死行（active/on_shelf）可改回 off_sale/draft 自救',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（非 LLM 行为：状态准入由 admin-api 服务层单测 + 仓内语料元守卫覆盖，不进 agent-eval 冒烟）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 建品/改品传非法 status（active / on_shelf / in_warehouse / ON_SALE / 含空格 …）⇒ **422 VALIDATION_ERROR**，且文案**列出合法枚举**（draft(草稿)/under_review(审核中)/on_sale(出售中)/off_sale(已下架)）——不是「请检查字段格式是否正确」这种无出路的话', '🔴 合法集合**单一真值源** = backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java 的 STATUS_TRANSITIONS 键集（PRODUCT_STATUSES 必须是它的派生）；admin-api 主源码里别处不得再定义 ≥3 个状态 token 的集合字面量；createProduct / updateProduct 两个入口都必须走 requireValidStatusOrNull', '🔴 状态机死行（当前状态不在状态机内，如 active / on_shelf / in_warehouse）⇒ 报错**必须给可执行出路**（改回 off_sale(已下架) 或 draft(草稿) 修正回状态机），**禁止**再出现「允许的目标状态: 无」；且该出路真的走得通（PUT /api/admin/products/{id}/status body={"status":"off_sale"} 成功），但**不允许**从死行直接跳到 on_sale（来历不明的行不得被直接上架）', "🔴 仓内语料（含 acceptance/** 的 harness）里商品 status 字面量必须全部落在合法集合内：引信 = acceptance/2026-10-04/worker-miniapp-sweep/harness/bootstrap-chain.mjs 原先建品写 status:'active'（另有 20 个 harness 文件写 status:'on_shelf'）", '🔴 写入方**未登记即红**：tests/unit_ci_workflows/product_status_write_sites.json ⇄ 现取检出集双向相等（新写入方未登记 ⇒ 红；陈旧条目 ⇒ 红，台账只许缩短）', "判别力自证：注入真语料（把 bootstrap-chain.mjs 的 status:'on_sale' 改回 'active'）⇒ 判据当场红；不改 ⇒ 不报（反向对照）"],
+    skip_reason='[backend-contract] 商品状态准入是服务层枚举校验（无米宝工具面）⇒ 由 admin-api 单测（ProductStatusAdmissionTest）+ 仓内语料元守卫（tests/unit_ci_workflows/test_product_status_single_source.py）覆盖，不进入 agent-eval 冒烟',
+    tags=['product', 'status', 'validation', 'backend-contract', 'meta-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -13246,6 +13264,7 @@ ALL_CASES = (
     _CASE_PR_122,
     _CASE_PR_123,
     _CASE_PR_015,
+    _CASE_PR_016,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
