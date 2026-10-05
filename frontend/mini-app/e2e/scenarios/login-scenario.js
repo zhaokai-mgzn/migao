@@ -43,8 +43,9 @@ async function run(mp) {
   rep.step('登录页可达', true, 'path=pages/auth/login/index')
 
   // ── 2. 品牌区 ──
-  const brand = await waitForText(page, '.login-brand__title', '小布 · 智能购物助手', 8000)
-  rep.step('品牌标题「小布 · 智能购物助手」', !!brand, brand ? `text=${brand}` : '未找到')
+  // 定位标签口径见 frontend/admin-web/src/config/ai-roles.ts（issue #6330/#6333/#6335）
+  const brand = await waitForText(page, '.login-brand__title', '小布 · 企业智能客服', 8000)
+  rep.step('品牌标题「小布 · 企业智能客服」', !!brand, brand ? `text=${brand}` : '未找到')
 
   // ── 3. 一键登录按钮 ──
   const btn = await waitForText(page, '.login-btn__text', '微信一键登录', 8000)

@@ -11,6 +11,7 @@ import { findColloquialMarkers } from './copy-voice-banlist'
 import { AI_ROLES } from '@/config/ai-roles'
 import { readFileSync } from 'fs'
 import { join } from 'path'
+import { execSync } from 'child_process'
 
 describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实能力文案 + 能力陈述型口吻，issue #6291 / #6326）', () => {
   // ── Hero ──
@@ -276,6 +277,47 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     expect(
       offenders,
       `定位标签必须来自单一源 src/config/ai-roles.ts（改词只改那里）；命中：${offenders.join('；')}`,
+    ).toEqual([])
+  })
+
+  it('定位标签全仓残留：旧标签不得出现在白名单之外的任何文件（issue #6335）', () => {
+    // 上面那条只扫「声明的 6 个定位面」⇒ e2e 断言 / 注释里的旧标签扫不到
+    //（#6335 实测漏了 3 处，其中 2 条 e2e 跑到必红）。这条按**全仓**再兜一遍。
+    const OLD = [
+      '企业智能工作助手',
+      '企业智能助手',
+      '米宝 · 智能助手',
+      '米宝 · B端工作助手',
+      '小布 · AI',
+      '米宝 · 商家助手',
+      '小布 · 智能购物助手',
+    ]
+    // 白名单：历史记录（改了就是篡改证据）/ 单一源的口径文档 / 本判据自己的禁用表
+    const ALLOW = [
+      /^CHANGELOG\.md$/,
+      /^frontend\/admin-web\/src\/config\/ai-roles\.ts$/,
+      /^frontend\/admin-web\/tests\/unit\/pages\/corporate-home\.test\.tsx$/,
+      /^acceptance\//,
+    ]
+    const patterns = OLD.map((o) => `-e '${o}'`).join(' ')
+    let out = ''
+    try {
+      out = execSync(`git grep -l -F ${patterns}`, {
+        cwd: join(process.cwd(), '..', '..'),
+        encoding: 'utf-8',
+      })
+    } catch {
+      out = '' // git grep 无命中时退 1，不是失败
+    }
+    const offenders = out
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((rel) => !ALLOW.some((re) => re.test(rel)))
+
+    expect(
+      offenders,
+      `旧定位标签残留在白名单之外（应改到 AI_ROLES 口径，或说明理由后进白名单）：${offenders.join('、')}`,
     ).toEqual([])
   })
 })
