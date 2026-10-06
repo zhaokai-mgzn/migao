@@ -142,11 +142,13 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 🔴 省料看板 = product:list（issue #5699 P4：该页两个读端点在 `StockBatchController` 上是方法级 product:list）。
     // #5939：入库单之后新增「发货单」（`/shipments`，码 = 既有 `order:list`）——
     // 出口单据与入口单据对称，仍与「生产管理」组无关。
+    // #6404：组尾再加「库存明细」（`/stock-ledger`，同取 `product:list`）。
     expect(inventoryGroup()!.children.map((c) => c.path)).toEqual([
       '/inbound-orders',
       '/shipments',
       '/production/remnants',
       '/production/saving-board',
+      '/stock-ledger',
     ])
     // #5939：发货单取**既有** order:list（不新造 shipment:view —— 新码今天没有岗位持有 ⇒ 菜单对
     // 所有人不可见，见 #4203 同族坑）。
@@ -154,7 +156,8 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
       'inbound:view',
       'order:list',
       'processing:manage',
-      'product:list',
+      'product:list',   // 省料看板（#5699 P4）
+      'product:list',   // 库存明细（#6404：同取既有 product:list ⇒ 零授权 delta）
     ])
     // 全站不再有指向两个旧路径的菜单项，也不再有独立的「加工费管理」项；
     // ⚠️ 「加工项管理」是**合并后的唯一入口**（#4542 起菜单名）⇒ **必须**在菜单里，不得写成负断言。
@@ -167,9 +170,9 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 已不存在 —— 用码点构造，避免在源码里再写出该旧名（issue #4542 判据 1：零命中）
     expect(allNames).not.toContain('\u52a0\u5de5\u9879\u4e0e\u52a0\u5de5\u8d39')
     expect(allNames.filter((n) => n === '加工项管理')).toHaveLength(1)
-    // 一项不少不减：22 项 = 1 顶部一级项 + 20 个组内项 + 1 个尾部独立项（#5778；#5939 +「发货单」）
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(20)
-    expect(allNames).toHaveLength(20)
+    // 一项不少不减：23 项 = 1 顶部一级项 + 21 个组内项 + 1 个尾部独立项（#5778；#5939 +「发货单」；#6404 +「库存明细」）
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(21)
+    expect(allNames).toHaveLength(21)
   })
 })
 

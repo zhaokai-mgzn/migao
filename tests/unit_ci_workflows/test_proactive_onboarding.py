@@ -333,14 +333,39 @@ class TestBlastRadius:
     """判据 7：本包**不新造权限码 / 不碰菜单单一源**。"""
 
     def test_menu_ts_is_untouched_by_this_package(self) -> None:
-        """`menu.ts` 是菜单单一源；主动引导只**读**它（经 P1 镜像）⇒ 本包不该改它。"""
+        """`menu.ts` 是菜单单一源；主动引导只**读**它（经 P1 镜像）⇒ **本包**不该改它。
+
+        🔴 射程修正（issue #6404，2026-10-06）——病根：原实现断言
+        `git diff --name-only origin/main -- menu.ts` **为空**，那是**整个检出**的射程，不是**本包**的。
+        `tests/unit_ci_workflows/` 是**所有包共享**的测试面，于是在多包并发的仓里
+        「**任何别的包**合法地新增一个菜单节点」都会让本判据红 —— 实测：库存明细页（#6404）
+        往 `menu.ts` 加 `stock-ledger` 节点，本判据报「**本包**改了菜单单一源：…/menu.ts」，
+        把别的包的合法改动**错误归因**给主动引导包。
+
+        ⚠️ 也不能退化成「整个 `menu_navigator.py` 被动过」（第一版修法，当场被这条判据自己否掉）：
+        任何**加菜单节点**的包都**必然**同批改该文件的 **P1** 段（`MENU_TREE` 是镜像），
+        按文件粒度判 = 换个姿势继续误伤。
+        ⇒ 精确射程 = **P2 切片**（`_p2_section`）相对 `origin/main` 是否变过：**只有本包自己的产物**
+        被动过时，`menu.ts` 才必须没被动过。意图分毫未减，别的包改菜单不再误伤。
+        ⚠️ 另一半（「P2 段不得手抄菜单节点」）由下面的 `test_p1_registry_is_reused_not_copied` 独立覆盖。
+        """
         import subprocess
 
-        diff = subprocess.run(
-            ["git", "diff", "--name-only", "origin/main", "--", str(MENU_TS.relative_to(REPO_ROOT))],
+        base = subprocess.run(
+            ["git", "show", f"origin/main:{NAV_MODULE.relative_to(REPO_ROOT)}"],
             cwd=str(REPO_ROOT), capture_output=True, text=True,
+        ).stdout
+        # 面非空自证：基线取不到（路径漂移 / 浅克隆）⇒ **红**，不许静默当绿（空集比空集是恒等）
+        assert "NAV_FEATURES" in base and "MENU_TREE" in base, (
+            "取不到 origin/main 的 menu_navigator.py（或它已改形）⇒ 本判据无法判定，不许当绿"
         )
-        assert diff.stdout.strip() == "", f"本包改了菜单单一源：{diff.stdout.strip()}"
+
+        if _p2_section(_read(NAV_MODULE)) != _p2_section(base):
+            diff = subprocess.run(
+                ["git", "diff", "--name-only", "origin/main", "--", str(MENU_TS.relative_to(REPO_ROOT))],
+                cwd=str(REPO_ROOT), capture_output=True, text=True,
+            ).stdout.strip()
+            assert diff == "", f"本包改了菜单单一源：{diff}"
 
     def test_p1_registry_is_reused_not_copied(self) -> None:
         """🔴 不许另造第二份真值：P2 段只**引用** P1 的 `MENU_TREE` / `NAV_FEATURES`。"""

@@ -54,6 +54,7 @@ const ALL_KEYS = [
   'shipments',
   'production-remnants',
   'production-saving-board',
+  'stock-ledger',
   'employees',
   'roles',
   'settings',
@@ -92,9 +93,9 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     expect(document.querySelectorAll('[data-testid^="command-palette-item-"]')).toHaveLength(0)
   })
 
-  it('空查询 = 全量索引：列出全部 22 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
+  it('空查询 = 全量索引：列出全部 23 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(22))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(23))
     expect(renderedKeys()).toEqual(ALL_KEYS)
     expect(input().value).toBe('')
   })
@@ -102,7 +103,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
   it('空查询也**不含**无权项：简报开关关 ⇒ 恰少「每日简报」（与侧边栏同一口径）', async () => {
     mockBriefingEnabled = false
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(21))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(22))
     expect(renderedKeys()).toEqual(ALL_KEYS.filter((k) => k !== 'briefing'))
   })
 
@@ -129,10 +130,11 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     expect(screen.queryByTestId('command-palette-item-products')).toBeNull()
   })
 
-  it('组名命中：`仓储` ⇒ 仓储与物料组的 4 项（顺序 = 组内顺序）', async () => {
+  it('组名命中：`仓储` ⇒ 仓储与物料组的 5 项（顺序 = 组内顺序；#6404 +库存明细）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
     typeQuery('仓储')
-    expect(renderedKeys()).toEqual(['inbound-orders', 'shipments', 'production-remnants', 'production-saving-board'])
+    expect(renderedKeys()).toEqual(['inbound-orders', 'shipments', 'production-remnants', 'production-saving-board',
+      'stock-ledger'])
   })
 
   it('无结果：给可读文案，且列表清空（不是留着上一轮结果）', async () => {
@@ -238,7 +240,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     rerender(<CommandPalette open={false} onClose={mockOnClose} />)
     rerender(<CommandPalette open onClose={mockOnClose} />)
 
-    await waitFor(() => expect(renderedKeys()).toHaveLength(22))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(23))
     expect(input().value).toBe('')
   })
 })

@@ -128,6 +128,13 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         citation="依据：本店发货数量口径说明",
         path="frontend/admin-web/src/lib/sales-shipment.ts",
     ),
+    # issue #6404：库存明细页的口径 = 「变动前 → 变动后」逐行解释 + 原因枚举 +
+    # **成本 NULL 显示「未知」不伪造 ¥0.00**（真值源就是该页唯一的展示口径模块）
+    "stock-ledger-display": TruthSource(
+        label="库存流水口径（变动前 → 变动后 · 原因枚举 · 成本未知不伪造）",
+        citation="依据：本店库存流水口径说明",
+        path="frontend/admin-web/src/lib/stock-ledger.ts",
+    ),
 }
 
 
@@ -214,6 +221,14 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         route="/shipments",
         truth_source="sales-shipment",
         page_permissions=("order:list",),
+        entity_permissions=(),
+    ),
+    PageEntry(
+        # 库存明细（issue #6404）：一行 = 一次 SKU 级库存变更（变动前 → 变动后）；
+        # 页面读码 `product:list` = 端点方法级注解逐字同码
+        route="/stock-ledger",
+        truth_source="stock-ledger-display",
+        page_permissions=("product:list",),
         entity_permissions=(),
     ),
 )
