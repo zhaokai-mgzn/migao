@@ -84,5 +84,5 @@
 ## 5. 产物
 
 - `harness/recon.mjs`（只读侦察）、`harness/steps.mjs`（探针步骤库）、`harness/pilot.mjs`（6 单试跑）、
-  `harness/main.mjs`（300 单四臂主实验）
+  `harness/main.mjs`（300 单四臂主实验）、`harness/verify.mjs`（**结论判定器**：11 条断言 + 注入式红证）
 - `out/recon.json` / `out/pilot.json` / `out/main.json` / `out/main.log` / `out/REPORT.md`

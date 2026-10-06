@@ -21,7 +21,7 @@
 | 同指派但 `pooled:false`（逐单） | 105.00 | 105.00 | **0** |
 | 订单页「生成加工单」（一次一张 + 选批次） | 105.00 | 105.00 | **0** |
 
-300 张加工单的**工序与配置的工艺路线 300/300 逐字全序相等**（含条件工序），坐标、红证、残留见下。
+300 张加工单的**工序与配置的工艺路线 300/300 匹配**（**归一后全序相等**，含条件工序；口径订正见 §六），坐标、红证、残留见下。
 
 ---
 
@@ -52,7 +52,7 @@
 | **A** 界面路径 | `{orderIds×75, batches:[], assignmentRule:null, pooled:true}` | `frontend/admin-web/src/lib/pool-board.ts::buildPoolRequest`（**该页 dispatchBatch/dispatchSingle 的唯一请求体构造器**） |
 | **B** 直调池化 | `batches:[{orderId,itemId}×75]`（batchNo 留空）+ `assignmentRule:'fifo'` + `pooled:true` | `ProcessingOrderService::generatePooled` |
 | **C** 直调逐单 | 同 B 的指派 + `pooled:false` | `ProcessingOrderService::generateOne` |
-| **D** 订单页路径 | `POST /api/admin/processing-orders/generate`，一次一张 + 显式 `batchNo` | `ProcessingOrderCard::confirmAssign` 的真实形态 |
+| **D** 订单页路径 | `POST /api/admin/processing-orders/generate`，一次一张 + 显式 `batchNo` | `frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx::confirmAssign` 的真实形态 |
 
 300 单派出 **300/300 成功、0 失败**（`out/main.json::arms.*.ok` = 75/75/75/75，`poPerArm` 同值）。
 
@@ -75,10 +75,11 @@
 - **J1 成立**：`B.saved = 45 > C.saved = 0` —— 省料**来自池化**（同指派、同批次、同几何，只差 `pooled`）。
 - **J3 成立**：225 行消耗全部满足 `planned ≤ formula` 且 `planned > 0`（`rowInvariants.plannedLEformula/plannedPositive = true`）。
 - **归一的实测部分**：60.00 / 75 行 = **每行 0.80 米**（实测）；公式侧每行 1.40 米。
-  **推断部分（未单独记录，如实标注）**：池级排料若按「75 块两两并排 ⇒ 38 行 × 1.4 米 = 53.2 米」，
-  则每行分摊 0.7093 米、落库存前按 0.1 米**向上**归一 ⇒ 0.80 米/行 ⇒ 60.00 米。
-  ⇒ 归一吃掉了一部分理论节省（53.2 → 60）。**这是设计口径，不是缺陷**
-  （`StockQuantity::toStockScaleByCeiling`，少领比不省料严重）。
+  **推断部分（独立复核 F5：`issuedMeters` 未落盘，只能反推，如实标注）**：由「75 行 × 0.80」与
+  `cuttingPlanByItemId` 的分摊式（`issued × formula_i / Σformula` 后 `StockQuantity::toStockScaleByCeiling`
+  向上到 0.1）只能推出 **池级 `issuedMeters ∈ (52.5, 60]`**，53.2 只是其中一解 —— 本轮**没有落盘
+  `issuedMeters`**，报告不给单点数字。**但「归一吃掉了一部分理论节省」这个方向是确定的**（否则 75 行
+  的分摊值会是 0.7 而不是 0.8）。**这是设计口径，不是缺陷**（少领比不省料严重）。
 
 ### 4.1 成批预览（用户在该页直接看到的数）
 
@@ -107,8 +108,11 @@
 
 **唯一会自动指派 + 池化的路径是「自动成批」**（`ProcessingOrderService::assignmentsOf` 造「有行、batchNo 留空」
 的指派交给规则补位 + `pooled=true`），但它由**服务级配置** `migao.production.auto-batch.enabled` 控制，
-**缺省关**（`AUTO_BATCH_DEFAULT_ENABLED = false`）。本轮实测：300 单确认支付后**全部滞留在池里**未被自动派走，
-说明 dev 环境该开关为关（`out/main.json::pool.orderCount = 300`）。
+**缺省关**（`AUTO_BATCH_DEFAULT_ENABLED = false`）。
+**证据强度（独立复核 F9 后收紧）**：`grep 'auto-batch' .github/workflows/deploy-admin-api.yml deploy/` = **零命中**
+⇒ 部署面**未显式设置**该开关 ⇒ 生效值 = 代码缺省 `false`；旁证是本轮 300 单支付后**全部滞留在池里**
+（`out/main.json::pool.orderCount = 300`）。⚠️ **未排除**「开关为开但未满足触发条件」这一分支
+（要排除需读服务端生效配置或触发一次自动成批，本轮**没做**）。
 
 ---
 
@@ -120,17 +124,23 @@
 ＋ 命中的条件工序 `production_route_rules`（`craft='韩褶'` ⇒ `韩褶` 插在锚点「三边」后、`上车布` 插在锚点「韩褶」后，
 规则级 `position='布帘'` 限定）。
 
+> ⚠️ **口径（2026-10-06 独立复核后订正）**：实得工序名是**变体名**（`精裁-布`/`布三边`/`布帘车被`…），期望是**逻辑名**，
+> 判据靠 `harness/steps.mjs::logicalOperation` 归一后才比 ⇒ **正确的说法是「归一后全序相等」，不是「逐字相等」**。
+> 该归一函数**非单射**（现取 41 行工序库实测 **11 组碰撞**：`精裁-布/精裁-纱`、`布三边/纱三边`、`布帘车被/车被-纱`…）
+> ⇒ 它**挡不住布/纱错料**。故补一条材料面判据 **R8**：本单是**布帘**单，实得工序行里不得出现任何纱系变体
+> （实测 `纱系=[]` ✓）。逐字口径的权威判据仍是 §七 的冻结快照测试。
+
 | 判据 | 读数 |
 |---|---|
 | 期望序列（配置展开） | `精裁 > 三边 > 韩褶 > 上车布 > 熨烫 > 定型 > 复烫 > 车被 > 外帘打卷 > 打包 > 外帘装袋 > 外帘发货` |
 | 实得序列（300 张单**唯一签名**） | `精裁-布 > 布三边 > 韩褶-布 > 上车布-布 > 熨烫-布 > 定型-布 > 复烫-布 > 布帘车被 > 外帘打卷 > 打包 > 外帘装袋 > 外帘发货` |
-| **判据 R1~R6** | **300 / 300 pass，0 fail** |
+| **判据 R1~R8** | **300 / 300 pass，0 fail**（机器判定器 `harness/verify.mjs`，11 条断言全绿） |
 | R7 签名唯一性 | `seqSignatureSet` 长度 = **1**（300 张单工序逐字一致，无随机） |
 | `route_key` / `route_source` | 全为 **`窗帘工序路线（默认）`** / **`direct`**（= 请求的两维直读命中） |
 | 工序行总数 | **3600** 行（300 × 12），全部命中工序库活跃行、`group_name`/`unit` 与工序库逐字相等、部位内 `seq` 连续 1..12 |
 | **判别力自证（红证）** | 注入式：把主线里的「打包」摘掉重算期望 ⇒ **同一判据 300/300 报红**（`redProof.poFlagged=300/300`） |
 
-**判据自证（为什么不是自我循环）**：`harness/judge-selftest.mjs` 先用**已落盘的真实签名**把期望函数跑通
+**判据自证（为什么不是自我循环）**：`harness/verify.mjs` 先用**已落盘的真实签名**把期望函数跑通
 （`missing=[] / extra=[]`、锚点插入后**全序相等**），再去跑主实验；期望函数只读 `production_route_templates` /
 `production_route_rules` / `production_operations` 三张配置表，不读实得行。
 逐字口径的权威判据是仓内冻结快照测试（见 §7），本判据是**结构**层。
@@ -141,6 +151,8 @@
 
 `cd backend/admin-api && ./mvnw -Dtest='PooledDispatchRealDbTest,BatchConsumptionCuttingPlanRealDbTest,ProductionRouteParityTest' test`
 
+> 原始产物：`out/evidence/det-tests/maven-test.log`（mvn 全量输出）+ 三个 surefire 摘要 txt（独立复核 F7 后补齐）。
+
 | 测试类 | 读数 | 钉住的不变式 |
 |---|---|---|
 | `PooledDispatchRealDbTest` | **Tests run: 4, Failures: 0** | 跨订单并排 ⇒ Σ(−delta)=3（对照逐单=6）/ 跨批次不成组 / 幂等闸 23505 + 注入式红证 |
@@ -149,6 +161,39 @@
 
 ⇒ 「省料算法」与「工序 × 路线展开」在**确定性层**本来就被钉住；本轮活环境读数是它的**端到端印证**，
 两者不冲突：**算法对、接线断**。
+
+---
+
+## 七之二、独立复核（双 AI 交叉验证，2026-10-06 11:05 +08）
+
+复核 AI 独立于本实施（只读；核验手段 `git show origin/main:<path>`、`gh run view`、只读 SELECT、
+`git diff 73327161f..origin/main`），对五条结论的判定：**1 成立（两点限定）／2 成立（方向与数值）／
+3 成立（弱证据强度）／4 成立（但「逐字」口径不成立，已订正）／5 成立**。它提出的 9 条问题与处置：
+
+| # | 复核提出的问题 | 处置 |
+|---|---|---|
+| F1 | 「逐字全序相等」用词失真；`logicalOperation` **非单射**（11 组碰撞）⇒ 布/纱错料会被归一掩盖（假绿通道） | **已订正**：§六 口径改为「归一后全序」，并**补判据 R8**（布帘单不得出现纱系变体，实测 `纱系=[]`）；碰撞数与样例写进 `out/evidence/verify.json::judgeCaveat` |
+| F2 | J1~J4 只活在报告散文里，`main.json::checks` 恒空 ⇒ 口径漂移无人报红 | **已修**：新增 `harness/verify.mjs`（11 条机器断言，任一假 ⇒ 非零退出），读数落 `out/evidence/verify.json` |
+| F3 | `judge-selftest.mjs` 是**空断言**（只有 console.log），且自算期望与主判据不同函数 | **已修**：判定收敛进 `verify.mjs`，**import 同一个 `expectedRoute`** 并带断言与退出码；红证见下 |
+| F4 | 消耗台账逐行未落盘，清理后不可复算 | **未修（如实登记）**：`main.json` 只有逐臂聚合；逐行原始数据随 `cleanup()` 已删。**下一轮**已在 `main.mjs` 预留落盘点（本轮时间点已过） |
+| F5 | 「53.2 → 60」是推断而非实测（`issuedMeters` 未落盘，只能反推区间） | **已订正**：§四 改为「`issuedMeters ∈ (52.5, 60]`，不给单点数字」 |
+| F6 | 「页面恒 0.00」无页面级观测（截图/读值） | **已收紧措辞**：本报告凡「页面显示」处一律写明是 **API 读数 + 代码推导**（`pool-board.ts::previewSummaryRows` 原样渲染服务端值），**未做 Playwright 截图**；登记为未覆盖 |
+| F7 | 确定性层读数无原始产物 | **已修**：`out/evidence/det-tests/`（mvn 全量日志 + 三个 surefire 摘要） |
+| F8 | 符号转述不准（`ProcessingOrderCard::confirmAssign`） | **已修**：改为 `frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx::confirmAssign` |
+| F9 | 「dev 自动成批开关为关」是间接反推 | **已收紧**：补 `grep auto-batch .github/workflows/deploy-admin-api.yml deploy/` = 零命中（⇒ 取代码缺省 false）；**未排除**「开但未触发」，如实登记 |
+
+**复核确认的判别力读数**：`node verify.mjs` → **11 pass / 0 fail（exit 0）**；
+`node verify.mjs --inject`（摘掉主线「打包」）→ **exit 1**（判据会红）。
+两条读数落 `out/evidence/verify.json` 与 `out/evidence/verify-inject.json`。
+
+**复核「无法判定」清单（照实登记，不粉饰）**：
+① 自动成批服务级开关的真实生效值（只到「部署面未显式设 ⇒ 缺省 false」）；
+② 省料看板是否会显示这笔 45 米 / 1800 元（**未测**）；
+③ J4 的普适性（单次观测、无「预览≠落账」反例；且本轮 `perOrderPlanned = formula = 105`
+⇒ **没有任何订单内并排**，故「把 #5158 旧收益算成池化新增」这一失效模式在本轮**结构上不可测**）；
+④ 部署实例运行版本与 sha 的一致性（只核了 deploy run 的 `headSha`，未探运行实例）；
+⑤ 工序行的 `qty` / `qty_source` 正确性（R1~R8 都不覆盖数量口径）；
+⑥ 前三次运行的中间版本读数（`main2.log` 那次崩溃前的脚本版本未留档）。
 
 ---
 
@@ -187,5 +232,5 @@ products=0 / categories=0 / processing_position_operations=0`（`out/main.json::
 ## 十、产物
 
 - `BRIEF.md` 任务书 · `harness/recon.mjs` 只读侦察 · `harness/steps.mjs` 探针步骤库 ·
-  `harness/judge-selftest.mjs` 判据自证 · `harness/pilot.mjs` 6 单试跑 · `harness/main.mjs` 300 单四臂主实验
+  `harness/pilot.mjs` 6 单试跑 · `harness/main.mjs` 300 单四臂主实验
 - `out/recon.json` / `out/main.json` / `out/main4.log` / `out/pilot.json`

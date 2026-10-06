@@ -138,6 +138,10 @@ R.poOpsTotal = ops.length
 R.rowInvariants = { rows: cons.length, plannedLEformula: cons.every((c) => Number(c.planned) <= Number(c.formula) + 1e-9), plannedPositive: cons.every((c) => Number(c.planned) > 0), minSaved: Math.min(...cons.map((c) => Number(c.saved))), savedAmountTotal: Number(cons.reduce((a, c) => a + Number(c.saved) * Number(c.unit_cost), 0).toFixed(2)) }
 R.poPerArm = Object.fromEntries(['A', 'B', 'C', 'D'].map((k) => [k, pos.filter((p) => (arms[k] || []).some((o) => o.orderId === p.order_id)).length]))
 
+// ── 逐行原始台账落盘（独立复核 F4：聚合不足以事后复算，清理前必须 dump）──
+mkdirSync(`${OUT}/evidence`, { recursive: true })
+writeFileSync(`${OUT}/evidence/consumption-rows.json`, JSON.stringify({ at: new Date().toISOString(), rows: cons.map((c) => ({ ...c, arm: armOfItem[c.order_item_id] ?? '?' })) }, null, 2))
+
 // ── 清理 + 残留现取读数 ──
 R.cleanupOut = String(cleanup(PREFIX)).trim().split('\n').slice(-3).join(' | ')
 R.residue = psql(`select

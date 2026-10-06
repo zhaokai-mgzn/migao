@@ -55,7 +55,7 @@
 
 ```bash
 cd acceptance/2026-10-06-pooling-savings/harness && N=300 node main.mjs   # 全量四臂复跑（云 dev，收尾自动清理）
-node judge-selftest.mjs                                                   # 判据自证（期望序列来自配置表，不读实得行）
+node verify.mjs                                                           # 结论判定器（11 条断言；--inject = 注入式红证）
 ```
 读数与证据：`acceptance/2026-10-06-pooling-savings/out/REPORT.md`、`out/main.json`。
 
