@@ -1,20 +1,20 @@
 {
-  "at": "2026-10-06T06:14:25.879Z",
+  "at": "2026-10-06T07:16:38.391Z",
   "checks": [
     {
       "id": "订单读面有数据",
       "ok": true,
-      "detail": "订单总数=316"
+      "detail": "订单总数=302"
     },
     {
       "id": "加工单五种状态齐全",
       "ok": true,
-      "detail": "{\"generated\":100,\"issued\":35,\"in_processing\":43,\"completed\":43,\"cancelled\":17}"
+      "detail": "{\"generated\":100,\"issued\":32,\"in_processing\":40,\"completed\":40,\"cancelled\":16}"
     },
     {
       "id": "计件汇总有数（报工→计件链路通）",
       "ok": true,
-      "detail": "total=226.13 元；工人 6 人；工序 22 道"
+      "detail": "total=222.57 元；工人 6 人；工序 22 道"
     },
     {
       "id": "省料台账有数据",
@@ -28,7 +28,7 @@
     }
   ],
   "api": {
-    "orderTotal": 316,
+    "orderTotal": 302,
     "poListLimit": 100,
     "statusDist": {
       "issued": 20,
@@ -38,19 +38,14 @@
       "generated": 20
     },
     "po_generated": 100,
-    "po_issued": 35,
-    "po_in_processing": 43,
-    "po_completed": 43,
-    "po_cancelled": 17,
+    "po_issued": 32,
+    "po_in_processing": 40,
+    "po_completed": 40,
+    "po_cancelled": 16,
     "piecework": {
       "period": "2026-10",
-      "total": 226.13,
+      "total": 222.57,
       "per_worker": [
-        {
-          "worker_name": "SD07演示工人1",
-          "amount": 61.61,
-          "qty": 160.71
-        },
         {
           "worker_name": "SD07演示工人3",
           "amount": 36.4,
@@ -67,6 +62,11 @@
           "qty": 62.65
         },
         {
+          "worker_name": "SD07演示工人1",
+          "amount": 58.05,
+          "qty": 151.59
+        },
+        {
           "worker_name": "SD07演示工人4",
           "amount": 24.25,
           "qty": 56.34
@@ -79,34 +79,6 @@
       ],
       "per_operation": [
         {
-          "operation": "精裁-布",
-          "logical_name": "精裁",
-          "position": "布帘",
-          "qty": 90.11,
-          "amount": 36.05
-        },
-        {
-          "operation": "布三边",
-          "logical_name": "三边",
-          "position": "布帘",
-          "qty": 74.8,
-          "amount": 29.91
-        },
-        {
-          "operation": "韩褶-布",
-          "logical_name": "韩褶",
-          "position": "布帘",
-          "qty": 3.75,
-          "amount": 1.5
-        },
-        {
-          "operation": "熨烫-布",
-          "logical_name": "熨烫",
-          "position": "布帘",
-          "qty": 69.76,
-          "amount": 24.45
-        },
-        {
           "operation": "精裁-纱",
           "logical_name": "精裁",
           "position": "纱帘",
@@ -114,11 +86,39 @@
           "amount": 13.03
         },
         {
+          "operation": "精裁-布",
+          "logical_name": "精裁",
+          "position": "布帘",
+          "qty": 85.51,
+          "amount": 34.21
+        },
+        {
+          "operation": "布三边",
+          "logical_name": "三边",
+          "position": "布帘",
+          "qty": 72.59,
+          "amount": 29.03
+        },
+        {
           "operation": "打孔-布",
           "logical_name": "打孔",
           "position": "布帘",
           "qty": 79.21,
           "amount": 11.88
+        },
+        {
+          "operation": "熨烫-布",
+          "logical_name": "熨烫",
+          "position": "布帘",
+          "qty": 67.99,
+          "amount": 23.83
+        },
+        {
+          "operation": "韩褶-布",
+          "logical_name": "韩褶",
+          "position": "布帘",
+          "qty": 3.21,
+          "amount": 1.28
         },
         {
           "operation": "上车布-布",
@@ -232,16 +232,6 @@
       ],
       "per_position": [
         {
-          "position_name": "SD07演示布638866 墨绿",
-          "amount": 1.91,
-          "qty": 4.77
-        },
-        {
-          "position_name": "SD07演示布723857 雾霾蓝",
-          "amount": 1.65,
-          "qty": 4.35
-        },
-        {
           "position_name": "SD07演示布814127 雾霾蓝",
           "amount": 62.16,
           "qty": 183.9
@@ -263,16 +253,6 @@
         }
       ],
       "per_set": [
-        {
-          "set_no": "JG-20261006-8233-001",
-          "amount": 1.91,
-          "qty": 4.77
-        },
-        {
-          "set_no": "JG-20261006-8240-001",
-          "amount": 1.65,
-          "qty": 4.35
-        },
         {
           "set_no": "JG-20261006-8274-001",
           "amount": 0.25,
@@ -602,15 +582,15 @@
       "savedAmount": 1434.52,
       "lineCount": 252,
       "unknownCostLines": 0,
-      "batchCount": 28,
+      "batchCount": 20,
       "le0_2Count": 0,
       "le0_2Share": 0
     },
     "pool": {
       "maxWaitHours": 24,
       "poolingEnabled": false,
-      "orderCount": 36,
-      "lineCount": 36,
+      "orderCount": 34,
+      "lineCount": 34,
       "overdueCount": 0,
       "urgentCount": 4,
       "warnings": [],
@@ -624,7 +604,7 @@
           "skuCode": "SD07演示-2.8-8141270",
           "requiredMeters": 2.6,
           "waitingSince": "2026-10-06T14:07:43.293611+08:00",
-          "waitHours": 0.1,
+          "waitHours": 1.1,
           "overdue": false,
           "isUrgent": true,
           "requiredDeliveryDate": "2026-10-02",
@@ -639,7 +619,7 @@
           "skuCode": "SD07演示-3.2-8141272",
           "requiredMeters": 5.6,
           "waitingSince": "2026-10-06T14:08:28.237397+08:00",
-          "waitHours": 0.1,
+          "waitHours": 1.1,
           "overdue": false,
           "isUrgent": true,
           "requiredDeliveryDate": "2026-10-14",
@@ -654,7 +634,7 @@
           "skuCode": "SD07演示-3.2-8141272",
           "requiredMeters": 3,
           "waitingSince": "2026-10-06T14:08:34.903664+08:00",
-          "waitHours": 0.1,
+          "waitHours": 1.1,
           "overdue": false,
           "isUrgent": true
         },
@@ -667,60 +647,12 @@
           "skuCode": "SD07演示-3.2-8141272",
           "requiredMeters": 4.6,
           "waitingSince": "2026-10-06T14:08:45.294694+08:00",
-          "waitHours": 0.1,
+          "waitHours": 1.1,
           "overdue": false,
           "isUrgent": true
         }
       ],
       "groups": [
-        {
-          "materialKey": "c45fe82a0aaa5ae373ca5516bd152a0e|SD07演示-2.8-6388663",
-          "productId": "c45fe82a0aaa5ae373ca5516bd152a0e",
-          "skuCode": "SD07演示-2.8-6388663",
-          "orderCount": 1,
-          "requiredMeters": 3.6,
-          "lines": [
-            {
-              "orderId": "2344d4a6e6742968ca6799fbe1cc11ed",
-              "orderNo": "20261006710810001",
-              "itemId": "f11ec24c7840958c4725338cf87a7022",
-              "productId": "c45fe82a0aaa5ae373ca5516bd152a0e",
-              "productName": "SD07演示布638866",
-              "skuCode": "SD07演示-2.8-6388663",
-              "requiredMeters": 3.6,
-              "waitingSince": "2026-10-06T14:04:03.481218+08:00",
-              "waitHours": 0.2,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-10",
-              "deliveryDaysLeft": 4
-            }
-          ]
-        },
-        {
-          "materialKey": "605a4761be9460cc8629d8f9f9a76e9f|SD07演示-2.8-7238573",
-          "productId": "605a4761be9460cc8629d8f9f9a76e9f",
-          "skuCode": "SD07演示-2.8-7238573",
-          "orderCount": 1,
-          "requiredMeters": 4.8,
-          "lines": [
-            {
-              "orderId": "8d4b4b2bd4ba1d795714bd491155c587",
-              "orderNo": "20261006161580016",
-              "itemId": "34f81cb8f62f6bcbe194bf9631b3db8d",
-              "productId": "605a4761be9460cc8629d8f9f9a76e9f",
-              "productName": "SD07演示布723857",
-              "skuCode": "SD07演示-2.8-7238573",
-              "requiredMeters": 4.8,
-              "waitingSince": "2026-10-06T14:05:27.906271+08:00",
-              "waitHours": 0.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-19",
-              "deliveryDaysLeft": 13
-            }
-          ]
-        },
         {
           "materialKey": "2b9dd2f403efc03be8eecb0f90e84368|SD07演示-3.2-8141272",
           "productId": "2b9dd2f403efc03be8eecb0f90e84368",
@@ -737,7 +669,7 @@
               "skuCode": "SD07演示-3.2-8141272",
               "requiredMeters": 4.8,
               "waitingSince": "2026-10-06T14:06:58.869249+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.2,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-02",
@@ -752,7 +684,7 @@
               "skuCode": "SD07演示-3.2-8141272",
               "requiredMeters": 4,
               "waitingSince": "2026-10-06T14:07:47.168498+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-07",
@@ -767,7 +699,7 @@
               "skuCode": "SD07演示-3.2-8141272",
               "requiredMeters": 4.4,
               "waitingSince": "2026-10-06T14:07:51.298305+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-09",
@@ -782,7 +714,7 @@
               "skuCode": "SD07演示-3.2-8141272",
               "requiredMeters": 3,
               "waitingSince": "2026-10-06T14:08:15.269328+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-12",
@@ -797,7 +729,7 @@
               "skuCode": "SD07演示-3.2-8141272",
               "requiredMeters": 4.8,
               "waitingSince": "2026-10-06T14:07:38.116475+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.2,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-13",
@@ -812,7 +744,7 @@
               "skuCode": "SD07演示-3.2-8141272",
               "requiredMeters": 3.6,
               "waitingSince": "2026-10-06T14:08:39.738681+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-13",
@@ -827,7 +759,7 @@
               "skuCode": "SD07演示-3.2-8141272",
               "requiredMeters": 2.3,
               "waitingSince": "2026-10-06T14:07:02.514575+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.2,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-20",
@@ -842,7 +774,7 @@
               "skuCode": "SD07演示-3.2-8141272",
               "requiredMeters": 6.8,
               "waitingSince": "2026-10-06T14:07:47.891607+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false
             }
@@ -864,7 +796,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 2.4,
               "waitingSince": "2026-10-06T14:08:34.194323+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-04",
@@ -879,7 +811,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 3.2,
               "waitingSince": "2026-10-06T14:07:46.818713+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-09",
@@ -894,7 +826,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 5.6,
               "waitingSince": "2026-10-06T14:07:49.750689+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-11",
@@ -909,7 +841,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 5.8,
               "waitingSince": "2026-10-06T14:07:46.099046+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-13",
@@ -924,7 +856,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 2.3,
               "waitingSince": "2026-10-06T14:08:09.390552+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-14",
@@ -939,7 +871,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 4.1,
               "waitingSince": "2026-10-06T14:07:03.695496+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.2,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-16",
@@ -954,7 +886,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 5.4,
               "waitingSince": "2026-10-06T14:07:49.014314+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-18",
@@ -969,7 +901,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 1.5,
               "waitingSince": "2026-10-06T14:07:02.116746+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.2,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-20",
@@ -984,7 +916,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 3.8,
               "waitingSince": "2026-10-06T14:07:12.02901+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.2,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-20",
@@ -999,7 +931,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 2.8,
               "waitingSince": "2026-10-06T14:07:48.641914+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-20",
@@ -1014,7 +946,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 4,
               "waitingSince": "2026-10-06T14:07:02.890085+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.2,
               "overdue": false,
               "isUrgent": false
             },
@@ -1027,7 +959,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 4,
               "waitingSince": "2026-10-06T14:07:04.478539+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.2,
               "overdue": false,
               "isUrgent": false
             }
@@ -1049,7 +981,7 @@
               "skuCode": "SD07演示-3.0-8141271",
               "requiredMeters": 4.6,
               "waitingSince": "2026-10-06T14:07:03.269231+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.2,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-09-30",
@@ -1064,7 +996,7 @@
               "skuCode": "SD07演示-3.0-8141271",
               "requiredMeters": 5.2,
               "waitingSince": "2026-10-06T14:07:47.534137+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-09",
@@ -1079,7 +1011,7 @@
               "skuCode": "SD07演示-3.0-8141271",
               "requiredMeters": 7.8,
               "waitingSince": "2026-10-06T14:08:13.040351+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-14",
@@ -1094,7 +1026,7 @@
               "skuCode": "SD07演示-3.0-8141271",
               "requiredMeters": 2.4,
               "waitingSince": "2026-10-06T14:08:30.513854+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-20",
@@ -1109,7 +1041,7 @@
               "skuCode": "SD07演示-3.0-8141271",
               "requiredMeters": 4,
               "waitingSince": "2026-10-06T14:07:04.084736+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.2,
               "overdue": false,
               "isUrgent": false
             },
@@ -1122,7 +1054,7 @@
               "skuCode": "SD07演示-3.0-8141271",
               "requiredMeters": 1.9,
               "waitingSince": "2026-10-06T14:07:48.26159+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false
             },
@@ -1135,7 +1067,7 @@
               "skuCode": "SD07演示-3.0-8141271",
               "requiredMeters": 4.8,
               "waitingSince": "2026-10-06T14:07:50.901388+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false
             }
@@ -1157,7 +1089,7 @@
               "skuCode": "SD07演示-2.8-8141270",
               "requiredMeters": 5.2,
               "waitingSince": "2026-10-06T14:07:50.527706+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-09-30",
@@ -1172,7 +1104,7 @@
               "skuCode": "SD07演示-2.8-8141270",
               "requiredMeters": 2.2,
               "waitingSince": "2026-10-06T14:07:49.375832+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-02",
@@ -1187,7 +1119,7 @@
               "skuCode": "SD07演示-2.8-8141270",
               "requiredMeters": 2,
               "waitingSince": "2026-10-06T14:08:02.479828+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-04",
@@ -1202,7 +1134,7 @@
               "skuCode": "SD07演示-2.8-8141270",
               "requiredMeters": 3.4,
               "waitingSince": "2026-10-06T14:07:50.133691+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-13",
@@ -1217,7 +1149,7 @@
               "skuCode": "SD07演示-2.8-8141270",
               "requiredMeters": 4.1,
               "waitingSince": "2026-10-06T14:07:17.729397+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.2,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-14",
@@ -1232,7 +1164,7 @@
               "skuCode": "SD07演示-2.8-8141270",
               "requiredMeters": 3.2,
               "waitingSince": "2026-10-06T14:08:08.25113+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.1,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-14",
@@ -1247,7 +1179,7 @@
               "skuCode": "SD07演示-2.8-8141270",
               "requiredMeters": 3.1,
               "waitingSince": "2026-10-06T14:07:07.077402+08:00",
-              "waitHours": 0.1,
+              "waitHours": 1.2,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-16",
@@ -1276,19 +1208,19 @@
       "path": "/production/pool",
       "url": "https://merchant.migaozn.com/production/pool",
       "file": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06-pooling-savings/out/screenshots/demo-_production_pool.png",
-      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 生产看板 智能派单 加工项管理 工艺配置 计件工资 仓储与物料 5 组织管理 3 通知中心 收起 生产管理 / 智能派单 米 米高测试 智能派单 待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；加急单不参与合并，立即单独派单 刷新 合并派单开关 未开启 最长等待 24 小时 待派订单 36 单 加工明细 36 行 加急订单 4 单 超时未派 0 单 加急订单（不参与合并，立即派） 4 行 / 4 单 —— 不参与合并，立即单独派单 单号 物料（商品 × 颜色 × 门幅） 需求米数 等待时长 加急标记 到货日 操作 20261006045490139 SD07演示布814127SD07演示-2.8-8141270 2.60 0.1 小时 加急 2026-10-02已逾期 4 天 立即派单 20261006570660257 SD07演示布814127SD07演示-3.2-8141272 5.60 0.1 小时 加急 2026-10-14剩 8 天 立即派单 20261006025840275 SD07演示布814127SD07演示-3.2-8141272 3.00 0.1 小时 加急 未指定 立即派单 20261006946530303 SD07演示布814127SD07演示-3.2-8141272 4.60 0.1 小时 加急 未指定 立即派单 可合并的待派订单（按料分组） 6 个料组 / 已选 0 单 一键合并派单 c45fe82a0"
+      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 生产看板 智能派单 加工项管理 工艺配置 计件工资 仓储与物料 5 组织管理 3 通知中心 收起 生产管理 / 智能派单 米 米高测试 智能派单 待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；加急单不参与合并，立即单独派单 刷新 合并派单开关 未开启 最长等待 24 小时 待派订单 34 单 加工明细 34 行 加急订单 4 单 超时未派 0 单 加急订单（不参与合并，立即派） 4 行 / 4 单 —— 不参与合并，立即单独派单 单号 物料（商品 × 颜色 × 门幅） 需求米数 等待时长 加急标记 到货日 操作 20261006045490139 SD07演示布814127SD07演示-2.8-8141270 2.60 1.2 小时 加急 2026-10-02已逾期 4 天 立即派单 20261006570660257 SD07演示布814127SD07演示-3.2-8141272 5.60 1.2 小时 加急 2026-10-14剩 8 天 立即派单 20261006025840275 SD07演示布814127SD07演示-3.2-8141272 3.00 1.2 小时 加急 未指定 立即派单 20261006946530303 SD07演示布814127SD07演示-3.2-8141272 4.60 1.1 小时 加急 未指定 立即派单 可合并的待派订单（按料分组） 4 个料组 / 已选 0 单 一键合并派单 2b9dd2f40"
     },
     "计件工资报表": {
       "path": "/production/piecework",
       "url": "https://merchant.migaozn.com/production/piecework",
       "file": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06-pooling-savings/out/screenshots/demo-_production_piecework.png",
-      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 生产看板 智能派单 加工项管理 工艺配置 计件工资 仓储与物料 5 组织管理 3 通知中心 收起 生产管理 / 计件工资 米 米高测试 计件工资 按期间汇总报工（合格数量 × 工序单价；返工/报废不计件） 刷新 期间 工人 查询 期间合计 ¥226.13 2026-10 · 共 6 人 按工人 按工序 按部位 按套 工人 计件数量 金额 SD07演示工人1 160.71 ¥61.61 SD07演示工人3 123.87 ¥36.40 SD07演示工人0 129.63 ¥44.88 SD07演示工人2 62.65 ¥25.06 SD07演示工人4 56.34 ¥24.25 SD07演示工人5 75.74 ¥33.93"
+      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 生产看板 智能派单 加工项管理 工艺配置 计件工资 仓储与物料 5 组织管理 3 通知中心 收起 生产管理 / 计件工资 米 米高测试 计件工资 按期间汇总报工（合格数量 × 工序单价；返工/报废不计件） 刷新 期间 工人 查询 期间合计 ¥222.57 2026-10 · 共 6 人 按工人 按工序 按部位 按套 工人 计件数量 金额 SD07演示工人3 123.87 ¥36.40 SD07演示工人0 129.63 ¥44.88 SD07演示工人2 62.65 ¥25.06 SD07演示工人1 151.59 ¥58.05 SD07演示工人4 56.34 ¥24.25 SD07演示工人5 75.74 ¥33.93"
     },
     "省料看板": {
       "path": "/production/saving-board",
       "url": "https://merchant.migaozn.com/production/saving-board",
       "file": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06-pooling-savings/out/screenshots/demo-_production_saving-board.png",
-      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 仓储与物料 5 入库单 发货单 余料台账 省料看板 库存明细 组织管理 3 通知中心 收起 仓储与物料 / 省料看板 米 米高测试 省料看板 省了多少料，看两件事：① 每批布用剩多少 ② 每平方米成品用掉多少米布；存量导入批次单独成组，不与切换后混算 按月 按周（ISO 周） 刷新 剩余 ≤0.2 米 的批次占比 0.0% 治「用不尽」—— 越多批次被用到几乎不剩，说明料真的被用掉了 入库/采购总米数 49810 米 治「买太多」—— 切换后的采购入库总米数，不含存量导入 两条指标必须并用：①「剩余 ≤0.2 米 的批次占比」治「用不尽」，②「入库/采购总米数」治「买太多」。单看①会被排料省料误导 —— 排料省料 ⇒ 批次剩得更多 ⇒ 只留①会把效率提升显示成变差。 切换后（采购入库） 批次数 23 ≤0.2 米占比 0.0% 余量合计 48974.9 米 省料 20 米 / 1434.52 元 ≤0.2 米：0 批 / 0.0% 0.2~0.5 米：0 批 / 0.0% 0.5~1 米：0 批 / 0.0% >1 米：23 批 / 100.0% 存量导入（切换前历史包袱） 存量导入·单列 批次数 5 ≤0.2 米占比 0.0% 余量合计 640 米 省料 无数据 / 无数据 元 ≤0.2 米：0 批 / 0.0% 0.2~0.5 米：0 批 / 0.0% 0.5~1 米：0 批 / 0.0% >1 米：5 批 / 100.0% 来源未知 来源未知 批次数 0 ≤0."
+      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 仓储与物料 5 入库单 发货单 余料台账 省料看板 库存明细 组织管理 3 通知中心 收起 仓储与物料 / 省料看板 米 米高测试 省料看板 省了多少料，看两件事：① 每批布用剩多少 ② 每平方米成品用掉多少米布；存量导入批次单独成组，不与切换后混算 按月 按周（ISO 周） 刷新 剩余 ≤0.2 米 的批次占比 0.0% 治「用不尽」—— 越多批次被用到几乎不剩，说明料真的被用掉了 入库/采购总米数 13457 米 治「买太多」—— 切换后的采购入库总米数，不含存量导入 两条指标必须并用：①「剩余 ≤0.2 米 的批次占比」治「用不尽」，②「入库/采购总米数」治「买太多」。单看①会被排料省料误导 —— 排料省料 ⇒ 批次剩得更多 ⇒ 只留①会把效率提升显示成变差。 切换后（采购入库） 批次数 15 ≤0.2 米占比 0.0% 余量合计 12621.9 米 省料 20 米 / 1434.52 元 ≤0.2 米：0 批 / 0.0% 0.2~0.5 米：0 批 / 0.0% 0.5~1 米：0 批 / 0.0% >1 米：15 批 / 100.0% 存量导入（切换前历史包袱） 存量导入·单列 批次数 5 ≤0.2 米占比 0.0% 余量合计 640 米 省料 无数据 / 无数据 元 ≤0.2 米：0 批 / 0.0% 0.2~0.5 米：0 批 / 0.0% 0.5~1 米：0 批 / 0.0% >1 米：5 批 / 100.0% 来源未知 来源未知 批次数 0 ≤0."
     }
   }
 }
