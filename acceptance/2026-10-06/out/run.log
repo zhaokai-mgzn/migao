@@ -161,3 +161,34 @@
 2026-10-06T01:48:59.338Z    DELETE 0  <= delete from order_items where order_id in (select id from orders where tenant_id=25 and customer_name like 'A0
 2026-10-06T01:48:59.338Z    DELETE 0  <= delete from orders where tenant_id=25 and customer_name like 'A06验收%'
 2026-10-06T01:48:59.338Z    UPDATE 20  <= update users set deleted=1, status='disabled', username=null, phone=null where tenant_id=25 and (username like
+2026-10-06T02:07:16.102Z == p1：岗位账号池 tenant=25 API=https://api.migaozn.com
+2026-10-06T02:07:24.102Z == p1 完成：{"pass":8}
+2026-10-06T02:07:24.102Z   [pass] P1-01 管理员登录（部署面短信万能码） — POST /api/auth/sms/login HTTP 200；tenant=25 code=shop-8yn7
+2026-10-06T02:07:24.103Z   [pass] P1-02 岗位清单 + 期望权限（DB 真值源） — 岗位=管理员(admin) / 客服(customer_service) / 财务(finance) / 知识编辑(knowledge_editor) / 运营(operator) / 商品管理员(product_manager) / 销售(sales)；每岗位权限数为 DB 现取
+2026-10-06T02:07:24.103Z   [pass] P1-04:客服 登录+权限：客服 — username=a06_customer_service@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=12 missing=[] extra=[]
+2026-10-06T02:07:24.103Z   [pass] P1-04:运营 登录+权限：运营 — username=a06_operator@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=26 missing=[] extra=[]
+2026-10-06T02:07:24.103Z   [pass] P1-04:销售 登录+权限：销售 — username=a06_sales@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=9 missing=[] extra=[]
+2026-10-06T02:07:24.103Z   [pass] P1-04:财务 登录+权限：财务 — username=a06_finance@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=9 missing=[] extra=[]
+2026-10-06T02:07:24.103Z   [pass] P1-04:商品管理员 登录+权限：商品管理员 — username=a06_product_manager@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=8 missing=[] extra=[]
+2026-10-06T02:07:24.103Z   [pass] P1-04:知识编辑 登录+权限：知识编辑 — username=a06_knowledge_editor@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=4 missing=[] extra=[]
+2026-10-06T02:13:22.322Z == p10 counts: {"fail":1}
+2026-10-06T02:13:22.323Z   [fail] P10-W3 销售新建订单（布料形态）异常 — TimeoutError: locator.click: Timeout 15000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('button', { name: /阳离子绒布/ }).first()[22m
+
+2026-10-06T02:20:59.050Z 登录完成
+2026-10-06T02:21:01.007Z 订单页就位
+2026-10-06T02:21:01.031Z 新增订单按钮数=1
+2026-10-06T02:21:05.313Z 弹窗后按钮(20)：["搜索菜单\n⌘K","工作台\n1","客户服务\n1","交易管理\n1","","生产管理\n1","仓储与物料\n3","","收起","","A\nA06验收销售","","拍照 / 上传识别","点击搜索并选择商品","添加商品","选择客户","费用明细","提交订单","取消",""]
+2026-10-06T02:21:05.354Z 正文头："米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n交易管理\n1\n订单列表\n生产管理\n1\n仓储与物料\n3\n通知中心\n收起\n交易管理\n/\n订单列表\nA\nA06验收销售\n新增订单\n\n支持添加多个商品，每个商品可单独配置加工项\n\n商品信息\n拍照 / 上传识别\n共 1 个商品\n选择商品*\n点击搜索并选择商品\n添加商品\n收货信息\n选客户自动带出姓名 / 电话 / 地址 / 常用物流\n选择客户\n收货人姓名*\n手机号*\n收货地址*\n常用物流（必填 · 选客户时自动带出）\n备注\n加急 / 到货日\n加急（插队）\n加急单不参与合并，在智能派单页立即单独派单\n要求到货日\n\n留空 = 未指定（不填就是不填，不猜一个日期）；到货日越早，在智能派单页排得越前\n\n合计\n¥0.00\n费用明细\n提交订单\n取消\n没有权限执行此操作\n没有权限执行此操作"
+2026-10-06T02:21:05.455Z dialog 数=0 内容="(无 dialog)"
+2026-10-06T02:26:28.372Z sales perms=undefined
+2026-10-06T02:26:28.509Z GET /api/admin/products?keyword=… → 200 {"success":true,"data":{"total":1,"page":1,"size":10,"items":[{"id":"61131d6e0045378431dd4dca009370ab","name":"阳离子绒布","categoryId":"af5360f1
+2026-10-06T02:26:28.721Z GET /api/admin/products?page=1 → 200 {"success":true,"data":{"total":8,"page":1,"size":10,"items":[{"id":"3d0e2deec75baa73c642c9d6cc01e167","name":"棉麻窗纱","categoryId":"af5360f1b
+2026-10-06T02:26:28.783Z GET /api/admin/customers?page=1 → 200 {"success":true,"data":{"total":11,"page":1,"size":10,"items":[{"id":"b33a13e30cea9fca67673712ee8cfc56","tenantId":25,"wechatNickname":"A06验
+2026-10-06T02:26:28.847Z GET /api/admin/customers?keyword=… → 200 {"success":true,"data":{"total":10,"page":1,"size":10,"items":[{"id":"b33a13e30cea9fca67673712ee8cfc56","tenantId":25,"wechatNickname":"A06验
+2026-10-06T02:27:13.180Z == p10 counts: {"fail":1}
+2026-10-06T02:27:13.182Z   [fail] P10-W3 销售在「订单列表」页新建订单（布料形态 · 页面操作 → DB 落库） — DB 无新行；选品=true 搜索框填词=true 布料 chip=1 aria-checked=true 合计="合计" 校验="还差 1 项（点一条可直接定位）： |  | 第 1 个商品未选择颜色"
+2026-10-06T02:28:08.287Z == p10 counts: {"pass":2}
+2026-10-06T02:28:08.289Z   [pass] P10-W3 销售在「订单列表」页新建订单（布料形态 · 页面操作 → DB 落库） — DB 落库 orders#01e5b256e846a402198c995db8f7206a order_no=20261006623690004 status=pending 金额=88 物流=express/四季安物流；选品=true 搜索框填词=true 布料 chip=1 aria-checked=true 颜色=咖色 合计="合计"
+2026-10-06T02:28:08.289Z   [pass] P10-LIVE 订单留存（用户 2026-10-06 要求看到订单数据） — 租户 25 现有订单 2 张；本轮演示单 20261006623690004（布料形态，未清理）
