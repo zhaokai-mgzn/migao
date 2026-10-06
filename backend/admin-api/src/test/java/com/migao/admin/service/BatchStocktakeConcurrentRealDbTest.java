@@ -14,6 +14,7 @@ import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
 import com.migao.admin.mapper.StockLedgerMapper;
+import com.migao.admin.time.BusinessClock;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
 import org.apache.ibatis.exceptions.PersistenceException;
@@ -369,7 +370,7 @@ class BatchStocktakeConcurrentRealDbTest {
     private static StockBatchConsumptionService batchServiceOn(SqlSession s) {
         return new StockBatchConsumptionService(s.getMapper(StockBatchMapper.class),
                 s.getMapper(StockBatchConsumptionMapper.class), s.getMapper(ProductSkuMapper.class),
-                s.getMapper(StockLedgerMapper.class), null, null);
+                s.getMapper(StockLedgerMapper.class), null, null, new BusinessClock());
     }
 
     /**
@@ -395,7 +396,7 @@ class BatchStocktakeConcurrentRealDbTest {
                     }
                 });
         return new StockBatchConsumptionService(s.getMapper(StockBatchMapper.class), naive,
-                s.getMapper(ProductSkuMapper.class), s.getMapper(StockLedgerMapper.class), null, null);
+                s.getMapper(ProductSkuMapper.class), s.getMapper(StockLedgerMapper.class), null, null, new BusinessClock());
     }
 
     /** 造一条盘点调整（盘前余量按真库现值读，测试不自己算第二份余量口径）。 */

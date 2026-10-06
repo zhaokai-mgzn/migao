@@ -14,6 +14,7 @@ import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
 import com.migao.admin.mapper.StockLedgerMapper;
+import com.migao.admin.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,10 +23,8 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.temporal.WeekFields;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -163,6 +162,9 @@ public class StockBatchConsumptionService {
      * 与 #5158 排料的 fail-soft 同一条纪律）。</p>
      */
     private final RemnantService remnantService;
+
+    /** 业务「今天」的**唯一来源**（issue #3802：业务代码里不许自己取时刻）。 */
+    private final BusinessClock businessClock;
 
     // ══════════════════════════════════════════════════════════════════════════════════
     // 写面 ① plan —— 只读校验（全部业务异常在此抛完）
@@ -915,7 +917,7 @@ public class StockBatchConsumptionService {
         // ── 环比（issue #6430）：全部用上面已加载的行内存聚合，**零新增 SQL** ──
         //   三条时间轴各自独立：省料/金额 = 消耗时间桶；le0_2Share = 批次收货月
         // 本期还没过完 ⇒ 不给方向（见 VERDICT_PARTIAL；当前期间与租户业务时区同口径）
-        String open = openPeriod(g, businessToday());
+        String open = openPeriod(g, businessClock.today());
         // 🔴 行级 → **按期间汇总**（一期一行）：同一期间的多数行必须相加，否则「相邻两期」会取到同一个月
         List<String[]> savedMetersSeries = aggregateByPeriod(savedMetersRows);
         List<String[]> savedAmountSeries = aggregateByPeriod(savedAmountRows);
@@ -1003,7 +1005,7 @@ public class StockBatchConsumptionService {
             metersPerM2Series.add(new String[]{period,
                     metersPerM2 == null ? null : plain(metersPerM2).toPlainString()});
         }
-        String open = openPeriod(g, businessToday());
+        String open = openPeriod(g, businessClock.today());
         SavingMetricViews.TrendComparison comparison = new SavingMetricViews.TrendComparison(
                 delta(purchasedSeries, DIR_DOWN_BETTER, open),      // 买得更少 = 更好
                 delta(metersPerM2Series, DIR_DOWN_BETTER, open));   // 单位产出用料更省 = 更好
@@ -1040,16 +1042,6 @@ public class StockBatchConsumptionService {
                     today.get(iso.weekBasedYear()), today.get(iso.weekOfWeekBasedYear()));
         }
         return periodOf(today);
-    }
-
-    /**
-     * 业务时区下的「今天」（口径同 {@code BusinessClock}：**不许**用无参 {@code LocalDate.now()}）。
-     *
-     * <p>时区取自 {@link SavingMetricViews#TIMEZONE}（= {@code BusinessClock.BUSINESS_ZONE.getId()}，
-     * 同一份口径），不写字面量。</p>
-     */
-    private static LocalDate businessToday() {
-        return LocalDate.ofInstant(Instant.now(), ZoneId.of(SavingMetricViews.TIMEZONE));
     }
 
     /** 分组键（{@code period|cohort|materialKey}）—— 机器可判，且**存量恒是独立键**（判据 2） */

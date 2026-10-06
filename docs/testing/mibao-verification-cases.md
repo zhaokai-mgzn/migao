@@ -8485,7 +8485,7 @@
 跳过: [backend-contract] 读面契约与口径（无 LLM 环节）⇒ 由 Java 定点判据 + 真 PG 判据覆盖，不进入 agent-eval 冒烟
 ```
 真值: batch-ledger.saving-metrics-read-face
-溯源: 2026-10-06 新增（issue #6430，用户两轮逐字）。取号 = 现取 `origin/main` 最大号 + 1（本仓取号法见 `tests/unit_ci_workflows/test_case_id_claims.py` 头注；`origin/main` 现取最大 = PR-126）⇒ PR-127。红证（实现前实测）：`./mvnw -q test -Dtest=SavingMetricsComparisonTest` 得 `COMPILATION ERROR … 找不到符号 类 MetricDelta / 方法 delta(...)`（契约点不存在 ⇒ 9 条判据一条都跑不到）；实现后 `Tests run: 12, Failures: 0, Errors: 0`（含 partial、期间键、**行级序列按期间汇总**三条，均由 2026-10-06 页面多模态验收反哺追加），真库 `Tests run: 7, Failures: 0`。 ｜ tags: batch-ledger, saving-metrics, real-db, backend-contract
+溯源: 2026-10-06 新增（issue #6430，用户两轮逐字）。取号 = 现取 `origin/main` 最大号 + 1（本仓取号法见 `tests/unit_ci_workflows/test_case_id_claims.py` 头注；`origin/main` 现取最大 = PR-126）⇒ PR-127。红证（实现前实测）：`./mvnw -q test -Dtest=SavingMetricsComparisonTest` 得 `COMPILATION ERROR … 找不到符号 类 MetricDelta / 方法 delta(...)`（契约点不存在 ⇒ 9 条判据一条都跑不到）；实现后 `Tests run: 12, Failures: 0, Errors: 0`（含 partial、期间键、**行级序列按期间汇总**三条，均由 2026-10-06 页面多模态验收反哺追加），真库 `Tests run: 7, Failures: 0`。 ｜ 2026-10-06 CI 反哺：首推被 `BusinessClockSourceGuardTest` 判红（我在服务里自取 `Instant` 时刻 = 业务「今天」的**第二个来源**，issue #3802 禁止）⇒ 改为**注入 `BusinessClock`**（业务时间单点，仓库 6+ 服务同一写法）并同批给 13 个手工构造点补 `BusinessClock` 实参；三条钟源守卫 + 本用例 19 条现取全绿。 ｜ tags: batch-ledger, saving-metrics, real-db, backend-contract
 
 ## 工具注册器域（1 case）
 
