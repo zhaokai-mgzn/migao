@@ -234,3 +234,30 @@ products=0 / categories=0 / processing_position_operations=0`（`out/main.json::
 - `BRIEF.md` 任务书 · `harness/recon.mjs` 只读侦察 · `harness/steps.mjs` 探针步骤库 ·
   `harness/pilot.mjs` 6 单试跑 · `harness/main.mjs` 300 单四臂主实验
 - `out/recon.json` / `out/main.json` / `out/main4.log` / `out/pilot.json`
+
+---
+
+## 十一、补充验证：**省料看板能不能看到真实省下的成本**（2026-10-06 11:43 +08，用户追问）
+
+**能。而且与台账逐值相等。** 但只对**真的指派了批次**的单成立。
+
+复跑：`cd acceptance/2026-10-06-pooling-savings/harness && node saving-board.mjs`（8 单：4 单界面体 + 4 单带指派；真浏览器读页面；收尾自动清理）
+
+| 判据 | 读数 |
+|---|---|
+| A1 台账落了省料 | 4 行：Σformula 5.6 / Σplanned 2.8 / **Σsaved 2.8 米** |
+| A2 看板米数 == 台账 Σsaved | 看板 `total.savedMeters=2.8` **== 2.8** |
+| A3 看板金额 == Σ(省料 × **当时**批次均价 40 元/米) | 看板 `total.savedAmount=`**112 元** `==` 112 |
+| A4 成本可知 ⇒ 金额不是「无数据」 | `unknownCostLines=0` / `lineCount=4` |
+| A5 能按（时间 × 来源组 × 物料）定位到本物料 | `2026-10 / 切换后（采购入库） / SD06省料-*`：2.8 米 · 112 元 |
+| **A6/A6b 页面渲染（真浏览器）** | 「逐单省料汇总」逐字：`2026-10 切换后（采购入库） …|SD06省料-174478  5.6 米  2.8 米  2.8 米  112 元`；截图 `out/screenshots/saving-board-174478.png` |
+| **A7 负对照** | 同一批单里走**界面真实请求体**的 4 单 ⇒ 台账 **0 行** ⇒ 看板上**没有任何省料**（与 §四 A 臂同因） |
+| A8 前后对照 | 清理后同一查询不再出现该物料组（`mineGroups=0`），全租户 Σsaved 回到 `null` ⇒ 读数确实来自本轮数据 |
+
+**口径与边界（照实登记）**：
+- 金额用**当时那一批的均价快照**（`stock_batch_consumptions.unit_cost`）⇒ 事后调价**不改历史**；
+  某行批次未记成本 ⇒ 该行金额不计入并计 `unknownCostLines`，聚合不可算时**写「无数据」而不是 0**（截图中存量导入组的省料即显示「无数据 元」）。
+- 合计读数是**逐行取整到分再相加**（`SUM(ROUND((formula−planned)×unit_cost,2))`）⇒ 与我按全精度算的 Σ 在分位一致（本轮 112 == 112）。
+- A7 与 §四 A 臂是同一根因（界面不指派批次）⇒ **商家若只走「智能派单」页，看板上看不到任何省料成本**（不是看板坏了，是没有可显示的账）。
+- **判据自身的假红（已修）**：页面按 `formatMetric` 渲染 ⇒ 末位 0 不补（页面写「112 元」而非「112.00 元」）；
+  第一版断言拿 2 位小数比 ⇒ 明明渲染正确却判红。已改为按页面展示口径归一后再比。
