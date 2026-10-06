@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 128
+    "backend_contract_scoring_zero": 129
   },
   "history": [
     {
@@ -344,6 +344,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 128,
       "note": "issue #6418（部署三腿 push 触发已死：合并凭据改用非内置 PAT）新增 1 条 `[backend-contract]` 用例 **MC-084**（判据 = `tests/unit_ci_workflows/test_automerge_merge_credential.py` 的实例判据 + 类级元守卫 + 8 条注入式红证与对照，以及 `tests/unit_ci_workflows/test_danger_scan.py::TestNewSecretAckChannel` 的 11 条；`expectations: []` ⇒ 按设计**不进 agent-eval**，机器判红通道在 `traces.tests`（两个文件均非空且真实存在）/ `traces.ci` = `pr-check.yml`）⇒ 读数 127 → **128** 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变，且**不含**任何「改散文就能绿」的纸面项）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = **实测**（本单新增用例 ⇒ 重渲染 `.github/render_cases.py` 后，CI run `37423069355` 的 `ci workflow helper unit tests（后半）` 实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 128}`，本机同判据实跑一致），**不是**按号推算。"
+    },
+    {
+      "sha": "pending-pr-6437",
+      "date": "2026-10-06",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 129,
+      "note": "issue #6430（省料看板重设计）新增 **PR-127**（`[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval）⇒ `backend_contract_scoring_zero` 128 → 129；同批新增的 **UI-090** 走 `direct_reply` 通道 ⇒ 不计入本读数。本单实测 129，`entries` 已对齐末行（`no_channel_total` 仍恒为 0）。"
     }
   ]
 }

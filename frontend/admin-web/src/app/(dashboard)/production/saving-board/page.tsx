@@ -7,6 +7,7 @@ import { toastRequestError } from '@/lib/api-error'
 import { savingBoardApi } from '@/lib/api'
 import { Badge, Button, Card } from '@/components/ui'
 import { cn } from '@/lib/utils'
+import { InlineMarkdown } from '@/lib/inline-markdown'
 import {
   NO_DATA,
   causalChain,
@@ -182,7 +183,7 @@ export default function SavingBoardPage() {
               {savedTerms(cohorts[0]?.buckets?.map((b) => b.label)).map((t) => (
                 <div key={t.term}>
                   <dt className="inline font-medium">{t.term}</dt>
-                  <dd className="inline">：{t.meaning}</dd>
+                  <dd className="inline">：<InlineMarkdown text={t.meaning} /></dd>
                 </div>
               ))}
             </dl>
@@ -224,7 +225,7 @@ export default function SavingBoardPage() {
       {/* ④ 来源组对照：存量导入**单列**（判据 2 —— 并列，不相加） */}
       <Card>
         <div className="p-5" data-testid="saving-cohorts">
-          <h2 className="text-sm font-medium text-neutral-900 mb-1">来源组对照（三行并列，**不相加**）</h2>
+          <h2 className="text-sm font-medium text-neutral-900 mb-1"><InlineMarkdown text="来源组对照（三行并列，**不相加**）" /></h2>
           <p className="text-xs text-neutral-500 mb-3">
             「存量导入」是上系统前的历史包袱，永远单列 —— 混进「切换后」算，改善就永远看不出来。
           </p>
@@ -297,7 +298,7 @@ export default function SavingBoardPage() {
             布剩在哪 · 批次余量分档（每批布用剩多少 · 按物料 × 时间 × 来源分组）
           </h2>
           <p data-testid="saving-period-axis-note" className="text-xs text-neutral-500 mb-3">
-            {periodAxisNote()}
+            <InlineMarkdown text={periodAxisNote()} />
           </p>
           {sortedBatchGroups.length === 0 ? (
             <div className="px-4 py-10 text-center text-neutral-400 text-sm" data-testid="saving-batch-groups-empty">
@@ -452,7 +453,7 @@ export default function SavingBoardPage() {
             <span className="text-xs text-neutral-500">时区 {trend?.timezone ?? '-'}</span>
           </div>
           <p data-testid="saving-trend-caveat" className="text-xs text-neutral-500 mb-2">
-            {trendCaveat()}
+            <InlineMarkdown text={trendCaveat()} />
           </p>
           {(comparisonPurchased || comparisonPerM2) && (
             <div className="mb-2 space-y-0.5 text-xs text-neutral-600">
@@ -505,7 +506,7 @@ export default function SavingBoardPage() {
         <summary className="cursor-pointer text-sm font-medium text-neutral-800">口径与边界（点开看）</summary>
         <ul className="mt-2 list-disc pl-4 space-y-0.5">
           {footnotes(trend?.timezone).map((f) => (
-            <li key={f}>{f}</li>
+            <li key={f}><InlineMarkdown text={f} /></li>
           ))}
         </ul>
       </details>

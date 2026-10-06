@@ -305,6 +305,19 @@ describe('#6430 省料看板重设计：把故事讲清楚', () => {
     )
   })
 
+  it('🔴 强调必须经渲染器上屏：文案不留字面星号，且 <strong> 真的出现（#5194 / §22）', async () => {
+    await renderPage()
+    const text = document.body.textContent ?? ''
+
+    expect(text).not.toContain('**')
+    expect(text).toContain('不相加')
+    // 只判「无星号」是空判据（把标记删掉也绿）⇒ 必须同时判「强调真的加粗了」
+    const bold = Array.from(document.querySelectorAll('strong')).map((n) => n.textContent)
+    expect(bold).toContain('不相加')
+    // 门道词典（<details> 折叠区）里的强调同样要渲染 —— 折叠不等于不渲染
+    expect(bold).toContain('批数')
+  })
+
   it('🔴 环比：本期还没过完（verdict=partial）⇒ 说「先不算」，不冒充结论', async () => {
     mockBoard.mockResolvedValue(
       ok({
