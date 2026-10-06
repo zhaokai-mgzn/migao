@@ -12797,6 +12797,25 @@ _CASE_UI_085 = EvalCase(
     precondition='前置由测试自身持有：frontend/admin-web/src/config/menu.ts 与 src/lib/menu-nav.ts 同时存在且被 vitest 正常收集（缺文件 / 改名 ⇒ 直接红，不表现成「agent 不干活」）',
 )
 
+# ── UI-086 [NORMAL] 入库单列表：表格列与状态药丸不得被压成竖排（th 全 nowrap + 横向逃逸口 + 复用 Badge 原语）（源: cases/ui.yml）──
+_CASE_UI_086 = EvalCase(
+    id='UI-086',
+    legacy_id='',
+    title='入库单列表：表格列与状态药丸不得被压成竖排（th 全 nowrap + 横向逃逸口 + 复用 Badge 原语）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['2026-10-06 用户实测（附两张截图）：「入库单列表的状态样式展示不对，列的样式也有问题，要平铺开」—— 状态药丸「已过账」折成两行（已过 / 账）、表头「行数 / 总数量」折行'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·表头单行：入库单列表 9 个表头（含「行数 / 总数量」）各自的内容行盒数 = 1。执行点 = tests/e2e/specs/warehouse/inbound-orders-table-geometry.spec.ts「表头全部单行」', '判据 2·状态药丸单行：已过账 / 已作废 / 草稿三种状态的药丸内容行盒数 = 1（改前「已过账」= 2 行，药丸被压成 ~1 个汉字宽）。执行点 = 同文件「状态药丸单行」', '判据 3·**逐单元格**单行：两行数据 × 9 个单元格（含供应商 / 仓库 / 单号 / 日期 / 金额 / `1 / 90`（**三文本节点**单元格）/ 聚合批次号「PC-… 等 2 个」/ 状态 / 操作）行盒数 = 1。执行点 = 同文件「每一列的内容都单行」', '判据 4·几何护栏：表格祖先里存在 `overflow-x: auto|scroll` 逃逸口（只有 nowrap 没有逃逸口 ⇒ 表格被外层 `overflow-hidden` **裁切** = 看不见的假绿），且最近一个 `overflow-x: hidden` 祖先的 `scrollWidth-clientWidth` ≤ 1px（右侧列没被裁掉）。执行点 = 同文件「横向逃逸口存在 + 卡片不裁切表格」', '判据 8·**逃逸口真的可滚 + 最右两列可达**（窄视口 1280）：容器的 `scrollWidth > clientWidth`（只断言「祖先里有个 overflow 容器」不够 —— 被 `overflow-hidden` 裁掉时同样有祖先），滚到底后状态药丸与「详情」按钮 `toBeInViewport()`（⚠️ `toBeVisible()` **不判视口相交**，滚动容器外的元素照样 visible）。执行点 = 同文件「窄视口（1280）：逃逸口真的可滚…」', '判据 5·宽视口同形态：1440×900 下表头与药丸同样单行。执行点 = 同文件「宽视口（1440×900）同样」', '判据 6·类级元守卫（每一次 PR 都能拦）：`src/app/**` 与 `src/components/**`（`src/components/ui/**` 除外 —— 共享原语面由 UI-056 守）里，凡**有 `<th>` 的表格**必须「每个 th 带 `whitespace-nowrap`」且「表格落在横向逃逸口里」（`overflow-x-auto` 或 `overflow-auto`），凡**手写药丸**（`inline-flex` ∧ `rounded-full` ∧ `border`）必须带 `whitespace-nowrap`；未登记即红、台账与现取缺陷集合**双向相等**（修好必须删死条目并下调基线）。**边界（有意，且被自证钉住）**：静态规则**只裁表头**，单元格（td）由判据 3/8 在效果层守 —— 「单元格能不能折行」取决于数据与列语义（`src/components/ui/Table.tsx` 的原语也只给表头 nowrap），静态判不了。执行点 = frontend/admin-web/tests/unit/list-table-nowrap-guard.test.ts', '判据 7·判别力自证：内存注入八种形态（无 nowrap 无逃逸口 ⇒ 红 / 只加逃逸口 ⇒ 仍红 / 两条都齐 ⇒ 绿 / `<td>` 当表头的单据表格 ⇒ 不在面内 / 手写药丸缺 nowrap ⇒ 红 / 补上 ⇒ 绿 / **th 全 nowrap 而 td 未 nowrap ⇒ 不红（有意边界，被这条断言钉住）** / `overflow-auto` 也算逃逸口）各自判定正确。执行点 = 同文件「判别力自证」', '🔴 红证（改前实测，2026-10-06，1280×800）：表头「行数 / 总数量」= **2 行**、状态药丸「已过账」= **2 行**、单元格「1 / 90」与聚合批次号折行、`overflow-x-auto` 逃逸口**不存在**（最近祖先 overflow-x = hidden）⇒ 判据 1/2/3/4 同时红（**5 failed / 1 passed**，那 1 条是 auth-setup）。复算命令（在 `tests` 目录下执行）= `npx playwright test --project=web inbound-orders-table-geometry --reporter=list`', '🔴 红证（类级守卫侧，改前实测）：改前基线 26 张表格 / 6 个手写药丸（含入库单列表那一处）；修复后若不同步删条目 ⇒ 守卫由「台账不得腐坏」判红并**具名**报出死条目。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run --dir tests/unit list-table-nowrap-guard`'],
+    skip_reason='[backend-contract] 纯前端布局几何由 Playwright E2E（tests/e2e/specs/warehouse/inbound-orders-table-geometry.spec.ts）+ admin-web vitest（tests/unit/list-table-nowrap-guard.test.ts）覆盖，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'layout', 'geometry', 'nowrap', 'table', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置由判据自身持有：列表数据由 spec 自己 mock `**/api/admin/inbound-orders**`（非空 4 行，覆盖 posted/cancelled/draft），登录由 E2E_MOCK_AUTH 夹具持有；页面渲染不出第一行时判据直接红（不表现成「agent 不干活」）',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -13517,6 +13536,7 @@ ALL_CASES = (
     _CASE_UI_083,
     _CASE_UI_084,
     _CASE_UI_085,
+    _CASE_UI_086,
     _CASE_UT_001,
     _CASE_UT_002,
 )
