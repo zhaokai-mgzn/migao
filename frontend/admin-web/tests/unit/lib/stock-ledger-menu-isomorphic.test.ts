@@ -35,7 +35,14 @@ const HEADER = readFileSync(join(process.cwd(), 'src/components/layout/Header.ts
 
 const PATH = '/stock-ledger'
 const NAME = '库存明细'
-const ICON = 'ClipboardList'
+/**
+ * ⚠️ 初版用的是 `ClipboardList` —— `menu-icons.test.ts` 的判据④（issue #5582「图标两两不同」）
+ * **当场判红**：`ClipboardList` 已被「订单列表」占用（`ClipboardList → 订单列表、库存明细`）。
+ * 该判据要求同屏相邻节点图标不得重复 ⇒ 换成 `ScrollText`（台账/卷册语义），
+ * 并按它的出口「**三处同批**」登记：`config/menu.ts` 的 icon 名 + `config/menu-icons.ts` 注册
+ * + `tests/setup.ts` 的 lucide 白名单（漏白名单会让任何渲染 Sidebar 的用例当场抛错）。
+ */
+const ICON = 'ScrollText'
 
 describe('库存明细菜单三处同构（issue #6404 / UI-088）', () => {
   it('① 三份源都有该节点，名称/路径逐字一致（漏任一处 ⇒ 岗位权限页与真实侧边栏漂移）', () => {
@@ -89,13 +96,17 @@ describe('库存明细菜单三处同构（issue #6404 / UI-088）', () => {
   })
 
   it('③ 图标已进菜单图标注册表（漏注册不报错，只会静默回落 BarChart3）', () => {
-    expect(MENU_ICONS).toMatch(/^\s*ClipboardList,$/m)
+    expect(MENU_ICONS).toMatch(/^\s*ScrollText,$/m)
     const mapBlock = MENU_ICONS.slice(
       MENU_ICONS.indexOf('export const menuIconMap'),
       MENU_ICONS.indexOf('export function resolveMenuIcon'),
     )
     expect(mapBlock.length).toBeGreaterThan(0)
-    expect(mapBlock).toMatch(/^\s*ClipboardList,$/m)
+    expect(mapBlock).toMatch(/^\s*ScrollText,$/m)
+    // 第三处：lucide 的**显式白名单**（`tests/setup.ts` 用白名单 mock 了 lucide-react）——
+    // 漏登记会让任何渲染 Sidebar 的用例抛 `No "X" export is defined on the "lucide-react" mock`
+    const SETUP = readFileSync(join(process.cwd(), 'tests/setup.ts'), 'utf-8')
+    expect(SETUP).toMatch(/^\s*ScrollText: iconStub\(/m)
   })
 
   it('④ 面包屑：/stock-ledger ⇒「仓储与物料 / 库存明细」（末项 == 侧边栏菜单名，§15.2）', () => {

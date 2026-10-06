@@ -38,7 +38,7 @@ import {
   type MenuItem,
 } from '@/config/menu'
 
-/** 新 IA（issue #5778；#5939 +「发货单」）：**6 组 / 20 个组内项 + 1 个顶部一级项 + 1 个尾部独立项 = 22 项** */
+/** 新 IA（issue #5778；#5939 +「发货单」；#6404 +「库存明细」）：**6 组 / 21 个组内项 + 1 个顶部一级项 + 1 个尾部独立项 = 23 项** */
 const EXPECTED_GROUPS: { key: string; name: string; keys: string[] }[] = [
   { key: 'workspace', name: '工作台', keys: ['dashboard', 'briefing'] },
   {
@@ -55,7 +55,7 @@ const EXPECTED_GROUPS: { key: string; name: string; keys: string[] }[] = [
   {
     key: 'inventory-center',
     name: '仓储与物料',
-    keys: ['inbound-orders', 'shipments', 'production-remnants', 'production-saving-board'],
+    keys: ['inbound-orders', 'shipments', 'production-remnants', 'production-saving-board', 'stock-ledger'],
   },
   { key: 'org-center', name: '组织管理', keys: ['employees', 'roles', 'settings'] },
 ]
@@ -109,11 +109,11 @@ describe('新 IA 事实（issue #5778：6 组 + 一级项 + 独立项 = 21 项�
     expect(menuGroups.map((g) => g.name)).not.toContain('智能客服')
   })
 
-  it('每组组内项 key 序列逐值相等（顺序敏感），且总数恒为 22', () => {
+  it('每组组内项 key 序列逐值相等（顺序敏感），且总数恒为 23', () => {
     expect(
       menuGroups.map((g) => ({ key: g.key, keys: g.children.map((c) => c.key) })),
     ).toEqual(EXPECTED_GROUPS.map((g) => ({ key: g.key, keys: g.keys })))
-    expect(ALL_KEYS).toHaveLength(22)
+    expect(ALL_KEYS).toHaveLength(23)
     expect(visibleKeys(ADMIN)).toEqual(ALL_KEYS)
   })
 
@@ -180,7 +180,7 @@ describe('isItemVisible：三条件（adminOnly ∧ briefingToggle ∧ permissio
     const withAdminOnly = menuGroups.flatMap((g) => g.children).filter((c) => c.adminOnly)
     expect(withAdminOnly).toEqual([])
     // 面非空自检：上面的空数组不是因为解析失灵
-    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(20)
+    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(21)
   })
 
   it.each([
@@ -231,7 +231,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 三条件 ⇒ �
         'product:list', 'inbound:view', 'order:create', 'production:execute',
       ],
       expected: ['dashboard', 'products', 'customers', 'orders', 'production-pool',
-        'inbound-orders', 'shipments', 'production-saving-board', 'notifications'],
+        'inbound-orders', 'shipments', 'production-saving-board', 'stock-ledger', 'notifications'],
     },
     {
       name: '财务 finance（9 码）',
@@ -245,7 +245,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 三条件 ⇒ �
     {
       name: '知识编辑 knowledge_editor（4 码）',
       permissions: ['dashboard:view', 'knowledge:view', 'knowledge:manage', 'product:list'],
-      expected: ['dashboard', 'products', 'knowledge', 'production-saving-board', 'notifications'],
+      expected: ['dashboard', 'products', 'knowledge', 'production-saving-board', 'stock-ledger', 'notifications'],
     },
     {
       name: '商品管理员 product_manager（8 码）',
@@ -255,7 +255,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 三条件 ⇒ �
       ],
       expected: ['dashboard', 'products', 'production-board', 'production-pool', 'processing',
         'production-process', 'production-piecework', 'production-remnants',
-        'production-saving-board', 'notifications'],
+        'production-saving-board', 'stock-ledger', 'notifications'],
     },
     {
       name: '运营 operator（26 码）',
@@ -269,7 +269,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 三条件 ⇒ �
       expected: ['dashboard', 'products', 'human-sessions', 'customers', 'knowledge', 'after-sales',
         'orders', 'finance', 'production-board', 'production-pool', 'processing', 'production-process',
         'production-piecework', 'inbound-orders', 'shipments', 'production-remnants',
-        'production-saving-board', 'employees', 'notifications'],
+        'production-saving-board', 'stock-ledger', 'employees', 'notifications'],
     },
   ]
 
@@ -291,10 +291,11 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 三条件 ⇒ �
     const ke = ROLES[3].permissions
     expect(visibleKeys({ permissions: ke.filter((p) => p !== 'knowledge:manage'), briefingEnabled: false }))
       .toEqual(ROLES[3].expected)
-    // 自证 2：`product:list` 是「商品管理 / 省料看板」两项的码 ⇒ 摘掉它，清单必须**少两项**
+    // 自证 2：`product:list` 是「商品管理 / 省料看板 / 库存明细」三项的码 ⇒ 摘掉它，清单必须**少三项**
     const after = visibleKeys({ permissions: ke.filter((p) => p !== 'product:list'), briefingEnabled: false })
     expect(after).not.toContain('products')
     expect(after).not.toContain('production-saving-board')
+    expect(after).not.toContain('stock-ledger')
   })
 })
 
@@ -413,7 +414,7 @@ describe('resolveActivePath：命中项里取**最长**（否则会出现两项�
 })
 
 describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前组', () => {
-  it('每个菜单项的路径都归到它**自己所属**的组（19 个组内项逐条穷举；#5778 起「商品管理」是一级项，不入组）', () => {
+  it('每个菜单项的路径都归到它**自己所属**的组（20 个组内项逐条穷举；#5778 起「商品管理」是一级项，不入组）', () => {
     // ⚠️ 这张表**不留豁免**：曾经 `/production/remnants` 与 `/production/saving-board` 被列为
     // 「已知偏差」（同前缀的 `/production` 抢走归组）—— 该偏差已修（见下方专条），
     // 于是两条回归契约表。**留豁免就等于把 bug 写成规格**。
@@ -423,8 +424,8 @@ describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前�
         return [item.path, g.key] as const
       }),
     )
-    expect(cases).toHaveLength(20)
-    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(20)
+    expect(cases).toHaveLength(21)
+    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(21)
     for (const [path, groupKey] of cases) {
       expect(`${path} ⇒ ${resolveActiveGroupKey(menuGroups, path)}`).toBe(`${path} ⇒ ${groupKey}`)
     }
@@ -479,9 +480,9 @@ describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前�
 describe('flattenMenu：head 组 → 一级项 → tail 组 → 尾部独立项（命令面板的索引面）', () => {
   const flat = flattenMenu(menuGroups, standaloneTopItems, standaloneItems)
 
-  it('顺序 = 22 项全部，且与组结构逐项对齐', () => {
+  it('顺序 = 23 项全部，且与组结构逐项对齐', () => {
     expect(flat.map((i) => i.key)).toEqual(ALL_KEYS)
-    expect(flat).toHaveLength(22)
+    expect(flat).toHaveLength(23)
     const expected = EXPECTED_GROUPS.flatMap((g) => g.keys.map((k) => ({ key: k, groupKey: g.key, groupName: g.name })))
     // #5877：一级项插在「工作台」组（head）与其余组（tail）之间；不属于任何组 ⇒ 组标签为空
     const headLen = EXPECTED_GROUPS.filter((g) => g.key === SLOT_KEY).flatMap((g) => g.keys).length
@@ -543,7 +544,7 @@ describe('splitGroupsAtTopItemSlot：一级项的插入位（#5877）', () => {
     const groups = visibleMenuGroups(menuGroups, { permissions: ['order:list', 'product:list'], roles: [] })
     expect(groups.map((g) => g.key)).toEqual(['trade-center', 'inventory-center'])
     expect(flattenMenu(groups, standaloneTopItems, standaloneItems).map((i) => i.key)).toEqual([
-      'products', 'orders', 'shipments', 'production-saving-board', 'notifications',
+      'products', 'orders', 'shipments', 'production-saving-board', 'stock-ledger', 'notifications',
     ])
   })
 })
@@ -551,8 +552,8 @@ describe('splitGroupsAtTopItemSlot：一级项的插入位（#5877）', () => {
 describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序档位）', () => {
   const items = allItems()
 
-  it('面非空自检：可搜索面 = 22 项', () => {
-    expect(items).toHaveLength(22)
+  it('面非空自检：可搜索面 = 23 项', () => {
+    expect(items).toHaveLength(23)
   })
 
   it('空查询 / 纯空白 ⇒ 空数组（面板的「空查询列全量」由调用方实现，不是本函数）', () => {
@@ -569,7 +570,7 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
     ['拼音首字母 keywords（rank 2）', 'yltz', ['production-remnants']],
     ['拼音首字母 keywords（rank 2）', 'sckb', ['production-board']],
     ['大小写不敏感', 'DINGDAN', ['orders']],
-    ['组名命中（rank 3）', '仓储', ['inbound-orders', 'shipments', 'production-remnants', 'production-saving-board']],
+    ['组名命中（rank 3）', '仓储', ['inbound-orders', 'shipments', 'production-remnants', 'production-saving-board', 'stock-ledger']],
     ['keywords 里的中文别名（rank 2）', '加工费', ['processing']],
     ['无命中 ⇒ []', '不存在的菜单', []],
   ])('%s：`%s`', (_name, query, expected) => {
@@ -620,7 +621,7 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
 describe('权限过滤的端到端口径（可见项 key 集合，逐条精确断言）', () => {
   it.each([
     [
-      '超管 `*` + admin 角色 + 简报开关开 ⇒ 22 项全可见',
+      '超管 `*` + admin 角色 + 简报开关开 ⇒ 23 项全可见',
       { permissions: ['*'], roles: ['admin'], briefingEnabled: true },
       ALL_KEYS,
     ],

@@ -56,7 +56,7 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
   it('判据① 正向不漏：`menu.ts` 的每个图标名都已注册（漏注册 = 静默回落 BarChart3）', () => {
     // 面非空自检：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证
     expect(iconNamesFromSource(MENU_TS).length).toBeGreaterThanOrEqual(24)
-    expect(allItems().length).toBe(28) // #5778：6 组头 + 1 一级项 + 19 组内项 + 1 独立项；#5939：+1 组内项「发货单」
+    expect(allItems().length).toBe(29) // #5778：6 组头 + 1 一级项 + 20 组内项 + 1 独立项；#5939：+「发货单」；#6404：+「库存明细」
 
     const usedFromSource = Array.from(new Set(iconNamesFromSource(MENU_TS)))
     const usedFromObjects = Array.from(new Set(allItems().map((i) => i.icon)))
@@ -120,10 +120,10 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
       .map(([icon, names]) => `${icon} → ${names.join('、')}`)
   }
 
-  it('🔴 判据④ 图标两两不同：28 个节点（6 组 + 1 一级项 + 20 子项 + 1 独立项）的图标互不重复（issue #5582）', () => {
+  it('🔴 判据④ 图标两两不同：29 个节点（6 组 + 1 一级项 + 21 子项 + 1 独立项）的图标互不重复（issue #5582）', () => {
     const items = allItems()
     // 面非空自证：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证，并点名几个已知节点
-    expect(items.length).toBe(28)
+    expect(items.length).toBe(29)
     expect(items.map((i) => i.name)).toEqual(
       expect.arrayContaining(['经营看板', '省料看板', '售后工单', '岗位权限', '财务对账', '计件工资', '组织管理', '企业基础信息']),
     )

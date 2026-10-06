@@ -253,7 +253,7 @@ export const menuGroups: MenuGroup[] = [
       // 🔴 节点码 = 该页第一屏读端点（`GET /api/admin/stock-ledger`）的**方法级**
       // `@RequirePermission("product:list")`（逐字同码，不新造码 —— 新码今天无人持有 ⇒
       // 节点对所有人不可见，#4203 同族坑）。同组「省料看板」是同款先例（issue #5699 P4）。
-      { key: 'stock-ledger', name: '库存明细', icon: 'ClipboardList', path: '/stock-ledger', permissionCode: 'product:list', keywords: ['kcmx', 'kucun', 'mingxi', 'liushui', 'taizhang', '台账'] },
+      { key: 'stock-ledger', name: '库存明细', icon: 'ScrollText', path: '/stock-ledger', permissionCode: 'product:list', keywords: ['kcmx', 'kucun', 'mingxi', 'liushui', 'taizhang', '台账'] },
     ],
   },
   // #2969: 组织管理组（员工管理 + 岗位权限 + 企业基础信息）
