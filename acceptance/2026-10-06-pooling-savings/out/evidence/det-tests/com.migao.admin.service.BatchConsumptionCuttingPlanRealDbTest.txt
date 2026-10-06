@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.migao.admin.service.BatchConsumptionCuttingPlanRealDbTest
+-------------------------------------------------------------------------------
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.468 s -- in com.migao.admin.service.BatchConsumptionCuttingPlanRealDbTest

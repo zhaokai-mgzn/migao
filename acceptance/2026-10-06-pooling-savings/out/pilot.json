@@ -1,0 +1,849 @@
+{
+  "at": "2026-10-06T02:39:03.081Z",
+  "stamp": "343081",
+  "prefix": "SD06省料",
+  "steps": [
+    {
+      "k": "probe",
+      "v": {
+        "productId": "bcc121bc7e2535ac9421d3612de75f75",
+        "skuId": "2107299568354398209",
+        "skuCode": "SD06省料-343081",
+        "inboundId": "fd03dd7aba51a191c593968252537700",
+        "batchNo": "PC-20261006-0002",
+        "batchQty": "4000.0"
+      }
+    },
+    {
+      "k": "orders",
+      "v": [
+        {
+          "orderId": "c3ae5ee8460d2d8f750303dafa30b22b",
+          "orderNo": "20261006171000006",
+          "status": "confirmed",
+          "itemId": "4d04cbcf386cef438f9f79ef4d18b279"
+        },
+        {
+          "orderId": "8d07670f59d4128523e624322e67ee3c",
+          "orderNo": "20261006332740007",
+          "status": "confirmed",
+          "itemId": "06e80f88c4daa6496c611324a74804bf"
+        },
+        {
+          "orderId": "e70e12831848a466aaa00d939e0bfb1d",
+          "orderNo": "20261006122920008",
+          "status": "confirmed",
+          "itemId": "290cdc901567ab3be1374b0dbf488922"
+        },
+        {
+          "orderId": "6218f683d25e44751637c2cf354b7929",
+          "orderNo": "20261006269310009",
+          "status": "confirmed",
+          "itemId": "71546c2bb5e9b73747f2aad9797238e1"
+        },
+        {
+          "orderId": "8ab21ac8ec62f34816104db83c955a7f",
+          "orderNo": "20261006030720010",
+          "status": "confirmed",
+          "itemId": "d750a2f7ac8f358e85aa3437797dc9fa"
+        },
+        {
+          "orderId": "82113bb0e8e2390c9e6f418677cd28a1",
+          "orderNo": "20261006386190011",
+          "status": "confirmed",
+          "itemId": "ed6a37ec664f8ccea249cc9407d449bf"
+        }
+      ]
+    },
+    {
+      "k": "preview_ui_body",
+      "v": {
+        "status": 200,
+        "data": {
+          "orderCount": 6,
+          "formulaMeters": 0,
+          "pooledPlannedMeters": 0,
+          "savedMeters": 0,
+          "perOrderPlannedMeters": 0,
+          "poolingGainMeters": 0
+        }
+      }
+    },
+    {
+      "k": "preview_filled_body",
+      "v": {
+        "status": 200,
+        "data": {
+          "orderCount": 6,
+          "assignmentRule": "fifo",
+          "formulaMeters": 8.4,
+          "pooledPlannedMeters": 4.2,
+          "savedMeters": 4.2,
+          "perOrderPlannedMeters": 8.4,
+          "poolingGainMeters": 4.2
+        }
+      }
+    },
+    {
+      "k": "pool",
+      "v": {
+        "status": 200,
+        "orderCount": 6,
+        "groups": [
+          {
+            "lines": 6
+          }
+        ]
+      }
+    },
+    {
+      "k": "dispatch_ui_body",
+      "v": {
+        "status": 200,
+        "results": [
+          {
+            "orderRef": "c3ae5ee8460d2d8f750303dafa30b22b",
+            "success": true,
+            "processingOrderNo": "JG-20261006-6877"
+          },
+          {
+            "orderRef": "8d07670f59d4128523e624322e67ee3c",
+            "success": true,
+            "processingOrderNo": "JG-20261006-6878"
+          }
+        ]
+      }
+    },
+    {
+      "k": "dispatch_filled_pooled",
+      "v": {
+        "status": 200,
+        "results": [
+          {
+            "orderRef": "e70e12831848a466aaa00d939e0bfb1d",
+            "success": true,
+            "processingOrderNo": "JG-20261006-6879"
+          },
+          {
+            "orderRef": "6218f683d25e44751637c2cf354b7929",
+            "success": true,
+            "processingOrderNo": "JG-20261006-6880"
+          },
+          {
+            "orderRef": "8ab21ac8ec62f34816104db83c955a7f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-6881"
+          },
+          {
+            "orderRef": "82113bb0e8e2390c9e6f418677cd28a1",
+            "success": true,
+            "processingOrderNo": "JG-20261006-6882"
+          }
+        ]
+      }
+    },
+    {
+      "k": "processing_orders",
+      "v": [
+        {
+          "id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "processing_order_no": "JG-20261006-6880",
+          "order_id": "6218f683d25e44751637c2cf354b7929",
+          "route_key": "窗帘工序路线（默认）",
+          "route_source": "direct",
+          "order_no": "20261006269310009"
+        },
+        {
+          "id": "239478bdbb65111a8497bbc25b39a2af",
+          "processing_order_no": "JG-20261006-6877",
+          "order_id": "c3ae5ee8460d2d8f750303dafa30b22b",
+          "route_key": "窗帘工序路线（默认）",
+          "route_source": "direct",
+          "order_no": "20261006171000006"
+        },
+        {
+          "id": "601eeec857194b4c348d44e97f51c843",
+          "processing_order_no": "JG-20261006-6879",
+          "order_id": "e70e12831848a466aaa00d939e0bfb1d",
+          "route_key": "窗帘工序路线（默认）",
+          "route_source": "direct",
+          "order_no": "20261006122920008"
+        },
+        {
+          "id": "63d86110232f58d470a46bfa0e4f0798",
+          "processing_order_no": "JG-20261006-6881",
+          "order_id": "8ab21ac8ec62f34816104db83c955a7f",
+          "route_key": "窗帘工序路线（默认）",
+          "route_source": "direct",
+          "order_no": "20261006030720010"
+        },
+        {
+          "id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "processing_order_no": "JG-20261006-6878",
+          "order_id": "8d07670f59d4128523e624322e67ee3c",
+          "route_key": "窗帘工序路线（默认）",
+          "route_source": "direct",
+          "order_no": "20261006332740007"
+        },
+        {
+          "id": "f12721a6037d864cf0d4afc6ee896bb0",
+          "processing_order_no": "JG-20261006-6882",
+          "order_id": "82113bb0e8e2390c9e6f418677cd28a1",
+          "route_key": "窗帘工序路线（默认）",
+          "route_source": "direct",
+          "order_no": "20261006386190011"
+        }
+      ]
+    },
+    {
+      "k": "consumptions",
+      "v": [
+        {
+          "id": 85,
+          "order_item_id": "290cdc901567ab3be1374b0dbf488922",
+          "batch_no": "PC-20261006-0002",
+          "delta": "-0.7",
+          "formula": "1.4",
+          "planned": "0.7",
+          "saved": "0.7",
+          "unit_cost": "40.0000"
+        },
+        {
+          "id": 86,
+          "order_item_id": "71546c2bb5e9b73747f2aad9797238e1",
+          "batch_no": "PC-20261006-0002",
+          "delta": "-0.7",
+          "formula": "1.4",
+          "planned": "0.7",
+          "saved": "0.7",
+          "unit_cost": "40.0000"
+        },
+        {
+          "id": 87,
+          "order_item_id": "d750a2f7ac8f358e85aa3437797dc9fa",
+          "batch_no": "PC-20261006-0002",
+          "delta": "-0.7",
+          "formula": "1.4",
+          "planned": "0.7",
+          "saved": "0.7",
+          "unit_cost": "40.0000"
+        },
+        {
+          "id": 88,
+          "order_item_id": "ed6a37ec664f8ccea249cc9407d449bf",
+          "batch_no": "PC-20261006-0002",
+          "delta": "-0.7",
+          "formula": "1.4",
+          "planned": "0.7",
+          "saved": "0.7",
+          "unit_cost": "40.0000"
+        }
+      ]
+    },
+    {
+      "k": "ops_sample",
+      "v": [
+        {
+          "processing_order_id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "position_name": "SD06省料布3430813 验收白",
+          "seq": 1,
+          "operation_name": "精裁-布",
+          "group_name": "裁剪",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "position_name": "SD06省料布3430813 验收白",
+          "seq": 2,
+          "operation_name": "布三边",
+          "group_name": "车位",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "position_name": "SD06省料布3430813 验收白",
+          "seq": 3,
+          "operation_name": "韩褶-布",
+          "group_name": "车位",
+          "unit": "折",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "position_name": "SD06省料布3430813 验收白",
+          "seq": 4,
+          "operation_name": "上车布-布",
+          "group_name": "车位",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "position_name": "SD06省料布3430813 验收白",
+          "seq": 5,
+          "operation_name": "熨烫-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "position_name": "SD06省料布3430813 验收白",
+          "seq": 6,
+          "operation_name": "定型-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "position_name": "SD06省料布3430813 验收白",
+          "seq": 7,
+          "operation_name": "复烫-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "position_name": "SD06省料布3430813 验收白",
+          "seq": 8,
+          "operation_name": "布帘车被",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "position_name": "SD06省料布3430813 验收白",
+          "seq": 9,
+          "operation_name": "外帘打卷",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "position_name": "SD06省料布3430813 验收白",
+          "seq": 10,
+          "operation_name": "打包",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "position_name": "SD06省料布3430813 验收白",
+          "seq": 11,
+          "operation_name": "外帘装袋",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "16cc3b1b0e716d18bcf4dcd0dd2856a8",
+          "position_name": "SD06省料布3430813 验收白",
+          "seq": 12,
+          "operation_name": "外帘发货",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "239478bdbb65111a8497bbc25b39a2af",
+          "position_name": "SD06省料布3430810 验收白",
+          "seq": 1,
+          "operation_name": "精裁-布",
+          "group_name": "裁剪",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "239478bdbb65111a8497bbc25b39a2af",
+          "position_name": "SD06省料布3430810 验收白",
+          "seq": 2,
+          "operation_name": "布三边",
+          "group_name": "车位",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "239478bdbb65111a8497bbc25b39a2af",
+          "position_name": "SD06省料布3430810 验收白",
+          "seq": 3,
+          "operation_name": "韩褶-布",
+          "group_name": "车位",
+          "unit": "折",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "239478bdbb65111a8497bbc25b39a2af",
+          "position_name": "SD06省料布3430810 验收白",
+          "seq": 4,
+          "operation_name": "上车布-布",
+          "group_name": "车位",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "239478bdbb65111a8497bbc25b39a2af",
+          "position_name": "SD06省料布3430810 验收白",
+          "seq": 5,
+          "operation_name": "熨烫-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "239478bdbb65111a8497bbc25b39a2af",
+          "position_name": "SD06省料布3430810 验收白",
+          "seq": 6,
+          "operation_name": "定型-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "239478bdbb65111a8497bbc25b39a2af",
+          "position_name": "SD06省料布3430810 验收白",
+          "seq": 7,
+          "operation_name": "复烫-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "239478bdbb65111a8497bbc25b39a2af",
+          "position_name": "SD06省料布3430810 验收白",
+          "seq": 8,
+          "operation_name": "布帘车被",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "239478bdbb65111a8497bbc25b39a2af",
+          "position_name": "SD06省料布3430810 验收白",
+          "seq": 9,
+          "operation_name": "外帘打卷",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "239478bdbb65111a8497bbc25b39a2af",
+          "position_name": "SD06省料布3430810 验收白",
+          "seq": 10,
+          "operation_name": "打包",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "239478bdbb65111a8497bbc25b39a2af",
+          "position_name": "SD06省料布3430810 验收白",
+          "seq": 11,
+          "operation_name": "外帘装袋",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "239478bdbb65111a8497bbc25b39a2af",
+          "position_name": "SD06省料布3430810 验收白",
+          "seq": 12,
+          "operation_name": "外帘发货",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "601eeec857194b4c348d44e97f51c843",
+          "position_name": "SD06省料布3430812 验收白",
+          "seq": 1,
+          "operation_name": "精裁-布",
+          "group_name": "裁剪",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "601eeec857194b4c348d44e97f51c843",
+          "position_name": "SD06省料布3430812 验收白",
+          "seq": 2,
+          "operation_name": "布三边",
+          "group_name": "车位",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "601eeec857194b4c348d44e97f51c843",
+          "position_name": "SD06省料布3430812 验收白",
+          "seq": 3,
+          "operation_name": "韩褶-布",
+          "group_name": "车位",
+          "unit": "折",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "601eeec857194b4c348d44e97f51c843",
+          "position_name": "SD06省料布3430812 验收白",
+          "seq": 4,
+          "operation_name": "上车布-布",
+          "group_name": "车位",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "601eeec857194b4c348d44e97f51c843",
+          "position_name": "SD06省料布3430812 验收白",
+          "seq": 5,
+          "operation_name": "熨烫-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "601eeec857194b4c348d44e97f51c843",
+          "position_name": "SD06省料布3430812 验收白",
+          "seq": 6,
+          "operation_name": "定型-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "601eeec857194b4c348d44e97f51c843",
+          "position_name": "SD06省料布3430812 验收白",
+          "seq": 7,
+          "operation_name": "复烫-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "601eeec857194b4c348d44e97f51c843",
+          "position_name": "SD06省料布3430812 验收白",
+          "seq": 8,
+          "operation_name": "布帘车被",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "601eeec857194b4c348d44e97f51c843",
+          "position_name": "SD06省料布3430812 验收白",
+          "seq": 9,
+          "operation_name": "外帘打卷",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "601eeec857194b4c348d44e97f51c843",
+          "position_name": "SD06省料布3430812 验收白",
+          "seq": 10,
+          "operation_name": "打包",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "601eeec857194b4c348d44e97f51c843",
+          "position_name": "SD06省料布3430812 验收白",
+          "seq": 11,
+          "operation_name": "外帘装袋",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "601eeec857194b4c348d44e97f51c843",
+          "position_name": "SD06省料布3430812 验收白",
+          "seq": 12,
+          "operation_name": "外帘发货",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "63d86110232f58d470a46bfa0e4f0798",
+          "position_name": "SD06省料布3430814 验收白",
+          "seq": 1,
+          "operation_name": "精裁-布",
+          "group_name": "裁剪",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "63d86110232f58d470a46bfa0e4f0798",
+          "position_name": "SD06省料布3430814 验收白",
+          "seq": 2,
+          "operation_name": "布三边",
+          "group_name": "车位",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "63d86110232f58d470a46bfa0e4f0798",
+          "position_name": "SD06省料布3430814 验收白",
+          "seq": 3,
+          "operation_name": "韩褶-布",
+          "group_name": "车位",
+          "unit": "折",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "63d86110232f58d470a46bfa0e4f0798",
+          "position_name": "SD06省料布3430814 验收白",
+          "seq": 4,
+          "operation_name": "上车布-布",
+          "group_name": "车位",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "63d86110232f58d470a46bfa0e4f0798",
+          "position_name": "SD06省料布3430814 验收白",
+          "seq": 5,
+          "operation_name": "熨烫-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "63d86110232f58d470a46bfa0e4f0798",
+          "position_name": "SD06省料布3430814 验收白",
+          "seq": 6,
+          "operation_name": "定型-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "63d86110232f58d470a46bfa0e4f0798",
+          "position_name": "SD06省料布3430814 验收白",
+          "seq": 7,
+          "operation_name": "复烫-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "63d86110232f58d470a46bfa0e4f0798",
+          "position_name": "SD06省料布3430814 验收白",
+          "seq": 8,
+          "operation_name": "布帘车被",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "63d86110232f58d470a46bfa0e4f0798",
+          "position_name": "SD06省料布3430814 验收白",
+          "seq": 9,
+          "operation_name": "外帘打卷",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "63d86110232f58d470a46bfa0e4f0798",
+          "position_name": "SD06省料布3430814 验收白",
+          "seq": 10,
+          "operation_name": "打包",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "63d86110232f58d470a46bfa0e4f0798",
+          "position_name": "SD06省料布3430814 验收白",
+          "seq": 11,
+          "operation_name": "外帘装袋",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "63d86110232f58d470a46bfa0e4f0798",
+          "position_name": "SD06省料布3430814 验收白",
+          "seq": 12,
+          "operation_name": "外帘发货",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "position_name": "SD06省料布3430811 验收白",
+          "seq": 1,
+          "operation_name": "精裁-布",
+          "group_name": "裁剪",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "position_name": "SD06省料布3430811 验收白",
+          "seq": 2,
+          "operation_name": "布三边",
+          "group_name": "车位",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "position_name": "SD06省料布3430811 验收白",
+          "seq": 3,
+          "operation_name": "韩褶-布",
+          "group_name": "车位",
+          "unit": "折",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "position_name": "SD06省料布3430811 验收白",
+          "seq": 4,
+          "operation_name": "上车布-布",
+          "group_name": "车位",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "position_name": "SD06省料布3430811 验收白",
+          "seq": 5,
+          "operation_name": "熨烫-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "position_name": "SD06省料布3430811 验收白",
+          "seq": 6,
+          "operation_name": "定型-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "position_name": "SD06省料布3430811 验收白",
+          "seq": 7,
+          "operation_name": "复烫-布",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "position_name": "SD06省料布3430811 验收白",
+          "seq": 8,
+          "operation_name": "布帘车被",
+          "group_name": "后道",
+          "unit": "米",
+          "qty": "1.40",
+          "qty_source": "fabric_meters"
+        },
+        {
+          "processing_order_id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "position_name": "SD06省料布3430811 验收白",
+          "seq": 9,
+          "operation_name": "外帘打卷",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "position_name": "SD06省料布3430811 验收白",
+          "seq": 10,
+          "operation_name": "打包",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "position_name": "SD06省料布3430811 验收白",
+          "seq": 11,
+          "operation_name": "外帘装袋",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        },
+        {
+          "processing_order_id": "8552feaa6c39a61ea724d47e28b3cfff",
+          "position_name": "SD06省料布3430811 验收白",
+          "seq": 12,
+          "operation_name": "外帘发货",
+          "group_name": "后道",
+          "unit": "套",
+          "qty": "1.00",
+          "qty_source": "fallback"
+        }
+      ]
+    }
+  ]
+}

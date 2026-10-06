@@ -115,6 +115,9 @@
       "path": "acceptance/2026-10-04/worker-miniapp-sweep/harness/bootstrap-chain.mjs"
     },
     {
+      "path": "acceptance/2026-10-06-pooling-savings/harness/steps.mjs"
+    },
+    {
       "path": "tests/e2e/specs/products/product-detail.spec.ts"
     },
     {
