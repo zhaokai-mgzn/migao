@@ -1,0 +1,73 @@
+{
+  "at": "2026-10-06T00:13:51.621Z",
+  "derivedFrom": "rows[].rawState + rows[].reclassReason（可复算：重跑本脚本即得同一台账）",
+  "files": [
+    {
+      "file": "p2-roles-ui.json",
+      "counts": {
+        "pass": 27,
+        "skip": 1
+      },
+      "changed": [
+        {
+          "id": "P2-NEG:admin",
+          "from": "pass",
+          "to": "skip",
+          "reason": "全码岗位无负向项 ⇒ 该判据对 admin **恒真**（空断言）⇒ 未覆盖，不折算 pass（独立复核 A-OBJ-1/C-OBJ-08）"
+        }
+      ]
+    },
+    {
+      "file": "p4-writes.json",
+      "counts": {
+        "pass": 7,
+        "fail": 2,
+        "skip": 2
+      },
+      "changed": [
+        {
+          "id": "P4-W3",
+          "from": "fail",
+          "to": "skip",
+          "reason": "页面校验清单逐字：「还差 1 项 … 有 1 行加工费未定价（组合那半按 0 计）⇒ 请先定价再下单：拼接」= 产品有意的业务闸门；驱动未去定价"
+        }
+      ]
+    },
+    {
+      "file": "p4d-writes2.json",
+      "counts": {
+        "pass": 1,
+        "skip": 2
+      },
+      "changed": [
+        {
+          "id": "P4D-2",
+          "from": "fail",
+          "to": "skip",
+          "reason": "关联订单为必填，UI 驱动未把订单解析进表单（提交后对话框仍在，库内无新行）"
+        },
+        {
+          "id": "P4D-3",
+          "from": "fail",
+          "to": "skip",
+          "reason": "页面校验逐字：「表单校验未通过：还有 6 处必填内容未完成」（商品分类/商品主图/计价单位/售卖方式…）；此后两次补齐仍未通过"
+        }
+      ]
+    },
+    {
+      "file": "p5-perm-api.json",
+      "counts": {
+        "pass": 3,
+        "skip": 1
+      },
+      "changed": [
+        {
+          "id": "P5-positive",
+          "from": "fail",
+          "to": "skip",
+          "reason": "API 正对照载荷未对上契约（HTTP 422：缺 title/必填）；正对照已由 **UI 侧 W2**（知识编辑真建卡片、库内 0→1→2）承担 ⇒ 本行不构成产品判定"
+        }
+      ]
+    }
+  ]
+}
