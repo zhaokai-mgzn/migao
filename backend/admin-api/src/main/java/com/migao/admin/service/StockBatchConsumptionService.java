@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * 批次消耗台账服务（V116，issue #5145 阶段 1）—— 派工扣批次的**写面**与批次账的**读面**。
@@ -927,7 +928,7 @@ public class StockBatchConsumptionService {
                 // le0_2Share **有意不给好坏**（DIR_NO_VERDICT ⇒ verdict 恒 null，issue #5144）
                 delta(le0_2ShareByPeriod(batchGroups), DIR_NO_VERDICT, open));
         return new SavingMetricViews.Board(g, SavingMetricViews.TIMEZONE, cohorts, batchGroups,
-                savedGroups, total, comparison);
+                savedGroups, total, comparison, batchTrendOf(batchGroups));
     }
 
     /**
@@ -1186,6 +1187,39 @@ public class StockBatchConsumptionService {
         }
         boolean up = DIR_UP_BETTER.equals(direction);
         return cmp > 0 == up ? "better" : "worse";
+    }
+
+    /**
+     * 批次结构趋势（issue #6459）：把 L2 分组行按<b>收货期间</b>聚合成「几乎用完的批数」序列。
+     *
+     * <p>零新增 SQL：输入就是 {@code savingBoard} 已经加载的 {@code batchGroups}（与
+     * {@link #le0_2ShareByPeriod} 同一批行、同一套 {@link #share} 口径）。</p>
+     *
+     * <p>🔴 <b>只聚合 {@link SavingMetricViews#COHORT_PURCHASE}</b>：存量导入（期初建账）与来源不明的
+     * 批次<b>不进这条序列</b> —— 它们是切换前的历史包袱，混进来会让改善永远看不出来
+     * （判据 2 的<b>实质</b>，一字不放宽）。</p>
+     *
+     * <p>期间按字典序升序（{@code YYYY-MM} 与 ISO 周都可比）；未记收货日期（{@code period == null}）
+     * 单独成一行且以 {@code null} 回给调用方（不猜一个日期），排在序列最前。</p>
+     */
+    static List<SavingMetricViews.BatchPeriodPoint> batchTrendOf(
+            List<SavingMetricViews.BatchGroup> batchGroups) {
+        Map<String, int[]> byPeriod = new TreeMap<>();
+        for (SavingMetricViews.BatchGroup g : batchGroups) {
+            if (!SavingMetricViews.COHORT_PURCHASE.equals(g.cohort())) {
+                continue;
+            }
+            int[] acc = byPeriod.computeIfAbsent(g.period() == null ? "" : g.period(),
+                    k -> new int[2]);
+            acc[0] += g.le0_2Count();
+            acc[1] += g.batchCount();
+        }
+        List<SavingMetricViews.BatchPeriodPoint> out = new ArrayList<>(byPeriod.size());
+        for (Map.Entry<String, int[]> e : byPeriod.entrySet()) {
+            out.add(new SavingMetricViews.BatchPeriodPoint(e.getKey().isEmpty() ? null : e.getKey(),
+                    e.getValue()[1], e.getValue()[0], share(e.getValue()[0], e.getValue()[1])));
+        }
+        return out;
     }
 
     /** 批次分档组 → 按收货月汇总的 {@code Σ le0_2Count / Σ batchCount}（**该期占比**，口径同 {@link #share}）。 */
