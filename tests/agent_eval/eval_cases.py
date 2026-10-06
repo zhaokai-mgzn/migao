@@ -5767,6 +5767,25 @@ _CASE_MC_085 = EvalCase(
     precondition='本用例是 [backend-contract] 纯静态用例：前置 = ① frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx 在场且含 `PRINT_TARGETS_BY_STATUS` 矩阵；② frontend/admin-web/src/types/index.ts 在场且含 `export type OrderStatus` 联合类型（成员**现取**，不硬编码）。前置由判据自身持有：文件缺失 / 正则取不到矩阵或状态成员 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它',
 )
 
+# ── MC-086 [NORMAL] 控制台口令面「只能建、不能救」的死角进不来：建号即设口令的 client 必须同时有同族重置出口（未配对即红 / 台账只许缩短 / 零命中即红 + 判别力自证）（源: cases/misc.yml）──
+_CASE_MC_086 = EvalCase(
+    id='MC-086',
+    legacy_id='',
+    title='控制台口令面「只能建、不能救」的死角进不来：建号即设口令的 client 必须同时有同族重置出口（未配对即红 / 台账只许缩短 / 零命中即红 + 判别力自证）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这里管理员查不到工人的pin码', '应该加个查看Pin码的功能，只有管理员权限才能看'],
+    expectations=[],
+    data_checks=['**病（issue #6432 的形态）**：`workerApi.createWorker` 建号时能设 PIN，但建完**再也拿不到** —— PIN 落库是 BCrypt 哈希（不可逆）、列表与视图面还显式脱敏 ⇒ 工人忘记 PIN 时管理员无路可走（只能删号重建，而重建会把报工记到两个身份上）。同族的 `employeeApi` 早就有 `resetPassword` ⇒ 这是**一族**：「建号即设口令」的能力面必须有对应的**重置出口**，而当时没有任何判据看着它。', '**判据 1（未配对即红，具名）**：某 client 暴露了 `create*` 且其入参类型含 `password` / `pin` 字段，却没有 `reset|change|update` + `Password|Pin` 方法，且不在豁免台账里 ⇒ 报出「未配对：<client> 暴露了 <方法>…」。判据 = tests/unit_ci_workflows/test_credential_rotation_pairing.py::test_discriminates_unpaired_client（内存语料 = 去掉工人侧重置面的改前形态）', '**判据 2（台账只许缩短：陈旧即红 / 超预算即红）**：`frozen_max_entries` 现取为 0；给一个**其实已配对**的 client 盖章 ⇒ 「陈旧台账条目」；条目数超上限 ⇒ 「超预算」；条目缺 `reason` ⇒ 红。判据 = 同文件::test_discriminates_stale_ledger_entry / test_discriminates_ledger_budget / test_ledger_is_wellformed_and_shrink_only', '**判据 3（零命中即红，fail-closed）**：扫描面一个「建号即设口令」的 client 都找不到（选择器漂了 / api.ts 结构变了）⇒ 判据自己失效 ⇒ 红，不许静默绿。判据 = 同文件::test_discriminates_empty_corpus', '**判据 4（对照读数：真语料上确实看得见配对）**：真仓上 `workerApi.createWorker ↔ resetWorkerPin`、`employeeApi.createEmployee ↔ resetPassword` 两条都必须被扫出来（防「选择器漂了还能绿」）。判据 = 同文件::test_real_repo_actually_sees_the_pairing + test_real_repo_passes', '🔴 **覆盖边界（照实登记）**：判据只认 frontend/admin-web/src/lib/api.ts 的**对象字面量 client**（`export const X = { … }` 顶格 `}` 收口）与 frontend/admin-web/src/types/index.ts 的**顶层 interface 字段**；经变量间接构造的请求体、行内 `{ pin }` 字面量、小程序 / H5 侧的 api 封装**不在射程内**；也判不了「重置口有没有接权限码 / 有没有接 UI」（那是 `@RequirePermission` 与页面判据的事）。本判据**不为存量条目的安全性背书**，只裁新增。'],
+    skip_reason='[backend-contract] 纯静态元守卫（只读两份前端语料 + 一份台账）由 tests/unit_ci_workflows/test_credential_rotation_pairing.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'admin-web', 'credential', 'rotation', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯静态用例（零 LLM、零网络、零时钟）：前置 = frontend/admin-web/src/lib/api.ts 与 frontend/admin-web/src/types/index.ts 在场且可读、tests/unit_ci_workflows/credential_rotation_pairing_ledger.json 可被 json 解析。前置由判据自身持有：文件缺失 / 台账坏 ⇒ 当场红（不表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -12948,6 +12967,25 @@ _CASE_UI_090 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端入口面：前置由单测自建 —— frontend/admin-web/tests/unit/pages/order-detail.test.tsx mock 了 `@/lib/api` 的 `orderApi.getOrder`（逐状态给 status）与组件桶；页面里的 `PRINT_TARGETS_BY_STATUS` 矩阵是判据的唯一真值源。文件缺失 / 矩阵被删 / 状态键漂移 ⇒ 判据当场红（不会表现成「agent 不干活」）；agent-eval 栈不跑它',
 )
 
+# ── UI-091 [NORMAL] 订单详情打印入口 × 订单状态矩阵：待付款出报价单；待发货/生产中出报价单+加工单+销售单；已发货/已完成四单齐全；已关闭零入口（issue #6434）（源: cases/ui.yml）──
+_CASE_UI_091 = EvalCase(
+    id='UI-091',
+    legacy_id='',
+    title='订单详情打印入口 × 订单状态矩阵：待付款出报价单；待发货/生产中出报价单+加工单+销售单；已发货/已完成四单齐全；已关闭零入口（issue #6434）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['「之前让你设计过打印销售单，报价单等功能，我在订单详情中没有看到打印功能」（2026-10-06 用户报障；追问确认场景 = 待发货订单 / merchant.migaozn.com）；用户同时裁定要覆盖的状态 = 待付款（报价单先行）+ 待发货 + 生产中（车间要加工单、随货要销售单）'],
+    expectations=['direct_reply'],
+    data_checks=['病根读数（现取 `origin/main`）：订单详情页的四个打印入口只在 `status === \'shipped\'` 与 `status === \'completed\'` 两个分支里渲染；`pending_payment` / `pending_shipment`（含 `producing`）分支里**一个打印按钮都没有**，而 `CHANGELOG` 的 #5651 条目声称的是「在「待发货」与「已完成」两个状态区」⇒ **声称与实现不符**（`git log -S 打印销售单` 只有一个提交 = 引入提交 #5669）。复算 = `git show origin/main:frontend/admin-web/src/app/\\(dashboard\\)/orders/\\[id\\]/OrderDetail.tsx | grep -n "打印销售单\\|pending_shipment"`。', '判据 1·🔴 **状态 × 入口矩阵**（表驱动）：待付款 ⇒ 只有「打印报价单」（且不得出现发货单/加工单/销售单）；待发货 ⇒ 报价单 + 加工单 + 销售单（**不得**出现发货单：未发货谈不上补打）；生产中（`producing`）⇒ 同待发货；已发货 / 已完成 ⇒ 四单齐全；已关闭 ⇒ 零入口。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx::「打印入口矩阵：…」六条（`it.each`）。', '判据 2·🔴 **红证（改前实测，`migao-dev-flow` §28.1 出口①）**：判据 1 先在 `origin/main` 上跑 ⇒ **3 红 3 绿**（红 = 待付款/待发货/生产中；绿 = 已发货/已完成/已关闭）—— 红只归因于本包缺口，同时证明矩阵**不是空断言**；落实现后 ⇒ 该文件 46/46 全绿。复算（在 frontend/admin-web 目录下执行）= `npx vitest run --dir tests/unit/pages order-detail -t 打印入口矩阵`。', '判据 3·**类级元守卫（唯一声明处）**：① 矩阵覆盖 `OrderStatus` 全部取值（新增状态忘登记 ⇒ 红）② 四个「有单据可出」的状态非空（清空 ⇒ 红）③ 页面代码里不得再出现手写的 `打印发货单/报价单/加工单/销售单` 字面量（再抄一份 ⇒ 红）④ `<PrintActions>` 接线 ≥4 且定义只有一份。判据 = tests/unit_ci_workflows/test_order_print_entry_matrix.py（5 条真语料 + 5 条判别力自证，含「只加注释 ⇒ 不红」的对照读数）。', '判据 4·**文案单一真值**：按钮文案 = `打印${PRINT_TARGET_SPECS[target].title}`（与纸面自检层标题**同一份**），页面不手写字面量 ⇒ 改文案 / 新增单据只改 frontend/admin-web/src/lib/print-doc.ts 一处。'],
+    skip_reason='[backend-contract] 纯前端入口面（零 LLM、零网络、零后端契约改动：矩阵只决定按钮渲染，打印仍走 #5914 的共享入口 usePrintDoc），不进入 agent-eval 冒烟',
+    tags=['ui', 'order', 'print', 'entry-matrix', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端入口面：前置由单测自建 —— frontend/admin-web/tests/unit/pages/order-detail.test.tsx mock 了 `@/lib/api` 的 `orderApi.getOrder`（逐状态给 status）与组件桶；页面里的 `PRINT_TARGETS_BY_STATUS` 矩阵是判据的唯一真值源。文件缺失 / 矩阵被删 / 状态键漂移 ⇒ 判据当场红（不会表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -13292,6 +13330,7 @@ ALL_CASES = (
     _CASE_MC_083,
     _CASE_MC_084,
     _CASE_MC_085,
+    _CASE_MC_086,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
@@ -13676,6 +13715,7 @@ ALL_CASES = (
     _CASE_UI_088,
     _CASE_UI_089,
     _CASE_UI_090,
+    _CASE_UI_091,
     _CASE_UT_001,
     _CASE_UT_002,
 )

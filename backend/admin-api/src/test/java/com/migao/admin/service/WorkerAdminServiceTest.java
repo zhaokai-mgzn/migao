@@ -1,4 +1,4 @@
-// case_ids: HR-002, HR-001, HR-007
+// case_ids: HR-002, HR-001, HR-007, UI-091
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -360,5 +360,122 @@ class WorkerAdminServiceTest {
 
         assertThat(Arrays.asList(captor.getValue().getWorkerNo(), captor.getValue().getRole()))
                 .doesNotContainNull();
+    }
+
+    // ============ ⑤ 重置 PIN（issue #6432）：工人忘记 PIN ⇒ 管理员唯一的兜底出口 ============
+
+    /**
+     * 接上「按 id 取 / 按 id 部分更新」两个 Mapper 调用，并保持与 {@code selectOne} 同一口径的**租户隔离**
+     * （别租户查不到这一行）—— 生产实现走的就是 {@code selectById} + {@code updateById}。
+     */
+    private void stubWorkerRowById() {
+        when(userMapper.selectById(anyString())).thenAnswer(inv -> {
+            User row = workersTable.get();
+            Long tenant = TenantContext.getTenantId();
+            if (row == null || tenant == null || !tenant.equals(row.getTenantId())) {
+                return null;
+            }
+            User copy = new User();
+            BeanUtils.copyProperties(row, copy);
+            return copy;
+        });
+        when(userMapper.updateById(any(User.class))).thenAnswer(inv -> {
+            User patch = inv.getArgument(0);
+            User row = workersTable.get();
+            if (row == null || patch.getId() == null || !patch.getId().equals(row.getId())) {
+                return 0;
+            }
+            if (patch.getPasswordHash() != null) {
+                row.setPasswordHash(patch.getPasswordHash());
+            }
+            return 1;
+        });
+    }
+
+    @Test
+    @DisplayName("⑤ 重置 PIN ⇒ 新 PIN 能登录 / 旧 PIN 立即失效；且**只改 password_hash**（不动工号/姓名/状态/权限）")
+    void resetPinReplacesTheOldPinAndTouchesNothingElse() {
+        service.createWorker(WORKER_NO, NAME, PIN);
+        stubWorkerRowById();
+
+        String returned = service.resetPin("worker-1", "135791");
+
+        assertThat(returned).isEqualTo("135791");
+        // 效果层（不是「方法被调用过」）：新 PIN 真能登进来，旧 PIN 真登不进来
+        assertThat(loginService.login(TENANT, WORKER_NO, "135791", null).get("worker_no")).isEqualTo(WORKER_NO);
+        assertThatThrownBy(() -> loginService.login(TENANT, WORKER_NO, PIN, null))
+                .isInstanceOf(BusinessException.class);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).updateById(captor.capture());
+        User patch = captor.getValue();
+        assertThat(patch.getId()).isEqualTo("worker-1");
+        assertThat(patch.getPasswordHash())
+                .as("落库的必须是 BCrypt 哈希（不得落明文）")
+                .isNotEqualTo("135791");
+        assertThat(passwordEncoder.matches("135791", patch.getPasswordHash())).isTrue();
+        assertThat(Arrays.asList(patch.getRole(), patch.getWorkerNo(), patch.getNickname(),
+                patch.getStatus(), patch.getPermissions(), patch.getUsername(), patch.getTenantId()))
+                .as("部分更新：重置 PIN 不得顺带改身份 / 权限 / 状态（那会变成越权面）")
+                .containsOnlyNulls();
+    }
+
+    @Test
+    @DisplayName("⑤ 不传 PIN ⇒ 服务端随机生成 6 位数字，且该随机值**当场可用**（产物必过同一条形态判据）")
+    void blankPinIsRandomisedAndUsable() {
+        service.createWorker(WORKER_NO, NAME, PIN);
+        stubWorkerRowById();
+
+        String generated = service.resetPin("worker-1", "   ");
+
+        assertThat(generated).matches("\\d{6}");
+        assertThat(loginService.login(TENANT, WORKER_NO, generated, null).get("worker_no")).isEqualTo(WORKER_NO);
+    }
+
+    @Test
+    @DisplayName("⑤ 目标必须是工人档案：拿**员工** id 调重置 ⇒ 404 且零写入（不得成为「改任意用户密码」的第二条路）")
+    void resetPinRefusesNonWorkerTarget() {
+        workersTable.set(User.builder().id("emp-1").tenantId(TENANT).nickname("管理员")
+                .role("admin").status("active").passwordHash(passwordEncoder.encode("old-pwd")).build());
+        stubWorkerRowById();
+
+        assertThatThrownBy(() -> service.resetPin("emp-1", "135791"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOT_FOUND");
+
+        verify(userMapper, never()).updateById(any(User.class));
+        assertThat(passwordEncoder.matches("old-pwd", workersTable.get().getPasswordHash()))
+                .as("员工的密码一字未动")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("⑤ 租户隔离：别租户的工人 id ⇒ 拒绝且零写入（跨租户重置 = 拿到别人家的身份）")
+    void resetPinIsTenantScoped() {
+        service.createWorker(WORKER_NO, NAME, PIN);
+        stubWorkerRowById();
+        TenantContext.setTenantId(OTHER_TENANT);
+
+        assertThatThrownBy(() -> service.resetPin("worker-1", "135791"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOT_FOUND");
+
+        verify(userMapper, never()).updateById(any(User.class));
+    }
+
+    @Test
+    @DisplayName("⑤ 形态 fail-closed：非数字 / 过短 / 过长的 PIN ⇒ 422 且零写入（先校验再落库）")
+    void resetPinValidatesShapeBeforeWriting() {
+        service.createWorker(WORKER_NO, NAME, PIN);
+        stubWorkerRowById();
+
+        for (String bad : List.of("12ab", "123", "1234567890123")) {
+            assertThatThrownBy(() -> service.resetPin("worker-1", bad))
+                    .as("非法 PIN：%s", bad)
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("code", "VALIDATION_ERROR")
+                    .hasMessageContaining("PIN");
+        }
+        verify(userMapper, never()).updateById(any(User.class));
     }
 }

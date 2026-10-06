@@ -1627,6 +1627,15 @@ export const workerApi = {
   createWorker: (data: WorkerFormData) =>
     request.post<ApiResponse<WorkerProfile>>('/api/admin/workers', data),
 
+  /**
+   * 重置工人 PIN（issue #6432）：`pin` 省略 ⇒ 服务端随机生成 6 位。
+   *
+   * 响应体**只含新 PIN 明文**（唯一一次下发面）——库里落的是 BCrypt 哈希、不可逆，
+   * 所以管理员没有「查看原 PIN」这条路，只有「重置并告知新值」。
+   */
+  resetWorkerPin: (id: string, pin?: string) =>
+    request.put<ApiResponse<{ pin: string }>>(`/api/admin/workers/${id}/pin`, pin ? { pin } : {}),
+
   /** 停用/启用：**复用**既有员工状态端点 PUT /api/admin/users/{id}/status（不另造一套）。 */
   setWorkerStatus: (id: string, status: EmployeeStatus) =>
     request.put<ApiResponse<void>>(`/api/admin/users/${id}/status`, { status }),

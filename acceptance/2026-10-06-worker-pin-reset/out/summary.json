@@ -1,0 +1,23 @@
+{
+  "site": "http://localhost:3001",
+  "target": "/employees",
+  "url": "http://localhost:3001/employees",
+  "loginOk": true,
+  "afterLogin": "http://localhost:3001/dashboard",
+  "loginShape": {
+    "id": "login-tabs-v5485",
+    "ok": true,
+    "tabs": [
+      "员工登录账号密码",
+      "管理员登录手机验证码"
+    ]
+  },
+  "testids": 15,
+  "http5xx": [],
+  "files": [
+    "01-full.png",
+    "page-text.txt",
+    "testids.txt"
+  ],
+  "missingShots": []
+}

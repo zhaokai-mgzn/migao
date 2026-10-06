@@ -4,11 +4,14 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.User;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import com.migao.admin.service.WorkerAdminService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -80,6 +83,23 @@ public class AdminWorkerController {
         User worker = workerAdminService.createWorker(
                 text(body, "workerNo"), text(body, "name"), text(body, "pin"));
         return ApiResponse.success(toWorkerView(worker));
+    }
+
+    /**
+     * 重置工人 PIN：Body {@code {"pin":"246810"}}；<b>pin 可省</b>（服务端随机生成 6 位）。
+     *
+     * <p>权限：{@code employee:create}（与建号同档写权限）。响应体**只含新 PIN 明文**（唯一一次下发面），
+     * 库里仍是 BCrypt 哈希 —— 原 PIN 读不出来（不可逆），所以出口是「重置 + 展示新值」而不是「查看」。</p>
+     */
+    @PutMapping("/{id}/pin")
+    @RequirePermission("employee:create")
+    @TenantOwnedResource("worker")
+    public ApiResponse<Map<String, Object>> resetPin(@PathVariable String id,
+                                                     @RequestBody(required = false) Map<String, Object> body) {
+        String newPin = workerAdminService.resetPin(id, text(body, "pin"));
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("pin", newPin);
+        return ApiResponse.success(data);
     }
 
     /**
