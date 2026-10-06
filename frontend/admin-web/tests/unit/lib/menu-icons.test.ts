@@ -56,7 +56,7 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
   it('判据① 正向不漏：`menu.ts` 的每个图标名都已注册（漏注册 = 静默回落 BarChart3）', () => {
     // 面非空自检：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证
     expect(iconNamesFromSource(MENU_TS).length).toBeGreaterThanOrEqual(24)
-    expect(allItems().length).toBe(29) // #5778：6 组头 + 1 一级项 + 20 组内项 + 1 独立项；#5939：+「发货单」；#6404：+「库存明细」
+    expect(allItems().length).toBe(29) // 6 组头 + 1 一级项 + 21 组内项 + 1 独立项（#5939 +「发货单」；#6404 +「库存明细」）
 
     const usedFromSource = Array.from(new Set(iconNamesFromSource(MENU_TS)))
     const usedFromObjects = Array.from(new Set(allItems().map((i) => i.icon)))

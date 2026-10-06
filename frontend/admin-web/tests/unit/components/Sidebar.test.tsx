@@ -56,7 +56,7 @@ import Sidebar from '@/components/layout/Sidebar'
 // #5877：一级项的插入位（席位常量 = 三源同批表达的同一件事）
 import { STANDALONE_TOP_AFTER_GROUP_KEY } from '@/config/menu'
 
-/** issue #5778 新 IA：**6 组**（key / 组名 / 组内项顺序） */
+/** issue #5778 新 IA：**6 组**（key / 组名 / 组内项顺序；组内顺序 **2026-10-06 方案 A1** 重排） */
 const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
   { key: 'workspace', name: '工作台', items: [['dashboard', '经营看板'], ['briefing', '每日简报']] },
   {
@@ -64,9 +64,9 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
     name: '客户服务',
     items: [
       ['human-sessions', '在线接待'],
-      ['customers', '客户列表'],
       ['knowledge', '知识库'],
       ['after-sales', '售后工单'],
+      ['customers', '客户列表'],
     ],
   },
   { key: 'trade-center', name: '交易管理', items: [['orders', '订单列表'], ['finance', '财务对账']] },
@@ -74,10 +74,10 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
     key: 'production-center',
     name: '生产管理',
     items: [
-      ['production-board', '生产看板'],
-      ['production-pool', '智能派单'],
       ['processing', '加工项管理'],
       ['production-process', '工艺配置'],
+      ['production-board', '生产看板'],
+      ['production-pool', '智能派单'],
       ['production-piecework', '计件工资'],
     ],
   },
@@ -86,10 +86,10 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
     name: '仓储与物料',
     items: [
       ['inbound-orders', '入库单'],
+      ['stock-ledger', '库存明细'],
       ['shipments', '发货单'],
       ['production-remnants', '余料台账'],
       ['production-saving-board', '省料看板'],
-      ['stock-ledger', '库存明细'],
     ],
   },
   {
@@ -100,17 +100,20 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
 ]
 /**
  * 一级项（**不占组**）：#5778 起「商品管理」不再占一个单成员组；
- * #5877（用户 2026-10-01 裁定）起渲染在「**工作台**」组之后（`STANDALONE_TOP_AFTER_GROUP_KEY`）。
+ * **用户 2026-10-06 裁定**起渲染在 `STANDALONE_TOP_AFTER_GROUP_KEY`（现取**最后一个组**）之后
+ * ⇒ 排在**所有分组之后**、尾部独立项之前。
  */
 const STANDALONE_TOP_KEYS = ['products']
 /** 一级项的插入位（本表独立写死，不从实现反推） */
-const TOP_SLOT_KEY = 'workspace'
+const TOP_SLOT_KEY = 'org-center'
 const GROUP_KEYS = GROUPS.map((g) => g.key)
-/** 展开全部组后应渲染的 21 项（head 组 → 一级项 → tail 组 → 尾部独立项，== `flattenMenu` 顺序） */
+/**
+ * 展开全部组后应渲染的 **23 项**（**全部分组 → 一级项 → 尾部独立项**，== `flattenMenu` 顺序）。
+ * ⚠️ 2026-10-06 起 `TOP_SLOT_KEY` = **最后一个组** ⇒ 一级项落在这条序列的**末尾附近**（通知中心之前）。
+ */
 const ALL_MENU_KEYS = [
-  ...GROUPS.filter((g) => g.key === TOP_SLOT_KEY).flatMap((g) => g.items.map(([k]) => k)),
+  ...GROUPS.flatMap((g) => g.items.map(([k]) => k)),
   ...STANDALONE_TOP_KEYS,
-  ...GROUPS.filter((g) => g.key !== TOP_SLOT_KEY).flatMap((g) => g.items.map(([k]) => k)),
   'notifications',
 ]
 
@@ -216,21 +219,21 @@ describe('Sidebar', () => {
     expect(screen.queryByText('角色权限')).not.toBeInTheDocument()
   })
 
-  it('22 项一项不少不减：`data-menu-key` 序列逐值 == 新 IA（一级项在前 → 分组项 → 独立项）', async () => {
+  it('23 项一项不少不减：`data-menu-key` 序列逐值 == 新 IA（全部分组 → 一级项 → 独立项）', async () => {
     mockBriefingEnabled = true
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     await waitFor(() => expect(groupButton('workspace').getAttribute('aria-expanded')).toBe('true'))
     expandAll()
-    // 🔴 #5877：一级项「商品管理」渲染在**「工作台」组之后**（不再是所有分组之前）；
-    // 客户服务组含 在线接待/客户列表/知识库/售后工单
+    // 🔴 2026-10-06 用户裁定（方案 A1）：组内重排 + 一级项「商品管理」排在**所有分组之后**；
+    // 客户服务组含 在线接待/知识库/售后工单/客户列表
     expect(menuKeys()).toEqual([
       'dashboard', 'briefing',
-      'products',
-      'human-sessions', 'customers', 'knowledge', 'after-sales',
+      'human-sessions', 'knowledge', 'after-sales', 'customers',
       'orders', 'finance',
-      'production-board', 'production-pool', 'processing', 'production-process', 'production-piecework',
-      'inbound-orders', 'shipments', 'production-remnants', 'production-saving-board', 'stock-ledger',
+      'processing', 'production-process', 'production-board', 'production-pool', 'production-piecework',
+      'inbound-orders', 'stock-ledger', 'shipments', 'production-remnants', 'production-saving-board',
       'employees', 'roles', 'settings',
+      'products',
       'notifications',
     ])
     expect(menuKeys()).toHaveLength(23)
@@ -429,7 +432,7 @@ describe('Sidebar', () => {
 
   // ── UI-005: 智能客服大类分组与图标 ──
 
-  it('（#5877）一级项「商品管理」在「工作台」组**之后**、「客户服务」组**之前**（DOM 顺序）', () => {
+  it('（2026-10-06 用户裁定）一级项「商品管理」在**所有分组之后**、「通知中心」之前（DOM 顺序）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     const follows = (a: HTMLElement, b: HTMLElement) =>
       (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
@@ -437,12 +440,17 @@ describe('Sidebar', () => {
     const workspace = screen.getByText('工作台')
     const customerService = screen.getByText('客户服务')
     const trade = screen.getByText('交易管理')
-    // 🔴 位置 = 工作台组之后（用户 2026-10-01 裁定）、客户服务组之前
+    const org = screen.getByText('组织管理')
+    const notifications = screen.getByText('通知中心')
+    // 🔴 位置 = **所有分组之后**（用户 2026-10-06 裁定：11 个大菜单项并列 ⇒ 一级项沉底）
     expect(follows(workspace, productItem)).toBe(true)
-    expect(follows(productItem, customerService)).toBe(true)
+    expect(follows(org, productItem)).toBe(true)
+    expect(follows(productItem, notifications)).toBe(true)
+    // 组顺序不受影响（判别力：这条与「一级项的位置」是两件事）
     expect(follows(customerService, trade)).toBe(true)
-    // 判别力：旧口径（一级项渲染在所有分组之前）在下面这一条上会给出 true ⇒ 现在就红
+    // 判别力：旧口径（一级项夹在「工作台」与「客户服务」之间）在下面两条上会给出 true ⇒ 现在就红
     expect(follows(productItem, workspace)).toBe(false)
+    expect(follows(productItem, customerService)).toBe(false)
     // 席位常量与渲染位必须同源（改常量而不改判据 = 无声漂移）
     expect(STANDALONE_TOP_AFTER_GROUP_KEY).toBe(TOP_SLOT_KEY)
   })
@@ -496,16 +504,16 @@ describe('Sidebar', () => {
     expect(within(link).queryByTestId('sidebar-pin-products')).toBeNull()
   })
 
-  it('（#5778）「客户服务」组内顺序：在线接待 → 客户列表 → 知识库 → 售后工单', () => {
+  it('（2026-10-06 方案 A1）「客户服务」组内顺序：在线接待 → 知识库 → 售后工单 → 客户列表', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expandGroups('customer-service')
     const groupContainer = screen.getByText('客户服务').closest('[data-group-key]') as HTMLElement
     const links = groupContainer.querySelectorAll('a')
     expect(links.length).toBe(4)
     expect(links[0].textContent).toContain('在线接待')
-    expect(links[1].textContent).toContain('客户列表')
-    expect(links[2].textContent).toContain('知识库')
-    expect(links[3].textContent).toContain('售后工单')
+    expect(links[1].textContent).toContain('知识库')
+    expect(links[2].textContent).toContain('售后工单')
+    expect(links[3].textContent).toContain('客户列表')
   })
 
   it('「在线接待」已从「工作台」分组移除（工作台仅剩经营看板）', () => {
@@ -612,11 +620,13 @@ describe('Sidebar', () => {
       // 无 knowledge:view（知识库节点码，issue #5246 起为**读**码）→ 入口隐藏；通知中心全员可见
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
       expect(screen.getByText('通知中心')).toBeInTheDocument()
-      // 可见项**精确**清单（渲染顺序，🔴 #5877：一级项插在「工作台」组之后）：
-      // 经营看板 → 商品管理（一级项）→ 订单列表 → **发货单**（#5939：与订单列表同码 order:list）
-      // → 省料看板 → 通知中心
+      // 可见项**精确**清单（渲染顺序）：
+      // 🔴 本用例的可见项里**没有** `org-center`（员工管理要 employee:list）⇒ 一级项挂到**可见分组末尾**
+      // （回落方向 = 「挂到末尾」，**不是**跳到最前）
+      // 经营看板 → 订单列表 → **库存明细**（2026-10-06：紧随入库单）→ **发货单**
+      // （#5939：与订单列表同码 order:list）→ 省料看板 → 商品管理（一级项）→ 通知中心
       expect(menuKeys()).toEqual(
-        ['dashboard', 'products', 'orders', 'shipments', 'production-saving-board', 'stock-ledger',
+        ['dashboard', 'orders', 'stock-ledger', 'shipments', 'production-saving-board', 'products',
           'notifications'])
       // UI-005/UI-011: 无 agent:session / knowledge:view / customer:view / after_sales:view →
       // **客户服务**整组隐藏（#5778 组名改判；#3081 已移除 AI 客服配置菜单）
