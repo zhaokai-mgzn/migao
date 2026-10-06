@@ -86,6 +86,10 @@ name: Auto Merge
 #      （本仓 #4470 / #4475 有同形记录）。**观测点** = 这类 PR 的 arm job；若报文指向 scope/workflow
 #      ⇒ 按「业务连续性优先」加**回落重试**（先 PAT、失败再用内置 token 合那一条 PR：宁可那一次
 #      push 被吞，也不让 PR 卡住），并把该出口补进判据。
+#      🧪 **实测（2026-10-06，PR #6433：仅注释、但确实改了 `.github/workflows/automerge.yml`）**：
+#      本凭证**成功合并**了该 PR（`mergedBy` = 令牌持有者，其合并又当场触发 push 批）⇒ 该风险**本次未复现**。
+#      ⚠️ 只覆盖「注释类改动 × 1 次实例」⇒ **不排除**其它形态（如 dependabot 的 action 版本升级、
+#      新增/删除 workflow 文件）被拒 ⇒ **观测点保留**，命中即按上面的回落重试处置。
 #   ② **它是长期令牌**：失效 / 吊销 ⇒ 本 job 回落内置 token + 具名 `::warning::`（**不卡合并**），
 #      而 `push` 面**静默退回被抑制形态** ⇒ 按 `deploy-reconcile.yml` 头部的**条件式**口径读。
 #      轮换 = `gh secret set AUTOMERGE_PAT`（或换细粒度 PAT：Contents RW · Pull requests RW · Workflows RW）
