@@ -34,7 +34,7 @@ const LABELS: WashLabelInput[] = [
 ]
 
 const JOB: PrintJob[] = [
-  { imageData: { width: 384, height: 320, data: new Uint8ClampedArray(4) } as unknown as ImageData, widthPx: 384, heightPx: 320, jobName: 'wash-label-0' },
+  { imageData: { width: 576, height: 320, data: new Uint8ClampedArray(4) } as unknown as ImageData, widthPx: 576, heightPx: 320, jobName: 'wash-label-0' },
 ]
 
 function fakeProvider(over: { connectError?: LabelPrintError; printError?: LabelPrintError } = {}) {
@@ -60,8 +60,11 @@ function fakeProvider(over: { connectError?: LabelPrintError; printError?: Label
 /** jsdom 里 `navigator.bluetooth` 不存在 ⇒ 不显式给 env 的话按钮是 disabled 的（正是判据 ① 的行为） */
 const OK_ENV: LabelPrintEnv = { secureContext: true, hasBluetoothApi: true, isIos: false, isWechat: false }
 
-const renderIt = (props: Parameters<typeof DirectLabelPrint>[0]) =>
-  render(<DirectLabelPrint labels={LABELS} env={OK_ENV} {...props} />)
+type DirectLabelPrintProps = Parameters<typeof DirectLabelPrint>[0]
+
+/** 缺省 `labels` / `env` 在这里补齐；调用方只给**要覆盖**的那几项 */
+const renderIt = (props: Partial<DirectLabelPrintProps> = {}) =>
+  render(<DirectLabelPrint {...props} labels={props.labels ?? LABELS} env={props.env ?? OK_ENV} />)
 
 describe('DirectLabelPrint — 环境不支持时动手前说清（issue #6439 判据 ①）', () => {
   it('无 Web Bluetooth ⇒ 按钮禁用 + 文案含系统打印兜底', () => {

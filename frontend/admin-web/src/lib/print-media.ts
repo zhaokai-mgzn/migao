@@ -100,6 +100,33 @@ export function printMediaSpec(media: PrintMediaId): PrintMediaSpec {
   return spec
 }
 
+/** 设备侧**点阵口径**（`dotGeometry` 块）—— 像素字面量的真正归属地（issue #6439） */
+export interface PrintDotGeometry {
+  dpi: number
+  dotsPerMm: number
+  /** 纸宽换来的像素数（未受打印头限制） */
+  widthPx: number
+  /** **实际可打**像素数（= min(纸宽像素, 打印头像素)）—— 出图必须用这个 */
+  effectiveWidthPx: number
+  headWidthPx: number
+}
+
+/**
+ * 取某介质的设备点阵口径。
+ *
+ * 🔴 这是**像素字面量的唯一出口**：渲染模块（洗水码 / 入库标签）不许再写第二份 `384` ——
+ * 写死一处、另一处漂移，打出来就是「标签尺寸错 / 二维码被非整数倍重采样糊掉」，
+ * 而两边都不会报错（`frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts` 的 C2b 钉住）。
+ *
+ * 缺登记 ⇒ **抛错**（fail-closed）：静默回落到一个通用值 = 把别人的纸打成我们的口径。
+ */
+export function printDotGeometry(media: PrintMediaId): PrintDotGeometry {
+  const spec = PRINT_MEDIA_SPECS[media] as (PrintMediaSpec & { dotGeometry?: PrintDotGeometry }) | undefined
+  const geometry = spec?.dotGeometry
+  if (!geometry) throw new Error(`介质 ${media} 没有登记 dotGeometry（像素口径的唯一真值源）`)
+  return geometry
+}
+
 /**
  * `@page` 规则的**唯一写法**（单据用它，不自己拼字符串）。
  * 例：`@page { size: 241mm 140mm; margin: 6mm 12mm; }`

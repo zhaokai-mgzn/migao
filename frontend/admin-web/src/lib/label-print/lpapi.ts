@@ -111,8 +111,7 @@ export const LPAPI_GAP_TYPE_UNSET = 255
 /** 位图黑白阈值（SDK 默认口径） */
 export const LPAPI_THRESHOLD_DEFAULT = 192
 
-/** 厂商 UMD bundle（静态资源；**不引 npm 依赖**，见 `public/vendor/README.md`） */
-export const LPAPI_SCRIPT_SRC = '/vendor/lpapi-ble.umd.js'
+/** `printImageData` 的纸张类型：**不替用户猜介质**（连续纸 / 间隙纸 / 黑标由机器上的装纸决定） */
 
 /**
  * 回执状态码 ⇒ 失败分类（`null` = 成功）。
@@ -145,19 +144,31 @@ export function openPrinterOptions(device: LpapiDeviceLike): Record<string, unkn
   }
 }
 
-/** 从全局作用域取 LPAPI 模块（UMD 三种挂法都认；取不到 ⇒ `null`，**不抛**） */
+/** 从模块命名空间 / 全局作用域取 LPAPI 模块（三种挂法都认；取不到 ⇒ `null`，**不抛**） */
 export function resolveLpapiModule(scope: unknown): LpapiModuleLike | null {
-  const root = scope as { LPAPI?: LpapiModuleLike & { LPAPI?: LpapiModuleLike }; default?: LpapiModuleLike & { LPAPI?: LpapiModuleLike } } | null | undefined
+  const root = scope as
+    | { LPAPI?: unknown; default?: unknown }
+    | null
+    | undefined
   if (!root) return null
-  const hasFactory = (m: unknown): m is LpapiModuleLike => {
-    const candidate = m as LpapiModuleLike | null | undefined
-    return !!candidate && (typeof candidate.getInstance === 'function' || typeof candidate.create === 'function')
+  // ⚠️ 先把候选**全部取出来**再逐个判：写成 `if (is(root.LPAPI)) … ; root.LPAPI?.LPAPI`
+  //    会让 TS 在否定分支里把 `root.LPAPI` 收窄成 `never`（实测 `tsc` 报 TS2339）。
+  const candidates: unknown[] = [
+    root.LPAPI,
+    (root.LPAPI as { LPAPI?: unknown } | null | undefined)?.LPAPI,
+    (root.default as { LPAPI?: unknown } | null | undefined)?.LPAPI,
+    root.default,
+  ]
+  for (const candidate of candidates) {
+    if (isLpapiModule(candidate)) return candidate
   }
-  if (hasFactory(root.LPAPI)) return root.LPAPI
-  if (hasFactory(root.LPAPI?.LPAPI)) return root.LPAPI!.LPAPI!
-  if (hasFactory(root.default?.LPAPI)) return root.default!.LPAPI!
-  if (hasFactory(root.default)) return root.default!
   return null
+}
+
+/** `getInstance` / `create` 至少有一个 ⇒ 这就是那个模块（**类型守卫独立成函数**，避免内联收窄） */
+function isLpapiModule(candidate: unknown): candidate is LpapiModuleLike {
+  const module = candidate as LpapiModuleLike | null | undefined
+  return !!module && (typeof module.getInstance === 'function' || typeof module.create === 'function')
 }
 
 /**
@@ -213,21 +224,27 @@ export function createLpapiProvider(api: LpapiPrinterLike): LabelPrinterProvider
   return provider
 }
 
-/** 动态注入厂商 UMD bundle（**只注入一次**；已加载 ⇒ 直接解析全局） */
-export async function loadLpapiApi(src: string = LPAPI_SCRIPT_SRC): Promise<LpapiPrinterLike | null> {
-  if (typeof document === 'undefined') return null
-  const existing = resolveLpapiModule(globalThis)
-  if (existing) return instantiate(existing)
-  await new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = src
-    script.async = true
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error(`加载失败：${src}`))
-    document.head.appendChild(script)
-  })
-  const module = resolveLpapiModule(globalThis)
-  return module ? instantiate(module) : null
+/**
+ * 动态加载厂商 SDK（**npm 依赖 `lpapi-ble`**，与 `frontend/bmini-app` 侧**同一个包、同一个版本口径**）。
+ *
+ * ⚠️ 为什么不 vendor 一份 UMD 到 `public/`：那份 bundle 里带着自己的像素口径字面量，
+ * 会撞上「打印头宽只许出现在介质矩阵」的类级守卫
+ * （`frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts` C2b）；
+ * 而 npm 依赖走 `node_modules`，既不在守卫射程内、又不进仓库。
+ *
+ * 取不到 ⇒ `null`（**不抛**）：调用方翻成 `sdk-unavailable` 文案（可行动：保持联网刷新重试）。
+ * 动态 `import()` ⇒ 这个包只在**用户点「直连打印机打印」时**才下载（不影响首屏）。
+ */
+export async function loadLpapiApi(): Promise<LpapiPrinterLike | null> {
+  try {
+    const mod = (await import(/* webpackChunkName: "lpapi-ble" */ 'lpapi-ble')) as unknown
+    // 与 bmini 侧 `loadLpapi()` 同口径：命名空间 `LPAPI` / `default.LPAPI` / `default` 三选一；
+    // 兜底再看全局（有些打包器会把它挂到 `globalThis`）
+    const module = resolveLpapiModule(mod) ?? resolveLpapiModule(globalThis)
+    return module ? instantiate(module) : null
+  } catch {
+    return null
+  }
 }
 
 /** UMD 实例化（`webBLE: true` = 走浏览器蓝牙适配层） */

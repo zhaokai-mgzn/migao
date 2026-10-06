@@ -51,21 +51,21 @@ function fakePrinter(over: {
     }),
     openPrinter: vi.fn(async (...args: unknown[]) => {
       calls.push({ fn: 'openPrinter', args })
-      return over.open ?? OK({ resultInfo: { deviceName: 'DP235S-Y608220585', printerDPI: 203, printerWidth: 384 } })
+      return over.open ?? OK({ resultInfo: { deviceName: 'DP235S-Y608220585', printerDPI: 203, printerWidth: 576 } })
     }),
     printImageData: vi.fn(async (options: Record<string, unknown>) => {
       calls.push({ fn: 'printImageData', args: [options] })
       return over.print ?? OK({ printable: 0 })
     }),
-    getPrinterInfo: () => over.info ?? { deviceName: 'DP235S-Y608220585', printerDPI: 203, printerWidth: 384 },
+    getPrinterInfo: () => over.info ?? { deviceName: 'DP235S-Y608220585', printerDPI: 203, printerWidth: 576 },
   }
   return { api, calls }
 }
 
 const job = (n = 1) =>
   Array.from({ length: n }, (_, i) => ({
-    imageData: { width: 384, height: 320, data: new Uint8ClampedArray(4) } as unknown as ImageData,
-    widthPx: 384,
+    imageData: { width: 576, height: 320, data: new Uint8ClampedArray(4) } as unknown as ImageData,
+    widthPx: 576,
     heightPx: 320,
     jobName: `wash-label-${i}`,
   }))
@@ -116,7 +116,7 @@ describe('createLpapiProvider — 连接（issue #6439 判据 ③）', () => {
     expect(calls.map((c) => c.fn)).toEqual(['requestDevice', 'openPrinter'])
     expect(calls[1].args[0]).toMatchObject({ name: 'DP235S-Y608220585', deviceId: 'dev-1', autoScan: false })
     expect(provider.deviceName).toBe('DP235S-Y608220585')
-    expect(provider.printerInfo).toMatchObject({ printerDPI: 203, printerWidth: 384 })
+    expect(provider.printerInfo).toMatchObject({ printerDPI: 203, printerWidth: 576 })
   })
 
   it('用户在弹框点取消（statusCode 25）⇒ 抛 user-cancelled，且**不再**去 openPrinter', async () => {
@@ -144,7 +144,7 @@ describe('createLpapiProvider — 打印（issue #6439 判据 ④⑤）', () => 
     await createLpapiProvider(api).print(job(2))
     const sent = calls.filter((c) => c.fn === 'printImageData').map((c) => c.args[0] as Record<string, unknown>)
     expect(sent).toHaveLength(2)
-    expect(sent[0]).toMatchObject({ width: 384, height: 320, jobName: 'wash-label-0' })
+    expect(sent[0]).toMatchObject({ width: 576, height: 320, jobName: 'wash-label-0' })
     // 默认「随机器设置」—— 连续纸/间隙纸/黑标由机器上的装纸决定，页面不写死
     expect(sent[0].gapType).toBe(255)
   })

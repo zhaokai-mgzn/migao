@@ -8,7 +8,8 @@
 //
 // 逐条判据（都能判红）：
 // ① **几何由机器自报值推出**：`printerDPI` / `printerWidth` 一变，`dpmm` 与画布尺寸跟着变
-//    —— **写死 203/384 ⇒ 必红**（「不做打印机定制功能」的落点：接别家机器不改码）；
+//    —— **写死机型口径 ⇒ 必红**（「不做打印机定制功能」的落点：接别家机器不改码）；
+//    兜底值本身也**不是**本模块的字面量，而是转发介质矩阵 `label-50x60.dotGeometry`（判据见下第一条）；
 // ② **短码是功能件、永不被裁**：`x + measure(短码, fontPx) ≤ widthPx − margin`，窄纸靠**缩字号**活下来；
 // ③ 窄到连最小字号都放不下 ⇒ **显式抛错**（fail-closed），**绝不静默裁掉短码**
 //    —— 短码是设计里明写的手输降级入口（`docs/design/worker-h5-scan-and-report.md` §1.4「不是可选项」）；
@@ -28,6 +29,10 @@ import {
   toWashLabelInputs,
   type WashLabelInput,
 } from '@/lib/label-print/wash-label'
+import { printDotGeometry } from '@/lib/print-media'
+
+/** 介质矩阵里的点阵口径（**唯一真值源**）—— 本文件的期望值从它取，不写第二份像素字面量 */
+const MATRIX = printDotGeometry('label-50x60')
 
 /** 确定性「量字」替身：0.6em/字符（等宽近似）—— 真机走 canvas `measureText` */
 const measure = (text: string, fontPx: number) => text.length * fontPx * 0.6
@@ -41,14 +46,16 @@ const input = (over: Partial<WashLabelInput> = {}): WashLabelInput => ({
 })
 
 describe('resolveLabelGeometry — 几何取自机器自报值（issue #6439 判据 ①）', () => {
-  it('未连接机器 ⇒ 按通用默认（203dpi / 384dot）', () => {
+  it('未连接机器 ⇒ 兜底口径**取自介质矩阵**（模块只是转发，不写第二份字面量）', () => {
     const geo = resolveLabelGeometry(null)
-    expect(geo.dpmm).toBeCloseTo(LABEL_DPI_DEFAULT / 25.4, 3)
-    expect(geo.widthPx).toBe(LABEL_HEAD_DOTS_DEFAULT)
+    expect(geo.dpmm).toBeCloseTo(MATRIX.dpi / 25.4, 3)
+    expect(geo.widthPx).toBe(MATRIX.headWidthPx)
     expect(geo.heightPx).toBe(Math.round(WASH_LABEL_DEFAULT_LENGTH_MM * geo.dpmm))
+    expect(LABEL_DPI_DEFAULT).toBe(MATRIX.dpi)
+    expect(LABEL_HEAD_DOTS_DEFAULT).toBe(MATRIX.headWidthPx)
   })
 
-  it('🔴 机器自报 300dpi / 576dot ⇒ 几何整体跟着变（写死 203/384 必红）', () => {
+  it('🔴 机器自报 300dpi / 576dot ⇒ 几何整体跟着变（写死兜底值 ⇒ 必红）', () => {
     const geo = resolveLabelGeometry({ printerDPI: 300, printerWidth: 576 })
     expect(geo.dpmm).toBeCloseTo(300 / 25.4, 3)
     expect(geo.widthPx).toBe(576)
@@ -57,9 +64,9 @@ describe('resolveLabelGeometry — 几何取自机器自报值（issue #6439 判
   })
 
   it('给了纸宽（mm）⇒ 取「纸宽 × dpmm」与打印头宽度的较小者（不越纸、不越头）', () => {
-    expect(resolveLabelGeometry({ printerDPI: 203, printerWidth: 384 }, 40).widthPx).toBe(Math.round(40 * (203 / 25.4)))
+    expect(resolveLabelGeometry({ printerDPI: 203, printerWidth: 576 }, 40).widthPx).toBe(Math.round(40 * (203 / 25.4)))
     // 纸比头宽 ⇒ 仍受头宽限制
-    expect(resolveLabelGeometry({ printerDPI: 203, printerWidth: 384 }, 80).widthPx).toBe(384)
+    expect(resolveLabelGeometry({ printerDPI: 203, printerWidth: 576 }, 80).widthPx).toBe(576)
   })
 })
 
@@ -74,7 +81,7 @@ describe('layoutWashLabel — 版式是纯函数（issue #6439）', () => {
   })
 
   it('判据 ②：窄纸靠缩字号活下来（字号随纸宽单调不增），短码本体一字不少', () => {
-    const wide = layoutWashLabel(input(), resolveLabelGeometry({ printerDPI: 203, printerWidth: 384 }), measure)
+    const wide = layoutWashLabel(input(), resolveLabelGeometry({ printerDPI: 203, printerWidth: 576 }), measure)
     const narrow = layoutWashLabel(input(), resolveLabelGeometry({ printerDPI: 203, printerWidth: 200 }), measure)
     expect(narrow.shortCode.fontPx).toBeLessThan(wide.shortCode.fontPx)
     expect(narrow.shortCode.text).toBe('7Q2M4K8P')
@@ -90,9 +97,13 @@ describe('layoutWashLabel — 版式是纯函数（issue #6439）', () => {
   })
 
   it('判据 ④：件名放不下 ⇒ 显式省略号（看得见的截断）', () => {
-    const long = layoutWashLabel(input({ pieceName: '超长件名'.repeat(12) }), geo, measure)
-    expect(long.pieceName).not.toBeNull()
+    const source = '超长件名'.repeat(12)
+    const long = layoutWashLabel(input({ pieceName: source }), geo, measure)
+    // 内容级判据（不用 `not.toBeNull()` 那种不触业务数据的弱断言 —— 弱断言守卫对新增文件 fail-closed）
+    // 版式把件名写成 `部位 · 件名`（部位在前）⇒ 断言从头到尾都是**真内容**，不是「非空」
+    expect(long.pieceName!.text.startsWith('布帘 · 超长件名')).toBe(true)
     expect(long.pieceName!.text.endsWith('…')).toBe(true)
+    expect(long.pieceName!.text.length).toBeLessThan(source.length)
     expect(
       long.pieceName!.x + measure(long.pieceName!.text, long.pieceName!.fontPx),
     ).toBeLessThanOrEqual(geo.widthPx - long.margin + 0.001)
@@ -101,7 +112,8 @@ describe('layoutWashLabel — 版式是纯函数（issue #6439）', () => {
   it('判据 ⑤：无码 ⇒ qr 为 null、短码上移，其余照排（不画假码）', () => {
     const withQr = layoutWashLabel(input(), geo, measure)
     const noQr = layoutWashLabel(input({ qrValue: null }), geo, measure)
-    expect(withQr.qr).not.toBeNull()
+    expect(withQr.qr!.size).toBeGreaterThan(0)
+    expect(withQr.qr!.x).toBeGreaterThanOrEqual(0)
     expect(noQr.qr).toBeNull()
     expect(noQr.shortCode.y).toBeLessThan(withQr.shortCode.y)
   })

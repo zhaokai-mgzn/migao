@@ -17,12 +17,14 @@
  * ## 硬约束
  *
  * - **几何由机器自报值推出**（`printerDPI` / `printerWidth`）——「不做打印机定制功能」的落点：
- *   接别家机器**不改码**。写死 203/384 ⇒ 守卫判红。
+ *   接别家机器**不改码**。写死机型口径 ⇒ 守卫判红；兜底值从介质矩阵取。
  * - **短码是功能件、永不被裁**：窄纸靠**缩字号**活下来；窄到连最小字号都放不下 ⇒ **显式抛错**
  *   （fail-closed），绝不静默裁掉。短码是设计里明写的手输降级入口
  *   （`docs/design/worker-h5-scan-and-report.md` §1.4「不是可选项」）。
  * - **件名放不下 ⇒ 显式省略号**（看得见的截断），不是静默切掉。
  */
+
+import { printDotGeometry } from '@/lib/print-media'
 
 /** 渲染一张洗水码需要的**数据**（与 React 无关：页面把 `ProductionPosition` 映射成它） */
 export interface WashLabelInput {
@@ -49,9 +51,12 @@ export interface LabelDotGeometry {
   heightPx: number
 }
 
-/** 未连上机器时的通用默认（**不是**某款机型的口径：只作占位，连上后立刻按自报值重算） */
-export const LABEL_DPI_DEFAULT = 203
-export const LABEL_HEAD_DOTS_DEFAULT = 384
+/** 兜底口径的**唯一真值源** = `lib/print-media.json` 的 `label-50x60.dotGeometry`（本文件不写第二份） */
+const FALLBACK_GEOMETRY = printDotGeometry('label-50x60')
+
+/** 未连上机器时的通用兜底（**不是**本文件的口径：连上后立刻按机器自报值重算） */
+export const LABEL_DPI_DEFAULT = FALLBACK_GEOMETRY.dpi
+export const LABEL_HEAD_DOTS_DEFAULT = FALLBACK_GEOMETRY.headWidthPx
 /** 水洗唛默认长度（mm）—— 长度随纸卷，页面可覆盖 */
 export const WASH_LABEL_DEFAULT_LENGTH_MM = 40
 /** 短码的最小字号（mm）：再小就失去「手输降级入口」的意义，宁可报错 */
@@ -71,7 +76,7 @@ const positive = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
 
 /**
- * 画布几何：**由机器自报值推出**（写死 203/384 ⇒ 守卫判红）。
+ * 画布几何：**由机器自报值推出**（写死机型口径 ⇒ 守卫判红；兜底值来自介质矩阵 `dotGeometry`）。
  *
  * @param printer   机器自报参数（未连上传 null/undefined）
  * @param paperWidthMm 纸宽（mm）；给了就取「纸宽 × dpmm」与**打印头宽度**的**较小者**（不越纸、不越头）
@@ -201,7 +206,8 @@ export function layoutWashLabel(
 
 /** 绘制上下文的最小面（只取本模块要用的那几个 —— 假 ctx 因此可测） */
 export interface WashLabelPaintContext {
-  fillStyle: string
+  /** 真 `CanvasRenderingContext2D` 的 `fillStyle` 是联合类型 ⇒ 这里按**可赋值**的最宽面声明 */
+  fillStyle: string | CanvasGradient | CanvasPattern
   font: string
   textAlign: CanvasTextAlign
   textBaseline: CanvasTextBaseline

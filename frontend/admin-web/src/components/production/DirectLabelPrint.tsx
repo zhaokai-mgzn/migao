@@ -56,7 +56,7 @@ export interface DirectLabelPrintProps {
 
 type Phase = 'load' | 'connect' | 'render' | 'print'
 
-/** 缺省通道：注入厂商 UMD → 造 LPAPI provider（**不引 npm 依赖**，见 `public/vendor/README.md`） */
+/** 缺省通道：动态加载 npm 依赖 `lpapi-ble`（与 bmini 侧同一个包）→ 造 LPAPI provider */
 async function defaultLoadProvider(): Promise<LabelPrinterProvider | null> {
   const { createLpapiProvider, loadLpapiApi } = await import('@/lib/label-print/lpapi')
   const api = await loadLpapiApi()
