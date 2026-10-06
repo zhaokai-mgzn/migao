@@ -3312,6 +3312,12 @@ cases:
 
   - id: UI-090
     legacy_id: ""
+      ci:
+        - pr-check.yml
+      verifies: []
+
+
+  - id: UI-091
     title: "订单详情打印入口 × 订单状态矩阵：待付款出报价单；待发货/生产中出报价单+加工单+销售单；已发货/已完成四单齐全；已关闭零入口（issue #6434）"
     domains:
       - ui
