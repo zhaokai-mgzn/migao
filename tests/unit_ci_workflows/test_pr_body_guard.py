@@ -545,6 +545,17 @@ def test_tracked_text_empty_repo_is_discriminating(tmp_path):
     assert rels == [] and files == [], "空仓的样本集必须为空（否则下界断言无判别力）"
 
 
+#: **登记的轮转存档**（2026-10-06，用户裁定「CHANGELOG 可以清空一次，后续再累加」）。
+#:
+#: 病根：`CHANGELOG.md` 单文件涨到 **525,386 字节**，越过本工具 `MAX_SCAN_BYTES = 512 * 1024`
+#: 的扫描上限 ⇒ 被跳过 ⇒ 本文件的判据 2「样本集必须覆盖 `CHANGELOG.md`」判红
+#: （issue #5239 的病灶文件就是这个文件本身）。轮转后 `CHANGELOG.md` 重新从 0 累加。
+#:
+#: ⚠️ 受判面**跟着条目走**，但**只认这张登记表里的文件**：未登记的路径不进受判面 ——
+#: 否则「把条目搬去任意文件」会变成删条目的后门（判据退化成「全仓某处有这几个字」）。
+ARCHIVE_FILES = ("docs/CHANGELOG-archive-2026-10-06.md",)
+
+
 def _unreleased_section() -> str:
     """`## [Unreleased]` 到下一个 `## ` 之间的正文；锚点不在 ⇒ 直接红（不得因此变绿）。"""
     text = CHANGELOG.read_text(encoding="utf-8")
@@ -555,12 +566,29 @@ def _unreleased_section() -> str:
     return rest if nxt < 0 else rest[:nxt]
 
 
+def _judged_surface() -> str:
+    """判据 4 的受判面 = `[Unreleased]` ⊕ **登记的**轮转存档全文。
+
+    下界（`MIN_UNRELEASED_ENTRIES`）与四条锚点**一条都不放宽**：轮转只是把条目**移了位置**，
+    「不许被顺手删掉」这条不变。存档文件缺失 ⇒ **红**（fail-closed，不许静默缩面）。
+    """
+    parts = [_unreleased_section()]
+    for rel in ARCHIVE_FILES:
+        f = REPO_ROOT / rel
+        assert f.is_file(), f"登记的轮转存档不见了：{rel} ⇒ 受判面被静默收窄（不许当绿）"
+        parts.append(f.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
 def test_changelog_unreleased_entries_survived_the_marker_removal():
     """判据 4：`## [Unreleased]` 的条目**逐字仍在**（标题 + 正文锚点）—— 防「修标记顺手删正文」。
 
     两条路线各自实测过：删掉整个条目（标题）⇒ 红；**只删正文里被锚住的那句** ⇒ 同样红。
+
+    ⚠️ 2026-10-06：`CHANGELOG.md` 一次性轮转（旧条目移入登记存档）⇒ 受判面 = `_judged_surface()`
+    （`[Unreleased]` ⊕ 登记存档）。**下界与四条锚点原样不动**，只是受判面跟着条目走。
     """
-    sec = _unreleased_section()
+    sec = _judged_surface()
     entries = sec.count("\n### ")
     assert entries >= MIN_UNRELEASED_ENTRIES, (
         f"`[Unreleased]` 只剩 {entries} 个条目（下界 {MIN_UNRELEASED_ENTRIES}）⇒ 受判面被收窄、判据濒临空跑")
