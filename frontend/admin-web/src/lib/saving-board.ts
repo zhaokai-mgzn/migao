@@ -52,8 +52,6 @@ export function formatMeters(meters: number | string | null | undefined, digits 
 export function metricCards(board: SavingBoardLite | null): SavingMetricCard[] {
   const bucketLabel = board?.cohorts?.[0]?.buckets?.[0]?.label
   const purchase = board?.cohorts?.find((c) => c.cohort === 'purchase')
-  const total = board?.total
-  const costHint = unknownCostHint(total?.unknownCostLines)
   return [
     {
       key: 'le_0_2',
@@ -71,17 +69,29 @@ export function metricCards(board: SavingBoardLite | null): SavingMetricCard[] {
       hint: '治「买太多」—— 切换后的采购入库总米数，不含存量导入',
       testId: 'saving-metric-purchased',
     },
-    {
-      key: 'saved',
-      label: '省了多少料',
-      value: formatMeters(total?.savedMeters),
-      secondary: `${formatMetric(total?.savedAmount)} 元`,
-      hint: costHint
-        ? `排料比公式少领的布；${costHint}`
-        : '排料比公式少领的布 —— 省料米数 × 这批布当时的均价',
-      testId: 'saving-metric-saved',
-    },
   ]
+}
+
+/**
+ * 第三张卡 = **结论卡**（省了多少料），**不是第三个指标**（issue #6430）。
+ *
+ * 🔴 为什么与 {@link metricCards} 分开：`metricCards` 的契约是「**两条指标恒同在**」
+ * （判据 3，锁定 —— 缺任一条即红）。省料汇总是**结论**，混进那一对会把
+ * 「恒两条」悄悄放宽成「恒三条」，正好废掉那条判据想守的东西。
+ */
+export function savedCard(board: SavingBoardLite | null): SavingMetricCard {
+  const total = board?.total
+  const costHint = unknownCostHint(total?.unknownCostLines)
+  return {
+    key: 'saved',
+    label: '省了多少料',
+    value: formatMeters(total?.savedMeters),
+    secondary: `${formatMetric(total?.savedAmount)} 元`,
+    hint: costHint
+      ? `排料比公式少领的布；${costHint}`
+      : '排料比公式少领的布 —— 省料米数 × 这批布当时的均价',
+    testId: 'saving-metric-saved',
+  }
 }
 
 /**

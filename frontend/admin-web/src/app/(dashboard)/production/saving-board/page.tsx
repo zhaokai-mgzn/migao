@@ -21,6 +21,7 @@ import {
   formatShare,
   headline,
   metricCards,
+  savedCard,
   periodAxisNote,
   savedTerms,
   sortByRemainingDesc,
@@ -101,7 +102,10 @@ export default function SavingBoardPage() {
     void load()
   }, [load])
 
-  const cards = metricCards({ cohorts: board?.cohorts, total: board?.total, trend })
+  // 🔴 **指标卡**（恒两条，判据 3 锁定）与**结论卡**（省了多少料）分开取：
+  //    前者是「两条指标必须并用」的契约载体，后者是结论 ⇒ 不混进那一对（issue #6430）
+  const lite = { cohorts: board?.cohorts, total: board?.total, trend }
+  const cards = [...metricCards(lite), savedCard(lite)]
   const cohorts = board?.cohorts ?? []
   const savedGroups = board?.savedGroups ?? []
   const total = board?.total
