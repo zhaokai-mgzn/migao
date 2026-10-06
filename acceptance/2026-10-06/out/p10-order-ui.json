@@ -1,0 +1,33 @@
+{
+  "at": "2026-10-06T02:28:08.286Z",
+  "subjectSha": "73327161f",
+  "tenantId": 25,
+  "stamp": "665583",
+  "buyer": "A06验收下单客户665583",
+  "counts": {
+    "pass": 2
+  },
+  "rows": [
+    {
+      "state": "pass",
+      "id": "P10-W3",
+      "name": "销售在「订单列表」页新建订单（布料形态 · 页面操作 → DB 落库）",
+      "detail": "DB 落库 orders#01e5b256e846a402198c995db8f7206a order_no=20261006623690004 status=pending 金额=88 物流=express/四季安物流；选品=true 搜索框填词=true 布料 chip=1 aria-checked=true 颜色=咖色 合计=\"合计\"",
+      "evidence": [
+        "out/shots/w3c-picker.png",
+        "out/shots/w3c-order-form.png",
+        "out/shots/w3c-order-after.png",
+        "SQL: select * from orders where customer_name='A06验收下单客户665583'"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P10-LIVE",
+      "name": "订单留存（用户 2026-10-06 要求看到订单数据）",
+      "detail": "租户 25 现有订单 2 张；本轮演示单 20261006623690004（布料形态，未清理）",
+      "evidence": [
+        "SQL: select count(*) from orders where tenant_id=25"
+      ]
+    }
+  ]
+}
