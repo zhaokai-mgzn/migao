@@ -857,12 +857,22 @@ public class StockBatchConsumptionService {
             savedByCohort.put(cohort, new SavedAcc());
         }
         SavingMetricViews.Total total;
+        // 逐单省料的环比序列（issue #6430）—— 口径：消耗时间桶（`savedGroups` 的 period）
+        List<String[]> savedMetersSeries = new ArrayList<>();
+        List<String[]> savedAmountSeries = new ArrayList<>();
         SavedAcc totalAcc = new SavedAcc();        for (StockBatchConsumptionMapper.SavingSum row
                 : consumptionMapper.sumSavingByPeriodCohortMaterial(
                         tenantId, SavingMetricViews.TIMEZONE, fmt)) {
             if (StringUtils.hasText(productId) && !productId.equals(row.getProductId())) {
                 continue; // 商品筛选（批次腿已在 listBatches 里筛过；两腿必须同一个筛选面）
             }
+            // 环比序列（issue #6430）：就在这一次扫描里攒，**零新增 SQL**；
+            // null = 该期这个指标读不出 ⇒ 该期不参与「相邻两期」的选择（不是当 0）
+            savedMetersSeries.add(new String[]{row.getPeriod(),
+                    row.getFormulaSum() == null || row.getPlannedSum() == null ? null
+                            : plain(row.getFormulaSum().subtract(row.getPlannedSum())).toPlainString()});
+            savedAmountSeries.add(new String[]{row.getPeriod(),
+                    row.getSavedAmountSum() == null ? null : row.getSavedAmountSum().toPlainString()});
             String cohort = SavingMetricViews.cohortOf(row.getSource());
             String key = groupKey(row.getPeriod(), cohort, row.getProductId(), row.getSkuCode());
             savedByGroup.computeIfAbsent(key, k -> new SavedAcc())
@@ -897,8 +907,15 @@ public class StockBatchConsumptionService {
                     s.knownCostLines == 0 ? null : plain(s.amount),
                     s.lineCount, s.lineCount - s.knownCostLines, bucketsOf(b)));
         }
+        // ── 环比（issue #6430）：全部用上面已加载的行内存聚合，**零新增 SQL** ──
+        //   三条时间轴各自独立：省料/金额 = 消耗时间桶；le0_2Share = 批次收货月
+        SavingMetricViews.BoardComparison comparison = new SavingMetricViews.BoardComparison(
+                delta(savedMetersSeries, DIR_UP_BETTER),
+                delta(savedAmountSeries, DIR_UP_BETTER),
+                // le0_2Share **有意不给好坏**（DIR_NO_VERDICT ⇒ verdict 恒 null，issue #5144）
+                delta(le0_2ShareByPeriod(batchGroups), DIR_NO_VERDICT));
         return new SavingMetricViews.Board(g, SavingMetricViews.TIMEZONE, cohorts, batchGroups,
-                savedGroups, total);
+                savedGroups, total, comparison);
     }
 
     /**
@@ -953,24 +970,37 @@ public class StockBatchConsumptionService {
         sorted.sort(Comparator.naturalOrder());
 
         List<SavingMetricViews.ConsumptionPoint> points = new ArrayList<>();
+        // 环比序列（issue #6430）：采购腿 = 入库时间桶 / 米每㎡ = 趋势时间桶（各自独立）
+        List<String[]> purchasedSeries = new ArrayList<>();
+        List<String[]> metersPerM2Series = new ArrayList<>();
         for (String period : sorted) {
             BigDecimal buy = purchased.get(period);
             BigDecimal open = opening.get(period);
             BigDecimal use = consumed.get(period);
             StockBatchConsumptionMapper.AreaSum a = area.get(period);
             BigDecimal areaM2 = a == null ? null : a.getAreaM2();
+            BigDecimal metersPerM2 = ratio(use, areaM2);
             points.add(new SavingMetricViews.ConsumptionPoint(period,
                     buy == null ? null : plain(buy),
                     open == null ? null : plain(open),
                     use == null ? null : plain(use),
                     areaM2 == null ? null : plain(areaM2),
-                    ratio(use, areaM2),
+                    metersPerM2,
                     a == null || a.getOutputLines() == null ? 0 : a.getOutputLines()));
+            // null = 该期这个指标读不出 ⇒ 该期不参与「相邻两期」的选择（不是当 0 参与）
+            purchasedSeries.add(new String[]{period,
+                    buy == null ? null : plain(buy).toPlainString()});
+            metersPerM2Series.add(new String[]{period,
+                    metersPerM2 == null ? null : plain(metersPerM2).toPlainString()});
         }
+        SavingMetricViews.TrendComparison comparison = new SavingMetricViews.TrendComparison(
+                delta(purchasedSeries, DIR_DOWN_BETTER),   // 买得更少 = 更好
+                delta(metersPerM2Series, DIR_DOWN_BETTER)); // 单位产出用料更省 = 更好
         return new SavingMetricViews.Trend(g, SavingMetricViews.TIMEZONE, points,
                 purchased.isEmpty() ? null : plain(StockQuantity.sum(purchased.values())),
                 consumed.isEmpty() ? null : plain(StockQuantity.sum(consumed.values())),
-                opening.isEmpty() ? null : plain(StockQuantity.sum(opening.values())));
+                opening.isEmpty() ? null : plain(StockQuantity.sum(opening.values())),
+                comparison);
     }
 
     /** 时间粒度 → PG {@code to_char} 格式 */
@@ -1010,6 +1040,85 @@ public class StockBatchConsumptionService {
 
     private static BigDecimal plainOrNull(BigDecimal value) {
         return value == null ? null : plain(value);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
+    // 相邻两期对比（环比，issue #6430）—— **纯静态函数**，零新增 SQL：
+    //   全部在 savingBoard/savingTrend 已加载的行上内存聚合 ⇒ 可无 DB 定点单测
+    // 口径（期间选择 / verdict 取值与较好方向）**唯一定义处** =
+    //   SavingMetricViews.MetricDelta 的 javadoc；这里只实现，不另立一份说法。
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    /** 较好方向：**↑ better**（省料米数 / 金额）。见 {@link SavingMetricViews.MetricDelta}。 */
+    private static final String DIR_UP_BETTER = "up";
+    /** 较好方向：**↓ better**（采购米数 / 米每㎡）。见 {@link SavingMetricViews.MetricDelta}。 */
+    private static final String DIR_DOWN_BETTER = "down";
+    /**
+     * 较好方向：**恒 {@code null} = 有意不给好坏**（只用于 {@code le0_2Share}，issue #5144）。
+     * 它不是 {@code "unknown"}：`unknown` 是「判不了」，`null` 是「我们不表态」。
+     */
+    private static final String DIR_NO_VERDICT = "none";
+
+    /**
+     * 一个指标的 {@code (期间 → 值)} 序列 → 相邻两期对比（{@link SavingMetricViews.MetricDelta}）。
+     *
+     * <p><b>纯函数</b>：值以字符串传入（{@code null} = 该期这个指标没数据），便于无 DB 定点单测。
+     * 期间选择与 {@code verdict} 口径见 {@link SavingMetricViews.MetricDelta} 的 javadoc
+     * （**唯一口径定义处**）。</p>
+     *
+     * @param series    每一行 = {@code [期间, 值]}；值 {@code null} 的期间<b>不参与</b>选择（不是当 0）
+     * @param direction 较好方向，见 {@link #DIR_UP_BETTER} / {@link #DIR_DOWN_BETTER} / {@link #DIR_NO_VERDICT}
+     */
+    static SavingMetricViews.MetricDelta delta(List<String[]> series, String direction) {
+        List<String[]> withData = new ArrayList<>();
+        for (String[] row : series) {
+            if (row != null && row.length >= 2 && row[1] != null) {
+                withData.add(row);
+            }
+        }
+        withData.sort(Comparator.comparing(row -> row[0] == null ? "" : row[0]));
+        int n = withData.size();
+        String period = n == 0 ? null : withData.get(n - 1)[0];
+        BigDecimal current = n == 0 ? null : new BigDecimal(withData.get(n - 1)[1]);
+        String previousPeriod = n < 2 ? null : withData.get(n - 2)[0];
+        BigDecimal previous = n < 2 ? null : new BigDecimal(withData.get(n - 2)[1]);
+        return new SavingMetricViews.MetricDelta(period, previousPeriod,
+                plain(current), plain(previous), verdict(current, previous, direction));
+    }
+
+    /** {@code verdict} 的唯一实现（口径 = {@link SavingMetricViews.MetricDelta} 的 javadoc）。 */
+    private static String verdict(BigDecimal current, BigDecimal previous, String direction) {
+        if (current == null || previous == null) {
+            return "unknown";                      // 判不了（缺值）≠ 有意不给（null）
+        }
+        if (DIR_NO_VERDICT.equals(direction)) {
+            return null;                           // 有意不给好坏（le0_2Share，issue #5144）
+        }
+        int cmp = current.compareTo(previous);     // 🔴 compareTo，不是 equals（标度陷阱）
+        if (cmp == 0) {
+            return "same";
+        }
+        boolean up = DIR_UP_BETTER.equals(direction);
+        return cmp > 0 == up ? "better" : "worse";
+    }
+
+    /** 批次分档组 → 按收货月汇总的 {@code Σ le0_2Count / Σ batchCount}（**该期占比**，口径同 {@link #share}）。 */
+    private static List<String[]> le0_2ShareByPeriod(
+            List<SavingMetricViews.BatchGroup> batchGroups) {
+        Map<String, int[]> byPeriod = new LinkedHashMap<>();
+        for (SavingMetricViews.BatchGroup g : batchGroups) {
+            int[] acc = byPeriod.computeIfAbsent(g.period(), k -> new int[2]);
+            acc[0] += g.le0_2Count();
+            acc[1] += g.batchCount();
+        }
+        List<String[]> out = new ArrayList<>(byPeriod.size());
+        for (Map.Entry<String, int[]> e : byPeriod.entrySet()) {
+            // 本期一个批次都没有 ⇒ 占比读不出（**无数据**，不是 0）⇒ 该期不参与「相邻两期」的选择
+            BigDecimal shareOfPeriod = share(e.getValue()[0], e.getValue()[1]);
+            out.add(new String[]{e.getKey(),
+                    shareOfPeriod == null ? null : plain(shareOfPeriod).toPlainString()});
+        }
+        return out;
     }
 
     /** 恒四档（key/label 与 {@link #distribution} **同一对常量**；空档回 0 —— 计数为 0 是事实） */

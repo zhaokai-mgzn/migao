@@ -11018,6 +11018,24 @@ _CASE_PR_126 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-127 [NORMAL] 🔴 真库+定点：省料看板与趋势的「相邻两期对比」（环比）—— 期间不回填、verdict 由服务端定、占比恒不给好坏（issue #6430）（源: cases/product.yml）──
+_CASE_PR_127 = EvalCase(
+    id='PR-127',
+    legacy_id='',
+    title='🔴 真库+定点：省料看板与趋势的「相邻两期对比」（环比）—— 期间不回填、verdict 由服务端定、占比恒不给好坏（issue #6430）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-06 逐字「省料看板看不明白这里是什么意思」「把这个省料的故事讲清楚明白」—— 重设计要求把「在变好还是变坏」讲清楚，环比口径归服务端'],
+    expectations=[],
+    data_checks=['判据 1·**期间选择不回填**：`MetricDelta` 的「上一期」= 该指标自己时间轴上**相邻的两个有数据期间**（值非 null 的期间按字典序取最后两个）⇒ 没数据的月份**不生成 0**、也不参与选择（否则「没采购」会被读成「采购下降」，与本模块「无数据不冒充 0」同源）。红证（定点）：把 null 期间当 0 参与 ⇒ `SavingMetricsComparisonTest` 用例红；现取命令（在 `backend/admin-api` 下执行）= `./mvnw -q test -Dtest=SavingMetricsComparisonTest`。', '判据 2·**verdict 四态 + 两种「不表态」可区分**：`better`/`worse`/`same`/`unknown`；`same` 一律 `compareTo` 判等（判别性对照：`1.5` 与 `1.50` ⇒ same，而 `equals` 为 false）；`le0_2Share.verdict` **判得了时恒 `null`**（有意不给好坏，见 #5144）且与 `"unknown"`（判不了）**可区分**（断言 `isNotEqualTo("unknown")`）。', '判据 3·**较好方向唯一定义处**：省料米数/金额 ↑ better、采购米数 ↓ better、米每㎡ ↓ better —— 集中在 `StockBatchConsumptionService` 的 `DIR_UP_BETTER` / `DIR_DOWN_BETTER` / `DIR_NO_VERDICT` 与单点 `verdict(...)`；口径正文在 `SavingMetricViews.MetricDelta` 的 javadoc（**不许写第二份**）。', '判据 4·**真库自洽**：`SavingMetricsBoardRealDbTest` 在真 PG 夹具上断言 `comparison` 的期间/数值与既有分组行**逐值自洽**（本期值 == `points` / 分组腿同期的值），并有反向对照「上期 ≠ 本期」。实测读数（2026-10-06）：`savedMeters 5.6 → 1 / savedAmount 69.96 → 5 / le0_2Share 0.5 → 0 (verdict=null) / purchased 15 (unknown) / metersPerM2 0.4583 → 0.8276 (worse)`。', '判据 5·**零新增 SQL、只加不改**：对比全部由 `savingBoard` / `savingTrend` **已加载的行**内存聚合（未加查询、未碰 mapper/XML、无迁移）；`Board` / `Trend` 既有 component 的顺序与名字一字未动（只在末尾追加 `comparison`）⇒ 既有消费方（ai-agent 的 `batch_stock_query` 按 key 取值）不受影响。'],
+    skip_reason='[backend-contract] 读面契约与口径（无 LLM 环节）⇒ 由 Java 定点判据 + 真 PG 判据覆盖，不进入 agent-eval 冒烟',
+    tags=['batch-ledger', 'saving-metrics', 'real-db', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -12910,6 +12928,24 @@ _CASE_UI_089 = EvalCase(
     precondition='前置由测试自身持有：frontend/admin-web/src/app/(dashboard)/stock-ledger/page.tsx 含 `批次余量` 视图（`data-testid=view-batch` / `batch-row` / `batch-remaining`）且测试 mock 了 `batchStockApi.batches`（视图被删 / 改名 / mock 缺失 ⇒ 直接红，不表现成「agent 不干活」）',
 )
 
+# ── UI-090 [NORMAL] 省料看板重设计：结论先行 + 门道可视（因果链/术语词典）+ 环比词来自服务端 + 异常优先与渐进披露 + 合计行用服务端 total（issue #6430）（源: cases/ui.yml）──
+_CASE_UI_090 = EvalCase(
+    id='UI-090',
+    legacy_id='',
+    title='省料看板重设计：结论先行 + 门道可视（因果链/术语词典）+ 环比词来自服务端 + 异常优先与渐进披露 + 合计行用服务端 total（issue #6430）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-06 逐字：「省料看板看不明白这里是什么意思，如果是新用户这么解释这些概念」「你需要重新设计整个页面布局，如何把这个省料的故事讲清楚明白，让用户能看懂逻辑和门道」「不单单是页面布局，还有核心功能如何表达出省料看板」'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据·**结论先行且只用服务端原值**：结论条（`saving-headline`）渲染「省料 99 米」（服务端合计腿），**不是**逐单求和（77 米）也不是来源组求和（18.2）—— 桩数据三个数互不相等，前端任何「顺手」求和即红。', '🔴 判据·**门道可视**：门道卡含因果链（`saving-causal-chain`：排料省 ⇒ 剩得更多 ⇒ 只盯一个数会看反）与术语词典（`saving-terms`：公式米数 / 排料米数 / 省料米数 / 省料金额 / 来源组 / 批次余量 + 「占比按**批数**算」）；既有「两条指标必须并用」的措辞一条不放宽。', '🔴 判据·**环比词只来自服务端 verdict**：同一份夹具把 `verdict` 由 `worse` 改成 `better` ⇒ 文案必须跟着改口（写死「变好了」的前端过不了这条）；`le0_2Share.verdict = null` ⇒ 该行**只给两期数值、不给好坏词**（有意不给，#5144）。', '🔴 判据·**异常优先 + 渐进披露**：「布剩在哪」按余量降序（**纯排序**），12 行默认只渲染 8 行且**余量最大的排第一**（不排序时它会被切掉 ⇒ 红）；点 `saving-batch-groups-toggle` 后最小余量的那行出现。', '🔴 判据·**合计行 = 服务端 total**：逐单省料表新增 `saving-saved-groups-total`，渲染 99 米 / 999 元（服务端合计腿），**不是**逐行求和 77 米 / 88.88 元 —— 判据 1（逐值相等、前端零算术）由此再加一道锁。', '🔴 判据·**新用户 5 问**：整页文本面必须答得出 ①省了多少 ②布还剩在哪、剩多少 ③比上期好还是坏 ④为什么两个指标要一起看 ⑤存量导入为什么单列（缺任一条即红）。', '判据·**两张表的时间轴说明 + 趋势分母警示**：`saving-period-axis-note`（收货月 vs 消耗月不是一回事）、`saving-trend-caveat`（产出面积跨品类不可比、只跟自己的历史比）；`saving-footnotes` 折叠区含「无数据 ≠ 0 / 金额是下界 / 存量导入单列」。', '🔴 判据·**两腿同参（防口径漂移）**：`board` 与 `trend` 收到的 params 必须深相等 —— 只给一条腿加筛选（例如只加 `productId`）会让结论卡①（单商品）与②（全店）分属两个域，而账面上看不出来。', '判据·**向后兼容**：后端未部署（响应无 `comparison` 键）⇒ 页面不崩、且不渲染任何环比块（滚动发布安全）。', '判据·**既有判据一条不放宽**：PR-093/094/095 的逐值相等、存量单列、无数据 ≠ 0、两条指标同在页面上，与 UI-057 的零内部代号（含类级元守卫 `user-copy-jargon-guard.test.ts`）全部继续绿。⚠️ 一处**定位串**改判（同批如实登记）：批次分组行 testid 由 `…-<cohort>-<period>` 改为 `…-<cohort>-<period>-<skuCode|productId>`（同一 cohort+period 下多行时旧 testid 撞车、`getByTestId` 定位不到具体行），**断言强度不变**。'],
+    skip_reason='[backend-contract] 纯前端页面 / 文案 / 纯函数，由 vitest 单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'saving-board', 'copy'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -13532,6 +13568,7 @@ ALL_CASES = (
     _CASE_PR_124,
     _CASE_PR_125,
     _CASE_PR_126,
+    _CASE_PR_127,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
@@ -13636,6 +13673,7 @@ ALL_CASES = (
     _CASE_UI_087,
     _CASE_UI_088,
     _CASE_UI_089,
+    _CASE_UI_090,
     _CASE_UT_001,
     _CASE_UT_002,
 )

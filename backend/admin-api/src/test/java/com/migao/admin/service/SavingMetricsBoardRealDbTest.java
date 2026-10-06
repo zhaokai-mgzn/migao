@@ -450,6 +450,125 @@ class SavingMetricsBoardRealDbTest {
                 .isEqualTo(SavingMetricViews.TIMEZONE);
     }
 
+    // ────────────────────────────────────────────── 判据 7（PR-093 / PR-094，issue #6430）：相邻两期对比
+
+    @Test
+    @DisplayName("🔴 判据7：comparison 的期间与数值与既有分组行**逐值自洽**；le0_2Share.verdict 恒 null")
+    void comparisonIsSelfConsistentWithTheGroupedRows() {
+        SavingMetricViews.Board board = service.savingBoard(TENANT_ID, null, "month");
+        SavingMetricViews.Trend trend = service.savingTrend(TENANT_ID, "month");
+
+        // ── 看板：省料腿（消耗时间桶 2026-08 / 2026-09）—— 值与同期 savedGroups 汇总**逐值相等** ──
+        SavingMetricViews.MetricDelta savedMeters = board.comparison().savedMeters();
+        SavingMetricViews.MetricDelta savedAmount = board.comparison().savedAmount();
+        assertThat(savedMeters.period())
+                .as("本期 = 最后一个有数据的消耗时间桶（夹具里 2026-10 也有一行消耗）").isEqualTo(PERIOD_OCT);
+        assertThat(savedMeters.previousPeriod()).as("上期 = 相邻的前一个有数据的消耗时间桶")
+                .isEqualTo(PERIOD_SEP);
+        assertThat(savedMeters.current())
+                .as("省料米数环比本期 == Σ savedGroups(period=2026-10).savedMeters")
+                .isEqualByComparingTo(sumSaved(board, PERIOD_OCT));
+        assertThat(savedMeters.previous()).isEqualByComparingTo(sumSaved(board, PERIOD_SEP));
+        assertThat(savedMeters.verdict())
+                .as("省料 ↑ better：本期 2.0 < 上期 15.8 ⇒ **worse**（方向不许写反，这条会红）")
+                .isEqualTo("worse");
+        assertThat(savedAmount.current())
+                .as("省料金额环比本期 == Σ savedGroups(period=2026-10).savedAmount（**逐值**，不是重算）")
+                .isEqualByComparingTo(sumSavedAmount(board, PERIOD_OCT));
+        assertThat(savedAmount.period()).isEqualTo(PERIOD_OCT);
+        assertThat(savedAmount.previous()).as("上期金额只含**有均价**的那行（O2 无均价不进金额腿）")
+                .isEqualByComparingTo(sumSavedAmount(board, PERIOD_SEP));
+        assertThat(savedAmount.verdict())
+                .as("判别性：金额本期 15.00 < 上期 103.76 ⇒ worse；"
+                        + "若把无均价行当 0/当全额，上期读数与方向都会变（这条会红）")
+                .isEqualTo("worse");
+
+        // ── 看板：le0_2Share（批次收货月 2026-08 / 2026-09）⇒ verdict **恒 null（有意不给）** ──
+        SavingMetricViews.MetricDelta share = board.comparison().le0_2Share();
+        assertThat(share.previousPeriod()).as("批次收货月 2026-09 的上一期 = 2026-08").isEqualTo(PERIOD_AUG);
+        assertThat(share.previous()).as("2026-08 存量批次 2 个里 1 个落 ≤0.2 档").isEqualByComparingTo("0.5");
+        assertThat(share.current()).as("2026-09 切换后批次 2 个里 0 个落 ≤0.2 档").isEqualByComparingTo("0");
+        assertThat(share.verdict())
+                .as("🔴 null = 有意不给好坏（会被排料省料反向污染），**不是** \"unknown\"（判不了）")
+                .isNull();
+
+        // ── 趋势：采购腿（入库时间桶）与 points 里同期值**逐值相等**；米每㎡ 走趋势时间桶 ──
+        SavingMetricViews.TrendComparison tc = trend.comparison();
+        Map<String, SavingMetricViews.ConsumptionPoint> byPeriod = new java.util.LinkedHashMap<>();
+        for (SavingMetricViews.ConsumptionPoint p : trend.points()) {
+            byPeriod.put(p.period(), p);
+        }
+        assertThat(tc.purchasedMeters().period())
+                .as("采购腿只有 2026-09 有数据（2026-08 全是存量导入 ⇒ 采购腿无数据，**不冒充 0**）")
+                .isEqualTo(PERIOD_SEP);
+        assertThat(tc.purchasedMeters().current())
+                .as("🔴 与 points 里同期的 purchasedMeters 相等（同一条腿，不许是第二个口径）")
+                .isEqualByComparingTo(byPeriod.get(PERIOD_SEP).purchasedMeters());
+        assertThat(tc.purchasedMeters().previousPeriod())
+                .as("只有一期有数据 ⇒ previousPeriod 为 null（不把 2026-08 的存量当采购）").isNull();
+        assertThat(tc.purchasedMeters().previous()).isNull();
+        assertThat(tc.purchasedMeters().verdict()).as("缺上期 ⇒ 判不了").isEqualTo("unknown");
+
+        assertThat(tc.metersPerM2().period()).isEqualTo(PERIOD_SEP);
+        assertThat(tc.metersPerM2().current())
+                .as("米每㎡ 本期 == points(2026-09).metersPerM2")
+                .isEqualByComparingTo(byPeriod.get(PERIOD_SEP).metersPerM2());
+        // 上期必须从 points **现取**（比率读不出的期间要跳过）—— 不写死数字：
+        //    面积腿是 MAX(宽) × MAX(高) 的粗略口径，写死即「把夹具的偶然值当口径」
+        List<String> ratioPeriods = new java.util.ArrayList<>();
+        for (SavingMetricViews.ConsumptionPoint p : trend.points()) {
+            if (p.metersPerM2() != null) {
+                ratioPeriods.add(p.period());
+            }
+        }
+        assertThat(ratioPeriods).as("夹具里三个桶有一个比率读不出（2026-10 分母 0）⇒ 可判该期被跳过")
+                .hasSize(2);
+        String lastRatioPeriod = ratioPeriods.get(ratioPeriods.size() - 1);
+        String prevRatioPeriod = ratioPeriods.get(ratioPeriods.size() - 2);
+        assertThat(tc.metersPerM2().period()).isEqualTo(lastRatioPeriod);
+        assertThat(tc.metersPerM2().previousPeriod())
+                .as("🔴 上期 = 比率可判的**相邻前一期**（跳过读不出的期间，不是当 0 参与）")
+                .isEqualTo(prevRatioPeriod);
+        assertThat(tc.metersPerM2().previous())
+                .as("🔴 上期值 == points 里同期的 metersPerM2（逐值相等，不是第二套口径）")
+                .isEqualByComparingTo(byPeriod.get(prevRatioPeriod).metersPerM2());
+        assertThat(tc.metersPerM2().previousPeriod())
+                .as("🔴 未跳过时的对照读数：若把 2026-10 当 0 参与，上期会变成它（这条会红）")
+                .isNotEqualTo(PERIOD_OCT);
+        assertThat(tc.metersPerM2().verdict())
+                .as("米每㎡ ↓ better：本期 " + tc.metersPerM2().current() + " > 上期 "
+                        + tc.metersPerM2().previous() + " ⇒ 变差")
+                .isEqualTo("worse");
+        System.out.println("[#6430 读数] savedMeters " + savedMeters.previous() + " → " + savedMeters.current()
+                + " / savedAmount " + savedAmount.previous() + " → " + savedAmount.current()
+                + " / le0_2Share " + share.previous() + " → " + share.current() + " (verdict=" + share.verdict() + ")"
+                + " / purchased " + tc.purchasedMeters().current() + " (verdict=" + tc.purchasedMeters().verdict() + ")"
+                + " / metersPerM2 " + tc.metersPerM2().previous() + " → " + tc.metersPerM2().current()
+                + " (" + tc.metersPerM2().verdict() + ")");
+    }
+
+    /** 同期 {@code savedGroups} 的省料米数之和（对照读数；**不另算一套口径**）。 */
+    private static BigDecimal sumSaved(SavingMetricViews.Board board, String period) {
+        BigDecimal sum = BigDecimal.ZERO;
+        for (SavingMetricViews.SavedGroup g : board.savedGroups()) {
+            if (period.equals(g.period())) {
+                sum = sum.add(g.savedMeters());
+            }
+        }
+        return sum;
+    }
+
+    /** 同期 {@code savedGroups} 的省料金额之和（只含**有均价**的组，见 {@code SavedGroup} 口径）。 */
+    private static BigDecimal sumSavedAmount(SavingMetricViews.Board board, String period) {
+        BigDecimal sum = null;
+        for (SavingMetricViews.SavedGroup g : board.savedGroups()) {
+            if (period.equals(g.period()) && g.savedAmount() != null) {
+                sum = sum == null ? g.savedAmount() : sum.add(g.savedAmount());
+            }
+        }
+        return sum;
+    }
+
     // ────────────────────────────────────────────── 装配
 
     private static String consumption(String po, String batchNo, String itemId, String delta,
