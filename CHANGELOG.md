@@ -1,7 +1,7 @@
 # 变更日志
 
 > **2026-10-06 一次性轮转**：此前的全部历史条目已移入
-> [`docs/CHANGELOG-archive-2026-10-06.md`](docs/CHANGELOG-archive-2026-10-06.md)（只读）。
+> [`acceptance/2026-10-06-changelog-rotation/CHANGELOG-archive.md`](acceptance/2026-10-06-changelog-rotation/CHANGELOG-archive.md)（只读）。
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]` 下累加。**
 

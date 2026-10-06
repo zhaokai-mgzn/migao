@@ -1,6 +1,9 @@
 # 变更日志 · 存档（截至 2026-10-06）
 
-> 本文件是 `CHANGELOG.md` 的**历史存档**（一次性轮转，2026-10-06）。
+> 本文件是 `CHANGELOG.md` 的**历史存档**（一次性轮转，2026-10-06）；
+> 放在 `acceptance/**` 下 = 按仓内既有约定登记为**历史记录面**
+> （全仓「当前文案」扫描面一律排除 `acceptance/**`，见 `corporate-home.test.tsx` 的白名单
+> 与 `test_craft_calc_ranking_order_single_source.py` 的 `EXCLUDED_PREFIXES`）。
 >
 > **为什么轮转**：`CHANGELOG.md` 单文件累积到 **525,386 字节**，越过了
 > `scripts/pr_body_guard.py` 的 `MAX_SCAN_BYTES = 512 * 1024` 扫描上限 ——

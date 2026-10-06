@@ -553,7 +553,7 @@ def test_tracked_text_empty_repo_is_discriminating(tmp_path):
 #:
 #: ⚠️ 受判面**跟着条目走**，但**只认这张登记表里的文件**：未登记的路径不进受判面 ——
 #: 否则「把条目搬去任意文件」会变成删条目的后门（判据退化成「全仓某处有这几个字」）。
-ARCHIVE_FILES = ("docs/CHANGELOG-archive-2026-10-06.md",)
+ARCHIVE_FILES = ("acceptance/2026-10-06-changelog-rotation/CHANGELOG-archive.md",)
 
 
 def _unreleased_section() -> str:
