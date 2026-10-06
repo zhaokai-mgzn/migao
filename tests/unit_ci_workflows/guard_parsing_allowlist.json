@@ -198,6 +198,13 @@
       "hits": 2,
       "reason": "同族存量（#5323 冻结清单**之外**，本单只登记不收口）：本地朴素 `#` 截断，未复用共享剥注释实现（`.github/danger_scan.py::strip_comment`）；是否已顺序保护未逐条判定 —— 按 #5323 判据 1 登记。",
       "issue": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_order_print_entry_matrix.py",
+      "rule": "quote-parse",
+      "hits": 2,
+      "reason": "issue #6434（订单详情打印入口矩阵守卫）新增的**有意**原文口径解析，两处都只吃单引号里的标识符：① `order_status_members`（`'([a-z_]+)'`）从 frontend/admin-web/src/types/index.ts 的 `export type OrderStatus = '…' | …` 取成员 —— TS 联合类型在 Python 侧没有 import 面，只能扫字面量，「现取」正是这条判据的要点（新增状态忘登记即红）；② `matrix_entries`（`'([a-z]+)'`）从 frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx 的 `PRINT_TARGETS_BY_STATUS` 取数组元素。**残余风险已由判别力自证的对照读数覆盖**：只往页面里加注释（注释里可以写满按钮名）⇒ 一条判据都不红（见同文件 `TestDiscriminatingPower::test_g5_comment_only_change_is_not_red`）。",
+      "issue": "#6434"
     }
   ]
 }
