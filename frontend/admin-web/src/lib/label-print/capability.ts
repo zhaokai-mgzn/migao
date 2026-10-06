@@ -21,7 +21,7 @@
  * ## 为什么每一类失败都要各自的文案
  *
  * 「打印失败」这四个字对用户不可行动：他不知道是该换浏览器、开蓝牙、插 USB、还是去装驱动。
- * 合并成一条通用文案 ⇒ 守卫判红（`tests/unit/lib/label-print-capability.test.ts`）。
+ * 合并成一条通用文案 ⇒ 守卫判红（`tests/unit/lib/label-print/capability.test.ts`）。
  */
 import type { PrintTarget } from '../print-doc'
 

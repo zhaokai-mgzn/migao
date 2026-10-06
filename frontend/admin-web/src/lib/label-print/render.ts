@@ -5,7 +5,7 @@
  * 本文件只负责「开画布 / 取 ImageData / 量字」。
  *
  * ⚠️ 边界（照实登记）：本仓 `admin-web` **没装 `canvas` 包** ⇒ jsdom 里跑不了真画布
- * ⇒ 本文件**不进单测**；被它调用的两个纯函数（版式 / 绘制）另有判据（`tests/unit/lib/label-print-wash-label.test.ts`），
+ * ⇒ 本文件用**打桩的 canvas** 测（`tests/unit/lib/label-print/render.test.ts`）；被它调用的两个纯函数（版式 / 绘制）另有判据（`tests/unit/lib/label-print/wash-label.test.ts`），
  * 组件测试则注入 `renderJobs` 替身。**真机纸面效果**由真机验收覆盖。
  */
 import type { PrintJob } from './lpapi'

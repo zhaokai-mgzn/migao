@@ -33,7 +33,7 @@ macOS + Chrome 153 + 德佟 DP235S：`openPrinter()` **空参**会让 SDK 走它
 - 不做语义分析：只做**括号配平**后判实参是否为空串 ⇒ 多行实参、嵌套调用都能正确取到。
 - 判不了「实参**内容**对不对」（`autoScan:false` 是否真在里面）—— 那一半由两侧的实例判据承担
   （`frontend/bmini-app/tests/inbound-print-channel.test.ts` 与
-  `frontend/admin-web/tests/unit/lib/label-print-lpapi.test.ts` 的入参 `toEqual`）。
+  `frontend/admin-web/tests/unit/lib/label-print/lpapi.test.ts` 的入参 `toEqual`）。
 """
 
 from __future__ import annotations

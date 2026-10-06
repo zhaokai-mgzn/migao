@@ -29,7 +29,7 @@ import type { WashLabelInput } from '@/lib/label-print/wash-label'
  *
  * - `loadProvider`：真实现要动态注入厂商 UMD bundle；测试传替身 ⇒ 单测不碰网络与蓝牙。
  * - `renderJobs`：真实现要真 canvas（本仓 jsdom 没装 `canvas` 包，跑不了）⇒ 测试传替身；
- *   版式与绘制本身另有纯函数判据（`tests/unit/lib/label-print-wash-label.test.ts`）。
+ *   版式与绘制本身另有纯函数判据（`tests/unit/lib/label-print/wash-label.test.ts`）。
  *
  * ## 留痕
  *
