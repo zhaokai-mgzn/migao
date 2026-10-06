@@ -737,4 +737,43 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     const line = await submittedLine()
     expect(line.processingInfo.specialOptions).toContain('拼2次')
   })
+
+  it('判据 28（2026-10-06，issue #6399）：「改工艺参数」**收起态**也要把当前所选摆出来并高亮', async () => {
+    // 用户逐字：「订单详情中，这里折叠的部分得把折叠的内容展示出来，不然用户不知道选择了什么，
+    // 而且得**高亮展示**」（截图红框 = `craft-plan-edit` 按钮这一行）。
+    // 改前形态：收起态只有一句静态按钮文案，加工类型 / 打开方式 / 款式 / 用料公式的**当前值**
+    // 全在被折叠的 `OrderCraftFields` 里（收起时该子树根本不渲染）⇒ 要核对只能点开一次。
+    await setupLine()
+    const toggle = screen.getAllByTestId('craft-plan-edit')[0]
+    if (toggle.getAttribute('aria-expanded') === 'true') fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+
+    // ① 四项当前值逐项可读（标签 + 值）——取值 = 页面侧唯一派生点 `derivedCraftSpec`
+    //    （与展开态控件 / 试算 / 落库同一份，不是另抄一份读数）
+    const current = screen.getByTestId('craft-plan-current')
+    expect(current).toHaveTextContent('加工类型')
+    expect(current).toHaveTextContent('定高买宽')
+    expect(current).toHaveTextContent('打开方式')
+    expect(current).toHaveTextContent('双开')
+    expect(current).toHaveTextContent('款式')
+    expect(current).toHaveTextContent('单色')
+    expect(current).toHaveTextContent('用料公式')
+    expect(current).toHaveTextContent('韩褶公式')
+    // ② 高亮：primary 色系（与周围那一圈中性灰不同一档）——条本身有底色 + 边框，**值**是高亮文字
+    //    红证方向：把 `bg-primary-50` / `text-primary-700` 退回中性灰 ⇒ 这两条断言红。
+    expect(current.className).toContain('bg-primary-50')
+    expect(current.className).toContain('border-primary-200')
+    expect(within(current).getByText('定高买宽').className).toContain('text-primary-700')
+
+    // ③ 展开态**不重复渲染**：内容本来就在眼前（同屏两份同一真值也会让按文案取元素的判据歧义）
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.queryByTestId('craft-plan-current')).toBeNull()
+
+    // ④ 读数是**跟着改的值走**的（不是一份写死的快照）：款式改「拼色」⇒ 收起后读到「拼色」
+    fireEvent.change(screen.getByTestId('craft-select-style'), { target: { value: '拼色' } })
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    await waitFor(() => expect(screen.getByTestId('craft-plan-current')).toHaveTextContent('拼色'))
+  })
 })
