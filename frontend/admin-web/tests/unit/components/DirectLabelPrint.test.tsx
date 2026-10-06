@@ -81,6 +81,13 @@ describe('DirectLabelPrint — 环境不支持时动手前说清（issue #6439 �
     })
     expect(screen.getByTestId('production-direct-print-button')).not.toBeDisabled()
     expect(screen.queryByTestId('direct-print-hint')).toBeNull()
+
+    // 🔴 **DOM 面**：markdown 强调标记不得原样上屏。2026-10-06 的 Playwright 读图验收抓到真形态 ——
+    //    页面把 `**免驱动**` 连星号一起印了出来（六条门禁全绿，只有肉眼/多模态看得见，正是 §15.7 的教训）。
+    //    红证：把 `DIRECT_PRINT_READY_HINT` 里的 `**` 加回去 ⇒ 本条必红。
+    const ready = screen.getByTestId('direct-print-ready')
+    expect(ready.textContent).toContain('免驱动')
+    expect(ready.textContent).not.toContain('*')
   })
 })
 
