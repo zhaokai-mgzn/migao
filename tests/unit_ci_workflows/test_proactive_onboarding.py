@@ -329,43 +329,53 @@ class TestFailClosedSurface:
         assert "def should_push" in section, "判定结果没有单一的「发不发」入口"
 
 
+#: 菜单**路径**字面量的识别式（`/products` / `/stock-ledger` …）——
+#: 主动引导（P2）若自带这类字面量，就是「第二份页面清单」（菜单单一源是 `menu.ts`）。
+_MENU_PATH_RE = re.compile(r"['\"](/[a-z0-9][a-z0-9/_-]*)['\"]")
+
+
+def _leaked_menu_paths(section: str) -> list[str]:
+    """P2 切片里出现的菜单路径字面量（去重、有序 ⇒ 判红可归因到具体路径）。"""
+    return sorted(set(_MENU_PATH_RE.findall(section)))
+
+
 class TestBlastRadius:
     """判据 7：本包**不新造权限码 / 不碰菜单单一源**。"""
 
     def test_menu_ts_is_untouched_by_this_package(self) -> None:
-        """`menu.ts` 是菜单单一源；主动引导只**读**它（经 P1 镜像）⇒ **本包**不该改它。
+        """`menu.ts` 是菜单单一源；主动引导只**读**它（经 P1 镜像）
+        ⇒ **本包切片里不得出现任何菜单路径字面量**（那正是「自带第二份页面清单」的形态）。
 
-        🔴 射程修正（issue #6404，2026-10-06）——病根：原实现断言
-        `git diff --name-only origin/main -- menu.ts` **为空**，那是**整个检出**的射程，不是**本包**的。
-        `tests/unit_ci_workflows/` 是**所有包共享**的测试面，于是在多包并发的仓里
-        「**任何别的包**合法地新增一个菜单节点」都会让本判据红 —— 实测：库存明细页（#6404）
-        往 `menu.ts` 加 `stock-ledger` 节点，本判据报「**本包**改了菜单单一源：…/menu.ts」，
-        把别的包的合法改动**错误归因**给主动引导包。
+        口径沿革 —— 两次都是这条判据**自己的读数**逼出来的，如实登记：
 
-        ⚠️ 也不能退化成「整个 `menu_navigator.py` 被动过」（第一版修法，当场被这条判据自己否掉）：
-        任何**加菜单节点**的包都**必然**同批改该文件的 **P1** 段（`MENU_TREE` 是镜像），
-        按文件粒度判 = 换个姿势继续误伤。
-        ⇒ 精确射程 = **P2 切片**（`_p2_section`）相对 `origin/main` 是否变过：**只有本包自己的产物**
-        被动过时，`menu.ts` 才必须没被动过。意图分毫未减，别的包改菜单不再误伤。
-        ⚠️ 另一半（「P2 段不得手抄菜单节点」）由下面的 `test_p1_registry_is_reused_not_copied` 独立覆盖。
+        - **原实现**：断言 `git diff --name-only origin/main -- menu.ts` 为空。
+          射程是**整个检出**而不是**本包**，而 `tests/unit_ci_workflows/` 是**所有包共享**的测试面
+          ⇒ 多包并发时「**任何别的包**合法地新增一个菜单节点」都会让本判据红，
+          并把「本包改了菜单单一源」**错误归因**给主动引导包（实测：库存明细页 #6404 加
+          `stock-ledger`，本判据报「本包改了菜单单一源：…/menu.ts」）。
+        - **中间版**（改成 `git show origin/main:<file>` 取基线、比 P2 切片）：读**可变远端引用**
+          ⇒ `ci workflow helper unit tests` 是**浅克隆**（`actions/checkout` 不给 `fetch-depth`）
+          ⇒ `origin/main` 不可达 ⇒ 判据**静默退化**。被同族的
+          `test_guard_no_mutable_ref_baseline.py` 当场判红（issue #5814 的同一形态）。
+        - **本版 = 绝对口径**：只读**仓内文件内容**，不读任何远端引用。
+          「P1 镜像 ⇄ `menu.ts` 逐节点一致」由 `test_menu_navigator.py` 判据 9 绝对判定（那边也不读远端）；
+          「P2 段不得手抄节点」由下面的 `test_p1_registry_is_reused_not_copied` 独立覆盖。
         """
-        import subprocess
+        section = _p2_section(_read(NAV_MODULE))
+        # 面非空自证：解析失灵（切片为空）⇒ 下面的断言会恒真 ⇒ 先自证
+        assert section.strip(), "取不到 P2 切片（解析失灵）⇒ 本判据会空跑，不许当绿"
 
-        base = subprocess.run(
-            ["git", "show", f"origin/main:{NAV_MODULE.relative_to(REPO_ROOT)}"],
-            cwd=str(REPO_ROOT), capture_output=True, text=True,
-        ).stdout
-        # 面非空自证：基线取不到（路径漂移 / 浅克隆）⇒ **红**，不许静默当绿（空集比空集是恒等）
-        assert "NAV_FEATURES" in base and "MENU_TREE" in base, (
-            "取不到 origin/main 的 menu_navigator.py（或它已改形）⇒ 本判据无法判定，不许当绿"
+        leaked = _leaked_menu_paths(section)
+        assert leaked == [], (
+            f"P2 段里出现菜单路径字面量 {leaked} —— 菜单单一源是 `menu.ts`："
+            "本包只许**读** P1 的 `MENU_TREE` / `NAV_FEATURES`，不得自带页面清单"
         )
 
-        if _p2_section(_read(NAV_MODULE)) != _p2_section(base):
-            diff = subprocess.run(
-                ["git", "diff", "--name-only", "origin/main", "--", str(MENU_TS.relative_to(REPO_ROOT))],
-                cwd=str(REPO_ROOT), capture_output=True, text=True,
-            ).stdout.strip()
-            assert diff == "", f"本包改了菜单单一源：{diff}"
+    def test_menu_path_leak_checker_has_discriminating_power(self) -> None:
+        """红证：上面那条用的**同一个**检查函数在注入样本上必须报出那个路径（否则它是空断言）。"""
+        assert _leaked_menu_paths("x = '/products'") == ["/products"]
+        # 判别力落在「路径字面量」上：无关文本不报（不然就是见谁都红的噪声门）
+        assert _leaked_menu_paths("只读 P1 的 MENU_TREE / NAV_FEATURES，不写任何页面路径") == []
 
     def test_p1_registry_is_reused_not_copied(self) -> None:
         """🔴 不许另造第二份真值：P2 段只**引用** P1 的 `MENU_TREE` / `NAV_FEATURES`。"""
