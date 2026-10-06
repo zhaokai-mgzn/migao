@@ -130,14 +130,16 @@ def test_real_dashboard_pages_have_no_unregistered_write_button():
 
 
 def test_fixed_pages_really_gate_their_write_button():
-    """实例面（本单修的**四页**）：四张写码必须**逐字**出现在各自文件里
-    （防「改回裸按钮、但文件里恰好还留着一句提到 hasPermission 的注释」就蒙混过关）。"""
+    """实例面（本单修的**五页**）：五张写码必须**逐字**出现在各自文件里
+    （防「改回裸按钮、但文件里恰好还留着一句提到 hasPermission 的注释」就蒙混过关）。
+    第 5 页 `/knowledge` = issue #6392（2026-10-06 岗位×页面验收发现，同批删掉台账条目）。"""
     pages = real_pages()
     expected = {
         "frontend/admin-web/src/app/(dashboard)/orders/page.tsx": "order:create",
         "frontend/admin-web/src/app/(dashboard)/products/page.tsx": "product:create",
         "frontend/admin-web/src/app/(dashboard)/inbound-orders/page.tsx": "inbound:create",
         "frontend/admin-web/src/app/(dashboard)/finance/page.tsx": "finance:create",
+        "frontend/admin-web/src/app/(dashboard)/knowledge/page.tsx": "knowledge:manage",
     }
     for path, code in expected.items():
         assert path in pages, f"{path} 不在扫描面"

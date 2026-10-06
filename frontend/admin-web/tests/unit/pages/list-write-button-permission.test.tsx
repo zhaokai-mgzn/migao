@@ -79,6 +79,10 @@ const mockInboundList = vi.fn()
 const mockGetSummary = vi.fn()
 const mockGetTransactions = vi.fn()
 const mockGetReconciliation = vi.fn()
+// #6392：/knowledge 页的读接口全部走这一个桩（本判据只裁按钮显隐，空数据集即可）
+const mockKnowledge = vi.fn(() =>
+  Promise.resolve({ data: { data: { items: [], total: 0, candidates: 0, created: 0 } } }),
+)
 
 vi.mock('@/lib/api', () => ({
   orderApi: { getOrders: (...a: unknown[]) => mockGetOrders(...a) },
@@ -90,6 +94,8 @@ vi.mock('@/lib/api', () => ({
     getTransactions: (...a: unknown[]) => mockGetTransactions(...a),
     getReconciliation: (...a: unknown[]) => mockGetReconciliation(...a),
   },
+  // knowledgeApi 的每个方法都返回同一个空数据集（方法名由页面决定，不在此处穷举 ⇒ 用 Proxy 兜底）
+  knowledgeApi: new Proxy({}, { get: () => mockKnowledge }),
 }))
 
 // 三个页面的重组件（表格）与按钮显隐无关 ⇒ 打桩，避免把无关依赖拖进本判据
@@ -107,6 +113,7 @@ import OrdersPage from '@/app/(dashboard)/orders/page'
 import ProductsPage from '@/app/(dashboard)/products/page'
 import InboundOrdersPage from '@/app/(dashboard)/inbound-orders/page'
 import FinancePage from '@/app/(dashboard)/finance/page'
+import KnowledgePage from '@/app/(dashboard)/knowledge/page'
 
 // 真实岗位权限集（口径 = docs/wiki/RBAC.md「岗位（实际生效）」；租户侧是**快照**，此处只取判据相关的码）
 // 客服 / 销售 / 财务 = issue #5983 点名「页面可进 + 按钮可点 + 账号无写权限」的三个岗位。
@@ -179,6 +186,21 @@ describe('#5983 列表页写按钮随权限显隐（判据：按钮可用 ⟺ �
     setPerms(ROLE_PERMS.财务)
     render(<FinancePage />)
     expect(screen.getByRole('button', { name: /登记收支/ })).toBeInTheDocument()
+  })
+
+  it('判据 6：/knowledge —— 客服（有 knowledge:view、无 knowledge:manage）看不到「新建知识卡片」；知识编辑（有码）看得到（#6392 验收发现，链内同修的第 5 页）', () => {
+    // 客服 = 12 码岗位，有读码 knowledge:view、无写码 knowledge:manage（口径 = RegistrationService 种子 / RBAC.md）
+    setPerms(ROLE_PERMS.客服)
+    const first = render(<KnowledgePage />)
+    expect(screen.queryByRole('button', { name: /新建知识卡片/ })).not.toBeInTheDocument()
+    // 头部另一个写入口同码（「文档提炼」也要 knowledge:manage）⇒ 一并守
+    expect(screen.queryByRole('button', { name: /文档提炼/ })).not.toBeInTheDocument()
+    first.unmount()
+
+    setPerms(['dashboard:view', 'knowledge:view', 'knowledge:manage', 'product:list'])
+    render(<KnowledgePage />)
+    expect(screen.getByRole('button', { name: /新建知识卡片/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /文档提炼/ })).toBeInTheDocument()
   })
 
   it('判据 4（对照，防「一刀切隐藏」）：三个写码齐全但**只**缺对方写码时，各自按钮只受自己那把码控制', () => {

@@ -12713,7 +12713,7 @@ _CASE_UI_081 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['客服/销售/财务登录后进 /orders、/products、/inbound-orders、/finance：页面能进（守卫是读码），但笔下的写按钮不该出现'],
     expectations=['direct_reply'],
-    data_checks=['判据 1：客服（有 order:list、无 order:create）在 /orders **看不到**「新增订单」；运营（有 order:create）**看得到**。执行点 = frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx「判据 1」', '判据 2：销售（有 product:list、无 product:create）在 /products 看不到「新增商品」；运营看得到。执行点 = 同文件「判据 2」', '判据 3：财务（有 inbound:view、无 inbound:create）在 /inbound-orders 看不到「新建入库单」；运营看得到。执行点 = 同文件「判据 3」', '判据 4（对照，防「一刀切隐藏」）：只持 order:create 时只有订单页按钮在场，另两页按钮不在。执行点 = 同文件「判据 4」', '判据 5（第 4 页 · 链内同修）：有 `finance:view` 但无 `finance:create` 时 /finance 看不到「登记收支」；财务（有码）看得到。执行点 = 同文件「判据 5」', '🔴 红证 1（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复后跑本判据 ⇒ **4 failed / 4**（报错形态逐字为 `expected document not to contain element, found <button …>新增商品</button>`）；恢复修复后 **4 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx`', '🔴 红证 2（第 4 页加入时实测，2026-10-02）：先落判据 5、`/finance` 尚未接码时跑 ⇒ **1 failed / 4 passed**（`expected document not to contain element, found <button …>登记收支</button>`）；接码后 **5 passed**'],
+    data_checks=['判据 1：客服（有 order:list、无 order:create）在 /orders **看不到**「新增订单」；运营（有 order:create）**看得到**。执行点 = frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx「判据 1」', '判据 2：销售（有 product:list、无 product:create）在 /products 看不到「新增商品」；运营看得到。执行点 = 同文件「判据 2」', '判据 3：财务（有 inbound:view、无 inbound:create）在 /inbound-orders 看不到「新建入库单」；运营看得到。执行点 = 同文件「判据 3」', '判据 4（对照，防「一刀切隐藏」）：只持 order:create 时只有订单页按钮在场，另两页按钮不在。执行点 = 同文件「判据 4」', '判据 5（第 4 页 · 链内同修）：有 `finance:view` 但无 `finance:create` 时 /finance 看不到「登记收支」；财务（有码）看得到。执行点 = 同文件「判据 5」', '判据 6（第 5 页 · 链内同修 · issue #6392）：有 `knowledge:view` 但无 `knowledge:manage` 时 /knowledge 看不到「新建知识卡片」**与**「文档提炼」（两个写入口同码）；知识编辑（有码）两个都看得到。执行点 = 同文件「判据 6」', '🔴 红证 1（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复后跑本判据 ⇒ **4 failed / 4**（报错形态逐字为 `expected document not to contain element, found <button …>新增商品</button>`）；恢复修复后 **4 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx`', '🔴 红证 2（第 4 页加入时实测，2026-10-02）：先落判据 5、`/finance` 尚未接码时跑 ⇒ **1 failed / 4 passed**（`expected document not to contain element, found <button …>登记收支</button>`）；接码后 **5 passed**', '🔴 红证 3（第 5 页加入时实测，2026-10-06）：把 `frontend/admin-web/src/app/(dashboard)/knowledge/page.tsx` 回退到 HEAD（未接码）跑本文件 ⇒ **1 failed / 5 passed**（报错逐字 `expected document not to contain element, found <button`）；恢复后 **6 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run --dir tests/unit/pages list-write-button-permission`', '🔴 红证 4（类级守卫侧的同一处，2026-10-06）：同上回退后跑 `python3 -m pytest tests/unit_ci_workflows/test_list_page_write_button_gate.py -q` ⇒ **2 failed / 3 passed**（具名 `…/knowledge/page.tsx 未接写码 knowledge:manage（实取 []）` 与「未登记的写按钮」）；恢复后 **5 passed**'],
     skip_reason='[backend-contract] 纯前端展示面（按钮是否渲染）由 vitest（jsdom）执行；「提交时后端 403」属 admin-api 权限链（另有用例），本用例不管，不进入 agent-eval 冒烟',
     tags=['ui', 'rbac', 'button-gate', 'admin-web'],
     persona='',
@@ -12776,6 +12776,25 @@ _CASE_UI_084 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+)
+
+# ── UI-085 [NORMAL] 岗位 × 侧边栏菜单：种子权限集 × menu.ts 三条件 ⇒ 可见项逐值相等（岗位矩阵）（源: cases/ui.yml）──
+_CASE_UI_085 = EvalCase(
+    id='UI-085',
+    legacy_id='',
+    title='岗位 × 侧边栏菜单：种子权限集 × menu.ts 三条件 ⇒ 可见项逐值相等（岗位矩阵）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['2026-10-06 用户裁定「做全量」：把「岗位 × 页面」这一维跑完（此前只做过单一人设 admin 的 UI 冒烟与 403 页面守卫）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·岗位矩阵：6 个岗位的种子权限集（逐字写死于用例内）各自渲染出的可见项 key（**顺序敏感**）逐值相等 —— 客服 10 / 销售 9 / 财务 8 / 知识编辑 5 / 商品管理员 10 / 运营 19 项。执行点 = frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的 describe「岗位矩阵：role_permissions（种子）× menu.ts 三条件」', '判据 2·三条件组合：`adminOnly` ∧ `briefingToggle` ∧ `permissionCode` 的 11 种组合表驱动（真实菜单无人用 adminOnly ⇒ 用合成项取证；同文件既有 describe）', '判据 3·开关语义：`briefingEnabled=false`（新租户默认）时「每日简报」不在任何岗位清单里、`true` 时才出现（同文件 toggle 用例）', '判据 4·判别力自证：摘掉**非菜单码**（knowledge:manage）可见项不变；摘掉**菜单码**（product:list）必少「商品管理」「省料看板」两项', "🔴 红证（改前实测，2026-10-06）：把 frontend/admin-web/src/config/menu.ts 的 `permissionCode: 'knowledge:view'` 改成 `'knowledge:list'` ⇒ 本文件 **102 条里 5 条红**（客服 / 知识编辑 / 运营等矩阵行）；恢复后 **102 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run --dir tests/unit/lib menu-nav.test`"],
+    skip_reason='[backend-contract] 纯前端纯函数（菜单过滤）由 vitest 验证；不依赖 LLM / 网络 / DB ⇒ 不进入 agent-eval 冒烟',
+    tags=['ui', 'rbac', 'menu', 'permission-matrix', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置由测试自身持有：frontend/admin-web/src/config/menu.ts 与 src/lib/menu-nav.ts 同时存在且被 vitest 正常收集（缺文件 / 改名 ⇒ 直接红，不表现成「agent 不干活」）',
 )
 
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
@@ -13497,6 +13516,7 @@ ALL_CASES = (
     _CASE_UI_082,
     _CASE_UI_083,
     _CASE_UI_084,
+    _CASE_UI_085,
     _CASE_UT_001,
     _CASE_UT_002,
 )
