@@ -77,6 +77,9 @@ on:
 permissions:
   contents: read
   actions: read          # 读本 workflow 的历史 run 取「上次成功的水位」
+  pull-requests: read    # issue #6042：判定面里 `test_case_id_claims.py` 的常驻出口要
+                         # `GET /repos/{r}/pulls?state=open` 与 `/pulls/{n}/files`（跨在飞 PR 取号面）
+                         # ⇒ 缺这条 = **注定 403**（报文成「列 open PR 失败」）⇒ 本腿跑它必红
   issues: write          # 判红出口：开/更 P1 值班 issue（缺它 = 钩子自己崩溃、红而不留痕，issue #3834）
 
 concurrency:
@@ -217,6 +220,9 @@ jobs:
         id: verify
         env:
           GH_TOKEN: ${{ github.token }}
+          # issue #6042：模板侧读数 —— 「`github.token` 解出空值」与「解出了但没传到子进程」是两种病，
+          # 这一行把前者单独钉出来（=`false` ⇒ env 声明本身没值，与本步 shell 的读数一起看）。
+          TOKEN_DECLARED: ${{ github.token != '' }}
           # 缺 PG ⇒ `pg_cluster.require_pg()` 判 **FAIL**（不是 skip）：与 pr-check 同款。
           MIGAO_REQUIRE_REALDB: "1"
           EVENT: ${{ github.event_name }}
@@ -248,6 +254,32 @@ jobs:
             exit 1
           fi
           echo "判定解释器 = $MIGAO_PY"
+
+          # ── 取数面读数（issue #6042，2026-10-06）──────────────────────────────────────
+          # 现场：本步 shell **确有**有效凭据（上面第 3~4 行的 `gh run list` 取水位成功），而 driver 拉起的
+          # pytest 里 `test_case_id_claims.py` 两条常驻出口报「没有 API 凭据（GITHUB_TOKEN/GH_TOKEN 都为空）」
+          # ⇒ 断点在「step shell → driver → pytest」这条链上。两行读数把两种可能分开：
+          #   ① 模板侧没解出值（`TOKEN_DECLARED=false` / shell len=0）；② 解出了但没进子进程。
+          # 读数**与判据同源**（同一解释器 + 直接问判据本体的 `TOKEN_ENVS` / `current_pr`），不另写推断；
+          # 且**不参与判定**（探针自己失败只打印，绝不判红）。
+          echo "取数面读数（step shell）: GH_TOKEN len=${#GH_TOKEN} / GITHUB_TOKEN len=${#GITHUB_TOKEN} / TOKEN_DECLARED=${TOKEN_DECLARED:-（未声明）}"
+          echo "上下文读数（step shell）: GITHUB_REF=${GITHUB_REF:-（空）} EVENT=${GITHUB_EVENT_NAME:-（空）} REPO=${GITHUB_REPOSITORY:-（空）}"
+          set +e
+          "$MIGAO_PY" - <<'PYEOF' 2>&1 | sed 's/^/取数面读数（判定解释器）: /'
+          import os
+          import sys
+          sys.path.insert(0, "tests/unit_ci_workflows")
+          try:
+              import test_case_id_claims as t
+              entries, _ = t.scan_claims(t.REPO_ROOT / t.CLAIMS_REL)
+              creds = {k: len(os.environ.get(k) or "") for k in t.TOKEN_ENVS}
+              print("creds =", creds, "| current_pr =", t.current_pr(t.parse_claims(entries)))
+          except Exception as exc:  # noqa: BLE001 —— 诊断面：绝不影响判定
+              print("探针自身失败（不影响判定）:", type(exc).__name__, exc)
+          print("GITHub_REF =", os.environ.get("GITHUB_REF"), "| EVENT =", os.environ.get("GITHUB_EVENT_NAME"),
+                "| REPO =", os.environ.get("GITHUB_REPOSITORY"))
+          PYEOF
+          set -e
 
           # ── 首发日 / 引入本腿的 PR：判定本体尚未在**判定基准（main）**上落地 ─────────────
           # `pull_request` 事件的 workflow 定义取自 **PR**，而判定基准是**显式 checkout 的 main**
