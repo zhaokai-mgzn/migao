@@ -258,7 +258,7 @@ class TenantOwnedWriteEndpointGuardTest {
     void annotatedKeysExistInRegistry() {
         // 认定表本体：**显式**调一次登记（生产上由 @PostConstruct 调；这里没有容器）
         TenantResourceOwnership ownership = new TenantResourceOwnership(
-                null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         ownership.registerChecks();
         Set<String> registered = ownership.registeredResources();
         Set<String> annotated = new LinkedHashSet<>();

@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.security.SecureRandom;
 import java.util.regex.Pattern;
 
 /**
@@ -71,6 +72,17 @@ public class WorkerAdminService {
 
     /** 姓名长度上限（与 {@code users.nickname VARCHAR(128)} 同量级，留足余量）。 */
     private static final int MAX_NAME_LENGTH = 64;
+
+    /**
+     * 随机 PIN 位数（issue #6432）：6 位。
+     *
+     * <p>取值理由：与登录失败保护（{@code LoginFailureGuard}：连续失败锁 15 分钟）配合，
+     * 10^6 的枚举空间在锁定窗口内走不完；再长则工人在 PAD 上照抄容易出错。</p>
+     */
+    private static final int RANDOM_PIN_LENGTH = 6;
+
+    /** 随机 PIN 源（凭据 ⇒ {@code SecureRandom}，不用可预测的 {@code Random} / 时间戳）。 */
+    private static final SecureRandom PIN_RANDOM = new SecureRandom();
 
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
@@ -135,6 +147,87 @@ public class WorkerAdminService {
         log.info("[工人档案] 建号成功：tenantId={}, workerNo={}, workerId={}", tenantId, no, worker.getId());
         worker.setPasswordHash(null);
         return worker;
+    }
+
+    /**
+     * 重置工人 PIN（issue #6432）—— **管理员唯一的兜底出口**（工人忘记 PIN 时原无路可走）。
+     *
+     * <p><b>为什么是「重置」而不是「查看」</b>：PIN 落库是 BCrypt 哈希（见 {@link #createWorker}），
+     * **不可逆** ⇒ 原值谁都读不出来（存量档案更只有哈希，即便今天改成可逆存储也恢复不了）。
+     * 因此出口 = 「设一个新 PIN（可随机）+ 明文展示一次」，与员工域既有
+     * {@code PUT /api/admin/users/{id}/reset-password} 的能力形态一致，且**不降级存储安全面**。</p>
+     *
+     * <p><b>三条硬约束</b>：① <b>只认工人档案</b>（{@code role=worker} ∧ {@code worker_no} 非空）
+     * —— 拿员工 id 调本方法必须 fail-closed，绝不能成为「改任意用户密码」的第二条路；
+     * ② <b>租户隔离</b>（别租户的行查不到即拒）；③ 形态复用建号同一条 {@link #PIN_PATTERN}，
+     * **随机值也过同一条**（不可能生成一个登不进的 PIN）。</p>
+     *
+     * @param workerId 工人档案 id
+     * @param pin      新 PIN（明文；仅用于 BCrypt 编码，不落日志）；null / 空白 ⇒ 服务端随机生成
+     * @return 新 PIN 明文（**唯一一次**下发面；库里落的是 BCrypt 哈希）
+     * @throws BusinessException 422 形态非法 / 404 目标不是本租户的工人档案
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public String resetPin(String workerId, String pin) {
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null) {
+            throw BusinessException.tenantInvalid();
+        }
+        if (workerId == null || workerId.isBlank()) {
+            throw BusinessException.validationError("工人档案 ID 不能为空");
+        }
+
+        String normalizedPin = pin == null ? "" : pin.trim();
+        if (normalizedPin.isEmpty()) {
+            normalizedPin = randomPin();
+        }
+        if (!PIN_PATTERN.matcher(normalizedPin).matches()) {
+            throw BusinessException.validationError(
+                    "PIN 必须是 4~12 位数字（工人端 PIN 输入框是数字键盘，含字母的 PIN 工人打不出来）");
+        }
+
+        // 目标限定工人档案（fail-closed）：查不到 / 不是工人 / 不是本租户 ⇒ 一律拒绝，且零写入
+        User worker = findOwnedWorker(workerId);
+        if (worker == null) {
+            throw BusinessException.notFound("工人档案",
+                    "请在「工人档案」列表里按工号找到这位工人，再点「重置 PIN」");
+        }
+
+        // 只更新 password_hash（部分更新：工号 / 姓名 / 状态 / 权限一律不动）
+        User update = new User();
+        update.setId(worker.getId());
+        update.setPasswordHash(passwordEncoder.encode(normalizedPin));
+        userMapper.updateById(update);
+        log.info("[工人档案] PIN 已重置：tenantId={}, workerNo={}, workerId={}",
+                tenantId, worker.getWorkerNo(), worker.getId());
+        return normalizedPin;
+    }
+
+    /**
+     * 本租户的工人档案（**归属认定的唯一判据**）：查不到 / 不是工人 / 不是本租户 ⇒ {@code null}。
+     *
+     * <p>两个调用方读的是**同一份**判据，不是两套：① {@code @TenantOwnedResource("worker")} 的
+     * 归属认定（{@code TenantResourceOwnership}，在 MVC 参数解析**之前**发生 —— issue #6158/#6167
+     * 的次序要求）；② {@link #resetPin} 落库前的「只认工人档案」（服务层）。</p>
+     */
+    public User findOwnedWorker(String workerId) {
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null || workerId == null || workerId.isBlank()) {
+            return null;
+        }
+        User worker = userMapper.selectById(workerId);
+        if (worker == null || !WORKER_ROLE.equals(worker.getRole())
+                || !StringUtils.hasText(worker.getWorkerNo())
+                || !tenantId.equals(worker.getTenantId())) {
+            return null;
+        }
+        return worker;
+    }
+
+    /** 随机 PIN：{@code SecureRandom} + 固定位数（**保留前导零**），产物必过 {@link #PIN_PATTERN}。 */
+    private static String randomPin() {
+        int bound = (int) Math.pow(10, RANDOM_PIN_LENGTH);
+        return String.format("%0" + RANDOM_PIN_LENGTH + "d", PIN_RANDOM.nextInt(bound));
     }
 
     /**

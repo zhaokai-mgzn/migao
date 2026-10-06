@@ -3092,7 +3092,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（85 case）
+## 杂项域（87 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4352,6 +4352,35 @@
 跳过: [backend-contract] 纯静态判据（零 LLM、零网络、零时钟；只读 `.github/workflows/automerge.yml` + `.github/danger_scan.py` 两份语料；判据 6/7 另用**假 `gh` + 临时目录**真跑那段 bash，仍不出网）由 tests/unit_ci_workflows/test_automerge_merge_credential.py、tests/unit_ci_workflows/test_automerge_credential_selection_fixture.py 与 tests/unit_ci_workflows/test_danger_scan.py::TestNewSecretAckChannel 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-06 新增（issue #6418，P1·ops「部署三腿 push 触发已死」）。取号 MC-084：main 上 misc 域现取为 MC-001~MC-083（MC-083 的 merge_log 记「MC-001~MC-082 ⇒ 取 MC-083」）⇒ 取 MC-084；查同时刻 open PR：无一条改 `.github/cases/misc.yml`（`gh pr list --state open` × `gh pr view --json files` 逐条核）。本单 = 合并凭据换非内置（PAT 优先 + 显式具名回落）+ 类级元守卫（arm job 登记表双向对齐）+ Danger Scan 的 owner 确认通道（fail-closed，逐名比对）+ 同批重锚两处快照与两处假真值订正。⚠️ **未固化（照实登记）**：见 data_checks 末条覆盖边界三条 —— 尤其「运行期真的不再被抑制」只能靠合并后的 push run 读数自证（本单在 PR body 与 issue #6418 里给了那条复算命令）。 ｜ tags: backend-contract, ci, auto-merge, credential, trigger-surface, fail-closed, red-proof
+
+### MC-085. 订单详情打印入口矩阵守卫：矩阵覆盖 OrderStatus 全部取值 + 四个必填状态非空 + 页面不得手写打印按钮字面量 + PrintActions 接线 ≥4 且定义唯一（issue #6434） 🔵
+```
+你: 「之前让你设计过打印销售单，报价单等功能，我在订单详情中没有看到打印功能」（2026-10-06 用户报障）—— 用户看到的是「入口不存在」，不是「功能没做」；这类缺陷的形态是**同一件事被抄成多份、其中一份漏了**，所以要在源码面钉住「只许有一张表」。
+数据: **病（issue #6434 的形态）**：四个打印入口原先在 `status === 'shipped'` 与 `status === 'completed'` 两个分支里**各写一份 JSX 字面量** ⇒ 「待发货 / 生产中 / 待付款」三个状态区一个按钮都没有（2026-10-06 用户报障），而这三张单据恰恰是发货**之前**就要用的。单修一处 = 没修：下次再加状态、再抄一份，同样的漏挂会原样复发。
+数据: **判据 1（实例：状态 × 入口矩阵）**：frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的表驱动六条（待付款/待发货/生产中/已发货/已完成/已关闭 × 应有/不该有）—— 改前实测 **3 红 3 绿**，落实现后 46/46 绿。执行点 = 同文件::「打印入口矩阵：…」。
+数据: **判据 2（类级元守卫：唯一声明处）**：frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx 必须 ① 含 `PRINT_TARGETS_BY_STATUS` 矩阵且其键集 == frontend/admin-web/src/types/index.ts 的 `OrderStatus` 全部成员（**现取**，不硬编码）② `pending_payment`/`pending_shipment`/`shipped`/`completed` 四项非空 ③ 代码里（**去注释后**）不得出现 `打印发货单|打印报价单|打印加工单|打印销售单` 任何一个字面量（文案只能来自 `PRINT_TARGET_SPECS[*].title`）④ `<PrintActions>` 接线 ≥4 且 `function PrintActions(` 只有一份。判据 = tests/unit_ci_workflows/test_order_print_entry_matrix.py::TestRealSources（4 条）。
+数据: **判据 3（判别力自证 + 对照读数）**：G1~G4 各有一条**注入式**红证（删状态键 / 清空待发货 / 写回字面量按钮 / 摘掉一处接线）—— 每条都断言「注入真生效（文本确实变了）」，防止锚点漂移把红证变成空断言；另有**对照读数**：只往页面里加注释（哪怕注释里写满四个按钮名）⇒ 一条都不红。判据 = 同文件::TestDiscriminatingPower（5 条）。
+数据: 🔴 **覆盖边界（照实登记）**：① 本判据只读**仓内两份语料**（零网络、零时钟、零运行时）⇒ 它判「入口矩阵覆盖得对不对」，**不判**「真机上点得开、纸出得来」（那属 #5688 的现场待办）；② 它不校验每个状态分支的**按钮顺序/布局**（只判集合），视觉回归由 `./check-ui-regression.sh` 与页面级旅程承接；③ 矩阵里「某状态该有几张单据」是产品口径，判据只钉「不许清空四个必填状态、不许漏登记状态键」——**有意不做**语义一刀切（例如 closed 为空是合法的）。
+前置: 本用例是 [backend-contract] 纯静态用例：前置 = ① frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx 在场且含 `PRINT_TARGETS_BY_STATUS` 矩阵；② frontend/admin-web/src/types/index.ts 在场且含 `export type OrderStatus` 联合类型（成员**现取**，不硬编码）。前置由判据自身持有：文件缺失 / 正则取不到矩阵或状态成员 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它
+跳过: [backend-contract] 纯静态判据（零 LLM、零网络、零时钟；只读 OrderDetail.tsx 与 types/index.ts 两份语料）由 tests/unit_ci_workflows/test_order_print_entry_matrix.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.print-single-doc-on-paper
+溯源: 2026-10-06 新增（issue #6434）。本包把「四个打印入口」从两个状态分支里的字面量副本收敛成 `PRINT_TARGETS_BY_STATUS` 一张表 + `PrintActions` 一个渲染器，并把入口补到待付款/待发货/生产中；本守卫钉住**收敛**这件事本身（覆盖全部状态键、四个必填状态非空、页面不许再手写字面量、接线 ≥4 且定义唯一），并带 5 条注入式判别力自证与 1 条「只加注释不红」的对照读数。取号 MC-085（`python3 scripts/next_case_id.py MC`，现取 main 最大 = MC-084）。 ｜ tags: backend-contract, frontend, order, print, entry-matrix, reuse-guard, red-proof
+
+### MC-086. 控制台口令面「只能建、不能救」的死角进不来：建号即设口令的 client 必须同时有同族重置出口（未配对即红 / 台账只许缩短 / 零命中即红 + 判别力自证） 🔵
+```
+你: 这里管理员查不到工人的pin码
+你: 应该加个查看Pin码的功能，只有管理员权限才能看
+数据: **病（issue #6432 的形态）**：`workerApi.createWorker` 建号时能设 PIN，但建完**再也拿不到** —— PIN 落库是 BCrypt 哈希（不可逆）、列表与视图面还显式脱敏 ⇒ 工人忘记 PIN 时管理员无路可走（只能删号重建，而重建会把报工记到两个身份上）。同族的 `employeeApi` 早就有 `resetPassword` ⇒ 这是**一族**：「建号即设口令」的能力面必须有对应的**重置出口**，而当时没有任何判据看着它。
+数据: **判据 1（未配对即红，具名）**：某 client 暴露了 `create*` 且其入参类型含 `password` / `pin` 字段，却没有 `reset|change|update` + `Password|Pin` 方法，且不在豁免台账里 ⇒ 报出「未配对：<client> 暴露了 <方法>…」。判据 = tests/unit_ci_workflows/test_credential_rotation_pairing.py::test_discriminates_unpaired_client（内存语料 = 去掉工人侧重置面的改前形态）
+数据: **判据 2（台账只许缩短：陈旧即红 / 超预算即红）**：`frozen_max_entries` 现取为 0；给一个**其实已配对**的 client 盖章 ⇒ 「陈旧台账条目」；条目数超上限 ⇒ 「超预算」；条目缺 `reason` ⇒ 红。判据 = 同文件::test_discriminates_stale_ledger_entry / test_discriminates_ledger_budget / test_ledger_is_wellformed_and_shrink_only
+数据: **判据 3（零命中即红，fail-closed）**：扫描面一个「建号即设口令」的 client 都找不到（选择器漂了 / api.ts 结构变了）⇒ 判据自己失效 ⇒ 红，不许静默绿。判据 = 同文件::test_discriminates_empty_corpus
+数据: **判据 4（对照读数：真语料上确实看得见配对）**：真仓上 `workerApi.createWorker ↔ resetWorkerPin`、`employeeApi.createEmployee ↔ resetPassword` 两条都必须被扫出来（防「选择器漂了还能绿」）。判据 = 同文件::test_real_repo_actually_sees_the_pairing + test_real_repo_passes
+数据: 🔴 **覆盖边界（照实登记）**：判据只认 frontend/admin-web/src/lib/api.ts 的**对象字面量 client**（`export const X = { … }` 顶格 `}` 收口）与 frontend/admin-web/src/types/index.ts 的**顶层 interface 字段**；经变量间接构造的请求体、行内 `{ pin }` 字面量、小程序 / H5 侧的 api 封装**不在射程内**；也判不了「重置口有没有接权限码 / 有没有接 UI」（那是 `@RequirePermission` 与页面判据的事）。本判据**不为存量条目的安全性背书**，只裁新增。
+前置: 本用例是 [backend-contract] 纯静态用例（零 LLM、零网络、零时钟）：前置 = frontend/admin-web/src/lib/api.ts 与 frontend/admin-web/src/types/index.ts 在场且可读、tests/unit_ci_workflows/credential_rotation_pairing_ledger.json 可被 json 解析。前置由判据自身持有：文件缺失 / 台账坏 ⇒ 当场红（不表现成「agent 不干活」）；agent-eval 栈不跑它
+跳过: [backend-contract] 纯静态元守卫（只读两份前端语料 + 一份台账）由 tests/unit_ci_workflows/test_credential_rotation_pairing.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-06 新增（issue #6432，用户实测报告「管理员查不到工人的 pin 码」）。落法（用户两问两答裁定）= 重置 PIN 并展示新值（BCrypt 不可逆 ⇒ 不做可逆存储的明文查看）、权限仅 `employee:create`；本用例只是**类级元守卫**那一半（实例判据在 UI-091：后端 `WorkerAdminService.resetPin` / 端点 / 前端弹窗）。取号 MC-086（`python3 scripts/next_case_id.py mc`；改号原因 = 本 PR 在飞期间 main 的 MC-085 已被 #6434「订单详情打印入口矩阵守卫」占用）。 ｜ tags: backend-contract, admin-web, credential, rotation, fail-closed, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -8663,7 +8692,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（89 case）
+## 前端 UI 域（91 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -9933,6 +9962,36 @@
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-10-06 新增（issue #6417，用户实测报告）：用户 2026-10-06「库存明细还是缺乏单批次的剩余量，比如 1 卷 = 67 米，经过加工裁剪后应该有个剩余米数」。诊断（读码）：库存明细页（PR #6407）是 SKU 级流水；批次余量读面（`GET /api/admin/batch-stock/batches`，`BatchRemaining`：inboundMeters / consumedMeters / remainingMeters）与商品详情 →「批次账」面板**早就有**，但商家在「库存明细」里点不出来 ⇒ 属**可达性缺口**，不是数据缺口。本包补视图②（八列 + 不重算见证批次 + 未选商品不拉全量 + 两本账不串），**权限不新造码**（批次读面与页面菜单节点码逐字同码 `product:list`）。取号 UI-089（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-088）。 ｜ tags: ui, stock, batch, admin-web
 
+### UI-090. 订单详情打印入口 × 订单状态矩阵：待付款出报价单；待发货/生产中出报价单+加工单+销售单；已发货/已完成四单齐全；已关闭零入口（issue #6434） 🔵
+```
+你: 「之前让你设计过打印销售单，报价单等功能，我在订单详情中没有看到打印功能」（2026-10-06 用户报障；追问确认场景 = 待发货订单 / merchant.migaozn.com）；用户同时裁定要覆盖的状态 = 待付款（报价单先行）+ 待发货 + 生产中（车间要加工单、随货要销售单）
+期望: direct_reply
+数据: 病根读数（现取 `origin/main`）：订单详情页的四个打印入口只在 `status === 'shipped'` 与 `status === 'completed'` 两个分支里渲染；`pending_payment` / `pending_shipment`（含 `producing`）分支里**一个打印按钮都没有**，而 `CHANGELOG` 的 #5651 条目声称的是「在「待发货」与「已完成」两个状态区」⇒ **声称与实现不符**（`git log -S 打印销售单` 只有一个提交 = 引入提交 #5669）。复算 = `git show origin/main:frontend/admin-web/src/app/\(dashboard\)/orders/\[id\]/OrderDetail.tsx | grep -n "打印销售单\|pending_shipment"`。
+数据: 判据 1·🔴 **状态 × 入口矩阵**（表驱动）：待付款 ⇒ 只有「打印报价单」（且不得出现发货单/加工单/销售单）；待发货 ⇒ 报价单 + 加工单 + 销售单（**不得**出现发货单：未发货谈不上补打）；生产中（`producing`）⇒ 同待发货；已发货 / 已完成 ⇒ 四单齐全；已关闭 ⇒ 零入口。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx::「打印入口矩阵：…」六条（`it.each`）。
+数据: 判据 2·🔴 **红证（改前实测，`migao-dev-flow` §28.1 出口①）**：判据 1 先在 `origin/main` 上跑 ⇒ **3 红 3 绿**（红 = 待付款/待发货/生产中；绿 = 已发货/已完成/已关闭）—— 红只归因于本包缺口，同时证明矩阵**不是空断言**；落实现后 ⇒ 该文件 46/46 全绿。复算（在 frontend/admin-web 目录下执行）= `npx vitest run --dir tests/unit/pages order-detail -t 打印入口矩阵`。
+数据: 判据 3·**类级元守卫（唯一声明处）**：① 矩阵覆盖 `OrderStatus` 全部取值（新增状态忘登记 ⇒ 红）② 四个「有单据可出」的状态非空（清空 ⇒ 红）③ 页面代码里不得再出现手写的 `打印发货单/报价单/加工单/销售单` 字面量（再抄一份 ⇒ 红）④ `<PrintActions>` 接线 ≥4 且定义只有一份。判据 = tests/unit_ci_workflows/test_order_print_entry_matrix.py（5 条真语料 + 5 条判别力自证，含「只加注释 ⇒ 不红」的对照读数）。
+数据: 判据 4·**文案单一真值**：按钮文案 = `打印${PRINT_TARGET_SPECS[target].title}`（与纸面自检层标题**同一份**），页面不手写字面量 ⇒ 改文案 / 新增单据只改 frontend/admin-web/src/lib/print-doc.ts 一处。
+前置: 本用例是 [backend-contract] 纯前端入口面：前置由单测自建 —— frontend/admin-web/tests/unit/pages/order-detail.test.tsx mock 了 `@/lib/api` 的 `orderApi.getOrder`（逐状态给 status）与组件桶；页面里的 `PRINT_TARGETS_BY_STATUS` 矩阵是判据的唯一真值源。文件缺失 / 矩阵被删 / 状态键漂移 ⇒ 判据当场红（不会表现成「agent 不干活」）；agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端入口面（零 LLM、零网络、零后端契约改动：矩阵只决定按钮渲染，打印仍走 #5914 的共享入口 usePrintDoc），不进入 agent-eval 冒烟
+```
+真值: frontend-fix.print-single-doc-on-paper, frontend-fix.no-api-change
+溯源: 2026-10-06 新增（issue #6434，用户实测报告「订单详情中没有看到打印功能」）。修法 = 把四个入口从两个状态分支里的**字面量副本**收敛成 `PRINT_TARGETS_BY_STATUS` 一张表 + `<PrintActions>` 一个渲染器（文案取 `PRINT_TARGET_SPECS[*].title`），并把入口补到待付款（报价单）/ 待发货 / 生产中（报价单 + 加工单 + 销售单）；已发货 / 已完成四单口径**一字未变**（只做加法，不回归既有入口）。取号 UI-090（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-089）。⚠️ **未固化 / 有意不做（照实登记）**：① 「真机上点得开、纸出得来」仍属 #5688 的现场待办（本用例只判**入口可达与矩阵覆盖**）；② 不为打印入口新造权限码（沿用既有页面口径 `order:list`）；③ 待付款**不加**发货单入口（未发货谈不上补打，既有判据「待付款订单没有发货单入口」保持绿）。 ｜ tags: ui, order, print, entry-matrix, red-proof
+
+### UI-091. 订单详情打印入口 × 订单状态矩阵：待付款出报价单；待发货/生产中出报价单+加工单+销售单；已发货/已完成四单齐全；已关闭零入口（issue #6434） 🔵
+```
+你: 「之前让你设计过打印销售单，报价单等功能，我在订单详情中没有看到打印功能」（2026-10-06 用户报障；追问确认场景 = 待发货订单 / merchant.migaozn.com）；用户同时裁定要覆盖的状态 = 待付款（报价单先行）+ 待发货 + 生产中（车间要加工单、随货要销售单）
+期望: direct_reply
+数据: 病根读数（现取 `origin/main`）：订单详情页的四个打印入口只在 `status === 'shipped'` 与 `status === 'completed'` 两个分支里渲染；`pending_payment` / `pending_shipment`（含 `producing`）分支里**一个打印按钮都没有**，而 `CHANGELOG` 的 #5651 条目声称的是「在「待发货」与「已完成」两个状态区」⇒ **声称与实现不符**（`git log -S 打印销售单` 只有一个提交 = 引入提交 #5669）。复算 = `git show origin/main:frontend/admin-web/src/app/\(dashboard\)/orders/\[id\]/OrderDetail.tsx | grep -n "打印销售单\|pending_shipment"`。
+数据: 判据 1·🔴 **状态 × 入口矩阵**（表驱动）：待付款 ⇒ 只有「打印报价单」（且不得出现发货单/加工单/销售单）；待发货 ⇒ 报价单 + 加工单 + 销售单（**不得**出现发货单：未发货谈不上补打）；生产中（`producing`）⇒ 同待发货；已发货 / 已完成 ⇒ 四单齐全；已关闭 ⇒ 零入口。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx::「打印入口矩阵：…」六条（`it.each`）。
+数据: 判据 2·🔴 **红证（改前实测，`migao-dev-flow` §28.1 出口①）**：判据 1 先在 `origin/main` 上跑 ⇒ **3 红 3 绿**（红 = 待付款/待发货/生产中；绿 = 已发货/已完成/已关闭）—— 红只归因于本包缺口，同时证明矩阵**不是空断言**；落实现后 ⇒ 该文件 46/46 全绿。复算（在 frontend/admin-web 目录下执行）= `npx vitest run --dir tests/unit/pages order-detail -t 打印入口矩阵`。
+数据: 判据 3·**类级元守卫（唯一声明处）**：① 矩阵覆盖 `OrderStatus` 全部取值（新增状态忘登记 ⇒ 红）② 四个「有单据可出」的状态非空（清空 ⇒ 红）③ 页面代码里不得再出现手写的 `打印发货单/报价单/加工单/销售单` 字面量（再抄一份 ⇒ 红）④ `<PrintActions>` 接线 ≥4 且定义只有一份。判据 = tests/unit_ci_workflows/test_order_print_entry_matrix.py（5 条真语料 + 5 条判别力自证，含「只加注释 ⇒ 不红」的对照读数）。
+数据: 判据 4·**文案单一真值**：按钮文案 = `打印${PRINT_TARGET_SPECS[target].title}`（与纸面自检层标题**同一份**），页面不手写字面量 ⇒ 改文案 / 新增单据只改 frontend/admin-web/src/lib/print-doc.ts 一处。
+前置: 本用例是 [backend-contract] 纯前端入口面：前置由单测自建 —— frontend/admin-web/tests/unit/pages/order-detail.test.tsx mock 了 `@/lib/api` 的 `orderApi.getOrder`（逐状态给 status）与组件桶；页面里的 `PRINT_TARGETS_BY_STATUS` 矩阵是判据的唯一真值源。文件缺失 / 矩阵被删 / 状态键漂移 ⇒ 判据当场红（不会表现成「agent 不干活」）；agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端入口面（零 LLM、零网络、零后端契约改动：矩阵只决定按钮渲染，打印仍走 #5914 的共享入口 usePrintDoc），不进入 agent-eval 冒烟
+```
+真值: frontend-fix.print-single-doc-on-paper, frontend-fix.no-api-change
+溯源: 2026-10-06 新增（issue #6434，用户实测报告「订单详情中没有看到打印功能」）。修法 = 把四个入口从两个状态分支里的**字面量副本**收敛成 `PRINT_TARGETS_BY_STATUS` 一张表 + `<PrintActions>` 一个渲染器（文案取 `PRINT_TARGET_SPECS[*].title`），并把入口补到待付款（报价单）/ 待发货 / 生产中（报价单 + 加工单 + 销售单）；已发货 / 已完成四单口径**一字未变**（只做加法，不回归既有入口）。取号 UI-090（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-089）。⚠️ **未固化 / 有意不做（照实登记）**：① 「真机上点得开、纸出得来」仍属 #5688 的现场待办（本用例只判**入口可达与矩阵覆盖**）；② 不为打印入口新造权限码（沿用既有页面口径 `order:list`）；③ 待付款**不加**发货单入口（未发货谈不上补打，既有判据「待付款订单没有发货单入口」保持绿）。 ｜ tags: ui, order, print, entry-matrix, red-proof
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -9962,8 +10021,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：691（活跃 134，跳过 557）
-- tier 分布：smoke 12 / normal 637 / adversarial 32
+- 用例总数：695（活跃 134，跳过 561）
+- tier 分布：smoke 12 / normal 641 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9978,7 +10037,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：7
-- 杂项域：85
+- 杂项域：87
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：63
@@ -9988,7 +10047,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：89
+- 前端 UI 域：91
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -10094,6 +10153,7 @@
 - MC-080: 「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（判定本体 = 单份共享库；AK/SK 引用在 job env 只声明一次），`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）
 - MC-083: 开租「必需初始数据清单」⇄ 入驻链路播种调用的类级元守卫（issue #6295）：清单里每条必须真的种、链路里每个种子协作者必须已登记（未登记即红）、后置条件校验必须接线在且逐项检查 enforced 项、豁免台账只许缩短、默认值字面量单一来源；判别力在内存语料上自证
 - MC-084: 合并凭据 ⇄ push 触发面：会 arm auto-merge 的 job 必须引用非内置凭据（secrets.AUTOMERGE_PAT）且缺 secret 时显式具名回落，arm job 登记表双向对齐、未登记即红；新增非内置 secrets 引用的 owner 确认通道逐名比对、无确认时逐字仍 BLOCK
+- MC-086: 控制台口令面「只能建、不能救」的死角进不来：建号即设口令的 client 必须同时有同族重置出口（未配对即红 / 台账只许缩短 / 零命中即红 + 判别力自证）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

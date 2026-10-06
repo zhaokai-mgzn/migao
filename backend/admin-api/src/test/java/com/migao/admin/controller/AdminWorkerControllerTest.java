@@ -1,4 +1,4 @@
-// case_ids: HR-002, HR-001
+// case_ids: HR-002, HR-001, UI-091
 package com.migao.admin.controller;
 
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -41,6 +41,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -197,8 +198,8 @@ class AdminWorkerControllerTest {
                     .isNotBlank();
         }
         assertThat(handlers)
-                .as("建号 + 列表两个端点是本单的交付面，缺一即红")
-                .isEqualTo(2);
+                .as("建号 + 列表 + 重置 PIN 三个端点是本面交付面，缺一即红")
+                .isEqualTo(3);
     }
 
     @Test
@@ -212,6 +213,47 @@ class AdminWorkerControllerTest {
                 String.class, String.class);
         assertThat(create.getAnnotation(RequirePermission.class).value()).isEqualTo("employee:create");
         assertThat(list.getAnnotation(RequirePermission.class).value()).isEqualTo("employee:list");
+
+        // 重置 PIN 与建号**同档写权限**（issue #6432）：只读角色（仅 employee:list）不得拿到重置口
+        Method resetPin = AdminWorkerController.class.getDeclaredMethod("resetPin", String.class, Map.class);
+        assertThat(resetPin.getAnnotation(RequirePermission.class).value()).isEqualTo("employee:create");
+    }
+
+    @Test
+    @DisplayName("重置 PIN ⇒ 200，响应体**只有新 PIN**（无 passwordHash / 无 password）；省略 pin ⇒ 服务端随机")
+    void resetPinReturnsOnlyTheNewPin() throws Exception {
+        when(workerAdminService.resetPin("w-1", "246810")).thenReturn("246810");
+        when(workerAdminService.resetPin("w-1", null)).thenReturn("654321");
+
+        mockMvc.perform(put("/api/admin/workers/w-1/pin")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("pin", "246810"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.pin").value("246810"))
+                .andExpect(jsonPath("$.data.passwordHash").doesNotExist())
+                .andExpect(jsonPath("$.data.password").doesNotExist());
+
+        // 空 body ⇒ pin 缺省 ⇒ 由服务端随机生成（页面不自造一套 PIN 规则）
+        mockMvc.perform(put("/api/admin/workers/w-1/pin")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pin").value("654321"));
+
+        verify(workerAdminService).resetPin("w-1", null);
+    }
+
+    @Test
+    @DisplayName("重置 PIN 的目标不是工人档案 ⇒ 404（fail-closed 透传到 HTTP，不是 200 假成功）")
+    void resetPinOnNonWorkerTargetReturnsNotFound() throws Exception {
+        when(workerAdminService.resetPin(any(), any()))
+                .thenThrow(BusinessException.notFound("工人档案", "请在「工人档案」列表里按工号找到这位工人"));
+
+        mockMvc.perform(put("/api/admin/workers/emp-1/pin")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
     }
 
 }

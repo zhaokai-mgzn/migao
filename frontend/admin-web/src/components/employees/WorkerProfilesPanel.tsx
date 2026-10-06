@@ -45,6 +45,12 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   const [creating, setCreating] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
+  // 重置 PIN（issue #6432）：弹窗两态 —— ① 输入 / 随机生成新 PIN ② 明文展示新 PIN（只显示这一次）
+  const [pinTarget, setPinTarget] = useState<WorkerProfile | null>(null)
+  const [pinInput, setPinInput] = useState('')
+  const [newPin, setNewPin] = useState<string | null>(null)
+  const [resettingPin, setResettingPin] = useState(false)
+
   const loadWorkers = useCallback(async () => {
     setLoading(true)
     try {
@@ -128,6 +134,33 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     }
   }
 
+  /**
+   * 重置 PIN（issue #6432）：原 PIN 是 BCrypt 哈希、**读不出来** ⇒ 唯一出口 = 设新值并当场展示。
+   * pin 留空 ⇒ 交给服务端随机生成 6 位（页面不自己造一套 PIN 规则，形态校验仍以服务端为准）。
+   */
+  const handleOpenResetPin = (worker: WorkerProfile) => {
+    setPinTarget(worker)
+    setPinInput('')
+    setNewPin(null)
+  }
+
+  const handleResetPin = async () => {
+    if (!pinTarget) return
+    const pin = pinInput.trim()
+    if (pin && !/^\d{4,12}$/.test(pin)) { toast.error('PIN 必须是 4~12 位数字'); return }
+
+    setResettingPin(true)
+    try {
+      const res = await workerApi.resetWorkerPin(pinTarget.id, pin || undefined)
+      setNewPin(res.data.data?.pin ?? '')
+    } catch (e) {
+      // 失败**不关弹窗**、不展示任何 PIN：管理员可改值重试（文案由拦截器统一展示服务端原文，UI-024）
+      toastRequestError(e, '重置 PIN 失败')
+    } finally {
+      setResettingPin(false)
+    }
+  }
+
   const columns: TableColumn<WorkerProfile>[] = [
     {
       key: 'workerNo',
@@ -151,16 +184,26 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     {
       key: 'actions',
       title: '操作',
-      width: '120px',
+      width: '180px',
       render: (record) => (
-        <button
-          type="button"
-          onClick={() => handleToggleStatus(record)}
-          disabled={!canWrite || togglingId === record.id}
-          className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm disabled:text-neutral-400 disabled:no-underline disabled:cursor-not-allowed"
-        >
-          {record.status === 'active' ? '停用' : '启用'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => handleOpenResetPin(record)}
+            disabled={!canWrite}
+            className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm disabled:text-neutral-400 disabled:no-underline disabled:cursor-not-allowed"
+          >
+            重置 PIN
+          </button>
+          <button
+            type="button"
+            onClick={() => handleToggleStatus(record)}
+            disabled={!canWrite || togglingId === record.id}
+            className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm disabled:text-neutral-400 disabled:no-underline disabled:cursor-not-allowed"
+          >
+            {record.status === 'active' ? '停用' : '启用'}
+          </button>
+        </div>
       ),
     },
   ]
@@ -275,6 +318,59 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
             工人不会进入管理后台，也拿不到任何菜单权限。
           </p>
         </div>
+      </Modal>
+
+      <Modal
+        open={pinTarget !== null}
+        onClose={() => setPinTarget(null)}
+        title={newPin === null ? '重置工人 PIN' : '新 PIN（只显示这一次）'}
+        width={520}
+        footer={
+          newPin === null ? (
+            <>
+              <Button variant="secondary" onClick={() => setPinTarget(null)} disabled={resettingPin}>
+                取消
+              </Button>
+              <Button onClick={handleResetPin} loading={resettingPin}>
+                确认重置
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => setPinTarget(null)}>完成</Button>
+          )
+        }
+      >
+        {newPin === null ? (
+          <div className="space-y-4">
+            <p className="text-sm text-neutral-600">
+              工人：
+              <span className="font-medium text-neutral-900">
+                {pinTarget?.workerNo} {pinTarget?.name}
+              </span>
+            </p>
+            <Input
+              label="新 PIN"
+              inputMode="numeric"
+              placeholder="4~12 位数字；留空则由系统随机生成 6 位"
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value)}
+            />
+            <p className="text-xs text-neutral-400">
+              系统只保存不可逆的加密结果，原 PIN 无法查看 ⇒ 工人忘记时只能重置为新值。
+              重置后旧 PIN 立即失效，请当面告知本人。
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="bg-neutral-50 rounded-lg p-4 text-center" data-testid="worker-new-pin">
+              <div className="text-xs text-neutral-500 mb-1">新 PIN</div>
+              <div className="text-2xl font-semibold tracking-[0.3em] text-neutral-900">{newPin}</div>
+            </div>
+            <p className="text-xs text-neutral-500">
+              关掉本窗口后就查不到了 —— 请立刻告知工人，让他用工号 + 这个 PIN 在工人端登录一次确认可用。
+            </p>
+          </div>
+        )}
       </Modal>
     </div>
   )
