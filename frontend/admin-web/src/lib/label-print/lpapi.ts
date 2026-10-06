@@ -167,8 +167,10 @@ export function resolveLpapiModule(scope: unknown): LpapiModuleLike | null {
 
 /** `getInstance` / `create` 至少有一个 ⇒ 这就是那个模块（**类型守卫独立成函数**，避免内联收窄） */
 function isLpapiModule(candidate: unknown): candidate is LpapiModuleLike {
-  const module = candidate as LpapiModuleLike | null | undefined
-  return !!module && (typeof module.getInstance === 'function' || typeof module.create === 'function')
+  // ⚠️ 变量名**不能**叫 `module`：Next 的 `@next/next/no-assign-module-variable` 会判 error
+  //    （那名字是 CommonJS 的保留物）——CI ESLint 实测抓过一次。
+  const sdk = candidate as LpapiModuleLike | null | undefined
+  return !!sdk && (typeof sdk.getInstance === 'function' || typeof sdk.create === 'function')
 }
 
 /**
@@ -240,16 +242,16 @@ export async function loadLpapiApi(): Promise<LpapiPrinterLike | null> {
     const mod = (await import(/* webpackChunkName: "lpapi-ble" */ 'lpapi-ble')) as unknown
     // 与 bmini 侧 `loadLpapi()` 同口径：命名空间 `LPAPI` / `default.LPAPI` / `default` 三选一；
     // 兜底再看全局（有些打包器会把它挂到 `globalThis`）
-    const module = resolveLpapiModule(mod) ?? resolveLpapiModule(globalThis)
-    return module ? instantiate(module) : null
+    const sdk = resolveLpapiModule(mod) ?? resolveLpapiModule(globalThis)
+    return sdk ? instantiate(sdk) : null
   } catch {
     return null
   }
 }
 
 /** UMD 实例化（`webBLE: true` = 走浏览器蓝牙适配层） */
-function instantiate(module: LpapiModuleLike): LpapiPrinterLike | null {
-  const factory = module.getInstance ?? module.create
+function instantiate(sdk: LpapiModuleLike): LpapiPrinterLike | null {
+  const factory = sdk.getInstance ?? sdk.create
   if (!factory) return null
-  return factory.call(module, { webBLE: true })
+  return factory.call(sdk, { webBLE: true })
 }
