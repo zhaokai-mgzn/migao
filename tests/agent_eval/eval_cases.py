@@ -5729,6 +5729,25 @@ _CASE_MC_083 = EvalCase(
     precondition='本用例是 [backend-contract] 纯静态元守卫用例：前置 = ① backend/admin-api/src/main/java/com/migao/admin/service/OnboardingInitialData.java（必需初始数据清单真值源）与同目录的 RegistrationService.java（入驻链路）在场；② tests/unit_ci_workflows/onboarding_required_seed_ledger.json 在场且含豁免冻结上限 `exemptions_frozen_count`。前置由判据自身持有：文件缺失 / 清单解析出 0 条 / 台账缺冻结上限 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它',
 )
 
+# ── MC-084 [NORMAL] 合并凭据 ⇄ push 触发面：会 arm auto-merge 的 job 必须引用非内置凭据（secrets.AUTOMERGE_PAT）且缺 secret 时显式具名回落，arm job 登记表双向对齐、未登记即红；新增非内置 secrets 引用的 owner 确认通道逐名比对、无确认时逐字仍 BLOCK（源: cases/misc.yml）──
+_CASE_MC_084 = EvalCase(
+    id='MC-084',
+    legacy_id='',
+    title='合并凭据 ⇄ push 触发面：会 arm auto-merge 的 job 必须引用非内置凭据（secrets.AUTOMERGE_PAT）且缺 secret 时显式具名回落，arm job 登记表双向对齐、未登记即红；新增非内置 secrets 引用的 owner 确认通道逐名比对、无确认时逐字仍 BLOCK',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['合并完成后，改过 frontend/admin-web、backend/admin-api、backend/ai-agent-service 的代码应当在数分钟内自动部署，不该因为「合并用的是机器人 token」而静默不部署、只靠对账腿兜底。', '以后任何人再写一条会 arm auto-merge 的路径、或把合并凭据改回内置 token，作业面必须当场红，而不是等线上停更几天才被发现。'],
+    expectations=[],
+    data_checks=['**病（issue #6418 的形态）**：内置 token 合并 ⇒ 合并者恒为 `app/github-actions` ⇒ GitHub 的**反递归抑制**（GITHUB_TOKEN 引发的事件，除 `workflow_dispatch` / `repository_dispatch` 外不创建新的 workflow run）吞掉该次合并的 `push` 事件 ⇒ 三条部署腿的主触发面（`on.push`）整条失效，只靠 `deploy-reconcile` 的 cron 兜底（**实测被节流到 ~6 次/日**，不是「20 分钟一次」）。这不是一处配置笔误，是**一族**：「用哪枚凭据合并」这件事决定了此后整条 push 触发链有没有电，而当时没有任何判据看着它。', '**判据 1（实例：arm job 必须走非内置凭据）**：`automerge.yml` 里每个会 arm merge 的 job 必须引用 `secrets.AUTOMERGE_PAT`，且**不得**把内置凭据（`secrets.GITHUB_TOKEN` / `github.token`）直接绑到 `GH_TOKEN`（那正是被吞的形态）⇒ 删掉 PAT 引用 / 改回内置写法 ⇒ 具名报出该 job。判据 = tests/unit_ci_workflows/test_automerge_merge_credential.py::TestRealWorkflow::test_real_workflow_has_no_problems。', '**判据 2（类级元守卫：未登记即红 + 双向对齐）**：会 arm 的 job 由**冻结登记表** `MERGE_JOBS_FROZEN` 认领，且与**现取**（按 `gh pr merge` / `MERGE_CMD_FAILED` 形态扫出来的 job 集合）**双向相等** ⇒ 新造一条会 arm 的路径而没登记、或登记的 job 不再 arm ⇒ 各自判红（台账不许给不存在的保护盖章）。判据 = 同文件::TestRealWorkflow::test_registry_matches_reality（登记表不可为空靠 arm_jobs 的防空断言兜住）。', '**判据 3（出声：缺 secret 不得静默降级）**：每个 arm job 必须声明显式回落（`env.FALLBACK_TOKEN`）**且**在正文里写出具名告警（`::warning::` + 「AUTOMERGE_PAT 未配置」+ 抑制后果）⇒ 缺 secret 时仍能 arm（不卡合并），但 run 上必须看得见「本次合并仍会被抑制」。判据 = 同文件::TestRealWorkflow::test_real_workflow_has_no_problems 的三、四条检查。', '**判据 4（判别力自证 + 对照读数）**：七种坏形态在**内存语料**上各自判红（摘掉 PAT 引用 / 把内置 token 绑回 GH_TOKEN / 摘掉回落声明 / 摘掉回落告警 / 新增未登记 arm job / 删光所有 arm job 触发防空跑 / 注入注释），并有一条**对照读数**（只往 YAML 里加注释 —— 哪怕包含 PAT 名与 arm 命令字样 —— ⇒ 不红）。判据 = 同文件::TestRedProofs（8 条）。', '**判据 5（危险通道：新增非内置 secrets 引用的 owner 确认）**：Danger Scan 的「修改 workflow 且新增非内置 secrets 引用 ⇒ BLOCK」原本**结构性**挡死「合法地引入一枚新 secret」（无任何记录确认的地方）⇒ 新增 owner 评论通道 `/danger-ack new-secret <NAME|all>`：**逐名比对**（该 workflow 新增的名字 ⊆ 已确认集合才降 WARN）、**无确认时与补通道前逐字相同地 BLOCK**、非 owner 的 ack 一律不算、`all` 只能在解析侧展开成具体名字。判据 = tests/unit_ci_workflows/test_danger_scan.py::TestNewSecretAckChannel（11 条，含 fail-closed 与「内置 GITHUB_TOKEN 豁免口径一字未动」的对照）。', '**同批重锚（改了约束对象就必须同批改它的快照）**：① `tests/unit_ci_workflows/test_automerge_bot_safe_path.py` 的 `ORIGINAL_NONBOT_RUN_RAW`（非 bot 合并 step 的逐字快照）随「⓪ 选合并凭据」段同批重锚，并保留变异红证；② 原「本 PR 不得新增 `secrets.*` 引用」那条**自设硬约束**由 #6418 命题改写为「两个 arm job 引用的都是非内置的 `AUTOMERGE_PAT`」；③ `.github/workflows/deploy-reconcile.yml` 头部「主触发已失效 / 20 分钟兜底」两处**假真值**同批订正。', '🔴 **覆盖边界（照实登记）**：① 判据**不读**「`AUTOMERGE_PAT` 这枚 secret 在仓库里配没配、权限够不够」—— 它只读仓内文件（零 `gh`、零网络、零时钟，同 test_publish_leg_fallback_surface.py 口径）；运行期那一半由 arm step 自己打印的 actor 读数 + 缺 secret 时的 `::warning::` 承接；② 「PAT 合并确实不再被抑制」这条只能由**运行期读数**证明（合并后 `gh run list --branch main --event push` 当场见到 push run），本判据不覆盖；③ 兜底面（`schedule` / `deploy-reconcile` / `post-merge-verify` 的补偿面）**一条都没删** —— 凭据缺失或轮换时会退回当前形态，那时兜底面是唯一的保护。'],
+    skip_reason='[backend-contract] 纯静态判据（零 LLM、零网络、零时钟；只读 `.github/workflows/automerge.yml` + `.github/danger_scan.py` 两份语料）由 tests/unit_ci_workflows/test_automerge_merge_credential.py 与 tests/unit_ci_workflows/test_danger_scan.py::TestNewSecretAckChannel 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'ci', 'auto-merge', 'credential', 'trigger-surface', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯静态用例：前置 = ① `.github/workflows/automerge.yml` 在场且可被 `yaml.safe_load` 解析（含两个 arm job）；② `.github/danger_scan.py` 在场且可被 `sys.path` 导入（`tests/unit_ci_workflows/test_danger_scan.py` 的既有导入面）。前置由判据自身持有：文件缺失 / YAML 解析失败 / 一个 arm job 都取不到 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -13233,6 +13252,7 @@ ALL_CASES = (
     _CASE_PK_001,
     _CASE_MC_080,
     _CASE_MC_083,
+    _CASE_MC_084,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

@@ -204,6 +204,15 @@ bad = workflow_structure_violations(mutant)              # 判据吃的是**当�
 两条发布腿各自补 `schedule` 兜底面 + 落静态形状判据）。🔴 **口径订正**：判据语义是 **`现取 ≤ 上限`**（只许缩短）⇒
 「把上限抬到高于现取条数」**本身不会红**；「上限 == 现取」靠**销账时同批降上限**这个动作，不是靠判据。）
 
+> 🔴 **口径订正（2026-10-06，issue #6418）：本表多处把「本仓的 `push` 是被吞的」写成恒真前提 —— 现按条件式读。**
+> 自 #6418 起，`.github/workflows/automerge.yml` 的合并凭据改用**非内置** `secrets.AUTOMERGE_PAT`
+> （合并者不再是 `app/github-actions` ⇒ 不再触发 GitHub 的反递归抑制）⇒ 合并产生的 `push` 事件
+> **恢复触发**，三条部署腿的主触发面复活。**但这是条件式的**：`AUTOMERGE_PAT` 未配置 / 轮换失效时，
+> arm step 打具名 `::warning::` 并回落内置 token ⇒ 退回「push 被吞」形态 ⇒ **本表要求的兜底面一条都不许删**
+> （`FM-E17` 的每日 `schedule` / `deploy-reconcile` / 各腿的补偿面）—— 那正是凭据缺失那一刻的全部保护。
+> 判据 = `tests/unit_ci_workflows/test_automerge_merge_credential.py`（用例 `MC-084`）；
+> 复算（现取）：`gh run list --branch main --event push --limit 300 --json headSha,createdAt`。
+
 ## 口径：几条绿色腿**不是**它名字读起来的意思（2026-10-03 固化，CI 审计 issue #6144 的 P2）
 
 > **为什么单开一节**：下面每条的**绿**都与「这条链真的跑通了」长得一模一样，而**没有任何东西

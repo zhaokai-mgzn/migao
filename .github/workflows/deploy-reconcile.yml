@@ -7,7 +7,20 @@
 # 对账逻辑：checkout main（PR 事件时 GITHUB_SHA 是 PR head，必须切到 main 取 HEAD）
 # → 逐服务判定「main HEAD 的代码状态是否已部署」→ 未部署则 gh workflow run dispatch 对应 deploy。
 # 实测提醒（2026-09-20）：近 15 次 deploy-*.yml run **全是 workflow_dispatch**（零 push、零
-# schedule）⇒ 部署腿的主触发实际已失效，本对账是唯一兜底。
+# schedule）⇒ 当时部署腿的主触发**实际已失效**，本对账是唯一兜底。
+# 🔴 **2026-10-06 订正（issue #6418）—— 这句话现在是条件式的，请按下面读**：
+#   ① **主触发已恢复**：`automerge.yml` 的合并凭据改用**非内置**的 `AUTOMERGE_PAT`
+#      （Settings → Secrets 里那枚；名字里不写 `secrets.` 前缀是**故意的** —— 本行是注释，
+#       而 Danger Scan 的 secrets 判据对「行首 `+#` 形态」的注释行不做剥离，写全名会被当成新增引用）
+#      （合并者不再是 `app/github-actions` ⇒ 不再触发 GitHub 的反递归抑制）⇒ 合并产生的
+#      `push` 事件重新触发三条部署腿。判据 = `tests/unit_ci_workflows/test_automerge_merge_credential.py`。
+#   ② **但它是条件式的**：`AUTOMERGE_PAT` 未配置 / 被轮换失效时，arm step 会打具名 `::warning::`
+#      并**回落到内置 token** ⇒ 退回上面那个形态（push 全被吞）⇒ **本对账仍是那时的唯一兜底**。
+#      ⇒ 兜底面（本文件 + 各腿 `on.schedule`）**一条都不删** —— 凭据缺失那一刻它们就是全部保护。
+#   ③ **顺带订正一处假真值**：「20 分钟兜底」不成立 —— `*/20` 的 cron **被 GitHub 节流**，
+#      现取实测相邻间隔 **2.5~8.6 小时**（仓内台账 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json`
+#      的现取读数：名义 72 次/日 → 实得 6.3 次/日 = 8.4%）。复算：
+#      `gh run list --workflow=deploy-reconcile.yml --event schedule --limit 40 --json createdAt`
 #
 # ── v5（issue #4827：「兜底静默失效」根治）─────────────────────────────────────
 # 事故：run 35497126164（2026-09-20 07:32:04，`workflow_dispatch`，main HEAD 593504de9）
