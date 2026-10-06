@@ -135,14 +135,15 @@ TOOLS: dict[str, ToolSpec] = {
         criteria=(_AAPI_TEST + "service/SavingMetricsBoardRealDbTest.java",),
     ),
     "scripts/saving-metrics-red-proof-web.py": ToolSpec(
-        floor=5,
-        heavy="node + npm（admin-web 依赖；5 条变异实测 12s）",
+        floor=6,
+        heavy="node + npm（admin-web 依赖；6 条变异实测约 40s）",
         impl=(
             "frontend/admin-web/src/lib/saving-board.ts",
             "frontend/admin-web/src/app/(dashboard)/production/saving-board/page.tsx",
         ),
         criteria=(
             "frontend/admin-web/tests/unit/components/SavingBoard.test.tsx",
+            "frontend/admin-web/tests/unit/components/SavingBoardStory.test.tsx",
             "frontend/admin-web/tests/unit/lib/saving-board.test.ts",
         ),
     ),
