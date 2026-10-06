@@ -1,0 +1,540 @@
+{
+  "at": "2026-10-05T23:26:39.626Z",
+  "subjectSha": "73327161f",
+  "tenantId": 25,
+  "stamp": "748560",
+  "counts": {
+    "pass": 7,
+    "fail": 2,
+    "skip": 2
+  },
+  "rows": [
+    {
+      "state": "pass",
+      "id": "P4-BTN:admin",
+      "name": "写按钮显隐矩阵：管理员",
+      "detail": "检查 6 页；不符 0 []",
+      "evidence": [
+        "DOM button 可见性",
+        "out/map.json#prefixes",
+        "permissions（DB）"
+      ]
+    },
+    {
+      "state": "fail",
+      "id": "P4-BTN:customer_service",
+      "name": "写按钮显隐矩阵：客服",
+      "detail": "检查 4 页；不符 1 [{\"p\":\"/knowledge\",\"write\":\"knowledge:manage\",\"expect\":false,\"actual\":true}]",
+      "evidence": [
+        "DOM button 可见性",
+        "out/map.json#prefixes",
+        "permissions（DB）"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P4-BTN:finance",
+      "name": "写按钮显隐矩阵：财务",
+      "detail": "检查 2 页；不符 0 []",
+      "evidence": [
+        "DOM button 可见性",
+        "out/map.json#prefixes",
+        "permissions（DB）"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P4-BTN:knowledge_editor",
+      "name": "写按钮显隐矩阵：知识编辑",
+      "detail": "检查 2 页；不符 0 []",
+      "evidence": [
+        "DOM button 可见性",
+        "out/map.json#prefixes",
+        "permissions（DB）"
+      ]
+    },
+    {
+      "state": "fail",
+      "id": "P4-BTN:operator",
+      "name": "写按钮显隐矩阵：运营",
+      "detail": "检查 6 页；不符 1 [{\"p\":\"/knowledge\",\"write\":\"knowledge:manage\",\"expect\":false,\"actual\":true}]",
+      "evidence": [
+        "DOM button 可见性",
+        "out/map.json#prefixes",
+        "permissions（DB）"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P4-BTN:product_manager",
+      "name": "写按钮显隐矩阵：商品管理员",
+      "detail": "检查 1 页；不符 0 []",
+      "evidence": [
+        "DOM button 可见性",
+        "out/map.json#prefixes",
+        "permissions（DB）"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P4-BTN:sales",
+      "name": "写按钮显隐矩阵：销售",
+      "detail": "检查 3 页；不符 0 []",
+      "evidence": [
+        "DOM button 可见性",
+        "out/map.json#prefixes",
+        "permissions（DB）"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P4-W1",
+      "name": "管理员在「员工管理」页建员工（页面操作 → DB 落库）",
+      "detail": "DB 落库 users#fd72faf33e84c9d7513dc77b35a82348 username=a06_probe_003057 position=客服 status=active；权限快照(12) == 岗位默认权限(12) ⇒ true；岗位下拉 option=[\"请选择岗位\",\"管理员\",\"客服\",\"财务\"]",
+      "evidence": [
+        "out/shots/w1-employee.png",
+        "SQL: select * from users where username=…"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P4-W2",
+      "name": "知识编辑在「知识库」页建卡片（页面操作 → DB 落库）",
+      "detail": "建前 1 条 → 建后 2 条；最新行={\"id\":\"9019e8fbca7ef192ac6c3779d33fcb96\",\"question\":\"A06验收知识003057问法\",\"answer\":\"A06验收知识003057回答\",\"category\":\"faq\",\"status\":\"draft\",\"created_by\":\"admin\"}；含探针串=true；页面反馈=[]",
+      "evidence": [
+        "out/shots/w2-knowledge.png",
+        "SQL: select * from knowledge_cards order by created_at desc limit 1"
+      ]
+    },
+    {
+      "state": "skip",
+      "id": "P4-W3",
+      "name": "销售在「订单列表」页新建订单（页面操作 → DB 落库）",
+      "detail": "DB 无新行；选中颜色=咖色 合计=\"合计 ¥211.20 1 行加工费未定价（组合那半按 0 计） 费用明细 提交订单 \" 校验清单=\"还差 1 项（点一条可直接定位）： |  | 有 1 行加工费未定价（组合那半按 0 计）⇒ 请先定价再下单：拼接。可就地改单价，或去「加工费组合」定价 | 费用明细 | 1.阳离子绒布咖色 | ¥211.20 | 商品2.4 米 × ¥88.00/米 | ¥211.20 | 加工组合未定价（组合那半按 0 计）· 拼接 | 未定价 | 接高未定价（按 0 计） | ¥0.00 | 商品小计 | ¥211.20 | 加工费 | ¥0.00 |  | 有 1 行加工费未定价 —— 组合那半按 0 计。请为下列\" 页面反馈=[]",
+      "evidence": [
+        "out/shots/w3-order-form.png",
+        "SQL: select * from orders where customer_name=…"
+      ],
+      "rawState": "fail",
+      "reclassReason": "页面校验清单逐字：「还差 1 项 … 有 1 行加工费未定价（组合那半按 0 计）⇒ 请先定价再下单：拼接」= 产品有意的业务闸门；驱动未去定价"
+    },
+    {
+      "state": "skip",
+      "id": "P4-W4",
+      "name": "客服在「售后工单」页建工单",
+      "detail": "前置不成立：本租户无可用订单（W3 未产出订单号）⇒ 关联订单为必填 ⇒ 本趟**未覆盖**（不冒充通过）",
+      "evidence": []
+    }
+  ],
+  "buttonMatrix": [
+    {
+      "roleCode": "admin",
+      "rows": [
+        {
+          "path": "/orders",
+          "read": "order:list",
+          "write": "order:create",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/products",
+          "read": "product:list",
+          "write": "product:create",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/after-sales",
+          "read": "after_sales:view",
+          "write": "order:refund",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/knowledge",
+          "read": "knowledge:view",
+          "write": "knowledge:manage",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/inbound-orders",
+          "read": "inbound:view",
+          "write": "inbound:create",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/employees",
+          "read": "employee:list",
+          "write": "employee:create",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "roleCode": "customer_service",
+      "rows": [
+        {
+          "path": "/orders",
+          "read": "order:list",
+          "write": "order:create",
+          "expectVisible": false,
+          "actualVisible": false,
+          "count": 0,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/products",
+          "skipped": "无读码（**本格未做负向探测** ⇒ 未覆盖，不得据此说「已被拦」）"
+        },
+        {
+          "path": "/after-sales",
+          "read": "after_sales:view",
+          "write": "order:refund",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/knowledge",
+          "read": "knowledge:view",
+          "write": "knowledge:manage",
+          "expectVisible": false,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": false
+        },
+        {
+          "path": "/inbound-orders",
+          "read": "inbound:view",
+          "write": "inbound:create",
+          "expectVisible": false,
+          "actualVisible": false,
+          "count": 0,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/employees",
+          "skipped": "无读码（**本格未做负向探测** ⇒ 未覆盖，不得据此说「已被拦」）"
+        }
+      ]
+    },
+    {
+      "roleCode": "finance",
+      "rows": [
+        {
+          "path": "/orders",
+          "read": "order:list",
+          "write": "order:create",
+          "expectVisible": false,
+          "actualVisible": false,
+          "count": 0,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/products",
+          "skipped": "无读码（**本格未做负向探测** ⇒ 未覆盖，不得据此说「已被拦」）"
+        },
+        {
+          "path": "/after-sales",
+          "skipped": "无读码（该页已被 p2 负向实测拦下）"
+        },
+        {
+          "path": "/knowledge",
+          "skipped": "无读码（该页已被 p2 负向实测拦下）"
+        },
+        {
+          "path": "/inbound-orders",
+          "read": "inbound:view",
+          "write": "inbound:create",
+          "expectVisible": false,
+          "actualVisible": false,
+          "count": 0,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/employees",
+          "skipped": "无读码（**本格未做负向探测** ⇒ 未覆盖，不得据此说「已被拦」）"
+        }
+      ]
+    },
+    {
+      "roleCode": "knowledge_editor",
+      "rows": [
+        {
+          "path": "/orders",
+          "skipped": "无读码（**本格未做负向探测** ⇒ 未覆盖，不得据此说「已被拦」）"
+        },
+        {
+          "path": "/products",
+          "read": "product:list",
+          "write": "product:create",
+          "expectVisible": false,
+          "actualVisible": false,
+          "count": 0,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/after-sales",
+          "skipped": "无读码（该页已被 p2 负向实测拦下）"
+        },
+        {
+          "path": "/knowledge",
+          "read": "knowledge:view",
+          "write": "knowledge:manage",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/inbound-orders",
+          "skipped": "无读码（**本格未做负向探测** ⇒ 未覆盖，不得据此说「已被拦」）"
+        },
+        {
+          "path": "/employees",
+          "skipped": "无读码（**本格未做负向探测** ⇒ 未覆盖，不得据此说「已被拦」）"
+        }
+      ]
+    },
+    {
+      "roleCode": "operator",
+      "rows": [
+        {
+          "path": "/orders",
+          "read": "order:list",
+          "write": "order:create",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/products",
+          "read": "product:list",
+          "write": "product:create",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/after-sales",
+          "read": "after_sales:view",
+          "write": "order:refund",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/knowledge",
+          "read": "knowledge:view",
+          "write": "knowledge:manage",
+          "expectVisible": false,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": false
+        },
+        {
+          "path": "/inbound-orders",
+          "read": "inbound:view",
+          "write": "inbound:create",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/employees",
+          "read": "employee:list",
+          "write": "employee:create",
+          "expectVisible": false,
+          "actualVisible": false,
+          "count": 0,
+          "loading": false,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "roleCode": "product_manager",
+      "rows": [
+        {
+          "path": "/orders",
+          "skipped": "无读码（**本格未做负向探测** ⇒ 未覆盖，不得据此说「已被拦」）"
+        },
+        {
+          "path": "/products",
+          "read": "product:list",
+          "write": "product:create",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/after-sales",
+          "skipped": "无读码（**本格未做负向探测** ⇒ 未覆盖，不得据此说「已被拦」）"
+        },
+        {
+          "path": "/knowledge",
+          "skipped": "无读码（该页已被 p2 负向实测拦下）"
+        },
+        {
+          "path": "/inbound-orders",
+          "skipped": "无读码（**本格未做负向探测** ⇒ 未覆盖，不得据此说「已被拦」）"
+        },
+        {
+          "path": "/employees",
+          "skipped": "无读码（**本格未做负向探测** ⇒ 未覆盖，不得据此说「已被拦」）"
+        }
+      ]
+    },
+    {
+      "roleCode": "sales",
+      "rows": [
+        {
+          "path": "/orders",
+          "read": "order:list",
+          "write": "order:create",
+          "expectVisible": true,
+          "actualVisible": true,
+          "count": 1,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/products",
+          "read": "product:list",
+          "write": "product:create",
+          "expectVisible": false,
+          "actualVisible": false,
+          "count": 0,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/after-sales",
+          "skipped": "无读码（该页已被 p2 负向实测拦下）"
+        },
+        {
+          "path": "/knowledge",
+          "skipped": "无读码（该页已被 p2 负向实测拦下）"
+        },
+        {
+          "path": "/inbound-orders",
+          "read": "inbound:view",
+          "write": "inbound:create",
+          "expectVisible": false,
+          "actualVisible": false,
+          "count": 0,
+          "loading": false,
+          "ok": true
+        },
+        {
+          "path": "/employees",
+          "skipped": "无读码（**本格未做负向探测** ⇒ 未覆盖，不得据此说「已被拦」）"
+        }
+      ]
+    }
+  ],
+  "residue": {
+    "a06_users": 10,
+    "knowledge_total": 2,
+    "orders_total": 0,
+    "tickets_total": 1
+  },
+  "orderNo": null,
+  "reclassified": [],
+  "skippedCellCitation": {
+    "total": 18,
+    "backedByP2": 6,
+    "dangling": [
+      {
+        "role": "customer_service",
+        "path": "/products"
+      },
+      {
+        "role": "customer_service",
+        "path": "/employees"
+      },
+      {
+        "role": "finance",
+        "path": "/products"
+      },
+      {
+        "role": "finance",
+        "path": "/employees"
+      },
+      {
+        "role": "knowledge_editor",
+        "path": "/orders"
+      },
+      {
+        "role": "knowledge_editor",
+        "path": "/inbound-orders"
+      },
+      {
+        "role": "knowledge_editor",
+        "path": "/employees"
+      },
+      {
+        "role": "product_manager",
+        "path": "/orders"
+      },
+      {
+        "role": "product_manager",
+        "path": "/after-sales"
+      },
+      {
+        "role": "product_manager",
+        "path": "/inbound-orders"
+      },
+      {
+        "role": "product_manager",
+        "path": "/employees"
+      },
+      {
+        "role": "sales",
+        "path": "/employees"
+      }
+    ]
+  }
+}
