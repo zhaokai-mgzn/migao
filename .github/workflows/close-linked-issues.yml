@@ -12,6 +12,9 @@ name: Close Linked Issues on Merge
 #
 # ⚠️ 触发可靠性（issue #3585 实测，本文件此前失效的真因）：
 # auto-merge 由 automerge.yml 用 secrets.GITHUB_TOKEN 开启 → 合并者是 app/github-actions；
+# 🔴 **2026-10-06 订正（issue #6418）**：合并凭据已改用**非内置** `secrets.AUTOMERGE_PAT` ⇒
+#     「合并者是 app/github-actions」**不再恒真**（PAT 生效时 closed/push 面会被触发）；
+#     ⚠️ 条件式：PAT 缺失/轮换失效时退回本形态 ⇒ 下面的选用口径与兜底面**一条都不撤**。
 # **GITHUB_TOKEN 引发的合并不会创建新的 workflow run**（GitHub 防递归），于是：
 #   · `pull_request_target [closed]` 对「自动合并」100% 不触发（实测：人工合并 #3395
 #     09:43:48Z → run 09:43:51Z；bot 合并 #3552/#3554 05:14Z → **零 run**）；

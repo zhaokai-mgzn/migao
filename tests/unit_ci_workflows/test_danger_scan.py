@@ -18,6 +18,9 @@ from danger_scan import (
     ack_env_lines,
     parse_migration_acks,
     migration_ack_env_lines,
+    new_secret_names,
+    parse_secret_acks,
+    secret_ack_env_lines,
     verify_migration_acks,
 )
 
@@ -240,7 +243,14 @@ class TestSecretsCommentStripping:
     MOVED_REMOVED = '-          echo "${{ secrets.ACR_PASSWORD }}" | docker login'
 
     def _blocker(self, detail):
-        return f"{self.WF} 新增 1 处非内置 secrets 引用 —— 需人工审查：{detail}"
+        # #6418 起 blocker 尾部多了「未确认：<名> + marker 出口」（G3 的「出口真可行动」）——
+        # 本类的**检测面**（哪一行算真新增）一字未动，故这里只把固定尾部补上：
+        # 断言仍是**逐字**比对，判据自己漂移照样会红。
+        return (
+            f"{self.WF} 新增 1 处非内置 secrets 引用 —— 需人工审查：{detail}"
+            "（未确认：NEW_SECRET；维护者评论 `/danger-ack new-secret NEW_SECRET` 后重跑本检查，"
+            "或 `/danger-ack new-secret all` 一次确认本 PR 新增的全部）"
+        )
 
     def _analyze_diff(self, hunk):
         """按 main() 的真实链路判 BLOCK：diff 行 → 前置筛选（同源）→ 判定 → analyze。"""
@@ -1231,3 +1241,105 @@ class TestArchiveMoveIsNotARewrite:
                    ("R100", f"{self.LIVE}/V45__z.sql")]
         kept, moves = danger_scan.split_migration_moves(changes)
         assert kept == changes and moves == []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+class TestNewSecretAckChannel:
+    """「修改 workflow 且新增非内置 secrets 引用」的 owner 确认通道（#6418）。
+
+    病：该形态是 BLOCK，而文案写「需人工审查」却**没有记录确认的地方** ⇒ 在 `enforce_admins=true`
+    的仓库里「合法地引入一枚新 secret」**结构性合不了**（同 #4295 删除 workflow 的处境）。
+    修法：owner 评论 `/danger-ack new-secret <NAME|all>` ⇒ 降 WARN + 留痕；无确认时**逐字仍是
+    BLOCK**（fail-closed），且放行判据是**逐名比对**（不是「有 ack 就放行」）。
+    """
+
+    WF = ".github/workflows/automerge.yml"
+    NEW_LINE = "+          AUTOMERGE_PAT: ${{ secrets.AUTOMERGE_PAT }}"
+
+    def _analyze(self, lines, acked=frozenset()):
+        return analyze(
+            workflow_changes=[("M", self.WF)], wf_new_secrets={self.WF: lines},
+            deleted_files=[], deploy_files=[], migration_changes=[], schema_changes=[],
+            secret_acked=acked,
+        )
+
+    def test_without_ack_still_blocks_with_original_wording(self):
+        """**无 ack 时与补通道前逐字相同**（这是本通道的承重不变量）。"""
+        blockers, warnings = self._analyze([self.NEW_LINE])
+        assert len(blockers) == 1, blockers
+        assert blockers[0].startswith(
+            f"{self.WF} 新增 1 处非内置 secrets 引用 —— 需人工审查"
+        ), blockers
+        assert not any("已由维护者显式确认" in w for w in warnings)
+
+    def test_blocker_names_the_missing_secret_and_the_exit(self):
+        """G3：判红必须**点名缺哪个** + 给出**可复制**的出口（marker 逐字）。"""
+        blockers, _ = self._analyze([self.NEW_LINE])
+        assert "AUTOMERGE_PAT" in blockers[0]
+        assert "/danger-ack new-secret AUTOMERGE_PAT" in blockers[0]
+        assert "/danger-ack new-secret all" in blockers[0]
+
+    def test_owner_ack_downgrades_to_warn(self):
+        blockers, warnings = self._analyze([self.NEW_LINE], acked={"AUTOMERGE_PAT"})
+        assert blockers == []
+        assert any("已由维护者显式确认" in w and "AUTOMERGE_PAT" in w for w in warnings)
+
+    def test_partial_ack_still_blocks_and_names_the_gap(self):
+        """两枚新 secret 只确认一枚 ⇒ 照旧 BLOCK（逐名比对，不是"有 ack 就放行"）。"""
+        other = "+          OTHER_PAT: ${{ secrets.OTHER_PAT }}"
+        blockers, _ = self._analyze([self.NEW_LINE, other], acked={"AUTOMERGE_PAT"})
+        assert len(blockers) == 1, blockers
+        assert "OTHER_PAT" in blockers[0]
+        assert "AUTOMERGE_PAT" not in blockers[0].split("未确认：")[1], "已确认的名字不该出现在「未确认」里"
+
+    def test_ack_of_a_name_that_was_not_added_does_not_grant(self):
+        blockers, _ = self._analyze([self.NEW_LINE], acked={"SOME_OTHER_SECRET"})
+        assert len(blockers) == 1, blockers
+
+    def test_builtin_token_exemption_unchanged(self):
+        """内置凭据豁免口径一字未动（新的通道不碰它）。"""
+        line = "+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
+        blockers, warnings = self._analyze([line], acked=frozenset())
+        assert blockers == []
+        assert warnings == [f"修改 workflow {self.WF} —— 建议人工复核"]
+
+    def test_new_secret_names_filters_builtin_and_dedupes(self):
+        lines = [
+            "+  A: ${{ secrets.BETA_PAT }}",
+            "+  B: ${{ secrets.BETA_PAT }}",
+            "+  C: ${{ secrets.GITHUB_TOKEN }}",
+        ]
+        assert new_secret_names(lines) == ["BETA_PAT"]
+
+    def test_parse_secret_acks_owner_only(self):
+        comments = [
+            {"user": {"login": "someone-else"}, "body": "/danger-ack new-secret BETA_PAT",
+             "html_url": "u0"},
+            {"user": {"login": "owner"}, "body": "LGTM", "html_url": "u1"},
+        ]
+        acked, via = parse_secret_acks(comments, "owner", ["BETA_PAT"])
+        assert acked == set() and via == "", "非 owner 的 ack 不得生效"
+
+        comments.append({"user": {"login": "owner"},
+                         "body": "/danger-ack new-secret BETA_PAT", "html_url": "u2"})
+        acked, via = parse_secret_acks(comments, "owner", ["BETA_PAT"])
+        assert acked == {"BETA_PAT"} and via == "u2"
+
+    def test_parse_secret_acks_all_expands_to_the_added_names(self):
+        comments = [{"user": {"login": "owner"},
+                     "body": "ok\n/danger-ack new-secret all", "html_url": "u3"}]
+        acked, _ = parse_secret_acks(comments, "owner", ["A_PAT", "B_PAT"])
+        assert acked == {"A_PAT", "B_PAT"}
+
+    def test_parse_secret_acks_fail_closed(self):
+        """无评论 / owner 为空 ⇒ 空集合（⇒ 仍 BLOCK）；env 行也必须是空值形态。"""
+        assert parse_secret_acks([], "owner", ["A_PAT"]) == (set(), "")
+        assert parse_secret_acks([{"user": {"login": "owner"}, "body": "/danger-ack new-secret all"}],
+                                 "", ["A_PAT"]) == (set(), "")
+        assert secret_ack_env_lines(set(), "owner", "") == [
+            "DANGER_ACK_SECRET=", "DANGER_ACK_SECRET_BY=", "DANGER_ACK_SECRET_URL="]
+
+    def test_ack_env_lines_shape(self):
+        assert secret_ack_env_lines({"B_PAT", "A_PAT"}, "owner", "u9") == [
+            "DANGER_ACK_SECRET=A_PAT,B_PAT", "DANGER_ACK_SECRET_BY=owner",
+            "DANGER_ACK_SECRET_URL=u9"]

@@ -4,6 +4,10 @@ name: verify-trigger
 #
 # ── 触发源为什么不能用 `pull_request: types:[closed]`（2026-09-14 实测，非推断）──
 # auto-merge 由 `automerge.yml` 用 `secrets.GITHUB_TOKEN` 开启 ⇒ **合并者恒为 `app/github-actions`**。
+# 🔴 **2026-10-06 订正（issue #6418）**：合并凭据已改用**非内置** `secrets.AUTOMERGE_PAT` ⇒
+#     「合并者恒为 `app/github-actions`」**不再恒真** —— PAT 生效时 `push` / `pull_request:[closed]`
+#     这些面**会**被触发。⚠️ **条件式**：PAT 未配置 / 轮换失效时 arm step 会打具名 `::warning::`
+#     并回落内置 token ⇒ 退回下面这个形态 ⇒ **本文件「改用不受该合并事件驱动的可靠触发源」的口径不撤**。
 # GitHub 既有语义：**由 `GITHUB_TOKEN` 引发的事件不创建新的 workflow run**（防递归）
 # ⇒ bot 合并的 PR **100% 不触发** `pull_request: [closed]`，而 bot 合并是本仓库常态。
 #

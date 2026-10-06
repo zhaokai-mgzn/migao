@@ -3092,7 +3092,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（84 case）
+## 杂项域（85 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4333,6 +4333,23 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-10-04 新增（issue #6295，P2·新租户开箱缺口）。取号 MC-083：main 上 misc 域为 MC-001~MC-082 ⇒ 取 MC-083。本单 = 类级元守卫（清单 ⇄ 链路双向对账，6 条判据 + 判别力自证）+ 豁免台账（onboarding_required_seed_ledger.json，只许缩短）；实例判据与红证见用例 OB-006。⚠️ 未固化（照实登记）：见 data_checks 末条覆盖边界三条。 ｜ tags: backend-contract, onboarding, required-initial-data, class-level-guard, fail-closed, red-proof
+
+### MC-084. 合并凭据 ⇄ push 触发面：会 arm auto-merge 的 job 必须引用非内置凭据（secrets.AUTOMERGE_PAT）且缺 secret 时显式具名回落，arm job 登记表双向对齐、未登记即红；新增非内置 secrets 引用的 owner 确认通道逐名比对、无确认时逐字仍 BLOCK 🔵
+```
+你: 合并完成后，改过 frontend/admin-web、backend/admin-api、backend/ai-agent-service 的代码应当在数分钟内自动部署，不该因为「合并用的是机器人 token」而静默不部署、只靠对账腿兜底。
+你: 以后任何人再写一条会 arm auto-merge 的路径、或把合并凭据改回内置 token，作业面必须当场红，而不是等线上停更几天才被发现。
+数据: **病（issue #6418 的形态）**：内置 token 合并 ⇒ 合并者恒为 `app/github-actions` ⇒ GitHub 的**反递归抑制**（GITHUB_TOKEN 引发的事件，除 `workflow_dispatch` / `repository_dispatch` 外不创建新的 workflow run）吞掉该次合并的 `push` 事件 ⇒ 三条部署腿的主触发面（`on.push`）整条失效，只靠 `deploy-reconcile` 的 cron 兜底（**实测被节流到 ~6 次/日**，不是「20 分钟一次」）。这不是一处配置笔误，是**一族**：「用哪枚凭据合并」这件事决定了此后整条 push 触发链有没有电，而当时没有任何判据看着它。
+数据: **判据 1（实例：arm job 必须走非内置凭据）**：`automerge.yml` 里每个会 arm merge 的 job 必须引用 `secrets.AUTOMERGE_PAT`，且**不得**把内置凭据（`secrets.GITHUB_TOKEN` / `github.token`）直接绑到 `GH_TOKEN`（那正是被吞的形态）⇒ 删掉 PAT 引用 / 改回内置写法 ⇒ 具名报出该 job。判据 = tests/unit_ci_workflows/test_automerge_merge_credential.py::TestRealWorkflow::test_real_workflow_has_no_problems。
+数据: **判据 2（类级元守卫：未登记即红 + 双向对齐）**：会 arm 的 job 由**冻结登记表** `MERGE_JOBS_FROZEN` 认领，且与**现取**（按 `gh pr merge` / `MERGE_CMD_FAILED` 形态扫出来的 job 集合）**双向相等** ⇒ 新造一条会 arm 的路径而没登记、或登记的 job 不再 arm ⇒ 各自判红（台账不许给不存在的保护盖章）。判据 = 同文件::TestRealWorkflow::test_registry_matches_reality（登记表不可为空靠 arm_jobs 的防空断言兜住）。
+数据: **判据 3（出声：缺 secret 不得静默降级）**：每个 arm job 必须声明显式回落（`env.FALLBACK_TOKEN`）**且**在正文里写出具名告警（`::warning::` + 「AUTOMERGE_PAT 未配置」+ 抑制后果）⇒ 缺 secret 时仍能 arm（不卡合并），但 run 上必须看得见「本次合并仍会被抑制」。判据 = 同文件::TestRealWorkflow::test_real_workflow_has_no_problems 的三、四条检查。
+数据: **判据 4（判别力自证 + 对照读数）**：七种坏形态在**内存语料**上各自判红（摘掉 PAT 引用 / 把内置 token 绑回 GH_TOKEN / 摘掉回落声明 / 摘掉回落告警 / 新增未登记 arm job / 删光所有 arm job 触发防空跑 / 注入注释），并有一条**对照读数**（只往 YAML 里加注释 —— 哪怕包含 PAT 名与 arm 命令字样 —— ⇒ 不红）。判据 = 同文件::TestRedProofs（8 条）。
+数据: **判据 5（危险通道：新增非内置 secrets 引用的 owner 确认）**：Danger Scan 的「修改 workflow 且新增非内置 secrets 引用 ⇒ BLOCK」原本**结构性**挡死「合法地引入一枚新 secret」（无任何记录确认的地方）⇒ 新增 owner 评论通道 `/danger-ack new-secret <NAME|all>`：**逐名比对**（该 workflow 新增的名字 ⊆ 已确认集合才降 WARN）、**无确认时与补通道前逐字相同地 BLOCK**、非 owner 的 ack 一律不算、`all` 只能在解析侧展开成具体名字。判据 = tests/unit_ci_workflows/test_danger_scan.py::TestNewSecretAckChannel（11 条，含 fail-closed 与「内置 GITHUB_TOKEN 豁免口径一字未动」的对照）。
+数据: **同批重锚（改了约束对象就必须同批改它的快照）**：① `tests/unit_ci_workflows/test_automerge_bot_safe_path.py` 的 `ORIGINAL_NONBOT_RUN_RAW`（非 bot 合并 step 的逐字快照）随「⓪ 选合并凭据」段同批重锚，并保留变异红证；② 原「本 PR 不得新增 `secrets.*` 引用」那条**自设硬约束**由 #6418 命题改写为「两个 arm job 引用的都是非内置的 `AUTOMERGE_PAT`」；③ `.github/workflows/deploy-reconcile.yml` 头部「主触发已失效 / 20 分钟兜底」两处**假真值**同批订正。
+数据: 🔴 **覆盖边界（照实登记）**：① 判据**不读**「`AUTOMERGE_PAT` 这枚 secret 在仓库里配没配、权限够不够」—— 它只读仓内文件（零 `gh`、零网络、零时钟，同 test_publish_leg_fallback_surface.py 口径）；运行期那一半由 arm step 自己打印的 actor 读数 + 缺 secret 时的 `::warning::` 承接；② 「PAT 合并确实不再被抑制」这条只能由**运行期读数**证明（合并后 `gh run list --branch main --event push` 当场见到 push run），本判据不覆盖；③ 兜底面（`schedule` / `deploy-reconcile` / `post-merge-verify` 的补偿面）**一条都没删** —— 凭据缺失或轮换时会退回当前形态，那时兜底面是唯一的保护。
+前置: 本用例是 [backend-contract] 纯静态用例：前置 = ① `.github/workflows/automerge.yml` 在场且可被 `yaml.safe_load` 解析（含两个 arm job）；② `.github/danger_scan.py` 在场且可被 `sys.path` 导入（`tests/unit_ci_workflows/test_danger_scan.py` 的既有导入面）。前置由判据自身持有：文件缺失 / YAML 解析失败 / 一个 arm job 都取不到 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它
+跳过: [backend-contract] 纯静态判据（零 LLM、零网络、零时钟；只读 `.github/workflows/automerge.yml` + `.github/danger_scan.py` 两份语料）由 tests/unit_ci_workflows/test_automerge_merge_credential.py 与 tests/unit_ci_workflows/test_danger_scan.py::TestNewSecretAckChannel 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-06 新增（issue #6418，P1·ops「部署三腿 push 触发已死」）。取号 MC-084：main 上 misc 域现取为 MC-001~MC-083（MC-083 的 merge_log 记「MC-001~MC-082 ⇒ 取 MC-083」）⇒ 取 MC-084；查同时刻 open PR：无一条改 `.github/cases/misc.yml`（`gh pr list --state open` × `gh pr view --json files` 逐条核）。本单 = 合并凭据换非内置（PAT 优先 + 显式具名回落）+ 类级元守卫（arm job 登记表双向对齐）+ Danger Scan 的 owner 确认通道（fail-closed，逐名比对）+ 同批重锚两处快照与两处假真值订正。⚠️ **未固化（照实登记）**：见 data_checks 末条覆盖边界三条 —— 尤其「运行期真的不再被抑制」只能靠合并后的 push run 读数自证（本单在 PR body 与 issue #6418 里给了那条复算命令）。 ｜ tags: backend-contract, ci, auto-merge, credential, trigger-surface, fail-closed, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -9958,7 +9975,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：7
-- 杂项域：84
+- 杂项域：85
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：63
@@ -10073,6 +10090,7 @@
 - PK-001: 包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）
 - MC-080: 「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（判定本体 = 单份共享库；AK/SK 引用在 job env 只声明一次），`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）
 - MC-083: 开租「必需初始数据清单」⇄ 入驻链路播种调用的类级元守卫（issue #6295）：清单里每条必须真的种、链路里每个种子协作者必须已登记（未登记即红）、后置条件校验必须接线在且逐项检查 enforced 项、豁免台账只许缩短、默认值字面量单一来源；判别力在内存语料上自证
+- MC-084: 合并凭据 ⇄ push 触发面：会 arm auto-merge 的 job 必须引用非内置凭据（secrets.AUTOMERGE_PAT）且缺 secret 时显式具名回落，arm job 登记表双向对齐、未登记即红；新增非内置 secrets 引用的 owner 确认通道逐名比对、无确认时逐字仍 BLOCK
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
