@@ -10,14 +10,14 @@ import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
 import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, ProcessingDoc, SalesDoc, OrderUrgencyPanel, EditOrderContentModal, PrintDocPreview } from '@/components/orders'
-import { PRINT_TARGET_SPECS, usePrintDoc } from '@/lib/print-doc'
+import { PRINT_TARGET_SPECS, usePrintDoc, type PrintTarget } from '@/lib/print-doc'
 // 费用构成（issue #5843）：详情页原先只算商品金额，与页脚订单级总额（**含**加工费）对不上
 // ⇒ 补「商品合计 + 加工费 + 其它构成 = 订单金额」这一块。判定与渲染都在
 // `components/orders/OrderFeeBreakdown.tsx` + `lib/order-fee-display.ts`（本页只接线、不自算）。
 // ⚠️ 直连组件路径（不走 `@/components/orders` 桶）：订单详情页单测把桶整体替身，
 // 直连才能让**真组件**参与渲染（否则「等式可见」这类判据测的是替身 = 空断言）。
 import OrderFeeBreakdown from '@/components/orders/OrderFeeBreakdown'
-import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
+import type { Order, OrderItem, LogisticsFormData, ProcessingOrder, OrderStatus } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { craftSpecRows } from '@/lib/craft-display'
 // 整卷售卖的分配文案（issue #5846）：**同一份**渲染实现（含负差额告警）——
@@ -311,10 +311,7 @@ export default function OrderDetailPage() {
         onConfirmReceive={() => setConfirmReceiveOpen(true)}
         onEditLogistics={() => setShowEditLogistics(true)}
         onRefund={() => setRefundModalOpen(true)}
-        onPrintShipment={() => openPreview('shipment')}
-        onPrintQuotation={() => openPreview('quotation')}
-        onPrintProcessing={() => openPreview('processing')}
-        onPrintSales={() => openPreview('sales')}
+        onPrint={openPreview}
       />
 
       {/* 基础信息 */}
@@ -556,6 +553,44 @@ function ConfirmModal({ open, title, message, loading, onClose, onConfirm }: Con
 
 // ============== 子组件 ==============
 
+/**
+ * 打印入口 × 订单状态（issue #6434）—— **唯一声明处**。
+ *
+ * 病根（用户 2026-10-06 报告「订单详情里没有打印功能」）：四个入口原先在
+ * `shipped` / `completed` 两个分支里**各写一份 JSX 字面量**，于是「待发货 / 生产中 / 待付款」
+ * 三个状态区**一个按钮都没有** —— 而这三张单据恰恰是发货**之前**就要用的：
+ * 销售单随货给客户、加工单下车间、报价单先行。
+ *
+ * => 收敛成一张表：新增状态 / 新增单据只改这里；按钮文案取 `PRINT_TARGET_SPECS[*].title`
+ * （与纸面自检层的标题**同一份**真值，不手写第二份字面量 —— 手写就会被类级元守卫判红）。
+ */
+const PRINT_TARGETS_BY_STATUS: Record<OrderStatus, PrintTarget[]> = {
+  // 待付款：报价先行（未付款谈不上销售单/加工单）
+  pending_payment: ['quotation'],
+  // 待发货（含 producing 生产中）：销售单随货、加工单下车间
+  pending_shipment: ['quotation', 'processing', 'sales'],
+  // 已发货 / 已完成：四份单据都可补打（与 #5651 / #5914 的既有口径逐条一致）
+  shipped: ['shipment', 'quotation', 'processing', 'sales'],
+  completed: ['shipment', 'quotation', 'processing', 'sales'],
+  // 已关闭 / 退款售后中：无单据可出
+  closed: [],
+  refund: [],
+}
+
+/** 打印入口按钮组：文案 / 顺序 / 在哪些状态出现，全部来自上面的矩阵 */
+function PrintActions({ status, onOpen }: { status: OrderStatus; onOpen: (target: PrintTarget) => void }) {
+  return (
+    <>
+      {PRINT_TARGETS_BY_STATUS[status].map((target) => (
+        <Button key={target} variant="secondary" onClick={() => onOpen(target)} className="gap-1.5">
+          <Printer className="w-4 h-4" />
+          {`打印${PRINT_TARGET_SPECS[target].title}`}
+        </Button>
+      ))}
+    </>
+  )
+}
+
 interface StatusSectionProps {
   order: Order
   /** 加工单（ProcessingOrderBlock 上报；null = 无加工单/未生成/查询失败） */
@@ -569,14 +604,8 @@ interface StatusSectionProps {
   onConfirmReceive: () => void
   onEditLogistics: () => void
   onRefund: () => void
-  /** 补打发货单（已发货/已完成；发货页有状态守卫进不去，重打只能在这里） */
-  onPrintShipment: () => void
-  /** 打印报价单（issue #4965）：与「打印发货单」并列，同一权限口径与写法 */
-  onPrintQuotation: () => void
-  /** 打印**加工单**（A4，issue #5651）：车间用的那张，按套分块 */
-  onPrintProcessing: () => void
-  /** 打印**销售单**（三联纸 241mm × 140mm，issue #5651）：随货给客户的那张 */
-  onPrintSales: () => void
+  /** 打印入口（issue #6434）：点哪份单据由 `PRINT_TARGETS_BY_STATUS` 决定，本页只接到共享打印入口 */
+  onPrint: (target: PrintTarget) => void
 }
 
 function StatusSection({
@@ -590,10 +619,7 @@ function StatusSection({
   onConfirmReceive,
   onEditLogistics,
   onRefund,
-  onPrintShipment,
-  onPrintQuotation,
-  onPrintProcessing,
-  onPrintSales,
+  onPrint,
 }: StatusSectionProps) {
   const status = normalizeOrderStatus(order.status as string)
   const display = displayOrderStatus(order.status as string)
@@ -635,6 +661,9 @@ function StatusSection({
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
+            {/* 打印入口（issue #6434）：待付款阶段「报价先行」—— 原先这里一个打印按钮都没有，
+                商家只能先把订单推成已发货才打得出一张报价单。 */}
+            <PrintActions status={status} onOpen={onPrint} />
             {/* 修改订单（issue #5842）：买家未付款（待付款）时的内容编辑入口 ——
                 收货信息 / 商品明细 / 加工项；金额保存时由服务端重算。
                 只在 pending_payment 分支出现：其余状态后端一律 422，界面不给死路。 */}
@@ -673,6 +702,9 @@ function StatusSection({
                 退款
               </Button>
             )}
+            {/* 打印入口（issue #6434）：待发货 / 生产中就是「销售单随货、加工单下车间」的实际时点 ——
+                原先这里一个打印按钮都没有，货还没发就印不出随货的那张纸。 */}
+            <PrintActions status={status} onOpen={onPrint} />
             {processingBlocked ? (
               <span className="text-sm text-amber-600">含加工项订单：先完成加工单再发货</span>
             ) : (
@@ -702,25 +734,9 @@ function StatusSection({
             <Button variant="secondary" onClick={onEditLogistics}>
               编辑物流
             </Button>
-            <Button variant="secondary" onClick={onPrintShipment} className="gap-1.5">
-              <Printer className="w-4 h-4" />
-              打印发货单
-            </Button>
-            {/* 打印报价单（issue #4965）：与「打印发货单」并列，同一权限口径与写法 */}
-            <Button variant="secondary" onClick={onPrintQuotation} className="gap-1.5">
-              <Printer className="w-4 h-4" />
-              打印报价单
-            </Button>
-            {/* 打印加工单（A4，issue #5651）：车间用；与报价单同范式、同一权限口径 */}
-            <Button variant="secondary" onClick={onPrintProcessing} className="gap-1.5">
-              <Printer className="w-4 h-4" />
-              打印加工单
-            </Button>
-            {/* 打印销售单（三联纸 241mm × 140mm，issue #5651）：随货给客户的那张 */}
-            <Button variant="secondary" onClick={onPrintSales} className="gap-1.5">
-              <Printer className="w-4 h-4" />
-              打印销售单
-            </Button>
+            {/* 打印入口（issue #6434）：四份单据由 `PRINT_TARGETS_BY_STATUS` 统一给出 ——
+                原先这四行在本分支与 completed 分支里**各写一份**，那正是「另一个状态区漏挂」的成因。 */}
+            <PrintActions status={status} onOpen={onPrint} />
             <Button onClick={onConfirmReceive} className="gap-1.5">
               确认收货
               <Zap className="w-4 h-4" />
@@ -743,24 +759,8 @@ function StatusSection({
                 退款
               </Button>
             )}
-            <Button variant="secondary" onClick={onPrintShipment} className="gap-1.5">
-              <Printer className="w-4 h-4" />
-              打印发货单
-            </Button>
-            {/* 打印报价单（issue #4965）：已完成订单同样可补打 */}
-            <Button variant="secondary" onClick={onPrintQuotation} className="gap-1.5">
-              <Printer className="w-4 h-4" />
-              打印报价单
-            </Button>
-            {/* 打印加工单 / 销售单（issue #5651）：已完成订单同样可补打 */}
-            <Button variant="secondary" onClick={onPrintProcessing} className="gap-1.5">
-              <Printer className="w-4 h-4" />
-              打印加工单
-            </Button>
-            <Button variant="secondary" onClick={onPrintSales} className="gap-1.5">
-              <Printer className="w-4 h-4" />
-              打印销售单
-            </Button>
+            {/* 打印入口（issue #6434）：与已发货同源（同一张矩阵表），已完成同样可补打 */}
+            <PrintActions status={status} onOpen={onPrint} />
           </div>
         </div>
       )}
