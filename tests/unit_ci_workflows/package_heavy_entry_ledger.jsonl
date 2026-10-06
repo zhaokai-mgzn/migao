@@ -9,5 +9,6 @@
 {"id":"1791251285.27613.31410","ts":"2026-10-06T01:48:06Z","role":"package","decision":"refused","at":"/private/tmp/wt-6392","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791253787.39841.5903","ts":"2026-10-06T02:29:48Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6398-inbound-list-table-nowrap","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791255521.71082.28063","ts":"2026-10-06T02:58:41Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6404-stock-ledger-page","why":"子包 worktree 直跑全量（无批次标记）"}
-{"id":"1791274493.46021.30687","ts":"2026-10-06T08:14:54Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6434-order-print-entries-by-status","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791274304.43552.2789","ts":"2026-10-06T08:11:46Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6432-worker-pin-reset","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791274493.46021.30687","ts":"2026-10-06T08:14:54Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6434-order-print-entries-by-status","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791276111.59425.6765","ts":"2026-10-06T08:41:51Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6439-production-label-direct-print","why":"子包 worktree 直跑全量（无批次标记）"}

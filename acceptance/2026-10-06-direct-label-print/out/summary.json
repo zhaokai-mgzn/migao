@@ -1,0 +1,23 @@
+{
+  "site": "http://localhost:3000",
+  "target": "/processing-orders/JG-20261006-5271/production",
+  "url": "http://localhost:3000/processing-orders/JG-20261006-5271/production",
+  "loginOk": true,
+  "afterLogin": "http://localhost:3000/dashboard",
+  "loginShape": {
+    "id": "login-tabs-v5485",
+    "ok": true,
+    "tabs": [
+      "员工登录账号密码",
+      "管理员登录手机验证码"
+    ]
+  },
+  "testids": 129,
+  "http5xx": [],
+  "files": [
+    "01-full.png",
+    "page-text.txt",
+    "testids.txt"
+  ],
+  "missingShots": []
+}

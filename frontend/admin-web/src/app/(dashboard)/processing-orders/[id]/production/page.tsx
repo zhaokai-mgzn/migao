@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, ArrowLeft, Copy, Printer, QrCode, RefreshCw, ShieldOff, Wrench } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
@@ -23,6 +23,10 @@ import CutPlanTable from '@/components/production/CutPlanTable'
 import PrintDocPreview from '@/components/orders/PrintDocPreview'
 import { PRINT_TARGET_SPECS, usePrintDoc } from '@/lib/print-doc'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
+// 免驱动直连打印（issue #6439）：**不做打印机定制功能** —— 通道层与机型无关，本页只接一条
+// 「直连打印机」入口；部位 ⇒ 洗水码数据的映射走单一处 `toWashLabelInputs`（页面不另写一份）
+import DirectLabelPrint from '@/components/production/DirectLabelPrint'
+import { toWashLabelInputs } from '@/lib/label-print/wash-label'
 import type {
   PieceworkSummary,
   ProcessingOrder,
@@ -226,15 +230,27 @@ export default function ProcessingOrderProductionPage() {
   const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc('labels')
 
   /**
-   * **真正**打印任务卡：先上报打印计数（fire-and-forget，失败不得阻断打印），再开印。
-   * ⚠️ 计数挪到「预览层里点打印」那一刻 —— 只看了预览没打纸的时候**不该**记账。
+   * 打印留痕（**唯一一处**：fire-and-forget，失败不得阻断打印）。
+   * 🔴 两条打印通道（系统打印 / 免驱动直连，issue #6439）**共用**它 ——
+   * 「打印必留痕」不因为换了条路就少记一次；反过来说，换通道**不换纪律**。
    */
-  const printTaskCards = () => {
+  const recordPrintOnce = useCallback(() => {
     if (po?.orderId) {
       productionApi.recordPrint(po.orderId).catch(() => {})
     }
+  }, [po?.orderId])
+
+  /**
+   * **真正**打印任务卡：先上报打印计数，再开印。
+   * ⚠️ 计数挪到「预览层里点打印」那一刻 —— 只看了预览没打纸的时候**不该**记账。
+   */
+  const printTaskCards = () => {
+    recordPrintOnce()
     requestPrint('labels')
   }
+
+  /** 直连通道要的洗水码数据（部位 ⇒ 数据走**单一处**映射；issue #6439） */
+  const washLabels = useMemo(() => toWashLabelInputs(operations?.positions), [operations])
 
   /** 点「打印任务卡」：先看纸面自检（标签纸型没配好 = 整卷打废） */
   const handlePrint = () => openPreview('labels')
@@ -467,6 +483,12 @@ export default function ProcessingOrderProductionPage() {
                   打印任务卡
                 </Button>
               </div>
+
+              {/* 免驱动直连打印机（issue #6439）—— **与上面那条并存，不是替换**：
+                  「打印任务卡」走系统打印，覆盖**任何**装了驱动的打印机（Windows 驱动 / USB /
+                  网络 / 已配对蓝牙）；这条只覆盖**带网页蓝牙协议**的机型，胜在**不用装驱动**。
+                  两条通道的能力面与边界见 `frontend/admin-web/src/lib/label-print/capability.ts`。 */}
+              <DirectLabelPrint className="mt-2" labels={washLabels} onRecordPrint={recordPrintOnce} />
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
