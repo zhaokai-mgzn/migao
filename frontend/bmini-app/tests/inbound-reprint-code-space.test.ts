@@ -258,7 +258,7 @@ describe('拍照补打：码空间判定与手输兜底（issue #5640）', () =>
     expect(reading.space).not.toBe('inbound-label')
     expect(reading.shortCode).toBe('7K3M9QP2')
     expect(reading.message).toBe(WASH_CODE_MESSAGE)
-    expect(reading.message).toContain('洗水码')
+    expect(reading.message).toContain('水洗唛')
     expect(reading.message).toContain('报工')
     expect(reading.action).toEqual(WASH_CODE_ACTION)
     expect(reading.action?.route).toBe(REPORT_PAGE_ROUTE)

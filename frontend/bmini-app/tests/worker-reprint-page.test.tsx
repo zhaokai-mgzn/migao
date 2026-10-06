@@ -215,7 +215,7 @@ describe('工人拍照补打页', () => {
     render(<WorkerReprintPage />)
     await shootAndRecognize()
     await waitFor(() => expect(screen.getByTestId('reprint-wash-code')).toBeTruthy())
-    expect(screen.getByTestId('reprint-wash-code').textContent).toContain('洗水码')
+    expect(screen.getByTestId('reprint-wash-code').textContent).toContain('水洗唛')
     expect(mockGetLabel).not.toHaveBeenCalled()
     expect(screen.queryByTestId('reprint-step-detail')).toBeNull()
     // 入口真的可点，且指向报工页（不是"说一句就完了"）
@@ -421,7 +421,7 @@ describe('落地页深链的页面侧（`?code=` 被消费且按码空间分流�
     render(<WorkerReprintPage />)
     await waitFor(() => expect(screen.getByTestId('reprint-wash-code')).toBeTruthy())
     expect(mockGetLabel).not.toHaveBeenCalled()
-    expect(screen.getByTestId('reprint-wash-code').textContent).toContain('洗水码')
+    expect(screen.getByTestId('reprint-wash-code').textContent).toContain('水洗唛')
     fireEvent.click(screen.getByTestId('reprint-go-report'))
     expect(mockNavigateTo).toHaveBeenCalledWith({ url: REPORT_PAGE_ROUTE })
   })
