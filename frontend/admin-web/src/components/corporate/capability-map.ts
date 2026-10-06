@@ -179,7 +179,7 @@ export const capabilityDomains: CapabilityDomain[] = [
       {
         name: '库存明细',
         detail:
-          '每一行 = 一次 SKU 级库存变更（变动前 → 变动后）：按时间 / 货号 / 原因 / 单据号 / 操作人逐笔回答「库存为什么从 X 变成 Y」。',
+          '逐笔列出 SKU 级库存变更（变动前 → 变动后），按时间 / 货号 / 原因 / 单据号 / 操作人成行，回答「库存为什么从 X 变成 Y」。',
         icon: ScrollText,
       },
     ],

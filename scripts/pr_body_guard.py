@@ -139,6 +139,17 @@ GH_PR_EDIT_RE = re.compile(r"\bgh\s+pr\s+(?:create|edit)\b")
 COMPUTED_MARKERS = ("$", "`", "%", "<(", "mktemp", "*")
 
 MAX_SCAN_BYTES = 512 * 1024
+
+#: **必扫清单**（不受 `MAX_SCAN_BYTES` 约束）。
+#:
+#: 体积上限的目的是跳过「多半不是源码的大文件」；但这几个文件的**正文就是本工具要判的东西** ——
+#: 一旦被上限吃掉，判据会**静默变空**（`tracked_text` 的 docstring 自己就写着这条风险）。
+#: 🔴 实测（2026-10-06，issue #6404）：`CHANGELOG.md` 涨到 512KB 之后被上限跳过 ⇒
+#: `test_pr_body_guard.py::test_scan_sample_set_is_non_empty_and_covers_changelog` 判红
+#: —— 而**任何**后续加 CHANGELOG 条目的 PR 都会红（临界点是被 #6404 顶破的：
+#: 合并前 `origin/main` 523,642 字节，距 524,288 只差 646 字节）。
+#: ⇒ 「判据的病灶文件」必须永远在样本里，体积不作为它的豁免理由。
+ALWAYS_SCAN = ("CHANGELOG.md",)
 DEFAULT_DIR_CANDIDATES = (".dsh-tmp", "tests/tmp")
 
 # ── R3（issue #5239）：Git 合并冲突标记 ──────────────────────────────────────
@@ -299,7 +310,9 @@ def tracked_text(root: "Path") -> "tuple[list[str], list[tuple[str, str]]] | Non
        `.next/` 这些工作区里存在但不在 git 里的目录**从不出现在清单中**（不靠 glob 扫工作区）；
         `.git/` 本身也不在 `ls-files` 里。
     ② 读不出来的（`UnicodeDecodeError` = 二进制）与 `OSError` ⇒ 跳过；
-    ③ 单文件 `> MAX_SCAN_BYTES` ⇒ 跳过。
+    ③ 单文件 `> MAX_SCAN_BYTES` ⇒ 跳过 —— **但 `ALWAYS_SCAN` 里的文件例外**：
+       体积上限是给「多半不是源码的大文件」用的，而 `CHANGELOG.md` 的正文正是本工具要判的东西
+       （吃掉了它 ⇒ 本判据静默变空，见 `ALWAYS_SCAN` 的注释与 issue #6404 的实测）。
 
     **单一源**：`cmd_scan` 与「样本集非空 + 覆盖 `CHANGELOG.md`」判据（issue #5239 判据 2）共用
     —— 判据若自己另抄一份枚举，扫描器坏了它照样绿（`migao-acceptance` 的「空跑」）。
@@ -312,7 +325,7 @@ def tracked_text(root: "Path") -> "tuple[list[str], list[tuple[str, str]]] | Non
     for rel in rels:
         f = root / rel
         try:
-            if f.stat().st_size > MAX_SCAN_BYTES:
+            if f.stat().st_size > MAX_SCAN_BYTES and rel not in ALWAYS_SCAN:
                 continue
             files.append((rel, f.read_text(encoding="utf-8")))
         except (OSError, UnicodeDecodeError):
