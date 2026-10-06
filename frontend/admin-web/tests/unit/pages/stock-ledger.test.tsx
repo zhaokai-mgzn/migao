@@ -1,4 +1,4 @@
-// case_ids: UI-087
+// case_ids: UI-087, UI-089
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -21,15 +21,24 @@ import userEvent from '@testing-library/user-event'
  * ③ 🔴 **页面不重算**：`delta` / `beforeQty` / `afterQty` / 金额一律**原样渲染服务端值**
  *    （第二份口径必然会漂）；判别器 = 下面的**见证行**。
  *
+ * ## 本文件另钉两件事（issue #6417 新增，UI-089）
+ *
+ * ④ **批次余量（每卷剩多少）看得见**：用户 2026-10-06 逐字「库存明细还是缺乏单批次的剩余量，
+ *    比如 1 卷 = 67 米，经过加工裁剪后应该有个剩余米数」⇒ 视图 ② 一行 = 一个批次，
+ *    `入库米数 / 已消耗 / **剩余米数**` 三列都在；
+ * ⑤ 🔴 **批次视图也不重算**：`remainingMeters` 原样渲染（见证批次里它与 `inbound − consumed` 故意不等）。
+ *
  * 菜单三源同构另见 `frontend/admin-web/tests/unit/lib/stock-ledger-menu-isomorphic.test.ts`。
  */
 
 const mockLedger = vi.fn()
 const mockGetProducts = vi.fn()
+const mockBatches = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   stockLedgerApi: { ledger: (...args: unknown[]) => mockLedger(...args) },
   productApi: { getProducts: (...args: unknown[]) => mockGetProducts(...args) },
+  batchStockApi: { batches: (...args: unknown[]) => mockBatches(...args) },
 }))
 
 /** 一行入库过账：成本三列都有值 */
@@ -237,5 +246,122 @@ describe('库存明细页（issue #6404 / UI-087）', () => {
     const err = await screen.findByTestId('stock-ledger-error')
     expect(err.textContent).toContain('权限')
     expect(screen.queryAllByTestId('stock-ledger-row')).toHaveLength(0)
+  })
+})
+
+// ── 视图 ②：批次余量（issue #6417 / UI-089）──────────────────────────────────
+/** 一行批次：一卷 67 米，裁剪掉 20 米 ⇒ 服务端说还剩 46.5（**故意**不等于 67−20，见 ⑩） */
+const batchRow = {
+  batchId: 11,
+  batchNo: 'PC-20261001-0001',
+  productId: 'prod-1',
+  skuId: 12,
+  skuCode: 'HZ-001-米白',
+  inboundNo: 'RK-20261001-0001',
+  dyeLot: 'G-77',
+  receivedDate: '2026-10-01',
+  unitCost: '24.80',
+  inboundMeters: '67.0',
+  consumedMeters: '20.0',
+  remainingMeters: '46.5',
+}
+
+/** 一卷用尽的批次（余量 0）—— 表里仍然列出（「用完了」本身是要看的信息） */
+const exhaustedRow = {
+  ...batchRow,
+  batchId: 12,
+  batchNo: 'PC-20260920-0007',
+  skuCode: 'HZ-002-浅灰',
+  dyeLot: null,
+  inboundMeters: '50.0',
+  consumedMeters: '50.0',
+  remainingMeters: '0.0',
+}
+
+const list = (items: unknown[]) => ({ data: { data: items } })
+
+describe('批次余量视图（issue #6417 / UI-089）', () => {
+  it('⑨ 每卷一行：批次号 / 货号·SKU / 缸号 / 入库单 / 入库米数 / 已消耗 / **剩余米数** / 收货日期', async () => {
+    const user = userEvent.setup()
+    mockBatches.mockResolvedValue(list([batchRow, exhaustedRow]))
+    render(<StockLedgerPage />)
+    await screen.findAllByTestId('stock-ledger-row')
+
+    await user.click(screen.getByTestId('view-batch'))
+    // 未选商品 ⇒ 显式提示（不是空白表）
+    expect(await screen.findByTestId('batch-need-product')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('搜索商品'), '遮光')
+    await user.click(screen.getByRole('button', { name: '搜索商品' }))
+    await user.click(await screen.findByTestId('product-option'))
+
+    const rows = await screen.findAllByTestId('batch-row')
+    expect(rows).toHaveLength(2)
+    expect(mockBatches).toHaveBeenLastCalledWith(expect.objectContaining({ productId: 'prod-1' }))
+
+    const cells = (i: number, id: string) => screen.getAllByTestId(id)[i].textContent
+    expect(cells(0, 'batch-no')).toBe('PC-20261001-0001')
+    expect(cells(0, 'batch-sku')).toBe('HZ-001-米白')
+    expect(cells(0, 'batch-dyelot')).toBe('G-77')
+    expect(cells(0, 'batch-inbound-no')).toBe('RK-20261001-0001')
+    expect(cells(0, 'batch-inbound')).toBe('67')
+    expect(cells(0, 'batch-consumed')).toBe('20')
+    // 🔴 用户要的那一列
+    expect(cells(0, 'batch-remaining')).toBe('46.5')
+    expect(cells(0, 'batch-received')).toBe('2026-10-01')
+    // 缺值不空白、不伪造：缸号 null ⇒ 「—」；用尽的批次照样列出（余量 0 本身是要看的信息）
+    expect(cells(1, 'batch-dyelot')).toBe('—')
+    expect(cells(1, 'batch-remaining')).toBe('0')
+  })
+
+  it('⑩ 不重算：remainingMeters 原样渲染（见证批次 67−20 ≠ 46.5；现算会得 47 ⇒ 本用例红）', async () => {
+    const user = userEvent.setup()
+    mockBatches.mockResolvedValue(list([batchRow]))
+    render(<StockLedgerPage />)
+    await screen.findAllByTestId('stock-ledger-row')
+
+    await user.click(screen.getByTestId('view-batch'))
+    await user.type(screen.getByLabelText('搜索商品'), '遮光')
+    await user.click(screen.getByRole('button', { name: '搜索商品' }))
+    await user.click(await screen.findByTestId('product-option'))
+    await screen.findAllByTestId('batch-row')
+
+    const row = screen.getByTestId('batch-row').textContent ?? ''
+    expect(screen.getByTestId('batch-remaining').textContent).toBe('46.5')
+    expect(screen.getByTestId('batch-inbound').textContent).toBe('67')
+    expect(screen.getByTestId('batch-consumed').textContent).toBe('20')
+    // 现算值 47 不得出现（那意味着页面自己减了一遍 = 第二份会漂的口径）
+    expect(row).not.toContain('47')
+  })
+
+  it('⑪ 未选商品：给可行动提示且**不发请求**（端点是全量无分页，不做一次拉全量）', async () => {
+    const user = userEvent.setup()
+    render(<StockLedgerPage />)
+    await screen.findAllByTestId('stock-ledger-row')
+
+    await user.click(screen.getByTestId('view-batch'))
+    expect(await screen.findByTestId('batch-need-product')).toBeInTheDocument()
+    expect(mockBatches).not.toHaveBeenCalled()
+    expect(screen.queryAllByTestId('batch-row')).toHaveLength(0)
+  })
+
+  it('⑫ 两个读面不串：批次视图不渲染 SKU 流水；读面失败 ⇒ 可行动话术', async () => {
+    const user = userEvent.setup()
+    mockBatches.mockRejectedValue(new Error('403'))
+    render(<StockLedgerPage />)
+    await screen.findAllByTestId('stock-ledger-row')
+
+    await user.click(screen.getByTestId('view-batch'))
+    await user.type(screen.getByLabelText('搜索商品'), '遮光')
+    await user.click(screen.getByRole('button', { name: '搜索商品' }))
+    await user.click(await screen.findByTestId('product-option'))
+
+    const err = await screen.findByTestId('batch-error')
+    expect(err.textContent).toContain('权限')
+    expect(screen.queryAllByTestId('batch-row')).toHaveLength(0)
+    // 批次视图下不得残留 SKU 流水行（两本账量纲不同，串起来就是假口径）
+    expect(screen.queryAllByTestId('stock-ledger-row')).toHaveLength(0)
+    // 也读不到「单据号」筛选（它只对流水视图有意义）
+    expect(screen.queryByLabelText('业务单据号')).toBeNull()
   })
 })
