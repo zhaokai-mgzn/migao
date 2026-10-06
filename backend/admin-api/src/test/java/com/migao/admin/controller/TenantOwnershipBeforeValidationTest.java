@@ -98,6 +98,8 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     @Mock private com.migao.admin.service.AfterSalesTicketService afterSalesTicketService;
     /** 订单服务（真类型 stub）—— 归属认定读的就是它的真实现 {@code existsForCurrentTenant}。 */
     @Mock private OrderService orderService;
+    /** 工人档案（同类第 9 个实例，issue #6432）：认定读 {@code findOwnedWorker}（与重置落库同一份判据）。 */
+    @Mock private com.migao.admin.service.WorkerAdminService workerAdminService;
 
     private TenantResourceOwnership ownership;
 
@@ -105,7 +107,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     void setUp() {
         super.baseSetUp();
         ownership = new TenantResourceOwnership(productMapper, categoryMapper, processingItemMapper,
-                processingCategoryMapper, afterSalesTicketMapper, orderService, null, null);
+                processingCategoryMapper, afterSalesTicketMapper, orderService, null, null, workerAdminService);
         ownership.registerChecks();
     }
 
@@ -332,8 +334,36 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.error.details[0].message").isNotEmpty());
     }
 
-    // ==================== 判据 5：两侧夹住（判据非空自证） ====================
+    @Test
+    @DisplayName("跨租户 + 非法载荷 ⇒ 404（工人档案 /pin 重置：同类第 9 个实例，issue #6432）")
+    void crossTenantWorkerPinReset_isNotFound_not422() throws Exception {
+        when(workerAdminService.findOwnedWorker(anyString())).thenReturn(null);
+        withInterceptor(new AdminWorkerController(workerAdminService))
+                .perform(put("/api/admin/workers/" + ORDER_ID + "/pin")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"pin\":\"12ab\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+        // 认定不过 ⇒ 服务层连一次都没被调到（更不可能改到别租户的 PIN）
+        verify(workerAdminService, never()).resetPin(anyString(), any());
+    }
 
+    @Test
+    @DisplayName("同租户 + 非法载荷 ⇒ 工人 /pin 仍是 422（校验没被挪没，只在认定之后发生）")
+    void sameTenantWorkerPinReset_stillValidationError() throws Exception {
+        when(workerAdminService.findOwnedWorker(anyString())).thenReturn(
+                com.migao.admin.entity.User.builder().id(ORDER_ID).tenantId(1L)
+                        .role("worker").workerNo("W-1001").build());
+        when(workerAdminService.resetPin(anyString(), any()))
+                .thenThrow(com.migao.admin.exception.BusinessException.validationError("PIN 必须是 4~12 位数字"));
+
+        withInterceptor(new AdminWorkerController(workerAdminService))
+                .perform(put("/api/admin/workers/" + ORDER_ID + "/pin")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"pin\":\"12ab\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+    }
+
+    // ==================== 判据 5：两侧夹住（判据非空自证） ====================
     @Test
     @DisplayName("🔴 两侧夹住：把拦截器摘掉，同一个「跨租户 + 非法载荷」请求当场变回 422")
     void withoutTheInterceptor_theSameRequestIsNot404_outOfBand() throws Exception {

@@ -213,6 +213,43 @@ bad = workflow_structure_violations(mutant)              # 判据吃的是**当�
 > 判据 = `tests/unit_ci_workflows/test_automerge_merge_credential.py`（用例 `MC-084`）；
 > 复算（现取）：`gh run list --branch main --event push --limit 300 --json headSha,createdAt`。
 
+### 运行期自证（`AUTOMERGE_PAT` 落地台账，2026-10-06）
+
+**secret 已落地**：`AUTOMERGE_PAT` 由本会话经 `gh secret set`（stdin，值不回显）写入，来源 = 会话的
+`gho_` OAuth token（**用户明确选定的落地方式**，见 issue #6418 的裁定；`x-oauth-scopes` 实测 =
+`admin:public_key, gist, read:org, repo`）。⚠️ **两条已知代价，照实登记，不许读成"永久修好"**：
+
+1. **这是长期个人令牌，不是可窄化的细粒度 PAT** —— 权限面 = 上面那串 scope；它失效 / 被改密码吊销 ⇒
+   arm step 会**回落内置 token 并打具名 `::warning::`**（不会卡合并），但 `push` 面**静默退回被抑制形态**
+   ⇒ 届时按上面的订正段读「条件式」。**重启条件**：换成细粒度 PAT（Contents RW · Pull requests RW ·
+   Workflows RW）或 GitHub App 安装令牌。
+2. **该 token 缺 `workflow` scope** ⇒ 含 `.github/workflows/**` 改动的 PR 由它合并**可能被 GitHub 拒**
+   （本仓 #4470 / #4475 有同形记录：`gh pr merge` 被 GraphQL 拒）。**观测点** = 下一个「改 workflow 的 PR」的
+   arm job：若出现合并失败且报文指向 scope/workflow ⇒ 按「业务连续性优先」加**回落重试**（先 PAT、失败再用
+   内置 token 合并那一条 PR，宁可那一次 push 被吞，也不让 PR 卡住），并把这个出口补进判据。
+
+**自证协议**（零成本，合并后即可复算 —— 关 #6418 的证据）：
+
+```bash
+gh api "repos/zhaokai-mgzn/migao/actions/runs?event=push&branch=main&per_page=6" \
+  --jq '.workflow_runs[] | "\(.created_at) \(.head_sha[0:9]) \(.name)"'   # 应出现**本合并之后**时刻的批
+gh run list --workflow=deploy-frontend.yml --limit 5 --json event,headSha    # 应出现 event=push
+```
+
+**读数（落地后，2026-10-06T07:57:21Z）**：探针合并 PR #6431 → main `a773113cc`，`mergedBy = zhaokai-mgzn`
+（不再是 `app/github-actions`），arm job 逐字打出 `🔑 合并凭据 = AUTOMERGE_PAT（actor=<查询失败>）`，
+其后**当场出现 5 条 `event=push` 的 run**（Main Freshness Guard / Post-Merge Verify / Close Linked Issues /
+Stale Report Reaper / H5 Freshness Guard）⇒ **push 面复活已实测**。三条部署腿不在该批里是**正常**：
+它们各有 `on.push.paths` 过滤（如 `deploy-frontend.yml` = `frontend/admin-web/**`）；「push + paths 命中 ⇒
+部署腿跑」由 `2026-10-05T12:02:41Z` 批的 `Build and Deploy ai-agent-service` 作旁证。
+⚠️ **两个未决观测点**：① 含 `.github/workflows/**` 的 PR 由本凭证合并**可能被拒**（缺 `workflow` scope）—— **实测一次通过**（#6433，仅注释类改动），风险本次未复现但观测点保留；
+② `actor=<查询失败>`（该令牌无 `read:user`）⇒ 误配自检退化。两者都写进了 `automerge.yml` 的「凭据来源 / 轮换」段。
+
+**读数（现取，本段落地前）**：main 上最新一批 `event=push` 的 run 仍是 **`2026-10-05T12:02:41Z`（sha `73327161f`）**
+—— 即本 #6418 系列三个 PR（`b85c30ba4` / `9309ed6d4` / `fecffd12c`）合并时**各自 0 条 push run**。
+（复算命令见上；**排序坑**：`gh run list --event push` 的顺序在本机实测出现过乱序，判读请以
+`gh api .../actions/runs?event=push` 的 `created_at` 为准。）
+
 ## 口径：几条绿色腿**不是**它名字读起来的意思（2026-10-03 固化，CI 审计 issue #6144 的 P2）
 
 > **为什么单开一节**：下面每条的**绿**都与「这条链真的跑通了」长得一模一样，而**没有任何东西

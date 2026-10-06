@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, UI-024, UI-040, UI-053, UI-076
+// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, UI-024, UI-040, UI-053, UI-076, UI-090
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -407,6 +407,78 @@ describe('OrderDetailPage', () => {
     await screen.findByRole('button', { name: /打印报价单/ })
     expect(screen.getAllByTestId('quotation-doc')).toHaveLength(1)
   })
+
+  // ===== 打印入口 × 订单状态矩阵（issue #6434）=====
+  //
+  // 病根（2026-10-06 用户报告；现取 `origin/main` 读数）：四个打印入口**只**挂在
+  // `status === 'shipped'` / `status === 'completed'` 两个分支里 —— 自 #5669 引入起就是这样
+  // （`git log -S "打印销售单"` 只有一个提交）⇒ 订单停在「**待发货 / 生产中 / 待付款**」时，
+  // 订单详情页**一个打印按钮都没有**，而这三张单据恰恰是发货**之前**就要用的
+  // （销售单随货、加工单下车间、报价单先行）。
+  //
+  // 判据形态 = **表驱动**：每个状态 × 「应有的入口 / 不该有的入口」逐条断言 ——
+  // 以后新增状态忘了挂入口、或把入口从某个状态里删掉，这里当场红。
+  const PRINT_ENTRY_MATRIX: { label: string; status: string; expected: string[]; absent: string[] }[] = [
+    {
+      label: '待付款',
+      status: 'pending_payment',
+      expected: ['打印报价单'],
+      absent: ['打印发货单', '打印加工单', '打印销售单'],
+    },
+    {
+      label: '待发货',
+      status: 'pending_shipment',
+      expected: ['打印报价单', '打印加工单', '打印销售单'],
+      absent: ['打印发货单'],
+    },
+    {
+      // `producing`（生产中）与后端 `confirmed` 都归入待发货分支（`BackendToFrontendStatus`）——
+      // 生产中照旧要能打加工单（车间用）与销售单。
+      label: '生产中',
+      status: 'producing',
+      expected: ['打印报价单', '打印加工单', '打印销售单'],
+      absent: ['打印发货单'],
+    },
+    {
+      label: '已发货',
+      status: 'shipped',
+      expected: ['打印发货单', '打印报价单', '打印加工单', '打印销售单'],
+      absent: [],
+    },
+    {
+      label: '已完成',
+      status: 'completed',
+      expected: ['打印发货单', '打印报价单', '打印加工单', '打印销售单'],
+      absent: [],
+    },
+    {
+      label: '已关闭',
+      status: 'closed',
+      expected: [],
+      absent: ['打印发货单', '打印报价单', '打印加工单', '打印销售单'],
+    },
+  ]
+
+  it.each(PRINT_ENTRY_MATRIX)(
+    '打印入口矩阵：$label（$status）应有 [$expected] / 不该有 [$absent]',
+    async ({ status, expected, absent }) => {
+      mockGetOrder.mockResolvedValue({
+        data: { data: { ...mockOrder, status, refundAmount: 0 } },
+      })
+      render(<OrderDetailPage />)
+
+      // 稳态锚点 = 订单号进 DOM（页面已拿到订单）——**不拿打印按钮当锚点**，
+      // 否则「按钮本来就该在」这条判据会退化成「等我自己出现」（空断言）。
+      await screen.findAllByText(mockOrder.orderNo)
+
+      for (const label of expected) {
+        expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+      }
+      for (const label of absent) {
+        expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
+      }
+    },
+  )
 
   it('编辑物流弹窗回填已落库的发货人（存量为空时也可在此补齐）', async () => {
     mockGetOrder.mockResolvedValue({

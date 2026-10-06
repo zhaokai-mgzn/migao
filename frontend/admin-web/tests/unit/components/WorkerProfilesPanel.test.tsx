@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: HR-001, HR-002, UI-024
+// case_ids: HR-001, HR-002, UI-024, UI-091
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { toast } from 'sonner'
@@ -22,12 +22,14 @@ import { toast } from 'sonner'
 const mockListWorkers = vi.fn()
 const mockCreateWorker = vi.fn()
 const mockSetWorkerStatus = vi.fn()
+const mockResetWorkerPin = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   workerApi: {
     listWorkers: (...a: unknown[]) => mockListWorkers(...a),
     createWorker: (...a: unknown[]) => mockCreateWorker(...a),
     setWorkerStatus: (...a: unknown[]) => mockSetWorkerStatus(...a),
+    resetWorkerPin: (...a: unknown[]) => mockResetWorkerPin(...a),
   },
 }))
 
@@ -50,6 +52,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     mockListWorkers.mockReset()
     mockCreateWorker.mockReset()
     mockSetWorkerStatus.mockReset()
+    mockResetWorkerPin.mockReset()
     ;(toast.error as ReturnType<typeof vi.fn>).mockClear()
     mockListWorkers.mockResolvedValue(okPage([worker()]))
   })
@@ -115,6 +118,57 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     // 没有假装成功：列表没有因为失败而刷新
     expect(mockListWorkers).toHaveBeenCalledTimes(1)
     // UI-024：拦截器已提示具体错误，页面不再叠加通用 toast
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('⑤ 重置 PIN（留空 ⇒ 服务端随机）：结果面板显示**服务端返回的新 PIN** + 「只显示这一次」提醒', async () => {
+    mockResetWorkerPin.mockResolvedValue({ data: { data: { pin: '654321' } } })
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByText('重置 PIN'))
+    fireEvent.click(screen.getByText('确认重置'))
+
+    await waitFor(() => expect(mockResetWorkerPin).toHaveBeenCalledWith('w-1', undefined))
+    expect(await screen.findByTestId('worker-new-pin')).toBeInTheDocument()
+    expect(screen.getByText('654321')).toBeInTheDocument()
+    // 明文**只在这里出现一次**（关掉即查不到）—— 页面必须把这一点说清，否则管理员会以为以后还能看
+    expect(screen.getByText(/关掉本窗口后就查不到了/)).toBeInTheDocument()
+  })
+
+  it('⑤ 手输新 PIN ⇒ 原样透传（页面只做形态拦阻，形态真值仍以服务端为准）', async () => {
+    mockResetWorkerPin.mockResolvedValue({ data: { data: { pin: '135791' } } })
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByText('重置 PIN'))
+    fireEvent.change(screen.getByPlaceholderText(/留空则由系统随机生成/), { target: { value: '135791' } })
+    fireEvent.click(screen.getByText('确认重置'))
+
+    await waitFor(() => expect(mockResetWorkerPin).toHaveBeenCalledWith('w-1', '135791'))
+    expect(await screen.findByText('135791')).toBeInTheDocument()
+  })
+
+  it('⑤ 无 employee:create ⇒ 重置 PIN 入口不可用（与建号同档写权限；只读角色点不动）', async () => {
+    render(<WorkerProfilesPanel canWrite={false} />)
+
+    const resetBtn = await screen.findByText('重置 PIN')
+    expect(resetBtn).toBeDisabled()
+    fireEvent.click(resetBtn)
+    expect(mockResetWorkerPin).not.toHaveBeenCalled()
+  })
+
+  it('⑤ 重置失败 ⇒ 弹窗不关、**不显示任何 PIN**（失败不得冒充成功）且不叠加通用 toast', async () => {
+    const notFound = new Error('工人档案不存在')
+    markErrorToastShown(notFound)
+    mockResetWorkerPin.mockRejectedValue(notFound)
+
+    render(<WorkerProfilesPanel canWrite />)
+    fireEvent.click(await screen.findByText('重置 PIN'))
+    fireEvent.click(screen.getByText('确认重置'))
+
+    await waitFor(() => expect(mockResetWorkerPin).toHaveBeenCalledTimes(1))
+    // 弹窗仍在（可改值重试），且没有伪造一个「新 PIN」出来
+    expect(screen.getByText('确认重置')).toBeInTheDocument()
+    expect(screen.queryByTestId('worker-new-pin')).not.toBeInTheDocument()
     expect(toast.error).not.toHaveBeenCalled()
   })
 })
