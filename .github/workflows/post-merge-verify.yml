@@ -130,6 +130,15 @@ jobs:
           import sys, pytest, yaml, httpx
           print(f"✅ pytest {pytest.__version__} / pyyaml {yaml.__version__} / httpx {httpx.__version__} @ {sys.executable}")
           PYEOF
+
+          # 🧪 **临时**：绕开 driver 直接在**本步**跑那两条常驻出口（与 driver 完全同一解释器/环境）
+          #    —— 用于把「driver 拉起的 pytest 里凭据为空」与「判据自己读不到」分开。**#6042 关单时删除本块**。
+          set +e
+          "$MIGAO_PY" -m pytest tests/unit_ci_workflows/test_case_id_claims.py \
+            -q -p no:cacheprovider -k "repo_case_id_claims_are_clean or repo_corpus_face_is_clean" \
+            2>&1 | tail -12 | sed 's/^/in-leg 复现: /'
+          echo "in-leg 复现退出码 = ${PIPESTATUS[0]}"
+          set -e
           echo "MIGAO_PY=$PY" >> "$GITHUB_ENV"
 
       # 真库判据要的是**二进制**而不是 PG 服务（13 个模块各自起一次性 initdb + pg_ctl 集群）。
@@ -262,7 +271,13 @@ jobs:
           #   ① 模板侧没解出值（`TOKEN_DECLARED=false` / shell len=0）；② 解出了但没进子进程。
           # 读数**与判据同源**（同一解释器 + 直接问判据本体的 `TOKEN_ENVS` / `current_pr`），不另写推断；
           # 且**不参与判定**（探针自己失败只打印，绝不判红）。
-          echo "取数面读数（step shell）: GH_TOKEN len=${#GH_TOKEN} / GITHUB_TOKEN len=${#GITHUB_TOKEN} / TOKEN_DECLARED=${TOKEN_DECLARED:-（未声明）}"
+          # ⚠️ 首轮实测（run 37436064816）：本步 `set -u` 下 `${#GITHUB_TOKEN}` 直接 **unbound variable** 把判定步打挂
+          #    ⇒ 读数两个变量都必须**先探存在再取长度**（`declare -p` 不展开、不触发 `set -u`）。
+          #    🧪 这条报错**本身就是读数**：报的是 `GITHUB_TOKEN` 而不是 `GH_TOKEN` ⇒ **`GH_TOKEN` 在 step shell 里是设了的**
+          #    （与上面取水位成功一致）⇒「本步没拿到凭据」这一支被排除 ⇒ 只剩「子进程侧 / 判据读的不是 `os.environ`」。
+          if declare -p GH_TOKEN >/dev/null 2>&1; then GH_LEN="${#GH_TOKEN}"; else GH_LEN="未设"; fi
+          if declare -p GITHUB_TOKEN >/dev/null 2>&1; then GT_LEN="${#GITHUB_TOKEN}"; else GT_LEN="未设"; fi
+          echo "取数面读数（step shell）: GH_TOKEN=${GH_LEN} / GITHUB_TOKEN=${GT_LEN} / TOKEN_DECLARED=${TOKEN_DECLARED:-（未声明）}"
           echo "上下文读数（step shell）: GITHUB_REF=${GITHUB_REF:-（空）} EVENT=${GITHUB_EVENT_NAME:-（空）} REPO=${GITHUB_REPOSITORY:-（空）}"
           set +e
           "$MIGAO_PY" - <<'PYEOF' 2>&1 | sed 's/^/取数面读数（判定解释器）: /'
