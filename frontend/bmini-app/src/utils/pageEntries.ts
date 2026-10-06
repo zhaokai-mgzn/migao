@@ -140,7 +140,7 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     nav: 'href',
     via: '/pages/worker/reprint/index',
     audience:
-      '工人身份（`/w/` 报工页页头入口；标签不在手边、或要按短码手输时走这条 —— 不必先扫洗水码）',
+      '工人身份（`/w/` 报工页页头入口；标签不在手边、或要按短码手输时走这条 —— 不必先扫水洗唛）',
   },
   {
     // issue #5747：这两页此前在 `/b/` 内**零入口**（只有 `/w/` 页头与扫标签深链），
@@ -160,7 +160,7 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     via: 'REPRINT_PAGE_ROUTE',
     viaBinding: 'src/utils/inbound/gaps.ts',
     audience:
-      '商家/工人身份（「我的」→ 补打入库标签；标签贴丢 / 磨花时不必先扫洗水码，与 `/w/` 那条入口同用途）',
+      '商家/工人身份（「我的」→ 补打入库标签；标签贴丢 / 磨花时不必先扫水洗唛，与 `/w/` 那条入口同用途）',
   },
   {
     route: '/pages/admin/pool/index',

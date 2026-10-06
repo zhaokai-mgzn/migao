@@ -900,7 +900,7 @@ export default function ProcessingOrderProductionPage() {
               )}
 
               <p className="text-xs text-neutral-500">
-                本码只读生成：不写入、不撤销任何数据，与纸面洗水码（同一份部位码）逐张一致。
+                本码只读生成：不写入、不撤销任何数据，与纸面水洗唛（同一份部位码）逐张一致。
                 计件归属仍按工人署名（工人端暂无登录），发工资前请核对报工人。
               </p>
             </div>
@@ -941,7 +941,7 @@ export default function ProcessingOrderProductionPage() {
               </p>
               <p className="text-neutral-500">
                 撤销后<span className="font-medium text-neutral-900">已打印的二维码立即失效</span>
-                （工人扫旧码报工将失败）—— 包括每张洗水码上的部位码。
+                （工人扫旧码报工将失败）—— 包括每张水洗唛上的部位码。
               </p>
               {/* issue #4287：本页**有**重新发码入口了（撤销后出现「重新生成二维码」）⇒
                   #4949 那句「撤销后本页无法重新发码」的免责声明**不再为真**，必须撤掉

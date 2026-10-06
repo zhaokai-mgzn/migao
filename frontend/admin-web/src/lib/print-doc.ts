@@ -42,7 +42,7 @@ export const PRINT_TARGET_SPECS: Record<PrintTarget, { title: string; media: Pri
   quotation: { title: '报价单', media: 'a4' },
   processing: { title: '加工单', media: 'a4' },
   sales: { title: '销售单', media: 'continuous-241x140' },
-  labels: { title: '洗水码', media: 'label-50x60' },
+  labels: { title: '水洗唛', media: 'label-50x60' },
 }
 
 export interface PrintDocController {

@@ -531,6 +531,8 @@ cases:
         - "frontend/admin-web/tests/unit/components/DirectLabelPrint.test.tsx"
         # issue #6439 的**类级元守卫**（铁律 8）：生产源码里任何 `openPrinter(` 调用都不许是空参形态
         - "tests/unit_ci_workflows/test_lpapi_open_printer_contract.py"
+        # issue #6451 的**类级元守卫**（铁律 8）：用户可见文案的口径（旧词「洗水码」不许再进代码面）
+        - "tests/unit_ci_workflows/test_wash_label_copy_terms.py"
         - "frontend/admin-web/tests/unit/lib/use-route-id.test.ts"
         - "tests/unit_ci_workflows/test_operation_display_name_guard.py"
         - "tests/unit_ci_workflows/test_wash_label_geometry_guard.py"

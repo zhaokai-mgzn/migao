@@ -184,7 +184,7 @@ describe('拍照补打主链：解码优先 / 码空间门禁 / 404-410 分开 /
     expect(state.kind).toBe('blocked')
     if (state.kind === 'blocked') {
       expect(state.space).toBe('wash-code')
-      expect(state.message).toContain('洗水码')
+      expect(state.message).toContain('水洗唛')
       expect(state.action?.route).toBeTruthy()
     }
     // 🔴 红证（对照组）：把这同一个码**伪造成入库码** ⇒ 门禁一撤，立刻查一次（且服务端 404）
