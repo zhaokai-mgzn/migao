@@ -1,0 +1,1787 @@
+{
+  "at": "2026-10-06T02:57:29.507Z",
+  "stamp": "449507",
+  "prefix": "SD06省料",
+  "n": 300,
+  "perArm": 75,
+  "arms": {
+    "A": {
+      "body": "UI体 {batches:[], assignmentRule:null, pooled:true}",
+      "res": {
+        "status": 200,
+        "data": [
+          {
+            "orderRef": "17bf1684e58ec4d02a128ef4e2574f51",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8383"
+          },
+          {
+            "orderRef": "ef17388eae17c5342724d95791ac1d9f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8384"
+          },
+          {
+            "orderRef": "e9c9a268dd3107b8605a904e3f1b06b2",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8385"
+          },
+          {
+            "orderRef": "56efde461f56a27f91c84a4dd89c8f84",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8386"
+          },
+          {
+            "orderRef": "efdb95d574c98b6126b8429807aab67c",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8387"
+          },
+          {
+            "orderRef": "08412bcc644e2ab7afc4d27c49e6a027",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8388"
+          },
+          {
+            "orderRef": "87a38db495ab6e38b424ba3123a4ac86",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8389"
+          },
+          {
+            "orderRef": "9678fb9e8460ae4c1f498d489d27c663",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8390"
+          },
+          {
+            "orderRef": "b4fcfb7aa808b71fa336d316dc30399f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8391"
+          },
+          {
+            "orderRef": "9b27406e333335d340c1d2d4fbed867d",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8392"
+          },
+          {
+            "orderRef": "a4320c793c8078838ea08a54e015592e",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8393"
+          },
+          {
+            "orderRef": "4593ef4989f9a0d8ed8919133c571ff6",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8394"
+          },
+          {
+            "orderRef": "090a8c404236a77efdbb4893aaff05a8",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8395"
+          },
+          {
+            "orderRef": "d7d049568e4d058f0e26b4c117bc4415",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8396"
+          },
+          {
+            "orderRef": "8cb3a13066b94d8db364076bb99dd4c5",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8397"
+          },
+          {
+            "orderRef": "c2180e7f08da66efaa110c1ca12e27d5",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8398"
+          },
+          {
+            "orderRef": "0dd399c6164f51a2c87d3cabf80cb402",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8399"
+          },
+          {
+            "orderRef": "2b6c8650fb60778c8cbcc50d7ae21f97",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8400"
+          },
+          {
+            "orderRef": "57e129c0c17097e249d3a7984c4a235f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8401"
+          },
+          {
+            "orderRef": "490415c41fad5db12008a15506015e54",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8402"
+          },
+          {
+            "orderRef": "36c3044cc8d4f29f58e8a63876ab242d",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8403"
+          },
+          {
+            "orderRef": "5529d49fac90dd74af5c03d3db6328c8",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8404"
+          },
+          {
+            "orderRef": "1de314781457182d73aa86a2d5bd6896",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8405"
+          },
+          {
+            "orderRef": "2ce701a8ad6e79ef1f59008388fe2d63",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8406"
+          },
+          {
+            "orderRef": "edb412572050cd369d7986dd82dcfaed",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8407"
+          },
+          {
+            "orderRef": "0d1a5f7fc057d5754ca084e5d3342c27",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8408"
+          },
+          {
+            "orderRef": "c456f6068b81915c72cdfa8e5acc22b1",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8409"
+          },
+          {
+            "orderRef": "612df5d1ab263c18a48294bc1c76a6a3",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8410"
+          },
+          {
+            "orderRef": "7e787238625e890fe5db76aa3b8aff2d",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8411"
+          },
+          {
+            "orderRef": "793b531170952e815f4311afce856c1c",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8412"
+          },
+          {
+            "orderRef": "9c95c09fc275e9192a375068b463d8ba",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8413"
+          },
+          {
+            "orderRef": "c46dd27231bc33dc0feb52897d53a110",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8414"
+          },
+          {
+            "orderRef": "8388670da4cfa661868f845d4dafb33a",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8415"
+          },
+          {
+            "orderRef": "c6d50ded11d49dce27f4b37a3aa42465",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8416"
+          },
+          {
+            "orderRef": "f1e5042a1bd82797310740eba3921426",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8417"
+          },
+          {
+            "orderRef": "5f15e46a0d2e8a9ba0227dea726c951f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8418"
+          },
+          {
+            "orderRef": "60e742dd25033ca8a98fda7416d8c4ea",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8419"
+          },
+          {
+            "orderRef": "3a31c257071e88f9a89e3b074f261bf4",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8420"
+          },
+          {
+            "orderRef": "ee78ae9da27cacb68313340cf8f1b645",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8421"
+          },
+          {
+            "orderRef": "f609258ae55917afbe52a5958b724fce",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8422"
+          },
+          {
+            "orderRef": "f9a74fc5e22b246045069e0c30347917",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8423"
+          },
+          {
+            "orderRef": "2c330ae98f21ba94038cee392098cac6",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8424"
+          },
+          {
+            "orderRef": "0a3ca3deedfe3b4bf4abba6bc36cc59d",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8425"
+          },
+          {
+            "orderRef": "934cf417e1f6fe6c96a24cc067fac2c1",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8426"
+          },
+          {
+            "orderRef": "1a1cd5186f7a3a66ed407022b9ee91c0",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8427"
+          },
+          {
+            "orderRef": "ae8f775f26f85f54ae2b667a0aae974f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8428"
+          },
+          {
+            "orderRef": "aa781dbb16cc8fb268448696bfe4a7a5",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8429"
+          },
+          {
+            "orderRef": "c99ba42e70aff7978accc486c92b215b",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8430"
+          },
+          {
+            "orderRef": "dfca415b7f31b8392da810d85d828a30",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8431"
+          },
+          {
+            "orderRef": "56509c3ac589cdb89dd6bed278642495",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8432"
+          },
+          {
+            "orderRef": "08ee9f09b4cec0e64196ddb4330b21ab",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8433"
+          },
+          {
+            "orderRef": "5d5aaffcea70969e906cfbcb67963216",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8434"
+          },
+          {
+            "orderRef": "9723055671d61ea2c983049e3aa2bf65",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8435"
+          },
+          {
+            "orderRef": "b3c1c7ba726cb7eb04b0f53fa8535440",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8436"
+          },
+          {
+            "orderRef": "468ff9730c80e4fd256d87705f7220d6",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8437"
+          },
+          {
+            "orderRef": "d437b0ca9053334780bc49dafaad1e70",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8438"
+          },
+          {
+            "orderRef": "c6aa8cee381207b1742429b9536fff17",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8439"
+          },
+          {
+            "orderRef": "0cafa526dd9e5ab88e44f49d57c34c4f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8440"
+          },
+          {
+            "orderRef": "26d3dcd812d789cb397f8667df55ba5e",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8441"
+          },
+          {
+            "orderRef": "1caf4b501b2d179e8bb6da82d4dbe3bc",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8442"
+          },
+          {
+            "orderRef": "543636949da82c4ecbd5e07e8652fda4",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8443"
+          },
+          {
+            "orderRef": "74e0228b553ae2770cbb35487ef6ab6d",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8444"
+          },
+          {
+            "orderRef": "6e9e04ff8ebe22c0e3f93994a37c2edd",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8445"
+          },
+          {
+            "orderRef": "fbe1158e046ea2499d7c14c9c6f41fdf",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8446"
+          },
+          {
+            "orderRef": "9643fc5bbdea260fddde17ea0d56f834",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8447"
+          },
+          {
+            "orderRef": "b7a977da62a0afbf6bc37ff1eb838ddd",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8448"
+          },
+          {
+            "orderRef": "2fde8d7e37c53158bf99c5e7eb1faf34",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8449"
+          },
+          {
+            "orderRef": "b59a1552eaf45007e5052fdee49764db",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8450"
+          },
+          {
+            "orderRef": "488e8b5fbe6f33a47943009d98483cca",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8451"
+          },
+          {
+            "orderRef": "644da3dcebd1ed92d8a8046283a745d9",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8452"
+          },
+          {
+            "orderRef": "82c2dbeb06d9877b1772d5be35e3e1a0",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8453"
+          },
+          {
+            "orderRef": "861d9b027a2d0754d70dbad574aa433e",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8454"
+          },
+          {
+            "orderRef": "9888fdb0febd8f352b97e16325f5260b",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8455"
+          },
+          {
+            "orderRef": "bd39937404342480f5bea91a234aafc0",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8456"
+          },
+          {
+            "orderRef": "56dfa03312f08914131c5e6f073655d7",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8457"
+          }
+        ],
+        "msg": ""
+      },
+      "ok": 75,
+      "fail": 0,
+      "sample": {
+        "orderRef": "17bf1684e58ec4d02a128ef4e2574f51",
+        "success": true,
+        "processingOrderNo": "JG-20261006-8383"
+      },
+      "ledger": {
+        "rows": 0,
+        "formula": 0,
+        "planned": 0,
+        "saved": 0
+      }
+    },
+    "B": {
+      "body": "直调 {逐行指派(no batchNo), fifo, pooled:true}",
+      "res": {
+        "status": 200,
+        "data": [
+          {
+            "orderRef": "432607347e872206f08dfa866c0bb9a7",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8458"
+          },
+          {
+            "orderRef": "130ed64a6ae67a8c454b9dd776719a61",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8459"
+          },
+          {
+            "orderRef": "1a3f8d1171fa764027ae389dd5444a63",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8460"
+          },
+          {
+            "orderRef": "68b181707cd2bdfbda65bebfd496cd84",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8461"
+          },
+          {
+            "orderRef": "bf24d21e8113661fa138a3a45829214e",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8462"
+          },
+          {
+            "orderRef": "fd43314a6e6114d7a51e0f25b5a441ea",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8463"
+          },
+          {
+            "orderRef": "2c6e5ac17987541b781356cc709d9ac1",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8464"
+          },
+          {
+            "orderRef": "4015e71400e4f6c95fe79020c251e105",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8465"
+          },
+          {
+            "orderRef": "4d56ead5a934be6ba2a11694c3ae3553",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8466"
+          },
+          {
+            "orderRef": "4f2359bded8d64f75ada32bcf36aae8d",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8467"
+          },
+          {
+            "orderRef": "f931d74d8e8eb801eb1eb55b318bf125",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8468"
+          },
+          {
+            "orderRef": "1747168f1486f0d99f1f4f6920281817",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8469"
+          },
+          {
+            "orderRef": "93ea937a0c77a56de95ff00d1d352c7f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8470"
+          },
+          {
+            "orderRef": "abb3c76e0baa13df0508da27b27712cd",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8471"
+          },
+          {
+            "orderRef": "7663eb95c52248da4bb82081b3317243",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8472"
+          },
+          {
+            "orderRef": "cbba80c408044fbb29773a396d97a148",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8473"
+          },
+          {
+            "orderRef": "5c8fa5227b1b8cbbb8df60aacdc60862",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8474"
+          },
+          {
+            "orderRef": "fff12465886654222175027abb0e6e3b",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8475"
+          },
+          {
+            "orderRef": "7a7005bcbf5a9d91cd3ce6c2da996396",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8476"
+          },
+          {
+            "orderRef": "b39eb258472497aabbdd1d3173026120",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8477"
+          },
+          {
+            "orderRef": "3e37a8cfa80a6787776831ec88bedbd8",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8478"
+          },
+          {
+            "orderRef": "283ae0ed551d481fde14c7053b251da1",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8479"
+          },
+          {
+            "orderRef": "6a3afb793facfa0444d14ac4f4cb0aed",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8480"
+          },
+          {
+            "orderRef": "d24fb5ca2f7105d58b47fe38a1357c19",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8481"
+          },
+          {
+            "orderRef": "e654d159a9713ad916eb63af61e61094",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8482"
+          },
+          {
+            "orderRef": "a2a983bbaee754c96ca863ec3be4038e",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8483"
+          },
+          {
+            "orderRef": "222a4eaa6630ec61341ce83ffdea6551",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8484"
+          },
+          {
+            "orderRef": "831f45c87ce85bdf8376ddde93c7cb92",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8485"
+          },
+          {
+            "orderRef": "f1d80bd27b462db1c676f59680cafda0",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8486"
+          },
+          {
+            "orderRef": "886fd3d5fb1b1e8588e924d3ad8a5179",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8487"
+          },
+          {
+            "orderRef": "aef5080620860263d89db14788ad7f16",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8488"
+          },
+          {
+            "orderRef": "a02415ca8a80bede4631d150142c6812",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8489"
+          },
+          {
+            "orderRef": "840dc62463fc771ee798c2b669f78994",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8490"
+          },
+          {
+            "orderRef": "039d29ea464f972073e940470210a772",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8491"
+          },
+          {
+            "orderRef": "9b3174d4a8e09d8eb155a0c9b53b28a3",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8492"
+          },
+          {
+            "orderRef": "ae075a6a9cc0399771a4015ad4551a12",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8493"
+          },
+          {
+            "orderRef": "8ec45c7f7423f535f8af474551701e6e",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8494"
+          },
+          {
+            "orderRef": "3f2d58c6a43271ae9664177f0ac826cc",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8495"
+          },
+          {
+            "orderRef": "6573707cda62e5969b9c939c3f6a109c",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8496"
+          },
+          {
+            "orderRef": "df7d3be48001301a543eac4e79231c3f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8497"
+          },
+          {
+            "orderRef": "a8e1c14e4166dcbac84a1b0339a47484",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8498"
+          },
+          {
+            "orderRef": "9647a08ee5b3c3a3dcd67407bf3020ae",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8499"
+          },
+          {
+            "orderRef": "1f9ef211ab1a95c747f772ea4d1a5805",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8500"
+          },
+          {
+            "orderRef": "f15dbc07619e25c45d1812035e505a02",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8501"
+          },
+          {
+            "orderRef": "5f5b44dd65bc089a910c7917218dd828",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8502"
+          },
+          {
+            "orderRef": "c6ed378372ffbfe8fc588fa1bebe6a29",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8503"
+          },
+          {
+            "orderRef": "13240d3c2ac35f713ce2f2341d0a656a",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8504"
+          },
+          {
+            "orderRef": "4a2b6e6aa61905954c00046846096bc0",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8505"
+          },
+          {
+            "orderRef": "0e0f29945a9c7ae1f12b31b055d355c5",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8506"
+          },
+          {
+            "orderRef": "52606d75a6dee7c6a8bed70dfbb4fea1",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8507"
+          },
+          {
+            "orderRef": "36753eb5e2913d16d555fda7e64f2cc6",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8508"
+          },
+          {
+            "orderRef": "8623ef0a70f5a33d72972a85b5bc4db9",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8509"
+          },
+          {
+            "orderRef": "2791a266c58f6c82164b5ebe9ea3c837",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8510"
+          },
+          {
+            "orderRef": "99dfbc1835d67bebcb26452435679e2a",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8511"
+          },
+          {
+            "orderRef": "351cf5541849021ffde82d36c7c1abe3",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8512"
+          },
+          {
+            "orderRef": "8f50693f2d9ee0a6295ac0cfff1b0493",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8513"
+          },
+          {
+            "orderRef": "d434725d52d7332c5c9ef700a3ff22b0",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8514"
+          },
+          {
+            "orderRef": "662bada62a930c4799c5cb8306b3ecd6",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8515"
+          },
+          {
+            "orderRef": "f27b1e95e451c04e191370b1a5c95c1e",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8516"
+          },
+          {
+            "orderRef": "f76206af4fbc4c78f80362e32d6d9a05",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8517"
+          },
+          {
+            "orderRef": "6972e281889e225a0060a0b65a327759",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8518"
+          },
+          {
+            "orderRef": "31b5a9cb491b022aef665e6d4aa7c7fc",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8519"
+          },
+          {
+            "orderRef": "1cad3b279161e13def7dd2899b5dfe1b",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8520"
+          },
+          {
+            "orderRef": "9bc6eda2b4a4ccc267349e96ba410517",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8521"
+          },
+          {
+            "orderRef": "34c5f95197e38d705e62ccd4e3e2d0e4",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8522"
+          },
+          {
+            "orderRef": "83d350e1362c4dd18c06ceed6ab62bd1",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8523"
+          },
+          {
+            "orderRef": "1e170cae79803e3a1a3b606675ec3821",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8524"
+          },
+          {
+            "orderRef": "ac879703f534430ab35ba658ecf7a1f1",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8525"
+          },
+          {
+            "orderRef": "eac35a08885a129a5647f601cbff7d00",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8526"
+          },
+          {
+            "orderRef": "78316f60b25393a3a876b15fc2b6a352",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8527"
+          },
+          {
+            "orderRef": "bc7d00b9096c28d368db5c96b4a8d2a5",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8528"
+          },
+          {
+            "orderRef": "7a70714ec397ed8393299eaa6ae4287a",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8529"
+          },
+          {
+            "orderRef": "52c811c005fd75a51bb375cd170003b5",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8530"
+          },
+          {
+            "orderRef": "40c1dcf8e4313d78c72f73cb66616ce2",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8531"
+          },
+          {
+            "orderRef": "9e9a0fa9d08508ac58990d7bdfc72cf9",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8532"
+          }
+        ],
+        "msg": ""
+      },
+      "ok": 75,
+      "fail": 0,
+      "sample": {
+        "orderRef": "432607347e872206f08dfa866c0bb9a7",
+        "success": true,
+        "processingOrderNo": "JG-20261006-8458"
+      },
+      "ledger": {
+        "rows": 75,
+        "formula": 105.00000000000013,
+        "planned": 59.999999999999915,
+        "saved": 45.000000000000064
+      }
+    },
+    "C": {
+      "body": "直调 {逐行指派(no batchNo), fifo, pooled:false}",
+      "res": {
+        "status": 200,
+        "data": [
+          {
+            "orderRef": "273105c65df19c3cc3b569628e456578",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8533"
+          },
+          {
+            "orderRef": "d8a75aaf79aad11e9c403f7fd6f01309",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8534"
+          },
+          {
+            "orderRef": "65797a76dbda4ddfd922fcb552bec14e",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8535"
+          },
+          {
+            "orderRef": "44bb97ef60d21ca7d1c1745623bdc405",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8536"
+          },
+          {
+            "orderRef": "38fc9636499c6e36b6201ea08268b49c",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8537"
+          },
+          {
+            "orderRef": "5ab0723b18aab4542c8b64cef439e1b8",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8538"
+          },
+          {
+            "orderRef": "71b6355217853d10f137de6bddc90527",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8539"
+          },
+          {
+            "orderRef": "e6324a97fd8db53c147f61387e0a2175",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8540"
+          },
+          {
+            "orderRef": "1dc7c78231bab2a5d80bd5fe337b57af",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8541"
+          },
+          {
+            "orderRef": "2e5cb55b223a8394e14222f386d32921",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8542"
+          },
+          {
+            "orderRef": "a9cbf6f31b6deb7f21c60091da5ff431",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8543"
+          },
+          {
+            "orderRef": "6094eab0265739b21276a48160a0b48c",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8544"
+          },
+          {
+            "orderRef": "943526dd972b4d4812453060d318a267",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8545"
+          },
+          {
+            "orderRef": "d105487a497f4b2401640c31259b1558",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8546"
+          },
+          {
+            "orderRef": "88b85c82c42320c0a8dfd297217402ae",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8547"
+          },
+          {
+            "orderRef": "3ec9ab708af2e80b4e6002f0c64d84db",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8548"
+          },
+          {
+            "orderRef": "784db046fe3a69b2b91896f6276458e5",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8549"
+          },
+          {
+            "orderRef": "d05230306b82cb6a746ef98510d4dda2",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8550"
+          },
+          {
+            "orderRef": "9c7e49626fd5bca25d7da900aa0bb1d1",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8551"
+          },
+          {
+            "orderRef": "a43bfce57ce4fb2418429d1ad40d2e23",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8552"
+          },
+          {
+            "orderRef": "1f2fb60874ef81ce0d652bdc1e9a7530",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8553"
+          },
+          {
+            "orderRef": "88ea14d9186162db2c01028ffc028f52",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8554"
+          },
+          {
+            "orderRef": "db1c2d73ab2a3eb5a7cd1314995f0c0f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8555"
+          },
+          {
+            "orderRef": "3767d369227db3513842959bb2600751",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8556"
+          },
+          {
+            "orderRef": "15202b4731c2582307dbed695726808b",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8557"
+          },
+          {
+            "orderRef": "b4fb671e13bf1444ed456b36eb174947",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8558"
+          },
+          {
+            "orderRef": "3db324b82c8c811fa688d271bf291d36",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8559"
+          },
+          {
+            "orderRef": "0296f014a8bf7823f51bbd4f92ad3439",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8560"
+          },
+          {
+            "orderRef": "9462b976e1488d2d975fb6e8a0e4e4a3",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8561"
+          },
+          {
+            "orderRef": "358874198a2acef913b2b93a1573c48f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8562"
+          },
+          {
+            "orderRef": "b6daf131adad8cbd378084a0b431ed35",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8563"
+          },
+          {
+            "orderRef": "224a6781fd9e318c3d73cef6b9eef781",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8564"
+          },
+          {
+            "orderRef": "ac58d1cbf492e9cce6308fb8471e6b78",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8565"
+          },
+          {
+            "orderRef": "76fac48b8d6cf39e3c52490c31d3265b",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8566"
+          },
+          {
+            "orderRef": "cfb73766d5f24a9beeefc273860f60b7",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8567"
+          },
+          {
+            "orderRef": "b46117d31ff0c396ea450fbc2657e96c",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8568"
+          },
+          {
+            "orderRef": "9995aa0b1efd1d5ff601871c627ba548",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8569"
+          },
+          {
+            "orderRef": "5512344da570ac811e8652c99e8065b9",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8570"
+          },
+          {
+            "orderRef": "c82f7f744d4d80dbc7fccaa905a7f0ae",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8571"
+          },
+          {
+            "orderRef": "fccecf2f4e8aea9c9fc91399d12525c0",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8572"
+          },
+          {
+            "orderRef": "fd9c0c6e7bbd8308f23b5789952fb017",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8573"
+          },
+          {
+            "orderRef": "bb27da9273d48d49246ce6aaaad4f63c",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8574"
+          },
+          {
+            "orderRef": "dc92b1233727fd68fabafc545cc51e1e",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8575"
+          },
+          {
+            "orderRef": "4075b9ac3abe850ef2a39817b796a510",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8576"
+          },
+          {
+            "orderRef": "0aa66112d7ebd0750c9eb4031f05e2a0",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8577"
+          },
+          {
+            "orderRef": "98f5c7d97111a6ca57e192569bd75e02",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8578"
+          },
+          {
+            "orderRef": "3049611d0513441e7ea2de3c15c433e0",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8579"
+          },
+          {
+            "orderRef": "513d3deabbe83b14558d315a1e92c685",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8580"
+          },
+          {
+            "orderRef": "b8834d1c3b3ac45188b512f317ffdfef",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8581"
+          },
+          {
+            "orderRef": "cfe04a0bd837253c42cfc6c4db234d8d",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8582"
+          },
+          {
+            "orderRef": "0fbc8cee6ad4f3624f43d5c28b7aed23",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8583"
+          },
+          {
+            "orderRef": "32ace3abc7b24de44fcf30fb6e674f01",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8584"
+          },
+          {
+            "orderRef": "e61408942103ec14cb96fd2d5a552017",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8585"
+          },
+          {
+            "orderRef": "388ecfbb7b94bca9f8b30d217049a12f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8586"
+          },
+          {
+            "orderRef": "c6af07bbf532a20cb7da0e17c3e09a68",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8587"
+          },
+          {
+            "orderRef": "84835a3d4016db3cfe59740726661d05",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8588"
+          },
+          {
+            "orderRef": "d8cab9f8621241a0f4638541e81e49e0",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8589"
+          },
+          {
+            "orderRef": "6e6af88e0bb66a60f888c61155be2d54",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8590"
+          },
+          {
+            "orderRef": "5515b3c0b400b015266eeaad33dbce21",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8591"
+          },
+          {
+            "orderRef": "3f8560bcd2fcafc11caeae17633ecafe",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8592"
+          },
+          {
+            "orderRef": "14377026ac7cafc9509eaa97bcd1d627",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8593"
+          },
+          {
+            "orderRef": "2279fb130e3f44b3e2b52467aa9c37b4",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8594"
+          },
+          {
+            "orderRef": "2f735908bb6f3fdbd5a0f2315bd72bce",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8595"
+          },
+          {
+            "orderRef": "0c1917c9d691d8bf2685dfa788ebb3b0",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8596"
+          },
+          {
+            "orderRef": "76ab787a800e274eb6f475ef0cd015be",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8597"
+          },
+          {
+            "orderRef": "fedee2de6971ac7ba4e033610efc268b",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8598"
+          },
+          {
+            "orderRef": "57040d689beabb5dbef6fac492973f4e",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8599"
+          },
+          {
+            "orderRef": "f6d5f760e1b4ff46752e30528d32aeaa",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8600"
+          },
+          {
+            "orderRef": "e1e2c4ba42ea14cc3bd5e100bb3924a5",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8601"
+          },
+          {
+            "orderRef": "2dece20311e644e3a0f29d183d71c002",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8602"
+          },
+          {
+            "orderRef": "8da64c9da55aeb8a8f2baba86dd61b52",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8603"
+          },
+          {
+            "orderRef": "fea981e56cf6b995ed00608913b60ca3",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8604"
+          },
+          {
+            "orderRef": "1f36fb3a765f6582c70760a3add75502",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8605"
+          },
+          {
+            "orderRef": "5a231823921e3b64a2dc3cc8a5388d9f",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8606"
+          },
+          {
+            "orderRef": "64248a1d7093fb36f440402268e304aa",
+            "success": true,
+            "processingOrderNo": "JG-20261006-8607"
+          }
+        ],
+        "msg": ""
+      },
+      "ok": 75,
+      "fail": 0,
+      "sample": {
+        "orderRef": "273105c65df19c3cc3b569628e456578",
+        "success": true,
+        "processingOrderNo": "JG-20261006-8533"
+      },
+      "ledger": {
+        "rows": 75,
+        "formula": 105.00000000000013,
+        "planned": 105.00000000000013,
+        "saved": 0
+      }
+    },
+    "D": {
+      "body": "订单页 {一次一张 + 显式 batchNo}",
+      "res": {
+        "status": 200,
+        "ok": 75,
+        "fail": 0,
+        "sample": {
+          "orderRef": "e60e6a372d3bb821ed268ed960da2301",
+          "success": true,
+          "processingOrderNo": "JG-20261006-8608"
+        }
+      },
+      "ok": 75,
+      "fail": 0,
+      "sample": {
+        "orderRef": "e60e6a372d3bb821ed268ed960da2301",
+        "success": true,
+        "processingOrderNo": "JG-20261006-8608"
+      },
+      "ledger": {
+        "rows": 75,
+        "formula": 105.00000000000013,
+        "planned": 105.00000000000013,
+        "saved": 0
+      }
+    }
+  },
+  "checks": [],
+  "residue": {
+    "orders": 0,
+    "pos": 0,
+    "cons_total": 0,
+    "skus": 0,
+    "batches": 0,
+    "products": 0,
+    "cats": 0,
+    "ops_total": 0
+  },
+  "probe": {
+    "productId": "cb2ab7ab8b8124c373fb81e2c8794c23",
+    "skuId": "2107304209284665345",
+    "skuCode": "SD06省料-449507",
+    "inboundId": "1f1fc64a6a03403c0f1c65735967b5a0",
+    "batchNo": "PC-20261006-0007",
+    "batchQty": "6000.0"
+  },
+  "ordersCreated": 300,
+  "orderIds": [
+    "17bf1684e58ec4d02a128ef4e2574f51",
+    "ef17388eae17c5342724d95791ac1d9f",
+    "e9c9a268dd3107b8605a904e3f1b06b2",
+    "56efde461f56a27f91c84a4dd89c8f84",
+    "efdb95d574c98b6126b8429807aab67c",
+    "08412bcc644e2ab7afc4d27c49e6a027",
+    "87a38db495ab6e38b424ba3123a4ac86",
+    "9678fb9e8460ae4c1f498d489d27c663",
+    "b4fcfb7aa808b71fa336d316dc30399f",
+    "9b27406e333335d340c1d2d4fbed867d",
+    "a4320c793c8078838ea08a54e015592e",
+    "4593ef4989f9a0d8ed8919133c571ff6",
+    "090a8c404236a77efdbb4893aaff05a8",
+    "d7d049568e4d058f0e26b4c117bc4415",
+    "8cb3a13066b94d8db364076bb99dd4c5",
+    "c2180e7f08da66efaa110c1ca12e27d5",
+    "0dd399c6164f51a2c87d3cabf80cb402",
+    "2b6c8650fb60778c8cbcc50d7ae21f97",
+    "57e129c0c17097e249d3a7984c4a235f",
+    "490415c41fad5db12008a15506015e54",
+    "36c3044cc8d4f29f58e8a63876ab242d",
+    "5529d49fac90dd74af5c03d3db6328c8",
+    "1de314781457182d73aa86a2d5bd6896",
+    "2ce701a8ad6e79ef1f59008388fe2d63",
+    "edb412572050cd369d7986dd82dcfaed",
+    "0d1a5f7fc057d5754ca084e5d3342c27",
+    "c456f6068b81915c72cdfa8e5acc22b1",
+    "612df5d1ab263c18a48294bc1c76a6a3",
+    "7e787238625e890fe5db76aa3b8aff2d",
+    "793b531170952e815f4311afce856c1c",
+    "9c95c09fc275e9192a375068b463d8ba",
+    "c46dd27231bc33dc0feb52897d53a110",
+    "8388670da4cfa661868f845d4dafb33a",
+    "c6d50ded11d49dce27f4b37a3aa42465",
+    "f1e5042a1bd82797310740eba3921426",
+    "5f15e46a0d2e8a9ba0227dea726c951f",
+    "60e742dd25033ca8a98fda7416d8c4ea",
+    "3a31c257071e88f9a89e3b074f261bf4",
+    "ee78ae9da27cacb68313340cf8f1b645",
+    "f609258ae55917afbe52a5958b724fce",
+    "f9a74fc5e22b246045069e0c30347917",
+    "2c330ae98f21ba94038cee392098cac6",
+    "0a3ca3deedfe3b4bf4abba6bc36cc59d",
+    "934cf417e1f6fe6c96a24cc067fac2c1",
+    "1a1cd5186f7a3a66ed407022b9ee91c0",
+    "ae8f775f26f85f54ae2b667a0aae974f",
+    "aa781dbb16cc8fb268448696bfe4a7a5",
+    "c99ba42e70aff7978accc486c92b215b",
+    "dfca415b7f31b8392da810d85d828a30",
+    "56509c3ac589cdb89dd6bed278642495",
+    "08ee9f09b4cec0e64196ddb4330b21ab",
+    "5d5aaffcea70969e906cfbcb67963216",
+    "9723055671d61ea2c983049e3aa2bf65",
+    "b3c1c7ba726cb7eb04b0f53fa8535440",
+    "468ff9730c80e4fd256d87705f7220d6",
+    "d437b0ca9053334780bc49dafaad1e70",
+    "c6aa8cee381207b1742429b9536fff17",
+    "0cafa526dd9e5ab88e44f49d57c34c4f",
+    "26d3dcd812d789cb397f8667df55ba5e",
+    "1caf4b501b2d179e8bb6da82d4dbe3bc",
+    "543636949da82c4ecbd5e07e8652fda4",
+    "74e0228b553ae2770cbb35487ef6ab6d",
+    "6e9e04ff8ebe22c0e3f93994a37c2edd",
+    "fbe1158e046ea2499d7c14c9c6f41fdf",
+    "9643fc5bbdea260fddde17ea0d56f834",
+    "b7a977da62a0afbf6bc37ff1eb838ddd",
+    "2fde8d7e37c53158bf99c5e7eb1faf34",
+    "b59a1552eaf45007e5052fdee49764db",
+    "488e8b5fbe6f33a47943009d98483cca",
+    "644da3dcebd1ed92d8a8046283a745d9",
+    "82c2dbeb06d9877b1772d5be35e3e1a0",
+    "861d9b027a2d0754d70dbad574aa433e",
+    "9888fdb0febd8f352b97e16325f5260b",
+    "bd39937404342480f5bea91a234aafc0",
+    "56dfa03312f08914131c5e6f073655d7",
+    "432607347e872206f08dfa866c0bb9a7",
+    "130ed64a6ae67a8c454b9dd776719a61",
+    "1a3f8d1171fa764027ae389dd5444a63",
+    "68b181707cd2bdfbda65bebfd496cd84",
+    "bf24d21e8113661fa138a3a45829214e",
+    "fd43314a6e6114d7a51e0f25b5a441ea",
+    "2c6e5ac17987541b781356cc709d9ac1",
+    "4015e71400e4f6c95fe79020c251e105",
+    "4d56ead5a934be6ba2a11694c3ae3553",
+    "4f2359bded8d64f75ada32bcf36aae8d",
+    "f931d74d8e8eb801eb1eb55b318bf125",
+    "1747168f1486f0d99f1f4f6920281817",
+    "93ea937a0c77a56de95ff00d1d352c7f",
+    "abb3c76e0baa13df0508da27b27712cd",
+    "7663eb95c52248da4bb82081b3317243",
+    "cbba80c408044fbb29773a396d97a148",
+    "5c8fa5227b1b8cbbb8df60aacdc60862",
+    "fff12465886654222175027abb0e6e3b",
+    "7a7005bcbf5a9d91cd3ce6c2da996396",
+    "b39eb258472497aabbdd1d3173026120",
+    "3e37a8cfa80a6787776831ec88bedbd8",
+    "283ae0ed551d481fde14c7053b251da1",
+    "6a3afb793facfa0444d14ac4f4cb0aed",
+    "d24fb5ca2f7105d58b47fe38a1357c19",
+    "e654d159a9713ad916eb63af61e61094",
+    "a2a983bbaee754c96ca863ec3be4038e",
+    "222a4eaa6630ec61341ce83ffdea6551",
+    "831f45c87ce85bdf8376ddde93c7cb92",
+    "f1d80bd27b462db1c676f59680cafda0",
+    "886fd3d5fb1b1e8588e924d3ad8a5179",
+    "aef5080620860263d89db14788ad7f16",
+    "a02415ca8a80bede4631d150142c6812",
+    "840dc62463fc771ee798c2b669f78994",
+    "039d29ea464f972073e940470210a772",
+    "9b3174d4a8e09d8eb155a0c9b53b28a3",
+    "ae075a6a9cc0399771a4015ad4551a12",
+    "8ec45c7f7423f535f8af474551701e6e",
+    "3f2d58c6a43271ae9664177f0ac826cc",
+    "6573707cda62e5969b9c939c3f6a109c",
+    "df7d3be48001301a543eac4e79231c3f",
+    "a8e1c14e4166dcbac84a1b0339a47484",
+    "9647a08ee5b3c3a3dcd67407bf3020ae",
+    "1f9ef211ab1a95c747f772ea4d1a5805",
+    "f15dbc07619e25c45d1812035e505a02",
+    "5f5b44dd65bc089a910c7917218dd828",
+    "c6ed378372ffbfe8fc588fa1bebe6a29",
+    "13240d3c2ac35f713ce2f2341d0a656a",
+    "4a2b6e6aa61905954c00046846096bc0",
+    "0e0f29945a9c7ae1f12b31b055d355c5",
+    "52606d75a6dee7c6a8bed70dfbb4fea1",
+    "36753eb5e2913d16d555fda7e64f2cc6",
+    "8623ef0a70f5a33d72972a85b5bc4db9",
+    "2791a266c58f6c82164b5ebe9ea3c837",
+    "99dfbc1835d67bebcb26452435679e2a",
+    "351cf5541849021ffde82d36c7c1abe3",
+    "8f50693f2d9ee0a6295ac0cfff1b0493",
+    "d434725d52d7332c5c9ef700a3ff22b0",
+    "662bada62a930c4799c5cb8306b3ecd6",
+    "f27b1e95e451c04e191370b1a5c95c1e",
+    "f76206af4fbc4c78f80362e32d6d9a05",
+    "6972e281889e225a0060a0b65a327759",
+    "31b5a9cb491b022aef665e6d4aa7c7fc",
+    "1cad3b279161e13def7dd2899b5dfe1b",
+    "9bc6eda2b4a4ccc267349e96ba410517",
+    "34c5f95197e38d705e62ccd4e3e2d0e4",
+    "83d350e1362c4dd18c06ceed6ab62bd1",
+    "1e170cae79803e3a1a3b606675ec3821",
+    "ac879703f534430ab35ba658ecf7a1f1",
+    "eac35a08885a129a5647f601cbff7d00",
+    "78316f60b25393a3a876b15fc2b6a352",
+    "bc7d00b9096c28d368db5c96b4a8d2a5",
+    "7a70714ec397ed8393299eaa6ae4287a",
+    "52c811c005fd75a51bb375cd170003b5",
+    "40c1dcf8e4313d78c72f73cb66616ce2",
+    "9e9a0fa9d08508ac58990d7bdfc72cf9",
+    "273105c65df19c3cc3b569628e456578",
+    "d8a75aaf79aad11e9c403f7fd6f01309",
+    "65797a76dbda4ddfd922fcb552bec14e",
+    "44bb97ef60d21ca7d1c1745623bdc405",
+    "38fc9636499c6e36b6201ea08268b49c",
+    "5ab0723b18aab4542c8b64cef439e1b8",
+    "71b6355217853d10f137de6bddc90527",
+    "e6324a97fd8db53c147f61387e0a2175",
+    "1dc7c78231bab2a5d80bd5fe337b57af",
+    "2e5cb55b223a8394e14222f386d32921",
+    "a9cbf6f31b6deb7f21c60091da5ff431",
+    "6094eab0265739b21276a48160a0b48c",
+    "943526dd972b4d4812453060d318a267",
+    "d105487a497f4b2401640c31259b1558",
+    "88b85c82c42320c0a8dfd297217402ae",
+    "3ec9ab708af2e80b4e6002f0c64d84db",
+    "784db046fe3a69b2b91896f6276458e5",
+    "d05230306b82cb6a746ef98510d4dda2",
+    "9c7e49626fd5bca25d7da900aa0bb1d1",
+    "a43bfce57ce4fb2418429d1ad40d2e23",
+    "1f2fb60874ef81ce0d652bdc1e9a7530",
+    "88ea14d9186162db2c01028ffc028f52",
+    "db1c2d73ab2a3eb5a7cd1314995f0c0f",
+    "3767d369227db3513842959bb2600751",
+    "15202b4731c2582307dbed695726808b",
+    "b4fb671e13bf1444ed456b36eb174947",
+    "3db324b82c8c811fa688d271bf291d36",
+    "0296f014a8bf7823f51bbd4f92ad3439",
+    "9462b976e1488d2d975fb6e8a0e4e4a3",
+    "358874198a2acef913b2b93a1573c48f",
+    "b6daf131adad8cbd378084a0b431ed35",
+    "224a6781fd9e318c3d73cef6b9eef781",
+    "ac58d1cbf492e9cce6308fb8471e6b78",
+    "76fac48b8d6cf39e3c52490c31d3265b",
+    "cfb73766d5f24a9beeefc273860f60b7",
+    "b46117d31ff0c396ea450fbc2657e96c",
+    "9995aa0b1efd1d5ff601871c627ba548",
+    "5512344da570ac811e8652c99e8065b9",
+    "c82f7f744d4d80dbc7fccaa905a7f0ae",
+    "fccecf2f4e8aea9c9fc91399d12525c0",
+    "fd9c0c6e7bbd8308f23b5789952fb017",
+    "bb27da9273d48d49246ce6aaaad4f63c",
+    "dc92b1233727fd68fabafc545cc51e1e",
+    "4075b9ac3abe850ef2a39817b796a510",
+    "0aa66112d7ebd0750c9eb4031f05e2a0",
+    "98f5c7d97111a6ca57e192569bd75e02",
+    "3049611d0513441e7ea2de3c15c433e0",
+    "513d3deabbe83b14558d315a1e92c685",
+    "b8834d1c3b3ac45188b512f317ffdfef",
+    "cfe04a0bd837253c42cfc6c4db234d8d",
+    "0fbc8cee6ad4f3624f43d5c28b7aed23",
+    "32ace3abc7b24de44fcf30fb6e674f01",
+    "e61408942103ec14cb96fd2d5a552017",
+    "388ecfbb7b94bca9f8b30d217049a12f",
+    "c6af07bbf532a20cb7da0e17c3e09a68",
+    "84835a3d4016db3cfe59740726661d05",
+    "d8cab9f8621241a0f4638541e81e49e0",
+    "6e6af88e0bb66a60f888c61155be2d54",
+    "5515b3c0b400b015266eeaad33dbce21",
+    "3f8560bcd2fcafc11caeae17633ecafe",
+    "14377026ac7cafc9509eaa97bcd1d627",
+    "2279fb130e3f44b3e2b52467aa9c37b4",
+    "2f735908bb6f3fdbd5a0f2315bd72bce",
+    "0c1917c9d691d8bf2685dfa788ebb3b0",
+    "76ab787a800e274eb6f475ef0cd015be",
+    "fedee2de6971ac7ba4e033610efc268b",
+    "57040d689beabb5dbef6fac492973f4e",
+    "f6d5f760e1b4ff46752e30528d32aeaa",
+    "e1e2c4ba42ea14cc3bd5e100bb3924a5",
+    "2dece20311e644e3a0f29d183d71c002",
+    "8da64c9da55aeb8a8f2baba86dd61b52",
+    "fea981e56cf6b995ed00608913b60ca3",
+    "1f36fb3a765f6582c70760a3add75502",
+    "5a231823921e3b64a2dc3cc8a5388d9f",
+    "64248a1d7093fb36f440402268e304aa",
+    "e60e6a372d3bb821ed268ed960da2301",
+    "f40750cc88e7e5f21bc9fe3702f224c8",
+    "15f7859f13050b2cd46d002d70f1c9c6",
+    "4fe975d4358772351542713bac9d214a",
+    "5480bfc195ad57c71cd86ae05accfb2a",
+    "cf4f8fe3f740627a1ee33c4221f7cdd5",
+    "a1f0bf0bea784ba7e62479274889cbb1",
+    "799093c0b14abb2fe365039a2d430f9d",
+    "5ac15f850e2965729c9e4b98e0ec4a18",
+    "ded4ec80bd9e175ce372125e1bb673a3",
+    "f8638de00df24565018853f5b64ebe3e",
+    "a80e548388cc908a7e8ce9df7b0bc4b5",
+    "7d5d15fdc25a9a6f687e39743a6315d1",
+    "2309f069ac1a3aeba6d4916efafbb245",
+    "e2e0120484f06b4b9c681d8f50984910",
+    "7b40e14550ae735e46a9dc28288ef6c5",
+    "479dc899fd6146784a6d46567bee9f2f",
+    "7840e697c820a2cfa67f5825bc3a5d0b",
+    "5eaad8a7965a539804861157a2f7c597",
+    "e2f110f2e553c8cf3266d9a7f13dc160",
+    "b12d1d56ae0246185a676a136ae03fdd",
+    "b91fcec346ad095bbcb4797254f1cd6d",
+    "2d7725cc87e71c8eb2ec4480676b236f",
+    "d984ec30d6c2b0bac6e8a1ce36588cfc",
+    "460946448c2d92a8adeffd19c9131f50",
+    "c094ca52abc1a6906739c4e45bf298f3",
+    "be422507cffa1a7d6be13f30624ece01",
+    "41b8df7efa493f506f2c65c54c0b1e2c",
+    "bbe13c114e42239e2671b48cf5726806",
+    "77d4f50d7a518e31edec13eb77fc53bd",
+    "f940c33b65203dbe84f001f0d6c2a376",
+    "1a57dcd7ac250166987d40539b98bdf2",
+    "5cb170e7ef8ecb3716b98b9e778ad8e7",
+    "1922097d0fdce5eddd22db67062e9e0d",
+    "a59ff8e7a38202fede764797fa295761",
+    "39c3a00e7c39bab9ff0132b752b6cbf6",
+    "50cb667b47dfaf0bb2207b740681f71d",
+    "3dc076aca0eed491148acbece544b867",
+    "a50ec718e90e54b859f71a2ef297c7cb",
+    "4cc595ea8ec291ad97f987ce8c6c50de",
+    "52546d141f2553387b116e5e8de0c5a4",
+    "868baeb1c51fab7d681053a6fe56f20a",
+    "2887da13096cc1f43f143e89c6bf433a",
+    "026b725164fc923c35fb923f8932a14b",
+    "7b4838c743164bbbe5b33af573d60152",
+    "30d4aa9a2840422685daf2f91e598b6b",
+    "90ee79a35cc4594fcf767b501833c7a9",
+    "272f6f5f93d536aa8a41e1347fe45e02",
+    "3543fed0ca71562b9280394a5724863e",
+    "4a3cdc53083966f88b3dabc40af1ad99",
+    "90dcfb635e3c3374beb525a1dd81e3fc",
+    "f6b76485c9951d41ab347aa757840d9f",
+    "a47e0c2e063a6d62aaffe935f2c294f1",
+    "7d2635ce76d59c24a613afa237943b21",
+    "94dd6970bf8a800d883c7026ce244fa8",
+    "a2ee457efc569188cec444f9a4d75be0",
+    "bb79f976abffc760850df38dd3b34eb1",
+    "56ea94926e33eefbe9cc635a9189fded",
+    "4dbbffeac65270a27d80a089d6ada1e5",
+    "53e3e04740fde90f033340fda96b60e3",
+    "1709b746a89467f7217347260bb91b27",
+    "1d5a66511463c8fada732461b915f2bc",
+    "8d2bcc3045118f5c2929a5b4973abebc",
+    "0166fdc7228d229c83d7851e47a005bd",
+    "d181c6878d63a1e1f454a1125346dea0",
+    "00bea497105cb2e0db8c129946a90d4d",
+    "855619374d15f3c6780ce7eecbab5fe6",
+    "88bc0d10d7bd11d24f566ef35cb65dc3",
+    "9e8a5f49cc0146f852a9630b4d8245e7",
+    "dc0b737967d1c0d64630958e73e66f72",
+    "8b67c66ec0f917e9119270406bb3cc74",
+    "db1ede53e2dd9e788561d19850fb39f2",
+    "06990a7a7c4064be4e43fd998ebfe1fd",
+    "8afd79311963402c6eb75e69d3d26065",
+    "93feb2d3b0636ed674738be84aa05c6c"
+  ],
+  "pool": {
+    "status": 200,
+    "orderCount": 300,
+    "poolingEnabled": false,
+    "groups": 1
+  },
+  "previewUI": {
+    "orderCount": 75,
+    "formulaMeters": 0,
+    "pooledPlannedMeters": 0,
+    "savedMeters": 0,
+    "perOrderPlannedMeters": 0,
+    "poolingGainMeters": 0
+  },
+  "previewFilled": {
+    "orderCount": 75,
+    "assignmentRule": "fifo",
+    "formulaMeters": 105,
+    "pooledPlannedMeters": 60,
+    "savedMeters": 45,
+    "perOrderPlannedMeters": 105,
+    "poolingGainMeters": 45
+  },
+  "consRows": 225,
+  "ledgerByArm": {
+    "B": {
+      "rows": 75,
+      "formula": 105.00000000000013,
+      "planned": 59.999999999999915,
+      "saved": 45.000000000000064
+    },
+    "C": {
+      "rows": 75,
+      "formula": 105.00000000000013,
+      "planned": 105.00000000000013,
+      "saved": 0
+    },
+    "D": {
+      "rows": 75,
+      "formula": 105.00000000000013,
+      "planned": 105.00000000000013,
+      "saved": 0
+    },
+    "A": {
+      "rows": 0,
+      "formula": 0,
+      "planned": 0,
+      "saved": 0
+    }
+  },
+  "poCount": 300,
+  "templates": [
+    {
+      "name": "布料工序路线",
+      "is_default": false,
+      "positions": "[\"布料\"]",
+      "mainline": "[\"裁剪\", \"打包\"]"
+    },
+    {
+      "name": "窗帘工序路线（默认）",
+      "is_default": true,
+      "positions": "[\"布帘\", \"纱帘\", \"帘头\"]",
+      "mainline": "[\"精裁\", \"三边\", \"熨烫\", \"定型\", \"复烫\", \"车被\", \"外帘打卷\", \"打包\", \"外帘装袋\", \"外帘发货\"]"
+    }
+  ],
+  "rulesCount": 27,
+  "catalogSize": 41,
+  "expectedRoute": [
+    "精裁",
+    "三边",
+    "韩褶",
+    "上车布",
+    "熨烫",
+    "定型",
+    "复烫",
+    "车被",
+    "外帘打卷",
+    "打包",
+    "外帘装袋",
+    "外帘发货"
+  ],
+  "routeKeySet": [
+    "窗帘工序路线（默认）"
+  ],
+  "routeSourceSet": [
+    "direct"
+  ],
+  "seqSignatureSet": [
+    "1:精裁-布>2:布三边>3:韩褶-布>4:上车布-布>5:熨烫-布>6:定型-布>7:复烫-布>8:布帘车被>9:外帘打卷>10:打包>11:外帘装袋>12:外帘发货"
+  ],
+  "judge": {
+    "expected": "精裁>三边>韩褶>上车布>熨烫>定型>复烫>车被>外帘打卷>打包>外帘装袋>外帘发货",
+    "pcs": 300,
+    "pass": 300,
+    "fail": 0,
+    "failSamples": []
+  },
+  "redProof": {
+    "injectedMissing": "打包",
+    "poFlagged": 300,
+    "total": 300
+  },
+  "opsSample": [
+    {
+      "po_id": "0124d51429c397c7c1bb1fb02017af0f",
+      "position_name": "SD06省料布449507-223 验收白",
+      "seq": 1,
+      "operation_name": "精裁-布",
+      "group_name": "裁剪",
+      "unit": "米",
+      "qty": "1.40",
+      "qty_source": "fabric_meters"
+    },
+    {
+      "po_id": "0124d51429c397c7c1bb1fb02017af0f",
+      "position_name": "SD06省料布449507-223 验收白",
+      "seq": 2,
+      "operation_name": "布三边",
+      "group_name": "车位",
+      "unit": "米",
+      "qty": "1.40",
+      "qty_source": "fabric_meters"
+    },
+    {
+      "po_id": "0124d51429c397c7c1bb1fb02017af0f",
+      "position_name": "SD06省料布449507-223 验收白",
+      "seq": 3,
+      "operation_name": "韩褶-布",
+      "group_name": "车位",
+      "unit": "折",
+      "qty": "1.00",
+      "qty_source": "fallback"
+    },
+    {
+      "po_id": "0124d51429c397c7c1bb1fb02017af0f",
+      "position_name": "SD06省料布449507-223 验收白",
+      "seq": 4,
+      "operation_name": "上车布-布",
+      "group_name": "车位",
+      "unit": "米",
+      "qty": "1.40",
+      "qty_source": "fabric_meters"
+    },
+    {
+      "po_id": "0124d51429c397c7c1bb1fb02017af0f",
+      "position_name": "SD06省料布449507-223 验收白",
+      "seq": 5,
+      "operation_name": "熨烫-布",
+      "group_name": "后道",
+      "unit": "米",
+      "qty": "1.40",
+      "qty_source": "fabric_meters"
+    },
+    {
+      "po_id": "0124d51429c397c7c1bb1fb02017af0f",
+      "position_name": "SD06省料布449507-223 验收白",
+      "seq": 6,
+      "operation_name": "定型-布",
+      "group_name": "后道",
+      "unit": "米",
+      "qty": "1.40",
+      "qty_source": "fabric_meters"
+    },
+    {
+      "po_id": "0124d51429c397c7c1bb1fb02017af0f",
+      "position_name": "SD06省料布449507-223 验收白",
+      "seq": 7,
+      "operation_name": "复烫-布",
+      "group_name": "后道",
+      "unit": "米",
+      "qty": "1.40",
+      "qty_source": "fabric_meters"
+    },
+    {
+      "po_id": "0124d51429c397c7c1bb1fb02017af0f",
+      "position_name": "SD06省料布449507-223 验收白",
+      "seq": 8,
+      "operation_name": "布帘车被",
+      "group_name": "后道",
+      "unit": "米",
+      "qty": "1.40",
+      "qty_source": "fabric_meters"
+    },
+    {
+      "po_id": "0124d51429c397c7c1bb1fb02017af0f",
+      "position_name": "SD06省料布449507-223 验收白",
+      "seq": 9,
+      "operation_name": "外帘打卷",
+      "group_name": "后道",
+      "unit": "套",
+      "qty": "1.00",
+      "qty_source": "fallback"
+    },
+    {
+      "po_id": "0124d51429c397c7c1bb1fb02017af0f",
+      "position_name": "SD06省料布449507-223 验收白",
+      "seq": 10,
+      "operation_name": "打包",
+      "group_name": "后道",
+      "unit": "套",
+      "qty": "1.00",
+      "qty_source": "fallback"
+    },
+    {
+      "po_id": "0124d51429c397c7c1bb1fb02017af0f",
+      "position_name": "SD06省料布449507-223 验收白",
+      "seq": 11,
+      "operation_name": "外帘装袋",
+      "group_name": "后道",
+      "unit": "套",
+      "qty": "1.00",
+      "qty_source": "fallback"
+    },
+    {
+      "po_id": "0124d51429c397c7c1bb1fb02017af0f",
+      "position_name": "SD06省料布449507-223 验收白",
+      "seq": 12,
+      "operation_name": "外帘发货",
+      "group_name": "后道",
+      "unit": "套",
+      "qty": "1.00",
+      "qty_source": "fallback"
+    }
+  ],
+  "poOpsTotal": 3600,
+  "rowInvariants": {
+    "rows": 225,
+    "plannedLEformula": true,
+    "plannedPositive": true,
+    "minSaved": 0,
+    "savedAmountTotal": 1800
+  },
+  "poPerArm": {
+    "A": 75,
+    "B": 75,
+    "C": 75,
+    "D": 75
+  },
+  "cleanupOut": "DELETE 1 | DELETE 1 | COMMIT"
+}
