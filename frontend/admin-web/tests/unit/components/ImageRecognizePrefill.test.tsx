@@ -1,4 +1,4 @@
-// case_ids: PR-008, OR-008
+// case_ids: PR-008, OR-008, PR-022
 /**
  * 图片识别预填映射（issue #5321 包 1）——**纯函数**面：不渲染 4965 行的建单页，
  * 直接在 `lib/image-recognize.ts` 上断言「识别结果 → 表单值 / 徽标清单」的确切产物。
@@ -369,6 +369,21 @@ describe('ProductForm 的 [图片识别] 徽标 (#5321)', () => {
     // 没有预填的键不得凭空长出徽标（标错了比不标更糟：商家会去核对一个不是识别来的格子）
     expect(screen.queryByTestId('recognized-marker-price')).toBeNull()
     expect(screen.queryByTestId('recognized-marker-craft')).toBeNull()
+  })
+
+  it('判据 2（issue #6403 缺陷 1）：多值门幅串预填 ⇒ 真 SkuMatrix 出 2 行「规格尺寸」（改前 (0)）', async () => {
+    const { initialData, recognizedFields } = buildProductPrefill([
+      { key: 'color', label: '颜色', value: '米白', source: TAG, reason: null },
+      { key: 'door_width', label: '门幅', value: '2.8米和3.2米', source: TAG, reason: null },
+    ])
+    render(
+      <ProductForm initialData={initialData} onSubmit={vi.fn()} recognizedFields={recognizedFields} />,
+    )
+    await act(async () => {})
+
+    // 「规格尺寸」区块的行数 = 门幅下拉的个数（改前 0 ⇒ 页面显示「规格尺寸 (0)」）
+    expect(screen.getAllByLabelText('规格尺寸')).toHaveLength(2)
+    expect(screen.getByTestId('recognized-marker-door_width').textContent).toBe('[图片识别]')
   })
 
   it('预填键清单与 `[图片识别]` 徽标渲染键**逐一对应**（预填了却没标注 = 红）', async () => {

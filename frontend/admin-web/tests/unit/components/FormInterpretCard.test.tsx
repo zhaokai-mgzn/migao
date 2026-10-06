@@ -1,4 +1,4 @@
-// case_ids: PR-008
+// case_ids: PR-008, PR-022
 /**
  * FormInterpretCard（issue #6367 包 P3）—— 建品页表单里的「识别 + 一次性推理」结果卡。
  *
@@ -160,5 +160,31 @@ describe('FormInterpretCard（issue #6367 包 P3）', () => {
     expect(fill).toBeDisabled()
     fireEvent.click(fill)
     expect(onFill).not.toHaveBeenCalled()
+  })
+
+  // ── issue #6403 缺陷 2：商品描述落的是 HTML（富文本区口径）⇒ **展示层**转可读纯文本 ──
+  const DESCRIPTION_HTML = '<p>常青藤系列纯色遮光窗帘，18 款</p><p>色号包含：2699-01</p>'
+  const DESCRIPTION_FIELD = field({
+    key: 'description',
+    label: '商品描述',
+    value: DESCRIPTION_HTML,
+    source: PAGE_FILL_SOURCE_INTERPRETED,
+  })
+
+  it('判据 4c（#6403 缺陷 2）：商品描述格是**可读纯文本**，不裸显示 <p> 标签', () => {
+    renderCard([DESCRIPTION_FIELD])
+
+    const cell = screen.getByTestId('form-interpret-field-description')
+    expect(cell.textContent).not.toMatch(/[<>]/)
+    expect(cell.textContent).toContain('常青藤系列纯色遮光窗帘，18 款')
+    expect(cell.textContent).toContain('色号包含：2699-01')
+  })
+
+  it('判据 4d（#6403 缺陷 2 反向守卫）：回填的 value 仍是**原始 HTML**（展示层不改落值）', () => {
+    const { onFill } = renderCard([DESCRIPTION_FIELD])
+
+    fireEvent.click(screen.getByTestId('form-interpret-fill'))
+
+    expect(onFill.mock.calls[0][0][0].value).toBe(DESCRIPTION_HTML)
   })
 })

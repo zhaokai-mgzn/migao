@@ -13,7 +13,7 @@ import type { RecognizedField } from './api'
 import type { ProductColor, ProductFormData } from '@/types'
 import { craftItemKeyOf } from './order-craft-fields'
 import { MAX_COLORS } from './product-limits'
-import { nextTempId, normalizeDoorWidth, rebuildSkus } from './sku-utils'
+import { nextTempId, normalizeDoorWidth, rebuildSkus, sameDoorWidth } from './sku-utils'
 
 /** 预填来源标记（与内核返回的 `source` 逐字一致 —— 徽标文案单一事实源，不另写一份） */
 export const RECOGNIZE_SOURCE_TAG = '[图片识别]'
@@ -31,8 +31,13 @@ export const RECOGNIZE_SOURCE_TAG = '[图片识别]'
  */
 export const COLOR_LIST_SEPARATORS = /[\n,，、]+/
 
-/** 识别到的一串颜色原文 → 逐行颜色名（trim + 去空 + **逐字去重** + 封顶 `MAX_COLORS`）。 */
-export function colorNamesOf(raw: string): string[] {
+/**
+ * **清单语义字段的唯一拆分实现**（颜色 / 门幅共用）。
+ *
+ * 分隔符表只有 {@link COLOR_LIST_SEPARATORS} 一份 —— 谁再写第二份 `.split(...)`
+ * 都是复发病根（本仓反复复发的「同一真值两处口径」，issue #6403 缺陷 1 就是这么来的）。
+ */
+export function listValuesOf(raw: string): string[] {
   const names: string[] = []
   for (const part of raw.split(COLOR_LIST_SEPARATORS)) {
     const name = part.trim()
@@ -41,6 +46,11 @@ export function colorNamesOf(raw: string): string[] {
     if (names.length >= MAX_COLORS) break
   }
   return names
+}
+
+/** 识别到的一串颜色原文 → 逐行颜色名（trim + 去空 + **逐字去重** + 封顶 `MAX_COLORS`）。 */
+export function colorNamesOf(raw: string): string[] {
+  return listValuesOf(raw)
 }
 
 /** 有值的字段 = 预填候选（`value: null` 的字段**不在其中**，见文件头口径） */
@@ -72,6 +82,40 @@ function normalizedDoorWidth(raw: string): string {
   return v !== '' && Number.isFinite(Number(v)) ? v : ''
 }
 
+/**
+ * 门幅串与色号串的**连接词差异**（issue #6403 缺陷 1）：用户实测图上的门幅逐字是
+ * `2.8米和3.2米` —— 「和 / 与 / 及」「分号 / 斜杠」不是 {@link COLOR_LIST_SEPARATORS}
+ * 里的字符，但它们是**同义连接写法**。这里先把它们**归一到表里已有的顿号**，
+ * 再交给**同一个**拆分实现 —— 分隔符表仍只有一份（不新造第二份）。
+ */
+const LIST_CONJUNCTIONS = /[和与及]|[;；/／]/g
+
+/**
+ * 识别到的一串门幅原文 → 规格尺寸清单（issue #6403 缺陷 1）。
+ *
+ * 门幅与颜色**同为清单语义**（内核可能给一串 `2.8米和3.2米`）⇒ 走**同一份**拆分实现
+ * {@link listValuesOf}，再逐个 {@link normalizeDoorWidth} 归一、**丢掉非数**
+ * （`'深灰色'` 之流仍必须丢）、按 {@link sameDoorWidth} **去重**（`2.8` / `2.8米` /
+ * `门幅2.8` 是同一根物理门幅）。单值串（`'2.8米'`）行为与改前**逐字一致**。
+ */
+export function doorWidthsOf(raw: string): string[] {
+  const widths: string[] = []
+  for (const part of listValuesOf(raw.replace(LIST_CONJUNCTIONS, '、'))) {
+    const width = normalizedDoorWidth(part)
+    if (width === '' || widths.some((w) => sameDoorWidth(w, width))) continue
+    widths.push(width)
+  }
+  return widths
+}
+
+/**
+ * 清单语义的识别字段**登记表**（类级元守卫，铁律 8）—— 判据 =
+ * `frontend/admin-web/tests/unit/lib/image-recognize-door-width-split.test.ts` 的「类级元守卫」：
+ * 登记 ⇄ 探针双向相等，且每一个登记项都必须能把多值串拆开落进表单。
+ * 新增同类字段却按标量处理（issue #6403 的原形态）⇒ 当场红。
+ */
+export const LIST_SEMANTIC_FIELD_KEYS = ['color', 'door_width'] as const
+
 export interface ProductPrefill {
   /** 传给 `<ProductForm initialData={...} />` 的初值（**只含能安全映射的键**） */
   initialData: Partial<ProductFormData>
@@ -88,7 +132,7 @@ export interface ProductPrefill {
  * | `description` | `description`（图文描述 → 商品描述富文本区，issue #6362） | 同名直填（**文案**不是事实：低可信度 —— 页面上按**解读来源**挂另一枚徽标提醒复核；本节只搬值、**不引用深通道** —— 判据 5 的射程与本文件的分工见 `docs/wiki/Frontend.md`）；`ProductFormData.description` 已存在、提交链路已通 ⇒ **不新增落库字段** |
  * | `material` / `craft` | `specifications.material` / `.craft` | `ProductAttributes` 读的是**英文 key**（`lib/attribute-keys.ts`：表单内部英文 key、提交时 `toChineseSpecKeys` 转中文落库）⇒ 只有英文 key 才**在表单里看得见**，且落库口径仍是「材质 / 工艺」 |
  * | `color` | `colors[].colorName` | `ProductColor` 需要 `id` ⇒ 复用 SkuMatrix「添加颜色」同一条路径的 `nextTempId()` |
- * | `door_width` | `doorWidths[]` | 经 `normalizeDoorWidth` 归一（与门幅下拉选项同口径） |
+ * | `door_width` | `doorWidths[]` | 与 `color` **同为清单字段**（issue #6403）：拆多值 → 逐个 `normalizeDoorWidth` 归一 → 丢非数 → 按 `sameDoorWidth` 去重 |
  * | `price` | **不映射**（有意） | `ProductFormData.price` 只是 `derivePrice(skus, price)` 的**兜底值**，商品页上**没有任何控件显示它** ⇒ 预填了商家看不见也改不了（「看得见才敢提交」）⇒ 留给商家在 SKU 矩阵里按门幅填 |
  */
 export function buildProductPrefill(fields: RecognizedField[]): ProductPrefill {
@@ -128,9 +172,10 @@ export function buildProductPrefill(fields: RecognizedField[]): ProductPrefill {
 
   // 颜色是**清单**字段（内核按顿号给一串）⇒ 拆成多行；塞成一格会被 30 字符输入框削断（issue #6354）
   const colorNames = colorNamesOf(valueOf(fields, 'color'))
-  const doorWidth = normalizedDoorWidth(valueOf(fields, 'door_width'))
+  // 门幅**同样是清单字段**（issue #6403）：图上一串「2.8米和3.2米」逐根拆开，
+  // 不再当标量（改前整串因 `Number(...)` 为 NaN 被丢 ⇒ 页面「规格尺寸 (0)」）
+  const doorWidths = doorWidthsOf(valueOf(fields, 'door_width'))
   const colors: ProductColor[] = colorNames.map((colorName) => ({ id: nextTempId(), colorName }))
-  const doorWidths: string[] = doorWidth ? [doorWidth] : []
   if (colors.length > 0) {
     initialData.colors = colors
     recognizedFields.push('color')

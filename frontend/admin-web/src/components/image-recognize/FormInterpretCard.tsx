@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Image from 'next/image'
 import { Button } from '@/components/ui'
 import { resolveImageUrl } from '@/lib/utils'
+import { htmlToPlainText } from '@/lib/rich-text-plain'
 import type { RecognizedField } from '@/lib/api'
 import {
   PAGE_FILL_SOURCE_INTERPRETED,
@@ -119,8 +120,10 @@ export default function FormInterpretCard({
                       checked={selected.includes(field.key)}
                       onChange={() => toggle(field.key)}
                     />
-                    <span className="text-xs leading-5 text-neutral-700">
-                      {field.label}：{field.value}
+                    {/* issue #6403 缺陷 2：值可能是 HTML（富文本区的落值口径）⇒ 展示层转可读纯文本；
+                        落值一个字不改（`onFill` 回传的仍是原始 HTML） */}
+                    <span className="text-xs leading-5 text-neutral-700 whitespace-pre-line">
+                      {field.label}：{htmlToPlainText(field.value)}
                     </span>
                   </label>
                 ) : (
