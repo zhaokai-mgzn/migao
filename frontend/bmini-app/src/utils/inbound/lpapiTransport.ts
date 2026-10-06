@@ -32,9 +32,15 @@
  *
  * - **只 h5**：weapp 端 `loadLpapi()` 返回 `null`（那一侧打印能力在 `printCapability` 里显式判，
  *   给的是可行动文案，不是静默失败）。
- * - **真机仍未实打**（2026-09-29）：本机没有安卓蓝牙环境 ⇒ 判据全部跑替身 + **真实回执包络形状**。
- *   重启条件（拿到安卓机后跑一次）：① 打出的点阵 1:1（不被缩放/居中）② 整幅在 30mm 纸内
- *   ③ 服务端 `print_count` +1 ④ 状态行显示「已连接」，机器关机后再打显示「未连上」。
+ * - **真机实测（2026-10-06，本机 macOS + Chrome 153 + 德佟 DP235S；issue #6439）**：BLE 口**开放**
+ *   （`requestDevice` 能列出 `DP235S-Y608220585`）⇒ §14.2 那条「唯一支点」成立。据此还查出一处
+ *   **恒失败**缺陷：`openPrinter()` **空参**会走 SDK 自己的 `searchPrinter()` 重扫，而 Web Bluetooth
+ *   **没有用户手势扫不了** ⇒ 恒回 `ERROR_NO_PRINTER`「未搜索到到打印机设备！」。现形态 = 显式喂
+ *   `{name, deviceId, checkDeviceName:false, autoScan:false}`（见下方 ② 连接处）。同一形态已落到
+ *   admin-web 侧 `frontend/admin-web/src/lib/label-print/lpapi.ts`（同一根因，同 PR 一起修）。
+ * - **安卓侧仍未实打**（2026-09-29 待办，**未完成**）：本机没有安卓蓝牙环境 ⇒ 判据仍全部跑替身 +
+ *   **真实回执包络形状**。重启条件（拿到安卓机后跑一次）：① 打出的点阵 1:1（不被缩放/居中）
+ *   ② 整幅在 30mm 纸内 ③ 服务端 `print_count` +1 ④ 状态行显示「已连接」，机器关机后再打显示「未连上」。
  */
 import { isH5 } from '../platform'
 import { LabelTransportError, type LabelTransport } from './labelPrint'
@@ -145,6 +151,18 @@ function firstDeviceName(resultInfo: unknown): string {
 }
 
 /**
+ * 回执里的设备 id —— `openPrinter` **必须**拿到它（与 `name` 一起）。
+ *
+ * 🔴 见文件头「真机实测（2026-10-06）」：空参调用会走 SDK 自己的 `searchPrinter()` 重扫，
+ * 而 Web Bluetooth **没有用户手势扫不了** ⇒ 恒回 `ERROR_NO_PRINTER`「未搜索到到打印机设备！」。
+ */
+function firstDeviceId(resultInfo: unknown): string {
+  const list = Array.isArray(resultInfo) ? resultInfo : []
+  const first: any = list[0]
+  return String(first?.deviceId ?? '').trim()
+}
+
+/**
  * 读机器的**自检**提示（用**厂商表**，不自造第二份）：`getPrinterInfo().printable` ≥ 20 才算异常
  * ⇒ `LPAPI.getPrintableMessage(code)` 给中文（缺纸 / 开盖 / 打印头过热…）。
  * 任何一步取不到 ⇒ 空串（**不猜、不编**）。
@@ -211,9 +229,20 @@ export function createLpapiTransport(options: {
       }
       const deviceName = firstDeviceName(device.resultInfo)
 
-      // ② 连接
+      // ② 连接 —— 🔴 **必须把弹框选中的设备显式喂进去 + 关掉 `autoScan`**：
+      //    空参 ⇒ SDK 回去走自己的 `searchPrinter()`，而 Web Bluetooth 没有用户手势扫不了
+      //    ⇒ 恒回 `ERROR_NO_PRINTER`（真机实测，见文件头）。`checkDeviceName:false` 是同一分支的
+      //    前置条件：SDK 只在它是布尔 `false` 时才肯用调用方给的设备兜底。
       try {
-        ensureOk(await api.openPrinter(), 'connect-failed')
+        ensureOk(
+          await api.openPrinter({
+            name: deviceName,
+            deviceId: firstDeviceId(device.resultInfo),
+            checkDeviceName: false,
+            autoScan: false,
+          }),
+          'connect-failed',
+        )
       } catch (error) {
         link.set(linkStateAfterFailure('connect-failed', before, deviceName))
         throw toTransportError(error, 'connect-failed')
