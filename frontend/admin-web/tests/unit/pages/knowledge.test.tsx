@@ -36,6 +36,20 @@ vi.mock('dayjs', () => ({
   }),
 }))
 
+// 登录态（issue #6392）：本页的**写入口**（新建知识卡片 / 文档提炼 / 行内编辑·发布·归档·删除）按
+// `knowledge:manage` 显隐 ⇒ 本文件全是「写流程」用例，必须以**持码**身份跑，否则按钮根本不渲染、
+// 用例测的就不是它声称的行为。`@/store/auth` 必须按 **zustand 选择器**返回（整份 state mock 会让
+// `useAuthStore(s => s.user)` 恒 undefined ⇒ `has()` 恒 false），范式同 list-write-button-permission.test.tsx。
+const authMock = vi.hoisted(() => ({
+  state: {
+    user: { id: '1', username: 'tester', name: '测试账号', permissions: ['*'] as string[], roles: [] as string[] },
+  },
+}))
+vi.mock('@/store/auth', () => ({
+  useAuthStore: (selector?: (s: unknown) => unknown) =>
+    typeof selector === 'function' ? selector(authMock.state) : authMock.state,
+}))
+
 // Mock sonner
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
