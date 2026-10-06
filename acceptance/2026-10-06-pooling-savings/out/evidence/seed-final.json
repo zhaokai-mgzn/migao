@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-06T07:16:38.391Z",
+  "at": "2026-10-06T07:27:42.977Z",
   "checks": [
     {
       "id": "订单读面有数据",
@@ -19,7 +19,7 @@
     {
       "id": "省料台账有数据",
       "ok": true,
-      "detail": "批次消耗行=252；看板 saved=20 米 / 1434.52 元"
+      "detail": "批次消耗行=274；看板 saved=24.3 米 / 1736.89 元"
     },
     {
       "id": "五个页面都能打开并渲染",
@@ -31,11 +31,11 @@
     "orderTotal": 302,
     "poListLimit": 100,
     "statusDist": {
+      "generated": 22,
       "issued": 20,
       "in_processing": 25,
       "completed": 25,
-      "cancelled": 10,
-      "generated": 20
+      "cancelled": 8
     },
     "po_generated": 100,
     "po_issued": 32,
@@ -576,11 +576,11 @@
       }
     },
     "savingBoard": {
-      "formulaMeters": 855.1,
-      "plannedMeters": 835.1,
-      "savedMeters": 20,
-      "savedAmount": 1434.52,
-      "lineCount": 252,
+      "formulaMeters": 941,
+      "plannedMeters": 916.7,
+      "savedMeters": 24.3,
+      "savedAmount": 1736.89,
+      "lineCount": 274,
       "unknownCostLines": 0,
       "batchCount": 20,
       "le0_2Count": 0,
@@ -589,219 +589,20 @@
     "pool": {
       "maxWaitHours": 24,
       "poolingEnabled": false,
-      "orderCount": 34,
-      "lineCount": 34,
+      "orderCount": 16,
+      "lineCount": 16,
       "overdueCount": 0,
-      "urgentCount": 4,
+      "urgentCount": 0,
       "warnings": [],
-      "urgentLines": [
-        {
-          "orderId": "c858ee97bcf04a6b8c7d3afec17a2712",
-          "orderNo": "20261006045490139",
-          "itemId": "0ab87fcaea9d4edd2286bb94813c5e02",
-          "productId": "f08ce865640f4e0e4480b190f71a2641",
-          "productName": "SD07演示布814127",
-          "skuCode": "SD07演示-2.8-8141270",
-          "requiredMeters": 2.6,
-          "waitingSince": "2026-10-06T14:07:43.293611+08:00",
-          "waitHours": 1.1,
-          "overdue": false,
-          "isUrgent": true,
-          "requiredDeliveryDate": "2026-10-02",
-          "deliveryDaysLeft": -4
-        },
-        {
-          "orderId": "8e9f4a3b792f807173f79f2b82746d8d",
-          "orderNo": "20261006570660257",
-          "itemId": "0b800af83577d4506786b1b6180c9d0a",
-          "productId": "2b9dd2f403efc03be8eecb0f90e84368",
-          "productName": "SD07演示布814127",
-          "skuCode": "SD07演示-3.2-8141272",
-          "requiredMeters": 5.6,
-          "waitingSince": "2026-10-06T14:08:28.237397+08:00",
-          "waitHours": 1.1,
-          "overdue": false,
-          "isUrgent": true,
-          "requiredDeliveryDate": "2026-10-14",
-          "deliveryDaysLeft": 8
-        },
-        {
-          "orderId": "8b53ce1cf8eec79e4012bed2192438f8",
-          "orderNo": "20261006025840275",
-          "itemId": "a958e739e24b5e16179eae4358413d3b",
-          "productId": "2b9dd2f403efc03be8eecb0f90e84368",
-          "productName": "SD07演示布814127",
-          "skuCode": "SD07演示-3.2-8141272",
-          "requiredMeters": 3,
-          "waitingSince": "2026-10-06T14:08:34.903664+08:00",
-          "waitHours": 1.1,
-          "overdue": false,
-          "isUrgent": true
-        },
-        {
-          "orderId": "f853169028b975d267d15c3df0b93591",
-          "orderNo": "20261006946530303",
-          "itemId": "30b387cebea3bcba30450eac1dbe86d7",
-          "productId": "2b9dd2f403efc03be8eecb0f90e84368",
-          "productName": "SD07演示布814127",
-          "skuCode": "SD07演示-3.2-8141272",
-          "requiredMeters": 4.6,
-          "waitingSince": "2026-10-06T14:08:45.294694+08:00",
-          "waitHours": 1.1,
-          "overdue": false,
-          "isUrgent": true
-        }
-      ],
+      "urgentLines": [],
       "groups": [
-        {
-          "materialKey": "2b9dd2f403efc03be8eecb0f90e84368|SD07演示-3.2-8141272",
-          "productId": "2b9dd2f403efc03be8eecb0f90e84368",
-          "skuCode": "SD07演示-3.2-8141272",
-          "orderCount": 8,
-          "requiredMeters": 33.7,
-          "lines": [
-            {
-              "orderId": "882f547e5023390252348559e1848bca",
-              "orderNo": "20261006972610027",
-              "itemId": "fbe8b82b373eec8ebf3194ba436870ce",
-              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-3.2-8141272",
-              "requiredMeters": 4.8,
-              "waitingSince": "2026-10-06T14:06:58.869249+08:00",
-              "waitHours": 1.2,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-02",
-              "deliveryDaysLeft": -4
-            },
-            {
-              "orderId": "5161ec236d585ab5d2cc51f91cb13fbf",
-              "orderNo": "20261006909310149",
-              "itemId": "7d5a1e9fbb1ea6327ce06d365b514e6f",
-              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-3.2-8141272",
-              "requiredMeters": 4,
-              "waitingSince": "2026-10-06T14:07:47.168498+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-07",
-              "deliveryDaysLeft": 1
-            },
-            {
-              "orderId": "471ae58789ee7c3028b39e40a6204c8d",
-              "orderNo": "20261006015540160",
-              "itemId": "a1e363012095687918eacfcf72a06bf2",
-              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-3.2-8141272",
-              "requiredMeters": 4.4,
-              "waitingSince": "2026-10-06T14:07:51.298305+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-09",
-              "deliveryDaysLeft": 3
-            },
-            {
-              "orderId": "978a33477e6dec8412ea567160053bd8",
-              "orderNo": "20261006956780222",
-              "itemId": "7056c28ec934e790ff688f2544034f9d",
-              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-3.2-8141272",
-              "requiredMeters": 3,
-              "waitingSince": "2026-10-06T14:08:15.269328+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-12",
-              "deliveryDaysLeft": 6
-            },
-            {
-              "orderId": "1312a7f3e5020204cc7273b68c4ff36a",
-              "orderNo": "20261006577460125",
-              "itemId": "94076fda740208e2c3cb4865a3447979",
-              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-3.2-8141272",
-              "requiredMeters": 4.8,
-              "waitingSince": "2026-10-06T14:07:38.116475+08:00",
-              "waitHours": 1.2,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-13",
-              "deliveryDaysLeft": 7
-            },
-            {
-              "orderId": "f5c989c1c810a1538216c9187716a300",
-              "orderNo": "20261006734220288",
-              "itemId": "93ce20d09519cd4992cdfbe5d8ffce6d",
-              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-3.2-8141272",
-              "requiredMeters": 3.6,
-              "waitingSince": "2026-10-06T14:08:39.738681+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-13",
-              "deliveryDaysLeft": 7
-            },
-            {
-              "orderId": "4b88c52e9fd3dc57ccf76d8aa259aefb",
-              "orderNo": "20261006980380035",
-              "itemId": "031de3522e1545c5829ffedc06d2ce6c",
-              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-3.2-8141272",
-              "requiredMeters": 2.3,
-              "waitingSince": "2026-10-06T14:07:02.514575+08:00",
-              "waitHours": 1.2,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-20",
-              "deliveryDaysLeft": 14
-            },
-            {
-              "orderId": "2b1bd3cd4707deee21b708d0e1ada411",
-              "orderNo": "20261006272610151",
-              "itemId": "2c7c285bc666459616a43184b7199ba6",
-              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-3.2-8141272",
-              "requiredMeters": 6.8,
-              "waitingSince": "2026-10-06T14:07:47.891607+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false
-            }
-          ]
-        },
         {
           "materialKey": "a61daac33e1a49974577d3ca81c4500b|SD07演示-2.8-8141273",
           "productId": "a61daac33e1a49974577d3ca81c4500b",
           "skuCode": "SD07演示-2.8-8141273",
-          "orderCount": 12,
-          "requiredMeters": 44.9,
+          "orderCount": 7,
+          "requiredMeters": 27.8,
           "lines": [
-            {
-              "orderId": "825aac13ea6cd0ce0c5ed9c42a3de05d",
-              "orderNo": "20261006856500273",
-              "itemId": "675829923785a92a4987fd362115acd1",
-              "productId": "a61daac33e1a49974577d3ca81c4500b",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-2.8-8141273",
-              "requiredMeters": 2.4,
-              "waitingSince": "2026-10-06T14:08:34.194323+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-04",
-              "deliveryDaysLeft": -2
-            },
             {
               "orderId": "4652c5da34522688a0bf40eb6ea4185d",
               "orderNo": "20261006719460148",
@@ -811,7 +612,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 3.2,
               "waitingSince": "2026-10-06T14:07:46.818713+08:00",
-              "waitHours": 1.1,
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-09",
@@ -826,41 +627,11 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 5.6,
               "waitingSince": "2026-10-06T14:07:49.750689+08:00",
-              "waitHours": 1.1,
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-11",
               "deliveryDaysLeft": 5
-            },
-            {
-              "orderId": "f7a53e423574c9cac9bb949478dca128",
-              "orderNo": "20261006239740146",
-              "itemId": "77d88d864a17c77a5d86f4d0294ff468",
-              "productId": "a61daac33e1a49974577d3ca81c4500b",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-2.8-8141273",
-              "requiredMeters": 5.8,
-              "waitingSince": "2026-10-06T14:07:46.099046+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-13",
-              "deliveryDaysLeft": 7
-            },
-            {
-              "orderId": "983a0e26221499d85d2f95cac1190859",
-              "orderNo": "20261006070070206",
-              "itemId": "095c55867ae994f92bfee02e7336a5b6",
-              "productId": "a61daac33e1a49974577d3ca81c4500b",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-2.8-8141273",
-              "requiredMeters": 2.3,
-              "waitingSince": "2026-10-06T14:08:09.390552+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-14",
-              "deliveryDaysLeft": 8
             },
             {
               "orderId": "2fbeff1281c80a5ca9629d48c6a76200",
@@ -871,7 +642,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 4.1,
               "waitingSince": "2026-10-06T14:07:03.695496+08:00",
-              "waitHours": 1.2,
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-16",
@@ -886,7 +657,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 5.4,
               "waitingSince": "2026-10-06T14:07:49.014314+08:00",
-              "waitHours": 1.1,
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-18",
@@ -901,37 +672,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 1.5,
               "waitingSince": "2026-10-06T14:07:02.116746+08:00",
-              "waitHours": 1.2,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-20",
-              "deliveryDaysLeft": 14
-            },
-            {
-              "orderId": "a54dd791369f8b82a5fe559ebad32063",
-              "orderNo": "20261006076840058",
-              "itemId": "ded450ece3b126898d56a1cd9588e3a3",
-              "productId": "a61daac33e1a49974577d3ca81c4500b",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-2.8-8141273",
-              "requiredMeters": 3.8,
-              "waitingSince": "2026-10-06T14:07:12.02901+08:00",
-              "waitHours": 1.2,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-20",
-              "deliveryDaysLeft": 14
-            },
-            {
-              "orderId": "d6aec79f260a6434a59d949cb8abb555",
-              "orderNo": "20261006432700153",
-              "itemId": "51854271126b105f94307bc16dfd5787",
-              "productId": "a61daac33e1a49974577d3ca81c4500b",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-2.8-8141273",
-              "requiredMeters": 2.8,
-              "waitingSince": "2026-10-06T14:07:48.641914+08:00",
-              "waitHours": 1.1,
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-20",
@@ -946,7 +687,7 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 4,
               "waitingSince": "2026-10-06T14:07:02.890085+08:00",
-              "waitHours": 1.2,
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false
             },
@@ -959,7 +700,59 @@
               "skuCode": "SD07演示-2.8-8141273",
               "requiredMeters": 4,
               "waitingSince": "2026-10-06T14:07:04.478539+08:00",
-              "waitHours": 1.2,
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false
+            }
+          ]
+        },
+        {
+          "materialKey": "2b9dd2f403efc03be8eecb0f90e84368|SD07演示-3.2-8141272",
+          "productId": "2b9dd2f403efc03be8eecb0f90e84368",
+          "skuCode": "SD07演示-3.2-8141272",
+          "orderCount": 3,
+          "requiredMeters": 13.1,
+          "lines": [
+            {
+              "orderId": "5161ec236d585ab5d2cc51f91cb13fbf",
+              "orderNo": "20261006909310149",
+              "itemId": "7d5a1e9fbb1ea6327ce06d365b514e6f",
+              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-3.2-8141272",
+              "requiredMeters": 4,
+              "waitingSince": "2026-10-06T14:07:47.168498+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false,
+              "requiredDeliveryDate": "2026-10-07",
+              "deliveryDaysLeft": 1
+            },
+            {
+              "orderId": "4b88c52e9fd3dc57ccf76d8aa259aefb",
+              "orderNo": "20261006980380035",
+              "itemId": "031de3522e1545c5829ffedc06d2ce6c",
+              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-3.2-8141272",
+              "requiredMeters": 2.3,
+              "waitingSince": "2026-10-06T14:07:02.514575+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false,
+              "requiredDeliveryDate": "2026-10-20",
+              "deliveryDaysLeft": 14
+            },
+            {
+              "orderId": "2b1bd3cd4707deee21b708d0e1ada411",
+              "orderNo": "20261006272610151",
+              "itemId": "2c7c285bc666459616a43184b7199ba6",
+              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-3.2-8141272",
+              "requiredMeters": 6.8,
+              "waitingSince": "2026-10-06T14:07:47.891607+08:00",
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false
             }
@@ -969,69 +762,9 @@
           "materialKey": "604c4b3bd608c09145314473ae3b2090|SD07演示-3.0-8141271",
           "productId": "604c4b3bd608c09145314473ae3b2090",
           "skuCode": "SD07演示-3.0-8141271",
-          "orderCount": 7,
-          "requiredMeters": 30.7,
+          "orderCount": 3,
+          "requiredMeters": 10.7,
           "lines": [
-            {
-              "orderId": "0b91009f487c47ec342871fc23714eb2",
-              "orderNo": "20261006086540037",
-              "itemId": "69f7abcffd9944423908e82066862e38",
-              "productId": "604c4b3bd608c09145314473ae3b2090",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-3.0-8141271",
-              "requiredMeters": 4.6,
-              "waitingSince": "2026-10-06T14:07:03.269231+08:00",
-              "waitHours": 1.2,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-09-30",
-              "deliveryDaysLeft": -6
-            },
-            {
-              "orderId": "4acf3ce1c6dc0429cbd47dd5f3df5001",
-              "orderNo": "20261006142190150",
-              "itemId": "baa220102424cb2b6ab434ce9fdb55bb",
-              "productId": "604c4b3bd608c09145314473ae3b2090",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-3.0-8141271",
-              "requiredMeters": 5.2,
-              "waitingSince": "2026-10-06T14:07:47.534137+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-09",
-              "deliveryDaysLeft": 3
-            },
-            {
-              "orderId": "242ab42f5cdc5389b20c4293e1a49817",
-              "orderNo": "20261006848340216",
-              "itemId": "5aab2caa76a90487c8a3d68d3ed58c85",
-              "productId": "604c4b3bd608c09145314473ae3b2090",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-3.0-8141271",
-              "requiredMeters": 7.8,
-              "waitingSince": "2026-10-06T14:08:13.040351+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-14",
-              "deliveryDaysLeft": 8
-            },
-            {
-              "orderId": "9a9e3e4c00a3265c12f3c48d6505bcb6",
-              "orderNo": "20261006085470263",
-              "itemId": "6a904f472ac38e1d5d695fb03d355180",
-              "productId": "604c4b3bd608c09145314473ae3b2090",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-3.0-8141271",
-              "requiredMeters": 2.4,
-              "waitingSince": "2026-10-06T14:08:30.513854+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-20",
-              "deliveryDaysLeft": 14
-            },
             {
               "orderId": "70704698ab41fc54d5d78c738e1c421d",
               "orderNo": "20261006761830039",
@@ -1041,7 +774,7 @@
               "skuCode": "SD07演示-3.0-8141271",
               "requiredMeters": 4,
               "waitingSince": "2026-10-06T14:07:04.084736+08:00",
-              "waitHours": 1.2,
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false
             },
@@ -1054,7 +787,7 @@
               "skuCode": "SD07演示-3.0-8141271",
               "requiredMeters": 1.9,
               "waitingSince": "2026-10-06T14:07:48.26159+08:00",
-              "waitHours": 1.1,
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false
             },
@@ -1067,7 +800,7 @@
               "skuCode": "SD07演示-3.0-8141271",
               "requiredMeters": 4.8,
               "waitingSince": "2026-10-06T14:07:50.901388+08:00",
-              "waitHours": 1.1,
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false
             }
@@ -1077,8 +810,8 @@
           "materialKey": "f08ce865640f4e0e4480b190f71a2641|SD07演示-2.8-8141270",
           "productId": "f08ce865640f4e0e4480b190f71a2641",
           "skuCode": "SD07演示-2.8-8141270",
-          "orderCount": 7,
-          "requiredMeters": 23.2,
+          "orderCount": 3,
+          "requiredMeters": 10.8,
           "lines": [
             {
               "orderId": "4b36ceaca61ad3aa781a3c39db900cb1",
@@ -1089,7 +822,7 @@
               "skuCode": "SD07演示-2.8-8141270",
               "requiredMeters": 5.2,
               "waitingSince": "2026-10-06T14:07:50.527706+08:00",
-              "waitHours": 1.1,
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-09-30",
@@ -1104,26 +837,11 @@
               "skuCode": "SD07演示-2.8-8141270",
               "requiredMeters": 2.2,
               "waitingSince": "2026-10-06T14:07:49.375832+08:00",
-              "waitHours": 1.1,
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-02",
               "deliveryDaysLeft": -4
-            },
-            {
-              "orderId": "5ec437fe8fd319180c99546b50d33acb",
-              "orderNo": "20261006807700188",
-              "itemId": "0fff6b250e2a5244a59768cc63e8865f",
-              "productId": "f08ce865640f4e0e4480b190f71a2641",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-2.8-8141270",
-              "requiredMeters": 2,
-              "waitingSince": "2026-10-06T14:08:02.479828+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-04",
-              "deliveryDaysLeft": -2
             },
             {
               "orderId": "b2a1f739e0afd71351a9c6918f73b28d",
@@ -1134,62 +852,17 @@
               "skuCode": "SD07演示-2.8-8141270",
               "requiredMeters": 3.4,
               "waitingSince": "2026-10-06T14:07:50.133691+08:00",
-              "waitHours": 1.1,
+              "waitHours": 1.3,
               "overdue": false,
               "isUrgent": false,
               "requiredDeliveryDate": "2026-10-13",
               "deliveryDaysLeft": 7
-            },
-            {
-              "orderId": "807e95e585c66c428c913471e696d3d8",
-              "orderNo": "20261006623190073",
-              "itemId": "6469c7638d30bb6c3b420c1f5ea6fc20",
-              "productId": "f08ce865640f4e0e4480b190f71a2641",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-2.8-8141270",
-              "requiredMeters": 4.1,
-              "waitingSince": "2026-10-06T14:07:17.729397+08:00",
-              "waitHours": 1.2,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-14",
-              "deliveryDaysLeft": 8
-            },
-            {
-              "orderId": "812a4aedf0b9edfaaf97f7c844e38ef2",
-              "orderNo": "20261006306710203",
-              "itemId": "2600ca32018751233dcd9d0bd7c57104",
-              "productId": "f08ce865640f4e0e4480b190f71a2641",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-2.8-8141270",
-              "requiredMeters": 3.2,
-              "waitingSince": "2026-10-06T14:08:08.25113+08:00",
-              "waitHours": 1.1,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-14",
-              "deliveryDaysLeft": 8
-            },
-            {
-              "orderId": "b7cefbc9e1c6b8e82556b7146104bbe4",
-              "orderNo": "20261006610860046",
-              "itemId": "72be6629f278d1eb582ceda439b373be",
-              "productId": "f08ce865640f4e0e4480b190f71a2641",
-              "productName": "SD07演示布814127",
-              "skuCode": "SD07演示-2.8-8141270",
-              "requiredMeters": 3.1,
-              "waitingSince": "2026-10-06T14:07:07.077402+08:00",
-              "waitHours": 1.2,
-              "overdue": false,
-              "isUrgent": false,
-              "requiredDeliveryDate": "2026-10-16",
-              "deliveryDaysLeft": 10
             }
           ]
         }
       ]
     },
-    "consumptions": 252
+    "consumptions": 274
   },
   "pages": {
     "订单管理": {
@@ -1208,7 +881,7 @@
       "path": "/production/pool",
       "url": "https://merchant.migaozn.com/production/pool",
       "file": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06-pooling-savings/out/screenshots/demo-_production_pool.png",
-      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 生产看板 智能派单 加工项管理 工艺配置 计件工资 仓储与物料 5 组织管理 3 通知中心 收起 生产管理 / 智能派单 米 米高测试 智能派单 待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；加急单不参与合并，立即单独派单 刷新 合并派单开关 未开启 最长等待 24 小时 待派订单 34 单 加工明细 34 行 加急订单 4 单 超时未派 0 单 加急订单（不参与合并，立即派） 4 行 / 4 单 —— 不参与合并，立即单独派单 单号 物料（商品 × 颜色 × 门幅） 需求米数 等待时长 加急标记 到货日 操作 20261006045490139 SD07演示布814127SD07演示-2.8-8141270 2.60 1.2 小时 加急 2026-10-02已逾期 4 天 立即派单 20261006570660257 SD07演示布814127SD07演示-3.2-8141272 5.60 1.2 小时 加急 2026-10-14剩 8 天 立即派单 20261006025840275 SD07演示布814127SD07演示-3.2-8141272 3.00 1.2 小时 加急 未指定 立即派单 20261006946530303 SD07演示布814127SD07演示-3.2-8141272 4.60 1.1 小时 加急 未指定 立即派单 可合并的待派订单（按料分组） 4 个料组 / 已选 0 单 一键合并派单 2b9dd2f40"
+      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 生产看板 智能派单 加工项管理 工艺配置 计件工资 仓储与物料 5 组织管理 3 通知中心 收起 生产管理 / 智能派单 米 米高测试 智能派单 待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；加急单不参与合并，立即单独派单 刷新 合并派单开关 未开启 最长等待 24 小时 待派订单 16 单 加工明细 16 行 加急订单 0 单 超时未派 0 单 加急订单（不参与合并，立即派） 0 行 / 0 单 —— 不参与合并，立即单独派单 当前没有加急待派订单 可合并的待派订单（按料分组） 4 个料组 / 已选 0 单 一键合并派单 a61daac33e1a49974577d3ca81c4500b|SD07演示-2.8-8141273 7 单 / 需求 27.80 米 单号 物料（商品 × 颜色 × 门幅） 需求米数 等待时长 加急标记 到货日 20261006719460148 SD07演示布814127SD07演示-2.8-8141273 3.20 1.3 小时 不加急 2026-10-09剩 3 天 20261006710980156 SD07演示布814127SD07演示-2.8-8141273 5.60 1.3 小时 不加急 2026-10-11剩 5 天 20261006724900038 SD07演示布814127SD07演示-2.8-8141273 4.10 1.4 小时 不加急 2026-10-16剩 10 天 2026100"
     },
     "计件工资报表": {
       "path": "/production/piecework",
@@ -1220,7 +893,7 @@
       "path": "/production/saving-board",
       "url": "https://merchant.migaozn.com/production/saving-board",
       "file": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06-pooling-savings/out/screenshots/demo-_production_saving-board.png",
-      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 仓储与物料 5 入库单 发货单 余料台账 省料看板 库存明细 组织管理 3 通知中心 收起 仓储与物料 / 省料看板 米 米高测试 省料看板 省了多少料，看两件事：① 每批布用剩多少 ② 每平方米成品用掉多少米布；存量导入批次单独成组，不与切换后混算 按月 按周（ISO 周） 刷新 剩余 ≤0.2 米 的批次占比 0.0% 治「用不尽」—— 越多批次被用到几乎不剩，说明料真的被用掉了 入库/采购总米数 13457 米 治「买太多」—— 切换后的采购入库总米数，不含存量导入 两条指标必须并用：①「剩余 ≤0.2 米 的批次占比」治「用不尽」，②「入库/采购总米数」治「买太多」。单看①会被排料省料误导 —— 排料省料 ⇒ 批次剩得更多 ⇒ 只留①会把效率提升显示成变差。 切换后（采购入库） 批次数 15 ≤0.2 米占比 0.0% 余量合计 12621.9 米 省料 20 米 / 1434.52 元 ≤0.2 米：0 批 / 0.0% 0.2~0.5 米：0 批 / 0.0% 0.5~1 米：0 批 / 0.0% >1 米：15 批 / 100.0% 存量导入（切换前历史包袱） 存量导入·单列 批次数 5 ≤0.2 米占比 0.0% 余量合计 640 米 省料 无数据 / 无数据 元 ≤0.2 米：0 批 / 0.0% 0.2~0.5 米：0 批 / 0.0% 0.5~1 米：0 批 / 0.0% >1 米：5 批 / 100.0% 来源未知 来源未知 批次数 0 ≤0."
+      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 仓储与物料 5 入库单 发货单 余料台账 省料看板 库存明细 组织管理 3 通知中心 收起 仓储与物料 / 省料看板 米 米高测试 省料看板 省了多少料，看两件事：① 每批布用剩多少 ② 每平方米成品用掉多少米布；存量导入批次单独成组，不与切换后混算 按月 按周（ISO 周） 刷新 剩余 ≤0.2 米 的批次占比 0.0% 治「用不尽」—— 越多批次被用到几乎不剩，说明料真的被用掉了 入库/采购总米数 13457 米 治「买太多」—— 切换后的采购入库总米数，不含存量导入 两条指标必须并用：①「剩余 ≤0.2 米 的批次占比」治「用不尽」，②「入库/采购总米数」治「买太多」。单看①会被排料省料误导 —— 排料省料 ⇒ 批次剩得更多 ⇒ 只留①会把效率提升显示成变差。 切换后（采购入库） 批次数 15 ≤0.2 米占比 0.0% 余量合计 12540.3 米 省料 24.3 米 / 1736.89 元 ≤0.2 米：0 批 / 0.0% 0.2~0.5 米：0 批 / 0.0% 0.5~1 米：0 批 / 0.0% >1 米：15 批 / 100.0% 存量导入（切换前历史包袱） 存量导入·单列 批次数 5 ≤0.2 米占比 0.0% 余量合计 640 米 省料 无数据 / 无数据 元 ≤0.2 米：0 批 / 0.0% 0.2~0.5 米：0 批 / 0.0% 0.5~1 米：0 批 / 0.0% >1 米：5 批 / 100.0% 来源未知 来源未知 批次数 0 ≤"
     }
   }
 }

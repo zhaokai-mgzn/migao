@@ -1,0 +1,105 @@
+{
+  "at": "2026-10-06T07:26:48.393Z",
+  "batch": "SD07演示客814127",
+  "steps": [
+    {
+      "op": "花边",
+      "action": "create",
+      "status": 200,
+      "ok": true,
+      "id": "9004a13170f74518cbb896495c69e286"
+    },
+    {
+      "op": "铅坠",
+      "action": "create",
+      "status": 200,
+      "ok": true,
+      "id": "5160ce7742e70fd7290c5628c6e56c87"
+    },
+    {
+      "op": "接高",
+      "action": "create",
+      "status": 200,
+      "ok": true,
+      "id": "84fb6d387bb1eb137b51a0cfd52e395b"
+    }
+  ],
+  "afterCreate": {
+    "total": 0,
+    "hasBare": []
+  },
+  "stuckBefore": {
+    "n": 22,
+    "sample": [
+      {
+        "order_id": "0b91009f487c47ec342871fc23714eb2",
+        "item_id": "69f7abcffd9944423908e82066862e38",
+        "order_no": "20261006086540037",
+        "ct": "纱帘",
+        "opts": [
+          "接高"
+        ]
+      },
+      {
+        "order_id": "1312a7f3e5020204cc7273b68c4ff36a",
+        "item_id": "94076fda740208e2c3cb4865a3447979",
+        "order_no": "20261006577460125",
+        "ct": "纱帘",
+        "opts": [
+          "加花边"
+        ]
+      },
+      {
+        "order_id": "242ab42f5cdc5389b20c4293e1a49817",
+        "item_id": "5aab2caa76a90487c8a3d68d3ed58c85",
+        "order_no": "20261006848340216",
+        "ct": "纱帘",
+        "opts": [
+          "加花边"
+        ]
+      }
+    ]
+  },
+  "retry": {
+    "attempted": 22,
+    "ok": 10,
+    "fail": 2,
+    "failSamples": [
+      {
+        "n": 10,
+        "msg": "{\"code\":\"VALIDATION_ERROR\",\"message\":\"加急单不参与合并派单，请单独派：20261006025840275、20261006570660257、20261006045490139\",\"details\":[]}"
+      },
+      {
+        "n": 2,
+        "msg": "{\"code\":\"VALIDATION_ERROR\",\"message\":\"加急单不参与合并派单，请单独派：20261006946530303\",\"details\":[]}"
+      }
+    ]
+  },
+  "after": {
+    "orders": 300,
+    "pos": 288,
+    "no_po": 12
+  },
+  "statusDist": [
+    {
+      "status": "in_processing",
+      "n": "40"
+    },
+    {
+      "status": "completed",
+      "n": "40"
+    },
+    {
+      "status": "issued",
+      "n": "32"
+    },
+    {
+      "status": "generated",
+      "n": "160"
+    },
+    {
+      "status": "cancelled",
+      "n": "16"
+    }
+  ]
+}
