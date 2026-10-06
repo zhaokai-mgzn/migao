@@ -1,0 +1,163 @@
+2026-10-05T22:54:01.044Z == p1：岗位账号池 tenant=25 API=https://api.migaozn.com
+2026-10-05T22:54:12.112Z == p1 完成：{"pass":8}
+2026-10-05T22:54:12.113Z   [pass] P1-01 管理员登录（部署面短信万能码） — POST /api/auth/sms/login HTTP 200；tenant=25 code=shop-8yn7
+2026-10-05T22:54:12.113Z   [pass] P1-02 岗位清单 + 期望权限（DB 真值源） — 岗位=管理员(admin) / 客服(customer_service) / 财务(finance) / 知识编辑(knowledge_editor) / 运营(operator) / 商品管理员(product_manager) / 销售(sales)；每岗位权限数为 DB 现取
+2026-10-05T22:54:12.113Z   [pass] P1-04:客服 登录+权限：客服 — username=a06_customer_service@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=12 missing=[] extra=[]
+2026-10-05T22:54:12.113Z   [pass] P1-04:运营 登录+权限：运营 — username=a06_operator@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=26 missing=[] extra=[]
+2026-10-05T22:54:12.113Z   [pass] P1-04:销售 登录+权限：销售 — username=a06_sales@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=9 missing=[] extra=[]
+2026-10-05T22:54:12.113Z   [pass] P1-04:财务 登录+权限：财务 — username=a06_finance@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=9 missing=[] extra=[]
+2026-10-05T22:54:12.114Z   [pass] P1-04:商品管理员 登录+权限：商品管理员 — username=a06_product_manager@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=8 missing=[] extra=[]
+2026-10-05T22:54:12.114Z   [pass] P1-04:知识编辑 登录+权限：知识编辑 — username=a06_knowledge_editor@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=4 missing=[] extra=[]
+2026-10-05T23:13:49.155Z == p5 counts: {"pass":3,"fail":1}
+2026-10-05T23:13:49.156Z   [pass] P5-customer_service — POST /api/admin/knowledge/cards → HTTP 403；库内 1 → 1；响应={"success":false,"error":{"code":"PERMISSION_DENIED","message":"权限不足，需要权限: knowledge:manage","details":[{"field":"requiredPermission","message":"knowledge:manag
+2026-10-05T23:13:49.156Z   [pass] P5-operator — POST /api/admin/knowledge/cards → HTTP 403；库内 1 → 1；响应={"success":false,"error":{"code":"PERMISSION_DENIED","message":"权限不足，需要权限: knowledge:manage","details":[{"field":"requiredPermission","message":"knowledge:manag
+2026-10-05T23:13:49.156Z   [pass] P5-product_manager — POST /api/admin/knowledge/cards → HTTP 403；库内 1 → 1；响应={"success":false,"error":{"code":"PERMISSION_DENIED","message":"权限不足，需要权限: knowledge:manage","details":[{"field":"requiredPermission","message":"knowledge:manag
+2026-10-05T23:13:49.157Z   [fail] P5-positive — HTTP 422；库内 1 → 1
+2026-10-05T23:28:16.193Z == p4d counts: {"fail":2,"skip":1}
+2026-10-05T23:28:16.194Z   [fail] P4D-1 API 夹具：真订单（供 W4 引用） — 两版载荷均未成功：[{"status":422,"text":"{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"items[0].subtotal\",\"message\":\"小计不能为空\"},{\"field\":\"items[0].productName\",\"message\":\"商品名称不能为空\"}]},\"requestId\":\"req_d6dcadca80f84935"},{"status":42
+2026-10-05T23:28:16.194Z   [skip] P4D-2 客服 UI 建工单 — 前置不成立：无可用订单夹具 ⇒ 未覆盖
+2026-10-05T23:28:16.194Z   [fail] P4D-3 商品管理员在「商品管理」页建商品（UI 操作 → DB 落库） — 建前 8 → 建后 8；保存按钮=「」；最新行=undefined
+2026-10-05T23:28:52.925Z == p4d counts: {"pass":1,"fail":2}
+2026-10-05T23:28:52.925Z   [pass] P4D-1 API 夹具：真订单（供 W4 引用） — HTTP 200；orders#7e4ba37cde5e08f0110ed4ca384957ff order_no=20261006287610001 status=pending 金额=128；商品=雪尼尔提花遮光布
+2026-10-05T23:28:52.926Z   [fail] P4D-2 客服在「售后工单」页建工单（UI 操作 → DB 落库） — DB 无新行；页面文本尾="类型\t状态\t优先级\t创建时间\t更新时间\t操作\nAS-20261004-0001\t-\t-\t退货\t已完成\t普通\t\n2026-10-04\n12:37\n\t\n2026-10-04\n12:37\n\t查看\n共 1 条记录(第 1-1 条)\n每页\n10\n20\n50\n100\n条\n1\n新建售后工单\n关联订单 *\n售后类型 *\n退货\n换货\n维修\n退款\n投诉\n其他\n优先级\n普通\n紧急\n严重\n售后原因描述 *\n取消\n提交工单"
+2026-10-05T23:28:52.926Z   [fail] P4D-3 商品管理员在「商品管理」页建商品（UI 操作 → DB 落库） — 建前 8 → 建后 8；保存按钮=「提交并上架」；最新行=undefined；弹窗按钮=["","","","","重置","存草稿","提交并上架",""]
+2026-10-05T23:29:44.274Z == p4d counts: {"pass":1,"fail":2}
+2026-10-05T23:29:44.275Z   [pass] P4D-1 API 夹具：真订单（供 W4 引用） — HTTP 200；orders#0e1081f2be37855417daf05e6d8e583d order_no=20261006299730002 status=pending 金额=128；商品=雪尼尔提花遮光布
+2026-10-05T23:29:44.275Z   [fail] P4D-2 客服在「售后工单」页建工单（UI 操作 → DB 落库） — DB 无新行；页面文本尾="类型\t状态\t优先级\t创建时间\t更新时间\t操作\nAS-20261004-0001\t-\t-\t退货\t已完成\t普通\t\n2026-10-04\n12:37\n\t\n2026-10-04\n12:37\n\t查看\n共 1 条记录(第 1-1 条)\n每页\n10\n20\n50\n100\n条\n1\n新建售后工单\n关联订单 *\n售后类型 *\n退货\n换货\n维修\n退款\n投诉\n其他\n优先级\n普通\n紧急\n严重\n售后原因描述 *\n取消\n提交工单"
+2026-10-05T23:29:44.275Z   [fail] P4D-3 商品管理员在「商品管理」页建商品（UI 操作 → DB 落库） — 建前 8 → 建后 8；保存按钮=「提交并上架」；下拉选中=["线B验收复现分类-mutbya2e","请选择","请选择"]；最新行=undefined；弹窗按钮=["","","","","重置","存草稿","提交并上架",""]
+2026-10-05T23:30:01.142Z p4-writes.json: {"pass":7,"fail":2,"skip":2} 订正 1 条
+2026-10-05T23:30:01.143Z    P4-W3: fail → skip（页面校验清单逐字：「还差 1 项 … 有 1 行加工费未定价（组合那半按 0 计）⇒ 请先定价再下单：拼接」= 产品有意的业务闸门；驱动未去定价）
+2026-10-05T23:30:01.143Z p4d-writes2.json: {"pass":1,"skip":2} 订正 2 条
+2026-10-05T23:30:01.144Z    P4D-2: fail → skip（关联订单为必填，UI 驱动未把订单解析进表单（提交后对话框仍在，库内无新行））
+2026-10-05T23:30:01.144Z    P4D-3: fail → skip（页面校验逐字：「表单校验未通过：还有 6 处必填内容未完成」（商品分类/商品主图/计价单位/售卖方式…）；此后两次补齐仍未通过）
+2026-10-05T23:30:01.588Z == p7 清理 before={"users":10,"knowledge":2,"orders":2,"tickets":1,"inbound":18} after={"users":10,"knowledge":2,"orders":2,"tickets":1,"inbound":18} dry=true
+2026-10-05T23:30:01.588Z    (dry)  <= delete from knowledge_cards where tenant_id=25 and (title like 'A06验收%' or question like 'A06验收%' or keywords 
+2026-10-05T23:30:01.588Z    (dry)  <= delete from after_sales_tickets where tenant_id=25 and description like 'A06验收%'
+2026-10-05T23:30:01.588Z    (dry)  <= delete from order_items where order_id in (select id from orders where tenant_id=25 and customer_name like 'A0
+2026-10-05T23:30:01.588Z    (dry)  <= delete from orders where tenant_id=25 and customer_name like 'A06验收%'
+2026-10-05T23:30:01.589Z    (dry)  <= update users set deleted=1, status='disabled', username=null, phone=null where tenant_id=25 and (username like
+2026-10-05T23:30:11.566Z == p7 清理 before={"users":10,"knowledge":2,"orders":2,"tickets":1,"inbound":18} after={"users":10,"knowledge":0,"orders":0,"tickets":1,"inbound":18} dry=false
+2026-10-05T23:30:11.568Z    DELETE 2  <= delete from knowledge_cards where tenant_id=25 and (title like 'A06验收%' or question like 'A06验收%' or keywords 
+2026-10-05T23:30:11.568Z    DELETE 0  <= delete from after_sales_tickets where tenant_id=25 and description like 'A06验收%'
+2026-10-05T23:30:11.568Z    DELETE 2  <= delete from order_items where order_id in (select id from orders where tenant_id=25 and customer_name like 'A0
+2026-10-05T23:30:11.569Z    DELETE 2  <= delete from orders where tenant_id=25 and customer_name like 'A06验收%'
+2026-10-05T23:30:11.569Z    UPDATE 10  <= update users set deleted=1, status='disabled', username=null, phone=null where tenant_id=25 and (username like
+2026-10-05T23:30:37.149Z p4-writes.json: {"pass":7,"fail":2,"skip":2} 订正 0 条
+2026-10-05T23:30:37.151Z p4d-writes2.json: {"pass":1,"skip":2} 订正 0 条
+2026-10-05T23:30:37.152Z p5-perm-api.json: {"pass":3,"skip":1} 订正 1 条
+2026-10-05T23:30:37.152Z    P5-positive: fail → skip（API 正对照载荷未对上契约（HTTP 422：缺 title/必填）；正对照已由 **UI 侧 W2**（知识编辑真建卡片、库内 0→1→2）承担 ⇒ 本行不构成产品判定）
+2026-10-06T00:13:51.618Z p2-roles-ui.json → {"pass":27,"skip":1}
+2026-10-06T00:13:51.620Z buttonMatrix 跳过格 18，悬空 12：[{"role":"customer_service","path":"/products"},{"role":"customer_service","path":"/employees"},{"role":"finance","path":"/products"},{"role":"finance","path":"/employees"},{"role":"knowledge_editor","path":"/orders"},{"role":"knowledge_editor","path":"/inbound-orders"}]
+2026-10-06T00:13:51.622Z p8-reclassify.json 重建：p2-roles-ui.json:1 p4-writes.json:1 p4d-writes2.json:2 p5-perm-api.json:1
+2026-10-06T00:13:51.624Z 陈留截图移出 7 张：["admin_briefing.png","customer_service_briefing.png","finance_briefing.png","knowledge_editor_briefing.png","operator_briefing.png","product_manager_briefing.png","sales_briefing.png"]
+2026-10-06T00:13:51.624Z == p9 完成
+2026-10-06T00:14:12.409Z == p7 清理 before={"users":11,"knowledge":0,"orders":0,"tickets":1,"inbound":18} after={"users":11,"knowledge":0,"orders":0,"tickets":1,"inbound":18} dry=false
+2026-10-06T00:14:12.410Z    DELETE 0  <= delete from knowledge_cards where tenant_id=25 and (title like 'A06验收%' or question like 'A06验收%' or keywords 
+2026-10-06T00:14:12.410Z    DELETE 0  <= delete from after_sales_tickets where tenant_id=25 and description like 'A06验收%'
+2026-10-06T00:14:12.410Z    DELETE 0  <= delete from order_items where order_id in (select id from orders where tenant_id=25 and customer_name like 'A0
+2026-10-06T00:14:12.410Z    DELETE 0  <= delete from orders where tenant_id=25 and customer_name like 'A06验收%'
+2026-10-06T00:14:12.410Z    UPDATE 11  <= update users set deleted=1, status='disabled', username=null, phone=null where tenant_id=25 and (username like
+2026-10-06T00:14:40.216Z == p7 清理 before={"users":12,"knowledge":0,"orders":0,"tickets":1,"inbound":18} after={"users":12,"knowledge":0,"orders":0,"tickets":1,"inbound":18} dry=false
+2026-10-06T00:14:40.218Z    DELETE 0  <= delete from knowledge_cards where tenant_id=25 and (title like 'A06验收%' or question like 'A06验收%' or keywords 
+2026-10-06T00:14:40.218Z    DELETE 0  <= delete from after_sales_tickets where tenant_id=25 and description like 'A06验收%'
+2026-10-06T00:14:40.218Z    DELETE 0  <= delete from order_items where order_id in (select id from orders where tenant_id=25 and customer_name like 'A0
+2026-10-06T00:14:40.218Z    DELETE 0  <= delete from orders where tenant_id=25 and customer_name like 'A06验收%'
+2026-10-06T00:14:40.218Z    UPDATE 12  <= update users set deleted=1, status='disabled', username=null, phone=null where tenant_id=25 and (username like
+2026-10-06T00:15:23.007Z == p7 清理 before={"users":13,"knowledge":0,"orders":0,"tickets":1,"inbound":18} after={"users":13,"knowledge":0,"orders":0,"tickets":1,"inbound":18} dry=false
+2026-10-06T00:15:23.008Z    DELETE 0  <= delete from knowledge_cards where tenant_id=25 and (title like 'A06验收%' or question like 'A06验收%' or keywords 
+2026-10-06T00:15:23.008Z    DELETE 0  <= delete from after_sales_tickets where tenant_id=25 and description like 'A06验收%'
+2026-10-06T00:15:23.008Z    DELETE 0  <= delete from order_items where order_id in (select id from orders where tenant_id=25 and customer_name like 'A0
+2026-10-06T00:15:23.008Z    DELETE 0  <= delete from orders where tenant_id=25 and customer_name like 'A06验收%'
+2026-10-06T00:15:23.009Z    UPDATE 13  <= update users set deleted=1, status='disabled', username=null, phone=null where tenant_id=25 and (username like
+2026-10-06T00:16:09.636Z == p7 清理 before={"users":14,"knowledge":0,"orders":0,"tickets":1,"inbound":18} after={"users":14,"knowledge":0,"orders":0,"tickets":1,"inbound":18} dry=false
+2026-10-06T00:16:09.637Z    DELETE 0  <= delete from knowledge_cards where tenant_id=25 and (title like 'A06验收%' or question like 'A06验收%' or keywords 
+2026-10-06T00:16:09.637Z    DELETE 0  <= delete from after_sales_tickets where tenant_id=25 and description like 'A06验收%'
+2026-10-06T00:16:09.637Z    DELETE 0  <= delete from order_items where order_id in (select id from orders where tenant_id=25 and customer_name like 'A0
+2026-10-06T00:16:09.637Z    DELETE 0  <= delete from orders where tenant_id=25 and customer_name like 'A06验收%'
+2026-10-06T00:16:09.637Z    UPDATE 14  <= update users set deleted=1, status='disabled', username=null, phone=null where tenant_id=25 and (username like
+2026-10-06T01:40:15.626Z == p1：岗位账号池 tenant=25 API=https://api.migaozn.com
+2026-10-06T01:40:24.125Z == p1 完成：{"pass":8}
+2026-10-06T01:40:24.126Z   [pass] P1-01 管理员登录（部署面短信万能码） — POST /api/auth/sms/login HTTP 200；tenant=25 code=shop-8yn7
+2026-10-06T01:40:24.127Z   [pass] P1-02 岗位清单 + 期望权限（DB 真值源） — 岗位=管理员(admin) / 客服(customer_service) / 财务(finance) / 知识编辑(knowledge_editor) / 运营(operator) / 商品管理员(product_manager) / 销售(sales)；每岗位权限数为 DB 现取
+2026-10-06T01:40:24.127Z   [pass] P1-04:客服 登录+权限：客服 — username=a06_customer_service@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=12 missing=[] extra=[]
+2026-10-06T01:40:24.127Z   [pass] P1-04:运营 登录+权限：运营 — username=a06_operator@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=26 missing=[] extra=[]
+2026-10-06T01:40:24.127Z   [pass] P1-04:销售 登录+权限：销售 — username=a06_sales@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=9 missing=[] extra=[]
+2026-10-06T01:40:24.128Z   [pass] P1-04:财务 登录+权限：财务 — username=a06_finance@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=9 missing=[] extra=[]
+2026-10-06T01:40:24.128Z   [pass] P1-04:商品管理员 登录+权限：商品管理员 — username=a06_product_manager@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=8 missing=[] extra=[]
+2026-10-06T01:40:24.128Z   [pass] P1-04:知识编辑 登录+权限：知识编辑 — username=a06_knowledge_editor@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=4 missing=[] extra=[]
+2026-10-06T01:40:28.856Z == p2b 覆盖补齐 tenant=25 subjectSha=73327161f mapCommit=73327161f
+2026-10-06T01:40:28.857Z    routes=40（动态段 7 ⇒ skip）prefixes=22 menu=22 roles=1
+2026-10-06T01:40:34.831Z [admin] 正向 allow/deny/no-guard = 3/3/0；负向组合 0 条，未拦 0 条
+2026-10-06T01:40:34.874Z == p2b counts: {"pass":5}（产物 p2b-coverage.smoke.json；负向 0 条未拦 0）
+2026-10-06T01:40:51.440Z == p2b 覆盖补齐 tenant=25 subjectSha=73327161f mapCommit=73327161f
+2026-10-06T01:40:51.443Z    routes=40（动态段 7 ⇒ skip）prefixes=22 menu=22 roles=7
+2026-10-06T01:41:38.682Z [admin] 正向 static 33：allow=32 deny=0 no-guard=1；负向组合 0 条，未拦 0 条
+2026-10-06T01:42:39.792Z [customer_service] 正向 static 33：allow=15 deny=17 no-guard=1；负向组合 11 条，未拦 0 条
+2026-10-06T01:43:28.767Z [operator] 正向 static 33：allow=30 deny=2 no-guard=1；负向组合 2 条，未拦 0 条
+2026-10-06T01:44:31.479Z [sales] 正向 static 33：allow=12 deny=20 no-guard=1；负向组合 12 条，未拦 0 条
+2026-10-06T01:45:35.835Z [finance] 正向 static 33：allow=10 deny=22 no-guard=1；负向组合 13 条，未拦 0 条
+2026-10-06T01:46:37.408Z [product_manager] 正向 static 33：allow=16 deny=16 no-guard=1；负向组合 11 条，未拦 0 条
+2026-10-06T01:47:47.008Z [knowledge_editor] 正向 static 33：allow=6 deny=26 no-guard=1；负向组合 16 条，未拦 0 条
+2026-10-06T01:47:47.071Z == p2b counts: {"pass":303,"skip":56}（产物 p2b-coverage.json；负向 65 条未拦 0）
+2026-10-06T01:47:47.071Z   [skip] P2B-POS:admin:/after-sales/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:admin:/customers/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:admin:/notifications — no-guard：map.json#prefixes 无前缀覆盖该路由 ⇒ 无守卫码，期望不可判定 ⇒ 不判 pass；实测可进（与 menu.ts 的 permissionCode=null 一致）
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:admin:/orders/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:admin:/orders/:id/ship — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:admin:/processing-orders/:id/production — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:admin:/products/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:admin:/products/:id/edit — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:customer_service:/after-sales/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:customer_service:/customers/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:customer_service:/notifications — no-guard：map.json#prefixes 无前缀覆盖该路由 ⇒ 无守卫码，期望不可判定 ⇒ 不判 pass；实测可进（与 menu.ts 的 permissionCode=null 一致）
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:customer_service:/orders/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:customer_service:/orders/:id/ship — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:customer_service:/processing-orders/:id/production — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:customer_service:/products/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:customer_service:/products/:id/edit — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:operator:/after-sales/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:operator:/customers/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:operator:/notifications — no-guard：map.json#prefixes 无前缀覆盖该路由 ⇒ 无守卫码，期望不可判定 ⇒ 不判 pass；实测可进（与 menu.ts 的 permissionCode=null 一致）
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:operator:/orders/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:operator:/orders/:id/ship — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.072Z   [skip] P2B-POS:operator:/processing-orders/:id/production — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:operator:/products/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:operator:/products/:id/edit — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:sales:/after-sales/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:sales:/customers/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:sales:/notifications — no-guard：map.json#prefixes 无前缀覆盖该路由 ⇒ 无守卫码，期望不可判定 ⇒ 不判 pass；实测可进（与 menu.ts 的 permissionCode=null 一致）
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:sales:/orders/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:sales:/orders/:id/ship — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:sales:/processing-orders/:id/production — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:sales:/products/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:sales:/products/:id/edit — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:finance:/after-sales/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:finance:/customers/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:finance:/notifications — no-guard：map.json#prefixes 无前缀覆盖该路由 ⇒ 无守卫码，期望不可判定 ⇒ 不判 pass；实测可进（与 menu.ts 的 permissionCode=null 一致）
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:finance:/orders/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:finance:/orders/:id/ship — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:finance:/processing-orders/:id/production — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:finance:/products/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:finance:/products/:id/edit — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:product_manager:/after-sales/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:product_manager:/customers/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:product_manager:/notifications — no-guard：map.json#prefixes 无前缀覆盖该路由 ⇒ 无守卫码，期望不可判定 ⇒ 不判 pass；实测可进（与 menu.ts 的 permissionCode=null 一致）
+2026-10-06T01:47:47.073Z   [skip] P2B-POS:product_manager:/orders/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.074Z   [skip] P2B-POS:product_manager:/orders/:id/ship — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.074Z   [skip] P2B-POS:product_manager:/processing-orders/:id/production — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.074Z   [skip] P2B-POS:product_manager:/products/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.074Z   [skip] P2B-POS:product_manager:/products/:id/edit — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.074Z   [skip] P2B-POS:knowledge_editor:/after-sales/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.074Z   [skip] P2B-POS:knowledge_editor:/customers/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.074Z   [skip] P2B-POS:knowledge_editor:/notifications — no-guard：map.json#prefixes 无前缀覆盖该路由 ⇒ 无守卫码，期望不可判定 ⇒ 不判 pass；实测可进（与 menu.ts 的 permissionCode=null 一致）
+2026-10-06T01:47:47.074Z   [skip] P2B-POS:knowledge_editor:/orders/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.074Z   [skip] P2B-POS:knowledge_editor:/orders/:id/ship — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.074Z   [skip] P2B-POS:knowledge_editor:/processing-orders/:id/production — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.074Z   [skip] P2B-POS:knowledge_editor:/products/:id — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:47:47.074Z   [skip] P2B-POS:knowledge_editor:/products/:id/edit — 动态段无夹具：路由含 `/:`，本轮无夹具 id（未取到 orders/products/after-sales 的实体 id）⇒ 未覆盖，不伪装 pass/fail
+2026-10-06T01:48:59.337Z == p7 清理 before={"users":20,"knowledge":0,"orders":0,"tickets":1,"inbound":18} after={"users":20,"knowledge":0,"orders":0,"tickets":1,"inbound":18} dry=false
+2026-10-06T01:48:59.338Z    DELETE 0  <= delete from knowledge_cards where tenant_id=25 and (title like 'A06验收%' or question like 'A06验收%' or keywords 
+2026-10-06T01:48:59.338Z    DELETE 0  <= delete from after_sales_tickets where tenant_id=25 and description like 'A06验收%'
+2026-10-06T01:48:59.338Z    DELETE 0  <= delete from order_items where order_id in (select id from orders where tenant_id=25 and customer_name like 'A0
+2026-10-06T01:48:59.338Z    DELETE 0  <= delete from orders where tenant_id=25 and customer_name like 'A06验收%'
+2026-10-06T01:48:59.338Z    UPDATE 20  <= update users set deleted=1, status='disabled', username=null, phone=null where tenant_id=25 and (username like
