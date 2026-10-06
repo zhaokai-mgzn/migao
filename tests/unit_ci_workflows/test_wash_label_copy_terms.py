@@ -260,7 +260,11 @@ def test_injection_turns_red_with_attribution():
     sample = "const x = 1\nconst hint = '与纸面洗水码逐张一致'\n"
     found = violations_in("sample.ts", sample)
     assert len(found) == 1, f"注入没被判红 ⇒ 判据是空断言：{found}"
-    assert found[0].startswith("sample.ts:2:"), f"归因行号不对：{found[0]}"
+    # ⚠️ 这里**不写**「合成文件名 + 冒号 + 行号」的字面量：`sample.ts` 是**合成**的源（按定义不存在），
+    #    而「引用新鲜度」判据（`scripts/drift_audit.py` 的 ref-freshness）会把那种形态当成
+    #    **真实引用**去 `origin/main` 上核对 ⇒ 判红。夹具就按夹具断言（拆字段比对），不冒充真引用。
+    name, line_no, _ = found[0].split(":", 2)
+    assert (name, line_no) == ("sample.ts", "2"), f"归因不对（应指到合成源的第 2 行）：{found[0]}"
 
     jsx = "export const C = () => (\n  <p>包括每张洗水码上的部位码。</p>\n)\n"
     assert [v.split(":")[1] for v in violations_in("sample.tsx", jsx)] == ["2"], "JSX 文本没被扫到"
@@ -289,7 +293,7 @@ def test_css_comment_inside_template_counts_as_comment():
 
 
 def test_regex_literal_with_quote_is_not_a_string():
-    """状态机存在的理由之三：正则字符类里的引号（`worker-h5/src/render.mjs:206` 实测形态）。"""
+    """状态机存在的理由之三：正则字符类里的引号（`worker-h5/src/render.mjs` 的 `esc()` 实测形态）。"""
     sample = (
         "const esc = (v) =>\n"
         "  String(v ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;' }))\n"
