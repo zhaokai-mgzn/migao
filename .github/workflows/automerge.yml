@@ -79,6 +79,19 @@ name: Auto Merge
 #   ⚠️ 定时档只为这个 job 存在：悬空 PR **不产生任何事件**（这正是它"零信号"的原因）
 #   ⇒ 必须有定时入口。GitHub 对 schedule 有节流（本仓实测 2~5.5h），故它是兜底不是实时。
 
+# ── 合并凭据的来源 / 轮换 / 已知限制（issue #6418，2026-10-06 落地）──────────────
+# 现取：`AUTOMERGE_PAT` = **会话 OAuth 令牌**（用户选定的落地方式；`x-oauth-scopes` 实测 =
+#   `admin:public_key, gist, read:org, repo`）。三条已知代价，改凭据前先读这段：
+#   ① **缺 `workflow` scope** ⇒ 含 `.github/workflows/**` 改动的 PR 由它合并**可能被 GitHub 拒**
+#      （本仓 #4470 / #4475 有同形记录）。**观测点** = 这类 PR 的 arm job；若报文指向 scope/workflow
+#      ⇒ 按「业务连续性优先」加**回落重试**（先 PAT、失败再用内置 token 合那一条 PR：宁可那一次
+#      push 被吞，也不让 PR 卡住），并把该出口补进判据。
+#   ② **它是长期令牌**：失效 / 吊销 ⇒ 本 job 回落内置 token + 具名 `::warning::`（**不卡合并**），
+#      而 `push` 面**静默退回被抑制形态** ⇒ 按 `deploy-reconcile.yml` 头部的**条件式**口径读。
+#      轮换 = `gh secret set AUTOMERGE_PAT`（或换细粒度 PAT：Contents RW · Pull requests RW · Workflows RW）
+#      后重跑本 job，**无需改代码**。
+#   ③ 该令牌无 `read:user` ⇒ actor 读数会打成 `actor=<查询失败>` ⇒ 「PAT 被误配成内置等价物」那条自检
+#      **退化为不可用**（≠「没被误配」）。自检判据仍在，换细粒度 PAT 后自动生效。
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]

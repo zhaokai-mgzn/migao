@@ -236,6 +236,15 @@ gh api "repos/zhaokai-mgzn/migao/actions/runs?event=push&branch=main&per_page=6"
 gh run list --workflow=deploy-frontend.yml --limit 5 --json event,headSha    # 应出现 event=push
 ```
 
+**读数（落地后，2026-10-06T07:57:21Z）**：探针合并 PR #6431 → main `a773113cc`，`mergedBy = zhaokai-mgzn`
+（不再是 `app/github-actions`），arm job 逐字打出 `🔑 合并凭据 = AUTOMERGE_PAT（actor=<查询失败>）`，
+其后**当场出现 5 条 `event=push` 的 run**（Main Freshness Guard / Post-Merge Verify / Close Linked Issues /
+Stale Report Reaper / H5 Freshness Guard）⇒ **push 面复活已实测**。三条部署腿不在该批里是**正常**：
+它们各有 `on.push.paths` 过滤（如 `deploy-frontend.yml` = `frontend/admin-web/**`）；「push + paths 命中 ⇒
+部署腿跑」由 `2026-10-05T12:02:41Z` 批的 `Build and Deploy ai-agent-service` 作旁证。
+⚠️ **两个未决观测点**：① 含 `.github/workflows/**` 的 PR 由本凭证合并**可能被拒**（缺 `workflow` scope）；
+② `actor=<查询失败>`（该令牌无 `read:user`）⇒ 误配自检退化。两者都写进了 `automerge.yml` 的「凭据来源 / 轮换」段。
+
 **读数（现取，本段落地前）**：main 上最新一批 `event=push` 的 run 仍是 **`2026-10-05T12:02:41Z`（sha `73327161f`）**
 —— 即本 #6418 系列三个 PR（`b85c30ba4` / `9309ed6d4` / `fecffd12c`）合并时**各自 0 条 push run**。
 （复算命令见上；**排序坑**：`gh run list --event push` 的顺序在本机实测出现过乱序，判读请以
