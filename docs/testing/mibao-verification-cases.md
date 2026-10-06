@@ -6837,7 +6837,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6222，P3·读面）：主会话在未修复构建 :8080 上逐字复现 —— `GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行（after-sales 5 / stock-ledger 389 同款）。机制：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（`pageSize < 0` 直接 return ⇒ 不追加 LIMIT、**不执行 count 查询**）⇒ 拦截器只填 `records`、`total` 停在默认 0；被 `setMaxLimit(500)` 约束的只是**正数** size ⇒ 行数不设上界。危害：`total=0` 让客户端分页器立刻认为已到末页 ⇒ 「有数据却显示为空 / 翻不动页」。**口径裁定 = 显式拒绝（400）而非钳到合法下界**，三条理由：① 病根是「非法入参**不静默**」，钳位仍是静默（把「静默给错数据」换成「静默改口径」）；② 本仓已有同族显式拒绝范式（`StockQuantity.requireOneDecimal` / `MoneyScale.requireTwoDecimals`(#6221) / 负数数量 ⇒ 400）；③ 钳位会掩盖调用方（含 Agent / 前端）的真实缺陷。**为什么这样选单点**（最少代码阶梯）：分页入口有两个族（`@RequestParam long size` 控制器方法现取 22 个 + 自带 page/size 字段的查询 DTO 三个、**无共同基类**），且 DTO 属性名不保证等于 HTTP 参数名（`ProductQueryRequest.productId` 对 `@RequestParam productCode`）⇒ DTO 侧做准入要么靠 `WebDataBinder` 名字启发（会漏）、要么按属性名校验（对不上）；两族**都必须**经同一个 HTTP 参数集 ⇒ 唯一真正单点 = Servlet 层参数闸（`prehandle` 取参 + `PaginationParamGate` 判定），并在 WebConfig 注册（排在授权/归属之后，沿用 F3 #6063 与 #6158 的次序纪律）。**类级固化**：台账 25 条分页入口 + 6 条判据 + 5 种坏形态判别力自证（未登记即红 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 + 只改措辞不红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-070（origin/main@dacac7471:001-067,069 · PR #6227:068 ⇒ 最小空闲 070）。 ｜ tags: api, pagination, fail-closed, backend-contract, negative-size
 
-## 商品域（117 case）
+## 商品域（118 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -8394,6 +8394,22 @@
 ```
 溯源: 2026-10-05 新增（issue #6354，P2·图片识别预填）。取号 = 现取最小空闲号（`.github/cases/` 无 PR-020，`scripts/next_case_id.py PR` 判取 PR-020）。红→绿（注入式双向对照）：`git stash` 注入 = 退回改前实现（新测试文件未跟踪仍在）⇒ `tests/unit/lib/image-recognize-color-split.test.ts` **5 failed**（读数逐字见判据 1/2）；`git stash pop` ⇒ 25 passed（本文件 5 + 既有 ImageRecognizePrefill 13 + image-recognize 7）。 ｜ tags: image-recognize, color, frontend, prefill, regression
 
+### PR-022. 图片识别门幅清单拆行 + 识别卡片描述转可读纯文本：一键填入后「规格尺寸」不再 (0)、卡片不再裸显示 <p>（issue #6403） 🔵
+```
+你: 建品页「拍照 / 上传识别」喂一张面料图（识别报告给出颜色一串 + 门幅逐字 `2.8米和3.2米`）
+期望: direct_reply
+数据: **病（用户 2026-10-06 实测，4 张截图）**：① 同一张图「颜色进得来、门幅一个都进不来」—— 一键填入后页面「规格尺寸 (0)」；② 识别卡片「商品描述」逐字显示 `<p>…</p><p>…</p>`。根因 = frontend/admin-web/src/lib/image-recognize.ts 的 `buildProductPrefill` 把 `door_width` 当**标量**（多值串归一后 `Number(...)` 为 `NaN` ⇒ 整串被丢），而 `color` 走的是清单口径（issue #6354）；以及 frontend/admin-web/src/components/image-recognize/FormInterpretCard.tsx 的 `{field.label}：{field.value}` 纯文本渲染。
+数据: **判据 1（实例，改前必红）**：`buildProductPrefill` 收 `door_width='2.8米和3.2米'` ⇒ `doorWidths = ['2.8','3.2']`；顿号 / 斜杠 /「与」/ 中英文逗号同效；`'2.8米'` ⇒ `['2.8']`（**旧行为不许变**）；`'深灰色'` ⇒ 该键不出现（非数仍必须丢）；`2.8` / `2.8米` / `门幅2.8` 按 `sameDoorWidth` 去重；SKU 行数 = 颜色数 × 门幅数。执行点 = frontend/admin-web/tests/unit/lib/image-recognize-door-width-split.test.ts。
+数据: **判据 2（页面级，改前必红）**：多值门幅串一键填入 ⇒ 真 SkuMatrix 渲染 **2 行**「规格尺寸」（改前「规格尺寸 (0)」）。执行点 = frontend/admin-web/tests/unit/components/ImageRecognizePrefill.test.tsx「判据 2」（真 ProductForm + 真 SkuMatrix）+ frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx「判据 2c」（`/products/new` 的一键填入链路；该文件里 `SkuMatrix` 是替身 ⇒ 断言它收到的 `doorWidths`）。
+数据: **判据 3（展示层纯函数，改前必红）**：`htmlToPlainText('<p>a</p><p>b</p>')` ⇒ 两段可读文本且**不含 `<` `>`**；`&amp;` ⇒ `&`（数字实体同样解码）；纯文本入参**原样**；连续空行收敛。执行点 = frontend/admin-web/tests/unit/lib/rich-text-plain.test.ts。
+数据: **判据 4（卡片，改前必红）**：`form-interpret-field-description` 的文本**不含 `<p>`** 且两段内容都在。执行点 = frontend/admin-web/tests/unit/components/FormInterpretCard.test.tsx「判据 4c」。
+数据: **判据 5（反向守卫，落值口径未变）**：`buildProductPrefill` 落给表单的 `description` 仍是**原始 HTML**；卡片回传 `onFill` 的 `value` 也是原始 HTML —— 展示层不改落值（富文本区 / 入库需要 HTML）。执行点 = frontend/admin-web/tests/unit/lib/rich-text-plain.test.ts 的「反向守卫」+ FormInterpretCard.test.tsx「判据 4d」。
+数据: **判据 6（类级元守卫，铁律 8）**：`LIST_SEMANTIC_FIELD_KEYS` 登记表 ⇄ 探针表**双向相等**，且每一个登记为清单语义的识别字段都必须能把多值串拆开落进表单（新增同类字段却按标量处理 ⇒ 红）；并扫描源码断言门幅拆分复用**唯一**那份分隔符表（再声明第二个 `*SEPARATORS` 常量 / 在 `doorWidthsOf` 里自写 `.split(` ⇒ 红）。
+数据: **边界（如实登记）**：本守卫只裁「识别字段 → 预填落点」这一族的清单语义（现登记 `color` / `door_width`）；**未登记**的清单字段不在此射程内。`SkuMatrix.tsx::BatchColorInput`（人工「批量输入颜色」）的分隔符口径与行为**本单未改**（`COLOR_LIST_SEPARATORS` 值逐字不变，判据 3 的「同一套表」仍绿）。展示层改的是纯文本化，**未**渲染富文本（HTML 注入面另行裁定）。
+跳过: [backend-contract] 确定性契约/机械判据，由 vitest（frontend/admin-web/tests/unit/lib/image-recognize-door-width-split.test.ts、frontend/admin-web/tests/unit/lib/rich-text-plain.test.ts、frontend/admin-web/tests/unit/components/FormInterpretCard.test.tsx、frontend/admin-web/tests/unit/components/ImageRecognizePrefill.test.tsx、frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx）验证，非 LLM 行为，不进入 agent-eval 冒烟 —— 拆行 / 丢非数 / 去重 / 纯文本转换都能逐值钉住
+```
+溯源: 2026-10-06 新增（issue #6403，P1·图片识别预填）。取号 = `scripts/next_case_id.py PR` 现取最小空闲号（判取 **PR-022**，历史空档）。红→绿（判据先落、实现后落）：改前 `npx vitest run` 四个文件 ⇒ 4 failed files / **9 failed | 11 passed (20)**（含 3 failed 为断言读数、页面级 2c 超时、`rich-text-plain` 整文件因模块不存在而红）；实现后同一批 **120 passed（10 files）**，并加跑包内相关面（lib / components / pages/products）。真浏览器两屏（上传图 → 识别卡片 → 一键填入）**未覆盖**（承载体没有上传图片的口，见 PR body 的「未覆盖项」）。 ｜ tags: image-recognize, door-width, frontend, prefill, regression
+
 ### PR-124. 米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361） 🔵
 ```
 你: 把一张面料图发给米宝并要求「按这张图建商品」⇒ 米宝调 image_recognize 时带 interpretations（含 name/material/craft/color 的贴近结论）
@@ -9860,8 +9876,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：685（活跃 134，跳过 551）
-- tier 分布：smoke 12 / normal 631 / adversarial 32
+- 用例总数：686（活跃 134，跳过 552）
+- tier 分布：smoke 12 / normal 632 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9882,7 +9898,7 @@
 - 订单域：63
 - 加工项域：27
 - 加工单域：61
-- 商品域：117
+- 商品域：118
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -10094,6 +10110,7 @@
 - PR-014: 批量库存调整 - 两段确认（多选勾选集合 → 逐条「改前库存 → 改后库存」）→ 执行 → 撤销
 - PR-016: 建品/改品 status 枚举准入：非法值 4xx 且列出合法枚举；状态机死行（active/on_shelf）可改回 off_sale/draft 自救
 - PR-020: 图片识别色号清单拆行：一张色卡的 16 个色号 ⇒ 16 行颜色（改前塞成一格、被 30 字符输入框削断）（issue #6354）
+- PR-022: 图片识别门幅清单拆行 + 识别卡片描述转可读纯文本：一键填入后「规格尺寸」不再 (0)、卡片不再裸显示 <p>（issue #6403）
 - PR-124: 米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361）
 - PR-125: 米宝解读额外生成商品描述文案 ⇒ 预填建品页「图文描述」富文本区（来源 [米宝解读]、有值才写键、不覆盖商家内容）（issue #6362）
 - PR-126: 识别 vs 推理的分工按字段定死：生成类字段（商品名/商品描述）只由 [米宝解读] 给值，识别路径永不许直填（issue #6386）

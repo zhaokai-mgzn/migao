@@ -10927,6 +10927,24 @@ _CASE_PR_020 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-022 [NORMAL] 图片识别门幅清单拆行 + 识别卡片描述转可读纯文本：一键填入后「规格尺寸」不再 (0)、卡片不再裸显示 <p>（issue #6403）（源: cases/product.yml）──
+_CASE_PR_022 = EvalCase(
+    id='PR-022',
+    legacy_id='',
+    title='图片识别门幅清单拆行 + 识别卡片描述转可读纯文本：一键填入后「规格尺寸」不再 (0)、卡片不再裸显示 <p>（issue #6403）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['建品页「拍照 / 上传识别」喂一张面料图（识别报告给出颜色一串 + 门幅逐字 `2.8米和3.2米`）'],
+    expectations=['direct_reply'],
+    data_checks=['**病（用户 2026-10-06 实测，4 张截图）**：① 同一张图「颜色进得来、门幅一个都进不来」—— 一键填入后页面「规格尺寸 (0)」；② 识别卡片「商品描述」逐字显示 `<p>…</p><p>…</p>`。根因 = frontend/admin-web/src/lib/image-recognize.ts 的 `buildProductPrefill` 把 `door_width` 当**标量**（多值串归一后 `Number(...)` 为 `NaN` ⇒ 整串被丢），而 `color` 走的是清单口径（issue #6354）；以及 frontend/admin-web/src/components/image-recognize/FormInterpretCard.tsx 的 `{field.label}：{field.value}` 纯文本渲染。', "**判据 1（实例，改前必红）**：`buildProductPrefill` 收 `door_width='2.8米和3.2米'` ⇒ `doorWidths = ['2.8','3.2']`；顿号 / 斜杠 /「与」/ 中英文逗号同效；`'2.8米'` ⇒ `['2.8']`（**旧行为不许变**）；`'深灰色'` ⇒ 该键不出现（非数仍必须丢）；`2.8` / `2.8米` / `门幅2.8` 按 `sameDoorWidth` 去重；SKU 行数 = 颜色数 × 门幅数。执行点 = frontend/admin-web/tests/unit/lib/image-recognize-door-width-split.test.ts。", '**判据 2（页面级，改前必红）**：多值门幅串一键填入 ⇒ 真 SkuMatrix 渲染 **2 行**「规格尺寸」（改前「规格尺寸 (0)」）。执行点 = frontend/admin-web/tests/unit/components/ImageRecognizePrefill.test.tsx「判据 2」（真 ProductForm + 真 SkuMatrix）+ frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx「判据 2c」（`/products/new` 的一键填入链路；该文件里 `SkuMatrix` 是替身 ⇒ 断言它收到的 `doorWidths`）。', "**判据 3（展示层纯函数，改前必红）**：`htmlToPlainText('<p>a</p><p>b</p>')` ⇒ 两段可读文本且**不含 `<` `>`**；`&amp;` ⇒ `&`（数字实体同样解码）；纯文本入参**原样**；连续空行收敛。执行点 = frontend/admin-web/tests/unit/lib/rich-text-plain.test.ts。", '**判据 4（卡片，改前必红）**：`form-interpret-field-description` 的文本**不含 `<p>`** 且两段内容都在。执行点 = frontend/admin-web/tests/unit/components/FormInterpretCard.test.tsx「判据 4c」。', '**判据 5（反向守卫，落值口径未变）**：`buildProductPrefill` 落给表单的 `description` 仍是**原始 HTML**；卡片回传 `onFill` 的 `value` 也是原始 HTML —— 展示层不改落值（富文本区 / 入库需要 HTML）。执行点 = frontend/admin-web/tests/unit/lib/rich-text-plain.test.ts 的「反向守卫」+ FormInterpretCard.test.tsx「判据 4d」。', '**判据 6（类级元守卫，铁律 8）**：`LIST_SEMANTIC_FIELD_KEYS` 登记表 ⇄ 探针表**双向相等**，且每一个登记为清单语义的识别字段都必须能把多值串拆开落进表单（新增同类字段却按标量处理 ⇒ 红）；并扫描源码断言门幅拆分复用**唯一**那份分隔符表（再声明第二个 `*SEPARATORS` 常量 / 在 `doorWidthsOf` 里自写 `.split(` ⇒ 红）。', '**边界（如实登记）**：本守卫只裁「识别字段 → 预填落点」这一族的清单语义（现登记 `color` / `door_width`）；**未登记**的清单字段不在此射程内。`SkuMatrix.tsx::BatchColorInput`（人工「批量输入颜色」）的分隔符口径与行为**本单未改**（`COLOR_LIST_SEPARATORS` 值逐字不变，判据 3 的「同一套表」仍绿）。展示层改的是纯文本化，**未**渲染富文本（HTML 注入面另行裁定）。'],
+    skip_reason='[backend-contract] 确定性契约/机械判据，由 vitest（frontend/admin-web/tests/unit/lib/image-recognize-door-width-split.test.ts、frontend/admin-web/tests/unit/lib/rich-text-plain.test.ts、frontend/admin-web/tests/unit/components/FormInterpretCard.test.tsx、frontend/admin-web/tests/unit/components/ImageRecognizePrefill.test.tsx、frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx）验证，非 LLM 行为，不进入 agent-eval 冒烟 —— 拆行 / 丢非数 / 去重 / 纯文本转换都能逐值钉住',
+    tags=['image-recognize', 'door-width', 'frontend', 'prefill', 'regression'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PR-124 [NORMAL] 米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361）（源: cases/product.yml）──
 _CASE_PR_124 = EvalCase(
     id='PR-124',
@@ -13414,6 +13432,7 @@ ALL_CASES = (
     _CASE_PR_015,
     _CASE_PR_016,
     _CASE_PR_020,
+    _CASE_PR_022,
     _CASE_PR_124,
     _CASE_PR_125,
     _CASE_PR_126,
