@@ -24,6 +24,7 @@ import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
+import com.migao.admin.time.BusinessClock;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
 import org.apache.ibatis.mapping.Environment;
@@ -170,7 +171,7 @@ class AutoBatchDispatchRealDbTest {
                 session.getMapper(ProductSkuMapper.class), null, configService,
                 // 余料腿显式不装（V122 / issue #5146）：本判据覆盖的是**批次账**，余料是附加事实
                 // —— null ⇒ 不登记余料，批次账行为与 #5158 逐字相同
-                null);
+                null, new BusinessClock());
 
         // 工序库读面与工序实例化落库 stub（见类注释「边界」）；被判定的事实全在真库
         ProductionOperationQueryService operations = mock(ProductionOperationQueryService.class);

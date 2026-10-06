@@ -3385,3 +3385,43 @@ cases:
         - pr-check.yml
       verifies: []
 
+  - id: UI-092
+    legacy_id: ""
+    title: "省料看板重设计：结论先行 + 门道可视（因果链/术语词典）+ 环比词来自服务端 + 异常优先与渐进披露 + 合计行用服务端 total（issue #6430）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - saving-board
+      - copy
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "用户 2026-10-06 逐字：「省料看板看不明白这里是什么意思，如果是新用户这么解释这些概念」「你需要重新设计整个页面布局，如何把这个省料的故事讲清楚明白，让用户能看懂逻辑和门道」「不单单是页面布局，还有核心功能如何表达出省料看板」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 判据·**结论先行且只用服务端原值**：结论条（`saving-headline`）渲染「省料 99 米」（服务端合计腿），**不是**逐单求和（77 米）也不是来源组求和（18.2）—— 桩数据三个数互不相等，前端任何「顺手」求和即红。"
+      - "🔴 判据·**门道可视**：门道卡含因果链（`saving-causal-chain`：排料省 ⇒ 剩得更多 ⇒ 只盯一个数会看反）与术语词典（`saving-terms`：公式米数 / 排料米数 / 省料米数 / 省料金额 / 来源组 / 批次余量 + 「占比按**批数**算」）；既有「两条指标必须并用」的措辞一条不放宽。"
+      - "🔴 判据·**环比词只来自服务端 verdict**：同一份夹具把 `verdict` 由 `worse` 改成 `better` ⇒ 文案必须跟着改口（写死「变好了」的前端过不了这条）；`le0_2Share.verdict = null` ⇒ 该行**只给两期数值、不给好坏词**（有意不给，#5144）。"
+      - "🔴 判据·**本期还没过完 ⇒ 不给方向**：`verdict = \"partial\"` ⇒ 文案写「本期还没过完，环比先不算」，且**不得**出现「变好/变差」（红证来源 = 2026-10-06 页面多模态验收实测：趋势区把「才过 6 天的 10 月」与整月 9 月比，打出「上期 13236.5 米 → 本期 220.5 米 · 变好了」）。"
+      - "🔴 判据·**异常优先 + 渐进披露**：「布剩在哪」按余量降序（**纯排序**），12 行默认只渲染 8 行且**余量最大的排第一**（不排序时它会被切掉 ⇒ 红）；点 `saving-batch-groups-toggle` 后最小余量的那行出现。"
+      - "🔴 判据·**合计行 = 服务端 total**：逐单省料表新增 `saving-saved-groups-total`，渲染 99 米 / 999 元（服务端合计腿），**不是**逐行求和 77 米 / 88.88 元 —— 判据 1（逐值相等、前端零算术）由此再加一道锁。"
+      - "🔴 判据·**新用户 5 问**：整页文本面必须答得出 ①省了多少 ②布还剩在哪、剩多少 ③比上期好还是坏 ④为什么两个指标要一起看 ⑤存量导入为什么单列（缺任一条即红）。"
+      - "判据·**两张表的时间轴说明 + 趋势分母警示**：`saving-period-axis-note`（收货月 vs 消耗月不是一回事）、`saving-trend-caveat`（产出面积跨品类不可比、只跟自己的历史比）；`saving-footnotes` 折叠区含「无数据 ≠ 0 / 金额是下界 / 存量导入单列」。"
+      - "🔴 判据·**两腿同参（防口径漂移）**：`board` 与 `trend` 收到的 params 必须深相等 —— 只给一条腿加筛选（例如只加 `productId`）会让结论卡①（单商品）与②（全店）分属两个域，而账面上看不出来。"
+      - "判据·**向后兼容**：后端未部署（响应无 `comparison` 键）⇒ 页面不崩、且不渲染任何环比块（滚动发布安全）。"
+      - "判据·**既有判据一条不放宽**：PR-093/094/095 的逐值相等、存量单列、无数据 ≠ 0、两条指标同在页面上，与 UI-057 的零内部代号（含类级元守卫 `user-copy-jargon-guard.test.ts`）全部继续绿。⚠️ 一处**定位串**改判（同批如实登记）：批次分组行 testid 由 `…-<cohort>-<period>` 改为 `…-<cohort>-<period>-<skuCode|productId>`（同一 cohort+period 下多行时旧 testid 撞车、`getByTestId` 定位不到具体行），**断言强度不变**。"
+    skip_reason: "[backend-contract] 纯前端页面 / 文案 / 纯函数，由 vitest 单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-06 新增（issue #6430，用户两轮逐字）。取号 = 现取 `origin/main` 最大号 + 1（`python3 scripts/next_case_id.py ui` 现取 main 最大 = UI-089）⇒ UI-090 **改判为 UI-092**（合并 main 时发现 UI-090/UI-091 已被 issue #6434 占用 ⇒ 按「现取 main 最大 + 1」重取号）。红证（实现前实测，`migao-dev-flow` §28.1 出口① 临时反转）：把 `page.tsx` / `lib/saving-board.ts` 换回 `git show origin/main:<path>` 的旧实现（同工作树注入，注入后 md5 自证与恢复值不同）⇒ 新判据 **17 failed / 17**；恢复新实现 ⇒ 3 个文件 **26 passed**（含既有 9 条）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/SavingBoardStory.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SavingBoard.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/saving-board-copy.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

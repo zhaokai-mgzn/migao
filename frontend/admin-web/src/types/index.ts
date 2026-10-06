@@ -3606,6 +3606,35 @@ export interface SavingBoardTotal {
   le0_2Share: number | null
 }
 
+/**
+ * 一个指标在**相邻两个有数据的期间**上的对比（issue #6430）。
+ *
+ * `verdict`：`better` / `worse` / `same` / `unknown`；**`null` = 有意不给好坏**
+ * （占比的方向会被排料省料反向污染 —— 排料省 ⇒ 批次剩更多 ⇒ 占比反而更差，见 #5144）。
+ * 期间来自**服务端**（`period` / `previousPeriod`）—— 前端不许自己算「上个月」。
+ */
+export interface SavingMetricDelta {
+  period: string | null
+  previousPeriod: string | null
+  current: number | null
+  previous: number | null
+  verdict: string | null
+}
+
+/** 看板（批次结构性 + 逐单省料）的环比 */
+export interface SavingBoardComparison {
+  savedMeters: SavingMetricDelta | null
+  savedAmount: SavingMetricDelta | null
+  /** 恒 `verdict: null`（有意不给好坏） */
+  le0_2Share: SavingMetricDelta | null
+}
+
+/** 趋势（采购/财务口径）的环比 */
+export interface SavingTrendComparison {
+  purchasedMeters: SavingMetricDelta | null
+  metersPerM2: SavingMetricDelta | null
+}
+
 export interface SavingBoard {
   granularity: string
   timezone: string
@@ -3614,6 +3643,8 @@ export interface SavingBoard {
   batchGroups: SavingBatchGroup[]
   savedGroups: SavingSavedGroup[]
   total: SavingBoardTotal
+  /** 相邻两个有数据的期间的环比（issue #6430）；后端未部署 ⇒ 缺键，页面不渲染环比块 */
+  comparison?: SavingBoardComparison | null
 }
 
 /** L3 趋势的一个时间点（采购/财务口径，不逐单） */
@@ -3638,6 +3669,8 @@ export interface SavingTrend {
   purchasedTotalMeters: number | null
   consumedTotalMeters: number | null
   openingTotalMeters: number | null
+  /** 采购米数与单位产出消耗的环比（issue #6430） */
+  comparison?: SavingTrendComparison | null
 }
 
 export interface PoolBoard {

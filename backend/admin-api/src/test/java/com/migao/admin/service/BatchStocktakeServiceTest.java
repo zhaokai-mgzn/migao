@@ -16,6 +16,7 @@ import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
 import com.migao.admin.mapper.StockLedgerMapper;
+import com.migao.admin.time.BusinessClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -85,7 +86,7 @@ class BatchStocktakeServiceTest {
                 StockBatchConsumption.class);
         // 真服务 + 桩 mapper：批次分录的落库形状由**被测代码**决定，而不是由测试自己拼出来
         batchService = new StockBatchConsumptionService(stockBatchMapper, consumptionMapper,
-                productSkuMapper, stockLedgerMapper, null, null);
+                productSkuMapper, stockLedgerMapper, null, null, new BusinessClock());
         service = new BatchStocktakeService(batchService, productSkuMapper,
                 new StockLedgerService(stockLedgerMapper, productSkuMapper));
         // 默认：该 run 没有任何已落账的盘点行（重放判据自己改桩）

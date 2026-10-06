@@ -23,6 +23,7 @@ import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
 import com.migao.admin.mapper.StockLedgerMapper;
+import com.migao.admin.time.BusinessClock;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
 import org.apache.ibatis.mapping.Environment;
@@ -455,7 +456,7 @@ class StockBatchStocktakeEndpointRaceRealDbTest {
     private static StockBatchConsumptionService batchServiceOn(SqlSession s) {
         return new StockBatchConsumptionService(s.getMapper(StockBatchMapper.class),
                 gated(s.getMapper(StockBatchConsumptionMapper.class)), s.getMapper(ProductSkuMapper.class),
-                s.getMapper(StockLedgerMapper.class), null, null);
+                s.getMapper(StockLedgerMapper.class), null, null, new BusinessClock());
     }
 
     /**

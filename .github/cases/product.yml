@@ -3495,7 +3495,7 @@ cases:
       - "判据 5·**单价口径**：`UPDATE stock_batches SET unit_cost = 99` 之后重读看板 ⇒ 省料金额**一字不变**（用的是行内快照 `stock_batch_consumptions.unit_cost`）。**红证 = 把金额腿改成读批次现价 `b.unit_cost`** ⇒ 当场红（实测 103.76 → 1227.6）。⚠️ 复读前必须 `session.clearCache()`（MyBatis 一级缓存按 SqlSession；不清缓存会读回改前值 ⇒ **断言恒真 = 空断言**，本单实测踩到并已修）。"
       - "判据 3·**粒度 fail-closed**：未知粒度 ⇒ 400 显式拒绝（**不静默回落 month**）；`week` 走 ISO 周（`YYYY-Www`）且响应的 `timezone` 显式为 `Asia/Shanghai`。**红证 = 把 default 改成回落 month** ⇒ 当场红。"
     skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-23 新增（issue #5159 剩余范围）：L2/L3 汇总读面 —— 汇总一致（逐值相等）+ 单价快照口径 + 粒度 fail-closed。取号 PR-093（本单硬分配区间 PR-093~PR-096）。"
+    merge_log: "2026-09-23 新增（issue #5159 剩余范围）：L2/L3 汇总读面 —— 汇总一致（逐值相等）+ 单价快照口径 + 粒度 fail-closed。取号 PR-093（本单硬分配区间 PR-093~PR-096）。 ｜ 2026-10-06（issue #6430 用例库同步）：本用例的读面**只加不改**地新增了 `comparison`（相邻两期环比；口径与判据另立 PR-127），**本用例三条判据一字不放宽**；同批前端改动见 UI-092（含一处**定位串**改判：批次分组行 testid 由 `…-<cohort>-<period>` 改为 `…-<cohort>-<period>-<skuCode|productId>`，原因 = 同一 cohort+period 下多行时旧 testid 撞车、定位不到具体行，断言强度不变）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/SavingMetricsBoardRealDbTest.java"
@@ -5021,6 +5021,41 @@ cases:
         - "backend/ai-agent-service/tests/test_vision/test_copy_vs_infer.py"
         - "backend/ai-agent-service/tests/test_vision/test_deep_channel.py"
         - "backend/ai-agent-service/tests/test_vision/test_recognizer.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-127
+    legacy_id: ""
+    title: "🔴 真库+定点：省料看板与趋势的「相邻两期对比」（环比）—— 期间不回填、verdict 由服务端定、占比恒不给好坏（issue #6430）"
+    domains:
+      - product
+      - inventory
+    tier: normal
+    tags:
+      - batch-ledger
+      - saving-metrics
+      - real-db
+      - backend-contract
+    truths_ref:
+      - batch-ledger.saving-metrics-read-face
+    user_inputs:
+      - "用户 2026-10-06 逐字「省料看板看不明白这里是什么意思」「把这个省料的故事讲清楚明白」—— 重设计要求把「在变好还是变坏」讲清楚，环比口径归服务端"
+    expectations: []
+    data_checks:
+      - "判据 1·**期间选择不回填**：`MetricDelta` 的「上一期」= 该指标自己时间轴上**相邻的两个有数据期间**（值非 null 的期间按字典序取最后两个）⇒ 没数据的月份**不生成 0**、也不参与选择（否则「没采购」会被读成「采购下降」，与本模块「无数据不冒充 0」同源）。红证（定点）：把 null 期间当 0 参与 ⇒ `SavingMetricsComparisonTest` 用例红；现取命令（在 `backend/admin-api` 下执行）= `./mvnw -q test -Dtest=SavingMetricsComparisonTest`。"
+      - "判据 2·**verdict 四态 + 两种「不表态」可区分**：`better`/`worse`/`same`/`unknown`；`same` 一律 `compareTo` 判等（判别性对照：`1.5` 与 `1.50` ⇒ same，而 `equals` 为 false）；`le0_2Share.verdict` **判得了时恒 `null`**（有意不给好坏，见 #5144）且与 `\"unknown\"`（判不了）**可区分**（断言 `isNotEqualTo(\"unknown\")`）。"
+      - "判据 3·**较好方向唯一定义处**：省料米数/金额 ↑ better、采购米数 ↓ better、米每㎡ ↓ better —— 集中在 `StockBatchConsumptionService` 的 `DIR_UP_BETTER` / `DIR_DOWN_BETTER` / `DIR_NO_VERDICT` 与单点 `verdict(...)`；口径正文在 `SavingMetricViews.MetricDelta` 的 javadoc（**不许写第二份**）。"
+      - "判据 4·**真库自洽**：`SavingMetricsBoardRealDbTest` 在真 PG 夹具上断言 `comparison` 的期间/数值与既有分组行**逐值自洽**（本期值 == `points` / 分组腿同期的值），并有反向对照「上期 ≠ 本期」。实测读数（2026-10-06）：`savedMeters 5.6 → 1 / savedAmount 69.96 → 5 / le0_2Share 0.5 → 0 (verdict=null) / purchased 15 (unknown) / metersPerM2 0.4583 → 0.8276 (worse)`。"
+      - "判据 6·**本期还没过完 ⇒ 不给方向（`partial`，2026-10-06 页面多模态验收反哺）**：`period` == 当前所在期间（业务时区；月 = `YYYY-MM`、周 = `ISO 周历年` 的 `IYYY-\"W\"IW`）⇒ `verdict = \"partial\"`，**只覆盖 better/worse/same**，**不覆盖** `unknown`（判不了更具体）与 `null`（有意不给）。病根 = 拿「才过 6 天的月份」与整月比大小 ⇒ 把「这个月还没进货」读成「买得更克制」（实测读数：上期 13236.5 米 → 本期 220.5 米 → 「变好了」）。定点判据用**注入的当前期间**（与「今天几号」解耦，不会下个月自己变红）；真库判据相应放宽为 `isIn(\"worse\", \"partial\")`（**仍禁止 better**）。"
+      - "判据 6c·**行级序列按期间汇总**：环比原始行是（期间 × 来源组 × 物料）粒度 ⇒ 用前必须按期间相加成一期一行，否则「相邻两期」会取到**同一个月的两行**（实测红证：页面打出「上期 **2026-10**：1.3 米 → 本期 **2026-10**：10.3 米」）。判据 = 定点 `aggregateByPeriod`（同期两行相加、全 null 期间整条不进序列 + 汇总后两期必不相同） + 真库「`previousPeriod != period`」。"
+      - "判据 5·**零新增 SQL、只加不改**：对比全部由 `savingBoard` / `savingTrend` **已加载的行**内存聚合（未加查询、未碰 mapper/XML、无迁移）；`Board` / `Trend` 既有 component 的顺序与名字一字未动（只在末尾追加 `comparison`）⇒ 既有消费方（ai-agent 的 `batch_stock_query` 按 key 取值）不受影响。"
+    skip_reason: "[backend-contract] 读面契约与口径（无 LLM 环节）⇒ 由 Java 定点判据 + 真 PG 判据覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-06 新增（issue #6430，用户两轮逐字）。取号 = 现取 `origin/main` 最大号 + 1（本仓取号法见 `tests/unit_ci_workflows/test_case_id_claims.py` 头注；`origin/main` 现取最大 = PR-126）⇒ PR-127。红证（实现前实测）：`./mvnw -q test -Dtest=SavingMetricsComparisonTest` 得 `COMPILATION ERROR … 找不到符号 类 MetricDelta / 方法 delta(...)`（契约点不存在 ⇒ 9 条判据一条都跑不到）；实现后 `Tests run: 12, Failures: 0, Errors: 0`（含 partial、期间键、**行级序列按期间汇总**三条，均由 2026-10-06 页面多模态验收反哺追加），真库 `Tests run: 7, Failures: 0`。 ｜ 2026-10-06 CI 反哺：首推被 `BusinessClockSourceGuardTest` 判红（我在服务里自取 `Instant` 时刻 = 业务「今天」的**第二个来源**，issue #3802 禁止）⇒ 改为**注入 `BusinessClock`**（业务时间单点，仓库 6+ 服务同一写法）并同批给 13 个手工构造点补 `BusinessClock` 实参；三条钟源守卫 + 本用例 19 条现取全绿。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/SavingMetricsComparisonTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/SavingMetricsBoardRealDbTest.java"
       ci:
         - pr-check.yml
       verifies: []

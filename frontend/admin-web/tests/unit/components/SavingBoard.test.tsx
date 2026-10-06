@@ -285,8 +285,12 @@ describe('#5159 省料看板页', () => {
     expect(within(opening).getByTestId('saving-cohort-opening-batch-count').textContent).toBe('2')
 
     // L2 分组表里两组是**两行**（不是一行加总）
-    expect(screen.getByTestId('saving-batch-group-purchase-2026-09')).toBeTruthy()
-    expect(screen.getByTestId('saving-batch-group-opening-2026-08')).toBeTruthy()
+    // ⚠️ 2026-10-06 定位串改判（issue #6430）：行 testid 由 `…-<cohort>-<period>` 改为
+    //    `…-<cohort>-<period>-<skuCode|productId>` —— 同一 (cohort, period) 下多行（同物料不同规格）时
+    //    旧 testid 会撞车（一个 testid 命中多行 ⇒ `getByTestId` 直接抛错，定位不到具体行）。
+    //    **判据一字不放宽**：断言的仍是「这两组各自成行」。
+    expect(screen.getByTestId('saving-batch-group-purchase-2026-09-SKU-A')).toBeTruthy()
+    expect(screen.getByTestId('saving-batch-group-opening-2026-08-SKU-A')).toBeTruthy()
   })
 
   it('🔴 判据1：米数/金额**原样渲染服务端值**（桩数据不自洽 ⇒ 任何前端重算必红）', async () => {

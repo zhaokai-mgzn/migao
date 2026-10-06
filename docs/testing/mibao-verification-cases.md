@@ -6886,7 +6886,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6222，P3·读面）：主会话在未修复构建 :8080 上逐字复现 —— `GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行（after-sales 5 / stock-ledger 389 同款）。机制：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（`pageSize < 0` 直接 return ⇒ 不追加 LIMIT、**不执行 count 查询**）⇒ 拦截器只填 `records`、`total` 停在默认 0；被 `setMaxLimit(500)` 约束的只是**正数** size ⇒ 行数不设上界。危害：`total=0` 让客户端分页器立刻认为已到末页 ⇒ 「有数据却显示为空 / 翻不动页」。**口径裁定 = 显式拒绝（400）而非钳到合法下界**，三条理由：① 病根是「非法入参**不静默**」，钳位仍是静默（把「静默给错数据」换成「静默改口径」）；② 本仓已有同族显式拒绝范式（`StockQuantity.requireOneDecimal` / `MoneyScale.requireTwoDecimals`(#6221) / 负数数量 ⇒ 400）；③ 钳位会掩盖调用方（含 Agent / 前端）的真实缺陷。**为什么这样选单点**（最少代码阶梯）：分页入口有两个族（`@RequestParam long size` 控制器方法现取 22 个 + 自带 page/size 字段的查询 DTO 三个、**无共同基类**），且 DTO 属性名不保证等于 HTTP 参数名（`ProductQueryRequest.productId` 对 `@RequestParam productCode`）⇒ DTO 侧做准入要么靠 `WebDataBinder` 名字启发（会漏）、要么按属性名校验（对不上）；两族**都必须**经同一个 HTTP 参数集 ⇒ 唯一真正单点 = Servlet 层参数闸（`prehandle` 取参 + `PaginationParamGate` 判定），并在 WebConfig 注册（排在授权/归属之后，沿用 F3 #6063 与 #6158 的次序纪律）。**类级固化**：台账 25 条分页入口 + 6 条判据 + 5 种坏形态判别力自证（未登记即红 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 + 只改措辞不红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-070（origin/main@dacac7471:001-067,069 · PR #6227:068 ⇒ 最小空闲 070）。 ｜ tags: api, pagination, fail-closed, backend-contract, negative-size
 
-## 商品域（118 case）
+## 商品域（119 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -7941,7 +7941,7 @@
 跳过: [backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟
 ```
 真值: batch-ledger.saving-metrics-read-face
-溯源: 2026-09-23 新增（issue #5159 剩余范围）：L2/L3 汇总读面 —— 汇总一致（逐值相等）+ 单价快照口径 + 粒度 fail-closed。取号 PR-093（本单硬分配区间 PR-093~PR-096）。 ｜ tags: batch-ledger, saving-metrics, real-db, backend-contract
+溯源: 2026-09-23 新增（issue #5159 剩余范围）：L2/L3 汇总读面 —— 汇总一致（逐值相等）+ 单价快照口径 + 粒度 fail-closed。取号 PR-093（本单硬分配区间 PR-093~PR-096）。 ｜ 2026-10-06（issue #6430 用例库同步）：本用例的读面**只加不改**地新增了 `comparison`（相邻两期环比；口径与判据另立 PR-127），**本用例三条判据一字不放宽**；同批前端改动见 UI-092（含一处**定位串**改判：批次分组行 testid 由 `…-<cohort>-<period>` 改为 `…-<cohort>-<period>-<skuCode|productId>`，原因 = 同一 cohort+period 下多行时旧 testid 撞车、定位不到具体行，断言强度不变）。 ｜ tags: batch-ledger, saving-metrics, real-db, backend-contract
 
 ### PR-094. 🔴 真库+页面：存量导入批次（source='opening'）独立成组，不混入「切换后」的分子分母 🔵
 ```
@@ -8502,6 +8502,21 @@
 ```
 溯源: 2026-10-05 新增（issue #6386，真跑验收发现）。取号 = 现取最大号 + 1（承 #6367 的 PR-124/PR-125）。红→绿：先写判据（含类级元守卫）⇒ 12 failed / 9 passed；实现后 21 passed。既有契约判据同步改钉新形态（recognizer 字段表 7 格→5 格、name/description 改由解读填、按 key 取不再按下标）。真跑复验两次（无 hint / 带 hint）读数见 data_checks 判据 6。 ｜ tags: image-recognize, source-marker, backend-contract, regression
 
+### PR-127. 🔴 真库+定点：省料看板与趋势的「相邻两期对比」（环比）—— 期间不回填、verdict 由服务端定、占比恒不给好坏（issue #6430） 🔵
+```
+你: 用户 2026-10-06 逐字「省料看板看不明白这里是什么意思」「把这个省料的故事讲清楚明白」—— 重设计要求把「在变好还是变坏」讲清楚，环比口径归服务端
+数据: 判据 1·**期间选择不回填**：`MetricDelta` 的「上一期」= 该指标自己时间轴上**相邻的两个有数据期间**（值非 null 的期间按字典序取最后两个）⇒ 没数据的月份**不生成 0**、也不参与选择（否则「没采购」会被读成「采购下降」，与本模块「无数据不冒充 0」同源）。红证（定点）：把 null 期间当 0 参与 ⇒ `SavingMetricsComparisonTest` 用例红；现取命令（在 `backend/admin-api` 下执行）= `./mvnw -q test -Dtest=SavingMetricsComparisonTest`。
+数据: 判据 2·**verdict 四态 + 两种「不表态」可区分**：`better`/`worse`/`same`/`unknown`；`same` 一律 `compareTo` 判等（判别性对照：`1.5` 与 `1.50` ⇒ same，而 `equals` 为 false）；`le0_2Share.verdict` **判得了时恒 `null`**（有意不给好坏，见 #5144）且与 `"unknown"`（判不了）**可区分**（断言 `isNotEqualTo("unknown")`）。
+数据: 判据 3·**较好方向唯一定义处**：省料米数/金额 ↑ better、采购米数 ↓ better、米每㎡ ↓ better —— 集中在 `StockBatchConsumptionService` 的 `DIR_UP_BETTER` / `DIR_DOWN_BETTER` / `DIR_NO_VERDICT` 与单点 `verdict(...)`；口径正文在 `SavingMetricViews.MetricDelta` 的 javadoc（**不许写第二份**）。
+数据: 判据 4·**真库自洽**：`SavingMetricsBoardRealDbTest` 在真 PG 夹具上断言 `comparison` 的期间/数值与既有分组行**逐值自洽**（本期值 == `points` / 分组腿同期的值），并有反向对照「上期 ≠ 本期」。实测读数（2026-10-06）：`savedMeters 5.6 → 1 / savedAmount 69.96 → 5 / le0_2Share 0.5 → 0 (verdict=null) / purchased 15 (unknown) / metersPerM2 0.4583 → 0.8276 (worse)`。
+数据: 判据 6·**本期还没过完 ⇒ 不给方向（`partial`，2026-10-06 页面多模态验收反哺）**：`period` == 当前所在期间（业务时区；月 = `YYYY-MM`、周 = `ISO 周历年` 的 `IYYY-"W"IW`）⇒ `verdict = "partial"`，**只覆盖 better/worse/same**，**不覆盖** `unknown`（判不了更具体）与 `null`（有意不给）。病根 = 拿「才过 6 天的月份」与整月比大小 ⇒ 把「这个月还没进货」读成「买得更克制」（实测读数：上期 13236.5 米 → 本期 220.5 米 → 「变好了」）。定点判据用**注入的当前期间**（与「今天几号」解耦，不会下个月自己变红）；真库判据相应放宽为 `isIn("worse", "partial")`（**仍禁止 better**）。
+数据: 判据 6c·**行级序列按期间汇总**：环比原始行是（期间 × 来源组 × 物料）粒度 ⇒ 用前必须按期间相加成一期一行，否则「相邻两期」会取到**同一个月的两行**（实测红证：页面打出「上期 **2026-10**：1.3 米 → 本期 **2026-10**：10.3 米」）。判据 = 定点 `aggregateByPeriod`（同期两行相加、全 null 期间整条不进序列 + 汇总后两期必不相同） + 真库「`previousPeriod != period`」。
+数据: 判据 5·**零新增 SQL、只加不改**：对比全部由 `savingBoard` / `savingTrend` **已加载的行**内存聚合（未加查询、未碰 mapper/XML、无迁移）；`Board` / `Trend` 既有 component 的顺序与名字一字未动（只在末尾追加 `comparison`）⇒ 既有消费方（ai-agent 的 `batch_stock_query` 按 key 取值）不受影响。
+跳过: [backend-contract] 读面契约与口径（无 LLM 环节）⇒ 由 Java 定点判据 + 真 PG 判据覆盖，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.saving-metrics-read-face
+溯源: 2026-10-06 新增（issue #6430，用户两轮逐字）。取号 = 现取 `origin/main` 最大号 + 1（本仓取号法见 `tests/unit_ci_workflows/test_case_id_claims.py` 头注；`origin/main` 现取最大 = PR-126）⇒ PR-127。红证（实现前实测）：`./mvnw -q test -Dtest=SavingMetricsComparisonTest` 得 `COMPILATION ERROR … 找不到符号 类 MetricDelta / 方法 delta(...)`（契约点不存在 ⇒ 9 条判据一条都跑不到）；实现后 `Tests run: 12, Failures: 0, Errors: 0`（含 partial、期间键、**行级序列按期间汇总**三条，均由 2026-10-06 页面多模态验收反哺追加），真库 `Tests run: 7, Failures: 0`。 ｜ 2026-10-06 CI 反哺：首推被 `BusinessClockSourceGuardTest` 判红（我在服务里自取 `Instant` 时刻 = 业务「今天」的**第二个来源**，issue #3802 禁止）⇒ 改为**注入 `BusinessClock`**（业务时间单点，仓库 6+ 服务同一写法）并同批给 13 个手工构造点补 `BusinessClock` 实参；三条钟源守卫 + 本用例 19 条现取全绿。 ｜ tags: batch-ledger, saving-metrics, real-db, backend-contract
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -8692,7 +8707,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（91 case）
+## 前端 UI 域（92 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -9992,6 +10007,26 @@
 真值: frontend-fix.print-single-doc-on-paper, frontend-fix.no-api-change
 溯源: 2026-10-06 新增（issue #6434，用户实测报告「订单详情中没有看到打印功能」）。修法 = 把四个入口从两个状态分支里的**字面量副本**收敛成 `PRINT_TARGETS_BY_STATUS` 一张表 + `<PrintActions>` 一个渲染器（文案取 `PRINT_TARGET_SPECS[*].title`），并把入口补到待付款（报价单）/ 待发货 / 生产中（报价单 + 加工单 + 销售单）；已发货 / 已完成四单口径**一字未变**（只做加法，不回归既有入口）。取号 UI-090（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-089）。⚠️ **未固化 / 有意不做（照实登记）**：① 「真机上点得开、纸出得来」仍属 #5688 的现场待办（本用例只判**入口可达与矩阵覆盖**）；② 不为打印入口新造权限码（沿用既有页面口径 `order:list`）；③ 待付款**不加**发货单入口（未发货谈不上补打，既有判据「待付款订单没有发货单入口」保持绿）。 ｜ tags: ui, order, print, entry-matrix, red-proof
 
+### UI-092. 省料看板重设计：结论先行 + 门道可视（因果链/术语词典）+ 环比词来自服务端 + 异常优先与渐进披露 + 合计行用服务端 total（issue #6430） 🔵
+```
+你: 用户 2026-10-06 逐字：「省料看板看不明白这里是什么意思，如果是新用户这么解释这些概念」「你需要重新设计整个页面布局，如何把这个省料的故事讲清楚明白，让用户能看懂逻辑和门道」「不单单是页面布局，还有核心功能如何表达出省料看板」
+期望: direct_reply
+数据: 🔴 判据·**结论先行且只用服务端原值**：结论条（`saving-headline`）渲染「省料 99 米」（服务端合计腿），**不是**逐单求和（77 米）也不是来源组求和（18.2）—— 桩数据三个数互不相等，前端任何「顺手」求和即红。
+数据: 🔴 判据·**门道可视**：门道卡含因果链（`saving-causal-chain`：排料省 ⇒ 剩得更多 ⇒ 只盯一个数会看反）与术语词典（`saving-terms`：公式米数 / 排料米数 / 省料米数 / 省料金额 / 来源组 / 批次余量 + 「占比按**批数**算」）；既有「两条指标必须并用」的措辞一条不放宽。
+数据: 🔴 判据·**环比词只来自服务端 verdict**：同一份夹具把 `verdict` 由 `worse` 改成 `better` ⇒ 文案必须跟着改口（写死「变好了」的前端过不了这条）；`le0_2Share.verdict = null` ⇒ 该行**只给两期数值、不给好坏词**（有意不给，#5144）。
+数据: 🔴 判据·**本期还没过完 ⇒ 不给方向**：`verdict = "partial"` ⇒ 文案写「本期还没过完，环比先不算」，且**不得**出现「变好/变差」（红证来源 = 2026-10-06 页面多模态验收实测：趋势区把「才过 6 天的 10 月」与整月 9 月比，打出「上期 13236.5 米 → 本期 220.5 米 · 变好了」）。
+数据: 🔴 判据·**异常优先 + 渐进披露**：「布剩在哪」按余量降序（**纯排序**），12 行默认只渲染 8 行且**余量最大的排第一**（不排序时它会被切掉 ⇒ 红）；点 `saving-batch-groups-toggle` 后最小余量的那行出现。
+数据: 🔴 判据·**合计行 = 服务端 total**：逐单省料表新增 `saving-saved-groups-total`，渲染 99 米 / 999 元（服务端合计腿），**不是**逐行求和 77 米 / 88.88 元 —— 判据 1（逐值相等、前端零算术）由此再加一道锁。
+数据: 🔴 判据·**新用户 5 问**：整页文本面必须答得出 ①省了多少 ②布还剩在哪、剩多少 ③比上期好还是坏 ④为什么两个指标要一起看 ⑤存量导入为什么单列（缺任一条即红）。
+数据: 判据·**两张表的时间轴说明 + 趋势分母警示**：`saving-period-axis-note`（收货月 vs 消耗月不是一回事）、`saving-trend-caveat`（产出面积跨品类不可比、只跟自己的历史比）；`saving-footnotes` 折叠区含「无数据 ≠ 0 / 金额是下界 / 存量导入单列」。
+数据: 🔴 判据·**两腿同参（防口径漂移）**：`board` 与 `trend` 收到的 params 必须深相等 —— 只给一条腿加筛选（例如只加 `productId`）会让结论卡①（单商品）与②（全店）分属两个域，而账面上看不出来。
+数据: 判据·**向后兼容**：后端未部署（响应无 `comparison` 键）⇒ 页面不崩、且不渲染任何环比块（滚动发布安全）。
+数据: 判据·**既有判据一条不放宽**：PR-093/094/095 的逐值相等、存量单列、无数据 ≠ 0、两条指标同在页面上，与 UI-057 的零内部代号（含类级元守卫 `user-copy-jargon-guard.test.ts`）全部继续绿。⚠️ 一处**定位串**改判（同批如实登记）：批次分组行 testid 由 `…-<cohort>-<period>` 改为 `…-<cohort>-<period>-<skuCode|productId>`（同一 cohort+period 下多行时旧 testid 撞车、`getByTestId` 定位不到具体行），**断言强度不变**。
+跳过: [backend-contract] 纯前端页面 / 文案 / 纯函数，由 vitest 单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-10-06 新增（issue #6430，用户两轮逐字）。取号 = 现取 `origin/main` 最大号 + 1（`python3 scripts/next_case_id.py ui` 现取 main 最大 = UI-089）⇒ UI-090 **改判为 UI-092**（合并 main 时发现 UI-090/UI-091 已被 issue #6434 占用 ⇒ 按「现取 main 最大 + 1」重取号）。红证（实现前实测，`migao-dev-flow` §28.1 出口① 临时反转）：把 `page.tsx` / `lib/saving-board.ts` 换回 `git show origin/main:<path>` 的旧实现（同工作树注入，注入后 md5 自证与恢复值不同）⇒ 新判据 **17 failed / 17**；恢复新实现 ⇒ 3 个文件 **26 passed**（含既有 9 条）。 ｜ tags: ui, saving-board, copy
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -10021,8 +10056,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：695（活跃 134，跳过 561）
-- tier 分布：smoke 12 / normal 641 / adversarial 32
+- 用例总数：697（活跃 134，跳过 563）
+- tier 分布：smoke 12 / normal 643 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -10043,11 +10078,11 @@
 - 订单域：63
 - 加工项域：27
 - 加工单域：61
-- 商品域：118
+- 商品域：119
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：91
+- 前端 UI 域：92
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
