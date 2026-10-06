@@ -1997,6 +1997,9 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     # 登记的是**父前缀** `/agent-workspace`（子树唯一菜单节点 = 「在线接待」；根 = 重定向占位页、
     # `sessions` = 会话监控都**没有侧边栏节点**）—— 三者同一码 `agent:session`（= 该节点码）。
     "/agent-workspace": "在线接待",
+    # 库存明细（issue #6404）：新菜单节点 + 新路由守卫**成对登记**（判据 11 ③：未登记即红）。
+    # 节点码 = 守卫码 = 该页第一屏读端点码（`StockLedgerController` 方法级 `product:list`）。
+    "/stock-ledger": "库存明细",
 }
 
 #: 没有可钉菜单节点的路由前缀（逐条带理由；**新增路由不登记即红** —— 见判据 11 ③ 末段）。
@@ -2142,6 +2145,13 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
                                            ("remnantApi.ledger",)),
     "/production/saving-board": MenuReadAnchor("省料看板", "production/saving-board/page.tsx",
                                                ("savingBoardApi.board", "savingBoardApi.trend")),
+    # 库存明细（issue #6404）：节点码 `product:list` = 本页第一屏读端点
+    # （`GET /api/admin/stock-ledger`，`StockLedgerController` 的**方法级** `@RequirePermission`）
+    # —— 与「省料看板」同款：按子菜单粒度把节点码收敛到该页读码，不新造权限点。
+    # ⚠️ 只收挂载即跑的 `stockLedgerApi.ledger`（由 `load` 在 `useEffect` 里触发）；
+    # 商品搜索框的 `productApi.getProducts` 是**点击才跑**，按本节口径**不收**（否则会把交互面的码
+    # 算成第一屏的码 —— 节注释里记着实测踩过的同款坑）。
+    "/stock-ledger": MenuReadAnchor("库存明细", "stock-ledger/page.tsx", ("stockLedgerApi.ledger",)),
     "/employees": MenuReadAnchor("员工管理", "employees/page.tsx", (
         "employeeApi.getEmployees", "employeeApi.loadPositions")),
     "/roles": MenuReadAnchor("岗位权限", "roles/page.tsx", (

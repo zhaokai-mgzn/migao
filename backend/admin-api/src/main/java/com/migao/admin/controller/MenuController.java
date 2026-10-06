@@ -122,6 +122,10 @@ public class MenuController {
         MenuNode i2 = new MenuNode("order:list", "发货单");
         MenuNode prRemnants = new MenuNode("processing:manage", "余料台账");
         MenuNode prSaving = new MenuNode("product:list", "省料看板");   // #5699 P4：= 该页读码
+        // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面，补 `StockLedgerController`
+        //（issue #4055）javadoc 里逐字登记的显式延后项「不做前端页面」。
+        // 🔴 权限码 = 该端点**方法级** `@RequirePermission("product:list")`（逐字同码，不新造码）。
+        MenuNode prLedger = new MenuNode("product:list", "库存明细");
         // 旧 label「员工列表」→「员工管理」（#5271；code 不变 employee:list）
         MenuNode e1 = new MenuNode("employee:list", "员工管理");
         // issue #5291：岗位权限节点改挂读码 `system:view`（企业基础信息仍是 system:manage）。
@@ -150,7 +154,7 @@ public class MenuController {
             // 生产管理（本轮收进「加工项管理」= p4，位于「智能派单」之后、「工艺配置」之前，
             // 与 menu.ts 的组内顺序逐字一致）
             new MenuNode("production-center", "生产管理", List.of(pr1, prPool, p4, pr2, pr3)),
-            new MenuNode("inventory-center", "仓储与物料", List.of(i1, i2, prRemnants, prSaving)),
+            new MenuNode("inventory-center", "仓储与物料", List.of(i1, i2, prRemnants, prSaving, prLedger)),
             new MenuNode("org-center", "组织管理", List.of(e1, r1, s1, e2))
         );
     }

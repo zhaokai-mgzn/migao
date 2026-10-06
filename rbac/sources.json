@@ -63,10 +63,10 @@
     {
       "face": "menu-frontend-nodes",
       "file": "frontend/admin-web/src/config/menu.ts",
-      "hits": 21,
+      "hits": 22,
       "kind": "declaration",
       "derived_from": "manifest.menu_nodes",
-      "note": "C1 真实侧边栏真值源（menu.ts，Sidebar 唯一读取的菜单源）。P4：『经营看板』节点补上 `permissionCode` ⇒ 带码节点命中数 19→20（涨跌都要在同 PR 更新本表）（issue #5939：+「发货单」节点 ⇒ 20→21；涨跌同 PR 更新）"
+      "note": "C1 真实侧边栏真值源（menu.ts，Sidebar 唯一读取的菜单源）。P4：『经营看板』节点补上 `permissionCode` ⇒ 带码节点命中数 19→20（涨跌都要在同 PR 更新本表）（issue #5939：+「发货单」节点 ⇒ 20→21；涨跌同 PR 更新）（issue #6404：+「库存明细」节点 ⇒ 21→22；涨跌同 PR 更新）"
     },
     {
       "face": "route-guard-map",
@@ -247,10 +247,10 @@
     {
       "face": "page-first-screen-anchors",
       "file": "tests/unit_ci_workflows/test_agent_permission_parity.py",
-      "hits": 22,
+      "hits": 23,
       "kind": "declaration",
       "derived_from": "manifest.pages（P3 派生目标口径）",
-      "note": "**「页面 → 码」的第四份副本**（设计 §1.3 的 C 类第 4 份）：21 条「页面 → 第一屏调用的 api 函数」锚点表（`MENU_READ_ENDPOINT_ANCHORS`）。它是判据 12 的**唯一手写输入**（其余三跳都是现取）⇒ 也是「页面 → 码」这一事实唯一**不在**菜单/注解侧的手写副本。P3 起由清单 `pages[]` 派生（`rbac/derive.py` 的 `derive_page_faces()`），本登记保留为**未登记即红**的绊线：新增一个 `MenuReadAnchor(...)` 而不同步 P3 的页面表 ⇒ 现取 22 ≠ 登记 21 ⇒ 红（`hits` 逐值对账）。（issue #5939：+/shipments 锚点 ⇒ 21→22；涨跌同 PR 更新）"
+      "note": "**「页面 → 码」的第四份副本**（设计 §1.3 的 C 类第 4 份）：21 条「页面 → 第一屏调用的 api 函数」锚点表（`MENU_READ_ENDPOINT_ANCHORS`）。它是判据 12 的**唯一手写输入**（其余三跳都是现取）⇒ 也是「页面 → 码」这一事实唯一**不在**菜单/注解侧的手写副本。P3 起由清单 `pages[]` 派生（`rbac/derive.py` 的 `derive_page_faces()`），本登记保留为**未登记即红**的绊线：新增一个 `MenuReadAnchor(...)` 而不同步 P3 的页面表 ⇒ 现取 22 ≠ 登记 21 ⇒ 红（`hits` 逐值对账）。（issue #5939：+/shipments 锚点 ⇒ 21→22；涨跌同 PR 更新）（issue #6404：+/stock-ledger 锚点 ⇒ 22→23；涨跌同 PR 更新）"
     },
     {
       "face": "page-parity-residual-ledger",
