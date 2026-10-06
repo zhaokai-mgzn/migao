@@ -8643,7 +8643,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（88 case）
+## 前端 UI 域（89 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -9896,6 +9896,23 @@
 ```
 溯源: 2026-10-06 新增（issue #6404）：菜单三源同构在仓里已有两条先例（PR-106 余料台账 / UI-078 发货单），本节点沿用同一形态并**加面包屑判据**（V111/#5034 曾漏过 Header 那一处）。取号 UI-088（现取 main 最大 = UI-085，PR #6400 占 UI-086，本 PR 占 UI-087）。 ｜ tags: ui, rbac, menu, permission-matrix, admin-web
 
+### UI-089. 库存明细页的「批次余量」视图（/stock-ledger）：每卷剩余米数可见 + 不重算（见证批次）+ 未选商品不拉全量 + 两本账不串 🔵
+```
+你: 2026-10-06 用户逐字：「库存明细还是缺乏单批次的剩余量，比如1卷=67米，经过加工裁剪后应该有个剩余米数」
+期望: direct_reply
+数据: 判据 1·批次余量可见：视图② 一行 = 一个批次，八列逐值渲染（批次号 / 货号·SKU / 缸号 / 入库单 / 入库米数 / 已消耗 / **剩余米数** / 收货日期）；缺值不空白（缸号 null ⇒ 「—」）；余量 0 的批次**照样列出**（用尽本身是要看的信息）。执行点 = frontend/admin-web/tests/unit/pages/stock-ledger.test.tsx 的「⑨ 每卷一行…」
+数据: 🔴 判据 2·**不重算**（见证批次）：服务端下发 inboundMeters '67.0' / consumedMeters '20.0' / remainingMeters '46.5'，而 67−20 = **47** ⇒ 页面必须渲染服务端的 46.5，渲染里**不得出现 47**（页面若自己减一遍 ⇒ 本判据红）。余量是**派生值**，单一真值在服务端。执行点 = 同文件「⑩ 不重算…」
+数据: 判据 3·未选商品 ⇒ 显式可行动提示（`batch-need-product`）**且不发请求**（`batchStockApi.batches` 调用次数 = 0、无批次行）—— 批次端点（`GET /api/admin/batch-stock/batches`）**无分页参数**，不选商品即拉整个租户 ⇒ 宁可不查。执行点 = 同文件「⑪ 未选商品…」
+数据: 判据 4·两本账**不串** + 失败可行动：批次视图下不渲染 SKU 流水行（`stock-ledger-row` 数 = 0）、不渲染只对流水有意义的「业务单据号」筛选；批次读面失败 ⇒ `batch-error` 话术含「权限」且无批次行。执行点 = 同文件「⑫ 两个读面不串…」
+数据: 判据 5·**类级**（由 #6398 的元守卫自动覆盖，无需本包另写）：本包新增的批次表必须「每个 th 带 `whitespace-nowrap`」且「表格在横向逃逸口里」—— 违反即具名红。执行点 = frontend/admin-web/tests/unit/list-table-nowrap-guard.test.ts（每次 PR 的 admin-web 单测面真跑）
+数据: 判据 6·**效果层**（真实浏览器 + 真实布局，jsdom 判不了的那一半）：每卷一行可见（46.5 / 0 / 120 三条读数）+ 表头八列**全部单行**（列不许被压成竖排，同 #6398 那一族）+ 卡片不裁切 + 1280 下 8 列直接装得下（最右「剩余米数」列无需横滚即在视口内）+ 1024 下装不下则**滚到底必达**（实测读数：表 813px / 容器 684px / overflow-x=auto）+ 未选商品时**一次批次请求都不发**。执行点 = tests/e2e/specs/warehouse/stock-ledger-batch-view.spec.ts
+数据: 🔴 红证（改前实测，2026-10-06，migao-dev-flow §28.1 出口① 临时反转）：把`批次余量`视图整段从页面移除（= 改前形态，用 `git show origin/main:<path>` 换入并自证 md5 不同）⇒ 单测 ⑨⑩⑪⑫ 四条**全红**（`Unable to find an element by: [data-testid="view-batch"]`），而原有 ⑧ 条**全绿** ⇒ 红只归因于本包新增判据；恢复 ⇒ 12 条全绿。复算（在 frontend/admin-web 目录下执行）= `npx vitest run --dir tests/unit/pages stock-ledger`；效果层复算（在 tests 目录下执行）= `npx playwright test --project=web --no-deps warehouse/stock-ledger-batch-view --reporter=list`
+前置: 前置由测试自身持有：frontend/admin-web/src/app/(dashboard)/stock-ledger/page.tsx 含 `批次余量` 视图（`data-testid=view-batch` / `batch-row` / `batch-remaining`）且测试 mock 了 `batchStockApi.batches`（视图被删 / 改名 / mock 缺失 ⇒ 直接红，不表现成「agent 不干活」）
+跳过: [backend-contract] 纯前端页面与纯函数由 vitest 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-10-06 新增（issue #6417，用户实测报告）：用户 2026-10-06「库存明细还是缺乏单批次的剩余量，比如 1 卷 = 67 米，经过加工裁剪后应该有个剩余米数」。诊断（读码）：库存明细页（PR #6407）是 SKU 级流水；批次余量读面（`GET /api/admin/batch-stock/batches`，`BatchRemaining`：inboundMeters / consumedMeters / remainingMeters）与商品详情 →「批次账」面板**早就有**，但商家在「库存明细」里点不出来 ⇒ 属**可达性缺口**，不是数据缺口。本包补视图②（八列 + 不重算见证批次 + 未选商品不拉全量 + 两本账不串），**权限不新造码**（批次读面与页面菜单节点码逐字同码 `product:list`）。取号 UI-089（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-088）。 ｜ tags: ui, stock, batch, admin-web
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -9925,8 +9942,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：689（活跃 134，跳过 555）
-- tier 分布：smoke 12 / normal 635 / adversarial 32
+- 用例总数：690（活跃 134，跳过 556）
+- tier 分布：smoke 12 / normal 636 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9951,7 +9968,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：88
+- 前端 UI 域：89
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -10181,4 +10198,5 @@
 - UI-086: 入库单列表：表格列与状态药丸不得被压成竖排（th 全 nowrap + 横向逃逸口 + 复用 Badge 原语）
 - UI-087: 库存明细页（/stock-ledger）：流水可见 + 成本 NULL≠0 + 不重算（见证行）+ 商品两步筛选
 - UI-088: 库存明细菜单三处同构 + 权限同码 + 图标注册 + 面包屑（/stock-ledger）
+- UI-089: 库存明细页的「批次余量」视图（/stock-ledger）：每卷剩余米数可见 + 不重算（见证批次）+ 未选商品不拉全量 + 两本账不串
 
