@@ -131,14 +131,6 @@ jobs:
           print(f"✅ pytest {pytest.__version__} / pyyaml {yaml.__version__} / httpx {httpx.__version__} @ {sys.executable}")
           PYEOF
 
-          # 🧪 **临时**：绕开 driver 直接在**本步**跑那两条常驻出口（与 driver 完全同一解释器/环境）
-          #    —— 用于把「driver 拉起的 pytest 里凭据为空」与「判据自己读不到」分开。**#6042 关单时删除本块**。
-          set +e
-          "$MIGAO_PY" -m pytest tests/unit_ci_workflows/test_case_id_claims.py \
-            -q -p no:cacheprovider -k "repo_case_id_claims_are_clean or repo_corpus_face_is_clean" \
-            2>&1 | tail -12 | sed 's/^/in-leg 复现: /'
-          echo "in-leg 复现退出码 = ${PIPESTATUS[0]}"
-          set -e
           echo "MIGAO_PY=$PY" >> "$GITHUB_ENV"
 
       # 真库判据要的是**二进制**而不是 PG 服务（13 个模块各自起一次性 initdb + pg_ctl 集群）。
@@ -294,6 +286,21 @@ jobs:
           print("GITHub_REF =", os.environ.get("GITHUB_REF"), "| EVENT =", os.environ.get("GITHUB_EVENT_NAME"),
                 "| REPO =", os.environ.get("GITHUB_REPOSITORY"))
           PYEOF
+
+          # 🧪 **临时诊断**（issue #6042）：绕开 driver，在**本步**（同一个 shell / 同一个解释器）直接跑
+          #    那两条常驻出口。两层读数一起看即可判定断点在哪：
+          #      · 本块**过** 而 driver 的 run **红** ⇒ 断点在 driver 拉起的那个子进程上；
+          #      · 本块**也红** ⇒ 断点在判据自己（读的不是 `os.environ` / 被谁改过）。
+          #    ⚠️ `sys.path` 必须加 **`tests`**（不是 `tests/unit_ci_workflows`）：本仓判据按包导入
+          #    （`unit_ci_workflows.*`）—— 上一版插错成 `tests/unit_ci_workflows` 直接
+          #    `ModuleNotFoundError: No module named 'unit_ci_workflows'`（run 37437327226 实测）。
+          #    **#6042 关单时删除本块。**
+          set +e
+          "$MIGAO_PY" -m pytest tests/unit_ci_workflows/test_case_id_claims.py \
+            -q -p no:cacheprovider --tb=line -k "repo_case_id_claims_are_clean or repo_corpus_face_is_clean" \
+            2>&1 | tail -14 | sed 's/^/in-leg 复现: /'
+          echo "in-leg 复现退出码 = ${PIPESTATUS[0]}（0 = 判据在本步能判；1 = 判据自己就红；5 = 一条都没收集到）"
+          set -e
           set -e
 
           # ── 首发日 / 引入本腿的 PR：判定本体尚未在**判定基准（main）**上落地 ─────────────
