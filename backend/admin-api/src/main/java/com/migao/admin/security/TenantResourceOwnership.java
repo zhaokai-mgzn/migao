@@ -9,6 +9,7 @@ import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.service.NotificationRuleService;
 import com.migao.admin.service.NotificationTemplateService;
 import com.migao.admin.service.OrderService;
+import com.migao.admin.service.WorkerAdminService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -47,6 +48,13 @@ public class TenantResourceOwnership {
      */
     private final NotificationTemplateService notificationTemplateService;
     private final NotificationRuleService notificationRuleService;
+
+    /**
+     * 工人档案的归属认定（issue #6432）：工人也是 {@code users} 行、与员工同表 ⇒ 认定读
+     * {@link WorkerAdminService#findOwnedWorker}（**同一份**「只认工人档案 + 本租户」判据，
+     * 不在安全层重写第二份谓词，也不与「员工」混为一谈）。
+     */
+    private final WorkerAdminService workerAdminService;
 
     /**
      * 资源键 → 归属认定（认定不过 ⇒ 抛 {@code NOT_FOUND}，与既有 404 路径同一份异常与文案）。
@@ -116,6 +124,14 @@ public class TenantResourceOwnership {
         checks.put("after-sales-ticket", id -> {
             if (afterSalesTicketMapper.selectById(id) == null) {
                 throw BusinessException.notFound("售后工单");
+            }
+        });
+        // 工人档案（issue #6432）：`PUT /api/admin/workers/{id}/pin`（重置 PIN）属**服务层校验形态**
+        // 的写端点（body 只有可选的 pin，形态判据在 WorkerAdminService）⇒ 归属认定必须在参数解析
+        // **之前**发生（否则跨租户 + 非法载荷会先拿到 422，「参数错误」掩盖越权尝试 —— #6158 的病灶）。
+        checks.put("worker", id -> {
+            if (workerAdminService.findOwnedWorker(id) == null) {
+                throw BusinessException.notFound("工人档案");
             }
         });
         // ─────────── issue #6167：混合表（可读面比可写面宽）───────────

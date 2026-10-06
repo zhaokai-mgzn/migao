@@ -4,6 +4,7 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.User;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import com.migao.admin.service.WorkerAdminService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -92,6 +93,7 @@ public class AdminWorkerController {
      */
     @PutMapping("/{id}/pin")
     @RequirePermission("employee:create")
+    @TenantOwnedResource("worker")
     public ApiResponse<Map<String, Object>> resetPin(@PathVariable String id,
                                                      @RequestBody(required = false) Map<String, Object> body) {
         String newPin = workerAdminService.resetPin(id, text(body, "pin"));

@@ -187,10 +187,8 @@ public class WorkerAdminService {
         }
 
         // 目标限定工人档案（fail-closed）：查不到 / 不是工人 / 不是本租户 ⇒ 一律拒绝，且零写入
-        User worker = userMapper.selectById(workerId);
-        if (worker == null || !WORKER_ROLE.equals(worker.getRole())
-                || !StringUtils.hasText(worker.getWorkerNo())
-                || !tenantId.equals(worker.getTenantId())) {
+        User worker = findOwnedWorker(workerId);
+        if (worker == null) {
             throw BusinessException.notFound("工人档案",
                     "请在「工人档案」列表里按工号找到这位工人，再点「重置 PIN」");
         }
@@ -203,6 +201,27 @@ public class WorkerAdminService {
         log.info("[工人档案] PIN 已重置：tenantId={}, workerNo={}, workerId={}",
                 tenantId, worker.getWorkerNo(), worker.getId());
         return normalizedPin;
+    }
+
+    /**
+     * 本租户的工人档案（**归属认定的唯一判据**）：查不到 / 不是工人 / 不是本租户 ⇒ {@code null}。
+     *
+     * <p>两个调用方读的是**同一份**判据，不是两套：① {@code @TenantOwnedResource("worker")} 的
+     * 归属认定（{@code TenantResourceOwnership}，在 MVC 参数解析**之前**发生 —— issue #6158/#6167
+     * 的次序要求）；② {@link #resetPin} 落库前的「只认工人档案」（服务层）。</p>
+     */
+    public User findOwnedWorker(String workerId) {
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null || workerId == null || workerId.isBlank()) {
+            return null;
+        }
+        User worker = userMapper.selectById(workerId);
+        if (worker == null || !WORKER_ROLE.equals(worker.getRole())
+                || !StringUtils.hasText(worker.getWorkerNo())
+                || !tenantId.equals(worker.getTenantId())) {
+            return null;
+        }
+        return worker;
     }
 
     /** 随机 PIN：{@code SecureRandom} + 固定位数（**保留前导零**），产物必过 {@link #PIN_PATTERN}。 */
