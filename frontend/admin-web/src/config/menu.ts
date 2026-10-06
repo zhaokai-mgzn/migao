@@ -246,6 +246,14 @@ export const menuGroups: MenuGroup[] = [
       // 「单看①会被排料省料误导」写在页面上；存量导入批次单独成组、不与切换后混算。
       // issue #5699（P4）：节点码 = 该页第一屏读码 `product:list`（StockBatchController 方法级注解），路由守卫同批同码。
       { key: 'production-saving-board', name: '省料看板', icon: 'TrendingDown', path: '/production/saving-board', permissionCode: 'product:list', keywords: ['slkb', 'shengliao', 'haoliao'] },
+      // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面。后端端点（issue #4055）与
+      // agent 工具（issue #5247）**早就有**，页面是 `StockLedgerController` 的 javadoc 里逐字登记的
+      // **显式延后项**（「本轮只做只读端点，不做前端页面」）⇒ 结果是同一个问题米宝答得出、
+      // 商家在后台点不出来。本节点把那个缺口补上。
+      // 🔴 节点码 = 该页第一屏读端点（`GET /api/admin/stock-ledger`）的**方法级**
+      // `@RequirePermission("product:list")`（逐字同码，不新造码 —— 新码今天无人持有 ⇒
+      // 节点对所有人不可见，#4203 同族坑）。同组「省料看板」是同款先例（issue #5699 P4）。
+      { key: 'stock-ledger', name: '库存明细', icon: 'ScrollText', path: '/stock-ledger', permissionCode: 'product:list', keywords: ['kcmx', 'kucun', 'mingxi', 'liushui', 'taizhang', '台账'] },
     ],
   },
   // #2969: 组织管理组（员工管理 + 岗位权限 + 企业基础信息）

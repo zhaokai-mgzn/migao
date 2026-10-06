@@ -131,6 +131,9 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("inventory-center", "发货单", "/shipments", "order:list"),
     MenuNode("inventory-center", "余料台账", "/production/remnants", "processing:manage"),
     MenuNode("inventory-center", "省料看板", "/production/saving-board", "product:list"),
+    # issue #6404：库存明细（与省料看板同码 `product:list` —— 两者都是该页的**读**码；
+    # 先例 = 「发货单」与「订单列表」同取 `order:list`，issue #5939）
+    MenuNode("inventory-center", "库存明细", "/stock-ledger", "product:list"),
     # 组织管理
     MenuNode("org-center", "员工管理", "/employees", "employee:list"),
     MenuNode("org-center", "岗位权限", "/roles", "system:view"),
@@ -216,6 +219,7 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     NavFeature("shipments", "发货单（出库）", (("inventory-center", "发货单"),), ("发货单", "出库")),
     NavFeature("remnants", "余料台账（余料）", (("inventory-center", "余料台账"),), ("余料台账", "余料")),
     NavFeature("saving-board", "省料看板（省料）", (("inventory-center", "省料看板"),), ("省料看板", "省料")),
+    NavFeature("stock-ledger", "库存明细（库存流水）", (("inventory-center", "库存明细"),), ("库存明细", "库存流水")),
     NavFeature("employees", "员工管理（员工开账号）", (("org-center", "员工管理"),), ("员工管理", "员工开账号")),
     NavFeature("roles", "岗位权限（角色权限）", (("org-center", "岗位权限"),), ("岗位权限", "角色权限")),
     NavFeature("settings", "企业基础信息（系统设置）", (("org-center", "企业基础信息"),), ("企业基础信息", "系统设置")),

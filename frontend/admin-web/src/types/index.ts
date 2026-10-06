@@ -19,6 +19,40 @@ export interface PageResponse<T> {
   size: number
 }
 
+/**
+ * 库存流水/台账一行（issue #6404 新增前端消费面；真值源 =
+ * `backend/admin-api/src/main/java/com/migao/admin/entity/StockLedger.java`）。
+ *
+ * 一行 = **一次 SKU 级库存变更**（before → after）。数量与金额列服务端下发 `BigDecimal`
+ * ⇒ 统一按 `string | null` 接（JSON 数字与字符串两种形态都见过）。
+ *
+ * 🔴 **NULL 的语义分两种，不许合并**：
+ *   · `unitCost` / `costAmount` / `avgCostBefore` / `avgCostAfter` = **成本未知**（存量行全为 NULL，不伪造 0）；
+ *   · 其余列 = 该行**没有这个值**。
+ * 页面按两种语义分别渲染（`frontend/admin-web/src/lib/stock-ledger.ts`）。
+ */
+export interface StockLedgerEntry {
+  id: number
+  productId?: string | null
+  skuId?: number | null
+  skuCode?: string | null
+  /** 变化量（正 = 入库/回补，负 = 出库/扣减），恒等于 afterQty − beforeQty */
+  delta?: string | null
+  beforeQty?: string | null
+  afterQty?: string | null
+  /** order / aftersales / manual / inbound（未知取值页面**原样显示**） */
+  reason?: string | null
+  /** 业务单据号：订单号 / 工单号 / 入库单号；手工调整为空 */
+  refNo?: string | null
+  note?: string | null
+  unitCost?: string | null
+  costAmount?: string | null
+  avgCostBefore?: string | null
+  avgCostAfter?: string | null
+  operator?: string | null
+  createdAt?: string | null
+}
+
 // 分页请求参数
 export interface PageParams {
   page?: number

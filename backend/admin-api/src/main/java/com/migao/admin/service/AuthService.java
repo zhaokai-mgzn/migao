@@ -1425,6 +1425,15 @@ public class AuthService {
         if (isAll || permissions.contains("product:list")) {
             inventoryChildren.add(menuItem("production-saving-board", "省料看板", "/production/saving-board"));
         }
+        // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面 —— 后端端点（issue #4055）与 agent
+        // 工具（issue #5247）早就有，页面是该控制器 javadoc 里逐字登记的显式延后项。
+        // 🔴 权限码与**方法级** `@RequirePermission("product:list")` 逐字同码：不新造码
+        //（新码今天没有任何岗位持有 ⇒ 节点对所有人不可见，#4203 同族坑）。
+        // 与 MenuController 的 `prLedger`、前端 `config/menu.ts` 的 `stock-ledger` **三处同构**，
+        // 且本节点必须与「省料看板」**同序**（三源同构守卫比对顺序，含组内序）。
+        if (isAll || permissions.contains("product:list")) {
+            inventoryChildren.add(menuItem("stock-ledger", "库存明细", "/stock-ledger"));
+        }
         if (!inventoryChildren.isEmpty()) {
             menus.add(menuGroup("inventory-center", "仓储与物料", inventoryChildren));
         }

@@ -8643,7 +8643,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（86 case）
+## 前端 UI 域（88 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -9866,6 +9866,36 @@
 ```
 溯源: 2026-10-06 新增（issue #6398，用户实测报告）：把「CJK min-content = 一个汉字 ⇒ 表格列被压扁」这一族从 UI-056（按钮）扩到**表格与药丸**。修复 = 列表卡片内加 `overflow-x-auto` + 全部 th/td 补 `whitespace-nowrap` + 状态标签复用共享原语 `Badge`（自带 nowrap，且在 UI-056 面内）。类级元守卫同时落两条规则 + 双向相等的存量台账（**改前** 26 表格 / 6 药丸 ⇒ 修后 25 / 5，各减 1）。取号 UI-086（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-085）。 2026-10-06 **独立复核**（另起 agent，只读、不看本包 spec）提出三条保留，其中两条**链内闭合**：① 逃逸口只判「祖先存在」⇒ 补判据 8（`scrollWidth > clientWidth` + 滚到底 `toBeInViewport`）；② 「td 半场无静态判据」⇒ **有意**不扩静态规则（原语 `src/components/ui/Table.tsx` 也只给表头 nowrap，单元格可折行是列语义），改为效果层判据 3 逐单元格守 + 把这条边界在自证里**钉成断言**（哪天扩到 td ⇒ 自证先红）；第三条（窄视口 1280 下最右两列需横向滚动）如实登记为**口径取舍**，见 CHANGELOG。复核另指出并已修：本用例两条「可复算命令」用了子目录相对路径 ⇒ `test_recomputable_command_paths`（M4）判红，已改成 M4 可解析的形态。 ｜ tags: ui, layout, geometry, nowrap, table, admin-web
 
+### UI-087. 库存明细页（/stock-ledger）：流水可见 + 成本 NULL≠0 + 不重算（见证行）+ 商品两步筛选 🔵
+```
+你: 2026-10-06 用户提问「我在哪里查批次的剩余布料？我们是不是缺了库存明细这个功能」，追问后裁定「直接做这个页面」
+期望: direct_reply
+数据: 判据 1·流水可见：时间 / 货号·SKU / 变动 / 变动前 / 变动后 / 原因 / 单据号 / 操作人 / 成本金额九列逐值渲染（入库过账行：+50 / 0 / 50 / 入库过账 / RK-20261001-0001 / zhangsan / ¥1240.00）。执行点 = frontend/admin-web/tests/unit/pages/stock-ledger.test.tsx
+数据: 判据 2·成本 NULL ⇒「未知」（**不得**回落成 ¥0.00 / 0 —— 真值源 backend/admin-api/src/main/java/com/migao/admin/entity/StockLedger.java 的 javadoc 逐字：「NULL = 该次变更发生时成本未知（存量行全部为 NULL，不伪造）」）；数量 NULL ⇒「-」（与「成本未知」区分：一个读不出、一个没有数）。执行点同上
+数据: 🔴 判据 3·不重算（**见证行**）：服务端下发 delta '-2.0' / costAmount '74.40'，而 afterQty−beforeQty = -6.0、|delta|×unitCost = 3.00 ⇒ 页面必须渲染服务端的 -2 / ¥74.40（页面若自算 ⇒ 本判据红）。执行点同上
+数据: 判据 4·未知 reason **原样显示**（不吞成空白 —— 读不出 ≠ 没有原因）；并含**类级**判据 ⑥：`StockLedger` 的每个 `REASON_*` 常量都必须有中文标签（服务端新增 reason 而前端未跟 ⇒ 具名红；反向陈旧也红）。执行点 = frontend/admin-web/tests/unit/lib/stock-ledger.test.ts 与 pages/stock-ledger.test.tsx
+数据: 判据 5·商品**两步筛选**：先 productApi.getProducts({keyword}) 拿 productId，再按 productId 查流水；**绝不把关键词发给 /api/admin/stock-ledger**（该端点没有关键词参数，传了会被服务端静默丢弃 = 拿全量冒充过滤结果）。执行点 = frontend/admin-web/tests/unit/pages/stock-ledger.test.tsx 与 frontend/admin-web/tests/unit/lib/stock-ledger-api.test.ts
+数据: 判据 6·单据号筛选 / 重置 / 空态「暂无库存流水」/ 读面失败给出可行动话术（含「权限」）。执行点 = frontend/admin-web/tests/unit/pages/stock-ledger.test.tsx
+数据: 🔴 红证（改前实测，2026-10-06，migao-dev-flow §28.1 出口① 临时反转）：三个测试文件在**实现落码之前**跑 ⇒ 3 failed（页面模块不存在 ⇒ 动态导入失败；菜单节点/面包屑/图标均未登记）。复算 = 在 frontend/admin-web 跑 npx vitest run tests/unit/lib/stock-ledger-api.test.ts tests/unit/lib/stock-ledger-menu-isomorphic.test.ts tests/unit/pages/stock-ledger.test.tsx（覆盖前先取 origin/main 版本：git show origin/main:frontend/admin-web/src/app/(dashboard)/stock-ledger/page.tsx 应为「不存在」）
+前置: 前置由测试自身持有：frontend/admin-web/src/app/(dashboard)/stock-ledger/page.tsx 与 frontend/admin-web/src/lib/stock-ledger.ts 同时存在且被 vitest 正常收集（缺文件 / 改名 ⇒ 直接红，不表现成「agent 不干活」）
+跳过: [backend-contract] 纯前端页面与纯函数由 vitest 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-06 新增（issue #6404）：把「库存明细」页的三条口径固化成判据（成本 NULL≠0 / 不重算见证行 / 商品两步筛选不吃关键词）。取号 UI-087（python3 scripts/next_case_id.py ui：现取 main 最大 = UI-085，PR #6400 占 UI-086）。 ｜ tags: ui, stock, ledger, admin-web
+
+### UI-088. 库存明细菜单三处同构 + 权限同码 + 图标注册 + 面包屑（/stock-ledger） 🔵
+```
+你: 2026-10-06 用户裁定「直接做这个页面」—— 新页面必须有侧边栏入口，否则用户最初那句「我在哪里查」没有被回答
+期望: direct_reply
+数据: 判据 1·三源同构：frontend/admin-web/src/config/menu.ts 的 stock-ledger 节点、backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java 的 prLedger（必须挂进 inventory-center 组、不得留在 production-center）、backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java 的 menuItem("stock-ledger", "库存明细", "/stock-ledger")（必须落在 inventoryChildren 装配区间）三处逐字一致。执行点 = frontend/admin-web/tests/unit/lib/stock-ledger-menu-isomorphic.test.ts
+数据: 判据 2·权限不放宽：菜单码 == backend/admin-api/src/main/java/com/migao/admin/controller/StockLedgerController.java 的 @RequirePermission ⇒ 逐字 product:list（不新造码：新码今天没有任何岗位持有 ⇒ 节点对所有人不可见，#4203 同族坑）。执行点同上
+数据: 判据 3·图标注册：ClipboardList 既被 import 又登记进 menuIconMap（漏注册**不报错**，只会静默回落 BarChart3）。执行点同上
+数据: 判据 4·面包屑：frontend/admin-web/src/components/layout/Header.tsx 的 /stock-ledger 条目 =「仓储与物料 / 库存明细」（末项 == 侧边栏菜单名，§15.2 / 判据 PG-038）。执行点同上
+数据: 🔴 红证（改前实测，2026-10-06，§28.1 出口① 临时反转）：实现落码前该文件 4 条全红（三源均无该节点 ⇒ 断言 undefined/false；面包屑条目 undefined）；落码后 4 passed。复算 = 在 frontend/admin-web 跑 npx vitest run tests/unit/lib/stock-ledger-menu-isomorphic.test.ts
+前置: 前置由测试自身持有：三份菜单源与 frontend/admin-web/src/components/layout/Header.tsx 同时存在（缺文件 ⇒ readFileSync 直接抛错，不表现成「agent 不干活」）
+跳过: [backend-contract] 纯静态文本守卫（不启动 Spring，因而不会被「后端没跑起来」掩盖）由 vitest 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-06 新增（issue #6404）：菜单三源同构在仓里已有两条先例（PR-106 余料台账 / UI-078 发货单），本节点沿用同一形态并**加面包屑判据**（V111/#5034 曾漏过 Header 那一处）。取号 UI-088（现取 main 最大 = UI-085，PR #6400 占 UI-086，本 PR 占 UI-087）。 ｜ tags: ui, rbac, menu, permission-matrix, admin-web
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -9895,8 +9925,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：687（活跃 134，跳过 553）
-- tier 分布：smoke 12 / normal 633 / adversarial 32
+- 用例总数：689（活跃 134，跳过 555）
+- tier 分布：smoke 12 / normal 635 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -9921,7 +9951,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：86
+- 前端 UI 域：88
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -10149,4 +10179,6 @@
 - UI-081: 列表页写按钮随权限显隐（issue #5983）：无写码岗位在 /orders、/products、/inbound-orders、/finance 看不到建单/建品/登记按钮，有码照旧
 - UI-085: 岗位 × 侧边栏菜单：种子权限集 × menu.ts 三条件 ⇒ 可见项逐值相等（岗位矩阵）
 - UI-086: 入库单列表：表格列与状态药丸不得被压成竖排（th 全 nowrap + 横向逃逸口 + 复用 Badge 原语）
+- UI-087: 库存明细页（/stock-ledger）：流水可见 + 成本 NULL≠0 + 不重算（见证行）+ 商品两步筛选
+- UI-088: 库存明细菜单三处同构 + 权限同码 + 图标注册 + 面包屑（/stock-ledger）
 

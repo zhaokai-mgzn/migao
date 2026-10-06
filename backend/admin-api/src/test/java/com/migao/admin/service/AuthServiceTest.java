@@ -609,9 +609,11 @@ class AuthServiceTest {
 
         var inventory = groupByKey(menus, "inventory-center");
         assertThat(keysOf(inventory.getChildren())).containsExactly(
-                "inbound-orders", "shipments", "production-remnants", "production-saving-board");
+                "inbound-orders", "shipments", "production-remnants", "production-saving-board",
+                "stock-ledger");
         assertThat(pathsOf(inventory.getChildren())).containsExactly(
-                "/inbound-orders", "/shipments", "/production/remnants", "/production/saving-board");
+                "/inbound-orders", "/shipments", "/production/remnants", "/production/saving-board",
+                "/stock-ledger");
 
         var org = groupByKey(menus, "org-center");
         assertThat(keysOf(org.getChildren())).containsExactly("employees", "roles", "settings");
@@ -663,8 +665,10 @@ class AuthServiceTest {
         // 新码持有者的正向读数（各自只点亮自己那一页 ⇒ 证明节点码 ≡ 页面读码）
         var poolOnly = groupByKey(menusForPermissions("processing:view"), "production-center");
         assertThat(namesOf(poolOnly.getChildren())).containsExactly("智能派单");
+        // issue #6404：`product:list` 现在点亮**两页**（省料看板 + 库存明细）—— 与「订单列表 / 发货单」
+        // 同取 `order:list` 同式：**同码 ≠ 同权**，两页各自的读端点注解就是这个码。
         var savingOnly = groupByKey(menusForPermissions("product:list"), "inventory-center");
-        assertThat(namesOf(savingOnly.getChildren())).containsExactly("省料看板");
+        assertThat(namesOf(savingOnly.getChildren())).containsExactly("省料看板", "库存明细");
     }
 
     @Test

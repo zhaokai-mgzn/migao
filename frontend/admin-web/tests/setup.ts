@@ -166,6 +166,7 @@ vi.mock('lucide-react', () => ({
   Image: iconStub('image'),
   ArrowUpDown: iconStub('arrow-up-down'),
   ClipboardList: iconStub('clipboard-list'),
+  ScrollText: iconStub('scroll-text'),
   ClipboardCheck: iconStub('clipboard-check'),
   Users: iconStub('users'),
   MessageSquare: iconStub('message-square'),

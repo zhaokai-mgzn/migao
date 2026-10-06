@@ -54,6 +54,11 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // 一条前缀同时覆盖 `/inbound-orders/new`（**不单列** —— 更宽的父前缀排在前面会让子路径成为
   // `find()` 永不命中的死条目，判据 11① 判红）。
   { prefix: '/inbound-orders', code: 'inbound:view' },
+  // 库存明细（issue #6404）：页面守卫码 = 菜单节点码 = 该页第一屏读端点码
+  //（`StockLedgerController` 的**方法级** `product:list`）—— 取**既有**码，不新造。
+  // 没有这一条就只有菜单一道防线：无 `product:list` 者地址栏直达 `/stock-ledger` 不被拦
+  //（同 #5976 入库单的现场形态）。
+  { prefix: '/stock-ledger', code: 'product:list' },
   { prefix: '/employees', code: 'employee:list' },
   { prefix: '/settings', code: 'system:manage' },
   // issue #5246：知识库页同理 —— 页面本身的守卫用读码 knowledge:view

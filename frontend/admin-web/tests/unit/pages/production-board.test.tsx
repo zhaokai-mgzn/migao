@@ -195,7 +195,8 @@ describe('生产管理菜单入口（侧边栏）', () => {
     const group = screen.getByText('仓储与物料').closest('[data-group-key]') as HTMLElement
     const links = group.querySelectorAll('a')
     // #5939：本组 3 → 4 项（+「发货单」`/shipments`，与「入库单」上下相邻）
-    expect(links).toHaveLength(4)
+    // #6404：本组 4 → 5 项（+「库存明细」`/stock-ledger`）
+    expect(links).toHaveLength(5)
     expect(links[0].textContent).toContain('入库单')
     expect(links[0]).toHaveAttribute('href', '/inbound-orders')
     expect(links[1].textContent).toContain('发货单')
@@ -204,6 +205,8 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(links[2]).toHaveAttribute('href', '/production/remnants')
     expect(links[3].textContent).toContain('省料看板')
     expect(links[3]).toHaveAttribute('href', '/production/saving-board')
+    expect(links[4].textContent).toContain('库存明细')
+    expect(links[4]).toHaveAttribute('href', '/stock-ledger')
   })
 
   it('「加工单」不再是独立菜单项：交易管理组只余两个业务项（issue #4357；#5778 收窄）', () => {
@@ -235,7 +238,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
       expandGroup(key)
     }
     const hrefs = Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'))
-    expect(hrefs).toHaveLength(21) // 简报开关关 ⇒ 21 项（22 - 每日简报；#5939：21 → 22 项）
+    expect(hrefs).toHaveLength(22) // 简报开关关 ⇒ 22 项（23 - 每日简报；#5939：21 → 22；#6404：22 → 23 项）
     expect(hrefs).not.toContain('/processing-orders')
   })
 
@@ -259,6 +262,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
       'order:list',         // 发货单（issue #5939：取**既有** order:list ⇒ 与订单列表同码、零授权 delta）
       'processing:manage',
       'product:list',       // 省料看板（issue #5699 P4：节点码 = 该页两个读端点的码）
+      'product:list',       // 库存明细（issue #6404：同取既有 product:list ⇒ 零授权 delta）
     ])
     // 反恒真（issue #5291）：组内**不是**同码 —— 若有人把四项一起改回去（或一起改过来），本条必红。
     // issue #5699（P4）：智能派单的码由 processing:manage 收敛为 processing:view ⇒ 本集合同批改准。

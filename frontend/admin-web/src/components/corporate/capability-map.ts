@@ -18,6 +18,7 @@ import {
   Route,
   Ruler,
   Scissors,
+  ScrollText,
   ShieldCheck,
   TrendingDown,
   Truck,
@@ -174,6 +175,12 @@ export const capabilityDomains: CapabilityDomain[] = [
         name: '省料看板',
         detail: '逐单比对公式米数与排料米数、按批次看余量分档、按单位产出看面料消耗。',
         icon: TrendingDown,
+      },
+      {
+        name: '库存明细',
+        detail:
+          '逐笔列出 SKU 级库存变更（变动前 → 变动后），按时间 / 货号 / 原因 / 单据号 / 操作人成行，回答「库存为什么从 X 变成 Y」。',
+        icon: ScrollText,
       },
     ],
   },

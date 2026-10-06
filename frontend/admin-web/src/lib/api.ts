@@ -157,6 +157,8 @@ import type {
   RemnantLedgerView,
   RemnantSpecsView,
   RemnantMatchView,
+  // 库存明细（issue #6404）：`GET /api/admin/stock-ledger` 的行类型
+  StockLedgerEntry,
 } from '@/types'
 import type { OrderContentUpdateParams } from '@/types'
 import { FrontendToBackendStatus } from '@/types'
@@ -865,6 +867,25 @@ export const savingBoardApi = {
 
   trend: (params?: { granularity?: string }) =>
     request.get<ApiResponse<SavingTrend>>('/api/admin/batch-stock/saving-trend', { params }),
+}
+
+/**
+ * 库存明细 / 库存流水**只读**查询（issue #6404；后端 `StockLedgerController`，issue #4055）。
+ *
+ * `GET /api/admin/stock-ledger?skuId=&productId=&refNo=&page=&size=`，
+ * 权限码 `product:list`（与端点**方法级** `@RequirePermission` 逐字同码 —— 库存属于商品管理的读权限，
+ * 不新造权限点）。大菜单「仓储与物料 ▸ 库存明细」的第一屏数据源。
+ *
+ * 🔴 **端点没有关键词参数**：`skuId` / `productId` / `refNo` 全是**精确**过滤 ——
+ * 传关键词会被服务端**静默丢弃** = 拿全量冒充过滤结果。
+ * ⇒ 商品侧必须先走 `productApi.getProducts` 搜索拿到 `productId`（见页面注释）。
+ *
+ * 🔴 只读：库存流水的**写入方**在库存变更的既有实现点（下单扣减 / 售后回补 / 手工调整 / 入库过账），
+ * 不经过本组。
+ */
+export const stockLedgerApi = {
+  ledger: (params?: { skuId?: number; productId?: string; refNo?: string; page?: number; size?: number }) =>
+    request.get<ApiResponse<PageResponse<StockLedgerEntry>>>('/api/admin/stock-ledger', { params }),
 }
 
 // 加工单 API（issue #3340）

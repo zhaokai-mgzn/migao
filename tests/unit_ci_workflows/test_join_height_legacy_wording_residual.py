@@ -104,6 +104,28 @@ def _plain(text: str) -> str:
     return text.replace("*", "").replace("`", "")
 
 
+#: **登记的 CHANGELOG 轮转存档**（2026-10-06，用户裁定「CHANGELOG 可以清空一次，后续再累加」）。
+#: `CHANGELOG.md` 曾涨到 525,386 字节、越过 `pr_body_guard` 的 512KB 扫描上限（issue #6404），
+#: 历史条目整体移入本文件。判据 1/2 的**阳性记录面**（「人工覆盖通路」记述行、接高上限断言）
+#: 跟着条目走 ⇒ 受判面 = `[Unreleased]` ⊕ 本表；**未登记的路径不进受判面**（否则成了搬走即豁免的后门）。
+CHANGELOG_ARCHIVES = (
+    REPO_ROOT / "acceptance" / "2026-10-06-changelog-rotation" / "CHANGELOG-archive.md",
+)
+
+
+def judged_surface(changelog: str) -> str:
+    """判据 1/2 的受判面 = `[Unreleased]` ⊕ **登记的**轮转存档全文。
+
+    ⚠️ **不**放宽到 `acceptance/**` 全部或已发布区段 —— 那两处的窄面由判据 5 的负例钉着；
+    这里只接登记表里这一个文件（轮转把条目搬到了它）。
+    """
+    parts = [unreleased_text(changelog)]
+    for p in CHANGELOG_ARCHIVES:
+        assert p.is_file(), f"登记的轮转存档不见了：{p} ⇒ 受判面被静默收窄（不许当绿）"
+        parts.append(p.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
 def unreleased_text(changelog: str) -> str:
     """`[Unreleased]` 区段正文（判据 1/2 的**唯一**扫描面）。"""
     head = UNRELEASED_HEADING_RE.search(changelog)
@@ -205,7 +227,7 @@ class TestCriterion1UnreleasedDropsTheStaleClaim:
 
     def test_former_boundary_bullet_records_the_unification(self):
         """防「删掉不提」：原边界段须如实记述统一已发生 + 引裁定（判据不是「不提就绿」）。"""
-        lines = [ln for ln in unreleased_text(read(CHANGELOG_PATH)).splitlines()
+        lines = [ln for ln in judged_surface(read(CHANGELOG_PATH)).splitlines()
                  if "人工覆盖通路" in ln]
         assert len(lines) == 1, f"`[Unreleased]` 里「人工覆盖通路」的记述行数变成了 {len(lines)}"
         assert "统一" in lines[0] or "同一份口径" in lines[0], "原边界段未如实记述口径已统一"
@@ -223,13 +245,13 @@ class TestCriterion1UnreleasedDropsTheStaleClaim:
 class TestCriterion2CapSameSourceAsEngine:
     def test_unreleased_cap_literals_agree_with_the_engine(self):
         cap = engine_cap()
-        hits = cap_literals(unreleased_text(read(CHANGELOG_PATH)))
+        hits = cap_literals(judged_surface(read(CHANGELOG_PATH)))
         assert cap in hits, (
             f"`[Unreleased]` 里没有任何接高上限断言（真值 = {CAP_SYMBOL} {cap} 米）⇒ 判据退化成恒真")
         assert [v for v in hits if v != cap] == []
 
     def test_red_proof_writing_0_2_metres_as_the_cap(self):
-        unreleased = unreleased_text(read(CHANGELOG_PATH))
+        unreleased = judged_surface(read(CHANGELOG_PATH))
         cap = engine_cap()
         mutated = unreleased.replace(f"{cap} 米", "0.2 米")
         assert mutated != unreleased, "真实文本里没有可替换的上限字面量 ⇒ 红证是空跑"

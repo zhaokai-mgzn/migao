@@ -311,6 +311,7 @@
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
+      "库存明细": "product:list",
       "组织管理": null,
       "员工管理": "employee:list",
       "岗位权限": "system:view",
@@ -338,6 +339,7 @@
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
+      "库存明细": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础信息": "system:manage",
@@ -362,6 +364,7 @@
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
+      "库存明细": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础信息": "system:manage"
@@ -502,6 +505,12 @@
       "code": "product:list"
     },
     {
+      "key": "stock-ledger",
+      "name": "库存明细",
+      "path": "/stock-ledger",
+      "code": "product:list"
+    },
+    {
       "key": "org-center",
       "name": "组织管理",
       "path": null,
@@ -602,6 +611,10 @@
     [
       "/inbound-orders",
       "inbound:view"
+    ],
+    [
+      "/stock-ledger",
+      "product:list"
     ],
     [
       "/employees",
@@ -911,6 +924,18 @@
       "units": {
         "order:list": [
           "GET /api/admin/shipments"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "stock-ledger",
+      "name": "库存明细",
+      "path": "/stock-ledger",
+      "gate": "product:list",
+      "units": {
+        "product:list": [
+          "GET /api/admin/stock-ledger"
         ]
       },
       "visibility_rule": "all"
