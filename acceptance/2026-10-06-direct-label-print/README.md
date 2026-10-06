@@ -4,9 +4,14 @@
 （`:3001` 上跑着**另一个 worktree（6430-saving-board-story）**的进程 ⇒ 本包改用 `:3000`；两个端口都在
 `CORS_ALLOWED_ORIGINS` 白名单内，见 `migao-dev-flow` §15.7「唯一入口」。本条**只读页面、无写操作**，不污染他人会话。）
 
-**被测代码 SHA = `71e5e86c4`**（`fix(admin-web): #6439 直连打印提示不再原样印出 markdown 星号`）——
-截图时工作树与它**逐字节一致**（截完 `git status --porcelain` 为空）。本目录在其后追加：
-**只加证据，不改代码**。测量时间 2026-10-06 18:04–18:06 (+08)。
+**两轮采证**（同一路径、同一环境）：
+
+| 轮 | 被测 SHA | 采的什么 | 产物 |
+|---|---|---|---|
+| 第 1 轮 | `71e5e86c4` | **缺陷形态**（页面上裸露的 markdown 星号） | `out/01-before-markdown-leak.png` |
+| 第 2 轮 | `79e925f3c` | 修复后**重放**（并覆盖 CI 首轮抓到的 4 处修复：像素口径单一真值 / npm 依赖替 vendor / 弱断言 / TS 类型） | `out/02-after-full.png` + `page-text.txt` + `testids.txt` + `summary.json` |
+
+两轮截图时的工作树与其 SHA **逐字节一致**（截完 `git status --porcelain` 为空）。测量时间 2026-10-06 18:04–18:32 (+08)。
 登录：管理员手机验证码（`13800138000` + 本机 `SMS_BYPASS_CODE`），租户 25「米高测试环境」。
 目标页：加工单 `JG-20261006-5271` 的 `/processing-orders/JG-20261006-5271/production`。
 
@@ -32,7 +37,7 @@ node /Users/guangzhen.zk/.dsh/.agent-presets/migao/skills/migao-dev-flow/scripts
 | `out/01-before-markdown-leak.png` | 标题行右上仍是「生成二维码（测试用）/ 撤销二维码 / **打印任务卡**」；其下多了一枚带蓝牙图标的「**直连打印机打印**」；再下一行小字**把 `**免驱动**` 连星号一起印了出来** | 入口在 + 与系统打印**并存** + 🔴 **markdown 标记外溢**（缺陷） |
 | `out/02-after-full.png` | 同上，但小字变成「点「直连打印机打印」后选一台标签机即可免驱动打印：不用装驱动，但只支持带网页蓝牙协议的机型。」**星号消失** | 修复生效 |
 
-`out/page-text.txt` 里 `**` 命中数：修前 **1**、修后 **0**；
+`out/page-text.txt` 里 `**` 命中数：修前 **1**、修后 **0**（两轮读数一致；第 2 轮在改动过 SDK 加载方式后**重放**确认文案面未漂移）；
 `error / 失败 / undefined / NaN` 命中数 **0**（两侧一致）。
 
 ## 3. 这一轮抓到的真缺陷（§15.7 的立项理由复现）
