@@ -1,4 +1,4 @@
-// case_ids: UI-028, PR-106, PR-038, UI-074
+// case_ids: UI-028, PR-106, PR-038, UI-074, UI-085
 /**
  * 侧边栏导航**纯函数**穷举（issue #5271）。
  *
@@ -197,6 +197,104 @@ describe('isItemVisible：三条件（adminOnly ∧ briefingToggle ∧ permissio
     ['有码 + `*`', codedItem, { permissions: ['*'] }, true],
   ])('%s', (_name, item, opts, expected) => {
     expect(isItemVisible(item as MenuItem, opts as MenuFilterOptions)).toBe(expected)
+  })
+})
+
+/**
+ * 岗位矩阵（issue #6392 · case UI-085 · 2026-10-06「岗位 × 页面」深度验收固化）
+ *
+ * 为什么单列：`isItemVisible` 只证明**三条件各自**成立，证明不了「**某个真实岗位**登进来到底看得见哪几项」——
+ * 2026-10-06 的验收是在真浏览器里逐岗位量出来的（7 岗位 × DOM 实测），本用例把那组读数**固化成判据**。
+ *
+ * 两处期望都是**独立写死**的（不拿实现反推）：
+ *   · `permissions` = 新租户七岗种子逐字（`backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java`）；
+ *   · `expected` = 该权限集 ∩ `menu.ts` 各节点 `permissionCode` 后的可见项 key 清单。
+ * 口径：`briefingEnabled = false`（新租户默认，`tenants.briefing_enabled = false`）⇒「每日简报」不在任何清单里。
+ * 突变敏感性：改 `menu.ts` 任一节点的 `permissionCode`、或改 `isItemVisible` 的任一条件 ⇒ 本表必红。
+ */
+describe('岗位矩阵：role_permissions（种子）× menu.ts 三条件 ⇒ 可见项逐值相等（UI-085）', () => {
+  const ROLES: { name: string; permissions: string[]; expected: string[] }[] = [
+    {
+      name: '客服 customer_service（12 码）',
+      permissions: [
+        'dashboard:view', 'order:list', 'order:detail', 'customer:view', 'agent:session',
+        'processing:view', 'inbound:view', 'after_sales:view', 'knowledge:view',
+        'agent:session:manage', 'production:execute', 'order:refund',
+      ],
+      expected: ['dashboard', 'human-sessions', 'customers', 'knowledge', 'after-sales', 'orders',
+        'production-pool', 'inbound-orders', 'shipments', 'notifications'],
+    },
+    {
+      name: '销售 sales（9 码）',
+      permissions: [
+        'dashboard:view', 'order:list', 'order:detail', 'customer:view', 'processing:view',
+        'product:list', 'inbound:view', 'order:create', 'production:execute',
+      ],
+      expected: ['dashboard', 'products', 'customers', 'orders', 'production-pool',
+        'inbound-orders', 'shipments', 'production-saving-board', 'notifications'],
+    },
+    {
+      name: '财务 finance（9 码）',
+      permissions: [
+        'dashboard:view', 'order:list', 'order:detail', 'customer:view', 'finance:view',
+        'processing:view', 'inbound:view', 'finance:create', 'production:execute',
+      ],
+      expected: ['dashboard', 'customers', 'orders', 'finance', 'production-pool',
+        'inbound-orders', 'shipments', 'notifications'],
+    },
+    {
+      name: '知识编辑 knowledge_editor（4 码）',
+      permissions: ['dashboard:view', 'knowledge:view', 'knowledge:manage', 'product:list'],
+      expected: ['dashboard', 'products', 'knowledge', 'production-saving-board', 'notifications'],
+    },
+    {
+      name: '商品管理员 product_manager（8 码）',
+      permissions: [
+        'dashboard:view', 'product:list', 'product:create', 'product:category',
+        'product:category:view', 'processing:view', 'processing:manage', 'production:view',
+      ],
+      expected: ['dashboard', 'products', 'production-board', 'production-pool', 'processing',
+        'production-process', 'production-piecework', 'production-remnants',
+        'production-saving-board', 'notifications'],
+    },
+    {
+      name: '运营 operator（26 码）',
+      permissions: [
+        'dashboard:view', 'order:list', 'order:detail', 'order:update', 'order:create', 'order:refund',
+        'product:list', 'product:create', 'product:category', 'product:category:view',
+        'processing:view', 'processing:manage', 'processing:update', 'production:view', 'production:execute',
+        'inbound:view', 'inbound:create', 'customer:view', 'customer:create', 'finance:view', 'finance:create',
+        'agent:session', 'agent:session:manage', 'employee:list', 'after_sales:view', 'knowledge:view',
+      ],
+      expected: ['dashboard', 'products', 'human-sessions', 'customers', 'knowledge', 'after-sales',
+        'orders', 'finance', 'production-board', 'production-pool', 'processing', 'production-process',
+        'production-piecework', 'inbound-orders', 'shipments', 'production-remnants',
+        'production-saving-board', 'employees', 'notifications'],
+    },
+  ]
+
+  it.each(ROLES.map((r) => [r.name, r.permissions, r.expected] as const))(
+    '%s 的可见项（顺序敏感）逐值相等',
+    (_name, permissions, expected) => {
+      expect(visibleKeys({ permissions, briefingEnabled: false })).toEqual(expected)
+    },
+  )
+
+  it('`briefingEnabled=true` 时「每日简报」才进清单（toggle 分支的岗位级取证）', () => {
+    const cs = ROLES[0].permissions
+    expect(visibleKeys({ permissions: cs, briefingEnabled: false })).not.toContain('briefing')
+    expect(visibleKeys({ permissions: cs, briefingEnabled: true })).toContain('briefing')
+  })
+
+  it('判别力自证：把某岗位的写码摘掉不改变菜单（菜单只看 permissionCode），改掉一个节点的码必然改变清单', () => {
+    // 自证 1：`knowledge:manage` 不是任何菜单项的 permissionCode ⇒ 摘掉它，可见项**不变**
+    const ke = ROLES[3].permissions
+    expect(visibleKeys({ permissions: ke.filter((p) => p !== 'knowledge:manage'), briefingEnabled: false }))
+      .toEqual(ROLES[3].expected)
+    // 自证 2：`product:list` 是「商品管理 / 省料看板」两项的码 ⇒ 摘掉它，清单必须**少两项**
+    const after = visibleKeys({ permissions: ke.filter((p) => p !== 'product:list'), briefingEnabled: false })
+    expect(after).not.toContain('products')
+    expect(after).not.toContain('production-saving-board')
   })
 })
 

@@ -1,6 +1,6 @@
 {
   "schema": "list-page-write-button-ledger/1.0",
-  "frozen_max_entries": 5,
+  "frozen_max_entries": 4,
   "note": [
     "issue #5983 的**类级元守卫**台账：登记「列表页有新增/新建类写按钮、但按钮上还没接写权限码」的存量页面。",
     "语义 = **豁免**（不是「已修」）。台账只许缩短：",
@@ -8,18 +8,15 @@
     "  ② 某页不再有写按钮后也必须删条目（陈旧即红）；",
     "  ③ 条数不得超过 frozen_max_entries；要新增条目必须先在 PR 里说明为什么该页不该接码。",
     "判据 = tests/unit_ci_workflows/test_list_page_write_button_gate.py（未登记即红 / 陈旧即红 / 超预算即红 / 零命中即红 + 内存判别力自证）。",
-    "本 PR（#5983）已修：orders（order:create）/ products（product:create）/ inbound-orders（inbound:create）/ finance（finance:create，链内同修的第 4 页）；employees 早已合规（对照范式），故都不在本台账里。"
+    "本 PR（#5983）已修：orders（order:create）/ products（product:create）/ inbound-orders（inbound:create）/ finance（finance:create，链内同修的第 4 页）；employees 早已合规（对照范式），故都不在本台账里。",
+    "2026-10-06 再缩短一条（issue #6392，本轮岗位×页面验收发现）：/knowledge 已按 knowledge:manage 接码并**同批删条目**（陈留即红）；上限 5 → 4。",
+    "⚠️ 台账**只管列表页整行形态的「新增/新建」按钮**（判据的选择器边界，见其 docstring）；页面头部的非「新增/新建」字样写入口与行内写操作按钮不在判据射程内 —— /knowledge 本轮已顺带把「文档提炼」与行内写操作一并接码，其余页面若存在同形态入口需另行核查。"
   ],
   "entries": [
     {
       "path": "frontend/admin-web/src/app/(dashboard)/after-sales/page.tsx",
       "labels": ["新建工单"],
       "reason": "同一类存量缺口（页面守卫 = 读码 after_sales:view，建单写码未在按钮上表达）；#5983 的范围只裁 /orders、/products、/inbound-orders 三页，本页留待单独立单/并入工单处理，不在本 PR 硬改。"
-    },
-    {
-      "path": "frontend/admin-web/src/app/(dashboard)/knowledge/page.tsx",
-      "labels": ["新建知识卡片"],
-      "reason": "同一类存量缺口（页面守卫 = 读码 knowledge:view，写面知识卡片需 knowledge:manage）；不在 #5983 范围内，登记待办。"
     },
     {
       "path": "frontend/admin-web/src/app/(dashboard)/production/processing/page.tsx",

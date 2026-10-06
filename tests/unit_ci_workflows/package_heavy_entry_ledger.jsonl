@@ -6,3 +6,4 @@
 {"id":"1791075679.96221.16483","ts":"2026-10-04T01:01:20Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/corporate-site-redesign","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791162879.14763.3670","ts":"2026-10-05T01:14:39Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6346-b-chat-richtext","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791171994.30983.28338","ts":"2026-10-05T03:46:35Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/image-recognize-multi-color","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791251285.27613.31410","ts":"2026-10-06T01:48:06Z","role":"package","decision":"refused","at":"/private/tmp/wt-6392","why":"子包 worktree 直跑全量（无批次标记）"}
