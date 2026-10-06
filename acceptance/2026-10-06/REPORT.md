@@ -295,14 +295,16 @@ run `37357202049`（`headSha=73327161f`，2026-10-05T18:36:19Z = **2026-10-06 02
 | F2 `docs/wiki/RBAC.md` 客服权限漂移 | **#6393**（文档订正） |
 | O1–O5 观察项 | 登记在 §4；**不派单**（证据不足） |
 | 判据侧 D1–D16 | 已修复/登记；承载体 = 本轮 `harness/**`（后续轮次直接复用） |
-| case 沉淀 | ⚠️ **未落库**（见 §9.1）——不为「看起来有沉淀」而写占位符 |
+| case 沉淀 | ✅ **已落库**（见 §9.1；随 PR #6395 同批：UI-081 判据 6 + 新增 UI-085） |
 
-### 9.1 case 沉淀（**未完成的诚实登记**）
+### 9.1 case 沉淀（2026-10-06 10:0x 更新：**已落库**，随 PR #6395）
 
-计划新增到 `.github/cases/ui.yml`（须同批跑 `render_cases.py` 并提交生成物，且测试文件头声明 `# case_ids:`）：
+两项都**已落库**（PR #6395，`render_cases.py` 重渲染 685 条、同参数再跑零 diff）：
 
-1. **岗位 × 页面写按钮显隐矩阵**：对「写码 ⇒ 页面写按钮」映射，断言「无码岗位 DOM 中该按钮不存在」（会红：把按钮改回裸渲染即红）。
-2. **侧边栏菜单 = `role_permissions` × `menu.ts`（含 `adminOnly` ∧ `briefingToggle` ∧ `permissionCode` 三条件）** 的逐项相等判据（D2/D12 的类级固化）。
+1. **写按钮显隐**：实例面 = `frontend/admin-web/tests/unit/pages/list-write-button-permission.test.tsx` **判据 6**（UI-081 第 5 页：`/knowledge`）；
+   类级面 = `tests/unit_ci_workflows/test_list_page_write_button_gate.py`（实例面 四页 → 五页，逐字 `knowledge:manage`）+ 台账删条目（5 → 4）。
+   红证：回退该页 ⇒ 守卫 `2 failed / 3 passed`、前端 `1 failed / 5 passed`。
+2. **岗位 × 菜单矩阵**：`frontend/admin-web/tests/unit/lib/menu-nav.test.ts` 新增 describe（**UI-085**）——6 个种子权限集 ⇒ 可见项逐值相等 + toggle 分支 + 判别力自证。
+   红证：改 `menu.ts` 一个 `permissionCode` ⇒ 102 条里 5 条红。
 
-未落库原因：本轮为**验收轮**，产物目录按惯例入仓（`test(acceptance):` PR），用例落库需走「改 `cases/*.yml` + 渲染生成物 + `verify-all.sh gate`」的独立包；
-本报告与对应 issue 已承载该待办（**不留只在上下文里的尾巴**）。
+仍未落库（照实登记）：**D12 的 `adminOnly` 类级化**（真实菜单无人使用该字段 ⇒ 只能靠合成项判，已在该文件既有 describe 内取证）。
