@@ -105,40 +105,45 @@ class MenuNode:
     permission_code: str
 
 
-#: `menu.ts` 的**全量导航节点**（issue #5989 现取：6 组 19 项 + 2 个一级独立项 = 21）。
+#: `menu.ts` 的**全量导航节点**（现取：6 组 21 项 + 2 个一级独立项 = 23）。
 #: 顺序 = `menu.ts` 的渲染顺序；判据按 `MENU_TREE_ORDER_LOCKED` 比对（**顺序也锁**，
-#: 因为「一级项插在哪个组之后」在 `menu.ts` 里是一门被用户裁定过的信息架构）。
+#: 因为「一级项与各组的相对位次」在 `menu.ts` 里是一门被用户裁定过的信息架构）。
+#: 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：组内顺序重排 + 一级项「商品管理」沉到
+#: **所有分组之后** —— 本镜像**必须同批跟改**（判据 tests/unit_ci_workflows/test_menu_navigator.py
+#: 的「MENU_TREE 的顺序与 menu.ts 的渲染顺序不同」就是本文件漏跟时的真红形态）。
 MENU_TREE: Tuple[MenuNode, ...] = (
     # 工作台
     MenuNode("workspace", "经营看板", "/dashboard", "dashboard:view"),
     MenuNode("workspace", "每日简报", "/briefing", "dashboard:view"),
-    # 客户服务
+    # 客户服务（2026-10-06：接待与工具相邻 → 售后出口 → 客户档案）
     MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),
-    MenuNode("customer-service", "客户列表", "/customers", "customer:view"),
     MenuNode("customer-service", "知识库", "/knowledge", "knowledge:view"),
     MenuNode("customer-service", "售后工单", "/after-sales", "after_sales:view"),
+    MenuNode("customer-service", "客户列表", "/customers", "customer:view"),
     # 交易管理
     MenuNode("trade-center", "订单列表", "/orders", "order:list"),
     MenuNode("trade-center", "财务对账", "/finance", "finance:view"),
-    # 生产管理
-    MenuNode("production-center", "生产看板", "/production", "production:view"),
-    MenuNode("production-center", "智能派单", "/production/pool", "processing:view"),
+    # 生产管理（2026-10-06：先备资料 → 再生产与派单 → 最末结算）
     MenuNode("production-center", "加工项管理", "/production/processing", "production:view"),
     MenuNode("production-center", "工艺配置", "/production/routings", "production:view"),
+    MenuNode("production-center", "生产看板", "/production", "production:view"),
+    MenuNode("production-center", "智能派单", "/production/pool", "processing:view"),
     MenuNode("production-center", "计件工资", "/production/piecework", "production:view"),
-    # 仓储与物料
+    # 仓储与物料（2026-10-06：单据（进 → 账 → 出）→ 台账 → 分析）
     MenuNode("inventory-center", "入库单", "/inbound-orders", "inbound:view"),
-    MenuNode("inventory-center", "发货单", "/shipments", "order:list"),
-    MenuNode("inventory-center", "余料台账", "/production/remnants", "processing:manage"),
-    MenuNode("inventory-center", "省料看板", "/production/saving-board", "product:list"),
     # issue #6404：库存明细（与省料看板同码 `product:list` —— 两者都是该页的**读**码；
     # 先例 = 「发货单」与「订单列表」同取 `order:list`，issue #5939）
     MenuNode("inventory-center", "库存明细", "/stock-ledger", "product:list"),
+    MenuNode("inventory-center", "发货单", "/shipments", "order:list"),
+    MenuNode("inventory-center", "余料台账", "/production/remnants", "processing:manage"),
+    MenuNode("inventory-center", "省料看板", "/production/saving-board", "product:list"),
     # 组织管理
     MenuNode("org-center", "员工管理", "/employees", "employee:list"),
     MenuNode("org-center", "岗位权限", "/roles", "system:view"),
     MenuNode("org-center", "企业基础信息", "/settings", "system:manage"),
     # 一级独立项（`standaloneTopItems` 的「商品管理」+ `standaloneItems` 的「通知中心」）
+    # 🔴 2026-10-06（issue #6457）：「商品管理」排在**所有分组之后**（原「工作台组之后」）
+    # ⇒ 顺序仍为「6 组 21 项 → 商品管理 → 通知中心」。
     MenuNode(STANDALONE_GROUP, "商品管理", "/products", "product:list"),
     MenuNode(STANDALONE_GROUP, "通知中心", "/notifications", ""),
 )
