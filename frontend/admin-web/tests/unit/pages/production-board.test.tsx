@@ -164,16 +164,18 @@ describe('生产管理菜单入口（侧边栏）', () => {
     //    （#4542 起菜单名 =「加工项管理」）；
     //    issue #5034 / #5177 / #5159 / #5191 先后往本组加过 4 项，**#5271 把它们中的 3 项搬走**。
     // 🔴 #5778（用户裁定「加工项应该属于生产管理」）：加工项管理自「商品与加工项」组**移入本组**
-    //    ⇒ 4 → **5 项**（位次 = 智能派单之后、工艺配置之前）。
+    //    ⇒ 4 → **5 项**。
+    // 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：组内顺序改为「**先备资料 → 再生产与派单 → 结算**」
+    //    ⇒ 加工项管理 / 工艺配置**提到最前**（加工项是派单机的输入）。
     expect(links).toHaveLength(5)
-    expect(links[0].textContent).toContain('生产看板')
-    expect(links[0]).toHaveAttribute('href', '/production')
-    expect(links[1].textContent).toContain('智能派单')
-    expect(links[1]).toHaveAttribute('href', '/production/pool')
-    expect(links[2].textContent).toContain('加工项管理')
-    expect(links[2]).toHaveAttribute('href', '/production/processing')
-    expect(links[3].textContent).toContain('工艺配置')
-    expect(links[3]).toHaveAttribute('href', '/production/routings')
+    expect(links[0].textContent).toContain('加工项管理')
+    expect(links[0]).toHaveAttribute('href', '/production/processing')
+    expect(links[1].textContent).toContain('工艺配置')
+    expect(links[1]).toHaveAttribute('href', '/production/routings')
+    expect(links[2].textContent).toContain('生产看板')
+    expect(links[2]).toHaveAttribute('href', '/production')
+    expect(links[3].textContent).toContain('智能派单')
+    expect(links[3]).toHaveAttribute('href', '/production/pool')
     expect(links[4].textContent).toContain('计件工资')
     expect(links[4]).toHaveAttribute('href', '/production/piecework')
     // 旧「工序库」入口不再作为独立菜单项（页面改为重定向，旧深链仍可达）
@@ -194,19 +196,21 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expandGroup('inventory-center')
     const group = screen.getByText('仓储与物料').closest('[data-group-key]') as HTMLElement
     const links = group.querySelectorAll('a')
-    // #5939：本组 3 → 4 项（+「发货单」`/shipments`，与「入库单」上下相邻）
+    // #5939：本组 3 → 4 项（+「发货单」`/shipments`）
     // #6404：本组 4 → 5 项（+「库存明细」`/stock-ledger`）
+    // 🔴 2026-10-06（issue #6457，方案 A1）：顺序改为「单据（进 → 账 → 出）→ 台账 → 分析」
+    //    ⇒ 库存明细**紧随入库单**、发货单退到其后。
     expect(links).toHaveLength(5)
     expect(links[0].textContent).toContain('入库单')
     expect(links[0]).toHaveAttribute('href', '/inbound-orders')
-    expect(links[1].textContent).toContain('发货单')
-    expect(links[1]).toHaveAttribute('href', '/shipments')
-    expect(links[2].textContent).toContain('余料台账')
-    expect(links[2]).toHaveAttribute('href', '/production/remnants')
-    expect(links[3].textContent).toContain('省料看板')
-    expect(links[3]).toHaveAttribute('href', '/production/saving-board')
-    expect(links[4].textContent).toContain('库存明细')
-    expect(links[4]).toHaveAttribute('href', '/stock-ledger')
+    expect(links[1].textContent).toContain('库存明细')
+    expect(links[1]).toHaveAttribute('href', '/stock-ledger')
+    expect(links[2].textContent).toContain('发货单')
+    expect(links[2]).toHaveAttribute('href', '/shipments')
+    expect(links[3].textContent).toContain('余料台账')
+    expect(links[3]).toHaveAttribute('href', '/production/remnants')
+    expect(links[4].textContent).toContain('省料看板')
+    expect(links[4]).toHaveAttribute('href', '/production/saving-board')
   })
 
   it('「加工单」不再是独立菜单项：交易管理组只余两个业务项（issue #4357；#5778 收窄）', () => {
@@ -250,19 +254,19 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 原先「入库单是仓储动作、权限码独立（inbound:view，issue #5034）」的口径**不变**，
     // 只是它现在挂在**新组**「仓储与物料」下 ⇒ 本用例改判为「按组取码」而不是把它算进本组。
     expect(group!.children.map((c) => c.permissionCode)).toEqual([
+      'production:view',    // 加工项管理（#5778 移入本组；2026-10-06 起为组内第一项）
+      'production:view',    // 工艺配置
       'production:view',    // 生产看板（issue #5291）
       'processing:view',    // 智能派单（issue #5699 P4：节点码 = 该页读端点码）
-      'production:view',    // 加工项管理（#5778 移入本组）
-      'production:view',    // 工艺配置
       'production:view',    // 计件工资
     ])
     const inventory = menuGroups.find((g) => g.key === 'inventory-center')
     expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
       'inbound:view',
+      'product:list',       // 库存明细（issue #6404：同取既有 product:list ⇒ 零授权 delta）
       'order:list',         // 发货单（issue #5939：取**既有** order:list ⇒ 与订单列表同码、零授权 delta）
       'processing:manage',
       'product:list',       // 省料看板（issue #5699 P4：节点码 = 该页两个读端点的码）
-      'product:list',       // 库存明细（issue #6404：同取既有 product:list ⇒ 零授权 delta）
     ])
     // 反恒真（issue #5291）：组内**不是**同码 —— 若有人把四项一起改回去（或一起改过来），本条必红。
     // issue #5699（P4）：智能派单的码由 processing:manage 收敛为 processing:view ⇒ 本集合同批改准。
