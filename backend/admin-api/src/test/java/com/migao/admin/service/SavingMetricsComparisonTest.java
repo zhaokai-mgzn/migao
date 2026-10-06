@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -205,5 +206,69 @@ class SavingMetricsComparisonTest {
         assertThat(d.previousPeriod()).isEqualTo("2026-09");
         assertThat(d.previous()).isEqualByComparingTo("8");
         assertThat(d.verdict()).as("7 < 8 ⇒ 变差（升序口径）").isEqualTo(WORSE);
+    }
+
+    @Test
+    @DisplayName("🔴 判据6：本期还没过完（period == 当前所在期间）⇒ verdict=partial，不给方向")
+    void inProgressPeriodGetsPartialInsteadOfADirection() {
+        // 同一份序列：把「当前所在期间」设成本期 ⇒ partial；设成更晚的期间 ⇒ 正常给方向
+        // （注入式的当前期间 ⇒ 判据与「今天几号」解耦，不会下个月自己变红）
+        List<String[]> series = List.of(
+                new String[]{"2026-09", "100"},
+                new String[]{"2026-10", "8"});
+
+        SavingMetricViews.MetricDelta partial =
+                StockBatchConsumptionService.delta(series, DOWN_BETTER, "2026-10");
+        assertThat(partial.verdict())
+                .as("本期（2026-10）还没过完 ⇒ 不给方向（半截月份比整月会把「还没进货」读成「买得更克制」）")
+                .isEqualTo("partial");
+
+        SavingMetricViews.MetricDelta done =
+                StockBatchConsumptionService.delta(series, DOWN_BETTER, "2026-11");
+        assertThat(done.verdict()).as("本期已过完 ⇒ 正常给方向（8 < 100，↓ better ⇒ better）").isEqualTo(BETTER);
+
+        // 覆盖面：unknown（缺上期）与 null（有意不给）**都不许**被 partial 盖掉
+        SavingMetricViews.MetricDelta unknown = StockBatchConsumptionService.delta(
+                List.<String[]>of(new String[]{"2026-10", "8"}), DOWN_BETTER, "2026-10");
+        assertThat(unknown.verdict()).as("判不了比「没过完」更具体 ⇒ 保持 unknown").isEqualTo(UNKNOWN);
+        SavingMetricViews.MetricDelta noVerdict =
+                StockBatchConsumptionService.delta(series, NO_VERDICT, "2026-10");
+        assertThat(noVerdict.verdict()).as("有意不给（le0_2Share）⇒ 仍是 null，不被 partial 顶掉").isNull();
+    }
+
+    @Test
+    @DisplayName("🔴 判据6c：行级序列按期间汇总 —— 同一期间的多行必须相加（否则相邻两期会是同一个月）")
+    void rowsOfTheSamePeriodAreSummedIntoOneEntry() {
+        List<String[]> series = StockBatchConsumptionService.aggregateByPeriod(List.of(
+                new String[]{"2026-10", "7.3"},
+                new String[]{"2026-10", "5.4"},      // 同月第二行（另一个来源组/物料）
+                new String[]{"2026-09", "1.25"},
+                new String[]{"2026-08", null}));      // 该期读不出 ⇒ 不进序列（不是当 0）
+
+        assertThat(series).as("一期一行：2026-10 的两行合一条，2026-08 整条不进").hasSize(2);
+        assertThat(series.get(0)[0]).isEqualTo("2026-10");
+        assertThat(new BigDecimal(series.get(0)[1])).as("同月多行**相加**：7.3 + 5.4").isEqualByComparingTo("12.7");
+        assertThat(series.get(1)[0]).isEqualTo("2026-09");
+
+        // 判别性：汇总后再判环比 ⇒ 两期必不相同（修复前这里是 2026-10 → 2026-10）
+        SavingMetricViews.MetricDelta d = StockBatchConsumptionService.delta(series, UP_BETTER, null);
+        assertThat(d.period()).isEqualTo("2026-10");
+        assertThat(d.previousPeriod())
+                .as("🔴 相邻两期必须是**不同的期间**（修复前会取到同月的另一行 ⇒ 这条会红）")
+                .isEqualTo("2026-09")
+                .isNotEqualTo(d.period());
+    }
+
+    @Test
+    @DisplayName("🔴 判据6b：当前所在期间的期间键与 SQL 的 to_char 同口径（月 / ISO 周历年）")
+    void openPeriodMatchesSqlPeriodKeys() {
+        assertThat(StockBatchConsumptionService.openPeriod("month", LocalDate.of(2026, 10, 6)))
+                .isEqualTo("2026-10");
+        // 2026-10-06 属 ISO 周 2026-W41（周一起算）
+        assertThat(StockBatchConsumptionService.openPeriod("week", LocalDate.of(2026, 10, 6)))
+                .isEqualTo("2026-W41");
+        // 跨年周：2027-01-01 属 ISO 周 2026-W53 —— IYYY 是**周历年**，写成日历年就错一格
+        assertThat(StockBatchConsumptionService.openPeriod("week", LocalDate.of(2027, 1, 1)))
+                .isEqualTo("2026-W53");
     }
 }

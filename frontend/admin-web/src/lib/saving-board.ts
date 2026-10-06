@@ -182,6 +182,8 @@ export function verdictWord(verdict?: string | null): string | null {
   if (verdict === 'worse') return '变差了'
   if (verdict === 'same') return '持平'
   if (verdict === 'unknown') return '还判不出'
+  // 「本期还没过完」：拿半截期间与整期比大小，会把「这个月还没进货」读成「买得更克制」⇒ 不给方向
+  if (verdict === 'partial') return '本期还没过完，环比先不算'
   return null
 }
 

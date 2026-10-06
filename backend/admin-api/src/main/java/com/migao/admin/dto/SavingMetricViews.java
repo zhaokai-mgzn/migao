@@ -149,6 +149,10 @@ public final class SavingMetricViews {
      *       比率类字段一律 {@code compareTo} 判等，<b>不许用 {@code equals}</b>（标度陷阱：
      *       {@code new BigDecimal("1.5").equals(new BigDecimal("1.50")) == false}）；</li>
      *   <li>{@code "unknown"}：<b>判不了</b> —— 任一值为 {@code null}（含 {@code current}/{@code previous} 缺）；</li>
+     *   <li>{@code "partial"}：<b>本期还没过完</b>（{@code period} == 当前所在期间）⇒ <b>不给方向</b>。
+     *       理由（2026-10-06 页面多模态验收实测）：拿「才过 6 天的月份」与整月比大小，会把
+     *       「这个月还没进货」读成「买得更克制」。**只覆盖 {@code better}/{@code worse}/{@code same}**，
+     *       不覆盖 {@code "unknown"} 与 {@code null}（它们比「没过完」更具体）；</li>
      *   <li>🔴 {@code null}：<b>有意不给好坏</b>（只对 {@link BoardComparison#le0_2Share()}，见其说明）。
      *       <b>{@code null} 与 {@code "unknown"} 是两个不同的东西</b>：前者是「我们不表态」，后者是「表态不了」。</li>
      * </ul>

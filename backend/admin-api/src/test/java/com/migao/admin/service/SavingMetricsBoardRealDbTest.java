@@ -465,13 +465,19 @@ class SavingMetricsBoardRealDbTest {
                 .as("本期 = 最后一个有数据的消耗时间桶（夹具里 2026-10 也有一行消耗）").isEqualTo(PERIOD_OCT);
         assertThat(savedMeters.previousPeriod()).as("上期 = 相邻的前一个有数据的消耗时间桶")
                 .isEqualTo(PERIOD_SEP);
+        assertThat(savedMeters.previousPeriod())
+                .as("🔴 相邻两期必须是**不同的期间**（修复前：环比序列是行级的 ⇒ 会取到同月的另一行，"
+                        + "页面打出「上期 2026-10 → 本期 2026-10」）")
+                .isNotEqualTo(savedMeters.period());
         assertThat(savedMeters.current())
                 .as("省料米数环比本期 == Σ savedGroups(period=2026-10).savedMeters")
                 .isEqualByComparingTo(sumSaved(board, PERIOD_OCT));
         assertThat(savedMeters.previous()).isEqualByComparingTo(sumSaved(board, PERIOD_SEP));
         assertThat(savedMeters.verdict())
-                .as("省料 ↑ better：本期 2.0 < 上期 15.8 ⇒ **worse**（方向不许写反，这条会红）")
-                .isEqualTo("worse");
+                .as("省料 ↑ better：本期 2.0 < 上期 15.8 ⇒ **worse**（方向绝不许是 better）；"
+                        + "但**本期若正是进行中的期间**（夹具末尾是 2026-10，跑在 10 月里）⇒ partial（不给方向）"
+                        + " —— 判据与「今天几号」解耦：两个取值都可接受，**better 一定不行**")
+                .isIn("worse", "partial");
         assertThat(savedAmount.current())
                 .as("省料金额环比本期 == Σ savedGroups(period=2026-10).savedAmount（**逐值**，不是重算）")
                 .isEqualByComparingTo(sumSavedAmount(board, PERIOD_OCT));
@@ -479,9 +485,9 @@ class SavingMetricsBoardRealDbTest {
         assertThat(savedAmount.previous()).as("上期金额只含**有均价**的那行（O2 无均价不进金额腿）")
                 .isEqualByComparingTo(sumSavedAmount(board, PERIOD_SEP));
         assertThat(savedAmount.verdict())
-                .as("判别性：金额本期 15.00 < 上期 103.76 ⇒ worse；"
+                .as("判别性：金额本期 15.00 < 上期 103.76 ⇒ worse（本期未过完时 ⇒ partial）；"
                         + "若把无均价行当 0/当全额，上期读数与方向都会变（这条会红）")
-                .isEqualTo("worse");
+                .isIn("worse", "partial");
 
         // ── 看板：le0_2Share（批次收货月 2026-08 / 2026-09）⇒ verdict **恒 null（有意不给）** ──
         SavingMetricViews.MetricDelta share = board.comparison().le0_2Share();

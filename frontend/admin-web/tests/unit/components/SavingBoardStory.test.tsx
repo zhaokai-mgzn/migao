@@ -305,6 +305,24 @@ describe('#6430 省料看板重设计：把故事讲清楚', () => {
     )
   })
 
+  it('🔴 环比：本期还没过完（verdict=partial）⇒ 说「先不算」，不冒充结论', async () => {
+    mockBoard.mockResolvedValue(
+      ok({
+        ...BOARD,
+        comparison: {
+          ...BOARD.comparison!,
+          savedMeters: { ...BOARD.comparison!.savedMeters, verdict: 'partial' },
+        },
+      })
+    )
+    await renderPage()
+    const el = screen.getByTestId('saving-comparison-saved')
+
+    expect(el.textContent).toContain('还没过完')
+    expect(el.textContent).not.toContain('变好')
+    expect(el.textContent).not.toContain('变差')
+  })
+
   it('🔴 占比环比：verdict 为 null ⇒ 只给两期数值，**不给好坏词**（有意不给，#5144）', async () => {
     await renderPage()
     const el = screen.getByTestId('saving-comparison-le-share')

@@ -22,8 +22,11 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.temporal.WeekFields;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -857,9 +860,11 @@ public class StockBatchConsumptionService {
             savedByCohort.put(cohort, new SavedAcc());
         }
         SavingMetricViews.Total total;
-        // 逐单省料的环比序列（issue #6430）—— 口径：消耗时间桶（`savedGroups` 的 period）
-        List<String[]> savedMetersSeries = new ArrayList<>();
-        List<String[]> savedAmountSeries = new ArrayList<>();
+        // 逐单省料的环比**行级**序列（issue #6430）—— 口径：消耗时间桶（`savedGroups` 的 period）
+        // ⚠️ 这里攒的是**行**（期间 × 来源组 × 物料）⇒ 用前必须 `aggregateByPeriod` 汇总成「一期一行」
+        //    （同一期间多行直接当两期 ⇒ 会打出「上期 2026-10 → 本期 2026-10」这种同月对比）
+        List<String[]> savedMetersRows = new ArrayList<>();
+        List<String[]> savedAmountRows = new ArrayList<>();
         SavedAcc totalAcc = new SavedAcc();        for (StockBatchConsumptionMapper.SavingSum row
                 : consumptionMapper.sumSavingByPeriodCohortMaterial(
                         tenantId, SavingMetricViews.TIMEZONE, fmt)) {
@@ -868,10 +873,10 @@ public class StockBatchConsumptionService {
             }
             // 环比序列（issue #6430）：就在这一次扫描里攒，**零新增 SQL**；
             // null = 该期这个指标读不出 ⇒ 该期不参与「相邻两期」的选择（不是当 0）
-            savedMetersSeries.add(new String[]{row.getPeriod(),
+            savedMetersRows.add(new String[]{row.getPeriod(),
                     row.getFormulaSum() == null || row.getPlannedSum() == null ? null
-                            : plain(row.getFormulaSum().subtract(row.getPlannedSum())).toPlainString()});
-            savedAmountSeries.add(new String[]{row.getPeriod(),
+                            : row.getFormulaSum().subtract(row.getPlannedSum()).toPlainString()});
+            savedAmountRows.add(new String[]{row.getPeriod(),
                     row.getSavedAmountSum() == null ? null : row.getSavedAmountSum().toPlainString()});
             String cohort = SavingMetricViews.cohortOf(row.getSource());
             String key = groupKey(row.getPeriod(), cohort, row.getProductId(), row.getSkuCode());
@@ -909,11 +914,16 @@ public class StockBatchConsumptionService {
         }
         // ── 环比（issue #6430）：全部用上面已加载的行内存聚合，**零新增 SQL** ──
         //   三条时间轴各自独立：省料/金额 = 消耗时间桶；le0_2Share = 批次收货月
+        // 本期还没过完 ⇒ 不给方向（见 VERDICT_PARTIAL；当前期间与租户业务时区同口径）
+        String open = openPeriod(g, businessToday());
+        // 🔴 行级 → **按期间汇总**（一期一行）：同一期间的多数行必须相加，否则「相邻两期」会取到同一个月
+        List<String[]> savedMetersSeries = aggregateByPeriod(savedMetersRows);
+        List<String[]> savedAmountSeries = aggregateByPeriod(savedAmountRows);
         SavingMetricViews.BoardComparison comparison = new SavingMetricViews.BoardComparison(
-                delta(savedMetersSeries, DIR_UP_BETTER),
-                delta(savedAmountSeries, DIR_UP_BETTER),
+                delta(savedMetersSeries, DIR_UP_BETTER, open),
+                delta(savedAmountSeries, DIR_UP_BETTER, open),
                 // le0_2Share **有意不给好坏**（DIR_NO_VERDICT ⇒ verdict 恒 null，issue #5144）
-                delta(le0_2ShareByPeriod(batchGroups), DIR_NO_VERDICT));
+                delta(le0_2ShareByPeriod(batchGroups), DIR_NO_VERDICT, open));
         return new SavingMetricViews.Board(g, SavingMetricViews.TIMEZONE, cohorts, batchGroups,
                 savedGroups, total, comparison);
     }
@@ -993,9 +1003,10 @@ public class StockBatchConsumptionService {
             metersPerM2Series.add(new String[]{period,
                     metersPerM2 == null ? null : plain(metersPerM2).toPlainString()});
         }
+        String open = openPeriod(g, businessToday());
         SavingMetricViews.TrendComparison comparison = new SavingMetricViews.TrendComparison(
-                delta(purchasedSeries, DIR_DOWN_BETTER),   // 买得更少 = 更好
-                delta(metersPerM2Series, DIR_DOWN_BETTER)); // 单位产出用料更省 = 更好
+                delta(purchasedSeries, DIR_DOWN_BETTER, open),      // 买得更少 = 更好
+                delta(metersPerM2Series, DIR_DOWN_BETTER, open));   // 单位产出用料更省 = 更好
         return new SavingMetricViews.Trend(g, SavingMetricViews.TIMEZONE, points,
                 purchased.isEmpty() ? null : plain(StockQuantity.sum(purchased.values())),
                 consumed.isEmpty() ? null : plain(StockQuantity.sum(consumed.values())),
@@ -1011,6 +1022,34 @@ public class StockBatchConsumptionService {
     /** 批次收货月（{@code YYYY-MM}）；未记日期 ⇒ {@code null}（**不猜**，页面渲染「未记收货日期」）。 */
     private static String periodOf(LocalDate date) {
         return date == null ? null : String.format("%04d-%02d", date.getYear(), date.getMonthValue());
+    }
+
+    /**
+     * **当前所在期间**（业务时区，与 SQL {@code to_char} 的期间键同口径）：环比判「本期还没过完」用。
+     *
+     * <p>月 = {@code YYYY-MM}；周 = {@code IYYY-"W"IW}（**ISO 周历年**，不是日历年 ——
+     * 例：{@code 2027-01-01} 属 {@code 2026-W53}，写成日历年就错一格）。</p>
+     */
+    static String openPeriod(String granularity, LocalDate today) {
+        if (today == null) {
+            return null;
+        }
+        if (SavingMetricViews.GRANULARITY_WEEK.equals(granularity)) {
+            WeekFields iso = WeekFields.ISO;
+            return String.format("%04d-W%02d",
+                    today.get(iso.weekBasedYear()), today.get(iso.weekOfWeekBasedYear()));
+        }
+        return periodOf(today);
+    }
+
+    /**
+     * 业务时区下的「今天」（口径同 {@code BusinessClock}：**不许**用无参 {@code LocalDate.now()}）。
+     *
+     * <p>时区取自 {@link SavingMetricViews#TIMEZONE}（= {@code BusinessClock.BUSINESS_ZONE.getId()}，
+     * 同一份口径），不写字面量。</p>
+     */
+    private static LocalDate businessToday() {
+        return LocalDate.ofInstant(Instant.now(), ZoneId.of(SavingMetricViews.TIMEZONE));
     }
 
     /** 分组键（{@code period|cohort|materialKey}）—— 机器可判，且**存量恒是独立键**（判据 2） */
@@ -1059,6 +1098,46 @@ public class StockBatchConsumptionService {
      */
     private static final String DIR_NO_VERDICT = "none";
 
+    /** 「判不了」（缺值）—— 与 {@code null}（有意不给）是两个不同的东西。 */
+    private static final String VERDICT_UNKNOWN = "unknown";
+
+    /**
+     * 「本期还没过完」—— 环比里**唯一时间相关**的那条口径。
+     *
+     * <p>病灶（2026-10-06 页面多模态验收实测）：趋势区打出
+     * 「上期 2026-09：13236.5 米 → 本期 2026-10：220.5 米 · 变好了」—— 而 2026-10 当时<b>才过 6 天</b>。
+     * 拿<b>半截月份</b>与整月比大小，会把「这个月还没进货」读成「买得更克制」。</p>
+     *
+     * <p>⇒ 本期是<b>进行中的期间</b>时不给方向（覆盖 {@code better}/{@code worse}/{@code same}）。
+     * <b>不覆盖</b> {@link #VERDICT_UNKNOWN}（判不了比「没过完」更具体）与 {@code null}（有意不给）。</p>
+     */
+    private static final String VERDICT_PARTIAL = "partial";
+
+    /**
+     * **行级 {@code (期间, 值)} → 一期一行的序列**（同一期间的多数行**相加**）。
+     *
+     * <p>🔴 为什么必须有这一步（2026-10-06 页面多模态验收实测的第二处缺陷）：环比的原始行是
+     * <b>（期间 × 来源组 × 物料）</b>粒度的 ⇒ 直接排序取最后两个会把<b>同一个月的两行</b>当成「两期」，
+     * 页面上打出「上期 2026-10：1.3 米 → 本期 2026-10：10.3 米」。</p>
+     *
+     * <p>语义与页面一致：值为 {@code null} 的行**不贡献**（不是当 0）；某期间所有行都为 null
+     * ⇒ 该期间**在序列里没有条目**（不参与「相邻两期」的选择，与判据 4 同源）。</p>
+     */
+    static List<String[]> aggregateByPeriod(List<String[]> rows) {
+        Map<String, BigDecimal> byPeriod = new LinkedHashMap<>();
+        for (String[] row : rows) {
+            if (row == null || row.length < 2 || row[0] == null || row[1] == null) {
+                continue;
+            }
+            byPeriod.merge(row[0], new BigDecimal(row[1]), BigDecimal::add);
+        }
+        List<String[]> out = new ArrayList<>();
+        for (Map.Entry<String, BigDecimal> e : byPeriod.entrySet()) {
+            out.add(new String[]{e.getKey(), e.getValue().toPlainString()});
+        }
+        return out;
+    }
+
     /**
      * 一个指标的 {@code (期间 → 值)} 序列 → 相邻两期对比（{@link SavingMetricViews.MetricDelta}）。
      *
@@ -1070,6 +1149,16 @@ public class StockBatchConsumptionService {
      * @param direction 较好方向，见 {@link #DIR_UP_BETTER} / {@link #DIR_DOWN_BETTER} / {@link #DIR_NO_VERDICT}
      */
     static SavingMetricViews.MetricDelta delta(List<String[]> series, String direction) {
+        return delta(series, direction, null);
+    }
+
+    /**
+     * 同上，但知道**当前所在期间**（{@code openPeriod}）：本期还没过完 ⇒ {@link #VERDICT_PARTIAL}
+     * （半截期间不与整期比大小，见该常量的说明）。
+     *
+     * @param openPeriod 当前所在期间（与 SQL 的 {@code to_char} 同口径）；{@code null} = 不判「没过完」
+     */
+    static SavingMetricViews.MetricDelta delta(List<String[]> series, String direction, String openPeriod) {
         List<String[]> withData = new ArrayList<>();
         for (String[] row : series) {
             if (row != null && row.length >= 2 && row[1] != null) {
@@ -1082,14 +1171,19 @@ public class StockBatchConsumptionService {
         BigDecimal current = n == 0 ? null : new BigDecimal(withData.get(n - 1)[1]);
         String previousPeriod = n < 2 ? null : withData.get(n - 2)[0];
         BigDecimal previous = n < 2 ? null : new BigDecimal(withData.get(n - 2)[1]);
+        String verdict = verdict(current, previous, direction);
+        // 本期还没过完 ⇒ 覆盖 better/worse/same（**不覆盖** unknown 与 null —— 它们比「没过完」更具体）
+        if (verdict != null && !VERDICT_UNKNOWN.equals(verdict) && period != null && period.equals(openPeriod)) {
+            verdict = VERDICT_PARTIAL;
+        }
         return new SavingMetricViews.MetricDelta(period, previousPeriod,
-                plain(current), plain(previous), verdict(current, previous, direction));
+                plain(current), plain(previous), verdict);
     }
 
     /** {@code verdict} 的唯一实现（口径 = {@link SavingMetricViews.MetricDelta} 的 javadoc）。 */
     private static String verdict(BigDecimal current, BigDecimal previous, String direction) {
         if (current == null || previous == null) {
-            return "unknown";                      // 判不了（缺值）≠ 有意不给（null）
+            return VERDICT_UNKNOWN;                // 判不了（缺值）≠ 有意不给（null）
         }
         if (DIR_NO_VERDICT.equals(direction)) {
             return null;                           // 有意不给好坏（le0_2Share，issue #5144）
