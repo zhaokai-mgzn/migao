@@ -778,10 +778,10 @@ class TestCriterion11YardstickIsSingleSource:
     #    —— 同源声明的 criterion 只认模块级函数，理由见它的 docstring。
 
     def test_the_predicate_itself_is_discriminating(self):
-        """谓词口径自证（**具名读数**）：精确名命中那 2 条，而不卷进同名不同族的 5 条。
+        """谓词口径自证（**具名读数**）：精确名命中那 2 条，而不卷进同名不同族的 6 条。
 
         反面锚逐条具名（这就是「为什么选精确名」的可复算证据）：若把谓词退回改动前的**前缀**口径，
-        这五条会一起进 `hits` ⇒ 台账要背 5 条**语义不同**的条目，等于教下一个人「它们可合并」。
+        这六条会一起进 `hits` ⇒ 台账要背 6 条**语义不同**的条目，等于教下一个人「它们可合并」。
         """
         assert STRIP_COMMENT_DEF_RE.search("def strip_comment(line: str) -> str:") is not None
         assert STRIP_COMMENT_DEF_RE.search("async def strip_comment(line):") is not None
@@ -795,6 +795,10 @@ class TestCriterion11YardstickIsSingleSource:
             GUARD_FILE,                                            # 自匹配（已排除）
             "tests/unit_ci_workflows/test_deploy_breaker_allowlist.py",
             "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
+            # ← **同名不同族**（issue #6439 新增）：LPAPI 守卫自带一个**JS/TS 感知**的注释剥离器
+            #   `strip_comments`（复数：`/* */` + `//`），与正典（Python 行注释 `strip_comment`）
+            #   **不是同一把尺子** —— 与下面 #6434 那条同属「为什么用精确名谓词」的一类。
+            "tests/unit_ci_workflows/test_lpapi_open_printer_contract.py",
             # ← **同名不同族**（issue #6434 新增）：它自带一个 **JSX/TS 感知**的注释剥离器
             #   `strip_comments`（复数），与正典（Python 行注释 `strip_comment`）**不是同一把尺子** ——
             #   正是「为什么用精确名谓词」的那一类：退回前缀口径 ⇒ 它会进台账并被当成可合并的同族。
@@ -804,12 +808,13 @@ class TestCriterion11YardstickIsSingleSource:
             "tests/unit_ci_workflows/test_swas_nginx_rate_limit.py",
         ], f"前缀族现取读数变了 —— 「为什么选精确名」的理由要重取：{prefix_family}"
 
-        # 而同名不同族那五条，**精确名谓词逐条不命中** ⇒ 它们不进台账（也就不会**陈旧红**）。
+        # 而同名不同族那六条，**精确名谓词逐条不命中** ⇒ 它们不进台账（也就不会**陈旧红**）。
         for family in (".github/danger_scan.py",):
             assert STRIP_COMMENT_DEF_RE.search(
                 (REPO_ROOT / family).read_text(encoding="utf-8")) is not None
         for unrelated in ("tests/unit_ci_workflows/test_deploy_breaker_allowlist.py",
                           "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
+                          "tests/unit_ci_workflows/test_lpapi_open_printer_contract.py",
                           "tests/unit_ci_workflows/test_order_print_entry_matrix.py",
                           "tests/unit_ci_workflows/test_qty_stub_reads_calc_info.py",
                           "tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py"):

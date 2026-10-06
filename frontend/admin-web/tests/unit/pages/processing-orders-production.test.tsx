@@ -643,6 +643,20 @@ describe('加工单生产明细页', () => {
     expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
   })
 
+  it('#6439 免驱动直连入口接线在：与「打印任务卡」并存；无网页蓝牙时动手前就说清并指向系统打印兜底', async () => {
+    render(<ProductionDetailPage />)
+    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+
+    // ① 入口真挂在页面上（**接线判据**：组件单测绿 ≠ 页面接上了 —— 见 migao-dev-flow §28.2）
+    expect(screen.getByTestId('production-direct-print-button')).toBeInTheDocument()
+    // ② 浏览器打印那条路**仍在**（两条通道并存，不是替换）
+    expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
+    // ③ jsdom 里没有 `navigator.bluetooth` ⇒ 能力探测判不可用 ⇒ 按钮禁用 + 文案给系统打印兜底。
+    //    红证：把探测结果恒置 ok（不看环境）⇒ 本条的 disabled 与 hint 两条断言必红。
+    expect(screen.getByTestId('production-direct-print-button')).toBeDisabled()
+    expect(screen.getByTestId('direct-print-hint')).toHaveTextContent('打印任务卡')
+  })
+
   it('#4240 无二维码（qr_token 为空）：不渲染撤销入口（无可撤销对象）', async () => {
     mockGetOrderOperations.mockResolvedValue(ok({ ...OPERATIONS_REVOKED, positions: [] }))
     mockGetPiecework.mockResolvedValue(ok({ total: 0 }))
