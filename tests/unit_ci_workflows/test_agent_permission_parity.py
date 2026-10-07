@@ -2143,8 +2143,11 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     "/shipments": MenuReadAnchor("发货单", "shipments/page.tsx", ("shipmentApi.list",)),
     "/production/remnants": MenuReadAnchor("余料台账", "production/remnants/page.tsx",
                                            ("remnantApi.ledger",)),
+    # 🔴 2026-10-07（issue #6459）：省料看板首屏重做后**只调一条读面**（`saving-board`）——
+    #    旧的 `savingBoardApi.trend` 随「单位产出消耗」表一起从页面上退场 ⇒ 本锚点同步缩短
+    #    （口径 = 只许缩短：声明陈旧会被判据 12 当场点名为「锚点声明的 X 不在 effect 驱动面上」）。
     "/production/saving-board": MenuReadAnchor("省料看板", "production/saving-board/page.tsx",
-                                               ("savingBoardApi.board", "savingBoardApi.trend")),
+                                               ("savingBoardApi.board",)),
     # 库存明细（issue #6404）：节点码 `product:list` = 本页第一屏读端点
     # （`GET /api/admin/stock-ledger`，`StockLedgerController` 的**方法级** `@RequirePermission`）
     # —— 与「省料看板」同款：按子菜单粒度把节点码收敛到该页读码，不新造权限点。
@@ -3606,15 +3609,18 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             problems_menu_read_parity,
         ),
         # ── 判据 12 的**多端点页适用面**（#5675 收口包）：结构事实未登记 / 登记与现取不符 ────────
-        "㉕ 单端点页变多端点页（省料看板的 saving-trend 改挂 `processing:manage`）⇒ 多端点页未登记 ⇒ 判据 12 红": (
-            # 形态 = 判据 12 的「第一屏恰好一个读端点码」**前提被打破**（issue #5699 P4 后该页
-            # 已收敛为单码 `product:list` ⇒ 本注入把它变回两码）⇒ 一致性段（③）与新登记表都要报，
-            # 而「多端点页未登记」这一支**只有**多端点登记表拦得住。本注入就是这张表自己的判别力证明。
+        "㉕ 单端点页的读端点改挂另一个码（省料看板的 `/saving-board` 改挂 `processing:manage`）⇒ 节点码 ≡ 页读码 被打破 ⇒ 判据 12 红": (
+            # 形态 = 判据 12 的「菜单节点码 ≡ 页面第一屏读端点码」被打破。
+            # 🔴 2026-10-07 改判（issue #6459）：省料看板首屏重做后**只调一条读面**（`saving-board`），
+            # 原来那条「把 `saving-trend` 改挂 `processing:manage` ⇒ 该页变多码」的注入**已失效**
+            # （页面不再读 `saving-trend` ⇒ 注入改变不了任何页码集 ⇒ 判据不红 = 空断言，实测被
+            # `test_every_judgement_can_go_red` 逮到）。改为对本页**真正在读**的那个端点下手：
+            # 读码由 `product:list` 变 `processing:manage` ⇒ 与节点码不再一致 ⇒ 当场红。
             "java:controller/StockBatchController.java",
             lambda s: _swap(
                 s,
-                '    @RequirePermission("product:list")\n    @GetMapping("/saving-trend")',
-                '    @RequirePermission("processing:manage")\n    @GetMapping("/saving-trend")',
+                '    @RequirePermission("product:list")\n    @GetMapping("/saving-board")',
+                '    @RequirePermission("processing:manage")\n    @GetMapping("/saving-board")',
             ),
             problems_menu_read_parity,
         ),
@@ -3970,7 +3976,9 @@ def test_pending_endpoint_registry_is_self_clearing(monkeypatch) -> None:
 def test_multi_endpoint_registry_is_self_clearing(monkeypatch) -> None:
     """多端点页登记表（判据 12 ⑤）的**三态**都能单独变红：未登记 / 现取不符 / 已不再多码（#5675 收口包）。
 
-    为什么单独成例：「未登记」那一态的**真实回归形态**由注入 ㉕㉖ 走（改注解 ⇒ 某页码集变化）；
+    为什么单独成例：「未登记」那一态的**真实回归形态**由注入 ㉖ 走（改注解 ⇒ 某页码集变化；
+    ⚠️ 2026-10-07 issue #6459 起 ㉕ 改判为「读码改挂 ⇒ 节点码 ≡ 页读码 被打破」那一态 —— 省料看板
+    已不再读 `saving-trend`，旧注入成了空断言，被本判据的 `test_every_judgement_can_go_red` 逮到）；
     本例外加的三态是**登记表自身**的卫生 —— ②「现取不符」的两侧（多一个 / 少一个码）与 ③「陈旧」
     今天在真实源码里**没有**对应坏形态，只能靠合成登记来压（同 `test_pending_endpoint_registry_is_self_clearing`
     的做法：不合成 = 这三态永远是空断言）。

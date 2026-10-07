@@ -3635,6 +3635,21 @@ export interface SavingTrendComparison {
   metersPerM2: SavingMetricDelta | null
 }
 
+/**
+ * 批次结构趋势的一个时间点（issue #6459）：按批次**收货期间**聚合的「几乎用完」读数。
+ *
+ * 🔴 **只含系统采购入库的批次**（服务端 `COHORT_PURCHASE`）—— 开业时导入的老库存不进这条序列
+ * （混进来会让改善永远看不出来，判据 2 的实质）。
+ */
+export interface SavingBatchPeriodPoint {
+  /** 批次收货期间；`null` = 未记收货日期（不猜一个日期） */
+  period: string | null
+  batchCount: number
+  le0_2Count: number
+  /** 分母为 0 / 无数据 ⇒ `null`（**不是 0**） */
+  le0_2Share: number | null
+}
+
 export interface SavingBoard {
   granularity: string
   timezone: string
@@ -3645,6 +3660,8 @@ export interface SavingBoard {
   total: SavingBoardTotal
   /** 相邻两个有数据的期间的环比（issue #6430）；后端未部署 ⇒ 缺键，页面不渲染环比块 */
   comparison?: SavingBoardComparison | null
+  /** 批次结构趋势（按收货期间，只含采购腿）；后端未部署 ⇒ 缺键，页面渲染「无数据」 */
+  batchTrend?: SavingBatchPeriodPoint[] | null
 }
 
 /** L3 趋势的一个时间点（采购/财务口径，不逐单） */

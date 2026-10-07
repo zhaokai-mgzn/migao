@@ -40,32 +40,42 @@ MUTATIONS = [
         "  if (n === null) return '0'\n  return digits === 0 ? String(Math.round(n)) : trimTrailingZeros(n.toFixed(digits))",
     ),
     (
-        "判据3 两条指标都用：页面上只剩指标①",
+        "判据1 首屏大数字不用服务端「本期」值：改成前端把分组腿求和",
         PAGE,
-        "        {cards.map((card) => (",
-        "        {cards.slice(0, 1).map((card) => (",
+        "              {formatMeters(meters.value)}",
+        "              {formatMeters(savedGroups.reduce((sum, g) => sum + Number(g.savedMeters ?? 0), 0))}",
     ),
     (
-        "判据3 说明文案：删掉「单看①会被排料误导」的因果",
-        LIB,
-        "    + '单看①会被排料省料误导 —— 排料省料 ⇒ 批次剩得更多 ⇒ 只留①会把效率提升显示成变差。'",
-        "    + '两条指标一起看即可。'",
+        "判据1 合计行不用服务端 total：改成前端把分组腿求和",
+        PAGE,
+        "                      <td className=\"px-4 py-2.5 text-right font-mono text-neutral-900\">{formatMeters(total?.savedMeters)}</td>",
+        "                      <td className=\"px-4 py-2.5 text-right font-mono text-neutral-900\">{formatMeters(savedGroups.reduce((sum, g) => sum + Number(g.savedMeters ?? 0), 0))}</td>",
     ),
     (
-        "判据2 存量单列：存量卡显示「切换后」的占比（两组混算）",
+        "趋势口径：把「几乎用完的批数」渲染成当期全部批数（口径松掉）",
         PAGE,
-        "                    {formatShare(c.le0_2Share)}",
-        "                    {formatShare(cohorts[0]?.le0_2Share)}",
+        "                        {formatMetric(p.le0_2Count, 0)}",
+        "                        {formatMetric(p.batchCount, 0)}",
     ),
     (
         "§22 文案不写死数字：档位文案硬编码「≤0.2 米」",
         LIB,
-        "  const bucketLabel = board?.cohorts?.[0]?.buckets?.[0]?.label\n  const purchase = board?.cohorts?.find((c) => c.cohort === 'purchase')",
-        "  const bucketLabel = '≤0.2 米'\n  const purchase = board?.cohorts?.find((c) => c.cohort === 'purchase')",
+        "    ? `几乎用完的布（剩余 ${bucketLabel}）· 批数`",
+        "    ? '几乎用完的布（剩余 ≤0.2 米）· 批数'",
+    ),
+    (
+        "issue #6459 内部口径词不上屏：把服务端分组标签搬到首屏",
+        PAGE,
+        "          <h2 className=\"text-sm font-medium text-neutral-900 mb-1\">{batchTrendTitle(bucketLabel)}</h2>",
+        "          <h2 className=\"text-sm font-medium text-neutral-900 mb-1\">切换后（采购入库）· {batchTrendTitle(bucketLabel)}</h2>",
     ),
 ]
 
-TESTS = ["tests/unit/components/SavingBoard.test.tsx", "tests/unit/lib/saving-board.test.ts"]
+TESTS = [
+    "tests/unit/components/SavingBoard.test.tsx",
+    "tests/unit/components/SavingBoardStory.test.tsx",
+    "tests/unit/lib/saving-board.test.ts",
+]
 TOOL_REL = "scripts/saving-metrics-red-proof-web.py"
 
 

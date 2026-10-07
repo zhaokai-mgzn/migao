@@ -1,0 +1,52 @@
+{
+  "_what": "工人面动作「落哪个端点」台账（issue #6472，S3 类级固化；AGENTS.md 铁律 8 / migao-dev-flow §23 G1~G3）。登记 src/services/*.ts 里**被工人面页面调用的动作函数**及其端点归属 —— 未登记即红、台账只许缩短、条目必须活着、空台账 fail-closed。判据 = tests/worker-action-endpoint-ledger.test.ts。",
+  "_how_to_regen": "台账条数**现取**（不写死）：cd frontend/bmini-app && node -e \"const l=require('./tests/worker-action-endpoint-ledger.json');console.log('entries=',l.entries.length);console.log(l.entries.map(e=>e.service+'::'+e.fn+' endpoint='+e.endpoint).join('\\n'))\" —— 权威集合由守卫按 src/services/*.ts（剥注释后）现扫「被 src/pages/**/*.tsx 里出现 hasWorkerSession( 的页面 import 的 service 模块」× 「函数体含 /api/admin/ 或 /api/worker/」算出，双向相等才算过。",
+  "_detection": "① 工人面动作 = src/services/*.ts 里**顶层导出函数**中，函数体（剥注释后、到下一个顶层 export 为止）含 `/api/admin/` 或 `/api/worker/`，且**它所在的 service 模块被某个「身份感知页面」import**（该页面出现 `hasWorkerSession(`）的那一批；② 每个检出项都必须在 entries 里登记（未登记即红）；③ 每条登记必须仍能被现扫命中（台账只许缩短）；④ endpoint=admin 的条目必须给出 worker_alternative（且该替代函数在同 service 里真的导出、真的含 `/api/worker/`）或显式写明 reason（有意不搬的理由）；⑤ 调用页必须仍 import 该 service、且该函数在页面里被引用（条目必须活着）。",
+  "_boundary": "① 射程只到「顶层导出函数」—— 非导出/嵌套函数不在面内；② 判定是**静态形态**（端点字符串在不在、页面有没有引用），**不是**运行期真的走对了端点 —— 行为面由 tests/production-ship-endpoint-by-identity.test.ts 与 tests/production-page.test.tsx 的实例判据承担；③ 端点常量若被抽成变量（如 frontend/bmini-app/src/services/workerInboundService.ts 的端点映射对象），静态扫描**看不见**它 ⇒ 该文件当前 0 命中（如实登记，不粉饰）；④ 它不改任何门禁的通过条件、不新增豁免。",
+  "entries": [
+    {
+      "service": "src/services/productionService.ts",
+      "fn": "shipOrder",
+      "endpoint": "admin",
+      "label": "发货（商家端点 POST /api/admin/production/orders/{orderId}/ship）",
+      "worker_alternative": "shipWorkerOrder",
+      "pages": [
+        "src/pages/production/index/index.tsx"
+      ],
+      "requires_worker_session": true,
+      "case_ids": [
+        "BM-039",
+        "BM-040"
+      ]
+    },
+    {
+      "service": "src/services/productionService.ts",
+      "fn": "getOrderOperations",
+      "endpoint": "admin",
+      "label": "读工序列表（商家端点 GET /api/admin/production/orders/{orderId}/operations）",
+      "worker_alternative": "getWorkerOrderOperations",
+      "pages": [
+        "src/pages/production/index/index.tsx"
+      ],
+      "requires_worker_session": true,
+      "case_ids": [
+        "BM-035"
+      ]
+    },
+    {
+      "service": "src/services/productionService.ts",
+      "fn": "getOrderPiecework",
+      "endpoint": "admin",
+      "label": "计件汇总（商家端点 GET /api/admin/production/orders/{orderId}/piecework）",
+      "worker_alternative": "",
+      "reason": "计件金额是**工人可见但非工人可写**的读面：服务端无 `/api/worker/**` 计件端点（挂在 `/api/worker/shipment/**` 与 `/api/worker/production/**` 的都是工序/发货面）⇒ 工人身份下调它会 401（页面本机侧已把无权限/失败降级为不显示金额，不冒充已知）。**有意不搬**：新造工人计件端点不在本单（零后端改动）。",
+      "pages": [
+        "src/pages/production/index/index.tsx"
+      ],
+      "requires_worker_session": false,
+      "case_ids": [
+        "BM-039"
+      ]
+    }
+  ]
+}

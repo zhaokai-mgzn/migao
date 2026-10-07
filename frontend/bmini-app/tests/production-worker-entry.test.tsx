@@ -64,6 +64,7 @@ jest.mock('../src/services/productionService', () => ({
   scanResolve: jest.fn(),
   completeByScan: jest.fn(),
   shipOrder: jest.fn(),
+  shipWorkerOrder: jest.fn(),
 }))
 
 import Taro from '@tarojs/taro'

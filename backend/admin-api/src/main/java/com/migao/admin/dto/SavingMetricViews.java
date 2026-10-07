@@ -183,6 +183,23 @@ public final class SavingMetricViews {
     }
 
     /**
+     * 批次结构趋势的一个时间点（issue #6459）：按批次<b>收货期间</b>聚合的「几乎用完」读数。
+     *
+     * <p>用途 = 页面首屏那张「几乎用完的布（剩余 ≤0.2m）· 批数」趋势表 —— 让读的人一眼看出
+     * 「布有没有被用干净」，而不必先理解来源组 / 分档占比这些内部口径。</p>
+     *
+     * <p>🔴 <b>只含 {@link #COHORT_PURCHASE}</b>：存量导入（期初建账）与来源不明的批次
+     * <b>不进这条序列</b> —— 切换前的历史包袱混进来会让改善永远看不出来（判据 2 的<b>实质</b>，
+     * 一字不放宽）。本单改的是<b>呈现</b>，不是口径。</p>
+     *
+     * <p>{@code period} = 批次收货月（未记收货日期 ⇒ {@code null}，调用方渲染「未记收货日期」——不猜）；
+     * 分母为 0 时 {@code le0_2Share} 为 {@code null}（无数据，不是 0 —— 判据 4）。</p>
+     */
+    public record BatchPeriodPoint(String period, int batchCount, int le0_2Count,
+                                   BigDecimal le0_2Share) {
+    }
+
+    /**
      * L2 看板（+ L1 的分组汇总）。
      *
      * @param granularity 时间粒度（{@link #GRANULARITY_MONTH} / {@link #GRANULARITY_WEEK}）
@@ -193,13 +210,16 @@ public final class SavingMetricViews {
      * @param total      全租户合计（= 各 {@code cohorts} 之和；判据 1 的对照读数）
      * @param comparison  相邻两期对比（环比；口径见 {@link MetricDelta}）—— 供前端讲清「在变好还是变坏」，
      *                    由上面已加载的行<b>内存聚合</b>得出（零新增 SQL）
+     * @param batchTrend  批次结构趋势（按收货期间；<b>只含</b> {@link #COHORT_PURCHASE}）—— 由
+     *                    {@code batchGroups} <b>内存聚合</b>得出（零新增 SQL，issue #6459）
      */
     public record Board(String granularity, String timezone,
                         List<CohortSummary> cohorts,
                         List<BatchGroup> batchGroups,
                         List<SavedGroup> savedGroups,
                         Total total,
-                        BoardComparison comparison) {
+                        BoardComparison comparison,
+                        List<BatchPeriodPoint> batchTrend) {
     }
 
     /**
