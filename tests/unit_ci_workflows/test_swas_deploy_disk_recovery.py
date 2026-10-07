@@ -1,5 +1,5 @@
 # case_ids: MC-087
-"""部署链路「磁盘水位 × 回收」联动 + 被闸门挡住时的**收口归因**守卫（issue #6508 / #6505）。
+"""部署链路「磁盘水位 × 回收」联动 + 构建后回收信号 + 被闸门挡住时的**收口归因**守卫（#6508 / #6505 / #6512）。
 
 ## 两条病（2026-10-07 真机实测，逐字读数）
 
@@ -15,7 +15,15 @@ CI 收口却说「部署失败，**且自动回滚（tag=sha-e0e3bdf）也失败
 实际状态 = **构建根本没开始、正在跑的服务一动没动**；而「回滚也失败」与主部署**是同一道闸门**
 （4045MB / 4046MB 都 < 4096MB），**不是第二次独立故障** ⇒ 排查方向被带偏（去救火 vs 去回收磁盘）。
 
-## 本文件锁什么（每条判据都能单独变红；红证见 §四、§五）
+**③ 构建后「回收量为 0」的假警 + 回收量口径错**（issue #6512，真机 run `37634071278` 逐字）：
+那次部署**磁盘是健康的**（构建前可用 10059MB ≫ 门槛 4096MB），按 `pick_cache_window` 选 72h 档，
+而这台机器上的缓存层都是几十分钟内建的 ⇒ 匹配 **0 条** ⇒ 回收量 0 **是预期结果、不是异常**；
+脚本却**无条件**打 `::warning::缓存回收量为 0…需人工核对` ⇒ **每次健康部署一条黄标**
+（告警疲劳 —— `migao-acceptance`「部分闭环」节的「永久噪音让真失败与噪音同形」，亦 #6505 同族）。
+且回收量的**口径**错：用 **Δ(整盘已用)** 当回收量，把**构建自身写盘**混进来 ⇒「prune 腾 2GB +
+构建写 2GB」读数 = 0；正确的量就在隔壁那行：**缓存占用差**（`构建缓存：X → Y`）。
+
+## 本文件锁什么（每条判据都能单独变红；红证分散在 §二 注入 / §三·§四·§四之二 真跑 / §五）
 
 | # | 判据 | 变红的形态 |
 |---|---|---|
@@ -30,6 +38,9 @@ CI 收口却说「部署失败，**且自动回滚（tag=sha-e0e3bdf）也失败
 | 9 | CI 收口**按标记分支**：被前置闸门挡住 ⇒ 「未开始部署 / 环境未受影响」**且不出现**「环境可能处于坏状态」 | 只按 `exit != 0` 收口（= 改前形态）⇒ 红 |
 | 10 | 回滚腿被**同一闸门**挡住 ⇒ 不得计入「环境可能坏」的证据 | 把它报成「回滚也失败 ⇒ 环境可能坏」⇒ 红 |
 | 11 | 中途失败（无标记）⇒ 仍说「环境可能处于坏状态，请人工介入」（**双向对照**，防文案恒打印） | 把中途失败也说成「未开始部署」⇒ 红 |
+| 12 | 构建后「回收量为 0」的告警**由水位守卫**（水位充裕 ⇒ 只打信息行「…属预期」） | 无条件告警（= #6512 ① 的改前形态）⇒ 红 |
+| 13 | 回收量**口径 = 缓存占用差**（`cache_before − cache_after`；Δ已用只作参照） | 用 Δ整盘已用 ⇒「prune 腾 2GB + 构建写 2GB」读数 0 ⇒ 红（#6512 ②） |
+| 14 | **类级**：构建段里**每一条** `::warning::` 都必须由门槛/水位（`_need_mb`）守卫 | 与「是否真需要回收」无关的告警 ⇒ 红（#6512 / #6505 同族） |
 
 ## 判定方式（零网络、零真机、零删除）
 
@@ -71,6 +82,9 @@ FOREIGN_IMAGE = "nginx:alpine"
 ABORT_REASON = "BUILD_MIN_FREE_MB"
 #: 候选窗口阶梯的上界（7 天）：它同时也是**正常构建路径**的后回收窗口
 DEFAULT_WINDOW_HOURS = 168
+
+#: issue #6512 ① 的**逐字锚点**：改前形态 = 无条件打印的假警（水位充裕也发）
+RECLAIM_ZERO_WARNING = "::warning::缓存回收量为 0"
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -404,6 +418,91 @@ def problems_gate_fail_closed_kept(text: str) -> list:
     return v
 
 
+# ── issue #6512：构建后「回收量为 0」的**假警**（①）与回收量的**口径**（②）────────────
+
+def problems_reclaim_zero_warning_gated_by_waterline(text: str) -> list:
+    """判据 12（issue #6512 ①）：回收量 0 的告警必须与**是否需要回收**绑定。
+
+    现场（真机 run `37634071278`，结论 success）：构建前可用 10059MB ≫ 门槛 4096MB（**水位充裕**），
+    按 `pick_cache_window` 选 72h 档，而本机缓存层都是几十分钟内建的 ⇒ 匹配 0 条 ⇒ 回收量 0
+    **是预期**；改前却**无条件**打 `::warning::…需人工核对` ⇒ **每次健康部署一条黄标**
+    （告警疲劳：「永久噪音让真失败与噪音同形」，与 #6505 同族）。
+    """
+    v = []
+    src = code_lines(text)
+    k = src.find(RECLAIM_ZERO_WARNING)
+    if k < 0:
+        v.append(f"找不到 `{RECLAIM_ZERO_WARNING}` 告警（判据锚点漂移 / 告警被整条删掉）")
+        return v
+    window = src[max(0, k - 600):k]
+    # 🔴 守卫判定必须取**最近的那一条**控制行（口径与类级判据 14 同源）：取「前 600 字符里出现过」
+    #    会被**信息行自己**（它引用了 `_df_after_mb`/`_need_mb`）喂绿 —— 实测：把守卫换成 `if false; then`
+    #    后判据仍绿（判别力失效）。最近一行则当场红。
+    guards = re.findall(r"^[ \t]*(?:if|elif) \[[^\n]*", src[:k], re.M)
+    if not guards:
+        v.append(f"`{RECLAIM_ZERO_WARNING}` 是**无条件**打印的 ⇒ 水位充裕时也发假警（issue #6512 ①）")
+    elif not (re.search(r"_df_after_mb|_df_mb", guards[-1]) and "_need_mb" in guards[-1]
+              and re.search(r"-l[et]|-g[et]", guards[-1])):
+        v.append(
+            "告警不由「回收后可用量 `_df_after_mb` vs 门槛 `_need_mb`」守卫（最近的控制行 ="
+            f" `{guards[-1].strip()[:80]}`）⇒ 与「是否需要回收」无关"
+            "（正是 issue #6512 ① 的改前形态：水位充裕也告警）"
+        )
+    if "if [" not in window:  # 保留窗口口径的一条：告警前面必须**有**条件分支（空跑锚点）
+        v.append(f"`{RECLAIM_ZERO_WARNING}` 前面没有任何条件分支（判据锚点漂移）")
+    if "属预期" not in build_block(text):
+        v.append("水位充裕（不需要回收）时**没有信息行**说清「回收量 0 属预期」⇒ 读者仍会把它读成异常")
+    return v
+
+
+def problems_reclaim_metric_is_cache_delta(text: str) -> list:
+    """判据 13（issue #6512 ②）：回收量的口径 = **构建缓存占用差**（不是 Δ整盘已用）。"""
+    v = []
+    src = code_lines(text)
+    m = re.search(r"^\s*_reclaimed_mb=\$\(\(([^)]*)\)\)", src, re.M)
+    if not m:
+        v.append("找不到回收量的计算行 `_reclaimed_mb=$(( … ))`（判据锚点漂移）")
+        return v
+    expr = m.group(1)
+    if "_cache_before_mb" not in expr or "_cache_after_mb" not in expr:
+        v.append(
+            "回收量口径不是**缓存占用差**（计算式里没有 `_cache_before_mb`/`_cache_after_mb`）："
+            f"现状 `{expr.strip()}` ⇒ Δ整盘已用把**构建自身写盘**混了进来"
+            "（「prune 腾 2GB + 构建写 2GB」读数 = 0 ⇒ 假警，issue #6512 ②）"
+        )
+    if "_used_after_mb" in expr:
+        v.append("回收量仍取自 Δ整盘已用（`_used_*`）⇒ 假警的形状未消除")
+    line = next((ln for ln in build_block(text).splitlines() if "缓存回收量：" in ln), "")
+    if not line:
+        v.append("构建后回收段没有「缓存回收量：」读数行")
+    elif "_cache_before_mb" not in line or "_cache_after_mb" not in line:
+        v.append("「缓存回收量：」行没有给出缓存占用差（前 → 后）⇒ 读数无法被复算")
+    return v
+
+
+def problems_build_block_warnings_are_waterline_gated(text: str) -> list:
+    """判据 14（**类级**，issue #6512 / #6505 同族）：构建段里每条 `::warning::` 都要由门槛守卫。
+
+    一类病（不是一处）：把「不需要 / 没发生」说成「有问题」⇒ 每次健康部署一条黄标 ⇒
+    永久噪音让真失败与噪音同形。只钉「回收量」这一处样例不够 ⇒ 本判据对**整段**里每一条
+    `::warning::` 判「它最近的条件行里必须出现门槛变量 `_need_mb`」（水位/门槛是「是否需要回收」的判据）。
+    """
+    v = []
+    lines = build_block(text).splitlines()
+    for i, ln in enumerate(lines):
+        if "::warning::" not in ln:
+            continue
+        guards = [g for g in lines[max(0, i - 8):i + 1] if re.search(r"\b(if|elif) \[", g)]
+        if not guards:
+            v.append(f"构建段里的 `::warning::` 没有条件守卫：{ln.strip()[:90]}")
+        elif "_need_mb" not in guards[-1]:
+            v.append(
+                "构建段里的 `::warning::` 不由门槛/水位守卫（最近的条件行里没有 `_need_mb`）"
+                f" ⇒ 与「是否真需要回收」无关：{ln.strip()[:90]}"
+            )
+    return v
+
+
 def problems_ci_branches_on_marker(text: str) -> list:
     """判据 9：CI 收口**按标记分支**，两条文案各自具名（全部在**原文**上判，见文件头的设计纪律）。"""
     v = []
@@ -467,6 +566,9 @@ def all_violations(deploy: str, ci: str) -> list:
         + problems_abort_does_not_touch_env(deploy)
         + problems_aggressive_prune_only_in_recovery(deploy)
         + problems_gate_fail_closed_kept(deploy)
+        + problems_reclaim_zero_warning_gated_by_waterline(deploy)
+        + problems_reclaim_metric_is_cache_delta(deploy)
+        + problems_build_block_warnings_are_waterline_gated(deploy)
         + problems_ci_branches_on_marker(ci)
         + problems_gate_leg_not_counted_as_broken(ci)
     )
@@ -512,6 +614,9 @@ def test_real_scripts_satisfy_every_judgement():
     (problems_abort_does_not_touch_env, "deploy"),
     (problems_aggressive_prune_only_in_recovery, "deploy"),
     (problems_gate_fail_closed_kept, "deploy"),
+    (problems_reclaim_zero_warning_gated_by_waterline, "deploy"),
+    (problems_reclaim_metric_is_cache_delta, "deploy"),
+    (problems_build_block_warnings_are_waterline_gated, "deploy"),
     (problems_ci_branches_on_marker, "ci"),
     (problems_gate_leg_not_counted_as_broken, "ci"),
 ])
@@ -603,6 +708,29 @@ def test_injection_aggressive_prune_into_build_path_goes_red():
                        '  CACHE_RECOVER_AF_CALL=1\n  docker builder prune -af || true\n'
                        '  _build_args=(--build-arg "APT_MIRROR=$APT_MIRROR")')
     assert problems_aggressive_prune_only_in_recovery(injected), "构建路径出现 -af 后没红（判据无判别力）"
+
+
+def test_injection_reclaim_warning_ungated_goes_red():
+    """注入⑩（issue #6512 ①）：把「水位充裕 ⇒ 信息行」的守卫拆掉 ⇒ 判据 12 与类级判据 14 必红。"""
+    injected = _inject(read_deploy(), '    if [ "${_df_after_mb:-0}" -ge "$_need_mb" ]; then',
+                       "    if false; then")
+    assert problems_reclaim_zero_warning_gated_by_waterline(injected), "拆掉水位守卫后没红（判据无判别力）"
+    assert problems_build_block_warnings_are_waterline_gated(injected), "类级守卫（判据 14）没红"
+
+
+def test_injection_reclaim_metric_back_to_used_delta_goes_red():
+    """注入⑪（issue #6512 ②）：把回收量口径换回 Δ整盘已用 ⇒ 判据 13 必红（改前形态）。"""
+    injected = _inject(read_deploy(), "    _reclaimed_mb=$(( _cache_before_mb - _cache_after_mb ))",
+                       "    _reclaimed_mb=$(( ${_used_before_mb:-0} - ${_used_after_mb:-0} ))")
+    assert problems_reclaim_metric_is_cache_delta(injected), "换回 Δ已用后没红（判据无判别力）"
+
+
+def test_injection_reclaim_info_line_removed_goes_red():
+    """注入⑫：删掉「属预期」的信息行 ⇒ 判据 12 必红（水位充裕的读者仍会被引去「人工核对」）。"""
+    src = read_deploy()
+    injected = re.sub(r"[^\n]*属预期[^\n]*\n", "", src, count=1)
+    assert injected != src, "注入未生效（信息行形态已漂移）"
+    assert problems_reclaim_zero_warning_gated_by_waterline(injected), "删掉信息行后没红（判据无判别力）"
 
 
 def test_comment_only_change_stays_green():
@@ -705,23 +833,38 @@ awk -v mb="$val" 'BEGIN { printf "/dev/vda3  41943040 30000000 %d  80%% /\n", mb
 """
 
 # 桩 `docker`：只实现本判据需要的那几条子命令；其余一律成功（构建/健康检查不占本判据面）。
+# ⚠️ 缓存占用是**状态量**（issue #6512 判据 13 需要「prune 真的让读数变小」）：`STUB_PRUNE_FREED_MB`
+#    非空时，`builder prune` 会把状态文件里的占用减掉那么多 ⇒ `docker system df` 的后续读数随之变小
+#    （真机口径）。**不设它时行为与改前逐字相同**（常量读数），既有判据不受影响。
 DOCKER_STUB = r"""#!/bin/bash
+cache_state() { printf '%s' "$STATE_DIR/cache-size"; }
+cache_now() {
+  if [ -f "$(cache_state)" ]; then cat "$(cache_state)"
+  else printf '%s' "${STUB_CACHE_SIZE:-}"; fi
+}
 case "$*" in
   "system df --format "*)
-    [ -n "${STUB_CACHE_SIZE:-}" ] || exit 1
+    cur=$(cache_now)
+    [ -n "$cur" ] || exit 1
     # ⚠️ `--format '{{.Type}} {{.Size}}'` 的真形态 = **两列**（`Build Cache <SIZE>`）：
     #    写三列会让夹具与真机不同源（真机上 `$3` 是空串 ⇒ 读数退化成 `?`）。
     echo "TYPE            SIZE"
     echo "Images          4.1GB"
-    echo "Build Cache     ${STUB_CACHE_SIZE}"
+    echo "Build Cache     ${cur}"
     # ⚠️ 第三列才是 SIZE（第一列是条目数 TOTAL）—— 与真机 `docker system df` 一致
     exit 0 ;;
   "system df -v"*)
-    [ -n "${STUB_CACHE_SIZE:-}" ] || exit 1
-    echo "Build cache usage: $(printf '%s' "${STUB_CACHE_SIZE}" | sed 's/[A-Za-z]//g')MB"
+    cur=$(cache_now)
+    [ -n "$cur" ] || exit 1
+    echo "Build cache usage: $(printf '%s' "$cur" | sed 's/[A-Za-z]//g')MB"
     exit 0 ;;
   "builder prune "*)
     echo "$*" >> "$STATE_DIR/cache-prunes"
+    if [ "${STUB_PRUNE_RC:-0}" = "0" ] && [ -n "${STUB_PRUNE_FREED_MB:-}" ]; then
+      base=$(printf '%s' "$(cache_now)" | sed 's/[A-Za-z]//g'); [ -n "$base" ] || base=0
+      new=$(( base - STUB_PRUNE_FREED_MB )); [ "$new" -lt 0 ] && new=0
+      printf '%sMB' "$new" > "$(cache_state)"
+    fi
     exit "${STUB_PRUNE_RC:-0}" ;;
   "images --format "*)
     echo "nginx:alpine"
@@ -951,6 +1094,120 @@ def test_exec_no_cache_reading_still_aborts_and_says_so(tmp_path):
     assert "无法读数" in out or "读数不可得" in out or "?" in out, (
         "缓存读不到时没有任何显式说明（静默 = 与改前同样的形态）"
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 四之二、issue #6512：构建后「回收量为 0」的**假警**与回收量的**口径**
+#
+# 现场（真机 run `37634071278`，结论 success，逐字）：
+# ```
+# 构建前磁盘可用：10059MB（门槛 4096MB）
+# 🧹 缓存回收：水位 10053MB ⇒ 选窗口 72h
+# 构建后磁盘可用：10052MB（构建前 10059MB）／构建缓存：6839 → 6839（清理档=1）
+# 缓存回收量：0MB（已用 28042MB → 28042MB；档位 1/2）
+# ##[warning]缓存回收量为 0（构建缓存 6839MB，清理档 1/2）—— 出口没有真的腾出空间，需人工核对
+# ```
+# ⇒ 水位充裕（10059 ≫ 4096）+ 缓存层都是几十分钟内的 ⇒ 72h 档匹配 0 条 ⇒ 0 **是预期**。
+# 桩 `df` 的 `Used` 列不随缓存变化 ⇒ 夹具里的 Δ整盘已用**恒为 0**，恰好等价于 issue 描述的场景
+# 「prune 腾 2GB + 构建自身写 2GB ⇒ Δused = 0」（判据 13 的判别力正来自这一点）。
+# ══════════════════════════════════════════════════════════════════════════
+
+#: 水位充裕（真机读数形态：构建前 10059MB ≫ 门槛 4096MB）
+GENEROUS_DF_SEQ = "10059,10000,10050,10052,10052"
+#: 构建**后**掉到门槛以下（`_df_after_mb` = 3000MB < 4096MB）⇒ 回收量 0 时**必须**告警
+LOW_WATERLINE_DF_SEQ = "9000,9000,9000,9000,3000"
+
+
+def test_exec_generous_waterline_zero_reclaim_is_info_not_warning(tmp_path):
+    """判据 12 的行为面（issue #6512 ① 的现场）：水位充裕 + 缓存差 0 ⇒ 只打信息行，**不得**告警。"""
+    proc, state, out = _run_deploy(tmp_path, df_seq=GENEROUS_DF_SEQ, cache_size="6839MB")
+    assert proc.returncode == 0, f"健康部署（水位充裕）不该失败：\n{out[-2000:]}"
+    assert RECLAIM_ZERO_WARNING not in out, (
+        "🔴 水位充裕（可用 10052MB ≫ 门槛 4096MB）时仍发「回收量为 0」的假警"
+        "（正是 issue #6512 ① 的现场）:\n" + "\n".join(l for l in out.splitlines() if "缓存" in l)
+    )
+    assert re.search(r"缓存回收量：0MB", out), f"读数行缺失/形态漂移：\n{out[-1500:]}"
+    info = [l for l in out.splitlines() if "属预期" in l]
+    assert info, f"水位充裕时没有信息行说清「回收量 0 属预期」：\n{out[-1500:]}"
+    assert "水位充裕" in info[0] and "72h" in info[0], (
+        f"信息行没有说清「为什么是 0」（水位充裕 + 按 N h 档未匹配到可回收层）：{info[0]!r}"
+    )
+    assert "until=72h" in (state / "cache-prunes").read_text(encoding="utf-8"), (
+        "阶梯没有按水位选到 72h 档（判据锚点漂移）"
+    )
+
+
+def test_exec_low_waterline_zero_reclaim_still_warns(tmp_path):
+    """判据 12 的反向面（**防反向假绿**）：水位告急（3000MB < 门槛）+ 回收量 0 ⇒ **必须**告警。
+
+    没有这一条，「把告警整行删掉」也能让上一条变绿 —— 那是把假警修成**假绿**。
+    同时钉住既有护栏：`BUILD_CACHE_RECLAIM_INSUFFICIENT` 的「下次构建会被拦」一字未动。
+    """
+    proc, _state, out = _run_deploy(tmp_path, df_seq=LOW_WATERLINE_DF_SEQ, cache_size="6839MB")
+    assert RECLAIM_ZERO_WARNING in out, (
+        f"水位告急（可用 3000MB < 门槛 4096MB）而回收量为 0 却不告警 ⇒ 告警被一并删掉（反向假绿）：\n{out[-2000:]}"
+    )
+    assert "属预期" not in out, "水位告急时也说「属预期」⇒ 把真异常说成正常"
+    assert "ABORT_REASON=BUILD_CACHE_RECLAIM_INSUFFICIENT" in out, "既有护栏（下次会被拦）的机读标记被动了"
+    assert "下次构建会被前置检查拦住" in out, "既有护栏（下次会被拦）的告警文案被动了"
+    assert proc.returncode == 0, "构建后余量不足只告警、本次部署继续（既有语义）"
+
+
+def test_exec_reclaim_metric_is_cache_delta_not_used_delta(tmp_path):
+    """判据 13 的行为面：注入「prune 腾 2GB + Δ整盘已用 = 0」⇒ 回收量读数**必须**是缓存占用差。"""
+    proc, _state, out = _run_deploy(tmp_path, df_seq="9000", cache_size="6839MB",
+                                    env_extra={"STUB_PRUNE_FREED_MB": "2048"})
+    assert proc.returncode == 0, f"健康部署不该失败：\n{out[-2000:]}"
+    assert "缓存回收量：2048MB" in out, (
+        "回收量口径不是缓存占用差（prune 腾了 2048MB，读数却不是 2048MB）：\n"
+        + "\n".join(l for l in out.splitlines() if "缓存回收量" in l or "整盘已用" in l)
+    )
+    assert re.search(r"整盘已用 (\d+)MB → \1MB", out), (
+        f"夹具没有建模「Δ整盘已用 = 0」⇒ 本条的判别力不成立（旧口径在这种场景恰好读 0）：\n{out[-1500:]}"
+    )
+    assert RECLAIM_ZERO_WARNING not in out, "明明腾出空间了，却仍发「回收量为 0」的告警"
+
+
+def test_exec_cache_readout_unavailable_never_fabricates_zero(tmp_path):
+    """读数不可得（`docker system df` 失败）⇒ 显式说「无法判定」，**不许**拿 0 冒充「没腾出空间」。"""
+    proc, _state, out = _run_deploy(tmp_path, df_seq="9000", cache_size="")
+    assert proc.returncode == 0, f"读数不可得不该让部署崩掉：\n{out[-2000:]}"
+    assert re.search(r"缓存回收量：无法判定", out), f"读数不可得时没有显式说明：\n{out[-1500:]}"
+    assert RECLAIM_ZERO_WARNING not in out, "读数不可得却谎报「回收量为 0」"
+
+
+def test_exec_red_proof_generous_waterline_warning_gate_removed(tmp_path):
+    """反向红证（§28.1 出口①）：拆掉水位守卫（恒走告警分支）⇒ 同一**充裕**水位夹具必发假警。"""
+    injected = _inject(read_deploy(), '    if [ "${_df_after_mb:-0}" -ge "$_need_mb" ]; then',
+                       "    if false; then")
+    proc, _state, out = _run_deploy(tmp_path, df_seq=GENEROUS_DF_SEQ, cache_size="6839MB",
+                                    script_text=injected)
+    assert RECLAIM_ZERO_WARNING in out, (
+        f"拆掉水位守卫后仍读不到假警 ⇒ 上面那条判据没有判别力：\n{out[-1500:]}"
+    )
+
+
+def test_exec_red_proof_low_waterline_warning_deleted(tmp_path):
+    """反向红证：把告警整行删掉 ⇒ 水位告急的夹具上**读不到**任何告警（判据 12 反向面判别力自证）。"""
+    src = read_deploy()
+    injected = re.sub(r'[ \t]*echo "  ::warning::缓存回收量为 0[^\n]*\n', "", src, count=1)
+    assert injected != src, "注入未生效（告警行形态已漂移）"
+    proc, _state, out = _run_deploy(tmp_path, df_seq=LOW_WATERLINE_DF_SEQ, cache_size="6839MB",
+                                    script_text=injected)
+    assert RECLAIM_ZERO_WARNING not in out, "删掉告警后仍打印 ⇒ 注入没落在告警上"
+
+
+def test_exec_red_proof_used_delta_metric_reads_zero(tmp_path):
+    """反向红证：口径换回 **Δ整盘已用** ⇒ 同一「prune 腾 2GB」夹具读数变 0（改前的假警形状）。"""
+    injected = _inject(read_deploy(), "    _reclaimed_mb=$(( _cache_before_mb - _cache_after_mb ))",
+                       "    _reclaimed_mb=$(( ${_used_before_mb:-0} - ${_used_after_mb:-0} ))")
+    proc, _state, out = _run_deploy(tmp_path, df_seq="9000", cache_size="6839MB",
+                                    env_extra={"STUB_PRUNE_FREED_MB": "2048"}, script_text=injected)
+    assert "缓存回收量：0MB" in out, (
+        "换回 Δ整盘已用后读数没变 0 ⇒ 口径判据没有判别力：\n"
+        + "\n".join(l for l in out.splitlines() if "缓存回收量" in l)
+    )
+    assert "缓存回收量：2048MB" not in out
 
 
 # ══════════════════════════════════════════════════════════════════════════

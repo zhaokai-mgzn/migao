@@ -616,11 +616,34 @@ if [ -n "$BUILD_SERVICE" ]; then
   _df_after_mb=$(disk_free_mb || true)
   _cache_after_mb=$(builder_cache_measure || true)
   _used_after_mb=$(disk_used_mb || true)
-  _reclaimed_mb=$(( ${_used_before_mb:-0} - ${_used_after_mb:-0} ))
+  # ── 回收量的**口径**（issue #6512 ②）= **构建缓存占用差** ─────────────────────────
+  # 改前用 Δ(整盘已用) 当回收量 ⇒ 把**构建自身写盘**混了进来：「prune 腾 2GB + 构建写 2GB」
+  # 读数 = 0 ⇒ 假警（真机 run 37634071278：`已用 28042MB → 28042MB` ⇒ 报「回收量 0」而水位是健康的）。
+  # 正确的量就在隔壁那行（`构建缓存：X → Y` 的差）；Δ已用只作**参照**打印，不是回收量。
+  # 读数不可得（`?`）⇒ 显式说「无法判定」，**绝不**拿 0 冒充「没腾出空间」（失败可见）。
+  _reclaim_known=0
+  _reclaimed_mb=0
+  if [ "${_cache_before_mb:-?}" != "?" ] && [ "${_cache_after_mb:-?}" != "?" ]; then
+    _reclaimed_mb=$(( _cache_before_mb - _cache_after_mb ))
+    _reclaim_known=1
+  fi
+  _reclaim_text="${_reclaimed_mb}MB"
+  if [ "$_reclaim_known" = "0" ]; then _reclaim_text="无法判定（构建缓存读数不可得）"; fi
   echo "  构建后磁盘可用：${_df_after_mb}MB（构建前 ${_df_mb}MB）／构建缓存：${_cache_before_mb:-?} → ${_cache_after_mb:-?}（清理档=${CACHE_RECOVER_DID}）"
-  echo "  缓存回收量：${_reclaimed_mb}MB（已用 ${_used_before_mb:-?}MB → ${_used_after_mb:-?}MB；档位 ${CACHE_RECOVER_DID}/2）"
-  if [ "${_reclaimed_mb:-0}" -le 0 ]; then
-    echo "  ::warning::缓存回收量为 0（构建缓存 ${_cache_after_mb:-?}MB，清理档 ${CACHE_RECOVER_DID}/2）—— 出口没有真的腾出空间，需人工核对"
+  echo "  缓存回收量：${_reclaim_text}（构建缓存 ${_cache_before_mb:-?}MB → ${_cache_after_mb:-?}MB；档位 ${CACHE_RECOVER_DID}/2）"
+  echo "     · 参照：整盘已用 ${_used_before_mb:-?}MB → ${_used_after_mb:-?}MB（含构建自身写盘，**不是**回收量）"
+  # ── 告警条件（issue #6512 ①）：只在**水位告急且出口没腾出空间**时才告警 ────────────────
+  # 水位充裕（回收后可用量 ≥ 门槛）时，按水位选的窗口没匹配到可回收层 ⇒ 回收量 0 **是预期**
+  # （真机：缓存层都是几十分钟内建的、而水位充裕时选 72h 档 ⇒ 匹配 0 条）⇒ 只打信息行。
+  # 改前是**无条件**告警 ⇒ 每次健康部署一条黄标 = 告警疲劳（永久噪音让真失败与噪音同形）。
+  if [ "$_reclaim_known" = "0" ]; then
+    echo "  ⚠️ 构建缓存读数不可得 ⇒ 回收量无法判定（不冒充 0；可用量判定见下）"
+  elif [ "${_reclaimed_mb:-0}" -le 0 ]; then
+    if [ "${_df_after_mb:-0}" -ge "$_need_mb" ]; then
+      echo "  ℹ️ 水位充裕（可用 ${_df_after_mb}MB ≥ 门槛 ${_need_mb}MB）⇒ 按 $(pick_cache_window "${_df_after_mb:-0}")h 档未匹配到可回收层，回收量 0 属预期（非异常）"
+    else
+      echo "  ::warning::缓存回收量为 0（构建缓存 ${_cache_before_mb:-?}MB → ${_cache_after_mb:-?}MB，清理档 ${CACHE_RECOVER_DID}/2）—— 水位告急（可用 ${_df_after_mb}MB < 门槛 ${_need_mb}MB）而出口没有真的腾出空间，需人工核对"
+    fi
   fi
   if [ "${_df_after_mb:-0}" -lt "$_need_mb" ]; then
     echo "ABORT_REASON=BUILD_CACHE_RECLAIM_INSUFFICIENT"
