@@ -16,20 +16,26 @@
  * | 1 | 内层原生 `input` 高 ÷ 外框高 ≥ 0.90（撑满） | 回到 Taro 的 `height:1.47059em` ⇒ 比值 ≈ 0.52 ⇒ 红 |
  * | 2 | 内层相对外框的**上留白 == 下留白**（±1 CSS px） | 内层贴顶 ⇒ 0.5 vs 23.4（差 23）⇒ 红 |
  * | 3 | 上留白 > 0（内层**没有**贴死框顶） | 内层贴死 ⇒ 0 ⇒ 红 |
- * | 4 | 每个可见输入面都过 1~3（登录页三个 tab + 独立工人登录页） | 漏一个面 ⇒ 该面读数判红 |
+ * | 4 | 每个可见输入面都过 1~3（登录页三个 tab + 独立工人登录页 + 首登强制改密页） | 漏一个面 ⇒ 该面读数判红 |
  *
- * ## 实测读数（390×844，Chromium；生产与本地 dist 同量级）
+ * ## 实测读数（390×844，Chromium，本地 dist 重建实测；「修前」= 临时撤掉共享样式层的引入后重建）
  *
- * | 面 | 修前 内层/外框 | 修前 上/下留白 | 修后 内层/外框 | 修后 上/下留白 |
+ * | 面 | 修前 内层/外框（占比） | 修前 上/下留白 | 修后 内层/外框（占比） | 修后 上/下留白 |
  * |---|---|---|---|---|
- * | 登录页 `.login-field__input` | 26.0 / 49.9 | 0.5 / 23.4 | 48.9 / 49.9 | 0.5 / 0.5 |
- * | 工人登录页 `.worker-login__input` | 22.9 / 46.8 | 0.5 / 23.3 | 45.8 / 46.8 | 0.5 / 0.5 |
+ * | 登录页 `.login-field__input`（7 个） | 26.0 / 49.906（52.1%） | 1.0 / 22.91 | 47.906 / 49.906（96.0%） | 1.0 / 1.0 |
+ * | 工人登录页 `.worker-login__input`（3 个） | 22.94 / 47.75（48.0%） | 1.0 / 23.81 | 45.75 / 47.75（95.8%） | 1.0 / 1.0 |
+ * | 首登强制改密页 `.cp-field__input`（3 个） | 24.47 / 47.75（51.2%） | 1.0 / 22.28 | 45.75 / 47.75（95.8%） | 1.0 / 1.0 |
+ *
+ * （上/下留白各 1 CSS px = 各页自己的 1px 边框 —— 内外层之间**没有**任何多余留白，文字在整框里居中。）
  *
  * ## 边界（照实登记，§19.1）
  * - 只判**竖向几何**：颜色 / 观感 / 暗色模式不在判据内，也不做像素基线（与 `bmini-tabbar.spec.ts` 同口径）。
- * - 只覆盖「**有显式高度的圆角框**」这一族输入面（登录页 + 工人登录页）——它是本缺陷的判别面；
- *   其余输入面的**登记**由 `frontend/bmini-app/tests/input-center-guard.test.ts` 的台账元守卫承担
- *   （rasterize 全部页面不是本腿的目的，也没法在未登录状态下都到达）。
+ * - 覆盖「**有显式高度的圆角框**」这一族输入面里的 **3 个页面 / 13 个输入框**（登录页 7 + 工人登录页 3 +
+ *   首登强制改密页 3）—— 它们是**未登录即可到达**的输入面，也是本缺陷的判别面。
+ *   ⚠️ **未实测**的输入面（报工页 / 坐席会话详情 / 工人入库 / 工人补打 / WorkerBar / FormCard ——
+ *   需要登录态或业务数据才能到达）**不在本腿**；它们靠**同一个全局选择器**（共享样式层作用于
+ *   `taro-input-core`，与具体 className 无关）**构造性覆盖**，并由
+ *   `frontend/bmini-app/tests/input-center-guard.test.ts` 的台账元守卫保证「新增输入面必须登记」。
  * - 输入框的**尺寸 / 圆角 / 字号**不在本判据内（不许把「修竖向对齐」做成「改尺寸」）：
  *   字号下限另有判据（`tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py`、
  *   `tests/unit_ci_workflows/test_bmini_h5_delivery_contract.py`）。
@@ -40,6 +46,7 @@ import { test, expect, type Page } from '@playwright/test'
 
 const LOGIN_PAGE = '/#/pages/auth/login/index'
 const WORKER_LOGIN_PAGE = '/#/pages/worker/login/index'
+const CHANGE_PASSWORD_PAGE = '/#/pages/auth/change-password/index'
 
 /** 外框（拿到 `className` 的那层 = 用户看到的圆角框）÷ 内层原生 input 的最小高度比 */
 const MIN_FILL_RATIO = 0.9
@@ -144,6 +151,20 @@ test.describe('B 端 H5 输入框文字竖向居中（issue #6478）', () => {
     // 工号 / PIN / 设备标签
     expect(readings.length).toBeGreaterThanOrEqual(3)
     console.log(`[input-center] 工人登录页读数 ${JSON.stringify(readings)}`)
+
+    for (const reading of readings) expectCentered(reading)
+  })
+
+  test('首登强制改密页（第三个输入面）同样撑满外框且上下留白对称', async ({ page }) => {
+    // 本页**无登录前提即可渲染**（它只在登录响应带 mustChangePassword 时被 redirectTo 过来，
+    // 页面自身不做鉴权分流）⇒ 可以直接当第三个受测输入面。
+    await page.goto(CHANGE_PASSWORD_PAGE)
+    await expect(page.locator('.cp-field__input').first()).toBeVisible()
+
+    const readings = await measureAll(page, '.cp-field__input', '改密页')
+    // 原密码 / 新密码 / 确认新密码
+    expect(readings.length).toBeGreaterThanOrEqual(3)
+    console.log(`[input-center] 改密页读数 ${JSON.stringify(readings)}`)
 
     for (const reading of readings) expectCentered(reading)
   })
