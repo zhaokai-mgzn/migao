@@ -2316,7 +2316,7 @@
 真值: customer-list.profile-view
 溯源: 2026-10-03 新增（issue #6217 / 族 3 · 包 4 / V1）：族 3（跨域具名视图）此前只有 product_health（#5369）与 customer_profile（#5456），本条目为**客户价值分层 / 流失预警**视图的专属用例 —— 它答的是页面结构上做不到的问题（客户列表只有单客户维度，无法按流失风险排序）。⚠️ 不并进简报表快照（先例 #5458 裁定：权限面不同 ⇒ 复用即越权）；取数只用三条既有只读端点。 ｜ tags: query, tool, cross-domain, disclosure, churn
 
-## 数据域（22 case）
+## 数据域（23 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -2579,6 +2579,25 @@
 ```
 真值: dashboard-jump.proactive-wiring-status, dashboard-jump.proactive-unwired-disclosure
 溯源: 2026-10-05 新增（issue #6347 **Part B**，与 Part A「商品 status 枚举准入」同单不同包）：租户 25 有 12 行 product_skus 而「商品健康度视图」返回 0 行 —— 那 10 行 SKU 属 8 个状态为 active 的商品，被快照的 onSaleProductNames 静默过滤；米宝据此答「SKU 记录数 = 0 / SKU 层是空的 / 建议先确认商品规格是否已录入」= **归因错误**，用户被引向徒劳返工。取号 DA-023：现取 .github/cases/ 最大号 = DA-021（main ∪ 全部在飞 ref，逐 ref 核过，见 PR body；DA-022 已被在飞 PR 占用）。**未覆盖面（如实登记）**：真实 LLM 行为面（米宝用这条消息怎么措辞）**不进 agent-eval 计分**（本条 `skip_reason` = `[backend-contract]`，`forbidden_text` 因此**不会被执行**）—— 本单钉的是**载荷**（引擎 + 工具消息）与**快照读数**。⚠️ 为什么不做成可跑用例：评测栈租户 = 1，种下的商品（**逐文件现取**：`tests/agent_eval/fixtures/mibao_eval_seed.sql` **1 个** `prod_eval_2699` + `tests/agent_eval/fixtures/xiaobu_eval_seed.sql` **3 个** `prod_eval_blackout` / `prod_eval_dark_green` / `prod_eval_summer`，合计 4 个；两文件里商品 `status` 字面量实测 `'on_sale'` × 4，无其它取值）全是 `on_sale` 且 SKU 非空 ⇒ **复现不出**「过滤前 > 0、过滤后 = 0」；要复现就得把那批商品的 SKU 全推到非法状态，而 `product.yml` / `data.yml` 的存量用例正在用它们（改前须先跑全量断言确认不误伤）⇒ 本包取**人工复算配方**（写在 PR body「LLM 侧人工复算配方」段：前置状态 + 命令 + 期望读数），真要跑时由人手动集中跑一次（用户裁定：不自动派发评测）。 ｜ tags: briefing, product_health, attribution, snapshot
+
+### DA-022. 缺料风险视图：material_shortage（商品级需求 vs SKU 权威库存）的缺口分层与「未知≠0」披露（issue #6280） 🔵
+```
+你: 哪些商品会被未完成订单吃空
+你: 缺料风险 / 缺口多少米
+端: mibao（单端 —— 仅米宝腿跑，小布腿跳过）
+期望: inventory_manage(action=material_shortage)
+数据: 只读且不回归：material_shortage 在 VALID_ACTIONS 与 read_only_actions 里；**不传 action 时仍是旧的 query 行为**（默认值不许被新 action 改掉）；未知 action ⇒ 无效操作类型（不猜）
+数据: 取数面 = 只读端点 GET /api/admin/materials/shortage（权限码 product:list）：需求 = SUM(order_items.quantity) WHERE orders.status ∈ statuses **且 products.unit = '米'**（单位真值在**商品档案**，不在 order_items.selling_method）；供给 = **SUM(product_skus.stock) GROUP BY product_id** —— 🔴 **不读** products.stock（派生冗余列，实测与 SKU 合计差 3.3%）；租户闸两侧都在、软删逐表过滤
+数据: 🔴「未知 ≠ 0」：单位不可比的商品 ⇒ demand_qty = **null** + risk_band = unknown（**不是 0**）；真 0 需求（有订单行、可比、合计 0）⇒ 照实 0 且与前者**可分**；non_comparable.lines / products 必须披露。红证：把「不可比」填成 0 ⇒ 必红
+数据: 🔴「交期未知 ≠ 今天到期」：days_to_deadline = null ⇒ **不得回填 0**；「缺口确定、紧迫性未知」落 short **单列**，**不得并进 critical**。红证：把 null 填成 0 天 ⇒ 分层与同一断言必红（实测 dev 库未完成订单交期填充率 = 0，今天这一档会占满 —— 那是**正确**输出）
+数据: 六档分层 blocked / critical / soon / short / safe / unknown（阈值 3 / 7 天进 basis 可复算）；输出行序 = 分层降序 → gap 降序 → product_id 升序 ⇒ 同一快照**逐字相同**；聚合用**全量行**（band_counts / non_comparable 不随 limit 变）；limit 非法值显式 400，truncated ⇒ 每个有真值字段落 incomplete + 可归因读数
+数据: 逐字段三态：status ∈ wired / not_wired / incomplete，不变式 **reason is None ⟺ status == wired**。v1 的 rate_per_week / exhaust_date 一律 not_wired + 具名理由（真值存在于台账但装配层未接线：真实周桶深度 2 周 < 要求 8 周）；history_depth.sufficient = false 时**禁止硬算、禁止回填 0**
+数据: 披露纪律（工具面）：工具**必须用人话说出**「预测层未启用：历史深度 N 周 < 8 周」与单位不可比计数，**不得**静默省略、**不得**把 null 说成 0；端点失败 ⇒ fail-closed + 点名 product:list + 可行动建议，**不得**用空列表冒充「没有缺料」（「没查」与「没问题」必须可分）
+前置: 本用例是 [backend-contract] 的**视图契约**用例（不进 agent-eval 冒烟）：两条 user_inputs 是**同一能力**的两种问法，不是两次会话。前置 = 端点可用且当前账号持 product:list。该前置由两侧单测直接构造并断言 ⇒ 前置不成立（端点 / 权限码改名）时单测直接红，不会表现为「agent 不干活」
+跳过: [backend-contract] 视图语义由 admin-api 单测验证（backend/admin-api/src/test/java/com/migao/admin/service/MaterialShortageServiceTest.java：六档分层 / 未知≠0 注入式红证 / 确定性 / 三态不变式 / 有界），工具面由 backend/ai-agent-service/tests/test_tools_inventory_manage_shortage.py 验证（action 白名单 / 不回归 / fail-closed / 披露纪律），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-10-04 新增（issue #6280）：商品级用料缺口与耗尽风险视图。粒度 = **商品**（实测 order_items 无 sku_id 原生列、SKU 身份只在 processing_info 的 jsonb 里，字面键覆盖率上限约 25%）⇒ 不做 SKU 级细分。需求侧用未完成订单（confirmed + producing，与族 1 UNSHIPPED_STATUSES 同口径）。**未覆盖面（如实登记）**：页面与 §15 UI 旅程 / Playwright 多模态验收**显式拆到 #6282**（本单不含）；**预测层未启用**（真实周桶深度 2 周 < 8 周，dev 库读数见 issue #6280 的 S0 系列评论），重启条件 = 深度 ≥ 8 周（约 2026-11-15 后）。 2026-10-07 **rebase 到 origin/main 后收口**（本包此前从未编译通过 ⇒ 判据从未真跑，对应 CI 红点 = `admin-api unit tests`，现取失败 run 37608465660）：① 修掉 `MaterialShortageService.java` 里 `historyDepth));` 的**多余括号**（语法错误 ⇒ 整个 admin-api 编不过）；② `band(null 交期)` 由 `critical` 改回 **`short`**（实现与本文「交期未知单列 short」口径不一致）；③ `parseLimit` 非整数分支的 message 补 **`≥ 1`**（与 0 / 负数分支同口径）；④ 源码扫描判据的**唯一一次假红**：Javadoc 里字面写了被扫的挂钟写法 ⇒ 改为 `{@link LocalDate.now}` 形态（原 Javadoc 字面写法）（判据不动）；⑤ `rowOrderIsDeterministic` 的期望值改为与本文件「分层降序」口径一致（紧急度降序 blocked → critical → … → unknown）；⑥ 补 `MaterialShortageControllerTest`（`growth_gate` 对新增 Controller 要求的同名判据，缺 ⇒ blocker 1 条，现取 0 条）。本机定点读数：Java 23 passed（18 服务 + 5 控制器）/ ai-agent 14 passed / 生成物新鲜 + truths + 6 个 cases 面判据文件 341 passed。 ⑦ **`Case Coverage Gate` 的真因在判据侧、不在用例侧**：`scripts/case_coverage.py::tool_declared_actions` 只认 `"enum": [ ... ]` 的**字面**形态，而 `inventory_manage` 把枚举归一到模块级常量 （`"enum": list(VALID_ACTION_ORDER)`）⇒ 取值集解析为空 ⇒ 该工具被判成「没有 action 维度」⇒ **每一条**声明过它的用例（本单的 DA-022 + 存量 PR-004）都被报成 dangling。修在解析器（新增「常量引用」解析腿，并把 `enum` **键名**排除出取值集），并落 L0 判据 `tests/unit_ci_workflows/test_case_coverage_action_enum_source.py`（5 条，含红证注入）；**工具源码一字未改**（`git diff HEAD -- backend/ai-agent-service/app/tools/inventory_manage.py` 为空）。 ⑧ **全量 `./mvnw test` 的另一处确定性红（CI `admin-api unit tests` 的真实红点）**：`MaterialShortageService` 直接构造注入 `JdbcTemplate`，而 `SecurityConfigTest`（全仓唯一的全上下文 `@SpringBootTest`，显式 exclude DataSource/MyBatis/Redis 自动配置）里**没有** `JdbcTemplate` bean ⇒ 上下文起不来 ⇒ 该类 55 条全 error（首轮全量实测 `Tests run: 4216, Failures: 1, Errors: 55`，根因 = `No qualifying bean of type JdbcTemplate`）。修法 = 改走 `ObjectProvider<JdbcTemplate>` 延迟获取（既有先例 = `service/ClientRequestIdService.java`，其注释已写明这个坑），拿不到 DB ⇒ fail-closed 503（读视图**不得**把「没查」冒充「没问题」）。并把这个「同族坑第 5 次」固化进既有护栏 `tests/unit_ci_workflows/test_security_config_mapper_mocks.py`（新增「不得直接声明 JdbcTemplate 字段」一条 + 非空自证；注入式红证：把字段改回直接注入 ⇒ 该判据红并具名报出文件）。 ⑨ **同一次全量跑出的第 2 处确定性红**：`BusinessClockTestSourceGuardTest`（`src/test` 侧的**族级**挂钟普查，台账只许缩短）报 `MaterialShortageServiceTest.java` 有 4 处「新命中」——而它们全是**本测试自己的判据字面量**（needle 串 `LocalDate.now(` / `LocalDateTime.now(` / `Clock.system` ×2，含 `@DisplayName` 文本）。根因不是「读了挂钟」，而是**平行实现**：该用例在单文件上重写了一份 「src/main 不得读挂钟」的扫描，而既有全仓守卫 `BusinessClockSourceGuardTest#onlyTheClockComponentReadsBusinessTimeFromMain`（扫描面 = 整个 `src/main/java`）**严格更强**。⇒ 删掉那份重复扫描（不往台账加条目、不扩 `SELF_EXCLUDED`，守卫强度不变，覆盖由更强的全仓守卫承担）。 ⑩ **`ci workflow helper unit tests（后半）` 的红也在本包**（不是存量债、不是已自愈）：`tests/unit_ci_workflows/test_assertion_specs_wellformed.py::TestOutputKeysAreProducible#test_snapshot_is_fresh` 判「工具产出键快照」过期 —— 本包给 `inventory_manage` 加了第三个 action，其返回 `dict(view)`（**动态形状**）⇒ 源码推导 = `dynamic=true / actions=null` + `shape_notes=["data=dict(view)"]`，而快照还是加 action 之前那份（`source_sha256` 也对不上）。按判据自己给的修法刷新并提交：`python3 scripts/output_keys_snapshot.py --refresh`（现取 51 个工具 / 223 个产出键）。本机复现读数：`MIGAO_CI_HELPER_SHARD=2/2 pytest tests/unit_ci_workflows` = **1 failed / 3406 passed** ⇒ 刷新后同口径全绿。 ｜ tags: query, tool, cross-domain, material-shortage, disclosure
 
 ## 防御域（24 case）
 
@@ -10257,8 +10276,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：711（活跃 134，跳过 577）
-- tier 分布：smoke 12 / normal 657 / adversarial 32
+- 用例总数：712（活跃 134，跳过 578）
+- tier 分布：smoke 12 / normal 658 / adversarial 32
 - 售后域：15
 - Agent 核心域：9
 - API 层域：21
@@ -10268,7 +10287,7 @@
 - 对话边界域：44
 - 跨域：3
 - 客户域：12
-- 数据域：22
+- 数据域：23
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
@@ -10309,6 +10328,7 @@
 - DA-008: 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）
 - DA-009: 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）
 - DA-010: 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）
+- DA-022: 缺料风险视图：material_shortage（商品级需求 vs SKU 权威库存）的缺口分层与「未知≠0」披露（issue #6280）
 - KN-001: 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 小布知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）
