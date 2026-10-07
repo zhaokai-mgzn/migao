@@ -48,6 +48,7 @@ entries:
   # ⇒ 用例待补（补完即删本条）。
   - tool: scheduled_task_manage
     kind: uncovered
+    persona: mibao
     issue: "#6486"
     reason: "包 2 新增工具：声明面与本地 fail-closed 已由 AG-011 钉住，LLM 行为面用例待补（#4262 不自动派发评测）"
     added: "2026-10-07"

@@ -248,6 +248,25 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
     # 同时把「无规则」分支改为 fail-closed（见 `execute()` 里的「该操作无校验规则」分支）。
     # ⚠️ required 一律按**工具实现的真实必填**声明（不是照抄契约 DTO）：声明比实现更严
     # = 合法调用被闸门拦（#3566 的 `settings_manage.update_settings` 就是这么坏掉的）。
+    # issue #6486 包 2：定时提醒（用户「预约」）的 A 档可逆写。
+    # `required` 一律按**工具实现的真实必填**声明（不是照抄契约 DTO）—— 声明比实现更严
+    # = 合法调用被闸门拦（#3566 的 `settings_manage.update_settings` 就是这么坏掉的）。
+    # `scheduled_task_manage.py` 的 `_create` 本地就拦这五件套、`_cancel` 拦 `task_id`
+    # ⇒ 这里如实对齐（零业务参数的 action 才写 `{"required": []}`，本工具没有这种）。
+    "scheduled_task_manage": {
+        "create": {
+            "required": ["fire_at", "task_type", "criterion", "action_label", "action_url"],
+            "fire_at": {"type": str, "min_len": 1, "label": "触发时刻"},
+            "task_type": {"type": str, "min_len": 1, "label": "任务类型"},
+            "criterion": {"type": str, "min_len": 1, "label": "为什么提醒"},
+            "action_label": {"type": str, "min_len": 1, "label": "处置入口文案"},
+            "action_url": {"type": str, "min_len": 1, "label": "处置入口地址"},
+        },
+        "cancel": {
+            "required": ["task_id"],
+            "task_id": {"type": str, "min_len": 1, "label": "待办 ID"},
+        },
+    },
     "notification_manage": {
         # issue #4047：`read_all`（全部标为已读，admin-api `PUT /read-all`）是**已声明可写的
         # action**（`notification_manage.py` 的 VALID_ACTIONS 含它；`read_only_actions` 只声明了
