@@ -39,7 +39,7 @@ r"""C′ —— **服务器侧构建**（issue #5814）的实例判据 + 类级�
 | 5 | 本地镜像 ref 由 **compose 自己求值**（唯一真相源） | 在脚本里另抄一份 ref 形态 ⇒ 改 compose 时静默漂移 ⇒ 红 |
 | 6 | 拉取段对**本地构建过**的服务**跳过 pull** | 不跳 ⇒ 去 ACR 找一个从未推送的 tag、白等 180s ⇒ 红 |
 | 7 | 构建有**显式上界** + `rc=124` 点名 | 无上界 ⇒ 挂住只能等 job 超时（`cancelled`）⇒ 红 |
-| 8 | 构建前**磁盘前置检查**；回收**非破坏性**（`until=168h`，绝不 `-af`） | 用 `-af` ⇒ 稳态秒级被打回冷构建 29.7min ⇒ 红 |
+| 8 | 构建前**磁盘前置检查**；回收**非破坏性**（窗口由水位选，见 `test_swas_deploy_disk_recovery.py`） | 构建路径里出现 `-af` / 回收窗口消失 ⇒ 稳态秒级被打回冷构建 29.7min ⇒ 红 |
 | 9 | CI 侧渲染**不漏占位符**（`__BUILD_SERVICE__` 等必须被替换） | 漏 ⇒ 远端拿到字面量 ⇒ 红 |
 
 ## 判定方式是确定的（零网络、零时钟、零 `origin/main`）
@@ -238,6 +238,39 @@ def test_pull_loop_skips_the_locally_built_service():
     assert 0 < skip < pull, f"在本段内：跳过逻辑（{skip}）必须在 pull（{pull}）之前"
 
 
+def _build_slice_without_cache_helper(text: str) -> str:
+    """构建路径那一段（`BUILD_SERVICE` 守卫 → `1.9` 段），**扣掉** `builder_cache_recover()` 函数体。
+
+    ⚠️ 两个坑（都实测踩过）：
+    ① 段尾锚点只能用 `echo "== 1.9`：`1.5` / `1.6` 那些段标题**本身是注释**（`_code` 会吃掉）；
+    ② 必须扣掉 `builder_cache_recover()` 的函数体：`-af`（恢复出口第 2 档）就定义在构建段里、
+       且被构建段调用（余量不足时）⇒ 不扣掉，「构建路径不许出现 `-af`」会恒红。
+    """
+    code = _code(text)
+    # 标记用 `docker build`（不是带 `timeout …` 前缀的整句）：判据 7 的注入会摘掉 `timeout` 包裹，
+    # 用整句当锚点会让本函数在那个注入下抛锚点异常（判据以「判据已过期」而非「行为变了」收场）。
+    build = code.find("docker build")
+    assert build > 0, "找不到构建调用（判据已过期）"
+    i = code.rfind('if [ -n "$BUILD_SERVICE" ]; then', 0, build)
+    assert i > 0, "找不到构建段守卫（判据已过期）"
+    end = code.find('echo "== 1.9', build)
+    assert end > build, "找不到构建段结尾（判据已过期）"
+    seg = code[i:end]
+    k = seg.find("builder_cache_recover() {")
+    if k >= 0:
+        depth, x = 0, seg.find("{", k)
+        while x < len(seg):
+            if seg[x] == "{":
+                depth += 1
+            elif seg[x] == "}":
+                depth -= 1
+                if depth == 0:
+                    seg = seg[:k] + seg[x + 1:]
+                    break
+            x += 1
+    return seg
+
+
 # ── 判据 7：构建有显式上界 + rc=124 点名 ─────────────────────────────────────
 def test_server_build_has_explicit_bound_and_names_timeout():
     text = deploy_text()
@@ -255,15 +288,23 @@ def test_server_build_has_explicit_bound_and_names_timeout():
 def test_disk_precheck_and_non_destructive_reclaim():
     text = deploy_text()
     assert "BUILD_MIN_FREE_MB" in text, "构建前必须有磁盘余量门槛（实测每次净增约 1GB、总盘 40GB）"
-    preck = _lineno(text, r'_df_mb=\$\(df -Pk / ')
+    preck = _lineno(text, r'_df_mb=\$\(disk_free_mb\b')
     build = _lineno(text, r'timeout "\$BUILD_TIMEOUT_SECS" docker build ')
     assert 0 < preck < build, f"磁盘前置检查（{preck}）必须在构建（{build}）之前（fail-closed）"
-    assert re.search(r'docker builder prune -f --filter until=168h', text), (
-        "构建后的缓存回收必须是 `--filter until=168h`（保住 7 天内的热层 ⇒ 稳态秒级）"
+    # 🔴 issue #6508 起「回收窗口」**由磁盘水位选**（`pick_cache_window`），不再是写死的 168h ——
+    #    真机实测：写死 168h 时缓存条目全是 72h 内建的 ⇒ 匹配 **0 条**、`Total: 0B`（空操作）。
+    #    本判据只钉住「按窗口回收的形态仍在」；窗口阶梯本身由 test_swas_deploy_disk_recovery.py 判。
+    assert re.search(r'builder prune -f --filter "?until=', text), (
+        "构建后的缓存回收必须是**带窗口过滤**的 prune（保住热层 ⇒ 稳态秒级）"
     )
-    assert "docker builder prune -af" not in _code(text), (
-        "**不得**出现 `docker builder prune -af` —— 那会把稳态 2s 打回冷构建 29.7min，"
-        "并破坏「回滚点/热层只许保留」的取舍"
+    # 构建路径（`BUILD_SERVICE` 守卫 → `# 1.5` 段）里**不许**出现 `-af` / 不带窗口的 prune：
+    # 那会把稳态 2s 打回冷构建 29.7min（`-af` 的合法落点只有恢复出口，见 issue #6508 的判据 7）。
+    blk = _build_slice_without_cache_helper(text)
+    # ⚠️ 只认**调用行**（行首就是 `docker builder prune -af`）：出口说明里逐字写了那条命令
+    #    （教学材料），按子串判会假红（实测）。
+    assert not re.search(r'^\s*docker builder prune -af\b', blk, re.M), (
+        "构建路径（扣掉恢复出口的函数体之后）里出现了 `docker builder prune -af` —— "
+        "那会把稳态 2s 打回冷构建 29.7min"
     )
     assert "/opt/migao" in _code(text), "磁盘回收出口必须点名 /opt/migao（2026-08-13 遗留的 2.2GB 旧源码克隆）"
 
@@ -346,7 +387,9 @@ def _problems(deploy: str, ci: str, df: str, legs: dict | None = None) -> list[s
     if not re.search(r'if timeout "\$BUILD_TIMEOUT_SECS" docker build ', d) or \
        not re.search(r'\[ "\$_rc" = "124" \]', d):
         out.append("c7")
-    if "docker builder prune -af" in d or "until=168h" not in d:
+    if "until=" not in d:
+        out.append("c8")
+    if re.search(r'^\s*docker builder prune -af\b', _build_slice_without_cache_helper(d), re.M):
         out.append("c8")
     for ph in ("__BUILD_SERVICE__", "__APT_MIRROR__", "__PIP_INDEX_URL__", "__BUILD_TIMEOUT_SECS__"):
         if not re.search(rf'out=\$\{{out//{re.escape(ph)}/\$\{{', c):
@@ -379,7 +422,8 @@ def test_injected_proofs():
         "c5": (deploy.replace("docker compose config --format json", "echo"), ci, df, legs),
         "c6": (deploy.replace('[ -n "$LOCAL_IMAGE_REF" ] && [ "$svc" = "$_svc" ]', "[ -n __never__ ]"), ci, df, legs),
         "c7": (deploy.replace('if timeout "$BUILD_TIMEOUT_SECS" docker build ', "if docker build "), ci, df, legs),
-        "c8": (deploy.replace("docker builder prune -f --filter until=168h", "docker builder prune -af"), ci, df, legs),
+        "c8": (deploy.replace('  _build_args=(--build-arg "APT_MIRROR=$APT_MIRROR")',
+                              '  docker builder prune -af || true\n  _build_args=(--build-arg "APT_MIRROR=$APT_MIRROR")'), ci, df, legs),
         "c9": (deploy, ci.replace("${out//__BUILD_SERVICE__/${SERVICE_KEY:-}}", "${out}"), df, legs),
     }
     for label, (d, c, f, lg) in cases.items():
