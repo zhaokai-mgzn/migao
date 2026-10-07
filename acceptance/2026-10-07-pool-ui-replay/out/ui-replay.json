@@ -1,0 +1,229 @@
+{
+  "at": "2026-10-07T12:09:44.887Z",
+  "stamp": "984887",
+  "prefix": "SD07UI3",
+  "web": "https://merchant.migaozn.com",
+  "steps": [
+    {
+      "k": "probe",
+      "v": {
+        "productId": "4075302bd5e1510e94f06d84d6bca360",
+        "skuId": "2107805577543995393",
+        "skuCode": "SD07UI3-984887",
+        "inboundId": "3a228542bb6695df0f352376df3a0040",
+        "batchNo": "PC-20261007-0003",
+        "batchQty": "4000.0"
+      }
+    },
+    {
+      "k": "orders",
+      "v": [
+        {
+          "orderId": "df08304a55e3c0304efaa969f8408bae",
+          "orderNo": "20261007441580013",
+          "status": "confirmed",
+          "itemId": "bc3ec01254a923b00b9b0838f250bcac"
+        },
+        {
+          "orderId": "a6633f8c92ce7f4f6d17cf8f6e7d99fd",
+          "orderNo": "20261007320250014",
+          "status": "confirmed",
+          "itemId": "946e7512828e74603836cd8dd90ce167"
+        },
+        {
+          "orderId": "cf78df1ab523d9e6bfa21f295b83ead4",
+          "orderNo": "20261007455190015",
+          "status": "confirmed",
+          "itemId": "ba9f81d9d10fe248f0cc0bf074589bc2"
+        },
+        {
+          "orderId": "2fb5bc593a849263c825db0145052856",
+          "orderNo": "20261007444970016",
+          "status": "confirmed",
+          "itemId": "dd110a2c6bbb804c595208fd0529789e"
+        }
+      ]
+    },
+    {
+      "k": "ui_preview_body",
+      "v": {
+        "orderIds": [
+          "df08304a55e3c0304efaa969f8408bae",
+          "a6633f8c92ce7f4f6d17cf8f6e7d99fd",
+          "cf78df1ab523d9e6bfa21f295b83ead4",
+          "2fb5bc593a849263c825db0145052856"
+        ],
+        "batches": [
+          {
+            "orderId": "df08304a55e3c0304efaa969f8408bae",
+            "itemId": "bc3ec01254a923b00b9b0838f250bcac"
+          },
+          {
+            "orderId": "a6633f8c92ce7f4f6d17cf8f6e7d99fd",
+            "itemId": "946e7512828e74603836cd8dd90ce167"
+          },
+          {
+            "orderId": "cf78df1ab523d9e6bfa21f295b83ead4",
+            "itemId": "ba9f81d9d10fe248f0cc0bf074589bc2"
+          },
+          {
+            "orderId": "2fb5bc593a849263c825db0145052856",
+            "itemId": "dd110a2c6bbb804c595208fd0529789e"
+          }
+        ],
+        "assignmentRule": "fifo",
+        "pooled": true
+      }
+    },
+    {
+      "k": "preview_panel_text",
+      "v": "成批预览（4 单 · 指派规则 fifo） 逐单公式米数（对照基线） 5.60 米 合并后预计领料米数 2.80 米 预计节省 2.80 米 对照·逐单派应领 5.60 米 合并新增收益 2.80 米"
+    },
+    {
+      "k": "ui_dispatch_body",
+      "v": {
+        "orderIds": [
+          "df08304a55e3c0304efaa969f8408bae",
+          "a6633f8c92ce7f4f6d17cf8f6e7d99fd",
+          "cf78df1ab523d9e6bfa21f295b83ead4",
+          "2fb5bc593a849263c825db0145052856"
+        ],
+        "batches": [
+          {
+            "orderId": "df08304a55e3c0304efaa969f8408bae",
+            "itemId": "bc3ec01254a923b00b9b0838f250bcac"
+          },
+          {
+            "orderId": "a6633f8c92ce7f4f6d17cf8f6e7d99fd",
+            "itemId": "946e7512828e74603836cd8dd90ce167"
+          },
+          {
+            "orderId": "cf78df1ab523d9e6bfa21f295b83ead4",
+            "itemId": "ba9f81d9d10fe248f0cc0bf074589bc2"
+          },
+          {
+            "orderId": "2fb5bc593a849263c825db0145052856",
+            "itemId": "dd110a2c6bbb804c595208fd0529789e"
+          }
+        ],
+        "assignmentRule": "fifo",
+        "pooled": true
+      }
+    },
+    {
+      "k": "consumptions",
+      "v": [
+        {
+          "id": 1279,
+          "order_item_id": "bc3ec01254a923b00b9b0838f250bcac",
+          "batch_no": "PC-20261007-0003",
+          "delta": "-0.7",
+          "formula": "1.4",
+          "planned": "0.7",
+          "saved": "0.7",
+          "unit_cost": "40.0000"
+        },
+        {
+          "id": 1280,
+          "order_item_id": "946e7512828e74603836cd8dd90ce167",
+          "batch_no": "PC-20261007-0003",
+          "delta": "-0.7",
+          "formula": "1.4",
+          "planned": "0.7",
+          "saved": "0.7",
+          "unit_cost": "40.0000"
+        },
+        {
+          "id": 1281,
+          "order_item_id": "ba9f81d9d10fe248f0cc0bf074589bc2",
+          "batch_no": "PC-20261007-0003",
+          "delta": "-0.7",
+          "formula": "1.4",
+          "planned": "0.7",
+          "saved": "0.7",
+          "unit_cost": "40.0000"
+        },
+        {
+          "id": 1282,
+          "order_item_id": "dd110a2c6bbb804c595208fd0529789e",
+          "batch_no": "PC-20261007-0003",
+          "delta": "-0.7",
+          "formula": "1.4",
+          "planned": "0.7",
+          "saved": "0.7",
+          "unit_cost": "40.0000"
+        }
+      ]
+    },
+    {
+      "k": "preview_response_savedMeters",
+      "v": 2.8
+    },
+    {
+      "k": "contrast",
+      "v": {
+        "old_body_savedMeters": 0,
+        "new_body_savedMeters": 1.4
+      }
+    },
+    {
+      "k": "cleanup",
+      "v": {
+        "cleaned": "BEGIN\nDELETE 0\nDELETE 0\nDELETE 0\nDELETE 4\nDELETE 4\nDELETE 48\nDELETE 4\nDELETE 0\nDELETE 4\nDELETE 0\nDELETE 6\nDELETE 6\nDELETE 6\nDELETE 1\nDELETE 1\nDELETE 1\nDELETE 1\nDELETE 1\nDELETE 1\nDELETE 1\nCOMMIT\n",
+        "left": 6
+      }
+    }
+  ],
+  "asserts": [
+    {
+      "name": "① 界面 /preview 请求体逐行带指派",
+      "ok": true,
+      "detail": "{\"orderIds\":[\"df08304a55e3c0304efaa969f8408bae\",\"a6633f8c92ce7f4f6d17cf8f6e7d99fd\",\"cf78df1ab523d9e6bfa21f295b83ead4\",\"2fb5bc593a849263c825db0145052856\"],\"batches\":[{\"orderId\":\"df08304a55e3c0304efaa969f8408bae\",\"itemId\":\"bc3ec01254a923b00b9b0838f250bcac\"},{\"orderId\":\"a6633f8c92ce7f4f6d17cf8f6e7d99fd\",\"itemId\":\"946e7512828e74603836cd8dd90ce167\"},{\"orderId\":\"cf78df1ab523d9e6bfa21f295b83ead4\",\"itemId\":\"ba9f81d9d10fe248f0cc0bf074589bc2\"},{\"orderId\":\"2fb5bc593a849263c825db0145052856\",\"itemId\":\"dd110a2c6bbb804c595208fd0529789e\"}],\"assignmentRule\":\"fifo\",\"pooled\":true}"
+    },
+    {
+      "name": "①b 界面 /preview 不再是空指派（#6408 的缺陷形态）",
+      "ok": true,
+      "detail": "batches=4"
+    },
+    {
+      "name": "② 界面 /dispatch 请求体逐行带指派 + fifo + pooled",
+      "ok": true,
+      "detail": "{\"orderIds\":[\"df08304a55e3c0304efaa969f8408bae\",\"a6633f8c92ce7f4f6d17cf8f6e7d99fd\",\"cf78df1ab523d9e6bfa21f295b83ead4\",\"2fb5bc593a849263c825db0145052856\"],\"batches\":[{\"orderId\":\"df08304a55e3c0304efaa969f8408bae\",\"itemId\":\"bc3ec01254a923b00b9b0838f250bcac\"},{\"orderId\":\"a6633f8c92ce7f4f6d17cf8f6e7d99fd\",\"itemId\":\"946e7512828e74603836cd8dd90ce167\"},{\"orderId\":\"cf78df1ab523d9e6bfa21f295b83ead4\",\"itemId\":\"ba9f81d9d10fe248f0cc0bf074589bc2\"},{\"orderId\":\"2fb5bc593a849263c825db0145052856\",\"itemId\":\"dd110a2c6bbb804c595208fd0529789e\"}],\"assignmentRule\":\"fifo\",\"pooled\":true}"
+    },
+    {
+      "name": "③ 真库产生扣料行（>0）",
+      "ok": true,
+      "detail": "rows=4"
+    },
+    {
+      "name": "③b Σ(saved_meters) > 0（真的省了料）",
+      "ok": true,
+      "detail": "2.8 米"
+    },
+    {
+      "name": "④ 服务端 preview.savedMeters == 台账 Σ(saved_meters)",
+      "ok": true,
+      "detail": "preview=2.8 / db=2.8"
+    },
+    {
+      "name": "⑥ 屏幕上「预计节省」显示值 == 台账 Σ(saved_meters)",
+      "ok": true,
+      "detail": "屏上=2.8 / db=2.8"
+    },
+    {
+      "name": "⑤ 对照·旧体（batches:[]）⇒ savedMeters == 0",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "⑤b 对照·新体（逐行指派+fifo）⇒ savedMeters > 0",
+      "ok": true,
+      "detail": "1.4"
+    }
+  ],
+  "cleanup": {
+    "left": 6,
+    "cleaned": "BEGIN\nDELETE 0\nDELETE 0\nDELETE 0\nDELETE 4\nDELETE 4\nDELETE 48\nDELETE 4\nDELETE 0\nDELETE 4\nDELETE 0\nDELETE 6\nDELETE 6\nDELETE 6\nDELETE 1\nDELETE 1\nDELETE 1\nDELETE 1\nDELETE 1\nDELETE 1\nDELETE 1\nCOMMIT\n"
+  },
+  "ok": true
+}
