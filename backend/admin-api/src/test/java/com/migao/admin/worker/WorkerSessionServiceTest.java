@@ -243,10 +243,10 @@ class WorkerSessionServiceTest {
     // ============================================================ ⑥ 长会话全局默认值（母单 #5161）
 
     @Test
-    @DisplayName("🔴 闲置超时全局默认值 = 一周（10080 分钟，用户 2026-09-29 逐字裁定）")
-    void idleTimeoutDefaultsToOneWeek() {
-        assertThat(WorkerSessionService.DEFAULT_IDLE_MINUTES).isEqualTo(10080);
-        assertThat(service.effectiveIdleMinutes()).isEqualTo(10080);
+    @DisplayName("🔴 闲置超时全局默认值 = 30 天（43200 分钟，用户 2026-10-07 逐字裁定「延长到 1 个月」）")
+    void idleTimeoutDefaultsToThirtyDays() {
+        assertThat(WorkerSessionService.DEFAULT_IDLE_MINUTES).isEqualTo(43200);
+        assertThat(service.effectiveIdleMinutes()).isEqualTo(43200);
     }
 
     @Test
@@ -255,8 +255,10 @@ class WorkerSessionServiceTest {
         assertThat(WorkerSessionService.MIN_IDLE_MINUTES).isEqualTo(5);
         assertThat(WorkerSessionService.MAX_IDLE_MINUTES).isEqualTo(WorkerSessionService.DEFAULT_IDLE_MINUTES);
 
-        org.springframework.test.util.ReflectionTestUtils.setField(service, "idleMinutes", 10079);
-        assertThat(service.effectiveIdleMinutes()).as("区间内（含默认值本身）不回落").isEqualTo(10079);
+        // 区间内（含默认值本身）不回落：用「默认值 − 1」而不是字面量 ⇒ 改默认值时本判据不会变成第二处真值
+        int insideRange = WorkerSessionService.DEFAULT_IDLE_MINUTES - 1;
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "idleMinutes", insideRange);
+        assertThat(service.effectiveIdleMinutes()).as("区间内（含默认值本身）不回落").isEqualTo(insideRange);
 
         org.springframework.test.util.ReflectionTestUtils.setField(service, "idleMinutes", 5);
         assertThat(service.effectiveIdleMinutes()).as("下界含").isEqualTo(5);
@@ -265,15 +267,18 @@ class WorkerSessionServiceTest {
     @Test
     @DisplayName("🔴 越界/非法值 ⇒ 回落默认并打警告（不静默接受非法配置）")
     void outOfRangeFallsBackToTheGlobalDefault() {
-        for (int bad : new int[] {0, -1, 4, 10081, 100000}) {
+        // 上界越界值取「默认值 + 1」（不写字面量）：默认值每一次裁定变更，本判据自动跟到新上界
+        for (int bad : new int[] {0, -1, 4, WorkerSessionService.DEFAULT_IDLE_MINUTES + 1, 100000}) {
             org.springframework.test.util.ReflectionTestUtils.setField(service, "idleMinutes", bad);
-            assertThat(service.effectiveIdleMinutes()).as("idleMinutes=%s", bad).isEqualTo(10080);
+            assertThat(service.effectiveIdleMinutes())
+                    .as("idleMinutes=%s", bad)
+                    .isEqualTo(WorkerSessionService.DEFAULT_IDLE_MINUTES);
         }
     }
 
     @Test
-    @DisplayName("🔴 登录落库的闲置过期 ≈ 一周；手机端与一体机同长（不分设备档）")
-    void loginPersistsOneWeekExpiryForEveryDevice() {
+    @DisplayName("🔴 登录落库的闲置过期 ≈ 30 天；手机端与一体机同长（不分设备档）")
+    void loginPersistsThirtyDayExpiryForEveryDevice() {
         when(userMapper.selectOne(any(Wrapper.class))).thenReturn(worker(WORKER_NO, PIN, "active"));
 
         for (String label : new String[] {"H5", "PAD-车间-01", "一体机-车间东"}) {
@@ -283,13 +288,13 @@ class WorkerSessionServiceTest {
             ArgumentCaptor<WorkerSession> captor = ArgumentCaptor.forClass(WorkerSession.class);
             verify(workerSessionMapper).insert(captor.capture());
             assertThat(captor.getValue().getIdleExpiresAt())
-                    .as("设备标签 %s 也按一周（10080 分钟）过期", label)
-                    .isAfter(OffsetDateTime.now().plusDays(6));
+                    .as("设备标签 %s 也按 30 天（43200 分钟）过期", label)
+                    .isAfter(OffsetDateTime.now().plusDays(29));
         }
     }
 
     @Test
-    @DisplayName("会话活跃期顺延用的是同一个全局默认值（一周）")
+    @DisplayName("会话活跃期顺延用的是同一个全局默认值（30 天）")
     void touchExtendsByTheGlobalDefault() {
         when(workerSessionMapper.selectActiveById("sess-1")).thenReturn(activeSession("sess-1"));
 
@@ -297,7 +302,7 @@ class WorkerSessionServiceTest {
 
         ArgumentCaptor<OffsetDateTime> expiry = ArgumentCaptor.forClass(OffsetDateTime.class);
         verify(workerSessionMapper).touch(eq("sess-1"), any(), expiry.capture());
-        assertThat(expiry.getValue()).isAfter(OffsetDateTime.now().plusDays(6));
+        assertThat(expiry.getValue()).isAfter(OffsetDateTime.now().plusDays(29));
     }
 
     @Test

@@ -6113,18 +6113,18 @@
 真值: processing-manage.worker-cutting-height-terminal
 溯源: 2026-09-29 新增（母单 #5161，P0-D / PR #5780）：用户裁定「裁高机的报工要支持扫码枪扫水洗唛直接展示订单详情并允许操作裁高计算器」+「报工 + 自动给裁高值（一条链）」；**下发仍不做**（不写机器）。 ｜ tags: processing, worker, cutting_height, terminal, backend-contract
 
-### PG-065. 工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为） 🔵
+### PG-065. 工人端页面开关（租户级）+ 工人会话超时 30 天（权限红线不动；单测覆盖，非 LLM 行为） 🔵
 ```
 你: 工人手机上该看到哪几页？一体机也一样吗？
 期望: direct_reply
 数据: GET/PUT /api/admin/worker-page-config：读挂 production:view、写挂 processing:manage；PUT 全量替换，缺键/未知键/非法页名 ⇒ 422 逐条理由（不静默回退默认）
 数据: 缺行 ⇒ 读面回默认四页全开（report / order / cut_calc / shipment）+ source='default'
 数据: GET /api/worker/me 只回本工人身份与本租户页面集；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403
-数据: worker.session.idle-minutes 全局默认 = 10080（一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话
+数据: worker.session.idle-minutes 全局默认 = 43200（30 天，2026-10-07 用户裁定「延长到 1 个月」；上一版 10080 一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话
 跳过: [backend-contract] 本条只登记「页面开关 + 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。
 ```
 真值: processing-manage.worker-page-config
-溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
+溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。🔴 2026-10-07 追加（issue #6473）：用户逐字「把工人的登录 Session 过期时间设置久一点，可以延长到 1 个月」⇒ 全局默认改 **43200（30 天）**、区间 `5 ~ 43200`，bmini/worker-h5 两侧的降级兜底常量同步，bmini 界面改按量级说人话（去掉 `?? 15`）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
 
 ### PG-059. 裁高读面 - 明细 product_id 为空时 brand 如实回 null 而不是 500（不可变表 get(null) 抛 NPE；单测覆盖，非 LLM 行为） 🔵
 ```
