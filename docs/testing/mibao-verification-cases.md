@@ -1079,18 +1079,20 @@
 真值: inbound-label-flow.short-code-and-public-entry
 溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.2/§5.4/§7.1）：把「服务端 302 了、而参数没有任何人读」这条链路接通并钉住（落地页 code 参数 → 码空间分流 → 补打页）。 ｜ tags: bmini, inbound, deeplink, code-space, landing-page
 
-### BM-028. B 端「问米宝」= C 端现行形态 + 不混入 C 端 agent 内容（六格等权 · 无商品推荐卡 · 默认「米宝」） 🔵
+### BM-028. B 端「问米宝」入口＝B 端场景 + 服务端单一真值（六格等权 · 无 C 端顾客口吻 · 无商品推荐卡 · 默认「米宝」） 🔵
 ```
-你: 商家在手机浏览器打开 `https://app.migaozn.com/b/` 停在「问米宝」空态：看到六个等权快捷入口（算料报价 / 查订单 / 查库存 / 找产品 / 售后咨询 / 查物流）与商家语义的欢迎语；**看不到**任何商品推荐卡、价格符号，也看不到顾客端 agent 名「小布」
+你: 商家在手机浏览器打开 `https://app.migaozn.com/b/` 停在「问米宝」空态：六个等权快捷入口的内容与 PC 端智能助手**同一份**（今日经营 / 交付风险 / 库存告急 / 商品健康度 / 售后待办 / 客户回访），点一格就发出对应的 B 端问句（如「哪些订单快到交期还卡着工序？」）；**看不到**任何商品推荐卡、价格符号、顾客端 agent 名「小布」，也看不到 C 端顾客口吻的旧入口（算料报价 / 找产品 / 售后咨询 / 查物流）
 期望: direct_reply
 数据: 判据 1·🔴 空态**不得**出现 C 端商品推荐卡（修复前渲染 `.new-arrivals` 商品卡并提示「点一下问问小布」= 把顾客端入口与顾客端 agent 名搬进商家端）：结构性判据 = 空态无 `.new-arrivals` / `.new-arrivals__card` / `.new-arrivals__img`、无「新品推荐」文本、无 `¥`。红证：把该组件挂回 frontend/bmini-app/src/components/chat/MessageList.tsx 的空态 ⇒ frontend/bmini-app/tests/chat-empty-state.test.tsx 判红（实跑过）
-数据: 判据 2·🔴 **快捷入口 = 六格等权（2 列 × 3 行）**，与顾客端现行判据同形（cases/ui.yml 的 UI-014 / UI-044）：`.quick-actions__item` 恰好 6 个、每个都不带 `quick-actions__item--wide`、无 `.quick-actions__group` / `__row` 残留；六条 prompt 逐条可断言。红证：给任一项加回 `wide: true` ⇒ frontend/bmini-app/tests/quick-actions.test.tsx 判红（实跑过）
-数据: 判据 3·**agent 名用 B 端口径**：空态欢迎语不含「小布」、含「商家经营助手」；「思考中」默认文案 = 「米宝正在思考...」（frontend/bmini-app/src/components/chat/TypingIndicator.tsx）
-数据: 判据 4·**类级元守卫（让同类进不来）**：B 端全量 `frontend/bmini-app/src/**` 的**代码**不得引用顾客端商品推荐端点 `new-arrivals`；聊天面（components/chat 与 pages/chat）的代码不得出现顾客端 agent 名 —— 「再抄一次顾客端页面」当场变红。边界：只扫代码（块注释与整行 `//` 注释先剔除），注释与文档不在面内
-跳过: [backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/chat-empty-state.test.tsx + frontend/bmini-app/tests/quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+数据: 判据 2·🔴 **快捷入口 = 六格等权（2 列 × 3 行）**：`.quick-actions__item` 恰好 6 个、每个都不带 `quick-actions__item--wide`、无 `.quick-actions__group` / `__row` 残留；六条 prompt 逐格可断言（渲染出的内容 = 服务端下发的那份）。红证：给任一项加回 `wide: true` ⇒ frontend/bmini-app/tests/quick-actions.test.tsx 判红（实跑过）
+数据: 判据 3·🔴 **入口内容单一真值 = 服务端**（issue #6468：此前 H5 组件里硬编码六条 **C 端顾客口吻**的入口，而服务端那份从没被消费）：服务端 `GET /api/chat/quick-actions`（backend/ai-agent-service/app/api/chat.py 的 `QUICK_ACTIONS`）是唯一内容源，H5 只渲染传入的 `actions`；组件源码不得再自带清单 / prompt / emoji 字面量；`actions` 为空 ⇒ **不渲染**（不退回一份本地兜底清单 —— 那正是病灶形态）。红证：把硬编码六条写回 frontend/bmini-app/src/components/chat/QuickActions.tsx ⇒ frontend/bmini-app/tests/quick-actions.test.tsx 的「类级元守卫」判红
+数据: 判据 4·🔴 **每条入口必须能追溯到真实能力**（机械投影，「引导了却做不到，比不引导更伤」）：backend/ai-agent-service/tests/test_chat.py::TestQuickActions::test_every_entry_maps_to_a_real_mibao_capability 要求每条的 skill 在米宝绑定面内、且 tool 在该 skill 的 tool_names 里。红证：把任一条 skill 改成已解绑的 `settings` 或把 tool 改成顾客端专用的 `aftersale_query` ⇒ 具名判红（实跑过）
+数据: 判据 5·**agent 名用 B 端口径**：空态欢迎语不含「小布」、含「商家经营助手」；「思考中」默认文案 = 「米宝正在思考...」（frontend/bmini-app/src/components/chat/TypingIndicator.tsx）
+数据: 判据 6·**类级元守卫（让同类进不来）**：B 端全量 `frontend/bmini-app/src/**` 的**代码**不得引用顾客端商品推荐端点 `new-arrivals`；聊天面（components/chat 与 pages/chat）的代码不得出现顾客端 agent 名，也不得出现 C 端顾客口吻的快捷问句（「推荐一下热门窗帘产品」「帮我查一下物流」「我想咨询售后问题」「帮我算一下窗帘用料和价格」）—— 「再抄一次顾客端页面」当场变红。边界：只扫代码（块注释与整行 `//` 注释先剔除），注释与文档不在面内
+跳过: [backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/chat-empty-state.test.tsx + frontend/bmini-app/tests/quick-actions.test.tsx；pytest: backend/ai-agent-service/tests/test_chat.py::TestQuickActions），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-09-28 新增（issue #5747）：用户在 B 端 H5 看到顾客端 agent 入口（新品推荐卡「点一下问问小布」），且 B 端快捷入口仍是顾客端旧版（算料报价全宽 + 2×2 共 5 格）⇒ 与顾客端现行形态对齐，并落「顾客端内容不得混入商家端」的实例判据 + 类级元守卫；同批删除 NewArrivals 组件/样式与只为它存在的旁路服务。 ｜ tags: bmini, chat, quick-actions, empty-state, c-end-isolation
+溯源: 2026-09-28 新增（issue #5747）：用户在 B 端 H5 看到顾客端 agent 入口（新品推荐卡「点一下问问小布」），且 B 端快捷入口仍是顾客端旧版（算料报价全宽 + 2×2 共 5 格）⇒ 与顾客端现行形态对齐，并落「顾客端内容不得混入商家端」的实例判据 + 类级元守卫；同批删除 NewArrivals 组件/样式与只为它存在的旁路服务。2026-10-07 修订（issue #6468，用户：「快捷菜单直接抄袭的 C 端设计，应该和 B 端需求场景相结合」）：#5747 只对齐了**形态**，**内容**仍是抄 C 端的顾客问句（「推荐一下热门窗帘产品」「帮我查一下物流」…）⇒ 六格换成 B 端商家场景（今日经营 / 交付风险 / 库存告急 / 商品健康度 / 售后待办 / 客户回访），并消除双源：内容真值收到服务端 `QUICK_ACTIONS`（H5 与 admin-web 同一份），同批落「每条入口必须追溯到真实能力」的机械投影判据与「H5 不得再硬编码入口内容」的类级元守卫。 ｜ tags: bmini, chat, quick-actions, empty-state, c-end-isolation
 
 ### BM-029. 「我的」页：工人面三页入口齐备（含拍照入库 / 补打入库标签）+ 字号按设计尺度（≥24） 🔵
 ```

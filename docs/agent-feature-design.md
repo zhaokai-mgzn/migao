@@ -374,14 +374,14 @@ B 端最贵的是**培训成本**，这是唯一能把它降到 0 的形态。
 | **2 · 不知道怎么表述** | 知道自己要什么，但说不出来 | **对话层（本关注点起点）** |
 | **3 · 不知道自己该关心什么** | 不知道自己有个问题 | **族 1** 主动发现（#5322） |
 
-### 现状盘点（三处载体，都只做了半套）
+### 现状盘点（载体清单，都只做了半套）
 
 | 载体 | 现状 | 问题 |
 |---|---|---|
 | `frontend/admin-web/src/components/chat/WelcomePanel.tsx` | 5 条**静态**示例 | 不管页面 / 角色 / 历史，**永远同样几条** |
-| `backend/ai-agent-service/app/suggestions/follow_up.py` | 按 `intent_type × stage` 出预设建议 | **反应式** —— 已问一轮才建议；**首轮词不达意时毫无帮助** |
 | `backend/ai-agent-service/app/agents/agents/mibao.py` 问候语 | 「我可以帮您查数据、做分析：订单与物流…」 | **能力罗列** —— 读完还是不知道问什么 |
-| `backend/ai-agent-service/app/suggestions/preference_tracker.py` | 已记录 click / top intents | **数据在，但没用于引导** |
+| **快捷入口清单**（`backend/ai-agent-service/app/api/chat.py` 的 `QUICK_ACTIONS`；admin-web 与 B 端 H5 共用，issue #6468） | 2026-10-07 起 = **6 条 B 端场景问句**，每条 prompt 逐字取对应工具 `description` 的【触发】词；判据钉「可执行」（skill/tool 机械投影） | 仍是**静态**（不管页面 / 角色 / 历史）—— 当前**有意**先保「问得出来就答得出来」与单一真值；类型 1 的上下文 / 角色相关见下面 P2 |
+| ~~`backend/ai-agent-service/app/suggestions/follow_up.py`~~ · ~~`backend/ai-agent-service/app/suggestions/preference_tracker.py`~~ | **已退役**（issue #5951；本条盘点时点已不在仓内） | —— 原「反应式建议 / 偏好记录」两条载体已删；现行的反应式入口是 `backend/ai-agent-service/app/suggestions/vague_guess.py` |
 
 ### 关键机制：引导必须是「能力事实的机械投影」
 

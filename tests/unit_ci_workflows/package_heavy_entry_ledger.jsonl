@@ -16,3 +16,4 @@
 {"id":"1791288339.94437.5157","ts":"2026-10-06T12:05:39Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6439-production-label-direct-print","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791328507.7265.15678","ts":"2026-10-06T23:15:08Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/menu-order-redesign","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791331240.15756.3004","ts":"2026-10-07T00:00:41Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6463-positioning-copy","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791333203.89709.20189","ts":"2026-10-07T00:33:24Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6468-bmini-quick-actions-b-side","why":"子包 worktree 直跑全量（无批次标记）"}
