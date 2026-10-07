@@ -107,7 +107,11 @@ public class SecurityConfig {
         // 真实请求根本发不出去（前端只看到 CORS 报错，看不出是「少了一个头」）。
         // 工人端 H5（issue #4716）的登录态载体是 `X-Worker-Session-Id`（#4733 登记的本处缺口）：
         // **不加它 ⇒ 工人登录成功后所有请求被预检拦掉**（现象 = 「登录了但全 401」）。
-        // 只加这一个头；origin 白名单**一字不动**（放宽 origin 才是越权面）。
+        // 同一个坑 2026-10-07 又以 `X-Client-Type` 复现（issue #6479）：两个 H5 端 `utils/request.ts`
+        // **每个**请求都带它，白名单里没有 ⇒ 跨域形态下全部请求 `net::ERR_FAILED`（本地联调实测）。
+        // ⇒ 不再靠「记得加」：判据 = tests/unit_ci_workflows/test_cors_custom_headers_contract.py
+        //    （扫前端**实际发送**的自定义头 ⊆ 本清单，漏一个当场具名红）。
+        // 只加头；origin 白名单**一字不动**（放宽 origin 才是越权面）。
         config.setAllowedHeaders(List.of(
                 "Content-Type",
                 "Authorization",
@@ -116,7 +120,9 @@ public class SecurityConfig {
                 "X-Request-Timestamp",
                 "X-Request-Nonce",
                 "X-Request-Id",
-                "X-Worker-Session-Id"
+                "X-Worker-Session-Id",
+                "X-Client-Type",
+                "X-Client-Request-Id"
         ));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
