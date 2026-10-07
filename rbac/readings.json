@@ -294,24 +294,24 @@
       "每日简报": "dashboard:view",
       "客户服务": null,
       "在线接待": "agent:session",
-      "客户列表": "customer:view",
       "知识库": "knowledge:view",
       "售后工单": "after_sales:view",
+      "客户列表": "customer:view",
       "交易管理": null,
       "订单列表": "order:list",
       "财务对账": "finance:view",
       "生产管理": null,
-      "生产看板": "production:view",
-      "智能派单": "processing:view",
       "加工项管理": "production:view",
       "工艺配置": "production:view",
+      "生产看板": "production:view",
+      "智能派单": "processing:view",
       "计件工资": "production:view",
       "仓储与物料": null,
       "入库单": "inbound:view",
+      "库存明细": "product:list",
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
-      "库存明细": "product:list",
       "组织管理": null,
       "员工管理": "employee:list",
       "岗位权限": "system:view",
@@ -348,26 +348,26 @@
     "auth": {
       "经营看板": "dashboard:view",
       "每日简报": "dashboard:view",
-      "商品管理": "product:list",
       "在线接待": "agent:session",
-      "客户列表": "customer:view",
       "知识库": "knowledge:view",
       "售后工单": "after_sales:view",
+      "客户列表": "customer:view",
       "订单列表": "order:list",
       "财务对账": "finance:view",
-      "生产看板": "production:view",
-      "智能派单": "processing:view",
       "加工项管理": "production:view",
       "工艺配置": "production:view",
+      "生产看板": "production:view",
+      "智能派单": "processing:view",
       "计件工资": "production:view",
       "入库单": "inbound:view",
+      "库存明细": "product:list",
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
-      "库存明细": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
-      "企业基础信息": "system:manage"
+      "企业基础信息": "system:manage",
+      "商品管理": "product:list"
     },
     "user": {}
   },
@@ -403,12 +403,6 @@
       "code": "agent:session"
     },
     {
-      "key": "customers",
-      "name": "客户列表",
-      "path": "/customers",
-      "code": "customer:view"
-    },
-    {
       "key": "knowledge",
       "name": "知识库",
       "path": "/knowledge",
@@ -419,6 +413,12 @@
       "name": "售后工单",
       "path": "/after-sales",
       "code": "after_sales:view"
+    },
+    {
+      "key": "customers",
+      "name": "客户列表",
+      "path": "/customers",
+      "code": "customer:view"
     },
     {
       "key": "trade-center",
@@ -445,18 +445,6 @@
       "code": null
     },
     {
-      "key": "production-board",
-      "name": "生产看板",
-      "path": "/production",
-      "code": "production:view"
-    },
-    {
-      "key": "production-pool",
-      "name": "智能派单",
-      "path": "/production/pool",
-      "code": "processing:view"
-    },
-    {
       "key": "processing",
       "name": "加工项管理",
       "path": "/production/processing",
@@ -467,6 +455,18 @@
       "name": "工艺配置",
       "path": "/production/routings",
       "code": "production:view"
+    },
+    {
+      "key": "production-board",
+      "name": "生产看板",
+      "path": "/production",
+      "code": "production:view"
+    },
+    {
+      "key": "production-pool",
+      "name": "智能派单",
+      "path": "/production/pool",
+      "code": "processing:view"
     },
     {
       "key": "production-piecework",
@@ -487,6 +487,12 @@
       "code": "inbound:view"
     },
     {
+      "key": "stock-ledger",
+      "name": "库存明细",
+      "path": "/stock-ledger",
+      "code": "product:list"
+    },
+    {
       "key": "shipments",
       "name": "发货单",
       "path": "/shipments",
@@ -502,12 +508,6 @@
       "key": "production-saving-board",
       "name": "省料看板",
       "path": "/production/saving-board",
-      "code": "product:list"
-    },
-    {
-      "key": "stock-ledger",
-      "name": "库存明细",
-      "path": "/stock-ledger",
       "code": "product:list"
     },
     {

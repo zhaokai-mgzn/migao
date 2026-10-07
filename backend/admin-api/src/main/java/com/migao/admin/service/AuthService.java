@@ -1297,30 +1297,26 @@ public class AuthService {
 
         // 商品管理（2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：
         // **顶层一级项**（不是组）—— 与前端 `menu.ts` 的 `standaloneTopItems` 逐值同构。
-        // 🔴 位置（用户 2026-10-01 二次裁定「商品管理的菜单不应该作为第一行」）=
-        // **紧跟「工作台」组之后**，即下面 `if (!workspaceChildren.isEmpty())` 那个 block 之后 ——
-        // 与前端 `menu.ts` 的 `STANDALONE_TOP_AFTER_GROUP_KEY`、`MenuController` 的顶层节点顺序
-        // **三处同批表达同一位置**；三源同构守卫按**顶层布局序列**（含位置）比对，挪错一处即判红。
-        if (isAll || permissions.contains("product:list")) {
-            menus.add(menuItem("products", "商品管理", "/products"));
-        }
+        // 🔴 位置（用户 2026-10-06 三次裁定）：**排在所有分组之后**（原「紧跟工作台组之后」）——
+        // 组名即「分组」，渲染在组与组之间会让「大菜单并列」自相矛盾。
+        // 本 block 因此**移到了本方法末尾**（`org-center` 组之后、通知中心之前），与前端
+        // `menu.ts` 的 `STANDALONE_TOP_AFTER_GROUP_KEY`（现取最后一个组）、`MenuController` 的
+        // 顶层节点顺序**三处同批表达同一位置**；三源同构守卫按**顶层布局序列**（含位置）比对。
 
         // 客户服务分组（本轮 2026-09-29 用户裁定**新建**）：原「智能客服」组（在线接待 / 知识库）
         // + 客户侧两项（客户列表 / 售后工单）**合并为一个组**（「都属于服务客户的功能」）。
         // 🔴 组内顺序**必须**逐字镜像 `menu.ts` 的 `customer-service` 组（三源同构守卫按前缀子序列比对）：
-        //    在线接待 → 客户列表 → 知识库 → 售后工单。
+        //    在线接待 → 知识库 → 售后工单 → 客户列表（用户 2026-10-06 方案 A1：
+        //    接待与工具相邻、售后是接待的第二出口、档案沉底）。
         // 🔴 #5271 收口：旧实现多一个 `chat`「米宝 · 在线对话」节点（#3094 从侧边栏移除后服务端没跟）
         // —— 已删除，本组**不得**再长回该节点。
         List<UserInfoResponse.MenuItem> customerServiceChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("agent:session")) {
             customerServiceChildren.add(menuItem("human-sessions", "在线接待", "/agent-workspace/human-sessions"));
         }
-        // 客户列表（本轮由交易管理组移入本组）：码不变 `customer:view`。
-        if (isAll || permissions.contains("customer:view")) {
-            customerServiceChildren.add(menuItem("customers", "客户列表", "/customers"));
-        }
         // issue #5246（已合入 main）：知识库节点用**读**码 `knowledge:view`。
-        // 本轮用户裁定：知识库**留在本组内**（不单独成项、不沉底）。
+        // 用户裁定：知识库**留在本组内**（不单独成项、不沉底）；2026-10-06 上移到「在线接待」之后
+        //（客服边接待边查知识库）。
         if (isAll || permissions.contains("knowledge:view")) {
             customerServiceChildren.add(menuItem("knowledge", "知识库", "/knowledge"));
         }
@@ -1328,7 +1324,13 @@ public class AuthService {
         // 本轮由交易管理组移入本组。
         if (isAll || permissions.contains("after_sales:view")) {
             customerServiceChildren.add(menuItem("after-sales", "售后工单", "/after-sales"));
-        }        if (!customerServiceChildren.isEmpty()) {
+        }
+        // 客户列表（本轮由交易管理组移入本组）：码不变 `customer:view`。
+        // 2026-10-06 沉到本组末（档案面：查档 / 建档，不是每次接待都会走的一步）。
+        if (isAll || permissions.contains("customer:view")) {
+            customerServiceChildren.add(menuItem("customers", "客户列表", "/customers"));
+        }
+        if (!customerServiceChildren.isEmpty()) {
             menus.add(menuGroup("customer-service", "客户服务", customerServiceChildren));
         }
 
@@ -1337,7 +1339,8 @@ public class AuthService {
         // #4490/#4542：加工项管理与加工费管理**合并为单一入口**（该页两个 tab）；
         // 路径 = `/production/processing`（旧 `/processing`、`/production/processing-fees`
         // 由前端重定向兜底）—— 与 `menu.ts` 逐字一致。
-        // ⚠️ 本项**必须**加在「智能派单」之后、「工艺配置」之前（组内顺序三源逐值相等）。
+        // ⚠️ 用户 2026-10-06 方案 A1 起，本项是本组**第一项**（原为「智能派单」之后、「工艺配置」之前）
+        // —— 组内顺序 = 先备资料（加工项 / 工艺）→ 再生产与派单 → 最末结算（计件工资）。
 
         // 交易管理分组（本轮 2026-09-29 收窄为**「下单 → 收款」两项**：客户列表 / 售后工单
         // 已移入「客户服务」组 —— 用户原话「客户管理也不属于交易管理」）。
@@ -1360,24 +1363,13 @@ public class AuthService {
         // 四个节点**必须与 MenuController 的静态权限树、前端 config/menu.ts 三处同构**；漏一处
         // 就是「岗位权限页勾得动、侧边栏看不到」（#4203 点名的同族坑）。
         List<UserInfoResponse.MenuItem> productionChildren = new java.util.ArrayList<>();
-        // issue #5291：生产看板 / 工艺配置 / 计件工资按生产域**读**码门控；智能派单沿用 processing:manage。
-        // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）。
-        // 🔴 注释必须写在 `if` **之外**：`tests/unit_ci_workflows/test_agent_permission_parity.py` 的
-        // `_iter_menu_auth`（RBAC 单一真值源 P1~P5 的**唯一** auth 菜单解析器）用的形态是
-        // `permissions.contains("X")) {` **紧跟** `var.add(menuItem(...))` —— `{` 与 `.add` 之间
-        // 插入任何一行（注释也一样）⇒ 该项**静默从读数里消失**（实测：本行注释曾让「生产看板」
-        // 从 `rbac/readings.json` 的 `menus.auth` 里消失，而「清单 == 生成物」对账因此判红）。
-        if (isAll || permissions.contains("production:view")) {
-            productionChildren.add(menuItem("production-board", "生产看板", "/production"));
-        }
-        // 智能派单（issue #5177）：池化派单的决策屏。issue #5699 **P4** 起节点码 = 该页第一屏**读**码
-        // `processing:view`（`ProductionPoolController` 的两个读端点同码）—— 此前节点挂
-        // `processing:manage` 而端点挂读码 = 「节点码 ≠ 页面读码」；P4 按子菜单粒度收敛为同码。
-        if (isAll || permissions.contains("processing:view")) {
-            productionChildren.add(menuItem("production-pool", "智能派单", "/production/pool"));
-        }
-        // 加工项管理（本轮 2026-09-29 由「商品与加工项」组移入本组）。
-        // 🔴 位置 = 「智能派单」之后、「工艺配置」之前 —— 与 `menu.ts` 的组内顺序逐值一致。
+        // issue #5291：加工项管理 / 工艺配置 / 生产看板 / 计件工资按生产域**读**码门控；智能派单沿用
+        // processing:view。🔴 注释必须写在 `if` **之外**：`tests/unit_ci_workflows/` 的
+        // `test_agent_permission_parity.py` 的 `_iter_menu_auth`（RBAC 单一真值源 P1~P5 的**唯一**
+        // auth 菜单解析器）用的形态是 `permissions.contains("X")) {` **紧跟** `var.add(menuItem(...))`
+        // —— `{` 与 `.add` 之间插入任何一行（注释也一样）⇒ 该项**静默从读数里消失**（实测：一行注释
+        // 曾让「生产看板」从 `rbac/readings.json` 的 `menus.auth` 里消失，「清单 == 生成物」对账因此判红）。
+        // 加工项管理（2026-09-29 由「商品与加工项」组移入本组；2026-10-06 起为**本组第一项**）。
         // ⚠️ 写法必须仍是 `children.add(menuItem(...))` 直调（三源同构守卫按该形态解析）；
         // 不要为「先算再填」引入中间变量或三元表达式 —— 那样解析器看不见本项（实测已踩）。
         if (isAll || permissions.contains("production:view")) {
@@ -1388,9 +1380,19 @@ public class AuthService {
         // issue #5699 **P4**：该页第一屏 6 个读端点此前跨两个码（路线规则族 4 个是 `processing:manage`）
         // ⇒ 整页收敛到**页面码** `production:view`（两码持有岗位集合逐值相同 ⇒ 对所有角色的可见面与
         // 可做面零 delta；写面 POST/DELETE 路线规则、PUT 工序部位仍由 processing:manage 拦）。
-        // **节点顺序**必须仍是 menu.ts 的顺序（三源同构守卫）⇒ 本项落在与生产看板/计件工资同码的判定里。
+        // **节点顺序**必须仍是 menu.ts 的顺序（三源同构守卫）⇒ 本项 2026-10-06 起为组内第二项。
         if (isAll || permissions.contains("production:view")) {
             productionChildren.add(menuItem("production-process", "工艺配置", "/production/routings"));
+        }
+        // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）。
+        if (isAll || permissions.contains("production:view")) {
+            productionChildren.add(menuItem("production-board", "生产看板", "/production"));
+        }
+        // 智能派单（issue #5177）：池化派单的决策屏。issue #5699 **P4** 起节点码 = 该页第一屏**读**码
+        // `processing:view`（`ProductionPoolController` 的两个读端点同码）—— 此前节点挂
+        // `processing:manage` 而端点挂读码 = 「节点码 ≠ 页面读码」；P4 按子菜单粒度收敛为同码。
+        if (isAll || permissions.contains("processing:view")) {
+            productionChildren.add(menuItem("production-pool", "智能派单", "/production/pool"));
         }
         if (isAll || permissions.contains("production:view")) {
             productionChildren.add(menuItem("production-piecework", "计件工资", "/production/piecework"));
@@ -1399,14 +1401,24 @@ public class AuthService {
             menus.add(menuGroup("production-center", "生产管理", productionChildren));
         }
 
-        // 仓储与物料分组（#5271 **新组**）：面料进出与消耗 —— 入库 → 批次 → 余料 → 省料，
-        // 与「生产管理」组拆开（一个仓管找「入库单」时不该在「生产看板」旁边找）。
+        // 仓储与物料分组（#5271 **新组**）：用户 2026-10-06 组内重排为
+        // **单据（进 → 账 → 出）→ 台账 → 分析**，与「生产管理」组拆开（一个仓管找「入库单」时
+        // 不该在「生产看板」旁边找）。
         // 🔴 入库单（V111，issue #5034）权限码**独立**（inbound:view）且必须落在**自己的 if** 里：
         // 入库是仓储动作、不是加工动作 —— 塞进下面 processing:manage 的判定会让
         // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 同族坑）。
         List<UserInfoResponse.MenuItem> inventoryChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("inbound:view")) {
             inventoryChildren.add(menuItem("inbound-orders", "入库单", "/inbound-orders"));
+        }
+        // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面 —— 后端端点（issue #4055）与 agent
+        // 工具（issue #5247）早就有，页面是该控制器 javadoc 里逐字登记的显式延后项。
+        // 🔴 权限码与**方法级** `@RequirePermission("product:list")` 逐字同码：不新造码
+        //（新码今天没有任何岗位持有 ⇒ 节点对所有人不可见，#4203 同族坑）。
+        // 与 MenuController 的 `prLedger`、前端 `config/menu.ts` 的 `stock-ledger` **三处同构**。
+        // ⚠️ 用户 2026-10-06 方案 A1：本项**紧跟「入库单」**（进仓之后第一件要看的就是账）。
+        if (isAll || permissions.contains("product:list")) {
+            inventoryChildren.add(menuItem("stock-ledger", "库存明细", "/stock-ledger"));
         }
         // 发货单（issue #5939）：与按单读面（GET /api/admin/orders/{id}/shipments）**逐字同码**
         // `order:list` ⇒ 零授权 delta（能看订单的人就能看发货单）；新造码会让菜单对所有人不可见
@@ -1424,15 +1436,6 @@ public class AuthService {
         // ⇒ 按子菜单粒度把节点码收敛到该读码（此前节点挂 processing:manage = 节点码 ≠ 页面读码）。
         if (isAll || permissions.contains("product:list")) {
             inventoryChildren.add(menuItem("production-saving-board", "省料看板", "/production/saving-board"));
-        }
-        // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面 —— 后端端点（issue #4055）与 agent
-        // 工具（issue #5247）早就有，页面是该控制器 javadoc 里逐字登记的显式延后项。
-        // 🔴 权限码与**方法级** `@RequirePermission("product:list")` 逐字同码：不新造码
-        //（新码今天没有任何岗位持有 ⇒ 节点对所有人不可见，#4203 同族坑）。
-        // 与 MenuController 的 `prLedger`、前端 `config/menu.ts` 的 `stock-ledger` **三处同构**，
-        // 且本节点必须与「省料看板」**同序**（三源同构守卫比对顺序，含组内序）。
-        if (isAll || permissions.contains("product:list")) {
-            inventoryChildren.add(menuItem("stock-ledger", "库存明细", "/stock-ledger"));
         }
         if (!inventoryChildren.isEmpty()) {
             menus.add(menuGroup("inventory-center", "仓储与物料", inventoryChildren));
@@ -1452,6 +1455,15 @@ public class AuthService {
         }
         if (!orgChildren.isEmpty()) {
             menus.add(menuGroup("org-center", "组织管理", orgChildren));
+        }
+
+        // 🔴 一级项「商品管理」（2026-09-29 由「商品与加工项」组升为一级菜单项）：
+        // **排在所有分组之后**（用户 2026-10-06 裁定，原为「工作台组之后」）—— 与前端
+        // `menu.ts` 的 `STANDALONE_TOP_AFTER_GROUP_KEY`（现取最后一个组 `org-center`）、
+        // `MenuController.MENU_TREE` 的顶层节点顺序**三处同批表达同一位置**；
+        // 三源同构守卫按**顶层布局序列**（含位置）比对，挪错一处即判红。
+        if (isAll || permissions.contains("product:list")) {
+            menus.add(menuItem("products", "商品管理", "/products"));
         }
 
         // 通知中心：全员可见（与顶栏铃铛一致，无权限码限制）

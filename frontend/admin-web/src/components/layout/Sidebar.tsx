@@ -9,9 +9,9 @@ import { cn } from '@/lib/utils'
 import Logo from '@/components/ui/Logo'
 // #3002: 菜单配置单源化 —— menuGroups/standaloneItems 移至 @/config/menu，
 // 与岗位权限弹窗共用，保证「权限分配」展示的菜单与真实侧边栏一致
-// #5877：`standaloneTopItems`（「商品管理」）是**一级项**，渲染在 `STANDALONE_TOP_AFTER_GROUP_KEY`
-// 那个组**之后**（用户 2026-10-01 裁定「商品管理的菜单不应该作为第一行」）；
-// 席位组不可见时由 `splitGroupsAtTopItemSlot` 回落到「所有分组之前」—— 一级项绝不跟着消失。
+// #5877 / 2026-10-06：`standaloneTopItems`（「商品管理」）是**一级项**，渲染在**所有分组之后**
+// （用户 2026-10-06 裁定：11 个大菜单项并列）；席位组不可见时**不跳到最前**，
+// 而是挂在「当前可见分组」的末尾（口径的唯一实现 = `splitGroupsAtTopItemSlot`）—— 一级项绝不跟着消失。
 import {
   menuGroups,
   standaloneTopItems,
@@ -375,13 +375,18 @@ export default function Sidebar({
         {/* ── head 组（含一级项插入位那个组）── */}
         {head.map((group) => renderGroup(group))}
 
-        {/* ── 一级项块（「商品管理」，#5877）──
-            位置 = `STANDALONE_TOP_AFTER_GROUP_KEY` 组**之后**、其余组之前（用户 2026-10-01 裁定）；
+        {/* ── 一级项块（「商品管理」）──
+            位置 = **所有分组之后**（用户 2026-10-06 裁定：11 个大菜单项并列；见 `STANDALONE_TOP_AFTER_GROUP_KEY`）；
             与上方之间的分隔线用**仓内既有同款**（`border-t border-white/5`，同尾部独立项前那条），
             它**有两种情形**（不要只按一种理解）：
-              · **常态**（席位组可见，`head` 非空）⇒ 它分隔的是「**工作台组 ↔ 一级项**」；
-              · **回落情形**（席位组被权限整组过滤掉 ⇒ `head` 为空）⇒ 一级项排在所有分组之前，
-                这条线才成为「**常用 ↔ 一级项**」的分隔线（此时它与尾部独立项前那条同形）。
+              · **常态**（席位组 `org-center` 可见：admin / 持 `system:view` 的岗位）⇒ 这条线是
+                「**组织管理组 ↔ 一级项**」的分隔线；
+              · **回落情形**（席位组被权限整组过滤掉 —— 实测七个种子岗位里只有 admin 持 `system:view`
+                ⇒ 这是**多数岗位**看到的形态）⇒ 一级项挂在**当前可见分组的末尾**，
+                这条线成为「**最后一个可见组 ↔ 一级项**」的分隔线。
+              ⚠️ 回落方向是「挂到末尾」**不是**「跳到最前」：旧口径（席位组不可见 ⇒ 排到第一行）
+                会让「商品管理」对多数岗位跑到菜单最上方，与「沉底」的裁定正好相反
+                —— 口径的唯一实现 = `frontend/admin-web/src/lib/menu-nav.ts` 的 `splitGroupsAtTopItemSlot`。
             视觉 = **板块入口**规格（与组头同级：`text-xs font-medium tracking-wide` + `h-3.5 w-3.5` 图标），
             **仍是**一整行可点的 `<Link>`（直达、无展开语义 ⇒ 右端那枚 ChevronRight **不旋转**）；
             🔴 **不渲染星标**：一级项不可收藏（否则「常用」里会出现第二条一模一样的入口）。 */}

@@ -8,11 +8,42 @@
 // 判据：tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py。
 //
 // ══════════════════════════════════════════════════════════════════════════════
-// issue #5271 菜单重设计 + **本轮（用户 2026-09-29 裁定）再重排**：
-// 信息架构**7 组 → 6 组**，仍 **21 项，一项不少不减**
+// issue #5271 菜单重设计 + 用户 **2026-09-29** 再重排 + 用户 **2026-10-06** 顺序重设计：
+// 信息架构 **6 组不变**，**23 项一项不少不减**（6 组 21 项 + 一级项「商品管理」+ 尾部「通知中心」）
 // ══════════════════════════════════════════════════════════════════════════════
 //
-// ## 本轮（用户 2026-09-29 逐条裁定）改了什么 —— 四条
+// ## 本轮（用户 2026-10-06 直接要求「子菜单顺序要重新设计下，让整个产品的菜单顺序也自洽」）
+//
+// 用户逐字裁定 = **方案 A1**：**组名 / 组归属 / 权限码 / 路径一字不动**，只改**渲染顺序**
+// （组顺序不动）+ 一级项落位 ⇒ **对所有岗位的可见项集合零 delta**（纯顺序）。
+//
+//   ① **「商品管理」一级项沉底**：原插在「工作台」组之后（用户 2026-10-01 裁定），现改为
+//      **排在所有分组之后**（仍是一级项、不进任何组，键不变 `products`）—— 组名即「分组」，
+//      渲染在组与组**之间**让「大菜单」这个概念自相矛盾（它没有任何兄弟项，孤零零卡在
+//      工作台与客户服务之间）。用户本轮口径：**11 个大菜单项之间并列**；
+//      实现 = `STANDALONE_TOP_AFTER_GROUP_KEY` = **最后一个组**（`org-center`）
+//      ⇒ head = 全部 6 组、tail = 空（渲染位仍由 `splitGroupsAtTopItemSlot` 单点决定）。
+//   ② **客户服务**：`在线接待 → 知识库 → 售后工单 → 客户列表`
+//      —— 原「客户列表」把「在线接待 / 知识库」这对**接待时并用**的项隔开（客服边接待边查知识库）；
+//      改为「① 接待与工具 → ② 售后（工单，接待的第二出口） → ③ 客户档案（查档/建档，最低频）」。
+//   ③ **生产管理**：`加工项管理 → 工艺配置 → 生产看板 → 智能派单 → 计件工资`
+//      —— 原「生产看板 / 智能派单」排在「加工项管理 / 工艺配置」**之前**，而**加工项是派单机的输入**
+//      （加工费组合的 `items[]` 取自加工项目录、路线由工艺配置定义）⇒ 改为「**先备资料、再生产与派单**、
+//      最末结算（计件工资）」。⚠️ 这是**顺序**调整，不改任何码（四项仍各自挂原码）。
+//   ④ **仓储与物料**：`入库单 → 库存明细 → 发货单 → 余料台账 → 省料看板`
+//      —— 原序把「发货单」（出库）夹在入库单之后、把「库存明细」甩到组末并被「省料看板」隔开；
+//      改为「**单据（进 → 账 → 出）→ 账（余料）→ 分析（省料）**」：
+//      进仓（入库单）之后第一件要看的就是**账**（库存明细 = SKU 变化流水，issue #6404），
+//      再是出口单据（发货单），然后才是两类**分析/台账**面（余料台账是裁下的小件、省料看板是聚合视图）。
+//
+// ## 本轮**不动**的（有意）
+//
+//   · **组顺序不动**（工作台 → 客户服务 → 交易管理 → 生产管理 → 仓储与物料 → 组织管理）——
+//     它按「我的 → 客户 → 交易 → 生产 → 物料 → 组织」动线已自洽，本轮只治**组内顺序**与一级项落位；
+//   · **组名一律不改**（用户 2026-10-06 裁定「只动顺序」）⇒ 面包屑 `ROUTE_BREADCRUMB_MAP` 无需改；
+//   · **权限码 / 路径 / 门控一字不动** ⇒ 零授权 delta（判据面：岗位矩阵用例 UI-085）。
+//
+// ## 历史锚点（用户 2026-09-29 逐条裁定）改了什么 —— 四条
 //
 //   ① **加工项归生产管理**：`processing`（加工项管理 `/production/processing`）由
 //      「商品与加工项」组移入「生产管理」组 —— 它本质是**加工定价资料**（加工费组合的
@@ -133,13 +164,17 @@ export const menuGroups: MenuGroup[] = [
     // 改用 `MessageSquare`（原「智能客服」组的图标，正好空闲；语义仍是「客户对话/服务」）。
     icon: 'MessageSquare',
     children: [
+      // ⚠️ 组内顺序（用户 2026-10-06 方案 A1）：接待与工具 → 售后出口 → 客户档案。
       { key: 'human-sessions', name: '在线接待', icon: 'Headphones', path: '/agent-workspace/human-sessions', permissionCode: 'agent:session', keywords: ['zxjd', 'jiedai', 'kefu', '客服', '人工'] },
-      // #2969：客户列表原在「客户管理」组；#5271 曾并入交易管理组；本轮移入本组（服务客户动线）
-      { key: 'customers', name: '客户列表', icon: 'UserCircle', path: '/customers', permissionCode: 'customer:view', keywords: ['khlb', 'kehu'] },
+      // 知识库（2026-10-06 上移）：紧挨「在线接待」—— 客服**边接待边查**知识库（同一动作的两半），
+      // 原序里被「客户列表」隔开 ⇒ 动线被打断。
       { key: 'knowledge', name: '知识库', icon: 'BookOpen', path: '/knowledge', permissionCode: 'knowledge:view', keywords: ['zsk', 'zhishi', 'qa'] },
       // issue #5246（已合入 main）：售后工单节点用**读**码 `after_sales:view` —— `order:refund`
       // 是「处理退款」的写码，节点挂在它上面 = 「能看工单」必须连写权一起给。**必须保留**该码。
       { key: 'after-sales', name: '售后工单', icon: 'LifeBuoy', path: '/after-sales', permissionCode: 'after_sales:view', keywords: ['shgd', 'shouhou', 'tuihuan', '退换货'] },
+      // #2969：客户列表原在「客户管理」组；#5271 曾并入交易管理组；#5778 移入本组（服务客户动线）。
+      // 2026-10-06 沉到本组末：它是**档案面**（查档 / 建档），不是每次接待都会走的一步。
+      { key: 'customers', name: '客户列表', icon: 'UserCircle', path: '/customers', permissionCode: 'customer:view', keywords: ['khlb', 'kehu'] },
     ],
   },
   // 交易管理（本轮 2026-09-29 收窄为**「下单 → 收款」两项**）：客户列表 / 售后工单是**服务客户**
@@ -178,14 +213,11 @@ export const menuGroups: MenuGroup[] = [
     name: '生产管理',
     icon: 'Factory',
     children: [
-      // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
-      { key: 'production-board', name: '生产看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'production:view', keywords: ['sckb', 'shengchan', 'jiagongdan', '加工单'] },
-      // 智能派单（issue #5177）：池化派单的**决策屏** —— 加急插队区（不进池、立即单派）
-      // + 物料分组成批区（勾选 → 预览 → 一键成批派单）+ 超时未派告警。
-      // issue #5699（P4）：节点码 = 该页第一屏读码 `processing:view`（此前挂 processing:manage ⇒ 节点码 ≠ 页面读码），
-      // 路由守卫同批改挂读码（`app/(dashboard)/layout.tsx`）。
-      { key: 'production-pool', name: '智能派单', icon: 'Layers', path: '/production/pool', permissionCode: 'processing:view', keywords: ['zndp', 'zhineng', 'paidan', '派单', 'ckb'] },
-      // 加工项管理（本轮 2026-09-29 用户裁定：**由「商品与加工项」组移入本组**，原话
+      // ⚠️ 组内顺序（用户 2026-10-06 方案 A1）：**先备资料、再生产与派单、最末结算** ——
+      // 加工项 / 工艺是**派单机的输入**（加工费组合的 `items[]` 取自加工项目录、路线由工艺配置定义），
+      // 原序把它们排在「生产看板 / 智能派单」之后 = 让「用结果的人」排在「准备输入的人」前面。
+      //
+      // 加工项管理（2026-09-29 用户裁定：**由「商品与加工项」组移入本组**，原话
       // 「加工项应该属于生产管理」）—— 它是**加工定价资料**（加工费组合的 `items[]` 必须取自
       // 加工项目录的活跃加工项），与「生产看板 / 工艺配置 / 计件工资」同域
       //（同组内「建组合发现缺加工项要跳到另一个菜单组去建」的割裂就此消除）。
@@ -209,6 +241,13 @@ export const menuGroups: MenuGroup[] = [
       // ⇒ 按子菜单粒度整页收敛到**页面码** production:view（两码持有岗位集合逐值相同 ⇒ 零 delta；
       // 写面 POST/DELETE 路线规则、PUT 工序部位仍由 processing:manage 拦）。
       { key: 'production-process', name: '工艺配置', icon: 'Route', path: '/production/routings', permissionCode: 'production:view', keywords: ['gypz', 'gongyi', 'gongxu', 'luxian'] },
+      // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
+      { key: 'production-board', name: '生产看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'production:view', keywords: ['sckb', 'shengchan', 'jiagongdan', '加工单'] },
+      // 智能派单（issue #5177）：池化派单的**决策屏** —— 加急插队区（不进池、立即单派）
+      // + 物料分组成批区（勾选 → 预览 → 一键成批派单）+ 超时未派告警。
+      // issue #5699（P4）：节点码 = 该页第一屏读码 `processing:view`（此前挂 processing:manage ⇒ 节点码 ≠ 页面读码），
+      // 路由守卫同批改挂读码（`app/(dashboard)/layout.tsx`）。
+      { key: 'production-pool', name: '智能派单', icon: 'Layers', path: '/production/pool', permissionCode: 'processing:view', keywords: ['zndp', 'zhineng', 'paidan', '派单', 'ckb'] },
       { key: 'production-piecework', name: '计件工资', icon: 'Coins', path: '/production/piecework', permissionCode: 'production:view', keywords: ['jjgz', 'jijian', 'gongzi'] },
     ],
   },
@@ -229,6 +268,16 @@ export const menuGroups: MenuGroup[] = [
       // ⚠️ 权限码独立（inbound:view）—— 塞进 processing:manage 的判定里会让
       // 「有 inbound:view、没有 processing:manage」的人看不到菜单（#4203 点名的同族坑）。
       { key: 'inbound-orders', name: '入库单', icon: 'PackageOpen', path: '/inbound-orders', permissionCode: 'inbound:view', keywords: ['rkd', 'ruku', 'caigou'] },
+      // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面。后端端点（issue #4055）与
+      // agent 工具（issue #5247）**早就有**，页面是 `StockLedgerController` 的 javadoc 里逐字登记的
+      // **显式延后项**（「本轮只做只读端点，不做前端页面」）⇒ 结果是同一个问题米宝答得出、
+      // 商家在后台点不出来。本节点把那个缺口补上。
+      // 🔴 节点码 = 该页第一屏读端点（`GET /api/admin/stock-ledger`）的**方法级**
+      // `@RequirePermission("product:list")`（逐字同码，不新造码 —— 新码今天无人持有 ⇒
+      // 节点对所有人不可见，#4203 同族坑）。同组「省料看板」是同款先例（issue #5699 P4）。
+      // ⚠️ 组内顺序（用户 2026-10-06 方案 A1）：**紧跟进库单** —— 进仓之后第一件要看的就是**账**
+      // （「为什么系统说还有 30 米、实际只剩 12 米」只有流水答得出）。
+      { key: 'stock-ledger', name: '库存明细', icon: 'ScrollText', path: '/stock-ledger', permissionCode: 'product:list', keywords: ['kcmx', 'kucun', 'mingxi', 'liushui', 'taizhang', '台账'] },
       // 发货单（issue #5939，用户 2026-10-02 裁定）：**与「入库单」对称**的出口单据 ——
       // 用户原话「我让你开发过发货单的，但是在大菜单上没见到这个单据」。
       // 在此之前发货单只有**按单**入口（订单详情 →「发货」/「打印发货单」），全量发货单无处可查。
@@ -246,14 +295,6 @@ export const menuGroups: MenuGroup[] = [
       // 「单看①会被排料省料误导」写在页面上；存量导入批次单独成组、不与切换后混算。
       // issue #5699（P4）：节点码 = 该页第一屏读码 `product:list`（StockBatchController 方法级注解），路由守卫同批同码。
       { key: 'production-saving-board', name: '省料看板', icon: 'TrendingDown', path: '/production/saving-board', permissionCode: 'product:list', keywords: ['slkb', 'shengliao', 'haoliao'] },
-      // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面。后端端点（issue #4055）与
-      // agent 工具（issue #5247）**早就有**，页面是 `StockLedgerController` 的 javadoc 里逐字登记的
-      // **显式延后项**（「本轮只做只读端点，不做前端页面」）⇒ 结果是同一个问题米宝答得出、
-      // 商家在后台点不出来。本节点把那个缺口补上。
-      // 🔴 节点码 = 该页第一屏读端点（`GET /api/admin/stock-ledger`）的**方法级**
-      // `@RequirePermission("product:list")`（逐字同码，不新造码 —— 新码今天无人持有 ⇒
-      // 节点对所有人不可见，#4203 同族坑）。同组「省料看板」是同款先例（issue #5699 P4）。
-      { key: 'stock-ledger', name: '库存明细', icon: 'ScrollText', path: '/stock-ledger', permissionCode: 'product:list', keywords: ['kcmx', 'kucun', 'mingxi', 'liushui', 'taizhang', '台账'] },
     ],
   },
   // #2969: 组织管理组（员工管理 + 岗位权限 + 企业基础信息）
@@ -277,8 +318,10 @@ export const menuGroups: MenuGroup[] = [
 //   · `standaloneTopItems` —— **一级项**（「商品管理」）：用户 2026-09-29 裁定「商品列表改成商品管理，
 //     直接作为一级菜单使用」—— 它是**唯一成员**的组会退化成一个没有分组的名字（点开只为看一项），
 //     故**不做单成员组**，改为一级项平铺：**保留为一级菜单**、一屏直达、不折叠、无需展开。
-//     🔴 **渲染位**（用户 2026-10-01 二次裁定）：排在 `STANDALONE_TOP_AFTER_GROUP_KEY`
-//     那个组**之后**（= 「工作台」组之后、下一个组之前）—— 用户原话「商品管理的菜单不应该作为第一行」。
+//     🔴 **渲染位**（用户 2026-10-06 三次裁定：**排在所有分组之后**）：`STANDALONE_TOP_AFTER_GROUP_KEY`
+//     现取**最后一个组**（`org-center`）⇒ head = 全部 6 组、tail = 空 —— 组名即「分组」，
+//     把一级项渲染在组与组**之间**会让「大菜单并列」这个概念自相矛盾。
+//     （沿革：2026-10-01 曾裁定「排在工作台组之后、不做第一行」；本轮用户口径 = 11 个一级项**并列**。）
 //     席位组**不可见**时（权限把它整组过滤掉 / 常量写错）⇒ 回落到**所有分组之前**：
 //     一级项**绝不允许跟着消失**（最坏退回旧位置，也不能没有入口）。
 //     口径的**唯一实现** = `frontend/admin-web/src/lib/menu-nav.ts` 的 `splitGroupsAtTopItemSlot`
@@ -294,7 +337,7 @@ export const menuGroups: MenuGroup[] = [
 //     判据：`frontend/admin-web/tests/unit/lib/menu-pinned.test.ts`。
 
 /**
- * 一级项（`standaloneTopItems`）的**插入位**：渲染在**这个组之后**（用户 2026-10-01 裁定）。
+ * 一级项（`standaloneTopItems`）的**插入位**：渲染在**这个组之后**（用户 2026-10-06 裁定 = 最后一个组）。
  *
  * ## 为什么是一个常量，以及为什么三源必须**同批**表达同一位置
  *
@@ -308,7 +351,7 @@ export const menuGroups: MenuGroup[] = [
  * ⚠️ 取值必须是 `menuGroups` 里**真实存在**的组 key —— 写错 ⇒ 前端回落（一级项回到最前）
  *    而服务端不动 ⇒ 判据红（这是**有意**的：静默漂移比直接红更难查）。
  */
-export const STANDALONE_TOP_AFTER_GROUP_KEY = 'workspace'
+export const STANDALONE_TOP_AFTER_GROUP_KEY = 'org-center'
 export const standaloneTopItems: MenuItem[] = [
   // 商品管理（本轮 2026-09-29 用户裁定：**由「商品与加工项」组升为一级菜单项**，原话
   // 「商品列表改成商品管理，直接作为一级菜单使用」）。

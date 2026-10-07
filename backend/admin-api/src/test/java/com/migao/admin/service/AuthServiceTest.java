@@ -572,14 +572,14 @@ class AuthServiceTest {
     void currentUserMenusMirrorFrontendIaForAllPermissions() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("*");
 
-        // 🔴 #5877（用户 2026-10-01 裁定「商品管理的菜单不应该作为第一行」）：
-        // 顶层下发顺序 = 工作台组 → 一级项「商品管理」 → 客户服务组 …（与前端渲染顺序逐项一致）
+        // 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：一级项**排在所有分组之后**、通知中心之前
+        //（原为「工作台组之后」）—— 与前端渲染顺序逐项一致。
         assertThat(keysOf(menus)).containsExactly(
-                "workspace", "products", "customer-service", "trade-center",
-                "production-center", "inventory-center", "org-center", "notifications");
+                "workspace", "customer-service", "trade-center",
+                "production-center", "inventory-center", "org-center", "products", "notifications");
         assertThat(namesOf(menus)).containsExactly(
-                "工作台", "商品管理", "客户服务", "交易管理",
-                "生产管理", "仓储与物料", "组织管理", "通知中心");
+                "工作台", "客户服务", "交易管理",
+                "生产管理", "仓储与物料", "组织管理", "商品管理", "通知中心");
 
         // 工作台（#5271 由「独立项」改为组）
         var workspace = groupByKey(menus, "workspace");
@@ -588,10 +588,11 @@ class AuthServiceTest {
 
         // 客户服务组（#5778 新建）：原「智能客服」组 + 客户侧两项
         var cs = groupByKey(menus, "customer-service");
+        // 🔴 2026-10-06（方案 A1）：接待与工具相邻 → 售后出口 → 客户档案（最低频）
         assertThat(keysOf(cs.getChildren()))
-                .containsExactly("human-sessions", "customers", "knowledge", "after-sales");
+                .containsExactly("human-sessions", "knowledge", "after-sales", "customers");
         assertThat(pathsOf(cs.getChildren())).containsExactly(
-                "/agent-workspace/human-sessions", "/customers", "/knowledge", "/after-sales");
+                "/agent-workspace/human-sessions", "/knowledge", "/after-sales", "/customers");
 
         var trade = groupByKey(menus, "trade-center");
         assertThat(keysOf(trade.getChildren()))
@@ -600,20 +601,22 @@ class AuthServiceTest {
                 .containsExactly("/orders", "/finance");
 
         var production = groupByKey(menus, "production-center");
+        // 🔴 2026-10-06（方案 A1）：先备资料（加工项 → 工艺）→ 再生产与派单 → 最末结算
         assertThat(keysOf(production.getChildren())).containsExactly(
-                "production-board", "production-pool", "processing",
-                "production-process", "production-piecework");
+                "processing", "production-process", "production-board",
+                "production-pool", "production-piecework");
         assertThat(pathsOf(production.getChildren())).containsExactly(
-                "/production", "/production/pool", "/production/processing",
-                "/production/routings", "/production/piecework");
+                "/production/processing", "/production/routings", "/production",
+                "/production/pool", "/production/piecework");
 
         var inventory = groupByKey(menus, "inventory-center");
+        // 🔴 2026-10-06（方案 A1）：单据（进 → 账 → 出）→ 台账 → 分析
         assertThat(keysOf(inventory.getChildren())).containsExactly(
-                "inbound-orders", "shipments", "production-remnants", "production-saving-board",
-                "stock-ledger");
+                "inbound-orders", "stock-ledger", "shipments", "production-remnants",
+                "production-saving-board");
         assertThat(pathsOf(inventory.getChildren())).containsExactly(
-                "/inbound-orders", "/shipments", "/production/remnants", "/production/saving-board",
-                "/stock-ledger");
+                "/inbound-orders", "/stock-ledger", "/shipments", "/production/remnants",
+                "/production/saving-board");
 
         var org = groupByKey(menus, "org-center");
         assertThat(keysOf(org.getChildren())).containsExactly("employees", "roles", "settings");
@@ -639,11 +642,11 @@ class AuthServiceTest {
 
         var production = groupByKey(readOnly, "production-center");
         assertThat(production.getName()).isEqualTo("生产管理");
-        // #5778：加工项管理已移入本组（位次 = 智能派单之后、工艺配置之前）
+        // #5778：加工项管理已移入本组；2026-10-06（方案 A1）起为**组内第一项**
         assertThat(namesOf(production.getChildren()))
-                .containsExactly("生产看板", "加工项管理", "工艺配置", "计件工资");
+                .containsExactly("加工项管理", "工艺配置", "生产看板", "计件工资");
         assertThat(pathsOf(production.getChildren())).containsExactly(
-                "/production", "/production/processing", "/production/routings", "/production/piecework");
+                "/production/processing", "/production/routings", "/production", "/production/piecework");
         // 同组不同权：智能派单**不**随读码一起出现（拆码没有变成「一组一起放行」）
         assertThat(allNames(readOnly)).doesNotContain("智能派单");
         // 加工项管理（#5778 起归「生产管理」组）同批改用读码 ⇒ 也随 production:view 可见
@@ -667,8 +670,10 @@ class AuthServiceTest {
         assertThat(namesOf(poolOnly.getChildren())).containsExactly("智能派单");
         // issue #6404：`product:list` 现在点亮**两页**（省料看板 + 库存明细）—— 与「订单列表 / 发货单」
         // 同取 `order:list` 同式：**同码 ≠ 同权**，两页各自的读端点注解就是这个码。
+        // ⚠️ 2026-10-06（issue #6457）：组内顺序变为「进 → 账 → 出 → 台账 → 分析」
+        // ⇒ 本权限集（只有这两页可见）的顺序是**库存明细 → 省料看板**。
         var savingOnly = groupByKey(menusForPermissions("product:list"), "inventory-center");
-        assertThat(namesOf(savingOnly.getChildren())).containsExactly("省料看板", "库存明细");
+        assertThat(namesOf(savingOnly.getChildren())).containsExactly("库存明细", "省料看板");
     }
 
     @Test
