@@ -127,7 +127,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
       screen.getByText(/只有已发布的卡片会被 AI 检索到/)
     ).toBeInTheDocument()
     expect(screen.getByText(/过账自动生成批次号、增加库存并按移动加权平均记成本/)).toBeInTheDocument()
-    expect(screen.getByText(/返工与报废不计件，由服务端排除/)).toBeInTheDocument()
+    expect(screen.getByText(/返工与报废不计件，系统会自动排除/)).toBeInTheDocument()
   })
 
   // ── 行业纵深 ──

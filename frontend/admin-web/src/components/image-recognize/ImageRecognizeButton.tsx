@@ -7,7 +7,7 @@ import { Button } from '@/components/ui'
 import { toastRequestError } from '@/lib/api-error'
 import { imageRecognizeApi, uploadApi } from '@/lib/api'
 import type { RecognizedField } from '@/lib/api'
-import { filledFields, RECOGNIZE_SOURCE_TAG } from '@/lib/image-recognize'
+import { filledFields, RECOGNIZE_NO_REASON, RECOGNIZE_SOURCE_TAG } from '@/lib/image-recognize'
 import FormInterpretCard, { type FormInterpretFields } from './FormInterpretCard'
 
 /** 识别不出来时的统一提示（degraded 与「零个可用字段」两种情形同一条） */
@@ -192,7 +192,7 @@ export default function ImageRecognizeButton({
             >
               {typeof f.value === 'string' && f.value.trim() !== ''
                 ? `${RECOGNIZE_SOURCE_TAG} ${f.label}：${f.value}`
-                : `${f.label}：未识别（${f.reason || '内核未给出原因'}）`}
+                : `${f.label}：未识别（${f.reason || RECOGNIZE_NO_REASON}）`}
             </p>
           ))}
         </div>

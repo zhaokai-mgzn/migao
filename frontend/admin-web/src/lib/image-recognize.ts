@@ -19,6 +19,12 @@ import { nextTempId, normalizeDoorWidth, rebuildSkus, sameDoorWidth } from './sk
 export const RECOGNIZE_SOURCE_TAG = '[图片识别]'
 
 /**
+ * 识别结果**没给出原因**时的兜底话术（单一事实源，issue #6488 / 文案规范 P5）。
+ * 两处面板（「填表」卡与识别结果列表）都从这里取，不各写一份。
+ */
+export const RECOGNIZE_NO_REASON = '系统没给出原因'
+
+/**
  * 颜色清单的**分隔口径**（issue #6354）。
  *
  * 内核 `TARGET_FIELDS.product.color` 的 hint 是「色号 + 颜色名，**多个用顿号分隔**」⇒ 到前端
