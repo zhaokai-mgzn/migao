@@ -955,7 +955,7 @@ cases:
         - "backend/ai-agent-service/tests/test_chat.py"
       ci:
         - bmini-app.yml
-        - ai-agent-service.yml
+        - ai-agent-tests.yml
       verifies: []
 
   - id: BM-029
