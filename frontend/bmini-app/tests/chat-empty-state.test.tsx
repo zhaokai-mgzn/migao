@@ -73,6 +73,47 @@ function codeOnly(file: string): string {
     .join('\n')
 }
 
+/**
+ * 空态里**渲染出来**的第二行文案（读渲染结果，不读源码 —— 判的是商家真看到的那句）
+ *
+ * 直接用 `textContent ?? ''`：元素缺失时下面 `toContain` 会给出「差在哪」的 diff，
+ * 比再加一条「元素存在」的存在性断言更有信息量。
+ */
+function emptyStateCopy(): string {
+  const { container } = render(<MessageList messages={[]} isStreaming={false} onInteract={jest.fn()} />)
+  return container.querySelector('.message-list__empty-text')?.textContent ?? ''
+}
+
+/**
+ * 六格快捷入口的 id（**真值 = 服务端单一源** `QUICK_ACTIONS`，issue #6468 起的同一份内容源）
+ *
+ * 从 Python 常量里现取，不在这里再抄一份 —— 抄一份就等于又造了一个会腐烂的副本。
+ */
+function serverQuickActionIds(): string[] {
+  const py = fs.readFileSync(
+    path.resolve(__dirname, '../../../backend/ai-agent-service/app/api/chat.py'),
+    'utf-8',
+  )
+  const block = py.slice(py.indexOf('QUICK_ACTIONS'), py.indexOf('async def get_quick_actions'))
+  return [...block.matchAll(/"id":\s*"([a-z_]+)"/g)].map((m) => m[1])
+}
+
+/**
+ * 每个快捷入口对应空态文案里必须出现的一个业务域词（逐条可指认）
+ *
+ * 这张表是**故意的第二处人工映射**：空态那句是中文句子、入口 id 是机器名，
+ * 没有映射就没法机械对账。它的作用 = 服务端新增/改名一条入口时，
+ * 要么补这里、要么补文案，两条路都必须动代码 ⇒ 不可能「悄悄不覆盖」。
+ */
+const ENTRY_DOMAIN_KEYWORD: Record<string, string> = {
+  daily_business: '经营',
+  delivery_risk: '交付',
+  low_stock: '库存',
+  product_health: '商品',
+  after_sales_todo: '售后',
+  customer_churn: '客户',
+}
+
 describe('B 端「问米宝」空态：不得混入 C 端 agent 内容（issue #5747）', () => {
   it('空态渲染：无商品卡 / 无价格 / 无「新品推荐」/ 无 C 端 agent 名', () => {
     const { container } = render(<MessageList messages={[]} isStreaming={false} onInteract={jest.fn()} />)
@@ -94,6 +135,21 @@ describe('B 端「问米宝」空态：不得混入 C 端 agent 内容（issue #
     expect(screen.queryByText(/专属智能购物助手/)).toBeNull()
     // 未配置 botName ⇒ B 端默认「米宝」（与 C 端默认「小布」区分，见 src/utils/brand.ts）
     expect(screen.getByText(/你好，我是米宝/)).toBeTruthy()
+  })
+
+  it('空态那句「都可以问我」必须覆盖快捷入口的每一组业务域（真值 = 服务端 QUICK_ACTIONS）', () => {
+    // 治的形态（issue #6476）：空态写着「查订单、查库存、**算料报价**、售后与物流」，
+    // 而六格入口是 今日经营/交付风险/库存告急/商品健康度/售后待办/客户回访 —— 两处**没有交集**，
+    // 且「算料报价」在 B 端没有对应能力（引导了却答不出来，比不引导更伤）。
+    const copy = emptyStateCopy()
+    const ids = serverQuickActionIds()
+
+    // ① 服务端改了入口集（新增 / 改名 / 删除）⇒ 先在这里红：要么补映射表，要么补文案，没有第三条路
+    expect(ids).toEqual(Object.keys(ENTRY_DOMAIN_KEYWORD))
+    // ② 文案必须逐组都提到（缺哪一组由 diff 具名给出）
+    expect(ids.filter((id) => !copy.includes(ENTRY_DOMAIN_KEYWORD[id]))).toEqual([])
+    // ③ 负向：B 端没有的能力不得再出现在引导里
+    expect(copy).not.toContain('算料报价')
   })
 
   it('「思考中」默认文案用 B 端 agent 名', () => {
