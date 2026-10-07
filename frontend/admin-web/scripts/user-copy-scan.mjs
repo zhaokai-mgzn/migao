@@ -214,19 +214,21 @@ export function scanProject(root) {
   return { files: files.map((f) => relative(root, f)), candidates: all }
 }
 
-/** 命中清单（按规则 × 文件排序） */
+/**
+ * 命中清单（按规则 × 文件排序）。
+ * `raw` = **豁免前**的全部命中（守卫用它判「豁免台账有没有空转」），`offenders` = 豁免后的。
+ */
 export function findViolations(root) {
   const { files, candidates } = scanProject(root)
-  const offenders = []
+  const raw = []
   for (const item of candidates) {
     for (const rule of RULES) {
       if (!rule.test(item.text)) continue
-      const where = `${item.file}:${item.line}`
-      if (EXEMPT.includes(where) || EXEMPT.includes(item.file)) continue
-      offenders.push({ ...item, rule: rule.id, ruleName: rule.name, where })
+      raw.push({ ...item, rule: rule.id, ruleName: rule.name, where: `${item.file}:${item.line}` })
     }
   }
-  return { files, candidates, offenders }
+  const offenders = raw.filter((o) => !EXEMPT.includes(o.where) && !EXEMPT.includes(o.file))
+  return { files, candidates, raw, offenders }
 }
 
 export function isExempt(file, line) {

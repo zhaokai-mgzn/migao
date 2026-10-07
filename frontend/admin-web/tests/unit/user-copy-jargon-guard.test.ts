@@ -37,7 +37,7 @@ import { RULES, EXEMPT, candidateStrings, findViolations, scanProject } from '..
 const ROOT = process.cwd()
 
 describe('用户可见文案不得含内部词汇 / 研发腔（#5565 · #5576 · #6459 · #6488）', () => {
-  const { files, candidates, offenders } = findViolations(ROOT)
+  const { files, candidates, raw, offenders } = findViolations(ROOT)
   const byRule = (id: string) => offenders.filter((o) => o.rule === id)
 
   it('普查面非空（扫不到文件 ⇒ 本判据在扫空气，而不是"没问题"）', () => {
@@ -67,7 +67,8 @@ describe('用户可见文案不得含内部词汇 / 研发腔（#5565 · #5576 �
   }
 
   it('豁免台账不空转：每条豁免必须**仍然**命中某条规则（失效的当场判红 ⇒ 逼着删干净）', () => {
-    const seen = new Set(offenders.flatMap((o) => [o.where, o.file]))
+    // ⚠️ 必须比 **raw**（豁免前）——比 offenders 的话，被豁免的那条永远不在里面 ⇒ 台账恒被判「空转」
+    const seen = new Set(raw.flatMap((o) => [o.where, o.file]))
     const stale = EXEMPT.filter((entry) => !seen.has(entry))
     expect(
       stale,
