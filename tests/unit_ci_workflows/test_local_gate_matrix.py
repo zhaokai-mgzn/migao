@@ -107,9 +107,11 @@ CI_LEG_COMMANDS = (
     "npm test",
     "npm run build:h5",
     "npm run build:weapp",
-    # 几何 e2e 腿（issue #5759）：装依赖（含 chromium 安装）→ 跑 spec（构建由腿自己完成）
+    # 几何 e2e 腿（issue #5759）：装依赖（含 chromium 安装）→ 跑 spec（构建由腿自己完成）。
+    # issue #6478 起跑**整个 `specs/bmini/` 目录**（腿的 testMatch 本来就是该目录）：
+    # 逐文件点名会让新加的 spec 静默不跑（「登记了但从不执行」）。
     "npm ci\nnpx playwright install chromium --with-deps",
-    "npx playwright test specs/bmini/bmini-tabbar.spec.ts --config=playwright.bmini.config.ts",
+    "npx playwright test specs/bmini/ --config=playwright.bmini.config.ts",
 )
 
 

@@ -710,8 +710,8 @@ bmini_leg() {
     && echo '▶ npm ci（tests 依赖）' \
     && npm ci
 npx playwright install chromium --with-deps \
-    && echo '▶ npx playwright test specs/bmini/bmini-tabbar.spec.ts --config=playwright.bmini.config.ts' \
-    && npx playwright test specs/bmini/bmini-tabbar.spec.ts --config=playwright.bmini.config.ts"
+    && echo '▶ npx playwright test specs/bmini/ --config=playwright.bmini.config.ts' \
+    && npx playwright test specs/bmini/ --config=playwright.bmini.config.ts"
 }
 
 # ai-agent 测试选择（2026-09-14，issue #3680）：quick 与 full 共用**同一选择集**。

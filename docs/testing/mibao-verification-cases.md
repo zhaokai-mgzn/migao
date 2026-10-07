@@ -710,7 +710,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
-## B 端小程序域（39 case）
+## B 端小程序域（42 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1238,6 +1238,48 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-10-07 新增（issue #6472）：报工页的发货块（`isCompleted && !shipped`）对任何身份渲染，而它打的是商家端点；工人零商家权限（`/api/admin/**` 拒绝集合含 worker）⇒ 纯工人设备点「发货」必被服务端拒绝。收口 = 有工人 session（`hasWorkerSession()`，单一真值）走既有工人发货端点 `POST /api/worker/shipment/orders/{id}/ship`，否则商家端点逐字不变。零后端改动；入参差异（工人路径必填 `items[]`）由端侧从读面 `positions` 映射补齐。 ｜ tags: bmini, worker, shipment
+
+### BM-041. 登录页记住上次成功登录的账号名（按登录面分开存 / 进页预填 / 绝不记 PIN·密码·验证码） 🔵
+```
+你: 用户 2026-10-07 原话「还要做个小优化，账号名存在 cookies 中，不要每次都要输入」—— 员工 / 管理员 / 工人三个登录面各自记住上次**成功登录**用过的账号名，再次进入登录页时预填
+期望: direct_reply
+数据: 判据 1·**预填口径**：`getRememberedAccount(面)` 取该面**上次成功登录**用过的账号名并预填；从未登录过 ⇒ 空串（**不编默认值**）；三面各存各的键、互不串台。证据：frontend/bmini-app/tests/login-remember-account.test.tsx（判据 1a / 1b / 1c / 1f）
+数据: 判据 2·**只记「成功过」的**：失败不写、成功才覆盖 —— 把 `rememberAccount` 提到 `if (!success)` 之前 ⇒ 判据 1d 判红。证据：frontend/bmini-app/tests/login-remember-account.test.tsx
+数据: 判据 3·🔴 **反向红线（可红）**：三个面全部填满并成功登录（密码 / 短信验证码 / PIN 各带一个哨兵值）⇒ 落盘键值里**不出现**任何哨兵；且落盘的键只有账号名三键。红证（实跑，真语料注入）：把 `rememberAccount('employee', identifier.trim())` 改成 `rememberAccount('employee', password)` ⇒ 判据 2 判红。证据：frontend/bmini-app/tests/login-remember-account.test.tsx
+数据: 判据 4·**类级**：① 本仓存储键面（`STORAGE_KEYS` 的键值 + `src` 下所有 storage 调用的字面量键）不许出现凭据形态键名（`password`/`pwd`/`pin`/`*code`/`credential`…）；② 账号名三键只有 frontend/bmini-app/src/utils/loginAccount.ts 一个读写点（第二份口径即红）。证据：frontend/bmini-app/tests/login-remember-account.test.tsx（判据 2b / 2c）
+数据: 判据 5·**退出登录不清账号名**（它只是输入便利，不是登录态）：调真实现的 `logout()` 后三键原值仍在，而 `auth_token` / `auth_user` 照旧被清（对照组）。证据：frontend/bmini-app/tests/login-remember-account.test.tsx（判据 1e）
+数据: 判据 6·**口径替换已显式登记**：用户口述要用浏览器 cookies 存账号名，落地为 **localStorage**（`Taro.setStorageSync` + `STORAGE_KEYS`，与 frontend/bmini-app/src/utils/workerSession.ts 同款）—— 不新引依赖、不用 cookie；替换理由写在本包 CHANGELOG 与 PR body（不静默改口径）。
+跳过: [backend-contract] 确定性页面判据（jest: frontend/bmini-app/tests/login-remember-account.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-07 新增（issue #6478）：用户要求「账号名存在 cookies 中，不要每次都要输入」。冻结口径 = **只记账号名**、按登录面分开存、只在成功登录后写、退出不清；🔴 绝不记 PIN / 密码 / 短信验证码（工人共用 PAD 上更不能留凭据）⇒ 反向红线判据可红（注入「把 pin 也存进去」当场红）。存储用仓内既有 localStorage 约定（用户口述的 cookies 是有意替换，已在 CHANGELOG 与 PR body 写明）。 ｜ tags: bmini, auth, login, ux
+
+### BM-042. B 端 H5 输入框文字竖向居中（共享样式层 + 真几何 e2e：内层撑满外框 / 上下留白对称） 🔵
+```
+你: 用户 2026-10-07 原话「H5 的输入框中的提示信息都不是居中的，文字偏上了」—— 生产 `https://app.migaozn.com/b/#/pages/auth/login/index`（390×844）实测：内层原生 input 26px 贴在 49.9px 外框顶部（上留白 0.5px / 下留白 23.4px）
+期望: direct_reply
+数据: 判据 1·**根因与修法**：Taro h5 的 `<Input>` 是两层 —— 外层 `taro-input-core`（拿 `className`，即用户看到的圆角框）+ 内层原生 `<input class="weui-input">`（Taro 自带 `height:1.47059em`）；外层 `display:block` 且无居中规则 ⇒ 内层行盒贴顶。修法落在**共享样式层** frontend/bmini-app/src/styles/input-center.scss（① 外框 `display:flex` + `align-items:center`；② 内层 `height:100%`），由 frontend/bmini-app/src/app.scss 引入。**只改竖向对齐**，不动任何尺寸 / 圆角 / 字号。
+数据: 判据 2·**真几何判据（不是字符串断言）**：tests/e2e/specs/bmini/bmini-input-center.spec.ts（配置 tests/playwright.bmini.config.ts；CI = .github/workflows/bmini-app.yml 的 `tabbar-geometry` job，该 job 的 run 自 issue #6478 起跑整个 `specs/bmini/` 目录）—— 对**未登录即可到达的 3 个输入面 / 13 个输入框**（登录页 7 + 工人登录页 3 + 首登强制改密页 3）逐个量「内层 input 高 ÷ 外框高 ≥ 0.90」「内层相对外框的上留白 == 下留白（±1 CSS px）」「上留白 > 0」。实测读数（390×844，Chromium，本地 dist 重建）：修后 登录页 47.906/49.906（上/下留白 1.0/1.0）、工人登录页 45.75/47.75（1.0/1.0）、改密页 45.75/47.75（1.0/1.0）；修前（临时撤掉共享层引入 + 重建后同一 spec 实跑）登录页 26.0/49.906（1.0/22.91）、工人登录页 22.94/47.75（1.0/23.81）、改密页 24.47/47.75（1.0/22.28）⇒ **3 failed** 且逐面具名报出占比与留白。未实测的输入面（报工页 / 坐席详情 / 工人入库 / 工人补打 / WorkerBar / FormCard）靠同一全局选择器构造性覆盖 + 台账登记（见 BM-043）。
+数据: 判据 3·**共享层必须真的接线且只许一份**：frontend/bmini-app/tests/input-center-guard.test.ts 断言共享层文件在位 + 被 frontend/bmini-app/src/app.scss 引入 + 三条居中声明都在；且 `taro-input-core` 只许出现在 frontend/bmini-app/src/styles 下的 scss（逐页打补丁 ⇒ 判红）。注入式红证（in-memory，实跑）：删 `@use` ⇒ 红；外框改回 `display:block` ⇒ 红；内层改回 `height:1.47059em` ⇒ 红；把规则抄进 frontend/bmini-app/src/pages/auth/login/index.scss ⇒ 红并具名。
+数据: 判据 4·**小程序端逐字不变**：共享层的两条选择器（`taro-input-core` / `.weui-input`）只存在于 Taro **h5** 产物 DOM；小程序编译产物里 `<Input>` 是单层原生 input，选择器一个元素都匹配不到 ⇒ 对小程序零影响。
+跳过: [backend-contract] 确定性判据（jest: frontend/bmini-app/tests/input-center-guard.test.ts；playwright: tests/e2e/specs/bmini/bmini-input-center.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.layout
+溯源: 2026-10-07 新增（issue #6478）：用户反馈「H5 输入框提示信息不居中、文字偏上」。根因是 Taro h5 的 `<Input>` 两层结构（外层拿 className 的圆角框 + 内层只按 line-height 撑高的原生 input），属 **h5 特有**形态。修在共享样式层（不许逐页打补丁），判据用**真渲染几何**（内层/外框高 + 上下留白对称）而不是字符串断言，并给撤掉修复后真红的读数。 ｜ tags: bmini, layout, h5
+
+### BM-043. 类级元守卫：bmini 输入框面台账（未登记即红 / 台账只许缩短 / 空台账 fail-closed / 抽取不完全即红） 🔵
+```
+你: 任何人给 bmini 的某个页面新增一个 `<Input>`（或给已有输入框换一个 className）—— 无论他有没有确认那一面也走共享样式层，判据都要拦得住
+期望: direct_reply
+数据: 判据 1·🔴 **未登记即红**：以 frontend/bmini-app/src 下全部 `.tsx`（先剥注释）为射程现取 `(文件, className)` 输入面配对集，凡有配对不在 frontend/bmini-app/tests/input-surface-ledger.json 里 ⇒ 具名判红。红证（实跑，in-test 注入）：造一个用 `<Input className='brand-new__input'>` 的页面 ⇒ 报出 `src/pages/brand-new/index.tsx::brand-new__input`。
+数据: 判据 2·**台账只许缩短 + 条目必须活着**：每条登记都必须仍能被扫到（面没了 ⇒ 该条已死 ⇒ 红）。红证：内存里把 frontend/bmini-app/src/pages/worker/reprint/index.tsx 的 `<Input>` 改名 ⇒ 红并报出 `src/pages/worker/reprint/index.tsx::admin-input`。
+数据: 判据 3·**抽取必须完整（fail-closed）**：`<Input>` 出现次数必须等于抽到的 className 数；把 className 挪成第二个属性（抽取口径漂移）⇒ 红，**不许**静默跳过。红证：内存变体 frontend/bmini-app/src/pages/sessions/detail/index.tsx ⇒ 红。
+数据: 判据 4·**台账不许空转**：条数为 0 ⇒ 红（「空」不等于「全部合规」）；射程一处 `<Input>` 都扫不到 ⇒ 红；每条登记必须声明 `label` 与非空 `case_ids`。红证：清空台账 / 清空射程 / 摘掉 label 与 case_ids，三条各自判红。
+数据: 判据 5·**条数现取、不写死**：守卫按射程现算配对集、与台账**双向相等**才算过；复算命令写在 frontend/bmini-app/tests/input-surface-ledger.json 的 `_recompute` 字段（文档与用例里都不写死条数）。
+跳过: [backend-contract] 确定性元守卫（jest: frontend/bmini-app/tests/input-center-guard.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-07 新增（issue #6478，铁律 8 类级固化）：修一个输入框的竖向对齐**只修这一处 = 没修** —— Taro h5 的两层 `<Input>` 形态在每个用 `<Input>` 的面上都存在。本台账把「有哪些输入面」变成可执行判据（未登记即红 + 只许缩短 + 抽取不完全即红 + 空台账 fail-closed + 每条声明 case_ids），并配 in-memory 注入式红证（红证走**真判据**，不另写第二份判定）。 ｜ tags: bmini, meta-guard
 
 ## 分类域（3 case）
 
@@ -10155,13 +10197,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：704（活跃 134，跳过 570）
-- tier 分布：smoke 12 / normal 650 / adversarial 32
+- 用例总数：707（活跃 134，跳过 573）
+- tier 分布：smoke 12 / normal 653 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
 - 登录认证域：12
-- B 端小程序域：39
+- B 端小程序域：42
 - 分类域：3
 - 对话边界域：44
 - 跨域：3
