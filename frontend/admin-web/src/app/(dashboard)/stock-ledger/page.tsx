@@ -142,7 +142,7 @@ export default function StockLedgerPage() {
   const searchProducts = useCallback(async () => {
     const kw = keyword.trim()
     if (!kw) {
-      setSearchHint('请先输入商品关键词（端点没有关键词参数，商品必须先选中才能按它查流水）')
+      setSearchHint('请先输入商品关键词，再从搜索结果里点选一个商品 —— 库存流水要按选中的商品查')
       setOptions([])
       return
     }
@@ -207,7 +207,7 @@ export default function StockLedgerPage() {
           <p className="mt-1 text-sm text-neutral-500">
             {view === 'flow'
               ? '每一行 = 一次 SKU 级库存变更（变动前 → 变动后）；库存为什么从 X 变成 Y，靠这张表逐行回答。'
-              : '每一行 = 一个批次（一卷布）：入库米数 − 已消耗 = 剩余米数（派生值，不另立库存数）；这一卷裁剪后还剩多少，看剩余米数列。'}
+              : '每一行 = 一个批次（一卷布）：这一卷裁剪后还剩多少米，看「剩余米数」列 —— 由入库米数减去已消耗算出，不另立库存数。'}
           </p>
         </div>
         <Button variant="secondary" onClick={refresh} aria-label="刷新库存明细">
@@ -445,8 +445,7 @@ export default function StockLedgerPage() {
               data-testid="batch-need-product"
               className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700"
             >
-              批次余量按商品查：请先在上方搜索并点选一个商品。
-              （批次读面没有分页参数，不选商品就是拉整个租户的批次 ⇒ 本页宁可不查，也不做「一次拉全量」的假方便。）
+              批次余量要按商品查：先在上方搜一个商品再点选。
             </div>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
@@ -512,8 +511,8 @@ export default function StockLedgerPage() {
           )}
 
           <p className="text-xs text-neutral-400">
-            「剩余米数」是派生值（= 入库米数 − 已派工消耗）：入库时按批次记账，派加工单指定批次时扣减、
-            作废回补。它不是另一份库存数 —— 与商品详情 →「批次账」同一口径、同一读面。
+            「剩余米数」= 入库米数 − 已派工消耗：入库时按批次记账，派加工单指定批次时扣减、作废时回补。
+            它不是另一份库存数 —— 与商品详情 →「批次账」是同一个口径、同一个数。
           </p>
         </>
       )}

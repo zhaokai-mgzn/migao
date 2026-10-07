@@ -138,7 +138,7 @@ describe('按批次盘点录入（UI-077 / PR-119）', () => {
     expect(first.runId).toMatch(/^PD-/)
     expect(first.lines).toEqual([{ batchId: 7, actualMeters: 58.5 }])
     await waitFor(() => expect(onApplied).toHaveBeenCalledTimes(1))
-    expect(screen.getByTestId('stocktake-result')).toHaveTextContent('1 个批次已落账')
+    expect(screen.getByTestId('stocktake-result')).toHaveTextContent('已更新 1 个批次')
   })
 
   it('UI-077 幂等键语义：成功 ⇒ 下一笔换新 runId；失败 ⇒ 重试复用同一个 runId', async () => {

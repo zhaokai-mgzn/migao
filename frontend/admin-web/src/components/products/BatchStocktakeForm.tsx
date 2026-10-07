@@ -155,7 +155,7 @@ export default function BatchStocktakeForm({ productId, batches, onApplied }: Pr
                     />
                     {r.invalid && (
                       <p className="mt-1 text-xs text-red-600" data-testid={`stocktake-input-error-${r.batch.batchId}`}>
-                        只能填 ≥0 且最多 1 位小数（0.1 米粒度，服务端不取整）
+                        只能填 ≥0、最多 1 位小数的米数（0.1 米一档，系统不会替你四舍五入）
                       </p>
                     )}
                   </td>
@@ -175,7 +175,7 @@ export default function BatchStocktakeForm({ productId, batches, onApplied }: Pr
           <span className="mx-1 font-medium tabular-nums" data-testid="stocktake-total">
             {totalDelta > 0 ? `+${meters(totalDelta)}` : meters(totalDelta)}
           </span>
-          米（{changed.length} 个批次会落账）
+          米（提交后会更新 {changed.length} 个批次）
         </p>
         <button
           type="button"
@@ -196,7 +196,7 @@ export default function BatchStocktakeForm({ productId, batches, onApplied }: Pr
 
       {result && (
         <div className="border-t border-neutral-100 px-3 py-2 text-xs text-neutral-600" data-testid="stocktake-result">
-          上次提交：{result.changedCount} 个批次已落账（合计差异 {result.totalDelta} 米）
+          上次提交：已更新 {result.changedCount} 个批次（合计差异 {result.totalDelta} 米）
           {result.unchangedCount > 0 && `，${result.unchangedCount} 个与余量相同（未写入）`}
           {result.replayedCount > 0 && `，${result.replayedCount} 个本次已记过（跳过）`}
         </div>
