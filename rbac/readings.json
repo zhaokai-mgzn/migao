@@ -869,8 +869,7 @@
       "gate": "product:list",
       "units": {
         "product:list": [
-          "GET /api/admin/batch-stock/saving-board",
-          "GET /api/admin/batch-stock/saving-trend"
+          "GET /api/admin/batch-stock/saving-board"
         ]
       },
       "visibility_rule": "all"
