@@ -8859,7 +8859,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（92 case）
+## 前端 UI 域（93 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -10183,6 +10183,24 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-10-06 新增（issue #6430，用户两轮逐字）。取号 = 现取 `origin/main` 最大号 + 1（`python3 scripts/next_case_id.py ui` 现取 main 最大 = UI-089）⇒ UI-090 **改判为 UI-092**（合并 main 时发现 UI-090/UI-091 已被 issue #6434 占用 ⇒ 按「现取 main 最大 + 1」重取号）。红证（实现前实测，`migao-dev-flow` §28.1 出口① 临时反转）：把 `page.tsx` / `lib/saving-board.ts` 换回 `git show origin/main:<path>` 的旧实现（同工作树注入，注入后 md5 自证与恢复值不同）⇒ 新判据 **17 failed / 17**；恢复新实现 ⇒ 3 个文件 **26 passed**（含既有 9 条）。 ｜ 2026-10-07 **整条改判（issue #6459，用户三张截图逐字）**：重做版首屏被用户判定「切换后（采购入库）这种概念让新用户无法理解」「这么多废话文字留在页面上只会干扰用户」⇒ 页面改为「结论数字 + 几乎用完的批数趋势 + 省料明细 + 折叠口径」，旧的结论条 / 门道卡 / 术语词典 / 两张指标卡 / 来源组对照表 / 布剩在哪 / 单位产出表**全部退场**（旧形态的十个 testid 由 `SavingBoardStory.test.tsx` 逐条断言「找不到」）。**红证（双向，实测）**：① §28.1 出口① 临时反转 —— 把 `page.tsx` / `lib/saving-board.ts` 换回 `git show origin/main:<path>` 的旧实现 ⇒ 新判据红（旧页面渲染出三个内部标签 ⇒ 文本面断言当场命中）；② 注入式（`scripts/saving-metrics-red-proof-web.py`，6 条变异）—— 逐条实测 `Tests 1~3 failed | 25~27 passed`，恢复后 `28 passed`；③ 旧口径的**服务端**判据（PR-093/094/095、PR-127）一字未动、现取全绿。**未固化 / 有意不做（照实登记）**：米宝会话卡 `frontend/bmini-app` 与 admin-web `BatchStockCard` 的**服务端下发** `cohortLabel` 渲染面不在元守卫的射程内（元守卫扫源码字面量）—— admin-web 那一处已按类级固化改说人话，bmini-app 侧另单跟踪。 ｜ tags: ui, saving-board, copy
 
+### UI-093. 商家后台用户可见文案去「研发腔」：全量扫描器 + 五条机械规则 + 类级守卫（issue #6488） 🔵
+```
+你: 库存明细：页头副标题写着「批次读面没有分页参数，不选商品就是拉整个租户的批次 ⇒ 本页宁可不查，也不做「一次拉全量」的假方便」；搜索提示写着「端点没有关键词参数」
+你: 工艺配置：「未定价 = 还没定价（≠ ¥0.00…）（issue #4886）」；参数说明写着「判定：净窗高 > 超高阈值（`oversize_height_threshold`）」「判据是客户口径（企业参数，可配），非 ERP 实证」
+你: 用户逐字：「我们系统中暴露了大量的这种研发过程产生的文字，适当的文档可以引导和教育用户如何使用我们的产品，但是这类文案明显不是一个好的引导文案」「最好是扫描下全部商家后台页面，目标是提高文案的真实价值和作用，去除这类看不懂的文字」
+期望: direct_reply
+数据: 🔴 判据·**全量扫描器 + 判据单一源**：`frontend/admin-web/scripts/user-copy-scan.mjs` 用 TypeScript AST 抽「会上屏」的三类候选（JSX 文本 / 白名单 JSX 属性 / 含中文的字符串与模板串**字面块**，注释与 CSS 模板串天然不在内），并把五条机械规则与「什么算上屏」的口径做成**唯一一份**（守卫 `frontend/admin-web/tests/unit/user-copy-jargon-guard.test.ts` 与命令行共用，不写第二份正则）。复算：`cd frontend/admin-web && node scripts/user-copy-scan.mjs`（退出码 ≠ 0 = 仍有命中）。
+数据: 🔴 判据·**五族研发腔零上屏**（修复前实测 78 处 / 25 个文件，逐条具名 file:line）：R1 接口与参数细节（端点/入参/分页参数/拉全量/读面/写面/幂等/落库/数据库/服务端/内核）、R2 内部机制名（组合键/派生值/真值源/单一源/快照/状态机/兜底/插值/落账/静默）、R3 研发过程编号与判据语（`issue #NNNN`/`#NNNN`/`PR #NNNN`/`V1xx`/判据/待查明）、R4 代码标识符上屏（`oversize_height_threshold`/`scan_url`/`PC-yyyyMMdd-NNNN`）、R5 行内代码片里塞标识符（`` `HEM_MARGIN` ``）。**判据面 = 用户可见文案**，不是「源码里有没有这个词」。
+数据: 🔴 判据·**类级元守卫不退化（判别力自证）**：坏的九个取样形态各自判红（五族各一 + 既有 L2/池/分组标签三族），好的三条（行业术语 + 商家动作）一条都不红；**只改注释不红**（对照读数：守卫不得被自己的文案喂红）；**真声明面自证**（内存里注入的坏文案确实被抽出来，否则「全绿」是假绿）。
+数据: 🔴 判据·**豁免台账只许缩短 + 不空转**：`EXEMPT` 每条必须**仍然**命中某条规则，失效当场判红（逼着删干净）。当前唯一一条 = 岗位编码输入框的 placeholder（`admin、customer_service` 是编码**内容本身**，不是散文里的研发腔）。
+数据: 判据·**三条既有规则原样迁入**（不削弱）：R6 `L1/L2/L3` 代号（UI-057）、R7 「池」隐喻（UI-058）、R8 服务端分组标签（UI-092）由行扫描改为同一份 AST 口径后**仍逐条判红**，且各自保留原出口话术。
+数据: 判据·**假红清理有实测**：`value="pending_review"` / `fieldKey="door_width"` / `stopColor="#6366f1"` 三个 JSX 属性值曾被误判成文案/issue 号 ⇒ 改为**属性白名单**（只认 label/title/hint/placeholder/…）+ 十六进制颜色排除，命中 91 → 78。
+数据: **不回归**：口径/接口/字段名/权限/算料行为一字未动（`frontend-fix.no-api-change`）；被改写的文案所承载的承诺与边界**逐条保留**（未定价 ≠ ¥0.00、「拼接/接高要手选，系统不推算」+「不触发工序」、算例数字仍由真值渲染）。
+跳过: [backend-contract] 纯前端文案 + 静态守卫，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-10-07 新增（issue #6488，用户逐字两轮 + 6 张截图）：商家后台用户可见文案去「研发腔」—— 全量扫描器（AST 抽文案例，227 文件 / 6409 条候选）+ 文案规范 `docs/design/user-facing-copy-standard.md`（三档处置 + P1~P5）+ 类级守卫扩容到八条规则（R1~R5 新增，R6~R8 由 #5565/#5576/#6459 的三条原样迁入同一份单一源）。红证（实现前实测）：`npx vitest run tests/unit/user-copy-jargon-guard.test.ts` = **5 failed / 11 passed**，R1~R5 各判红并逐条具名 file:line（78 处 / 25 个文件）；修复后同命令全绿。取号 = `python3 scripts/next_case_id.py ui`（main 最大 UI-092）。⚠️ 如实登记（未固化 / 有意不做）：服务端**下发**字符串的渲染面（如米宝会话卡还原样渲染 `cohortLabel`）不在本守卫射程内（它扫源码字面量）—— 与 UI-092 的登记同源，另单跟踪。 ｜ tags: ui, copy, jargon, admin-web
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -10212,8 +10230,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：708（活跃 134，跳过 574）
-- tier 分布：smoke 12 / normal 654 / adversarial 32
+- 用例总数：709（活跃 134，跳过 575）
+- tier 分布：smoke 12 / normal 655 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
@@ -10238,7 +10256,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：92
+- 前端 UI 域：93
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
