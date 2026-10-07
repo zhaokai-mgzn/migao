@@ -263,12 +263,14 @@ jobs:
       #      本腿的作者拥有该 workflow ⇒ 让**腿自己**对「产物是不是当前源码的」负责，比"祈祷上一步跑过"更硬；
       #   ② 同一 worktree 里再出现一次 `npm run build:h5` 会让 `test_local_gate_matrix` 的**同序**判据失效
       #      （它按首次出现取位置）⇒ 同源契约要求每个命令在 CI 腿里只出现一次。
+      # 命令跑**整个 `specs/bmini/` 目录**（issue #6478 起）：腿的 `testMatch` 本来就是
+      # `specs/bmini/**/*.spec.ts`，逐文件点名会让新 spec 静默不跑（＝「登记了但从不执行」）。
       - name: Run tabBar geometry e2e
         if: steps.detect.outputs.run_tests == 'true'
         working-directory: tests
         env:
           CI: 'true'
-        run: npx playwright test specs/bmini/bmini-tabbar.spec.ts --config=playwright.bmini.config.ts
+        run: npx playwright test specs/bmini/ --config=playwright.bmini.config.ts
 
       - name: Upload e2e artifacts (failure)
         if: failure() && steps.detect.outputs.run_tests == 'true'

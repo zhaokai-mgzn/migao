@@ -17,6 +17,11 @@ export const STORAGE_KEYS = {
   // 服务端会话标识（不是 JWT），WORKER 是「当前工人」的展示缓存（真值仍在服务端）。
   WORKER_SESSION: 'worker_session_id',
   WORKER: 'worker_current',
+  // 「记住上次成功登录的账号名」（issue #6478）：**只记账号名**，按登录面分开存、进登录页预填。
+  // 🔴 绝不记 PIN / 密码 / 验证码 —— 落盘的键只有这三个 + 上面的登录态键，凭据一个都不进来。
+  LOGIN_ACCOUNT_EMPLOYEE: 'login_account_employee',
+  LOGIN_ACCOUNT_ADMIN: 'login_account_admin',
+  LOGIN_ACCOUNT_WORKER: 'login_account_worker',
 } as const
 
 // 默认租户 ID（开发用）

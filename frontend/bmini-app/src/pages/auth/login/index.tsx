@@ -3,6 +3,7 @@ import { View, Text, Button, Input } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useAuthStore } from '../../../store/authStore'
 import { sendSmsCode } from '../../../utils/auth'
+import { getRememberedAccount, rememberAccount } from '../../../utils/loginAccount'
 import { workerLogin } from '../../../services/workerService'
 import { WORKER_HOME_ROUTE } from '../../../utils/inbound/gaps'
 import './index.scss'
@@ -58,17 +59,19 @@ export default function LoginPage() {
   )
 
   // 员工入口
-  const [identifier, setIdentifier] = useState('')
+  // 「记住上次成功登录的账号名」（issue #6478）：**只预填账号名**，绝不预填密码；
+  // 从未登录过 ⇒ `getRememberedAccount` 回空串（**不编默认值**）。
+  const [identifier, setIdentifier] = useState(() => getRememberedAccount('employee'))
   const [password, setPassword] = useState('')
 
   // 管理员入口（issue #5721）
-  const [phone, setPhone] = useState('')
+  const [phone, setPhone] = useState(() => getRememberedAccount('admin'))
   const [code, setCode] = useState('')
   const [countdown, setCountdown] = useState(0)
   const [sendingCode, setSendingCode] = useState(false)
 
-  // 工人入口（issue #6467）
-  const [workerNo, setWorkerNo] = useState('')
+  // 工人入口（issue #6467）：工号预填（PIN / 设备标签不预填）
+  const [workerNo, setWorkerNo] = useState(() => getRememberedAccount('worker'))
   const [pin, setPin] = useState('')
   const [deviceLabel, setDeviceLabel] = useState('')
   const [workerSubmitting, setWorkerSubmitting] = useState(false)
@@ -107,6 +110,8 @@ export default function LoginPage() {
 
     const success = await employeeLoginAction(identifier.trim(), password)
     if (!success) return
+    // **成功之后**才记该面的账号名（记的是「上次成功登录用过的账号名」，不是「上次输入过」）
+    rememberAccount('employee', identifier.trim())
     afterLoginSuccess()
   }, [identifier, password, isLoading, employeeLoginAction, afterLoginSuccess])
 
@@ -120,6 +125,8 @@ export default function LoginPage() {
 
     const success = await smsLoginAction(phone.trim(), code.trim())
     if (!success) return
+    // 只记手机号（账号名）；**验证码绝不落盘**（issue #6478 的红线）
+    rememberAccount('admin', phone.trim())
     afterLoginSuccess()
   }, [phone, code, isLoading, smsLoginAction, afterLoginSuccess])
 
@@ -168,6 +175,8 @@ export default function LoginPage() {
         setWorkerError(res.message || '登录失败，请重试')
         return
       }
+      // 只记工号（账号名）；**PIN 绝不落盘**（共用 PAD 上更不能留凭据，issue #6478）
+      rememberAccount('worker', workerNo.trim())
       Taro.redirectTo({ url: WORKER_HOME_ROUTE })
     } finally {
       setWorkerSubmitting(false)

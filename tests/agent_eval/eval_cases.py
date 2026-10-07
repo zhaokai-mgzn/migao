@@ -1743,6 +1743,60 @@ _CASE_BM_037 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-038 [NORMAL] 登录页记住上次成功登录的账号名（按登录面分开存 / 进页预填 / 绝不记 PIN·密码·验证码）（源: cases/bmini.yml）──
+_CASE_BM_038 = EvalCase(
+    id='BM-038',
+    legacy_id='',
+    title='登录页记住上次成功登录的账号名（按登录面分开存 / 进页预填 / 绝不记 PIN·密码·验证码）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-07 原话「还要做个小优化，账号名存在 cookies 中，不要每次都要输入」—— 员工 / 管理员 / 工人三个登录面各自记住上次**成功登录**用过的账号名，再次进入登录页时预填'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**预填口径**：`getRememberedAccount(面)` 取该面**上次成功登录**用过的账号名并预填；从未登录过 ⇒ 空串（**不编默认值**）；三面各存各的键、互不串台。证据：frontend/bmini-app/tests/login-remember-account.test.tsx（判据 1a / 1b / 1c / 1f）', '判据 2·**只记「成功过」的**：失败不写、成功才覆盖 —— 把 `rememberAccount` 提到 `if (!success)` 之前 ⇒ 判据 1d 判红。证据：frontend/bmini-app/tests/login-remember-account.test.tsx', "判据 3·🔴 **反向红线（可红）**：三个面全部填满并成功登录（密码 / 短信验证码 / PIN 各带一个哨兵值）⇒ 落盘键值里**不出现**任何哨兵；且落盘的键只有账号名三键。红证（实跑，真语料注入）：把 `rememberAccount('employee', identifier.trim())` 改成 `rememberAccount('employee', password)` ⇒ 判据 2 判红。证据：frontend/bmini-app/tests/login-remember-account.test.tsx", '判据 4·**类级**：① 本仓存储键面（`STORAGE_KEYS` 的键值 + `src` 下所有 storage 调用的字面量键）不许出现凭据形态键名（`password`/`pwd`/`pin`/`*code`/`credential`…）；② 账号名三键只有 frontend/bmini-app/src/utils/loginAccount.ts 一个读写点（第二份口径即红）。证据：frontend/bmini-app/tests/login-remember-account.test.tsx（判据 2b / 2c）', '判据 5·**退出登录不清账号名**（它只是输入便利，不是登录态）：调真实现的 `logout()` 后三键原值仍在，而 `auth_token` / `auth_user` 照旧被清（对照组）。证据：frontend/bmini-app/tests/login-remember-account.test.tsx（判据 1e）', '判据 6·**口径替换已显式登记**：用户口述的「cookies」落地为 **localStorage**（`Taro.setStorageSync` + `STORAGE_KEYS`，与 frontend/bmini-app/src/utils/workerSession.ts 同款）—— 不新引依赖、不用 cookie；替换理由写在本包 CHANGELOG 与 PR body（不静默改口径）。'],
+    skip_reason='[backend-contract] 确定性页面判据（jest: frontend/bmini-app/tests/login-remember-account.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'auth', 'login', 'ux'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-039 [NORMAL] B 端 H5 输入框文字竖向居中（共享样式层 + 真几何 e2e：内层撑满外框 / 上下留白对称）（源: cases/bmini.yml）──
+_CASE_BM_039 = EvalCase(
+    id='BM-039',
+    legacy_id='',
+    title='B 端 H5 输入框文字竖向居中（共享样式层 + 真几何 e2e：内层撑满外框 / 上下留白对称）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-07 原话「H5 的输入框中的提示信息都不是居中的，文字偏上了」—— 生产 `https://app.migaozn.com/b/#/pages/auth/login/index`（390×844）实测：内层原生 input 26px 贴在 49.9px 外框顶部（上留白 0.5px / 下留白 23.4px）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**根因与修法**：Taro h5 的 `<Input>` 是两层 —— 外层 `taro-input-core`（拿 `className`，即用户看到的圆角框）+ 内层原生 `<input class="weui-input">`（Taro 自带 `height:1.47059em`）；外层 `display:block` 且无居中规则 ⇒ 内层行盒贴顶。修法落在**共享样式层** frontend/bmini-app/src/styles/input-center.scss（① 外框 `display:flex` + `align-items:center`；② 内层 `height:100%`），由 frontend/bmini-app/src/app.scss 引入。**只改竖向对齐**，不动任何尺寸 / 圆角 / 字号。', '判据 2·**真几何判据（不是字符串断言）**：tests/e2e/specs/bmini/bmini-input-center.spec.ts（配置 tests/playwright.bmini.config.ts；CI = .github/workflows/bmini-app.yml 的 `tabbar-geometry` job，该 job 的 run 自 issue #6478 起跑整个 `specs/bmini/` 目录）—— 每个可见输入面量「内层 input 高 ÷ 外框高 ≥ 0.90」「内层相对外框的上留白 == 下留白（±1 CSS px）」「上留白 > 0」。实测读数（修后）：登录页 47.906/49.906（上/下留白 1.0/1.0）、工人登录页 45.75/47.75（1.0/1.0）；修前（撤掉共享层重建后同一 spec 实跑）：登录页 26.0/49.9（0.5/23.4）⇒ 判红。', '判据 3·**共享层必须真的接线且只许一份**：frontend/bmini-app/tests/input-center-guard.test.ts 断言共享层文件在位 + 被 frontend/bmini-app/src/app.scss 引入 + 三条居中声明都在；且 `taro-input-core` 只许出现在 frontend/bmini-app/src/styles 下的 scss（逐页打补丁 ⇒ 判红）。注入式红证（in-memory，实跑）：删 `@use` ⇒ 红；外框改回 `display:block` ⇒ 红；内层改回 `height:1.47059em` ⇒ 红；把规则抄进 frontend/bmini-app/src/pages/auth/login/index.scss ⇒ 红并具名。', '判据 4·**小程序端逐字不变**：共享层的两条选择器（`taro-input-core` / `.weui-input`）只存在于 Taro **h5** 产物 DOM；小程序编译产物里 `<Input>` 是单层原生 input，选择器一个元素都匹配不到 ⇒ 对小程序零影响。'],
+    skip_reason='[backend-contract] 确定性判据（jest: frontend/bmini-app/tests/input-center-guard.test.ts；playwright: tests/e2e/specs/bmini/bmini-input-center.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'layout', 'h5'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-040 [NORMAL] 类级元守卫：bmini 输入框面台账（未登记即红 / 台账只许缩短 / 空台账 fail-closed / 抽取不完全即红）（源: cases/bmini.yml）──
+_CASE_BM_040 = EvalCase(
+    id='BM-040',
+    legacy_id='',
+    title='类级元守卫：bmini 输入框面台账（未登记即红 / 台账只许缩短 / 空台账 fail-closed / 抽取不完全即红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['任何人给 bmini 的某个页面新增一个 `<Input>`（或给已有输入框换一个 className）—— 无论他有没有确认那一面也走共享样式层，判据都要拦得住'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·🔴 **未登记即红**：以 frontend/bmini-app/src 下全部 `.tsx`（先剥注释）为射程现取 `(文件, className)` 输入面配对集，凡有配对不在 frontend/bmini-app/tests/input-surface-ledger.json 里 ⇒ 具名判红。红证（实跑，in-test 注入）：造一个用 `<Input className='brand-new__input'>` 的页面 ⇒ 报出 `src/pages/brand-new/index.tsx::brand-new__input`。", '判据 2·**台账只许缩短 + 条目必须活着**：每条登记都必须仍能被扫到（面没了 ⇒ 该条已死 ⇒ 红）。红证：内存里把 frontend/bmini-app/src/pages/worker/reprint/index.tsx 的 `<Input>` 改名 ⇒ 红并报出 `src/pages/worker/reprint/index.tsx::admin-input`。', '判据 3·**抽取必须完整（fail-closed）**：`<Input>` 出现次数必须等于抽到的 className 数；把 className 挪成第二个属性（抽取口径漂移）⇒ 红，**不许**静默跳过。红证：内存变体 frontend/bmini-app/src/pages/sessions/detail/index.tsx ⇒ 红。', '判据 4·**台账不许空转**：条数为 0 ⇒ 红（「空」不等于「全部合规」）；射程一处 `<Input>` 都扫不到 ⇒ 红；每条登记必须声明 `label` 与非空 `case_ids`。红证：清空台账 / 清空射程 / 摘掉 label 与 case_ids，三条各自判红。', '判据 5·**条数现取、不写死**：守卫按射程现算配对集、与台账**双向相等**才算过；复算命令写在 frontend/bmini-app/tests/input-surface-ledger.json 的 `_recompute` 字段（文档与用例里都不写死条数）。'],
+    skip_reason='[backend-contract] 确定性元守卫（jest: frontend/bmini-app/tests/input-center-guard.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'meta-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -13241,6 +13295,9 @@ ALL_CASES = (
     _CASE_BM_035,
     _CASE_BM_036,
     _CASE_BM_037,
+    _CASE_BM_038,
+    _CASE_BM_039,
+    _CASE_BM_040,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
