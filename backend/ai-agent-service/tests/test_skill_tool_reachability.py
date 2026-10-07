@@ -288,6 +288,10 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         "product_update", "settings_manage", "sku_update",
         # issue #5314：批量更新（新 A 档写工具）⇒ 校验目标表新增一项，未绑它的 skill 各 +1
         "product_batch_update",
+        # issue #6486 包 2：定时提醒（新 A 档写工具 `scheduled_task_manage`）⇒ 同 #5314 的形态：
+        # 它回注册表、被 `reminder` skill 绑定 ⇒ F6 要求 `_VALIDATION_RULES` 规则
+        # ⇒ **域无关**的校验目标表新增一项 ⇒ 未绑它的 skill 各 +1 死角。
+        "scheduled_task_manage",
     }),
     # customer_order：自己工具集 11 个（含 validate_input）→ 死角 10 个（#5247 复算）
     "customer_order": frozenset({
@@ -296,6 +300,10 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         "product_update", "settings_manage", "sku_update",
         # issue #5314：同上（各 +1）
         "product_batch_update",
+        # issue #6486 包 2：定时提醒（新 A 档写工具 `scheduled_task_manage`）⇒ 同 #5314 的形态：
+        # 它回注册表、被 `reminder` skill 绑定 ⇒ F6 要求 `_VALIDATION_RULES` 规则
+        # ⇒ **域无关**的校验目标表新增一项 ⇒ 未绑它的 skill 各 +1 死角。
+        "scheduled_task_manage",
     }),
     # settings：自己工具集 4 个（含 validate_input）→ 死角 9 个（#5247 复算）
     # ⚠️ 该 skill 仍**注册在全局 registry**（#5247 只把它从米宝的 `skill_names` 移出，文件与
@@ -306,6 +314,10 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         "product_update", "sku_update",
         # issue #5314：同上（各 +1）
         "product_batch_update",
+        # issue #6486 包 2：定时提醒（新 A 档写工具 `scheduled_task_manage`）⇒ 同 #5314 的形态：
+        # 它回注册表、被 `reminder` skill 绑定 ⇒ F6 要求 `_VALIDATION_RULES` 规则
+        # ⇒ **域无关**的校验目标表新增一项 ⇒ 未绑它的 skill 各 +1 死角。
+        "scheduled_task_manage",
     }),
 }
 
@@ -330,9 +342,9 @@ A5_REANCHOR_ADDITIONS: dict[str, frozenset[str]] = {
     # 三条正当性（`test_reanchored_additions_trace_to_a_real_product_change` 逐条核）：
     # ① 已注册 ② 写工具（read_only=False）③ 被 `product` skill 绑定。
     # 计数对账：账本 32 − 增量 3 == `A5_BASELINE_COUNT_PRE_5247`（29）。
-    "customer_aftersales": frozenset({"product_batch_update"}),
-    "customer_order": frozenset({"product_batch_update"}),
-    "settings": frozenset({"product_batch_update"}),
+    "customer_aftersales": frozenset({"product_batch_update", "scheduled_task_manage"}),
+    "customer_order": frozenset({"product_batch_update", "scheduled_task_manage"}),
+    "settings": frozenset({"product_batch_update", "scheduled_task_manage"}),
 }
 
 # 锚点条数的**计数对账**基准：`账本总数 − 增量条数` 必须等于它（只改数字会被这条拦住）。
