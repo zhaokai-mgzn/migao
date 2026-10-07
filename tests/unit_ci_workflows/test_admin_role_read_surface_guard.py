@@ -76,7 +76,16 @@ ROLE_READ_ENDPOINTS: dict[str, str] = {
 #: 🔴 这是**显式放宽**（diff 里看得见）、不是放宽判定：超出上限照旧红；
 #: 修法（让本判据认得命令式动态校验 ⇒ 这两个端点连同同类能一起从「无码」面里摘出去，
 #: 上限随之退回 10 甚至更低）见 issue #6378；未落地前**不得再涨**。
-ADMIN_SCOPE_UNANNOTATED_CEILING = 11
+#: 11 → 14（issue #6486 包 1，2026-10-07）：新增 `AgentScheduledTaskController` 的
+#: `POST/GET/DELETE /api/admin/agent/scheduled-tasks` —— 米宝**定时提醒**的**自助**端点
+#: （商家给自己建/查/取消待办；收件人取自认证上下文，读写都只碰自己的行）⇒ 与既有
+#: `NotificationController` 的**自助**端点同款：**有意不加细粒度码**（加码等于把自助功能
+#: 锁给持码角色），已按本判据的报错提示登记进既有台账
+#: `test_agent_permission_parity.py::UNANNOTATED_ENDPOINTS`（逐条带理由）。
+#: 🔴 与 #6367 同款的**显式放宽**（diff 里看得见）、不是放宽判定：超出上限照旧红。
+#: 退回路径：这 3 条若能表达成注解式（例如引入「自助」语义码、或把自助面移出 `/api/admin/**`），
+#: 读数应随之退回 11；在此之前**不得再涨**。
+ADMIN_SCOPE_UNANNOTATED_CEILING = 14
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 一、共用的静态归属机具（**不造第二套解析器**：issue #3570 的教训）
