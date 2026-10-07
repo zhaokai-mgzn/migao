@@ -353,7 +353,8 @@ UNCOVERED_FACES: tuple[dict[str, str], ...] = (
     {
         "face": "「省料看板」的域归属",
         "reason": (
-            "该页第一屏两个读端点（`StockBatchController` 的 `saving-board` / `saving-trend`）是**方法级** "
+            "该页第一屏读端点（`StockBatchController` 的 `saving-board`；#6459 起 `saving-trend` 已随"
+            "「单位产出消耗」表从首屏退场、只剩这一条）是**方法级** "
             "`product:list`（V116/#5145 的口径：批次/库存属商品域读权限、不新造权限点），而它挂在"
             "「仓储与物料」组下 —— P4 按子菜单粒度把节点码收敛到该读码（**语义跨度最大**的一条）。"
             "第三条候选（为它**新造一个专属读码**）不在射程：新造权限点 = 新增一处真值 + 给全部岗位授码（授权变更）。"

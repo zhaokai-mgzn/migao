@@ -320,6 +320,42 @@ class SavingMetricsBoardRealDbTest {
         assertThat(opening.unknownCostLines()).as("O2 那行没有均价").isEqualTo(1);
     }
 
+    // ────────────────────────────────────────────── 判据 6（PR-093，issue #6459）：批次结构趋势
+
+    @Test
+    @DisplayName("🔴 判据6（#6459）：batchTrend 只含采购腿 —— 存量所在的那个月**整期缺席**（混入即多一行）")
+    void batchTrendOnlyCoversThePurchaseCohort() {
+        SavingMetricViews.Board board = service.savingBoard(TENANT_ID, null, "month");
+
+        // 采购腿的分组行按期间聚合（本判据的对照读数，取自同一份 batchGroups）
+        java.util.Map<String, int[]> fromGroups = new java.util.LinkedHashMap<>();
+        for (SavingMetricViews.BatchGroup g : board.batchGroups()) {
+            if (!SavingMetricViews.COHORT_PURCHASE.equals(g.cohort())) {
+                continue;
+            }
+            int[] acc = fromGroups.computeIfAbsent(g.period(), k -> new int[2]);
+            acc[0] += g.le0_2Count();
+            acc[1] += g.batchCount();
+        }
+
+        assertThat(board.batchTrend()).as("期数与采购腿的分组期数一致").hasSize(fromGroups.size());
+        int batches = 0;
+        for (SavingMetricViews.BatchPeriodPoint p : board.batchTrend()) {
+            int[] acc = fromGroups.get(p.period());
+            assertThat(acc).as("每期都能在采购腿里找到同名期间（%s）", p.period()).isNotNull();
+            assertThat(p.batchCount()).isEqualTo(acc[1]);
+            assertThat(p.le0_2Count()).isEqualTo(acc[0]);
+            batches += p.batchCount();
+        }
+        assertThat(batches).as("🔴 合计恒 = 采购的 2 批（P1/P2）；把存量算进来会变 4 批").isEqualTo(2);
+        assertThat(board.batchTrend()).extracting(SavingMetricViews.BatchPeriodPoint::period)
+                .as("🔴 存量 O1/O2 在 2026-08 —— 该期**一个采购批次都没有**，故整期不得出现在序列里")
+                .containsExactly(PERIOD_SEP);
+        assertThat(board.batchTrend().get(0).le0_2Share())
+                .as("采购两批余量都在 >1 档 ⇒ 该期占比 = 0/2（真 0，不是无数据）")
+                .isEqualByComparingTo("0.0000");
+    }
+
     // ────────────────────────────────────────────── 判据 3（PR-095）：空数据不冒充 0
 
     @Test

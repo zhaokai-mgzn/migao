@@ -73,9 +73,6 @@ const REGISTERED_MARKER_FILES = [
   'src/components/settings/OversizeThresholdPreview.tsx',
   'src/app/(dashboard)/production/remnants/page.tsx',
   'src/app/(dashboard)/production/routings/page.tsx',
-  // issue #6430 省料看板重设计：口径/门道文案里的**强调**（消费点已接 `InlineMarkdown`）
-  'src/lib/saving-board.ts',
-  'src/app/(dashboard)/production/saving-board/page.tsx',
 ] as const
 
 /**
@@ -91,7 +88,6 @@ const WIRED_FILES = [
   'src/components/settings/OversizeThresholdPreview.tsx',
   'src/app/(dashboard)/production/remnants/page.tsx',
   'src/app/(dashboard)/production/routings/page.tsx',
-  'src/app/(dashboard)/production/saving-board/page.tsx',
 ] as const
 
 interface Leak {

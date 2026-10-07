@@ -1,22 +1,23 @@
 // case_ids: PR-093, PR-094, PR-095, PR-096
 //
-// PR-093~096（issue #5159）：省料看板页的**可执行判据**（`admin-web` 组件面）。
+// 省料看板页的**可执行判据**（`admin-web` 组件面；首屏形态 = issue #6459 用户裁定）。
 //
 // ## 本文件的判别性做法（为什么桩数据是"不自洽"的）
 //
 // 🔴 **米数 / 占比 / 金额一律原样渲染服务端值**（要求「看板汇总 == Σ 逐单」逐值相等）。
-// 所以桩数据**故意不自洽**：
-//   · `savedGroups[].savedMeters = 77` 而 `cohorts[purchase].savedMeters = 12.4`（不是它的和）；
-//   · `total.savedMeters = 99`（也不是任何人的和）。
-// ⇒ 前端一旦"顺手"求和/求差/重算，两个数就对不上，断言立刻红（判据不会被自己的文案喂绿）。
+// 所以桩数据**故意不自洽** —— 三个「省料米数」互不相等：
+//   · `savedGroups[].savedMeters = 77`（逐单分组腿）
+//   · `comparison.savedMeters.current = 55`（服务端「本期」值 = 首屏大数字）
+//   · `total.savedMeters = 99`（服务端累计腿 = 明细合计行 / 「累计」副行）
+// ⇒ 前端一旦「顺手」求和/求差/换用另一个数，断言立刻红。
 //
-// 🔴 **空数据不冒充 0**（判据 4）：第二组用例把占比与采购米数都置 `null` ⇒ 卡片必须显示
-// 「无数据」，**且不得出现 `0.0%` / `0 米`**（0 会被读成「没有浪费」）。
+// 🔴 **空数据不冒充 0**（判据 4）：第二组夹具把合计与趋势都置空 ⇒ 必须显示「无数据」，
+// **且不得出现 `0 米` / `0.0%`**（0 会被读成「没有浪费」）。
 //
-// 🔴 **存量单列**（判据 2）：`opening` 有**自己的一张卡**，占比 50.0% 与「切换后」的 0.0%
-// 是两个数；两组混算会得到 25.0% ⇒ 任一混淆写法都会让某条断言红。
+// 🔴 **一条读面**（issue #6459）：页面只调 `saving-board`；旧版的两条腿（board + trend）
+// 有一类「只给一条腿加筛选 ⇒ 两处口径分属两个域」的漂移面 ⇒ 现在**结构性消失**，本文件把它钉住。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, waitFor } from '@testing-library/react'
 
 const mockBoard = vi.fn()
 const mockTrend = vi.fn()
@@ -33,127 +34,38 @@ vi.mock('sonner', () => ({
 }))
 
 import SavingBoardPage from '@/app/(dashboard)/production/saving-board/page'
-import type { SavingBoard, SavingTrend } from '@/types'
+import type { SavingBoard } from '@/types'
 
 const ok = (data: unknown) => ({ data: { data } })
 
-const TREND: SavingTrend = {
-  granularity: 'month',
-  timezone: 'Asia/Shanghai',
-  points: [
-    {
-      period: '2026-08',
-      purchasedMeters: null, // 该月只有存量导入 ⇒ ② 无数据（不是 0 米）
-      openingMeters: 35,
-      consumedMeters: 2,
-      outputAreaM2: 0, // 分母 0 ⇒ 单位产出读不出
-      metersPerM2: null,
-      outputLines: 0,
-    },
-    {
-      period: '2026-09',
-      purchasedMeters: 15,
-      openingMeters: null,
-      consumedMeters: 4.8,
-      outputAreaM2: 5.8,
-      metersPerM2: 0.8276,
-      outputLines: 3,
-    },
-  ],
-  purchasedTotalMeters: 15,
-  consumedTotalMeters: 6.8,
-  openingTotalMeters: 35,
-}
+const BUCKETS = [
+  { key: 'le_0_2', label: '≤0.2 米', batchCount: 0, share: 0, remainingMeters: null },
+  { key: 'b0_2_0_5', label: '0.2~0.5 米', batchCount: 0, share: 0, remainingMeters: null },
+  { key: 'b0_5_1', label: '0.5~1 米', batchCount: 0, share: 0, remainingMeters: null },
+  { key: 'gt_1', label: '>1 米', batchCount: 15, share: 1, remainingMeters: null },
+]
 
-let bucketSeq = 0
-const BUCKET_KEYS = ['le_0_2', 'b0_2_0_5', 'b0_5_1', 'gt_1'] as const
-const bucket = (label: string, count: number, share: number | null) => ({
-  // 与真实服务端同形：恒四档、key 唯一（`le_0_2`/`b0_2_0_5`/`b0_5_1`/`gt_1`）
-  key: BUCKET_KEYS[bucketSeq++ % 4],
-  label,
-  batchCount: count,
-  share,
-  remainingMeters: null,
+const cohort = (over: Record<string, unknown> = {}) => ({
+  cohort: 'purchase',
+  cohortLabel: '切换后（采购入库）',
+  opening: false,
+  batchCount: 15,
+  le0_2Count: 0,
+  le0_2Share: 0,
+  remainingMeters: 12540.3,
+  savedMeters: 12.4,
+  savedAmount: 103.76,
+  lineCount: 6,
+  unknownCostLines: 1,
+  buckets: BUCKETS,
+  ...over,
 })
 
 const BOARD: SavingBoard = {
   granularity: 'month',
   timezone: 'Asia/Shanghai',
-  cohorts: [
-    {
-      cohort: 'purchase',
-      cohortLabel: '切换后（采购入库）',
-      opening: false,
-      batchCount: 2,
-      le0_2Count: 0,
-      le0_2Share: 0,
-      remainingMeters: 9.4,
-      savedMeters: 12.4,
-      savedAmount: 103.76,
-      lineCount: 6,
-      unknownCostLines: 1,
-      buckets: [bucket('≤0.2 米', 0, 0), bucket('0.2~0.5 米', 0, 0), bucket('0.5~1 米', 0, 0), bucket('>1 米', 2, 1)],
-    },
-    {
-      cohort: 'opening',
-      cohortLabel: '存量导入（切换前历史包袱）',
-      opening: true,
-      batchCount: 2,
-      le0_2Count: 1,
-      le0_2Share: 0.5,
-      remainingMeters: 29.2,
-      savedMeters: 5.8,
-      savedAmount: 33.8,
-      lineCount: 2,
-      unknownCostLines: 1,
-      buckets: [bucket('≤0.2 米', 1, 0.5), bucket('0.2~0.5 米', 0, 0), bucket('0.5~1 米', 0, 0), bucket('>1 米', 1, 0.5)],
-    },
-    {
-      cohort: 'unknown',
-      cohortLabel: '来源未知',
-      opening: false,
-      batchCount: 0,
-      le0_2Count: 0,
-      le0_2Share: null, // 无数据（**不是 0**）
-      remainingMeters: null,
-      savedMeters: null,
-      savedAmount: null,
-      lineCount: 0,
-      unknownCostLines: 0,
-      buckets: [bucket('≤0.2 米', 0, null), bucket('0.2~0.5 米', 0, null), bucket('0.5~1 米', 0, null), bucket('>1 米', 0, null)],
-    },
-  ],
-  batchGroups: [
-    {
-      period: '2026-09',
-      cohort: 'purchase',
-      cohortLabel: '切换后（采购入库）',
-      opening: false,
-      materialKey: 'p1|SKU-A',
-      productId: 'p1',
-      skuCode: 'SKU-A',
-      batchCount: 2,
-      le0_2Count: 0,
-      le0_2Share: 0,
-      remainingMeters: 9.4,
-      buckets: [bucket('≤0.2 米', 0, 0)],
-    },
-    {
-      period: '2026-08',
-      cohort: 'opening',
-      cohortLabel: '存量导入（切换前历史包袱）',
-      opening: true,
-      materialKey: 'p1|SKU-A',
-      productId: 'p1',
-      skuCode: 'SKU-A',
-      batchCount: 2,
-      le0_2Count: 1,
-      le0_2Share: 0.5,
-      remainingMeters: 29.2,
-      buckets: [bucket('≤0.2 米', 1, 0.5)],
-    },
-  ],
-  // 🔴 故意与 cohorts 的和（18.2）不等 ⇒ 前端任何"顺手求和"都会红
+  cohorts: [cohort(), cohort({ cohort: 'opening', opening: true, batchCount: 0, le0_2Share: null })],
+  batchGroups: [],
   savedGroups: [
     {
       period: '2026-09',
@@ -171,6 +83,7 @@ const BOARD: SavingBoard = {
       unknownCostLines: 0,
     },
   ],
+  // 🔴 服务端累计腿：99 / 999 —— 与逐单 77、本期 55 **都不等**
   total: {
     formulaMeters: 100,
     plannedMeters: 1,
@@ -182,151 +95,192 @@ const BOARD: SavingBoard = {
     le0_2Count: 1,
     le0_2Share: 0.25,
   },
+  comparison: {
+    savedMeters: {
+      period: '2026-10',
+      previousPeriod: '2026-09',
+      current: 55,
+      previous: 120,
+      verdict: 'worse',
+    },
+    savedAmount: {
+      period: '2026-10',
+      previousPeriod: '2026-09',
+      current: 555,
+      previous: 1500,
+      verdict: 'worse',
+    },
+    le0_2Share: null,
+  },
+  // 🔴 「几乎用完」1 / 3 与「当期收进」4 / 6 是两组不同的服务端值 —— 混用即红
+  batchTrend: [
+    { period: '2026-08', batchCount: 4, le0_2Count: 1, le0_2Share: 0.25 },
+    { period: '2026-09', batchCount: 6, le0_2Count: 3, le0_2Share: 0.5 },
+  ],
 }
 
 const EMPTY_BOARD: SavingBoard = {
-  ...BOARD,
-  cohorts: BOARD.cohorts.map((c) =>
-    c.cohort === 'purchase'
-      ? { ...c, batchCount: 0, le0_2Count: 0, le0_2Share: null, savedMeters: null, savedAmount: null, remainingMeters: null }
-      : c
-  ),
-  batchGroups: [],
-  savedGroups: [],
-}
-
-const EMPTY_TREND: SavingTrend = {
   granularity: 'month',
   timezone: 'Asia/Shanghai',
-  points: [],
-  purchasedTotalMeters: null,
-  consumedTotalMeters: null,
-  openingTotalMeters: null,
+  cohorts: [cohort({ batchCount: 0, le0_2Share: null, savedMeters: null, savedAmount: null, remainingMeters: null })],
+  batchGroups: [],
+  savedGroups: [],
+  total: {
+    formulaMeters: null,
+    plannedMeters: null,
+    savedMeters: null,
+    savedAmount: null,
+    lineCount: 0,
+    unknownCostLines: 0,
+    batchCount: 0,
+    le0_2Count: 0,
+    le0_2Share: null,
+  },
+  comparison: null,
+  batchTrend: [],
 }
 
 const renderPage = async () => {
   render(<SavingBoardPage />)
-  // 等首屏两次请求都落地（`Promise.all`）—— 用 findBy* 等待，不用定长 sleep。
-  // ⚠️ 不能用指标卡当等待信号：`metricCards` **恒两条**、不等数据（`board = null` 时就已渲染，
-  // 只是值显示「无数据」）⇒ 它在「读面未落地 / 已落地」两态下**都成立**，等它等于没等
-  // （issue #5300 的「等 A 断言 B」，全文件共用这一处等待）⇒ 改等**只可能来自 board 读面**的来源组卡。
-  // 两条腿由同一个 `Promise.all` 落地（同一批 setState）⇒ 等它就同时覆盖了 trend 腿。
-  await screen.findByTestId('saving-cohort-purchase')
+  // 等**只可能来自读面**的节点落地（规则句是静态的，不能当等待信号）
+  await screen.findByTestId('saving-metric-saved-meters')
+  await waitFor(() => expect(mockBoard).toHaveBeenCalled())
 }
 
-describe('#5159 省料看板页', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockBoard.mockResolvedValue(ok(BOARD))
-    mockTrend.mockResolvedValue(ok(TREND))
+beforeEach(() => {
+  vi.clearAllMocks()
+  mockBoard.mockResolvedValue(ok(BOARD))
+  mockTrend.mockResolvedValue(ok({}))
+})
+
+describe('#6459 省料看板页（结论数字 + 趋势 + 明细）', () => {
+  it('🔴 首屏大数字 = 服务端「本期」值（55 米 / 555 元），不是逐单求和（77）', async () => {
+    await renderPage()
+    const meters = screen.getByTestId('saving-metric-saved-meters')
+    const amount = screen.getByTestId('saving-metric-saved-amount')
+
+    expect(within(meters).getByText('55 米')).toBeTruthy()
+    expect(within(amount).getByText('555 元')).toBeTruthy()
+    expect(meters.textContent).toContain('省下的布 · 2026-10')
+    // 「累计」副行 = 服务端 total（也是原值，不是任何求和）
+    expect(meters.textContent).toContain('累计 99 米')
+    expect(amount.textContent).toContain('累计 999 元')
+    // 红证：任何「顺手」把分组腿求和（77 / 88.88）拿来做大数字的实现都在这里红
+    expect(within(meters).queryByText('77 米')).toBeNull()
+    expect(within(amount).queryByText('88.88 元')).toBeNull()
   })
 
-  it('🔴 判据3：两条指标**都在**页面上，且写明「单看①会被排料误导」', async () => {
+  it('🔴 环比：好坏词来自服务端 verdict（worse ⇒ 变差），期间也来自服务端', async () => {
     await renderPage()
-    const first = screen.getByTestId('saving-metric-le-0-2')
-    const second = screen.getByTestId('saving-metric-purchased')
+    const el = screen.getByTestId('saving-comparison-saved-meters')
 
-    // 指标①：剩余 ≤0.2 米的批次占比（档位文案来自服务端 label）
-    expect(within(first).getByText(/剩余/)).toBeTruthy()
-    expect(within(first).getByText('≤0.2 米', { exact: false })).toBeTruthy()
-    expect(within(first).getByText('0.0%')).toBeTruthy()
-    // 指标②：入库/采购总米数
-    expect(within(second).getByText('入库/采购总米数')).toBeTruthy()
-    expect(within(second).getByText('15 米')).toBeTruthy()
+    expect(el.textContent).toContain('2026-09')
+    expect(el.textContent).toContain('2026-10')
+    expect(el.textContent).toContain('变差')
 
-    const note = screen.getByTestId('saving-metric-coexistence-note')
-    expect(note.textContent).toContain('两条指标必须并用')
-    expect(note.textContent).toContain('排料')
-    expect(note.textContent).toContain('误导')
-    expect(note.textContent).toContain('剩得更多')
-    expect(note.textContent).toContain('显示成变差')
+    // 单变量对照：只把 verdict 改成 better ⇒ 页面必须改口（写死「变好了」的前端过不了）
+    mockBoard.mockResolvedValue(
+      ok({
+        ...BOARD,
+        comparison: {
+          ...BOARD.comparison!,
+          savedMeters: { ...BOARD.comparison!.savedMeters, verdict: 'better' },
+        },
+      })
+    )
+    render(<SavingBoardPage />)
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByTestId('saving-comparison-saved-meters')
+          .some((n) => (n.textContent ?? '').includes('变好'))
+      ).toBe(true)
+    )
+  })
+
+  it('🔴 环比：本期还没过完（verdict=partial）⇒ 说「先不算」，不冒充结论', async () => {
+    mockBoard.mockResolvedValue(
+      ok({
+        ...BOARD,
+        comparison: {
+          ...BOARD.comparison!,
+          savedMeters: { ...BOARD.comparison!.savedMeters, verdict: 'partial' },
+        },
+      })
+    )
+    await renderPage()
+    const el = screen.getByTestId('saving-comparison-saved-meters')
+
+    expect(el.textContent).toContain('还没过完')
+    expect(el.textContent).not.toContain('变好')
+    expect(el.textContent).not.toContain('变差')
+  })
+
+  it('🔴 趋势表：几乎用完的布（1 / 3 批）与当期收进的布（4 / 6 批）是两组服务端值，占比原样', async () => {
+    await renderPage()
+    const cellsOf = (testId: string) =>
+      within(screen.getByTestId(testId))
+        .getAllByRole('cell')
+        .map((c) => c.textContent)
+
+    // 逐格断言：把「几乎用完」渲染成当期全部批数（口径松掉）⇒ 第 2 格由 1 变 4 ⇒ 当场红
+    expect(cellsOf('saving-batch-trend-2026-08')).toEqual(['2026-08', '1', '4', '25.0%'])
+    expect(cellsOf('saving-batch-trend-2026-09')).toEqual(['2026-09', '3', '6', '50.0%'])
+    // 档位文案来自服务端 `buckets[].label`（写死「0.2」的另一条判据在 lib 测试里）
+    expect(screen.getByTestId('saving-batch-trend').textContent).toContain('≤0.2 米')
+  })
+
+  it('🔴 逐单明细原样渲染 + 合计行 = 服务端 total（99 米 / 999 元），不是逐行求和', async () => {
+    await renderPage()
+    const row = screen.getByTestId('saving-saved-group-2026-09-p1|SKU-A')
+    expect(row.textContent).toContain('77 米')
+    expect(row.textContent).toContain('88.88 元')
+
+    const total = screen.getByTestId('saving-saved-groups-total')
+    expect(total.textContent).toContain('99 米')
+    expect(total.textContent).toContain('999')
+    expect(total.textContent).not.toContain('88.88')
+    // 未记均价的行数必须说出来（金额是**下界**）
+    expect(total.textContent).toContain('2 行未记批次均价')
+  })
+
+  it('🔴 明细与口径区**默认收起**（首屏不堆东西；issue #6459）', async () => {
+    await renderPage()
+    expect((screen.getByTestId('saving-saved-groups-details') as HTMLDetailsElement).open).toBe(false)
+    expect((screen.getByTestId('saving-footnotes') as HTMLDetailsElement).open).toBe(false)
   })
 
   it('🔴 判据4：无数据 ⇒ 显示「无数据」，**不得**渲染成 0', async () => {
     mockBoard.mockResolvedValue(ok(EMPTY_BOARD))
-    mockTrend.mockResolvedValue(ok(EMPTY_TREND))
     await renderPage()
 
-    const first = screen.getByTestId('saving-metric-le-0-2')
-    const second = screen.getByTestId('saving-metric-purchased')
-    expect(within(first).getByText('无数据')).toBeTruthy()
-    expect(within(second).getByText('无数据')).toBeTruthy()
-    // 红证：实现若把 null 回落成 0 ⇒ 这里会出现「0.0%」/「0 米」⇒ 两条断言之一必红
-    expect(within(first).queryByText('0.0%')).toBeNull()
-    expect(within(second).queryByText('0 米')).toBeNull()
-
-    // 「来源未知」组的占比无数据（计数 0 照实显示 —— 计数为 0 是事实）
-    // ⚠️ 组卡来自 board 读面（`cohorts` 为空时整段不渲染）⇒ 对**异步渲染面**用同步 `getBy*`
-    // 会命中不了还没渲染的节点（issue #5300 实测红：`Unable to find
-    // [data-testid="saving-cohort-unknown"]`）。等**目标本身**出现，断言语义一字未改。
-    const unknown = await screen.findByTestId('saving-cohort-unknown')
-    expect(within(unknown).getByTestId('saving-cohort-unknown-le-share').textContent).toBe('无数据')
-    expect(within(unknown).getByTestId('saving-cohort-unknown-batch-count').textContent).toBe('0')
-
-    // L2 / L1 / L3 三段空数据都渲染「无数据」，不是空表也不是 0
-    expect(screen.getByTestId('saving-batch-groups-empty').textContent).toBe('无数据')
+    const meters = screen.getByTestId('saving-metric-saved-meters')
+    const amount = screen.getByTestId('saving-metric-saved-amount')
+    expect(within(meters).getByText('无数据')).toBeTruthy()
+    expect(within(amount).getByText('无数据 元')).toBeTruthy()
+    // 红证：实现若把 null 回落成 0 ⇒ 这里会出现「0 米」/「0 元」⇒ 断言必红
+    expect(meters.textContent).not.toContain('0 米')
+    expect(amount.textContent).not.toContain('0 元')
+    // 趋势空 ⇒ 「无数据」；明细空 ⇒ 「无数据」（不是空表、也不是 0）
+    expect(screen.getByTestId('saving-batch-trend-empty').textContent).toBe('无数据')
     expect(screen.getByTestId('saving-saved-groups-empty').textContent).toBe('无数据')
-    expect(screen.getByTestId('saving-trend-empty').textContent).toBe('无数据')
+    // 后端未部署（无 comparison / batchTrend）时同样不崩、不渲染环比块
+    expect(screen.queryByTestId('saving-comparison-saved-meters')).toBeNull()
   })
 
-  it('🔴 判据2：存量导入**独立成卡**（50.0%），不混进「切换后」（0.0%）', async () => {
+  it('🔴 判据2：趋势只吃服务端 batchTrend —— 存量/来源未知的批次不进序列（页面不自己分来源）', async () => {
     await renderPage()
-    const purchase = screen.getByTestId('saving-cohort-purchase')
-    const opening = screen.getByTestId('saving-cohort-opening')
-
-    expect(within(purchase).getByTestId('saving-cohort-purchase-le-share').textContent).toBe('0.0%')
-    expect(within(opening).getByTestId('saving-cohort-opening-le-share').textContent).toBe('50.0%')
-    // 「存量导入」必须打得出来（用户看得见这是历史包袱）
-    expect(opening.textContent).toContain('存量导入')
-    expect(opening.textContent).toContain('单列')
-    // 红证：把两组混算 ⇒ 占比会变成 25.0%（1/4），与上面两条断言都不符
-    expect(within(purchase).getByTestId('saving-cohort-purchase-le-share').textContent).not.toBe('25.0%')
-    expect(within(purchase).getByTestId('saving-cohort-purchase-batch-count').textContent).toBe('2')
-    expect(within(opening).getByTestId('saving-cohort-opening-batch-count').textContent).toBe('2')
-
-    // L2 分组表里两组是**两行**（不是一行加总）
-    // ⚠️ 2026-10-06 定位串改判（issue #6430）：行 testid 由 `…-<cohort>-<period>` 改为
-    //    `…-<cohort>-<period>-<skuCode|productId>` —— 同一 (cohort, period) 下多行（同物料不同规格）时
-    //    旧 testid 会撞车（一个 testid 命中多行 ⇒ `getByTestId` 直接抛错，定位不到具体行）。
-    //    **判据一字不放宽**：断言的仍是「这两组各自成行」。
-    expect(screen.getByTestId('saving-batch-group-purchase-2026-09-SKU-A')).toBeTruthy()
-    expect(screen.getByTestId('saving-batch-group-opening-2026-08-SKU-A')).toBeTruthy()
+    // 页面渲染的期数 == 服务端给的期数（多出来的一行只可能来自前端自己聚合 batchGroups）
+    const rows = screen.getAllByTestId(/^saving-batch-trend-2026-/)
+    expect(rows).toHaveLength(2)
+    // 承接服务端口径的文本说明在折叠区（不在首屏刷存在感）
+    expect(screen.getByTestId('saving-footnotes').textContent).toContain('老库存不算')
   })
 
-  it('🔴 判据1：米数/金额**原样渲染服务端值**（桩数据不自洽 ⇒ 任何前端重算必红）', async () => {
+  it('🔴 一条读面：页面只调 saving-board（不再有「两腿不同参」的口径漂移面）', async () => {
     await renderPage()
-    const group = screen.getByTestId('saving-saved-group-purchase-2026-09')
-    // 分组腿：77 米 / 88.88 元（服务端给的，不是 12.4 / 103.76）
-    expect(group.textContent).toContain('77 米')
-    expect(group.textContent).toContain('88.88 元')
-    // 来源组卡：12.4 米 / 103.76 元 —— 与分组腿是两个数，页面**两个都照实显示**
-    const purchase = screen.getByTestId('saving-cohort-purchase')
-    expect(purchase.textContent).toContain('12.4 米')
-    expect(purchase.textContent).toContain('103.76 元')
-    // 未记均价的行数必须说出来（否则「读不出」会被读成「只省了这么点」）
-    expect(purchase.textContent).toContain('1 行未记批次均价')
-  })
-
-  it('🔴 判据3(L3)：② 不含存量导入；分母 0 ⇒ 单位产出显「无数据」', async () => {
-    await renderPage()
-    const aug = screen.getByTestId('saving-trend-2026-08')
-    // 该月只有存量导入 ⇒ ② 无数据（**不是 0 米**），存量导入单列 35 米
-    expect(aug.textContent).toContain('无数据')
-    expect(aug.textContent).toContain('35 米')
-    expect(aug.textContent).not.toContain('0 米')
-    // 分母 0 ⇒ 单位产出消耗读不出
-    expect(aug.textContent).toContain('无数据')
-
-    const sep = screen.getByTestId('saving-trend-2026-09')
-    expect(sep.textContent).toContain('15 米')
-    expect(sep.textContent).toContain('0.8276')
-    // 时区口径必须看得见（否则跨月边界上是两个数）
-    expect(screen.getByTestId('saving-trend').textContent).toContain('Asia/Shanghai')
-  })
-
-  it('粒度切换 ⇒ 请求带上 service 认得的取值（未知值由服务端 400 拒绝，前端不静默回落）', async () => {
-    await renderPage()
+    expect(mockBoard).toHaveBeenCalledTimes(1)
     expect(mockBoard).toHaveBeenCalledWith({ granularity: 'month' })
-    expect(mockTrend).toHaveBeenCalledWith({ granularity: 'month' })
+    expect(mockTrend).not.toHaveBeenCalled()
   })
 })
