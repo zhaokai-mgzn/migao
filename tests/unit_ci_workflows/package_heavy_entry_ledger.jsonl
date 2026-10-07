@@ -22,4 +22,5 @@
 {"id":"1791333203.89709.20189","ts":"2026-10-07T00:33:24Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6468-bmini-quick-actions-b-side","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791333214.89904.15472","ts":"2026-10-07T00:33:34Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/saving-board-simplify","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791335434.56728.9437","ts":"2026-10-07T01:10:34Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/saving-board-simplify","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791347357.38643.28049","ts":"2026-10-07T04:29:18Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6486-scheduled-task-design","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791351570.54777.14860","ts":"2026-10-07T05:39:31Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6488-copy-plain-language","why":"子包 worktree 直跑全量（无批次标记）"}
