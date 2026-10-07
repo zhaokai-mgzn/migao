@@ -4724,16 +4724,17 @@
 
 ### ON-003. intent 归属表全量登记 + 双端能力视图契约校验（v2 按 agent 核对） 🔵
 ```
-你: schema 全量登记 27 个业务 intent（双端 24 + finance 仅 mibao + knowledge_manage/quote 仅 xiaobu——knowledge_faq 已双端可达，issue #3059）；契约校验与双端真实映射按 agent 分别对比
+你: schema 全量登记 30 个业务 intent（双端 22 + 仅 mibao 5（finance + 加工单域 3 + 定时提醒 1）+ 仅 xiaobu 2（knowledge_manage/quote）——knowledge_faq 已双端可达，issue #3059）；契约校验与双端真实映射按 agent 分别对比，活映射侧另有一条端到端判据
 期望: none
-数据: schema.intent_ownership 全量登记 27 个业务 intent（排除 general 兜底；mibao 已启用 knowledge_faq 知识卡片检索，issue #3059；knowledge_manage 管理意图不可达 agent——管理走 admin-web）
+数据: schema.intent_ownership 全量登记 30 个业务 intent（排除 general 兜底；mibao 已启用 knowledge_faq 知识卡片检索，issue #3059；knowledge_manage 管理意图不可达 agent——管理走 admin-web；定时提醒 scheduled_task_manage 仅 mibao（issue #6486 包 2 引入、#6514 补登记 schema））
 数据: 契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中
 数据: xiaobu 专属 intent（quote/knowledge_manage）在 mibao 映射缺失是正常的，不得误报（knowledge_faq 现为双端可达）
 数据: 缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）
+数据: **活映射侧**（issue #6514）：backend/ai-agent-service/tests/test_ontology_contract.py 的 TestLiveRegistryMatchesSchema::test_live_registry_matches_schema_no_violations 直接跑 scripts/check_ontology_contract.py（= contract-check.sh 第 6 项同一入口）并断言 exit 0 —— 在装了全依赖的 job（ai-agent-tests.yml 的 ai-agent-service unit tests）里执行且**无 skip 分支**；测试文件里的夹具快照漂移不构成「有人守着」
 跳过: [backend-contract] 契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.context-memory
-溯源: 2026-09-04 更新：切片 A 全量登记 27 intent + 契约校验 v2（按 agent 核对，get_all_skill_names 口径） ｜ tags: ontology, intent_ownership, contract, dual_agent
+溯源: 2026-09-04 更新：切片 A 全量登记 27 intent + 契约校验 v2（按 agent 核对，get_all_skill_names 口径）；2026-10-07 更新（issue #6514）：登记数改按现取口径写 30（定时提醒 scheduled_task_manage 补登记 schema，引入者 PR #6499 漏登记 ⇒ contract-check.sh 第 6 项曾恒红）；补活映射侧端到端判据（改前唯一验活映射的端到端判据在 CI 最小环境恒 skip、替代面是硬编码快照） ｜ tags: ontology, intent_ownership, contract, dual_agent
 
 ### ON-004. vision 分析文本落上下文槽 + base_skill 接线（行为闭环收口） 🔵
 ```

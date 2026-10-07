@@ -22,6 +22,19 @@
   * `TestLiveAuditEndToEnd` —— 端到端跑真实 CLI（需 ai-agent 全依赖）：
     本机/ai-agent-tests.yml 里有依赖 ⇒ 真跑；CI 最小环境（无 loguru）⇒ **显式 skip
     并记原因**（照实登记，不把"没跑"读成"通过"）。
+  * `TestLiveLayerIsWiredInCi` —— **判别力前置**（issue #6514）：上一段的 skip 只在
+    「活映射面在 CI 里**真有人跑**」时才允许成立 —— 替代判据 =
+    `backend/ai-agent-service/tests/test_ontology_contract.py::test_live_registry_matches_schema_no_violations`
+    （直接跑 `scripts/check_ontology_contract.py` 断言 exit 0，**无 skip**），
+    执行面 = `ai-agent-tests.yml` 的 `ai-agent-service unit tests`（装全依赖）。
+    这条接线被摘掉 ⇒ **判红**（不是静默跳过）；本文件也据此在台账
+    `tests/unit_ci_workflows/wiring_claims_ledger.json` 登记了 `WIRING_UNDER_TEST`（§28.2）。
+
+⚠️ issue #6514 的病灶（本文件改前即此形态）：#6499 加了活映射却没登记 schema，
+`contract-check.sh` 第 6 项在 main 上恒红，而 **CI 结构性看不见** —— 因为
+① 唯一验活映射的端到端判据（上一段）在最小环境里恒 skip；② skip 理由声称「同口径的
+schema 层断言见兄弟判据」，而兄弟判据用的是**本文件里硬编码的快照**（不是活映射）
+⇒ 制造了「有人守着」的假象。现在 skip 有前置、指向的替代判据是真的（上一段）。
 
 反向证明（不把门禁放宽成空判据）：`test_false_declaration_is_still_detected`
 用**注入式红证**——造一个真·声明可达却无映射的 intent ⇒ 必须报违规。
@@ -53,6 +66,60 @@ sys.path.insert(0, str(AIS_ROOT))
 from app.ontology.contract import check_intent_ownership  # noqa: E402
 from app.ontology.loader import load_ontology  # noqa: E402
 
+# ── 活映射面的**接线声明**（`migao-dev-flow` §28.2；台账 = tests/unit_ci_workflows/wiring_claims_ledger.json）──
+# 本判据守的接线 = 「活映射（真 registry ↔ schema）**在 CI 里真有人跑**」：全依赖 job
+# `ai-agent-tests.yml` 的 `ai-agent-service unit tests` 跑 `backend/ai-agent-service/tests/`
+# 整个套件，其中 `test_live_registry_matches_schema_no_violations` 直接跑
+# `scripts/check_ontology_contract.py` 并断言 exit 0（**无 skip 分支**，issue #6514）。
+# 本文件在最小环境里 skip 的**前置**就是这条接线活着 —— 摘掉它 ⇒ 判红，不是静默跳过
+# （见 `_live_layer_wiring_problems` 与 `TestLiveLayerIsWiredInCi`）。
+WIRING_UNDER_TEST = "backend/ai-agent-service/tests/test_ontology_contract.py::test_live_registry_matches_schema_no_violations"
+
+AIS_LIVE_TESTS = AIS_ROOT / "tests" / "test_ontology_contract.py"
+AIS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ai-agent-tests.yml"
+LIVE_LAYER_SYMBOL = "test_live_registry_matches_schema_no_violations"
+
+
+def _live_layer_wiring_problems(
+    live_text: str | None = None, workflow_text: str | None = None
+) -> list[str]:
+    """「活映射面在 CI 里真有人跑」—— 最小环境 skip 的**前置**（判别力前置，issue #6514）。
+
+    helper job 只装 pytest+pyyaml ⇒ 活映射端到端层**物理上跑不了**；但「跑不了」只有在
+    **替代面确实存在、且被装了全依赖的 job 真的执行**时才允许 skip。两半都只读文本、零依赖：
+      ① 全依赖 job 里必须有一条**不 skip** 的活映射判据（`LIVE_LAYER_SYMBOL` 在 AI 侧测试文件里）；
+      ② 那条判据所在的套件必须由装了全依赖的 job 跑（装 `requirements.txt` + `pytest tests/`）。
+    任一不成立 ⇒ 返回问题清单；调用方据此 **fail**（不是 skip）。
+    两个参数仅供**注入式红证**用（缺省 = 现读仓内真值）。
+    """
+    if live_text is None:
+        live_text = (
+            AIS_LIVE_TESTS.read_text(encoding="utf-8") if AIS_LIVE_TESTS.is_file() else ""
+        )
+    if workflow_text is None:
+        workflow_text = (
+            AIS_WORKFLOW.read_text(encoding="utf-8") if AIS_WORKFLOW.is_file() else ""
+        )
+    problems: list[str] = []
+    if LIVE_LAYER_SYMBOL not in live_text:
+        problems.append(
+            "全依赖 job 里没有**不 skip** 的活映射判据："
+            f"{AIS_LIVE_TESTS.relative_to(REPO_ROOT)} 里找不到 `{LIVE_LAYER_SYMBOL}` "
+            "⇒ 最小环境 skip 后，活映射面在 CI 里**无人覆盖**"
+        )
+    if "requirements.txt" not in workflow_text:
+        problems.append(
+            f"{AIS_WORKFLOW.relative_to(REPO_ROOT)} 里没有装全依赖（requirements.txt）"
+            "⇒ 活映射判据跑不起来"
+        )
+    if not re.search(r"pytest\s+tests/", workflow_text):
+        problems.append(
+            f"{AIS_WORKFLOW.relative_to(REPO_ROOT)} 里没有跑 ai-agent 整套 `tests/` "
+            "⇒ 活映射判据不在执行面内"
+        )
+    return problems
+
+
 # 双端真实可达映射（真值来源：get_all_skill_names → skill.intents × route_keys）
 REAL_AGENT_INTENT_MAPS = {
     "mibao": {
@@ -70,6 +137,9 @@ REAL_AGENT_INTENT_MAPS = {
         # 由 order skill 承载 ⇒ 重新出现在 mibao 真值映射里（仅 B 端；C 端不声明）。
         "processing_order_generate": "order", "processing_order_query": "order",
         "processing_order_update": "order",
+        # 定时提醒域（issue #6486 包 2 引入，**#6514 补登记 schema**）：route_key 取 reminder
+        # skill 的 `route_keys` 末位（registry last-wins）；仅 B 端（C 端不声明）。
+        "scheduled_task_manage": "scheduled_task",
         "session_manage": "data", "staff_manage": "staff",
         "statistics": "data", "system_settings": "settings",
     },
@@ -91,8 +161,11 @@ REAL_AGENT_INTENT_MAPS = {
 }
 
 REAL_AGENT_ROUTE_KEYS = {
+    # mibao 侧含 reminder / schedule / scheduled_task（issue #6486 包 2 的 reminder skill
+    # 声明的三个 route_key；#6514 补进本快照 —— 此前它们只活在活映射里）。
     "mibao": {"aftersales", "customer", "data", "general", "knowledge",
-              "order", "product", "settings", "staff"},
+              "order", "product", "reminder", "schedule", "scheduled_task",
+              "settings", "staff"},
     "xiaobu": {"aftersales", "customer", "data", "general", "knowledge",
                "order", "product", "quote", "settings", "staff"},
 }
@@ -346,7 +419,7 @@ class TestWrapperForwardsFullDetail:
 
 
 class TestLiveAuditEndToEnd:
-    """证据层：真实 CLI 端到端（需 ai-agent 全依赖；最小环境显式 skip 并记原因）。"""
+    """证据层：真实 CLI 端到端（需 ai-agent 全依赖；最小环境**有前置地** skip 并记原因）。"""
 
     def test_audit_script_exits_zero(self):
         """`scripts/check_ontology_contract.py` 必须以 0 退出（issue #4058 验收标准）。"""
@@ -355,9 +428,17 @@ class TestLiveAuditEndToEnd:
             capture_output=True, text=True,
         )
         if probe.returncode != 0:
+            problems = _live_layer_wiring_problems()
+            assert problems == [], (
+                "ai-agent 全依赖不可用（本 job 只装 pytest pyyaml）**且**活映射面在 CI 里"
+                "没有承接判据 ⇒ 这条 skip 会让「映射加了、schema 没登记」结构性不可见"
+                "（issue #6514 的病根）：\n  - " + "\n  - ".join(problems)
+            )
             pytest.skip(
                 "ai-agent 全依赖不可用（本 job 只装 pytest pyyaml）⇒ 端到端层未跑；"
-                "同口径的 schema 层断言见 TestContractGate::test_live_schema_has_no_violations。"
+                "**同口径的活映射判据在装了全依赖的 job 里真跑且不 skip** = "
+                f"{WIRING_UNDER_TEST}（CI job = ai-agent-tests.yml / ai-agent-service unit tests）"
+                "—— 本文件只做最小环境可跑的那一半，不替代它。"
                 f" 探测输出：{probe.stderr.strip().splitlines()[-1:] }"
             )
         proc = subprocess.run(
@@ -385,3 +466,45 @@ class TestLiveAuditEndToEnd:
         assert joined, (
             "审计脚本未把 violations 逐项加入输出行 ⇒ 明细会再次丢失（看 run_audit 实现）"
         )
+
+
+class TestLiveLayerIsWiredInCi:
+    """**判别力前置**（issue #6514 判据 3）：`TestLiveAuditEndToEnd` 的 skip 只许在
+    「活映射面在 CI 里真有人跑」时成立 —— 否则判红。
+
+    这就是 issue 正文「假承诺必须消掉」的**更强形态**：改前 skip 理由里那句「同口径的…
+    见兄弟判据」指向的是**硬编码快照**（`REAL_AGENT_INTENT_MAPS`，不是活映射）⇒ 制造
+    「有人守着」的假象。现在它指向一条**真跑活映射**的判据（`WIRING_UNDER_TEST`），
+    且这条指向本身有判据 —— 摘掉替代判据 / 摘掉它的执行面 ⇒ 本类当场红。
+
+    helper job（只装 pytest+pyyaml）与全依赖 job 里**都跑**（零依赖、只读文本）。
+    """
+
+    def test_live_mapping_criterion_runs_in_a_full_dependency_job(self):
+        problems = _live_layer_wiring_problems()
+        assert problems == [], (
+            "最小环境 skip 的替代面不成立（issue #6514）：\n  - " + "\n  - ".join(problems)
+        )
+
+    def test_precondition_has_discriminating_power(self):
+        """注入式自证：三条接线各摘一处 ⇒ 前置必须判红（不会红的断言 = 空断言）。"""
+        live = AIS_LIVE_TESTS.read_text(encoding="utf-8")
+        workflow = AIS_WORKFLOW.read_text(encoding="utf-8")
+        # 对照读数：真值 ⇒ 零问题
+        assert _live_layer_wiring_problems(live, workflow) == []
+        # 自证注入点真实存在（否则下面的注入是空动作、本判据是空断言）
+        assert LIVE_LAYER_SYMBOL in live
+        assert "requirements.txt" in workflow
+        assert "pytest tests/" in workflow
+        # ① 活映射判据被删 / 改名
+        assert _live_layer_wiring_problems(
+            live.replace(LIVE_LAYER_SYMBOL, "zzz_removed_live_check"), workflow
+        ) != [], "活映射判据被摘掉却仍判绿 ⇒ 前置是空断言"
+        # ② 全依赖 job 不再装依赖
+        assert _live_layer_wiring_problems(
+            live, workflow.replace("requirements.txt", "zzz_removed_requirements")
+        ) != [], "全依赖 job 不装依赖却仍判绿 ⇒ 前置是空断言"
+        # ③ 全依赖 job 不再跑该套件
+        assert _live_layer_wiring_problems(
+            live, workflow.replace("pytest tests/", "pytest zzz_nothing/")
+        ) != [], "全依赖 job 不跑该套件却仍判绿 ⇒ 前置是空断言"

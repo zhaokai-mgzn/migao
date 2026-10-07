@@ -7,13 +7,23 @@ intent 归属契约校验测试（issue #2821 延续切片 A：全量登记 + �
   （真实可达，由 get_all_skill_names 含 fallback 构建，而非 persona 过滤——后者会
   包含被 RAG 禁用/未启用的 skill）
 - agent_route_keys: {agent: set(route_keys)} 每个 agent 真实可达的路由集合
-- schema.intent_ownership 全量登记 27 个业务 intent（双端 23 + finance 仅 mibao +
-  knowledge_faq/knowledge_manage/quote 仅 xiaobu；general 兜底不属业务表）
+- schema.intent_ownership 全量登记 30 个业务 intent（双端 22 + 仅 mibao 5
+  （finance + 加工单域 3 + 定时提醒 1）+ 仅 xiaobu 2（knowledge_manage/quote）；
+  knowledge_faq 双端可达、general 兜底不属业务表）
 - 四类违规：agent 映射缺失（假声明）/ 未登记 / route_key 漂移 / 双端不可达
+- **活映射侧**（issue #6514）：`TestLiveRegistryMatchesSchema` 直接跑
+  `scripts/check_ontology_contract.py`（= `contract-check.sh` 第 6 项的同一份入口），
+  在装了全依赖的 job（`ai-agent-tests.yml` 的 `ai-agent-service unit tests`）里断言 exit 0
+  —— **无 skip 分支**。上面那份 `REAL_AGENT_INTENT_MAPS` 是纯函数用例的**夹具快照**，
+  它漂移不会红 ⇒ 只靠它在 CI 里结构性看不见「映射加了、schema 没登记」（#6499 即此形态）。
 
 Seam: app.ontology.contract.check_intent_ownership()（纯函数，输入 schema + 双端映射，
 输出违规清单；不触碰 skill_registry 内部实现）。
 """
+
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -48,6 +58,8 @@ REAL_AGENT_INTENT_MAPS = {
         "processing_order_generate": "order",
         "processing_order_query": "order",
         "processing_order_update": "order",
+        # 定时提醒域（issue #6486 包 2，仅 mibao；#6514 补登记 schema）
+        "scheduled_task_manage": "scheduled_task",
     },
     "xiaobu": {
         "after_sales": "aftersales", "after_sales_create": "aftersales",
@@ -68,14 +80,16 @@ REAL_AGENT_INTENT_MAPS = {
 
 # 真实可达 route_keys（含 fallback 兜底 skill 的 route_keys）
 REAL_AGENT_ROUTE_KEYS = {
-    "mibao": {"aftersales", "customer", "data", "general", "knowledge", "order", "product", "settings", "staff"},
+    "mibao": {"aftersales", "customer", "data", "general", "knowledge", "order", "product",
+              "reminder", "schedule", "scheduled_task", "settings", "staff"},
     "xiaobu": {"aftersales", "customer", "data", "general", "knowledge", "order", "product", "quote", "settings", "staff"},
 }
 
 
 class TestSchemaIntentOwnership:
-    def test_schema_registers_all_29_business_intents(self, ontology):
-        """schema 必须全量登记 29 个业务 intent（#3081 移除 quick_reply；#3340 新增加工单域 3 个；排除 general 兜底）"""
+    def test_schema_registers_all_30_business_intents(self, ontology):
+        """schema 必须全量登记 30 个业务 intent（#3081 移除 quick_reply；#3340 新增加工单域 3 个；
+        #6486 包 2 新增定时提醒 1 个（#6514 补登记）；排除 general 兜底）"""
         owned = ontology.intent_ownership
         assert set(owned) == {
             # 双端 22
@@ -85,8 +99,9 @@ class TestSchemaIntentOwnership:
             "order_create", "order_query", "permission_manage", "processing_manage",
             "product_inquiry", "role_manage", "session_manage",
             "staff_manage", "statistics", "system_settings",
-            # 仅 mibao（finance + 加工单域 3 个）
-            "finance", "processing_order_generate", "processing_order_query", "processing_order_update",
+            # 仅 mibao（finance + 加工单域 3 个 + 定时提醒 1 个）
+            "finance", "processing_order_generate", "processing_order_query",
+            "processing_order_update", "scheduled_task_manage",
             # 仅 xiaobu
             "knowledge_faq", "knowledge_manage", "quote",
         }
@@ -198,3 +213,37 @@ class TestContractValidation:
             ontology, maps, REAL_AGENT_ROUTE_KEYS, include_unregistered=False
         )
         assert any("order_query" in v and "route_key" in v for v in violations)
+
+
+class TestLiveRegistryMatchesSchema:
+    """活映射侧（issue #6514）：**在装了全依赖的 job 里**跑真入口，**不 skip**。
+
+    为什么必须另立一条、不能只靠上面的 `REAL_AGENT_INTENT_MAPS`：
+    那份映射是**测试文件里的夹具快照** —— 它与活映射（`get_skill_registry()` + 双端 Agent
+    配置现取）漂移时，本文件里没有任何判据会红。#6499（issue #6486 包 2）正是这样落进 main 的：
+    加了工具 / skill / 活映射，**漏登记 `schema.yaml`** ⇒ `contract-check.sh` 第 6 项在 main 上
+    恒红，而 CI 全绿（唯一验活映射的端到端判据在最小环境里恒 skip，替代面又是一个硬编码快照）。
+
+    本类把口径换回**活代码**：直接跑 `scripts/check_ontology_contract.py`（`contract-check.sh`
+    第 6 项的同一份入口脚本，不复制判定），断言 exit 0。
+    载重面 = `ai-agent-tests.yml` 的 `ai-agent-service unit tests`（装 requirements，实测 3m56s）；
+    **没有 skip 分支** —— 脚本 import 失败（依赖缺失 / 代码坏了）即红，不会静默跳过。
+    """
+
+    def test_live_registry_matches_schema_no_violations(self):
+        """活映射 ↔ schema 必须无违规（与 `contract-check.sh` 第 6 项同一条入口、同一句话）。"""
+        repo_root = Path(__file__).resolve().parents[3]
+        script = repo_root / "scripts" / "check_ontology_contract.py"
+        assert script.is_file(), f"审计脚本不在仓内：{script}"
+        proc = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=str(repo_root), capture_output=True, text=True, timeout=300,
+        )
+        assert proc.returncode == 0, (
+            "活映射 ↔ schema 漂移（`contract-check.sh` 第 6 项会因此恒红）：\n"
+            f"exit={proc.returncode}\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+        )
+        assert "✅ intent 归属契约一致" in proc.stdout, (
+            "审计脚本未收口到「一致」结论（判据必须与 `contract-check.sh` 第 6 项同一句）\n"
+            f"--- stdout ---\n{proc.stdout}"
+        )
