@@ -28,8 +28,8 @@
 复算（一条命令，退出码 ≠ 0 就是还有命中）：
 
 ```bash
-cd frontend/admin-web && node scripts/user-copy-scan.mjs            # 汇总 + 命中清单
-cd frontend/admin-web && node scripts/user-copy-scan.mjs --rule R2  # 只看某条规则
+node frontend/admin-web/scripts/user-copy-scan.mjs            # 汇总 + 命中清单（退出码 ≠ 0 = 仍有命中）
+node frontend/admin-web/scripts/user-copy-scan.mjs --rule R2  # 只看某条规则
 ```
 
 ## 3. 三档处置（散文级：规则判不了，靠这条）

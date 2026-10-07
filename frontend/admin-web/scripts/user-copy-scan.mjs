@@ -32,7 +32,7 @@
  *   node scripts/user-copy-scan.mjs --rule R2      # 只看某条规则
  */
 import { readdirSync, statSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, relative, dirname } from 'node:path'
+import { join, relative, dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import ts from 'typescript'
 
@@ -237,7 +237,10 @@ export function isExempt(file, line) {
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 if (isMain) {
-  const root = process.cwd()
+  // 🔴 根按**脚本自身位置**解析（`<root>/frontend/admin-web/scripts/...` 的上两级）：
+  //    这样 `node frontend/admin-web/scripts/user-copy-scan.mjs` 在**仓库根**也能直接跑
+  //    —— 可复算命令必须指涉**存在**的路径（tests/unit_ci_workflows/test_recomputable_command_paths.py）。
+  const root = process.env.MIGAO_COPY_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '..')
   const { files, candidates, offenders } = findViolations(root)
   const jsonAt = process.argv.indexOf('--json')
   if (jsonAt !== -1 && process.argv[jsonAt + 1]) {
