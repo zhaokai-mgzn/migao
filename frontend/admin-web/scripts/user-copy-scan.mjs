@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// case_ids: UI-059
+// case_ids: UI-093
 /**
  * 商家后台「用户可见文案」扫描器 + 「研发腔」判据单一源（issue #6488）。
  *
