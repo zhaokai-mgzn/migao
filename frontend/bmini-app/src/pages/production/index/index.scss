@@ -445,3 +445,30 @@
     color: #9aa5b1;
   }
 }
+
+// 无工人身份时的引导（issue #6467 判据 3）：写入口只认工号 + PIN 签发的工人 session，
+// 而商家账号看到写入口只会换来一个 401 ⇒ 这里明说缺什么、并给一条可点的路。
+.production-worker-login-required {
+  margin: 24px 32px;
+  padding: 24px;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  border-radius: 12px;
+
+  &__text {
+    display: block;
+    font-size: 28px;
+    color: #874d00;
+    line-height: 1.6;
+  }
+
+  &__btn {
+    margin-top: 20px;
+    height: 88px;
+    line-height: 88px;
+    background: #1a73e8;
+    color: #ffffff;
+    border-radius: 8px;
+    font-size: 32px;
+  }
+}

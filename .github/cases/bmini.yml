@@ -923,7 +923,7 @@ cases:
 
   - id: BM-028
     legacy_id: ""
-    title: "B 端「问米宝」= C 端现行形态 + 不混入 C 端 agent 内容（六格等权 · 无商品推荐卡 · 默认「米宝」）"
+    title: "B 端「问米宝」入口＝B 端场景 + 服务端单一真值（六格等权 · 无 C 端顾客口吻 · 无商品推荐卡 · 默认「米宝」）"
     domains:
       - bmini
     tier: normal
@@ -936,22 +936,26 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "商家在手机浏览器打开 `https://app.migaozn.com/b/` 停在「问米宝」空态：看到六个等权快捷入口（算料报价 / 查订单 / 查库存 / 找产品 / 售后咨询 / 查物流）与商家语义的欢迎语；**看不到**任何商品推荐卡、价格符号，也看不到顾客端 agent 名「小布」"
+      - "商家在手机浏览器打开 `https://app.migaozn.com/b/` 停在「问米宝」空态：六个等权快捷入口的内容与 PC 端智能助手**同一份**（今日经营 / 交付风险 / 库存告急 / 商品健康度 / 售后待办 / 客户回访），点一格就发出对应的 B 端问句（如「哪些订单快到交期还卡着工序？」）；**看不到**任何商品推荐卡、价格符号、顾客端 agent 名「小布」，也看不到 C 端顾客口吻的旧入口（算料报价 / 找产品 / 售后咨询 / 查物流）"
     expectations:
       - tool: direct_reply
     data_checks:
       - "判据 1·🔴 空态**不得**出现 C 端商品推荐卡（修复前渲染 `.new-arrivals` 商品卡并提示「点一下问问小布」= 把顾客端入口与顾客端 agent 名搬进商家端）：结构性判据 = 空态无 `.new-arrivals` / `.new-arrivals__card` / `.new-arrivals__img`、无「新品推荐」文本、无 `¥`。红证：把该组件挂回 frontend/bmini-app/src/components/chat/MessageList.tsx 的空态 ⇒ frontend/bmini-app/tests/chat-empty-state.test.tsx 判红（实跑过）"
-      - "判据 2·🔴 **快捷入口 = 六格等权（2 列 × 3 行）**，与顾客端现行判据同形（cases/ui.yml 的 UI-014 / UI-044）：`.quick-actions__item` 恰好 6 个、每个都不带 `quick-actions__item--wide`、无 `.quick-actions__group` / `__row` 残留；六条 prompt 逐条可断言。红证：给任一项加回 `wide: true` ⇒ frontend/bmini-app/tests/quick-actions.test.tsx 判红（实跑过）"
-      - "判据 3·**agent 名用 B 端口径**：空态欢迎语不含「小布」、含「商家经营助手」；「思考中」默认文案 = 「米宝正在思考...」（frontend/bmini-app/src/components/chat/TypingIndicator.tsx）"
-      - "判据 4·**类级元守卫（让同类进不来）**：B 端全量 `frontend/bmini-app/src/**` 的**代码**不得引用顾客端商品推荐端点 `new-arrivals`；聊天面（components/chat 与 pages/chat）的代码不得出现顾客端 agent 名 —— 「再抄一次顾客端页面」当场变红。边界：只扫代码（块注释与整行 `//` 注释先剔除），注释与文档不在面内"
-    skip_reason: "[backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/chat-empty-state.test.tsx + frontend/bmini-app/tests/quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-28 新增（issue #5747）：用户在 B 端 H5 看到顾客端 agent 入口（新品推荐卡「点一下问问小布」），且 B 端快捷入口仍是顾客端旧版（算料报价全宽 + 2×2 共 5 格）⇒ 与顾客端现行形态对齐，并落「顾客端内容不得混入商家端」的实例判据 + 类级元守卫；同批删除 NewArrivals 组件/样式与只为它存在的旁路服务。"
+      - "判据 2·🔴 **快捷入口 = 六格等权（2 列 × 3 行）**：`.quick-actions__item` 恰好 6 个、每个都不带 `quick-actions__item--wide`、无 `.quick-actions__group` / `__row` 残留；六条 prompt 逐格可断言（渲染出的内容 = 服务端下发的那份）。红证：给任一项加回 `wide: true` ⇒ frontend/bmini-app/tests/quick-actions.test.tsx 判红（实跑过）"
+      - "判据 3·🔴 **入口内容单一真值 = 服务端**（issue #6468：此前 H5 组件里硬编码六条 **C 端顾客口吻**的入口，而服务端那份从没被消费）：服务端 `GET /api/chat/quick-actions`（backend/ai-agent-service/app/api/chat.py 的 `QUICK_ACTIONS`）是唯一内容源，H5 只渲染传入的 `actions`；组件源码不得再自带清单 / prompt / emoji 字面量；`actions` 为空 ⇒ **不渲染**（不退回一份本地兜底清单 —— 那正是病灶形态）。红证：把硬编码六条写回 frontend/bmini-app/src/components/chat/QuickActions.tsx ⇒ frontend/bmini-app/tests/quick-actions.test.tsx 的「类级元守卫」判红"
+      - "判据 4·🔴 **每条入口必须能追溯到真实能力**（机械投影，「引导了却做不到，比不引导更伤」）：backend/ai-agent-service/tests/test_chat.py::TestQuickActions::test_every_entry_maps_to_a_real_mibao_capability 要求每条的 skill 在米宝绑定面内、且 tool 在该 skill 的 tool_names 里。红证：把任一条 skill 改成已解绑的 `settings` 或把 tool 改成顾客端专用的 `aftersale_query` ⇒ 具名判红（实跑过）"
+      - "判据 5·**agent 名用 B 端口径**：空态欢迎语不含「小布」、含「商家经营助手」；「思考中」默认文案 = 「米宝正在思考...」（frontend/bmini-app/src/components/chat/TypingIndicator.tsx）"
+      - "判据 6·**类级元守卫（让同类进不来）**：B 端全量 `frontend/bmini-app/src/**` 的**代码**不得引用顾客端商品推荐端点 `new-arrivals`；聊天面（components/chat 与 pages/chat）的代码不得出现顾客端 agent 名，也不得出现 C 端顾客口吻的快捷问句（「推荐一下热门窗帘产品」「帮我查一下物流」「我想咨询售后问题」「帮我算一下窗帘用料和价格」）—— 「再抄一次顾客端页面」当场变红。边界：只扫代码（块注释与整行 `//` 注释先剔除），注释与文档不在面内"
+    skip_reason: "[backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/chat-empty-state.test.tsx + frontend/bmini-app/tests/quick-actions.test.tsx；pytest: backend/ai-agent-service/tests/test_chat.py::TestQuickActions），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-28 新增（issue #5747）：用户在 B 端 H5 看到顾客端 agent 入口（新品推荐卡「点一下问问小布」），且 B 端快捷入口仍是顾客端旧版（算料报价全宽 + 2×2 共 5 格）⇒ 与顾客端现行形态对齐，并落「顾客端内容不得混入商家端」的实例判据 + 类级元守卫；同批删除 NewArrivals 组件/样式与只为它存在的旁路服务。2026-10-07 修订（issue #6468，用户：「快捷菜单直接抄袭的 C 端设计，应该和 B 端需求场景相结合」）：#5747 只对齐了**形态**，**内容**仍是抄 C 端的顾客问句（「推荐一下热门窗帘产品」「帮我查一下物流」…）⇒ 六格换成 B 端商家场景（今日经营 / 交付风险 / 库存告急 / 商品健康度 / 售后待办 / 客户回访），并消除双源：内容真值收到服务端 `QUICK_ACTIONS`（H5 与 admin-web 同一份），同批落「每条入口必须追溯到真实能力」的机械投影判据与「H5 不得再硬编码入口内容」的类级元守卫。"
     traces:
       tests:
         - "frontend/bmini-app/tests/chat-empty-state.test.tsx"
         - "frontend/bmini-app/tests/quick-actions.test.tsx"
+        - "backend/ai-agent-service/tests/test_chat.py"
       ci:
         - bmini-app.yml
+        - ai-agent-tests.yml
       verifies: []
 
   - id: BM-029
@@ -1085,4 +1089,163 @@ cases:
       ci:
         - bmini-app.yml
         - pr-check.yml
+      verifies: []
+
+  - id: BM-033
+    legacy_id: ""
+    title: "B 端登录页第三入口（工人）+ 路由参数直达 - 工号 + PIN 走既有 workerLogin，成功落工人首页（不 switchTab）"
+    domains:
+      - bmini
+      - auth
+    tier: normal
+    tags:
+      - bmini
+      - login
+      - worker
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "工人打开 B 端 H5 登录页（或从报工页 / 工人首页点「去登录工人身份」）→ 切到第三个 tab「工人登录」→ 填工号 + PIN（可选设备标签）→ POST /api/worker/login → 成功进工人工作台；输错 PIN 时屏上**原样**显示服务端文案"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**三个 tab 都在册**（员工 / 管理员 / 工人），默认停在员工入口；`/pages/auth/login/index?tab=worker` **路由参数直达**工人入口（员工/管理员字段退场）。证据：frontend/bmini-app/tests/login-page.test.tsx"
+      - "判据 2·🔴 **提交恰一次 + 成功后 `redirectTo` 工人首页且绝不 switchTab**：工人 tab 提交 ⇒ `workerLogin(工号, PIN, 设备标签)` 恰一次（**既有**端点 `POST /api/worker/login`，未新造端点/登录服务），成功 ⇒ `Taro.redirectTo({ url: WORKER_HOME_ROUTE })` 且 `Taro.switchTab` 一次都不调（工人没有商家会话，switchTab 会落到商家 tabBar=问米宝，而工人零商家权限 ⇒ 落地即 403/空页）。红证（实跑）：把 `redirectTo` 改回 `switchTab` ⇒ 1 failed"
+      - "判据 3·**失败原样展示服务端 message**：服务端失败信封是 `{success:false,error:{code,message}}`（真值 = backend/admin-api/src/main/java/com/migao/admin/config/GlobalExceptionHandler.java 的 `handleBusinessException`）⇒ 端侧取值链路必须取到它，而不是 HTTP 层噪声「Request failed with status 401」。证据：frontend/bmini-app/tests/worker-service-message.test.ts"
+    skip_reason: "[backend-contract] 确定性前端判据（jest: frontend/bmini-app/tests/login-page.test.tsx + frontend/bmini-app/tests/worker-service-message.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-07 新增（issue #6467 切片 1）：现场（生产 app.migaozn.com，2026-10-07 08:06:57 / 08:07:48 +08，nginx 日志 `POST /api/worker/production/scan/complete 401`）用管理员账号在 H5 点「完成报工」⇒ 被清商家登录态并踢回登录页，重登再点仍然 401。根因之一是 H5 上**没有工人登录入口**（独立的 pages/worker/login/index 存在，但报工页/工人首页都不指向它）⇒ 登录页补第三 tab，并支持 `?tab=worker` 直达（给报工页/工人首页的引导用）。**零后端改动**（truths_ref = frontend-fix.no-api-change）。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/login-page.test.tsx"
+        - "frontend/bmini-app/tests/worker-service-message.test.ts"
+      ci:
+        - bmini-app.yml
+      verifies: []
+
+  - id: BM-034
+    legacy_id: ""
+    title: "工人首页（新页 pages/worker/home/index）- 身份卡读服务端 + 三件工人功能 + 退出工人身份；不出现任何商家面入口"
+    domains:
+      - bmini
+      - auth
+    tier: normal
+    tags:
+      - bmini
+      - worker
+      - page-flow
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "工人用「工号 + PIN」登录成功后落在**工人工作台**：页头显示当前工人（工号 + 姓名，来自服务端 `GET /api/worker/production/current-worker`）→ 三件功能：扫码报工 / 拍照入库 / 补打入库标签；底部「退出工人身份」→ 回登录页的工人入口"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**身份卡读服务端**：工号 + 姓名来自 `fetchCurrentWorker()`（服务端工人 session，页头显示的正是「这笔活会记到谁头上」= 计件工资凭证）；服务端读不到（session 失效）⇒ 回落成「未登录工人身份」并清本机工人态，**不**静默保留上一个人的名字。红证（实跑）：把身份卡改读 `getCachedWorker()`（不调服务端）⇒ 1 failed"
+      - "判据 2·**三件工人功能入口各自跳对路由**：扫码报工 → `/pages/production/index/index`；拍照入库 / 补打入库标签 → 路由常量真值在 frontend/bmini-app/src/utils/inbound/gaps.ts（`INBOUND_PAGE_ROUTE` / `REPRINT_PAGE_ROUTE`，页面不写第二份字面量）"
+      - "判据 3·🔴 **不出现任何商家面入口**：问米宝 / 数据 / 坐席 / 我的 四个 tabBar 文案与管理面 4 项（标签取自 frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`）一个都不渲染 —— 工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`），点了只会 403/空页。红证（实跑）：往页面混入一行「问米宝」⇒ 1 failed"
+      - "判据 4·**退出工人身份**：`workerLogout()`（服务端留 `end_reason=logout` 痕）+ `clearWorkerSession()` 清本机 ⇒ `redirectTo` 登录页的工人入口（共用 PAD 场景：下一个人接着用；只清本机会让下一个人记到上一个人头上）"
+      - "判据 5·**新页必须在册**：`WORKER_HOME_ROUTE` 逐字出现在 frontend/bmini-app/src/app.config.ts 的 pages 里（没登记 = 死链），并登记进 frontend/bmini-app/src/utils/pageEntries.ts 的入口台账（「登记了没人指向也红 / 没登记即红」）。证据：frontend/bmini-app/tests/page-entry-reachability.test.ts"
+    skip_reason: "[backend-contract] 确定性页面链路判据（jest: frontend/bmini-app/tests/worker-home-page.test.tsx + tests/page-entry-reachability.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-07 新增（issue #6467 切片 1）：工人身份此前**没有落点** —— 登录后只能落商家 tabBar（问米宝/数据/坐席/我的），而工人零商家权限 ⇒ 看见商家菜单只会 403/空页；且 `Taro.switchTab` 只能落 tabBar 页 ⇒ 工人登录成功只能 redirectTo 一个非 tabBar 的工人页。本页 = 工人面收口（身份卡 + 三件工人功能 + 退出）。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/worker-home-page.test.tsx"
+        - "frontend/bmini-app/tests/page-entry-reachability.test.ts"
+      ci:
+        - bmini-app.yml
+      verifies: []
+
+  - id: BM-035
+    legacy_id: ""
+    title: "报工页身份分流 - 无工人身份不渲染工人写入口（渲染引导去工人登录）；有身份时现状逐字不变"
+    domains:
+      - bmini
+      - production
+    tier: normal
+    tags:
+      - bmini
+      - production
+      - worker
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "商家管理员账号在 B 端 H5 打开扫码报工页（本机**没有**工人身份）→ 扫码/手输单号仍能看本单工序（商家读面），但**没有**「完成报工」/【开工】写入口，只有「请先用工号 + PIN 登录工人身份」+「去登录工人身份」；车间工人设备（有工人身份）看到的写入口与修复前逐字相同"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **无工人身份 ⇒ 不给写入口**：`hasWorkerSession() === false` 时**不渲染**「完成报工」与【开工】（屏上 `完成报工` 文本一个都没有），且 `completeByScan` 一次都不被调用。红证（实跑）：注入 `const workerReady = true`（= 摘掉身份分流，回到旧行为）⇒ 1 failed"
+      - "判据 2·**引导可行动**：渲染「请先用工号 + PIN 登录工人身份」文案 +「去登录工人身份」按钮 ⇒ `Taro.navigateTo({ url: WORKER_TAB_LOGIN_ROUTE })`（= `/pages/auth/login/index?tab=worker`，路由常量真值在 frontend/bmini-app/src/utils/inbound/gaps.ts）。同仓既有范式 = frontend/bmini-app/src/pages/worker/inbound/index.tsx 的 `workerReady` 分流（本单只把同一形态补到报工页）"
+      - "判据 3·**有工人身份 ⇒ 现状逐字不变**：写入口仍在（`完成报工` 按钮数不变），in-flight 锁 / 数量校验 / 幂等键 / 唯一写入口 `scan/complete` 的既有判据逐条不回归。证据：frontend/bmini-app/tests/production-worker-entry.test.tsx、frontend/bmini-app/tests/production-report-guard.test.tsx、frontend/bmini-app/tests/production-single-write-entry.test.ts"
+      - "⚠️ 边界（照实登记）：生产现场那台设备（管理员 + 无工人身份）在本单上线后**仍不能直接报工** —— 它会看到可行动的引导，这是**有意**的（报工归属必须有工人档案 = 计件工资凭证）。"
+    skip_reason: "[backend-contract] 确定性页面判据（jest: frontend/bmini-app/tests/production-worker-entry.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-07 新增（issue #6467 切片 1）：现场缺陷的**正面修法** —— 修复前该页只要有 `part_token` 就渲染「完成报工」（不看本机有没有工人身份），而那台设备从来没有工人身份 ⇒ 点一次换一个 401，请求层再把商家登录态清掉、踢回登录页。同批把既有写面判据的夹具种上工人身份（它们判的是写面本身，前提是工人设备）。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/production-worker-entry.test.tsx"
+        - "frontend/bmini-app/tests/production-page.test.tsx"
+        - "frontend/bmini-app/tests/production-report-guard.test.tsx"
+      ci:
+        - bmini-app.yml
+      verifies: []
+
+  - id: BM-036
+    legacy_id: ""
+    title: "请求层 401 身份分流 - 工人端点 401 不再误诊成「商家会话过期」（不清商家态 / 不跳商家登录页 / 上屏服务端文案）"
+    domains:
+      - bmini
+      - auth
+    tier: normal
+    tags:
+      - bmini
+      - auth
+      - worker
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "本机同时有商家登录态（管理员在共用 PAD 上开着后台）与一次**工人端点**调用：`POST /api/worker/production/scan/complete` 返回 401（报工写入口只认工号 + PIN 签发的工人身份）或 `POST /api/worker/login` 输错 PIN 返回 401 → 屏上只出现服务端文案，商家登录态**不受影响**"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **工人端点 401（`path` 以 `/api/worker/` 开头）**：① **不清**商家 `auth_token` / `auth_user`（实测旧行为把它们清掉 ⇒ 用户被踢回登录页，重登再点仍然 401）；② 只清工人 session/缓存；③ 上屏**服务端文案**（`data.error.message || data.message`，取不到才用兜底「工人身份已失效，请重新用工号 + PIN 登录」）；④ **不**做商家登录页跳转（把定时器推完也不跳；引导交给页面自身的身份分流）。红证（实跑）：把该分流条件写成 `false`（= 旧行为）⇒ 2 failed。证据：frontend/bmini-app/tests/request.test.ts"
+      - "判据 2·**商家端点 401 行为逐字不变**：清 `auth_token`/`auth_user` + 弹「登录已过期，请重新登录」+ 1.5s 后 `redirectTo` 商家登录页。证据：frontend/bmini-app/tests/request.test.ts（既有判据 + 新增一条钉死跳转）"
+      - "判据 3·**实现只取最少代码**：分流依据是 `path.startsWith('/api/worker/')`（不引入第二份端点台账）—— 与服务端 `WorkerSessionService` 的工人路径前缀同形。"
+    skip_reason: "[backend-contract] 确定性网络层判据（jest: frontend/bmini-app/tests/request.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-07 新增（issue #6467 切片 1，第二个真缺陷）：nginx 日志实证 `POST /api/worker/production/scan/complete 401` 与 `POST /api/auth/employee/login 200` 交替出现（重登后再点仍然 401），而前端 error 层把**任何** 401 + 本机有 token 都读成「商家会话过期」⇒ 吞掉服务端可行动文案 + 毁掉有效商家登录态。修复 = 按端点归属分流（工人端点的 401 与商家会话无关）。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/request.test.ts"
+      ci:
+        - bmini-app.yml
+      verifies: []
+
+  - id: BM-037
+    legacy_id: ""
+    title: "类级元守卫：工人面写入口台账（未登记即红 / 台账只许缩短 / 身份分流与渲染条件都要命中 / 空台账 fail-closed）"
+    domains:
+      - bmini
+      - production
+    tier: normal
+    tags:
+      - bmini
+      - worker
+      - meta-guard
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "任何人给 bmini 的某个页面新增一处工人写调用（`completeByScan` / `workerLogin` / `workerLogout` / `createInboundDraft` / `postInboundDraft`）—— 无论他有没有写身份分流，判据都要拦得住"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **未登记即红**：以 frontend/bmini-app/src/pages 下全部 `.tsx`（先剥注释）为射程现取 (页面, 工人写调用) 配对集，凡有配对不在 frontend/bmini-app/tests/worker-surface-ledger.json 里 ⇒ 具名判红。红证（实跑，in-test 注入）：新增一个调 `workerLogout()` 的虚拟页面 ⇒ 报出 `src/pages/worker/brand-new/index.tsx::workerLogout(`"
+      - "判据 2·**台账只许缩短**：每条登记都必须仍能被扫到（页面已不再有该调用 ⇒ 该条已死 ⇒ 红）。红证：摘掉工人首页的 `workerLogout(` 调用而不删登记 ⇒ 红"
+      - "判据 3·🔴 **声称「必须先有工人身份」的写入口必须真的有分流**：`gate_tokens` 两条记号（身份分流**声明** + **用到它的渲染条件**）都要命中。红证（真语料注入，两条各一次）：① 把 `const workerReady = hasWorkerSession()` 改成 `const workerReady = true` ⇒ 正跑判据 1 failed；② **留着声明**只把 `position.part_token && workerReady ? (` 改成 `position.part_token ? (` ⇒ 正跑判据 1 failed（这一族正是「按某个 token 在不在」判的守卫会漏的形态）"
+      - "判据 4·**引导必须可行动**：分流页面必须渲染引导文案（`guide_token`）与指向登录页工人入口的记号（`login_route_token`）；删掉任一个 ⇒ 红"
+      - "判据 5·**台账不许空转（fail-closed）**：条数为 0 ⇒ 红（「空」不等于「全部合规」）；每条登记必须声明 `case_ids`。台账条数**现取**（守卫按射程现算配对集，双向相等才算过；文档里不写死条数）"
+    skip_reason: "[backend-contract] 确定性元守卫（jest: frontend/bmini-app/tests/worker-surface-ledger.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-07 新增（issue #6467 切片 1，铁律 8 类级固化）：入库页早就有 `workerReady` 分流，报工页却漏了 —— 二者互不相关、漏一处没有任何东西会红。本台账把「哪个页面渲染工人写入口 / 哪个页面必须先有工人身份」变成可执行判据（未登记即红 + 只许缩短 + 注入式红证）。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/worker-surface-ledger.test.ts"
+      ci:
+        - bmini-app.yml
       verifies: []

@@ -71,6 +71,7 @@ jest.mock('@tarojs/taro', () => {
 jest.mock('../src/services/productionService', () => ({
   ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
+  getWorkerOrderOperations: jest.fn(),
   // 扫码主闭环（切片 ②）：本文件测逐道报工与补传链路 ⇒ 解析面默认返回 undefined
   scanResolve: jest.fn(),
   completeByScan: jest.fn(),
@@ -88,6 +89,7 @@ import ProductionPage from '../src/pages/production/index/index'
 import {
   completeByScan,
   getOrderOperations,
+  getWorkerOrderOperations,
   getOrderPiecework,
 } from '../src/services/productionService'
 import type { OrderOperations, ReportPayload } from '../src/services/productionService'
@@ -100,6 +102,7 @@ import {
   listWorkLogs,
 } from '../src/utils/productionOffline'
 import { setupNetworkListener } from '../src/utils/errorHandler'
+import { setWorkerSessionId } from '../src/utils/workerSession'
 
 const ORDER_ID = 'CSO260915-02615'
 /** 布帘这一行的部位任务码（一部位一码，issue #4946）——收口后报工的唯一凭证。 */
@@ -156,6 +159,17 @@ function makePending(requestId: string, overrides: Record<string, any> = {}) {
 }
 
 const mockGet = getOrderOperations as jest.Mock
+const mockWorkerGet = getWorkerOrderOperations as jest.Mock
+
+/**
+ * 让本用例跑在**有工人身份**的车间设备上（issue #6467 判据 3）：
+ * 写入口只在 `hasWorkerSession()` 为真时渲染 ⇒ 报工类用例必须先种一个工人 session；
+ * 此时读面也按身份分流走 `/api/worker/**`（mockWorkerGet），与真机一致。
+ */
+function enableWorkerIdentity() {
+  setWorkerSessionId('sess-worker-1')
+  mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail() })
+}
 const mockComplete = completeByScan as jest.Mock
 const mockPiecework = getOrderPiecework as jest.Mock
 
@@ -205,6 +219,7 @@ describe('ProductionPage 弱网降级（issue #4206 / 补传收口 #5647）', ()
   it('报工传输失败 ⇒ 入本机队列，队列项持久化该次报工的幂等键与报工凭证', async () => {
     mockComplete.mockResolvedValue({ success: false, offline: true, message: '网络异常，请检查网络连接' })
 
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -227,6 +242,7 @@ describe('ProductionPage 弱网降级（issue #4206 / 补传收口 #5647）', ()
   it('业务拒绝（有 HTTP 状态码）不入队（重发会重复执行且重试无意义）', async () => {
     mockComplete.mockResolvedValue({ success: false, message: '报工数量超上限：本次最多可报 11' })
 
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -322,6 +338,7 @@ describe('ProductionPage 弱网降级（issue #4206 / 补传收口 #5647）', ()
   it('端到端：离线报工入队 → 网络恢复自动补传 → 同键只落一次报工', async () => {
     // ① 离线报工（传输层失败）⇒ 入本机队列
     mockComplete.mockResolvedValueOnce({ success: false, offline: true, message: '网络异常，请检查网络连接' })
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')

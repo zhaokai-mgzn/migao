@@ -21,6 +21,8 @@ export default function ChatPage() {
     isLoadingMessages,
     error,
     handedOff,
+    quickActions,
+    loadQuickActions,
     ensureLatestSession,
     createSession,
     sendMessage,
@@ -76,9 +78,11 @@ export default function ChatPage() {
       return
     }
 
-    // 无会话 UX：续聊最近一次，无则静默新建
-    await ensureLatestSession()
-  }, [checkAuth, ensureLatestSession])
+    // 无会话 UX：续聊最近一次，无则静默新建；
+    // 同批拉空态快捷入口（issue #6468）：内容 = 服务端**单一真值**（`/api/chat/quick-actions`），
+    // H5 不再自带一份（旧形态正是抄 C 端的硬编码六条）。
+    await Promise.all([ensureLatestSession(), loadQuickActions()])
+  }, [checkAuth, ensureLatestSession, loadQuickActions])
 
   useEffect(() => {
     initialize()
@@ -182,7 +186,7 @@ export default function ChatPage() {
         ) : (
           <>
             <MessageList messages={messages} isStreaming={isStreaming} onInteract={handleSend} />
-            {showQuickActions && <QuickActions onAction={handleQuickAction} />}
+            {showQuickActions && <QuickActions actions={quickActions} onAction={handleQuickAction} />}
           </>
         )}
       </View>
