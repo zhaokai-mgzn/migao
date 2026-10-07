@@ -710,7 +710,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
-## B 端小程序域（32 case）
+## B 端小程序域（37 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1144,6 +1144,71 @@
 ```
 真值: inbound-order-flow.draft-then-post
 溯源: 2026-10-05 新增（issue #6340）：工人端「拍照入库」建单必失败 —— recognize 出参把雪花 skuId 当 JSON number 发出，页面 JSON.parse 当场丢精度 ⇒ 回传时服务端报「商品明细第 1 项的 SKU 不属于该商品（或不存在）」。根因两层：后端 WorkerInboundSkuMatch.skuId 等 6 处 DTO 字段漏 `@JsonSerialize(using = ToStringSerializer.class)`（同族 #5904 的前端侧已修、工人端与出参契约都还留着）+ bmini 页面写的是 `Number(chosenSku?.skuId)`。修复 = 后端补注解（出参字符串）+ 端侧类型改 string + 去 Number()。边界如实登记：运行时红转绿要**部署后**重放 seed-inbound-t25/probe-worker-skuid.mjs 才算闭环（本用例只覆盖单元/组件层）。 ｜ tags: bmini, inbound, backend-contract
+
+### BM-033. B 端登录页第三入口（工人）+ 路由参数直达 - 工号 + PIN 走既有 workerLogin，成功落工人首页（不 switchTab） 🔵
+```
+你: 工人打开 B 端 H5 登录页（或从报工页 / 工人首页点「去登录工人身份」）→ 切到第三个 tab「工人登录」→ 填工号 + PIN（可选设备标签）→ POST /api/worker/login → 成功进工人工作台；输错 PIN 时屏上**原样**显示服务端文案
+期望: direct_reply
+数据: 判据 1·**三个 tab 都在册**（员工 / 管理员 / 工人），默认停在员工入口；`/pages/auth/login/index?tab=worker` **路由参数直达**工人入口（员工/管理员字段退场）。证据：frontend/bmini-app/tests/login-page.test.tsx
+数据: 判据 2·🔴 **提交恰一次 + 成功后 `redirectTo` 工人首页且绝不 switchTab**：工人 tab 提交 ⇒ `workerLogin(工号, PIN, 设备标签)` 恰一次（**既有**端点 `POST /api/worker/login`，未新造端点/登录服务），成功 ⇒ `Taro.redirectTo({ url: WORKER_HOME_ROUTE })` 且 `Taro.switchTab` 一次都不调（工人没有商家会话，switchTab 会落到商家 tabBar=问米宝，而工人零商家权限 ⇒ 落地即 403/空页）。红证（实跑）：把 `redirectTo` 改回 `switchTab` ⇒ 1 failed
+数据: 判据 3·**失败原样展示服务端 message**：服务端失败信封是 `{success:false,error:{code,message}}`（真值 = backend/admin-api/src/main/java/com/migao/admin/config/GlobalExceptionHandler.java 的 `handleBusinessException`）⇒ 端侧取值链路必须取到它，而不是 HTTP 层噪声「Request failed with status 401」。证据：frontend/bmini-app/tests/worker-service-message.test.ts
+跳过: [backend-contract] 确定性前端判据（jest: frontend/bmini-app/tests/login-page.test.tsx + frontend/bmini-app/tests/worker-service-message.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-07 新增（issue #6467 切片 1）：现场（生产 app.migaozn.com，2026-10-07 08:06:57 / 08:07:48 +08，nginx 日志 `POST /api/worker/production/scan/complete 401`）用管理员账号在 H5 点「完成报工」⇒ 被清商家登录态并踢回登录页，重登再点仍然 401。根因之一是 H5 上**没有工人登录入口**（独立的 pages/worker/login/index 存在，但报工页/工人首页都不指向它）⇒ 登录页补第三 tab，并支持 `?tab=worker` 直达（给报工页/工人首页的引导用）。**零后端改动**（truths_ref = frontend-fix.no-api-change）。 ｜ tags: bmini, login, worker
+
+### BM-034. 工人首页（新页 pages/worker/home/index）- 身份卡读服务端 + 三件工人功能 + 退出工人身份；不出现任何商家面入口 🔵
+```
+你: 工人用「工号 + PIN」登录成功后落在**工人工作台**：页头显示当前工人（工号 + 姓名，来自服务端 `GET /api/worker/production/current-worker`）→ 三件功能：扫码报工 / 拍照入库 / 补打入库标签；底部「退出工人身份」→ 回登录页的工人入口
+期望: direct_reply
+数据: 判据 1·**身份卡读服务端**：工号 + 姓名来自 `fetchCurrentWorker()`（服务端工人 session，页头显示的正是「这笔活会记到谁头上」= 计件工资凭证）；服务端读不到（session 失效）⇒ 回落成「未登录工人身份」并清本机工人态，**不**静默保留上一个人的名字。红证（实跑）：把身份卡改读 `getCachedWorker()`（不调服务端）⇒ 1 failed
+数据: 判据 2·**三件工人功能入口各自跳对路由**：扫码报工 → `/pages/production/index/index`；拍照入库 / 补打入库标签 → 路由常量真值在 frontend/bmini-app/src/utils/inbound/gaps.ts（`INBOUND_PAGE_ROUTE` / `REPRINT_PAGE_ROUTE`，页面不写第二份字面量）
+数据: 判据 3·🔴 **不出现任何商家面入口**：问米宝 / 数据 / 坐席 / 我的 四个 tabBar 文案与管理面 4 项（标签取自 frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`）一个都不渲染 —— 工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`），点了只会 403/空页。红证（实跑）：往页面混入一行「问米宝」⇒ 1 failed
+数据: 判据 4·**退出工人身份**：`workerLogout()`（服务端留 `end_reason=logout` 痕）+ `clearWorkerSession()` 清本机 ⇒ `redirectTo` 登录页的工人入口（共用 PAD 场景：下一个人接着用；只清本机会让下一个人记到上一个人头上）
+数据: 判据 5·**新页必须在册**：`WORKER_HOME_ROUTE` 逐字出现在 frontend/bmini-app/src/app.config.ts 的 pages 里（没登记 = 死链），并登记进 frontend/bmini-app/src/utils/pageEntries.ts 的入口台账（「登记了没人指向也红 / 没登记即红」）。证据：frontend/bmini-app/tests/page-entry-reachability.test.ts
+跳过: [backend-contract] 确定性页面链路判据（jest: frontend/bmini-app/tests/worker-home-page.test.tsx + tests/page-entry-reachability.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-07 新增（issue #6467 切片 1）：工人身份此前**没有落点** —— 登录后只能落商家 tabBar（问米宝/数据/坐席/我的），而工人零商家权限 ⇒ 看见商家菜单只会 403/空页；且 `Taro.switchTab` 只能落 tabBar 页 ⇒ 工人登录成功只能 redirectTo 一个非 tabBar 的工人页。本页 = 工人面收口（身份卡 + 三件工人功能 + 退出）。 ｜ tags: bmini, worker, page-flow
+
+### BM-035. 报工页身份分流 - 无工人身份不渲染工人写入口（渲染引导去工人登录）；有身份时现状逐字不变 🔵
+```
+你: 商家管理员账号在 B 端 H5 打开扫码报工页（本机**没有**工人身份）→ 扫码/手输单号仍能看本单工序（商家读面），但**没有**「完成报工」/【开工】写入口，只有「请先用工号 + PIN 登录工人身份」+「去登录工人身份」；车间工人设备（有工人身份）看到的写入口与修复前逐字相同
+期望: direct_reply
+数据: 判据 1·🔴 **无工人身份 ⇒ 不给写入口**：`hasWorkerSession() === false` 时**不渲染**「完成报工」与【开工】（屏上 `完成报工` 文本一个都没有），且 `completeByScan` 一次都不被调用。红证（实跑）：注入 `const workerReady = true`（= 摘掉身份分流，回到旧行为）⇒ 1 failed
+数据: 判据 2·**引导可行动**：渲染「请先用工号 + PIN 登录工人身份」文案 +「去登录工人身份」按钮 ⇒ `Taro.navigateTo({ url: WORKER_TAB_LOGIN_ROUTE })`（= `/pages/auth/login/index?tab=worker`，路由常量真值在 frontend/bmini-app/src/utils/inbound/gaps.ts）。同仓既有范式 = frontend/bmini-app/src/pages/worker/inbound/index.tsx 的 `workerReady` 分流（本单只把同一形态补到报工页）
+数据: 判据 3·**有工人身份 ⇒ 现状逐字不变**：写入口仍在（`完成报工` 按钮数不变），in-flight 锁 / 数量校验 / 幂等键 / 唯一写入口 `scan/complete` 的既有判据逐条不回归。证据：frontend/bmini-app/tests/production-worker-entry.test.tsx、frontend/bmini-app/tests/production-report-guard.test.tsx、frontend/bmini-app/tests/production-single-write-entry.test.ts
+数据: ⚠️ 边界（照实登记）：生产现场那台设备（管理员 + 无工人身份）在本单上线后**仍不能直接报工** —— 它会看到可行动的引导，这是**有意**的（报工归属必须有工人档案 = 计件工资凭证）。
+跳过: [backend-contract] 确定性页面判据（jest: frontend/bmini-app/tests/production-worker-entry.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-07 新增（issue #6467 切片 1）：现场缺陷的**正面修法** —— 修复前该页只要有 `part_token` 就渲染「完成报工」（不看本机有没有工人身份），而那台设备从来没有工人身份 ⇒ 点一次换一个 401，请求层再把商家登录态清掉、踢回登录页。同批把既有写面判据的夹具种上工人身份（它们判的是写面本身，前提是工人设备）。 ｜ tags: bmini, production, worker
+
+### BM-036. 请求层 401 身份分流 - 工人端点 401 不再误诊成「商家会话过期」（不清商家态 / 不跳商家登录页 / 上屏服务端文案） 🔵
+```
+你: 本机同时有商家登录态（管理员在共用 PAD 上开着后台）与一次**工人端点**调用：`POST /api/worker/production/scan/complete` 返回 401（报工写入口只认工号 + PIN 签发的工人身份）或 `POST /api/worker/login` 输错 PIN 返回 401 → 屏上只出现服务端文案，商家登录态**不受影响**
+期望: direct_reply
+数据: 判据 1·🔴 **工人端点 401（`path` 以 `/api/worker/` 开头）**：① **不清**商家 `auth_token` / `auth_user`（实测旧行为把它们清掉 ⇒ 用户被踢回登录页，重登再点仍然 401）；② 只清工人 session/缓存；③ 上屏**服务端文案**（`data.error.message || data.message`，取不到才用兜底「工人身份已失效，请重新用工号 + PIN 登录」）；④ **不**做商家登录页跳转（把定时器推完也不跳；引导交给页面自身的身份分流）。红证（实跑）：把该分流条件写成 `false`（= 旧行为）⇒ 2 failed。证据：frontend/bmini-app/tests/request.test.ts
+数据: 判据 2·**商家端点 401 行为逐字不变**：清 `auth_token`/`auth_user` + 弹「登录已过期，请重新登录」+ 1.5s 后 `redirectTo` 商家登录页。证据：frontend/bmini-app/tests/request.test.ts（既有判据 + 新增一条钉死跳转）
+数据: 判据 3·**实现只取最少代码**：分流依据是 `path.startsWith('/api/worker/')`（不引入第二份端点台账）—— 与服务端 `WorkerSessionService` 的工人路径前缀同形。
+跳过: [backend-contract] 确定性网络层判据（jest: frontend/bmini-app/tests/request.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-07 新增（issue #6467 切片 1，第二个真缺陷）：nginx 日志实证 `POST /api/worker/production/scan/complete 401` 与 `POST /api/auth/employee/login 200` 交替出现（重登后再点仍然 401），而前端 error 层把**任何** 401 + 本机有 token 都读成「商家会话过期」⇒ 吞掉服务端可行动文案 + 毁掉有效商家登录态。修复 = 按端点归属分流（工人端点的 401 与商家会话无关）。 ｜ tags: bmini, auth, worker
+
+### BM-037. 类级元守卫：工人面写入口台账（未登记即红 / 台账只许缩短 / 身份分流与渲染条件都要命中 / 空台账 fail-closed） 🔵
+```
+你: 任何人给 bmini 的某个页面新增一处工人写调用（`completeByScan` / `workerLogin` / `workerLogout` / `createInboundDraft` / `postInboundDraft`）—— 无论他有没有写身份分流，判据都要拦得住
+期望: direct_reply
+数据: 判据 1·🔴 **未登记即红**：以 frontend/bmini-app/src/pages 下全部 `.tsx`（先剥注释）为射程现取 (页面, 工人写调用) 配对集，凡有配对不在 frontend/bmini-app/tests/worker-surface-ledger.json 里 ⇒ 具名判红。红证（实跑，in-test 注入）：新增一个调 `workerLogout()` 的虚拟页面 ⇒ 报出 `src/pages/worker/brand-new/index.tsx::workerLogout(`
+数据: 判据 2·**台账只许缩短**：每条登记都必须仍能被扫到（页面已不再有该调用 ⇒ 该条已死 ⇒ 红）。红证：摘掉工人首页的 `workerLogout(` 调用而不删登记 ⇒ 红
+数据: 判据 3·🔴 **声称「必须先有工人身份」的写入口必须真的有分流**：`gate_tokens` 两条记号（身份分流**声明** + **用到它的渲染条件**）都要命中。红证（真语料注入，两条各一次）：① 把 `const workerReady = hasWorkerSession()` 改成 `const workerReady = true` ⇒ 正跑判据 1 failed；② **留着声明**只把 `position.part_token && workerReady ? (` 改成 `position.part_token ? (` ⇒ 正跑判据 1 failed（这一族正是「按某个 token 在不在」判的守卫会漏的形态）
+数据: 判据 4·**引导必须可行动**：分流页面必须渲染引导文案（`guide_token`）与指向登录页工人入口的记号（`login_route_token`）；删掉任一个 ⇒ 红
+数据: 判据 5·**台账不许空转（fail-closed）**：条数为 0 ⇒ 红（「空」不等于「全部合规」）；每条登记必须声明 `case_ids`。台账条数**现取**（守卫按射程现算配对集，双向相等才算过；文档里不写死条数）
+跳过: [backend-contract] 确定性元守卫（jest: frontend/bmini-app/tests/worker-surface-ledger.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-07 新增（issue #6467 切片 1，铁律 8 类级固化）：入库页早就有 `workerReady` 分流，报工页却漏了 —— 二者互不相关、漏一处没有任何东西会红。本台账把「哪个页面渲染工人写入口 / 哪个页面必须先有工人身份」变成可执行判据（未登记即红 + 只许缩短 + 注入式红证）。 ｜ tags: bmini, worker, meta-guard
 
 ## 分类域（3 case）
 
@@ -10056,13 +10121,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：697（活跃 134，跳过 563）
-- tier 分布：smoke 12 / normal 643 / adversarial 32
+- 用例总数：702（活跃 134，跳过 568）
+- tier 分布：smoke 12 / normal 648 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
 - 登录认证域：12
-- B 端小程序域：32
+- B 端小程序域：37
 - 分类域：3
 - 对话边界域：44
 - 跨域：3

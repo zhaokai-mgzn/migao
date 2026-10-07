@@ -49,12 +49,45 @@ function getToken(): string | null {
   }
 }
 
+/** 工人端点前缀（issue #6467：`/api/worker/**` 的 401 与商家会话**无关**） */
+const WORKER_API_PREFIX = '/api/worker/'
+
+/** 工人端点 401 的兜底文案（**只在服务端没给 message 时**用；能取到就原样上屏） */
+const WORKER_AUTH_EXPIRED_FALLBACK = '工人身份已失效，请重新用工号 + PIN 登录'
+
+/** 服务端文案（`ApiResponse` 信封：`{success:false, error:{message}}`，兼容 `{message}`） */
+function serverMessage(data: any): string {
+  return String(data?.error?.message || data?.message || '')
+}
+
 /**
  * 统一错误处理
+ *
+ * @param path 本次请求的端点（`request()` 传入）—— 用于**身份分流**：工人端点的 401
+ *   不是「商家会话过期」（issue #6467）。
  */
-function handleErrorStatus(statusCode: number, data: any): void {
+function handleErrorStatus(statusCode: number, data: any, path: string): void {
   switch (statusCode) {
     case 401:
+      // 🔴 工人端点的 401（issue #6467 现场缺陷）：`/api/worker/**` 只认工人 session
+      // （`X-Worker-Session-Id`，工号 + PIN 签发）——
+      //   · 报工写入口 401 是「这台设备没有工人身份」，**不是**商家会话过期；
+      //   · 工人登录输错 PIN 也是 401。
+      // 旧行为把它读成「登录已过期」⇒ 清商家 token/user + 跳商家登录页
+      // （实测：管理员在 H5 点「完成报工」→ 商家登录态被毁、踢回登录页，重登再点仍然如此），
+      // 且服务端那句可行动文案（「尚未登录工人身份…请重新用工号 + PIN 登录」）被吞掉。
+      // 现行为：只清工人态、上屏服务端文案、**不**做商家登录页跳转（引导交给页面自身的身份分流）。
+      if (path.startsWith(WORKER_API_PREFIX)) {
+        try {
+          Taro.removeStorageSync(STORAGE_KEYS.WORKER_SESSION)
+          Taro.removeStorageSync(STORAGE_KEYS.WORKER)
+        } catch {}
+        Taro.showToast({
+          title: serverMessage(data) || WORKER_AUTH_EXPIRED_FALLBACK,
+          icon: 'none',
+        })
+        break
+      }
       // 只有「本来就有会话」才谈得上过期。无 token 时的 401 是**端点自己的业务拒绝**
       // （issue #5485：员工登录失败统一 `401` + `AUTH_FAILED` + 统一文案；改密同理）
       // ⇒ 文案归调用方展示（`serverMessage` 取 `error.data.error.message`）；
@@ -162,8 +195,8 @@ async function request<T = any>(
         return responseData as T
       }
 
-      // 非成功状态码
-      handleErrorStatus(statusCode, responseData)
+      // 非成功状态码（把 `path` 一并传下去：401 要按**端点归属**分流，issue #6467）
+      handleErrorStatus(statusCode, responseData, path)
 
       const error: any = new Error(`Request failed with status ${statusCode}`)
       error.statusCode = statusCode

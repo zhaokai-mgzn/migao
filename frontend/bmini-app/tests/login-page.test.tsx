@@ -5,7 +5,7 @@
  *       成功跳转、失败不跳转、密码框遮蔽、微信授权按钮已退场、
  *       两个入口的切换、管理员「手机号 + 验证码」链路（发码 / 冷却 / 提交 / 失败不跳转）
  */
-// case_ids: AU-001, AU-003, AU-006, BM-001, BM-002, BM-027
+// case_ids: AU-001, AU-003, AU-006, BM-001, BM-002, BM-027, BM-033
 import React from 'react'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 
@@ -34,8 +34,16 @@ jest.mock('../src/utils/auth', () => ({
   sendSmsCode: (...args: unknown[]) => mockSendSmsCode(...args),
 }))
 
+// 工人入口（issue #6467）：第三 tab 走**既有** workerLogin（POST /api/worker/login），
+// 不新造端点 / 不新造登录服务 —— 这里替身掉它，判据关心的是「调没调、调了几次、成功去哪」。
+const mockWorkerLogin = jest.fn()
+jest.mock('../src/services/workerService', () => ({
+  workerLogin: (...args: unknown[]) => mockWorkerLogin(...args),
+}))
+
 import Taro from '@tarojs/taro'
 import LoginPage from '../src/pages/auth/login/index'
+import { WORKER_HOME_ROUTE } from '../src/utils/inbound/gaps'
 
 const IDENTIFIER_PLACEHOLDER = '如 zhangsan@acme'
 const PASSWORD_PLACEHOLDER = '请输入密码'
@@ -380,5 +388,147 @@ describe('LoginPage · 管理员短信入口（issue #5721）', () => {
     // 页面不自行判角色、不编造文案（角色门禁与反枚举文案的唯一真值都在服务端）
     expect(mockSmsLoginAction).toHaveBeenCalledTimes(1)
     expect(Taro.switchTab).not.toHaveBeenCalled()
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 工人入口（issue #6467 切片 1）
+//
+// 为什么必须有这条链：现场（2026-10-07 生产）用**管理员**账号在 H5 点「完成报工」⇒
+// `POST /api/worker/production/scan/complete` 401 + 请求层把商家登录态清掉、踢回登录页。
+// 报工写入口**只认**工人身份（工号 + PIN 签发的 session），而 H5 上此前**没有任何**
+// 工人登录入口（只有独立的 `pages/worker/login/index`，报工页/首页都不指向它）。
+// ⇒ 登录页补第三 tab（工人），并支持 `?tab=worker` **路由参数直达**（报工/入库页引导过来的入口）。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('LoginPage · 工人入口（issue #6467 判据 1）', () => {
+  const WORKER_NO_PLACEHOLDER = '请输入工号'
+  const WORKER_PIN_PLACEHOLDER = '请输入 PIN'
+  const DEVICE_PLACEHOLDER = '设备标签（可选）'
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockWorkerLogin.mockReset()
+    mockGetState.mockReturnValue({ user: { mustChangePassword: false } })
+    // 缺省：无路由参数（`?tab` 不生效）⇒ 用例自己注入 `{ tab: 'worker' }`
+    ;(Taro.getCurrentInstance as jest.Mock).mockReturnValue({ router: { params: {} } })
+  })
+
+  /** 切到工人 tab（三个 tab 的文案互不相同，取精确文本） */
+  function switchToWorkerTab() {
+    fireEvent.click(screen.getByText('工人登录'))
+  }
+
+  /** 填工人表单 */
+  function fillWorkerForm(no: string, pin: string, deviceLabel = '') {
+    fireEvent.change(screen.getByPlaceholderText(WORKER_NO_PLACEHOLDER), { target: { value: no } })
+    fireEvent.change(screen.getByPlaceholderText(WORKER_PIN_PLACEHOLDER), { target: { value: pin } })
+    if (deviceLabel) {
+      fireEvent.change(screen.getByPlaceholderText(DEVICE_PLACEHOLDER), {
+        target: { value: deviceLabel },
+      })
+    }
+  }
+
+  it('三个入口并列渲染（员工 / 管理员 / 工人），默认停在员工入口', () => {
+    render(<LoginPage />)
+
+    expect(screen.getByText('员工登录')).toBeTruthy()
+    expect(screen.getByText('管理员登录')).toBeTruthy()
+    expect(screen.getByText('工人登录')).toBeTruthy()
+    expect(screen.getByPlaceholderText(IDENTIFIER_PLACEHOLDER)).toBeTruthy()
+    expect(screen.queryByPlaceholderText(WORKER_NO_PLACEHOLDER)).toBeNull()
+  })
+
+  it('🔴 `?tab=worker` 路由参数 ⇒ 直接停在工人入口（报工页/首页引导过来的直达入口）', () => {
+    ;(Taro.getCurrentInstance as jest.Mock).mockReturnValue({ router: { params: { tab: 'worker' } } })
+
+    render(<LoginPage />)
+
+    expect(screen.getByPlaceholderText(WORKER_NO_PLACEHOLDER)).toBeTruthy()
+    expect(screen.getByPlaceholderText(WORKER_PIN_PLACEHOLDER)).toBeTruthy()
+    // 三条身份链不共用一个表单：员工字段退场
+    expect(screen.queryByPlaceholderText(IDENTIFIER_PLACEHOLDER)).toBeNull()
+  })
+
+  it('切到工人入口 ⇒ 渲染工号 + PIN + 设备标签（可选），商家字段退场', () => {
+    render(<LoginPage />)
+    switchToWorkerTab()
+
+    expect(screen.getByText('工号')).toBeTruthy()
+    expect(screen.getByText('PIN')).toBeTruthy()
+    expect(screen.getByPlaceholderText(WORKER_NO_PLACEHOLDER)).toBeTruthy()
+    expect(screen.getByPlaceholderText(WORKER_PIN_PLACEHOLDER)).toBeTruthy()
+    expect(screen.getByPlaceholderText(DEVICE_PLACEHOLDER)).toBeTruthy()
+    expect(screen.queryByPlaceholderText(IDENTIFIER_PLACEHOLDER)).toBeNull()
+    expect(screen.queryByPlaceholderText(PHONE_PLACEHOLDER)).toBeNull()
+  })
+
+  it('🔴 工人 tab 提交 ⇒ workerLogin(工号, PIN, 设备标签) 恰一次 + 成功 redirectTo 工人首页（**不** switchTab 问米宝）', async () => {
+    mockWorkerLogin.mockResolvedValueOnce({
+      success: true,
+      data: { session_id: 'sess-1', worker_id: 'w-1', worker_no: 'G001', worker_name: '张三' },
+    })
+
+    render(<LoginPage />)
+    switchToWorkerTab()
+    fillWorkerForm('  G001  ', ' 2468 ', 'PAD-车间-01')
+    await act(async () => {
+      fireEvent.click(screen.getByText('登录'))
+    })
+
+    expect(mockWorkerLogin).toHaveBeenCalledTimes(1)
+    // 只去空白，不复制服务端的格式规则（格式 / 角色门禁的唯一真值在服务端）
+    expect(mockWorkerLogin).toHaveBeenCalledWith('G001', '2468', 'PAD-车间-01')
+    expect(Taro.redirectTo).toHaveBeenCalledWith({ url: WORKER_HOME_ROUTE })
+    // 🔴 工人**没有商家会话**：switchTab 会落到商家 tabBar（问米宝）⇒ 一律不许
+    expect(Taro.switchTab).not.toHaveBeenCalled()
+  })
+
+  it('🔴 工人登录失败 ⇒ 原样展示服务端 message（不编造、不复制角色规则），且不跳转', async () => {
+    mockWorkerLogin.mockResolvedValueOnce({ success: false, message: '工号或 PIN 不正确' })
+
+    render(<LoginPage />)
+    switchToWorkerTab()
+    fillWorkerForm('G001', '0000')
+    await act(async () => {
+      fireEvent.click(screen.getByText('登录'))
+    })
+
+    expect(await screen.findByText('工号或 PIN 不正确')).toBeTruthy()
+    expect(Taro.redirectTo).not.toHaveBeenCalled()
+    expect(Taro.switchTab).not.toHaveBeenCalled()
+  })
+
+  it('空输入本地拦下（工号 / PIN 都拦，不白跑一次请求）', async () => {
+    render(<LoginPage />)
+    switchToWorkerTab()
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('登录'))
+    })
+    expect(mockWorkerLogin).not.toHaveBeenCalled()
+
+    fillWorkerForm('G001', '')
+    await act(async () => {
+      fireEvent.click(screen.getByText('登录'))
+    })
+    expect(mockWorkerLogin).not.toHaveBeenCalled()
+    expect(Taro.showToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: expect.stringContaining('工号') }),
+    )
+  })
+
+  it('工人 tab 不碰商家登录动作（员工 / 管理员两个动作一次都不调）', async () => {
+    mockWorkerLogin.mockResolvedValueOnce({ success: false, message: '工号或 PIN 不正确' })
+
+    render(<LoginPage />)
+    switchToWorkerTab()
+    fillWorkerForm('G001', '2468')
+    await act(async () => {
+      fireEvent.click(screen.getByText('登录'))
+    })
+
+    expect(mockEmployeeLoginAction).not.toHaveBeenCalled()
+    expect(mockSmsLoginAction).not.toHaveBeenCalled()
   })
 })

@@ -18,22 +18,35 @@
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
-jest.mock('@tarojs/taro', () => ({
-  __esModule: true,
-  default: {
-    scanCode: jest.fn(),
-    showToast: jest.fn(),
-    navigateTo: jest.fn(),
-    getStorageSync: jest.fn(() => ''),
-    setStorageSync: jest.fn(),
-    removeStorageSync: jest.fn(),
-  },
-  useDidShow: jest.fn(),
-}))
+jest.mock('@tarojs/taro', () => {
+  // 真内存 storage：本文件的用例必须先种下**工人身份**（issue #6467：写入口只在
+  // `hasWorkerSession()` 为真时渲染），空实现会让「种了没有」与「没种」长得一样。
+  const store: Record<string, any> = {}
+  return {
+    __esModule: true,
+    default: {
+      scanCode: jest.fn(),
+      showToast: jest.fn(),
+      navigateTo: jest.fn(),
+      getStorageSync: jest.fn((key: string) => (key in store ? store[key] : '')),
+      setStorageSync: jest.fn((key: string, value: any) => {
+        store[key] = value
+      }),
+      removeStorageSync: jest.fn((key: string) => {
+        delete store[key]
+      }),
+      __clearStorage: () => {
+        Object.keys(store).forEach((key) => delete store[key])
+      },
+    },
+    useDidShow: jest.fn(),
+  }
+})
 
 jest.mock('../src/services/productionService', () => ({
   ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
+  getWorkerOrderOperations: jest.fn(),
   completeByScan: jest.fn(),
   getOrderPiecework: jest.fn(),
   // 锁用**真身**（不 mock）：本文件的判据就是「锁真的挡住了第二笔」
@@ -50,8 +63,10 @@ import ProductionPage from '../src/pages/production/index/index'
 import {
   completeByScan,
   getOrderOperations,
+  getWorkerOrderOperations,
   reportInFlightLock,
 } from '../src/services/productionService'
+import { setWorkerSessionId } from '../src/utils/workerSession'
 import type { OrderOperations } from '../src/services/productionService'
 
 const ORDER_ID = 'CSO260915-02615'
@@ -86,6 +101,7 @@ function makeDetail(): OrderOperations {
 
 const mockGet = getOrderOperations as jest.Mock
 const mockComplete = completeByScan as jest.Mock
+const mockWorkerGet = getWorkerOrderOperations as jest.Mock
 
 /** 手动可控的 deferred（用于把请求悬停在「在飞」状态） */
 function deferred<T>() {
@@ -115,6 +131,10 @@ const reportButton = () => screen.getAllByText('完成报工')[1]
 describe('ProductionPage 报工防连点（issue #4116 §5-1）', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    ;(Taro as any).__clearStorage()
+    // issue #6467：报工写入口只在有工人身份时渲染 ⇒ 本文件（判据全是写面）先种工人身份
+    setWorkerSessionId('sess-worker-1')
+    mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail() })
     // 锁是模块级单例：上一用例若把请求悬停在在飞状态，锁会残留 ⇒ 用例间必须复位
     reportInFlightLock.release()
     ;(Taro.scanCode as jest.Mock).mockResolvedValue({ result: ORDER_ID })
@@ -148,7 +168,8 @@ describe('ProductionPage 报工防连点（issue #4116 §5-1）', () => {
       success: true,
       data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false },
     })
-    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2))
+    // 有工人身份 ⇒ 报工后的「刷新本单」走工人读面（mockWorkerGet），与真机同一条路
+    await waitFor(() => expect(mockWorkerGet).toHaveBeenCalledTimes(2))
     // 结束之后锁释放：仍是一次调用（没有排队的第二个请求被补发）
     expect(mockComplete).toHaveBeenCalledTimes(1)
   })
