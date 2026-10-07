@@ -14,3 +14,4 @@
 {"id":"1791274503.46315.4957","ts":"2026-10-06T08:15:03Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6430-saving-board-story","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791276111.59425.6765","ts":"2026-10-06T08:41:51Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6439-production-label-direct-print","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791288339.94437.5157","ts":"2026-10-06T12:05:39Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6439-production-label-direct-print","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791331240.15756.3004","ts":"2026-10-07T00:00:41Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6463-positioning-copy","why":"子包 worktree 直跑全量（无批次标记）"}
