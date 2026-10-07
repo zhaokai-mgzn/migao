@@ -1833,9 +1833,9 @@ _CASE_BM_043 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── BM-44 [NORMAL] B 端「问米宝」输入条 H5 形态：placeholder 不承诺录音 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒）（源: cases/bmini.yml）──
-_CASE_BM_44 = EvalCase(
-    id='BM-44',
+# ── BM-044 [NORMAL] B 端「问米宝」输入条 H5 形态：placeholder 不承诺录音 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒）（源: cases/bmini.yml）──
+_CASE_BM_044 = EvalCase(
+    id='BM-044',
     legacy_id='',
     title='B 端「问米宝」输入条 H5 形态：placeholder 不承诺录音 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒）',
     skill=Skill.GENERAL,
@@ -13354,7 +13354,7 @@ ALL_CASES = (
     _CASE_BM_041,
     _CASE_BM_042,
     _CASE_BM_043,
-    _CASE_BM_44,
+    _CASE_BM_044,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,

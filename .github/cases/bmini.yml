@@ -1412,7 +1412,7 @@ cases:
         - bmini-app.yml
       verifies: []
 
-  - id: BM-44
+  - id: BM-044
     legacy_id: ""
     title: "B 端「问米宝」输入条 H5 形态：placeholder 不承诺录音 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒）"
     domains:
