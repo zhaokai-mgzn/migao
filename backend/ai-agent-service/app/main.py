@@ -174,7 +174,15 @@ def create_app() -> FastAPI:
         allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
-        allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Tenant-ID", "Accept", "Origin"],
+        # ⚠️ 逐项白名单，与 admin-api `SecurityConfig.setAllowedHeaders` 同口径（issue #6479）：
+        # 两个 H5 端（bmini `utils/request.ts`、mini-app `utils/request.ts`）**每个**请求都带
+        # `X-Client-Type`，缺它 ⇒ 跨域形态下 `/api/chat/**` 与 `/api/chat/quick-actions` 等
+        # 全部请求被预检拦掉（本地联调实测 `net::ERR_FAILED`）。
+        # 判据 = tests/unit_ci_workflows/test_cors_custom_headers_contract.py（漏一个当场具名红）。
+        allow_headers=[
+            "Authorization", "Content-Type", "X-Request-ID", "X-Tenant-ID", "Accept", "Origin",
+            "X-Client-Type", "X-Client-Request-Id", "X-Worker-Session-Id",
+        ],
     )
     logger.info(f"CORS allowed origins: {cors_origins}")
 

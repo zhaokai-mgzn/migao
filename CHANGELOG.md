@@ -37,6 +37,14 @@
   只记账号名这一条不变。
 - 边界（照实登记）：不改登录协议、不改身份判据、不重排登录页版面；小程序端行为逐字不变
   （修复用的选择器只存在于 H5 产物 DOM 里）。
+
+### 跨域形态下两个 H5 端的请求不再被预检拦掉：CORS 头白名单补齐 `X-Client-Type` / `X-Client-Request-Id`（2026-10-07，issue #6479）
+
+- **病根**：两个 H5 端（B 端 `bmini-app`、C 端 `mini-app`）的 `utils/request.ts` / `sse.ts` / `voice.ts` / `imageUpload.ts` **每个**请求都带 `X-Client-Type`，而 admin-api 的 `setAllowedHeaders(...)` 与 ai-agent 的 `allow_headers=[...]` 都没有它 ⇒ 预检的 `Access-Control-Allow-Headers` 不回该头 ⇒ **浏览器根本不发**真实请求（前端只看到 `net::ERR_FAILED` / CORS 报错，**服务端零日志**，极易误判成「后端挂了」）。同一形态 2026-09-27 已在 `X-Worker-Session-Id` 上发生过（现象 = 「登录了但全 401」），当时把部署改成**同源**绕开了它 —— 头白名单本身没修、也**没有判据**。
+- **修法**：admin-api 补 `X-Client-Type` / `X-Client-Request-Id`；ai-agent 补 `X-Client-Type` / `X-Client-Request-Id` / `X-Worker-Session-Id`。**origin 白名单一字未动**（放宽 origin 才是越权面）。
+- **类级固化**：`tests/unit_ci_workflows/test_cors_custom_headers_contract.py` 扫「前端**代码里**实际发送的 `X-*` 头」⊆「两个后端的白名单」（含反空跑金丝雀）⇒ 漏登记一个头**当场具名红**，不再靠「记得加」。
+- **影响面**：生产 H5 与 API **同源**（nginx 反代 `/api`）⇒ 线上行为不变；本地联调与任何分域部署形态由「全挂」变可用。
+
 ### 工人登录不再动不动要重登：会话闲置超时 一周 → 30 天（2026-10-07，issue #6473）
 
 用户 2026-10-07：> 把工人的登录 Session 过期时间设置久一点，可以延长到 1 个月
