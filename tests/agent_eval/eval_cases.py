@@ -500,6 +500,24 @@ _CASE_AG_010 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── AG-011 [NORMAL] 定时提醒工具面：action 闭集 + A 档可逆写声明 + 三件套本地 fail-closed（源: cases/agents.yml）──
+_CASE_AG_011 = EvalCase(
+    id='AG-011',
+    legacy_id='',
+    title='定时提醒工具面：action 闭集 + A 档可逆写声明 + 三件套本地 fail-closed',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家对米宝说「3 天后提醒我跟进张先生」→ 米宝发确认卡，点头后建一条待办'],
+    expectations=['scheduled_task_manage'],
+    data_checks=['action 面是**闭集** {create, list, cancel}（多一个写 action 进来 = 能力扩面，须重走 A 档裁定）', 'A 档声明齐全：read_only=False + requires_confirmation=True + idempotent=True + destructive=False', '只有 list 免确认（read_only_actions == {list}）—— 写 action 不得被挪进来「洗白」', '角色层显式声明 allowed_roles == [admin, operator]，不含 C 端 / 幽灵角色', '三件套（fire_at / task_type / criterion / action_label / action_url）缺任一 ⇒ **本地**即返回 missing_arguments（在发 HTTP 之前，用例不 mock HTTP 自证这一点）'],
+    skip_reason='[backend-contract] 工具声明面与本地 fail-closed 由 pytest 单测验证（test_scheduled_task_manage.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'scheduled_task', 'write_boundary'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── API-001 [NORMAL] chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开（源: cases/api.yml）──
 _CASE_API_001 = EvalCase(
     id='API-001',
@@ -13316,6 +13334,7 @@ ALL_CASES = (
     _CASE_AG_006,
     _CASE_AG_007,
     _CASE_AG_010,
+    _CASE_AG_011,
     _CASE_API_001,
     _CASE_API_002,
     _CASE_API_003,
