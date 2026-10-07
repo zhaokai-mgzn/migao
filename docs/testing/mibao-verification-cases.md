@@ -225,7 +225,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6224，用户 2026-10-03 逐字裁定「退款方式 不用记」⇒ 执行选项 2 下线该字段）。修前实测：refundMethod 是零生产者字段（DB 列 after_sales_tickets.refund_method 全仓无 INSERT/UPDATE、无 setter 实参写入，响应里只有「实体 getter → DTO setter」直通）⇒ 线上恒不下发（NON_NULL）而前端 types 却声明了它。修法 = 移除实体/列表响应/详情响应三处字段声明 + 服务里两处直通 + frontend/admin-web/src/types/index.ts 的声明（保留 DB 列）。取号 AS-015（python3 scripts/next_case_id.py AS ⇒ main:001-010,013-014 + 在飞 PR #6230:011-012 ⇒ 最小空闲 AS-015）。 ｜ tags: refund, dead-field, response-contract, backend-contract
 
-## Agent 核心域（8 case）
+## Agent 核心域（9 case）
 
 ### AG-001. AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离 🔵
 ```
@@ -322,6 +322,20 @@
 ```
 真值: agent-notification.scheduled-task-trio, agent-notification.scheduled-task-idempotent, agent-notification.scheduled-task-lifecycle
 溯源: 2026-10-07 新增（issue #6486 包 1）：定时任务服务端能力的实例判据，逐条对应该测试类的 8 组断言。 ｜ tags: agents, scheduled_task, notification
+
+### AG-011. 定时提醒工具面：action 闭集 + A 档可逆写声明 + 三件套本地 fail-closed 🔵
+```
+你: 商家对米宝说「3 天后提醒我跟进张先生」→ 米宝发确认卡，点头后建一条待办
+期望: direct_reply
+数据: action 面是**闭集** {create, list, cancel}（多一个写 action 进来 = 能力扩面，须重走 A 档裁定）
+数据: A 档声明齐全：read_only=False + requires_confirmation=True + idempotent=True + destructive=False
+数据: 只有 list 免确认（read_only_actions == {list}）—— 写 action 不得被挪进来「洗白」
+数据: 角色层显式声明 allowed_roles == [admin, operator]，不含 C 端 / 幽灵角色
+数据: 三件套（fire_at / task_type / criterion / action_label / action_url）缺任一 ⇒ **本地**即返回 missing_arguments（在发 HTTP 之前，用例不 mock HTTP 自证这一点）
+跳过: [backend-contract] 工具声明面与本地 fail-closed 由 pytest 单测验证（test_scheduled_task_manage.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: agent-notification.scheduled-task-trio, agent-notification.scheduled-task-idempotent
+溯源: 2026-10-07 新增（issue #6486 包 2）：定时提醒域工具面的实例判据，逐条对应该测试类的 15 条断言。 ｜ tags: agents, scheduled_task, write_boundary
 
 ## API 层域（21 case）
 
@@ -10243,10 +10257,10 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：710（活跃 134，跳过 576）
-- tier 分布：smoke 12 / normal 656 / adversarial 32
+- 用例总数：711（活跃 134，跳过 577）
+- tier 分布：smoke 12 / normal 657 / adversarial 32
 - 售后域：15
-- Agent 核心域：8
+- Agent 核心域：9
 - API 层域：21
 - 登录认证域：12
 - B 端小程序域：43

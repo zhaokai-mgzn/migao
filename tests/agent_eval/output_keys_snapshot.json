@@ -1252,6 +1252,42 @@
    ],
    "source_sha256": "3684cc79937d348f6a09e576f247b547c636436442d2e10b3b444aff3406ec66"
   },
+  "scheduled_task_manage": {
+   "actions": {
+    "create": {
+     "dynamic": true,
+     "keys": []
+    },
+    "list": {
+     "dynamic": false,
+     "keys": [
+      "count",
+      "tasks"
+     ]
+    }
+   },
+   "actions_unattributed": [
+    "cancel"
+   ],
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/scheduled_task_manage.py",
+   "keys": [
+    "cancelled",
+    "count",
+    "task_id",
+    "tasks"
+   ],
+   "literal_keys": [
+    "cancelled",
+    "count",
+    "task_id",
+    "tasks"
+   ],
+   "shape_notes": [
+    "data=response.get('data') or {}"
+   ],
+   "source_sha256": "b009c0c9713ad4f6f975fc80355596fdba9ed93943d2bd698c5dbc64d450e299"
+  },
   "session_manage": {
    "actions": {
     "detail": {
@@ -1371,7 +1407,7 @@
     "params",
     "validated"
    ],
-   "source_sha256": "851ee88c5c12f5d483ba9212f67868b1db19bc73f00442417ce9b8a33c5432b8"
+   "source_sha256": "59a46b13ad216a3cf49648593042f6542001a164acd22d9b75b59b7bbd1ad940"
   }
  }
 }

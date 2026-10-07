@@ -308,6 +308,7 @@ def _register_all_skills(registry: SkillRegistry):
     from app.graph.skills.product_skill import PRODUCT_SKILL_CONFIG
     from app.graph.skills.aftersales_skill import AFTERSALES_SKILL_CONFIG
     from app.graph.skills.customer_skill import CUSTOMER_SKILL_CONFIG
+    from app.graph.skills.reminder_skill import REMINDER_SKILL_CONFIG
     from app.graph.skills.staff_skill import STAFF_SKILL_CONFIG
     from app.graph.skills.settings_skill import SETTINGS_SKILL_CONFIG
     from app.graph.skills.data_skill import DATA_SKILL_CONFIG
@@ -333,6 +334,7 @@ def _register_all_skills(registry: SkillRegistry):
         DATA_SKILL_CONFIG,
         KNOWLEDGE_SKILL_CONFIG,
         GENERAL_SKILL_CONFIG,
+        REMINDER_SKILL_CONFIG,   # 定时提醒（issue #6486 包 2）
         # 小布 Skill
         CUSTOMER_ORDER_SKILL_CONFIG,
         CUSTOMER_PRODUCT_SKILL_CONFIG,

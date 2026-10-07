@@ -417,7 +417,8 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
 #: 它剩下的两个 action（list / unread_count）对应的端点在 `NotificationController` 里
 #: **没有** `@RequirePermission` ⇒ 目录里没有对应码，角色层是**真正需要**的；
 #: 类体必须显式声明 `allowed_roles`（判据 `test_role_gated_tools_still_declare_their_role_list`）。
-ROLE_GATED_B_SIDE_TOOLS = frozenset({"notification_manage"})
+#: 定时任务（issue #6486 包 2）：三个端点都无权限码（自助语义，与通知中心同款）⇒ 回到角色层。
+ROLE_GATED_B_SIDE_TOOLS = frozenset({"notification_manage", "scheduled_task_manage"})
 
 #: **未注册但类仍在**的工具（issue #3917：加工单工具暂不接入，类文件保留并直测）。
 #: 类里的 `allowed_roles` 同样是 F4 病灶 —— 恢复注册时不得把假拒绝一起带回来。

@@ -66,6 +66,7 @@ from app.tools.category_manage import CategoryManageTool
 from app.tools.processing_item_manage import ProcessingItemManageTool
 from app.tools.product_update import ProductUpdateTool
 from app.tools.product_batch_update import ProductBatchUpdateTool
+from app.tools.scheduled_task_manage import ScheduledTaskManageTool
 from app.tools.sku_update import SkuUpdateTool
 from app.tools.interact import InteractTool
 from app.tools.validate_input import ValidateInputTool
@@ -110,6 +111,7 @@ __all__ = [
     # 与逐条写同码（product:create），登记形态与其余写工具一致（注册集双向核对 =
     # tests/test_tools_registry.py::TestToolsFacadeCompleteness）
     "ProductBatchUpdateTool",
+    "ScheduledTaskManageTool",
     "InteractTool", "ValidateInputTool", "CurtainCalcTool",
     "ProductionProgressQueryTool", "PieceworkQueryTool",
     "ProductionWorklogQueryTool",

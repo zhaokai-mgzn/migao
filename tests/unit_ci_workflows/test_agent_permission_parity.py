@@ -1302,6 +1302,17 @@ def problems_missing_codes(w: World) -> list[str]:
             continue
         if t.name in LOCAL_ONLY_TOOLS:
             continue
+        # 🔴 **自助面的具名出口**（issue #6486 包 2）：工具**不声明码**合规 ⟺ 它调用的
+        # **每一个**端点都是**已登记**的未注解端点（`UNANNOTATED_ENDPOINTS`，逐条带理由）。
+        # 判据 8 已经对那张台账做**双向**对账（未登记即红 / 陈旧即红），这里**复用**同一套
+        # 匹配机具（`_matches_registered`，不造第二套解析器 —— #3570 的教训）。
+        # **不是放宽**：端点**未登记** ⇒ 照旧落进下面的 `out.append`；红证 ⑥ 仍有效
+        # （`role_manage` 的端点带码、根本不在该台账里）。
+        if t.endpoints and all(
+            any(_matches_registered(f"{verb} {path}", {pat: ""}) for pat in UNANNOTATED_ENDPOINTS)
+            for verb, path, _ in t.endpoints
+        ):
+            continue
         out.append(
             f"{t.name}（{t.file}）：B 端可达、又**有** admin-api 调用点"
             f"（{[f'{v} {p}' for v, p, _ in t.endpoints][:3]}…），却未声明 required_permissions —— "
