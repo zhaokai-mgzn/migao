@@ -392,23 +392,11 @@ class MaterialShortageServiceTest {
 
     // ── 纪律 3：确定性 + 入参 fail-closed ───────────────────────────────────────
 
-    @Test
-    @DisplayName("🔴 服务源码不出现挂钟读取（LocalDate/Instant/OffsetDateTime.now / Clock.system）")
-    void serviceSourceHasNoWallClock() throws IOException {
-        Path path = Path.of(SERVICE_REL);
-        if (!Files.exists(path)) {
-            // 从模块根运行（backend/admin-api）时的相对回退
-            path = Path.of("src/main/java/com/migao/admin/service/MaterialShortageService.java");
-        }
-        assertThat(path).as("判据对象必须存在（路径漂移 ⇒ 判红，不是空跑通过）").exists();
-        String source = Files.readString(path, StandardCharsets.UTF_8);
-        for (String needle : List.of("LocalDate.now(", "Instant.now(", "OffsetDateTime.now(",
-                "LocalDateTime.now(", "Clock.system")) {
-            assertThat(source).as("禁止的挂钟写法：%s", needle).doesNotContain(needle);
-        }
-        // 业务「今天」只有一条路：注入的 BusinessClock
-        assertThat(source).contains("businessClock.today()");
-    }
+    // 「本类不读挂钟」**不在这里自建一份源码扫描**：`src/main` 侧的挂钟读取点由既有全仓守卫
+    // `com.migao.admin.time.BusinessClockSourceGuardTest#onlyTheClockComponentReadsBusinessTimeFromMain`
+    // 统一判（面 = 整个 `src/main/java`，比单文件扫描更强）—— 这里再写一份就是**平行实现**
+    // （判据漂移 + 本文件的 needle 字面量会被那套守卫的族级普查判成「新命中」，实测两侧同时红）。
+    // 本类的确定性由「纯函数 compute(...) 不碰 DB / 不读挂钟」的用例本身承担。
 
     @Test
     @DisplayName("🔴 取数 SQL 的权威口径：需求按 products.unit 过滤（不是订单行 selling_method）；供给**不读** products.stock")
