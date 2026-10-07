@@ -10243,8 +10243,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：709（活跃 134，跳过 575）
-- tier 分布：smoke 12 / normal 655 / adversarial 32
+- 用例总数：710（活跃 134，跳过 576）
+- tier 分布：smoke 12 / normal 656 / adversarial 32
 - 售后域：15
 - Agent 核心域：8
 - API 层域：21

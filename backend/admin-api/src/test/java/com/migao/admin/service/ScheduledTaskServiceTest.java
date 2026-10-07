@@ -10,6 +10,7 @@ import com.migao.admin.entity.Tenant;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.ScheduledTaskMapper;
 import com.migao.admin.mapper.TenantMapper;
+import org.springframework.dao.DuplicateKeyException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -301,5 +303,33 @@ class ScheduledTaskServiceTest {
         service.scanDue();
 
         assertThat(TenantContext.getTenantId()).isEqualTo(7L);
+    }
+
+    @Test
+    @DisplayName("并发撞唯一索引 ⇒ 冲突映射为**返回既有行**（不暴露成 500）")
+    void duplicateKeyMapsToExistingRow() {
+        ScheduledTask existing = task("st-raced", ScheduledTask.STATUS_PENDING);
+        // 第一次检查「没有」、冲突后重查「有」—— 模拟两个请求同时通过检查的窗口
+        when(scheduledTaskMapper.selectByDedupKey(anyLong(), any()))
+                .thenReturn(null)
+                .thenReturn(existing);
+        doThrow(new DuplicateKeyException("uk_scheduled_tasks_tenant_dedup"))
+                .when(scheduledTaskMapper).insert(any(ScheduledTask.class));
+
+        ScheduledTask result = service.create(20L, "u-1", validRequest());
+
+        assertThat(result.getId()).isEqualTo("st-raced");
+        verify(scheduledTaskMapper, times(1)).insert(any(ScheduledTask.class));
+    }
+
+    @Test
+    @DisplayName("冲突但重查仍为空（不是本键的冲突）⇒ 照常抛，不吞")
+    void duplicateKeyOfAnotherKindIsRethrown() {
+        when(scheduledTaskMapper.selectByDedupKey(anyLong(), any())).thenReturn(null);
+        doThrow(new DuplicateKeyException("pk"))
+                .when(scheduledTaskMapper).insert(any(ScheduledTask.class));
+
+        assertThatThrownBy(() -> service.create(20L, "u-1", validRequest()))
+                .isInstanceOf(DuplicateKeyException.class);
     }
 }

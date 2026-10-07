@@ -92,6 +92,10 @@
       "table": "role_permissions",
       "handling": "none"
     },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ScheduledTaskService.java::scheduledTaskMapper": {
+      "table": "scheduled_tasks",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/ScheduledTaskService.java"
+    },
     "backend/admin-api/src/main/java/com/migao/admin/service/StockBatchConsumptionService.java::consumptionMapper": {
       "table": "stock_batch_consumptions",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/StockBatchConsumptionMapper.java"

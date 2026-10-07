@@ -12,6 +12,7 @@ import com.migao.admin.mapper.ScheduledTaskMapper;
 import com.migao.admin.mapper.TenantMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -124,7 +125,24 @@ public class ScheduledTaskService {
                 .dedupKey(dedupKey)
                 .deleted(0)
                 .build();
-        scheduledTaskMapper.insert(task);
+        try {
+            scheduledTaskMapper.insert(task);
+        } catch (DuplicateKeyException e) {
+            // 🔴 并发下的**冲突映射**（不是重复的防御性代码）：两个请求可以**同时**通过上面的
+            // `selectByDedupKey` 检查（检查-再插入之间的窗口），此时唯一索引
+            // `uk_scheduled_tasks_tenant_dedup` 兜底拦下第二条 —— 把它映射回「返回既有行」，
+            // 语义与第一次命中完全相同（幂等）。不映射 ⇒ 并发重试暴露成 500。
+            // 判据：`tests/unit_ci_workflows/test_idempotent_unique_write_guard.py`
+            // （唯一键写入点必须**登记**：要么原子写、要么冲突映射；本处 = 冲突映射）。
+            ScheduledTask raced = scheduledTaskMapper.selectByDedupKey(tenantId, dedupKey);
+            if (raced == null) {
+                // 不是本键的冲突（比如主键重复）⇒ 照常抛，不吞
+                throw e;
+            }
+            log.info("[ScheduledTask] 并发建单撞唯一索引，返回既有行: tenantId={}, dedupKey={}",
+                    tenantId, dedupKey);
+            return raced;
+        }
         log.info("[ScheduledTask] 建单: id={}, tenantId={}, fireAt={}, type={}",
                 task.getId(), tenantId, task.getFireAt(), task.getTaskType());
         return task;
