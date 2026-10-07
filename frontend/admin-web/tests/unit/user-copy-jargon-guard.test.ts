@@ -48,9 +48,16 @@ describe('用户可见文案不得含内部词汇 / 研发腔（#5565 · #5576 �
     }
   })
 
+  it('规则表不许被悄悄删空（八条一条都不许少；每条必须给得出可行动的出口）', () => {
+    expect(RULES.map((r) => r.id)).toEqual(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8'])
+    for (const rule of RULES) {
+      expect(rule.name.length, `${rule.id} 缺名字`).toBeGreaterThan(1)
+      expect(rule.出口.length, `${rule.id} 的出口必须写到「改成什么」，否则判红时读的人无从下手`).toBeGreaterThan(15)
+    }
+  })
+
   // 每条规则一个用例（判红时**具名到规则**，出口逐条给）
-  for (const rule of RULES) {
-    it(`[${rule.id}] ${rule.name} 没有出现在用户可见文案里（未登记即红）`, () => {
+  for (const rule of RULES) {    it(`[${rule.id}] ${rule.name} 没有出现在用户可见文案里（未登记即红）`, () => {
       expect(
         byRule(rule.id).map((o) => `${o.where}  ${o.text.slice(0, 120)}`),
         `${rule.name} —— 商家读不懂（issue #6488）。\n出口：${rule.出口}\n`
