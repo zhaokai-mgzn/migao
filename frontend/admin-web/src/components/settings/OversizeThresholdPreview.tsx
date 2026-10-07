@@ -90,7 +90,7 @@ export function OversizeThresholdPreview({ config }: Props) {
       const now = pick(nowRes)
       const adj = pick(adjRes)
       if (now === null || adj === null) {
-        setError('试算失败（服务端判定不可用）—— 请稍后重试；**这不影响已下的单**')
+        setError('试算失败（系统暂时给不出判定）—— 请稍后重试；**这不影响已下的单**')
         setCurrent(null)
         setAdjusted(null)
         return
@@ -130,7 +130,7 @@ export function OversizeThresholdPreview({ config }: Props) {
     >
       <h4 className="text-sm font-semibold text-neutral-900">阈值试算 —— 改完先看，不保存</h4>
       <p className="text-xs text-neutral-500 mt-1">
-        <InlineMarkdown text="超高 / 超宽会进加工费组合键（命中不到组合就收不到价）。改阈值前先在这里试一扇窗，看看判定会不会变。判定由服务端给，本页**不保存任何改动**。" />
+        <InlineMarkdown text="超高 / 超宽会进加工费组合（组合没配价就收不到这笔钱）。改阈值前先在这里试一扇窗，看看会不会变。判定由系统给，本页**不保存任何改动**。" />
       </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">

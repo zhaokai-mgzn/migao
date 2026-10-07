@@ -1173,9 +1173,11 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(within(panel).getByText('新', { selector: 'strong' })).toBeInTheDocument()
     expect(panel).toHaveTextContent('保存后新的算料按当前配置计算')
 
-    // 🔴 issue #5194 **改判**（用户 2026-09-23 裁定）：本面板（含术语说明区）的 51 处文案里
-    // **保留** `**强调**` / `` `键名` `` 标记，由渲染层解析成 `<strong>` / `<code>` ——
+    // 🔴 issue #5194 **改判**（用户 2026-09-23 裁定）：本面板（含术语说明区）的文案里
+    // **保留** `**强调**` / `` `行内代码片` `` 标记，由渲染层解析成 `<strong>` / `<code>` ——
     // 而不是把标记删掉（删掉 = 丢掉强调，商家看到的是没有层级的散文）。
+    // 🔴 issue #6488：代码片里只放**商家看得懂的名字**（旧文的 `oversize_width_threshold` 这类
+    // 键名已整段去掉）⇒ 正控改钉中文名，仍要求代码片真的以元素呈现。
     // 红证（改前实测 = 本条判红）：渲染层不做解析 ⇒ 整块 `textContent` 里出现字面 `**` 与反引号。
     const text = panel.textContent ?? ''
     expect(text).toContain('术语怎么判') // 自证非空：空面板上的「不含 **」恒真
@@ -1187,7 +1189,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
       within(panel).getAllByText('净窗高', { selector: 'strong' }).length
     ).toBeGreaterThan(0)
     expect(
-      within(panel).getAllByText('oversize_width_threshold', { selector: 'code' }).length
+      within(panel).getAllByText('超宽阈值', { selector: 'code' }).length
     ).toBeGreaterThan(0)
   })
 
@@ -1421,7 +1423,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(await screen.findByTestId('glossary-example-倒幅')).toHaveTextContent('定宽买高')
     // 死亡条件绑 #4569：加工项特征**当前**只计价、不触发工序
     expect(screen.getByTestId('glossary-term-拼接')).toHaveTextContent('不触发工序')
-    expect(screen.getByTestId('glossary-term-接高')).toHaveTextContent('待查明')
+    expect(screen.getByTestId('glossary-term-接高')).toHaveTextContent('还没确认')
   })
 
   // ══════════════════ ⑨c 适用条件里的「单价（元/套）」（issue #4567 用户走查①；#4650 起随条件搬进抽屉） ══════════════════
