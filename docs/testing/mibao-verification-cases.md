@@ -710,7 +710,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
-## B 端小程序域（40 case）
+## B 端小程序域（42 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1212,7 +1212,34 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-07 新增（issue #6467 切片 1，铁律 8 类级固化）：入库页早就有 `workerReady` 分流，报工页却漏了 —— 二者互不相关、漏一处没有任何东西会红。本台账把「哪个页面渲染工人写入口 / 哪个页面必须先有工人身份」变成可执行判据（未登记即红 + 只许缩短 + 注入式红证）。 ｜ tags: bmini, worker, meta-guard
 
-### BM-038. 登录页记住上次成功登录的账号名（按登录面分开存 / 进页预填 / 绝不记 PIN·密码·验证码） 🔵
+### BM-038. 类级元守卫：工人面动作**端点归属**台账（工人面动作打 /api/admin/ ⇒ 未登记即红 / 台账只许缩短 / admin 条目必须给出路 / 工人替代必须真被用上 / 空台账 fail-closed） 🔵
+```
+你: 任何人给 bmini 的某个**身份感知页面**（出现 `hasWorkerSession(` 的 `.tsx`）新增/改动一个工人动作，而它打的是 `/api/admin/**`（工人零商家权限，`SecurityConfig.ADMIN_API_REJECTED_ROLES` 的拒绝集合含 worker ⇒ 纯工人设备必被拒）—— 无论他有没有写身份分流，判据都要拦得住
+期望: direct_reply
+数据: 判据 1·🔴 **未登记即红**：射程 = frontend/bmini-app/src/services/*.ts 里**顶层导出函数**中，函数体（先剥注释）含 `/api/admin/`、且所在 service 模块被某个身份感知页面（`src/pages/**/*.tsx` 里出现 `hasWorkerSession(`）import 的那一批；凡不在 frontend/bmini-app/tests/worker-action-endpoint-ledger.json 里 ⇒ 具名判红。红证（实跑，in-test 注入）：给 frontend/bmini-app/src/services/productionService.ts 注入一个调 `/api/admin/.../nope` 的新导出函数 ⇒ 报出 `src/services/productionService.ts::injectedAdminAction`
+数据: 判据 2·**台账只许缩短**：每条登记都必须仍能被现扫命中（函数已删 / 已不再被身份感知页面引用 / 端点已搬走 ⇒ 该条已死 ⇒ 红）。红证（实跑）：登记一个不存在的 `shippedLongAgo` ⇒ 判红；摘掉 `shipOrder` 的登记（函数仍在被页面引用）⇒ 判据 1 红
+数据: 判据 3·🔴 **admin 条目必须给出路**：要么 `worker_alternative` 在**同 service** 里真的顶层导出、且其函数体真的含 `/api/worker/`；要么显式写明 `reason`（有意不搬的理由）。红证（实跑）：把 `shipOrder` 的 `worker_alternative` 清空且不给 `reason` ⇒ 红；把替代函数名改成 `shipWorkerOrderGhost` ⇒ 红
+数据: 判据 4·**工人替代必须真的被用上**（`migao-dev-flow` §28.2「判据绿 ≠ 接线在」）：登记了 `worker_alternative` 就必须在调用页里找到对它的调用。红证（实跑，真语料注入）：把 frontend/bmini-app/src/pages/production/index/index.tsx 里的 `shipWorkerOrder(` 改名 ⇒ 报「接线不在」（替代只是声明，工人身份下仍走商家端点）；不注入 ⇒ 同一份判据不报（反向对照）
+数据: 判据 5·**台账不许空转（fail-closed）**：条数为 0 ⇒ 红（「空」不等于「全部合规」）；每条登记必须声明 `case_ids`；正跑还要求「登记集 ⇄ 现扫集」双向相等。台账条数**现取**（不写死），复算（**在仓根执行**，路径即仓根相对）：`node -e "const l=require('./frontend/bmini-app/tests/worker-action-endpoint-ledger.json');console.log(l.entries.length)"`
+跳过: [backend-contract] 确定性元守卫（jest: frontend/bmini-app/tests/worker-action-endpoint-ledger.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-07 新增（issue #6472，铁律 8 类级固化）：病灶 = 报工页的发货块对任何身份渲染，而工人零商家权限 ⇒ 纯工人设备点「发货」必被服务端拒（界面给了做不成的动作）。修一处 ≠ 这一类进不来 —— 读面（`getOrderOperations`）走过同一条路却没有任何东西会红。本台账把「工人面动作打哪个端点 / 谁是它的工人替代 / 替代有没有真的接上线」变成可执行判据。 ｜ tags: bmini, worker, meta-guard
+
+### BM-039. 发货按身份选端点：工人身份 ⇒ 恰一次 /api/worker/shipment/.../ship（**零次** /api/admin/.../ship）、商家身份逐字反向；工人路径必带非空 items[]；商家路径 body 逐字不变 🔵
+```
+你: 一台**只有工人身份**的车间设备（零商家权限）把一单的最后一道报完（`isCompleted`）⇒ 屏上出现「发货」块 ⇒ 填货运单号点「发货」：请求必须打 `POST /api/worker/shipment/orders/{orderId}/ship`（issue #5648 既有端点），而不是 `POST /api/admin/production/orders/{orderId}/ship`（工人被拒绝集合拒在 `/api/admin/**` 外）。同一台共用 PAD 上只有商家身份时，行为与从前逐字一致
+期望: direct_reply
+数据: 判据 1·🔴 **工人身份下 `worker/shipment` 恰一次、`/api/admin/.../ship` 零次**（断言的是**请求 URL 集合**，不是「某个函数被调过」）：`shipWorkerOrder(ORDER_ID,'SF123456',POSITIONS)` ⇒ 本次 `Taro.request` 里 URL 含 `/ship` 的恰好 1 条 = `/api/worker/shipment/orders/{id}/ship`，且 `/api/admin/` 命中 0 条。证据：frontend/bmini-app/tests/production-ship-endpoint-by-identity.test.ts
+数据: 判据 2·**商家身份下逐字反向**：`shipOrder(ORDER_ID,'SF123456')` ⇒ `/api/admin/production/orders/{id}/ship` 恰 1 条、`/api/worker/` 0 条；且 body **逐字不变** = `{trackingNo, logisticsCompany}`（**不带** `items` —— 商家端点的实发数量由服务端取「订单未发余量」，客户端多传会改它的写面语义），请求头**不带** `X-Worker-Session-Id` / `X-Client-Request-Id`
+数据: 判据 3·**工人路径 body 必须带非空 `items[]`**（服务端 `OrderShipmentService#parseDetails` 的硬契约：缺/空 ⇒ 422「发货明细不能为空」；`shipped_quantity` 必须正数、`unit` 必填）⇒ 映射自读面 `positions[].order_item_id` + 首道工序 `qty`/`unit`，`{order_item_id, shipped_quantity, unit}` 三键；缺 `order_item_id` 的部位跳过（不冒充已知）。另断言工人路径带 `X-Worker-Session-Id` 与幂等键 `X-Client-Request-Id`（发货不可逆，重试要去重；两端点共用服务端 `ClientRequestIdService`）
+数据: 判据 4·**成功回执可见 + 失败不谎报**（行为面，页面级）：工人身份下发货成功 ⇒ 屏上出现「✅ 已发货」；服务端拒绝 ⇒ 上屏服务端原文且**不出现**「✅ 已发货」（UI 反馈必须等于实际效果）。证据：frontend/bmini-app/tests/production-page.test.tsx 的「发货按身份选端点」组
+跳过: [backend-contract] 确定性网络层 + 页面判据（jest: frontend/bmini-app/tests/production-ship-endpoint-by-identity.test.ts / frontend/bmini-app/tests/production-page.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-07 新增（issue #6472）：报工页的发货块（`isCompleted && !shipped`）对任何身份渲染，而它打的是商家端点；工人零商家权限（`/api/admin/**` 拒绝集合含 worker）⇒ 纯工人设备点「发货」必被服务端拒绝。收口 = 有工人 session（`hasWorkerSession()`，单一真值）走既有工人发货端点 `POST /api/worker/shipment/orders/{id}/ship`，否则商家端点逐字不变。零后端改动；入参差异（工人路径必填 `items[]`）由端侧从读面 `positions` 映射补齐。 ｜ tags: bmini, worker, shipment
+
+### BM-041. 登录页记住上次成功登录的账号名（按登录面分开存 / 进页预填 / 绝不记 PIN·密码·验证码） 🔵
 ```
 你: 用户 2026-10-07 原话「还要做个小优化，账号名存在 cookies 中，不要每次都要输入」—— 员工 / 管理员 / 工人三个登录面各自记住上次**成功登录**用过的账号名，再次进入登录页时预填
 期望: direct_reply
@@ -1227,12 +1254,12 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-07 新增（issue #6478）：用户要求「账号名存在 cookies 中，不要每次都要输入」。冻结口径 = **只记账号名**、按登录面分开存、只在成功登录后写、退出不清；🔴 绝不记 PIN / 密码 / 短信验证码（工人共用 PAD 上更不能留凭据）⇒ 反向红线判据可红（注入「把 pin 也存进去」当场红）。存储用仓内既有 localStorage 约定（用户口述的 cookies 是有意替换，已在 CHANGELOG 与 PR body 写明）。 ｜ tags: bmini, auth, login, ux
 
-### BM-039. B 端 H5 输入框文字竖向居中（共享样式层 + 真几何 e2e：内层撑满外框 / 上下留白对称） 🔵
+### BM-042. B 端 H5 输入框文字竖向居中（共享样式层 + 真几何 e2e：内层撑满外框 / 上下留白对称） 🔵
 ```
 你: 用户 2026-10-07 原话「H5 的输入框中的提示信息都不是居中的，文字偏上了」—— 生产 `https://app.migaozn.com/b/#/pages/auth/login/index`（390×844）实测：内层原生 input 26px 贴在 49.9px 外框顶部（上留白 0.5px / 下留白 23.4px）
 期望: direct_reply
 数据: 判据 1·**根因与修法**：Taro h5 的 `<Input>` 是两层 —— 外层 `taro-input-core`（拿 `className`，即用户看到的圆角框）+ 内层原生 `<input class="weui-input">`（Taro 自带 `height:1.47059em`）；外层 `display:block` 且无居中规则 ⇒ 内层行盒贴顶。修法落在**共享样式层** frontend/bmini-app/src/styles/input-center.scss（① 外框 `display:flex` + `align-items:center`；② 内层 `height:100%`），由 frontend/bmini-app/src/app.scss 引入。**只改竖向对齐**，不动任何尺寸 / 圆角 / 字号。
-数据: 判据 2·**真几何判据（不是字符串断言）**：tests/e2e/specs/bmini/bmini-input-center.spec.ts（配置 tests/playwright.bmini.config.ts；CI = .github/workflows/bmini-app.yml 的 `tabbar-geometry` job，该 job 的 run 自 issue #6478 起跑整个 `specs/bmini/` 目录）—— 对**未登录即可到达的 3 个输入面 / 13 个输入框**（登录页 7 + 工人登录页 3 + 首登强制改密页 3）逐个量「内层 input 高 ÷ 外框高 ≥ 0.90」「内层相对外框的上留白 == 下留白（±1 CSS px）」「上留白 > 0」。实测读数（390×844，Chromium，本地 dist 重建）：修后 登录页 47.906/49.906（上/下留白 1.0/1.0）、工人登录页 45.75/47.75（1.0/1.0）、改密页 45.75/47.75（1.0/1.0）；修前（临时撤掉共享层引入 + 重建后同一 spec 实跑）登录页 26.0/49.906（1.0/22.91）、工人登录页 22.94/47.75（1.0/23.81）、改密页 24.47/47.75（1.0/22.28）⇒ **3 failed** 且逐面具名报出占比与留白。未实测的输入面（报工页 / 坐席详情 / 工人入库 / 工人补打 / WorkerBar / FormCard）靠同一全局选择器构造性覆盖 + 台账登记（见 BM-040）。
+数据: 判据 2·**真几何判据（不是字符串断言）**：tests/e2e/specs/bmini/bmini-input-center.spec.ts（配置 tests/playwright.bmini.config.ts；CI = .github/workflows/bmini-app.yml 的 `tabbar-geometry` job，该 job 的 run 自 issue #6478 起跑整个 `specs/bmini/` 目录）—— 对**未登录即可到达的 3 个输入面 / 13 个输入框**（登录页 7 + 工人登录页 3 + 首登强制改密页 3）逐个量「内层 input 高 ÷ 外框高 ≥ 0.90」「内层相对外框的上留白 == 下留白（±1 CSS px）」「上留白 > 0」。实测读数（390×844，Chromium，本地 dist 重建）：修后 登录页 47.906/49.906（上/下留白 1.0/1.0）、工人登录页 45.75/47.75（1.0/1.0）、改密页 45.75/47.75（1.0/1.0）；修前（临时撤掉共享层引入 + 重建后同一 spec 实跑）登录页 26.0/49.906（1.0/22.91）、工人登录页 22.94/47.75（1.0/23.81）、改密页 24.47/47.75（1.0/22.28）⇒ **3 failed** 且逐面具名报出占比与留白。未实测的输入面（报工页 / 坐席详情 / 工人入库 / 工人补打 / WorkerBar / FormCard）靠同一全局选择器构造性覆盖 + 台账登记（见 BM-043）。
 数据: 判据 3·**共享层必须真的接线且只许一份**：frontend/bmini-app/tests/input-center-guard.test.ts 断言共享层文件在位 + 被 frontend/bmini-app/src/app.scss 引入 + 三条居中声明都在；且 `taro-input-core` 只许出现在 frontend/bmini-app/src/styles 下的 scss（逐页打补丁 ⇒ 判红）。注入式红证（in-memory，实跑）：删 `@use` ⇒ 红；外框改回 `display:block` ⇒ 红；内层改回 `height:1.47059em` ⇒ 红；把规则抄进 frontend/bmini-app/src/pages/auth/login/index.scss ⇒ 红并具名。
 数据: 判据 4·**小程序端逐字不变**：共享层的两条选择器（`taro-input-core` / `.weui-input`）只存在于 Taro **h5** 产物 DOM；小程序编译产物里 `<Input>` 是单层原生 input，选择器一个元素都匹配不到 ⇒ 对小程序零影响。
 跳过: [backend-contract] 确定性判据（jest: frontend/bmini-app/tests/input-center-guard.test.ts；playwright: tests/e2e/specs/bmini/bmini-input-center.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
@@ -1240,7 +1267,7 @@
 真值: frontend-fix.layout
 溯源: 2026-10-07 新增（issue #6478）：用户反馈「H5 输入框提示信息不居中、文字偏上」。根因是 Taro h5 的 `<Input>` 两层结构（外层拿 className 的圆角框 + 内层只按 line-height 撑高的原生 input），属 **h5 特有**形态。修在共享样式层（不许逐页打补丁），判据用**真渲染几何**（内层/外框高 + 上下留白对称）而不是字符串断言，并给撤掉修复后真红的读数。 ｜ tags: bmini, layout, h5
 
-### BM-040. 类级元守卫：bmini 输入框面台账（未登记即红 / 台账只许缩短 / 空台账 fail-closed / 抽取不完全即红） 🔵
+### BM-043. 类级元守卫：bmini 输入框面台账（未登记即红 / 台账只许缩短 / 空台账 fail-closed / 抽取不完全即红） 🔵
 ```
 你: 任何人给 bmini 的某个页面新增一个 `<Input>`（或给已有输入框换一个 className）—— 无论他有没有确认那一面也走共享样式层，判据都要拦得住
 期望: direct_reply
@@ -6155,18 +6182,18 @@
 真值: processing-manage.worker-cutting-height-terminal
 溯源: 2026-09-29 新增（母单 #5161，P0-D / PR #5780）：用户裁定「裁高机的报工要支持扫码枪扫水洗唛直接展示订单详情并允许操作裁高计算器」+「报工 + 自动给裁高值（一条链）」；**下发仍不做**（不写机器）。 ｜ tags: processing, worker, cutting_height, terminal, backend-contract
 
-### PG-065. 工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为） 🔵
+### PG-065. 工人端页面开关（租户级）+ 工人会话超时 30 天（权限红线不动；单测覆盖，非 LLM 行为） 🔵
 ```
 你: 工人手机上该看到哪几页？一体机也一样吗？
 期望: direct_reply
 数据: GET/PUT /api/admin/worker-page-config：读挂 production:view、写挂 processing:manage；PUT 全量替换，缺键/未知键/非法页名 ⇒ 422 逐条理由（不静默回退默认）
 数据: 缺行 ⇒ 读面回默认四页全开（report / order / cut_calc / shipment）+ source='default'
 数据: GET /api/worker/me 只回本工人身份与本租户页面集；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403
-数据: worker.session.idle-minutes 全局默认 = 10080（一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话
+数据: worker.session.idle-minutes 全局默认 = 43200（30 天，2026-10-07 用户裁定「延长到 1 个月」；上一版 10080 一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话
 跳过: [backend-contract] 本条只登记「页面开关 + 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。
 ```
 真值: processing-manage.worker-page-config
-溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
+溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。🔴 2026-10-07 追加（issue #6473）：用户逐字「把工人的登录 Session 过期时间设置久一点，可以延长到 1 个月」⇒ 全局默认改 **43200（30 天）**、区间 `5 ~ 43200`，bmini/worker-h5 两侧的降级兜底常量同步，bmini 界面改按量级说人话（去掉 `?? 15`）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
 
 ### PG-059. 裁高读面 - 明细 product_id 为空时 brand 如实回 null 而不是 500（不可变表 get(null) 抛 NPE；单测覆盖，非 LLM 行为） 🔵
 ```
@@ -10170,13 +10197,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：705（活跃 134，跳过 571）
-- tier 分布：smoke 12 / normal 651 / adversarial 32
+- 用例总数：707（活跃 134，跳过 573）
+- tier 分布：smoke 12 / normal 653 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
 - 登录认证域：12
-- B 端小程序域：40
+- B 端小程序域：42
 - 分类域：3
 - 对话边界域：44
 - 跨域：3

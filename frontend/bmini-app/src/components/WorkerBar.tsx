@@ -119,10 +119,28 @@ export function WorkerBar({ onWorkerChange, onNeedLogin }: Props) {
 
       {message ? <Text className='worker-bar__message'>{message}</Text> : null}
       <Text className='worker-bar__hint'>
-        每笔报工都记到上面这个人头上；闲置 {worker?.idle_minutes ?? 15} 分钟自动登出
+        每笔报工都记到上面这个人头上；{idleHint(worker?.idle_minutes)}
       </Text>
     </View>
   )
+}
+
+/**
+ * 闲置时长的**人类可读**表述（issue #6473）。
+ *
+ * <p>为什么不直接印分钟数：全局默认自 2026-10-07 起是 **30 天**（43200 分钟）—— 「闲置 43200 分钟
+ * 自动登出」对工人没有意义（默认还是一周时就已经是「闲置 10080 分钟」）。</p>
+ *
+ * <p>拿不到 `idle_minutes` 时**不编数字**：改前这里是 `?? 15` —— 一个与服务端真值不符的第二份默认值
+ * （服务端恒回该字段，所以它只在降级路径生效，但照样会说错）。</p>
+ */
+export function idleHint(minutes?: number | null): string {
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes <= 0) {
+    return '闲置超时后自动登出'
+  }
+  if (minutes < 60) return `闲置 ${Math.round(minutes)} 分钟自动登出`
+  if (minutes < 1440) return `闲置 ${Math.round(minutes / 60)} 小时自动登出`
+  return `闲置 ${Math.round(minutes / 1440)} 天自动登出`
 }
 
 export default WorkerBar

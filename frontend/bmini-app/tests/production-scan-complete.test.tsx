@@ -61,6 +61,7 @@ jest.mock('../src/services/productionService', () => ({
   getOrderOperations: jest.fn(),
   getWorkerOrderOperations: jest.fn(),
   shipOrder: jest.fn(),
+  shipWorkerOrder: jest.fn(),
   getOrderPiecework: jest.fn(),
   scanResolve: jest.fn(),
   completeByScan: jest.fn(),

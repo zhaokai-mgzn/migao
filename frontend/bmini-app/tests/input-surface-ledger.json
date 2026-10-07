@@ -15,73 +15,73 @@
       "file": "src/components/WorkerBar.tsx",
       "className": "worker-bar__input",
       "label": "共用 PAD 顶栏的工人身份切换（工号 / PIN）",
-      "case_ids": ["BM-039"]
+      "case_ids": ["BM-042"]
     },
     {
       "file": "src/components/cards/FormCard.tsx",
       "className": "form-card__input",
       "label": "AI 交互卡的通用表单字段（FormCard）",
-      "case_ids": ["BM-039"]
+      "case_ids": ["BM-042"]
     },
     {
       "file": "src/pages/auth/change-password/index.tsx",
       "className": "cp-field__input",
       "label": "首登强制改密页的三个密码框",
-      "case_ids": ["BM-039"]
+      "case_ids": ["BM-042"]
     },
     {
       "file": "src/pages/auth/login/index.tsx",
       "className": "login-field__input",
       "label": "商家登录页：员工账号 / 密码、管理员手机号、工号 / PIN / 设备标签",
-      "case_ids": ["BM-039"]
+      "case_ids": ["BM-042"]
     },
     {
       "file": "src/pages/auth/login/index.tsx",
       "className": "login-field__input login-field__input--code",
       "label": "商家登录页：短信验证码框（与「获取验证码」按钮同行）",
-      "case_ids": ["BM-039"]
+      "case_ids": ["BM-042"]
     },
     {
       "file": "src/pages/production/index/index.tsx",
       "className": "production-manual__input",
       "label": "报工页：手输加工单号",
-      "case_ids": ["BM-039"]
+      "case_ids": ["BM-042"]
     },
     {
       "file": "src/pages/production/index/index.tsx",
       "className": "production-ship__input",
       "label": "报工页：货运单号",
-      "case_ids": ["BM-039"]
+      "case_ids": ["BM-042"]
     },
     {
       "file": "src/pages/production/index/index.tsx",
       "className": "operation-item__qty-input",
       "label": "报工页：工序完成数量",
-      "case_ids": ["BM-039"]
+      "case_ids": ["BM-042"]
     },
     {
       "file": "src/pages/sessions/detail/index.tsx",
       "className": "detail-input__field",
       "label": "坐席会话详情页：回复输入框",
-      "case_ids": ["BM-039"]
+      "case_ids": ["BM-042"]
     },
     {
       "file": "src/pages/worker/inbound/index.tsx",
       "className": "admin-input",
       "label": "工人拍照入库页的字段组（数量 / 缸号 / 手输单号等 5 处）",
-      "case_ids": ["BM-039"]
+      "case_ids": ["BM-042"]
     },
     {
       "file": "src/pages/worker/login/index.tsx",
       "className": "worker-login__input",
       "label": "独立工人登录页：工号 / PIN / 设备标签",
-      "case_ids": ["BM-039"]
+      "case_ids": ["BM-042"]
     },
     {
       "file": "src/pages/worker/reprint/index.tsx",
       "className": "admin-input",
       "label": "工人补打标签页：手输 8 位短码",
-      "case_ids": ["BM-039"]
+      "case_ids": ["BM-042"]
     }
   ]
 }

@@ -1,4 +1,4 @@
-// case_ids: BM-039, BM-040
+// case_ids: BM-042, BM-043
 /**
  * 「H5 输入框文字竖向居中」的**共享层 + 输入面台账**元守卫（issue #6478；AGENTS.md 铁律 8 / `migao-dev-flow` §23）
  *

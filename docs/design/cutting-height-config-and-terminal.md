@@ -344,13 +344,15 @@ PY
    `WRITE_UNDER_READ_CODE`，现取上限 12）；把只读预演挂读码会把台账 **12 → 13**，而**增长它须人裁定**
    ⇒ 取「与配置保存同一个面」。差异写在控制器方法注释里。
 
-### 7.2 补充裁定：工人端会话时长（用户 2026-09-29 逐字「一周」）
+### 7.2 补充裁定：工人端会话时长（2026-09-29 逐字「一周」→ 🔴 **2026-10-07 逐字「延长到 1 个月」**）
 
 - 口径：**改全局默认值**（手机端同长），**不加机台档、不区分 deviceLabel**。
-- 落码：`WorkerSessionService.DEFAULT_IDLE_MINUTES = 10080`（一周）；`MAX_IDLE_MINUTES = DEFAULT_IDLE_MINUTES`
-  （单一真值，不抄第二遍）；可配区间 `5 ~ 10080`；越界/非法 ⇒ **回落默认 + WARN**。
+- 落码：`WorkerSessionService.DEFAULT_IDLE_MINUTES = 43200`（**30 天**，issue #6473；上一版 10080 一周）；
+  `MAX_IDLE_MINUTES = DEFAULT_IDLE_MINUTES`（单一真值，不抄第二遍）；可配区间 `5 ~ 43200`；
+  越界/非法 ⇒ **回落默认 + WARN**。
 - 🔴 **照实登记两个后果**（用户已知情并裁定）：
-  ① 闲置保护实际上**退化为「基本不过期」** ⇒ 共用屏上「上一个人没登出、下一个人的活记到上一个人头上」的
+  ① 闲置保护**不再生效**（一个月不碰也不过期；一周那次已经「基本不过期」，本次更远一档）
+  ⇒ 共用屏上「上一个人没登出、下一个人的活记到上一个人头上」的
   **唯一护栏只剩手动「切换工人」**（`switchWorker` 仍立即失效旧会话）；
   ② 因此一体机页面必须**常驻显示「当前工人：XXX」**、报工前身份显眼（落点 = `frontend/worker-h5`）。
 - ⚠️ **不放宽权限**：工人 session/JWT 的 `permissions` 仍恒为 `[]`，`/api/admin/**` 对 `worker` 仍 403。
@@ -365,11 +367,11 @@ PY
 | 2 | 一体机机台模式：**可达** | 一致 | — |
 | 3 | 「扫码读面补明细键」判**部分可达**，理由 = `set_overview.positions[]` 里没有那 9 键 | 🔴 **误归因**：复核者查的是 `ProcessingSetReadService::setOverview`（**商家端** `processing-order-sets` 那条路径）；**扫码读面**的 `set_overview` 由 `ProductionScanService::scanDetailOverview` 装配（`withPositionDetail` 逐个部位追加，见该文件 `POSITION_DETAIL_KEYS` / `scanDetailOverview` / `withPositionDetail` 三处）⇒ **该路径确实带这 9 键**，与用例 PG-046 的判据同源 | 不解（复核者的**观察**正确、**对象指错**）；两读面形状不同这一点本就**有意**，已登记在 `docs/wiki/CONTRACT-LEDGER.md` §九 |
 | 4 | 工人端页面开关判**部分可达**：后端齐，但 `/api/worker/me` **零消费方** ⇒ 开关不改变工人看到的任何东西 | 🔴 **成立，我认账**（这是我从 P0-E 划走、又还没做的那一半） | **补包**：`frontend/worker-h5` 消费 `/api/worker/me` —— 按 `report` 门控报工主流程、按 `cut_calc` 门控机台模式入口；**取不到页面集时 fail-open + 显式提示**（不把「开关没读到」变成「活干不了」）；`order` / `shipment` 在 `/w/` **暂无对应面** ⇒ 不为它们造 UI，只登记 |
-| 5 | 会话超时一周：**可达** | 一致 | — |
+| 5 | 会话超时一周：**可达**（🔴 2026-10-07 值改为 **30 天**，issue #6473 ⇒ 本行读数对应**改值前**的一周，形态未变） | 一致 | — |
 | a | 本文 §2.7「改 `ProductionScanService.resolve`」与实现形态的描述 | — | **本条更正**（见下） |
 | b | 本文 §2.8 声称「前端守卫 + 同构判据」已落地 | — | **确认未落地**（同第 4 条），补包后仍**不含**「未登记即红」的机械守卫 ⇒ 照实登记为缺口 |
 | c | `CHANGELOG` 未登记 P0-E 的三件 | — | 本 PR（#5782）已补三条 |
-| d | 前端兜底常量不一致（`app.mjs` 的 `?? 15` vs 后端默认 10080） | — | 补包一并修 `worker-h5` 侧；**`frontend/bmini-app`** 的同类兜底**不在本包**、登记为缺口 |
+| d | 前端兜底常量不一致（`app.mjs` 的 `?? 15` vs 后端默认 10080） | — | 补包一并修 `worker-h5` 侧；**`frontend/bmini-app`** 的同类兜底**不在本包**、登记为缺口 ⇒ 🔴 **2026-10-07 已补齐**（issue #6473：`WorkerBar.tsx::idleHint` 去掉 `?? 15`、按量级说人话，两侧兜底同步到 43200） |
 | e | 无 worker 页面键的机械守卫（`test_menu_three_sources_are_isomorphic.py` 不含） | — | 登记为缺口（本期只落**行为判据**：页面不在集合 ⇒ 走不到 / 入口不出现） |
 
 **§2.7 更正（复核 a）**：那 9 个明细键的**实际落点**是**扫码读面**的 `set_overview.positions[]` 与旧码 `selections[].positions[]`
