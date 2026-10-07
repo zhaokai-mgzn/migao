@@ -3291,7 +3291,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## 杂项域（87 case）
+## 杂项域（88 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4580,6 +4580,26 @@
 跳过: [backend-contract] 纯静态元守卫（只读两份前端语料 + 一份台账）由 tests/unit_ci_workflows/test_credential_rotation_pairing.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-06 新增（issue #6432，用户实测报告「管理员查不到工人的 pin 码」）。落法（用户两问两答裁定）= 重置 PIN 并展示新值（BCrypt 不可逆 ⇒ 不做可逆存储的明文查看）、权限仅 `employee:create`；本用例只是**类级元守卫**那一半（实例判据在 UI-091：后端 `WorkerAdminService.resetPin` / 端点 / 前端弹窗）。取号 MC-086（`python3 scripts/next_case_id.py mc`；改号原因 = 本 PR 在飞期间 main 的 MC-085 已被 #6434「订单详情打印入口矩阵守卫」占用）。 ｜ tags: backend-contract, admin-web, credential, rotation, fail-closed, red-proof
+
+### MC-087. 部署链路的「磁盘水位 × 回收」联动 + 被前置闸门挡住时的收口归因（issue #6508 / #6505）：恢复出口按水位选窗口（固定 168h 在真机是 `Total: 0B` 的空操作）；构建缓存读数不许是 `?`；`-af` 只许落在恢复出口；闸门中止打机读标记 `ABORT_REASON=`，CI 收口按标记分支（未开始部署 ≠ 环境可能坏） 🔵
+```
+你: 有一次是磁盘把三条部署腿全挡住了，脚本给的恢复出口在本机跑出来是空的（Total: 0B），我是自己又算了一层才解开的
+你: 同一次 run 里远端说「构建前磁盘可用 4045MB < 门槛 4096MB ⇒ 中止构建（旧容器保持不动）」，CI 收口却说「且自动回滚也失败 ⇒ 环境可能处于坏状态，请立即人工介入」——实际构建根本没开始
+数据: **病 1（issue #6508，真机实测 2026-10-07）**：`deploy/swas/deploy.sh` 给运维的恢复出口写死 `docker builder prune --filter until=168h`，而缓存条目全是 72h 内建的 ⇒ 匹配 **0 条**、`Total: 0B`（同一时刻 `until=48h` 解出 6.745GB）⇒ **照着提示敲解决不了问题**；且 Build Cache 12.44GB / 184 条 / 100% RECLAIMABLE **完全不在保留策略里**（只增不减），部署日志那一格逐字是 `构建缓存：?`。
+数据: **病 2（issue #6505）**：同一次 run 里，远端说「构建前磁盘可用：4045MB < 门槛 4096MB ⇒ 中止构建（旧容器保持不动、环境未受影响）」，CI 收口说「部署失败…且**自动回滚（tag=sha-e0e3bdf）也失败** ⇒ 环境可能处于坏状态，请立即人工介入」——实际**构建根本没开始、在跑的服务一动没动**；而回滚腿命中的是**同一道闸门**（4045MB / 4046MB 都 < 4096MB），不是第二次独立故障。
+数据: **判据 1（读数不许是 `?`）**：构建路径里必须打印「／构建缓存：<前> → <后>」；读数解析必须把 `docker system df` 的 `1.9GB` 这类人类可读串转成 MB（`--format '{{.Type}} {{.Size}}'` 下尺寸在**第二列**）。判据 = tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py::test_exec_cache_readout_is_a_number_never_a_question_mark。
+数据: **判据 2（窗口按水位选 + 清到阈值以上为止）**：`pick_cache_window` 必须拿磁盘可用量做**多处**分档比较（`"$free" -ge` ≥ 4 处）⇒ 阶梯退化成一个固定窗口即红；`builder_cache_recover` 必须重测可用量并与门槛比较（`-lt "$want"`），且带**兜底档**（`docker builder prune -af`）。判据 = 同文件::test_window_tightens_as_free_space_drops + test_each_judge_is_clean_on_the_real_scripts[problems_ladder_links_to_waterline-deploy]。
+数据: **判据 3/4（不得碰保留集）**：缓存回收段**只发 `docker builder prune`**；段内不许出现 `docker image rm/rmi/prune/system prune/volume rm`，也不许引用 `LAST_GOOD_FILE` / `rollback_tag` / `.last-good-tag` / `retained_tags` / `cleanup_project_images`（结构上碰不到「当前在用 + 回滚点 + 最近 N 个」）。判据 = 同文件::problems_only_build_cache_is_touched / problems_retention_set_untouched + 执行式 test_exec_recovery_never_touches_images_or_retention_set。
+数据: **判据 5/6（机读标记 + 中止不动环境）**：闸门中止必须打 `ABORT_REASON=BUILD_MIN_FREE_MB`（与 `EFFECTIVE_TAG=` 同族、CI 按 `^ *ABORT_REASON=` 解析）并说明「旧容器保持不动」；中止分支内不许出现 `docker build` / `docker compose pull|up` / `docker image rm`。判据 = 同文件::problems_abort_marker / problems_abort_does_not_touch_env + test_exec_gate_abort_emits_marker_and_touches_nothing。
+数据: **判据 7（`-af` 只许落在恢复出口）**：`docker builder prune -af` 是两档阶梯的第 2 档 ⇒ 必须在 `builder_cache_recover()` 函数体内（带 `RECOVER_TIER_1/2` 与 `CACHE_RECOVER_AF_CALL` 行锚）；出现在函数体之外（= 无条件清光缓存，会把稳态 2s 打回冷构建 29.7min）即红。判据 = 同文件::problems_aggressive_prune_only_in_recovery + tests/unit_ci_workflows/test_swas_server_side_build.py::test_disk_precheck_and_non_destructive_reclaim。
+数据: **判据 8（fail-closed 一字未改）**：余量不足仍必须**中止构建**（`if [ "$_df_mb" -lt "$_need_mb" ]`），且**清缓存之后要重新比一次门槛**（不许「清完就放行」）。判据 = 同文件::problems_gate_fail_closed_kept。
+数据: **判据 9/10（收口按标记分支）**：CI 收口按 `$(is_gate_abort)` 分支 —— 被前置闸门挡住 ⇒ 打印「**未开始部署**（旧容器保持不动、环境未受影响）」+ 出口（回收磁盘 / 扩容），**且不得**出现「环境可能处于坏状态」/「立即人工介入」；部署中途失败（无标记）⇒ 仍说「环境可能处于坏状态，请立即人工介入」（双向对照）；回滚腿被**同一闸门**挡住 ⇒ 具名「回滚腿被同一道闸门挡住」，不计入「环境可能坏」的证据。判据 = 同文件::test_ci_gate_abort_names_never_started_and_never_says_env_broken / test_ci_midway_failure_still_says_env_may_be_broken / test_ci_rollback_leg_blocked_by_same_gate_is_not_evidence_of_damage。
+数据: **判别力自证（注入式红证，§28.1 出口①）**：9 条注入各自让对应判据单独变红（固定窗口 / 删标记 / 摘读数 / 缓存段删镜像 / 缓存段引用回滚点 / 中止分支动环境 / 砍 fail-closed 比较 / 收口退回只看退出码 / 把 `-af` 挪进构建路径），另有一条**对照读数**（只加注释 ⇒ 不红）。判据 = 同文件::test_injection_* + test_comment_only_change_stays_green。
+数据: 🔴 **覆盖边界（照实登记）**：① 判据证明「脚本在给定输入下会做什么」，**不是**「真机上 `docker builder prune` 真的解出 N GB」——后者只能真跑一次（复算命令：`docker system df -v` + `docker builder prune --filter until=<窗口>h -f`）；② 「`-af` 兜底后稳态是否退化」是运行期读数（改源码 2s vs 冷构建 29.7min），静态判据看不见；③ 阶梯档位（168/72/48/24/6h）是**人可读的取舍**，判据只钉「按可用 MB 单调变紧 + 必到兜底档」，不钉具体数值。
+前置: 本用例是 [backend-contract] 纯静态 + 桩化执行式用例：前置 = `deploy/swas/deploy.sh` / `deploy/scripts/swas-deploy-ci.sh` 在场且可 `bash -n`；执行式判据在 `tmp_path` 里用桩 `df`/`docker`/`curl`/`flock`/`timeout`/`aliyun` 跑**真实**脚本（零网络、零真机、零删除）。前置由判据自身持有：文件缺失 / 脚本语法坏 / 桩取不到 ⇒ 当场红（不表现成「agent 不干活」）；agent-eval 栈不跑它
+跳过: [backend-contract] 纯离线判据（零 LLM、零网络、零真机；只读两份部署脚本 + 桩化外部依赖真跑）由 tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-07 新增（issue #6508 P2 + issue #6505 P3，同一「部署链路可运维性」面 ⇒ 同包同 PR）。取号 **MC-087**（`python3 scripts/next_case_id.py mc`：main 现取 MC-001~MC-086 ⇒ 取 MC-087；同时刻 open PR 只有两条 dependabot，均未改 `.github/cases/**`）。本单 = ① 恢复出口从固定窗口改成**按水位选窗口 + 清到阈值以上为止**（含 `-af` 兜底档）② 缓存读数真正打进日志（消灭逐字的 `构建缓存：?`）③ 闸门中止打机读标记 + CI 收口按标记分支给出两条具名文案。**硬约束**：`BUILD_MIN_FREE_MB` 的 fail-closed（中止构建、旧容器不动）**原样保留**；不新增 schedule（铁律 10 —— 自愈是部署内、带阈值、幂等、失败可见）。⚠️ **未固化（照实登记）**：见 data_checks 末条覆盖边界三条 —— 尤其「真机上回收量 > 0」只能真跑一次自证。 ｜ tags: backend-contract, deploy, swas, disk, cache, observability, fail-closed, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -10276,8 +10296,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：712（活跃 134，跳过 578）
-- tier 分布：smoke 12 / normal 658 / adversarial 32
+- 用例总数：713（活跃 134，跳过 579）
+- tier 分布：smoke 12 / normal 659 / adversarial 32
 - 售后域：15
 - Agent 核心域：9
 - API 层域：21
@@ -10292,7 +10312,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：7
-- 杂项域：87
+- 杂项域：88
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：63
@@ -10410,6 +10430,7 @@
 - MC-083: 开租「必需初始数据清单」⇄ 入驻链路播种调用的类级元守卫（issue #6295）：清单里每条必须真的种、链路里每个种子协作者必须已登记（未登记即红）、后置条件校验必须接线在且逐项检查 enforced 项、豁免台账只许缩短、默认值字面量单一来源；判别力在内存语料上自证
 - MC-084: 合并凭据 ⇄ push 触发面：会 arm auto-merge 的 job 必须引用非内置凭据（secrets.AUTOMERGE_PAT）且缺 secret 时显式具名回落，arm job 登记表双向对齐、未登记即红；新增非内置 secrets 引用的 owner 确认通道逐名比对、无确认时逐字仍 BLOCK
 - MC-086: 控制台口令面「只能建、不能救」的死角进不来：建号即设口令的 client 必须同时有同族重置出口（未配对即红 / 台账只许缩短 / 零命中即红 + 判别力自证）
+- MC-087: 部署链路的「磁盘水位 × 回收」联动 + 被前置闸门挡住时的收口归因（issue #6508 / #6505）：恢复出口按水位选窗口（固定 168h 在真机是 `Total: 0B` 的空操作）；构建缓存读数不许是 `?`；`-af` 只许落在恢复出口；闸门中止打机读标记 `ABORT_REASON=`，CI 收口按标记分支（未开始部署 ≠ 环境可能坏）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

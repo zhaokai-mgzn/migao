@@ -6039,6 +6039,25 @@ _CASE_MC_086 = EvalCase(
     precondition='本用例是 [backend-contract] 纯静态用例（零 LLM、零网络、零时钟）：前置 = frontend/admin-web/src/lib/api.ts 与 frontend/admin-web/src/types/index.ts 在场且可读、tests/unit_ci_workflows/credential_rotation_pairing_ledger.json 可被 json 解析。前置由判据自身持有：文件缺失 / 台账坏 ⇒ 当场红（不表现成「agent 不干活」）；agent-eval 栈不跑它',
 )
 
+# ── MC-087 [NORMAL] 部署链路的「磁盘水位 × 回收」联动 + 被前置闸门挡住时的收口归因（issue #6508 / #6505）：恢复出口按水位选窗口（固定 168h 在真机是 `Total: 0B` 的空操作）；构建缓存读数不许是 `?`；`-af` 只许落在恢复出口；闸门中止打机读标记 `ABORT_REASON=`，CI 收口按标记分支（未开始部署 ≠ 环境可能坏）（源: cases/misc.yml）──
+_CASE_MC_087 = EvalCase(
+    id='MC-087',
+    legacy_id='',
+    title='部署链路的「磁盘水位 × 回收」联动 + 被前置闸门挡住时的收口归因（issue #6508 / #6505）：恢复出口按水位选窗口（固定 168h 在真机是 `Total: 0B` 的空操作）；构建缓存读数不许是 `?`；`-af` 只许落在恢复出口；闸门中止打机读标记 `ABORT_REASON=`，CI 收口按标记分支（未开始部署 ≠ 环境可能坏）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['有一次是磁盘把三条部署腿全挡住了，脚本给的恢复出口在本机跑出来是空的（Total: 0B），我是自己又算了一层才解开的', '同一次 run 里远端说「构建前磁盘可用 4045MB < 门槛 4096MB ⇒ 中止构建（旧容器保持不动）」，CI 收口却说「且自动回滚也失败 ⇒ 环境可能处于坏状态，请立即人工介入」——实际构建根本没开始'],
+    expectations=[],
+    data_checks=['**病 1（issue #6508，真机实测 2026-10-07）**：`deploy/swas/deploy.sh` 给运维的恢复出口写死 `docker builder prune --filter until=168h`，而缓存条目全是 72h 内建的 ⇒ 匹配 **0 条**、`Total: 0B`（同一时刻 `until=48h` 解出 6.745GB）⇒ **照着提示敲解决不了问题**；且 Build Cache 12.44GB / 184 条 / 100% RECLAIMABLE **完全不在保留策略里**（只增不减），部署日志那一格逐字是 `构建缓存：?`。', '**病 2（issue #6505）**：同一次 run 里，远端说「构建前磁盘可用：4045MB < 门槛 4096MB ⇒ 中止构建（旧容器保持不动、环境未受影响）」，CI 收口说「部署失败…且**自动回滚（tag=sha-e0e3bdf）也失败** ⇒ 环境可能处于坏状态，请立即人工介入」——实际**构建根本没开始、在跑的服务一动没动**；而回滚腿命中的是**同一道闸门**（4045MB / 4046MB 都 < 4096MB），不是第二次独立故障。', "**判据 1（读数不许是 `?`）**：构建路径里必须打印「／构建缓存：<前> → <后>」；读数解析必须把 `docker system df` 的 `1.9GB` 这类人类可读串转成 MB（`--format '{{.Type}} {{.Size}}'` 下尺寸在**第二列**）。判据 = tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py::test_exec_cache_readout_is_a_number_never_a_question_mark。", '**判据 2（窗口按水位选 + 清到阈值以上为止）**：`pick_cache_window` 必须拿磁盘可用量做**多处**分档比较（`"$free" -ge` ≥ 4 处）⇒ 阶梯退化成一个固定窗口即红；`builder_cache_recover` 必须重测可用量并与门槛比较（`-lt "$want"`），且带**兜底档**（`docker builder prune -af`）。判据 = 同文件::test_window_tightens_as_free_space_drops + test_each_judge_is_clean_on_the_real_scripts[problems_ladder_links_to_waterline-deploy]。', '**判据 3/4（不得碰保留集）**：缓存回收段**只发 `docker builder prune`**；段内不许出现 `docker image rm/rmi/prune/system prune/volume rm`，也不许引用 `LAST_GOOD_FILE` / `rollback_tag` / `.last-good-tag` / `retained_tags` / `cleanup_project_images`（结构上碰不到「当前在用 + 回滚点 + 最近 N 个」）。判据 = 同文件::problems_only_build_cache_is_touched / problems_retention_set_untouched + 执行式 test_exec_recovery_never_touches_images_or_retention_set。', '**判据 5/6（机读标记 + 中止不动环境）**：闸门中止必须打 `ABORT_REASON=BUILD_MIN_FREE_MB`（与 `EFFECTIVE_TAG=` 同族、CI 按 `^ *ABORT_REASON=` 解析）并说明「旧容器保持不动」；中止分支内不许出现 `docker build` / `docker compose pull|up` / `docker image rm`。判据 = 同文件::problems_abort_marker / problems_abort_does_not_touch_env + test_exec_gate_abort_emits_marker_and_touches_nothing。', '**判据 7（`-af` 只许落在恢复出口）**：`docker builder prune -af` 是两档阶梯的第 2 档 ⇒ 必须在 `builder_cache_recover()` 函数体内（带 `RECOVER_TIER_1/2` 与 `CACHE_RECOVER_AF_CALL` 行锚）；出现在函数体之外（= 无条件清光缓存，会把稳态 2s 打回冷构建 29.7min）即红。判据 = 同文件::problems_aggressive_prune_only_in_recovery + tests/unit_ci_workflows/test_swas_server_side_build.py::test_disk_precheck_and_non_destructive_reclaim。', '**判据 8（fail-closed 一字未改）**：余量不足仍必须**中止构建**（`if [ "$_df_mb" -lt "$_need_mb" ]`），且**清缓存之后要重新比一次门槛**（不许「清完就放行」）。判据 = 同文件::problems_gate_fail_closed_kept。', '**判据 9/10（收口按标记分支）**：CI 收口按 `$(is_gate_abort)` 分支 —— 被前置闸门挡住 ⇒ 打印「**未开始部署**（旧容器保持不动、环境未受影响）」+ 出口（回收磁盘 / 扩容），**且不得**出现「环境可能处于坏状态」/「立即人工介入」；部署中途失败（无标记）⇒ 仍说「环境可能处于坏状态，请立即人工介入」（双向对照）；回滚腿被**同一闸门**挡住 ⇒ 具名「回滚腿被同一道闸门挡住」，不计入「环境可能坏」的证据。判据 = 同文件::test_ci_gate_abort_names_never_started_and_never_says_env_broken / test_ci_midway_failure_still_says_env_may_be_broken / test_ci_rollback_leg_blocked_by_same_gate_is_not_evidence_of_damage。', '**判别力自证（注入式红证，§28.1 出口①）**：9 条注入各自让对应判据单独变红（固定窗口 / 删标记 / 摘读数 / 缓存段删镜像 / 缓存段引用回滚点 / 中止分支动环境 / 砍 fail-closed 比较 / 收口退回只看退出码 / 把 `-af` 挪进构建路径），另有一条**对照读数**（只加注释 ⇒ 不红）。判据 = 同文件::test_injection_* + test_comment_only_change_stays_green。', '🔴 **覆盖边界（照实登记）**：① 判据证明「脚本在给定输入下会做什么」，**不是**「真机上 `docker builder prune` 真的解出 N GB」——后者只能真跑一次（复算命令：`docker system df -v` + `docker builder prune --filter until=<窗口>h -f`）；② 「`-af` 兜底后稳态是否退化」是运行期读数（改源码 2s vs 冷构建 29.7min），静态判据看不见；③ 阶梯档位（168/72/48/24/6h）是**人可读的取舍**，判据只钉「按可用 MB 单调变紧 + 必到兜底档」，不钉具体数值。'],
+    skip_reason='[backend-contract] 纯离线判据（零 LLM、零网络、零真机；只读两份部署脚本 + 桩化外部依赖真跑）由 tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'deploy', 'swas', 'disk', 'cache', 'observability', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯静态 + 桩化执行式用例：前置 = `deploy/swas/deploy.sh` / `deploy/scripts/swas-deploy-ci.sh` 在场且可 `bash -n`；执行式判据在 `tmp_path` 里用桩 `df`/`docker`/`curl`/`flock`/`timeout`/`aliyun` 跑**真实**脚本（零网络、零真机、零删除）。前置由判据自身持有：文件缺失 / 脚本语法坏 / 桩取不到 ⇒ 当场红（不表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -13652,6 +13671,7 @@ ALL_CASES = (
     _CASE_MC_084,
     _CASE_MC_085,
     _CASE_MC_086,
+    _CASE_MC_087,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

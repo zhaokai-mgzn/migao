@@ -209,6 +209,91 @@ LAST_GOOD_FILE=${LAST_GOOD_FILE:-/opt/migao-deploy/.last-good-tag}
 disk_pct() { df / | awk 'NR==2 {gsub("%","",$5); print $5}'; }
 # 已用空间（MB）：用于把「补回回滚点到底花了多少空间」**如实**打进部署日志（不猜、不算百分比估）
 disk_used_mb() { df -Pk / | awk 'NR==2 {print int($3/1024)}'; }
+# 可用空间（MB）：**唯一一份**口径 —— 构建前置门槛与缓存回收的水位判定共用它（两处不许各写各的）。
+disk_free_mb() { df -Pk / | awk 'NR==2 {print int($4/1024)}'; }
+
+# ══════════════════════════════════════════════════════════════════════════
+# 构建缓存的**水位联动回收**（issue #6508）—— 只碰构建缓存，永不碰镜像/保留集
+#
+# 病（**真机实测 2026-10-07**）：脚本给运维的恢复出口是固定窗口
+# `docker builder prune --filter until=168h`，而缓存条目**全是 72h 内建的** ⇒ 匹配 0 条、
+# `Total: 0B`（同一时刻 `until=48h` 解出 **6.745GB**）⇒ **照提示敲解决不了问题**。
+# 另一半：Build Cache 168h/184 条 / 100% RECLAIMABLE，**只增不减**，是磁盘单调爬升的主因。
+#
+# 落码（issue #6508 要的三件）：
+#   ① 窗口**按磁盘可用量选**（`pick_cache_window`：水位越低窗口越紧，最紧档 = 兜底清空）；
+#   ② 部署内**带阈值、幂等、失败可见**的自愈（`builder_cache_recover`：清到门槛以上为止；
+#      铁律 10 口径 —— 不是新 schedule，也不做无人值守的删除）；
+#   ③ 读数**真的打进部署日志**（`builder_cache_measure` ⇒ 消灭逐字的 `构建缓存：?`）。
+#
+# 🔴 铁律 10 / 保留集：本段**只发 `docker builder prune`**（构建缓存不是镜像、不是 tag、
+#    不是回滚点）⇒ 结构上碰不到「当前在用 + `.last-good-tag` 回滚点 + 最近 N 个」。
+#    由 tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py 的判据 3/4 机械钉住
+#    （缓存段里出现任何删镜像命令、或引用回滚点，当场判红）。
+# ⚠️ `-af`（清空构建缓存）**只许**出现在本段的**兜底档**：它会把稳态 2s 打回冷构建 29.7min，
+#    故只在「不腾空间这一趟就部署不下去」时才允许 —— 这正是「恢复出口必须真可行动」的代价。
+# ══════════════════════════════════════════════════════════════════════════
+
+#: 候选窗口阶梯（小时，逗号分隔，**从宽到紧**）：水位越低走到越后面；
+#: 走完仍不够 ⇒ 兜底档 = `--keep-storage 0`（清空构建缓存 —— 真机实测缓存 100% RECLAIMABLE）。
+BUILD_CACHE_LADDER=${BUILD_CACHE_LADDER:-168,72,48,24,6}
+#: 「还值得回收」的下限（GB）：构建缓存**不足**这么多时，为它清缓存只是徒劳（日志里写清扫原因）
+BUILD_CACHE_GATE_MB=${BUILD_CACHE_GATE_MB:-1}
+
+#: 尺寸串 → MB（`1.9GB` / `512MB` / `0B` / `-` ⇒ 数；**读不出** ⇒ 空串 —— 绝不猜）
+_size_to_mb() {
+  LC_ALL=C awk -v s="$1" 'BEGIN {
+    if (s == "" || s == "-") { print ""; exit }
+    n = s + 0
+    u = s; sub(/^[0-9.]+/, "", u); u = toupper(substr(u, 1, 2))
+    if (u == "B") { printf "%d", (n < 1048576 ? (n > 0 ? 1 : 0) : n / 1048576) }
+    else if (u == "KB") { printf "%d", (n < 1024 ? (n > 0 ? 1 : 0) : n / 1024) }
+    else if (u == "MB") { printf "%d", n }
+    else if (u == "GB") { printf "%d", n * 1024 }
+    else if (u == "TB") { printf "%d", n * 1024 * 1024 }
+    else if (s ~ /^[0-9.]+$/) { printf "%d", n }
+    else { print "" }
+  }'
+}
+
+#: 构建缓存当前占用（MB）。**读不出 ⇒ 空串**（调用方必须显式说「无法读数」，不许静默当 0）。
+#: 两段实现（`--format` 取尺寸列；老版本 docker 用 `-v` 的 `Build cache usage:` 行）——
+#: 实测本机 `docker system df --format` 可用；`-v` 是**可检出信号的**回落（缺它则 `-v` 环境读数为 `?`）。
+cache_total_mb() {
+  local out
+  out=$(docker system df --format '{{.Type}} {{.Size}}' 2>/dev/null         | awk '$1=="Build" && $2=="Cache" {print $3}' | head -n 1 || true)
+  if [ -z "$out" ]; then
+    out=$(docker system df -v 2>/dev/null | sed -n 's/^Build cache usage: *//p' | head -n 1 || true)
+  fi
+  _size_to_mb "$out"
+}
+
+#: 缓存读数（MB；读不出 ⇒ `?`）。**读数与「有没有清到空间」是两件事** ⇒ 分开两个函数。
+builder_cache_measure() {
+  local mb
+  mb=$(cache_total_mb || true)
+  if [ -z "$mb" ]; then
+    echo "?"
+  else
+    echo "$mb"
+  fi
+}
+
+#: 按磁盘可用量选清理窗口（小时；**只读、幂等**，真跑函数本体的判据见测试文件的 §三）。
+#: 契约：可用量越小 ⇒ 窗口越紧（单调，由 `BUILD_CACHE_LADDER` 从宽到紧的次序保证）；
+#: 极端档（连 `BUILD_MIN_FREE_MB/2` 都不够）⇒ `-af`（由 `builder_cache_recover` 兜底）。
+#: 为什么要「按水位」而不是固定窗口：真机实测 `until=168h` 在该场景匹配 **0 条**（缓存全是 72h 内建的）
+#: ⇒ 固定窗口 = **空操作**；水位越低越要敢清更近的层 —— 那正是 issue #6508 的修法。
+pick_cache_window() {
+  local free=${1:-0} want=${BUILD_MIN_FREE_MB:-4096}
+  if [ "$free" -ge "$((want * 4))" ]; then echo 168
+  elif [ "$free" -ge "$((want * 2))" ]; then echo 72
+  elif [ "$free" -ge "$want" ]; then echo 48
+  elif [ "$free" -ge "$((want / 2))" ]; then echo 24
+  else echo 6
+  fi
+  return 0
+}
 
 # ACR 登录（**唯一一份**）：1.9 的「回滚点补回」与第 2 步的常规拉取共用 ⇒ 判据/凭据读取不会漂移。
 # ACR 是私有仓库（docs/wiki/CI-CD.md：服务器需凭据拉私有镜像）⇒ 补回前必须先登录，否则必然失败。
@@ -317,6 +402,58 @@ report_rollback_point() {
 }
 
 
+#: 构建缓存回收（**清到门槛以上为止**）。铁律 10 口径：部署内、带阈值、幂等、失败可见。
+#: 契约（判据 3/4 机械钉住）：**只发 `docker builder prune`** ⇒ 结构上碰不到镜像 / tag / 回滚点 / 保留集。
+#: 副作用（供调用方读）：`CACHE_RECOVER_CANDIDATE`（是否值得清）/ `CACHE_RECOVER_DID`
+#: （清了几次：0=没清 / 1=按窗口清 / 2=窗口 + 兜底清空）/ `CACHE_RECOVER_MSG`（人读原因）。
+builder_cache_recover() {
+  local want=$1 free window cache now_after cap_mb
+  free=$(disk_free_mb || true)
+  window=$(pick_cache_window "${free:-0}")
+  cache=$(builder_cache_measure || true)
+  CACHE_RECOVER_CANDIDATE=1
+  CACHE_RECOVER_DID=0
+  CACHE_RECOVER_MSG=""
+  # 读数不可得且缓存为空 ⇒ 没有可清的东西（**明说**，不静默；失败可见）
+  if [ "$cache" = "?" ] && [ "$window" != "6" ]; then
+    CACHE_RECOVER_CANDIDATE=0
+    CACHE_RECOVER_MSG="构建缓存读数不可得、且当前水位不需要兜底清理 ⇒ 跳过缓存回收"
+    echo "  ℹ️ 缓存回收：${CACHE_RECOVER_MSG}"
+    return 0
+  fi
+  cap_mb=${BUILD_CACHE_GATE_MB:-1}
+  if [ "$cache" != "?" ] && [ "${cache:-0}" -lt "$cap_mb" ] && [ "$window" != "6" ]; then
+    CACHE_RECOVER_CANDIDATE=0
+    CACHE_RECOVER_MSG="构建缓存仅 ${cache}MB（< ${cap_mb}MB）⇒ 清它也只是徒劳，跳过（缓存读数非空故不是「?」）"
+    echo "  ℹ️ 缓存回收：${CACHE_RECOVER_MSG}"
+    return 0
+  fi
+  # ── 第 1 档：按水位选的窗口（真机上 168h 是空操作 ⇒ 所以窗口由 `pick_cache_window` 给）──────
+  # 🔴 `RECOVER_TIER_1=1` 是**档位标记**（判据的锚点：证明这一档真的落码、不是只写在注释里）。
+  RECOVER_TIER_1=1
+  echo "  🧹 缓存回收：水位 ${free}MB ⇒ 选窗口 ${window}h（可用量经门槛 ${want}MB 判定；此档保留比 ${window}h 更新的层）"
+  if docker builder prune -f --filter "until=${window}h" >/dev/null 2>&1; then
+    CACHE_RECOVER_DID=1
+  else
+    echo "  ⚠️ docker builder prune --filter until=${window}h 失败（不影响本次部署；下面仍会复核水位）"
+  fi
+  now_after=$(disk_free_mb || true)
+  # ── 第 2 档（兜底）：窗口清完仍不足门槛 ⇒ 清空构建缓存 ─────────────────────────────────
+  # ⚠️ 这一档会把稳态 2s 打回冷构建 29.7min ⇒ **只在「不腾空间就部署不下去」时**才走到
+  #    （水位已经低于门槛，即下面这个 `-lt` 为真）；正常路径永远不会碰到它。
+  if [ "${now_after:-0}" -lt "$want" ]; then
+    RECOVER_TIER_2=1
+    echo "  🔴 窗口 ${window}h 清完仍不足门槛（${now_after}MB < ${want}MB）⇒ 兜底档：清空构建缓存（代价 = 下一次是冷构建）"
+    CACHE_RECOVER_AF_CALL=1
+    if docker builder prune -af >/dev/null 2>&1; then
+      CACHE_RECOVER_DID=2
+    else
+      echo "  ⚠️ docker builder prune -af 失败（不影响本次部署；水位复核在下面）"
+    fi
+  fi
+  return 0
+}
+
 CONFIG_REF_RESOLVED=$(config_ref_for_tag "$TAG")
 if [ -z "$CONFIG_REF_RESOLVED" ]; then
   echo "❌ 无法把镜像 tag 追溯到具体 commit（tag=${TAG}）⇒ **拒绝用 main 的配置**（issue #5083）"
@@ -393,10 +530,27 @@ if [ -n "$BUILD_SERVICE" ]; then
   # ── 磁盘前置检查（issue #5814 §四.4）────────────────────────────────────────
   # 实测：每次构建净增约 1 GB、构建缓存已 1.36 GB、服务器总盘 **40 GB**（不是 70）⇒ 余量是真约束。
   # 构建前先断言余量 ≥ 门槛（fail-closed：空间不够时**不动**正在跑的服务，直接中止）。
-  _df_mb=$(df -Pk / | awk 'NR==2 {print int($4/1024)}' || true)
+  _df_mb=$(disk_free_mb || true)
   _need_mb=${BUILD_MIN_FREE_MB:-4096}
   echo "  构建前磁盘可用：${_df_mb}MB（门槛 ${_need_mb}MB）"
+  # ── issue #6508 ①：门槛判定**之前**先做一次「按水位的构建缓存回收」────────────────
+  # 余量不足时，第一动作不再是「交给人工」（改前形态：真机上给的那条命令是空操作），
+  # 而是**本脚本自己按水位清缓存、清到门槛以上为止**（幂等、带阈值、失败可见）。
+  # ⚠️ 保留 `-lt` 之后的 fail-closed 中止**一字不改**（那是有效护栏，issue #6503 的实证）。
+  _cache_mb=$(builder_cache_measure || true)
   if [ "${_df_mb:-0}" -lt "$_need_mb" ]; then
+    RECOVERY_ANCHOR=1
+    echo "  磁盘可用 ${_df_mb}MB < 门槛 ${_need_mb}MB ⇒ 先按水位回收构建缓存（issue #6508，不再只给人工出口）"
+    builder_cache_recover "$_need_mb"
+    _df_after_recover=$(disk_free_mb || true)
+    _cache_after_recover=$(builder_cache_measure || true)
+    echo "  缓存回收结果：${_df_mb}MB → ${_df_after_recover}MB（门槛 ${_need_mb}MB）；构建缓存：${_cache_mb:-?} → ${_cache_after_recover:-?}（清理档=${CACHE_RECOVER_DID}）"
+    _df_mb=$_df_after_recover
+  fi
+  if [ "${_df_mb:-0}" -lt "$_need_mb" ]; then
+    # 🔴 issue #6505：**机读标记**（部署日志里同族的那几个 `XXX=` 标记的写法）—— CI 收口据此判「**未开始部署**」
+    #    （旧容器保持不动、环境未受影响），而不是把同一次闸门读成「两次独立失败 + 环境可能坏」。
+    echo "ABORT_REASON=BUILD_MIN_FREE_MB"
     echo "  ❌ 磁盘可用 ${_df_mb}MB < 门槛 ${_need_mb}MB ⇒ **中止构建**（旧容器保持不动、环境未受影响）"
     echo "     回收出口（**人工**，本脚本不做无人值守删除 —— 铁律 10）："
     echo "       · 遗留旧源码克隆：/opt/migao（2026-08-13 残留，实测 2.2 GB）"
@@ -405,7 +559,12 @@ if [ -n "$BUILD_SERVICE" ]; then
     #    （不带保留集 ⇒ 会连带删掉回滚点）⇒ 说明文字里写出字面量会被那条判据正确判红。
     echo "       · 清掉所有未使用镜像（prune 的 all 档，约 2.4 GB）—— ⚠️ 它**不带保留集**，会连带删掉回滚点；"
     echo "         只许在人工确认「当前在用 + .last-good-tag 都在保留范围」之后执行，见第 0 段保留策略"
-    echo "       · 构建缓存：docker builder prune --filter until=168h（**保留 7 天内**，别用 -af）"
+    # 🔴 出口必须**真可行动**（issue #6508 的病根：改前逐字写死 `until=168h`，而真机上缓存条目
+    #    全是 72h 内建的 ⇒ 那条命令匹配 0 条、`Total: 0B` —— 照着敲解决不了问题）。
+    #    现取的候选窗口由**本次读数**给出；最紧档后面的 `--keep-storage 0` 是兜底（清空）。
+    _sug_window=$(pick_cache_window "${_df_mb:-0}")
+    echo "       · 构建缓存：docker builder prune --filter until=${_sug_window}h（按当前水位 ${_df_mb}MB 选的窗口；"
+    echo "         仍不够 ⇒ 兜底 docker builder prune -af **只清构建缓存**，代价是下一次冷构建）"
     echo "       · 或扩容磁盘（用户 2026-09-30 已表态「有必要会扩容」）"
     exit 1
   fi
@@ -447,14 +606,24 @@ if [ -n "$BUILD_SERVICE" ]; then
     echo "❌ 构建报成功但 ${LOCAL_IMAGE_REF} **不在本地** ⇒ 中止（拒绝静默回落到 ACR）"
     exit 1
   fi
-  # ── 构建后回收（**非破坏性**，铁律 10 口径：只清构建缓存，不删带 tag 的镜像）──────
-  # `until=168h` = 只清 7 天前的缓存 ⇒ 保住稳态秒级所需的热层；`-a` 一律不用。
-  docker builder prune -f --filter until=168h >/dev/null 2>&1 \
-    || echo "  ⚠️ docker builder prune 失败（不影响本次部署；缓存偏多时人工清理）"
-  _df_after_mb=$(df -Pk / | awk 'NR==2 {print int($4/1024)}' || true)
-  _cache_mb=$(docker system df --format '{{.Type}} {{.Size}}' 2>/dev/null | awk '$1=="Build Cache"{print $2}' || true)
-  echo "  构建后磁盘可用：${_df_after_mb}MB（构建前 ${_df_mb}MB）／构建缓存：${_cache_mb:-?}"
+  # ── 构建后回收（**只碰构建缓存**，铁律 10 口径：不删带 tag 的镜像、不碰保留集）──────
+  # 缺口（issue #6508 ②）：Build Cache 此前**完全不在保留策略里**（只增不减，实测 12.44GB /
+  # 184 条 / 100% RECLAIMABLE）⇒ 这里按**水位**回收（`builder_cache_recover`：清到门槛以上为止），
+  # 并把**两个读数**（可用量 + 缓存占用）真的打进日志 —— 改前那一格逐字是 `构建缓存：?`。
+  _cache_before_mb=$(builder_cache_measure || true)
+  _used_before_mb=$(disk_used_mb || true)
+  builder_cache_recover "$_need_mb"
+  _df_after_mb=$(disk_free_mb || true)
+  _cache_after_mb=$(builder_cache_measure || true)
+  _used_after_mb=$(disk_used_mb || true)
+  _reclaimed_mb=$(( ${_used_before_mb:-0} - ${_used_after_mb:-0} ))
+  echo "  构建后磁盘可用：${_df_after_mb}MB（构建前 ${_df_mb}MB）／构建缓存：${_cache_before_mb:-?} → ${_cache_after_mb:-?}（清理档=${CACHE_RECOVER_DID}）"
+  echo "  缓存回收量：${_reclaimed_mb}MB（已用 ${_used_before_mb:-?}MB → ${_used_after_mb:-?}MB；档位 ${CACHE_RECOVER_DID}/2）"
+  if [ "${_reclaimed_mb:-0}" -le 0 ]; then
+    echo "  ::warning::缓存回收量为 0（构建缓存 ${_cache_after_mb:-?}MB，清理档 ${CACHE_RECOVER_DID}/2）—— 出口没有真的腾出空间，需人工核对"
+  fi
   if [ "${_df_after_mb:-0}" -lt "$_need_mb" ]; then
+    echo "ABORT_REASON=BUILD_CACHE_RECLAIM_INSUFFICIENT"
     echo "  ::warning::构建后磁盘可用 ${_df_after_mb}MB 已低于门槛 ${_need_mb}MB ⇒ 本次部署继续，但下次构建会被前置检查拦住"
     # ⚠️ 同上前置检查里的理由：**不逐字写出**被 test_swas_deploy_disk_retention.py 判红的那条命令形态。
     echo "     处置：回收 /opt/migao（2.2GB）/ 清掉所有未使用镜像（prune 的 all 档，约 2.4GB，**须先确认保留集**）/ 扩容"
