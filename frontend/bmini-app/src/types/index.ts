@@ -148,7 +148,10 @@ export interface QuickAction {
   id: string
   name: string
   prompt: string
+  /** admin-web 的图标名（lucide） */
   icon?: string
+  /** B 端 H5 六格用的 emoji（issue #6468：同一份服务端内容两个消费端各有渲染形态） */
+  emoji?: string
 }
 
 // ========== API 响应 ==========

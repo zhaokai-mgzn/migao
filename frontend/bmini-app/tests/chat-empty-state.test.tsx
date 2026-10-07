@@ -43,6 +43,17 @@ const SRC_ROOT = path.resolve(__dirname, '../src')
 const C_END_AGENT_NAME = '小布'
 /** C 端商品推荐端点（B 端消费它 = 把顾客端的商品展示搬进商家端） */
 const C_END_PRODUCT_ENDPOINT = 'new-arrivals'
+/**
+ * C 端**顾客口吻**的快捷入口问句（issue #6468）：B 端入口曾逐字抄这几条，
+ * 内容真值现在只在服务端（`backend/ai-agent-service/app/api/chat.py` 的 `QUICK_ACTIONS`）
+ * ⇒ H5 代码里再出现它们 = 又抄了一份。
+ */
+const C_END_QUICK_PROMPTS = [
+  '推荐一下热门窗帘产品',
+  '帮我查一下物流',
+  '我想咨询售后问题',
+  '帮我算一下窗帘用料和价格',
+]
 
 function listSourceFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -102,6 +113,14 @@ describe('B 端「问米宝」空态：不得混入 C 端 agent 内容（issue #
     const offenders = chatSurface
       .flatMap(listSourceFiles)
       .filter((file) => codeOnly(file).includes(C_END_AGENT_NAME))
+    expect(offenders.map((f) => path.relative(SRC_ROOT, f))).toEqual([])
+  })
+
+  it('类级元守卫：聊天面不得再硬编码 C 端顾客口吻的快捷入口（issue #6468）', () => {
+    const chatSurface = [path.join(SRC_ROOT, 'components', 'chat'), path.join(SRC_ROOT, 'pages', 'chat')]
+    const offenders = chatSurface
+      .flatMap(listSourceFiles)
+      .filter((file) => C_END_QUICK_PROMPTS.some((p) => codeOnly(file).includes(p)))
     expect(offenders.map((f) => path.relative(SRC_ROOT, f))).toEqual([])
   })
 })
