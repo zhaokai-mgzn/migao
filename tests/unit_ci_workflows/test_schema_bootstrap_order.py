@@ -470,18 +470,38 @@ def pg(realdb_binaries):
             shutil.rmtree(sockdir, ignore_errors=True)
 
 
+@pytest.fixture(scope="module")
+def built_db(pg):
+    """**本 module 的库已按 `schema.sql` 建好** —— 显式的建库前置（issue #6498）。
+
+    为什么必须是独立夹具，而不是「谁先跑谁顺手建」：`pg` 是 `scope="module"`，而 CI 以
+    `pytest -n 4` 并行（`.github/workflows/pr-check.yml`）⇒ **同一 module 的测试会被分到不同
+    worker**，每个 worker 各持一个**自己的空库**。原先「建库」只是
+    `test_schema_sql_builds_with_on_error_stop_1` 的**副作用**，于是消费它的
+    `test_target_segment_actually_ran` 一旦被分到别处，就在空库上查询，报
+    `relation "production_route_signals" does not exist` —— **看起来像「schema.sql 建库中止」，
+    实际是测试隔离问题**（2026-10-07 两次 CI 复现，归因见 issue #6498）。
+
+    module-scoped ⇒ 同一 worker 内**只建一次**（`CREATE POLICY` 没有 `IF NOT EXISTS`，建两次会红），
+    且**每个消费者都拿到已建好的库**。
+    """
+    return pg, pg.run_file(SCHEMA)
+
+
 def test_real_db_harness_actually_ran(pg):
     """自证：真库夹具真的起来了（防「夹具坏了 ⇒ 后面全 skip ⇒ 看起来像绿」）。"""
     assert pg.query("SELECT 1") == "1", "临时集群没起来 —— 后续真库判据全是假绿"
 
 
-def test_schema_sql_builds_with_on_error_stop_1(pg):
+def test_schema_sql_builds_with_on_error_stop_1(built_db):
     """🔴 机械判据：`ON_ERROR_STOP=1` 跑**全文** ⇒ **exit 0** + **零 ERROR**。
 
     ⚠️ **不许**用 `ON_ERROR_STOP=0`（那正是吞掉错误的原因：实测越序时它 exit=0、只留一行 ERROR
     在输出里，脚本「看起来成功」）。
+
+    ⚠️ 建库动作走 `built_db`（显式前置），**不再**由本测试自己 `run_file` —— 见该夹具的注释。
     """
-    proc = pg.run_file(SCHEMA)
+    pg, proc = built_db
     combined = proc.stdout + proc.stderr
     errors = [l for l in combined.splitlines() if "ERROR:" in l or "错误:" in l]
     assert errors == [], f"schema.sql 建库报错（ON_ERROR_STOP=1 下即中止）：\n  " + "\n  ".join(errors)
@@ -491,8 +511,13 @@ def test_schema_sql_builds_with_on_error_stop_1(pg):
     )
 
 
-def test_target_segment_actually_ran(pg):
-    """目标段落**真的跑到了**（行数从 schema.sql 现场派生，**不写死数字**）+ V63 终态生效。"""
+def test_target_segment_actually_ran(built_db):
+    """目标段落**真的跑到了**（行数从 schema.sql 现场派生，**不写死数字**）+ V63 终态生效。
+
+    ⚠️ 依赖 `built_db`（而非 `pg`）：本测试**只查询**，库必须先建好 —— 这个前置在 xdist 下
+    必须是**显式**的，否则被分到另一个 worker 时拿到空库（issue #6498）。
+    """
+    pg, _ = built_db
     text = SCHEMA.read_text(encoding="utf-8")
     block = _signal_seed_block(text)
     seed_rows = _rows_of_values(block, block.index("VALUES"))
