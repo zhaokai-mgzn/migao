@@ -125,7 +125,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
       .catch(() => {
         if (cancelled) return
         setExamples([])
-        setExamplesError('算例加载失败：服务端判定不可用（请稍后重试）')
+        setExamplesError('算例加载失败：系统暂时给不出判定（请稍后重试）')
       })
     return () => {
       cancelled = true
@@ -202,7 +202,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
         <summary className="cursor-pointer text-sm font-medium text-neutral-800">术语怎么判</summary>
 
         <h3 className="mt-2 text-sm font-medium text-neutral-700">
-          系统自动推算（会进加工费组合键）
+          系统自动推算（会进加工费组合）
         </h3>
         {examplesError !== null && (
           <p data-testid="glossary-examples-error" className="mt-1 text-xs text-amber-700">
@@ -248,7 +248,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
             （用料 / 工序 / 对客价 / 计件），所以与上面三组分开列 */}
         <h3 className="mt-4 text-sm font-medium text-neutral-700">特殊选项（下单时勾选）</h3>
         <p className="mt-1 text-xs text-neutral-500">
-          <InlineMarkdown text="这六项影响的东西**各不相同** —— 有的改用料、有的加一道工序、有的只影响计件历史口径。工序映射逐值取自生产真值源（不是这里自己编的）。" />
+          <InlineMarkdown text="这六项影响的东西**各不相同** —— 有的改用料、有的加一道工序、有的只影响计件的历史口径。每项对应哪道工序，以生产里的工序路线表为准（不是这里自己编的）。" />
         </p>
         <div className="mt-1">
           {SPECIAL_OPTION_TERMS.map((term) => (

@@ -5729,7 +5729,7 @@ function LineItemBlock({
                       {metersStale && (
                         <p data-testid="meters-manual-stale" className="mt-1 text-xs text-amber-700">
                           用料已人工指定（{line.quantity} 米；{metersCompareText}）—— 宽 / 高 / 门幅或工艺改动后系统
-                          <strong>未跟随</strong>重算（不会静默覆盖你手填的数）；点上方「恢复按公式计算」
+                          <strong>未跟随</strong>重算（不会偷偷覆盖你手填的数）；点上方「恢复按公式计算」
                           按新参数重算。
                         </p>
                       )}
@@ -6391,7 +6391,7 @@ function LineItemBlock({
                     {/* 缺选配信息（组合键为空）⇒ **不给**改单价入口：没有 key 可同步 */}
                     {feeIsUnpriced && !canOverrideFee && (
                       <span data-testid="fee-combination-no-composition" className="text-amber-600">
-                        缺选配信息 ⇒ 没有组合键可同步，无法就地改单价
+                        缺选配信息 ⇒ 这行还没匹配到加工费组合，无法就地改单价
                       </span>
                     )}
                     {/* 定价入口（与页面既有告警同一路径；已定价行无需它） */}

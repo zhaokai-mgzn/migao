@@ -624,7 +624,7 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     expect(screen.getByTestId('craft-plan-meters-mismatch')).toHaveTextContent('5.8')
     // 四条底线（owner 2026-09-23 裁定）一字不动
     expect(notice).toHaveTextContent('未跟随')
-    expect(notice).toHaveTextContent('不会静默覆盖你手填的数')
+    expect(notice).toHaveTextContent('不会偷偷覆盖你手填的数')
     expect(notice).toHaveTextContent('恢复按公式计算')
   })
 
@@ -681,7 +681,7 @@ describe('#5202 用料联动自动重算（两个根因）', { timeout: 20000 },
     expect(notice).not.toHaveTextContent('差 ')
     // 四条底线仍在（不可比 ≠ 砍掉告知的其余部分）
     expect(notice).toHaveTextContent('未跟随')
-    expect(notice).toHaveTextContent('不会静默覆盖你手填的数')
+    expect(notice).toHaveTextContent('不会偷偷覆盖你手填的数')
     expect(notice).toHaveTextContent('恢复按公式计算')
   })
 })

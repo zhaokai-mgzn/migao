@@ -68,7 +68,7 @@ export const capabilityDomains: CapabilityDomain[] = [
       },
       {
         name: '每日简报',
-        detail: 'AI 每天生成经营要点，数字经服务端校验；简报不含客户手机号等个人信息。',
+        detail: 'AI 每天生成经营要点，数字都经过系统核对；简报不含客户手机号等个人信息。',
         icon: Newspaper,
       },
     ],
@@ -144,7 +144,7 @@ export const capabilityDomains: CapabilityDomain[] = [
       },
       {
         name: '计件工资',
-        detail: '按人 / 工序 / 部位 / 套四档下钻；返工与报废不计件，由服务端排除。',
+        detail: '按人 / 工序 / 部位 / 套四档下钻；返工与报废不计件，系统会自动排除。',
         icon: Coins,
       },
     ],

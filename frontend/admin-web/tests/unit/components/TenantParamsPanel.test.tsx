@@ -250,7 +250,9 @@ describe('判据 8：内联参数（余料回收域）在本页内渲染（issue
   it('域摘要与余料术语的 markdown 强调**渲染成元素**、裸标记不上屏（issue #5194 改判）', async () => {
     render(<TenantParamsPanel />)
     await waitFor(() => expect(screen.getByTestId('param-hem_margin')).toBeInTheDocument())
-    // 算料域摘要（`本域**每一项都直接改米数 = 改钱**`）+ 参数三件套里的 `` `HEM_MARGIN` ``
+    // 算料域摘要（`本域**每一项都直接改米数 = 改钱**`）+ 参数三件套里的 `` `上下卷边` ``
+    // 🔴 issue #6488：代码片里只放**商家看得懂的名字**（旧文的 `` `HEM_MARGIN` `` 键名已去掉）——
+    //    正控随之改钉中文名，仍要求代码片真的以元素呈现（不是把标记删掉）。
     const calcText = screen.getByTestId('tenant-params-panel').textContent ?? ''
     expect(calcText).not.toContain('**')
     expect(calcText).not.toContain('`')
@@ -260,7 +262,7 @@ describe('判据 8：内联参数（余料回收域）在本页内渲染（issue
     ).toContain('每一项都直接改米数 = 改钱')
     expect(
       Array.from(document.querySelectorAll('code')).map((el) => el.textContent)
-    ).toContain('HEM_MARGIN')
+    ).toContain('上下卷边')
 
     // 余料回收域：术语表（`但还**能再用**的布`）
     fireEvent.click(screen.getByTestId('param-domain-remnant'))

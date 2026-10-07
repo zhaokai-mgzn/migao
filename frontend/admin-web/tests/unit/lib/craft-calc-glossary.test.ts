@@ -307,10 +307,10 @@ describe('算料配置页·口径与术语说明（issue #4975）', () => {
     expect(joined).toContain('不触发工序')
   })
 
-  it('判据 7b：接高的「双眼皮接高」照实写「待查明」，不凭字面编解释', () => {
+  it('判据 7b：接高的「双眼皮接高」照实写「还没确认」，不凭字面编解释', () => {
     const jiegao = MANUAL_FEATURE_TERMS.find((t) => t.name === '接高')
     if (!jiegao) throw new Error('手选术语里缺「接高」')
-    expect(jiegao.boundary ?? '').toContain('待查明')
+    expect(jiegao.boundary ?? '').toContain('还没确认')
   })
 
   it('判据 8：术语覆盖清单齐全（自动推算三项 + 手选两项 + 近义词族）', () => {
@@ -440,24 +440,24 @@ describe('特殊选项术语（issue #4986）', () => {
     expect(offenders).toEqual([])
   })
 
-  it('判据 3：拼3次写明「用料系数未登记 ⇒ 不插值、不静默退回单色」', () => {
+  it('判据 3：拼3次写明「用料系数未登记 ⇒ 不会替你估系数、也不退回按单色算」', () => {
     const t = SPECIAL_OPTION_TERMS.find((x) => x.name === '拼3次')
     if (!t) throw new Error('特殊选项术语里缺「拼3次」')
     const text = `${t.impact}${t.boundary ?? ''}`
     // 注入：把这段边界删掉 ⇒ 红（商家会以为拼3次与拼2次一样有系数）
     expect(text).toContain('未登记')
-    expect(text).toContain('不插值')
+    expect(text).toContain('不会替你估系数')
   })
 
-  it('判据 4：双眼皮接高 = 与「接高」同一道工序 + 含义待查明', () => {
+  it('判据 4：双眼皮接高 = 与「接高」同一道工序 + 含义还没确认', () => {
     const a = SPECIAL_OPTION_TERMS.find((x) => x.name === '接高')
     const b = SPECIAL_OPTION_TERMS.find((x) => x.name === '双眼皮接高')
     if (!a || !b) throw new Error('特殊选项术语里缺「接高」或「双眼皮接高」')
     // 注入：给「双眼皮接高」编一道自己的工序 ⇒ 红（真值源里它映射到同一道）
     expect(b.operation).toBe(a.operation)
     expect(b.after).toBe(a.after)
-    // 含义未查明 ⇒ 照实写，不凭字面推
-    expect(b.boundary ?? '').toContain('待查明')
+    // 含义还没弄清楚 ⇒ 照实写，不凭字面猜
+    expect(b.boundary ?? '').toContain('还没确认')
   })
 
   it('判据 5：一分为二 = 不加工序 / 只有历史计件系数（三层写清）', () => {
@@ -466,8 +466,8 @@ describe('特殊选项术语（issue #4986）', () => {
     // 注入：给它写一道工序 / 加上「用料」层 ⇒ 红
     expect(t.operation).toBeNull()
     expect(t.layers).toEqual(['计件'])
-    // 自 #4589 起零消费（新报工不乘、历史快照仍乘）—— 不写这句会让商家以为现在还乘系数
-    expect(`${t.definition}${t.impact}${t.boundary ?? ''}`).toContain('零消费')
+    // 自 #4589 起这一档对新报工不再生效（只对以前报过的工有效）—— 不写这句会让商家以为现在还乘系数
+    expect(`${t.definition}${t.impact}${t.boundary ?? ''}`).toContain('新报工不再乘它')
   })
 
   it('判据 6：文案里不出现**数值**（沿用 #4975 的纪律）', () => {

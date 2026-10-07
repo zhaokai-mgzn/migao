@@ -148,7 +148,7 @@ export function WorkerPageConfigPanel() {
           ))}
           {allKeys.length === 0 && (
             <p className="text-sm text-neutral-500">
-              没有读到可配置的页面清单（服务端没回 labels）—— 请刷新重试，不要凭记忆勾选
+              暂时没读到可配置的页面清单 —— 请刷新重试，不要凭记忆勾选
             </p>
           )}
         </div>

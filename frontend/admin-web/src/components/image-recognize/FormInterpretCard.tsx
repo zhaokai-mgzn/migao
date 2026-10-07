@@ -6,6 +6,7 @@ import { Button } from '@/components/ui'
 import { resolveImageUrl } from '@/lib/utils'
 import { htmlToPlainText } from '@/lib/rich-text-plain'
 import type { RecognizedField } from '@/lib/api'
+import { RECOGNIZE_NO_REASON } from '@/lib/image-recognize'
 import {
   PAGE_FILL_SOURCE_INTERPRETED,
   PAGE_FILL_SOURCE_RECOGNIZED,
@@ -131,7 +132,7 @@ export default function FormInterpretCard({
                     data-testid={`form-interpret-reason-${field.key}`}
                     className="text-xs leading-5 text-neutral-500"
                   >
-                    {field.label}：未填（{field.reason || '内核未给出原因'}）
+                    {field.label}：未填（{field.reason || RECOGNIZE_NO_REASON}）
                   </p>
                 )}
                 {field.note && (

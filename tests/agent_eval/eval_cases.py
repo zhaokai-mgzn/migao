@@ -13220,6 +13220,24 @@ _CASE_UI_092 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-093 [NORMAL] 商家后台用户可见文案去「研发腔」：全量扫描器 + 五条机械规则 + 类级守卫（issue #6488）（源: cases/ui.yml）──
+_CASE_UI_093 = EvalCase(
+    id='UI-093',
+    legacy_id='',
+    title='商家后台用户可见文案去「研发腔」：全量扫描器 + 五条机械规则 + 类级守卫（issue #6488）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户逐字：「我们系统中暴露了大量的这种研发过程产生的文字，适当的文档可以引导和教育用户如何使用我们的产品，但是这类文案明显不是一个好的引导文案」「最好是扫描下全部商家后台页面，目标是提高文案的真实价值和作用，去除这类看不懂的文字」 —— 现场病灶（截图逐字）：库存明细「端点没有关键词参数」「批次读面没有分页参数……本页宁可不查，也不做「一次拉全量」的假方便」；工艺配置「未定价 = 还没定价（≠ ¥0.00…）（issue #4886）」「判定：净窗高 > 超高阈值（oversize_height_threshold）」「判据是客户口径（企业参数，可配），非 ERP 实证」'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据·**全量扫描器 + 判据单一源**：`frontend/admin-web/scripts/user-copy-scan.mjs` 用 TypeScript AST 抽「会上屏」的三类候选（JSX 文本 / 白名单 JSX 属性 / 含中文的字符串与模板串**字面块**，注释与 CSS 模板串天然不在内），并把五条机械规则与「什么算上屏」的口径做成**唯一一份**（守卫 `frontend/admin-web/tests/unit/user-copy-jargon-guard.test.ts` 与命令行共用，不写第二份正则）。复算：`node frontend/admin-web/scripts/user-copy-scan.mjs`（在仓库根跑；退出码 ≠ 0 = 仍有命中）。', '🔴 判据·**五族研发腔零上屏**（修复前实测 78 处 / 25 个文件，逐条具名 file:line）：R1 接口与参数细节（端点/入参/分页参数/拉全量/读面/写面/幂等/落库/数据库/服务端/内核）、R2 内部机制名（组合键/派生值/真值源/单一源/快照/状态机/兜底/插值/落账/静默）、R3 研发过程编号与判据语（`issue #NNNN`/`#NNNN`/`PR #NNNN`/`V1xx`/判据/待查明）、R4 代码标识符上屏（`oversize_height_threshold`/`scan_url`/`PC-yyyyMMdd-NNNN`）、R5 行内代码片里塞标识符（`` `HEM_MARGIN` ``）。**判据面 = 用户可见文案**，不是「源码里有没有这个词」。', '🔴 判据·**类级元守卫不退化（判别力自证）**：坏的九个取样形态各自判红（五族各一 + 既有 L2/池/分组标签三族），好的三条（行业术语 + 商家动作）一条都不红；**只改注释不红**（对照读数：守卫不得被自己的文案喂红）；**真声明面自证**（内存里注入的坏文案确实被抽出来，否则「全绿」是假绿）。', '🔴 判据·**豁免台账只许缩短 + 不空转**：`EXEMPT` 每条必须**仍然**命中某条规则，失效当场判红（逼着删干净）。当前唯一一条 = 岗位编码输入框的 placeholder（`admin、customer_service` 是编码**内容本身**，不是散文里的研发腔）。', '判据·**三条既有规则原样迁入**（不削弱）：R6 `L1/L2/L3` 代号（UI-057）、R7 「池」隐喻（UI-058）、R8 服务端分组标签（UI-092）由行扫描改为同一份 AST 口径后**仍逐条判红**，且各自保留原出口话术。', '判据·**假红清理有实测**：`value="pending_review"` / `fieldKey="door_width"` / `stopColor="#6366f1"` 三个 JSX 属性值曾被误判成文案/issue 号 ⇒ 改为**属性白名单**（只认 label/title/hint/placeholder/…）+ 十六进制颜色排除，命中 91 → 78。', '**不回归**：口径/接口/字段名/权限/算料行为一字未动（`frontend-fix.no-api-change`）；被改写的文案所承载的承诺与边界**逐条保留**（未定价 ≠ ¥0.00、「拼接/接高要手选，系统不推算」+「不触发工序」、算例数字仍由真值渲染）。'],
+    skip_reason='[backend-contract] 纯前端文案 + 静态守卫，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'copy', 'jargon', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -13963,6 +13981,7 @@ ALL_CASES = (
     _CASE_UI_090,
     _CASE_UI_091,
     _CASE_UI_092,
+    _CASE_UI_093,
     _CASE_UT_001,
     _CASE_UT_002,
 )
