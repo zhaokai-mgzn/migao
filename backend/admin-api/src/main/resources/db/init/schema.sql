@@ -3591,5 +3591,55 @@ SELECT 'rr-v93-' || t.id || '-' || r.rid, t.id, r.trigger_kind, r.trigger_value,
 ON CONFLICT (id) DO NOTHING;
 
 -- ================================================
+-- 定时任务（用户「预约」）—— issue #6486 包 1（V149）
+-- ================================================
+-- 与 db/migration/V149__create_scheduled_tasks.sql 的终态逐字一致（本文件是**唯一建库脚本**，
+-- 不同步 ⇒ 新建库缺终态 ⇒ 「bootstrap 库与存量库两份真相」）。
+-- 语义说明（为什么单独一张表 / 三件套为什么 NOT NULL）见该迁移文件头注。
+CREATE TABLE IF NOT EXISTS scheduled_tasks (
+    id           VARCHAR(64) PRIMARY KEY,
+    tenant_id    BIGINT NOT NULL REFERENCES tenants(id),
+    task_type    VARCHAR(32) NOT NULL,
+    subject_type VARCHAR(32),
+    subject_id   VARCHAR(64),
+    fire_at      TIMESTAMP WITH TIME ZONE NOT NULL,
+    criterion    TEXT NOT NULL,
+    impact       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    action_label VARCHAR(64) NOT NULL,
+    action_url   VARCHAR(255) NOT NULL,
+    payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    source       VARCHAR(32) NOT NULL,
+    status       VARCHAR(32) NOT NULL DEFAULT 'pending',
+    dedup_key    VARCHAR(128) NOT NULL,
+    fired_at     TIMESTAMP WITH TIME ZONE,
+    created_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted      INTEGER NOT NULL DEFAULT 0
+);
+-- 扫描器主查询：到期且待投递（部分索引）
+CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
+    ON scheduled_tasks (fire_at)
+    WHERE status = 'pending' AND deleted = 0;
+-- 幂等键（部分唯一索引：软删行不占位）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_scheduled_tasks_tenant_dedup
+    ON scheduled_tasks (tenant_id, dedup_key)
+    WHERE deleted = 0;
+ALTER TABLE scheduled_tasks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_scheduled_tasks ON scheduled_tasks
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+COMMENT ON TABLE scheduled_tasks IS
+    '定时任务（用户「预约」）—— issue #6486 包 1（V149）。一行 = 一条在未来某时刻要投递的提醒。'
+    '🔴 三件套（criterion / action_label / action_url）全 NOT NULL ⇒ 没有处置入口的待办建不出来'
+    '（主动引擎「无处置入口不发」的**建单期**落点）。'
+    '与 notifications 的分工：本表 = 待触发计划（可取消），notifications = 投递记录（不可撤回）。';
+COMMENT ON COLUMN scheduled_tasks.dedup_key IS
+    '幂等键：同一件事在同一时刻只提醒一次（部分唯一索引 uk_scheduled_tasks_tenant_dedup）。'
+    '缺省由服务端按「收件人 + 任务类型 + 触发时刻（秒）」派生。';
+COMMENT ON COLUMN scheduled_tasks.status IS
+    'pending / fired / cancelled / failed / dismissed。只有 pending 会被扫描器投递；'
+    'fired 后不重投（疲劳控制之一）。';
+COMMENT ON COLUMN scheduled_tasks.source IS 'user（米宝委托）/ system（规则派生）。';
+
+-- ================================================
 -- END OF SCHEMA
 -- ================================================

@@ -222,3 +222,36 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+  - id: AG-010
+    legacy_id: ""
+    title: "定时任务（用户「预约」）服务端：三件套 fail-closed + 幂等 + 取消 + 到点投递只读"
+    domains:
+      - agents
+    tier: normal
+    tags:
+      - agents
+      - scheduled_task
+      - notification
+    truths_ref:
+      - agent-notification.scheduled-task-trio
+      - agent-notification.scheduled-task-idempotent
+      - agent-notification.scheduled-task-lifecycle
+    user_inputs:
+      - "商家对米宝说「3 天后提醒我跟进张先生」→ 建一条待办；到点由每分钟的扫描腿投递成站内通知"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "三件套 fail-closed：criterion / actionLabel / actionUrl 任一为空 ⇒ 抛 BusinessException 且**一次 insert 都不发**（三条各自独立）"
+      - "幂等：同租户同 dedupKey 第二次调用返回既有行、不 insert；派生键 = 收件人:类型:触发时刻(秒)"
+      - "取消：pending ⇒ 落 cancelled；fired ⇒ 拒绝（消息已发出，不可撤回）；跨租户 id ⇒ 拒绝"
+      - "投递：到期的 pending ⇒ 调通知服务一次（收件人 / 标题 / 正文 = 三件套）+ 置 fired；单条失败 ⇒ 该条置 failed 且不拖垮同轮其它条"
+      - "只读：投递路径只触达通知服务（结构面判据 = 服务依赖里没有订单 / 商品 / 售后写服务）"
+      - "租户上下文：扫描完必须还原为进入前的值（issue #3957 的调度线程教训）"
+    skip_reason: "[backend-contract] 服务端纯逻辑由 JUnit 单测验证（ScheduledTaskServiceTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-07 新增（issue #6486 包 1）：定时任务服务端能力的实例判据，逐条对应该测试类的 8 组断言。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ScheduledTaskServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

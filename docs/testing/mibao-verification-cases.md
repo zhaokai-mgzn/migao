@@ -225,7 +225,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6224，用户 2026-10-03 逐字裁定「退款方式 不用记」⇒ 执行选项 2 下线该字段）。修前实测：refundMethod 是零生产者字段（DB 列 after_sales_tickets.refund_method 全仓无 INSERT/UPDATE、无 setter 实参写入，响应里只有「实体 getter → DTO setter」直通）⇒ 线上恒不下发（NON_NULL）而前端 types 却声明了它。修法 = 移除实体/列表响应/详情响应三处字段声明 + 服务里两处直通 + frontend/admin-web/src/types/index.ts 的声明（保留 DB 列）。取号 AS-015（python3 scripts/next_case_id.py AS ⇒ main:001-010,013-014 + 在飞 PR #6230:011-012 ⇒ 最小空闲 AS-015）。 ｜ tags: refund, dead-field, response-contract, backend-contract
 
-## Agent 核心域（7 case）
+## Agent 核心域（8 case）
 
 ### AG-001. AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离 🔵
 ```
@@ -307,6 +307,21 @@
 ```
 真值: ai-chat.intent-domains
 溯源: 2026-10-02 新增（issue #5951）：该测试文件此前未声明 case_ids，本单改动它（去掉已退役的 suggestions 桩键）后按门禁口径补声明；用例内容如实对应该文件既有的两组断言，**未新增/未放宽任何断言**。 ｜ tags: agents, multimodal, routing, regression
+
+### AG-010. 定时任务（用户「预约」）服务端：三件套 fail-closed + 幂等 + 取消 + 到点投递只读 🔵
+```
+你: 商家对米宝说「3 天后提醒我跟进张先生」→ 建一条待办；到点由每分钟的扫描腿投递成站内通知
+期望: direct_reply
+数据: 三件套 fail-closed：criterion / actionLabel / actionUrl 任一为空 ⇒ 抛 BusinessException 且**一次 insert 都不发**（三条各自独立）
+数据: 幂等：同租户同 dedupKey 第二次调用返回既有行、不 insert；派生键 = 收件人:类型:触发时刻(秒)
+数据: 取消：pending ⇒ 落 cancelled；fired ⇒ 拒绝（消息已发出，不可撤回）；跨租户 id ⇒ 拒绝
+数据: 投递：到期的 pending ⇒ 调通知服务一次（收件人 / 标题 / 正文 = 三件套）+ 置 fired；单条失败 ⇒ 该条置 failed 且不拖垮同轮其它条
+数据: 只读：投递路径只触达通知服务（结构面判据 = 服务依赖里没有订单 / 商品 / 售后写服务）
+数据: 租户上下文：扫描完必须还原为进入前的值（issue #3957 的调度线程教训）
+跳过: [backend-contract] 服务端纯逻辑由 JUnit 单测验证（ScheduledTaskServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: agent-notification.scheduled-task-trio, agent-notification.scheduled-task-idempotent, agent-notification.scheduled-task-lifecycle
+溯源: 2026-10-07 新增（issue #6486 包 1）：定时任务服务端能力的实例判据，逐条对应该测试类的 8 组断言。 ｜ tags: agents, scheduled_task, notification
 
 ## API 层域（21 case）
 
@@ -10231,7 +10246,7 @@
 - 用例总数：709（活跃 134，跳过 575）
 - tier 分布：smoke 12 / normal 655 / adversarial 32
 - 售后域：15
-- Agent 核心域：7
+- Agent 核心域：8
 - API 层域：21
 - 登录认证域：12
 - B 端小程序域：43
