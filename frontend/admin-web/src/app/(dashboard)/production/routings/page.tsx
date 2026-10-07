@@ -2047,7 +2047,7 @@ function ProcessConfigContent() {
     }
     if (routing.is_default) {
       out.push(
-        '默认路线是路线兜底的终点：删了之后匹配不到专属路线的订单，一张加工单也生成不了。请先把另一条设为默认，再删这条。',
+        '默认路线是订单的最后去处：删了之后，没匹配到专属路线的订单一张加工单也生成不了。请先把另一条设为默认，再删这条。',
       )
     }
     return out
@@ -2547,7 +2547,7 @@ function ProcessConfigContent() {
             <div className="mb-3 flex flex-wrap items-baseline gap-2">
               <h2 className="text-base font-medium text-neutral-900">配置就绪度</h2>
               <span className="text-sm text-neutral-500">
-                按顺序配：先有工序与单价，才能排路线；路线里要有一条默认的兜底；最后按你家口径核一遍算料与裁高
+                按顺序配：先有工序与单价，才能排路线；路线里要留一条默认路线（没匹配到的订单走它）；最后按你家口径核一遍算料与裁高
               </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -2700,7 +2700,7 @@ function ProcessConfigContent() {
                   </div>
                   <p className="mb-3 text-xs text-neutral-500">
                     这一屏的价是<strong>计件单价（给工人）</strong>：报工工资 = 数量 × 计件单价。
-                    <strong>一道工序一个价</strong>（issue #4886）；
+                    <strong>一道工序一个价</strong>；
                     <span className="text-amber-700">未定价</span> = 还没定价（≠ ¥0.00；真 0 元照显示 ¥0.00）。
                     收顾客的那笔钱不在这里 —— 基础工序在「加工项组合费用」，特殊选项在每道工序的
                     <strong>「适用条件」</strong>里（按套计价）。
@@ -2908,7 +2908,7 @@ function ProcessConfigContent() {
                                 {isEmptyShell && (
                                   <span
                                     data-testid={`routing-empty-shell-${id}`}
-                                    title="主线为空：这条路线被命中后一道工序都没有 —— 既不报错也不拦，该订单会静默拿到 0 道工序"
+                                    title="主线为空：这条路线被命中后一道工序都没有 —— 既不报错也不拦，该订单会拿到 0 道工序"
                                     className="rounded bg-red-50 px-1.5 py-0.5 text-[11px] text-red-600"
                                   >
                                     空壳 · 不可用
@@ -3272,7 +3272,7 @@ function ProcessConfigContent() {
                           ))}
                         </select>
                         <span className="mt-1 block text-xs text-neutral-400">
-                          韩褶 / 打孔按工艺自动推导公式，这里只在该推导不适用时兜底。
+                          韩褶 / 打孔按工艺自动推导公式；推导不适用时，用这条备用公式。
                         </span>
                       </div>
 
@@ -3631,7 +3631,7 @@ function ProcessConfigContent() {
                 ⇒ 它现在不出现在加工单里，也没法定价。
               </p>
               <p className="mt-1 text-xs text-neutral-400">
-                点下面的「删除这道工序」把它删掉；若只是读面没读全，请点右上「刷新」重试。
+                点下面的「删除这道工序」把它删掉；如果只是列表没加载全，点右上「刷新」重试。
               </p>
               <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
                 <Button
@@ -4281,7 +4281,7 @@ function ProcessConfigContent() {
             </p>
             <p className="text-neutral-500">
               删除后它不再出现在工序库与工序单价表里，新加工单不会再生成这道工序；
-              <strong>历史报工不受影响</strong>（报工按当时的工序快照）。
+              <strong>历史报工不受影响</strong>（以前报过的工按当时的工序算）。
             </p>
             {deleteOpByNameCells.length === 0 ? (
               <p
@@ -4303,7 +4303,7 @@ function ProcessConfigContent() {
                 <strong className="mx-1">{opDeleteBlockerCells.length}</strong>
                 行还是「做」。点「确认删除」：系统会把这几行<strong>设为不做</strong>，
                 然后删除这道工序（一次完成，不留半成品）；
-                <strong>历史报工不受影响</strong>（报工按当时的工序快照）。
+                <strong>历史报工不受影响</strong>（以前报过的工按当时的工序算）。
               </p>
             ) : (
               <p
