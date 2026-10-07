@@ -1031,6 +1031,13 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
     "PUT /api/admin/notifications*": "同上（标记已读）",
     "DELETE /api/admin/notifications*": "同上（删除自己的通知）",
+    # issue #6486 包 1：定时任务（用户「预约」）—— **自助语义**，与上三条同款：
+    # 收件人 = 建单者自己（controller 从 SecurityContext 取，body 伪造不了）；
+    # 既读不到别人的待办（RLS + 租户拦截器），也写不到别人名下 ⇒ 不影响他人 ⇒ 不加码。
+    # （将来若开放「给他人设提醒」，那才是新权限面，须另案裁定。）
+    "POST /api/admin/agent/scheduled-tasks*": "自助待办：建的是**自己的**提醒（#6486）",
+    "GET /api/admin/agent/scheduled-tasks*": "同上（只看得到自己的待办）",
+    "DELETE /api/admin/agent/scheduled-tasks*": "同上（只取消自己的待办）",
     "POST /api/admin/agent/audit-logs": "内部服务**取证上报**面：加码会让受限岗位的写操作审计被 403（#4727 第 11 行，"
                                         "取证缺口不可接受 —— 这是审计明说该放行的一条）",
     "POST /api/admin/image-recognition": "图片识别（issue #5321 包 1）—— ⚠️ **本条不是「有意放行」**："
