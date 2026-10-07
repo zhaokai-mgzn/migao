@@ -563,10 +563,21 @@ def _inject_controller_top_item_renamed(src: str) -> str:
     树里的一级项是**内联构造**的，与文件上方那条 `MenuNode p1 = new MenuNode("product:list", "商品管理");`
     **声明不是同一处**。锚点打在声明上 ⇒ 判据读的树文本**一字未变** ⇒ 这条红证**静默失效**
     （#5877 改用「最终 return 的 List.of」解析后实测踩到：注入「生效」了但判据照旧全绿）。
+
+    ⚠️⚠️ **锚点不得带缩进、不得假定尾随逗号、且必须限定在 `return List.of(...)` 之内**
+    （2026-10-06 实测踩到）：一级项随编排从「工作台组之后」沉到「所有分组之后」⇒ ① 它**成了
+    `List.of(...)` 的最后一条**，尾随逗号（Java 允许但**最后一条通常不写**）随之消失；② 文件上方还有一条
+    **同名声明** `MenuNode p1 = new MenuNode("product:list", "商品管理");`，只按内容替换会**打在声明上**
+    —— 注入「生效了」（文本确实变了）但**树文本一字未改** ⇒ 判据照旧全绿，红证**静默失效**
+    （这正是本函数 docstring 第一条警告的形态，2026-10-06 二次踩中）⇒ 锚点必须先**限定到顶层 List**。
     """
-    old = 'new MenuNode("product:list", "商品管理"),'
-    assert old in src, "注入锚点失配：`MenuController` 顶层 List.of 里找不到「商品管理」条目"
-    return src.replace(old, 'new MenuNode("product:list", "商品管理X"),', 1)
+    anchor = "        return List.of(\n"
+    assert anchor in src, "注入锚点失配：`MenuController` 找不到 `return List.of(` 行"
+    head, tail = src.split(anchor, 1)
+    inner = 'new MenuNode("product:list", "商品管理")'
+    assert inner in tail, "注入锚点失配：`MenuController` 顶层 List.of 里找不到「商品管理」条目"
+    tail = re.sub(re.escape(inner) + r",?", 'new MenuNode("product:list", "商品管理X"),', tail, count=1)
+    return head + anchor + tail
 
 
 def _inject_controller_extra_node(src: str) -> str:
@@ -585,24 +596,32 @@ def _inject_controller_top_item_moved_to_front(src: str) -> str:
 
     ⚠️ 这是「位置」判据（#5877 新增）的**专属**注入：组层、一级项标签层、导航节点层**都不变**
     ⇒ 旧实现（`_parse_controller_top_items` 口径）会**全绿**通过，只有布局序列判据抓得住。
+
+    ⚠️ 2026-10-06：一级项现位于**所有分组之后**（`List.of(...)` 的最后一条，**尾随逗号已消失**）
+    ⇒ 只锚**内容**、逗号可选、且**限定在 `return List.of(...)` 之内**（否则会打在文件上方的同名声明上）；
+    注入后按 `return List.of(` 行的缩进 + 4 空格重排（与前几个条目同级）。
     """
-    entry = '\n            new MenuNode("product:list", "商品管理"),'
-    assert entry in src, "注入锚点失配：`MenuController` 顶层 List.of 里找不到「商品管理」条目"
-    src2 = src.replace(entry, "", 1)
     anchor = "        return List.of(\n"
-    assert anchor in src2, "注入锚点失配：`MenuController` 找不到 `return List.of(` 行"
-    return src2.replace(
-        anchor, anchor + '            new MenuNode("product:list", "商品管理"),\n', 1)
+    assert anchor in src, "注入锚点失配：`MenuController` 找不到 `return List.of(` 行"
+    head, tail = src.split(anchor, 1)
+    entry = 'new MenuNode("product:list", "商品管理")'
+    assert entry in tail, "注入锚点失配：`MenuController` 顶层 List.of 里找不到「商品管理」条目"
+    tail = re.sub(re.escape(entry) + r",?\n", "", tail, count=1)
+    return head + anchor + '            ' + entry + ",\n" + tail
 
 
 def _inject_front_slot_constant(src: str) -> str:
-    """把一级项的**插入位常量**改到另一个组（`workspace` → `trade-center`）⇒ 前端布局与两处服务端都不一致。
+    """把一级项的**插入位常量**改到另一个组（末组 `org-center` → 首组 `workspace`）⇒ 前端布局与两处服务端都不一致。
 
     位置是**三源共有的语义**：只改前端常量（服务端不动）就是真实会发生的漂移形态。
+    ⚠️ 锚点用**纯内容**（不含值），值会随用户裁定变化（2026-10-01 取 `workspace`、2026-10-06 改取 `org-center`）
+    ⇒ 把值写进 assert 会让每条「换个落位」的改动都先撞一次**注入失配**（红得没有信息量）。
     """
-    old = "export const STANDALONE_TOP_AFTER_GROUP_KEY = 'workspace'"
-    assert old in src, "注入锚点失配：`menu.ts` 里找不到 STANDALONE_TOP_AFTER_GROUP_KEY 声明"
-    return src.replace(old, "export const STANDALONE_TOP_AFTER_GROUP_KEY = 'trade-center'", 1)
+    prefix = "export const STANDALONE_TOP_AFTER_GROUP_KEY = '"
+    assert prefix in src, "注入锚点失配：`menu.ts` 里找不到 STANDALONE_TOP_AFTER_GROUP_KEY 声明"
+    m = re.search(re.escape(prefix) + r"[^']+'", src)
+    assert m, "注入锚点失配：STANDALONE_TOP_AFTER_GROUP_KEY 的取值形态不是 `<前缀>'<值>'`"
+    return src[: m.start()] + prefix + "workspace'" + src[m.end():]
 
 
 #: `AuthService` 里一级项的那一段（`if` + `add`）—— 三个位置注入共用同一段原文
