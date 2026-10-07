@@ -1,43 +1,37 @@
-// case_ids: PR-095
+// case_ids: PR-095, UI-092
 //
-// PR-095（issue #5159）：省料看板的**空数据不冒充 0** 与「文案不写死数字」两条纪律。
-//
-// 这两条都是**纯函数面**的判据（不需要起栈）：
-// - 判据「空数据不冒充 0」：`null` ⇒ 「无数据」，而**真 0 必须照实回 0** ——
-//   两者可区分，才不会把「没有浪费」与「还没有数据」读成同一件事（0 冒充「没有浪费」是本单点名的坑）。
+// 省料看板**纯函数面**的判据：
+// - 判据 4「空数据不冒充 0」：`null` ⇒ 「无数据」，而**真 0 必须照实回 0** ——
+//   两者可区分，才不会把「没有浪费」与「还没有数据」读成同一件事。
 // - §22 基线纪律①「文案里不出现数字」：档位文案（如「≤0.2 米」）**必须**来自服务端 `buckets[].label`。
 //   本文件用**假档位**（「≤9.9 米」）做判别性断言 —— 一旦实现里写死了「0.2」，这些断言立刻红。
+// - issue #6459「少废话」：页面自带文案有**字数上限**（加一段解释就红）—— 免得门道卡那类散文再长回来。
+// - issue #6459「首屏两个大数字」：本期取服务端 `comparison`，后端未部署 ⇒ 退回服务端 `total`，
+//   两条路都**不自己算**。
 import { describe, expect, it } from 'vitest'
 import {
   NO_DATA,
-  cohortBadge,
-  coexistenceNote,
+  batchTrendNote,
+  batchTrendTitle,
+  comparisonText,
+  footnotes,
   formatMeters,
   formatMetric,
   formatPeriod,
   formatShare,
-  metricCards,
+  metricView,
+  savedRule,
   unknownCostHint,
+  verdictWord,
 } from '@/lib/saving-board'
-
-const ok = {
-  cohorts: [
-    {
-      cohort: 'purchase',
-      le0_2Share: 0,
-      buckets: [{ label: '≤9.9 米' }, { label: '9.9~8.8 米' }],
-    },
-  ],
-  trend: { purchasedTotalMeters: 0 },
-}
 
 describe('#5159 省料看板：无数据不冒充 0', () => {
   it('null / undefined / 非数 ⇒ 无数据；真 0 ⇒ 照实回 0（两者可区分）', () => {
     expect(formatMetric(null)).toBe(NO_DATA)
     expect(formatMetric(undefined)).toBe(NO_DATA)
     expect(formatMetric(Number.NaN)).toBe(NO_DATA)
-    // 🔴 红证：把下面的 '0' 改成 NO_DATA（= 无数据冒充成「无数据」）或把上面的 null 改成 '0'
-    //    （= 无数据冒充成 0）——两条断言必有一条红。
+    // 🔴 红证：把 '0' 改成 NO_DATA（无数据冒充成「无数据」）或把上面的 null 改成 '0'
+    //    （无数据冒充成 0）—— 两条断言必有一条红。
     expect(formatMetric(0)).toBe('0')
     expect(formatMetric(0)).not.toBe(NO_DATA)
     expect(formatMetric(12.345)).toBe('12.35')
@@ -71,50 +65,73 @@ describe('#5159 省料看板：无数据不冒充 0', () => {
   })
 })
 
-describe('#5159 省料看板：两条指标并用 + 文案不写死数字', () => {
-  it('指标卡**恒两条**（缺任一条 ⇒ 红），值一律取自服务端', () => {
-    const cards = metricCards(ok)
-    expect(cards).toHaveLength(2)
-    expect(cards.map((c) => c.testId)).toEqual(['saving-metric-le-0-2', 'saving-metric-purchased'])
-    expect(cards[0].value).toBe('0.0%')
-    expect(cards[1].value).toBe('0 米')
-  })
-
+describe('#6459 省料看板：档位文案来自服务端 + 少废话 + 首屏取值', () => {
   it('🔴 档位文案来自**服务端 label**（写死「0.2」⇒ 红）', () => {
-    const cards = metricCards(ok)
-    expect(cards[0].label).toContain('≤9.9 米')
-    expect(cards[0].label).not.toContain('0.2')
-    const note = coexistenceNote(ok)
-    expect(note).toContain('≤9.9 米')
-    expect(note).not.toContain('0.2')
+    const title = batchTrendTitle('≤9.9 米')
+    expect(title).toContain('≤9.9 米')
+    expect(title).not.toContain('0.2')
+    expect(title).toContain('几乎用完的布')
   })
 
   it('取不到档位文案时退回**不含数字**的措辞（绝不自己编一个「≤0.2 米」）', () => {
-    const cards = metricCards(null)
-    expect(cards[0].label).toBe('剩余最小档的批次占比')
-    expect(coexistenceNote(null)).not.toMatch(/\d/)
+    expect(batchTrendTitle(undefined)).not.toMatch(/\d/)
+    expect(batchTrendTitle(null)).not.toMatch(/\d/)
   })
 
-  it('🔴 说明文案写明「单看①会被排料误导」（页面必须看得见，不是只写进文档）', () => {
-    const note = coexistenceNote(ok)
-    expect(note).toContain('两条指标必须并用')
-    expect(note).toContain('排料')
-    expect(note).toContain('误导')
-    // 因果链条必须写出来：排料省料 ⇒ 批次剩得更多 ⇒ 把效率提升显示成变差
-    expect(note).toContain('剩得更多')
-    expect(note).toContain('显示成变差')
+  it('🔴 页面自带文案有**字数上限**（加一段解释性散文 ⇒ 红：#6459 的「少废话」裁定）', () => {
+    // 首屏两句话（页头规则 + 趋势说明）合计不超过 120 字
+    expect(savedRule().length + batchTrendNote().length).toBeLessThanOrEqual(120)
+    // 折叠区也不许变成第二个文档
+    expect(footnotes('Asia/Shanghai').length).toBeLessThanOrEqual(7)
+    // 规则必须说清三个量（数据 / 规则说清楚「怎么省下来」）
+    expect(savedRule()).toContain('该领')
+    expect(savedRule()).toContain('排料实际领走')
+    expect(savedRule()).toContain('进价')
   })
 
-  it('无数据时两张卡都显示「无数据」，**不是 0**', () => {
-    const empty = metricCards({ cohorts: [], trend: { purchasedTotalMeters: null } })
-    expect(empty).toHaveLength(2)
-    expect(empty.map((c) => c.value)).toEqual([NO_DATA, NO_DATA])
-    expect(empty.map((c) => c.value)).not.toContain('0')
+  it('🔴 内部口径词不进这层文案（切换后 / 存量导入 / 来源未知）', () => {
+    const text = [savedRule(), batchTrendNote(), ...footnotes()].join('\n')
+    expect(text).not.toContain('切换后')
+    expect(text).not.toContain('存量导入')
+    expect(text).not.toContain('来源未知')
+    // 历史库存这件事要用商家的话说（元守卫 `user-copy-jargon-guard` 的形态③ 是这条的类级收口）
+    expect(text).toContain('老库存')
   })
 
-  it('存量导入组带「单列」徽标（判据 2 的可见形态）', () => {
-    expect(cohortBadge('opening')).toContain('单列')
-    expect(cohortBadge('purchase')).toBeNull()
-    expect(cohortBadge('unknown')).toBe('来源未知')
+  it('🔴 首屏大数字 = 服务端本期值；后端未部署 ⇒ 退回服务端累计值（两条路都不自己算）', () => {
+    const delta = { period: '2026-10', current: 55, previous: 120, verdict: 'worse' }
+    expect(metricView(delta, 99)).toEqual({ period: '2026-10', value: 55, cumulative: 99 })
+
+    // 无 comparison（后端未部署）⇒ 大数字退回**累计**（服务端 total），期间不编一个
+    expect(metricView(undefined, 99)).toEqual({ period: null, value: 99, cumulative: 99 })
+    expect(metricView(null, null).value).toBeNull()
+
+    // 本期读不出（current 为 null）⇒ 同样退回累计，且**不假装有本期**
+    expect(metricView({ period: '2026-10', current: null }, 99)).toEqual({
+      period: null,
+      value: 99,
+      cumulative: 99,
+    })
+  })
+
+  it('环比文案：好坏词只来自服务端 verdict；null verdict ⇒ 明说「不给好坏」', () => {
+    const worse = comparisonText(
+      { period: '2026-10', previousPeriod: '2026-09', current: 55, previous: 120, verdict: 'worse' },
+      'meters'
+    )
+    expect(worse).toContain('变差')
+    expect(worse).toContain('55 米')
+
+    const withheld = comparisonText(
+      { period: '2026-10', previousPeriod: '2026-09', current: 55, previous: 120, verdict: null },
+      'meters'
+    )
+    expect(withheld).toContain('不给好坏')
+    expect(withheld).not.toContain('变好')
+    expect(withheld).not.toContain('变差')
+
+    // 未知取值不猜（不回落成「持平」）
+    expect(verdictWord('weird')).toBeNull()
+    expect(verdictWord('partial')).toContain('还没过完')
   })
 })

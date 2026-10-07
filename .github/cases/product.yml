@@ -3494,11 +3494,13 @@ cases:
       - "判据 1·**汇总一致**：`saving-board` 的合计与分组腿 == 逐单读面 `Σ saved_meters` / `Σ saved_amount`，**逐值相等**。判别性做法：夹具里放两行 `0.1 米 × 12.345 元` ⇒「逐行先取整再求和」= 2.46、「整段求和再取整」= 2.47，两个读数在同一测试里对照打印 ⇒ 这条判据不是自说自话。**红证 = 把金额腿改成 `ROUND(SUM(...), 2)`** ⇒ 当场红（实测 103.76 → 103.77）。"
       - "判据 5·**单价口径**：`UPDATE stock_batches SET unit_cost = 99` 之后重读看板 ⇒ 省料金额**一字不变**（用的是行内快照 `stock_batch_consumptions.unit_cost`）。**红证 = 把金额腿改成读批次现价 `b.unit_cost`** ⇒ 当场红（实测 103.76 → 1227.6）。⚠️ 复读前必须 `session.clearCache()`（MyBatis 一级缓存按 SqlSession；不清缓存会读回改前值 ⇒ **断言恒真 = 空断言**，本单实测踩到并已修）。"
       - "判据 3·**粒度 fail-closed**：未知粒度 ⇒ 400 显式拒绝（**不静默回落 month**）；`week` 走 ISO 周（`YYYY-Www`）且响应的 `timezone` 显式为 `Asia/Shanghai`。**红证 = 把 default 改成回落 month** ⇒ 当场红。"
+      - "判据 6·**批次结构趋势（issue #6459）**：`Board.batchTrend` 按**批次收货期间**给出「几乎用完（剩余最小档）的批数 / 该期批数 / 占比」，**只含 `purchase`**（存量导入与来源未知**不进序列**）。真库读数（同夹具）：采购在 2026-09（2 批 / 0 批几乎用完 / 0.0000）、存量在 2026-08 ⇒ 序列**只有 2026-09 一行**；**红证 = 把存量并进来** ⇒ 多出 2026-08 一行、合计由 2 变 4。定点判据 = `SavingMetricsBatchTrendTest`（同期多行相加 / 期间升序 / 未记收货日期不猜 / 1÷3 ⇒ 0.3333）。复用**已加载的行**内存聚合（**零新增 SQL**）；`Board` 既有 component 的顺序与名字一字未动（**只在末尾追加** `batchTrend`）。"
     skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-23 新增（issue #5159 剩余范围）：L2/L3 汇总读面 —— 汇总一致（逐值相等）+ 单价快照口径 + 粒度 fail-closed。取号 PR-093（本单硬分配区间 PR-093~PR-096）。 ｜ 2026-10-06（issue #6430 用例库同步）：本用例的读面**只加不改**地新增了 `comparison`（相邻两期环比；口径与判据另立 PR-127），**本用例三条判据一字不放宽**；同批前端改动见 UI-092（含一处**定位串**改判：批次分组行 testid 由 `…-<cohort>-<period>` 改为 `…-<cohort>-<period>-<skuCode|productId>`，原因 = 同一 cohort+period 下多行时旧 testid 撞车、定位不到具体行，断言强度不变）。"
+    merge_log: "2026-09-23 新增（issue #5159 剩余范围）：L2/L3 汇总读面 —— 汇总一致（逐值相等）+ 单价快照口径 + 粒度 fail-closed。取号 PR-093（本单硬分配区间 PR-093~PR-096）。 ｜ 2026-10-06（issue #6430 用例库同步）：本用例的读面**只加不改**地新增了 `comparison`（相邻两期环比；口径与判据另立 PR-127），**本用例三条判据一字不放宽**；同批前端改动见 UI-092（含一处**定位串**改判：批次分组行 testid 由 `…-<cohort>-<period>` 改为 `…-<cohort>-<period>-<skuCode|productId>`，原因 = 同一 cohort+period 下多行时旧 testid 撞车、定位不到具体行，断言强度不变）。 ｜ 2026-10-07（issue #6459 用例库同步）：**只增不减**新增判据 6（`batchTrend` 只含采购腿）；新增序列是**追加**在 `Board` 末尾的 component、既有 component 顺序与名字一字未动 ⇒ 判据 1/3/5 逐条不变（前端改动见 UI-092 的改判记录）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/SavingMetricsBoardRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/SavingMetricsBatchTrendTest.java"
         - "frontend/admin-web/tests/unit/components/SavingBoard.test.tsx"
       ci:
         - pr-check.yml
@@ -3525,9 +3527,9 @@ cases:
       - "判据 2·**存量单列**：`cohorts` 三组恒在（含 `opening`）；切换后 `batchCount` = 2（**不含**存量批次）、存量组 `batchCount` = 2；存量组自证 `opening=true`；两组各有自己的 `le0_2Share`。**红证 = 把 `opening` 并进 `purchase`** ⇒ 当场红（实测存量批次读数 2 → 0）。"
       - "判别性对照读数（同夹具）：切换后占比 = **0/2 = 0.0000**、存量占比 = **1/2 = 0.5000**、**若把存量混进切换后 = 1/4 = 0.2500** —— 三个数在同一测试里都在 ⇒「不混入」这句话可证伪。"
       - "分组腿同样单列：`batchGroups` 里存量批次落在 `cohort=opening` 的**独立组**（时间维度 = 收货月），且**不存在**「存量 + 切换后」混在一起的组。"
-      - "页面面（`SavingBoard.test.tsx`）：存量导入**独立成卡**并带「存量导入·单列」徽标，占比 50.0% 与「切换后」的 0.0% 是两个数。**红证 = 让存量卡显示切换后的占比** ⇒ 当场红。"
+      - "页面面（`SavingBoard.test.tsx`）：🔴 **2026-10-07 改判（issue #6459）** —— 旧写的「存量导入独立成卡并带「存量导入·单列」徽标」**已作废**（来源组对照表连同它的三个内部标签被用户裁定从页面删除）。**口径一字不放宽、呈现改说人话**：存量批次仍**不进**趋势的分子分母（服务端 `batchTrend` 只含采购腿；真库读数 = 存量所在的 2026-08 **整期缺席**），页面上这件事只用商家的话在折叠区说一次（「趋势只统计系统里采购入库的批次：开业时导入的老库存不算」）。**红证 = 让趋势序列吃全量来源** ⇒ 行数由 1 变 2、合计由 2 变 4 ⇒ 当场红。新增的**类级元守卫** = `user-copy-jargon-guard` 的形态③（`切换后` / `存量导入` / `来源未知` 三个服务端标签进用户可见文案即红）。"
     skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-23 新增（issue #5159 剩余范围）：存量导入批次单列成组（历史包袱不进切换后的分子分母）。取号 PR-094。"
+    merge_log: "2026-09-23 新增（issue #5159 剩余范围）：存量导入批次单列成组（历史包袱不进切换后的分子分母）。取号 PR-094。 ｜ 2026-10-07（issue #6459 用例库同步，用户裁定）：**页面面改判** —— 存量单列这件事不再以「独立成卡 + 徽标」呈现（那种呈现把三个内部标签端给了新用户），改由「趋势只含采购腿」+ 折叠区的人话说明承担；**服务端判据（判据 2 / 对照读数 / 分组腿单列）一条不动**。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/SavingMetricsBoardRealDbTest.java"
@@ -3557,10 +3559,10 @@ cases:
       - "判据 4·**空租户**（无批次/无入库/无消耗）：每组 `batchCount=0` 但 `le0_2Share` / `savedMeters` / `savedAmount` / `remainingMeters` / 四档 `share` **一律 `null`**（**不是 0**）；`batchGroups` / `savedGroups` 为空、`trend.points` 为空且三个合计为 `null`。"
       - "判据 4·**真 0 与无数据可区分**（同夹具对照）：非空租户里「分母 2、分子 0」必须是 `0.0000`（真 0），而空租户同名字段是 `null`。**红证 = 让分母为 0 时回落 `BigDecimal.ZERO`** ⇒ 当场红（实测 expected null but was 0）。"
       - "判据 4·**分母 0 ⇒ 比率 null**：有消耗但明细行没有面积（`order_item_id` 不存在于 `order_items`）⇒ `outputAreaM2 = 0` 而 `metersPerM2` 必须 `null`（不得回落成 0 —— 会读成「一点布都没用」）。另：同一明细行有两行扣减 ⇒ 面积**按 `order_item_id` 去重**（否则分母虚高、效率被说好）。"
-      - "页面面：无数据时两张指标卡渲染「无数据」且**不得出现 `0.0%` / `0 米`**；三段表（L2/L1/L3）空数据渲染「无数据」而不是空表或 0。**红证 = 让 `formatMetric(null)` 回 `'0'`** ⇒ 前端判据当场红（实测 5 failed / 17）。"
-      - "§22 基线纪律①（文案不写死数字）：档位文案（如「≤0.2 米」）**必须**来自服务端 `buckets[].label`。**红证 = 在助手/页面里硬编码「≤0.2 米」** ⇒ 当场红（两条断言各红一次）。"
+      - "页面面（🔴 **2026-10-07 改判，issue #6459**）：旧写的「无数据时两张指标卡渲染「无数据」」**已作废**（那两张卡被用户裁定删除）；现口径 = 首屏两个大数字（`saving-metric-saved-meters` / `saving-metric-saved-amount`）在无数据时渲染「无数据」且**不得出现 `0 米` / `0 元`**；趋势表与明细表空数据渲染「无数据」而不是空表或 0。**红证 = 让 `formatMetric(null)` 回 `'0'`** ⇒ 前端判据当场红（红证机具第 1 条变异：`Tests 3 failed | 25 passed`）。"
+      - "§22 基线纪律①（文案不写死数字）：档位文案（如「≤0.2 米」）**必须**来自服务端 `buckets[].label`（现用于趋势表标题 `batchTrendTitle`）。**红证 = 在助手/页面里硬编码「≤0.2 米」** ⇒ 当场红（红证机具第 5 条变异：`Tests 1 failed | 27 passed`）。"
     skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-23 新增（issue #5159 剩余范围）：空数据不冒充 0（含量纲为「比率」的分母 0 一格）+ 文案不写死数字。取号 PR-095。"
+    merge_log: "2026-09-23 新增（issue #5159 剩余范围）：空数据不冒充 0（含量纲为「比率」的分母 0 一格）+ 文案不写死数字。取号 PR-095。 ｜ 2026-10-07（issue #6459 用例库同步）：**页面面定位串改判** —— 判据不变（无数据不冒充 0、档位文案来自服务端），落点由两张指标卡改为「首屏两个大数字 + 趋势表 + 明细表」；服务端四条判据（空租户 / 真 0 与无数据可区分 / 分母 0 ⇒ 比率 null / 面积去重）一字未动。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/SavingMetricsBoardRealDbTest.java"
@@ -3572,7 +3574,7 @@ cases:
 
   - id: PR-096
     legacy_id: ""
-    title: "🔴 两条指标并用（① 剩余最小档批次占比 + ② 入库/采购总米数）+ 页面写明「单看①会被排料误导」+ 不损失客户"
+    title: "🔴 省料看板「两条指标并用」**已按用户裁定从页面删除**（issue #6459 改判）+ 前端零算术 + 不损失客户"
     domains:
       - product
       - inventory
@@ -3588,12 +3590,12 @@ cases:
       - "省了多少料（L2 批次分档聚合 / L3 单位产出消耗）—— 非 LLM 行为，由真 PG Java 判据与前端组件判据覆盖"
     expectations: []
     data_checks:
-      - "判据 3·**两条指标都在**：页面恒渲染两张卡（`saving-metric-le-0-2` / `saving-metric-purchased`），指标②只含 `purchase` 腿、**不含**存量导入（该月只有存量导入时②必须是「无数据」而不是把存量米数算成采购）。**红证 = 页面上只剩指标①**（`cards.slice(0, 1)`）⇒ 当场红。"
-      - "判据 3·**「单看①会误导」写在页面上**（不是只写进文档）：说明条含「两条指标必须并用」「排料」「误导」「剩得更多」「显示成变差」五要素。**红证 = 删掉这句因果** ⇒ 当场红。"
-      - "判据 1（页面面）·**米数/金额原样渲染服务端值**：桩数据**故意不自洽**（分组腿 77 米 vs 来源组卡 12.4 米、合计 99 米）⇒ 前端任何「顺手求和/求差」都会让断言红。"
+      - "🔴 **2026-10-07 整条改判（issue #6459，用户逐字「这个功能只需要用数据和规则说清楚我们是如何省下多少布料，节省了多少成本即可」+「这么多废话文字留在页面上只会干扰用户」）**：旧的两条判据 ——「页面恒渲染两张卡（`saving-metric-le-0-2` / `saving-metric-purchased`）」与「说明条含『两条指标必须并用 / 排料 / 误导 / 剩得更多 / 显示成变差』五要素」—— **随两张卡与那条说明一起作废**（它们正是用户点名删掉的东西）。新形态 = 首屏**两张省料结论卡**（`saving-metric-saved-meters` / `saving-metric-saved-amount`，值原样取服务端 `comparison`，读不出退回服务端 `total`）+ **一张「几乎用完的布 · 批数」趋势表**（服务端 `batchTrend`，只含采购腿）+ 默认收起的省料明细与口径区。新判据落点 = UI-092。**红证（注入式，实测）**：把旧区块写回页面 ⇒ `SavingBoardStory.test.tsx` 的「旧形态结构性退场」当场红；把内部口径词搬到首屏 ⇒ `Tests 1 failed | 27 passed`（§6459 红证机具第 6 条变异）。"
+      - "⚠️ **删的是呈现，不是口径**（判据一条不放宽）：① 指标①的实质（布有没有被用干净）以「几乎用完的布 · 批数」趋势继续在页面上；② 旧指标②（采购总米数）退出首屏，但**历史导入不进计量腿**这条服务端口径一字未改（PR-094）；③ 前端仍**零算术、零好坏判定**（下一条）。"
+      - "判据 1（页面面）·**米数/金额原样渲染服务端值**：桩数据**故意不自洽**（本期 55 米 / 逐单分组腿 77 米 / 合计 99 米，三个数互不相等）⇒ 前端任何「顺手求和/求差」都会让断言红（红证机具第 2、3 条变异分别打首屏大数字与合计行，实测 `3 failed / 25 passed` 与 `1 failed / 27 passed`）。"
       - "判据 6·**不损失客户**：两次读面调用之后 `product_skus.stock` / `orders.total_amount` / `stock_ledger_entries` 行数**逐值不变**（读面不写任何东西）。未记均价的行数以「另有 N 行未记批次均价，金额不含这些行」显式渲染（否则「读不出」会被读成「只省了这么点」）。"
     skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-23 新增（issue #5159 剩余范围）：两条指标并用 + 页面写明误导原因 + 不损失客户。取号 PR-096。"
+    merge_log: "2026-09-23 新增（issue #5159 剩余范围）：两条指标并用 + 页面写明误导原因 + 不损失客户。取号 PR-096。 ｜ 2026-10-07 **整条改判（issue #6459，用户亲裁）**：用户看过重做版首屏后判定「切换后（采购入库）这种概念让新用户无法理解」「这么多废话文字留在页面上只会干扰用户」，并明确「只需要用数据和规则说清楚我们是如何省下多少布料，节省了多少成本即可」⇒ 原判据「两条指标必须并用 / 页面必须写明单看①会被排料误导」**随两张卡与说明条一起废除**（这是对 #5144 的**有意推翻**，不是放宽）；**保留并加强的是**：前端零算术、无数据不冒充 0、历史导入不进计量腿、不损失客户四条。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/SavingMetricsBoardRealDbTest.java"
@@ -5049,9 +5051,9 @@ cases:
       - "判据 4·**真库自洽**：`SavingMetricsBoardRealDbTest` 在真 PG 夹具上断言 `comparison` 的期间/数值与既有分组行**逐值自洽**（本期值 == `points` / 分组腿同期的值），并有反向对照「上期 ≠ 本期」。实测读数（2026-10-06）：`savedMeters 5.6 → 1 / savedAmount 69.96 → 5 / le0_2Share 0.5 → 0 (verdict=null) / purchased 15 (unknown) / metersPerM2 0.4583 → 0.8276 (worse)`。"
       - "判据 6·**本期还没过完 ⇒ 不给方向（`partial`，2026-10-06 页面多模态验收反哺）**：`period` == 当前所在期间（业务时区；月 = `YYYY-MM`、周 = `ISO 周历年` 的 `IYYY-\"W\"IW`）⇒ `verdict = \"partial\"`，**只覆盖 better/worse/same**，**不覆盖** `unknown`（判不了更具体）与 `null`（有意不给）。病根 = 拿「才过 6 天的月份」与整月比大小 ⇒ 把「这个月还没进货」读成「买得更克制」（实测读数：上期 13236.5 米 → 本期 220.5 米 → 「变好了」）。定点判据用**注入的当前期间**（与「今天几号」解耦，不会下个月自己变红）；真库判据相应放宽为 `isIn(\"worse\", \"partial\")`（**仍禁止 better**）。"
       - "判据 6c·**行级序列按期间汇总**：环比原始行是（期间 × 来源组 × 物料）粒度 ⇒ 用前必须按期间相加成一期一行，否则「相邻两期」会取到**同一个月的两行**（实测红证：页面打出「上期 **2026-10**：1.3 米 → 本期 **2026-10**：10.3 米」）。判据 = 定点 `aggregateByPeriod`（同期两行相加、全 null 期间整条不进序列 + 汇总后两期必不相同） + 真库「`previousPeriod != period`」。"
-      - "判据 5·**零新增 SQL、只加不改**：对比全部由 `savingBoard` / `savingTrend` **已加载的行**内存聚合（未加查询、未碰 mapper/XML、无迁移）；`Board` / `Trend` 既有 component 的顺序与名字一字未动（只在末尾追加 `comparison`）⇒ 既有消费方（ai-agent 的 `batch_stock_query` 按 key 取值）不受影响。"
+      - "判据 5·**零新增 SQL、只加不改**：对比全部由 `savingBoard` / `savingTrend` **已加载的行**内存聚合（未加查询、未碰 mapper/XML、无迁移）；`Board` / `Trend` 既有 component 的顺序与名字一字未动（只在末尾追加 `comparison`）⇒ 既有消费方（ai-agent 的 `batch_stock_query` 按 key 取值）不受影响。 ｜ 2026-10-07（issue #6459）：同批在 `Board` 末尾**再追加**一个 component `batchTrend`（只含采购腿、由已加载的 `batchGroups` 内存聚合，**零新增 SQL**）；既有 component 的顺序与名字**仍**一字未动 ⇒ 本判据继续成立。"
     skip_reason: "[backend-contract] 读面契约与口径（无 LLM 环节）⇒ 由 Java 定点判据 + 真 PG 判据覆盖，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-06 新增（issue #6430，用户两轮逐字）。取号 = 现取 `origin/main` 最大号 + 1（本仓取号法见 `tests/unit_ci_workflows/test_case_id_claims.py` 头注；`origin/main` 现取最大 = PR-126）⇒ PR-127。红证（实现前实测）：`./mvnw -q test -Dtest=SavingMetricsComparisonTest` 得 `COMPILATION ERROR … 找不到符号 类 MetricDelta / 方法 delta(...)`（契约点不存在 ⇒ 9 条判据一条都跑不到）；实现后 `Tests run: 12, Failures: 0, Errors: 0`（含 partial、期间键、**行级序列按期间汇总**三条，均由 2026-10-06 页面多模态验收反哺追加），真库 `Tests run: 7, Failures: 0`。 ｜ 2026-10-06 CI 反哺：首推被 `BusinessClockSourceGuardTest` 判红（我在服务里自取 `Instant` 时刻 = 业务「今天」的**第二个来源**，issue #3802 禁止）⇒ 改为**注入 `BusinessClock`**（业务时间单点，仓库 6+ 服务同一写法）并同批给 13 个手工构造点补 `BusinessClock` 实参；三条钟源守卫 + 本用例 19 条现取全绿。"
+    merge_log: "2026-10-06 新增（issue #6430，用户两轮逐字）。取号 = 现取 `origin/main` 最大号 + 1（本仓取号法见 `tests/unit_ci_workflows/test_case_id_claims.py` 头注；`origin/main` 现取最大 = PR-126）⇒ PR-127。红证（实现前实测）：`./mvnw -q test -Dtest=SavingMetricsComparisonTest` 得 `COMPILATION ERROR … 找不到符号 类 MetricDelta / 方法 delta(...)`（契约点不存在 ⇒ 9 条判据一条都跑不到）；实现后 `Tests run: 12, Failures: 0, Errors: 0`（含 partial、期间键、**行级序列按期间汇总**三条，均由 2026-10-06 页面多模态验收反哺追加），真库 `Tests run: 7, Failures: 0`。 ｜ 2026-10-06 CI 反哺：首推被 `BusinessClockSourceGuardTest` 判红（我在服务里自取 `Instant` 时刻 = 业务「今天」的**第二个来源**，issue #3802 禁止）⇒ 改为**注入 `BusinessClock`**（业务时间单点，仓库 6+ 服务同一写法）并同批给 13 个手工构造点补 `BusinessClock` 实参；三条钟源守卫 + 本用例 19 条现取全绿。 ｜ 2026-10-07（issue #6459）：前端**不再渲染** `le0_2Share` 与 `purchasedMeters` 的环比（两张卡连同单位产出趋势被用户裁定删除，页面改为**一条读面** ⇒ 旧 UI-092 的「两腿同参」漂移面结构性消失）；服务端口径（期间选择 / verdict 四态 / partial / 行级按期间汇总）与真库自洽判据**一字未动**。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/SavingMetricsComparisonTest.java"

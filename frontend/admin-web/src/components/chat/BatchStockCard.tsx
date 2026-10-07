@@ -220,8 +220,9 @@ export default function BatchStockCard({ data }: { data: BatchStockCardData }) {
           <span className="text-neutral-900">{formatMeters(data.consumedTotalMeters)}</span>
         </div>
         <div className={ROW_CLASS}>
-          {/* 存量导入单列（口径：它不是「这个月的采购」） */}
-          <span className="text-neutral-500">存量导入入库（单列）</span>
+          {/* 老库存单列（口径：它不是「这个月的采购」）。**不上屏**服务端分组标签 `cohortLabel`
+              —— 那三个词商家读不懂，见 issue #6459 与 `user-copy-jargon-guard` 的形态③ */}
+          <span className="text-neutral-500">开业时导入的老库存（单列）</span>
           <span className="text-neutral-900">{formatMeters(data.openingTotalMeters)}</span>
         </div>
       </Shell>
