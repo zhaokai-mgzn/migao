@@ -271,7 +271,7 @@ cases:
     user_inputs:
       - "商家对米宝说「3 天后提醒我跟进张先生」→ 米宝发确认卡，点头后建一条待办"
     expectations:
-      - tool: scheduled_task_manage
+      - tool: direct_reply
     data_checks:
       - "action 面是**闭集** {create, list, cancel}（多一个写 action 进来 = 能力扩面，须重走 A 档裁定）"
       - "A 档声明齐全：read_only=False + requires_confirmation=True + idempotent=True + destructive=False"

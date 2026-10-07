@@ -95,6 +95,8 @@ BASE_PY = SERVICE_ROOT / "app" / "tools" / "base.py"
 #: ⇒ 解析集合少一个 ⇒ 名单同步（工具类文件仍在，正是"比注册表不比文件"的活例，
 #: 与 `#3917` 的 `processing_order_*` 同款）。
 KNOWN_REGISTERED_TOOLS: frozenset[str] = frozenset({
+    # issue #6486 包 2：定时提醒（用户「预约」）的 A 档可逆写工具
+    "scheduled_task_manage",
     "after_sales_manage", "aftersale_create", "aftersale_query", "category_manage",
     "curtain_calc", "customer_address_query", "customer_logistics_track", "customer_manage",
     "customer_order_query", "dashboard_stats", "employee_manage", "finance_api",

@@ -305,6 +305,15 @@ CARD_DB_CONSISTENCY_LEDGER: dict = {
         "note": "`price` 属 CARD_ONLY_VALUE_FIELDS ⇒ 建品调用带该字段即入按值比对（该比对与工具无关）",
     },
     # ── ② 结构上不可判定（逐条给理由，**不静默跳过**）──────────────────────────
+    "scheduled_task_manage": {
+        "stance": UNDECIDABLE,
+        "anchor": "#6486",
+        "issue": "#6486",
+        "owner": "定时提醒域写路径 owner（scheduled_task_manage）",
+        "reason": "参数面（fire_at / task_type / criterion / action_label / action_url）**无金额字段** ⇒ "
+                  "没有卡值比对载体；且它落库的是**待办计划**（到点只投站内通知、不执行业务写），"
+                  "业务账在该域不存在 —— 是「结构上无从比对」，不是「没登记」。",
+    },
     "order_manage": {
         "stance": UNDECIDABLE,
         "anchor": "#4025",

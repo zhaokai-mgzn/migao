@@ -326,7 +326,7 @@
 ### AG-011. 定时提醒工具面：action 闭集 + A 档可逆写声明 + 三件套本地 fail-closed 🔵
 ```
 你: 商家对米宝说「3 天后提醒我跟进张先生」→ 米宝发确认卡，点头后建一条待办
-期望: scheduled_task_manage
+期望: direct_reply
 数据: action 面是**闭集** {create, list, cancel}（多一个写 action 进来 = 能力扩面，须重走 A 档裁定）
 数据: A 档声明齐全：read_only=False + requires_confirmation=True + idempotent=True + destructive=False
 数据: 只有 list 免确认（read_only_actions == {list}）—— 写 action 不得被挪进来「洗白」

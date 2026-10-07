@@ -71,6 +71,10 @@ from pathlib import Path
 # tests/unit_ci_workflows/test_case_trust_gate.py::TestDegenerateGuardRails
 #   ::test_write_tool_sets_only_name_reachable_tools（真值 = eval_case_filter 的两端工具集并集）。
 WRITE_TOOLS: frozenset[str] = frozenset({
+    # issue #6486 包 2：定时提醒（用户「预约」）的 A 档可逆写 —— `read_only=False`，
+    # 且**未**声明 `read_only_actions` 之外的写 action 豁免（`list` 是只读 action，
+    # `create` / `cancel` 是写）⇒ 整工具归入本表（否则含它期望的用例不被分类为写用例）。
+    "scheduled_task_manage",
     # read_only = False 且**未**声明 read_only_actions 的工具
     # ⚠️ `human_handoff` 已于 2026-09-19 按用户裁定退场（模型不可达：不在默认注册表、
     #    不在任何 skill 工具集）⇒ **从本表移除**（本表只列当前可达的工具，见上方幽灵

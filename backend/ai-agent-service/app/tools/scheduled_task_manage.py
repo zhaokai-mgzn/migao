@@ -35,7 +35,7 @@ from typing import Any, Dict, Optional
 
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 #: 本工具 action 面的**唯一真值**（判据 `tests/test_scheduled_task_manage.py` 钉住）
@@ -229,11 +229,9 @@ class ScheduledTaskManageTool(BaseTool):
         )
 
         if not response.get("success"):
-            return ToolResult(
-                success=False,
-                error=response.get("error", {}).get("code", "create_failed")
-                if isinstance(response.get("error"), dict)
-                else "create_failed",
+            return admin_api_failure(
+                response,
+                error="create_failed",
                 message=response.get("message") or "创建提醒失败",
                 suggestion="请核对触发时刻格式（带时区的 ISO8601）与三件套后重试",
             )
@@ -261,8 +259,8 @@ class ScheduledTaskManageTool(BaseTool):
             user_id=context.user_id,
         )
         if not response.get("success"):
-            return ToolResult(
-                success=False,
+            return admin_api_failure(
+                response,
                 error="list_failed",
                 message=response.get("message") or "查询提醒失败",
                 suggestion="请稍后重试",
@@ -296,8 +294,8 @@ class ScheduledTaskManageTool(BaseTool):
             user_id=context.user_id,
         )
         if not response.get("success"):
-            return ToolResult(
-                success=False,
+            return admin_api_failure(
+                response,
                 error="cancel_failed",
                 message=response.get("message") or "取消失败",
                 suggestion="请稍后重试",
