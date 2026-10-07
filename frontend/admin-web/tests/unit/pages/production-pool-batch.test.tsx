@@ -167,10 +167,11 @@ describe('智能派单 · 成批区（PR-081）', () => {
     fireEvent.click(screen.getByLabelText('选择订单 MG-0009'))
 
     await waitFor(() => expect(mockPreview).toHaveBeenCalledTimes(1))
+    // issue #6408：逐行带指派 + 显式 fifo —— 空指派 ⇒ 服务端一次都不扣料、省料恒 0
     expect(mockPreview).toHaveBeenCalledWith({
       orderIds: ['o9'],
-      batches: [],
-      assignmentRule: null,
+      batches: [{ orderId: 'o9', itemId: 'i9' }],
+      assignmentRule: 'fifo',
       pooled: true,
     })
 
@@ -231,8 +232,11 @@ describe('智能派单 · 成批区（PR-081）', () => {
     await waitFor(() =>
       expect(mockPreview).toHaveBeenLastCalledWith({
         orderIds: ['o9', 'o1'],
-        batches: [],
-        assignmentRule: null,
+        batches: [
+          { orderId: 'o9', itemId: 'i9' },
+          { orderId: 'o1', itemId: 'i1' },
+        ],
+        assignmentRule: 'fifo',
         pooled: true,
       }),
     )
@@ -244,8 +248,11 @@ describe('智能派单 · 成批区（PR-081）', () => {
     await waitFor(() => expect(mockDispatch).toHaveBeenCalledTimes(1))
     expect(mockDispatch).toHaveBeenCalledWith({
       orderIds: ['o9', 'o1'],
-      batches: [],
-      assignmentRule: null,
+      batches: [
+        { orderId: 'o9', itemId: 'i9' },
+        { orderId: 'o1', itemId: 'i1' },
+      ],
+      assignmentRule: 'fifo',
       pooled: true,
     })
 

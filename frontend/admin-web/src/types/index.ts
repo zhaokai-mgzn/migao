@@ -3710,9 +3710,20 @@ export interface PoolBoard {
  * 池化派单请求体（`/preview` 与 `/dispatch` **同体**）。
  * `pooled: true` = 成批池化派单；`pooled: false` + 单订单 = **加急插队**（一个动作，同一个端点）。
  */
+/**
+ * 逐面料行的批次指派 —— 与后端 `ProcessingOrderGenerateRequest.BatchAssignment` 逐字同义。
+ *
+ * `batchNo` **留空** ⇒ 由 `assignmentRule` 按 #5167 的规则补位（= 算法替商家挑批次，issue #6408）。
+ */
+export interface PoolBatchAssignment {
+  orderId: string
+  itemId: string
+  batchNo?: string | null
+}
+
 export interface PoolDispatchRequest {
   orderIds: string[]
-  batches: unknown[]
+  batches: PoolBatchAssignment[]
   assignmentRule: string | null
   pooled: boolean
 }

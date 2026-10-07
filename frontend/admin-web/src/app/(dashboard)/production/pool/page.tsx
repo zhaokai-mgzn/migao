@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Layers, RefreshCw, XCircle, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
@@ -62,6 +62,18 @@ export default function ProductionPoolPage() {
   /** 正在单派的订单 id（按钮级 loading，避免连点重复派单） */
   const [singlePending, setSinglePending] = useState<string | null>(null)
 
+  /**
+   * 勾选中的**池行**（`orderId` + `itemId`）。
+   *
+   * 🔴 派单请求体必须**逐行带指派**（issue #6408）：空指派 ⇒ 服务端 `buildDesignations`
+   * 直接返回空 ⇒ 池级排料求解器一次都不跑 ⇒ 不落扣料行、「预计节省」恒 0.00。
+   * 取值口径复用成批候选的**唯一入口** `batchGroups`（不在这里另写一份 `groups` 遍历）。
+   */
+  const selectedLines = useMemo(
+    () => batchGroups(board).flatMap((g) => g.lines).filter((l) => selectedIds.includes(l.orderId)),
+    [board, selectedIds],
+  )
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -80,7 +92,7 @@ export default function ProductionPoolPage() {
 
   // 勾选订单 ⇒ 调 /preview（预览是「这批派下去会领多少料」的唯一真值来源）
   useEffect(() => {
-    if (selectedIds.length === 0) {
+    if (selectedLines.length === 0) {
       setPreview(null)
       setPreviewError('')
       return
@@ -88,7 +100,7 @@ export default function ProductionPoolPage() {
     let cancelled = false
     void (async () => {
       try {
-        const res = await poolBoardApi.preview(buildPoolRequest(selectedIds, true))
+        const res = await poolBoardApi.preview(buildPoolRequest(selectedLines, true))
         if (cancelled) return
         setPreview(res.data?.data ?? null)
         setPreviewError('')
@@ -101,7 +113,7 @@ export default function ProductionPoolPage() {
     return () => {
       cancelled = true
     }
-  }, [selectedIds])
+  }, [selectedLines])
 
   const toggleOrder = (orderId: string) => {
     setSelectedIds((prev) =>
@@ -120,7 +132,7 @@ export default function ProductionPoolPage() {
     setSinglePending(line.orderId)
     setDispatchError('')
     try {
-      const res = await poolBoardApi.dispatch(buildPoolRequest([line.orderId], false))
+      const res = await poolBoardApi.dispatch(buildPoolRequest([line], false))
       const rows = res.data?.data ?? []
       setResults(rows)
       const done = rows.find((r) => r.success)
@@ -147,7 +159,7 @@ export default function ProductionPoolPage() {
     setDispatching(true)
     setDispatchError('')
     try {
-      const res = await poolBoardApi.dispatch(buildPoolRequest(selectedIds, true))
+      const res = await poolBoardApi.dispatch(buildPoolRequest(selectedLines, true))
       const rows = res.data?.data ?? []
       setResults(rows)
       const okCount = rows.filter((r) => r.success).length
