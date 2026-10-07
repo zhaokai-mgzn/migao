@@ -40,9 +40,14 @@ import ts from 'typescript'
 export const SCAN_DIRS = ['src/app', 'src/components', 'src/lib']
 const SKIP_DIRS = new Set(['node_modules', '.next', 'dist', 'coverage', '__pycache__'])
 
-/** 不上屏的 JSX 属性（id / 样式 / 测试钩子 / 图标几何） */
-const ATTR_DENY =
-  /^(className|style|id|key|htmlFor|type|name|role|href|src|rel|target|autoComplete|inputMode|pattern|fill|stroke|viewBox|xmlns|d|width|height|tabIndex|loading|decoding|sizes|as|ref|data-|aria-hidden|testId)/
+/**
+ * **只认这些 JSX 属性**里的值是文案（白名单，不是黑名单）。
+ *
+ * 反面清单（黑名单）不够用 —— 实测漏过 `value="pending_review"`、`fieldKey="door_width"`、
+ * `stopColor="#6366f1"`：它们都是 JSX 属性值，却**不是给商家看的字**。
+ */
+const ATTR_COPY =
+  /^(label|title|hint|impact|boundary|placeholder|description|desc|sub|subtitle|suffix|prefix|alt|tooltip|emptyText|empty|message|note|tip|text|content|confirmText|help|error|unit|aria-label)$/
 
 /** 不是给商家看的串：CSS / 打印样式表（含中文注释）、正则、URL */
 const NOT_COPY = /@media|display\s*:|<style|box-sizing|@page|^\s*[\w-]+\s*:\s*[^;]+;|^https?:\/\//
@@ -77,7 +82,10 @@ export const RULES = [
   {
     id: 'R3',
     name: '研发过程编号与判据语',
-    test: (t) => /issue\s*#?\s*\d+|#\d{3,}|PR\s*#?\s*\d+|\bV\d{2,}\b|判据|待查明|死亡条件|回归测试/.test(t),
+    test: (t) =>
+      // ⚠️ 先排掉**十六进制颜色**（`#6366f1` 会被 `#\d{3,}` 误判成 issue 号，实测假红）
+      !/^#[0-9a-fA-F]{3,8}$/.test(t.trim()) &&
+      /issue\s*#?\s*\d+|#\d{3,}|PR\s*#?\s*\d+|\bV\d{2,}\b|判据|待查明|死亡条件|回归测试/.test(t),
     出口: '整句删掉（商家不关心是哪张单哪条判据）；要留追溯就写进注释 / PR body。',
   },
   {
@@ -127,9 +135,13 @@ export const RULES = [
 /**
  * 豁免台账（**只许缩短**）：登记「命中规则但确有必要」的 `仓库相对路径:行` 或 `仓库相对路径`（整文件）。
  * 守卫 `tests/unit/user-copy-jargon-guard.test.ts` 会逐条复算：**失效的豁免当场判红**（逼着删干净）。
- * 当前为空。
+ * 当前只有一条（`git log -p` 可见来由）。
  */
-export const EXEMPT = []
+export const EXEMPT = [
+  // 岗位编码输入框的 placeholder —— 这里的 `admin、customer_service` **就是内容本身**
+  // （商家要照着填的编码），不是把代码标识符写进了散文里。
+  'src/app/(dashboard)/roles/page.tsx:360',
+]
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir)) {
@@ -158,12 +170,12 @@ export function candidateStrings(source, fileName = 'x.tsx') {
     if (ts.isJsxExpression(init) && init.expression && ts.isStringLiteral(init.expression)) return init.expression.text
     return null
   }
-  /** 这个字面量是不是「不上屏的 JSX 属性」的值（`node` 也可能是被包在 `{…}` 里的那层） */
-  const isDeniedAttrValue = (node) => {
+  /** 这个字面量是不是 JSX 属性的值（不管上不上屏）—— 用于**避免重复抽**（属性分支已按白名单处理过了） */
+  const isAttrValue = (node) => {
     const parent = node.parent
     if (!parent) return false
     const attr = ts.isJsxAttribute(parent) ? parent : ts.isJsxExpression(parent) ? parent.parent : null
-    return !!attr && ts.isJsxAttribute(attr) && ATTR_DENY.test(attr.name.getText(sf))
+    return !!attr && ts.isJsxAttribute(attr)
   }
   const visit = (node) => {
     if (ts.isJsxText(node)) {
@@ -171,11 +183,11 @@ export function candidateStrings(source, fileName = 'x.tsx') {
     } else if (ts.isJsxAttribute(node)) {
       const name = node.name.getText(sf)
       const text = attrText(node)
-      if (text !== null && !ATTR_DENY.test(name)) push(node, text, `attr:${name}`)
+      if (text !== null && ATTR_COPY.test(name)) push(node, text, `attr:${name}`)
     } else if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       // ⚠️ 属性白名单要在这里**再判一次**：`className='端点 读面'` 既是 JSX 属性值、也是一个含中文的
       //    字符串字面量 —— 只在上面那个分支排除是不够的（漏了就假红）。
-      if (CJK.test(node.text) && !isDeniedAttrValue(node)) push(node, node.text, 'string')
+      if (CJK.test(node.text) && !isAttrValue(node)) push(node, node.text, 'string')
     } else if (ts.isTemplateExpression(node)) {
       // ⚠️ 只取**字面块**（`head` + 各 `templateSpans` 的 literal），把 `${…}` 插值整个丢掉：
       //    ① 插值里是表达式（`s.messageCount`），不是给商家看的字；
