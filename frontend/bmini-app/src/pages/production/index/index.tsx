@@ -11,6 +11,7 @@ import {
   reportInFlightLock,
   scanResolve,
   shipOrder,
+  shipWorkerOrder,
   type OrderOperations,
   type PieceworkSummary,
   type ProductionOperation,
@@ -668,6 +669,12 @@ export default function ProductionPage() {
    * <p>后端是**原子入口**（记物流 + 流转状态一次完成），故这里只调一次 ——
    * 分两次调用中间失败会产生「有单号但没发货」或「发货了没单号」的静默不一致。</p>
    *
+   * <p>🔴 **端点按本机身份分流**（issue #6472，S1）：工人身份（{@link hasWorkerSession}，
+   * 单一真值）⇒ 走 `POST /api/worker/shipment/orders/{id}/ship`（`/api/admin/**` 把 `worker`
+   * 放进拒绝集合 ⇒ 纯工人设备打商家端点**必 403**，见 issue #5648）；无工人身份（纯商家设备）
+   * ⇒ 商家端点 `shipOrder` **逐字不变**。两条路都读服务端同一张发货单链
+   * （`OrderShipmentService`）⇒ 落库形状同源，不新造第二个发货实现。</p>
+   *
    * <p>失败只展示后端 message（守卫/状态不符都由后端判定并指名原因），**不猜**。</p>
    */
   const handleShip = useCallback(async () => {
@@ -680,7 +687,11 @@ export default function ProductionPage() {
     setShipping(true)
     setError('')
     try {
-      const res = await shipOrder(detail.order_id, no)
+      // 工人身份 ⇒ 工人端点（实发明细由读面 `positions` 映射，见 `workerShipItems`）；
+      // 商家身份 ⇒ 商家端点（body 只有单号/承运商，一字不变）。
+      const res = hasWorkerSession()
+        ? await shipWorkerOrder(detail.order_id, no, detail.positions)
+        : await shipOrder(detail.order_id, no)
       if (!res.success) {
         setError(res.message || '发货失败，请重试')
         return
