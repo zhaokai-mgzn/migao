@@ -194,7 +194,7 @@ export default function InboundOrdersPage() {
       return
     }
     if (!importRunId.trim()) {
-      toast.error('导入标识不能为空（它是幂等键：重跑同一标识不会重复建账）')
+      toast.error('导入标识不能为空 —— 同一个标识只建一次账，重跑同一份文件不会重复建单、不会重复加库存')
       return
     }
     setImporting(true)
@@ -207,7 +207,7 @@ export default function InboundOrdersPage() {
         await load()
       } else if (report && report.failCount === 0 && !report.created && report.inboundNo) {
         // 幂等命中：这次运行早已建过账 —— 不是失败，但也**没有**再动库存
-        toast.success('这次导入运行已经建过账（幂等命中，未重复加库存）')
+        toast.success('这次导入已经建过账了（同一个标识只建一次，没有重复加库存）')
       } else {
         toast.error('有明细行未通过校验，未建账（一行都没写）—— 请按报告修改后重跑')
       }
@@ -228,8 +228,8 @@ export default function InboundOrdersPage() {
             入库单
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            商品布料入库：建单（草稿）→ 过账（自动生成批次号 + 自动加库存 + 移动加权平均成本）→ 批次可追溯；
-            <strong>期初建账</strong>可按实物把在库批次（含 0.5 米级尾料）登记进来
+            布料到货先建入库单（此时不动库存）；确认无误后过账，系统才生成批次号、按实际入库量加库存，
+            并按移动加权平均重算成本。<strong>期初建账</strong>可按实物把在库批次（含 0.5 米级尾料）登记进来
           </p>
         </div>
         <div className="flex gap-2">
@@ -369,12 +369,12 @@ export default function InboundOrdersPage() {
             导入会建一张<strong>期初建账</strong>入库单并<strong>直接过账</strong>：库存按登记的剩余米数增加、
             系统批次号自动生成、<strong>旧系统批次号原样登记</strong>。
             「剩余米数」填<strong>现在实物还剩多少米</strong>（不是当初进了多少米）——
-            0.5 米这样的尾料也能如实登记（最多 1 位小数，不做静默取整）。
+            0.5 米这样的尾料也能如实登记（最多 1 位小数，系统不会四舍五入替你改）。
           </p>
 
           <div className="grid grid-cols-2 gap-3">
             <Input
-              label="导入标识（幂等键）"
+              label="导入标识"
               aria-label="导入标识"
               value={importRunId}
               onChange={(e) => setImportRunId(e.target.value)}
