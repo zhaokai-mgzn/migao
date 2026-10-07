@@ -611,27 +611,8 @@
    "source_sha256": "e8d640b728fb5508be845a6c75a2b35bcec5cc6de06cb56dd897a361205aa980"
   },
   "inventory_manage": {
-   "actions": {
-    "low_stock_alert": {
-     "dynamic": false,
-     "keys": [
-      "count",
-      "items",
-      "threshold"
-     ]
-    },
-    "query": {
-     "dynamic": false,
-     "keys": [
-      "product_id",
-      "product_name",
-      "status",
-      "stock",
-      "stock_source"
-     ]
-    }
-   },
-   "dynamic": false,
+   "actions": null,
+   "dynamic": true,
    "file": "backend/ai-agent-service/app/tools/inventory_manage.py",
    "keys": [
     "count",
@@ -653,7 +634,10 @@
     "stock_source",
     "threshold"
    ],
-   "source_sha256": "f5b02ef13173d8a985c81b820e99d61dda35d6cb5b34af7fe022e990896ae3ab"
+   "shape_notes": [
+    "data=dict(view)"
+   ],
+   "source_sha256": "1dc05f48521af645e9df9bff4efa9f7ca021722e819166eeee456db3f9327b92"
   },
   "knowledge_search": {
    "actions": null,
