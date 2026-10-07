@@ -500,6 +500,10 @@ _ISSUE_3317_RETIRED_READ_ONLY: dict = {
 #: 判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。
 _CONFIRM_GATE_BINDING_SKILLS: frozenset = frozenset({
     "customer_order", "customer_aftersales", "product",
+    # 🔴 **issue #6486 包 2（定时提醒域，2026-10-07）**：`reminder` 绑定 A 档可逆写
+    # `scheduled_task_manage`（`requires_confirmation=True`）且**已绑 `interact`** ⇒ 名册 3 → 4。
+    # 判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。
+    "reminder",
 })
 
 # 显式豁免台账（键 = Skill 名，值 = 不绑 `interact` 的理由）：**没绑 `interact` 的 Skill 必须

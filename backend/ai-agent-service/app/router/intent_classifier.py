@@ -61,6 +61,8 @@ _INTENT_DESCRIPTIONS: dict[str, str] = {
     'category_manage': '商品分类的查询/创建/更名/启用停用/删除/排序',
     'processing_manage': '加工项的创建/更新/上下架/删除/调价等管理操作（不含单纯查询）',
     # 客户关系域
+    # 定时提醒域（issue #6486 包 2）
+    'scheduled_task_manage': '定时提醒/到点提醒（用户委托「什么时候提醒我做什么」，到点发站内通知）',
     'customer_manage': '客户档案增删改、打标签、跟进记录、合并客户等写操作',
     'customer_query': '查询客户信息、客户列表、客户详情、历史订单等读操作',
     # 人事域

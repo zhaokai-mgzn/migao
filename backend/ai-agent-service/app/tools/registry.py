@@ -692,6 +692,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.processing_item_manage import ProcessingItemManageTool
     from app.tools.product_update import ProductUpdateTool
     from app.tools.product_batch_update import ProductBatchUpdateTool
+    from app.tools.scheduled_task_manage import ScheduledTaskManageTool
     from app.tools.sku_update import SkuUpdateTool
     from app.tools.interact import InteractTool  # noqa: F401 保留以备将来使用
     from app.tools.validate_input import ValidateInputTool
@@ -763,6 +764,8 @@ def create_default_registry() -> ToolRegistry:
     # `/api/admin/agent/batches` 四个端点。注册表只决定「工具存在」；可达性由 persona 的
     # skill 工具集决定（米宝 product；C 端一律不绑 —— 批量写是商户员工能力）。
     registry.register(ProductBatchUpdateTool())
+    # 定时任务（用户「预约」，issue #6486 包 2）：A 档可逆写第 4 条，绑在 reminder skill。
+    registry.register(ScheduledTaskManageTool())
     registry.register(SkuUpdateTool())
     # interact 工具重新启用：支持交互式组件（interactive component support）
     registry.register(InteractTool())
