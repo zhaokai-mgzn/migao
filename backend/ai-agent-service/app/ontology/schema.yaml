@@ -153,6 +153,16 @@ intent_ownership:
     route_key: quote
     agents: [xiaobu]
     description: 窗帘算料报价（仅小布 customer_quote）
+  # ── 助手域：定时提醒（issue #6486 包 2 引入；#6514 补登记）──
+  # 引入者 PR #6499 加了工具 / skill / 活映射，**漏登记本表** ⇒ `contract-check.sh` 第 6 项
+  # 在 main 上恒红（活映射侧从 `get_skill_registry()` + `MIBAO_CONFIG` 现取，有它）。
+  # route_key = reminder skill 的 `route_keys` 末位（registry last-wins 语义，见
+  # `SkillRegistry.get_intent_to_route_map`）；仅 B 端米宝可达（该 skill 的 `system_prompts`
+  # 只声明 mibao，C 端不声明）⇒ 勿加 xiaobu。
+  scheduled_task_manage:
+    route_key: scheduled_task
+    agents: [mibao]
+    description: 定时提醒（建/列/取消「到点提醒」待办，A 档可逆写；到点只发站内通知）
 
 # ── 外部关系目标登记（issue #5245 B6）──
 # relations[].target 必须落在 objects 或本表，loader 加载时 fail-closed 校验

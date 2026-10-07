@@ -58,6 +58,17 @@
         "MC-012",
         "MC-072"
       ]
+    },
+    {
+      "declared_in": "tests/unit_ci_workflows/test_ontology_contract_gate.py",
+      "wiring": "backend/ai-agent-service/tests/test_ontology_contract.py::test_live_registry_matches_schema_no_violations",
+      "registered_at": "2026-10-07（issue #6514）",
+      "covers": "活映射（真 skill registry ↔ `schema.intent_ownership`）这条**消费面**在 CI 里真的有人跑：`tests/unit_ci_workflows/test_ontology_contract_gate.py` 在最小环境（只装 pytest+pyyaml）里 skip 端到端层，其**前置**是该接线活着 —— ① `backend/ai-agent-service/tests/test_ontology_contract.py` 里有**不 skip** 的 `test_live_registry_matches_schema_no_violations`（直接跑 `scripts/check_ontology_contract.py` 断言 exit 0，与 `contract-check.sh` 第 6 项同一份入口）；② 它所在的套件由装了全依赖的 job 执行（`.github/workflows/ai-agent-tests.yml` 的 `ai-agent-service unit tests`：装 `requirements.txt` + `pytest tests/`）。⚠️ 改前的病根（issue #6514）：唯一验活映射的端到端判据恒 skip，而 skip 理由指向的「兄弟判据」用的是硬编码快照 ⇒ 「映射加了、schema 没登记」在 CI 里结构性不可见。",
+      "red_proof": "`tests/unit_ci_workflows/test_ontology_contract_gate.py::TestLiveLayerIsWiredInCi::test_precondition_has_discriminating_power`（三条接线在内存里各摘一处 —— 判据符号改名 / 去掉 requirements 安装 / 去掉 `pytest tests/` ⇒ 前置各自判红；不注入 ⇒ 零问题）。另：摘掉 `wiring` 锚（把该判据改名）⇒ 本台账守卫判据 3 具名报出。实例侧红证 = 删掉 `schema.yaml` 里的 `scheduled_task_manage` 登记 ⇒ `backend/ai-agent-service/tests/test_ontology_contract.py::TestLiveRegistryMatchesSchema::test_live_registry_matches_schema_no_violations` 判红（审计脚本 exit 1 + 逐项违规明细）。",
+      "case_ids": [
+        "MC-012",
+        "ON-003"
+      ]
     }
   ],
   "coverage_boundary": [
