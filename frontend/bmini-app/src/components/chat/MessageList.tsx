@@ -56,7 +56,7 @@ export default function MessageList({ messages, isStreaming, onInteract }: Messa
           </View>
           <Text className='message-list__empty-title'>你好，我是{botName}</Text>
           <Text className='message-list__empty-text'>
-            你的商家经营助手{'\n'}查订单、查库存、算料报价、售后与物流，都可以问我
+            你的商家经营助手{'\n'}经营、订单交付、库存、商品、售后、客户，都可以问我
           </Text>
           {/* 🔴 B 端空态**不铺商品**（issue #5747）：C 端旧版的商品推荐卡（拉
               `/api/chat/products/new-arrivals`、提示「点一下问问小布」）已整块删除 ——

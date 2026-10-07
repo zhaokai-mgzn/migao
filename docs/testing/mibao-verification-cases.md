@@ -710,7 +710,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
-## B 端小程序域（42 case）
+## B 端小程序域（43 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1088,11 +1088,12 @@
 数据: 判据 3·🔴 **入口内容单一真值 = 服务端**（issue #6468：此前 H5 组件里硬编码六条 **C 端顾客口吻**的入口，而服务端那份从没被消费）：服务端 `GET /api/chat/quick-actions`（backend/ai-agent-service/app/api/chat.py 的 `QUICK_ACTIONS`）是唯一内容源，H5 只渲染传入的 `actions`；组件源码不得再自带清单 / prompt / emoji 字面量；`actions` 为空 ⇒ **不渲染**（不退回一份本地兜底清单 —— 那正是病灶形态）。红证：把硬编码六条写回 frontend/bmini-app/src/components/chat/QuickActions.tsx ⇒ frontend/bmini-app/tests/quick-actions.test.tsx 的「类级元守卫」判红
 数据: 判据 4·🔴 **每条入口必须能追溯到真实能力**（机械投影，「引导了却做不到，比不引导更伤」）：backend/ai-agent-service/tests/test_chat.py::TestQuickActions::test_every_entry_maps_to_a_real_mibao_capability 要求每条的 skill 在米宝绑定面内、且 tool 在该 skill 的 tool_names 里。红证：把任一条 skill 改成已解绑的 `settings` 或把 tool 改成顾客端专用的 `aftersale_query` ⇒ 具名判红（实跑过）
 数据: 判据 5·**agent 名用 B 端口径**：空态欢迎语不含「小布」、含「商家经营助手」；「思考中」默认文案 = 「米宝正在思考...」（frontend/bmini-app/src/components/chat/TypingIndicator.tsx）
+数据: 判据 7·🔴 **空态那句「都可以问我」与快捷入口指向同一组业务域**（issue #6476：文案原文是「查订单、查库存、**算料报价**、售后与物流」——与六格**没有任何交集**，且「算料报价」在 B 端没有对应能力）：frontend/bmini-app/tests/chat-empty-state.test.tsx **现取**服务端 `QUICK_ACTIONS` 的 id 清单，要求空态文案逐组覆盖其业务域词（经营 / 交付 / 库存 / 商品 / 售后 / 客户），并负向断言不含「算料报价」。红证（实跑过）：把文案改回旧那句 ⇒ 具名判红；服务端新增第 7 条入口而不补映射/文案 ⇒ 同样红（服务端 id 集 != 映射表键集）
 数据: 判据 6·**类级元守卫（让同类进不来）**：B 端全量 `frontend/bmini-app/src/**` 的**代码**不得引用顾客端商品推荐端点 `new-arrivals`；聊天面（components/chat 与 pages/chat）的代码不得出现顾客端 agent 名，也不得出现 C 端顾客口吻的快捷问句（「推荐一下热门窗帘产品」「帮我查一下物流」「我想咨询售后问题」「帮我算一下窗帘用料和价格」）—— 「再抄一次顾客端页面」当场变红。边界：只扫代码（块注释与整行 `//` 注释先剔除），注释与文档不在面内
 跳过: [backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/chat-empty-state.test.tsx + frontend/bmini-app/tests/quick-actions.test.tsx；pytest: backend/ai-agent-service/tests/test_chat.py::TestQuickActions），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-09-28 新增（issue #5747）：用户在 B 端 H5 看到顾客端 agent 入口（新品推荐卡「点一下问问小布」），且 B 端快捷入口仍是顾客端旧版（算料报价全宽 + 2×2 共 5 格）⇒ 与顾客端现行形态对齐，并落「顾客端内容不得混入商家端」的实例判据 + 类级元守卫；同批删除 NewArrivals 组件/样式与只为它存在的旁路服务。2026-10-07 修订（issue #6468，用户：「快捷菜单直接抄袭的 C 端设计，应该和 B 端需求场景相结合」）：#5747 只对齐了**形态**，**内容**仍是抄 C 端的顾客问句（「推荐一下热门窗帘产品」「帮我查一下物流」…）⇒ 六格换成 B 端商家场景（今日经营 / 交付风险 / 库存告急 / 商品健康度 / 售后待办 / 客户回访），并消除双源：内容真值收到服务端 `QUICK_ACTIONS`（H5 与 admin-web 同一份），同批落「每条入口必须追溯到真实能力」的机械投影判据与「H5 不得再硬编码入口内容」的类级元守卫。 ｜ tags: bmini, chat, quick-actions, empty-state, c-end-isolation
+溯源: 2026-09-28 新增（issue #5747）：用户在 B 端 H5 看到顾客端 agent 入口（新品推荐卡「点一下问问小布」），且 B 端快捷入口仍是顾客端旧版（算料报价全宽 + 2×2 共 5 格）⇒ 与顾客端现行形态对齐，并落「顾客端内容不得混入商家端」的实例判据 + 类级元守卫；同批删除 NewArrivals 组件/样式与只为它存在的旁路服务。2026-10-07 修订（issue #6468，用户：「快捷菜单直接抄袭的 C 端设计，应该和 B 端需求场景相结合」）：#5747 只对齐了**形态**，**内容**仍是抄 C 端的顾客问句（「推荐一下热门窗帘产品」「帮我查一下物流」…）⇒ 六格换成 B 端商家场景（今日经营 / 交付风险 / 库存告急 / 商品健康度 / 售后待办 / 客户回访），并消除双源：内容真值收到服务端 `QUICK_ACTIONS`（H5 与 admin-web 同一份），同批落「每条入口必须追溯到真实能力」的机械投影判据与「H5 不得再硬编码入口内容」的类级元守卫。 2026-10-07 再修订（issue #6476，用户：「下面的文案和快捷对话没对上」）：空态那句自我介绍是 #5747 只换了 agent 名、**没换能力面**的残留（「算料报价」B 端根本没有）⇒ 换成与六格逐组对应的域词，并落「空态文案与服务端 QUICK_ACTIONS 同源」的判据（服务端改入口集而文案没跟上即红）。 ｜ tags: bmini, chat, quick-actions, empty-state, c-end-isolation
 
 ### BM-029. 「我的」页：工人面三页入口齐备（含拍照入库 / 补打入库标签）+ 字号按设计尺度（≥24） 🔵
 ```
@@ -1280,6 +1281,19 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-10-07 新增（issue #6478，铁律 8 类级固化）：修一个输入框的竖向对齐**只修这一处 = 没修** —— Taro h5 的两层 `<Input>` 形态在每个用 `<Input>` 的面上都存在。本台账把「有哪些输入面」变成可执行判据（未登记即红 + 只许缩短 + 抽取不完全即红 + 空台账 fail-closed + 每条声明 case_ids），并配 in-memory 注入式红证（红证走**真判据**，不另写第二份判定）。 ｜ tags: bmini, meta-guard
+
+### BM-044. B 端「问米宝」输入条 H5 形态：placeholder 不承诺录音 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒） 🔵
+```
+你: 商家在手机浏览器（`app.migaozn.com/b/`）打开「问米宝」：输入框里那行提示是**键盘措辞**（H5 里浏览器没有录音实现，不再写「按住说话」这种做不到的承诺），文字用 App 字体与设计色、右下**没有**原生缩放手柄、单行与动作行对齐
+期望: direct_reply
+数据: 判据 1·🔴 H5 不承诺录音：frontend/bmini-app/tests/chat-input-surface.test.tsx —— `TARO_ENV=h5` 且录音不可用时 placeholder = 键盘措辞（`打字问米宝，比如「今天经营怎么样？」`）且**不含**「按住说话」。红证（实跑过）：把 placeholder 改回硬编码那一句 ⇒ 具名判红
+数据: 判据 2·小程序（录音可用）保留「打字 or 说话」双语义 placeholder —— 一刀切成键盘措辞 ⇒ 红
+数据: 判据 3·🔴 **样式必须落到内层原生控件**：Taro H5 把 class 挂在包裹元素 `<taro-textarea-core>` 上，真正绘制文字的是内层 `<textarea class="taro-textarea">`；只写外层时实测内层跑的是**浏览器默认**（`monospace 13.33px` + 默认灰 placeholder + `resize` 手柄）。判据 = 输入态 SCSS 块含 `.taro-textarea` 内层选择器 + `font-family/font-size/line-height/color: inherit` + `resize: none` + `::placeholder` 用 `$text-secondary` + `min-height: 42px`（单行行盒，原 40px 小于行盒）；**反陷阱**断言块内不出现 `textarea` 标签选择器（H5 构建会把它改写成自定义元素 ⇒ 静默无效）。红证（各一次，实跑过）：删掉内层块 / `resize: none`→`both` / `min-height` 42→40px ⇒ 具名判红
+数据: 判据 4·真机读数（承载体，**不进 CI**）：真栈 + 真 Chromium（:8080 admin-api + :8001 ai-agent 跑被验 commit，H5 由本 worktree 构建产物供给）内层 `textarea` 读数由 `fontFamily: monospace` / `fontSize: 13.3333px` / `resize: both` / `::placeholder rgb(117,117,117)` 变为 App 字体 / `14.56px` / `none` / `rgb(90,107,124)`
+跳过: [backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/chat-input-surface.test.tsx + frontend/bmini-app/tests/message-input.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-07 新增（issue #6476，用户逐字：「输入框中有一行小字叫发消息或按住说话的样式不对」）：三处独立病灶 —— ① 文案空承诺（H5 无录音却写「按住说话」，C 端早已按 `docs/design/agent-input-bar-unified-design.md` §R5 分流，B 端漏）；② **样式一条都没落到真控件**（Taro H5 的 class 在 `<taro-textarea-core>` 包裹元素上，内层原生控件跑浏览器默认：monospace 13.33px + 默认灰 + 原生 resize 斜线）；③ 行盒 `min-height: 40px` < 单行 42px。修法 = placeholder 平台分流 + 内层 `.taro-textarea` 显式继承 + 占位符真规则（`placeholderClass` 仅 weapp 生效）+ `min-height: 42px`。踩坑登记：**`textarea` 标签选择器会被 Taro 的 H5 构建改写成自定义元素**（产物实测 `.message-input__textarea taro-textarea-core{…}` = 又打回包裹元素），第一版守卫就是这么假绿的 —— 已补反陷阱断言。同型顺带发现另开两单：#6479（CORS 头白名单缺 `X-Client-Type`）、#6480（全站 H5 输入面内层控件不继承字体 + 占位符色落默认）。 ｜ tags: bmini, chat, input-bar, h5-surface
 
 ## 分类域（3 case）
 
@@ -10197,13 +10211,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：707（活跃 134，跳过 573）
-- tier 分布：smoke 12 / normal 653 / adversarial 32
+- 用例总数：708（活跃 134，跳过 574）
+- tier 分布：smoke 12 / normal 654 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
 - 登录认证域：12
-- B 端小程序域：42
+- B 端小程序域：43
 - 分类域：3
 - 对话边界域：44
 - 跨域：3
