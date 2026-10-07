@@ -710,7 +710,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
-## B 端小程序域（37 case）
+## B 端小程序域（39 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1211,6 +1211,33 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-10-07 新增（issue #6467 切片 1，铁律 8 类级固化）：入库页早就有 `workerReady` 分流，报工页却漏了 —— 二者互不相关、漏一处没有任何东西会红。本台账把「哪个页面渲染工人写入口 / 哪个页面必须先有工人身份」变成可执行判据（未登记即红 + 只许缩短 + 注入式红证）。 ｜ tags: bmini, worker, meta-guard
+
+### BM-038. 类级元守卫：工人面动作**端点归属**台账（工人面动作打 /api/admin/ ⇒ 未登记即红 / 台账只许缩短 / admin 条目必须给出路 / 工人替代必须真被用上 / 空台账 fail-closed） 🔵
+```
+你: 任何人给 bmini 的某个**身份感知页面**（出现 `hasWorkerSession(` 的 `.tsx`）新增/改动一个工人动作，而它打的是 `/api/admin/**`（工人零商家权限，`SecurityConfig.ADMIN_API_REJECTED_ROLES` 的拒绝集合含 worker ⇒ 纯工人设备必被拒）—— 无论他有没有写身份分流，判据都要拦得住
+期望: direct_reply
+数据: 判据 1·🔴 **未登记即红**：射程 = frontend/bmini-app/src/services/*.ts 里**顶层导出函数**中，函数体（先剥注释）含 `/api/admin/`、且所在 service 模块被某个身份感知页面（`src/pages/**/*.tsx` 里出现 `hasWorkerSession(`）import 的那一批；凡不在 frontend/bmini-app/tests/worker-action-endpoint-ledger.json 里 ⇒ 具名判红。红证（实跑，in-test 注入）：给 frontend/bmini-app/src/services/productionService.ts 注入一个调 `/api/admin/.../nope` 的新导出函数 ⇒ 报出 `src/services/productionService.ts::injectedAdminAction`
+数据: 判据 2·**台账只许缩短**：每条登记都必须仍能被现扫命中（函数已删 / 已不再被身份感知页面引用 / 端点已搬走 ⇒ 该条已死 ⇒ 红）。红证（实跑）：登记一个不存在的 `shippedLongAgo` ⇒ 判红；摘掉 `shipOrder` 的登记（函数仍在被页面引用）⇒ 判据 1 红
+数据: 判据 3·🔴 **admin 条目必须给出路**：要么 `worker_alternative` 在**同 service** 里真的顶层导出、且其函数体真的含 `/api/worker/`；要么显式写明 `reason`（有意不搬的理由）。红证（实跑）：把 `shipOrder` 的 `worker_alternative` 清空且不给 `reason` ⇒ 红；把替代函数名改成 `shipWorkerOrderGhost` ⇒ 红
+数据: 判据 4·**工人替代必须真的被用上**（`migao-dev-flow` §28.2「判据绿 ≠ 接线在」）：登记了 `worker_alternative` 就必须在调用页里找到对它的调用。红证（实跑，真语料注入）：把 frontend/bmini-app/src/pages/production/index/index.tsx 里的 `shipWorkerOrder(` 改名 ⇒ 报「接线不在」（替代只是声明，工人身份下仍走商家端点）；不注入 ⇒ 同一份判据不报（反向对照）
+数据: 判据 5·**台账不许空转（fail-closed）**：条数为 0 ⇒ 红（「空」不等于「全部合规」）；每条登记必须声明 `case_ids`；正跑还要求「登记集 ⇄ 现扫集」双向相等。台账条数**现取**（不写死），复算（**在仓根执行**，路径即仓根相对）：`node -e "const l=require('./frontend/bmini-app/tests/worker-action-endpoint-ledger.json');console.log(l.entries.length)"`
+跳过: [backend-contract] 确定性元守卫（jest: frontend/bmini-app/tests/worker-action-endpoint-ledger.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-07 新增（issue #6472，铁律 8 类级固化）：病灶 = 报工页的发货块对任何身份渲染，而工人零商家权限 ⇒ 纯工人设备点「发货」必被服务端拒（界面给了做不成的动作）。修一处 ≠ 这一类进不来 —— 读面（`getOrderOperations`）走过同一条路却没有任何东西会红。本台账把「工人面动作打哪个端点 / 谁是它的工人替代 / 替代有没有真的接上线」变成可执行判据。 ｜ tags: bmini, worker, meta-guard
+
+### BM-039. 发货按身份选端点：工人身份 ⇒ 恰一次 /api/worker/shipment/.../ship（**零次** /api/admin/.../ship）、商家身份逐字反向；工人路径必带非空 items[]；商家路径 body 逐字不变 🔵
+```
+你: 一台**只有工人身份**的车间设备（零商家权限）把一单的最后一道报完（`isCompleted`）⇒ 屏上出现「发货」块 ⇒ 填货运单号点「发货」：请求必须打 `POST /api/worker/shipment/orders/{orderId}/ship`（issue #5648 既有端点），而不是 `POST /api/admin/production/orders/{orderId}/ship`（工人被拒绝集合拒在 `/api/admin/**` 外）。同一台共用 PAD 上只有商家身份时，行为与从前逐字一致
+期望: direct_reply
+数据: 判据 1·🔴 **工人身份下 `worker/shipment` 恰一次、`/api/admin/.../ship` 零次**（断言的是**请求 URL 集合**，不是「某个函数被调过」）：`shipWorkerOrder(ORDER_ID,'SF123456',POSITIONS)` ⇒ 本次 `Taro.request` 里 URL 含 `/ship` 的恰好 1 条 = `/api/worker/shipment/orders/{id}/ship`，且 `/api/admin/` 命中 0 条。证据：frontend/bmini-app/tests/production-ship-endpoint-by-identity.test.ts
+数据: 判据 2·**商家身份下逐字反向**：`shipOrder(ORDER_ID,'SF123456')` ⇒ `/api/admin/production/orders/{id}/ship` 恰 1 条、`/api/worker/` 0 条；且 body **逐字不变** = `{trackingNo, logisticsCompany}`（**不带** `items` —— 商家端点的实发数量由服务端取「订单未发余量」，客户端多传会改它的写面语义），请求头**不带** `X-Worker-Session-Id` / `X-Client-Request-Id`
+数据: 判据 3·**工人路径 body 必须带非空 `items[]`**（服务端 `OrderShipmentService#parseDetails` 的硬契约：缺/空 ⇒ 422「发货明细不能为空」；`shipped_quantity` 必须正数、`unit` 必填）⇒ 映射自读面 `positions[].order_item_id` + 首道工序 `qty`/`unit`，`{order_item_id, shipped_quantity, unit}` 三键；缺 `order_item_id` 的部位跳过（不冒充已知）。另断言工人路径带 `X-Worker-Session-Id` 与幂等键 `X-Client-Request-Id`（发货不可逆，重试要去重；两端点共用服务端 `ClientRequestIdService`）
+数据: 判据 4·**成功回执可见 + 失败不谎报**（行为面，页面级）：工人身份下发货成功 ⇒ 屏上出现「✅ 已发货」；服务端拒绝 ⇒ 上屏服务端原文且**不出现**「✅ 已发货」（UI 反馈必须等于实际效果）。证据：frontend/bmini-app/tests/production-page.test.tsx 的「发货按身份选端点」组
+跳过: [backend-contract] 确定性网络层 + 页面判据（jest: frontend/bmini-app/tests/production-ship-endpoint-by-identity.test.ts / frontend/bmini-app/tests/production-page.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-07 新增（issue #6472）：报工页的发货块（`isCompleted && !shipped`）对任何身份渲染，而它打的是商家端点；工人零商家权限（`/api/admin/**` 拒绝集合含 worker）⇒ 纯工人设备点「发货」必被服务端拒绝。收口 = 有工人 session（`hasWorkerSession()`，单一真值）走既有工人发货端点 `POST /api/worker/shipment/orders/{id}/ship`，否则商家端点逐字不变。零后端改动；入参差异（工人路径必填 `items[]`）由端侧从读面 `positions` 映射补齐。 ｜ tags: bmini, worker, shipment
 
 ## 分类域（3 case）
 
@@ -10128,13 +10155,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：702（活跃 134，跳过 568）
-- tier 分布：smoke 12 / normal 648 / adversarial 32
+- 用例总数：704（活跃 134，跳过 570）
+- tier 分布：smoke 12 / normal 650 / adversarial 32
 - 售后域：15
 - Agent 核心域：7
 - API 层域：21
 - 登录认证域：12
-- B 端小程序域：37
+- B 端小程序域：39
 - 分类域：3
 - 对话边界域：44
 - 跨域：3
