@@ -11,15 +11,38 @@
  * - **不算米数**：`savedMeters` / `poolingGainMeters` / `perOrderPlannedMeters` 全部原样渲染
  *   服务端值 —— 要求是「口径必须与落账逐值相等」，前端重算就是那类「两套语义」的 bug。
  */
-import type { PoolBoard, PoolDispatchRequest, PoolGroup, PoolPreview } from '@/types'
+import type { PoolBoard, PoolDispatchRequest, PoolGroup, PoolLine, PoolPreview } from '@/types'
+
+/**
+ * 批次指派规则（逐行不指定批次 ⇒ 由服务端按这条规则补位 = **算法替商家挑批次**）。
+ *
+ * 真值源 = 服务端 `ProcessingOrderService.AUTO_BATCH_DEFAULT_ASSIGNMENT_RULE`（`"fifo"`）——
+ * 前端只是把自动路径既有的缺省规则显式说出来，**不在这里另立一套策略**。
+ */
+export const POOL_ASSIGNMENT_RULE = 'fifo'
 
 /**
  * 池化派单请求体（`/preview` 与 `/dispatch` **同体**，冻结契约逐字给出四个键）。
  *
  * `pooled: true` = 成批池化派单；**加急插队 = 同一个端点 + 单订单 + `pooled: false`**（一个动作）。
+ *
+ * 🔴 **逐行必须带 `{orderId, itemId}` 的指派**（issue #6408）：服务端
+ * `ProcessingOrderService::buildDesignations` 在指派为空时**直接返回空** ⇒ 没有指派就没有
+ * `Designation` ⇒ 池级排料求解器（`StockBatchConsumptionService::plan`）**一次都不跑** ⇒
+ * 不落 `stock_batch_consumptions`、不排料、页面「预计节省」恒 `0.00`。实测（300 单四臂对照，云 dev）：
+ * 空指派臂消耗行 **0** 行 / Σsaved **0**；逐行指派 + `fifo` 臂 75 行 / **45 米**。
+ * ⇒ `batches: []` 是**缺陷形态**、不是「缺省」；`case_ids: PR-081` 的类级自证把它钉住。
  */
-export function buildPoolRequest(orderIds: string[], pooled: boolean): PoolDispatchRequest {
-  return { orderIds, batches: [], assignmentRule: null, pooled }
+export function buildPoolRequest(
+  lines: Pick<PoolLine, 'orderId' | 'itemId'>[],
+  pooled: boolean,
+): PoolDispatchRequest {
+  return {
+    orderIds: lines.map((l) => l.orderId),
+    batches: lines.map((l) => ({ orderId: l.orderId, itemId: l.itemId })),
+    assignmentRule: POOL_ASSIGNMENT_RULE,
+    pooled,
+  }
 }
 
 /**

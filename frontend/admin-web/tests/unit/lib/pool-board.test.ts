@@ -25,21 +25,40 @@ import {
 import type { PoolPreview } from '@/types'
 
 describe('buildPoolRequest（/preview 与 /dispatch 同体）', () => {
-  it('成批池化：pooled=true，四个键齐全（batches/assignmentRule 显式给空值）', () => {
-    expect(buildPoolRequest(['o1', 'o2'], true)).toEqual({
+  const L = (orderId: string, itemId: string) => ({ orderId, itemId })
+
+  it('成批池化：pooled=true，**逐行带指派**（orderId+itemId）+ 显式给 fifo（issue #6408）', () => {
+    expect(buildPoolRequest([L('o1', 'i1'), L('o2', 'i2')], true)).toEqual({
       orderIds: ['o1', 'o2'],
-      batches: [],
-      assignmentRule: null,
+      batches: [
+        { orderId: 'o1', itemId: 'i1' },
+        { orderId: 'o2', itemId: 'i2' },
+      ],
+      assignmentRule: 'fifo',
       pooled: true,
     })
   })
 
   it('加急插队：**同一个端点 + 单订单 + pooled=false**（一个动作，不批）', () => {
-    const body = buildPoolRequest(['u1'], false)
+    const body = buildPoolRequest([L('u1', 'iu1')], false)
     expect(body.pooled).toBe(false)
     expect(body.orderIds).toEqual(['u1'])
     // 加急插队是「一单一派」—— 批内混加急会被服务端整批拒绝（422），前端不制造那种请求
     expect(body.orderIds).toHaveLength(1)
+  })
+
+  it('🔴 类级自证：**非空行 ⇒ 指派非空且逐行 1:1、规则非空**（空指派 = #6408 的缺陷形态）', () => {
+    // 缺陷形态（2026-10-06 实测，300 单四臂对照）：`batches: []` ⇒ 服务端 `buildDesignations`
+    // 直接返回空 ⇒ 排料求解器一次都不跑 ⇒ 消耗行 0 行、`saved = 0`、页面「预计节省」恒 0.00。
+    // 本断言让「又变回空指派 / 规则又给 null」当场红，而不是等到真库上看不见扣料才发现。
+    for (const pooled of [true, false]) {
+      const body = buildPoolRequest([L('a', 'ia'), L('b', 'ib'), L('c', 'ic')], pooled)
+      expect(body.batches).toHaveLength(body.orderIds.length)
+      expect(body.batches.map((b) => b.orderId)).toEqual(body.orderIds)
+      expect(body.batches.every((b) => b.itemId !== '')).toBe(true)
+      // 规则必须显式给值：`null` ⇒ 未指定批次的行**不补位**（服务端口径）⇒ 等于白带指派
+      expect(body.assignmentRule).toBe('fifo')
+    }
   })
 })
 
