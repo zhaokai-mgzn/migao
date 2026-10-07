@@ -52,6 +52,7 @@ jest.mock('../src/services/productionService', () => ({
   // 若一并 mock 掉会拿到 undefined ⇒ 点「完成报工」直接抛错
   ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
+  getWorkerOrderOperations: jest.fn(),
   // 扫码主闭环（切片 ②）：本文件测逐道报工链路 ⇒ 解析面默认返回 undefined ⇒ 页面回落既有形态
   scanResolve: jest.fn(),
   completeByScan: jest.fn(),
@@ -81,12 +82,14 @@ import {
 import {
   completeByScan,
   getOrderOperations,
+  getWorkerOrderOperations,
   getOrderPiecework,
   scanResolve,
   shipOrder,
 } from '../src/services/productionService'
 import type { OrderOperations } from '../src/services/productionService'
 import { decodeQrFromImageData, loadPixelsFromFileH5 } from '../src/utils/inbound/barcodeDecode'
+import { setWorkerSessionId } from '../src/utils/workerSession'
 
 const mockLoadPixels = loadPixelsFromFileH5 as jest.Mock
 const mockDecodeQr = decodeQrFromImageData as jest.Mock
@@ -165,6 +168,17 @@ function makeDetail(overrides: Partial<OrderOperations> = {}): OrderOperations {
 }
 
 const mockGet = getOrderOperations as jest.Mock
+const mockWorkerGet = getWorkerOrderOperations as jest.Mock
+
+/**
+ * 让本用例跑在**有工人身份**的车间设备上（issue #6467 判据 3）：
+ * 写入口只在 `hasWorkerSession()` 为真时渲染 ⇒ 报工类用例必须先种一个工人 session；
+ * 此时读面也按身份分流走 `/api/worker/**`（mockWorkerGet），与真机一致。
+ */
+function enableWorkerIdentity() {
+  setWorkerSessionId('sess-worker-1')
+  mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail() })
+}
 const mockComplete = completeByScan as jest.Mock
 const mockPiecework = getOrderPiecework as jest.Mock
 const mockShip = shipOrder as jest.Mock
@@ -325,6 +339,7 @@ describe('ProductionPage（工人扫码报工）', () => {
   })
 
   it('点「完成报工」→ 调唯一写入口 completeByScan（凭证=部位码、qty 默认=应做数量、work_type=normal）', async () => {
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -353,14 +368,15 @@ describe('ProductionPage（工人扫码报工）', () => {
   })
 
   it('报工成功 → 刷新进度（重新拉取工序列表）', async () => {
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
-    mockGet.mockClear()
+    mockWorkerGet.mockClear()
 
     fireEvent.click(screen.getAllByText('完成报工')[1])
 
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
+    await waitFor(() => expect(mockWorkerGet).toHaveBeenCalledWith(ORDER_ID))
   })
 
   it('order_completed=true → 展示「✅ 订单生产完成」', async () => {
@@ -369,6 +385,7 @@ describe('ProductionPage（工人扫码报工）', () => {
       data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: true },
     })
 
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -381,6 +398,7 @@ describe('ProductionPage（工人扫码报工）', () => {
   it('报工失败（success=false）→ 展示后端 message 且不清空工序列表', async () => {
     mockComplete.mockResolvedValue({ success: false, message: '该工序已报工完成，无需重复报工' })
 
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -608,6 +626,7 @@ describe('ProductionPage 完成数量可编辑（issue #4206 判据 1）', () =>
   })
 
   it('改成 8 米报工 ⇒ 请求体 qty/qualified_qty 都是 8（不是写死的应做数量）', async () => {
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -630,6 +649,7 @@ describe('ProductionPage 完成数量可编辑（issue #4206 判据 1）', () =>
   })
 
   it('数量超上限 ⇒ 前端拦下不发请求（红证：服务端上限之外再加一道客户端防线）', async () => {
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -713,7 +733,11 @@ describe('ProductionPage 计件累计与报工明细（issue #4206 判据 3）',
   it('报工成功后出现本单报工明细（人 / 工序 / 数量 / 时间）', async () => {
     // 本用例针对**本机兜底**路径（服务端没给 work_logs）⇒ 显式清空，
     // 否则夹具的 work_logs 会让页面走「全单流水」分支（那是另一条用例的判据）。
+    // 有工人身份（enableWorkerIdentity）⇒ 读面是工人路径 ⇒ 两个读面都要清空；
+    // 顺序必须在 enableWorkerIdentity **之后**（它会把读面夹具重置成默认值）。
+    enableWorkerIdentity()
     mockGet.mockResolvedValue({ success: true, data: makeDetail({ work_logs: [] }) })
+    mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail({ work_logs: [] }) })
 
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))

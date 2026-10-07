@@ -1,4 +1,4 @@
-// case_ids: BM-004
+// case_ids: BM-004, BM-036
 /**
  * HTTP 请求层测试（B 端小程序基建，issue #2977）
  *
@@ -214,6 +214,101 @@ describe('request utils', () => {
       expect(Taro.showToast).toHaveBeenCalledWith(
         expect.objectContaining({ title: expect.stringContaining('服务器错误') }),
       )
+    })
+  })
+
+  // ========== 401 身份分流（issue #6467 判据 4） ==========
+  //
+  // 现场（2026-10-07 生产）：管理员账号在 H5 点「完成报工」⇒ `POST /api/worker/production/scan/complete`
+  // 401（报工写入口只认工人 session），而请求层把**任何** 401 都读成「商家会话过期」⇒
+  // 弹「登录已过期，请重新登录」+ 清商家 token/user + 跳商家登录页 ⇒
+  // 服务端那句「尚未登录工人身份…」被吞掉、有效的商家登录态被毁、重登再点仍然 401（死循环）。
+  //
+  // 口径：**工人端点**（`/api/worker/` 前缀）的 401 与商家会话无关 —— 不清商家态、不跳商家登录页、
+  // 只清工人态、把服务端文案上屏；**商家端点** 401 行为**逐字不变**。
+  describe('401 身份分流（issue #6467）', () => {
+    const WORKER_401 = {
+      success: false,
+      error: {
+        code: 'AUTH_FAILED',
+        message: '尚未登录工人身份或登录已失效，请重新用工号 + PIN 登录',
+      },
+    }
+
+    it('🔴 工人端点 401（本机有商家 token）⇒ 不清商家态、只清工人态、上屏服务端文案、不跳商家登录页', async () => {
+      Taro.setStorageSync(STORAGE_KEYS.TOKEN, 'merchant-token')
+      Taro.setStorageSync(STORAGE_KEYS.USER, { id: 'u1', nickname: '管理员' })
+      Taro.setStorageSync(STORAGE_KEYS.WORKER_SESSION, 'stale-worker-session')
+      ;(Taro.request as jest.Mock).mockResolvedValueOnce({ statusCode: 401, data: WORKER_401 })
+
+      await expect(post('/api/worker/production/scan/complete', { qty: 1 })).rejects.toThrow(
+        'Request failed with status 401',
+      )
+
+      // ① 商家登录态一字不动（实测：旧行为把它清掉 ⇒ 用户被踢回登录页）
+      expect((Taro as any).__getStorage()[STORAGE_KEYS.TOKEN]).toBe('merchant-token')
+      expect((Taro as any).__getStorage()[STORAGE_KEYS.USER]).toEqual({ id: 'u1', nickname: '管理员' })
+      expect(Taro.removeStorageSync).not.toHaveBeenCalledWith(STORAGE_KEYS.TOKEN)
+      expect(Taro.removeStorageSync).not.toHaveBeenCalledWith(STORAGE_KEYS.USER)
+      // ② 只清工人 session / 缓存
+      expect((Taro as any).__getStorage()[STORAGE_KEYS.WORKER_SESSION]).toBeUndefined()
+      expect(Taro.removeStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.WORKER_SESSION)
+      // ③ 上屏**服务端**文案（可行动；不换成技术噪声、不换成通用兜底）
+      expect(Taro.showToast).toHaveBeenCalledWith({
+        title: WORKER_401.error.message,
+        icon: 'none',
+      })
+      // ④ 不做商家登录页跳转（引导交给页面自身的身份分流）—— 连定时器推进后也不许跳
+      await jest.advanceTimersByTimeAsync(5000)
+      expect(Taro.redirectTo).not.toHaveBeenCalled()
+    })
+
+    it('工人端点 401 取不到服务端文案 ⇒ 用可行动兜底（不是「Request failed with status 401」）', async () => {
+      ;(Taro.request as jest.Mock).mockResolvedValueOnce({ statusCode: 401, data: {} })
+
+      await expect(get('/api/worker/production/current-worker')).rejects.toThrow(
+        'Request failed with status 401',
+      )
+
+      const titles = (Taro.showToast as jest.Mock).mock.calls.map((call) => call[0].title)
+      expect(titles).toContain('工人身份已失效，请重新用工号 + PIN 登录')
+      expect(titles.join('\n')).not.toContain('Request failed')
+    })
+
+    it('🔴 工人登录输错 PIN（`POST /api/worker/login` 401）同样不误杀商家登录态', async () => {
+      Taro.setStorageSync(STORAGE_KEYS.TOKEN, 'merchant-token')
+      ;(Taro.request as jest.Mock).mockResolvedValueOnce({
+        statusCode: 401,
+        data: { success: false, error: { code: 'AUTH_FAILED', message: '工号或 PIN 不正确' } },
+      })
+
+      await expect(
+        post('/api/worker/login', { workerNo: 'G001', pin: '0000' }, { skipAuth: true }),
+      ).rejects.toThrow('Request failed with status 401')
+
+      expect((Taro as any).__getStorage()[STORAGE_KEYS.TOKEN]).toBe('merchant-token')
+      expect(Taro.showToast).toHaveBeenCalledWith({ title: '工号或 PIN 不正确', icon: 'none' })
+      expect(Taro.redirectTo).not.toHaveBeenCalled()
+    })
+
+    it('商家端点 401 行为**逐字不变**：清商家 token/user + 弹「登录已过期」+ 跳商家登录页', async () => {
+      Taro.setStorageSync(STORAGE_KEYS.TOKEN, 'expired-token')
+      Taro.setStorageSync(STORAGE_KEYS.USER, { id: 'u1' })
+      ;(Taro.request as jest.Mock).mockResolvedValueOnce({
+        statusCode: 401,
+        data: { message: 'Unauthorized' },
+      })
+
+      await expect(get('/api/admin/orders')).rejects.toThrow('Request failed with status 401')
+
+      expect(Taro.removeStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.TOKEN)
+      expect(Taro.removeStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.USER)
+      expect((Taro as any).__getStorage()[STORAGE_KEYS.TOKEN]).toBeUndefined()
+      expect(Taro.showToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: expect.stringContaining('登录已过期') }),
+      )
+      await jest.advanceTimersByTimeAsync(1500)
+      expect(Taro.redirectTo).toHaveBeenCalledWith({ url: '/pages/auth/login/index' })
     })
   })
 

@@ -13,6 +13,13 @@ export default defineAppConfig({
     'pages/production/index/index',
     // 工人登录（issue #4733）：工号 + PIN，主路径不依赖微信；与商家登录页是两条链路
     'pages/worker/login/index',
+    // 工人**首页**（issue #6467 切片 1）：纯工人设备（有工人 session、无商家会话）的落地页 ——
+    // 身份卡 + 扫码报工 / 拍照入库 / 补打入库标签 + 退出工人身份。
+    // 为什么不是商家 tabBar：工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`），
+    // 且 `Taro.switchTab` 只能落 tabBar 页 ⇒ 工人登录成功只能 redirectTo 本页。
+    // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `WORKER_HOME_ROUTE` 必须逐字等于它
+    // （没登记 = 死链 ⇒ 入口台账 tests/page-entry-reachability.test.ts 与 G0 同款守卫判红）
+    'pages/worker/home/index',
     // 工人**拍照入库**（issue #5052 P3）：拍上游标签 → 本机解码优先（0 次 LLM）→ 工人确认
     // → 过账（不可逆，二次确认）→ 出 30×40mm 标签 → 送打印（Web Bluetooth，Android / 桌面 Chrome）。
     // 走 `/api/worker/inbound/**`（工人零商家权限码，不是管理面）。
