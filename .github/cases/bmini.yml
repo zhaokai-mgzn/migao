@@ -1338,7 +1338,7 @@ cases:
       - "判据 3·🔴 **反向红线（可红）**：三个面全部填满并成功登录（密码 / 短信验证码 / PIN 各带一个哨兵值）⇒ 落盘键值里**不出现**任何哨兵；且落盘的键只有账号名三键。红证（实跑，真语料注入）：把 `rememberAccount('employee', identifier.trim())` 改成 `rememberAccount('employee', password)` ⇒ 判据 2 判红。证据：frontend/bmini-app/tests/login-remember-account.test.tsx"
       - "判据 4·**类级**：① 本仓存储键面（`STORAGE_KEYS` 的键值 + `src` 下所有 storage 调用的字面量键）不许出现凭据形态键名（`password`/`pwd`/`pin`/`*code`/`credential`…）；② 账号名三键只有 frontend/bmini-app/src/utils/loginAccount.ts 一个读写点（第二份口径即红）。证据：frontend/bmini-app/tests/login-remember-account.test.tsx（判据 2b / 2c）"
       - "判据 5·**退出登录不清账号名**（它只是输入便利，不是登录态）：调真实现的 `logout()` 后三键原值仍在，而 `auth_token` / `auth_user` 照旧被清（对照组）。证据：frontend/bmini-app/tests/login-remember-account.test.tsx（判据 1e）"
-      - "判据 6·**口径替换已显式登记**：用户口述的「cookies」落地为 **localStorage**（`Taro.setStorageSync` + `STORAGE_KEYS`，与 frontend/bmini-app/src/utils/workerSession.ts 同款）—— 不新引依赖、不用 cookie；替换理由写在本包 CHANGELOG 与 PR body（不静默改口径）。"
+      - "判据 6·**口径替换已显式登记**：用户口述要用浏览器 cookies 存账号名，落地为 **localStorage**（`Taro.setStorageSync` + `STORAGE_KEYS`，与 frontend/bmini-app/src/utils/workerSession.ts 同款）—— 不新引依赖、不用 cookie；替换理由写在本包 CHANGELOG 与 PR body（不静默改口径）。"
     skip_reason: "[backend-contract] 确定性页面判据（jest: frontend/bmini-app/tests/login-remember-account.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-10-07 新增（issue #6478）：用户要求「账号名存在 cookies 中，不要每次都要输入」。冻结口径 = **只记账号名**、按登录面分开存、只在成功登录后写、退出不清；🔴 绝不记 PIN / 密码 / 短信验证码（工人共用 PAD 上更不能留凭据）⇒ 反向红线判据可红（注入「把 pin 也存进去」当场红）。存储用仓内既有 localStorage 约定（用户口述的 cookies 是有意替换，已在 CHANGELOG 与 PR body 写明）。"
     traces:
