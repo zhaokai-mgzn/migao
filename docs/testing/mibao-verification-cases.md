@@ -1220,7 +1220,7 @@
 数据: 判据 2·**台账只许缩短**：每条登记都必须仍能被现扫命中（函数已删 / 已不再被身份感知页面引用 / 端点已搬走 ⇒ 该条已死 ⇒ 红）。红证（实跑）：登记一个不存在的 `shippedLongAgo` ⇒ 判红；摘掉 `shipOrder` 的登记（函数仍在被页面引用）⇒ 判据 1 红
 数据: 判据 3·🔴 **admin 条目必须给出路**：要么 `worker_alternative` 在**同 service** 里真的顶层导出、且其函数体真的含 `/api/worker/`；要么显式写明 `reason`（有意不搬的理由）。红证（实跑）：把 `shipOrder` 的 `worker_alternative` 清空且不给 `reason` ⇒ 红；把替代函数名改成 `shipWorkerOrderGhost` ⇒ 红
 数据: 判据 4·**工人替代必须真的被用上**（`migao-dev-flow` §28.2「判据绿 ≠ 接线在」）：登记了 `worker_alternative` 就必须在调用页里找到对它的调用。红证（实跑，真语料注入）：把 frontend/bmini-app/src/pages/production/index/index.tsx 里的 `shipWorkerOrder(` 改名 ⇒ 报「接线不在」（替代只是声明，工人身份下仍走商家端点）；不注入 ⇒ 同一份判据不报（反向对照）
-数据: 判据 5·**台账不许空转（fail-closed）**：条数为 0 ⇒ 红（「空」不等于「全部合规」）；每条登记必须声明 `case_ids`；正跑还要求「登记集 ⇄ 现扫集」双向相等。台账条数**现取**（不写死），复算：`cd frontend/bmini-app && node -e "const l=require('./tests/worker-action-endpoint-ledger.json');console.log(l.entries.length)"`
+数据: 判据 5·**台账不许空转（fail-closed）**：条数为 0 ⇒ 红（「空」不等于「全部合规」）；每条登记必须声明 `case_ids`；正跑还要求「登记集 ⇄ 现扫集」双向相等。台账条数**现取**（不写死），复算（**在仓根执行**，路径即仓根相对）：`node -e "const l=require('./frontend/bmini-app/tests/worker-action-endpoint-ledger.json');console.log(l.entries.length)"`
 跳过: [backend-contract] 确定性元守卫（jest: frontend/bmini-app/tests/worker-action-endpoint-ledger.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
