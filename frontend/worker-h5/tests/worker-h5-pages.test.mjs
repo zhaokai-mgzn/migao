@@ -12,7 +12,7 @@
 //   ② `report` ∉ pages ⇒ **显式**「本机未开报工页」视图（不静默留一个扫不动码的页面）；
 //   ③ `me` 失败 / `pages` 缺失 ⇒ **fail-open**（报工页照旧可用）+ 显式提示（降级态要看得见）；
 //   ④ 两条跨应用入口（`/b/#/pages/worker/*`）**不受** `pages` 影响（防误删 #5052 的动线）；
-//   ⑤ 闲置登出兜底与服务端**同源**（`DEFAULT_WORKER_IDLE_MINUTES === 10080`，防回退到 15）。
+//   ⑤ 闲置登出兜底与服务端**同源**（`DEFAULT_WORKER_IDLE_MINUTES === 43200`，防回退到 15）。
 //
 // 🔴 前端**不**做权限门禁（本包边界）：`pages` 只决定「页面上看不看得见」，
 // 真正的准入仍在服务端 `/api/worker/**`（后端 `WorkerPages` 类注释是单一真值源）。
@@ -44,7 +44,7 @@ const MACHINE_ENTRY = '/w/machine.html'
 const INBOUND_ENTRY = '/b/#/pages/worker/inbound/index'
 const REPRINT_ENTRY = '/b/#/pages/worker/reprint/index'
 
-const WORKER = { workerName: '张师傅', workerNo: 'W-001', idleMinutes: 10080 }
+const WORKER = { workerName: '张师傅', workerNo: 'W-001', idleMinutes: 43200 }
 
 /**
  * 去掉「标识符里出现的路径」造成的**假命中**（`view.` 命中 `wx.` 的同族坑）。
@@ -268,13 +268,13 @@ test('🔴 ④ 两条跨应用入口**不受** `pages` 影响（防误删 #5052 
 
 // ── 判据 ⑤：闲置兜底与服务端同源 ─────────────────────────────────────────────────────────
 
-test('🔴 ⑤ 闲置登出兜底与服务端默认同源（10080 = 一周），不得回退到 15', () => {
-  assert.equal(DEFAULT_WORKER_IDLE_MINUTES, 10080, '兜底必须 = 服务端 WorkerSessionService.DEFAULT_IDLE_MINUTES')
-  assert.notEqual(DEFAULT_WORKER_IDLE_MINUTES, 15, '改前那处字面 15 会让前端比服务端早 10065 分钟踢人')
+test('🔴 ⑤ 闲置登出兜底与服务端默认同源（43200 = 30 天），不得回退到 15', () => {
+  assert.equal(DEFAULT_WORKER_IDLE_MINUTES, 43200, '兜底必须 = 服务端 WorkerSessionService.DEFAULT_IDLE_MINUTES')
+  assert.notEqual(DEFAULT_WORKER_IDLE_MINUTES, 15, '改前那处字面 15 会让前端比服务端早 43185 分钟踢人')
 })
 
 test('🔴 ⑤ 红证：把兜底改回 15 ⇒ 本判据必红（读数对照）', () => {
-  const fallbackAfter = 10080
+  const fallbackAfter = 43200
   const fallbackBefore = 15
   assert.notEqual(fallbackAfter, fallbackBefore, '两版兜底的读数必须不同（否则本判据是空断言）')
   assert.equal(DEFAULT_WORKER_IDLE_MINUTES === fallbackAfter, true, '现值必须等于服务端同源值')
@@ -289,7 +289,7 @@ test('api.readMe() 打 `GET /api/worker/me` 并带既有的 X-Worker-Session-Id 
       status: 200,
       body: {
         success: true,
-        data: { session_id: 'sess-1', worker_id: 'w-1', worker_no: 'A017', worker_name: '张三', idle_minutes: 10080 },
+        data: { session_id: 'sess-1', worker_id: 'w-1', worker_no: 'A017', worker_name: '张三', idle_minutes: 43200 },
       },
     },
     {
@@ -317,7 +317,7 @@ test('api.readMe() 的 401 ⇒ 抛 SESSION_EXPIRED 并清本地（身份面口�
       status: 200,
       body: {
         success: true,
-        data: { session_id: 'sess-1', worker_id: 'w-1', worker_no: 'A017', worker_name: '张三', idle_minutes: 10080 },
+        data: { session_id: 'sess-1', worker_id: 'w-1', worker_no: 'A017', worker_name: '张三', idle_minutes: 43200 },
       },
     },
     { status: 401, body: { success: false, error: { message: '工人登录已失效，请重新登录' } } },

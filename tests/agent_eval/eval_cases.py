@@ -8931,16 +8931,16 @@ _CASE_PG_047 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-065 [NORMAL] 工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+# ── PG-065 [NORMAL] 工人端页面开关（租户级）+ 工人会话超时 30 天（权限红线不动；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
 _CASE_PG_065 = EvalCase(
     id='PG-065',
     legacy_id='',
-    title='工人端页面开关（租户级）+ 工人会话超时一周（权限红线不动；单测覆盖，非 LLM 行为）',
+    title='工人端页面开关（租户级）+ 工人会话超时 30 天（权限红线不动；单测覆盖，非 LLM 行为）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=['工人手机上该看到哪几页？一体机也一样吗？'],
     expectations=['direct_reply'],
-    data_checks=['GET/PUT /api/admin/worker-page-config：读挂 production:view、写挂 processing:manage；PUT 全量替换，缺键/未知键/非法页名 ⇒ 422 逐条理由（不静默回退默认）', "缺行 ⇒ 读面回默认四页全开（report / order / cut_calc / shipment）+ source='default'", 'GET /api/worker/me 只回本工人身份与本租户页面集；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403', 'worker.session.idle-minutes 全局默认 = 10080（一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话'],
+    data_checks=['GET/PUT /api/admin/worker-page-config：读挂 production:view、写挂 processing:manage；PUT 全量替换，缺键/未知键/非法页名 ⇒ 422 逐条理由（不静默回退默认）', "缺行 ⇒ 读面回默认四页全开（report / order / cut_calc / shipment）+ source='default'", 'GET /api/worker/me 只回本工人身份与本租户页面集；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403', 'worker.session.idle-minutes 全局默认 = 43200（30 天，2026-10-07 用户裁定「延长到 1 个月」；上一版 10080 一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话'],
     skip_reason='[backend-contract] 本条只登记「页面开关 + 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。',
     tags=['processing', 'worker', 'rbac', 'tenant_config', 'backend-contract'],
     persona='',
