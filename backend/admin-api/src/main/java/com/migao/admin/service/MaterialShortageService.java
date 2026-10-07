@@ -11,6 +11,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
@@ -96,6 +97,7 @@ public class MaterialShortageService {
 
     public static final String ERR_LIMIT_INVALID = "MATERIAL_SHORTAGE_LIMIT_INVALID";
     public static final String ERR_STATUS_UNKNOWN = "MATERIAL_SHORTAGE_STATUS_UNKNOWN";
+    public static final String ERR_NO_DATASOURCE = "MATERIAL_SHORTAGE_NO_DATASOURCE";
 
     /**
      * 需求侧 SQL（**权威口径**）。
@@ -261,8 +263,32 @@ public class MaterialShortageService {
             Map.entry("exhaust_date", "预计耗尽日 —— v1 未接线，恒 null"),
             Map.entry("unwired", "该行读不出的字段名（空列表 = 本行无非可比格）"));
 
-    private final JdbcTemplate jdbc;
+    /**
+     * 延迟获取 {@code JdbcTemplate}（**不是**直接注入）：与 {@code ClientRequestIdService} /
+     * {@code MigrationRunner} 同一取舍 —— 无 DataSource 的测试上下文（{@code SecurityConfigTest}
+     * 显式 exclude 了 DataSourceAutoConfiguration / MybatisPlusAutoConfiguration /
+     * RedisAutoConfiguration）里没有这个 Bean，**直接构造注入会让整个应用上下文起不来**
+     * （`AdminApiApplicationTest` / `SecurityConfigTest` 等全上下文用例当场红）。
+     */
+    private final ObjectProvider<JdbcTemplate> jdbcProvider;
     private final BusinessClock businessClock;
+
+    /**
+     * 取 {@code JdbcTemplate}；不可用（本上下文没有 DB）⇒ **fail-closed 抛错**，不静默降级。
+     *
+     * <p>与写侧（{@code ClientRequestIdService} 的 no-op 降级）相反，理由是本视图是**读**：
+     * 拿不到数就返回空列表 = 把「没查」冒充「没问题」（缺料风险视图的首页语义恰好就是
+     * 「没有商品会被吃空」）⇒ 必须响亮失败。</p>
+     */
+    private JdbcTemplate jdbc() {
+        JdbcTemplate template = jdbcProvider == null ? null : jdbcProvider.getIfAvailable();
+        if (template == null) {
+            throw new BusinessException(ERR_NO_DATASOURCE,
+                    "本上下文没有可用的数据源（拿不到 JdbcTemplate）⇒ 用料缺口视图无法取数", 503,
+                    "该端点需要 DB；请确认运行环境已配置数据源（测试上下文 exclude DataSourceAutoConfiguration）");
+        }
+        return template;
+    }
 
     /**
      * 端点入口：取数 + 装配（租户取自 {@link TenantContext}，**原样回显**）。
@@ -278,6 +304,7 @@ public class MaterialShortageService {
         Long tenantId = TenantContext.getTenantId();
         log.info("用料缺口视图: tenantId={}, statuses={}, limit={}, asOf={}", tenantId, statuses, limit, asOf);
 
+        JdbcTemplate jdbc = jdbc();
         List<DemandRow> demand = jdbc.query(String.format(DEMAND_SQL, placeholders(statuses)),
                 demandMapper, tenantId, tenantId, statuses.toArray(), COMPARABLE_UNIT);
         List<SupplyRow> supply = jdbc.query(SUPPLY_SQL, supplyMapper, tenantId, tenantId);
@@ -612,7 +639,7 @@ public class MaterialShortageService {
     // ── 取数辅助 ────────────────────────────────────────────────────────────────
 
     private HistoryDepth readHistoryDepth(Long tenantId) {
-        List<HistoryRow> rows = jdbc.query(HISTORY_DEPTH_SQL, historyMapper, tenantId);
+        List<HistoryRow> rows = jdbc().query(HISTORY_DEPTH_SQL, historyMapper, tenantId);
         if (rows.isEmpty()) {
             return historyDepth(null, null, 0);
         }

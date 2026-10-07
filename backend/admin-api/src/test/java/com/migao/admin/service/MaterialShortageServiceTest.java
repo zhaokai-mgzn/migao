@@ -21,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.io.IOException;
@@ -434,7 +435,7 @@ class MaterialShortageServiceTest {
     @Test
     @DisplayName("🔴 limit 非法（0 / 负数 / 非整数）⇒ 400 显式拒绝，且**不触达 DB**")
     void invalidLimitIsRejectedBeforeAnyQuery() {
-        MaterialShortageService service = new MaterialShortageService(jdbc, businessClock());
+        MaterialShortageService service = new MaterialShortageService(provider(jdbc), businessClock());
         for (String bad : List.of("0", "-1", "-50", "abc", "1.5")) {
             assertThatThrownBy(() -> service.shortage("confirmed,producing", bad, "2026-10-04"))
                     .as("limit=%s", bad)
@@ -485,10 +486,35 @@ class MaterialShortageServiceTest {
         return new BusinessClock(Clock.fixed(Instant.parse("2026-10-04T00:00:00Z"), ZoneOffset.UTC));
     }
 
+    /** 把 mock JdbcTemplate 包成 ObjectProvider（生产代码用它做「无 DataSource 上下文」降级）。 */
+    private static ObjectProvider<JdbcTemplate> provider(JdbcTemplate jdbc) {
+        return new ObjectProvider<>() {
+            @Override
+            public JdbcTemplate getObject() {
+                return jdbc;
+            }
+
+            @Override
+            public JdbcTemplate getObject(Object... args) {
+                return jdbc;
+            }
+
+            @Override
+            public JdbcTemplate getIfAvailable() {
+                return jdbc;
+            }
+
+            @Override
+            public JdbcTemplate getIfUnique() {
+                return jdbc;
+            }
+        };
+    }
+
     @Test
     @DisplayName("as_of 缺省取业务「今天」（Asia/Shanghai，注入时钟钉住），显式传入则原样使用")
     void asOfComesFromBusinessClockOrCaller() {
-        MaterialShortageService service = new MaterialShortageService(jdbc, businessClock());
+        MaterialShortageService service = new MaterialShortageService(provider(jdbc), businessClock());
         assertThat(service.parseAsOf(null)).isEqualTo(LocalDate.of(2026, 10, 4));
         assertThat(service.parseAsOf("2026-01-02")).isEqualTo(LocalDate.of(2026, 1, 2));
         assertThatThrownBy(() -> service.parseAsOf("2026/01/02"))
