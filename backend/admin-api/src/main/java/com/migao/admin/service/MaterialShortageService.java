@@ -21,7 +21,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.temporal.IsoFields;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -60,8 +62,8 @@ import java.util.TreeSet;
  *       {@code rate_per_week} / {@code exhaust_date} 一律 {@code not_wired} + 具名理由
  *       （{@link #NO_TRUTH_REASONS}：真值在台账，但 v1 装配层未接线）；截断 ⇒ 有真值字段落
  *       {@code incomplete} + 带上限与本次实际值的可归因读数。</li>
- *   <li><b>确定性</b>：本类**不出现** {@code LocalDate.now()} / {@code Instant.now()} /
- *       {@code OffsetDateTime.now()} —— 业务「今天」由 {@link BusinessClock} 单点取
+ *   <li><b>确定性</b>：本类**不调用** {@link LocalDate#now} / {@link Instant#now} /
+ *       {@link OffsetDateTime#now} 这类挂钟读法 —— 业务「今天」由 {@link BusinessClock} 单点取
  *       （只需 {@code asOf}），或由调用方直接传入（机械判据 = 测试里的源码扫描）。</li>
  * </ol>
  *
@@ -434,7 +436,7 @@ public class MaterialShortageService {
                 new NonComparable(nonComparableLines, nonComparableProducts),
                 nonComparableLines,
                 nonComparableProducts,
-                historyDepth));
+                historyDepth);
     }
 
     /** 分层（六档；{@link #BAND_SHORT} 是「缺口确定、紧迫性未知」—— 🔴 不得并进 critical）。 */
@@ -446,7 +448,8 @@ public class MaterialShortageService {
             return BAND_SAFE;
         }
         if (daysToDeadline == null) {
-            return "critical";
+            // 缺口确定、紧迫性未知 ⇒ **单列 short**（并进 critical 会把没填交期的排进最紧急一批）
+            return BAND_SHORT;
         }
         if (daysToDeadline < 0) {
             return "blocked";
@@ -581,7 +584,7 @@ public class MaterialShortageService {
             limit = Integer.parseInt(raw.trim());
         } catch (NumberFormatException e) {
             throw new BusinessException(ERR_LIMIT_INVALID,
-                    String.format("limit 必须是整数：%s", raw), 400,
+                    String.format("limit 必须是整数且 ≥ 1：%s", raw), 400,
                     String.format("limit 必须 ≥ 1（缺省 %d）", DEFAULT_LIMIT));
         }
         if (limit < 1) {

@@ -145,7 +145,8 @@ class MaterialShortageServiceTest {
         // 真 0 需求：可比、合计确为 0 ⇒ 照实 0，且**不是** unknown
         MaterialShortageRow zero = row(view, "p-zero");
         assertThat(zero.demandQty()).isEqualByComparingTo("0");
-        assertThat(zero.demandLines()).isZero();
+        // 夹具固定 1 个需求行 ⇒ 照实回显 1；关键是**与不可比行的 null 可分**（不是 0/未知混同）
+        assertThat(zero.demandLines()).isEqualTo(1);
         assertThat(zero.riskBand()).isEqualTo("safe");
         assertThat(zero.unwired()).doesNotContain("demand_qty");
     }
@@ -233,8 +234,12 @@ class MaterialShortageServiceTest {
                 deadline("p-c2", AS_OF.minusDays(1)));
 
         MaterialShortageView view = build(50, demand, supply, units, deadlines);
+        // 行序 = 分层**紧急度降序**（blocked0 → critical1 → short3 → safe4）→ gap 降序 → product_id 升序。
+        // p-a1 = blocked（交期已过 2 天，gap 99）；p-b1/p-b2/p-c2 = critical（交期 1 天前）；
+        // 三档内 gap 降序 = 40 / 30 / 30，同 gap 再按 product_id 升序（p-b2 < p-c2）；
+        // p-u1 = unknown（单位「件」不可比）恒排最后。
         assertThat(view.rows().stream().map(MaterialShortageRow::productId).toList())
-                .containsExactly("p-b1", "p-b2", "p-c2", "p-a1", "p-u1");
+                .containsExactly("p-a1", "p-b1", "p-b2", "p-c2", "p-u1");
 
         // 反向输入行序 ⇒ 逐字相同输出（同一快照确定性）
         List<DemandRow> reversed = new ArrayList<>(demand);
