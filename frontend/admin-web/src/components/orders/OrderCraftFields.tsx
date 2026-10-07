@@ -393,7 +393,7 @@ export default function OrderCraftFields({
             onChange={(next) => onChange({ craftTier: next })}
           />
           <p className="mt-1 text-xs text-neutral-400">
-            档位来自「工艺配置 → 算料配置」的档位表（可增删），随单落库
+            档位来自「工艺配置 → 算料配置」的档位表（可增删），随这张单一起保存
           </p>
         </div>
       )}

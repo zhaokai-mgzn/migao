@@ -146,7 +146,7 @@ const platformGuarantees = [
   {
     icon: ClipboardList,
     title: '操作可追溯',
-    description: 'AI 工具调用与关键业务操作落库审计，身份取自登录上下文，敏感参数脱敏记录。',
+    description: 'AI 的工具调用与关键业务操作全程留有记录可查，身份取自登录账号，敏感信息脱敏保存。',
   },
   {
     icon: BookOpen,

@@ -702,7 +702,7 @@ export default function ProcessingOrderProductionPage() {
               <h2 className="text-base font-medium text-neutral-900">卡在哪</h2>
               <span className="text-xs text-neutral-500">
                 A 模式 · 只查「没开工」；阈值 {stuckPoints?.threshold_hours ?? '—'} 小时（
-                {stuckPoints?.threshold_source === 'history' ? '历史中位数' : '系统兜底默认值'}）
+                {stuckPoints?.threshold_source === 'history' ? '历史中位数' : '系统默认值'}）
               </span>
             </div>
             {stuckPointsError ? (
@@ -821,8 +821,8 @@ export default function ProcessingOrderProductionPage() {
               >
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>
-                  <span className="font-medium">测试用</span>：逐张渲染每个商品/部位自己的扫码内容
-                  （scan_url / part_token），不是加工单号；扫码工具读不出来时可复制短码，
+                  <span className="font-medium">测试用</span>：逐张显示每个商品/部位自己的二维码内容，
+                  不是加工单号；扫码工具读不出来时可复制短码，
                   或在报工页<span className="font-medium">手动输入</span>加工单号。
                 </span>
               </p>

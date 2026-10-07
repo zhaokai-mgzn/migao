@@ -123,7 +123,7 @@ export interface PrintDotGeometry {
 export function printDotGeometry(media: PrintMediaId): PrintDotGeometry {
   const spec = PRINT_MEDIA_SPECS[media] as (PrintMediaSpec & { dotGeometry?: PrintDotGeometry }) | undefined
   const geometry = spec?.dotGeometry
-  if (!geometry) throw new Error(`介质 ${media} 没有登记 dotGeometry（像素口径的唯一真值源）`)
+  if (!geometry) throw new Error(`介质 ${media} 还没登记像素参数，无法换算尺寸`)
   return geometry
 }
 
