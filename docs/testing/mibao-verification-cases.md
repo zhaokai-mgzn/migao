@@ -9870,7 +9870,7 @@
 跳过: [backend-contract] 纯前端公开页面（无 LLM 行为）：由 vitest 验证；页面级视觉另有 Playwright 截图 + 多模态读图一轮（migao-dev-flow §15.7 口径），不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change, frontend-fix.ui-token
-溯源: 2026-10-04 新增（issue #6291）：官网企业站整体重构 —— 视觉改用产品自身的织物质感 token（frontend/admin-web/tailwind.config.ts 的 primary/accent/neutral + Logo 织金），文案按 config/menu.ts 的六个能力域与两位 AI 的真实工具能力重写；联系页占位假值按用户裁定改为「只保留在线留言」。取号 UI-082（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-081）。2026-10-05 补（issue #6326）：四页文案由口语化改为「能力陈述型」书面语（对齐 B 端官网：短标题 + 名词化正文 + 可验证事实 + 克制的 CTA），事实口径一字未动，新增判据 6（AI 口语词表反回退，含判别力自证）。 ｜ tags: ui, homepage, corporate, copy-truthfulness, admin-web
+溯源: 2026-10-04 新增（issue #6291）：官网企业站整体重构 —— 视觉改用产品自身的织物质感 token（frontend/admin-web/tailwind.config.ts 的 primary/accent/neutral + Logo 织金），文案按 config/menu.ts 的六个能力域与两位 AI 的真实工具能力重写；联系页占位假值按用户裁定改为「只保留在线留言」。取号 UI-082（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-081）。2026-10-05 补（issue #6326）：四页文案由口语化改为「能力陈述型」书面语（对齐 B 端官网：短标题 + 名词化正文 + 可验证事实 + 克制的 CTA），事实口径一字未动，新增判据 6（AI 口语词表反回退，含判别力自证）。2026-10-07 补（issue #6463，产品定位文案）：登录页 / 首次改密页副标题 + app/layout.tsx 的 title/description 的定位口径由「电商管理」改为「经营管理平台」（用户逐字「这里的定位已经不太对了，我们不单单管理电商了」）；新增类级守卫 tests/unit_ci_workflows/test_positioning_copy_terms.py（生产源码里旧定位串反回退 + 三处正向锚 + 注入式红证与注释面正面对照），traces 同步登记；既有判据 1~6 与 expectations 一字未动。 ｜ tags: ui, homepage, corporate, copy-truthfulness, admin-web
 
 ### UI-083. 右上角用户卡片「点击外部收起」回归修复（issue #6339）：fixed 遮罩落在 backdrop-blur 祖先内 ⇒ 只盖住顶栏 56px；改文档级 mousedown + 类级不变式「fixed 不得落在生成包含块的祖先内」 🔵
 ```
