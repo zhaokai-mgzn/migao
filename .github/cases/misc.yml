@@ -159,7 +159,7 @@ cases:
       - "**判据 4**：生效码必须在权限目录（`RegistrationService` 种子）里 —— 拼错 ⇒ 该端点对所有角色恒 403 ⇒ 红"
       - "**判据 5（对照读数只许缩短）**：`/api/admin/**` 上「无任何生效码」的端点总数 ≤ 10（修前实测 13，本单 -3）；增长 ⇒ 红，缩短后须调低台账读数（台账读数与现取不一致亦红）"
       - "**判据 6（判别力自证）**：五种坏形态（新增无注解读端点 / 摘掉注解 / 幽灵台账条目 / 码拼错 / 重新标 exempt）在**内存构造的源码**上各自判红；只改注释 ⇒ **不红**（对照读数）"
-      - "**跨码面（真值在同 PR 的判据 2）**：`/roles/all` 与米宝 `role_manage` 工具跨码（页面守卫 `employee:list` vs 工具 `system:view`）⇒ 具名登记在 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`，未登记/陈旧 ⇒ 判据 2 红"
+      - "**跨码面（真值在同 PR 的判据 2）**：`/roles/all` 与黄金策 `role_manage` 工具跨码（页面守卫 `employee:list` vs 工具 `system:view`）⇒ 具名登记在 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`，未登记/陈旧 ⇒ 判据 2 红"
       - "**覆盖面照实登记**：判据只裁这一个 controller（其余 `/api/admin/**` 无码端点归既有 `UNANNOTATED_ENDPOINTS` 台账）；判「注解面」不判运行时授权（运行时身份级读数在 SecurityConfigTest）"
     skip_reason: "[backend-contract] 注解面 / 台账的离线判据（零 LLM、秒级；只读源码文本，不连库/不跑 LLM）由 tests/unit_ci_workflows/test_admin_role_read_surface_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-10-02 新增（issue #5980：`GET /api/admin/roles` 与 `/roles/all` 无 `@RequirePermission` ⇒ 按 `docs/wiki/RBAC.md` 的「放行策略现状」分支 ③ 对全部商户员工开放，含 0 权限岗位）。落码 = `AdminRoleController` 三条读端点的方法级注解（`/roles`·`/roles/{id}` → 既有读码 `system:view`；`/roles/all` → 既有读码 `employee:list`）+ 本判据 test_admin_role_read_surface_guard.py + 端点台账 `admin_role_read_surface_ledger.json`（`exempt` 面落地后为空 = 只许缩短）+ 既有台账三处同步：判据 8 的 `UNANNOTATED_ENDPOINTS` 删三条（陈旧即红）、`CODE_DIVERGENCE_EXCEPTIONS['role_manage']` 新增（上限 1→2，同 diff 显式）、`rbac/manifest.json` 的 `pages[employees|roles].units` 与 `rbac/readings.json` 重生成。**选码口径（逐调用方核对，零回归）**：`/roles/all` 唯一调用方 = `employeeApi.loadPositions()`（员工管理页岗位下拉，该页守卫码 `employee:list`）；`/roles` 是岗位权限页**第一屏**（`roleApi.getRoles()`，该页守卫码 `system:view`）⇒ 各取**该页**的既有读码，**不新增权限码、不改岗位矩阵**。取号 MC-005/006（现取最小空闲号：main ∪ 在飞 PR #5993/#5994 已占 MC-062；#5951 退役留下的空号由本单收回，与那两条无继承关系）。"
@@ -505,7 +505,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "发布目标限定在 <静态根>/w 子树；静态根（同时承载线上 C 端 H5）不得被任何 --delete/清空/rm -rf 触碰：远端输出自证 PARENT_INDEX_BEFORE_SHA256 == PARENT_INDEX_AFTER_SHA256，且沙箱行为测试断言父目录 index.html 逐字节不变"
-      - "发布后 GET https://app.migaozn.com/w/ 的 body 哈希 == 仓库 frontend/worker-h5/index.html（同样断言 /w/index.html 与 /w/src/app.mjs），body 含 src/app.mjs 且不含 TARO_ / 小布智能助手 —— 修复前 /w/ 已是 200 的 C 端页面，故 200 本身不是判据"
+      - "发布后 GET https://app.migaozn.com/w/ 的 body 哈希 == 仓库 frontend/worker-h5/index.html（同样断言 /w/index.html 与 /w/src/app.mjs），body 含 src/app.mjs 且不含 TARO_ / 元元智能助手 —— 修复前 /w/ 已是 200 的 C 端页面，故 200 本身不是判据"
       - "越界子目录（.. / . / 空 / /etc / a/b）必须拒绝且静态根零改动；连跑两次结果一致（幂等），w/ 子树内的陈旧文件被收敛"
       - "🔴 module **闭包加载**判据（issue #6306）：起点 = **发布集内每个 `*.html` 入口**（worker 有两个：`index.html → src/app.mjs`；`machine.html → src/machine-app.mjs`，只从 index 出发会漏掉 `machine.mjs` 那条链），沿**静态 `import … from` + 动态 `import('…')` 字面量**递归取每个依赖，逐个断 `200`；闭包**空集判红**；另断入口引用的 `<link rel=\"stylesheet\" href>` = 200 —— 病根是共享模块曾住仓根 `frontend/shared/`（发布集外）⇒ 线上被 nginx SPA 兜底接成 `200 text/html` ⇒ 浏览器拒绝执行 module script ⇒ 整页白屏，而身份 / 字节哈希 / MIME 三面**条条全绿**。判据 = `tests/unit_ci_workflows/test_worker_h5_module_closure_guard.py`（结构元守卫：按现取腿集合判 + 豁免台账只许缩短 + 四组锚的注入式红证 + 本地静态服务上真跑绿/红两面）"
     skip_reason: "[backend-contract] 部署 workflow / 发布脚本由 pytest 单测 + 沙箱行为测试验证（tests/unit_ci_workflows/test_worker_h5_hosting.py），非 LLM 行为，不进入 agent-eval 冒烟"
@@ -661,14 +661,14 @@ cases:
       verifies: []
 
   # ==========================================================================
-  # MC-021（issue #5247，P4）：B 端米宝**只读化**。用户裁定 2026-09-23：
+  # MC-021（issue #5247，P4）：B 端黄金策**只读化**。用户裁定 2026-09-23：
   # 「B 端 agent 定位要求侧重数据查询和分析；创建和更新能力以及 tools 都从 B 端移除」。
   # 病：只读化是**跨三个文件族的联合事实**（工具声明 `read_only`/`VALID_ACTIONS`、
   # skill 绑定 `*_TOOLS`、能力文案）——任何一处改回去都不会有东西变红。
   # ==========================================================================
   - id: MC-021
     legacy_id: ""
-    title: "B 端米宝只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动"
+    title: "B 端黄金策只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动"
     domains:
       - misc
       - ci
@@ -690,7 +690,7 @@ cases:
       - "判据 1（L0）：mibao 的 skill 并集（`skill_names` + `fallback_skill`）里**每个**工具都必须 `read_only = True`，且不得有悬空绑定（绑了不存在的工具名 ⇒ 红）"
       - "判据 2（L0）：写能力工具**一个都不得绑在 B 端**——具名清单 11 个（order_create / order_manage / product_manage / product_update / sku_update / processing_item_manage / processing_order_generate / processing_order_update / settings_manage / notification_manage / validate_input）"
       - "判据 3（L0）：B 端可达工具的 `VALID_ACTIONS` ⊆ 其 `read_only_actions`；另有**写 action 闭词表**兜底（把写 action 挪进 read_only_actions 洗白也红）"
-      - "判据 4（L1 能力谎报）：`mibao.py` 的 `greeting` / `direct_replies.*` 在**非否定句**里不得出现写能力承诺词（闭词表；否定句豁免 —— 如实告知「米宝不做这类操作」不算谎报）"
+      - "判据 4（L1 能力谎报）：`mibao.py` 的 `greeting` / `direct_replies.*` 在**非否定句**里不得出现写能力承诺词（闭词表；否定句豁免 —— 如实告知「黄金策不做这类操作」不算谎报）"
       - "判据 5（边界）：与 C 端共享的 8 个工具（order_create / validate_input / interact / knowledge_search / processing_item_query / product_search / product_detail / production_progress_query）必须**仍然存在**且**仍被 C 端 skill 绑定** —— 「只解绑 B 端、绝不删除、C 端零改动」是用户裁定的硬边界"
       - "红证（九条注入**各能单独变红**）：① order_create 绑回 order skill ①b settings_manage 绑回 product skill ② 工具 read_only 改回 False ②b 悬空绑定 ③ 塞回写 action ③b 把写 action 挪进 read_only_actions 洗白 ④ capabilities 注入「我可以帮您创建商品」④b greeting 注入写能力承诺 ⑤ 摘掉共享工具的 C 端绑定 ⇒ 对应判据逐条变红"
     skip_reason: "[backend-contract] B 端只读化是源码静态事实（工具声明 / skill 绑定 / 能力文案），由零依赖 pytest 静态判据 + 九条注入式红证验证（tests/unit_ci_workflows/test_mibao_b_end_readonly.py），非 LLM 行为，不进入 agent-eval 冒烟"
@@ -1643,7 +1643,7 @@ cases:
       - "**台账销账**：`LEGACY_ROLES_IN_FALLBACK` 必须为空（两个角色已进种子 ⇒ 留着一条不空的登记 = 两套真相）；销账后语义更严（任何种子外的回退角色都判红）"
       - "**红证**：从种子里删掉一个角色 ⇒ 红；让 V137 多授一个码 ⇒ 红（逐值比较分支）；把登记表塞回一条 ⇒ 红；只改散文 ⇒ 不红"
     skip_reason: "[backend-contract] P6 历史岗位码正式定义的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_migration_convergence.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P6 阶段；人类 2026-09-27 裁定出口 (i)「正式定义」）。落码 = `RegistrationService.initializeDefaultRolesAndPermissions` 建两个 roles 行 + 授默认码（码集逐字取自回退 switch）+ 清单 `roles.seed` 补两角色 + 生成器渲染的 `V137__formalize_legacy_roles.sql` + `LEGACY_ROLES_IN_FALLBACK` 整表销账 + 镜像（ai-agent `ROLE_PERMISSIONS` 的两条口径注记改准）。⚠️ 转述更正：派单里「幽灵角色码**数据库里存在**」是错的载体 —— 它们**不在库里**（无 roles 行、无 role_permissions），只在回退 switch / 米宝 allowed_roles / bmini 角色名映射里。取号 MC-044：与 MC-039 同 PR 顺延。（**rebase 让号，记实**：同步 main 后 main 已并入 `MC-039`~`MC-041`、在飞 PR #5733 已占 `MC-042` ⇒ 本包顺延为 `MC-043`~`MC-045`（取号判据只看已合并状态，拦不住在飞撞号 —— 本仓第 N 次实证）。）"
+    merge_log: "2026-09-27 新增（跟踪单 #5699 的 P6 阶段；人类 2026-09-27 裁定出口 (i)「正式定义」）。落码 = `RegistrationService.initializeDefaultRolesAndPermissions` 建两个 roles 行 + 授默认码（码集逐字取自回退 switch）+ 清单 `roles.seed` 补两角色 + 生成器渲染的 `V137__formalize_legacy_roles.sql` + `LEGACY_ROLES_IN_FALLBACK` 整表销账 + 镜像（ai-agent `ROLE_PERMISSIONS` 的两条口径注记改准）。⚠️ 转述更正：派单里「幽灵角色码**数据库里存在**」是错的载体 —— 它们**不在库里**（无 roles 行、无 role_permissions），只在回退 switch / 黄金策 allowed_roles / bmini 角色名映射里。取号 MC-044：与 MC-039 同 PR 顺延。（**rebase 让号，记实**：同步 main 后 main 已并入 `MC-039`~`MC-041`、在飞 PR #5733 已占 `MC-042` ⇒ 本包顺延为 `MC-043`~`MC-045`（取号判据只看已合并状态，拦不住在飞撞号 —— 本仓第 N 次实证）。）"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_rbac_migration_convergence.py"
@@ -1753,7 +1753,7 @@ cases:
       verifies: []
 
   # ==========================================================================
-  # MC-046（issue #4184）：C 端小布 H5（`frontend/mini-app` 的 `build:h5` 产物）**没有部署通路**。
+  # MC-046（issue #4184）：C 端元元 H5（`frontend/mini-app` 的 `build:h5` 产物）**没有部署通路**。
   # 病（现取复算，2026-09-27）：线上 `app.migaozn.com/js/app.js` 的 `Last-Modified` = 08-30 06:54 GMT，
   # 而 `frontend/mini-app` 最近改动 = 09-26 ⇒ 落后 ~28 天；而建腿前 `grep -rln '/opt/migao-deploy' .github/workflows/`
   # **0 命中** ⇒ **没有任何东西会因此变红**（「C 端已部署」一直被当真）。
@@ -1956,7 +1956,7 @@ cases:
       - "**判据 6（换了措辞的「旧落点」口径同样红）**：加载面出现「沿革 …（写进 / 迁至 / 移至 / 放进 / 放入 / 放在）… 正文」⇒ 红。红证**在真实文件上**：把 description 改回「已迁至正文「版本沿革」节」⇒ **具名判红**（旧落点口径：沿革已迁至正文），还原后 9 passed"
       - "**「加载面」定义的对照（防假红 + 防假绿）**：同样的文字放在 YAML 注释里 ⇒ **不红**（注释不进上下文，刻意留着「此前写…」的历史说明）；放进 description ⇒ **必须红**"
     skip_reason: "[backend-contract] 技能加载面的静态/结构判据（只读仓内两个文件，零网络、零时钟、不跑被引用的测试、不烧 token）由 tests/unit_ci_workflows/test_skill_load_surface.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-01 新增（issue #5853：用户就「优化 API 用量」三条通用建议（合并调用 / 精简 prompt / 按复杂度选模型）问「能否应用到米高研发模式」，并选定**技能分层**）：研发模式的加载成本集中在 migao-dev-flow —— 加载它 = 把整份 SKILL.md 放进上下文，而正文 `## 版本沿革` 节 = 1122 条目行 / 96,269 字符，沿革是纯历史记录、执行流程时零需要。本次把 dev-flow 与 migao-acceptance 两个技能的沿革**逐字**外置到同目录 CHANGELOG.md（SKILL.md 只留指针），**加载面** 328,954 → 231,203 字符（**-29.7%**）、acceptance 26,306 → 21,065（-19.9%）；三处「沿革写进正文」的口径副本同批改；类级守卫 = tests/unit_ci_workflows/test_skill_load_surface.py（回流即红 / 外置≠删除 / 指针在位 / 旧落点口径 / 内存红证 + 加载面定义对照）。⚠️ 判据在真实语料上当场抓到 1 条存量散落沿革（v1.91.0 写在 §27 尾部），同批并入。⚠️ **独立验收 agent 又抓到第 4 处副本**（description 里「已迁至正文」——换了动词故漏网，且在加载面内）⇒ 同 PR 修复 + 判据升级为扫「真加载面」并新增判据 6。⚠️ 未实装：不设体积上限（设了会挡住正常的纪律新增）、正文里支撑纪律的实证叙述不动、判不了「沿革内容是否完整」、判据 6 仍是字面形态判据（不重叠措辞在射程外）。取号 MC-052（现取 main + 全部在飞分支的 `- id:` 差集：main 最大 = MC-051）。"
+    merge_log: "2026-10-01 新增（issue #5853：用户就「优化 API 用量」三条通用建议（合并调用 / 精简 prompt / 按复杂度选模型）问「能否应用到观星台研发模式」，并选定**技能分层**）：研发模式的加载成本集中在 migao-dev-flow —— 加载它 = 把整份 SKILL.md 放进上下文，而正文 `## 版本沿革` 节 = 1122 条目行 / 96,269 字符，沿革是纯历史记录、执行流程时零需要。本次把 dev-flow 与 migao-acceptance 两个技能的沿革**逐字**外置到同目录 CHANGELOG.md（SKILL.md 只留指针），**加载面** 328,954 → 231,203 字符（**-29.7%**）、acceptance 26,306 → 21,065（-19.9%）；三处「沿革写进正文」的口径副本同批改；类级守卫 = tests/unit_ci_workflows/test_skill_load_surface.py（回流即红 / 外置≠删除 / 指针在位 / 旧落点口径 / 内存红证 + 加载面定义对照）。⚠️ 判据在真实语料上当场抓到 1 条存量散落沿革（v1.91.0 写在 §27 尾部），同批并入。⚠️ **独立验收 agent 又抓到第 4 处副本**（description 里「已迁至正文」——换了动词故漏网，且在加载面内）⇒ 同 PR 修复 + 判据升级为扫「真加载面」并新增判据 6。⚠️ 未实装：不设体积上限（设了会挡住正常的纪律新增）、正文里支撑纪律的实证叙述不动、判不了「沿革内容是否完整」、判据 6 仍是字面形态判据（不重叠措辞在射程外）。取号 MC-052（现取 main + 全部在飞分支的 `- id:` 差集：main 最大 = MC-051）。"
     traces:
       ci:
         - pr-check.yml
@@ -2352,7 +2352,7 @@ cases:
         - tests/unit_ci_workflows/test_rbac_derived_pages.py
       verifies: []
 
-  # MC-063（issue #5989，P1）：米宝「**导航类**」指引真值源 ——
+  # MC-063（issue #5989，P1）：黄金策「**导航类**」指引真值源 ——
   # 「功能 ⇄ 页面 ⇄ 权限码 ⇄ 你这角色能不能看」的登记表 + 默认拒绝 + citation + 禁止编步骤。
   # 用户 2026-10-02 裁定：真值源 = **C 混合**（结构性事实走登记表、步骤/图文留给知识卡片），
   # **第一批只做「导航类」**（不写操作步骤）。病 = 此前**没有任何**「功能 ↔ 页面 ↔ 角色可见性」
@@ -2627,7 +2627,7 @@ cases:
       - "**判据 1（值域 ⊆ 白名单）**：`AgentBatchService` 的 `TYPE_*` 常量字面量 ⊆ `ck_agent_batch_type` 允许值；`TYPE_FIELD` 引用的 `FIELD_*` 常量字面量 ⊆ `ck_agent_batch_item_field` 允许值（**别名要解析**：`FIELD_*` 的定义体是 `AgentWriteValues.FIELD_*`）。执行点 = tests/unit_ci_workflows/test_agent_batch_type_domain.py 的 `test_code_batch_domains_are_allowed_by_the_db_constraints`。"
       - "**判据 2（两条终态一致）**：迁移链按版本号重放（DROP 置空 / ADD 重取 `CHECK (<列> IN …)`）得到的终态白名单 == `db/init/schema.sql`（基线）的终态；任一侧少一个值 ⇒ 红。执行点 = 同文件同判据函数（`migration_replay` ⇄ `schema_constraints` 的差集）。"
       - "**判据 3（fail-closed）**：两个来源解析为空 / 变量解析不出字面量 / 约束在两处都不存在 ⇒ 一律判红，不得读成「没问题」。执行点 = 同文件 `domain_problems` 的 fail-closed 分支 + 判别力自证的 ⑤⑥ 两条。"
-      - "**判据 4（缺陷 C：路由目的地恒在图上）**：`_get_intent_to_route(agent)` 的每个值、以及 `route_by_intent(state)` 在边界输入（未绑定的 `pending_interact_skill` / `action=handoff_offer` 在米宝上 / notification 意图）下的返回值，必须 ∈ 该 agent 的 `skill_route_map` 的 key ∪ value；另有「`_route_map` 的 value 必须是真的图节点」这条自证坐标。执行点 = backend/ai-agent-service/tests/test_route_destination_binding.py 的 `test_every_mapped_destination_is_a_node` / `test_known_intents_land_on_a_node` / `test_any_pending_skill_lands_on_a_node` / `test_handoff_offer_only_where_the_node_exists` / `test_route_map_values_are_real_nodes`。"
+      - "**判据 4（缺陷 C：路由目的地恒在图上）**：`_get_intent_to_route(agent)` 的每个值、以及 `route_by_intent(state)` 在边界输入（未绑定的 `pending_interact_skill` / `action=handoff_offer` 在黄金策上 / notification 意图）下的返回值，必须 ∈ 该 agent 的 `skill_route_map` 的 key ∪ value；另有「`_route_map` 的 value 必须是真的图节点」这条自证坐标。执行点 = backend/ai-agent-service/tests/test_route_destination_binding.py 的 `test_every_mapped_destination_is_a_node` / `test_known_intents_land_on_a_node` / `test_any_pending_skill_lands_on_a_node` / `test_handoff_offer_only_where_the_node_exists` / `test_route_map_values_are_real_nodes`。"
       - "**判别力自证（注入式红证）**：① 约束里去掉 `inventory_stock` ⇒ `test_code_batch_domains_are_allowed_by_the_db_constraints` 红并具名「代码写入的取值 ['inventory_stock'] 不在 schema.sql 的 ck_agent_batch_type 的白名单里」（实测 1 failed / 2 passed）；② 摘掉 `pending_skill` 目的地闸 ⇒ `test_any_pending_skill_lands_on_a_node` 红并报出 `route_by_intent 返回 'settings'`（= 2026-10-02 实测崩溃形态，1 failed / 27 passed）；③ 摘掉 `handoff_offer` 目的地闸 ⇒ `test_handoff_offer_only_where_the_node_exists` 红（1 failed / 27 passed）；④ 对照：不注入 ⇒ 全绿、只改注释 ⇒ 不红。执行点 = 两文件各自的 `test_injected_bad_corpora_are_named` / 上列参数化用例。"
       - "🔴 **覆盖边界（显式登记）**：① 批次取值判据只认落码形态（`public static final String X = <字面量>;` 与 `Map.of(TYPE_a, FIELD_b, …)` 两种落码形态）；拼接 / 枚举 / 反射 / 配置文件派生的取值不在射程。② 只对账 `schema.sql`（基线）与**活**迁移链；归档链有意不看（V127 已冻结在指纹账本里，其值由 V146 显式重建）。③ 路由判据只覆盖已登记的 `mibao` / `xiaobu`；`pending_interact_skill` 里图上没有的名字只在**本轮**改判到 fallback，会话状态面的清零不属射程。④ 真库面（索引/事务/端点）由 `AgentBatchMigrationTest` / `AgentBatchServiceTest` 承担。⑤ 不查 GitHub / 不联网 / 不起真库 / 不烧 token。⑥ 本判据不改任何门禁的通过条件、不新增豁免。"
     skip_reason: "[backend-contract] 纯静态文本对账 + 纯内存图对象判定（零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_agent_batch_type_domain.py 与 backend/ai-agent-service/tests/test_route_destination_binding.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
@@ -2637,12 +2637,12 @@ cases:
         - tests/unit_ci_workflows/test_agent_batch_type_domain.py
         - backend/ai-agent-service/tests/test_route_destination_binding.py
   # MC-067（issue #5989 下半场 / P2）：**主动新手引导**（用户 2026-10-02 裁定形态 A =
-  # 「首次进入某个已登记页面 ⇒ 米宝在**对话区**主动发一条**导航提示**」）。
+  # 「首次进入某个已登记页面 ⇒ 黄金策在**对话区**主动发一条**导航提示**」）。
   # 服务端**只判定**（纯函数 + 会话级频率上限），前端只递交「进页」事件；
   # 不新建 SSE 主动推 / 定时 / 队列等推送基础设施。
   - id: MC-070
     legacy_id: ""
-    title: "米宝**主动新手引导**（issue #5989 · P2）：首次进某个已登记页面 ⇒ 对话区主动发一条**导航提示**；**每页每会话最多 1 次**（服务端判，不靠前端自觉）· **只推该角色可见的**（只读服务端会话权限）· **未登记页面不推**（默认拒绝，静默）· **只给导航不给步骤**（结构 + 文案双层）· 拿不到「在哪一页 / 这页能做什么」⇒ **不发**（可行动性）"
+    title: "黄金策**主动新手引导**（issue #5989 · P2）：首次进某个已登记页面 ⇒ 对话区主动发一条**导航提示**；**每页每会话最多 1 次**（服务端判，不靠前端自觉）· **只推该角色可见的**（只读服务端会话权限）· **未登记页面不推**（默认拒绝，静默）· **只给导航不给步骤**（结构 + 文案双层）· 拿不到「在哪一页 / 这页能做什么」⇒ **不发**（可行动性）"
     domains:
       - misc
       - ai
@@ -2658,7 +2658,7 @@ cases:
       - red-proof
     truths_ref: []
     user_inputs:
-      - "用户**首次进入**某个已登记页面（如商品管理 /products）⇒ 米宝在对话区主动发一条：「你在【商品管理】（/products）。这页能做：…（登记项 #products → 一级项「商品管理」）（只给导航：在哪一页 / 这页有什么。操作步骤不在本轮。）」"
+      - "用户**首次进入**某个已登记页面（如商品管理 /products）⇒ 黄金策在对话区主动发一条：「你在【商品管理】（/products）。这页能做：…（登记项 #products → 一级项「商品管理」）（只给导航：在哪一页 / 这页有什么。操作步骤不在本轮。）」"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -2882,7 +2882,7 @@ cases:
 
   - id: MC-075
     legacy_id: ""
-    title: "B 端米宝页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）"
+    title: "B 端黄金策页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）"
     domains:
       - misc
       - ai
@@ -2912,7 +2912,7 @@ cases:
       - "**判据 8/9（缺口不许匿名存在）**：豁免每条必须带 `route` + `reason`（为什么不登记）+ `restart_condition`（补哪一份**具名**口径文档才能重启）；`coverage_boundary` 每条带 `face`/`reason`/`recompute`，条数冻结（`coverage_boundary_frozen`）且只许缩短。"
       - "**判别力自证（注入式红证，全部内存构造、不动仓内文件）**：① 摘掉一条已登记 route（`/production/piecework`）⇒ 判红且**具名**；② 往台账加一条 ⇒ 判红（只许缩短）；③ 造悬挂 route ⇒ 红；④ 幽灵真值源 id / 幽灵 path ⇒ 红；⑤ 幽灵权限码 ⇒ 红；⑥ 豁免缺 `reason`/`restart_condition` ⇒ 逐条红；⑦ 删一条覆盖面登记 ⇒ 红；⑧ **对照读数**：只给登记项加无关元数据键 / 只给台账加说明键 ⇒ **不红**。执行点 = 同文件 7 条 `test_red_proof_*` + `test_control_comment_only_change_is_green`。"
       - "**纯静态自证**：本判据零 ai-agent 依赖（AST 取 import 名）+ 禁 pytest 的 skip / importorskip（针脚**拼出来** —— 判据自身出现这两个字面量会扫到自己 ⇒ 永远红）。执行点 = 同文件 `test_this_judgement_is_pure_static_and_never_skips`。"
-      - "🔴 **覆盖边界（显式登记）**：① 「这份文档真的是这一页的口径」是**判断**不是判据 —— 锚点逐条写在 PR body（`<仓库相对路径>::<符号>`），台账的 `reason`/`restart_condition` 是**自述**；② 判不了「米宝真的按真值源解释了这一页」（行为面在 `backend/ai-agent-service/tests/test_page_context.py`，LLM 面按 issue #4262 本轮不跑评测）；③ `page_registry.py` 是 **AST 静态解析**，登记表被改写成非字面量形态 ⇒ fail-closed 判红；④ 本判据**不改**任何门禁的通过条件、不新增豁免。"
+      - "🔴 **覆盖边界（显式登记）**：① 「这份文档真的是这一页的口径」是**判断**不是判据 —— 锚点逐条写在 PR body（`<仓库相对路径>::<符号>`），台账的 `reason`/`restart_condition` 是**自述**；② 判不了「黄金策真的按真值源解释了这一页」（行为面在 `backend/ai-agent-service/tests/test_page_context.py`，LLM 面按 issue #4262 本轮不跑评测）；③ `page_registry.py` 是 **AST 静态解析**，登记表被改写成非字面量形态 ⇒ fail-closed 判红；④ 本判据**不改**任何门禁的通过条件、不新增豁免。"
     skip_reason: "[backend-contract] 纯静态仓内守卫（只读 menu.ts / page_registry.py / admin-api 权限目录 / 豁免台账；零真库、零网络、零 LLM、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_page_context_registry_coverage.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-10-03 新增（issue #6215，用户 2026-10-03 裁定「先做 4，这个更有价值」）。落地 = ① `backend/ai-agent-service/app/context/page_registry.py` 登记面 6 → **10** 条 route、真值源 3 → **7** 条（新增 `curtain-production-rules` / `dashboard-cards` / `order-amount` / `sales-shipment` 四条真值源）；② 新增豁免台账 `tests/unit_ci_workflows/page_context_exemptions_ledger.json`（**13** 条，只许缩短，每条带 reason + 具名重启条件）；③ 新增元守卫 `tests/unit_ci_workflows/test_page_context_registry_coverage.py`（双向相等 + 登记项自证 + 8 条注入式红证）；④ `backend/ai-agent-service/tests/test_page_context.py` 同步更新未登记语料（`/dashboard` 等已登记 ⇒ 换成仍在豁免台账里的真实页面 + 两个不存在的路径）并新增「精确 > 通配」「登记面只许扩」两条判据。取号 MC-075（`scripts/next_case_id.py MC` ⇒ main:001-074 ⇒ 最小空闲 MC-075）。⚠️ 未固化（照实登记）：不判「该页真值源是否为该页口径」这一判断本身；不跑真实 LLM 评测。"
     traces:

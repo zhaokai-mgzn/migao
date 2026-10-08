@@ -397,7 +397,7 @@ public class AuthService {
                             .identityType("sms")
                             .roles(roles)
                             .tenantId(-1L)
-                            .tenantName("米高平台管理")
+                            .tenantName("观星台平台管理")
                             .build())
                     .accessToken(accessToken)
                     .refreshToken(null)  // 审计 07 P1-5: 不下发，仅 HttpOnly cookie
@@ -902,7 +902,7 @@ public class AuthService {
                             .nickname(platformAdmin.getNickname())
                             .avatar(platformAdmin.getAvatar())
                             .tenantId(-1L)
-                            .tenantName("米高平台管理")
+                            .tenantName("观星台平台管理")
                             .status(platformAdmin.getStatus())
                             .build())
                     .roles(securityUser.getRoles())
@@ -952,7 +952,7 @@ public class AuthService {
                 .roles(securityUser.getRoles())
                 .permissions(permissions)
                 .menus(menus)
-                // 米宝唤出能力位（issue #5642）：唯一判定 = `AdminGate.canSummonMibao`
+                // 黄金策唤出能力位（issue #5642）：唯一判定 = `AdminGate.canSummonMibao`
                 // （"*" 通配 ⇒ 管理员自动落入 ⇒ 既有行为零回归；被显式授权的员工也落入）
                 .capabilities(capabilitiesOf(permissions, user.getTenantId()))
                 .build();
@@ -1022,7 +1022,7 @@ public class AuthService {
                         .identityType("account")
                         .roles(roles)
                         .tenantId(-1L)
-                        .tenantName("米高平台管理")
+                        .tenantName("观星台平台管理")
                         .build())
                 .accessToken(newAccessToken)
                 .refreshToken(newRefreshToken)
@@ -1055,7 +1055,7 @@ public class AuthService {
      * 查询智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示）
      *
      * @param tenantId 租户ID
-     * @return 智能客服名称，未配置或查询失败返回 null（前端兜底「小布」）
+     * @return 智能客服名称，未配置或查询失败返回 null（前端兜底「元元」）
      */
     private String getBotName(Long tenantId) {
         if (tenantId == null || tenantId == -1L) {
@@ -1308,7 +1308,7 @@ public class AuthService {
         // 🔴 组内顺序**必须**逐字镜像 `menu.ts` 的 `customer-service` 组（三源同构守卫按前缀子序列比对）：
         //    在线接待 → 知识库 → 售后工单 → 客户列表（用户 2026-10-06 方案 A1：
         //    接待与工具相邻、售后是接待的第二出口、档案沉底）。
-        // 🔴 #5271 收口：旧实现多一个 `chat`「米宝 · 在线对话」节点（#3094 从侧边栏移除后服务端没跟）
+        // 🔴 #5271 收口：旧实现多一个 `chat`「黄金策 · 在线对话」节点（#3094 从侧边栏移除后服务端没跟）
         // —— 已删除，本组**不得**再长回该节点。
         List<UserInfoResponse.MenuItem> customerServiceChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("agent:session")) {

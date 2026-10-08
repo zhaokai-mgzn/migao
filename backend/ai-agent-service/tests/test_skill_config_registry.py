@@ -68,7 +68,7 @@ class TestSkillConfig:
             tool_names=["tool_a", "tool_b"],
             route_keys=["test"],
             intents=["intent_a", "intent_b"],
-            system_prompts={"mibao": "米宝 Prompt", "xiaobu": "小布 Prompt"},
+            system_prompts={"mibao": "黄金策 Prompt", "xiaobu": "元元 Prompt"},
             default_persona="mibao",
         )
         assert config.name == "test"
@@ -145,10 +145,10 @@ class TestCreateSkillConfig:
             domain="order",
             display_name="订单",
             tool_names=["order_query"],
-            mibao_prompt="米宝订单",
-            xiaobu_prompt="小布订单",
+            mibao_prompt="黄金策订单",
+            xiaobu_prompt="元元订单",
         )
-        assert config.system_prompts == {"mibao": "米宝订单", "xiaobu": "小布订单"}
+        assert config.system_prompts == {"mibao": "黄金策订单", "xiaobu": "元元订单"}
         assert config.route_keys == ["order"]  # 默认用 domain
 
     def test_extra_prompts(self):
@@ -320,7 +320,7 @@ class TestAgentConfig:
         assert config.allows_role("anyone") is True
 
     def test_register_and_get(self):
-        config = AgentConfig(name="mibao", display_name="米宝", persona="mibao")
+        config = AgentConfig(name="mibao", display_name="黄金策", persona="mibao")
         register_agent(config)
         assert get_agent_config("mibao") == config
 
@@ -330,11 +330,11 @@ class TestAgentConfig:
 
     def test_find_agent_for_role(self):
         register_agent(AgentConfig(
-            name="mibao", display_name="米宝", persona="mibao",
+            name="mibao", display_name="黄金策", persona="mibao",
             allowed_roles={"admin", "agent"},
         ))
         register_agent(AgentConfig(
-            name="xiaobu", display_name="小布", persona="xiaobu",
+            name="xiaobu", display_name="元元", persona="xiaobu",
             allowed_roles={"customer"},
         ))
         assert find_agent_for_role("admin") == "mibao"
@@ -351,11 +351,11 @@ class TestAgentRouter:
     def setup_method(self):
         reset_agent_configs()
         register_agent(AgentConfig(
-            name="mibao", display_name="米宝", persona="mibao",
+            name="mibao", display_name="黄金策", persona="mibao",
             allowed_roles={"admin", "agent"},
         ))
         register_agent(AgentConfig(
-            name="xiaobu", display_name="小布", persona="xiaobu",
+            name="xiaobu", display_name="元元", persona="xiaobu",
             allowed_roles={"customer"},
         ))
 
@@ -388,7 +388,7 @@ class TestAgentRouter:
         assert result in ("mibao", "xiaobu")
 
 
-# ────────────── 小布 C 端售后 skill 引导（闭环回归） ──────────────
+# ────────────── 元元 C 端售后 skill 引导（闭环回归） ──────────────
 
 
 def test_customer_aftersales_prompt_self_handles_aftersale_requests():
@@ -464,7 +464,7 @@ _ISSUE_3317_BINDINGS = {
 }
 
 #: 🔴 **#5247 退役子集**（键 = 工具名，值 = 前提为什么消失）。
-#: 这 6 处里已随 **B 端米宝只读化**（用户裁定 2026-09-23）收窄为只读的 4 把 ——
+#: 这 6 处里已随 **B 端黄金策只读化**（用户裁定 2026-09-23）收窄为只读的 4 把 ——
 #: 它们的 `requires_confirmation`/`destructive` 语义按设计消失（只读工具不是写操作、
 #: 不再走确认门禁）⇒ 从「禁止 B 路径」的判据面退场，改用**前提消失的判据**替代：
 #: 必须是只读（`read_only = True`）。谁把它们改回写工具，判据立刻红 → 那时必须把
@@ -602,7 +602,7 @@ def test_confirmed_write_tools_require_interact_in_same_skill():
     常量/断言驱动的守护（分支本体在 base_skill.py，属其它包所有权，本包不改；保留它是对
     "非注册 tool_names 动态子集"的防御性兜底，不再承担已注册 Skill 的话术分流）。
 
-    🔴 **issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）：厚度守卫由阈值改成名册**。
+    🔴 **issue #5247 改判（B 端黄金策只读化，用户裁定 2026-09-23）：厚度守卫由阈值改成名册**。
     本单解绑了 6 个 B 端 Skill 的全部写工具（只剩只读）⇒ 判据前提集从 15 个 Skill 缩到 3
     （见 `_CONFIRM_GATE_BINDING_SKILLS`）。原 `checked >= 10` 若只改成 `>= 3`，**再解绑一个
     也不会有东西变红**（判据退化成"至少还有一个"）⇒ 换成**名册集合相等 + 非空下限**：
@@ -863,7 +863,7 @@ def test_customer_skills_only_bind_tools_customer_role_can_use():
 
     根因（CH-012/OR-014/OR-017/CH-010 实测 2026-09-11，run 34620594324）：
     `ValidateInputTool.allowed_roles = ["admin","agent","tenant_admin"]` —— **不含 customer**
-    → 小布的 `customer_order` / `customer_aftersales` 都绑了它，但顾客调用一律返回
+    → 元元的 `customer_order` / `customer_aftersales` 都绑了它，但顾客调用一律返回
     `权限不足`。而 `base_skill` 的「确认-执行链」依赖 `validate_input` **成功**才持久化
     「已校验待执行」状态：
 
@@ -1283,7 +1283,7 @@ class TestGlobalAgentRegistryNotPolluted:
                 f"会 skill_names=[] 静默空转。检查 test 级 teardown 恢复是否还在"
                 f"（_isolate_global_agent_registry）。"
             )
-        # stub 的 fallback 是默认值 "general"，真实小布是 "customer_general" —— 用它区分真值
+        # stub 的 fallback 是默认值 "general"，真实元元是 "customer_general" —— 用它区分真值
         assert get_agent_config("xiaobu").fallback_skill == "customer_general", (
             "全局 xiaobu 配置不是真实声明（被测试 stub 覆盖）"
         )

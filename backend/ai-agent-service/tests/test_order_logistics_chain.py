@@ -20,7 +20,7 @@
      框架**不得**把该终答当完成（有界注入一条纠正并继续本轮），同轮补上 `logistics_track`；
   ③ **反向守卫**：这些路径**一律不得**触发纠正（避免"一律补查物流"的过度纠正）——
      非物流意图 / 本轮 `order_query` 没返回真实订单号 / 本轮已尝试过 logistics_track /
-     本 skill 工具集里没有 logistics_track（C 端小布用小布的物流工具）；
+     本 skill 工具集里没有 logistics_track（C 端元元用元元的物流工具）；
      并且第 1 轮的**安全行为**（拒绝快递单号直查）与 `logistics_track` 的**参数契约**
      （只收 order_id）一个字都没被改坏。
 """
@@ -177,7 +177,7 @@ def _run_chain(replies, *, intent="logistics_track", tool_names=("order_query", 
         }
         out = asyncio.run(base_skill.execute_skill(
             state=state, skill_name=skill_name, tool_names=list(tool_names),
-            system_prompt="你是米宝"))
+            system_prompt="你是黄金策"))
 
     # 注入事件（**不是**"消息列表里出现过"）：new_messages 是累积的，纠正会留在后续每次
     # LLM 调用的上下文里 —— 只有"本次调用比上次多出来的纠正"才算一次注入，否则永远数成 N 次。
@@ -317,7 +317,7 @@ class TestChainGateReverseGuards:
         assert [n for n, _ in executed] == ["logistics_track"]
 
     def test_not_triggered_when_skill_lacks_logistics_tool(self):
-        """本 skill 工具集里没有 logistics_track（如 C 端小布用小布的物流工具）⇒ 不触发。
+        """本 skill 工具集里没有 logistics_track（如 C 端元元用元元的物流工具）⇒ 不触发。
 
         #4125 起：B 端任一域都共享到 `logistics_track`，故"缺该工具的域"按 pre-#4125 形态
         **直接构造**（`family_share=False`）；判据本体未动 —— 缺工具就不得触发。

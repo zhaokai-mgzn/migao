@@ -401,7 +401,7 @@ cases:
     post_clean:
       - type: product_status_restore
         product_keyword: "遮光窗帘"
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「商品上架/下架状态流转」（product_manage(action=toggle_status)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「商品上架/下架状态流转」（product_manage(action=toggle_status)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
     merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：下架→上架是**有条件复位**，本类型补无条件那半；断言（expectations/must_succeed/required_args/data_checks）**原样未动**。2026-09-18（burn-down 缴费，随 #4303 的用例面改动）：补 `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 销掉存量违规 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账，清单条目随之删除）；判据是**真前置**（按名字选品 ⇒ 该名字唯一且存在），形态与 #3835 给 OR-014 的同一份（同关键词、同 `product_dedupe`、同 `expect=1`），断言面（expectations/must_succeed/required_args/data_checks/pre_clean/post_clean）一字未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=toggle_status, status=on_sale)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / required_args 里的 product_manage 同步移除（否则成为永不满足的悬空声明）。"
     traces:
       tests:
@@ -493,8 +493,8 @@ cases:
     data_checks:
       # 原断言「商品真的被创建（机器断言见 must_succeed[product_manage(action=create)] + output_verify 的
       # product_id 非空）」在新事实下**必然为假**（B 端已无任何写能力），随 #5247 改判为下面这条。
-      - "只读 + 如实说明：回复不得谎称已创建商品，须说明 B 端米宝不做创建并引导去后台「商品管理」页面操作（原「商品真的被创建」断言随写能力下线改判）"
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建商品完整流程」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+      - "只读 + 如实说明：回复不得谎称已创建商品，须说明 B 端黄金策不做创建并引导去后台「商品管理」页面操作（原「商品真的被创建」断言随写能力下线改判）"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建商品完整流程」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
     merge_log: "eval P003 + verification 2.9（同义，取 eval 版）；2026-09-09 校准：补「窗帘布艺」点分类卡轮 + 末轮回传 confirmValue「确认创建测试窗帘A」（agent 实际生成，含商品名上下文；原脚本末轮『确认创建』被 agent 理解成『发确认卡』而非『点确认卡回传』，product_manage 永不执行）；2026-09-18 下沉（issue #4042）：补 must_succeed[product_manage(action=create)] + output_verify(product_id 非空)，并把不计分的散文 `data.product_id.length > 0` 弃用；补 pre_clean[product_remove 自有名] + precondition[product_count_for_keyword expect=0]（前置自断言，清掉 CASE-TRUST-NO-EFFECT-ASSERTION / CASE-TRUST-NO-PRECONDITION-ASSERTION 两条存量违规）；2026-09-18 **轮次形状修正**（issue #4042 归因）：末两轮静态文本（「确认创建」/「确认创建测试窗帘A」）答不上 agent 动态生成的**加工项多选卡**，R5/R6 全被该卡吃掉 ⇒ confirm 卡在最后一轮才发出、无人点击 ⇒ 建品永不执行（`no_success(product_manage)`，与 OR-014/CH-010 同款 #3518 坑）⇒ 末两轮改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡 / 无卡发原 confirmValue 文本），断言原样未动；2026-09-18（issue #4200 的恒红修复）：`precondition` 补 `max_growth: 1` —— 本用例自己就要创建「测试窗帘A」⇒ 容差缺省 0 时正常行为下 `0 → 1 > 0` **恒判运行期漂移**、score 归零（判定跑 35295494688 实测：`assertions_fired.scoring` 逐条 ✅ 而 `score=0.0`，唯一 failure 是前置自身）⇒ 容忍自建的那一个；并行用例再造同名（`0 → 2`）仍判漂移，判别力不丢。`expect` 与全部断言（expectations / must_succeed / output_verify / pre_clean / namespaces）原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=create), validate_input, interact(choice)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / output_verify / user_inputs[repeat_until].tool_called 里的 product_manage 与「商品真的被创建」data_checks 同步移除/改判（否则成为永不满足的悬空声明）。"
     traces:
       tests:
@@ -767,7 +767,7 @@ cases:
         source: "E2E引导建品样品帘"
         expect: 0
         max_growth: 1
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建商品完整引导流程 - AI 主导收集信息」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建商品完整引导流程 - AI 主导收集信息」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
     merge_log: "eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）；2026-09-15（issue #3835）改名去种子撞名（同 PR-016 口径）：`名称叫夏日清风窗帘` → `名称叫E2E引导建品样品帘`（种子 `prod_eval_summer` 就叫「夏日清风窗帘」⇒ 运行期造同名副本；且它是**单一声明者** ⇒ 争用组不成立、隔离为零）；`pre_clean: product_remove{测试窗帘}` → 自有名（顺带消除对 PR-008「测试窗帘A」的子串误删）；expectations/data_checks 原样未动。2026-09-19（#4371 商品↔加工项解耦）：删除「需要打孔和韩式折边这两个加工项」一轮 + `expectations[processing_item_query]` + `data_checks[创建的加工项数量 = 2]`（改为 = 0，与解耦后的真值一致）—— 建品不再询问/关联加工项；引导流程断言（interact choice / validate_input / product_manage create）原样未动。2026-09-19（issue #4412 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规）：补 `precondition[product_count_for_keyword: E2E引导建品样品帘, expect: 0, max_growth: 1]` —— 创建前提 = 该名字下无既有商品（残留 ⇒ 建出同名副本，红的表现像「agent 不会建品」，归因全错）；`expect: 0` 判基线、`max_growth: 1` 容忍本用例自己造的那一个（自建目标先例：chat.yml #4099 / hr.yml HR-002）。断言（user_inputs / expectations / must_succeed / pre_clean / namespaces）原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [interact(choice), validate_input, product_manage(action=create)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed 里的 product_manage 同步移除（否则成为永不满足的悬空声明）。"
     # ⚠️ 2026-09-24（issue #5247）：原 `must_succeed[product_manage(action=create)]` **已删除** ——
     # 该工具已从 B 端全部 skill 解绑，保留即「永不满足的悬空声明」。
@@ -825,8 +825,8 @@ cases:
     data_checks:
       # 原「最终 price=200（不是 100）」断言的是建品落库结果（写路径）⇒ 在新事实下**必然为假**，
       # 随 #5247 改判为如实说明口径（历史原文即本注释）。
-      - "只读 + 如实说明：回复不得谎称已创建/已改价，须说明 B 端米宝不做创建并引导去后台「商品管理」页面操作"
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「商品创建中途修改 - 用户纠偏」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+      - "只读 + 如实说明：回复不得谎称已创建/已改价，须说明 B 端黄金策不做创建并引导去后台「商品管理」页面操作"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「商品创建中途修改 - 用户纠偏」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
     merge_log: "eval M003 独有（中途纠偏）；2026-09-09 校准：补「窗帘布艺」点分类卡轮（「分类选窗帘」后 agent 查分类树发现无「窗帘」精确分类发 choice 卡，原脚本后续轮跳过点卡导致分类卡反复发、6 轮走不到 create——与 PR-008 同类）。2026-09-19（#4371 商品↔加工项解耦）：删除「不需要加工项」一轮 + `expectations[processing_item_query]` + `data_checks[无加工项关联]` —— 建品不再经加工项（商品不持有加工项），该断言的对象已不存在；改价纠偏意图与其余断言原样未动。2026-09-20（issue #4630 的 case-trust burn-down 缴费）：真修本条的存量两码而非收窄 —— 补 `precondition[product_count_for_keyword: 测试窗帘, expect: 0, max_growth: 1]`（清 CASE-TRUST-NO-PRECONDITION-ASSERTION；本用例自建该名字，「名字空闲」是它真正依赖且只读的前置）与 `must_succeed[product_manage(create)]`（清 CASE-TRUST-NO-EFFECT-ASSERTION）；断言只增不减，`expectations` / `data_checks` / `user_inputs` 一字未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=create, price=200), validate_input] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed 里的 product_manage 与「最终 price=200（不是 100）」data_checks 同步移除/改判（否则成为永不满足的悬空声明）。"
     traces:
       tests:
@@ -841,8 +841,8 @@ cases:
     domains:
       - product
     tier: normal
-    # 归位（issue #3367 覆盖盘点）：本条断言 `curtain_calc` —— 算料报价是**小布专属**
-    # 能力（米宝工具集里没有该工具），却被写成不带 persona 的 B 端档位并 `skip_reason`
+    # 归位（issue #3367 覆盖盘点）：本条断言 `curtain_calc` —— 算料报价是**元元专属**
+    # 能力（黄金策工具集里没有该工具），却被写成不带 persona 的 B 端档位并 `skip_reason`
     # 挂起 → **C 端这个核心能力在评测里 0 覆盖**（只有单测覆盖公式，没有真实 LLM 链路证据）。
     # 故补 persona: xiaobu 让它进 C 端可执行集，并撤掉 skip_reason。
     persona: xiaobu
@@ -866,7 +866,7 @@ cases:
       - "data.total > 0"
     # 原 skip_reason（"B 端无 curtain_calc 工具"）已失效：本用例改挂 C 端（persona: xiaobu），
     # C 端 customer_quote skill 正是提供 curtain_calc 的地方。
-    merge_log: "POC 小布增强新增（算料报价 skill）"
+    merge_log: "POC 元元增强新增（算料报价 skill）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_curtain_calc.py"
@@ -929,8 +929,8 @@ cases:
       # 原两条（「商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）」/
       # 「售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存」）里的「开启后为 true」半边
       # 随 #5247 写能力下线**必然为假** ⇒ 改判如下（历史原文即本注释）。
-      - "如实说明：退货回补库存开关（allowReturnRestock）的修改须在后台「商品管理」页面操作 —— B 端米宝只读、不代改；开关当前值可经商品详情读出（只读核对）"
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「退货回补库存开关（allow_return_restock）的写能力」（product_update / product_manage）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 商品详情只读核对 + 如实说明 + 引导去后台页面。本用例不再进 agent-eval 冒烟（写能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+      - "如实说明：退货回补库存开关（allowReturnRestock）的修改须在后台「商品管理」页面操作 —— B 端黄金策只读、不代改；开关当前值可经商品详情读出（只读核对）"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「退货回补库存开关（allow_return_restock）的写能力」（product_update / product_manage）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 商品详情只读核对 + 如实说明 + 引导去后台页面。本用例不再进 agent-eval 冒烟（写能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
     merge_log: "issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存。2026-09-14 归一（issue #3568）：① 输入去「（100元的那件）」stale 价格点名（种子遮光窗帘 ¥168，实测 agent 合理澄清白耗一轮，同 #3538/#3518）；② 收尾 `auto_select: true` → `auto_respond` 答卡轮（无卡时 auto_select 会发对不上卡片的字面量「第一个」）；③ 补 pre_clean product_dedupe（只按关键词，不带 price 限定） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_update / product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_update or product_manage(allow_return_restock=true)] 改判为 [product_detail]（只读核对 —— 开关是商品设置字段，可经商品详情读出），data_checks 改判为「修改须在后台「商品管理」页面操作 + 如实说明」（原「开启后为 true」半边在写能力下线后必然为假）。"
     traces:
       tests:
@@ -942,20 +942,20 @@ cases:
 
   - id: PR-018
     legacy_id: ""
-    title: "B端米宝 product_list 卡片引用对齐 — 只渲染回复文本中实际引用的商品"
+    title: "B端黄金策 product_list 卡片引用对齐 — 只渲染回复文本中实际引用的商品"
     domains:
       - product
     tier: normal
     # ── persona（issue #4093 的 PR-018 条目 → 跟踪单 #4110）──
-    # 本条断言的正是 **B 端米宝**的卡片行为，四处独立证据都指向 B 端：
-    #   · 本用例 `title`「B端米宝 product_list 卡片引用对齐」+ `tags: [mibao]`；
+    # 本条断言的正是 **B 端黄金策**的卡片行为，四处独立证据都指向 B 端：
+    #   · 本用例 `title`「B端黄金策 product_list 卡片引用对齐」+ `tags: [mibao]`；
     #   · 实现注释逐字点名 —— `app/api/chat.py::_filter_products_by_reference`
-    #     「背景（issue #3009 / **case PR-018**）：**B 端米宝**「低库存清单」等分析型查询里…」；
+    #     「背景（issue #3009 / **case PR-018**）：**B 端黄金策**「低库存清单」等分析型查询里…」；
     #   · 「低库存」是**商家后台口径**（`LOW_STOCK_THRESHOLD = 100`，
     #     `product_search` 以 `stockBelow` 下发）—— C 端顾客查不到也不该查这个视角；
     #   · 同域对位用例 PR-006（低库存预警）也是 B 端口径。
     # 缺标注的后果（首跑指纹实证）：工具集 ⊆ `XIAOBU_TOOLS` ⇒ 被静态判为单端且**被 C 端腿选中**，
-    # 而小布拒绝这种后台查询是**正确行为** ⇒ 用例恒红（`no_success(product_search)`），
+    # 而元元拒绝这种后台查询是**正确行为** ⇒ 用例恒红（`no_success(product_search)`），
     # 红的是**用例挂错了腿**，不是 agent 能力缺口。
     persona: mibao
     tags:
@@ -990,11 +990,11 @@ cases:
     must_succeed:
       - tool: product_search
     data_checks:
-      - "米宝（agent_type=mibao）回复中：product_list 卡片仅包含文本实际引用的商品（按商品名/ID 匹配），未被引用的商品不渲染"
+      - "黄金策（agent_type=mibao）回复中：product_list 卡片仅包含文本实际引用的商品（按商品名/ID 匹配），未被引用的商品不渲染"
       - "文本未引用任何商品时不下发 product_list 卡片（宁可无卡，不误导）"
-      - "小布（agent_type=xiaobu）保持现状：product_search 结果全量渲染卡片（货架浏览体验不回退）"
+      - "元元（agent_type=xiaobu）保持现状：product_search 结果全量渲染卡片（货架浏览体验不回退）"
     skip_reason: ""
-    merge_log: "2026-09-07 新增（issue #3009）：sess_66c12e3cf3a14ee0 低库存清单场景，LLM 文本正确筛出 5 件低库存商品，但下方渲染了 2 页×10 张原始返回商品卡，文本与卡片两层皮。方案 B：mibao 延迟到文本生成后按引用过滤再发卡；2026-09-18 下沉补齐（issue #4093 的 PR-018 条目 → 跟踪单 #4110，首跑指纹 `no_success(product_search)`）：本单只补**单端标注** `persona: mibao`（title/tags/实现注释三处均写 B 端米宝，见 `app/api/chat.py::_filter_products_by_reference` 的「背景（issue #3009 / case PR-018）」；缺标注 ⇒ 被 C 端腿选中，而小布拒绝商家后台口径的「低库存」是**正确行为** ⇒ 恒红）+ **效果层断言** `must_succeed[product_search]`（读场景证明查询真成功；种子里无低库存商品 ⇒ 按 seed 真值**不要求非空**，空结果仍 success=true）；title/expectations/data_checks **原样未动**"
+    merge_log: "2026-09-07 新增（issue #3009）：sess_66c12e3cf3a14ee0 低库存清单场景，LLM 文本正确筛出 5 件低库存商品，但下方渲染了 2 页×10 张原始返回商品卡，文本与卡片两层皮。方案 B：mibao 延迟到文本生成后按引用过滤再发卡；2026-09-18 下沉补齐（issue #4093 的 PR-018 条目 → 跟踪单 #4110，首跑指纹 `no_success(product_search)`）：本单只补**单端标注** `persona: mibao`（title/tags/实现注释三处均写 B 端黄金策，见 `app/api/chat.py::_filter_products_by_reference` 的「背景（issue #3009 / case PR-018）」；缺标注 ⇒ 被 C 端腿选中，而元元拒绝商家后台口径的「低库存」是**正确行为** ⇒ 恒红）+ **效果层断言** `must_succeed[product_search]`（读场景证明查询真成功；种子里无低库存商品 ⇒ 按 seed 真值**不要求非空**，空结果仍 success=true）；title/expectations/data_checks **原样未动**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_card_reference_alignment.py"
@@ -1081,9 +1081,9 @@ cases:
     data_checks:
       # 原断言「create 参数含 specifications（…随 specs 落库到 product_attributes…）」断言的是
       # **写路径落库**，在新事实下**必然为假** ⇒ 改判如下（历史原文即本注释）。
-      - "只读 + 如实说明：不得谎称已创建/已落库规格，须说明 B 端米宝不做创建并引导去后台「商品管理」页面操作"
+      - "只读 + 如实说明：不得谎称已创建/已落库规格，须说明 B 端黄金策不做创建并引导去后台「商品管理」页面操作"
     # forbidden-text-intent: 本用例退役后**被测行为就是这条禁令本身** —— 「不得谎称已创建」（B 端建品写能力
-    # 已随 #5247 下线，如实说明「米宝不做创建」才是正确行为），禁令侧无「某一轮良性措辞误伤」的风险。
+    # 已随 #5247 下线，如实说明「黄金策不做创建」才是正确行为），禁令侧无「某一轮良性措辞误伤」的风险。
     # 声明形态照 assertion_taxonomy.has_forbidden_text_intent 的既有约定（先例 = AS-009）。
     forbidden_text:
       - "尚未真正创建"
@@ -1120,7 +1120,7 @@ cases:
         source: "E2E色卡建品样品面料"
         expect: 0
         max_growth: 1
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「色卡图建品的规格落库」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「色卡图建品的规格落库」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
     merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩褶」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动。2026-09-18（issue #4305 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: E2E色卡建品样品面料, expect=0, max_growth=1]` —— 建品用例的真前置 =「目标名尚不存在且运行期只新增自己那一件」；判据清零 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账）。断言面一字未动。2026-09-19（#4371 商品↔加工项解耦）：本用例的**加工项半边退场** —— 删除 ③ 加工项轮（`auto_respond 已选加工项：…`）、`data_checks` 的两条 processing_item_configs/processingItemConfigs 断言、`required_args` 的 `processing_item_configs.customPrice` 字段、收尾 fallback 里的「已选加工项：…」；标题去掉「与加工项价格落库」。**保留**：specifications 落库断言（本用例的另一半，与解耦无关）、must_succeed / forbidden_text / pre_clean / precondition / namespaces 原样未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=create)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / required_args / user_inputs[repeat_until].tool_called 里的 product_manage 与「create 参数含 specifications」data_checks 同步移除/改判（否则成为永不满足的悬空声明）。forbidden_text（「尚未真正创建」「未创建成功」）按「不得谎称已创建」保留，并按 assertion_taxonomy 既有约定补 `# forbidden-text-intent:` 声明（先例 AS-009）。"
     traces:
       tests:
@@ -1250,7 +1250,7 @@ cases:
       verifies: []
   - id: PR-024
     legacy_id: ""
-    title: "小布算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警）"
+    title: "元元算料上限 - 定宽布买高 + 对花损耗（窗高超定高上限，必须走定宽分支并告警）"
     domains:
       - product
       - quote
@@ -1351,7 +1351,7 @@ cases:
     #（历史理由原样保留，不删）。
     data_checks:
       # 原 `success=true`（写路径效果层）随 #5247 改判为如实说明口径（历史原文即本注释）。
-      - "写能力已下线（#5247）⇒ 不再有写确认卡：须如实说明「米宝只做数据查询与分析，不做上下架/创建类操作」并引导去后台「商品管理」页面操作，不得谎称已执行"
+      - "写能力已下线（#5247）⇒ 不再有写确认卡：须如实说明「黄金策只做数据查询与分析，不做上下架/创建类操作」并引导去后台「商品管理」页面操作，不得谎称已执行"
     pre_clean:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
@@ -1370,7 +1370,7 @@ cases:
     post_clean:
       - type: product_status_restore
         product_keyword: "遮光窗帘"
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「B 端写操作必须先出确认卡再执行」（product_manage(action=toggle_status)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（写能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「B 端写操作必须先出确认卡再执行」（product_manage(action=toggle_status)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（写能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
     merge_log: "2026-09-15 新增（#3882 复盘，#3886）：sess_f26fda5046f34992 复盘——B 端写操作（下架/删加工项）被确认门禁拦截后 agent 只在文本声称「确认卡已发出」而未调 interact，客户无卡可点；行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py），本条为行为评测用例（LLM 真跑验证），核心断言 order_before[interact[confirm] before product_manage]：缺卡/写先于卡即红。以 PR-007 为模板（答卡轮 auto_respond fallback=确认 + pre_clean product_dedupe 遮光窗帘 + truths_ref product-sku-stock.status-flow + 命名空间互斥）。2026-09-18 补复位轮 + 前置自断言（issue #4075 用例侧 / #4046）：下架后新增「重新上架」答卡轮（同 PR-007），让共享夹具在用例结束时归零（此前残留 off_sale 会污染同栈按名检索的用例）；并补 precondition[product_count_for_keyword expect=1]。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：用例侧复位是**有条件**的（流程走完才复位），本声明补无条件那半。**断言（expectations / order_before / data_checks）原样未动** ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=toggle_status, status=off_sale)] 改判为 [direct_reply]（如实说明 + 引导去后台页面）；`order_before[interact[confirm] before product_manage]` **整块删除**（该时序只存在于写路径：写能力下线后既无写工具、也无写确认卡，保留即永不满足的悬空声明），data_checks 里的 success=true 改判为「不再有写确认卡 + 如实说明 + 引导后台」。"
     traces:
       tests:
@@ -1434,7 +1434,7 @@ cases:
     data_checks:
       # 原断言「product_manage(action=update) 携带 images … 商品主图已更新（images 落库）…」断言的是
       # **写路径落库**，在新事实下**必然为假** ⇒ 改判如下（历史原文即本注释）。
-      - "只读 + 如实说明：不得谎称已设置主图/已更新图片，须说明 B 端米宝不做主图写入并引导去后台「商品管理」页面操作"
+      - "只读 + 如实说明：不得谎称已设置主图/已更新图片，须说明 B 端黄金策不做主图写入并引导去后台「商品管理」页面操作"
     pre_clean:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
@@ -1447,7 +1447,7 @@ cases:
       - type: product_count_for_keyword
         source: "遮光窗帘"
         expect: 1
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「设置商品主图成功路径」（product_manage(action=update, images)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（写能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「设置商品主图成功路径」（product_manage(action=update, images)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（写能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
     merge_log: "2026-09-15 新增（issue #3930/#3931 实证 sess_2efa2071bb1747d8）：设主图成功路径——同回合 agent 先错误路由 product_update(images=…)（无该参数）被静默丢弃 → 「没有要修改的字段」→ 误宣「不支持图片」；19:49 改用 product_manage(action=update, images) 成功。本用例锁定正确路径（expectations/required_args/must_succeed 三层）；db_verify 对商品 images 无 fetch（只支持 processingItemConfigs），效果层由 must_succeed 兜底，落库层缺口已登记；2026-09-18 轮次预算修正（issue #4042）：收尾单张 `auto_respond` 轮被 R1 后的 **choice 卡**（「要设成哪种图？」）吃掉 ⇒ 同轮发出的 confirm 卡无人作答 ⇒ 用例**结构上不可满足**（合格 agent 也必红，首跑指纹 `no_success(product_manage)`）⇒ 改为 `repeat_until(tool_called=product_manage, max=3)` 协作轮（有卡答卡：choice→首项 / confirm→confirmValue；目标工具成功即跳过余轮）。断言（expectations / required_args / must_succeed）原样未动 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=update)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / required_args / user_inputs[repeat_until].tool_called 里的 product_manage 与「商品主图已更新（images 落库）」data_checks 同步移除/改判（否则成为永不满足的悬空声明）；同条目的 `fallback` 键（值「确认」）保留并包进 `auto_respond`（只写 `fallback` 的裸 dict 不是控制轮，会被当原文发出去）。"
     traces:
       tests:
@@ -1492,7 +1492,7 @@ cases:
     # 原清单（「不包含图片上传」「拿不到可写入的地址」「拿不到地址」「无法设置主图」「不能设置主图」
     # 「不支持修改主图」「不支持图片」）是**防能力误宣** —— 当时 `product_manage` 有 images 参数、
     # 主图写能力真实可达，说「不支持」就是误宣。写能力从 B 端下线后这些措辞**变成了真话**：
-    # 如实说明「米宝不做这类操作」现在是**正确行为**，再 forbid 它们 = 把正确行为判红。
+    # 如实说明「黄金策不做这类操作」现在是**正确行为**，再 forbid 它们 = 把正确行为判红。
     # ⇒ 改判为禁止**谎称已执行**的措辞（原清单逐字保留在本注释里，历史不删）。
     # forbidden-text-intent: 退役后本用例**被测行为就是这条禁令本身** —— 「不得谎称已设置主图」
     # （写能力已随 #5247 从 B 端下线，「如实说明 + 引导后台」是唯一正确行为，正向可达性已无对象）。
@@ -1505,7 +1505,7 @@ cases:
     data_checks:
       # 原断言「回复不得出现「不包含图片上传/…」类能力否定…最终走 product_manage(action=update, images=…)」
       # 在新事实下**必然为假**（写能力已下线、如实说明才是正确行为）⇒ 改判如下（历史原文即本注释）。
-      - "如实说明：B 端米宝不写主图（能力已随 #5247 下线），须引导去后台「商品管理」页面操作；且不得出现「已为您设置主图/主图已更新/设置成功」类谎称已执行的措辞（机器断言见 forbidden_text）"
+      - "如实说明：B 端黄金策不写主图（能力已随 #5247 下线），须引导去后台「商品管理」页面操作；且不得出现「已为您设置主图/主图已更新/设置成功」类谎称已执行的措辞（机器断言见 forbidden_text）"
     # ⚠️ 2026-09-24（issue #5247）：原 `must_succeed[product_manage(action=update)]` **已删除** ——
     # 该工具已从 B 端全部 skill 解绑，保留即「永不满足的悬空声明」。
     pre_clean:
@@ -1519,8 +1519,8 @@ cases:
       - type: product_count_for_keyword
         source: "遮光窗帘"
         expect: 1
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「设主图能力不误宣」（product_manage(action=update, images)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）+ 禁止谎称已执行（forbidden_text 改判）。本用例不再进 agent-eval 冒烟（写能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
-    merge_log: "2026-09-15 新增（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝文本）：「不包含图片上传」「拿不到可写入的地址」必须被守卫命中并纠正——product_manage 有 images/detail_images 参数、能力真实可达；forbidden_text 逐词机器断言（可判定形式），守卫判据与话术见 base_skill.py 的 _PRODUCT_IMAGE_ACTION_WORDS / _product_image_denial_hit / _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE。2026-09-18 补前置自断言（issue #4046）：precondition[product_count_for_keyword expect=1]（断言原样未动） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=update)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed 里的 product_manage 同步移除（否则成为永不满足的悬空声明）。**forbidden_text 改判**：原 forbid 清单与新事实冲突（如实说明「米宝不做这类操作」现在是正确行为），改判为禁止谎称已执行（「已为您设置主图」/「已设置主图」/「主图已更新」/「设置成功」），原清单逐字保留在本用例注释里。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「设主图能力不误宣」（product_manage(action=update, images)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）+ 禁止谎称已执行（forbidden_text 改判）。本用例不再进 agent-eval 冒烟（写能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
+    merge_log: "2026-09-15 新增（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝文本）：「不包含图片上传」「拿不到可写入的地址」必须被守卫命中并纠正——product_manage 有 images/detail_images 参数、能力真实可达；forbidden_text 逐词机器断言（可判定形式），守卫判据与话术见 base_skill.py 的 _PRODUCT_IMAGE_ACTION_WORDS / _product_image_denial_hit / _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE。2026-09-18 补前置自断言（issue #4046）：precondition[product_count_for_keyword expect=1]（断言原样未动） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=update)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed 里的 product_manage 同步移除（否则成为永不满足的悬空声明）。**forbidden_text 改判**：原 forbid 清单与新事实冲突（如实说明「黄金策不做这类操作」现在是正确行为），改判为禁止谎称已执行（「已为您设置主图」/「已设置主图」/「主图已更新」/「设置成功」），原清单逐字保留在本用例注释里。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_product_image_denial_guard.py"
@@ -1547,7 +1547,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "建单只写单据+明细（含货号/颜色/门幅快照），状态 draft；receiveStock / stock_ledger 写入 / 批次台账**均不得**被调用"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ 2026-09-24（issue #5148 用例库同步）：**整格改判** —— 本条仍写「数量 ≥1 整数 / 按米入库暂不支持小数米」，而 #5063（V115，已合入 94aacbc46）已把入库数量放宽到 **1 位小数**（超 1 位小数由服务端显式拒绝）⇒ 陈旧真值源订正为现状口径。**判据一格不放宽**：被拒的仍是 0 / 负数 / 超 1 位小数 / 非正单价 / 串 SKU。"
     traces:
       tests:
@@ -1575,7 +1575,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "过账一次性完成四件事：批次号 PC-yyyyMMdd-NNNN 回写明细行、receiveStock 加库存、stock_ledger_entries 记 reason=inbound 且 before/after 与成本快照齐备、stock_batches 记批次（带 dye_lot）；状态转 posted 并留痕操作人"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口"
     traces:
       tests:
@@ -1603,7 +1603,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "draft→posted 只允许一次（重复过账被拒且不二次加库存）；posted 的单作废被拒（库存已进台账，冲销须另开单据）"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口"
     traces:
       tests:
@@ -1631,7 +1631,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "数量 0 / 负数被拒（下限 = **大于 0 米**：issue #5153 起由「≥1 米」放宽，0.5 米的实物尾料可如实登记 —— 见 PR-061/PR-062）；**超过 1 位小数**（如 2.755）被**显式拒绝**且文案说明 0.1 米粒度（V115/#5063 起入库量支持 1 位小数，**不静默取整**成 2.8；放宽下限**不连带**放宽精度）；单价 ≤0 被拒（不记单价请留空）；SKU 与商品不匹配被拒（否则库存会加到别的货号上）"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ 2026-09-24 改判（issue #5153，GAP-12）：下限由「≥1 米」放宽为「大于 0 米」（尾料进不来 = 系统说谎），被拒的仍是 0 / 负数 / 超 1 位小数 / 非正单价 / 串 SKU —— **判据一格不放宽**，只改下限这一个值。"
     traces:
       tests:
@@ -1659,7 +1659,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "(5×10+30×12.5)/35 = 11.4286；before_qty=0 或 before_avg 未知 ⇒ 均价 = 本次进价；unitCost=null ⇒ 均价保持原值；全程无成本信息 ⇒ NULL（不得变成 0）"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口"
     traces:
       tests:
@@ -1687,7 +1687,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "PATCH /api/admin/inbound-orders/{id} 的 action 白名单 = {post, cancel}；未知动作抛校验错误（fail-closed：静默什么都不做会让调用方以为过账成功）"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口"
     traces:
       tests:
@@ -1715,7 +1715,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "list 与 create 均以 TenantContext 的 tenantId 调服务；无认证上下文时操作人退化为 system（不写 null、不抛异常）"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口"
     traces:
       tests:
@@ -1743,7 +1743,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "迁移显式 BEGIN/COMMIT、DDL 全带 IF NOT EXISTS / pg_constraint 守卫；**不得**给 avg_cost/cost_amount 回填 0（0 是假真值）；reason CHECK 必须放行 inbound；docs/sql/schema.sql 同步终态（三张新表 + 成本列 + 两个唯一索引）"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口"
     traces:
       tests:
@@ -1771,7 +1771,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "页面渲染列表（单号/状态/行数·总数量/**批次号列**）；建单入口**导航到独立整页** `/inbound-orders/new`（issue #5844：不再是弹窗），整页按「一行 = 一个批次」提交明细（含数量/单价/缸号/卷长），明细有「批次号」列且草稿态为「过账后生成」（草稿不发号）；数量 **0** 与超 1 位小数在**提交前**被挡（不调建单接口）—— 下限自 issue #5153 起为「大于 0 米」，**0.5 米可通过**（见 PR-062）；列表批次号列：已过账显示真值、草稿「过账后生成」、作废「-」、多批次「首个 等 N 个」；详情草稿显示「过账后生成」且有过账按钮，过账后显示批次号且过账/作废入口消失；详情明细有「卷长(米)」列（1 卷 = 多少米，原值直读 —— `58.55` 就是 `58.55`，**不得**套用库存米数的 0.1 米粒度格式化器渲染成 `58.6`；未填 ⇒ `-`，不写 0）；🔴 **2026-10-01 追加（issue #5904）**：建单明细里的 `skuId` 是**雪花号字符串**（实测 `2097126615461462018` ≈ 2.1e18 > JS 的 2^53）⇒ 提交体里必须**逐字原样**，**不得**被 `Number()` 截断（截断后服务端查不到该 SKU，建单恒失败：「商品明细第 1 项的 SKU 不属于该商品」）；判据 = `frontend/admin-web/tests/unit/pages/inbound-orders-new.test.tsx` 的「#5904 靶心」用例（用真实量级 id）+ 源码面元守卫 `frontend/admin-web/tests/unit/lib/snowflake-id-not-number.test.ts`（`Number()/parseInt()/parseFloat()` 作用在 `.id` 上即红，未登记即红）"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ 2026-09-24 改判（issue #5153，GAP-12）：原「数量 0.5 在提交前被挡」随下限放宽而**陈腐**，订正为「0 与超精度仍被挡、0.5 可通过」（改后判据不弱化：仍要求提交前拦截且不调接口）。 ｜ 2026-10-01 新增（issue #5904）：新增入库单**保存恒失败**的根因 = SKU 雪花号被 `Number()` 截断（前端 `skuId: Number(sku.id)` / `DraftLine.skuId: number`）⇒ 改为**全程字符串原样透传**（含 `lib/api.ts` 的 candidates 参数类型与 `ProcessingOrderBlock` 的派工候选行，同一类共 2 处）；判据补齐：实例（真实量级 id 的提交体逐字断言）+ 类级元守卫（源码面禁止把 `.id` 交给数字转换）；测试夹具 id 由玩具值（`11`）换成真实雪花号 —— 玩具 id 正是这个洞当初溜过去的原因。"
     traces:
       tests:
@@ -1800,7 +1800,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "三份源文件都含入库单节点，path=/inbound-orders、permissionCode=inbound:view、icon=PackageOpen；MenuController 的节点真的挂进菜单树；权限码不得挪用 processing:manage —— 🔴 **2026-09-23 补判据（issue #5271 拆组）**：该节点必须落在 **`inventory-center`「仓储与物料」组**内（组名逐字、组 key 与组顺序三源一致），**不在** `production-center`「生产管理」组内（#5271 前它挂在生产管理组 ⇒ 旧散文与 `List.of(...)` 里指向 `production` 组的组断言**已作废**）；同组另两项 = 余料台账 `/production/remnants`、省料看板 `/production/saving-board`（均 `processing:manage`）。红证：把入库单节点挪回生产管理组 / 组 key 只改一处 ⇒ `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`（#5271 起比对**全树**：组 key + 组名 + 组顺序 + 导航型节点名）与 `MenuControllerTest`（仓储与物料组 = 入库单 / 余料台账 / 省料看板 三项，codes = `inbound:view` / `processing:manage` / `processing:manage`）判红；`inbound-menu-isomorphic.test.ts` 的组断言（② 的 `List.of(...)` 所在组）**须为** `inventory-center` —— 仍指 `production` 即红"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ 2026-09-23（issue #5271 用例库同步）：**组归属补判据**（原文只写「真的挂进菜单树」、**没写挂哪一组** ⇒ #5271 拆组后「挂生产管理组」这一隐含事实已成假）—— 断言升级为「落在 `inventory-center`『仓储与物料』组、**不在** `production-center` 组、组内三项顺序 = 入库单 → 余料台账 → 省料看板」，并点明 #5271 后 `inbound-menu-isomorphic.test.ts` 的 `List.of(...)` 组断言须指向 `inventory-center`（仍指 `production` 即红）。**判据只增不减**：原五条（三源存在 / path / 权限码 / 图标 / 不挪用 processing:manage）一条未删。"
     traces:
       tests:
@@ -1828,7 +1828,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "inbound_orders / inbound_order_items / stock_batches 三张表的表名映射、字段清单、id 生成策略（ASSIGN_UUID vs IDENTITY AUTO）、软删 @TableLogic 全部与 V111 迁移列一一对齐；批次号与缸号必须是**两列**（合并会逼系统编缸号 = 假真值）；批次号租户内唯一索引必须在"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5045，V111）：入库单模块的 Mapper/SQL 契约面（growth gate 的 mapper 缺测门禁要求同名测试）"
     traces:
       tests:
@@ -1858,7 +1858,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "手写 SQL 必须有 o.tenant_id = #{tenantId} 与 o.deleted = 0；行数/总量聚合子查询也必须限定 deleted = 0（否则软删明细虚增「行数/总数量」）；必须有 LIMIT；列别名与 InboundOrderLine 属性名逐一对齐（别名写错时 MyBatis 不报错、字段静默为 null）"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5045，V111）：入库单模块的 Mapper/SQL 契约面（growth gate 的 mapper 缺测门禁要求同名测试）"
     traces:
       tests:
@@ -1886,7 +1886,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "receiveStock 只按 id 定位（不得用颜色/门幅组合条件更新）；加库存+写均价+记批次号一条 SQL 完成；SQL 里**不得**出现加权平均公式（公式只有 InboundOrderService.movingAverage 一处实现，两份实现必然漂移）；成本未知时 cost_amount 留 NULL（不用 0 冒充「成本为零」）；既有 deductStock/restoreStock 未被改坏"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5045，V111）：入库单模块的 Mapper/SQL 契约面（growth gate 的 mapper 缺测门禁要求同名测试）"
     traces:
       tests:
@@ -2014,7 +2014,7 @@ cases:
       - "判据 3·**加库存带各自的号**：`product_skus.latest_batch_no` 由每行各自的 `receiveStock` 写入（N 行 ⇒ 调 N 次、批次号两两不同）——整单共用号会让「最近批次」在多行同 SKU 时静默丢掉区分度。"
       - "判据 4·**粒度 = 行而非 SKU**：同一 SKU 的两行（不同缸号）各一个批次、`dye_lot` 各归各行 —— 按 SKU 合并批次会丢掉缸号区分度、追溯断链。"
       - "判据 5·**单行过账逐值不变**：仍是 `PC-yyyyMMdd-NNNN`、仍恰好 1 条批次行 / 1 条 `reason='inbound'` 台账 / `ref_no` = 入库单号；均价与台账成本快照口径不变。"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-22 新增（issue #5141，P0）：多行入库单过账必失败 —— 整单共用一个批次号撞 `uk_stock_batches_no`、整单回滚（实现与 V111 文件头裁定「一个 SKU 行 = 一个批次」相反）。"
     traces:
       tests:
@@ -2371,7 +2371,7 @@ cases:
       - "判据 3·**建单幂等（GAP-02）**：同一 `(tenant_id, import_run_id)` 重跑建单 ⇒ **返回同一张单**（不建第二张；两张都过账 = 库存加两次）。真 PG 实测：第二张被 `uk_inbound_orders_tenant_import_run (tenant_id, import_run_id) WHERE import_run_id IS NOT NULL AND deleted = 0` 挡下、同键单据数 = 1；**注入红证** = DROP 该索引 ⇒ 同键 2 张。**不误伤**：不带运行标识的普通建单可并存、另一租户同键允许。"
       - "判据 4·**口径一致**：单号唯一索引范围 = **租户内**（与 V111 建表注释逐字写的「租户内唯一」一致；改前是全局唯一索引 ⇒ 注释与索引矛盾，且另一租户同号会把本租户的建单挡下）；`source ∈ {purchase, opening}` 有 CHECK 取值约束（写 `gift` 当场拒绝），缺省 `purchase`。"
       - "判据 5·**不损失客户**：既有单行/多行过账行为、移动加权均价、台账 `ref_no` = 入库单号、成本快照逐值不变；不带 `import_run_id` 的建单行为与改前逐字一致。"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 真 PG 判据覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测 + 真 PG 判据覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-24 新增（issue #5148，P1）：入库单过账/建单的幂等与并发健壮性 —— 并发过账闸（条件更新 CAS）、单号取号重试、建单运行级幂等键（V117）+ 单号索引口径统一 + 过期 javadoc 订正。"
     traces:
       tests:
@@ -2474,7 +2474,7 @@ cases:
       - "判据 7·**导入必须走服务层（禁令②）**：导入器不得自己归一（去注释后的源码里不得出现 `setScale` / `RoundingMode` / `intValue()` / `(long)` / `(int)`），数值单元格按十进制定点读（`BigDecimal.valueOf`），且必须调 `inboundOrderService.create` + `.post`；**全或无**：任一行为红 ⇒ 一行都不写（不建单、不调 create）。"
       - "判据 8·**不损失客户**：对客金额 / 售价 / 成品口径一字未动（本单只加库存侧的登记能力 + 一处下限值）。"
       - "判据 9·**缺口列与 bootstrap 镜像**：`legacy_batch_no VARCHAR(64)` 落在 `stock_batches` 与 `inbound_order_items` 两处（明细行也要一列 —— 建单与过账是两次请求，不落明细行则过账时丢号），列注释写明「旧系统」来路；V118 已登记 `migration_fingerprints.json`、显式 `BEGIN/COMMIT`、前置 fail-closed 在写语句之前、两遍真跑幂等；`docs/sql/schema.sql` 已同步终态。"
-    skip_reason: "[backend-contract] 入库/建账是后台仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 真 PG 判据 + 源码禁令判据覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库/建账是后台仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测 + 真 PG 判据 + 源码禁令判据覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-24 新增（issue #5153，P1）：批次建账/初始化入口 —— 期初入库单（复用 V117 的 source/import_run_id，不新造幂等键）、旧系统批次号的独立落点（V118）、GAP-12 下限「≥1 米」→「大于 0 米」（0.5 米尾料可登记）。取号 PR-061（#5154 实际占用 PR-059/PR-060 ⇒ 顺延）。"
     traces:
       tests:
@@ -2546,7 +2546,7 @@ cases:
       - "判据 3·**不虚报**：跨批次（不同卷）即使门幅相同也**不得**成组 —— 两块料各自都要单独占一段卷长 ⇒ 两行各扣 3 米。工艺未知 / 缺窗高 / 缺幅数（引擎 `panels` 缺席，不自己算 `ceil(M/G)`）/ 门幅没记 / 取不到上下卷边 / 排料器报错 ⇒ **逐值退回公式口径**（saved = 0），且绝不因排料失败让加工单生成失败。"
       - "判据 4·**幂等**：同一加工单重复落账 ⇒ 被 `uk_batch_consumption_line` 挡下（真 PG 实测 SQLSTATE **23505**）、台账行数不变、批次余量不变（不得静默二次扣减）。"
       - "判据 5·**不损失客户**：对客金额 / 售价 / 成品口径逐值不变（排料只改**批次实物账**的扣减米数，`product_skus.stock` 与 `stock_ledger_entries` 一字不动）。"
-    skip_reason: "[backend-contract] 加工单/批次账的后端口径（无米宝工具面）⇒ 由 Java 单测 + 真 PG 判据覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 加工单/批次账的后端口径（无黄金策工具面）⇒ 由 Java 单测 + 真 PG 判据覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-25 新增（issue #5158，P1）：把 #5142 的 A 类排料接进生成加工单 —— 扣减米数从公式口径改为排料口径（省下的米数留在批次余量上），成组键 = **批次 × 加工类型**（跨批次成组是虚报），排不了料一律逐值退回公式口径。"
     traces:
       tests:
@@ -2580,7 +2580,7 @@ cases:
       - "判据 2·**单价口径不变量**：把 `stock_batches.unit_cost` 改成 99 之后，**历史单**的 `saved_amount` 仍为 37.50（用的是行内**当时**均价快照，不是查询时 join 批次价）。历史行（V119 之前）`formula = planned = −delta`、均价 NULL = 未知（不回填、不猜）。"
       - "判据 3·**汇总一致**：按加工单聚合与按批次聚合的 `Σ saved_meters` 逐值相等（同一批行、同一个列族，不许两套口径）；对账读面另给 `totalFormulaMeters` / `totalPlannedMeters` / `totalSavedMeters`。"
       - "判据 4·**对账可拆且不放宽**：`soldUnbatchedMeters`（已售未派）与 `planSavedMeters`（排料节省）**分别可读**，两项之和**逐值等于**拆之前的总解释项 ⇒ `reconciled` 判据仍是 `diff == explainedDiff`（改前判 true 的账改后仍判 true；不许一项冒充另一项）。夹具：批次入 60 / 卖 6 / 排料后只扣 3 ⇒ 差 3 全部读作排料节省、已售未派 0；另一组「已售未派 2 + 排料节省 3 = 差 5」两项并存。"
-    skip_reason: "[backend-contract] 台账列与对账读面的口径（无米宝工具面）⇒ 由 Java 单测 + 真 PG 判据覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 台账列与对账读面的口径（无黄金策工具面）⇒ 由 Java 单测 + 真 PG 判据覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-25 新增（issue #5158，P1；硬要求来自 #5159 L1）：两个米数与「当时该批次均价」落库（V119），对账差额拆成「已售未派」与「排料节省」两项分别可读。"
     traces:
       tests:
@@ -2645,7 +2645,7 @@ cases:
       - "判据 4·**非法规则值显式拒绝**：`bestfit` / `best fit` / `fifo,best_fit` / `1` / `自动` ⇒ 400 + `ASSIGNMENT_RULE_UNKNOWN` + 可选值清单，**绝不静默回落 fifo**；合法取值面 = 缺省(空)/`fifo`/`FIFO`/`best_fit`/`best-fit`。红证：把 `default -> throw` 改成 `default -> fifo` ⇒ 判据红。"
       - "平局裁决：两批余量**逐值相同**且都够用 ⇒ 取先入库者（复用 FIFO 序，不引入第二个排序键）。"
       - "自检：候选/建议值的挑法只有**一处实现**（`suggest`）—— 读面与生成侧自动指派共用它，两处各写一份必然漂移。"
-    skip_reason: "[backend-contract] 批次指派策略的后端口径（无米宝工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 批次指派策略的后端口径（无黄金策工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-25 新增（issue #5167）：best-fit 批次指派策略（可切换，默认仍 FIFO）。取号 PR-066（PR-065 之后顺延；本单预留区间 PR-066~PR-069）。"
     traces:
       tests:
@@ -2715,7 +2715,7 @@ cases:
       - "显式 `fifo` 同样开启补位（缺省「不补位」≠ 规则值 `fifo`）；行里已有 `batchNo` ⇒ 人工最终选择优先，不查建议值。"
       - "判据 3·**无候选 ⇒ 显式拒绝该行**：`suggestedBatchNo` 回 null ⇒ 逐单失败（`在指派规则 best_fit 下没有可满足的批次（该行需要 2.7 米）`）、不落半成品（不插加工单、不扣批次）—— 不静默跳过 = 不静默少扣。"
       - "判据 4·**非法规则值 ⇒ 整批拒绝**（**即使本次所有行都显式指定了批次**）：`bestfit` ⇒ 400 + `ASSIGNMENT_RULE_UNKNOWN`，且在**碰任何 Mapper 之前**判完。两个入口都判：`POST /processing-orders/generate`（body 字段）与 `GET /batch-stock/candidates`（query 参数，非法值 ⇒ 400）。"
-    skip_reason: "[backend-contract] 生成加工单侧的规则装配与失败面（无米宝工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 生成加工单侧的规则装配与失败面（无黄金策工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-25 新增（issue #5167）：生成加工单口的 assignmentRule（显式开启才补位 / 人工指定优先 / 失败面显式）。取号 PR-068。"
     traces:
       tests:
@@ -2749,7 +2749,7 @@ cases:
       - "判据 5·**等待时长可读 + 上限可配**：`waitHours = now − orders.created_at`（系统无 `paid_at/confirmed_at` 列 ⇒ 用下单时刻作**上界**口径，只会算得更久、不假装刚进池），`maxWaitHours` 回口径；缺省 24 小时 ⇒ 30 小时的那张超上限、2 小时的不超；调成 1 小时 ⇒ 2 小时与 30 小时的两张超上限，而**恰好 1.0 小时**的那张不算（判据是严格大于）⇒ 阈值确实生效。"
       - "判据 5·**不得静默压单**：超上限必须有**带对象名字**的告警（`orderNo` + `waitHours` + 上限 + 「请成批派单或单独派单」），不是数不清对象的计数；红证：把 `overdue` 恒置 false ⇒ 告警数与超限数都变 0 ⇒ 判据红。"
       - "**非法上限 fail-closed**：`maxWaitHours <= 0` ⇒ 400（`maxWaitHours 必须为正数`），**不静默回落**缺省值 —— 静默回落会让看板以为在按自己设的阈值告警。"
-    skip_reason: "[backend-contract] 池读面的分组/等待/兜底判定（无米宝工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 池读面的分组/等待/兜底判定（无黄金策工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5169）：待派池读面与兜底（按物料分组 / 等待时长 / 超上限可行动告警 / 上限可配且非法值拒绝）。取号 PR-069（本单硬分配区间 PR-069~PR-072）。"
     traces:
       tests:
@@ -2852,7 +2852,7 @@ cases:
       - "🔴 判据 1·**缺省关的 HTTP 入口守卫**：`POST /api/admin/production/pool/dispatch` 不传 `pooled` ⇒ 控制器下传 **null**（服务侧的 `POOLED_DEFAULT_ENABLED` 是**唯一**的缺省值来源）；这一层若写死 true（或在 DTO 上再写一个缺省值），池化就会对所有既有调用方默认生效 ⇒ 记录期基线被污染。`pooled=true` ⇒ 原样下传（池化必须**显式**开启）。"
       - "判据 5·`GET /api/admin/production/pool` 不传 `maxWaitHours` ⇒ 下传 null（服务侧用缺省 24 小时，**不在控制器里编造**）；传 `6` ⇒ 原样下传（上限可配）；响应回 `maxWaitHours` / `poolingEnabled=false` / `overdueCount`（池**看得见** ≠ 池化**已开启**）。"
       - "判据 4·`POST /api/admin/production/pool/preview` 把 `orderIds`/`batches`/`assignmentRule` 原样下传，响应回 `formulaMeters`（6）/`savedMeters`（3）/`assignmentRule` 口径 —— 预览是只读端点（不建加工单、不落台账）。"
-    skip_reason: "[backend-contract] 端点装配与缺省下传（无米宝工具面）⇒ 由 MockMvc 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 端点装配与缺省下传（无黄金策工具面）⇒ 由 MockMvc 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5169）：池化端点装配（缺省关下传 null / 上限可配 / 预览只读）。取号 PR-072。"
     traces:
       tests:
@@ -2886,7 +2886,7 @@ cases:
       - "🔴 判据 1·**零落账**：拒绝发生在 `plan`（只读段，写面在 `apply`）⇒ 被拒批次在真库台账里 **0 行**、批次余量一字不动（60 仍是 60），不留下「有加工单、扣了半截」的半成品。"
       - "🔴 **红证（改前形态 = 静默落账，实测不是推断）**：同一夹具把 SKU 码换成改前读侧必然产出的 `null`（既有路径读的是快照里**不存在**的 `skuCode` 键 ⇒ 恒 null；护栏第一个条件 `hasText(d.skuCode())` 因此恒假 ⇒ 整条判据 no-op）⇒ 真库读数 = 台账 **1 行**、扣 **3 米**、批次余量 60 → **57**，三个数在同测试内打印并与上面那条对照。"
       - "判据 1·**可被触达的路径**：`generate` 允许逐行显式传 `batches`（文员手选批次号）⇒ 手选一个同货号但错颜色/门幅的批次，改前就是上述静默扣账。"
-    skip_reason: "[backend-contract] 批次账的真库读数（无米宝工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 批次账的真库读数（无黄金策工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5174）：跨 SKU 批次护栏的真库判据（显式拒绝 + 零落账 + 红证静默落账）。取号 PR-076。"
     traces:
       tests:
@@ -2918,7 +2918,7 @@ cases:
       - "🔴 判据 1 的**读侧一半**：不启用池化（逐单派）时，`plan` 收到的 `Designation.skuCode` **非 null** 且逐值等于快照里的 SKU 码（快照由 `buildSnapshot` 写入：`processing_info.sku` 与 `processing_info.skuCode` **都落 `sku` 这一个键**，快照里没有 `skuCode` 键）。红证 = 改前该值为 `[null]`；它的真库后果（静默扣账）见 PR-076 的对照读数。"
       - "判据 3 的**读侧一半**：按规则自动补位时 `suggestedBatchNo` 收到的过滤入参 = **同一个** SKU 码（改前收 `null` ⇒ 过滤条件整条 no-op ⇒ 同货号错颜色/门幅的批次也能被补位；真库读数见 PR-078）。补位挑出的批次进 `plan` 时带着同一个 SKU 码（两处口径同源，不另立第二份）。"
       - "判据 2·**合法路径逐值不变**：正确 SKU ⇒ 加工单照旧生成成功；派工需求 `meters` 仍是公式口径米数（向上进位到 0.1，与销售账同函数）、排料定尺三项（加工类型 / 窗高 / 分幅数）仍**逐值来自快照**（#5158 口径本单不碰）。"
-    skip_reason: "[backend-contract] 派工入参装配（无米宝工具面）⇒ 由 Mockito 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 派工入参装配（无黄金策工具面）⇒ 由 Mockito 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5174）：读侧取键（快照 `sku` 键）+ 规则补位过滤入参 + 定尺入参逐值不变。取号 PR-077。"
     traces:
       tests:
@@ -2955,7 +2955,7 @@ cases:
       - "🔴 判据 2 的**反向护栏**（防「修成一律拒绝」）：批次侧 `sku_code` 为 **NULL**（导入批次未带色号 —— 如实登记的边界）⇒ **不擅自收紧**、仍按 `productId` 那道判据放行并正常落账；谁把 `hasText(batch.getSkuCode())` 去掉，这条立刻变红。"
       - "判据 5·**幂等不变**：同一加工单重复落账被 `uk_batch_consumption_line` 挡下（SQLSTATE 23505），台账行数与批次余量都不再变化（沿用 #5145 闸）。"
       - "判据 4·**不损失客户**：`product_skus.stock` / `price` 与 `stock_ledger_entries` 行数指纹一字不动（批次护栏不碰销售账）。"
-    skip_reason: "[backend-contract] 同 SKU 落账与建议值的真库读数（无米宝工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 同 SKU 落账与建议值的真库读数（无黄金策工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5174）：同 SKU 落账逐值不变 + 排料口径 + 建议值过滤（含红证）+ 反向护栏 + 幂等 + 不损失客户。取号 PR-078。"
     traces:
       tests:
@@ -2992,7 +2992,7 @@ cases:
       - "🔴 **wire 契约**：JSON 键名必须是 `isUrgent`（不是 `urgent`）—— 红证 = 把 DTO 字段从 `Boolean` 改成原生 `boolean` ⇒ Lombok getter 变 `isUrgent()` ⇒ Jackson 属性名变 `urgent` ⇒ 前端读不到加急标记。到货日出线格式 `YYYY-MM-DD`，其前提（`application.yml` 的 `write-dates-as-timestamps: false`）**读真值源**断言，不是在测试里自选格式。"
       - "判据 6·**不损失客户（真库双向）**：标加急/填到货日、以及取消加急/清空到货日 ⇒ `total_amount` / `actual_amount` / `discount_amount` **逐值不变**。"
       - "**订单页 UI（§15.1 断言结果可见）**：订单新建页与详情页的加急开关 + 到货日选择器写进请求体；**不勾/不填 ⇒ 请求体里不出现这两个键**（不得默认勾上加急）；列表页加急角标随值出现/消失（红证 = 把缺省改成「总是加急」⇒ 角标断言红）。**版式（issue #5915，用户 2026-10-01 逐字「要求到货日能否和日期选择控件放一行？」）**：新建页那一格的 label 与原生日期控件在**同一个 flex 行容器**里（label 不再是 `block + mb-1.5` 独占一行、控件不再 `w-full`），label 的 `htmlFor` ↔ 控件 `id` 关联保持；下方提示仍另起一行、**文案一字未改**。红证 = 把 label 改回 `block`、或给控件加回 `w-full` ⇒ frontend/admin-web/tests/unit/pages/orders-urgency.test.tsx 的行容器/宽度断言红。"
-    skip_reason: "[backend-contract] 订单字段与迁移的真库读数（无米宝工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据 + 前端 vitest 覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 订单字段与迁移的真库读数（无黄金策工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据 + 前端 vitest 覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5177）：订单级加急/到货日字段（V120）零联动 + 缺省不变 + 改单三态 fail-closed + wire 键名 + 不损失客户 + 订单页录入位。取号 PR-079。 2026-10-01 版式补记（issue #5915）：新建订单页「要求到货日」的 label 与日期控件改为**同一行**（`flex items-center`，label 不再独占一行、控件不再 `w-full`），提示仍另起一行；缺省口径与请求体一字未改。"
     traces:
       tests:
@@ -3031,7 +3031,7 @@ cases:
       - "🔴 判据 3·**成批批内拒绝（fail-closed）**：`/dispatch` 与 `/preview` 带 `pooled=true` 且批次里含加急单 ⇒ **整批显式拒绝**（消息点名**订单号** + 可行动处置：单独派 = 插队，或先取消加急），且**一行都不写**。**红证（实测单点变异）** = 摘掉 `assertNoUrgentInPooledBatch` 在成批路径上的调用 ⇒ 拒绝断言当场红。判别力：拒绝文案**不得**是逐单路径的既有文案（`不允许生成加工单`）—— 两个不同失败面必须能机器分辨。"
       - "判据 3·**加急不侵入单派**：同一个加急单走 `pooled=false` ⇒ 抛的仍是**既有**失败文案（用「状态非 confirmed」的夹具），消息里**不含**「加急」⇒ 加急只改「是否入池/派单时机」，不改单订单路径的任何一格（判据 2 的「单订单路径错误文案」）。"
       - "**看板上的一个动作**：插队区每行一个「加急插队派单」按钮 ⇒ 调同一个 `/dispatch` 端点 + `pooled=false` + 单订单；成功后在**看板上可见地**出现该加工单号（§15.1：断言结果可见，不停留在「API 被调用」）。"
-    skip_reason: "[backend-contract] 加急插队的判定与拒绝（无米宝工具面）⇒ 由 Java 单测 + 前端 vitest 覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 加急插队的判定与拒绝（无黄金策工具面）⇒ 由 Java 单测 + 前端 vitest 覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5177）：加急不进池 + 成批批内整批拒绝（含单点变异红证）+ 不侵入单派 + 看板插队动作。取号 PR-080。"
     traces:
       tests:
@@ -3071,7 +3071,7 @@ cases:
       - "🔴 存量行不炸读面（issue #5550）：`order_items.processing_info` 为 **NULL** 的明细行（真库实证：待派 29 行里 15 行如此）**不得**让 `GET /api/admin/production/pool` NPE 500 —— 该行按「既无加工项也无 `saleForm`」的**既有**语义跳过（不成派单候选、不产出行；整单没有快照时不进池），而**同池的正常行一行不丢**（同夹具里正常单照旧成组、计数逐值不变）。**红证** = 摘掉 `buildSnapshot` 的 `pi == null` 判定 ⇒ `PoolBoardUrgencyTest#poolReadFaceSurvivesLegacyItemWithoutProcessingInfo` 当场 NPE 红。**类级元守卫** = `ProcessingInfoNullSafetyMetaGuardTest#everyNormalizationCallSiteHandlesNull`（归一化入口的每一处结果解引用都必须先判 null；无判定的新调用点即红，报告给文件:行与出口）。"
       - "**全选（issue #6520）**：成批区标题栏一个「全选 N 单」按钮 —— 候选口径 = `batchGroups` 的**跨料组并集**（**加急单在 `urgentLines`、不在候选内**，全选勾不到它，否则整批必被 422 拒绝）；全选中时按钮变「取消全选」并清空；无候选时禁用。红证 = `production-pool-batch.test.tsx` 的「全选」用例：断言的是**每一行真的被勾上**且 `/preview` 的 `batches` 逐行带指派（不是只改计数文案），并断言加急行**没有**勾选框。"
       - "**超时未派告警不占屏（issue #6521）**：旧形态「每单一行红字」的常驻大红块（10 单 = 整屏）改为**一行摘要常驻 + 逐单明细按需展开** —— 摘要 = 条数 + 最长等待阈值 + 最久已等（数字全部来自服务端 `overdueCount` / `warnings[].waitHours` / `maxWaitHours`，前端只格式化）；逐单明细默认**不渲染**（折叠 ≠ CSS 隐藏）⇒「不占屏」是可断言的机器读数；展开后高度封顶 + 内部滚动，页面高度不随超时单数增长；`overdueCount = 0` ⇒ 整块不存在。"
-    skip_reason: "[backend-contract] 排序/预览/成批派单（无米宝工具面）⇒ 由 Java 单测 + 真 PG 判据 + 前端 vitest 覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 排序/预览/成批派单（无黄金策工具面）⇒ 由 Java 单测 + 真 PG 判据 + 前端 vitest 覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5177）：智能派单排序（临期优先 + null 最后，含单点变异红证）+ 缺省不变 + 预览逐值不说谎 + 池视图字段 + 一键成批派单。取号 PR-081。 2026-09-25 追加（issue #5550）：存量行（`processing_info` 为 NULL）不炸池读面 + 归一化解引用类级元守卫。 2026-10-08 追加（issue #6520 / #6521）：成批区「全选」（跨料组候选并集，加急单不在其中）+ 超时未派告警改「一行摘要常驻 + 逐单明细按需展开」（折叠态明细不渲染 ⇒ 不再占整屏）。"
     traces:
       tests:
@@ -3112,7 +3112,7 @@ cases:
       - "🔴 **透传进快照（真库 JSONB 往返）**：订单级 `isUrgent` / `requiredDeliveryDate` 随加工单生成写进 `items_snapshot` **每一行**（订单级事实只能逐行固化），经真库 JSONB 编解码往返后仍是**布尔 `true`**（不是字符串 `\"true\"`）与 `YYYY-MM-DD` 字符串，且能被 `ProcessingOrderResponse.ProcessingOrderItemBrief` 解析出 `items`（**不为 null**）。⚠️ 这是本仓一处**静默退化**点：快照里出现 DTO 未声明的键 ⇒ `convertValue` 抛错被 catch ⇒ `items` 整段变 null 而接口照样 200 ⇒ 本用例另带一条**红证对照**（多一个未声明键 ⇒ 解析必抛）证明上一条不是碰巧通过。"
       - "**缺值口径**：`isUrgent` **恒落键**（`false` 是**真值** —— 显式「否」不得当成「未填」丢弃）；`requiredDeliveryDate` **缺值不落键**（写空串/占位会把「未指定」读成一个日期）⇒ 既有单的快照在缺省下与该键族引入前**逐字相同**（零污染）。"
       - "**迁移指纹账本只追加**：`tests/unit_ci_workflows/migration_fingerprints.json` 只新增 V120 一条，旧条目零改动（判据本体 = `test_migration_immutability.py`，挂 MC-012）。"
-    skip_reason: "[backend-contract] 迁移与快照的真库读数（无米宝工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 迁移与快照的真库读数（无黄金策工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5177）：V120 两遍幂等 + 列形态对账 + schema.sql 同步 + 加急/到货日透传进快照（含静默退化的红证对照）+ 指纹账本只追加。取号 PR-082。"
     traces:
       tests:
@@ -3150,7 +3150,7 @@ cases:
         🔴 判据 3·**「生成物新鲜度」抓不到这条（所以必须单列判据）**：那条检查比的是「能否由当前源重渲染出**已提交的**产物」，**不是**「产物是否等于真值」⇒ 一份**稳定地错**的产物永远绿。实证：修前那两个生成物在 main 上**长期"新鲜"**，而 33 处取值与真值不同（连带交给 LLM 的判据文本与真值不同；任何按值检索/比对的工具都会漏）。
       - |-
         判据 4·**零 diff 自证（稳定点）**：同参数再跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md` ⇒ 两个生成物**逐字节相同**，且与已提交版本**逐字节一致**；判据本体 = 同文件 `test_render_is_a_stable_fixpoint_and_matches_committed`（渲染两次 + 对齐已提交）。⚠️ 本单**预期生成物会变**（那正是修复本身）⇒ 生成物由 `render_cases.py` 重生成，**一个字面量都不许手改**。
-    skip_reason: "[backend-contract] 渲染腿取值保真（CI 机具面，无米宝工具面）⇒ 由 tests/unit_ci_workflows 单测验证，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 渲染腿取值保真（CI 机具面，无黄金策工具面）⇒ 由 tests/unit_ci_workflows 单测验证，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5179）：双引号标量按 YAML 8.1.3 解码（引号 / 反斜杠 / 斜杠 / 换行 / 制表 / 回车 / 退格 / 换页 / 十六进制 / Unicode 与代理对）+ 单引号 `''` 只处理 `''`；修前 33 处取值不同 / 163 个多余转义序列，修后 0。取号 PR-083。"
     traces:
       tests:
@@ -3185,7 +3185,7 @@ cases:
         🔴 判据 2·**「0 条」是「比较器坏了」，不是「没有差异」**：`Report.assert_sane()` 在任一侧条数为 0、或两侧 id 序列不是逐位相同时**抛错**。为什么必须有这条：#5179 的复核方**两次**独立测量都"量不出来"，成因正是真值侧解析出 **0 条** —— 而 0 条与"完全一致"在读数上**长得一模一样**（一次假绿就此诞生）。**红证（两侧都要红，只红一侧等于只守了一半）** = 产物侧换成没有 `EvalCase(...)` 的文件 ⇒ `test_comparator_reds_when_a_side_is_empty` 必红；`--cases` 指到空目录 ⇒ 同一判据的另一半必红。
       - |-
         🔴 判据 3·**判别力自证（不会红的断言 = 空断言）**：修完之后"零差异"是常态 ⇒ 判据 1 永远是绿的，读者无从知道它"到底是守住了，还是根本不会红"。⇒ `test_value_diff_guard_can_actually_go_red` 把当前产物按**改前形态**重新转义（`\` → `\\` 先做、`"` → `\"` 后做）喂给同一条判据 ⇒ 必须报出差异且 `escape_overflow` 非空。**边界照实登记**：该自证覆盖 `\"` / `\\` 两族（33 处里的 32 处），`\/` 那 1 处需要**源码侧**信息（源写 `\/` 而真值是 `/`）⇒ 由 #5179 的 PR body 里 `git show origin/main:` 的逐处对照承担，**不把"没覆盖"伪装成"已覆盖"**。
-    skip_reason: "[backend-contract] 用例库比较器与其健康断言（CI 机具面，无米宝工具面）⇒ 由 tests/unit_ci_workflows 单测验证，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 用例库比较器与其健康断言（CI 机具面，无黄金策工具面）⇒ 由 tests/unit_ci_workflows 单测验证，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5179）：比较器落库为单一实现 + 「0 条判为比较器坏了」的两侧红证 + 判别力自证（改前形态必红）+ 数字订正（36 不可复算 ⇒ 33/45/163）。取号 PR-084。"
     traces:
       tests:
@@ -3223,7 +3223,7 @@ cases:
         判据 4·**真库零容忍（口径收紧，不是放宽）**：`test_real_library_values_are_py_yaml_identical` 现取真库与 PyYAML 的**每一处**取值差异 ⇒ 块标量 / 跨行标量 / 转义解码任一族再破都逐处点名。#5179 之前的放行口径是"差异都能由 `STILL_UNFAITHFUL` 解释"（修前实测 33 处全是 `escaped_*`）⇒ 修好后那条容忍口径**整条退场**。
       - |-
         **越界声明（本单不做，防被读成已做）**：不改用例库**内容语义**；不动 `scripts/drift_audit_baseline.json` 与那 9 条豁免；**不动严格腿** `.github/cases_yaml.py`（严格判定唯一实现，一字未改）；不碰产品代码。
-    skip_reason: "[backend-contract] 解析器保真度的边界登记与死亡条件（CI 机具面，无米宝工具面）⇒ 由 tests/unit_ci_workflows 单测验证，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 解析器保真度的边界登记与死亡条件（CI 机具面，无黄金策工具面）⇒ 由 tests/unit_ci_workflows 单测验证，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5179）：escaped_* 一族死亡条件按设计触发并移出登记表 + 现存三种不保真形态在册 + 未定义转义两侧行为钉住 + 真库零容忍口径。取号 PR-085。"
     traces:
       tests:
@@ -3255,7 +3255,7 @@ cases:
       - "判据 2·**事件驱动、不是计时器**：① 结构性 —— 触发链（`PoolChangeNotifier` / `AutoBatchDispatchListener` / `ProcessingOrderService`）**没有任何 `@Scheduled`**，且监听器是 `@TransactionalEventListener(phase = AFTER_COMMIT)`（提交前评估会读到「还没入池」的单 ⇒ 相位是正确性的一部分）；② 行为性 —— **没有到期的单**（进池 1~3 小时、到货日 30 天后）在条件满足时**当次事件内**即成批。**红证 = 把主触发改成「只在兜底扫描里」**（条件判定恒不成立）⇒ ②当场红。"
       - "判据 1/10·**挂载点纪律**（四个挂载点：确认支付 / 入库过账 / 改单 / 取消）：① `InOrder` 断言「状态流转 → 库存副作用 → 通知」的**顺序**（挂到业务前面 = 用一次评估阻塞主流程）；② 🔴 **通知点抛异常 ⇒ 主流程仍成功且副作用照旧**（确认支付照常返回、`increaseSales` 仍被调到；过账仍 `receiveStock`）；③ 通知点未装配 ⇒ 跳过且不影响主流程；④ 触发原因是四类之一。**红证 = 去掉 `notifySafely` 的 `catch`** ⇒ ②红；**把 `confirmPayment` 里那行通知删掉** ⇒ ①红。"
       - "判据 10·**失败可查**：通知点失败/未装配 ⇒ `INCIDENT_PRODUCTION_POOL_NOTIFY_FAILED` 出现在日志里（grep 得到，不静默）。"
-    skip_reason: "[backend-contract] 自动成批的开关缺省与事件挂载点纪律（无米宝工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 自动成批的开关缺省与事件挂载点纪律（无黄金策工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5182，阶段 2b-3）：默认关 + 事件驱动（AFTER_COMMIT，无计时器）+ 四个挂载点的 fail-soft 与留痕。取号 PR-086（本单硬分配区间 PR-086~PR-089）。"
     traces:
       tests:
@@ -3292,7 +3292,7 @@ cases:
       - "判据 7·**幂等**：派过的单有了活跃加工单 ⇒ `pool()` 按同一口径（与 `uk_processing_orders_active` 逐字相同）把它排除 ⇒ 第二次触发**不重复派**（一次 `generate` 都不调）。**红证 = 池不再排除已派单** ⇒ 该判据红。"
       - "判据 10·**失败可查**：三级降级（整批池级 → 逐单 + 规则 → 逐单不带规则）都失败 ⇒ `failures` 非空 + 监听器打出 `INCIDENT_PRODUCTION_AUTO_BATCH_DISPATCH_FAILED`。**红证 = 把失败改成静默**（删掉那行 `log.error`）⇒ 该判据红。"
       - "**「不能损失客户」的降级链**：⓵ 池级失败（累计余量不足 = 池化新出现的失败面）⇒ 逐单 + 规则重试（逐单看各自多半够）；⓶ 仍失败（该 SKU 根本没有可用批次）⇒ 逐单**不带规则**（#5145 之前的缺省形态：不碰批次账）⇒ **绝不因为优化不可用把订单压住**；重试不会重复派（`selectActiveByOrderId` + 唯一索引 fail-closed）。"
-    skip_reason: "[backend-contract] 自动成批的条件/加急/兜底/幂等（无米宝工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 自动成批的条件/加急/兜底/幂等（无黄金策工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5182，阶段 2b-3）：成批条件三条 + 加急立即派 + 兜底算式 + 幂等 + 失败留痕 + 三级降级。取号 PR-087。"
     traces:
       tests:
@@ -3497,7 +3497,7 @@ cases:
       - "判据 5·**单价口径**：`UPDATE stock_batches SET unit_cost = 99` 之后重读看板 ⇒ 省料金额**一字不变**（用的是行内快照 `stock_batch_consumptions.unit_cost`）。**红证 = 把金额腿改成读批次现价 `b.unit_cost`** ⇒ 当场红（实测 103.76 → 1227.6）。⚠️ 复读前必须 `session.clearCache()`（MyBatis 一级缓存按 SqlSession；不清缓存会读回改前值 ⇒ **断言恒真 = 空断言**，本单实测踩到并已修）。"
       - "判据 3·**粒度 fail-closed**：未知粒度 ⇒ 400 显式拒绝（**不静默回落 month**）；`week` 走 ISO 周（`YYYY-Www`）且响应的 `timezone` 显式为 `Asia/Shanghai`。**红证 = 把 default 改成回落 month** ⇒ 当场红。"
       - "判据 6·**批次结构趋势（issue #6459）**：`Board.batchTrend` 按**批次收货期间**给出「几乎用完（剩余最小档）的批数 / 该期批数 / 占比」，**只含 `purchase`**（存量导入与来源未知**不进序列**）。真库读数（同夹具）：采购在 2026-09（2 批 / 0 批几乎用完 / 0.0000）、存量在 2026-08 ⇒ 序列**只有 2026-09 一行**；**红证 = 把存量并进来** ⇒ 多出 2026-08 一行、合计由 2 变 4。定点判据 = `SavingMetricsBatchTrendTest`（同期多行相加 / 期间升序 / 未记收货日期不猜 / 1÷3 ⇒ 0.3333）。复用**已加载的行**内存聚合（**零新增 SQL**）；`Board` 既有 component 的顺序与名字一字未动（**只在末尾追加** `batchTrend`）。"
-    skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无黄金策工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5159 剩余范围）：L2/L3 汇总读面 —— 汇总一致（逐值相等）+ 单价快照口径 + 粒度 fail-closed。取号 PR-093（本单硬分配区间 PR-093~PR-096）。 ｜ 2026-10-06（issue #6430 用例库同步）：本用例的读面**只加不改**地新增了 `comparison`（相邻两期环比；口径与判据另立 PR-127），**本用例三条判据一字不放宽**；同批前端改动见 UI-092（含一处**定位串**改判：批次分组行 testid 由 `…-<cohort>-<period>` 改为 `…-<cohort>-<period>-<skuCode|productId>`，原因 = 同一 cohort+period 下多行时旧 testid 撞车、定位不到具体行，断言强度不变）。 ｜ 2026-10-07（issue #6459 用例库同步）：**只增不减**新增判据 6（`batchTrend` 只含采购腿）；新增序列是**追加**在 `Board` 末尾的 component、既有 component 顺序与名字一字未动 ⇒ 判据 1/3/5 逐条不变（前端改动见 UI-092 的改判记录）。"
     traces:
       tests:
@@ -3530,7 +3530,7 @@ cases:
       - "判别性对照读数（同夹具）：切换后占比 = **0/2 = 0.0000**、存量占比 = **1/2 = 0.5000**、**若把存量混进切换后 = 1/4 = 0.2500** —— 三个数在同一测试里都在 ⇒「不混入」这句话可证伪。"
       - "分组腿同样单列：`batchGroups` 里存量批次落在 `cohort=opening` 的**独立组**（时间维度 = 收货月），且**不存在**「存量 + 切换后」混在一起的组。"
       - "页面面（`SavingBoard.test.tsx`）：🔴 **2026-10-07 改判（issue #6459）** —— 旧写的「存量导入独立成卡并带「存量导入·单列」徽标」**已作废**（来源组对照表连同它的三个内部标签被用户裁定从页面删除）。**口径一字不放宽、呈现改说人话**：存量批次仍**不进**趋势的分子分母（服务端 `batchTrend` 只含采购腿；真库读数 = 存量所在的 2026-08 **整期缺席**），页面上这件事只用商家的话在折叠区说一次（「趋势只统计系统里采购入库的批次：开业时导入的老库存不算」）。**红证 = 让趋势序列吃全量来源** ⇒ 行数由 1 变 2、合计由 2 变 4 ⇒ 当场红。新增的**类级元守卫** = `user-copy-jargon-guard` 的形态③（`切换后` / `存量导入` / `来源未知` 三个服务端标签进用户可见文案即红）。"
-    skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无黄金策工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5159 剩余范围）：存量导入批次单列成组（历史包袱不进切换后的分子分母）。取号 PR-094。 ｜ 2026-10-07（issue #6459 用例库同步，用户裁定）：**页面面改判** —— 存量单列这件事不再以「独立成卡 + 徽标」呈现（那种呈现把三个内部标签端给了新用户），改由「趋势只含采购腿」+ 折叠区的人话说明承担；**服务端判据（判据 2 / 对照读数 / 分组腿单列）一条不动**。"
     traces:
       tests:
@@ -3563,7 +3563,7 @@ cases:
       - "判据 4·**分母 0 ⇒ 比率 null**：有消耗但明细行没有面积（`order_item_id` 不存在于 `order_items`）⇒ `outputAreaM2 = 0` 而 `metersPerM2` 必须 `null`（不得回落成 0 —— 会读成「一点布都没用」）。另：同一明细行有两行扣减 ⇒ 面积**按 `order_item_id` 去重**（否则分母虚高、效率被说好）。"
       - "页面面（🔴 **2026-10-07 改判，issue #6459**）：旧写的「无数据时两张指标卡渲染「无数据」」**已作废**（那两张卡被用户裁定删除）；现口径 = 首屏两个大数字（`saving-metric-saved-meters` / `saving-metric-saved-amount`）在无数据时渲染「无数据」且**不得出现 `0 米` / `0 元`**；趋势表与明细表空数据渲染「无数据」而不是空表或 0。**红证 = 让 `formatMetric(null)` 回 `'0'`** ⇒ 前端判据当场红（红证机具第 1 条变异：`Tests 3 failed | 25 passed`）。"
       - "§22 基线纪律①（文案不写死数字）：档位文案（如「≤0.2 米」）**必须**来自服务端 `buckets[].label`（现用于趋势表标题 `batchTrendTitle`）。**红证 = 在助手/页面里硬编码「≤0.2 米」** ⇒ 当场红（红证机具第 5 条变异：`Tests 1 failed | 27 passed`）。"
-    skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无黄金策工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5159 剩余范围）：空数据不冒充 0（含量纲为「比率」的分母 0 一格）+ 文案不写死数字。取号 PR-095。 ｜ 2026-10-07（issue #6459 用例库同步）：**页面面定位串改判** —— 判据不变（无数据不冒充 0、档位文案来自服务端），落点由两张指标卡改为「首屏两个大数字 + 趋势表 + 明细表」；服务端四条判据（空租户 / 真 0 与无数据可区分 / 分母 0 ⇒ 比率 null / 面积去重）一字未动。"
     traces:
       tests:
@@ -3596,7 +3596,7 @@ cases:
       - "⚠️ **删的是呈现，不是口径**（判据一条不放宽）：① 指标①的实质（布有没有被用干净）以「几乎用完的布 · 批数」趋势继续在页面上；② 旧指标②（采购总米数）退出首屏，但**历史导入不进计量腿**这条服务端口径一字未改（PR-094）；③ 前端仍**零算术、零好坏判定**（下一条）。"
       - "判据 1（页面面）·**米数/金额原样渲染服务端值**：桩数据**故意不自洽**（本期 55 米 / 逐单分组腿 77 米 / 合计 99 米，三个数互不相等）⇒ 前端任何「顺手求和/求差」都会让断言红（红证机具第 2、3 条变异分别打首屏大数字与合计行，实测 `3 failed / 25 passed` 与 `1 failed / 27 passed`）。"
       - "判据 6·**不损失客户**：两次读面调用之后 `product_skus.stock` / `orders.total_amount` / `stock_ledger_entries` 行数**逐值不变**（读面不写任何东西）。未记均价的行数以「另有 N 行未记批次均价，金额不含这些行」显式渲染（否则「读不出」会被读成「只省了这么点」）。"
-    skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 省料度量的汇总读面与看板（无黄金策工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5159 剩余范围）：两条指标并用 + 页面写明误导原因 + 不损失客户。取号 PR-096。 ｜ 2026-10-07 **整条改判（issue #6459，用户亲裁）**：用户看过重做版首屏后判定「切换后（采购入库）这种概念让新用户无法理解」「这么多废话文字留在页面上只会干扰用户」，并明确「只需要用数据和规则说清楚我们是如何省下多少布料，节省了多少成本即可」⇒ 原判据「两条指标必须并用 / 页面必须写明单看①会被排料误导」**随两张卡与说明条一起废除**（这是对 #5144 的**有意推翻**，不是放宽）；**保留并加强的是**：前端零算术、无数据不冒充 0、历史导入不进计量腿、不损失客户四条。"
     traces:
       tests:
@@ -3715,7 +3715,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  # ── issue #5188：批次 / 省料数据接入米宝（只读工具 + 交互卡）──────────────────
+  # ── issue #5188：批次 / 省料数据接入黄金策（只读工具 + 交互卡）──────────────────
   # 取号：本单开工时 main 最高 = PR-096；PR-097~PR-099 已分配给**并行**的 #5146 包
   # （该包已合并，见上一条 PR-097~099，**未占用他人号**）⇒ 本单取 PR-100~102。
   # 判据口径：① 工具真能查（改前 `app/tools/` 零批次工具 ⇒ 红）；② 🔴 口径同源（省料度量与
@@ -3723,7 +3723,7 @@ cases:
   # （码与端点 `@RequirePermission` 逐字一致）；④ 只读无副作用；⑤ 空数据不冒充 0。
   - id: PR-100
     legacy_id: ""
-    title: "米宝查批次余量 / 「快用尽」批次（按物料 / 批次号 / 缸号）"
+    title: "黄金策查批次余量 / 「快用尽」批次（按物料 / 批次号 / 缸号）"
     domains:
       - product
       - inventory
@@ -3749,7 +3749,7 @@ cases:
       - "读数一律取 `/api/admin/batch-stock/batches` 读面（余量是服务端派生值 = 入库量 + Σ消耗）；agent 侧不得自己算「入库 − 消耗」"
       - "空结果如实回「**无数据**」（不得回 0、不得编造批次号）；缺 `product:list` 时如实说明「这是权限限制、不要重试」并指向管理后台授权路径"
     skip_reason: ""
-    merge_log: "2026-09-23 新增（issue #5188）：批次/省料数据接入米宝 —— 批次余量与「快用尽」（PR-100）。取号 PR-100（本单开工时 main 最高 PR-096，PR-097~099 属并行的 #5146 包）"
+    merge_log: "2026-09-23 新增（issue #5188）：批次/省料数据接入黄金策 —— 批次余量与「快用尽」（PR-100）。取号 PR-100（本单开工时 main 最高 PR-096，PR-097~099 属并行的 #5146 包）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_batch_stock_query.py"
@@ -3760,7 +3760,7 @@ cases:
 
   - id: PR-101
     legacy_id: ""
-    title: "米宝查剩余量四档分布（档位文案取服务端 label，不自写数字）"
+    title: "黄金策查剩余量四档分布（档位文案取服务端 label，不自写数字）"
     domains:
       - product
       - inventory
@@ -3797,7 +3797,7 @@ cases:
 
   - id: PR-102
     legacy_id: ""
-    title: "米宝答「这个月省了多少料 / 省了多少钱」—— 🔴 与省料看板读面逐值相等（不另算一份）"
+    title: "黄金策答「这个月省了多少料 / 省了多少钱」—— 🔴 与省料看板读面逐值相等（不另算一份）"
     domains:
       - product
       - inventory
@@ -3825,7 +3825,7 @@ cases:
       - "判据 5·**空数据不冒充 0**：`lineCount = 0` 的组与空租户 ⇒ `savedMeters` / `savedAmount` / `le0_2Share` 一律 `null`，文案回「**无数据**」、**不得出现 `0%` / `0 米`**（0 会被读成「没有浪费」）；未记均价的行数以「另有 N 行没有均价」显式说明"
       - "判据 4·**只读无副作用**：工具源码里没有任何写调用（无 `post/put/patch/delete`），运行期四个 action 各跑一次后写方法**零调用**；不改任何对客金额/售价/成品口径（判据 6）"
     skip_reason: ""
-    merge_log: "2026-09-23 新增（issue #5188）：省料度量接入米宝（PR-102）—— 判据 2「逐值相等」由「同夹具、读面 vs 工具」钉住；判据 4/5 同批覆盖"
+    merge_log: "2026-09-23 新增（issue #5188）：省料度量接入黄金策（PR-102）—— 判据 2「逐值相等」由「同夹具、读面 vs 工具」钉住；判据 4/5 同批覆盖"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_batch_stock_query.py"
@@ -4047,7 +4047,7 @@ cases:
           fallback: "确认"
       # R4 撤销入口（用户只说「撤销」，批次号由会话上下文给出）
       - "撤销刚才那个批量改价"
-      # R5 答撤销前的确认卡（若米宝先发卡）
+      # R5 答撤销前的确认卡（若黄金策先发卡）
       - auto_respond:
           fallback: "确认"
     namespaces:
@@ -4158,7 +4158,7 @@ cases:
   # ── issue #5950：第三个具名批量 `inventory_stock`（批量库存调整）──────────────────
   # 取号：`python3 scripts/next_case_id.py PR` 现取 = **PR-014**（最小空闲号；候选 = main ∪
   # 全部 open PR 分支 ∪ 本工作区，工具在同一次调用里断言「返回号 ∉ 候选集」）。
-  # 为什么批量库存值得单独立用例：它是米宝相对页面的**唯一碾压场景**（「这 20 个商品统一
+  # 为什么批量库存值得单独立用例：它是黄金策相对页面的**唯一碾压场景**（「这 20 个商品统一
   # 调到 1200 米」= 页面 20 次操作 → Agent 1 次意图），而形态与改价批量**不是同一条**：
   # field 是 `stock`（十进制数量列、可 1 位小数）、写面是 **SKU 级库存**（唯一权威，
   # `products.stock` 只是派生冗余列 = #4038）。
@@ -4189,7 +4189,7 @@ cases:
           fallback: "确认"
       # R4 撤销入口（用户只说「撤销」，批次号由会话上下文给出）
       - "撤销刚才那个批量调库存"
-      # R5 答撤销前的确认卡（若米宝先发卡）
+      # R5 答撤销前的确认卡（若黄金策先发卡）
       - auto_respond:
           fallback: "确认"
     namespaces:
@@ -4296,7 +4296,7 @@ cases:
       - "🔴 不新造库存增减：源码里没有 `receiveStock` / `deductStock` / `restoreStock` / `stock_ledger_entries` / `StockLedgerService`；过账本体必须落到 `inboundOrderService.create(` / `inboundOrderService.post(`"
       - "路径面：控制器 `@RequestMapping` == `/api/worker/inbound`（不以 `/api/admin` 开头），且本包**只有** `/recognize`、`/drafts`、`/drafts/{id}/post` 三个 POST（标签位图 / 打印计数属 P2，不得顺手落进来）"
       - "🔴 工人在 `/api/admin/**` 仍被拒：`SecurityConfig.ADMIN_API_REJECTED_ROLES` 含 `WorkerSessionService.WORKER_ROLE`（= `worker`），且该集合不含 `operator`/`admin`/`service`（反向护栏：门禁不是「把所有人都拒了」）"
-    skip_reason: "[backend-contract] 工人入库面是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与结构守卫覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 工人入库面是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测与结构守卫覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-26 新增（issue #5052 P1，设计真值源 docs/design/inbound-photo-and-label.md §5）：工人可达的入库三端点（recognize / drafts / drafts/{id}/post）。本条钉「载体与边界」：字段集即能力集、零商家权限码、不新造库存增减、路径不与 /api/admin/** 混用。识别与过账的行为判据见 PR-111 / PR-112。"
     traces:
       tests:
@@ -4332,7 +4332,7 @@ cases:
       - "🔴 零命中不建品：品名 + 色号在 `product_skus` 零命中 ⇒ `skuMatches` 为空数组，且 `productMapper` / `productSkuMapper` 的 `insert` **零调用**、`receiveStock` 零调用（防 AI 幻觉造出假 SKU 还带库存流水）"
       - "张数准入：0 张 / 4 张 ⇒ 400，且一次远端调用都不发生（上限 3 张沿用现状）"
       - "ai-agent 侧 schema 同源：`inbound` target 的 4 个字段键（product_name / color_name / quantity_meters / barcode）与前两个 target **零交集**，阈值取严档 0.85，低置信度（0.40）的米数**留空 + 给理由**且理由含「入库侧」"
-    skip_reason: "[backend-contract] 入库识别是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + ai-agent vision 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库识别是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测 + ai-agent vision 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-26 新增（issue #5052 P1，设计 §6）：识别策略 = 解码优先 → vision 兜底 → 手输。复用既有 vision 基建（ImageRecognitionClient → ai-agent POST /api/internal/vision/recognize），**只换 schema 与入口**：ai-agent 的 app/vision/targets.py 新增 `inbound` target（不新增第二套识别内核）。"
     traces:
       tests:
@@ -4370,7 +4370,7 @@ cases:
       - "🔴 未确认不落库：`confirmed` 缺失 / false / null / 整个 body 缺失 ⇒ **409**，且 `receiveStock` / `record` / `markPosted` 零调用"
       - "🔴 跨租户 / 非本人草稿 ⇒ **404**（不是 403，避免存在性泄露），且不写任何库存"
       - "身份只来自 `X-Worker-Session-Id`：body 里塞 `operator` / `tenantId` 不被读取（`markPosted` 收到的 operator = session 解出的工人 id，tenant = 上下文租户）"
-    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-26 新增（issue #5052 P1，设计 §5.2 / §9.2）：过账**内部复用** #5045 的 `InboundOrderService.post`（不新造库存增减、不直接写台账）；幂等**复用** #4037 的客户端请求幂等实现（不新建第二套幂等表）；状态码按设计单：参数类拒绝 400（口径本体仍是 InboundOrderService.requireItemNumbers 那一处）、未确认 409、跨租户/非本人 404。"
     traces:
       tests:
@@ -4406,7 +4406,7 @@ cases:
       - "🔴 落地页地址走单一配置：改 `migao.inbound-label.landing-path` 即改 302 目标；解析文件里不出现硬编码域名（`migaozn.com`）"
       - "🔴 未登记即红（类级）：控制器里出现的单字母短码前缀集合必须恰好等于登记表 `CODE_SPACES`（`/s/` + `/i/`）；每个前缀都必须在 `SecurityConfig` 的 permitAll 名单里"
       - "🔴 撤销 = 短码置 NULL + 原码留档（`CHECK ((short_code IS NULL) <> (revoked_code IS NULL))`）⇒ 撤销后扫码仍是 410 而**不是 404**；DB 层码形状正则与 Java 侧字母表**机械等价**（逐字符集合相等）"
-    skip_reason: "[backend-contract] 入库标签是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 静态守卫 + 迁移契约覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库标签是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测 + 静态守卫 + 迁移契约覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-26 新增（issue #5052 P2，设计真值源 docs/design/inbound-photo-and-label.md §5.2 / §7.1 / §7.3）：入库标签码空间 `/i/`（V134 建表 `inbound_labels`）—— 照 `WorkerShortLinkService` 的**范式**（8 位 Crockford Base32 / 部分唯一索引 / 原子自增计数），但**不复用其表**（#5052 边界逐字：「照其范式、不复用其表」）。生成/归一化/碰撞重试**复用同一份实现**（`ALPHABET` / `normalize` / `allocateUnique` 收 `Predicate` 的新重载），不复制第二份字母表。"
     traces:
       tests:
@@ -4448,7 +4448,7 @@ cases:
       - "🔴 打印必留痕（结构判据）：`COALESCE(print_count…)` 只在 `InboundLabelMapper`；`inboundLabelMapper.incrementPrintCount(` 只被 `InboundLabelService` 调用；`inboundLabelService.recordPrint(` 只被 `/print` 端点调用 ⇒ **结构上不存在**第二条写计数的路径；计数与审计在**同一次调用**里"
       - "🔴 本包**不做服务端位图**（`/bitmap` 端点零命中；§7.2 已改判为设备侧 canvas 渲染）⇒ 详情读面只回字段、不回任何可直打的渲染产物（没有「拿到图就本地直打」的旁路）"
       - "拒绝口径：未登录 ⇒ **401**（一次业务调用都不发生）；跨租户 / 不存在 ⇒ **404**；已撤销 ⇒ **410** 且**不计不审**；自增影响 0 行（并发撤销 / 软删）⇒ 404，绝不回一个没落库的计数"
-    skip_reason: "[backend-contract] 入库标签是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 源码守卫覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库标签是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测 + 源码守卫覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-26 新增（issue #5052 P2，设计 §7.3 / §9.2）：打印计数与审计**复用既有范式**（`processing_set_part_tokens.print_count` 的列注释口径 + `AuditLogService`），不新造计数/审计机制。设备侧那一半（壳 / 小程序不得本地直打绕过）在 P4 打印适配层的包里钉。"
     traces:
       tests:
@@ -4477,7 +4477,7 @@ cases:
     truths_ref:
       - inbound-label-flow.worker-detail-read-and-photo-upload
     user_inputs:
-      - "工人扫到 / 拍到一张已打印的米高标签 ⇒ 打开单据详情核对后重打一张（功能② 的硬依赖；非 LLM 行为，由 admin-api 单测覆盖）"
+      - "工人扫到 / 拍到一张已打印的观星台标签 ⇒ 打开单据详情核对后重打一张（功能② 的硬依赖；非 LLM 行为，由 admin-api 单测覆盖）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -4486,8 +4486,8 @@ cases:
       - "🔴 跨租户去戳一个**已撤销**的码 ⇒ 仍是 404（先判租户、后判撤销 ⇒ 不泄露「这个码存在过」）"
       - "🔴 已撤销（本租户）⇒ **410 Gone** + 错误码 `LABEL_REVOKED` + 可行动建议（补打一张，不静默回落到别的标签）"
       - "零商家权限码：详情面源码里没有 `@RequirePermission` / `PermissionInterceptor` / 任何商家码字面量；准入判据只有有效工人 session（无 / 无效 ⇒ 401）"
-    skip_reason: "[backend-contract] 入库标签是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-26 新增（issue #5052 P2，设计 §5.2）：功能②「拍照米高标签 → 显示单据详情 → 打印新标签」的**硬依赖读面**。字段集刻意只放渲染与核对要用的东西（不返回单据金额 / 成本 —— 工人不需要，也不该看到）。"
+    skip_reason: "[backend-contract] 入库标签是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-26 新增（issue #5052 P2，设计 §5.2）：功能②「拍照观星台标签 → 显示单据详情 → 打印新标签」的**硬依赖读面**。字段集刻意只放渲染与核对要用的东西（不返回单据金额 / 成本 —— 工人不需要，也不该看到）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/InboundLabelServiceTest.java"
@@ -4521,7 +4521,7 @@ cases:
       - "🔴 只收真图片：MIME 不是 `image/*` ⇒ 400；MIME 是 `image/png` 但**读不出图像头**（改名 + 伪造类型的文本）⇒ 400（按**内容**判，不按文件名 / Content-Type 判）；空文件 ⇒ 400"
       - "张数：1~3 张（上限 = `WorkerInboundService.MAX_IMAGES`，与识别端点**同一常量**）；0 张 / 4 张 ⇒ 400；单张 >5MB ⇒ 400；单边 >8000px ⇒ 400"
       - "存储**复用**既有 `FileStorageService`（目录 `inbound`），不新造存储 / 不新建桶约定；三张合法照片 ⇒ 200 + 三个 URL（可直接喂 `recognize` 的 `images`）"
-    skip_reason: "[backend-contract] 入库上传是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测 + 结构守卫覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 入库上传是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测 + 结构守卫覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-26 新增（issue #5052 P2，设计 §5.2 / §9.3）：独立控制器（不挤进 P1 的 `WorkerInboundController` —— 它的结构守卫逐字钉住「只有那三个 POST」）。"
     traces:
       tests:
@@ -4551,13 +4551,13 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "🔴 补的是 P2 留下的**静默串端**缺口：端点（InboundLabelShortLinkController）与 permitAll 都已落好，但 `deploy/swas/nginx.conf` 里 `location /i/` 命中数 = 0 ⇒ 扫码落到 `location /` 的 SPA fallback，**HTTP 200 + C 端小布首页**。线上实测（2026-09-27）：`GET /i/<任意形态>` 的 body 与 `GET /` 逐字节同哈希，而同刻 `/s/<任意>` = 404（到了 admin-api）"
+      - "🔴 补的是 P2 留下的**静默串端**缺口：端点（InboundLabelShortLinkController）与 permitAll 都已落好，但 `deploy/swas/nginx.conf` 里 `location /i/` 命中数 = 0 ⇒ 扫码落到 `location /` 的 SPA fallback，**HTTP 200 + C 端元元首页**。线上实测（2026-09-27）：`GET /i/<任意形态>` 的 body 与 `GET /` 逐字节同哈希，而同刻 `/s/<任意>` = 404（到了 admin-api）"
       - "🔴 边缘归属（离线判据，tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py 的 F1~F3）：登记表 PUBLIC_PREFIX_FACES 覆盖 `/s/`、`/i/`（代理到 admin-api:8080）、`/b/`（静态 + 自己的命名空间 fallback）、`/w/`（由 `location /` 的 root 承载，风险已登记）；三个发现面（控制器短码前缀 / nginx 公开前缀 location / 发布腿 H5_SUBDIR）**未登记即红**"
       - "🔴 `proxy_pass` **不带 URI 后缀**：语义模拟断言 `/i/<任意形态>` 的转发路径原样（写成 `…:8080/i;` ⇒ 变成 `/i7K3M9QP2`，控制器收不到自己的路径 ⇒ 判据红）"
       - "🔴 端到端链路（离线语义模拟）：`/i/<短码>` 代理到 admin-api ⇒ 302 → 落地页 `/b/?code=…` → nginx `location /b/` → bmini 的 index.html；探针覆盖 `/i/`、`/i/<任意形态>`、`/s/`、`/b/`、`/b/<子路由>`、`/w/`、`/`（零回归：根仍是 C 端、`/b/` 不串端）"
       - "🔴 线上活体断言（deploy/scripts/bmini-h5-verify-served.sh ⑤，由 bmini-h5-publish.yml 在 nginx.conf 变更时重跑）：`GET /i/<不可能存在的短码>` 必须到 admin-api（未知短码 404 / 已撤销 410），**不得**返回根页；判定刻意**不用**「状态码是 302」（未知短码本来就 404），而是「body 是否与 `GET /` 同哈希」+ 5xx 判定"
       - "🔴 限流预算（tests/unit_ci_workflows/test_swas_nginx_rate_limit.py 判据 4/6/8）：`/i/` 与 `/s/` **同族同档**（worker_entry：per-IP 50 r/s + burst 1000；正常用量 = 一次扫码 1 个请求 ⇒ 余量 ≥ 10×），**不**套内部管理面的宽预算；且 `$worker_entry_key` 的 map 必须覆盖 `/i/` —— 否则 key 为空、nginx「空 key 不计账」⇒ 限流是空断言（判据 8 = map 语义求值 + 注入式红证）"
-      - "零回归：`/`（C 端小布）、`/b/` 与 `/b/<子路由>`（bmini）、`/w/`（worker-h5，逐字节）、`/s/`（admin-api 代理）四段既有语义一字未改（判据 = 同一套语义模拟 + 既有 worker-h5 / bmini 身份断言）"
+      - "零回归：`/`（C 端元元）、`/b/` 与 `/b/<子路由>`（bmini）、`/w/`（worker-h5，逐字节）、`/s/`（admin-api 代理）四段既有语义一字未改（判据 = 同一套语义模拟 + 既有 worker-h5 / bmini 身份断言）"
     skip_reason: "[backend-contract] 边缘接线与限流预算是**确定性**判据（nginx 语义模拟 + 结构守卫 + 线上落地面探针），由 pytest 单测与发布腿覆盖，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-27 新增（issue #5052 §7.1 的 nginx 面）：P2 把端点与 permitAll 都落了，但边缘没登记 ⇒ 印出去的码会被 `location /` 的 SPA fallback 吃掉（静默串端，与 #5668 的 `/b/` 同类）。本单照 `/s/` 的形态加 `location /i/`（`proxy_pass` 不带 URI 后缀 + Host / X-Real-IP / X-Forwarded-For 覆盖），并按限流判据 3「新增代理面必须连同限流预算一起复核」把 `/i/` 纳进 `$worker_entry_key` 的 map（同一档，不开豁免），另补类级守卫：公开前缀在 nginx 的归属未登记即红。"
     traces:
@@ -4601,7 +4601,7 @@ cases:
       - "**类级元守卫**（判据 8）= `MC-053` / `tests/unit_ci_workflows/test_batch_stocktake_write_point.py`：批次台账写入点唯一（未登记即红）；余量派生（Σdelta 读口）只许在台账服务与其 mapper 里"
       - "🔴 判据 D-2（独立复核后收口）：**盘点行进不了「生产消耗」的三条计量腿** —— `sumDeltaBySku`（对账的派工扣减净额腿）/ `sumSavingByPeriodCohortMaterial`（省料看板）/ `sumOutputAreaByPeriod`（产出面积）三处汇总一律按 `reason IN ('processing_order','processing_order_cancelled')` **显式包含**（新来源默认不进计量腿，要进必须显式登记）。改前真库实测（零派工零订单、只插一条盘点行）：三条腿读出 `delta=-1.5/formula=1.5`、省料看板多一张「unknown 来源」组卡（line_count=1）、产出面积多一行 —— 一次盘亏被读成「这个月消耗了 1.5 米布」（本仓自认最大的失败模式：**归因错**）。判据 = `BatchStocktakeRealDbTest#stocktakeRowsStayOutOfConsumptionMetrics`（加盘点行前后三条腿读数**逐值相同**，并反向断言余量派生**必须**含盘点差异）；**红证（实测）**：摘掉三处过滤 ⇒ 读数由 `sku:-2.0/2.0|saving:2.0/2.0/1|area:0/1` 变成 `sku:-3.0/3.0|saving:3.0/3.0/2|area:0/2` ⇒ 判据红。`reconcile` 的 `diff` 不受影响（两腿同增同减）故不改。"
       - "🔴 判据 D-1（独立复核后收口）：**V143 的回滚段必须真能跑** —— 迁移文件里每一条 `-- -- ` 开头的行 = 一句真 SQL（共 8 句），判据逐句实跑。改前实测：第 ④ 句 42710（缺前置 `DROP CONSTRAINT IF EXISTS`）、两句 `SET NOT NULL` **根本没写** ⇒ 按净效果回滚后原先被形状约束挡住的非法行能落库（`00000`）⇒ 「两族可区分」这条合约被永久拆掉。判据 = `BatchStocktakeRealDbTest#rollbackPathIsExecutableAndRestoresTheContract`（8 句全 rc=0；回滚后非法行重新被拒 `23502` —— 形状约束没了由 NOT NULL 顶上；**负对照**：跳过两句 `SET NOT NULL` ⇒ 同一行 `00000`）；两条读数都在测试输出里。"
-    skip_reason: "[backend-contract] 盘点写面是确定性的账务判据（真库 + mock + 结构守卫三层，无 LLM 环节、无米宝工具面）由 admin-api 单测与 pytest 结构守卫覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 盘点写面是确定性的账务判据（真库 + mock + 结构守卫三层，无 LLM 环节、无黄金策工具面）由 admin-api 单测与 pytest 结构守卫覆盖，不进入 agent-eval 冒烟"
     precondition: "本用例是 [backend-contract] 账务面用例：前置（租户 / 商品 / SKU 库存 / 批次行）由判据自建 —— `BatchStocktakeRealDbTest` 在 `@BeforeAll` 起一次性真 PG 集群并跑真 `schema.sql` 建终态后插入夹具；`BatchStocktakeServiceTest` 用桩 mapper 造「入库量 60 + Σdelta」的派生余量。前置不成立时判据直接红（真库缺 PG 由 `PgCluster` fail-closed，不走 skip）；agent-eval 栈不跑它"
     merge_log: "2026-10-01 新增（issue #5865，用户裁定档位 A 最小录入式 + 实盘为准）：此前盘点的写面只有 Agent 面 SKU 粒度的一条路（改 `product_skus.stock` + 写销售台账、**完全不落批次**）⇒ 盘完后「Σ批次余量 ≠ SKU 库存」恒成立而**没有配平路径**；本单补按批次的写面：实盘录入 → 差异预览 → 一次事务落批次分录 + SKU 库存。取号 PR-119（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 PR-118**，同步 main 时该号已被并行包占用 ⇒ 按「后合入者让号」顺延为 **PR-119**）。"
     traces:
@@ -4821,7 +4821,7 @@ cases:
       - "🔴 仓内语料（含 acceptance/** 的 harness）里商品 status 字面量必须全部落在合法集合内：引信 = acceptance/2026-10-04/worker-miniapp-sweep/harness/bootstrap-chain.mjs 原先建品写 status:'active'（另有 19 个 harness 文件、共 20 处写 status:'on_shelf'）"
       - "🔴 写入方**未登记即红**：tests/unit_ci_workflows/product_status_write_sites.json ⇄ 现取检出集双向相等（新写入方未登记 ⇒ 红；陈旧条目 ⇒ 红，台账只许缩短）"
       - "判别力自证：注入真语料（把 bootstrap-chain.mjs 的 status:'on_sale' 改回 'active'）⇒ 判据当场红；不改 ⇒ 不报（反向对照）"
-    skip_reason: "[backend-contract] 商品状态准入是服务层枚举校验（无米宝工具面）⇒ 由 admin-api 单测（ProductStatusAdmissionTest）+ 仓内语料元守卫（tests/unit_ci_workflows/test_product_status_single_source.py）覆盖，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 商品状态准入是服务层枚举校验（无黄金策工具面）⇒ 由 admin-api 单测（ProductStatusAdmissionTest）+ 仓内语料元守卫（tests/unit_ci_workflows/test_product_status_single_source.py）覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-10-05 新增（issue #6347 Part A）：建品/改品对 status 原先只校长度（ColumnTextLength）⇒ active 8 行 / on_shelf 2 行落库成**状态机死行**（不在「在售」口径里 ⇒ 快照静默过滤其 SKU；上架动作被拒 ⇒ 无法自救）。取号 = python3 scripts/next_case_id.py 现取最小空闲号 **PR-016**（历史空档）。Part B（快照三态口径）**不在本单**。"
     traces:
       tests:
@@ -4930,7 +4930,7 @@ cases:
       - regression
     truths_ref: []
     user_inputs:
-      - "把一张面料图发给米宝并要求「按这张图建商品」⇒ 米宝调 image_recognize 时带 interpretations（含 name/material/craft/color 的贴近结论）"
+      - "把一张面料图发给黄金策并要求「按这张图建商品」⇒ 黄金策调 image_recognize 时带 interpretations（含 name/material/craft/color 的贴近结论）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -4968,7 +4968,7 @@ cases:
       - regression
     truths_ref: []
     user_inputs:
-      - "用户 2026-10-05 逐字「然后把商品描述的文案也要生成一份」⇒ 米宝的 interpretations 里带 description（HTML 片段）"
+      - "用户 2026-10-05 逐字「然后把商品描述的文案也要生成一份」⇒ 黄金策的 interpretations 里带 description（HTML 片段）"
     expectations:
       - tool: direct_reply
     data_checks:

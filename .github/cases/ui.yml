@@ -74,7 +74,7 @@ cases:
 
   - id: UI-003
     legacy_id: ""
-    title: "米宝「今日经营速览」洞察条 - 一句话经营解读"
+    title: "黄金策「今日经营速览」洞察条 - 一句话经营解读"
     domains:
       - ui
       - frontend
@@ -90,7 +90,7 @@ cases:
       - dashboard-jump.low-stock
       - dashboard-jump.real-data
     user_inputs:
-      - "经营看板织物质感重设计子任务 C：米宝「今日经营速览」洞察条置于页面顶部"
+      - "经营看板织物质感重设计子任务 C：黄金策「今日经营速览」洞察条置于页面顶部"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -166,14 +166,14 @@ cases:
       - tool: direct_reply
     data_checks:
       - "Sidebar.tsx 渲染一级大类「智能客服」，DOM 顺序位于「工作台」之后、「商品管理」之前；「在线接待」从「工作台」分组移除"
-      - "「智能客服」下子菜单顺序：在线接待 在前、知识库 次之（#3094 起米宝·在线对话 菜单入口已移除，智能体对话经右下角 FAB 进入；#3081 起 AI 客服配置菜单已移除）"
+      - "「智能客服」下子菜单顺序：在线接待 在前、知识库 次之（#3094 起黄金策·在线对话 菜单入口已移除，智能体对话经右下角 FAB 进入；#3081 起 AI 客服配置菜单已移除）"
       - "「在线接待」渲染 Headphones 图标（iconMap 已注册，非 BarChart3 回退），与「经营看板」BarChart3 图标明确区分；「智能客服」大类渲染 MessageSquare 图标"
       - "原「机器人设置」更名为「AI 客服配置」后（2026-08）又随 #3081 合并进企业基础信息：侧边栏不再出现「AI 客服配置」菜单项，/chat/config 页面删除，机器人名称+欢迎语并入 /settings 页「AI 客服设置」区块；不再出现「机器人设置」残留"
       - "链接路径：在线接待 href=/agent-workspace/human-sessions（#3081 起无 /chat/config 链接）"
       - "权限过滤不回归：无 agent:session → 隐藏「在线接待」；无 knowledge:manage → 隐藏「知识库」；均无 → 「智能客服」整组隐藏"
       - "「在线接待」菜单项不再出现旧名「人工客服」（#3109 菜单改名，页面标题/Header 面包屑/权限分配弹窗同步为新名；C 端顾客侧『人工客服』来源标识与转人工文案不变）"
     skip_reason: "[backend-contract] 纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/settings/Header.test），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670）；2026-09-09 #3081：AI 客服配置菜单移除、合并进企业基础信息；2026-09-09 #3094：米宝·在线对话 菜单入口移除，智能体对话入口收敛到右下角 FAB；2026-09-09 #3109：菜单改名「在线接待」（页面标题/面包屑/权限弹窗同步，C 端文案不动）"
+    merge_log: "2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670）；2026-09-09 #3081：AI 客服配置菜单移除、合并进企业基础信息；2026-09-09 #3094：黄金策·在线对话 菜单入口移除，智能体对话入口收敛到右下角 FAB；2026-09-09 #3109：菜单改名「在线接待」（页面标题/面包屑/权限弹窗同步，C 端文案不动）"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/Sidebar.test.tsx"
@@ -220,7 +220,7 @@ cases:
 
   - id: UI-007
     legacy_id: ""
-    title: "小布 C 端输入条 - 单容器语音优先（textarea 常驻 + 带文字标签的宽胶囊「按住 说话」松开发送）"
+    title: "元元 C 端输入条 - 单容器语音优先（textarea 常驻 + 带文字标签的宽胶囊「按住 说话」松开发送）"
     domains:
       - ui
       - frontend
@@ -233,7 +233,7 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-voice-holdtalk
     user_inputs:
-      - "小布 C 端（小程序/H5 同源）输入条为单容器语音优先布局：textarea 常驻（语音优先 placeholder「按住说话，也可以打字」），空草稿时右侧主键是带文字标签的宽胶囊「按住 说话」，有草稿时该键位变为发送；上滑取消录音；首访给一条一次性可关闭的语音引导"
+      - "元元 C 端（小程序/H5 同源）输入条为单容器语音优先布局：textarea 常驻（语音优先 placeholder「按住说话，也可以打字」），空草稿时右侧主键是带文字标签的宽胶囊「按住 说话」，有草稿时该键位变为发送；上滑取消录音；首访给一条一次性可关闭的语音引导"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -245,7 +245,7 @@ cases:
       - "添图入口统一：选图进草稿（预览可删），无按住模式下直接发图旁路；空文本有图点发送 → 纯图消息（UI-013 协议不变）"
       - "自适应动作键：草稿为空显示语音键，有草稿变为发送，流式中变为停止；流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送"
     skip_reason: "[backend-contract] 纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）"
-    merge_log: "2026-09-15 修订（C 端语音守卫对齐 B 端 #2984）：空口/误触录音（<0.8s 或 <4KB）不发转写请求、toast「未检测到声音，已取消转写」（issue #3945）；2026-09-14 修订（语音优先）：placeholder 改「按住说话，也可以打字」（H5 回落「打字告诉我您想找什么」）、空态主键由裸波形图标升级为带文字标签的宽胶囊「按住 说话」、新增首访一次性可关闭引导（voice_hint_seen）；单容器/无模式切换/松开直接发送等行为断言不变（issue #3741）；2026-09-06 修订：输入条单容器重构（删模式切换键、textarea 常驻、语音改右下按住键、添图统一草稿语义），「松开直接发送」行为保持不变（issue #2952）；2026-08-31 新增：小布 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计）"
+    merge_log: "2026-09-15 修订（C 端语音守卫对齐 B 端 #2984）：空口/误触录音（<0.8s 或 <4KB）不发转写请求、toast「未检测到声音，已取消转写」（issue #3945）；2026-09-14 修订（语音优先）：placeholder 改「按住说话，也可以打字」（H5 回落「打字告诉我您想找什么」）、空态主键由裸波形图标升级为带文字标签的宽胶囊「按住 说话」、新增首访一次性可关闭引导（voice_hint_seen）；单容器/无模式切换/松开直接发送等行为断言不变（issue #3741）；2026-09-06 修订：输入条单容器重构（删模式切换键、textarea 常驻、语音改右下按住键、添图统一草稿语义），「松开直接发送」行为保持不变（issue #2952）；2026-08-31 新增：元元 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计）"
     traces:
       tests:
         - "frontend/mini-app/tests/message-input.test.tsx"
@@ -255,7 +255,7 @@ cases:
 
   - id: UI-008
     legacy_id: ""
-    title: "米高会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互）"
+    title: "观星台会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互）"
     domains:
       - ui
       - frontend
@@ -288,7 +288,7 @@ cases:
 
   - id: UI-009
     legacy_id: ""
-    title: "米宝聊天输入框 - 拖拽图片作为附件上传"
+    title: "黄金策聊天输入框 - 拖拽图片作为附件上传"
     domains:
       - ui
       - frontend
@@ -301,7 +301,7 @@ cases:
     truths_ref:
       - frontend-fix.chat-input-drag-drop
     user_inputs:
-      - "米宝聊天输入框支持把图片文件直接拖拽到输入区作为附件上传，与点击「添加图片」按钮共用同一套校验与上传链路（最多 3 张、5MB、jpeg/png/gif/webp）"
+      - "黄金策聊天输入框支持把图片文件直接拖拽到输入区作为附件上传，与点击「添加图片」按钮共用同一套校验与上传链路（最多 3 张、5MB、jpeg/png/gif/webp）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -309,7 +309,7 @@ cases:
       - "drop 图片文件 → 调用 chatApi.uploadChatImages 并出现预览缩略图；拖拽非图片文件 toast「不支持的文件类型」、超 5MB toast「超过 5MB 限制」、超过 3 张 toast「最多上传 3 张图片」"
       - "会话已关闭/流式中/上传中拖拽不生效；拖拽上传与点击上传共用 handleFiles 校验逻辑"
     skip_reason: "[backend-contract] 纯前端聊天输入拖拽交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-08-31 新增：米宝输入框拖拽图片附件上传（drag & drop 复用 uploadChatImages 链路）"
+    merge_log: "2026-08-31 新增：黄金策输入框拖拽图片附件上传（drag & drop 复用 uploadChatImages 链路）"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/MessageInput.test.tsx"
@@ -320,7 +320,7 @@ cases:
 
   - id: UI-010
     legacy_id: ""
-    title: "小布聊天主页快捷入口改版 - 转人工→查物流、退换货→售后咨询"
+    title: "元元聊天主页快捷入口改版 - 转人工→查物流、退换货→售后咨询"
     domains:
       - ui
       - frontend
@@ -333,7 +333,7 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-quick-actions
     user_inputs:
-      - "小布聊天主页四个快捷对话入口：查订单/找产品/售后咨询/查物流"
+      - "元元聊天主页四个快捷对话入口：查订单/找产品/售后咨询/查物流"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -342,7 +342,7 @@ cases:
       - "点击「售后咨询」发送售后 prompt（如「我想咨询售后问题」），进入售后工单快捷对话"
       - "「转人工」入口移除 + 转人工能力退场（2026-09-19 用户裁定）后，输入「转人工」关键词不再导向任何转人工能力：AI 如实告知系统无人工转接通道并继续服务（机器断言见 CH-015 的 forbidden_text）"
     skip_reason: "[backend-contract] 纯前端入口改版由 mini-app jest 单测 + xiaobu E2E 验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-01 新增：小布快捷入口改版（转人工→查物流、退换货→售后咨询，弱化退换货引导）；2026-09-19 **退场同步**（用户裁定）：第 4 条 data_check 由「输入『转人工』仍可触发 human_handoff（能力不退化）」改为「不再导向转人工能力，AI 如实告知」——原断言的前提（该能力应保留）正是本次裁定取消的东西"
+    merge_log: "2026-09-01 新增：元元快捷入口改版（转人工→查物流、退换货→售后咨询，弱化退换货引导）；2026-09-19 **退场同步**（用户裁定）：第 4 条 data_check 由「输入『转人工』仍可触发 human_handoff（能力不退化）」改为「不再导向转人工能力，AI 如实告知」——原断言的前提（该能力应保留）正是本次裁定取消的东西"
     traces:
       tests:
         - "frontend/mini-app/tests/quick-actions.test.tsx"
@@ -353,7 +353,7 @@ cases:
 
   - id: UI-011
     legacy_id: ""
-    title: "侧边栏移除「米宝 · 在线对话」/chat 菜单入口 —— 智能体对话入口统一收敛到右下角浮动按钮（#3094）"
+    title: "侧边栏移除「黄金策 · 在线对话」/chat 菜单入口 —— 智能体对话入口统一收敛到右下角浮动按钮（#3094）"
     domains:
       - ui
       - frontend
@@ -368,16 +368,16 @@ cases:
       - frontend-fix.cs-menu-icons
       - frontend-fix.cs-menu-permission
     user_inputs:
-      - "隐藏侧边栏「智能客服」组「米宝 · 在线对话」菜单入口：智能体对话统一经右下角浮动按钮（FAB）进入（issue #3094）"
+      - "隐藏侧边栏「智能客服」组「黄金策 · 在线对话」菜单入口：智能体对话统一经右下角浮动按钮（FAB）进入（issue #3094）"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "Sidebar「智能客服」组子菜单：在线接待(/agent-workspace/human-sessions) 在前、知识库(/knowledge) 次之，共 2 项（#3094 米宝·在线对话 入口已移除；#3081 起无 AI 客服配置菜单）"
-      - "「米宝 · 在线对话」不再作为侧边栏菜单项渲染（mibao-chat 菜单配置与 MessageCircle 图标注册删除）；/chat 页面路由保留（ActiveSessions「查看全部」/深链/Header 面包屑不回归）"
+      - "Sidebar「智能客服」组子菜单：在线接待(/agent-workspace/human-sessions) 在前、知识库(/knowledge) 次之，共 2 项（#3094 黄金策·在线对话 入口已移除；#3081 起无 AI 客服配置菜单）"
+      - "「黄金策 · 在线对话」不再作为侧边栏菜单项渲染（mibao-chat 菜单配置与 MessageCircle 图标注册删除）；/chat 页面路由保留（ActiveSessions「查看全部」/深链/Header 面包屑不回归）"
       - "权限过滤：agent:session 控制「在线接待」可见；无 agent:session → 隐藏「在线接待」，仅保留知识库（knowledge:manage）"
       - "「智能客服」组子菜单均不可见时整组隐藏（不回归 UI-005 行为）"
     skip_reason: "[backend-contract] 纯前端侧边栏菜单由 vitest 单测验证（sidebar.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-02 新增：POC 演示入口修复 — 侧边栏智能客服组加米宝在线对话 /chat 菜单项（米宝入口原仅 FAB/直输 /chat，老板演示找不到）；2026-09-09 #3081：移除 AI 客服配置子菜单；2026-09-09 #3094：米宝·在线对话 菜单入口移除，智能体对话入口统一收敛到右下角 FAB（/chat 路由保留）"
+    merge_log: "2026-09-02 新增：POC 演示入口修复 — 侧边栏智能客服组加黄金策在线对话 /chat 菜单项（黄金策入口原仅 FAB/直输 /chat，老板演示找不到）；2026-09-09 #3081：移除 AI 客服配置子菜单；2026-09-09 #3094：黄金策·在线对话 菜单入口移除，智能体对话入口统一收敛到右下角 FAB（/chat 路由保留）"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/Sidebar.test.tsx"
@@ -421,7 +421,7 @@ cases:
 
   - id: UI-013
     legacy_id: ""
-    title: "小布 C 端支持纯图消息发送（拍照识别：无文本仅图片 → 后端 vision 理解）"
+    title: "元元 C 端支持纯图消息发送（拍照识别：无文本仅图片 → 后端 vision 理解）"
     domains:
       - ui
       - frontend
@@ -436,7 +436,7 @@ cases:
       - frontend-fix.no-api-change
       - frontend-fix.vitest
     user_inputs:
-      - "顾客拍一张窗帘照片直接发送（不带文字），小布应能收到并走视觉理解推荐相似商品"
+      - "顾客拍一张窗帘照片直接发送（不带文字），元元应能收到并走视觉理解推荐相似商品"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -456,7 +456,7 @@ cases:
 
   - id: UI-014
     legacy_id: ""
-    title: "小布聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽）"
+    title: "元元聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽）"
     domains:
       - ui
       - frontend
@@ -469,7 +469,7 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-quick-actions
     user_inputs:
-      - "顾客打开小布聊天主页，快捷入口区六个入口等权排列：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流"
+      - "顾客打开元元聊天主页，快捷入口区六个入口等权排列：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -490,7 +490,7 @@ cases:
 
   - id: UI-044
     legacy_id: ""
-    title: "小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由文字胶囊/快捷对话入口承载"
+    title: "元元聊天主页空态移除商品推荐卡（NewArrivals），推荐改由文字胶囊/快捷对话入口承载"
     domains:
       - ui
       - frontend
@@ -503,7 +503,7 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-quick-actions
     user_inputs:
-      - "顾客打开小布聊天主页空态：顶部三条居中的推荐胶囊（如「📐 按窗尺寸测算用布量与报价」），不再展示热销商品图片与名称"
+      - "顾客打开元元聊天主页空态：顶部三条居中的推荐胶囊（如「📐 按窗尺寸测算用布量与报价」），不再展示热销商品图片与名称"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -568,7 +568,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "多租户场景下，C 端聊天页导航副标题应显示当前企业（租户）设置里的公司名，而不是写死的「米高窗帘」"
+      - "多租户场景下，C 端聊天页导航副标题应显示当前企业（租户）设置里的公司名，而不是写死的「观星台窗帘」"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -576,7 +576,7 @@ cases:
       - "租户名为空/未登录 → 仅「智能购物助手」，不硬编码默认企业名"
       - "User 类型含 tenantName（camelCase，对齐 admin-api mini/login 返回）"
     skip_reason: "[backend-contract] 纯前端文案由 mini-app jest 单测验证（brand.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-04 新增：品牌硬编码修复 — 导航副标题原写死「米高窗帘」，多租户下串台"
+    merge_log: "2026-09-04 新增：品牌硬编码修复 — 导航副标题原写死「观星台窗帘」，多租户下串台"
     traces:
       tests:
         - "frontend/mini-app/tests/brand.test.ts"
@@ -615,7 +615,7 @@ cases:
 
   - id: UI-018
     legacy_id: ""
-    title: "C 端智能客服名称取 botName 配置 — 思考中/空态/导航名去硬编码（默认小布）"
+    title: "C 端智能客服名称取 botName 配置 — 思考中/空态/导航名去硬编码（默认元元）"
     domains:
       - ui
       - frontend
@@ -627,15 +627,15 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "C 端「正在思考...」/空态/导航名应使用企业设置里的智能客服名称（TenantAiConfig.botName），未配置默认「小布」"
+      - "C 端「正在思考...」/空态/导航名应使用企业设置里的智能客服名称（TenantAiConfig.botName），未配置默认「元元」"
     expectations:
       - tool: direct_reply
     data_checks:
       - "admin-api mini/login 与 /api/admin/user/info 返回 botName（camelCase，对齐 User 类型）"
       - "思考中文案 = 「{botName}正在思考...」；空态 = 「你好，我是{botName}」；导航名 = buildBotName(botName)"
-      - "botName 为空/未登录 → 兜底「小布」（buildBotName 默认值）"
+      - "botName 为空/未登录 → 兜底「元元」（buildBotName 默认值）"
     skip_reason: "[backend-contract] 纯前端文案由 mini-app jest 单测验证（brand.test.ts + message-list），非 LLM 行为"
-    merge_log: "2026-09-04 新增：智能客服名称去硬编码 — 思考中/空态/导航名原写死「AI/小布」（issue #2857）"
+    merge_log: "2026-09-04 新增：智能客服名称去硬编码 — 思考中/空态/导航名原写死「AI/元元」（issue #2857）"
     traces:
       tests:
         - "frontend/mini-app/tests/brand.test.ts"
@@ -678,7 +678,7 @@ cases:
 
   - id: UI-019
     legacy_id: ""
-    title: "米宝工作台「洞察」重构为「会话简报」 — 工具台账转业务简报（结论/待办/办理结果/建议，/chat 工作台默认右侧展开可缩回）"
+    title: "黄金策工作台「洞察」重构为「会话简报」 — 工具台账转业务简报（结论/待办/办理结果/建议，/chat 工作台默认右侧展开可缩回）"
     domains:
       - ui
       - frontend
@@ -691,9 +691,9 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "米宝会话页顶部「洞察」抽屉展示的是工具调用台账（查询订单/参数校验/请求确认），商家用户不理解也不关心 agent 调用了哪些工具"
+      - "黄金策会话页顶部「洞察」抽屉展示的是工具调用台账（查询订单/参数校验/请求确认），商家用户不理解也不关心 agent 调用了哪些工具"
       - "应改为「会话简报」：业务语言回答三个问题 — ①刚办了什么事（会话结论）②哪些事还需要确认/跟进（需要你处理）③涉及的业务对象什么状态、接下来可以问什么（办理结果 + 建议）"
-      - "从侧边栏「米宝 · 在线对话」进入 /chat 工作台页右侧完全空白：会话简报应默认在右侧展开（docked 常驻列、无遮罩），可像抽屉一样向右缩回；右下角 FAB 浮窗入口保持现有设计（overlay 覆盖式抽屉、默认收起、带遮罩）"
+      - "从侧边栏「黄金策 · 在线对话」进入 /chat 工作台页右侧完全空白：会话简报应默认在右侧展开（docked 常驻列、无遮罩），可像抽屉一样向右缩回；右下角 FAB 浮窗入口保持现有设计（overlay 覆盖式抽屉、默认收起、带遮罩）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -713,7 +713,7 @@ cases:
     # （找不到区块 / 断言不符），不会与「agent 不干活」同形。agent-eval 栈不跑本用例
     # （skip_reason 已登记）⇒ 没有可挂的运行期 precondition 类型（`_PRECONDITION_TYPES` 全是后端共享夹具计数）。
     precondition: "本用例是 [backend-contract] 纯前端渲染用例：前置（会话消息流 + suggestions + 订单/售后台账行 + docked/overlay 两种布局入口）由单测自建（frontend/admin-web/tests/unit/lib/session-insight.test.ts、tests/unit/components/SessionInsight.test.tsx、tests/unit/components/ChatArea.test.tsx 直接构造 message/会话对象；e2e tests/e2e/specs/chat/chat.spec.ts 走 fixture 模式），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它"
-    merge_log: "2026-09-05 新增：米宝「洞察」重构为「会话简报」— 工具语言转业务信息（issue #2897）；2026-09-xx 更新：/chat 工作台 docked 默认右侧展开可缩回、FAB 保持 overlay 现状（issue #3018） ｜ 2026-09-20（issue #4622 的 case-trust burn-down 缴费，**整条销账**）：补 `precondition` 声明 —— 原条目只命中 CASE-TRUST-NO-PRECONDITION-ASSERTION，而本用例是 `[backend-contract]` 纯前端渲染用例、**没有**可挂的运行期 precondition 类型 ⇒ 按 chat.yml 既有两条 `[backend-contract]` 形态（#4614 的 CH-027 同款）用**声明式**字符串写清前置是什么、由谁满足、不成立时怎么红。user_inputs / expectations / data_checks / traces **一字未动**（无放宽）。"
+    merge_log: "2026-09-05 新增：黄金策「洞察」重构为「会话简报」— 工具语言转业务信息（issue #2897）；2026-09-xx 更新：/chat 工作台 docked 默认右侧展开可缩回、FAB 保持 overlay 现状（issue #3018） ｜ 2026-09-20（issue #4622 的 case-trust burn-down 缴费，**整条销账**）：补 `precondition` 声明 —— 原条目只命中 CASE-TRUST-NO-PRECONDITION-ASSERTION，而本用例是 `[backend-contract]` 纯前端渲染用例、**没有**可挂的运行期 precondition 类型 ⇒ 按 chat.yml 既有两条 `[backend-contract]` 形态（#4614 的 CH-027 同款）用**声明式**字符串写清前置是什么、由谁满足、不成立时怎么红。user_inputs / expectations / data_checks / traces **一字未动**（无放宽）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/session-insight.test.ts"
@@ -726,7 +726,7 @@ cases:
 
   - id: UI-021
     legacy_id: ""
-    title: "米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白）"
+    title: "黄金策展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白）"
     domains:
       - ui
       - frontend
@@ -739,7 +739,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "米宝 AI 对话浮框（点开机器人后的默认大弹框）的顶部/底部/右侧缩放手柄只有 8px 太大难抓取；高度/宽度最多只能缩放到视口 90%，上下左右总会留空白拖不满屏"
+      - "黄金策 AI 对话浮框（点开机器人后的默认大弹框）的顶部/底部/右侧缩放手柄只有 8px 太大难抓取；高度/宽度最多只能缩放到视口 90%，上下左右总会留空白拖不满屏"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -759,7 +759,7 @@ cases:
 
   - id: UI-022
     legacy_id: ""
-    title: "米宝展开大面板新增右下角斜向缩放把手（同时调整宽度与高度）"
+    title: "黄金策展开大面板新增右下角斜向缩放把手（同时调整宽度与高度）"
     domains:
       - ui
       - frontend
@@ -772,7 +772,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "米宝大弹框只能横向（右侧把手）/上下（顶部/底部把手）分别缩放，没有斜向缩放能力；希望加一个右下角把手，按住后沿对角线拖动可同时调整宽度与高度"
+      - "黄金策大弹框只能横向（右侧把手）/上下（顶部/底部把手）分别缩放，没有斜向缩放能力；希望加一个右下角把手，按住后沿对角线拖动可同时调整宽度与高度"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -792,7 +792,7 @@ cases:
 
   - id: UI-023
     legacy_id: ""
-    title: "米宝最小化浮窗 — 默认高度按视口自适应（≥600 上限 760）+ 底部/右下角把手调大小 + 位置与尺寸越界自动钳制"
+    title: "黄金策最小化浮窗 — 默认高度按视口自适应（≥600 上限 760）+ 底部/右下角把手调大小 + 位置与尺寸越界自动钳制"
     domains:
       - ui
       - frontend
@@ -805,7 +805,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "米宝收起后的最小化小浮窗固定 400×600，高度不够、聊天布局拥挤；且换屏/改窗口后存储的浮窗位置会落到视口外看不见"
+      - "黄金策收起后的最小化小浮窗固定 400×600，高度不够、聊天布局拥挤；且换屏/改窗口后存储的浮窗位置会落到视口外看不见"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -859,7 +859,7 @@ cases:
 
   - id: UI-025
     legacy_id: ""
-    title: "米宝输入条统一重设计 — ArrowUp/Square 同形图标、录音状态条替代 placeholder 文案、预览缩略图内嵌容器"
+    title: "黄金策输入条统一重设计 — ArrowUp/Square 同形图标、录音状态条替代 placeholder 文案、预览缩略图内嵌容器"
     domains:
       - ui
       - frontend
@@ -873,7 +873,7 @@ cases:
       - frontend-fix.no-api-change
       - frontend-fix.vitest
     user_inputs:
-      - "米宝聊天输入条图标与状态呈现和小布同形：发送键 ↑（ArrowUp）、停止键 ■（Square）、语音键音波线稿（AudioLines 弃用 Mic），录音状态在容器内状态条展示而不占用 placeholder，图片预览缩略图收进输入容器内"
+      - "黄金策聊天输入条图标与状态呈现和元元同形：发送键 ↑（ArrowUp）、停止键 ■（Square）、语音键音波线稿（AudioLines 弃用 Mic），录音状态在容器内状态条展示而不占用 placeholder，图片预览缩略图收进输入容器内"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -943,7 +943,7 @@ cases:
 
   - id: UI-029
     legacy_id: ""
-    title: "米宝面板缩放防冻结与恢复默认 —— 双击手柄复位 + 残留尺寸视口钳制 + 角把手误触防护（#3021）"
+    title: "黄金策面板缩放防冻结与恢复默认 —— 双击手柄复位 + 残留尺寸视口钳制 + 角把手误触防护（#3021）"
     domains:
       - ui
       - frontend
@@ -956,7 +956,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "米宝对话面板被拖拽/误触缩放后宽度被冻成固定 px：窗口尺寸变化后面板不重新适配，右侧露出大片白色卡片底（观感『页面坏了』），且界面上没有任何恢复默认大小的入口"
+      - "黄金策对话面板被拖拽/误触缩放后宽度被冻成固定 px：窗口尺寸变化后面板不重新适配，右侧露出大片白色卡片底（观感『页面坏了』），且界面上没有任何恢复默认大小的入口"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -979,7 +979,7 @@ cases:
 
   - id: UI-030
     legacy_id: ""
-    title: "米宝交互组件渲染三态固化 —— interactive（等待用户）/ readonly（已答只读）/ hidden（流式中），渲染决策收敛为纯函数 resolveInteractiveState，FAB 浮窗与 /chat 工作台共用同一 MessageList 链路"
+    title: "黄金策交互组件渲染三态固化 —— interactive（等待用户）/ readonly（已答只读）/ hidden（流式中），渲染决策收敛为纯函数 resolveInteractiveState，FAB 浮窗与 /chat 工作台共用同一 MessageList 链路"
     domains:
       - ui
       - frontend
@@ -994,7 +994,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "米宝（admin-web）interact 交互组件（choice/confirm/form）渲染不确定：已回复的卡片锁是组件本地 useState(submitted)，FAB 关闭重开/会话切换后组件重挂载 → 锁重置 → 已经确认的卡片重新可点 → 可重复提交（重复建单/下单）"
+      - "黄金策（admin-web）interact 交互组件（choice/confirm/form）渲染不确定：已回复的卡片锁是组件本地 useState(submitted)，FAB 关闭重开/会话切换后组件重挂载 → 锁重置 → 已经确认的卡片重新可点 → 可重复提交（重复建单/下单）"
       - "企业级要求渲染逻辑与效果固定：同一消息任何时候渲染结果一致，不能一会渲染可交互控件、一会渲染只读/消失控件"
     expectations:
       - tool: direct_reply
@@ -1015,7 +1015,7 @@ cases:
       - "锁的单一事实源为消息级 interactiveAnswered（来自 store 透传/历史回放），非组件本地 useState：FAB 关闭重开（ChatArea 卸载重挂载）后已答卡片仍保持只读不可点"
       - "FAB 浮窗（FloatingAssistant）与 /chat 工作台共用 MessageList/InteractiveMessage 链路，两入口渲染决策一致"
     skip_reason: "[backend-contract] 纯前端渲染决策由 vitest 单测（components-chat.test.tsx + interactive-render 单测）验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-08 新增：米宝交互组件渲染三态固化（issue #3036）。2026-09-19（#4616/#4617 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须整条销账）：补**机器计分型**前置自断言（纯函数 `resolveInteractiveState` 存在 + `MessageList.tsx` 经它决策），把「前置不成立 ⇒ 找不到导出，判红却伪装成渲染决策写错」挡在门口；user_inputs / expectations 与其余 data_checks 原样未动、无放宽。"
+    merge_log: "2026-09-08 新增：黄金策交互组件渲染三态固化（issue #3036）。2026-09-19（#4616/#4617 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须整条销账）：补**机器计分型**前置自断言（纯函数 `resolveInteractiveState` 存在 + `MessageList.tsx` 经它决策），把「前置不成立 ⇒ 找不到导出，判红却伪装成渲染决策写错」挡在门口；user_inputs / expectations 与其余 data_checks 原样未动、无放宽。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/components-chat.test.tsx"
@@ -1026,7 +1026,7 @@ cases:
 
   - id: UI-031
     legacy_id: ""
-    title: "米宝交互组件历史回放透传 —— interactive 载荷落库 + history 返回，刷新/切会话后已答卡片以只读变体呈现而非消失"
+    title: "黄金策交互组件历史回放透传 —— interactive 载荷落库 + history 返回，刷新/切会话后已答卡片以只读变体呈现而非消失"
     domains:
       - ui
       - frontend
@@ -1042,7 +1042,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "米宝交互组件（choice/confirm/form）只存在于前端内存态：后端 save_message 只存 content+tool_calls，interactive 载荷从不落库，get_history 不返回；前端 selectSession 历史映射同样丢弃 interactive → 刷新/切会话后确认卡片整体消失只剩纯文本，待确认状态（session-insight detectPendingInteraction）失效"
+      - "黄金策交互组件（choice/confirm/form）只存在于前端内存态：后端 save_message 只存 content+tool_calls，interactive 载荷从不落库，get_history 不返回；前端 selectSession 历史映射同样丢弃 interactive → 刷新/切会话后确认卡片整体消失只剩纯文本，待确认状态（session-insight detectPendingInteraction）失效"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -1051,7 +1051,7 @@ cases:
       - "detectPendingInteraction 在历史回放后仍能检测未答交互（interactive 随历史返回）"
       - "卡片信息（fields/options/formFields）不回退：历史回放的只读变体仍展示完整字段内容"
     skip_reason: "[backend-contract] 前后端契约由 vitest（interactive-contract.test.ts / components-chat.test.tsx）+ ai-agent 单测（get_history 返回 interactive）验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-08 新增：米宝交互组件历史回放透传（issue #3036）"
+    merge_log: "2026-09-08 新增：黄金策交互组件历史回放透传（issue #3036）"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/store/interactive-contract.test.ts"
@@ -1099,7 +1099,7 @@ cases:
 
   - id: UI-033
     legacy_id: ""
-    title: "知识库页 UI 修复：面包屑对齐菜单名 + 页面样式统一 + 分页不被米宝浮动按钮遮挡 + 模板套用/候选采纳后结果立即可见可编辑（#3070）"
+    title: "知识库页 UI 修复：面包屑对齐菜单名 + 页面样式统一 + 分页不被黄金策浮动按钮遮挡 + 模板套用/候选采纳后结果立即可见可编辑（#3070）"
     domains:
       - ui
       - frontend
@@ -1114,13 +1114,13 @@ cases:
       - frontend-fix.no-api-change
       - frontend-fix.vitest
     user_inputs:
-      - "知识库页面包屑应与侧边栏菜单一致叫「知识库」（非「知识库管理」）；页面样式与全局产品样式一致；右下角分页不被米宝浮动按钮遮挡；行业模板一键套用后套用出的卡片立即可见可编辑；待确认候选采纳后结果立即可见可编辑"
+      - "知识库页面包屑应与侧边栏菜单一致叫「知识库」（非「知识库管理」）；页面样式与全局产品样式一致；右下角分页不被黄金策浮动按钮遮挡；行业模板一键套用后套用出的卡片立即可见可编辑；待确认候选采纳后结果立即可见可编辑"
     expectations:
       - tool: direct_reply
     data_checks:
       - "Header 面包屑 /knowledge → 智能客服 / 知识库（与侧边栏菜单名一致，不再出现「知识库管理」）"
       - "知识库页内容区 p-6 内边距、页面标题 text-xl text-neutral-900 + 副标题、Tab 高亮用 primary-600（非蓝色 border-blue-500）、筛选/表单控件带标准 focus 态（focus:border-primary-500 focus:ring-2）"
-      - "dashboard 布局底部预留米宝浮动按钮（FAB）空间（main pb-24 + 内容卡片 min-h 联动），内容不足一屏时底部锚定元素（分页等）不被右下角浮动按钮遮挡、可正常点击"
+      - "dashboard 布局底部预留黄金策浮动按钮（FAB）空间（main pb-24 + 内容卡片 min-h 联动），内容不足一屏时底部锚定元素（分页等）不被右下角浮动按钮遮挡、可正常点击"
       - "行业模板一键套用后：跳转「知识卡片」Tab、重置筛选并刷新列表，套用出的卡片（published）立即可见且可编辑（打开编辑弹窗回填标题）"
       - "待确认候选「采纳」后：跳转「知识卡片」Tab 并刷新列表，已发布卡片立即可见可编辑"
     skip_reason: "[backend-contract] 纯前端样式/交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟"
@@ -1224,8 +1224,8 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "侧边栏「智能客服」组不再有「AI 客服配置」菜单项（#3094 起 在线接待/知识库 共 2 项，米宝·在线对话 入口已移除）；/chat/config 页面与 /agent-workspace/quick-replies 占位页删除，Header 面包屑无对应残留"
-      - "「企业基础信息」页（/settings）新增「AI 客服设置」tab（#3098 恢复 #3006 之前的左侧 tab 导航布局）：tab 栏 = 基本设置（公司名称+Logo）/ AI 客服设置 / 通知设置；AI 客服设置 tab 副文案说明作用「配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语」，含 AI 客服名称（必填）+ 欢迎语；🔴 **2026-10-01 改判（issue #5899）**：本 tab **不再有「保存」按钮** —— 两个字段**失焦即保存**（调用 /api/admin/tenant/ai-config；名称为空不提交并报错回退；值没变不发请求），成功提示「AI 客服名称已保存」/「欢迎语已保存，顾客侧将按新配置生效」"
+      - "侧边栏「智能客服」组不再有「AI 客服配置」菜单项（#3094 起 在线接待/知识库 共 2 项，黄金策·在线对话 入口已移除）；/chat/config 页面与 /agent-workspace/quick-replies 占位页删除，Header 面包屑无对应残留"
+      - "「企业基础信息」页（/settings）新增「AI 客服设置」tab（#3098 恢复 #3006 之前的左侧 tab 导航布局）：tab 栏 = 基本设置（公司名称+Logo）/ AI 客服设置 / 通知设置；AI 客服设置 tab 副文案说明作用「配置顾客在对话中看到的 AI 客服助手（元元）的名称与欢迎语」，含 AI 客服名称（必填）+ 欢迎语；🔴 **2026-10-01 改判（issue #5899）**：本 tab **不再有「保存」按钮** —— 两个字段**失焦即保存**（调用 /api/admin/tenant/ai-config；名称为空不提交并报错回退；值没变不发请求），成功提示「AI 客服名称已保存」/「欢迎语已保存，顾客侧将按新配置生效」"
       - "企业基础信息页 tab 行为：默认激活「基本设置」tab；点击左侧 tab 切换内容区（AI 客服设置/通知设置内容不默认展示）；URL ?tab=ai 直达 AI 客服设置 tab（旧链接兼容，不再重定向 /chat/config）；修改密码/登录日志 tab 保持 #3006 隐藏；🔴 **2026-10-01 整格改判（issue #5899）** —— 用户逐字：「保存按钮放置的太底端了，用户容易忽略，我建议是如果有办法移除保存按钮就直接移除，通过更优秀的设计来满足配置变更保存的结果」⇒ **基本设置 / AI 客服设置两个 tab 的「保存」按钮整体移除**，改为**变更即保存**（口径与 #3119 通知开关、#3468 简报开关与生成时刻同源）：① 公司名称 / 企业编码 / AI 客服名称 / 欢迎语 —— **失焦即落库**（有改动才发请求）；② Logo —— **上传成功即落库、移除即落库**（改前要再点一次「保存」才生效）；③ 卡片标题下写明「修改后自动保存，无需手动提交」（把「没有保存按钮」这件事说出来，否则商家会去找按钮）；④ 失败沿用既有回退：企业编码 422 展示**服务端** message 并把输入框拉回已落库值，`#3099` 的「保存后刷新用户信息（侧边栏/右上角即时同步）」行为不变。判据 = `frontend/admin-web/tests/unit/pages/settings.test.tsx` 的实例判据 5 条 + **类级元守卫**「基本设置 / AI 客服设置 里每个可编辑字段都变更即保存（漏接线即红，枚举当前 tab 的每个文本框/文本域）」"
       - "通知设置 tab（#3103/#3119）：仅系统通知总开关（启用系统通知，控制订单/客服等重要事件自动站内信；关闭后不再产生新站内信、历史保留）；开关点击即时保存（乐观更新+失败回滚，调用 /api/admin/settings），无独立保存按钮（开关类配置即时生效）；已移除通知邮箱输入框——notification_email 为僵尸字段（站内信无需邮箱、后端无邮件消费逻辑），SystemSettings 类型同步移除该字段"
       - "快捷回复 UI 全部移除：quickReplyApi 与 QuickReply 类型删除，页面不再出现「快捷回复」tab/新建回复/模板列表"
@@ -1434,7 +1434,7 @@ cases:
       verifies: []
   - id: UI-043
     legacy_id: ""
-    title: "小布选择卡片回传人话 — 点击选项发 label 而非内部编码（proc_item_* 用户看不懂）"
+    title: "元元选择卡片回传人话 — 点击选项发 label 而非内部编码（proc_item_* 用户看不懂）"
     domains:
       - ui
       - frontend
@@ -1459,7 +1459,7 @@ cases:
       - "多选字段不得被 store 白名单吞掉（issue #3947 的真实病根）：frontend/mini-app/src/store/chatStore.ts 的 onInteractive 原样透传 multiSelect/multiSelectSubmitPrefix/multiSelectSubmitLabel/multiSelectSkipLabel，判据 = frontend/mini-app/tests/store-chat.test.ts"
       - "单选卡（无 multiSelect）点第一项仍立即提交，且不渲染「完成选择」按钮（防多选逻辑污染单选体验）"
     skip_reason: "[backend-contract] 纯前端组件行为由 jest 组件测试验证（frontend/mini-app/tests/choice-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-15 新增：小布 ChoiceCard 点击选项直发 opt.value（裸编码 proc_item_*），用户实测看不懂；评测 harness 早已按前端协议修为发 label（issue #3365 实证「发内部 id → 模型看不懂选了什么」），但真实小程序组件漏改 → 本次对齐；2026-09-25 补：多选卡勾选积累 +「完成选择（N）」一次性提交（issue #3947，admin-web 既有协议的 Taro 落地）"
+    merge_log: "2026-09-15 新增：元元 ChoiceCard 点击选项直发 opt.value（裸编码 proc_item_*），用户实测看不懂；评测 harness 早已按前端协议修为发 label（issue #3365 实证「发内部 id → 模型看不懂选了什么」），但真实小程序组件漏改 → 本次对齐；2026-09-25 补：多选卡勾选积累 +「完成选择（N）」一次性提交（issue #3947，admin-web 既有协议的 Taro 落地）"
     traces:
       tests:
         - "frontend/mini-app/tests/choice-card.test.tsx"
@@ -1483,7 +1483,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "真机预览实测：小布回复含 **9231 遮光窗帘**、**几米** 等 markdown 加粗符与 - 列表，气泡里原样显示星号与短横线"
+      - "真机预览实测：元元回复含 **9231 遮光窗帘**、**几米** 等 markdown 加粗符与 - 列表，气泡里原样显示星号与短横线"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -1515,13 +1515,13 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "顾客在小布对话里收到生产进度卡：显示加工单做到哪一步了（进度百分比）、当前在做哪道工序、还剩几道工序、预计什么时候交付"
+      - "顾客在元元对话里收到生产进度卡：显示加工单做到哪一步了（进度百分比）、当前在做哪道工序、还剩几道工序、预计什么时候交付"
     expectations:
       - tool: direct_reply
     data_checks:
       - "进度百分比取 progress.percent；progress 缺省时按 已完/总数 推导，空态（无工序）显示「暂无生产进度」（不显示假进度、不空白）"
       - "当前工序 = 第一个 status!=done 的工序；待完工序数 = status!=done 的工序数；交期字段缺省时不渲染交期行"
-      - "兼容两种载荷（M4-G-2 实装字段）：工序树 {positions[].operations[], progress:{total,done,percent}, expected_delivery_at} 与米宝精简进度 {progress_percent, current_operation, pending_operations[], total_operations, done_operations, expected_delivery_date}"
+      - "兼容两种载荷（M4-G-2 实装字段）：工序树 {positions[].operations[], progress:{total,done,percent}, expected_delivery_at} 与黄金策精简进度 {progress_percent, current_operation, pending_operations[], total_operations, done_operations, expected_delivery_date}"
       - "不泄露内部信息：工人姓名 / 计件单价 / 成本 / qr_token 不出现在卡片文案（内部计件与对外加工费两套账分离）"
       - "MessageBubble 的 cardData.type='production_progress' 渲染该卡（未知卡片占位分支不被命中）"
     skip_reason: "[backend-contract] 纯前端组件渲染由 jest 单测验证（frontend/mini-app/tests/production-progress-card.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
@@ -1889,7 +1889,7 @@ cases:
       - "判据 2·**中间态逐键不丢**（用户原始 bug 的正身）：输入序列 `0` ⇒ **DOM 值仍为 \"0\"**、回调 `0`；续输 `0.` ⇒ DOM `\"0.\"`、回调 `null`（不谎报成 0）；再输 `0.5` ⇒ 回调 `0.5`；清空 ⇒ DOM `\"\"`、回调 `null`；负号中间态 `-` ⇒ DOM `\"-\"` 不被吞；`abc` 等非法字符 ⇒ 草稿与 DOM 都不变（不静默变 0）。证据：NumberInput.test.tsx 的 ①②③⑥ 与「非法字符被忽略」。**红证（真实浏览器 + 真实 React 19，Chrome for Testing 实测）**：旧形态 `value={n || ''}` + `onChange(Number(raw))` 在 `0 → . → 5` 序列上 `dom=\"\"` / `state=0`（输入框敲下 \"0\" 当刻被清空 ⇒ 永远打不出 0.x）；本组件同序列 `dom=\"0\"/\"0.\"/\"0.5\"`"
       - "判据 3·**失焦归一化与边界**：`decimals`（默认 2）截断 —— `0.567` 失焦 ⇒ DOM `0.57`、回调 `0.57`；尾随小数点 `2.` ⇒ `2`；`min` / `max` 夹紧（`1.2` + min=5 ⇒ 5；`99` + max=10 ⇒ 10）；空草稿失焦 ⇒ `null`（`allowEmpty` 默认 true），`allowEmpty={false}` ⇒ 回上一个有效值（不落 null、不落 0）；外部 `value` 变化同步草稿（1 ⇒ 2 时 DOM 变 `\"2\"`），但**用户正在输入的中间态优先**（外部 value 未变时输入 `\"2.\"` 不被洗回 `\"2\"`）。证据：NumberInput.test.tsx 的 ④⑤a⑤b⑤c 与 blur 组。**红证（issue #5218 #7 订正）**：承重的守卫**只有一条** —— `NumberInput.tsx` 的 `if (editingRef.current && value === lastEmittedRef.current) return`；删掉它 ⇒ ⑤c「外部回传「空」不得吞掉正在输入的中间态」必红（单点变异实测）。⚠️ 原声明「去掉「草稿解析值等于外部值则不覆盖」这条守卫 ⇒ ④ 必红」**是假的**（独立复核两次实测：删任一条守卫 19/19 仍全绿）⇒ 那条守卫已按最少代码阶梯**删除**，声明同步订正（假红证比没有红证更坏）"
       - "判据 4·**站点落地（改前必红的存量站点）**：① `components/products/SkuMatrix.tsx` 价格/库存单元格（旧 `value={sku?.price || ''}` + `parseFloat(raw) || 0`）⇒ 输入 `0` 后 DOM 仍为 `0`、可连续打出 `0.5`；库存 `0`（无库存）同样是合法值；**缺行**（矩阵未重建）显示占位符 `0.00`/`0`，**已存在的行 `price=0`** 显示 `0`（「0 = 未填写」由校验表达，输入框不再替商家藏起来，issue #5218 #1 的可见面变化如实登记）；`onChange` 载荷形状（`{colors,doorWidths,skus}` 且带 colorId/colorName/doorWidth 定位）与 #2908 的 `border-red-400` + `aria-invalid` 标红行为**不变**。证据：frontend/admin-web/tests/unit/components/SkuMatrixNumbers.test.tsx（**红证**：改前实测 `AssertionError: expected '' to be '0'`，三条全红）③ **编辑既有值方向**（issue #5218 判据 1/2，同一文件单开一组）：价格已是 `12.5` ⇒ 全选输入 `0` ⇒ DOM 仍为 `\"0\"`；库存已是 `30` ⇒ 输入 `0` ⇒ DOM 仍为 `\"0\"`；既有值 ⇒ 逐键 `0 → . → 5` 打出 `0.5`。**红证（单点变异实测）**：把接线改回 `value={sku?.price ? sku.price : null}` / `value={sku?.stock ? sku.stock : null}` ⇒ 这 4 条必红（0 是 falsy ⇒ 外部值变 null ⇒ 草稿被洗成 `''`）② `app/(dashboard)/production/routings/page.tsx` 算料配置三处（标量参数 / 档位 fullness / 拼次数，旧 `value={String(v ?? '')}` + 清空落 `NaN` 哨兵 ⇒ 输入框渲染出**字面量 `NaN`** 且清不掉）⇒ 清空即空框、`0.5` 可逐键录入、面板内任何输入框都不以 `NaN` 为值。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx「清空算料参数 ⇒ 空框（不许变成字面量 `NaN`），且 0.x 小数能正常录入」（**红证**：还原旧代码后该条实测红 —— `toHaveValue('0.5')` 收到空值；`NaN` 兜底断言同因）"
-      - "判据 5·**工人端同一病灶**：`frontend/bmini-app/src/pages/production/index/index.tsx` 报工数量输入框键盘类型 = `digit`（微信小程序 `number` 键盘**没有小数点键**，而报工数量按米常有小数如 60.5 ⇒ 改前小数点根本打不出来）；数量仍走既有「默认 = 应做数量 / 上限 = 应做数量」校验，请求体字段与幂等键一字未变。证据：frontend/bmini-app/tests/production-page.test.tsx「报工数量输入框用小数键位（type=digit）」（**红证**：还原旧代码后实测 `Expected: \"digit\" / Received: \"number\"`）。② **同一机制的第二处（2026-09-29 补漏）**：`frontend/mini-app/src/components/cards/FormCard.tsx` 与 `frontend/bmini-app/src/components/cards/FormCard.tsx` 的数字字段键盘 = `digit`（改前是 `const inputType = isNumber ? 'number' : 'text'` ⇒ 米宝在小程序里收集的尺寸 / 数量 / 金额**在真机上打不出小数点**，用户 2026-09-29 报障「商家后台输入框无法输入小数点」；字段面 = `NUMBER_KEYS` = quantity / price / amount / stock / width / height / meter / …，手机号字段不受影响）；本地校验（必填 / 手机号 / 数字 > 0）与 `__FORM__|json` 序列化一字未改。证据：`frontend/mini-app/tests/form-card.test.tsx` 与 `frontend/bmini-app/tests/form-card.test.tsx` 的「数字字段（数量(米)）键盘用 digit ⇒ 小数点打得出来，且 0.5 原样进值 / 原样提交」（**红证**：改前实测 `Expected: digit / Received: number`）；**类级判据** = `frontend/mini-app/tests/numeric-input-keyboard-guard.test.ts`（全仓扫 Taro `Input` 上 `type=number`，豁免**纯数字字段**：字段名 phone / mobile / tel / pin / captcha 或中文标签 验证码 / 手机号 / 短信 / 密码 / PIN / 工号 / 账号；红证样本 ①~③ + 真仓零命中 ⑥；**判别力实测**：修复前的直写形态被扫出、修复后零命中）。**已知不覆盖（钉成可执行断言 ④⑤）**：`type={x}` 间接形态（本仓 FormCard 恰是这种 ⇒ 由实例判据承担）/ `Textarea` 与原生 input / admin-web 桌面侧（浏览器 `type=number` 不挡小数点键，挡的是中间态，另有判据 1/6）"
+      - "判据 5·**工人端同一病灶**：`frontend/bmini-app/src/pages/production/index/index.tsx` 报工数量输入框键盘类型 = `digit`（微信小程序 `number` 键盘**没有小数点键**，而报工数量按米常有小数如 60.5 ⇒ 改前小数点根本打不出来）；数量仍走既有「默认 = 应做数量 / 上限 = 应做数量」校验，请求体字段与幂等键一字未变。证据：frontend/bmini-app/tests/production-page.test.tsx「报工数量输入框用小数键位（type=digit）」（**红证**：还原旧代码后实测 `Expected: \"digit\" / Received: \"number\"`）。② **同一机制的第二处（2026-09-29 补漏）**：`frontend/mini-app/src/components/cards/FormCard.tsx` 与 `frontend/bmini-app/src/components/cards/FormCard.tsx` 的数字字段键盘 = `digit`（改前是 `const inputType = isNumber ? 'number' : 'text'` ⇒ 黄金策在小程序里收集的尺寸 / 数量 / 金额**在真机上打不出小数点**，用户 2026-09-29 报障「商家后台输入框无法输入小数点」；字段面 = `NUMBER_KEYS` = quantity / price / amount / stock / width / height / meter / …，手机号字段不受影响）；本地校验（必填 / 手机号 / 数字 > 0）与 `__FORM__|json` 序列化一字未改。证据：`frontend/mini-app/tests/form-card.test.tsx` 与 `frontend/bmini-app/tests/form-card.test.tsx` 的「数字字段（数量(米)）键盘用 digit ⇒ 小数点打得出来，且 0.5 原样进值 / 原样提交」（**红证**：改前实测 `Expected: digit / Received: number`）；**类级判据** = `frontend/mini-app/tests/numeric-input-keyboard-guard.test.ts`（全仓扫 Taro `Input` 上 `type=number`，豁免**纯数字字段**：字段名 phone / mobile / tel / pin / captcha 或中文标签 验证码 / 手机号 / 短信 / 密码 / PIN / 工号 / 账号；红证样本 ①~③ + 真仓零命中 ⑥；**判别力实测**：修复前的直写形态被扫出、修复后零命中）。**已知不覆盖（钉成可执行断言 ④⑤）**：`type={x}` 间接形态（本仓 FormCard 恰是这种 ⇒ 由实例判据承担）/ `Textarea` 与原生 input / admin-web 桌面侧（浏览器 `type=number` 不挡小数点键，挡的是中间态，另有判据 1/6）"
       - "判据 6·**防新形态复发（静态扫描；判据是「语义」而非某一种写法）**：命中 = **表达式在 `x` 为假值时会产出一个「空」值**（`0` 被当空 = 病根本体）—— 这正是 #5198 漏网的形态（它只机械扫了 `value={x || ''}` **一种写法**）。两种**等价**形态都纳入判定：① **三元** `x ? x : <空>` —— 条件与真分支**规范化后同一表达式**（`?.` 与 `.` 视为同一形态），且假分支是空值；② **短路或** `x || <空>`（≡ `x ? x : <空>`）；`<空>` = `null` / `undefined` / `''` / `\"\"`。**两个分支都纳入判定**：真分支必须与条件同一表达式（`x ? x : …` 才是「拿 x 自己当 x 的真值判据」），假分支必须是空值。**分档作用域（#5228 实测数据逼出来的，不是随手选的）**：三元形态在**全仓** `src/**`（admin-web / mini-app / bmini-app，剥掉注释后）判红 —— 实测 `x ? x : null` / `: undefined` / `: ''` 三种写法**各 0 处** ⇒ 全仓扫描零假红，沿用既有严格度；短路或形态**只在「数值输入接线」面**判红（`value=` / `defaultValue=` 落在带数值标记的控件上：`type=\"number\"` / `inputMode=\"decimal\"` / `step=` / `min=` / `NumberInput`）—— **分档理由是实测的**：裸 `||` 兜底全仓 **223 处**（`|| ''` 166 / `|| undefined` 45 / `|| null` 12），几乎全是**合法**的字符串 / nullable 兜底（`data.content || ''`、`res.data.session || null`）⇒ 全仓判红就是**假红机器**（假红 = 假证据，比漏报更坏：它会逼后人去改合法代码）。**已知不覆盖（判据边界，与判据本体一起登记）**：以下三条**都不是留白** —— 实现侧已把它们各自钉成**可执行断言** ⑨（防后人把「没扫到」读成「没违规」）：① 非「数值输入接线」面的裸 `||` 兜底**有意不判红**（= 上面那 223 处合法兜底，这是判据的**边界**不是漏）；② 经中间变量 / 解构 / `{...props}` 展开传递的**间接接线**（静态文本扫描**不追数据流**）；③ issue #5228 表里字面写的「跨行 `x &&` 接 `x : null`」**不是合法 JS**（`&&` 后不能直接接 `:`）⇒ 无法作判据样本；其可判的等价形态（跨行的 `?:`）**已覆盖且有红证**。扫描器自身可红：四个变体（`x ? x : null` / `x ? x : undefined` / `x ? x : ''` / 数值接线上的 `x || null`）**各一条红证样本**必须被扫出、`typeof m === 'string' && m ? m : null`（字符串守卫）与注释里的旧形态不判红、全仓真扫零命中。证据：frontend/admin-web/tests/unit/components/NumberInputWiring.test.ts（**红证**：把 `findFalsyWiring` 换成 `() => []` ⇒ ①~⑤ 必红）"
       - "判据 7·**下单页工艺字段同一病灶**（issue #5218 #2/#3）：① 花距（占位符写着「米，如 0.6」）逐键 `0 → . → 6` ⇒ DOM 依次 `\"0\"` / `\"0.\"` / `\"0.6\"`，且 `0` 是合法值（旧 `numberOrNull` 的 `parsed > 0 ? parsed : null` 把它判成空 ⇒ 框当场清空）；② 配布边米数输入 `0` ⇒ **不落 0**（`null` = 跟随主布，算料口径不变）但**显式告知**（`craft-edge-meters-zero-rejected`：按主布米数 N 米计算 + 留空即跟随主布），不再无声跳回；③ 配布边单价 `0` 不落库但框里保留输入。证据：frontend/admin-web/tests/unit/components/OrderCraftFields.test.tsx 的「判据 3」「判据 4」与配布边单价一条（**红证（单点变异实测）**：花距改回 `type=\"number\"` + `> 0` 强转 ⇒ 判据 3 必红；删掉显式告知块 ⇒ 判据 4 必红）"
       - "判据 8·**其余三处漏网站点迁移**（issue #5218 #4/#5/#6）：① `components/products/ProductForm.tsx`「1 卷 = 多少米」与 ② `components/settings/OversizeThresholdPreview.tsx` 四个框（试算窗宽/高、超宽/超高阈值）迁 `NumberInput` ⇒ 逐键 `0 → . → 5` / `3 → . → 5` 时 DOM 保留中间态；③ `app/(dashboard)/production/routings/page.tsx` 规则单价行内编辑改用**逐字保留原文**的 `type=text + inputMode=decimal`（等效实现，issue 明确允许）—— 该格的本地预检要**拒绝**三位小数，而 `NumberInput` 失焦按 `decimals` 归一化会把 `6.005` 静默改成 `6.01`（实测：换成 NumberInput 后「三位小数 ⇒ 不发请求」那条既有判据直接红）。证据：ProductForm.test.tsx 与 OversizeThresholdPreview.test.tsx 的「逐键」两条 + production-routings.test.tsx「规则区单价：逐键 `0 → . → 5` 打出 0.5，三位小数中间态不丢」（**红证（单点变异实测）**：三格分别改回 `type=number` ⇒ 各自对应条必红）"
@@ -2010,7 +2010,7 @@ cases:
       - "🔴 判据·**页面零隐喻 + 人话读数**：整页渲染文本不出现 `/池/`，也不出现旧词（成批区 / 加急插队 / 一键成批派单 / 池化开关）；同时**必须有**替换后的人话（合并派单开关 / 待派订单 / 加急订单（不参与合并，立即派）/ 可合并的待派订单（按料分组）/ 一键合并派单）—— 「删掉就算过」不算通过。"
       - "🔴 判据·**只改文案（负控）**：路由 `/production/pool`、菜单 key `production-pool`、权限码 `processing:manage`、三个接口路径（含 `pooled` / `poolingEnabled` 字段）逐字未动（先例 = UI-028「角色权限」→「岗位权限」时 URL 与接口不变）。"
       - "🔴 类级元守卫：`user-copy-jargon-guard.test.ts` 新增「机制隐喻」形态 —— `src/app` / `src/components` / `src/lib` 的**用户可见**行里出现 CJK「池」即红（注释与 SVG path 不算；ASCII 的 `pool` / `pooled` / `poolingEnabled` 是契约与实现，不在射程）。修复前实测具名 2 行预览标签（`src/lib/pool-board.ts` 的 `previewSummaryRows`（第一行「合并后预计领料米数」与第五行「合并新增收益」两处标签））。"
-      - "**命名裁定留档**：菜单名曾考虑「智能下料」（用户先提），因本仓「下料」已被裁定为**车间裁剪工序**（工序库「裁剪组」；米宝触发词「这单下料做到哪了」走 `production_worklog_query`）会撞名 ⇒ 用户改选「智能派单」；「智能」保留用户本意（系统按料分组、算好合并省多少），动作落回商家的词「派单」。"
+      - "**命名裁定留档**：菜单名曾考虑「智能下料」（用户先提），因本仓「下料」已被裁定为**车间裁剪工序**（工序库「裁剪组」；黄金策触发词「这单下料做到哪了」走 `production_worklog_query`）会撞名 ⇒ 用户改选「智能派单」；「智能」保留用户本意（系统按料分组、算好合并省多少），动作落回商家的词「派单」。"
     skip_reason: "[backend-contract] 纯前端文案/菜单名 + 静态守卫（无 LLM 行为面），不进入 agent-eval 冒烟"
     merge_log: "2026-09-25 新增（issue #5576）：池看板 → 智能派单 + 页内去内部隐喻 + 三源同构与「只改文案」负控 + 「池」隐喻类级元守卫。取号 UI-058。"
     traces:
@@ -2889,7 +2889,7 @@ cases:
       verifies: []
 
   # ==========================================================================
-  # UI-079 / UI-080（issue #5952，用户 2026-10-02 裁定）——米宝（B 端）流式体验：
+  # UI-079 / UI-080（issue #5952，用户 2026-10-02 裁定）——黄金策（B 端）流式体验：
   #   ① 客户端打字机（服务端**不做**真逐字，理由见 UI-079 的 skip_reason / data_checks）
   #   ② 不向用户暴露 tool（对齐 C 端先例 issue #2857；B 端此前只有「人性化进度」这一半，
   #      没有**判据**把守 ⇒ 本批补上「不得回退成渲染工具名/参数」的具名断言）
@@ -2898,7 +2898,7 @@ cases:
 
   - id: UI-079
     legacy_id: ""
-    title: "米宝对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（单调不回退 / 收口替换不卡 / 结束中断卸载立刻全文 / 减少动画直接全文）"
+    title: "黄金策对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（单调不回退 / 收口替换不卡 / 结束中断卸载立刻全文 / 减少动画直接全文）"
     domains:
       - ui
       - frontend
@@ -2926,7 +2926,7 @@ cases:
       - "🔴 红证（改前实测）：本单落地前全仓 `grep -rn \"typewriter\\|useTypewriter\" frontend/admin-web/src` = 0 命中 ⇒ 组件测试 import 即失败；把 hook 换成直返全文（等效「无打字机」）⇒ 判据 1/2/3 的「中途可见 < 全长」「维持替换过程单调」「流式结束立刻等于全文」三条当场红（本机实测 3 failed / 6 passed）；把组件的 `data-revealed` 接入摘掉 ⇒ 组件侧两条红"
     skip_reason: "[backend-contract] 纯前端揭示层（服务端一字未改：仍整段下发）由 vitest（jsdom）执行，不进入 agent-eval 冒烟；LLM 行为面不变，故无 agent 用例"
     precondition: "本用例是 [backend-contract] 纯前端用例：前置由单测自建 —— frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx 用 `vi.useFakeTimers()` 直接驱动 hook 的揭示时钟；frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx `vi.mock('@/store/chat')` 注入带 `isStreaming/tool_calls` 的消息夹具。前置不成立时单测直接红（找不到 `data-revealed` / 找不到文案），不依赖共享夹具；agent-eval 栈不跑它"
-    merge_log: "2026-10-02 新增（issue #5952）：米宝对话从「服务端整段下发、界面一次性刷出」改为「客户端按节奏揭示」（用户同日裁定「选 2」）。服务端真逐字**有意不做**（节点级 astream + finalize_turn 后置收口 + C 端跨片脱敏三重结构性冲突，见 user_inputs）。取号 UI-079（现取 ui.yml 最大 = UI-078 的下一号）。"
+    merge_log: "2026-10-02 新增（issue #5952）：黄金策对话从「服务端整段下发、界面一次性刷出」改为「客户端按节奏揭示」（用户同日裁定「选 2」）。服务端真逐字**有意不做**（节点级 astream + finalize_turn 后置收口 + C 端跨片脱敏三重结构性冲突，见 user_inputs）。取号 UI-079（现取 ui.yml 最大 = UI-078 的下一号）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx"
@@ -2937,7 +2937,7 @@ cases:
 
   - id: UI-080
     legacy_id: ""
-    title: "米宝对话不向用户暴露 tool：带 tool_calls 的消息只渲染人性化进度文案，工具名/入参/结果/原始 JSON 一律不进 DOM（对齐 C 端先例 issue #2857）"
+    title: "黄金策对话不向用户暴露 tool：带 tool_calls 的消息只渲染人性化进度文案，工具名/入参/结果/原始 JSON 一律不进 DOM（对齐 C 端先例 issue #2857）"
     domains:
       - ui
       - frontend
@@ -3043,10 +3043,11 @@ cases:
       - "判据 4·合规宣称不变（OB-005 口径字面保留）：首页仍渲染 GB/T 47746-2026 区块（标准号 + 4 能力点 + 免责小字），且不含「已通过…认证 / 无缝接管」。执行点 = corporate-home.test.tsx「renders GB/T 47746-2026 遵循国家标准区块」"
       - "判据 5·视觉口径：四页渲染结果的 innerHTML 不含 from-blue-600 / to-indigo-800（旧的通用蓝色渐变模板）。执行点 = 四个页面测试文件各自的「视觉口径」用例"
       - "判据 6·文案口吻（issue #6326 新增）：四页渲染文本不得出现 AI 口语词表（打理 / 管住 / 接住 / 折腾 / 摊开 / 跑完 / 直说 / 兜底 / 一句话 / 问一句 / 谁都不会 / 把时间还给 / 说了算 / 答一遍 / 先说说）。词表单一源 = frontend/admin-web/tests/unit/pages/copy-voice-banlist.ts。执行点 = 四个页面测试文件各自的「文案口吻」用例 + corporate-home.test.tsx 的「判别力自证」（词表必须命中已知口语样本，防空断言）"
+      - "判据 7·品牌称呼反回流（issue #6525，**类级元守卫**）：四个前端包**生产源码的代码面**不得出现旧称呼（米宝 / 小布 / 米高；`米高` 的计量义「2.7 米高窗」豁免、服务端协议标签 `[米宝解读]` 豁免），且新称呼（观星台 / 黄金策 / 元元）在关键落点**正向存在**；守卫自带判别力自证（字符串命中判红 / 计量义不假红 / 注释面不假红）。执行点 = tests/unit_ci_workflows/test_positioning_copy_terms.py 的 `test_old_agent_names_do_not_come_back_in_code_face` / `test_new_agent_names_are_present_at_key_surfaces` / `test_agent_name_guard_discriminating_power`"
       - "🔴 红证（改前实测，2026-10-04）：把这 6 个源文件（四页 + 导航 + 页脚）替换回 origin/main 版本后跑本用例的 5 个测试文件 ⇒ **28 failed / 58**；恢复后 **58 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run --dir tests/unit/pages corporate-home.test services.test corporate-about.test corporate-contact.test` + `npx vitest run --dir tests/unit/components CorporateFooter`（两条合计 52 + 6 = 58；写法用 `--dir` + 文件名过滤，避免在文档里留下包内相对路径字面量 —— M4 只认仓库根相对路径，包内路径会被判成失效路径）"
     skip_reason: "[backend-contract] 纯前端公开页面（无 LLM 行为）：由 vitest 验证；页面级视觉另有 Playwright 截图 + 多模态读图一轮（migao-dev-flow §15.7 口径），不进入 agent-eval 冒烟"
     precondition: "本用例是 [backend-contract] 纯前端页面用例：前置 = `(corporate)` 四页源码与 5 个 vitest 文件同时存在、且被 vitest 正常收集；前置由测试自身持有（页面文件缺失 / 改名 / 选择器被摘即直接红，不表现成「agent 不干活」），不依赖共享夹具 ⇒ agent-eval 栈不跑它"
-    merge_log: "2026-10-04 新增（issue #6291）：官网企业站整体重构 —— 视觉改用产品自身的织物质感 token（frontend/admin-web/tailwind.config.ts 的 primary/accent/neutral + Logo 织金），文案按 config/menu.ts 的六个能力域与两位 AI 的真实工具能力重写；联系页占位假值按用户裁定改为「只保留在线留言」。取号 UI-082（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-081）。2026-10-05 补（issue #6326）：四页文案由口语化改为「能力陈述型」书面语（对齐 B 端官网：短标题 + 名词化正文 + 可验证事实 + 克制的 CTA），事实口径一字未动，新增判据 6（AI 口语词表反回退，含判别力自证）。2026-10-07 补（issue #6463，产品定位文案）：登录页 / 首次改密页副标题 + app/layout.tsx 的 title/description 的定位口径由「电商管理」改为「经营管理平台」（用户逐字「这里的定位已经不太对了，我们不单单管理电商了」）；新增类级守卫 tests/unit_ci_workflows/test_positioning_copy_terms.py（生产源码里旧定位串反回退 + 三处正向锚 + 注入式红证与注释面正面对照），traces 同步登记；既有判据 1~6 与 expectations 一字未动。"
+    merge_log: "2026-10-04 新增（issue #6291）：官网企业站整体重构 —— 视觉改用产品自身的织物质感 token（frontend/admin-web/tailwind.config.ts 的 primary/accent/neutral + Logo 织金），文案按 config/menu.ts 的六个能力域与两位 AI 的真实工具能力重写；联系页占位假值按用户裁定改为「只保留在线留言」。取号 UI-082（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-081）。2026-10-05 补（issue #6326）：四页文案由口语化改为「能力陈述型」书面语（对齐 B 端官网：短标题 + 名词化正文 + 可验证事实 + 克制的 CTA），事实口径一字未动，新增判据 6（AI 口语词表反回退，含判别力自证）。2026-10-07 补（issue #6463，产品定位文案）：登录页 / 首次改密页副标题 + app/layout.tsx 的 title/description 的定位口径由「电商管理」改为「经营管理平台」（用户逐字「这里的定位已经不太对了，我们不单单管理电商了」）；新增类级守卫 tests/unit_ci_workflows/test_positioning_copy_terms.py（生产源码里旧定位串反回退 + 三处正向锚 + 注入式红证与注释面正面对照），traces 同步登记；既有判据 1~6 与 expectations 一字未动。 ｜ 2026-10-08 续（issue #6525，品牌改名 米高→观星台 / 米宝→黄金策 / 小布→元元）：新增判据 7（旧称呼反回流 + 新称呼正向锚 + 判别力自证），与本用例①的定位守卫**同处一份守卫文件**（同一扫面、同一注释剥离实现，不写第二把尺子）；既有判据 1~6 与 expectations 一字未动。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/corporate-home.test.tsx"
@@ -3055,6 +3056,7 @@ cases:
         - "frontend/admin-web/tests/unit/pages/corporate-contact.test.tsx"
         - "frontend/admin-web/tests/unit/components/CorporateFooter.test.tsx"
         - "tests/unit_ci_workflows/test_positioning_copy_terms.py"
+        - "frontend/admin-web/tests/unit/components/WelcomePanel.test.ts"
       ci:
         - pr-check.yml
       verifies: []
@@ -3096,7 +3098,7 @@ cases:
 
   - id: UI-084
     legacy_id: ""
-    title: "B 端米宝回复富文本渲染 — admin-web 软换行不折段 + bmini 粗体/列表不裸符号（用户实测截图，C 端 UI-042 的同族补课）"
+    title: "B 端黄金策回复富文本渲染 — admin-web 软换行不折段 + bmini 粗体/列表不裸符号（用户实测截图，C 端 UI-042 的同族补课）"
     domains:
       - ui
       - frontend
@@ -3108,7 +3110,7 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "用户 2026-10-05 实测截图 + 逐字：「这个回复是不是没排版」—— 米宝 capabilities 能力清单（每行一条、末尾单个换行）在 admin-web 聊天气泡里被折成一整段无分段长文；同句文案在小程序端则是 `**` 与 `- ` 裸符号"
+      - "用户 2026-10-05 实测截图 + 逐字：「这个回复是不是没排版」—— 黄金策 capabilities 能力清单（每行一条、末尾单个换行）在 admin-web 聊天气泡里被折成一整段无分段长文；同句文案在小程序端则是 `**` 与 `- ` 裸符号"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -3116,7 +3118,7 @@ cases:
       - "判据 2·bmini 富文本：frontend/bmini-app/src/utils/richText.ts 的 parseRichText（成对 **x** ⇒ bold 段、未闭合 ** 原样保留 = 流式安全、单个 * 不误吞、- 与 • 开头 ⇒ bullet、空行保留）+ frontend/bmini-app/src/components/chat/MessageBubble.tsx 按行渲染（.message-bubble__line / --bullet / --empty / __text-strong；DOM 文本零字面 **）。执行点 = frontend/bmini-app/tests/chat-rich-text.test.ts 与 frontend/bmini-app/tests/chat-rich-text-render.test.tsx"
       - "🔴 红证（改前实测，migao-dev-flow §28.1 出口① 临时反转）：把两端渲染文件换回 origin/main 版本再跑 ⇒ admin-web 4 条里 1 条红（<br> 实测计数 0 / 期望 3）；bmini 13 条里 3 条红（.message-bubble__line 零命中 / 期望 4）。复算 = 在 frontend/admin-web 跑 npx vitest run tests/unit/components/chat-soft-breaks.test.tsx、在 frontend/bmini-app 跑 npx jest tests/chat-rich-text-render.test.tsx（覆盖前先取 origin/main 版本：git show origin/main:<仓库相对路径>）"
     skip_reason: "[backend-contract] 纯前端渲染由 vitest / jest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-05 新增（issue #6346）：C 端 2026-09-15 已治过同族缺陷（UI-042：气泡无 markdown 处理、`**`/列表裸奔），B 端两端都漏课 —— admin-web 侧因 CommonMark 软换行（段落内单个换行 = 空格）把米宝多行回复折成一整段（修法 = 挂 remark-breaks），bmini 侧沿用 C 端最小子集解析器 + 按行渲染（不建跨 App 共享模块，#6306 教训）。取号 UI-084（scripts/next_case_id.py ui：现取 main 最大 = UI-083，被 #6339 的包占用）。"
+    merge_log: "2026-10-05 新增（issue #6346）：C 端 2026-09-15 已治过同族缺陷（UI-042：气泡无 markdown 处理、`**`/列表裸奔），B 端两端都漏课 —— admin-web 侧因 CommonMark 软换行（段落内单个换行 = 空格）把黄金策多行回复折成一整段（修法 = 挂 remark-breaks），bmini 侧沿用 C 端最小子集解析器 + 按行渲染（不建跨 App 共享模块，#6306 教训）。取号 UI-084（scripts/next_case_id.py ui：现取 main 最大 = UI-083，被 #6339 的包占用）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/chat-soft-breaks.test.tsx"
@@ -3421,7 +3423,7 @@ cases:
       - "判据·**向后兼容**：后端未部署（响应无 `comparison` 键）⇒ 页面不崩、且不渲染任何环比块（滚动发布安全）。"
       - "判据·**既有口径一条不放宽**（🔴 2026-10-07 改判后重述）：PR-093 的逐值相等（前端零算术）、PR-094 的「历史导入不进计量腿」、PR-095 的「无数据 ≠ 0 / 档位文案来自服务端」、PR-096 的「不损失客户」与 UI-057 的零内部代号**全部继续绿**；**新增**的是「零服务端分组标签」与「旧形态结构性退场」。⚠️ 一处**定位串**改判（如实登记）：省料明细行 testid 由 `saving-saved-group-<cohort>-<period>` 改为 `saving-saved-group-<period>-<materialKey>` —— 来源组维度已不上屏，行内不再有 cohort 列；**断言强度不变**（仍是「逐行原样渲染服务端值」）。"
     skip_reason: "[backend-contract] 纯前端页面 / 文案 / 纯函数，由 vitest 单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-06 新增（issue #6430，用户两轮逐字）。取号 = 现取 `origin/main` 最大号 + 1（`python3 scripts/next_case_id.py ui` 现取 main 最大 = UI-089）⇒ UI-090 **改判为 UI-092**（合并 main 时发现 UI-090/UI-091 已被 issue #6434 占用 ⇒ 按「现取 main 最大 + 1」重取号）。红证（实现前实测，`migao-dev-flow` §28.1 出口① 临时反转）：把 `page.tsx` / `lib/saving-board.ts` 换回 `git show origin/main:<path>` 的旧实现（同工作树注入，注入后 md5 自证与恢复值不同）⇒ 新判据 **17 failed / 17**；恢复新实现 ⇒ 3 个文件 **26 passed**（含既有 9 条）。 ｜ 2026-10-07 **整条改判（issue #6459，用户三张截图逐字）**：重做版首屏被用户判定「切换后（采购入库）这种概念让新用户无法理解」「这么多废话文字留在页面上只会干扰用户」⇒ 页面改为「结论数字 + 几乎用完的批数趋势 + 省料明细 + 折叠口径」，旧的结论条 / 门道卡 / 术语词典 / 两张指标卡 / 来源组对照表 / 布剩在哪 / 单位产出表**全部退场**（旧形态的十个 testid 由 `SavingBoardStory.test.tsx` 逐条断言「找不到」）。**红证（双向，实测）**：① §28.1 出口① 临时反转 —— 把 `page.tsx` / `lib/saving-board.ts` 换回 `git show origin/main:<path>` 的旧实现 ⇒ 新判据红（旧页面渲染出三个内部标签 ⇒ 文本面断言当场命中）；② 注入式（`scripts/saving-metrics-red-proof-web.py`，6 条变异）—— 逐条实测 `Tests 1~3 failed | 25~27 passed`，恢复后 `28 passed`；③ 旧口径的**服务端**判据（PR-093/094/095、PR-127）一字未动、现取全绿。**未固化 / 有意不做（照实登记）**：米宝会话卡 `frontend/bmini-app` 与 admin-web `BatchStockCard` 的**服务端下发** `cohortLabel` 渲染面不在元守卫的射程内（元守卫扫源码字面量）—— admin-web 那一处已按类级固化改说人话，bmini-app 侧另单跟踪。"
+    merge_log: "2026-10-06 新增（issue #6430，用户两轮逐字）。取号 = 现取 `origin/main` 最大号 + 1（`python3 scripts/next_case_id.py ui` 现取 main 最大 = UI-089）⇒ UI-090 **改判为 UI-092**（合并 main 时发现 UI-090/UI-091 已被 issue #6434 占用 ⇒ 按「现取 main 最大 + 1」重取号）。红证（实现前实测，`migao-dev-flow` §28.1 出口① 临时反转）：把 `page.tsx` / `lib/saving-board.ts` 换回 `git show origin/main:<path>` 的旧实现（同工作树注入，注入后 md5 自证与恢复值不同）⇒ 新判据 **17 failed / 17**；恢复新实现 ⇒ 3 个文件 **26 passed**（含既有 9 条）。 ｜ 2026-10-07 **整条改判（issue #6459，用户三张截图逐字）**：重做版首屏被用户判定「切换后（采购入库）这种概念让新用户无法理解」「这么多废话文字留在页面上只会干扰用户」⇒ 页面改为「结论数字 + 几乎用完的批数趋势 + 省料明细 + 折叠口径」，旧的结论条 / 门道卡 / 术语词典 / 两张指标卡 / 来源组对照表 / 布剩在哪 / 单位产出表**全部退场**（旧形态的十个 testid 由 `SavingBoardStory.test.tsx` 逐条断言「找不到」）。**红证（双向，实测）**：① §28.1 出口① 临时反转 —— 把 `page.tsx` / `lib/saving-board.ts` 换回 `git show origin/main:<path>` 的旧实现 ⇒ 新判据红（旧页面渲染出三个内部标签 ⇒ 文本面断言当场命中）；② 注入式（`scripts/saving-metrics-red-proof-web.py`，6 条变异）—— 逐条实测 `Tests 1~3 failed | 25~27 passed`，恢复后 `28 passed`；③ 旧口径的**服务端**判据（PR-093/094/095、PR-127）一字未动、现取全绿。**未固化 / 有意不做（照实登记）**：黄金策会话卡 `frontend/bmini-app` 与 admin-web `BatchStockCard` 的**服务端下发** `cohortLabel` 渲染面不在元守卫的射程内（元守卫扫源码字面量）—— admin-web 那一处已按类级固化改说人话，bmini-app 侧另单跟踪。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/SavingBoardStory.test.tsx"
@@ -3460,7 +3462,7 @@ cases:
       - "判据·**假红清理有实测**：`value=\"pending_review\"` / `fieldKey=\"door_width\"` / `stopColor=\"#6366f1\"` 三个 JSX 属性值曾被误判成文案/issue 号 ⇒ 改为**属性白名单**（只认 label/title/hint/placeholder/…）+ 十六进制颜色排除，命中 91 → 78。"
       - "**不回归**：口径/接口/字段名/权限/算料行为一字未动（`frontend-fix.no-api-change`）；被改写的文案所承载的承诺与边界**逐条保留**（未定价 ≠ ¥0.00、「拼接/接高要手选，系统不推算」+「不触发工序」、算例数字仍由真值渲染）。"
     skip_reason: "[backend-contract] 纯前端文案 + 静态守卫，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-07 新增（issue #6488，用户逐字两轮 + 6 张截图）：商家后台用户可见文案去「研发腔」—— 全量扫描器（AST 抽文案例，227 文件 / 6409 条候选）+ 文案规范 `docs/design/user-facing-copy-standard.md`（三档处置 + P1~P5）+ 类级守卫扩容到八条规则（R1~R5 新增，R6~R8 由 #5565/#5576/#6459 的三条原样迁入同一份单一源）。红证（实现前实测）：守卫测试 `frontend/admin-web/tests/unit/user-copy-jargon-guard.test.ts` 得 **5 failed / 11 passed**（在 `frontend/admin-web` 目录下跑 vitest），R1~R5 各判红并逐条具名 file:line（78 处 / 25 个文件）；修复后同命令全绿。取号 = `python3 scripts/next_case_id.py ui`（main 最大 UI-092）。⚠️ 如实登记（未固化 / 有意不做）：服务端**下发**字符串的渲染面（如米宝会话卡还原样渲染 `cohortLabel`）不在本守卫射程内（它扫源码字面量）—— 与 UI-092 的登记同源，另单跟踪。 ｜ 2026-10-08 续（用户验收线上页面提的两条）：① 副标题回归「讲这个功能干什么」，落 S1~S4 四条判据 + 规范 §6；② 新增 R9「占位符字母 / 模式代号上屏」（`X 变成 Y` / `A 模式`）—— 顺带清掉 `A 模式`（#6492 第 1 条）；③ 「按移动加权平均重算成本」「0.5 米级尾料」这类机制/口径措辞改为讲用途，关键规则改 `<strong>` 加粗。"
+    merge_log: "2026-10-07 新增（issue #6488，用户逐字两轮 + 6 张截图）：商家后台用户可见文案去「研发腔」—— 全量扫描器（AST 抽文案例，227 文件 / 6409 条候选）+ 文案规范 `docs/design/user-facing-copy-standard.md`（三档处置 + P1~P5）+ 类级守卫扩容到八条规则（R1~R5 新增，R6~R8 由 #5565/#5576/#6459 的三条原样迁入同一份单一源）。红证（实现前实测）：守卫测试 `frontend/admin-web/tests/unit/user-copy-jargon-guard.test.ts` 得 **5 failed / 11 passed**（在 `frontend/admin-web` 目录下跑 vitest），R1~R5 各判红并逐条具名 file:line（78 处 / 25 个文件）；修复后同命令全绿。取号 = `python3 scripts/next_case_id.py ui`（main 最大 UI-092）。⚠️ 如实登记（未固化 / 有意不做）：服务端**下发**字符串的渲染面（如黄金策会话卡还原样渲染 `cohortLabel`）不在本守卫射程内（它扫源码字面量）—— 与 UI-092 的登记同源，另单跟踪。 ｜ 2026-10-08 续（用户验收线上页面提的两条）：① 副标题回归「讲这个功能干什么」，落 S1~S4 四条判据 + 规范 §6；② 新增 R9「占位符字母 / 模式代号上屏」（`X 变成 Y` / `A 模式`）—— 顺带清掉 `A 模式`（#6492 第 1 条）；③ 「按移动加权平均重算成本」「0.5 米级尾料」这类机制/口径措辞改为讲用途，关键规则改 `<strong>` 加粗。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/user-copy-jargon-guard.test.ts"

@@ -1,5 +1,5 @@
 """
-米宝多轮 — 高级域（画像/指代/生命周期/话题切换/思考剥离）
+黄金策多轮 — 高级域（画像/指代/生命周期/话题切换/思考剥离）
 
 （由 test_mibao_advanced_multiturn.py 按场景域拆分，2026-08-29）
 """
@@ -28,7 +28,7 @@ def _auto_reset_singletons():
 
 
 class TestMibaoMultiturnAdvanced:
-    """米宝多轮 — 高级域（画像/指代/生命周期/话题切换/思考剥离）"""
+    """黄金策多轮 — 高级域（画像/指代/生命周期/话题切换/思考剥离）"""
 
     async def test_case_18_customer_portrait_building(self):
         """

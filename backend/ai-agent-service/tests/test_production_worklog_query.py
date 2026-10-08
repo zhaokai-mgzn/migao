@@ -117,7 +117,7 @@ SELLER_PERMISSIONS = ["production:view"]
 
 @pytest.fixture
 def seller_context():
-    """B 端商户员工（米宝）上下文 —— 持 `production:view`（过程明细读码，issue #5291）"""
+    """B 端商户员工（黄金策）上下文 —— 持 `production:view`（过程明细读码，issue #5291）"""
     return ToolContext(
         tenant_id=1, user_id="agent_001", session_id="sess_wl_1",
         role="operator", permissions=list(SELLER_PERMISSIONS),
@@ -126,7 +126,7 @@ def seller_context():
 
 @pytest.fixture
 def customer_context():
-    """C 端顾客（小布）上下文 —— 车间报工明细/计件不对其开放"""
+    """C 端顾客（元元）上下文 —— 车间报工明细/计件不对其开放"""
     return ToolContext(tenant_id=1, user_id="customer_001", session_id="sess_wl_2", role="customer")
 
 

@@ -1,4 +1,4 @@
-name: Agent Eval (米宝能力评测)
+name: Agent Eval (黄金策能力评测)
 permissions:
   contents: read
   issues: write  # 失败建 issue 必需（#3497，修复 #3270 同款次生 bug：缺此权限失败通知静默）
@@ -114,7 +114,7 @@ jobs:
         with:
           script: |
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
-            const title = `[Agent Eval] 米宝冒烟评测失败 — ${new Date().toISOString().slice(0, 10)}`
+            const title = `[Agent Eval] 黄金策冒烟评测失败 — ${new Date().toISOString().slice(0, 10)}`
             // 去重守卫（issue #2746）：同日同标题 open issue 已存在 → 仅评论追加，不重复建
             const q = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
             const { data: search } = await github.rest.search.issuesAndPullRequests({ q })
@@ -132,7 +132,7 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title,
-                body: `米宝能力冒烟评测失败（真实 LLM + 多轮业务流）。\n\n查看详情：${runUrl}`,
+                body: `黄金策能力冒烟评测失败（真实 LLM + 多轮业务流）。\n\n查看详情：${runUrl}`,
                 labels: ['bug', 'role/qa'],
               })
             }

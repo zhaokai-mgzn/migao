@@ -4,10 +4,10 @@
 #
 # 🔴 为什么不能只看 `curl -sI https://app.migaozn.com/w/` = 200：
 #    修复**前**它就已经是 200 —— nginx 的 `location /` 是 `try_files $uri $uri/ /index.html`，
-#    `/w/` 不存在时**静默回落**到 C 端 Taro H5 的 index.html（「米高窗帘 · 小布智能助手」）。
+#    `/w/` 不存在时**静默回落**到 C 端 Taro H5 的 index.html（「观星台窗帘 · 元元智能助手」）。
 #    ⇒ 200 是**恒真**的（空断言）。本脚本断言的是**页面身份**：
 #      ① `GET /w/` 与 `GET /w/index.html` 的 body 哈希 == **本仓库** `frontend/worker-h5/index.html`；
-#      ② body 含工人端入口 `src/app.mjs`；**不含** C 端标识（`TARO_` / `小布智能助手`）；
+#      ② body 含工人端入口 `src/app.mjs`；**不含** C 端标识（`TARO_` / `元元智能助手`）；
 #      ③ `GET /w/src/app.mjs` 200 且哈希 == 本仓库同名文件（证明 `src/**` 真的落了，不只是 index）。
 #      ④⑤ `/w/machine.html` 与 `/w/src/machine.mjs`（一体机机台页，母单 #5161）；
 #      ⑥ **module script 的 MIME**（issue #6293）：`frontend/worker-h5/src/**` 的**每个** `.mjs` 的
@@ -34,7 +34,7 @@ LOCAL_APP="$ROOT/frontend/worker-h5/src/app.mjs"
 LOCAL_MACHINE="$ROOT/frontend/worker-h5/machine.html"
 LOCAL_MACHINE_APP="$ROOT/frontend/worker-h5/src/machine.mjs"
 
-C_END_MARKERS=("TARO_" "小布智能助手")
+C_END_MARKERS=("TARO_" "元元智能助手")
 WORKER_MARKERS=("src/app.mjs")
 
 TMPDIR_RUN="$(mktemp -d)"

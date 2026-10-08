@@ -105,7 +105,7 @@ public class UserController {
             }
         }
 
-        // 查询智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示；未配置为 null → 前端兜底「小布」）
+        // 查询智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示；未配置为 null → 前端兜底「元元」）
         String botName = null;
         if (user.getTenantId() != null) {
             com.migao.admin.entity.TenantAiConfig aiConfig = tenantAiConfigMapper.selectOne(

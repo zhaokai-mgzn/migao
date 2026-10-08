@@ -29,7 +29,7 @@ function initialTab(routeTab: unknown): LoginTab {
 }
 
 /**
- * B 端登录页（米宝商家端）
+ * B 端登录页（黄金策商家端）
  *
  * 1. **员工入口**（issue #5485）：填「用户名@企业编码」+ 密码 → `employeeLoginAction`
  *    → 后端 `POST /api/auth/employee/login` 由标识里的企业编码解析租户
@@ -38,10 +38,10 @@ function initialTab(routeTab: unknown): LoginTab {
  *    → `POST /api/auth/sms/login`。为什么必须有：管理员身份在设计上是「手机号 + 短信」，
  *    而 #5485 之后 H5 只留了员工入口 ⇒ 管理员在**唯一可达的 H5** 上无路可走
  *    （存量账号 `users.username` 为 NULL，员工入口同样进不去）。
- * 3. 成功 → switchTab 到「问米宝」（首页 Tab）；首登强制改密 ⇒ 先去改密页。
+ * 3. 成功 → switchTab 到「问黄金策」（首页 Tab）；首登强制改密 ⇒ 先去改密页。
  * 4. **工人入口**（issue #6467 切片 1）：工号 + PIN（可选设备标签）→ `workerLogin`
  *    → `POST /api/worker/login`（**既有**端点，不新造登录服务）。工人**没有商家会话**
- *    ⇒ 成功只能 `redirectTo` 工人首页（`switchTab` 会落到商家 tabBar/问米宝）。
+ *    ⇒ 成功只能 `redirectTo` 工人首页（`switchTab` 会落到商家 tabBar/问黄金策）。
  *    报工页/工人首页的「去登录工人身份」用 `?tab=worker` 直达本入口。
  *
  * 原「微信授权手机号 → 跨租户匹配员工 → 绑定 openid → 二次免密」整条退场：
@@ -156,7 +156,7 @@ export default function LoginPage() {
    * （`POST /api/worker/login`，`skipAuth`：工人身份不走商家 JWT）。
    *
    * <p>🔴 成功**只能** `redirectTo` 工人首页：工人没有商家会话，`switchTab` 会落到商家 tabBar
-   * （问米宝）—— 而工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`）⇒ 落地即 403 / 空页。</p>
+   * （问黄金策）—— 而工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`）⇒ 落地即 403 / 空页。</p>
    *
    * <p>失败**原样展示服务端 message**：格式 / PIN 是否正确 / 角色门禁的单一真值都在服务端，
    * 前端只挡空输入（否则就是第二套口径）。</p>
@@ -194,7 +194,7 @@ export default function LoginPage() {
   const handleTerms = useCallback(() => {
     Taro.showModal({
       title: '服务条款',
-      content: '本应用面向米高平台商家员工，使用即表示同意平台服务条款。',
+      content: '本应用面向观星台平台商家员工，使用即表示同意平台服务条款。',
       showCancel: false,
       confirmText: '我知道了',
     })
@@ -219,7 +219,7 @@ export default function LoginPage() {
         </View>
         {/* AI 角色标签口径见 frontend/admin-web/src/config/ai-roles.ts（issue #6330/#6333）；
             本 App 是独立工程，不跨 App 引共享模块（#6306 教训：落在发布集外 ⇒ 白屏）⇒ 本地字面量 + 测试钉值。 */}
-        <Text className='login-brand__title'>米宝 · 企业智能生产管家</Text>
+        <Text className='login-brand__title'>黄金策 · 企业智能生产管家</Text>
         <Text className='login-brand__subtitle'>经营数据 · AI 客服 · 移动坐席</Text>
       </View>
 

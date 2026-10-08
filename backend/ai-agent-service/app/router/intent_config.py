@@ -32,7 +32,7 @@ class IntentType(str, Enum):
     COMPLAINT = "complaint"
     # ── 商品域 (product) ──
     PRODUCT_INQUIRY = "product_inquiry"
-    QUOTE = "quote"  # 窗帘算料报价（C 端小布）
+    QUOTE = "quote"  # 窗帘算料报价（C 端元元）
     CATEGORY_MANAGE = "category_manage"
     PROCESSING_MANAGE = "processing_manage"
     # ── 客户关系域 (crm) ──

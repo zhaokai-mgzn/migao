@@ -32,12 +32,12 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     expect(screen.getByText(/布艺行业 AI 经营平台/)).toBeInTheDocument()
   })
 
-  it('renders hero description：小布与米宝的分工规格句', () => {
+  it('renders hero description：元元与黄金策的分工规格句', () => {
     render(<HomePage />)
     expect(
-      screen.getByText(/顾客侧由小布承接：咨询应答、算料报价、下单、物流查询与售后受理/)
+      screen.getByText(/顾客侧由元元承接：咨询应答、算料报价、下单、物流查询与售后受理/)
     ).toBeInTheDocument()
-    expect(screen.getByText(/经营侧由米宝承接：商品、订单、生产、库存与财务/)).toBeInTheDocument()
+    expect(screen.getByText(/经营侧由黄金策承接：商品、订单、生产、库存与财务/)).toBeInTheDocument()
   })
 
   it('renders hero 事实标签（可核实的四条）', () => {
@@ -60,9 +60,9 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
   it('renders 双 AI 区块：能力清单 + 能力边界', () => {
     render(<HomePage />)
     expect(screen.getByText(/顾客侧服务，经营侧管理/)).toBeInTheDocument()
-    expect(screen.getAllByText('米宝').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('黄金策').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('企业智能生产管家').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('小布').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('元元').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('企业智能客服').length).toBeGreaterThanOrEqual(1)
     // 能力规格要点（都对应真实存在的模块 / 工具）
     expect(
@@ -131,7 +131,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     expect(screen.getByText('人机协同')).toBeInTheDocument()
     expect(screen.getByText(/AI 优先应答，人工按规则接续/)).toBeInTheDocument()
     expect(screen.getByText('客户咨询')).toBeInTheDocument()
-    expect(screen.getByText('小布 AI 应答')).toBeInTheDocument()
+    expect(screen.getByText('元元 AI 应答')).toBeInTheDocument()
     expect(screen.getByText('自动转人工')).toBeInTheDocument()
     expect(screen.getByText('人工接续')).toBeInTheDocument()
     expect(screen.getByText('留言受理')).toBeInTheDocument()
@@ -195,9 +195,9 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     expect(screen.queryByText('1-3 个工作日内完成审核')).not.toBeInTheDocument()
   })
 
-  it('renders bottom CTA：数分钟内完成开通，小布与米宝同步上线', () => {
+  it('renders bottom CTA：数分钟内完成开通，元元与黄金策同步上线', () => {
     render(<HomePage />)
-    expect(screen.getByText(/数分钟内完成开通，小布与米宝同步上线/)).toBeInTheDocument()
+    expect(screen.getByText(/数分钟内完成开通，元元与黄金策同步上线/)).toBeInTheDocument()
     expect(screen.getByText(/经 AI 自动甄别后秒级返回结果/)).toBeInTheDocument()
   })
 
@@ -234,7 +234,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
 
   it('文案口吻判据自身的判别力自证：词表能命中已知口语样本', () => {
     // 让「空断言」进不来：样本是 2026-10-04 版本里逐字出现过的措辞。
-    expect(findColloquialMarkers('米宝打理经营，把商品管住，做不到的事 AI 会直说')).toEqual([
+    expect(findColloquialMarkers('黄金策打理经营，把商品管住，做不到的事 AI 会直说')).toEqual([
       '打理',
       '管住',
       '直说',
@@ -334,7 +334,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
     expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
     expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
-    expect(findPersonifiedAi('小布与米宝')).toEqual([])
+    expect(findPersonifiedAi('元元与黄金策')).toEqual([])
 
     // 真实语料
     const quantifiers = findQuantifierRhetoric(text)
@@ -347,9 +347,9 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
   })
   it('企业级口径：官网源码不得出现零售单店视角的「门店」（issue #6379 / #6384）', () => {
     // 口径（用户 2026-10-05 两次裁定）：
-    //   ① 「米宝不是面向门店经营……是企业级的生产管家」（issue #6379）
+    //   ① 「黄金策不是面向门店经营……是企业级的生产管家」（issue #6379）
     //   ② 「要去掉，不要出现门店，我们是解决企业的问题」（issue #6384）
-    // 「门店」是**零售单店**视角，而米高是**企业级**平台（企业智能生产管家 + 六个能力域）
+    // 「门店」是**零售单店**视角，而观星台是**企业级**平台（企业智能生产管家 + 六个能力域）
     // ⇒ 用它描述客户的经营形态或 AI 的朝向，都把客户框小了。
     // 禁用表收窄到**单字**「门店」：前两条（门店经营 / 门店真实数据）被它天然覆盖。
     // 这里扫**源码**而不是渲染文本：layout.tsx 的 OG / Twitter 描述不上屏，渲染文本判据扫不到它。

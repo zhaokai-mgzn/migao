@@ -155,7 +155,7 @@ export const menuGroups: MenuGroup[] = [
   //   · `knowledge:view`（issue #5246）：知识库用**读**码 —— 「看知识库」与「改知识库」是两件事；
   //   · 知识库**仍留在本组内**（用户 2026-09-29 裁定：不单独成项、不沉底 —— 通知中心是全局项
   //     （无码 + 另有顶栏铃铛入口）故可沉底，知识库是功能域模块且侧边栏是它**唯一**入口）。
-  //   · 已删除的 `chat`「米宝 · 在线对话」节点**不得长回来**（#3094 从侧边栏移除，走右下角 FAB）。
+  //   · 已删除的 `chat`「黄金策 · 在线对话」节点**不得长回来**（#3094 从侧边栏移除，走右下角 FAB）。
   {
     key: 'customer-service',
     name: '客户服务',
@@ -270,7 +270,7 @@ export const menuGroups: MenuGroup[] = [
       { key: 'inbound-orders', name: '入库单', icon: 'PackageOpen', path: '/inbound-orders', permissionCode: 'inbound:view', keywords: ['rkd', 'ruku', 'caigou'] },
       // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面。后端端点（issue #4055）与
       // agent 工具（issue #5247）**早就有**，页面是 `StockLedgerController` 的 javadoc 里逐字登记的
-      // **显式延后项**（「本轮只做只读端点，不做前端页面」）⇒ 结果是同一个问题米宝答得出、
+      // **显式延后项**（「本轮只做只读端点，不做前端页面」）⇒ 结果是同一个问题黄金策答得出、
       // 商家在后台点不出来。本节点把那个缺口补上。
       // 🔴 节点码 = 该页第一屏读端点（`GET /api/admin/stock-ledger`）的**方法级**
       // `@RequirePermission("product:list")`（逐字同码，不新造码 —— 新码今天无人持有 ⇒

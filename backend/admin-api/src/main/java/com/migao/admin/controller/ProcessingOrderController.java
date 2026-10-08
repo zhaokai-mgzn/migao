@@ -15,7 +15,7 @@ import java.util.List;
 
 /**
  * 加工单 Controller（issue #3340）
- * 供 admin-web 与米宝 Agent 共同调用。
+ * 供 admin-web 与黄金策 Agent 共同调用。
  */
 @Slf4j
 @RestController

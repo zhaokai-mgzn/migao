@@ -3,7 +3,7 @@
 
 ## 这个工具是什么
 
-米宝（B 端）在**同页**（建品页 / 建单页，浮动面板就在表单上方）拿到用户丢进对话的图片后，
+黄金策（B 端）在**同页**（建品页 / 建单页，浮动面板就在表单上方）拿到用户丢进对话的图片后，
 调本工具 ⇒ **复用识别内核**（不是第二份识别实现）⇒ 得到「填哪几格 + 候选 + 解读」的
 同页填充计划 ⇒ 由 `chat.py` 以**瞬时** SSE 事件（`page_fill`）推给页面表单。
 
@@ -242,7 +242,7 @@ class TestReachability:
         assert "image_recognize" in ORDER_TOOLS
 
     def test_tool_is_not_bound_to_the_c_end_agent(self):
-        """C 端零改动：不把小布拖进这条链路。"""
+        """C 端零改动：不把元元拖进这条链路。"""
         from app.graph.skills.customer_skill import CUSTOMER_TOOLS
 
         assert "image_recognize" not in CUSTOMER_TOOLS

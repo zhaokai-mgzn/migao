@@ -1,4 +1,4 @@
-# 米高 Logo 重设计方案
+# 观星台 Logo 重设计方案
 
 > 2026-08-27 ｜ 现状：`frontend/admin-web` 使用折线 M 图形标，`favicon.svg` 却是「米」字——两处不统一，图形标也未体现行业属性。
 
@@ -43,7 +43,7 @@
 | 文件 | 说明 |
 |------|------|
 | `concept-{a,b,c}.svg` | 48×48 图形标（可直接当图标用）|
-| `lockup-{a,b,c}.svg` | 图形标 +「米高 / MIGAO」横向组合稿 |
+| `lockup-{a,b,c}.svg` | 图形标 +「观星台 / MIGAO」横向组合稿 |
 | `variant-{white-blue,gold,blue-gold,navy}.svg` | 底板配色变体（织金暖底 = `variant-gold.svg`，已落地）|
 | `color-comparison.svg` | 5 版底板配色对比图 |
 | `overview.svg` | 三方向对比总览图 |

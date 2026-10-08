@@ -1,3 +1,4 @@
+# case_ids: CH-046
 """
 测试 app.agents.channel_config — 渠道欢迎语配置
 
@@ -32,7 +33,7 @@ class TestChannelGreetingDefaults:
     def test_wechat_mini_greeting_contains_welcome(self):
         """微信小程序欢迎语包含'微信'渠道标识"""
         config = DEFAULT_CHANNEL_CONFIGS[CHANNEL_WECHAT_MINI]
-        assert "微信" in config.greeting or "小布" in resolve_greeting(CHANNEL_WECHAT_MINI)
+        assert "微信" in config.greeting or "元元" in resolve_greeting(CHANNEL_WECHAT_MINI)
 
     def test_douyin_greeting_differs_from_wechat(self):
         """不同渠道欢迎语不同"""
@@ -48,19 +49,19 @@ class TestChannelGreetingResolution:
     def test_resolve_greeting_replaces_bot_name(self):
         """{bot_name} 占位符被替换为 bot_name 参数"""
         greeting = resolve_greeting(CHANNEL_WECHAT_MINI, bot_name="测试助手")
-        assert "小布" not in greeting
+        assert "元元" not in greeting
         assert "测试助手" in greeting
 
     def test_resolve_greeting_default_bot_name(self):
-        """不传bot_name时默认使用'小布'"""
+        """不传bot_name时默认使用'元元'"""
         greeting = resolve_greeting(CHANNEL_WECHAT_MINI)
-        assert "小布" in greeting
+        assert "元元" in greeting
 
     def test_unknown_channel_has_default_greeting(self):
         """未知渠道也有默认欢迎语"""
         greeting = resolve_greeting("unknown_channel")
         assert len(greeting) > 0
-        assert "小布" in greeting
+        assert "元元" in greeting
 
 
 class TestTenantConfigOverride:

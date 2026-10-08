@@ -68,7 +68,7 @@ export default function ChangePasswordPage() {
       <div className="w-full max-w-[420px] relative z-10">
         <div className="flex flex-col items-center mb-8">
           <Logo size="large" className="mb-4" />
-          <h1 className="text-2xl font-bold text-neutral-900">米高</h1>
+          <h1 className="text-2xl font-bold text-neutral-900">观星台</h1>
           <p className="mt-1.5 text-sm text-neutral-500">企业级AI经营管理平台</p>
         </div>
 

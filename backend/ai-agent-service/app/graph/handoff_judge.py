@@ -1,5 +1,5 @@
 """
-小布 AI 主动引导转人工 — 判定模块（Guided Handoff Judge）
+元元 AI 主动引导转人工 — 判定模块（Guided Handoff Judge）
 
 纯规则信号判定，不依赖 LLM（确定性、可单测），设计见
 docs/design/xiaobu-ai-handoff-guidance.md §3。
@@ -52,7 +52,7 @@ _OUT_OF_SCOPE_WORDS = (
 #
 # `complaint` 于 2026-09-11 纳入（CH-014 抖动治理，CI 实证 run 34622425044）：
 # 旧注释的理由是「投诉/举报/不满/差评已被 L1 rule_matcher 命中 complaint 走既有直转/
-# 投诉流程」—— 那是**B 端**语义（米宝收到投诉直接转人工）。C 端实测（小布）该轮
+# 投诉流程」—— 那是**B 端**语义（黄金策收到投诉直接转人工）。C 端实测（元元）该轮
 # 既没有直转、也没有弹卡，只有一句安抚文本，于是 CH-014 的 `interact` 期望
 # 取决于分类器把「你们太坑了」分到 general / after_sales / complaint 中的哪一个
 # → 同一用例两次 run 结果相反。判据统一为**消息里有没有可执行诉求**（见

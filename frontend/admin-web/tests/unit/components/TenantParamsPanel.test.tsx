@@ -59,7 +59,7 @@ function calcResponse(
 }
 
 const aiResponse = {
-  data: { success: true, data: { botName: '小布', greetingTemplate: '您好' } },
+  data: { success: true, data: { botName: '元元', greetingTemplate: '您好' } },
 }
 
 beforeEach(() => {
@@ -183,7 +183,7 @@ describe('判据 6：AI 客服域的清单与文案一致', () => {
     // 真正来自读面的是**值位** ⇒ 同步读 `param-value-botName` 会读到占位「…」。
     // 等**被断言的这件事本身**成立，断言语义一字未改。
     await waitFor(() =>
-      expect(screen.getByTestId('param-value-botName')).toHaveTextContent('小布')
+      expect(screen.getByTestId('param-value-botName')).toHaveTextContent('元元')
     )
   })
 })

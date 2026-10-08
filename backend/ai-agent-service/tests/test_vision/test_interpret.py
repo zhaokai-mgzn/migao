@@ -3,9 +3,9 @@
 
 ## 这个包是什么
 
-建品页表单内的「识别 + 米宝推理」按钮（表单内有，**不经过米宝对话窗口**）在服务端的落点：
+建品页表单内的「识别 + 黄金策推理」按钮（表单内有，**不经过黄金策对话窗口**）在服务端的落点：
 `POST /api/internal/vision/interpret` → **一次**识别（既有内核）+ **恰好一次**文本推理
-（米宝主模型）→ `deep_channel.build_page_fill(..., interpretations=...)` ⇒ `page_fill` 计划。
+（黄金策主模型）→ `deep_channel.build_page_fill(..., interpretations=...)` ⇒ `page_fill` 计划。
 
 本文件是该契约的**判据**（issue #6367 包 P1 的验收面）：
 

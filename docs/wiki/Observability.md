@@ -4,7 +4,7 @@
 
 ## 1. 背景与选型结论
 
-- **现状缺口**：ai-agent-service（LangGraph 双 Agent：小布/米宝）目前仅有 `loguru` + `RequestLoggingMiddleware`（request_id）日志与 circuit_breaker/fallback，缺少图内逐节点 trace、LLM 调用级观测、token 成本、bad case 回放。
+- **现状缺口**：ai-agent-service（LangGraph 双 Agent：元元/黄金策）目前仅有 `loguru` + `RequestLoggingMiddleware`（request_id）日志与 circuit_breaker/fallback，缺少图内逐节点 trace、LLM 调用级观测、token 成本、bad case 回放。
 - **选型结论**：
   - 生产监控 → **ARMS 大模型可观测**（数据留阿里云、零业务代码埋点、成本≈0）；
   - 开发调试 → 可选 **LangSmith Developer 免费档**（5k traces/月，SDK 已随 langchain-core 安装，仅配环境变量）；

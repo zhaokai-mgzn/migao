@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * Agent 生产进度/计件/过程明细（米宝工具消费，issue #3995 / #4201，M4-G-2）
+ * Agent 生产进度/计件/过程明细（黄金策工具消费，issue #3995 / #4201，M4-G-2）
  *
  * ⚠️ 冻结契约（并行包消费）：路径/参数/返回字段不可改。
  *   GET /api/admin/agent/production/progress?order_no=xxx

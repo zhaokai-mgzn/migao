@@ -1,6 +1,6 @@
 // case_ids: UI-084
 /**
- * 米宝（B 端 admin-web）聊天回复的**软换行**渲染 —— issue #6346 / 用例 UI-084
+ * 黄金策（B 端 admin-web）聊天回复的**软换行**渲染 —— issue #6346 / 用例 UI-084
  *
  * ## 治的形态
  *
@@ -92,7 +92,7 @@ beforeEach(() => {
 describe('MessageList — UI-084 软换行渲染', () => {
   it('段落内单个换行渲染成 <br>（能力清单不再被折成一整段）', () => {
     mockChatStore.messages = [
-      aiMsg('您好！我是米宝。\n📦 **订单与履约** - 订单/物流查询\n🏭 **生产与算料** - 工序库\n⚠️ 创建/修改类操作米宝不做。'),
+      aiMsg('您好！我是黄金策。\n📦 **订单与履约** - 订单/物流查询\n🏭 **生产与算料** - 工序库\n⚠️ 创建/修改类操作黄金策不做。'),
     ]
     const view = render(<MessageList />)
     const text = view.container.textContent || ''

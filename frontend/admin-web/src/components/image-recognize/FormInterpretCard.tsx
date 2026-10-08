@@ -52,7 +52,7 @@ const GROUPS = [
   {
     source: PAGE_FILL_SOURCE_INTERPRETED,
     testid: 'form-interpret-group-interpreted',
-    title: `${PAGE_FILL_SOURCE_INTERPRETED} 米宝推的`,
+    title: `${PAGE_FILL_SOURCE_INTERPRETED} 黄金策推的`,
   },
 ] as const
 
@@ -60,7 +60,7 @@ const GROUPS = [
  * 「识别 + 一次性推理」的**内嵌结果卡**（issue #6367 包 P3）—— 纯展示 + 一次填充回调。
  *
  * 用户口径（逐字）：**不是**弹窗 / 对话 / 气泡；两段分组（`[图片识别]` 从图上抄的 /
- * `[米宝解读]` 米宝推的，各带 `note` 依据）；每格可勾选/取消，「一键填入」把选中的格子交回页面。
+ * `[米宝解读]` 黄金策推的，各带 `note` 依据）；每格可勾选/取消，「一键填入」把选中的格子交回页面。
  *
  * 🔴 **不落库**：本组件不 import 任何写端点，也只调调用方给的那一个 `onFill`
  * （= 页面既有的 `onRecognized`）——「填表」与「提交」是两件事，后者永远是人的动作。

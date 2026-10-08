@@ -107,7 +107,7 @@ class WorkerCuttingHeightServiceTest {
                 ProcessingOrder.builder().id("po-1").tenantId(TENANT).orderId(ORDER_ID).build()));
         when(processingOrderSetMapper.selectCount(any())).thenReturn(3L);
         when(productAttributeMapper.selectList(any())).thenReturn(List.of(
-                ProductAttribute.builder().tenantId(TENANT).productId("p-cloth").attrKey("brand").attrValue("米高").build()));
+                ProductAttribute.builder().tenantId(TENANT).productId("p-cloth").attrKey("brand").attrValue("观星台").build()));
         when(cuttingHeightConfigMapper.selectActiveByTenant(TENANT)).thenReturn(storedConfig());
 
         Map<String, Object> out = service.read("7K3M9QP2", TENANT);
@@ -124,7 +124,7 @@ class WorkerCuttingHeightServiceTest {
         assertThat(positions).extracting(p -> p.get("position_kind")).containsExactly("布帘", "纱帘");
         Map<String, Object> cloth = positions.get(0);
         assertThat(cloth.get("scanned")).isEqualTo(true);
-        assertThat(cloth.get("brand")).isEqualTo("米高");
+        assertThat(cloth.get("brand")).isEqualTo("观星台");
         assertThat(cloth.get("product_name")).isEqualTo("全遮光布窗帘");
         assertThat(cloth.get("width")).isEqualTo(new BigDecimal("3.500"));
         assertThat(cloth.get("height")).isEqualTo(new BigDecimal("2.700"));

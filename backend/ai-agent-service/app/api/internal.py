@@ -71,11 +71,11 @@ class VisionInterpretRequest(BaseModel):
     """识别 + 一次性推理请求（issue #6367 包 P1 · 建品页表单内入口）
 
     与 `VisionRecognizeRequest` 的唯一差别是**多一句商家自己写的补充要求**（`hint`）：
-    表单内的按钮 + 一句文字输入框 ⇒ 走「上传 → 识别 → **一次**推理」，**不经过米宝对话**。
+    表单内的按钮 + 一句文字输入框 ⇒ 走「上传 → 识别 → **一次**推理」，**不经过黄金策对话**。
 
     - `hint` **可选**、纯文本、**≤200 字**（超限 ⇒ 400，见 `app/vision/interpret.py` 的
       `HINT_MAX_CHARS`；**不静默截断**）；
-    - 推理**复用米宝主模型**（`LLMFactory.create_skill_llm`），**不新增模型依赖 / 配置项**。
+    - 推理**复用黄金策主模型**（`LLMFactory.create_skill_llm`），**不新增模型依赖 / 配置项**。
     """
     tenant_id: int = Field(..., description="租户 ID")
     target_type: str = Field(..., description="识别 target：product（商品）/ order（订单）")
@@ -387,7 +387,7 @@ async def vision_interpret(
 
     与紧邻的 `/vision/recognize` 同一条链路、同一套 Service Token 依赖、**同一个出口形状**
     （`{"component":"page_fill","target_type":…,"fields":[…]}`，逐字段八键），差别只有两点：
-    ① 多一次**文本推理**（米宝主模型，产出 `[米宝解读]` 来源的解读）；
+    ① 多一次**文本推理**（黄金策主模型，产出 `[米宝解读]` 来源的解读）；
     ② 可带一句商家的补充要求 `hint`（≤200 字）。
 
     🔴 **不落库**：本端点只回「填哪几格」，**提交永远是商家在页面上点按钮的动作**。

@@ -2,12 +2,12 @@
 
 ## 它是什么（以及**不是**什么）
 
-建品页表单内的「识别 + 米宝推理」按钮（**不经过米宝对话窗口**）走这条链：
+建品页表单内的「识别 + 黄金策推理」按钮（**不经过黄金策对话窗口**）走这条链：
 
 ```
 POST /api/internal/vision/interpret
   └─ recognize()            ← 既有识别内核，原样调用（**不是第二份识别实现**）
-     └─ 一次文本 LLM 调用    ← 米宝主模型，产出 interpretations
+     └─ 一次文本 LLM 调用    ← 黄金策主模型，产出 interpretations
         └─ build_page_fill(..., interpretations=...)   ← 既有纯函数（**不是第二份字段表**）
 ```
 
@@ -85,7 +85,7 @@ async def interpret_page_fill(
     result = await recognize(target_type, images, tenant_id=tenant_id)
     fields = result.get("fields") or []
     # ⚠️ 这里**保持**「识别失败 / 一格都没认出来 ⇒ 降级不推理」的原口径（issue #6367 判据 4）：
-    # 在**零命中**的空基底上让米宝开写，等于凭空生成「商品名 + 描述」（没有任何图上锚点）。
+    # 在**零命中**的空基底上让黄金策开写，等于凭空生成「商品名 + 描述」（没有任何图上锚点）。
     # 真跑里正常路径不是这个形态：色卡图至少能认出色号（`color`）⇒ 非零命中 ⇒ 照常推理，
     # `name` / `description` 由 `[米宝解读]` 给（issue #6386）。
     if result.get("degraded") or not any(f.get("value") for f in fields):
@@ -156,7 +156,7 @@ def build_interpret_prompt(
     ]
     # 🔴 例外（issue #6386）：**生成类**字段（`name` / `description`）本来就是文案，
     # 「只给 note 不给 value」等于什么都没交付（用户 2026-10-05 真跑复验时实测到：
-    # 米宝给了一整段「为什么这么推测」的 note，而 `name` 的值仍是空）。
+    # 黄金策给了一整段「为什么这么推测」的 note，而 `name` 的值仍是空）。
     # ⇒ 这两格**必须给 value**，不确定就用「约 / 推测 / 可咨询客服」这类措辞写清楚。
     # ⚠️ **按 target 有无生成类字段**决定要不要说这一段（issue #6530）：订单侧根本没有这两格
     #（`TARGET_FIELDS["order"]` 全为 `recognizable=True`）—— 对订单求它「必须给 name 的 value」
@@ -192,7 +192,7 @@ async def _interpret(
     hint: Optional[str],
     tenant_id: Optional[int],
 ) -> Dict[str, Any]:
-    """**恰好一次**文本 LLM 调用 ⇒ `interpretations`（复用米宝主模型，无新增依赖）。"""
+    """**恰好一次**文本 LLM 调用 ⇒ `interpretations`（复用黄金策主模型，无新增依赖）。"""
     messages = [HumanMessage(content=build_interpret_prompt(target_type, fields, hint))]
     llm = LLMFactory.create_skill_llm(force_no_think=True)
     response = await asyncio.wait_for(

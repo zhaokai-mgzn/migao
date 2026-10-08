@@ -7,7 +7,7 @@ Agent 可调用的工具（Tool）门面：基础设施 + 注册器 + 全部已�
 所有 Tool 通过 HTTP API 调用 admin-api，不直接操作数据库（见 docs/TOOL_API_SPEC.md）。
 
 知识库域：知识卡片检索（KnowledgeSearchTool）已启用——LLM WIKI 板块替代旧 RAG
-（issue #3051），双端接线（米宝 #3059 / 小布 #3077）；KnowledgeManageTool（写侧）
+（issue #3051），双端接线（黄金策 #3059 / 元元 #3077）；KnowledgeManageTool（写侧）
 不注册——知识管理在 admin-web 后台操作，不经 Agent（见 tools/registry.py）。
 """
 

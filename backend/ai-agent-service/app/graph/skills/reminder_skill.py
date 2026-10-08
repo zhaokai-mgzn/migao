@@ -1,12 +1,12 @@
-"""定时任务（用户「预约」）Skill 节点（B 端米宝，issue #6486 包 2）
+"""定时任务（用户「预约」）Skill 节点（B 端黄金策，issue #6486 包 2）
 
 ## 本域是什么
 
-商家把「到点要办的事」委托给米宝：**建一条待办 → 到点收到站内通知**。
+商家把「到点要办的事」委托给黄金策：**建一条待办 → 到点收到站内通知**。
 
 ## 🔴 本域是 A 档可逆写（不是只读域）
 
-与米宝其余域（#5247 起大多只读）不同，本域**有一把写工具**：`scheduled_task_manage`。
+与黄金策其余域（#5247 起大多只读）不同，本域**有一把写工具**：`scheduled_task_manage`。
 它的准入由用户 2026-10-07 裁定（留痕 = `docs/wiki/agent-write-boundary.md` §五 + issue #6486），
 白名单与绑定域由 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 机械钉住
 （`A_TIER_SKILLS` 里 `scheduled_task_manage → reminder`）。

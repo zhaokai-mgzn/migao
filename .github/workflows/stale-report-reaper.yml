@@ -13,7 +13,7 @@ on:
       - "Post-Deploy Eval (部署后全量回归)"
       - "Nightly Verification (p1 smoke + fixture e2e)"
       - "Drift Audit (真相源契约)"
-      - "Xiaobu Acceptance (小布 C 端验收)"
+      - "Xiaobu Acceptance (元元 C 端验收)"
     types: [completed]
   # ② main 上有新合并时也扫一遍（覆盖「报告还开着、而它报的那条腿早已绿」的存量）
   push:

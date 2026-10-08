@@ -1,12 +1,12 @@
 # case_ids: MC-075
-"""B 端米宝页面上下文（族 4）的**登记收敛元守卫**（issue #6215）—— `menu.ts` 的 route 集合
+"""B 端黄金策页面上下文（族 4）的**登记收敛元守卫**（issue #6215）—— `menu.ts` 的 route 集合
 ⇄ `PAGE_REGISTRY ∪ 豁免台账` **双向相等**，且登记项自证（真值源在册 / 路径存在 / 权限码真实）。
 
 ## 病（本单要治的形态）
 
 族 4 的登记表在 #5371 起有 **6** 条 route，而 `frontend/admin-web/src/config/menu.ts` 有 **22** 个菜单页
 ⇒ 用户在其余 **16** 个页面上问「这一页是干什么的 / 这个数怎么算的」时，`build_page_context` 走
-**默认拒绝**（这是**有意**的安全默认）⇒ 米宝只能回「我不确定你在哪一页」。
+**默认拒绝**（这是**有意**的安全默认）⇒ 黄金策只能回「我不确定你在哪一页」。
 病根不是「默认拒绝错了」，而是 **`route → 真值源` 的覆盖没有任何东西在管**：
 
 - 登记表少一条 = 用户得不到解释，而**没有任何判据会红**（漏登记的形态是**沉默**）；
@@ -279,7 +279,7 @@ def problems_coverage(
         if path in exc:
             continue
         out.append(
-            f"菜单页 `{path}` **既没登记也没豁免** —— 米宝在这一页拿不到任何页面上下文"
+            f"菜单页 `{path}` **既没登记也没豁免** —— 黄金策在这一页拿不到任何页面上下文"
             "（漏登记的形态是沉默：要么登记真值源，要么进 `tests/unit_ci_workflows/"
             "page_context_exemptions_ledger.json` 具名豁免）"
         )
@@ -344,7 +344,7 @@ def problems_truth_sources_are_registered(
         if ts not in sources:
             out.append(
                 f"`{route}` 引用了未登记的真值源 `{ts}` ⇒ 该条目**不生效**（fail-closed，"
-                "米宝仍拿不到这一页的口径）"
+                "黄金策仍拿不到这一页的口径）"
             )
             continue
         used.add(str(ts))

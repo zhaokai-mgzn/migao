@@ -60,8 +60,8 @@ public class ImageRecognitionClient {
     /**
      * 推理端点的读超时（issue #6367 包 P2）—— <b>比 recognize 宽</b>，理由与判据：
      *
-     * <p>上游 {@code /api/internal/vision/interpret} = **vision 一次 + 米宝主模型文本推理一次**
-     * （用户裁定「推理复用米宝主模型」，见 issue #6367 的收口），是同一条链上**两次串行**的
+     * <p>上游 {@code /api/internal/vision/interpret} = **vision 一次 + 黄金策主模型文本推理一次**
+     * （用户裁定「推理复用黄金策主模型」，见 issue #6367 的收口），是同一条链上**两次串行**的
      * 远端等待；而 {@code recognize} = 一次 vision。⇒ 若沿用 75s，长尾会在**上游还在正常干活**时
      * 被本侧掐断，对外表现为「图片识别服务不可用」——商家看到的是**假故障**，且会反复重拍。</p>
      *
@@ -180,7 +180,7 @@ public class ImageRecognitionClient {
     }
 
     /**
-     * 识别 + 米宝推理 → 同页填充计划（**不落库**；issue #6367 包 P2）。
+     * 识别 + 黄金策推理 → 同页填充计划（**不落库**；issue #6367 包 P2）。
      *
      * <p>与 {@link #recognize} <b>同族</b>：同一个 client、同一套 service token 与 {@code baseUrl}、
      * 同一套 fail-closed 判定口径；差别只有两处，都必须显式可见：① 上游路径

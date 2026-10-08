@@ -16,15 +16,15 @@ import {
 describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实，issue #6291 / #6326）', () => {
   it('renders page header', () => {
     render(<AboutPage />)
-    expect(screen.getByRole('heading', { level: 1, name: '关于米高' })).toBeInTheDocument()
-    expect(screen.getByText(/米高是杭州词元通达科技有限公司旗下的 AI 经营平台/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: '关于观星台' })).toBeInTheDocument()
+    expect(screen.getByText(/观星台是杭州词元通达科技有限公司旗下的 AI 经营平台/)).toBeInTheDocument()
   })
 
   it('renders company intro（布艺行业真实流程 + 双 AI 分工）', () => {
     render(<AboutPage />)
     expect(screen.getByText(/一款窗帘要按颜色 × 售卖方式 × 门幅组合出几十个规格/)).toBeInTheDocument()
-    expect(screen.getByText(/顾客侧由小布 7×24 小时接待咨询/)).toBeInTheDocument()
-    expect(screen.getByText(/经营侧由米宝以自然语言问答/)).toBeInTheDocument()
+    expect(screen.getByText(/顾客侧由元元 7×24 小时接待咨询/)).toBeInTheDocument()
+    expect(screen.getByText(/经营侧由黄金策以自然语言问答/)).toBeInTheDocument()
   })
 
   it('renders mission and vision', () => {
@@ -35,7 +35,7 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
 
   it('renders 产品原则（不编造 / 价格不由模型定 / 敏感事项不做决定 / 边界写明）', () => {
     render(<AboutPage />)
-    expect(screen.getByText('米高的产品原则')).toBeInTheDocument()
+    expect(screen.getByText('观星台的产品原则')).toBeInTheDocument()
     expect(screen.getByText('数据之外不作答')).toBeInTheDocument()
     expect(screen.getByText('定价权归属商品库')).toBeInTheDocument()
     expect(screen.getByText('敏感事项不由 AI 决定')).toBeInTheDocument()
@@ -98,7 +98,7 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
     expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
     expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
     expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
-    expect(findPersonifiedAi('小布与米宝')).toEqual([])
+    expect(findPersonifiedAi('元元与黄金策')).toEqual([])
 
     // 真实语料
     const quantifiers = findQuantifierRhetoric(text)

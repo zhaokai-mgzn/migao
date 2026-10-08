@@ -89,7 +89,7 @@ cases:
       # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：原首条
       # `- tool: product_manage` 已移除 —— 建品写工具已从 B 端全部 skill 解绑（工具类与
       # C 端绑定未动）⇒ 保留它 = 永不满足的悬空声明（静态判据还会把本用例判成
-      # 「只能跑小布却未标注 persona」）。断言面按 A 类模板改判为**存活的只读路径** order_query。
+      # 「只能跑元元却未标注 persona」）。断言面按 A 类模板改判为**存活的只读路径** order_query。
       # 第二句含「订单」触发词 → 允许切换出 pending 创建流程
       - tool: order_query
     # 效果层断言（issue #4517 的 burn-down 缴费；门禁 a2 条 / #3778「调用了 ≠ 成了」）：
@@ -136,8 +136,8 @@ cases:
       # ⚠️ 2026-09-24（issue #5247）：原「未创建」断言的**机器形态**早在 2026-09-14 就升级为
       # `forbidden_tools[product_manage(action=create)]`（跨轮全程禁用）—— 那条**原样保留**
       # （解绑后仍成立：永不调用；删它才是放宽）。本条补的是**行为面**的新机制。
-      - "如实说明米宝不做建品（创建商品能力已从米宝下线），并引导顾客到后台「商品」页面操作；不得口头声称已创建/已受理"
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建商品」（product_manage action=create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「查订单（order_query）+ 如实说明米宝不做建品、引导去后台商品页面」。"
+      - "如实说明黄金策不做建品（创建商品能力已从黄金策下线），并引导顾客到后台「商品」页面操作；不得口头声称已创建/已受理"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建商品」（product_manage action=create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「查订单（order_query）+ 如实说明黄金策不做建品、引导去后台商品页面」。"
     merge_log: "eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准）。2026-09-14 校准（#3544 收口批）：data_checks 里恒真的「product_manage(action=create) 未被调用」升级为 forbidden_tools（action 限定，跨轮全程禁用）。2026-09-21（issue #4946 的 burn-down 缴费 —— 本 PR 改了 `cases/*.yml` ⇒ 每 PR 至少净缩 1 条存量违规，metric=entries ⇒ 必须**整条销账**）：本用例命中的三条存量违规（CASE-TRUST-NO-EFFECT-ASSERTION / NO-SELF-CLEAN / NO-PRECONDITION-ASSERTION）逐条修掉 —— ① 补 `must_succeed[order_query]` 效果层断言（R2 的诉求是「真的查出来」，裸工具名只证明「调用了」）；② 补 `namespaces[product_name:测试]` + `pre_clean[product_remove:测试]`（并行同名建品用例会污染判据；跑坏留下的同名商品会让基线不为 0 ⇒ 先复位再评，重试前置与首跑等价）；③ 补 `precondition[product_count_for_keyword:测试, expect:0, max_growth:0]`（本用例的意义就是「没有创建」⇒ 基线 0 + 整轮不增长；`expect:0` 依 `precondition_lower_bound` 规则②把存在性下界降为 0）。user_inputs / expectations / forbidden_tools / data_checks / traces 原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage, order_query] 改判为 [order_query]（存活的只读路径）；must_succeed / required_args / repeat_until 里的 product_manage 同步移除（否则成为永不满足的悬空声明）—— 本用例的 must_succeed 原本只声明 order_query（保留）、required_args / repeat_until 无 product_manage 声明（无需改动）；`forbidden_tools[product_manage(action=create)]` 原样保留（「永不调用」在解绑后仍成立，删它才是放宽）；`data_checks` 增补行为面新机制（如实说明 + 引导后台）。"
     traces:
       tests:
@@ -261,7 +261,7 @@ cases:
         source: "星夜"
         expect: 0
         max_growth: 1
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建商品并确认建品（星夜）」（product_manage action=create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「查订单（order_query）+ 如实说明米宝不做建品、引导去后台商品页面」。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「创建商品并确认建品（星夜）」（product_manage action=create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「查订单（order_query）+ 如实说明黄金策不做建品、引导去后台商品页面」。"
     merge_log: "eval M009 独有；2026-09-18（skip 豁免收紧跟随）：补 namespaces[product_name:星夜] + pre_clean[product_remove 自有名] 声明自清理，并补 must_succeed[product_manage(action=create)]（效果层 —— 原 data_checks『创建的 name=星夜, price=299』**不计分**）+ precondition[product_count_for_keyword 星夜 expect=0]（前置自断言）；三条一起把 CASE-TRUST-NO-SELF-CLEAN / NO-EFFECT-ASSERTION / NO-PRECONDITION-ASSERTION 清零（整条销账，burn-down）；expectations / user_inputs / data_checks 原样未动；2026-09-18（issue #4200 的潜伏恒红修复）：`precondition` 补 `max_growth: 1` —— 本用例自己就要创建「星夜」⇒ 容差缺省 0 时正常行为下 `0 → 1 > 0` **恒判运行期漂移**、score 归零（同族实例 PR-008 / PR-016 已实测：逐条计分断言全 passed 而 `score=0.0`）⇒ 容忍自建的那一个；并行用例再造同名（`0 → 2`）仍判漂移。`expect` 与全部断言原样未动、无放宽。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [order_query, product_manage(action=create)] 改判为 [order_query]，`must_succeed` 里的 product_manage 同步移除并**改判到存活的只读路径 order_query**（不留空 —— 效果层断言保留、也避免悬空声明；required_args / repeat_until 本就没有 product_manage 声明）。"
     traces:
       tests:
@@ -369,7 +369,7 @@ cases:
     # `product_manage(action=update)`（改价效果层）—— 能力从 B 端下线后该声明**永不满足**
     # ⇒ 整条移除（不是放宽：本用例已退役，见 skip_reason；活着的机器断言 =
     # expectations[product_search, product_detail] + precondition + data_checks）。
-    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「改价（商品管理）」（product_manage action=update）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「搜商品 + 查商品详情（product_search / product_detail）+ 如实说明改价须在后台「商品」页面操作」。"
+    skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「改价（商品管理）」（product_manage action=update）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「搜商品 + 查商品详情（product_search / product_detail）+ 如实说明改价须在后台「商品」页面操作」。"
     merge_log: "eval M010 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实对象（依赖排序/加工项个数的指代在别的栈上会指向别的东西或不存在）。2026-09-19（#4371 商品↔加工项解耦）：删除「给这款商品添加加工项 打孔」一轮 + 其答卡轮 + `expectations[product_processing_item_manage]` + `data_checks[第9轮加工项按名称解析…]` —— 商品不再持有加工项，该工具退场；长上下文/跨域回切/改价回查意图与其余断言原样未动。 ｜ 2026-09-21（issue #4921 的 burn-down 缴费，随 #4913 的用例库同步）：补 `must_succeed[product_manage(action=update)]`（效果层 —— 裸工具名期望只证「调用过」，改价 `success=false` 照样判绿）+ `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（真前置 —— 按名定位的那件商品在且唯一；有同名副本时 agent 会正确地反问，红却表现为「agent 不干活」）+ `namespaces[product_name:遮光窗帘]`（**弱证据**：并行互斥；`product_attr` 无声明式复位类型 ⇒ 「重试前置不等价」这条残留**如实登记**在用例注释里，跟随 #4128）。三条一起把 `CASE-TRUST-NO-EFFECT-ASSERTION` / `CASE-TRUST-NO-PRECONDITION-ASSERTION` / `CASE-TRUST-NO-SELF-CLEAN` **整条销账**；`user_inputs` / `expectations` / `data_checks` 一字未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=update), product_detail] 改判为 [product_search, product_detail]，`must_succeed` 里的 product_manage 同步移除（否则成为永不满足的悬空声明；required_args / repeat_until 本就没有 product_manage 声明）。"
     traces:
       tests:
@@ -873,9 +873,9 @@ cases:
       # 前置不成立（意图白名单收窄 / 建议节点被摘掉）时，`interact` 期望 unmatched ⇒
       # 判红会伪装成「agent 不会建议」，归因错人。⇒ 写成机器计分型自断言（含 success=true）。
       # **断言面（user_inputs / expectations / forbidden_text）一字未动、无放宽。**
-      - "前置（precondition）：小布对**单轮负面情绪**会走「主动建议」确定性节点（真值 = `backend/ai-agent-service/app/graph/handoff_offer.py` 的 `judge_handoff`：意图 ∈ `_OFFER_ALLOWED_INTENTS`（general / after_sales / complaint）且命中 S1 负面情绪词表 ⇒ 下发 `interact` choice 建议卡，与转人工工具是否可达无关）（success=true）；前置不成立时 `interact` 期望 unmatched，判红会伪装成「agent 不会建议」"
+      - "前置（precondition）：元元对**单轮负面情绪**会走「主动建议」确定性节点（真值 = `backend/ai-agent-service/app/graph/handoff_offer.py` 的 `judge_handoff`：意图 ∈ `_OFFER_ALLOWED_INTENTS`（general / after_sales / complaint）且命中 S1 负面情绪词表 ⇒ 下发 `interact` choice 建议卡，与转人工工具是否可达无关）（success=true）；前置不成立时 `interact` 期望 unmatched，判红会伪装成「agent 不会建议」"
       - "不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转"
-      - "interact 卡片选项含『整理成售后工单』与『继续咨询小布』，且**不含**任何邀约人工转接的措辞（卡片文案判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）"
+      - "interact 卡片选项含『整理成售后工单』与『继续咨询元元』，且**不含**任何邀约人工转接的措辞（卡片文案判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）"
       - "用户点『整理成售后工单』后进入售后受理链路（确定性路由 after_sales, source=rule；判据见 tests/test_xiaobu_handoff_offer.py::TestOfferToDirectHandoffE2E）"
       - "整场不出现假承诺话术（机器断言见 forbidden_text）—— 系统已无人工转接通道"
     skip_reason: ""
@@ -904,7 +904,7 @@ cases:
       - ai-chat.handoff-offer
     user_inputs:
       - "你们太坑了，再也不买了"
-      - "继续咨询小布"
+      - "继续咨询元元"
       - "你们又没解决，气死我了"
     expectations:
       - tool: interact
@@ -919,9 +919,9 @@ cases:
       # 口径：`assertion_taxonomy.declares_precondition` 认「`data_checks` 里含前置关键词
       # **且**是机器计分型」，故本条带 `success=true`（= 计分标记，**不新增断言强度**）。
       # **断言面（user_inputs / expectations / forbidden_text）一字未动、无放宽。**
-      - "前置（precondition）：小布「主动建议转人工」的冷却**处于启用状态**且**每会话上限 = 1 次**（真值 = `backend/ai-agent-service/app/graph/handoff_judge.py` 的 `DEFAULT_HANDOFF_MAX_OFFERS = 1`，判据 = `_cooldown_blocked` 的 `offer_count >= DEFAULT_HANDOFF_MAX_OFFERS`；`handoff_offer.py` 在每次建议后把 `offer_count` +1）—— 本用例第 3 轮「冷却生效不再弹卡」正是按该上限校准的（success=true）；上限被改大或冷却判据被摘掉时，第 3 轮不会按预期收敛，判红会伪装成「agent 不弹建议卡」"
+      - "前置（precondition）：元元「主动建议转人工」的冷却**处于启用状态**且**每会话上限 = 1 次**（真值 = `backend/ai-agent-service/app/graph/handoff_judge.py` 的 `DEFAULT_HANDOFF_MAX_OFFERS = 1`，判据 = `_cooldown_blocked` 的 `offer_count >= DEFAULT_HANDOFF_MAX_OFFERS`；`handoff_offer.py` 在每次建议后把 `offer_count` +1）—— 本用例第 3 轮「冷却生效不再弹卡」正是按该上限校准的（success=true）；上限被改大或冷却判据被摘掉时，第 3 轮不会按预期收敛，判红会伪装成「agent 不弹建议卡」"
       - "首次不满 → 建议卡片（offer_count 记为 1）"
-      - "用户点『继续咨询小布』→ 消息正常路由（general），不创建工单"
+      - "用户点『继续咨询元元』→ 消息正常路由（general），不创建工单"
       - "再次不满 → 冷却生效不再弹建议卡（handoff.offer_count >= 1）"
     skip_reason: ""
     merge_log: "xiaobu-ai-handoff-guidance.md 冷却/防骚扰。2026-09-19（#4592 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）：补**机器计分型**前置自断言（冷却启用 + `DEFAULT_HANDOFF_MAX_OFFERS = 1`，真值逐行核过 handoff_judge.py / handoff_offer.py），把「上限漂移 ⇒ 第 3 轮不收敛、判红却伪装成 agent 不弹卡」这条形态挡在门口；user_inputs / expectations / forbidden_text 原样未动、无放宽。"
@@ -1137,14 +1137,14 @@ cases:
 
   - id: CH-019
     legacy_id: ""
-    title: "B 端米宝交互卡可用 - 建品/下单/售后/客户写操作可发 interact 卡片（issue #2777 G6）"
+    title: "B 端黄金策交互卡可用 - 建品/下单/售后/客户写操作可发 interact 卡片（issue #2777 G6）"
     domains:
       - chat
       - product
       - order
     tier: normal
     # persona 标 mibao（#3961）：本用例的触发语与断言全落在 B 端写操作链路上（建品/下单/
-    # 售后/客户），而 C 端小布没有 product_manage / after_sales_manage / customer_manage
+    # 售后/客户），而 C 端元元没有 product_manage / after_sales_manage / customer_manage
     # 等管理端工具 —— 显式标注后它不再进入 C 端可选集，杜绝「跑在错误 Agent 上还计分」
     # （静态侧同时消掉 CASE-TRUST-SINGLE-LEG-NO-PERSONA 的跨腿泄漏隐患：#3266 的
     #  `is_customer_facing_case` 语义过滤今天已把它挡在 C 端之外，但那是**语义**判据，
@@ -1418,7 +1418,7 @@ cases:
 
   - id: CH-024
     legacy_id: ""
-    title: "C 端长期记忆端到端 — 表达偏好→会话关闭落库→跨会话注入→个性化推荐（小布）"
+    title: "C 端长期记忆端到端 — 表达偏好→会话关闭落库→跨会话注入→个性化推荐（元元）"
     domains:
       - chat
       - customer
@@ -1654,7 +1654,7 @@ cases:
       - frontend
     truths_ref: []
     user_inputs:
-      - "会话 A 发消息后米宝回复中，切到会话 B 再切回会话 A"
+      - "会话 A 发消息后黄金策回复中，切到会话 B 再切回会话 A"
       - "切回后等待动画恢复；流结束后最终回复可见"
     expectations:
       - "切回原会话时在途 AI 占位（isStreaming）恢复，等待动画重新可见（前端 store 单测断言）"
@@ -1728,7 +1728,7 @@ cases:
     persona: xiaobu
     truths_ref: []
     user_inputs:
-      - "C 端小布（mini-app/bmini-app）interact 交互组件（confirm/choice/form）点选后无任何提交锁：ConfirmCard/ChoiceCard/FormCard 点几次就触发几次 onAction（可重复下单/重复确认），与 B 端 #3036 同源不固化"
+      - "C 端元元（mini-app/bmini-app）interact 交互组件（confirm/choice/form）点选后无任何提交锁：ConfirmCard/ChoiceCard/FormCard 点几次就触发几次 onAction（可重复下单/重复确认），与 B 端 #3036 同源不固化"
     expectations:
       - "点在响应中的应用：用户回复后 sendMessage 把最后一条未答 interactive 消息标记 interactiveAnswered（本地即时锁），后端已由 #3037 持久化"
     data_checks:
@@ -1771,7 +1771,7 @@ cases:
     persona: xiaobu
     truths_ref: []
     user_inputs:
-      - "C 端小布历史消息映射（mini-app/bmini-app services/chatService.ts getSessionMessages）丢弃 interactive 与 interactive_answered → 刷新后交互组件整体消失只剩文本（#3036 同源；后端 #3037 已返回 interactive 字段，仅前端映射未透传）"
+      - "C 端元元历史消息映射（mini-app/bmini-app services/chatService.ts getSessionMessages）丢弃 interactive 与 interactive_answered → 刷新后交互组件整体消失只剩文本（#3036 同源；后端 #3037 已返回 interactive 字段，仅前端映射未透传）"
     expectations:
       - "历史回放后 interactive 组件按三态渲染：未答 → 可交互；已答 → 只读变体"
     data_checks:
@@ -1858,7 +1858,7 @@ cases:
     # 【真前置是什么】R1「帮我查一下我的订单」与 R2「算了，先看看你们有什么窗帘」是**同一条
     #   在办语境的两半** —— R2 之所以是「顾客改主意」而不是「顾客要取消」，前提正是 R1 真的
     #   查到了**该顾客的订单**（集合为空时 R2 的「算了」没有对象，本用例判的就不是它要判的
-    #   那件事，而红的表现只是 `unmatched expectation`，看起来像「小布不会查单」，归因全错）。
+    #   那件事，而红的表现只是 `unmatched expectation`，看起来像「元元不会查单」，归因全错）。
     #   订单集合的不可变键 = 顾客手机号 `13800138000`（C 端种子 `xiaobu_eval_seed.sql` 的
     #   `debug_customer_1` /「张三」/ `EVAL-ORD-0001`+`0002`）；取数走
     #   `local_runner._probe_phone_order_count` → `GET /api/admin/orders?receiver=<手机号>`，
@@ -1889,7 +1889,7 @@ cases:
       - "无在办流程时，「算了」只是顾客改主意，不得回复『已取消』（假状态变更）"
       - "同一句里的新诉求（看看有什么窗帘）必须被正常处理，不得整句丢弃"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3367）：验收剧本 C-A2 沉淀（假取消 + 吞诉求） ｜ 2026-09-21（issue #4939 的 case-trust burn-down 缴费）：补 **`precondition[order_count_for_phone: 13800138000]`**（真前置 = 该顾客的订单集合非空，否则 R2 的「算了」没有对象、红的表现像「小布不会查单」；沿用既有已登记类型，不新增 type）+ **`must_succeed[product_search]`**（效果层：「调用过 ≠ 成了」，把「新诉求必须真的被接住并检索出来」钉住，同时满足规则 c「`forbidden_text` 不得单独承载判据」）。`user_inputs` / `expectations` / `forbidden_text` / `data_checks` / `traces` / `skip_reason` **一字未动、无放宽**；本条 `skip_reason: \"\"` ⇒ 两格**进运行期**。"
+    merge_log: "2026-09-13 新增（issue #3367）：验收剧本 C-A2 沉淀（假取消 + 吞诉求） ｜ 2026-09-21（issue #4939 的 case-trust burn-down 缴费）：补 **`precondition[order_count_for_phone: 13800138000]`**（真前置 = 该顾客的订单集合非空，否则 R2 的「算了」没有对象、红的表现像「元元不会查单」；沿用既有已登记类型，不新增 type）+ **`must_succeed[product_search]`**（效果层：「调用过 ≠ 成了」，把「新诉求必须真的被接住并检索出来」钉住，同时满足规则 c「`forbidden_text` 不得单独承载判据」）。`user_inputs` / `expectations` / `forbidden_text` / `data_checks` / `traces` / `skip_reason` **一字未动、无放宽**；本条 `skip_reason: \"\"` ⇒ 两格**进运行期**。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_graph_skills.py"
@@ -1899,7 +1899,7 @@ cases:
 
   - id: CH-034
     legacy_id: ""
-    title: "图片内容驱动业务动作 - 发图后小布看懂画面并据此检索（vision 正向能力）"
+    title: "图片内容驱动业务动作 - 发图后元元看懂画面并据此检索（vision 正向能力）"
     domains:
       - chat
       - product
@@ -1994,7 +1994,7 @@ cases:
     #   ① post_session（落库）：会话关闭后 user_memories 必须有 key=curtain_style /
     #      value 含「奶油风」（GET /api/chat/memories）—— 记忆真的存下来了；
     #   ② forbidden_text（注入失效的**行为指纹**）：R2 顾客没重述风格，若注入失效，
-    #      小布只能反问顾客偏好（「您喜欢什么风格」类话术）→ 命中即红；
+    #      元元只能反问顾客偏好（「您喜欢什么风格」类话术）→ 命中即红；
     #   ③ must_succeed + required_args（推荐真的可用）：R2 必须发出**有据**的检索
     #      （keyword 非空）且调用成功 —— 防「记忆注入了但检索全失败」这种半绿。
     #   ⚠️ 边界（诚实标注）：`want_text` 是全程断言，R1 回显即满足 → 不能单独证明 R2
@@ -2177,7 +2177,7 @@ cases:
 
   - id: CH-039
     legacy_id: ""
-    title: "小布答顾客查生产进度（订单做到哪道工序/还要多久）"
+    title: "元元答顾客查生产进度（订单做到哪道工序/还要多久）"
     domains:
       - chat
       - order
@@ -2191,7 +2191,7 @@ cases:
       - ai-chat.intent-tool-map
       - ai-chat.tool-classes
     # ── 覆盖说明（issue #3996，M4-I；2026-09-17 issue #4007 改为点名单号）──
-    # 顾客问「我的订单做到哪道工序了」→ 小布调 production_progress_query(order_no=…) 取进度%/
+    # 顾客问「我的订单做到哪道工序了」→ 元元调 production_progress_query(order_no=…) 取进度%/
     # 当前工序/待完工序/预计交期；数量与状态语义见冻结契约（M4-G-2 端点）。
     # ⚠️ 为何**点名 fixture 订单号**（EVAL-ORD-0002）：原输入「我的订单做到哪了」要求 agent
     #   先链式取号（customer_order_query → 从列表里挑一笔），同跑的下单用例会新建「待付款」单、
@@ -2213,7 +2213,7 @@ cases:
       - "夹具订单 EVAL-ORD-0002 无加工单 ⇒ 返回 0%/空工序但 success=true；如实转述「暂无加工进度」属合格行为，不算违规"
       - "工具失败/查不到时如实告知「当前查不到进度（该功能暂时不可用）」并给替代路径（稍后再试/换单号），禁止编造进度或交期"
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3996，M4-I）：生产进度问答 C 端覆盖（小布）。2026-09-17（issue #4007，run 35233821582 CH-039 reproducible）：原输入不含订单号 → agent 先 customer_order_query 取号、查到全为「已发货/已完成」的存量单后直接作答、**production_progress_query 全程未调用** → 改为**点名单号**（fixture EVAL-ORD-0002，先例 CH-006 点名单号）使 agent 无需链式取号即可直接调工具；并补 must_succeed 把「工具被成功调用」变成机器断言（同批产品侧把 progress 的订单解析对齐 resolveOrder 三形态）"
+    merge_log: "2026-09-17 新增（issue #3996，M4-I）：生产进度问答 C 端覆盖（元元）。2026-09-17（issue #4007，run 35233821582 CH-039 reproducible）：原输入不含订单号 → agent 先 customer_order_query 取号、查到全为「已发货/已完成」的存量单后直接作答、**production_progress_query 全程未调用** → 改为**点名单号**（fixture EVAL-ORD-0002，先例 CH-006 点名单号）使 agent 无需链式取号即可直接调工具；并补 must_succeed 把「工具被成功调用」变成机器断言（同批产品侧把 progress 的订单解析对齐 resolveOrder 三形态）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_production_progress_query.py"
@@ -2224,7 +2224,7 @@ cases:
 
   - id: CH-040
     legacy_id: ""
-    title: "米宝查订单生产进度（做到哪道工序/还要多久）"
+    title: "黄金策查订单生产进度（做到哪道工序/还要多久）"
     domains:
       - chat
       - order
@@ -2238,9 +2238,9 @@ cases:
       - ai-chat.intent-tool-map
       - ai-chat.tool-classes
     # ── 覆盖说明（issue #3996，M4-I；2026-09-17 issue #4007 改为点名单号）──
-    # B 端商家问「这单做到哪道工序」→ 米宝调 production_progress_query(order_no=…)。
-    # 本用例是 mibao 侧该工具的**唯一**覆盖证据（覆盖门禁对「米宝 skill 绑了但零用例」
-    # 判 uncovered 阻塞），也是「米宝真的能用生产进度」的行为面证据。
+    # B 端商家问「这单做到哪道工序」→ 黄金策调 production_progress_query(order_no=…)。
+    # 本用例是 mibao 侧该工具的**唯一**覆盖证据（覆盖门禁对「黄金策 skill 绑了但零用例」
+    # 判 uncovered 阻塞），也是「黄金策真的能用生产进度」的行为面证据。
     # ⚠️ 为何**点名 fixture 订单号**（EVAL-MB-ORD-0003）：原输入「最近那笔还在生产的订单」
     #   要求 agent 先 order_query 按状态筛再取号；实测（run 35233821582）筛出 0 笔
     #   「生产中」订单 → agent 直接答「没有可查的生产进度」、**工具全程未调用**。
@@ -2263,7 +2263,7 @@ cases:
       - "夹具订单 EVAL-MB-ORD-0003 无加工单 ⇒ 返回 0%/空工序但 success=true；如实转述「尚未开始生产/暂无工序」属合格行为"
       - "工具失败/查不到时如实告知，不得编造交期"
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3996，M4-I）：生产进度问答 B 端覆盖（米宝）。2026-09-17（issue #4007，run 35233821582 CH-040 reproducible）：原输入「最近那笔还在生产的订单」→ agent 用 order_query(status=producing) 筛出 0 笔即作答、**production_progress_query 全程未调用**；改为点名单号 EVAL-MB-ORD-0003（PG-015 已 skip ⇒ 无加工单竞态）+ 补 must_succeed；产品侧同批把 progress 的订单解析对齐 resolveOrder 三形态"
+    merge_log: "2026-09-17 新增（issue #3996，M4-I）：生产进度问答 B 端覆盖（黄金策）。2026-09-17（issue #4007，run 35233821582 CH-040 reproducible）：原输入「最近那笔还在生产的订单」→ agent 用 order_query(status=producing) 筛出 0 笔即作答、**production_progress_query 全程未调用**；改为点名单号 EVAL-MB-ORD-0003（PG-015 已 skip ⇒ 无加工单竞态）+ 补 must_succeed；产品侧同批把 progress 的订单解析对齐 resolveOrder 三形态"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_production_progress_query.py"
@@ -2274,7 +2274,7 @@ cases:
 
   - id: CH-041
     legacy_id: ""
-    title: "米宝查工人计件工资（某师傅某月计件合计与明细）"
+    title: "黄金策查工人计件工资（某师傅某月计件合计与明细）"
     domains:
       - chat
       - hr
@@ -2288,9 +2288,9 @@ cases:
       - ai-chat.intent-tool-map
       - ai-chat.tool-classes
     # ── 覆盖说明（issue #3996，M4-I）──
-    # 商家问「王师傅这个月计件多少」→ 米宝调 piecework_query(worker_name=…, period=…) 取
+    # 商家问「王师傅这个月计件多少」→ 黄金策调 piecework_query(worker_name=…, period=…) 取
     # 合计 + 逐工序明细。计件工资只对 B 端开放（工具 allowed_roles 排除 customer，
-    # C 端小布工具集不含本工具）—— 本用例是 mibao 侧该工具的唯一覆盖证据。
+    # C 端元元工具集不含本工具）—— 本用例是 mibao 侧该工具的唯一覆盖证据。
     user_inputs:
       - "王师傅这个月计件做了多少？顺便看下明细"
     expectations:
@@ -2300,7 +2300,7 @@ cases:
       - "工人姓名取自用户输入，用户未说月份时不编造月份（不传 period，按当月）"
       - "查不到该工人/该月无报工时如实告知，禁止编造计件金额"
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3996，M4-I）：计件工资问答 B 端覆盖（米宝）"
+    merge_log: "2026-09-17 新增（issue #3996，M4-I）：计件工资问答 B 端覆盖（黄金策）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_piecework_query.py"
@@ -2431,7 +2431,7 @@ cases:
 
   - id: CH-044
     legacy_id: ""
-    title: "B 端发图建品 - 米宝调 image_recognize 生成同页填充计划（图片 URL 逐字取自上下文，不落库）"
+    title: "B 端发图建品 - 黄金策调 image_recognize 生成同页填充计划（图片 URL 逐字取自上下文，不落库）"
     domains:
       - chat
       - product
@@ -2448,7 +2448,7 @@ cases:
       - ai-chat.route-actions
     # ── 覆盖缺口销账（issue #6090；原登记 = issue #5368 包 2，跟踪单 #4941）──────────
     # `.github/eval-coverage-baseline.yml` 的 `image_recognize` 是**当前唯一的阻断型条目**，
-    # 条目自述销账方式 = 「发图 → 米宝调 image_recognize → 同页填表」用例 ⇒ 本用例就是它
+    # 条目自述销账方式 = 「发图 → 黄金策调 image_recognize → 同页填表」用例 ⇒ 本用例就是它
     # （**同 PR 删条目**，分开做会被 `baseline_stale_blocking` 判红）。
     # 三条断言各管一件事、互补：① 调用发生 ② 调用**成功**（success=true，工具级）
     # ③ 参数契约（target_type + images 逐字取自上下文，不得编造 URL）。
@@ -2478,14 +2478,14 @@ cases:
       - "识别结果进**同页填充计划**（`page_fill` 计划），**不落库、不提交** —— 提交永远是商家在页面上点按钮；机械判据 = backend/ai-agent-service/tests/test_tools_image_recognize.py 的 TestNoWriteBoundary（静态扫描识别内核不 import 写入缝）"
       - "回复说明「哪几格已填、哪几格留空及原因」；取值不在店铺目录里 ⇒ 给候选 + 解释、**不填**（不猜）"
       - "⚠️ 本用例**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）：只登记用例，等 #5966 那次 B 端集中跑批时验证"
-    precondition: "本用例依赖的图片资产 https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png 可被抓取（本机可达是必要不充分条件；vision 供应商侧能否抓取不在本仓可观测范围）。前置不成立时失败表现为「图片分析暂时无法完成」（命中 forbidden_text 或 must_succeed 失败），与它真正要守的「米宝发出 image_recognize 调用」**同名不同因** —— 此时该用例的红**不可归因于 agent**。"
+    precondition: "本用例依赖的图片资产 https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png 可被抓取（本机可达是必要不充分条件；vision 供应商侧能否抓取不在本仓可观测范围）。前置不成立时失败表现为「图片分析暂时无法完成」（命中 forbidden_text 或 must_succeed 失败），与它真正要守的「黄金策发出 image_recognize 调用」**同名不同因** —— 此时该用例的红**不可归因于 agent**。"
     # 🔴 `skip_reason` **必须为空**（照 CH-034 / CH-042 的形态）：`scripts/case_coverage.py` 走
     # `select_cases_for_persona`（tests/agent_eval/eval_case_filter.py），它会**丢掉 skip_reason 非空**的用例
     # ⇒ 写了 skip_reason 的用例**不计入覆盖矩阵**，条目销不掉（实测：本用例首版带 skip_reason 时
     # `mibao_coverage --check` 仍报「image_recognize[uncovered] 0 条（正向 0）」）。
     # 「手动触发、不进 PR smoke」由 **tier: normal** 表达（runner/CI 按 tier 选档），不靠 skip_reason。
     skip_reason: ""
-    merge_log: "2026-10-03 新增（issue #6090）：销 `.github/eval-coverage-baseline.yml` 的 image_recognize 阻塞条目（登记于 2026-09-24 / issue #5368 包 2，跟踪单 #4941）。用例 = 「发图 → 米宝调 image_recognize → 同页填表」，断言 = 工具调用 + must_succeed + 参数契约（target_type/images）+ 不推诿禁令。**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）—— 真实读数由 #5966 那次 B 端集中跑批给出。"
+    merge_log: "2026-10-03 新增（issue #6090）：销 `.github/eval-coverage-baseline.yml` 的 image_recognize 阻塞条目（登记于 2026-09-24 / issue #5368 包 2，跟踪单 #4941）。用例 = 「发图 → 黄金策调 image_recognize → 同页填表」，断言 = 工具调用 + must_succeed + 参数契约（target_type/images）+ 不推诿禁令。**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）—— 真实读数由 #5966 那次 B 端集中跑批给出。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_image_recognize.py"
@@ -2496,7 +2496,7 @@ cases:
 
   - id: CH-045
     legacy_id: ""
-    title: "B 端米宝页面上下文（族 4）登记扩面（issue #6215）：新增页面走**登记表**注入 + 精确条目优先于通配 + **未登记页面仍默认拒绝**（豁免 ≠ 放行）+ 登记面只许扩"
+    title: "B 端黄金策页面上下文（族 4）登记扩面（issue #6215）：新增页面走**登记表**注入 + 精确条目优先于通配 + **未登记页面仍默认拒绝**（豁免 ≠ 放行）+ 登记面只许扩"
     domains:
       - chat
       - ai
@@ -2509,13 +2509,13 @@ cases:
     truths_ref:
       - ai-chat.context-memory
     user_inputs:
-      - "商家在**经营看板**（/dashboard）问「这个 AI 接待占比是怎么算的 / 哪些卡片为什么没显示」⇒ 米宝的回答必须基于**登记的真值源**（本页 = 经营看板指标卡登记表），并写明来源标注"
+      - "商家在**经营看板**（/dashboard）问「这个 AI 接待占比是怎么算的 / 哪些卡片为什么没显示」⇒ 黄金策的回答必须基于**登记的真值源**（本页 = 经营看板指标卡登记表），并写明来源标注"
     expectations:
       - tool: direct_reply
     # ⚠️ 真值暂缺（[backend-contract] 形态，与本文件既有 backend-contract 用例同口径）：
     # 本用例的机器判据 = `backend/ai-agent-service/tests/test_page_context.py`（注入面：登记 ⇒ 注入真值源与
     # 必写标注；未登记 ⇒ 常量降级提示且 route 一个字都不进上下文；按角色裁剪）。它是**纯函数 + 入口级**
-    # 判据（零 LLM），不进 agent-eval 冒烟 —— 「米宝是否真的照真值源解释」属行为面，按用户裁定
+    # 判据（零 LLM），不进 agent-eval 冒烟 —— 「黄金策是否真的照真值源解释」属行为面，按用户裁定
     # (#4262 / #4974) **手动集中跑一次**，本轮不自动派发真实 LLM 评测。
     data_checks:
       - "**登记 ⇒ 注入**：`build_page_context(\"/dashboard\", …, permissions=[\"dashboard:view\"])` 返回的上下文里 `truthSource` = 该页登记的真值源；注入文本含该真值源的 `label` / `path` 与**必写来源标注**。执行点 = backend/ai-agent-service/tests/test_page_context.py 的 `TestPageContextField` 与 `test_truth_source_reaches_context_with_citation`。"
@@ -2523,11 +2523,43 @@ cases:
       - "🔴 **未登记仍默认拒绝（豁免 ≠ 放行）**：进豁免台账的真实页面（如 `/knowledge` / `/customers/12345` / `/settings` / `/after-sales`）与根本不存在的路径 ⇒ 一律**不注入**，且注入文本 == 常量降级提示（route 一个字都不进）。执行点 = 同文件 `problems_default_deny` / `test_unregistered_route_renders_constant_notice`。"
       - "**登记面只许扩 + 登记自证**：条数不写死（现取 10），只与冻结地板比；每条登记的真值源在册且 `path` 真实存在、权限码真实存在、route 对应真实页面（通配条目跳过目录核）。执行点 = 同文件 `test_registry_does_not_shrink_below_expanded_floor` / `test_registry_routes_match_real_pages` / `problems_truth_source_registered` / `problems_permission_codes`。"
       - "**覆盖面（漏登记 / 悬挂 / 真值源与权限码 / 只许缩短）**由元守卫判，**不在本用例重复**：tests/unit_ci_workflows/test_page_context_registry_coverage.py（用例 MC-075）。"
-    skip_reason: "[backend-contract] 注入面判据是**纯函数 + 入口级**（登记表 + 会话权限入参；零 LLM、零网络）由 backend/ai-agent-service/tests/test_page_context.py 验证；「米宝是否真的照真值源解释」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测"
+    skip_reason: "[backend-contract] 注入面判据是**纯函数 + 入口级**（登记表 + 会话权限入参；零 LLM、零网络）由 backend/ai-agent-service/tests/test_page_context.py 验证；「黄金策是否真的照真值源解释」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测"
     merge_log: "2026-10-03 新增（issue #6215）：族 4 登记面 6 → 10 条 route（真值源 3 → 6 条），未确证的 13 个菜单页进豁免台账（只许缩短）。取号 = `scripts/next_case_id.py CH` 给的是历史空档 **CH-029**，但该号**已在 `.github/skip-exemption-baseline.json` 里且已被 #5951 整条退役**（`.github/cases/chat.yml` 有逐字注记）⇒ **不采用**，改为现取最大号 + 1 = **CH-045**（与 MC-070 不采用历史空档 MC-049 的先例同口径）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_page_context.py"
       ci:
         - pr-check.yml
+      verifies: []
+
+  - id: CH-046
+    legacy_id: ""
+    title: "渠道欢迎语解析（元元）：四渠道默认文案 + 租户 botName 优先 + {bot_name} 占位符"
+    domains:
+      - chat
+      - settings
+    tier: normal
+    tags:
+      - chat
+      - channel
+      - greeting
+      - tenant-config
+    truths_ref: []
+    user_inputs:
+      - "同一套 C 端客服在微信小程序 / 微信 H5 / 抖音小程序 / Web 四个渠道的欢迎语（含租户自定义 botName 与 greetingTemplate）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·四渠道默认配置齐备：`ALL_CHANNELS` 每一条都有非空 `greeting`。执行点 = backend/ai-agent-service/tests/test_channel_greeting.py 的 `TestChannelGreetingDefaults::test_four_channels_have_default_config`"
+      - "判据 2·渠道文案确实不同：微信与抖音的默认 welcome 不相等（同一条文案通吃四渠道即红）。执行点 = 同 class 的 `test_douyin_greeting_differs_from_wechat`"
+      - "判据 3·租户配置优先 + 占位符替换：`resolve_greeting(channel, tenant_config=…, bot_name=…)` 的 `{bot_name}` 被真实客服名替换；系统默认名 = `DEFAULT_BOT_NAME`（issue #6525 改名后 = 「元元」）。执行点 = `TestChannelGreetingResolution`"
+      - "⚠️ 真值缺口（照实登记）：四渠道欢迎语没有对口的 `business_truths` id（只在代码与测试里钉值）⇒ `truths_ref: []`，按既有口径只告警不阻塞（同 knowledge.yml 的 KN-001~003）"
+    skip_reason: "[backend-contract] 纯配置解析（dict → 文案），**零 LLM**：判定在 `app.agents.channel_config` 的纯函数层（由 ai-agent-service pytest 执行），不进 agent-eval 冒烟"
+    precondition: "前置 = `app.agents.channel_config` 可导入且四渠道常量齐备；缺渠道 / 多渠道即直接红（不会表现成「agent 不会打招呼」）"
+    merge_log: "2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新，`DEFAULT_BOT_NAME` 随改）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的渠道欢迎语断言，**未新增 / 未放宽**（先例 = AG-007 / issue #5951）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_channel_greeting.py"
+      ci:
+        - ai-agent-tests.yml
       verifies: []

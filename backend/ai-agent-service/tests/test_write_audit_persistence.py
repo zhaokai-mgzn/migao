@@ -250,7 +250,7 @@ class TestAuditPersistenceFailureIsObservable:
 
 
 class TestProductionWiring:
-    """生产接线：米宝/小布真实执行入口 `_execute_tool_safe`（base_skill）必须落库。"""
+    """生产接线：黄金策/元元真实执行入口 `_execute_tool_safe`（base_skill）必须落库。"""
 
     @staticmethod
     def _clear_cache():

@@ -1,5 +1,5 @@
 # case_ids: CH-024, MC-014
-"""用户长期记忆注入测试（issue #2815，C 端小布专属）
+"""用户长期记忆注入测试（issue #2815，C 端元元专属）
 
 覆盖 base_skill 的记忆注入接线：
 - 仅 xiaobu（C 端）注入 format_for_prompt 输出
@@ -28,7 +28,7 @@ class TestInjectUserMemories:
     @pytest.mark.asyncio
     async def test_xiaobu_injects_memories(self):
         """xiaobu + 有记忆 → 消毒后的记忆块前置注入 system prompt"""
-        base_prompt = "你是小布，米高窗帘的智能客服。"
+        base_prompt = "你是元元，观星台窗帘的智能客服。"
         with patch(
             "app.graph.skills.base_skill.UserMemoryManager"
         ) as mock_cls:
@@ -50,7 +50,7 @@ class TestInjectUserMemories:
     @pytest.mark.asyncio
     async def test_mibao_does_not_inject(self):
         """mibao（B 端）不注入用户记忆（agent_type 分流）"""
-        base_prompt = "你是米宝，商家后台助手。"
+        base_prompt = "你是黄金策，商家后台助手。"
         with patch(
             "app.graph.skills.base_skill.UserMemoryManager"
         ) as mock_cls:
@@ -68,7 +68,7 @@ class TestInjectUserMemories:
     @pytest.mark.asyncio
     async def test_no_memories_no_inject(self):
         """xiaobu 但无记忆 → 原样返回"""
-        base_prompt = "你是小布。"
+        base_prompt = "你是元元。"
         with patch(
             "app.graph.skills.base_skill.UserMemoryManager"
         ) as mock_cls:
@@ -82,7 +82,7 @@ class TestInjectUserMemories:
     @pytest.mark.asyncio
     async def test_exception_does_not_break(self):
         """DB/提取异常 → 不注入且不抛（fire-and-forget 语义）"""
-        base_prompt = "你是小布。"
+        base_prompt = "你是元元。"
         with patch(
             "app.graph.skills.base_skill.UserMemoryManager"
         ) as mock_cls:

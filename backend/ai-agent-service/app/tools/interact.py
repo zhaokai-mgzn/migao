@@ -173,7 +173,7 @@ class InteractTool(BaseTool):
     # 所有角色可用（双端）+ 保留角色层
     allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
     # 无权限码：纯本地渲染工具（不调 admin-api）且**双端都要用** ——
-    # C 端 JWT 没有 permissions claim（加码会让小布全量失效）。
+    # C 端 JWT 没有 permissions claim（加码会让元元全量失效）。
     required_permissions = []
     read_only = True   # 只读渲染（BaseTool 默认值，显式声明以便权限面自检）
 

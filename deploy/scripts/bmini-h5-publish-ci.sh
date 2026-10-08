@@ -218,7 +218,7 @@ PY
 
 say "# B 端 h5（bmini）静态落位（issue #5668）"
 say ""
-say "- 目标：\`$EXPECTED_TARGET\`（静态根 = nginx 的 \`root\`，**同时承载 C 端小布 ⇒ 只收敛 $SUBDIR/ 子树**）"
+say "- 目标：\`$EXPECTED_TARGET\`（静态根 = nginx 的 \`root\`，**同时承载 C 端元元 ⇒ 只收敛 $SUBDIR/ 子树**）"
 say "- 产物：\`frontend/bmini-app/dist/\`（CI 按 \`TARO_APP_H5_PUBLIC_PATH=/$SUBDIR/\` 构建）"
 say "- 传输：ACR 镜像 \`$IMAGE\`（实例 \`docker cp\` 取出 /dist ⇒ 线上字节 == CI 构建字节）"
 say "- 本地 \`dist/index.html\` 哈希：\`$LOCAL_SHA\`"

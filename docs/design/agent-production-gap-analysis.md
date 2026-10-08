@@ -1,6 +1,6 @@
 # Agent 生产级差距分析（2026-09-09）
 
-> 目标：把「米宝/小布达到生产级」从主观判断变成可度量、可迭代的工程闭环。
+> 目标：把「黄金策/元元达到生产级」从主观判断变成可度量、可迭代的工程闭环。
 > 数据来源：生产评测（local_runner normal 档 × 最新 main）、人工复盘（sess_7f27/sess_50ff，
 > regression-mibao/sess-20260908-order-aftersales-review.md）、验收协议（docs/testing/acceptance-protocol.md）。
 > 本文件是路线图：每轮落地一项，用评测基线验证进步。
@@ -1122,7 +1122,7 @@ PR-005/007/011/012）：LLM 长序列波动（单跑通过、全量偶发）+ PP
 
 **误判**：aftersales skill 缺 human_handoff（complaint 意图路由但工具缺失）→
 判定为「投诉无法转人工」缺陷 → #3260 补工具。
-**纠正**（用户）：human_handoff 是 **C 端小布独有**（转人工），B 端米宝
+**纠正**（用户）：human_handoff 是 **C 端元元独有**（转人工），B 端黄金策
 **正确架构**就是没有——探针印证（agent 自述「转人工是客户侧功能」）。
 **回滚**：#3261。
 

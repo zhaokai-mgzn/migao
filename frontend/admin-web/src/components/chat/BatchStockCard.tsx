@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * 批次账 / 省料度量卡（米宝 B 端会话内）— issue #5188
+ * 批次账 / 省料度量卡（黄金策 B 端会话内）— issue #5188
  *
  * ## 为什么按 `action` 分支
  *
@@ -23,7 +23,7 @@
  *
  * 契约不变式「后端能发到这一端的卡型 ⊆ 这一端能渲染的卡型」
  * （`backend/ai-agent-service/tests/test_card_type_cross_end_contract.py`）。
- * 该工具只绑米宝的 Skill（`product:list` 门禁 ⇒ C 端恒不可达）⇒ 按 persona 推导，
+ * 该工具只绑黄金策的 Skill（`product:list` 门禁 ⇒ C 端恒不可达）⇒ 按 persona 推导，
  * 需要渲染本卡的是 **B 端桌面（本文件）+ B 端移动（bmini-app）** 两端；
  * C 端 `mini-app` **有意不加**分支（加了就是永不命中的死 UI，反向契约判据专门拦这种）。
  */

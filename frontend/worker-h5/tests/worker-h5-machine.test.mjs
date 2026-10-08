@@ -102,7 +102,7 @@ function screen() {
         position_kind: '布帘',
         position_name: '布帘',
         scanned: true,
-        brand: '米高',
+        brand: '观星台',
         product_name: '全遮光布窗帘',
         width: 3.5,
         height: 2.7,
@@ -224,7 +224,7 @@ test('① 扫一次水洗唛（全局 keydown，不点任何输入框）⇒ 屏�
 
   const html = doc.root.innerHTML
   assert.match(html, /订单详情/, '扫完必须直接给详情面（用户裁定：扫 ⇒ 直接展示订单详情）')
-  assert.match(html, /米高/, '品牌')
+  assert.match(html, /观星台/, '品牌')
   assert.match(html, /张女士/, '收货人')
   assert.match(html, /全遮光布窗帘/, '款式')
   assert.match(html, /套数<\/dt><dd>3套/, '套数（整数，不显示 3.000 套）')

@@ -153,12 +153,12 @@ class WorkerCuttingHeightNullProductIdTest {
         stubSupportRows(null);
         when(productAttributeMapper.selectList(any())).thenReturn(List.of(
                 ProductAttribute.builder().tenantId(TENANT).productId("p-cloth")
-                        .attrKey("brand").attrValue("米高").build()));
+                        .attrKey("brand").attrValue("观星台").build()));
         when(cuttingHeightConfigMapper.selectActiveByTenant(TENANT)).thenReturn(config());
 
         Map<String, Object> out = service.read(TOKEN, TENANT);
 
-        assertThat(positionsOf(out).get(0)).containsEntry("brand", "米高");
+        assertThat(positionsOf(out).get(0)).containsEntry("brand", "观星台");
         assertThat(positionsOf(out).get(1)).containsEntry("brand", null);
     }
 

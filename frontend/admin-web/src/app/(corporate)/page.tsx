@@ -32,9 +32,9 @@ import {
 } from '@/components/corporate/capability-map'
 
 export const metadata: Metadata = {
-  title: '米高 — 布艺行业 AI 经营平台：顾客服务与生产管理',
+  title: '观星台 — 布艺行业 AI 经营平台：顾客服务与生产管理',
   description:
-    '米高是面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧由小布提供 7×24 智能客服，覆盖算料报价、下单、物流查询与售后受理；经营侧由米宝覆盖商品、订单、生产、库存与财务。入驻申请 AI 自动甄别，通过后秒级开通；人机协同机制参考 GB/T 47746-2026 设计。',
+    '观星台是面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧由元元提供 7×24 智能客服，覆盖算料报价、下单、物流查询与售后受理；经营侧由黄金策覆盖商品、订单、生产、库存与财务。入驻申请 AI 自动甄别，通过后秒级开通；人机协同机制参考 GB/T 47746-2026 设计。',
 }
 
 /** Hero 事实标签：每一条都能在代码或文档里找到出处，不写形容词 */
@@ -48,7 +48,7 @@ const heroFacts = [
 const agents = [
   {
     icon: Bot,
-    name: '米宝',
+    name: '黄金策',
     role: AI_ROLES.mibao,
     brief: '面向企业生产与经营：以自然语言问答交付商品、订单、生产、库存与财务的日常经营信息。',
     highlights: [
@@ -64,7 +64,7 @@ const agents = [
   },
   {
     icon: MessageSquare,
-    name: '小布',
+    name: '元元',
     role: AI_ROLES.xiaobu,
     brief: '面向终端顾客：7×24 小时在线接待，覆盖规格咨询、下单、物流查询与售后受理。',
     highlights: [
@@ -186,13 +186,13 @@ const steps = [
     icon: Rocket,
     step: '03',
     title: '即刻开通',
-    description: '开通后即获得管理后台，小布与米宝同步上线。',
+    description: '开通后即获得管理后台，元元与黄金策同步上线。',
   },
 ]
 
 const handoffSteps: Array<[string, string]> = [
   ['客户咨询', '顾客通过微信小程序或网页发起咨询'],
-  ['小布 AI 应答', '商品、订单、物流、售后实时应答'],
+  ['元元 AI 应答', '商品、订单、物流、售后实时应答'],
   ['自动转人工', '识别复杂诉求，或顾客主动要求转人工'],
   ['人工接续', '自动创建会话与工单，上下文同步，无需重复描述'],
   ['留言受理', '非营业时间留言，人工上线后接续处理'],
@@ -252,9 +252,9 @@ export default function HomePage() {
               </h1>
 
               <p className="mt-6 max-w-2xl text-base leading-relaxed text-neutral-300 sm:text-lg">
-                顾客侧由小布承接：咨询应答、算料报价、下单、物流查询与售后受理；
-                经营侧由米宝承接：商品、订单、生产、库存与财务，以自然语言问答交付。
-                小布与米宝读取的是真实经营数据，回答与后台记录一致。
+                顾客侧由元元承接：咨询应答、算料报价、下单、物流查询与售后受理；
+                经营侧由黄金策承接：商品、订单、生产、库存与财务，以自然语言问答交付。
+                元元与黄金策读取的是真实经营数据，回答与后台记录一致。
               </p>
 
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
@@ -285,7 +285,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* 右侧：小布与米宝的分工 */}
+            {/* 右侧：元元与黄金策的分工 */}
             <div className="space-y-4 lg:col-span-5">
               {agents.map((agent) => (
                 <div
@@ -305,20 +305,20 @@ export default function HomePage() {
                 </div>
               ))}
               <p className="px-1 text-xs leading-relaxed text-neutral-500">
-                米宝入口：管理后台右下角悬浮助手，也支持商家小程序「问米宝」；小布入口：顾客微信小程序。
+                黄金策入口：管理后台右下角悬浮助手，也支持商家小程序「问黄金策」；元元入口：顾客微信小程序。
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── 小布与米宝的完整分工 ─────────────────────────────── */}
+      {/* ── 元元与黄金策的完整分工 ─────────────────────────────── */}
       <section className="bg-neutral-50 py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="双 AI 分工"
             title="顾客侧服务，经营侧管理"
-            lead="小布与米宝均基于大语言模型理解业务意图，7×24 小时在线，读取真实经营数据；能力边界在页面中明确标注，超出范围的请求由 AI 直接说明。"
+            lead="元元与黄金策均基于大语言模型理解业务意图，7×24 小时在线，读取真实经营数据；能力边界在页面中明确标注，超出范围的请求由 AI 直接说明。"
           />
           <div className="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-6 md:grid-cols-2">
             {agents.map((agent) => (
@@ -450,7 +450,7 @@ export default function HomePage() {
           <SectionHeading
             kicker="人机协同"
             title="AI 优先应答，人工按规则接续"
-            lead="日常咨询由小布直接处理；复杂诉求按规则转接人工，会话记录与上下文同步至坐席，顾客无需重复描述。（协同机制参考推荐性国标 GB/T 47746-2026 设计）"
+            lead="日常咨询由元元直接处理；复杂诉求按规则转接人工，会话记录与上下文同步至坐席，顾客无需重复描述。（协同机制参考推荐性国标 GB/T 47746-2026 设计）"
           />
 
           <div className="mt-14 grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -506,7 +506,7 @@ export default function HomePage() {
               }
             />
             <p className="mx-auto mt-8 max-w-3xl text-center text-xs leading-relaxed text-neutral-400">
-              「遵循 / 对标 GB/T 47746-2026」指小布智能客服的人机协同机制功能设计参考该推荐性国家标准；该标准为推荐性标准、无认证或备案机制，本页面不构成任何认证、检测或备案结论。
+              「遵循 / 对标 GB/T 47746-2026」指元元智能客服的人机协同机制功能设计参考该推荐性国家标准；该标准为推荐性标准、无认证或备案机制，本页面不构成任何认证、检测或备案结论。
             </p>
           </div>
         </div>
@@ -602,10 +602,10 @@ export default function HomePage() {
         </div>
         <div className="relative mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
           <h2 className="text-2xl font-bold tracking-tight sm:text-4xl">
-            数分钟内完成开通，小布与米宝同步上线
+            数分钟内完成开通，元元与黄金策同步上线
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-neutral-300">
-            入驻申请经 AI 自动甄别后秒级返回结果；开通后即可使用管理后台，小布与米宝随即可用。
+            入驻申请经 AI 自动甄别后秒级返回结果；开通后即可使用管理后台，元元与黄金策随即可用。
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link

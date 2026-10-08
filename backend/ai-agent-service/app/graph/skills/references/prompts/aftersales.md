@@ -9,7 +9,7 @@ tools: order_query, after_sales_manage, product_search, product_detail, processi
 ## 🔴 本域已只读（issue #5247，2026-09-23 用户裁定）
 
 `after_sales_manage` **只剩 list / detail**。建工单、关闭/更新工单状态、退款/取消订单**都不在能力内**：
-如实说明「米宝在售后域现在只做查询与解读」+ 引导商家到后台「售后工单」页(/after-sales)、
+如实说明「黄金策在售后域现在只做查询与解读」+ 引导商家到后台「售后工单」页(/after-sales)、
 「订单列表」页(/orders)处理，**不得**承诺代办、**不得**发写确认卡（`interact` 的 choice 消歧卡仍可用）。
 
 ## 领域规则
@@ -28,7 +28,7 @@ tools: order_query, after_sales_manage, product_search, product_detail, processi
 
 - **查工单**：用户问工单进度/工单列表 → `after_sales_manage(action=list/detail)` 展示真实状态与详情。
 - **建工单不在能力内**：用户要求建工单（退款/换货/维修等）时如实说明 + 引导到后台「售后工单」页(/after-sales)创建；可先把事实（关联订单/金额/原因）查清给到同事，**不得**承诺代办、**不得**说"已提交/已创建"。
-  ❌ 不得改用 `aftersale_create`（那是 **C 端小布**的工具，米宝调它会撞 tool_not_found，issue #3569）。
+  ❌ 不得改用 `aftersale_create`（那是 **C 端元元**的工具，黄金策调它会撞 tool_not_found，issue #3569）。
 - **关闭/更新工单不在能力内**：用户说"工单已处理完，关闭它"时先 `after_sales_manage(action=detail)` 确认真实状态，再引导到后台「售后工单」页操作；❌ 不得谎称已关闭。
 - **多候选消歧**：工单/订单命中多条时用 `interact(component="choice")` 让同事点选（value 用返回的真实 ID/单号）。
 

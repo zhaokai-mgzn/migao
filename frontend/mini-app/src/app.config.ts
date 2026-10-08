@@ -7,7 +7,7 @@ export default defineAppConfig({
   window: {
     backgroundTextStyle: 'light',
     navigationBarBackgroundColor: '#0A2540',
-    navigationBarTitleText: '小布',
+    navigationBarTitleText: '元元',
     navigationBarTextStyle: 'white',
     backgroundColor: '#F5F7FA',
   },

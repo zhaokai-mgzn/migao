@@ -7,7 +7,7 @@
 - P3：relock 写入的 pending_skill 不得被 execute_skill 轮末跨轮持久化覆盖回原 skill
   （否则下一轮短消息快捷路由仍走无工具的 skill，故障复发）。
 
-实证（sess_202d55d49a254a10，2026-09-17）：B 端米宝在 product skill 内完成
+实证（sess_202d55d49a254a10，2026-09-17）：B 端黄金策在 product skill 内完成
 validate_input(order_create) + 确认卡，点卡后答卡轮留在 product → LLM 调 order_create
 → `[product] Tool not found: order_create` → 最终回复「已转到订单流程为您落单…请稍候，
 我这就提交」→ orders 表无新订单；且 session_states.pending_skill 在 relock 后被轮末

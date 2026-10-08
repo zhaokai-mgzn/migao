@@ -3,7 +3,7 @@ AI 智能客服系统 - 通知管理 Tool（**只读**）
 
 查询站内通知列表与未读数。
 
-🔴 **B 端米宝只读化**（issue #5247 用户裁定 2026-09-23；settings 域整域收编 = issue #5302）：
+🔴 **B 端黄金策只读化**（issue #5247 用户裁定 2026-09-23；settings 域整域收编 = issue #5302）：
 `mark_read` / `read_all` / `delete` / `create` 四个写 action **已从本工具删除**，
 对应写方法与**写参数**（`notification_id` / `recipient_id` / `title` / `content`）一并删除，
 连只服务 `create` 的收件人解析机具（`_resolve_tenant_recipients` /

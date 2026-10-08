@@ -56,7 +56,7 @@ from app.llm.retry_policy import _is_retryable
 # 历史坑（2026-09-11 实测）：此前所有 skill 共用**一个全局**熔断器名
 # `LLM_BREAKER = "llm_minimax"`（遗留名，与实际模型无关）→ 任一 skill 的 LLM
 # 连续 3 次超时即把该全局熔断器打成 OPEN → **全部** skill 的 LLM 调用被拒 →
-# 用户侧（含 C 端小布）查订单/下单/问答统一返回兜底文案「抱歉，AI 服务暂时不可用」。
+# 用户侧（含 C 端元元）查订单/下单/问答统一返回兜底文案「抱歉，AI 服务暂时不可用」。
 #
 #     [circuit-breaker:llm_minimax] OPEN → HALF_OPEN | recovery_timeout(30.0s)
 #     [circuit-breaker:llm_minimax] HALF_OPEN → OPEN | probe failed: TimeoutError
@@ -345,7 +345,7 @@ def _extract_usage(response: AIMessage) -> Optional[tuple[int, int]]:
 # （「第一笔订单」「数量 3 米」「确认下单」）——不锁就会被重新意图分类跳出本 Skill，
 # 上下文断裂、流程每轮从头重来。
 #
-# ⚠️ 必须同时列出 C 端（小布）Skill 名：小布的 Skill 叫 `customer_*`，与 B 端名
+# ⚠️ 必须同时列出 C 端（元元）Skill 名：元元的 Skill 叫 `customer_*`，与 B 端名
 # （product/order/aftersales/...）**名字对不上**。只写 B 端名时 C 端写流程**从不锁**
 # （CI 实证 run 34613307565 / CH-012 路由 dump）：
 #     R1 intent=after_sales → aftersales   ← 正确进入
@@ -361,7 +361,7 @@ def _extract_usage(response: AIMessage) -> Optional[tuple[int, int]]:
 CREATION_SKILL_NAMES = frozenset({
     # B 端
     "product", "order", "aftersales", "staff", "customer",
-    # C 端（小布）写流程
+    # C 端（元元）写流程
     "customer_order", "customer_aftersales",
 })
 
@@ -1090,7 +1090,7 @@ def _user_already_answered_processing(messages, source_tool: str = "processing_i
     """顾客**是否已经就加工项作答**（文本形态：说了加工项名 / 明确不要）。
 
     实证（C-A1 重放 9，run 34788143133 的 transcript）：
-      R2 小布**在文本里**问「需要一起加工吗？」→ R3 顾客答「打孔」→
+      R2 元元**在文本里**问「需要一起加工吗？」→ R3 顾客答「打孔」→
       R5 代码兜底仍把 confirm 卡改写成加工项 choice 卡 → **同一件事问第二遍**，
       顾客不得不再答一次才轮到「确认下单」（UA 判定因此记"有条件通过"）。
     账上为什么没痕迹：`PROC_ITEMS_ASKED_KEY` 只在**发出加工项卡**时记账 ——
@@ -1737,16 +1737,16 @@ def card_fingerprint(args: dict) -> str:
 # 为什么不再用"主体 + 否定词 + 动作词"的正则窗口与**精确子串词表**：
 # 它们把**字面间隔**写死了（主体后 `{0,8}`、否定词到「权限」之间 `{0,8}`、词表要求逐字相等），
 # 于是"措辞一变即漏"就是必然 —— 本轮实测的漏配（旧实现对这些句子全部返回空）：
-#   「非常抱歉，小布这边没有办法帮您直接下单哦」  ← 「这边」一插入就超出 8 字窗口
+#   「非常抱歉，元元这边没有办法帮您直接下单哦」  ← 「这边」一插入就超出 8 字窗口
 #   「没有权限帮您下单」                        ← 句首没有主体标记，旧正则要求主体在前
-#   「抱歉，下单功能暂时不可用」「这边帮不了您下单呢」「小布暂时不支持下单哦」
+#   「抱歉，下单功能暂时不可用」「这边帮不了您下单呢」「元元暂时不支持下单哦」
 # 现在改为**语义归一 + 结构化判据**：按小句切分后判三条（**不设距离窗口**，插词/语序无关）：
 #   ① 本小句有**下单动作词** —— 判据锚在"下单"这一具体能力上，不是泛化的"做不到"；
 #   ② 本小句有**自我能力否定** —— 否定动词 / 权限受限 / 把本该自己做的事推给别人的"协助"回避式；
 #   ③ 该否定**不是**归因给顾客/商品等**非自我主体** —— 越权拒绝与客观说明不得被误判（DF-020/021 边界）。
 _ORDER_ACTION_WORDS = ("提交订单", "下单", "创建订单", "建单", "代为提交", "代为下单",
                        "帮您提交", "帮您下单", "代下单",
-                       # B 端（米宝）同义动作词（#3571 族第 6 次复发，OR-014 run 34856561459）：
+                       # B 端（黄金策）同义动作词（#3571 族第 6 次复发，OR-014 run 34856561459）：
                        # 店员口径把"提交订单"说成「落单/出单」—— 此前不在表里，于是
                        # 「落单（提交订单）属于订单环节的操作」「这单要落单，请回「转人工」」
                        # 这类句子**整句没有动作锚点** → 判据直接跳过该小句。这是**动作词表**
@@ -1800,7 +1800,7 @@ CAPABILITY_DENIAL_PATTERNS = ("协助下单", "协助完成下单", "协助您�
                               "人工协助", "需要协助")
 
 # 主体标记：自我（否定归因给 AI 自己）vs 非自我（顾客/商品等 → 客观说明或真实越权）
-_AGENT_SELF_WORDS = ("我", "我们", "小布", "智能客服", "客服", "这边")
+_AGENT_SELF_WORDS = ("我", "我们", "元元", "智能客服", "客服", "这边")
 _NON_SELF_SUBJECT_WORDS = ("顾客", "客户", "您", "买家", "用户", "商家", "商品", "库存",
                            "这款", "该款", "该商品", "货")
 
@@ -1864,7 +1864,7 @@ def _flow_owner_skill(state: dict | None = None,
     """**声明了**该写工具的 skill 名 —— 判据取自注册表声明（`SkillConfig.tool_names`）+ 当前 persona 可达集。
 
     为什么必须 derive（#3571 族第 6 次复发，OR-014 实证）：`_relock_order_skill` 曾写死
-    `"customer_order"` —— 那是**只存在于小布（C 端）图**里的节点名。米宝（B 端）图只有
+    `"customer_order"` —— 那是**只存在于元元（C 端）图**里的节点名。黄金策（B 端）图只有
     `order/product/…`（`MIBAO_CONFIG.skill_names`）⇒ B 端会话回锁后会指向一个
     **图中不存在的节点**（`route_by_intent` 把 pending 名原样返回，条件边映射缺失）——
     即"恢复了能力"的那一步自己先把会话打坏。
@@ -1893,7 +1893,7 @@ def _flow_owner_skill(state: dict | None = None,
         if cfg is not None:
             # persona **已知**：只能回锁该 persona 图里真的存在的节点。一个候选都不可达 ⇒
             # fail-safe 返回 ""（不回锁）。issue #5247 实测暴露：B 端只读化后 `order_create`
-            # 的唯一归属是 C 端 `customer_order`，若仍走下面的"唯一候选"兜底，**米宝**（已知 persona）
+            # 的唯一归属是 C 端 `customer_order`，若仍走下面的"唯一候选"兜底，**黄金策**（已知 persona）
             # 会拿到一个**不在自己图里**的节点名（`route_by_intent` 原样返回 pending 名 ⇒ 条件边
             # 映射缺失，会话被打坏）。兜底只对"persona 完全解析不出"的情形保留。
             return ""
@@ -1910,7 +1910,7 @@ async def _relock_order_skill(session_id: str | None, state: dict | None = None,
     """顾客在办下单但当前轮在别的 skill → 把会话**锁回下单流程**（issue #3477）。
 
     为什么必要（C-A1 run 34791767013 实证）：会话被 choice 卡锁在 `customer_product`，
-    顾客「确认下单」后小布说"没权限"并转人工 —— 该 skill 没有 `order_create`，
+    顾客「确认下单」后元元说"没权限"并转人工 —— 该 skill 没有 `order_create`，
     而守卫（能力误宣/转人工）此前只认 customer_order/customer_aftersales。
     把 `pending_interact_skill` 锁回**声明了该写工具的那个 skill** 后，**下一轮**路由会走下单
     流程，订单才能真的落下（这是恢复路径，不是口头承诺）。目标由 `_flow_owner_skill` 从
@@ -2076,9 +2076,9 @@ async def _order_flow_in_progress(session_id: str | None, state: dict | None = N
 
 # ── 回复**文本**里的能力自我否定（issue #3443，C-A1 transcript 实证）──────────
 # 实证（run 34773014637 的 C-A1）：
-#   R6「小布这边是**咨询客服**，没办法直接帮您提交订单哦，不过下单很简单，我教您~」
+#   R6「元元这边是**咨询客服**，没办法直接帮您提交订单哦，不过下单很简单，我教您~」
 #   R7「我是咨询客服，**没有权限帮您直接提交订单**哦，下单还是需要您在小程序里操作完成」
-#   R9「小布这边确实**没办法直接帮您提交订单**，这是为了保护您的订单和支付安全哦」
+#   R9「元元这边确实**没办法直接帮您提交订单**，这是为了保护您的订单和支付安全哦」
 #   → 还下发了一张「转人工客服，协助我下单」的卡，顾客亲手选了人工，全程未调 order_create。
 # 已有的两道守卫都挡不住它：#3421 管的是**工具参数**（handoff reason），
 # `_write_input_recovery_block` 之类管的是**工具调用**；而本条是**最终回复文本**。
@@ -2087,7 +2087,7 @@ async def _order_flow_in_progress(session_id: str | None, state: dict | None = N
 # 都锁在"**AI 自己** × **下单动作**"上。差异：agent 侧判据已升级为**语义归一**
 # （小句内共现 + 非自我主体排除，见下），不再受措辞/插词影响；评测侧仍是「主体 + 否定词 +
 # 动作词 + 24 字窗口」的旧正则形态（属评测包领地，如需同源覆盖由评测包同步 —— 本轮只跑体检不改）。
-# 「我是小布，您的专属咨询客服」这类正常开场白两侧都不会误判（无否定 / 无下单动作）。
+# 「我是元元，您的专属咨询客服」这类正常开场白两侧都不会误判（无否定 / 无下单动作）。
 def _normalize_clause(clause: str) -> str:
     """语义归一：抹平**无意义的写法差异**（不改变判据语义），再交给结构化判据。
 
@@ -2131,7 +2131,7 @@ def _negation_positions(clause: str, include_assist: bool) -> list:
 def _self_scoped_clause(clause: str, neg_pos: int) -> bool:
     """该否定是否**归因于 AI 自己**（= 能力误宣）而不是顾客/商品等非自我主体。
 
-    取否定词之前**最近的**主体标记：自我标记（我/小布/智能客服/这边…）→ 是；
+    取否定词之前**最近的**主体标记：自我标记（我/元元/智能客服/这边…）→ 是；
     非自我主体（顾客/您/商品/库存…）→ 不是（客观说明、真实越权、顾客自己的权限问题）；
     两者都没有 → 视为**隐含主语**（AI 自己）—— 「没有权限帮您下单」这类句首形式，
     旧正则因为强制要求主体标记在前而漏掉。
@@ -2282,7 +2282,7 @@ _TEXT_DENIAL_CORRECTIVE = (
     "`order_create`（含 sms_code）。只有顾客**显式**要求人工、情绪激动或诉求超出能力时才允许引导人工。"
 )
 
-# B 端（米宝，店员/管理员）同义纠正话术：C 端那段提到"小程序 / 短信验证码 / 收货地址查询"
+# B 端（黄金策，店员/管理员）同义纠正话术：C 端那段提到"小程序 / 短信验证码 / 收货地址查询"
 # 都不是 B 端口径（`ORDER_TOOLS` 里没有 `customer_address_query`，B 端代客下单也不需要
 # 顾客短信码）—— 拿 C 端话术去纠正 B 端，只会把模型推向另一个不存在的工具。
 _TEXT_DENIAL_CORRECTIVE_BIZ = (
@@ -2307,7 +2307,7 @@ _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE = (
     "你刚才的回复以「该入口不支持图片 / 拿不到可写入的地址」为由把设主图的请求推走了。"
     "这条边界**是真的**：管理后台的商品图片写入（主图 / 详情图）当前**不在你的能力内** —— "
     "相关写工具没有绑定给你，点名调用只会失败。但光说做不到不算交付，请**重新给出回复**，"
-    "两件事都要有：① 如实说明「米宝在商品域现在只做查询与改价，改图不在能力内」；"
+    "两件事都要有：① 如实说明「黄金策在商品域现在只做查询与改价，改图不在能力内」；"
     "② 给出去处 —— 请商家到后台「商品管理」页面（/products 的图片按钮）自行操作。"
     "**禁止**承诺代办、发写确认卡，或出现「已为您设置主图 / 主图已更新 / 设置成功」这类"
     "谎称已执行的措辞；也**不要**为此转人工（这是产品边界，不是人工能代的活）。"
@@ -2344,7 +2344,7 @@ def _registry_has_tool(registry, name: str) -> bool:
 # 而"顾客要物流 ⇒ 拿到订单号必须继续查轨迹"是**确定性**的交付标准。
 # 判据**全部是事实**，不看顾客话术关键词（禁"含『物流』字样就调工具"式硬绑）：
 #   ① 本轮**意图事实** = 物流查询（路由器已算出的 `intent_result.intent`）；
-#   ② 本 skill 工具集里**真有** `logistics_track`（C 端用小布的 customer_logistics_track，不适用）；
+#   ② 本 skill 工具集里**真有** `logistics_track`（C 端用元元的 customer_logistics_track，不适用）；
 #   ③ 本回合 `order_query` **成功返回过真实订单号**（`order_nos` 非空——没有订单号时
 #      正确行为是问顾客要订单号，不是硬调）；
 #   ④ 本回合**从未尝试**过 `logistics_track`（模型自己没走完这一步）。
@@ -2618,7 +2618,7 @@ def _capability_denial_reason(args: dict) -> str:
 # 判据：会话里**出现过窗户尺寸措辞**才允许算料。为什么这样不卡死：模型缺尺寸时会先问，
 # 问过之后会话里自然出现「窗宽/窗高」→ 下一轮放行（自愈）；而顾客直接报"要 3 米"时，
 # 会话里永远不会有尺寸措辞 → 一直被拦，逼模型走"按米数下单"而不是"按窗宽算料"。
-_DIMENSION_HINTS = ("窗宽", "窗高", "宽度", "高度", "尺寸", "多宽", "多高", "米宽", "米高")
+_DIMENSION_HINTS = ("窗宽", "窗高", "宽度", "高度", "尺寸", "多宽", "多高", "米宽", "观星台")
 
 
 def _conversation_mentions_dimensions(messages) -> bool:
@@ -2639,7 +2639,7 @@ async def _curtain_calc_dimension_block(tool_name: str, args: dict, tool_call: d
     """无窗户尺寸证据时拦下 `curtain_calc`（返回 3 元组），否则放行（None）。"""
     if tool_name != "curtain_calc":
         return None
-    # C 端专属：`curtain_calc` 是小布（顾客自助）的报价能力；B 端米宝有自己的算料链路。
+    # C 端专属：`curtain_calc` 是元元（顾客自助）的报价能力；B 端黄金策有自己的算料链路。
     if not _is_customer_role(state):
         return None
     if _conversation_mentions_dimensions((state or {}).get("messages") or []):
@@ -3301,10 +3301,10 @@ PERMISSION_LABELS = {
     "customer:view": "客户管理",
     "finance:view": "财务对账",
     "agent:session": "会话监控",
-    # 米宝唤出码（issue #5642 功能⑤）：名称逐字取 admin-api `RegistrationService.defaultPermissions`
-    # 的同码条目（该行名称列 = 「米宝对话」）。**只读镜像**：不改写、不润色；
+    # 黄金策唤出码（issue #5642 功能⑤）：名称逐字取 admin-api `RegistrationService.defaultPermissions`
+    # 的同码条目（该行名称列 = 「黄金策对话」）。**只读镜像**：不改写、不润色；
     # 缺标签 / 名称不一致由 `tests/test_permission_scope_injection.py` 的目录守卫机械判红。
-    "agent:chat": "米宝对话",
+    "agent:chat": "黄金策对话",
     "employee:list": "员工列表",
     "employee:create": "新增员工",
     "system:manage": "系统管理",
@@ -3315,7 +3315,7 @@ _MAX_SCOPE_CODES = 20
 
 
 def _inject_permission_scope(system_prompt: str, state: AgentState) -> str:
-    """B 端（米宝）**权限范围**注入（issue #4107 / 父单 #4103 的 F8）。
+    """B 端（黄金策）**权限范围**注入（issue #4107 / 父单 #4103 的 F8）。
 
     让模型知道「本会话人是谁、当前账号已开通哪些能力」，从而：权限拒绝不重试、
     如实说明缺哪项能力并给开通路径（对应 principles.md 的权限归因规则两半）。
@@ -3454,11 +3454,11 @@ def _sanitize_tool_args(tool, tool_args: dict) -> dict:
 # 见 test_graph_skills.py 的 test_unexpected_kwarg_dropped）；只读工具永远静默
 # （查询类模型爱带多余参数，不能因此失败）。
 _IMAGE_DROP_GUIDANCE = {
-    "images": "商品主图写入不在米宝能力内（改图不代做）——请如实说明，并引导商家到"
+    "images": "商品主图写入不在黄金策能力内（改图不代做）——请如实说明，并引导商家到"
               "后台「商品管理」页面(/products)操作",
-    "detail_images": "商品详情图写入不在米宝能力内（改图不代做）——请如实说明，并引导商家到"
+    "detail_images": "商品详情图写入不在黄金策能力内（改图不代做）——请如实说明，并引导商家到"
                      "后台「商品管理」页面(/products)操作",
-    "main_image": "商品主图写入不在米宝能力内（改图不代做）——请如实说明，并引导商家到"
+    "main_image": "商品主图写入不在黄金策能力内（改图不代做）——请如实说明，并引导商家到"
                   "后台「商品管理」页面(/products)操作",
 }
 
@@ -3596,7 +3596,7 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
                     return cached["result"], cached["dict"]
 
     # 3. 执行 + 超时
-    # 写审计落库（issue #4039）：本函数是米宝/小布**真实写路径**（直调 tool.execute，
+    # 写审计落库（issue #4039）：本函数是黄金策/元元**真实写路径**（直调 tool.execute，
     # 不经 ToolRegistry.execute_tool）⇒ hook 必须挂在这里，否则 audit_logs 恒 0 行。
     # 挂 finally：成功/超时/异常三条出口都留痕（失败也要可追溯）；只读工具不记。
     _audit_write = not tool.read_only

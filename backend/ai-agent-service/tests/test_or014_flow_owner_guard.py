@@ -22,19 +22,19 @@ R7「这单我不具备提交能力」/R8「这单在商品线确实落不了」
 `PRODUCT_TOOLS` 里没有 `order_create` ⇒ 模型"实话实说"自己这条线落不了单。两处必须一起修：
 ① 文本级能力误宣判据认不出**归属错位/`V不了`/「不具备…能力」/「落单」**这些**形态**（改前
 实测 5 句全部返回空）；② `_relock_order_skill` 把回锁目标写死 C 端节点名 `customer_order`，
-米宝图里没有该节点。本文件把两处的修法钉在**事实**上（注册表声明 + persona 可达集 +
+黄金策图里没有该节点。本文件把两处的修法钉在**事实**上（注册表声明 + persona 可达集 +
 会话状态），并额外钉住**合法换域不得被牺牲**（`#3625 G3/T2` 契约）。
 
 判据与结构不变式见 `tests/unit_ci_workflows/test_denial_guard_or014_invariants.py`。
 
-## issue #5247 重新裁定（B 端米宝只读，2026-09-23）—— 本文件适用面的变化
+## issue #5247 重新裁定（B 端黄金策只读，2026-09-23）—— 本文件适用面的变化
 
 用户裁定把「创建和更新能力」从 B 端移除 ⇒ B 端**全部** skill 解绑了 `order_create`
 （连带 `validate_input`），它现在**唯一**的归属是 C 端 `customer_order`。对回锁判据的直接后果：
 
 | 判据 | #5247 之前 | #5247 之后（本文件的处置） |
 |---|---|---|
-| 「回锁目标必须在该 persona 图里」 | mibao 归属 `order`（可达）、xiaobu 归属 `customer_order`（可达） | mibao **没有**声明该写工具的 skill ⇒ **合法答案只有 `""`**（解析不出 ⇒ 不回锁）；判据改成「owner 非空 ⇒ 必须可达」，**保留为红**：活真值下 `_flow_owner_skill({"agent_type":"mibao"})` 返回 C 端节点名 `customer_order`（米宝图里没有该节点）= #3571/OR-014 的乒乓形态，修法在 `app/graph/skills/base_skill.py`（已知 persona 时不可达必须返回 `""`） |
+| 「回锁目标必须在该 persona 图里」 | mibao 归属 `order`（可达）、xiaobu 归属 `customer_order`（可达） | mibao **没有**声明该写工具的 skill ⇒ **合法答案只有 `""`**（解析不出 ⇒ 不回锁）；判据改成「owner 非空 ⇒ 必须可达」，**保留为红**：活真值下 `_flow_owner_skill({"agent_type":"mibao"})` 返回 C 端节点名 `customer_order`（黄金策图里没有该节点）= #3571/OR-014 的乒乓形态，修法在 `app/graph/skills/base_skill.py`（已知 persona 时不可达必须返回 `""`） |
 | 「两个 persona 各有自己的下单 skill」 | 成立（order / customer_order） | **premise 消失**（B 端已无下单写工具）⇒ 用例退役，跨图安全由上一行承担 |
 | 「认不出 persona 时不得瞎猜」 | 活真值恰好有 2 个候选 ⇒ 必返回 `""` | 活真值只剩 1 个候选（唯一候选兜底=函数 docstring 的窄例外）⇒ 改成**注入式**歧义夹具，判据与被测真值解耦 |
 | 「商品线自称落不了单 → 纠正 + 回锁」 | B 端 `product`（能落单，只是被 agent 误宣为不能） | **premise 消失**（B 端已无下单写工具 ⇒ "落不了单"是**如实告知**，不是能力误宣）⇒ 载体换成 C 端 `customer_product`：`TestBEndDenialIsCorrectedAndRelocked` → `TestDenialIsCorrectedAndRelocked`（四条子判据：纠正重答 / confirm 卡迁移 / choice 卡不迁移 / 不在办不纠正，断言强度不变） |
@@ -80,12 +80,12 @@ OR015_DENIALS = [
 
 # **不得被误判**的边界（DF-020/021 越权拒绝、第三方主体客观说明、正常成功/开场白）
 CLEAN_TEXTS = [
-    "小布没有权限查看其他租户的数据，只能看您自己的订单",
-    "小布无法帮您导出全部租户数据，也不会有这样的权限",
+    "元元没有权限查看其他租户的数据，只能看您自己的订单",
+    "元元无法帮您导出全部租户数据，也不会有这样的权限",
     "顾客在小程序里没有下单权限，需要人工开通",
     "该商品不支持散剪，下单时请注意",
     "库存不足无法创建订单",
-    "亲，我是小布，您的专属咨询客服～",
+    "亲，我是元元，您的专属咨询客服～",
     "已经帮您提交订单啦，订单号 20260914691810001",
     "好的，我这就帮您下单",
     "订单已创建，请您核对",
@@ -124,14 +124,14 @@ class TestFlowOwnerIsFactDerived:
     def test_owner_is_reachable_in_persona_graph(self, persona):
         """不变式：回锁目标**必须真的存在于该 persona 的 skill_names**。
 
-        实证（OR-014）：旧实现写死 `customer_order` → 米宝（B 端）图里没有该节点，
+        实证（OR-014）：旧实现写死 `customer_order` → 黄金策（B 端）图里没有该节点，
         `route_by_intent` 把 pending 名原样返回、条件边映射缺失 ⇒ 回锁自己把会话打坏。
 
         issue #5247 重新裁定：B 端只读 ⇒ 全部 B 端 skill 解绑 `order_create`，「该 persona
         有没有声明这个写工具的 skill」必须允许答案为**没有** —— 那时唯一安全答案是 `""`
         （解析不出 ⇒ 不回锁，见 `_flow_owner_skill` 的 fail-safe 分支），**不得**退回
         `owners[0]`（唯一候选兜底）：活真值里唯一候选是 **C 端** `customer_order`，
-        兜给米宝就是把会话锁到一个米宝图里不存在的节点（与 OR-014 同族）。
+        兜给黄金策就是把会话锁到一个黄金策图里不存在的节点（与 OR-014 同族）。
         ⇒ 判据写成「owner 非空 ⇒ 必须可达」；空是合法答案，非空却不可达**必红**。
         """
         owner = _flow_owner_skill({"agent_type": persona})
@@ -258,7 +258,7 @@ def _run_denied_order_turn(replies, *, skill, tool_names, facts, state_overrides
         state.update(state_overrides or {})
         out = asyncio.run(base_skill.execute_skill(
             state=state, skill_name=skill, tool_names=list(tool_names),
-            system_prompt="你是米宝"))
+            system_prompt="你是黄金策"))
     return out, llm, pending_calls, store
 
 
@@ -274,8 +274,8 @@ class TestDenialIsCorrectedAndRelocked:
     与断言强度一字未改。
     """
 
-    # C 端能力误宣原文（#3477 族）：小布自称没权限下单，而会话正锁在商品线。
-    DENIAL = "亲，小布这边没有帮您下单的权限哦，需要您在小程序里操作"
+    # C 端能力误宣原文（#3477 族）：元元自称没权限下单，而会话正锁在商品线。
+    DENIAL = "亲，元元这边没有帮您下单的权限哦，需要您在小程序里操作"
     OK = "好嘞，我这就把商品加进订单，请稍等～"
     SKILL = "customer_product"
     XIAOBU = {"role": "customer", "agent_type": "xiaobu"}
@@ -334,7 +334,7 @@ class TestDenialIsCorrectedAndRelocked:
 class TestCEndContractUnbroken:
     """C 端既有契约（#3477）：同一形态下回锁目标仍是 C 端下单 skill（换 derive 不换行为）。"""
 
-    DENIAL = "亲，小布这边没有帮您下单的权限哦，需要您在小程序里操作"
+    DENIAL = "亲，元元这边没有帮您下单的权限哦，需要您在小程序里操作"
     OK = "好嘞，我这就把商品加进订单，请稍等～"
 
     def test_customer_session_relocks_to_customer_owner(self):

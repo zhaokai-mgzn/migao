@@ -468,7 +468,7 @@ async def _vague_guess_route(state: AgentState, route_decision) -> dict | None:
     """模糊轮 ⇒ 猜测卡路由；不符条件返回 None（交还原有路径）。
 
     触发面（三条都是事实，不是文案判据）：
-    ① **米宝（B 端）**：本单的受众（issue #5329 判据来源是 B 端提问引导）；
+    ① **黄金策（B 端）**：本单的受众（issue #5329 判据来源是 B 端提问引导）；
     ② **低置信模糊轮**：`source == "low_confidence"` = L2 分类器自己都不确定
        （`IntentRouter.LOW_CONFIDENCE_THRESHOLD`）—— 正是「知道自己要什么但说不出来」；
     ③ **本会话第一次需要澄清**（见 `_claim_first_clarify_round`）。
@@ -747,7 +747,7 @@ async def intent_router_node(state: AgentState) -> dict:
     agent_intents = _get_agent_intents(agent_type)
 
     # 商家配置的自动转人工关键词：命中则直接转人工（complaint 意图 → human_handoff）
-    # 仅小布（C 端）生效；商家后台「机器人设置」配置 autoHandoffKeywords。
+    # 仅元元（C 端）生效；商家后台「机器人设置」配置 autoHandoffKeywords。
     tenant_id = state.get("tenant_id")
     if agent_type == "xiaobu" and tenant_id and user_message:
         try:
@@ -1022,7 +1022,7 @@ def _get_intent_to_route(agent_type: str = "") -> dict[str, str]:
     导致 quote 意图 fallback 到 general。故按 agent_type 传对应 persona。
 
     🔴 **只留本 agent 绑定得上的 route_key**（issue #6044 缺陷 C）：`get_intent_to_route_map`
-    按 **persona** 过滤，而 persona 过滤**不等于绑定过滤** —— 米宝 persona 的 skill 文件若
+    按 **persona** 过滤，而 persona 过滤**不等于绑定过滤** —— 黄金策 persona 的 skill 文件若
     **未绑进**该 agent 的 `skill_names`，它的 route_key 仍会进映射表，而
     `build_agent_graph` 的 `skill_route_map` **不会**建那个节点 ⇒ `route_by_intent` 返回一个
     LangGraph 条件边的**不存在的目的地** ⇒ `BranchSpec._finish` 抛
@@ -1034,7 +1034,7 @@ def _get_intent_to_route(agent_type: str = "") -> dict[str, str]:
       File "…/langgraph/graph/_branch.py", line 203, in <listcomp>
         r if isinstance(r, Send) else self.ends[r] for r in result
     ```
-    `settings` skill 已按 #5247 解绑出米宝（`MIBAO_CONFIG.skill_names` 里没有它），但
+    `settings` skill 已按 #5247 解绑出黄金策（`MIBAO_CONFIG.skill_names` 里没有它），但
     `settings_skill.py` 的文件仍在注册表里（保留它是有意的：删除会让路由/账本口径漂移）
     ⇒ 这个"文件在、绑定不在"的缝隙就是崩溃点。
 
@@ -1061,7 +1061,7 @@ def _get_intent_to_route(agent_type: str = "") -> dict[str, str]:
     for intent in _DIRECT_REPLY_INTENTS:
         intent_map[intent] = "direct_reply"
     intent_map["general"] = "general"
-    # 米宝已启用 knowledge skill（issue #3059）：knowledge_faq 走知识卡片检索；
+    # 黄金策已启用 knowledge skill（issue #3059）：knowledge_faq 走知识卡片检索；
     # 仅 knowledge_manage 管理意图 fallback 到 general（知识管理走 admin-web，不经 agent）
     if agent_type == "mibao":
         intent_map.update(_KNOWLEDGE_FALLBACK)
@@ -1132,7 +1132,7 @@ def route_by_intent(state: AgentState) -> str:
 
     # 🔴 **目的地闸**（issue #6044 缺陷 C）：条件边只认 `skill_route_map` 的 key/value，
     # 返回别的名字 ⇒ `BranchSpec._finish` 抛 `KeyError: '<名字>'` ⇒ 整轮 SSE 崩
-    # （2026-10-02 实测：米宝 + 意图 notification ⇒ `KeyError: 'settings'`）。
+    # （2026-10-02 实测：黄金策 + 意图 notification ⇒ `KeyError: 'settings'`）。
     # **闸只装在 `action=handoff_offer` 这一条返回路径上**，原因如下（CI run 37009338419 的实测教训）：
     #
     # · `pending_interact_skill` 那条路径**不能**改判 —— 它的既有契约是

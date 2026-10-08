@@ -10,13 +10,13 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: {
-    default: '米高 — 布艺行业的 AI 经营平台',
-    template: '%s — 米高',
+    default: '观星台 — 布艺行业的 AI 经营平台',
+    template: '%s — 观星台',
   },
   description:
-    '杭州词元通达科技有限公司出品的米高平台：面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧小布 7×24 小时接待咨询、算料报价、下单与售后；经营侧米宝覆盖商品、订单、生产、库存与财务。',
+    '杭州词元通达科技有限公司出品的观星台平台：面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧元元 7×24 小时接待咨询、算料报价、下单与售后；经营侧黄金策覆盖商品、订单、生产、库存与财务。',
   keywords: [
-    '米高',
+    '观星台',
     'AI 智能客服',
     '布艺 SaaS',
     '窗帘',
@@ -24,32 +24,32 @@ export const metadata: Metadata = {
     '加工单',
     '计件工资',
     'AI 经营助手',
-    '小布',
-    '米宝',
+    '元元',
+    '黄金策',
   ],
   authors: [{ name: '杭州词元通达科技有限公司' }],
   openGraph: {
     type: 'website',
     locale: 'zh_CN',
     url: 'https://www.migaozn.com',
-    siteName: '米高 MIGAO',
-    title: '米高 — 布艺行业的 AI 经营平台',
+    siteName: '观星台 MIGAO',
+    title: '观星台 — 布艺行业的 AI 经营平台',
     description:
-      '布艺行业的 AI 客服与经营平台：小布承接顾客服务，米宝承接生产管理，四个终端共用数据底座。',
+      '布艺行业的 AI 客服与经营平台：元元承接顾客服务，黄金策承接生产管理，四个终端共用数据底座。',
     images: [
       {
         url: 'https://www.migaozn.com/og-image.png',
         width: 1200,
         height: 630,
-        alt: '米高 AI 经营平台',
+        alt: '观星台 AI 经营平台',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: '米高 — 布艺行业的 AI 经营平台',
+    title: '观星台 — 布艺行业的 AI 经营平台',
     description:
-      '布艺行业的 AI 客服与经营平台：小布承接顾客服务，米宝承接生产管理，四个终端共用数据底座。',
+      '布艺行业的 AI 客服与经营平台：元元承接顾客服务，黄金策承接生产管理，四个终端共用数据底座。',
   },
   robots: {
     index: true,

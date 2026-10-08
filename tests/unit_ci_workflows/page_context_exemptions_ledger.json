@@ -1,7 +1,7 @@
 {
   "schema": "page-context-exemptions-ledger/v1",
   "issue": 6215,
-  "what": "B 端米宝「页面上下文解释与教学」（能力地图族 4）的**豁免台账**：`frontend/admin-web/src/config/menu.ts` 里的每一个菜单 route，要么登记进 `backend/ai-agent-service/app/context/page_registry.py` 的 `PAGE_REGISTRY`（米宝能拿该页口径解释），要么**在此具名登记豁免**（未确证有「确为该页口径」的真值源 ⇒ 不注入）。判据 = `tests/unit_ci_workflows/test_page_context_registry_coverage.py`。",
+  "what": "B 端黄金策「页面上下文解释与教学」（能力地图族 4）的**豁免台账**：`frontend/admin-web/src/config/menu.ts` 里的每一个菜单 route，要么登记进 `backend/ai-agent-service/app/context/page_registry.py` 的 `PAGE_REGISTRY`（黄金策能拿该页口径解释），要么**在此具名登记豁免**（未确证有「确为该页口径」的真值源 ⇒ 不注入）。判据 = `tests/unit_ci_workflows/test_page_context_registry_coverage.py`。",
   "why": "「暂不覆盖」在此之前**只活在代码里没有的东西**（登记表里少一条），既看不出是有意为之、也看不出欠了什么 ⇒ 谁也不知道 22 个菜单页里有 16 个悄悄没覆盖。本表把「为什么没覆盖 + 补哪一份口径文档才能重启」变成**必须显式登记、只许缩短**的东西：业务方补齐口径文档 ⇒ 删一条豁免 + 加一条登记（台账变短、登记面变长，两个方向都看得见）。",
   "frozen_note": "🔴 **只许缩短**（沿用 `tests/unit_ci_workflows/schedule_scope_ledger.json` 的存量冻结范式）：① `exempt_routes_frozen` 是**冻结快照**，必须与 `exemptions` 逐项相等 —— 想「把新页塞进豁免」必须同时改快照、`baseline_frozen` 与 `exemptions` 三处，且 `baseline_frozen` 只许变小；② 与登记表的**双向相等**由元守卫核（漏登记 / 多登记 / 悬挂 route ⇒ 逐条判红）。⚠️ 「缩短」= 删一条豁免 + 同批在 `PAGE_REGISTRY` 里补上该 route（**不是**只删台账条目）。",
   "baseline_frozen": 13,
@@ -33,12 +33,12 @@
     },
     {
       "route": "/customers",
-      "reason": "客户列表：`docs/curtain-production-rules.md` §7「客户工艺画像（客户记忆）」讲的是**生产侧**的记忆口径，不是本页客户档案字段的口径 ⇒ 引它会让米宝拿错口径解释这一页（比不解释更烦）。",
+      "reason": "客户列表：`docs/curtain-production-rules.md` §7「客户工艺画像（客户记忆）」讲的是**生产侧**的记忆口径，不是本页客户档案字段的口径 ⇒ 引它会让黄金策拿错口径解释这一页（比不解释更烦）。",
       "restart_condition": "补 `docs/customer-profile-fields.md`（客户档案字段与客户记忆口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/customers\"`。"
     },
     {
       "route": "/knowledge",
-      "reason": "知识库：现有真值源都是**给米宝读的厂内口径**，没有「知识卡片来源 / 检索排序」的对外口径 ⇒ 解释这一页等于自己编一套。",
+      "reason": "知识库：现有真值源都是**给黄金策读的厂内口径**，没有「知识卡片来源 / 检索排序」的对外口径 ⇒ 解释这一页等于自己编一套。",
       "restart_condition": "补 `docs/knowledge-base-card-sources.md`（知识卡片来源与检索口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/knowledge\"`。"
     },
     {
@@ -95,7 +95,7 @@
       "recompute": "python3 -m pytest tests/unit_ci_workflows/test_page_context_registry_coverage.py -q -s  # 判据 1 打印现取的覆盖/豁免条数"
     },
     {
-      "face": "判不了「米宝真的按真值源解释了这一页」（行为面）",
+      "face": "判不了「黄金策真的按真值源解释了这一页」（行为面）",
       "reason": "本判据是**纯静态**的（只读仓内文件：`menu.ts` / `page_registry.py` / 权限目录 / 本台账；零网络、零 LLM、不 import `app.*` 运行时依赖）。「解释是否引用了真值源」由 `backend/ai-agent-service/tests/test_page_context.py` 的注入面判据 + `.github/cases/chat.yml` 的 CH 用例承接口径（**本轮不跑真实 LLM 评测**，见 issue #4262 裁定）。",
       "recompute": "cd backend/ai-agent-service && python3 -m pytest tests/test_page_context.py -q"
     },
@@ -106,7 +106,7 @@
     },
     {
       "face": "豁免台账只裁「这一页有没有登记真值源」，不保证口径文档本身是对的",
-      "reason": "登记面与豁免面都不为文档内容背书：文档写错 ⇒ 米宝照着错的解释。该面由文档自身的判据（如 `docs/curtain-production-rules.md` 的复核命令）承接，不在本表射程。",
+      "reason": "登记面与豁免面都不为文档内容背书：文档写错 ⇒ 黄金策照着错的解释。该面由文档自身的判据（如 `docs/curtain-production-rules.md` 的复核命令）承接，不在本表射程。",
       "recompute": "sed -n '92,110p' docs/curtain-production-process-standard.md  # 该文档的「复核命令」节"
     }
   ]

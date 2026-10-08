@@ -1,6 +1,6 @@
 // case_ids: API-010
 /**
- * 小布登录页 E2E 验收
+ * 元元登录页 E2E 验收
  * 覆盖：登录页品牌区 + 一键登录按钮；已登录时自动跳转对话页（预期行为）
  * 说明：模拟器若已持有有效登录态，打开登录页会自动 switchTab 回对话页，属预期；
  *      该自动跳转会让 navigateTo 命令挂起（超时），因此用 try/catch + 兜底 currentPage 判定。
@@ -44,8 +44,8 @@ async function run(mp) {
 
   // ── 2. 品牌区 ──
   // 定位标签口径见 frontend/admin-web/src/config/ai-roles.ts（issue #6330/#6333/#6335）
-  const brand = await waitForText(page, '.login-brand__title', '小布 · 企业智能客服', 8000)
-  rep.step('品牌标题「小布 · 企业智能客服」', !!brand, brand ? `text=${brand}` : '未找到')
+  const brand = await waitForText(page, '.login-brand__title', '元元 · 企业智能客服', 8000)
+  rep.step('品牌标题「元元 · 企业智能客服」', !!brand, brand ? `text=${brand}` : '未找到')
 
   // ── 3. 一键登录按钮 ──
   const btn = await waitForText(page, '.login-btn__text', '微信一键登录', 8000)

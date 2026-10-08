@@ -1,7 +1,7 @@
 name: Publish C-end H5 (app.migaozn.com 根)
 
 # ── 为什么需要这条腿（issue #4184）─────────────────────────────────────────────
-# `frontend/mini-app`（C 端小布）的 h5 产物此前**没有任何部署通路**：
+# `frontend/mini-app`（C 端元元）的 h5 产物此前**没有任何部署通路**：
 #   · `grep -rln '/opt/migao-deploy' .github/workflows/` = 0 命中；
 #   · `mini-app.yml` 的两个 job（typecheck+单测 / 视觉回归）都只 `npm run build:h5`，**不发布**；
 #   · 而它的产物是 `app.migaozn.com` 的**静态根本身**（nginx `root` = `/opt/migao-deploy/h5`）——

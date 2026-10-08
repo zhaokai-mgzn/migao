@@ -34,7 +34,7 @@
 // 规范：`docs/design/user-facing-copy-standard.md`
 //
 // ⚠️ 边界（照实登记，issue #6459）：本守卫扫**源码字面量**，判不了**服务端下发的字符串** ——
-//    例如米宝会话卡 `src/components/chat/BatchStockCard.tsx` 直接渲染响应里的 `cohortLabel`，
+//    例如黄金策会话卡 `src/components/chat/BatchStockCard.tsx` 直接渲染响应里的 `cohortLabel`，
 //    那三个词会经它上屏而不被本守卫抓到（该面另单跟踪，本单**有意不做**）。
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'

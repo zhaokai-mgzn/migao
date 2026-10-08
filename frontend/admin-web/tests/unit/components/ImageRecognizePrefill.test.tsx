@@ -151,7 +151,7 @@ describe('图片识别 · 商品描述文案预填 (#6362)', () => {
     reason: null,
   }
 
-  it('描述文案**逐字**写进富文本区初值，并计入 recognizedFields（页面据此分派 [米宝解读] 徽标）', () => {
+  it('描述文案**逐字**写进富文本区初值，并计入 recognizedFields（页面据此分派 [黄金策解读] 徽标）', () => {
     const { initialData, recognizedFields } = buildProductPrefill([DESCRIPTION_FIELD])
 
     // 逐字相等（不是"包含"）：HTML 片段被改写 / 截断 / trim 掉首尾都算红
@@ -402,7 +402,7 @@ describe('ProductForm 的 [图片识别] 徽标 (#5321)', () => {
     // `[米宝解读]`（内核不产这一格）⇒ 它进的是解读清单，渲染的必须是 `interpreted-marker-*`。
     render(
       <ProductForm
-        initialData={{ description: '<p>米宝生成的描述</p>' }}
+        initialData={{ description: '<p>黄金策生成的描述</p>' }}
         onSubmit={vi.fn()}
         interpretedFields={['description']}
       />,

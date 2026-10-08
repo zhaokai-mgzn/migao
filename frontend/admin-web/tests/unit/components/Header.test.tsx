@@ -306,7 +306,7 @@ describe('Header', () => {
         username: '13800138000',
         nickname: '张老板',
         position: '运营',
-        tenantName: '米高布艺',
+        tenantName: '观星台布艺',
       },
       logout: mockLogout,
     })
@@ -324,7 +324,7 @@ describe('Header', () => {
     // 岗位
     expect(screen.getByText('运营')).toBeInTheDocument()
     // 所属企业
-    expect(screen.getByText('米高布艺')).toBeInTheDocument()
+    expect(screen.getByText('观星台布艺')).toBeInTheDocument()
   })
 
   it('再次点击用户按钮收起下拉卡片（#3099）', async () => {
@@ -648,7 +648,7 @@ describe('Header', () => {
       render(<Header />)
     })
     expect(screen.getByText('客户服务')).toBeInTheDocument()
-    expect(screen.getByText('米宝 · 在线对话')).toBeInTheDocument()
+    expect(screen.getByText('黄金策 · 在线对话')).toBeInTheDocument()
     // #3081: /chat/config 页面已删除（合并进企业基础信息），不再有 AI 客服配置面包屑
     expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
   })

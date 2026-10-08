@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-B 端米宝评测覆盖体检（issue #3555）—— C 端 `xiaobu_coverage.py` 的对称面。
+B 端黄金策评测覆盖体检（issue #3555）—— C 端 `xiaobu_coverage.py` 的对称面。
 
 **背景**：C 端自 #3266 起有覆盖体检（哪个能力没被测），B 端一直没有 —— `scripts/`
 里只有 `xiaobu_coverage.py`，于是 B 端的工具覆盖缺口只能靠**真实 LLM 全量复测**撞出来
@@ -72,7 +72,7 @@ def sanity_errors() -> list:
     tools = lr.mibao_real_toolset()
     broken = lr.skill_files_without_tools()
     if broken:
-        errors.append(f"以下米宝 skill 解析不出任何工具（文件改名/解析口径漂移）: {broken}")
+        errors.append(f"以下黄金策 skill 解析不出任何工具（文件改名/解析口径漂移）: {broken}")
     if lr.toolset_below_floor(tools):
         errors.append(
             f"B 端工具集只解析到 {len(tools)} 个 < 下界 {lr.MIBAO_TOOLSET_MIN}"
@@ -158,7 +158,7 @@ def render_text(rep, cases, by_tier) -> str:
 
 def render_md(rep, by_tier) -> str:
     total = len(rep.tools)
-    out = ["# B 端米宝评测覆盖矩阵", "",
+    out = ["# B 端黄金策评测覆盖矩阵", "",
            "> 生成物（`scripts/mibao_coverage.py --md` 渲染，禁止手改）。"
            "单一源 `.github/cases/`。", "",
            f"- B 端用例集：**{rep.cases_run} 条**（mibao 归属，skip 不计）",

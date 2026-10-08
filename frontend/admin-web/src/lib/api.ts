@@ -826,11 +826,11 @@ export const imageRecognizeApi = {
    * 「识别 + **一次性**推理」（issue #6367 包 P3，冻结契约）—— 建品页表单内那个入口。
    *
    * 与 `recognize` 的差别只有两点（其余同族：同样先 `uploadApi.uploadImage`、同样**只回字段候选**）：
-   * - 端点 `/api/admin/image-recognition/interpret`（admin-api 代理，服务端复用米宝主模型）；
+   * - 端点 `/api/admin/image-recognition/interpret`（admin-api 代理，服务端复用黄金策主模型）；
    * - 请求体多一个**可选** `hint`（商家的一句话要求，≤200 字，`maxLength` 由输入框限住）：
    *   **空串 / 缺省 ⇒ 该键不出现**（「没补充」不等于「补充了空字符串」）。
    *
-   * 响应 = `PageFillPlan`：每格带 `source`（从图上抄的 / 米宝推的）与 `note`（依据），
+   * 响应 = `PageFillPlan`：每格带 `source`（从图上抄的 / 黄金策推的）与 `note`（依据），
    * 前端**只比对字符串做展示**。
    * 🔴 **不落库**：同 `recognize` —— 结果只填表，提交永远是人的动作。
    */
@@ -1739,7 +1739,7 @@ export interface AgentSessionDetail extends AgentSession {
   customerAvatarUrl?: string
   /** 转人工时点 AI 会话上下文摘要（管理端可见；GB/T 47746-2026） */
   aiContextSummary?: string | null
-  /** 转人工前顾客与 AI 客服（小布）的对话快照（管理端可见） */
+  /** 转人工前顾客与 AI 客服（元元）的对话快照（管理端可见） */
   aiContext?: AgentAiTurn[] | null
 }
 

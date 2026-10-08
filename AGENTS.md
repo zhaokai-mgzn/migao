@@ -4,7 +4,7 @@
 
 ## 这是什么
 
-面向布艺行业的多租户 AI 智能客服 SaaS：C 端小布 + B 端米宝双 Agent（LangGraph），
+面向布艺行业的多租户 AI 智能客服 SaaS：C 端元元 + B 端黄金策双 Agent（LangGraph），
 Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
 
 ## 改代码前（铁律）
@@ -116,7 +116,7 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
 
 ## 开发环境准备（获取研发模式）
 
-「米高研发」= DSH agent preset（`preset.yml` + `agent.cordis.yml` + `migao-dev-flow` / `migao-acceptance`
+「观星台研发」= DSH agent preset（`preset.yml` + `agent.cordis.yml` + `migao-dev-flow` / `migao-acceptance`
 两个技能），**权威源是独立仓 [zhaokai-mgzn/migao-agent-presets](https://github.com/zhaokai-mgzn/migao-agent-presets)**
 （裁定 2026-10-02：复用并复活该仓；issue #6020 是迁移单），**预设随预设仓的 PR 一起评审、一起回溯**；
 本业务仓**已不再承载 `.agent-presets/**`**。
@@ -180,4 +180,4 @@ head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
 ## 环境
 
 - 本地只启 3 组件：admin-api(:8080) + ai-agent-service(:8001) + admin-web(:3001)；DB/Redis 用云 dev
-- DSH 专用技能：`migao-dev-flow`（三把工具/提交流程/QA 门禁 §3.4）、`migao-acceptance`（验收/评测协议）——由「米高研发」preset 自动加载
+- DSH 专用技能：`migao-dev-flow`（三把工具/提交流程/QA 门禁 §3.4）、`migao-acceptance`（验收/评测协议）——由「观星台研发」preset 自动加载

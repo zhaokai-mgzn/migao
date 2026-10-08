@@ -425,7 +425,7 @@ export default function ProductsPage() {
       if (action === 'recommend') {
         return {
           title: '设为推荐',
-          desc: '设为推荐后，该商品将展示在小布对话页的「新品推荐」位。是否确认？',
+          desc: '设为推荐后，该商品将展示在元元对话页的「新品推荐」位。是否确认？',
           variant: 'primary' as const,
           onSubmit: submitSingleConfirm,
           onClose: () => setSingleConfirm(null),

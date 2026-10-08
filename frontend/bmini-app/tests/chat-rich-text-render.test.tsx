@@ -1,12 +1,12 @@
 // case_ids: UI-084
 /**
- * 米宝（B 端小程序 / H5）气泡富文本渲染 —— issue #6346 / 用例 UI-084
+ * 黄金策（B 端小程序 / H5）气泡富文本渲染 —— issue #6346 / 用例 UI-084
  *
  * ## 治的形态
  *
  * `frontend/bmini-app/src/components/chat/MessageBubble.tsx` 此前把整段 `content` 塞进**一个**
  * `white-space: pre-wrap` 的 `<Text>` ⇒ 换行保留、但 markdown 标记**原样上屏**：
- * 米宝能力清单（`**订单与履约** - 订单/物流查询…`）里商家看到的是字面 `**` 与 `- `。
+ * 黄金策能力清单（`**订单与履约** - 订单/物流查询…`）里商家看到的是字面 `**` 与 `- `。
  * C 端在 2026-09-15（UI-042）就治过同一形态，B 端漏课。
  *
  * ## 判据（逐条能红）
@@ -56,7 +56,7 @@ describe('MessageBubble — UI-084 B 端富文本渲染', () => {
   })
 
   it('多行能力清单按行渲染：行数 = 换行切分数 + 1，空行保留段间距', () => {
-    const content = '您好！我是米宝。\n\n📦 **订单与履约** - 订单/物流查询\n🏭 **生产与算料** - 工序库'
+    const content = '您好！我是黄金策。\n\n📦 **订单与履约** - 订单/物流查询\n🏭 **生产与算料** - 工序库'
     const { container } = render(<MessageBubble message={aiMsg(content)} />)
     const lines = container.querySelectorAll('.message-bubble__line')
     expect(lines).toHaveLength(4)

@@ -6,7 +6,7 @@
 
 > 本节是 AI-TDD 铁律的**仓库载体**：根 `CLAUDE.md` 已随仓库精简删除（issue #2646/#2647），
 > 其正文于 issue #5081 迁入本节（命令部分按现状重写，未照抄已过期的清单）。
-> DSH「米高研发」preset 的会话入口与 `.github/PULL_REQUEST_TEMPLATE.md` 都回指本节。
+> DSH「观星台研发」preset 的会话入口与 `.github/PULL_REQUEST_TEMPLATE.md` 都回指本节。
 
 | CP | 步骤 | 动作 |
 |----|------|------|

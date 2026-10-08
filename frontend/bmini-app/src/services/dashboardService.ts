@@ -1,5 +1,5 @@
 /**
- * B 端数据一屏服务（米宝商家端，issue #2977）
+ * B 端数据一屏服务（黄金策商家端，issue #2977）
  *
  * 复用 admin-api DashboardController 现成端点：
  * - GET /api/admin/dashboard/stats — 核心经营数字（今日订单/销售额/活跃会话/AI 接管率…）

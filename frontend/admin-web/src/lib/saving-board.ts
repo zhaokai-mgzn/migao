@@ -21,7 +21,7 @@
  * （`SavingMetricViews.cohortLabel`）一个都不许出现在本文件与页面里 ——
  * 新用户读不懂（issue #6459 用户逐字「让新用户如何理解」）。
  * 类级元守卫 = `frontend/admin-web/tests/unit/user-copy-jargon-guard.test.ts` 的形态③。
- * ⚠️ 边界（照实登记）：元守卫扫的是**源码字面量**，服务端**下发的字符串**（例如米宝会话卡
+ * ⚠️ 边界（照实登记）：元守卫扫的是**源码字面量**，服务端**下发的字符串**（例如黄金策会话卡
  * `BatchStockCard` 直接渲染 `cohortLabel`）不在它的射程内 —— 那一面另单登记，本单**有意不做**。
  */
 

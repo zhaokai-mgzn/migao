@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * 生产进度卡（米宝 B 端会话内）— issue #4016 P14（用户 2026-09-18 裁定「补发射点」）
+ * 生产进度卡（黄金策 B 端会话内）— issue #4016 P14（用户 2026-09-18 裁定「补发射点」）
  *
  * ## 为什么是「补发射点」而不是删卡
  *
@@ -12,7 +12,7 @@
  *
  * ## 为什么 B 端桌面也要有这一端
  *
- * `production_progress_query` 同时绑在**两个 persona** 的 Skill 上（C 端小布 + B 端米宝，
+ * `production_progress_query` 同时绑在**两个 persona** 的 Skill 上（C 端元元 + B 端黄金策，
  * 见评测用例 CH-039/CH-040）⇒ 契约不变式「后端能发到这一端的卡型 ⊆ 这一端能渲染的卡型」
  * 要求三端都有渲染分支（判据见 `backend/ai-agent-service/tests/test_card_type_cross_end_contract.py`，
  * 该判据在缺分支时**实测报红**：`B端桌面 admin-web ToolResultCard 缺 ['production_progress']`）。
@@ -21,7 +21,7 @@
  *
  * 只给「进度 / 当前工序 / 待完工序数 / 预计交付」，兼容两种载荷：
  * 1. 工序树：`{positions[].operations[], progress:{total,done,percent}, expected_delivery_at}`
- * 2. 米宝精简进度：`{progress_percent, current_operation, pending_operations[],
+ * 2. 黄金策精简进度：`{progress_percent, current_operation, pending_operations[],
  *    total_operations, done_operations, expected_delivery_date}`
  * 空态（两种载荷都没带工序信息）→「暂无生产进度」（不显示假进度、不空白）。
  *

@@ -625,7 +625,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             //
             // 后果是**客户可见的错价**：商品库出现「商品级 basePrice ≠ SKU 级 price」两个价，
             // 而 agent 下单的**权威价**正是 SKU 级（OrderService 取价校验取 ProductSku.price）
-            // ⇒ 米宝按旧 SKU 价报价并成交，商户刚改的价对 AI 报价无效。
+            // ⇒ 黄金策按旧 SKU 价报价并成交，商户刚改的价对 AI 报价无效。
             //
             // 显式带 `skus`（前端表单逐 SKU 定价）时走上面的分支、SKU 级价优先，本分支不参与。
             ProductSku priceSync = new ProductSku();
@@ -2276,7 +2276,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // status（上下架）：委托状态机唯一入口 applyStatusTransition（issue #3560）。
         // 回归背景：product_update 一直在请求体里下发 status，但本 DTO 曾无该字段 + 本方法从不读取它
         // → Jackson 静默忽略 → hasUpdate 保持 false → 上一行 !hasUpdate 分支返回商品详情
-        // （HTTP 200 + success）→ 米宝回「已下架」而 products.status 未变。与 stock 同型的"假成功"。
+        // （HTTP 200 + success）→ 黄金策回「已下架」而 products.status 未变。与 stock 同型的"假成功"。
         //
         // 为什么放在 updateProduct 之后：updateProduct 内部刻意 `product.setStatus(originalStatus)`
         // （注释「状态变更必须通过 updateProductStatus 接口（含状态机校验）」）——它靠 BeanUtils
@@ -2298,7 +2298,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * Agent 专用库存调整（生产回归修复：杜绝"假成功"）。
      *
      * 背景：updateProduct 对 stock 的处理依赖 SKU 重建条件（colors/skus 等字段非空），
-     * 单独传 stock 时被静默忽略但接口仍返回 success —— 米宝曾报"库存已调整"而库表未变。
+     * 单独传 stock 时被静默忽略但接口仍返回 success —— 黄金策曾报"库存已调整"而库表未变。
      * 本方法直接对现有 SKU 分配增减量并写库，语义与商品列表的总库存（SKU 汇总）一致。
      *
      * 分配规则（确定性）：

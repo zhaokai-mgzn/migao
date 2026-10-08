@@ -46,7 +46,7 @@ class ProcessingItemQueryTool(BaseTool):
 
     # 权限码（admin-api 目录，issue #5291）：加工项/加工分类的**读**端点取生产域读码
     # `production:view`（`ProcessingItemController` 两个 GET 的方法级注解；写面仍是 `processing:manage`）。
-    # 本工具**双端**（C 端小布下单前拿目录 + B 端建品/下单）⇒ c_end_reachable=True：
+    # 本工具**双端**（C 端元元下单前拿目录 + B 端建品/下单）⇒ c_end_reachable=True：
     # C 端 JWT 没有 permissions claim，C 端按角色层放行（零回归）。
     required_permissions = ["production:view"]
     c_end_reachable = True

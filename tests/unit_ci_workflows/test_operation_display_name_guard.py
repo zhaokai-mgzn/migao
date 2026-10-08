@@ -104,7 +104,7 @@ HELPER = "frontend/admin-web/src/lib/operation-display.ts"
 #: 受管面（显式白名单）：工序名会出现在这些界面上的位置
 #: 第 4 项是 issue #4630 补的**漏改面** —— 加工单「生产」页的计件表（`per_operation` 的
 #: 第 4 个消费面；#4621 只改了前三个 ⇒ 它一直渲染变体名，而**没有任何判据会因此变红**）。
-#: 第 5 项是 issue #4647 / D1 补的**会话卡面** —— 米宝会话里的生产进度卡（`current_operation`）；
+#: 第 5 项是 issue #4647 / D1 补的**会话卡面** —— 黄金策会话里的生产进度卡（`current_operation`）；
 #: 它改前不在任何清单里 ⇒ 退回裸渲染快照名时**四条判据全绿**。
 #: 第 6 项是 issue #4963 补的**加工单「生产」页本身**（`processing-orders/[id]/production/page.tsx`）：
 #: 它消费卡点报表（`stuck[].operation`，带 `logical_name` / `position`）与工序进度表；

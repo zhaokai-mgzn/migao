@@ -77,7 +77,7 @@ ROLE_READ_ENDPOINTS: dict[str, str] = {
 #: 修法（让本判据认得命令式动态校验 ⇒ 这两个端点连同同类能一起从「无码」面里摘出去，
 #: 上限随之退回 10 甚至更低）见 issue #6378；未落地前**不得再涨**。
 #: 11 → 14（issue #6486 包 1，2026-10-07）：新增 `AgentScheduledTaskController` 的
-#: `POST/GET/DELETE /api/admin/agent/scheduled-tasks` —— 米宝**定时提醒**的**自助**端点
+#: `POST/GET/DELETE /api/admin/agent/scheduled-tasks` —— 黄金策**定时提醒**的**自助**端点
 #: （商家给自己建/查/取消待办；收件人取自认证上下文，读写都只碰自己的行）⇒ 与既有
 #: `NotificationController` 的**自助**端点同款：**有意不加细粒度码**（加码等于把自助功能
 #: 锁给持码角色），已按本判据的报错提示登记进既有台账

@@ -2,9 +2,9 @@
 共享基础设施（拆分自 test_mibao_multiturn_intelligence.py，2026-08-29）
 """
 """
-米宝（MibaoAgent/WorkAssistantAgent）多轮对话智能测试用例
+黄金策（MibaoAgent/WorkAssistantAgent）多轮对话智能测试用例
 
-覆盖 10 个多轮对话场景，验证米宝的智能程度：
+覆盖 10 个多轮对话场景，验证黄金策的智能程度：
 1. 商品搜索→查看详情→库存查询（跨Tool连续调用）
 2. 订单查询→物流追踪→订单状态变更（全订单流程）
 3. 模糊问题→引导澄清→精准服务（意图澄清能力）
@@ -97,7 +97,7 @@ class CaseResult:
                 args_str = ", ".join(f"{k}={v}" for k, v in t.tool_args.items())
                 lines.append(f"[TOOL]   调用: {t.tool_name}({args_str})")
                 lines.append(f"[TOOL]   返回: {json.dumps(t.tool_result, ensure_ascii=False)[:200]}")
-            lines.append(f"[OUTPUT] 米宝回复: \"{t.reply[:100]}{'...' if len(t.reply) > 100 else ''}\"")
+            lines.append(f"[OUTPUT] 黄金策回复: \"{t.reply[:100]}{'...' if len(t.reply) > 100 else ''}\"")
             for c in t.checks:
                 status = "✅ PASS" if c["passed"] else "❌ FAIL"
                 lines.append(f"[CHECK]  {status}: {c['description']}")
@@ -303,7 +303,7 @@ class MultiTurnRunner:
             args_str = ", ".join(f"{k}={v}" for k, v in turn.tool_args.items())
             self._live_print(f"[TOOL]   调用: {turn.tool_name}({args_str})")
             self._live_print(f"[TOOL]   返回: {json.dumps(turn.tool_result, ensure_ascii=False)[:200]}")
-        self._live_print(f'[OUTPUT] 米宝回复: "{turn.reply[:100]}{"..." if len(turn.reply) > 100 else ""}"')
+        self._live_print(f'[OUTPUT] 黄金策回复: "{turn.reply[:100]}{"..." if len(turn.reply) > 100 else ""}"')
         for c in turn.checks:
             status = "✅ PASS" if c["passed"] else "❌ FAIL"
             self._live_print(f"[CHECK]  {status}: {c['description']}")

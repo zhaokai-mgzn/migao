@@ -12,7 +12,7 @@
  * |---|---|---|
  * | F1 | 解码命中 ⇒ **0 次 LLM**、不调识别端点（补打链里没有 vision 这一支） | 复刻「先问模型」 ⇒ 计数 1（同文件内对照） |
  * | F2 | 🔴 `/s/` 洗水码 ⇒ **一次都不查入库详情**（门禁在 `loadReprintDetail` 里） | 把 reading 伪造成入库码 ⇒ 立刻查一次（对照组） |
- * | F3 | 非米高码 ⇒ 同样一次都不查 + 明确告知 | 去掉码空间门禁 ⇒ 红 |
+ * | F3 | 非观星台码 ⇒ 同样一次都不查 + 明确告知 | 去掉码空间门禁 ⇒ 红 |
  * | F4 | 解码失败 ⇒ 走手输（**不猜单、不预填**）+ 重拍提示 | 解不出还去查 ⇒ 红 |
  * | F5 | **404 / 410 分开**：`not-found` 与 `revoked` 是两种状态、两句不同的话 | 合成一句话 ⇒ 判据红 |
  * | F5b | 服务端「200 但无 data」**不算 ready**（不返回空详情、不画假标签） | 只判 `success` ⇒ 红 |
@@ -194,13 +194,13 @@ describe('拍照补打主链：解码优先 / 码空间门禁 / 404-410 分开 /
     expect(wrong.kind).toBe('not-found')
   })
 
-  it('F3 非米高二维码 ⇒ 一次都不查 + 明确告知', async () => {
+  it('F3 非观星台二维码 ⇒ 一次都不查 + 明确告知', async () => {
     const server = fakeServer()
     const reading = classifyScannedCode('https://example.com/i/ABCD0234')
     const state = await loadReprintDetail({ reading, lookup: server.lookup })
     expect(server.state.detailCalls).toEqual([])
     expect(state.kind).toBe('blocked')
-    if (state.kind === 'blocked') expect(state.message).toContain('不是米高的标签')
+    if (state.kind === 'blocked') expect(state.message).toContain('不是观星台的标签')
   })
 
   it('F4 解码失败 ⇒ 走手输（不猜单、不预填）+ 重拍提示', async () => {

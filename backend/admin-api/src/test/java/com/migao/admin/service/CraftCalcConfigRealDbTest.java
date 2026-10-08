@@ -57,13 +57,13 @@ import org.mockito.ArgumentCaptor;
  *       mock 面（{@code CraftCalcClientTest} 用 {@code mock(CraftCalcConfigMapper.class)}）
  *       结构上看不见「列名写错 / 表未纳管 / JSONB 解不出来」这三类真问题；</li>
  *   <li><b>行值真的变成引擎能吃的 config</b>：{@code CraftCalcConfig#toConfigMap()} 的键集与取值
- *       直接决定引擎拿到的口径（键名漂移 ⇒ 引擎静默回落默认值 = 米宝一个数、落库另一个数）；</li>
+ *       直接决定引擎拿到的口径（键名漂移 ⇒ 引擎静默回落默认值 = 黄金策一个数、落库另一个数）；</li>
  *   <li><b>最后那一跳真的发生</b>：{@code CraftCalcClient.withTenantConfig} 把 config **放进请求体**
  *       发给 {@code POST /api/internal/production/craft-calc} —— 本类捕获**真实出参**逐值核对。</li>
  * </ol>
  *
  * <h2>与 AI 侧判据的关系（同一租户、同一入参）</h2>
- * 米宝工具路径侧的判据是
+ * 黄金策工具路径侧的判据是
  * {@code backend/ai-agent-service/tests/test_production/test_tenant_craft_calc_config.py}（纯函数级 +
  * 响应形状镜像）。两侧的**同一 config** 由本类与那条判据各自的 {@code TENANT_CONFIG_JSON} 声明，
  * 逐值一致性由 {@code tests/unit_ci_workflows/test_craft_calc_config_contract.py} 的判据 9 **机械钉住**

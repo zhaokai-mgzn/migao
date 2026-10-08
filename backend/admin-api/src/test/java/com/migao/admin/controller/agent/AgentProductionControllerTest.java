@@ -41,7 +41,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * AgentProductionController 测试（米宝生产进度/计件端点，issue #3995，M4-G-2）
+ * AgentProductionController 测试（黄金策生产进度/计件端点，issue #3995，M4-G-2）
  *
  * 这两个端点是**冻结契约**（并行包消费）：路径/参数/返回字段不可改。
  * 因此除了值断言，还断言 **data 的键集完全等于契约键集** —— 少一个键或改名都会红。

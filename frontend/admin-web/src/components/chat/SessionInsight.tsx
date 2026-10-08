@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * 会话简报 — 米宝（经营侧；定位标签单一源见 @/config/ai-roles，本文件不复述标签字面量）会话的右侧业务简报抽屉
+ * 会话简报 — 黄金策（经营侧；定位标签单一源见 @/config/ai-roles，本文件不复述标签字面量）会话的右侧业务简报抽屉
  *
  * 信息架构（UI-019 / issue #2897，从「工具台账」改为「业务简报」——
  * 商家用户不关心 agent 调用了哪些工具，只关心业务结果）：
@@ -222,14 +222,14 @@ export default function SessionInsight({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {/* ─── 概览：米宝身份 + 会话状态 ─── */}
+          {/* ─── 概览：黄金策身份 + 会话状态 ─── */}
           <div className="px-4 py-3 border-b border-gray-100">
             <div className="flex items-center gap-2.5">
               <span className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
                 <Bot className="w-[18px] h-[18px]" />
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-800 leading-tight">{`米宝 · ${AI_ROLES.mibao}`}</p>
+                <p className="text-sm font-semibold text-gray-800 leading-tight">{`黄金策 · ${AI_ROLES.mibao}`}</p>
                 <p className="text-[10px] text-gray-400 mt-0.5">商品 · 订单 · 售后 · 客户 · 数据</p>
               </div>
               <span className={cn(
@@ -249,7 +249,7 @@ export default function SessionInsight({
               <p className="text-xs text-gray-400 leading-relaxed">
                 本会话还没有记录
                 <br />
-                <span className="text-[11px]">向米宝提问后，这里会汇总本次会话的成果与待办</span>
+                <span className="text-[11px]">向黄金策提问后，这里会汇总本次会话的成果与待办</span>
               </p>
             </div>
           ) : (
@@ -293,11 +293,11 @@ export default function SessionInsight({
                       >
                         <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold text-amber-800">米宝在等你确认</p>
+                          <p className="text-xs font-semibold text-amber-800">黄金策在等你确认</p>
                           {pendingInteraction.title && (
                             <p className="text-[11px] text-amber-700 mt-0.5 truncate">{pendingInteraction.title}</p>
                           )}
-                          <p className="text-[10px] text-amber-600 mt-0.5">请回到对话中完成确认，米宝才会继续</p>
+                          <p className="text-[10px] text-amber-600 mt-0.5">请回到对话中完成确认，黄金策才会继续</p>
                         </div>
                       </div>
                     )}

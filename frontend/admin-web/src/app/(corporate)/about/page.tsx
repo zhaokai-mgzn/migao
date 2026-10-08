@@ -16,9 +16,9 @@ import {
 import { CallToAction, PageHero, SectionHeading } from '@/components/corporate/CorporateSection'
 
 export const metadata: Metadata = {
-  title: '关于米高 — 布艺行业的 AI 经营平台',
+  title: '关于观星台 — 布艺行业的 AI 经营平台',
   description:
-    '杭州词元通达科技有限公司出品的米高平台：面向布艺 / 窗帘商家的多租户 AI 经营平台，顾客侧小布、经营侧米宝，覆盖商品、客户、交易、生产、仓储、组织六个能力域。',
+    '杭州词元通达科技有限公司出品的观星台平台：面向布艺 / 窗帘商家的多租户 AI 经营平台，顾客侧元元、经营侧黄金策，覆盖商品、客户、交易、生产、仓储、组织六个能力域。',
 }
 
 const values = [
@@ -49,7 +49,7 @@ const techFoundation = [
     icon: Bot,
     title: '两侧 AI 各自独立配置',
     description:
-      '小布与米宝是两套独立配置的 Agent：提示词、知识范围与可用工具各不相同，能力边界在页面上逐条标注。',
+      '元元与黄金策是两套独立配置的 Agent：提示词、知识范围与可用工具各不相同，能力边界在页面上逐条标注。',
   },
   {
     icon: Wrench,
@@ -99,8 +99,8 @@ export default function AboutPage() {
     <>
       <PageHero
         kicker="关于我们"
-        title="关于米高"
-        lead="米高是杭州词元通达科技有限公司旗下的 AI 经营平台。产品目标明确：由 AI 承接客户接待，并协助经营者掌握商品、订单、生产、库存与账目。"
+        title="关于观星台"
+        lead="观星台是杭州词元通达科技有限公司旗下的 AI 经营平台。产品目标明确：由 AI 承接客户接待，并协助经营者掌握商品、订单、生产、库存与账目。"
         chips={['杭州词元通达科技有限公司', '布艺 / 窗帘行业', '多租户 SaaS']}
       />
 
@@ -114,12 +114,12 @@ export default function AboutPage() {
               这些环节一旦依赖 Excel 与微信群接力，信息就会分散在十几个人的手中。
             </p>
             <p>
-              米高的产品形态是多租户 SaaS 底座，加上顾客侧的小布与经营侧的米宝。顾客侧由小布 7×24 小时接待咨询、
-              算料报价、下单、物流查询与售后受理；经营侧由米宝以自然语言问答查询订单、加工单进度、库存批次、
+              观星台的产品形态是多租户 SaaS 底座，加上顾客侧的元元与经营侧的黄金策。顾客侧由元元 7×24 小时接待咨询、
+              算料报价、下单、物流查询与售后受理；经营侧由黄金策以自然语言问答查询订单、加工单进度、库存批次、
               计件工资与应收对账。两侧读取的数据与后台所见一致。
             </p>
             <p>
-              米高不将 AI 描述为万能：可查询的查询，可计算的算，可落成工单的落成工单；超出范围的请求，
+              观星台不将 AI 描述为万能：可查询的查询，可计算的算，可落成工单的落成工单；超出范围的请求，
               AI 会明确说明，边界同时标注在页面上。这是产品交付的前提。
             </p>
           </div>
@@ -146,7 +146,7 @@ export default function AboutPage() {
               </div>
               <h2 className="mt-5 text-xl font-bold text-neutral-900">我们的愿景</h2>
               <p className="mt-3 leading-relaxed text-neutral-600">
-                让智能化与 AI 走进每一家中小企业。米高从布艺行业做起，把大企业才用得起的经营能力，
+                让智能化与 AI 走进每一家中小企业。观星台从布艺行业做起，把大企业才用得起的经营能力，
                 交到中小商家手上。
               </p>
             </div>
@@ -159,8 +159,8 @@ export default function AboutPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="产品原则"
-            title="米高的产品原则"
-            lead="这四条原则界定了米高 AI 的能力范围与行为方式。"
+            title="观星台的产品原则"
+            lead="这四条原则界定了观星台 AI 的能力范围与行为方式。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2">
             {principles.map((item) => (
@@ -221,7 +221,7 @@ export default function AboutPage() {
       </section>
 
       <CallToAction
-        title="了解米高在您的企业如何运行"
+        title="了解观星台在您的企业如何运行"
         lead="提交入驻申请，AI 自动甄别后即刻开通；也欢迎先留言说明业务场景，我们将按您的流程安排演示。"
         primary={
           <Link

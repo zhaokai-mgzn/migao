@@ -247,7 +247,7 @@ async def test_pe_flow_no_error():
 
 
 async def main():
-    print("\n🔍 米宝 Post-Deploy 自动验证")
+    print("\n🔍 黄金策 Post-Deploy 自动验证")
     print(f"   AI Service: {AI_SERVICE_URL}")
     print(f"   Test Image: {TEST_IMAGE}")
     print(f"   Token: {'已设置' if TEST_TOKEN else '未设置(部分测试跳过)'}")

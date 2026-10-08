@@ -436,7 +436,7 @@ describe('useAuthStore (Zustand auth store)', () => {
               position: '运营',
               avatar: 'https://oss.example.com/avatar.png',
               tenantId: 1,
-              tenantName: '米高布艺',
+              tenantName: '观星台布艺',
               tenantLogo: 'https://oss.example.com/logo.png',
               status: 'active',
             },
@@ -456,7 +456,7 @@ describe('useAuthStore (Zustand auth store)', () => {
       expect(user.nickname).toBe('张老板')
       expect(user.username).toBe('13800138000')
       expect(user.position).toBe('运营')
-      expect(user.tenantName).toBe('米高布艺')
+      expect(user.tenantName).toBe('观星台布艺')
       expect(user.tenantLogo).toBe('https://oss.example.com/logo.png')
       // 角色/权限/菜单保留（侧边栏过滤等依赖）
       expect(user.roles).toEqual(['admin'])
@@ -464,7 +464,7 @@ describe('useAuthStore (Zustand auth store)', () => {
       expect(user.menus).toEqual([{ key: 'dashboard', name: '经营看板', path: '/dashboard' }])
     })
 
-    it('应把 /api/auth/me 顶层的 capabilities 并入 user（#5642：米宝门禁/看板 AI 卡在页面刷新后仍为真值）', async () => {
+    it('应把 /api/auth/me 顶层的 capabilities 并入 user（#5642：黄金策门禁/看板 AI 卡在页面刷新后仍为真值）', async () => {
       mockGetUserInfo.mockResolvedValue({
         data: {
           data: {
@@ -478,7 +478,7 @@ describe('useAuthStore (Zustand auth store)', () => {
             permissions: ['*'],
             menus: [],
             // 🔴 capabilities 在 /api/auth/me 响应的 data **顶层**（与 user 平级），不在 user 内；
-            // store 漏并 ⇒ user.capabilities 恒 undefined ⇒ 米宝页 gate 恒 return null（全站空白）、
+            // store 漏并 ⇒ user.capabilities 恒 undefined ⇒ 黄金策页 gate 恒 return null（全站空白）、
             // 看板 aiService 指标卡恒不渲染
             capabilities: { mibaoChat: true, aiService: true },
           },

@@ -60,7 +60,7 @@
 **不适用域负例**见 `test_order_only_cases_are_not_in_scope`
 （`order_create` 用例**不得**被判红 —— 库里 13 条点名种子商品的下单用例靠这条口径不被假红）。
 
-## #5247 改判（2026-09-23 用户裁定「B 端米宝只读化」）：真值面为什么变了
+## #5247 改判（2026-09-23 用户裁定「B 端黄金策只读化」）：真值面为什么变了
 
 **原口径**：第 3 层手抄「5 个商品写工具」（`product_manage` / `product_update` / `sku_update` /
 `inventory_manage(adjust)` …），据此命中 **12 条**「写共享夹具属性」的用例。
@@ -195,7 +195,7 @@ def _all_cases() -> list:
 #: `WRITE_TOOL_ACTIONS`（工具级写、只有部分 action 是写）—— 该模块是**本仓"写"判定的唯一源**
 #: （`is_write_expectation` 与它同源），且它自己只列当前可达的工具（幽灵写工具由
 #: `test_case_trust_gate.py::test_write_tool_sets_only_name_reachable_tools` 兜底）。
-#: ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：**原口径**是本地手抄
+#: ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端黄金策只读化」）：**原口径**是本地手抄
 #: 一份「5 个商品写工具」（`product_manage` / `product_update` / `sku_update` /
 #: `inventory_manage` / …）。那份清单已被 #5247 证伪：前三个从 B 端全部 skill 解绑
 #: （两侧工具集都不可达 ⇒ 不是写方），`inventory_manage` 收窄为只读（写 action `adjust`
@@ -545,7 +545,7 @@ class TestSeedTruthAndScanSurface:
         names = seed_product_names()
         assert names, "从 fixtures/*.sql 解析不到任何商品名 —— 判据会空跑（fail-closed）"
         assert {"遮光窗帘", "北欧风窗帘", "夏日清风窗帘"} <= names, (
-            f"小布栈的三个种子商品名必须都在派生集合里（解析口径变了？）：{sorted(names)}")
+            f"元元栈的三个种子商品名必须都在派生集合里（解析口径变了？）：{sorted(names)}")
 
     def test_two_independent_seed_sources_agree(self):
         """与 #3835 守卫的硬编码清单**互校**：两份真值集合必须相等。

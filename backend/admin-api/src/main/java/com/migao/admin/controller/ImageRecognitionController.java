@@ -24,7 +24,7 @@ import java.util.Map;
  * <ul>
  *   <li>{@code POST /api/admin/image-recognition} —— 图 → 结构化字段（<b>不落库</b>）；</li>
  *   <li>{@code POST /api/admin/image-recognition/interpret} —— 图 + 可选 {@code hint} →
- *       米宝推理的 {@code page_fill} 计划（<b>同族</b>：同权限、同 service token、同 service，
+ *       黄金策推理的 {@code page_fill} 计划（<b>同族</b>：同权限、同 service token、同 service，
  *       不新立第二套约定）。</li>
  * </ul>
  *
@@ -40,7 +40,7 @@ import java.util.Map;
  *       {@code /api/admin/agent/*}）。把页面入口挂进去 = 把纯技术能力标成「必须有 Agent 才能用」，
  *       而设计裁定恰恰是<b>「不要让 Agent 成为这个能力的唯一入口」</b>
  *       （{@code docs/agent-feature-design.md} §四，PR #5320 入库）。{@code /interpret} 同理：
- *       用户裁定「操作入口和呈现方式和米宝 agent 不一样」⇒ 它<b>不经过</b>对话窗口。</li>
+ *       用户裁定「操作入口和呈现方式和黄金策 agent 不一样」⇒ 它<b>不经过</b>对话窗口。</li>
  *   <li><b>对内</b>：本控制器 → {@link ImageRecognitionClient} →
  *       {@code POST /api/internal/vision/recognize} / {@code POST /api/internal/vision/interpret}
  *       （Service Token）。与 {@link CraftCalcController} / 简报 / 知识提炼<b>同一套</b>内部调用约定，
@@ -109,7 +109,7 @@ public class ImageRecognitionController {
     }
 
     /**
-     * 识别 + 米宝推理 → 同页填充计划（**不落库**；issue #6367 包 P2）。
+     * 识别 + 黄金策推理 → 同页填充计划（**不落库**；issue #6367 包 P2）。
      *
      * <p>与 {@link #recognize} <b>同族</b>：同一类级前缀、同一个 {@code @PostMapping} 形态、
      * 同一份「按 target 取写码」权限判定、同一套 client / service token；只多一个**可选** {@code hint}

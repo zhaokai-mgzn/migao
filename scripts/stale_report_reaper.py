@@ -58,8 +58,8 @@ PREFIX_TO_WORKFLOW = {
     #: 映射到任一条都可能拿另一条的绿去关单（假关）。前缀匹配是 `startswith` + **表序**，
     #: 故这里逐字取标题里两条腿各自的措辞；`[Agent Eval]` 这个根前缀**故意不登记**
     #: （登记了就会把两条腿一起吞掉）—— 影子前缀由 `shadowed_prefixes()` 守着。
-    "[Agent Eval] 米宝冒烟评测失败": "agent-eval.yml",
-    "[Agent Eval] 米宝对抗评测失败": "agent-eval-adversarial.yml",
+    "[Agent Eval] 黄金策冒烟评测失败": "agent-eval.yml",
+    "[Agent Eval] 黄金策对抗评测失败": "agent-eval-adversarial.yml",
     "[E2E Real]": "e2e-real.yml",
     #: ⚠️ 边界（照实登记）：`[Agent Eval]×2` / `[E2E Real]` / `[Fixture]` 这四条腿的**读数口径未取证**
     #: （2026-10-01 现取：近期连一次 success run 都没有 ⇒ 采不到「跑判据 N」这类样本）

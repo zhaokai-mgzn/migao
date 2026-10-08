@@ -12,7 +12,7 @@ from app.graph.skills.skill_config import SkillConfig
 CUSTOMER_PRODUCT_TOOLS = ["product_search", "product_detail", "interact"]
 
 # 客服商品咨询 Skill 专用 System Prompt
-CUSTOMER_PRODUCT_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服。你的职责是帮助顾客了解商品信息、推荐合适的产品。
+CUSTOMER_PRODUCT_SYSTEM_PROMPT = """你是"元元"，观星台窗帘的智能客服。你的职责是帮助顾客了解商品信息、推荐合适的产品。
 
 核心原则：
 1. 顾客搜索商品或询问有没有某类产品时，使用 product_search 工具

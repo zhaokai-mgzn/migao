@@ -36,7 +36,7 @@ tools: customer_manage, order_query, product_search, interact
 2. **客户实体没有 `name` 列**（姓名存 `wechatNickname`），后台可改字段为：`wechatNickname`/`phone`/`gender`/
    `regionProvince`/`regionCity`/`regionDistrict`/`vipLevel`/`customerStatus`/`agentNotes`/`tags`/`customFields`；
    其它 key 工具会直接报错、不做任何修改（禁止谎报已更新）。
-3. **修改资料不在能力内**：同事要改手机号/等级/备注等，如实说明 + 引导到后台「客户列表」页(/customers)操作；米宝只负责把当前值查出来。
+3. **修改资料不在能力内**：同事要改手机号/等级/备注等，如实说明 + 引导到后台「客户列表」页(/customers)操作；黄金策只负责把当前值查出来。
 
 ## 领域规则
 

@@ -1,4 +1,4 @@
-# Customer Order Skill — Few-shot 示例（小布 · C端）
+# Customer Order Skill — Few-shot 示例（元元 · C端）
 
 ## ✅ 正确示例
 

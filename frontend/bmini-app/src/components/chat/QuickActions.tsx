@@ -9,7 +9,7 @@ interface QuickActionsProps {
 }
 
 /**
- * B 端「问米宝」空态快捷入口：**六格等权**（2 列 × 3 行），点任一格即发送 prompt 触发对话。
+ * B 端「问黄金策」空态快捷入口：**六格等权**（2 列 × 3 行），点任一格即发送 prompt 触发对话。
  *
  * 🔴 内容**不在这里定义**（issue #6468）：单一真值 = 服务端
  * `GET /api/chat/quick-actions`（`backend/ai-agent-service/app/api/chat.py` 的 `QUICK_ACTIONS`）。

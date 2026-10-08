@@ -3,7 +3,7 @@
 
 ⚠️ 本工具的权限码是生产域读码 `production:view`（issue #5291：生产域此前**没有读码**，两个读端点与
 `ProductionController` 的写面同用 `order:list`/`processing:manage`）：读端点已按 #5246/#5291 的裁决
-**拆成方法级 `production:view`** —— 否则持有 `order:list` 的客服/销售/财务能经米宝读到「工艺配置」
+**拆成方法级 `production:view`** —— 否则持有 `order:list` 的客服/销售/财务能经黄金策读到「工艺配置」
 页面里看不见的数据（权限泄露），而只持读码的岗位若被要求写码则被假拒绝。
 本文件把「工具码 == 端点码」钉在测试层。
 """

@@ -393,7 +393,7 @@ class AfterSalesTicketServiceTest {
     }
 
     // ======================== issue #3686：source 按真实来源落库 ========================
-    // 原实现 :348 无条件 setSource("agent") ⇒ C 端小布顾客工单被误标 agent、DDL DEFAULT 'customer' 成死默认。
+    // 原实现 :348 无条件 setSource("agent") ⇒ C 端元元顾客工单被误标 agent、DDL DEFAULT 'customer' 成死默认。
     // 取值集合（不臆造）：customer/agent/merchant —— 前两值代码中已存在（实体注释 + 前端渲染），
     // merchant = 人工建单（表单入口）。全仓库唯一消费方 AfterSalesDetail.tsx:387。
 
@@ -769,7 +769,7 @@ class AfterSalesTicketServiceTest {
     // ========== Bug修复测试 ==========
 
     @Test
-    @DisplayName("getTicketById — 按ticket_no查询 (兼容米宝用ticket_no调用detail)")
+    @DisplayName("getTicketById — 按ticket_no查询 (兼容黄金策用ticket_no调用detail)")
     void getTicketById_ByTicketNo() {
         // given: UUID查询返回null, 但ticket_no查询找到记录
         when(afterSalesTicketMapper.selectById("AS-20260704-0001")).thenReturn(null);

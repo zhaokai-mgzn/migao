@@ -114,7 +114,7 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
     }
 
     case 'batch_stock': {
-      // 批次账 / 省料度量卡（issue #5188）。该工具只绑米宝 Skill（`product:list` 门禁 ⇒
+      // 批次账 / 省料度量卡（issue #5188）。该工具只绑黄金策 Skill（`product:list` 门禁 ⇒
       // C 端恒不可达）⇒ 按 persona 推导只需 B 端两端渲染（本端 + admin-web 桌面）。
       return <BatchStockCard key={`card-${idx}`} data={data} />
     }

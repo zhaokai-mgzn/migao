@@ -237,7 +237,7 @@ cases:
       - agent-notification.scheduled-task-idempotent
       - agent-notification.scheduled-task-lifecycle
     user_inputs:
-      - "商家对米宝说「3 天后提醒我跟进张先生」→ 建一条待办；到点由每分钟的扫描腿投递成站内通知"
+      - "商家对黄金策说「3 天后提醒我跟进张先生」→ 建一条待办；到点由每分钟的扫描腿投递成站内通知"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -269,7 +269,7 @@ cases:
       - agent-notification.scheduled-task-trio
       - agent-notification.scheduled-task-idempotent
     user_inputs:
-      - "商家对米宝说「3 天后提醒我跟进张先生」→ 米宝发确认卡，点头后建一条待办"
+      - "商家对黄金策说「3 天后提醒我跟进张先生」→ 黄金策发确认卡，点头后建一条待办"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -285,4 +285,40 @@ cases:
         - "backend/ai-agent-service/tests/test_scheduled_task_manage.py"
       ci:
         - pr-check.yml
+      verifies: []
+
+  - id: AG-012
+    legacy_id: ""
+    title: "双 Agent 声明契约（元元 / 黄金策）：display_name / persona / skill 集 / 角色白名单 / 默认 agent 与建图"
+    domains:
+      - agents
+      - chat
+    tier: normal
+    tags:
+      - agents
+      - dual-agent
+      - config-contract
+      - naming
+    truths_ref:
+      - ai-chat.tool-classes
+      - ai-chat.permission-layers
+    user_inputs:
+      - "ai-agent-service 的双 Agent 声明：mibao / xiaobu 两种 agent_type 的 AgentConfig（称呼 / persona / skill 集 / 角色面）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·声明字段（issue #6525 改名后口径）：`get_agent_config('mibao').display_name == '黄金策'` 且 `persona == 'mibao'`；`get_agent_config('xiaobu').display_name == '元元'` 且 `persona == 'xiaobu'` —— **中文字面量是称呼、`agent_type`/`persona` 是标识符**，改名只动前者。执行点 = backend/ai-agent-service/tests/test_dual_agent.py 的 `TestAgentConfigs::test_mibao_config_exists` / `test_xiaobu_config_exists`"
+      - "判据 2·skill 集与 fallback 不塌缩：黄金策 = order / product / aftersales（`general` 兜底）；元元 = `customer_*` 前缀（customer_order / customer_product）+ `customer_general` 兜底。执行点 = 同文件 `test_mibao_skills` / `test_xiaobu_skills`"
+      - "判据 3·角色白名单：黄金策容许 admin / agent 而**不许** customer；元元只容许 customer 而不许 admin。执行点 = 同文件 `test_mibao_roles` / `test_xiaobu_roles`"
+      - "判据 4·工厂与默认值：不传参的 `get_agent()` 默认返回元元（向后兼容）、两种 agent_type 返回**不同实例**、传入自定义 registry 时不再建默认 registry。执行点 = `TestGetAgentFactory` 四条"
+      - "判据 5·双类型建图 + 兼容入口：`build_agent_graph('mibao' / 'xiaobu')` 与 `build_customer_service_graph()` 都能建出图。执行点 = `TestGraphBuilderDualType` 三条"
+      - "🔴 红证（可复算）：把 `backend/ai-agent-service/app/agents/agents/{xiaobu,mibao}.py` 的 `display_name` 换回旧称呼 ⇒ 判据 1 与 `TestGreetings` 当场红；复算命令 = 在仓库根跑 `pytest backend/ai-agent-service/tests/test_dual_agent.py -q`"
+    skip_reason: "[backend-contract] AgentConfig / 工厂 / 建图的**零 LLM** 单元契约：判定在 dataclass 与图构建层（由 ai-agent-service pytest 执行），不进 agent-eval 冒烟"
+    precondition: "前置 = 双 Agent 声明模块与 skill 注册表可导入（`app.agents.agent_config` / `app.graph.skills.skill_registry`）；前置由测试自身的 autouse fixture（重置全局实例与注册表）持有 —— 导入失败即直接红，不表现成「agent 不干活」"
+    merge_log: "2026-10-08 新增（issue #6525，品牌改名 米高→观星台 / 米宝→黄金策 / 小布→元元）：该测试文件此前**未声明 case_ids**，本单改动它（断言里的旧称呼换新；`agent_type` / `persona` / 文件名等标识符一字未动）后按 Growth Gate 口径补声明。用例内容**如实对应该文件既有的五组断言**，未新增、未放宽任何断言（先例 = AG-007 / issue #5951 的同款处置）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_dual_agent.py"
+      ci:
+        - ai-agent-tests.yml
       verifies: []

@@ -741,7 +741,7 @@ class TestGuardIsNotVacuous:
             "该系统已无人工转接通道，我继续帮您处理可以吗？",
             "抱歉，我没法把您转接给人工，但我可以现在就把问题整理成售后工单跟进。",
             "要我把您的情况整理成售后工单跟进吗？",
-            "继续咨询小布",
+            "继续咨询元元",
         ]
         reported = [t for t in honest if invites_handoff(t)]
         assert not reported, (
@@ -794,7 +794,7 @@ class TestGuardIsNotVacuous:
         """**prompt 面自证**：内联 prompt 里写回该工具 ⇒ 采集器必须看得见。"""
         planted = tmp_path / "planted_general_skill.py"
         planted.write_text(
-            'X_SYSTEM_PROMPT = """你是小布。\n复杂投诉 → 用 human_handoff 转人工。\n"""\n'
+            'X_SYSTEM_PROMPT = """你是元元。\n复杂投诉 → 用 human_handoff 转人工。\n"""\n'
             'CONFIG = build(system_prompts={"xiaobu": X_SYSTEM_PROMPT}, xiaobu_prompt="备用")\n',
             encoding="utf-8")
         hits = stray_mentions(prompt_literal_strings(planted), "planted")

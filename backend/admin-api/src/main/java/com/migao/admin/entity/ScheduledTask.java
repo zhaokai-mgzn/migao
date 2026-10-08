@@ -73,7 +73,7 @@ public class ScheduledTask {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String, Object> payload;
 
-    /** user（米宝委托）/ system（规则派生）。 */
+    /** user（黄金策委托）/ system（规则派生）。 */
     private String source;
 
     /** pending / fired / cancelled / failed / dismissed。 */

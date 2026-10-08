@@ -1,3 +1,4 @@
+# case_ids: AG-012
 """
 双 Agent 架构测试（Skill-centric 配置驱动版）
 
@@ -54,18 +55,18 @@ class TestAgentConfigs:
         """mibao AgentConfig 已注册"""
         config = get_agent_config("mibao")
         assert config.name == "mibao"
-        assert config.display_name == "米宝"
+        assert config.display_name == "黄金策"
         assert config.persona == "mibao"
 
     def test_xiaobu_config_exists(self):
         """xiaobu AgentConfig 已注册"""
         config = get_agent_config("xiaobu")
         assert config.name == "xiaobu"
-        assert config.display_name == "小布"
+        assert config.display_name == "元元"
         assert config.persona == "xiaobu"
 
     def test_mibao_skills(self):
-        """米宝使用完整 Skill 集合"""
+        """黄金策使用完整 Skill 集合"""
         config = get_agent_config("mibao")
         assert "order" in config.skill_names
         assert "product" in config.skill_names
@@ -73,21 +74,21 @@ class TestAgentConfigs:
         assert config.fallback_skill == "general"
 
     def test_xiaobu_skills(self):
-        """小布使用 customer_* 前缀的 Skill"""
+        """元元使用 customer_* 前缀的 Skill"""
         config = get_agent_config("xiaobu")
         assert "customer_order" in config.skill_names
         assert "customer_product" in config.skill_names
         assert config.fallback_skill == "customer_general"
 
     def test_mibao_roles(self):
-        """米宝允许内部角色"""
+        """黄金策允许内部角色"""
         config = get_agent_config("mibao")
         assert config.allows_role("admin")
         assert config.allows_role("agent")
         assert not config.allows_role("customer")
 
     def test_xiaobu_roles(self):
-        """小布允许 C 端角色"""
+        """元元允许 C 端角色"""
         config = get_agent_config("xiaobu")
         assert config.allows_role("customer")
         assert not config.allows_role("admin")
@@ -125,7 +126,7 @@ class TestGetAgentFactory:
     @patch("app.graph.builder.build_agent_graph")
     @patch("app.agents.customer_service_agent.create_default_registry")
     def test_get_agent_default_is_xiaobu(self, mock_create_registry, mock_build_graph):
-        """默认 get_agent() 返回小布 Agent（向后兼容）"""
+        """默认 get_agent() 返回元元 Agent（向后兼容）"""
         mock_create_registry.return_value = MagicMock()
         mock_build_graph.return_value = MagicMock()
 
@@ -146,7 +147,7 @@ class TestGetAgentFactory:
     @patch("app.graph.builder.build_agent_graph")
     @patch("app.agents.customer_service_agent.create_default_registry")
     def test_mibao_and_xiaobu_are_different_instances(self, mock_create_registry, mock_build_graph):
-        """米宝和小布是不同的 Agent 实例"""
+        """黄金策和元元是不同的 Agent 实例"""
         mock_create_registry.return_value = MagicMock()
         mock_build_graph.return_value = MagicMock()
 
@@ -165,25 +166,25 @@ class TestGreetings:
     @patch("app.graph.builder.build_agent_graph")
     @patch("app.agents.customer_service_agent.create_default_registry")
     async def test_mibao_greeting(self, mock_create_registry, mock_build_graph, agent_context):
-        """米宝的 greeting 包含'米宝'和'工作助手'"""
+        """黄金策的 greeting 包含'黄金策'和'工作助手'"""
         mock_create_registry.return_value = MagicMock()
         mock_build_graph.return_value = MagicMock()
 
         agent = get_agent(agent_type="mibao")
         greeting = await agent.get_greeting(agent_context)
-        assert "米宝" in greeting
+        assert "黄金策" in greeting
         assert "工作助手" in greeting
 
     @patch("app.graph.builder.build_agent_graph")
     @patch("app.agents.customer_service_agent.create_default_registry")
     async def test_xiaobu_greeting(self, mock_create_registry, mock_build_graph, agent_context):
-        """小布的 greeting 包含'小布'和'客服'"""
+        """元元的 greeting 包含'元元'和'客服'"""
         mock_create_registry.return_value = MagicMock()
         mock_build_graph.return_value = MagicMock()
 
         agent = get_agent(agent_type="xiaobu")
         greeting = await agent.get_greeting(agent_context)
-        assert "小布" in greeting
+        assert "元元" in greeting
         assert "客服" in greeting
 
 

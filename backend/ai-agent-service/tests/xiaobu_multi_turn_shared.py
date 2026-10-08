@@ -2,10 +2,10 @@
 共享基础设施（拆分自 test_xiaobu_multi_turn_scenarios.py，2026-08-29）
 """
 """
-小布（CustomerServiceAgent）复杂多轮对话场景测试
+元元（CustomerServiceAgent）复杂多轮对话场景测试
 ==============================================
 
-10 个场景验证小布的智能程度，涵盖：
+10 个场景验证元元的智能程度，涵盖：
 - 意图识别准确性
 - 多轮上下文保持
 - Skill 路由正确性
@@ -156,7 +156,7 @@ def log_turn(
         logger.info(f"  ║ 🔧 Tool调用: (无)")
     logger.info(f"  ╠{'─'*56}╣")
     # 完整输出回复内容，不截断
-    logger.info(f"  ║ 📤 小布回复:")
+    logger.info(f"  ║ 📤 元元回复:")
     for line in reply.split('\n'):
         logger.info(f"  ║    {line}")
     if entities:

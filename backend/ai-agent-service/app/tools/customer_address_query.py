@@ -1,5 +1,5 @@
 """
-AI 智能客服系统 - C 端收货地址查询 Tool（小布专用，issue #2815 CH-025）
+AI 智能客服系统 - C 端收货地址查询 Tool（元元专用，issue #2815 CH-025）
 
 下单场景自动填充：老客户下单时，查询最近一笔有收货地址的订单的收货信息
 （收货人/手机号/地址），供 interact form 预填，用户可修改后确认，减少输入。
@@ -19,7 +19,7 @@ from app.utils.log_sanitizer import LogSanitizer
 
 
 class CustomerAddressQueryTool(BaseTool):
-    """C 端收货地址查询（小布专用，强制用户级隔离，只读）"""
+    """C 端收货地址查询（元元专用，强制用户级隔离，只读）"""
 
     name = "customer_address_query"
 
@@ -39,7 +39,7 @@ class CustomerAddressQueryTool(BaseTool):
 
     # 物理隔离：仅 C 端顾客可用；商户员工/管理员一律拒绝（用 B 端 order_query）
     allowed_roles = ["customer"]
-    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（加码会让小布全量失效）。
+    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（加码会让元元全量失效）。
     required_permissions = []
     read_only = True   # 只读（BaseTool 默认值，显式声明以便权限面自检）
 

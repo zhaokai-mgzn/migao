@@ -112,7 +112,7 @@ class TestRedEvidenceDanglingActionBlocks:
     def test_must_succeed_and_db_verify_sources_are_covered(self):
         """`must_succeed` / `db_verify.source` 的 action 同受约束（不漏面）。
 
-        ⚠️ 夹具工具**再次重锚**（2026-09-24，issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：
+        ⚠️ 夹具工具**再次重锚**（2026-09-24，issue #5247，用户裁定 2026-09-23「B 端黄金策只读化」）：
         原用的 `product_manage` / `order_manage` 已从 B 端解绑（两侧工具集都不可达）⇒
         `action_binding_violations` 只判**两端注册表并集内**的工具，夹具会因此**静默失去判别力**
         （本测试当场变红——这正是「幽灵夹具」会被抓住的形态）。改用 B 端可达且**多 action** 的

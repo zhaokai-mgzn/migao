@@ -12,7 +12,7 @@ const MOCK_PRODUCT = {
   name: '天鹅绒遮光窗帘',
   sku: 'SKU-DETAIL-001',
   skuCode: 'SKU-DETAIL-001',
-  brand: '米高',
+  brand: '观星台',
   categoryId: 'cat_001',
   categoryName: '窗帘布艺',
   description: '<p>优质天鹅绒材质，遮光率95%以上</p>',
@@ -73,9 +73,9 @@ test.describe('商品详情', () => {
   test('基本信息应显示分类、品牌、计价方式、单价', async ({ page }) => {
     await expect(page.getByRole('heading', { name: '基本信息' })).toBeVisible()
     await expect(page.getByText('窗帘布艺')).toBeVisible()
-    // "米高" is also the app name in sidebar; scope to product info
+    // "观星台" is also the app name in sidebar; scope to product info
     const infoSection = page.getByRole('heading', { name: '基本信息' }).locator('..')
-    await expect(infoSection.getByText('米高')).toBeVisible()
+    await expect(infoSection.getByText('观星台')).toBeVisible()
     await expect(page.getByText('按米')).toBeVisible()
     await expect(page.getByText('¥168.00/米')).toBeVisible()
   })

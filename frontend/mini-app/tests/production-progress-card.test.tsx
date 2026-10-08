@@ -156,7 +156,7 @@ describe('ProductionProgressCard（顾客端生产进度卡）', () => {
     expect(screen.getByText('当前工序：外帘装袋')).toBeTruthy()
   })
 
-  it('兼容米宝精简进度载荷（progress_percent/current_operation/pending_operations/expected_delivery_date）', () => {
+  it('兼容黄金策精简进度载荷（progress_percent/current_operation/pending_operations/expected_delivery_date）', () => {
     // 来源：M4-G-2 已合并的 GET /api/admin/agent/production/progress 返回形状（无 positions）
     render(
       <ProductionProgressCard

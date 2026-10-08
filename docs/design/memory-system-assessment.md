@@ -1,7 +1,7 @@
 # 双 Agent 记忆功能体系调研与评估报告
 
 > 版本：v1.0（2026-09）
-> 范围：`backend/ai-agent-service` — 小布（C 端）/ 米宝（B 端）记忆体系现状评估
+> 范围：`backend/ai-agent-service` — 元元（C 端）/ 黄金策（B 端）记忆体系现状评估
 > 方法：代码逐文件核实（证据带 文件:行号）+ 主流方案一手文档调研（LangGraph/LangMem、Mem0、Zep/Graphiti、Letta、OpenAI）
 > 结论先行：**短期记忆达标不需强化；长期记忆只写不读是最大短板，需优化完善（接线 + 安全防护 + 合规闭环）；偏好读取未接线；语义/程序记忆层空置**
 
@@ -13,8 +13,8 @@
 
 | Agent | 服务对象 | Skill 域 | 记忆策略 |
 |---|---|---|---|
-| 小布 xiaobu | C 端消费者 | customer_order/product/quote/aftersales/knowledge + customer_general | **与米宝共用同一套 memory 模块** |
-| 米宝 mibao | B 端商家员工 | order/product/aftersales/customer/staff/settings/data + general | 同上，无 agent 维度区分 |
+| 元元 xiaobu | C 端消费者 | customer_order/product/quote/aftersales/knowledge + customer_general | **与黄金策共用同一套 memory 模块** |
+| 黄金策 mibao | B 端商家员工 | order/product/aftersales/customer/staff/settings/data + general | 同上，无 agent 维度区分 |
 
 双 Agent 差异仅体现在 Skill 组合与 persona prompt（`agents/agents/xiaobu.py`、`agents/agents/mibao.py`），记忆存储与提取策略完全共享：`user_memories` 表只有 `tenant_id+user_id` 维度，**无 agent_type 列**（`docs/sql/migrations/V20260608__add_user_memories.sql:3-15`）。
 
@@ -66,8 +66,8 @@
 
 ### 1.6 双 Agent 记忆差异化缺失
 
-- 小布（C 端）需要的：消费者画像（风格偏好、预算、常用尺寸、历史订单倾向、复购线索）
-- 米宝（B 端）需要的：商家操作习惯（常用功能、处理规则、常用快捷操作、偏好设置）
+- 元元（C 端）需要的：消费者画像（风格偏好、预算、常用尺寸、历史订单倾向、复购线索）
+- 黄金策（B 端）需要的：商家操作习惯（常用功能、处理规则、常用快捷操作、偏好设置）
 - 现状：**两者共用同一 extractor prompt 与同一张表**，提取出的画像无法按角色/agent 区分消费，也无 agent 维度检索（`extractor.py:37-56` 的提取 prompt 是通用客服模板）。
 
 ---
@@ -146,8 +146,8 @@ upsert 按 `(tenant,user,key)` 去重，但 key 由 LLM 自由生成 → 同一�
 
 ### 3.3 业务价值评估（为什么值得完善）
 
-- **C 端小布**：消费者画像记忆是客服体验差异化的核心——「上次看过的遮光窗帘」「偏好简约风」「上次退过货的款」直接影响转化与信任。当前画像提取了却不注入，等于零价值。
-- **B 端米宝**：商家操作习惯记忆（常用功能排序、处理规则偏好）可显著降低操作路径成本，且 B 端数据量小、结构化程度高，最适合先落地。
+- **C 端元元**：消费者画像记忆是客服体验差异化的核心——「上次看过的遮光窗帘」「偏好简约风」「上次退过货的款」直接影响转化与信任。当前画像提取了却不注入，等于零价值。
+- **B 端黄金策**：商家操作习惯记忆（常用功能排序、处理规则偏好）可显著降低操作路径成本，且 B 端数据量小、结构化程度高，最适合先落地。
 - **合规底线**：`user_memories` 已收集真实用户偏好但无查询/删除接口，个保法合规风险客观存在（审计 06 A3 已列为 P0）。
 
 ---
@@ -200,7 +200,7 @@ upsert 按 `(tenant,user,key)` 去重，但 key 由 LLM 自由生成 → 同一�
 
 ## 六、实施记录（issue #2815，2026-09）
 
-> 决策：**C 端（小布）启用长期记忆；B 端（米宝）本期不落库**。复用 `user_memories` 表加 `agent_type` 列。全部改动经 AI-TDD + `case_ids:`（CH-024/CH-025/MC-013/MC-014/MC-015）+ 三把工具预检。
+> 决策：**C 端（元元）启用长期记忆；B 端（黄金策）本期不落库**。复用 `user_memories` 表加 `agent_type` 列。全部改动经 AI-TDD + `case_ids:`（CH-024/CH-025/MC-013/MC-014/MC-015）+ 三把工具预检。
 
 | 项 | 落地内容 | 证据/验证 |
 |---|---|---|

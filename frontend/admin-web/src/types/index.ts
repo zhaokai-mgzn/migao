@@ -88,7 +88,7 @@ export interface User {
   /** 身份类型：employee=员工 / admin=企业管理员 / super_admin=平台超管（#5485） */
   identityType?: string
   /**
-   * 能力位（issue #5642 功能⑤）：能否唤出米宝 —— **服务端单一真值**（`GET /api/auth/me` 下发）。
+   * 能力位（issue #5642 功能⑤）：能否唤出黄金策 —— **服务端单一真值**（`GET /api/auth/me` 下发）。
    * 🔴 前端**不得**自己判权限码：哪些码算管理员是服务端 `AdminGate` 的事，端侧只读这个布尔位
    * （⇒ 改一处即小程序端与 admin-web 两端同步）。`false` ⇒ 必须给「需要管理员授权」+ 可行动引导。
    */

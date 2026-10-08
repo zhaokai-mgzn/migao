@@ -458,7 +458,7 @@ class TestPageFillPlanContract:
     def test_reference_is_carried_through_but_is_never_a_value(self):
         """参考格（issue #6529）：`reference` 透传，`value` / `source` **仍然为空**。
 
-        深通道（米宝同页填充）与一次性推理共用这一份构造 ⇒ 两条通道不可能各说一套。
+        深通道（黄金策同页填充）与一次性推理共用这一份构造 ⇒ 两条通道不可能各说一套。
         """
         fields = [{
             "key": "items", "label": "商品明细", "value": None, "source": None,

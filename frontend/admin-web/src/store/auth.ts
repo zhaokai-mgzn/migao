@@ -169,7 +169,7 @@ export const useAuthStore = create<AuthState>()((set, get) => {
         // 兼容历史扁平响应（部分测试/旧契约 data 直接是 user 对象）。
         // #5485: 内层还带 mustChangePassword —— 强制改密页跳转的判据靠它（刷新页面后也拿得到）。
         // #5642: capabilities（mibaoChat/aiService）在 data **顶层**（与 user 平级，服务端单一真值），
-        // 漏并 ⇒ 米宝页 MibaoAccessGate 恒 return null（整页空白）、看板 aiService 指标卡恒不渲染。
+        // 漏并 ⇒ 黄金策页 MibaoAccessGate 恒 return null（整页空白）、看板 aiService 指标卡恒不渲染。
         const payload = data as any
         const inner = payload?.user && typeof payload.user === 'object' ? payload.user : payload
         set({

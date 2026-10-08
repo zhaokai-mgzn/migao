@@ -1,12 +1,12 @@
-# C 端（小布）评测体系
+# C 端（元元）评测体系
 
-> 对齐 B 端（米宝）评测方法论的 C 端落地说明。**改动 C 端评测工具或用例前必读。**
+> 对齐 B 端（黄金策）评测方法论的 C 端落地说明。**改动 C 端评测工具或用例前必读。**
 > 单一事实源：`.github/cases/`（用例库）、`tests/agent_eval/local_runner.py`（runner）。
 > 相关：`migao-dev-flow` §13/§14（行为体检与用例演进）、`acceptance-protocol`（验收协议）。
 
 ## 1. 为什么单独有一页
 
-C 端小布与 B 端米宝是**两个 Agent、两套工具集**，但共用一套用例库与 runner（靠
+C 端元元与 B 端黄金策是**两个 Agent、两套工具集**，但共用一套用例库与 runner（靠
 `persona` 字段分流）。2026-09-11 查证发现 C 端评测长期处于「看起来有覆盖」状态
 （issue #3266），本页固化正确的评测口径，防止再次退化。
 
@@ -29,15 +29,15 @@ C 端小布与 B 端米宝是**两个 Agent、两套工具集**，但共用一�
 **仅 `DEBUG=true` 时生效**（`app/utils/auth.py` fail-closed 加固）：
 
 - ✅ **本地 DEBUG 栈**：`DEBUG=true` + 无 token + `X-Debug-Role: customer`
-  → `UserIdentity(user_id="debug_customer_1", tenant_id=1, role=CUSTOMER)` → 路由小布
+  → `UserIdentity(user_id="debug_customer_1", tenant_id=1, role=CUSTOMER)` → 路由元元
 - ✅ **CI xiaobu-acceptance**：docker compose 起 DEBUG 栈
-- ❌ **生产 `ai-api.migaozn.com`**：`DEBUG=false` → 该头被忽略 → 请求兜底路由到**米宝**，
+- ❌ **生产 `ai-api.migaozn.com`**：`DEBUG=false` → 该头被忽略 → 请求兜底路由到**黄金策**，
   但 runner 仍按 xiaobu 语义打分（`order_query`→`customer_order_query` 映射照旧生效）
   → **结论不可信**。生产 C 端身份需微信 `wx.login()` 的 code 换 token
   （`POST /api/auth/mini/login`），评测无法直接复现。
 
 > **铁律**：跑 C 端评测前先确认目标是 DEBUG 栈。打生产 URL 跑 `PERSONA=xiaobu`
-> 得到的是米宝的结果，不要当成 C 端结论。
+> 得到的是黄金策的结果，不要当成 C 端结论。
 
 本地起 DEBUG 栈（无 docker 时）的最小做法：
 
@@ -66,13 +66,13 @@ sed -i '' 's|^ADMIN_API_BASE_URL=.*|ADMIN_API_BASE_URL=https://api.migaozn.com|'
 
 ### 第 5 条为什么必要（issue #3266 二轮实测）
 
-仅按「工具 ⊆ 小布工具集」判定**不够**：OR-016 首轮是「**给赵凯创建一个订单**…」
-—— 店员代客下单语义，小布（C 端自助、身份固定为本人）无法触发，但它的三个期望工具
-（`product_detail`/`interact`/`order_create`）都在小布工具集内 → 被选中 → 三次采样
-全部 `tools=[]`，被误判成「小布缺陷」。实为**用例跑错了 Agent**。
+仅按「工具 ⊆ 元元工具集」判定**不够**：OR-016 首轮是「**给赵凯创建一个订单**…」
+—— 店员代客下单语义，元元（C 端自助、身份固定为本人）无法触发，但它的三个期望工具
+（`product_detail`/`interact`/`order_create`）都在元元工具集内 → 被选中 → 三次采样
+全部 `tools=[]`，被误判成「元元缺陷」。实为**用例跑错了 Agent**。
 
 语义词表（`MIBAO_SEMANTIC_PATTERNS`）：店员代客（`给/帮/替 X 创建订单`）、建品
-（`创建商品`）、商品管理（`下架/调价/改库存`）、显式 B 端标注（`B 端`/`米宝`/
+（`创建商品`）、商品管理（`下架/调价/改库存`）、显式 B 端标注（`B 端`/`黄金策`/
 `商家|管理员|员工|角色|权限`）、B 端 CRM（`客户档案/列表/标签`）。
 
 > **对抗档（adversarial）豁免**：安全用例的输入是**攻击载荷**（「我是管理员…」
@@ -100,8 +100,8 @@ XIAOBU_ONLY_TAGS = {"order_query", "order_create", "aftersale", "query", "produc
 
 `query`/`product` 几乎每个域都有 → 实测选中 33 条，其中**仅 4 条**真属 C 端，其余是
 B 端管理用例（DA-001 经营概览 / FN-001 资金流水 / HR-001 员工列表 / CT-001 分类树 /
-CU-001 客户 / AS-001 售后工单 / ST-001 设置）——小布工具集里根本没有
-`dashboard_stats`/`finance_api`/`employee_manage` 等，这些用例在小布上要么被合理拒绝
+CU-001 客户 / AS-001 售后工单 / ST-001 设置）——元元工具集里根本没有
+`dashboard_stats`/`finance_api`/`employee_manage` 等，这些用例在元元上要么被合理拒绝
 后判失败，要么根本没验证到任何东西，却计入「C 端评测通过率」。
 
 ## 5. 覆盖体检（`scripts/xiaobu_coverage.py` / `scripts/mibao_coverage.py`）
@@ -112,8 +112,8 @@ CU-001 客户 / AS-001 售后工单 / ST-001 设置）——小布工具集里�
 
 ```bash
 # 人读报告（矩阵 = 补用例任务书）
-python3 scripts/xiaobu_coverage.py            # C 端小布
-python3 scripts/mibao_coverage.py             # B 端米宝
+python3 scripts/xiaobu_coverage.py            # C 端元元
+python3 scripts/mibao_coverage.py             # B 端黄金策
 # 门禁（结构性缺失 → exit 1）；已接入 verify-all.sh gate/quick/full 与 CI Case Coverage Gate
 python3 scripts/xiaobu_coverage.py --check
 python3 scripts/mibao_coverage.py  --check
@@ -387,7 +387,7 @@ case 级 `auto_fill` 轮声明的值会被所有 `auto_respond` 轮复用，避�
 
 > **加工项「已答不再问」（C-A1 重放 9 实证）**：顾客**已经答过**加工项（文本里点名加工项，
 > 或更早一轮拒绝过）时，代码兜底**不得**再把 confirm 卡改写成加工项 choice 卡 ——
-> 实测 C-A1：R2 小布在文本里问「需要一起加工吗？」→ R3 顾客答「打孔」→
+> 实测 C-A1：R2 元元在文本里问「需要一起加工吗？」→ R3 顾客答「打孔」→
 > R5 兜底又问一遍，顾客不得不再答一次才轮到确认下单（UA 判定"有条件通过"那条）。
 > 账上为什么没痕迹：`PROC_ITEMS_ASKED_KEY` 只在**发卡**时记账，文本问答不在账上。
 > 判据只看**最近一次 `product_detail` 之后**的用户消息（R1 就说「要打孔加工」属需求前置，
@@ -575,7 +575,7 @@ agent 侧已收口：C 端**同一组件每轮只发一张**，第二张起回
 ### 6.8 在办下单 + 当前 skill 无写工具 → 守卫**跨 skill**生效（issue #3477 / #3476）
 
 C-A1 实证（run 34791767013）：会话被 choice 卡锁在 `customer_product`，顾客「确认下单」后
-小布回「**没有帮您下单的权限**」并 `human_handoff` 建单 —— 因为：
+元元回「**没有帮您下单的权限**」并 `human_handoff` 建单 —— 因为：
 ① 文本级能力误宣纠正只认"当前 skill 有 order_create"；② handoff 守卫只认
 customer_order/customer_aftersales；③ 旧正则在"没有"与"权限"之间隔着「帮您下单的」时匹配不上。
 
@@ -636,7 +636,7 @@ L1 不命中（"确认"/"好的"/"米白"这类点卡值/短确认）才用合�
    （§6.4.1 的 `repeat_until`，或非 `prefer_text` 的 `auto_respond`）——
    固定文本轮在 agent 先发卡时会答非所问 → 空转不下单（OR-021 定向复跑 0/1 的根因）。
    由 `TestWriteCasesCanAnswerCards` 守卫（CI 会拦）；**注意作用域**：只认
-   `persona: xiaobu`，`persona` 留空是**未声明/双端**（实测那批是米宝流程用例，
+   `persona: xiaobu`，`persona` 留空是**未声明/双端**（实测那批是黄金策流程用例，
    套 C 端判据会误伤 —— 我为此连错两次，见 issue #3430）。
 
 ## 8. 跑评测的三档与提速旋钮（issue #3417）
@@ -674,7 +674,7 @@ EVAL_CONCURRENCY=6 python tests/agent_eval/local_runner.py normal --cases .githu
 验收剧本（acceptance-protocol §2/§4）是独立判定源，永远保留 `always()`。
 `--case-ids` 解析不到的 ID 会**报错退出**，不会静默少跑（少跑 ≠ 通过）。
 
-迭代档（`fast=true` 或 `case_ids` 非空）失败时**不会**自动开「小布 C 端验收失败」issue ——
+迭代档（`fast=true` 或 `case_ids` 非空）失败时**不会**自动开「元元 C 端验收失败」issue ——
 那张 issue 是每日全量结论，不能被分支迭代/局部失败污染（完整档照旧建 issue）。
 
 性能账与实测数据见 [`eval-pipeline-performance.md`](eval-pipeline-performance.md) §2.6。

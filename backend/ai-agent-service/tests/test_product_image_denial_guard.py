@@ -19,7 +19,7 @@ agent 拒绝：「我这个商品管理入口只能改价格、名称、描述�
 `tool_not_found`，且每次命中都多烧一次重答 —— 守卫从纠错器变成 bug 制造器。
 ⇒ 本文件按新裁定改判（**不是删守卫**）：
   · 判据（锚点 × 否定 × 自我主体）与判别性用例**原样保留**（仍是同一类「AI 自我否定」形态）；
-  · **纠正方向换掉**：如实说明「这条能力当前不在米宝能力内」+ 引导商家到后台「商品管理」页面
+  · **纠正方向换掉**：如实说明「这条能力当前不在黄金策能力内」+ 引导商家到后台「商品管理」页面
     （判据见 `TestProductImageCorrectiveAdjudication`）；
   · **注入话术不得点名任何模型调不到的工具**（同一类判据的机械形态，含其它图片话术面）。
 """
@@ -98,7 +98,7 @@ class TestProductImageDenialHit:
             # 中性描述（商品没设主图，帮忙查详情）
             "该商品没有设置主图，我帮您查一下详情",
             # 与图片无关的既有边界（回归：下单域越权拒绝不得因图片判据误报）
-            "小布没有权限查看其他租户的数据，只能看您自己的订单",
+            "元元没有权限查看其他租户的数据，只能看您自己的订单",
             "库存不足无法创建订单",
         ]:
             assert capability_denial_text_hit(t) == "", f"中性/越权文本误命中: {t!r}"
@@ -106,7 +106,7 @@ class TestProductImageDenialHit:
 
     def test_order_denial_phrasing_unaffected(self):
         """下单域既有判据不因图片域扩展而回归（锚点不相交）。"""
-        for t in ["没有权限帮您下单", "非常抱歉，小布这边没有办法帮您直接下单哦",
+        for t in ["没有权限帮您下单", "非常抱歉，元元这边没有办法帮您直接下单哦",
                   "抱歉，下单功能暂时不可用"]:
             assert capability_denial_text_hit(t), f"下单域判据回归: {t!r}"
 
@@ -171,7 +171,7 @@ class TestProductImageCorrectiveAdjudication:
         """新方向两件事齐备：① 如实说明「该能力当前不在能力内」② 给出去处（后台商品管理页）。"""
         text = _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE
         assert "不在" in text and "能力内" in text, (
-            "纠正话术未如实说明「该能力当前不在米宝能力内」"
+            "纠正话术未如实说明「该能力当前不在黄金策能力内」"
         )
         assert "后台" in text and "商品管理" in text, (
             "纠正话术未引导商家到后台「商品管理」页面（光说做不到不算交付）"
@@ -418,7 +418,7 @@ class TestProductImageDenialToolCallGate:
                 state=_make_state(messages=history),
                 skill_name="product",
                 tool_names=["product_detail", "product_manage", "interact"],
-                system_prompt="你是米宝（B 端商品助手）。",
+                system_prompt="你是黄金策（B 端商品助手）。",
             ))
         # 重新取 ainvoke 的调用输入检查纠正话术
         call_inputs = [c.args[0] for c in llm.ainvoke.await_args_list]

@@ -94,7 +94,7 @@ public class OrderController {
      *
      * <p>🔴 <b>为什么判在这里，而不是 {@link OrderCreateRequest} 上的 {@code @NotBlank}</b>（实测踩过）：
      * 那张 DTO 是**表单与 agent 共用的 wire 契约**，而 {@code OrderDtoContractTest} 钉着
-     * 「**工具侧合法载荷在服务端必须零违规**」。C 端小布/米宝的自助下单**不采集**地址与物流
+     * 「**工具侧合法载荷在服务端必须零违规**」。C 端元元/黄金策的自助下单**不采集**地址与物流
      * （{@code order_create} 工具 schema 的 required 只有 name/phone/items）⇒ 把 {@code @NotBlank}
      * 加到共用 DTO 上，会让「合法 agent 载荷」当场变成非法（实测：该契约的 2 条判据 +
      * {@code OrderControllerTest} 5 条 + {@code AgentOrderControllerTest} 3 条 +

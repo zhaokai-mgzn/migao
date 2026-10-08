@@ -87,7 +87,7 @@ export function buildInsightSentence(p: InsightParams): string {
 }
 
 /**
- * 米宝「今日经营速览」洞察条（经营看板顶部 AI 洞察一等公民）。
+ * 黄金策「今日经营速览」洞察条（经营看板顶部 AI 洞察一等公民）。
  * 以「一句话经营解读」形式呈现：数字串联成句，客户一眼读懂业务含义。
  */
 export default function TodayOverviewBar({
@@ -121,7 +121,7 @@ export default function TodayOverviewBar({
         <div className="mb-2.5 flex items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-primary-600 to-primary-500 px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
             <Sparkles className="h-3 w-3" />
-            米宝 · 今日经营速览
+            黄金策 · 今日经营速览
           </span>
           <span className="text-[11px] text-neutral-400">AI 生成内容仅供参考</span>
         </div>

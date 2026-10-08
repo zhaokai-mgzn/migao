@@ -3,7 +3,7 @@
  *
  * ## 为什么前端只做两件事
  *
- * 浮动面板（`components/ai-assistant/FloatingAssistant.tsx`）与米宝同屏 ⇒ 前端**能**直接读到
+ * 浮动面板（`components/ai-assistant/FloatingAssistant.tsx`）与黄金策同屏 ⇒ 前端**能**直接读到
  * `window.location.pathname` 与当前实体 id。但「读得到」不等于「可以注入」：
  * **route → 真值源** 的登记表、**未登记即不注入**的默认拒绝、以及**按角色裁剪**，唯一真值都在服务端
  * （`backend/ai-agent-service/app/context/page_registry.py`）。本模块只负责把**最小面**递上去：

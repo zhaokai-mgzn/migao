@@ -27,7 +27,7 @@ test.describe('系统设置页面 — AI 配置迁移提示已移除 (Issue #647
   })
 
   test('不应该存在 AI 助手名称输入框', async () => {
-    const botNameInput = page.page.locator('input[placeholder="小布"]')
+    const botNameInput = page.page.locator('input[placeholder="元元"]')
     await expect(botNameInput).not.toBeVisible()
   })
 

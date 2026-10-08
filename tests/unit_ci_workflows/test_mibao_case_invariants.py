@@ -1,4 +1,4 @@
-"""B 端（米宝）用例集静态不变式 —— 评测体系根本解 T1（#3483）
+"""B 端（黄金策）用例集静态不变式 —— 评测体系根本解 T1（#3483）
 
 背景：C 端（#3266 后）已有完整静态校验（test_xiaobu_case_set.py：工具集真值 +
 用例归属 + smoke 覆盖），**B 端对称面缺失**。B 端全量评测（normal/adversarial）
@@ -9,7 +9,7 @@
 探针实证（2026-09-14，#3483 T1）：
 - AS-003/AS-005 的 `after_sales_manage or aftersale_create` 是 OR 分支 —— B 端走
   after_sales_manage、C 端走 aftersale_create，两端均可满足，合法；
-- CH-011（跨用户订单查询拒绝，adversarial）期望 `customer_order_query`（小布专属、
+- CH-011（跨用户订单查询拒绝，adversarial）期望 `customer_order_query`（元元专属、
   无 OR 分支）→ B 端必挂的固定噪音。它本质是 C 端数据隔离用例
   （merge_log: "C 端表单化交互方案"），已修为 `persona: xiaobu`。
 
@@ -48,7 +48,7 @@ MIBAO_AGENT_SRC = (REPO_ROOT / "backend" / "ai-agent-service" / "app" / "agents"
 # 只在本测试内按伪工具处理，不改 eval_case_filter.PSEUDO_TOOLS（那会牵动 C 端用例选择语义）。
 PSEUDO_TOOL_NAMES = set(PSEUDO_TOOLS) | {"none"}
 
-# 米宝声明的 skill（app/agents/agents/mibao.py 的 MIBAO_CONFIG.skill_names + fallback）。
+# 黄金策声明的 skill（app/agents/agents/mibao.py 的 MIBAO_CONFIG.skill_names + fallback）。
 # 解析真值/口径的唯一实现在 `eval_case_filter`（覆盖体检脚本与用例选择共用），
 # 此处只做"声明齐全"的守卫。
 MIBAO_SKILL_FILES = list(eval_case_filter.MIBAO_SKILL_FILES)
@@ -66,7 +66,7 @@ def _skill_name(skill_file_name: str) -> str:
 def _mibao_declared_skill_names() -> set:
     """解析 `mibao.py` 的 `MIBAO_CONFIG.skill_names` + `fallback_skill`（纯文本，零 app 依赖）。
 
-    本文件里**唯一**一份「米宝声明了什么」的取值口径（两个方向守卫共用，避免两套解析漂移）。
+    本文件里**唯一**一份「黄金策声明了什么」的取值口径（两个方向守卫共用，避免两套解析漂移）。
     """
     src = MIBAO_AGENT_SRC.read_text(encoding="utf-8")
     cfg = src[src.find("MIBAO_CONFIG"):]
@@ -80,14 +80,14 @@ def _mibao_declared_skill_names() -> set:
 
 
 def _mibao_real_toolset() -> set:
-    """从源码解析：米宝各 skill 工具并集（B 端可跑工具集的单一真值来源）。
+    """从源码解析：黄金策各 skill 工具并集（B 端可跑工具集的单一真值来源）。
 
     委托 `eval_case_filter.mibao_real_toolset()`（issue #3555 去重）——覆盖体检脚本
     `scripts/mibao_coverage.py` 用同一函数，两处口径不可能漂移。
     """
     tools = mibao_real_toolset()
     broken = skill_files_without_tools()
-    assert not broken, f"米宝声明的 skill 解析不出工具（解析口径漂移/文件改名）: {broken}"
+    assert not broken, f"黄金策声明的 skill 解析不出工具（解析口径漂移/文件改名）: {broken}"
     assert tools, "B 端工具集解析为空 —— 覆盖矩阵会假绿"
     return tools
 
@@ -135,7 +135,7 @@ class TestMibaoToolsetTruth:
     def test_mibao_toolset_contains_bend_admin_tools(self):
         """B 端管理工具必须全部在源码工具集内（防解析漏文件/漏常量）。
 
-        ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：名单已按新事实
+        ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端黄金策只读化」）：名单已按新事实
         改判 —— 写工具（`order_create` / `order_manage` / `product_manage`）**不再属于** B 端
         工具集（下方反向断言钉住这条硬边界），取而代之的是 6 个新接入的**只读**查询工具。
         """
@@ -179,7 +179,7 @@ class TestMibaoToolsetTruth:
             "（补回白名单被撤销 / 被解绑 ⇒ 必须显式改判本断言，不能静默消失）")
 
     def test_every_declared_skill_file_is_parseable(self):
-        """米宝**声明**的每个 skill 都必须存在且解析出工具（issue #3555 防假绿）。
+        """黄金策**声明**的每个 skill 都必须存在且解析出工具（issue #3555 防假绿）。
 
         为什么需要：覆盖体检的"缺口 = 工具集 - 有用例的工具"。若某个 skill 文件改名/
         漏登记 → 它的工具静默从工具集消失 → 该能力的**零覆盖不再被报出来**，
@@ -187,7 +187,7 @@ class TestMibaoToolsetTruth:
         """
         broken = skill_files_without_tools()
         assert not broken, (
-            f"米宝声明的 skill 解析不出任何工具: {broken}\n"
+            f"黄金策声明的 skill 解析不出任何工具: {broken}\n"
             f"（文件改名/移动后请同步 eval_case_filter.MIBAO_SKILL_FILES）"
         )
 
@@ -214,7 +214,7 @@ class TestMibaoToolsetTruth:
 
         为什么需要：反方向此前没有具名判据 —— `MIBAO_TOOLSET_MIN = 25` 只是"防解析器坏掉"的
         下界、**不是**覆盖门禁。`settings_skill` 的 3 个只读工具（`settings_manage` /
-        `notification_manage` / `validate_input`）经 #4125 家族并入后，删掉它会让米宝工具集
+        `notification_manage` / `validate_input`）经 #4125 家族并入后，删掉它会让黄金策工具集
         34 → 31（实测）——「清单与声明/登记是否自洽」这条判据必须自己说出来，不能靠
         "正好有用例期望这些工具"这种偶然兜底。
 
@@ -228,13 +228,13 @@ class TestMibaoToolsetTruth:
         unregistered = sorted((covered - declared) - registered)
         assert not unregistered, (
             f"MIBAO_SKILL_FILES 里的额外来源 {unregistered} 不在 mibao.py 的 skill_names/fallback "
-            f"里，也没登记进 eval_case_filter.MIBAO_EXTRA_SKILL_FILES —— 它会被算进米宝工具集"
+            f"里，也没登记进 eval_case_filter.MIBAO_EXTRA_SKILL_FILES —— 它会被算进黄金策工具集"
             f"却来源不可见（额外来源必须逐条登记，issue #5707）"
         )
         not_in_list = sorted(registered_files - set(MIBAO_SKILL_FILES))
         assert not not_in_list, (
             f"MIBAO_EXTRA_SKILL_FILES 登记的 {not_in_list} 已不在 MIBAO_SKILL_FILES 里 —— "
-            f"已登记的额外来源被删掉（米宝工具集静默缩水，MIBAO_TOOLSET_MIN 的下界拦不住）；"
+            f"已登记的额外来源被删掉（黄金策工具集静默缩水，MIBAO_TOOLSET_MIN 的下界拦不住）；"
             f"恢复该条目，或连同登记一起显式改判（issue #5707）"
         )
         over_registered = sorted(registered - (covered - declared))
@@ -252,7 +252,7 @@ class TestMibaoToolsetTruth:
         )
 
     def test_mibao_toolset_excludes_customer_only_tools(self):
-        """B 端工具集不得混入小布专属工具（customer_* 系 / aftersale_create 等）。
+        """B 端工具集不得混入元元专属工具（customer_* 系 / aftersale_create 等）。
 
         ⚠️ 2026-09-19：`human_handoff` 已按用户裁定退场（模型不可达）⇒ 从"C 端专属工具"
         清单移除 —— 本清单的语义是「**某一端**有、另一端不得混入」，退场后它**两端都没有**，
@@ -326,7 +326,7 @@ class TestBendWriteToolSuccessAssertions:
     （断言永远无意义）而**无人拦截** —— C 端点名的「拼写错误或越界」风险会搬到 B 端。
 
     范围：B 端全量会跑的用例（mibao 专属 + 双端），与 `_bend_runnable_cases()` 一致。
-    实证（2026-09-14）：`processing_item_manage` / `sku_update` 都在米宝 skill 工具集内，
+    实证（2026-09-14）：`processing_item_manage` / `sku_update` 都在黄金策 skill 工具集内，
     PP-006 / PR-021 因此可安全使用 `must_succeed` 升级假绿断言。
     """
 

@@ -50,7 +50,7 @@ describe('RegisterPage', () => {
   it('should render subtitle', async () => {
     render(<RegisterPage />)
     await waitFor(() => {
-      expect(screen.getByText('米高 · AI智能管理平台')).toBeInTheDocument()
+      expect(screen.getByText('观星台 · AI智能管理平台')).toBeInTheDocument()
     })
   })
 
@@ -175,7 +175,7 @@ describe('RegisterPage', () => {
     const user = userEvent.setup()
     mockSubmitRegistration.mockResolvedValue({
       data: {
-        data: { applicationId: 100, status: 'approved', message: 'AI 甄别通过，欢迎入驻米高平台' },
+        data: { applicationId: 100, status: 'approved', message: 'AI 甄别通过，欢迎入驻观星台平台' },
       },
     })
     render(<RegisterPage />)
@@ -186,8 +186,8 @@ describe('RegisterPage', () => {
     })
     expect(screen.getByText(/企业账号已自动开通/)).toBeInTheDocument()
     expect(screen.getByText('立即登录')).toBeInTheDocument()
-    expect(screen.getByText('米宝 · 企业智能生产管家')).toBeInTheDocument()
-    expect(screen.getByText('小布 · 企业智能客服')).toBeInTheDocument()
+    expect(screen.getByText('黄金策 · 企业智能生产管家')).toBeInTheDocument()
+    expect(screen.getByText('元元 · 企业智能客服')).toBeInTheDocument()
   })
 
   it('AI 甄别驳回 → 展示驳回原因', async () => {

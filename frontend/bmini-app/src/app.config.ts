@@ -26,7 +26,7 @@ export default defineAppConfig({
     // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `INBOUND_PAGE_ROUTE` 必须逐字等于它
     // （守卫 tests/inbound-page-platform-gaps.test.ts 判据 G0：没登记进这里 = 死链 ⇒ 红）
     'pages/worker/inbound/index',
-    // 工人**拍照补打标签**（issue #5640 功能②）：拍米高入库标签（或手输 8 位短码）→ 看单据详情
+    // 工人**拍照补打标签**（issue #5640 功能②）：拍观星台入库标签（或手输 8 位短码）→ 看单据详情
     // → 补打一张新标签。标签贴丢 / 磨花 / 贴错时，工人不必再回电脑端管理后台。
     // 版面 / 渲染 / 打印三件与入库页**共用**（`src/utils/inbound/labelLayout|labelCanvas|labelPrint`）
     // ⇒ 只换数据源（过账回执 ⇒ 按短码读详情）。路由字面量同上：gaps.ts 的 `REPRINT_PAGE_ROUTE` 必须逐字等于它。
@@ -43,7 +43,7 @@ export default defineAppConfig({
   window: {
     backgroundTextStyle: 'light',
     navigationBarBackgroundColor: '#0A2540',
-    navigationBarTitleText: '米宝商家助手',
+    navigationBarTitleText: '黄金策商家助手',
     navigationBarTextStyle: 'white',
     backgroundColor: '#F5F7FA',
   },
@@ -55,7 +55,7 @@ export default defineAppConfig({
     list: [
       {
         pagePath: 'pages/chat/index/index',
-        text: '问米宝',
+        text: '问黄金策',
         iconPath: 'assets/tabbar/chat.png',
         selectedIconPath: 'assets/tabbar/chat-active.png',
       },
@@ -69,8 +69,8 @@ export default defineAppConfig({
       {
         pagePath: 'pages/sessions/index/index',
         text: '坐席',
-        // 🔴 此前与「问米宝」共用 chat.png（两处 img.src 的 base64 实测完全相同）⇒ 底栏两个入口长得一样；
-        // 现用「列表」字形（客服坐席列表），与问米宝的对话气泡区分开。判据 = tests/tabbar-icons.test.ts
+        // 🔴 此前与「问黄金策」共用 chat.png（两处 img.src 的 base64 实测完全相同）⇒ 底栏两个入口长得一样；
+        // 现用「列表」字形（客服坐席列表），与问黄金策的对话气泡区分开。判据 = tests/tabbar-icons.test.ts
         iconPath: 'assets/tabbar/sessions.png',
         selectedIconPath: 'assets/tabbar/sessions-active.png',
       },

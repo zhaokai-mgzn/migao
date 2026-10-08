@@ -1,5 +1,5 @@
 # case_ids: MC-021
-"""**B 端米宝写面边界**的机械判据（issue #5247 只读化 → issue #5303 A 档可逆写补回）。
+"""**B 端黄金策写面边界**的机械判据（issue #5247 只读化 → issue #5303 A 档可逆写补回）。
 
 ## 裁定一（2026-09-23 / issue #5247）
 
@@ -8,7 +8,7 @@
 
 配套裁定：写工具处置 = **收窄为只读工具**（保留工具名与只读 action、`read_only=True`、
 权限码改读码、删写 action）；**员工与岗位保留只读**；**系统设置不进 B 端对话面**；
-C 端（小布）**零改动**。
+C 端（元元）**零改动**。
 
 ## 裁定二（2026-09-24 / issue #5303，**A 档可逆写补回** —— 本判据的第二次改判）
 
@@ -33,7 +33,7 @@ C 端（小布）**零改动**。
 |---|---|---|
 | **S1 工具声明** | `backend/ai-agent-service/app/tools/*.py` 的 `read_only` / `VALID_ACTIONS` | 把某个 `read_only=True` 改回 `False`，或往 `VALID_ACTIONS` 里塞回写 action |
 | **S2 skill 绑定** | `app/graph/skills/*.py` 的 `*_TOOLS` + `app/agents/agents/mibao.py` 的 `skill_names` | 把 `order_create` / `product_manage` / `validate_input` 重新绑回任一 B 端 skill（= 写能力静默复活） |
-| **S3 能力文案** | `mibao.py` 的 `greeting` / `direct_replies.capabilities` | 文案承诺已下线能力（= **能力谎报**），或反过来**漏报**已补回的能力（商家不知道能找米宝改价） |
+| **S3 能力文案** | `mibao.py` 的 `greeting` / `direct_replies.capabilities` | 文案承诺已下线能力（= **能力谎报**），或反过来**漏报**已补回的能力（商家不知道能找黄金策改价） |
 
 ## 判据（每条都有**注入式红证**，见文件末尾 `test_every_judgement_can_go_red`）
 
@@ -54,7 +54,7 @@ C 端（小布）**零改动**。
    —— 「只解绑 B 端，绝不删除、不改 C 端行为」是用户裁定的硬边界。
 6. **A 档写能力「文案 ↔ 绑定」双向一致**（#5303 新增）：文案承诺改价 ⇒ 两条工具必须真的绑在
    B 端；工具绑在 B 端 ⇒ 文案必须真的提到改价（**反向能力谎报**同样是缺陷）。
-7. **声明了米宝 persona 的每个 skill**（可达 + **已解绑的孤儿**）绑的工具必须
+7. **声明了黄金策 persona 的每个 skill**（可达 + **已解绑的孤儿**）绑的工具必须
    **∈ A 档白名单 ∪ 只读**（#5302 收口新增，见下）。
 
 ## 🔴 判据 7 的立案理由（#5302）：判据 1~3 的射程是「**可达**」，而 #5247 的处置里有「解绑」
@@ -529,7 +529,7 @@ def problems_action_sets(w: World) -> list[str]:
 
 
 #: 句级否定词（**与仓内同类守卫同口径**）：这些句子是「教用户别这么期待」，不是能力承诺。
-#: 不做句级过滤会把「⚠️ 下单/建品/改价等操作米宝不做」这类**正确的如实告知**判成谎报（假红）。
+#: 不做句级过滤会把「⚠️ 下单/建品/改价等操作黄金策不做」这类**正确的如实告知**判成谎报（假红）。
 #: ⚠️ 教训：本判据回归时第一版就是全文扫描 ⇒ 立刻误红了自家 capabilities 的否定句。
 CAPABILITY_NEGATIONS = (
     "不做", "不提供", "不在能力内", "不得", "不能", "无法", "禁止", "切勿", "只读", "不支持",
@@ -596,7 +596,7 @@ def problems_a_tier_capability_parity(w: World) -> list[str]:
             out.append(
                 f"A 档工具 `{'/'.join(bound)}` 已绑回 B 端，但 `mibao.py` 的 greeting / "
                 f"capabilities 一个字都没提{words} ⇒ **反向能力谎报**"
-                "（商家不知道能找米宝用这个能力；补回了却不说 = 白补）"
+                "（商家不知道能找黄金策用这个能力；补回了却不说 = 白补）"
             )
     return out
 
@@ -617,7 +617,7 @@ def problems_shared_tools_intact(w: World) -> list[str]:
 
 
 def problems_declared_persona_tools_are_controlled(w: World) -> list[str]:
-    """判据 7（#5302）：**声明了米宝 persona 的每个 skill**（含已解绑的孤儿）绑的工具
+    """判据 7（#5302）：**声明了黄金策 persona 的每个 skill**（含已解绑的孤儿）绑的工具
     必须 **∈ A 档白名单 ∪ 只读**。
 
     与判据 1 的唯一差别 = **射程**：判据 1 取「可达并集」（`skill_names` ∪ fallback），

@@ -8,7 +8,7 @@
 
 ## ✨ 核心亮点
 
-- **双 Agent 架构** — C 端客服"小布" + B 端工作助手"米宝"，LangGraph 状态图驱动
+- **双 Agent 架构** — C 端客服"元元" + B 端工作助手"黄金策"，LangGraph 状态图驱动
 - **AI 工具** — 商品搜索、订单管理、物流追踪、客户查询等，自动意图路由（数量以 `registry.py` 注册表为单一源）
 - **多租户 SaaS** — 租户隔离（JWT 派生 tenant_id → MyBatis 租户拦截器 → 字段脱敏）
 - **完整业务后台** — 商品、订单、CRM、人工坐席、数据看板等 12+ 管理模块
@@ -134,7 +134,7 @@ migao/
 │   │
 │   └── ai-agent-service/       # Python AI Agent 服务（FastAPI + LangGraph）
 │       ├── app/
-│       │   ├── agents/         # 双 Agent：小布（C端）+ 米宝（B端）
+│       │   ├── agents/         # 双 Agent：元元（C端）+ 黄金策（B端）
 │       │   ├── api/            # SSE 流式聊天 + 内部 API
 │       │   ├── graph/          # LangGraph 状态图（意图路由→工具调用→响应）
 │       │   ├── tools/          # 业务工具（注册于 registry.py，数量以注册表为单一源）

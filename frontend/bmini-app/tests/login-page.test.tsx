@@ -1,5 +1,5 @@
 /**
- * B 端登录页测试（米宝商家端，issue #5485 起＝账号密码；issue #5721 加管理员短信入口）
+ * B 端登录页测试（黄金策商家端，issue #5485 起＝账号密码；issue #5721 加管理员短信入口）
  *
  * 覆盖: 渲染（账号 + 密码 + 登录按钮）、提交调用、空输入拦截、
  *       成功跳转、失败不跳转、密码框遮蔽、微信授权按钮已退场、
@@ -77,7 +77,7 @@ describe('LoginPage', () => {
   it('应渲染品牌、账号密码两个输入框与登录按钮', () => {
     render(<LoginPage />)
 
-    expect(screen.getByText('米宝 · 企业智能生产管家')).toBeTruthy()
+    expect(screen.getByText('黄金策 · 企业智能生产管家')).toBeTruthy()
     expect(screen.getByText('经营数据 · AI 客服 · 移动坐席')).toBeTruthy()
     expect(screen.getByText('用户名@企业编码')).toBeTruthy()
     expect(screen.getByText('密码')).toBeTruthy()
@@ -112,7 +112,7 @@ describe('LoginPage', () => {
     expect(mockEmployeeLoginAction).toHaveBeenCalledWith('zhangsan@acme', 'init-pass-123')
   })
 
-  it('登录成功应跳转到问米宝页', async () => {
+  it('登录成功应跳转到问黄金策页', async () => {
     mockEmployeeLoginAction.mockResolvedValueOnce(true)
 
     render(<LoginPage />)
@@ -463,7 +463,7 @@ describe('LoginPage · 工人入口（issue #6467 判据 1）', () => {
     expect(screen.queryByPlaceholderText(PHONE_PLACEHOLDER)).toBeNull()
   })
 
-  it('🔴 工人 tab 提交 ⇒ workerLogin(工号, PIN, 设备标签) 恰一次 + 成功 redirectTo 工人首页（**不** switchTab 问米宝）', async () => {
+  it('🔴 工人 tab 提交 ⇒ workerLogin(工号, PIN, 设备标签) 恰一次 + 成功 redirectTo 工人首页（**不** switchTab 问黄金策）', async () => {
     mockWorkerLogin.mockResolvedValueOnce({
       success: true,
       data: { session_id: 'sess-1', worker_id: 'w-1', worker_no: 'G001', worker_name: '张三' },
@@ -480,7 +480,7 @@ describe('LoginPage · 工人入口（issue #6467 判据 1）', () => {
     // 只去空白，不复制服务端的格式规则（格式 / 角色门禁的唯一真值在服务端）
     expect(mockWorkerLogin).toHaveBeenCalledWith('G001', '2468', 'PAD-车间-01')
     expect(Taro.redirectTo).toHaveBeenCalledWith({ url: WORKER_HOME_ROUTE })
-    // 🔴 工人**没有商家会话**：switchTab 会落到商家 tabBar（问米宝）⇒ 一律不许
+    // 🔴 工人**没有商家会话**：switchTab 会落到商家 tabBar（问黄金策）⇒ 一律不许
     expect(Taro.switchTab).not.toHaveBeenCalled()
   })
 

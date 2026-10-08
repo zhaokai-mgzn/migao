@@ -13,7 +13,7 @@ const MOCK_PRODUCT = {
   name: '编辑测试商品-天鹅绒窗帘',
   sku: 'SKU-EDIT-001',
   skuCode: 'SKU-EDIT-001',
-  brand: '米高',
+  brand: '观星台',
   categoryId: 'cat_001',
   categoryName: '窗帘',
   description: '<p>这是商品描述</p>',

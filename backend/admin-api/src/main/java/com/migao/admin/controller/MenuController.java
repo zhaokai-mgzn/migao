@@ -61,7 +61,7 @@ public class MenuController {
         // 智能客服：🔴 旧节点 `new MenuNode("agent:session", "会话监控")` 在 #5271 **删除** ——
         // `agent:session` 已由「在线接待」承载，而「会话监控」对应的页面 `/agent-workspace/sessions`
         // 从来不在侧边栏里 ⇒ 它只是权限树上一个重复勾选项。
-        // （#3094 已把「米宝 · 在线对话」菜单入口移除，智能体对话走右下角 FAB。）
+        // （#3094 已把「黄金策 · 在线对话」菜单入口移除，智能体对话走右下角 FAB。）
         MenuNode cs1 = new MenuNode("agent:session", "在线接待");
         // issue #5246（已合入 main）：知识库节点码 = **读**码 `knowledge:view`（原 `knowledge:manage`）——
         // #5271 重排本树时必须保留该码（漏带 = 静默回退别人刚修的授权口径）。

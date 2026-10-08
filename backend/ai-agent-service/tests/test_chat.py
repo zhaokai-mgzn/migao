@@ -740,10 +740,10 @@ class TestQuickActions:
             assert c_end_phrase not in joined, f"C 端顾客问句回到了 B 端入口清单：{c_end_phrase!r}"
 
     def test_every_entry_maps_to_a_real_mibao_capability(self):
-        """机械投影：每条引导必须能追溯到「**米宝已绑定** ∧ 该 skill 的工具集里有这条 tool」。
+        """机械投影：每条引导必须能追溯到「**黄金策已绑定** ∧ 该 skill 的工具集里有这条 tool」。
 
         「引导了却做不到，比不引导更伤」（`docs/agent-feature-design.md` §九）。
-        红证（注入实测）：把任一条的 `skill` 改成 `settings`（#5247 已从米宝解绑）或把 `tool`
+        红证（注入实测）：把任一条的 `skill` 改成 `settings`（#5247 已从黄金策解绑）或把 `tool`
         改成顾客端专用的 `aftersale_query`（不在 aftersales skill 的 `tool_names` 里）
         ⇒ 本判据**具名**报出该条。
         """
@@ -756,7 +756,7 @@ class TestQuickActions:
             skill_name, tool_name = action["skill"], action["tool"]
             if skill_name not in MIBAO_CONFIG.skill_names:
                 offenders.append(
-                    f"{action['id']}：skill {skill_name!r} 不在米宝绑定面 {MIBAO_CONFIG.skill_names}"
+                    f"{action['id']}：skill {skill_name!r} 不在黄金策绑定面 {MIBAO_CONFIG.skill_names}"
                 )
                 continue
             skill = registry.get(skill_name)

@@ -6,7 +6,7 @@ AI 智能客服系统 - 工序库 / 工艺路线查询 Tool（issue #5247 模块
 - `routings`   → `GET /api/admin/production/routings`（工艺路线模板：主线 + 适用帘种 + 默认标记）
 
 ⚠️ 权限码口径（issue #5247 起，issue #5291 收口）：这两个读端点原先只吃 `ProductionController` 的
-**类级** `order:list` ⇒ 持 `order:list` 的客服/销售/财务能经米宝读工艺数据，而侧边栏「工艺配置」页
+**类级** `order:list` ⇒ 持 `order:list` 的客服/销售/财务能经黄金策读工艺数据，而侧边栏「工艺配置」页
 对它们不可见 = 用户裁定禁止的权限泄露形态。#5247 先补**方法级**注解（收窄到 `processing:manage`）；
 **issue #5291** 为生产域读出**读**码 `production:view` 后，端点与工具同批改挂读码
 （只读工具不再被迫持管理码；粒度债台账 `READ_WRITE_EXCEPTIONS` 因此**清空为 0 条**）。

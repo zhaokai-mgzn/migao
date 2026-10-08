@@ -10,7 +10,7 @@ import java.util.Map;
 /**
  * 定时任务（用户「预约」）的**读面视图**（issue #6486 包 1）。
  *
- * <p>与 {@code AgentScheduledTaskRequest} 分工：本类只管<b>出去</b>的形状（供米宝工具消费），
+ * <p>与 {@code AgentScheduledTaskRequest} 分工：本类只管<b>出去</b>的形状（供黄金策工具消费），
  * 请求类只管<b>进来</b>的形状。两者不共用一个类 —— 请求里有 {@code dedupKey} 这类
  * 「只进不出」的字段，共用会让调用方以为响应里也有。</p>
  */
@@ -35,7 +35,7 @@ public final class AgentScheduledTaskViews {
         private String actionLabel;
         /** 一键处置入口地址。 */
         private String actionUrl;
-        /** user（米宝委托）/ system（规则派生）。 */
+        /** user（黄金策委托）/ system（规则派生）。 */
         private String source;
         /** pending / fired / cancelled / failed / dismissed。 */
         private String status;

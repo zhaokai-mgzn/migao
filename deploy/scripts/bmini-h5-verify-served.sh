@@ -4,9 +4,9 @@
 #
 # 🔴 为什么不能只看 `/b/` = 200、也不能只看「页面标题/文案」：
 #    · 修复**前** `/b/` 就已经是 200 —— nginx 的 `location /` 是 `try_files $uri $uri/ /index.html`，
-#      `/b/` 不存在时**静默回落**到根 index.html（C 端小布）；
+#      `/b/` 不存在时**静默回落**到根 index.html（C 端元元）；
 #    · 更隐蔽的是：bmini 与 C 端**同为 Taro h5 产物**，实测两者 `dist/index.html` 的
-#      `<title>` 都是「米高窗帘 · 小布智能助手」、都带 `window.TARO_ENV = 'h5'`，连资源名
+#      `<title>` 都是「观星台窗帘 · 元元智能助手」、都带 `window.TARO_ENV = 'h5'`，连资源名
 #      （`js/app.js` / `css/app.css`）都一样 ⇒ **标记法区分不了这两端**。
 #    ⇒ 可判的只有两样：**字节哈希**（线上 body == 本仓库 `frontend/bmini-app/dist/index.html`）
 #      与**资源命名空间**（index.html 的引用必须落在 `/b/` 内，不许引用根级 `/js/…`）。
@@ -20,7 +20,7 @@
 #      判定，避免两套真相源）；另加 `/s/<短码面>` 仍被代理（不是静态页）。
 #   ⑤ **入库标签面不串端**（issue #5052 §7.1 的 nginx 面）：`GET /i/<不可能存在的短码>` **必须**走到
 #      admin-api（未知短码 ⇒ 404），**不得**返回根页 —— 少了 nginx 的 `location /i/` 时它会静默
-#      落到 `location /` 的 SPA fallback（200 + C 端小布首页；2026-09-27 线上实测正是这一形态）。
+#      落到 `location /` 的 SPA fallback（200 + C 端元元首页；2026-09-27 线上实测正是这一形态）。
 #      ⚠️ 判据**不是**「状态码是 302」（未知短码本来就 404）—— 判据是「**到了 admin-api**」与
 #      「**落到了 SPA**」可判：落 SPA 时 body 与 `GET /` 同哈希。
 #   ⑥ **入口脚本的 MIME**（issue #6293）：`dist/index.html` 引用的入口脚本的 Content-Type 必须 ∈
@@ -151,7 +151,7 @@ else
     done
   fi
   if [ "$( [ -s "$TMPDIR_RUN/spa.html" ] && file_sha256 "$TMPDIR_RUN/spa.html" || echo '(空)' )" != "$EXPECTED_INDEX_SHA" ]; then
-    bad "GET $SPA_PROBE 没有返回 bmini 的 index.html（HTTP ${CODE}）—— nginx 的 \`location /${SUBDIR}/\` 缺少落在 /${SUBDIR}/index.html 的 fallback（会静默回落根 index.html = C 端小布）"
+    bad "GET $SPA_PROBE 没有返回 bmini 的 index.html（HTTP ${CODE}）—— nginx 的 \`location /${SUBDIR}/\` 缺少落在 /${SUBDIR}/index.html 的 fallback（会静默回落根 index.html = C 端元元）"
     echo "     处置：确认 \`deploy/swas/nginx.conf\` 的 \`location /${SUBDIR}/\` 已在**本次合并的 commit** 上；"
     echo "           等 deploy-* 跑完（它才会 cp nginx.conf + reload）后用 \`gh run rerun <run-id>\` 重跑本 job。"
   fi
@@ -159,7 +159,7 @@ fi
 echo ""
 
 # ── ③ 不劫持根：/ 与根级子路由仍是 C 端页面 ──────────────────────────────────
-echo "③ GET $BASE/ 与 ${ROOT_PROBE}（根仍必须是 C 端小布，不能被 /${SUBDIR}/ 规则吃掉）"
+echo "③ GET $BASE/ 与 ${ROOT_PROBE}（根仍必须是 C 端元元，不能被 /${SUBDIR}/ 规则吃掉）"
 for path in "/" "$ROOT_PROBE"; do
   out="$TMPDIR_RUN/root.html"
   CODE=$(fetch "$BASE$path" "$out")
@@ -222,7 +222,7 @@ else
     I_SHA=$( [ -s "$TMPDIR_RUN/i.html" ] && file_sha256 "$TMPDIR_RUN/i.html" || echo '(空)' )
   done
   if [ "$I_SHA" = "$ROOT_SHA" ]; then
-    bad "GET ${I_PROBE} → HTTP ${CODE} 且 body 与 \`GET /\` 同哈希 = 落到了 location / 的 SPA fallback（C 端小布）：\`location /i/\` 没随 nginx 配置生效（扫标签会看到错页面；HTTP 200 不是错误码，监控不会红）"
+    bad "GET ${I_PROBE} → HTTP ${CODE} 且 body 与 \`GET /\` 同哈希 = 落到了 location / 的 SPA fallback（C 端元元）：\`location /i/\` 没随 nginx 配置生效（扫标签会看到错页面；HTTP 200 不是错误码，监控不会红）"
     echo "     处置：确认 \`deploy/swas/nginx.conf\` 的 \`location /i/\` 已在**本次合并的 commit** 上；"
     echo "           等 deploy-* 跑完（它才会 cp nginx.conf + reload）后用 \`gh run rerun <run-id>\` 重跑本 job。"
   elif [ "$CODE" -ge 500 ] 2>/dev/null; then

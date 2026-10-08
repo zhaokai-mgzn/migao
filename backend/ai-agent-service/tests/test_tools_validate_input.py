@@ -2,7 +2,7 @@
 # case_ids: PR-005, AS-003, PR-019, OR-015, HR-005, PP-006, PR-021, FN-001, ST-001
 # 域级映射（本文件覆盖 20+ 写工具的闸门规则）：PP-006 加工项计价方式、PR-005 调整库存、
 # PR-021 SKU 调价、FN-001 资金流水登记、ST-001 系统设置。
-# 🔴 #5247（B 端米宝只读化，用户裁定 2026-09-23）：8 把工具的**写 action 已从工具删除**
+# 🔴 #5247（B 端黄金策只读化，用户裁定 2026-09-23）：8 把工具的**写 action 已从工具删除**
 #    （收窄为只读），但这些 action 的**规则块仍在** `_VALIDATION_RULES` 里 ⇒
 #    本文件里针对它们的行为用例**仍然有效**（`validate_input` 按 (工具, action) 查表，
 #    与工具当前能不能收到该 action 无关）；它们的**时效性**由 `RETIRED_RULE_KEYS_5247`
@@ -594,7 +594,7 @@ class TestValidateInputGateContractAudit:
         真实参数 name/industry）→ 合法写路径 100% 被闸门拦住。"""
         result = await tool.execute(
             context=admin_tool_context, target_tool="settings_manage",
-            target_action="update_settings", params={"name": "米高布艺旗舰店"},
+            target_action="update_settings", params={"name": "观星台布艺旗舰店"},
         )
         assert result.success is True, result.message
 
@@ -603,7 +603,7 @@ class TestValidateInputGateContractAudit:
         result = await tool.execute(
             context=admin_tool_context, target_tool="settings_manage",
             target_action="update_ai_config",
-            params={"greeting_template": "您好，欢迎咨询米高布艺"},
+            params={"greeting_template": "您好，欢迎咨询观星台布艺"},
         )
         assert result.success is True, result.message
 
@@ -700,7 +700,7 @@ def _dead_rule_keys(rules_by_tool):
 
 
 #: 🔴 **#5247 退役台账**：`_VALIDATION_RULES` 里 **action 已从工具删除**的规则键
-#: （B 端米宝只读化：#5247 的 8 把 + #5302 收口的 2 把（settings 域）工具的写 action 被删、
+#: （B 端黄金策只读化：#5247 的 8 把 + #5302 收口的 2 把（settings 域）工具的写 action 被删、
 #: 规则块留在 app 侧未同批清理；**条数现取、不写死** —— 判据是集合相等，不是计数）。
 #: ⚠️ **#4025 F8 销账包**：其中 2 条对应的规则块已从 app 侧删除
 #:   （`finance_api.create_transaction` / `settings_manage.change_password`）⇒ 这 2 条**必须**
@@ -763,7 +763,7 @@ RETIRED_RULE_KEYS_B_END_READONLY: frozenset = frozenset({
 class TestValidationRuleKeysAreLive:
     """L0 静态不变式：闸门规则键必须能命中工具的 action（issue #3566）。
 
-    ## 🔴 issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）—— 台账化，不是放宽
+    ## 🔴 issue #5247 改判（B 端黄金策只读化，用户裁定 2026-09-23）—— 台账化，不是放宽
 
     本单把 8 把 B 端写工具的**写 action 全部删除**（收窄为只读），而这些 action 的规则块
     留在 `app/tools/validate_input.py` 的 `_VALIDATION_RULES` 里未同批清理 ⇒ 检测器报出

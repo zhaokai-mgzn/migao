@@ -155,7 +155,7 @@ async def extract_memories_from_turn(
     Returns:
         记忆列表 [{type, key, value, importance, context}]
     """
-    # B 端不提取（issue #2815：米宝暂不对接长期记忆）
+    # B 端不提取（issue #2815：黄金策暂不对接长期记忆）
     if agent_type != "xiaobu":
         return []
 

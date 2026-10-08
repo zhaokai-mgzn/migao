@@ -1,7 +1,7 @@
 # case_ids: PR-017
 """文本声称有确认卡但未发卡时，改写为纯文本确认指引（issue #3929）。
 
-生产实证（B 端米宝 agent，主模型 deepseek-flash，会话 sess_2efa2071bb1747d8，
+生产实证（B 端黄金策 agent，主模型 deepseek-flash，会话 sess_2efa2071bb1747d8，
 2026-09-15）：模型经常在文本里说「请点下方确认卡片 / 确认无误请点下方卡片，
 我立即写入」，但该回合根本没调 interact 工具 → SSE 无 interactive 事件 →
 客户看不到卡、没有可点击按钮。用户 19:43:57 直接问「为什么我看不到？

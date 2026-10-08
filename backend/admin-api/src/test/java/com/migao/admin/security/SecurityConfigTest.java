@@ -655,7 +655,7 @@ class SecurityConfigTest {
     // ======================== Service Token 透传商户员工 — 细粒度鉴权（issue #4105 F2）========================
     // 背景：ai-agent 调用 admin-api 始终带 X-Service-Token + X-Tenant-Id + X-User-Id，
     // ServiceTokenFilter 此前一律构造 role=service 的身份 ⇒ PermissionInterceptor.hasBypassRole()
-    // 直接放行，商户员工（受限岗位）能让米宝执行自己无权执行的写操作，admin-api 完全无感。
+    // 直接放行，商户员工（受限岗位）能让黄金策执行自己无权执行的写操作，admin-api 完全无感。
     // 目标：X-User-Id 命中同租户商户员工时挂真实角色，交由 @RequirePermission 校验并返回 F1 的可执行 403。
 
     @Test

@@ -623,7 +623,7 @@ class TestRowShape:
 class TestFilteredSkusAreNotMisattributed:
     """🔴 issue #6347 Part B 的**实例判据**：有 SKU 但商品不在售 ⇒ 不许说成「没有 SKU」。
 
-    用户真实遭遇（2026-10-05 租户 25）：`product_skus` 12 行、「商品健康度视图」0 行，米宝据此答
+    用户真实遭遇（2026-10-05 租户 25）：`product_skus` 12 行、「商品健康度视图」0 行，黄金策据此答
     「SKU 记录数 = 0 / SKU 层是空的 / 建议先确认商品规格（颜色 × 门幅）是否已正确录入」——
     **归因错了**，把用户引向**徒劳返工**（重录规格），而真因（商品状态不是 `on_sale`）一字未提。
 

@@ -5,11 +5,11 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * 图片识别 + 米宝推理请求（issue #6367 包 P2 · 表单内入口）。
+ * 图片识别 + 黄金策推理请求（issue #6367 包 P2 · 表单内入口）。
  *
  * <p>与 {@link ImageRecognitionRequest} 同族：{@code targetType} / {@code images} 的取值与校验口径
  * <b>逐字一致</b>（未知 target ⇒ 400；空图 ⇒ 400 且不发起远端调用）；本 DTO 只**多一个可选**
- * {@code hint}（商家已经知道的那点信息，喂给米宝推理当输入），<b>不改既有 DTO</b>。</p>
+ * {@code hint}（商家已经知道的那点信息，喂给黄金策推理当输入），<b>不改既有 DTO</b>。</p>
  */
 @Data
 public class ImageRecognitionInterpretRequest {

@@ -108,7 +108,7 @@ const mockProduct = {
   sku: 'SKU-2699',
   skuCode: 'SKU-2699-001',
   categoryName: '窗帘布',
-  brand: '米高',
+  brand: '观星台',
   pricingType: 'per_meter' as const,
   pricingUnit: '米',
   price: 99.5,

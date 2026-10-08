@@ -8,7 +8,7 @@ import TodayOverviewBar, {
 } from '@/components/dashboard/TodayOverviewBar'
 
 describe('TodayOverviewBar 组件（一句话经营解读）', () => {
-  it('渲染「米宝 · 今日经营速览」品牌标签', () => {
+  it('渲染「黄金策 · 今日经营速览」品牌标签', () => {
     render(
       <TodayOverviewBar
         todayOrders={10}

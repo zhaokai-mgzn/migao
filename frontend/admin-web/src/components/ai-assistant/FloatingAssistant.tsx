@@ -280,7 +280,7 @@ export default function FloatingAssistant() {
               >
                 <div className="flex items-center gap-2">
                   <span className="text-lg flex-shrink-0">🤖</span>
-                  <span className="text-sm font-semibold text-white">{`米宝 · ${AI_ROLES.mibao}`}</span>
+                  <span className="text-sm font-semibold text-white">{`黄金策 · ${AI_ROLES.mibao}`}</span>
                 </div>
                 <div className="flex items-center gap-1">
                   {/* 全屏/退出全屏 */}
@@ -345,7 +345,7 @@ export default function FloatingAssistant() {
           >
             <div className="flex items-center gap-1.5">
               <span className="text-sm">🤖</span>
-              <span className="text-xs font-semibold text-white">米宝</span>
+              <span className="text-xs font-semibold text-white">黄金策</span>
             </div>
             <div className="flex items-center gap-1">
               {/* 恢复 */}
@@ -409,7 +409,7 @@ export default function FloatingAssistant() {
             'active:scale-95',
             'transition-all duration-200 ease-in-out',
           )}
-          title="打开米宝"
+          title="打开黄金策"
         >
           {/* 呼吸光环 */}
           <span className="absolute inset-0 rounded-full bg-primary-500/40 animate-ping" style={{ animationDuration: '2.4s' }} />

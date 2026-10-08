@@ -282,7 +282,7 @@ class CustomerManageTool(BaseTool):
             customers.append({
                 "id": record.get("id"),
                 # 生产回归修复：admin-api 客户数据无 name 字段（存 wechatNickname/nickname），
-                # 旧实现只读 name → 米宝显示"姓名字段都为空"。逐级回退。
+                # 旧实现只读 name → 黄金策显示"姓名字段都为空"。逐级回退。
                 "name": record.get("name")
                         or record.get("wechatNickname")
                         or record.get("nickname")

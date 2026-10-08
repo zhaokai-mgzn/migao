@@ -380,7 +380,7 @@ class TestOutputVerifyActionScope:
     def test_multi_action_tools_detected(self):
         """检测器自证：已知多 action 工具必须被认出来（防解析失效 → 守卫恒真）。
 
-        ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：
+        ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端黄金策只读化」）：
         `category_manage` 已收窄为**单 action**（只剩 `tree`）⇒ 它从「必须被认出」组
         移入「不得被误判」组；「必须被认出」的名单改为**当前 B 端可达**的多 action 工具
         （含 #5247 新接入的 `inbound_order_query` / `operation_catalog_query` /

@@ -688,7 +688,7 @@ class TestEvidenceWindow:
         它的评测 job 已整体删除，PR 上只剩纯静态 `map` job ⇒ **不再产生任何 eval summary**
         （零 LLM、零 `write_summary_json`），「窗口写进 artifact 供取数」在该文件里**没有被测对象**。
         留着它只会让本条变成对着一份永不产出的 summary 的空断言（不会红的断言）。
-        仍会产生 summary 的两路留在循环里（判定用途的单一入口 `post-deploy-eval` + 小布验收
+        仍会产生 summary 的两路留在循环里（判定用途的单一入口 `post-deploy-eval` + 元元验收
         `xiaobu-acceptance`）；该 workflow 若重新评测，本循环必须把它加回。
         """
         for wf in ("post-deploy-eval.yml", "xiaobu-acceptance.yml"):

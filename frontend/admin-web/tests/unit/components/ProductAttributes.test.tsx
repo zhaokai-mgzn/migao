@@ -103,7 +103,7 @@ describe('ProductAttributes (#563)', () => {
       <ProductAttributes
         value={{
           skuCode: 'CL-RED-001',
-          brand: '米高',
+          brand: '观星台',
           unit: '米',
           specifications: {
             weight: '200-300g',
