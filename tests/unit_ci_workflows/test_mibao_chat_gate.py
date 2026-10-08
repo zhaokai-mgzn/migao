@@ -25,7 +25,7 @@
 
 | # | 判据 | 红证形态 |
 |---|---|---|
-| ④ **迁移面**：`agent:chat` 的存量回填**只授 `admin`**（裁定⑧）+ 幂等 + 终态对账 `DO` 块 + 头部回滚 SQL | 多授一个岗位 / 去掉 `DO` 块 ⇒ 红 |
+| ④ **迁移面**：`agent:chat` 的存量回填**只授 `admin`**（裁定⑧）+ 幂等 + 终态对账 `DO` 块 + 头部回滚 SQL（**「落库」= 该迁移有 `INSERT INTO`**；纯改名 `UPDATE` 不计入，issue #6525） | 多授一个岗位 / 去掉 `DO` 块 ⇒ 红 |
 | ⑤ **服务端接线**：`AdminGate` 是唯一判定；`/api/auth/me`（`AuthService.getCurrentUser`）经**同一函数**下发能力位 | 判定改成读 `role` 字段 / 能力位恒 `true` ⇒ 红 |
 | ⑥ **端侧消费**：两端都读服务端 `capabilities.mibaoChat`，且未授权态含**逐字**「需要管理员授权」+ 可行动引导（不是静默隐藏、不是 403 白屏） | 改成前端硬编码码 / 删掉引导文案 ⇒ 红 |
 | ⑦ **防空跑**：语料完整 + 判据自身不在语料内 | 语料塌陷 ⇒ 红 |
@@ -207,6 +207,23 @@ def parse_migrations(corpus: dict[str, str]) -> dict[str, str]:
     }
 
 
+def landing_migrations(corpus: dict[str, str], code: str) -> dict[str, str]:
+    """含授权码 `code` **落库**（有 `INSERT INTO`）的迁移 —— 判据 ④ 的**唯一**收集口径。
+
+    为什么不是「提到即算」（issue #6525，2026-10-08）：
+    改名类迁移（`UPDATE permissions SET name = '黄金策对话' WHERE code = 'agent:chat'`）只改**展示名**，
+    既不落库也不授权；把它算进来，④ 就从「**防重复授权**」退化成「迁移里不许出现这个码」——
+    而 ④ 的形态判据（`ON CONFLICT` / `WHERE NOT EXISTS` / 终态对账 `DO $$` / 回滚 SQL）只对**落库**成立。
+    收紧的只有「谁来计数」，落库迁移出现两条仍**必红**（= ④ 的原意）。
+    判别力自证 = `test_rename_only_migration_is_not_counted_as_landing`。
+    """
+    return {
+        rel: text
+        for rel, text in parse_migrations(corpus).items()
+        if f"'{code}'" in text and re.search(r"INSERT\s+INTO", text, re.I)
+    }
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 三、判据（纯函数：输入语料 ⇒ 问题清单，空列表 = 绿）
 # ══════════════════════════════════════════════════════════════════════════════
@@ -326,9 +343,7 @@ def problems_migration_shape(corpus: dict[str, str]) -> list[str]:
     assert grant_code, "`AdminGate.MIBAO_CHAT_GRANT_CODE` 解析失配（fail-closed）"
     code = grant_code.group(1)
 
-    migrations = {
-        rel: text for rel, text in parse_migrations(corpus).items() if f"'{code}'" in text
-    }
+    migrations = landing_migrations(corpus, code)
     out: list[str] = []
     if len(migrations) != 1:
         out.append(
@@ -541,11 +556,8 @@ def _inject_ghost_code(corpus: dict[str, str]) -> dict[str, str]:
 
 def _inject_wide_backfill(corpus: dict[str, str]) -> dict[str, str]:
     """④ 回填放宽到非 admin 岗位（违反裁定⑧）。"""
-    migrations = {
-        rel: text for rel, text in parse_migrations(corpus).items()
-        if "MIBAO_CHAT_GRANT_CODE" not in text and "agent:chat" in text
-    }
-    assert len(migrations) == 1, f"注入锚点失配：含 agent:chat 的迁移不是 1 条：{sorted(migrations)}"
+    migrations = landing_migrations(corpus, "agent:chat")
+    assert len(migrations) == 1, f"注入锚点失配：agent:chat 的**落库**迁移不是 1 条：{sorted(migrations)}"
     rel, text = next(iter(migrations.items()))
     mutated = text.replace("AND r.code = 'admin'", "AND r.code IN ('admin', 'customer_service')", 1)
     assert mutated != text, "注入锚点失配（迁移里的 admin 谓词没被换掉）"
@@ -615,6 +627,34 @@ def test_every_judgement_is_green() -> None:
     assert bad == {}, "黄金策唤出授权门判据未通过：\n" + "\n".join(
         f"  【{label}】\n    - " + "\n    - ".join(items[:12]) for label, items in bad.items()
     )
+
+
+def test_rename_only_migration_is_not_counted_as_landing() -> None:
+    """**判别力自证**（issue #6525）：纯改名迁移不得被 ④ 算作「落库」。
+
+    本次改名给 `agent:chat` 加了一条**只改展示名**的迁移（`254`），而 ④ 的原实现按「提到即算」收集
+    ⇒ 迁移数从 1 变 2 ⇒ ④ 误红（防重复授权退化成「迁移里不许出现这个码」）。
+    本用例同时证明两件事，缺一即为空断言：
+      ① 探针**真的**进了语料、且**旧口径**会把它算上（提到即算计数 = 2）；
+      ② 新口径只算落库 ⇒ 计数回到 1、④ 复绿。
+    红证：把 `landing_migrations` 退回「提到即算」⇒ 这里当场红（计数 2 ≠ 1）。
+    """
+    probe = MIGRATIONS_DIR + "/V999__rename_only_probe.sql"
+    base = load_corpus()
+    base_mentioned = [r for r, text in parse_migrations(base).items() if "'agent:chat'" in text]
+    mutated = {
+        **base,
+        probe: "UPDATE permissions SET name = '黄金策对话' WHERE code = 'agent:chat';\n",
+    }
+    assert probe in parse_migrations(mutated), "探针没进语料（路径前缀失配）"
+    mentioned = [r for r, text in parse_migrations(mutated).items() if "'agent:chat'" in text]
+    assert len(mentioned) == len(base_mentioned) + 1, (
+        f"探针没生效（提到即算应比基线多 1 条）：基线 {sorted(base_mentioned)} / 注入后 {sorted(mentioned)}"
+    )
+    assert len(landing_migrations(mutated, "agent:chat")) == len(
+        landing_migrations(base, "agent:chat")
+    ), "纯改名迁移被算成了落库（落库计数不该因改名迁移增加）"
+    assert problems_migration_shape(mutated) == [], "改名迁移不该让判据 ④ 变红"
 
 
 def test_every_judgement_can_go_red() -> None:

@@ -225,7 +225,7 @@ class ProductionSourceProvenanceMigrationTest {
         // 默认租户 1 的 industry 在 bootstrap 里就是受控 code（否则新库与迁移库终态不同）
         assertThat(schema)
                 .as("bootstrap 的默认租户 industry 必须是受控 code（V62 会把存量归一，终态须一致）")
-                .contains("VALUES (1, '观星台智能', 'migao', 'curtain', 'active')");
+                .contains("VALUES (1, '米高智能', 'migao', 'curtain', 'active')");
     }
 
     // ══════════════════════ 工具 ══════════════════════
