@@ -586,7 +586,12 @@ def build_block(text: str) -> str:
     #    实测「1.5 段之后的内容」被算进构建段 ⇒ 判据假绿）。
     build = text.find('timeout "$BUILD_TIMEOUT_SECS" docker build')
     assert build > 0, "反空跑锚点：找不到带显式上界的构建调用（判据已过期）"
-    i = text.rfind('if [ -n "$BUILD_SERVICE" ]; then', 0, build)
+    # ⚠️ 锚点**不带** `]; then` 后缀（issue #6551）：构建守卫现在多了一个合取项
+    #    （`&& [ -z "$LOCAL_IMAGE_REF" ]`，本地已有该 tag 镜像时短路构建）⇒ 用旧字面量会
+    #    `rfind` 到**更早**的那处 `BUILD_SERVICE` 守卫（只取 `_svc` 的那段），段首被拉前
+    #    ⇒ 把第 0 段的 `::warning::` 一并算进「构建段」（判据 14 假红）。
+    #    语义不变：仍是「承载 docker build 的**那个** BUILD_SERVICE 守卫（取最后一处）」。
+    i = text.rfind('if [ -n "$BUILD_SERVICE" ]', 0, build)
     assert i > 0, "反空跑锚点：找不到构建段的守卫（判据已过期）"
     j = text.find("# 1.5 ", i)
     assert j > i, "反空跑锚点：找不到构建段的结尾标记（判据已过期）"

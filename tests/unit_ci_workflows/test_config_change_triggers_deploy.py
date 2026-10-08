@@ -529,7 +529,10 @@ def check_canonical_configs_match_the_deploy_script(text: str) -> None:
     或常量随手改）⇒ 红 —— 否则「配置应用面 = 哪几份」这个前提会静默漂移，而上面的触发面/对账面
     判据会继续在**错的集合**上恒真。
     """
-    copied = {f"deploy/swas/{n}" for n in re.findall(r"^cp src/deploy/swas/([A-Za-z0-9._-]+) \./", text, re.M)}
+    # ⚠️ `^\s*`（issue #6551）：应用面现在落在「现盘复用 / 取配置」二分里 ⇒ `cp` 会带缩进。
+    #    行首缩进**不是契约**，契约是「**哪几份**被应用」（集合相等仍逐字判）⇒ 判据没被放松；
+    #    注入式红证走子串替换（`text.replace`），不受缩进影响。
+    copied = {f"deploy/swas/{n}" for n in re.findall(r"^\s*cp src/deploy/swas/([A-Za-z0-9._-]+) \./", text, re.M)}
     assert copied == set(CANONICAL_SWAS_CONFIGS), (
         f"`deploy/swas/deploy.sh` 实际 `cp` 的配置 {sorted(copied)} 与本判据声称的三份 "
         f"{sorted(CANONICAL_SWAS_CONFIGS)} 不一致 ⇒ 「配置与镜像同源」的应用面变了（同源声明必须同批更新）"
