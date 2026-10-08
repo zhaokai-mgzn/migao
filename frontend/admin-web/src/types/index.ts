@@ -3513,7 +3513,16 @@ export interface PoolWarning {
 
 /** 物料分组（`materialKey` = 商品 × 颜色 × 门幅） */
 export interface PoolGroup {
+  /**
+   * 分组键（`productId|skuCode`）—— **机器键**：React `key` / 分组判据 / 其它消费者吃它。
+   * 🔴 它是内部标识（`productId` 是 UUID）⇒ **不上屏**（见 `materialLabel`）。
+   */
   materialKey: string
+  /**
+   * 组标题的**展示名**（`商品名 × 颜色/门幅`，服务端组装 · issue #6523）。
+   * 🔴 前端**不得**自己拼（那是第二份会漂的口径）；也**不得**退回 `materialKey`（内部标识上屏）。
+   */
+  materialLabel: string
   productId: string
   skuCode?: string | null
   orderCount: number

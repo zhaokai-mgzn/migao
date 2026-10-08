@@ -540,13 +540,14 @@ public class ProcessingOrderService {
             BigDecimal waitHours = hoursBetween(order.getCreatedAt(), now);
             boolean overdue = waitHours.compareTo(maxWaitHours) > 0;
             if (overdue) {
-                // 「不得静默压单」= 超上限这件事**必须带着对象名字说出来**（哪张单、等了多久、该做什么），
-                // 而不是一个数不清对象的计数。**加急单同样告警** —— 它更不该被压住。
+                // 「不得静默压单」= 超上限这件事**必须带着对象说出来**。🔴 issue #6524：对象由
+                // `orderNo` **字段**承载（前端在明细表里单独成列），读数由 `waitHours` 字段承载
+                // （同表另一列）⇒ 文案**不重复念同屏已有的列**，也不带口语责备尾巴；
+                // 只留「阈值 + 该做什么」（阈值来自本次生效的 `maxWaitHours`，不写死）。
+                // **加急单同样告警** —— 它更不该被压住。
                 warnings.add(new ProductionPoolViews.PoolWarning(order.getId(), order.getOrderNo(),
-                        waitHours, String.format(
-                        "订单 %s 已等待派单 %s 小时（超过上限 %s 小时）：请合并派单或单独派单"
-                                + "（不要一直压着不派）",
-                        order.getOrderNo(), waitHours.toPlainString(), maxWaitHours.toPlainString())));
+                        waitHours, String.format("已超过最长等待 %s 小时，请合并派单或单独派单",
+                        maxWaitHours.toPlainString())));
             }
             boolean urgent = Boolean.TRUE.equals(order.getIsUrgent());
             LocalDate requiredDeliveryDate = order.getRequiredDeliveryDate();
@@ -594,7 +595,8 @@ public class ProcessingOrderService {
             }
             List<ProductionPoolViews.PoolLine> lines = new ArrayList<>(entry.getValue());
             lines.sort(POOL_LINE_ORDER);
-            groups.add(new ProductionPoolViews.PoolGroup(entry.getKey(), material[0], material[1],
+            groups.add(new ProductionPoolViews.PoolGroup(entry.getKey(),
+                    materialLabel(lines.get(0)), material[0], material[1],
                     groupOrders.size(), required, List.copyOf(lines)));
         }
         return new ProductionPoolViews.Pool(maxWaitHours, POOLED_DEFAULT_ENABLED, ordersInPool.size(),
@@ -680,6 +682,18 @@ public class ProcessingOrderService {
     /** 物料键（商品 × 颜色 × 门幅）。{@code skuCode} 在本系统里就是「颜色 × 门幅」的组合。 */
     private static String materialKey(String productId, String skuCode) {
         return (productId == null ? "" : productId) + "|" + (skuCode == null ? "" : skuCode);
+    }
+
+    /**
+     * 物料组的**展示名**（issue #6523）：{@code 商品名 × 颜色/门幅}，**不是**机器键。
+     *
+     * <p>它是 {@link #materialKey} 的人话孪生兄弟 —— ⚠️ 已定的边界：**不得**退回机器键
+     * （那正是本单修掉的缺陷：UUID 被当展示名摆给商家看）。商品名与 SKU 本来就都在
+     * {@link ProductionPoolViews.PoolLine} 里（同组各行同料 ⇒ 取任一行的即可）。</p>
+     */
+    private static String materialLabel(ProductionPoolViews.PoolLine line) {
+        String name = StringUtils.hasText(line.productName()) ? line.productName() : "未命名商品";
+        return StringUtils.hasText(line.skuCode()) ? name + " × " + line.skuCode() : name;
     }
 
     /**

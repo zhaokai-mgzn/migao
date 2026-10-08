@@ -91,7 +91,9 @@ const board = (over: Partial<PoolBoard> = {}): PoolBoard => ({
   urgentLines: [URGENT_A, URGENT_B],
   groups: [
     {
-      materialKey: '遮光布 / 米白 / 2.8m',
+      // 🔴 issue #6523：`materialKey` 是机器键（不上屏），组标题渲染服务端 `materialLabel`
+      materialKey: 'p1|米白/2.8m',
+      materialLabel: '遮光布 × 米白/2.8m',
       productId: 'p1',
       skuCode: '米白/2.8m',
       orderCount: 1,

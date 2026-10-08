@@ -4552,7 +4552,7 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("#5169 判据5 待派池：按物料分组可查 / 等待时长可读 / 超上限**带单号**告警")
+    @DisplayName("#5169 判据5 待派池：按物料分组可查 / 等待时长可读 / 超上限**带对象**告警（#6524 文案=阈值+动作）")
     void poolGroupsByMaterialAndWarnsOverdueOrders() {
         java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
         // ⚠️ 顺序**必须忠于真实查询**：`pool()` 走 `orderByAsc(createdAt)`（池的遍历序 = 下单时刻升序），
@@ -4593,9 +4593,11 @@ class ProcessingOrderServiceTest {
         assertThat(pool.warnings().get(0).orderNo()).isEqualTo("ORD-20260912-0002");
         assertThat(pool.warnings().get(0).waitHours()).isEqualByComparingTo("30.0");
         assertThat(pool.warnings().get(0).message())
-                .as("🔴 告警必须**带着对象名字**说出来：哪张单、等了多久、该做什么（不得静默压单）")
-                .contains("ORD-20260912-0002").contains("30.0").contains("24")
-                .contains("合并派单");
+                .as("🔴 #6524 告警文案 = 阈值 + 该做什么；不念同屏已有的列（单号 / 等待时长）"
+                        + "；对象名字与读数仍由字段承载（orderNo / waitHours 上一行刚断言过）")
+                .contains("24").contains("请合并派单或单独派单")
+                .doesNotContain("ORD-20260912-0002").doesNotContain("30.0")
+                .doesNotContain("不要一直压着不派");
         assertThat(pool.groups().get(0).lines().get(0).waitHours())
                 .as("池内等待时长**逐单可读**，且**等得久的在前**（= 记录期既有序：池按 createdAt 升序遍历；"
                         + "issue #5177 的排序键在「无加急单、无到货日」时与之**同序** ⇒ 缺省不变）")

@@ -67,7 +67,14 @@ public final class ProductionPoolViews {
     /**
      * 一个物料分组（商品 × 颜色 × 门幅）里的待派行。
      *
-     * @param materialKey 分组键（{@code productId|skuCode}；机器可判，便于前端折叠/筛选）
+     * @param materialKey 分组键（{@code productId|skuCode}；机器可判，便于前端折叠/筛选）。
+     *                    🔴 它是**机器键**，不是展示名 —— 看板标题渲染 {@link #materialLabel}。
+     * @param materialLabel 人话展示名（{@code 商品名 × 颜色/门幅}），issue #6523 新增。
+     *                    <p>为什么由服务端给而不是前端拼：{@code materialKey} 里的 {@code productId} 是 UUID
+     *                    ⇒ 原样上屏就是把内部标识摆给商家看（真机实测 2026-10-08：标题成了
+     *                    {@code a61daac33e1a49974577d3ca81c4500b|SD07演示-2.8-8141273}）；而
+     *                    「商品名 × SKU」是**展示口径**，在前端拼字符串就是第二份会漂的口径
+     *                    （字段改名 / 顺序调整时两处不同步，且没有任何东西会红）。</p>
      * @param orderCount  **去重后**的订单数（一张单同物料两行只算一行）
      * @param lines       **已排序**（{@code ProcessingOrderService.POOL_LINE_ORDER}：到货日升序、
      *                    NULL 排最后 → 等待时长降序 → 进池时刻升序 → 单号升序）。前端**按序渲染即可**，
@@ -76,6 +83,7 @@ public final class ProductionPoolViews {
      */
     public record PoolGroup(
             String materialKey,
+            String materialLabel,
             String productId,
             String skuCode,
             int orderCount,
@@ -86,7 +94,10 @@ public final class ProductionPoolViews {
     /**
      * 超上限的告警行（「不得静默压单」的可行动面）。
      *
-     * <p>{@code message} 是可执行的话（谁、等了多久、该做什么），不是「有 N 条超时」这种数不清对象的汇总。</p>
+     * <p>{@code message} 只陈述**阈值 + 该做什么**（{@code 已超过最长等待 N 小时，请合并派单或单独派单}，
+     * issue #6524）—— 它**不说**是哪张单（{@code orderNo} 字段承载、前端在明细表里单独成列）、
+     * 也**不说**等了多久（{@code waitHours} 字段承载、同表另一列）：同屏已有的信息不重复念一遍，
+     * 也不带口语责备尾巴。字段一律不动 —— 「不得静默压单 / 告警必须带对象」这条口径不放松。</p>
      */
     public record PoolWarning(
             String orderId,
