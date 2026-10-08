@@ -11,7 +11,7 @@ interface LogoProps {
   className?: string
 }
 
-/** 观星台品牌 Logo — 帘成 M：织金暖底 + 窗帘杆 + 垂帘 M + 波浪底摆 */
+/** 米高品牌 Logo — 帘成 M：织金暖底 + 窗帘杆 + 垂帘 M + 波浪底摆 */
 export default function Logo({ size = 'medium', className }: LogoProps) {
   const s = sizeMap[size]
   return (
