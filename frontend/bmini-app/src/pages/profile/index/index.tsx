@@ -3,8 +3,8 @@ import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useAuthStore } from '../../../store/authStore'
 import { useChatStore } from '../../../store/chatStore'
-import { visibleAdminSurfaces } from '../../../utils/adminPermission'
-import { useAdminPermissions } from '../../../components/admin/useAdminPermissions'
+// 手机端菜单（issue #6570）：**服务端按岗位投影**，端侧不再自己判权限码
+import { useMobileMenu } from '../../../components/admin/useMobileMenu'
 // 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
 import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import './index.scss'
@@ -25,9 +25,10 @@ import './index.scss'
 export default function ProfilePage() {
   useMerchantSurfaceGuard()
   const { user, isLoggedIn, logout } = useAuthStore()
-  // 服务端下发的权限集合（`GET /api/auth/me`）；`null` = 未知 ⇒ 入口照显（fail-open）
-  const permissions = useAdminPermissions()
-  const adminSurfaces = visibleAdminSurfaces(permissions)
+  // 服务端下发的**手机端菜单**（`GET /api/auth/me` 的 `mobileSurfaces`，issue #6570）：
+  // 端侧**只渲染服务端给的面**（旧口径 = 端侧拿 permissions 自己判码 + 未知照显 ⇒ 员工点进去逐项 403）
+  const menu = useMobileMenu()
+  const navSurfaces = menu.surfaces.filter((surface) => !!surface.route)
 
   const handleAbout = () => {
     Taro.showModal({
@@ -110,22 +111,29 @@ export default function ProfilePage() {
             它们是工人动作，归位在工人登录后的工作台 `src/pages/worker/home/index.tsx`。
             判据 = tests/profile-page.test.tsx 的两条反向断言（渲染面取不到 + 源码面无工人面路由记号）。 */}
 
-        {/* ── 管理面 4 项（issue #5654）──
+        {/* ── 管理面（issue #5654；菜单改为**服务端下发** issue #6570）──
             管理员离店后仍要能办的事：排产/派单 · 入库过账 · 售后处理 · 计件工资报表。
-            🔴 可见性 = 「能读这一页」的**端点码**（`src/utils/adminPermission.ts` 台账），
-            权限集合来自服务端 `GET /api/auth/me`；**集合未知 ⇒ 照显**（fail-open：
-            判定权威在服务端 403 + 显式文案，静默隐藏入口是 #5642 明令禁止的形态）。 */}
-        {adminSurfaces.map((surface) => (
+            🔴 可见性 = **服务端按岗位投影**（`GET /api/auth/me` 的 `mobileSurfaces`，服务端
+            `MobileSurfaces.visibleFor` 按生效权限集合过滤）—— 端侧**不再自己判权限码**。
+            🔴 没拿到菜单（`error`）⇒ **显式说 + 可重试**：既不静默隐藏（#5642 禁止的形态），
+            也不退回「照显全部」（那会让员工点进去逐项 403 —— issue #6570 的现状读数）。 */}
+        {navSurfaces.map((surface) => (
           <View
             key={surface.key}
             className='menu-item'
             data-testid={`profile-admin-${surface.key}`}
-            onClick={() => Taro.navigateTo({ url: surface.route })}
+            onClick={() => surface.route && Taro.navigateTo({ url: surface.route })}
           >
-            <Text className='menu-item__text'>{surface.label}</Text>
+            <Text className='menu-item__text'>{surface.title}</Text>
             <Text className='menu-item__arrow'>›</Text>
           </View>
         ))}
+        {menu.state === 'error' && (
+          <View className='menu-item' data-testid='profile-menu-error' onClick={menu.reload}>
+            <Text className='menu-item__text'>菜单没加载出来，点这里重试</Text>
+            <Text className='menu-item__arrow'>↻</Text>
+          </View>
+        )}
 
         <View className='menu-item' onClick={handleAbout}>
           <Text className='menu-item__text'>关于我们</Text>

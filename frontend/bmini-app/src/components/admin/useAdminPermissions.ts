@@ -4,10 +4,14 @@
  * 真值 = 服务端 `GET /api/auth/me` 的 `permissions`（admin-api `UserInfoResponse`）。
  * 端侧**不发明权限码**，也不缓存到 store（权限改了要重新拉；本 hook 每次进页面拉一次）。
  *
- * 🔴 三态语义（交给 `canOpenAdminSurface` / `canWriteAdminSurface` 消费）：
+ * 🔴 三态语义（交给 `canWriteAdminSurface` 消费）：
  * - `null` = **未知**（还没回来 / 拉失败）⇒ 一律按「可能有」（fail-open），
  *   判定权威留给服务端 403 + 显式文案 —— 把「未知」当「无权」就是静默隐藏入口；
  * - `[]` / `['x']` = 已知集合（`'*'` 通配由 `hasPermissionCode` 判真）。
+ *
+ * ⚠️ 它**不再用于菜单可见性**（issue #6570，用户 2026-10-08 裁定「走 B」）：手机端菜单改由服务端按岗位
+ * 投影，端侧读 `useMobileMenu()`（`GET /api/auth/me` 的 `mobileSurfaces`）。本 hook 现在只服务
+ * **页面内的写动作判权**（管理面 3 页 + 计件页的按钮与拒绝文案）。
  */
 import { useEffect, useState } from 'react'
 import { fetchMyPermissions } from '../../services/adminOpsService'

@@ -7,6 +7,21 @@
 
 ## [Unreleased]
 
+### 手机端菜单改由**服务端按岗位下发**（员工只看到自己岗位的面）；「数据」页的生产待办块同步按岗位开关（2026-10-08，issue #6570）
+
+- **改后**：`GET /api/auth/me` 下发 `mobileSurfaces`（服务端 `MobileSurfaces.visibleFor` 按生效权限集合过滤）：
+  手机端「我的」页**只渲染服务端给的面**；「数据」页的生产待办块由**同一份清单**开关 —— 没有
+  `production:view` 的岗位（客服 / 财务实测）不再看到那块永远无意义的「无权限查看生产待办」。
+- **改前**：端侧拿 `permissions` **自己判码**，且「集合未知 ⇒ 照显」（fail-open）⇒ 员工会看到自己没有的入口，
+  点进去逐项 403（租户 25 四个岗位的线上读数见 issue #6570）。
+- **拿不到菜单**（网络 / 服务异常）⇒ 显式「菜单没加载出来，点这里重试」，**一个面都不渲染**：
+  既不静默隐藏（#5642 的禁止形态），也不退回照显。写动作判权与 403 的逐字文案**不变**。
+- **判据**：`backend/admin-api/src/test/java/com/migao/admin/service/MobileSurfacesTest.java`（四组线上读数逐值 +
+  读码镜像）、`AuthIntegrationTest.java`（`mobileSurfaces` 字段名与能力位 `route` 缺键语义）、
+  `frontend/bmini-app/tests/mobile-menu-server-driven.test.tsx`（给什么渲染什么 / 空数组 ≠ 失败 / 拉不到 ⇒ 显式 /
+  重试真拉 / 待办块开关）、`admin-surfaces-guard.test.ts`（判据 8：服务端清单 ⇄ `app.config.ts` / 入口台账 /
+  读码 / 能力位接线，双向）。
+
 ### 「数据」页的三类待办改落到「加工单详情」只读页；手机端加身份护栏：工人设备打开商家页自动回工人工作台（2026-10-08，issue #6567）
 
 - **改后**：在「数据」页点待排产 / 卡在哪 / 待发货任意一张待办卡片 ⇒ 打开**加工单详情**

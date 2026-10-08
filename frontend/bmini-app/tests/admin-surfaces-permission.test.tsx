@@ -7,9 +7,12 @@
  * 而不是靠桩喂进去的结论。
  *
  * 判据：
- * ① **入口可见性**：`GET /api/auth/me` 的 `permissions` 决定「我的」页 4 个入口显不显示
- *    （无权限码 ⇒ **菜单不可见**）；只有部分权限 ⇒ 只显示对应那些；
- *    `/me` 拉不到（未知）⇒ **照显**（fail-open：判定权威在服务端 403，静默隐藏是 #5642 禁止的形态）。
+ * ① **入口可见性 = 服务端下发的菜单**（issue #6570 改判，用户 2026-10-08 裁定「走 B」）：
+ *    `GET /api/auth/me` 的 **`mobileSurfaces`**（服务端按岗位投影）决定「我的」页显示哪些入口。
+ *    🔴 **旧口径已废**：端侧拿 `permissions` 自己判码、且「集合未知 ⇒ 照显」（fail-open）——
+ *    它的实际形态是「员工看到自己没有的入口，点进去逐项 403」（线上读数见 issue #6570）。
+ *    新口径下 `/me` 拿不到 ⇒ 显式「菜单没加载出来，点这里重试」+ **一个面都不渲染**
+ *    （既不静默隐藏，也不照显）。
  * ② **h5 下不调 `Taro.login`**（#5650 的既有判据）：h5 编译目标下渲染 4 个管理面，
  *    `Taro.login` **一次都不许被调**（红证：在任一管理面渲染路径上加一句 `Taro.login()` ⇒ 必红）。
  * ③ **平台能力缺口显式**：h5 下未登录 ⇒ 明说「浏览器环境不支持微信登录，请用账号密码登录」
@@ -53,7 +56,23 @@ mockChatStore.useChatStore.getState = jest.fn(() => ({ clearMessages: jest.fn() 
 /** 「我的」页的 4 个入口（testid = `profile-admin-<key>`） */
 const SURFACE_KEYS = ['pool', 'inbound', 'after-sales', 'piecework']
 
-/** 网络层桩：`/api/auth/me` 给权限集合，其余端点给最小合法响应 */
+/**
+ * 服务端 `MobileSurfaces.visibleFor` 的**测试桩镜像**（面 → 码；`*` = 全给）——
+ * 真值在 `backend/.../service/MobileSurfaces.java`（判据：`MobileSurfacesTest`）。
+ */
+function menuFor(permissions: string[]) {
+  const catalog = [
+    { key: 'pool', title: '智能派单', route: '/pages/admin/pool/index', code: 'processing:view' },
+    { key: 'inbound', title: '入库过账', route: '/pages/admin/inbound/index', code: 'inbound:view' },
+    { key: 'after-sales', title: '售后处理', route: '/pages/admin/after-sales/index', code: 'after_sales:view' },
+    { key: 'piecework', title: '计件工资报表', route: '/pages/admin/piecework/index', code: 'production:view' },
+  ]
+  return catalog
+    .filter((surface) => permissions.includes('*') || permissions.includes(surface.code))
+    .map(({ code, ...surface }) => surface)
+}
+
+/** 网络层桩：`/api/auth/me` 给权限集合 + 手机端菜单，其余端点给最小合法响应 */
 function stubNetwork(permissions: string[] | null) {
   mockGet.mockImplementation(async (url: string) => {
     if (url === '/api/auth/me') {
@@ -62,7 +81,7 @@ function stubNetwork(permissions: string[] | null) {
         error.statusCode = 500
         throw error
       }
-      return { success: true, data: { permissions } } as any
+      return { success: true, data: { permissions, mobileSurfaces: menuFor(permissions) } } as any
     }
     if (url === '/api/admin/production/pool') {
       return {
@@ -103,26 +122,28 @@ beforeEach(() => {
   stubNetwork(null)
 })
 
-describe('管理面入口可见性（issue #5654 判据：无权限码 ⇒ 菜单不可见）', () => {
-  it('管理员（`*` 通配）⇒ 4 个入口都在', async () => {
+describe('管理面入口可见性（issue #5654 判据；菜单口径 = 服务端下发，issue #6570 改判）', () => {
+  it('管理员（`*` 通配）⇒ 服务端给 4 个面，4 个入口都在', async () => {
     stubNetwork(['*'])
     render(<ProfilePage />)
     await waitFor(() => expect(screen.getByTestId('profile-admin-pool')).toBeTruthy())
     SURFACE_KEYS.forEach((key) => expect(screen.getByTestId(`profile-admin-${key}`)).toBeTruthy())
   })
 
-  it('零权限 ⇒ 4 个入口**一个都不出现**（菜单不可见）', async () => {
+  it('服务端给空清单（零权限）⇒ 4 个入口**一个都不出现**（菜单不可见）', async () => {
     stubNetwork([])
     render(<ProfilePage />)
-    // 等「权限集合到位」这一步真的发生（初次渲染是 fail-open 的全显态）
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/auth/me', expect.anything()))
     await waitFor(() =>
       SURFACE_KEYS.forEach((key) => expect(screen.queryByTestId(`profile-admin-${key}`)).toBeNull()),
     )
+    // 空清单是**服务端的明确答复**，不是失败 ⇒ 不该出现「没加载出来」
+    expect(screen.queryByTestId('profile-menu-error')).toBeNull()
     // 其余菜单项不受影响（只治理管理面入口）
     expect(screen.getByText('关于我们')).toBeTruthy()
   })
 
-  it('只有 inbound:view ⇒ 只出现「入库过账」', async () => {
+  it('只有 inbound:view ⇒ 服务端只给「入库过账」一个面', async () => {
     stubNetwork(['inbound:view'])
     render(<ProfilePage />)
     await waitFor(() => expect(screen.getByTestId('profile-admin-inbound')).toBeTruthy())
@@ -131,11 +152,14 @@ describe('管理面入口可见性（issue #5654 判据：无权限码 ⇒ 菜�
     expect(screen.queryByTestId('profile-admin-piecework')).toBeNull()
   })
 
-  it('权限集合拉不到（未知）⇒ **照显**（fail-open，不静默隐藏入口）', async () => {
+  it('🔴 菜单拉不到（500）⇒ 显式「菜单没加载出来，点这里重试」+ **一个面都不渲染**', async () => {
     stubNetwork(null)
     render(<ProfilePage />)
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/auth/me', expect.anything()))
-    SURFACE_KEYS.forEach((key) => expect(screen.getByTestId(`profile-admin-${key}`)).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('profile-menu-error')).toBeTruthy())
+
+    expect(screen.getByText('菜单没加载出来，点这里重试')).toBeTruthy()
+    // **改判**（issue #6570）：旧口径是「照显」（fail-open）⇒ 员工点进去逐项 403
+    SURFACE_KEYS.forEach((key) => expect(screen.queryByTestId(`profile-admin-${key}`)).toBeNull())
   })
 })
 

@@ -20,6 +20,9 @@
  *   Java 字面量逐值相等。
  * 判据 7·**机制存活读数**：清单 A 条数、射程实测 API 数、每个面的读端点在后端解析得出来
  *   —— 防「面变窄了但没人知道」。
+ * 判据 8·**手机端菜单 = 服务端投影**（issue #6570）：`MobileSurfaces.java` 的 `ALL`（服务端按岗位
+ *   投影的那份清单）⇄ 端侧落地 —— 有路由的面必须在 `app.config.ts` 在册 + 入口台账登记过 +
+ *   读码与端侧台账逐值相等；无路由的能力位必须被对应页面真的消费。
  */
 import fs from 'fs'
 import path from 'path'
@@ -253,5 +256,100 @@ describe('管理面手机端类级守卫（issue #5654）', () => {
     const java = fs.readFileSync(path.join(REPO_ROOT, AFTER_SALES_SERVICE), 'utf8')
     expect(AFTER_SALES_STATUS_TRANSITIONS).toEqual(javaSetMap(java, 'STATUS_TRANSITIONS'))
     expect(AFTER_SALES_STATUS_LABELS).toEqual(javaStringMap(java, 'TICKET_STATUS_LABELS'))
+  })
+})
+
+/**
+ * 判据 8（issue #6570）·**手机端菜单的服务端投影 ⇄ 端侧落地**（双向）
+ *
+ * 真值 = `backend/.../service/MobileSurfaces.java` 的 `ALL`（服务端按岗位投影、`/api/auth/me` 下发）。
+ * 端侧（bmini）必须处处对得上 —— 否则「服务端说有一个面」而端侧点进去是空白 / 没人指向它：
+ * ① 每个**有路由**的面 ⇒ 路由逐字出现在 `src/app.config.ts` 的 pages 里（没登记 = 空白页）；
+ * ② 每个有路由的面 ⇒ 在入口台账 `src/utils/pageEntries.ts` 里登记过（谁是它的入口）；
+ * ③ 导航面的读码 ⇒ 与端侧台账 `ADMIN_SURFACES[key].readPermission` 逐值相等（两份镜像同源）；
+ * ④ **无路由的能力位必须接线**：`production-todos` 必须被「数据」页真的消费
+ *    （登记而不接线 = 台账自我复制的历史文档，§28.2）。
+ *
+ * 红证（怎么让它单独变红）：给 Java 清单加一条 bmini 没登记的 `new Surface(...)` ⇒ ①/② 判红；
+ * 把 `piecework` 的读码改一个字母 ⇒ ③ 判红。
+ */
+const MOBILE_SURFACES_JAVA =
+  'backend/admin-api/src/main/java/com/migao/admin/service/MobileSurfaces.java'
+
+interface MobileSurfaceRow {
+  key: string
+  title: string
+  route: string | null
+  code: string
+}
+
+/** 现取服务端清单（逐条 `new Surface("key", "标题", "路由"|null, "码")`） */
+function parseMobileSurfacesCatalog(): MobileSurfaceRow[] {
+  const text = fs.readFileSync(path.join(REPO_ROOT, MOBILE_SURFACES_JAVA), 'utf8')
+  const rows: MobileSurfaceRow[] = []
+  const re = /new Surface\("([^"]+)",\s*"([^"]+)",\s*(null|"[^"]*"),\s*"([^"]+)"\)/g
+  let match: RegExpExecArray | null
+  while ((match = re.exec(text))) {
+    rows.push({
+      key: match[1],
+      title: match[2],
+      route: match[3] === 'null' ? null : match[3].slice(1, -1),
+      code: match[4],
+    })
+  }
+  return rows
+}
+
+describe('判据 8·手机端菜单 = 服务端投影（issue #6570）', () => {
+  const catalog = parseMobileSurfacesCatalog()
+
+  it('清单现取到 5 项（反空跑：空集上「每项都在册」恒真）', () => {
+    expect(catalog.map((row) => row.key)).toEqual([
+      'pool',
+      'inbound',
+      'after-sales',
+      'piecework',
+      'production-todos',
+    ])
+  })
+
+  it('有路由的面 ⇒ 逐字在 `app.config.ts` 的 pages 里 + 入口台账里登记过', () => {
+    const appConfig = fs.readFileSync(path.join(BMINI_ROOT, 'src/app.config.ts'), 'utf8')
+    const ledger = fs.readFileSync(path.join(BMINI_ROOT, 'src/utils/pageEntries.ts'), 'utf8')
+
+    catalog
+      .filter((row) => row.route)
+      .forEach((row) => {
+        // app.config 的 pages 清单不带前导 `/`
+        expect({
+          route: row.route,
+          inAppConfig: appConfig.includes(`'${row.route!.slice(1)}'`),
+        }).toEqual({ route: row.route, inAppConfig: true })
+        expect({ route: row.route, inLedger: ledger.includes(`'${row.route}'`) }).toEqual({
+          route: row.route,
+          inLedger: true,
+        })
+      })
+  })
+
+  it('导航面的读码 == 端侧台账（两份镜像同源；改一处即红）', () => {
+    catalog
+      .filter((row) => row.route)
+      .forEach((row) => {
+        const surface = ADMIN_SURFACES.find((item) => item.key === row.key)
+        expect({ key: row.key, code: surface?.readPermission }).toEqual({ key: row.key, code: row.code })
+      })
+  })
+
+  it('无路由的能力位必须**接线**：「数据」页真的按它开关生产待办块', () => {
+    const dashboard = fs.readFileSync(
+      path.join(BMINI_ROOT, 'src/pages/dashboard/index/index.tsx'),
+      'utf8',
+    )
+    const featureKeys = catalog.filter((row) => !row.route).map((row) => row.key)
+    expect(featureKeys.length).toBeGreaterThan(0)
+    featureKeys.forEach((key) => {
+      expect({ key, consumed: dashboard.includes(`'${key}'`) }).toEqual({ key, consumed: true })
+    })
   })
 })

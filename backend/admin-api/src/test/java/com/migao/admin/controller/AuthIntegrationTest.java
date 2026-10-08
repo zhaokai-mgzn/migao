@@ -216,6 +216,18 @@ class AuthIntegrationTest {
                                 .name("仪表盘")
                                 .path("/dashboard")
                                 .build()))
+                // 手机端菜单（issue #6570，用户 2026-10-08 裁定「走 B」）：服务端按岗位投影，
+                // 控制器只负责把它**原样序列化**出去（字段名是端侧的依赖）
+                .mobileSurfaces(List.of(
+                        UserInfoResponse.MobileSurface.builder()
+                                .key("pool")
+                                .title("智能派单")
+                                .route("/pages/admin/pool/index")
+                                .build(),
+                        UserInfoResponse.MobileSurface.builder()
+                                .key("production-todos")
+                                .title("生产待办")
+                                .build()))
                 .build();
 
         when(authService.getCurrentUser()).thenReturn(userInfo);
@@ -230,7 +242,14 @@ class AuthIntegrationTest {
                 .andExpect(jsonPath("$.data.user.position").value("运营"))
                 .andExpect(jsonPath("$.data.roles[0]").value("admin"))
                 .andExpect(jsonPath("$.data.permissions").isArray())
-                .andExpect(jsonPath("$.data.menus[0].key").value("dashboard"));
+                .andExpect(jsonPath("$.data.menus[0].key").value("dashboard"))
+                // 🔴 字段名 = 端侧依赖（bmini `MeResponse.mobileSurfaces`）：改名/改驼峰即端侧菜单全灭
+                .andExpect(jsonPath("$.data.mobileSurfaces[0].key").value("pool"))
+                .andExpect(jsonPath("$.data.mobileSurfaces[0].title").value("智能派单"))
+                .andExpect(jsonPath("$.data.mobileSurfaces[0].route").value("/pages/admin/pool/index"))
+                // 无独立页面的能力位：`route` **缺键**（不是 null、不是空串）—— 端侧据此只开页面内的块
+                .andExpect(jsonPath("$.data.mobileSurfaces[1].key").value("production-todos"))
+                .andExpect(jsonPath("$.data.mobileSurfaces[1].route").doesNotExist());
     }
 
     // ======================== 小程序登录测试 ========================

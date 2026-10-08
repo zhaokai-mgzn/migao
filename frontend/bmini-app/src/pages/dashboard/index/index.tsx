@@ -16,6 +16,8 @@ import {
   type ProductionTodo,
   type ProductionTodoResult,
 } from '../../../services/dashboardService'
+// 手机端菜单（issue #6570）：生产待办块的开关在**服务端**（`mobileSurfaces` 的 `production-todos`）
+import { useMobileMenu } from '../../../components/admin/useMobileMenu'
 // 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
 import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import './index.scss'
@@ -103,6 +105,14 @@ export default function DashboardPage() {
   const operations = todoStats?.operations ?? {}
   const numeric = (value: unknown): number | null => (typeof value === 'number' ? value : null)
 
+  // 🔴 生产待办块的**开关在服务端**（issue #6570）：`/me` 的 `mobileSurfaces` 里没有 `production-todos`
+  // （= 本岗位没有 `production:view`）⇒ 整块不渲染（不再摆一块「无权限查看生产待办」的噪音）。
+  // 三态处置：`loading` ⇒ 先不渲染（避免闪一块注定要消失的内容）；`ok` ⇒ 按服务端清单；
+  // `error`（菜单没拿到）⇒ **照渲染**，让本块自己的状态机去说（宁可不隐藏数据，也不静默吞掉待办）。
+  const menu = useMobileMenu()
+  const showProductionTodos =
+    menu.state === 'error' || (menu.state === 'ok' && menu.surfaces.some((s) => s.key === 'production-todos'))
+
   /** 可点即办：URL 由服务端给；拿不到合法路由 ⇒ 不可点（不给死链） */
   const openTodo = (todo: ProductionTodo) => {
     const url = productionTodoTargetUrl(todo)
@@ -135,6 +145,7 @@ export default function DashboardPage() {
         </View>
 
         {/* ═══════════ 第一屏：生产待办（每件可点即办） ═══════════ */}
+        {showProductionTodos && (
         <View className='dashboard-section' data-testid='production-todos'>
           <Text className='dashboard-section__title'>今天要处理的事</Text>
           {prodTodos.length === 0 ? (
@@ -171,6 +182,7 @@ export default function DashboardPage() {
             })
           )}
         </View>
+        )}
 
         {/* ═══════════ 第二屏：在制工序进度（三态，非告警） ═══════════ */}
         {todoStats && (
