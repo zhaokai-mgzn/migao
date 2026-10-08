@@ -118,8 +118,18 @@ jobs:
         working-directory: frontend/bmini-app
         run: npm run build:h5
 
-      - name: Docker login ACR
-        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+      # 登录实现**唯一一份** = `scripts/acr_login.sh`（issue #6526 A）。
+      # 🔴 本调用点**承重**（带 `--fatal`）：本腿把 `/dist` 装进**传输镜像推到 ACR**，
+      #    登录是它的**必要步骤** ⇒ 重试 3 次仍失败必须**判红**（不许降成 warning）。
+      #    ⚠️ 与三条部署腿 + 对账腿（不承重）的**态是反的** —— 这正是 issue #6526 两态接口的由来。
+      # 判据 = tests/unit_ci_workflows/test_acr_login_not_load_bearing.py（**双向**：该带 `--fatal`
+      #        的腿没带 ⇒ 红；不该带的腿带了 ⇒ 也红）。
+      # ⚠️ `hashFiles` 弃权：取不到 helper 时**不执行登录**而不是报「找不到文件」（本腿的触发面
+      #    是 `push: main` / `schedule` / `workflow_dispatch`，正常都有 helper）。
+      # ⚠️ 本步**承重** ⇒ 非零退出语义必须保留（不许改成 `|| true`）。
+      - name: Docker login ACR (retry, fatal)
+        if: ${{ hashFiles('scripts/acr_login.sh') != '' }}
+        run: bash scripts/acr_login.sh ${{ env.ACR_REGISTRY }} "${{ secrets.ACR_USERNAME }}" "${{ secrets.ACR_PASSWORD }}" --fatal
 
       # 传输载体：上下文**只给 dist/**（给 frontend/bmini-app 会把 700MB+ 的 node_modules 灌进上下文）
       - name: Pack product into transport image and push

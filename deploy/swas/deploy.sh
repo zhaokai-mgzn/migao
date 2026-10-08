@@ -305,7 +305,30 @@ registry_login() {
     # shellcheck disable=SC1091
     . ./.env.registry
     if [ -n "${ACR_USERNAME:-}" ] && [ -n "${ACR_PASSWORD:-}" ]; then
-      echo "$ACR_PASSWORD" | docker login "$REGISTRY" -u "$ACR_USERNAME" --password-stdin >/dev/null 2>&1 || true
+      # ── issue #6526 C：**不再静默** —— 旧版把登录失败整层吞掉
+      #    （`… --password-stdin >/dev/null 2>&1 || true`）⇒ 下游「拉取镜像失败」被错误归因
+      #    （读日志的人只会看到「拉取失败」，看不到「那之前登录就失败了」）。
+      #    语义**仍是非致命**（C′ 本地构建时可能不需要它；1.9 的「从 ACR 补回回滚点」需要）
+      #    ⇒ 失败时具名 `::warning::` + 把 stderr 关键行打出来，**但函数仍返回 0**。
+      # ⚠️ `2>&1 >/dev/null` 的**顺序不能反**：先把 stderr 复制到原 stdout（被 `$( )` 捕获）、
+      #    再丢掉 stdout ⇒ 只捕获 stderr；反过来写会把 stderr 也丢掉（那正是旧版的病）。
+      # ⚠️ 密码走 `--password-stdin`，**绝不回显**：打印的只有 docker 的 stderr 原文。
+      _ok="no"; _i=1
+      while [ "$_i" -le 3 ]; do
+        _err="$(printf '%s\n' "$ACR_PASSWORD" | timeout "${ACR_LOGIN_ATTEMPT_TIMEOUT_SECONDS:-60}" \
+                  docker login "$REGISTRY" -u "$ACR_USERNAME" --password-stdin 2>&1 >/dev/null)"
+        _rc=$?
+        if [ "$_rc" = "0" ]; then _ok="yes"; break; fi
+        echo "⚠️ ACR 登录第 ${_i}/3 次失败（${REGISTRY}）："
+        printf '%s\n' "$_err" | tail -n 3 | sed 's/^/    /'
+        if [ "$_i" -lt 3 ]; then
+          if [ "$_i" = "1" ]; then sleep 5; else sleep 10; fi
+        fi
+        _i=$(( _i + 1 ))
+      done
+      if [ "$_ok" != "yes" ]; then
+        echo "::warning::ACR 登录失败（3 次尝试后仍失败，${REGISTRY}）—— 非致命（C′ 本地构建不需要凭据），但「拉镜像 / 从 ACR 补回回滚点」会跟着失败；下游报「拉取失败」时请先回到这里看读因"
+      fi
     fi
   fi
   return 0
