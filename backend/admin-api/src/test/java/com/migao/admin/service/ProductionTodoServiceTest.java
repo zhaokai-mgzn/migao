@@ -161,7 +161,7 @@ class ProductionTodoServiceTest {
                 .contains("上道做完后等了 6.0 小时没人领")
                 .contains(ORDER_NO);
         // 可点即办：落到该订单（挂到对象上，不是死链）
-        assertThat(todo.get("link")).isEqualTo("/pages/production/index/index?orderId=" + ORDER_ID);
+        assertThat(todo.get("link")).isEqualTo("/pages/production/order-detail/index?orderId=" + ORDER_ID);
     }
 
     @Test
@@ -225,7 +225,7 @@ class ProductionTodoServiceTest {
         assertThat(evidenceOf(todo))
                 .containsEntry("operation_instance_count", 0)
                 .containsEntry("has_processing_items", true);
-        assertThat(todo.get("link")).isEqualTo("/pages/production/index/index?orderId=" + ORDER_ID);
+        assertThat(todo.get("link")).isEqualTo("/pages/production/order-detail/index?orderId=" + ORDER_ID);
     }
 
     @Test
@@ -263,7 +263,7 @@ class ProductionTodoServiceTest {
         assertThat(todo.get("type")).isEqualTo(ProductionTodoService.TYPE_TO_SHIP);
         assertThat(todo.get("criterion")).isEqualTo(ProductionTodoService.CRITERION_TO_SHIP);
         assertThat(evidenceOf(todo)).containsEntry("processing_completed", true);
-        assertThat(todo.get("link")).isEqualTo("/pages/production/index/index?orderId=" + ORDER_ID);
+        assertThat(todo.get("link")).isEqualTo("/pages/production/order-detail/index?orderId=" + ORDER_ID);
     }
 
     @Test
@@ -331,7 +331,7 @@ class ProductionTodoServiceTest {
             assertThat(String.valueOf(todo.get("title"))).isNotBlank();
             assertThat(String.valueOf(todo.get("reason"))).isNotBlank();
             assertThat(evidenceOf(todo)).isNotEmpty();
-            assertThat(String.valueOf(todo.get("link"))).startsWith("/pages/production/index/index?orderId=");
+            assertThat(String.valueOf(todo.get("link"))).startsWith("/pages/production/order-detail/index?orderId=");
         }
     }
 

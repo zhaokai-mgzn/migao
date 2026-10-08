@@ -16,6 +16,8 @@ import {
   type ProductionTodo,
   type ProductionTodoResult,
 } from '../../../services/dashboardService'
+// 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
+import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import './index.scss'
 
 /**
@@ -33,6 +35,7 @@ import './index.scss'
  *    `error` ⇒「加载失败」。把 403 渲染成「没有待处理」= 把「看不到」说成「没有」。
  */
 export default function DashboardPage() {
+  useMerchantSurfaceGuard()
   const { user } = useAuthStore()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [tasks, setTasks] = useState<PendingTask[]>([])

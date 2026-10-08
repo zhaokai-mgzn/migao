@@ -15,8 +15,7 @@
       ],
       "requires_worker_session": true,
       "case_ids": [
-        "BM-039",
-        "BM-040"
+        "BM-039"
       ]
     },
     {
@@ -46,6 +45,21 @@
       "requires_worker_session": false,
       "case_ids": [
         "BM-039"
+      ]
+    },
+    {
+      "service": "src/services/productionService.ts",
+      "fn": "getProcessingOrderBrief",
+      "endpoint": "admin",
+      "label": "读加工单抬头（商家端点 GET /api/admin/processing-orders/{id}）—— 「数据」页待办的落脚页（加工单详情只读页）用它",
+      "worker_alternative": "",
+      "reason": "工人面无对应读面：`/api/worker/production/**` 下只有「工序列表 / 报工 / 发货」三族端点，没有返回加工单抬头（加工单号 / 订单号 / 客户 / 交期）的工人端点。本函数只被**商家只读页** `src/pages/production/order-detail/index.tsx` 调用（该页没有 `hasWorkerSession(`，不按身份分流；纯工人设备到达该页会被 `src/utils/roleGuard.ts` 的护栏送回工人工作台）⇒ 它不会在工人身份下「打商家端点」。**有意不搬**：为它新造工人端点不在本单（零后端契约新增）。",
+      "pages": [
+        "src/pages/production/order-detail/index.tsx"
+      ],
+      "requires_worker_session": false,
+      "case_ids": [
+        "BM-040"
       ]
     }
   ]

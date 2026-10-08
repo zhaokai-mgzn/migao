@@ -5,6 +5,8 @@ import { useAuthStore } from '../../../store/authStore'
 import { useChatStore } from '../../../store/chatStore'
 import { visibleAdminSurfaces } from '../../../utils/adminPermission'
 import { useAdminPermissions } from '../../../components/admin/useAdminPermissions'
+// 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
+import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import './index.scss'
 
 /**
@@ -21,6 +23,7 @@ import './index.scss'
  * 免得商家员工点进去只被身份分流挡住（反向判据见 tests/profile-page.test.tsx）。
  */
 export default function ProfilePage() {
+  useMerchantSurfaceGuard()
   const { user, isLoggedIn, logout } = useAuthStore()
   // 服务端下发的权限集合（`GET /api/auth/me`）；`null` = 未知 ⇒ 入口照显（fail-open）
   const permissions = useAdminPermissions()

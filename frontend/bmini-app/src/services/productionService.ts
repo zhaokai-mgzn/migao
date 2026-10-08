@@ -517,6 +517,53 @@ export async function getOrderOperations(
 }
 
 /**
+ * 加工单**抬头**（issue #6567）：`GET /api/admin/processing-orders/{id}`（id 可为 UUID / 加工单号 / 订单号）。
+ *
+ * <p>为什么单独要这一趟：工序读面（{@link getOrderOperations}）只给 `order_id`，不给加工单号 /
+ * 订单号 / 客户 / 交期 —— 而「加工单详情」页页头要的正是这几个**给人看的**字段
+ * （把 UUID 印在页头 = 让商家去读内部标识）。</p>
+ *
+ * <p>两种「不是加载失败」的返回：`data === null` = 这笔订单**还没有加工单**（服务端口径，issue #3887）；
+ * `forbidden` = 无 `production:view` ⇒ 页面必须显式说权限，**不许**把它渲染成「没有数据」。</p>
+ */
+export interface ProcessingOrderBrief {
+  id: string
+  orderId: string
+  orderNo?: string | null
+  processingOrderNo?: string | null
+  customerName?: string | null
+  expectedDeliveryDate?: string | null
+}
+
+export interface ProcessingOrderBriefResult {
+  success: boolean
+  data?: ProcessingOrderBrief | null
+  message?: string
+  /** 403（无 `production:view`）—— 与「加载失败」是两件事，页面分别有文案 */
+  forbidden: boolean
+}
+
+export async function getProcessingOrderBrief(orderId: string): Promise<ProcessingOrderBriefResult> {
+  try {
+    const res = await get<ProductionResponse<ProcessingOrderBrief | null>>(
+      `/api/admin/processing-orders/${encodeURIComponent(orderId)}`,
+      { baseURL: API_BASE_URL },
+    )
+    if (!res?.success) {
+      return { success: false, forbidden: false, message: res?.message || '加载加工单失败，请重试' }
+    }
+    // 服务端在「订单还没有加工单」时返回 `success + data:null`（issue #3887）—— 那不是失败
+    return { success: true, forbidden: false, data: res.data ?? null }
+  } catch (error: any) {
+    return {
+      success: false,
+      forbidden: error?.statusCode === 403,
+      message: error?.data?.message || error?.message || '加载加工单失败，请重试',
+    }
+  }
+}
+
+/**
  * 加工单计件汇总（契约 3：GET .../piecework）
  *
  * `{total, per_worker, per_operation}` —— Σ(合格数量 × 单价 × 系数)，**排除返工/报废**

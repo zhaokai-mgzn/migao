@@ -25,6 +25,8 @@ import {
 } from '../../../utils/adminPermission'
 import { confirmAdminAction } from '../../../utils/adminConfirm'
 import { useAdminPermissions } from '../../../components/admin/useAdminPermissions'
+// 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
+import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import { SurfaceLoginRequired, SurfaceState } from '../../../components/admin/SurfaceState'
 import {
   dispatchPoolOrders,
@@ -53,6 +55,7 @@ function previewRows(preview: PoolPreview): { key: string; label: string; value:
 }
 
 export default function AdminPoolPage() {
+  useMerchantSurfaceGuard()
   const { isLoggedIn } = useAuthStore()
   const permissions = useAdminPermissions()
   const [board, setBoard] = useState<AdminOpsResult<PoolBoard> | null>(null)

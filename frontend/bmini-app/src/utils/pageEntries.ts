@@ -178,6 +178,20 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     viaBinding: 'src/utils/adminPermission.ts',
     audience: '商家身份（同上）',
   },
+  {
+    // issue #6567（用户 2026-10-08）：「数据」页三类待办（待排产 / 卡在哪 / 待发货）的落脚点，
+    // 由报工页（工人面：扫一扫 / 手输单号 / 「去登录工人身份」）改成**加工单详情**（商家只读面）。
+    // `via` 就是被跳转的那个 `url` —— link 由**服务端**拼（前端不猜对象路由，见
+    // src/services/dashboardService.ts 的 productionTodoTargetUrl），路由真值在服务端那一侧（viaBinding）。
+    route: '/pages/production/order-detail/index',
+    from: 'src/pages/dashboard/index/index.tsx',
+    nav: 'navigateTo',
+    via: 'url',
+    viaBinding:
+      'backend/admin-api/src/main/java/com/migao/admin/service/ProductionTodoService.java',
+    audience:
+      '商家身份（「数据」页点待办卡片 → 加工单详情只读页；link 由服务端给，页面按无权限 / 无加工单 / 加载失败三态分开说）',
+  },
   // ── issue #6467 切片 1：工人面（工人首页 + 登录页的工人入口） ──
   // 现场缺陷的根因之一是「工人身份没有落点」：工人登录后只能落商家 tabBar（问黄金策/数据/坐席/我的），
   // 而工人零商家权限 ⇒ 看见商家菜单只会 403/空页。⇒ 工人首页 + 一条直达的工人入口都要**可达**。

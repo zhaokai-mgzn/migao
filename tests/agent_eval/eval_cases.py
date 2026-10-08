@@ -1834,6 +1834,24 @@ _CASE_BM_039 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-040 [NORMAL] 「数据」页三类待办落到「加工单详情」只读页 + 纯工人设备不进商家页（三身份隔离收口）（源: cases/bmini.yml）──
+_CASE_BM_040 = EvalCase(
+    id='BM-040',
+    legacy_id='',
+    title='「数据」页三类待办落到「加工单详情」只读页 + 纯工人设备不进商家页（三身份隔离收口）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家在「数据」页点一张待办（待排产 / 卡在哪 / 待发货）⇒ 打开的是**只读的加工单详情**（加工单号 / 订单号 / 客户 / 交期 + 工序进度），页面上没有「扫一扫」「去登录工人身份」；工人设备（有工人 session、没有商家凭据）打开商家页 ⇒ 自动回工人工作台'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·三类待办的落脚页 = 加工单详情：backend/admin-api/src/main/java/com/migao/admin/service/ProductionTodoService.java 的 `processingOrderDetailPage(orderId)` 逐字产出 `/pages/production/order-detail/index?orderId=<orderId>`；页面在 frontend/bmini-app/src/app.config.ts 在册、并登记进入口台账（via=url，viaBinding=该 Java 文件）。红证：改回报工页 ⇒ frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L4 绑定判红 + backend/admin-api/src/test/java/com/migao/admin/service/ProductionTodoServiceTest.java 的三类 link 断言判红', '判据 2·🔴 新页**纯只读**：frontend/bmini-app/tests/processing-order-detail-page.test.tsx 的源码级断言（去注释后不得出现「扫一扫 / 去登录工人身份 / scanResolve( / completeByScan( / getWorkerOrderOperations / hasWorkerSession / WORKER_TAB_LOGIN_ROUTE / PRODUCTION_WORKER_LOGIN_REQUIRED / workerSessionHeaders」任一记号）+ 反向自证（源码确实消费 `getProcessingOrderBrief(` / `getOrderOperations(`）。红证：往页面注入一个「扫一扫」按钮 ⇒ 该用例判红', '判据 3·页面三态分开（403 ⇒「无「生产看板」查看权限（需要权限码 production:view）」/ 这笔订单还没有加工单 / 加载失败可重试）+ 抬头缺键的行不渲染：同文件四条用例。红证：删掉 forbidden 分支 ⇒ 落到「加载失败」⇒ 红', '判据 4·🔴 商家面身份护栏：frontend/bmini-app/tests/role-guard.test.tsx —— 有工人 session、无商家凭据 ⇒ `Taro.redirectTo(WORKER_HOME_ROUTE)`；有商家凭据（哪怕同时有工人 session）**不跳**（负控：共用 PAD 的正常动线）；工人页 / 公开登录页**不许**挂护栏（负控：挂了工人会被自己的页面弹走）', '判据 5·**类级**（新增商家页不挂护栏 ⇒ 红）：商家页清单**现取** —— tabBar 四页来自 frontend/bmini-app/src/app.config.ts 的 `tabBar.list`、管理面 4 项来自 frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`、外加坐席会话详情页 —— 每页都必须挂 `useMerchantSurfaceGuard`（证据：同文件的「商家页清单」组，含反空跑断言）'],
+    skip_reason='[backend-contract] 确定性结构 / 页面判据（jest: frontend/bmini-app/tests/processing-order-detail-page.test.tsx + role-guard.test.tsx + page-entry-reachability.test.ts；java: ProductionTodoServiceTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'production', 'dashboard', 'page-entry', 'role-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── BM-041 [NORMAL] 登录页记住上次成功登录的账号名（按登录面分开存 / 进页预填 / 绝不记 PIN·密码·验证码）（源: cases/bmini.yml）──
 _CASE_BM_041 = EvalCase(
     id='BM-041',
@@ -13539,6 +13557,7 @@ ALL_CASES = (
     _CASE_BM_037,
     _CASE_BM_038,
     _CASE_BM_039,
+    _CASE_BM_040,
     _CASE_BM_041,
     _CASE_BM_042,
     _CASE_BM_043,

@@ -39,6 +39,14 @@ export default defineAppConfig({
     'pages/admin/inbound/index',
     'pages/admin/after-sales/index',
     'pages/admin/piecework/index',
+    // 加工单**详情**（商家只读面，issue #6567）：「数据」页三类待办（待排产 / 卡在哪 / 待发货）的落脚点。
+    // 此前它们一律落到报工页（工人面：扫一扫 + 手输单号 + 「去登录工人身份」）⇒ 商家点一张待办卡片
+    // 看到的是「请先登录工人身份」（用户 2026-10-08 反馈）。本页**纯只读**：不扫码、不报工、不发货，
+    // 读 `GET /api/admin/processing-orders/{id}` + `GET /api/admin/production/orders/{id}/operations`
+    // （都是 `production:view`，与 todo-overview 同码）。路由字面量是**单一真值**：
+    // `backend/admin-api/src/main/java/com/migao/admin/service/ProductionTodoService.java` 里
+    // `processingOrderDetailPage()` 拼的路径必须逐字等于它（入口台账 pageEntries.ts 双向钉住）。
+    'pages/production/order-detail/index',
   ],
   window: {
     backgroundTextStyle: 'light',
