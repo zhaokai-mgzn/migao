@@ -3,6 +3,7 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.dto.BatchStockViews;
+import com.migao.admin.dto.MaterialLabels;
 import com.migao.admin.dto.ProcessingOrderGenerateRequest;
 import com.migao.admin.dto.ProcessingOrderGenerateRequest.BatchAssignment;
 import com.migao.admin.dto.ProcessingOrderResponse;
@@ -690,10 +691,13 @@ public class ProcessingOrderService {
      * <p>它是 {@link #materialKey} 的人话孪生兄弟 —— ⚠️ 已定的边界：**不得**退回机器键
      * （那正是本单修掉的缺陷：UUID 被当展示名摆给商家看）。商品名与 SKU 本来就都在
      * {@link ProductionPoolViews.PoolLine} 里（同组各行同料 ⇒ 取任一行的即可）。</p>
+     *
+     * <p>🔴 组装口径在 {@link com.migao.admin.dto.MaterialLabels}（**唯一一份**，issue #6535）：
+     * 省料看板的 {@code SavingMetricViews.SavedGroup.materialLabel} 走的是同一个入口 ——
+     * 两个 DTO 各写一份必然漂成两套语义（缺值回退 / 分隔符），而页面上看不出来。</p>
      */
     private static String materialLabel(ProductionPoolViews.PoolLine line) {
-        String name = StringUtils.hasText(line.productName()) ? line.productName() : "未命名商品";
-        return StringUtils.hasText(line.skuCode()) ? name + " × " + line.skuCode() : name;
+        return MaterialLabels.materialLabel(line.productName(), line.skuCode());
     }
 
     /**

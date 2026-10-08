@@ -257,7 +257,10 @@ export default function SavingBoardPage() {
                         className="border-t border-neutral-100"
                       >
                         <td className="px-4 py-2.5 text-neutral-600 whitespace-nowrap">{g.period}</td>
-                        <td className="px-4 py-2.5 text-neutral-700">{g.materialKey}</td>
+                        {/* 🔴 「物料」列 = 服务端展示名（人话，issue #6535）—— `materialKey` 是机器键
+                            （`productId|skuCode`，productId 是 UUID）⇒ 只做 testid，**不上屏**。
+                            展示名一律来自服务端（前端不拼串：那是第二份会漂的口径）。 */}
+                        <td className="px-4 py-2.5 text-neutral-700">{g.materialLabel}</td>
                         <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(g.formulaMeters)}</td>
                         <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(g.plannedMeters)}</td>
                         <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(g.savedMeters)}</td>

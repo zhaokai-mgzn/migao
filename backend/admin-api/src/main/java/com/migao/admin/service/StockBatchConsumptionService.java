@@ -3,20 +3,25 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.migao.admin.dto.BatchStockViews;
+import com.migao.admin.dto.MaterialLabels;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.SavingMetricViews;
 import com.migao.admin.entity.FabricRemnant;
+import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductSku;
 import com.migao.admin.entity.StockBatch;
 import com.migao.admin.entity.StockBatchConsumption;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
 import com.migao.admin.mapper.StockLedgerMapper;
 import com.migao.admin.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -166,6 +171,28 @@ public class StockBatchConsumptionService {
 
     /** 业务「今天」的**唯一来源**（issue #3802：业务代码里不许自己取时刻）。 */
     private final BusinessClock businessClock;
+
+    /**
+     * 商品读面（只取<b>商品名</b>，issue #6535）：省料看板的「物料」列要人话展示名
+     * （{@code 商品名 × 颜色/门幅}），而它的聚合行只有 {@code productId}。
+     *
+     * <p>🔴 <b>可为 null</b>（既有 13 个真库判据直接 {@code new} 本服务、不装商品腿）
+     * —— null ⇒ 展示名退化成「商品名缺失」那一支（{@link MaterialLabels#UNNAMED_PRODUCT}），
+     * <b>绝不</b>退回机器键（那正是本单修掉的缺陷）。</p>
+     *
+     * <p>为什么用<b>可选 setter 注入</b>而不是构造器参数（本单实测过的取舍）：
+     * {@code @RequiredArgsConstructor} 的对象是 {@code final} 字段，加成 final 构造器参数 ⇒
+     * 13 个既有测试文件<b>全线编译不过</b>（实测 {@code mvn -Dtest=SavingMetricsBoardRealDbTest test}
+     * 直接 testCompile 失败）—— 那是「改一个展示字段要动 13 个文件」的代价。
+     * 本单只需要「生产能注入、测试能不装」，{@code @Autowired(required = false)} 精确表达这件事，
+     * 与同类的 {@link #remnantService}（余料腿「可为 null」）同一条纪律。</p>
+     *
+     * <p>取名的口径：<b>一次批量查</b>（按去重后的 {@code productId} 集合）—— 逐组查 = N+1
+     * （分组数随月份 × 物料数增长）。且它是<b>展示</b>依赖：拿不到名字不该让整个读面失败。</p>
+     */
+    @Autowired(required = false)
+    @Setter
+    private ProductMapper productMapper;
 
     // ══════════════════════════════════════════════════════════════════════════════════
     // 写面 ① plan —— 只读校验（全部业务异常在此抛完）
@@ -890,8 +917,10 @@ public class StockBatchConsumptionService {
             totalAcc.add(row);
         }
         List<SavingMetricViews.SavedGroup> savedGroups = new ArrayList<>();
+        // 展示名（issue #6535）：**先批量取名，再逐组组装**（一次查询，不是 N+1）
+        Map<String, String> materialLabels = materialLabelsOf(savedByGroup.values());
         for (SavedAcc acc : savedByGroup.values()) {
-            savedGroups.add(acc.toGroup());
+            savedGroups.add(acc.toGroup(materialLabels));
         }
         total = new SavingMetricViews.Total(plainOrNull(totalAcc.formula), plainOrNull(totalAcc.planned),
                 totalAcc.lineCount == 0 ? null : plain(totalAcc.formula.subtract(totalAcc.planned)),
@@ -1328,16 +1357,55 @@ public class StockBatchConsumptionService {
             lineCount += row.getLineCount() == null ? 0 : row.getLineCount();
         }
 
-        private SavingMetricViews.SavedGroup toGroup() {
+        private SavingMetricViews.SavedGroup toGroup(Map<String, String> materialLabels) {
             return new SavingMetricViews.SavedGroup(period, cohort,
                     SavingMetricViews.cohortLabel(cohort),
                     SavingMetricViews.COHORT_OPENING.equals(cohort),
-                    SavingMetricViews.materialKeyOf(productId, skuCode), productId, skuCode,
+                    SavingMetricViews.materialKeyOf(productId, skuCode),
+                    materialLabels.getOrDefault(groupKey(period, cohort, productId, skuCode),
+                            MaterialLabels.materialLabel(null, skuCode)),
+                    productId, skuCode,
                     plain(formula), plain(planned),
                     lineCount == 0 ? null : plain(formula.subtract(planned)),
                     knownCostLines == 0 ? null : plain(amount),
                     lineCount, lineCount - knownCostLines);
         }
+    }
+
+    /**
+     * 省料分组的**展示名**（issue #6535）：{@code productId → 商品名 × 颜色/门幅}。
+     *
+     * <p>🔴 <b>一次批量查</b>（按去重后的 {@code productId}）—— 逐组查就是 N+1；本读面本来就
+     * 是一次事务内的只读聚合，这一条查询与它同事务同口径。租户与软删过滤由
+     * MyBatis-Plus 的 {@code @TableLogic} 与多租户拦截器承担（不手写 SQL = 不复制
+     * 「哪些商品算本租户的」这条口径）。</p>
+     *
+     * <p>拿不到名字的商品（已删 / 跨租户 / 真无此商品）**不出现在 map 里** ⇒ 调用方退回
+     * 「{@link MaterialLabels#UNNAMED_PRODUCT} × 颜色/门幅」（{@link MaterialLabels#materialLabel}）
+     * —— 展示依赖 fail-soft，<b>绝不</b>退回机器键（那正是本单修掉的缺陷）。</p>
+     *
+     * @param groups 已聚合的分组（取其 {@code productId} 的去重集合；{@code null} 商品当无名字）
+     * @return 分组键（{@code groupKey}）→ 展示名
+     */
+    private Map<String, String> materialLabelsOf(Collection<SavedAcc> groups) {
+        List<String> ids = new ArrayList<>(new LinkedHashSet<>(
+                groups.stream().map(g -> g.productId).filter(StringUtils::hasText).toList()));
+        if (productMapper == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> names = new HashMap<>();
+        for (Product p : productMapper.selectBatchIds(ids)) {
+            names.put(p.getId(), p.getName());
+        }
+        // 🔴 展示名按**组**组装（不是按商品）：同商品可以有不同的「颜色 × 门幅」
+        //    （= 本读面的分组维度之一）⇒ 名字里的 skuCode 必须取**本组**的，
+        //    否则同商品的多个颜色在页面上会长得一模一样（那也是「展示说谎」）。
+        Map<String, String> labels = new HashMap<>();
+        for (SavedAcc g : groups) {
+            labels.put(groupKey(g.period, g.cohort, g.productId, g.skuCode),
+                    MaterialLabels.materialLabel(names.get(g.productId), g.skuCode));
+        }
+        return labels;
     }
 
     /**

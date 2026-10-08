@@ -3592,7 +3592,17 @@ export interface SavingSavedGroup {
   cohort: string
   cohortLabel: string
   opening: boolean
+  /**
+   * 分组键（`productId|skuCode`）—— **机器键**：React `key` / `data-testid` / 分组与对账口径吃它。
+   * 🔴 它是内部标识（`productId` 是 UUID）⇒ **不上屏**（见 `materialLabel`）。
+   */
   materialKey: string
+  /**
+   * 「物料」列的**展示名**（`商品名 × 颜色/门幅`，服务端组装 · issue #6535；与智能派单的
+   * `PoolGroup.materialLabel` **同源**）。
+   * 🔴 前端**不得**自己拼（那是第二份会漂的口径）；也**不得**退回 `materialKey`（内部标识上屏）。
+   */
+  materialLabel: string
   productId: string
   skuCode: string
   formulaMeters: number

@@ -101,9 +101,18 @@ public final class SavingMetricViews {
      * 「有几行读不出金额」（V119 之前的历史行均价未知，一律不回填、不猜）
      * ⇒ 读的人不会把「部分行没有均价」误读成「只省了这么点钱」。
      * {@code lineCount == 0} ⇒ 两个合计均为 {@code null}（无数据）。</p>
+     *
+     * @param materialKey   <b>机器键</b>（{@code productId|skuCode}）—— React {@code key} /
+     *                      {@code data-testid} / 分组与对账口径吃它，<b>不上屏</b>。
+     * @param materialLabel <b>展示名</b>（{@code 商品名 × 颜色/门幅}，issue #6535；与
+     *                      {@code PoolGroup.materialLabel} <b>同源</b> = {@link MaterialLabels}）。
+     *                      <p>为什么由服务端给而不是前端拼：{@code materialKey} 里的 {@code productId}
+     *                      是 UUID ⇒ 原样上屏就是把内部标识摆给商家看（#6523 同族，本单换了一个 DTO）；
+     *                      而「商品名 × SKU」是<b>展示口径</b>，在前端拼字符串就是第二份会漂的口径
+     *                      （字段改名 / 顺序调整时两处不同步，且没有任何东西会红）。</p>
      */
     public record SavedGroup(String period, String cohort, String cohortLabel, boolean opening,
-                             String materialKey, String productId, String skuCode,
+                             String materialKey, String materialLabel, String productId, String skuCode,
                              BigDecimal formulaMeters, BigDecimal plannedMeters, BigDecimal savedMeters,
                              BigDecimal savedAmount, int lineCount, int unknownCostLines) {
     }

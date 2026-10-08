@@ -73,6 +73,9 @@ const BOARD: SavingBoard = {
       cohortLabel: '切换后（采购入库）',
       opening: false,
       materialKey: 'p1|SKU-A',
+      // 🔴 展示名 = 服务端下发的人话（issue #6535）；**故意**与机器键不同形 ——
+      //    前端若把它换成 materialKey / 自己拼串，下面「物料列」那条断言当场红
+      materialLabel: '遮光帘A × 2.8米',
       productId: 'p1',
       skuCode: 'SKU-A',
       formulaMeters: 10,
@@ -242,6 +245,32 @@ describe('#6459 省料看板页（结论数字 + 趋势 + 明细）', () => {
     expect(total.textContent).not.toContain('88.88')
     // 未记均价的行数必须说出来（金额是**下界**）
     expect(total.textContent).toContain('2 行未记批次均价')
+  })
+
+  it('🔴 #6535：「物料」列 = 服务端展示名（人话），内部键 `productId|skuCode` 不上屏（负控：契约与读数逐值不变）', async () => {
+    await renderPage()
+
+    // 负控 1：定位串仍是机器键 `materialKey`（`data-testid` 逐字不变 —— 只改展示、不动契约）
+    const row = screen.getByTestId('saving-saved-group-2026-09-p1|SKU-A')
+
+    // 🔴 展示：列文本 = 服务端 `materialLabel`，**不含**内部键、不含竖线（§31 P3：不摆内部标识）
+    expect(row.textContent).toContain('遮光帘A × 2.8米')
+    expect(row.textContent).not.toContain('p1|SKU-A')
+    expect(row.textContent).not.toContain('|')
+    // 反面形态（UUID 形态的商品键）：夹具形状即错 ⇒ 这条断言是**判别性**的，不是自说自话
+    expect(row.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)
+
+    // 负控 2：同一行的金额 / 米数读数**逐值不变**（只改展示那一格）
+    expect(row.textContent).toContain('77 米')
+    expect(row.textContent).toContain('88.88 元')
+    expect(within(row).getAllByRole('cell').map((c) => c.textContent)).toEqual([
+      '2026-09',
+      '遮光帘A × 2.8米',
+      '10 米',
+      '4.6 米',
+      '77 米',
+      '88.88 元',
+    ])
   })
 
   it('🔴 明细与口径区**默认收起**（首屏不堆东西；issue #6459）', async () => {
