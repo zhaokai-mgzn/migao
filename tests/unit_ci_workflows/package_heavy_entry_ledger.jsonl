@@ -27,4 +27,5 @@
 {"id":"1791380983.94415.9808","ts":"2026-10-07T13:49:43Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6508-6505-deploy-disk-recovery","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791383620.39602.29952","ts":"2026-10-07T14:33:40Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6512-reclaim-warning","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791385320.63750.9151","ts":"2026-10-07T15:02:01Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6514-ontology-contract-drift","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791425349.86938.7883","ts":"2026-10-08T02:09:10Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6525-brand-rename","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791426366.99902.18932","ts":"2026-10-08T02:26:07Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6529-image-lines-no-match","why":"子包 worktree 直跑全量（无批次标记）"}
