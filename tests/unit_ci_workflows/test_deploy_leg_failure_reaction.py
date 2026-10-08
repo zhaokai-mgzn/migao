@@ -346,11 +346,14 @@ class React:
     def __init__(self, tmp_path: Path, *, conclusion: str, attempt: str,
                  leg: str = "Build and Deploy admin-api",
                  log_text: str | None = None, ledger_path: Path | None = None,
-                 rerun_fail: bool = False):
+                 rerun_fail: bool = False, extra_env: dict | None = None,
+                 script: Path | None = None, issues_file: Path | None = None):
         self.tmp = tmp_path
         self.bin_dir, _ = make_stub(tmp_path)
         self.calls = tmp_path / "gh-calls.log"
-        self.issues = tmp_path / "issues.tsv"
+        # ⚠️ 桩状态可以**预置**（`issues_file`）：本类在**构造器里**就把脚本跑完 ⇒ 「先种单、
+        #    再跑」（success + 已有开放单 ⇒ 清零）那种时序场景必须先把桩喂进去。
+        self.issues = issues_file if issues_file is not None else tmp_path / "issues.tsv"
         log_file = None
         if log_text is not None:
             log_file = tmp_path / "run.log"
@@ -367,13 +370,21 @@ class React:
             "LEG_RUN_ID": "999",
             "LEG_HEAD_SHA": "deadbeefcafe",
             "LEG_RUN_URL": "https://github.com/x/y/actions/runs/999",
+            # issue #6556 判据 ③ 的判别阀默认值：`push` 面下「目标 tag = head sha」成立
+            # ⇒ 既有的 success 用例（`test_state4_success_clears_only` 等）语义**一字不变**。
+            # ⚠️ 别 `setdefault` 成空串：空串在真实 workflow 里表示「非 workflow_run 事件」，
+            #    而那是**状态兜底**入口的形态（它不带腿载荷），两者混同会让事件面用例假绿。
+            "LEG_RUN_EVENT": "push",
         })
+        # issue #6556：两条新入口（状态兜底 / 判别阀）与红证注入面都靠它驱动。
+        if extra_env:
+            env.update(extra_env)
         if log_file is not None:
             env["REACT_LOG_FILE"] = str(log_file)
         if rerun_fail:
             env["STUB_RERUN_FAIL"] = "1"
-        self.proc = subprocess.run([BASH, str(SCRIPT)], env=env,
-                                   capture_output=True, text=True, timeout=120)
+        self.proc = subprocess.run([BASH, str(script if script is not None else SCRIPT)],
+                                   env=env, capture_output=True, text=True, timeout=120)
 
     @property
     def gh_calls(self) -> list:
@@ -455,14 +466,12 @@ def test_state4_success_clears_only(tmp_path):
     assert r.proc.returncode == 0, f"→ {r.proc.returncode}"
     assert not r.ran("issue create") and not r.ran("issue comment"), f"success 不该开单 → {r.gh_calls}"
     assert not r.rerun_requested, f"success 不该重跑（即使 rerun=true）→ {r.gh_calls}"
-    assert "无开放单需要清零" in r.out, f"{r.out!r}"
+    assert "无开放的 `[deploy-leg]` 单需要清零" in r.out, f"{r.out!r}"
     # 4b：**先种一张开放单**（标题与腿名匹配）⇒ 必须评论清零说明 + 关闭（清零不靠人记得）
-    r2 = React(tmp_path / "b", conclusion="success", attempt="2", ledger_path=led)
-    r2.issues.write_text(
-        "7\t[deploy-leg] Build and Deploy admin-api 部署失败（合并后未上线）\topen\n",
-        encoding="utf-8")
-    proc = subprocess.run([BASH, str(SCRIPT)], env=r2_env(r2), capture_output=True, text=True, timeout=120)
-    assert proc.returncode == 0, f"→ {proc.returncode}\n{proc.stdout}{proc.stderr}"
+    # ⚠️ 桩单必须**先种**：`React` 的构造器里就把脚本跑完了。
+    r2 = React(tmp_path / "b", conclusion="success", attempt="2", ledger_path=led,
+               issues_file=seed_issues(tmp_path / "b",
+                                       [leg_issue(7, "Build and Deploy admin-api")]))
     calls = r2.calls.read_text(encoding="utf-8")
     assert "issue comment 7" in calls, f"success + 已有开放单 ⇒ 必须评论清零说明 → {calls!r}"
     assert "issue close 7" in calls, f"success + 已有开放单 ⇒ 必须关闭（清零不靠人记得）→ {calls!r}"
@@ -737,3 +746,495 @@ def test_comment_only_change_does_not_red():
     )
     # 尺寸面同理：注释不该把任何 step 顶过硬限
     assert len(mutated) < RUN_BODY_LIMIT, "加一行注释就把正文顶过 13,250 ⇒ 该 step 早该外置"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 六、issue #6556：cron 驱动的腿完成**不发出 `workflow_run`** ⇒ 清零臂 / 即时通知对它失效
+# ══════════════════════════════════════════════════════════════════════════
+#
+# ## 病（现取读数，不是推断）
+#
+# 六条部署腿的**完成时刻** ⇄ 对账腿被 `workflow_run` 触发的 run（`createdAt`），同一天 n=17：
+# **15/15** 条 `push` 触发的完成都在 **1~3 秒**内触发对账腿；**2/2** 条 `schedule` 触发的完成
+# （06:11:00 frontend success / 06:25:56 ai-agent success）**一次都没触发**。
+# 后果实测：#6544 / #6548 两条 `[deploy-leg]` 单在各自腿成功之后仍挂着，已按设计口径**人工清零**。
+# ⇒ #6526 B 的两条臂（「成功即清零」「即时通知」）都建立在 `workflow_run` 之上，对 cron 驱动的腿
+# **一次都不生效**。本节的判据就是给这个缺口落的机械面。
+#
+# ## 判据 1：**收敛判据**（`deployed`）—— 推理与锚点
+#
+# ① **事件快路径**的判别力（`success` 不是无条件依据）。
+#    `deploy-*.yml` 的 `Skip if already built (schedule reconcile)` 判「已部署」**只看 run 结论**
+#    （issue #6294）：命中 ⇒ `skip=true` ⇒ `Deploy to SWAS` 整段 skipped，而 **run 结论仍是 success**。
+#    那条路径上「线上到底在跑什么」由
+#    `Assert running tag == target (skip 不得冒充已部署，issue #6294)` 自证 ⇒
+#    `deploy/scripts/swas_deploy_running_tag.sh`：在跑 tag ≠ 目标 tag ⇒ **exit 1** ⇒ job 判红。
+#    ⇒ `success` + 「该 run 的目标 tag 就是它自己的 head sha」⇒ 目标 tag 已在跑。
+#    目标 tag 的来源 = `Resolve image tag`：无 `inputs.image_tag` ⇒ `sha-${GITHUB_SHA::7}`（`MODE=build`），
+#    有 `inputs.image_tag` ⇒ 那个 tag（`MODE=rollback`）。而 `workflow_dispatch` 可以带
+#    `-f image_tag=<tag>`（**人工回滚**，`.github/workflows/deploy-admin-api.yml` 的 `on.workflow_dispatch.inputs`）
+#    ⇒ 那条 success 说的是**回滚 tag** 在跑，**不构成**「main HEAD 已上线」的证据
+#    ⇒ 必须按 `workflow_run.event` 把它挡掉（判据 1/1b 的负控就是它）。
+# ② **状态兜底**的判据 = 对账步落的 `.deploy-watchdog-state.tsv` 里该腿 = `deployed`。
+#    两条来源逐条同源（都写在对账步里）：`镜像已存在：<image>`（判据 ①，C′ 后对 ACR 恒不成立、保留待复活）
+#    与 `无漂移：自 <p>（上次成功部署）起 <svc_path> 无代码改动`（判据 ②，**有效判据** = 该 commit
+#    的代码状态已在线上）。**不另立第二份腿清单 / 第二套状态**（状态文件由 `deploy-reconcile.yml`
+#    的 `Reconcile deploys` 步落、由 `scripts/deploy_reconcile_state.sh` 的 `watchdog_note` 写）。
+#    🔴 边界（照实登记）：判据 ② 的基准 `p` 是「同 sha 结论 success 的最新一条 run」，该 run 可能是
+#    **人工回滚** run ⇒ 「自 `p` 起 code path 无改动 ⇒ 该 commit 已在线上」这一步**不区分回滚**。
+#    本单**不动**对账步的判定语义（那是 #5929/#5814 的契约）⇒ 该残余只在「人工回滚 + 其后该服务
+#    code path 无改动」时成立。
+# ③ **状态面只做「消费」**：本脚本**不**查 `gh run list`、**不**算漂移/镜像 —— 判定本体只在对账步里。
+
+#: `[deploy-leg]` 单的标题前缀（与脚本 `LEG_TITLE_PREFIX` 同口径）。
+LEG_PREFIX = "[deploy-leg]"
+#: 值守面那一族的标题前缀 —— 去重判据读它（**不**改它的判定语义）。
+WATCHDOG_PREFIX = "[deploy-watchdog]"
+#: 腿的 **workflow 名**（= `on.workflow_run.workflows` 里的字符串 = 线上既有单的标题形态）。
+LEG_ADMIN_WEB = "Build and Deploy frontend (admin-web)"
+LEG_AI_AGENT = "Build and Deploy ai-agent-service"
+#: 服务键 ⇄ workflow 名 的**唯一一份**映射（脚本里的 `LEG_KEYS` 读的就是这些 workflow 文件的 `name:`）。
+SVC_TO_WORKFLOW_NAME = {
+    "admin-api": "Build and Deploy admin-api",
+    "ai-agent-service": LEG_AI_AGENT,
+    "admin-web": LEG_ADMIN_WEB,
+    "worker-h5": "Publish worker-h5 (app.migaozn.com/w/)",
+    "bmini-h5-hosting": "Publish bmini h5 (app.migaozn.com/b/)",
+    "c-end-h5": "Publish C-end H5 (app.migaozn.com 根)",
+}
+
+
+def leg_issue(n: int, leg_name: str) -> str:
+    """一条 `[deploy-leg] <腿> …` 的开放单（TSV 行）。"""
+    return f"{n}\t{LEG_PREFIX} {leg_name} 部署失败（合并后未上线）\topen"
+
+
+def state_file(tmp_path: Path, rows: dict) -> Path:
+    """造一份对账状态文件（**与 `watchdog_note` 落的行同形**：`<服务键>\\t<状态>\\t<依据>`）。"""
+    out = tmp_path / "state.tsv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("".join(f"{k}\t{v[0]}\t{v[1]}\n" for k, v in rows.items()), encoding="utf-8")
+    return out
+
+
+def fallback_env(state: Path, sha: str = "deadbeefcafe", event: str = "schedule") -> dict:
+    """状态兜底入口的 env（真实 workflow 里由新薄壳步给：见 `STATE_FALLBACK_STEP`）。"""
+    return {"STATE_FALLBACK": "1", "STATE_FILE": str(state), "TARGET_SHA": sha,
+            "EVENT_NAME": event, "LEG_NAME": ""}
+
+
+def seed_issues(tmp_path: Path, lines: list) -> Path:
+    """把桩单**预置**到磁盘（`React` 构造器里就跑脚本 ⇒ 必须先种）。"""
+    out = tmp_path / "seeded-issues.tsv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("".join(l + "\n" for l in lines), encoding="utf-8")
+    return out
+
+
+def run_fallback(tmp_path: Path, *, state_rows: dict, issues: list, leg: str = "",
+                 script: Path | None = None, sha: str = "deadbeefcafe",
+                 event: str = "schedule", ledger_path: Path | None = None) -> "React":
+    """跑一次**状态兜底**入口（`event_name != workflow_run`，`LEG_NAME` 为空）。
+
+    ⚠️ 桩单必须**先种**（见 `seed_issues`）：种在 `React(...)` 之后 = 「跑完再喂输入」
+    （本包实测：`issue list` 返回空 ⇒ 用例假红）。
+    """
+    st = state_file(tmp_path, state_rows)
+    seeded = seed_issues(tmp_path, issues)
+    return React(tmp_path / "run", conclusion="", attempt="", leg=leg,
+                 ledger_path=ledger_path, extra_env=fallback_env(st, sha=sha, event=event),
+                 script=script, issues_file=seeded)
+
+
+# ── 判据 ① 非 `workflow_run` 事件下也能清零（**核心**）───────────────────────────
+
+@pytest.mark.parametrize("event", ["schedule", "workflow_dispatch"])
+def test_state_fallback_closes_on_converged_leg_without_workflow_run(tmp_path, event):
+    """判据 ①：`event_name=schedule` + 状态兜底输入（腿已收敛）+ 一个开放单 ⇒ **必须发起 close**。
+
+    ⚠️ `TARGET_SHA` 必须等于对账基准 —— 这是「这条状态说的是**哪个 commit**」的绑定，与
+    `reconcile_one` 的基准（`HEAD_SHA=$(git rev-parse HEAD)`）同源。
+    """
+    st = {k: ("inflight", "同 commit 的 run 未跑完") for k in SVC_TO_WORKFLOW_NAME}
+    st["admin-web"] = ("deployed", "无漂移：自 abc1234（上次成功部署）起 frontend/admin-web 无代码改动")
+    r = run_fallback(tmp_path, state_rows=st, issues=[leg_issue(7, LEG_ADMIN_WEB)],
+                     sha="deadbeefcafe", event=event)
+    assert r.proc.returncode == 0, f"状态兜底入口必须 rc=0（不许判红）→ {r.proc.returncode}\n{r.out}"
+    assert r.ran("issue close 7"), (
+        f"`{event}` 事件下腿已收敛（状态=deployed）且有开放单 ⇒ **必须发起 close**（issue #6556）"
+        f" → {r.gh_calls}"
+    )
+    assert r.ran("issue comment 7"), f"清零必须留说明 → {r.gh_calls}"
+    assert "issue create" not in "\n".join(r.gh_calls), (
+        f"已收敛的腿只能清零、不许开新单 → {r.gh_calls}"
+    )
+
+
+def test_state_fallback_marks_that_it_did_not_call_the_event_path(tmp_path):
+    """判据 ①（读数面）：状态兜底**不碰事件面**的载荷 —— 空 `LEG_NAME` 也照样动作。"""
+    st = {"admin-web": ("deployed", "无漂移：自 abc1234 起 frontend/admin-web 无代码改动")}
+    r = run_fallback(tmp_path, state_rows=st, issues=[leg_issue(3, LEG_ADMIN_WEB)])
+    assert r.proc.returncode == 0, f"→ {r.proc.returncode}"
+    assert "状态兜底" in r.out, f"读数必须点明走的是哪条入口：{r.out!r}"
+    assert "LEG_NAME 为空且未开状态兜底" not in r.out, "不该走到「输入缺失」那条弃权分支"
+
+
+# ── 判据 ② 负控：仍失败 / `terminal` ⇒ 不许关 ──────────────────────────────────
+
+@pytest.mark.parametrize("state", ["terminal", "dispatched", "inflight", "unrecorded", "notarget"])
+def test_state_fallback_never_closes_for_a_non_converged_leg(tmp_path, state):
+    """判据 ②（负控）：该腿仍失败（断路器终态）/ 还没轮到时 ⇒ **不许**关（逐状态各一例）。"""
+    st = {"admin-web": (state, f"对账步落的依据（{state}）")}
+    r = run_fallback(tmp_path, state_rows=st, issues=[leg_issue(7, LEG_ADMIN_WEB)])
+    assert r.proc.returncode == 0, f"→ {r.proc.returncode}"
+    assert not r.ran("issue close"), (
+        f"状态 `{state}` **不是**收敛 ⇒ 不许关单（只有 `deployed` 才是清零依据）→ {r.gh_calls}"
+    )
+
+
+def test_state_fallback_missing_state_row_never_closes(tmp_path):
+    """判据 ②（负控，缺行形态）：状态文件里**根本没有这条腿** ⇒ 不许关（fail-closed 到「不清零」）。"""
+    st = {"admin-api": ("deployed", "无漂移：自 abc1234 起 backend/admin-api 无代码改动")}
+    r = run_fallback(tmp_path, state_rows=st, issues=[leg_issue(7, LEG_ADMIN_WEB)])
+    assert not r.ran("issue close"), f"读不到该腿的状态 ⇒ 不许关 → {r.gh_calls}"
+    assert "admin-web" not in "\n".join(
+        c for c in r.gh_calls if "issue list" in c), (
+        f"连这条腿的**标题**都不该去查（缺行 = 判不了，不是「没单」）→ {r.gh_calls}"
+    )
+
+
+def test_state_fallback_missing_state_file_is_declared_not_silent(tmp_path):
+    """判据 ②（负控，缺文件形态）：读不到状态文件 ⇒ **具名**弃权、不判红、不关单。"""
+    r = React(tmp_path / "run", conclusion="", attempt="", leg="",
+              extra_env={"STATE_FALLBACK": "1", "STATE_FILE": str(tmp_path / "nope.tsv"),
+                         "TARGET_SHA": "deadbeefcafe", "EVENT_NAME": "schedule"})
+    r.issues.write_text(leg_issue(7, LEG_ADMIN_WEB) + "\n", encoding="utf-8")
+    assert r.proc.returncode == 0, f"→ {r.proc.returncode}"
+    assert "::warning::" in r.out and "状态兜底" in r.out, f"弃权必须具名：{r.out!r}"
+    assert not r.ran("issue close"), f"读不到状态文件 ⇒ 不许关 → {r.gh_calls}"
+
+
+# ── 判据 ③ 收敛判据的**判别力**（`success` ≠ 已部署 / 自证未过的形态）────────────
+
+@pytest.mark.parametrize("run_event", ["workflow_dispatch", "repository_dispatch", "merge_group"])
+def test_convergence_is_not_established_by_a_success_that_does_not_self_verify(tmp_path, run_event):
+    """判据 ③：`success` 但「自证不是针对 head sha」的形态（**具体形态 = 人工回滚 dispatch**）⇒ 不许关。
+
+    推理与锚点见本节文件头「判据 1 ①」：`Resolve image tag` 在 `inputs.image_tag` 非空时给出
+    **回滚 tag**（`MODE=rollback`）⇒ 那条 `success` 说的是回滚 tag 在跑、不是 main HEAD 已上线。
+    实现面 = 判别阀读 `github.event.workflow_run.event`（薄壳步的 `LEG_RUN_EVENT`）。
+    """
+    r = React(tmp_path / "run", conclusion="success", attempt="1", leg=LEG_ADMIN_WEB,
+              extra_env={"LEG_RUN_EVENT": run_event},
+              issues_file=seed_issues(tmp_path, [leg_issue(7, LEG_ADMIN_WEB)]))
+    assert r.proc.returncode == 0, f"→ {r.proc.returncode}"
+    assert not r.ran("issue close"), (
+        f"`{run_event}` 触发的 run：目标 tag 未必是 head sha ⇒ **不许**当清零依据 → {r.gh_calls}"
+    )
+    assert not r.ran("issue list"), (
+        f"判别阀必须在**调 gh 之前**挡掉（否则每轮白打一次搜索）→ {r.gh_calls}"
+    )
+    assert "不当清零依据" in r.out, f"必须如实说明为什么不清零：{r.out!r}"
+
+
+@pytest.mark.parametrize("run_event", ["push", "schedule"])
+def test_convergence_holds_for_events_whose_target_tag_is_head_sha(tmp_path, run_event):
+    """判据 ③（正例，与上一条**只差一个变量**）：`push` / `schedule` ⇒ 目标 tag = head sha ⇒ 可以清零。
+
+    与 `test_state4_success_clears_only` 的区别：这里显式给出 `LEG_RUN_EVENT`，证明「能不能清零」
+    真的挂在那一列上（否则那条判别阀就是装饰）。⚠️ `schedule` 走**事件面**的真实场景不存在
+    （cron 完成不投递 `workflow_run`）—— 这里判的是**判别阀**的取值面，不是运行期会不会发生。
+    """
+    r = React(tmp_path / "run", conclusion="success", attempt="1", leg=LEG_ADMIN_WEB,
+              extra_env={"LEG_RUN_EVENT": run_event},
+              issues_file=seed_issues(tmp_path, [leg_issue(7, LEG_ADMIN_WEB)]))
+    assert r.ran("issue close 7"), f"`{run_event}` ⇒ 目标 tag = head sha，应清零 → {r.gh_calls}"
+
+
+def test_real_wiring_success_does_imply_self_verify_passed():
+    """判据 ③（**在真 wiring 上**自证「success ⇒ 自证通过」这半条推理，不靠转述）。
+
+    读的是真文件、三类锚点：① 自证步存在且挂在 `skip == 'true'`；
+    ② 自证实现体（`deploy/scripts/swas_deploy_running_tag.sh`）在「在跑 tag ≠ 目标 tag」时**非零退出**
+    ⇒ 它判红 ⇒ job 判红 ⇒ **run 结论就不是 success**；
+    ③ 这些腿的 `workflow_dispatch` 可以带 `image_tag`（**回滚**路径）⇒ 那是判据 ③ 的判别阀要挡的形态。
+    """
+    legs = sorted(p for p in (REPO_ROOT / ".github" / "workflows").glob("deploy-*.yml")
+                  if "Skip if already built" in p.read_text(encoding="utf-8"))
+    assert len(legs) >= 3, f"反空跑锚点：带 `Skip if already built` 的腿不足 3 条（现取 {len(legs)}）—— 判据已过期"
+    for p in legs:
+        text = p.read_text(encoding="utf-8")
+        assert "Assert running tag == target (skip 不得冒充已部署，issue #6294)" in text, (
+            f"{p.name}：`skip=true` 那条路径上缺运行面自证步 ⇒ 「success ⇒ 已部署」不成立（#6294）"
+        )
+        assert "swas_deploy_running_tag.sh" in text, f"{p.name}：自证没走共享实现体"
+        assert re.search(r"Assert running tag == target.*\n(?:.*\n)*?\s*if: always\(\) && steps\.sync\.outputs\.skip == 'true'",
+                         text), f"{p.name}：自证步没挂在 `skip == 'true'` 上"
+        assert "inputs.image_tag" in text, (
+            f"{p.name}：没有 `image_tag` 输入 ⇒ 判据 ③ 的判别阀（回滚 run 不当清零依据）会失去对象（判据已过期）"
+        )
+    probe = (REPO_ROOT / "deploy" / "scripts" / "swas_deploy_running_tag.sh").read_text(encoding="utf-8")
+    assert "RC=1" in probe and 'exit "$RC"' in probe, (
+        "自证实现体不再以非零退出表态「在跑 tag ≠ 目标 tag」⇒ 「结论 success ⇒ 自证通过」这条推理失效"
+    )
+    assert "skip 不得冒充已部署" in probe, "自证实现体缺 #6294 的语义锚（判据已过期）"
+
+
+# ── 判据 ④ **元守卫**：清零臂必须**同时**有事件驱动与状态驱动两条入口 ─────────────
+
+STATE_FALLBACK_STEP = "腿级失败反应（状态兜底：schedule 完成的腿不投递 workflow_run，issue #6556）"
+
+
+def _reaction_step_env() -> dict:
+    """真语料上反应步的 env 映射（**执行式**读法：把 `${{ … }}` 换成字面量后喂给 `bash`）。"""
+    return _step(STEP_NAME).get("env") or {}
+
+
+def test_clearing_arm_has_both_entries_and_neither_is_decorative(tmp_path):
+    """判据 ④（**元守卫**）：缺任一条入口 ⇒ 红；且两条都**真在分流**（不是写着好看的）。
+
+    ① 静态：两条入口的**接线**在位（各自薄壳步 + env + 「弃权不判红」）；
+    ② 执行式：`TARGET_SHA` 与状态里的基准一致 ⇒ 关；不一致 ⇒ **不关**
+       （防「状态兜底」退化成「无论哪个 commit 的状态都关单」）。
+    """
+    names = [s.get("name") for s in _steps()]
+    assert STEP_NAME in names, f"事件驱动入口（{STEP_NAME}）不在位 → {names}"
+    assert STATE_FALLBACK_STEP in names, (
+        f"状态驱动入口（{STATE_FALLBACK_STEP}）不在位 ⇒ 清零臂只修了一半（issue #6556 判据 ④）→ {names}"
+    )
+    fb = _step(STATE_FALLBACK_STEP)
+    env = fb.get("env") or {}
+    for key in ("STATE_FALLBACK", "STATE_FILE", "TARGET_SHA"):
+        assert key in env, f"状态兜底入口缺 env `{key}`（`${{ }}` 只许出现在 env 里）→ {env}"
+    assert env["STATE_FALLBACK"] == "1", f"状态兜底入口必须开阀门 → {env['STATE_FALLBACK']!r}"
+    assert env["STATE_FILE"] == ".deploy-watchdog-state.tsv", (
+        f"状态来源必须是**对账步落的**那一份（不另立第二套状态）→ {env['STATE_FILE']!r}"
+    )
+    assert env.get("EVENT_NAME") == "${{ github.event_name }}", (
+        f"状态兜底入口必须知道本轮不是 `workflow_run`（事件名走 env）→ {env.get('EVENT_NAME')!r}"
+    )
+    fb_run = str(fb.get("run", ""))
+    assert "deploy_leg_failure_reaction.sh || {" in fb_run and "exit 0" in fb_run, (
+        "状态兜底入口缺「非零 rc 吞成 warning + exit 0」的兜底（反应步自身不得判红）"
+    )
+    # 事件入口保持原样（`workflow_run` 载荷 + 判别阀）
+    ev_env = _reaction_step_env()
+    assert ev_env.get("LEG_RUN_EVENT") == "${{ github.event.workflow_run.event }}", (
+        f"事件入口缺判别阀 env（`LEG_RUN_EVENT`）→ {ev_env.get('LEG_RUN_EVENT')!r}"
+    )
+    # ② 执行式：**两条入口都按同一份状态/事件分流**（`TARGET_SHA` 是绑定，不是装饰）
+    # ⚠️ **不对比 `TARGET_SHA`**（如实登记）：状态由**同一个 job 的 `Reconcile deploys` 步**落，
+    # 它的基准就是它自己 checkout（`ref: main`）的 HEAD ⇒ 状态文件**没有「陈旧到另一个 commit」
+    # 这个面**（`watchdog_note` 每轮先播种 `unrecorded` 再整行替换）。这里**正向登记**这条边界：
+    # `TARGET_SHA` 只进读数行、不当判据 —— 多立一条比不出差别的判据会让读者以为它更强。
+    st = state_file(tmp_path, {"admin-web": ("deployed", "无漂移：自 abc1234")})
+    r = run_fallback(tmp_path, state_rows={"admin-web": ("deployed", "无漂移：自 abc1234")},
+                     issues=[leg_issue(7, LEG_ADMIN_WEB)])
+    assert r.ran("issue close 7"), f"收敛 ⇒ 该关 → {r.gh_calls}"
+    assert "deadbeefcafe" in r.out, (
+        f"`TARGET_SHA` 必须出现在取数行里（可追溯；它**不是**判据）→ {r.out!r}"
+    )
+
+
+# ── 判据 ④（通知补齐 + 去重）──────────────────────────────────────────────────
+
+def test_terminal_leg_without_open_issue_gets_one_from_the_state_face(tmp_path):
+    """判据 ④（通知补齐）：状态值守面判到 `terminal` 且**没有**开放的 `[deploy-leg]` 单 ⇒ 也开一条。"""
+    st = {"ai-agent-service": ("terminal", "部署落在不可恢复终态（conclusion=failure）")}
+    r = run_fallback(tmp_path, state_rows=st, issues=[])
+    assert r.proc.returncode == 0, f"→ {r.proc.returncode}"
+    creates = [c for c in r.gh_calls if "issue create" in c]
+    assert creates, f"cron-only 失败（terminal）原先没有即时面 ⇒ 必须补开一条 → {r.gh_calls}"
+    assert f"{LEG_PREFIX} {LEG_AI_AGENT} 部署失败" in creates[0], (
+        f"补开的单必须是**这条腿**的标题（服务键 ⇄ workflow 名的映射要对）→ {creates[0]!r}"
+    )
+    assert "priority/P1" in creates[0], f"值守面口径 = P1 → {creates[0]!r}"
+
+
+def test_terminal_leg_does_not_double_report_when_watchdog_issue_is_open(tmp_path):
+    """判据 ④（去重）：同一腿不许被 `[deploy-leg]` 与 `[deploy-watchdog]` 两套标题各重复出声一次。"""
+    st = {"ai-agent-service": ("terminal", "部署落在不可恢复终态（conclusion=failure）")}
+    r = run_fallback(tmp_path, state_rows=st,
+                     issues=[f"42\t{WATCHDOG_PREFIX} main HEAD 超时未部署（合并后仍未上线）\topen"])
+    assert not [c for c in r.gh_calls if "issue create" in c], (
+        f"值守面已在叫这条腿（`{WATCHDOG_PREFIX}` 单开着）⇒ 不得再开一条 `{LEG_PREFIX}` → {r.gh_calls}"
+    )
+    assert "去重" in r.out, f"跳过必须具名（别让读者以为它没跑）：{r.out!r}"
+
+
+def test_terminal_leg_with_an_open_leg_issue_comments_instead_of_opening(tmp_path):
+    """判据 ④（幂等）：已有开放的 `[deploy-leg]` 单 ⇒ 评论追加，**不**重复开单。"""
+    st = {"ai-agent-service": ("terminal", "部署落在不可恢复终态（conclusion=failure）")}
+    r = run_fallback(tmp_path, state_rows=st, issues=[leg_issue(11, LEG_AI_AGENT)])
+    assert r.ran("issue comment 11"), f"必须在该单上追加复核 → {r.gh_calls}"
+    assert not [c for c in r.gh_calls if "issue create" in c], f"不许重复开单 → {r.gh_calls}"
+
+
+@pytest.mark.parametrize("state", ["deployed", "inflight", "notarget", "unrecorded"])
+def test_notification_arm_only_fires_for_the_alertable_state(tmp_path, state):
+    """判据 ④（负控）：只有 `terminal` 才补通知 —— `deployed`/`inflight`/`notarget`/`unrecorded` 都不开单。
+
+    与值守面的 `case "${state}"` **逐值同口径**（`deployed|inflight` ⇒ 不报；`notarget` ⇒ 还没轮到；
+    `unrecorded` ⇒ 机制故障单，另开）。**`dispatched` 有意不开**：`[deploy-leg]` 判的是「这一次 run
+    挂了」，而 `dispatched` 是「本轮才补出去」—— 报它会把每一次正常补部署都变成一张单（噪声判据是缺陷）。
+    """
+    st = {"ai-agent-service": (state, f"对账步落的依据（{state}）")}
+    r = run_fallback(tmp_path, state_rows=st, issues=[])
+    assert not [c for c in r.gh_calls if "issue create" in c], (
+        f"状态 `{state}` 不在告警桶里 ⇒ 不得补开单 → {r.gh_calls}"
+    )
+
+
+def test_dispatched_state_does_not_open_a_leg_issue(tmp_path):
+    """判据 ④（边界，正向登记）：`dispatched` **有意不补通知**（避免把每次正常补部署变成噪声单）。"""
+    st = {"ai-agent-service": ("dispatched", "本轮才补 dispatch（对账开始时该 commit 尚无可用部署）")}
+    r = run_fallback(tmp_path, state_rows=st, issues=[])
+    assert not [c for c in r.gh_calls if "issue create" in c], f"→ {r.gh_calls}"
+    assert not r.ran("issue close"), f"`dispatched` 也不是清零依据 → {r.gh_calls}"
+
+
+# ── 判据 ④（静态）：映射两侧都对得上（服务键 ⇄ `reconcile_one` / workflow 名 ⇄ `name:`）──
+
+def test_service_key_to_workflow_name_mapping_is_consistent_on_both_sides():
+    """状态面（服务键）与事件面（workflow 名）是**两套键** ⇒ 映射必须两侧都对得上，否则静默不清零。"""
+    script = SCRIPT.read_text(encoding="utf-8")
+    m = re.search(r'LEG_KEYS="(.*?)"\n', script, re.S)
+    assert m, "反空跑锚点：脚本里找不到 `LEG_KEYS` 那一段（映射被删/改名 ⇒ 判据已过期）"
+    # ⚠️ 先吃掉 shell 的**续行反斜杠**（`\` + 换行）—— 否则会解析出一个叫 `\` 的「腿」
+    #    （本包实测：`dictionary update sequence element #1 has length 1`）。
+    flat = re.sub(r"\\\s*\n", " ", m.group(1))
+    pairs = dict(p.split(":", 1) for p in flat.split())
+    assert pairs, f"`LEG_KEYS` 解析出空表（缩进/形态被改）→ {m.group(1)!r}"
+    # ① 服务键侧：必须与对账步的 `reconcile_one` 调用**双向相等**
+    svc = set(re.findall(r"^\s*reconcile_one\s+(\S+)", reconcile_body(), re.M))
+    assert svc, "反空跑锚点：对账步里解析不出 `reconcile_one` 调用（判据已过期）"
+    assert set(pairs) == svc, (
+        f"脚本的腿表 ⇄ 对账步的 `reconcile_one` 调用必须**双向相等**（新腿漏登记 ⇒ 状态面无腿可判）"
+        f"\n  script     = {sorted(pairs)}\n  reconcile  = {sorted(svc)}"
+    )
+    # ② workflow 名侧：`name:` 必须与 `on.workflow_run.workflows` 里那一条**逐字相等**
+    legs = _on_block(_doc())["workflow_run"]["workflows"]
+    for key, wf in pairs.items():
+        text = (REPO_ROOT / ".github" / "workflows" / wf).read_text(encoding="utf-8")
+        name = re.search(r"^name:[ \t]*(.+?)[ \t]*$", text, re.M)
+        assert name, f"{wf} 里取不到 `name:`（判据已过期）"
+        assert name.group(1) == SVC_TO_WORKFLOW_NAME[key], (
+            f"服务键 `{key}` 的 workflow 名与判据里登记的不一致：文件写 `{name.group(1)}`，"
+            f"判据写 `{SVC_TO_WORKFLOW_NAME[key]}`（改真名必须同改这里）"
+        )
+        assert name.group(1) in legs, (
+            f"{wf} 的 `name:` = `{name.group(1)}` 不在 `on.workflow_run.workflows` 里 ⇒ "
+            f"事件面与状态面**静默脱钩**"
+        )
+
+
+# ── 判据 ⑤ 变异：摘掉状态兜底臂 ⇒ 红；只改注释 ⇒ 不红 ───────────────────────────
+
+def _expect_red_on_a_converged_leg(script: Path, tmp_path: Path, note: str) -> "React":
+    """在**收敛**形态下跑一个变异体；返回读数（调用方断言「没关」⇒ 变异被抓住）。"""
+    st = {"admin-web": ("deployed", "无漂移：自 abc1234（上次成功部署）起 frontend/admin-web 无代码改动")}
+    r = run_fallback(tmp_path, state_rows=st, issues=[leg_issue(7, LEG_ADMIN_WEB)], script=script)
+    assert r.proc.returncode == 0, f"{note}: 变异体必须仍 rc=0 → {r.proc.returncode}\n{r.out}"
+    return r
+
+
+def test_mutation_removing_state_fallback_arm_turns_red(tmp_path):
+    """判据 ⑤a：**摘掉状态兜底臂**（状态驱动入口不再执行）⇒ 收敛形态下的 close **消失** ⇒ 判据 ① 当场红。"""
+    body = SCRIPT.read_text(encoding="utf-8")
+    # 变异 = **把状态兜底臂掏空**（函数留着、行为拿走）—— 这比「摘掉一行调用」更贴近「有人来
+    # 修一半」的真实形态：入口的**两条调用路径**（`LEG` 为空时的入口 + 事件面之后的兜底）都还在，
+    # 只有臂本身没了 ⇒ 判据 ① 必须当场红，而事件面（判据 ③）一字不变。
+    anchor = "state_fallback_arm() {"
+    assert body.count(anchor) == 1, (
+        f"`state_fallback_arm` 的实现应当恰好一处，现取 {body.count(anchor)} 处（判据已过期）"
+    )
+    broken = body.replace(anchor, anchor + "\n  return 0   # 红证注入：掏空状态兜底臂", 1)
+    assert broken != body, "注入未生效（替换 0 次）"
+    # 自证坐标（铁律 8）：被掏空的是**状态兜底**那一支；事件快路径的 `clear_leg ""` 仍在。
+    assert 'clear_leg "" "部署成功' in broken, "连事件面一起改了 ⇒ 变异打偏（红证在证明另一个东西）"
+    variant = tmp_path / "no-fallback.sh"
+    variant.write_text(broken, encoding="utf-8")
+    r = _expect_red_on_a_converged_leg(variant, tmp_path / "mut", "no-fallback")
+    assert not r.ran("issue close"), (
+        f"摘掉状态兜底臂后**仍**关掉了单 ⇒ 判据 ① 是空断言（它没在判那段接线）→ {r.gh_calls}"
+    )
+    assert not r.ran("issue list"), f"变异体应连查都不查 → {r.gh_calls}"
+
+
+def test_mutation_fusing_the_convergence_criterion_turns_red(tmp_path):
+    """判据 ⑤b：把收敛判据**熔断**（`deployed` 不再被认成收敛）⇒ 判据 ① 当场红。
+
+    ⚠️ 熔断点必须落在**状态兜底自己的 case 分支**上：脚本里另有一处事件面的
+    `success | skipped | neutral) SUCCESS=1`（形态相同、语义无关，改它证明不了兜底臂）。
+    """
+    body = SCRIPT.read_text(encoding="utf-8")
+    anchor = '    case "$state" in\n      deployed)'
+    assert anchor in body, "注入未生效：找不到状态兜底的 `case \"$state\"` 分支（判据已过期）"
+    broken = body.replace(anchor, '    case "$state" in\n      deployed_NEVER)')
+    assert broken != body, "注入未生效"
+    variant = tmp_path / "fused.sh"
+    variant.write_text(broken, encoding="utf-8")
+    r = _expect_red_on_a_converged_leg(variant, tmp_path / "mut", "fused-state")
+    assert not r.ran("issue close"), (
+        f"收敛判据被熔断后**仍**关单 ⇒ 判据 ① 没挂在状态值上 → {r.gh_calls}"
+    )
+
+
+def test_mutation_removing_the_event_face_turns_red(tmp_path):
+    """判据 ⑤c（**另一条入口**）：摘掉事件快路径的清零 ⇒ `push` 面成功后的 close 消失 ⇒ 判据 ③ 当场红。"""
+    body = SCRIPT.read_text(encoding="utf-8")
+    anchor = '  clear_leg "" "部署成功（conclusion=${CONCLUSION}，sha=${HEAD_SHA:-未知}，run ${RUN_URL:-}）"'
+    assert anchor in body, f"注入未生效：找不到事件面的清零调用（判据已过期）"
+    broken = body.replace(anchor, '  : # 红证注入：摘掉事件面的清零')
+    assert broken != body, "注入未生效"
+    variant = tmp_path / "no-event-arm.sh"
+    variant.write_text(broken, encoding="utf-8")
+    r = React(tmp_path / "mut", conclusion="success", attempt="1", leg=LEG_ADMIN_WEB,
+              extra_env={"LEG_RUN_EVENT": "push"}, script=variant,
+              issues_file=seed_issues(tmp_path / "mut", [leg_issue(7, LEG_ADMIN_WEB)]))
+    assert not r.ran("issue close"), (
+        f"摘掉事件面清零后**仍**关单 ⇒ 判据 3b 是空断言 → {r.gh_calls}"
+    )
+
+
+def test_mutation_disabling_the_discriminating_valve_turns_red(tmp_path):
+    """判据 ⑤d：把判别阀接成常量（任何 `LEG_RUN_EVENT` 都当 `push`）⇒ 判据 ③ 的负控当场红。"""
+    body = SCRIPT.read_text(encoding="utf-8")
+    anchor = '    "" | push | schedule) ;;   # 空 = 本机/离线调用面（守卫测试的既有驱动面）；两者 = head sha 就是目标 tag'
+    assert anchor in body, "注入未生效：找不到判别阀那一段（判据已过期）"
+    # ⚠️ 替换串必须**带注释**：只把 `case` 那一行换成 `*)` 会把行尾注释留成残渣 ⇒ 变异体是
+    #    **语法错误**（`syntax error near unexpected token`）而不是「判别阀失效」⇒ 那条红证是空跑
+    #    （本包实测到的形态）。替换后连旧分支一起消失才是真变异。
+    broken = body.replace(anchor, "    *) ;;   # 红证注入：任何事件都放行")
+    assert broken != body and "push | schedule)" not in broken, "注入未生效"
+    variant = tmp_path / "no-valve.sh"
+    variant.write_text(broken, encoding="utf-8")
+    r = React(tmp_path / "mut", conclusion="success", attempt="1", leg=LEG_ADMIN_WEB,
+              extra_env={"LEG_RUN_EVENT": "workflow_dispatch"}, script=variant,
+              issues_file=seed_issues(tmp_path / "mut", [leg_issue(7, LEG_ADMIN_WEB)]))
+    assert r.ran("issue close"), f"（前置）变异体应当放行 —— 若它没关，说明注入没生效 → {r.gh_calls}"
+
+
+def test_comment_only_change_does_not_red_for_the_new_arm(tmp_path):
+    """判据 ⑤e（对照）：**只改注释 ⇒ 不红** —— 两条入口在注释改动后行为逐字不变。"""
+    body = SCRIPT.read_text(encoding="utf-8")
+    note = "# 只加一行注释（issue #6556）：状态兜底与事件面并存\n"
+    mutated = body.replace("set -uo pipefail", "set -uo pipefail\n" + note, 1)
+    assert mutated != body, "注入未生效"
+    variant = tmp_path / "comment-only.sh"
+    variant.write_text(mutated, encoding="utf-8")
+    # ① 状态兜底臂：行为不变
+    r = _expect_red_on_a_converged_leg(variant, tmp_path / "mut", "comment-only")
+    assert r.ran("issue close 7"), f"只加注释不该改变状态兜底的行为 → {r.gh_calls}"
+    # ② 事件面：行为不变
+    r2 = React(tmp_path / "mut2", conclusion="success", attempt="1", leg=LEG_ADMIN_WEB,
+               extra_env={"LEG_RUN_EVENT": "push"}, script=variant,
+               issues_file=seed_issues(tmp_path / "mut2", [leg_issue(7, LEG_ADMIN_WEB)]))
+    assert r2.ran("issue close 7"), f"只加注释不该改变事件面的行为 → {r2.gh_calls}"
+
+
+def test_no_new_step_body_exceeds_the_github_limit_after_this_change():
+    """薄壳步也要过 13,250 硬限（新增的薄壳步不许把那一步顶过线）。"""
+    over = [(len(s.get("run", "") or ""), s.get("name")) for s in _steps()
+            if len(s.get("run", "") or "") > RUN_BODY_LIMIT]
+    assert not over, f"以下 step 的 run 正文超过 {RUN_BODY_LIMIT} 字符：{over}"
