@@ -11,7 +11,7 @@ import userEvent from '@testing-library/user-event'
  * 后端只读端点 `GET /api/admin/stock-ledger`（issue #4055）**早就有了**，
  * agent 工具 `stock_ledger_query`（issue #5247）也有 —— **只有页面没有**：
  * `StockLedgerController` 的 javadoc 逐字登记「本轮只做只读端点，不做前端页面」。
- * 后果 = 同一个问题（「为什么系统说还有 30 米、实际只剩 12 米」）**米宝答得出来、商家点不出来**。
+ * 后果 = 同一个问题（「为什么系统说还有 30 米、实际只剩 12 米」）**黄金策答得出来、商家点不出来**。
  *
  * ## 本文件钉住的三件事（每条都能单独变红）
  *

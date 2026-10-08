@@ -51,7 +51,7 @@ export default function CorporateNav() {
           <Link href="/" className="flex shrink-0 items-center gap-2.5">
             <Logo size="small" />
             <span className="text-lg font-semibold tracking-tight text-neutral-900">
-              米高
+              观星台
             </span>
           </Link>
 

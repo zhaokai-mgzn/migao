@@ -249,7 +249,7 @@ esac
 EXPECTED_TARGET="$STATIC_ROOT"
 LOCAL_SHA="$(file_sha256 "$LOCAL_INDEX")"
 
-say "# C 端小布 h5 静态落位（issue #4184）"
+say "# C 端元元 h5 静态落位（issue #4184）"
 say ""
 say "- 目标：\`$EXPECTED_TARGET\`（= nginx 的 \`root\` **本身**；只收敛托管清单里的顶层条目）"
 say "- 产物：\`frontend/mini-app/dist/\`（CI 跑 \`npm run build:h5\`，publicPath 已是 \`/\`）"

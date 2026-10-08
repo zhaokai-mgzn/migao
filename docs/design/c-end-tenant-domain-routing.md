@@ -4,7 +4,7 @@
 
 ## 背景与问题
 
-现状 C 端小布小程序登录租户判定依赖**客户端传参**：
+现状 C 端元元小程序登录租户判定依赖**客户端传参**：
 
 - 前端写死 `DEFAULT_TENANT_ID = 1`（`frontend/mini-app/src/utils/constants.ts:19`），登录时 body 传 `tenantId`
 - 后端 `POST /api/auth/mini/login {code, tenantId}` 信任该值（仅校验租户存在且 active）

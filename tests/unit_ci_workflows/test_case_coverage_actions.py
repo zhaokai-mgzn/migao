@@ -163,9 +163,9 @@ class TestUncoveredActionsAreReportedNotBlocking:
         rep = _rep([_case("T-15", expectations=[{"tool": "order_manage",
                                                  "args": {"action": "cancel"}}])],
                    tools={"order_manage"})
-        text = render_action_gaps(rep, "B 端米宝")
+        text = render_action_gaps(rep, "B 端黄金策")
         assert "只报告不阻塞" in text and "update_status" in text
-        assert "order_manage" in render_action_gaps(rep, "B 端米宝", md=True)
+        assert "order_manage" in render_action_gaps(rep, "B 端黄金策", md=True)
 
     def test_render_is_empty_without_action_dimension(self):
         """该端一个 action 维度都没有 → 渲染器返回空串（不往报告里塞空标题）。"""
@@ -233,7 +233,7 @@ class TestRepoActionLevelJudgement:
     def test_repo_reports_action_gaps_including_known_precedents(self):
         rep = _rep(self.cases)
         pairs = set(rep.action_uncovered)
-        # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：先例**整组换锚** ——
+        # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端黄金策只读化」）：先例**整组换锚** ——
         # 原三条先例（`customer_manage/create_tag`、`processing_item_manage/create_category`、
         # `order_manage/update_status`）断言的 action **已从工具源码删除 / 工具已从 B 端解绑**
         # ⇒ 它们不再是"未覆盖的 action"，继续钉着只会让本判据恒红。换用的四条全部是**当前真实**
@@ -270,7 +270,7 @@ class TestRepoActionLevelJudgement:
           ② **去掉清单必红**：判据本身不得被削弱 —— 由下方注入**真实用例集副本**
              承担（`action_dangling` + `check_problems()` 文本**带用例 ID** + `blocking_gaps()`
              三处同验），不再依赖"仓库里恰好有一条真实违规"；
-          ③ C 端同样归零（`order_query` 本就不是小布工具）。
+          ③ C 端同样归零（`order_query` 本就不是元元工具）。
 
         ⚠️ 2026-09-24（issue #5247，B 端只读化）：注入用的工具**重新锚定** —— 原用的
         `order_manage` 已从 B 端全部 skill 解绑（不在 `toolset_for("mibao")` 里）⇒
@@ -283,7 +283,7 @@ class TestRepoActionLevelJudgement:
         assert rep.action_dangling == [], (
             f"B 端出现悬空 action 声明（断言永不满足 = 假红/假绿）: {rep.action_dangling}")
         assert _rep(self.cases, "xiaobu").action_dangling == [], (
-            "C 端不得有悬空 action（order_query 不是小布工具）")
+            "C 端不得有悬空 action（order_query 不是元元工具）")
 
         injected = list(self.cases) + [
             _case("T-DANGLING", expectations=[{"tool": "inventory_manage",

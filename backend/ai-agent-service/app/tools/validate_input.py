@@ -493,7 +493,7 @@ class ValidateInputTool(BaseTool):
     )
     # ⚠️ 角色层**不适用**（`["*"]`）—— 本工具是**双端 + 全岗位**的前置校验器，
     # 不是一份会漂移的角色清单（issue #4147 G1(b)）。三条理由：
-    # ① 双端都要用：小布的 `customer_aftersales`/`customer_order` 绑定它，而 `base_skill`
+    # ① 双端都要用：元元的 `customer_aftersales`/`customer_order` 绑定它，而 `base_skill`
     #    的「确认-执行链」依赖它**成功**才持久化「已校验待执行」状态
     #    （`if tool_name == "validate_input" and result_dict.get("success"):` → 落 pending）；
     #    此前不含 customer → 顾客调用一律 `权限不足` → C 端售后 confirm 永远换不来执行

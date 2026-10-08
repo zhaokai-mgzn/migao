@@ -4,7 +4,7 @@
  *
  * ## 治的形态
  *
- * `frontend/bmini-app/src/app.config.ts` 里「问米宝」与「坐席」**指向同一张图**
+ * `frontend/bmini-app/src/app.config.ts` 里「问黄金策」与「坐席」**指向同一张图**
  * （`assets/tabbar/chat.png` / `chat-active.png`）⇒ 线上四个 tab 只有三张不同图标，
  * 用户看到两个一模一样的入口（headless 实测：两处 `img.src` 的 base64 完全相同）。
  * 这类缺陷**不会让任何东西变红**：路由对、点击对、只是「看起来不对」。
@@ -50,7 +50,7 @@ describe('B 端 tabBar 图标唯一性（issue #5759）', () => {
     expect(active).toHaveLength(4)
   })
 
-  it('🔴 四个 tab 的未选图标两两不同（问米宝与坐席曾共用 chat.png）', () => {
+  it('🔴 四个 tab 的未选图标两两不同（问黄金策与坐席曾共用 chat.png）', () => {
     expect(new Set(icon).size).toBe(icon.length)
   })
 

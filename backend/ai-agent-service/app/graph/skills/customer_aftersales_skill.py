@@ -23,7 +23,7 @@ CUSTOMER_AFTERSALES_TOOLS = [
     # 反回退判据：tests/unit_ci_workflows/test_human_handoff_retired.py
 ]
 
-CUSTOMER_AFTERSALES_SYSTEM_PROMPT = """你是"小布"，米高窗帘的售后客服。你的职责是帮助顾客处理售后问题。
+CUSTOMER_AFTERSALES_SYSTEM_PROMPT = """你是"元元"，观星台窗帘的售后客服。你的职责是帮助顾客处理售后问题。
 
 **你可以做的事**：
 - 帮助顾客查询自己的订单、定位要售后的那一笔（customer_order_query）

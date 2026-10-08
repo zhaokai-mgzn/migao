@@ -472,7 +472,7 @@ class TestOrderCreatePayload:
     @patch("app.tools.order_create.get_admin_api_client")
     async def test_checklist_field_ids_are_normalized_to_craft_spec_keys(
             self, mock_get_client, tool, agent_ctx):
-        """C 端小布按**清单 id** 采集的字段，必须被归一成工艺规格键后上行（issue #4362，S1）。
+        """C 端元元按**清单 id** 采集的字段，必须被归一成工艺规格键后上行（issue #4362，S1）。
 
         病根：`curtain_checklist` 问到的字段只活在会话的 collector 字典里（**零消费者**）
         ⇒ 会话结束即丢。归一实现只有一处（`curtain_checklist.to_craft_spec`）；
@@ -491,7 +491,7 @@ class TestOrderCreatePayload:
             "product_id": "pid-1",
             "processing_info": {
                 "sellingMethod": "bulk_cut",
-                # 清单 id（snake_case，C 端小布的词汇）
+                # 清单 id（snake_case，C 端元元的词汇）
                 "curtain_type": "纱帘", "open_count": 4, "is_shaped": False,
                 "formula": "fullness", "has_pattern": True, "window_type": "转角",
             },

@@ -20,7 +20,7 @@
  *
  * UI-055 判据 5 修过**一处**（工人端报工数量，`bmini-app/src/pages/production/index/index.tsx`），
  * 但「同一机制还有没有第二处」当时没问 —— 于是 **`FormCard`（interact form 的通用数字字段，
- * 米宝在小程序里收集尺寸 / 数量 / 金额的入口）整批漏网**：`const inputType = isNumber ? 'number' : 'text'`
+ * 黄金策在小程序里收集尺寸 / 数量 / 金额的入口）整批漏网**：`const inputType = isNumber ? 'number' : 'text'`
  * ⇒ 用户在真机上**无法输入任何小数**（用户 2026-09-29 报障「输入框无法输入小数点」）。
  * 这正是 `migao-dev-flow` §26 `FM-R12`「只想到一处漏同族」的形态 ⇒ 本文件把它钉成**类级**判据。
  *

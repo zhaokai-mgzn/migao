@@ -25,12 +25,12 @@ import {
 export const metadata: Metadata = {
   title: '产品与服务 — AI 客服、经营助手与全链路经营平台',
   description:
-    `米高产品全景：顾客侧小布${AI_ROLES.xiaobu}，经营侧米宝${AI_ROLES.mibao}；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖商品、客户、交易、生产、仓储、组织六个能力域。`,
+    `观星台产品全景：顾客侧元元${AI_ROLES.xiaobu}，经营侧黄金策${AI_ROLES.mibao}；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖商品、客户、交易、生产、仓储、组织六个能力域。`,
 }
 
 const coreProducts = [
   {
-    title: `小布 · ${AI_ROLES.xiaobu}`,
+    title: `元元 · ${AI_ROLES.xiaobu}`,
     icon: MessageSquare,
     tagline: '顾客侧：从规格咨询到下单、物流查询与售后受理',
     features: [
@@ -45,7 +45,7 @@ const coreProducts = [
       '不做：改价、取消订单、退款、承诺优惠折扣、报库存数量。涉及价格与赔偿只解释规则、收集材料，落到工单由商家确认。',
   },
   {
-    title: `米宝 · ${AI_ROLES.mibao}`,
+    title: `黄金策 · ${AI_ROLES.mibao}`,
     icon: Bot,
     tagline: '经营侧：以自然语言查询账目、订单与进度',
     features: [
@@ -66,22 +66,22 @@ const terminals = [
     icon: Globe,
     title: '管理后台',
     audience: '老板 / 运营 / 客服',
-    description: '浏览器打开即用，六个能力域集中在此；右上角通知中心，右下角悬浮米宝随时提问。',
+    description: '浏览器打开即用，六个能力域集中在此；右上角通知中心，右下角悬浮黄金策随时提问。',
     points: ['经营看板与每日简报', '商品、订单、售后、财务', '生产、仓储、组织与权限'],
   },
   {
     icon: Smartphone,
     title: '顾客小程序',
     audience: '终端消费者',
-    description: '在微信内直接咨询小布、下单、查询物流与提交售后，无需额外下载。',
+    description: '在微信内直接咨询元元、下单、查询物流与提交售后，无需额外下载。',
     points: ['7×24 咨询与下单', '订单与物流进度', '售后申请与进度'],
   },
   {
     icon: MessageSquare,
     title: '商家小程序',
     audience: '老板 / 店长（移动端）',
-    description: '移动端可用：问米宝、看数据、处理坐席会话，并提供工人登录与拍照入库入口。',
-    points: ['问米宝 / 看数据', '坐席会话处理', '工人登录、拍照入库、补打标签'],
+    description: '移动端可用：问黄金策、看数据、处理坐席会话，并提供工人登录与拍照入库入口。',
+    points: ['问黄金策 / 看数据', '坐席会话处理', '工人登录、拍照入库、补打标签'],
   },
   {
     icon: ScanLine,
@@ -123,23 +123,23 @@ export default function ServicesPage() {
     <>
       <PageHero
         kicker="产品与服务"
-        title="小布与米宝，以及全链路经营平台"
-        lead="顾客侧由小布承接服务，经营侧由米宝承接管理；后端由商品、客户、交易、生产、仓储、组织六个能力域支撑，四个终端共用数据底座。"
+        title="元元与黄金策，以及全链路经营平台"
+        lead="顾客侧由元元承接服务，经营侧由黄金策承接管理；后端由商品、客户、交易、生产、仓储、组织六个能力域支撑，四个终端共用数据底座。"
         chips={[
-          '2 个 AI：小布与米宝',
+          '2 个 AI：元元与黄金策',
           `6 个能力域 · ${menuItemCount} 项功能`,
           '4 个终端',
           '算料 · 工序 · 批次 · 计件',
         ]}
       />
 
-      {/* ── 小布与米宝 ──────────────────────────────────────── */}
+      {/* ── 元元与黄金策 ──────────────────────────────────────── */}
       <section className="bg-white py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             kicker="核心 AI 产品"
-            title="小布服务顾客，米宝管理经营"
-            lead="小布与米宝读取真实经营数据：顾客问到的商品、订单与库存，与经营者在后台看到的完全一致。"
+            title="元元服务顾客，黄金策管理经营"
+            lead="元元与黄金策读取真实经营数据：顾客问到的商品、订单与库存，与经营者在后台看到的完全一致。"
           />
 
           <div className="mt-14 space-y-8">
@@ -276,7 +276,7 @@ export default function ServicesPage() {
           <SectionHeading
             kicker="行业纵深"
             title="布艺经营的四项核心能力"
-            lead="通用客服机器人难以覆盖这四项能力，而它们正是米高产品设计的起点。"
+            lead="通用客服机器人难以覆盖这四项能力，而它们正是观星台产品设计的起点。"
           />
           <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {industryDepth.map((item) => (
@@ -319,7 +319,7 @@ export default function ServicesPage() {
       </section>
 
       <CallToAction
-        title="了解米高是否适配您的业务"
+        title="了解观星台是否适配您的业务"
         lead="提交入驻申请，AI 自动甄别后即刻开通；也可先留言说明业务场景，我们将按您的流程安排演示。"
         primary={
           <Link

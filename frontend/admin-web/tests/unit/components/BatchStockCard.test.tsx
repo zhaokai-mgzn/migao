@@ -4,7 +4,7 @@
  *
  * ## 为什么 B 端桌面必须有这一端
  *
- * `batch_stock_query` 绑在米宝的 Skill（`general` / `product`）上，且声明 `product:list`
+ * `batch_stock_query` 绑在黄金策的 Skill（`general` / `product`）上，且声明 `product:list`
  * ⇒ **只有 B 端可达**。契约不变式「后端能发到这一端的卡型 ⊆ 这一端能渲染的卡型」
  * （`backend/ai-agent-service/tests/test_card_type_cross_end_contract.py`）**实测红证**：
  * 只加后端 `_detect_card_type` 映射、不加本端分支时报

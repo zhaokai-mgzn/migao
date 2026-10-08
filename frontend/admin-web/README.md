@@ -1,12 +1,12 @@
 # Admin Web
 
-米高 AI 智能客服 — Next.js 管理后台
+观星台 AI 智能客服 — Next.js 管理后台
 
 ## 技术栈
 
 - Next.js 16 (App Router, React 19) + TypeScript + Tailwind CSS
 - Zustand（状态管理）+ Axios（HTTP 请求）
-- 米宝 AI 助手（FloatingAssistant SSE 流式对话）
+- 黄金策 AI 助手（FloatingAssistant SSE 流式对话）
 
 ## 快速开始
 

@@ -74,7 +74,7 @@ def test_update_role_ids_field_is_consumed():
     """update 下发 roleIds → 控制器必须读取 roleIds（与 createUser 同语义：角色表主键）。"""
     keys = _read_keys(_update_user_body())
     assert "roleIds" in keys, (
-        "AdminUserController.updateUser 未读取 roleIds —— 米宝『把某人改成某角色』会 200 假成功，"
+        "AdminUserController.updateUser 未读取 roleIds —— 黄金策『把某人改成某角色』会 200 假成功，"
         "user_roles 关联与 user.role 均不变（issue #3550）"
     )
 

@@ -14,7 +14,7 @@ interface MessageListProps {
 }
 
 export default function MessageList({ messages, isStreaming, onInteract }: MessageListProps) {
-  // UI-018：智能客服名称取自租户配置 botName（B 端未配置默认「米宝」）
+  // UI-018：智能客服名称取自租户配置 botName（B 端未配置默认「黄金策」）
   const botName = buildBotName(useAuthStore((s) => s.user)?.botName)
   const scrollAnchorId = 'msg-anchor'
   const scrollTopRef = useRef(0)
@@ -59,7 +59,7 @@ export default function MessageList({ messages, isStreaming, onInteract }: Messa
             你的商家经营助手{'\n'}经营、订单交付、库存、商品、售后、客户，都可以问我
           </Text>
           {/* 🔴 B 端空态**不铺商品**（issue #5747）：C 端旧版的商品推荐卡（拉
-              `/api/chat/products/new-arrivals`、提示「点一下问问小布」）已整块删除 ——
+              `/api/chat/products/new-arrivals`、提示「点一下问问元元」）已整块删除 ——
               商家端不该出现顾客端的商品展示，更不该出现**顾客端 agent 名**。 */}
         </View>
       </View>
@@ -81,7 +81,7 @@ export default function MessageList({ messages, isStreaming, onInteract }: Messa
             <MessageBubble key={msg.id} message={msg} onInteract={onInteract} />
           ))}
 
-          {/* 思考中动画（UI-018：显示租户 botName，B 端默认「米宝正在思考...」） */}
+          {/* 思考中动画（UI-018：显示租户 botName，B 端默认「黄金策正在思考...」） */}
           {showTyping && <TypingIndicator text={`${botName}正在思考...`} />}
 
           {/* 滚动锚点 */}

@@ -534,7 +534,7 @@ class OrderServiceTest {
     }
 
     // ============ 下单行要素结构化落库（V63，issue #4362，S1）============
-    // 判据：两个采集端（C 端小布澄清清单 / B 端米宝 order_create）写入的 processing_info 顶层
+    // 判据：两个采集端（C 端元元澄清清单 / B 端黄金策 order_create）写入的 processing_info 顶层
     // 工艺规格键，必须**物化**到 order_items 的列上（此前它们埋在 JSONB 里，加工单只能靠猜）。
     // 全部可空、不设必填校验（用户裁定「部位不是必填的」）⇒ 缺键不报错、就是缺。
 

@@ -534,7 +534,7 @@ class TestMappingSource:
     """结果来源分类（门禁分层：规则命中阻塞 / 兜底网只报告，issue #3502）
 
     背景（2026-09-14 dogfooding 首跑实证）：只改 `tests/agent_eval/behavior_mapping.py`
-    （评测基建）会被兜底网里的 CH-010（小布下单）判红 —— 与本 PR 改动**无因果**。
+    （评测基建）会被兜底网里的 CH-010（元元下单）判红 —— 与本 PR 改动**无因果**。
     故 workflow 需要知道"这批用例是规则命中还是兜底网"，二者门禁强度不同。
     """
 

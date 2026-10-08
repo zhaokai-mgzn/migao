@@ -3,7 +3,7 @@
 #   本单是**新的一类**（C 端 H5 静态根落地面 + 「手动才发布」的触发面契约），按用例号顺延取 MC-046
 #   （取号时**三轮**现取：写侧 = MC-039 → rebase 后被 main 上的 #5731 占 → 改 MC-040/041
 #    又被在飞分支占 ⇒ 定 MC-046；口径 = main 已占 ∪ 在飞分支已占 之后的下一个空号）。）
-r"""C 端小布 H5（`frontend/mini-app` 的 `build:h5` 产物）**静态根落地面**的常驻判据（issue #4184）。
+r"""C 端元元 H5（`frontend/mini-app` 的 `build:h5` 产物）**静态根落地面**的常驻判据（issue #4184）。
 
 ## 病根（开工前现取复算，2026-09-27）
 
@@ -1903,7 +1903,7 @@ def _make_dist(tmp_path: Path, ref: str = "/js/app.js", app_js: str = "// C 端�
     (dist / "js").mkdir(parents=True, exist_ok=True)
     (dist / "css").mkdir(exist_ok=True)
     (dist / "index.html").write_text(
-        f'<!doctype html><title>米高窗帘 · 小布智能助手</title><script defer src="{ref}"></script>'
+        f'<!doctype html><title>观星台窗帘 · 元元智能助手</title><script defer src="{ref}"></script>'
         '<link href="/css/app.css" rel="stylesheet">',
         encoding="utf-8",
     )
@@ -2095,7 +2095,7 @@ def test_reserved_subtree_digest_really_moves_when_touched(tmp_path):
 # 「上一版线上产物」的一页（08-30 那次发布的形态：结构相同、标题与注释不同 ⇒ 哈希不同）
 STALE_C_END_PAGE = (
     '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"/>'
-    "<title>米高窗帘 · 小布智能助手</title>"
+    "<title>观星台窗帘 · 元元智能助手</title>"
     "<script>window.TARO_ENV = 'h5'</script>"
     '<script defer="defer" src="/js/2.js"></script>'
     '<script defer="defer" src="/js/app.js"></script>'

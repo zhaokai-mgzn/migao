@@ -1,5 +1,5 @@
 # case_ids: MC-021
-# （沿用 tests/unit_ci_workflows/** 既有惯例：本文件判的是 **B 端米宝只读化的能力面**
+# （沿用 tests/unit_ci_workflows/** 既有惯例：本文件判的是 **B 端黄金策只读化的能力面**
 #   —— 与 tests/unit_ci_workflows/test_mibao_b_end_readonly.py 同族，故挂同一条用例 MC-021；
 #   本 PR **不新建用例族**、**不新增 [backend-contract] 用例** ⇒ 不动任何账本。）
 """**能力下线后的「死引用 / 死守卫 / 死绑定」类级元守卫**（issue #5331，§23 G1 + G2）。

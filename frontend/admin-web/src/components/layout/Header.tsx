@@ -42,7 +42,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 客户服务组（本轮 2026-09-29 用户裁定**新建**：原「智能客服」组 + 客户侧两项合并）
   // 🔴 首项 = 组名「客户服务」，与侧边栏 `config/menu.ts` 的 `customer-service` 组逐字一致
   // （判据 PG-038：末项 label == 菜单名）。
-  { match: (p) => p.startsWith('/chat'), crumbs: [{ label: '客户服务' }, { label: '米宝 · 在线对话' }] },
+  { match: (p) => p.startsWith('/chat'), crumbs: [{ label: '客户服务' }, { label: '黄金策 · 在线对话' }] },
   { match: (p) => p.startsWith('/agent-workspace/human-sessions'), crumbs: [{ label: '客户服务' }, { label: '在线接待' }] },
   // 「会话监控」是**非菜单路由**（侧边栏无此项，属域内下钻）—— 首项仍取它所属的业务组名。
   { match: (p) => p.startsWith('/agent-workspace/sessions'), crumbs: [{ label: '客户服务' }, { label: '会话监控' }] },

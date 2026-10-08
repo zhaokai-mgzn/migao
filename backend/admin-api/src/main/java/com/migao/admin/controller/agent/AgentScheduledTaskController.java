@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 定时任务（用户「预约」）端点 —— issue #6486 包 1（包 2 的米宝工具走这里）。
+ * 定时任务（用户「预约」）端点 —— issue #6486 包 1（包 2 的黄金策工具走这里）。
  *
  * <pre>
  * POST   /api/admin/agent/scheduled-tasks        建一条待办（幂等：同 dedupKey 返回既有行）

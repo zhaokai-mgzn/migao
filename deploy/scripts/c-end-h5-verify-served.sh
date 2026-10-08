@@ -83,7 +83,7 @@ content_type_of() {
   curl -sS -m 20 -H 'Cache-Control: no-cache' -o /dev/null -w '%{content_type}' "$1" 2>"$TMPDIR_RUN/curl.err" || true
 }
 
-echo "== C 端小布 h5 落地面断言（issue #4184）=="
+echo "== C 端元元 h5 落地面断言（issue #4184）=="
 echo "   BASE_URL=$BASE"
 [ -f "$LOCAL_INDEX" ] || { echo "❌ 本仓库缺少 ${LOCAL_INDEX}（无法比对身份）" >&2; exit 2; }
 EXPECTED_SHA="$(file_sha256 "$LOCAL_INDEX")"

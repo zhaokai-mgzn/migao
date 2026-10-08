@@ -2,7 +2,7 @@
   "name": "bmini-app",
   "version": "1.0.0",
   "private": true,
-  "description": "B端商家小程序（米宝商家端）",
+  "description": "B端商家小程序（黄金策商家端）",
   "templateInfo": {
     "name": "default",
     "typescript": true,

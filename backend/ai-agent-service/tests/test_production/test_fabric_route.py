@@ -155,7 +155,7 @@ def test_curtain_mainline_is_nine_steps_plus_packing():
 def test_packing_appears_once_per_curtain_route():
     """每个 `(帘种, 工艺)` 组合里 `打包` 各出现**恰好 1 行**（缺 ⇒ 少一道活；重复 ⇒ 双付）。
 
-    形态对齐 #4408 的实证：页面路径 14 道/¥3.00 vs 米宝路径 17 道/¥6.00 —— 同一道套级工序
+    形态对齐 #4408 的实证：页面路径 14 道/¥3.00 vs 黄金策路径 17 道/¥6.00 —— 同一道套级工序
     被按部位展开两次 ⇒ **双付工人工资**。
     """
     for craft in CRAFTS:

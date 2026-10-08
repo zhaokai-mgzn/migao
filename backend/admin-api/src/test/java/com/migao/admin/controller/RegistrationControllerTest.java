@@ -70,7 +70,7 @@ class RegistrationControllerTest extends BaseControllerTest {
         RegistrationResponse response = RegistrationResponse.builder()
                 .applicationId(100L)
                 .status("approved")
-                .message("AI 甄别通过，欢迎入驻米高平台")
+                .message("AI 甄别通过，欢迎入驻观星台平台")
                 .build();
         when(registrationService.submitApplication(any(RegistrationRequest.class), anyString()))
                 .thenReturn(response);
@@ -82,7 +82,7 @@ class RegistrationControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.applicationId").value(100))
                 .andExpect(jsonPath("$.data.status").value("approved"))
-                .andExpect(jsonPath("$.data.message").value("AI 甄别通过，欢迎入驻米高平台"));
+                .andExpect(jsonPath("$.data.message").value("AI 甄别通过，欢迎入驻观星台平台"));
 
         verify(registrationService).submitApplication(any(RegistrationRequest.class), anyString());
     }

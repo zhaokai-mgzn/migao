@@ -1741,9 +1741,9 @@ export default function NewOrderPage() {
     [customerName, customerPhone, customerAddress, remark, loadLinePicker]
   )
 
-  // 深通道（issue #5368 包 2）：米宝识别结果经 **SSE → store → 浏览器内存事件**推到本页
+  // 深通道（issue #5368 包 2）：黄金策识别结果经 **SSE → store → 浏览器内存事件**推到本页
   // （浮动面板在建单页上就在表单上方，不需要跳转；走内存通道 ⇒ 收货信息不进 URL / 日志 / 历史）。
-  // 🔴 订单侧**只收识别来源**（`[图片识别]`）：米宝的解读在订单侧**只解释、一格都不填**
+  // 🔴 订单侧**只收识别来源**（`[图片识别]`）：黄金策的解读在订单侧**只解释、一格都不填**
   // （客户信息错 ⇒ 货发错人）—— 内核已保证这类格子 `value` 为空，这里因此自然排除。
   // 填表口径与快通道**完全同一条**（复用 `handleRecognized`：只填空字段、不覆盖已输入内容）。
   useEffect(

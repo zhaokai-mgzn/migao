@@ -4,7 +4,7 @@
  *
  * 用户口径（逐字）：按钮 + 一句文字输入框，**只做一次性推理**（不是对话、不留上下文）；
  * 结果以**内嵌卡片**呈现（不是弹窗 / 对话 / 气泡），分两段 —— `[图片识别]`（从图上抄的）/
- * `[米宝解读]`（米宝推的），每格可勾选，「一键填入」把**选中的**格子交给页面。
+ * `[米宝解读]`（黄金策推的），每格可勾选，「一键填入」把**选中的**格子交给页面。
  *
  * 判据（会红）：
  * 1. 两段分组：`source` 决定格子进哪一段，组内可见该格 `note` 依据；
@@ -71,7 +71,7 @@ const INTERPRETED_FIELD = field({
   label: '工艺',
   value: '韩褶',
   source: PAGE_FILL_SOURCE_INTERPRETED,
-  note: '商家补充了「韩褶」，米宝折成规范工艺名',
+  note: '商家补充了「韩褶」，黄金策折成规范工艺名',
 })
 
 const FIELDS: PageFillField[] = [RECOGNIZED_FIELD, EMPTY_FIELD, INTERPRETED_FIELD]

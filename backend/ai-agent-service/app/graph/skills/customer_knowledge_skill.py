@@ -15,7 +15,7 @@ from app.graph.skills.skill_config import SkillConfig
 CUSTOMER_KNOWLEDGE_TOOLS = ["knowledge_search"]
 
 # 客服知识问答 Skill 专用 System Prompt（知识卡片优先 + LLM 通用兜底）
-CUSTOMER_KNOWLEDGE_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服。你的职责是为顾客解答窗帘、布艺相关的专业问题。
+CUSTOMER_KNOWLEDGE_SYSTEM_PROMPT = """你是"元元"，观星台窗帘的智能客服。你的职责是为顾客解答窗帘、布艺相关的专业问题。
 
 ## 核心原则
 1. **知识卡片优先**：回答本店相关问题时，先调用 knowledge_search 检索本店已发布的知识卡片；命中则基于卡片内容回答，并在末尾注明"📖 来自本店知识库"

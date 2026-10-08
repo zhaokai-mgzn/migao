@@ -1,6 +1,6 @@
 // case_ids: BM-044
 /**
- * B 端「问米宝」输入条的 **H5 形态**判据（issue #6476）
+ * B 端「问黄金策」输入条的 **H5 形态**判据（issue #6476）
  *
  * ## 治的形态（用户 2026-10-07 逐字）
  *
@@ -53,7 +53,7 @@ const mockVoiceSupported = isVoiceSupported as jest.Mock
 
 const SCSS_PATH = path.resolve(__dirname, '../src/components/chat/MessageInput.scss')
 /** H5 那条腿的键盘措辞（与 C 端口径同形：语音不可用就不承诺语音） */
-const H5_PLACEHOLDER = '打字问米宝，比如「今天经营怎么样？」'
+const H5_PLACEHOLDER = '打字问黄金策，比如「今天经营怎么样？」'
 const VOICE_PLACEHOLDER = '发消息或按住说话'
 
 /** 在指定编译目标下跑（`isH5()` 读的是 `process.env.TARO_ENV`） */

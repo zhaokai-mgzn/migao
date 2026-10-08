@@ -10,14 +10,14 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 米宝唤出授权门的**服务端单一真值**（issue #5642 功能⑤）。
+ * 黄金策唤出授权门的**服务端单一真值**（issue #5642 功能⑤）。
  *
  * <p>本用例锁四件事（每条都能红）：
  * <ol>
  *   <li>{@code "*"} 通配**直接判真** ⇒ {@code role='admin'} 自动落入、**无需特例分支**
  *       （改成读 {@code role} 字段 ⇒ 本条红）；</li>
  *   <li>三码**全持**为真、**缺一**为假（改成 {@code anyMatch} ⇒ 缺一那格红）；</li>
- *   <li>非管理员员工被显式授权米宝唤出码 ⇒ {@code canSummonMibao} 为真，
+ *   <li>非管理员员工被显式授权黄金策唤出码 ⇒ {@code canSummonMibao} 为真，
  *       但 {@code hasAllAdminPermissionCodes} **仍为假**（「被授权者」≠「管理员」，
  *       两个概念合并 ⇒ 本条红）；</li>
  *   <li>空 / {@code null} 权限 ⇒ **fail-closed**（不是静默放行）。</li>
@@ -52,7 +52,7 @@ class AdminGateTest {
     }
 
     @Test
-    @DisplayName("AdminGate — 被显式授权者可唤米宝，但不算「管理员」（两个概念不合并）")
+    @DisplayName("AdminGate — 被显式授权者可唤黄金策，但不算「管理员」（两个概念不合并）")
     void grantedEmployeeCanSummonButIsNotAdmin() {
         List<String> granted = List.of(AdminGate.MIBAO_CHAT_GRANT_CODE);
         assertThat(AdminGate.canSummonMibao(granted)).isTrue();
@@ -75,7 +75,7 @@ class AdminGateTest {
     void codesAreImmutable() {
         assertThat(AdminGate.ADMIN_PERMISSION_CODES).isInstanceOf(Set.class);
         assertThat(AdminGate.ADMIN_PERMISSION_CODES)
-                .as("管理员集合必须含米宝唤出码（否则「默认可唤」与「授权码」会分叉）")
+                .as("管理员集合必须含黄金策唤出码（否则「默认可唤」与「授权码」会分叉）")
                 .contains(AdminGate.MIBAO_CHAT_GRANT_CODE);
     }
 

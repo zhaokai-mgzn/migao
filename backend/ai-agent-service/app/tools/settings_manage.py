@@ -3,7 +3,7 @@ AI 智能客服系统 - 系统设置管理 Tool（**只读**）
 
 查询系统设置、AI 客服配置与登录日志。
 
-🔴 **B 端米宝只读化**（issue #5247 用户裁定 2026-09-23；settings 域整域收口 = issue #5302）：
+🔴 **B 端黄金策只读化**（issue #5247 用户裁定 2026-09-23；settings 域整域收口 = issue #5302）：
 写能力（`update_settings` / `update_ai_config` / `change_password`）**已从本工具删除**，
 对应写方法与**写参数**一并删除（不是"只从 description 里摘掉"）。
 ⚠️ `VALID_ACTIONS` 是本工具 action 面的**唯一真值**：往这里加回写 action = 写能力复活

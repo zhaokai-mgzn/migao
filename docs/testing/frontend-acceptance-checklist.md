@@ -17,7 +17,7 @@
 
 ## 剧本
 
-### 1. #3022 米宝面板缩放防冻结
+### 1. #3022 黄金策面板缩放防冻结
 
 - 操作：双击面板缩放把手 → 拖拽到极端尺寸 → 切页再回
 - L1 断言：页面无 `pageerror`；缩放后容器宽高被钳制（≤ 视口）；双击恢复默认尺寸
@@ -30,7 +30,7 @@
   点击侧边栏各菜单 → 高亮类名唯一对应当前项
 - UA：截图确认无样式错乱
 
-### 3. #3037 米宝交互组件渲染三态固化（admin-web）
+### 3. #3037 黄金策交互组件渲染三态固化（admin-web）
 
 - 操作：弹 choice 卡（加工项）→ 点选 → **刷新页面** → 回看历史
 - L1 断言：刷新后已作答卡渲染只读态（交互控件 disabled/只读，选中内容可见）；
@@ -75,12 +75,12 @@
 
 ### 8. 布局遮挡探针模板（fixed 浮动元素 vs 底部锚定元素）
 
-> 适用：任何页面有 fixed/absolute 浮动元素（米宝 FAB、悬浮助手、吸顶操作条）且内容区底部
+> 适用：任何页面有 fixed/absolute 浮动元素（黄金策 FAB、悬浮助手、吸顶操作条）且内容区底部
 > 有锚定元素（分页条、底部操作栏）时。**vitest/jsdom 是结构性盲区，必须真实渲染探针。**
 
 - 操作：打开 `<页面>` → 场景 A：筛选到 0~3 条短内容；场景 B：长列表滚动到底（`scrollTo(0, document.body.scrollHeight)`）
 - L1 几何断言（`page.evaluate` 打点，两场景各一次）：
-  - `fab = querySelector('button[title="打开米宝"]').getBoundingClientRect()`
+  - `fab = querySelector('button[title="打开黄金策"]').getBoundingClientRect()`
   - `pag = 分页行（含「共 N 条」的 justify-between 行）.getBoundingClientRect()`
   - 断言：`max(0, min(fab.right, pag.right) - max(fab.left, pag.left))` 与对应 y 方向重叠
     在**两场景均为 0**，且末页「下一页」按钮矩形与 FAB 无重叠、可点击；

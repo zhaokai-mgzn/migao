@@ -96,7 +96,7 @@ position.put("operations", …);      // [{operation, unit, unit_price, qty, don
 ## 2. 全链路数据流（P2b 的改动面就是这张图的红线）
 
 ```
-① 下单（admin-web / 米宝）
+① 下单（admin-web / 黄金策）
    order_items: width/height/craft/curtainType/openCount/cuttingMode/isShaped/fullness/…
    └ processing_info: specialOptions[] / fabric_meters / processingMeters      [算料单一真值=ai-agent]
         │

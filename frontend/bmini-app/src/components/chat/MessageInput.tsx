@@ -32,7 +32,7 @@ const MAX_IMAGES = 3
  * H5 的措辞给一个**真答得出来**的例子（六格里的第一条），不写「按住说话」。
  */
 const PLACEHOLDER_VOICE = '发消息或按住说话'
-const PLACEHOLDER_TEXT = '打字问米宝，比如「今天经营怎么样？」'
+const PLACEHOLDER_TEXT = '打字问黄金策，比如「今天经营怎么样？」'
 
 /**
  * 输入条（豆包式单容器，参考 docs/design/agent-input-bar-unified-design.md）

@@ -1,5 +1,5 @@
 """
-米宝全能力自然语言测试套件（手动脚本，非 pytest 用例 — 文件名无 test_ 前缀）
+黄金策全能力自然语言测试套件（手动脚本，非 pytest 用例 — 文件名无 test_ 前缀）
 
 覆盖: 商品CRUD / 订单查改 / 客户 / 员工 / 数据 / 知识 / 视觉 / P&E
 每项创建修改后通过 admin-api 校验数据准确性
@@ -160,14 +160,14 @@ async def scenario_order_close(client):
     order_no = order.get("orderNo", "")
     check("3.0 找待付款订单", True, f"{order_no}")
 
-    # 3.2 通过米宝关闭
+    # 3.2 通过黄金策关闭
     sid = await _session(client)
     if not sid:
         return
     text = await _sse(client, sid, f"关闭订单 {order_no}，确认")
     check("3.1 关闭指令", bool(text), f"{len(text) if text else 0}字")
 
-    # 如果米宝要求确认，再发一次
+    # 如果黄金策要求确认，再发一次
     if text and ("确认" in text or "确定" in text):
         await _sse(client, sid, "确认关闭")
 
@@ -438,7 +438,7 @@ async def scenario_selling_method_mapping(client):
 # ═══════════════════════════════════════════════════════════════
 async def main():
     print("╔══════════════════════════════════════╗")
-    print("║   🧪 米宝全能力自然语言测试        ║")
+    print("║   🧪 黄金策全能力自然语言测试        ║")
     print("╚══════════════════════════════════════╝")
     print(f"  AI: {AI_URL}")
     print(f"  Admin: {ADMIN_URL}")

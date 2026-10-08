@@ -4,10 +4,10 @@
 验证新增 Skill 不会抢走已有 Skill 的路由，
 确保 Skill Registry 注册正确、意图映射不冲突。
 
-issue #5247（B 端米宝只读，用户裁定 2026-09-23）：B 端全部 skill 只绑 `read_only=True`
+issue #5247（B 端黄金策只读，用户裁定 2026-09-23）：B 端全部 skill 只绑 `read_only=True`
 工具 ⇒ 本文件两处派生面的前提随之变化（逐条写在相关用例 docstring 里）：
   · 「持有需确认写工具」的 skill 从 B 端 4 个变成 **C 端 2 个 + `settings`**（后者仍注册、
-    仍绑 `settings_manage` / `notification_manage`，但已不在米宝的 `skill_names` 里）；
+    仍绑 `settings_manage` / `notification_manage`，但已不在黄金策的 `skill_names` 里）；
   · 需要「写工具清单」的判据一律改**注册表派生**（`read_only=False`），不再维护人工清单 ——
     人工清单在 `employee_manage` / `role_manage` / `inventory_manage` 被收窄为只读后立刻误红
     （§19.1「误红即坏断言」）。
@@ -78,7 +78,7 @@ def reset():
 # ============ Skill Registry 完整性 ============
 
 def test_all_mibao_skills_registered():
-    """米宝的 8 个 Skill 全部注册"""
+    """黄金策的 8 个 Skill 全部注册"""
     registry = get_skill_registry()
     agent = get_agent_config("mibao")
     names = agent.get_all_skill_names()
@@ -89,7 +89,7 @@ def test_all_mibao_skills_registered():
 
 
 def test_all_xiaobu_skills_registered():
-    """小布的 3 个 C 端 Skill 全部注册"""
+    """元元的 3 个 C 端 Skill 全部注册"""
     registry = get_skill_registry()
     agent = get_agent_config("xiaobu")
     names = agent.get_all_skill_names()
@@ -122,7 +122,7 @@ def test_no_overlapping_route_keys():
 def test_general_has_only_read_tools():
     """兜底 general Skill 只应有**只读** Tool（写操作需确认后走领域 Skill）。
 
-    issue #5247 重新锚定（B 端米宝只读）：原判据维护人工清单
+    issue #5247 重新锚定（B 端黄金策只读）：原判据维护人工清单
     `{product_manage, order_create, inventory_manage, order_manage, employee_manage,
     role_manage, settings_manage}` —— 其中 `employee_manage` / `role_manage` /
     `inventory_manage`（连同 `customer_manage` / `category_manage` / `after_sales_manage` /
@@ -191,7 +191,7 @@ def test_all_intents_have_route():
 # ============ Fallback 机制 ============
 
 def test_mibao_has_fallback():
-    """米宝必须有兜底 Skill"""
+    """黄金策必须有兜底 Skill"""
     agent = get_agent_config("mibao")
     assert agent.fallback_skill is not None
     registry = get_skill_registry()
@@ -200,7 +200,7 @@ def test_mibao_has_fallback():
 
 
 def test_xiaobu_has_fallback():
-    """小布必须有兜底 Skill"""
+    """元元必须有兜底 Skill"""
     agent = get_agent_config("xiaobu")
     assert agent.fallback_skill is not None
     registry = get_skill_registry()
@@ -250,7 +250,7 @@ def test_all_write_skills_bind_interact_via_confirm_guard():
     是同一不变式在 C 端的**子集**（该文件 docstring 里"B 端经评估不补 interact"的前提
     已被 #3577 推翻）。
 
-    issue #5247（B 端米宝只读）：派生集随绑定面收缩 —— B 端 skill 不再持有任何需确认写工具，
+    issue #5247（B 端黄金策只读）：派生集随绑定面收缩 —— B 端 skill 不再持有任何需确认写工具，
     持有者只剩 C 端（`customer_order` / `customer_aftersales`）与仍注册的 `settings`。
     判据本身（注册表派生 × 全部已注册 skill）**不需要改口径**：前提变了，判据自动跟着变
     —— 这正是 #3624 收敛掉硬编码枚举的收益。

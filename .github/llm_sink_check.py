@@ -90,8 +90,8 @@ from render_cases import load_case_dicts  # noqa: E402
 # 锚点（按文本检索，行号会漂移）：
 #   .github/workflows/post-deploy-eval.yml      → `[Post-Deploy] 部署后回归失败 — `
 #   .github/workflows/xiaobu-acceptance.yml     → `[Xiaobu] ${personaLabel} 验收失败 — `
-#   .github/workflows/agent-eval.yml            → `[Agent Eval] 米宝冒烟评测失败 — `
-#   .github/workflows/agent-eval-adversarial.yml→ `[Agent Eval] 米宝对抗评测失败 — `
+#   .github/workflows/agent-eval.yml            → `[Agent Eval] 黄金策冒烟评测失败 — `
+#   .github/workflows/agent-eval-adversarial.yml→ `[Agent Eval] 黄金策对抗评测失败 — `
 #
 # ⚠️ 为什么搜索之后还要**本地正则复核**：GitHub 的 `in:title` 是**分词模糊匹配**，不是
 #    子串匹配 —— 实测 `in:title "[Post-Deploy]"` 会命中 #3778（标题里只有
@@ -99,8 +99,8 @@ from render_cases import load_case_dicts  # noqa: E402
 LLM_ISSUE_TITLE_PATTERNS: tuple[tuple[str, str], ...] = (
     ("[Post-Deploy]", r"^\[Post-Deploy\]\s*部署后回归失败"),
     ("[Xiaobu]", r"^\[Xiaobu\]\s*.*验收失败"),
-    ("[Agent Eval]", r"^\[Agent Eval\]\s*米宝冒烟评测失败"),
-    ("[Agent Eval]", r"^\[Agent Eval\]\s*米宝对抗评测失败"),
+    ("[Agent Eval]", r"^\[Agent Eval\]\s*黄金策冒烟评测失败"),
+    ("[Agent Eval]", r"^\[Agent Eval\]\s*黄金策对抗评测失败"),
 )
 
 # GitHub 侧回填的**机读标记**：发现红例的 issue 上应留有指向本台账的回填记录。

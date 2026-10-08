@@ -39,8 +39,8 @@ class SmsConfigTest {
         @DisplayName("应正确绑定 signName")
         void shouldBindSignName() {
             SmsConfig cfg = new SmsConfig();
-            cfg.setSignName("米高布艺");
-            assertThat(cfg.getSignName()).isEqualTo("米高布艺");
+            cfg.setSignName("观星台布艺");
+            assertThat(cfg.getSignName()).isEqualTo("观星台布艺");
         }
 
         @Test

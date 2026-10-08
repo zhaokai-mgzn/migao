@@ -35,7 +35,7 @@
       "controller": "com/migao/admin/controller/AdminRoleController.java",
       "decision": "annotated",
       "effective_code": "employee:list",
-      "note": "issue #5980：唯一调用方 = `employeeApi.loadPositions()`（`frontend/admin-web/src/lib/api.ts`），只被「员工管理」页的岗位下拉消费；该页节点码 / 路由守卫码 = `employee:list` ⇒ 取该页读码，**岗位下拉零回归**（取 `system:view` 会让运营的下拉变空）。⚠️ 因**两个页面共用同一条 API 而守卫码不同**，它与米宝 `role_manage` 工具构成跨码 ⇒ 具名登记在 `test_agent_permission_parity.py` 的 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`"
+      "note": "issue #5980：唯一调用方 = `employeeApi.loadPositions()`（`frontend/admin-web/src/lib/api.ts`），只被「员工管理」页的岗位下拉消费；该页节点码 / 路由守卫码 = `employee:list` ⇒ 取该页读码，**岗位下拉零回归**（取 `system:view` 会让运营的下拉变空）。⚠️ 因**两个页面共用同一条 API 而守卫码不同**，它与黄金策 `role_manage` 工具构成跨码 ⇒ 具名登记在 `test_agent_permission_parity.py` 的 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`"
     },
     {
       "endpoint": "GET /api/admin/roles/{}",

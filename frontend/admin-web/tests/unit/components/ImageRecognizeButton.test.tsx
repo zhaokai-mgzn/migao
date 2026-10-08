@@ -231,7 +231,7 @@ const PLAN_FIELDS = [
     source: '[米宝解读]',
     reason: null,
     candidates: [],
-    note: '商家补充了「韩褶」，米宝折成规范工艺名',
+    note: '商家补充了「韩褶」，黄金策折成规范工艺名',
     note_source: '[米宝解读]',
   },
 ]
@@ -304,7 +304,7 @@ describe('解读模式（issue #6367 包 P3）', () => {
     expect(interpreted.textContent).toContain('[米宝解读]')
     expect(within(interpreted).getByTestId('form-interpret-field-craft')).toBeInTheDocument()
     expect(within(interpreted).getByTestId('form-interpret-note-craft').textContent).toContain(
-      '米宝折成规范工艺名',
+      '黄金策折成规范工艺名',
     )
   })
 

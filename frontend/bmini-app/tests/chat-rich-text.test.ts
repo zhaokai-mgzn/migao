@@ -1,6 +1,6 @@
 // case_ids: UI-084
 /**
- * richText 解析器测试（B 端米宝消息富文本渲染，issue #6346 / 用例 UI-084）
+ * richText 解析器测试（B 端黄金策消息富文本渲染，issue #6346 / 用例 UI-084）
  *
  * 与 C 端 `frontend/mini-app/tests/rich-text.test.ts`（UI-042）同口径 —— B 端此前是纯文本
  * `pre-wrap`，`**` 与 `- ` 原样上屏。覆盖：

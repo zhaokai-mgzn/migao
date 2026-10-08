@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tests/xiaobu_dist_freshness.py — 小布 H5 视觉腿的「产物新鲜度」前置断言（issue #4249）。
+"""tests/xiaobu_dist_freshness.py — 元元 H5 视觉腿的「产物新鲜度」前置断言（issue #4249）。
 
 ## 病根（本文件是它的直接对策）
 
@@ -265,7 +265,7 @@ def ensure(project_root, build_cmd=None, env=None) -> Verdict:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="小布 H5 视觉腿的产物新鲜度护栏（issue #4249）")
+    parser = argparse.ArgumentParser(description="元元 H5 视觉腿的产物新鲜度护栏（issue #4249）")
     sub = parser.add_subparsers(dest="cmd", required=True)
     for name, help_text in (
         ("check", "只校验（不构建；无指纹 ⇒ exit 3 未判定）"),

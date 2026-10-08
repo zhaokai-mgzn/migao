@@ -103,7 +103,7 @@ class AfterSalesSourceContractTest extends BaseControllerTest {
     // 从 X-Agent-Client 头解析后透传 ⇒ 断言它收到的第 4 个实参。
 
     @Test
-    @DisplayName("Agent BFF + X-Agent-Client: customer（C 端小布）→ source=customer")
+    @DisplayName("Agent BFF + X-Agent-Client: customer（C 端元元）→ source=customer")
     void agentBff_customer() throws Exception {
         when(afterSalesTicketService.createTicketForAgent(any(AgentAfterSalesCreateRequest.class),
                 eq(TEST_TENANT_ID), anyString(), anyString())).thenReturn(stubDetail());
@@ -117,7 +117,7 @@ class AfterSalesSourceContractTest extends BaseControllerTest {
     }
 
     @Test
-    @DisplayName("Agent BFF + X-Agent-Client: agent（米宝 AI 建单）→ source=agent")
+    @DisplayName("Agent BFF + X-Agent-Client: agent（黄金策 AI 建单）→ source=agent")
     void agentBff_agent() throws Exception {
         when(afterSalesTicketService.createTicketForAgent(any(AgentAfterSalesCreateRequest.class),
                 eq(TEST_TENANT_ID), anyString(), anyString())).thenReturn(stubDetail());

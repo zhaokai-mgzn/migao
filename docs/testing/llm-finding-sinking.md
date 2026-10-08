@@ -26,7 +26,7 @@
 
 | 步 | 做什么 | 落点（可机械核） |
 |---|---|---|
-| ① 发现 | LLM 低频道（定时/手动）跑出红例 → **自动开 issue** | issue 号 = **台账主键**。标题族：`[Post-Deploy] 部署后回归失败` / `[Xiaobu] … 验收失败` / `[Agent Eval] 米宝冒烟评测失败` / `[Agent Eval] 米宝对抗评测失败` |
+| ① 发现 | LLM 低频道（定时/手动）跑出红例 → **自动开 issue** | issue 号 = **台账主键**。标题族：`[Post-Deploy] 部署后回归失败` / `[Xiaobu] … 验收失败` / `[Agent Eval] 黄金策冒烟评测失败` / `[Agent Eval] 黄金策对抗评测失败` |
 | ② 归因 | 区分「**用例资产缺陷** / **产品缺陷** / LLM 波动」 | 只有前两类需要下沉；波动按 §14.3 波动台账治理，**不得**用它当"不下沉"的万能理由 |
 | ③ 下沉 | 在红例涉及的用例上补 **≥1 条确定性断言**，并在用例 `merge_log` 写 `issue #<N>` | 断言形态见下；`merge_log` 回填 = **记入用例库**（`--selftest` 逐条核） |
 | ④ 入账 + 回填 | 台账加条目（`sunk` 或 `unsunk`），并在**发现它的 issue** 上回填断言 ID / 台账评注 | `.github/llm-finding-ledger.json`；GitHub 侧回填用 `--check-backfill` 核 |
@@ -84,7 +84,7 @@ python3 .github/llm_sink_check.py --json                          # 机读输出
 | `OR-010` | 同上（真实 run 的首跑红指纹里就有 `no_success(order_create)`，**断言看不见**） | `must_succeed: [order_create]` |
 | `OR-011` | 同上 | `must_succeed: [order_create]` + `db_verify`（`order_items` 明细/数量、`order_phone` 落库号） |
 
-⚠️ **2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）之后，上面这张表不再是可照抄的形态**：
+⚠️ **2026-09-24（issue #5247，用户裁定 2026-09-23「B 端黄金策只读化」）之后，上面这张表不再是可照抄的形态**：
 `order_create` 已从 B 端全部 skill 解绑、下单写链路整体下线 ⇒ `OR-009` / `OR-010` / `OR-011` **退役**
 （`skip_reason` 写明理由，条目不删除），上表那四处落点（三条 `must_succeed` + OR-011 的 `db_verify`）
 按判据要求**清空**（否则是永不满足的悬空声明）⇒ 台账把 **#4014 改判为 `status: unsunk`**

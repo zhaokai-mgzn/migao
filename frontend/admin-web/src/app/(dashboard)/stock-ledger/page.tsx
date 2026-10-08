@@ -26,7 +26,7 @@ import type { BatchRemaining, StockLedgerEntry } from '@/types'
  *   两本账在数据层就是两本（`stock_ledger_entries` = SKU 销售账；`stock_batch_consumptions` = 批次加工账，
  *   见 `StockBatchConsumption` 的 javadoc）⇒ 本页**不把它们并成一行**（量纲不同，合并即造假口径）。
  *
- * ## 🔴 为什么这页必须有（而不是让米宝答就行）
+ * ## 🔴 为什么这页必须有（而不是让黄金策答就行）
  *
  * 后端端点（issue #4055）与 agent 工具（issue #5247）**早就有**，页面是 `StockLedgerController`
  * 的 javadoc 里逐字登记的**显式延后项**（「本轮只做只读端点，不做前端页面」）⇒

@@ -322,7 +322,7 @@ def _parse_llm_json(text: str) -> Optional[dict]:
 def _build_llm_messages(req: RegistrationReviewRequest) -> list:
     """构造合规审查提示词（系统提示 + 结构化申请数据）。"""
     system_prompt = (
-        "你是企业入驻审核专员，负责对 SaaS 平台（米高）的商家入驻申请做合规与法律风险甄别。\n"
+        "你是企业入驻审核专员，负责对 SaaS 平台（观星台）的商家入驻申请做合规与法律风险甄别。\n"
         "审查维度：\n"
         "1. 企业经营合法性：名称是否规范，行业是否属于需特殊资质的禁限行业（金融、借贷、"
         "证券、虚拟货币、医疗、药品、保健食品、烟草、彩票、棋牌、教育培训等），有无明显违法迹象。\n"

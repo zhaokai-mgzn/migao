@@ -3,10 +3,10 @@
  *
  * ## 它解决什么
  *
- * 米宝是**浮动面板**（`components/ai-assistant/FloatingAssistant.tsx` 挂载
+ * 黄金策是**浮动面板**（`components/ai-assistant/FloatingAssistant.tsx` 挂载
  * `components/business/MibaoChatPanel.tsx`，挂在 `(dashboard)/layout.tsx`）⇒
- * 商家可以站在建品页 / 建单页上直接跟米宝说话，**表单就在屏幕下方**。
- * 米宝识别完要把字段推给当前页面表单 —— 本模块就是那条通道。
+ * 商家可以站在建品页 / 建单页上直接跟黄金策说话，**表单就在屏幕下方**。
+ * 黄金策识别完要把字段推给当前页面表单 —— 本模块就是那条通道。
  *
  * ## 🔴 为什么是内存事件（硬约束 1：零 PII 落盘）
  *

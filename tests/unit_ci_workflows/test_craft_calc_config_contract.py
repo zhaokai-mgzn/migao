@@ -496,7 +496,7 @@ class TestMoneyFacingParsingIsSyntaxBased:
 # ══════════════════════════════════════════════════════════════════════════════
 # 判据 9（issue #4945 处 1）：两条**真栈**判据必须用**同一份**租户配置
 # ══════════════════════════════════════════════════════════════════════════════
-# 病根：判据 5 的「同一租户 + 同一入参 ⇒ 米宝工具路径 ≡ CraftCalcClient 路径」这条保证，
+# 病根：判据 5 的「同一租户 + 同一入参 ⇒ 黄金策工具路径 ≡ CraftCalcClient 路径」这条保证，
 # 由**两侧各自的** `TENANT_CONFIG_JSON` 声明支撑 ——
 #   · 服务端半边：backend/admin-api/src/test/java/com/migao/admin/service/CraftCalcConfigRealDbTest.java
 #     （真 PG + 真 craft_calc_configs 行 + 真 toConfigMap + 真 CraftCalcClient 出参）
@@ -555,7 +555,7 @@ def test_both_realstack_judgements_declare_the_same_tenant_config():
     drifted = {k: v for k, v in shared.items() if v[0] != v[1]}
     assert drifted == {}, (
         f"两侧声明的同一批配置值不一致：{drifted} ⇒ 「同一租户 + 同一配置」这条前提在账面成立、"
-        f"实际不等（米宝一个数、下单路径另一个数）。改一侧必须同批改另一侧。")
+        f"实际不等（黄金策一个数、下单路径另一个数）。改一侧必须同批改另一侧。")
 
 
 def test_judgement9_detector_reds_on_injected_drift():

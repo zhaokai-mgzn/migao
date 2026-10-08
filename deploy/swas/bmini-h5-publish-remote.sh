@@ -4,20 +4,20 @@
 #
 # 落位：`app.migaozn.com` 静态根（nginx `root` = `/opt/migao-deploy/h5`）下的 **`b/`** 子树。
 #
-# 🔴 红线一（与工人端 `w/` 同源）：静态根**同时承载线上 C 端小布 H5**（同一个 root、同一个
+# 🔴 红线一（与工人端 `w/` 同源）：静态根**同时承载线上 C 端元元 H5**（同一个 root、同一个
 #   `location /`）⇒ 本脚本**只允许**清空/覆盖 `<静态根>/<子目录>`（默认 `b/`）子树，
 #   **绝不**对静态根本身做 `--delete` / 清空 / `rm -rf`。判定落在 `assert_target_safe()` +
 #   `purge_target()`（都在动手之前），并有「发布前后父目录 `index.html` 哈希必须一致」的自证。
 #
 # 🔴 红线二（**本应用特有**）：产物**必须落在自己的命名空间里**。bmini h5 是 Taro 打出来的
 #   SPA，默认 `publicPath: '/'` 时 index.html 引用的是 `/js/app.js`、`/css/app.css` ——
-#   与**同静态根下的 C 端小布产物同名同路径**（实测：两端都打成 `js/app.js`）。若把这样一份
+#   与**同静态根下的 C 端元元产物同名同路径**（实测：两端都打成 `js/app.js`）。若把这样一份
 #   产物发到 `/b/`，浏览器会在 `/b/` 的页面上加载**C 端的包**：页面"打得开"，跑的是另一个应用。
 #   ⇒ `assert_product_scoped()` 在**写入目标之前**逐条检查 index.html 的同源引用，
 #      任何一个逃出 `/<子目录>/` 前缀 ⇒ **拒绝发布**（fail-closed，而不是发上去再等人发现）。
 #
 # ⚠️ 为什么身份判据不能用"页面文案/标题"：实测 `dist/index.html` 的 `<title>` 是
-#   「米高窗帘 · 小布智能助手」、且带 `window.TARO_ENV = 'h5'` —— 与 C 端**逐字相同**
+#   「观星台窗帘 · 元元智能助手」、且带 `window.TARO_ENV = 'h5'` —— 与 C 端**逐字相同**
 #   ⇒ 标记法区分不了这两端。可判的只有 **字节哈希**（本脚本 + CI 侧的 `PUBLISHED_INDEX_SHA256`）
 #   与**资源命名空间**（上面那条）。
 #
@@ -146,7 +146,7 @@ assert_product_scoped() {
     esac
   done <<< "$refs"
   [ -z "$out_of_scope" ] \
-    || die "index.html 引用了本应用命名空间（/${SUBDIR}/）之外的资源：${out_of_scope} —— 这是「与同静态根下的 C 端小布共用路径」的串端形态，拒绝发布（构建时须传 TARO_APP_H5_PUBLIC_PATH=/${SUBDIR}/）"
+    || die "index.html 引用了本应用命名空间（/${SUBDIR}/）之外的资源：${out_of_scope} —— 这是「与同静态根下的 C 端元元共用路径」的串端形态，拒绝发布（构建时须传 TARO_APP_H5_PUBLIC_PATH=/${SUBDIR}/）"
   while IFS= read -r r; do
     [ -n "$r" ] || continue
     case "$r" in

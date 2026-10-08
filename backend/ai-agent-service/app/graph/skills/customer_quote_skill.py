@@ -11,7 +11,7 @@ from app.graph.skills.skill_config import SkillConfig
 CUSTOMER_QUOTE_TOOLS = ["curtain_calc", "product_detail", "product_search", "interact"]
 
 # 客服算料报价 Skill 专用 System Prompt
-CUSTOMER_QUOTE_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服。你的职责是帮助顾客计算窗帘用布量和报价。
+CUSTOMER_QUOTE_SYSTEM_PROMPT = """你是"元元"，观星台窗帘的智能客服。你的职责是帮助顾客计算窗帘用布量和报价。
 
 算料的必填/可选参数表、智能默认值、术语映射与**分步执行流程**在本 prompt 上方的领域规则里，
 照它执行；下面只讲**怎么说**（C 端体验优先）。

@@ -7,7 +7,7 @@
  * 现场（2026-10-07 生产）：管理员账号在 H5 上用**商家**身份点「完成报工」⇒
  * `POST /api/worker/production/scan/complete` 401 + 请求层「登录已过期」把商家登录态清掉、
  * 踢回登录页 ⇒ 重登再点仍然如此。根因之一是**端侧没有工人身份的落点**：
- * 工人登录后只能落进商家的 tabBar（问米宝/数据/坐席/我的），而工人零商家权限
+ * 工人登录后只能落进商家的 tabBar（问黄金策/数据/坐席/我的），而工人零商家权限
  * （`/api/admin/**` 拒绝集合含 `worker`）⇒ 看见商家菜单只会 403 / 空页。
  *
  * ## 本文件锁四条（每条都有红证）
@@ -15,13 +15,13 @@
  *    不是前端 state 拼的（页头显示的正是「这笔活会记到谁头上」= 计件工资的凭证）；
  * ② **三件工人功能入口**各自跳对路由（扫码报工 / 拍照入库 / 补打入库标签），
  *    且后两个走 `utils/inbound/gaps.ts` 的路由常量（单一真值，不写字面量）；
- * ③ **不出现任何商家面入口**（问米宝 / 数据 / 坐席 / 管理面 4 项）；
+ * ③ **不出现任何商家面入口**（问黄金策 / 数据 / 坐席 / 管理面 4 项）；
  * ④ **退出工人身份** = `workerLogout()` + 清本机工人态 + 回登录页的工人入口。
  *
  * ## 红证（每条判据的失败形态）
  * - 身份卡改读 `getCachedWorker()` 而不调 `fetchCurrentWorker()` ⇒ ①红（服务端真值不取）。
  * - 把「拍照入库」入口指向别处 / 删掉 ⇒ ②红。
- * - 往页面加一行「问米宝」⇒ ③红。
+ * - 往页面加一行「问黄金策」⇒ ③红。
  * - 退出只清本机不调 `workerLogout()`（服务端 session 还活着 ⇒ 下一个人扫码记到上一个人头上）⇒ ④红。
  */
 import React from 'react'
@@ -125,10 +125,10 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     expect(REPRINT_PAGE_ROUTE).toBe('/pages/worker/reprint/index')
   })
 
-  it('🔴 不出现任何商家面入口（问米宝 / 数据 / 坐席 / 管理面 4 项 + 「我的」）', async () => {
+  it('🔴 不出现任何商家面入口（问黄金策 / 数据 / 坐席 / 管理面 4 项 + 「我的」）', async () => {
     await renderLoggedIn()
 
-    for (const merchantEntry of ['问米宝', '数据', '坐席', '我的']) {
+    for (const merchantEntry of ['问黄金策', '数据', '坐席', '我的']) {
       expect({ merchantEntry, visible: screen.queryByText(merchantEntry) !== null }).toEqual({
         merchantEntry,
         visible: false,

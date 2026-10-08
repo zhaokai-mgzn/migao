@@ -23,7 +23,7 @@ class AgentConfig:
 
     Attributes:
         name: Agent 唯一标识，如 "mibao", "xiaobu", "supply_chain"
-        display_name: 人类可读名称，如 "米宝", "小布", "链宝"
+        display_name: 人类可读名称，如 "黄金策", "元元", "链宝"
         persona: Prompt 人格 key，用于从 SkillConfig.system_prompts 中选择 Prompt
         skill_names: 该 Agent 使用的 Skill 名称列表（按优先级排列）
         fallback_skill: 兜底 Skill 名称（处理低置信度和跨领域问题）

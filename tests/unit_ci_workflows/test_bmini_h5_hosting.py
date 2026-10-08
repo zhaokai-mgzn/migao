@@ -25,7 +25,7 @@ r"""B 端 h5（`frontend/bmini-app` 的 `build:h5` 产物）**对外落地面**�
    ⇒ **标记法区分不了这两端**）。产物必须按 `/<SUBDIR>/` 构建，且本地与远端**各判一次**
    （本地在发起云调用之前 fail-closed；远端在写入目标之前 fail-closed）；
 4. 🔴 **nginx 语义**（本单最危险的一处）：`/b/` 必须有**落在自己命名空间内的 fallback**
-   —— 否则 `/b/<子路由>` 会静默回落根 `index.html`（= C 端小布，**HTTP 200**，监控不红）；
+   —— 否则 `/b/<子路由>` 会静默回落根 `index.html`（= C 端元元，**HTTP 200**，监控不红）；
    且**不得劫持根**（根仍由 `location /` 承担）。判据是**真解析 + 真模拟**（见 `_serve()`），
    不是文本匹配；
 5. **类级固化**（`migao-dev-flow` §23）：**任何**静态 `location` 的 `try_files` fallback
@@ -88,11 +88,11 @@ SERVER_NAME = "app.migaozn.com"
 
 DESTRUCTIVE_RE = re.compile(r"(rm\s+-[A-Za-z]*[rf][A-Za-z]*\b|--delete\b|-delete\b)")
 
-# C 端小布的一页（与 `/` 的落地面同形；**注意**：bmini 产物的 `<title>` 与它逐字相同 ——
+# C 端元元的一页（与 `/` 的落地面同形；**注意**：bmini 产物的 `<title>` 与它逐字相同 ——
 # 这正是本单不能靠标记判身份的原因，见模块 docstring 判据 3）
 C_END_PAGE = (
     '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"/>'
-    "<title>米高窗帘 · 小布智能助手</title>"
+    "<title>观星台窗帘 · 元元智能助手</title>"
     "<script>window.TARO_ENV = 'h5'</script>"
     '<script defer="defer" src="/js/app.js"></script></head>'
     '<body><div id="app"></div></body></html>'
@@ -104,7 +104,7 @@ def _bmini_page(legacy: bool = False) -> bytes:
     prefix = "" if legacy else f"/{SUBDIR}"
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"/>'
-        "<title>米高窗帘 · 小布智能助手</title>"
+        "<title>观星台窗帘 · 元元智能助手</title>"
         "<script>window.TARO_ENV = 'h5'</script>"
         f'<script defer="defer" src="{prefix}/js/app.js"></script>'
         f'<link href="{prefix}/css/app.css" rel="stylesheet"></head>'
@@ -522,7 +522,7 @@ def test_bmini_subroute_is_served_by_own_fallback():
     served = _serve(_block(), files, f"/{SUBDIR}/orders/2026/detail")
     assert served == f"{SUBDIR}/index.html", (
         f"`/{SUBDIR}/orders/2026/detail` 落到 `{served}` —— 期望 `{SUBDIR}/index.html`"
-        "（若落到 `index.html` 就是**静默串端**：URL 是 /b/…、页面是 C 端小布，且 HTTP 200）"
+        "（若落到 `index.html` 就是**静默串端**：URL 是 /b/…、页面是 C 端元元，且 HTTP 200）"
     )
     assert _serve(_block(), files, f"/{SUBDIR}/") == f"{SUBDIR}/index.html"
     assert _serve(_block(), files, f"/{SUBDIR}/index.html") == f"{SUBDIR}/index.html"
@@ -791,7 +791,7 @@ class _NginxishServer:
       · ``root_hijacked`` —— 根被 `/b/` 规则吃掉（根返回 bmini 产物）
       · ``stale_b``       —— `/b/` 上是**旧产物**（不是本仓库这次构建）
       · ``w_broken``      —— worker-h5 的 `/w/` 坏了
-      · ``i_falls_back``  —— nginx 少了 `location /i/`（入库标签的码静默回落到根页 = C 端小布）
+      · ``i_falls_back``  —— nginx 少了 `location /i/`（入库标签的码静默回落到根页 = C 端元元）
       · ``bad_js_mime``   —— 入口脚本（`.js`/`.mjs`）被发成 `application/octet-stream`（issue #6293）
     """
 
@@ -809,7 +809,7 @@ class _NginxishServer:
             if self.mode == "no_b_location":
                 return c_end
             if self.mode == "stale_b":
-                return '<!doctype html><title>米高窗帘 · 小布智能助手</title><script>// 旧产物</script>'.encode("utf-8")
+                return '<!doctype html><title>观星台窗帘 · 元元智能助手</title><script>// 旧产物</script>'.encode("utf-8")
             if path in (f"/{SUBDIR}/", f"/{SUBDIR}/index.html"):
                 return bmini
             # 子资源（`/b/js/**` 等）在静态根上真实存在 ⇒ 按文件伺候（⑥ 要判它们的 MIME，issue #6293）；

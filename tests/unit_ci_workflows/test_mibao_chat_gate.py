@@ -1,5 +1,5 @@
 # case_ids: BM-008
-"""米宝唤出授权门的**机械判据**（issue #5642 功能⑤）。
+"""黄金策唤出授权门的**机械判据**（issue #5642 功能⑤）。
 
 ## 用户裁定（本守卫的唯一理由，2026-09-26）
 
@@ -7,7 +7,7 @@
 
 ## 为什么必须有机械判据（病根）
 
-「谁能唤出米宝」改动前**没有任何权限码在管**（`backend/ai-agent-service/app/api/chat.py` 的
+「谁能唤出黄金策」改动前**没有任何权限码在管**（`backend/ai-agent-service/app/api/chat.py` 的
 `/api/chat/send` 无端点级码；`frontend/bmini-app/src/pages/chat/**` 零权限门）⇒ 本单新增码
 `agent:chat` 并给出**一处**判定（`AdminGate`）。若把这个集合抄到第二处（第二个 Java 常量、
 前端硬编码、第二份文档式约定），「改一处而另一端不同步」**不会有任何东西变红**
@@ -374,7 +374,7 @@ def problems_server_wiring(corpus: dict[str, str]) -> list[str]:
     if "containsAll(ADMIN_PERMISSION_CODES)" not in gate:
         out.append("`AdminGate` 的判定不是 `containsAll(ADMIN_PERMISSION_CODES)` ⇒ 集合不再是「全持」语义")
     if not re.search(r"\bcanSummonMibao\s*\(", gate):
-        out.append("`AdminGate` 没有对外暴露米宝唤出判定（`canSummonMibao`）")
+        out.append("`AdminGate` 没有对外暴露黄金策唤出判定（`canSummonMibao`）")
     # 能力位必须**由这一处**算出，且出现在两个 return 分支（平台超管 / 商户管理员）
     # ⚠️ 2026-09-29（issue #5792）：`capabilitiesOf` 增加了**租户级**参数
     #    （`aiService` 可插拔开关需要租户维度）⇒ 正则放宽为"任意实参"，但**分支数仍是 2** 的语义不变。
@@ -399,7 +399,7 @@ def problems_frontend_consumption(corpus: dict[str, str]) -> list[str]:
         if needle not in text:
             out.append(f"`{rel}` 没有消费服务端下发的 `{needle}`（端侧判定来源不是单一真值）")
         if "MibaoAccessGate" not in text:
-            out.append(f"`{rel}` 没有挂米宝唤出授权门（未授权者会直接进对话）")
+            out.append(f"`{rel}` 没有挂黄金策唤出授权门（未授权者会直接进对话）")
 
     for rel in (BMINI_GATE, WEB_GATE):
         text = corpus.get(rel)
@@ -608,11 +608,11 @@ INJECTIONS: dict[str, tuple["callable", "callable"]] = {
 
 
 def test_every_judgement_is_green() -> None:
-    """全部判据在**当前仓库**上全绿（红 = 米宝唤出授权门已经漂移，逐条问题见断言文案）。"""
+    """全部判据在**当前仓库**上全绿（红 = 黄金策唤出授权门已经漂移，逐条问题见断言文案）。"""
     corpus = load_corpus()
     problems = {label: fn(corpus) for label, fn in JUDGEMENTS.items()}
     bad = {label: p for label, p in problems.items() if p}
-    assert bad == {}, "米宝唤出授权门判据未通过：\n" + "\n".join(
+    assert bad == {}, "黄金策唤出授权门判据未通过：\n" + "\n".join(
         f"  【{label}】\n    - " + "\n    - ".join(items[:12]) for label, items in bad.items()
     )
 

@@ -39,7 +39,7 @@
     {
       "id": "c-end-h5",
       "path": "deploy/scripts/c-end-h5-publish-ci.sh",
-      "what": "C 端小布 H5 发布腿（静态根**本身**）。",
+      "what": "C 端元元 H5 发布腿（静态根**本身**）。",
       "command_content_source": "$COMMAND_CONTENT（env 前缀 + `$REMOTE_FETCH --apply`）",
       "bootstrap_mode": "fetch-by-ref（codeload `tar.gz/$SCRIPT_SHA` ⇒ `deploy/swas/c-end-h5-publish-remote.sh`）",
       "byte_guard_since": "#6095（本单之前已修）",

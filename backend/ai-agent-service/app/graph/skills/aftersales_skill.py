@@ -1,11 +1,11 @@
 """
-售后 Skill 节点（B 端米宝，**只读**，issue #5247）
+售后 Skill 节点（B 端黄金策，**只读**，issue #5247）
 
 处理售后工单的查询与状态解读（另含投诉语义的安抚与引导）。
 🔴 建单 / 改状态（关闭、拒绝）已按用户裁定 2026-09-23 从 B 端移除：本 skill 不绑任何写工具。
 
 ⚠️ `route_keys` / `intents` 有意保持不变（`after_sales_create` intent 仍由本 skill 声明，
-理由见 order_skill：全局 intent→route_key 映射影响小布路由，删 intent 属 C 端改动）。
+理由见 order_skill：全局 intent→route_key 映射影响元元路由，删 intent 属 C 端改动）。
 商家说「帮我建个售后单」→ 路由仍落到本 skill，由提示词如实说明并引导去页面。
 """
 
@@ -30,7 +30,7 @@ AFTERSALES_TOOLS = ["order_query", "after_sales_manage",
 AFTERSALES_SYSTEM_PROMPT = """## 🔴 本域已只读（issue #5247 用户裁定 2026-09-23）
 
 `after_sales_manage` **只剩 list / detail**。建工单、关闭/拒绝工单**不在能力内**：
-如实说明「米宝在售后域现在只做查询与解读」+ 引导商家到后台「售后工单」页（/after-sales）处理，
+如实说明「黄金策在售后域现在只做查询与解读」+ 引导商家到后台「售后工单」页（/after-sales）处理，
 **不得**承诺代办、不得发写确认卡。
 
 ## 售后工单枚举（英文仅内部传值，回复用户必须用中文）

@@ -2,7 +2,7 @@
  * Layout 断言工具 — 用 boundingBox + getComputedStyle 做确定性的几何/样式断言。
  *
  * 用途：验证「尺寸 / 长宽比 / 对齐 / 溢出」等布局真值（见 frontend-fix.layout 真值）。
- * 相比「元素存在/不存在」，能拦截纯 CSS/尺寸回归（如米宝最小化浮窗长宽比异常）。
+ * 相比「元素存在/不存在」，能拦截纯 CSS/尺寸回归（如黄金策最小化浮窗长宽比异常）。
  */
 import { expect, type Locator } from '@playwright/test'
 

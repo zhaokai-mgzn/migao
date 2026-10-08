@@ -1,4 +1,4 @@
-# 小布小程序 E2E 验收（微信开发者工具）
+# 元元小程序 E2E 验收（微信开发者工具）
 
 基于官方 [miniprogram-automator](https://github.com/wechat-miniprogram/miniprogram-automator) 驱动微信开发者工具模拟器，
 对已构建产物做真实链路验收（渲染 + 交互 + 真实后端 SSE 对话），并自动截图。

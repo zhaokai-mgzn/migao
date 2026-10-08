@@ -1,4 +1,4 @@
-# 小布 C 端重构设计：无会话 UX + 上下文自动管理 + AI 验收体系
+# 元元 C 端重构设计：无会话 UX + 上下文自动管理 + AI 验收体系
 
 > 版本：v1.0（待评审）
 > 日期：2026-09-01
@@ -14,7 +14,7 @@
 | 现状 | 问题 |
 |---|---|
 | tabBar 3 个：**对话 / 会话 / 我的** | 「会话」是后端术语（session），C 端用户不理解；会话列表页（搜索/删除/新建）是后台管理思维 |
-| 进入对话页先 `createSession()` | 用户没有"创建会话"的心智模型，他只想"找小布聊天" |
+| 进入对话页先 `createSession()` | 用户没有"创建会话"的心智模型，他只想"找元元聊天" |
 | 会话列表含「暂无会话记录/开始对话」空态 | 暗示用户需要"管理"对话，而非自然对话 |
 | "我的"页只有会话统计（总会话数/本月对话） | 用户关心的订单、售后、物流完全没有入口 |
 
@@ -56,7 +56,7 @@
 ```
 对话（默认）          我的
 ┌────────────────┐   ┌────────────────┐
-│ 小布            │   │ 头像 昵称 ID     │
+│ 元元            │   │ 头像 昵称 ID     │
 │ (最近一次续聊)   │   │ ──────────────  │
 │                 │   │ 📦 我的订单      │
 │ [消息流]         │   │ 🔄 我的售后      │
@@ -206,13 +206,13 @@ mini-app
 
 ### 5.1 路径①：local_runner 用 C 端身份
 
-**问题**：现有 runner 请求不带 Authorization → DEBUG 默认 `dev_user`（role=ADMIN）→ 测的是米宝。
+**问题**：现有 runner 请求不带 Authorization → DEBUG 默认 `dev_user`（role=ADMIN）→ 测的是黄金策。
 
 **方案**：local_runner 增加 `--persona xiaobu` 模式：
 - 新增 fixture 登录：`POST /api/auth/sms/login`（手机号 + 万能码）→ 但该接口只认平台管理员/员工
 - **更稳妥**：新增 `POST /api/auth/dev/login`（仅 DEBUG 模式开放）：`{role: "customer", tenantId: 1}` → 签发 customer 角色 JWT
-- runner 带 `Authorization: Bearer <customer-jwt>` → 路由到小布，跑 OR-001（查订单）、OR-010（下单）等用例
-- 校验点：小布调用 `customer_order_query`（不调 `order_query`）；返回订单只含当前用户（数据隔离）
+- runner 带 `Authorization: Bearer <customer-jwt>` → 路由到元元，跑 OR-001（查订单）、OR-010（下单）等用例
+- 校验点：元元调用 `customer_order_query`（不调 `order_query`）；返回订单只含当前用户（数据隔离）
 
 ### 5.2 路径②：`test_xiaobu_acceptance.py`（真实 LLM E2E）
 

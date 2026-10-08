@@ -2,8 +2,8 @@
 AI 智能客服系统 - 双 Agent 架构
 
 基于 LangGraph StateGraph 实现的智能 Agent，支持两种身份：
-- 小布（CustomerServiceAgent）：C 端客服，面向消费者
-- 米宝（WorkAssistantAgent）：B 端工作助手，面向商家/管理员
+- 元元（CustomerServiceAgent）：C 端客服，面向消费者
+- 黄金策（WorkAssistantAgent）：B 端工作助手，面向商家/管理员
 
 公共逻辑提取到 BaseAgent 基类：
 - LangGraph StateGraph 驱动的对话流程（缓存→路由→Skill→建议）
@@ -506,14 +506,14 @@ def reset_agent():
 # 测试文件可能仍通过旧类名导入，提供别名避免 ImportError
 
 class CustomerServiceAgent(BaseAgent):
-    """小布 C 端客服（向后兼容别名，等价于 BaseAgent(agent_type='xiaobu')）"""
+    """元元 C 端客服（向后兼容别名，等价于 BaseAgent(agent_type='xiaobu')）"""
 
     def __init__(self, tool_registry: Optional[ToolRegistry] = None):
         super().__init__(agent_type="xiaobu", tool_registry=tool_registry)
 
 
 class WorkAssistantAgent(BaseAgent):
-    """米宝 B 端工作助手（向后兼容别名，等价于 BaseAgent(agent_type='mibao')）"""
+    """黄金策 B 端工作助手（向后兼容别名，等价于 BaseAgent(agent_type='mibao')）"""
 
     def __init__(self, tool_registry: Optional[ToolRegistry] = None):
         super().__init__(agent_type="mibao", tool_registry=tool_registry)

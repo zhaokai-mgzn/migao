@@ -1,6 +1,6 @@
 // case_ids: OR-001, AS-001, UI-015
 /**
- * 小布「我的」页 E2E 验收
+ * 元元「我的」页 E2E 验收
  * 覆盖：tab 切换 → 用户信息区 → 订单/售后区块 → 设置项
  */
 const { capture, sleep, waitForElement, makeReporter } = require('../lib/harness')

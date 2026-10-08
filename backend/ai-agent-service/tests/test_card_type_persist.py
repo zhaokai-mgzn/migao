@@ -17,7 +17,7 @@
 1. **事实驱动**：写入的卡型**只能**来自 `_card_payload` 真正下发的那一个值 ——
    落库集合必须与 SSE 上 `event: card` 的卡型集合**逐字相等**（本文 `test_persisted_types_equal_emitted_types`），
    不许出现「声称发卡但没发」（#3970 同族）或「发了却没记」。
-2. **只记真实使用**：B 端米宝的 `product_list` 走**引用对齐**延迟发卡 ——
+2. **只记真实使用**：B 端黄金策的 `product_list` 走**引用对齐**延迟发卡 ——
    若最终文本没引用任何商品，卡片被**丢弃**（chat.py「宁可无卡，不误导」），
    此时**不得**记成一次 `product_list` 使用（否则用量统计被虚高的 pending 卡污染，
    而统计正是本项要支撑的产出）。
@@ -204,7 +204,7 @@ class TestCardTypePersisted:
     async def test_dropped_reference_aligned_card_is_not_counted(self):
         """只记**真实使用**：B 端引用对齐丢弃的 pending 卡不算一次 product_list 使用。
 
-        米宝 `product_search` 走延迟发卡，最终文本未引用任何商品 ⇒ 卡片被丢弃
+        黄金策 `product_search` 走延迟发卡，最终文本未引用任何商品 ⇒ 卡片被丢弃
         （chat.py「未引用任何商品 → 不发卡（宁可无卡，不误导）」）。
         此时若把 pending 记成已用，用量统计就被「发了又被丢掉」的卡污染。
         """

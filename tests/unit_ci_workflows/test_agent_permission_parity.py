@@ -835,12 +835,12 @@ LOCAL_ONLY_TOOLS: dict[str, str] = {
     # 调一次 vision 模型 + 跑 `app/vision/**` 的纯函数（识别 / 消歧 / 解读），
     # 产出「同页填充计划」交给 `chat.py` 的瞬时 SSE 事件；**没有任何 admin-api HTTP 调用点**
     # ⇒ 没有可对账的端点码（与 `interact` 同一豁免口径）。可达性只由 B 端两个 skill 的
-    # 工具集决定（`product` / `order`；小布不绑 ⇒ C 端零改动）。
+    # 工具集决定（`product` / `order`；元元不绑 ⇒ C 端零改动）。
     "image_recognize": "纯本地图片识别 + 同页填充计划构造（只调 vision 模型与 app/vision 纯函数）：无 admin-api 调用点",
     # issue #5989（P1 导航类指引）：`nav_guide` 的答案来自**仓内登记表**
     # `app/context/menu_navigator.py`（`config/menu.ts` 的镜像 + 显式登记的意图表）
     # ⇒ **没有任何 admin-api HTTP 调用点**，没有可对账的端点码（与 `interact` 同一豁免口径）。
-    # 可达性只由 B 端 `general` 兜底 skill 的工具集决定（小布不绑 ⇒ C 端零改动）。
+    # 可达性只由 B 端 `general` 兜底 skill 的工具集决定（元元不绑 ⇒ C 端零改动）。
     "nav_guide": "纯本地导航指引（功能 ⇄ 菜单路径 ⇄ 权限码的仓内登记表 + 会话权限裁剪）：无 admin-api 调用点",
 }
 
@@ -917,7 +917,7 @@ CODE_DIVERGENCE_EXCEPTIONS: dict[str, dict[str, object]] = {
     # ── issue #5980（第二条；上限同批显式 1 → 2）────────────────────────────────
     # 「同一条 API 被**两个守卫码不同的页面/消费者**共用」——这是**结构事实**，不是漂移：
     # `GET /api/admin/roles/all` 的唯一前端调用方是「员工管理」页岗位下拉
-    # （该页守卫码 `employee:list`），而米宝 `role_manage` 工具（挂「岗位权限」页、声明
+    # （该页守卫码 `employee:list`），而黄金策 `role_manage` 工具（挂「岗位权限」页、声明
     # `system:view`）也消费它 —— 两个消费者对同一端点各有**正确但不同**的最小码。
     # 收敛到任意一侧都会**弄坏另一侧的既有功能**。
     "role_manage": {
@@ -1025,7 +1025,7 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     "GET /api/admin/user/info": "自助首屏：只返回当前用户自己的角色/权限/菜单（#4727 第 7 行）",
     # issue #5980：`GET /api/admin/roles` · `/roles/all` · `/roles/{id}` **三条已从本表删除**
     # （它们不再是「未注解端点」）—— 本守卫的「陈旧登记必须删除」面要求如此。
-    # 其中 `/roles`·`/roles/all` 与米宝 `role_manage` 工具的跨码关系具名登记在
+    # 其中 `/roles`·`/roles/all` 与黄金策 `role_manage` 工具的跨码关系具名登记在
     # `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`（那才是它们现在的正确登记处）。
     "PUT /api/admin/settings/password": "自助改密：只改当前认证用户自己的密码（#4727 部分覆盖表）",
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
@@ -1055,7 +1055,7 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
                                         "`requirePermission(\"order:create\")`，并断言未知 target 时"
                                         "`never()` 调客户端与权限判定。同族形态见 `AgentOrderController` "
                                         "的退款 action 复检（类级读码 + 命令式 `order:refund`）。",
-    "POST /api/admin/image-recognition/interpret": "图片识别 + 米宝推理（issue #6367 包 P2）—— "
+    "POST /api/admin/image-recognition/interpret": "图片识别 + 黄金策推理（issue #6367 包 P2）—— "
                                         "与上面的 `POST /api/admin/image-recognition` **同族、同一处判定**："
                                         "权限**有**，只是同样取不到静态注解上（一个入口覆盖两个模块、"
                                         "两种写码，`@RequirePermission` 表达不了分叉）⇒ 控制器内"
@@ -1182,7 +1182,7 @@ REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
         "where": "去向：#5236",
     },
     "行为评测用例未补": {
-        "what": "本单未新增/修改 `.github/cases/**` 的行为用例（如「客服经米宝查售后不再 403」的正向对照）",
+        "what": "本单未新增/修改 `.github/cases/**` 的行为用例（如「客服经黄金策查售后不再 403」的正向对照）",
         "why": "B 端 skill 工具绑定与提示词属 #5247（在其上 rebase），行为面用例应与绑定同批落地",
         "where": "去向：#5247（input 已写进 PR 说明）",
     },
@@ -1259,7 +1259,7 @@ def _by_name(w: World) -> dict[str, ToolDecl]:
 
 
 def _c_end_reachable(w: World) -> frozenset[str]:
-    """C 端可达工具集（**推导**：小布的 skill_names + fallback → 各自 `*_TOOLS`）。"""
+    """C 端可达工具集（**推导**：元元的 skill_names + fallback → 各自 `*_TOOLS`）。"""
     return w.c_end_tools
 
 
@@ -1673,7 +1673,7 @@ def problems_role_list_hygiene(w: World) -> list[str]:
 
 
 def problems_c_end_flag(w: World) -> list[str]:
-    """判据 7：`c_end_reachable` ≡ 「被小布（C 端）的 skill 绑定」（不得手写）。"""
+    """判据 7：`c_end_reachable` ≡ 「被元元（C 端）的 skill 绑定」（不得手写）。"""
     out: list[str] = []
     derived = _c_end_reachable(w)
     for t in w.tools:
@@ -2882,14 +2882,14 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         endpoints=('GET /api/admin/after-sales', 'GET /api/admin/after-sales/{}', 'GET /api/admin/agent/after-sales/mine'),
         menu_nodes=('auth:售后工单', 'controller:售后工单', 'frontend:售后工单'),
         tools=('after_sales_manage',),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「售后工单」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；3 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/after-sales；GET /api/admin/after-sales/{}；GET /api/admin/agent/after-sales/mine）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（after_sales_manage）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「售后工单」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；3 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/after-sales；GET /api/admin/after-sales/{}；GET /api/admin/agent/after-sales/mine）；Agent 侧 1 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（after_sales_manage）。'),
     ),
     "agent:session": AuthorizationCensusEntry(
         roles=('customer_service',),
         endpoints=('GET /api/admin/agent-sessions', 'GET /api/admin/agent-sessions/monitor', 'GET /api/admin/agent-sessions/{}', 'POST /api/admin/agent-sessions'),
         menu_nodes=('auth:在线接待', 'controller:在线接待', 'frontend:在线接待'),
         tools=('session_manage',),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「在线接待」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；4 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent-sessions；GET /api/admin/agent-sessions/monitor；GET /api/admin/agent-sessions/{} 等）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（session_manage）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「在线接待」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；4 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent-sessions；GET /api/admin/agent-sessions/monitor；GET /api/admin/agent-sessions/{} 等）；Agent 侧 1 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（session_manage）。'),
     ),
     "agent:session:manage": AuthorizationCensusEntry(
         roles=('customer_service',),
@@ -2904,14 +2904,14 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         endpoints=('GET /api/admin/customer-tags', 'GET /api/admin/customers', 'GET /api/admin/customers/profile-view', 'GET /api/admin/customers/{}'),
         menu_nodes=('auth:客户列表', 'controller:客户列表', 'frontend:客户列表'),
         tools=('customer_manage',),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「客户列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；4 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/customer-tags；GET /api/admin/customers；GET /api/admin/customers/profile-view 等）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（customer_manage）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「客户列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；4 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/customer-tags；GET /api/admin/customers；GET /api/admin/customers/profile-view 等）；Agent 侧 1 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（customer_manage）。'),
     ),
     "dashboard:view": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'sales'),
         endpoints=('DELETE /api/admin/files/{}', 'DELETE /api/admin/upload/image', 'GET /api/admin/briefing/config', 'GET /api/admin/briefing/snapshot', 'GET /api/admin/briefing/today', 'GET /api/admin/dashboard/active-sessions', 'GET /api/admin/dashboard/order-status', 'GET /api/admin/dashboard/order-trend', 'GET /api/admin/dashboard/pending-shipment-count', 'GET /api/admin/dashboard/pending-tasks', 'GET /api/admin/dashboard/processing-shipment-count', 'GET /api/admin/dashboard/product-ranking', 'GET /api/admin/dashboard/recent-orders', 'GET /api/admin/dashboard/stats', 'POST /api/admin/files/upload', 'POST /api/admin/files/upload-batch', 'POST /api/admin/upload/image', 'POST /api/admin/upload/images'),
         menu_nodes=('auth:每日简报', 'controller:每日简报', 'controller:经营看板', 'frontend:每日简报'),
         tools=('briefing_query', 'dashboard_stats'),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「每日简报 / 经营看板」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；18 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（DELETE /api/admin/files/{}；DELETE /api/admin/upload/image；GET /api/admin/briefing/config 等）；Agent 侧 2 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（briefing_query / dashboard_stats）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「每日简报 / 经营看板」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；18 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（DELETE /api/admin/files/{}；DELETE /api/admin/upload/image；GET /api/admin/briefing/config 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（briefing_query / dashboard_stats）。'),
     ),
     "finance:create": AuthorizationCensusEntry(
         roles=('finance',),
@@ -2925,7 +2925,7 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         endpoints=('GET /api/admin/finance/reconciliation', 'GET /api/admin/finance/summary', 'GET /api/admin/finance/transactions'),
         menu_nodes=('auth:财务对账', 'controller:财务对账', 'frontend:财务对账'),
         tools=('finance_api',),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「财务对账」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；3 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/finance/reconciliation；GET /api/admin/finance/summary；GET /api/admin/finance/transactions）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（finance_api）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「财务对账」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；3 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/finance/reconciliation；GET /api/admin/finance/summary；GET /api/admin/finance/transactions）；Agent 侧 1 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（finance_api）。'),
     ),
     "inbound:create": AuthorizationCensusEntry(
         roles=('operator',),
@@ -2950,7 +2950,7 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         endpoints=('GET /api/admin/knowledge/candidates', 'GET /api/admin/knowledge/candidates/pending-count', 'GET /api/admin/knowledge/cards', 'GET /api/admin/knowledge/cards/search', 'GET /api/admin/knowledge/templates'),
         menu_nodes=('auth:知识库', 'controller:知识库', 'frontend:知识库'),
         tools=('knowledge_search',),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「知识库」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；5 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/knowledge/candidates；GET /api/admin/knowledge/candidates/pending-count；GET /api/admin/knowledge/cards 等）；Agent 侧 1 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（knowledge_search）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「知识库」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；5 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/knowledge/candidates；GET /api/admin/knowledge/candidates/pending-count；GET /api/admin/knowledge/cards 等）；Agent 侧 1 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（knowledge_search）。'),
     ),
     "order:detail": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'sales'),
@@ -2964,7 +2964,7 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         endpoints=('GET /api/admin/agent/orders/mine', 'GET /api/admin/agent/orders/resolve', 'GET /api/admin/agent/payment-qrcodes', 'GET /api/admin/orders', 'GET /api/admin/orders/follow-status/stats', 'GET /api/admin/orders/statistics', 'GET /api/admin/orders/{}', 'GET /api/admin/orders/{}/follow-status', 'GET /api/admin/orders/{}/shipments', 'GET /api/admin/production/orders/{}/operations', 'GET /api/admin/production/orders/{}/piecework', 'GET /api/admin/production/route-signals', 'GET /api/admin/production/routing-gaps', 'GET /api/admin/production/scan', 'GET /api/admin/production/stuck-points', 'POST /api/admin/orders/auto-features', 'POST /api/admin/orders/craft-calc', 'POST /api/admin/orders/door-width-plan', 'POST /api/admin/orders/fee-preview'),
         menu_nodes=('auth:订单列表', 'controller:订单列表', 'frontend:订单列表'),
         tools=('logistics_track', 'order_query'),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；19 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；19 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
     ),
     "order:create": AuthorizationCensusEntry(
         # issue #5988（2026-10-02 人类裁定「应允许」）：销售**下单**是本职。
@@ -2977,7 +2977,7 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
                    '本码不挂菜单节点（订单列表的节点码是 `order:list`）⇒ 补它**不改变任何菜单可见性**，'
                    '只把「下单」这个动作打通：2 个端点的生效码就是本码 ⇒ 由 403 变为可写'
                    '（POST /api/admin/agent/orders；POST /api/admin/orders）；'
-                   'Agent 侧 1 个工具声明本码 ⇒ 米宝的建单工具对销售由「权限不足」变为可达（order_create）。'),
+                   'Agent 侧 1 个工具声明本码 ⇒ 黄金策的建单工具对销售由「权限不足」变为可达（order_create）。'),
     ),
     "order:refund": AuthorizationCensusEntry(
         # issue #5988（2026-10-02 人类裁定「应允许」）：客服**处理售后**是本职（#5246 只给了读码）。
@@ -3034,7 +3034,7 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         endpoints=('GET /api/admin/batch-stock/batches', 'GET /api/admin/batch-stock/candidates', 'GET /api/admin/batch-stock/consumptions', 'GET /api/admin/batch-stock/distribution', 'GET /api/admin/batch-stock/reconcile', 'GET /api/admin/batch-stock/saving-board', 'GET /api/admin/batch-stock/saving-trend', 'GET /api/admin/products', 'GET /api/admin/products/export', 'GET /api/admin/products/import-template', 'GET /api/admin/products/low-stock-by-color', 'GET /api/admin/products/{}', 'GET /api/admin/stock-ledger'),
         menu_nodes=('auth:商品管理', 'controller:商品管理', 'frontend:商品管理'),
         tools=('batch_stock_query', 'inventory_manage', 'order_create', 'product_detail', 'product_search', 'stock_ledger_query'),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「商品管理」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；13 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/batch-stock/batches；GET /api/admin/batch-stock/candidates；GET /api/admin/batch-stock/consumptions 等）；Agent 侧 6 个工具声明本码 ⇒ 米宝对这批账号由「权限不足」变为可达（batch_stock_query / inventory_manage / order_create / product_detail / product_search / stock_ledger_query）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「商品管理」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；13 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/batch-stock/batches；GET /api/admin/batch-stock/candidates；GET /api/admin/batch-stock/consumptions 等）；Agent 侧 6 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（batch_stock_query / inventory_manage / order_create / product_detail / product_search / stock_ledger_query）。'),
     ),
 }
 

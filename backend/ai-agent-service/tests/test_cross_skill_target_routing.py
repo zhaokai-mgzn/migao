@@ -26,7 +26,7 @@ skill（`_relocked_this_round`）」契约。本文件把它扩到 `cross_skill_
 **不**改成 `success=True`（#3976 的空头承诺形态——本轮 `bind_tools` 已定，目标工具本轮不可执行）。
 `#4017` 的逐条死角拦截判据在 `tests/test_skill_tool_reachability.py`，本文件不复制、不放宽。
 
-## issue #5247 重新锚定（B 端米宝只读，用户裁定 2026-09-23）—— 载体从 B 端换成 C 端
+## issue #5247 重新锚定（B 端黄金策只读，用户裁定 2026-09-23）—— 载体从 B 端换成 C 端
 
 本文件的判据前提是「某流程**绑了 `validate_input`**，且它校验的目标写工具归属**别的**流程」。
 用户裁定把创建/更新能力从 B 端移除后：B 端**全部** skill 解绑 `validate_input`（判决的
@@ -227,7 +227,7 @@ async def _run_turn(*, skill, tool_names, replies, facts=None, state_overrides=N
         llm_factory.create_skill_llm.return_value = no_think
         result = await execute_skill(
             state=state, skill_name=skill, tool_names=list(tool_names),
-            system_prompt="你是米宝")
+            system_prompt="你是黄金策")
     return result, rec, {"llm": llm, "no_think": no_think}
 
 

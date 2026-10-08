@@ -1,5 +1,5 @@
 """
-米宝高级多轮汇总报告（由 test_mibao_advanced_multiturn.py 拆分，2026-08-29）
+黄金策高级多轮汇总报告（由 test_mibao_advanced_multiturn.py 拆分，2026-08-29）
 """
 # case_ids: AS-005, CH-002, OR-006, PR-011, PR-012
 import pytest

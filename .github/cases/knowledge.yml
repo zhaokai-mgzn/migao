@@ -1,8 +1,8 @@
 # 知识问答评测用例（LLM WIKI 板块，issue #3051/#3059）
 #
 # 覆盖双端知识卡片检索（词条优先）：
-# - 小布（C 端消费者）：knowledge_faq → customer_knowledge skill → knowledge_search
-# - 米宝（B 端员工）：knowledge_faq → knowledge skill → knowledge_search（issue #3059 启用）
+# - 元元（C 端消费者）：knowledge_faq → customer_knowledge skill → knowledge_search
+# - 黄金策（B 端员工）：knowledge_faq → knowledge skill → knowledge_search（issue #3059 启用）
 #
 # 断言设计（环境无关、防 LLM 波动误报）：
 # - expectations 用 tool(args) 关键字段形态：CJK 值仅校验 key 存在（query 必填）
@@ -12,7 +12,7 @@
 cases:
   - id: KN-001
     legacy_id: ""
-    title: "小布知识问答 - 面料问题先检索本店知识卡片（query 必填）"
+    title: "元元知识问答 - 面料问题先检索本店知识卡片（query 必填）"
     domains:
       - knowledge
       - chat
@@ -33,7 +33,7 @@ cases:
     data_checks:
       - "knowledge_search 返回后会话正常结束（无报错）；命中则基于卡片回答并注明「来自本店知识库」，未命中用通用行业建议兜底，不得编造本店事实"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3059 知识问答评测闭环）：C 端小布知识卡片优先回归——此前知识域零 LLM 级冒烟覆盖"
+    merge_log: "2026-09-08 新增（issue #3059 知识问答评测闭环）：C 端元元知识卡片优先回归——此前知识域零 LLM 级冒烟覆盖"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_knowledge_search.py"
@@ -44,7 +44,7 @@ cases:
 
   - id: KN-002
     legacy_id: ""
-    title: "小布知识问答 - 清洗保养类问题走知识卡片检索"
+    title: "元元知识问答 - 清洗保养类问题走知识卡片检索"
     domains:
       - knowledge
       - chat
@@ -65,7 +65,7 @@ cases:
     data_checks:
       - "知识卡片命中时回答基于卡片内容并注明来源；未命中时如实告知知识库暂无收录，用通用行业建议谨慎回答"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3059）：小布知识问答日常回归（清洗保养子域）"
+    merge_log: "2026-09-08 新增（issue #3059）：元元知识问答日常回归（清洗保养子域）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_knowledge_search.py"
@@ -75,7 +75,7 @@ cases:
 
   - id: KN-003
     legacy_id: ""
-    title: "米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）"
+    title: "黄金策知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）"
     domains:
       - knowledge
       - chat
@@ -94,9 +94,9 @@ cases:
         args:
           query: 退换货
     data_checks:
-      - "米宝知识问答走知识卡片检索（B 端 skill 接线不可回退）；命中基于卡片回答，未命中通用兜底不编造本店事实"
+      - "黄金策知识问答走知识卡片检索（B 端 skill 接线不可回退）；命中基于卡片回答，未命中通用兜底不编造本店事实"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3059）：米宝启用 knowledge skill 后的接线回归——防止 future 再次注释禁用导致 B 端知识问答静默退化"
+    merge_log: "2026-09-08 新增（issue #3059）：黄金策启用 knowledge skill 后的接线回归——防止 future 再次注释禁用导致 B 端知识问答静默退化"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_knowledge_search.py"
@@ -167,7 +167,7 @@ cases:
 
   - id: KN-004
     legacy_id: ""
-    title: "米宝知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除）"
+    title: "黄金策知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除）"
     domains:
       - knowledge
       - chat
@@ -188,7 +188,7 @@ cases:
     data_checks:
       - "加工计价规则类问题：knowledge_search 未命中（加工项派生卡片已移除，#3085）→ 用 processing_item_query 查店铺加工项目录（返回计价方式/单价/单位），以工具结果回答计价规则"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3059）：米宝知识问答日常回归（加工计价子域）；2026-09-09 更新（issue #3085）：加工项派生移除，计价走 processing_item_query 工具实时查询"
+    merge_log: "2026-09-08 新增（issue #3059）：黄金策知识问答日常回归（加工计价子域）；2026-09-09 更新（issue #3085）：加工项派生移除，计价走 processing_item_query 工具实时查询"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_knowledge_search.py"
@@ -225,4 +225,34 @@ cases:
         - "backend/ai-agent-service/tests/test_tools_knowledge_search.py"
       ci:
         - pr-check.yml
+      verifies: []
+
+  - id: KN-009
+    legacy_id: ""
+    title: "C 端知识问答**活栈**冒烟（元元）：多轮上下文 + 复合 Tool 的 SSE 事件 + 异常输入 + 快捷操作菜单"
+    domains:
+      - knowledge
+      - chat
+    tier: normal
+    tags:
+      - knowledge
+      - smoke
+      - live-stack
+    truths_ref: []
+    user_inputs:
+      - "对**已部署**的 C 端客服（元元）跑知识库与高级 AI 对话冒烟：多轮上下文关联 / 复合 Tool 调用的 SSE 事件 / 空消息·超长消息·并发会话 / 快捷操作菜单"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·活栈链路（HTTP / SSE 契约）：多轮对话上下文关联、复合 Tool 调用能产出 SSE 事件、快捷操作菜单接口返回非空列表。执行点 = tests/smoke/test_11_knowledge_ai_advanced.py"
+      - "判据 2·异常输入不炸链路：空消息 / 超长消息 / 并发会话下返回结构化错误或降级，**不得 5xx 裸崩**。执行点 = 同文件的三组 `Test...SSE...`"
+      - "⚠️ 真值缺口（照实登记）：活栈冒烟依赖部署环境与卡片是否已发布 ⇒ `truths_ref: []`（同 KN-001~003 的既有口径，只告警不阻塞）"
+    skip_reason: "[backend-contract] **活栈冒烟**（pytest 直连已部署环境，nightly-verification 腿）：判定在 HTTP / SSE 契约与工具链路层 —— 它**不是** agent-eval 的可重放用例（评测栈无法重放活环境），故不进 agent-eval 冒烟"
+    precondition: "前置 = 目标环境可达（`tests/smoke/config.py` 的 base url + 租户凭据）且该环境 C 端渠道可用；不可达时 pytest fixture 直接报错（不会伪装成「知识问答不会答」）"
+    merge_log: "2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。"
+    traces:
+      tests:
+        - "tests/smoke/test_11_knowledge_ai_advanced.py"
+      ci:
+        - nightly-verification.yml
       verifies: []

@@ -1,6 +1,6 @@
 # AI Agent Service
 
-米高 AI 智能客服 — Python AI 服务（米宝 + 小布双 Agent）
+观星台 AI 智能客服 — Python AI 服务（黄金策 + 元元双 Agent）
 
 ## 技术栈
 
@@ -36,7 +36,7 @@ python -m uvicorn app.main:app --port 8001 --reload
 
 ```
 app/
-├── agents/      # 双 Agent 定义（米宝/小布）
+├── agents/      # 双 Agent 定义（黄金策/元元）
 ├── graph/       # LangGraph 状态图 + 23 个 Skill
 │   ├── skills/  # Skill 节点定义
 │   └── nodes.py # Graph 节点逻辑

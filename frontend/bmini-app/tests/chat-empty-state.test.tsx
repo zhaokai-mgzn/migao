@@ -1,12 +1,12 @@
 // case_ids: BM-028
 /**
- * B 端「问米宝」空态契约 —— **不得混入 C 端 agent 的内容**（issue #5747）
+ * B 端「问黄金策」空态契约 —— **不得混入 C 端 agent 的内容**（issue #5747）
  *
  * ## 治的形态
  *
- * B 端 agent 页（`src/pages/chat/index/index.tsx`）**照抄了 C 端小布主页的旧版本**：
+ * B 端 agent 页（`src/pages/chat/index/index.tsx`）**照抄了 C 端元元主页的旧版本**：
  * 空态渲染 `NewArrivals`（商品卡，拉 **C 端端点** `/api/chat/products/new-arrivals`，
- * 提示「点一下问问小布」）⇒ 商家在 `/b/` 里看到的是**顾客端的入口与商品展示**。
+ * 提示「点一下问问元元」）⇒ 商家在 `/b/` 里看到的是**顾客端的入口与商品展示**。
  *
  * C 端（`frontend/mini-app`）早在 issue #3978 / #4236 就删掉了这块（判据 =
  * `tests/e2e/specs/xiaobu/xiaobu-h5.spec.ts` 的 `.new-arrivals` 为零 / `¥` 为零负向断言）。
@@ -14,7 +14,7 @@
  * ## 两层判据
  *
  * 1. **行为层**（渲染出来是什么）：空态不得出现商品卡容器 / 价格符号 / 「新品推荐」文本 /
- *    C 端 agent 名（「小布」）；欢迎语是 B 端语义（商家经营助手），不是「专属智能购物助手」。
+ *    C 端 agent 名（「元元」）；欢迎语是 B 端语义（商家经营助手），不是「专属智能购物助手」。
  * 2. **源码层（类级元守卫）**：B 端整个 `src/**` 不得再引用 C 端商品推荐端点
  *    （`new-arrivals`）；聊天面（`components/chat` / `pages/chat`）不得出现 C 端 agent 名
  *    ——「再抄一次 C 端页面」会**当场变红**，而不是等用户在小程序里看见。
@@ -39,8 +39,8 @@ import MessageList from '../src/components/chat/MessageList'
 import TypingIndicator from '../src/components/chat/TypingIndicator'
 
 const SRC_ROOT = path.resolve(__dirname, '../src')
-/** C 端 agent（小布）的默认名 —— B 端默认「米宝」，出现在 B 端聊天面即为串味 */
-const C_END_AGENT_NAME = '小布'
+/** C 端 agent（元元）的默认名 —— B 端默认「黄金策」，出现在 B 端聊天面即为串味 */
+const C_END_AGENT_NAME = '元元'
 /** C 端商品推荐端点（B 端消费它 = 把顾客端的商品展示搬进商家端） */
 const C_END_PRODUCT_ENDPOINT = 'new-arrivals'
 /**
@@ -114,7 +114,7 @@ const ENTRY_DOMAIN_KEYWORD: Record<string, string> = {
   customer_churn: '客户',
 }
 
-describe('B 端「问米宝」空态：不得混入 C 端 agent 内容（issue #5747）', () => {
+describe('B 端「问黄金策」空态：不得混入 C 端 agent 内容（issue #5747）', () => {
   it('空态渲染：无商品卡 / 无价格 / 无「新品推荐」/ 无 C 端 agent 名', () => {
     const { container } = render(<MessageList messages={[]} isStreaming={false} onInteract={jest.fn()} />)
 
@@ -124,7 +124,7 @@ describe('B 端「问米宝」空态：不得混入 C 端 agent 内容（issue #
     expect(container.querySelector('.new-arrivals__img')).toBeNull()
     expect(screen.queryByText(/新品推荐/)).toBeNull()
     expect(screen.queryByText('¥')).toBeNull()
-    // C 端 agent 名（小布）不得出现在 B 端聊天面
+    // C 端 agent 名（元元）不得出现在 B 端聊天面
     expect(screen.queryByText(new RegExp(C_END_AGENT_NAME))).toBeNull()
   })
 
@@ -133,8 +133,8 @@ describe('B 端「问米宝」空态：不得混入 C 端 agent 内容（issue #
 
     expect(screen.getByText(/商家经营助手/)).toBeTruthy()
     expect(screen.queryByText(/专属智能购物助手/)).toBeNull()
-    // 未配置 botName ⇒ B 端默认「米宝」（与 C 端默认「小布」区分，见 src/utils/brand.ts）
-    expect(screen.getByText(/你好，我是米宝/)).toBeTruthy()
+    // 未配置 botName ⇒ B 端默认「黄金策」（与 C 端默认「元元」区分，见 src/utils/brand.ts）
+    expect(screen.getByText(/你好，我是黄金策/)).toBeTruthy()
   })
 
   it('空态那句「都可以问我」必须覆盖快捷入口的每一组业务域（真值 = 服务端 QUICK_ACTIONS）', () => {
@@ -154,7 +154,7 @@ describe('B 端「问米宝」空态：不得混入 C 端 agent 内容（issue #
 
   it('「思考中」默认文案用 B 端 agent 名', () => {
     render(<TypingIndicator />)
-    expect(screen.getByText('米宝正在思考...')).toBeTruthy()
+    expect(screen.getByText('黄金策正在思考...')).toBeTruthy()
   })
 
   it('类级元守卫：B 端源码不得再消费 C 端商品推荐端点', () => {

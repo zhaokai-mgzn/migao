@@ -21,7 +21,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
     expect(
       screen.getByRole('heading', {
         level: 1,
-        name: '小布与米宝，以及全链路经营平台',
+        name: '元元与黄金策，以及全链路经营平台',
       })
     ).toBeInTheDocument()
     expect(screen.getByText(/四个终端共用数据底座/)).toBeInTheDocument()
@@ -29,23 +29,23 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
 
   it('renders 页头事实标签（AI 数 / 能力域数 / 终端数 / 行业纵深）', () => {
     render(<ServicesPage />)
-    expect(screen.getByText('2 个 AI：小布与米宝')).toBeInTheDocument()
+    expect(screen.getByText('2 个 AI：元元与黄金策')).toBeInTheDocument()
     expect(screen.getByText(/6 个能力域 · \d+ 项功能/)).toBeInTheDocument()
     expect(screen.getByText('4 个终端')).toBeInTheDocument()
     expect(screen.getByText('算料 · 工序 · 批次 · 计件')).toBeInTheDocument()
   })
 
-  // ── 小布与米宝 ──
+  // ── 元元与黄金策 ──
 
-  it('renders 小布与米宝的产品卡', () => {
+  it('renders 元元与黄金策的产品卡', () => {
     render(<ServicesPage />)
-    expect(screen.getByText('小布 · 企业智能客服')).toBeInTheDocument()
-    expect(screen.getByText('米宝 · 企业智能生产管家')).toBeInTheDocument()
+    expect(screen.getByText('元元 · 企业智能客服')).toBeInTheDocument()
+    expect(screen.getByText('黄金策 · 企业智能生产管家')).toBeInTheDocument()
     expect(screen.getByText('顾客侧：从规格咨询到下单、物流查询与售后受理')).toBeInTheDocument()
     expect(screen.getByText('经营侧：以自然语言查询账目、订单与进度')).toBeInTheDocument()
   })
 
-  it('renders 小布的能力点（含算料报价与售后受理）', () => {
+  it('renders 元元的能力点（含算料报价与售后受理）', () => {
     render(<ServicesPage />)
     expect(
       screen.getByText('按尺寸与工艺计算用料并给出估算报价，明确说明为估算而非成交价')
@@ -56,7 +56,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
     expect(screen.getByText('订单进度、物流轨迹、收货地址查询')).toBeInTheDocument()
   })
 
-  it('renders 米宝的能力点（含生产计件与财务对账）', () => {
+  it('renders 黄金策的能力点（含生产计件与财务对账）', () => {
     render(<ServicesPage />)
     expect(
       screen.getByText('生产与计件：工序库、工艺路线、计件工资与报工明细')
@@ -191,7 +191,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
     expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
     expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
     expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
-    expect(findPersonifiedAi('小布与米宝')).toEqual([])
+    expect(findPersonifiedAi('元元与黄金策')).toEqual([])
 
     // 真实语料
     const quantifiers = findQuantifierRhetoric(text)

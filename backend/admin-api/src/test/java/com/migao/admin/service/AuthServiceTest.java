@@ -622,8 +622,8 @@ class AuthServiceTest {
         assertThat(keysOf(org.getChildren())).containsExactly("employees", "roles", "settings");
         assertThat(pathsOf(org.getChildren())).containsExactly("/employees", "/roles", "/settings");
 
-        // #3094/#5271：旧 `chat`「米宝 · 在线对话」节点已删除；「会话监控」从来不在侧边栏里
-        assertThat(allNames(menus)).doesNotContain("米宝 · 在线对话", "会话监控");
+        // #3094/#5271：旧 `chat`「黄金策 · 在线对话」节点已删除；「会话监控」从来不在侧边栏里
+        assertThat(allNames(menus)).doesNotContain("黄金策 · 在线对话", "会话监控");
         // #5271/#5778：旧「客户管理」组（`customer-center`）不再存在（本轮新建的是 `customer-service`）
         assertThat(keysOf(menus)).doesNotContain("customer-center", "product-center",
                 "smart-customer-service");
@@ -749,7 +749,7 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("客户服务组：在线接待 + 客户列表 + 知识库 + 售后工单（旧「米宝 · 在线对话」节点已删除，无权限则整组不出现）")
+    @DisplayName("客户服务组：在线接待 + 客户列表 + 知识库 + 售后工单（旧「黄金策 · 在线对话」节点已删除，无权限则整组不出现）")
     void currentUserMenusDropRemovedChatEntry() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus =
                 // issue #5246（已合入 main）：知识库节点码 = 读码 knowledge:view
@@ -761,7 +761,7 @@ class AuthServiceTest {
         assertThat(namesOf(cs.getChildren())).containsExactly("在线接待", "知识库");
         assertThat(pathsOf(cs.getChildren()))
                 .containsExactly("/agent-workspace/human-sessions", "/knowledge");
-        assertThat(allNames(menus)).doesNotContain("米宝 · 在线对话", "会话监控");
+        assertThat(allNames(menus)).doesNotContain("黄金策 · 在线对话", "会话监控");
     }
 
     private void authenticateAs(String userId, Long tenantId) {

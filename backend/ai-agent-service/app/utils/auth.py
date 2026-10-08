@@ -61,7 +61,7 @@ class UserRole(str, Enum):
     注意：此枚举仅用于 require_roles 等端点级粗筛，且必须与 admin-api
     实际签发的角色码对齐——商户员工角色码（operator/product_manager/
     customer_service/knowledge_editor/super_admin）均须在此放行，否则
-    admin-api JWT 在解析处被 pydantic 校验拒绝（401），员工无法使用米宝
+    admin-api JWT 在解析处被 pydantic 校验拒绝（401），员工无法使用黄金策
     B 端对话（角色码漂移修复，POC 审查 D 项）。
     细粒度权限由 AgentConfig.allowed_roles / Tool.allowed_roles 判断。
     """
@@ -87,7 +87,7 @@ class UserIdentity(BaseModel):
     identity_type: str  # wechat_mini / wechat_h5 / account / agent_wechat_mini
     # P1-C（RBAC 走查）：role 用 str 而非 UserRole 枚举——商户可在「角色管理」创建
     # 任意自定义角色码（如 poc_operator_custom），枚举强校验会拒绝未知码 → 401
-    # TOKEN_INVALID，自定义角色员工无法使用米宝。已知枚举码仍定义于 UserRole 供
+    # TOKEN_INVALID，自定义角色员工无法使用黄金策。已知枚举码仍定义于 UserRole 供
     # require_roles 白名单引用；此处放宽为 str 仅做格式透传，权限由 permissions claim 控制。
     role: str
     permissions: list[str] = []  # 细粒度权限码列表

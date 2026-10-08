@@ -83,7 +83,7 @@ export async function miniAppLogin(tenantId: number): Promise<LoginResult> {
 }
 
 /**
- * B 端员工登录（米宝商家端，issue #5485 起＝「用户名@企业编码 + 密码」）
+ * B 端员工登录（黄金策商家端，issue #5485 起＝「用户名@企业编码 + 密码」）
  *
  * 1. POST /api/auth/employee/login，body `{ identifier, password }`
  * 2. `identifier` 形如 `zhangsan@acme`（**原样发服务端**）——租户**只**由标识里的

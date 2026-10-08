@@ -75,8 +75,8 @@ def test_global_rules_forbid_english_in_user_facing_replies(skill):
     """全局规则必须要求「面向用户一律中文」，且覆盖**技术术语（SKU/ID）**而不只是英文枚举。
 
     为什么锁这条：用户（顾客尤其低学历用户、以及商家员工）看不懂英文单词。
-    规则原先只禁「英文枚举」（pending/refund），实测仍漏出 `SKU`（小布 1 次 / 米宝 3 次）
-    与 `ID`（米宝 1 次）——见 2026-09-14 结论档 run 34841029062 的回复文本。
+    规则原先只禁「英文枚举」（pending/refund），实测仍漏出 `SKU`（元元 1 次 / 黄金策 3 次）
+    与 `ID`（黄金策 1 次）——见 2026-09-14 结论档 run 34841029062 的回复文本。
     ⚠️ 本断言同时防「把规则改回只禁枚举」的回退：只留 ① 会让 ② 类泄漏重新发生。
     """
     prompt = _build_system_prompt(skill)
@@ -149,7 +149,7 @@ def test_aftersales_has_critical_rules():
 
     变更沿革（用户裁定 2026-09-19）：「不应该存在 human_handoff 这种东西，以后全是
     AI 来判断」—— 原断言要求售后 prompt 出现「转人工 / 人工介入」，那是**指向一个
-    已退场出口**的指令（米宝侧本来也没有该工具）。替代规则：超权限/复杂投诉时
+    已退场出口**的指令（黄金策侧本来也没有该工具）。替代规则：超权限/复杂投诉时
     如实说明能力边界 + 把能落地的落地（落成工单/记录），不得推给人工了事。
     """
     prompt = _build_system_prompt("aftersales")
@@ -192,7 +192,7 @@ def test_order_prompt_is_read_only_no_write_confirmation_flow():
         "提示词不得再教模型走写前确认流程"
     )
     # 「确认卡之前」可以**描述性**出现（`prompts/order.md` 说明**后台建单页**何时让商家选加工项），
-    # 但不得是**指令**：判据 = 它附近必须没有让米宝自己发卡的措辞。
+    # 但不得是**指令**：判据 = 它附近必须没有让黄金策自己发卡的措辞。
     assert "本域不代选" in prompt or "不在能力内" in prompt, (
         "order prompt 未声明「下单/选加工项不在本域能力内」—— 描述性提及会退化成能力谎报"
     )
@@ -367,10 +367,10 @@ def test_snapshot_all_skills():
             )
 
 
-# ============ 小布 C 端售后 few-shot 引导 ============
+# ============ 元元 C 端售后 few-shot 引导 ============
 
 def test_customer_aftersales_fewshot_guides_aftersale_create():
-    """小布售后必须注入 C 端 few-shot：明确换货/退货诉求 → aftersale_create，
+    """元元售后必须注入 C 端 few-shot：明确换货/退货诉求 → aftersale_create，
     **且不得再指向已退场的转人工出口**（真实闭环回归：两次新会话 AI 均转人工建 complaint 工单）。
 
     变更沿革（用户裁定 2026-09-19）：「不应该存在 human_handoff 这种东西，以后全是
@@ -413,7 +413,7 @@ def test_customer_aftersales_fewshot_guides_aftersale_create():
 
 
 def test_customer_aftersales_prompt_loaded_with_identity():
-    """小布售后 prompt 组装包含公共身份与原则（无意外污染）"""
+    """元元售后 prompt 组装包含公共身份与原则（无意外污染）"""
     prompt = _build_system_prompt("customer_aftersales")
     assert "词元通达商家管理后台" in prompt, "缺少公共身份"
     assert "不编造数据" in prompt, "缺少公共原则"
@@ -447,7 +447,7 @@ def test_general_inline_prompt_guides_choice_clarify():
 def test_customer_product_image_clarify_not_default_search():
     """C 端 customer_product 图片段：意图不明时先澄清候选，不默认直接搜相似。
 
-    回归背景：小布 C 端顾客随手发图时，旧 prompt"识别后主动搜相似"会把
+    回归背景：元元 C 端顾客随手发图时，旧 prompt"识别后主动搜相似"会把
     "想量尺寸/想问价/想做售后"一律当"找同款"处理（G1 缺口）。
     """
     from app.graph.skills.customer_product_skill import CUSTOMER_PRODUCT_SYSTEM_PROMPT
@@ -470,7 +470,7 @@ def test_customer_general_image_clarify_not_default_search():
     )
 
 
-# ============ C 端（小布）Prompt 厚度门禁（issue #3569） ============
+# ============ C 端（元元）Prompt 厚度门禁（issue #3569） ============
 #
 # 为什么 C 端需要单独一套门禁：
 # 1) 上面 `test_snapshot_all_skills` 只列 8 个 B 端 skill，且调用

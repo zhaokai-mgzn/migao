@@ -25,7 +25,7 @@
  * |---|---|---|
  * | S1 | 扫到 `/i/<短码>` ⇒ 入库空间，短码取自 URL **原样**（客户端不归一化） | 把短码 `.toUpperCase()`/`.replace` ⇒ 红 |
  * | S2 | 🔴 扫到 `/s/<短码>` ⇒ **洗水码空间** + 报工入口（不是入库标签） | 不看码空间直接取路径段 ⇒ 红（S2 的 `treatAsInbound` 复刻） |
- * | S3 | 非米高二维码（别的域名 / 纯文本）⇒ **明确告知** | 靠「含 `/i/` 就当入库」⇒ 红（别的域名的 `/i/` 会命中） |
+ * | S3 | 非观星台二维码（别的域名 / 纯文本）⇒ **明确告知** | 靠「含 `/i/` 就当入库」⇒ 红（别的域名的 `/i/` 会命中） |
  * | S4 | 手输含 `O`/`I`/`L` 的 8 位 ⇒ 入库空间且**原样**交给服务端归一化 | 用严格字母表 `isValidShortCode` 当闸 ⇒ 红（本单指定的红证） |
  * | S5 | 手输形态不合法（非 8 位 / 含符号）⇒ 明说「8 位」**且一次请求都不发** | 放行任意字符串 ⇒ 红 |
  * | G1 | 两个码空间的**前缀**与后端逐值一致（`/s/` 与 `/i/` 各一处真值） | 客户端另抄一份前缀 ⇒ 红 |
@@ -114,7 +114,7 @@ function lengthGateProblems(classify: (raw: string) => { shortCode: string | nul
 function loosePathProblems(classify: (raw: string) => { space: string }): string[] {
   const foreign = 'https://example.com/i/ABCD2345'
   return classify(foreign).space === 'inbound-label'
-    ? [`别的域名里的 /i/ 被当成了米高标签：${foreign} ⇒ 会去查一次入库详情`]
+    ? [`别的域名里的 /i/ 被当成了观星台标签：${foreign} ⇒ 会去查一次入库详情`]
     : []
 }
 
@@ -270,12 +270,12 @@ describe('拍照补打：码空间判定与手输兜底（issue #5640）', () =>
     expect(spaceGateProblems(gatedShortCode)).toEqual([])
   })
 
-  it('S3 非米高二维码 ⇒ 明确告知「这不是米高的标签」（别的域名 / 纯文本 / 空）', () => {
+  it('S3 非观星台二维码 ⇒ 明确告知「这不是观星台的标签」（别的域名 / 纯文本 / 空）', () => {
     for (const raw of ['https://example.com/i/ABCD2345', 'https://app.migaozn.com/x/ABCD2345', 'MG-1001']) {
       const reading = classifyScannedCode(raw)
       expect({ raw, space: reading.space }).toEqual({ raw, space: 'foreign' })
       expect(reading.message).toBe(FOREIGN_CODE_MESSAGE)
-      expect(reading.message).toContain('不是米高的标签')
+      expect(reading.message).toContain('不是观星台的标签')
       expect(reading.shortCode).toBeNull()
     }
     // 红证（注入式）：靠「路径里有 /i/ 就当入库」的宽松口径会把**别人域名**的 /i/ 当成自家标签

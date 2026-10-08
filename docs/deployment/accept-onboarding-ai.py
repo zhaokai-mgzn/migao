@@ -128,11 +128,11 @@ def h_homepage():
         checks = {
             "HTTP 200": r.status_code == 200,
             "公司名 杭州词元通达科技有限公司": "杭州词元通达科技有限公司" in body,
-            "米高 × 小布": "米高 × 小布" in body or "米高" in body,
-            "小布 智能客服": "小布" in body,
+            "观星台 × 元元": "观星台 × 元元" in body or "观星台" in body,
+            "元元 智能客服": "元元" in body,
             "AI 智能甄别": "AI 智能甄别" in body,
             "即刻开通": "即刻开通" in body,
-            "无旧名 米宝": "米宝" not in body,
+            "无旧名（米宝/米高/小布）": "米宝" not in body and "米高" not in body and "小布" not in body,
             "无虚构品牌 A": "品牌 A" not in body,
             "无 1-3 个工作日": "1-3 个工作" not in body,
         }

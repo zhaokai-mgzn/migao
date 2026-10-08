@@ -657,7 +657,7 @@ class ProductionServiceTest {
 
     // ── 生产进度查询的订单解析（issue #4007：progress 与 report 同口径，不得只认 order_no）──
     //
-    // 病灶（run 35233821582 的 CH-039/CH-040）：米宝/小布拿到的是**内部 order_id** 或
+    // 病灶（run 35233821582 的 CH-039/CH-040）：黄金策/元元拿到的是**内部 order_id** 或
     // 用户点名的不存在形态时，`progress` 只按 `order_no` 查 ⇒ 明明有单却 404 ⇒
     // 工具层 `no_success(production_progress_query)`。修复 = 复用 `resolveOrder`
     // （order_id → order_no → qr_token，与 #4006 的报工链路同一口径）。

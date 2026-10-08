@@ -4,7 +4,7 @@
  *
  * ## 为什么 B 端桌面也要有这一端
  *
- * `production_progress_query` 同时绑在**两个 persona** 的 Skill 上（C 端小布 + B 端米宝，
+ * `production_progress_query` 同时绑在**两个 persona** 的 Skill 上（C 端元元 + B 端黄金策，
  * 评测用例 CH-039/CH-040）⇒ 契约不变式「后端能发到这一端的卡型 ⊆ 这一端能渲染的卡型」
  * 要求三端都有渲染分支。**红证**：只补后端映射、不补本端分支时，
  * `test_card_type_cross_end_contract.py` 实测报
@@ -14,7 +14,7 @@
  *
  * 兼容两种载荷（缺一不可）：
  * 1. 工序树：`{positions[].operations[], progress:{total,done,percent}, expected_delivery_at}`
- * 2. 米宝精简进度：`{progress_percent, current_operation, pending_operations[],
+ * 2. 黄金策精简进度：`{progress_percent, current_operation, pending_operations[],
  *    total_operations, done_operations, expected_delivery_date}`
  * 空态（两种载荷都没带工序信息）→「暂无生产进度」（不显示假进度、不空白）。
  */
@@ -23,7 +23,7 @@ import { render, screen } from '@testing-library/react'
 import ToolResultCard from '@/components/chat/ToolResultCard'
 import ProductionProgressCard from '@/components/chat/ProductionProgressCard'
 
-/** 米宝精简进度载荷 */
+/** 黄金策精简进度载荷 */
 const SIMPLE = {
   order_no: 'CSO260915-02615',
   status: 'producing',

@@ -1,11 +1,11 @@
 """
-C 端小布下单「加工项」环节契约（issue #3270 / #3266 实测缺口）。
+C 端元元下单「加工项」环节契约（issue #3270 / #3266 实测缺口）。
 
 背景（2026-09-11 实测）：
 - `order_create` 工具**已支持** `processing_info.processingItems` / `processingFee`
   （app/tools/order_create.py:125-150），B 端 `EXAMPLES-order.md` 有 7 处加工项规则；
 - 但 C 端 `customer_order_skill.py` 的 `CUSTOMER_ORDER_SYSTEM_PROMPT`
-  **`grep 加工项` 零命中** → 小布下单链路没有「询问加工项 / 计加工费」环节。
+  **`grep 加工项` 零命中** → 元元下单链路没有「询问加工项 / 计加工费」环节。
 
 用户可见后果：顾客买需要加工的商品（打孔/定型等）时，
 - 加工项从不被询问（顾客不知道能选，也不知道要加钱）；
@@ -26,12 +26,12 @@ from app.tools.order_create import OrderCreateTool
 
 
 class TestCustomerOrderProcessingItemRule:
-    """小布下单 prompt 必须含主动询问加工项 + 加工费计入的规则"""
+    """元元下单 prompt 必须含主动询问加工项 + 加工费计入的规则"""
 
     def test_prompt_mentions_processing_item(self):
         """prompt 必须出现「加工项」——这是缺失能力的直接信号"""
         assert "加工项" in CUSTOMER_ORDER_SYSTEM_PROMPT, (
-            "C 端下单 prompt 完全未提加工项 —— 小布无法引导顾客选加工项"
+            "C 端下单 prompt 完全未提加工项 —— 元元无法引导顾客选加工项"
         )
 
     def test_rule_is_proactive_before_confirm(self):
@@ -43,7 +43,7 @@ class TestCustomerOrderProcessingItemRule:
         assert ("主动" in p or "必须" in p), "未强调主动询问（防退回被动式）"
 
     def test_rule_covers_interact_choice_multi_select(self):
-        """询问方式须用交互卡（小布 C 端点选友好），与 B 端一致"""
+        """询问方式须用交互卡（元元 C 端点选友好），与 B 端一致"""
         p = CUSTOMER_ORDER_SYSTEM_PROMPT
         assert "interact" in p, "未要求用 interact 组件询问加工项"
         assert "choice" in p, "加工项询问未指定 choice 组件"
@@ -103,7 +103,7 @@ class TestCustomerOrderPromptGrowthGuard:
     # 2026-09-13 上调 3300 → 3600（+300，issue #3386/#3389）：两条**能力诚实性**规则 ——
     #   ① 手机号必须用完整 11 位（禁止自己打码/填 0）—— 掩码值回流写工具会静默写错订单手机号
     #      （DB 实证：订单 20260913384380002 落库 13800008000）；
-    #   ② 禁止能力自我否定（"小布没法提交订单"）—— 验收 C-A1 实证：顾客「确认下单」×4 轮被拒 + 转人工。
+    #   ② 禁止能力自我否定（"元元没法提交订单"）—— 验收 C-A1 实证：顾客「确认下单」×4 轮被拒 + 转人工。
     #   同步执行了守卫要求的"先删旧内容"：本轮净删 ~130 字符冗余措辞（重复调用告警、
     #   校验说明、引导话术示例），新规则首版 490 字符压缩到 ~330。
     #   ⚠️ 下次再涨前必须先删旧内容（prompt 越长越容易稀释关键规则，实测长 prompt 的规则遵守率下降）。

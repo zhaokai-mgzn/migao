@@ -1,7 +1,7 @@
 """
-米宝（MibaoAgent/WorkAssistantAgent）多轮对话智能测试用例
+黄金策（MibaoAgent/WorkAssistantAgent）多轮对话智能测试用例
 
-覆盖 10 个多轮对话场景，验证米宝的智能程度：
+覆盖 10 个多轮对话场景，验证黄金策的智能程度：
 1. 商品搜索→查看详情→库存查询（跨Tool连续调用）
 2. 订单查询→物流追踪→订单状态变更（全订单流程）
 3. 模糊问题→引导澄清→精准服务（意图澄清能力）
@@ -59,7 +59,7 @@ def _auto_reset_singletons():
 
 
 class TestMibaoMultiturnIntelligence:
-    """米宝多轮对话智能测试"""
+    """黄金策多轮对话智能测试"""
 
     # ---------- Case 1: 商品搜索→查看详情→库存查询 ----------
 
@@ -457,7 +457,7 @@ class TestMibaoMultiturnIntelligence:
             turn_num=1,
             user_message="你能帮我做什么",
             expected_graph_result=make_graph_result(
-                final_answer="我是米宝，您的智能工作助手。我可以帮您：\n1. 📦 订单管理（查询、物流追踪、状态变更）\n2. 🛍️ 商品管理（搜索、上下架、库存管理）\n3. 📚 知识查询（面料知识、安装指南、售后政策）\n4. 🔧 售后处理（投诉、退换货）\n请问需要什么帮助？",
+                final_answer="我是黄金策，您的智能工作助手。我可以帮您：\n1. 📦 订单管理（查询、物流追踪、状态变更）\n2. 🛍️ 商品管理（搜索、上下架、库存管理）\n3. 📚 知识查询（面料知识、安装指南、售后政策）\n4. 🔧 售后处理（投诉、退换货）\n请问需要什么帮助？",
                 skill_used="direct_reply",
                 intent="capabilities", confidence=0.95,
             ),
@@ -465,7 +465,7 @@ class TestMibaoMultiturnIntelligence:
                 {"fn": lambda s, r, e: "direct_reply" in e.get("skill_used", ""),
                  "desc": "capabilities 走 direct_reply"},
                 {"fn": lambda s, r, e: "订单" in r.content or "商品" in r.content,
-                 "desc": "回复列举了米宝的核心能力"},
+                 "desc": "回复列举了黄金策的核心能力"},
             ],
         )
 
@@ -740,9 +740,9 @@ class TestMibaoMultiturnIntelligence:
         # 轮1: 问候
         await runner.run_turn(
             turn_num=1,
-            user_message="你好米宝",
+            user_message="你好黄金策",
             expected_graph_result=make_graph_result(
-                final_answer="您好！我是米宝，有什么可以帮您的吗？",
+                final_answer="您好！我是黄金策，有什么可以帮您的吗？",
                 skill_used="direct_reply",
                 intent="greeting", confidence=0.98,
             ),
@@ -966,7 +966,7 @@ class TestMibaoSummaryReport:
 
         # 汇总报告
         print("\n" + "=" * 60)
-        print("米宝多轮对话智能测试 - 汇总报告")
+        print("黄金策多轮对话智能测试 - 汇总报告")
         print("=" * 60)
         total = len(results)
         passed = sum(1 for _, s, _ in results if s == "PASS")

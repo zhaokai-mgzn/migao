@@ -1,5 +1,5 @@
 """
-米宝多轮 — 订单域（批量筛选/财务汇总/订单恢复）
+黄金策多轮 — 订单域（批量筛选/财务汇总/订单恢复）
 
 （由 test_mibao_advanced_multiturn.py 按场景域拆分，2026-08-29）
 """
@@ -28,7 +28,7 @@ def _auto_reset_singletons():
 
 
 class TestMibaoMultiturnOrder:
-    """米宝多轮 — 订单域（批量筛选/财务汇总/订单恢复）"""
+    """黄金策多轮 — 订单域（批量筛选/财务汇总/订单恢复）"""
 
     async def test_case_11_batch_order_filter_and_mark(self):
         """

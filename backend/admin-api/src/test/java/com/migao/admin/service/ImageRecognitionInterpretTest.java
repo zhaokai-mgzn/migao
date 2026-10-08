@@ -41,7 +41,7 @@ import static org.mockito.Mockito.when;
  *       {@code degraded=true} / 空 fields 是<b>合法结果</b>，如实透传；</li>
  *   <li>不可达 / 外壳失败 / 缺 {@code data.fields} / {@code component != page_fill} ⇒ 422 fail-closed
  *       （可行动 suggestion，不 500 裸抛、不静默空计划）；</li>
- *   <li>🔴 推理多一次 LLM 调用 ⇒ **超时必须比 {@code recognize} 更宽**（同族上界 = 米宝推理那档）。</li>
+ *   <li>🔴 推理多一次 LLM 调用 ⇒ **超时必须比 {@code recognize} 更宽**（同族上界 = 黄金策推理那档）。</li>
  * </ol>
  */
 @ExtendWith(MockitoExtension.class)
@@ -210,7 +210,7 @@ class ImageRecognitionInterpretTest {
     }
 
     @Test
-    @DisplayName("🔴 推理端超时比 recognize 宽（多一次 LLM 调用），且不超米宝推理那档量级")
+    @DisplayName("🔴 推理端超时比 recognize 宽（多一次 LLM 调用），且不超黄金策推理那档量级")
     void interpretTimeoutIsWiderThanRecognizeButBounded() {
         assertThat(ImageRecognitionClient.INTERPRET_READ_TIMEOUT_MS)
                 .as("interpret = vision 一次 + 文本 LLM 一次 ⇒ 必须比 recognize 宽，否则长尾必现假故障")

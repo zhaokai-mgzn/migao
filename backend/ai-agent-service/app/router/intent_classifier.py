@@ -57,7 +57,7 @@ _INTENT_DESCRIPTIONS: dict[str, str] = {
     'complaint': '投诉、举报、不满',
     # 商品域
     'product_inquiry': '商品咨询、价格查询、产品推荐、加工项查询',
-    'quote': '窗帘算料报价、按窗宽窗高与面料单价算钱（C 端小布）',
+    'quote': '窗帘算料报价、按窗宽窗高与面料单价算钱（C 端元元）',
     'category_manage': '商品分类的查询/创建/更名/启用停用/删除/排序',
     'processing_manage': '加工项的创建/更新/上下架/删除/调价等管理操作（不含单纯查询）',
     # 客户关系域

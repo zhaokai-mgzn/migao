@@ -1,4 +1,4 @@
-# C 端小布小程序 · 真机调试 runbook（v1.0 已走通）
+# C 端元元小程序 · 真机调试 runbook（v1.0 已走通）
 
 > 状态：**2026-09-15 全链路真机验证通过**（构建 → 预览扫码 → 渲染 → 真实微信登录 → SSE 对话）。
 > 一次性接入：`deploy/scripts/wx-mini-test-env-setup.sh`（AppID/Secret → 服务器 → 本地私有配置）。
@@ -85,7 +85,7 @@ open ~/Desktop/preview-qr.png
 
 - [x] 预览二维码扫码 → 登录页渲染（手机 8.0.76 / 基础库 3.17.3）
 - [x] 开启开发调试后点「微信一键登录」→ 后端 `code2Session 成功`（19:47 实证 openid=o8JhL3Yx8xXjHfMebMAWdjP-TXis）
-- [x] 对话 → SSE 流式回复（19:48~19:57 六轮客户消息，小布 persona，含下单流程「继续下单 9231 遮光窗帘」）
+- [x] 对话 → SSE 流式回复（19:48~19:57 六轮客户消息，元元 persona，含下单流程「继续下单 9231 遮光窗帘」）
 - [x] 交互卡（choice 选择卡）渲染；下单规格收集部分回复退化为纯文本（agent 卡片一致性，见 §6 待办）
 
 ## 6. 待办（walkthrough 产出的问题清单）

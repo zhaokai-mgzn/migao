@@ -4,8 +4,8 @@
  *
  * ## 为什么是「内存事件通道」而不是 URL / 存储
  *
- * 商家站在建品页 / 建单页上跟米宝说话（浮动面板在表单上方，`(dashboard)/layout.tsx` 挂载），
- * 米宝识别完要把字段**推给当前页面表单**。最省事的写法是 `?prefill=<base64>` 或
+ * 商家站在建品页 / 建单页上跟黄金策说话（浮动面板在表单上方，`(dashboard)/layout.tsx` 挂载），
+ * 黄金策识别完要把字段**推给当前页面表单**。最省事的写法是 `?prefill=<base64>` 或
  * `localStorage` —— 两者都把**订单侧收货信息**写进了会落盘的地方
  * （query 参数进 nginx access log 与 Referer；localStorage 留在磁盘上）。
  * 本仓已为「预填手机号把完整号码带进 `final_text`」吃过一次账（issue 的硬约束 1）。

@@ -197,7 +197,7 @@ class KnowledgeDistillServiceTest {
         void distill_aiOnlySession_skipped() {
             AgentSession aiOnly = AgentSession.builder()
                     .id("ai1").tenantId(1L).status("ended").endedAt(OffsetDateTime.now().minusHours(2))
-                    .build();  // 无 employeeId = 小布/AI 纯自动接待
+                    .build();  // 无 employeeId = 元元/AI 纯自动接待
             when(agentSessionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(aiOnly));
 
             Map<String, Object> result = knowledgeDistillService.distillConversations(1L, 24);

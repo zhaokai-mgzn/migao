@@ -2690,7 +2690,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_role_permissions ON role_permissions(role_i
 -- 要求它当模板键，自由文本取不到模板（静默落空库）。迁移 V62 会把存量自由文本按同口径归一。
 INSERT INTO tenants (id, name, code, industry, status)
   OVERRIDING SYSTEM VALUE
-  VALUES (1, '米高智能', 'migao', 'curtain', 'active')
+  VALUES (1, '观星台智能', 'migao', 'curtain', 'active')
   ON CONFLICT (id) DO NOTHING;
 
 -- 默认角色（五岗：管理员/运营/客服 + 超管；角色码与 HR 用例对齐）
@@ -3396,7 +3396,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT;
 ALTER TABLE product_skus ADD COLUMN IF NOT EXISTS color_name VARCHAR(64);
 
 -- 租户 AI 配置：机器人名称（docs/sql/009）+ 渠道配置（V10）
-ALTER TABLE tenant_ai_configs ADD COLUMN IF NOT EXISTS bot_name VARCHAR(64) DEFAULT '小布';
+ALTER TABLE tenant_ai_configs ADD COLUMN IF NOT EXISTS bot_name VARCHAR(64) DEFAULT '元元';
 ALTER TABLE tenant_ai_configs ADD COLUMN IF NOT EXISTS channel_configs JSONB;
 
 -- 会话最后活动时间（V13）
@@ -3638,7 +3638,7 @@ COMMENT ON COLUMN scheduled_tasks.dedup_key IS
 COMMENT ON COLUMN scheduled_tasks.status IS
     'pending / fired / cancelled / failed / dismissed。只有 pending 会被扫描器投递；'
     'fired 后不重投（疲劳控制之一）。';
-COMMENT ON COLUMN scheduled_tasks.source IS 'user（米宝委托）/ system（规则派生）。';
+COMMENT ON COLUMN scheduled_tasks.source IS 'user（黄金策委托）/ system（规则派生）。';
 
 -- ================================================
 -- END OF SCHEMA

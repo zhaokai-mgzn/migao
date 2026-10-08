@@ -302,7 +302,7 @@ class TestIdempotencyClassificationLock:
     def test_real_registry_has_known_non_idempotent_writes(self):
         """真值抽样：核心非幂等**写**工具必须仍是 idempotent=False（防被顺手改成 True）。
 
-        🔴 **issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）—— 收窄抽样域，不是放宽**：
+        🔴 **issue #5247 改判（B 端黄金策只读化，用户裁定 2026-09-23）—— 收窄抽样域，不是放宽**：
         抽样口径一直是「**注册表里的非幂等写工具**」，而本单把 8 把写工具收窄成只读
         ⇒ 其中 4 把的**前提消失**，从抽样里退场（`# [RETIRED #5247]`）：
           · `customer_manage` / `finance_api` / `inventory_manage` / `role_manage`

@@ -154,7 +154,7 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('logo')).toBeInTheDocument()
   })
 
-  it('未设置企业 Logo 时回退米高默认 Logo', () => {
+  it('未设置企业 Logo 时回退观星台默认 Logo', () => {
     mockUseAuthStore.mockReturnValue({
       user: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], permissions: ['*'], tenantName: '测试企业' },
     })
@@ -204,9 +204,9 @@ describe('Sidebar', () => {
     for (const [, name] of GROUPS.flatMap((g) => g.items)) {
       expect(screen.getByText(name)).toBeInTheDocument()
     }
-    // UI-005/UI-011: **客户服务**分组下 在线接待 + 知识库（#3094 米宝·在线对话 菜单入口已移除，对话经右下角 FAB）；#2969 知识库并入本组；#3081 AI 客服配置已合并进企业基础信息
+    // UI-005/UI-011: **客户服务**分组下 在线接待 + 知识库（#3094 黄金策·在线对话 菜单入口已移除，对话经右下角 FAB）；#2969 知识库并入本组；#3081 AI 客服配置已合并进企业基础信息
     // #5778：客户列表 / 售后工单也并入本组
-    expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+    expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
     // 每日简报由企业开关控制（#3468）：开关开 ⇒ 可见
     expect(screen.getByText('每日简报')).toBeInTheDocument()
     // #1403: 商品分类管理已移出侧边栏，入口内嵌到新增商品页
@@ -272,8 +272,8 @@ describe('Sidebar', () => {
     expect(linkFor('员工管理')).toHaveAttribute('href', '/employees')
     expect(linkFor('岗位权限')).toHaveAttribute('href', '/roles')
     expect(linkFor('企业基础信息')).toHaveAttribute('href', '/settings')
-    // #3094: 米宝 · 在线对话 菜单入口已移除（侧边栏不再渲染 /chat 链接）
-    expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+    // #3094: 黄金策 · 在线对话 菜单入口已移除（侧边栏不再渲染 /chat 链接）
+    expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
     expect(linkFor('在线接待')).toHaveAttribute('href', '/agent-workspace/human-sessions')
     expect(linkFor('知识库')).toHaveAttribute('href', '/knowledge')
     expect(linkFor('通知中心')).toHaveAttribute('href', '/notifications')
@@ -286,7 +286,7 @@ describe('Sidebar', () => {
     for (const g of GROUPS) {
       expect(screen.queryByText(g.name)).not.toBeInTheDocument()
     }
-    expect(screen.queryByText('米高')).not.toBeInTheDocument()
+    expect(screen.queryByText('观星台')).not.toBeInTheDocument()
     // 菜单名文本同样不渲染（此态下只有图标）
     expect(screen.queryByText('商品列表')).not.toBeInTheDocument()
     expect(screen.queryByText('经营看板')).not.toBeInTheDocument()
@@ -352,19 +352,19 @@ describe('Sidebar', () => {
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
-  // ── 前缀嵌套路由互斥单高亮（#3094 米宝菜单已移除：/chat 无侧边栏入口，在线接待不重复高亮）──
+  // ── 前缀嵌套路由互斥单高亮（#3094 黄金策菜单已移除：/chat 无侧边栏入口，在线接待不重复高亮）──
 
-  it('/chat 时无侧边栏菜单高亮（米宝入口已移除，对话经右下角 FAB）', () => {
+  it('/chat 时无侧边栏菜单高亮（黄金策入口已移除，对话经右下角 FAB）', () => {
     mockUsePathname.mockReturnValue('/chat')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+    expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
     // /chat 不属于任何菜单项 ⇒ 无组可展开；展开智能客服后「在线接待」仍在 DOM 且不得高亮
     expandGroups('customer-service')
     const humanLink = linkFor('在线接待')
     expect(getActiveClass(humanLink)).not.toContain('bg-primary-600')
   })
 
-  it('/chat 时侧边栏无高亮菜单项（#3094 米宝入口已移除）', async () => {
+  it('/chat 时侧边栏无高亮菜单项（#3094 黄金策入口已移除）', async () => {
     mockBriefingEnabled = true
     mockUsePathname.mockReturnValue('/chat')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
@@ -549,9 +549,9 @@ describe('Sidebar', () => {
     expect(within(groupButtonEl).queryByTestId('icon-headphones')).not.toBeInTheDocument()
   })
 
-  it('「米宝·在线对话」菜单入口已移除（#3094：智能体对话经右下角浮动按钮进入）', () => {
+  it('「黄金策·在线对话」菜单入口已移除（#3094：智能体对话经右下角浮动按钮进入）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+    expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
   })
 
   // ── 权限过滤 ──
@@ -576,8 +576,8 @@ describe('Sidebar', () => {
       // #1403: 商品分类管理已移出侧边栏
       expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
       expect(screen.getByText('通知中心')).toBeInTheDocument()
-      // UI-005/UI-011: admin 可见智能客服大类及其子菜单（#3094 米宝·在线对话 入口已移除）
-      expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+      // UI-005/UI-011: admin 可见智能客服大类及其子菜单（#3094 黄金策·在线对话 入口已移除）
+      expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
       expect(menuKeys()).toHaveLength(23)
     })
 
@@ -631,7 +631,7 @@ describe('Sidebar', () => {
       // UI-005/UI-011: 无 agent:session / knowledge:view / customer:view / after_sales:view →
       // **客户服务**整组隐藏（#5778 组名改判；#3081 已移除 AI 客服配置菜单）
       expect(screen.queryByText('客户服务')).not.toBeInTheDocument()
-      expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+      expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
     })
 
@@ -657,21 +657,21 @@ describe('Sidebar', () => {
       expect(screen.queryByText('每日简报')).not.toBeInTheDocument()
     })
 
-    it('有 agent:session → 保留「在线接待」（#3094 米宝·在线对话 菜单已移除不渲染；#3081 无 AI 客服配置菜单）', () => {
+    it('有 agent:session → 保留「在线接待」（#3094 黄金策·在线对话 菜单已移除不渲染；#3081 无 AI 客服配置菜单）', () => {
       mockUseAuthStore.mockReturnValue({
         user: { id: '5', username: 'cs', name: '客服', permissions: ['agent:session'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.getByText('客户服务')).toBeInTheDocument()
       expandGroups('customer-service')
-      expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+      expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
       expect(screen.getByText('在线接待')).toBeInTheDocument()
       expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
       // 组内**只有**在线接待（知识库要 knowledge:view —— issue #5246 起节点用读码）
       expect(menuKeys()).toEqual(['human-sessions', 'notifications'])   // #5699 P4：经营看板要 dashboard:view
     })
 
-    it('仅 knowledge:view → 隐藏「在线接待」，保留「知识库」（#3094 米宝入口已移除）', () => {
+    it('仅 knowledge:view → 隐藏「在线接待」，保留「知识库」（#3094 黄金策入口已移除）', () => {
       // issue #5246（已合入 main）：『知识库』节点码从写码 `knowledge:manage` 换成**读码**
       // `knowledge:view`（拆读写：只想看知识卡片的岗位不该被授予增删改发布权）⇒ 入口可见性按读码判。
       mockUseAuthStore.mockReturnValue({
@@ -681,7 +681,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('客户服务')).toBeInTheDocument()
       expandGroups('customer-service')
       expect(screen.getByText('知识库')).toBeInTheDocument()
-      expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+      expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
       expect(menuKeys()).toEqual(['knowledge', 'notifications'])   // #5699 P4：同上
     })
@@ -731,7 +731,7 @@ describe('Sidebar', () => {
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
-      expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+      expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
     })

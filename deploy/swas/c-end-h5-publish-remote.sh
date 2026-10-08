@@ -1,6 +1,6 @@
 #!/bin/bash
 # ══════════════════════════════════════════════════════════════════════════════
-# C 端小布 H5（`frontend/mini-app` 的 `build:h5` 产物）静态落位 —— **远端执行体**（issue #4184）
+# C 端元元 H5（`frontend/mini-app` 的 `build:h5` 产物）静态落位 —— **远端执行体**（issue #4184）
 #
 # 落位：`app.migaozn.com` 的**静态根本身**（nginx `root` = `/opt/migao-deploy/h5`，
 # 见 `deploy/swas/nginx.conf` 的 `server_name app.migaozn.com` 段）——
@@ -306,7 +306,7 @@ write_manifest() {
 import datetime, json, os, sys
 mf, new, sha, published, published_commit = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 data = {
-    "_what": "C 端小布 H5（frontend/mini-app 的 build:h5 产物）在 app.migaozn.com 静态根上的**托管物台账**（issue #4184）。",
+    "_what": "C 端元元 H5（frontend/mini-app 的 build:h5 产物）在 app.migaozn.com 静态根上的**托管物台账**（issue #4184）。",
     "_why": "发布腿的删除范围 = 本文件的 managed_top_level ∩ 磁盘现值。没有它就没有删除动作（首次发布走 --takeover-first-publish）。",
     "_owner": "deploy/swas/c-end-h5-publish-remote.sh（唯一写者）",
     "managed_top_level": new.split(),

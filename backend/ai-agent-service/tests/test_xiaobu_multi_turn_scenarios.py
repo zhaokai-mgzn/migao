@@ -1,8 +1,8 @@
 """
-小布（CustomerServiceAgent）复杂多轮对话场景测试
+元元（CustomerServiceAgent）复杂多轮对话场景测试
 ==============================================
 
-10 个场景验证小布的智能程度，涵盖：
+10 个场景验证元元的智能程度，涵盖：
 - 意图识别准确性
 - 多轮上下文保持
 - Skill 路由正确性
@@ -89,7 +89,7 @@ def _auto_reset_singletons():
 
 
 class TestXiaobuMultiTurnScenarios:
-    """小布多轮对话场景测试集"""
+    """元元多轮对话场景测试集"""
 
     # ── Case 1：完整购物咨询旅程 ──
     async def test_case04_cross_skill_complex_switch(self, agent_context):
@@ -224,7 +224,7 @@ class TestXiaobuMultiTurnScenarios:
         ======================
         场景：商品质量问题 → 情绪激动 → 要求赔偿 → 坚持投诉 → 转人工
         验证：
-        - 小布的情绪安抚话术
+        - 元元的情绪安抚话术
         - 正确识别需要转人工的时机
         - 不承诺具体赔偿方案（超出权限）
         """
@@ -320,7 +320,7 @@ class TestXiaobuMultiTurnScenarios:
         Case 6：模糊意图识别挑战
         ======================
         场景：模糊表述 → 追问澄清 → 正确理解
-        如"那个东西怎么样了"（无法判断是订单还是商品）→ 小布应追问
+        如"那个东西怎么样了"（无法判断是订单还是商品）→ 元元应追问
         测试 L2 小模型分类在模糊场景下的表现
         """
         report = ScenarioReport(name="Case6-模糊意图识别")
@@ -524,7 +524,7 @@ class TestSummaryReport:
         此测试始终通过，仅用于输出日志信息。
         """
         logger.info("\n" + "=" * 60)
-        logger.info("小布多轮对话场景测试 - 全部完成")
+        logger.info("元元多轮对话场景测试 - 全部完成")
         logger.info("=" * 60)
         logger.info("共 10 个场景，覆盖：")
         logger.info("  1. 完整购物咨询旅程")

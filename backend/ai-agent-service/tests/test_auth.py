@@ -196,7 +196,7 @@ class TestGetCurrentUser:
     @patch("app.utils.auth.settings")
     @pytest.mark.asyncio
     async def test_no_token_in_debug_mode_with_customer_header_returns_customer(self, mock_settings):
-        """DEBUG + 显式 X-Debug-Role: customer → 小布 C 端身份（本地验收/CI xiaobu 用）"""
+        """DEBUG + 显式 X-Debug-Role: customer → 元元 C 端身份（本地验收/CI xiaobu 用）"""
         mock_settings.DEBUG = True
         mock_settings.JWT_PUBLIC_KEY = ""
 

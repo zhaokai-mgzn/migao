@@ -289,7 +289,7 @@ def test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs():
         assert f"label: '{label}'" in src, f"既有 tab `{label}` 不见了（本单只加卡片，不动导航）"
     for testid in ('data-testid="bmini-h5-entry"', 'data-testid="bmini-h5-qr"', 'data-testid="bmini-h5-unconfigured"'):
         assert testid in src, f"设置页缺 {testid}"
-    assert "手机浏览器扫码使用米宝商家端" in src, "缺那行说明（用户要知道扫了干什么）"
+    assert "手机浏览器扫码使用黄金策商家端" in src, "缺那行说明（用户要知道扫了干什么）"
 
 
 def test_mutations_are_all_detected(tmp_path):

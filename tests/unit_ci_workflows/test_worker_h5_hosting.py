@@ -81,7 +81,7 @@ SUBDIR = "w"
 # 内容按实测特征构造：含 `window.TARO_ENV` 与 C 端标题，**不含** `src/app.mjs`。
 C_END_PAGE = (
     '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"/>'
-    "<title>米高窗帘 · 小布智能助手</title>"
+    "<title>观星台窗帘 · 元元智能助手</title>"
     "<script>window.TARO_ENV = 'h5'</script>"
     '<script defer="defer" src="/js/app.js"></script></head>'
     '<body><div id="app"></div></body></html>'
@@ -432,7 +432,7 @@ def test_sandbox_publish_is_identity_and_preserves_parent(tmp_path):
     assert _file_sha(published_machine) == _file_sha(WORKER_MACHINE), "发布的 machine.html 与仓库不一致"
     body = published_index.read_text(encoding="utf-8")
     assert "src/app.mjs" in body
-    assert "TARO_" not in body and "小布智能助手" not in body
+    assert "TARO_" not in body and "元元智能助手" not in body
 
     # tests/ 不发
     assert not (root / SUBDIR / "tests").exists(), "tests/ 不该被发布"
@@ -616,7 +616,7 @@ def test_verify_served_is_red_on_c_end_fallback(tmp_path):
         server.server_close()
     assert proc.returncode == 1, f"C 端回落到 /w/ 时身份断言竟判绿（空断言）：\n{proc.stdout}"
     assert "❌ 落地面身份断言**失败" in proc.stdout
-    assert "TARO_" in proc.stdout or "小布智能助手" in proc.stdout
+    assert "TARO_" in proc.stdout or "元元智能助手" in proc.stdout
 
 
 def test_verify_served_is_red_on_octet_stream_mjs(tmp_path):

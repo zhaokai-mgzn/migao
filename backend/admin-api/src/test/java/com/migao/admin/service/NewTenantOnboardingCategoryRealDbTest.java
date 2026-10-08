@@ -188,9 +188,9 @@ class NewTenantOnboardingCategoryRealDbTest {
     @Test
     @DisplayName("判据1·空库真跑入驻链路 ⇒ 分类恰 1 行（具名）⇒ 用它首建商品成功（改前：分类 0 行 ⇒ 422）")
     void onboardingSeedsDefaultCategoryAndFirstProductSucceeds() throws Exception {
-        long appId = insertPendingApplication("杭州米高布艺有限公司", "13800001501");
+        long appId = insertPendingApplication("杭州观星台布艺有限公司", "13800001501");
         long tenantId = approveAndGetTenantId(registrationServiceWith(realSeedService), appId,
-                "杭州米高布艺有限公司");
+                "杭州观星台布艺有限公司");
 
         TenantContext.setTenantId(tenantId);
         try {

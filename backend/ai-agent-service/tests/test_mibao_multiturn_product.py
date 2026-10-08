@@ -1,5 +1,5 @@
 """
-米宝多轮 — 商品域（批量创建/促销/推荐/不一致检测）
+黄金策多轮 — 商品域（批量创建/促销/推荐/不一致检测）
 
 （由 test_mibao_advanced_multiturn.py 按场景域拆分，2026-08-29）
 """
@@ -28,7 +28,7 @@ def _auto_reset_singletons():
 
 
 class TestMibaoMultiturnProduct:
-    """米宝多轮 — 商品域（批量创建/促销/推荐/不一致检测）"""
+    """黄金策多轮 — 商品域（批量创建/促销/推荐/不一致检测）"""
 
     async def test_case_13_batch_product_create_and_refine(self):
         """

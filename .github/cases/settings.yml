@@ -75,7 +75,7 @@ cases:
       - settings-manage.change-password
     user_inputs:
       - "改密码，旧密码xxx 新密码newpass123"
-    # ── 2026-09-25 **退场改造**（issue #5302；承接 #5247「B 端米宝只读化」）────────────
+    # ── 2026-09-25 **退场改造**（issue #5302；承接 #5247「B 端黄金策只读化」）────────────
     # 原断言（`settings_manage(action=change_password)` + 同 action 的 `must_succeed`）
     # **不可满足**：该写 action 已从工具源码删除（`VALID_ACTIONS` 只剩三个只读 action），
     # 且后台自 issue #3006/#3098 起**也没有**自助改密入口 ⇒ 不存在"能改成功"的路径。
@@ -96,7 +96,7 @@ cases:
       - "已帮您修改"
       - "修改成功"
     data_checks:
-      - "如实告知：米宝不改密码（本域只读），且后台暂无自助改密入口 ⇒ 引导用户联系管理员处理"
+      - "如实告知：黄金策不改密码（本域只读），且后台暂无自助改密入口 ⇒ 引导用户联系管理员处理"
       - "整场不得出现假承诺话术（机器断言见 forbidden_text）"
       - "不得索取/复述密码明文，也不得改用其它工具假装完成（如改配置/发通知）"
       - "settings_manage 只暴露 get_settings/get_ai_config/login_logs（结构性判据：backend/ai-agent-service/tests/test_settings_domain_readonly.py）"
@@ -151,7 +151,7 @@ cases:
       - agent-notification.notification-status
     user_inputs:
       - "把新订单通知标为已读"
-    # ── 2026-09-25 **退场改造**（issue #5302；承接 #5247「B 端米宝只读化」）────────────
+    # ── 2026-09-25 **退场改造**（issue #5302；承接 #5247「B 端黄金策只读化」）────────────
     # 原断言（`notification_manage(action=mark_read or read_all)` + data_check「status 变为 read」）
     # **不可满足**：两个写 action 已从工具源码删除（`VALID_ACTIONS` 只剩 list/unread_count）。
     # 用例保留（用户仍会说这句话），改判**能力下线后的正确行为** = 如实告知 + 引导到后台
@@ -170,7 +170,7 @@ cases:
       - "已经帮您标记"
       - "已为您标记"
     data_checks:
-      - "如实告知：米宝不改通知状态（本域只读）⇒ 引导用户到商户后台「通知中心」页自助标记"
+      - "如实告知：黄金策不改通知状态（本域只读）⇒ 引导用户到商户后台「通知中心」页自助标记"
       - "整场不得出现假承诺话术（机器断言见 forbidden_text）"
       - "notification_manage 只暴露 list/unread_count（结构性判据：backend/ai-agent-service/tests/test_settings_domain_readonly.py）"
     skip_reason: ""
@@ -316,13 +316,13 @@ cases:
     #    （声称会渲染、实际永不渲染）。#4085 按用户裁定**补发射点**（C 端只读工具
     #    `payment_qrcode_query` → `_detect_card_type` 映射 `payment` → 渲染分支恢复），
     #    故两条断言改写成与实现一致的形态（写明载荷来源与空态触发条件）。
-    # ⚠️ 本用例**不承担**该工具的机器可判覆盖：其 expectation 含 B 端 order_query ⇒ 不进小布腿
+    # ⚠️ 本用例**不承担**该工具的机器可判覆盖：其 expectation 含 B 端 order_query ⇒ 不进元元腿
     #    用例集（`select_cases_for_persona`）。工具级正向覆盖由 **ST-012**（persona: xiaobu）承担。
     # ⚠️ 期望为 `direct_reply or order_query`（不是裸 direct_reply）：客人/商家问「我支付这笔订单怎么付款」
     #    时，**先查这笔待付款单再给收款码指引**是真实合理行为（run 35233821582 本用例 mibao 腿
     #    R1 实测即 order_query → 旧期望「无工具调用」判红 = 期望过严/假红）。OR 形态两条路径都放行：
     #    · 直接答（无工具调用 + 有 final_text）；
-    #    · 或先 order_query（小布腿由 runner 的 check_expectation 同义映射为 customer_order_query）。
+    #    · 或先 order_query（元元腿由 runner 的 check_expectation 同义映射为 customer_order_query）。
     #    保留计分断言（非空期望），不放宽成空断言。
     user_inputs:
       - "我支付这笔订单，怎么付款"
@@ -336,7 +336,7 @@ cases:
       - "无收款码时展示降级提示（PaymentCard 空态「商家暂未设置收款码，请联系客服获取收款方式」）—— 触发条件 = 工具 success=true 且 `payment_qrcodes` 为空对象（空是合法答案，不是失败）"
       - "答付款问题前先定位订单（order_query / C 端 customer_order_query）属合格路径；direct_reply 直答亦合格（OR 形态）"
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖。2026-09-17（issue #4007，run 35233821582 ST-011 reproducible）：期望由裸 `direct_reply` 放宽为 `direct_reply or order_query` —— 实测 mibao 腿 R1 先 order_query（查这笔待付款订单）再答付款指引，行为合理却被「期望无工具调用」判红（期望过严）；OR 形态同时保留直接答分支（小布腿 runner 侧 order_query→customer_order_query 同义映射）。2026-09-18（issue #4085 第 1 项）：修正两条与实现**相反**的 data_checks（「C 端渲染 PaymentCard」在 #4016 P14 裁掉渲染分支后已不成立）—— 改为写明真实发射点（payment_qrcode_query → 卡型 payment）、载荷来源与空态触发条件；机器可判覆盖另立 ST-012（本用例含 B 端 order_query 期望，不进小布腿用例集，无法承担该工具的工具级覆盖）"
+    merge_log: "2026-09-17 新增（issue #3990）：M3-F 企业收款二维码——C 端展示行为覆盖（persona 双端）；写路径由 MockMvc 单测覆盖。2026-09-17（issue #4007，run 35233821582 ST-011 reproducible）：期望由裸 `direct_reply` 放宽为 `direct_reply or order_query` —— 实测 mibao 腿 R1 先 order_query（查这笔待付款订单）再答付款指引，行为合理却被「期望无工具调用」判红（期望过严）；OR 形态同时保留直接答分支（元元腿 runner 侧 order_query→customer_order_query 同义映射）。2026-09-18（issue #4085 第 1 项）：修正两条与实现**相反**的 data_checks（「C 端渲染 PaymentCard」在 #4016 P14 裁掉渲染分支后已不成立）—— 改为写明真实发射点（payment_qrcode_query → 卡型 payment）、载荷来源与空态触发条件；机器可判覆盖另立 ST-012（本用例含 B 端 order_query 期望，不进元元腿用例集，无法承担该工具的工具级覆盖）"
     traces:
       tests:
         - "frontend/mini-app/tests/payment-card.test.tsx"
@@ -346,7 +346,7 @@ cases:
 
   - id: ST-012
     legacy_id: ""
-    title: "小布答顾客问付款/收款码 —— 收款二维码工具可达 + 支付卡发射点（issue #4085 第 1 项）"
+    title: "元元答顾客问付款/收款码 —— 收款二维码工具可达 + 支付卡发射点（issue #4085 第 1 项）"
     domains:
       - settings
       - finance
@@ -365,7 +365,7 @@ cases:
     # #3990 就交付在 main，但**没有任何发射点**（#4016 P14 裁掉 C 端 case 'payment' 后
     # 彻底不可达）⇒「交付物在 main ≠ 能力可达」。本用例是该能力的**工具级正向覆盖**：
     # 断言 C 端收款码工具真的被调用且成功（不是「文本里提了一句收款码」）。
-    # ⚠️ 期望工具 payment_qrcode_query 只在小布工具集里 ⇒ 单端用例，必须标 persona
+    # ⚠️ 期望工具 payment_qrcode_query 只在元元工具集里 ⇒ 单端用例，必须标 persona
     #    （否则另一条腿必挂；CASE-TRUST-SINGLE-LEG-NO-PERSONA 亦会红）。
     user_inputs:
       - "我想付款，收款码在哪里？"

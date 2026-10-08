@@ -274,7 +274,7 @@ MAPPING_RULES = [
     #   = §13.3「修复必须重放」在**映射层**的漏洞（"修了却没人验"）。
     #
     # 两个文件为什么同一条规则：`customer_quote_skill` **就是**提供 `curtain_calc` 的 C 端入口
-    #   （PR-013 的 `persona: xiaobu` 说明即此 —— 米宝工具集里没有该工具）⇒ 拆成两条只会让
+    #   （PR-013 的 `persona: xiaobu` 说明即此 —— 黄金策工具集里没有该工具）⇒ 拆成两条只会让
     #   "改入口 skill"漏掉另一端。它此前连同族一起漏掉是**文件名形态**所致：
     #   `customer_(manage|skill|general_skill)` 匹配不到 `customer_quote_skill`
     #   （#4454 给 `customer_order_skill.py` 补 OR-037 时**漏掉的同族一处**，本单按"同类扫描"一并补）。
@@ -283,7 +283,7 @@ MAPPING_RULES = [
     #   · PR-013「窗帘算料报价 - 褶皱倍数与用布量计算」（xiaobu，`skip_reason` 空）：
     #     期望 = `curtain_calc(window_width=3, window_height=2.5)`，`data_checks` =
     #     `data.fabric_meters > 0` / `data.total > 0` —— **米数与金额**的直接承载用例；
-    #   · PR-024「小布算料上限 - 定宽布买高 + 对花损耗」（xiaobu，`skip_reason` 空）：
+    #   · PR-024「元元算料上限 - 定宽布买高 + 对花损耗」（xiaobu，`skip_reason` 空）：
     #     算料面**唯一**带 `output_verify` **值级**断言的用例（`fabric_meters: 10.2` /
     #     `formula_used: fixed_width` / `warning: __nonempty__`）—— 引擎算法改动若把数算错，
     #     只有它能当场变红（PR-013 只断 `> 0`，算成 1 米也绿）；
@@ -309,8 +309,8 @@ MAPPING_RULES = [
     # 对应引擎产出（**米 / 折 / 孔 / 幅 / 套**），`qty_and_source()` 把 `calc_info` 换算成
     # **工序应做数量** ⇒ 改它就是改「算出来的米数怎么变成工序数量 / 单位」，行为面落在
     # 生产进度与计件问答（工序名 / 应做数量 / 单位 / 明细）。
-    # 为什么是这三条（当下**唯一可跑**的承载面，逐条读过）：CH-039（小布问生产进度，xiaobu）/
-    #   CH-040（米宝问生产进度，mibao）/ CH-041（米宝查计件明细 = 工序/数量/金额，mibao）——
+    # 为什么是这三条（当下**唯一可跑**的承载面，逐条读过）：CH-039（元元问生产进度，xiaobu）/
+    #   CH-040（黄金策问生产进度，mibao）/ CH-041（黄金策查计件明细 = 工序/数量/金额，mibao）——
     #   `skip_reason` 全空，且分别是 `production_progress_query` / `piecework_query` 的
     #   **唯一**覆盖（覆盖门禁对"绑了却零用例"判阻塞）。
     # ⚠️ 它**不**锚 PR-013/PR-024/CH-043：那三条只看 `curtain_calc` 自身，`routing.py` 一行都
@@ -403,7 +403,7 @@ def map_changed_files_with_source(paths: list) -> tuple:
       规则命中的用例与"本 PR 改了什么"有**因果**（改 order_skill.py → OR-016 红 = 真回归），
       失败必须拦合并；而兜底网是"映射表没覆盖到"时的**网**，与本 PR 改动**无因果** ——
       实证：只改 `tests/agent_eval/behavior_mapping.py`（评测基建）就被兜底网里的
-      CH-010（小布下单表单化交互）判红，属无因果阻塞。故 workflow 对两者分层：
+      CH-010（元元下单表单化交互）判红，属无因果阻塞。故 workflow 对两者分层：
       `rules` → 阻塞；`default_net` → 只报告（PR 评论显式标注）。
       兜底网本身**不取消**：无规则命中时静默跳过才是更坏的选择（把漏测伪装成"无需测试"）。
     """

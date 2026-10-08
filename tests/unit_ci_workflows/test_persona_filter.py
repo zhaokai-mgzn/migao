@@ -1,8 +1,8 @@
 """
 Test eval-case persona attribution filter (issue #2855).
 
-背景：米宝（mibao，B 端）full 回归误报 —— 一批 C 端专属用例（转人工 human_handoff /
-customer_order_query / customer_logistics_track 等仅注册于小布 customer_* skill）
+背景：黄金策（mibao，B 端）full 回归误报 —— 一批 C 端专属用例（转人工 human_handoff /
+customer_order_query / customer_logistics_track 等仅注册于元元 customer_* skill）
 在 PERSONA=mibao 下必然失败，污染 B 端回归信号。
 修复：cases/*.yml 支持 persona 字段（mibao/xiaobu/""双端），render 透传 +
 local_runner 按 persona 过滤（mibao 跳过 xiaobu 专属，反之亦然）。
@@ -19,9 +19,9 @@ from render_cases import filter_by_persona, load_case_dicts  # noqa: E402
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 
 # 已标记 persona: xiaobu 的 C 端专属用例（issue #2855 修复对象；#3038 新增 3 条交互固化用例）
-# KN-001/002：小布知识问答（issue #3059）；KN-008：知识来源标注边界（issue #3076）
+# KN-001/002：元元知识问答（issue #3059）；KN-008：知识来源标注边界（issue #3076）
 # CH-010：选购下单表单化（curtain_calc 仅 customer_quote C 端，2026-09-09 校准）
-# PR-013：窗帘算料报价 —— **小布专属能力**（米宝工具集无 curtain_calc），原写成不带 persona
+# PR-013：窗帘算料报价 —— **元元专属能力**（黄金策工具集无 curtain_calc），原写成不带 persona
 # 的 B 端档位并 skip_reason 挂起 → C 端该能力在评测里 0 覆盖（issue #3367 覆盖盘点时归位）。
 # 本集合是 C 端**可执行面**的单一事实源：新增/移出必须显式改这里（避免悄悄改变评测面）。
 # DF-020/021/022：**C 端原生对抗用例**（issue #3367）—— 越权/注入/空结果不得下单。
@@ -29,32 +29,32 @@ CASES_DIR = REPO_ROOT / ".github" / "cases"
 # validate_input / 批量删改 confirm），C 端"正确拒绝且不调工具"会被它们判红（首跑 6/12 实证）。
 XIAOBU_ONLY = {"CH-008", "CH-010", "CH-012", "CH-013", "CH-014", "CH-015", "CH-017", "OR-012", "ST-008", "CH-030", "CH-031", "CH-032", "KN-001", "KN-002", "KN-008", "AS-008", "OR-017", "CH-024", "PR-013", "DF-020", "DF-021", "DF-022", "DF-023", "OR-018", "OR-019", "PR-024", "CH-033", "OR-020", "OR-021", "OR-022", "OR-023", "OR-024", "CH-025", "CH-011", "OR-025", "AS-009", "CH-034", "CH-035", "CH-036", "CH-037", "CH-038", "OR-026", "CU-007", "UI-045", "CH-039", "ST-012", "OR-014", "OR-037", "CH-042", "CH-043", "OR-049", "OR-050", "AS-010"}  # CH-024：C 端长期记忆端到端（issue #3357 起不再 skip）
 # OR-049 / OR-050 / AS-010（#4074）：幂等的**行为层**三条用例 —— 断言工具分别是
-# `order_create` 与 `aftersale_create`，两者都是**小布专属**（米宝自 #5247「B 端只读化」
+# `order_create` 与 `aftersale_create`，两者都是**元元专属**（黄金策自 #5247「B 端只读化」
 # 起不绑任何写工具，`order_skill.ORDER_TOOLS` 里没有 `order_create`）⇒ 入本集合
 # （同 OR-014/OR-017/AS-003 的端别口径；缺 persona 时 B 端腿必挂 = 固定噪音）。
 # CH-043（#5039）：`curtain_calc.fabric_widths`（候选门幅集）的**填参**行为面 ——
-# 断言工具 `curtain_calc` 是**小布专属**（米宝工具集不含它，见 `eval_case_filter.XIAOBU_TOOLS`
-# 与 customer_quote_skill 的绑定）⇒ 米宝腿跑不动 ⇒ 入本集合（同 PR-013/PR-024 口径）。
+# 断言工具 `curtain_calc` 是**元元专属**（黄金策工具集不含它，见 `eval_case_filter.XIAOBU_TOOLS`
+# 与 customer_quote_skill 的绑定）⇒ 黄金策腿跑不动 ⇒ 入本集合（同 PR-013/PR-024 口径）。
 # CH-042（#5013）：门幅与加工类型**自动选择**（候选集内选门幅 + 自动定高买宽/定宽买高）——
 # 与 CH-036 同族（算料引擎的确定性逻辑，`persona: xiaobu`、`[backend-contract]` 由单测计分）；
-# 断言工具是 `direct_reply` 而非小布专属工具，入本集合的理由 = **与 CH-036 同端别口径**
+# 断言工具是 `direct_reply` 而非元元专属工具，入本集合的理由 = **与 CH-036 同端别口径**
 # （同一引擎、同一 C 端话术面），保持两条同族用例的端别一致。
-# CU-007（#3932）：C 端商品搜索只展示已上架商品——小布专属可见性用例（B 端无对应场景）。
+# CU-007（#3932）：C 端商品搜索只展示已上架商品——元元专属可见性用例（B 端无对应场景）。
 # CH-025：下单地址预填可修改（issue #3360 起不再 skip）
-# CH-011：跨用户订单查询拒绝（#3483 T1）——期望 customer_order_query 为小布专属，
+# CH-011：跨用户订单查询拒绝（#3483 T1）——期望 customer_order_query 为元元专属，
 # 此前缺省双端导致 B 端 adversarial 全量每轮必挂，已修为 persona: xiaobu。
 # OR-025 / AS-009（#3494）：C 端物流/售后进度正向查询，persona: xiaobu（覆盖审计新增）。
 # CH-034（vision 正向能力）/ CH-035（长期记忆跨会话）/ OR-026（写前校验拒绝半）：
 # issue #3558 C 端薄覆盖补齐 —— 三条均 persona: xiaobu（C 端专属能力，B 端无对应工具/场景）。
 # UI-045（issue #3997）：顾客端生产进度卡 —— C 端专属可视化（工人端扫码报工走 BM-006，B 端无此卡）。
-# CH-039（#3996，M4-I）：顾客查生产进度 → production_progress_query（小布专属能力面；
+# CH-039（#3996，M4-I）：顾客查生产进度 → production_progress_query（元元专属能力面；
 # 断言该工具 ⇒ 其工具集真值必须含它，见 tests/unit_ci_workflows/test_xiaobu_case_set.py
 # 的 TestXiaobuToolsetTruth 与 eval_case_filter.XIAOBU_TOOLS）。
 # ST-012（#4085 第 1 项）：顾客问付款/收款码 → payment_qrcode_query（C 端只读专属；
 # 同款理由 —— 断言该工具 ⇒ 工具集真值必须含它，本文件的数量断言也随之 +1）。
 # OR-037（#4454）：C 端行话下单落内部值（`craft` 落「韩褶」而非「韩式褶」）——
-# 期望工具 order_create ⊆ 小布工具集，且「术语映射」段写在 C 端 `customer_order`
-# 内联 prompt 里（B 端米宝的对应段在 `prompts/order.md`，两条用例各锚一端）。
+# 期望工具 order_create ⊆ 元元工具集，且「术语映射」段写在 C 端 `customer_order`
+# 内联 prompt 里（B 端黄金策的对应段在 `prompts/order.md`，两条用例各锚一端）。
 
 
 def _all_cases():
@@ -72,7 +72,7 @@ class TestPersonaFieldInCases:
 
     def test_default_persona_is_both(self):
         by_id = {c["id"]: c for c in _all_cases()}
-        # 未标记 persona 的用例（如米宝核心 OR-001）缺省为双端
+        # 未标记 persona 的用例（如黄金策核心 OR-001）缺省为双端
         assert by_id["OR-001"].get("persona", "") in ("", "mibao", "both")
 
 

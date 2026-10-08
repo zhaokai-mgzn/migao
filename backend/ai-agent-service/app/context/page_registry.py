@@ -4,10 +4,10 @@
 
 B 端最贵的成本是**培训成本**（「这个字段什么意思」「这单为什么是这个价」「这个报错怎么解决」），
 而知识已经在库里 —— 缺的只是「用户在哪一页」这个入口。浮动面板（`FloatingAssistant.tsx`）
-与米宝同屏 ⇒ 前端**能**直接读到 route 与当前实体。
+与黄金策同屏 ⇒ 前端**能**直接读到 route 与当前实体。
 
 ⚠️ **但它的失效模式是「让人更烦」**：**猜错页面比不猜更烦** ——
-用户明明在商品页，米宝却拿订单页的口径解释，这比「我不知道你在哪一页」糟糕得多。
+用户明明在商品页，黄金策却拿订单页的口径解释，这比「我不知道你在哪一页」糟糕得多。
 ⇒ 本模块的三条纪律（缺一不可，逐条有判据）：
 
 1. **注入面按角色裁剪**（上下文注入是**新的越权面**）：只传 `route` + 实体 `id`，
@@ -370,7 +370,7 @@ def render_page_context(question: str, context: Optional[PageContext]) -> str:
     if source is None:  # pragma: no cover - 与 build_page_context 同步的纵深防御
         return PAGE_CONTEXT_UNKNOWN_NOTICE + question
     lines = [
-        f"（米宝正在用户当前页面上：{context.route}",
+        f"（黄金策正在用户当前页面上：{context.route}",
         f"本页的口径说明以《{source.label}》为唯一真值源（{source.path}）；"
         f"解释本页字段/口径/价格时必须基于该真值源，并在答案里写明「{source.citation}」；"
         f"真值源没写到的内容不要替它编。",

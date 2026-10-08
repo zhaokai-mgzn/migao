@@ -15,7 +15,7 @@
   且只列 `["admin","agent","tenant_admin","customer"]` ⇒ 除 admin 外的**全部商户员工**
   （operator / product_manager / customer_service / sales / finance / 自定义岗位）调用
   一律「权限不足」。而本工具是**纯本地参数校验**（不读库、不写库、不调外部 API），
-  双端（小布、米宝）都要用，真正的授权在**目标写工具自己的 `required_permissions`** 上。
+  双端（元元、黄金策）都要用，真正的授权在**目标写工具自己的 `required_permissions`** 上。
 - **G2** 工具层 `check_permission` 拒绝**从不带 `error_code`**（41 处
   `ToolResult(success=False, error="权限不足")` 里只有 2 处带码，且都在
   `admin_api_failure` 内）⇒ #4122 加的非重试闸门
@@ -339,7 +339,7 @@ class TestValidateInputGateIsNotARoleList:
         )
 
     def test_c_end_confirmation_chain_still_works(self):
-        """C 端（小布）依赖 `validate_input` 成功才落「已校验待执行」——通配不得把 C 端关掉。"""
+        """C 端（元元）依赖 `validate_input` 成功才落「已校验待执行」——通配不得把 C 端关掉。"""
         ctx = ToolContext(tenant_id=1, user_id="c1", session_id="s1", role="customer")
         assert ValidateInputTool().check_permission(ctx) is True
 
@@ -354,7 +354,7 @@ class TestValidateInputGateIsNotARoleList:
         "validate_input": "纯本地参数校验（双端都要用；自身不读也不写业务数据）",
         # issue #5368 包 2（Agent 深通道）：图 → 同页填充计划。只调 vision 模型与
         # `app/vision/**` 的纯函数，**无 admin-api 调用点**；B 端两个 skill（product/order）
-        # 可达，小布不绑 ⇒ C 端拿不到它。
+        # 可达，元元不绑 ⇒ C 端拿不到它。
         "image_recognize": "纯本地图片识别 + 同页填充计划构造（无 admin-api 调用点、不读写业务数据）",
     }
 

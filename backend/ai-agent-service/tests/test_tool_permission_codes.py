@@ -6,7 +6,7 @@
 `.github/templates/ai-chat.yml` 的 `[ai-chat.permission-layers]` 写的是
 「权限两层：角色检查（allowed_roles）+ 细粒度权限（required_permissions）」，
 `app/agents/agent_router.py` 的注释与 issue #2773 的收口说明更进一步：
-「米宝工具级权限仍由 permissions claim 强控（required_permissions）」。
+「黄金策工具级权限仍由 permissions claim 强控（required_permissions）」。
 
 **但实现不是这样**：`BaseTool.check_permission` 只在 `required_permissions` **非空**时
 才看 `context.permissions`，而 38 个工具类里只有 1 个（`employee_manage`）声明了它 ——
@@ -75,7 +75,7 @@
   该码是**读码**（三个读端点都是它）⇒ #5302 收窄为只读后**码不变**（无写码可去，
   该域读写同码的粒度债见 `tests/unit_ci_workflows/test_agent_permission_parity.py`
   的 `REGISTERED_RESIDUALS`「settings 域写面未注解」）。
-- 🔴 **issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）**：下列 8 把工具的写 action
+- 🔴 **issue #5247 改判（B 端黄金策只读化，用户裁定 2026-09-23）**：下列 8 把工具的写 action
   被删除 ⇒ 它们各自只保留**读码**（`after_sales_manage` / `category_manage` /
   `customer_manage` / `employee_manage` / `finance_api` / `inventory_manage` /
   `role_manage` / `session_manage`），另进场 6 把新只读工具
@@ -131,7 +131,7 @@ PERMISSION_CATALOG = frozenset({
     "order:detail",
     "order:refund",
     # 售后工单**读**码（issue #5246）：此前列表/详情与建单/改状态同用 `order:refund`
-    # （**处理退款**的写语义）⇒ 客服岗位默认权限不含它 ⇒ 客服经米宝查售后必 403。
+    # （**处理退款**的写语义）⇒ 客服岗位默认权限不含它 ⇒ 客服经黄金策查售后必 403。
     "after_sales:view",
     "customer:view",
     "finance:view",
@@ -149,10 +149,10 @@ PERMISSION_CATALOG = frozenset({
     "customer:create",
     "finance:create",
     "agent:session:manage",
-    # 米宝唤出码（issue #5642 功能⑤）：与 admin-api `RegistrationService.defaultPermissions` /
+    # 黄金策唤出码（issue #5642 功能⑤）：与 admin-api `RegistrationService.defaultPermissions` /
     # `PermissionService.ensureFullPermissionCatalog` 的**同名同行**逐字对齐（名称「米宝对话」）。
     # ⚠️ 它**不是**工具层授权码（工具层仍按各工具的 `required_permissions` 判）—— 它管的是
-    # 「能不能唤出米宝」（`AdminGate.canSummonMibao` ⇒ `capabilities.mibaoChat`），
+    # 「能不能唤出黄金策」（`AdminGate.canSummonMibao` ⇒ `capabilities.mibaoChat`），
     # 落进本镜像只是为了**目录不腐烂**（判据：本 frozenset ≡ Java 目录逐值相等）。
     "agent:chat",
 })
@@ -239,7 +239,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
 #: 工具 → 应声明的权限码（下表的「工具 × 角色」放行集由它推导，不手写第二遍）
 TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # issue #5246：读（list/detail）取新增的售后读码 `after_sales:view`。
-    # 🔴 **issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）**：写 action
+    # 🔴 **issue #5247 改判（B 端黄金策只读化，用户裁定 2026-09-23）**：写 action
     # （create/update_status）已从工具删除 ⇒ 写码 `order:refund` 随之退场 —— 这是**收窄**，
     # 不是放宽：工具自身再没有需要该码的调用面（残留的规则/映射由
     # `tests/test_tools_validate_input.py` 的 #5247 退役台账治理）。
@@ -339,7 +339,7 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
 #: 每个工具**必须**放行的商户角色（除恒放行的 admin 外）—— 显式写死，
 #: 映射一变本表就得跟着改，diff 里看得见「谁新拿到/谁被收回」。
 EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
-    # issue #5246：售后**读**码 `after_sales:view` 已授予客服/运营 ⇒ 客服经米宝查售后不再 403。
+    # issue #5246：售后**读**码 `after_sales:view` 已授予客服/运营 ⇒ 客服经黄金策查售后不再 403。
     "after_sales_manage": frozenset({"customer_service", "operator"}),
     # 批次/省料读面（issue #5188）：`product:list` 的持有角色（目录推导，不手抄）
     "batch_stock_query": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
@@ -354,7 +354,7 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "craft_calc_config_query": frozenset({"operator", "product_manager"}),
     # issue #4923 进场：声明 `production:view` ⇒ 目录推导的持有角色 = operator + product_manager
     # （与 `craft_calc_config_query` / `operation_catalog_query` 同码同放行集）。
-    # ⚠️ C 端恒不可达：C 端 JWT 无权限码（`UserIdentity.permissions` 默认空）⇒ 小布不做权限码授权。
+    # ⚠️ C 端恒不可达：C 端 JWT 无权限码（`UserIdentity.permissions` 默认空）⇒ 元元不做权限码授权。
     "craft_config_query": frozenset({"operator", "product_manager"}),
     # issue #5988（2026-10-02 人类裁定「应允许」）：财务补 `customer:view` ⇒
     # 它**首次**满足本工具的码门禁 ⇒ 放行集必须加上它（否则「有码却被角色层拒」= 假拒绝）。
@@ -620,7 +620,7 @@ class TestPermissionCodeIsTheGate:
     def test_customer_without_codes_is_denied_on_every_coded_tool(self):
         """C 端顾客 JWT 没有权限码 ⇒ 非双端的管理类工具一律拒绝（不因改码而开口子）。
 
-        issue #5246：声明了 `c_end_reachable` 的**双端工具**（被小布 skill 绑定）是**唯一**例外 ——
+        issue #5246：声明了 `c_end_reachable` 的**双端工具**（被元元 skill 绑定）是**唯一**例外 ——
         权限码层对 C 端不可判，按 `base.py` 的既定语义落到角色层（= 加码前的行为，零回归）。
         例外集合在这里**逐字**钉住（它的取值由 `tests/unit_ci_workflows/test_agent_permission_parity.py`
         从 `app/graph/skills/*.py` 机械推导），两个方向都要成立：非双端工具拒 + 双端工具放行。

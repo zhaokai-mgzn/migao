@@ -144,7 +144,7 @@ class PermissionServiceTest {
         // （否则「新租户有、老租户没有」会静默复发）。
         // issue #5291：三个域新增**读**码（product:category:view / production:view / system:view）
         // ⇒ 27 → 30（应补 26 → 29）。本用例正是「**存量**租户拿新码」的路径。
-        // issue #5642 功能⑤：新增**一个**码 `agent:chat`（米宝唤出权）⇒ 30 → 31（应补 29 → 30）。
+        // issue #5642 功能⑤：新增**一个**码 `agent:chat`（黄金策唤出权）⇒ 30 → 31（应补 29 → 30）。
         // issue #5699 的 **I4**：新增**一个写**码 `production:execute`（生产执行）⇒ 31 → 32（应补 30 → 31）。
         assertThat(inserted).isEqualTo(31);
         // 补种的码应含 order:list / employee:create / finance:view（此前角色管理无法授予）
@@ -160,7 +160,7 @@ class PermissionServiceTest {
                         || "product:category:view".equals(p.getCode())
                         || "production:view".equals(p.getCode())
                         || "system:view".equals(p.getCode())
-                        // issue #5642 功能⑤：米宝唤出码 —— 存量租户的角色管理页必须能勾到它，
+                        // issue #5642 功能⑤：黄金策唤出码 —— 存量租户的角色管理页必须能勾到它，
                         // 否则「上线当天批量授权」（裁定⑧ 的交付物）在存量租户上无入口
                         || "agent:chat".equals(p.getCode())));
     }

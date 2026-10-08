@@ -183,7 +183,7 @@ def test_real_face_is_discovered_and_its_contract_is_readable():
         "探针在真实服务目录上判「无法判定」—— 面清单为空 / 契约不可解析 ⇒ 门禁的「未就绪」"
         "与用例的 skip 会各说各话"
     )
-    assert "test_e2e_mibao_scenarios.py" in reading.stdout, "探到的面里没有米宝 e2e 面"
+    assert "test_e2e_mibao_scenarios.py" in reading.stdout, "探到的面里没有黄金策 e2e 面"
 
 
 def test_face_uses_the_shared_judgement_and_declares_the_contract():

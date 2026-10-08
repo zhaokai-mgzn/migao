@@ -36,8 +36,8 @@ BYPASS_CODE = os.environ.get("BYPASS_CODE", "123456")
 # CI 模式：SERVICE_TOKEN 存在时，chat/send 无 auth（DEBUG 默认用户），admin-api 用 X-Service-Token
 SERVICE_TOKEN = os.environ.get("SERVICE_TOKEN", "")
 
-# Persona：mibao（默认，B 端工作助手）/ xiaobu（C 端客服小布）
-# xiaobu 模式：不带 Bearer token，通过 X-Debug-Role: customer 让 DEBUG 模式路由到小布，
+# Persona：mibao（默认，B 端工作助手）/ xiaobu（C 端客服元元）
+# xiaobu 模式：不带 Bearer token，通过 X-Debug-Role: customer 让 DEBUG 模式路由到元元，
 # 并验证 C 端数据隔离（customer_order_query 而非 order_query）。
 PERSONA = os.environ.get("PERSONA", "mibao").strip().lower()
 
@@ -1864,7 +1864,7 @@ def _chat_headers(token: str, debug_user: str = "",
                   debug_permissions: str = "") -> dict:
     """ai-agent 请求头：调试身份必须显式声明（P0-3 安全加固）
 
-    - xiaobu（C 端）：X-Debug-Role: customer（DEBUG 本地栈/CI 显式注入小布身份）
+    - xiaobu（C 端）：X-Debug-Role: customer（DEBUG 本地栈/CI 显式注入元元身份）
     - mibao（B 端）+ SERVICE_TOKEN（CI）：X-Debug-Role: mibao——此前不带任何头
       依赖"无 token → DEBUG 静默降级 tenant1 管理员"，服务端已 fail-closed，
       现改为显式声明管理员调试身份，语义不变（eval 仍跑 tenant1 词元通达）。
@@ -2713,7 +2713,7 @@ def _card_answer_matchers(args: dict) -> list:
 def check_repeated_card_ask(results: list) -> list:
     """「同一张卡顾客**已答过**又被重问」→ 违规（issue #3477 复盘 / 断言矩阵补行）。
 
-    背景（C-A1 R5，run 34788143133 transcript）：R2 小布**文本**问「需要一起加工吗？」→
+    背景（C-A1 R5，run 34788143133 transcript）：R2 元元**文本**问「需要一起加工吗？」→
     R3 顾客答「打孔」→ R5 又发加工项 choice 卡 —— 同一件事问第二遍（加工项侧已由
     agent 守卫修 #3473，这里补**评测断言**，覆盖地址/数量/颜色等所有"同卡重问"）。
 
@@ -2874,19 +2874,19 @@ _WRITE_CLAIM_MARKERS = (
 
 
 # ── 能力误宣（"能做却说做不了"，issue #3389 / 验收 C-A1 实证）──────────────
-# 实证（run 34743802010，C-A1）：顾客「确认下单」×4 轮 → 小布「**下单这个操作小布这边没法
+# 实证（run 34743802010，C-A1）：顾客「确认下单」×4 轮 → 元元「**下单这个操作元元这边没法
 # 直接帮您提交呢**，需要您在小程序里点一下"立即购买"」→ R9 `human_handoff(reason=
 # "顾客需协助下单（智能客服无法代为提交订单）")`，整场 9 轮从未调用 `order_create`。
 # 而 order_create 就是 customer_order skill 自己的写工具（OR-014/017/018/019/020 都真实落单）。
 #
 # 与 `check_false_success` 配对：那条管"没做却说做了"（假成功），本条管"能做却说做不了"（假无能）。
 # 判据（保守，避免误报）：
-#   · **必须是"施动者是 AI 自己"的否定**（我/我们/小布/智能客服/这边 + 没法/无法/不能/…）；
+#   · **必须是"施动者是 AI 自己"的否定**（我/我们/元元/智能客服/这边 + 没法/无法/不能/…）；
 #     商家侧/商品侧的客观说明（"这款不支持散剪""价格不能直接改"）不在此列；
 #   · 同一句内 24 字符内与**下单动作**词共现（下单/提交订单/创建订单/建单/代为下单…），顺序不限；
 #   · 转人工 `reason`/`summary` 同样扫描（C-A1 R9 的实际形态）。
 _AGENT_INABILITY_RE_SRC = (
-    r"(?:我|我们|小布|智能客服|客服|这边)[^。！？\n]{0,8}"
+    r"(?:我|我们|元元|智能客服|客服|这边)[^。！？\n]{0,8}"
     r"(?:没法|无法|不能|没办法|做不到|没有权限|无权限|没权限"
     r"|没(?:有)?[^。！？\n]{0,8}权限)"   # 「没有帮您下单的权限」（#3477：词被隔开时旧正则漏）
 )
@@ -6921,8 +6921,8 @@ def is_customer_case(case) -> bool:
     （"声称查过而其实没查"家族）。
     故判据与**选择函数同源**：先看它是否被选进 C 端集，其次才回退看声明。
     """
-    # **只在本轮就是 C 端 run 时才有意义**：C端专属检查不应在米宝 run 上生效
-    # （双端用例也会被米宝 run 选中 → 不加这道闸就会对 B 端链路误报）。
+    # **只在本轮就是 C 端 run 时才有意义**：C端专属检查不应在黄金策 run 上生效
+    # （双端用例也会被黄金策 run 选中 → 不加这道闸就会对 B 端链路误报）。
     if PERSONA != "xiaobu":
         return False
     declared = str(getattr(case, "persona", "") or "").strip()
@@ -6942,7 +6942,7 @@ async def check_phone_provenance(token: str, case, results: list) -> list:
     比逐用例写 `db_verify[order_phone].expect_phone` 更结构性：**新增用例无需配置**
     就自动受保护。CH-010 的脏号码 `13800008000` 既不是用例给的 `13800138000`、
     也不是种子号码 → 本断言直接判红，不需要人肉审计 DB。
-    只对 C 端（xiaobu）生效：B 端米宝给顾客建单时可能从客户档案取号（非用例提供），
+    只对 C 端（xiaobu）生效：B 端黄金策给顾客建单时可能从客户档案取号（非用例提供），
     全局套用会误报。
     """
     if not is_customer_case(case):
@@ -10858,7 +10858,7 @@ async def main():
     # persona 归属 + C 端工具集过滤（issue #2855 / #3266）
     # mibao：跳过 C 端专属（xiaobu）用例
     # xiaobu：#2855 persona 过滤 + #3266 工具集过滤（双端用例须其断言工具全在
-    #         小布能力内；B 端管理用例——断言的工具小布没有——一律排除，
+    #         元元能力内；B 端管理用例——断言的工具元元没有——一律排除，
     #         防「跑在错误 Agent 上还计分」的假绿）
     before = len(cases)
     # #5504：留住**过滤前**的用例全集 = `--case-ids` 的解析空间。跨腿 ID 必须能被解析成

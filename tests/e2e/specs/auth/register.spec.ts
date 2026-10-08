@@ -174,8 +174,8 @@ test.describe('企业入驻注册页面', () => {
 
     await expect(page.getByText('审核通过，欢迎入驻！')).toBeVisible({ timeout: 15000 })
     // 定位标签口径见 frontend/admin-web/src/config/ai-roles.ts（issue #6330/#6333/#6335）
-    await expect(page.getByText(/米宝.*企业智能生产管家/)).toBeVisible()
-    await expect(page.getByText(/小布.*智能客服/)).toBeVisible()
+    await expect(page.getByText(/黄金策.*企业智能生产管家/)).toBeVisible()
+    await expect(page.getByText(/元元.*智能客服/)).toBeVisible()
     await expect(page.getByText(/全功能管理后台/)).toBeVisible()
   })
 

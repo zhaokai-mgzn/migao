@@ -296,7 +296,7 @@ def test_every_registered_write_tool_is_declared():
     与 `tests/test_write_tool_confirm_gate_invariant.py` 的「写工具必须显式表态」同族：
     那边管确认门禁，这边管**判据归属**。
 
-    ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：判定面从「已注册」
+    ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端黄金策只读化」）：判定面从「已注册」
     **收紧为「已注册 ∧ 两端可达」** —— 旧口径隐含「已注册 ⇒ 必然可达」，而 #5247 之后
     7 个写工具**仍注册**（类与注册行都在）却**绑不上任何 skill**（模型永远调不到）：
     要求它们表态 = 幽灵写工具（`test_write_tool_sets_only_name_reachable_tools` 会判红）。

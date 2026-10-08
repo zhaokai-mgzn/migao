@@ -40,7 +40,7 @@ describe('CorporateFooter（官网页脚 v4：主体事实 + 能力入口，issu
   it('renders copyright with legal company name', () => {
     render(<CorporateFooter />)
     expect(
-      screen.getByText(/© 2026 杭州词元通达科技有限公司 · 米高 版权所有/)
+      screen.getByText(/© 2026 杭州词元通达科技有限公司 · 观星台 版权所有/)
     ).toBeInTheDocument()
   })
 

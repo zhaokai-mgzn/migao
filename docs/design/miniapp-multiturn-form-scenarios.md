@@ -1,11 +1,11 @@
-# 小布多轮对话场景评测 + 表单化交互设计方案
+# 元元多轮对话场景评测 + 表单化交互设计方案
 
 > 版本 v1.0 ｜ 2026-09-01 ｜ 状态：方案评审中
 > 关联：[tenant-miniapp-launch-and-payment.md](tenant-miniapp-launch-and-payment.md)（上架+支付）、[cases/chat.yml](../../.github/cases/chat.yml)（行为用例单一源）、[InteractTool](../../backend/ai-agent-service/app/tools/interact.py)
 
 ## 1. 背景与目标
 
-小布是 MIGAO 的 C 端 AI 智能客服（微信小程序）。现状：已有对话、快捷操作、8 种信息卡片（商品/订单/物流/报价/知识/确认/选择/工具指示）与 interact 工具（choice/confirm/form 三种交互组件），但存在三个关键差距：
+元元是 MIGAO 的 C 端 AI 智能客服（微信小程序）。现状：已有对话、快捷操作、8 种信息卡片（商品/订单/物流/报价/知识/确认/选择/工具指示）与 interact 工具（choice/confirm/form 三种交互组件），但存在三个关键差距：
 
 | # | 差距 | 现状证据 |
 |---|---|---|
@@ -13,11 +13,11 @@
 | G2 | **多轮业务场景未评测** | `chat.yml` 8 个 CH 用例全为对抗/边界（escape hatch/打岔/闲聊穿插），无「选购→规格→报价→确认→下单」正向多轮链路 |
 | G3 | **LLM 表单引导不足** | `registry.py` 有 interact 启用痕迹，但无场景化引导与用例约束，LLM 倾向纯文本收参 |
 
-**目标**：参考主流 C 端企业级 agent（[悟帆交互式卡片](https://cloud.tencent.com.cn/developer/article/2693125)、[Copilot Studio adaptive cards](https://learn.microsoft.com/hu-hu/training/modules/deliver-rich-agent-responses-adaptive-cards-copilot-studio/1-introduction)、[Neo Agent Intent Forms](https://docs.neoagent.io/chat-agents/intent-forms)、[Simlect-AI-Mall 对话导购客服](https://github.com/Audreator/Simlect-AI-Mall)）的设计思路，让用户通过**点选/填表/确认**完成下单等核心业务，小布**聪明（多轮上下文）可靠（结构化校验+确认后执行）**，同时**兼顾数据安全**（多租户隔离/敏感信息脱敏/SMS 验证/最小化采集）。
+**目标**：参考主流 C 端企业级 agent（[悟帆交互式卡片](https://cloud.tencent.com.cn/developer/article/2693125)、[Copilot Studio adaptive cards](https://learn.microsoft.com/hu-hu/training/modules/deliver-rich-agent-responses-adaptive-cards-copilot-studio/1-introduction)、[Neo Agent Intent Forms](https://docs.neoagent.io/chat-agents/intent-forms)、[Simlect-AI-Mall 对话导购客服](https://github.com/Audreator/Simlect-AI-Mall)）的设计思路，让用户通过**点选/填表/确认**完成下单等核心业务，元元**聪明（多轮上下文）可靠（结构化校验+确认后执行）**，同时**兼顾数据安全**（多租户隔离/敏感信息脱敏/SMS 验证/最小化采集）。
 
 ## 2. 主流 C 端 agent 交互设计共识（参考）
 
-| 模式 | 说明 | 小布对应 |
+| 模式 | 说明 | 元元对应 |
 |---|---|---|
 | 产品/列表卡片（Product/List Card） | 搜索结果结构化展示 + 操作按钮 | ProductCard ✅ |
 | 意图表单（Intent Form） | 收集业务关键参数（数量/规格/地址），提交后执行工具 | **FormCard ❌（本次实现）** |

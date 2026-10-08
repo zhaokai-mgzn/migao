@@ -143,7 +143,7 @@ describe('#5918 新增商品页：识别入口的落点与功能', () => {
     const file = new File(['x'], 'a.png', { type: 'image/png' })
     fireEvent.change(screen.getByTestId('image-recognize-input'), { target: { files: [file] } })
 
-    // 上传 → 一次性推理：targetType / 图片地址 / 空的补充要求逐字断言（快通道不依赖米宝）
+    // 上传 → 一次性推理：targetType / 图片地址 / 空的补充要求逐字断言（快通道不依赖黄金策）
     await waitFor(() =>
       expect(mockInterpret).toHaveBeenCalledWith('product', ['https://cdn.example.com/roll.jpg'], ''),
     )

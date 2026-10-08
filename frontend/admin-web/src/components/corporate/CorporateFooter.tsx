@@ -27,11 +27,11 @@ export default function CorporateFooter() {
           <div className="space-y-4">
             <div className="flex items-center gap-2.5">
               <Logo size="small" />
-              <span className="text-lg font-semibold tracking-tight text-white">米高</span>
+              <span className="text-lg font-semibold tracking-tight text-white">观星台</span>
             </div>
             <p className="max-w-xs text-sm leading-relaxed text-neutral-400">
-              杭州词元通达科技有限公司出品的米高平台：面向布艺 / 窗帘商家的多租户 AI
-              经营平台，顾客侧小布、经营侧米宝，共用数据底座。
+              杭州词元通达科技有限公司出品的观星台平台：面向布艺 / 窗帘商家的多租户 AI
+              经营平台，顾客侧元元、经营侧黄金策，共用数据底座。
             </p>
           </div>
 
@@ -69,7 +69,7 @@ export default function CorporateFooter() {
             <ul className="space-y-2.5 text-sm text-neutral-400">
               <li>提交入驻申请并完成手机验证</li>
               <li>AI 自动核验企业信息与合规性</li>
-              <li>通过后即刻开通管理后台，小布与米宝同步上线</li>
+              <li>通过后即刻开通管理后台，元元与黄金策同步上线</li>
             </ul>
             <Link
               href="/register"
@@ -82,10 +82,10 @@ export default function CorporateFooter() {
 
         <div className="space-y-3 py-6 text-center text-xs leading-relaxed text-neutral-500">
           <p>
-            「遵循 / 对标 GB/T 47746-2026」指小布智能客服的人机协同机制功能设计参考该推荐性国家标准；该标准为推荐性标准、无认证或备案机制，本页面不构成任何认证、检测或备案结论。
+            「遵循 / 对标 GB/T 47746-2026」指元元智能客服的人机协同机制功能设计参考该推荐性国家标准；该标准为推荐性标准、无认证或备案机制，本页面不构成任何认证、检测或备案结论。
           </p>
           <p>本页面展示的功能以实际开通版本为准；报价与交付内容由双方另行确认。</p>
-          <p>© 2026 杭州词元通达科技有限公司 · 米高 版权所有</p>
+          <p>© 2026 杭州词元通达科技有限公司 · 观星台 版权所有</p>
         </div>
       </div>
     </footer>

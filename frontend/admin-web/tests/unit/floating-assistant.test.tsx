@@ -53,48 +53,48 @@ describe('FloatingAssistant', () => {
   it('默认状态下只显示 FAB 按钮', () => {
     render(<FloatingAssistant />)
 
-    expect(screen.getByTitle('打开米宝')).toBeInTheDocument()
-    expect(screen.queryByText('米宝 · 企业智能生产管家')).not.toBeInTheDocument()
+    expect(screen.getByTitle('打开黄金策')).toBeInTheDocument()
+    expect(screen.queryByText('黄金策 · 企业智能生产管家')).not.toBeInTheDocument()
   })
 
   it('点击 FAB 打开面板，居中大窗两栏布局', () => {
     render(<FloatingAssistant />)
 
-    fireEvent.click(screen.getByTitle('打开米宝'))
+    fireEvent.click(screen.getByTitle('打开黄金策'))
 
     // 面板标题可见
-    expect(screen.getByText('米宝 · 企业智能生产管家')).toBeInTheDocument()
+    expect(screen.getByText('黄金策 · 企业智能生产管家')).toBeInTheDocument()
     // 居中大窗：会话列表 + 聊天区两栏
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
     expect(screen.getByTestId('chat-area')).toBeInTheDocument()
     // FAB 在面板打开时隐藏
-    expect(screen.queryByTitle('打开米宝')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('打开黄金策')).not.toBeInTheDocument()
   })
 
   it('点击居中遮罩关闭面板', () => {
     render(<FloatingAssistant />)
 
-    fireEvent.click(screen.getByTitle('打开米宝'))
-    expect(screen.getByText('米宝 · 企业智能生产管家')).toBeInTheDocument()
+    fireEvent.click(screen.getByTitle('打开黄金策'))
+    expect(screen.getByText('黄金策 · 企业智能生产管家')).toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('float-assistant-overlay'))
-    expect(screen.queryByText('米宝 · 企业智能生产管家')).not.toBeInTheDocument()
+    expect(screen.queryByText('黄金策 · 企业智能生产管家')).not.toBeInTheDocument()
   })
 
   it('点击关闭按钮收起面板', () => {
     render(<FloatingAssistant />)
 
-    fireEvent.click(screen.getByTitle('打开米宝'))
-    expect(screen.getByText('米宝 · 企业智能生产管家')).toBeInTheDocument()
+    fireEvent.click(screen.getByTitle('打开黄金策'))
+    expect(screen.getByText('黄金策 · 企业智能生产管家')).toBeInTheDocument()
 
     fireEvent.click(screen.getByTitle('关闭'))
-    expect(screen.queryByText('米宝 · 企业智能生产管家')).not.toBeInTheDocument()
+    expect(screen.queryByText('黄金策 · 企业智能生产管家')).not.toBeInTheDocument()
   })
 
   it('打开面板时自动加载会话列表', () => {
     render(<FloatingAssistant />)
 
-    fireEvent.click(screen.getByTitle('打开米宝'))
+    fireEvent.click(screen.getByTitle('打开黄金策'))
 
     expect(mockFetchSessions).toHaveBeenCalled()
   })
@@ -108,7 +108,7 @@ describe('FloatingAssistant', () => {
 
   function openMinimized() {
     render(<FloatingAssistant />)
-    fireEvent.click(screen.getByTitle('打开米宝'))
+    fireEvent.click(screen.getByTitle('打开黄金策'))
     fireEvent.click(screen.getByTitle('收起'))
     return screen.getByTestId('float-minimized-window')
   }
@@ -166,7 +166,7 @@ describe('FloatingAssistant', () => {
   it('拖拽移动按当前浮窗尺寸钳制 —— 可贴满左右/上下极限不留白', () => {
     setViewport(1024, 768)
     const win = openMinimized()
-    fireEvent.mouseDown(screen.getByText('米宝'), { clientX: 500, clientY: 500 })
+    fireEvent.mouseDown(screen.getByText('黄金策'), { clientX: 500, clientY: 500 })
     fireEvent.mouseMove(document, { clientX: 5000, clientY: 5000 })
     expect(win.style.left).toBe('624px')   // 1024 - 400
     expect(win.style.top).toBe('154px')    // 768 - 614

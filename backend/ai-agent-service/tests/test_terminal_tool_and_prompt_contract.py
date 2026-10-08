@@ -160,7 +160,7 @@ class TestTerminalResetsDomain:
                 state=_state(),
                 skill_name="customer_aftersales",
                 tool_names=[tool.name],
-                system_prompt="你是小布的售后客服",
+                system_prompt="你是元元的售后客服",
             ))
         return reset_calls
 

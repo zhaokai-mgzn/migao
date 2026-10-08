@@ -43,10 +43,10 @@ describe('CorporateSection（官网共用版式）', () => {
   // ── PageHero ──
 
   it('PageHero 渲染 kicker / h1 / 导语', () => {
-    render(<PageHero kicker="产品与服务" title="能干活的两个 AI" lead="米高不是接一个客服机器人" />)
+    render(<PageHero kicker="产品与服务" title="能干活的两个 AI" lead="观星台不是接一个客服机器人" />)
     expect(screen.getByText('产品与服务')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1, name: '能干活的两个 AI' })).toBeInTheDocument()
-    expect(screen.getByText('米高不是接一个客服机器人')).toBeInTheDocument()
+    expect(screen.getByText('观星台不是接一个客服机器人')).toBeInTheDocument()
   })
 
   it('PageHero 渲染事实标签；未给 chips 时不渲染标签容器', () => {

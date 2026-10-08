@@ -1,6 +1,6 @@
 # RBAC 权限体系
 
-> 2026-08 已实现「员工管理权限全链路」：门禁 → 细粒度接口鉴权 → 前端菜单/按钮/路由 → 米宝工具，见下文「全链路现状」。
+> 2026-08 已实现「员工管理权限全链路」：门禁 → 细粒度接口鉴权 → 前端菜单/按钮/路由 → 黄金策工具，见下文「全链路现状」。
 > 2026-09（#2969）「角色权限」改名「**岗位权限**」：岗位=角色体系（roles 表即岗位），role_permissions 即岗位默认权限；创建员工选岗位自动带出默认权限，保存勾选=员工最终权限（快照式）。
 
 ## 岗位（实际生效）
@@ -9,7 +9,7 @@
 |------|------|---------|
 | 管理员 | admin | 恒为全部权限 `["*"]`（`RoleService.getUserPermissions`） |
 | 平台管理员 | super_admin | 全部权限（在 `platform_admins` 表，走 `PermissionInterceptor` 直通） |
-| 客服 | customer_service | 岗位默认权限：role_permissions 预置 —— 实际权限码 `dashboard:view`, `order:list`, `order:detail`, `customer:view`, `agent:session`, `processing:view`, `inbound:view`, **`after_sales:view`**（售后**读**码，issue #5246 新增 —— 客服经米宝查售后不再 403）, **`knowledge:view`**（知识卡片读码，issue #5246 新增）, **`agent:session:manage`**（会话转接/结束写码，issue #5246 第二批）, **`production:execute`**（生产执行写码，issue #5699 —— 今日持 `order:list` ⇒ 建加工单/报工/打印/发货本来就过得了）, **`order:refund`**（售后**写**面：建单/改状态；issue #5988 —— 人类 2026-10-02 裁定「应允许」：客服处理售后 = 本职）。**仍无** `order:update`（改单写面） |
+| 客服 | customer_service | 岗位默认权限：role_permissions 预置 —— 实际权限码 `dashboard:view`, `order:list`, `order:detail`, `customer:view`, `agent:session`, `processing:view`, `inbound:view`, **`after_sales:view`**（售后**读**码，issue #5246 新增 —— 客服经黄金策查售后不再 403）, **`knowledge:view`**（知识卡片读码，issue #5246 新增）, **`agent:session:manage`**（会话转接/结束写码，issue #5246 第二批）, **`production:execute`**（生产执行写码，issue #5699 —— 今日持 `order:list` ⇒ 建加工单/报工/打印/发货本来就过得了）, **`order:refund`**（售后**写**面：建单/改状态；issue #5988 —— 人类 2026-10-02 裁定「应允许」：客服处理售后 = 本职）。**仍无** `order:update`（改单写面） |
 | 运营 | operator | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `order:refund`, `product:list`, `product:create`, `product:category`, `processing:manage`, `processing:view`, `processing:update`, `inbound:view`, `inbound:create`, `customer:view`, `finance:view`, `agent:session`, `employee:list`, **`after_sales:view`**, **`knowledge:view`**, **`order:update`**, **`order:create`**, **`customer:create`**, **`finance:create`**, **`agent:session:manage`**（后七个码 issue #5246 新增）, **`product:category:view`**, **`production:view`**（三个域**读**码中的两个，issue #5291 新增 —— operator 原持 `product:category` / `processing:manage`，拆码时**同批回填读码** ⇒ 菜单与 Agent 面**零变化**；第三个 `system:view` **不给**：岗位权限归 admin 专属） |
 | 销售 | sales | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `product:list`, `order:list`, `order:detail`, `customer:view`, `processing:view` |
 | 财务 | finance | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `finance:view`, `processing:view`, `inbound:view`, **`finance:create`**（登记收支写码，issue #5246 第二批） |
@@ -52,7 +52,7 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 ```
 
 - RS256 非对称签名 (admin-api 持私钥, ai-agent-service 持公钥)
-- `permissions` claim 由 `JwtAuthenticationFilter` 解析，并透传到米宝工具的 `ToolContext.permissions`（同一份权限码，不另立口径）。
+- `permissions` claim 由 `JwtAuthenticationFilter` 解析，并透传到黄金策工具的 `ToolContext.permissions`（同一份权限码，不另立口径）。
   生效边界（#4106 铺开后为**全部 B 端工具**；此前只有 `employee_manage` 声明 `required_permissions`）：
   工具声明 `required_permissions` 时按权限码放行，`allowed_roles` 只做粗筛与路由；越权的最终关口是 admin-api 的 `@RequirePermission` 403（见下方「强制点」与「权限码矩阵与已知缺口」）。
   两点补充口径（#4147）：① `allowed_roles = ["*"]` 表示**角色层不适用**（任何已认证身份），
@@ -61,7 +61,7 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
   ② 工具层 `check_permission` 的拒绝必须带 `error_code ∈ NON_RETRYABLE_ERROR_CODES`
   （当前 `PERMISSION_DENIED`），否则授权失败会进自修复重试的参数改写重放；
   ③ **权限码是「商户员工」概念（issue #5246）**：C 端（`customer`/`agent`）JWT 里没有 `permissions`
-  claim ⇒ 对 C 端而言细粒度层**不可判**。⇒ 声明了权限码的**双端工具**（同时被小布 skill 绑定：
+  claim ⇒ 对 C 端而言细粒度层**不可判**。⇒ 声明了权限码的**双端工具**（同时被元元 skill 绑定：
   `product_search` / `product_detail` / `processing_item_query` / `order_create` / `knowledge_search` /
   `production_progress_query`）必须在类上显式写 `c_end_reachable = True`，C 端才按**角色层**放行
   （= 与加码前逐字一致，C 端零回归）；**未声明**该标记的工具对 C 端一律拒绝（既有 C 端硬闸）。
@@ -81,7 +81,7 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
   → 前端路由守卫(403 页) + 按钮级权限(employee:create 才可见新增/编辑/删除/禁用)
   → 后端 SecurityConfig 门禁(/api/admin/** 仅商户员工角色, customer/agent/worker 拒绝)
   → @RequirePermission + PermissionInterceptor 按权限码 403
-  → 米宝: ToolContext.permissions → employee_manage 按 employee:list/employee:create 放行
+  → 黄金策: ToolContext.permissions → employee_manage 按 employee:list/employee:create 放行
 ```
 
 ## 强制点（已启用）
@@ -132,7 +132,7 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 > **issue #5246 落地状态（2026-09-23）** —— 上表逐条结论已落地，**没有一条留在沉默里**：
 > · **该补的补了**：第 1/2/3 行（`AdminPermissionController` / `NotificationRule` / `NotificationTemplate`）
 >   已是 `system:manage`；第 5 行 `POST /api/admin/notifications` 补 `system:manage`，
->   **同批**给 ai-agent 的 `notification_manage` 声明同一码（单边改动会砍掉运营经米宝发通知的能力）。
+>   **同批**给 ai-agent 的 `notification_manage` 声明同一码（单边改动会砍掉运营经黄金策发通知的能力）。
 > · **该放行的登记为「有意放行」**：第 4/6/7/8/9/10/11 行 + 部分覆盖表的读面，逐条登记在守卫
 >   `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `UNANNOTATED_ENDPOINTS`（每条含理由）；
 >   判据 8 会因「新增了未登记的无码端点」或「登记项已陈旧」而变红 ⇒ 沉默放行不再可能。
@@ -194,7 +194,7 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 | 2 | `NotificationRuleController` | `GET/POST/PUT/DELETE /api/admin/notification-rules` | 无注解 | ✅ **补类级 `system:manage`** | 租户级通知配置（含写面），与「租户设置」同族；前端与 ai-agent **零调用**（仅单测命中）⇒ 零回归 |
 | 3 | `NotificationTemplateController` | `GET/POST/PUT/DELETE /api/admin/notification-templates` | 无注解 | ✅ **补类级 `system:manage`** | 同上 |
 | 4 | `NotificationController` | `GET /notifications`、`GET /unread-count`、`PUT /{id}/read`、`PUT /read-all`、`DELETE /{id}` | 无注解 | ⬜ **该放行** | **自助**端点：收件人一律取 `SecurityContext` 的当前 `userId`（不接受 body 注入）⇒ 无跨用户读写；通知中心**无前端路由守卫**（全员可见）⇒ 加码会砍掉所有岗位的通知铃铛 |
-| 5 | `NotificationController` | `POST /api/admin/notifications` | 无注解 | ⚠️ **本轮不改（登记为分叉）** | 语义上是「管理员手动发送」的**租户级写面**（收件人由 body 指定），但 ai-agent 的 `notification_manage`（`allowed_roles=["admin","agent","tenant_admin","operator"]`、**未声明** `required_permissions`）与 `human_handoff`（C 端）都在调它 ⇒ 单方面补 `system:manage` 会**砍掉 operator 经米宝发通知**的既有能力。正解 = 注解 **与** ai-agent 侧 `required_permissions` **同 PR** 落地（#4727 禁改 ai-agent） |
+| 5 | `NotificationController` | `POST /api/admin/notifications` | 无注解 | ⚠️ **本轮不改（登记为分叉）** | 语义上是「管理员手动发送」的**租户级写面**（收件人由 body 指定），但 ai-agent 的 `notification_manage`（`allowed_roles=["admin","agent","tenant_admin","operator"]`、**未声明** `required_permissions`）与 `human_handoff`（C 端）都在调它 ⇒ 单方面补 `system:manage` 会**砍掉 operator 经黄金策发通知**的既有能力。正解 = 注解 **与** ai-agent 侧 `required_permissions` **同 PR** 落地（#4727 禁改 ai-agent） |
 | 6 | `MenuController` | `GET /api/admin/menus` | 无注解 | ⬜ **该放行** | 内容是**静态常量**（`MENU_TREE` 硬编码权限码目录，不读任何租户/业务数据），且每个已认证员工本来就能从 `/api/auth/me` 拿到 `permissions`/`menus`；唯一调用方「员工管理」页（守卫 `employee:list`）的勾选树依赖它 |
 | 7 | `UserController` | `GET /api/admin/user/info` | 无注解 | ⬜ **该放行** | **自助**首屏：只返回**自己**的角色/权限（**不下发菜单**：该端点原私有持有的菜单表已在 issue #5236 判为「三源同构」之外的第四处菜单源、且**无消费方** ⇒ 整段删除；菜单的真值源 = `GET /api/auth/me` 与 `frontend/admin-web/src/config/menu.ts`）；任何权限码都会让无该码的员工登录后白屏 |
 | 8 | `AuthController` | 10 个 `/api/auth/**` 端点 | 无注解 | ⬜ **该放行** | 公开登录/OAuth/refresh（`permitAll`）+ 自助 `me`/`logout`/`mini/bind-phone`（C 端能力，**加码 = 线上故障**） |
@@ -206,9 +206,9 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 
 | controller | 未覆盖端点 | 结论 | 依据 |
 |---|---|---|---|
-| `AdminRoleController` | `GET /roles`、`GET /roles/all`、`GET /roles/{id}` | ✅ **该收紧（已收紧，issue #5980）** | 三条读面原**无注解** ⇒ 按分支 ③ 对全部商户员工开放（含 0 权限岗位）。**issue #5980 逐调用方核对后取各页既有的读码**：`GET /roles/all` → `employee:list`（唯一调用方 = 「员工管理」页岗位下拉 `employeeApi.loadPositions()`，该页节点码/守卫码即本码）；`GET /roles`、`GET /roles/{id}` → `system:view`（「岗位权限」页的**第一屏**读端点与回显，该页节点码/守卫码即本码）。**不新增权限码、不改岗位矩阵**；写面（POST/PUT/DELETE）仍是 `system:manage`。⚠️ `/roles/all` 因此与米宝 `role_manage` 工具**跨码**（同一 API 被两个守卫码不同的页面共用）⇒ 具名登记在 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']` |
+| `AdminRoleController` | `GET /roles`、`GET /roles/all`、`GET /roles/{id}` | ✅ **该收紧（已收紧，issue #5980）** | 三条读面原**无注解** ⇒ 按分支 ③ 对全部商户员工开放（含 0 权限岗位）。**issue #5980 逐调用方核对后取各页既有的读码**：`GET /roles/all` → `employee:list`（唯一调用方 = 「员工管理」页岗位下拉 `employeeApi.loadPositions()`，该页节点码/守卫码即本码）；`GET /roles`、`GET /roles/{id}` → `system:view`（「岗位权限」页的**第一屏**读端点与回显，该页节点码/守卫码即本码）。**不新增权限码、不改岗位矩阵**；写面（POST/PUT/DELETE）仍是 `system:manage`。⚠️ `/roles/all` 因此与黄金策 `role_manage` 工具**跨码**（同一 API 被两个守卫码不同的页面共用）⇒ 具名登记在 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']` |
 | `SettingsController` | `PUT /api/admin/settings/password` | ⬜ **该放行** | 自助改密：只改**当前认证用户**自己的密码 |
-| `agent/AgentPaymentController` | `GET /api/admin/agent/payment-qrcodes` | ⬜ **该放行** | 米宝收款码读面（会话内展示给客户），与类级 `order:list` 同族的读口径 |
+| `agent/AgentPaymentController` | `GET /api/admin/agent/payment-qrcodes` | ⬜ **该放行** | 黄金策收款码读面（会话内展示给客户），与类级 `order:list` 同族的读口径 |
 
 > **残余风险（照实登记，本轮不修）**：分支 ③ + 上表第 6/7 行意味着**零权限的商户员工**仍能读
 > `/api/admin/menus`（静态目录）与自己的 `/api/admin/user/info`。二者都不含跨用户/租户数据，
@@ -289,7 +289,7 @@ ai-agent 调用 admin-api **始终**带 `X-Service-Token` + `X-Tenant-Id` + `X-U
 
 > ✅ **该缺口已于 issue #5246 关闭**：售后接口不再用类级 `order:refund` 覆盖只读端点 ——
 > 读面改为 `after_sales:view` 并授给客服/运营，写面保留 `order:refund` ⇒
-> 客服驱动米宝**查**售后不再 403；客服仍**不能**退款/建工单（无 `order:refund`）—— 这是有意的读写分权。
+> 客服驱动黄金策**查**售后不再 403；客服仍**不能**退款/建工单（无 `order:refund`）—— 这是有意的读写分权。
 
 ## 写越权用例时的取值纪律（#4104 登记）
 

@@ -1,4 +1,4 @@
-# 米宝定时任务（用户「预约」）设计 —— 主动发现（族 1）的时间轴扩展
+# 黄金策定时任务（用户「预约」）设计 —— 主动发现（族 1）的时间轴扩展
 
 > issue [#6486](https://github.com/zhaokai-mgzn/migao/issues/6486) ｜ 2026-10-07 ｜ 状态：**设计待裁定**（阻塞点见 §七）
 >
@@ -18,7 +18,7 @@
 | 维度 | 取值 | 含义 |
 |---|---|---|
 | 执行层次 | **L1 提醒型** | 到点只发提醒 / 通知；**不**重跑业务动作 |
-| 落地端 | **B 端米宝** | 商家 / 员工侧；C 端后置（见 §九 包 3） |
+| 落地端 | **B 端黄金策** | 商家 / 员工侧；C 端后置（见 §九 包 3） |
 | 架构定位 | **族 1 的时间轴扩展** | 扩展既有主动发现引擎，**不新建一套定时任务系统** |
 
 ---
@@ -132,7 +132,7 @@ CREATE TABLE scheduled_tasks (
     action_label  VARCHAR(64) NOT NULL,   -- 一键处置入口文案
     action_url    VARCHAR(255) NOT NULL,  -- 一键处置入口地址
     payload       JSONB DEFAULT '{}',
-    source        VARCHAR(32) NOT NULL,   -- user(米宝委托) / system(规则派生)
+    source        VARCHAR(32) NOT NULL,   -- user(黄金策委托) / system(规则派生)
     status        VARCHAR(32) NOT NULL DEFAULT 'pending',
                   -- pending / fired / cancelled / failed / dismissed
     dedup_key     VARCHAR(128),           -- 幂等键（见 §六.2）
@@ -186,7 +186,7 @@ ScheduledTaskScanner                     ← 形态照抄 BriefingScheduler
 ⇒ 商家在 admin-web 的**未读铃铛**（`frontend/admin-web/src/components/layout/NotificationBell.tsx`）
 与**通知中心**（`frontend/admin-web/src/app/(dashboard)/notifications/page.tsx`）看到 —— **前端零改动、端点零新增**。
 
-> ⚠️ **诚实的取舍**：这样商家是在「通知中心」看到，**不是**米宝主动在对话里开口。
+> ⚠️ **诚实的取舍**：这样商家是在「通知中心」看到，**不是**黄金策主动在对话里开口。
 > 要真正「像人一样提起」，需往会话写 `sender_type='system'` 的消息 —— 那是**体验增强**，
 > 归包 3（§九），**不塞进包 1**。
 
@@ -196,7 +196,7 @@ ScheduledTaskScanner                     ← 形态照抄 BriefingScheduler
 
 ### 7.1 需要什么
 
-米宝要能听懂「3 天后提醒我跟进张先生」，就需要一个新工具（暂名 `scheduled_task_manage`，
+黄金策要能听懂「3 天后提醒我跟进张先生」，就需要一个新工具（暂名 `scheduled_task_manage`，
 actions = `create` / `list` / `cancel`）。
 
 ### 7.2 会撞哪一条门禁
@@ -234,7 +234,7 @@ actions = `create` / `list` / `cancel`）。
 - **选项与代价**：
   - **批准** ⇒ 拿到「用户委托」这一真正的产品增量；代价 = 放开一处写面（合规成本），
     需同步改判据 + 留裁定留痕
-  - **不批准** ⇒ 只能做系统派生提醒（价值有限，见 §2.1 的提出人判断）；米宝仍不能创建待办
+  - **不批准** ⇒ 只能做系统派生提醒（价值有限，见 §2.1 的提出人判断）；黄金策仍不能创建待办
 - **不裁时的安全默认动作**：先落**包 1**（零裁定、零门禁冲突），包 2 待裁定
 
 ---
@@ -291,7 +291,7 @@ actions = `create` / `list` / `cancel`）。
    建议的验证路径（零成本、零代码）：从既有会话面（`agent_sessions` / `agent_messages`）
    检索真实用户表达过的「提醒 / 到时候 / 记得 / 过几天」类诉求，统计分布与当前 AI 的失败回答 ——
    **该验证不在本设计的交付范围内**，登记为立项前置建议。
-4. **投递形态的体感落差**：包 1 走通知中心（§6.3），不是米宝主动开口 —— 登记为包 3 的动机之一。
+4. **投递形态的体感落差**：包 1 走通知中心（§6.3），不是黄金策主动开口 —— 登记为包 3 的动机之一。
 5. **本设计不碰**既有 6 条规则的判定逻辑（`proactive.py` 的 `RULES` 一字不改）。
 
 **未决（需在包 1 开工前定）**：

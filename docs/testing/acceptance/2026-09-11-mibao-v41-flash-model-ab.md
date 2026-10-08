@@ -1,6 +1,6 @@
-# 米宝（B 端）主推理模型 DeepSeek-V4.1-Flash 复测报告 2026-09-11
+# 黄金策（B 端）主推理模型 DeepSeek-V4.1-Flash 复测报告 2026-09-11
 
-> **被测对象**：米宝 B 端 AI 客服 agent（`PERSONA=mibao`，租户 1 词元通达）
+> **被测对象**：黄金策 B 端 AI 客服 agent（`PERSONA=mibao`，租户 1 词元通达）
 > **触发**：B 端评测任务遗留 P1 结论为「需模型迭代根治」→ 换模型复跑（issue #3319）
 > **依据**：`docs/testing/acceptance-protocol.md`（v1.1）、`migao-dev-flow` §13/§14
 > **定位（重要）**：本报告是**模型层 A/B 复测**（L1 机器断言 + 证据引用），

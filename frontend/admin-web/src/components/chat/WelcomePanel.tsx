@@ -57,7 +57,7 @@ export default function WelcomePanel() {
         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 shadow-card">
           <Bot className="h-9 w-9 text-white" />
         </div>
-        <h2 className="mb-1 text-xl font-bold text-neutral-800">欢迎使用米宝</h2>
+        <h2 className="mb-1 text-xl font-bold text-neutral-800">欢迎使用黄金策</h2>
         <p className="text-sm text-neutral-500">我是你的智能工作助手，可以帮你查订单、管商品、看数据</p>
       </div>
 

@@ -19,7 +19,7 @@ business_truths:
   - [aftersales-flow.type-enums] 售后类型：管理端表单校验 return|exchange|repair|refund|complaint|other；Agent 工具枚举 refund/exchange/repair/complaint/other（无 return），跨层枚举不一致
   - [aftersales-flow.agent-create] Agent 专用创建 POST /api/admin/agent/after-sales 的 orderId 可传 UUID 或订单号(ORD-xxx)，服务端自动解析并校验订单属于当前租户
   - [aftersales-flow.refund-money-scale] 涉钱金额小数位准入（issue #6221）：凡写 `NUMERIC(·,2)` 金额列（`orders.refund_amount` / `finance_transactions.amount` 等）的退款与售后联动路径，金额**最多 2 位小数**（按**有效**小数位判，尾零不算）；超位 ⇒ **4xx 显式拒绝**（fail-closed），**不静默取整/四舍五入**（PG 对超 scale 写入只四舍五入、不报错 ⇒ 缺应用层准入时 0.001 会被舍成 0.00，订单与流水两处同时归零）。单点准入 = `backend/admin-api/src/main/java/com/migao/admin/service/MoneyScale.java`（`requireTwoDecimalsOrNull`，null = 未传而非 0），同 `StockQuantity.requireOneDecimal` 的既有范式。
-  - [aftersales-flow.return-restock-switch] 售后库存联动（issue #2991）：refund/return 工单 resolved 时按商品「退货回补库存」开关（products.allow_return_restock，默认 false）决定是否恢复 SKU 库存——订单全部商品允许才整单回补，任一商品不允许则整单不回补（窗帘定制退货不可再售）；米宝不得在售后完成后默认引导恢复库存/重新上架
+  - [aftersales-flow.return-restock-switch] 售后库存联动（issue #2991）：refund/return 工单 resolved 时按商品「退货回补库存」开关（products.allow_return_restock，默认 false）决定是否恢复 SKU 库存——订单全部商品允许才整单回补，任一商品不允许则整单不回补（窗帘定制退货不可再售）；黄金策不得在售后完成后默认引导恢复库存/重新上架
 
 primary_specs:
   - tests/e2e/specs/after-sales/after-sales-list.spec.ts

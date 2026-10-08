@@ -1,5 +1,5 @@
 """
-AI 智能客服系统 - C 端"查物流" Tool（小布专用）
+AI 智能客服系统 - C 端"查物流" Tool（元元专用）
 
 与 B 端 logistics_track 物理隔离，落实 C 端物流查询两条铁律：
 1. **不支持顾客提供快递单号直接查询**：本工具无 tracking_number 参数，
@@ -35,7 +35,7 @@ MAX_TRACKED_ORDERS = 5
 
 
 class CustomerLogisticsTrackTool(BaseTool):
-    """C 端"查物流" Tool（小布专用）
+    """C 端"查物流" Tool（元元专用）
 
     仅查询当前登录顾客「已发货（在途）」订单的物流信息；
     不支持按快递单号直接查询，不支持跨用户查询，纯只读。
@@ -71,7 +71,7 @@ class CustomerLogisticsTrackTool(BaseTool):
 
     # 物理隔离：仅 C 端顾客可用；商户员工/管理员一律拒绝（用 B 端 logistics_track）
     allowed_roles = ["customer"]
-    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（加码会让小布全量失效）。
+    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（加码会让元元全量失效）。
     required_permissions = []
     read_only = True
     read_only_actions = frozenset({"list"})

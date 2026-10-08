@@ -18,7 +18,7 @@ from render_cases import load_case_dicts  # noqa: E402
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 
 # 已知模型漂移用例（issue #2786）：agent-eval-smoke 若包含它们将单点阻塞 PR
-# ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：**OR-010 已从本表移除** ——
+# ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端黄金策只读化」）：**OR-010 已从本表移除** ——
 # 它断言的是 B 端**经对话建单**（`order_create`），该能力已从 B 端全部 skill 解绑 ⇒ 用例退役
 # （`skip_reason` 写明理由，条目不删除）。「漂移用例不得回 smoke」这条判据对**已退役**用例
 # 不再有对象；`PR-010` 保留（它已按新事实改判为**只读查询链路**，仍是活跃的 normal 档用例，
@@ -43,7 +43,7 @@ EXPECTED_SMOKE = {"AS-001", "CU-001", "HR-001", "HR-004", "OR-001", "PR-001", "P
 #   · 本测试是**冻结守卫**：下次再动 smoke 集合必须同样显式改这里 + 写明理由。
 # ── OR-012 / AS-008 于 2026-09-13 由 smoke 提为 normal（issue #3367 覆盖审计）──
 # 原判断（issue #3266）是"升 smoke 以补 C 端覆盖缺口"，但 smoke 档对 C 端**根本没人跑**：
-#   · pr-check 的 agent-eval-smoke 打的是共享 B 端环境、未设 PERSONA（默认米宝）
+#   · pr-check 的 agent-eval-smoke 打的是共享 B 端环境、未设 PERSONA（默认黄金策）
 #     → persona: xiaobu 的用例被 persona 过滤排除（见下条 test_mibao_smoke_excludes_xiaobu_only）；
 #   · xiaobu-acceptance 由 CI 以 tier=normal 派发。
 # 结果：这两条（物流查询、售后进度查询，且带"仅限本人/拒绝越权直查"数据隔离断言）

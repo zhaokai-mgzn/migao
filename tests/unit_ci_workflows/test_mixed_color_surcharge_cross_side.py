@@ -9,7 +9,7 @@
 
 | 侧 | 实现（副本） | 顾客在哪看到 |
 |---|---|---|
-| 报价侧（AI 报价卡） | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `MIXED_COLOR_SURCHARGE_PER_METER` | 小布报价卡 `total` / `mixed_color_surcharge` |
+| 报价侧（AI 报价卡） | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `MIXED_COLOR_SURCHARGE_PER_METER` | 元元报价卡 `total` / `mixed_color_surcharge` |
 | 订单侧（订单金额） | `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCalculator.java` 的**同名**常量 | 下单页「拼色加价」行 → 订单金额（`lineAmount()`） |
 
 ⇒ **只改一侧**（或把订单侧改回 V82 那笔元/套）⇒ **顾客看到的价 ≠ 下单收的价**，

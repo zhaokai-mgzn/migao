@@ -32,10 +32,10 @@ const CUSTOM = '__custom__'
 const BRAND_OPTIONS = [
   { value: '', label: '请选择' },
   { value: '无品牌', label: '无品牌' },
-  { value: '米高', label: '米高' },
+  { value: '观星台', label: '观星台' },
   { value: CUSTOM, label: '其他（自定义输入）' },
 ]
-const BRAND_BUILTIN = new Set(['无品牌', '米高'])
+const BRAND_BUILTIN = new Set(['无品牌', '观星台'])
 
 const UNIT_OPTIONS = [
   { value: '', label: '请选择' },
@@ -238,7 +238,7 @@ export default function ProductAttributes({
     onChange({ specifications: next })
   }
 
-  // 品牌：单独处理（含“无品牌”/“米高”内置）
+  // 品牌：单独处理（含“无品牌”/“观星台”内置）
   const externalBrandCustom = !!brand && !BRAND_BUILTIN.has(brand)
   const [brandCustomMode, setBrandCustomMode] = useState<boolean>(externalBrandCustom)
   useEffect(() => {

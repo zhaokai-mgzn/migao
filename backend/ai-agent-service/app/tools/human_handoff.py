@@ -1,5 +1,5 @@
 """
-AI 智能客服系统 - 转人工 Tool (小布专用)
+AI 智能客服系统 - 转人工 Tool (元元专用)
 
 ⚠️ **已按用户裁定下线（模型不可达）** —— 用户裁定原文（2026-09-19）：
 「**不应该存在 human_handoff 这种东西，以后全是 AI 来判断**」。
@@ -164,7 +164,7 @@ async def _load_ai_context(session_id: Optional[str]) -> Dict[str, Any]:
 class HumanHandoffTool(BaseTool):
     """转人工 Tool
 
-    小布（C端客服）专用：客户要求转人工时，自动创建投诉类型售后工单，
+    元元（C端客服）专用：客户要求转人工时，自动创建投诉类型售后工单，
     通知管理员，并返回友好提示告知客户等待人工回电。
 
     ⚠️ **已按用户裁定下线（模型不可达）** —— 见模块 docstring。
@@ -408,7 +408,7 @@ class HumanHandoffTool(BaseTool):
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
                 # 工单真实来源（issue #3686）：转人工工单的发起方就是当前会话调用方 ——
-                # C 端小布顾客转人工 → "customer"；B 端米宝转人工 → "agent"。
+                # C 端元元顾客转人工 → "customer"；B 端黄金策转人工 → "agent"。
                 # 放 header 不放 body（同 #3605 取舍：来源不由 payload 决定）。
                 headers={
                     "X-Agent-Client": context.ticket_source,

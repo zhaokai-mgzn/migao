@@ -119,7 +119,7 @@ export const WORKER_TAB_LOGIN_ROUTE = '/pages/auth/login/index?tab=worker'
  * **工人首页**路由（issue #6467 切片 1）：纯工人设备登录成功后的落地页。
  *
  * 为什么必须有它：工人零商家权限（`/api/admin/**` 的拒绝集合含 `worker`）⇒ 落进商家 tabBar
- * （问米宝 / 数据 / 坐席 / 我的）只会看到 403 / 空页；而 `Taro.switchTab` **只能**落 tabBar 页
+ * （问黄金策 / 数据 / 坐席 / 我的）只会看到 403 / 空页；而 `Taro.switchTab` **只能**落 tabBar 页
  * ⇒ 工人登录成功后的去向只能是 `redirectTo` 一个**非 tabBar** 的工人页。
  *
  * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它

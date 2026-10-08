@@ -35,7 +35,7 @@ import java.util.Set;
  * 本过滤器改为挂该用户的真实角色（不再挂 {@code service}）—— 否则
  * {@link PermissionInterceptor#hasBypassRole} 与
  * {@code SecurityConfig#adminApiAuthorizationManager()} 会双双放行，
- * 使受限岗位的员工能借米宝执行自己无权执行的写操作。</p>
+ * 使受限岗位的员工能借黄金策执行自己无权执行的写操作。</p>
  *
  * <p><b>商户员工判定失败时 fail-closed（issue #5085，改判 #4105 的 fail-open）</b>：查库异常
  * （DB/连接抖动）时**拒绝请求**（503，不设 SecurityContext、不继续 filter chain），

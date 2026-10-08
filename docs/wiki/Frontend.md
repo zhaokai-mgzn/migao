@@ -59,10 +59,10 @@
 
 ## bmini-app (Taro B 端商家小程序，issue #2977)
 
-B 端 agent 手机版（商家员工「问米宝」）：独立小程序（与 C 端小布不同 appid/主体），
+B 端 agent 手机版（商家员工「问黄金策」）：独立小程序（与 C 端元元不同 appid/主体），
 复用 C 端 mini-app 的基建代码（SSEClient / authStore / request / chatService）。
 
-- 4 个 tab 页：问米宝(SSE对话→米宝) · 数据(经营一屏) · 坐席(移动坐席) · 我的
+- 4 个 tab 页：问黄金策(SSE对话→黄金策) · 数据(经营一屏) · 坐席(移动坐席) · 我的
 - 登录：「用户名@企业编码 + 密码」→ `POST /api/auth/employee/login`（issue #5485 起统一口径；
   租户只由标识里的企业编码解析，前端不传 tenantId）。原「微信授权手机号 → 匹配员工并绑定 openid」
   已整条退场（BM-001~003 已改写；`POST /api/auth/bmini/login` 废弃）。

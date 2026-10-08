@@ -156,7 +156,7 @@ class TestCustomerList:
     @patch("app.tools.customer_manage.get_admin_api_client")
     async def test_list_name_fallback_wechat_nickname(self, mock_get_client, tool, admin_tool_context, mock_client):
         """生产回归：admin-api 客户列表无 name 字段（返回 wechatNickname），
-        米宝曾显示"姓名字段都为空"。必须回退到 wechatNickname/nickname。"""
+        黄金策曾显示"姓名字段都为空"。必须回退到 wechatNickname/nickname。"""
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {

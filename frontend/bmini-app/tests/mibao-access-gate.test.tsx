@@ -1,15 +1,15 @@
 // case_ids: BM-008
 /**
- * 米宝唤出授权门（bmini-app 侧，issue #5642 功能⑤）。
+ * 黄金策唤出授权门（bmini-app 侧，issue #5642 功能⑤）。
  *
  * ## 病灶（本包要治的形态）
- * 改动前「人人可唤米宝」—— `pages/chat` **零权限门**（设计单 §1.1 读数⑤）。
+ * 改动前「人人可唤黄金策」—— `pages/chat` **零权限门**（设计单 §1.1 读数⑤）。
  * 用户 2026-09-26 裁定：「管理员可以在 H5 上唤出 migao Agent 进行对话，
  * **其他员工需要授权**才能唤出」⇒ 未授权者必须看到**明确的授权缺失态**，
  * 而不是静默隐藏入口（违反要求）或 403 白屏（违反要求）。
  *
  * ## 本文件锁五条（每条能红）
- * ① allowed=true ⇒ 渲染米宝对话内容；
+ * ① allowed=true ⇒ 渲染黄金策对话内容；
  * ② allowed=false ⇒ 拒绝态**渲染出来了**（入口可见，非静默隐藏）+ 逐字「需要管理员授权」+ 可行动引导；
  * ③ allowed=false ⇒ 不是 403 白屏（无 403 字样、有可读引导）；
  * ④ allowed=null ⇒ 不渲染任何一侧（判定未回来时不得误报「没权限」）；
@@ -28,11 +28,11 @@ import MibaoAccessGate, {
   MIBAO_GRANT_GUIDE_TEXT,
 } from '../src/components/chat/MibaoAccessGate'
 
-describe('米宝唤出授权门（bmini）', () => {
-  it('① allowed=true ⇒ 渲染米宝对话内容', () => {
+describe('黄金策唤出授权门（bmini）', () => {
+  it('① allowed=true ⇒ 渲染黄金策对话内容', () => {
     render(
       <MibaoAccessGate allowed={true}>
-        <div data-testid='mibao-content'>米宝对话</div>
+        <div data-testid='mibao-content'>黄金策对话</div>
       </MibaoAccessGate>,
     )
     expect(screen.getByTestId('mibao-content')).toBeTruthy()
@@ -42,7 +42,7 @@ describe('米宝唤出授权门（bmini）', () => {
   it('② allowed=false ⇒ 入口可见 + 逐字「需要管理员授权」+ 可行动引导', () => {
     render(
       <MibaoAccessGate allowed={false}>
-        <div data-testid='mibao-content'>米宝对话</div>
+        <div data-testid='mibao-content'>黄金策对话</div>
       </MibaoAccessGate>,
     )
     // 拒绝态渲染出来了 ⇒ 入口可见（不是静默隐藏）
@@ -58,7 +58,7 @@ describe('米宝唤出授权门（bmini）', () => {
   it('③ allowed=false ⇒ 不是 403 白屏', () => {
     const { container } = render(
       <MibaoAccessGate allowed={false}>
-        <div>米宝对话</div>
+        <div>黄金策对话</div>
       </MibaoAccessGate>,
     )
     expect(container.textContent || '').not.toMatch(/403/)
@@ -69,7 +69,7 @@ describe('米宝唤出授权门（bmini）', () => {
   it('④ allowed=null ⇒ 不渲染任何一侧（判定未回来）', () => {
     const { container } = render(
       <MibaoAccessGate allowed={null}>
-        <div>米宝对话</div>
+        <div>黄金策对话</div>
       </MibaoAccessGate>,
     )
     expect(container.textContent || '').toBe('')

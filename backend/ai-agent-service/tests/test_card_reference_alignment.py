@@ -1,4 +1,4 @@
-"""B 端米宝 product_list 卡片引用对齐测试（issue #3009 / case PR-018）。
+"""B 端黄金策 product_list 卡片引用对齐测试（issue #3009 / case PR-018）。
 
 背景（sess_66c12e3cf3a14ee0 复盘）：
 用户问「查一下低库存商品的具体清单」，LLM 文本正确筛出 5 件低库存商品，
@@ -212,7 +212,7 @@ class TestMibaoReferenceAlignedCards:
 class TestXiaobuKeepsFullCards:
     @pytest.mark.asyncio
     async def test_xiaobu_sends_all_products_unfiltered(self):
-        """小布：product_search 有结果即发全量卡片（货架浏览）"""
+        """元元：product_search 有结果即发全量卡片（货架浏览）"""
         products = [_product("p1", "雪尼尔遮光帘"), _product("p2", "棉麻纱帘")]
         responses = [
             _tool_result("product_search", products),

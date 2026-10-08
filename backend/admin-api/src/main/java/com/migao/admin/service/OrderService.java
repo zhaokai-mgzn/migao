@@ -580,7 +580,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // ── 制单人（issue #5835，V142）──
         // 用户 2026-09-30 逐字：「制单人这个字段可以不用加到订单详情中，但是要加到订单列表中，
         // 并且支持根据制单人过滤」。
-        // **单点落库**：本方法是三条建单路径（B 端 admin-web 表单 / 米宝 order_create /
+        // **单点落库**：本方法是三条建单路径（B 端 admin-web 表单 / 黄金策 order_create /
         // 程序化调用）的**唯一共享入口** ⇒ 在这里统一解析当前操作者，各 controller 不各拼一遍
         // （在 controller 里拼会漏掉 `createOrderForAgent` 这条手工 new 出来的路径）。
         // 🔴 取不到（service 占位 internal-service / 匿名 / C 端自助下单）⇒ **两列都不写**
@@ -759,7 +759,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             item.setWidth(itemRequest.getWidth());
             item.setHeight(itemRequest.getHeight());
             item.setProcessingInfo(itemRequest.getProcessingInfo());
-            // 下单行要素落列（V63，issue #4362，S1）：两个采集端（C 端小布澄清清单 / B 端米宝
+            // 下单行要素落列（V63，issue #4362，S1）：两个采集端（C 端元元澄清清单 / B 端黄金策
             // order_create）写入的 processing_info 顶层工艺规格键在此**物化**到 order_items 的列上。
             // 判在本方法（表单 / Agent / 程序化三条路径的**唯一共享入口**）才无死角；
             // 全部可空、不设必填校验（用户裁定「部位不是必填的」）⇒ 缺键就是缺。
@@ -1749,7 +1749,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                         order.getOrderNo(), "订单取消，加工单自动作废，回补批次库存");
             } else {
                 throw BusinessException.validationError(String.format(
-                        "订单已发加工（加工单 %s 状态：%s），请先在订单详情或让米宝处理加工单后再取消订单",
+                        "订单已发加工（加工单 %s 状态：%s），请先在订单详情或让黄金策处理加工单后再取消订单",
                         activePo.getProcessingOrderNo(), activePo.getStatus()));
             }
         }

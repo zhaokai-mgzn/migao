@@ -27,7 +27,7 @@
 实测存量 **126** 处死角（8 个 skill），按 `A5_GAP_BASELINE` 登记为**存量账本**
 （锚 `c0be8e35`，只许缩短、新增阻塞），机制修复跟踪 **#4017**。
 > ⚠️ 条数是**锚定值**、随产品决策重锚：#4012 落地 126 条 / 8 skill → #4196 重锚 140 条 →
-> **#5247 重锚 29 条 / 3 skill**（B 端米宝只读；逐条理由见 `A5_GAP_BASELINE` 上方的
+> **#5247 重锚 29 条 / 3 skill**（B 端黄金策只读；逐条理由见 `A5_GAP_BASELINE` 上方的
 > 「#5247 重新锚定」块）。上面这句"126"是 #4012 落地时的历史锚，不是当前值。
 
 ### 适用域声明（本守卫对谁生效 / 对谁不生效）
@@ -306,7 +306,7 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         "scheduled_task_manage",
     }),
     # settings：自己工具集 4 个（含 validate_input）→ 死角 9 个（#5247 复算）
-    # ⚠️ 该 skill 仍**注册在全局 registry**（#5247 只把它从米宝的 `skill_names` 移出，文件与
+    # ⚠️ 该 skill 仍**注册在全局 registry**（#5247 只把它从黄金策的 `skill_names` 移出，文件与
     #    注册一字未删）⇒ 它仍是矩阵里的活 skill，账本保留其行（幽灵检查也据此通过）。
     "settings": frozenset({
         "aftersale_create", "order_create", "order_manage", "processing_item_manage",
@@ -349,7 +349,7 @@ A5_REANCHOR_ADDITIONS: dict[str, frozenset[str]] = {
 
 # 锚点条数的**计数对账**基准：`账本总数 − 增量条数` 必须等于它（只改数字会被这条拦住）。
 #   · 历史锚：#4012 落地时 126 条（锚 `c0be8e35`）；#4196 重新锚定为 140 条（含 14 条增量）。
-#   · 本次（issue #5247，B 端米宝只读）重新锚定为 **29 条**：B 端 5 个 skill 整体退出矩阵
+#   · 本次（issue #5247，B 端黄金策只读）重新锚定为 **29 条**：B 端 5 个 skill 整体退出矩阵
 #     （不再绑 validate_input，见上方「#5247 重新锚定」①）+ 8 个写工具收窄为只读后退出矩阵
 #     （②）+ 剩余 3 行按活真值收缩；增量登记随之清空（③）⇒ 29 − 0 == 29。
 A5_BASELINE_COUNT_PRE_5247 = 29
@@ -443,7 +443,7 @@ def test_no_skill_validates_a_write_tool_it_cannot_execute():
     账本的 126 条**不再靠"放行"活着**：`test_every_registered_gap_is_rejected_at_runtime`
     逐条断言它们被拦下（强度只升不降）。
 
-    ## issue #5247（B 端米宝只读）对本用例的影响
+    ## issue #5247（B 端黄金策只读）对本用例的影响
 
     本用例**判据一字未改**（账本 + 新增阻塞），改的只是账本内容（见上方「#5247 重新锚定」）：
     B 端 5 个 skill 整体退出矩阵（不再绑 `validate_input`）、8 个只读化目标退出矩阵、

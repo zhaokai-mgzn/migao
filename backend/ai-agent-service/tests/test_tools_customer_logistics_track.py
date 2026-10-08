@@ -1,5 +1,5 @@
 """
-C 端"查物流" Tool 单元测试（小布专用 customer_logistics_track）
+C 端"查物流" Tool 单元测试（元元专用 customer_logistics_track）
 
 铁律覆盖（OR-012）：
 1. 仅查当前用户已发货(在途)订单的物流（/orders/mine?status=shipped 后端强制按用户过滤）

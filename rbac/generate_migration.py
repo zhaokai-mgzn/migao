@@ -341,7 +341,7 @@ WHERE NOT EXISTS (SELECT 1 FROM roles r WHERE r.tenant_id = t.id AND r.code = '{
 -- ## 边界（照实登记）
 --   ① 本迁移**不**回填 `users.permissions` 快照（设计 §2.9：快照是最终权限，回填 = 静默改授权）——
 --      但两角色的码集未变 ⇒ 快照面**本来就不需要**回填；
---   ② 米宝 `allowed_roles`（`backend/ai-agent-service/app/agents/agents/mibao.py`）与 bmini 角色名映射
+--   ② 黄金策 `allowed_roles`（`backend/ai-agent-service/app/agents/agents/mibao.py`）与 bmini 角色名映射
 --      （`frontend/bmini-app/src/pages/profile/index/index.tsx`）引用的是**角色名**：正式定义后仍逐字成立
 --      （读数见 PR body），本迁移**不**动它们。
 

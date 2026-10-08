@@ -163,7 +163,7 @@ def test_craft_spec_maps_room_to_room_key():
     """房间名必须落库（issue #4390 缺口④ 的残留）。
 
     病灶（实测）：`room` 是清单里 **`required: True`** 的问项（note 原话「逐扇窗；房间名用户自定义
-    （北次卧）」）⇒ **小布每单都必问**；但 `CHECKLIST_TO_CRAFT_SPEC` 里**没有**它 ⇒ 答案收进 collector
+    （北次卧）」）⇒ **元元每单都必问**；但 `CHECKLIST_TO_CRAFT_SPEC` 里**没有**它 ⇒ 答案收进 collector
     后**零消费者**，会话结束即丢 —— 「问到了却不落库」本来正是本映射表要消灭的形态。
 
     为什么确定是**遗漏**而不是有意排除（同文件对 `cutting_mode` 的排除就**写了理由**，此处一字皆无）：

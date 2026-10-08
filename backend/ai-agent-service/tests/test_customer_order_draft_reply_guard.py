@@ -228,7 +228,7 @@ def _run_epilogue(reply_text: str, *, store_state: dict | None = None,
                     },
             skill_name="customer_order",
             tool_names=["order_create"],
-            system_prompt="你是小布",
+            system_prompt="你是元元",
         ))
     return str(out.get("final_answer") or ""), shared
 

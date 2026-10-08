@@ -30,7 +30,7 @@ from render_cases import load_case_dicts  # noqa: E402
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 SKILLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "skills"
 
-# C 端（小布）skill 的工具常量 —— 新增 C 端 skill 时必须登记到这里，
+# C 端（元元）skill 的工具常量 —— 新增 C 端 skill 时必须登记到这里，
 # 否则它的工具不会被本守卫纳入（这是有意的：新增能力面要显式过一次评审）。
 CUSTOMER_SKILL_TOOL_CONSTS = (
     "CUSTOMER_ORDER_TOOLS",
@@ -51,7 +51,7 @@ INTERNAL_NO_CASE: dict = {}
 
 
 # ── 共享层守卫的**分端声明**（issue #3404 人工提醒固化）────────────────────────
-# 背景：B 端（米宝/客服）与 C 端（小布）共用同一个 `base_skill.py` —— 两端卡片由同一个
+# 背景：B 端（黄金策/客服）与 C 端（元元）共用同一个 `base_skill.py` —— 两端卡片由同一个
 # `interact` 工具产出。若 C 端语义守卫不声明分端，就会误伤 B 端（实测：数量口径守卫会拦
 # B 端店员代客下单的"用量"选项、预填守卫会拦客服改客户资料的表单）。
 # 规则：`base_skill.py` 里每个 `*_block` 拦截守卫**必须二选一**：
@@ -140,7 +140,7 @@ class TestXiaobuCapabilityCoverage:
           - `skip_reason` 非空的不跑（CH-030/031/032 就是被 skip 的纯前端用例）；
           - smoke 档在 CI 里**没人跑**（xiaobu-acceptance 派发的是 normal）
             → 只看 persona 会把"从不执行的用例"算成覆盖，得出"已覆盖"的假结论；
-          - 双端用例只要期望工具都在小布能力集内也会被选进来（select_cases_for_persona）。
+          - 双端用例只要期望工具都在元元能力集内也会被选进来（select_cases_for_persona）。
         这里直接复用运行器的选择语义，保证"覆盖统计的面 = 真正被测的面"。
         """
         from eval_case_filter import select_cases_for_persona

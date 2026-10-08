@@ -1033,7 +1033,7 @@ case "$MODE" in
     # （服务不在跑 / 凭据被拒 401）⇒ 未就绪（跳过）+ 一行可行动文案，**不是**失败 —— 此前这形态被
     # 报成 ai-agent 腿 20 条 failed（实测 2.79s），读者会以为那是代码回归。
     # 就绪 ⇒ ✅；该面随后在下面那条 ai-agent 腿内**真跑并判红绿**（探针只看探通不通，不看断言）。
-    report_env ai-agent-e2e "ai-agent e2e 前置就绪（米宝全场景：需本机服务 + 凭据）" bash -c "python3 '$ROOT/scripts/ai-agent-e2e-readiness.py'"
+    report_env ai-agent-e2e "ai-agent e2e 前置就绪（黄金策全场景：需本机服务 + 凭据）" bash -c "python3 '$ROOT/scripts/ai-agent-e2e-readiness.py'"
     report_gated ai-agent ai_agent_face_paths "ai-agent 单测"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     report_gated admin-web-vitest admin_web_face_paths "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report_gated admin-web-tsc admin_web_face_paths "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
@@ -1051,7 +1051,7 @@ case "$MODE" in
     # （服务不在跑 / 凭据被拒 401）⇒ 未就绪（跳过）+ 一行可行动文案，**不是**失败 —— 此前这形态被
     # 报成 ai-agent 腿 20 条 failed（实测 2.79s），读者会以为那是代码回归。
     # 就绪 ⇒ ✅；该面随后在下面那条 ai-agent 腿内**真跑并判红绿**（探针只看探通不通，不看断言）。
-    report_env ai-agent-e2e "ai-agent e2e 前置就绪（米宝全场景：需本机服务 + 凭据）" bash -c "python3 '$ROOT/scripts/ai-agent-e2e-readiness.py'"
+    report_env ai-agent-e2e "ai-agent e2e 前置就绪（黄金策全场景：需本机服务 + 凭据）" bash -c "python3 '$ROOT/scripts/ai-agent-e2e-readiness.py'"
     report_gated ai-agent ai_agent_face_paths "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     report_gated admin-web-vitest admin_web_face_paths "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report_gated admin-web-tsc admin_web_face_paths "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
@@ -1075,7 +1075,7 @@ case "$MODE" in
     # （服务不在跑 / 凭据被拒 401）⇒ 未就绪（跳过）+ 一行可行动文案，**不是**失败 —— 此前这形态被
     # 报成 ai-agent 腿 20 条 failed（实测 2.79s），读者会以为那是代码回归。
     # 就绪 ⇒ ✅；该面随后在下面那条 ai-agent 腿内**真跑并判红绿**（探针只看探通不通，不看断言）。
-    report_env ai-agent-e2e "ai-agent e2e 前置就绪（米宝全场景：需本机服务 + 凭据）" bash -c "python3 '$ROOT/scripts/ai-agent-e2e-readiness.py'"
+    report_env ai-agent-e2e "ai-agent e2e 前置就绪（黄金策全场景：需本机服务 + 凭据）" bash -c "python3 '$ROOT/scripts/ai-agent-e2e-readiness.py'"
     report_gated ai-agent ai_agent_face_paths "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     ;;
   gate)

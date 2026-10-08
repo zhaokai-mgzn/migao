@@ -168,7 +168,7 @@ cases:
 
   - id: DA-006
     legacy_id: ""
-    title: "商品销量排行 - 米宝答「哪个商品卖得最好」（dashboard_stats product_ranking）"
+    title: "商品销量排行 - 黄金策答「哪个商品卖得最好」（dashboard_stats product_ranking）"
     domains:
       - data
       - chat
@@ -209,7 +209,7 @@ cases:
       - "摘要含榜首商品名（如「本月销量排行: N个商品，榜首「星空全遮光窗帘」」）"
       - "权限：admin/agent/tenant_admin/operator 可查；customer 拒绝（不越权）"
     skip_reason: "[backend-contract] 非 LLM 行为：转发实现与权限由 ai-agent 单测验证（test_tools_dashboard_stats.py），不进入 agent-eval 冒烟"
-    merge_log: "2026-09-02 新增：POC 演示审查 E 项 — 米宝问数「哪个花色卖得最好」无工具支撑（dashboard_stats 无 TopN）；按订单数据实际粒度实现商品维度排行（order_items 无颜色字段，花色排行需 schema 变更后置）。2026-09-19（issue #4589 的 Case Trust burn-down 缴费，metric=entries ⇒ 必须**整条销账**）：补一条**机器计分型**前置自断言（`data_checks` 含「前置」+ `success=true`）—— `action=product_ranking` 存在 + `period` 白名单接受 `month` + 转发通道存在（真值逐行核过 `dashboard_stats.py` 的 `VALID_ACTIONS` / period 白名单与 `DashboardController` 的 `/product-ranking`），把「action 改名 / month 静默降级 ⇒ 期望 unmatched ⇒ 判红伪装成 agent 不会查排行」挡在门口（口径照 DF-002/DF-004/PP-008 先例）。`user_inputs` / `expectations` / 既有四条 `data_checks` 原样未动、无放宽。"
+    merge_log: "2026-09-02 新增：POC 演示审查 E 项 — 黄金策问数「哪个花色卖得最好」无工具支撑（dashboard_stats 无 TopN）；按订单数据实际粒度实现商品维度排行（order_items 无颜色字段，花色排行需 schema 变更后置）。2026-09-19（issue #4589 的 Case Trust burn-down 缴费，metric=entries ⇒ 必须**整条销账**）：补一条**机器计分型**前置自断言（`data_checks` 含「前置」+ `success=true`）—— `action=product_ranking` 存在 + `period` 白名单接受 `month` + 转发通道存在（真值逐行核过 `dashboard_stats.py` 的 `VALID_ACTIONS` / period 白名单与 `DashboardController` 的 `/product-ranking`），把「action 改名 / month 静默降级 ⇒ 期望 unmatched ⇒ 判红伪装成 agent 不会查排行」挡在门口（口径照 DF-002/DF-004/PP-008 先例）。`user_inputs` / `expectations` / 既有四条 `data_checks` 原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_dashboard_stats.py"
@@ -524,7 +524,7 @@ cases:
     expectations: []
     data_checks:
       - "接线状态**逐规则**输出（rule_id → status + 原因 + 缺哪个数组/字段），且**四态可分**：`wired`（已接入**且本次完整** —— 只有它能被判成「这方面没问题」）/ `incomplete`（已接入但**本次不完整**：行数被上限截断、分组维度缺值、有行未判定）/ `not_enabled`（系统**有**该能力、**该租户没开**，**可行动**：引导开启）/ `not_wired`（系统**未实现**，**不可行动**）—— 🔴 `not_enabled` 与 `not_wired` **并列、不可合并**（一个是「去开就能用」、一个是「现在没有」），**不是**一个整体布尔"
-      - "六条规则逐条可判（rule_id 现取）：`unshipped_overdue` / `low_stock` / `repeat_returns` 装配行级数组后 `wired`（本次被上限截断或维度缺值 ⇒ `incomplete`）；`below_cost_price` 的状态**随租户三态** —— 做成本核算且行级完整 ⇒ `wired`、**有行成本未知**（该行 `cost_amount` 为 NULL）⇒ `incomplete`（+ `gaps` 点名该行**未判定**，不得读成「没命中」）、**不做**成本核算（该租户无 `avg_cost IS NOT NULL` 的 SKU）⇒ `not_enabled`（可行动：引导开启成本核算）；`price_change_over`（**数据源 = 两条腿、一个数组**，issue #5388 审计腿 + #5411 批量腿：审计腿 = `audit_logs` 的 `resource_type='agent_tool'` + `tool_name ∈ {product_update, sku_update}`，幅度取 `action_details.priceChange` **真值**；批量腿 = `agent_batches`（`batch_type='product_price'` 且**已执行**）× `agent_batch_items` 的 `old_value` / `new_value` —— 批量执行时参数只有 `batch_id`，审计行里没有价格可落；两腿合并进**同一个** `price_changes` 数组、键名同形）**同样随租户三态** —— 审计在跑且行级完整 ⇒ `wired`、**有行读不出改价真值**（#5303 之前的记录没有 before_price）⇒ `incomplete`（+ `gaps` 点名未判定）、**窗口内连一条写工具审计行都没有**（审计没在跑 ⇒ 无法区分「从没改过价」与「审计丢行」）⇒ `not_enabled`（可行动：让米宝执行一次写操作以产生审计留痕）；🔴 该租户级前置 `audit_tool_logging` **只管审计腿** —— 它 false 时批量腿不受影响，该租户仍可能因批量改价而命中（那种情形下「本次未判定」只对审计腿成立）；`discount_over`（**数据源 = `orders.discount_amount`**，经营洞察）⇒ 数组已接入且完整即 `wired`（它是主库列、非 fail-open 旁路 ⇒ 空命中可信），行级金额缺失（`discount_amount` 默认 0 / `total_amount` 未知）⇒ `incomplete`（分母未知的**不判定**，不是 100% 让利）—— 部分接线场景有断言，不是整体一个布尔"
+      - "六条规则逐条可判（rule_id 现取）：`unshipped_overdue` / `low_stock` / `repeat_returns` 装配行级数组后 `wired`（本次被上限截断或维度缺值 ⇒ `incomplete`）；`below_cost_price` 的状态**随租户三态** —— 做成本核算且行级完整 ⇒ `wired`、**有行成本未知**（该行 `cost_amount` 为 NULL）⇒ `incomplete`（+ `gaps` 点名该行**未判定**，不得读成「没命中」）、**不做**成本核算（该租户无 `avg_cost IS NOT NULL` 的 SKU）⇒ `not_enabled`（可行动：引导开启成本核算）；`price_change_over`（**数据源 = 两条腿、一个数组**，issue #5388 审计腿 + #5411 批量腿：审计腿 = `audit_logs` 的 `resource_type='agent_tool'` + `tool_name ∈ {product_update, sku_update}`，幅度取 `action_details.priceChange` **真值**；批量腿 = `agent_batches`（`batch_type='product_price'` 且**已执行**）× `agent_batch_items` 的 `old_value` / `new_value` —— 批量执行时参数只有 `batch_id`，审计行里没有价格可落；两腿合并进**同一个** `price_changes` 数组、键名同形）**同样随租户三态** —— 审计在跑且行级完整 ⇒ `wired`、**有行读不出改价真值**（#5303 之前的记录没有 before_price）⇒ `incomplete`（+ `gaps` 点名未判定）、**窗口内连一条写工具审计行都没有**（审计没在跑 ⇒ 无法区分「从没改过价」与「审计丢行」）⇒ `not_enabled`（可行动：让黄金策执行一次写操作以产生审计留痕）；🔴 该租户级前置 `audit_tool_logging` **只管审计腿** —— 它 false 时批量腿不受影响，该租户仍可能因批量改价而命中（那种情形下「本次未判定」只对审计腿成立）；`discount_over`（**数据源 = `orders.discount_amount`**，经营洞察）⇒ 数组已接入且完整即 `wired`（它是主库列、非 fail-open 旁路 ⇒ 空命中可信），行级金额缺失（`discount_amount` 默认 0 / `total_amount` 未知）⇒ `incomplete`（分母未知的**不判定**，不是 100% 让利）—— 部分接线场景有断言，不是整体一个布尔"
       - "**不同性质的「没有」可分**：六条规则当天一条都没命中时，`not_wired`（系统没做）/ `not_enabled`（该租户没开）/ `incomplete`（本次不完整）与「`wired` 但当天无命中」在输出上必须不同 —— 前三种都带原因、只有 `wired` 不带 —— 注入式红证：抹掉 status 字段（或给已接线补原因）⇒ 判别断言必须变红；🔴 **「租户从没改过价」与「审计根本没在跑」也必须不同**（两者都表现为「没有改价记录」：前者正常的空 ⇒ `wired`、后者故障的空 ⇒ `not_enabled`，判据 = 租户级事实 `audit_tool_logging`）"
       - "装配层自描述优先（声明里没给的字段就是没有，不靠某一行碰巧带上）；老快照没有 row_fields 时按实际行的字段并集兜底（滚动升级期不把已接线读成未接线）"
       - "🔴 **有界不许变成静默少报**：行数组被行数上限截断 ⇒ 该规则落 `incomplete`（带原因：上限多少行 / 本次给出多少行）；分组维度在部分行缺值（如退货行没有商品）同样落 `incomplete` —— 注入式红证：抹掉截断标志 ⇒ 截断判据必红；把缺值补齐 ⇒ 维度判据必红"
@@ -569,7 +569,7 @@ cases:
       verifies: []
 
   # ══════════════════════════════════════════════════════════════════════════
-  # DA-019 / DA-020（issue #3592 销账，2026-09-26）—— #5247「B 端米宝只读化」新接入的
+  # DA-019 / DA-020（issue #3592 销账，2026-09-26）—— #5247「B 端黄金策只读化」新接入的
   # 两个 B 端只读工具此前**零 LLM 行为面覆盖**：
   #   · `briefing_query`（经营日报）缺口登记 = `.github/eval-coverage-baseline.yml` 的
   #     `briefing_query` / `uncovered`；
@@ -592,7 +592,7 @@ cases:
   # ══════════════════════════════════════════════════════════════════════════
   - id: DA-019
     legacy_id: ""
-    title: "今日经营日报（每日简报）—— 米宝调 briefing_query 取当天日报并如实转述（覆盖 #5247 新接入的只读工具）"
+    title: "今日经营日报（每日简报）—— 黄金策调 briefing_query 取当天日报并如实转述（覆盖 #5247 新接入的只读工具）"
     domains:
       - data
     tier: normal
@@ -630,7 +630,7 @@ cases:
 
   - id: DA-020
     legacy_id: ""
-    title: "客服会话列表（只读）—— 米宝按 action=list 取会话列表，如实转述（销账 session_manage 薄覆盖）"
+    title: "客服会话列表（只读）—— 黄金策按 action=list 取会话列表，如实转述（销账 session_manage 薄覆盖）"
     domains:
       - data
       - notification
@@ -725,7 +725,7 @@ cases:
       - tool: briefing_query
         args:
           view: product_health
-    # forbidden-text-intent: 本用例的被测行为**就是**「归因错误」这条禁令 —— #6347 的用户真实遭遇是米宝
+    # forbidden-text-intent: 本用例的被测行为**就是**「归因错误」这条禁令 —— #6347 的用户真实遭遇是黄金策
     # 拿空数组回答「SKU 记录数 = 0 / SKU 层是空的 / 建议先确认商品规格是否已录入」，把用户引向**徒劳返工**
     # （重录规格），而真因（商品状态不在 on_sale）一字未提。禁令与原因/出路断言成对，缺任一半都不算覆盖。
     forbidden_text:
@@ -743,7 +743,7 @@ cases:
       - "原因与出路逐字落地：说清「有 N 个 SKU（M 个商品）**因未上架未纳入**」+ 被排除商品的**状态分布**；状态在状态机内（`off_sale`/`draft`）⇒「上架即可」；状态不在状态机内（如 `active`/`on_shelf`）⇒ 点出**上架动作会被拒**、需先改回 `off_sale`/`draft` 再上架（Part A 已让这条恢复边可走）；装配层读不到商品行（`unknown`）⇒ **不猜**出路，只说先核实"
       - "🔴 **消息是模型的唯一输入源**：工具消息（`briefing_query` 的 `view=product_health`）必须含上述原因与出路，且**不得**出现任何 `forbidden_text` 表述；对照读数：没有过滤事实的空快照 ⇒ 退回旧口径（`not_wired`），**不得**改写成「被过滤」"
     skip_reason: "[backend-contract] 快照装配由 admin-api 单测验证（DailyBriefingServiceTest 的 SnapshotRows 两条新判据：过滤事实透出 / 未过滤时不挂空集合）；引擎与工具披露由 ai-agent 单测验证（tests/test_briefing_product_health.py 的 TestFilteredSkusAreNotMisattributed、tests/test_tools_briefing_query.py 的两条），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-05 新增（issue #6347 **Part B**，与 Part A「商品 status 枚举准入」同单不同包）：租户 25 有 12 行 product_skus 而「商品健康度视图」返回 0 行 —— 那 10 行 SKU 属 8 个状态为 active 的商品，被快照的 onSaleProductNames 静默过滤；米宝据此答「SKU 记录数 = 0 / SKU 层是空的 / 建议先确认商品规格是否已录入」= **归因错误**，用户被引向徒劳返工。取号 DA-023：现取 .github/cases/ 最大号 = DA-021（main ∪ 全部在飞 ref，逐 ref 核过，见 PR body；DA-022 已被在飞 PR 占用）。**未覆盖面（如实登记）**：真实 LLM 行为面（米宝用这条消息怎么措辞）**不进 agent-eval 计分**（本条 `skip_reason` = `[backend-contract]`，`forbidden_text` 因此**不会被执行**）—— 本单钉的是**载荷**（引擎 + 工具消息）与**快照读数**。⚠️ 为什么不做成可跑用例：评测栈租户 = 1，种下的商品（**逐文件现取**：`tests/agent_eval/fixtures/mibao_eval_seed.sql` **1 个** `prod_eval_2699` + `tests/agent_eval/fixtures/xiaobu_eval_seed.sql` **3 个** `prod_eval_blackout` / `prod_eval_dark_green` / `prod_eval_summer`，合计 4 个；两文件里商品 `status` 字面量实测 `'on_sale'` × 4，无其它取值）全是 `on_sale` 且 SKU 非空 ⇒ **复现不出**「过滤前 > 0、过滤后 = 0」；要复现就得把那批商品的 SKU 全推到非法状态，而 `product.yml` / `data.yml` 的存量用例正在用它们（改前须先跑全量断言确认不误伤）⇒ 本包取**人工复算配方**（写在 PR body「LLM 侧人工复算配方」段：前置状态 + 命令 + 期望读数），真要跑时由人手动集中跑一次（用户裁定：不自动派发评测）。"
+    merge_log: "2026-10-05 新增（issue #6347 **Part B**，与 Part A「商品 status 枚举准入」同单不同包）：租户 25 有 12 行 product_skus 而「商品健康度视图」返回 0 行 —— 那 10 行 SKU 属 8 个状态为 active 的商品，被快照的 onSaleProductNames 静默过滤；黄金策据此答「SKU 记录数 = 0 / SKU 层是空的 / 建议先确认商品规格是否已录入」= **归因错误**，用户被引向徒劳返工。取号 DA-023：现取 .github/cases/ 最大号 = DA-021（main ∪ 全部在飞 ref，逐 ref 核过，见 PR body；DA-022 已被在飞 PR 占用）。**未覆盖面（如实登记）**：真实 LLM 行为面（黄金策用这条消息怎么措辞）**不进 agent-eval 计分**（本条 `skip_reason` = `[backend-contract]`，`forbidden_text` 因此**不会被执行**）—— 本单钉的是**载荷**（引擎 + 工具消息）与**快照读数**。⚠️ 为什么不做成可跑用例：评测栈租户 = 1，种下的商品（**逐文件现取**：`tests/agent_eval/fixtures/mibao_eval_seed.sql` **1 个** `prod_eval_2699` + `tests/agent_eval/fixtures/xiaobu_eval_seed.sql` **3 个** `prod_eval_blackout` / `prod_eval_dark_green` / `prod_eval_summer`，合计 4 个；两文件里商品 `status` 字面量实测 `'on_sale'` × 4，无其它取值）全是 `on_sale` 且 SKU 非空 ⇒ **复现不出**「过滤前 > 0、过滤后 = 0」；要复现就得把那批商品的 SKU 全推到非法状态，而 `product.yml` / `data.yml` 的存量用例正在用它们（改前须先跑全量断言确认不误伤）⇒ 本包取**人工复算配方**（写在 PR body「LLM 侧人工复算配方」段：前置状态 + 命令 + 期望读数），真要跑时由人手动集中跑一次（用户裁定：不自动派发评测）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java"
