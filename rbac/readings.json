@@ -317,6 +317,7 @@
       "岗位权限": "system:view",
       "企业基础信息": "system:manage",
       "商品管理": "product:list",
+      "参数总览": "production:view",
       "通知中心": null
     },
     "controller": {
@@ -325,6 +326,7 @@
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "商品管理": "product:list",
+      "参数总览": "production:view",
       "加工项管理": "production:view",
       "订单列表": "order:list",
       "售后工单": "after_sales:view",
@@ -367,7 +369,8 @@
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础信息": "system:manage",
-      "商品管理": "product:list"
+      "商品管理": "product:list",
+      "参数总览": "production:view"
     },
     "user": {}
   },
@@ -541,6 +544,12 @@
       "code": "product:list"
     },
     {
+      "key": "params",
+      "name": "参数总览",
+      "path": "/settings/params",
+      "code": "production:view"
+    },
+    {
       "key": "notifications",
       "name": "通知中心",
       "path": "/notifications",
@@ -619,6 +628,10 @@
     [
       "/employees",
       "employee:list"
+    ],
+    [
+      "/settings/params",
+      "production:view"
     ],
     [
       "/settings",
@@ -911,6 +924,22 @@
         "system:manage": [
           "GET /api/admin/settings",
           "GET /api/admin/tenant/ai-config"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "params",
+      "name": "参数总览",
+      "path": "/settings/params",
+      "gate": "production:view",
+      "units": {
+        "production:view": [
+          "GET /api/admin/production/craft-calc-config",
+          "GET /api/admin/production/operation-positions",
+          "GET /api/admin/production/processing-fee-combinations",
+          "GET /api/admin/production/processing-fee-gaps",
+          "GET /api/admin/production/routings"
         ]
       },
       "visibility_rule": "all"

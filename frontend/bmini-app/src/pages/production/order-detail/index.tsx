@@ -67,8 +67,14 @@ export default function ProcessingOrderDetailPage() {
     }
     setOrder(brief.data)
     const ops = await getOrderOperations(orderId)
-    setDetail(ops.success && ops.data ? ops.data : null)
-    setOpsFailed(!(ops.success && ops.data))
+    // issue #6573 顺带修：原写法 `ops.success && ops.data ? ops.data : null` 命中
+    // `frontend/admin-web/tests/unit/components/NumberInputWiring.test.ts` 判据 ⑧
+    //（全仓零命中的「falsy 兜底」形态：`x ? x : null` 这种把**取值**与**真值判断**糅在一句里的写法，
+    // 一旦载荷变成 `0`/`''` 就会静默丢掉它）⇒ 拆成显式的 `?? null`；语义逐值不变
+    //（`ops.data` 是对象，除 null/undefined 外都为真）。
+    const opsData = ops.success ? (ops.data ?? null) : null
+    setDetail(opsData)
+    setOpsFailed(opsData === null)
     setState('ok')
   }, [orderId])
 

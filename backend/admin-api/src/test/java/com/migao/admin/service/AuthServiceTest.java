@@ -568,18 +568,22 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("全权账号：一个顶层一级项 + 六个组 + 通知中心**逐组逐项**镜像 menu.ts（组 key/名/顺序/组内 key/名/路径/顺序）")
+    @DisplayName("全权账号：两个顶层一级项 + 六个组 + 通知中心**逐组逐项**镜像 menu.ts（组 key/名/顺序/组内 key/名/路径/顺序）")
     void currentUserMenusMirrorFrontendIaForAllPermissions() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("*");
 
         // 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：一级项**排在所有分组之后**、通知中心之前
         //（原为「工作台组之后」）—— 与前端渲染顺序逐项一致。
+        // 🔴 issue #6573：一级项 1 → **2**（「参数总览」由 `/settings` 的 tab 升为一级项，码取既有
+        // `production:view`；位置 = 「商品管理」之后、通知中心之前）。
         assertThat(keysOf(menus)).containsExactly(
                 "workspace", "customer-service", "trade-center",
-                "production-center", "inventory-center", "org-center", "products", "notifications");
+                "production-center", "inventory-center", "org-center",
+                "products", "params", "notifications");
         assertThat(namesOf(menus)).containsExactly(
                 "工作台", "客户服务", "交易管理",
-                "生产管理", "仓储与物料", "组织管理", "商品管理", "通知中心");
+                "生产管理", "仓储与物料", "组织管理",
+                "商品管理", "参数总览", "通知中心");
 
         // 工作台（#5271 由「独立项」改为组）
         var workspace = groupByKey(menus, "workspace");
@@ -630,6 +634,9 @@ class AuthServiceTest {
         assertThat(allNames(menus)).doesNotContain("客户管理", "商品与加工项", "智能客服");
         // #5778：顶层一级项「商品管理」不在任何组内（它不是 `menuGroup`）
         assertThat(allNames(menus)).contains("商品管理");
+        // issue #6573：第 2 个一级项「参数总览」同理（也不在 `orgChildren` 里 —— 它是顶层 `menuItem`）
+        assertThat(allNames(menus)).contains("参数总览");
+        assertThat(pathsOf(menus)).contains("/settings/params");
     }
 
     @Test

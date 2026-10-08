@@ -36,6 +36,7 @@ import {
   ScrollText,
   ShieldCheck,
   ShoppingCart,
+  SlidersHorizontal,
   UserCircle,
   Users,
   LifeBuoy,
@@ -77,6 +78,8 @@ export const menuIconMap: Record<string, LucideIcon> = {
   TrendingDown,
   // 发货单（issue #5939）：与「入库单」的 PackageOpen 对称的出口图标
   Truck,
+  // 参数总览（issue #6573）：一级项，与 `/settings` 里该 tab 原本用的图标同一枚
+  SlidersHorizontal,
 }
 
 /**

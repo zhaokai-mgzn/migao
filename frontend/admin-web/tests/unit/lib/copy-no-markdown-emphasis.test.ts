@@ -66,6 +66,10 @@ const REGISTERED = ['****'] as const
  */
 const REGISTERED_MARKER_FILES = [
   'src/lib/craft-calc-glossary.ts',
+  // issue #6573：配置主线的步骤文案（`MAINLINE_STEPS[].why/impact`）里带强调 —— 渲染点是
+  // `src/components/settings/ConfigReadinessBar.tsx`（见下方接线表；`production/routings`
+  // 页也消费同一模块，它在接线表里早就有）。
+  'src/lib/config-readiness.ts',
   'src/lib/tenant-params.ts',
   'src/components/production/CraftCalcGlossary.tsx',
   'src/components/settings/TenantParamsPanel.tsx',
@@ -84,6 +88,7 @@ const REGISTERED_MARKER_FILES = [
  */
 const WIRED_FILES = [
   'src/components/production/CraftCalcGlossary.tsx',
+  'src/components/settings/ConfigReadinessBar.tsx',
   'src/components/settings/TenantParamsPanel.tsx',
   'src/components/settings/RemnantItemSizesPanel.tsx',
   'src/components/settings/OversizeThresholdPreview.tsx',

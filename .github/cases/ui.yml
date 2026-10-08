@@ -1840,11 +1840,14 @@ cases:
     truths_ref:
       - frontend-fix.layout
     user_inputs:
-      - "issue #5131：商家可配参数散在 6 个页面 / 7 张表 ⇒ 新增「参数总览」tab 一处列出"
+      - "issue #5131：商家可配参数散在 6 个页面 / 7 张表 ⇒ 新增「参数总览」一处列出"
+      - "issue #6573（用户 2026-10-08 裁定方案 C）：「参数总览」由 /settings 的 tab **升为一级菜单项**（/settings/params），并加「配置主线」（还缺什么、下一步去哪）"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "settings 页有「参数总览」tab；URL 带 tab=params 可直达（既有 tab=ai 行为不变）"
+      - "「参数总览」是**一级菜单项**（`/settings/params`，节点码 = 路由守卫码 = 该页第一屏读码 `production:view`）；它是 settings 页的 tab 这一形态**已退场**，旧深链 `settings?tab=params` 触发 `router.replace('/settings/params')`（旧链接不 404）"
+      - "**配置主线**（issue #6573）：常驻面只有**一行摘要**（完成数 + 缺口 + 下一步）；逐项明细按需展开且**折叠态下逐项 DOM 不渲染**（§31 P1）；每步三态 = 已配置 / 待配置 / **读不到**（读失败 ⇒ unknown，绝不画成「待配置」）"
+      - "**域级权限**（issue #6573）：算料域需 `production:view`、AI 客服域需 `system:manage`、余料回收域需 `processing:manage`；不持该码的域**不渲染也不请求**"
       - "域清单按 PARAM_DOMAINS 渲染（算料 / AI 客服 / 加工费 / 工艺）；每个标量参数渲染 label + hint + impact 三件套"
       - "算料域当读面 source 不等于 stored ⇒ 每键渲染「未配置（正在用引擎默认值）」标记；source 等于 stored ⇒ 不渲染该标记"
       - "「高级」默认收起：初始不渲染其中参数，点开后渲染"
@@ -1852,12 +1855,15 @@ cases:
       - "算料口径读面失败（权限拒绝等）⇒ 渲染可行动话术（含「请联系管理员」），不静默空白"
       - "行式配置（加工费组合 / 特殊选项价 / 工序库 / 工序管理 / 计件）只给入口链接与「钱在哪」说明，不在本页做列表编辑"
       - "阈值试算（§22 P4）：双列对照「按当前口径」与「按你改的阈值」；判定依据逐字来自服务端 auto-features（config 透传，不本地判、不本地拼文案）；改阈值 ⇒ 用新值重发试算；服务端不可用 ⇒ 可行动话术（**不得**显示成「不判任何特征」）；本块**不发任何 PUT**"
-    skip_reason: "[backend-contract] 纯前端 tab 与只读展示（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/TenantParamsPanel.test.tsx 与 frontend/admin-web/tests/unit/lib/tenant-params.test.ts 执行"
-    precondition: "本用例是 [backend-contract] 纯前端用例：前置（算料配置读面与 AI 配置读面）由单测 mock `@/lib/api` 自建，不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它"
-    merge_log: "2026-09-22 新增（issue #5131）：用户 2026-09-22 裁定 D6′ = 方案 A（整合落在页面与信息架构，存储保持结构化列），并逐字强调「我们的配置类页面务必要考虑配置复杂度和用户体验」⇒ 按 migao-dev-flow §22 配置类页面规范落增量 1：P1 按域分组 / P2 每参数三件套 / P3 默认值可见 / **P4 阈值试算**（双列对照，服务端判定真值 —— 只覆盖超高与超宽两个阈值键，其余算料参数的服务端试算不收 config）。**未闭环（照实登记）**：P6 变更留痕登记为后续增量"
+    skip_reason: "[backend-contract] 纯前端页面与只读展示（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/TenantParamsPanel.test.tsx、frontend/admin-web/tests/unit/pages/settings-params.test.tsx（新页面 + 配置主线）、frontend/admin-web/tests/unit/lib/config-readiness.test.ts（三态判据）、frontend/admin-web/tests/unit/lib/tenant-params.test.ts 执行"
+    precondition: "本用例是 [backend-contract] 纯前端用例：前置（算料配置读面与 AI 配置读面）由单测 mock `@/lib/api` 自建（#6573 起算料域读面由**页面**发起、以 props 注入面板），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它"
+    merge_log: "2026-09-22 新增（issue #5131）：用户 2026-09-22 裁定 D6′ = 方案 A（整合落在页面与信息架构，存储保持结构化列），并逐字强调「我们的配置类页面务必要考虑配置复杂度和用户体验」⇒ 按 migao-dev-flow §22 配置类页面规范落增量 1：P1 按域分组 / P2 每参数三件套 / P3 默认值可见 / **P4 阈值试算**（双列对照，服务端判定真值 —— 只覆盖超高与超宽两个阈值键，其余算料参数的服务端试算不收 config）。**未闭环（照实登记）**：P6 变更留痕登记为后续增量。 ｜ 2026-10-08（issue #6573，用户裁定方案 C）**改判**：参数总览由 `/settings` 的 tab **升为一级菜单项** `/settings/params` —— 旧形态把配置中心绑在 `system:manage` 上，持 `production:view` 的生产岗根本进不去，而缺配置的正是他们要配的东西；同批落「配置主线」（跨页就绪度：工序与单价 → 工艺路线 → 默认路线 → 加工费组合 → 算料配置）与**域级权限**（不持码的域不渲染也不请求）。判据口径同步改判：第一屏读端点由**页面**的 effect 驱动面承担（`MENU_READ_ENDPOINT_ANCHORS` 新增该页一条，5 个读面全是 `production:view` ⇒ 第一屏码集恰好一个码）。**未实装（照实登记）**：服务端聚合就绪度端点、跨页的「加工项 / 余料尺寸」两步、以及真实浏览器点击 E2E 均未做"
     traces:
       tests:
+        - "frontend/admin-web/tests/unit/components/ConfigReadinessBar.test.tsx"
         - "frontend/admin-web/tests/unit/components/TenantParamsPanel.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/settings-params.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/config-readiness.test.ts"
         - "frontend/admin-web/tests/unit/lib/tenant-params.test.ts"
         - "frontend/admin-web/tests/unit/components/OversizeThresholdPreview.test.tsx"
       ci:
@@ -2274,9 +2280,9 @@ cases:
       - "判据 3·**唯一读取点**：`process.env.NEXT_PUBLIC_BMINI_H5_URL` 在全前端只允许出现在 frontend/admin-web/src/lib/bmini-h5-url.ts；组件经 `getBminiH5Url()` 取。红证：在第二个文件里再读一次 ⇒ 判红。执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py。"
       - "判据 4·**前端源码零硬编码域名**：`frontend/admin-web/src/**` 与 `frontend/bmini-app/{src,config}/**` 的**代码**（注释不算 —— 否则判据会被自己的文档喂红）里不得出现 app.migaozn.com；豁免台账为空、未登记即红。执行点 = 同文件（含「注释剥离但字符串保留」的状态机，防 `https://` 被当注释切掉的假绿）。"
       - "判据 5·**发布链三环在案**：Dockerfile 的 `ARG`+`ENV`、deploy-frontend.yml 的 `--build-arg`、.env.example 的说明 —— 任一环缺失 ⇒ 镜像里没有这个值 ⇒ 设置页永远显示「未配置」而没人会发现。红证：删任一环 ⇒ 判红（实测）。执行点 = 同文件。"
-      - "判据 6·**既有页零回归**：设置页既有四个 tab（基本设置 / AI 客服设置 / 参数总览 / 通知设置）全在、既有 33 格 vitest 全绿（本单只加卡片，不动导航与保存逻辑）。"
+      - "判据 6·**既有页零回归**：设置页既有 tab（基本设置 / AI 客服设置 / 工人端页面 / 通知设置）全在、既有 vitest 全绿（本单只加卡片，不动导航与保存逻辑）。⚠️ 2026-10-08（issue #6573）改判：原口径里的「参数总览」已**搬出本页**成为一级菜单项 ⇒ 本判据的 tab 清单不再含它（设置页的 tab 数 4 → 4，但成员变了）。"
     skip_reason: "[backend-contract] 纯前端渲染 + 接线判据（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（frontend/admin-web/tests/unit/pages/settings.test.tsx，39 格）与 pytest（tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py）执行"
-    merge_log: "2026-09-26 新增（issue #5668）：B 端 h5 的发布腿落位 app.migaozn.com/b/ 的同时，在商家后台「企业设置」页给出扫码入口。地址走单一配置 NEXT_PUBLIC_BMINI_H5_URL（反面教材 = craft-display 三份副本 #4393）；未配置时不画假码（同族：洗水码「缺码不画假码」）。取号 UI-064（**改号记录**：本包原先取 UI-061，而 #5651 的「A4 加工单打印」先合并并占用了 UI-061 ⇒ 按当前最大号 UI-063 顺延为 UI-064）。"
+    merge_log: "2026-09-26 新增（issue #5668）：B 端 h5 的发布腿落位 app.migaozn.com/b/ 的同时，在商家后台「企业设置」页给出扫码入口。地址走单一配置 NEXT_PUBLIC_BMINI_H5_URL（反面教材 = craft-display 三份副本 #4393）；未配置时不画假码（同族：洗水码「缺码不画假码」）。取号 UI-064（**改号记录**：本包原先取 UI-061，而 #5651 的「A4 加工单打印」先合并并占用了 UI-061 ⇒ 按当前最大号 UI-063 顺延为 UI-064）。 ｜ 2026-10-08（issue #6573）**判据 6 改判**：设置页的 tab 清单里「参数总览」换成「工人端页面」（前者已升为一级菜单项 `/settings/params`）—— 同批把判据的**静态断言**加严两条：该页**不得**再出现 `label: '参数总览'`（两处入口 = 入口分裂）、且必须保留 `router.replace('/settings/params')`（旧深链不 404）；执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py 的 test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs（前端侧同批改判见 frontend/admin-web/tests/unit/pages/settings.test.tsx）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/settings.test.tsx"
@@ -2336,7 +2342,7 @@ cases:
   # ==========================================================================
   - id: UI-066
     legacy_id: ""
-    title: "商家后台大菜单重排：6 组 + 一级项「商品管理」+ 尾部「通知中心」= 22 项一项不少不减（🔴 2026-10-02 issue #5939 起 **+「发货单」**：仓储与物料组内、与「入库单」对称；加工项归生产管理 / 客户侧独立成组；#5877 起一级项排在「工作台」组之后）"
+    title: "商家后台大菜单重排：6 组 + **两个**一级项（「商品管理」「参数总览」）+ 尾部「通知中心」= **24 项**一项不少不减（🔴 2026-10-02 issue #5939 起 **+「发货单」**：仓储与物料组内、与「入库单」对称；🔴 2026-10-08 issue #6573 起 **+一级项「参数总览」** `/settings/params`；加工项归生产管理 / 客户侧独立成组）"
     domains:
       - ui
       - frontend
@@ -2358,13 +2364,14 @@ cases:
       - "判据 1·**三源同构（组层）**：`frontend/admin-web/src/config/menu.ts` 的 `menuGroups` / `backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java` 的 `MENU_TREE` / `backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java` 的 `buildMenusByPermissions` 的「组 key + 组名 + 顺序」逐值相等，且为 **6 组**：`workspace 工作台 / customer-service 客户服务 / trade-center 交易管理 / production-center 生产管理 / inventory-center 仓储与物料 / org-center 组织管理`。执行点 = tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py 的 test_menu_is_isomorphic_across_three_sources（#5778 起含「一级项层 / 独立项层」两段判据；**#5877 起再含「顶层布局序列」**——**位置**也参与三源比对，注入式红证第 ⑥~⑩ 条）。"
       - "判据 2·**加工项管理归生产管理组**（用户第 1 条）：`production-center` 组内顺序 = 生产看板 → 智能派单 → **加工项管理** → 工艺配置 → 计件工资（5 项），且 `product-center` 组**不再存在**。执行点 = frontend/admin-web/tests/unit/pages/processing-merged.test.tsx（「加工项管理由生产管理组承载」）+ tests/unit/pages/processing-fees.test.tsx + backend/admin-api/src/test/java/com/migao/admin/controller/MenuControllerTest.java 的 productionCenterGroupMirrorsMenuTs / productCenterGroupIsGone。"
       - "判据 3·**客户侧独立成「客户服务」组**（用户第 2/3 条）：该组成员与顺序 = 在线接待 → 客户列表 → 知识库 → 售后工单；`trade-center` 收窄为 订单列表 → 财务对账。执行点 = frontend/admin-web/tests/unit/components/Sidebar.test.tsx（「客户服务」组内顺序）+ backend/admin-api/src/test/java/com/migao/admin/service/AuthServiceTest.java 的 currentUserMenusDropRemovedChatEntry / currentUserMenusAbsorbCustomerCenterIntoTrade。"
-      - "判据 4·🔴 **「商品管理」是顶层一级项，且渲染在「工作台」组之后**（用户 2026-09-29「直接作为一级菜单使用」+ 2026-10-01「商品管理的菜单不应该作为第一行」）：它**保留为一级菜单**（不折叠、一屏直达）、不属于任何组（服务端 = `MenuController` 顶层节点 + `AuthService` 顶层 `menuItem`），位置 = 「工作台」组之后、下一个组之前。**位置在四处同批表达**：frontend/admin-web/src/config/menu.ts 的 `STANDALONE_TOP_AFTER_GROUP_KEY`（= workspace）、backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java 的 `MENU_TREE` 顶层节点顺序、backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java 的 `buildMenusByPermissions` 里该 `menus.add(...)` 的文档位置、以及 Sidebar 的渲染序。且**不得**与任何组内项重名同路径。**席位组不可见时的回落**：`dashboard:view` 被整组过滤掉 ⇒ 一级项**回落到所有分组之前**（绝不跟着消失，最坏退回旧位置）。执行点 = 三源同构守卫的「顶层布局序列」判据（注入 ⑦ MenuController 挪回最前 / ⑧ 前端席位常量改判 / ⑨⑩ AuthService 挪回首尾与组之间）+ frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的 `splitGroupsAtTopItemSlot` 专条用例 + frontend/admin-web/tests/unit/components/Sidebar.test.tsx 的「一级项在『工作台』组之后」DOM 顺序用例 + MenuControllerTest 的 topLevelStandaloneItemMirrorsFrontend。"
+      - "判据 4·🔴 **「商品管理」是顶层一级项**（用户 2026-09-29「直接作为一级菜单使用」）：它**保留为一级菜单**（不折叠、一屏直达）、不属于任何组（服务端 = `MenuController` 顶层节点 + `AuthService` 顶层 `menuItem`）。**位置在四处同批表达**：frontend/admin-web/src/config/menu.ts 的 `STANDALONE_TOP_AFTER_GROUP_KEY`、backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java 的 `MENU_TREE` 顶层节点顺序、backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java 的 `buildMenusByPermissions` 里该 `menus.add(...)` 的文档位置、以及 Sidebar 的渲染序。且**不得**与任何组内项重名同路径。**席位组不可见时的回落**：`dashboard:view` 被整组过滤掉 ⇒ 一级项**回落到所有分组之前**（绝不跟着消失，最坏退回旧位置）。⚠️ **位置改判（2026-10-06，issue #6457）**：本判据原写「位置 = 「工作台」组之后、下一个组之前」（#5877 口径）—— 用户 2026-10-06 改判为「**所有分组之后**」（理由：组名即「分组」，一级项渲染在组与组之间会让「大菜单并列」自相矛盾）⇒ `STANDALONE_TOP_AFTER_GROUP_KEY` 现取**最后一个组** `org-center`；三源同构守卫的「顶层布局序列」判据同步含**位置**。执行点 = 三源同构守卫的「顶层布局序列」判据（注入 ⑦ MenuController 挪回最前 / ⑧ 前端席位常量改判 / ⑨⑩ AuthService 挪回首尾与组之间）+ frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的 `splitGroupsAtTopItemSlot` 专条用例 + frontend/admin-web/tests/unit/components/Sidebar.test.tsx 的 DOM 顺序用例 + MenuControllerTest 的 topLevelStandaloneItemMirrorsFrontend。"
+      - "判据 9·🔴 **第二个一级项「参数总览」**（issue #6573，用户 2026-10-08 裁定方案 C）：`frontend/admin-web/src/config/menu.ts` 的 `standaloneTopItems` 第 2 项 = 「参数总览」(`/settings/params`，节点码取**既有**读码 `production:view`)，与「商品管理」**并列**、同排**所有分组之后**、通知中心之前；四处载体同批（menu.ts / `MenuController.MENU_TREE` / `AuthService.buildMenusByPermissions` / `backend/ai-agent-service/app/context/menu_navigator.py` 的 `MENU_TREE`）。**权限**：不新造码、不改任何端点的权限码 ⇒ 新增的只是**一个入口的可见面**（持 `production:view` 的生产岗此前进不去 `/settings`）。执行点 = tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py（一级项层 / 顶层布局序列）+ test_agent_permission_parity.py（`ROUTE_MENU_ANCHORS` / `MENU_READ_ENDPOINT_ANCHORS` 成对登记）+ backend/admin-api/src/test/java/com/migao/admin/service/AuthServiceTest.java"
       - "判据 5·**面包屑与侧边栏一致（§15.2）**：`/products` ⇒ **单级**「商品管理」（一级项**没有父组**，与「通知中心」同口径；旧口径「商品管理 > 商品管理」是两个同名项，已收口）；`/customers`、`/after-sales`、`/knowledge`、`/agent-workspace*`、`/chat` ⇒ 首项「客户服务」；`/production/processing` 与旧路径 `/processing` ⇒ 首项「生产管理」。执行点 = frontend/admin-web/tests/unit/components/Header.test.tsx + frontend/admin-web/tests/unit/lib/menu-breadcrumb-coverage.test.tsx（PG-038 按菜单项 path 穷举）。"
       - "判据 6·**RBAC 单一真值源同批对齐**：`rbac/manifest.json` 的 `menu_nodes` / `menus.{frontend,controller,auth}` 与本 IA 逐值相等，产物 `rbac/readings.json` 新鲜（`python3 rbac/generate_readings.py --check`）；菜单树上的两个商品域动作码节点（`新增商品` / `商品分类管理`）随 `product-center` 撤销而删除（**权限码本身仍在权限目录里**）。执行点 = tests/unit_ci_workflows/test_rbac_single_source_manifest.py + test_rbac_derived_pages.py（ACTION_NODE_CODES 只许缩短）。"
       - "判据 7·**权限码 / 路径 / 门控一字不动（零可见性 delta）**：纯信息架构调整，不改任何端点的码；后端 `AuthServiceTest` 的角色可见性用例（负控 / inbound 独立门控 / 客户侧）+ frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的权限过滤表逐条精确断言。"
       - "判据 8·**一级项不进「常用」**（#5877）：一级项**不再渲染星标按钮**（`sidebar-pin-products` 不存在），可收藏面 = 组内项 ∪ 尾部独立项；用户 localStorage 里残留的 `products` key **静默丢弃**（不出现第二条一模一样的入口），而一级项本身照旧渲染一次；视觉改为**板块入口**规格（与组头同级排版 + 与上方之间的分隔线 + 不旋转的 ChevronRight）。执行点 = frontend/admin-web/tests/unit/lib/menu-pinned.test.ts + frontend/admin-web/tests/unit/components/Sidebar.test.tsx 的「无星标 / 不进常用 / 板块入口规格」用例。"
     skip_reason: "[backend-contract] 纯前端信息架构 + 三处菜单源同构（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（前端）与 pytest（tests/unit_ci_workflows 的三源同构守卫）执行"
-    merge_log: "2026-09-29 新增（issue #5778）：用户逐条裁定菜单重排。**判据一格不放宽** —— 旧 IA 的钉子（`customer-center` 不再存在、旧组名不得长回来、21 项一项不少不减）逐条保留并新增 `product-center` / `smart-customer-service` 两条反向钉子；RBAC 的两个动作码节点台账按「只许缩短」口径同批收缩。2026-10-01 改判（issue #5877）：一级项由「所有分组**之前**」改为「**工作台**组之后」（用户「商品管理的菜单不应该作为第一行」），判据 4/5/8 同步改口径并新增「顶层布局序列」三源判据（注入 ⑦~⑩）；席位组不可见时的**回落**口径同日写明。2026-10-02 追加（issue #5939）：菜单项由 21 → **22 项**（+「发货单」`/shipments`），本用例的「一项不少不减」计数随之改判；新节点的三源同构与页面判据另立 **UI-078**（不在本用例重复表达）。"
+    merge_log: "2026-09-29 新增（issue #5778）：用户逐条裁定菜单重排。**判据一格不放宽** —— 旧 IA 的钉子（`customer-center` 不再存在、旧组名不得长回来、21 项一项不少不减）逐条保留并新增 `product-center` / `smart-customer-service` 两条反向钉子；RBAC 的两个动作码节点台账按「只许缩短」口径同批收缩。2026-10-01 改判（issue #5877）：一级项由「所有分组**之前**」改为「**工作台**组之后」（用户「商品管理的菜单不应该作为第一行」），判据 4/5/8 同步改口径并新增「顶层布局序列」三源判据（注入 ⑦~⑩）；席位组不可见时的**回落**口径同日写明。2026-10-02 追加（issue #5939）：菜单项由 21 → **22 项**（+「发货单」`/shipments`），本用例的「一项不少不减」计数随之改判；新节点的三源同构与页面判据另立 **UI-078**（不在本用例重复表达）。 ｜ 2026-10-08（issue #6573，用户裁定方案 C）：新增**第二个一级项「参数总览」**（`/settings/params`，码取既有读码 `production:view`）⇒ 菜单项 22 → **24 项**（6 组 21 子项 + **2** 一级项 + 1 尾部独立项）；同批把**判据 4 的位置口径**从 #5877 的「工作台组之后」校正到 #6457 的「**所有分组之后**」（该处此前已随 #6457 过期，本单顺手改准，**判据只增不减**：新增判据 9，其余八条一字未删）。"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py"

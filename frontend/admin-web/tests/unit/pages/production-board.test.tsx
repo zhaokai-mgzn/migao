@@ -242,7 +242,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
       expandGroup(key)
     }
     const hrefs = Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'))
-    expect(hrefs).toHaveLength(22) // 简报开关关 ⇒ 22 项（23 - 每日简报；#5939：21 → 22；#6404：22 → 23 项）
+    expect(hrefs).toHaveLength(23) // 简报开关关 ⇒ 23 项（24 - 每日简报；#5939：21 → 22；#6404：22 → 23；#6573：23 → 24 项）
     expect(hrefs).not.toContain('/processing-orders')
   })
 

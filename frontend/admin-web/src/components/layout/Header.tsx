@@ -117,6 +117,9 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 组织管理组（与侧边栏"组织管理"分组对齐，#2969 员工/岗位权限/企业信息归入本组）
   { match: (p) => p.startsWith('/employees'), crumbs: [{ label: '组织管理' }, { label: '员工管理' }] },
   { match: (p) => p.startsWith('/roles'), crumbs: [{ label: '组织管理' }, { label: '岗位权限' }] },
+  // 参数总览（issue #6573）：**一级菜单项**（不属于任何组）⇒ 面包屑单级，与「商品管理」「通知中心」同口径。
+  // ⚠️ 必须排在 `/settings` **之前** —— 本表用 `find()` 取首个命中，否则它会退化成「企业基础信息」。
+  { match: (p) => p.startsWith('/settings/params'), crumbs: [{ label: '参数总览' }] },
   { match: (p) => p.startsWith('/settings'), crumbs: [{ label: '组织管理' }, { label: '企业基础信息' }] },
 
   // 通知中心（独立菜单，全员可见，与顶栏铃铛一致）

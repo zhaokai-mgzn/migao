@@ -62,9 +62,10 @@ class MenuControllerTest {
     private static final List<String> GROUP_LABELS = List.of(
             "工作台", "客户服务", "交易管理", "生产管理", "仓储与物料", "组织管理");
 
-    /** #5778 的 **22 个菜单项名**（一项不少不减；「通知中心」是一级独立项、不在本权限树内）。
+    /** #5778 的 **23 个菜单项名**（一项不少不减；「通知中心」是一级独立项、不在本权限树内）。
      *  ⚠️ #6404：菜单项 21 → 22（+「库存明细」`/stock-ledger`）。
-     *  ⚠️ 含顶层一级项「商品管理」（它不属于任何组，但仍是菜单项）。
+     *  ⚠️ #6573：菜单项 22 → 23（+顶层一级项「参数总览」`/settings/params`，取既有读码 `production:view`）。
+     *  ⚠️ 含两个顶层一级项「商品管理」「参数总览」（它们不属于任何组，但仍是菜单项）。
      *  🔴 2026-10-06（issue #6457，用户裁定方案 A1）：**顺序重排**（项数不变）——
      *  客户服务组「接待与工具 → 售后 → 档案」、生产管理组「先备资料 → 再生产」、
      *  仓储组「单据（进 → 账 → 出）→ 台账 → 分析」，且一级项「商品管理」沉到**所有分组之后**。 */
@@ -75,7 +76,7 @@ class MenuControllerTest {
             "加工项管理", "工艺配置", "生产看板", "智能派单", "计件工资",
             "入库单", "库存明细", "发货单", "余料台账", "省料看板",
             "员工管理", "岗位权限", "企业基础信息",
-            "商品管理");
+            "商品管理", "参数总览");
 
     /** 动作码节点（非菜单项）2 个，**统一追加在组尾**：order:detail / employee:create。
      *  🔴 2026-09-29（#5778）：原 4 个 → **2 个** —— 「新增商品」/「商品分类管理」两个节点原挂在
@@ -83,6 +84,11 @@ class MenuControllerTest {
      *（权限码本身仍在权限目录里，删的是「菜单树上有这两个勾选项」这一事实）。 */
     private static final List<String> ACTION_NODE_LABELS = List.of(
             "订单详情", "新增员工");
+
+    /** 顶层**一级项**名（`children` 为空、直接跳转的那些，**不属于任何组**）。
+     *  🔴 #6573 起两个：商品管理 / 参数总览 —— 它们不参与 `allChildren` 的组内计数，
+     *  由 `topLevelStandaloneItems` 单独断言（避免两处都算它们 ⇒ 重复计数）。 */
+    private static final List<String> TOP_LEVEL_STANDALONE_LABELS = List.of("商品管理", "参数总览");
 
     /**
      * 拉取菜单树 DOM —— jsonPath 的过滤表达式对「单元素结果是否解包」语义不稳，
@@ -162,29 +168,36 @@ class MenuControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").isArray())
                 // issue #5271：七大组（旧树是 9 个顶层条目）。
-                // 🔴 2026-09-29（issue #5778）：**六大组 + 一个顶层一级项「商品管理」= 7 个顶层条目**
-                //（`product-center` 撤销、`smart-customer-service` → `customer-service`、商品列表升为一级项）。
-                .andExpect(jsonPath("$.data.length()").value(7));
+                // 🔴 2026-09-29（issue #5778）：**六大组 + 两个顶层一级项「商品管理」「参数总览」= 8 个顶层条目**
+                //（`product-center` 撤销、`smart-customer-service` → `customer-service`、商品列表升为一级项；
+                //  「参数总览」由 issue #6573 从 `/settings` 的 tab 升为一级项）。
+                .andExpect(jsonPath("$.data.length()").value(8));
     }
 
     @Test
-    @DisplayName("2026-10-06 新 IA：顶层一级项（商品管理）不在任何组内，且排在**所有分组之后**")
+    @DisplayName("2026-10-06 新 IA：顶层一级项（商品管理 / 参数总览）不在任何组内，且排在**所有分组之后**")
     void topLevelStandaloneItemMirrorsFrontend() throws Exception {
         JsonNode tree = fetchTree();
         var tops = topLevelStandaloneItems(tree);
-        assertEquals(1, tops.size(), "顶层一级项应恰有 1 个（商品管理）—— 实得 = " + labels(tree));
+        assertEquals(2, tops.size(), "顶层一级项应恰有 2 个（商品管理 / 参数总览）—— 实得 = " + labels(tree));
         assertEquals("商品管理", tops.get(0).path("label").asText(),
-                "顶层一级项必须是「商品管理」—— 实得 = " + labels(tree));
+                "第 1 个顶层一级项必须是「商品管理」—— 实得 = " + labels(tree));
+        // issue #6573：第 2 个一级项 = 「参数总览」（码取既有读码 `production:view`，不新造码）
+        assertEquals("参数总览", tops.get(1).path("label").asText(),
+                "第 2 个顶层一级项必须是「参数总览」—— 实得 = " + labels(tree));
         // 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：一级项**排在所有分组之后**（原「工作台组之后」）
         // —— 组名即「分组」，渲染在组与组之间会让「大菜单并列」自相矛盾。
         // 顶层**位次**：第 0 项 = 「工作台」组、第 6 项（末项）= 一级项「商品管理」。
         // 判据 = 三源同构守卫的顶层布局序列（tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py）。
         assertEquals("workspace", tree.get(0).path("code").asText(),
                 "顶层第 0 项必须是「工作台」组 —— 实得 = " + codes(tree));
-        assertEquals("org-center", tree.get(tree.size() - 2).path("code").asText(),
-                "顶层倒数第 2 项必须是「组织管理」组（一级项紧跟在它之后）—— 实得 = " + codes(tree));
-        assertEquals("product:list", tree.get(tree.size() - 1).path("code").asText(),
-                "顶层末项必须是一级项「商品管理」（排在**所有分组之后**）—— 实得 = " + codes(tree));
+        assertEquals("org-center", tree.get(tree.size() - 3).path("code").asText(),
+                "顶层倒数第 3 项必须是「组织管理」组（两个一级项紧跟在它之后）—— 实得 = " + codes(tree));
+        assertEquals("product:list", tree.get(tree.size() - 2).path("code").asText(),
+                "顶层倒数第 2 项必须是「商品管理」（排在**所有分组之后**）—— 实得 = " + codes(tree));
+        // issue #6573：末项 = 「参数总览」（与「商品管理」并列、同排在所有分组之后）
+        assertEquals("production:view", tree.get(tree.size() - 1).path("code").asText(),
+                "顶层末项必须是「参数总览」—— 实得 = " + codes(tree));
         assertEquals("product:list", tops.get(0).path("code").asText());
         assertEquals(0, tops.get(0).path("children").size(),
                 "一级项不得有子节点（它不是组）—— 有子节点说明它被写成了组");
@@ -316,17 +329,19 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("菜单项一项不少不减（21 项各恰好一次，含顶层一级项）+ 2 个动作码节点（合计 23 组内节点）")
+    @DisplayName("菜单项一项不少不减（**21 组内项** + **2 顶层一级项**各恰好一次）+ 2 个动作码节点（合计 23 组内节点）")
     void everyMenuItemAppearsExactlyOnce() throws Exception {
         List<String> all = labels(allChildren(fetchTree()));
         for (String name : MENU_ITEM_LABELS) {
             int expected = 1;
-            // 「商品管理」是**顶层一级项** ⇒ 不在 allChildren（它不属于任何组），单独在下面断言
-            if ("商品管理".equals(name)) {
-                // 顶层一级项：不在 allChildren（它不属于任何组）⇒ 按「顶层一级项里有且仅有一项」断言
+            // 顶层**一级项**（「商品管理」「参数总览」）是**叶子** ⇒ 不在 `allChildren`
+            // （它们不属于任何组），改在顶层一级项集合里各断言恰好一次。
+            // ⚠️ 这里按**名单**判断而不是按名字硬编码：将来再加一级项，忘了登记就会落到下面那条
+            // 「组内节点出现次数不是 1」上 ⇒ 当场红（不会静默跳过）。
+            if (TOP_LEVEL_STANDALONE_LABELS.contains(name)) {
                 assertEquals(1, topLevelStandaloneItems(fetchTree()).stream()
-                                .filter(n -> "商品管理".equals(n.path("label").asText())).count(),
-                        "顶层一级项「商品管理」的出现次数不是 1");
+                                .filter(n -> name.equals(n.path("label").asText())).count(),
+                        "顶层一级项「" + name + "」的出现次数不是 1");
                 continue;
             }
             assertEquals(expected, all.stream().filter(name::equals).count(),
@@ -336,12 +351,14 @@ class MenuControllerTest {
             assertEquals(1, all.stream().filter(action::equals).count(),
                     "动作码节点「" + action + "」缺失或重复（实得全表 = " + all + "）");
         }
-        // 组内节点总数 = 22 个**组内**菜单项（23 项 − 顶层一级项「商品管理」）+ 2 动作码节点 = 24。
-        // （#5939：菜单项 21 → 22；#6404：菜单项 22 → 23，组内项 21 → 22 ⇒ 本表同批 +「库存明细」。）
-        // ⚠️ 顶层一级项是**叶子**（不在任何组内）⇒ 不被 `allChildren` 收录，它的存在由
+        // 组内节点总数 = 21 个**组内**菜单项（23 项 − **2 个**顶层一级项「商品管理」「参数总览」）
+        // + 2 动作码节点 = 23。
+        // （#5939：菜单项 21 → 22；#6404：菜单项 22 → 23，组内项 21 → 22；#6573：菜单项 23 → 24，
+        //   组内项**不变**（新增的是顶层一级项）⇒ 总数 24 → 25，组内 22 → 21 + 2 动作码。）
+        // ⚠️ 顶层一级项是**叶子**（不在任何组内）⇒ 不被 `allChildren` 收录，它们的存在由
         // `topLevelStandaloneItemMirrorsFrontend` 单独断言（避免两处都算它 ⇒ 重复计数）。
-        assertEquals(MENU_ITEM_LABELS.size() - 1 + ACTION_NODE_LABELS.size(), all.size(),
-                "组内节点总数 = 22 组内菜单项 + 2 动作码节点（实得全表 = " + all + "）");
+        assertEquals(MENU_ITEM_LABELS.size() - 2 + ACTION_NODE_LABELS.size(), all.size(),
+                "组内节点总数 = 21 组内菜单项 + 2 动作码节点（实得全表 = " + all + "）");
     }
 
     @Test
