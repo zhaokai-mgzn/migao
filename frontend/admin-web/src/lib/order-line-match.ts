@@ -93,7 +93,7 @@ export interface DetailEntry {
 export function parseDetailEntries(fields: RecognizedField[]): DetailEntry[] {
   const raw = valueOf(fields, 'items')
   // 未采纳的「参考」原文（issue #6529）：值**不采纳**（不填表、不进备注），但**照旧查目录** ——
-  // 否则商家听不到「图上写的型号在目录里查不到」（同图米宝会话说得出、页面却沉默）。
+  // 否则商家听不到「图上写的型号在目录里查不到」（同图黄金策会话说得出、页面却沉默）。
   const referenceOnly = raw === ''
   const text = raw || referenceOf(fields, 'items')
   if (text === '') return []

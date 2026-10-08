@@ -3158,7 +3158,7 @@ export default function NewOrderPage() {
                 <SectionTitle icon={<Package className="w-4 h-4" />} title="商品信息" />
                 <div className="flex items-center gap-3">
                   {/* issue #6530：与建品页**同一个入口形态** —— 「拍照 / 上传识别」+「补充一句（可选）」，
-                      走同一条一次性推理链（不经过米宝对话窗口）。订单侧的解读仍然**一格都不填**
+                      走同一条一次性推理链（不经过黄金策对话窗口）。订单侧的解读仍然**一格都不填**
                       （客户信息错 ⇒ 货发错人）：那句话只用来消歧与给依据，值一律由 `[图片识别]` 来。 */}
                   <ImageRecognizeButton targetType="order" interpret onRecognized={handleRecognized} />
                   <span className="text-xs text-neutral-400">
