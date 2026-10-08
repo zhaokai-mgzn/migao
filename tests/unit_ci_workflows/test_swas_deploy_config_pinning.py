@@ -15,7 +15,7 @@
 `IMAGE_TAG` 此前只用于镜像与回滚提示，**没有任何**「按 IMAGE_TAG 校验/固定配置」的逻辑。
 这与本仓「部署结论以**容器真身**为唯一判据」同族 —— 配置也是"真身"的一部分。
 
-## 续篇：**取配置本身也要能续、能重、可观测**（issue #6551；本文件同址扩写，不另立文件）
+## 续篇：**取配置本身要能重、可观测、不被残包毒化**（issue #6551；本文件同址扩写，不另立文件）
 
 病根（**CI 逐字现取**，run 37726977789，2026-10-08）：
 
@@ -656,9 +656,12 @@ exit 0
 #   第一轮按 `$FAIL_PLAN`（剩余次数）**截断**响应：只写一半就 `exit 28`
 #   （= 真 curl 的 `(28) Operation timed out … with X out of Y bytes received`，与事故同族）；
 #   后续轮次识别 `-C -`：偏移 = **盘上现有字节数**，**只发剩下的那段**（真 curl 的 `Range` 语义），
-#   并把 `Range: bytes=N-` 记进 `$RANGE_LOG` ⇒ 「第二次请求真的带了 Range」「续传后的包逐字节等于夹具」
-#   都是**可断言**的读数（`test_exec_resume_retry_observable`）。
-CURL_RANGE_STUB = """#!/bin/bash
+#   并把 `Range: bytes=N-` 记进 `$RANGE_LOG`。
+#   ⚠️ **现在这一支是"反向仪表"**：`-C -` 已被 #6550 实测否掉（codeload 不认 `Range`）⇒ 生产码路
+#   **不许**发偏移 ⇒ 断言的是 `ranges == ["Range: bytes=0-", "Range: bytes=0-"]`（**两轮都从 0 重取**、
+#   残包已删）。桩保留"支持 `-C -`"的能力，正是为了让**"真发了偏移"这件事可被观测** —— 谁把 `-C -`
+#   加回来，这条判据立刻红（真 curl 的 `Range` 语义 vs 现场事故读数，两者都要看得见）。
+CURL_PARTIAL_STUB = """#!/bin/bash
 out=""; url=""; fmt=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -841,7 +844,8 @@ def _run(tmp_path: Path, script_text: str, *, tag: str, fixtures: dict,
     fixtures: {ref: marker} —— 桩上**可取到**的配置包（ref 不在其中 ⇒ 404 ⇒ 22）
     running:  {服务: tag} —— 「当前在跑」的镜像 tag（缺 ⇒ 没有在跑容器 ⇒ 判据 unknown）
     ancestry: {"<target>..<current>": status} —— compare API 回放（缺 ⇒ API 取不到）
-    curl_body: 桩 curl 的实现（默认单段桩；`CURL_RANGE_STUB` = 支持 `-C -` 的分段桩）
+    curl_body: 桩 curl 的实现（默认单段桩；`CURL_PARTIAL_STUB` = 首轮截断的分段桩 —— 它**支持** `-C -`，
+        用来**证明**第二轮仍然是从 0 重取，见该桩定义处的说明）
     seed:     {工作目录内相对路径: 文本} —— 预置现盘状态（#6551 ②）
     fail_plan_count: 分段桩**前 N 轮**截断响应（模拟半途超时 ⇒ `curl: (28)`）
     local_images: 桩 docker 认为「**本地已有**」的镜像 ref（#6551 ② 的 C′ 回滚腿判据）
@@ -1134,7 +1138,7 @@ def test_exec_retry_is_observable_and_restarts_from_zero(tmp_path):
     """
     fixtures = {MAIN_REF: MARKER_MAIN, "aaaaaaa": MARKER_OLD}
     proc, log, urls, work = _run(tmp_path, read_deploy_sh(), tag=OLD_TAG, fixtures=fixtures,
-                                 curl_body=CURL_RANGE_STUB, fail_plan_count=1)
+                                 curl_body=CURL_PARTIAL_STUB, fail_plan_count=1)
     assert proc.returncode == 0, f"截断一次后应当靠重试成功：\n{proc.stdout}\n{proc.stderr}"
     ranges = _range_headers(tmp_path)
     assert ranges == ["Range: bytes=0-", "Range: bytes=0-"], (
@@ -1158,12 +1162,13 @@ def test_exec_pre_6551_single_attempt_fails_on_truncated_response(tmp_path):
     """🔴 判别力红证（#6551 ①）：**同一组输入**下，改动前的码路（**只有一次尝试**）在
     「第一轮截断」上**必失败**（`取不到 tag=… 对应的配置` ⇒ 中止部署）—— 这正是本单现场。
 
-    ⚠️ 桩不模拟 `--retry`：与**现取事故读数一致**（半途超时那一族它从不触发）——
-    真实 `curl --retry 3` 的逐字读数见 PR body 的「真 curl + 本地桩」红证。
+    ⚠️ 桩不模拟 `--retry`：与**生产那台机器**的现取事故读数一致（半途超时在那里**一次都没触发**）——
+    但 `--retry` 的触发条件是**按 curl 版本 / 错误类分叉**的（#6551 的订正评论里有三条注入读数），
+    ⇒ 不能从参数面判定"它一定会/一定不会重试"，这正是本单改成**显式重试循环**的理由。
     """
     fixtures = {MAIN_REF: MARKER_MAIN, "aaaaaaa": MARKER_OLD}
     proc, log, urls, work = _run(tmp_path, _pre_6551_script(read_deploy_sh()), tag=OLD_TAG,
-                                 fixtures=fixtures, curl_body=CURL_RANGE_STUB, fail_plan_count=1)
+                                 fixtures=fixtures, curl_body=CURL_PARTIAL_STUB, fail_plan_count=1)
     assert proc.returncode != 0, f"截断响应下改动前竟成功了（红证空跑）：\n{proc.stdout}"
     assert "syntax error" not in proc.stderr, f"重建体有语法错（本地 bash 3.2 会宽容掉 ⇒ 假绿）：\n{proc.stderr}"
     assert "取不到 tag=sha-aaaaaaa 对应的配置" in proc.stdout, proc.stdout
