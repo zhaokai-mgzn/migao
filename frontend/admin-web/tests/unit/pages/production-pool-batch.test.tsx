@@ -264,16 +264,107 @@ describe('智能派单 · 成批区（PR-081）', () => {
     expect(screen.getByTestId('pool-result-o1')).toHaveTextContent('先到「工艺配置」给这个商品补路线')
   })
 
-  it('overdueCount > 0 ⇒ 展示 warnings 的可行动文案（不是只报数）', async () => {
+  it('「全选」一次勾上**全部料组**的成批候选（加急单不在候选内），再点一次清空', async () => {
+    const URGENT = line({
+      orderId: 'u1',
+      orderNo: 'MG-URG-1',
+      itemId: 'iu1',
+      isUrgent: true,
+      waitHours: 6,
+    })
+    const L7 = line({ orderId: 'o7', orderNo: 'MG-0007', itemId: 'i7' })
     mockGetBoard.mockResolvedValue(
       ok(
         board({
-          overdueCount: 1,
+          orderCount: 4,
+          lineCount: 4,
+          urgentCount: 1,
+          urgentLines: [URGENT],
+          groups: [
+            {
+              materialKey: '遮光布 / 米白 / 2.8m',
+              productId: 'p1',
+              skuCode: '米白/2.8m',
+              orderCount: 3,
+              requiredMeters: 30,
+              lines: [L1, L2, L3],
+            },
+            {
+              materialKey: '遮光布 / 米白 / 3.2m',
+              productId: 'p2',
+              skuCode: '米白/3.2m',
+              orderCount: 1,
+              requiredMeters: 10,
+              lines: [L7],
+            },
+          ],
+        }),
+      ),
+    )
+
+    render(<ProductionPoolPage />)
+    const selectAll = await screen.findByTestId('pool-select-all')
+    // 候选数 = **成批候选**（两个料组的行 3 + 1）—— 加急单 `u1` 不在其中
+    expect(selectAll).toHaveTextContent('全选 4 单')
+
+    fireEvent.click(selectAll)
+
+    // 请求体逐行带指派（issue #6408）：勾中哪几行，请求里就是哪几行 —— 加急单**不在**里面
+    await waitFor(() =>
+      expect(mockPreview).toHaveBeenLastCalledWith({
+        orderIds: ['o9', 'o1', 'o5', 'o7'],
+        batches: [
+          { orderId: 'o9', itemId: 'i9' },
+          { orderId: 'o1', itemId: 'i1' },
+          { orderId: 'o5', itemId: 'i5' },
+          { orderId: 'o7', itemId: 'i7' },
+        ],
+        assignmentRule: 'fifo',
+        pooled: true,
+      }),
+    )
+    // 每一行**真的**被勾上（不是只改了计数文案）
+    for (const orderNo of ['MG-0009', 'MG-0001', 'MG-0005', 'MG-0007']) {
+      expect(screen.getByLabelText(`选择订单 ${orderNo}`)).toBeChecked()
+    }
+    expect(screen.getByTestId('pool-dispatch-batch')).not.toBeDisabled()
+    // 加急行在插队区：**没有**勾选框（勾不到它，也就不会拿到 422 整批拒绝）
+    expect(screen.queryByLabelText('选择订单 MG-URG-1')).toBeNull()
+    expect(screen.getByText('MG-URG-1')).toBeInTheDocument()
+
+    // 全选中 ⇒ 按钮变「取消全选」，点它清空（一键合并派单回到禁用）
+    expect(screen.getByTestId('pool-select-all')).toHaveTextContent('取消全选')
+    fireEvent.click(screen.getByTestId('pool-select-all'))
+    await waitFor(() => expect(screen.getByLabelText('选择订单 MG-0009')).not.toBeChecked())
+    expect(screen.getByLabelText('选择订单 MG-0007')).not.toBeChecked()
+    expect(screen.getByTestId('pool-select-all')).toHaveTextContent('全选 4 单')
+    expect(screen.getByTestId('pool-dispatch-batch')).toBeDisabled()
+  })
+
+  it('无成批候选 ⇒ 「全选」禁用（空批次不是有效动作）', async () => {
+    mockGetBoard.mockResolvedValue(ok(board({ orderCount: 0, lineCount: 0, groups: [] })))
+
+    render(<ProductionPoolPage />)
+    const selectAll = await screen.findByTestId('pool-select-all')
+    expect(selectAll).toBeDisabled()
+  })
+
+  it('超时未派告警：常驻只占**一行摘要**（逐单明细默认不在 DOM 里），点「查看明细」才展开、可收起', async () => {
+    mockGetBoard.mockResolvedValue(
+      ok(
+        board({
+          overdueCount: 2,
           warnings: [
             {
               orderId: 'o5',
               orderNo: 'MG-0005',
               waitHours: 120,
+              message: '已超过最长等待 24 小时，请尽快成批或单独派单',
+            },
+            {
+              orderId: 'o1',
+              orderNo: 'MG-0001',
+              waitHours: 30,
               message: '已超过最长等待 24 小时，请尽快成批或单独派单',
             },
           ],
@@ -282,13 +373,29 @@ describe('智能派单 · 成批区（PR-081）', () => {
     )
 
     render(<ProductionPoolPage />)
-    await waitFor(() => expect(screen.getByTestId('pool-warnings')).toBeInTheDocument())
+    const box = await screen.findByTestId('pool-warnings')
 
-    expect(screen.getByTestId('pool-status-overdue-count')).toHaveTextContent('1')
-    const warn = screen.getByTestId('pool-warning-o5')
+    // 摘要一行：条数 + 阈值 + 最久等待（数字全部来自服务端，前端只做格式化）
+    expect(box).toHaveTextContent('2 单已超过最长等待 24 小时')
+    expect(box).toHaveTextContent('最久已等 5 天')
+    expect(screen.getByTestId('pool-status-overdue-count')).toHaveTextContent('2')
+
+    // 🔴「不再占用大幅屏幕」的机械读数：默认折叠 ⇒ **逐单明细根本不在 DOM 里**
+    expect(screen.queryByTestId('pool-warning-o5')).toBeNull()
+    expect(screen.queryByTestId('pool-warning-o1')).toBeNull()
+
+    // 展开 ⇒ 逐单明细：单号 / 已等待 / 服务端建议文案，一条不少
+    fireEvent.click(screen.getByTestId('pool-warnings-toggle'))
+    const warn = await screen.findByTestId('pool-warning-o5')
     expect(warn).toHaveTextContent('MG-0005')
     expect(warn).toHaveTextContent('5 天')
     expect(warn).toHaveTextContent('已超过最长等待 24 小时，请尽快成批或单独派单')
+    expect(screen.getByTestId('pool-warning-o1')).toHaveTextContent('MG-0001')
+    expect(screen.getByTestId('pool-warning-o1')).toHaveTextContent('1 天 6 小时')
+
+    // 收起 ⇒ 明细消失（页面高度回到一行）
+    fireEvent.click(screen.getByTestId('pool-warnings-toggle'))
+    await waitFor(() => expect(screen.queryByTestId('pool-warning-o5')).toBeNull())
   })
 
   it('后端 `non_null` 序列化：缺席的键（到货日 / skuCode / warnings / urgentLines）按「未指定 / 空」渲染，不崩', async () => {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Layers, RefreshCw, XCircle, Zap } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, Layers, RefreshCw, XCircle, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { poolBoardApi } from '@/lib/api'
@@ -61,6 +61,14 @@ export default function ProductionPoolPage() {
   const [dispatching, setDispatching] = useState(false)
   /** 正在单派的订单 id（按钮级 loading，避免连点重复派单） */
   const [singlePending, setSinglePending] = useState<string | null>(null)
+  /**
+   * 超时未派**逐单明细**是否展开。
+   *
+   * 🔴 默认**折叠**：告警常驻面只占**一行摘要**（旧形态是每单一行红字的常驻大红块 ——
+   * 10 单就吃掉整屏，把真正要操作的「可合并的待派订单」挤出首屏）。折叠态下明细
+   * **不渲染**（不是 CSS 隐藏）⇒「不占屏」是可断言的机器读数。
+   */
+  const [showOverdueDetail, setShowOverdueDetail] = useState(false)
 
   /**
    * 勾选中的**池行**（`orderId` + `itemId`）。
@@ -185,6 +193,27 @@ export default function ProductionPoolPage() {
   const warnings = board?.warnings ?? []
 
   /**
+   * **成批候选**的全部订单 id —— 「全选」的唯一取值口径（复用 `batchGroups`，
+   * 不在这里另写一份 `groups` 遍历）。
+   *
+   * 🔴 加急单在 `urgentLines`（插队区），**不是**成批候选 ⇒ 全选**勾不到**它；
+   * 否则整批必被 422 拒绝（同 `frontend/admin-web/src/lib/pool-board.ts` 的 `batchGroups` 口径）。
+   */
+  const candidateIds = Array.from(
+    new Set(groups.flatMap((g) => (g.lines ?? []).map((l) => l.orderId))),
+  )
+  const allSelected = candidateIds.length > 0 && candidateIds.every((id) => selectedIds.includes(id))
+
+  /** 全选 / 取消全选（跨**全部料组**的成批候选并集） */
+  const toggleAll = () => setSelectedIds(allSelected ? [] : candidateIds)
+
+  /** 超时未派告警：`overdueCount > 0` 且服务端给了逐单文案 */
+  const hasOverdue = (board?.overdueCount ?? 0) > 0 && warnings.length > 0
+  const maxWaitHours = board?.maxWaitHours ?? MAX_WAIT_HOURS
+  /** 最久的等待时长（展示用聚合：只取服务端 `waitHours` 的最大值，不重算业务口径） */
+  const longestWaitHours = warnings.reduce((max, w) => Math.max(max, w.waitHours), 0)
+
+  /**
    * 订单 id → 单号（**纯展示映射**，只做「键 → 单号」，不重算任何业务数）。
    *
    * <p>🔴 必须**跨看板刷新累积**，不能每次渲染从当前看板派生：派单成功后那一单就**离开看板**了
@@ -257,28 +286,64 @@ export default function ProductionPoolPage() {
         </span>
       </div>
 
-      {/* 超时未派告警（overdueCount > 0 ⇒ 必须有可行动文案） */}
-      {(board?.overdueCount ?? 0) > 0 && warnings.length > 0 && (
-        <div
-          data-testid="pool-warnings"
-          className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1.5"
-        >
-          {warnings.map((w) => (
-            <div
-              key={w.orderId}
-              data-testid={`pool-warning-${w.orderId}`}
-              className="flex items-start gap-2 text-sm text-red-700"
+      {/*
+        超时未派告警 —— **一行摘要常驻 + 逐单明细按需展开**。
+
+        旧形态是「每单一行红字」的常驻大红块：10 单就吃掉整屏，且服务端文案自带单号与
+        等待时长（与摘要重复）⇒ 把真正要操作的「可合并的待派订单」挤出首屏。
+        现在常驻面只有一行（条数 + 阈值 + 最久等待，数字全部来自服务端），
+        逐单明细折叠时**不渲染**、展开时高度封顶 + 内部滚动 —— 页面高度不随超时单数增长。
+      */}
+      {hasOverdue && (
+        <div data-testid="pool-warnings" className="rounded-lg border border-amber-200 bg-amber-50/60">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
+            <span className="text-sm text-neutral-800">
+              <span className="font-medium">{warnings.length}</span> 单已超过最长等待 <span className="font-mono">{maxWaitHours}</span> 小时
+            </span>
+            <span className="text-xs text-neutral-500">最久已等 {formatWaitHours(longestWaitHours)}</span>
+            <button
+              type="button"
+              onClick={() => setShowOverdueDetail((v) => !v)}
+              aria-expanded={showOverdueDetail}
+              data-testid="pool-warnings-toggle"
+              className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-neutral-600 transition-colors hover:bg-amber-100 hover:text-neutral-900 focus:outline-none focus:ring-2 focus:ring-amber-400/60"
             >
-              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>
-                <span className="font-mono font-medium">{w.orderNo}</span>
-                {' 已等待 '}
-                <span className="font-mono">{formatWaitHours(w.waitHours)}</span>
-                {' —— '}
-                {w.message}
-              </span>
+              {showOverdueDetail ? '收起明细' : '查看明细'}
+              <ChevronDown
+                className={cn('w-3.5 h-3.5 transition-transform', showOverdueDetail && 'rotate-180')}
+              />
+            </button>
+          </div>
+
+          {showOverdueDetail && (
+            <div className="border-t border-amber-200/60 bg-white/50 max-h-56 overflow-y-auto overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-neutral-500">
+                  <tr>
+                    <th className="w-44 px-3 py-1.5 text-left font-medium whitespace-nowrap">单号</th>
+                    <th className="w-32 px-3 py-1.5 text-right font-medium whitespace-nowrap">已等待</th>
+                    <th className="px-3 py-1.5 text-left font-medium whitespace-nowrap">建议</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {warnings.map((w) => (
+                    <tr
+                      key={w.orderId}
+                      data-testid={`pool-warning-${w.orderId}`}
+                      className="border-t border-neutral-100 text-neutral-600"
+                    >
+                      <td className="px-3 py-1.5 font-mono text-neutral-900">{w.orderNo}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-amber-700 whitespace-nowrap">
+                        {formatWaitHours(w.waitHours)}
+                      </td>
+                      <td className="px-3 py-1.5 text-neutral-500">{w.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
+          )}
         </div>
       )}
 
@@ -398,14 +463,24 @@ export default function ProductionPoolPage() {
                     {groups.length} 个料组 / 已选 {selectedIds.length} 单
                   </span>
                 </div>
-                <Button
-                  onClick={() => void dispatchBatch()}
-                  disabled={selectedIds.length === 0}
-                  loading={dispatching}
-                  data-testid="pool-dispatch-batch"
-                >
-                  一键合并派单
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={toggleAll}
+                    disabled={candidateIds.length === 0}
+                    data-testid="pool-select-all"
+                  >
+                    {allSelected ? '取消全选' : candidateIds.length > 0 ? `全选 ${candidateIds.length} 单` : '全选'}
+                  </Button>
+                  <Button
+                    onClick={() => void dispatchBatch()}
+                    disabled={selectedIds.length === 0}
+                    loading={dispatching}
+                    data-testid="pool-dispatch-batch"
+                  >
+                    一键合并派单
+                  </Button>
+                </div>
               </div>
 
               {groups.length === 0 ? (
