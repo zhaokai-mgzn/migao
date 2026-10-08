@@ -689,6 +689,23 @@ describe('Header', () => {
     expect(screen.getByText('企业基础信息')).toBeInTheDocument()
   })
 
+  // 🔴 issue #6573：「参数总览」由 `/settings?tab=params` 升为**一级菜单项** `/settings/params`
+  // ⇒ 它**不属于任何组** ⇒ 面包屑必须是**单级**「参数总览」（与「商品管理」「通知中心」同口径），
+  // 而不是落回 `/settings` 那条的「组织管理 / 企业基础信息」（= 把新页当成老页的子页）。
+  it('/settings/params 路径应显示**单级**「参数总览」面包屑（一级项无父组，issue #6573）', async () => {
+    mockPathname = '/settings/params'
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getAllByText('参数总览')).toHaveLength(1)
+    // 更具体的子路径必须**先于** `/settings` 那条命中（否则会渲染成「组织管理 / 企业基础信息」）
+    expect(screen.queryByText('组织管理')).not.toBeInTheDocument()
+    expect(screen.queryByText('企业基础信息')).not.toBeInTheDocument()
+    // 单级 = 整个面包屑容器里没有分隔符（不是「碰巧只剩一项」）
+    const nav = document.querySelector('nav')!
+    expect(nav.textContent).toBe('参数总览')
+  })
+
   it('/agent-workspace 未知子路径回退「客服工作台」面包屑（#3081 快捷回复占位页已删除）', async () => {
     mockPathname = '/agent-workspace/unknown'
     await act(async () => {

@@ -1,14 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Building2, Bot, Bell, Newspaper, SlidersHorizontal, Smartphone, HardHat } from 'lucide-react'
+import { Building2, Bot, Bell, Newspaper, Smartphone, HardHat } from 'lucide-react'
 import Image from 'next/image'
 import { QRCodeSVG } from 'qrcode.react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui'
 import { settingsApi, uploadApi, briefingApi } from '@/lib/api'
-import { TenantParamsPanel } from '@/components/settings/TenantParamsPanel'
 import { WorkerPageConfigPanel } from '@/components/settings/WorkerPageConfigPanel'
 import { readImageDimensions } from '@/lib/image-dimensions'
 import { getBminiH5Url } from '@/lib/bmini-h5-url'
@@ -20,16 +19,19 @@ import type { SystemSettings, AiConfig, BriefingConfig } from '@/types'
 // #3098: 恢复 #3006 之前的左侧 tab 导航布局（基本设置 / AI 客服设置 / 通知设置）；
 // 修改密码/登录日志保持 #3006 隐藏决定（登录日志无记录、密码未来统一短信码登录）。
 
-type SettingsTab = 'basic' | 'ai' | 'params' | 'workerPages' | 'notification'
+type SettingsTab = 'basic' | 'ai' | 'workerPages' | 'notification'
 
-// issue #5131：新增「参数总览」tab —— 企业参数中心（§22 配置类页面规范）。
-// 它与既有三个 tab 同层：都是**企业级**配置，放一处才符合「整合到一块」（用户 2026-09-22）。
 // V141（母单 #5161）：新增「工人端页面」tab —— 工人端页面/菜单权限的**租户级**开关。
 // 🔴 刻意**不新建路由/菜单**（会动「菜单三源同构」那套）⇒ 加在既有 settings 页的 tab 里。
+//
+// 🔴 issue #6573（2026-10-08，用户裁定方案 C）：「参数总览」**搬出本页**，升为 `/settings/params`
+// 的**一级菜单项** —— 它跨「算料 / 加工费 / 工艺 / 余料回收」多域，塞在本页 tab 里等于把它
+// 绑在 `system:manage` 上（持 `production:view` 的生产岗根本进不来，看不到「还缺什么配置」）。
+// 本页从此只承载**企业级**设置（基本设置 / AI 客服 / 工人端页面 / 通知）。
+// ⚠️ 旧深链 `?tab=params` **保留为重定向**（见下方 `useEffect`），旧链接不 404。
 const TABS: { key: SettingsTab; label: string; icon: typeof Building2 }[] = [
   { key: 'basic', label: '基本设置', icon: Building2 },
   { key: 'ai', label: 'AI 客服设置', icon: Bot },
-  { key: 'params', label: '参数总览', icon: SlidersHorizontal },
   { key: 'workerPages', label: '工人端页面', icon: HardHat },
   { key: 'notification', label: '通知设置', icon: Bell },
 ]
@@ -42,6 +44,13 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     (TABS.some((t) => t.key === urlTab) ? urlTab : 'basic') as SettingsTab
   )
+
+  // issue #6573：「参数总览」已由本页 tab **升为一级菜单项**（`/settings/params`）—— 旧深链
+  // `?tab=params` 保留为重定向（仓内口径：旧路径保留为重定向，旧深链不 404）。
+  const router = useRouter()
+  useEffect(() => {
+    if (urlTab === 'params') router.replace('/settings/params')
+  }, [urlTab, router])
 
   // ============ 基本设置（企业信息）============
   // #3103: notificationEmail 为僵尸字段（站内信无需邮箱，后端无邮件消费逻辑），已从 UI/类型移除
@@ -597,8 +606,6 @@ export default function SettingsPage() {
           )}
 
           {/* 通知设置（#3119：开关即时保存，无独立保存按钮） */}
-          {/* 参数总览（issue #5131 · 企业参数中心）*/}
-          {activeTab === 'params' && <TenantParamsPanel />}
 
           {/* 工人端页面开关（V141，母单 #5161）：租户级页面可见性，**不是**权限 */}
           {activeTab === 'workerPages' && <WorkerPageConfigPanel />}

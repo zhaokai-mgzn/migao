@@ -1487,6 +1487,15 @@ public class AuthService {
             menus.add(menuItem("products", "商品管理", "/products"));
         }
 
+        // 参数总览（issue #6573）：由 `/settings` 的 tab 升为一级菜单项 —— 与「商品管理」并列、
+        // 同排在**所有分组之后**（位置在**四处**同批表达：本处 add 的文档位置 /
+        // `MenuController.MENU_TREE` 的顶层节点顺序 / `frontend/admin-web/src/config/menu.ts` 的
+        // `standaloneTopItems` / `backend/ai-agent-service/app/context/menu_navigator.py` 的
+        // `MENU_TREE`）。码 = 该页第一屏读码 `production:view`（既有码，不新造）。
+        if (isAll || permissions.contains("production:view")) {
+            menus.add(menuItem("params", "参数总览", "/settings/params"));
+        }
+
         // 通知中心：全员可见（与顶栏铃铛一致，无权限码限制）
         menus.add(menuItem("notifications", "通知中心", "/notifications"));
 

@@ -808,32 +808,48 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
   })
 })
 
-describe('SettingsPage — 参数总览 tab（issue #5131，企业参数中心）', () => {
-  it('第四个 tab「参数总览」在；点它挂载参数中心（按域分组）', async () => {
-    const user = userEvent.setup()
+// issue #6573（2026-10-08 用户裁定方案 C）：「参数总览」由本页 tab **升为一级菜单项**
+// `/settings/params` ⇒ 本页的判据随之改判（**判据面缩小一格不放宽**）：
+//   ① 本页**不再有**「参数总览」tab（tab 恰四个企业级设置）；
+//   ② 旧深链 `?tab=params` 保留为重定向 ⇒ `router.replace('/settings/params')`（旧链接不 404）。
+// 搬走后的参数面本体 = `frontend/admin-web/src/app/(dashboard)/settings/params/page.tsx`
+// （本文件只判**本页的出口行为**：不再挂 tab + 旧深链重定向）。
+describe('SettingsPage — 「参数总览」已升为独立菜单项 /settings/params（issue #6573）', () => {
+  it('本页**不再**有「参数总览」tab；tab 恰四个：基本设置 / AI 客服设置 / 工人端页面 / 通知设置', async () => {
     mockApiSuccess()
-    mockGetCraftCalcConfig.mockResolvedValue({
-      data: { success: true, data: { source: 'default', config: {} } },
-    })
+    mockAiConfigSuccess()
+    mockBriefingConfigSuccess()
     mockSearchParams.mockReturnValue(new URLSearchParams(''))
     render(<SettingsPage />)
 
-    const tab = await screen.findByRole('button', { name: /参数总览/ })
-    await user.click(tab)
-
-    expect(await screen.findByTestId('tenant-params-panel')).toBeInTheDocument()
-    expect(screen.getByTestId('param-domain-calc')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /基本设置/ })).toBeInTheDocument()
+    })
+    for (const label of ['基本设置', 'AI 客服设置', '工人端页面', '通知设置']) {
+      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument()
+    }
+    // 🔴 反面（判别力）：升为一级项后本页**不得**再出现「参数总览」tab —— 同一个配置面
+    // 若两处都给入口，商家会在两个地方看到同一份参数（§31 P2「信息不重复」）
+    expect(screen.queryByRole('button', { name: /参数总览/ })).toBeNull()
+    // 面板也**不在**本页挂载（是搬走，不是复制一份）
+    expect(screen.queryByTestId('tenant-params-panel')).toBeNull()
   })
 
-  it('?tab=params 可直达（既有 ?tab=ai 行为不变）', async () => {
+  it('旧深链 `?tab=params` ⇒ `router.replace(\'/settings/params\')`（不 404；本页不挂面板）', async () => {
     mockApiSuccess()
-    mockGetCraftCalcConfig.mockResolvedValue({
-      data: { success: true, data: { source: 'default', config: {} } },
-    })
+    mockAiConfigSuccess()
+    mockBriefingConfigSuccess()
+    mockRouterReplace.mockClear()
     mockSearchParams.mockReturnValue(new URLSearchParams('tab=params'))
     render(<SettingsPage />)
 
-    expect(await screen.findByTestId('tenant-params-panel')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(mockRouterReplace).toHaveBeenCalledWith('/settings/params')
+    })
+    // 判别力：不是「碰巧别处也调了 replace」—— 逐条只认这一个目标
+    expect(mockRouterReplace.mock.calls.every(([to]) => to === '/settings/params')).toBe(true)
+    // 重定向期间面板**不得**闪现在本页（旧深链只跳转，不渲染第二份参数面）
+    expect(screen.queryByTestId('tenant-params-panel')).toBeNull()
   })
 })
 
@@ -882,9 +898,11 @@ describe('SettingsPage — 手机端入口二维码（issue #5668）', () => {
     expect(await screen.findByTestId('bmini-h5-entry')).toBeInTheDocument()
     expect(screen.getByText('手机浏览器扫码使用黄金策商家端')).toBeInTheDocument()
     // 既有四个 tab 一个不少（零回归：只加卡片，不动导航）
-    for (const label of ['基本设置', 'AI 客服设置', '参数总览', '通知设置']) {
+    // （#6573：「参数总览」已升为一级菜单项 ⇒ 本页第四个 tab 是「工人端页面」）
+    for (const label of ['基本设置', 'AI 客服设置', '工人端页面', '通知设置']) {
       expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument()
     }
+    expect(screen.queryByRole('button', { name: /参数总览/ })).toBeNull()
   })
 
   it('未配置 ⇒ 明确「未配置」提示，且**不生成二维码**（缺码不画假码）', async () => {

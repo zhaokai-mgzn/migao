@@ -41,6 +41,17 @@ import type {
   Routing,
   RoutingsResponse,
 } from '@/types'
+// 就绪度判据的**单一真值**（issue #6573）：本页的页内五步与跨页主线（`/settings/params` 的
+// 配置主线）**都调这里** —— 同一个概念两个载体 = 同一屏两个互相矛盾的数（#5858 的实测形态）。
+import {
+  BASE_ROUTE_NAMES,
+  judgeBaseRoutesStep,
+  judgeConfigSourceStep,
+  judgeDefaultRouteStep,
+  judgeOperationsStep,
+  missingBaseRoutesOf,
+  type ReadinessState,
+} from '@/lib/config-readiness'
 
 /**
  * 工艺配置 /production/routings（issue #4416 合并单页；issue #4433 = 母单 #4423 的 **P3** 适配新模型）
@@ -560,7 +571,7 @@ function QtyFallbackBadge({ testId }: { testId: string }) {
   )
 }
 
-type ReadinessState = 'done' | 'todo' | 'unknown'
+ // 三态类型已收敛到 `@/lib/config-readiness`（issue #6573），本页不再自带一份
 
 /**
  * 就绪度一步（把「工序与单价 → 工艺路线 → 默认路线 → 算料 / 裁高」的先后依赖变成看得见的步骤）。
@@ -1725,16 +1736,13 @@ function ProcessConfigContent() {
    * `FABRIC_ROUTE_TEMPLATE_NAME_DEFAULT`）—— 判据是**「缺哪条」**，所以必须点名，不能只数条数
    * （数条数会把「窗帘路线 + 一条商家自建路线」判成齐 —— 用户实测踩到的形态）。
    */
-  const BASE_ROUTE_NAMES = ['窗帘工序路线（默认）', '布料工序路线']
   const missingBaseRoutes = useMemo(
-    () => BASE_ROUTE_NAMES.filter((n) => !routeList.some((r) => r.name === n)),
+    () => missingBaseRoutesOf(routeList.map((r) => r.name)),
     [routeList],
   )
-  /**
-   * 就绪度②的判据（issue #4677）：**两条基础路线是否齐** ∧ **没有空壳路线**。
-   * 改前 = `routeList.length > 0 && emptyShells.length === 0`（**只数条数** ⇒ 缺布料路线照样「已完成」）。
-   */
-  const routingsReady = missingBaseRoutes.length === 0 && emptyShells.length === 0
+  // 就绪度②的判据（issue #4677）：**两条基础路线是否齐** ∧ **没有空壳路线** ——
+  // 判据本身已收敛到 `@/lib/config-readiness` 的 `judgeBaseRoutesStep`（issue #6573），
+  // 本页**不再自带一份**（改前的 `routingsReady` 常量就是那第二份）。
   const defaults = useMemo(() => routeList.filter((r) => r.is_default), [routeList])
 
   /**
@@ -1748,12 +1756,15 @@ function ProcessConfigContent() {
    * 未定价 ⇒ 报工按未定价处理（工人白干）；孤儿 ⇒ 库里有工序却没有任何价目行
    * （**表里看不到、也没法定价**）。用户裁定（2026-10-01）＝ 这两条必须进判据。
    */
-  const opsStepState: ReadinessState =
-    catalogError !== '' || matrixError !== ''
-      ? 'unknown'
-      : operationsReady && operationsRows.length > 0 && unpricedCount === 0 && orphanRows.length === 0
-        ? 'done'
-        : 'todo'
+  const opsStepState: ReadinessState = judgeOperationsStep({
+    readFailed: catalogError !== '' || matrixError !== '',
+    // `!operationsReady` ⇒ 当作「表里没有工序」⇒ `todo`（与改前的 `operationsReady && …` 逐值等价）
+    total: operationsReady ? operationsRows.length : 0,
+    unpriced: unpricedCount,
+    // 孤儿工序（库里有、没有任何价目行）：本页**取得到** ⇒ 参与判定
+    //（issue #6573：跨页主线页取不到这一维 ⇒ 它传 `null` = 不参与判定，而不是假装是 0）
+    orphans: orphanRows.length,
+  })
   const opsStepStatus = catalogError !== '' || matrixError !== '' ? '读取失败' : undefined
   const opsStepHint =
     catalogError !== ''
@@ -1777,7 +1788,7 @@ function ProcessConfigContent() {
    * `source='stored'` ⇒ `done`；`source='default'` ⇒ `todo`（缺行用系统默认，界面必须显式说出来）。
    */
   const calcStepState: ReadinessState =
-    calcError !== '' || calcConfig === null ? 'unknown' : calcConfig.source === 'stored' ? 'done' : 'todo'
+    calcError !== '' || calcConfig === null ? 'unknown' : judgeConfigSourceStep(calcConfig.source)
   const calcStepStatus = calcError !== '' ? '读取失败' : calcConfig === null ? '读取中' : undefined
   const calcStepHint = calcError !== ''
     ? '算料配置没读出来（≠ 没配）：点「去处理」重试。'
@@ -1788,7 +1799,7 @@ function ProcessConfigContent() {
         : '现在用的是系统默认值：「每折吃布 / 余量 / 档位倍数」直接决定用料米数（改它 = 改钱），点「去处理」按你家口径核一遍。'
 
   const cutStepState: ReadinessState =
-    cutError !== '' || cutSource === null ? 'unknown' : cutSource === 'stored' ? 'done' : 'todo'
+    cutError !== '' || cutSource === null ? 'unknown' : judgeConfigSourceStep(cutSource)
   const cutStepStatus = cutError !== '' ? '读取失败' : cutSource === null ? '读取中' : undefined
   const cutStepHint = cutError !== ''
     ? '裁高配置没读出来（≠ 没配）：点「去处理」重试。'
@@ -2569,7 +2580,7 @@ function ProcessConfigContent() {
                     ? `基础路线 ${BASE_ROUTE_NAMES.length - missingBaseRoutes.length}/${BASE_ROUTE_NAMES.length} 条 · 缺 ${missingBaseRoutes.join(' / ')}`
                     : `基础路线 ${BASE_ROUTE_NAMES.length}/${BASE_ROUTE_NAMES.length} 条 · 齐`
                 }
-                state={routingsReady ? 'done' : 'todo'}
+                state={judgeBaseRoutesStep(missingBaseRoutes, emptyShells.length)}
                 hint={routingsHint}
                 action={{ testId: 'readiness-goto-routings', onClick: () => gotoReadinessStep('routings') }}
               />
@@ -2577,7 +2588,7 @@ function ProcessConfigContent() {
                 testId="readiness-step-default-route"
                 index={3}
                 label={`默认路线 ${defaults.length} 条`}
-                state={defaults.length === 1 ? 'done' : 'todo'}
+                state={judgeDefaultRouteStep(defaults.length)}
                 hint={defaultRouteHint}
                 action={{ testId: 'readiness-goto-default-route', onClick: () => gotoReadinessStep('default-route') }}
               />

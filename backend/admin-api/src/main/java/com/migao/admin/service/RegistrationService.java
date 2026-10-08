@@ -713,7 +713,9 @@ public class RegistrationService {
                 {"加工单查看", "processing:view", "processing-order", "view", "查看加工单"},
                 {"加工单操作", "processing:update", "processing-order", "update", "生成/发加工/取消加工单"},
                 // 生产域**读**码（issue #5291）：同批改挂本码的是**三件不同的事**，逐件点名 ——
-                //   ① **四个侧边栏节点**（生产看板 / 加工项管理 / 工艺配置 / 计件工资）的 permissionCode；
+                //   ① **五个侧边栏节点**（生产看板 / 加工项管理 / 工艺配置 / 计件工资 / 参数总览）的
+                //      permissionCode —— 第 5 项「参数总览」由 issue #6573 新增（一级菜单项，取本**既有**
+                //      读码：它的第一屏读面就是 `craft-calc-config` 等方法级 `production:view` 端点）；
                 //   ② **两个**只读端点：`/operations-catalog`、`/routings`（逐字同 `ProductionController`
                 //      类注记的「两个**只读**端点」）。⚠️ **不是**「该四个页面的读端点」：工艺配置页第一屏的
                 //      配置族读端点（`/route-rules` 等）今天仍由方法级 `processing:manage` 把守，且那是有

@@ -361,6 +361,21 @@ export const standaloneTopItems: MenuItem[] = [
   //   **不再存在**（组内已空）。原组里的两个动作码节点（`product:create` / `product:category`）
   //   由服务端权限树承载（判据里的 `ACTION_NODES` 按**节点归属组**登记）。
   { key: 'products', name: '商品管理', icon: 'Package', path: '/products', permissionCode: 'product:list', keywords: ['splb', 'spgl', 'shangpin', '商品'] },
+  // 参数总览（issue #6573，用户 2026-10-08 裁定**方案 C**）：由 `/settings?tab=params` 的 tab
+  // **升为一级菜单项**。理由 = 配置面（算料 / 加工费 / 工艺 / 余料回收）散在 6 个页面，而
+  // 「还缺什么」的信息被锁在「工艺配置」页的第一屏 ⇒ 集中管理 + 一条走得完的配置主线。
+  //
+  // 🔴 **节点码取既有码 `production:view`，不新造**：
+  //   · 新造一个码今天**没有任何岗位持有** ⇒ 菜单节点对所有人不可见（#4203 同族坑，仓内明令禁止）；
+  //   · 取 `production:view` ⇒ 持有该码的岗位（operator / product_manager / sales /
+  //     customer_service / finance，见 `rbac/manifest.json` 的 `roles.seed`）**此前进不去** `/settings`
+  //     （那里是 `system:manage`）⇒ 本项是**新增入口**、不是搬家；
+  //   · 本项**不改任何端点的权限码** ⇒ 授权 delta = 仅「新增一个入口的可见面」。
+  // 🔴 位置：与「商品管理」并列，同排在**所有分组之后**（`STANDALONE_TOP_AFTER_GROUP_KEY`）——
+  //   位置在**四处**同批表达（本文件 / `MenuController.MENU_TREE` / `AuthService` 顶层 `menus.add` /
+  //   `backend/ai-agent-service/app/context/menu_navigator.py` 的 `MENU_TREE`），
+  //   判据 = `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的顶层布局序列。
+  { key: 'params', name: '参数总览', icon: 'SlidersHorizontal', path: '/settings/params', permissionCode: 'production:view', keywords: ['cszl', 'canshu', 'peizhi', '配置', '缺什么'] },
 ]
 
 export const standaloneItems: MenuItem[] = [

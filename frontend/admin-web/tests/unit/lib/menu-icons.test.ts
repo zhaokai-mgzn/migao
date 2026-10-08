@@ -55,8 +55,8 @@ function unregisteredIcons(names: string[], registered: readonly string[]): stri
 describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
   it('判据① 正向不漏：`menu.ts` 的每个图标名都已注册（漏注册 = 静默回落 BarChart3）', () => {
     // 面非空自检：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证
-    expect(iconNamesFromSource(MENU_TS).length).toBeGreaterThanOrEqual(24)
-    expect(allItems().length).toBe(29) // 6 组头 + 1 一级项 + 21 组内项 + 1 独立项（#5939 +「发货单」；#6404 +「库存明细」）
+    expect(iconNamesFromSource(MENU_TS).length).toBeGreaterThanOrEqual(25)
+    expect(allItems().length).toBe(30) // 6 组头 + 2 一级项 + 21 组内项 + 1 独立项（#5939 +「发货单」；#6404 +「库存明细」；#6573 +「参数总览」）
 
     const usedFromSource = Array.from(new Set(iconNamesFromSource(MENU_TS)))
     const usedFromObjects = Array.from(new Set(allItems().map((i) => i.icon)))
@@ -67,7 +67,7 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
   it('判据② 反向无死映射：`menuIconMap` 的键集合 == `menu.ts` 用到的图标名集合（双向相等）', () => {
     const used = Array.from(new Set(allItems().map((i) => i.icon))).sort()
     // 面非空自检 + 精确相等：既拦「漏注册」也拦「用不到的死映射」
-    expect(registeredIconNames().length).toBeGreaterThanOrEqual(24)
+    expect(registeredIconNames().length).toBeGreaterThanOrEqual(25)
     expect([...registeredIconNames()].sort()).toEqual(used)
     expect(registeredIconNames().filter((n) => !used.includes(n))).toEqual([])
   })
@@ -120,10 +120,10 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
       .map(([icon, names]) => `${icon} → ${names.join('、')}`)
   }
 
-  it('🔴 判据④ 图标两两不同：29 个节点（6 组 + 1 一级项 + 21 子项 + 1 独立项）的图标互不重复（issue #5582）', () => {
+  it('🔴 判据④ 图标两两不同：30 个节点（6 组 + 2 一级项 + 21 子项 + 1 独立项）的图标互不重复（issue #5582）', () => {
     const items = allItems()
     // 面非空自证：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证，并点名几个已知节点
-    expect(items.length).toBe(29)
+    expect(items.length).toBe(30)
     expect(items.map((i) => i.name)).toEqual(
       expect.arrayContaining(['经营看板', '省料看板', '售后工单', '岗位权限', '财务对账', '计件工资', '组织管理', '企业基础信息']),
     )

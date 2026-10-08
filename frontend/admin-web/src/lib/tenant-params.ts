@@ -83,6 +83,18 @@ export interface ParamDomain {
   rows?: RowConfigLink[]
   /** 本页内联编辑的配置（与标量参数 / 行式入口可并存） */
   inline?: InlineConfig
+  /**
+   * 打开**本域**所需的读码（issue #6573）—— 域级「看得见 ⇒ 打得开」。
+   *
+   * 不持该码 ⇒ **不渲染、不请求**（不是渲染出来再让人撞 403）。
+   * `undefined` = 本域**没有读面**（只有去别处的外链入口，如 `fee` / `craft`）⇒ 恒可见。
+   *
+   * 🔴 取值必须与「该域第一屏读端点」的码**逐字相同**（判据口径同 `rbac/manifest.json` 的
+   * `pages[].units`）：算料 = `production:view`（`GET /api/admin/production/craft-calc-config`
+   * 的**方法级**注解）、AI 客服 = `system:manage`（`GET /api/admin/tenant/ai-config`）、
+   * 余料回收 = `processing:manage`（`RemnantController` **类级**注解）。
+   */
+  requiredCode?: string
   /** 就地编辑入口（既有页面；本增量**不新建编辑器**） */
   edit?: { href: string; label: string }
 }
@@ -155,6 +167,7 @@ export const PARAM_DOMAINS: readonly ParamDomain[] = [
       key,
       copy: CALC_PARAM_COPY[key],
     })),
+    requiredCode: 'production:view',
     edit: { href: '/production/routings?tab=calc', label: '去算料配置' },
   },
   {
@@ -162,12 +175,14 @@ export const PARAM_DOMAINS: readonly ParamDomain[] = [
     label: 'AI 客服',
     summary: '顾客在对话里看到的称呼与开场文案',
     common: Object.keys(AI_PARAM_COPY).map((key) => ({ key, copy: AI_PARAM_COPY[key] })),
+    requiredCode: 'system:manage',
     edit: { href: '/settings?tab=ai', label: '去 AI 客服设置' },
   },
   {
     key: 'remnant',
     label: '余料回收',
     summary: '裁剪剩下的余料怎么用起来 —— 余料只记实物可用性，不计价、不进库存金额',
+    requiredCode: 'processing:manage',
     // 🔴 §22 P1：**不新造第二个配置入口** —— 小件用料尺寸表就配在**本页本域**里
     // （它是行式参数：一行一个小件、列是尺寸；另开一个 settings 段就是第二个入口）。
     inline: { panel: 'remnant-specs', copy: REMNANT_PARAM_COPY },

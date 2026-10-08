@@ -105,7 +105,7 @@ class MenuNode:
     permission_code: str
 
 
-#: `menu.ts` 的**全量导航节点**（现取：6 组 21 项 + 2 个一级独立项 = 23）。
+#: `menu.ts` 的**全量导航节点**（现取：6 组 21 项 + 3 个一级独立项 = 24；第 3 项「参数总览」= issue #6573）。
 #: 顺序 = `menu.ts` 的渲染顺序；判据按 `MENU_TREE_ORDER_LOCKED` 比对（**顺序也锁**，
 #: 因为「一级项与各组的相对位次」在 `menu.ts` 里是一门被用户裁定过的信息架构）。
 #: 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：组内顺序重排 + 一级项「商品管理」沉到
@@ -143,8 +143,11 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("org-center", "企业基础信息", "/settings", "system:manage"),
     # 一级独立项（`standaloneTopItems` 的「商品管理」+ `standaloneItems` 的「通知中心」）
     # 🔴 2026-10-06（issue #6457）：「商品管理」排在**所有分组之后**（原「工作台组之后」）
-    # ⇒ 顺序仍为「6 组 21 项 → 商品管理 → 通知中心」。
+    # ⇒ 顺序 =「6 组 21 项 → 商品管理 → 参数总览 → 通知中心」（参数总览 = issue #6573 新增的一级项）。
     MenuNode(STANDALONE_GROUP, "商品管理", "/products", "product:list"),
+    # 参数总览（issue #6573）：一级项，与「商品管理」并列、同排在**所有分组之后**。
+    # 码 = 该页第一屏读码（`GET /api/admin/production/craft-calc-config` 的方法级 `production:view`）。
+    MenuNode(STANDALONE_GROUP, "参数总览", "/settings/params", "production:view"),
     MenuNode(STANDALONE_GROUP, "通知中心", "/notifications", ""),
 )
 
@@ -229,6 +232,9 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     NavFeature("roles", "岗位权限（角色权限）", (("org-center", "岗位权限"),), ("岗位权限", "角色权限")),
     NavFeature("settings", "企业基础信息（系统设置）", (("org-center", "企业基础信息"),), ("企业基础信息", "系统设置")),
     NavFeature("products", "商品管理（商品）", ((STANDALONE_GROUP, "商品管理"),), ("商品管理", "商品")),
+    # 参数总览（issue #6573）：一级项。说法**接地**（逐字等于菜单名）—— 判据 6b 要求说法是
+    # 登记菜单名（或本功能 label）的一部分，本表不做同义词词典。
+    NavFeature("params", "参数总览（企业参数与配置主线）", ((STANDALONE_GROUP, "参数总览"),), ("参数总览",)),
     NavFeature("notifications", "通知中心（消息）", ((STANDALONE_GROUP, "通知中心"),), ("通知中心", "消息")),
 )
 
