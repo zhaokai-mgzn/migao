@@ -11,6 +11,7 @@ import {
   buildOrderPrefill,
   ORDER_DERIVATION_INPUT_KEYS,
   RECOGNIZE_SOURCE_TAG,
+  referenceFields,
   sizeTargetLineIndex,
 } from '@/lib/image-recognize'
 import ImageRecognizeButton, { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
@@ -1590,16 +1591,17 @@ export default function NewOrderPage() {
    * 查询失败 ⇒ **fail-closed**：该条目只剩「都不是」（宁可少给候选，也不猜商品）。
    */
   const loadLinePicker = useCallback(async (entries: DetailEntry[]) => {
-    setLinePicker(entries.map((entry) => ({ entry, options: [], loading: true, resolved: null })))
+    setLinePicker(entries.map((entry) => ({ entry, options: [], loading: true, resolved: null, failed: false })))
     const loaded = await Promise.all(
       entries.map(async (entry) => {
         try {
           const res = await productApi.getProducts({ keyword: entry.name, page: 1, size: 10 })
           const items = (res.data?.data?.items || []) as Product[]
-          return { state: { entry, options: pickerOptionsFor(entry, items), loading: false, resolved: null }, catalog: items }
+          return { state: { entry, options: pickerOptionsFor(entry, items), loading: false, resolved: null, failed: false }, catalog: items }
         } catch {
+          // 查询**失败**（不是「目录里没有」）—— 分开记账，面板上如实分开说（issue #6529）
           return {
-            state: { entry, options: pickerOptionsFor(entry, []), loading: false, resolved: null },
+            state: { entry, options: pickerOptionsFor(entry, []), loading: false, resolved: null, failed: true },
             catalog: [] as Product[],
           }
         }
@@ -1747,7 +1749,12 @@ export default function NewOrderPage() {
   useEffect(
     () =>
       subscribePageFill('order', (plan) => {
-        handleRecognized(fieldsOfSource(plan, PAGE_FILL_SOURCE_RECOGNIZED))
+        // 有值的识别格进表单；「参考格」（图上读到、没采纳，issue #6529）**只随行带去查目录**
+        // —— 它的 `value` 为空，任何映射函数都写不进表单。
+        handleRecognized([
+          ...fieldsOfSource(plan, PAGE_FILL_SOURCE_RECOGNIZED),
+          ...referenceFields(plan.fields),
+        ])
       }),
     [handleRecognized]
   )
@@ -3150,7 +3157,10 @@ export default function NewOrderPage() {
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <SectionTitle icon={<Package className="w-4 h-4" />} title="商品信息" />
                 <div className="flex items-center gap-3">
-                  <ImageRecognizeButton targetType="order" onRecognized={handleRecognized} />
+                  {/* issue #6530：与建品页**同一个入口形态** —— 「拍照 / 上传识别」+「补充一句（可选）」，
+                      走同一条一次性推理链（不经过米宝对话窗口）。订单侧的解读仍然**一格都不填**
+                      （客户信息错 ⇒ 货发错人）：那句话只用来消歧与给依据，值一律由 `[图片识别]` 来。 */}
+                  <ImageRecognizeButton targetType="order" interpret onRecognized={handleRecognized} />
                   <span className="text-xs text-neutral-400">
                     共 {lineItems.length} 个商品
                   </span>

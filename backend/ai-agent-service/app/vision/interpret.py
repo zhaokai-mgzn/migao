@@ -112,6 +112,11 @@ _GENERATIVE_KEYS_HINT = (
 )
 
 
+def _generative_keys(target_type: str) -> tuple:
+    """该 target 的**生成类**字段键（`recognizable=False`）—— 真值只有 `targets.py` 一处。"""
+    return tuple(f.key for f in TARGET_FIELDS.get(target_type, ()) if not f.recognizable)
+
+
 def build_interpret_prompt(
     target_type: str,
     fields: Sequence[dict],
@@ -148,11 +153,17 @@ def build_interpret_prompt(
         '"note": "<给商家看的解释与依据>"}}}',
         "1. 只给**贴近的结论**，不编造。不确定 / 看不出来 ⇒ **只给 note、不给 value**"
         "（note 里写清你的依据与不确定在哪）。",
-        # 🔴 例外（issue #6386）：**生成类**字段（`name` / `description`）本来就是文案，
-        # 「只给 note 不给 value」等于什么都没交付（用户 2026-10-05 真跑复验时实测到：
-        # 米宝给了一整段「为什么这么推测」的 note，而 `name` 的值仍是空）。
-        # ⇒ 这两格**必须给 value**，不确定就用「约 / 推测 / 可咨询客服」这类措辞写清楚。
-        _GENERATIVE_KEYS_HINT,
+    ]
+    # 🔴 例外（issue #6386）：**生成类**字段（`name` / `description`）本来就是文案，
+    # 「只给 note 不给 value」等于什么都没交付（用户 2026-10-05 真跑复验时实测到：
+    # 米宝给了一整段「为什么这么推测」的 note，而 `name` 的值仍是空）。
+    # ⇒ 这两格**必须给 value**，不确定就用「约 / 推测 / 可咨询客服」这类措辞写清楚。
+    # ⚠️ **按 target 有无生成类字段**决定要不要说这一段（issue #6530）：订单侧根本没有这两格
+    #（`TARGET_FIELDS["order"]` 全为 `recognizable=True`）—— 对订单求它「必须给 name 的 value」
+    # 只会把它的注意力从订单侧真有用的解释上引开。真值仍只有一处：`recognizable=False`。
+    if _generative_keys(target_type):
+        lines.append(_GENERATIVE_KEYS_HINT)
+    lines += [
         "2. 图上**已经写明**的那几格不要重复申报 value（系统不会用解读覆盖识别结果）。",
         "3. description 是**商品描述文案**：HTML 片段（如 <p>…</p>），"
         "贴近图上信息 + 行业常识（材质 / 工艺 / 适用场景 / 清洗与安装提示）；"

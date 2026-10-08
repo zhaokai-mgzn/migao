@@ -30,6 +30,7 @@ from app.vision.recognizer import (
     extract_fields,
     recognize,
 )
+from app.vision.targets import REFERENCE_KEYS, TARGET_FIELDS
 
 VISION_DIR = Path(__file__).resolve().parents[2] / "app" / "vision"
 
@@ -577,3 +578,64 @@ class TestExtractFieldsShipment:
         text = msgs[0].content[0]["text"]
         for key in ("order_no", "product_name", "quantity", "width", "height"):
             assert key in text
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 「参考」字段（issue #6529）：图上读到、但**没采纳**的原文 —— 只用于查目录 / 展示
+# ══════════════════════════════════════════════════════════════════════════════
+class TestReferenceOnlyFields:
+    """订单侧明细低置信度时**不丢原文**：商家要据此听到「图上写的型号在目录里查不到」。
+
+    背景（用户 2026-10-08 实证）：同一张手写单，米宝会话说得出「型号在店里查不到」，
+    建单页却只有一句「商品明细：未识别」—— 因为内核把 0.75 的原文连值带字一起丢了，
+    页面连「拿什么去查目录」都没有。
+
+    红证（注入式，两条各自会红）：
+    ① 把 `recognizer._resolve` 里那段 `REFERENCE_KEYS` 分支改回 `return None, gate_reason, None`
+       ⇒ `test_low_confidence_items_keeps_the_text_as_reference` 红；
+    ② 把置信度闸整段删掉（低置信度也采纳为 `value`）⇒ `test_accepted_items_carries_no_reference`
+       与 `test_undeclared_keys_never_carry_a_reference` 的「值必须为空」红。
+    """
+
+    def _cell(self, key: str, value: str, confidence: float) -> dict:
+        raw = json.dumps(
+            {"fields": {key: {"value": value, "confidence": confidence}}}, ensure_ascii=False
+        )
+        return next(f for f in extract_fields("order", raw) if f["key"] == key)
+
+    def test_low_confidence_items_keeps_the_text_as_reference(self):
+        cell = self._cell("items", "2698-11、C31", 0.75)
+        assert cell["value"] is None
+        assert cell["source"] is None
+        assert cell["reference"] == "2698-11、C31"
+        assert cell["reason"] == "置信度 0.75 低于订单侧阈值 0.85，宁可不填"
+
+    def test_accepted_items_carries_no_reference(self):
+        """达到阈值 ⇒ 正常采纳为值，**不带** reference（它不是第二个值）。"""
+        cell = self._cell("items", "雪尼尔遮光窗帘", 0.9)
+        assert cell["value"] == "雪尼尔遮光窗帘"
+        assert cell["source"] == FIELD_MARKER
+        assert cell["reference"] is None
+
+    @pytest.mark.parametrize(
+        "key,value",
+        [
+            ("customer_name", "王秀英"),
+            ("customer_address", "杭州市余杭区某小区"),
+            ("curtain_width", "2.8"),
+            ("quantity", "3 套"),
+        ],
+    )
+    def test_undeclared_keys_never_carry_a_reference(self, key, value):
+        """类级（铁律 8）：**没登记**的键低于阈值时连原文都不给。
+
+        它们直接进单据与推导链（错填 = 货发错人 / 米数错），没有「只用来查目录」这个安全出口。
+        """
+        cell = self._cell(key, value, 0.55)
+        assert cell["value"] is None
+        assert cell["reference"] is None
+
+    def test_declaration_matches_the_field_table(self):
+        """登记表 ⇄ 字段表：声明了的键必须真实存在（否则是死声明，永远不会有行为）。"""
+        for target, keys in REFERENCE_KEYS.items():
+            assert set(keys) <= {f.key for f in TARGET_FIELDS[target]}

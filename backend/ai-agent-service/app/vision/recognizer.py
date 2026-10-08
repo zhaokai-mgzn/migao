@@ -42,6 +42,7 @@ from loguru import logger
 from app.llm import LLMFactory
 from app.vision.pipeline import normalize_image_urls
 from app.vision.targets import (
+    REFERENCE_KEYS,
     TARGET_FIELDS,
     TARGET_POLICY,
     TARGET_SIDE_LABEL,
@@ -151,13 +152,16 @@ def extract_fields(target_type: str, raw_text: str) -> List[dict]:
     fields: List[dict] = []
     for f in schema:
         entry = raw_fields.get(f.key)
-        value, reason = _resolve(target_type, f, entry, policy)
+        value, reason, reference = _resolve(target_type, f, entry, policy)
         fields.append({
             "key": f.key,
             "label": f.label,
             "value": value,
             "source": FIELD_MARKER if value else None,
             "reason": reason,
+            # 「参考」= 图上抄到的原文，但**没被采纳**（置信度不足）—— 只对 `REFERENCE_KEYS`
+            # 登记的格子出现。🔴 它不是值：消费侧**不得**据此预填表单（`value` 仍为空即该纪律的形状）。
+            "reference": reference,
         })
     return fields
 
@@ -228,10 +232,17 @@ def _resolve(
     field: TargetField,
     entry: Any,
     policy: Dict[str, float],
-):
-    """把模型对**一格**的答复解析成 `(value, reason)`。留空一律给得出理由。"""
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """把模型对**一格**的答复解析成 `(value, reason, reference)`。留空一律给得出理由。
+
+    `reference` = 图上抄到的**原文**，但**没被采纳**（issue #6529）：只有
+    `targets.REFERENCE_KEYS` 登记的格子（订单侧 `items`）卡在**置信度闸**时会带出它 ——
+    那几格的唯一消费方是「按名称**查目录** ⇒ 给候选 ⇒ **商家点选**」，读错**不会变成单里的值**；
+    而整格丢掉 ⇒ 商家连「图上写的型号在目录里查不到」都听不到（页面一片沉默）。
+    🔴 **它不是值**：`value` 仍为 `None` ⇒ 消费侧不得据此预填表单 / 写备注。
+    """
     if not isinstance(entry, dict):
-        return None, _NOT_RECOGNISED
+        return None, _NOT_RECOGNISED, None
 
     value = _as_text(entry.get("value"))
     reason = _as_text(entry.get("reason"))
@@ -239,20 +250,20 @@ def _resolve(
         # 🔴 自相矛盾：模型一边给值、一边说「图上没有这一格」（issue #6386 真跑亲见 ——
         # `name` 给了 `常青藤系列窗帘面料色卡` 而 reason 逐字是「图片未给出该字段」）。
         # 「它自己都说没有」⇒ 这个值**一定是编的**，丢掉（宁可不填）。
-        return None, reason
+        return None, reason, None
     if not value:
-        return None, reason or _NOT_RECOGNISED
+        return None, reason or _NOT_RECOGNISED, None
 
     confidence = entry.get("confidence")
     if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
-        return None, _NO_CONFIDENCE
+        return None, _NO_CONFIDENCE, None
 
     # 订单侧的第一道硬闸：手机号**形状**不合就留空（错填 = 货发错人）。
     # 放在置信度闸**之前**：一个「很自信地认错」的号码，置信度再高也不能填。
     if target_type == "order" and field.key == "customer_phone":
         digits = _normalise_phone(value)
         if not _MOBILE_RE.match(digits):
-            return None, f"手机号「{value}」不是 11 位有效号码，宁可不填"
+            return None, f"手机号「{value}」不是 11 位有效号码，宁可不填", None
         value = digits
 
     # 订单侧的第二道硬闸（issue #5349）：**尺寸**必须是能直接进推导链的数。
@@ -261,7 +272,7 @@ def _resolve(
     if field.key in _SIZE_FIELDS_BY_TARGET.get(target_type, frozenset()):
         size, size_reason = _normalise_size(value)
         if size is None:
-            return None, size_reason
+            return None, size_reason, None
         value = size
 
     # ⚠️ 客户写明的工艺要求（`open_count` / `style` / `processing_items`，issue #5794）**在这里不过闸**
@@ -273,16 +284,21 @@ def _resolve(
     if target_type == "shipment" and field.key == "quantity":
         qty, qty_reason = _normalise_quantity(value)
         if qty is None:
-            return None, qty_reason
+            return None, qty_reason, None
         value = qty
 
     min_confidence = policy["min_confidence"]
     if confidence < min_confidence:
-        return None, (
+        gate_reason = (
             f"置信度 {confidence} 低于{TARGET_SIDE_LABEL[target_type]}阈值 "
             f"{min_confidence}，宁可不填"
         )
-    return value, None
+        # 「参考」字段（`targets.REFERENCE_KEYS`）：值**不采纳**，但原文照带 ——
+        # 它的消费方是「查目录 + 展示」，不是填表（见函数 docstring）。
+        if field.key in REFERENCE_KEYS.get(target_type, ()):
+            return None, gate_reason, value
+        return None, gate_reason, None
+    return value, None, None
 
 
 def _normalise_size(value: str) -> Tuple[Optional[str], Optional[str]]:

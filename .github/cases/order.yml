@@ -3615,7 +3615,7 @@ cases:
   # ══════════════════════════════════════════════════════════════════════════
   - id: OR-048
     legacy_id: ""
-    title: "下单页图片识别 —— 明细条目 → 匹配候选（可解释） → 用户选品 → 建订单行（数量 / 规格 / 单价）+ 不猜商品 / 不落库 / 单价只来自目录·SKU / 门幅只来自所选 SKU"
+    title: "下单页图片识别 —— 明细条目 → 匹配候选（可解释） → 用户选品 → 建订单行（数量 / 规格 / 单价）+ 不猜商品 / 不落库 / 单价只来自目录·SKU / 门幅只来自所选 SKU / 没认准的明细也要说清「目录里没有匹配的商品」"
     domains:
       - order
       - product
@@ -3630,7 +3630,7 @@ cases:
     user_inputs:
       - "（无 LLM 环节：本用例的判据由前端 vitest 单测 + CI 守卫直接执行，见 traces.tests）"
     expectations: []
-    skip_reason: "[backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数 + CI 守卫，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/order-line-match.test.ts、frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx、frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx 与 tests/unit_ci_workflows/test_fabric_width_truth_source.py 执行（含 4 条注入式红证实跑）"
+    skip_reason: "[backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数 + CI 守卫，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/order-line-match.test.ts、frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx、frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx、frontend/admin-web/tests/unit/components/ImageRecognizeButton.test.tsx、frontend/admin-web/tests/unit/components/FormInterpretCard.test.tsx、frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx 与 tests/unit_ci_workflows/test_fabric_width_truth_source.py 执行（含注入式红证实跑）"
     data_checks:
       - "**判据 1·不猜商品**：识别出 N 条明细 ⇒ 先给「N 条待选」的选品面板（候选 + 恒在的「都不是」），**不直接建行**；匹配不到 / 未选 / 点「都不是」/ 选了**没给过该条目**的商品 ⇒ **一行都不建**（明细留在备注）。红证：注入「载入候选后自动选第一个」（= 识别即建行）⇒ 页面断言当场红（实测 4 条全红）。"
       - "**判据 2·候选可解释**：每个候选带**用户读得到的理由**（与商品名重合 N/M 字 / 名称包含 / 规格命中如「材质 雪尼尔」）并按分排序 —— 不是把目录原样倒给用户，也不是「AI 推荐」这类黑箱文案。"
@@ -3641,16 +3641,21 @@ cases:
       - "**判据 7·用户复核**：选品前一行都不建；建行后数量 / 单价**可就地改**（改完仍是商家的值，不被推导静默改回）；每条明细的处置在面板上可见（已建行 / 已跳过），面板随时可关（未处理的明细只留在备注）。"
       - "**类级（铁律 8 / §23 G1·G2）**：识别字段 ⇄ 建行面 的**接线登记表**（`LINE_PATH_FIELD_KEYS`）—— 源码实际读取的键必须 ⊆ 声明、声明必须在后端 `targets.py` 的 order 字段表里（改名漂移 / 偷偷多读一个键 ⇒ 红）；**钱面类级守卫**：订单侧识别字段表里出现价格 / 门幅类键 ⇒ 红（注入 `price` / `door_width` 即红，已实跑）。"
       - "**判据 8·客户写明的工艺要求按图选中（2026-09-29 新增，issue #5794）**：订单侧字段表新增 `open_count` / `style` / `processing_items` 三格（用户口径：「如果用户是根据图片下单的，就需要**根据图中客户要求来决定工艺规格和加工项选择了，不能选错**」）—— 分工与 #5349 同一条：**内核只负责抄清楚**（三格**原样透传**，刻意不加形状硬闸 —— 与尺寸 / 手机号那两道**有意不同**：那两处的错值直接进推导链与发货，这三格进的是勾选控件），判定与换算在**消费侧** `lib/image-recognize.ts`（开数 `1`~`4`、款式 `单色`/`拼色`、加工项 = 目录名清单 + V139 改名别名 `韩折`⇒`韩褶`；认不出的值**不落键**）。落进行状态后：打开方式 / 款式**盖过系统默认**（默认双开、默认单色）、加工项按图勾选并**取消系统推荐默认里客户没提的那几项**（否则「默认韩褶 + 定型」会把客户的单子改成系统以为的样子）；覆盖**留痕可见**（`recognized-craft-note` 在 ①用料与规格 里逐字说出「按图选了什么」）。红证：把 `openCountOf` 的归一删掉（原文直填 `open_count`）⇒ `image-recognize-craft.test.ts` 的「双开 ⇒ 2」必红；把「取消推荐默认」那段删掉 ⇒ `orders-new-layout.test.tsx` 判据 12 的 `checkedItems()` 会多出「韩褶」⇒ 红；给内核那三格加**语义判定**（如 `open_count` 加形状硬闸）⇒ 后端会把「双开」判空、消费侧永远收不到 ⇒ `test_recognizer.py::TestCustomerCraftRequestsPassThrough` 红（**分工漂移**）。执行点 = frontend/admin-web/tests/unit/lib/image-recognize-craft.test.ts（纯函数 25 条）+ frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx（判据 12）+ backend/ai-agent-service/tests/test_vision/test_recognizer.py 与 test_targets.py。"
+      - "**判据 9·没认准的明细也要说清「目录里没有匹配的商品」（2026-10-08 新增，issue #6529 / #6531）**：订单侧 `items` 置信度 0.75 < 0.85 ⇒ 内核 `value` 仍为空（**不填表单、不进备注**）但带出「**参考**」原文（`targets.py::REFERENCE_KEYS`，只有登记过的键才有）；页面按参考原文**照旧查目录** ⇒ 没有候选时显示「目录里没有匹配的商品」、查询失败时显示「这次没查成」（两者**分开说**，不再把故障说成「没有匹配」）。🔴 顺带修正：该提示此前的渲染条件 `options.length === 0` **恒假**（「都不是」是恒在选项）⇒ 文案从不显示。红证：把 `_resolve` 的 `REFERENCE_KEYS` 分支改回丢弃 ⇒ `test_recognizer.py::TestReferenceOnlyFields::test_low_confidence_items_keeps_the_text_as_reference` 红；给未登记的键（客户名 / 地址 / 尺寸 / 数量）也带 `reference` ⇒ `test_undeclared_keys_never_carry_a_reference` 红；前端把 `REFERENCE_ONLY_FIELD_KEYS` 与内核 `targets.py::REFERENCE_KEYS` 改成不等 ⇒ `order-line-match.test.ts` 的类级守卫红；把参考明细写进备注 ⇒ 页面判据「备注不含 2698-11」红。执行点 = backend/ai-agent-service/tests/test_vision/test_recognizer.py + test_deep_channel.py、frontend/admin-web/tests/unit/lib/order-line-match.test.ts、frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx、frontend/admin-web/tests/unit/components/ImageRecognizeButton.test.tsx + FormInterpretCard.test.tsx。"
+      - "**判据 10·入口与建品页同形（2026-10-08 新增，issue #6531）**：建单页的图片入口 = 「拍照 / 上传识别」+「补充一句（可选）」，走与建品页同一条一次性推理（`imageRecognizeApi.interpret`，**不调** `recognize`）；结果先落内嵌卡片、点「一键填入」才进表单（**不自动填表**）。🔴 订单侧的解读**一格都不填**（`INTERPRETABLE_KEYS['order'] == ()`）—— 客户信息错 ⇒ 货发错人。执行点 = frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx（入口判据）、frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx 判据 12（按图选工艺规格与加工项，断言一字未改、只换触发路径）。"
+    merge_log: "2026-09-24 新增（issue #5345；原 8 条判据）。2026-10-08（issue #6529 / #6531，用户报告建单页「没给出『没有匹配的商品』这个提示」）：判据 9 / 10 入库。① 判据 9 = 低置信度明细（0.75 < 0.85）以「参考（未采纳）」形态带给页面 —— `value` 仍空（不填表单 / 不进备注），只用于查目录；顺带修正一处**恒假条件**（`options.length === 0` 因「都不是」恒在而永假 ⇒ 「目录里没有匹配的商品」这句文案此前从不显示），并把它与「查询失败」分开说。② 判据 10 = 建单页入口改成与建品页同形（「补充一句（可选）」+ 一次性推理卡片 + 「一键填入」），订单侧解读仍一格都不填。既有 8 条断言**一字未动**（判据 1~7 逐条原样；判据 8 只换触发路径，断言不变）；`traces.tests` 补 4 个执行点（test_deep_channel.py / ImageRecognizeButton.test.tsx / FormInterpretCard.test.tsx / orders-new-layout.test.tsx）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/order-line-match.test.ts"
-        - "frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx"
-        - "frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx"        - "frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx"
         - "tests/unit_ci_workflows/test_fabric_width_truth_source.py"
         - "frontend/admin-web/tests/unit/lib/image-recognize-craft.test.ts"
         - "frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx"
         - "backend/ai-agent-service/tests/test_vision/test_recognizer.py"
         - "backend/ai-agent-service/tests/test_vision/test_targets.py"
+        - "backend/ai-agent-service/tests/test_vision/test_deep_channel.py"
+        - "frontend/admin-web/tests/unit/components/ImageRecognizeButton.test.tsx"
+        - "frontend/admin-web/tests/unit/components/FormInterpretCard.test.tsx"
       ci:
         - pr-check.yml
       verifies: []

@@ -137,6 +137,25 @@ describe('ImageRecognizeButton (#5321)', () => {
     )
   })
 
+  it('参考字段（#6529）：图上读到但没采纳 ⇒ **随行回传**（供查目录）并单独一行显示', async () => {
+    const reference = {
+      key: 'items',
+      label: '商品明细',
+      value: null,
+      source: null,
+      reason: '置信度 0.75 低于订单侧阈值 0.85，宁可不填',
+      reference: '2698-11、C31',
+    }
+    mocks.recognize.mockResolvedValue(recognizeResponse([FIELD_NAME, reference], false, 'order'))
+    const { onRecognized } = renderAndPickFile({ targetType: 'order' })
+
+    await waitFor(() => expect(onRecognized).toHaveBeenCalledTimes(1))
+    // 有值格 + 参考格**一起**回传；参考格的 `value` 仍是 null ⇒ 调用方的映射函数写不进表单
+    expect(onRecognized.mock.calls[0][0]).toEqual([FIELD_NAME, reference])
+    expect(screen.getByTestId('image-recognize-field-items').textContent).toContain('未识别')
+    expect(screen.getByTestId('image-recognize-reference-items').textContent).toContain('2698-11、C31')
+  })
+
   it('degraded ⇒ 弹「未识别到可用字段…」且不回传任何字段', async () => {
     mocks.recognize.mockResolvedValue(recognizeResponse([], true))
     const { onRecognized } = renderAndPickFile()

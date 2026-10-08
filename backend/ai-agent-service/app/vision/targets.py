@@ -216,6 +216,26 @@ DERIVATION_INPUT_KEYS: Dict[str, Tuple[str, ...]] = {
     "order": ("curtain_width", "curtain_height"),
 }
 
+#: 「**参考**字段」登记表（issue #6529）—— 置信度不足时**不采纳为值**，但把图上原文
+#: 以 `reference` 原样带出去，**只读参考**（展示 + 查目录），**永不进表单**。
+#:
+#: 为什么是它（而不是"放宽订单侧阈值"）：`items`（商品明细）在页面上的**唯一消费方**是
+#: 「按名称**查目录** ⇒ 给候选 ⇒ **商家点选** ⇒ 才建订单行」（issue #5345）——
+#: 一个读错的明细**不会变成单里的值**，只会变成一次检索词；而把它整格丢掉，商家就连
+#: 「图上写的这个型号在目录里查不到」都听不到（用户 2026-10-08 实证：同图在米宝会话里
+#: 说得出「没有匹配的商品」，建单页却一片沉默，issue #6529）。
+#: 反面对照：客户名 / 电话 / 地址 / 帘宽 / 帘高**不在此表** —— 它们的值直接进单据与推导链
+#: （错填 = 货发错人 / 米数错），必须保持「置信度不足 ⇒ 连原文都不给」。
+#:
+#: 🔴 本表 ⇄ 行为**双向**由 `backend/ai-agent-service/tests/test_vision/test_recognizer.py`
+#: 的 `TestReferenceOnlyFields` 钉住（未登记的键**不得**带 `reference`；登记了的键低于阈值
+#: 必须**带着原文**返回）；前端消费侧的键集由
+#: `frontend/admin-web/src/lib/order-line-match.ts::REFERENCE_ONLY_FIELD_KEYS` 声明，
+#: 并由 `tests/unit/lib/order-line-match.test.ts` 的类级守卫与本表逐字对齐（改名漂移 ⇒ 红）。
+REFERENCE_KEYS: Dict[str, Tuple[str, ...]] = {
+    "order": ("items",),
+}
+
 # 每个 target 的消歧策略。
 #
 # `min_confidence` = **采纳下限**：低于它一律**留空 + 给理由**（错填比留空贵得多）。

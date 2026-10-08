@@ -790,6 +790,14 @@ export interface RecognizedField {
   source: string | null
   /** `value` 为空时的原因（如「图片未标注门幅」） */
   reason: string | null
+  /**
+   * 图上抄到、但内核**没采纳**的原文（issue #6529；只有订单侧 `items` 会带）。
+   *
+   * 🔴 **它不是值**：只在 `value` 为空时出现，且**不得写进表单 / 备注** —— 消费方只有两个：
+   * 「按名称**查目录** ⇒ 给候选 ⇒ 商家点选」与「展示给商家看」。
+   * 键名清单的唯一真值 = `backend/ai-agent-service/app/vision/targets.py::REFERENCE_KEYS`。
+   */
+  reference?: string | null
 }
 
 /** 图片识别响应体（`targetType` 回显 + 降级位 + 逐字段候选）。 */

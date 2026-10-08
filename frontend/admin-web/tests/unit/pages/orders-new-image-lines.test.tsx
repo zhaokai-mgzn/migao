@@ -25,6 +25,9 @@ const mockCreateOrder = vi.fn()
 const mockGetProducts = vi.fn()
 const mockGetProduct = vi.fn()
 const mockGetProcessingItems = vi.fn()
+// 图片识别入口（#6531）：建单页与建品页同一条「识别 + 一次性推理」链路
+const mockInterpret = vi.fn()
+const mockRecognize = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: { createOrder: (...args: any[]) => mockCreateOrder(...args) },
@@ -83,9 +86,14 @@ vi.mock('@/lib/api', () => ({
       }),
   },
   feePreviewApi: { preview: () => Promise.resolve({ data: { data: { items: [], processingFeeTotal: 0 } } }) },
-  // 识别端点（本文件不经上传按钮，替身只为模块可解析）
-  imageRecognizeApi: { recognize: () => Promise.resolve({ data: { data: { fields: [] } } }) },
-  uploadApi: { uploadImage: () => Promise.resolve({ data: { data: { url: '' } } }) },
+  // 识别端点（本文件的参考明细判据走**深通道**内存事件；这两个替身只服务于入口判据）
+  imageRecognizeApi: {
+    recognize: (...a: unknown[]) => mockRecognize(...a),
+    interpret: (...a: unknown[]) => mockInterpret(...a),
+  },
+  uploadApi: {
+    uploadImage: () => Promise.resolve({ data: { data: { url: 'https://cdn.test/order.png' } } }),
+  },
 }))
 
 vi.mock('next/link', () => ({
@@ -142,6 +150,46 @@ async function recognize() {
   })
 }
 
+/**
+ * 「参考明细」计划（#6529）：`items` 的 `value` 为空、`reference` 带图上原文
+ * —— 内核在置信度不足时的**真实产出形态**（页面据此仍要去查目录）。
+ */
+async function recognizeReference(reference: string) {
+  await act(async () => {
+    window.dispatchEvent(
+      new CustomEvent(PAGE_FILL_EVENT, {
+        detail: {
+          component: PAGE_FILL_COMPONENT,
+          target_type: 'order',
+          fields: [
+            {
+              key: 'items',
+              label: '商品明细',
+              value: null,
+              source: null,
+              reason: '置信度 0.75 低于订单侧阈值 0.85，宁可不填',
+              reference,
+              candidates: [],
+              note: null,
+              note_source: null,
+            },
+            {
+              key: 'quantity',
+              label: '数量',
+              value: '8米',
+              source: PAGE_FILL_SOURCE_RECOGNIZED,
+              reason: null,
+              candidates: [],
+              note: null,
+              note_source: null,
+            },
+          ],
+        },
+      }),
+    )
+  })
+}
+
 const priceInputs = () => screen.queryAllByLabelText('单价 (¥/米)') as HTMLInputElement[]
 
 describe('NewOrderPage — 明细 → 候选 → 选品 → 建订单行（#5345）', () => {
@@ -150,6 +198,8 @@ describe('NewOrderPage — 明细 → 候选 → 选品 → 建订单行（#5345
     mockGetProducts.mockResolvedValue({ data: { data: { items: CATALOG, total: 1 } } })
     mockGetProduct.mockResolvedValue({ data: { data: PRODUCT_DETAIL } })
     mockGetProcessingItems.mockResolvedValue({ data: { data: { items: [] } } })
+    mockInterpret.mockResolvedValue({ data: { data: { degraded: true, fields: [] } } })
+    mockRecognize.mockResolvedValue({ data: { data: { degraded: true, fields: [] } } })
   })
 
   it('判据 1/2/7：识别到明细先出**选品面板**（候选 + 理由 + 「都不是」），选品前一行都不建', async () => {
@@ -231,5 +281,50 @@ describe('NewOrderPage — 明细 → 候选 → 选品 → 建订单行（#5345
     })
     expect(priceInputs()).toHaveLength(0)
     expect(mockGetProduct).not.toHaveBeenCalled() // 没选品 ⇒ 连详情都不取
+  })
+
+  it('参考明细（#6529）：图上读到但没采纳 ⇒ 照旧查目录，并把「目录里没有匹配的商品」说给商家', async () => {
+    mockGetProducts.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+    render(<NewOrderPage />)
+    await recognizeReference('2698-11、C31')
+
+    // ① 面板照旧打开（两条参考明细 → 两条待选）
+    expect(await screen.findByTestId('order-line-picker')).toBeInTheDocument()
+    expect(mockGetProducts.mock.calls.map((c) => c[0].keyword)).toEqual(['2698-11', 'C31'])
+    // ② 未采纳这件事**如实说清**（不冒充「识别到了」）
+    expect(screen.getByTestId('order-line-picker-reference-0').textContent).toContain('未采纳')
+    // ③ 结论明确：目录里没有匹配的商品（这就是用户要的那句提示）
+    expect((await screen.findByTestId('order-line-picker-no-candidate-0')).textContent).toContain(
+      '目录里没有匹配的商品',
+    )
+    // ④ 🔴 参考明细**不进备注**（备注只记「有值」的识别结果）—— 它只是查目录的输入
+    const remark = screen.getByPlaceholderText(/可填写发货要求/) as HTMLTextAreaElement
+    expect(remark.value).not.toContain('2698-11')
+    expect(remark.value).toContain('数量：8米')
+    expect(mockCreateOrder).not.toHaveBeenCalled()
+  })
+
+  it('参考明细：候选**查询失败**与「目录里没有」**分开说**（#6529）', async () => {
+    mockGetProducts.mockRejectedValue(new Error('网络错误'))
+    render(<NewOrderPage />)
+    await recognizeReference('2698-11')
+
+    expect(await screen.findByTestId('order-line-picker-failed-0')).toBeInTheDocument()
+    expect(screen.queryByTestId('order-line-picker-no-candidate-0')).toBeNull()
+  })
+
+  it('订单侧入口与建品页同形（#6531）：有「补充一句（可选）」，选图走一次性推理（不调 recognize）', async () => {
+    render(<NewOrderPage />)
+
+    expect(screen.getByTestId('image-recognize-hint')).toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('image-recognize-input'), {
+      target: { files: [new File(['x'], 'order.png', { type: 'image/png' })] },
+    })
+
+    await waitFor(() => expect(mockInterpret).toHaveBeenCalledTimes(1))
+    expect(mockInterpret.mock.calls[0][0]).toBe('order')
+    expect(mockInterpret.mock.calls[0][1]).toEqual(['https://cdn.test/order.png'])
+    // 认绿对照：入口换了通道 ⇒ 快通道端点**一次都没被调**
+    expect(mockRecognize).not.toHaveBeenCalled()
   })
 })

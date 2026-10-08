@@ -34,8 +34,9 @@ const mockGetProduct = vi.fn()
 const mockGetProcessingItems = vi.fn()
 const mockCraftCalcPreview = vi.fn()
 const mockFeePreview = vi.fn()
-// 图片识别（issue #5794）：页面快通道的上传 + 识别两个端点（判据 12 驱动它们）
+// 图片识别（issue #5794 / #6531）：页面入口 = 「识别 + 一次性推理」两个端点（判据 12 驱动它们）
 const mockImageRecognize = vi.fn()
+const mockImageInterpret = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: { createOrder: (...a: unknown[]) => mockCreateOrder(...a) },
@@ -52,7 +53,10 @@ vi.mock('@/lib/api', () => ({
   uploadApi: {
     uploadImage: () => Promise.resolve({ data: { data: { url: 'https://cdn.test/order.png' } } }),
   },
-  imageRecognizeApi: { recognize: (...a: unknown[]) => mockImageRecognize(...a) },
+  imageRecognizeApi: {
+    recognize: (...a: unknown[]) => mockImageRecognize(...a),
+    interpret: (...a: unknown[]) => mockImageInterpret(...a),
+  },
   // 自动特征判定面（issue #4976 包 2b）：本文件与它正交 ⇒ 服务端替身返回「不判」，
   // 免得提交闸门拦住无关断言（同 `orders-new-item-remark.test.tsx` 的口径）。
   autoFeaturesApi: {
@@ -209,6 +213,9 @@ const openStep = (title: RegExp) => {
 const checkedItems = () =>
   screen
     .getAllByRole('checkbox')
+    // 识别结果卡（#6531：订单侧入口与建品页同形）自己也有勾选框（「一键填入」用）——
+    // 它不是加工项目录，剔除；**真加工项的 `aria-label` 仍必须都在**（缺一个 ⇒ 读数是 `null` ⇒ 红）。
+    .filter((c) => !(c.getAttribute('data-testid') || '').startsWith('form-interpret-check-'))
     .filter((c) => (c as HTMLInputElement).checked)
     .map((c) => c.getAttribute('aria-label'))
 
@@ -302,6 +309,7 @@ const stubApis = () => {
   mockFeePreview.mockResolvedValue(feeMatched())
   // 缺省：识别端点回「零可用字段」（degraded）—— 只有判据 12 会真的驱动它
   mockImageRecognize.mockResolvedValue({ data: { data: { degraded: true, fields: [] } } })
+  mockImageInterpret.mockResolvedValue({ data: { data: { degraded: true, fields: [] } } })
 }
 
 describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 常态可编辑 / 推荐组合 / 特殊选项并入加工项）', () => {
@@ -526,19 +534,26 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
   })
 
   it('判据 12（2026-09-29 新增）：图片下单 ⇒ **按图中客户要求**选工艺规格与加工项（不按系统默认）', async () => {
-    mockImageRecognize.mockResolvedValue({
+    // issue #6531：订单侧入口改成与建品页同一条「识别 + 一次性推理」（可补充一句话）⇒
+    // 识别端点由 `recognize` 换成 `interpret`，且结果**先落卡片、点「一键填入」才进表单**。
+    // 本判据的断言面（按图选工艺规格与加工项）**一个字不改**，只换触发路径。
+    mockImageInterpret.mockResolvedValue({
       data: {
         data: {
-          degraded: false,
+          component: 'page_fill',
+          target_type: 'order',
           fields: [
-            { key: 'open_count', label: '打开方式', value: '单开', source: '[图片识别]', reason: null },
-            { key: 'style', label: '款式', value: '拼色', source: '[图片识别]', reason: null },
+            { key: 'open_count', label: '打开方式', value: '单开', source: '[图片识别]', reason: null, candidates: [], note: null, note_source: null },
+            { key: 'style', label: '款式', value: '拼色', source: '[图片识别]', reason: null, candidates: [], note: null, note_source: null },
             {
               key: 'processing_items',
               label: '加工项',
               value: '打孔、定型',
               source: '[图片识别]',
               reason: null,
+              candidates: [],
+              note: null,
+              note_source: null,
             },
           ],
         },
@@ -554,6 +569,8 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
 
     const file = new File(['x'], 'order.png', { type: 'image/png' })
     fireEvent.change(screen.getByTestId('image-recognize-input'), { target: { files: [file] } })
+    // 结果**不自动填表**（与建品页同一条判据）：本页也不该例外 ⇒ 必须点「一键填入」
+    fireEvent.click(await screen.findByTestId('form-interpret-fill'))
 
     // ① 留痕可见（①用料与规格 里逐字说出「按图选了什么」）
     const note = await screen.findByTestId('recognized-craft-note')

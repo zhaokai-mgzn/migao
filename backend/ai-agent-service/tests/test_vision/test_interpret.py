@@ -56,9 +56,10 @@ from app.vision.recognizer import FIELD_MARKER, extract_fields, recognize
 
 INTERPRET_PY = Path(__file__).resolve().parents[2] / "app" / "vision" / "interpret.py"
 
-#: 判据 7：`page_fill` 逐字段的**八键**（与 `deep_channel._empty_cell` 同源，前端按它渲染）
+#: 判据 7：`page_fill` 逐字段的**九键**（与 `deep_channel.build_page_fill` 同源，前端按它渲染）
 FIELD_KEYS = {
     "key", "label", "value", "source", "reason", "candidates", "note", "note_source",
+    "reference",
 }
 
 # ── 夹具：钉住 vision（抄写）与文本推理（解读）两次模型调用 ──────────────────
