@@ -1373,25 +1373,32 @@ public class StockBatchConsumptionService {
     }
 
     /**
-     * 省料分组的**展示名**（issue #6535）：{@code productId → 商品名 × 颜色/门幅}。
+     * 省料分组的**展示名**（issue #6535）：{@code 分组键 → 商品名 × 颜色/门幅}。
      *
      * <p>🔴 <b>一次批量查</b>（按去重后的 {@code productId}）—— 逐组查就是 N+1；本读面本来就
      * 是一次事务内的只读聚合，这一条查询与它同事务同口径。租户与软删过滤由
      * MyBatis-Plus 的 {@code @TableLogic} 与多租户拦截器承担（不手写 SQL = 不复制
      * 「哪些商品算本租户的」这条口径）。</p>
      *
-     * <p>拿不到名字的商品（已删 / 跨租户 / 真无此商品）**不出现在 map 里** ⇒ 调用方退回
-     * 「{@link MaterialLabels#UNNAMED_PRODUCT} × 颜色/门幅」（{@link MaterialLabels#materialLabel}）
-     * —— 展示依赖 fail-soft，<b>绝不</b>退回机器键（那正是本单修掉的缺陷）。</p>
+     * <p>拿不到名字的商品（已删 / 跨租户 / 真无此商品 / 没装商品腿）⇒ 该组退回
+     * 「{@link MaterialLabels#UNNAMED_PRODUCT} × 颜色/门幅」（{@link MaterialLabels#materialLabel}，
+     * 由调用点组装）—— <b>展示</b>依赖 fail-soft，<b>绝不</b>退回机器键
+     * （那正是本单修掉的缺陷）。</p>
      *
      * @param groups 已聚合的分组（取其 {@code productId} 的去重集合；{@code null} 商品当无名字）
      * @return 分组键（{@code groupKey}）→ 展示名
      */
     private Map<String, String> materialLabelsOf(Collection<SavedAcc> groups) {
+        // 🔴 空集返回**可变**表，不是不可变的空表：`WorkerCuttingHeightNullProductIdTest`
+        //    （#6219 的类级守卫）用正则扫**源码文本**（`EMPTY_IMMUTABLE_RETURN`，**注释也在射程内**）
+        //    找「方法体里直接返回不可变空表」的产出方，未在它那张 `Ledger.PRODUCERS` 登记即红。
+        //    本单不值得为一条展示名的空分支扩那张台账 ⇒ 用可变表，**不引入新的产出方**
+        //    （这也正是 #6219 那次修复的处置形态：空集改可变表）。
+        Map<String, String> labels = new LinkedHashMap<>();
         List<String> ids = new ArrayList<>(new LinkedHashSet<>(
                 groups.stream().map(g -> g.productId).filter(StringUtils::hasText).toList()));
         if (productMapper == null || ids.isEmpty()) {
-            return Map.of();
+            return labels;
         }
         Map<String, String> names = new HashMap<>();
         for (Product p : productMapper.selectBatchIds(ids)) {
@@ -1400,7 +1407,6 @@ public class StockBatchConsumptionService {
         // 🔴 展示名按**组**组装（不是按商品）：同商品可以有不同的「颜色 × 门幅」
         //    （= 本读面的分组维度之一）⇒ 名字里的 skuCode 必须取**本组**的，
         //    否则同商品的多个颜色在页面上会长得一模一样（那也是「展示说谎」）。
-        Map<String, String> labels = new HashMap<>();
         for (SavedAcc g : groups) {
             labels.put(groupKey(g.period, g.cohort, g.productId, g.skuCode),
                     MaterialLabels.materialLabel(names.get(g.productId), g.skuCode));
