@@ -36,6 +36,36 @@ public class UserInfoResponse {
     private List<MenuItem> menus;
 
     /**
+     * 手机端（bmini）可见面 —— **服务端按岗位投影**（issue #6570，用户 2026-10-08 裁定「走 B」）。
+     *
+     * <p>🔴 与 {@link #capabilities} 同一口径：**这是端侧唯一的判定来源**，端侧不得自己拿
+     * {@link #permissions} 判菜单（旧口径 = 每个客户端各判一次码、且「集合未知 ⇒ 照显」，
+     * 线上读数与形态见 issue #6570）。</p>
+     * <p>空数组 = 服务端**明确答复**「本岗位一个面都没有」（这是正常答复）；
+     * 端侧**拿不到**本字段时应显式说「菜单没加载出来 + 重试」，不许静默隐藏、也不许照显。</p>
+     * <p>⚠️ 它只是 UI 显隐，不是授权：数据面仍由 {@code @RequirePermission}
+     * 与 {@code PermissionInterceptor} 拦（既有架构契约，不砍）。</p>
+     */
+    private List<MobileSurface> mobileSurfaces;
+
+    /**
+     * 手机端一个可见面 / 能力位（{@code MobileSurfaces.Surface} 的响应投影）。
+     */
+    @Data
+    @Builder
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class MobileSurface {
+        /** 稳定键（端侧按它取图标、写判据；**不按中文标题**） */
+        private String key;
+
+        /** 中文名（端侧直接渲染，不自造文案） */
+        private String title;
+
+        /** bmini 页面路由；**缺键** = 该面没有独立页面（只用来开/关页面内的一块内容） */
+        private String route;
+    }
+
+    /**
      * 能力位（issue #5642 功能⑤「黄金策唤出授权门」）。
      *
      * <p>🔴 **这是端侧唯一的判定来源**：前端**不得**自己判权限码（哪些码算管理员是服务端

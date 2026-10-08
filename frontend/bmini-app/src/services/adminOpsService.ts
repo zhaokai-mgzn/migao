@@ -96,6 +96,45 @@ async function runVoid(
 
 export interface MeResponse {
   permissions?: string[] | null
+  /** 手机端可见面（issue #6570）：服务端按岗位投影，端侧**不再自己判码** */
+  mobileSurfaces?: MobileSurface[] | null
+}
+
+/**
+ * 手机端一个可见面 / 能力位（`UserInfoResponse.MobileSurface` 的端侧投影，字段同源）。
+ *
+ * `route` 缺键 = 该面**没有独立页面**，只用来开/关页面内的一块内容（当前 = `production-todos`）。
+ */
+export interface MobileSurface {
+  key: string
+  title: string
+  route?: string | null
+}
+
+export interface MyMobileMenu {
+  /** `ok` = 服务端答复（`surfaces` 可能是空数组：本岗位一个面都没有，这是**正常答复**）；`error` = 没拿到 */
+  state: 'ok' | 'error'
+  surfaces: MobileSurface[]
+}
+
+/**
+ * 读当前登录员工的**手机端菜单**（`GET /api/auth/me` 的 `mobileSurfaces`，issue #6570）。
+ *
+ * 拿不到（网络/未登录/服务端失败/字段缺失）⇒ `state='error'` ⇒ 消费方**必须显式说**
+ * （「菜单没加载出来 + 重试」）。**不得**把「没拿到」当成「本岗位没有面」（静默隐藏），
+ * 也**不得**退回「照显全部」（旧口径：员工会看到自己没有的入口，点进去逐项 403）。
+ */
+export async function fetchMyMobileMenu(): Promise<MyMobileMenu> {
+  try {
+    const res = await get<ApiResponse<MeResponse>>('/api/auth/me', { baseURL: API_BASE_URL })
+    const surfaces = res?.data?.mobileSurfaces
+    if (!res?.success || !Array.isArray(surfaces)) {
+      return { state: 'error', surfaces: [] }
+    }
+    return { state: 'ok', surfaces }
+  } catch {
+    return { state: 'error', surfaces: [] }
+  }
 }
 
 /**

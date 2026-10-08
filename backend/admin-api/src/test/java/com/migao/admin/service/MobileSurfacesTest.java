@@ -1,0 +1,100 @@
+// case_ids: BM-046
+package com.migao.admin.service;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * 手机端菜单的**服务端投影**（issue #6570，用户 2026-10-08 裁定「走 B」）。
+ *
+ * <p>判据口径：权限集合 → 可见面 = {@link MobileSurfaces#visibleFor}。期望值**逐字取自线上真账号读数**
+ * （2026-10-08 20:09 +08，租户 25 四个岗位在 `/b/` 的「我的」页实拍）：客服 3 / 运营 4 / 商品管理员 2 / 财务 2。
+ * ⇒ 本测试同时是「服务端投影 == 端侧旧口径的实际可见性」的等价性判据（零行为回归）。</p>
+ *
+ * <p>红证（怎么让它单独变红）：把某个面的 {@code readPermission} 改错一个字母 ⇒ 对应用例的键序列对不上。</p>
+ */
+class MobileSurfacesTest {
+
+    /** 线上读数：tenant 25 / a06_customer_service（客服，12 码） */
+    private static final List<String> CUSTOMER_SERVICE_CODES = List.of(
+            "dashboard:view", "processing:view", "production:execute", "inbound:view", "knowledge:view",
+            "order:list", "order:detail", "order:refund", "after_sales:view", "customer:view",
+            "agent:session", "agent:session:manage");
+
+    /** 线上读数：a06_product_manager（商品管理员，8 码） */
+    private static final List<String> PRODUCT_MANAGER_CODES = List.of(
+            "dashboard:view", "product:list", "product:create", "product:category", "product:category:view",
+            "processing:manage", "processing:view", "production:view");
+
+    /** 线上读数：a06_finance（财务，9 码） */
+    private static final List<String> FINANCE_CODES = List.of(
+            "dashboard:view", "processing:view", "production:execute", "inbound:view", "order:list",
+            "order:detail", "customer:view", "finance:view", "finance:create");
+
+    private static List<String> keys(List<String> permissions) {
+        return MobileSurfaces.visibleFor(permissions).stream().map(MobileSurfaces.Surface::key).toList();
+    }
+
+    @Test
+    @DisplayName("通配 `*`（管理员）⇒ 全部 5 项，顺序 = 清单声明顺序")
+    void wildcardSeesEverything() {
+        assertThat(keys(List.of("*"))).containsExactly(
+                "pool", "inbound", "after-sales", "piecework", "production-todos");
+    }
+
+    @Test
+    @DisplayName("🔴 客服（12 码，无 production:view）⇒ 智能派单/入库过账/售后处理 + 生产待办块**关**")
+    void customerServiceMatchesLiveReading() {
+        // 线上实拍：3 个入口；「数据」页那块「无权限查看生产待办」的噪音正是因为没有 production:view
+        assertThat(keys(CUSTOMER_SERVICE_CODES)).containsExactly("pool", "inbound", "after-sales");
+    }
+
+    @Test
+    @DisplayName("🔴 商品管理员（8 码）⇒ 智能派单 + 计件工资报表（+ 生产待办块开）")
+    void productManagerMatchesLiveReading() {
+        assertThat(keys(PRODUCT_MANAGER_CODES)).containsExactly("pool", "piecework", "production-todos");
+    }
+
+    @Test
+    @DisplayName("🔴 财务（9 码）⇒ 智能派单 + 入库过账（无 production:view ⇒ 生产待办块关）")
+    void financeMatchesLiveReading() {
+        assertThat(keys(FINANCE_CODES)).containsExactly("pool", "inbound");
+    }
+
+    @Test
+    @DisplayName("空集合 / null ⇒ 空清单（不是「全给」）")
+    void emptyPermissionsYieldNothing() {
+        assertThat(MobileSurfaces.visibleFor(List.of())).isEmpty();
+        assertThat(MobileSurfaces.visibleFor(null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("每个面的读码 = 后端注解的镜像（真值在 `@RequirePermission`）")
+    void readPermissionsMirrorBackendAnnotations() {
+        assertThat(MobileSurfaces.ALL).extracting(MobileSurfaces.Surface::key, MobileSurfaces.Surface::readPermission)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("pool", "processing:view"),
+                        org.assertj.core.groups.Tuple.tuple("inbound", "inbound:view"),
+                        org.assertj.core.groups.Tuple.tuple("after-sales", "after_sales:view"),
+                        org.assertj.core.groups.Tuple.tuple("piecework", "production:view"),
+                        org.assertj.core.groups.Tuple.tuple("production-todos", "production:view"));
+    }
+
+    @Test
+    @DisplayName("只有 production-todos 没有独立页面（其余 4 个都有 bmini 路由）")
+    void onlyProductionTodosHasNoRoute() {
+        assertThat(MobileSurfaces.ALL).filteredOn(s -> s.route() == null)
+                .extracting(MobileSurfaces.Surface::key).containsExactly("production-todos");
+        assertThat(MobileSurfaces.ALL).filteredOn(s -> s.route() != null)
+                .extracting(MobileSurfaces.Surface::route)
+                .containsExactly(
+                        "/pages/admin/pool/index",
+                        "/pages/admin/inbound/index",
+                        "/pages/admin/after-sales/index",
+                        "/pages/admin/piecework/index");
+    }
+}

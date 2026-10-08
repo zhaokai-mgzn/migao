@@ -755,7 +755,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
-## B 端小程序域（45 case）
+## B 端小程序域（46 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -864,7 +864,7 @@
 你: 管理员用手机浏览器（h5）打开「我的」→ 智能派单 / 入库过账 / 售后处理 / 计件工资报表：排产派单可勾选并预览成批方案后一键派单；入库单可看详情并对草稿单过账；售后工单可看详情并按状态机推进；计件报表按人/按工序出数
 期望: direct_reply
 数据: 判据 1·**4 项端到端可用**（每项至少一条）：① 智能派单——池+加急插区上屏 → 勾选 → 预览（服务端五个米数原样渲染）→ 二次确认 → `POST /api/admin/production/pool/dispatch`（成批 `pooled:true`；**加急单 = 单订单 + `pooled:false`**）；② 入库过账——列表 → 点卡拉详情 → 草稿单出「过账」→ 二次确认 → `PATCH /api/admin/inbound-orders/{id}` `{action:'post'}` → 刷新；③ 售后处理——列表 → 详情（含状态历史）→ **只出状态机允许的下一步** → 二次确认 → `PUT /api/admin/after-sales/{id}/status`；④ 计件工资——`GET /api/admin/production/piecework/summary?period=YYYY-MM` 四块渲染 + 期间切换。证据：frontend/bmini-app/tests/admin-pool-dispatch.test.tsx / admin-inbound-post.test.tsx / admin-after-sales.test.tsx / admin-piecework.test.tsx
-数据: 判据 2·**权限拒绝有文案（双面）**：无对应码 ⇒ ①「我的」页入口**不可见**（`GET /api/auth/me` 的 `permissions` 判定；集合**未知**时 fail-open 照显，不静默隐藏）；② 端点 403 ⇒ 页面逐字「无「XX」…权限（需要权限码 …）」（如「无「入库过账」过账权限（需要权限码 inbound:create）」），**不许空白/转圈**。红证：去掉 forbidden 分支 ⇒ admin-pool-dispatch.test.tsx 的 403 用例当场红（实测退出码 1）。证据：frontend/bmini-app/tests/admin-surfaces-permission.test.tsx + admin-surfaces-service.test.ts
+数据: 判据 2·**权限拒绝有文案（双面）**：无对应码 ⇒ ①「我的」页入口**不可见**；🔴 **2026-10-08 改判（issue #6570，用户裁定「走 B」）**：菜单可见性改由**服务端按岗位投影**（`GET /api/auth/me` 的 `mobileSurfaces`，服务端 `MobileSurfaces.visibleFor`），端侧不再自己判码；**菜单拉不到 ⇒ 显式「菜单没加载出来，点这里重试」+ 一个面都不渲染**（旧口径「集合未知 ⇒ 照显（fail-open）」已废 —— 它的实际形态是员工点进去逐项 403，线上读数见 issue #6570）；② 端点 403 ⇒ 页面逐字「无「XX」…权限（需要权限码 …）」（如「无「入库过账」过账权限（需要权限码 inbound:create）」），**不许空白/转圈**。红证：去掉 forbidden 分支 ⇒ admin-pool-dispatch.test.tsx 的 403 用例当场红（实测退出码 1）。证据：frontend/bmini-app/tests/admin-surfaces-permission.test.tsx + admin-surfaces-service.test.ts
 数据: 判据 3·**权限码真值在后端注解**：端侧台账（`ADMIN_SURFACES[].readPermission/writePermission`）与 4 个 Controller 的 `@RequirePermission` **逐值相等**（读：processing:view / inbound:view / after_sales:view / production:view（issue #5675 起 —— 该端点是「计件工资」页第一屏读端点，台账随后端注解同步）；写：processing:update / inbound:create / order:refund）。红证：改台账任一码 ⇒ 守卫判据 5 红。证据：frontend/bmini-app/tests/admin-surfaces-guard.test.ts
 数据: 判据 4·**h5 下不调 `Taro.login`**（#5650 既有判据）：h5 编译目标下渲染 4 个管理面，`Taro.login` 一次都不被调；未登录 ⇒ 明说「浏览器环境不支持微信登录，请用「用户名@企业编码 + 密码」登录」并给「去登录」。红证：在池页渲染路径注入 `Taro.login()` ⇒ 运行时判据 + 类级守卫**同时**红（实测退出码 1）。证据：frontend/bmini-app/tests/admin-surfaces-permission.test.tsx + admin-surfaces-guard.test.ts
 数据: 判据 5·**平台能力缺口显式**（类级）：射程内实测的 Taro API 集必须**逐值等于**声明集（当前 = `redirectTo` / `showModal`，均 h5 可用），命中 #5650 的两张清单（h5 未实现 / 只走微信 JS-SDK）⇒ 必须在缺口台账登记文案**且由真的调用它的文件接线**。红证：注入 `Taro.login` 不同步声明 ⇒ 判据 2 红；补声明+登记文案但不接线 ⇒ 判据 3 红（两条实测退出码均为 1）。证据：frontend/bmini-app/tests/admin-surfaces-guard.test.ts
@@ -873,7 +873,8 @@
 数据: 判据 8·**不新增后端逻辑**：本单 diff **零** `backend/**` 改动（4 项端点全部既有）；登记**既有分歧**（本单不改后端、不改 admin-web）：admin-web 菜单节点码与端点码不一致（智能派单节点 `processing:manage` vs 读端 `processing:view`）⇒ 手机端一律以**端点码**为可见性判据（宁可不出死页）。🔴 **2026-09-27 改判（issue #5675）**：原登记的第二处「计件节点 `production:view` vs 端 `processing:manage`」**已收口**（该端点是「计件工资」页第一屏读端点，形态 = 菜单节点码 ≠ 该页第一屏读端点码 ⇒ 端点码改挂 `production:view`，本台账镜像同步）⇒ 本格的既有分歧**由两处缩到一处**，只剩智能派单那条（#5675 复算后判为**有意保留**：两个方向的对齐都会改变某个岗位集合的可见性或可做性，已具名登记在 `tests/unit_ci_workflows/test_agent_permission_parity.py` 判据 12 的残留台账）。
 跳过: [backend-contract] 确定性契约/机械判据，由 jest（frontend/bmini-app/tests/admin-surfaces-guard.test.ts / admin-surfaces-service.test.ts / admin-surfaces-permission.test.tsx / admin-pool-dispatch.test.tsx / admin-inbound-post.test.tsx / admin-after-sales.test.tsx / admin-piecework.test.tsx）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-09-26 新增（issue #5654）：管理面 11 项「只有电脑端能做」中的 4 项下放到手机端（载体 = bmini-app 的 h5 产物，#5650）。四项全部消费既有端点（零后端改动）；权限可见性以**端点码**为判据（并登记了与 admin-web 菜单节点码的两处分歧）；写动作全部二次确认；计件报表与 PC 同一个端点、同一份服务端聚合（判据夹具用「per_worker 之和 ≠ total」证明页面没重算）。 ｜ tags: bmini, admin-surface, permission, h5, backend_contract
+溯源: 2026-09-26 新增（issue #5654）：管理面 11 项「只有电脑端能做」中的 4 项下放到手机端（载体 = bmini-app 的 h5 产物，#5650）。四项全部消费既有端点（零后端改动）；权限可见性以**端点码**为判据（并登记了与 admin-web 菜单节点码的两处分歧）；写动作全部二次确认；计件报表与 PC 同一个端点、同一份服务端聚合（判据夹具用「per_worker 之和 ≠ total」证明页面没重算）。
+2026-10-08 **判据 2 改判**（issue #6570，用户裁定「走 B」）：菜单可见性由「端侧拿 `permissions` 自己判码 + 集合未知 ⇒ 照显（fail-open）」改为「**服务端按岗位投影**下发 `mobileSurfaces`，端侧只渲染给到的面；拉不到 ⇒ 显式 + 可重试，且一个面都不渲染」。写动作判权（`canWriteAdminSurface`）**未变**（仍 fail-open + 服务端 403 逐字文案）。 ｜ tags: bmini, admin-surface, permission, h5, backend_contract
 
 ### BM-010. 入库标签 30×40mm 像素口径 - 单一真值（240/320/384/8 dots/mm），别处出现第二份字面量即红 🔵
 ```
@@ -1369,6 +1370,20 @@
 ```
 真值: auth.tenant-local-identity
 溯源: 2026-10-08 新增（issue #6564）：生产（阿里云 SWAS，租户 25 = 企业编码 migao）工人 cy-1001 在 B 端 H5 输正确 PIN 恒 401 —— 前端 `workerLogin` 默认发 `tenantId = DEFAULT_TENANT_ID = 1`，而 `/b/` 无租户子域/网关头 ⇒ 服务端按 body 租户 1 注入租户谓词 ⇒ 查不到租户 25 的工人行。修法 = 口径 B「工号 + 企业编码，租户只由服务端解析」；短链 302 追加 `tenant_code` 供工人端 H5 预填；兼容期仍接受 body `tenantId`（打 WARN）。 ｜ tags: bmini, login, worker, tenant
+
+### BM-046. 手机端菜单 = 服务端按岗位投影（「我的」入口 + 「数据」生产待办块）；菜单拉不到 ⇒ 显式态，不照显 🔵
+```
+你: 员工在手机端登录：什么岗位就只看到那个岗位的菜单（由服务端说了算）；菜单没加载出来时会明说并可重试，而不是给一堆点进去就报无权限的入口
+期望: direct_reply
+数据: 判据 1·**服务端投影逐值**（真值 = backend/admin-api/src/main/java/com/migao/admin/service/MobileSurfaces.java 的 `ALL` + `visibleFor`）：期望值**逐字取自线上真账号读数**（2026-10-08 19:58~20:09 +08，租户 25 四岗位在 `/b/` 的实拍）—— 通配 `*` ⇒ 5 项；客服（12 码，**无** `production:view`）⇒ pool/inbound/after-sales；商品管理员（8 码）⇒ pool/piecework/production-todos；财务（9 码）⇒ pool/inbound；空集合/null ⇒ 空清单（不是「全给」）。红证：把任一面的读码改一个字母 ⇒ 对应键序列对不上。证据：backend/admin-api/src/test/java/com/migao/admin/service/MobileSurfacesTest.java
+数据: 判据 2·**`/me` 字段与缺键语义**：`$.data.mobileSurfaces[0].key/title/route` 逐值；无独立页面的能力位（`production-todos`）⇒ `route` **缺键**（`doesNotExist`，不是 null、不是空串）—— 端侧据此只开页面内的块。红证：字段名改名/改蛇形 ⇒ 端侧菜单全灭（端侧读的就是这个键）+ 本判据红。证据：backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java
+数据: 判据 3·🔴 **端侧只渲染服务端给的面**：给 4 面 ⇒ 逐字按服务端顺序与标题渲染（端侧不自造、不排序）；只给 1 面 ⇒ 只出 1 个；给**空数组** ⇒ 一个入口都没有且**不是**错误态（服务端的明确答复 ≠ 失败）；🔴 **拉不到 ⇒ 显式「菜单没加载出来，点这里重试」+ 一个面都不渲染**（既不静默隐藏，也不照显）；点重试**真的**再拉一次 `/me`。红证：退回「未知 ⇒ 照显」⇒ 该用例红。证据：frontend/bmini-app/tests/mobile-menu-server-driven.test.tsx
+数据: 判据 4·**「数据」页生产待办块 = 同一份服务端清单开关**：清单含 `production-todos` ⇒ 渲染（每件可点即办）；🔴 **不含**（没有 `production:view` 的岗位 = 客服 / 财务实拍）⇒ **整块不渲染**（那块「无权限查看生产待办（需生产看板权限）」的噪音消失）；菜单**拉不到** ⇒ 照渲染（数据优先：不静默吞掉今天的待办）。红证：仍按权限码判 ⇒ 该用例红。证据：同判据 3 的文件
+数据: 判据 5·**类级守卫（服务端清单 ⇄ 端侧落地，双向）**：后端清单现取 5 项（反空跑）；有路由的面必须 ① 逐字在 `frontend/bmini-app/src/app.config.ts` 的 pages 在册 ② 在入口台账 `frontend/bmini-app/src/utils/pageEntries.ts` 登记过 ③ 读码与端侧台账 `ADMIN_SURFACES[].readPermission` 逐值相等；无路由的能力位必须被「数据」页**真的消费**（登记而不接线 = 台账自我复制）。红证：给 Java 清单加一条 bmini 没登记的 `new Surface(...)` ⇒ 判红。证据：frontend/bmini-app/tests/admin-surfaces-guard.test.ts（判据 8）
+数据: 判据 6·**源级：端侧不再自己判菜单码**：「我的」页源码不含 `visibleAdminSurfaces` / `useAdminPermissions` / `permissions.includes`，且确实调用 `useMobileMenu()`（反向自证，防空跑）；「数据」页的开关取 `s.key === 'production-todos'`。证据：同判据 3 的文件
+跳过: [backend-contract] 确定性判据（Java 单测 + jest + 源码守卫），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-08 新增（issue #6570，用户逐字「走B，4。你直接通过读取租户数据来获取账号和密码」）：手机端菜单改由**服务端按岗位投影**（`MobileSurfaces` → `GET /api/auth/me` 的 `mobileSurfaces`），端侧只渲染服务端给的面；「数据」页的生产待办块改用**同一份清单**开关（消掉没有 `production:view` 的岗位那块永远无意义的「无权限」噪音）。**改判**：BM-009 判据 2 的「集合未知 ⇒ 照显（fail-open）」随之下线（用户裁定「走 B」），改为「拉不到 ⇒ 显式 + 可重试 + 不渲染」。落地形态**不是**在 `rbac/manifest.json` 新增一段：该清单的段集是**对账式**的（`test_manifest_segments_are_all_reconciled` 会把未对账的新段判红），故把「面 → 码」的服务端投影放在 `com.migao.admin.service.MobileSurfaces`，与后端 `@RequirePermission` 保持镜像（BM-009 判据 5 逐值比对）。**未固化项**：tabBar 仍为静态 4 项（小程序 tabBar 不能按角色逐项隐藏；是否上自定义 tabBar 待用户裁定，见 issue #6570）。 ｜ tags: bmini, menu, permission, backend_contract
 
 ## 分类域（3 case）
 
@@ -10395,13 +10410,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：719（活跃 134，跳过 585）
-- tier 分布：smoke 12 / normal 665 / adversarial 32
+- 用例总数：720（活跃 134，跳过 586）
+- tier 分布：smoke 12 / normal 666 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
 - 登录认证域：12
-- B 端小程序域：45
+- B 端小程序域：46
 - 分类域：3
 - 对话边界域：45
 - 跨域：3
@@ -10439,6 +10454,7 @@
 - API-008: 缺必填 @RequestParam / 参数类型不符 ⇒ 400 + 字段名（不是 500），且处理器分支台账双向一致（#5982）
 - BM-008: 黄金策唤出授权门（按权限码）- 管理员默认可唤；未授权员工明确「需要管理员授权」+ 可行动引导
 - BM-009: 管理面手机端 4 项（智能派单 / 入库过账 / 售后处理 / 计件工资报表）- h5 可用 + 权限双面 + 写动作护栏 + 与 PC 同源
+- BM-046: 手机端菜单 = 服务端按岗位投影（「我的」入口 + 「数据」生产待办块）；菜单拉不到 ⇒ 显式态，不照显
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）
 - CH-030: C 端交互组件提交锁（防重复提交）—— confirm/choice/form 点选/提交后本地锁卡，已答消息携带 interactiveAnswered，历史回放后不复活

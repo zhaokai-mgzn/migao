@@ -21,9 +21,15 @@
  *        路由守卫都已是读码（#5291 漏改）。**可见性零变化**：持 `production:view` 的岗位集合与
  *        持 `processing:manage` 的集合逐值相等（admin + operator，见 `RegistrationService` 种子 /
  *        `V129__backfill_domain_read_permissions.sql` 回填谓词 / `RoleService` 回退三处一致）。
- * - 🔴 端侧**只读服务端下发的权限集合**（`GET /api/auth/me` 的 `permissions`），**不自己发明码**；
- *   集合**未知**（拉取失败）⇒ 一律按「可能有」处理（fail-open），把判定交给服务端 403 + 显式文案
- *   —— 静默隐藏入口是 #5642 明令禁止的形态。
+ * - 🔴 **菜单可见性已不在本文件**（issue #6570，用户 2026-10-08 裁定「走 B」）：手机端菜单改由**服务端按岗位
+ *   投影**（`GET /api/auth/me` 的 `mobileSurfaces`，服务端 `MobileSurfaces.visibleFor` 按生效权限集合过滤），
+ *   端侧**只渲染服务端给的面**；拿不到菜单 ⇒ 显式说「菜单没加载出来 + 重试」（`useMobileMenu` 的三态）。
+ *   旧口径（端侧拿 `permissions` 自己判码 + **未知照显**）已退场 —— 它的实际形态是「员工看到自己
+ *   没有的入口，点进去逐项 403」（issue #6570 的线上读数：客服/财务在「数据」页还看到一块
+ *   「无权限查看生产待办」的噪音）。
+ * - 本文件保留的是**面 → 端点码台账**（写动作判权 + 拒绝文案 + BM-009 与后端注解的逐值比对）。
+ * - 🔴 写动作判权仍按「集合未知 ⇒ 判真」（fail-open）：判定权威在服务端 403 + 显式文案 ——
+ *   静默隐藏**按钮**同样是 #5642 禁止的形态。
  */
 /** 4 个管理面的键（顺序 = 「我的」页入口顺序） */
 export type AdminSurfaceKey = 'pool' | 'inbound' | 'after-sales' | 'piecework'
@@ -117,7 +123,7 @@ export function findAdminSurface(key: AdminSurfaceKey): AdminSurface {
  * 权限集合判定（**唯一入口**）。
  *
  * `'*'` = 通配（服务端给管理员的超权标记，`RoleService` 的 `["*"]` 口径）⇒ 一律判真；
- * 集合缺失/非数组 ⇒ 判假（调用方据「未知」另作处置，见 `canOpenAdminSurface`）。
+ * 集合缺失/非数组 ⇒ 判假（调用方据「未知」另作处置，见 `canWriteAdminSurface` 的三态口径）。
  */
 export function hasPermissionCode(
   permissions: string[] | null | undefined,
@@ -125,21 +131,6 @@ export function hasPermissionCode(
 ): boolean {
   if (!Array.isArray(permissions)) return false
   return permissions.includes('*') || permissions.includes(code)
-}
-
-/**
- * 能否打开该管理面。
- *
- * 🔴 集合**未知**（`null`，`/api/auth/me` 还没回来或失败）⇒ **判真**（fail-open）：
- * 端侧集合只用于「确定无权时不出入口」，判定权威在服务端（403 + 显式文案），
- * 拿「未知」当「无权」就是 #5642 点名的静默隐藏。
- */
-export function canOpenAdminSurface(
-  permissions: string[] | null | undefined,
-  key: AdminSurfaceKey,
-): boolean {
-  if (permissions === null || permissions === undefined) return true
-  return hasPermissionCode(permissions, findAdminSurface(key).readPermission)
 }
 
 /** 能否执行该面的写动作（无写动作的面恒真；集合未知 ⇒ 判真，同上） */
@@ -168,13 +159,6 @@ export function missingPermissionText(
     return `无「${surface.label}」${surface.writeActionLabel || '操作'}权限（需要权限码 ${surface.writePermission}）`
   }
   return `无「${surface.label}」查看权限（需要权限码 ${surface.readPermission}）`
-}
-
-/** 「我的」页要显示的入口（集合未知 ⇒ 全部显示，见 `canOpenAdminSurface`） */
-export function visibleAdminSurfaces(
-  permissions: string[] | null | undefined,
-): AdminSurface[] {
-  return ADMIN_SURFACES.filter((surface) => canOpenAdminSurface(permissions, surface.key))
 }
 
 // ══════════════════════════════════════════════════════════════════════════

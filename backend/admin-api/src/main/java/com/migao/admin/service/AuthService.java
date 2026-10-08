@@ -912,6 +912,8 @@ public class AuthService {
                     // ⚠️ 平台超管的 tenantId 是 -1（不对应任何租户）⇒ `aiService` 按「未启用」处理
                     //    （它不该看某个租户的 AI 接入指标；与"宁可不显示"的保守策略一致）。
                     .capabilities(capabilitiesOf(permissions, -1L))
+                    // 手机端菜单（issue #6570）：平台超管恒持 "*" ⇒ 全给（走通配，不是特例分支）
+                    .mobileSurfaces(mobileSurfacesOf(permissions))
                     .build();
         }
 
@@ -955,7 +957,26 @@ public class AuthService {
                 // 黄金策唤出能力位（issue #5642）：唯一判定 = `AdminGate.canSummonMibao`
                 // （"*" 通配 ⇒ 管理员自动落入 ⇒ 既有行为零回归；被显式授权的员工也落入）
                 .capabilities(capabilitiesOf(permissions, user.getTenantId()))
+                // 手机端菜单（issue #6570，用户 2026-10-08 裁定「走 B」）：**服务端按岗位投影，端侧零口径**
+                .mobileSurfaces(mobileSurfacesOf(permissions))
                 .build();
+    }
+
+    /**
+     * 手机端可见面（issue #6570）—— **服务端投影的唯一入口**。
+     *
+     * <p>真值链：本方法 → {@link MobileSurfaces#visibleFor}（面 → 码）→ 生效权限集合
+     * （{@code RoleService.getUserPermissions}／平台超管的 {@code "*"}）。端侧（bmini）只渲染
+     * 这里给的面，**不再自己拿 permissions 判菜单**（旧口径的 fail-open 与线上读数见 issue #6570）。</p>
+     */
+    private List<UserInfoResponse.MobileSurface> mobileSurfacesOf(List<String> permissions) {
+        return MobileSurfaces.visibleFor(permissions).stream()
+                .map(surface -> UserInfoResponse.MobileSurface.builder()
+                        .key(surface.key())
+                        .title(surface.title())
+                        .route(surface.route())
+                        .build())
+                .toList();
     }
 
     /**
