@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, FolderTree, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { AlertCircle, ChevronDown, FolderTree, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button, Modal } from '@/components/ui'
@@ -148,6 +148,8 @@ function ProcessingContent() {
   const [combinations, setCombinations] = useState<FeeCombinationsResponse | null>(null)
   const [gaps, setGaps] = useState<FeeGaps | null>(null)
   const [gapsError, setGapsError] = useState('')
+  // issue #6532：缺口明细**默认折叠**（常驻面只留一行摘要）—— 页面高度不随未定价组合数增长。
+  const [gapsExpanded, setGapsExpanded] = useState(false)
   const [feesLoading, setFeesLoading] = useState(true)
   const [feesError, setFeesError] = useState('')
 
@@ -689,13 +691,37 @@ function ProcessingContent() {
             )}
           </section>
 
-          {/* ── 次区：未定价缺口（只读告警，不是第二块主操作区）── */}
+          {/* ── 次区：未定价缺口（只读告警，不是第二块主操作区）──
+              issue #6532（研发模式 §31 P1 常驻面克制）：常驻面 = **一行**（标题 + 计数 + 开关），
+              逐条明细**默认折叠且折叠态不渲染** ⇒ 这一段的高度不随未定价组合数增长。
+              空态 / 错误态照旧常驻可见（不因折叠把「没有缺口」藏起来）。 */}
           <section className="rounded-lg border border-amber-200 bg-amber-50/40" data-testid="fee-gaps">
-            <div className="flex items-center justify-between border-b border-amber-100 px-4 py-3">
+            <div
+              className={cn(
+                'flex items-center justify-between px-4 py-3',
+                (gapsError || gapRows.length === 0 || gapsExpanded) && 'border-b border-amber-100',
+              )}
+            >
               <h2 className="text-sm font-medium text-amber-900">未定价组合（订单里出现过、但这里没有价）</h2>
-              <span className="text-sm text-amber-800" data-testid="fee-gaps-total">
-                {gapRows.length}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-amber-800" data-testid="fee-gaps-total">
+                  {gapRows.length}
+                </span>
+                {!gapsError && gapRows.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setGapsExpanded((v) => !v)}
+                    aria-expanded={gapsExpanded}
+                    data-testid="fee-gaps-toggle"
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-amber-800 transition-colors hover:bg-amber-100 hover:text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+                  >
+                    {gapsExpanded ? '收起' : `查看 ${gapRows.length} 条明细`}
+                    <ChevronDown
+                      className={cn('h-3.5 w-3.5 transition-transform', gapsExpanded && 'rotate-180')}
+                    />
+                  </button>
+                ) : null}
+              </div>
             </div>
             {gapsError ? (
               <div className="p-4 text-sm text-amber-800" data-testid="fee-gaps-unavailable">
@@ -705,8 +731,8 @@ function ProcessingContent() {
               <div className="p-4 text-sm text-amber-800" data-testid="fee-gaps-empty">
                 没有未定价组合（当前成交的选配组合都已定价）。
               </div>
-            ) : (
-              <ul className="divide-y divide-amber-100">
+            ) : gapsExpanded ? (
+              <ul className="max-h-56 divide-y divide-amber-100 overflow-y-auto">
                 {gapRows.map((gap) => (
                   <li key={gap.composition_key} className="px-4 py-3" data-testid={`fee-gap-${gap.composition_key}`}>
                     <div className="flex items-center justify-between">
@@ -721,7 +747,7 @@ function ProcessingContent() {
                   </li>
                 ))}
               </ul>
-            )}
+            ) : null}
           </section>
         </div>
       )}

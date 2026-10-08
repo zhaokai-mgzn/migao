@@ -8,7 +8,8 @@
 // ③ 护栏理由**逐条**展示：按**真实信封** `error.details[].message` 读（不读不存在的 `error_messages`）；
 //    同一组合重复定价（409）也要给出可读理由，不得只弹「保存失败」；
 // ④ 空组合**本地先拦**（不发无效请求）；
-// ⑤ 缺口区：未定价组合（`GET /processing-fee-gaps`）逐条可见；
+// ⑤ 缺口区：未定价组合（`GET /processing-fee-gaps`）**默认折叠**（一行摘要 + 按需展开，含出现次数），
+//    折叠态下逐条 DOM **不渲染**（issue #6532，研发模式 §31 P1 常驻面克制）；空态行为不变。
 // ⑥ 改单价走 `PUT /{id}`（body 只有 unit_price）、停用走 `DELETE /{id}`（二次确认后）；
 // ⑦ 侧边栏入口（生产管理组）指向本页。
 // 反 placeholder：断言落**真实数据行**与**请求体**，不断言「页面存在」。
@@ -243,14 +244,43 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
     expect(mockCreateFeeCombination).not.toHaveBeenCalled()
   })
 
-  it('缺口区：未定价组合逐条可见（含出现次数），不是只显示条数', async () => {
+  // issue #6532（研发模式 §31 P1）：缺口区常驻面 = **一行**（标题 + 计数 + 开关），逐条明细按需展开。
+  it('缺口区：默认折叠 —— 逐条明细**不渲染**（不是 CSS 隐藏），一行摘要仍给条数', async () => {
     render(<ProcessingPage />)
     await waitFor(() => expect(screen.getByTestId('fee-gaps-total')).toHaveTextContent('1'))
 
+    // 折叠态下逐条 DOM 取不到 —— 这才是「不占屏」的机器读数
+    expect(screen.queryByTestId('fee-gap-定型+韩褶')).not.toBeInTheDocument()
+    const toggle = screen.getByTestId('fee-gaps-toggle')
+    expect(toggle).toHaveTextContent('查看 1 条明细')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('缺口区：点开关 ⇒ 逐条出现（项名 + 出现次数）；再点收起 ⇒ 消失', async () => {
+    render(<ProcessingPage />)
+    await waitFor(() => expect(screen.getByTestId('fee-gaps-total')).toHaveTextContent('1'))
+
+    await userEvent.click(screen.getByTestId('fee-gaps-toggle'))
     const gap = screen.getByTestId('fee-gap-定型+韩褶')
     expect(within(gap).getByTestId('fee-gap-items-定型+韩褶')).toHaveTextContent('韩褶')
     expect(within(gap).getByTestId('fee-gap-items-定型+韩褶')).toHaveTextContent('定型')
-    expect(within(gap).getByTestId('fee-gap-order-count-定型+韩褶')).toHaveTextContent('3')
+    expect(within(gap).getByTestId('fee-gap-order-count-定型+韩褶')).toHaveTextContent('订单出现 3 次')
+    expect(screen.getByTestId('fee-gaps-toggle')).toHaveAttribute('aria-expanded', 'true')
+
+    await userEvent.click(screen.getByTestId('fee-gaps-toggle'))
+    expect(screen.queryByTestId('fee-gap-定型+韩褶')).not.toBeInTheDocument()
+    expect(screen.getByTestId('fee-gaps-toggle')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('缺口区：没有未定价组合 ⇒ 仍是空态文案，且不出现折叠开关', async () => {
+    mockGetFeeGaps.mockResolvedValue(
+      ok({ ...GAPS, unpriced_combinations: [], unpriced_combination_total: 0 }),
+    )
+    render(<ProcessingPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('fee-gaps-empty')).toHaveTextContent('没有未定价组合'),
+    )
+    expect(screen.queryByTestId('fee-gaps-toggle')).not.toBeInTheDocument()
   })
 
   it('改单价走 PUT /{id}（body 只有 unit_price）；停用走 DELETE /{id}（二次确认后）', async () => {
