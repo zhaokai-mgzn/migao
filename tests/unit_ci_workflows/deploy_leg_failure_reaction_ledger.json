@@ -1,52 +1,71 @@
 {
   "schema": "deploy-leg-failure-reaction-ledger/v1",
-  "what": "「腿级失败反应」（issue #6526 B）的登记表：`deploy-reconcile.yml` 的 `on.workflow_run.workflows` 里的**每一条腿**必须在这里登记 `name` + `rerun` + `reason`。**未登记即红**（新腿没进台账 ⇒ `scripts/deploy_leg_failure_reaction.sh` 当场非零退出并具名报出该腿；判据 = `tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py`，与 `on.workflow_run.workflows` 清单**双向相等**）。",
+  "what": "「腿级失败反应」（issue #6526 B）的登记表：`deploy-reconcile.yml` 的 `on.workflow_run.workflows` 里的**每一条腿**必须在这里登记 `name` + `rerun` + `reason`。与 `on.workflow_run.workflows` 清单**双向相等** ⇄ 判据 `tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py`。",
   "why": "三条部署腿的 `permissions` 只有 `contents: read` / `actions: read` ⇒ 失败**不出声**；唯一出声面是 `deploy-reconcile.yml` 的 `[deploy-watchdog]`（判的是**状态**「合并了但没上线」，宽限 N=2700s + cron 被节流到 2.5~8.6h）。⇒ 需要一条**事件驱动**的「**这一次 run 挂了**」出口。承载面选 `deploy-reconcile.yml`（它已经有 `workflow_run` 监听六条腿 + `issues: write` + `actions: write`）⇒ 零新增权限、零新增 mechanism 登记。",
-  "rerun_semantics": "`rerun=true` 只表示**允许自动重跑一次**（真正的触发条件还有两条：① `conclusion` 属失败类 ② `run_attempt == 1` ③ 失败日志里**没有**命中具名确定性闸门 —— 磁盘水位 / 不可恢复终态 / skip 自证 / C 端产物陈旧 / dependabot）。第二次仍失败 ⇒ **不**再自动重跑（与 #4767/#5814 的断路器语义一致；attempt 用 GitHub 自己的 `run_attempt`，**不自建计数器**）。",
+  "rerun_default_off": {
+    "decision": "2026-10-08 用户裁定（逐字「可以小改」）：**关掉自动重跑臂，只保留通知** —— `legs[].rerun` 六条**全部 `false`**。",
+    "how_to_flip_back": "**一行数据**：把目标腿的 `rerun` 改成 `true` 即可恢复自动重跑（脚本的逻辑一字未改，它只按这一列取值）。",
+    "not_a_feature_removal": {
+      "claim": "关掉的是**数据**，不是**功能** —— 功能仍在、且被**开关双向**判据钉住。",
+      "evidence": [
+        "tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py::test_rerun_arm_is_off_by_default_for_every_leg（真台账 = 六条全 false ⇒ 任何腿 attempt1 + 无闸门也**只通知、不重跑**）",
+        "tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py::test_flipping_a_leg_to_true_re_enables_the_rerun_arm（临时把某腿翻 `true` ⇒ 同一场景**重跑臂重新生效**：`gh run rerun <id> --failed` 被发起）",
+        "tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py::test_state1_failure_attempt1_no_gate_reruns_and_notifies（⇐ 它现在**以临时启用台账**驱动，否则会退化成空断言）"
+      ],
+      "recompute": "python3 -m pytest tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py -q -k \"rerun\""
+    }
+  },
+  "rerun_semantics": "`rerun=true` 只表示**允许自动重跑一次**（真正的触发条件还有三条：① `conclusion` 属失败类 ② `run_attempt == 1` ③ 失败日志里**没有**命中具名确定性闸门 —— 磁盘水位 / 不可恢复终态 / skip 自证 / C 端产物陈旧 / dependabot）。第二次仍失败 ⇒ **不**再自动重跑（与 #4767/#5814 的断路器语义一致；attempt 用 GitHub 自己的 `run_attempt`，**不自建计数器**）。🔴 **当前六条全 `false`** ⇒ 210~③ 三条前置条件都够不着：本台账现在是**只通知**。",
+  "rerun_flip_conditions": "每条腿的**重启条件**逐条写在 `legs[].reason` 里：谁要恢复自动重跑 ⇔ 改它那一行的 `rerun` 为 `true`。功能面未删（见 `rerun_default_off.not_a_feature_removal`）；⚠️ 但**放开哪一条腿**要连带确认那条腿的重跑是**幂等且安全**的（发布腿重跑 = 重新发布一次；镜像腿重跑 = 重新构建部署一次）。",
+  "red_ownership": "⚠️ **判红归属（2026-10-08 订正）**：`scripts/deploy_leg_failure_reaction.sh` 对「该腿未登记」以**非零退出**表态，但 `deploy-reconcile.yml` 的**薄壳步**把它的非零 rc **吞成 `::warning::` + `exit 0`**（那条吞错语义是**有意**的：反应步自身**不得**让 reconcile job 判红，issue #6526 B）。⇒ **「未登记即红」由 PR 面的 `tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py::test_unregistered_leg_is_red`（连同 `test_mutation_dropping_one_ledger_row_is_detected`）承担，workflow 运行期**不会**因此判红**（运行期只有 `::warning::` + 本台账口径）。不要把这条读成「workflow 层会判红」。",
   "legs": [
     {
       "name": "Build and Deploy frontend (admin-web)",
-      "rerun": true,
-      "reason": "镜像腿（构建 + 服务器侧部署）。失败 = 这个 commit 的 admin-web 没上线 ⇒ 重跑一次是安全的（`concurrency: cancel-in-progress: false` 下至多排队，不会互踩）。"
+      "rerun": false,
+      "reason": "**本轮按用户 2026-10-08 裁定：只通知、不自动重跑**（原口径是允许重跑一次）。背景（恢复时仍成立）：镜像腿（构建 + 服务器侧部署），失败 = 这个 commit 的 admin-web 没上线；`concurrency: cancel-in-progress: false` 下重跑至多排队、不会互踩。**重启条件**：本腿恢复自动重跑 ⇔ 把本行的 `rerun` 改成 `true`（改这一行数据即可，脚本逻辑一字未动）。"
     },
     {
       "name": "Build and Deploy admin-api",
-      "rerun": true,
-      "reason": "同 frontend（镜像腿）。网络 RST 类瞬时失败重跑一次就能收敛 —— 这正是 issue #6526 要治的形态。"
+      "rerun": false,
+      "reason": "**本轮按用户 2026-10-08 裁定：只通知、不自动重跑**（原口径是允许重跑一次）。背景：同 frontend（镜像腿）；网络 RST 类瞬时失败重跑一次通常就能收敛 —— 这正是 issue #6526 要治的形态，**若日后重启**，本腿是最先该考虑恢复的一条。**重启条件**：把本行的 `rerun` 改成 `true`。"
     },
     {
       "name": "Build and Deploy ai-agent-service",
-      "rerun": true,
-      "reason": "同 frontend（镜像腿）。"
+      "rerun": false,
+      "reason": "**本轮按用户 2026-10-08 裁定：只通知、不自动重跑**（原口径是允许重跑一次）。背景：同 frontend（镜像腿）。**重启条件**：把本行的 `rerun` 改成 `true`。"
     },
     {
       "name": "Publish worker-h5 (app.migaozn.com/w/)",
-      "rerun": true,
-      "reason": "静态落地面腿（无镜像；`workflow_dispatch` 面没有人工闸 ⇒ dispatch/rerun 会**真的发布**）。远端脚本先建 stage 再整份覆盖、**不对静态根清空** ⇒ 重跑幂等（同 `publish_leg_fallback_ledger.json` 的 `schedule_safety` 口径）。"
+      "rerun": false,
+      "reason": "**本轮按用户 2026-10-08 裁定：只通知、不自动重跑**（原口径是允许重跑一次）。背景：静态落地面腿（无镜像；`workflow_dispatch` 面没有人工闸 ⇒ dispatch/rerun 会**真的发布**），远端脚本先建 stage 再整份覆盖、**不对静态根清空** ⇒ 重跑幂等（同 `publish_leg_fallback_ledger.json` 的 `schedule_safety` 口径）。**重启条件**：把本行的 `rerun` 改成 `true`——但要连同确认「这条腿重跑 = 再发布一次」是可接受的。"
     },
     {
       "name": "Publish bmini h5 (app.migaozn.com/b/)",
-      "rerun": true,
-      "reason": "同 worker-h5（静态落地面腿，重跑幂等）。注意：它的**登录**是承重态（把产物装进传输镜像推到 ACR）⇒ `scripts/acr_login.sh --fatal`。"
+      "rerun": false,
+      "reason": "**本轮按用户 2026-10-08 裁定：只通知、不自动重跑**（原口径是允许重跑一次）。背景：同 worker-h5（静态落地面腿，重跑幂等）；注意它的**登录**是承重态（把产物装进传输镜像推到 ACR）⇒ `scripts/acr_login.sh --fatal`。**重启条件**：把本行的 `rerun` 改成 `true`（同样要确认「重跑 = 再发布一次」可接受）。"
     },
     {
       "name": "Publish C-end H5 (app.migaozn.com 根)",
       "rerun": false,
-      "reason": "**禁止自动重跑**：本腿的发布步骤只在 `workflow_dispatch` **且** `inputs.publish == 'true'` 时执行 —— 发布由**人手动**触发（用户 2026-09-27 裁定 B，见 `.github/workflows/c-end-h5-publish.yml` 的 Manual gate 与 `publish_leg_fallback_ledger.json` 的 `c-end-h5` 条）。自动重跑不会有任何发布效果，只会再判一次「Manual gate」红 ⇒ 纯噪声；失败仍**照常通知**。"
+      "reason": "**本轮按用户 2026-10-08 裁定：只通知、不自动重跑**。**这一条即使将来放开**也有独立的**更硬**理由阻止自动重跑：本腿的发布步骤只在 `workflow_dispatch` **且** `inputs.publish == 'true'` 时执行 —— 发布由**人手动**触发（用户 2026-09-27 裁定 B，见 `.github/workflows/c-end-h5-publish.yml` 的 Manual gate 与 `publish_leg_fallback_ledger.json` 的 `c-end-h5` 条）。自动重跑不会有任何发布效果，只会再判一次「Manual gate」红 ⇒ 纯噪声；失败仍**照常通知**。**重启条件（本腿特有）**：不止改 `rerun=true`，还必须先改变「发布由人手动」这条裁定，否则重跑只是噪声。"
     }
   ],
   "coverage_boundary": [
     {
       "face": "「重跑也没用」的**非具名**失败（例如代码本身编译不过）",
-      "reason": "本脚本只按**具名确定性闸门**（5 类，锚点逐条写在 `GATES` 里）抑制重跑；一个不在名单里的确定性失败仍会被重跑一次（第二次失败后不再重跑）。这是**有意**的取舍：名单外的失败**不可静态判定**是不是确定性的，宁可多跑一次也不要把「瞬时失败」漏掉。"
+      "reason": "本脚本只按**具名确定性闸门**（5 类，锚点逐条写在 `GATES` 里）抑制重跑；一个不在名单里的确定性失败仍会被重跑一次（第二次失败后不再重跑）。这是**有意**的取舍：名单外的失败**不可静态判定**是不是确定性的，宁可多跑一次也不要把「瞬时失败」漏掉。⚠️ **当前六条腿 `rerun:false` ⇒ 这一面暂时够不着**（没有任何腿会自动重跑），但判据与闸门检出**保留在射程内**（开关双向用例覆盖）。"
     },
     {
       "face": "重跑**真的被 GitHub 接受**与否",
-      "reason": "`gh run rerun` 会因 `actions: write` 缺失 / run 太旧（>30 天）而失败 —— 脚本把非零返回写成 `**自动重跑尝试失败**` 进通知正文 + `::warning::`，不判红。"
+      "reason": "`gh run rerun` 会因 `actions: write` 缺失 / run 太旧（>30 天）而失败 —— 脚本把非零返回写成 `**自动重跑尝试失败**` 进通知正文 + `::warning::`，不判红。⚠️ 当前 `rerun:false` ⇒ 这一面也暂时够不着。"
     },
     {
       "face": "本脚本**不判线上状态**、**不关** `[deploy-watchdog]` 的单",
       "reason": "分工写在脚本文件头：`[deploy-watchdog]` 判「合并了但没上线」（状态），本出口判「这一次 run 挂了」（事件）。两者各自零点火线，互不代关。"
+    },
+    {
+      "face": "「未登记即红」在**运行期**判不了（只有 PR 面判）",
+      "reason": "见 `red_ownership`：薄壳步把脚本的非零 rc 吞成 `::warning::` + `exit 0`（**有意**语义）。⇒ 运行期只看得到 warning；红由 PR 面的 `test_unregistered_leg_is_red` 承担。**不改薄壳步**。"
     }
   ]
 }

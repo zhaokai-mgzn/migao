@@ -25,10 +25,19 @@ r"""腿级失败反应守卫 —— issue #6526 B（**这一次 run 挂了** ⇒
 |---|---|---|
 | 1 | 反应步**接线在**：`if` 含 `always()` 与 `workflow_run`；`${{ }}` 一律走 `env:` | 把事件判据写进正文 / 去掉 `always()` ⇒ 红 |
 | 2 | 四态逐条（**执行式**，桩 `gh` + fixture 日志）：① 失败+attempt1+无闸门 ⇒ 重跑+通知 ② 失败+attempt2 ⇒ 只通知 ③ 失败+attempt1+**具名闸门**（逐条各一个 fixture）⇒ 不重跑但仍通知 ④ success ⇒ 只清零 | 任一臂被摘掉 ⇒ 对应场景红 |
-| 3 | 台账 ⇄ `on.workflow_run.workflows` **双向相等**，且 `c-end-h5` 的 `rerun=false` | 新腿没进台账 / 台账多一条 / c-end-h5 被改成 true ⇒ 红 |
+| 3 | 台账 ⇄ `on.workflow_run.workflows` **双向相等**，且**六条腿全 `rerun=false`**（用户 2026-10-08 裁定：只通知、不自动重跑） | 新腿没进台账 / 台账多一条 / 有人把某条腿悄悄翻成 true ⇒ 红 |
+| 3b | **开关双向**：① 真台账（六条全 false）⇒ 任何腿 attempt1 + 无闸门也**只通知、不重跑**；② 临时把某腿翻 `true` ⇒ **重跑臂重新生效** | 把「关掉」做成「删掉功能」（翻 true 也不重跑）⇒ 红；或「检查」退化成恒真 ⇒ 红 |
 | 4 | 台账**未登记即红**（脚本非零）+ 底座脚本缺失时反应步**弃权不红** | 台账被删 / 脚本被删后判红 ⇒ 红 |
 | 5 | **判别力自证**：内存变异（摘掉重跑臂 / 摘掉通知臂 / 台账删一行 / 把 `source` 行改回 4 次）**各自判红**；**只改注释 ⇒ 不红** | 判据退化成空断言 ⇒ 红 |
 | 6 | 反应步**绝不许**让对账 job 判红（脚本缺失 / 非零退出都被 `::warning::` 吞掉） | 有人在薄壳里去掉那层兜底 ⇒ 红 |
+
+## 🔴 判红归属（2026-10-08 订正，别读错）
+
+`scripts/deploy_leg_failure_reaction.sh` 对「该腿未登记」以**非零退出**表态，但 `deploy-reconcile.yml` 的
+**薄壳步**把它的非零 rc **吞成 `::warning::` + `exit 0`** —— 那条吞错语义是**有意**的（反应步自身
+**不得**让 reconcile job 判红，issue #6526 B）⇒ **「未登记即红」由本文件（PR 面）承担，
+workflow 运行期不会因此判红**。承载判据：`test_unregistered_leg_is_red` +
+`test_mutation_dropping_one_ledger_row_is_detected`。**不改薄壳步的吞错语义。**
 
 ## 边界（照实登记）
 
@@ -56,6 +65,7 @@ LEDGER = REPO_ROOT / "tests/unit_ci_workflows" / "deploy_leg_failure_reaction_le
 BASH = "/bin/bash"
 
 STEP_NAME = "腿级失败反应（workflow_run ⇒ 出声 + 首次自动重跑一次）"
+RUN_ID = "999"        # `React` 固定的桩 run id（重跑读数一律断言 `run rerun 999 …`）
 STATE_SCRIPT = "scripts/deploy_reconcile_state.sh"
 C_END_LEG = "Publish C-end H5 (app.migaozn.com 根)"
 
@@ -239,16 +249,49 @@ def test_ledger_matches_workflow_run_legs_bidirectionally():
         assert l.get("reason"), f"台账条目 `{l.get('name')}` 缺理由（为什么是这个 rerun 值）"
 
 
-def test_c_end_h5_never_autoreruns():
-    """`Publish C-end H5` 的 `rerun` 必须是 `false`（发布由人手动，用户 2026-09-27 裁定 B）。"""
-    entry = {l["name"]: l for l in ledger()["legs"]}[C_END_LEG]
-    assert entry["rerun"] is False, (
-        f"`{C_END_LEG}` 的发布只在 `workflow_dispatch` + `inputs.publish=='true'` 时发生"
-        "（用户 2026-09-27 裁定 B：发布由人手动）⇒ 自动重跑没有任何发布效果，只能刷噪声"
+def test_ledger_is_all_rerun_false_by_default():
+    """用户 2026-10-08 裁定：**六条腿全部 `rerun:false`**（只通知、不自动重跑）。"""
+    pairs = [(l["name"], l["rerun"]) for l in ledger()["legs"]]
+    assert len(pairs) == 6, f"台账应登记六条腿（现取 {len(pairs)}）"
+    assert all(r is False for _n, r in pairs), (
+        "台账里有腿的 `rerun` 不是 `false` —— 用户 2026-10-08 裁定为**关掉自动重跑臂、只保留通知**"
+        f"（现取 {pairs}）。要放开某条腿 ⇔ 改它那一行数据为 `true`（见台账 `rerun_default_off`）。"
     )
-    others = [l["name"] for l in ledger()["legs"] if l["name"] != C_END_LEG]
-    assert all({l["name"]: l for l in ledger()["legs"]}[n]["rerun"] is True for n in others), (
-        f"其余五条腿应为 rerun=true（现取 {[(l['name'], l['rerun']) for l in ledger()['legs']]}）"
+
+
+def test_ledger_records_who_closed_it_and_how_to_flip_back():
+    """关掉这件事本身要有**承载体**：谁/何时/为什么 + 怎么一行翻回来 + 「不是删功能」的证据指向。"""
+    d = ledger()["rerun_default_off"]
+    assert d.get("decision"), "台账缺 `rerun_default_off.decision`（谁在什么时候为什么关）"
+    assert "2026-10-08" in d["decision"] and "只保留通知" in d["decision"], (
+        f"`decision` 必须逐字记下裁定日期与口径（现取 {d.get('decision')!r}）"
+    )
+    assert d.get("how_to_flip_back"), "缺 `how_to_flip_back`（怎么翻回来：一行数据）"
+    assert "一行" in d["how_to_flip_back"] or "`rerun`" in d["how_to_flip_back"], (
+        f"`how_to_flip_back` 必须说明「改哪一行数据」→ {d.get('how_to_flip_back')!r}"
+    )
+    ev = d.get("not_a_feature_removal") or {}
+    assert ev.get("claim") and ev.get("evidence") and ev.get("recompute"), (
+        "缺「这不是删功能」的声明 / 证据指向 / 复算命令"
+    )
+    for item in ev["evidence"]:
+        name = item.split("::")[-1].split("（")[0].strip()
+        assert f"def {name}(" in Path(__file__).read_text(encoding="utf-8"), (
+            f"`not_a_feature_removal.evidence` 指向的判据 `{name}` 在本文件里不存在（台账给不存在的判据盖章 ⇒ 红）"
+        )
+
+
+def test_ledger_pins_down_who_owns_the_red():
+    """判红归属必须与事实一致：**未登记即红 = PR 面判据**，workflow 层的薄壳步吞错（有意）。"""
+    own = ledger()["red_ownership"]
+    assert "薄壳步" in own and "吞" in own, (
+        "台账必须写明 workflow 薄壳步把非零 rc 吞成 warning（不要把这条读成「workflow 层会判红」）"
+    )
+    assert "test_unregistered_leg_is_red" in own, "必须指明承担这条红的判据名（PR 面）"
+    # 与 workflow 事实对账（现取正文，不看记忆）
+    body = reaction_body()
+    assert re.search(r"deploy_leg_failure_reaction\.sh \|\| \{", body) and "exit 0" in body, (
+        "workflow 薄壳步的吞错语义不见了？台账的 `red_ownership` 与正文对不上 ⇒ 红"
     )
 
 
@@ -274,6 +317,27 @@ def make_stub(tmp_path: Path) -> tuple[Path, Path]:
     gh.write_text(GH_STUB, encoding="utf-8")
     gh.chmod(0o755)
     return bin_dir, gh
+
+
+def ledger_with(tmp_path: Path, *, enable: tuple[str, ...] = ()) -> Path:
+    """真台账的**临时副本**，把 `enable` 点名的腿翻成 `rerun: true`（其余保持真值）。
+
+    🔴 为什么必须有它（**判别力**）：用户 2026-10-08 裁定后**真台账六条全是 `false`**
+    ⇒ 「重跑臂」在真语料上**根本不会被触发**。若用例仍拿真台账跑「attempt1 + 无闸门 ⇒ 重跑」，
+    那条断言会**永远绿**（不管是重跑臂在不在）—— 那就是空断言。
+    ⇒ 凡是要验**重跑臂本身**的用例，一律用本函数**临时启用**被测腿；默认值那一条由
+    `test_rerun_arm_is_off_by_default_for_every_leg` 单独用**真台账**判。
+    """
+    d = json.loads(LEDGER.read_text(encoding="utf-8"))
+    for leg in d["legs"]:
+        if leg["name"] in enable:
+            leg["rerun"] = True
+    out = tmp_path / "ledger_override.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    # ⚠️ **必须 `indent=2`**：脚本的台账解析锚在「腿对象字段缩进 6 空格」上（见 `read_ledger`）；
+    #    紧凑 JSON（无缩进）会被读成空表 ⇒ 判据当场红（这正是这条依赖的形态）。
+    out.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out
 
 
 class React:
@@ -319,6 +383,16 @@ class React:
         return any(needle in c for c in self.gh_calls)
 
     @property
+    def rerun_requested(self) -> bool:
+        """是否**发起过**自动重跑（`gh run rerun <id> …`）。"""
+        return self.ran(f"run rerun {RUN_ID}")
+
+    @property
+    def notified(self) -> bool:
+        """是否**开过/更过**值守单（`issue create` / `issue comment`）。"""
+        return self.ran("issue create") or self.ran("issue comment")
+
+    @property
     def opened(self) -> list:
         if not self.issues.exists():
             return []
@@ -329,46 +403,61 @@ class React:
         return self.proc.stdout + self.proc.stderr
 
 
+LEG = "Build and Deploy admin-api"
+
+
 def test_state1_failure_attempt1_no_gate_reruns_and_notifies(tmp_path):
-    """① 失败类 + attempt1 + 日志无确定性闸门 ⇒ **重跑 + 通知**。"""
-    r = React(tmp_path, conclusion="failure", attempt="1",
-              log_text="普通失败：npm ci 超时\n")
+    """① 失败类 + attempt1 + 日志无确定性闸门 + 该腿**被临时启用** ⇒ **重跑 + 通知**。
+
+    ⚠️ 用 `ledger_with(enable=(LEG,))` 而不是真台账（真台账现在六条全 `false`，见
+    `test_rerun_arm_is_off_by_default_for_every_leg`）—— 否则这条用例会退化成空断言。
+    """
+    led = ledger_with(tmp_path, enable=(LEG,))
+    r = React(tmp_path / "run", conclusion="failure", attempt="1",
+              log_text="普通失败：npm ci 超时\n", ledger_path=led)
     assert r.proc.returncode == 0, f"反应步必须 rc=0（不许判红）→ {r.proc.returncode}\n{r.out}"
-    assert r.ran("run rerun 999"), f"没发起自动重跑 → {r.gh_calls}"
-    assert r.ran("issue create"), f"没开值守单 → {r.gh_calls}"
+    assert r.rerun_requested, f"该腿已临时启用 rerun=true，却没发起自动重跑 → {r.gh_calls}"
+    assert r.notified, f"没开值守单 → {r.gh_calls}"
     assert any("priority/P1" in c for c in r.gh_calls), f"值守单缺 priority/P1 → {r.gh_calls}"
     assert "已自动重跑一次" in r.out, f"动作行缺读数：{r.out!r}"
 
 
 def test_state2_failure_attempt2_notifies_but_never_reruns(tmp_path):
-    """② 失败类 + attempt2 ⇒ **只通知、不重跑**（自动重跑只做一次）。"""
-    r = React(tmp_path, conclusion="failure", attempt="2", log_text="普通失败\n")
+    """② 失败类 + attempt2（该腿**已被启用** ⇒ 唯一原因是 attempt 不是 1）⇒ **只通知、不重跑**。"""
+    led = ledger_with(tmp_path, enable=(LEG,))
+    r = React(tmp_path / "run", conclusion="failure", attempt="2",
+              log_text="普通失败\n", ledger_path=led)
     assert r.proc.returncode == 0, f"→ {r.proc.returncode}"
-    assert not r.ran("run rerun 999"), f"attempt2 仍重跑 ⇒ 断路器语义被破坏 → {r.gh_calls}"
-    assert r.ran("issue create"), f"仍必须通知 → {r.gh_calls}"
+    assert not r.rerun_requested, (
+        f"该腿 rerun=true、但 attempt2 仍重跑 ⇒ 断路器语义被破坏 → {r.gh_calls}"
+    )
+    assert r.notified, f"仍必须通知 → {r.gh_calls}"
     assert "不自动重跑" in r.out and "attempt" in r.out, f"动作行未说明原因：{r.out!r}"
 
 
 @pytest.mark.parametrize("label", sorted(GATE_LOGS))
 def test_state3_named_gate_suppresses_rerun_but_still_notifies(tmp_path, label):
     """③ 失败类 + attempt1 + 日志含**具名闸门** ⇒ **不重跑、但仍通知**（逐条 fixture）。"""
-    r = React(tmp_path, conclusion="failure", attempt="1", log_text=GATE_LOGS[label])
+    led = ledger_with(tmp_path, enable=(LEG,))   # 该腿**已启用** ⇒ 唯一原因是闸门
+    r = React(tmp_path / "run", conclusion="failure", attempt="1",
+              log_text=GATE_LOGS[label], ledger_path=led)
     assert r.proc.returncode == 0, f"{label}: → {r.proc.returncode}"
-    assert not r.ran("run rerun 999"), f"{label}: 命中具名闸门却仍重跑 → {r.gh_calls}"
-    assert r.ran("issue create"), f"{label}: 仍必须通知 → {r.gh_calls}"
+    assert not r.rerun_requested, f"{label}: rerun=true 且命中具名闸门却仍重跑 → {r.gh_calls}"
+    assert r.notified, f"{label}: 仍必须通知 → {r.gh_calls}"
     assert "命中具名确定性闸门" in r.out, f"{label}: 动作行缺闸门读数：{r.out!r}"
 
 
 def test_state4_success_clears_only(tmp_path):
     """④ success ⇒ **只清零**（不开单、不重跑）；已有开放单 ⇒ 评论 + 关闭。"""
     # 4a：无开放单 ⇒ 不开单、不评论、不重跑
-    r = React(tmp_path / "a", conclusion="success", attempt="2")
+    led = ledger_with(tmp_path, enable=(LEG,))   # 即使该腿被启用，success 也不该重跑
+    r = React(tmp_path / "a", conclusion="success", attempt="2", ledger_path=led)
     assert r.proc.returncode == 0, f"→ {r.proc.returncode}"
     assert not r.ran("issue create") and not r.ran("issue comment"), f"success 不该开单 → {r.gh_calls}"
-    assert not r.ran("run rerun 999"), f"success 不该重跑 → {r.gh_calls}"
+    assert not r.rerun_requested, f"success 不该重跑（即使 rerun=true）→ {r.gh_calls}"
     assert "无开放单需要清零" in r.out, f"{r.out!r}"
     # 4b：**先种一张开放单**（标题与腿名匹配）⇒ 必须评论清零说明 + 关闭（清零不靠人记得）
-    r2 = React(tmp_path / "b", conclusion="success", attempt="2")
+    r2 = React(tmp_path / "b", conclusion="success", attempt="2", ledger_path=led)
     r2.issues.write_text(
         "7\t[deploy-leg] Build and Deploy admin-api 部署失败（合并后未上线）\topen\n",
         encoding="utf-8")
@@ -405,9 +494,12 @@ def test_unregistered_leg_is_red(tmp_path):
                     encoding="utf-8")
     r = React(tmp_path / "run", conclusion="failure", attempt="1", log_text="boom\n",
               leg="Unregistered Leg", ledger_path=mini)
-    assert r.proc.returncode != 0, f"未登记的腿必须判红 → {r.proc.returncode}\n{r.out}"
+    # ⚠️ 判红**归属**：脚本对「未登记」非零退出，但 `deploy-reconcile.yml` 的薄壳步把非零 rc
+    #    吞成 `::warning::` + `exit 0`（**有意**语义，见台账 `red_ownership`）⇒ 运行期**不会**判红，
+    #    红由**本文件（PR 面）**承担。这里断言的是「脚本层会非零」（workflow 层另有吞错用例）。
+    assert r.proc.returncode != 0, f"未登记的腿必须由脚本非零表态 → {r.proc.returncode}\n{r.out}"
     assert "未登记" in r.out, f"必须具名报出是哪条腿：{r.out!r}"
-    assert not r.ran("run rerun 999"), f"未登记时不许有任何动作 → {r.gh_calls}"
+    assert not r.rerun_requested, f"未登记时不许有任何动作 → {r.gh_calls}"
 
 
 def test_rerun_false_leg_notifies_without_rerun(tmp_path):
@@ -467,30 +559,73 @@ def _mut_run(body: str, tmp_path: Path, *, ledger_text: str | None = None,
 
 
 def test_mutation_dropping_rerun_arm_is_detected(tmp_path):
-    """判据 5a：摘掉**重跑臂** ⇒ 「重跑发生了」这条读数**当场变红**（对变异后的脚本真跑一次）。"""
-    r = React(tmp_path / "real", conclusion="failure", attempt="1", log_text="普通失败\n")
-    assert r.ran("run rerun 999"), f"前置不成立：真语料上重跑臂没生效 → {r.gh_calls}"
-    # 变异：把 `_rerun_rc=0` 改成 `1`（= 旧形态：**失败不自愈**，只出声）
-    old = SCRIPT.read_text(encoding="utf-8")
-    broken = old.replace("  _rerun_rc=0\n", "  _rerun_rc=1\n", 1)
-    assert broken != old, "注入未生效：脚本里找不到重跑那一行"
-    variant = tmp_path / "no-rerun.sh"
-    variant.write_text(broken, encoding="utf-8")
-    env = r2_env(r)
-    env.update({"LEG_CONCLUSION": "failure", "LEG_ATTEMPT": "1"})
-    r.calls.unlink(missing_ok=True)   # 清掉真语料那一轮的读数（否则「摘掉后没有重跑」会被前一轮的记录掩盖）
-    proc = subprocess.run([BASH, str(variant)], env=env, capture_output=True, text=True, timeout=120)
-    assert proc.returncode == 0, f"反应步必须 rc=0 → {proc.returncode}"
-    calls = r.calls.read_text(encoding="utf-8")
-    assert "run rerun 999" not in calls, (
-        f"摘掉重跑臂后**仍**发起了重跑 ⇒ 「重跑发生了」那条判据是空断言 → {calls!r}"
+    """判据 5a：**把台账那一行翻回 `false`**（= 本次小改的形态）⇒ 「重跑发生了」这条读数**当场变红**。
+
+    这一次不是内存变异，而是**真实开关**：启用态的先跑一次（重跑发生）→ 关掉后同一场景再跑一次（不发生）。
+    ⇒ 它同时证明「重跑臂真的挂在台账那一行数据上」。
+    """
+    led = ledger_with(tmp_path / "on", enable=(LEG,))
+    r_on = React(tmp_path / "run_on", conclusion="failure", attempt="1",
+                 log_text="普通失败\n", ledger_path=led)
+    assert r_on.rerun_requested, f"前置不成立：启用态下重跑臂没生效 → {r_on.gh_calls}"
+
+    # 关掉 = 把台账那一行改回默认 `false`（真实数据变异，不改脚本）
+    d = json.loads(led.read_text(encoding="utf-8"))
+    d["legs"] = [dict(l, rerun=False) for l in d["legs"]]
+    off = tmp_path / "off" / "ledger_off.json"
+    off.parent.mkdir(parents=True, exist_ok=True)
+    off.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    r_off = React(tmp_path / "run_off", conclusion="failure", attempt="1",
+                  log_text="普通失败\n", ledger_path=off)
+    assert r_off.proc.returncode == 0, f"反应步必须 rc=0 → {r_off.proc.returncode}"
+    assert not r_off.rerun_requested, (
+        f"台账翻回 false 后**仍**发起了重跑 ⇒ 「关掉重跑臂」没生效 → {r_off.gh_calls}"
     )
-    assert "已自动重跑一次" not in (proc.stdout + proc.stderr), "动作行仍宣称已重跑 ⇒ 读数与事实不符"
+    assert r_off.notified, "关掉重跑臂**不等于**关掉通知 —— 仍必须出声"
+    assert "已自动重跑一次" not in r_off.out, "动作行仍宣称已重跑 ⇒ 读数与事实不符"
+
+
+@pytest.mark.parametrize("leg", [l["name"] for l in
+                                  json.loads(LEDGER.read_text(encoding="utf-8"))["legs"]])
+def test_rerun_arm_is_off_by_default_for_every_leg(tmp_path, leg):
+    """判据 3b①（**真台账**）：六条腿全部 `rerun:false` ⇒ 任何腿 attempt1 + 无闸门也**只通知、不重跑**。"""
+    r = React(tmp_path / leg.replace("/", "_").replace(" ", "_"), conclusion="failure",
+              attempt="1", log_text="普通失败：npm ci 超时\n", leg=leg)
+    assert r.proc.returncode == 0, f"{leg}: → {r.proc.returncode}"
+    assert not r.rerun_requested, (
+        f"{leg}: 真台账 `rerun=false` 却发起了自动重跑 → {r.gh_calls}"
+    )
+    assert r.notified, f"{leg}: 关掉重跑臂不等于关掉通知 —— 必须仍出声 → {r.gh_calls}"
+    assert "不自动重跑" in r.out and "rerun=false" in r.out, (
+        f"{leg}: 动作行必须说明原因（台账登记 rerun=false）→ {r.out!r}"
+    )
+
+
+def test_flipping_a_leg_to_true_re_enables_the_rerun_arm(tmp_path):
+    """判据 3b②（**开关双向**）：把某腿翻 `true` ⇒ 重跑臂**重新生效**（关掉的是数据，不是功能）。"""
+    common = dict(conclusion="failure", attempt="1", log_text="普通失败：npm ci 超时\n")
+    off = React(tmp_path / "off", **common)                      # 真台账
+    led_on = ledger_with(tmp_path / "on", enable=(LEG,))
+    on = React(tmp_path / "on_run", ledger_path=led_on, **common)  # 同一场景 + 翻 true
+
+    assert not off.rerun_requested, f"启用前不该重跑 → {off.gh_calls}"
+    assert on.rerun_requested, (
+        f"把 `{LEG}` 的 `rerun` 翻成 `true` 后重跑臂**没有**重新生效 ⇒ 要么功能被删、要么判据是空断言"
+        f" → {on.gh_calls}"
+    )
+    assert "已自动重跑一次" in on.out, f"启用后动作行应宣称已重跑：{on.out!r}"
+    # 两侧都通知（关掉重跑臂不影响出声面）
+    assert off.notified and on.notified, "两侧都必须通知"
+    # 逐字读数对照（写进 CI 日志，供人工复核开关确实只差台账那一行）
+    print(f"[switch] rerun=false ⇒ 重跑调用={off.rerun_requested} · rerun=true ⇒ 重跑调用={on.rerun_requested}")
 
 
 def test_rerun_refusal_is_reported_not_swallowed(tmp_path):
     """附加：`gh run rerun` 被拒（`actions: write` 不可用 / run 太旧）⇒ 进通知正文 + 不判红。"""
-    r = React(tmp_path, conclusion="failure", attempt="1", log_text="普通失败\n", rerun_fail=True)
+    led = ledger_with(tmp_path / "on", enable=(LEG,))   # 该腿启用，否则重跑臂根本不跑（空断言）
+    r = React(tmp_path / "run", conclusion="failure", attempt="1", log_text="普通失败\n",
+              ledger_path=led, rerun_fail=True)
     assert r.proc.returncode == 0, f"反应步必须 rc=0 → {r.proc.returncode}"
     assert "**自动重跑尝试失败**" in r.out, f"重跑被拒必须如实写在通知正文里：{r.out!r}"
     assert r.ran("issue create"), f"重跑被拒仍必须通知 → {r.gh_calls}"
@@ -499,7 +634,7 @@ def test_rerun_refusal_is_reported_not_swallowed(tmp_path):
 def test_mutation_dropping_notify_arm_is_detected(tmp_path):
     """判据 5b：摘掉**通知臂** ⇒ 调用记录里不再有 `issue create/comment`（判据 2 的读数锚）。"""
     r_normal = React(tmp_path / "normal", conclusion="failure", attempt="1", log_text="普通失败\n")
-    assert r_normal.ran("issue create"), "前置不成立：真语料上通知臂没生效"
+    assert r_normal.notified, "前置不成立：真语料上通知臂没生效"
     # 变异：把 `notify "$ACTION"` 那一行摘掉（= notice-only 的旧形态）
     script_old = SCRIPT.read_text(encoding="utf-8")
     broken = script_old.replace('notify "$ACTION"', '', 1)
@@ -539,8 +674,8 @@ def test_mutation_dropping_one_ledger_row_is_detected(tmp_path):
     mini = tmp_path / "ledger.json"
     mini.write_text(json.dumps(dropped, ensure_ascii=False), encoding="utf-8")
     r = React(tmp_path / "run", conclusion="failure", attempt="1", log_text="boom\n",
-              leg="Build and Deploy admin-api", ledger_path=mini)
-    assert r.proc.returncode != 0, "台账里没有这条腿 ⇒ 脚本必须判红"
+              leg=LEG, ledger_path=mini)
+    assert r.proc.returncode != 0, "台账里没有这条腿 ⇒ 脚本必须非零表态（PR 面判红，见 red_ownership）"
 
 
 def test_mutation_four_source_lines_is_detected():
@@ -553,6 +688,41 @@ def test_mutation_four_source_lines_is_detected():
     assert broken.count("source scripts/deploy_reconcile_state.sh") != 1, (
         "改回 4 次后计数仍等于 1 ⇒ 那条判据是空断言"
     )
+
+
+def test_ledger_rerun_flag_is_load_bearing(tmp_path):
+    """判据 5f：把 `read_ledger` 的取值**熔断**（强制 `false`）⇒ 启用态的用例**当场红**。
+
+    ⇒ 证明「重跑臂真的挂在台账那一列数据上」，而不是挂在别处（否则开关只是装饰）。
+    """
+    old = SCRIPT.read_text(encoding="utf-8")
+    anchor = 'RERUN_ENABLED="$(ledger_rerun "$LEG")"'
+    assert anchor in old, "注入未生效：脚本里找不到 `rerun` 取值那一行（判据已过期）"
+    broken = old.replace(anchor, anchor + '\nRERUN_ENABLED="false"   # 红证注入：熔断台账取值', 1)
+    variant = tmp_path / "fused.sh"
+    variant.mkdir(parents=True, exist_ok=True)
+    script = variant / "fused.sh"
+    script.write_text(broken, encoding="utf-8")
+
+    led = ledger_with(tmp_path / "on", enable=(LEG,))
+    bin_dir, _ = make_stub(tmp_path / "fused_run")
+    calls = tmp_path / "fused_run" / "gh-calls.log"
+    log = tmp_path / "fused_run" / "run.log"
+    log.write_text("普通失败\n", encoding="utf-8")
+    env = os.environ.copy()
+    env.update({
+        "PATH": f"{bin_dir}{os.pathsep}{env['PATH']}", "GH_CALL_LOG": str(calls),
+        "STUB_ISSUES": str(tmp_path / "fused_run" / "i.tsv"),
+        "REACT_LEDGER": str(led), "REACT_LOG_FILE": str(log),
+        "LEG_NAME": LEG, "LEG_CONCLUSION": "failure", "LEG_ATTEMPT": "1", "LEG_RUN_ID": RUN_ID,
+    })
+    proc = subprocess.run([BASH, str(script)], env=env, capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, f"反应步必须 rc=0 → {proc.returncode}"
+    text = calls.read_text(encoding="utf-8") if calls.exists() else ""
+    assert f"run rerun {RUN_ID}" not in text, (
+        f"台账被熔断成 false 后**仍**发起了重跑 ⇒ 「重跑臂挂在台账那一列上」是空断言 → {text!r}"
+    )
+    assert "issue create" in text, "熔断只该关掉重跑臂，通知必须照旧"
 
 
 def test_comment_only_change_does_not_red():

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # 腿级失败反应（issue #6526 B）：**部署腿的某一次 run 挂了** ⇒ ① 出声（开/更值班 issue）
 # ② 首次自动重跑一次（具名确定性闸门命中时不重跑）。
+# 🔴 **现行默认（用户 2026-10-08 裁定「可以小改」）**：台账六条腿 `rerun` **全部 `false`**
+#    ⇒ **只出声、不自动重跑**；要恢复某条腿的自动重跑 ⇔ 把台账里那一行改成 `true`
+#    （**功能未删**，开关双向判据见 `tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py`
+#    的 `test_rerun_arm_is_off_by_default_for_every_leg` ⇄ `test_flipping_a_leg_to_true_re_enables_the_rerun_arm`）。
 #
 # ── 为什么承载面是 `deploy-reconcile.yml` 而不是三条部署腿 ──────────────────────
 # 三条腿的 `permissions` 只有 `contents: read` / `actions: read`。给它们加 `issues: write`
@@ -61,21 +65,26 @@ GATES=(
 )
 
 read_ledger() {   # 打印 `<腿名>\t<true|false>`（离线、零依赖：无 python3 也能跑）
-  # ⚠️ **多行** JSON：`name` 与 `rerun` 各占一行 ⇒ 单行 sed 匹配不到（首版的真缺陷）。
-  #    按 `{` … `}` 逐条取块，再在块内各取一处 —— 解析面只认本台账的两种字段。
+  # ⚠️ **两个真缺陷**（都在实测里踩过）：
+  #   ① `name` 与 `rerun` 各占一行 ⇒ 单行 sed 匹配不到（首版）；
+  #   ② 台账**顶层还有别的对象**（`rerun_default_off.not_a_feature_removal.evidence` 里逐字引用了
+  #      判据名与 `rerun` 字样）⇒ 「按 `{`…`}` 取块」会把**非腿对象**也当成腿（实测：把某腿翻
+  #      `true` 之后仍报「未登记」）。
+  # ⇒ 锚在**本台账的稳定缩进契约**上：腿对象的字段缩进 6 空格、块结束 `}` 缩进 4 空格；
+  #    顶层注解对象里不会出现 6 空格缩进的 `"name"`/`"rerun"` ⇒ 天然被跳过。
+  #    改 JSON 缩进风格（如 4 空格）会让这里读空 ⇒ **判据会红**（`rerun` 一律读成非 true）。
   [ -f "$LEDGER" ] || return 0
   awk '
-    /\{/ { blk = "" }
-    { blk = blk " " $0 }
-    /\}/ {
-      n = ""; r = ""
-      if (match(blk, /"name"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
-        n = substr(blk, RSTART, RLENGTH); sub(/^.*"[[:space:]]*:[[:space:]]*"/, "", n); sub(/"$/, "", n)
+    {
+      if ($0 ~ /^      "name"[[:space:]]*:[[:space:]]*"/ && n == "") {
+        n = $0; sub(/^.*"name"[[:space:]]*:[[:space:]]*"/, "", n); sub(/".*$/, "", n)
       }
-      if (match(blk, /"rerun"[[:space:]]*:[[:space:]]*(true|false)/)) {
-        r = substr(blk, RSTART, RLENGTH); sub(/^.*:[[:space:]]*/, "", r)
+      if ($0 ~ /^      "rerun"[[:space:]]*:[[:space:]]*(true|false)/ && r == "") {
+        r = $0; sub(/^.*"rerun"[[:space:]]*:[[:space:]]*/, "", r); sub(/[^a-z].*$/, "", r)
       }
-      if (n != "" && r != "") printf "%s\t%s\n", n, r
+      if ($0 ~ /^    \}[,]?[[:space:]]*$/ && n != "" && r != "") {
+        printf "%s\t%s\n", n, r; n = ""; r = ""
+      }
     }
   ' "$LEDGER"
 }
@@ -150,6 +159,10 @@ if [ ! -f "$LEDGER" ]; then
   exit 1
 fi
 if ! ledger_legs | grep -qxF "$LEG"; then
+  # ⚠️ 判红**归属**：本脚本以非零退出表态，但 `deploy-reconcile.yml` 的薄壳步把非零 rc
+  #    吞成 `::warning::` + `exit 0`（**有意**语义：反应步自身不得让 reconcile job 判红）。
+  #    ⇒ 运行期**不会**判红，红由 PR 面的
+  #    `tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py::test_unregistered_leg_is_red` 承担。
   echo "::error::部署腿 \`${LEG}\` 未登记在 $LEDGER —— 新腿必须同批登记（rerun + 理由）；未登记即红（issue #6526 B）"
   exit 1
 fi
@@ -197,9 +210,12 @@ ACTION=""
 if [ -n "$HIT" ]; then
   ACTION="**不自动重跑**（命中具名确定性闸门：${HIT}）—— 重跑只会再命中同一条闸门；已通知，请人工按 run 日志处置。"
 elif [ "$RERUN_ENABLED" != "true" ]; then
-  # 台账里 rerun=false 的腿（`Publish C-end H5 (app.migaozn.com 根)`）：**发布由人手动**
-  # —— 用户 2026-09-27 裁定 B（首次发布由人手动触发）⇒ 自动重跑**不许**替它发布。
-  ACTION="**不自动重跑**（台账登记 rerun=false：本腿发布由人手动，用户 2026-09-27 裁定 B）。"
+  # 台账里 `rerun=false` 的腿。**当前六条腿全部如此** —— 用户 2026-10-08 裁定（逐字「可以小改」）：
+  # 关掉自动重跑臂、**只保留通知**（详见台账 `rerun_default_off`：谁在什么时候为什么关、怎么翻回来）。
+  # 翻回来 = 把该腿那一行的 `rerun` 改成 `true`（脚本逻辑一字未动，它只按这一列取值）。
+  # ⚠️ `Publish C-end H5` 另有独立理由：它的发布只在 `workflow_dispatch` + `inputs.publish=='true'`
+  # 时发生（用户 2026-09-27 裁定 B）⇒ 自动重跑不会有任何发布效果；该理由逐条写在台账 `reason` 里。
+  ACTION="**不自动重跑**（台账登记 rerun=false：本轮按用户 2026-10-08 裁定只通知、不自动重跑；要恢复请改该腿那一行的数据）。"
 elif [ "${ATTEMPT:-}" != "1" ]; then
   ACTION="**不自动重跑**（attempt=${ATTEMPT:-未知} ≠ 1）—— 自动重跑**只做一次**（与 #4767/#5814 的断路器语义一致；attempt 用 GitHub 自己的 \`run_attempt\`，不自建计数器）。"
 else
