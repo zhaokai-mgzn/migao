@@ -2,16 +2,18 @@
 /**
  * 个人中心页面测试（B 端商家版，issue #2977）
  *
- * 覆盖: 未登录状态、已登录渲染（角色/租户）、菜单（含工人面三页入口）、退出登录
+ * 覆盖: 未登录状态、已登录渲染（角色/租户）、菜单（**不含**工人三件功能）、退出登录
  *
- * B 端语义：聚焦员工身份（昵称/角色/租户）+ 关于/隐私 + 退出；
+ * B 端语义：聚焦员工身份（昵称/角色/租户）+ 管理面 + 关于/隐私 + 退出；
  * 不展示 C 端消费者功能（我的订单/我的售后/绑定手机号——B 端员工管理他人的订单）
  *
- * issue #5747（BM-029）：工人面的**三页**都要在 `/b/` 内可达 —— 原菜单只有「扫码报工」，
- * 拍照入库（`INBOUND_PAGE_ROUTE`）与补打入库标签（`REPRINT_PAGE_ROUTE`）在 `/b/` 里
- * **零入口**（只在 `/w/` 报工页页头，见 src/utils/pageEntries.ts）⇒ 站在商家 H5 里的人
- * 一步也走不到。
+ * issue #6563（用户 2026-10-08 裁定）：**工人三件功能不在本页** —— 它们是工人动作，
+ * 归位在工人登录后的工作台（`src/pages/worker/home/index.tsx`；三件入口的存活判据 =
+ * tests/worker-home-page.test.tsx）。#5747 把三页铺进商家菜单的理由（「`/b/` 内零入口」）
+ * 已随工人工作台落地而消失 ⇒ 本文件保留一条**反向判据**（渲染面 + 源码面都不许出现它们）。
  */
+import fs from 'fs'
+import path from 'path'
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 
@@ -59,7 +61,7 @@ chatStoreMock.useChatStore.getState = jest.fn(() => ({
 import Taro from '@tarojs/taro'
 import ProfilePage from '../src/pages/profile/index/index'
 import { useAuthStore } from '../src/store/authStore'
-import { INBOUND_PAGE_ROUTE, REPRINT_PAGE_ROUTE } from '../src/utils/inbound/gaps'
+import { stripComments } from './helpers/h5PlatformLists'
 
 describe('ProfilePage', () => {
   beforeEach(() => {
@@ -104,40 +106,37 @@ describe('ProfilePage', () => {
     expect(screen.getByText('运')).toBeTruthy()
   })
 
-  it('应显示菜单项（扫码报工/关于我们/隐私协议）', () => {
+  it('应显示菜单项（关于我们/隐私协议）', () => {
     render(<ProfilePage />)
-    expect(screen.getByText('扫码报工')).toBeTruthy()
     expect(screen.getByText('关于我们')).toBeTruthy()
     expect(screen.getByText('隐私协议')).toBeTruthy()
   })
 
-  it('点击「扫码报工」应跳转工人扫码报工页（issue #3997）', () => {
+  // ── issue #6563（用户 2026-10-08 裁定）：工人三件功能**不在商家菜单** ──
+  // 它们是工人动作（各自页内还会再要求工人身份），归位在工人登录后的工作台
+  // （`src/pages/worker/home/index.tsx`）。红证 = 把任一条渲染/写回本页 ⇒ 下面两条各自判红。
+  it('🔴 不渲染工人三件功能（扫码报工 / 拍照入库 / 补打入库标签）', () => {
     render(<ProfilePage />)
-    fireEvent.click(screen.getByText('扫码报工'))
+    expect(screen.queryByText('扫码报工')).toBeNull()
+    expect(screen.queryByText('拍照入库')).toBeNull()
+    expect(screen.queryByText('补打入库标签')).toBeNull()
+  })
 
-    expect(Taro.navigateTo).toHaveBeenCalledWith({
-      url: '/pages/production/index/index',
+  it('🔴 源码（去注释）里没有任何工人面路由记号 —— 防入口换个别名回到商家菜单', () => {
+    const src = stripComments(
+      fs.readFileSync(path.join(__dirname, '../src/pages/profile/index/index.tsx'), 'utf8'),
+    )
+    ;[
+      '扫码报工',
+      '拍照入库',
+      '补打入库标签',
+      'PRODUCTION_PAGE_ROUTE',
+      'INBOUND_PAGE_ROUTE',
+      'REPRINT_PAGE_ROUTE',
+      '/pages/production/index/index',
+    ].forEach((token) => {
+      expect(src).not.toContain(token)
     })
-  })
-
-  it('工人面三页都有入口：扫码报工 / 拍照入库 / 补打入库标签（issue #5747）', () => {
-    render(<ProfilePage />)
-    expect(screen.getByText('拍照入库')).toBeTruthy()
-    expect(screen.getByText('补打入库标签')).toBeTruthy()
-  })
-
-  it('点击「拍照入库」跳 INBOUND_PAGE_ROUTE 指向的页（路由字面量同源）', () => {
-    render(<ProfilePage />)
-    fireEvent.click(screen.getByText('拍照入库'))
-
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: INBOUND_PAGE_ROUTE })
-  })
-
-  it('点击「补打入库标签」跳 REPRINT_PAGE_ROUTE 指向的页', () => {
-    render(<ProfilePage />)
-    fireEvent.click(screen.getByText('补打入库标签'))
-
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: REPRINT_PAGE_ROUTE })
   })
 
   it('B 端员工不展示 C 端消费者功能（无订单/售后/绑定手机号入口）', () => {

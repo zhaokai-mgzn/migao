@@ -119,7 +119,7 @@ describe('管理面入口可见性（issue #5654 判据：无权限码 ⇒ 菜�
       SURFACE_KEYS.forEach((key) => expect(screen.queryByTestId(`profile-admin-${key}`)).toBeNull()),
     )
     // 其余菜单项不受影响（只治理管理面入口）
-    expect(screen.getByText('扫码报工')).toBeTruthy()
+    expect(screen.getByText('关于我们')).toBeTruthy()
   })
 
   it('只有 inbound:view ⇒ 只出现「入库过账」', async () => {
