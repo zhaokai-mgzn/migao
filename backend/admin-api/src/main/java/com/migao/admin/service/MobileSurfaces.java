@@ -48,7 +48,7 @@ public final class MobileSurfaces {
             new Surface("piecework", "计件工资报表", "/pages/admin/piecework/index", "production:view"),
             // route == null：没有独立页面 —— 「数据」页的生产待办块按它开/关（缺码的岗位不该看到一块
             // 「无权限查看生产待办」的噪音；现状读数见 issue #6570 的客服/财务两行）。
-            new Surface("production-todos", "生产待办", null, "production:view"),);
+            new Surface("production-todos", "生产待办", null, "production:view"));
 
     private MobileSurfaces() {
     }
