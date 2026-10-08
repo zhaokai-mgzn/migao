@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { ClipboardList, Layers, RefreshCw, Search, X } from 'lucide-react'
+import { InlineMarkdown } from '@/lib/inline-markdown'
 import { Button } from '@/components/ui'
 import { batchStockApi, productApi, stockLedgerApi } from '@/lib/api'
 import { formatCost, formatDelta, formatQty, formatTime, reasonLabel } from '@/lib/stock-ledger'
@@ -205,9 +206,13 @@ export default function StockLedgerPage() {
             库存明细
           </h1>
           <p className="mt-1 text-sm text-neutral-500">
-            {view === 'flow'
-              ? '每一行 = 一次库存变动：变动前多少、变动后多少、因为什么变 —— 库存为什么从 X 变成 Y，逐行都能对上。'
-              : '每一行 = 一个批次（一卷布）：这一卷裁剪后还剩多少米，看「剩余米数」列 —— 由入库米数减去已消耗算出，不另立库存数。'}
+            <InlineMarkdown
+              text={
+                view === 'flow'
+                  ? '每次库存变动都记在这里：**什么时候、因为哪张单、从多少变成多少** —— 想查库存为什么变，按时间往下看。'
+                  : '按商品查每一卷布还剩多少米：**由入库米数减去已消耗算出**，不另立库存数。'
+              }
+            />
           </p>
         </div>
         <Button variant="secondary" onClick={refresh} aria-label="刷新库存明细">

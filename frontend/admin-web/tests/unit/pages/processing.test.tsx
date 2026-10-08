@@ -101,7 +101,7 @@ describe('ProcessingPage（issue #4490 合并后：/production/processing 的「
   it('should render page description', async () => {
     render(<ProcessingPage />)
     await waitFor(() => {
-      expect(screen.getByText(/加工项是下单时客户可选的加工服务/)).toBeInTheDocument()
+      expect(screen.getByText(/管理下单时客户可选的加工服务与加工费/)).toBeInTheDocument()
     })
   })
 

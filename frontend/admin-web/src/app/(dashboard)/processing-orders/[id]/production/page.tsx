@@ -701,8 +701,8 @@ export default function ProcessingOrderProductionPage() {
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="text-base font-medium text-neutral-900">卡在哪</h2>
               <span className="text-xs text-neutral-500">
-                A 模式 · 只查「没开工」；阈值 {stuckPoints?.threshold_hours ?? '—'} 小时（
-                {stuckPoints?.threshold_source === 'history' ? '历史中位数' : '系统默认值'}）
+                只看还没开工的单；<strong>等待超过 {stuckPoints?.threshold_hours ?? '—'} 小时</strong>就列在这里（
+                {stuckPoints?.threshold_source === 'history' ? '按历史中位数' : '按系统默认值'}）
               </span>
             </div>
             {stuckPointsError ? (

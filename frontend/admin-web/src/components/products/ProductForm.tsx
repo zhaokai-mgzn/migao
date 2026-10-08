@@ -873,7 +873,7 @@ export default function ProductForm({
       >
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-neutral-500">管理商品分类，支持对分类进行新增、编辑、删除和排序</p>
+            <p className="text-sm text-neutral-500">管理商品分类：新增、编辑、删除和排序</p>
             <Button onClick={handleCatAdd} size="sm">
               <Plus className="w-4 h-4 mr-1" />
               添加分类
@@ -886,7 +886,7 @@ export default function ProductForm({
               </div>
             ) : categories.length === 0 ? (
               <div className="py-12 text-center text-sm text-neutral-500">
-                管理商品分类，支持对分类进行新增、编辑、删除和排序
+                管理商品分类：新增、编辑、删除和排序
               </div>
             ) : (
               <CategoryTree

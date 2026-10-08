@@ -1,6 +1,6 @@
 // case_ids: UI-057, UI-058, UI-092, UI-093
 //
-// 类级元守卫：**内部词汇不得写进用户可见文案**。八个形态，同一条纪律。
+// 类级元守卫：**内部词汇不得写进用户可见文案**。九个形态 + 页面副标题四条，同一条纪律。
 //
 // ① 度量分层代号（#5565）：省料看板把 `L2` / `L3` 抄进了页头副标题与区块标题
 //    ⇒ 用户逐字反馈「L2和L3是什么概念，用户不懂，我也不懂」。
@@ -14,6 +14,14 @@
 //    接口与参数细节（「端点没有关键词参数」）、内部机制名（「读面」「派生值」「真值源」「组合键」）、
 //    研发过程编号与判据语（`issue #4886` / 「判据」）、代码标识符上屏（`oversize_height_threshold`）、
 //    行内代码片里塞标识符（`` `HEM_MARGIN` ``）。
+// ⑨ **占位符字母 / 模式代号**（#6488 续，用户 2026-10-08 逐字「用户不理解这句话是啥"库存为什么从 X 变成 Y"」）：
+//    把 X/Y 当变量、把设计文档里的「A 模式」写进散文 ⇒ 商家读不懂。
+//
+// **页面副标题四条**（S1~S4，用户 2026-10-08 定的标准）：副标题要说清「**这个功能是干什么的**」
+// （正例：「管理客户信息、标签和互动记录」；「待派订单按料（商品 × 颜色 × 门幅）合并 ——
+// 同料合并领料，减少接头损耗；**加急单不参与合并，立即单独派单**」也行），**关键规则加粗**。
+// ⇒ 机械可判的四条：箭头链路（⇒/→）、表达式（`每行 = 一次…`）、本企业数值口径（`0.5 米级`/`0.1 米粒度`）、
+//    占位符字母与模式代号。**「讲不讲用途」判不了**，只能靠规范与评审（见 docs/design/user-facing-copy-standard.md §3）。
 //
 // 形态相同：写码时**对着 issue / 设计文档写**，把内部编号、机制名、接口细节当名词带上了屏。
 // 单个页面改一次不解决复发 ⇒ 本守卫是那条类级收口。
@@ -32,7 +40,17 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
-import { RULES, EXEMPT, candidateStrings, findViolations, scanProject } from '../../scripts/user-copy-scan.mjs'
+import {
+  RULES,
+  EXEMPT,
+  SUBTITLE_RULES,
+  SUBTITLE_EXEMPT,
+  candidateStrings,
+  findViolations,
+  findSubtitleOffenses,
+  pageSubtitles,
+  scanProject,
+} from '../../scripts/user-copy-scan.mjs'
 
 const ROOT = process.cwd()
 
@@ -48,8 +66,8 @@ describe('用户可见文案不得含内部词汇 / 研发腔（#5565 · #5576 �
     }
   })
 
-  it('规则表不许被悄悄删空（八条一条都不许少；每条必须给得出可行动的出口）', () => {
-    expect(RULES.map((r) => r.id)).toEqual(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8'])
+  it('规则表不许被悄悄删空（九条一条都不许少；每条必须给得出可行动的出口）', () => {
+    expect(RULES.map((r) => r.id)).toEqual(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9'])
     for (const rule of RULES) {
       expect(rule.name.length, `${rule.id} 缺名字`).toBeGreaterThan(1)
       expect(rule.出口.length, `${rule.id} 的出口必须写到「改成什么」，否则判红时读的人无从下手`).toBeGreaterThan(15)
@@ -138,5 +156,59 @@ describe('用户可见文案不得含内部词汇 / 研发腔（#5565 · #5576 �
     findViolations(ROOT)
     expect(readdirSync(join(ROOT, 'scripts')).length).toBe(before)
     expect(statSync(join(ROOT, 'scripts', 'user-copy-scan.mjs')).isFile()).toBe(true)
+  })
+})
+
+describe('页面副标题要说清「这个功能是干什么的」（#6488 续，用户 2026-10-08 定的标准）', () => {
+  const { subtitles, offenses } = findSubtitleOffenses(ROOT)
+  const byRule = (id: string) => offenses.filter((o) => o.rule === id)
+
+  it('普查面非空（抽不到页面头 ⇒ 判据在扫空气）', () => {
+    expect(subtitles.length, '商家后台应有成批页面头').toBeGreaterThanOrEqual(15)
+    expect(pageSubtitles(ROOT).length).toBe(subtitles.length)
+  })
+
+  it('副标题规则表不许被删空（四条一条都不许少；每条给得出可行动的出口）', () => {
+    expect(SUBTITLE_RULES.map((r) => r.id)).toEqual(['S1', 'S2', 'S3', 'S4'])
+    for (const rule of SUBTITLE_RULES) {
+      expect(rule.name.length, `${rule.id} 缺名字`).toBeGreaterThan(1)
+      expect(rule.出口.length, `${rule.id} 的出口必须写到「改成什么」`).toBeGreaterThan(10)
+    }
+  })
+
+  for (const rule of SUBTITLE_RULES) {
+    it(`[${rule.id}] ${rule.name} 没有出现在页面副标题里（未登记即红）`, () => {
+      expect(
+        byRule(rule.id).map((o) => `${o.where}【${o.title}】 ${o.text.slice(0, 120)}`),
+        `${rule.name} —— 副标题要讲「这个功能干什么」，不是写实现（issue #6488）。\n出口：${rule.出口}\n`
+          + '（确有必要请登记 scripts/user-copy-scan.mjs 的 SUBTITLE_EXEMPT —— 只许缩短。）',
+      ).toEqual([])
+    })
+  }
+
+  it('副标题豁免台账不空转（失效即红 ⇒ 逼着删干净）', () => {
+    const live = new Set(subtitles.map((s) => `${s.file}:${s.line}`))
+    const stale = SUBTITLE_EXEMPT.filter((e) => !live.has(e))
+    expect(stale, 'SUBTITLE_EXEMPT 里有不再命中的条目：\n' + stale.join('\n')).toEqual([])
+  })
+
+  it('判别力自证：四条规则对坏形态判红、对好文案（用户点名的正例）不红', () => {
+    const S = (id: string) => SUBTITLE_RULES.find((r) => r.id === id)!
+    // 坏形态（都是本轮真实病灶的**逐字**形态）
+    expect(S('S1').test('工序与计件单价 → 工艺路线 → 算料口径')).toBe(true)
+    expect(S('S2').test('每一行 = 一次库存变动：变动前多少、变动后多少')).toBe(true)
+    expect(S('S3').test('可按实物把在库批次（含 0.5 米级尾料）登记进来')).toBe(true)
+    expect(S('S4').test('库存为什么从 X 变成 Y，逐行都能对上')).toBe(true)
+    // 好文案：用户点名的正例 + 改写后的形态，一条都不许红（否则判据会逼人把好文案也改坏）
+    for (const good of [
+      '管理客户信息、标签和互动记录',
+      '待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；加急单不参与合并，立即单独派单',
+      '登记布料到货、过账后加库存 —— 过账前不改动库存，可以先核对再确认',
+      '管理发货单：可按单号、订单号、客户检索，并补打纸质发货单',
+    ]) {
+      for (const rule of SUBTITLE_RULES) {
+        expect(rule.test(good), `${rule.id} 把好文案判红了：${good}`).toBe(false)
+      }
+    }
   })
 })
