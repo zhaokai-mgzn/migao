@@ -1,0 +1,98 @@
+{
+  "idemKey": "l2-e1-murza5i4",
+  "serialHttp": 200,
+  "serialBody": {
+    "success": true,
+    "data": {
+      "id": "65b2e98fb11b57e89b14bc11346d2ac0",
+      "name": "线②验收重复提交",
+      "basePrice": 9,
+      "description": "线②验收重复提交探针",
+      "images": [],
+      "status": "draft",
+      "stock": 1,
+      "stockWarningThreshold": 10,
+      "skuCode": "l2-E1-DUP-RZA5I4",
+      "unit": "米",
+      "pricingType": "per_meter",
+      "stockDeductionMode": "on_order",
+      "colorCount": 1,
+      "totalStock": 1,
+      "salesCount": 0,
+      "salesAmount": 0,
+      "recommended": false,
+      "allowReturnRestock": false,
+      "colors": [
+        {
+          "id": "2106261829619511298",
+          "productId": "65b2e98fb11b57e89b14bc11346d2ac0",
+          "colorName": "米白",
+          "sortOrder": 0,
+          "createdAt": "2026-10-03 13:55:27",
+          "updatedAt": "2026-10-03 13:55:27"
+        }
+      ],
+      "sellingMethods": [
+        "bulk_cut",
+        "full_roll"
+      ],
+      "doorWidths": [
+        "2.8m"
+      ],
+      "skus": [
+        {
+          "id": "2106261829657260033",
+          "productId": "65b2e98fb11b57e89b14bc11346d2ac0",
+          "colorId": "2106261829619511298",
+          "colorName": "米白",
+          "doorWidth": "2.8m",
+          "price": 9,
+          "stock": 1,
+          "skuCode": "L2-E1-DUP-RZA5I4-01-28",
+          "createdAt": "2026-10-03 13:55:27",
+          "updatedAt": "2026-10-03 13:55:27"
+        }
+      ],
+      "detailImages": [],
+      "editedBy": "13870217889",
+      "editedAt": "2026-10-03 13:55:27",
+      "createdAt": "2026-10-03 13:55:27",
+      "updatedAt": "2026-10-03 13:55:27",
+      "price": 9
+    },
+    "requestId": "req_7bfc7c9006494505",
+    "timestamp": 1791006927
+  },
+  "afterSerial": 1,
+  "concHttp": [
+    200,
+    200,
+    200,
+    200,
+    200
+  ],
+  "concBody": [
+    {
+      "ok": true,
+      "id": "aa1e8b1a8fee6e016d02dca242965442"
+    },
+    {
+      "ok": true,
+      "id": "48829a26c3690c564f9fa2cd63f5185d"
+    },
+    {
+      "ok": true,
+      "id": "5c25f75cd6d8042330226d1b20656187"
+    },
+    {
+      "ok": true,
+      "id": "09f056d388e56f8e67a6d23e5b3d128e"
+    },
+    {
+      "ok": true,
+      "id": "d4ba141ea1ac8442bd1b8cfad86cbe97"
+    }
+  ],
+  "afterConc": 6,
+  "clientRequestKeys": []
+}

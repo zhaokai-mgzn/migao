@@ -30,6 +30,7 @@ from app.vision.recognizer import (
     extract_fields,
     recognize,
 )
+from app.vision.targets import REFERENCE_KEYS, TARGET_FIELDS
 
 VISION_DIR = Path(__file__).resolve().parents[2] / "app" / "vision"
 
@@ -95,8 +96,10 @@ class VisionStub:
 class TestExtractFieldsProduct:
     def test_product_fixture_maps_to_an_exact_field_table(self):
         fields = extract_fields("product", PRODUCT_VISION_FIXTURE)
+        # 🔴 issue #6386：`name` / `description` **不再**出现在识别字段表里
+        #（它们是文案、不是图上的事实 ⇒ 改由 `[米宝解读]` 给；真正的守卫在
+        # tests/test_vision/test_copy_vs_infer.py）——所以这张表从 7 格缩到 5 格。
         assert [(f["key"], f["label"], f["value"], f["source"]) for f in fields] == [
-            ("name", "商品名称", "雪尼尔遮光窗帘", FIELD_MARKER),
             ("color", "颜色", "3610-28 奶茶色", FIELD_MARKER),
             ("material", "材质", "雪尼尔", FIELD_MARKER),
             ("craft", "工艺", "遮光", FIELD_MARKER),
@@ -116,9 +119,9 @@ class TestExtractFieldsProduct:
     def test_field_order_is_the_schema_order_not_the_model_order(self):
         # 模型把 price 写在最前面，返回顺序仍必须是 schema 顺序（页面按它逐格填）
         shuffled = ('{"fields": {"price": {"value": "9", "confidence": 0.9}, '
-                    '"name": {"value": "帘", "confidence": 0.9}}}')
+                    '"color": {"value": "帘", "confidence": 0.9}}}')
         assert [f["key"] for f in extract_fields("product", shuffled)] == [
-            "name", "color", "material", "craft", "door_width", "price",
+            "color", "material", "craft", "door_width", "price",
         ]
 
 
@@ -144,9 +147,11 @@ class TestExtractFieldsOrder:
     def test_order_side_is_stricter_than_product_side_on_the_same_confidence(self):
         """用户裁定：订单侧「不确定的宁可不填」比商品侧更严格（客户信息错 ⇒ 货发错人）。"""
         payload = '{"fields": {"%s": {"value": "王秀英", "confidence": 0.70}}}'
-        product = extract_fields("product", payload % "name")
+        # ⚠️ issue #6386：商品侧原来拿 `name` 做对照，而 `name` 已不在识别字段表里
+        # ⇒ 改用 `color`（仍在识别面、商品侧阈值较宽），对照关系不变。
+        product = extract_fields("product", payload % "color")
         order = extract_fields("order", payload % "customer_name")
-        assert product[0]["value"] == "王秀英"
+        assert next(f for f in product if f["key"] == "color")["value"] == "王秀英"
         assert order[0]["value"] is None
         assert "置信度" in order[0]["reason"]
 
@@ -258,7 +263,12 @@ class TestExtractFieldsOrderSize:
     def test_product_side_is_untouched_by_the_order_side_size_guard(self):
         """商品侧的 `door_width` 不套这条闸（它的门幅是**商品属性**，不是窗帘成品尺寸）。"""
         payload = '{"fields": {"door_width": {"value": "门幅2.8米", "confidence": 0.9}}}'
-        assert extract_fields("product", payload)[4]["value"] == "门幅2.8米"
+        # 🔴 按 key 取（issue #6386 教训）：原先写死下标 `[4]`，字段表一增删就**指错格子**，
+        # 报错还会伪装成「识别回归」。锁定对象必须用 key，不许用位置。
+        door_width = next(
+            f for f in extract_fields("product", payload) if f["key"] == "door_width"
+        )
+        assert door_width["value"] == "门幅2.8米"
 
 
 class TestCustomerCraftRequestsPassThrough:
@@ -568,3 +578,64 @@ class TestExtractFieldsShipment:
         text = msgs[0].content[0]["text"]
         for key in ("order_no", "product_name", "quantity", "width", "height"):
             assert key in text
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 「参考」字段（issue #6529）：图上读到、但**没采纳**的原文 —— 只用于查目录 / 展示
+# ══════════════════════════════════════════════════════════════════════════════
+class TestReferenceOnlyFields:
+    """订单侧明细低置信度时**不丢原文**：商家要据此听到「图上写的型号在目录里查不到」。
+
+    背景（用户 2026-10-08 实证）：同一张手写单，黄金策会话说得出「型号在店里查不到」，
+    建单页却只有一句「商品明细：未识别」—— 因为内核把 0.75 的原文连值带字一起丢了，
+    页面连「拿什么去查目录」都没有。
+
+    红证（注入式，两条各自会红）：
+    ① 把 `recognizer._resolve` 里那段 `REFERENCE_KEYS` 分支改回 `return None, gate_reason, None`
+       ⇒ `test_low_confidence_items_keeps_the_text_as_reference` 红；
+    ② 把置信度闸整段删掉（低置信度也采纳为 `value`）⇒ `test_accepted_items_carries_no_reference`
+       与 `test_undeclared_keys_never_carry_a_reference` 的「值必须为空」红。
+    """
+
+    def _cell(self, key: str, value: str, confidence: float) -> dict:
+        raw = json.dumps(
+            {"fields": {key: {"value": value, "confidence": confidence}}}, ensure_ascii=False
+        )
+        return next(f for f in extract_fields("order", raw) if f["key"] == key)
+
+    def test_low_confidence_items_keeps_the_text_as_reference(self):
+        cell = self._cell("items", "2698-11、C31", 0.75)
+        assert cell["value"] is None
+        assert cell["source"] is None
+        assert cell["reference"] == "2698-11、C31"
+        assert cell["reason"] == "置信度 0.75 低于订单侧阈值 0.85，宁可不填"
+
+    def test_accepted_items_carries_no_reference(self):
+        """达到阈值 ⇒ 正常采纳为值，**不带** reference（它不是第二个值）。"""
+        cell = self._cell("items", "雪尼尔遮光窗帘", 0.9)
+        assert cell["value"] == "雪尼尔遮光窗帘"
+        assert cell["source"] == FIELD_MARKER
+        assert cell["reference"] is None
+
+    @pytest.mark.parametrize(
+        "key,value",
+        [
+            ("customer_name", "王秀英"),
+            ("customer_address", "杭州市余杭区某小区"),
+            ("curtain_width", "2.8"),
+            ("quantity", "3 套"),
+        ],
+    )
+    def test_undeclared_keys_never_carry_a_reference(self, key, value):
+        """类级（铁律 8）：**没登记**的键低于阈值时连原文都不给。
+
+        它们直接进单据与推导链（错填 = 货发错人 / 米数错），没有「只用来查目录」这个安全出口。
+        """
+        cell = self._cell(key, value, 0.55)
+        assert cell["value"] is None
+        assert cell["reference"] is None
+
+    def test_declaration_matches_the_field_table(self):
+        """登记表 ⇄ 字段表：声明了的键必须真实存在（否则是死声明，永远不会有行为）。"""
+        for target, keys in REFERENCE_KEYS.items():
+            assert set(keys) <= {f.key for f in TARGET_FIELDS[target]}

@@ -219,7 +219,7 @@ class TestMerchantStaffRoles:
 
     此前 UserRole 枚举仅 customer/agent/admin 三值，admin-api 签发的
     operator/product_manager/customer_service 等员工角色 JWT 全部 401，
-    商户员工无法使用米宝 B 端对话。
+    商户员工无法使用黄金策 B 端对话。
     """
 
     @pytest.mark.parametrize(

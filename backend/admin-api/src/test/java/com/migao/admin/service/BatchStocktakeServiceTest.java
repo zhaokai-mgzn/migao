@@ -16,6 +16,7 @@ import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
 import com.migao.admin.mapper.StockLedgerMapper;
+import com.migao.admin.time.BusinessClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -85,11 +86,14 @@ class BatchStocktakeServiceTest {
                 StockBatchConsumption.class);
         // 真服务 + 桩 mapper：批次分录的落库形状由**被测代码**决定，而不是由测试自己拼出来
         batchService = new StockBatchConsumptionService(stockBatchMapper, consumptionMapper,
-                productSkuMapper, stockLedgerMapper, null, null);
+                productSkuMapper, stockLedgerMapper, null, null, new BusinessClock());
         service = new BatchStocktakeService(batchService, productSkuMapper,
                 new StockLedgerService(stockLedgerMapper, productSkuMapper));
         // 默认：该 run 没有任何已落账的盘点行（重放判据自己改桩）
         when(consumptionMapper.selectList(any())).thenReturn(List.of());
+        // 默认：原子闸**本次生效**（影响 1 行）。返回 0 = 同 run × 批次已有一行 ⇒ 幂等回放
+        // （issue #6301 的并发语义；那一条由真库判据 BatchStocktakeConcurrentRealDbTest 覆盖）
+        when(consumptionMapper.insertStocktakeIfAbsent(any(StockBatchConsumption.class))).thenReturn(1);
         when(productSkuMapper.selectList(any())).thenReturn(List.of(sku(SKU_ID, "SKU-A", "60")));
     }
 
@@ -132,7 +136,7 @@ class BatchStocktakeServiceTest {
     private StockBatchConsumption capturedBatchEntry() {
         ArgumentCaptor<StockBatchConsumption> captor =
                 ArgumentCaptor.forClass(StockBatchConsumption.class);
-        verify(consumptionMapper).insert(captor.capture());
+        verify(consumptionMapper).insertStocktakeIfAbsent(captor.capture());
         return captor.getValue();
     }
 
@@ -143,7 +147,7 @@ class BatchStocktakeServiceTest {
     }
 
     private void assertNoWrites() {
-        verify(consumptionMapper, never()).insert(any(StockBatchConsumption.class));
+        verify(consumptionMapper, never()).insertStocktakeIfAbsent(any(StockBatchConsumption.class));
         verify(stockLedgerMapper, never()).insert(any(StockLedger.class));
         verify(productSkuMapper, never()).updateById(any(ProductSku.class));
         // 红线 ①：批次行**一字不改**（余量是派生值，改的是分录）
@@ -363,7 +367,7 @@ class BatchStocktakeServiceTest {
         assertThat(result.totalDelta()).isEqualByComparingTo("-3.5");
         ArgumentCaptor<StockBatchConsumption> captor =
                 ArgumentCaptor.forClass(StockBatchConsumption.class);
-        verify(consumptionMapper, times(2)).insert(captor.capture());
+        verify(consumptionMapper, times(2)).insertStocktakeIfAbsent(captor.capture());
         assertThat(captor.getAllValues()).extracting(StockBatchConsumption::getStocktakeRunId)
                 .containsOnly(RUN_ID);
         // 台账逐批次一行（含小数），**该 SKU 的库存链**首尾相接（60 → 58.5 → 56.5）

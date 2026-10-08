@@ -1,0 +1,230 @@
+[
+  {
+    "id": "S1-FIX",
+    "name": "夹具自证：订单行数量落库 == 我们给的量",
+    "status": "pass",
+    "detail": "给 10.000 / 库读 10.000",
+    "evidence": [
+      "SQL: select quantity from order_items where id='fb4effd33d3c976964416c'",
+      "读面不作期望来源（此处仅自证夹具）"
+    ],
+    "at": "2026-10-03 21:10:10 +08"
+  },
+  {
+    "id": "S1-1",
+    "name": "串行双发：只产生 1 张有效发货单（无第二张）",
+    "status": "pass",
+    "detail": "期望 1 == 实测 1",
+    "evidence": [
+      "期望来源: 「重复提交不得产生第二张有效发货单」= 本包判据；原始读数取 RDS order_shipments（非系统读面）",
+      "R1 200 {\"success\":true,\"data\":{\"order_id\":\"fa5634f0834aa1abd50cf1\",\"status\":\"shipped\",\"shipment_no\":\"SH202610031310109226\",\"source\":\"worker_photo\",\"tracking_no\":\"SF-PR",
+      "R2 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"当前状态（已发货）不可发货：仅 [已确认, 生产中, 已打包] 可发货\"},\"requestId\":\"req_ba160fa700df49dc\",\"timestamp\":1791004210,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+      "SQL: select id, shipment_no from order_shipments where order_id='fa5634f0834aa1abd50cf1' → [\"SH202610031310109226\"]"
+    ],
+    "at": "2026-10-03 21:10:11 +08"
+  },
+  {
+    "id": "S1-2",
+    "name": "串行双发：累计已发 ≤ 订单量（不得超发）",
+    "status": "pass",
+    "detail": "期望 ≤ 10.000 == 实测 10.000",
+    "evidence": [
+      "期望来源: 独立算式：Σ order_shipment_items.shipped_quantity ≤ order_items.quantity（夹具给 10）",
+      "SQL: select shipped_quantity,unit from order_shipment_items where order_id='fa5634f0834aa1abd50cf1' → [{\"shipment_id\":\"168d32b22741038b601b1ae6c14368e8\",\"order_item_id\":\"fb4effd33d3c976964416c\",\"shipped_quantity\":10,\"unit\":\"米\",\"set_count\":null,\"roll_count\":null}]"
+    ],
+    "at": "2026-10-03 21:10:11 +08"
+  },
+  {
+    "id": "S1-3",
+    "name": "串行双发：第二次被拒且状态未回退（订单仍 shipped）",
+    "status": "pass",
+    "detail": "期望 第 2 次 4xx ∧ status=shipped == 实测 HTTP 422 ∧ status=shipped",
+    "evidence": [
+      "期望来源: shipped ∉ SHIPPABLE_FROM（服务端可发状态 = confirmed|producing|packed）",
+      "R2 body(直读): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"当前状态（已发货）不可发货：仅 [已确认, 生产中, 已打包] 可发货\"},\"requestId\":\"req_ba160fa700df49dc\",\"timestamp\":1791004210,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    ],
+    "at": "2026-10-03 21:10:11 +08"
+  },
+  {
+    "id": "S1-4",
+    "name": "未发量（独立算式）== 订单量 − 已发合计",
+    "status": "pass",
+    "detail": "期望 0.000 == 实测 0.000",
+    "evidence": [
+      "期望来源: 独立算式 order_items.quantity − Σ order_shipment_items.shipped_quantity（两侧都直连 RDS 原始列）",
+      "SQL: select quantity ... / Σ shipped_quantity → 10.000 − 10.000"
+    ],
+    "at": "2026-10-03 21:10:11 +08"
+  },
+  {
+    "id": "S1-5",
+    "name": "读面 by_unit 与 RDS 原始列一致（交叉核对，非期望来源）",
+    "status": "pass",
+    "detail": "期望 10.000 == 实测 10.000",
+    "evidence": [
+      "期望来源: RDS 原始列求和（系统的读面**不是**期望来源，仅被核对）",
+      "GET /api/worker/shipment/orders/fa5634f0834aa1abd50cf1 → shipped_totals={\"set_count\":0,\"roll_count\":0,\"by_unit\":{\"米\":10}}"
+    ],
+    "at": "2026-10-03 21:10:11 +08"
+  },
+  {
+    "id": "S1-6",
+    "name": "发货单留痕：shipped_at 非空 ∧ shipped_by 非空（责任凭证）",
+    "status": "pass",
+    "detail": "期望 both non-null == 实测 {\"shipped_at\":{\"raw\":\"2026-10-03T13:10:10.382383+08:00\",\"plus08\":\"2026-10-03 13:10:10 (原文偏移=本地墙钟，未再换算)\"},\"shipped_by_id\":\"52909fe5f7906f8882aea6c5c1690426\",\"shipped_by_name\":\"发货验收工人\"}",
+    "evidence": [
+      "期望来源: 「谁发的货」是责任凭证（WorkerShipmentController 头注）；原始列直读",
+      "SQL: select shipped_at, shipped_by_worker_name from order_shipments where order_id='fa5634f0834aa1abd50cf1'"
+    ],
+    "at": "2026-10-03 21:10:11 +08"
+  },
+  {
+    "id": "S2-DISC",
+    "name": "判别性证据：两次请求**真的并发**发出（同刻起跑，无 4xx 前置拒绝）",
+    "status": "pass",
+    "detail": "HTTP=[200,422] 并发墙钟=288ms",
+    "evidence": [
+      "Promise.all 同时发出两个 POST /ship（无 X-Client-Request-Id 头 ⇒ 不走幂等回放，专测状态机原子流转）",
+      "A: {\"success\":true,\"data\":{\"order_id\":\"fa2b880c6f5365924c6524\",\"status\":\"shipped\",\"shipment_no\":\"SH202610031310113962\",\"sou",
+      "B: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"订单状态已并发变更，请刷新后重试\"},\"requestId\":\"req_e666112e58f94f4d\",\"ti"
+    ],
+    "at": "2026-10-03 21:10:12 +08"
+  },
+  {
+    "id": "S2-1",
+    "name": "并发双发：只产生 1 张发货单（不得第二张）",
+    "status": "pass",
+    "detail": "期望 1 == 实测 1",
+    "evidence": [
+      "期望来源: 本包判据「重复/并发提交不得产生第二张有效发货单」；原始读数 = RDS order_shipments",
+      "SQL 结果: [{\"no\":\"SH202610031310113962\",\"tracking\":\"SF-PROBE-S2a\"}]",
+      "HTTP 两路: [200,422]"
+    ],
+    "at": "2026-10-03 21:10:12 +08"
+  },
+  {
+    "id": "S2-2",
+    "name": "并发双发：恰有一路成功、另一路 4xx（不产生双写）",
+    "status": "pass",
+    "detail": "期望 1 路 2xx + 1 路 4xx == 实测 [200,422]",
+    "evidence": [
+      "期望来源: 状态机原子流转：transition(orderId, expected, target) 影响行数==0 ⇒ 抛 422 ⇒ 整笔回滚",
+      "A(200): {\"success\":true,\"data\":{\"order_id\":\"fa2b880c6f5365924c6524\",\"status\":\"shipped\",\"shipment_no\":\"SH202610031310113962\",\"source\":\"worker_photo\",\"tracking_no\":\"SF-PROBE-S2a\",\"shipped_items\":[{\"order_item_i",
+      "B(422): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"订单状态已并发变更，请刷新后重试\"},\"requestId\":\"req_e666112e58f94f4d\",\"timestamp\":1791004212,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    ],
+    "at": "2026-10-03 21:10:12 +08"
+  },
+  {
+    "id": "S2-3",
+    "name": "并发双发：明细不重复记账（Σ已发 ≤ 订单量）",
+    "status": "pass",
+    "detail": "期望 ≤ 8.000 == 实测 8.000 (1 行)",
+    "evidence": [
+      "期望来源: 独立算式：Σ shipped_quantity ≤ order_items.quantity（夹具给 8）",
+      "SQL: select order_item_id, shipped_quantity from order_shipment_items where order_id='fa2b880c6f5365924c6524' → [{\"shipment_id\":\"0ac9a4bbac36293b19b591a87bba3ddc\",\"order_item_id\":\"fb2f3f1a35414b0290f10b\",\"shipped_quantity\":8,\"unit\":\"米\",\"set_count\":null,\"roll_count\":null}]"
+    ],
+    "at": "2026-10-03 21:10:12 +08"
+  },
+  {
+    "id": "S2-4",
+    "name": "并发双发：无残留半成品（无 0 张/2 张、无孤儿明细）",
+    "status": "pass",
+    "detail": "期望 shipments=1 ∧ items=1 ∧ 明细全部挂在唯一发货单上 == 实测 shipments=1 items=1 orphan=0",
+    "evidence": [
+      "期望来源: 「明细写了但状态没变」在结构上不可能（状态流转是最后一步，失败整笔回滚）",
+      "SQL: order_shipments ✕ order_shipment_items join by shipment_id"
+    ],
+    "at": "2026-10-03 21:10:12 +08"
+  },
+  {
+    "id": "S3-1",
+    "name": "同幂等键并发：只 1 张发货单、只 1 行明细、不超发",
+    "status": "pass",
+    "detail": "期望 shipments=1 ∧ items=1 ∧ Σ≤6.000 == 实测 shipments=1 items=1 Σ=6.000",
+    "evidence": [
+      "期望来源: 幂等占位 client_request_keys(tenant,key,endpoint) 原子 claim ⇒ 第二路不得执行",
+      "key=fsp-S3-murxnyvq-0",
+      "A(200): {\"success\":true,\"data\":{\"source\":\"worker_photo\",\"status\":\"shipped\",\"order_id\":\"fac14e454bcb82ced36084\",\"shipment_no\":\"SH202610031310124270\",\"tracking_no\":\"SF-PROBE-S3b\",\"shipped_items\":[{\"unit\":\"米\",\"p",
+      "B(200): {\"success\":true,\"data\":{\"order_id\":\"fac14e454bcb82ced36084\",\"status\":\"shipped\",\"shipment_no\":\"SH202610031310124270\",\"source\":\"worker_photo\",\"tracking_no\":\"SF-PROBE-S3b\",\"shipped_items\":[{\"order_item_i"
+    ],
+    "at": "2026-10-03 21:10:13 +08"
+  },
+  {
+    "id": "S3-2",
+    "name": "同幂等键并发：第二路为「回放/在飞」而非重复执行（无第二个 shipment_no）",
+    "status": "pass",
+    "detail": "期望 两路 shipment_no 相同 ∨ 第二路 409/REPLAYED == 实测 {\"a\":\"SH202610031310124270\",\"b\":\"SH202610031310124270\",\"bReplayed\":null,\"bStatus\":200}",
+    "evidence": [
+      "期望来源: ClientRequestIdService: claim→complete 回放同一结果；在飞 ⇒ 409 REQUEST_IN_PROGRESS",
+      "B body: {\"success\":true,\"data\":{\"order_id\":\"fac14e454bcb82ced36084\",\"status\":\"shipped\",\"shipment_no\":\"SH202610031310124270\",\"source\":\"worker_photo\",\"tracking_no\":\"SF-PROBE-S3b\",\"shipped_items\":[{\"order_item_id\":\"fb0c0fd6996614ea7d6880\",\"product_nam"
+    ],
+    "at": "2026-10-03 21:10:13 +08"
+  },
+  {
+    "id": "S3-3",
+    "name": "同幂等键串行重放：不新建单据、不改数量",
+    "status": "pass",
+    "detail": "期望 shipments=1 ∧ Σ=6.000 == 实测 shipments=1 Σ=6.000",
+    "evidence": [
+      "期望来源: 同键重放 = 回放首次快照（migao #4037 幂等口径）",
+      "第三路(200): {\"success\":true,\"data\":{\"source\":\"worker_photo\",\"status\":\"shipped\",\"order_id\":\"fac14e454bcb82ced36084\",\"shipment_no\":\"SH202610031310124270\",\"tracking_no\":\"SF-PROBE-S3b\",\"shipped_items\":[{\"unit\":\"米\",\"product_name\":\"发货验收亚麻布S3\",\"order_item_id\""
+    ],
+    "at": "2026-10-03 21:10:13 +08"
+  },
+  {
+    "id": "S4-1",
+    "name": "正对照：正常发货被接受（2xx）",
+    "status": "pass",
+    "detail": "期望 2xx == 实测 HTTP 200",
+    "evidence": [
+      "期望来源: confirmed ∈ SHIPPABLE_FROM；夹具满足必填（trackingNo/logisticsCompany/items 非空且数量>0）",
+      "POST body: {\"trackingNo\":\"SF-PROBE-S4\",\"items\":2}",
+      "resp: {\"success\":true,\"data\":{\"order_id\":\"fa701f0c4add6f8db4c0f4\",\"status\":\"shipped\",\"shipment_no\":\"SH202610031310146415\",\"source\":\"worker\",\"tracking_no\":\"SF-PROBE-S4\",\"shipped_items\":[{\"order_item_id\":\"fb0"
+    ],
+    "at": "2026-10-03 21:10:14 +08"
+  },
+  {
+    "id": "S4-2",
+    "name": "独立算式：Σ已发 == 我们给的实发合计（逐件）",
+    "status": "pass",
+    "detail": "期望 15.500 == 实测 15.500",
+    "evidence": [
+      "期望来源: 独立算式：夹具给定 12.5 + 3.0 = 15.50（NOT 系统读面）",
+      "SQL: select order_item_id, shipped_quantity, unit, set_count, roll_count from order_shipment_items where order_id='fa701f0c4add6f8db4c0f4' → [{\"shipment_id\":\"a75a023db5fe0e80c28fb854164046f7\",\"order_item_id\":\"fb026b7ac7c33bfa9be734\",\"shipped_quantity\":12.5,\"unit\":\"米\",\"set_count\":4,\"roll_count\":2},{\"shipment_id\":\"a75a023db5fe0e80c28fb854164046f7\",\"order_item_id\":\"fb421fc404985993be807e\",\"shipped_quantity\":3,\"unit\":\"米\",\"set_count\":1,\"roll_count\":null}]"
+    ],
+    "at": "2026-10-03 21:10:14 +08"
+  },
+  {
+    "id": "S4-3",
+    "name": "逐件等价：每行 shipped_quantity/unit/set_count/roll_count 与提交一致",
+    "status": "pass",
+    "detail": "期望 [{\"q\":\"12.50\",\"u\":\"米\",\"s\":4,\"r\":2},{\"q\":\"3.00\",\"u\":\"米\",\"s\":1,\"r\":null}] == 实测 [{\"q\":\"12.500\",\"u\":\"米\",\"s\":4,\"r\":2},{\"q\":\"3.000\",\"u\":\"米\",\"s\":1,\"r\":null}]",
+    "evidence": [
+      "期望来源: 「缺值不猜」：null 必须保持 null（不得写成 0）",
+      "roll_count(null) 原始读数: [2,null]"
+    ],
+    "at": "2026-10-03 21:10:14 +08"
+  },
+  {
+    "id": "S4-4",
+    "name": "一步到底补记 packed_at（跳过打包也留痕）",
+    "status": "pass",
+    "detail": "期望 packed_at non-null == 实测 2026-10-03T13:10:14.076742+08:00",
+    "evidence": [
+      "期望来源: OrderShipmentService.doShip：shipment.packedAt == null ⇒ 同事务补记",
+      "SQL: select packed_at, shipped_at from order_shipments where order_id='fa701f0c4add6f8db4c0f4'"
+    ],
+    "at": "2026-10-03 21:10:14 +08"
+  },
+  {
+    "id": "S4-5",
+    "name": "待发量（独立算式）== 订单量 − 已发合计 == 0",
+    "status": "pass",
+    "detail": "期望 0.00 == 实测 0.000",
+    "evidence": [
+      "期望来源: 独立算式 12.5 + 3.0 − Σ已发",
+      "两侧都直连 RDS 原始列"
+    ],
+    "at": "2026-10-03 21:10:14 +08"
+  }
+]

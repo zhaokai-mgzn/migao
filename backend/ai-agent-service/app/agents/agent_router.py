@@ -55,7 +55,7 @@ class AgentRouter:
         # 兜底分流（P1-C 修复，RBAC 走查）：
         # - C 端角色（customer/agent）→ 最小权限 xiaobu（安全兜底不变）
         # - 商户员工（admin-api 签发的后台 JWT，含「角色管理」自定义角色码，
-        #   无法在 allowed_roles 白名单穷举）→ mibao；米宝工具级权限仍由
+        #   无法在 allowed_roles 白名单穷举）→ mibao；黄金策工具级权限仍由
         #   permissions claim 强控（required_permissions），自定义角色无权限码
         #   自然被工具拒绝，不会越权暴露管理能力。
         all_configs = get_all_agent_configs()

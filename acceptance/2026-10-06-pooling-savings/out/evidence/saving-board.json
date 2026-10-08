@@ -1,0 +1,170 @@
+{
+  "at": "2026-10-06T03:42:54.478Z",
+  "stamp": "174478",
+  "prefix": "SD06省料",
+  "checks": [
+    {
+      "id": "A1-台账真的落了省料",
+      "ok": true,
+      "detail": "行数=4 Σformula=5.6 Σplanned=2.8 Σsaved=2.8 米"
+    },
+    {
+      "id": "A2-看板米数 == 台账逐行 Σsaved",
+      "ok": true,
+      "detail": "看板 total.savedMeters=2.8 vs 台账 2.8"
+    },
+    {
+      "id": "A3-看板金额 == Σ(省料 × 当时批次均价)",
+      "ok": true,
+      "detail": "看板 total.savedAmount=112 vs 台账 112"
+    },
+    {
+      "id": "A4-成本可知（金额不是「无数据」）",
+      "ok": true,
+      "detail": "unknownCostLines=0、lineCount=4"
+    },
+    {
+      "id": "A5-能定位到本物料的省料组",
+      "ok": true,
+      "detail": "组数=1 [{\"period\":\"2026-10\",\"cohort\":\"purchase\",\"skuCode\":\"SD06省料-174478\",\"savedMeters\":2.8,\"savedAmount\":112,\"lineCount\":4,\"unknownCostLines\":0}]"
+    },
+    {
+      "id": "A7-负对照·界面路径的 4 单不产生省料",
+      "ok": true,
+      "detail": "台账行数=4（应=带指派臂的 4 单；界面臂 4 单 0 行）"
+    },
+    {
+      "id": "A6-页面渲染出看板数字（真浏览器）",
+      "ok": true,
+      "detail": "页面「逐单省料汇总」文本=\"逐单省料汇总（与逐单明细逐值相等） 时间 来源组 物料 公式米数 排料米数 省料米数 省料金额 2026-10 切换后（采购入库） e0c33ddae55599f745fd354d61200439|SD06省料-174478 5.6 米 2.8 米 2.8 米 112 元\"｜含米数=true 含金额=true"
+    },
+    {
+      "id": "A6b-页面确实带上省料金额（元）",
+      "ok": true,
+      "detail": "期望金额 112 元（页面按 formatMetric 展示，末位 0 不补）"
+    },
+    {
+      "id": "A8-清理后看板不再出现该物料（证明读数来自本轮数据）",
+      "ok": true,
+      "detail": "清理后本物料组=0，全租户 Σsaved=undefined 米 / undefined 元"
+    }
+  ],
+  "probe": {
+    "productId": "e0c33ddae55599f745fd354d61200439",
+    "skuId": "2107315638691762178",
+    "skuCode": "SD06省料-174478",
+    "inboundId": "c793242da0cbb2cb99763c900d17d87c",
+    "batchNo": "PC-20261006-0009",
+    "batchQty": "600.0"
+  },
+  "dispatch": {
+    "ui": [
+      {
+        "orderRef": "6692e3283509427bdfda98c0f1f31746",
+        "success": true,
+        "processingOrderNo": "JG-20261006-8691"
+      },
+      {
+        "orderRef": "aebba903356b17a69166a4e1cc3c71d1",
+        "success": true,
+        "processingOrderNo": "JG-20261006-8692"
+      },
+      {
+        "orderRef": "0a4a5ede5b75d910f16d2a0ded74d69d",
+        "success": true,
+        "processingOrderNo": "JG-20261006-8693"
+      },
+      {
+        "orderRef": "1000c8c355b540dde1e8f18b593c1797",
+        "success": true,
+        "processingOrderNo": "JG-20261006-8694"
+      }
+    ],
+    "api": [
+      {
+        "orderRef": "b039ab9e547cdf727ec33e25e423e2c7",
+        "success": true,
+        "processingOrderNo": "JG-20261006-8695"
+      },
+      {
+        "orderRef": "a4a6dfb3e1b509e60305ed56ecb3b5f1",
+        "success": true,
+        "processingOrderNo": "JG-20261006-8696"
+      },
+      {
+        "orderRef": "424e9bfc7ea9e362806ed9f3e477d2d1",
+        "success": true,
+        "processingOrderNo": "JG-20261006-8697"
+      },
+      {
+        "orderRef": "90d19b28f8a0f436f56cbf95a7c29915",
+        "success": true,
+        "processingOrderNo": "JG-20261006-8698"
+      }
+    ]
+  },
+  "ledger": {
+    "rows": 4,
+    "formula": 5.6,
+    "planned": 2.8,
+    "saved": 2.8,
+    "amount": 112
+  },
+  "board": {
+    "status": 200,
+    "total": {
+      "formulaMeters": 5.6,
+      "plannedMeters": 2.8,
+      "savedMeters": 2.8,
+      "savedAmount": 112,
+      "lineCount": 4,
+      "unknownCostLines": 0,
+      "batchCount": 17,
+      "le0_2Count": 0,
+      "le0_2Share": 0
+    },
+    "savedGroups": [
+      {
+        "period": "2026-10",
+        "cohort": "purchase",
+        "skuCode": "SD06省料-174478",
+        "savedMeters": 2.8,
+        "savedAmount": 112,
+        "lineCount": 4,
+        "unknownCostLines": 0
+      }
+    ],
+    "cohorts": [
+      {
+        "cohort": "purchase",
+        "savedMeters": 2.8,
+        "savedAmount": 112,
+        "batchCount": 12
+      },
+      {
+        "cohort": "opening",
+        "batchCount": 5
+      },
+      {
+        "cohort": "unknown",
+        "batchCount": 0
+      }
+    ]
+  },
+  "boardMine": {
+    "groups": 1,
+    "savedMeters": 2.8,
+    "savedAmount": 112
+  },
+  "uiText": "逐单省料汇总（与逐单明细逐值相等）\n时间\t来源组\t物料\t公式米数\t排料米数\t省料米数\t省料金额\n2026-10\t切换后（采购入库）\te0c33ddae55599f745fd354d61200439|SD06省料-174478\t5.6 米\t2.8 米\t2.8 米\t112 元",
+  "screenshot": "out/screenshots/saving-board-174478.png",
+  "after": {
+    "mineGroups": 0
+  },
+  "residue": {
+    "orders": 0,
+    "cons": 0,
+    "products": 0,
+    "batches": 0
+  }
+}

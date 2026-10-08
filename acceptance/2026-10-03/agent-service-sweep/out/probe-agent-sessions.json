@@ -1,0 +1,209 @@
+[
+  {
+    "id": "F0-1",
+    "name": "夹具：先建真实 AI 会话（:8001）作为转人工源",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且有 session id == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 转人工正路要求 ai_session_id 指向真实会话（FK 约束，见 PG 报错逐字）",
+      "HTTP/读数: {\"status\":200,\"aiSessionId\":\"sess_d136d7c8188d4524\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21"
+    ],
+    "at": "2026-10-03 13:49:10 +08",
+    "atUtc": "2026-10-03T05:49:10.643Z"
+  },
+  {
+    "id": "F1-1",
+    "name": "转人工建会话 ⇒ 200 且有 id（初始 waiting）",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 data.id 非空且 status==\"waiting\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: AgentSessionService.createSessionForHandoff —— 初始 status=\"waiting\"",
+      "HTTP/读数: {\"status\":200,\"id\":\"4f03e72acf11c5056017bd68cd892c5e\",\"s\":\"waiting\",\"body\":\"{\\\"success\\\":true,\\\"data\\\":{\\\"id\\\":\\\"4f03e72acf11c5056017bd68cd892c5e\\\",\\\"customerId\\\":\\\"probe_line1_f_fmurz21yq\\\",\\\"aiSessionId\\\":\\\"sess_d136d7c8188d4524\\\",\\\"status\\\":\\\"waiting\\\",\\\"priority\\\":1,\\\"reason\\\":\\\"线①验收转人工-fmurz21yq\\\",\\\"queuePosition\\\":0,\\\"messageCount\\\":1,\\\"startedAt\\\":\\\"\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21"
+    ],
+    "at": "2026-10-03 13:49:10 +08",
+    "atUtc": "2026-10-03T05:49:10.871Z"
+  },
+  {
+    "id": "F2-1",
+    "name": "转人工会话 DB 逐字段（tenant/customer/aiSession/status）",
+    "status": "pass",
+    "detail": "期望 tenant_id=20 ∧ customer_id/ai_session_id 与请求一致 ∧ status=waiting == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 请求体是期望来源；TenantContext 决定 tenant_id（转人工不得跨租户）",
+      "HTTP/读数: {\"mismatches\":[],\"row\":{\"id\":\"4f03e72acf11c5056017bd68cd892c5e\",\"tenant_id\":20,\"customer_id\":\"probe_line1_f_fmurz21yq\",\"ai_session_id\":\"sess_d136d7c8188d4524\",\"status\":\"waiting\",\"employee_id\":null,\"ai_context_messages\":\"数组(1)\",\"started_at\":\"2026-10-03T13:49:10.797201+08:00\",\"deleted\":0}}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21"
+    ],
+    "at": "2026-10-03 13:49:11 +08",
+    "atUtc": "2026-10-03T05:49:11.023Z"
+  },
+  {
+    "id": "F3-1",
+    "name": "工作台会话列表（本租户）能看到该转人工会话",
+    "status": "pass",
+    "detail": "期望 命中 1 条且 tenantId 一致 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: getSessionPage(..., tenantId=TenantContext) ⇒ 列表按租户过滤",
+      "HTTP/读数: {\"httpStatus\":200,\"total\":2,\"mine\":1}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21"
+    ],
+    "at": "2026-10-03 13:49:11 +08",
+    "atUtc": "2026-10-03T05:49:11.116Z"
+  },
+  {
+    "id": "F3-2",
+    "name": "他租户（21）列表看不到租户 20 的转人工会话",
+    "status": "pass",
+    "detail": "期望 命中 0 条 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 列表按 TenantContext 租户过滤（跨租户不可见）",
+      "HTTP/读数: {\"httpStatus\":200,\"total\":0,\"leaked\":0,\"sampleIds\":[]}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21"
+    ],
+    "at": "2026-10-03 13:49:11 +08",
+    "atUtc": "2026-10-03T05:49:11.176Z"
+  },
+  {
+    "id": "F3-3",
+    "name": "跨租户按 id 读会话详情 ⇒ 必须拒（不得返回他租户内容）",
+    "status": "pass",
+    "detail": "期望 HTTP 4xx（403/404）且响应不含会话内容 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 租户归属判据：详情面必须以 TenantContext 校验归属（getSessionDetail 的租户校验）",
+      "HTTP/读数: {\"status\":404,\"body\":\"{\\\"success\\\":false,\\\"error\\\":{\\\"code\\\":\\\"NOT_FOUND\\\",\\\"message\\\":\\\"客服会话不存在\\\"},\\\"requestId\\\":\\\"req_6cfde927cb8d49a0\\\",\\\"timestamp\\\":1791006551,\\\"suggestion\\\":\\\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\\\"}\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21",
+      "GET /api/admin/agent-sessions/4f03e72acf11c5056017bd68cd892c5e with tenant-21 token"
+    ],
+    "at": "2026-10-03 13:49:11 +08",
+    "atUtc": "2026-10-03T05:49:11.230Z"
+  },
+  {
+    "id": "F4-1",
+    "name": "接管（assign）⇒ waiting → active 且 employee_id 落库",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 DB status==\"active\" 且 employee_id=='l1empfmurz21yqa' == 实测 [object Object]",
+    "evidence": [
+      "期望来源: AgentSessionService.assignSession —— 校验 status==\"waiting\" 后转 active 并落 employee_id",
+      "HTTP/读数: {\"status\":200,\"dbStatus\":\"active\",\"employee_id\":\"l1empfmurz21yqa\",\"body\":\"{\\\"success\\\":true,\\\"requestId\\\":\\\"req_d84d9a7d15394bb6\\\",\\\"timestamp\\\":1791006551}\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21"
+    ],
+    "at": "2026-10-03 13:49:11 +08",
+    "atUtc": "2026-10-03T05:49:11.612Z"
+  },
+  {
+    "id": "F4-2",
+    "name": "接管后详情面可查（含 AI 上下文快照）",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且返回会话对象（aiContext 相关字段存在） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 人工接管后工作台必须能读到会话（闭环可查）",
+      "HTTP/读数: {\"status\":200,\"keys\":[\"id\",\"customerId\",\"employeeId\",\"employeeName\",\"aiSessionId\",\"status\",\"priority\",\"reason\",\"queuePosition\",\"messageCount\",\"startedAt\",\"createdAt\",\"messages\",\"aiContextSummary\"],\"msgCount\":2}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21"
+    ],
+    "at": "2026-10-03 13:49:11 +08",
+    "atUtc": "2026-10-03T05:49:11.700Z"
+  },
+  {
+    "id": "F4-3",
+    "name": "状态机：已 active 再 assign ⇒ 拒（非 waiting）",
+    "status": "pass",
+    "detail": "期望 HTTP 4xx == 实测 [object Object]",
+    "evidence": [
+      "期望来源: assignSession 校验「校验会话状态必须为 waiting」⇒ 非法流转拒",
+      "HTTP/读数: {\"status\":422,\"body\":\"{\\\"success\\\":false,\\\"error\\\":{\\\"code\\\":\\\"VALIDATION_ERROR\\\",\\\"message\\\":\\\"只有等待中的会话才能分配\\\"},\\\"requestId\\\":\\\"req_3f648b41b9944aca\\\",\\\"timestamp\\\":1791006551,\\\"suggestion\\\":\\\"请检查必填字段是否完整，字段格式是否正确\\\"}\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21"
+    ],
+    "at": "2026-10-03 13:49:11 +08",
+    "atUtc": "2026-10-03T05:49:11.774Z"
+  },
+  {
+    "id": "F4-4",
+    "name": "跨租户分配员工（租户 B 员工 → 租户 A 会话）⇒ 必须拒",
+    "status": "pass",
+    "detail": "期望 HTTP 4xx 且 DB employee_id 仍为空、status 仍 waiting == 实测 [object Object]",
+    "evidence": [
+      "期望来源: assignSession 的租户隔离校验（会话归属）+ 员工必须属本租户；不然后果 = 他租户员工接管本租户会话",
+      "HTTP/读数: {\"status\":404,\"body\":\"{\\\"success\\\":false,\\\"error\\\":{\\\"code\\\":\\\"NOT_FOUND\\\",\\\"message\\\":\\\"客服员工不存在\\\"},\\\"requestId\\\":\\\"req_4f4d46b0c0384887\\\",\\\"timestamp\\\":1791006551,\\\"suggestion\\\":\\\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\\\"}\",\"dbStatus\":\"waiting\",\"employee_id\":null}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21",
+      "POST assign employeeId=l1empfmurz21yqb(tenant 21) → session 901f1688c06c0f9629dfd636799d8eba(tenant 20)"
+    ],
+    "at": "2026-10-03 13:49:12 +08",
+    "atUtc": "2026-10-03T05:49:12.061Z"
+  },
+  {
+    "id": "F5-1",
+    "name": "结束会话 ⇒ status==\"ended\" 且 ended_at 打点",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 DB status==\"ended\" 且 ended_at 非空 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: AgentSessionService.endSession —— setStatus(\"ended\") + setEndedAt(now)",
+      "HTTP/读数: {\"status\":200,\"dbStatus\":\"ended\",\"ended_at\":\"2026-10-03T13:49:12.227466+08:00\",\"body\":\"{\\\"success\\\":true,\\\"requestId\\\":\\\"req_7ab8212b59454c5a\\\",\\\"timestamp\\\":1791006552}\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21"
+    ],
+    "at": "2026-10-03 13:49:12 +08",
+    "atUtc": "2026-10-03T05:49:12.376Z"
+  },
+  {
+    "id": "F5-2",
+    "name": "状态机：已 ended 再 end ⇒ 拒",
+    "status": "pass",
+    "detail": "期望 HTTP 4xx == 实测 [object Object]",
+    "evidence": [
+      "期望来源: endSession 校验「ended 不可再结束」",
+      "HTTP/读数: {\"status\":422,\"body\":\"{\\\"success\\\":false,\\\"error\\\":{\\\"code\\\":\\\"VALIDATION_ERROR\\\",\\\"message\\\":\\\"只有进行中或等待中的会话才能结束\\\"},\\\"requestId\\\":\\\"req_8547c2688715466a\\\",\\\"timestamp\\\":1791006552,\\\"suggestion\\\":\\\"请检查必填字段是否完整，字段格式是否正确\\\"}\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21"
+    ],
+    "at": "2026-10-03 13:49:12 +08",
+    "atUtc": "2026-10-03T05:49:12.434Z"
+  },
+  {
+    "id": "F6-1",
+    "name": "@Async 蒸馏监听器：会话结束后产出的候选租户归属 == 结束方租户",
+    "status": "pass",
+    "detail": "期望 候选行 tenant_id 全为 20（跨租户条数 = 0） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: SessionDistillListener 在租户上下文内写候选（TenantContext 必须随事务/请求传递）⇒ 不得落他租户",
+      "HTTP/读数: {\"candidateRows\":0,\"foreignTenantRows\":[],\"sample\":[]}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8",
+      "登录 A=tenant 20 / B=tenant 21",
+      "SQL: knowledge_candidates where source_ref like %4f03e72acf11c5056017bd68cd892c5e% or %probe_line1%"
+    ],
+    "at": "2026-10-03 13:49:32 +08",
+    "atUtc": "2026-10-03T05:49:32.958Z"
+  },
+  {
+    "id": "F6-2",
+    "name": "@Async 监听器触发存在性",
+    "status": "skip",
+    "detail": "45s 内未观测到任何候选行 ⇒ 监听器未触发或该租户蒸馏被关闭；本条记未覆盖（不得读成通过）",
+    "evidence": [],
+    "at": "2026-10-03 13:49:32 +08",
+    "atUtc": "2026-10-03T05:49:32.959Z"
+  }
+]

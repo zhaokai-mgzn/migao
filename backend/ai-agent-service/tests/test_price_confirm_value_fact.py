@@ -185,7 +185,7 @@ class _TurnHarness:
                 state=_make_state(messages=[HumanMessage(content=user_msg)]),
                 skill_name="product",
                 tool_names=["product_update"],
-                system_prompt="你是米宝",
+                system_prompt="你是黄金策",
             ))
         # 只报**本轮**执行了什么（累计列表会把上一轮的读数混进来 ⇒ 断言指向错误的轮次）
         return [name for name, _ in self.executed[start:]]

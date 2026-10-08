@@ -33,8 +33,8 @@ intent_ownership:
   # ── 加工单域（issue #3340 登记；#3917 曾下线，#4196 用户裁定**恢复接入**）──
   # 按 #4196 逐条反转 #3917：registry.py 三行 import/register 取消注释、
   # order_skill.py 的 tool_names/intents 恢复、IntentType 补回此三值（#4027 曾因缺枚举移除声明）
-  # ⇒ 米宝（商家后台）**可达**，故此处恢复 `agents: [mibao]`（#4058 的 `agents: []` 是下线态对齐）。
-  # C 端小布不可达（加工单是 B 端履约单据）——勿加 xiaobu。
+  # ⇒ 黄金策（商家后台）**可达**，故此处恢复 `agents: [mibao]`（#4058 的 `agents: []` 是下线态对齐）。
+  # C 端元元不可达（加工单是 B 端履约单据）——勿加 xiaobu。
   processing_order_generate:
     route_key: order
     agents: [mibao]
@@ -102,20 +102,20 @@ intent_ownership:
   # ── 设置域 ──
   system_settings:
     route_key: settings
-    # issue #5247：B 端米宝已解绑 settings skill（用户裁定「系统设置/通知配置不进 B 端对话面」）
-    # ⇒ mibao **不可达**，只保留 C 端（小布 customer_general 仍声明该 intent）。
+    # issue #5247：B 端黄金策已解绑 settings skill（用户裁定「系统设置/通知配置不进 B 端对话面」）
+    # ⇒ mibao **不可达**，只保留 C 端（元元 customer_general 仍声明该 intent）。
     agents: [xiaobu]
     description: 系统设置
   ai_config:
     route_key: settings
-    # issue #5247：B 端米宝已解绑 settings skill（用户裁定「系统设置/通知配置不进 B 端对话面」）
-    # ⇒ mibao **不可达**，只保留 C 端（小布 customer_general 仍声明该 intent）。
+    # issue #5247：B 端黄金策已解绑 settings skill（用户裁定「系统设置/通知配置不进 B 端对话面」）
+    # ⇒ mibao **不可达**，只保留 C 端（元元 customer_general 仍声明该 intent）。
     agents: [xiaobu]
     description: AI 配置
   notification:
     route_key: settings
-    # issue #5247：B 端米宝已解绑 settings skill（用户裁定「系统设置/通知配置不进 B 端对话面」）
-    # ⇒ mibao **不可达**，只保留 C 端（小布 customer_general 仍声明该 intent）。
+    # issue #5247：B 端黄金策已解绑 settings skill（用户裁定「系统设置/通知配置不进 B 端对话面」）
+    # ⇒ mibao **不可达**，只保留 C 端（元元 customer_general 仍声明该 intent）。
     agents: [xiaobu]
     description: 通知管理
   # ── 数据域 ──
@@ -143,7 +143,7 @@ intent_ownership:
   knowledge_faq:
     route_key: knowledge
     agents: [mibao, xiaobu]
-    description: 知识卡片问答（双端：小布 C 端消费者 + 米宝 B 端员工，issue #3059）
+    description: 知识卡片问答（双端：元元 C 端消费者 + 黄金策 B 端员工，issue #3059）
   knowledge_manage:
     route_key: knowledge
     agents: [xiaobu]
@@ -152,7 +152,17 @@ intent_ownership:
   quote:
     route_key: quote
     agents: [xiaobu]
-    description: 窗帘算料报价（仅小布 customer_quote）
+    description: 窗帘算料报价（仅元元 customer_quote）
+  # ── 助手域：定时提醒（issue #6486 包 2 引入；#6514 补登记）──
+  # 引入者 PR #6499 加了工具 / skill / 活映射，**漏登记本表** ⇒ `contract-check.sh` 第 6 项
+  # 在 main 上恒红（活映射侧从 `get_skill_registry()` + `MIBAO_CONFIG` 现取，有它）。
+  # route_key = reminder skill 的 `route_keys` 末位（registry last-wins 语义，见
+  # `SkillRegistry.get_intent_to_route_map`）；仅 B 端黄金策可达（该 skill 的 `system_prompts`
+  # 只声明 mibao，C 端不声明）⇒ 勿加 xiaobu。
+  scheduled_task_manage:
+    route_key: scheduled_task
+    agents: [mibao]
+    description: 定时提醒（建/列/取消「到点提醒」待办，A 档可逆写；到点只发站内通知）
 
 # ── 外部关系目标登记（issue #5245 B6）──
 # relations[].target 必须落在 objects 或本表，loader 加载时 fail-closed 校验
@@ -349,7 +359,7 @@ objects:
     rules:
       - text: "SKU 价格是权威价：下单/改价一律以 SKU 价格为基准，禁止向顾客索要价格"
         severity: must
-      - text: "小布（C 端）无改价/取消类动作：L0 工具白名单物理隔离资金/改价/取消工具"
+      - text: "元元（C 端）无改价/取消类动作：L0 工具白名单物理隔离资金/改价/取消工具"
         severity: must
       - text: "价格/库存变更需确认闸（GB-03）"
         severity: must
@@ -421,7 +431,7 @@ objects:
         severity: must
       - text: "售后 resolved + refund/return 类 → 订单累加 refundAmount、写退款流水"
         severity: must
-      - text: "小布无退款/改价/取消工具；涉赔偿/法律一律转人工"
+      - text: "元元无退款/改价/取消工具；涉赔偿/法律一律转人工"
         severity: must
       - text: "C 端售后查询按 X-User-Id 反查本人订单，只返回这些订单上的工单"
         severity: must

@@ -1,5 +1,7 @@
 package com.migao.admin.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -69,6 +71,8 @@ public class OpeningImportReport {
 
         private String productId;
 
+        /** SKU ID（雪花号，> 2^53）⇒ 字符串出参，防 JS 精度丢失（issue #6340）。 */
+        @JsonSerialize(using = ToStringSerializer.class)
         private Long skuId;
 
         /** 剩余米数（登记值；口径 = **登记时点的实物剩余量**，不是旧系统原始入库量） */

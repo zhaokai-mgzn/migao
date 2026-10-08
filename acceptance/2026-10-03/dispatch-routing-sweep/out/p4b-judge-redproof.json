@@ -1,0 +1,21 @@
+[
+  {
+    "id": "JDG-01",
+    "name": "p2 矩阵 judge() 同源红证：9 道门全部会红、2 道正向必绿",
+    "status": "pass",
+    "detail": "加工单 JG-20261003-6364；读数 {\"greenBaseline\":true,\"redOnSwap\":true,\"redOnShort\":true,\"redOnDroppedRow\":true,\"redOnPrice0\":true,\"redOnUnpricedFallback\":true,\"redOnQtyZero\":true,\"redOnUnknownUnit\":true,\"redOnEmpty\":true,\"redOnMissingPriceRow\":true,\"greenOnRealRouteFailure\":true,\"redOnUnrelatedFailure\":true}",
+    "evidence": [
+      "import { judge } from './p2-matrix.mjs'",
+      "SQL: select operation_name,qty,unit,unit_price from processing_position_operations where processing_order_id='8d1556d2b46aad2db1494aa85e60125f'"
+    ],
+    "at": "2026-10-02T23:23:51.064Z"
+  },
+  {
+    "id": "JDG-02",
+    "name": "本单读面 == 落库（按部位逐道）",
+    "status": "pass",
+    "detail": "RX-428072 本白；共 10 道",
+    "evidence": [],
+    "at": "2026-10-02T23:23:51.065Z"
+  }
+]

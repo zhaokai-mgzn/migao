@@ -79,6 +79,23 @@ name: Auto Merge
 #   ⚠️ 定时档只为这个 job 存在：悬空 PR **不产生任何事件**（这正是它"零信号"的原因）
 #   ⇒ 必须有定时入口。GitHub 对 schedule 有节流（本仓实测 2~5.5h），故它是兜底不是实时。
 
+# ── 合并凭据的来源 / 轮换 / 已知限制（issue #6418，2026-10-06 落地）──────────────
+# 现取：`AUTOMERGE_PAT` = **会话 OAuth 令牌**（用户选定的落地方式；`x-oauth-scopes` 实测 =
+#   `admin:public_key, gist, read:org, repo`）。三条已知代价，改凭据前先读这段：
+#   ① **缺 `workflow` scope** ⇒ 含 `.github/workflows/**` 改动的 PR 由它合并**可能被 GitHub 拒**
+#      （本仓 #4470 / #4475 有同形记录）。**观测点** = 这类 PR 的 arm job；若报文指向 scope/workflow
+#      ⇒ 按「业务连续性优先」加**回落重试**（先 PAT、失败再用内置 token 合那一条 PR：宁可那一次
+#      push 被吞，也不让 PR 卡住），并把该出口补进判据。
+#      🧪 **实测（2026-10-06，PR #6433：仅注释、但确实改了 `.github/workflows/automerge.yml`）**：
+#      本凭证**成功合并**了该 PR（`mergedBy` = 令牌持有者，其合并又当场触发 push 批）⇒ 该风险**本次未复现**。
+#      ⚠️ 只覆盖「注释类改动 × 1 次实例」⇒ **不排除**其它形态（如 dependabot 的 action 版本升级、
+#      新增/删除 workflow 文件）被拒 ⇒ **观测点保留**，命中即按上面的回落重试处置。
+#   ② **它是长期令牌**：失效 / 吊销 ⇒ 本 job 回落内置 token + 具名 `::warning::`（**不卡合并**），
+#      而 `push` 面**静默退回被抑制形态** ⇒ 按 `deploy-reconcile.yml` 头部的**条件式**口径读。
+#      轮换 = `gh secret set AUTOMERGE_PAT`（或换细粒度 PAT：Contents RW · Pull requests RW · Workflows RW）
+#      后重跑本 job，**无需改代码**。
+#   ③ 该令牌无 `read:user` ⇒ actor 读数会打成 `actor=<查询失败>` ⇒ 「PAT 被误配成内置等价物」那条自检
+#      **退化为不可用**（≠「没被误配」）。自检判据仍在，换细粒度 PAT 后自动生效。
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
@@ -132,12 +149,51 @@ jobs:
       # 注：`GITHUB_STEP_SUMMARY` 由 runner 预置为环境变量，无需（也不该）在 env: 里重声明。
       - name: Enable native auto-merge (squash)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 🔴 **合并凭据决定 push 触发面的存亡**（issue #6418）——
+          #   内置 `GITHUB_TOKEN` 合并 ⇒ 合并者恒为 `app/github-actions` ⇒ GitHub 的**反递归抑制**
+          #   （GITHUB_TOKEN 引发的事件，除 `workflow_dispatch` / `repository_dispatch` 外**不创建
+          #   新的 workflow run**）吞掉该次合并产生的 `push` 事件 ⇒ 三条部署腿
+          #   （`deploy-frontend` / `deploy-admin-api` / `deploy-ai-agent-service`）的**主触发面整条失效**
+          #   （它们的主触发就是 `on.push`）。实测（2026-10-06 现取）：近 40 个已合并 PR 里 38 个
+          #   `mergedBy=app/github-actions`，同期 `push` run = **0 条**；最近 80 个 main commit 里
+          #   唯一有 push run 的 8 个**全部**是人工合并（`mergedBy=zhaokai-mgzn`）的。
+          #   ⇒ 走非内置凭据：合并者是 PAT 持有者而非 app ⇒ push 事件恢复触发。
+          #     权限：细粒度 PAT（Contents RW + Pull requests RW + **Workflows RW** —— 合并改
+          #     `.github/workflows/**` 的 PR 需要它）/ 经典 PAT（`repo` + `workflow`）。
+          AUTOMERGE_PAT: ${{ secrets.AUTOMERGE_PAT }}
+          # 回落凭据：**显式具名，不静默降级**。缺 secret 时仍能 arm（不因缺密钥卡住合并），
+          # 但当场打 `::warning::` + step summary 写明「本次合并仍会被抑制 ⇒ 部署仍只靠对账腿」。
+          FALLBACK_TOKEN: ${{ github.token }}
           # 双保险：即使 git 上下文异常，gh 也能凭 GH_REPO 解析目标仓库
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -uo pipefail
+
+          # ---------- ⓪ 选合并凭据（**先选后 arm**：它决定合并后 push 事件会不会被吞）----------
+          if [ -n "${AUTOMERGE_PAT:-}" ]; then
+            GH_TOKEN="$AUTOMERGE_PAT"
+            actor="$(gh api user --jq .login 2>/dev/null || echo '')"
+            echo "🔑 合并凭据 = AUTOMERGE_PAT（actor=${actor:-<查询失败>}）⇒ 合并后 push 事件不被抑制（#6418）"
+            if [ "$actor" = "github-actions[bot]" ]; then
+              echo "::warning::AUTOMERGE_PAT 的 actor 解析为 github-actions[bot] ⇒ 它**就是**内置凭据的等价物 ⇒ 抑制照旧、push 面不会恢复（#6418）：请换成用户 / GitHub App 的 PAT"
+            fi
+          else
+            GH_TOKEN="${FALLBACK_TOKEN:-}"
+            echo "::warning::AUTOMERGE_PAT 未配置 ⇒ 回落到内置 GITHUB_TOKEN：本次合并仍会被 GitHub 反递归抑制，合并后的 push 事件不触发任何 workflow（三条部署腿的主触发不恢复，#6418）。出口：Settings → Secrets and variables → Actions 建 AUTOMERGE_PAT（Contents RW + Pull requests RW + Workflows RW）后重跑本 job"
+            {
+              echo "### ⚠️ 合并凭据回落（#6418）"
+              echo ""
+              echo "- 本仓库未配置 \`AUTOMERGE_PAT\` ⇒ 本次 arm 用的仍是内置 \`GITHUB_TOKEN\`。"
+              echo "- 后果：本 PR 合并产生的 \`push\` 事件**不触发任何 workflow**（GitHub 防递归抑制）"
+              echo "  ⇒ \`deploy-frontend\` / \`deploy-admin-api\` / \`deploy-ai-agent-service\` 的**主触发不恢复**，"
+              echo "  部署仍只靠 \`deploy-reconcile\` 的 20 分钟 cron（**实测被 GitHub 节流到 ~6 次/日**）。"
+              echo "- 出口（人工一步）：Settings → Secrets and variables → Actions → New repository secret："
+              echo "  \`AUTOMERGE_PAT\` = 细粒度 PAT（Contents: RW · Pull requests: RW · Workflows: RW）"
+              echo "  或经典 PAT（\`repo\` + \`workflow\`）；建好后重跑本 job 即生效（**无需改代码**）。"
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          fi
+          export GH_TOKEN
 
           merge_out="$(mktemp)"
           # ⚠️ trap 里的变量名必须与主流程的 `rc` **不同名**：trap 是 EXIT 时执行的，
@@ -278,6 +334,16 @@ jobs:
           esac
   # ── bot 安全路径（2026-09-22 新增，关联 #5077）────────────────────────────────
   # 与既有 job 同一组护栏，只把作者类型换成 bot（两条路径互斥 ⇒ 任一 PR 只可能走一条）。
+  #
+  # 🔴 **口径：本 job 判「绿」≠「已 arm」**（2026-10-03，CI 审计 issue #6144 的 P2）——
+  #    `main()` 在 bot-safe 判「不安全」时走 `note({...})` + `print("未 arm（fail-closed）")` 后
+  #    **正常返回** ⇒ 本 check 仍是**绿**；`gh pr merge --auto` 失败（`MERGE_CMD_FAILED`）同样只写
+  #    `note(...)` 后返回 ⇒ 也是绿。**这是有意的**（fail-closed 不表达成红），但后果是
+  #    「Enable auto-merge (bot, safe classes only)」**绿 + 没 arm** 与「已 arm」长得一模一样。
+  #    ⇒ 要判断 arm 没 arm，看 `gh pr view <PR> --json autoMergeRequest`（非空 = 已 arm），
+  #      **不许看本腿颜色**；唯一兜底 = 同文件的 `detect-dangling-prs`（`schedule`，现取小时级
+  #      `7 * * * *`；窗口 ≥60min，且**只报警不补 arm**）。
+  #    口径全文（单一来源）= docs/wiki/CI-CD.md 的「口径：几条绿色腿不是它名字读起来的意思」§①。
   enable-auto-merge-bot-safe:
     name: Enable auto-merge (bot, safe classes only)
     runs-on: ubuntu-latest
@@ -300,9 +366,13 @@ jobs:
 
       - name: Classify bot PR (fail-closed) and arm only if safe
         env:
-          # 用 `github.token`（= 内置 GITHUB_TOKEN，同一凭据）而**不是**再写一处 secrets 引用
-          # 引用：本 PR 的硬约束禁止新增 secrets 引用（Danger Scan 会 BLOCK），两者取值完全相同。
-          GH_TOKEN: ${{ github.token }}
+          # 🔴 与 job `enable-auto-merge` 同一口径（issue #6418）：合并凭据决定 push 触发面存亡 ——
+          #   内置 token 合并 ⇒ 合并者 `app/github-actions` ⇒ 反递归抑制吞掉 push 事件。此处原注释
+          #   写「本 PR 的硬约束禁止新增 secrets 引用（Danger Scan 会 BLOCK）」—— 那条硬约束已由本单
+          #   改造成**owner 显式确认通道**（`/danger-ack new-secret <NAME>`，见 `.github/danger_scan.py`；
+          #   无确认时**逐字仍是 BLOCK**），故这里可以正规地引用它。
+          AUTOMERGE_PAT: ${{ secrets.AUTOMERGE_PAT }}
+          FALLBACK_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -321,6 +391,18 @@ jobs:
           import subprocess
 
           GH = os.environ.get("AUTOMERGE_GH_BIN", "gh")
+          # ── 合并凭据（#6418）：内置 token ⇒ 合并者 app/github-actions ⇒ push 被反递归抑制 ──
+          _pat = os.environ.pop("AUTOMERGE_PAT", "") or ""
+          if _pat:
+              os.environ["GH_TOKEN"] = _pat
+              _actor = subprocess.run([GH, "api", "user", "--jq", ".login"],
+                                      capture_output=True, text=True).stdout.strip()
+              print("🔑 合并凭据 = AUTOMERGE_PAT（actor=%s）⇒ 合并后 push 事件不被抑制（#6418）"
+                    % (_actor or "<查询失败>"))
+          else:
+              os.environ["GH_TOKEN"] = os.environ.pop("FALLBACK_TOKEN", "")
+              print("::warning::AUTOMERGE_PAT 未配置 ⇒ 回落到内置 GITHUB_TOKEN：本次合并仍会被 GitHub "
+                    "反递归抑制，部署主触发不恢复（#6418）")
           REPO = os.environ.get("GH_REPO", "")
           PR = os.environ.get("PR_NUMBER", "")
           TITLE = os.environ.get("PR_TITLE", "")

@@ -67,7 +67,7 @@ def _matches(value: Any, needle: str) -> bool:
 
 
 class BatchStockQueryTool(BaseTool):
-    """批次账 / 省料度量的只读查询（米宝 B 端；数据面 #5145 / #5159）"""
+    """批次账 / 省料度量的只读查询（黄金策 B 端；数据面 #5145 / #5159）"""
 
     name = "batch_stock_query"
 

@@ -52,7 +52,7 @@ afterEach(() => {
 describe('UI-079 useTypewriter — 客户端打字机', () => {
   it('UI-079-1 真在逐字揭示：中途可见字符数 < 总长，最终 == 总长', () => {
     vi.useFakeTimers()
-    const text = '这是一段足够长的米宝回复，用来观察它是不是真的一个字一个字出现。'
+    const text = '这是一段足够长的黄金策回复，用来观察它是不是真的一个字一个字出现。'
     render(<Probe text={text} />)
 
     expect(visibleCount()).toBe(0)

@@ -1,7 +1,8 @@
+# case_ids: OR-013
 """
-米宝机器人全场景 E2E 集成测试
+黄金策机器人全场景 E2E 集成测试
 ================================
-通过真实 LLM 调用验证米宝所有 Skill 节点的对话能力。
+通过真实 LLM 调用验证黄金策所有 Skill 节点的对话能力。
 按 TDD 逐条推进，每条测试描述一个业务行为。
 
 运行方式：
@@ -11,19 +12,28 @@
     - AI Agent Service 运行在 localhost:8001（DEBUG=true，默认 admin 用户 → mibao agent）
     - DashScope API Key 已配置
     - PostgreSQL 和 Redis 可用
+    - **凭据能被服务接受**：`/api/chat/send` 走的是 `get_current_user`，它**不认**
+      `X-Service-Token` —— DEBUG=true 的服务要显式 `X-Debug-Role`（或 JWT，P0-3 加固后
+      「无 token 无调试头」一律 401 fail-closed）。凭据不被接受时本文件**整体 skip**
+      （未就绪，不是失败，见下面的「服务就绪检查」）。
 
 实现适配说明：
-    - 实际接口为 POST /api/chat/send（非 /api/v1/chat），由 X-Service-Token + DEBUG 模式自动注入 admin 用户
+    - 实际接口为 POST /api/chat/send（非 /api/v1/chat），身份由 JWT 或 DEBUG 下的
+      `X-Debug-Role` 注入（admin → mibao agent）；`X-Service-Token` 只对内部 API 有效
     - SSE data 字段为 JSON 编码（如 {"content": "..."}），需 json.loads 解析
     - agent_type 由后端 JWT 角色自动决定（admin → mibao）
     - 多轮对话历史由服务端按 session_id 自动管理，无需在请求体中传 chat_history
 """
+# case_ids: OR-013
 import json
+import os
 import uuid
 from typing import Any, Dict, List, Optional
 
 import httpx
 import pytest
+
+from tests.live_service_readiness import not_ready_reason
 
 
 # === SSE 解析辅助 ===
@@ -46,29 +56,42 @@ class SSEEvent:
         return f"SSEEvent({self.event_type}, {self.data[:60]}...)"
 
 
-BASE_URL = "http://localhost:8001"
-HEADERS = {
-    "Content-Type": "application/json",
-    "X-Service-Token": "f4ac825ebdf8900b7b2fbcc13af93b29f352264823a3bf9a8098e7155a6961a8b",
-    "X-Tenant-Id": "1",
+# 前置就绪探针的**契约**（issue #6160）：探哪个端点、用什么凭据 —— **唯一来源**。
+# ⚠️ 必须是**字面量**：`scripts/ai-agent-e2e-readiness.py` 用 `ast` 现取它（既不执行本文件的
+#    代码，也不需要 venv / httpx）⇒ 本文件的 skip 判定与 verify-all.sh 的「未就绪」前置
+#    读的是**同一份事实**（两处各写一份必然漂移）。
+# 🔴 凭据**不进代码**（issue #6172）：字面量里留空串（契约形状与 `ast` 现取都不变），真值由
+#    环境注入 `MIGAO_SERVICE_TOKEN`；不设 ⇒ 不带该头（探针判未就绪，不是失败）。
+LIVE_SERVICE_PROBE = {
+    "endpoint": "http://localhost:8001/api/chat/send",
+    "headers": {
+        "Content-Type": "application/json",
+        "X-Service-Token": "",
+        "X-Tenant-Id": "1",
+    },
 }
-CHAT_ENDPOINT = f"{BASE_URL}/api/chat/send"
+if os.environ.get("MIGAO_SERVICE_TOKEN"):
+    LIVE_SERVICE_PROBE["headers"]["X-Service-Token"] = os.environ["MIGAO_SERVICE_TOKEN"]
+BASE_URL = "http://localhost:8001"
+CHAT_ENDPOINT = LIVE_SERVICE_PROBE["endpoint"]
+HEADERS = dict(LIVE_SERVICE_PROBE["headers"])
 
 
-# === 服务可用性检查 ===
-
-def _is_service_available() -> bool:
-    try:
-        import socket
-        with socket.create_connection(("localhost", 8001), timeout=2):
-            return True
-    except (socket.timeout, ConnectionRefusedError, OSError):
-        return False
-
-SERVICE_AVAILABLE = _is_service_available()
+# === 服务就绪检查（外部服务 + 凭据）===
+# 本面需要**本机在跑的 ai-agent-service** + **它接受的凭据**。两种「没准备好」都判
+# **未就绪（skip）**、而不是**失败**（issue #6160）：
+#   ① 服务不在跑（连不上）；② 服务在跑但**不认这套凭据**（HTTP 401 AUTH_REQUIRED）。
+# 后者实测把 20 条用例报成 failed（`chat 接口返回非 200：401, detail={"code":"AUTH_REQUIRED"}`，
+# 2.79s），且同一读数在主检出上逐字复现 ⇒ 那是**本地环境红**，不是代码回归。
+#
+# 判定本体 = `tests/live_service_readiness.py::not_ready_reason()`（单一实现，stdlib-only）：
+# 它**真去探**一次 chat 端点（空体 POST，鉴权先于请求体校验 ⇒ 不触发 LLM）；verify-all.sh 的
+# `ai-agent-e2e` 前置用的是同一个函数 ⇒ 用例的 skip 与门禁的「未就绪」不会各说各话。
+# 🔴 探针**只看探通不通**：探得通之后本文件照常跑、照常判红绿 —— 真失败仍红，不许被吞掉。
+READINESS_REASON = not_ready_reason(CHAT_ENDPOINT, HEADERS)
 _skip_if_no_service = pytest.mark.skipif(
-    not SERVICE_AVAILABLE,
-    reason="AI Agent Service 未在 localhost:8001 运行",
+    bool(READINESS_REASON),
+    reason=f"ai-agent e2e 未就绪（需本机服务 + 凭据）；准备：{READINESS_REASON}",
 )
 
 
@@ -229,11 +252,11 @@ async def _flush_semantic_cache():
 @pytest.mark.asyncio
 @_skip_if_no_service
 class TestP0CoreScenarios:
-    """P0 核心场景：验证米宝基础对话能力。"""
+    """P0 核心场景：验证黄金策基础对话能力。"""
 
     async def test_greeting_returns_welcome_message(self):
         """
-        业务场景：用户首次打招呼，米宝应友好回应并介绍自己
+        业务场景：用户首次打招呼，黄金策应友好回应并介绍自己
         预期行为：返回包含欢迎语的文本，无 Tool 调用，无 error
         """
         events = await send_chat("你好")
@@ -242,7 +265,7 @@ class TestP0CoreScenarios:
         text = get_full_text(events)
         assert len(text) > 0, "应返回非空文本回复"
         assert_no_error_text(text)
-        assert any(kw in text for kw in ["你好", "您好", "米宝", "助手", "帮"]), (
+        assert any(kw in text for kw in ["你好", "您好", "黄金策", "助手", "帮"]), (
             f"回复应包含问候或自我介绍关键词，实际: {text[:100]}"
         )
         assert not get_tool_calls(events), "问候场景不应触发 Tool 调用"
@@ -250,7 +273,7 @@ class TestP0CoreScenarios:
 
     async def test_product_search_triggers_tool_and_returns_results(self):
         """
-        业务场景：商家询问商品，米宝应调用 product_search 工具并返回结果
+        业务场景：商家询问商品，黄金策应调用 product_search 工具并返回结果
         预期行为：触发 product_search Tool，返回成功结果，文本包含商品信息
         """
         events = await send_chat("帮我查一下店里现在有哪些窗帘商品可以推荐给顾客")
@@ -266,7 +289,7 @@ class TestP0CoreScenarios:
 
     async def test_order_query_asks_for_details_or_returns_results(self):
         """
-        业务场景：商家查询客户订单，米宝应尝试调用 order_query 或追问必要信息
+        业务场景：商家查询客户订单，黄金策应尝试调用 order_query 或追问必要信息
         预期行为：触发 order_query Tool 或合理追问（如缺少客户标识）
         """
         events = await send_chat("帮我查一下最近的订单")
@@ -282,7 +305,7 @@ class TestP0CoreScenarios:
 
     async def test_logistics_track_returns_shipping_info(self):
         """
-        业务场景：商家查询订单物流，米宝应调用 logistics_track 返回快递状态
+        业务场景：商家查询订单物流，黄金策应调用 logistics_track 返回快递状态
         预期行为：触发 logistics_track Tool，返回成功结果或合理的"无物流"说明
         """
         events = await send_chat("查一下订单 ORD-2024001 的物流状态")
@@ -321,11 +344,11 @@ class TestP0CoreScenarios:
 @pytest.mark.asyncio
 @_skip_if_no_service
 class TestP1ExtendedScenarios:
-    """P1 扩展场景：验证米宝进阶业务能力。"""
+    """P1 扩展场景：验证黄金策进阶业务能力。"""
 
     async def test_aftersales_handles_return_request(self):
         """
-        业务场景：客户商品破损要退货，米宝应引导售后流程
+        业务场景：客户商品破损要退货，黄金策应引导售后流程
         预期行为：路由至售后 Skill，触发售后 Tool 或给出处理指引
         """
         events = await send_chat("客户说窗帘收到有破损，想退货怎么处理")
@@ -342,7 +365,7 @@ class TestP1ExtendedScenarios:
 
     async def test_complaint_provides_resolution(self):
         """
-        业务场景：客户投诉服务态度差，米宝应安抚并提供解决方案
+        业务场景：客户投诉服务态度差，黄金策应安抚并提供解决方案
         预期行为：识别投诉意图，响应不含错误标记
         """
         events = await send_chat("有个客户非常不满意，投诉说安装师傅态度很差，要求赔偿")
@@ -355,7 +378,7 @@ class TestP1ExtendedScenarios:
 
     async def test_product_create_triggers_manage_tool(self):
         """
-        业务场景：商家要创建新商品，米宝按新引导流程逐步确认
+        业务场景：商家要创建新商品，黄金策按新引导流程逐步确认
         预期行为：查询分类、查询加工项、使用 interact 展示选项
         """
         events = await send_chat(
@@ -372,7 +395,7 @@ class TestP1ExtendedScenarios:
 
     async def test_inventory_query_returns_stock_info(self):
         """
-        业务场景：商家查询库存情况，米宝应检索相关库存数据
+        业务场景：商家查询库存情况，黄金策应检索相关库存数据
         预期行为：触发商品搜索或库存管理 Tool
         """
         events = await send_chat("查一下麻芘隔热窗帘的库存还有多少")
@@ -386,7 +409,7 @@ class TestP1ExtendedScenarios:
 
     async def test_farewell_ends_politely(self):
         """
-        业务场景：用户道别，米宝应礼貌结束对话
+        业务场景：用户道别，黄金策应礼貌结束对话
         预期行为：返回告别语，无 Tool 调用，不含错误标记
         """
         events = await send_chat("好的谢谢，再见")
@@ -402,7 +425,7 @@ class TestP1ExtendedScenarios:
 @pytest.mark.asyncio
 @_skip_if_no_service
 class TestP2AdvancedScenarios:
-    """P2 高级场景：验证米宝多轮对话与复杂意图处理。"""
+    """P2 高级场景：验证黄金策多轮对话与复杂意图处理。"""
 
     async def test_multiturn_context_reference_resolution(self):
         """
@@ -429,7 +452,7 @@ class TestP2AdvancedScenarios:
     async def test_cross_skill_intent_switch(self):
         """
         业务场景：用户从商品话题切换到订单话题
-        预期行为：米宝能无缝切换 Skill，第二轮触发订单相关 Tool 或追问
+        预期行为：黄金策能无缝切换 Skill，第二轮触发订单相关 Tool 或追问
         """
         # 第一轮：商品场景、创建会话
         events1 = await send_chat("看看现在隔热麶光窗帘都有哪些型号")
@@ -452,7 +475,7 @@ class TestP2AdvancedScenarios:
 
     async def test_mixed_intent_handles_multiple_requests(self):
         """
-        业务场景：一句话包含多个意图（物流+库存），米宝应合理处理
+        业务场景：一句话包含多个意图（物流+库存），黄金策应合理处理
         预期行为：至少触发一个 Tool 并返回非空文本
         """
         events = await send_chat(
@@ -469,7 +492,7 @@ class TestP2AdvancedScenarios:
 
     async def test_vague_query_asks_for_clarification(self):
         """
-        业务场景：用户提出模糊问题，米宝应主动追问澄清
+        业务场景：用户提出模糊问题，黄金策应主动追问澄清
         预期行为：返回追问或引导，不盲目执行
         """
         events = await send_chat("帮我看看那个")
@@ -485,7 +508,7 @@ class TestP2AdvancedScenarios:
 
     async def test_capabilities_lists_all_functions(self):
         """
-        业务场景：用户询问米宝能做什么，应完整列出能力
+        业务场景：用户询问黄金策能做什么，应完整列出能力
         预期行为：返回功能列表，覆盖主要能力（商品/订单/知识/售后）
         """
         events = await send_chat("你都能帮我做什么")

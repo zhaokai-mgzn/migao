@@ -23,7 +23,10 @@ import httpx
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
 ADMIN_API = "http://localhost:8081"
-SERVICE_TOKEN = "f4ac825ebdf8900b7b2fbcc13af93b29f352264823a3bf9a8098e7155a6961a8b"
+# 🔴 凭据**不进代码**（issue #6172；形态照抄 issue #6170 的 `MIGAO_SERVICE_TOKEN` 环境注入）。
+#    不设 ⇒ 不带该头 ⇒ 抓取拿不到 200 ⇒ 走下面的**缓存快照**回退（CI 本来就这条路：
+#    无 admin-api + `test_contract_snapshot_freshness.py` 的「回退即快照」口径）。
+SERVICE_TOKEN = os.environ.get("MIGAO_SERVICE_TOKEN", "")
 
 os.makedirs(SNAPSHOT_DIR, exist_ok=True)
 
@@ -57,29 +60,36 @@ def _save_snapshot(name: str, data: dict) -> None:
 
 
 async def _fetch(endpoint: str, params: dict = None) -> dict:
-    """从本地 admin-api 获取响应，失败时回退到缓存快照。"""
-    headers = {
-        "X-Service-Token": SERVICE_TOKEN,
-        "X-Tenant-Id": "1",
-    }
+    """从本地 admin-api 获取响应，失败时回退到缓存快照。
+
+    ⚠️ **没凭据就不发请求**（issue #6172）：不设 `MIGAO_SERVICE_TOKEN` 时带上空 token 只会拿到
+    401（服务 fail-closed）—— 那是**未就绪**、不是数据，直接走快照回退（CI 的常态路径）。
+    """
     snapshot_key = endpoint.replace("/", "_").lstrip("_")
 
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                f"{ADMIN_API}{endpoint}",
-                params=params or {},
-                headers=headers,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                _save_snapshot(snapshot_key, data)
-                _save_contract_fingerprint()
-                return data
-            else:
-                print(f"[contract] {endpoint} → {resp.status_code}: {resp.text[:200]}")
-    except Exception as e:
-        print(f"[contract] {endpoint} → {e}")
+    if SERVICE_TOKEN:
+        headers = {
+            "X-Service-Token": SERVICE_TOKEN,
+            "X-Tenant-Id": "1",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{ADMIN_API}{endpoint}",
+                    params=params or {},
+                    headers=headers,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    _save_snapshot(snapshot_key, data)
+                    _save_contract_fingerprint()
+                    return data
+                else:
+                    print(f"[contract] {endpoint} → {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            print(f"[contract] {endpoint} → {e}")
+    else:
+        print(f"[contract] {endpoint} → 未就绪（未设 MIGAO_SERVICE_TOKEN）⇒ 用缓存快照")
 
     # Fallback to cached snapshot
     return _load_snapshot(snapshot_key)

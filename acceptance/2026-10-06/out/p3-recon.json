@@ -1,0 +1,1499 @@
+[
+  {
+    "role": "admin",
+    "path": "/employees",
+    "ident": null,
+    "ok": true,
+    "pageShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-admin-list.png",
+    "list": {
+      "dialogOpen": false,
+      "inputs": [
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "输入姓名或手机号搜索"
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "全部状态",
+            "启用",
+            "禁用"
+          ]
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "10",
+            "20",
+            "50",
+            "100"
+          ]
+        }
+      ],
+      "buttons": [
+        "搜索菜单⌘K",
+        "工作台1",
+        "客户服务4",
+        "交易管理2",
+        "生产管理5",
+        "仓储与物料4",
+        "组织管理3",
+        "收起",
+        "米米高测试",
+        "新增员工",
+        "员工",
+        "工人档案",
+        "重置",
+        "查询",
+        "A06验收知识编辑",
+        "编辑",
+        "重置密码",
+        "删除",
+        "A06验收商品管理员",
+        "编辑",
+        "重置密码",
+        "删除",
+        "A06验收财务",
+        "编辑",
+        "重置密码",
+        "删除",
+        "A06验收销售",
+        "编辑",
+        "重置密码",
+        "删除",
+        "A06验收运营",
+        "编辑",
+        "重置密码",
+        "删除",
+        "A06验收客服",
+        "编辑",
+        "重置密码",
+        "删除",
+        "米高测试",
+        "编辑",
+        "重置密码",
+        "删除",
+        "1"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n员工管理\n岗位权限\n企业基础信息\n通知中心\n收起\n组织管理\n/\n员工管理\n米\n米高测试\n员工管理\n\n管理系统用户和员工账号\n\n新增员工\n员工\n工人档案\n姓名/手机号\n状态\n全部状态\n启用\n禁用\n重置\n查询\n序号\n\t\n姓名\n\t\n手机号\n\t\n登录账号\n\t\n岗位\n\t\n权限\n\t\n状态\n\t\n创建时间\n\t\n操作\n\n1\tA06验收知识编辑\t1375061605\ta06_knowledge_editor\t知识编辑\t\n经营看板\n省料看板\nknowledge:manage\n+1\n\t\n\t\n2026-10-06\n06:54\n\t\n编辑\n重置密码\n删除\n\n2\tA06验收商品管理员\t1374869204\ta06_product_manager\t商品管理员\t\n经营看板\n省料看板\nproduct:create\n+5\n\t\n\t\n2026-10-06\n06:54\n\t\n编辑\n重置密码\n删除\n\n3\tA06验收财务\t1374743303\ta06_finance\t财务\t\n经营看板\n智能派单\nproduction:execute\n+6\n\t\n\t\n2026-10-06\n06:54\n\t\n编辑\n重置密码\n删除\n\n4\tA06验收销售\t1374611302\ta06_sales\t销售\t\n经营看板\n省料看板"
+    },
+    "buttonText": "新增员工",
+    "dialogShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-admin-dialog.png",
+    "dialog": {
+      "dialogOpen": true,
+      "inputs": [
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "请输入姓名"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "请输入手机号"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "员工登录账号，如 zhangsan"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "password",
+          "placeholder": "请输入初始密码"
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "请选择岗位",
+            "管理员",
+            "客服",
+            "财务",
+            "知识编辑",
+            "运营",
+            "商品管理员",
+            "销售"
+          ]
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        }
+      ],
+      "buttons": [
+        "取消",
+        "创建"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n员工管理\n岗位权限\n企业基础信息\n通知中心\n收起\n组织管理\n/\n员工管理\n米\n米高测试\n员工管理\n\n管理系统用户和员工账号\n\n新增员工\n员工\n工人档案\n姓名/手机号\n状态\n全部状态\n启用\n禁用\n重置\n查询\n序号\n\t\n姓名\n\t\n手机号\n\t\n登录账号\n\t\n岗位\n\t\n权限\n\t\n状态\n\t\n创建时间\n\t\n操作\n\n1\tA06验收知识编辑\t1375061605\ta06_knowledge_editor\t知识编辑\t\n经营看板\n省料看板\nknowledge:manage\n+1\n\t\n\t\n2026-10-06\n06:54\n\t\n编辑\n重置密码\n删除\n\n2\tA06验收商品管理员\t1374869204\ta06_product_manager\t商品管理员\t\n经营看板\n省料看板\nproduct:create\n+5\n\t\n\t\n2026-10-06\n06:54\n\t\n编辑\n重置密码\n删除\n\n3\tA06验收财务\t1374743303\ta06_finance\t财务\t\n经营看板\n智能派单\nproduction:execute\n+6\n\t\n\t\n2026-10-06\n06:54\n\t\n编辑\n重置密码\n删除\n\n4\tA06验收销售\t1374611302\ta06_sales\t销售\t\n经营看板\n省料看板"
+    }
+  },
+  {
+    "role": "product_manager",
+    "path": "/products",
+    "ident": "a06_product_manager",
+    "ok": true,
+    "pageShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-product_manager-list.png",
+    "list": {
+      "dialogOpen": false,
+      "inputs": [
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "text",
+          "placeholder": "请输入商品标题"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "text",
+          "placeholder": "请输入商品货号"
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "全部",
+            "出售中",
+            "已下架",
+            "审核中",
+            "草稿"
+          ]
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "date",
+          "placeholder": "开始日期"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "date",
+          "placeholder": "结束日期"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "10",
+            "20",
+            "50",
+            "100"
+          ]
+        }
+      ],
+      "buttons": [
+        "搜索菜单⌘K",
+        "工作台1",
+        "生产管理5",
+        "仓储与物料2",
+        "收起",
+        "AA06验收商品管理员",
+        "查询",
+        "重置",
+        "批量导出",
+        "下载导入模板",
+        "导入商品",
+        "新增商品",
+        "查看",
+        "编辑",
+        "推荐",
+        "下架",
+        "删除",
+        "查看",
+        "编辑",
+        "推荐",
+        "下架",
+        "删除",
+        "查看",
+        "编辑",
+        "推荐",
+        "下架",
+        "删除",
+        "查看",
+        "编辑",
+        "推荐",
+        "下架",
+        "删除",
+        "查看",
+        "编辑",
+        "推荐",
+        "下架",
+        "删除",
+        "查看",
+        "编辑",
+        "推荐",
+        "下架",
+        "删除",
+        "查看",
+        "编辑",
+        "推荐",
+        "下架",
+        "删除",
+        "查看",
+        "编辑",
+        "推荐",
+        "下架",
+        "删除",
+        "1"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n生产管理\n5\n仓储与物料\n2\n通知中心\n收起\n商品管理\nA\nA06验收商品管理员\n商品管理\n商品标题\n商品货号\n状态\n全部\n出售中\n已下架\n审核中\n草稿\n创建时间\n至\n查询\n重置\n批量导出\n下载导入模板\n导入商品\n新增商品\n\t\n商品标题\n\t\n商品货号\n\t\n在售颜色\n\t\n库存\n\t\n销量\n\t\n销售额\n\t\n创建时间\n\t\n状态\n\t\n操作\n\n\t\n无图\n棉麻窗纱\n\tMG-CMCS-30...\t共1色\t260\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n阳离子绒布\n\tMG-YLZ-280...\t共1色\t90\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n涤纶印花窗帘布\n\tMG-DLQ-280...\t共1色\t240\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n荷兰绒遮光布\n\tMG-HLR-280...\t共1色\t180.5\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n双层纱帘布\n\tMG-SCC-280...\t共1色\t240\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n"
+    },
+    "buttonText": "新增商品",
+    "dialogShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-product_manager-dialog.png",
+    "dialog": {
+      "dialogOpen": false,
+      "inputs": [
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "text",
+          "placeholder": "补充一句（可选）：如 客厅用、韩褶、遮光"
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "请选择",
+            "线B验收复现分类-mutbya2e",
+            "布艺面料"
+          ]
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "最多可输入50汉字（100字符）"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "file",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "请输入商品货号"
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "请选择",
+            "请选择",
+            "无品牌",
+            "米高",
+            "其他（自定义输入）"
+          ]
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "请选择",
+            "请选择",
+            "米",
+            "卷",
+            "件",
+            "套",
+            "平方米"
+          ]
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "请选择",
+            "请选择",
+            "100g以下",
+            "100-200g",
+            "200-300g",
+            "300-400g",
+            "400g以上",
+            "其他"
+          ]
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "请选择",
+            "请选择",
+            "涤纶",
+            "棉",
+            "麻",
+            "丝绸",
+            "混纺",
+            "绒布",
+            "雪尼尔",
+            "其他"
+          ]
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "请选择",
+            "请选择",
+            "遮光",
+            "隔热",
+            "防紫外线",
+            "防水",
+            "防霉",
+            "隔音",
+            "其他"
+          ]
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "请选择",
+            "请选择",
+            "提花",
+            "印花",
+            "绣花",
+            "烫金",
+            "植绒",
+            "色织",
+            "其他"
+          ]
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "请选择",
+            "请选择",
+            "现代简约",
+            "北欧",
+            "中式",
+            "欧式",
+            "田园",
+            "轻奢",
+            "其他"
+          ]
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "请选择",
+            "请选择",
+            "纯色",
+            "条纹",
+            "格子",
+            "花卉",
+            "几何",
+            "卡通",
+            "其他"
+          ]
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "text",
+          "placeholder": "未配置"
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "全部",
+            "按颜色分类",
+            "按规格尺寸"
+          ]
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "number",
+          "placeholder": "价格"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "text",
+          "placeholder": "数量"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "radio",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "radio",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "radio",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "radio",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "file",
+          "placeholder": null
+        }
+      ],
+      "buttons": [
+        "搜索菜单⌘K",
+        "工作台1",
+        "生产管理5",
+        "仓储与物料2",
+        "收起",
+        "AA06验收商品管理员",
+        "拍照 / 上传识别",
+        "重置",
+        "管理分类",
+        "排序",
+        "▸ 展开预设颜色",
+        "▸ 批量输入颜色",
+        "添加颜色分类",
+        "批量填写",
+        "重置",
+        "存草稿",
+        "提交并上架"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n生产管理\n5\n仓储与物料\n2\n通知中心\n收起\n商品管理\nA\nA06验收商品管理员\n新增商品\n拍照 / 上传识别\n重置\n基础信息\n*商品分类\n请选择\n线B验收复现分类-mutbya2e\n布艺面料\n管理分类\n*商品标题\n0/60\n*商品主图\n\n照片要求：比例为 1:1，像素尺寸 1440×1440 及以上；至多可上传 5 张，拖拽可调整顺序\n\n上传封面\n0/5\n商品属性\n*货号\n品牌\n请选择\n请选择\n无品牌\n米高\n其他（自定义输入）\n*计价单位\n请选择\n请选择\n米\n卷\n件\n套\n平方米\n克重\n请选择\n请选择\n100g以下\n100-200g\n200-300g\n300-400g\n400g以上\n其他\n材质\n请选择\n请选择\n涤纶\n棉\n麻\n丝绸\n混纺\n绒布\n雪尼尔\n其他\n功能\n请选择\n请选择\n遮光\n隔热\n防紫外线\n防水\n防霉\n隔音\n其他\n工艺\n请选择\n请选择\n提花\n印花\n绣花\n烫金\n植绒\n色织\n其他\n风格\n请选择\n请选择\n现代简约\n北欧\n中式\n欧式\n田园\n轻奢\n其他\n图案\n请选择\n请选择\n纯色\n条纹\n格子\n花卉\n几何\n卡通\n其他\n*售卖方式\n散剪\n整卷\n\n商品的基础属性（不是 SKU 组合项）：SKU 由「颜色 × 门幅」组成； 客户下单时可要求优先按整卷发货，订单里再体现分配\n\n1 卷 = 多少米（标称）\n米\n\n标称值：仅作建"
+    }
+  },
+  {
+    "role": "sales",
+    "path": "/orders",
+    "ident": "a06_sales",
+    "ok": true,
+    "pageShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-sales-list.png",
+    "list": {
+      "dialogOpen": false,
+      "inputs": [
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "date",
+          "placeholder": "开始日期"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "date",
+          "placeholder": "结束日期"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "请输入订单ID"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "请输入收货人姓名或手机号"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "请输入制单人姓名"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "请输入商品货号"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "请输入商品标题"
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "全部",
+            "是",
+            "否"
+          ]
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "checkbox",
+          "placeholder": null
+        }
+      ],
+      "buttons": [
+        "搜索菜单⌘K",
+        "工作台1",
+        "客户服务1",
+        "交易管理1",
+        "生产管理1",
+        "仓储与物料3",
+        "收起",
+        "AA06验收销售",
+        "新增订单",
+        "查询",
+        "重置",
+        "刷新",
+        "全部",
+        "待付款",
+        "待发货",
+        "已发货",
+        "已完成",
+        "含加工订单",
+        "已关闭",
+        "退款/售后",
+        "‹",
+        "1",
+        "›"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n交易管理\n1\n订单列表\n生产管理\n1\n仓储与物料\n3\n通知中心\n收起\n交易管理\n/\n订单列表\nA\nA06验收销售\n订单列表\n新增订单\n下单时间\n至\n订单ID\n收货人\n制单人\n商品货号\n商品标题\n是否加工\n全部\n是\n否\n查询\n重置\n刷新\n全部\n待付款\n待发货\n已发货\n已完成\n含加工订单\n已关闭\n退款/售后\n\t订单ID\t采购商品\t\n采购明细\n(名称:单价×数量+加工费)\n\t累计金额(元)\t实收款(元)\t收货人信息\t下单时间\n\t制单人\t状态\t加急\t到货日\t备注\t操作\n暂无数据\n共 0 条\n‹\n1\n›"
+    },
+    "buttonText": "新增订单",
+    "dialogShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-sales-dialog.png",
+    "dialog": {
+      "dialogOpen": false,
+      "inputs": [
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "请输入收货人姓名"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "请输入 11 位手机号"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "请输入详细收货地址"
+        },
+        {
+          "tag": "select",
+          "id": "order-logistics-type",
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "未指定",
+            "快递",
+            "物流/专线"
+          ]
+        },
+        {
+          "tag": "input",
+          "id": "order-logistics-company",
+          "name": null,
+          "type": null,
+          "placeholder": "如 四季安物流"
+        },
+        {
+          "tag": "textarea",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "可填写发货要求、特殊说明等（选填）"
+        },
+        {
+          "tag": "input",
+          "id": "requiredDeliveryDate",
+          "name": null,
+          "type": "date",
+          "placeholder": null
+        }
+      ],
+      "buttons": [
+        "搜索菜单⌘K",
+        "工作台1",
+        "客户服务1",
+        "交易管理1",
+        "生产管理1",
+        "仓储与物料3",
+        "收起",
+        "AA06验收销售",
+        "拍照 / 上传识别",
+        "点击搜索并选择商品",
+        "添加商品",
+        "选择客户",
+        "费用明细",
+        "提交订单",
+        "取消"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n交易管理\n1\n订单列表\n生产管理\n1\n仓储与物料\n3\n通知中心\n收起\n交易管理\n/\n订单列表\nA\nA06验收销售\n新增订单\n\n支持添加多个商品，每个商品可单独配置加工项\n\n商品信息\n拍照 / 上传识别\n共 1 个商品\n选择商品*\n点击搜索并选择商品\n添加商品\n收货信息\n选客户自动带出姓名 / 电话 / 地址 / 常用物流\n选择客户\n收货人姓名*\n手机号*\n收货地址*\n常用物流（必填 · 选客户时自动带出）\n备注\n加急 / 到货日\n加急（插队）\n加急单不参与合并，在智能派单页立即单独派单\n要求到货日\n\n留空 = 未指定（不填就是不填，不猜一个日期）；到货日越早，在智能派单页排得越前\n\n合计\n¥0.00\n费用明细\n提交订单\n取消\n没有权限执行此操作\n没有权限执行此操作"
+    }
+  },
+  {
+    "role": "finance",
+    "path": "/finance",
+    "ident": "a06_finance",
+    "ok": false,
+    "pageShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-finance-list.png",
+    "list": {
+      "dialogOpen": false,
+      "inputs": [
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "date",
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "date",
+          "placeholder": null
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "全部",
+            "收款",
+            "退款"
+          ]
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "全部",
+            "微信",
+            "支付宝",
+            "银行转账",
+            "现金",
+            "其他"
+          ]
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "流水号 / 订单号"
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "10",
+            "20",
+            "50",
+            "100"
+          ]
+        }
+      ],
+      "buttons": [
+        "搜索菜单⌘K",
+        "工作台1",
+        "客户服务1",
+        "交易管理2",
+        "生产管理1",
+        "仓储与物料2",
+        "收起",
+        "AA06验收财务",
+        "登记收支",
+        "重置",
+        "查询",
+        "资金流水",
+        "收支汇总",
+        "应收对账",
+        "查询",
+        "1"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n1\n交易管理\n2\n订单列表\n财务对账\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n交易管理\n/\n财务对账\nA\nA06验收财务\n财务对账\n\n资金流水、收支汇总与应收对账\n\n登记收支\n开始日期\n结束日期\n重置\n查询\n本期收入\n¥1,574.00\n13 笔\n本期退款\n¥300.01\n2 笔\n净收入\n¥1,273.99\n收入 - 退款\n待收款\n¥0.00\n累计未收差额\n资金流水\n收支汇总\n应收对账\n收支类型\n全部\n收款\n退款\n支付方式\n全部\n微信\n支付宝\n银行转账\n现金\n其他\n关键词\n查询\n流水号\t类型\t金额\t支付方式\t关联订单\t状态\t操作人\t交易时间\t备注\nFIN-20261004-0015\t收款\t+¥80.00\t-\t20261004797970002\t成功\t系统\t\n2026-10-04\n12:59\n\t订单确认收款\nFIN-20261004-0014\t收款\t+¥168.00\t-\t20261004979700005\t成功\t系统\t\n2026-10-04\n12:41\n\t订单确认收款\nFIN-20261004-0013\t收款\t+¥168.00\t-\t20261004387530004\t成功\t系统\t\n2026-10-04\n12:40\n\t订单确认收款\nFIN-20261004-0012\t收款\t+¥168.00\t-\t20261004"
+    },
+    "note": "页面上没有匹配 /新建|新增|添加|创建/ 的按钮"
+  },
+  {
+    "role": "knowledge_editor",
+    "path": "/knowledge",
+    "ident": "a06_knowledge_editor",
+    "ok": true,
+    "pageShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-knowledge_editor-list.png",
+    "list": {
+      "dialogOpen": false,
+      "inputs": [
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "搜索标题 / 关键词 / 常见问法 / 回答内容"
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "全部分类",
+            "FAQ",
+            "商品",
+            "测量",
+            "售后",
+            "店铺配置"
+          ]
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "全部来源",
+            "模板",
+            "会话提炼",
+            "文档提炼",
+            "人工"
+          ]
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "全部状态",
+            "草稿",
+            "待审核",
+            "已发布",
+            "已归档"
+          ]
+        }
+      ],
+      "buttons": [
+        "搜索菜单⌘K",
+        "工作台1",
+        "客户服务1",
+        "仓储与物料1",
+        "收起",
+        "AA06验收知识编辑",
+        "文档提炼",
+        "新建知识卡片",
+        "知识卡片",
+        "待确认",
+        "行业模板",
+        "重置",
+        "查询",
+        "1"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n知识库\n仓储与物料\n1\n通知中心\n收起\n客户服务\n/\n知识库\nA\nA06验收知识编辑\n知识库\n\nAI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题\n\n文档提炼\n新建知识卡片\n知识卡片\n待确认\n行业模板\n关键词\n重置\n查询\n全部分类\nFAQ\n商品\n测量\n售后\n店铺配置\n全部来源\n模板\n会话提炼\n文档提炼\n人工\n全部状态\n草稿\n待审核\n已发布\n已归档\n知识卡片标题\n\t\n分类\n\t\n来源\n\t\n状态\n\t\n版本\n\t\n更新时间\n\t\n操作\n\n暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用\n共 0 条记录\n1"
+    },
+    "buttonText": "新建知识卡片",
+    "dialogShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-knowledge_editor-dialog.png",
+    "dialog": {
+      "dialogOpen": true,
+      "inputs": [
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "如：雪尼尔面料会起球吗"
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "FAQ",
+            "商品",
+            "测量",
+            "售后",
+            "店铺配置"
+          ]
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "顾客可能的问法（用于检索命中）"
+        },
+        {
+          "tag": "textarea",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "AI 客服将基于此内容回答"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "如：雪尼尔, 起球, 面料"
+        }
+      ],
+      "buttons": [
+        "取消",
+        "保存"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n知识库\n仓储与物料\n1\n通知中心\n收起\n客户服务\n/\n知识库\nA\nA06验收知识编辑\n知识库\n\nAI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题\n\n文档提炼\n新建知识卡片\n知识卡片\n待确认\n行业模板\n关键词\n重置\n查询\n全部分类\nFAQ\n商品\n测量\n售后\n店铺配置\n全部来源\n模板\n会话提炼\n文档提炼\n人工\n全部状态\n草稿\n待审核\n已发布\n已归档\n知识卡片标题\n\t\n分类\n\t\n来源\n\t\n状态\n\t\n版本\n\t\n更新时间\n\t\n操作\n\n暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用\n共 0 条记录\n1\n新建知识卡片\n标题 *\n分类\nFAQ\n商品\n测量\n售后\n店铺配置\n常见问法\n标准回答 *\n关键词（逗号分隔）\n取消\n保存"
+    }
+  },
+  {
+    "role": "operator",
+    "path": "/inbound-orders",
+    "ident": "a06_operator",
+    "ok": true,
+    "pageShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-operator-list.png",
+    "list": {
+      "dialogOpen": false,
+      "inputs": [
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "入库单号 / 供应商 / 送货单号"
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "全部状态",
+            "草稿",
+            "已过账",
+            "已作废"
+          ]
+        }
+      ],
+      "buttons": [
+        "搜索菜单⌘K",
+        "工作台1",
+        "客户服务4",
+        "交易管理2",
+        "生产管理5",
+        "仓储与物料4",
+        "组织管理1",
+        "收起",
+        "AA06验收运营",
+        "期初建账导入",
+        "新建入库单",
+        "查询",
+        "重置",
+        "详情",
+        "详情",
+        "详情",
+        "详情",
+        "详情",
+        "详情",
+        "详情",
+        "详情",
+        "详情",
+        "详情",
+        "详情",
+        "详情",
+        "详情",
+        "详情",
+        "详情"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n入库单\n发货单\n余料台账\n省料看板\n组织管理\n1\n通知中心\n收起\n仓储与物料\n/\n入库单\nA\nA06验收运营\n入库单\n\n商品布料入库：建单（草稿）→ 过账（自动生成批次号 + 自动加库存 + 移动加权平均成本）→ 批次可追溯；期初建账可按实物把在库批次（含 0.5 米级尾料）登记进来\n\n期初建账导入\n新建入库单\n全部状态\n草稿\n已过账\n已作废\n查询\n重置\n入库单号\t入库日期\t供应商\t仓库\t行数 / 总数量\t批次号\t金额\t状态\t操作\nRK-20261005-0015\t2026-10-05\t广州中大轻纺城-A132档\t门店后仓\t1 / 50\t-\t¥1650.00\t已作废\t详情\nRK-20261005-0014\t2026-10-04\t绍兴柯桥万隆布业\t主仓（一楼）\t1 / 100\t过账后生成\t¥7000.00\t草稿\t详情\nRK-20261005-0013\t2026-10-04\t南通罗莱家纺原料\t主仓（一楼）\t1 / 300\t过账后生成\t¥4260.00\t草稿\t详情\nRK-20261005-0012\t2026-10-03\t柯桥金梭纺织有限公司\tA区货架\t1 / 60\tPC-20261005-0016\t¥3509.00\t已过账\t详情\nRK-20261005-0011"
+    },
+    "buttonText": "新建入库单",
+    "dialogShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-operator-dialog.png",
+    "dialog": {
+      "dialogOpen": false,
+      "inputs": [
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "采购收货（正常入库）",
+            "期初建账（按实物登记在库批次）"
+          ]
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "如：柯桥××布行"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "date",
+          "placeholder": null
+        },
+        {
+          "tag": "textarea",
+          "id": "inbound-remark",
+          "name": null,
+          "type": null,
+          "placeholder": "可填写收货注意、质检情况、随货单据等（选填）"
+        },
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "商品名称 / 货号"
+        }
+      ],
+      "buttons": [
+        "搜索菜单⌘K",
+        "工作台1",
+        "客户服务4",
+        "交易管理2",
+        "生产管理5",
+        "仓储与物料4",
+        "组织管理1",
+        "收起",
+        "AA06验收运营",
+        "棉麻窗纱(MG-CMCS-300-IVY)",
+        "阳离子绒布(MG-YLZ-280-CFF)",
+        "涤纶印花窗帘布(MG-DLQ-280-GRY)",
+        "荷兰绒遮光布(MG-HLR-280-DGN)",
+        "双层纱帘布(MG-SCC-280-WHT)",
+        "棉麻混纺素色布(MG-MMSF-280-OAT)",
+        "高精密双面遮光布(MG-GJM-280-CRM)",
+        "雪尼尔提花遮光布(MG-XNE-280-MBL)",
+        "取消",
+        "保存为草稿"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n入库单\n发货单\n余料台账\n省料看板\n组织管理\n1\n通知中心\n收起\n仓储与物料\n/\n入库单\nA\nA06验收运营\n新增入库单\n\n建单只登记、不动库存；过账时系统逐行生成批次号（PC-yyyyMMdd-NNNN， 一行 = 一个批次）并加库存、按移动加权平均重算成本\n\n单据信息\n单据来源\n采购收货（正常入库）\n期初建账（按实物登记在库批次）\n供应商\n供应商送货单号\n仓库 / 仓位\n入库日期\n备注\n\n保存为草稿不会改动库存；批次号在过账时由系统自动生成 （PC-yyyyMMdd-NNNN，一行 = 一个批次）， 库存与成本也在过账时一次性写入（可核对后再过账）。\n\n入库明细\n共 0 行（一行 = 一个批次）\n棉麻窗纱(MG-CMCS-300-IVY)阳离子绒布(MG-YLZ-280-CFF)涤纶印花窗帘布(MG-DLQ-280-GRY)荷兰绒遮光布(MG-HLR-280-DGN)双层纱帘布(MG-SCC-280-WHT)棉麻混纺素色布(MG-MMSF-280-OAT)高精密双面遮光布(MG-GJM-280-CRM)雪尼尔提花遮光布(MG-XNE-280-MBL)\n选择入库 SKU（勾选即加入明细，一行 = 一个批次）\n先在左侧选一个商品\n\n还没有明细：左侧搜商品 "
+    }
+  },
+  {
+    "role": "customer_service",
+    "path": "/after-sales",
+    "ident": "a06_customer_service",
+    "ok": true,
+    "pageShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-customer_service-list.png",
+    "list": {
+      "dialogOpen": false,
+      "inputs": [
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "工单号、订单号、客户名"
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "全部状态",
+            "待处理",
+            "处理中",
+            "已完成",
+            "已拒绝",
+            "已关闭"
+          ]
+        },
+        {
+          "tag": "select",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": null,
+          "options": [
+            "10",
+            "20",
+            "50",
+            "100"
+          ]
+        }
+      ],
+      "buttons": [
+        "搜索菜单⌘K",
+        "工作台1",
+        "客户服务4",
+        "交易管理1",
+        "生产管理1",
+        "仓储与物料2",
+        "收起",
+        "AA06验收客服",
+        "新建工单",
+        "全部",
+        "待处理",
+        "处理中",
+        "已完成",
+        "已拒绝",
+        "已关闭",
+        "重置",
+        "查询",
+        "查看",
+        "1"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n1\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n客户服务\n/\n售后工单\nA\nA06验收客服\n售后管理\n\n管理客户售后工单，处理退货、换货、维修等售后请求\n\n新建工单\n全部\n待处理\n处理中\n已完成\n已拒绝\n已关闭\n关键词搜索\n状态筛选\n全部状态\n待处理\n处理中\n已完成\n已拒绝\n已关闭\n重置\n查询\n工单号\t关联订单\t客户\t售后类型\t状态\t优先级\t创建时间\t更新时间\t操作\nAS-20261004-0001\t-\t-\t退货\t已完成\t普通\t\n2026-10-04\n12:37\n\t\n2026-10-04\n12:37\n\t查看\n共 1 条记录(第 1-1 条)\n每页\n10\n20\n50\n100\n条\n1"
+    },
+    "buttonText": "新建工单",
+    "dialogShot": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/recon-customer_service-dialog.png",
+    "dialog": {
+      "dialogOpen": true,
+      "inputs": [
+        {
+          "tag": "input",
+          "id": null,
+          "name": null,
+          "type": "text",
+          "placeholder": "请输入订单号/客户姓名/手机号"
+        },
+        {
+          "tag": "textarea",
+          "id": null,
+          "name": null,
+          "type": null,
+          "placeholder": "请详细描述售后原因..."
+        }
+      ],
+      "buttons": [
+        "退货",
+        "换货",
+        "维修",
+        "退款",
+        "投诉",
+        "其他",
+        "普通",
+        "紧急",
+        "严重",
+        "取消",
+        "提交工单"
+      ],
+      "bodyHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n1\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n客户服务\n/\n售后工单\nA\nA06验收客服\n售后管理\n\n管理客户售后工单，处理退货、换货、维修等售后请求\n\n新建工单\n全部\n待处理\n处理中\n已完成\n已拒绝\n已关闭\n关键词搜索\n状态筛选\n全部状态\n待处理\n处理中\n已完成\n已拒绝\n已关闭\n重置\n查询\n工单号\t关联订单\t客户\t售后类型\t状态\t优先级\t创建时间\t更新时间\t操作\nAS-20261004-0001\t-\t-\t退货\t已完成\t普通\t\n2026-10-04\n12:37\n\t\n2026-10-04\n12:37\n\t查看\n共 1 条记录(第 1-1 条)\n每页\n10\n20\n50\n100\n条\n1\n新建售后工单\n关联订单 *\n售后类型 *\n退货\n换货\n维修\n退款\n投诉\n其他\n优先级\n普通\n紧急\n严重\n售后原因描述 *\n取消\n提交工单"
+    }
+  }
+]

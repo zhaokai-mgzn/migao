@@ -1,2 +1,16 @@
 34b0a2b1e4423d0f43560784db326aa4cbe0a2e6:acceptance/2026-09-25/login-rework/ua/journey2.cjs:generic-api-key:172
 866aab980f2815409b6629938eb357ce6769ef19:acceptance/2026-09-25/login-rework/ua/journey2.cjs:generic-api-key:172
+# 验收承载体里的**测试数据**被 generic-api-key 误报（13 处，2026-10-03 实测）：
+#   dev 环境测试 key（lb-…-as / fsp-S3-…-0）、被测件随机 hex token（qr_token / part_token / idemKey）。
+# 这些是**测试夹具值**、不是可用凭据；用路径正则豁免（对 rebase 稳健，不用逐 commit 指纹）。
+206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/batch-writeface-sweep/out/E1-duplicate-submit.json:generic-api-key:2
+206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/dispatch-routing-sweep/out/pilot.json:generic-api-key:14
+206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/dispatch-routing-sweep/out/pilot.json:generic-api-key:264
+206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/shipments-sweep/out/replay-9170d691a-v2/p1-records.json:generic-api-key:146
+206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/shipments-sweep/out/replay-9170d691a/p1-records.json:generic-api-key:146
+206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/shipments-sweep/out/replay-fix/p1-records.json:generic-api-key:146
+206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/shipments-sweep/out/replay-fix2/p1-records.json:generic-api-key:146
+206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/shipments-sweep/out/replay-k34/p1-records.json:generic-api-key:146
+206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/shipments-sweep/out/replay-postrevert2/p1-records.json:generic-api-key:146
+206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/shipments-sweep/out/replay-s2-INVALID-dupchain/p1-records.json:generic-api-key:146
+206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/shipments-sweep/out/replay-s2b/p1-records.json:generic-api-key:146

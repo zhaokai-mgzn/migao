@@ -5,7 +5,7 @@
 商家【默】/客户记忆三层）、缺省即报、矛盾拦截、轮次上限转复尺/人工。
 
 真值源：docs/curtain-fabric-quote-rules.md + docs/curtain-production-rules.md。
-纯函数、零 IO，可单测；接线（小布 skill 澄清话术 + 会话状态）在 M3-E 后半/PR。
+纯函数、零 IO，可单测；接线（元元 skill 澄清话术 + 会话状态）在 M3-E 后半/PR。
 """
 from __future__ import annotations
 
@@ -109,7 +109,7 @@ def missing_required(collector: Dict[str, Any]) -> List[str]:
 
 
 def conflicts(collector: Dict[str, Any]) -> List[str]:
-    """矛盾拦截：返回可读提示列表（机器可判，供小布回复/卡片标注）。"""
+    """矛盾拦截：返回可读提示列表（机器可判，供元元回复/卡片标注）。"""
     warns: List[str] = []
     width = collector.get("width")
     open_count = collector.get("open_count")

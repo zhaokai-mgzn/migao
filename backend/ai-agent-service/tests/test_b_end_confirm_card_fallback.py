@@ -158,7 +158,7 @@ def _run(last_user_msg: str, *, tool_name: str = "product_manage",
             state=_make_state(messages=history),
             skill_name=skill_name,
             tool_names=[tool_name],
-            system_prompt="你是米宝（B 端商品助手），写操作必须先展示确认卡并取得用户确认。",
+            system_prompt="你是黄金策（B 端商品助手），写操作必须先展示确认卡并取得用户确认。",
         ))
     return out, executed
 

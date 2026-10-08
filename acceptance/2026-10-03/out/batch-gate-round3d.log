@@ -1,0 +1,8 @@
+批次数：1 个包｜基准：origin/main@9bd8d4301
+包：fix/6220-aftersales-concurrency
+── 就绪前置判定（--require-ready 默认开启；issue #6028）──
+  ❌ fix/6220-aftersales-concurrency（不就绪）：没有对应的 open PR（gh pr list --head fix/6220-aftersales-concurrency --state open 为空）｜下一步：先开 PR
+⛔ 有包未通过就绪判定 ⇒ **拒绝**，**没有跑**那一次全量（没跑 ≠ 通过、≠ 全绿）。
+   出口（三选一）：① 按上面逐包的「下一步」修好再重跑；② 修不了 ⇒ 把该包移出本批；
+                   ③ 人类明知故犯 ⇒ 显式 --no-require-ready（跳过判定，风险自负）
+   ⚠️ 「无法判定」是 fail-closed 的**拒绝**，不是「就绪」—— 别把 ❓ 读成 ✅。

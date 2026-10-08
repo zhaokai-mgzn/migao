@@ -1,5 +1,5 @@
 """
-渠道配置 — 小布多渠道路由
+渠道配置 — 元元多渠道路由
 
 支持渠道: wechat_mini / wechat_h5 / douyin_mini / web
 新增渠道只需加配置，不改代码。
@@ -31,7 +31,7 @@ class ChannelConfig:
 
 DEFAULT_CHANNEL_CONFIGS: Dict[str, ChannelConfig] = {
     CHANNEL_WECHAT_MINI: ChannelConfig(
-        greeting="您好！我是{bot_name}，米高窗帘的智能客服。我可以为您查订单、看物流、了解商品，有什么可以帮您的吗？",
+        greeting="您好！我是{bot_name}，观星台窗帘的智能客服。我可以为您查订单、看物流、了解商品，有什么可以帮您的吗？",
         capabilities=(
             "🔍 **商品咨询** - 搜索商品、查看详情\n"
             "📦 **订单查询** - 查订单、追踪物流\n"
@@ -40,13 +40,13 @@ DEFAULT_CHANNEL_CONFIGS: Dict[str, ChannelConfig] = {
         ),
     ),
     CHANNEL_WECHAT_H5: ChannelConfig(
-        greeting="您好！我是{bot_name}，米高窗帘的智能客服。有什么可以帮您的吗？",
+        greeting="您好！我是{bot_name}，观星台窗帘的智能客服。有什么可以帮您的吗？",
     ),
     CHANNEL_DOUYIN_MINI: ChannelConfig(
-        greeting="您好！我是{bot_name}，米高窗帘的智能客服。有什么可以帮您的吗？",
+        greeting="您好！我是{bot_name}，观星台窗帘的智能客服。有什么可以帮您的吗？",
     ),
     CHANNEL_WEB: ChannelConfig(
-        greeting="您好！我是{bot_name}，米高窗帘在线客服。有什么可以帮您的吗？",
+        greeting="您好！我是{bot_name}，观星台窗帘在线客服。有什么可以帮您的吗？",
     ),
 }
 
@@ -83,7 +83,7 @@ def get_channel_config(channel: str, tenant_config: Optional[dict] = None) -> Ch
     )
 
 
-def resolve_greeting(channel: str, tenant_config: Optional[dict] = None, bot_name: str = "小布") -> str:
+def resolve_greeting(channel: str, tenant_config: Optional[dict] = None, bot_name: str = "元元") -> str:
     """解析最终欢迎语，替换 {bot_name} 占位符"""
     ch = get_channel_config(channel, tenant_config)
     greeting = ch.greeting or "您好！我是{bot_name}，有什么可以帮您的吗？"

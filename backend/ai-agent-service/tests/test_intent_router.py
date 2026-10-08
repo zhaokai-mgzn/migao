@@ -461,7 +461,9 @@ class TestIntentConfig:
         """所有意图类型存在（含 order_create / finance / quote 算料；#3081 已移除 quick_reply）"""
         # 30 → 33（issue #4196）：加工单域三意图（generate/query/update）恢复登记
         # ——#3917 下线时它们从未进过枚举，故本次是**新增三个取值**（真值变化，非放宽）。
-        assert len(IntentType) == 33  # 含 order_create + finance + quote（算料报价）+ 加工单域 3
+        # 33 → 34（issue #6486 包 2）：定时提醒域新增 `scheduled_task_manage`
+        # —— 新增取值前先按 `test_skill_intent_legality` 的四处一起改（枚举/描述/归域/路由表）。
+        assert len(IntentType) == 34  # 含 order_create + finance + quote（算料）+ 加工单域 3 + 定时提醒
 
     def test_finance_maps_to_finance_api(self):
         """财务意图映射到 finance_api 工具"""

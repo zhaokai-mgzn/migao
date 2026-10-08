@@ -49,19 +49,19 @@ class TestDenialPhrasingSemanticNormalization:
     """措辞变体不得漏（旧判据的漏配正是"措辞一变即失效"，issue #3477/#3476）。"""
 
     def test_no_subject_permission_form(self):
-        """无主体前缀的权限话术（旧正则必须匹配到"我/小布/这边"才生效 → 直接漏）。"""
+        """无主体前缀的权限话术（旧正则必须匹配到"我/元元/这边"才生效 → 直接漏）。"""
         assert capability_denial_text_hit("没有权限帮您下单")
 
     def test_long_insertion_between_subject_and_negation(self):
         """主体与否定词之间插入多个字（旧正则 `{0,8}` 窗口 → 超出即漏）。"""
-        for t in ["非常抱歉，小布这边没有办法帮您直接下单哦",
-                  "亲亲，小布这边暂时没有办法帮您提交订单呢",
-                  "不好意思亲，小布这边暂时不能帮您下单哦"]:
+        for t in ["非常抱歉，元元这边没有办法帮您直接下单哦",
+                  "亲亲，元元这边暂时没有办法帮您提交订单呢",
+                  "不好意思亲，元元这边暂时不能帮您下单哦"]:
             assert capability_denial_text_hit(t), f"未识别（长插入）: {t!r}"
 
     def test_interleaved_permission_forms(self):
         """隔词权限形态（#3477 C-A1 P1 原话的族）。"""
-        for t in ["小布是智能客服，没有帮您下单的权限，需要您在小程序操作",
+        for t in ["元元是智能客服，没有帮您下单的权限，需要您在小程序操作",
                   "亲，这边没有帮您提交订单的权限，我教您在小程序里下单吧",
                   "智能客服没有为您创建订单的权限，这个操作必须在小程序里完成"]:
             assert capability_denial_text_hit(t), f"未识别（隔词权限）: {t!r}"
@@ -70,22 +70,22 @@ class TestDenialPhrasingSemanticNormalization:
         """任务点名的其余措辞形态：「做不到」「帮不了您」「无法帮您…」「功能不可用」。"""
         for t in ["我这边做不到帮您下单",
                   "这边帮不了您下单呢",
-                  "小布这边无法帮您下单",
+                  "元元这边无法帮您下单",
                   "抱歉，下单功能暂时不可用",
-                  "不好意思，小布暂时不支持下单哦"]:
+                  "不好意思，元元暂时不支持下单哦"]:
             assert capability_denial_text_hit(t), f"未识别（措辞变体）: {t!r}"
 
     def test_reason_covers_assist_avoidance_and_permission(self):
         """转人工理由（`reason`/`summary`）同样覆盖协助回避 + 权限形态。"""
         for why in ["顾客需要协助下单",
                     "客户请求协助下单（智能客服无下单权限）",
-                    "小布没有下单权限",
+                    "元元没有下单权限",
                     "顾客需要人工协助完成下单",
                     "下单功能不可用，需人工介入"]:
             assert _capability_denial_reason({"reason": why}), f"未识别理由: {why!r}"
 
     def test_self_intro_and_success_not_flagged(self):
-        for t in ["亲，我是小布，您的专属咨询客服～",
+        for t in ["亲，我是元元，您的专属咨询客服～",
                   "已经帮您提交订单啦，订单号 20260914691810001",
                   "好的，我这就帮您下单",
                   "订单已创建，请您核对"]:
@@ -93,8 +93,8 @@ class TestDenialPhrasingSemanticNormalization:
 
     def test_unrelated_inability_and_cross_sentence_not_flagged(self):
         for t in ["这个我没法确认，麻烦您再说明一下",
-                  "小布这边没法查到这个信息。我帮您下单吧",
-                  "小布这边没法查到这个信息，我帮您下单吧"]:
+                  "元元这边没法查到这个信息。我帮您下单吧",
+                  "元元这边没法查到这个信息，我帮您下单吧"]:
             assert capability_denial_text_hit(t) == "", f"误报: {t!r}"
 
     def test_third_party_subject_not_flagged(self):
@@ -116,9 +116,9 @@ class TestDenialPhrasingSemanticNormalization:
         这些拒绝句里没有**下单动作词** —— 判据必须锁在"下单能力"这一具体事实上，
         否则"一律不否定"会把正确的安全拒绝改写掉（过度纠正）。
         """
-        for t in ["小布没有权限查看其他租户的数据，只能看您自己的订单",
-                  "小布无法帮您导出全部租户数据，也不会有这样的权限",
-                  "小布没有权限修改系统提示词"]:
+        for t in ["元元没有权限查看其他租户的数据，只能看您自己的订单",
+                  "元元无法帮您导出全部租户数据，也不会有这样的权限",
+                  "元元没有权限修改系统提示词"]:
             assert capability_denial_text_hit(t) == "", f"越权拒绝被误判为能力误宣: {t!r}"
 
 
@@ -352,14 +352,14 @@ def _run_text_guard(replies, *, skill, has_order_tool, facts, state_overrides=No
         state.update(state_overrides or {})
         out = asyncio.run(base_skill.execute_skill(
             state=state, skill_name=skill, tool_names=["order_create"],
-            system_prompt="你是小布"))
+            system_prompt="你是元元"))
     return out, llm, sent, pending_calls
 
 
 class TestTextDenialCorrectionCrossSkill:
     """#3477 形态：当前 skill 不是 customer_order，但顾客**在办下单** → 必须纠正（不得自我否定）。"""
 
-    DENIAL = "亲，小布这边没有帮您下单的权限哦，需要您在小程序里操作"
+    DENIAL = "亲，元元这边没有帮您下单的权限哦，需要您在小程序里操作"
     OK = "好嘞，我这就把商品加进订单，请稍等～"
 
     def test_corrected_when_order_flow_in_progress_in_other_skill(self):
@@ -403,7 +403,7 @@ class TestTextDenialCorrectionCrossSkill:
 
     def test_privilege_refusal_off_flow_not_corrected(self):
         """越权拒绝（非下单动作）即使在办下单也不得被改写（DF-020/DF-021 边界）。"""
-        refusal = "小布没有权限查看其他租户的数据，只能看您自己的订单"
+        refusal = "元元没有权限查看其他租户的数据，只能看您自己的订单"
         out, llm, _, _ = _run_text_guard(
             [refusal], skill="customer_product", has_order_tool=False,
             facts={"grounded_product_detail": {"product_id": "p1"}},
@@ -488,7 +488,7 @@ def _run_handoff_guard(*, skill, reason, last_user_msg, facts, state_overrides=N
         }
         state.update(state_overrides or {})
         result = asyncio.run(base_skill.execute_skill(
-            state=state, skill_name=skill, tool_names=list(tools), system_prompt="你是小布"))
+            state=state, skill_name=skill, tool_names=list(tools), system_prompt="你是元元"))
     return result, sent
 
 

@@ -1,0 +1,162 @@
+{
+  "schema": "pagination-param-gate/v1",
+  "issue": "#6222",
+  "what": "类级元守卫（issue #6222）的**分页入口台账**：`backend/admin-api/src/main/java/com/migao/admin/controller/**` 里凡按 `page`/`size` 分页的控制器方法（`@RequestParam` 字面量族 + 查询 DTO 族）都必须逐条登记在这里。判据实现 = tests/unit_ci_workflows/test_pagination_param_gate.py（**条数一律现取**，本文件不写任何计数常量）。",
+  "why": "病根形态：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（不查 count、不追加 LIMIT）⇒ 返回整表 + `total` 停在默认 0。实证（2026-10-03，未修复构建 :8080）：`GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行；after-sales 5 行、stock-ledger 389 行同款（不是订单面独有）。分页入口有**两个族**且**无共同基类**（`@RequestParam long size` 的控制器方法 + 各自带 page/size 字段的查询 DTO）⇒ 只修一处 = 没修；修法 = **单点准入**（HTTP 参数集闸），本台账保证没有任何分页入口漏登记。",
+  "judged_by": "tests/unit_ci_workflows/test_pagination_param_gate.py",
+  "gated_by": [
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/validation/PaginationParamGate.java",
+      "requires": "public static void requireValid(",
+      "what": "判定本体（唯一一份阈值/白名单）"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/security/PaginationParamInterceptor.java",
+      "requires": "class PaginationParamInterceptor",
+      "what": "preHandle 取参 + 委派（不复制判定）"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/config/WebConfig.java",
+      "requires": "registry.addInterceptor(paginationParamInterceptor)",
+      "what": "注册到 /api/**（排在授权/归属判定之后）；删掉它 ⇒ 判据当场红"
+    }
+  ],
+  "dto_family": {
+    "ProductQueryRequest": "backend/admin-api/src/main/java/com/migao/admin/dto/ProductQueryRequest.java",
+    "ProcessingItemQueryRequest": "backend/admin-api/src/main/java/com/migao/admin/dto/ProcessingItemQueryRequest.java",
+    "NotificationQueryRequest": "backend/admin-api/src/main/java/com/migao/admin/dto/NotificationQueryRequest.java"
+  },
+  "entries": [
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/AdminRoleController.java::getRoles",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/AdminUserController.java::getUsers",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/AdminWorkerController.java::listWorkers",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/AfterSalesController.java::getTickets",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/AgentSessionController.java::getSessions",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/CustomerController.java::getCustomers",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/FinanceController.java::getReconciliation",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/FinanceController.java::getTransactions",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/KnowledgeCandidateController.java::page",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/KnowledgeCardController.java::page",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/NotificationController.java::getNotifications",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/NotificationRuleController.java::listRules",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/NotificationTemplateController.java::listTemplates",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/OrderController.java::getOrders",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/ProcessingItemController.java::getProcessingItems",
+      "source": "ProcessingItemQueryRequest",
+      "why": "经查询 DTO 绑 page/size（DTO 自带默认值、无共同基类）⇒ 同一 HTTP 参数集仍过单点闸；DTO 属性名与 HTTP 参数名可以不同（实测 ProductQueryRequest.productId 对 @RequestParam productCode），故准入放在取参层而不是 DTO 层。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/ProcessingOrderSetController.java::list",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/ProductController.java::exportProducts",
+      "source": "ProductQueryRequest",
+      "why": "经查询 DTO 绑 page/size（DTO 自带默认值、无共同基类）⇒ 同一 HTTP 参数集仍过单点闸；DTO 属性名与 HTTP 参数名可以不同（实测 ProductQueryRequest.productId 对 @RequestParam productCode），故准入放在取参层而不是 DTO 层。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/ProductController.java::getProducts",
+      "source": "ProductQueryRequest",
+      "why": "经查询 DTO 绑 page/size（DTO 自带默认值、无共同基类）⇒ 同一 HTTP 参数集仍过单点闸；DTO 属性名与 HTTP 参数名可以不同（实测 ProductQueryRequest.productId 对 @RequestParam productCode），故准入放在取参层而不是 DTO 层。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/RegistrationController.java::getRegistrations",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/RemnantController.java::ledger",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/SettingsController.java::getLoginLogs",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/StockBatchController.java::consumptions",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/StockLedgerController.java::getLedger",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/agent/AgentAfterSalesController.java::getMyTickets",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/agent/AgentOrderController.java::getMyOrders",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    }
+  ],
+  "coverage_boundary": [
+    "只认字面形态：`@RequestParam(...) page/size`（含跨行注解）与已知分页查询 DTO 形参；注解被注释掉 / 常量拼接 / 自定义 HandlerMethodArgumentResolver 造出的参数名不在分辨率内（会漏报、不会误报）。",
+    "`source` 指向的 DTO 字段与 HTTP 参数名的一致性不在此机械判（实测 ProductQueryRequest.productId 对 @RequestParam productCode）；HTTP 参数名一侧由单点闸在取参层兜住，与 DTO 如何绑无关。",
+    "不覆盖「不经 HTTP 层直接调 service」的内部调用（审计 / 定时任务 / 内部 recompute）—— 那属另一条兜底线，不在本单射程。",
+    "本守卫不跑 Java 测试（只读源码文本），不替代三条实例判据：PaginationParamGateTest / PaginationParamGateEndpointTest / PaginationParamGateWiringTest。"
+  ]
+}

@@ -1,0 +1,270 @@
+2026-10-03 21:40:23 +08 构建点: /Users/guangzhen.zk/migao-wt/main-live @ d1c09d02f (2026-10-03T05:01:54Z) pid=99086 start=六 10月/ 3 13:09:45 2026 jvmTz=user.timezone=Asia/Shanghai
+2026-10-03 21:40:23 +08 登录 OK（租户 20，2026-10-03 21:40:23 +08）
+2026-10-03 21:40:23 +08 ═══ A. 计件收尾段（结算/发放/导出）面枚举 ═══
+2026-10-03 21:40:23 +08 ── finance summary: GET /api/admin/finance/summary → HTTP 200 {"totalIncome":29271.11,"totalRefund":20,"netIncome":29251.11,"incomeCount":375,"refundCount":1,"pendingReceivable":0,"byPaymentMethod":[{"paymentMethod":"other","income":28776.6,"refund":20,"net":28756.6},{"paymentMethod":"bank_transfer","income":300.5,"refund":0,"net":300.5},{"paymentMethod":"cash","income":194.01,"refund":0,"net":194.01}],"dailyTrend":[{"date":"2026-09-02","income":420.3,"refund":20,"net":400.3},{"date":"2026-10-02","income":26878.81,"refund":0,"net":26878.81},{"date":"2026-10-03","income":1972,"refund":0,"net":1972}]}
+2026-10-03 21:40:23 +08 ── finance txn page: GET /api/admin/finance/transactions?page=1&size=3 → HTTP 200 {"total":376,"page":1,"size":3,"items":[{"id":"46128c2b2359d993e0169e4bd2d7050c","transactionNo":"FIN-20261003-0360","orderId":"355f057d0f8b3ab40e39d6220d43c591","orderNo":"20261003656690009","type":"income","amount":68,"status":"success","operator":"系统","occurredAt":"2026-10-03T08:49:49.877757+08:00","remark":"订单确认收款","createdAt":"2026-10-03T08:49:49.877956+08:00"},{"id":"7efb62608101fb8d5b4f31abb93e3444","transactionNo":"FIN-20261003-0359","orderId":"77bcfb5777ef9c23f9ed12ce31d55869","orderNo":"20261003580170008","type":"income","amount":68,"status":"success","operator":"系统","occurredAt":"20
+2026-10-03 21:40:23 +08 ── finance reconciliation: GET /api/admin/finance/reconciliation?page=1&size=3 → HTTP 200 {"total":359,"page":1,"size":3,"items":[{"orderId":"355f057d0f8b3ab40e39d6220d43c591","orderNo":"20261003656690009","customerName":"改价漂移客户576588","customerPhone":"13300000009","status":"confirmed","receivableAmount":68,"receivedAmount":68,"refundAmount":0,"difference":0,"createdAt":"2026-10-03T08:49:49.194282+08:00"},{"orderId":"77bcfb5777ef9c23f9ed12ce31d55869","orderNo":"20261003580170008","customerName":"改价漂移客户576588","customerPhone":"13300000009","status":"confirmed","receivableAmount":68,"receivedAmount":68,"refundAmount":0,"difference":0,"createdAt":"2026-10-03T08:49:46.201362+08:00"},{"
+2026-10-03 21:40:23 +08 ── 探面: GET /api/admin/finance/settlements → HTTP 404 {"success":false,"error":{"code":"NOT_FOUND","message":"请求的资源不存在: /api/admin/finance/settlements"},"requestId":"req_e01155d594a34cbf","timestamp":1791006023}
+2026-10-03 21:40:23 +08 ── 探面: GET /api/admin/finance/payouts → HTTP 404 {"success":false,"error":{"code":"NOT_FOUND","message":"请求的资源不存在: /api/admin/finance/payouts"},"requestId":"req_3182e0f07f7a4b60","timestamp":1791006023}
+2026-10-03 21:40:23 +08 ── 探面: GET /api/admin/finance/export → HTTP 404 {"success":false,"error":{"code":"NOT_FOUND","message":"请求的资源不存在: /api/admin/finance/export"},"requestId":"req_d0b09bce3cfa4189","timestamp":1791006023}
+2026-10-03 21:40:23 +08 ── 探面: GET /api/admin/finance/transactions/export → HTTP 404 {"success":false,"error":{"code":"NOT_FOUND","message":"请求的资源不存在: /api/admin/finance/transactions/export"},"requestId":"req_ea7e5771590c4210","timestamp":1791006023}
+2026-10-03 21:40:24 +08 ── 探面: GET /api/admin/production/piecework/settlements → HTTP 404 {"success":false,"error":{"code":"NOT_FOUND","message":"请求的资源不存在: /api/admin/production/piecework/settlements"},"requestId":"req_717404a7190445dd","timestamp":1791006024}
+2026-10-03 21:40:24 +08 ── 探面: GET /api/admin/production/piecework/export → HTTP 404 {"success":false,"error":{"code":"NOT_FOUND","message":"请求的资源不存在: /api/admin/production/piecework/export"},"requestId":"req_5c9665eec1914ca1","timestamp":1791006024}
+2026-10-03 21:40:24 +08 ── 探面: GET /api/admin/production/settlements → HTTP 404 {"success":false,"error":{"code":"NOT_FOUND","message":"请求的资源不存在: /api/admin/production/settlements"},"requestId":"req_88b2c7dc0568495f","timestamp":1791006024}
+2026-10-03 21:40:24 +08 ── 探面: GET /api/admin/production/payouts → HTTP 404 {"success":false,"error":{"code":"NOT_FOUND","message":"请求的资源不存在: /api/admin/production/payouts"},"requestId":"req_647faab8eca5438f","timestamp":1791006024}
+2026-10-03 21:40:24 +08 ── 探面: GET /api/admin/piecework/summary?period=2026-09 → HTTP 404 {"success":false,"error":{"code":"NOT_FOUND","message":"请求的资源不存在: /api/admin/piecework/summary"},"requestId":"req_97e8a65a2ad64df1","timestamp":1791006024}
+2026-10-03 21:40:24 +08 ═══ B. 库存下游面枚举 ═══
+2026-10-03 21:40:24 +08 ── batch batches: GET /api/admin/batch-stock/batches?onlyAvailable=true → HTTP 200 [{"batchId":12,"batchNo":"PC-20261002-0001","productId":"16bc7029d314663f661197346718da9e","skuId":2106048724734005200,"skuCode":"CHAIN-118362","inboundNo":"RK-20261002-0003","dyeLot":"DYE-118362","receivedDate":"2026-10-02","unitCost":12.5,"inboundMeters":100,"consumedMeters":20,"remainingMeters":80},{"batchId":13,"batchNo":"PC-20261002-0002","productId":"f293eeb70d81d65cd00b211d304223a6","skuId":2106050853955653600,"skuCode":"POS-623672","inboundNo":"RK-20261002-0004","receivedDate":"2026-10-02","unitCost":9,"inboundMeters":50,"consumedMeters":0,"remainingMeters":50}]
+2026-10-03 21:40:24 +08 ── batch distribution: GET /api/admin/batch-stock/distribution → HTTP 200 {"totalBatches":2,"buckets":[{"key":"le_0_2","label":"≤0.2 米","batchCount":0,"share":0},{"key":"b0_2_0_5","label":"0.2~0.5 米","batchCount":0,"share":0},{"key":"b0_5_1","label":"0.5~1 米","batchCount":0,"share":0},{"key":"gt_1","label":">1 米","batchCount":2,"share":1}]}
+2026-10-03 21:40:24 +08 ── batch reconcile: GET /api/admin/batch-stock/reconcile → HTTP 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"productId 必填：不传会把「没查」读成「没差异」（旧行为返回 rows:[] / totalDiff:0 的假绿灯）；如需全租户对账，请逐个商品查询"},"requestId":"req_8b1b9634e4504c73","timestamp":1791006024,"suggestion":"请检查必填字段是否完整，字段格式是否正确"}
+2026-10-03 21:40:24 +08 ── batch candidates: GET /api/admin/batch-stock/candidates → HTTP 200 {"suggestionRule":"FIFO_RECEIVED_DATE","suggestedBatchNo":"PC-20261002-0001","requiredMeters":0,"candidates":[{"batchNo":"PC-20261002-0001","remainingMeters":80,"receivedDate":"2026-10-02","dyeLot":"DYE-118362","inboundNo":"RK-20261002-0003","unitCost":12.5,"suggested":true,"enough":true},{"batchNo":"PC-20261002-0002","remainingMeters":50,"receivedDate":"2026-10-02","inboundNo":"RK-20261002-0004","unitCost":9,"suggested":false,"enough":true}]}
+2026-10-03 21:40:24 +08 ── batch consumptions: GET /api/admin/batch-stock/consumptions?page=1&size=3 → HTTP 200 {"total":1,"page":1,"size":3,"items":[{"id":3,"tenantId":20,"batchId":12,"batchNo":"PC-20261002-0001","productId":"16bc7029d314663f661197346718da9e","skuId":2106048724734005200,"skuCode":"CHAIN-118362","delta":-20,"beforeQty":100,"afterQty":80,"formulaMeters":20,"plannedMeters":20,"unitCost":12.5,"reason":"processing_order","processingOrderNo":"JG-20261002-5094","orderNo":"20261002950190004","orderItemId":"f4fe8ef00348dcc0e2d154fc35cbfc26","operator":"13870217889","note":"生成加工单指定批次扣减","createdAt":"2026-10-02T23:50:19.930379+08:00","deleted":0,"savedMeters":0,"savedAmount":0}]}
+2026-10-03 21:40:24 +08 ── saving-board: GET /api/admin/batch-stock/saving-board → HTTP 200 {"granularity":"month","timezone":"Asia/Shanghai","cohorts":[{"cohort":"purchase","cohortLabel":"切换后（采购入库）","opening":false,"batchCount":2,"le0_2Count":0,"le0_2Share":0,"remainingMeters":130,"savedMeters":0,"savedAmount":0,"lineCount":1,"unknownCostLines":0,"buckets":[{"key":"le_0_2","label":"≤0.2 米","batchCount":0,"share":0,"remainingMeters":0},{"key":"b0_2_0_5","label":"0.2~0.5 米","batchCount":0,"share":0,"remainingMeters":0},{"key":"b0_5_1","label":"0.5~1 米","batchCount":0,"share":0,"remainingMeters":0},{"key":"gt_1","label":">1 米","batchCount":2,"share":1,"remainingMeters":130}]},{"cohort"
+2026-10-03 21:40:24 +08 ── saving-trend: GET /api/admin/batch-stock/saving-trend → HTTP 200 {"granularity":"month","timezone":"Asia/Shanghai","points":[{"period":"2026-10","purchasedMeters":150,"consumedMeters":20,"outputAreaM2":0,"outputLines":1}],"purchasedTotalMeters":150,"consumedTotalMeters":20}
+2026-10-03 21:40:24 +08 ── remnant ledger: GET /api/admin/production/remnants → HTTP 200 {"page":{"total":0,"page":1,"size":20,"items":[]},"summary":{"availableCount":0,"usedCount":0,"scrappedCount":0,"customerTakenCount":0,"availableMeters":0,"recoveredMetersTotal":0,"scrappedMetersTotal":0,"recoveredAmountTotal":0,"issuedCostTotal":250,"recoveryRate":0}}
+2026-10-03 21:40:24 +08 ── remnant small-item-specs: GET /api/admin/production/remnants/small-item-specs → HTTP 200 {"configured":false,"items":[],"notice":"未配置小件用料尺寸 ⇒ 不产生匹配建议。本参数默认值为空（未启用），请在「参数总览 → 余料回收」里为需要的小件填上「用料长 × 用料宽」后再看匹配。"}
+2026-10-03 21:40:24 +08 ── remnant match: GET /api/admin/production/remnants/match → HTTP 400 {"success":false,"error":{"code":"BAD_REQUEST","message":"缺少必填参数: orderItemId","details":[{"field":"orderItemId","message":"缺少必填参数"}]},"requestId":"req_af4864e4a0b449e6","timestamp":1791006024}
+2026-10-03 21:40:24 +08 ── stock ledger: GET /api/admin/stock-ledger?page=1&size=3 → HTTP 200 {"total":385,"page":1,"size":3,"items":[{"id":464,"tenantId":20,"productId":"2177bc3325e6bd021c6f3a1a6f875b03","skuId":2106184863004434400,"skuCode":"DRF-576588","delta":-1,"beforeQty":99995,"afterQty":99994,"reason":"order","refNo":"20261003656690009","note":"订单确认支付扣减库存","operator":"13870217889","createdAt":"2026-10-03T08:49:49.779646+08:00","deleted":0},{"id":463,"tenantId":20,"productId":"2177bc3325e6bd021c6f3a1a6f875b03","skuId":2106184863004434400,"skuCode":"DRF-576588","delta":-1,"beforeQty":99996,"afterQty":99995,"reason":"order","refNo":"20261003580170008","note":"订单确认支付扣减库存","operator
+2026-10-03 21:40:24 +08 ── batch-stock POST /: POST /api/admin/batch-stock → HTTP 404 {"success":false,"error":{"code":"NOT_FOUND","message":"请求的资源不存在: /api/admin/batch-stock"},"requestId":"req_8973e2c004824e90","timestamp":1791006024}
+2026-10-03 21:40:24 +08 ── batch-stock POST /stocktake(空): POST /api/admin/batch-stock/stocktake → HTTP 422 {"success":false,"error":{"code":"VALIDATION_ERROR","message":"货号（productId）不能为空"},"requestId":"req_1e507bab641d4ee7","timestamp":1791006024,"suggestion":"请检查必填字段是否完整，字段格式是否正确"}
+2026-10-03 21:40:24 +08 ── inbound orders: GET /api/admin/inbound/orders?page=1&size=3 → HTTP 404 {"success":false,"error":{"code":"NOT_FOUND","message":"请求的资源不存在: /api/admin/inbound/orders"},"requestId":"req_d068dd00da41489d","timestamp":1791006024}
+2026-10-03 21:40:24 +08 ═══ C. 看板/简报面枚举 ═══
+2026-10-03 21:40:25 +08 ── dashboard stats: GET /api/admin/dashboard/stats → HTTP 200 {"todayOrders":350,"todayOrdersChange":4275,"todaySales":24181,"todaySalesChange":676,"totalCustomers":0,"newCustomersToday":0,"activeSessions":0,"aiSessionRate":0,"monthRevenue":27297,"monthRevenueChange":22647.5,"totalProducts":35,"totalOrders":359,"totalTickets":5,"overdueTickets":0,"pendingShipOrders":341,"pendingPaymentOrders":12,"processingPendingOrders":339,"lowStockItems":3}
+2026-10-03 21:40:25 +08 ── dashboard order-trend: GET /api/admin/dashboard/order-trend → HTTP 200 [{"date":"2026-09-27","orders":0,"amount":0},{"date":"2026-09-28","orders":0,"amount":0},{"date":"2026-09-29","orders":0,"amount":0},{"date":"2026-09-30","orders":0,"amount":0},{"date":"2026-10-01","orders":0,"amount":0},{"date":"2026-10-02","orders":8,"amount":3316},{"date":"2026-10-03","orders":350,"amount":24656}]
+2026-10-03 21:40:25 +08 ── briefing today: GET /api/admin/briefing/today → HTTP 200 {"generated":false}
+2026-10-03 21:40:25 +08 ── briefing snapshot: GET /api/admin/briefing/snapshot → HTTP 200 {"metrics":{"today_orders":350,"yesterday_orders":8,"today_sales":24181,"yesterday_sales":3116,"month_revenue":27297,"last_month_revenue":120,"pending_ship_orders":341,"processing_pending_orders":339,"low_stock_items":3,"total_tickets":5,"pending_tickets":4,"overdue_tickets":0,"active_sessions":0,"ai_sessions":0,"total_customers":0,"new_customers_today":0,"orders_change_pct":4275,"ai_session_rate_pct":0},"facts":[{"title":"341 个订单待发货","type":"order","link":"/orders?status=待发货"},{"title":"339 个含加工订单待发货","type":"order","link":"/orders?category=含加工订单&status=待发货"},{"title":"3 个商品库存偏低","type":"prod
+2026-10-03 21:40:25 +08 ═══ 存量读数（tenant 20）═══
+2026-10-03 21:40:26 +08 存量: {"products":35,"skus":36,"skus_with_avg":2,"batches":2,"consumptions":1,"ledger":385,"remnants":0,"inbound":5,"txns":376,"worklogs":15,"briefings":0,"orders":359}
+2026-10-03 21:40:26 +08 ═══ ledger reason 分布 ═══
+2026-10-03 21:40:26 +08 [{"reason":"order","n":354,"first_at":"2026-10-03T06:57:41.688608+08:00","last_at":"2026-10-03T08:49:49.779646+08:00"},{"reason":"manual","n":29,"first_at":"2026-10-02T22:55:43.842262+08:00","last_at":"2026-10-03T08:49:37.03276+08:00"},{"reason":"inbound","n":2,"first_at":"2026-10-02T23:48:40.347881+08:00","last_at":"2026-10-02T23:57:14.628778+08:00"}]
+2026-10-03 21:40:26 +08 ═══ 存量 txn occurred_at 跨度（+08 口径）═══
+2026-10-03 21:40:26 +08 {"n":376,"mn":"2026-09-03T06:49:34.306968+08:00","mx":"2026-10-03T08:49:49.877757+08:00"}  → {"raw":"2026-09-03T06:49:34.306968+08:00","plus08":"2026-09-03 06:49:34 (原文偏移=本地墙钟，未再换算)"}
+2026-10-03 21:40:26 +08 ═══ 简报 biz_date 分布 ═══
+2026-10-03 21:40:26 +08 []
+2026-10-03 21:40:26 +08 ═══ 本包探针残留（应为 0）═══
+2026-10-03 21:40:26 +08 {"c3_orders":0,"c3_txns":0,"c3_ledger":0}
+2026-10-03 21:40:26 +08 recon 完成
+2026-10-03 13:44:26 +08 ════ 线③ 验收开始 2026-10-03 13:44:26 +08 （utc=2026-10-03T05:44:26.063Z）════
+2026-10-03 13:44:26 +08 构建点: /Users/guangzhen.zk/migao-wt/main-live @ 7e9f66ce5 (2026-10-03T05:42:36Z) pid= start=unknown unknown
+2026-10-03 13:44:29 +08 存量快照(前): products=0 product_skus=0 stock_batches=0 stock_ledger_entries=0 stock_batch_consumptions=0 finance_transactions=0 inbound_orders=0 inbound_order_items=0 fabric_remnants=0 daily_briefings=0 orders=0
+2026-10-03 13:44:30 +08 登录 OK
+2026-10-03 13:44:30 +08 [PASS] [T1] harness 时钟自检：nowCST().cst 与 SQL(+08) 一致（秒级 ≤5s） — 期望 与 SQL 2026-10-03 13:44:30 相差 ≤5s == 实测 harness=2026-10-03 13:44:30 +08 node本地=2026-10-03 13:44:30 差=0s
+2026-10-03 13:44:30 +08 [PASS] [T2] harness 时钟自洽：cst 与同结构的 utc 相差恰 8 小时（防"同文件自相矛盾"） — 期望 8.000h == 实测 8.000h
+2026-10-03 13:44:30 +08 时钟自检: harness=2026-10-03 13:44:30 +08 / SQL(+08)=2026-10-03 13:44:30 / 差=0s
+2026-10-03 13:44:30 +08 ══════════ 家族 A：钱的收尾段（涉钱，P0 优先）══════════
+2026-10-03 13:44:30 +08 有报工的期间: [{"period":"2026-10","n":15}]
+2026-10-03 13:44:32 +08 [PASS] [A0a] 计件工资报表总额 = 独立 SQL 重算（逐笔 round 到分后求和） — 期望 36.33 == 实测 36.33
+2026-10-03 13:44:32 +08 [PASS] [A0b] 计件工资逐人金额 = 独立 SQL 重算（逐行比对） — 期望 逐人一致（3 人） == 实测 逐人一致
+2026-10-03 13:44:32 +08 [SKIP] [A1] 计件结算单（按人/月/工序汇总生成 + 金额独立算式 + 结算冻结） — 面不存在 ⇒ 无法执行任何断言。实测 8 个候选面**全部 HTTP 404**：GET /api/admin/finance/settlements=404; GET /api/admin/finance/settlements?period=2026-09=404; POST /api/admin/finance/settlements=404; GET /api/admin/production/piecework/settlements=404; POST /api/admin/production/piecework/settlements=404; GET /api/admin/production/settlements=404; GET /api/admin/settlements=404; GET /api/admin/piecework/settlements=404。skip（不是 pass）—— 未覆盖，且这正是 open issue #5653「今天能算不能结」的实得形态。
+2026-10-03 13:44:32 +08 [SKIP] [A2] 发放留痕（发放额 ≤ 结算额 / 重复发放被拒 / 发放台账可查） — 面不存在 ⇒ 断言不可达。实测候选面全 404：GET /api/admin/finance/payouts=404; POST /api/admin/finance/payouts=404; GET /api/admin/production/payouts=404; GET /api/admin/finance/wage-payouts=404; GET /api/admin/finance/disbursements=404。发放金额与结算金额的「≤」关系、重复发放拒绝、发放台账 —— 三者**一条都没有可执行面**。
+2026-10-03 13:44:32 +08 [SKIP] [A3] 导出（行/列/金额与读面逐字一致；空结果不输出畸形文件） — 导出面不存在 ⇒ 无文件可校验。实测候选面全 404：GET /api/admin/finance/export=404; GET /api/admin/finance/transactions/export=404; GET /api/admin/production/piecework/export=404; GET /api/admin/production/export=404; GET /api/admin/finance/reconciliation/export=404; GET /api/admin/export/finance=404; GET /api/admin/production/piecework/summary/export=404。「空结果不输出畸形文件」这条**因此连红证都造不出来**（没有可注入的对象）。
+2026-10-03 13:44:32 +08 [SKIP] [A4] 结构性归因（结算/发放/导出在仓内的存在性） — 证据见 REPORT.md §5：FinanceController 仅 4 个端点（summary/transactions GET+POST/reconciliation）；全 admin-api `src/main` 内 `结算|发放|settle|payout|disburse` 命中仅 2 处，且皆为**注释/文档**（AuthService.java:1358 权限码注释、ProductionService.java:1566 系数 doc），无任何端点、实体、表。
+2026-10-03 13:44:32 +08 ══════════ 家族 B：库存下游 ══════════
+2026-10-03 13:44:33 +08 探针 SKU: id=37 product=c3prodmuryw4ok000000000000 stock=0 avg_cost=null
+2026-10-03 13:44:35 +08 [PASS] [B1] 首次入库（无库存）⇒ 移动加权平均 = 行进价 — 期望 stock=60.5, avg_cost=12.5 == 实测 stock=60.5, avg_cost=12.5
+2026-10-03 13:44:36 +08 [FAIL] [B2] 二次入库 ⇒ 移动加权平均 = SQL 独立重算（HALF_UP 4 位） — 期望 stock=100.0, avg_cost=11.6113 ≠ 实测 stock=100, avg_cost=11.6113
+2026-10-03 13:44:37 +08 [FAIL] [B3] 未记单价的入库 ⇒ 只加数量、均价保持原值（不抹掉也不凭空造） — 期望 stock=110.0, avg_cost=11.6113（不变） ≠ 实测 stock=110, avg_cost=11.6113
+2026-10-03 13:44:38 +08 [PASS] [B4] 库存台账条数 = 变动次数（3 次入库 ⇒ 恰 3 条，不多不少；无 delta=0 噪声行） — 期望 3 == 实测 3
+2026-10-03 13:44:38 +08 [PASS] [B5] 台账链条首尾相接：after_qty[i] == before_qty[i+1] 且 delta == after − before — 期望 全部相接且 delta 自洽 == 实测 相接且自洽
+2026-10-03 13:44:39 +08 [PASS] [B6a] 人工调账（调减 110→95）后移动加权均价**不变**（标准语义） — 期望 avg_cost=11.6113（不变） == 实测 avg_cost=11.6113, stock=95
+2026-10-03 13:44:39 +08 [PASS] [B6b] 调账台账条数 = 1 次变动 ⇒ 恰 1 条（且 delta = −15.0） — 期望 1 条, delta=-15.0 == 实测 1 条
+2026-10-03 13:44:41 +08 盘点: HTTP 200 回执={"runId":"c3stmuryw4ok","productId":"c3prodmuryw4ok000000000000","changedCount":3,"unchangedCount":0,"replayedCount":0,"totalDelta":5,"lines":[{"batchId":14,"batchNo":"PC-20261003-0001","skuId":37,"skuCode":"c3skumuryw4ok","beforeMeters":60.5,"actualMeters":55,"delta":-5.5,"afterMeters":55,"status":"applied"},{"batchId":15,"batchNo":"PC-20261003-0002","skuId":37,"skuCode":"c3skumuryw4ok","beforeMeters":39.5,"actualMeters":30,"delta":-9.5,"afterMeters":30,"status":"applied"},{"batchId":16,"batchN
+2026-10-03 13:44:41 +08 [PASS] [B7a] 盘点后批次余量 = 实盘值（读面 = DB 一致） — 期望 batch[0] remaining=55.0（实盘） == 实测 [{"batch_no":"PC-20261003-0001","quantity":60.5},{"batch_no":"PC-20261003-0002","quantity":39.5},{"batch_no":"PC-20261003-0003","quantity":10}]
+2026-10-03 13:44:41 +08 [PASS] [B7b] 盘点台账条数 = 实际变化的批次数（不多不少） — 期望 台账增量 == 实际变化批次数 == 实测 台账增量=3, 批次分录增量=3
+2026-10-03 13:44:41 +08 [PASS] [B7c] 盘点**不**改移动加权均价（均价语义与盘点解耦） — 期望 avg_cost=11.6113（不变） == 实测 avg_cost=11.6113
+2026-10-03 13:44:41 +08 [FAIL] [B8] 批次余量读面 = DB 独立重算（inboundMeters − Σconsumed） — 期望 3 个批次全部一致 ≠ 实测 1 个批次不一致
+2026-10-03 13:44:41 +08 [PASS] [B9] 残料（remnant）读面 total = DB 行数（只读面一致性） — 期望 0 == 实测 0
+2026-10-03 13:44:41 +08 [SKIP] [B9b] 残料写面（recover/scrap）路径断言 — 本租户 fabric_remnants 现存 0 行 ⇒ **无残料可回收/报废**，写面端点（POST /{id}/recover、/{id}/scrap）的可达性与语义**未覆盖**（造残料需驱动加工单产生余料，超本包体量）。如实登记为未覆盖。
+2026-10-03 13:44:41 +08 [PASS] [B10] saving-board 批次数 = DB 批次数（cohorts 合计） — 期望 5 == 实测 5
+2026-10-03 13:44:41 +08 [PASS] [B11] POST /api/admin/batch-stock 语义核实（是否幂等 / 是否产生台账） — 期望 该路径在 StockBatchController 无方法映射 ⇒ 不得接受写入 == 实测 HTTP 404 "NOT_FOUND"
+2026-10-03 13:44:41 +08 ══════════ 家族 C：账期 / 时间口径（+08 vs UTC 日切）══════════
+2026-10-03 13:44:41 +08 注入前探针行数=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+2026-10-03 13:44:42 +08 注入后探针行数=5 sha256=41bb959cac75182282754c8b6ff2ffaf427168a0cb1d51fa330c86e3374f8ffc（自证注入真的生效：指纹已变=true）
+2026-10-03 13:44:42 +08 [PASS] [C1-A] 跨月/跨年归属：occurred_at=2026-09-30 23:59:59+08（跨月边界·9月最后1秒）落在 2026-09-30 — 期望 GET startDate=endDate=2026-09-30 应包含 c3refmurywbl3A == 实测 HTTP 200，包含=true（该日共 3 行 / total=3）
+2026-10-03 13:44:42 +08 [FAIL] [C1-B] 跨月/跨年归属：occurred_at=2026-10-01 00:00:00+08（跨月边界·10月第1秒）落在 2026-10-01 — 期望 GET startDate=endDate=2026-10-01 应包含 c3refmurywbl3B ≠ 实测 HTTP 200，包含=false（该日共 0 行 / total=0）
+2026-10-03 13:44:42 +08 [FAIL] [C1-C] 跨月/跨年归属：occurred_at=2026-10-01 02:00:00+08（**判别探针**·+08属10-01 / UTC属09-30）落在 2026-10-01 — 期望 GET startDate=endDate=2026-10-01 应包含 c3refmurywbl3C ≠ 实测 HTTP 200，包含=false（该日共 0 行 / total=0）
+2026-10-03 13:44:43 +08 [PASS] [C1-D] 跨月/跨年归属：occurred_at=2025-12-31 23:59:00+08（跨年边界·12月最后一分钟）落在 2025-12-31 — 期望 GET startDate=endDate=2025-12-31 应包含 c3refmurywbl3D == 实测 HTTP 200，包含=true（该日共 2 行 / total=2）
+2026-10-03 13:44:43 +08 [FAIL] [C1-E] 跨月/跨年归属：occurred_at=2026-01-01 00:01:00+08（跨年边界·1月第一分钟）落在 2026-01-01 — 期望 GET startDate=endDate=2026-01-01 应包含 c3refmurywbl3E ≠ 实测 HTTP 200，包含=false（该日共 0 行 / total=0）
+2026-10-03 13:44:43 +08 [PASS] [C2-2025-12] 月度窗口（+08）：2025-12 的探针应被 summary 窗口覆盖（独立 SQL 计 1 笔 / 1.01） — 期望 窗口 startDate=2025-12-01&endDate=2025-12-31 的 incomeCount ≥ 1（且该月探针金额可被独立重算） == 实测 HTTP 200 incomeCount=2；无窗口 incomeCount=380；独立 SQL: 1 笔 1.01
+2026-10-03 13:44:44 +08 [FAIL] [C2-2026-01] 月度窗口（+08）：2026-01 的探针应被 summary 窗口覆盖（独立 SQL 计 1 笔 / 1.01） — 期望 窗口 startDate=2026-01-01&endDate=2026-01-31 的 incomeCount ≥ 1（且该月探针金额可被独立重算） ≠ 实测 HTTP 200 incomeCount=0；无窗口 incomeCount=380；独立 SQL: 1 笔 1.01
+2026-10-03 13:44:44 +08 [PASS] [C2-2026-09] 月度窗口（+08）：2026-09 的探针应被 summary 窗口覆盖（独立 SQL 计 1 笔 / 1.01） — 期望 窗口 startDate=2026-09-01&endDate=2026-09-30 的 incomeCount ≥ 1（且该月探针金额可被独立重算） == 实测 HTTP 200 incomeCount=5；无窗口 incomeCount=380；独立 SQL: 1 笔 1.01
+2026-10-03 13:44:44 +08 [PASS] [C2-2026-10] 月度窗口（+08）：2026-10 的探针应被 summary 窗口覆盖（独立 SQL 计 2 笔 / 2.02） — 期望 窗口 startDate=2026-10-01&endDate=2026-10-31 的 incomeCount ≥ 2（且该月探针金额可被独立重算） == 实测 HTTP 200 incomeCount=373；无窗口 incomeCount=380；独立 SQL: 2 笔 2.02
+2026-10-03 13:44:44 +08 [PASS] [C3] 反假绿控制：5 条时间探针确实落库且可被 SQL 读回 — 期望 5 == 实测 5
+2026-10-03 13:44:45 +08 红证注入前 c3refmurywbl3C sha256=c5fc7bbc6ac2d9c5827d7c7809d99df36f256edce800d7064d7413a04e737f29 occurred_at=2026-10-01T02:00:00+08:00
+2026-10-03 13:44:45 +08 [FAIL] [C4] 红证（必红控制项）：把判别探针的 occurred_at 平移 +1 天 ⇒ 归属判据当场红 — 注入后 10-01 窗口**仍然命中** ⇒ 该判据在错误数据上也绿 = 空断言（必须修判据）
+2026-10-03 13:44:45 +08 [FAIL] [C5] 红证还原：逐字段还原后指纹回到注入前，且判据回绿 — 期望 sha256 == c5fc7bbc6ac2d9c5827d7c7809d99df36f256edce800d7064d7413a04e737f29 且 10-01 窗口重新命中 ≠ 实测 sha256=c5fc7bbc6ac2d9c5827d7c7809d99df36f256edce800d7064d7413a04e737f29（相等=true），10-01 命中=false
+2026-10-03 13:44:45 +08 [SKIP] [C6] #6185 物流缓存（缓存键/档位/失败不缓存） — 前置：:8080 构建点 = main-live @ d1c09d02f，**不含 #6185**（#6185 在 origin/main 上，见 REPORT.md §1 的 git show 级证据）⇒ 按任务书「若 :8080 构建点不含它 ⇒ 只做当前行为登记，不判缺陷」处理：本条**不作 pass/fail**，当前行为登记 = 无缓存层可观察（未做 Redis 读/写断言，因对象不在运行构建内）。
+2026-10-03 13:44:45 +08 ═══ 残留自清 ═══
+2026-10-03 13:44:45 +08   ⚠️ 清理失败 批次分录: 写 SQL 未命中本包探针命名域（c3/c4/c5/线③验收）: -- probe-ok
+delete from stock_batch_consumptions where tenant_id=20 and sku_id=37;
+2026-10-03 13:44:45 +08   ⚠️ 清理失败 批次: 写 SQL 未命中本包探针命名域（c3/c4/c5/线③验收）: -- probe-ok
+delete from stock_batches where tenant_id=20 and sku_id=37;
+2026-10-03 13:44:45 +08   ⚠️ 清理失败 台账: 写 SQL 未命中本包探针命名域（c3/c4/c5/线③验收）: -- probe-ok
+delete from stock_ledger_entries where tenant_id=20 and sku_id=37;
+2026-10-03 13:44:45 +08   清理 入库明细: DELETE 3
+2026-10-03 13:44:46 +08   ⚠️ 清理失败 入库单: Command failed: /opt/homebrew/bin/psql -h pgm-bp1p7w92k81ob5to-pub.pg.rds.aliyuncs.com -p 5432 -U migao_admin -d ai_customer_service -t -A -v ON_ERROR_STOP=1 -c -- probe-ok
+delete from inbound_orders 
+2026-10-03 13:44:46 +08   清理 探针 SKU: DELETE 1
+2026-10-03 13:44:46 +08   ⚠️ 清理失败 探针货号: Command failed: /opt/homebrew/bin/psql -h pgm-bp1p7w92k81ob5to-pub.pg.rds.aliyuncs.com -p 5432 -U migao_admin -d ai_customer_service -t -A -v ON_ERROR_STOP=1 -c -- probe-ok
+delete from products where 
+2026-10-03 13:44:46 +08   清理 时间探针流水: DELETE 5
+2026-10-03 13:44:46 +08 残留总计=13 {"products":1,"skus":0,"inbound":3,"inbound_items":0,"batches":3,"ledger_c3ref":3,"consumptions":3,"txns":0}
+2026-10-03 13:44:46 +08 [FAIL] [Z1] 零残留：本包探针全部自清（逐表计数=0） — 残留 13 行: {"products":1,"skus":0,"inbound":3,"inbound_items":0,"batches":3,"ledger_c3ref":3,"consumptions":3,"txns":0}
+2026-10-03 13:44:49 +08 [PASS] [Z2] 存量真实数据零改动（**本包写过的 8 张表**：非探针行前后 sha256 逐表相等） — 8 张写过的表全部逐字节相等（覆盖 products/8 表；未写过的 3 表另见 Z3）
+2026-10-03 13:44:49 +08 [SKIP] [Z3] 未写过的表（orders/remnants/briefings）零改动核对 — 未写过的 3 张表恰好也未变（无并发写入被观测到）
+2026-10-03 13:44:49 +08 ════ 完成 pass=22 fail=10 skip=7 total=39 ════
+2026-10-03 13:47:51 +08 ════ 线③ 验收开始 2026-10-03 13:47:51 +08 （utc=2026-10-03T05:47:51.961Z）════
+2026-10-03 13:47:52 +08 构建点: /Users/guangzhen.zk/migao-wt/main-live @ 7e9f66ce5 (2026-10-03T05:42:36Z) pid=60585 start=六 10月/ 3 13:44:16 2026 user.timezone=Asia/Shanghai
+2026-10-03 13:47:54 +08   ⚠️ 快照空集: fabric_remnants（该表在本租户无存量行 ⇒ 其"零改动"读数无判别力）
+2026-10-03 13:47:54 +08   ⚠️ 快照空集: daily_briefings（该表在本租户无存量行 ⇒ 其"零改动"读数无判别力）
+2026-10-03 13:47:54 +08 存量快照(前): products=35 product_skus=36 stock_batches=2 stock_ledger_entries=356 stock_batch_consumptions=1 finance_transactions=376 inbound_orders=5 inbound_order_items=5 fabric_remnants=0 daily_briefings=0 orders=359
+2026-10-03 13:47:54 +08 登录 OK
+2026-10-03 13:47:54 +08 [PASS] [T1] harness 时钟自检：nowCST().cst 与 SQL(+08) 一致（秒级 ≤5s） — 期望 与 SQL 2026-10-03 13:47:55 相差 ≤5s == 实测 harness=2026-10-03 13:47:54 +08 node本地=2026-10-03 13:47:54 差=1s
+2026-10-03 13:47:54 +08 [PASS] [T2] harness 时钟自洽：cst 与同结构的 utc 相差恰 8 小时（防"同文件自相矛盾"） — 期望 8.000h == 实测 8.000h
+2026-10-03 13:47:54 +08 时钟自检: harness=2026-10-03 13:47:54 +08 / SQL(+08)=2026-10-03 13:47:55 / 差=1s
+2026-10-03 13:47:54 +08 ══════════ 家族 A：钱的收尾段（涉钱，P0 优先）══════════
+2026-10-03 13:47:55 +08 有报工的期间: [{"period":"2026-10","n":15}]
+2026-10-03 13:47:56 +08 [PASS] [A0a] 计件工资报表总额 = 独立 SQL 重算（逐笔 round 到分后求和） — 期望 36.33 == 实测 36.33
+2026-10-03 13:47:56 +08 [PASS] [A0b] 计件工资逐人金额 = 独立 SQL 重算（逐行比对） — 期望 逐人一致（3 人） == 实测 逐人一致
+2026-10-03 13:47:56 +08 [SKIP] [A1] 计件结算单（按人/月/工序汇总生成 + 金额独立算式 + 结算冻结） — 面不存在 ⇒ 无法执行任何断言。实测 8 个候选面**全部 HTTP 404**：GET /api/admin/finance/settlements=404; GET /api/admin/finance/settlements?period=2026-09=404; POST /api/admin/finance/settlements=404; GET /api/admin/production/piecework/settlements=404; POST /api/admin/production/piecework/settlements=404; GET /api/admin/production/settlements=404; GET /api/admin/settlements=404; GET /api/admin/piecework/settlements=404。skip（不是 pass）—— 未覆盖，且这正是 open issue #5653「今天能算不能结」的实得形态。
+2026-10-03 13:47:56 +08 [SKIP] [A2] 发放留痕（发放额 ≤ 结算额 / 重复发放被拒 / 发放台账可查） — 面不存在 ⇒ 断言不可达。实测候选面全 404：GET /api/admin/finance/payouts=404; POST /api/admin/finance/payouts=404; GET /api/admin/production/payouts=404; GET /api/admin/finance/wage-payouts=404; GET /api/admin/finance/disbursements=404。发放金额与结算金额的「≤」关系、重复发放拒绝、发放台账 —— 三者**一条都没有可执行面**。
+2026-10-03 13:47:57 +08 [SKIP] [A3] 导出（行/列/金额与读面逐字一致；空结果不输出畸形文件） — 导出面不存在 ⇒ 无文件可校验。实测候选面全 404：GET /api/admin/finance/export=404; GET /api/admin/finance/transactions/export=404; GET /api/admin/production/piecework/export=404; GET /api/admin/production/export=404; GET /api/admin/finance/reconciliation/export=404; GET /api/admin/export/finance=404; GET /api/admin/production/piecework/summary/export=404。「空结果不输出畸形文件」这条**因此连红证都造不出来**（没有可注入的对象）。
+2026-10-03 13:47:57 +08 [SKIP] [A4] 结构性归因（结算/发放/导出在仓内的存在性） — 证据见 REPORT.md §5：FinanceController 仅 4 个端点（summary/transactions GET+POST/reconciliation）；全 admin-api `src/main` 内 `结算|发放|settle|payout|disburse` 命中仅 2 处，且皆为**注释/文档**（AuthService.java:1358 权限码注释、ProductionService.java:1566 系数 doc），无任何端点、实体、表。
+2026-10-03 13:47:57 +08 ══════════ 家族 B：库存下游 ══════════
+2026-10-03 13:47:57 +08 探针 SKU: id=38 product=c3prodmurz0i6u000000000000 stock=0 avg_cost=null
+2026-10-03 13:47:58 +08 [PASS] [B1] 首次入库（无库存）⇒ 移动加权平均 = 行进价 — 期望 stock=60.5, avg_cost=12.5 == 实测 stock=60.5, avg_cost=12.5
+2026-10-03 13:47:59 +08 [PASS] [B2] 二次入库 ⇒ 移动加权平均 = SQL 独立重算（HALF_UP 4 位） — 期望 stock=100.0, avg_cost=11.6113 == 实测 stock=100, avg_cost=11.6113
+2026-10-03 13:48:00 +08 [PASS] [B3] 未记单价的入库 ⇒ 只加数量、均价保持原值（不抹掉也不凭空造） — 期望 stock=110.0, avg_cost=11.6113（不变） == 实测 stock=110, avg_cost=11.6113
+2026-10-03 13:48:00 +08 [PASS] [B4] 库存台账条数 = 变动次数（3 次入库 ⇒ 恰 3 条，不多不少；无 delta=0 噪声行） — 期望 3 == 实测 3
+2026-10-03 13:48:00 +08 [PASS] [B5] 台账链条首尾相接：after_qty[i] == before_qty[i+1] 且 delta == after − before — 期望 全部相接且 delta 自洽 == 实测 相接且自洽
+2026-10-03 13:48:01 +08 [PASS] [B6a] 人工调账（调减 110→95）后移动加权均价**不变**（标准语义） — 期望 avg_cost=11.6113（不变） == 实测 avg_cost=11.6113, stock=95
+2026-10-03 13:48:01 +08 [PASS] [B6b] 调账台账条数 = 1 次变动 ⇒ 恰 1 条（且 delta = −15.0） — 期望 1 条, delta=-15.0 == 实测 1 条
+2026-10-03 13:48:02 +08 盘点: HTTP 200 回执={"runId":"c3stmurz0i6u","productId":"c3prodmurz0i6u000000000000","changedCount":3,"unchangedCount":0,"replayedCount":0,"totalDelta":5,"lines":[{"batchId":17,"batchNo":"PC-20261003-0004","skuId":38,"skuCode":"c3skumurz0i6u","beforeMeters":60.5,"actualMeters":55,"delta":-5.5,"afterMeters":55,"status":"applied"},{"batchId":18,"batchNo":"PC-20261003-0005","skuId":38,"skuCode":"c3skumurz0i6u","beforeMeters":39.5,"actualMeters":30,"delta":-9.5,"afterMeters":30,"status":"applied"},{"batchId":19,"batchN
+2026-10-03 13:48:03 +08 [PASS] [B7a] 盘点后批次余量 = 实盘值（读面 = DB 一致） — 期望 batch[0] remaining=55.0（实盘） == 实测 [{"batch_no":"PC-20261003-0004","quantity":60.5},{"batch_no":"PC-20261003-0005","quantity":39.5},{"batch_no":"PC-20261003-0006","quantity":10}]
+2026-10-03 13:48:03 +08 [PASS] [B7b] 盘点台账条数 = 实际变化的批次数（不多不少） — 期望 台账增量 == 实际变化批次数 == 实测 台账增量=3, 批次分录增量=3
+2026-10-03 13:48:03 +08 [PASS] [B7c] 盘点**不**改移动加权均价（均价语义与盘点解耦） — 期望 avg_cost=11.6113（不变） == 实测 avg_cost=11.6113
+2026-10-03 13:48:03 +08 [PASS] [B8] 批次余量读面 = DB 独立重算（inboundMeters − Σconsumed） — 期望 3 个批次全部一致 == 实测 全部一致
+2026-10-03 13:48:03 +08 [PASS] [B9] 残料（remnant）读面 total = DB 行数（只读面一致性） — 期望 0 == 实测 0
+2026-10-03 13:48:03 +08 [SKIP] [B9b] 残料写面（recover/scrap）路径断言 — 本租户 fabric_remnants 现存 0 行 ⇒ **无残料可回收/报废**，写面端点（POST /{id}/recover、/{id}/scrap）的可达性与语义**未覆盖**（造残料需驱动加工单产生余料，超本包体量）。如实登记为未覆盖。
+2026-10-03 13:48:03 +08 [PASS] [B10] saving-board 批次数 = DB 批次数（cohorts 合计） — 期望 5 == 实测 5
+2026-10-03 13:48:03 +08 [PASS] [B11] POST /api/admin/batch-stock 语义核实（是否幂等 / 是否产生台账） — 期望 该路径在 StockBatchController 无方法映射 ⇒ 不得接受写入 == 实测 HTTP 404 "NOT_FOUND"
+2026-10-03 13:48:03 +08 ══════════ 家族 C：账期 / 时间口径（+08 vs UTC 日切）══════════
+2026-10-03 13:48:03 +08 注入前探针行数=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+2026-10-03 13:48:04 +08 注入后探针行数=5 sha256=063ad57ac6886727849d757888f636f8a8b0d02eec2a1324d03e45143d662ef3（自证注入真的生效：指纹已变=true）
+2026-10-03 13:48:04 +08 [PASS] [C1-A] 跨月/跨年归属：occurred_at=2026-09-30 23:59:59+08（跨月边界·9月最后1秒）落在 2026-09-30 — 期望 GET startDate=endDate=2026-09-30 应包含 c3refmurz0nd3A == 实测 HTTP 200，包含=true（该日共 3 行 / total=3）
+2026-10-03 13:48:04 +08 [FAIL] [C1-B] 跨月/跨年归属：occurred_at=2026-10-01 00:00:00+08（跨月边界·10月第1秒）落在 2026-10-01 — 期望 GET startDate=endDate=2026-10-01 应包含 c3refmurz0nd3B ≠ 实测 HTTP 200，包含=false（该日共 0 行 / total=0）
+2026-10-03 13:48:04 +08 [FAIL] [C1-C] 跨月/跨年归属：occurred_at=2026-10-01 02:00:00+08（**判别探针**·+08属10-01 / UTC属09-30）落在 2026-10-01 — 期望 GET startDate=endDate=2026-10-01 应包含 c3refmurz0nd3C ≠ 实测 HTTP 200，包含=false（该日共 0 行 / total=0）
+2026-10-03 13:48:04 +08 [PASS] [C1-D] 跨月/跨年归属：occurred_at=2025-12-31 23:59:00+08（跨年边界·12月最后一分钟）落在 2025-12-31 — 期望 GET startDate=endDate=2025-12-31 应包含 c3refmurz0nd3D == 实测 HTTP 200，包含=true（该日共 2 行 / total=2）
+2026-10-03 13:48:04 +08 [FAIL] [C1-E] 跨月/跨年归属：occurred_at=2026-01-01 00:01:00+08（跨年边界·1月第一分钟）落在 2026-01-01 — 期望 GET startDate=endDate=2026-01-01 应包含 c3refmurz0nd3E ≠ 实测 HTTP 200，包含=false（该日共 0 行 / total=0）
+2026-10-03 13:48:05 +08 [PASS] [C2-2025-12] 月度窗口（+08）：2025-12 的探针应被 summary 窗口覆盖（独立 SQL 计 1 笔 / 1.01） — 期望 窗口 startDate=2025-12-01&endDate=2025-12-31 的 incomeCount ≥ 1（且该月探针金额可被独立重算） == 实测 HTTP 200 incomeCount=2；无窗口 incomeCount=380；独立 SQL: 1 笔 1.01
+2026-10-03 13:48:05 +08 [FAIL] [C2-2026-01] 月度窗口（+08）：2026-01 的探针应被 summary 窗口覆盖（独立 SQL 计 1 笔 / 1.01） — 期望 窗口 startDate=2026-01-01&endDate=2026-01-31 的 incomeCount ≥ 1（且该月探针金额可被独立重算） ≠ 实测 HTTP 200 incomeCount=0；无窗口 incomeCount=380；独立 SQL: 1 笔 1.01
+2026-10-03 13:48:06 +08 [PASS] [C2-2026-09] 月度窗口（+08）：2026-09 的探针应被 summary 窗口覆盖（独立 SQL 计 1 笔 / 1.01） — 期望 窗口 startDate=2026-09-01&endDate=2026-09-30 的 incomeCount ≥ 1（且该月探针金额可被独立重算） == 实测 HTTP 200 incomeCount=5；无窗口 incomeCount=380；独立 SQL: 1 笔 1.01
+2026-10-03 13:48:06 +08 [PASS] [C2-2026-10] 月度窗口（+08）：2026-10 的探针应被 summary 窗口覆盖（独立 SQL 计 2 笔 / 2.02） — 期望 窗口 startDate=2026-10-01&endDate=2026-10-31 的 incomeCount ≥ 2（且该月探针金额可被独立重算） == 实测 HTTP 200 incomeCount=373；无窗口 incomeCount=380；独立 SQL: 2 笔 2.02
+2026-10-03 13:48:07 +08 [PASS] [C3] 反假绿控制：5 条时间探针确实落库且可被 SQL 读回 — 期望 5 == 实测 5
+2026-10-03 13:48:07 +08 [PASS] [C7-A] 窗口唯一性：c3refmurz0nd3A（occurred_at=2026-09-30 23:59:59+08）恰落在 [2026-09-30] 一个日窗口 — 期望 [2026-09-30] == 实测 ["2026-09-30"]
+2026-10-03 13:48:07 +08 [FAIL] [C7-C] 窗口唯一性：c3refmurz0nd3C（occurred_at=2026-10-01 02:00:00+08）恰落在 [2026-10-01] 一个日窗口 — 期望 [2026-10-01] ≠ 实测 ["2026-09-30"]
+2026-10-03 13:48:07 +08 [FAIL] [C7-E] 窗口唯一性：c3refmurz0nd3E（occurred_at=2026-01-01 00:01:00+08）恰落在 [2026-01-01] 一个日窗口 — 期望 [2026-01-01] ≠ 实测 ["2025-12-31"]
+2026-10-03 13:48:08 +08 红证前置：c3refmurz0nd3A 在 2026-09-30 窗口命中=true（必须 true 才有判别力）
+2026-10-03 13:48:08 +08 [PASS] [C4] 红证（必红控制项）：把**当前为绿**的 A 探针挪出所属日窗口 ⇒ 同一判据当场红 — 前置绿(2026-09-30 命中=true) → 注入后红(命中=false) ⇒ 判据**会红**，C1/C7 非空断言得证
+2026-10-03 13:48:08 +08 [PASS] [C5] 红证还原：逐字段还原后指纹回到注入前，且同一判据回绿 — 期望 sha256 == 35f53dd7a552eefc69211dc1f3838db35f95638c2203d381141ec212583f75a6 且 2026-09-30 窗口重新命中 == 实测 sha256=35f53dd7a552eefc69211dc1f3838db35f95638c2203d381141ec212583f75a6（相等=true），2026-09-30 命中=true
+2026-10-03 13:48:09 +08 [PASS] [C8a] 边界夹逼·下界：北京 2026-10-01 08:00:00（= 2026-10-01T00:00:00Z）落在 10-01 窗口 — 期望 包含（两种口径在此点一致 ⇒ 正对照） == 实测 包含=true
+2026-10-03 13:48:09 +08 [FAIL] [C8b] 🔴 边界夹逼·错位：北京 2026-10-01 07:59:59（= 2026-09-30T23:59:59Z）**应**落在 10-01 窗口 — 期望 包含（+08 口径） ≠ 实测 包含=false
+2026-10-03 13:48:09 +08 [FAIL] [C8c] 🔴 错位归属：北京 10-01 的流水**不得**落进 09-30 窗口 — 期望 不包含（+08 口径） ≠ 实测 09-30 窗口包含=true
+2026-10-03 13:48:09 +08 订单探针: c3ordmurz0nd3 created_at=2026-10-03 02:00:00+08（DB: {"id":"c3ee7496ac1c7a29429443","order_no":"c3ordmurz0nd3","created_at":"2026-10-03T02:00:00+08:00"}）
+2026-10-03 13:48:09 +08 [FAIL] [C9] 🔴 跨端点口径不自洽：同一笔「北京今日凌晨」订单，Dashboard 按 +08 收录 / 订单列表按 UTC 排除 — 期望 两端口径一致（列表也应收录该单） ≠ 实测 Dashboard order-trend[2026-10-03] orders=351；列表 startDate=endDate=2026-10-03 total=9 收录探针=false
+2026-10-03 13:48:09 +08 [SKIP] [C6] #6185 物流缓存（缓存键/档位/失败不缓存） — 前置：:8080 构建点 = main-live @ d1c09d02f，**不含 #6185**（#6185 在 origin/main 上，见 REPORT.md §1 的 git show 级证据）⇒ 按任务书「若 :8080 构建点不含它 ⇒ 只做当前行为登记，不判缺陷」处理：本条**不作 pass/fail**，当前行为登记 = 无缓存层可观察（未做 Redis 读/写断言，因对象不在运行构建内）。
+2026-10-03 13:48:09 +08 ═══ 残留自清 ═══
+2026-10-03 13:48:09 +08   清理 批次分录: DELETE 3
+2026-10-03 13:48:10 +08   清理 批次: DELETE 3
+2026-10-03 13:48:10 +08   清理 台账: DELETE 7
+2026-10-03 13:48:10 +08   清理 入库明细: DELETE 3
+2026-10-03 13:48:10 +08   清理 入库单: DELETE 3
+2026-10-03 13:48:10 +08   清理 探针 SKU: DELETE 1
+2026-10-03 13:48:10 +08   清理 探针货号: DELETE 1
+2026-10-03 13:48:10 +08   清理 时间探针流水: DELETE 7
+2026-10-03 13:48:10 +08   清理 时间探针订单: DELETE 1
+2026-10-03 13:48:11 +08 残留总计=0 {"products":0,"skus":0,"inbound":0,"inbound_items":0,"batches":0,"consumptions":0,"ledger":0,"txns":0,"orders":0}
+2026-10-03 13:48:11 +08 [PASS] [Z1] 零残留：本包探针全部自清（逐表计数=0） — {"products":0,"skus":0,"inbound":0,"inbound_items":0,"batches":0,"consumptions":0,"ledger":0,"txns":0,"orders":0}
+2026-10-03 13:48:12 +08   ⚠️ 快照空集: fabric_remnants（该表在本租户无存量行 ⇒ 其"零改动"读数无判别力）
+2026-10-03 13:48:12 +08   ⚠️ 快照空集: daily_briefings（该表在本租户无存量行 ⇒ 其"零改动"读数无判别力）
+2026-10-03 13:48:12 +08 [FAIL] [Z2] 存量真实数据零改动（本包写过的表：非探针行前后 sha256 逐表相等） — 检测到**本包写过的表**上非探针行变化 ⇒ 违反零改动纪律: products: n 35→40, sha b5af3840a6c2→17f2cb0db4b3 | product_skus: n 36→45, sha 505f8451e4f8→178e3ac36282
+2026-10-03 13:48:12 +08 [SKIP] [Z3] 未写过的表（orders/remnants/briefings）零改动核对 — 未写过的 3 张表恰好也未变（无并发写入被观测到）
+2026-10-03 13:48:12 +08 ════ 完成 pass=29 fail=10 skip=7 total=46 ════
+2026-10-03 13:49:06 +08 ════ 线③ 验收开始 2026-10-03 13:49:06 +08 （utc=2026-10-03T05:49:06.700Z）════
+2026-10-03 13:49:07 +08 构建点: /Users/guangzhen.zk/migao-wt/main-live @ 7e9f66ce5 (2026-10-03T05:42:36Z) pid=60585 start=六 10月/ 3 13:44:16 2026 user.timezone=Asia/Shanghai
+2026-10-03 13:49:08 +08   ⚠️ 快照空集: fabric_remnants（该表在本租户无存量行 ⇒ 其"零改动"读数无判别力）
+2026-10-03 13:49:08 +08   ⚠️ 快照空集: daily_briefings（该表在本租户无存量行 ⇒ 其"零改动"读数无判别力）
+2026-10-03 13:49:09 +08 存量快照(前): products=35 product_skus=36 stock_batches=2 stock_ledger_entries=356 stock_batch_consumptions=1 finance_transactions=376 inbound_orders=5 inbound_order_items=5 fabric_remnants=0 daily_briefings=0 orders=359
+2026-10-03 13:49:09 +08 登录 OK
+2026-10-03 13:49:09 +08 [PASS] [T1] harness 时钟自检：nowCST().cst 与 SQL(+08) 一致（秒级 ≤5s） — 期望 与 SQL 2026-10-03 13:49:09 相差 ≤5s == 实测 harness=2026-10-03 13:49:09 +08 node本地=2026-10-03 13:49:09 差=0s
+2026-10-03 13:49:09 +08 [PASS] [T2] harness 时钟自洽：cst 与同结构的 utc 相差恰 8 小时（防"同文件自相矛盾"） — 期望 8.000h == 实测 8.000h
+2026-10-03 13:49:09 +08 时钟自检: harness=2026-10-03 13:49:09 +08 / SQL(+08)=2026-10-03 13:49:09 / 差=0s
+2026-10-03 13:49:09 +08 ══════════ 家族 A：钱的收尾段（涉钱，P0 优先）══════════
+2026-10-03 13:49:09 +08 有报工的期间: [{"period":"2026-10","n":15}]
+2026-10-03 13:49:10 +08 [PASS] [A0a] 计件工资报表总额 = 独立 SQL 重算（逐笔 round 到分后求和） — 期望 36.33 == 实测 36.33
+2026-10-03 13:49:10 +08 [PASS] [A0b] 计件工资逐人金额 = 独立 SQL 重算（逐行比对） — 期望 逐人一致（3 人） == 实测 逐人一致
+2026-10-03 13:49:11 +08 [SKIP] [A1] 计件结算单（按人/月/工序汇总生成 + 金额独立算式 + 结算冻结） — 面不存在 ⇒ 无法执行任何断言。实测 8 个候选面**全部 HTTP 404**：GET /api/admin/finance/settlements=404; GET /api/admin/finance/settlements?period=2026-09=404; POST /api/admin/finance/settlements=404; GET /api/admin/production/piecework/settlements=404; POST /api/admin/production/piecework/settlements=404; GET /api/admin/production/settlements=404; GET /api/admin/settlements=404; GET /api/admin/piecework/settlements=404。skip（不是 pass）—— 未覆盖，且这正是 open issue #5653「今天能算不能结」的实得形态。
+2026-10-03 13:49:11 +08 [SKIP] [A2] 发放留痕（发放额 ≤ 结算额 / 重复发放被拒 / 发放台账可查） — 面不存在 ⇒ 断言不可达。实测候选面全 404：GET /api/admin/finance/payouts=404; POST /api/admin/finance/payouts=404; GET /api/admin/production/payouts=404; GET /api/admin/finance/wage-payouts=404; GET /api/admin/finance/disbursements=404。发放金额与结算金额的「≤」关系、重复发放拒绝、发放台账 —— 三者**一条都没有可执行面**。
+2026-10-03 13:49:11 +08 [SKIP] [A3] 导出（行/列/金额与读面逐字一致；空结果不输出畸形文件） — 导出面不存在 ⇒ 无文件可校验。实测候选面全 404：GET /api/admin/finance/export=404; GET /api/admin/finance/transactions/export=404; GET /api/admin/production/piecework/export=404; GET /api/admin/production/export=404; GET /api/admin/finance/reconciliation/export=404; GET /api/admin/export/finance=404; GET /api/admin/production/piecework/summary/export=404。「空结果不输出畸形文件」这条**因此连红证都造不出来**（没有可注入的对象）。
+2026-10-03 13:49:11 +08 [SKIP] [A4] 结构性归因（结算/发放/导出在仓内的存在性） — 证据见 REPORT.md §5：FinanceController 仅 4 个端点（summary/transactions GET+POST/reconciliation）；全 admin-api `src/main` 内 `结算|发放|settle|payout|disburse` 命中仅 2 处，且皆为**注释/文档**（AuthService.java:1358 权限码注释、ProductionService.java:1566 系数 doc），无任何端点、实体、表。
+2026-10-03 13:49:11 +08 ══════════ 家族 B：库存下游 ══════════
+2026-10-03 13:49:11 +08 探针 SKU: id=39 product=c3prodmurz23h2000000000000 stock=0 avg_cost=null
+2026-10-03 13:49:12 +08 [PASS] [B1] 首次入库（无库存）⇒ 移动加权平均 = 行进价 — 期望 stock=60.5, avg_cost=12.5 == 实测 stock=60.5, avg_cost=12.5
+2026-10-03 13:49:13 +08 [PASS] [B2] 二次入库 ⇒ 移动加权平均 = SQL 独立重算（HALF_UP 4 位） — 期望 stock=100.0, avg_cost=11.6113 == 实测 stock=100, avg_cost=11.6113
+2026-10-03 13:49:14 +08 [PASS] [B3] 未记单价的入库 ⇒ 只加数量、均价保持原值（不抹掉也不凭空造） — 期望 stock=110.0, avg_cost=11.6113（不变） == 实测 stock=110, avg_cost=11.6113
+2026-10-03 13:49:14 +08 [PASS] [B4] 库存台账条数 = 变动次数（3 次入库 ⇒ 恰 3 条，不多不少；无 delta=0 噪声行） — 期望 3 == 实测 3
+2026-10-03 13:49:14 +08 [PASS] [B5] 台账链条首尾相接：after_qty[i] == before_qty[i+1] 且 delta == after − before — 期望 全部相接且 delta 自洽 == 实测 相接且自洽
+2026-10-03 13:49:15 +08 [PASS] [B6a] 人工调账（调减 110→95）后移动加权均价**不变**（标准语义） — 期望 avg_cost=11.6113（不变） == 实测 avg_cost=11.6113, stock=95
+2026-10-03 13:49:15 +08 [PASS] [B6b] 调账台账条数 = 1 次变动 ⇒ 恰 1 条（且 delta = −15.0） — 期望 1 条, delta=-15.0 == 实测 1 条
+2026-10-03 13:49:16 +08 盘点: HTTP 200 回执={"runId":"c3stmurz23h2","productId":"c3prodmurz23h2000000000000","changedCount":3,"unchangedCount":0,"replayedCount":0,"totalDelta":5,"lines":[{"batchId":20,"batchNo":"PC-20261003-0007","skuId":39,"skuCode":"c3skumurz23h2","beforeMeters":60.5,"actualMeters":55,"delta":-5.5,"afterMeters":55,"status":"applied"},{"batchId":21,"batchNo":"PC-20261003-0008","skuId":39,"skuCode":"c3skumurz23h2","beforeMeters":39.5,"actualMeters":30,"delta":-9.5,"afterMeters":30,"status":"applied"},{"batchId":22,"batchN
+2026-10-03 13:49:16 +08 [PASS] [B7a] 盘点后批次余量 = 实盘值（读面 = DB 一致） — 期望 batch[0] remaining=55.0（实盘） == 实测 [{"batch_no":"PC-20261003-0007","quantity":60.5},{"batch_no":"PC-20261003-0008","quantity":39.5},{"batch_no":"PC-20261003-0009","quantity":10}]
+2026-10-03 13:49:16 +08 [PASS] [B7b] 盘点台账条数 = 实际变化的批次数（不多不少） — 期望 台账增量 == 实际变化批次数 == 实测 台账增量=3, 批次分录增量=3
+2026-10-03 13:49:16 +08 [PASS] [B7c] 盘点**不**改移动加权均价（均价语义与盘点解耦） — 期望 avg_cost=11.6113（不变） == 实测 avg_cost=11.6113
+2026-10-03 13:49:16 +08 [PASS] [B8] 批次余量读面 = DB 独立重算（inboundMeters − Σconsumed） — 期望 3 个批次全部一致 == 实测 全部一致
+2026-10-03 13:49:17 +08 [PASS] [B9] 残料（remnant）读面 total = DB 行数（只读面一致性） — 期望 0 == 实测 0
+2026-10-03 13:49:17 +08 [SKIP] [B9b] 残料写面（recover/scrap）路径断言 — 本租户 fabric_remnants 现存 0 行 ⇒ **无残料可回收/报废**，写面端点（POST /{id}/recover、/{id}/scrap）的可达性与语义**未覆盖**（造残料需驱动加工单产生余料，超本包体量）。如实登记为未覆盖。
+2026-10-03 13:49:17 +08 [PASS] [B10] saving-board 批次数 = DB 批次数（cohorts 合计） — 期望 5 == 实测 5
+2026-10-03 13:49:17 +08 [PASS] [B11] POST /api/admin/batch-stock 语义核实（是否幂等 / 是否产生台账） — 期望 该路径在 StockBatchController 无方法映射 ⇒ 不得接受写入 == 实测 HTTP 404 "NOT_FOUND"
+2026-10-03 13:49:17 +08 ══════════ 家族 C：账期 / 时间口径（+08 vs UTC 日切）══════════
+2026-10-03 13:49:17 +08 注入前探针行数=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+2026-10-03 13:49:18 +08 注入后探针行数=5 sha256=00465f72f2dfd4401738636d106a257f87af3f52ca00ad429c645a4a49d1634b（自证注入真的生效：指纹已变=true）
+2026-10-03 13:49:18 +08 [PASS] [C1-A] 跨月/跨年归属：occurred_at=2026-09-30 23:59:59+08（跨月边界·9月最后1秒）落在 2026-09-30 — 期望 GET startDate=endDate=2026-09-30 应包含 c3refmurz286nA == 实测 HTTP 200，包含=true（该日共 3 行 / total=3）
+2026-10-03 13:49:18 +08 [FAIL] [C1-B] 跨月/跨年归属：occurred_at=2026-10-01 00:00:00+08（跨月边界·10月第1秒）落在 2026-10-01 — 期望 GET startDate=endDate=2026-10-01 应包含 c3refmurz286nB ≠ 实测 HTTP 200，包含=false（该日共 0 行 / total=0）
+2026-10-03 13:49:18 +08 [FAIL] [C1-C] 跨月/跨年归属：occurred_at=2026-10-01 02:00:00+08（**判别探针**·+08属10-01 / UTC属09-30）落在 2026-10-01 — 期望 GET startDate=endDate=2026-10-01 应包含 c3refmurz286nC ≠ 实测 HTTP 200，包含=false（该日共 0 行 / total=0）
+2026-10-03 13:49:18 +08 [PASS] [C1-D] 跨月/跨年归属：occurred_at=2025-12-31 23:59:00+08（跨年边界·12月最后一分钟）落在 2025-12-31 — 期望 GET startDate=endDate=2025-12-31 应包含 c3refmurz286nD == 实测 HTTP 200，包含=true（该日共 2 行 / total=2）
+2026-10-03 13:49:18 +08 [FAIL] [C1-E] 跨月/跨年归属：occurred_at=2026-01-01 00:01:00+08（跨年边界·1月第一分钟）落在 2026-01-01 — 期望 GET startDate=endDate=2026-01-01 应包含 c3refmurz286nE ≠ 实测 HTTP 200，包含=false（该日共 0 行 / total=0）
+2026-10-03 13:49:19 +08 [PASS] [C2-2025-12] 月度窗口（+08）：2025-12 的探针应被 summary 窗口覆盖（独立 SQL 计 1 笔 / 1.01） — 期望 窗口 startDate=2025-12-01&endDate=2025-12-31 的 incomeCount ≥ 1（且该月探针金额可被独立重算） == 实测 HTTP 200 incomeCount=2；无窗口 incomeCount=380；独立 SQL: 1 笔 1.01
+2026-10-03 13:49:19 +08 [FAIL] [C2-2026-01] 月度窗口（+08）：2026-01 的探针应被 summary 窗口覆盖（独立 SQL 计 1 笔 / 1.01） — 期望 窗口 startDate=2026-01-01&endDate=2026-01-31 的 incomeCount ≥ 1（且该月探针金额可被独立重算） ≠ 实测 HTTP 200 incomeCount=0；无窗口 incomeCount=380；独立 SQL: 1 笔 1.01
+2026-10-03 13:49:19 +08 [PASS] [C2-2026-09] 月度窗口（+08）：2026-09 的探针应被 summary 窗口覆盖（独立 SQL 计 1 笔 / 1.01） — 期望 窗口 startDate=2026-09-01&endDate=2026-09-30 的 incomeCount ≥ 1（且该月探针金额可被独立重算） == 实测 HTTP 200 incomeCount=5；无窗口 incomeCount=380；独立 SQL: 1 笔 1.01
+2026-10-03 13:49:20 +08 [PASS] [C2-2026-10] 月度窗口（+08）：2026-10 的探针应被 summary 窗口覆盖（独立 SQL 计 2 笔 / 2.02） — 期望 窗口 startDate=2026-10-01&endDate=2026-10-31 的 incomeCount ≥ 2（且该月探针金额可被独立重算） == 实测 HTTP 200 incomeCount=373；无窗口 incomeCount=380；独立 SQL: 2 笔 2.02
+2026-10-03 13:49:20 +08 [PASS] [C3] 反假绿控制：5 条时间探针确实落库且可被 SQL 读回 — 期望 5 == 实测 5
+2026-10-03 13:49:20 +08 [PASS] [C7-A] 窗口唯一性：c3refmurz286nA（occurred_at=2026-09-30 23:59:59+08）恰落在 [2026-09-30] 一个日窗口 — 期望 [2026-09-30] == 实测 ["2026-09-30"]
+2026-10-03 13:49:21 +08 [FAIL] [C7-C] 窗口唯一性：c3refmurz286nC（occurred_at=2026-10-01 02:00:00+08）恰落在 [2026-10-01] 一个日窗口 — 期望 [2026-10-01] ≠ 实测 ["2026-09-30"]
+2026-10-03 13:49:21 +08 [FAIL] [C7-E] 窗口唯一性：c3refmurz286nE（occurred_at=2026-01-01 00:01:00+08）恰落在 [2026-01-01] 一个日窗口 — 期望 [2026-01-01] ≠ 实测 ["2025-12-31"]
+2026-10-03 13:49:21 +08 红证前置：c3refmurz286nA 在 2026-09-30 窗口命中=true（必须 true 才有判别力）
+2026-10-03 13:49:21 +08 [PASS] [C4] 红证（必红控制项）：把**当前为绿**的 A 探针挪出所属日窗口 ⇒ 同一判据当场红 — 前置绿(2026-09-30 命中=true) → 注入后红(命中=false) ⇒ 判据**会红**，C1/C7 非空断言得证
+2026-10-03 13:49:22 +08 [PASS] [C5] 红证还原：逐字段还原后指纹回到注入前，且同一判据回绿 — 期望 sha256 == 5ebcfe6e0282c5a7ca161141ef92270da6b5a9b6714fb802c8574fe96cd58bf6 且 2026-09-30 窗口重新命中 == 实测 sha256=5ebcfe6e0282c5a7ca161141ef92270da6b5a9b6714fb802c8574fe96cd58bf6（相等=true），2026-09-30 命中=true
+2026-10-03 13:49:22 +08 [PASS] [C8a] 边界夹逼·下界：北京 2026-10-01 08:00:00（= 2026-10-01T00:00:00Z）落在 10-01 窗口 — 期望 包含（两种口径在此点一致 ⇒ 正对照） == 实测 包含=true
+2026-10-03 13:49:22 +08 [FAIL] [C8b] 🔴 边界夹逼·错位：北京 2026-10-01 07:59:59（= 2026-09-30T23:59:59Z）**应**落在 10-01 窗口 — 期望 包含（+08 口径） ≠ 实测 包含=false
+2026-10-03 13:49:22 +08 [FAIL] [C8c] 🔴 错位归属：北京 10-01 的流水**不得**落进 09-30 窗口 — 期望 不包含（+08 口径） ≠ 实测 09-30 窗口包含=true
+2026-10-03 13:49:22 +08 订单探针: c3ordmurz286n created_at=2026-10-03 02:00:00+08（DB: {"id":"c3405a24f3a7e625dfe0dc","order_no":"c3ordmurz286n","created_at":"2026-10-03T02:00:00+08:00"}）
+2026-10-03 13:49:22 +08 [FAIL] [C9] 🔴 跨端点口径不自洽：同一笔「北京今日凌晨」订单，Dashboard 按 +08 收录 / 订单列表按 UTC 排除 — 期望 两端口径一致（列表也应收录该单） ≠ 实测 Dashboard order-trend[2026-10-03] orders=351；列表 startDate=endDate=2026-10-03 total=9 收录探针=false
+2026-10-03 13:49:23 +08 [SKIP] [C6] #6185 物流缓存（缓存键/档位/失败不缓存） — 前置：:8080 构建点 = main-live @ 7e9f66ce5，**不含 #6185**（实证：该构建里 `grep -rl "logisticsCache|物流缓存" src/main/java` 无命中；见 REPORT.md §1 的 git show 级证据）⇒ 按任务书「若 :8080 构建点不含它 ⇒ 只做当前行为登记，不判缺陷」处理：本条**不作 pass/fail**，当前行为登记 = 无缓存层可观察（未做 Redis 读/写断言，因对象不在运行构建内）。
+2026-10-03 13:49:23 +08 ═══ 残留自清 ═══
+2026-10-03 13:49:23 +08   清理 批次分录: DELETE 3
+2026-10-03 13:49:23 +08   清理 批次: DELETE 3
+2026-10-03 13:49:23 +08   清理 台账: DELETE 7
+2026-10-03 13:49:23 +08   清理 入库明细: DELETE 3
+2026-10-03 13:49:24 +08   清理 入库单: DELETE 3
+2026-10-03 13:49:24 +08   清理 探针 SKU: DELETE 1
+2026-10-03 13:49:24 +08   清理 探针货号: DELETE 1
+2026-10-03 13:49:24 +08   清理 时间探针流水: DELETE 7
+2026-10-03 13:49:24 +08   清理 时间探针订单: DELETE 1
+2026-10-03 13:49:24 +08 残留总计=0 {"products":0,"skus":0,"inbound":0,"inbound_items":0,"batches":0,"consumptions":0,"ledger":0,"txns":0,"orders":0}
+2026-10-03 13:49:24 +08 [PASS] [Z1] 零残留：本包探针全部自清（逐表计数=0） — {"products":0,"skus":0,"inbound":0,"inbound_items":0,"batches":0,"consumptions":0,"ledger":0,"txns":0,"orders":0}
+2026-10-03 13:49:26 +08   ⚠️ 快照空集: fabric_remnants（该表在本租户无存量行 ⇒ 其"零改动"读数无判别力）
+2026-10-03 13:49:26 +08   ⚠️ 快照空集: daily_briefings（该表在本租户无存量行 ⇒ 其"零改动"读数无判别力）
+2026-10-03 13:49:26 +08 [PASS] [Z2] 存量真实数据零改动（**本包写过的表**：既有非探针行逐字段 sha256 前后相等） — 9 张写过的表：既有行**零字段变化、零消失**（另见 Z4 的并发新增登记）
+2026-10-03 13:49:26 +08 [SKIP] [Z4] 并发写入登记（非本包新增行） — 本次窗口内未观测到其它包的并发新增
+2026-10-03 13:49:27 +08 [PASS] [B0] 构建点自证：测量期间构建点/进程未变（协议红线） — 全程 7e9f66ce5（pid 60585，进程启动 六 10月/ 3 13:44:16 2026）；窗口 2026-10-03 13:49:06 +08 → 2026-10-03 13:49:27 +08
+2026-10-03 13:49:27 +08 ════ 完成 pass=31 fail=9 skip=7 total=47 ════

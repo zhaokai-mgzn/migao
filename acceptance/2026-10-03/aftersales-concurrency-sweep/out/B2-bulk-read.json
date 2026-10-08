@@ -1,0 +1,88 @@
+{
+  "at": {
+    "cst": "2026-10-03 17:03:38 +08",
+    "utc": "2026-10-03T09:03:38.114Z"
+  },
+  "readings": [
+    {
+      "path": "/api/admin/orders?page=1&size=20",
+      "label": "orders",
+      "size": 20,
+      "status": 401,
+      "rows": null,
+      "ms": 5,
+      "ok": false,
+      "consistent": false
+    },
+    {
+      "path": "/api/admin/after-sales?page=1&size=20",
+      "label": "after-sales",
+      "size": 20,
+      "status": 401,
+      "rows": null,
+      "ms": 3,
+      "ok": false,
+      "consistent": false
+    },
+    {
+      "path": "/api/admin/orders?page=1&size=200",
+      "label": "orders",
+      "size": 200,
+      "status": 401,
+      "rows": null,
+      "ms": 6,
+      "ok": false,
+      "consistent": false
+    },
+    {
+      "path": "/api/admin/after-sales?page=1&size=200",
+      "label": "after-sales",
+      "size": 200,
+      "status": 401,
+      "rows": null,
+      "ms": 4,
+      "ok": false,
+      "consistent": false
+    },
+    {
+      "path": "/api/admin/orders?page=1&size=2000",
+      "label": "orders",
+      "size": 2000,
+      "status": 401,
+      "rows": null,
+      "ms": 5,
+      "ok": false,
+      "consistent": false
+    },
+    {
+      "path": "/api/admin/after-sales?page=1&size=2000",
+      "label": "after-sales",
+      "size": 2000,
+      "status": 401,
+      "rows": null,
+      "ms": 3,
+      "ok": false,
+      "consistent": false
+    },
+    {
+      "path": "/api/admin/orders?page=1&size=5000",
+      "label": "orders",
+      "size": 5000,
+      "status": 401,
+      "rows": null,
+      "ms": 4,
+      "ok": false,
+      "consistent": false
+    },
+    {
+      "path": "/api/admin/after-sales?page=1&size=5000",
+      "label": "after-sales",
+      "size": 5000,
+      "status": 401,
+      "rows": null,
+      "ms": 3,
+      "ok": false,
+      "consistent": false
+    }
+  ]
+}

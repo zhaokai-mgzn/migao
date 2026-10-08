@@ -1,0 +1,24 @@
+[
+ {
+  "id": "ROLE-plat-numeric999999999999",
+  "name": "角色越权·超管端点（合法数字 id）",
+  "verdict": "pass",
+  "detail": "商家 admin 被权限闸拦住（A=403 B=403），超管正对照到业务层 404（id 不存在）",
+  "evidence": [
+   "A → 403 {\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足\"},\"requestId\":\"req_3c04d00535f24328\",\"timestamp\":1790995353}",
+   "B → 403 {\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足\"},\"requestId\":\"req_11cd7e9439644d68\",\"timestamp\":1790995353}",
+   "P → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"入驻申请不存在\"},\"requestId\":\"req_2d6edaa8c24e42c8\",\"timestamp\":1790995353,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查"
+  ]
+ },
+ {
+  "id": "ROLE-plat-numericistrations/1",
+  "name": "角色越权·超管端点（合法数字 id）",
+  "verdict": "pass",
+  "detail": "商家 admin 被权限闸拦住（A=403 B=403），超管正对照到业务层 404（id 不存在）",
+  "evidence": [
+   "A → 403 {\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足\"},\"requestId\":\"req_d33efcb3adac40ea\",\"timestamp\":1790995353}",
+   "B → 403 {\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足\"},\"requestId\":\"req_0146bc593ffe45c1\",\"timestamp\":1790995353}",
+   "P → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"入驻申请不存在\"},\"requestId\":\"req_d04570676c904a73\",\"timestamp\":1790995353,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查"
+  ]
+ }
+]

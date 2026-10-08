@@ -41,9 +41,12 @@ import java.util.Set;
  *   <li><b>来源可区分</b>：分录带 {@code reason='stocktake'} + {@code stocktake_run_id}，
  *       且三个扣料专属列留空（DB 约束 {@code ck_batch_consumption_source_shape} 两族形状互斥）；</li>
  *   <li><b>禁止负余量</b>：实盘 &lt; 0 ⇒ 400；盘后 SKU 库存 &lt; 0 ⇒ 422（都发生在**任何写入之前**）；</li>
- *   <li><b>幂等</b>：{@code delta = 0} ⇒ 零写入；同一 run id 重放 ⇒ 该批次跳过（读半边
- *       {@link StockBatchConsumptionService#stocktakeRecordedBatchIds} + 写半边部分唯一索引
- *       {@code uk_batch_consumption_stocktake}）；</li>
+ *   <li><b>幂等</b>：{@code delta = 0} ⇒ 零写入；同一 run id 的重放 / **并发**请求 ⇒ 该批次按
+ *       「回放」出回执（读半边 {@link StockBatchConsumptionService#stocktakeRecordedBatchIds}
+ *       + 写半边**原子闸** {@code StockBatchConsumptionMapper#insertStocktakeIfAbsent}
+ *       = {@code ON CONFLICT DO NOTHING} 的部分唯一索引 {@code uk_batch_consumption_stocktake}）
+ *       —— 并发时不抛唯一键异常、不冒泡成 500（issue #6301，判据
+ *       {@code BatchStocktakeConcurrentRealDbTest#sameRunIdConcurrentRequestsAllGetIdempotentReceipt}）；</li>
  *   <li><b>不静默取整</b>：实盘米数一律过 {@link StockQuantity#requireOneDecimal}
  *       （超精度 / 负数显式 4xx，服务端绝不四舍五入、绝不截断）；</li>
  *   <li><b>对账差额不增大</b>：两本账按同一个 Σdelta 变化 ⇒
@@ -59,7 +62,9 @@ import java.util.Set;
  * <ul>
  *   <li>本类**不做**盘点单实体（无单号 / 状态 / 审批 / 打印）—— 用户 2026-10-01 选了 A 档；</li>
  *   <li>并发：两个**不同** run id 同时盘同一批次，理论上会各自基于同一盘前值记账（本仓既有派工
- *       路径同款：靠唯一索引防重复，不靠行锁）。同一 run id 的重复请求由部分唯一索引挡住；</li>
+ *       路径同款：靠唯一索引防重复，不靠行锁）。**同一 run id** 的并发请求由原子闸
+ *       {@code insertStocktakeIfAbsent} 判退 ⇒ 幂等回执（replayed）且**不再重复动 SKU 库存**
+ *       （issue #6301）；</li>
  *   <li>跨货号一次提交不做（一次提交 = 一个货号；跨货号是两次提交，各自一个事务）。</li>
  * </ul>
  */
@@ -201,9 +206,54 @@ public class BatchStocktakeService {
             newStockBySku.put(entry.getKey(), after);
         }
 
-        // ⑤ 写：批次分录（唯一写入点 = StockBatchConsumptionService）→ SKU 库存 + 销售台账（唯一写入点 =
-        //    StockLedgerService）。两段在**同一个事务**里：任一步失败整笔回滚。
-        batchStockService.applyStocktake(tenantId, runId, adjustments);
+        // ⑤ 写：批次分录（唯一写入点 = StockBatchConsumptionService，**原子闸**：并发/重复的同一
+        //    run id 请求在唯一索引处被判出来、返回已处理而不是抛异常 —— issue #6301）→
+        //    SKU 库存 + 销售台账（唯一写入点 = StockLedgerService）。两段在**同一个事务**里：
+        //    任一步失败整笔回滚。
+        Set<Long> recorded = batchStockService.applyStocktake(tenantId, runId, adjustments);
+
+        // ⑤b 原子闸判退的批次 = 并发中的**另一请求**已把这一行记过（它的 SKU 库存也已由那一笔对齐）
+        //     ⇒ 本次必须是**幂等回放**：改回执状态，并把该批次从 SKU 库存 / 台账的写入面里摘掉。
+        //    🔴 不摘就会双记：四个并发请求对同一个 sku 各写一次 `stock += delta`（探针 W5 的修前形态）。
+        Set<Long> replayedNow = new LinkedHashSet<>();
+        if (recorded.size() < adjustments.size()) {
+            List<StockBatchConsumptionService.StocktakeAdjustment> persisted = new ArrayList<>();
+            for (StockBatchConsumptionService.StocktakeAdjustment adjustment : adjustments) {
+                if (recorded.contains(adjustment.batch().batchId())) {
+                    persisted.add(adjustment);
+                    continue;
+                }
+                long batchId = adjustment.batch().batchId();
+                replayedNow.add(batchId);
+                replayed++;
+                for (int i = 0; i < results.size(); i++) {
+                    BatchStockViews.StocktakeLineResult line = results.get(i);
+                    if (line.batchId() == batchId && BatchStockViews.STOCKTAKE_APPLIED.equals(line.status())) {
+                        results.set(i, row(adjustment.batch(), line.actualMeters(), BigDecimal.ZERO,
+                                adjustment.batch().remainingMeters(), BatchStockViews.STOCKTAKE_REPLAYED));
+                    }
+                }
+                List<BatchStockViews.StocktakeLineResult> skuLines = perSku.get(adjustment.batch().skuId());
+                if (skuLines != null) {
+                    skuLines.removeIf(line -> line.batchId() == batchId);
+                }
+                totalDelta = totalDelta.subtract(adjustment.delta());
+            }
+            if (!replayedNow.isEmpty()) {
+                log.info("批次盘点并发回放: tenant={}, product={}, runId={}, replayedBatches={}",
+                        tenantId, productId, runId, replayedNow);
+                newStockBySku.clear();
+                for (Map.Entry<Long, List<BatchStockViews.StocktakeLineResult>> entry : perSku.entrySet()) {
+                    ProductSku sku = skuById.get(entry.getKey());
+                    if (sku == null || entry.getValue().isEmpty()) {
+                        continue;
+                    }
+                    BigDecimal delta = StockQuantity.sum(entry.getValue().stream()
+                            .map(BatchStockViews.StocktakeLineResult::delta).toList());
+                    newStockBySku.put(entry.getKey(), StockQuantity.orZero(sku.getStock()).add(delta));
+                }
+            }
+        }
         for (Map.Entry<Long, BigDecimal> entry : newStockBySku.entrySet()) {
             ProductSku sku = skuById.get(entry.getKey());
             BigDecimal before = StockQuantity.orZero(sku.getStock());
@@ -223,8 +273,8 @@ public class BatchStocktakeService {
             }
         }
         log.info("批次盘点完成: tenant={}, product={}, runId={}, changed={}, unchanged={}, replayed={}, delta={}",
-                tenantId, productId, runId, adjustments.size(), unchanged, replayed, plain(totalDelta));
-        return new BatchStockViews.StocktakeResult(runId, productId, adjustments.size(), unchanged,
+                tenantId, productId, runId, recorded.size(), unchanged, replayed, plain(totalDelta));
+        return new BatchStockViews.StocktakeResult(runId, productId, recorded.size(), unchanged,
                 replayed, StockQuantity.stripTrailingZerosPlain(totalDelta), results);
     }
 

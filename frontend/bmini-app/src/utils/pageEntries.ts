@@ -35,7 +35,14 @@
  * ③ tabBar 四页**机械豁免**，不在册：它们在 `app.config.ts` 的 `tabBar.list` 里，
  *    可达性由系统（微信 / Taro h5 的 tabbar）提供，不是谁"跳"过去的。
  */
-import { INBOUND_PAGE_ROUTE, REPRINT_PAGE_ROUTE, WORKER_LOGIN_ROUTE } from './inbound/gaps'
+import {
+  INBOUND_PAGE_ROUTE,
+  PRODUCTION_PAGE_ROUTE,
+  REPRINT_PAGE_ROUTE,
+  WORKER_HOME_ROUTE,
+  WORKER_LOGIN_ROUTE,
+  WORKER_TAB_LOGIN_ROUTE,
+} from './inbound/gaps'
 
 /** 导航形态（守卫据此选正则；**不能**是新造的词 —— 形态本身就是判据的一部分） */
 export type EntryNav = 'navigateTo' | 'redirectTo' | 'switchTab' | 'reLaunch' | 'href'
@@ -140,7 +147,7 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     nav: 'href',
     via: '/pages/worker/reprint/index',
     audience:
-      '工人身份（`/w/` 报工页页头入口；标签不在手边、或要按短码手输时走这条 —— 不必先扫洗水码）',
+      '工人身份（`/w/` 报工页页头入口；标签不在手边、或要按短码手输时走这条 —— 不必先扫水洗唛）',
   },
   {
     // issue #5747：这两页此前在 `/b/` 内**零入口**（只有 `/w/` 页头与扫标签深链），
@@ -160,7 +167,7 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     via: 'REPRINT_PAGE_ROUTE',
     viaBinding: 'src/utils/inbound/gaps.ts',
     audience:
-      '商家/工人身份（「我的」→ 补打入库标签；标签贴丢 / 磨花时不必先扫洗水码，与 `/w/` 那条入口同用途）',
+      '商家/工人身份（「我的」→ 补打入库标签；标签贴丢 / 磨花时不必先扫水洗唛，与 `/w/` 那条入口同用途）',
   },
   {
     route: '/pages/admin/pool/index',
@@ -193,5 +200,58 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     via: 'surface.route',
     viaBinding: 'src/utils/adminPermission.ts',
     audience: '商家身份（同上）',
+  },
+  // ── issue #6467 切片 1：工人面（工人首页 + 登录页的工人入口） ──
+  // 现场缺陷的根因之一是「工人身份没有落点」：工人登录后只能落商家 tabBar（问黄金策/数据/坐席/我的），
+  // 而工人零商家权限 ⇒ 看见商家菜单只会 403/空页。⇒ 工人首页 + 一条直达的工人入口都要**可达**。
+  {
+    route: WORKER_HOME_ROUTE,
+    from: 'src/pages/auth/login/index.tsx',
+    nav: 'redirectTo',
+    via: 'WORKER_HOME_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '工人身份（登录页工人 tab 用「工号 + PIN」登录成功后 redirectTo 本页；**不**switchTab —— 工人没有商家会话，switchTab 会落到商家 tabBar）',
+  },
+  {
+    route: '/pages/auth/login/index',
+    from: 'src/pages/production/index/index.tsx',
+    nav: 'navigateTo',
+    via: 'WORKER_TAB_LOGIN_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '工人身份（报工页在**无工人 session** 时的「去登录工人身份」：直达登录页工人 tab，登录成功后进工人工作台）',
+  },
+  {
+    route: '/pages/auth/login/index',
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'WORKER_TAB_LOGIN_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience: '工人身份（工人首页读不到当前工人 / 未登录时的「去登录工人身份」）',
+  },
+  {
+    route: PRODUCTION_PAGE_ROUTE,
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'PRODUCTION_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience: '工人身份（工人首页 →「扫码报工」；页内再按有无工人 session 分流写入口）',
+  },
+  {
+    route: INBOUND_PAGE_ROUTE,
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'INBOUND_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience: '工人身份（工人首页 →「拍照入库」；未登录时该页自身引导去工号 + PIN 登录）',
+  },
+  {
+    route: REPRINT_PAGE_ROUTE,
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'REPRINT_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience: '工人身份（工人首页 →「补打入库标签」；标签贴丢 / 磨花时用）',
   },
 ]

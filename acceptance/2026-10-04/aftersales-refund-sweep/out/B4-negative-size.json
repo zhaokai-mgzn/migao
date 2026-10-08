@@ -1,0 +1,29 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:16:30 +08",
+    "utc": "2026-10-04T01:16:30.310Z"
+  },
+  "negProbe": [
+    {
+      "label": "orders",
+      "status": 200,
+      "total": 0,
+      "size": 500,
+      "rows": 82
+    },
+    {
+      "label": "stock-ledger",
+      "status": 200,
+      "total": 0,
+      "size": 500,
+      "rows": 162
+    },
+    {
+      "label": "after-sales",
+      "status": 200,
+      "total": 0,
+      "size": 500,
+      "rows": 19
+    }
+  ]
+}

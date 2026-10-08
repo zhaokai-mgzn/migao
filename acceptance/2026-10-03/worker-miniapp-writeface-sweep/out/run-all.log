@@ -1,0 +1,30 @@
+2026-10-03 17:01:23 +08 构建点: worktree=/Users/guangzhen.zk/migao-wt/main-live sha=43ca70322 pid=61739 启动=六 10月/ 3 16:22:58 2026
+2026-10-03 17:01:26 +08 前置残留: {"probeUsers":1,"probeSessions":1,"probeOrders":0,"probeProcessingOrders":0,"probeSets":0,"probeItems":0,"probePositionOps":0,"probePartTokens":0,"probeWorkLogs":0,"probeAudits":0,"probeIdemKeys":0,"probeInboundItems":0,"probeInboundLabels":0}
+2026-10-03 17:01:31 +08 前置清理后: {"probeUsers":0,"probeSessions":0,"probeOrders":0,"probeProcessingOrders":0,"probeSets":0,"probeItems":0,"probePositionOps":0,"probePartTokens":0,"probeWorkLogs":0,"probeAudits":0,"probeIdemKeys":0,"probeInboundItems":0,"probeInboundLabels":0}
+2026-10-03 17:01:33 +08 存量基线(excludeProbe): 996cccaa16d90010
+2026-10-03 17:01:33 +08 ▶ p0-env
+2026-10-03 17:01:43 +08 ◀ p0-env ok
+2026-10-03 17:01:43 +08 ▶ p1-auth
+2026-10-03 17:01:48 +08 ◀ p1-auth ok
+2026-10-03 17:01:48 +08 ▶ p2-scan
+2026-10-03 17:02:08 +08 ◀ p2-scan ok
+2026-10-03 17:02:08 +08 ▶ p2b-cuttingheight-npe
+2026-10-03 17:02:16 +08 ◀ p2b-cuttingheight-npe ok
+2026-10-03 17:02:16 +08 ▶ p3-inbound
+2026-10-03 17:02:23 +08 ◀ p3-inbound ok
+2026-10-03 17:02:23 +08 ▶ p4-ship-upload
+2026-10-03 17:02:28 +08 ◀ p4-ship-upload ok
+2026-10-03 17:02:28 +08 ▶ p5-ui
+file:///Users/guangzhen.zk/ai%20native/migao/acceptance/2026-10-03/worker-miniapp-writeface-sweep/harness/p5-ui.mjs:214
+const brokenPass = codeVal === brokenExpectation
+                   ^
+
+ReferenceError: codeVal is not defined
+    at file:///Users/guangzhen.zk/ai%20native/migao/acceptance/2026-10-03/worker-miniapp-writeface-sweep/harness/p5-ui.mjs:214:20
+
+Node.js v24.19.0
+2026-10-03 17:03:10 +08 ◀ p5-ui exit 1
+2026-10-03 17:03:10 +08 ▶ p6-baseline
+2026-10-03 17:03:18 +08 ◀ p6-baseline ok
+2026-10-03 17:03:25 +08 零残留: total=0 clean=true｜存量 sha256 一致=false
+2026-10-03 17:03:25 +08 汇总: {"pass":91,"fail":1,"skip":2,"falseRed":0,"total":94}；零残留=true；存量一致=false

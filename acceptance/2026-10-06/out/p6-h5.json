@@ -1,0 +1,127 @@
+{
+  "at": "2026-10-06T00:16:08.546Z",
+  "subjectSha": "73327161f",
+  "app": "https://app.migaozn.com",
+  "worker": {
+    "no": "A06W733994",
+    "name": "A06验收工人733994"
+  },
+  "workerCreate": {
+    "http": 200,
+    "ok": true,
+    "row": {
+      "id": "092693321dff6c2460ac223711deafa7",
+      "worker_no": "A06W733994",
+      "nickname": "A06验收工人733994",
+      "status": "active"
+    },
+    "text": "{\"success\":true,\"data\":{\"id\":\"092693321dff6c2460ac223711deafa7\",\"workerNo\":\"A06W733994\",\"name\":\"A06验收工人733994\",\"role\":\"worker\",\"status\":\"active\",\"createdAt\":\"2026-10-06T08:15:34.368441979+08:00\"},\"req"
+  },
+  "h5": {
+    "url": "https://app.migaozn.com/w/?tenant_id=25",
+    "loginView": true,
+    "badPinError": "工号或 PIN 不正确",
+    "loginOk": true,
+    "currentWorker": "当前工人：A06验收工人733994（工号 A06W733994）",
+    "shots": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/h5-w-login.png",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/h5-w-badpin.png",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/h5-w-logged.png"
+    ],
+    "entry": "https://app.migaozn.com/w/?tenant_id=25",
+    "bareLoginProbe": {
+      "url": "https://app.migaozn.com/w/",
+      "err": "无法识别租户：请通过 <租户ID>.app.migaozn.com 域名访问或提供 tenantId",
+      "currentWorker": 0
+    },
+    "entryProbes": [
+      {
+        "url": "https://app.migaozn.com/w/?tenant_id=25",
+        "tenantErr": false,
+        "bodyLen": 47,
+        "errText": ""
+      },
+      {
+        "url": "https://25.app.migaozn.com/w/",
+        "navErr": "Error: page.goto: net::ERR_NAME_NOT_RESOLVED at https://25.app.migaozn.com/w/\nCall log:\n\u001b[2m  - navi"
+      },
+      {
+        "url": "https://app.migaozn.com/w/",
+        "tenantErr": false,
+        "bodyLen": 47,
+        "errText": ""
+      }
+    ],
+    "bodyLen": 47,
+    "domIds": [
+      "wh5-current-worker",
+      "wh5-switch",
+      "wh5-logout",
+      "wh5-worker-entries",
+      "wh5-machine-entry",
+      "wh5-error",
+      "wh5-code",
+      "wh5-scan"
+    ]
+  },
+  "counts": {
+    "pass": 6
+  },
+  "rows": [
+    {
+      "state": "pass",
+      "id": "P6-W0a",
+      "name": "建测工人档案（工号+PIN）",
+      "detail": "POST /api/admin/workers HTTP 200；DB users#092693321dff6c2460ac223711deafa7 worker_no=A06W733994 status=active ",
+      "evidence": [
+        "POST /api/admin/workers"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P6-W1",
+      "name": "工人端 /w/ 首屏渲染（带租户上下文；#6306 修复后复探）",
+      "detail": "入口=https://app.migaozn.com/w/?tenant_id=25 探测=[{\"url\":\"https://app.migaozn.com/w/?tenant_id=25\",\"tenantErr\":false,\"bodyLen\":47,\"errText\":\"\"},{\"url\":\"https://25.app.migaozn.com/w/\",\"navErr\":\"Error: page.goto: net::ERR_NAME_NOT_RESOLVED at https://25.app.migaozn.com/w/\\nCall log:\\n\\u001b[2m  - navi\"},{\"url\":\"https://app.migaozn.com/w/\",\"tenantErr\":false,\"bodyLen\":47,\"errText\":\"\"}] url=https://app.migaozn.com/w/?tenant_id=25 #wh5-login=1 #wh5-worker-no=1 #wh5-pin=1 bodyLen=47；正文头=\"工人领活\\n\\n工号 + PIN 登录（手机 / PAD 均可，无需微信）\\n\\n工号\\nPIN\\n登 录\"",
+      "evidence": [
+        "out/shots/h5-w-login.png",
+        "DOM #wh5-login/#wh5-worker-no/#wh5-pin"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P6-W2",
+      "name": "工人端错 PIN 负对照",
+      "detail": "仍在登录态=true 错误文案=\"工号或 PIN 不正确\" 已登录元素数=0",
+      "evidence": [
+        "out/shots/h5-w-badpin.png"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P6-W3",
+      "name": "工人端真实登录（工号+PIN）并进入报工页",
+      "detail": "#wh5-current-worker=\"当前工人：A06验收工人733994（工号 A06W733994）\"；期望含工号/姓名 A06W733994",
+      "evidence": [
+        "out/shots/h5-w-logged.png"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P6-W4",
+      "name": "登录后报工页 DOM 就位",
+      "detail": "#wh5-* 元素 8 个：[\"wh5-current-worker\",\"wh5-switch\",\"wh5-logout\",\"wh5-worker-entries\",\"wh5-machine-entry\",\"wh5-error\",\"wh5-code\",\"wh5-scan\"]",
+      "evidence": [
+        "DOM 快照"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P6-M1",
+      "name": "一体机页 /w/machine.html 非空白",
+      "detail": "正文 60 字符；#wh5-* 元素 0 个；正文头=\"机台模式 · 裁高\\n—\\n\\n本台设备还没登录：请先用工号 + PIN 登录，再扫码\\n\\n请重新扫一次水洗唛（或手工输入短码）\"",
+      "evidence": [
+        "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06/out/shots/h5-machine.png"
+      ]
+    }
+  ]
+}

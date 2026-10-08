@@ -142,7 +142,7 @@ python3.11 -m pytest tests/unit_ci_workflows -q
 | `CASE-TRUST-NO-PRECONDITION-ASSERTION` | `fixture_pg_013` | 多轮写用例无 `precondition` / 机器计分型前置断言 |
 | `CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH` | `TestSelfTargetMaxGrowth` 的注入夹具 | 自建名 + `expect: 0` 前置缺 `max_growth`（或 <1）⇒ 运行期 `0 → 1` 恒判漂移 |
 | `CASE-TRUST-STALE-LINE-REF` | `TestReferenceFreshness` 的 3 个注入夹具 | 行号越界 / 文件不存在 / 符号在文件里完全找不到 |
-| `CASE-TRUST-SINGLE-LEG-NO-PERSONA` | `fixture_single_leg_unmarked`（**正**）/ `fixture_shared_tool_unmarked`（**反**：必须**不报**） | `{curtain_calc}` ⊆ 小布且 ⊄ 米宝但无 `persona` ⇒ 报；共享工具（`product_detail`+`order_create`，两端都有）⇒ **不得**判单端（#4356） |
+| `CASE-TRUST-SINGLE-LEG-NO-PERSONA` | `fixture_single_leg_unmarked`（**正**）/ `fixture_shared_tool_unmarked`（**反**：必须**不报**） | `{curtain_calc}` ⊆ 元元且 ⊄ 黄金策但无 `persona` ⇒ 报；共享工具（`product_detail`+`order_create`，两端都有）⇒ **不得**判单端（#4356） |
 | `CASE-TRUST-PROSE-TEST-REF-GHOST` | `TestProseTestRefChannel` 的注入夹具（正 + **反**：合法跨引用必须**不报**） | 散文点名的测试**解析不到任何真实文件**（既不在 `traces.tests`、测试根目录里也没有同名文件）⇒ 报（#5196） |
 
 ### 绿证 C —— 门禁对**正确形态**保持沉默（防假红）
@@ -233,14 +233,14 @@ python3.11 -m pytest tests/unit_ci_workflows -q
 
 ### 绿证 I —— 规则 d 判据**收紧**（`is_single_leg_by_toolset`，#4356）的假阳性红证与判别力守卫
 
-**病灶（旧判据的前提为假）**：旧形态 = 「`expectations` 工具集 ⊆ `XIAOBU_TOOLS` ⇒ 只可能是小布用例」，
+**病灶（旧判据的前提为假）**：旧形态 = 「`expectations` 工具集 ⊆ `XIAOBU_TOOLS` ⇒ 只可能是元元用例」，
 其 docstring 逐字写着前提「**米宝工具集与之不相交**」。实测**两端共享 7 个工具**
 （`order_create` / `product_detail` / `product_search` / `validate_input` / `interact` /
 `knowledge_search` / `production_progress_query`）⇒ 共享工具用例（`OR-008`/`OR-010` 一族，
-`persona: mibao` 且已在 main）被判成「只可能是小布」。
+`persona: mibao` 且已在 main）被判成「只可能是元元」。
 
 **危害不是「不精确」**：照该判据反推 `persona: xiaobu` ⇒
-`render_cases.filter_by_persona` 跑米宝腿时跳过它 ⇒ **真实米宝用例被静默移出米宝腿**
+`render_cases.filter_by_persona` 跑黄金策腿时跳过它 ⇒ **真实黄金策用例被静默移出黄金策腿**
 （全量跑不会有任何红，也不触发 runner 的「禁止静默少跑」守卫——那不是 `case_ids` 窄跑）；
 同时 `eval_case_filter.select_cases_for_persona` 对**显式** `persona: xiaobu` 无条件保留
 ⇒ 该用例反而在 C 端腿跑起来（绕过 `MIBAO_SEMANTIC_PATTERNS` 语义过滤）= 假红。
@@ -251,7 +251,7 @@ python3.11 -m pytest tests/unit_ci_workflows -q
 
 ```
 FAILED ...TestNoFalsePositivesOnCorrectShapes::test_shared_tool_case_is_not_required_to_annotate
-E  AssertionError: 共享工具用例被判成「只能跑小布」—— 前提「双端工具集不相交」为假（#4356）
+E  AssertionError: 共享工具用例被判成「只能跑元元」—— 前提「双端工具集不相交」为假（#4356）
 E  assert not True
 FAILED ...TestDegenerateGuardRails::test_mibao_toolset_truth_loaded
 E  AttributeError: module 'assertion_taxonomy' has no attribute 'MIBAO_TOOLSET_SOURCE'
@@ -279,12 +279,12 @@ E   'OR-028', 'OR-029', 'OR-030', 'OR-031', 'PR-018']
 | 基线该码 | 13 条 → **0**（`--prune-baseline`：条目 85→**78**、违规码 148→**135**，只删不加） |
 | 门禁 | `python3 .github/case_trust_gate.py --base origin/main` ⇒ **✅ 通过** |
 
-**判别力未失的负例（R2）**：`fixture_single_leg_unmarked`（`{curtain_calc}` ⊄ 米宝）**仍报**；
-`test_dual_leg_case_is_not_required_to_annotate`（`order_query` ⊄ 小布）**仍不报**；
+**判别力未失的负例（R2）**：`fixture_single_leg_unmarked`（`{curtain_calc}` ⊄ 黄金策）**仍报**；
+`test_dual_leg_case_is_not_required_to_annotate`（`order_query` ⊄ 元元）**仍不报**；
 库级下界守卫 `test_predicate_still_flags_real_single_leg_cases`（真·单端 ≥10 条，实测 16）
 防「为消账本把判据削成恒假」。
 
-**边界（有意不做）**：不加对称的「米宝单端」臂（实测会新命中 88 条 = 全库 persona 标注口径，
+**边界（有意不做）**：不加对称的「黄金策单端」臂（实测会新命中 88 条 = 全库 persona 标注口径，
 属 `CASE-TRUST-ALL-CASES-PERSONA-ANNOTATED` 那条**有意更窄**的口径 —— 它已于 2026-09-26
 **撤登记**，**不在**未实装登记册里；接受的缺口与重启条件见 `assertion_taxonomy.py` 的
 「已撤登记（有意不做 / 口径已无对象）」组与其台帐 `WITHDRAWN_UNIMPLEMENTED`）；语义单端
@@ -296,7 +296,7 @@ E   'OR-028', 'OR-029', 'OR-030', 'OR-031', 'PR-018']
 
 `TestDegenerateGuardRails` 全绿：写工具集合非空（≥5）、效果层集合非空（≥3）且每项带理由、
 判据不恒真/不恒假、机器计分口径与 `local_runner.py` **同源**（直接读其源码锚点比对）、
-小布工具集**转发**单一源而非复制、未实装项带理由与缺口（登记册为空时 ⇒ **撤登记台帐**必须
+元元工具集**转发**单一源而非复制、未实装项带理由与缺口（登记册为空时 ⇒ **撤登记台帐**必须
 解释这个「空」：依据 + 重启条件，判据 = `TestWithdrawnRegistrations`）、`RULES` 内无恒真规则。
 
 ---

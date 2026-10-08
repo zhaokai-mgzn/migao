@@ -1,4 +1,4 @@
-# Customer Quote Skill — Few-shot 示例（小布 · C端算料报价）
+# Customer Quote Skill — Few-shot 示例（元元 · C端算料报价）
 
 > 轨迹里出现的工具必须都在本 skill 工具集内（`curtain_calc` / `product_detail` /
 > `product_search` / `interact`）。本 skill **没有下单能力**，算完一律交回下单流程。

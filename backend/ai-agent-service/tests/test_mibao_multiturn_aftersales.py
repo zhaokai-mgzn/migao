@@ -1,5 +1,5 @@
 """
-米宝多轮 — 售后域（退货库存规则/纠纷判定）
+黄金策多轮 — 售后域（退货库存规则/纠纷判定）
 
 （由 test_mibao_advanced_multiturn.py 按场景域拆分，2026-08-29）
 """
@@ -28,7 +28,7 @@ def _auto_reset_singletons():
 
 
 class TestMibaoMultiturnAftersales:
-    """米宝多轮 — 售后域（退货库存规则/纠纷判定）"""
+    """黄金策多轮 — 售后域（退货库存规则/纠纷判定）"""
 
     async def test_case_15_aftersales_return_no_restock(self):
         """

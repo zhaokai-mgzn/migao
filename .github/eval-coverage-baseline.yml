@@ -38,9 +38,20 @@ version: 2
 # ⚠️ 本文件由 `yaml_light`（仓库零依赖解析器）读取 —— 只能用**单行标量**：
 #    多行字符串（`>-`）/ flow style 会让解析在缩进更深的行处**静默停止**，
 #    entries 整段读成空 = 存量缺口全部当作新缺口阻塞（门禁全红，且看不出原因）。
-note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 **1 条阻塞**（nav_guide，跟踪 #5989）+ **1 条薄覆盖**（validate_input，跟踪 #3558），全部有归属。2026-10-03（issue #6090 销账）：`image_recognize`/uncovered 一条**销账删除** —— 配套用例 CH-044（发图 → 米宝调 image_recognize → 同页填表）在**同一个 PR** 补上（补用例与删条目必须同 PR，否则陈旧登记被判红）。2026-09-26（issue #3592 销账）：briefing_query / craft_calc_config_query / processing_order_set_query 三条 uncovered + session_manage/thin_positive 一条**销账删除** —— 配套用例 DA-019 / PP-015 / PG-064 / DA-020 在**同一个 PR** 补上（补用例与删条目必须同 PR，否则陈旧登记被判红）。2026-09-24（issue #5247，B 端只读化）：order_manage/missing_positive 与 sku_update/thin_positive 两条**销账删除** —— 两个工具已从 B 端解绑（不再是 B 端工具 ⇒ 登记被判无效/阻塞）。"
+note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 **1 条阻塞**（nav_guide，跟踪 #5989）+ **1 条薄覆盖**（validate_input，跟踪 #3558），全部有归属。2026-10-03（issue #6090 销账）：`image_recognize`/uncovered 一条**销账删除** —— 配套用例 CH-044（发图 → 黄金策调 image_recognize → 同页填表）在**同一个 PR** 补上（补用例与删条目必须同 PR，否则陈旧登记被判红）。2026-09-26（issue #3592 销账）：briefing_query / craft_calc_config_query / processing_order_set_query 三条 uncovered + session_manage/thin_positive 一条**销账删除** —— 配套用例 DA-019 / PP-015 / PG-064 / DA-020 在**同一个 PR** 补上（补用例与删条目必须同 PR，否则陈旧登记被判红）。2026-09-24（issue #5247，B 端只读化）：order_manage/missing_positive 与 sku_update/thin_positive 两条**销账删除** —— 两个工具已从 B 端解绑（不再是 B 端工具 ⇒ 登记被判无效/阻塞）。"
 
 entries:
+  # issue #6486 包 2（2026-10-07）：定时提醒（用户「预约」）的 A 档可逆写工具。
+  # 本 PR 只做到「工具面声明 + 本地 fail-closed」的**确定性判据**（用例 AG-011，
+  # traces = test_scheduled_task_manage.py，走 `[backend-contract]` skip ⇒ 覆盖体检不计）；
+  # LLM 行为面（黄金策真的发起确认卡并落一条待办）需真跑评测，按 #4262 用户裁定**不自动派发**
+  # ⇒ 用例待补（补完即删本条）。
+  - tool: scheduled_task_manage
+    kind: uncovered
+    persona: mibao
+    issue: "#6486"
+    reason: "包 2 新增工具：声明面与本地 fail-closed 已由 AG-011 钉住，LLM 行为面用例待补（#4262 不自动派发评测）"
+    added: "2026-10-07"
   # ── 结构性缺失（阻塞项，靠本清单才保持绿）──────────────────────────────
   # ✅ 销账（2026-09-26，issue #3592 / 本 PR）：`briefing_query` / `craft_calc_config_query` /
   #    `processing_order_set_query` 三条 **uncovered** 条目**已删除** —— 配套用例
@@ -52,12 +63,12 @@ entries:
   #    `BriefingController` 的 `GET /api/admin/briefing/today` 不看 `tenants.briefing_enabled`
   #    （未生成简报时 HTTP 200 + `generated=false`），工具侧同样 `success=True` ⇒ 开关只影响
   #    **内容**，不影响「模型有没有调对工具、调用是否成功」这一计分面（见 DA-019 的覆盖说明注释）。
-  #    原第 4 条注释留档：「2026-09-24（issue #5247，用户裁定 2026-09-23『B 端米宝只读化』）：
+  #    原第 4 条注释留档：「2026-09-24（issue #5247，用户裁定 2026-09-23『B 端黄金策只读化』）：
   #    下列 3 条是新接入的只读工具首次登记 —— 它们替代了 B 端下线的写能力（库存台账/入库批次/
   #    工序库分别由 PR-005、PP-002 两条改判用例覆盖；这三条暂无用例）」。
 
   # ✅ 销账（2026-10-03，issue #6090）：`image_recognize` 的 **uncovered（阻塞）** 条目**已删除** ——
-  #    配套用例 **CH-044**（`.github/cases/chat.yml`：发图 → 米宝调 image_recognize → 同页填表；
+  #    配套用例 **CH-044**（`.github/cases/chat.yml`：发图 → 黄金策调 image_recognize → 同页填表；
   #    断言 = 工具调用 + must_succeed + 参数契约 target_type/images + 不推诿禁令）在**同一个 PR** 里补上。
   #    补用例与删条目必须同 PR：分开做会出现「main 带陈旧登记」（`baseline_stale_blocking` 判红）
   #    或「main 带零覆盖缺口」的红窗口。跟踪单 `#4941` 随之失去本条对象。

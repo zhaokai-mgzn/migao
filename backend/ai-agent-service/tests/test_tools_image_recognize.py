@@ -3,7 +3,7 @@
 
 ## 这个工具是什么
 
-米宝（B 端）在**同页**（建品页 / 建单页，浮动面板就在表单上方）拿到用户丢进对话的图片后，
+黄金策（B 端）在**同页**（建品页 / 建单页，浮动面板就在表单上方）拿到用户丢进对话的图片后，
 调本工具 ⇒ **复用识别内核**（不是第二份识别实现）⇒ 得到「填哪几格 + 候选 + 解读」的
 同页填充计划 ⇒ 由 `chat.py` 以**瞬时** SSE 事件（`page_fill`）推给页面表单。
 
@@ -100,6 +100,21 @@ class TestToolDeclaration:
         assert props["target_type"]["enum"] == ["product", "order"]
         assert schema["function"]["parameters"]["required"] == ["target_type", "images"]
 
+    def test_interpretations_description_matches_the_widened_scope(self):
+        """issue #6361：模型看到的参数描述 = **四格可落值 + 两格只建议**（旧的两格口径必须消失）。
+
+        描述是**模型唯一的口径来源** ⇒ 它漂回「只对 material / craft 生效」时这里必须红。
+        """
+        description = ImageRecognizeTool().get_schema()["function"]["parameters"]["properties"][
+            "interpretations"
+        ]["description"]
+        assert "只对 material / craft 生效" not in description
+        for fillable in ("name", "material", "craft", "color"):
+            assert fillable in description, f"可落值的 {fillable} 未写进参数描述"
+        for note_only in ("door_width", "price"):
+            assert note_only in description, f"只建议不落值的 {note_only} 未写进参数描述"
+        assert "不落值" in description or "只写 note" in description
+
 
 class TestExecuteProducesAPageFillPlan:
     @pytest.mark.asyncio
@@ -117,7 +132,10 @@ class TestExecuteProducesAPageFillPlan:
         assert plan["component"] == "page_fill"
         assert plan["target_type"] == "product"
         by_key = {f["key"]: f for f in plan["fields"]}
-        assert by_key["name"]["source"] == SOURCE_RECOGNIZED
+        # issue #6386：`name` 是生成类字段 ⇒ 识别面不给它值，来源只能靠解读
+        #（本用例的 `interpretations` 只给了 `material` ⇒ `name` 整格留空）
+        assert by_key["name"]["value"] is None
+        assert by_key["name"]["source"] is None
         assert by_key["material"]["source"] == SOURCE_INTERPRETED
         assert by_key["color"]["value"] is None
         assert by_key["color"]["candidates"]
@@ -224,7 +242,7 @@ class TestReachability:
         assert "image_recognize" in ORDER_TOOLS
 
     def test_tool_is_not_bound_to_the_c_end_agent(self):
-        """C 端零改动：不把小布拖进这条链路。"""
+        """C 端零改动：不把元元拖进这条链路。"""
         from app.graph.skills.customer_skill import CUSTOMER_TOOLS
 
         assert "image_recognize" not in CUSTOMER_TOOLS

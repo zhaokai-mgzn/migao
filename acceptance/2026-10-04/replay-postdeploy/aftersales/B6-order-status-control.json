@@ -1,0 +1,418 @@
+{
+  "records": [
+    {
+      "id": "LB-CTRL-ORDER-STATUS-CAS",
+      "name": "正对照：订单侧并发改状态（confirmed→producing）N=4×3 轮 ⇒ 恰 1 个赢家（DB 谓词守卫在位）",
+      "status": "pass",
+      "detail": "三轮成功数=[1,1,1]；逐轮状态码=[[200,422,422,422],[200,422,422,422],[200,422,422,422]]；DB 终态=[\"producing\",\"producing\",\"producing\"]",
+      "evidence": [
+        "期望来源: 本包独立算式 + 源码 —— backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java 的 updateOrderStatus ⇒ transitionStatusAtomic(id, currentStatus, status, null)，其 wrapper = eq(id).eq(status, expectedStatus).set(status, newStatus)；rows==0 ⇒ 「订单状态已并发变更，请刷新后重试」",
+        "为什么它是**对照**: 售后工单侧（AfterSalesTicketService.updateTicketStatus）在**同一时刻、同一装置**下读到 4/4 全 200（见 LB-C2/LB-C21/LB-C23）",
+        "   ⇒ 两者差别只在「落库语句有没有状态谓词」，不是「并发到不了」或「装置坏了」",
+        "重叠证据: R1: 真重叠：最大逐对重叠 123ms（并集 125ms < 各历时之和 484ms） ｜ R2: 真重叠：最大逐对重叠 83ms（并集 83ms < 各历时之和 325ms） ｜ R3: 真重叠：最大逐对重叠 77ms（并集 82ms < 各历时之和 304ms）",
+        "逐请求结局: [[[200,\"ok\"],[422,\"订单状态已并发变更，请刷新后重试\"],[422,\"订单状态已并发变更，请刷新后重试\"],[422,\"订单状态已并发变更，请刷新后重试\"]],[[200,\"ok\"],[422,\"订单状态已并发变更，请刷新后重试\"],[422,\"订单状态已并发变更，请刷新后重试\"],[422,\"订单状态已并发变更，请刷新后重试\"]],[[200,\"ok\"],[422,\"订单状态已并发变更，请刷新后重试\"],[422,\"订单状态已并发变更，请刷新后重试\"],[422,\"订单状态已并发变更，请刷新后重试\"]]]"
+      ],
+      "at": "2026-10-04 09:32:18 +08",
+      "atUtc": "2026-10-04T01:32:18.482Z",
+      "extra": {
+        "N": 4,
+        "rounds": [
+          {
+            "round": 1,
+            "N": 4,
+            "okCount": 1,
+            "statuses": [
+              200,
+              422,
+              422,
+              422
+            ],
+            "msgs": [
+              "ok",
+              "订单状态已并发变更，请刷新后重试",
+              "订单状态已并发变更，请刷新后重试",
+              "订单状态已并发变更，请刷新后重试"
+            ],
+            "dbStatus": "producing",
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 200,
+                "msg": "ok",
+                "durMs": 114
+              },
+              {
+                "i": 1,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单状态已并发变更，请刷新后重试",
+                "durMs": 123
+              },
+              {
+                "i": 2,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单状态已并发变更，请刷新后重试",
+                "durMs": 124
+              },
+              {
+                "i": 3,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单状态已并发变更，请刷新后重试",
+                "durMs": 123
+              }
+            ],
+            "expectation": "N 路并发 confirmed→producing ⇒ 恰 1 次 200（其余 422「订单状态已并发变更，请刷新后重试」）；DB 终态 producing",
+            "pass": true,
+            "overlapEvidence": {
+              "barrierAt": 1791077536181,
+              "barrierAtCST": "2026-10-04 09:32:16 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077536181,
+                  "t1": 1791077536295,
+                  "durMs": 114
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077536182,
+                  "t1": 1791077536305,
+                  "durMs": 123
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077536182,
+                  "t1": 1791077536306,
+                  "durMs": 124
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077536182,
+                  "t1": 1791077536305,
+                  "durMs": 123
+                }
+              ],
+              "unionMs": 125,
+              "sumMs": 484,
+              "maxPairOverlapMs": 123,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 123ms（并集 125ms < 各历时之和 484ms）"
+            }
+          },
+          {
+            "round": 2,
+            "N": 4,
+            "okCount": 1,
+            "statuses": [
+              200,
+              422,
+              422,
+              422
+            ],
+            "msgs": [
+              "ok",
+              "订单状态已并发变更，请刷新后重试",
+              "订单状态已并发变更，请刷新后重试",
+              "订单状态已并发变更，请刷新后重试"
+            ],
+            "dbStatus": "producing",
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 200,
+                "msg": "ok",
+                "durMs": 76
+              },
+              {
+                "i": 1,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单状态已并发变更，请刷新后重试",
+                "durMs": 83
+              },
+              {
+                "i": 2,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单状态已并发变更，请刷新后重试",
+                "durMs": 83
+              },
+              {
+                "i": 3,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单状态已并发变更，请刷新后重试",
+                "durMs": 83
+              }
+            ],
+            "expectation": "N 路并发 confirmed→producing ⇒ 恰 1 次 200（其余 422「订单状态已并发变更，请刷新后重试」）；DB 终态 producing",
+            "pass": true,
+            "overlapEvidence": {
+              "barrierAt": 1791077537227,
+              "barrierAtCST": "2026-10-04 09:32:17 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077537227,
+                  "t1": 1791077537303,
+                  "durMs": 76
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077537227,
+                  "t1": 1791077537310,
+                  "durMs": 83
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077537227,
+                  "t1": 1791077537310,
+                  "durMs": 83
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077537227,
+                  "t1": 1791077537310,
+                  "durMs": 83
+                }
+              ],
+              "unionMs": 83,
+              "sumMs": 325,
+              "maxPairOverlapMs": 83,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 83ms（并集 83ms < 各历时之和 325ms）"
+            }
+          },
+          {
+            "round": 3,
+            "N": 4,
+            "okCount": 1,
+            "statuses": [
+              200,
+              422,
+              422,
+              422
+            ],
+            "msgs": [
+              "ok",
+              "订单状态已并发变更，请刷新后重试",
+              "订单状态已并发变更，请刷新后重试",
+              "订单状态已并发变更，请刷新后重试"
+            ],
+            "dbStatus": "producing",
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 200,
+                "msg": "ok",
+                "durMs": 70
+              },
+              {
+                "i": 1,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单状态已并发变更，请刷新后重试",
+                "durMs": 77
+              },
+              {
+                "i": 2,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单状态已并发变更，请刷新后重试",
+                "durMs": 75
+              },
+              {
+                "i": 3,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "订单状态已并发变更，请刷新后重试",
+                "durMs": 82
+              }
+            ],
+            "expectation": "N 路并发 confirmed→producing ⇒ 恰 1 次 200（其余 422「订单状态已并发变更，请刷新后重试」）；DB 终态 producing",
+            "pass": true,
+            "overlapEvidence": {
+              "barrierAt": 1791077538299,
+              "barrierAtCST": "2026-10-04 09:32:18 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077538299,
+                  "t1": 1791077538369,
+                  "durMs": 70
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077538299,
+                  "t1": 1791077538376,
+                  "durMs": 77
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077538299,
+                  "t1": 1791077538374,
+                  "durMs": 75
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077538299,
+                  "t1": 1791077538381,
+                  "durMs": 82
+                }
+              ],
+              "unionMs": 82,
+              "sumMs": 304,
+              "maxPairOverlapMs": 77,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 77ms（并集 82ms < 各历时之和 304ms）"
+            }
+          }
+        ],
+        "overlapEvidence": [
+          {
+            "barrierAt": 1791077536181,
+            "barrierAtCST": "2026-10-04 09:32:16 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077536181,
+                "t1": 1791077536295,
+                "durMs": 114
+              },
+              {
+                "i": 1,
+                "t0": 1791077536182,
+                "t1": 1791077536305,
+                "durMs": 123
+              },
+              {
+                "i": 2,
+                "t0": 1791077536182,
+                "t1": 1791077536306,
+                "durMs": 124
+              },
+              {
+                "i": 3,
+                "t0": 1791077536182,
+                "t1": 1791077536305,
+                "durMs": 123
+              }
+            ],
+            "unionMs": 125,
+            "sumMs": 484,
+            "maxPairOverlapMs": 123,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 123ms（并集 125ms < 各历时之和 484ms）"
+          },
+          {
+            "barrierAt": 1791077537227,
+            "barrierAtCST": "2026-10-04 09:32:17 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077537227,
+                "t1": 1791077537303,
+                "durMs": 76
+              },
+              {
+                "i": 1,
+                "t0": 1791077537227,
+                "t1": 1791077537310,
+                "durMs": 83
+              },
+              {
+                "i": 2,
+                "t0": 1791077537227,
+                "t1": 1791077537310,
+                "durMs": 83
+              },
+              {
+                "i": 3,
+                "t0": 1791077537227,
+                "t1": 1791077537310,
+                "durMs": 83
+              }
+            ],
+            "unionMs": 83,
+            "sumMs": 325,
+            "maxPairOverlapMs": 83,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 83ms（并集 83ms < 各历时之和 325ms）"
+          },
+          {
+            "barrierAt": 1791077538299,
+            "barrierAtCST": "2026-10-04 09:32:18 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077538299,
+                "t1": 1791077538369,
+                "durMs": 70
+              },
+              {
+                "i": 1,
+                "t0": 1791077538299,
+                "t1": 1791077538376,
+                "durMs": 77
+              },
+              {
+                "i": 2,
+                "t0": 1791077538299,
+                "t1": 1791077538374,
+                "durMs": 75
+              },
+              {
+                "i": 3,
+                "t0": 1791077538299,
+                "t1": 1791077538381,
+                "durMs": 82
+              }
+            ],
+            "unionMs": 82,
+            "sumMs": 304,
+            "maxPairOverlapMs": 77,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 77ms（并集 82ms < 各历时之和 304ms）"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LB-CTRL-CAS-SQL",
+      "name": "正对照的 SQL 层量化：同一并发下「有状态谓词且谓词列被改写」写 1 次、「无谓词」写 N 次",
+      "status": "pass",
+      "detail": "N=4 并发：有谓词 ⇒ w=1 status=producing（期望 w=1）；无谓词 ⇒ w=4 status=producing（期望 w=4）",
+      "evidence": [
+        "注入方式: **不改产品源码** —— 自建临时表 lb_gp_orderstatus 上跑 4 个**独立 psql 进程**，",
+        "  ① 有谓词: UPDATE … SET w=w+1 WHERE id=1 AND status='confirmed'（= OrderService.transitionStatusAtomic 同形）",
+        "  ② 无谓词: UPDATE … SET w=w+1 WHERE id=1（= AfterSalesTicketService.updateById 同形：WHERE 仅主键）",
+        "该读数把「重复生效」量化为一次计数（不依赖任何响应时序），是 C2/C21/C23 泄漏的机制层证据",
+        "读数: 有谓词 w=1 / 无谓词 w=4",
+        "⚠️ 自曝（第一版判据缺陷）: 谓词列若**不被本次 UPDATE 改写**，N=4 并发下终值同样是 4 ⇒ 该写法**无判别力**（会假红）。",
+        "   这是**本包自己的 SQL 写错**，不是产品守卫无效 —— 修法是让 SET 同时改写谓词列（与产品 set(status,newStatus) 同形）。"
+      ],
+      "at": "2026-10-04 09:32:19 +08",
+      "atUtc": "2026-10-04T01:32:19.688Z",
+      "extra": {
+        "N": 4,
+        "withPred": {
+          "w": 1,
+          "status": "producing"
+        },
+        "withoutPred": {
+          "w": 4,
+          "status": "producing"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "pass": 2,
+    "fail": 0,
+    "skip": 0,
+    "falseRed": 0,
+    "total": 2
+  }
+}

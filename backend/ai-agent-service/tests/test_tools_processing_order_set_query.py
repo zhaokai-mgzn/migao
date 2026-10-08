@@ -3,7 +3,7 @@
 
 ⚠️ 权限码是生产域读码 `production:view`（issue #5291：从写码 `processing:manage` 拆出）：这三个读端点
 （#5257 新增、#5246 收口）生效码即 `production:view` —— 与侧边栏「生产看板」节点同码。若写成
-`processing:view`，持有它的岗位能在页面里看不到生产看板的情况下经米宝读到套件与扫码进度（权限泄露）；
+`processing:view`，持有它的岗位能在页面里看不到生产看板的情况下经黄金策读到套件与扫码进度（权限泄露）；
 若写成写码 `processing:manage`，则只读岗位又被假拒绝。故这里逐字钉死。
 """
 # case_ids: PG-057

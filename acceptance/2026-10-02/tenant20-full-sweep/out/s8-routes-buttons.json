@@ -1,0 +1,104 @@
+[
+  {
+    "id": "RT-01",
+    "name": "页面守卫矩阵：管理员(admin)",
+    "status": "pass",
+    "detail": "40 条路由全部与期望一致（拦截 0 条）",
+    "evidence": [
+      "out/s8-routes.json"
+    ],
+    "at": "2026-10-02T18:30:49.242Z"
+  },
+  {
+    "id": "RT-01",
+    "name": "页面守卫矩阵：客服(customer_service)",
+    "status": "pass",
+    "detail": "40 条路由全部与期望一致（拦截 20 条）",
+    "evidence": [
+      "out/s8-routes.json"
+    ],
+    "at": "2026-10-02T18:31:04.261Z"
+  },
+  {
+    "id": "RT-01",
+    "name": "页面守卫矩阵：运营(operator)",
+    "status": "pass",
+    "detail": "40 条路由全部与期望一致（拦截 2 条）",
+    "evidence": [
+      "out/s8-routes.json"
+    ],
+    "at": "2026-10-02T18:31:20.560Z"
+  },
+  {
+    "id": "RT-01",
+    "name": "页面守卫矩阵：销售(sales)",
+    "status": "pass",
+    "detail": "40 条路由全部与期望一致（拦截 22 条）",
+    "evidence": [
+      "out/s8-routes.json"
+    ],
+    "at": "2026-10-02T18:31:32.057Z"
+  },
+  {
+    "id": "RT-01",
+    "name": "页面守卫矩阵：财务(finance)",
+    "status": "pass",
+    "detail": "40 条路由全部与期望一致（拦截 26 条）",
+    "evidence": [
+      "out/s8-routes.json"
+    ],
+    "at": "2026-10-02T18:31:45.235Z"
+  },
+  {
+    "id": "RT-01",
+    "name": "页面守卫矩阵：商品管理员(product_manager)",
+    "status": "pass",
+    "detail": "40 条路由全部与期望一致（拦截 20 条）",
+    "evidence": [
+      "out/s8-routes.json"
+    ],
+    "at": "2026-10-02T18:32:00.036Z"
+  },
+  {
+    "id": "RT-01",
+    "name": "页面守卫矩阵：知识编辑(knowledge_editor)",
+    "status": "pass",
+    "detail": "40 条路由全部与期望一致（拦截 31 条）",
+    "evidence": [
+      "out/s8-routes.json"
+    ],
+    "at": "2026-10-02T18:32:13.268Z"
+  },
+  {
+    "id": "RT-01",
+    "name": "页面守卫矩阵：验收临时岗790472(acc_custom_790472)",
+    "status": "pass",
+    "detail": "40 条路由全部与期望一致（拦截 32 条）",
+    "evidence": [
+      "out/s8-routes.json"
+    ],
+    "at": "2026-10-02T18:32:26.578Z"
+  },
+  {
+    "id": "RT-02",
+    "name": "未被路由守卫覆盖的页面（清单 + 逐条现场复核）",
+    "status": "pass",
+    "detail": "1/40 条无守卫：notifications/page.tsx",
+    "evidence": [
+      "frontend/admin-web/src/app/(dashboard)/layout.tsx 的 ROUTE_PERMISSION_MAP"
+    ],
+    "at": "2026-10-02T18:32:26.580Z"
+  },
+  {
+    "id": "BTN-01",
+    "name": "元素级 RBAC：员工页写操作按钮（employee:create 门控）",
+    "status": "pass",
+    "detail": "管理员(admin):有码→新增显示/编辑显示/重置显示｜客服(customer_service):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜运营(operator):无码→新增隐藏/编辑隐藏/重置隐藏｜销售(sales):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜财务(finance):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜商品管理员(product_manager):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜知识编辑(knowledge_editor):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜验收临时岗790472(acc_custom_790472):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）",
+    "evidence": [
+      "out/s8-buttons-employees.json",
+      "screenshots/s8-employees-*.png",
+      "frontend/admin-web/src/app/(dashboard)/employees/page.tsx:19 canWrite = hasPermission('employee:create')"
+    ],
+    "at": "2026-10-02T18:32:39.992Z"
+  }
+]

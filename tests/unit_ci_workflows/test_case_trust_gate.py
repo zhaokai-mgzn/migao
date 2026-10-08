@@ -78,7 +78,7 @@ def fixture_cu_003() -> dict:
     `customer_index`）—— 本夹具**刻意保留修前形态**以维持判据的判别力（新形态的回归
     由 `test_concurrent_fix_shapes_pass` 锁定）。
 
-    ⚠️ 工具槽已**重新锚定**（#5247，用户裁定 2026-09-23「B 端米宝只读化」；#5302 收口时
+    ⚠️ 工具槽已**重新锚定**（#5247，用户裁定 2026-09-23「B 端黄金策只读化」；#5302 收口时
     统一到 `order_create`）：原载荷的 `customer_manage(action=add_tag)` 已随本次只读化
     **从源码删除写 action**（现只剩 list/detail/list_tags）⇒ 它不再是写工具，本夹具承载的
     `CASE-TRUST-NO-EFFECT-ASSERTION` / `CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE`
@@ -109,7 +109,7 @@ def fixture_cu_003() -> dict:
 
 
 def fixture_pg_013() -> dict:
-    """PG-013「米宝加工单 LLM 行为」—— 散文禁令承载关键判据（#3833）。
+    """PG-013「黄金策加工单 LLM 行为」—— 散文禁令承载关键判据（#3833）。
 
     载荷取自 `.github/cases/processing-order.yml` 的 PG-013 **报缺陷当时的形态**
     （2026-09-12 新增版本）：
@@ -128,17 +128,17 @@ def fixture_pg_013() -> dict:
     换用在册写工具 `order_manage`（同为订单域 WRITE|DESTRUCTIVE），**缺陷形态不变**
     （只证明「调用了」+ 全程禁令 + 无自清理 + 无前置自断言）。
 
-    ⚠️ **再次重新锚定**（#5247，用户裁定 2026-09-23「B 端米宝只读化」）：`order_manage`
+    ⚠️ **再次重新锚定**（#5247，用户裁定 2026-09-23「B 端黄金策只读化」）：`order_manage`
     已从 B 端全部 skill 解绑 ⇒ 连 C 端也没绑定 ⇒ **两侧工具集都不可达**（= 幽灵写工具，
     判据从「真实可达」退化成「曾经可达」）⇒ 它从 `WRITE_TOOLS` 移出后，上面那段 #4010/A13
     的失效形态**原样复发**（本夹具承载的四条规则同时落空）。改用**当前可达**的整工具写
-    工具 `order_create`（`WRITE_TOOLS` 成员，C 端小布；`required_args` 同步换成
+    工具 `order_create`（`WRITE_TOOLS` 成员，C 端元元；`required_args` 同步换成
     `order_create` 的真实参数形态），**缺陷形态不变**（只证明「调用了」+ 全程禁令 +
     无自清理 + 无前置自断言）。
     """
     return {
         "id": "PG-013",
-        "title": "米宝加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）",
+        "title": "黄金策加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）",
         "expectations": [{"tool": "order_query"}, {"tool": "order_create"}],
         "required_args": [{"tool": "order_create",
                            "fields": ["items[].processing_info.sellingMethod"]}],
@@ -218,13 +218,13 @@ def fixture_ch_016() -> dict:
 
 
 def fixture_single_leg_unmarked() -> dict:
-    """单端（纯小布工具集）用例缺 persona 标注 —— 跨腿窄跑必红（#3822）。
+    """单端（纯元元工具集）用例缺 persona 标注 —— 跨腿窄跑必红（#3822）。
 
-    工具集 `{curtain_calc}` ⊆ `eval_case_filter.XIAOBU_TOOLS`（米宝工具集无 curtain_calc）。
+    工具集 `{curtain_calc}` ⊆ `eval_case_filter.XIAOBU_TOOLS`（黄金策工具集无 curtain_calc）。
     """
     return {
         "id": "FAKE-PR-999",
-        "title": "（注入夹具）小布算料用例但未标注 persona",
+        "title": "（注入夹具）元元算料用例但未标注 persona",
         "expectations": [{"tool": "curtain_calc"}],
         "data_checks": ["用量结果含 face_width/meters"],
         "forbidden_text": [],
@@ -240,15 +240,15 @@ def fixture_shared_tool_unmarked() -> dict:
     `eval_case_filter.mibao_real_toolset()` 里）⇒ 本用例两条腿都跑得动。
 
     ⚠️ 第二条共享工具已**重新锚定**（#5247，B 端只读化）：原载荷的 `order_create` 已从
-    B 端全部 skill 解绑 ⇒ 只剩 C 端可达 ⇒ 本夹具会被判成「只能跑小布」（上面那条
+    B 端全部 skill 解绑 ⇒ 只剩 C 端可达 ⇒ 本夹具会被判成「只能跑元元」（上面那条
     #4356 假阳性重新回流，本测试随之失去判别力）。改用同属**两端共享工具集**的
     `validate_input`（`OR-008` 用例本身也已随 #5247 退役、`expectations` 改判为
     `product_detail`，见 `.github/cases/order.yml`）——「两条 expectations 都是两端共享
     工具」这一前提不变，判别力不变。
 
     ⇒ 判据**必须不报**：它若报，消红的省事写法就是 `persona: xiaobu`，而
-    `render_cases.filter_by_persona` 跑米宝腿时会跳过 `persona == "xiaobu"`
-    ⇒ **真实米宝用例被静默移出米宝腿**（全量跑不会有任何红）。
+    `render_cases.filter_by_persona` 跑黄金策腿时会跳过 `persona == "xiaobu"`
+    ⇒ **真实黄金策用例被静默移出黄金策腿**（全量跑不会有任何红）。
     """
     return {
         "id": "FAKE-OR-008",
@@ -306,7 +306,7 @@ def codes(violations) -> set:
 # `WRITE_TOOLS` 移除它（A13 的修复）之后，用它当写工具的夹具会**静默失去判别力**
 # （「写用例」相关规则不再命中，负例断言变成恒真）。
 #
-# ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）**再次重新锚定**：
+# ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端黄金策只读化」）**再次重新锚定**：
 # `order_manage` / `product_manage` / `product_update` / `sku_update` /
 # `processing_order_generate` / `processing_order_update` 已从 B 端全部 skill 解绑
 # （`WRITE_TOOLS` 里只剩 C 端两个），`customer_manage(action=add_tag)` 的写 action 已从
@@ -316,7 +316,7 @@ def codes(violations) -> set:
 # 🔴 2026-09-25（issue #5302，settings 域整域收口）**第三次重新锚定 —— 而且是收口**：
 # 「部分 action 是写」的 **action 级锚点彻底消失**（`WRITE_TOOL_ACTIONS` 最后的两个成员
 # `notification_manage` / `settings_manage` 也收窄为只读）⇒ 本文件所有代表「写用例」的夹具
-# **统一锚到 `order_create`**（`WRITE_TOOLS` 成员，C 端小布，当前可达）。随之而来的一条事实：
+# **统一锚到 `order_create`**（`WRITE_TOOLS` 成员，C 端元元，当前可达）。随之而来的一条事实：
 # **B 端已没有任何写用例**（写分类只可能来自 C 端两个工具）—— 故夹具的 `persona` 不再承担
 # 「B 端写工具」的语义，只用于压掉 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`（该规则只在 persona
 # 缺省时命中，与 persona 取值无关；实证 = 本文件 PG-013 夹具长期用 `persona: "mibao"` +
@@ -397,7 +397,7 @@ class TestKnownDefectFixturesAreBlocked:
         )
 
     def test_single_leg_without_persona_is_flagged(self):
-        """#3822：纯小布工具集用例缺 persona 标注。"""
+        """#3822：纯元元工具集用例缺 persona 标注。"""
         v = tax.judge_case(fixture_single_leg_unmarked(), catalog=_seed_catalog())
         assert "CASE-TRUST-SINGLE-LEG-NO-PERSONA" in codes(v), (
             f"单端未标注 persona 未被判违规，实际={v}"
@@ -1069,6 +1069,39 @@ class TestReferenceFreshness:
             "规则 G 未做「只扫新增行」过滤 —— 会把存量过期引用算到无关 PR 头上（假红）"
         )
 
+    def test_evidence_archive_is_exempt_from_ref_freshness(self, tmp_path, monkeypatch):
+        """规则 G 的**证据面豁免**（issue #6186）：`acceptance/**` 的行号是**运行时刻的快照**。
+
+        病根（PR #6184 实证）：把当日全部验收承载体入仓（132 个文件，只新增 `acceptance/**`）⇒
+        CI 的 Case Trust Gate 判红一片 `CASE-TRUST-STALE-LINE-REF`（`OrderController.java:239` /
+        `page.tsx:2349` / `SecurityTokenFilter.java:104` 行号漂移 …）。那些引用是**采集当时的快照**，
+        要求它们"今天仍在 origin/main 命中"等于要求证据**随代码漂移被改写** = 篡改记录。
+
+        🔴 **两侧夹住**（缺任一条都不算修好）：
+          ① **豁免面**（`acceptance/` 前缀）里的过期引用 ⇒ **不进判定**；
+          ② **非豁免面**（同一次调用里的普通 `.md`）的同一条引用 ⇒ **照旧**进判定 ⇒ 证明豁免没有把真判据一起吞掉；
+          ③ 豁免面文件仍出现在 `scanned_files` 里（**可见的登记**，不是静默丢弃）。
+        """
+        gate = _gate_module()
+        monkeypatch.setattr(gate, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(gate, "_ORIGIN_LINES_CACHE", {})
+
+        body = "见 `probe_target_6186.py:4242` 处的实现（快照，不要求今天仍命中）\n"
+        ev_rel = "acceptance/2026-10-03/probe-evidence-6186.md"
+        other_rel = "docs/probe-other-6186.md"
+        for rel in (ev_rel, other_rel):
+            pth = tmp_path / rel
+            pth.parent.mkdir(parents=True, exist_ok=True)
+            pth.write_text(body, encoding="utf-8")
+
+        res = gate.check_reference_freshness_in_diff([ev_rel, other_rel], base="origin/main")
+
+        assert ev_rel in res["scanned_files"] and other_rel in res["scanned_files"], (
+            f"两个文件都应被登记为 scanned（豁免必须是**可见的登记**，不是静默丢弃）：{res['scanned_files']}")
+        assert res["ref_count"] == 1, (
+            "证据面豁免未生效（应为 1：只有非豁免面那条进判定）或被放宽成"
+            f"吞真判据（应为 1）：ref_count={res['ref_count']}")
+
     def test_binary_file_in_diff_does_not_crash_the_gate(self, tmp_path, monkeypatch):
         """红证（issue #4210）：改动集含**二进制文件** ⇒ 规则 G 不得崩溃，且必须**显式登记跳过**。
 
@@ -1076,7 +1109,7 @@ class TestReferenceFreshness:
         本仓的视觉回归基线就是 PNG（**UI 一改就必须更新**）⇒ `UnicodeDecodeError`
         ⇒ 整个 Case Trust Gate 以 **crash** 报红：规则 G **事实上没跑**，却把合法 PR 拦下
         （既是**假红**，又让判据在「改动集含二进制」这一整类 PR 上失效）。
-        实证载体：PR #4209（小布主页改版只更新了截图基线，业务断言全绿，本 gate 9s 内崩溃）。
+        实证载体：PR #4209（元元主页改版只更新了截图基线，业务断言全绿，本 gate 9s 内崩溃）。
 
         判据三条（缺任一条都不算修好）：
           ① 不抛异常；
@@ -1126,7 +1159,7 @@ class TestReferenceFreshness:
 class TestNoFalsePositivesOnCorrectShapes:
     """假红与假绿同属「断言可信度」缺陷 —— 判据必须对**正确形态**保持沉默。
 
-    ⚠️ 本类夹具的写工具槽已**重新锚定**（#5247，用户裁定 2026-09-23「B 端米宝只读化」）：
+    ⚠️ 本类夹具的写工具槽已**重新锚定**（#5247，用户裁定 2026-09-23「B 端黄金策只读化」）：
     原用的 `customer_manage(action=add_tag)` / `sku_update` / `order_manage` 都不再是
     **可达写工具**（前者写 action 已从源码删除，后两者已从 B 端全部 skill 解绑）⇒
     「写/读」两侧的判别力都会落空（负例断言变恒真、正例断言变空跑）。
@@ -1328,7 +1361,7 @@ class TestNoFalsePositivesOnCorrectShapes:
             '        any_of: ["无加工项", "无法生成加工单"]\n'
         )
         pg013 = {
-            "id": "PG-013", "title": "米宝加工单 LLM 行为",
+            "id": "PG-013", "title": "黄金策加工单 LLM 行为",
             "expectations": [{"tool": "order_query"}, {"tool": "order_create"}],
             "must_succeed": [{"tool": "order_create"}],
             "precondition": "库里存在订单 EVAL-MB-ORD-0002（已确认且含加工项）",
@@ -1366,7 +1399,7 @@ class TestNoFalsePositivesOnCorrectShapes:
         assert "CASE-TRUST-SINGLE-LEG-NO-PERSONA" not in codes(v)
 
     def test_dual_leg_case_is_not_required_to_annotate(self):
-        """双端用例（工具集不 ⊆ 小布）不得被要求标注（有意不做的口径）。"""
+        """双端用例（工具集不 ⊆ 元元）不得被要求标注（有意不做的口径）。"""
         case = {
             "id": "FAKE-OR-900", "title": "（注入夹具）双端订单查询",
             "expectations": [{"tool": "order_query"}],
@@ -1382,11 +1415,11 @@ class TestNoFalsePositivesOnCorrectShapes:
 
         红证：改前 `judge_case(fixture_shared_tool_unmarked())` 报
         `CASE-TRUST-SINGLE-LEG-NO-PERSONA`（假阳性）⇒ 照它反推 `persona: xiaobu`
-        会把真实米宝用例静默移出米宝腿。
+        会把真实黄金策用例静默移出黄金策腿。
         """
         case = fixture_shared_tool_unmarked()
         assert not tax.is_single_leg_by_toolset(case), (
-            "共享工具用例被判成「只能跑小布」—— 前提「双端工具集不相交」为假（#4356）"
+            "共享工具用例被判成「只能跑元元」—— 前提「双端工具集不相交」为假（#4356）"
         )
         v = tax.judge_case(case, catalog=_seed_catalog())
         assert "CASE-TRUST-SINGLE-LEG-NO-PERSONA" not in codes(v), (
@@ -1440,31 +1473,31 @@ class TestDegenerateGuardRails:
         )
 
     def test_mibao_toolset_truth_loaded(self):
-        """米宝工具集真值必须加载成功（#4356）。
+        """黄金策工具集真值必须加载成功（#4356）。
 
-        为什么：收紧后的判据 = 「小布腿跑得动 ∧ 米宝腿跑不动」—— 米宝真值缺失时
+        为什么：收紧后的判据 = 「元元腿跑得动 ∧ 黄金策腿跑不动」—— 黄金策真值缺失时
         整个判据会退化成旧形态（假阳性回流），而这**不会有任何东西变红**。
         故这里做上界/下界双向守卫：真值非空、规模够、且两端**确实相交**
         （若哪天不再相交，本判据的收紧就成了空操作 ⇒ 必须有人重新评估）。
         """
         assert tax.MIBAO_TOOLSET_SOURCE == "eval_case_filter.mibao_real_toolset"
         assert tax._MIBAO_TOOLS, (
-            "米宝工具集未加载 ⇒ 判据退化成旧形态（共享工具用例重新被判成单端）"
+            "黄金策工具集未加载 ⇒ 判据退化成旧形态（共享工具用例重新被判成单端）"
         )
         assert len(tax._MIBAO_TOOLS) >= 25, (
-            f"米宝工具集只解析出 {len(tax._MIBAO_TOOLS)} 个，判据疑似空转"
+            f"黄金策工具集只解析出 {len(tax._MIBAO_TOOLS)} 个，判据疑似空转"
         )
         shared = set(tax._XIAOBU_TOOLS) & set(tax._MIBAO_TOOLS)
         assert shared, (
-            "两端工具集不再相交 ⇒ 「⊆ 小布 ∧ ⊄ 米宝」与旧判据等价（收紧成空操作）"
+            "两端工具集不再相交 ⇒ 「⊆ 元元 ∧ ⊄ 黄金策」与旧判据等价（收紧成空操作）"
         )
 
     def test_predicate_never_contradicts_mibao_annotation(self):
-        """库级前提守卫：判据声称「只可能是小布」的用例，不得已标注 `persona: mibao`（#4356）。
+        """库级前提守卫：判据声称「只可能是元元」的用例，不得已标注 `persona: mibao`（#4356）。
 
-        这是把**假前提**变成可红判据：旧判据隐含「米宝工具集与小布工具集不相交」，
+        这是把**假前提**变成可红判据：旧判据隐含「黄金策工具集与元元工具集不相交」，
         而实测两端共享 7 个工具 ⇒ 库内一批 `persona: mibao` 的用例被同一判据判成
-        「只可能是小布」（改前 @74f8d5ff 实测 21 条，含 `OR-008`/`OR-010`）——
+        「只可能是元元」（改前 @74f8d5ff 实测 21 条，含 `OR-008`/`OR-010`）——
         判据与**同库标注**自相矛盾，而规则 d 只查「标注存在」，矛盾永远不变红。
         改后必须为 0（判据与库内标注一致）。
         """
@@ -1477,7 +1510,7 @@ class TestDegenerateGuardRails:
         )
 
     def test_predicate_still_flags_real_single_leg_cases(self):
-        """判别力未失：真·单端用例（工具集 ⊄ 米宝）**仍**被判单端（#4356）。
+        """判别力未失：真·单端用例（工具集 ⊄ 黄金策）**仍**被判单端（#4356）。
 
         防「为消账本把判据削成恒假」—— 收紧后现库仍有真阳性（@74f8d5ff 实测 16 条，
         全部已标 `persona: xiaobu`），故给下界守卫。
@@ -1499,7 +1532,7 @@ class TestDegenerateGuardRails:
         当前该形态的活例是 `human_handoff`（用户裁定 2026-09-19 退场、注册行已注释、
         类文件仍在）。
 
-        ⚠️ 2026-09-24（#5247，B 端米宝只读化）：该形态的**新活例**是 6 个已从 B 端解绑的
+        ⚠️ 2026-09-24（#5247，B 端黄金策只读化）：该形态的**新活例**是 6 个已从 B 端解绑的
         写工具（`order_manage` / `product_manage` / `product_update` / `sku_update` /
         `processing_order_generate` / `processing_order_update`）—— 工具类与注册行仍在、
         但两侧工具集都不可达、C 端也没绑定 ⇒ 必须从 `WRITE_TOOLS` 移出（本次已移出，
@@ -1511,8 +1544,8 @@ class TestDegenerateGuardRails:
         「工具真实可达」悄悄变成「曾经可达」。**本表是判据源，不是历史档案。**
 
         真值来源：`tests/agent_eval/eval_case_filter.py`（零第三方依赖，CI helper job
-        与覆盖体检共用）—— `mibao_real_toolset()` 解析米宝 skill 源码的 `*_TOOLS`，
-        `XIAOBU_TOOLS` 是小布侧真值，二者并集 = `scripts/case_coverage.py::registered_tools()`
+        与覆盖体检共用）—— `mibao_real_toolset()` 解析黄金策 skill 源码的 `*_TOOLS`，
+        `XIAOBU_TOOLS` 是元元侧真值，二者并集 = `scripts/case_coverage.py::registered_tools()`
         的「两端注册表并集」，也是**用例能断言到的工具全集**。不复制清单（复制 = 双源漂移）。
         """
         from eval_case_filter import XIAOBU_TOOLS, mibao_real_toolset  # noqa: PLC0415
@@ -1575,11 +1608,11 @@ class TestDegenerateGuardRails:
             )
 
     def test_xiaobu_toolset_source_is_forwarded_not_copied(self):
-        """小布工具集必须**转发**单一源，不得在本模块复制一份平行清单。"""
+        """元元工具集必须**转发**单一源，不得在本模块复制一份平行清单。"""
         assert tax.XIAOBU_TOOLSET_SOURCE == "eval_case_filter.XIAOBU_TOOLS", (
-            "小布工具集来源变了 —— 复制平行清单会造成双源漂移"
+            "元元工具集来源变了 —— 复制平行清单会造成双源漂移"
         )
-        assert tax._XIAOBU_TOOLS, "小布工具集未加载 ⇒ 规则 d 静默失效"
+        assert tax._XIAOBU_TOOLS, "元元工具集未加载 ⇒ 规则 d 静默失效"
 
     def test_unimplemented_entries_carry_reason_and_need(self):
         """未实装项必须写明**缺什么**（不得留空凑数），且必须带**可执行约束**四字段。

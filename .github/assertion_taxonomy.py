@@ -71,6 +71,10 @@ from pathlib import Path
 # tests/unit_ci_workflows/test_case_trust_gate.py::TestDegenerateGuardRails
 #   ::test_write_tool_sets_only_name_reachable_tools（真值 = eval_case_filter 的两端工具集并集）。
 WRITE_TOOLS: frozenset[str] = frozenset({
+    # issue #6486 包 2：定时提醒（用户「预约」）的 A 档可逆写 —— `read_only=False`，
+    # 且**未**声明 `read_only_actions` 之外的写 action 豁免（`list` 是只读 action，
+    # `create` / `cancel` 是写）⇒ 整工具归入本表（否则含它期望的用例不被分类为写用例）。
+    "scheduled_task_manage",
     # read_only = False 且**未**声明 read_only_actions 的工具
     # ⚠️ `human_handoff` 已于 2026-09-19 按用户裁定退场（模型不可达：不在默认注册表、
     #    不在任何 skill 工具集）⇒ **从本表移除**（本表只列当前可达的工具，见上方幽灵
@@ -79,7 +83,7 @@ WRITE_TOOLS: frozenset[str] = frozenset({
     #    本表**不会**因「删除工具文件」而改动：2026-09-26 用户裁定「保留现状，不删」
     #    撤回了 2026-09-19 派生的阶段二删除方向（工具类 / 数据面 / 商家工作台均属有意保留）；
     #    退场只发生在**可达性**这一半（工具始终不在本表里）。
-    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：`order_manage` /
+    # ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端黄金策只读化」）：`order_manage` /
     #    `product_manage` / `product_update` / `sku_update` / `processing_order_generate` /
     #    `processing_order_update` **已从 B 端全部 skill 解绑** —— 工具类与注册行仍在，
     #    C 端绑定也未动，但**两侧工具集都不可达** ⇒ 它们是幽灵写工具（判据从「真实可达」
@@ -93,7 +97,7 @@ WRITE_TOOLS: frozenset[str] = frozenset({
     # ⇒ 效果层断言 / 自清理规则对它**静默失效**（这正是 #5303 那条注释记的病根）。
     "product_batch_update",        # WRITE（两段确认 + batch_id 结构锁；绝对目标值 ⇒ 幂等）
     # ⚠️ 2026-09-24（issue #5303，**改判** #5247 的一半）：`product_update` / `sku_update`
-    #    **补回本表** —— 二者是 #5285「B 端米宝只读化」后**唯一回绑的两个 A 档可逆写工具**
+    #    **补回本表** —— 二者是 #5285「B 端黄金策只读化」后**唯一回绑的两个 A 档可逆写工具**
     #    （product_skill 重新绑定：前者写商品级 `products.base_price`，后者写
     #    `product_skus.price`；都带工具级预览闸 + 用例侧 `post_clean` 复位）⇒ **重新可达**。
     #    判据面为什么必须跟着回（病根）：本表是「写用例必须有效果层断言 / 必须声明自清理」
@@ -105,7 +109,7 @@ WRITE_TOOLS: frozenset[str] = frozenset({
     "product_update",              # WRITE|IDEMPOTENT（商品级 base_price；#5303 回绑）
     "sku_update",                  # WRITE|IDEMPOTENT（SKU 价；#5303 回绑）
     # ⚠️ 2026-09-24（issue #5303，**改判** #5247 的一半）：`product_update` / `sku_update`
-    #    **补回本表** —— 二者是 #5285「B 端米宝只读化」后**唯一回绑的两个 A 档可逆写工具**
+    #    **补回本表** —— 二者是 #5285「B 端黄金策只读化」后**唯一回绑的两个 A 档可逆写工具**
     #    （product_skill 重新绑定：前者写商品级 `products.base_price`，后者写
     #    `product_skus.price`；都带工具级预览闸 + 用例侧 `post_clean` 复位）⇒ **重新可达**。
     #    判据面为什么必须跟着回（病根）：本表是「写用例必须有效果层断言 / 必须声明自清理」
@@ -135,7 +139,7 @@ WRITE_TOOLS: frozenset[str] = frozenset({
 #   · notification_manage  read_only_actions = {"list","unread_count"}
 #   · settings_manage      read_only_actions = {"get_settings","get_ai_config","login_logs"}
 #
-# ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端米宝只读化」）：下列 9 条**已整条移出本表** ——
+# ⚠️ 2026-09-24（issue #5247，用户裁定 2026-09-23「B 端黄金策只读化」）：下列 9 条**已整条移出本表** ——
 # 写 action 已从工具源码删除（工具收窄为纯只读）+ 部分工具还从 B 端解绑：
 #   · 收窄为只读（写 action 已删除 ⇒ 不再是"部分写"工具）：
 #     customer_manage（现 {"list","detail","list_tags"}）/ after_sales_manage（{"list","detail"}）/
@@ -1142,12 +1146,12 @@ def check_reference_freshness(refs: list[dict], read_lines) -> dict:
 # 六、persona 规则（单端用例的标注与跨腿窄跑）
 # ══════════════════════════════════════════════════════════════════════════════
 
-# C 端（小布）工具集真值 —— **单一源** = `tests/agent_eval/eval_case_filter.XIAOBU_TOOLS`
+# C 端（元元）工具集真值 —— **单一源** = `tests/agent_eval/eval_case_filter.XIAOBU_TOOLS`
 # （该模块零第三方依赖，自身的一致性由 `test_xiaobu_case_set.py::TestXiaobuToolsetTruth`
 #  与后端 `CUSTOMER_*_TOOLS` 锁定）。本模块只做转发，**不复制**一份平行清单
 # （复制 = 双源漂移，正是本模块 header 反对的）。
-# B 端（米宝）工具集真值同理转发 `eval_case_filter.mibao_real_toolset()`（#4356）：
-# 收紧后的单端判据**必须**同时看两端 —— 旧形态只看小布，隐含「两端不相交」这个**假**前提。
+# B 端（黄金策）工具集真值同理转发 `eval_case_filter.mibao_real_toolset()`（#4356）：
+# 收紧后的单端判据**必须**同时看两端 —— 旧形态只看元元，隐含「两端不相交」这个**假**前提。
 try:  # pragma: no cover - 导入失败时降级为「未实装」，不静默恒真
     import os as _os
     import sys as _sys
@@ -1194,7 +1198,7 @@ def case_can_run_on(case: dict, available) -> bool:
 
     逐条 `expectations` 取「**至少一个** OR 分支的工具可用」—— 与运行器的
     `check_expectation` 同语义（`A or B` 命中任一即满足；先例 `AS-003`/`AS-005`：
-    `after_sales_manage or aftersale_create` 在米宝腿仍有合法路径）。
+    `after_sales_manage or aftersale_create` 在黄金策腿仍有合法路径）。
     分支提取**复用** `eval_case_filter.expectation_branches`（单一实现，不另写一套）。
     **否定式期望**（「X 未被调用」）跳过：断言"某工具没被调用"在任何一端都成立，
     不构成能力要求（口径同 `eval_case_filter.is_positive_case`；不跳过则
@@ -1216,27 +1220,27 @@ def case_can_run_on(case: dict, available) -> bool:
 
 
 def is_single_leg_by_toolset(case: dict) -> bool:
-    """**纯静态**判定：该用例是否只能跑单端（小布腿跑得动、米宝腿跑不动）。
+    """**纯静态**判定：该用例是否只能跑单端（元元腿跑得动、黄金策腿跑不动）。
 
-    ⚠️ 判据形态于 **#4356** 收紧 —— 旧形态「工具集 ⊆ `XIAOBU_TOOLS` ⇒ 只可能是小布」
-    的前提「**米宝工具集与之不相交**」是**假的**：两端实测共享 7 个工具
+    ⚠️ 判据形态于 **#4356** 收紧 —— 旧形态「工具集 ⊆ `XIAOBU_TOOLS` ⇒ 只可能是元元」
+    的前提「**黄金策工具集与之不相交**」是**假的**：两端实测共享 7 个工具
     （`order_create` / `product_detail` / `product_search` / `validate_input` /
     `interact` / `knowledge_search` / `production_progress_query`）⇒ 共享工具用例
-    （如 `OR-010`，`persona: mibao` 且已在 main）被同一判据判成「只可能是小布」。
+    （如 `OR-010`，`persona: mibao` 且已在 main）被同一判据判成「只可能是元元」。
 
     为什么这不是「判据不够精确」而已：照该判据反推 persona 写成 `xiaobu` ⇒
-      · `render_cases.filter_by_persona` 跑米宝腿时跳过 `persona == "xiaobu"`
-        ⇒ **真实米宝用例被静默移出米宝腿**（全量跑不会有任何红，也不触发 runner 的
+      · `render_cases.filter_by_persona` 跑黄金策腿时跳过 `persona == "xiaobu"`
+        ⇒ **真实黄金策用例被静默移出黄金策腿**（全量跑不会有任何红，也不触发 runner 的
         「禁止静默少跑」守卫——那不是 `case_ids` 窄跑）；
       · `eval_case_filter.select_cases_for_persona` 对**显式** `persona: xiaobu`
         无条件保留 ⇒ 该用例反而在 C 端腿跑起来（绕过语义过滤）= 假红。
 
-    正确形态 = 「小布腿**跑得动** ∧ 米宝腿**跑不动**」：
-      · 米宝腿只有 persona 过滤、**没有**工具集过滤
-        （`eval_case_filter.select_cases_for_persona`）⇒ 工具集 ⊄ 米宝的用例在米宝腿
+    正确形态 = 「元元腿**跑得动** ∧ 黄金策腿**跑不动**」：
+      · 黄金策腿只有 persona 过滤、**没有**工具集过滤
+        （`eval_case_filter.select_cases_for_persona`）⇒ 工具集 ⊄ 黄金策的用例在黄金策腿
         **必挂** —— 那才是需要 persona 标注的一类；
       · 共享工具用例两条腿都跑得动 ⇒ **不该**被要求标注；
-      · `expectations` 为空、或**米宝真值缺失**（`_MIBAO_TOOLS` 未加载/低于下界）
+      · `expectations` 为空、或**黄金策真值缺失**（`_MIBAO_TOOLS` 未加载/低于下界）
         ⇒ 返回 False（**无法判定**），**不得**退化成旧形态 —— 由
         `TestDegenerateGuardRails::test_mibao_toolset_truth_loaded` 报红。
 
@@ -1619,7 +1623,7 @@ RULES: tuple[dict, ...] = (
             "单端用例缺标注 ⇒ 被另一条腿选中 ⇒ 该腿必挂（假红）；且 `case_ids` 窄跑时"
             "另一腿「禁止静默少跑」守卫会红，**配对不豁免**（#3822，run 34907040543）。"
         ),
-        "counterexample": "（存量：按工具集可判定的纯小布用例中，缺 `persona` 标注者见基线清单）",
+        "counterexample": "（存量：按工具集可判定的纯元元用例中，缺 `persona` 标注者见基线清单）",
         "implemented": True,
         "fix": "在该用例上加 `persona: xiaobu`（或 `mibao`）。",
     },
@@ -2166,7 +2170,7 @@ def judge_case(case: dict, *, catalog: dict[str, set[str]] | None = None,
     if missing_persona_annotation(case):
         tools = sorted({t for t, _ in expectation_tools(case) if t})
         add("CASE-TRUST-SINGLE-LEG-NO-PERSONA",
-            f"期望工具 {tools} ⊆ 小布工具集（米宝工具集与之不相交）"
+            f"期望工具 {tools} ⊆ 元元工具集（黄金策工具集与之不相交）"
             f"⇒ 只能跑单端，但 persona 未标注"
             f"（缺 persona 的另一条腿必挂；`case_ids` 窄跑还会触发"
             f"「{SILENT_SKIP_GUARD_ANCHOR}」守卫，#3822）")

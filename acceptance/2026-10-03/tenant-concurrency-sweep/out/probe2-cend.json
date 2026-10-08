@@ -1,0 +1,68 @@
+{
+  "dbCount": 12,
+  "attempts": [
+    {
+      "round": 0,
+      "warmupStatuses": [
+        200
+      ],
+      "status": 200,
+      "n": 12,
+      "total": 12,
+      "req": "req_fc69c8ce84d94880",
+      "head": "{\"success\":true,\"data\":{\"items\":[{\"id\":\"53be16a1c433bfcdde92acb323a25eec\",\"order_no\":\"20260914652230002\",\"status\":\"pending\",\"status_text\":\"p"
+    },
+    {
+      "round": 1,
+      "warmupStatuses": [
+        200
+      ],
+      "status": 200,
+      "n": 12,
+      "total": 12,
+      "req": "req_e22b503695b1432d",
+      "head": "{\"success\":true,\"data\":{\"items\":[{\"id\":\"53be16a1c433bfcdde92acb323a25eec\",\"order_no\":\"20260914652230002\",\"status\":\"pending\",\"status_text\":\"p"
+    },
+    {
+      "round": 2,
+      "warmupStatuses": [
+        200
+      ],
+      "status": 200,
+      "n": 12,
+      "total": 12,
+      "req": "req_1e0471ef348c4418",
+      "head": "{\"success\":true,\"data\":{\"items\":[{\"id\":\"53be16a1c433bfcdde92acb323a25eec\",\"order_no\":\"20260914652230002\",\"status\":\"pending\",\"status_text\":\"p"
+    }
+  ],
+  "got3": [
+    "53be16a1c433bfcdde92acb323a25eec",
+    "c9a1aa7d33ba4ec7394c41c0f8b0eecc",
+    "3372ff0e4aa995939f64813f165c2f8b",
+    "0895e24cb3233ce267981b6529d02998",
+    "f08f116896ca4bfa48de2f8be647b64f",
+    "fbb4e2dffd64df838fae149c01d962b2",
+    "41d2055487eba6434bae745eb8968c0e",
+    "e495c2d5479ad72ef544332921a6e0eb",
+    "334abe70d9058e0b957d8189e57bbfbe",
+    "f2f5af871127594f62059faa8132a745",
+    "13eed91165776597b690a40d612eea5e",
+    "2e430ea3024959c67c077146bd01d0da"
+  ],
+  "got4": [
+    "53be16a1c433bfcdde92acb323a25eec",
+    "c9a1aa7d33ba4ec7394c41c0f8b0eecc",
+    "3372ff0e4aa995939f64813f165c2f8b",
+    "0895e24cb3233ce267981b6529d02998",
+    "f08f116896ca4bfa48de2f8be647b64f",
+    "fbb4e2dffd64df838fae149c01d962b2",
+    "41d2055487eba6434bae745eb8968c0e",
+    "e495c2d5479ad72ef544332921a6e0eb",
+    "334abe70d9058e0b957d8189e57bbfbe",
+    "f2f5af871127594f62059faa8132a745",
+    "13eed91165776597b690a40d612eea5e",
+    "2e430ea3024959c67c077146bd01d0da"
+  ],
+  "foreign": [],
+  "badIds": []
+}

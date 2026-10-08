@@ -46,7 +46,7 @@ SKILL_MAP = {
     "order": "ORDER",
     "product": "PRODUCT",
     "processing": "PRODUCT",
-    "processing-order": "PRODUCT",   # 加工单与加工项同族（工具面同在米宝 PRODUCT 家族）
+    "processing-order": "PRODUCT",   # 加工单与加工项同族（工具面同在黄金策 PRODUCT 家族）
     "category": "PRODUCT",
     "aftersales": "AFTERSALES",
     "customer": "CUSTOMER",
@@ -396,7 +396,7 @@ def to_md(cases):
         by_domain.setdefault(c["_domain"], []).append(c)
 
     lines = [
-        "# 米宝 B端 全覆盖验证 Case（生成物）",
+        "# 黄金策 B端 全覆盖验证 Case（生成物）",
         "",
         "> ⚠️ 本文件由 `render_cases.py` 从 `cases/*.yml` 生成，禁止手改。",
         "> 单一源：`.github/cases/`（本仓唯一源）。",
@@ -451,8 +451,8 @@ def to_md(cases):
             # 缺行 = YAML 未声明 = 双端（与 `filter_by_persona` 的缺省语义一致，不额外落字面量）。
             if c.get("persona"):
                 _persona = _one_line(c["persona"])
-                _leg = {"mibao": "单端 —— 仅米宝腿跑，小布腿跳过",
-                        "xiaobu": "单端 —— 仅小布腿跑，米宝腿跳过"}.get(
+                _leg = {"mibao": "单端 —— 仅黄金策腿跑，元元腿跳过",
+                        "xiaobu": "单端 —— 仅元元腿跑，黄金策腿跳过"}.get(
                             _persona, "两腿都跑（非 mibao/xiaobu 的取值按缺省处理）")
                 lines.append(f"端: {_persona}（{_leg}）")
             # 历史轮次（issue #5482）：与 `pre_clean` / `post_clean` 同因同形 —— 声明了

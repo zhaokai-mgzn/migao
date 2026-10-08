@@ -1,0 +1,14 @@
+{
+  "http": 422,
+  "body": {
+    "success": false,
+    "error": {
+      "code": "VALIDATION_ERROR",
+      "message": "不支持的文件类型，仅支持 JPG、JPEG、PNG、GIF、WebP、PDF、XLSX、DOCX 格式"
+    },
+    "requestId": "req_88b1e5e6f8da45e4",
+    "timestamp": 1791006926,
+    "suggestion": "请检查必填字段是否完整，字段格式是否正确"
+  },
+  "newLocalFilesAfterBatch": []
+}

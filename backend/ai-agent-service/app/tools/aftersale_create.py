@@ -1,7 +1,7 @@
 """
-AI 智能客服系统 - C端售后创建 Tool (小布专用)
+AI 智能客服系统 - C端售后创建 Tool (元元专用)
 
-客户通过小布创建售后工单：退换货、维修、投诉等。
+客户通过元元创建售后工单：退换货、维修、投诉等。
 与 after_sales_manage（管理员使用）分开：客户只能创建，不能查列表/改状态。
 
 安全（#518）:
@@ -26,7 +26,7 @@ VALID_TICKET_TYPES = {"refund", "exchange", "repair", "complaint", "other"}
 class AftersaleCreateTool(BaseTool):
     """C端售后创建 Tool
 
-    小布（C端客服）专用：客户想要退换货、维修、投诉时调用。
+    元元（C端客服）专用：客户想要退换货、维修、投诉时调用。
     必须关联已有订单号，只能创建自己的工单。
 
     安全:
@@ -49,7 +49,7 @@ class AftersaleCreateTool(BaseTool):
     allowed_roles = ["customer"]
 
     # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（`RoleService` 对
-    # customer/agent 返回空集），加码会让小布全量失效 ⇒ 保留角色层 ["customer"]。
+    # customer/agent 返回空集），加码会让元元全量失效 ⇒ 保留角色层 ["customer"]。
     required_permissions = []
 
     read_only = False
@@ -253,7 +253,7 @@ class AftersaleCreateTool(BaseTool):
                 json_data=json_data,
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
-                # 工单真实来源（issue #3686）：本工具只挂在小布（C 端），
+                # 工单真实来源（issue #3686）：本工具只挂在元元（C 端），
                 # context.ticket_source = "customer"（顾客发起）。
                 # 放 header 不放 body —— 来源不由客户端 payload 决定（#3605 已删 body 里的 source），
                 # 服务端只接受白名单值，缺省回退 agent（= 旧行为）。

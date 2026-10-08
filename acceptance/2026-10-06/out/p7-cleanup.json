@@ -1,0 +1,41 @@
+{
+  "at": "2026-10-06T00:16:09.635Z",
+  "tenantId": 25,
+  "dry": false,
+  "before": {
+    "users": 14,
+    "knowledge": 0,
+    "orders": 0,
+    "tickets": 1,
+    "inbound": 18
+  },
+  "after": {
+    "users": 14,
+    "knowledge": 0,
+    "orders": 0,
+    "tickets": 1,
+    "inbound": 18
+  },
+  "ran": [
+    {
+      "sql": "delete from knowledge_cards where tenant_id=25 and (title like 'A06验收%' or question like 'A06验收%' or keywords like 'A06验收%')",
+      "out": "DELETE 0"
+    },
+    {
+      "sql": "delete from after_sales_tickets where tenant_id=25 and description like 'A06验收%'",
+      "out": "DELETE 0"
+    },
+    {
+      "sql": "delete from order_items where order_id in (select id from orders where tenant_id=25 and customer_name like 'A06验收%')",
+      "out": "DELETE 0"
+    },
+    {
+      "sql": "delete from orders where tenant_id=25 and customer_name like 'A06验收%'",
+      "out": "DELETE 0"
+    },
+    {
+      "sql": "update users set deleted=1, status='disabled', username=null, phone=null where tenant_id=25 and (username like 'a06%' or nickname like 'A06验收%' or worker_no like 'A06W%')",
+      "out": "UPDATE 14"
+    }
+  ]
+}

@@ -77,12 +77,33 @@ public class ProductionOperationCommandService {
      * （见 {@link #rejectNameFieldOnUpdate}）—— 加护栏之前它是**静默忽略**（200 且库里一字未改）。
      * 同理，{@code is_must_finish} 已退场（#4961）⇒ 出现即 422（见 {@link #rejectMustFinishField}）。</p>
      *
+     * <p>🔴 <b>issue #6126：价目行只认显式 {@code positions}</b> —— 本方法**不再**在省略
+     * {@code positions} 时兜底新建「取价来源列」那一行。类级不变量 =「任何工序设置写面调用之后，
+     * 该工序的**价目行集合**与**有效价**都逐字不变，除非该写面**显式**带 {@code positions} /
+     * {@code unit_price}」；违背它就会「保存一次设置凭空多一行、只增不减」（实测租户 20：`打包` 上
+     * 软删 `布帘` 孤儿行同一会话 6 → 9 → 13）。</p>
+     *
+     * <p><b>有意不做（如实登记）</b>：不再有「存量孤儿工序在改价 / 改状态时顺带自愈出那一行」——
+     * 那条路建出来的行**读面看不见**（本方法不返回矩阵行），而 `create` 已保证新工序恒有那一行
+     * ⇒ 放弃它的代价是「极少数历史孤儿要显式传 {@code positions} 才接入」，换来的是写面幂等。
+     * 显式带 {@code positions} 时仍与 {@link #create} 共用 {@link #attachPositions}（口径不分叉）。</p>
+     *
      * @param body 可含 unit_price / is_start_marker / status / unit /
      *             group_name / sort_order / scope（scope = 部位级 position / 套级 set，issue #4384 A1）
+     *             / positions（显式带 ⇒ 只补缺失的矩阵行）
      * @return 更新后的工序（形态 = {@link ProductionOperationQueryService#operationView}，与目录项同构）
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> update(String id, Map<String, Object> body, Long tenantId) {
+        // 🔴 issue #6238：本方法是**读-判-写**（读旧价 → 判「价变了吗」 → 条件追加版本行），
+        // 必须先**取工序行的排他锁**再读，否则两个并发请求都读到提交前快照的旧价 ⇒ 都判「价变了」
+        // ⇒ **同一次调价被重复记账**（实测 N=4 并发同价提交 ⇒ 版本账 4 行；该表除主键外无唯一约束，
+        // DDL 兜不住）。**顺序即语义：先锁后读**（锁后的普通 SELECT 在 READ COMMITTED 下读到最新已提交
+        // 版本），颠倒顺序等于没修。行锁把同一工序的并发改价串行化到提交 ⇒ 同价重复提交退化为
+        // 「价没变 ⇒ 不追加」（幂等空操作，不是冲突 ⇒ 不 409），异价并发则两次变更各自成行、
+        // created_at 顺序与提交顺序一致（「当前价 = 最新版本行」仍成立）。
+        // 判据见 ProductionOperationPriceVersionConcurrentRealDbTest（case_ids PP-022）。
+        productionOperationMapper.lockById(id);
         ProductionOperation op = productionOperationMapper.selectById(id);
         if (op == null || !tenantId.equals(op.getTenantId()) || !Integer.valueOf(0).equals(op.getDeleted())) {
             throw BusinessException.notFound("工序");
@@ -103,6 +124,9 @@ public class ProductionOperationCommandService {
                 if (newPrice.signum() < 0) {
                     throw BusinessException.validationError("unit_price 不能为负");
                 }
+                // 金额精度准入（issue #6228）：计件单价列 NUMERIC(·,2)，超 2 位有效小数会被 PG
+                // 静默四舍五入（付工人的价按被改掉的值算）⇒ 在任何写之前显式拒绝。
+                newPrice = MoneyScale.requireTwoDecimalsOrNull(newPrice, "unit_price");
                 partial.setUnitPrice(newPrice);
                 op.setUnitPrice(newPrice);
             }
@@ -142,23 +166,25 @@ public class ProductionOperationCommandService {
                 op.setIsStartMarker(startMarker);
             }
         }
-        // issue #4614（**存量孤儿接入路径**）+ 去部位化（issue #4883）：body 带 positions ⇒ 只**补**
-        // 缺失的矩阵行；**省略 positions ⇒ 也补那一行**（恒有且只有一行）—— 判据同 {@link #create}。
+        // issue #4614（**存量孤儿接入路径**）：body **显式**带 positions ⇒ 只**补**缺失的矩阵行。
         // 校验先于写入（与新增路径同一份 `requestedPositions` / `rejectUnknownPositions`）。
-        // ⚠️ 停用工序：省略 positions 时**不兜底建行**（建出来的行读面看不见 = 「接了但没生效」），
-        //    显式传 positions 仍走既有 422 护栏。
-        boolean explicitPositions = body != null && body.containsKey("positions");
+        //
+        // 🔴 issue #6126：**省略 positions 的写面调用一律不建行、也不做值域校验**（只认显式传参）——
+        //   此前这里省略 positions 时按「取价来源列」兜底新建一行 `position=布帘`（#4883 去部位化），
+        //   于是**连 body 为 `{}`（键数 0）** 的一次调用都在该工序价目行集合里凭空多出一行
+        //   （只增不减；软删也只软删 ⇒ 孤儿行累积，实测租户 20：8 道「只有通用一行」的工序、
+        //   `打包` 上软删布帘孤儿行同一会话 6 → 9 → 13）。
+        //   「价目行集合与有效价逐字不变，除非该写面显式带 positions / unit_price」是类级不变量；
+        //   **放弃**了「存量孤儿在改价/改状态时顺带自愈」这条路（见 update 的 javadoc「有意不做」段）。
         List<String> positions = null;
         List<ProductionOperationPosition> existingRows = List.of();
-        if (explicitPositions || "active".equals(op.getStatus())) {
-            positions = explicitPositions
-                    ? requestedPositions(body.get("positions"))
-                    : List.of(ProductionOperationQueryService.COLLAPSE_PRICE_SOURCE_POSITION);
+        if (body != null && body.containsKey("positions")) {
+            positions = requestedPositions(body.get("positions"));
             existingRows = tenantMatrixRows(tenantId);
             rejectUnknownPositions(positions, existingRows);
             // 冻结判据：矩阵行只在 deleted=0 **AND status='active'** 的工序上补（停用工序接部位 =
             // 建出一批读面看不见的行，商家会以为「接了但没生效」）。
-            if (explicitPositions && !"active".equals(op.getStatus())) {
+            if (!"active".equals(op.getStatus())) {
                 throw BusinessException.validationError("工序「" + op.getName()
                         + "」当前是停用状态：停用工序不接部位（先启用它，再接部位）");
             }
@@ -230,6 +256,9 @@ public class ProductionOperationCommandService {
         if (unitPrice.signum() < 0) {
             throw BusinessException.validationError("unit_price 不能为负");
         }
+        // 金额精度准入（issue #6228）：`production_operations.unit_price` 与单价版本台账列均为
+        // NUMERIC(·,2) ⇒ 超 2 位有效小数会被 PG 静默四舍五入。判在 insert 之前。
+        unitPrice = MoneyScale.requireTwoDecimalsOrNull(unitPrice, "unit_price");
         // issue #4642：**旧形态工序名不许建**（拒绝，不归一）。病根 = 同一个请求里
         // `name` 原样落库、而 `attachPositions` 用归一后的逻辑名建矩阵行 ⇒ **同一道工序在库里两名并存**
         // （库里 `布三边` + 矩阵行 `三边`），且 `name` 会经目录/孤儿弹窗上屏（变体名泄漏）。

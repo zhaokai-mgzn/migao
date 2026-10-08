@@ -1,0 +1,63 @@
+{
+  "at": "2026-10-03T00:36:50.182Z",
+  "uiBase": "http://localhost:3001",
+  "uiHttp": 200,
+  "uiLocation": null,
+  "unpricedOnlyFace": {
+    "total": 17.6,
+    "per_worker": {
+      "工资验收工人甲674096": 16,
+      "未分配": 1.6
+    },
+    "per_operation": [
+      {
+        "amount": 6.8,
+        "operation": "精裁-布"
+      },
+      {
+        "amount": 10.8,
+        "operation": "布三边"
+      },
+      {
+        "amount": 0,
+        "operation": "熨烫-布"
+      }
+    ],
+    "per_position": [
+      {
+        "position_name": "工资验收行-A 本白",
+        "amount": 17.6,
+        "qty": 64
+      }
+    ],
+    "per_set": [
+      {
+        "set_no": "JG-20261003-6401-001",
+        "amount": 17.6,
+        "qty": 64
+      }
+    ],
+    "unpriced": {
+      "qty": 5,
+      "operations": [
+        {
+          "operation": "定型-布",
+          "logical_name": "定型",
+          "qty": 5
+        }
+      ],
+      "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。"
+    }
+  },
+  "agentPiecework": {
+    "http": 200,
+    "data": {
+      "worker_name": "undefined",
+      "period": "2026-10",
+      "total": 0,
+      "details": []
+    },
+    "raw": "{\"success\":true,\"data\":{\"worker_name\":\"undefined\",\"period\":\"2026-10\",\"total\":0.00,\"details\":[]},\"requestId\":\"req_405cd47f82214ce5\",\"timestamp\":1790987810}"
+  },
+  "wageWriteEndpoints": []
+}

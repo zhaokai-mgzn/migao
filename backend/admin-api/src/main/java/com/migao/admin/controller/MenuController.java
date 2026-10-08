@@ -61,7 +61,7 @@ public class MenuController {
         // 智能客服：🔴 旧节点 `new MenuNode("agent:session", "会话监控")` 在 #5271 **删除** ——
         // `agent:session` 已由「在线接待」承载，而「会话监控」对应的页面 `/agent-workspace/sessions`
         // 从来不在侧边栏里 ⇒ 它只是权限树上一个重复勾选项。
-        // （#3094 已把「米宝 · 在线对话」菜单入口移除，智能体对话走右下角 FAB。）
+        // （#3094 已把「黄金策 · 在线对话」菜单入口移除，智能体对话走右下角 FAB。）
         MenuNode cs1 = new MenuNode("agent:session", "在线接待");
         // issue #5246（已合入 main）：知识库节点码 = **读**码 `knowledge:view`（原 `knowledge:manage`）——
         // #5271 重排本树时必须保留该码（漏带 = 静默回退别人刚修的授权口径）。
@@ -109,7 +109,8 @@ public class MenuController {
         // 权限码沿用 processing:manage（不要新造权限码）。
         MenuNode pr2 = new MenuNode("production:view", "工艺配置");   // #5699 P4：= 该页唯一码
         MenuNode pr3 = new MenuNode("production:view", "计件工资");
-        // 仓储与物料（issue #5271 **新组**）：面料进出与消耗 —— 入库 → 批次 → 余料 → 省料。
+        // 仓储与物料（issue #5271 **新组**）：面料进出与消耗 —— 用户 2026-10-06 组内重排为
+        // **单据（进 → 账 → 出）→ 台账 → 分析**（原序「库存明细」在组末、被「省料看板」隔开）。
         // 入库单（V111，issue #5034）权限码**独立**（inbound:view，与 @RequirePermission 同码）；
         // 余料台账（issue #5191）/ 省料看板（issue #5159）沿用 processing:manage ——
         // 与 RemnantController 的类级 @RequirePermission 同码（门禁不放宽也不收紧）。
@@ -122,6 +123,11 @@ public class MenuController {
         MenuNode i2 = new MenuNode("order:list", "发货单");
         MenuNode prRemnants = new MenuNode("processing:manage", "余料台账");
         MenuNode prSaving = new MenuNode("product:list", "省料看板");   // #5699 P4：= 该页读码
+        // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面，补 `StockLedgerController`
+        //（issue #4055）javadoc 里逐字登记的显式延后项「不做前端页面」。
+        // 🔴 权限码 = 该端点**方法级** `@RequirePermission("product:list")`（逐字同码，不新造码）。
+        // 用户 2026-10-06 裁定（方案 A1）：本节点**紧跟进库单**（进仓之后第一件要看的就是账）。
+        MenuNode prLedger = new MenuNode("product:list", "库存明细");
         // 旧 label「员工列表」→「员工管理」（#5271；code 不变 employee:list）
         MenuNode e1 = new MenuNode("employee:list", "员工管理");
         // issue #5291：岗位权限节点改挂读码 `system:view`（企业基础信息仍是 system:manage）。
@@ -134,24 +140,26 @@ public class MenuController {
 
         return List.of(
             new MenuNode("workspace", "工作台", List.of(d1, d2)),
-            // 商品管理（2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：
-            // 它与 **menu.ts 的 `standaloneTopItems`** 对应 —— 前端把它渲染成 `menu.ts` 的
-            // `STANDALONE_TOP_AFTER_GROUP_KEY` 那个组**之后**的一级项（用户 2026-10-01 裁定），
-            // 本树同样把它放成**顶层节点**（不是组）。⚠️ 位置 = **紧跟在「工作台」组之后**，
-            // 与前端渲染顺序、`AuthService` 的 add 顺序**逐项一致**
-            //（判据 = 三源同构守卫的**顶层布局序列**比对，含位置）。
-            new MenuNode("product:list", "商品管理"),
-            // 客户服务（本轮新建）：原「智能客服」组 + 客户侧两项（客户列表 / 售后工单）合并。
-            // 🔴 **组内顺序 = `menu.ts` 的 `customer-service` 组顺序**（在线接待 / 客户列表 / 知识库 /
-            // 售后工单）—— 三源同构守卫按**前缀子序列**比对，乱序即红。
-            new MenuNode("customer-service", "客户服务", List.of(cs1, c1, cs2, o3)),
+            // 客户服务（#5778 新建）：原「智能客服」组 + 客户侧两项（客户列表 / 售后工单）合并。
+            // 🔴 **组内顺序 = `menu.ts` 的 `customer-service` 组顺序**（在线接待 / 知识库 /
+            // 售后工单 / 客户列表 —— 用户 2026-10-06 调整：接待与工具相邻、档案沉底）
+            // —— 三源同构守卫按**前缀子序列**比对，乱序即红。
+            new MenuNode("customer-service", "客户服务", List.of(cs1, cs2, o3, c1)),
             // 交易管理（本轮收窄为「下单 → 收款」两项）
             new MenuNode("trade-center", "交易管理", List.of(o1, f1, o2)),
-            // 生产管理（本轮收进「加工项管理」= p4，位于「智能派单」之后、「工艺配置」之前，
-            // 与 menu.ts 的组内顺序逐字一致）
-            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, p4, pr2, pr3)),
-            new MenuNode("inventory-center", "仓储与物料", List.of(i1, i2, prRemnants, prSaving)),
-            new MenuNode("org-center", "组织管理", List.of(e1, r1, s1, e2))
+            // 生产管理（用户 2026-10-06 组内重排：**先备资料、再生产与派单、最末结算** ——
+            // 加工项 / 工艺是派单机的输入；四项**权限码一字不动**）
+            new MenuNode("production-center", "生产管理", List.of(p4, pr2, pr1, prPool, pr3)),
+            // 仓储与物料（用户 2026-10-06 组内重排：单据（进 → 账 → 出）→ 台账 → 分析）
+            new MenuNode("inventory-center", "仓储与物料", List.of(i1, prLedger, i2, prRemnants, prSaving)),
+            new MenuNode("org-center", "组织管理", List.of(e1, r1, s1, e2)),
+            // 🔴 一级项（不属于任何组）：**排在所有分组之后**（用户 2026-10-06 裁定，原为「工作台组之后」）
+            // —— 组名即「分组」，渲染在组与组之间会让「大菜单并列」自相矛盾。
+            // 它与 **menu.ts 的 `standaloneTopItems`** 对应，前端把它渲染在
+            // `STANDALONE_TOP_AFTER_GROUP_KEY`（现取最后一个组 `org-center`）那个组**之后**；
+            // ⚠️ 位置 = 与前端渲染顺序、`AuthService` 的 add 顺序**逐项一致**
+            //（判据 = 三源同构守卫的**顶层布局序列**比对，含位置）。
+            new MenuNode("product:list", "商品管理")
         );
     }
 

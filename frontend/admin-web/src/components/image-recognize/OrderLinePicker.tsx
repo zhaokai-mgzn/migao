@@ -30,6 +30,11 @@ export interface PickerEntryState {
   loading: boolean
   /** 已处理：`{ productId, label }` —— `NO_MATCH_CHOICE` 表示商家选了「都不是」 */
   resolved: { productId: string; label: string } | null
+  /**
+   * 候选查询**失败**（网络 / 服务异常）—— 与「目录里没有匹配的商品」**分开报**（issue #6529）：
+   * 把故障说成「没有匹配」，商家会以为店里真没这个商品，转头去建一个重复商品。
+   */
+  failed?: boolean
 }
 
 interface OrderLinePickerProps {
@@ -83,6 +88,16 @@ export default function OrderLinePicker({
                 {item.entry.quantity !== null ? `数量 ${item.entry.quantity}` : '数量未逐条对应'}
               </span>
             </div>
+            {item.entry.referenceOnly && (
+              /* 未采纳的参考条目（issue #6529）：来源如实说清 —— 图上读到、但没认准 */
+              <p
+                data-testid={`order-line-picker-reference-${index}`}
+                className="mt-1 text-xs leading-5 text-amber-700"
+              >
+                图上读到、但没认准（未采纳）：已按这个名字查过目录，请核对后再选；不选就点「
+                {NO_MATCH_LABEL}」
+              </p>
+            )}
             {item.entry.priceHint !== null && (
               <p
                 data-testid={`order-line-picker-price-hint-${index}`}
@@ -121,11 +136,19 @@ export default function OrderLinePicker({
                     </span>
                   </button>
                 ))}
-                {item.options.length === 0 && (
-                  <p data-testid={`order-line-picker-no-candidate-${index}`} className="text-xs text-neutral-500">
-                    目录里没有相似的商品（或候选查询失败）⇒ 只能点「{NO_MATCH_LABEL}」
-                  </p>
-                )}
+                {/* ⚠️ 判「没有候选」**不能**用 `options.length === 0`：「都不是」是**恒在**的末位选项
+                    （`pickerOptionsFor` 每次都带上它）⇒ 那个条件恒假、这段文案此前**从不显示**。
+                    参考明细（#6529）要的正是这句话，故按「除『都不是』外一个候选都没有」判。 */}
+                {item.options.filter((option) => option.productId !== NO_MATCH_CHOICE).length === 0 &&
+                  (item.failed ? (
+                    <p data-testid={`order-line-picker-failed-${index}`} className="text-xs text-neutral-500">
+                      商品目录这次没查成（查询失败）⇒ 请稍后重试，或点「{NO_MATCH_LABEL}」不建行
+                    </p>
+                  ) : (
+                    <p data-testid={`order-line-picker-no-candidate-${index}`} className="text-xs text-neutral-500">
+                      目录里没有匹配的商品 ⇒ 请先在建商品页建好它，或点「{NO_MATCH_LABEL}」不建行
+                    </p>
+                  ))}
               </div>
             )}
           </div>

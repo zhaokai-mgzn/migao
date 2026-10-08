@@ -8,7 +8,7 @@ import { currentLandingCode } from '../../../utils/inbound/deepLink'
 import MessageList from '../../../components/chat/MessageList'
 import MessageInput from '../../../components/chat/MessageInput'
 import QuickActions from '../../../components/chat/QuickActions'
-// 米宝唤出授权门 + 能力位来源（issue #5642 功能⑤）
+// 黄金策唤出授权门 + 能力位来源（issue #5642 功能⑤）
 import MibaoAccessGate from '../../../components/chat/MibaoAccessGate'
 import { getUserInfo } from '../../../services/userService'
 import './index.scss'
@@ -21,6 +21,8 @@ export default function ChatPage() {
     isLoadingMessages,
     error,
     handedOff,
+    quickActions,
+    loadQuickActions,
     ensureLatestSession,
     createSession,
     sendMessage,
@@ -32,7 +34,7 @@ export default function ChatPage() {
   // 状态栏高度（自定义导航栏需要）
   const [statusBarHeight, setStatusBarHeight] = useState(20)
 
-  // 米宝唤出能力位（issue #5642 功能⑤）：**只**取服务端 `capabilities.mibaoChat`
+  // 黄金策唤出能力位（issue #5642 功能⑤）：**只**取服务端 `capabilities.mibaoChat`
   // —— 前端不判任何权限码（哪些码算管理员是服务端单一真值，改一处即 h5 与 admin-web 同步）。
   // `null` = 尚未取到 ⇒ 门不渲染任何一侧（避免把「还没拿到」误报成「没权限」）。
   const [mibaoAllowed, setMibaoAllowed] = useState<boolean | null>(null)
@@ -60,7 +62,7 @@ export default function ChatPage() {
       return
     }
 
-    // 🔴 米宝唤出授权门前置（issue #5642 功能⑤）：未授权 ⇒ **不创建会话、不改路由**
+    // 🔴 黄金策唤出授权门前置（issue #5642 功能⑤）：未授权 ⇒ **不创建会话、不改路由**
     // （入口保持可见，页内由 `<MibaoAccessGate>` 给「需要管理员授权」+ 可行动引导
     //  —— 不是静默隐藏、不是 403 白屏）。
     let allowed = false
@@ -76,9 +78,11 @@ export default function ChatPage() {
       return
     }
 
-    // 无会话 UX：续聊最近一次，无则静默新建
-    await ensureLatestSession()
-  }, [checkAuth, ensureLatestSession])
+    // 无会话 UX：续聊最近一次，无则静默新建；
+    // 同批拉空态快捷入口（issue #6468）：内容 = 服务端**单一真值**（`/api/chat/quick-actions`），
+    // H5 不再自带一份（旧形态正是抄 C 端的硬编码六条）。
+    await Promise.all([ensureLatestSession(), loadQuickActions()])
+  }, [checkAuth, ensureLatestSession, loadQuickActions])
 
   useEffect(() => {
     initialize()
@@ -157,7 +161,7 @@ export default function ChatPage() {
         </View>
       </View>
 
-      {/* 🔴 米宝唤出授权门（issue #5642 功能⑤）：未授权 ⇒ 明确「需要管理员授权」+ 可行动引导 */}
+      {/* 🔴 黄金策唤出授权门（issue #5642 功能⑤）：未授权 ⇒ 明确「需要管理员授权」+ 可行动引导 */}
       <MibaoAccessGate allowed={mibaoAllowed}>
       {/* 错误提示 */}
       {error && (
@@ -182,7 +186,7 @@ export default function ChatPage() {
         ) : (
           <>
             <MessageList messages={messages} isStreaming={isStreaming} onInteract={handleSend} />
-            {showQuickActions && <QuickActions onAction={handleQuickAction} />}
+            {showQuickActions && <QuickActions actions={quickActions} onAction={handleQuickAction} />}
           </>
         )}
       </View>

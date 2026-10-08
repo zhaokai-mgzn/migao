@@ -34,29 +34,35 @@ vi.mock('@/lib/api', () => ({
 
 import CommandPalette from '@/components/layout/CommandPalette'
 
-/** 新 IA 全量 22 项（#5877：head 组 → 一级项 → tail 组 → 独立项，== `flattenMenu` 顺序；#5939 +「发货单」） */
+/**
+ * 新 IA 全量 **23 项**（**2026-10-06 方案 A1**：全部分组 → 一级项 → 独立项，== `flattenMenu` 顺序；
+ * #5939 +「发货单」；#6404 +「库存明细」）。
+ *
+ * 顺序是本表**独立写死**的期望值 ⇒ 组内重排 / 一级项落位被无声改回 ⇒ 本用例当场红。
+ */
 const ALL_KEYS = [
   'dashboard',
   'briefing',
-  'products',
   'human-sessions',
-  'customers',
   'knowledge',
   'after-sales',
+  'customers',
   'orders',
   'finance',
-  'production-board',
-  'production-pool',
   'processing',
   'production-process',
+  'production-board',
+  'production-pool',
   'production-piecework',
   'inbound-orders',
+  'stock-ledger',
   'shipments',
   'production-remnants',
   'production-saving-board',
   'employees',
   'roles',
   'settings',
+  'products',
   'notifications',
 ]
 
@@ -92,9 +98,9 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     expect(document.querySelectorAll('[data-testid^="command-palette-item-"]')).toHaveLength(0)
   })
 
-  it('空查询 = 全量索引：列出全部 22 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
+  it('空查询 = 全量索引：列出全部 23 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(22))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(23))
     expect(renderedKeys()).toEqual(ALL_KEYS)
     expect(input().value).toBe('')
   })
@@ -102,7 +108,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
   it('空查询也**不含**无权项：简报开关关 ⇒ 恰少「每日简报」（与侧边栏同一口径）', async () => {
     mockBriefingEnabled = false
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(21))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(22))
     expect(renderedKeys()).toEqual(ALL_KEYS.filter((k) => k !== 'briefing'))
   })
 
@@ -129,10 +135,11 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     expect(screen.queryByTestId('command-palette-item-products')).toBeNull()
   })
 
-  it('组名命中：`仓储` ⇒ 仓储与物料组的 4 项（顺序 = 组内顺序）', async () => {
+  it('组名命中：`仓储` ⇒ 仓储与物料组的 5 项（顺序 = 组内顺序；2026-10-06 库存明细紧随入库单）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
     typeQuery('仓储')
-    expect(renderedKeys()).toEqual(['inbound-orders', 'shipments', 'production-remnants', 'production-saving-board'])
+    expect(renderedKeys()).toEqual(['inbound-orders', 'stock-ledger', 'shipments', 'production-remnants',
+      'production-saving-board'])
   })
 
   it('无结果：给可读文案，且列表清空（不是留着上一轮结果）', async () => {
@@ -160,27 +167,29 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
   it('↑/↓ 移动高亮 + Enter 跳转：router.push 收到**被高亮那一项**的 path', () => {
     render(<CommandPalette open onClose={mockOnClose} />)
     typeQuery('lb') // keywords 命中：商品列表(splb) / 订单列表(ddlb) / 客户列表(khlb)
-    expect(renderedKeys()).toEqual(['products', 'customers', 'orders'])
-    expect(highlightedKeys()).toEqual(['products'])
+    // 顺序 = **菜单自身顺序**（同档稳定）⇒ 2026-10-06 方案 A1 后：客户列表（客户服务）→ 订单列表（交易管理）
+    // → 商品管理（一级项，排在所有分组之后）
+    expect(renderedKeys()).toEqual(['customers', 'orders', 'products'])
+    expect(highlightedKeys()).toEqual(['customers'])
 
     press('ArrowDown')
-    expect(highlightedKeys()).toEqual(['customers'])
-    press('ArrowDown')
     expect(highlightedKeys()).toEqual(['orders'])
+    press('ArrowDown')
+    expect(highlightedKeys()).toEqual(['products'])
 
     press('Enter')
     expect(mockPush).toHaveBeenCalledTimes(1)
-    expect(mockPush).toHaveBeenCalledWith('/orders')
+    expect(mockPush).toHaveBeenCalledWith('/products')
     expect(mockOnClose).toHaveBeenCalledTimes(1)
   })
 
   it('↑ 从首项回绕到末项（不是停在原地），Enter 跳到末项', () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    typeQuery('lb')
+    typeQuery('lb')   // 多结果集：客户列表 → 订单列表 → 商品管理（顺序 = 菜单自身顺序）
     press('ArrowUp')
-    expect(highlightedKeys()).toEqual(['orders'])
+    expect(highlightedKeys()).toEqual(['products'])
     press('Enter')
-    expect(mockPush).toHaveBeenCalledWith('/orders')
+    expect(mockPush).toHaveBeenCalledWith('/products')
   })
 
   it('查询变化 ⇒ 高亮归零（否则会停在越界/错位的下标上）', () => {
@@ -188,7 +197,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     typeQuery('lb')
     press('ArrowDown')
     press('ArrowDown')
-    expect(highlightedKeys()).toEqual(['orders'])
+    expect(highlightedKeys()).toEqual(['products'])
 
     typeQuery('caiwu') // 单结果集：若不归零，高亮下标会停在 2（越界 ⇒ 无高亮）
     expect(renderedKeys()).toEqual(['finance'])
@@ -238,7 +247,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     rerender(<CommandPalette open={false} onClose={mockOnClose} />)
     rerender(<CommandPalette open onClose={mockOnClose} />)
 
-    await waitFor(() => expect(renderedKeys()).toHaveLength(22))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(23))
     expect(input().value).toBe('')
   })
 })

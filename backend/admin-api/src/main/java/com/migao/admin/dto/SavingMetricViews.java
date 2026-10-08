@@ -122,6 +122,84 @@ public final class SavingMetricViews {
     }
 
     /**
+     * 一个指标在<b>相邻两个有数据的期间</b>上的对比（环比，issue #6430）。
+     *
+     * <h2>🔴 口径：本期的「上一期」= 该指标自己时间轴上、相邻的两个**有数据**期间</h2>
+     * <p><b>不是自然月回填</b>。规则：把该指标的 {@code (期间 → 值)} 序列里<b>值非 {@code null}</b>
+     * 的期间按<b>字典序</b>排序，取最后两个 —— {@code period}/{@code current} = 最后那个；
+     * {@code previousPeriod}/{@code previous} = 次后一个；<b>不足两个 ⇒ 两者为 {@code null}</b>。</p>
+     * <p><b>理由</b>：没数据的月份<b>不生成 0</b> —— 否则「没采购」会被读成「采购下降」，
+     * 与本模块「无数据不冒充 0」（本类头注判据 4）同源。</p>
+     *
+     * <h2>🔴 各指标的时间轴各自独立（不许混用）</h2>
+     * <ul>
+     *   <li>{@link BoardComparison#savedMeters()} / {@link BoardComparison#savedAmount()}
+     *       → <b>消耗时间桶</b>（{@link Board#savedGroups()} 的 {@code period}）；</li>
+     *   <li>{@link BoardComparison#le0_2Share()} → <b>批次收货月</b>（{@link Board#batchGroups()} 的
+     *       {@code period}，按 period 汇总 {@code Σ le0_2Count / Σ batchCount} 得该期占比）；</li>
+     *   <li>{@link TrendComparison#purchasedMeters()} → <b>入库/采购时间桶</b>
+     *       （{@link Trend#points()} 里 purchased 的 {@code period}）；</li>
+     *   <li>{@link TrendComparison#metersPerM2()} → <b>趋势时间桶</b>（{@link Trend#points()} 的 {@code period}）。</li>
+     * </ul>
+     *
+     * <h2>🔴 {@code verdict} 取值与「较好方向」——**唯一口径定义处**</h2>
+     * <ul>
+     *   <li>{@code "better"} / {@code "worse"}：按下面各指标的较好方向判；</li>
+     *   <li>{@code "same"}：{@code current} 与 {@code previous} <b>数值相等</b>（{@code compareTo == 0}）——
+     *       比率类字段一律 {@code compareTo} 判等，<b>不许用 {@code equals}</b>（标度陷阱：
+     *       {@code new BigDecimal("1.5").equals(new BigDecimal("1.50")) == false}）；</li>
+     *   <li>{@code "unknown"}：<b>判不了</b> —— 任一值为 {@code null}（含 {@code current}/{@code previous} 缺）；</li>
+     *   <li>{@code "partial"}：<b>本期还没过完</b>（{@code period} == 当前所在期间）⇒ <b>不给方向</b>。
+     *       理由（2026-10-06 页面多模态验收实测）：拿「才过 6 天的月份」与整月比大小，会把
+     *       「这个月还没进货」读成「买得更克制」。**只覆盖 {@code better}/{@code worse}/{@code same}**，
+     *       不覆盖 {@code "unknown"} 与 {@code null}（它们比「没过完」更具体）；</li>
+     *   <li>🔴 {@code null}：<b>有意不给好坏</b>（只对 {@link BoardComparison#le0_2Share()}，见其说明）。
+     *       <b>{@code null} 与 {@code "unknown"} 是两个不同的东西</b>：前者是「我们不表态」，后者是「表态不了」。</li>
+     * </ul>
+     * <p><b>较好方向（本处为唯一定义）</b>：
+     * {@code savedMeters} / {@code savedAmount} <b>↑ better</b>（省得更多 = 更好）；
+     * {@code purchasedMeters} <b>↓ better</b>（买得更少 = 更好）；
+     * {@code metersPerM2} <b>↓ better</b>（单位产出用料更省 = 更好）；
+     * {@code le0_2Share} <b>恒 {@code null}</b>（有意不给，见 {@link BoardComparison#le0_2Share()}）。</p>
+     *
+     * <p>数值一律按既有字段同一套 {@code plain(...)} 序列化口径输出（去无意义尾零）。</p>
+     */
+    public record MetricDelta(String period, String previousPeriod,
+                              BigDecimal current, BigDecimal previous, String verdict) {
+    }
+
+    /**
+     * 看板（批次结构性 + 逐单省料）的环比（issue #6430）。
+     *
+     * @param savedMeters  省料米数（消耗时间桶；<b>↑ better</b>）
+     * @param savedAmount  省料金额（消耗时间桶；<b>↑ better</b>）
+     * @param le0_2Share   「剩余 ≤0.2m」批次占比（批次收货月；<b>{@code verdict} 恒 {@code null}</b>：
+     *                     <b>有意不给好坏</b> —— 它会被排料省料<b>反向污染</b>
+     *                     （排料省 ⇒ 批次剩得更多 ⇒ 占比更差），把「更好/更差」写上去正是 issue #5144
+     *                     要治的误导；期间与数值照常给出，读的人自己按上下文解释）
+     */
+    public record BoardComparison(MetricDelta savedMeters, MetricDelta savedAmount,
+                                  MetricDelta le0_2Share) {
+    }
+
+    /**
+     * 批次结构趋势的一个时间点（issue #6459）：按批次<b>收货期间</b>聚合的「几乎用完」读数。
+     *
+     * <p>用途 = 页面首屏那张「几乎用完的布（剩余 ≤0.2m）· 批数」趋势表 —— 让读的人一眼看出
+     * 「布有没有被用干净」，而不必先理解来源组 / 分档占比这些内部口径。</p>
+     *
+     * <p>🔴 <b>只含 {@link #COHORT_PURCHASE}</b>：存量导入（期初建账）与来源不明的批次
+     * <b>不进这条序列</b> —— 切换前的历史包袱混进来会让改善永远看不出来（判据 2 的<b>实质</b>，
+     * 一字不放宽）。本单改的是<b>呈现</b>，不是口径。</p>
+     *
+     * <p>{@code period} = 批次收货月（未记收货日期 ⇒ {@code null}，调用方渲染「未记收货日期」——不猜）；
+     * 分母为 0 时 {@code le0_2Share} 为 {@code null}（无数据，不是 0 —— 判据 4）。</p>
+     */
+    public record BatchPeriodPoint(String period, int batchCount, int le0_2Count,
+                                   BigDecimal le0_2Share) {
+    }
+
+    /**
      * L2 看板（+ L1 的分组汇总）。
      *
      * @param granularity 时间粒度（{@link #GRANULARITY_MONTH} / {@link #GRANULARITY_WEEK}）
@@ -130,12 +208,18 @@ public final class SavingMetricViews {
      * @param batchGroups L2 批次分档聚合（时间 × 来源 × 物料）
      * @param savedGroups L1 逐单省料的分组聚合（时间 × 来源 × 物料）
      * @param total      全租户合计（= 各 {@code cohorts} 之和；判据 1 的对照读数）
+     * @param comparison  相邻两期对比（环比；口径见 {@link MetricDelta}）—— 供前端讲清「在变好还是变坏」，
+     *                    由上面已加载的行<b>内存聚合</b>得出（零新增 SQL）
+     * @param batchTrend  批次结构趋势（按收货期间；<b>只含</b> {@link #COHORT_PURCHASE}）—— 由
+     *                    {@code batchGroups} <b>内存聚合</b>得出（零新增 SQL，issue #6459）
      */
     public record Board(String granularity, String timezone,
                         List<CohortSummary> cohorts,
                         List<BatchGroup> batchGroups,
                         List<SavedGroup> savedGroups,
-                        Total total) {
+                        Total total,
+                        BoardComparison comparison,
+                        List<BatchPeriodPoint> batchTrend) {
     }
 
     /**
@@ -204,13 +288,26 @@ public final class SavingMetricViews {
     }
 
     /**
+     * 趋势（采购/财务口径）的环比（issue #6430）。
+     *
+     * @param purchasedMeters 入库/采购总米数（入库时间桶；**↓ better**）
+     * @param metersPerM2     单位产出面料消耗（趋势时间桶；**↓ better**）；<b>该期读不出比率（分母为 0 / 无数据）
+     *                        ⇒ 该期不参与「相邻两期」的选择</b>（不是当 0 参与）
+     */
+    public record TrendComparison(MetricDelta purchasedMeters, MetricDelta metersPerM2) {
+    }
+
+    /**
      * L3 趋势读面（按周/月）。
      *
      * <p>{@code purchasedTotalMeters} / {@code consumedTotalMeters} = 全期合计（采购腿同样只含
      * {@link #COHORT_PURCHASE}）；{@code openingTotalMeters} 单列（判据 2）。无数据的腿为 {@code null}。</p>
+     *
+     * @param comparison 相邻两期对比（环比；口径见 {@link MetricDelta}）—— 由 {@code points} 内存聚合，零新增 SQL
      */
     public record Trend(String granularity, String timezone, List<ConsumptionPoint> points,
                         BigDecimal purchasedTotalMeters, BigDecimal consumedTotalMeters,
-                        BigDecimal openingTotalMeters) {
+                        BigDecimal openingTotalMeters,
+                        TrendComparison comparison) {
     }
 }

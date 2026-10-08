@@ -206,7 +206,8 @@ class ProductSkuReceiveStockNullCostRealDbTest {
             mapper.receiveStock(skuId,
                     new BigDecimal(quantity),
                     newAvgCost == null ? null : new BigDecimal(newAvgCost),
-                    batchNo);
+                    batchNo,
+                    TENANT_ID);
         }
     }
 

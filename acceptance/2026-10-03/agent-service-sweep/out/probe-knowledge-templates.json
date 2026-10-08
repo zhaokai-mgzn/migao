@@ -1,0 +1,78 @@
+[
+  {
+    "id": "E1-1",
+    "name": "模板清单读面 ⇒ 200 且结构合法",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 data 为数组（可为空） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: KnowledgeTemplateController.list 契约（ApiResponse<List<KnowledgeTemplateInfo>>）",
+      "HTTP/读数: {\"status\":200,\"isArray\":true,\"count\":1,\"body\":\"{\\\"success\\\":true,\\\"data\\\":[{\\\"templateId\\\":\\\"curtain\\\",\\\"industry\\\":\\\"curtain\\\",\\\"name\\\":\\\"布艺窗帘行业模板\\\",\\\"version\\\":1,\\\"description\\\":\\\"布艺窗帘行业预置知识卡片：面料/清洗/安装/测量/价格售后 FAQ + 主流产品目录 + 尺寸测量指南。套用后可编辑，价格等请按本店实际调整。\\\",\\\"entryCount\\\":\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "观测窗口: 2026-10-03 13:46:44 +08"
+    ],
+    "at": "2026-10-03 13:46:44 +08",
+    "atUtc": "2026-10-03T05:46:44.867Z"
+  },
+  {
+    "id": "E1-2",
+    "name": "登记：模板清单读数（非判据）",
+    "status": "pass",
+    "detail": "模板 1 个：curtain",
+    "evidence": [
+      "原始首项: {\"templateId\":\"curtain\",\"industry\":\"curtain\",\"name\":\"布艺窗帘行业模板\",\"version\":1,\"description\":\"布艺窗帘行业预置知识卡片：面料/清洗/安装/测量/价格售后 FAQ + 主流产品目录 + 尺寸测量指南。套用后可编辑，价格等请按本店实际调整。\",\"entryCount\":27}"
+    ],
+    "at": "2026-10-03 13:46:44 +08",
+    "atUtc": "2026-10-03T05:46:44.868Z"
+  },
+  {
+    "id": "E1-3",
+    "name": "登记：knowledge_templates 表不存在（模板为代码内建）",
+    "status": "pass",
+    "detail": "库中无 knowledge_templates 表 ⇒ 模板清单来自代码内建（与\"建/改/停用\"需另找载体）",
+    "evidence": [
+      "SQL: select table_name from information_schema.tables where table_name='knowledge_templates'"
+    ],
+    "at": "2026-10-03 13:46:45 +08",
+    "atUtc": "2026-10-03T05:46:45.042Z"
+  },
+  {
+    "id": "E2-1",
+    "name": "应用模板 curtain ⇒ 200 且返回结果对象",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 data 为对象 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: KnowledgeTemplateController.apply 契约（ApiResponse<Map<String,Object>>）",
+      "HTTP/读数: {\"status\":200,\"data\":\"{\\\"skipped\\\":0,\\\"templateId\\\":\\\"curtain\\\",\\\"created\\\":27}\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "观测窗口: 2026-10-03 13:46:44 +08"
+    ],
+    "at": "2026-10-03 13:46:45 +08",
+    "atUtc": "2026-10-03T05:46:45.995Z"
+  },
+  {
+    "id": "E2-2",
+    "name": "登记：应用模板后的卡片留痕（只读观察，非判据）",
+    "status": "pass",
+    "detail": "命中 5 张：dd312a660a3592122e704d6af8e80030:测量窗帘需要准备什么工具？ | d4013e4b09792bf4c5a0473f1c947005:窗帘高度到窗台还是落地怎么定？ | 80d310f91341e6240547647774ca45ed:轨道内装窗帘尺寸怎么量？ | 3c79414d90541fdd6bf847e325ea043f:罗马杆外装窗帘宽度怎么量？ | 647",
+    "evidence": [
+      "SQL: knowledge_cards where tenant_id=20 and source_ref like %curtain%",
+      "⚠️ 本项为登记项：模板应用语义（是否落卡/落草稿）未在被测契约中声明，不作 pass/fail 主张"
+    ],
+    "at": "2026-10-03 13:46:46 +08",
+    "atUtc": "2026-10-03T05:46:46.135Z"
+  },
+  {
+    "id": "E3-1",
+    "name": "应用不存在的模板 ⇒ 4xx（不得 500）",
+    "status": "pass",
+    "detail": "期望 HTTP 4xx == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 未知模板 id ⇒ 4xx（不得静默 200、不得 500）",
+      "HTTP/读数: {\"status\":404,\"body\":\"{\\\"success\\\":false,\\\"error\\\":{\\\"code\\\":\\\"NOT_FOUND\\\",\\\"message\\\":\\\"行业模板不存在\\\"},\\\"requestId\\\":\\\"req_7bdf623cd38f489e\\\",\\\"timestamp\\\":1791006406,\\\"suggestion\\\":\\\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\\\"}\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "观测窗口: 2026-10-03 13:46:44 +08"
+    ],
+    "at": "2026-10-03 13:46:46 +08",
+    "atUtc": "2026-10-03T05:46:46.259Z"
+  }
+]

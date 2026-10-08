@@ -117,6 +117,42 @@ public final class StockQuantity {
     }
 
     /**
+     * 库存**绝对值**的准入判据（fail-closed）：先过 {@link #requireOneDecimalOrNull} 的精度口径，
+     * 再拒**负数**（issue #6199）。
+     *
+     * <h2>为什么必须是单独一个方法（不是把非负塞进 {@link #requireOneDecimal}）</h2>
+     * 库存链路里住着**两类语义完全不同**的数值，混用一条判据正是 #6199 的根因：
+     * <ol>
+     *   <li><b>绝对值</b>（建品/改品的 {@code stock}、SKU 库存、导入的库存列）—— 实物米数，
+     *       负数<b>没有物理意义</b>，必须拒；</li>
+     *   <li><b>增量</b>（库存调整量 {@code adjustment}、订单扣减/回补）—— 负数<b>是正常业务</b>
+     *       （出库、盘亏），拒了等于把功能砍掉。</li>
+     * </ol>
+     * ⇒ 非负只能落在「绝对值的准入口」上：改 {@link #requireOneDecimal} 会连带拒掉所有出库增量
+     * （既有判据当场红），而在各 Service 里各写一个 {@code if (x < 0) throw} 迟早分叉
+     * —— 那正是本仓反复复发的形态（同一事实的第二份口径）。
+     *
+     * <p>与同族护栏同口径：盘点盘亏 ⇒ 422 {@code INSUFFICIENT_STOCK}、入库数量必须 &gt; 0 米、
+     * 批量库存的「改后值」走同一条建品/改品路径 —— 本方法只做<b>准入</b>（拒绝，不顺带归零/取整），
+     * 不改任何既有合法量值。</p>
+     *
+     * @param raw   {@code null} = 「本字段未传」⇒ 原样返回 {@code null}
+     *              （改品语义：这一项不改；**不得**把「未传」变成 0）
+     * @param label 出错文案里的字段名（如「库存 stock」「SKU 库存 stock」「第 2 行库存」）
+     * @return 合法值原样返回（{@code 0} → {@code 0}、{@code 60.5} → {@code 60.5}）
+     */
+    public static BigDecimal requireNonNegativeOrNull(BigDecimal raw, String label) {
+        BigDecimal value = requireOneDecimalOrNull(raw, label);
+        if (value != null && value.signum() < 0) {
+            throw BusinessException.validationError(String.format(
+                    "%s 不能为负（库存是实物米数，下限为 0），当前值 %s"
+                            + " —— 请改为不小于 0 的值后重试（服务端不做静默归零）",
+                    label, value.toPlainString()));
+        }
+        return value;
+    }
+
+    /**
      * 领料量落到库存列前的**显式定向舍入**（唯一入口）：按 {@code docs/curtain-fabric-quote-rules.md}
      * §8「用料米数一律向上进位到 0.1」进位。
      *

@@ -23,8 +23,8 @@
 
 朴素断言 `_detect_card_type` 的**全局值域 ⊆ B端桌面` 无法通过、也不该通过：
 `curtain_calc`（→ `quotation`）是 **C 端专属**工具（`base_skill.py` 写死「C 端专属：`curtain_calc`
-是小布（顾客自助）的报价能力；B 端米宝有自己的算料链路」，且只出现在
-`customer_quote_skill.py::CUSTOMER_QUOTE_TOOLS`）—— B 端米宝**永远收不到** `quotation` 卡，
+是元元（顾客自助）的报价能力；B 端黄金策有自己的算料链路」，且只出现在
+`customer_quote_skill.py::CUSTOMER_QUOTE_TOOLS`）—— B 端黄金策**永远收不到** `quotation` 卡，
 强行要求 B 端桌面渲染它是**过度建设**（无数据形态可依）。
 
 正确判据 = **按 persona 从 Skill 注册表推导可达卡型**（真值，非人工清单）：
@@ -35,7 +35,7 @@
 实测（@ 本 PR 的 origin/main）：`mibao` 可达 `{product_list, product_detail, logistics, order}`，
 `xiaobu` 另有 `quotation` —— 与产品口径、与 `base_skill.py` 的注释三方一致。
 这样判定的是「**后端真能发到这一端**的卡型」，而不是「后端函数理论上能返回的卡型」；
-判据随注册表自动前进：**谁把 `curtain_calc` 绑给米宝的 Skill，这里立刻红**（那正是本接缝的复发形态）。
+判据随注册表自动前进：**谁把 `curtain_calc` 绑给黄金策的 Skill，这里立刻红**（那正是本接缝的复发形态）。
 
 另加一条全局判据：`_detect_card_type` 的值域必须 ⊆ 全部渲染端 case 的并集
 （任何卡型至少有一端能渲染 —— 不许存在「谁都渲染不了」的卡型）。
@@ -313,7 +313,7 @@ class TestBackendCardTypeMapping:
         assert _detect_card_type("knowledge_search", {}) is None
 
     def test_quotation_is_xiaobu_only(self):
-        """#3960 的产品口径落码：quotation 只对 C 端 persona 可达（B 端米宝不可达）。"""
+        """#3960 的产品口径落码：quotation 只对 C 端 persona 可达（B 端黄金策不可达）。"""
         assert "quotation" in reachable_card_types("xiaobu")
         assert "quotation" not in reachable_card_types("mibao")
 

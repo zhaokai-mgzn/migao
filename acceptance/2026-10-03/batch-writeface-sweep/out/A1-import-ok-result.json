@@ -1,0 +1,17 @@
+{
+  "http": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "total": 2,
+      "successCount": 2,
+      "failCount": 0,
+      "blankRows": 0,
+      "createdProducts": 1,
+      "updatedProducts": 0,
+      "errors": []
+    },
+    "requestId": "req_c878dc76efe04d5c",
+    "timestamp": 1791006831
+  }
+}

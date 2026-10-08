@@ -1,7 +1,7 @@
 """
 C 端商品可见性单元测试（issue #3932）
 
-小布（C 端顾客）只能看到已上架（on_sale）商品：下架（off_sale）等非上架商品
+元元（C 端顾客）只能看到已上架（on_sale）商品：下架（off_sale）等非上架商品
 不得出现在 product_search 结果、product_detail 详情、C 端商品客服提示词中；
 B 端（admin 等商户角色）保持现状——能看到自己店铺全状态商品。
 """

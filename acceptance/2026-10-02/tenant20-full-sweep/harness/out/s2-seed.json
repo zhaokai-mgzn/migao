@@ -1,0 +1,267 @@
+[
+  {
+    "id": "SEED-01",
+    "name": "读取新租户岗位清单",
+    "status": "pass",
+    "detail": "HTTP 200；岗位=管理员(admin) / 客服(customer_service) / 财务(finance) / 知识编辑(knowledge_editor) / 运营(operator) / POC验收-看板客服(poc_accept_agent) / POC-自定义运营(poc_operator_custom) / 商品管理员(product_manager) / 销售(sales)",
+    "evidence": [
+      "GET /api/admin/roles/all"
+    ],
+    "at": "2026-10-02T13:46:30.917Z"
+  },
+  {
+    "id": "SEED-03",
+    "name": "建员工+登录：客服",
+    "status": "pass",
+    "detail": "users#f156c2bd36b2ab6d0744968eb0e74f04 username=acc_customer_service_790472@tenant_7478359537 首登强制改密=true 改密成功=true permissions=[\"dashboard:view\",\"order:list\",\"order:detail\",\"order:refund\",\"customer:view\",\"agent:session\",\"processing:view\",\"inbound:view\",\"after_sales:view\",\"knowledge:view\",\"agent:session:manage\",\"production:execute\"]",
+    "evidence": [
+      "POST /api/admin/users {position:客服}",
+      "POST /api/auth/employee/login",
+      "POST /api/auth/password/change",
+      "GET /api/auth/me"
+    ],
+    "at": "2026-10-02T13:46:32.276Z"
+  },
+  {
+    "id": "SEED-03",
+    "name": "建员工+登录：运营",
+    "status": "pass",
+    "detail": "users#a3a99b3b2ea4097a0b8f9dea5fcf042b username=acc_operator_790472@tenant_7478359537 首登强制改密=true 改密成功=true permissions=[\"dashboard:view\",\"processing:manage\",\"product:list\",\"product:create\",\"product:category\",\"order:list\",\"order:detail\",\"order:refund\",\"customer:view\",\"finance:view\",\"agent:session\",\"employee:list\",\"processing:view\",\"processing:update\",\"inbound:view\",\"inbound:create\",\"after_sales:view\",\"knowledge:view\",\"order:update\",\"order:create\",\"customer:create\",\"finance:create\",\"agent:session:manage\",\"product:category:view\",\"production:view\",\"production:execute\"]",
+    "evidence": [
+      "POST /api/admin/users {position:运营}",
+      "POST /api/auth/employee/login",
+      "POST /api/auth/password/change",
+      "GET /api/auth/me"
+    ],
+    "at": "2026-10-02T13:46:33.398Z"
+  },
+  {
+    "id": "SEED-03",
+    "name": "建员工+登录：销售",
+    "status": "pass",
+    "detail": "users#f81fc6610204dd0b1c562774223ccce5 username=acc_sales_790472@tenant_7478359537 首登强制改密=true 改密成功=true permissions=[\"dashboard:view\",\"product:list\",\"order:list\",\"order:detail\",\"customer:view\",\"processing:view\",\"inbound:view\",\"order:create\",\"production:execute\"]",
+    "evidence": [
+      "POST /api/admin/users {position:销售}",
+      "POST /api/auth/employee/login",
+      "POST /api/auth/password/change",
+      "GET /api/auth/me"
+    ],
+    "at": "2026-10-02T13:46:34.541Z"
+  },
+  {
+    "id": "SEED-03",
+    "name": "建员工+登录：财务",
+    "status": "pass",
+    "detail": "users#7b1b85689b6c1db0f20ccead04f59b56 username=acc_finance_790472@tenant_7478359537 首登强制改密=true 改密成功=true permissions=[\"dashboard:view\",\"order:list\",\"order:detail\",\"customer:view\",\"finance:view\",\"processing:view\",\"inbound:view\",\"finance:create\",\"production:execute\"]",
+    "evidence": [
+      "POST /api/admin/users {position:财务}",
+      "POST /api/auth/employee/login",
+      "POST /api/auth/password/change",
+      "GET /api/auth/me"
+    ],
+    "at": "2026-10-02T13:46:35.674Z"
+  },
+  {
+    "id": "SEED-03",
+    "name": "建员工+登录：商品管理员",
+    "status": "pass",
+    "detail": "users#aea3c24443a11210ee466c7c4b98020e username=acc_product_manager_790472@tenant_7478359537 首登强制改密=true 改密成功=true permissions=[\"dashboard:view\",\"processing:manage\",\"product:list\",\"product:create\",\"product:category\",\"processing:view\",\"product:category:view\",\"production:view\"]",
+    "evidence": [
+      "POST /api/admin/users {position:商品管理员}",
+      "POST /api/auth/employee/login",
+      "POST /api/auth/password/change",
+      "GET /api/auth/me"
+    ],
+    "at": "2026-10-02T13:46:36.880Z"
+  },
+  {
+    "id": "SEED-03",
+    "name": "建员工+登录：知识编辑",
+    "status": "pass",
+    "detail": "users#8d17d199ce60d3d4b55db5a4702c6dc4 username=acc_knowledge_editor_790472@tenant_7478359537 首登强制改密=true 改密成功=true permissions=[\"dashboard:view\",\"knowledge:manage\",\"product:list\",\"knowledge:view\"]",
+    "evidence": [
+      "POST /api/admin/users {position:知识编辑}",
+      "POST /api/auth/employee/login",
+      "POST /api/auth/password/change",
+      "GET /api/auth/me"
+    ],
+    "at": "2026-10-02T13:46:38.028Z"
+  },
+  {
+    "id": "SEED-04",
+    "name": "自定义岗位创建（岗位权限页能力）",
+    "status": "pass",
+    "detail": "roles#25ac5184e0fd8bf0626af13a7939e739 name=验收临时岗790472 落库权限=[\"dashboard:view\",\"order:list\"]",
+    "evidence": [
+      "POST /api/admin/roles {permissions:['dashboard:view','order:list']}"
+    ],
+    "at": "2026-10-02T13:46:38.459Z"
+  },
+  {
+    "id": "SEED-05",
+    "name": "自定义岗位员工创建+登录",
+    "status": "pass",
+    "detail": "users#92351dfad718ad68642c7314143bab15 username=acc_custom_790472@tenant_7478359537 permissions=[\"dashboard:view\",\"order:list\"]",
+    "evidence": [
+      "POST /api/admin/users {position:自定义岗}",
+      "GET /api/auth/me"
+    ],
+    "at": "2026-10-02T13:46:39.607Z"
+  },
+  {
+    "id": "SEED-06",
+    "name": "工人档案创建（工号+PIN）",
+    "status": "pass",
+    "detail": "users#5733402a3df85cbc16ccb0dafcdc028a workerNo=W790472 name=验收工人790472 role=worker；响应不含口令字段=true",
+    "evidence": [
+      "POST /api/admin/workers {workerNo,name,pin}"
+    ],
+    "at": "2026-10-02T13:46:39.837Z"
+  },
+  {
+    "id": "SEED-07",
+    "name": "工人工号唯一性校验",
+    "status": "pass",
+    "detail": "重复工号 → HTTP 409（期望 409/400，非 500）",
+    "evidence": [
+      "POST /api/admin/workers 重复 workerNo"
+    ],
+    "at": "2026-10-02T13:46:39.953Z"
+  },
+  {
+    "id": "SEED-08",
+    "name": "工人建号缺 PIN 校验",
+    "status": "pass",
+    "detail": "缺 PIN → HTTP 422",
+    "evidence": [
+      "POST /api/admin/workers 无 pin"
+    ],
+    "at": "2026-10-02T13:46:40.004Z"
+  },
+  {
+    "id": "SEED-09",
+    "name": "DB：员工落库",
+    "status": "pass",
+    "detail": "15 名用户（含管理员）：管理员/admin poc_operator_custom/poc_operator_custom operator/operator product_manager/product_manager poc_accept_agent/operator 商品专员/operator 客服专员/poc_accept_agent 客服/customer_service 运营/operator 销售/sales 财务/finance 商品管理员/product_manager 知识编辑/knowledge_editor 验收临时岗790472/acc_custom_790472 null/worker",
+    "evidence": [
+      "SQL: select id,phone,nickname,username,role,position from users where tenant_id=20"
+    ],
+    "at": "2026-10-02T13:46:40.118Z"
+  },
+  {
+    "id": "SEED-10",
+    "name": "DB 权限快照 = 岗位默认权限：客服",
+    "status": "pass",
+    "detail": "users.permissions(12) == role_permissions(12)：after_sales:view,agent:session,agent:session:manage,customer:view,dashboard:view,inbound:view,knowledge:view,order:detail,order:list,order:refund,processing:view,production:execute",
+    "evidence": [
+      "SQL: select permissions from users where username='acc_customer_service_790472'",
+      "SQL: select p.code from role_permissions rp join permissions p on p.id=rp.permission_id join roles r on r.id=rp.role_id where r.code='customer_service'"
+    ],
+    "at": "2026-10-02T13:46:40.118Z"
+  },
+  {
+    "id": "SEED-10",
+    "name": "DB 权限快照 = 岗位默认权限：运营",
+    "status": "pass",
+    "detail": "users.permissions(26) == role_permissions(26)：after_sales:view,agent:session,agent:session:manage,customer:create,customer:view,dashboard:view,employee:list,finance:create,finance:view,inbound:create,inbound:view,knowledge:view,order:create,order:detail,order:list,order:refund,order:update,processing:manage,processing:update,processing:view,product:category,product:category:view,product:create,product:list,production:execute,production:view",
+    "evidence": [
+      "SQL: select permissions from users where username='acc_operator_790472'",
+      "SQL: select p.code from role_permissions rp join permissions p on p.id=rp.permission_id join roles r on r.id=rp.role_id where r.code='operator'"
+    ],
+    "at": "2026-10-02T13:46:40.119Z"
+  },
+  {
+    "id": "SEED-10",
+    "name": "DB 权限快照 = 岗位默认权限：销售",
+    "status": "pass",
+    "detail": "users.permissions(9) == role_permissions(9)：customer:view,dashboard:view,inbound:view,order:create,order:detail,order:list,processing:view,product:list,production:execute",
+    "evidence": [
+      "SQL: select permissions from users where username='acc_sales_790472'",
+      "SQL: select p.code from role_permissions rp join permissions p on p.id=rp.permission_id join roles r on r.id=rp.role_id where r.code='sales'"
+    ],
+    "at": "2026-10-02T13:46:40.119Z"
+  },
+  {
+    "id": "SEED-10",
+    "name": "DB 权限快照 = 岗位默认权限：财务",
+    "status": "pass",
+    "detail": "users.permissions(9) == role_permissions(9)：customer:view,dashboard:view,finance:create,finance:view,inbound:view,order:detail,order:list,processing:view,production:execute",
+    "evidence": [
+      "SQL: select permissions from users where username='acc_finance_790472'",
+      "SQL: select p.code from role_permissions rp join permissions p on p.id=rp.permission_id join roles r on r.id=rp.role_id where r.code='finance'"
+    ],
+    "at": "2026-10-02T13:46:40.119Z"
+  },
+  {
+    "id": "SEED-10",
+    "name": "DB 权限快照 = 岗位默认权限：商品管理员",
+    "status": "pass",
+    "detail": "users.permissions(8) == role_permissions(8)：dashboard:view,processing:manage,processing:view,product:category,product:category:view,product:create,product:list,production:view",
+    "evidence": [
+      "SQL: select permissions from users where username='acc_product_manager_790472'",
+      "SQL: select p.code from role_permissions rp join permissions p on p.id=rp.permission_id join roles r on r.id=rp.role_id where r.code='product_manager'"
+    ],
+    "at": "2026-10-02T13:46:40.120Z"
+  },
+  {
+    "id": "SEED-10",
+    "name": "DB 权限快照 = 岗位默认权限：知识编辑",
+    "status": "pass",
+    "detail": "users.permissions(4) == role_permissions(4)：dashboard:view,knowledge:manage,knowledge:view,product:list",
+    "evidence": [
+      "SQL: select permissions from users where username='acc_knowledge_editor_790472'",
+      "SQL: select p.code from role_permissions rp join permissions p on p.id=rp.permission_id join roles r on r.id=rp.role_id where r.code='knowledge_editor'"
+    ],
+    "at": "2026-10-02T13:46:40.120Z"
+  },
+  {
+    "id": "SEED-10",
+    "name": "DB 权限快照 = 岗位默认权限：验收临时岗790472",
+    "status": "pass",
+    "detail": "users.permissions(2) == role_permissions(2)：dashboard:view,order:list",
+    "evidence": [
+      "SQL: select permissions from users where username='acc_custom_790472'",
+      "SQL: select p.code from role_permissions rp join permissions p on p.id=rp.permission_id join roles r on r.id=rp.role_id where r.code='acc_custom_790472'"
+    ],
+    "at": "2026-10-02T13:46:40.120Z"
+  },
+  {
+    "id": "SEED-11",
+    "name": "页面：员工管理列表渲染新建员工",
+    "status": "pass",
+    "detail": "命中 7/7 名员工姓名（页面文本 1220 字符）",
+    "evidence": [
+      "screenshots/s2-employees-list.png"
+    ],
+    "at": "2026-10-02T13:46:43.628Z"
+  },
+  {
+    "id": "SEED-12",
+    "name": "页面：员工管理含工人入口/标签",
+    "status": "pass",
+    "detail": "页面文本含「工人」=true",
+    "evidence": [
+      "screenshots/s2-employees-list.png"
+    ],
+    "at": "2026-10-02T13:46:43.629Z"
+  },
+  {
+    "id": "SEED-13",
+    "name": "服务器日志：建号链路可追溯",
+    "status": "pass",
+    "detail": "命中 10 行，示例：2026-10-02 17:21:15.737 [http-nio-8080-exec-132] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash",
+    "evidence": [
+      "L269939: 2026-10-02 17:06:39.979 [http-nio-8080-exec-126] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 24",
+      "L269942: 2026-10-02 17:06:39.989 [http-nio-8080-exec-132] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 24",
+      "L269976: 2026-10-02 17:06:40.160 [http-nio-8080-exec-136] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 24",
+      "L269980: 2026-10-02 17:06:40.165 [http-nio-8080-exec-144] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 24",
+      "L269990: 2026-10-02 17:06:40.340 [http-nio-8080-exec-142] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 24",
+      "L269992: 2026-10-02 17:06:40.340 [http-nio-8080-exec-117] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 24",
+      "L269994: 2026-10-02 17:06:40.342 [http-nio-8080-exec-146] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 24",
+      "L270001: 2026-10-02 17:06:40.365 [http-nio-8080-exec-142] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 24",
+      "L270073: 2026-10-02 17:21:15.723 [http-nio-8080-exec-132] DEBUG c.m.a.m.U.selectActiveUsersByPhoneIgnoreTenant - ==>  Preparing: SELECT id, tenant_id, phone, username, password_hash, nickname, avatar, role, worker_no, session_ttl, status, must_change_password, created_at, updated_at, deleted FROM users WHERE phone = ? AND deleted = 0 AND status = 'active' ORDER BY updated_at DESC",
+      "L270076: 2026-10-02 17:21:15.737 [http-nio-8080-exec-132] DEBUG c.m.a.mapper.UserMapper.selectById - ==>  Preparing: SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, username, must_change_password, position, worker_no, permissions, session_ttl, status, created_at, updated_at, deleted FROM users WHERE id = ? AND deleted = 0 AND tenant_id = 24"
+    ],
+    "at": "2026-10-02T13:46:43.796Z"
+  }
+]

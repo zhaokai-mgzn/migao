@@ -1,4 +1,4 @@
-# Customer After-Sales Skill — Few-shot 示例（小布 · C端）
+# Customer After-Sales Skill — Few-shot 示例（元元 · C端）
 
 > 核心原则：顾客有明确售后诉求（换货/退货/退款/维修/投诉）时，
 > **必须走 aftersale_create 创建售后工单**；顾客要求"找人工/找老板"、

@@ -44,6 +44,11 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # AK/SK **只在这一处声明**（issue #6294）：Deploy step 与「跳过部署自证」step 共用 ——
+    # Danger Scan 的 secrets 判据把「旧位置删除 + 新位置新增」认作**移动**（非新增）⇒ 零 blocker。
+    env:
+      AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+      SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
     # 硬超时兜底（issue #4767 ①）：脚本被卡死时由 GitHub 终止 run ⇒ run 进**终态** ⇒
     # `deploy-frontend` 的 concurrency 组释放。事故里挂住的 run 占锁 20+ 分钟 ⇒ 后续 main 的部署全被挡住。
     # 90min 的来历（issue #5814 C′ + #5896）：构建已搬到**服务器侧**，其墙钟算在「发起+轮询」预算之内
@@ -76,9 +81,17 @@ jobs:
             echo "MODE=build" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Docker login ACR
+      # 登录实现**唯一一份** = `scripts/acr_login.sh`（issue #6526 A）：重试 3 次 / 每次有
+      # `timeout` 上界 / 退避 5s·10s / 密码走 `--password-stdin`（一个字节都不进 docker 的 argv）。
+      # 🔴 本调用点**不承重**（无 `--fatal`）：C′（issue #5814）之后 CI 不构建、不推 ACR
+      #    （自证步见本文件上面的 `Assert server-side build (no ACR push)`）⇒ 登录失败只出
+      #    具名 `::warning::`、**不判红**。让一个不承重的步骤否决整条腿正是 issue #6526 要治的病。
+      #    重启条件（写在这里，别只写在脚本里）：**若将来恢复 CI 侧推 ACR ⇒ 加上 `--fatal`**。
+      # 判据 = tests/unit_ci_workflows/test_acr_login_not_load_bearing.py（裸 `docker login` ⇒ 红；
+      #        该带 `--fatal` 的腿没带 / 不该带的腿带了 ⇒ 红，两侧都是双向判据）。
+      - name: Docker login ACR (retry, non-fatal)
         if: steps.tag.outputs.MODE == 'build'
-        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+        run: bash scripts/acr_login.sh ${{ env.ACR_REGISTRY }} "${{ secrets.ACR_USERNAME }}" "${{ secrets.ACR_PASSWORD }}"
 
       # ── 部署对账（仅 schedule 触发时生效，issue #2947）──
       # 连续快速合并时 GitHub 可能吞掉 push 触发（实测 #2927 合入 main 后 frontend
@@ -342,8 +355,6 @@ jobs:
       - name: Deploy to SWAS (测试环境)
         if: steps.sync.outputs.skip != 'true'
         env:
-          AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
-          SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
           ACR_U: ${{ secrets.ACR_USERNAME }}
           ACR_P: ${{ secrets.ACR_PASSWORD }}
           IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
@@ -355,6 +366,24 @@ jobs:
           bash deploy/scripts/swas-deploy-ci.sh \
             ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P" "$IMAGE_TAG" \
             admin-web
+
+      # ── 「跳过部署」的运行面自证（issue #6294，判据 1）────────────────────────────
+      # 病：上面 `Skip if already built` 判「已部署」**只看 run 结论**（镜像在 ACR / 同 sha 结论 success）
+      # ⇒ 「跳过」那条路径上 `Deploy to SWAS` 整段 skipped，而 **run 结论 = success**；
+      # 对账侧（`deploy-reconcile.yml`）的断路器把 `success` 放进允许名单 ⇒ 不再补部署 ⇒
+      # 环境停摆而台账全绿（现场：SWAS 在跑 `admin-web:sha-877ac15`，main HEAD `9d82e2e60`）。
+      # 出口 = 在**跳过**时读一次**运行面**（远端在跑 tag），与目标 tag 比较：不一致 ⇒ 具名判红。
+      # ⚠️ 判红**不**顺手补部署：那是断路器（#4767 ③ / #5814 B）要防的 churn；本步只把事实变成可归因的红。
+      # 判据 = tests/unit_ci_workflows/test_deploy_skip_is_not_success.py（含类级元守卫：
+      # 任何带 `Skip if already built` 的腿漏接本步 ⇒ 未接线即红）。
+      - name: "Assert running tag == target (skip 不得冒充已部署，issue #6294)"
+        if: always() && steps.sync.outputs.skip == 'true'
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
+        run: |
+          set -euo pipefail
+          bash deploy/scripts/swas_deploy_running_tag.sh \
+            ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$IMAGE_TAG" admin-web
 
   # 部署后探测：前端域名 HTTP 200（防构建期 baked NEXT_PUBLIC_* 配错无信号）
   post-deploy-probe:

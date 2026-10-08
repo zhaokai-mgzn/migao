@@ -152,9 +152,11 @@ def _shell_corpus(text: str) -> list[tuple[int, str, str]]:
 
     ⚠️ 为什么必须只吃 shell 正文：把整份 YAML 都当命令 ⇒ YAML 结构行
     （`steps:` / `name:` / `on:` …）会被当成一条**永不结束**的命令，把后文真正的
-    `docker push` 吸进同一条语句 ⇒ 报出 `bmini-h5-publish.yml:102: steps:` 这种
-    **指错对象**的判红（实测踩到）。shell 正文的边界由缩进决定：`run:` 之下、
-    下一个缩进 ≤ 键所在缩进的行为止。
+    `docker push` 吸进同一条语句 ⇒ 报出 `bmini-h5-publish.yml: steps:` 这种**指错对象**的判红
+    （实测踩到：那块 YAML 若被当命令，报错行号落在 `steps:` 上，机器会跑去查「steps 有什么上界」）。
+    ⇒ 这里**有意不写行号**：活跃 workflow 的行号几分钟就失效，而本判据要的是「报错会指错
+    **哪一类**对象」这个**形态**（dev-flow §16.7『引用纪律』禁写裸 `path:NNN`）。
+    shell 正文的边界由缩进决定：`run:` 之下、下一个缩进 ≤ 键所在缩进的行为止。
     """
     lines = text.splitlines()
     out: list[tuple[int, str, str]] = []

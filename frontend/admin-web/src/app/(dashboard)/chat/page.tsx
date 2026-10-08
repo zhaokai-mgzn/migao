@@ -28,7 +28,7 @@ function SessionFromQuery() {
 
 export default function ChatPage() {
   const { fetchSessions } = useChatStore()
-  // 米宝唤出能力位（issue #5642 功能⑤）：**只**取服务端 `/api/auth/me` 下发的
+  // 黄金策唤出能力位（issue #5642 功能⑤）：**只**取服务端 `/api/auth/me` 下发的
   // `capabilities.mibaoChat` —— 前端不判任何权限码（单一真值在服务端 `AdminGate`，
   // 改一处即小程序端与 admin-web 两端同步）。
   const mibaoAllowed = useAuthStore((s) => s.user?.capabilities?.mibaoChat)

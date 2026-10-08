@@ -23,6 +23,10 @@ required 检查照旧**绿**。
 | 5 | **谓词有牙齿**（注入式红证：并行度漂移 / 本地腿漂移 / 库存塌陷 / skip 两个方向 / 台账缺字段，各能单独变红）+ **对照读数**（正常读数 ⇒ 不报） | 谓词恒真/恒假（空断言）⇒ 红 |
 | 6 | 红证孔（`MIGAO_FAIL_HELPER_LEG_SHAPE=1`）在**判定读取处**真的存在 | 孔被删 ⇒ 「把机制注红 ⇒ 必红」不可复算 ⇒ 红 |
 | 7 | **运行期牙齿**：本轮真收集到的库存 ≥ 冻结基线（`test_live_inventory_is_not_below_the_frozen_baseline`） | 收集面被截断 / worker 崩 / 整批判据消失 ⇒ 测试失败 ⇒ required 判红（**跑子集时不判**，见 §边界） |
+| 8 | **分片三方一致**（issue #6164）：台账 `shape.shards` 的片名 == CI matrix 的 `shard` 取值 == 本地 `ci_helper_leg()` 里 `MIGAO_CI_HELPER_SHARD=` 的取值；且 env 名 / 盐 / 规则实现在位 | 只加一片 / 只删一片 / 改了盐没同步 / 台账没登记 ⇒ 红 |
+| 9 | **分片是全划分**：按现取语料 + `conftest.shard_of` 复算 ⇒ 每个 `test_*.py` **恰好**落进一片（并集 == 目录全集、两两不相交、无空片） | 分片规则改成漏掉某类文件 / 只有一片拿到全部 ⇒ 红（这是「文件不属于任何片 ⇒ 静默少跑」的唯一堵法） |
+| 10 | **每片都有冻结基线**：`frozen_inventory.shards` 的键集合 == 片名集合，且逐片 `collected_total > 0` | 加了片却没冻结该片基线 ⇒ 该片的库存牙齿会失效 ⇒ 红 |
+| 11 | 判据 8~10 的**注入式红证**（各能单独变红）+ 对照读数 | 谓词恒真/恒假 ⇒ 红 |
 
 ## 未固化 / 边界（照实登记）
 
@@ -40,6 +44,7 @@ import pathlib
 import re
 
 import pytest
+import yaml
 
 from unit_ci_workflows import conftest
 
@@ -73,7 +78,29 @@ def pytest_argv(text: str, *, ci: bool) -> str:
     else:
         text = _extract_function(text, "ci_helper_leg")
     match = re.search(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", text)
-    return match.group(0).strip() if match else ""
+    return _argv_only(match.group(0)) if match else ""
+
+
+#: argv 之后的 **shell 控制尾巴**（`|| rc=1` 等）不是 argv 的一部分（同 MC-031 的口径）：
+#: 拆腿后本地每片都写成 `MIGAO_CI_HELPER_SHARD=N/M python3 -m pytest … -n 4 || ci_helper_rc=1`
+#: —— 片号必须走 env、每片退出码必须逐片收集。
+_ARGV_TAIL_RE = re.compile(r"\s*(?:\|\||&&|;).*$")
+
+
+def _argv_only(line: str) -> str:
+    """去掉 shell 控制尾巴后的 argv 原文。"""
+    return _ARGV_TAIL_RE.sub("", line or "").strip()
+
+
+def pytest_argv_lines(text: str) -> list[str]:
+    """现取**全部** pytest 命令行（本地腿拆腿后有两片 ⇒ 两行）。
+
+    🔴 取全部而不是第一条：本包实测过一处真退化 —— 只比第一条时，**只改第二片**
+    （`-n 4 → -n 8`）判据毫无反应 ⇒ 「并行度三方一致」这条契约被钉住的只剩两片中的一片。
+    """
+    body = _extract_function(text, "ci_helper_leg")
+    return [_argv_only(m.group(0))
+            for m in re.finditer(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", body)]
 
 
 def parallel_flag(argv: str, flag: str) -> str | None:
@@ -140,6 +167,23 @@ def _run(ledger: dict, ci_argv: str, local_argv: str) -> list[str]:
     return ledger_shape_problems(ledger, ci_argv, local_argv)
 
 
+def _set_floor(ledger: dict, value: int) -> dict:
+    """把**本轮该用的**那条库存下界改成 `value`（分片感知：有片改片，无片改整套）。
+
+    为什么不能直接写 `frozen_inventory.collected_total`：**本文件自己就跑在某一片里**
+    （CI 上 `MIGAO_CI_HELPER_SHARD` 是设着的）⇒ 判定读的是**该片**的下界，改整套那个数改不到它
+    ⇒ 红证会退化成空跑（这正是「判据不知道自己跑在哪一片」的形态）。
+    """
+    shard = conftest.active_shard()
+    if shard is None:
+        ledger["frozen_inventory"]["collected_total"] = value
+    else:
+        key = f"{shard[0]}/{shard[1]}"
+        floors = ledger["frozen_inventory"].setdefault("shards", {})
+        floors[key] = {**(floors.get(key) or {}), "collected_total": value}
+    return ledger
+
+
 @pytest.fixture(autouse=True)
 def _red_proof_hole_off(monkeypatch):
     """红证孔**默认关闭**：本文件的判据自己不能被它注红（否则「注红必红」的实测会自伤）。
@@ -177,9 +221,8 @@ def test_live_inventory_is_not_below_the_frozen_baseline(request) -> None:
     `conftest.collection_floor_problems` 的结构性区分口径），所以研发日常不受影响。
     """
     session = request.session
-    whole_suite = not (conftest._current_test_files()
-                       - {(getattr(i, "nodeid", "") or "").split("::", 1)[0].rsplit("/", 1)[-1]
-                          for i in session.items})
+    whole_suite = not (conftest.expected_test_files()
+                       - {conftest._item_file(i) for i in session.items})
     if not whole_suite:
         return                     # 子集运行：库存判据不适用（不是"通过"—— 是"没这一问"）
     problems = conftest.collection_floor_problems(session, _LEDGER)
@@ -209,7 +252,7 @@ def test_session_hook_is_wired_and_fires_on_a_short_inventory(monkeypatch, reque
     # 现取收集数（别的包在长判据）⇒ 直接 +1 会构造出一个**根本不短**的库存，判据退化成空跑
     # （**实测**：本文件初版就是这么写的，全量里 `DID NOT RAISE`）。
     strict = json.loads(json.dumps(_LEDGER))
-    strict["frozen_inventory"]["collected_total"] = int(session.testscollected) + 1
+    _set_floor(strict, int(session.testscollected) + 1)
     monkeypatch.setattr(conftest, "_helper_leg_ledger", lambda: strict)
     with pytest.raises(BaseException) as caught:
         conftest.pytest_sessionfinish(session, 0)
@@ -229,7 +272,7 @@ def test_session_hook_returns_early_on_the_xdist_controller(monkeypatch, request
     if hasattr(session.config, "workerinput"):
         pytest.skip("本进程是 xdist worker（它**该**判）⇒ 控制器早退这一半不适用")
     strict = json.loads(json.dumps(_LEDGER))
-    strict["frozen_inventory"]["collected_total"] = int(session.testscollected) + 1000
+    _set_floor(strict, int(session.testscollected) + 1000)
     monkeypatch.setattr(conftest, "_helper_leg_ledger", lambda: strict)
     conftest.pytest_sessionfinish(session, 0)      # 控制器早退 ⇒ 不得抛
 
@@ -244,15 +287,15 @@ def test_collection_floor_guard_is_live_and_fail_closed() -> None:
     """
     assert callable(getattr(conftest, "collection_floor_problems", None)), (
         "运行期库存判据本体不存在（issue #5814）⇒ 「变快只是少跑」没人判")
-    floor = int(_LEDGER["frozen_inventory"]["collected_total"])
+    floor = conftest._frozen_floor(_LEDGER["frozen_inventory"], conftest.active_shard())
     strict = json.loads(json.dumps(_LEDGER))
-    strict["frozen_inventory"]["collected_total"] = floor + 1
+    _set_floor(strict, floor + 1)
 
     class _Item:
         def __init__(self, nodeid):
             self.nodeid = nodeid
 
-    whole = sorted(conftest._current_test_files())
+    whole = sorted(conftest.expected_test_files())
 
     class _Session:
         def __init__(self, collected, nodeids):
@@ -289,14 +332,14 @@ def test_criteria_are_not_vacuous_injected_red_proofs() -> None:
         "本地腿少了并行度居然不报 ⇒ 本地会按串行跑（与 CI 不同源）而无人发现")
 
     # ③ 库存塌陷：**跑整套**时本轮收集数 < 冻结基线 ⇒ 运行期判定必须报（"少跑了"可判）
-    floor = int(_LEDGER["frozen_inventory"]["collected_total"])
+    floor = conftest._frozen_floor(_LEDGER["frozen_inventory"], conftest.active_shard())
     frozen_skips = int(_LEDGER["frozen_inventory"]["skipped_reading"]["MIGAO_REQUIRE_REALDB"])
 
     class _Item:
         def __init__(self, nodeid):
             self.nodeid = nodeid
 
-    whole = sorted(conftest._current_test_files())
+    whole = sorted(conftest.expected_test_files())
 
     class _Session:
         def __init__(self, collected, nodeids):
@@ -363,7 +406,7 @@ class _FakeSession:
 
 def test_is_subset_run_classifies_by_structure_not_by_count() -> None:
     """行为级：覆盖全部判据文件 ⇒ 非子集；少一份文件 ⇒ 子集（**与收集数无关**）。"""
-    all_files = sorted(conftest._current_test_files())
+    all_files = sorted(conftest.expected_test_files())
     assert all_files, "本目录应当有判据文件（否则本判据是空断言）"
     full = _FakeSession([f"{n}::test_x" for n in all_files])
     assert conftest.is_subset_run(full) is False, "覆盖全部文件 ⇒ 不该判成子集"
@@ -395,3 +438,211 @@ def test_subset_predicate_has_exactly_one_source() -> None:
     # 禁用串用拼接构造，避免本判据自身成为命中源
     for bad in ("or 0) < 1" + "00", "testscollected < 1" + "00"):
         assert bad not in code, f"不得用数值启发式判子集（{bad!r}）—— 那是假红的根因"
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════
+# #6164：**分片**（一条 required 腿 → 两条并行腿）的判据 8~11
+# ══════════════════════════════════════════════════════════════════════════════════════
+# 为什么单独一组：分片把「这条腿跑多大范围」从**一个**命令变成**两片**命令，而三处声明
+# （CI matrix / 本地 `ci_helper_leg()` / 台账 `shape.shards`）**任何一处少一片**，后果都不是
+# 「变慢」而是**静默少跑那一半**（required 检查照旧绿）。所以这三处必须**逐字三方一致**，
+# 且「分片是全划分」必须按**现取语料**复算 —— 规则一改成漏掉某类文件，两片合起来就不等于全集。
+
+SHARD_ENV = conftest.SHARD_ENV
+
+
+def ci_shard_names(ci_text: str) -> list[str]:
+    """现取 CI 侧的分片清单（`jobs.ci-workflow-tests.strategy.matrix.include[].shard`）。"""
+    try:
+        doc = yaml.safe_load(ci_text) or {}
+    except yaml.YAMLError:
+        return []
+    job = ((doc.get("jobs") or {}).get("ci-workflow-tests") or {})
+    matrix = ((job.get("strategy") or {}).get("matrix") or {})
+    return [str(e["shard"]) for e in (matrix.get("include") or [])
+            if isinstance(e, dict) and e.get("shard")]
+
+
+def local_shard_names(verify_text: str) -> list[str]:
+    """现取本地的分片清单（`ci_helper_leg()` 里 `MIGAO_CI_HELPER_SHARD=<N/M>` 的取值，按出现序）。"""
+    body = _extract_function(verify_text, "ci_helper_leg")
+    return re.findall(rf"{re.escape(SHARD_ENV)}=([0-9]+/[0-9]+)", body)
+
+
+def shard_problems(ledger: dict, ci_text: str, verify_text: str, census=None) -> list[str]:
+    """判据 8/9/10 的**谓词本体**（真台账 + 内存构造的坏台账/坏配置共用同一份）。"""
+    bad: list[str] = []
+    shards = ((ledger.get("shape") or {}).get("shards") or {})
+    if not shards:
+        return ["台账缺 `shape.shards` ⇒ 分片形态下**无对象可判**（issue #6164，fail-closed）"]
+    names = [str(n) for n in (shards.get("names") or [])]
+    if not names:
+        bad.append("台账 `shape.shards.names` 为空 ⇒ 分片清单无对象可判")
+    if int(shards.get("count") or 0) != len(names):
+        bad.append(f"台账 `shape.shards.count` = {shards.get('count')!r} != 片名条数 {len(names)}")
+    if shards.get("env") != SHARD_ENV:
+        bad.append(f"台账 `shape.shards.env` = {shards.get('env')!r} != 判定本体用的 {SHARD_ENV!r}")
+    if int(shards.get("salt") or 0) != int(conftest.SHARD_SALT):
+        bad.append(
+            f"台账 `shape.shards.salt` = {shards.get('salt')!r} != `conftest.SHARD_SALT` = "
+            f"{conftest.SHARD_SALT} ⇒ **改了盐没同步**（改盐 = 改分片，两片的成员全变）"
+        )
+    if "conftest.py::shard_of" not in str(shards.get("rule_impl") or ""):
+        bad.append(f"台账 `shape.shards.rule_impl` = {shards.get('rule_impl')!r} ⇒ 指向的规则实现不是 "
+                   "`conftest.py::shard_of`（规则没有单一实现 = 下一份拷贝各自演化）")
+
+    # ② 三方一致（CI matrix / 本地腿 / 台账）
+    for label, got in (("CI matrix", ci_shard_names(ci_text)),
+                       ("本地 `ci_helper_leg()`", local_shard_names(verify_text))):
+        if not got:
+            bad.append(f"{label} 里现取不到分片清单 ⇒ 分片形态无从判定（fail-closed 判红）")
+        elif sorted(got) != sorted(names):
+            bad.append(f"{label} 的片名 {sorted(got)} != 台账 {sorted(names)} ⇒ 只改了一边（静默少跑那一半）")
+
+    # ③ 全划分：并集 == 现取语料、两两不相交、无空片
+    files = set(conftest._current_test_files() if census is None else census)
+    if not files:
+        bad.append("现取语料为空 ⇒ 「并集 == 全集」是空断言（fail-closed）")
+    elif names:
+        buckets: dict[str, set[str]] = {}
+        for name in names:
+            try:
+                index, count = (int(x) for x in name.split("/"))
+            except ValueError:
+                bad.append(f"片名形态不合规（应为 `N/M`）：{name!r}")
+                continue
+            buckets[name] = {f for f in files if conftest.shard_of(f, count) == index}
+        if buckets:
+            union = set().union(*buckets.values())
+            total = sum(len(b) for b in buckets.values())
+            if union != files:
+                bad.append(f"分片**不是全划分**：并集 {len(union)} != 语料 {len(files)}（差 "
+                           f"{len(files) - len(union)} 个文件不属于任何片 ⇒ 静默少跑）")
+            if total != len(union):
+                bad.append(f"两片**相交**：各片条数合计 {total} > 并集 {len(union)}（同一文件被跑两次）")
+            for name, bucket in buckets.items():
+                if not bucket:
+                    bad.append(f"分片 {name} 是**空片** ⇒ 那条腿什么都没跑（而 required 照旧绿）")
+
+    # ④ 每片都有冻结基线
+    floors = ((ledger.get("frozen_inventory") or {}).get("shards") or {})
+    for name in names:
+        value = int(((floors.get(name) or {}).get("collected_total")) or 0)
+        if value <= 0:
+            bad.append(f"分片 {name} 没有冻结基线（`frozen_inventory.shards[{name!r}].collected_total`）"
+                       "⇒ 该片的运行期库存牙齿无对象可判")
+
+    # ⑤ **本地腿的每一条** pytest 行都要合规（#6164 补的真退化）：行数 == 片数，且每条的
+    #    `-n` 都等于台账声明的并行度 —— 只比第一条 ⇒ 只改第二片就没人拦（本包实测过）。
+    shape = ledger.get("shape") or {}
+    flag = str(shape.get("parallel_flag") or "-n")
+    declared = shape.get("parallel_workers")
+    lines = pytest_argv_lines(verify_text)
+    if len(lines) != len(names):
+        bad.append(f"本地腿里现取到 {len(lines)} 条 pytest 行，而台账声明 {len(names)} 片"
+                   " ⇒ 少一条 = 本地少跑一片（而 CI 照旧两片）")
+    for i, argv in enumerate(lines):
+        got = parallel_flag(argv, flag)
+        if declared is not None and str(got) != str(declared):
+            bad.append(f"本地腿第 {i + 1} 条 pytest 行的 `{flag}` = {got!r}，台账声明 {declared}"
+                       f" ⇒ 形态漂移（**只比第一条**是放走这条的写法；argv = {argv}）")
+    return bad
+
+
+def test_shards_are_declared_consistently_everywhere() -> None:
+    """判据 8/9/10：真台账 + 真 CI matrix + 真本地腿 + 真语料 ⇒ 必须零问题。"""
+    ci_text = (REPO / CI_REL).read_text(encoding="utf-8")
+    verify_text = (REPO / VERIFY_REL).read_text(encoding="utf-8")
+    problems = shard_problems(_LEDGER, ci_text, verify_text)
+    assert problems == [], "分片判据报红：\n  - " + "\n  - ".join(problems)
+
+
+def test_shard_partition_is_recomputed_from_the_live_corpus() -> None:
+    """判据 9 的**读数**臂：现取语料下，两片的条数必须合计 == 语料（不是「大致相等」）。"""
+    names = [str(n) for n in _LEDGER["shape"]["shards"]["names"]]
+    files = conftest._current_test_files()
+    buckets = {}
+    for name in names:
+        index, count = (int(x) for x in name.split("/"))
+        buckets[name] = {f for f in files if conftest.shard_of(f, count) == index}
+    assert sum(len(b) for b in buckets.values()) == len(files), (
+        f"分片条数合计 {sum(len(b) for b in buckets.values())} != 语料 {len(files)}"
+    )
+    assert buckets, "一片都没算出来 ⇒ 本判据是空断言"
+    for name, bucket in buckets.items():
+        assert bucket, f"分片 {name} 是空片"
+
+
+def test_shard_criteria_are_not_vacuous_injected_red_proofs() -> None:
+    """判据 11：8/9/10 每条**各自**能单独变红；且真读数**不报**（判别力的另一臂）。"""
+    ci_text = (REPO / CI_REL).read_text(encoding="utf-8")
+    verify_text = (REPO / VERIFY_REL).read_text(encoding="utf-8")
+    assert ci_shard_names(ci_text) and local_shard_names(verify_text), (
+        "真配置里现取不到片名 ⇒ 下面的红证会退化成空跑"
+    )
+    assert shard_problems(_LEDGER, ci_text, verify_text) == [], "真读数被判红 ⇒ 谓词恒真，不是判据"
+
+    # ① 台账只登记一片（而 CI / 本地跑两片）⇒ 必红：三方一致没有被钉住
+    one_shard_ledger = json.loads(json.dumps(_LEDGER))
+    one_shard_ledger["shape"]["shards"]["names"] = ["1/2"]
+    one_shard_ledger["shape"]["shards"]["count"] = 1
+    assert shard_problems(one_shard_ledger, ci_text, verify_text) != [], (
+        "台账只登记一片（而 CI/本地跑两片）⇒ 不报 ⇒ 三方一致没有被钉住"
+    )
+
+    # ② 本地腿少一片（把 2/2 那条改成 1/2）⇒ 必红
+    one_local = verify_text.replace(f"{SHARD_ENV}=2/2", f"{SHARD_ENV}=1/2")
+    assert local_shard_names(one_local) != local_shard_names(verify_text), "变异点没命中 ⇒ 本红证会退化成空跑"
+    assert shard_problems(_LEDGER, ci_text, one_local) != [], (
+        "本地腿少了 2/2 那一片 ⇒ 不报 ⇒ 本地覆盖缩水（CI 两片、本地一片）会溜过去"
+    )
+
+    # ③ CI 少一片 ⇒ 必红（去掉 matrix 的第二条 include）
+    one_ci = ci_text.replace('          - shard: "2/2"\n            shard_suffix: "（后半）"\n', "")
+    assert ci_shard_names(one_ci) != ci_shard_names(ci_text), "变异点没命中 ⇒ 本红证会退化成空跑"
+    assert shard_problems(_LEDGER, one_ci, verify_text) != [], (
+        "CI matrix 少一片 ⇒ 不报 ⇒ 「只加一片」的形态（关键路径没减半）会溜过去"
+    )
+
+    # ④ 盐漂移（改盐 = 改分片）⇒ 必红
+    salted = json.loads(json.dumps(_LEDGER))
+    salted["shape"]["shards"]["salt"] = int(conftest.SHARD_SALT) + 1
+    assert shard_problems(salted, ci_text, verify_text) != [], (
+        "台账的盐与判定实现不一致 ⇒ 不报 ⇒ 两片成员与冻结基线静默对不上"
+    )
+
+    # ⑤ 某片没有冻结基线 ⇒ 必红（那一片的库存牙齿会失效）
+    no_floor = json.loads(json.dumps(_LEDGER))
+    del no_floor["frozen_inventory"]["shards"]["2/2"]
+    assert shard_problems(no_floor, ci_text, verify_text) != [], (
+        "少了某片的冻结基线 ⇒ 不报 ⇒ 那一半「少跑」没有任何读数"
+    )
+
+    # ⑥ 台账整个 `shards` 块被删 ⇒ fail-closed 必红
+    assert shard_problems({"shape": {"parallel_workers": 4}}, ci_text, verify_text) != [], (
+        "台账没有分片块 ⇒ 不报 ⇒ 分片形态无对象可判"
+    )
+
+    # ⑦ 片名与规则的**值域**对不上（`3/2` 这个片号永远分不到文件）⇒ 一整半文件不属于任何片
+    #    ⇒ 必红。这是「静默少跑」的**真实**形态：规则没改，但声明的片名漏了一片。
+    holes = json.loads(json.dumps(_LEDGER))
+    holes["shape"]["shards"]["names"] = ["1/2", "3/2"]
+    holes_problems = shard_problems(holes, ci_text, verify_text)
+    assert any("全划分" in p for p in holes_problems), (
+        f"片名与规则值域对不上 ⇒ 必须报「不是全划分」，实际：{holes_problems}"
+    )
+
+    # ⑧ **只改第二片**那行的 `-n` ⇒ 必红（#6164 补的真退化：只比第一条 ⇒ 放走它）
+    idx = verify_text.find("ci_helper_leg()")
+    assert idx >= 0, "找不到本地腿函数（注入点漂移）"
+    body = verify_text[idx:]
+    matches = list(re.finditer(rf"-m\s+pytest\s+{re.escape(PYTEST_TARGET)}[^\n]*", body))
+    assert len(matches) == 2, f"本地腿里现取到 {len(matches)} 条 pytest 行（应为 2）"
+    second = matches[1]
+    at = second.start() + second.group(0).rfind("-n 4")
+    assert at > second.start(), f"第二条 pytest 行里找不到 `-n 4`：{second.group(0)!r}"
+    second_only = verify_text[:idx] + body[:at] + "-n 8" + body[at + len("-n 4"):]
+    assert pytest_argv_lines(second_only)[1] != pytest_argv_lines(verify_text)[1], "变异没命中第二片"
+    assert any("第 2 条" in p or "条 pytest" in p for p in shard_problems(_LEDGER, ci_text, second_only)), (
+        "只改第二片的 `-n` ⇒ 不报 ⇒ 并行度契约只钉住了两片中的一片（本包实测过的真退化）"
+    )

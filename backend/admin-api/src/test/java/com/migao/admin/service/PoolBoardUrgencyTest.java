@@ -1,4 +1,8 @@
 // case_ids: PR-079, PR-080, PR-081
+//
+// 2026-10-08（issue #6523 / #6524）追加两组判据（`materialKey` 逐字不变是它们的**负控**）：
+//   ① 料组标题不许把内部键摆给商家看 —— 展示名与标识分离（服务端下发 `materialLabel`）；
+//   ② 超时告警文案 = 阈值 + 该做什么，不念同屏已有的列（单号 / 等待时长），不带口语责备尾巴。
 package com.migao.admin.service;
 
 import com.migao.admin.dto.ProductionPoolViews;
@@ -336,6 +340,85 @@ class PoolBoardUrgencyTest {
         assertThat(pool.urgentCount()).as("NULL 行不得被读成加急").isZero();
     }
 
+    // ─────────────────────────────────────────── 展示名与标识分离（issue #6523）
+
+    @Test
+    @DisplayName("🔴 #6523 料组标题：展示名是人话（不含 `|`、不含 productId 形态的 UUID），机器键逐字不变（负控）")
+    void poolGroupExposesHumanLabelWhileMaterialKeyStaysTheMachineKey() {
+        // 🔴 夹具刻意让「机器键」长得像真机上的那个（UUID + `|` + SKU）—— 真机实测（2026-10-08）：
+        //    标题渲染成 `a61daac33e1a49974577d3ca81c4500b|SD07演示-2.8-8141273`。
+        String productId = "a61daac33e1a49974577d3ca81c4500b";
+        String skuCode = "SD07演示-2.8-8141273";
+        OffsetDateTime now = businessClock.nowOffset();
+        when(orderMapper.selectList(any())).thenReturn(List.of(
+                orderOf("o-old", "ORD-0001", now.minusHours(30), false, null),
+                orderOf("o-new", "ORD-0002", now.minusHours(2), false, null)));
+        when(processingOrderMapper.selectActiveOrderIds(eq(TENANT), anyCollection())).thenReturn(List.of());
+        when(orderItemMapper.selectList(any())).thenReturn(
+                itemsOf("o-old", "i-old", productId, skuCode), itemsOf("o-new", "i-new", productId, skuCode));
+
+        ProductionPoolViews.Pool pool = processingOrderService.pool(TENANT, null);
+
+        assertThat(pool.groups()).hasSize(1);
+        ProductionPoolViews.PoolGroup group = pool.groups().get(0);
+
+        // ① 展示名 = 人话：商品名 × 该行的物料键（SKU 本身＝本系统里「颜色 × 门幅」的组合，
+        //    与逐行「物料」列**同源**（列里显示的也是 productName + skuCode）⇒ 组标题与行内对得上）
+        assertThat(group.materialLabel())
+                .as("展示名必须由服务端组装（前端拼字符串 = 第二份会漂的口径）")
+                .isEqualTo("布艺遮光帘A × " + skuCode);
+        assertThat(group.materialLabel()).as("🔴 内部键的 `|` 分隔符不得上屏").doesNotContain("|");
+        assertThat(group.materialLabel()).as("🔴 productId（UUID）不得上屏").doesNotContain(productId);
+        assertThat(group.materialLabel())
+                .as("🔴 兜底：UUID 形态的串一个都不许出现在展示名里")
+                .doesNotContainPattern("[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}");
+        assertThat(group.materialLabel()).as("展示名不得为空（空标题比机器键更糟）").isNotBlank();
+
+        // ② 负控：`materialKey` 逐字不变（仍是机器键 —— 前端 React key / 分组判据 / 其它消费者都吃它）
+        assertThat(group.materialKey())
+                .as("🔴 `materialKey` = `productId|skuCode`，一字不改（本单只**新增**展示字段）")
+                .isEqualTo(productId + "|" + skuCode);
+        assertThat(group.productId()).isEqualTo(productId);
+        assertThat(group.skuCode()).isEqualTo(skuCode);
+    }
+
+    // ─────────────────────────────────────────── 超时告警文案（issue #6524）
+
+    @Test
+    @DisplayName("🔴 #6524 告警文案：阈值 + 该做什么；不念同屏已有的列（单号 / 等待时长），不带口语责备尾巴")
+    void overdueWarningCopyStatesThresholdAndActionWithoutRepeatingColumns() {
+        BigDecimal maxWait = new BigDecimal("6");
+        OffsetDateTime now = businessClock.nowOffset();
+        when(orderMapper.selectList(any())).thenReturn(List.of(
+                orderOf("o-old", "ORD-20261008001", now.minusHours(30), false, null)));
+        when(processingOrderMapper.selectActiveOrderIds(eq(TENANT), anyCollection())).thenReturn(List.of());
+        when(orderItemMapper.selectList(any())).thenReturn(itemsOf("o-old", "i-old"));
+
+        ProductionPoolViews.Pool pool = processingOrderService.pool(TENANT, maxWait);
+
+        assertThat(pool.overdueCount()).isEqualTo(1);
+        assertThat(pool.warnings()).hasSize(1);
+        ProductionPoolViews.PoolWarning warning = pool.warnings().get(0);
+        String message = warning.message();
+
+        assertThat(message).as("🔴 删掉口语责备尾巴（语调：只陈述事实 + 该做什么）")
+                .doesNotContain("不要一直压着不派");
+        assertThat(message).as("🔴 保留「该做什么」").contains("请合并派单或单独派单");
+        assertThat(message).as("🔴 阈值由**真值**渲染（写死 24 会被本夹具的 6 当场抓住）").contains("6");
+        assertThat(message)
+                .as("🔴 阈值是**本次生效**的那个值：缺省 24 不得落到文案里")
+                .doesNotContain("24");
+        assertThat(message).as("🔴 单号不在文案里重复（同屏明细表已有独立列）")
+                .doesNotContain("ORD-20261008001");
+        assertThat(message).as("🔴 实际等待时长也不在文案里重复（同屏明细表已有独立列）")
+                .doesNotContain("30");
+
+        // 负控：告警**对象**一个都没丢 —— 名字与读数仍由字段承载（前端把它们渲染成独立列）
+        assertThat(warning.orderId()).isEqualTo("o-old");
+        assertThat(warning.orderNo()).as("🔴「不得静默压单」不靠文案，靠这个字段").isEqualTo("ORD-20261008001");
+        assertThat(warning.waitHours()).isEqualByComparingTo("30.0");
+    }
+
     // ─────────────────────────────────────────── 夹具
 
     private Order orderOf(String id, String orderNo, OffsetDateTime createdAt, boolean urgent,
@@ -346,11 +429,16 @@ class PoolBoardUrgencyTest {
 
     /** 一行明细：带 {@code productId} + {@code processing_info.sku}（「物料」= 商品 × 颜色 × 门幅）。 */
     private List<OrderItem> itemsOf(String orderId, String itemId) {
+        return itemsOf(orderId, itemId, "prod-1", "SKU-A");
+    }
+
+    /** 同上，但显式给 {@code productId} / {@code skuCode}（issue #6523：夹具要能长成真机上的 UUID + SKU）。 */
+    private List<OrderItem> itemsOf(String orderId, String itemId, String productId, String skuCode) {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("colorName", "米白");
         info.put("sellingMethod", "散剪");
         info.put("doorWidth", "2.8米");
-        info.put("sku", "SKU-A");
+        info.put("sku", skuCode);
         info.put("cuttingMode", "定高买宽");
         List<Map<String, Object>> procs = new ArrayList<>();
         Map<String, Object> p = new LinkedHashMap<>();
@@ -361,7 +449,7 @@ class PoolBoardUrgencyTest {
         procs.add(p);
         info.put("processingItems", procs);
         return List.of(OrderItem.builder().id(itemId).tenantId(TENANT).orderId(orderId)
-                .productId("prod-1").productName("布艺遮光帘A").quantity(new BigDecimal("3"))
+                .productId(productId).productName("布艺遮光帘A").quantity(new BigDecimal("3"))
                 .width(new BigDecimal("1.5")).height(new BigDecimal("1.1"))
                 .processingInfo(info).build());
     }

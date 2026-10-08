@@ -1,5 +1,5 @@
 """
-米宝多轮 — 可靠性域（补货/供应链/权限/物流/容错）
+黄金策多轮 — 可靠性域（补货/供应链/权限/物流/容错）
 
 （由 test_mibao_advanced_multiturn.py 按场景域拆分，2026-08-29）
 """
@@ -28,7 +28,7 @@ def _auto_reset_singletons():
 
 
 class TestMibaoMultiturnReliability:
-    """米宝多轮 — 可靠性域（补货/供应链/权限/物流/容错）"""
+    """黄金策多轮 — 可靠性域（补货/供应链/权限/物流/容错）"""
 
     async def test_case_12_inventory_alert_batch_restock(self):
         """

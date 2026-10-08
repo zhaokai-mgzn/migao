@@ -1,36 +1,30 @@
-// case_ids: OB-004
+// case_ids: UI-082
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
-// Mock lucide-react — icons used by about page
-vi.mock('lucide-react', () => {
-  const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
-  return {
-    Lightbulb: stub('lightbulb'),
-    Heart: stub('heart'),
-    Sprout: stub('sprout'),
-    Lock: stub('lock'),
-    Target: stub('target'),
-    Eye: stub('eye'),
-  }
-})
+vi.mock('next/link', () => ({
+  default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
+}))
 
 import AboutPage from '@/app/(corporate)/about/page'
+import {
+  findColloquialMarkers,
+  findPersonifiedAi,
+  findQuantifierRhetoric,
+} from './copy-voice-banlist'
 
-describe('CorporateAboutPage', () => {
+describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实，issue #6291 / #6326）', () => {
   it('renders page header', () => {
     render(<AboutPage />)
-    expect(screen.getByText('关于米高')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: '关于观星台' })).toBeInTheDocument()
+    expect(screen.getByText(/观星台是杭州词元通达科技有限公司旗下的 AI 经营平台/)).toBeInTheDocument()
   })
 
-  it('renders header description', () => {
+  it('renders company intro（布艺行业真实流程 + 双 AI 分工）', () => {
     render(<AboutPage />)
-    expect(screen.getByText(/以AI双助手重新定义企业电商管理/)).toBeInTheDocument()
-  })
-
-  it('renders company intro text', () => {
-    render(<AboutPage />)
-    expect(screen.getByText(/米高是杭州词元通达科技有限公司旗下的AI智能电商管理平台/)).toBeInTheDocument()
+    expect(screen.getByText(/一款窗帘要按颜色 × 售卖方式 × 门幅组合出几十个规格/)).toBeInTheDocument()
+    expect(screen.getByText(/顾客侧由元元 7×24 小时接待咨询/)).toBeInTheDocument()
+    expect(screen.getByText(/经营侧由黄金策以自然语言问答/)).toBeInTheDocument()
   })
 
   it('renders mission and vision', () => {
@@ -39,32 +33,80 @@ describe('CorporateAboutPage', () => {
     expect(screen.getByText('我们的愿景')).toBeInTheDocument()
   })
 
-  it('renders core values section', () => {
+  it('renders 产品原则（不编造 / 价格不由模型定 / 敏感事项不做决定 / 边界写明）', () => {
+    render(<AboutPage />)
+    expect(screen.getByText('观星台的产品原则')).toBeInTheDocument()
+    expect(screen.getByText('数据之外不作答')).toBeInTheDocument()
+    expect(screen.getByText('定价权归属商品库')).toBeInTheDocument()
+    expect(screen.getByText('敏感事项不由 AI 决定')).toBeInTheDocument()
+    expect(screen.getByText('能力边界公开标注')).toBeInTheDocument()
+  })
+
+  it('renders core values section 与四条价值观', () => {
     render(<AboutPage />)
     expect(screen.getByText('核心价值观')).toBeInTheDocument()
+    for (const name of ['技术驱动', '客户至上', '行业深耕', '数据安全']) {
+      expect(screen.getByText(name)).toBeInTheDocument()
+    }
   })
 
-  it('renders value names', () => {
+  it('renders 技术底座 section 与四张卡', () => {
     render(<AboutPage />)
-    expect(screen.getByText('技术驱动')).toBeInTheDocument()
-    expect(screen.getByText('客户至上')).toBeInTheDocument()
-    expect(screen.getByText('行业深耕')).toBeInTheDocument()
-    expect(screen.getByText('数据安全')).toBeInTheDocument()
+    expect(screen.getByText('技术底座')).toBeInTheDocument()
+    for (const title of ['两侧 AI 各自独立配置', '业务工具层', '多租户底座', '四个终端，同一数据源']) {
+      expect(screen.getByText(title)).toBeInTheDocument()
+    }
+    // 查无出处的年份不得回流（issue #6382：原「发展历程」的 2024 Q1~2025 早于仓史两年）
+    expect(screen.queryByText(/20\d\d/)).not.toBeInTheDocument()
   })
 
-  it('renders timeline section', () => {
+  it('renders 底部 CTA', () => {
     render(<AboutPage />)
-    expect(screen.getByText('发展历程')).toBeInTheDocument()
+    expect(screen.getByText('立即入驻')).toBeInTheDocument()
+    expect(screen.getByText('留言咨询')).toBeInTheDocument()
   })
 
-  it('renders timeline entries', () => {
+  it('宣传真实性：不出现占位联系方式与浮夸表述', () => {
     render(<AboutPage />)
-    // Timeline renders twice (desktop alternating + mobile single-sided),
-    // so text appears twice in the DOM
-    expect(screen.getAllByText('项目启动').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('核心引擎开发').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('平台上线').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('多渠道接入').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('能力进化').length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText(/400-888-8888/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/contact@migao-ai\.com/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/文一西路000号/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/自动学习/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/越用越懂/)).not.toBeInTheDocument()
+  })
+
+  it('视觉口径：不再使用通用蓝色渐变模板', () => {
+    const { container } = render(<AboutPage />)
+    expect(container.innerHTML).not.toContain('from-blue-600')
+    expect(container.innerHTML).not.toContain('to-indigo-800')
+  })
+
+  // ── 文案口吻（issue #6326：去 AI 口语，改「能力陈述型」书面语）──
+
+  it('文案口吻：关于我们页渲染文本不含 AI 口语词表', () => {
+    const { container } = render(<AboutPage />)
+    const hits = findColloquialMarkers(container.textContent ?? '')
+    expect(hits, `关于我们页渲染文本出现 AI 口语词：${hits.join(' / ')}`).toEqual([])
+  })
+  // ── 文案质感：量化排比与拟人量词（issue #6366）──
+
+  it('文案质感：关于我们页渲染文本无量化排比、无拟人量词', () => {
+    const { container } = render(<AboutPage />)
+    const text = container.textContent ?? ''
+
+    // 判别力自证：病症样本必须被检出、合规样本必须零命中（否则本判据是空断言）
+    expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
+    expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
+    expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
+    expect(findPersonifiedAi('元元与黄金策')).toEqual([])
+
+    // 真实语料
+    const quantifiers = findQuantifierRhetoric(text)
+    expect(
+      quantifiers,
+      `关于我们页渲染文本出现量化排比：${quantifiers.join(' / ')}`,
+    ).toEqual([])
+    const personified = findPersonifiedAi(text)
+    expect(personified, `关于我们页渲染文本出现拟人量词：${personified.join(' / ')}`).toEqual([])
   })
 })

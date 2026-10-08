@@ -2,7 +2,7 @@ import { View, Text } from '@tarojs/components'
 import './BatchStockCard.scss'
 
 /**
- * 批次账 / 省料度量卡（米宝 B 端**移动**会话内）— issue #5188
+ * 批次账 / 省料度量卡（黄金策 B 端**移动**会话内）— issue #5188
  *
  * 与 B 端桌面 `frontend/admin-web/src/components/chat/BatchStockCard.tsx` **同口径、同分支**：
  * 一个工具四个只读读面，按工具回的 `action` 判别键分支。

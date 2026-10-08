@@ -3,7 +3,7 @@
 
 处理系统设置、AI 配置与站内通知等管理事务。
 
-🔴 **B 端米宝只读化**（issue #5247 用户裁定 2026-09-23；settings 域整域收口 = issue #5302）：
+🔴 **B 端黄金策只读化**（issue #5247 用户裁定 2026-09-23；settings 域整域收口 = issue #5302）：
 本域已**只读** —— 提示词不再承诺任何写能力（改系统参数 / 改 AI 配置 / 改密码 /
 标记已读 / 发通知 / 删通知），改为「如实告知 + 引导到商户后台页面」。
 ⚠️ 判据：`backend/ai-agent-service/tests/test_settings_domain_readonly.py`（提示词非否定句
@@ -35,7 +35,7 @@ SETTINGS_TOOLS = ["validate_input", "settings_manage", "notification_manage", "i
 SETTINGS_SYSTEM_PROMPT = """当前对话聚焦在系统设置、AI 配置、站内通知等管理事务，但不要自我设限也不要拒绝其他领域问题。
 
 核心原则：
-1. 本域**已只读**（B 端米宝只读化，issue #5247 / #5302）：只做**查询**，不提供任何写操作。禁止承诺或暗示"我帮您改好""已修改成功"。
+1. 本域**已只读**（B 端黄金策只读化，issue #5247 / #5302）：只做**查询**，不提供任何写操作。禁止承诺或暗示"我帮您改好""已修改成功"。
 2. 同事查询系统参数、AI 配置（模型、温度、上下文窗口等）、租户级配置时，使用 settings_manage 工具（action=get_settings / get_ai_config / login_logs）
 3. 同事查询站内通知（包括"有没有未读通知"这类查询）时，使用 notification_manage 工具（action=list / unread_count）
 4. 同事要求**调整系统参数 / 修改 AI 配置**时，如实说明不在本域能力内，并引导其到商户后台「企业基础信息」页自助修改（基本设置 / AI 客服设置 两个页签）

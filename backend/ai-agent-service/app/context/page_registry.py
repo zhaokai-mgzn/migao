@@ -4,10 +4,10 @@
 
 B 端最贵的成本是**培训成本**（「这个字段什么意思」「这单为什么是这个价」「这个报错怎么解决」），
 而知识已经在库里 —— 缺的只是「用户在哪一页」这个入口。浮动面板（`FloatingAssistant.tsx`）
-与米宝同屏 ⇒ 前端**能**直接读到 route 与当前实体。
+与黄金策同屏 ⇒ 前端**能**直接读到 route 与当前实体。
 
 ⚠️ **但它的失效模式是「让人更烦」**：**猜错页面比不猜更烦** ——
-用户明明在商品页，米宝却拿订单页的口径解释，这比「我不知道你在哪一页」糟糕得多。
+用户明明在商品页，黄金策却拿订单页的口径解释，这比「我不知道你在哪一页」糟糕得多。
 ⇒ 本模块的三条纪律（缺一不可，逐条有判据）：
 
 1. **注入面按角色裁剪**（上下文注入是**新的越权面**）：只传 `route` + 实体 `id`，
@@ -33,6 +33,22 @@ B 端最贵的成本是**培训成本**（「这个字段什么意思」「这�
 - **不做实体内容读取**：本模块只带 `id` 引用；实体内容由服务端既有读取面（工具/端点）
   **按该角色权限**再取一次。**复用既有读取面，不新开**。
 - **不做知识库构建**（`knowledge_search` 已有）、**不做跨页面/跨实体追问**（属族 5 与对话层）。
+
+## 登记面的覆盖面受元守卫约束（issue #6215）
+
+登记表从 #5371 的 6 条扩到 10 条时，**覆盖面本身成了会红的东西**（在此之前漏登记是**沉默**的）：
+
+- **双向相等**：`frontend/admin-web/src/config/menu.ts` 的每个菜单 route ⇄
+  `PAGE_REGISTRY ∪ 豁免台账` —— 漏登记 / 多登记（悬挂）/ 两边都有 ⇒ 逐条判红；
+- **豁免台账** = `tests/unit_ci_workflows/page_context_exemptions_ledger.json`
+  （每条带 `reason` + **具名**重启条件；**只许缩短**：存量冻结 + 新增即红）；
+- **登记项自证**：`truth_source` 必须在册、真值源 `path` 必须真实存在、权限码必须在
+  admin-api 权限目录里（复用既有解析器）；真值源**没有**登记项引用 ⇒ 也判红（死条目）；
+- 判据 = `tests/unit_ci_workflows/test_page_context_registry_coverage.py`（用例 MC-075，
+  **纯静态、零 ai-agent 依赖**）。
+
+🔴 **不许编口径**：确证不了「这份文件就是这一页的口径」的页面 ⇒ **进豁免台账，不进登记表**
+（宁可少登记，也不许让 LLM 拿一份不相关的文档解释这一页）。
 """
 
 from __future__ import annotations
@@ -96,6 +112,29 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         citation="依据：本店加工工序与工艺路线标准",
         path="docs/curtain-production-process-standard.md",
     ),
+    # ── issue #6215 扩面新增（登记面 6 → 10 条）：每条都指到「**确为该页口径**」的文件 ──
+    "curtain-production-rules": TruthSource(
+        label="窗帘生产与计件规则清单（生产 · 工序 · 计件）",
+        citation="依据：本店生产与计件规则清单",
+        path="docs/curtain-production-rules.md",
+    ),
+    "dashboard-cards": TruthSource(
+        label="经营看板指标卡登记表（口径与显隐）",
+        citation="依据：经营看板指标卡登记表",
+        path="frontend/admin-web/src/lib/dashboard-cards.ts",
+    ),
+    "sales-shipment": TruthSource(
+        label="发货数量口径（下单数量 vs 实发数量，各归其 owner）",
+        citation="依据：本店发货数量口径说明",
+        path="frontend/admin-web/src/lib/sales-shipment.ts",
+    ),
+    # issue #6404：库存明细页的口径 = 「变动前 → 变动后」逐行解释 + 原因枚举 +
+    # **成本 NULL 显示「未知」不伪造 ¥0.00**（真值源就是该页唯一的展示口径模块）
+    "stock-ledger-display": TruthSource(
+        label="库存流水口径（变动前 → 变动后 · 原因枚举 · 成本未知不伪造）",
+        citation="依据：本店库存流水口径说明",
+        path="frontend/admin-web/src/lib/stock-ledger.ts",
+    ),
 }
 
 
@@ -151,6 +190,46 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         truth_source="curtain-production-process-standard",
         page_permissions=("processing:manage",),
         entity_permissions=("processing:manage",),
+    ),
+    # ── issue #6215 扩面（6 → 10 条）：只登记「真值源**确为该页口径**」的页；确证不了的进豁免台账
+    #    `tests/unit_ci_workflows/page_context_exemptions_ledger.json`（**只许缩短**），绝不硬塞 ──
+    # ⚠️ 上面的 `/orders/*` 是**通配整族**：登记面把它读作「`/orders` 这一族」（含列表页本身，
+    #    与既有的 `/products/*` 同式）；`/orders/new`（上面的精确条目）**优先于**它被命中。
+    PageEntry(
+        # 经营看板：卡片口径与显隐规则（能力位 gating）
+        route="/dashboard",
+        truth_source="dashboard-cards",
+        page_permissions=("dashboard:view",),
+        entity_permissions=(),
+    ),
+    PageEntry(
+        # 生产看板（= 加工单唯一入口，issue #4357）：订单 → 加工单的形态与粒度
+        route="/production",
+        truth_source="curtain-production-rules",
+        page_permissions=("production:view",),
+        entity_permissions=(),
+    ),
+    PageEntry(
+        # 计件工资：计件口径与「个 / 件」数量兜底
+        route="/production/piecework",
+        truth_source="curtain-production-rules",
+        page_permissions=("production:view",),
+        entity_permissions=(),
+    ),
+    PageEntry(
+        # 发货单（issue #5939）：数量口径（实发 vs 下单数量，各自 owner；「没这个数」不印 0）
+        route="/shipments",
+        truth_source="sales-shipment",
+        page_permissions=("order:list",),
+        entity_permissions=(),
+    ),
+    PageEntry(
+        # 库存明细（issue #6404）：一行 = 一次 SKU 级库存变更（变动前 → 变动后）；
+        # 页面读码 `product:list` = 端点方法级注解逐字同码
+        route="/stock-ledger",
+        truth_source="stock-ledger-display",
+        page_permissions=("product:list",),
+        entity_permissions=(),
     ),
 )
 
@@ -291,7 +370,7 @@ def render_page_context(question: str, context: Optional[PageContext]) -> str:
     if source is None:  # pragma: no cover - 与 build_page_context 同步的纵深防御
         return PAGE_CONTEXT_UNKNOWN_NOTICE + question
     lines = [
-        f"（米宝正在用户当前页面上：{context.route}",
+        f"（黄金策正在用户当前页面上：{context.route}",
         f"本页的口径说明以《{source.label}》为唯一真值源（{source.path}）；"
         f"解释本页字段/口径/价格时必须基于该真值源，并在答案里写明「{source.citation}」；"
         f"真值源没写到的内容不要替它编。",

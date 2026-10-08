@@ -184,3 +184,47 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: OB-006
+    legacy_id: ""
+    title: "开租即种默认商品分类 —— 新租户开箱首建商品不再 422「分类ID不能为空」"
+    domains:
+      - onboarding
+      - product
+    tier: normal
+    tags:
+      - onboarding
+      - required-initial-data
+      - default-category
+      - idempotent
+      - red-proof
+      - backend-contract
+    truths_ref:
+      - registration-approval.required-initial-data
+      - registration-approval.approve-side-effects
+    user_inputs:
+      - "商家入驻通过（POST /api/auth/register 或超管 PUT /api/super-admin/registrations/{id}/approve）后，管理员第一次建商品不应该先撞 422；他应该开箱就有一个可选的商品分类。"
+      - "同一个租户若被重复开通 / 重试，不应该种出两个同名默认分类。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**病（issue #6295 的形态，已在云测试环境复现）**：入驻链路（RegistrationService.approveApplication）种了行业生产种子模板，**唯独漏了商品分类** ⇒ 新租户 categories 表 0 行；而 POST /api/admin/products 在非草稿状态要求 categoryId 非空（ProductService.validateRequiredForStatus）⇒ 开箱第一次建商品必撞 422「分类ID不能为空」（实测 tenant 25：catsBefore: []）。"
+      - "**判据 1（真库主判据）**：空库上真跑入驻链路 ⇒ 该租户 categories 恰 **1** 行、名字 = 单一来源常量 OnboardingInitialData.DEFAULT_PRODUCT_CATEGORY_NAME、tenant_id = 新租户；随后用该分类 id 走真 ProductService.createProduct（status=on_sale）⇒ **首建商品成功**、products 落 1 行且 category_id = 该分类 id。判据 = backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java::onboardingSeedsDefaultCategoryAndFirstProductSucceeds。"
+      - "**判据 2（注入式红证 A · 双向）**：把种子那步摘掉（seedDefaultCategory spy 成 no-op）+ 同时摘掉后置条件探针 ⇒ 入驻「成功」但分类表 0 行 ⇒ 界面唯一能提交的 categoryId 是空 ⇒ 首建商品**逐字**报 422「分类ID不能为空」（读数为 VALIDATION_ERROR / 422）。这条读数自证判据 1 的绿**有判别力**。判据 = 同文件 neuteredSeedWithoutPostconditionGuardReproduces422。"
+      - "**判据 3（后置条件元守卫的判别力 · 注入红证 B）**：只把种子摘掉、保留后置条件校验 ⇒ 入驻**当场 fail-closed**（ONBOARDING_REQUIRED_DATA_MISSING）—— 「漏种」从静默变成开租当场红，不许产出「开箱不可用」的租户。判据 = 同文件 neuteredSeedWithPostconditionGuardFailsOnboarding + backend/admin-api/src/test/java/com/migao/admin/service/RegistrationServiceTest.java::failsClosedWhenRequiredInitialDataMissing。"
+      - "**判据 4（幂等 · 真库行数）**：入驻已种下 1 行后再对同一租户调播种 ⇒ 返回 0、分类行数仍为 1（重复入驻 / 重试不种出重复分类）。判据 = 同文件 seedingIsIdempotentOnRealDatabase。"
+      - "**判据 5（调用点具名断言 · mock 面）**：approveApplication 必须对新租户 id 调 seedDefaultCategory（删掉那一行即红）—— 同 #4430 的教训（调用点没有具名断言 ⇒ 删掉调用 CI 全绿）。判据 = RegistrationServiceTest::successSeedsDefaultProductCategory。"
+      - "**类级固化（本用例的元守卫）**：开租「必需初始数据清单」⇄ 入驻链路的播种调用双向对账（未登记即红 / 后置条件接线在 / 豁免台账只许缩短 / 默认值单一来源）—— 判据 = tests/unit_ci_workflows/test_onboarding_required_seed_guard.py（用例 MC-083）。"
+      - "🔴 **未固化 / 边界（照实登记）**：① **既有租户不自动补种**（本单选择「登记式」而非迁移回填，理由与重启条件见 PR body）⇒ tenant 25 这类存量租户仍走自助路径（建商品页「管理分类 → 添加分类」，需 product:category 权限）；② 真库判据用的是**真 PG + 真 mapper + 真 Service**，但**没有**真 HTTP 栈（端点层是否 422 由 ProductServiceTest 与端点既有判据覆盖）；③ 默认分类名是**产品口径**（「窗帘成品」，可编辑），改它不需要动代码之外的东西，但换名会改本用例与判据的常量来源（单一来源 = OnboardingInitialData.DEFAULT_PRODUCT_CATEGORY_NAME）。"
+    skip_reason: "[backend-contract] 由 admin-api 单测（真库 NewTenantOnboardingCategoryRealDbTest + mock RegistrationServiceTest / ProductCategorySeedServiceTest）+ 静态元守卫（test_onboarding_required_seed_guard.py）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    precondition: "本用例是 [backend-contract] 纯后端契约用例：前置 = 真 PG 二进制（CI 由 admin-api-test job 的「Assert PostgreSQL binaries exist」保证，缺失即 job 失败）+ bootstrap 终态 schema（backend/admin-api/src/main/resources/db/init/schema.sql）；前置由测试自身持有（PgCluster.startOrAbort 缺 PG 时 CI 判红 / 本机显式 skip），不依赖共享夹具与远端环境 ⇒ 不会表现成「agent 不干活」；agent-eval 栈不跑它"
+    merge_log: "2026-10-04 新增（issue #6295，P2·新租户开箱缺口）。取号 OB-006：main 上 onboarding 域为 OB-001~OB-005 ⇒ 取 OB-006。本单 = ① 开租即种默认商品分类（具名/可编辑/幂等，默认值单一来源 OnboardingInitialData.DEFAULT_PRODUCT_CATEGORY_NAME）+ ② 入驻后置条件元守卫（缺必需初始数据 ⇒ 开租 fail-closed）+ ③ 真库实例判据（含双向注入红证：摘掉种子 ⇒ 逐字 422）+ ④ 类级元守卫（清单 ⇄ 链路双向对账，用例 MC-083）。⚠️ 未固化（照实登记）：见 data_checks 末条三条边界（既有租户不自动补种 / 无真 HTTP 栈 / 默认名属产品口径）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductCategorySeedServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/RegistrationServiceTest.java"
+        - "tests/unit_ci_workflows/test_onboarding_required_seed_guard.py"
+      ci:
+        - pr-check.yml
+      verifies: []

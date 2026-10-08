@@ -11,6 +11,7 @@ import {
   reportInFlightLock,
   scanResolve,
   shipOrder,
+  shipWorkerOrder,
   type OrderOperations,
   type PieceworkSummary,
   type ProductionOperation,
@@ -24,6 +25,10 @@ import {
 } from '../../../services/productionService'
 import { WorkerBar } from '../../../components/WorkerBar'
 import { hasWorkerSession } from '../../../utils/workerSession'
+import {
+  PRODUCTION_WORKER_LOGIN_REQUIRED,
+  WORKER_TAB_LOGIN_ROUTE,
+} from '../../../utils/inbound/gaps'
 import { operationDisplayName } from '../../../utils/operationDisplayName'
 import { parseOrderIdFromQr, resolveOrderIdFromParams } from '../../../utils/productionQr'
 import { canUseNativeScan, H5_SCAN_PHOTO_FAILED_HINT, H5_SCAN_PHOTO_HINT } from '../../../utils/platform'
@@ -219,6 +224,15 @@ function specSummary(position: ProductionPosition): string[] {
  */
 export default function ProductionPage() {
   const { user } = useAuthStore()
+  /**
+   * 本机有没有工人身份（issue #6467 判据 3）—— **写入口的渲染前提**。
+   *
+   * <p>报工写面只认工号 + PIN 签发的工人 session（服务端 `resolveIdentity` 读
+   * `X-Worker-Session-Id`）：没有它时渲染写入口 = 用户点一次换一个 401
+   * （现场实测：管理员在 H5 点「完成报工」→ 401 → 请求层把商家登录态清掉、踢回登录页，
+   * 重登再点仍然如此）。⇒ 没有身份就**不给写入口**，改为可行动的引导。</p>
+   */
+  const workerReady = hasWorkerSession()
   const [detail, setDetail] = useState<OrderOperations | null>(null)
   const [manualId, setManualId] = useState('')
   const [loading, setLoading] = useState(false)
@@ -447,6 +461,9 @@ export default function ProductionPage() {
   const handleReport = useCallback(
     async (position: ProductionPosition, operation: ProductionOperation) => {
       if (!detail) return
+      // 纵深：写入口本就只在有工人身份时渲染（见 JSX），这里再兜一道 ——
+      // 绝不用「没有工人身份」的请求去换一个必然的 401（issue #6467）
+      if (!workerReady) return
       const orderId = detail.order_id
       const token = position.part_token
       if (!token) {
@@ -537,7 +554,7 @@ export default function ProductionPage() {
         setReportingId(null)
       }
     },
-    [detail, user, qtyInputs, loadOrder],
+    [detail, user, qtyInputs, loadOrder, workerReady],
   )
 
   /**
@@ -551,6 +568,8 @@ export default function ProductionPage() {
    */
   const handleScanComplete = useCallback(async () => {
     if (!scanScreen) return
+    // 纵深：同 handleReport —— 无工人身份绝不发写请求（issue #6467）
+    if (!workerReady) return
     const { token, view } = scanScreen
     const operation = view.operation
     // 未确定工序 ⇒ 屏上根本不渲染【完成】（见 JSX）⇒ 这里再兜一道，绝不带 null 去报工
@@ -624,7 +643,7 @@ export default function ProductionPage() {
       reportInFlightLock.release()
       setReportingId(null)
     }
-  }, [scanScreen, detail, loadOrder])
+  }, [scanScreen, detail, loadOrder, workerReady])
 
   /** 「不是这道？改」（设计 §3.3）：显式指定工序 ⇒ **服务端**校验它属于本次扫码的部位/套 */
   const handlePickAlternative = useCallback(
@@ -650,6 +669,12 @@ export default function ProductionPage() {
    * <p>后端是**原子入口**（记物流 + 流转状态一次完成），故这里只调一次 ——
    * 分两次调用中间失败会产生「有单号但没发货」或「发货了没单号」的静默不一致。</p>
    *
+   * <p>🔴 **端点按本机身份分流**（issue #6472，S1）：工人身份（{@link hasWorkerSession}，
+   * 单一真值）⇒ 走 `POST /api/worker/shipment/orders/{id}/ship`（`/api/admin/**` 把 `worker`
+   * 放进拒绝集合 ⇒ 纯工人设备打商家端点**必 403**，见 issue #5648）；无工人身份（纯商家设备）
+   * ⇒ 商家端点 `shipOrder` **逐字不变**。两条路都读服务端同一张发货单链
+   * （`OrderShipmentService`）⇒ 落库形状同源，不新造第二个发货实现。</p>
+   *
    * <p>失败只展示后端 message（守卫/状态不符都由后端判定并指名原因），**不猜**。</p>
    */
   const handleShip = useCallback(async () => {
@@ -662,7 +687,11 @@ export default function ProductionPage() {
     setShipping(true)
     setError('')
     try {
-      const res = await shipOrder(detail.order_id, no)
+      // 工人身份 ⇒ 工人端点（实发明细由读面 `positions` 映射，见 `workerShipItems`）；
+      // 商家身份 ⇒ 商家端点（body 只有单号/承运商，一字不变）。
+      const res = hasWorkerSession()
+        ? await shipWorkerOrder(detail.order_id, no, detail.positions)
+        : await shipOrder(detail.order_id, no)
       if (!res.success) {
         setError(res.message || '发货失败，请重试')
         return
@@ -673,6 +702,17 @@ export default function ProductionPage() {
       setShipping(false)
     }
   }, [detail, trackingNo])
+
+  /**
+   * 「去登录工人身份」（issue #6467 判据 3）：跳**登录页的工人入口**
+   * （`/pages/auth/login/index?tab=worker`，路由常量 = `utils/inbound/gaps.ts` 单一真值）。
+   *
+   * <p>不去 `switchTab`、也不跳独立的 `pages/worker/login/index`：前者落商家 tabBar、
+   * 后者与登录页的工人 tab 是同一个身份链的第二个入口（入口越少越不会被走错）。</p>
+   */
+  const handleGoWorkerLogin = useCallback(() => {
+    Taro.navigateTo({ url: WORKER_TAB_LOGIN_ROUTE })
+  }, [])
 
   const positions = detail?.positions || []
   const progress = detail?.progress
@@ -725,6 +765,21 @@ export default function ProductionPage() {
         </View>
       )}
 
+      {/* 🔴 无工人身份 ⇒ 不给写入口，改为可行动的引导（issue #6467 判据 3）：
+          报工写面只认工号 + PIN 签发的工人 session —— 显示写入口只会换回一个 401
+          （现场实测：管理员在 H5 点「完成报工」→ 401 → 请求层清商家登录态 + 踢回登录页）。
+          有工人身份时本块**不渲染**，页面逐字保持原状。 */}
+      {!workerReady && (
+        <View className='production-worker-login-required'>
+          <Text className='production-worker-login-required__text'>
+            {PRODUCTION_WORKER_LOGIN_REQUIRED}
+          </Text>
+          <Button className='production-worker-login-required__btn' onClick={handleGoWorkerLogin}>
+            去登录工人身份
+          </Button>
+        </View>
+      )}
+
       {/* A 模式一屏（切片 ② / 设计 §4.1）：工序 + 应做数量 ⇒【完成】；「不是这道？改」只在需要时点 */}
       {scanScreen && (
         <View className='production-scan-screen'>
@@ -753,13 +808,16 @@ export default function ProductionPage() {
                   该工序未定价（≠ ¥0.00）：可照常完工，但不产生计件金额
                 </Text>
               )}
-              <Button
-                className='production-scan-screen__btn'
-                disabled={reportingId !== null}
-                onClick={handleScanComplete}
-              >
-                {reportingId === scanScreen.view.operation.operation_id ? '领活中…' : '开工'}
-              </Button>
+              {/* 【开工】= 工人写入口（`scan/complete`）：只在有工人身份时渲染（issue #6467） */}
+              {workerReady ? (
+                <Button
+                  className='production-scan-screen__btn'
+                  disabled={reportingId !== null}
+                  onClick={handleScanComplete}
+                >
+                  {reportingId === scanScreen.view.operation.operation_id ? '领活中…' : '开工'}
+                </Button>
+              ) : null}
               {scanScreen.view.alternatives.length > 0 && (
                 <View className='production-scan-screen__alts'>
                   <Text className='production-scan-screen__alts-title'>不是这道？改</Text>
@@ -949,8 +1007,9 @@ export default function ProductionPage() {
                         {`本次最多 ${formatQty(remainingQty(operation))}${operation.unit}`}
                       </Text>
                       {/* disabled = in-flight 锁的可见面（issue #4116 §5-1）：报工期间不可再点。
-                          写入口只在**有部位任务码**时才有（issue #5647 G10，见上方提示行）。 */}
-                      {position.part_token ? (
+                          写入口只在**有部位任务码**（issue #5647 G10）**且有工人身份**（issue #6467）
+                          时才有：没有工人身份时写请求必然 401。 */}
+                      {position.part_token && workerReady ? (
                         <Button
                           className='operation-item__btn'
                           disabled={reportingId !== null}

@@ -1,4 +1,4 @@
-// case_ids: BM-006
+// case_ids: BM-006, BM-039
 /**
  * 工人端扫码报工页测试（issue #3997 M4-G-3 / issue #4206 补齐，消费 M4-G-2 冻结契约）
  *
@@ -52,10 +52,12 @@ jest.mock('../src/services/productionService', () => ({
   // 若一并 mock 掉会拿到 undefined ⇒ 点「完成报工」直接抛错
   ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
+  getWorkerOrderOperations: jest.fn(),
   // 扫码主闭环（切片 ②）：本文件测逐道报工链路 ⇒ 解析面默认返回 undefined ⇒ 页面回落既有形态
   scanResolve: jest.fn(),
   completeByScan: jest.fn(),
   shipOrder: jest.fn(),
+  shipWorkerOrder: jest.fn(),
   getOrderPiecework: jest.fn(),
 }))
 
@@ -81,12 +83,15 @@ import {
 import {
   completeByScan,
   getOrderOperations,
+  getWorkerOrderOperations,
   getOrderPiecework,
   scanResolve,
   shipOrder,
+  shipWorkerOrder,
 } from '../src/services/productionService'
 import type { OrderOperations } from '../src/services/productionService'
 import { decodeQrFromImageData, loadPixelsFromFileH5 } from '../src/utils/inbound/barcodeDecode'
+import { clearWorkerSession, setWorkerSessionId } from '../src/utils/workerSession'
 
 const mockLoadPixels = loadPixelsFromFileH5 as jest.Mock
 const mockDecodeQr = decodeQrFromImageData as jest.Mock
@@ -165,9 +170,21 @@ function makeDetail(overrides: Partial<OrderOperations> = {}): OrderOperations {
 }
 
 const mockGet = getOrderOperations as jest.Mock
+const mockWorkerGet = getWorkerOrderOperations as jest.Mock
+
+/**
+ * 让本用例跑在**有工人身份**的车间设备上（issue #6467 判据 3）：
+ * 写入口只在 `hasWorkerSession()` 为真时渲染 ⇒ 报工类用例必须先种一个工人 session；
+ * 此时读面也按身份分流走 `/api/worker/**`（mockWorkerGet），与真机一致。
+ */
+function enableWorkerIdentity() {
+  setWorkerSessionId('sess-worker-1')
+  mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail() })
+}
 const mockComplete = completeByScan as jest.Mock
 const mockPiecework = getOrderPiecework as jest.Mock
 const mockShip = shipOrder as jest.Mock
+const mockWorkerShip = shipWorkerOrder as jest.Mock
 
 describe('ProductionPage（工人扫码报工）', () => {
   beforeEach(() => {
@@ -325,6 +342,7 @@ describe('ProductionPage（工人扫码报工）', () => {
   })
 
   it('点「完成报工」→ 调唯一写入口 completeByScan（凭证=部位码、qty 默认=应做数量、work_type=normal）', async () => {
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -353,14 +371,15 @@ describe('ProductionPage（工人扫码报工）', () => {
   })
 
   it('报工成功 → 刷新进度（重新拉取工序列表）', async () => {
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
-    mockGet.mockClear()
+    mockWorkerGet.mockClear()
 
     fireEvent.click(screen.getAllByText('完成报工')[1])
 
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
+    await waitFor(() => expect(mockWorkerGet).toHaveBeenCalledWith(ORDER_ID))
   })
 
   it('order_completed=true → 展示「✅ 订单生产完成」', async () => {
@@ -369,6 +388,7 @@ describe('ProductionPage（工人扫码报工）', () => {
       data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: true },
     })
 
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -381,6 +401,7 @@ describe('ProductionPage（工人扫码报工）', () => {
   it('报工失败（success=false）→ 展示后端 message 且不清空工序列表', async () => {
     mockComplete.mockResolvedValue({ success: false, message: '该工序已报工完成，无需重复报工' })
 
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -608,6 +629,7 @@ describe('ProductionPage 完成数量可编辑（issue #4206 判据 1）', () =>
   })
 
   it('改成 8 米报工 ⇒ 请求体 qty/qualified_qty 都是 8（不是写死的应做数量）', async () => {
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -630,6 +652,7 @@ describe('ProductionPage 完成数量可编辑（issue #4206 判据 1）', () =>
   })
 
   it('数量超上限 ⇒ 前端拦下不发请求（红证：服务端上限之外再加一道客户端防线）', async () => {
+    enableWorkerIdentity()
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
@@ -713,7 +736,11 @@ describe('ProductionPage 计件累计与报工明细（issue #4206 判据 3）',
   it('报工成功后出现本单报工明细（人 / 工序 / 数量 / 时间）', async () => {
     // 本用例针对**本机兜底**路径（服务端没给 work_logs）⇒ 显式清空，
     // 否则夹具的 work_logs 会让页面走「全单流水」分支（那是另一条用例的判据）。
+    // 有工人身份（enableWorkerIdentity）⇒ 读面是工人路径 ⇒ 两个读面都要清空；
+    // 顺序必须在 enableWorkerIdentity **之后**（它会把读面夹具重置成默认值）。
+    enableWorkerIdentity()
     mockGet.mockResolvedValue({ success: true, data: makeDetail({ work_logs: [] }) })
+    mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail({ work_logs: [] }) })
 
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
@@ -836,6 +863,96 @@ describe('ProductionPage 深链带参直达（issue #4206 判据 4）', () => {
 
     expect(screen.queryByRole('button', { name: '发货' })).toBeNull()
     expect(screen.queryByPlaceholderText('货运单号')).toBeNull()
+  })
+
+  /**
+   * 🔴 端点按**本机身份**分流（issue #6472，S1 + S2）。
+   *
+   * 报工页的发货块对任何身份都渲染，而工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`，
+   * issue #4727）⇒ 纯工人设备点「发货」必被服务端拒绝。收口 = 有工人 session 走
+   * `POST /api/worker/shipment/orders/{id}/ship`，否则走商家端点**逐字不变**。
+   *
+   * 红证（实跑）：把页面的 `hasWorkerSession()` 判据写死 `false` ⇒ 工人用例红
+   * （调的是 `shipOrder`）；写死 `true` ⇒ 商家用例红（调的是 `shipWorkerOrder`）。
+   */
+  describe('发货按身份选端点（issue #6472）', () => {
+    const completed = () => ({
+      success: true,
+      data: makeDetail({ progress: { total: 3, done: 3, percent: 100 }, work_logs: [] }),
+    })
+
+    it('工人身份：发货走 `shipWorkerOrder`（实发明细随读面 positions），商家端点一次都不调', async () => {
+      setWorkerSessionId('sess-worker-1')
+      mockWorkerGet.mockResolvedValue(completed())
+      mockWorkerShip.mockResolvedValue({ success: true, data: { order_id: ORDER_ID, status: 'shipped' } })
+
+      render(<ProductionPage />)
+      fireEvent.click(screen.getByText('扫一扫'))
+      await screen.findByText('✅ 订单生产完成')
+
+      fireEvent.change(screen.getByPlaceholderText('货运单号'), { target: { value: 'SF123456' } })
+      fireEvent.click(screen.getByRole('button', { name: '发货' }))
+
+      await waitFor(() => expect(mockWorkerShip).toHaveBeenCalledTimes(1))
+      // 第 3 参 = 读面 positions（端侧据此映射必填的 items[]，见 `workerShipItems`）
+      expect(mockWorkerShip.mock.calls[0][0]).toBe(ORDER_ID)
+      expect(mockWorkerShip.mock.calls[0][1]).toBe('SF123456')
+      expect(Array.isArray(mockWorkerShip.mock.calls[0][2])).toBe(true)
+      // 🔴 反向：工人设备不得打商家端点
+      expect(mockShip).not.toHaveBeenCalled()
+    })
+
+    it('工人身份：发货**成功回执**把「已发货」上屏（不静默失败）', async () => {
+      setWorkerSessionId('sess-worker-1')
+      mockWorkerGet.mockResolvedValue(completed())
+      mockWorkerShip.mockResolvedValue({ success: true, data: { order_id: ORDER_ID, status: 'shipped' } })
+
+      render(<ProductionPage />)
+      fireEvent.click(screen.getByText('扫一扫'))
+      await screen.findByText('✅ 订单生产完成')
+
+      fireEvent.change(screen.getByPlaceholderText('货运单号'), { target: { value: 'SF123456' } })
+      fireEvent.click(screen.getByRole('button', { name: '发货' }))
+
+      expect(await screen.findByText('✅ 已发货')).toBeTruthy()
+    })
+
+    it('工人身份：服务端拒绝 ⇒ 上屏服务端原文，**不谎报已发货**', async () => {
+      setWorkerSessionId('sess-worker-1')
+      mockWorkerGet.mockResolvedValue(completed())
+      mockWorkerShip.mockResolvedValue({
+        success: false,
+        message: '发货明细不能为空：需要逐行给出**实发**数量',
+      })
+
+      render(<ProductionPage />)
+      fireEvent.click(screen.getByText('扫一扫'))
+      await screen.findByText('✅ 订单生产完成')
+
+      fireEvent.change(screen.getByPlaceholderText('货运单号'), { target: { value: 'SF123456' } })
+      fireEvent.click(screen.getByRole('button', { name: '发货' }))
+
+      expect(await screen.findByText('发货明细不能为空：需要逐行给出**实发**数量')).toBeTruthy()
+      expect(screen.queryByText('✅ 已发货')).toBeNull()
+    })
+
+    it('商家身份（无工人 session）：发货仍走商家端点，工人端点一次都不调', async () => {
+      clearWorkerSession()
+      mockGet.mockResolvedValue(completed())
+      mockShip.mockResolvedValue({ success: true, data: { order_id: ORDER_ID, status: 'shipped' } })
+
+      render(<ProductionPage />)
+      fireEvent.click(screen.getByText('扫一扫'))
+      await screen.findByText('✅ 订单生产完成')
+
+      fireEvent.change(screen.getByPlaceholderText('货运单号'), { target: { value: 'SF123456' } })
+      fireEvent.click(screen.getByRole('button', { name: '发货' }))
+
+      await waitFor(() => expect(mockShip).toHaveBeenCalledTimes(1))
+      expect(mockShip).toHaveBeenCalledWith(ORDER_ID, 'SF123456')
+      expect(mockWorkerShip).not.toHaveBeenCalled()
+      expect(await screen.findByText('✅ 已发货')).toBeTruthy()
+    })
   })
 
 })

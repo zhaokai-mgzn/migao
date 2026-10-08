@@ -1,6 +1,6 @@
 # case_ids: HR-009, MC-021
-# （沿用 tests/unit_ci_workflows/** 既有惯例：本文件判的是 **B 端/米宝失败兜底面**
-#   —— HR-009「米宝无某能力时须如实说明并给后台开通路径（不得自旋重试）」与
+# （沿用 tests/unit_ci_workflows/** 既有惯例：本文件判的是 **B 端/黄金策失败兜底面**
+#   —— HR-009「黄金策无某能力时须如实说明并给后台开通路径（不得自旋重试）」与
 #   MC-021「B 端能力面不谎报」同族。本 PR **不新建用例族**、**不新增 [backend-contract] 用例**。）
 """**族 6（善后与补救）的「失败 → 原因 → 补救」登记表类级元守卫**（issue #5441，§23 G1/G2/G5）。
 
@@ -353,7 +353,7 @@ _POINTER_PAIR = re.compile(r"「([^」]{1,24})」\s*[或/]\s*「([^」]{1,24})�
 
 #: 显式不判表（**只许缩短**）：与 admin-web 侧边栏无关的页面指针。每条必须带理由。
 LEGACY_POINTER_EXEMPTIONS: tuple[str, ...] = (
-    "app/api/products.py::「我的」",      # C 端小程序「我的」页（小布面）—— 不在 admin-web 侧边栏
+    "app/api/products.py::「我的」",      # C 端小程序「我的」页（元元面）—— 不在 admin-web 侧边栏
     "app/api/internal.py::「应做数量」",  # 看板**字段名**，不是页面入口
 )
 #: 冻结账户：条数**现取**比对，涨跌都红（与 `dead_object_ledger.json` 的 `anchor.not_judged` 同纪律）。

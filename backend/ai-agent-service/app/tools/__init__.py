@@ -7,7 +7,7 @@ Agent 可调用的工具（Tool）门面：基础设施 + 注册器 + 全部已�
 所有 Tool 通过 HTTP API 调用 admin-api，不直接操作数据库（见 docs/TOOL_API_SPEC.md）。
 
 知识库域：知识卡片检索（KnowledgeSearchTool）已启用——LLM WIKI 板块替代旧 RAG
-（issue #3051），双端接线（米宝 #3059 / 小布 #3077）；KnowledgeManageTool（写侧）
+（issue #3051），双端接线（黄金策 #3059 / 元元 #3077）；KnowledgeManageTool（写侧）
 不注册——知识管理在 admin-web 后台操作，不经 Agent（见 tools/registry.py）。
 """
 
@@ -66,6 +66,7 @@ from app.tools.category_manage import CategoryManageTool
 from app.tools.processing_item_manage import ProcessingItemManageTool
 from app.tools.product_update import ProductUpdateTool
 from app.tools.product_batch_update import ProductBatchUpdateTool
+from app.tools.scheduled_task_manage import ScheduledTaskManageTool
 from app.tools.sku_update import SkuUpdateTool
 from app.tools.interact import InteractTool
 from app.tools.validate_input import ValidateInputTool
@@ -110,6 +111,7 @@ __all__ = [
     # 与逐条写同码（product:create），登记形态与其余写工具一致（注册集双向核对 =
     # tests/test_tools_registry.py::TestToolsFacadeCompleteness）
     "ProductBatchUpdateTool",
+    "ScheduledTaskManageTool",
     "InteractTool", "ValidateInputTool", "CurtainCalcTool",
     "ProductionProgressQueryTool", "PieceworkQueryTool",
     "ProductionWorklogQueryTool",

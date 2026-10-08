@@ -40,7 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <p><b>为什么判在 DTO 而不是 Service</b>（本文件同时是这条口径的承载体）：
  * agent 路径 {@code OrderService.createOrderForAgent} 是<b>手工 new {@link OrderCreateRequest}</b>
- * 再调 service ⇒ <b>不经过 Bean Validation</b>；而 C 端小布/米宝的自助下单**不采集**这三个字段
+ * 再调 service ⇒ <b>不经过 Bean Validation</b>；而 C 端元元/黄金策的自助下单**不采集**这三个字段
  * （{@code order_create} 工具 schema 的 required 只有 name/phone/items）。把必填下沉到 Service
  * 会把整条 agent 下单路径打死。⇒ 本闸门的射程**就是** HTTP 表单路径，这是**有意为之**，
  * 不是漏判。前端一半的判据 = {@code frontend/admin-web/tests/unit/pages/orders-new-submit-gate.test.tsx}。</p>

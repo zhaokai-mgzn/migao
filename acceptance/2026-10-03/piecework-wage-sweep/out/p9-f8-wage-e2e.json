@@ -1,0 +1,232 @@
+{
+  "at": "2026-10-03T00:49:28.053Z",
+  "run": "567249",
+  "logical": "复烫",
+  "generalPrice": "1.11",
+  "worker": "工资验收工人戊567249",
+  "generalRowCandidates": [
+    {
+      "logical_name": "三边",
+      "position": "通用",
+      "id": "opp-v72-20-三边-布帘",
+      "unit_price": "0.40"
+    },
+    {
+      "logical_name": "复烫",
+      "position": "通用",
+      "id": "opp-v72-20-复烫-布帘",
+      "unit_price": "0.35"
+    },
+    {
+      "logical_name": "定型",
+      "position": "通用",
+      "id": "opp-v72-20-定型-布帘",
+      "unit_price": "0.40"
+    },
+    {
+      "logical_name": "打包",
+      "position": "通用",
+      "id": "opp-v79-20-打包-布帘",
+      "unit_price": null
+    },
+    {
+      "logical_name": "打孔",
+      "position": "通用",
+      "id": "opp-v72-20-打孔-布帘",
+      "unit_price": "0.15"
+    },
+    {
+      "logical_name": "接高",
+      "position": "通用",
+      "id": "opp-v72-20-接高-布帘",
+      "unit_price": "1.00"
+    },
+    {
+      "logical_name": "熨烫",
+      "position": "通用",
+      "id": "opp-v72-20-熨烫-布帘",
+      "unit_price": "0.35"
+    },
+    {
+      "logical_name": "精裁",
+      "position": "通用",
+      "id": "opp-v72-20-精裁-布帘",
+      "unit_price": "0.40"
+    },
+    {
+      "logical_name": "车被",
+      "position": "通用",
+      "id": "opp-v72-20-车被-布帘",
+      "unit_price": "0.40"
+    },
+    {
+      "logical_name": "韩褶",
+      "position": "通用",
+      "id": "opp-v72-20-韩褶-布帘",
+      "unit_price": "0.40"
+    }
+  ],
+  "libraryRow": {
+    "id": "op-v91-20-22",
+    "name": "复烫-布",
+    "unit_price": "0.35",
+    "scope": "position"
+  },
+  "originalGeneralPrice": "0.35",
+  "rowsBefore": [
+    {
+      "id": "opp-v72-20-复烫-布帘",
+      "position": "通用",
+      "unit_price": "0.35",
+      "applicable": true,
+      "deleted": 0
+    }
+  ],
+  "tempSoftDeleted": [],
+  "afterPreInject": [
+    {
+      "id": "opp-v72-20-复烫-布帘",
+      "position": "通用",
+      "unit_price": null,
+      "applicable": true,
+      "deleted": 0
+    }
+  ],
+  "order1": {
+    "tag": "Z1",
+    "orderId": "fb1b93b8011562ca0346ad37637a95bc",
+    "catId": "2df2103eebe2a70cdd5dab51c5484c95",
+    "productId": "d223c010ee42116b5a784f22ef30575c"
+  },
+  "generate1": {
+    "http": 200
+  },
+  "X": null,
+  "inject": {
+    "target": "通用",
+    "existedId": "opp-v72-20-复烫-布帘",
+    "price": "1.11"
+  },
+  "afterInject": [
+    {
+      "id": "opp-v72-20-复烫-布帘",
+      "position": "通用",
+      "unit_price": "1.11",
+      "applicable": true,
+      "deleted": 0
+    }
+  ],
+  "order2": {
+    "tag": "Z2",
+    "orderId": "09ab199a5cc73905c5bf6e75f2a9e2ac",
+    "catId": "cafef2db91cffe8b7ddcb018eb0e78aa",
+    "productId": "1b913f6d43d71093c144f3cba322d540"
+  },
+  "generate2": {
+    "http": 200
+  },
+  "Y": "1.11",
+  "put": {
+    "http": 200,
+    "sentScope": "position",
+    "body": "{\"success\":true,\"data\":{\"id\":\"op-v91-20-22\",\"name\":\"复烫\",\"library_name\":\"复烫-布\",\"group\":\"后道\",\"position\":\"布帘\",\"scope\":\"position\",\"unit\":\"米\",\"unit_price\":0.35,\"is_must_finish\":false,\"is_start_marker\":false,\"source\":\"占位待确认\",\"created_positions\":1,\"skipped_positions\":0},\"requestId\":\"req_6278db19bdc946e8\",\"timestamp\":1790988573}"
+  },
+  "rowsAfterPut": [
+    {
+      "id": "03433b9eb59f871422e3d7674fbd3976",
+      "position": "布帘",
+      "unit_price": "1.11",
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "opp-v72-20-复烫-布帘",
+      "position": "通用",
+      "unit_price": "1.11",
+      "applicable": true,
+      "deleted": 0
+    }
+  ],
+  "order3": {
+    "tag": "Z3",
+    "orderId": "3c58376219e4a50a89552d7a3fc6954e",
+    "catId": "7fe9cff400fd14bab6a79256735d464c",
+    "productId": "488e69519a5bfdb5b719808437274f40"
+  },
+  "generate3": {
+    "http": 200
+  },
+  "Z": "1.11",
+  "report3": {
+    "http": 200,
+    "data": {
+      "operation_id": "83c12ec0a14764ebd7db5d09a368ab7f",
+      "done_qty": 3,
+      "status": "done",
+      "order_completed": false,
+      "worker_name": "工资验收工人戊567249",
+      "identity_source": "client_body"
+    }
+  },
+  "log3": {
+    "operation_name": "复烫-布",
+    "unit_price": "1.11",
+    "price_state": "priced",
+    "qualified_qty": "3.00"
+  },
+  "piecework3": {
+    "total": 3.33,
+    "per_worker": {
+      "工资验收工人戊567249": 3.33
+    },
+    "per_operation": [
+      {
+        "amount": 3.33,
+        "operation": "复烫-布"
+      }
+    ],
+    "per_position": [
+      {
+        "position_name": "工资验收行Z3 本白",
+        "amount": 3.33,
+        "qty": 3
+      }
+    ],
+    "per_set": [
+      {
+        "set_no": "JG-20261003-1390-001",
+        "amount": 3.33,
+        "qty": 3
+      }
+    ],
+    "unpriced": {
+      "qty": 0,
+      "operations": [],
+      "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。"
+    }
+  },
+  "verdict": "未复现（保存后实例价仍取有效价）",
+  "restoreState": [
+    {
+      "id": "opp-v72-20-复烫-布帘",
+      "position": "通用",
+      "unit_price": "0.35",
+      "deleted": 0
+    }
+  ],
+  "rowsFinal": [
+    {
+      "id": "opp-v72-20-复烫-布帘",
+      "position": "通用",
+      "unit_price": "0.35",
+      "applicable": true,
+      "deleted": 0
+    }
+  ],
+  "cleanup": {
+    "deletedIds": [
+      "03433b9eb59f871422e3d7674fbd3976"
+    ],
+    "restore": null
+  }
+}

@@ -1,0 +1,63 @@
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::               (v3.5.16)
+
+2026-10-03 13:00:18.281 [main] INFO  com.migao.admin.AdminApiApplication - Starting AdminApiApplication using Java 21.0.12 with PID 56672 (/Users/guangzhen.zk/migao-wt/main-live/backend/admin-api/target/classes started by guangzhen.zk in /Users/guangzhen.zk/migao-wt/main-live/backend/admin-api)
+2026-10-03 13:00:18.282 [main] INFO  com.migao.admin.AdminApiApplication - No active profile set, falling back to 1 default profile: "default"
+2026-10-03 13:00:19.151 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Multiple Spring Data modules found, entering strict repository configuration mode
+2026-10-03 13:00:19.155 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2026-10-03 13:00:19.193 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Finished Spring Data repository scanning in 24 ms. Found 0 Redis repository interfaces.
+2026-10-03 13:00:19.832 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat initialized with port 8080 (http)
+2026-10-03 13:00:19.846 [main] INFO  o.a.catalina.core.StandardService - Starting service [Tomcat]
+2026-10-03 13:00:19.846 [main] INFO  o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/10.1.55]
+2026-10-03 13:00:19.889 [main] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring embedded WebApplicationContext
+2026-10-03 13:00:19.889 [main] INFO  o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 1584 ms
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+2026-10-03 13:00:19.905 [main] INFO  c.m.admin.security.JwtTokenProvider - RSA 密钥加载成功（RS256）
+2026-10-03 13:00:19.906 [main] INFO  c.m.admin.security.JwtTokenProvider - JWT 使用 RS256 (RSA) 算法
+ _ _   |_  _ _|_. ___ _ |    _ 
+| | |\/|_)(_| | |_\  |_)||_|_\ 
+     /               |         
+                        3.5.16 
+2026-10-03 13:00:20.833 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter jwtFilterRegistration was not registered (disabled)
+2026-10-03 13:00:20.833 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter passwordChangeRequiredFilterRegistration was not registered (disabled)
+2026-10-03 13:00:20.833 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter workerSessionFilterRegistration was not registered (disabled)
+2026-10-03 13:00:20.833 [main] INFO  o.s.b.web.servlet.RegistrationBean - Filter serviceTokenFilterRegistration was not registered (disabled)
+2026-10-03 13:00:22.127 [main] WARN  com.migao.admin.service.SmsService - [POC 模式] SMS 万能验证码已启用（bypass-code 非空）：任意手机号可使用万能码 123456 登录。接入真实短信服务后必须移除该机制，见技术债 Issue #2616。
+2026-10-03 13:00:22.674 [main] INFO  com.migao.admin.config.OssConfig - 初始化 OSS 客户端: endpoint=oss-cn-hangzhou.aliyuncs.com, bucket=, permanentBucket=ai-customer-service-admin-dev, temporaryBucket=
+2026-10-03 13:00:23.408 [main] INFO  o.s.b.a.e.web.EndpointLinksResolver - Exposing 3 endpoints beneath base path '/actuator'
+2026-10-03 13:00:23.446 [main] INFO  o.s.s.c.a.a.c.InitializeAuthenticationProviderBeanManagerConfigurer$InitializeAuthenticationProviderManagerConfigurer - Global AuthenticationManager configured with AuthenticationProvider bean with name authenticationProvider
+2026-10-03 13:00:23.446 [main] WARN  o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer - Global AuthenticationManager configured with an AuthenticationProvider bean. UserDetailsService beans will not be used by Spring Security for automatically configuring username/password login. Consider removing the AuthenticationProvider bean. Alternatively, consider using the UserDetailsService in a manually instantiated DaoAuthenticationProvider. If the current configuration is intentional, to turn off this warning, increase the logging level of 'org.springframework.security.config.annotation.authentication.configuration.InitializeUserDetailsBeanManagerConfigurer' to ERROR
+2026-10-03 13:00:23.656 [main] INFO  c.b.m.e.s.MybatisPlusApplicationContextAware - Register ApplicationContext instances org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext@58ffcbd7
+2026-10-03 13:00:24.109 [main] WARN  o.s.b.w.s.c.AnnotationConfigServletWebServerApplicationContext - Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Failed to start bean 'webServerStartStop'
+2026-10-03 13:00:24.139 [main] INFO  o.s.b.a.l.ConditionEvaluationReportLogger - 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+2026-10-03 13:00:24.149 [main] ERROR o.s.b.d.LoggingFailureAnalysisReporter - 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Web server failed to start. Port 8080 was already in use.
+
+Action:
+
+Identify and stop the process that's listening on port 8080 or configure this application to listen on another port.
+
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:3.5.16:run (default-cli) on project admin-api: Process terminated with exit code: 1 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

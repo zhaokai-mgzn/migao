@@ -1,0 +1,239 @@
+{
+  "line": "③ 并发竞态（race-sweep）",
+  "date": "2026-10-04",
+  "timezone": "Asia/Shanghai (+08)",
+  "env": {
+    "api_base": "https://api.migaozn.com",
+    "tenant_id": 25,
+    "admin_phone": "13800138000",
+    "sms_code": "123456",
+    "temp_tenant": {
+      "id": 26,
+      "name": "米高测试环境-隔离对照",
+      "phone": "13800138001",
+      "created_via": "POST /api/auth/register（产品入驻流程）",
+      "cleaned": true
+    },
+    "live_worktree_local_buildpoint": "（仅本地旧构建点，非被测面）"
+  },
+  "buildpoint": {
+    "claimed_by_ledger": "ff655a06c",
+    "behaviorally_measured": "de614623d",
+    "measurement": "out/buildpoint-shape-sample.json（12/12 连续采样 /ship 均为 legacy 形状：data={order_id,status}、order_shipments 零行、client_request_keys 零行；与 de614623d 源码逐字一致；origin/main 的 shipAtomic 会落 shipment_no）",
+    "deploy_leg": "最近一次 deploy-admin-api success=2026-10-03T21:47:10Z；其后 2026-10-04T00:30:01Z run=failure 且远端输出 PREV_GOOD_TAG=sha-de61462 + 『磁盘可用 3998MB < 门槛 4096MB ⇒ 中止构建』",
+    "attribution_caveat": "本线全部 fail 读数取自 de614623d（落后 origin/main 152 提交）；需在环境升到 main 后复验。已由集成侧独立登记为 issue #6294。"
+  },
+  "counts": {
+    "pass": 17,
+    "fail": 5,
+    "skip": 1,
+    "false_red": 4,
+    "per_suite": {
+      "probe-write": {
+        "pass": 4,
+        "fail": 4,
+        "skip": 0,
+        "total": 8
+      },
+      "probe-idem": {
+        "pass": 4,
+        "fail": 1,
+        "skip": 1,
+        "total": 6
+      },
+      "probe-cross": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 0,
+        "total": 5
+      },
+      "probe-redproof": {
+        "pass": 4,
+        "fail": 0,
+        "skip": 0,
+        "total": 4
+      }
+    },
+    "false_red_note": "4 条判据缺陷（已修正/登记，不计入产品 fail）：W6 首版（draft 商品打 /batch/on-shelf ⇒ 逐条 addError 但整体 200）、C4 首版（跨租户 id 取用映射反了）、RP1 首版（回执行字段名取错）、W4/W6/W7 首版夹具（skuCode>30 字符 ⇒ 建品 500）"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "level": "fail(产品)",
+      "title": "并发过账同一 SKU ⇒ stock_ledger_entries before/after 同基、链断裂（净增量仍正确）",
+      "case_ids": [
+        "W3b",
+        "W7"
+      ],
+      "buildpoint": "de614623d",
+      "minimal_repro": "建两张同 SKU 草稿入库单（10 米 / 15 米）→ 同一 microtask 门控同时 PATCH /api/admin/inbound-orders/{id} {action:post} → 查 stock_ledger_entries",
+      "would_red": "W3b（链首尾相接）+ W7（洁净 SKU 同判据）",
+      "discriminating_control": "RP3 顺序双击过账 ⇒ 台账 1 行、库存只加一次；RP2 注入同基两行 ⇒ chainCheck 报 1 处（判据非恒绿）",
+      "root_cause_symbol": "de614623d: backend/admin-api/.../service/InboundOrderService.java#post（beforeQty=sku.getStock() 快照读 + productSkuMapper.receiveStock 原子自增 stock=stock+qty + stockLedgerService.record(beforeQty, afterQty) 用陈旧快照）",
+      "evidence": [
+        "out/probe-write-raw.json::cases.W3.ledgerMine=65.0→75.0 / 65.0→80.0、sameBaseConcurrentRead=true",
+        "out/probe-write-raw.json::cases.W7.ledgerMine=15.0:100.0→115.0 / 10.0:100.0→110.0",
+        "out/probe-write.json::W3b 记录"
+      ]
+    },
+    {
+      "id": "F2",
+      "level": "fail(产品)",
+      "title": "并发确认收款超卖：库存 10 米、两张各 8 米订单双双 200，库存被钳到 0（少扣 6 米），台账 delta 错记为 -8/-10",
+      "case_ids": [
+        "W4"
+      ],
+      "buildpoint": "de614623d",
+      "minimal_repro": "建洁净 SKU（stock=10）→ 建两张各 8 米订单 → 同时 PUT /api/admin/orders/{id}/payment",
+      "would_red": "W4（恰一单成功 + 扣减恰一次 + 库存不为负 + 链一致）",
+      "discriminating_control": "out/control-seq-oversell.json：同一序列**顺序**执行 ⇒ 首单 200、库存 10→2、第二单 422『库存不足：需要 8 米，当前仅剩 2.0 米』",
+      "root_cause_symbol": "de614623d: OrderService#confirmPayment（validateStockSufficient 前置校验在并发窗口内失效）+ ProductSkuMapper#deductStock 的 GREATEST(stock-qty,0) 把差额静默吞掉；台账 before/after 同样取快照",
+      "evidence": [
+        "out/probe-write-raw.json::cases.W4（statuses=[200,200]、stockBefore=10.0、stockAfter=0.0、rejectedBodies=[]、ledgerMine delta=-8/-10）",
+        "out/control-seq-oversell.json::pay2.status=422"
+      ]
+    },
+    {
+      "id": "F3",
+      "level": "fail(产品)",
+      "title": "同 runId 并发盘点：1×200 + 5×500（INTERNAL_ERROR），回执应为 replayed；防双记有效（分录仍 1 行）",
+      "case_ids": [
+        "W5"
+      ],
+      "buildpoint": "de614623d",
+      "minimal_repro": "对同一批次用同一 runId 并发 POST /api/admin/batch-stock/stocktake 6 次",
+      "would_red": "W5（重复提交必须给可读回执，不得 5xx）",
+      "discriminating_control": "RP1 同 runId **顺序**两次 ⇒ 第二次 changed=0,replayed=1（200）——同一代码在无并发窗口时行为正确",
+      "root_cause_symbol": "BatchStocktakeService#stocktake 的读半边 stocktakeRecordedBatchIds（非原子）+ 写半边部分唯一索引 uk_batch_consumption_stocktake ⇒ 两请求同时通过读判、插入时撞唯一索引抛 DuplicateKeyException，未映射为业务回执",
+      "evidence": [
+        "out/probe-write-raw.json::cases.W5（statuses=[500,500,500,500,200,500]、consumptionsForRun=1、stock Δ-3 正确）",
+        "out/db-index-readback.json::uk_batch_consumption_stocktake（tenant_id, stocktake_run_id, batch_id）WHERE stocktake_run_id IS NOT NULL",
+        "out/probe-redproof-raw.json::cases.RP1"
+      ]
+    },
+    {
+      "id": "F4",
+      "level": "fail(产品)",
+      "title": "发货面同键并发无幂等：同 X-Client-Request-Id 4 并发 ⇒ [200,422,422,422]、占位 0 行、发货单 0 行，订单被置 shipped",
+      "case_ids": [
+        "I6"
+      ],
+      "buildpoint": "de614623d",
+      "minimal_repro": "建单+确认收款 → 同键 4 并发 POST /api/admin/production/orders/{orderId}/ship",
+      "would_red": "I6（占位 1 行、发货单 1 张、状态恰流转一次）",
+      "discriminating_control": "I1/I4（同键并发/顺序建单）在同一环境 pass ⇒ 判据本身有效；对照 out/probe-idem-raw.json::cases.I5 显示 /api/admin/orders 也不消费幂等键",
+      "root_cause_symbol": "de614623d: ProductionController#ship 无 @RequestHeader(X-Client-Request-Id)、返回 Map.of(order_id,status)，不调 OrderShipmentService#recordMerchantShipment（origin/main 已按 #6157/#6181 改造）",
+      "evidence": [
+        "out/probe-idem-raw.json::cases.I6（statuses=[200,422,422,422]、claimRows=0、shipments=0、orderStatus=shipped）",
+        "out/buildpoint-shape-sample.json（12/12 legacy 形状）"
+      ]
+    }
+  ],
+  "line_scope_observations": [
+    {
+      "id": "O1",
+      "level": "观察（非并发，线外）",
+      "title": "POST /api/admin/products：skuCode 长度 >30 字符 ⇒ 500 INTERNAL_ERROR（应 4xx）",
+      "differential": "len=30→200、len=31→500（连续采样，见 out/run-all.log 与 harness/_trycreate9.mjs 读数）",
+      "note": "products.sku_code 为 varchar(30)；origin/main 的 ProductCreateRequest 仍无长度准入（git show origin/main:...ProductCreateRequest.java）⇒ 复发面在 main 也在；本线不判定其归属，仅登记"
+    },
+    {
+      "id": "O2",
+      "level": "环境",
+      "title": "被测面行为实测 = de614623d，与台账声称 ff655a06c 不一致（部署腿自 2026-10-03 起无成功）",
+      "evidence": [
+        "out/buildpoint-shape-sample.json",
+        "gh run view 37165129713 远端输出：PREV_GOOD_TAG=sha-de61462 / 磁盘 3998MB < 4096MB ⇒ 中止构建",
+        "集成侧 issue #6294"
+      ]
+    }
+  ],
+  "temp_tenant": {
+    "id": 26,
+    "cleaned": true,
+    "readings": {
+      "tenants_after": [
+        {
+          "id": 25,
+          "name": "米高测试环境",
+          "code": "shop-8yn7",
+          "status": "active"
+        }
+      ],
+      "tenant26_exists": 0,
+      "tenant25_probe_residue": {
+        "products": 0,
+        "product_skus": 0,
+        "orders": 0,
+        "inbound_orders": 0,
+        "stock_ledger_entries": 0,
+        "stock_batch_consumptions": 0,
+        "client_request_keys": 0,
+        "tenant_applications_probe_phone": 0
+      },
+      "cleanup_evidence": [
+        "out/cleanup.json（tenant26：leftovers=[]、tenantsDeleted=1、usersDeleted=1）",
+        "out/cleanup-tenantA.json（租户 25 探针对象删除完成）",
+        "out/residue-final.json"
+      ],
+      "tenants_now": [
+        {
+          "id": 25,
+          "name": "米高测试环境",
+          "code": "shop-8yn7",
+          "status": "active",
+          "created_at": "2026-10-04T08:31:29.837154+08:00"
+        }
+      ],
+      "note_tenants_now": "现取（09:55:03 +08，复核修正时刻）= **只有 25**：id=26（本线临时租户）已清；父会话重放期间曾短暂出现 id=27「米高测试环境-隔离对照」（09:54:25 +08 读数），到 09:55:03 已不在（重放侧已清）。两窗口的探针残留由重放侧用**已修好谓词**的 cleanup-a.mjs 收口。",
+      "residue_audit": "out/residue-audit.json：租户 25 内带 race-sweep 标记的 products/orders/finance_transactions 现取行的 created_at 全部落在 09:52–09:53 +08（重放窗口）；本线窗口（≤09:24）在这些表内无残留"
+    },
+    "objection_fixes": {
+      "fixed_at": "2026-10-04T01:55:03.716Z",
+      "objection_1": "成立并已修：cleanup-a.mjs 的 blocked 20 条（10 表 × 2 轮）全部是谓词**列名错误**（kind=sql_error；fk_blocked=0）：inbound_orders 用了不存在的 dye_lot（真实列在 stock_batches/inbound_order_items）⇒ 经 FK 闭包传播到 inbound_labels；finance_transactions 用了不存在的 ref_no（真实列 order_no/order_id）；processing_orders 用了不存在的 order_no（真实列 processing_order_no/order_id）⇒ 连带 6 张加工子表失败。归属更正：inbound_orders/inbound_labels 是本线根表/子表（当时探针入库单 24 行），非“其他线的对象”。谓词已按真实 schema 改写；失败分类 fk_blocked vs sql_error，schema 类失败一律进 errors（不再 errors:[] 而 blocked 非空）；新增 --dry 只读校验（现 errors=[]、blockedTop=[]）。残留扫描面已补 finance_transactions/processing_orders/inbound_labels/stock_batches。",
+      "objection_2": "成立并已修：原报告引用的 usersDeleted=1 与证据相抵——cleanup.json::after.tenantB 实为 usersDeleted=0 / totalDeletedRows=0 / tenantsDeleted=1 / leftovers=[]。改写为可复算口径：users 行已不在，由含 users 表在内的全 tenant_id 表现取扫描 leftovers:[] 证明；该批行在前一轮（被 SIGTERM 打断）已删，tenants 行由最后一次运行删除。",
+      "evidence_files": [
+        "out/cleanup-tenantA-historical-blocked.json（重建，含 provenance；原 cleanup-tenantA.json 曾被 --dry 覆盖）",
+        "out/cleanup-tenantA-dry.json",
+        "out/residue-audit.json",
+        "out/tenants-now.json",
+        "out/run-all.log（blockedTop 行，未被覆盖）"
+      ]
+    }
+  },
+  "not_covered": [
+    "W2 的 post×cancel 交叉竞态仅 1 轮（未做多轮重复 ⇒ 覆盖强度有限）",
+    "『不同 runId 并发盘同一批次』未测（BatchStocktakeService javadoc 自认该形态靠唯一索引而非行锁）",
+    "加工单生成/派工/批次扣减并发未测（租户 25 无加工单夹具链，需先走 production 建链）",
+    "售后工单并发完结归线②；本线未测",
+    "工人侧 Idempotency-Key（/api/worker/**）未测（需工人登录会话夹具）",
+    "跨租户**写**面（PUT/DELETE 越租户对象）未测（C 组覆盖读 + 各自建品）",
+    "UI 层并发（双击提交）未测（无头浏览器未接入本线）",
+    "多实例/脏部署状态对读数的干扰未排除（部署腿自 10-03 起失败，见 O2）"
+  ],
+  "artifacts": {
+    "out": [
+      "probe-write.json",
+      "probe-write-raw.json",
+      "probe-write-summary.json",
+      "probe-idem.json",
+      "probe-idem-raw.json",
+      "probe-idem-summary.json",
+      "probe-cross.json",
+      "probe-cross-raw.json",
+      "probe-cross-summary.json",
+      "probe-redproof.json",
+      "probe-redproof-raw.json",
+      "probe-redproof-summary.json",
+      "buildpoint-shape-sample.json",
+      "control-seq-oversell.json",
+      "db-index-readback.json",
+      "cleanup.json",
+      "cleanup-tenantA.json",
+      "residue-final.json",
+      "fixtures.json",
+      "run-all.log"
+    ],
+    "harness": "acceptance/2026-10-04/race-sweep/harness/**（lib.mjs 复制自 2026-10-03 底座 + 自建 probe-write/probe-idem/probe-cross/probe-redproof/bootstrap/cleanup*/control-*）"
+  }
+}

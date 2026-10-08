@@ -381,7 +381,7 @@ class TestSeedRuleEquivalence:
         docker.chmod(0o755)
         monkeypatch.setenv("PATH", f"{fakebin}:{os.environ['PATH']}")
         proc = subprocess.run(
-            ["bash", str(SEED_SCRIPT), "--persona", "米宝", "--dry-run"],
+            ["bash", str(SEED_SCRIPT), "--persona", "黄金策", "--dry-run"],
             cwd=REPO_ROOT, capture_output=True, text=True,
         )
         assert proc.returncode != 0, (
@@ -851,7 +851,7 @@ class TestCasePersonaOwnershipLock:
         )
 
     def test_or016_is_mibao_only(self):
-        """OR-016 归属锁：**米宝专属**（它点名 B 端 fixture 商品）—— 退役**不改端归属**。
+        """OR-016 归属锁：**黄金策专属**（它点名 B 端 fixture 商品）—— 退役**不改端归属**。
 
         原口径：`OR-016` 必须在 `mibao` 可跑集里、且不在 `xiaobu` 可跑集里（"错栈即 0 分"
         的反面证据：它点名「2699系列雪尼尔窗帘面料」= B 端 fixture，跑 C 端栈必然搜不到）。

@@ -126,9 +126,9 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
    * 闲置登出：定时器（服务端 `idle_minutes`）+ 可见性变化双保险。
    *
    * 🔴 兜底必须与服务端**同源**（母单 #5161 顺手修的不一致）：改前这里是字面 `15`，
-   * 而服务端全局默认 = 一周（`WorkerSessionService.DEFAULT_IDLE_MINUTES = 10080`，
-   * 2026-09-29 用户裁定）。正常链路服务端**恒回** `idle_minutes`（登录响应就带 ⇒ 进 state），
-   * 故兜底只在拿不到时生效；但字面 `15` 会让降级路径比服务端早 10065 分钟踢人。
+   * 而服务端全局默认 = **30 天**（`WorkerSessionService.DEFAULT_IDLE_MINUTES = 43200`，
+   * 2026-10-07 用户裁定「延长到 1 个月」；上一版一周 10080）。正常链路服务端**恒回** `idle_minutes`
+   * （登录响应就带 ⇒ 进 state），故兜底只在拿不到时生效；但字面 `15` 会让降级路径比服务端早 43185 分钟踢人。
    */
   function armIdle() {
     if (idleTimer) clearTimeout(idleTimer)

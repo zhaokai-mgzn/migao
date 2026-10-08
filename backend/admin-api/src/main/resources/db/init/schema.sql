@@ -704,6 +704,8 @@ CREATE TABLE orders (
     is_urgent BOOLEAN NOT NULL DEFAULT FALSE,       -- 订单级加急标记：true = 插队、不进池、立刻单派（pooled=false）；与售后工单 priority 不共享来源、不联动（用户裁定「加急不能跟售后工单绑定」）。NOT NULL ⇒ 无第三态，「未标加急」与「明确不加急」同值
     required_delivery_date DATE,                    -- 客户要求到货日；NULL = 未指定（不猜、不回填）。DATE 而非 TIMESTAMP —— 只有日期精度的事实不该带时刻。消费者 = 池看板排序（到货日升序、NULL 排最后）
     remark TEXT,                                     -- 备注
+    -- 来自 V148__add_order_shipped_at.sql（issue #6262，用户 2026-10-03 逐字裁定 B）
+    shipped_at TIMESTAMP WITH TIME ZONE,             -- 发货时刻 = 该单最近一次 →shipped 流转发生的时刻；由两条发货路各自的条件 UPDATE 写入（OrderService.transitionStatusAtomic / OrderShipmentService.transition）。用途 = 「发货后 N 天自动完成」定时腿的判定锚点。NULL = 未采集（存量回填不全 / 从未发货）⇒ **不参与**自动完成，只能人工确认收货。不是 updated_at（会被后续编辑刷新）、也不是 created_at（那是下单时刻）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
@@ -755,6 +757,7 @@ CREATE TABLE order_logistics (
     tracking_no VARCHAR(128) NOT NULL,
     shipper_name VARCHAR(64),                 -- 发货人（发货单纸面「经手人」，V46 迁移；存量 NULL）
     logistics_type VARCHAR(16) DEFAULT 'express',  -- 物流类型：express 快递 / logistics 物流专线（四季安等，V47 迁移；issue #3984）
+    shipping_method VARCHAR(16),              -- 发货方式（V147 迁移；issue #6239）：logistics 物流发货 / none 无需物流；NULL = 未采集（存量行 + 老客户端不发该字段，不猜、不回填）
     status VARCHAR(32) DEFAULT 'in_transit',  -- in_transit / delivered / returned
     tracking_info JSONB DEFAULT '[]',  -- 物流轨迹
     shipped_at TIMESTAMP WITH TIME ZONE,
@@ -3586,6 +3589,56 @@ SELECT 'rr-v93-' || t.id || '-' || r.rid, t.id, r.trigger_kind, r.trigger_value,
           AND e.action = r.action
           AND COALESCE(e.operation, '') = COALESCE(r.operation, ''))
 ON CONFLICT (id) DO NOTHING;
+
+-- ================================================
+-- 定时任务（用户「预约」）—— issue #6486 包 1（V149）
+-- ================================================
+-- 与 db/migration/V149__create_scheduled_tasks.sql 的终态逐字一致（本文件是**唯一建库脚本**，
+-- 不同步 ⇒ 新建库缺终态 ⇒ 「bootstrap 库与存量库两份真相」）。
+-- 语义说明（为什么单独一张表 / 三件套为什么 NOT NULL）见该迁移文件头注。
+CREATE TABLE IF NOT EXISTS scheduled_tasks (
+    id           VARCHAR(64) PRIMARY KEY,
+    tenant_id    BIGINT NOT NULL REFERENCES tenants(id),
+    task_type    VARCHAR(32) NOT NULL,
+    subject_type VARCHAR(32),
+    subject_id   VARCHAR(64),
+    fire_at      TIMESTAMP WITH TIME ZONE NOT NULL,
+    criterion    TEXT NOT NULL,
+    impact       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    action_label VARCHAR(64) NOT NULL,
+    action_url   VARCHAR(255) NOT NULL,
+    payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    source       VARCHAR(32) NOT NULL,
+    status       VARCHAR(32) NOT NULL DEFAULT 'pending',
+    dedup_key    VARCHAR(128) NOT NULL,
+    fired_at     TIMESTAMP WITH TIME ZONE,
+    created_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted      INTEGER NOT NULL DEFAULT 0
+);
+-- 扫描器主查询：到期且待投递（部分索引）
+CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
+    ON scheduled_tasks (fire_at)
+    WHERE status = 'pending' AND deleted = 0;
+-- 幂等键（部分唯一索引：软删行不占位）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_scheduled_tasks_tenant_dedup
+    ON scheduled_tasks (tenant_id, dedup_key)
+    WHERE deleted = 0;
+ALTER TABLE scheduled_tasks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_scheduled_tasks ON scheduled_tasks
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+COMMENT ON TABLE scheduled_tasks IS
+    '定时任务（用户「预约」）—— issue #6486 包 1（V149）。一行 = 一条在未来某时刻要投递的提醒。'
+    '🔴 三件套（criterion / action_label / action_url）全 NOT NULL ⇒ 没有处置入口的待办建不出来'
+    '（主动引擎「无处置入口不发」的**建单期**落点）。'
+    '与 notifications 的分工：本表 = 待触发计划（可取消），notifications = 投递记录（不可撤回）。';
+COMMENT ON COLUMN scheduled_tasks.dedup_key IS
+    '幂等键：同一件事在同一时刻只提醒一次（部分唯一索引 uk_scheduled_tasks_tenant_dedup）。'
+    '缺省由服务端按「收件人 + 任务类型 + 触发时刻（秒）」派生。';
+COMMENT ON COLUMN scheduled_tasks.status IS
+    'pending / fired / cancelled / failed / dismissed。只有 pending 会被扫描器投递；'
+    'fired 后不重投（疲劳控制之一）。';
+COMMENT ON COLUMN scheduled_tasks.source IS 'user（米宝委托）/ system（规则派生）。';
 
 -- ================================================
 -- END OF SCHEMA

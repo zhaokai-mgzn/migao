@@ -98,7 +98,7 @@ describe('ChangePasswordPage', () => {
     expect(mockChangePasswordAction).toHaveBeenCalledWith('init-pass-123', 'new-pass-456')
   })
 
-  it('改密成功 ⇒ 用换发的新凭据进主界面（问米宝）', async () => {
+  it('改密成功 ⇒ 用换发的新凭据进主界面（问黄金策）', async () => {
     mockChangePasswordAction.mockResolvedValueOnce(true)
 
     render(<ChangePasswordPage />)

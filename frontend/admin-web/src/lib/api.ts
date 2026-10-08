@@ -8,6 +8,9 @@ import {
 import type { RefundOrderParams } from './data-adapter'
 // 发货读面（issue #5651）：真值 owner = `OrderShipmentService.readShipment`，这里只声明形状
 import type { OrderShipmentRead } from './sales-shipment'
+// 「识别 + 一次性推理」端点回的是**同一条字段计划**（issue #6367 包 P3）—— 复用它的形状，
+// 不另造第二份（两份定义迟早让 `source` / `fields` 漂移）。**类型导入**，运行时零依赖。
+import type { PageFillPlan } from './agent-page-fill'
 import type { 
   ApiResponse, 
   PageResponse, 
@@ -154,6 +157,8 @@ import type {
   RemnantLedgerView,
   RemnantSpecsView,
   RemnantMatchView,
+  // 库存明细（issue #6404）：`GET /api/admin/stock-ledger` 的行类型
+  StockLedgerEntry,
 } from '@/types'
 import type { OrderContentUpdateParams } from '@/types'
 import { FrontendToBackendStatus } from '@/types'
@@ -785,6 +790,14 @@ export interface RecognizedField {
   source: string | null
   /** `value` 为空时的原因（如「图片未标注门幅」） */
   reason: string | null
+  /**
+   * 图上抄到、但内核**没采纳**的原文（issue #6529；只有订单侧 `items` 会带）。
+   *
+   * 🔴 **它不是值**：只在 `value` 为空时出现，且**不得写进表单 / 备注** —— 消费方只有两个：
+   * 「按名称**查目录** ⇒ 给候选 ⇒ 商家点选」与「展示给商家看」。
+   * 键名清单的唯一真值 = `backend/ai-agent-service/app/vision/targets.py::REFERENCE_KEYS`。
+   */
+  reference?: string | null
 }
 
 /** 图片识别响应体（`targetType` 回显 + 降级位 + 逐字段候选）。 */
@@ -807,6 +820,25 @@ export const imageRecognizeApi = {
     request.post<ApiResponse<ImageRecognizeResult>>('/api/admin/image-recognition', {
       targetType,
       images,
+    }),
+
+  /**
+   * 「识别 + **一次性**推理」（issue #6367 包 P3，冻结契约）—— 建品页表单内那个入口。
+   *
+   * 与 `recognize` 的差别只有两点（其余同族：同样先 `uploadApi.uploadImage`、同样**只回字段候选**）：
+   * - 端点 `/api/admin/image-recognition/interpret`（admin-api 代理，服务端复用黄金策主模型）；
+   * - 请求体多一个**可选** `hint`（商家的一句话要求，≤200 字，`maxLength` 由输入框限住）：
+   *   **空串 / 缺省 ⇒ 该键不出现**（「没补充」不等于「补充了空字符串」）。
+   *
+   * 响应 = `PageFillPlan`：每格带 `source`（从图上抄的 / 黄金策推的）与 `note`（依据），
+   * 前端**只比对字符串做展示**。
+   * 🔴 **不落库**：同 `recognize` —— 结果只填表，提交永远是人的动作。
+   */
+  interpret: (targetType: 'product' | 'order', images: string[], hint?: string) =>
+    request.post<ApiResponse<PageFillPlan>>('/api/admin/image-recognition/interpret', {
+      targetType,
+      images,
+      ...(hint ? { hint } : {}),
     }),
 }
 
@@ -843,6 +875,25 @@ export const savingBoardApi = {
 
   trend: (params?: { granularity?: string }) =>
     request.get<ApiResponse<SavingTrend>>('/api/admin/batch-stock/saving-trend', { params }),
+}
+
+/**
+ * 库存明细 / 库存流水**只读**查询（issue #6404；后端 `StockLedgerController`，issue #4055）。
+ *
+ * `GET /api/admin/stock-ledger?skuId=&productId=&refNo=&page=&size=`，
+ * 权限码 `product:list`（与端点**方法级** `@RequirePermission` 逐字同码 —— 库存属于商品管理的读权限，
+ * 不新造权限点）。大菜单「仓储与物料 ▸ 库存明细」的第一屏数据源。
+ *
+ * 🔴 **端点没有关键词参数**：`skuId` / `productId` / `refNo` 全是**精确**过滤 ——
+ * 传关键词会被服务端**静默丢弃** = 拿全量冒充过滤结果。
+ * ⇒ 商品侧必须先走 `productApi.getProducts` 搜索拿到 `productId`（见页面注释）。
+ *
+ * 🔴 只读：库存流水的**写入方**在库存变更的既有实现点（下单扣减 / 售后回补 / 手工调整 / 入库过账），
+ * 不经过本组。
+ */
+export const stockLedgerApi = {
+  ledger: (params?: { skuId?: number; productId?: string; refNo?: string; page?: number; size?: number }) =>
+    request.get<ApiResponse<PageResponse<StockLedgerEntry>>>('/api/admin/stock-ledger', { params }),
 }
 
 // 加工单 API（issue #3340）
@@ -1584,6 +1635,15 @@ export const workerApi = {
   createWorker: (data: WorkerFormData) =>
     request.post<ApiResponse<WorkerProfile>>('/api/admin/workers', data),
 
+  /**
+   * 重置工人 PIN（issue #6432）：`pin` 省略 ⇒ 服务端随机生成 6 位。
+   *
+   * 响应体**只含新 PIN 明文**（唯一一次下发面）——库里落的是 BCrypt 哈希、不可逆，
+   * 所以管理员没有「查看原 PIN」这条路，只有「重置并告知新值」。
+   */
+  resetWorkerPin: (id: string, pin?: string) =>
+    request.put<ApiResponse<{ pin: string }>>(`/api/admin/workers/${id}/pin`, pin ? { pin } : {}),
+
   /** 停用/启用：**复用**既有员工状态端点 PUT /api/admin/users/{id}/status（不另造一套）。 */
   setWorkerStatus: (id: string, status: EmployeeStatus) =>
     request.put<ApiResponse<void>>(`/api/admin/users/${id}/status`, { status }),
@@ -1679,7 +1739,7 @@ export interface AgentSessionDetail extends AgentSession {
   customerAvatarUrl?: string
   /** 转人工时点 AI 会话上下文摘要（管理端可见；GB/T 47746-2026） */
   aiContextSummary?: string | null
-  /** 转人工前顾客与 AI 客服（小布）的对话快照（管理端可见） */
+  /** 转人工前顾客与 AI 客服（元元）的对话快照（管理端可见） */
   aiContext?: AgentAiTurn[] | null
 }
 

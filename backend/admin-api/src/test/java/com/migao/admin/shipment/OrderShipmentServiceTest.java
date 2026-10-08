@@ -45,6 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -101,6 +102,9 @@ class OrderShipmentServiceTest {
     @BeforeAll
     static void initLambdaCache() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), Order.class);
+        // issue #6157：撤销打包改用 LambdaUpdateWrapper（显式 SET 列 = NULL）⇒ OrderShipment 也要注册
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""),
+                OrderShipment.class);
     }
 
     @BeforeEach
@@ -302,6 +306,111 @@ class OrderShipmentServiceTest {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // ④b 发货写面不变式（issue #6157）：累计已发 ≤ 订单量 / 请求内聚合 / 精度
+    //     （判定本体 = ShipmentInvariantsTest；这里钉**这条路的接线 + 拒绝即零写**）
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("🔴 超发 ⇒ 4xx 且**一个字节都没写**（修前实测：quantity=10 传 999 ⇒ 200、Σ已发=999）")
+    void overShipmentIsRejectedWithZeroWrites() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("packed"));
+        givenOrderItems(plainItem()); // 订单量 12.00
+        when(orderShipmentMapper.selectByOrderId(ORDER_ID, TENANT)).thenReturn(new ArrayList<>());
+        Map<String, Object> body = shipBody();
+        body.put("items", List.of(new LinkedHashMap<>(Map.of(
+                "order_item_id", ITEM_ID, "shipped_quantity", new BigDecimal("999"), "unit", "米"))));
+
+        assertThatThrownBy(() -> service.ship(ORDER_ID, body, TENANT, KEY, worker()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("累计实发超过订单量");
+        verify(orderShipmentMapper, never()).insert(any(OrderShipment.class));
+        verify(orderShipmentItemMapper, never()).insert(any(OrderShipmentItem.class));
+        verify(orderMapper, never()).update(isNull(), any());
+    }
+
+    @Test
+    @DisplayName("两侧夹住：恰好发满 12 ⇒ 200；12.01 ⇒ 4xx（超一分就拒，不是「>= 上限就拒」）")
+    void exactlyAtLimitPassesAndOneCentOverIsRejected() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("packed"));
+        givenOrderItems(plainItem());
+        when(orderShipmentMapper.selectByOrderId(ORDER_ID, TENANT)).thenReturn(new ArrayList<>());
+        Map<String, Object> exactly = shipBody();
+        exactly.put("items", List.of(new LinkedHashMap<>(Map.of(
+                "order_item_id", ITEM_ID, "shipped_quantity", new BigDecimal("12.00"), "unit", "米"))));
+        assertThat(service.ship(ORDER_ID, exactly, TENANT, KEY, worker()).get("status")).isEqualTo("shipped");
+
+        Map<String, Object> over = shipBody();
+        over.put("items", List.of(new LinkedHashMap<>(Map.of(
+                "order_item_id", ITEM_ID, "shipped_quantity", new BigDecimal("12.01"), "unit", "米"))));
+        assertThatThrownBy(() -> service.ship(ORDER_ID, over, TENANT, KEY, worker()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("超出 0.01");
+    }
+
+    @Test
+    @DisplayName("🔴 请求内同一 order_item_id 两行 ⇒ 按求和判上限（6+6=12 恰好放行、7+6=13 ⇒ 4xx 且不写两行）")
+    void duplicateOrderItemLinesInOneRequestAreSummed() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("packed"));
+        givenOrderItems(plainItem()); // ⚠️ 订单量 12；用 6+6=12 恰好放行、7+6=13 拒绝
+        when(orderShipmentMapper.selectByOrderId(ORDER_ID, TENANT)).thenReturn(new ArrayList<>());
+        Map<String, Object> summed = shipBody();
+        summed.put("items", List.of(
+                new LinkedHashMap<>(Map.of("order_item_id", ITEM_ID,
+                        "shipped_quantity", new BigDecimal("6"), "unit", "米")),
+                new LinkedHashMap<>(Map.of("order_item_id", ITEM_ID,
+                        "shipped_quantity", new BigDecimal("6"), "unit", "米"))));
+        assertThat(service.ship(ORDER_ID, summed, TENANT, KEY, worker()).get("status")).isEqualTo("shipped");
+
+        // 换一场（清调用史）：下面的「不写两行」判据不该被上面那次的合法 insert 喂红
+        clearInvocations(orderShipmentItemMapper, orderShipmentMapper, orderMapper);
+        Map<String, Object> dup = shipBody();
+        dup.put("items", List.of(
+                new LinkedHashMap<>(Map.of("order_item_id", ITEM_ID,
+                        "shipped_quantity", new BigDecimal("7"), "unit", "米")),
+                new LinkedHashMap<>(Map.of("order_item_id", ITEM_ID,
+                        "shipped_quantity", new BigDecimal("6"), "unit", "米"))));
+        assertThatThrownBy(() -> service.ship(ORDER_ID, dup, TENANT, KEY, worker()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("超出 1");
+        verify(orderShipmentItemMapper, never()).insert(any(OrderShipmentItem.class));
+    }
+
+    @Test
+    @DisplayName("累计口径含已落库明细：上一张单已发 5，本次 8（合计 13 > 12）⇒ 4xx")
+    void cumulativeCountsAlreadyPersistedDetails() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("packed"));
+        givenOrderItems(plainItem());
+        when(orderShipmentMapper.selectByOrderId(ORDER_ID, TENANT)).thenReturn(new ArrayList<>());
+        when(orderShipmentItemMapper.selectByOrderId(ORDER_ID, TENANT)).thenReturn(new ArrayList<>(
+                List.of(OrderShipmentItem.builder().orderItemId(ITEM_ID)
+                        .shippedQuantity(new BigDecimal("5.00")).unit("米").build())));
+        Map<String, Object> body = shipBody();
+        body.put("items", List.of(new LinkedHashMap<>(Map.of(
+                "order_item_id", ITEM_ID, "shipped_quantity", new BigDecimal("8"), "unit", "米"))));
+
+        assertThatThrownBy(() -> service.ship(ORDER_ID, body, TENANT, KEY, worker()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("累计实发超过订单量");
+        verify(orderShipmentItemMapper, never()).insert(any(OrderShipmentItem.class));
+    }
+
+    @Test
+    @DisplayName("🔴 越界精度 0.001 ⇒ 4xx 且零写（修前被 numeric(10,2) 吃成 0.00 且仍 200）")
+    void subCentPrecisionIsRejectedWithZeroWrites() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("packed"));
+        givenOrderItems(plainItem());
+        when(orderShipmentMapper.selectByOrderId(ORDER_ID, TENANT)).thenReturn(new ArrayList<>());
+        Map<String, Object> body = shipBody();
+        body.put("items", List.of(new LinkedHashMap<>(Map.of(
+                "order_item_id", ITEM_ID, "shipped_quantity", new BigDecimal("0.001"), "unit", "米"))));
+
+        assertThatThrownBy(() -> service.ship(ORDER_ID, body, TENANT, KEY, worker()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("列精度");
+        verify(orderShipmentItemMapper, never()).insert(any(OrderShipmentItem.class));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // ⑤ 原子性（结构判据 + 失败传播）：@Transactional 边界 + 状态流转在最后一步
     // ══════════════════════════════════════════════════════════════════════════
 
@@ -405,14 +514,48 @@ class OrderShipmentServiceTest {
         Map<String, Object> result = service.unpack(ORDER_ID, "装错单了，拆开重打", TENANT, KEY, worker());
 
         assertThat(result.get("status")).isEqualTo("producing");
-        org.mockito.ArgumentCaptor<OrderShipment> captor =
-                org.mockito.ArgumentCaptor.forClass(OrderShipment.class);
-        verify(orderShipmentMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getUnpackReason()).isEqualTo("装错单了，拆开重打");
-        assertThat(captor.getValue().getUnpackedByWorkerId()).isEqualTo(WORKER_ID);
-        assertThat(captor.getValue().getUnpackedAt()).isNotNull();
-        assertThat(captor.getValue().getPackedAt()).isNull();
+        // 🔴 issue #6157：置空必须走**显式 SET 列 = NULL** 的 UPDATE，不能用 updateById
+        // （MyBatis-Plus 默认更新策略跳过 null ⇒ 三处置空静默无效，实测撤销后仍标着 packed_at）
+        org.mockito.ArgumentCaptor<Wrapper<OrderShipment>> captor = captorOf(OrderShipment.class);
+        verify(orderShipmentMapper).update(isNull(), captor.capture());
+        verify(orderShipmentMapper, never()).updateById(any(OrderShipment.class));
+        String sql = String.valueOf(captor.getValue().getSqlSet());
+        assertThat(sql).contains("packed_at").contains("packed_by_worker_id").contains("packed_by_worker_name");
+        assertThat(sql).contains("unpacked_at").contains("unpack_reason");
+        // 响应里的留痕也必须已对齐（内存态不能留着旧值）
+        assertThat(result.get("packed_at")).isNull();
+        assertThat(result.get("packed_by")).isNull();
         verify(orderMapper).update(isNull(), any());
+    }
+
+    /** 强类型的 wrapper 捕获器（{@code ArgumentCaptor<Wrapper<E>>} 的泛型写法收敛在一处）。 */
+    @SuppressWarnings("unchecked")
+    private static <E> org.mockito.ArgumentCaptor<Wrapper<E>> captorOf(Class<E> entity) {
+        return (org.mockito.ArgumentCaptor<Wrapper<E>>) (org.mockito.ArgumentCaptor<?>)
+                org.mockito.ArgumentCaptor.forClass(Wrapper.class);
+    }
+
+    @Test
+    @DisplayName("🔴 撤销打包后 packed_* 真的为空（读面复读：状态与留痕一致，不是只清内存）")
+    void unpackActuallyClearsPackedColumns() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("packed"));
+        OrderShipment packed = OrderShipment.builder().id("ship-1").tenantId(TENANT)
+                .orderId(ORDER_ID).shipmentNo("SH1").source(OrderShipmentService.SOURCE_WORKER)
+                .packedAt(OffsetDateTime.now()).packedByWorkerId(WORKER_ID)
+                .packedByWorkerName(WORKER_NAME).build();
+        List<OrderShipment> rows = new ArrayList<>(List.of(packed));
+        when(orderShipmentMapper.selectByOrderId(ORDER_ID, TENANT)).thenReturn(rows);
+
+        Map<String, Object> result = service.unpack(ORDER_ID, "装错单了", TENANT, KEY, worker());
+
+        // 响应里直接回答「谁在何时打的包」——撤销后必须是空，而不是过期事实
+        assertThat(result.get("packed_at")).isNull();
+        assertThat(result.get("packed_by")).isNull();
+        assertThat(result.get("unpacked_at")).isNotNull();
+        org.mockito.ArgumentCaptor<Wrapper<OrderShipment>> captor = captorOf(OrderShipment.class);
+        verify(orderShipmentMapper).update(isNull(), captor.capture());
+        assertThat(String.valueOf(captor.getValue().getSqlSet()))
+                .contains("packed_at=#{").contains("packed_by_worker_name=#{");
     }
 
     @Test

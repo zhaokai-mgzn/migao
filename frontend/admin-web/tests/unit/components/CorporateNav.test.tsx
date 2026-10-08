@@ -47,18 +47,18 @@ describe('CorporateNav', () => {
   it('should render logo and brand name', () => {
     render(<CorporateNav />)
     expect(screen.getByTestId('logo')).toBeInTheDocument()
-    expect(screen.getByText('米高')).toBeInTheDocument()
+    expect(screen.getByText('观星台')).toBeInTheDocument()
   })
 
   it('should render logo link pointing to root', () => {
     render(<CorporateNav />)
-    const brandLink = screen.getByText('米高').closest('a')
+    const brandLink = screen.getByText('观星台').closest('a')
     expect(brandLink).toHaveAttribute('href', '/')
   })
 
   it('should render all 4 desktop navigation links', () => {
     render(<CorporateNav />)
-    // Note: 米高 appears in both logo area and nav — use getAllByText for nav items
+    // Note: 观星台 appears in both logo area and nav — use getAllByText for nav items
     // Desktop nav is rendered inside md:flex hidden container
     const homeLinks = screen.getAllByText('首页')
     const servicesLinks = screen.getAllByText('产品服务')

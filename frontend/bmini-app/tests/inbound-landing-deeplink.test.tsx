@@ -16,7 +16,7 @@
  * |---|---|---|
  * | D1 | `/b/?code=<合法入库短码>`（服务端 302 的**裸短码**形态）⇒ 入库标签空间 + 短码原样带走 | 删掉消费逻辑 / 裸码判成 foreign ⇒ 红 |
  * | D2 | 🔴 `/b/?code=<洗水码 URL>` ⇒ 洗水码空间 + 报工入口（**绝不**当入库标签） | 不看码空间直接取路径段 ⇒ 红 |
- * | D3 | 别域名 / 纯文本 ⇒ 「这不是米高的标签」；空值 ⇒ 「8 位短码」提示（**都不静默**） | 读不到就 `return`（静默当没有参数）⇒ 红 |
+ * | D3 | 别域名 / 纯文本 ⇒ 「这不是观星台的标签」；空值 ⇒ 「8 位短码」提示（**都不静默**） | 读不到就 `return`（静默当没有参数）⇒ 红 |
  * | D4 | 「**出现但为空**」与「**没出现**」可区分（`present`） | 合并成一个 `raw === ''` 判断 ⇒ 红 |
  * | D5 | 启动器（`src/app.tsx`）真的把码交给补打页（渲染 `App` 实跑，断言 `Taro.redirectTo`） | 删掉那两行 ⇒ 红 |
  * | D6 | 商家首页**不抢路由**：URL 上带 `?code=` 时不再排"未登录 ⇒ 去商家登录"的定时器 | 删掉那道闸 ⇒ 红（工人被踢到商家登录页） |
@@ -149,7 +149,7 @@ describe('落地页深链：按码空间分流（复用 codeSpace 的既有判�
     expect(classifyLandingCode('https://app.migaozn.com/s/7K3M9QP2').space).not.toBe('inbound-label')
   })
 
-  it('D3 别域名 / 纯文本 ⇒ 「这不是米高的标签」；空值 ⇒ 「8 位」提示（都不静默）', () => {
+  it('D3 别域名 / 纯文本 ⇒ 「这不是观星台的标签」；空值 ⇒ 「8 位」提示（都不静默）', () => {
     for (const raw of ['https://evil.example/i/ABCD2345', 'MG-1001', 'hello world']) {
       const reading = classifyLandingCode(raw)
       expect({ raw, space: reading.space }).toEqual({ raw, space: 'foreign' })
@@ -161,7 +161,7 @@ describe('落地页深链：按码空间分流（复用 codeSpace 的既有判�
       expect({ raw, space: reading.space }).toEqual({ raw, space: 'invalid-input' })
       expect(reading.message).toBe(MANUAL_CODE_INVALID_MESSAGE)
     }
-    // 抄短的 / 抄漏的形态（工人最常见的错）⇒ 走「扫到」口径的 foreign（明说"这不是米高的标签"
+    // 抄短的 / 抄漏的形态（工人最常见的错）⇒ 走「扫到」口径的 foreign（明说"这不是观星台的标签"
     // 并给出"手输那 8 位"的出路）—— 判据只要求**不静默**、给得出下一句可行动的话
     expect(classifyLandingCode('ABCD2').space).toBe('foreign')
     expect(classifyLandingCode('ABCD2').message).toBe(FOREIGN_CODE_MESSAGE)

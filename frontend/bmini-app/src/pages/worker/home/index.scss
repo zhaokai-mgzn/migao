@@ -1,0 +1,89 @@
+.worker-home {
+  padding: 48px 32px;
+
+  &__card {
+    padding: 32px;
+    background: #ffffff;
+    border-radius: 12px;
+    margin-bottom: 32px;
+  }
+
+  &__card-title {
+    display: block;
+    font-size: 24px;
+    color: #7a8899;
+    margin-bottom: 12px;
+  }
+
+  &__worker-no {
+    display: block;
+    font-size: 28px;
+    color: #5b6b7c;
+  }
+
+  &__worker-name {
+    display: block;
+    font-size: 44px;
+    font-weight: 700;
+    color: #0a2540;
+  }
+
+  &__message {
+    display: block;
+    margin-top: 12px;
+    font-size: 24px;
+    color: #d93025;
+  }
+
+  &__entries {
+    display: block;
+  }
+
+  &__entry {
+    height: 112px;
+    padding: 0 32px;
+    margin-bottom: 24px;
+    background: #ffffff;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+  }
+
+  &__entry-text {
+    font-size: 32px;
+    color: #0a2540;
+  }
+
+  &__exit {
+    margin-top: 32px;
+    height: 88px;
+    line-height: 88px;
+    background: #ffffff;
+    color: #d93025;
+    border: 1px solid #dfe6ef;
+    border-radius: 8px;
+    font-size: 30px;
+  }
+
+  &__gate {
+    padding: 32px;
+    background: #ffffff;
+    border-radius: 12px;
+  }
+
+  &__gate-text {
+    display: block;
+    font-size: 28px;
+    color: #5b6b7c;
+    margin-bottom: 24px;
+  }
+
+  &__login {
+    height: 88px;
+    line-height: 88px;
+    background: #1a73e8;
+    color: #ffffff;
+    border-radius: 8px;
+    font-size: 32px;
+  }
+}

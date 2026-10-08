@@ -3,7 +3,7 @@
 
 ## 病（2026-10-02 B 端真实 LLM 评测实测）
 
-米宝的「批量库存调整」在真库上**从未成功过一次**：
+黄金策的「批量库存调整」在真库上**从未成功过一次**：
 
 ```
 [admin-api] Caused by: org.postgresql.util.PSQLException: ERROR: new row for relation "agent_batches"

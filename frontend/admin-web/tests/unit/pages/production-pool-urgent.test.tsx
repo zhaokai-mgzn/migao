@@ -91,7 +91,9 @@ const board = (over: Partial<PoolBoard> = {}): PoolBoard => ({
   urgentLines: [URGENT_A, URGENT_B],
   groups: [
     {
-      materialKey: '遮光布 / 米白 / 2.8m',
+      // 🔴 issue #6523：`materialKey` 是机器键（不上屏），组标题渲染服务端 `materialLabel`
+      materialKey: 'p1|米白/2.8m',
+      materialLabel: '遮光布 × 米白/2.8m',
       productId: 'p1',
       skuCode: '米白/2.8m',
       orderCount: 1,
@@ -245,10 +247,11 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
 
     await waitFor(() => expect(mockDispatch).toHaveBeenCalledTimes(1))
     // ② 加急插队 = 同一个端点 + **单订单** + **pooled:false**（一个动作）
+    // issue #6408：加急单也**逐行带指派**（同一个动作、同一个端点）—— 否则这一单同样一张料都不领
     expect(mockDispatch).toHaveBeenCalledWith({
       orderIds: ['u1'],
-      batches: [],
-      assignmentRule: null,
+      batches: [{ orderId: 'u1', itemId: 'iu1' }],
+      assignmentRule: 'fifo',
       pooled: false,
     })
 
@@ -280,8 +283,8 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
     await waitFor(() => expect(mockDispatch).toHaveBeenCalledTimes(1))
     expect(mockDispatch).toHaveBeenCalledWith({
       orderIds: ['o1'],
-      batches: [],
-      assignmentRule: null,
+      batches: [{ orderId: 'o1', itemId: 'io1' }],
+      assignmentRule: 'fifo',
       pooled: true,
     })
 

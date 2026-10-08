@@ -14,7 +14,7 @@ S1（issue #4621 / `tests/unit_ci_workflows/test_operation_display_name_guard.py
 | # | 判据 | 形态 | 红证 |
 |---|---|---|---|
 | ① | FE 源码（**去注释后**）不得出现变体名字面量（`-布` / `-纱`） | 扫 `frontend/admin-web/src/**`（`.ts`/`.tsx`）；豁免逐条登记 | 塞 `'精裁-布'` ⇒ 红 |
-| ② | **自维护登记机制**：命中标记的文件必须出现在「受管」或「豁免」之一 | 标记见 `MARKERS`；受管面必须 import 唯一 helper 且不裸渲染 | 新增一个读 `per_operation` 的面而不登记 ⇒ 红；**把米宝会话卡退回裸渲染快照名 ⇒ 红**（#4647 / D1） |
+| ② | **自维护登记机制**：命中标记的文件必须出现在「受管」或「豁免」之一 | 标记见 `MARKERS`；受管面必须 import 唯一 helper 且不裸渲染 | 新增一个读 `per_operation` 的面而不登记 ⇒ 红；**把黄金策会话卡退回裸渲染快照名 ⇒ 红**（#4647 / D1） |
 | ③ | 后端 **web 读面成对出现**：`put("operation"` / `put("operation_name"` 必须同文件出现 `logical_name` | 静态兜底（逐键权威在 S1 的 Java 单测里） | 去掉读面的 `logical_name` ⇒ 红 |
 | ③b | 后端**文案**不得用拼接拼出变体名（`name + "-布"`） | 扫生产 Java（`.equals`/`.endsWith` 判定式不算）；豁免逐条登记 | 注入 `name + "-布"` ⇒ 红（#4647 / D3） |
 | ④ | FE 不得在 JSX 渲染位置取 `library_name`（库口径原名键） | 扫 FE 语料；**含属性位置**（比「只拦子节点」严一格） | 往已豁免的 `routings/page.tsx` 塞 `{op.library_name}` ⇒ 红（#4647 / D5） |
@@ -71,7 +71,7 @@ S1（issue #4621 / `tests/unit_ci_workflows/test_operation_display_name_guard.py
 仍为空。**这不是放宽判据**：纸面一旦重新渲染工序名，本文件 `_direct_render_hits` 与 S1 的 C5 都会红。
 
 ⚠️ **④ 与「不重写 S1」的关系**（issue #4647）：④ 是**新增**判据，与 S1 的 `FACES` 无关；
-② 的受管表新增了米宝会话卡 ⇒ 同步加进 S1 的 `FACES`（否则 `_s1_drift` 会红 —— 两处清单必须一致）。
+② 的受管表新增了黄金策会话卡 ⇒ 同步加进 S1 的 `FACES`（否则 `_s1_drift` 会红 —— 两处清单必须一致）。
 
 ## 边界（本单**不做**）
 
@@ -148,7 +148,7 @@ MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # 标记集里没有 `CatalogOperation` ⇒ 注入一个「读 catalog 的新面」时命中集为空、守卫**不红**
     # （改前实测）。精确词边界：`\bCatalogOperation\b` **不**匹配 `CatalogOperations` 这类别的类型名。
     ("CatalogOperation", re.compile(r"\bCatalogOperation\b")),
-    # **米宝会话卡的载荷键**（`production_progress_query` 精简载荷的 `current_operation`）。
+    # **黄金策会话卡的载荷键**（`production_progress_query` 精简载荷的 `current_operation`）。
     # issue #4647 / D1 实测补入：`components/chat/ProductionProgressCard.tsx` 读的正是这个键，
     # 而它的元素类型是**文件内本地接口** `ProductionCardOperation`（不是上面任何一个标记）
     # ⇒ 标记集照不到它、它也不在任何登记表里 ⇒ **四条判据全绿**（复验方注入实验：把该面退回
@@ -168,7 +168,7 @@ MANAGED_FACES: tuple[str, ...] = (
     # 它**仍命中标记**（`ProductionPosition`）只是因为 props 要取部位/尺寸/码 ⇒ 落 `EXEMPT_FACES`。
     "frontend/admin-web/src/app/(dashboard)/production/piecework/page.tsx",
     "frontend/admin-web/src/components/production/PieceworkTable.tsx",
-    # issue #4647 / D1：米宝会话里的**生产进度卡** —— 它渲染 `current_operation`（工人端快照名），
+    # issue #4647 / D1：黄金策会话里的**生产进度卡** —— 它渲染 `current_operation`（工人端快照名），
     # 改前**不在任何清单里**（复验方实测四项全 False）⇒ 把它退回裸渲染快照名时四条判据全绿。
     # 今天它已走 `operationDisplayName()`（issue #4643），登记是为了让「下次再退回裸渲染」直接判红。
     "frontend/admin-web/src/components/chat/ProductionProgressCard.tsx",
@@ -1006,7 +1006,7 @@ def test_c2_s1_registry_drift_is_red():
 # ── ② 测试（issue #4647 / D1：会话卡的漏点）───────────────────────────────────
 
 def test_c2_injected_bare_snapshot_render_in_progress_card_is_red(tmp_path: Path):
-    """② 注入式红证（issue #4647 / D1）：把**米宝会话卡**退回裸渲染快照名 ⇒ 判红。
+    """② 注入式红证（issue #4647 / D1）：把**黄金策会话卡**退回裸渲染快照名 ⇒ 判红。
 
     <p>改前实测（复验方）：该面 `_markers_in()` = `[]`、不在 `MANAGED_FACES` / `EXEMPT_FACES` /
     S1 `FACES`（四项全 False）⇒ 注入**四条判据全绿**（缺陷 6 可静默复发）。

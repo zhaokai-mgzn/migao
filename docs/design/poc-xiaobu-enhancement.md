@@ -1,14 +1,14 @@
-# POC 前小布 Agent 增强实施蓝图
+# POC 前元元 Agent 增强实施蓝图
 
-> 版本 v1.0 ｜ 目标：POC 演示前补齐小布「AI 客服接单闭环」+ 小程序 C 端界面现代化
+> 版本 v1.0 ｜ 目标：POC 演示前补齐元元「AI 客服接单闭环」+ 小程序 C 端界面现代化
 > 现状基于代码逐文件核实，非文档宣称。
 
 ## 一、现状盘点（已核实）
 
 ### 后端 AI 服务（ai-agent-service）
-- 小布 Agent 框架完整：LangGraph 图 + SSE 流式 + 多模态消息 + 跨轮记忆（pending_skill/plan 恢复）
+- 元元 Agent 框架完整：LangGraph 图 + SSE 流式 + 多模态消息 + 跨轮记忆（pending_skill/plan 恢复）
 - 4 个业务 Skill + 1 兜底：customer_order（查询）/ customer_product（查询）/ customer_aftersales（创建工单）/ customer_knowledge（LLM 内置知识）/ customer_general
-- `order_create` 工具已存在且安全设计完整（SMS 验证码 + 手机号格式校验 + 透传字段），`allowed_roles` 含 `customer`，但**小布 skill 未接入**
+- `order_create` 工具已存在且安全设计完整（SMS 验证码 + 手机号格式校验 + 透传字段），`allowed_roles` 含 `customer`，但**元元 skill 未接入**
 - `interact` 工具已完整支持 choice / confirm / form 三种组件
 - SSE 服务端已支持 `suggestions` 和 `interactive` 事件（sse.py）
 - chat.py 在 interact 工具成功时下发 `interactive` 事件
@@ -25,8 +25,8 @@
 | # | 项 | 说明 |
 |---|---|---|
 | B1 | 算料工具（新） | 纯计算工具：窗宽高 + 褶皱倍数 + 门幅 → 面料米数 + 加工费 + 辅料 + 总价 |
-| B2 | 算料报价 Skill（新） | 注册 skill + 路由 + 意图，小布对话内算料报价 |
-| B3 | 小布接 order_create | customer_order_skill 加 tool_names + prompt，形成报价→下单闭环 |
+| B2 | 算料报价 Skill（新） | 注册 skill + 路由 + 意图，元元对话内算料报价 |
+| B3 | 元元接 order_create | customer_order_skill 加 tool_names + prompt，形成报价→下单闭环 |
 
 ### SSE 通道
 | # | 项 | 说明 |
@@ -48,7 +48,7 @@
 
 ```
 第一梯队（P0 核心闭环）：
-  B1 算料工具 → B2 算料 skill → B3 小布接 order_create
+  B1 算料工具 → B2 算料 skill → B3 元元接 order_create
   （并行）S1+S2 SSE 事件消费 → F1 报价单卡片 → F2 确认卡片 → F3 验证码
   → 形成「咨询→算料报价→SMS验证→下单→后台可见」闭环
 
@@ -72,11 +72,11 @@
 ## 五、验收标准
 
 - 算料工具：褶皱倍数 1.5/2.0/2.5、门幅 1.4/2.8m、对开/单开均算对，与行业公式一致（单测覆盖）
-- 闭环：小布对话内「3米窗 2倍褶皱 遮光布」→ 报价单卡片 → 确认 → SMS 验证 → 订单创建成功 → admin-web 订单列表可见
+- 闭环：元元对话内「3米窗 2倍褶皱 遮光布」→ 报价单卡片 → 确认 → SMS 验证 → 订单创建成功 → admin-web 订单列表可见
 - UI：报价单/确认/验证码/追问 chips 均渲染，interact 卡片不出现"未知卡片占位"
 - 三把工具全绿 + 测试带 case_ids
 
-## 六、机器人设置集成（商家后台 → 小布行为）
+## 六、机器人设置集成（商家后台 → 元元行为）
 
 > 原则：按合理性评估落地，不盲目照搬 TenantAiConfig 全部字段（评估见下）。
 

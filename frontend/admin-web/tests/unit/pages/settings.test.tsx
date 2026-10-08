@@ -142,8 +142,8 @@ function mockAiConfigSuccess() {
   mockGetAiConfig.mockResolvedValue({
     data: {
       data: {
-        botName: '小布',
-        greetingTemplate: '您好，我是小布，有什么可以帮您？',
+        botName: '元元',
+        greetingTemplate: '您好，我是元元，有什么可以帮您？',
       },
     },
   })
@@ -202,7 +202,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       })
       await switchToTab(user, 'AI 客服设置')
       // 副文案说明作用：配置顾客在对话中看到的 AI 客服助手
-      expect(screen.getByText(/配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语/)).toBeInTheDocument()
+      expect(screen.getByText(/配置顾客在对话中看到的 AI 客服助手（元元）的名称与欢迎语/)).toBeInTheDocument()
       // 不再出现「AI 客服配置」独立页面命名
       expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
     })
@@ -213,7 +213,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
         expect(screen.getByText('基本设置', { selector: 'h2' })).toBeInTheDocument()
       })
       // AI 客服设置内容（输入框）默认不展示
-      expect(screen.queryByPlaceholderText('小布')).not.toBeInTheDocument()
+      expect(screen.queryByPlaceholderText('元元')).not.toBeInTheDocument()
     })
 
     it('加载 AI 客服配置并回填 AI 客服名称与欢迎语', async () => {
@@ -224,10 +224,10 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       })
       await switchToTab(user, 'AI 客服设置')
       await waitFor(() => {
-        expect(screen.getByDisplayValue('小布')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('元元')).toBeInTheDocument()
       })
       expect(
-        screen.getByDisplayValue('您好，我是小布，有什么可以帮您？'),
+        screen.getByDisplayValue('您好，我是元元，有什么可以帮您？'),
       ).toBeInTheDocument()
     })
 
@@ -243,7 +243,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       fireEvent.click(screen.getByRole('button', { name: /AI 客服设置/ }))
       // #5899：保存按钮已移除（改动即时生效）
       expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
-      const input = screen.getByPlaceholderText('小布')
+      const input = screen.getByPlaceholderText('元元')
       fireEvent.blur(input)
       expect(toast.error).toHaveBeenCalledWith('请输入 AI 客服名称')
       expect(mockUpdateAiConfig).not.toHaveBeenCalled()
@@ -257,13 +257,13 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
         expect(screen.getByRole('button', { name: /AI 客服设置/ })).toBeInTheDocument()
       })
       await switchToTab(user, 'AI 客服设置')
-      const input = await screen.findByDisplayValue('小布')
+      const input = await screen.findByDisplayValue('元元')
       await user.clear(input)
-      await user.type(input, '米高助手')
+      await user.type(input, '观星台助手')
       fireEvent.blur(input)
       await waitFor(() => {
         expect(mockUpdateAiConfig).toHaveBeenCalledWith(
-          expect.objectContaining({ botName: '米高助手' }),
+          expect.objectContaining({ botName: '观星台助手' }),
         )
       })
       expect(toast.success).toHaveBeenCalledWith('AI 客服名称已保存')
@@ -309,7 +309,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
         expect(screen.getByRole('button', { name: /AI 客服设置/ })).toBeInTheDocument()
       })
       await switchToTab(user, 'AI 客服设置')
-      expect(screen.getByPlaceholderText('小布')).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('元元')).toBeInTheDocument()
     })
   })
 
@@ -319,7 +319,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       render(<SettingsPage />)
       // AI 客服设置内容直接呈现（tab 激活态）
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('小布')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText('元元')).toBeInTheDocument()
       })
       // 不再重定向到 /chat/config（该页面已删除）
       expect(mockRouterReplace).not.toHaveBeenCalledWith('/chat/config')
@@ -350,10 +350,10 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
       mockUpdateSettings.mockResolvedValue({ data: { data: {} } })
       render(<SettingsPage />)
       const name = await screen.findByLabelText('公司名称')
-      fireEvent.change(name, { target: { value: '米高布艺' } })
+      fireEvent.change(name, { target: { value: '观星台布艺' } })
       fireEvent.blur(name)
       await waitFor(() => {
-        expect(mockUpdateSettings).toHaveBeenCalledWith(expect.objectContaining({ companyName: '米高布艺' }))
+        expect(mockUpdateSettings).toHaveBeenCalledWith(expect.objectContaining({ companyName: '观星台布艺' }))
       })
       const code = screen.getByPlaceholderText('如 migao')
       fireEvent.change(code, { target: { value: 'migao_home' } })
@@ -795,7 +795,7 @@ describe('SettingsPage — AI 客服设置合并进企业基础信息 (#3081)', 
 
     // AI 客服设置 tab：AI 客服名称 + 欢迎语
     await switchToTab(user, 'AI 客服设置')
-    await screen.findByDisplayValue('小布')
+    await screen.findByDisplayValue('元元')
     expect(textFields().length).toBeGreaterThan(0)
     for (const [index, el] of textFields().entries()) {
       mockUpdateAiConfig.mockClear()
@@ -880,7 +880,7 @@ describe('SettingsPage — 手机端入口二维码（issue #5668）', () => {
     render(<SettingsPage />)
 
     expect(await screen.findByTestId('bmini-h5-entry')).toBeInTheDocument()
-    expect(screen.getByText('手机浏览器扫码使用米宝商家端')).toBeInTheDocument()
+    expect(screen.getByText('手机浏览器扫码使用黄金策商家端')).toBeInTheDocument()
     // 既有四个 tab 一个不少（零回归：只加卡片，不动导航）
     for (const label of ['基本设置', 'AI 客服设置', '参数总览', '通知设置']) {
       expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument()

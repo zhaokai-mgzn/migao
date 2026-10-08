@@ -31,9 +31,13 @@ class TestSchemas:
     def test_product_target_fields(self):
         assert field_keys("product") == (
             "name", "color", "material", "craft", "door_width", "price",
+            # 2026-10-05（issue #6362）：「商品描述」文案 —— 用户逐字「然后把商品描述的文案也要生成一份」。
+            # 落点是建品页**既有**富文本区（`ProductFormData.description`）⇒ **不新增落库字段**；
+            # 该格只允许 `[米宝解读]` 填值（见 `deep_channel.INTERPRETABLE_KEYS`）。
+            "description",
         )
         assert [f.label for f in TARGET_FIELDS["product"]] == [
-            "商品名称", "颜色", "材质", "工艺", "门幅", "售价",
+            "商品名称", "颜色", "材质", "工艺", "门幅", "售价", "商品描述",
         ]
 
     def test_order_target_fields(self):

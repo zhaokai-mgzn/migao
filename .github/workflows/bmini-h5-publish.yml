@@ -118,8 +118,18 @@ jobs:
         working-directory: frontend/bmini-app
         run: npm run build:h5
 
-      - name: Docker login ACR
-        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+      # 登录实现**唯一一份** = `scripts/acr_login.sh`（issue #6526 A）。
+      # 🔴 本调用点**承重**（带 `--fatal`）：本腿把 `/dist` 装进**传输镜像推到 ACR**，
+      #    登录是它的**必要步骤** ⇒ 重试 3 次仍失败必须**判红**（不许降成 warning）。
+      #    ⚠️ 与三条部署腿 + 对账腿（不承重）的**态是反的** —— 这正是 issue #6526 两态接口的由来。
+      # 判据 = tests/unit_ci_workflows/test_acr_login_not_load_bearing.py（**双向**：该带 `--fatal`
+      #        的腿没带 ⇒ 红；不该带的腿带了 ⇒ 也红）。
+      # ⚠️ `hashFiles` 弃权：取不到 helper 时**不执行登录**而不是报「找不到文件」（本腿的触发面
+      #    是 `push: main` / `schedule` / `workflow_dispatch`，正常都有 helper）。
+      # ⚠️ 本步**承重** ⇒ 非零退出语义必须保留（不许改成 `|| true`）。
+      - name: Docker login ACR (retry, fatal)
+        if: ${{ hashFiles('scripts/acr_login.sh') != '' }}
+        run: bash scripts/acr_login.sh ${{ env.ACR_REGISTRY }} "${{ secrets.ACR_USERNAME }}" "${{ secrets.ACR_PASSWORD }}" --fatal
 
       # 传输载体：上下文**只给 dist/**（给 frontend/bmini-app 会把 700MB+ 的 node_modules 灌进上下文）
       - name: Pack product into transport image and push
@@ -169,6 +179,13 @@ jobs:
         env:
           AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          # 🔴 **执行体 ref**（issue #6124）：引导**按它**从 codeload 取回
+          #    `deploy/swas/bmini-h5-publish-remote.sh` 并执行；发布逻辑**不进** SWAS 命令内容
+          #    （命令内容只留极小引导 ⇒ 与远端脚本大小解耦，不再逼近 16 KB 墙；病根见 issue #6095）。
+          #    = 本 workflow 跑的那个 commit ⇒ 它的 tarball 必定含远端执行体；**不是** main 的最新
+          #    （取最新会让「远端执行的那份」与「本次 CI 审过的 commit」漂移）。
+          #    ⚠️ 与第 5 参数（**产物** ref = ACR 镜像 tag）是两件事：镜像是产物、git ref 只有这一个。
+          H5_PUBLISHED_COMMIT: ${{ github.sha }}
         run: |
           bash deploy/scripts/bmini-h5-publish-ci.sh \
             "${{ env.SWAS_INSTANCE_ID }}" "${{ env.SWAS_REGION }}" "$AK" "$SK" "sha-${GITHUB_SHA::7}"

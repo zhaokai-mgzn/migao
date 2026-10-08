@@ -1,0 +1,102 @@
+{
+  "at": "2026-10-04T01:56:56.747Z",
+  "tenant": 25,
+  "roots": {
+    "products": {
+      "predicate": "tenant_id=25 and name like 'race-sweep%'",
+      "rows": 6
+    },
+    "product_skus": {
+      "predicate": "tenant_id=25 and product_id in (select id from products where tenant_id=25 and name like 'race-sweep%')",
+      "rows": 0
+    },
+    "orders": {
+      "predicate": "tenant_id=25 and (remark like 'race-sweep%' or customer_name like 'race-sweep%')",
+      "rows": 12
+    },
+    "inbound_orders": {
+      "predicate": "tenant_id=25 and (coalesce(supplier,'') like 'race-sweep%' or coalesce(remark,'') like 'race-sweep%' or coalesce(supplier_doc_no,'') like 'race-sweep%')",
+      "rows": 0
+    },
+    "client_request_keys": {
+      "predicate": "tenant_id=25 and client_request_id like 'race-sweep%'",
+      "rows": 0
+    },
+    "stock_batches": {
+      "predicate": "tenant_id=25 and (product_id in (select id from products where tenant_id=25 and name like 'race-sweep%') or sku_id in (select id from product_skus where tenant_id=25 and product_id in (select id from products where tenant_id=25 and name like 'race-sweep%')) or supplier like 'race-sweep%' or dye_lot like 'race-sweep%' or inbound_order_id in (select id from inbound_orders where tenant_id=25 and (supplier like 'race-sweep%' or remark like 'race-sweep%')))",
+      "rows": 0
+    },
+    "stock_batch_consumptions": {
+      "predicate": "tenant_id=25 and (stocktake_run_id like 'race-sweep%' or batch_id in (select id from stock_batches where tenant_id=25 and (supplier like 'race-sweep%' or dye_lot like 'race-sweep%')))",
+      "rows": 0
+    },
+    "stock_ledger_entries": {
+      "predicate": "tenant_id=25 and (product_id in (select id from products where tenant_id=25 and name like 'race-sweep%') or sku_id in (select id from product_skus where tenant_id=25 and product_id in (select id from products where tenant_id=25 and name like 'race-sweep%')) or note like '%race-sweep%' or coalesce(ref_no,'') in (select order_no from orders where tenant_id=25 and (remark like 'race-sweep%' or customer_name like 'race-sweep%')) or coalesce(ref_no,'') in (select inbound_no from inbound_orders where tenant_id=25 and (supplier like 'race-sweep%' or remark like 'race-sweep%')))",
+      "rows": 7
+    },
+    "order_shipments": {
+      "predicate": "tenant_id=25 and order_id in (select id from orders where tenant_id=25 and (remark like 'race-sweep%' or customer_name like 'race-sweep%'))",
+      "rows": 0
+    },
+    "finance_transactions": {
+      "predicate": "tenant_id=25 and (order_id in (select id from orders where tenant_id=25 and (remark like 'race-sweep%' or customer_name like 'race-sweep%')) or coalesce(order_no,'') in (select order_no from orders where tenant_id=25 and (remark like 'race-sweep%' or customer_name like 'race-sweep%')) or coalesce(remark,'') like '%race-sweep%')",
+      "rows": 3
+    },
+    "processing_orders": {
+      "predicate": "tenant_id=25 and (order_id in (select id from orders where tenant_id=25 and (remark like 'race-sweep%' or customer_name like 'race-sweep%')) or coalesce(processing_order_no,'') in (select order_no from orders where tenant_id=25 and (remark like 'race-sweep%' or customer_name like 'race-sweep%')))",
+      "rows": 0
+    }
+  },
+  "steps": [
+    {
+      "round": 1,
+      "table": "order_logistics",
+      "deleted": 1
+    },
+    {
+      "round": 1,
+      "table": "product_colors",
+      "deleted": 6
+    },
+    {
+      "round": 1,
+      "table": "finance_transactions",
+      "deleted": 3
+    },
+    {
+      "round": 1,
+      "table": "stock_ledger_entries",
+      "deleted": 7
+    },
+    {
+      "round": 1,
+      "table": "orders",
+      "deleted": 12
+    },
+    {
+      "round": 1,
+      "table": "products",
+      "deleted": 6
+    }
+  ],
+  "errors": [],
+  "blocked": [],
+  "plan": {
+    "tablesInClosure": 25,
+    "deleteOrder": 25
+  },
+  "totalDeleted": 35,
+  "after": {
+    "products": 0,
+    "finance_transactions": 0,
+    "processing_orders": 0,
+    "inbound_labels": 0,
+    "stock_batches": 0,
+    "orders": 0,
+    "inbounds": 0,
+    "keys": 0,
+    "ledger": 0,
+    "consumptions": 0
+  },
+  "blockedTop": []
+}

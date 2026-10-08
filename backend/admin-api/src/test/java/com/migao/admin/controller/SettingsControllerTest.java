@@ -343,7 +343,7 @@ class SettingsControllerTest {
         void configExists_returnsConfig() throws Exception {
             TenantAiConfig config = TenantAiConfig.builder()
                     .tenantId(1L)
-                    .botName("小布")
+                    .botName("元元")
                     .greetingTemplate("你好")
                     .build();
             when(tenantAiConfigMapper.selectOne(any())).thenReturn(config);
@@ -351,7 +351,7 @@ class SettingsControllerTest {
             mockMvc.perform(get("/api/admin/tenant/ai-config"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.data.botName").value("小布"));
+                    .andExpect(jsonPath("$.data.botName").value("元元"));
         }
 
         @Test
@@ -377,7 +377,7 @@ class SettingsControllerTest {
             when(tenantAiConfigMapper.insert(any(TenantAiConfig.class))).thenReturn(1);
 
             TenantAiConfig body = TenantAiConfig.builder()
-                    .botName("小布")
+                    .botName("元元")
                     .greetingTemplate("你好，欢迎光临")
                     .build();
 
@@ -386,7 +386,7 @@ class SettingsControllerTest {
                             .content(objectMapper.writeValueAsString(body)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.data.botName").value("小布"));
+                    .andExpect(jsonPath("$.data.botName").value("元元"));
         }
 
         @Test
@@ -402,7 +402,7 @@ class SettingsControllerTest {
             when(tenantAiConfigMapper.updateById(any(TenantAiConfig.class))).thenReturn(1);
 
             TenantAiConfig body = TenantAiConfig.builder()
-                    .botName("新小布")
+                    .botName("新元元")
                     .greetingTemplate("新问候语")
                     .afterHoursMode("offline_reply")
                     .build();
@@ -412,7 +412,7 @@ class SettingsControllerTest {
                             .content(objectMapper.writeValueAsString(body)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.data.botName").value("新小布"));
+                    .andExpect(jsonPath("$.data.botName").value("新元元"));
         }
 
         @Test

@@ -15,7 +15,7 @@ from app.briefing.proactive import (
     daily_findings_total,
     proactive_status,
 )
-from app.briefing.product_health import FIELD_LABELS, product_health
+from app.briefing.product_health import FIELD_LABELS, NOT_ON_SALE, product_health
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
@@ -130,7 +130,7 @@ class BriefingQueryTool(BaseTool):
 
         data: Dict[str, Any] = response.get("data") or {}
         if view:
-            return _view_result(view, data, context)
+            return render_view_result(view, data, context)
         if not data:
             return ToolResult(
                 success=True,
@@ -199,7 +199,7 @@ class BriefingQueryTool(BaseTool):
         )
 
 
-def _view_result(view: str, snapshot: Dict[str, Any], context: ToolContext) -> ToolResult:
+def render_view_result(view: str, snapshot: Dict[str, Any], context: ToolContext) -> ToolResult:
     """具名跨域视图的按需结果（族 3 · 包 2，issue #5369）。
 
     三条口径逐字落在这里（消息是模型的**唯一**输入源，消息里没有的兜底模型编不出来）：
@@ -208,6 +208,13 @@ def _view_result(view: str, snapshot: Dict[str, Any], context: ToolContext) -> T
        与 `proactive_status` 的披露同一纪律（issue #5358）；
     2. 🔴 **「未知」与「0」不混**：成本未知的行如实说「毛利无法给出（不是 0）」；
     3. **有界不静默**：输出被上限截断时点出「只列前 N 行，共 M 行」。
+
+    第四条口径（issue #6347 Part B，与「未接线」同一纪律的另一半）：
+
+    4. 🔴 **「有 SKU 但被在售口径过滤掉」与「表里没有 SKU」不可合并** —— 前者要说清「有 N 个 SKU
+       （M 个商品）因未上架未纳入」+ 出路（商品状态非法时先改回 off_sale/draft 再上架）；**禁止**
+       说成「SKU 记录数 = 0 / SKU 层是空的 / 建议检查商品规格是否已录入」（那是**归因错误**，
+       会把用户引向徒劳返工）。原文由引擎侧 `_filtered_reason` **单点**产出（本文件不另写一份）。
     """
     result = product_health(snapshot, tenant_id=context.tenant_id)
     fields = result["fields"]
@@ -216,7 +223,16 @@ def _view_result(view: str, snapshot: Dict[str, Any], context: ToolContext) -> T
     incomplete = [(FIELD_LABELS.get(name, name), entry["reason"]) for name, entry in fields.items()
                   if entry["status"] == INCOMPLETE]
 
-    message = f"商品健康度视图：{result['count']} 个 SKU"
+    count = result["count"]
+    filtered = result["not_on_sale"]
+    message = f"商品健康度视图：{count} 个 SKU"
+    if count == 0 and any(entry["status"] == NOT_ON_SALE for entry in fields.values()):
+        # 🔴 空数组**不许**被静默读成「这个租户没有 SKU」（issue #6347 Part B）：过滤事实在，
+        # 就把「有几个 / 为什么没进来 / 怎么让它们进来」原样说出来（模型只看得见这条消息）。
+        message = f"商品健康度视图：本次 **0** 个 SKU —— {filtered['message']}"
+    elif filtered["filtered_count"]:
+        # 部分被过滤：视图本身照旧可用，但过滤事实也得说出来（否则条数偏低会被读成「就这些」）
+        message += f"（另有 {filtered['filtered_count']} 个 SKU 因商品未上架未纳入 —— {filtered['message']}）"
     if result["truncated"]:
         message += f"（视图只列前 {result['count']} 行，共 {result['rows_total']} 行）"
     unknown_cost = result["unknown_cost_rows"]

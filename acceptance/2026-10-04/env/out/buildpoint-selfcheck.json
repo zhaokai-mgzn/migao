@@ -1,0 +1,29 @@
+{
+ "at": "2026-10-04 10:36:40 +0800",
+ "note": "本轮被测面发生过 2 次切换；下表是**每次读数各自时刻**的运行镜像 tag（SWAS 云助手 `docker ps` 现取）",
+ "observations": [
+  {
+   "when": "2026-10-04 09:25:10 +08",
+   "phase": "before 半场重放",
+   "tag_before_run": "sha-de61462",
+   "tag_after_run": "sha-de61462",
+   "how": "同一命令前后各取一次（自证同刻未切换）",
+   "artifact": "env/out/replay-predeploy.json"
+  },
+  {
+   "when": "2026-10-04 09:30:44 +08",
+   "phase": "after 半场重放",
+   "tag": "sha-6838a05",
+   "how": "replay-postdeploy/run.log **第 2 行**",
+   "artifact": "replay-postdeploy/run.log"
+  },
+  {
+   "when": "2026-10-04 10:05:27 +08",
+   "phase": "#6293 修复部署后复验",
+   "tag": "sha-4a24347",
+   "how": "replay-postdeploy/60-mime-after-6293.log 末段",
+   "artifact": "replay-postdeploy/60-mime-after-6293.log"
+  }
+ ],
+ "ledger_claimed": "ff655a06c（部署台账最近一次 success 的 headSha —— 该 run 的 Deploy 步实为 skipped，见 env/out/deploy-ledger-audit.json）"
+}

@@ -1,0 +1,22 @@
+{
+  "productId": "db241eb07aca041753b51f5ad027d22a",
+  "skuCode": "L2-BATCH-MURZ9X2E",
+  "name": "线②验收读面G",
+  "childrenTotals": {
+    "skus": 1,
+    "colors": 1,
+    "ledger": 1
+  },
+  "read": {
+    "getById": {
+      "http": 404,
+      "success": false,
+      "deletedFlag": null
+    },
+    "listBySku": {
+      "http": 200,
+      "total": 0
+    },
+    "exportRows": 0
+  }
+}

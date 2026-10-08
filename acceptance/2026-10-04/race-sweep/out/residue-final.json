@@ -1,0 +1,22 @@
+{
+  "at": "2026-10-04T01:23:46.755Z",
+  "tenants": [
+    {
+      "id": 25,
+      "name": "米高测试环境",
+      "code": "shop-8yn7",
+      "status": "active"
+    }
+  ],
+  "tenant25_probe_residue": {
+    "products": 0,
+    "product_skus": 0,
+    "orders": 0,
+    "inbound_orders": 0,
+    "stock_ledger_entries": 0,
+    "stock_batch_consumptions": 0,
+    "client_request_keys": 0,
+    "tenant_applications_probe_phone": 0
+  },
+  "tenant26_exists": 0
+}

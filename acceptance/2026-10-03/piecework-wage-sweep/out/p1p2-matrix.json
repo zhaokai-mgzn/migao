@@ -1,0 +1,338 @@
+[
+  {
+    "id": "P1-01",
+    "name": "探针单 A 自建（分类/商品/订单/加工单）",
+    "status": "pass",
+    "detail": "order=ed5105c7… po=JG-20261003-6401",
+    "evidence": [
+      "POST /api/admin/orders",
+      "POST /api/admin/processing-orders/generate",
+      "SQL: processing_orders.id='5ef130934bdc509518d27b6c9dd16c88'"
+    ],
+    "at": "2026-10-03T00:34:35.696Z"
+  },
+  {
+    "id": "P1-02",
+    "name": "探针单 A 已实例化工序",
+    "status": "pass",
+    "detail": "10 道：精裁-布 → 布三边 → 熨烫-布 → 定型-布 → 复烫-布 → 布帘车被 → 外帘打卷 → 打包 → 外帘装袋 → 外帘发货",
+    "evidence": [
+      "SQL: processing_position_operations where processing_order_id='5ef130934bdc509518d27b6c9dd16c88'"
+    ],
+    "at": "2026-10-03T00:34:35.802Z"
+  },
+  {
+    "id": "P1-03",
+    "name": "探针定型：有价 0.40 / 显式 0 元 / 未定价(NULL) 三态可区分",
+    "status": "pass",
+    "detail": "精裁-布=0.40 · 熨烫-布=0.00 · 定型-布=null",
+    "evidence": [
+      "SQL: update processing_position_operations … where processing_order_id='5ef130934bdc509518d27b6c9dd16c88'"
+    ],
+    "at": "2026-10-03T00:34:35.997Z"
+  },
+  {
+    "id": "P1-04",
+    "name": "报工落库（部分报工 / 报满 / 显式 0 元 / 未定价 / 返工）",
+    "status": "pass",
+    "detail": "{\"r1\":200,\"r2\":200,\"r3\":200,\"r4\":200,\"r5\":200}",
+    "evidence": [
+      "POST /api/admin/production/orders/{orderId}/operations/{operationId}/report ×5"
+    ],
+    "at": "2026-10-03T00:34:36.896Z"
+  },
+  {
+    "id": "M1-01",
+    "name": "【逐分】per_operation 明细 == 独立算式（数量 × 快照单价，逐笔取整）",
+    "status": "pass",
+    "detail": "3 道逐分相符",
+    "evidence": [
+      "GET /api/admin/production/orders/ed5105c74637e2ee78b21dc4ee05c542/piecework",
+      "独立算式: 精裁-布=3.20, 布三边=8.00, 熨烫-布=0.00"
+    ],
+    "at": "2026-10-03T00:34:37.129Z"
+  },
+  {
+    "id": "M2-01",
+    "name": "【逐分】per-order total == 独立算式合计",
+    "status": "pass",
+    "detail": "读面 11.2 vs 独立算式 11.20",
+    "evidence": [
+      "GET /api/admin/production/orders/ed5105c74637e2ee78b21dc4ee05c542/piecework"
+    ],
+    "at": "2026-10-03T00:34:37.129Z"
+  },
+  {
+    "id": "M3-01",
+    "name": "【逐分】per_worker 之和 == total（无二次兜底）",
+    "status": "pass",
+    "detail": "Σ=11.20 total=11.2",
+    "evidence": [
+      "GET …/piecework → .per_worker"
+    ],
+    "at": "2026-10-03T00:34:37.129Z"
+  },
+  {
+    "id": "M4-per_position",
+    "name": "【逐分】per_position 合计 == total",
+    "status": "pass",
+    "detail": "Σ=11.20 total=11.2",
+    "evidence": [
+      "GET …/piecework → .per_position"
+    ],
+    "at": "2026-10-03T00:34:37.129Z"
+  },
+  {
+    "id": "M4-per_set",
+    "name": "【逐分】per_set 合计 == total",
+    "status": "pass",
+    "detail": "Σ=11.20 total=11.2",
+    "evidence": [
+      "GET …/piecework → .per_set"
+    ],
+    "at": "2026-10-03T00:34:37.129Z"
+  },
+  {
+    "id": "M5-01",
+    "name": "【逐分】期间报表（按探针工人下钻）total == 独立算式合计",
+    "status": "pass",
+    "detail": "报表 11.2 vs 独立算式 11.20",
+    "evidence": [
+      "GET /api/admin/production/piecework/summary?period=2026-10&worker_name=工资验收工人甲674096"
+    ],
+    "at": "2026-10-03T00:34:37.690Z"
+  },
+  {
+    "id": "M5-02",
+    "name": "【逐分】报表 per_worker 合计 == 报表 total",
+    "status": "pass",
+    "detail": "Σ=11.20 total=11.2",
+    "evidence": [
+      "GET …/piecework/summary → .per_worker"
+    ],
+    "at": "2026-10-03T00:34:37.691Z"
+  },
+  {
+    "id": "M5-03",
+    "name": "【逐分】报表 per_operation 合计 == 报表 total",
+    "status": "pass",
+    "detail": "Σ=11.20 total=11.2",
+    "evidence": [
+      "GET …/piecework/summary → .per_operation"
+    ],
+    "at": "2026-10-03T00:34:37.691Z"
+  },
+  {
+    "id": "M5-per_position",
+    "name": "【逐分】报表 per_position 合计 == total",
+    "status": "pass",
+    "detail": "Σ=11.20 total=11.2",
+    "evidence": [
+      "GET …/piecework/summary → .per_position"
+    ],
+    "at": "2026-10-03T00:34:37.691Z"
+  },
+  {
+    "id": "M5-per_set",
+    "name": "【逐分】报表 per_set 合计 == total",
+    "status": "pass",
+    "detail": "Σ=11.20 total=11.2",
+    "evidence": [
+      "GET …/piecework/summary → .per_set"
+    ],
+    "at": "2026-10-03T00:34:37.691Z"
+  },
+  {
+    "id": "M6-01",
+    "name": "三端点同源恒等：per-order == 报表(同人) == agent worklog",
+    "status": "pass",
+    "detail": "per-order=11.2 报表=11.2 worklog=11.2",
+    "evidence": [
+      "GET /orders/{id}/piecework",
+      "GET /piecework/summary",
+      "GET /agent/production/worklog?order_no=JG-20261003-6401"
+    ],
+    "at": "2026-10-03T00:34:37.930Z"
+  },
+  {
+    "id": "M7-01",
+    "name": "【缺失≠0】未定价工序在 unpriced 块显式可见且数量正确",
+    "status": "pass",
+    "detail": "unpriced=[{\"operation\":\"定型-布\",\"logical_name\":\"定型\",\"qty\":5}]；独立算式未定价数量=5.00",
+    "evidence": [
+      "GET /orders/{id}/piecework → .unpriced"
+    ],
+    "at": "2026-10-03T00:34:37.931Z"
+  },
+  {
+    "id": "M7-02",
+    "name": "【缺失≠0】未定价工序不得以「0 元」混进 per_operation 金额",
+    "status": "pass",
+    "detail": "per_operation 中 定型-布 的读数: []",
+    "evidence": [
+      "GET /orders/{id}/piecework → .per_operation"
+    ],
+    "at": "2026-10-03T00:34:37.931Z"
+  },
+  {
+    "id": "M7-03",
+    "name": "【三态】显式定价 0 元 ≠ 未定价（0 元进金额、不进 unpriced 清单）",
+    "status": "pass",
+    "detail": "熨烫-布: per_operation={\"amount\":0,\"operation\":\"熨烫-布\"}；在 unpriced 清单=false",
+    "evidence": [
+      "GET /orders/{id}/piecework"
+    ],
+    "at": "2026-10-03T00:34:37.931Z"
+  },
+  {
+    "id": "M8-01",
+    "name": "【双付】同 X-Client-Request-Id 重放：报工行数不增 + replayed=true",
+    "status": "fail",
+    "detail": "行数 5→5；replayed=undefined；HTTP 422",
+    "evidence": [
+      "POST …/report 带 X-Client-Request-Id=674096-IDEM ×2"
+    ],
+    "at": "2026-10-03T00:34:38.374Z"
+  },
+  {
+    "id": "M9-01",
+    "name": "【边界】超应做数量 ⇒ 422 拒绝（不得静默截断/丢明细）",
+    "status": "fail",
+    "detail": "HTTP 200 ",
+    "evidence": [
+      "POST …/report qty=5（opRated1 已报 8+3 返工 / 应做 20，剩余 12）"
+    ],
+    "at": "2026-10-03T00:34:38.578Z"
+  },
+  {
+    "id": "M10-01",
+    "name": "【改价口径】实例改价后历史报工仍按**报工快照价**（不追溯）",
+    "status": "pass",
+    "detail": "改价前独立算式 13.20；改价后读面 13.2",
+    "evidence": [
+      "SQL: update processing_position_operations set unit_price=9.99",
+      "GET /orders/{A.orderId}/piecework"
+    ],
+    "at": "2026-10-03T00:34:38.878Z"
+  },
+  {
+    "id": "M10-02",
+    "name": "【改价口径·反向】还原价后新报工按还原价快照（逐笔可追溯）",
+    "status": "fail",
+    "detail": "新报工快照 unit_price=0.40（期望 0.40）；独立算式 13.20",
+    "evidence": [
+      "POST …/report",
+      "SQL: 最新 production_work_logs 行"
+    ],
+    "at": "2026-10-03T00:34:39.390Z"
+  },
+  {
+    "id": "M11-01",
+    "name": "【跨单】同一工人多张单 ⇒ 报表合计 == 该工人两单独立算式之和",
+    "status": "pass",
+    "detail": "报表 20.7 vs 独立算式 20.70",
+    "evidence": [
+      "GET /piecework/summary?period=2026-10&worker_name=工资验收工人甲674096"
+    ],
+    "at": "2026-10-03T00:34:42.086Z"
+  },
+  {
+    "id": "M11-02",
+    "name": "【按人隔离】换一个工人 ⇒ 报表合计只含该工人的报工",
+    "status": "pass",
+    "detail": "报表 5 vs 独立算式 5.00",
+    "evidence": [
+      "GET /piecework/summary?period=2026-10&worker_name=工资验收工人乙674096"
+    ],
+    "at": "2026-10-03T00:34:42.346Z"
+  },
+  {
+    "id": "M12-01",
+    "name": "【口径】返工不计件（独立算式排除后与读数逐分一致）",
+    "status": "pass",
+    "detail": "返工行 1 条；报表 20.7 == 独立算式 20.70",
+    "evidence": [
+      "SQL: work_type='rework' 的行",
+      "GET /piecework/summary"
+    ],
+    "at": "2026-10-03T00:34:42.346Z"
+  },
+  {
+    "id": "M13-01",
+    "name": "【日期边界】work_date 移出本期 ⇒ 报表按 work_date 区间精确过滤（+08 业务时钟落本地日）",
+    "status": "pass",
+    "detail": "移出后报表 13.2 vs 独立算式（仅本期行）13.20；被移行原 date=2026-10-03",
+    "evidence": [
+      "SQL: update production_work_logs set work_date = 上月最后一天",
+      "GET /piecework/summary?period=2026-10"
+    ],
+    "at": "2026-10-03T00:34:42.790Z"
+  },
+  {
+    "id": "M14-01",
+    "name": "【边界】qty=0 报工被拒且不落 0 元行",
+    "status": "pass",
+    "detail": "HTTP 422；库里 qty=0 行数 0",
+    "evidence": [
+      "POST …/report qty=0"
+    ],
+    "at": "2026-10-03T00:34:43.123Z"
+  },
+  {
+    "id": "M15-01",
+    "name": "【作废】软删的报工行不计件（读面 == 剩余行独立算式）",
+    "status": "pass",
+    "detail": "软删 1 行后读面 10 vs 独立算式 10.00",
+    "evidence": [
+      "SQL: update production_work_logs set deleted=1 where id='03d274d743895376d676f1f88ced5e23'",
+      "GET /orders/{id}/piecework"
+    ],
+    "at": "2026-10-03T00:34:43.535Z"
+  },
+  {
+    "id": "RED-01",
+    "name": "【红证·注入式】未定价混进明细 ⇒ M7-02 判据必红",
+    "status": "pass",
+    "detail": "注入读数下判据=false（期望 false）；干净读数下=true（期望 true）",
+    "evidence": [
+      "out/redproof.json #RED-01"
+    ],
+    "at": "2026-10-03T00:34:43.624Z"
+  },
+  {
+    "id": "RED-02",
+    "name": "【红证·注入式】差一分 ⇒ M2-01 逐分判据必红",
+    "status": "pass",
+    "detail": "差一分读数下判据=false（期望 false）",
+    "evidence": [
+      "out/redproof.json #RED-02"
+    ],
+    "at": "2026-10-03T00:34:43.625Z"
+  },
+  {
+    "id": "RED-03",
+    "name": "【红证·注入式】漏一道工序明细 ⇒ M1-01 必红",
+    "status": "pass",
+    "detail": "漏行读数下 diffs=[\"精裁-布: 独立算式 3.20，读面缺该行\"]",
+    "evidence": [
+      "out/redproof.json #RED-03"
+    ],
+    "at": "2026-10-03T00:34:43.625Z"
+  },
+  {
+    "id": "M16-01",
+    "name": "【F8 正对照】",
+    "status": "skip",
+    "detail": "工序库读面找不到逻辑工序「定型」⇒ 无法执行该注入（登记为未覆盖）",
+    "evidence": [],
+    "at": "2026-10-03T00:34:43.675Z"
+  },
+  {
+    "id": "M16-02",
+    "name": "【F8 正对照】",
+    "status": "skip",
+    "detail": "同上",
+    "evidence": [],
+    "at": "2026-10-03T00:34:43.675Z"
+  }
+]

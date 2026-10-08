@@ -46,7 +46,7 @@ interface ProductFormProps {
    * 只影响渲染：在对应字段旁显示 `[米宝解读]` 徽标。
    *
    * 🔴 与 {@link ProductFormProps.recognizedFields} **必须是两枚不同的徽标**：
-   * 「图上抄下来的」与「米宝推的」可信度不同，标注相同 ⇒ 商家无从判断该信哪一格
+   * 「图上抄下来的」与「黄金策推的」可信度不同，标注相同 ⇒ 商家无从判断该信哪一格
    * （同一格只挂一枚：调用方把解读键从 `recognizedFields` 里摘掉后再传）。
    * 同样**不参与提交**（不新增/不改任何载荷字段）。
    */
@@ -771,7 +771,17 @@ export default function ProductForm({
 
       {/* ============ 图文描述 ============ */}
       <Section title="图文描述">
-        <FieldRow label="商品描述" alignTop>
+        {/* 商品描述（issue #6362）：米宝解读产生的**文案**（不是图上抄下来的事实）⇒ 挂 `[米宝解读]`
+            徽标提醒复核；空值时不预填、键不出现 ⇒ 商家自己写的描述一个字都不会动。 */}
+        <FieldRow
+          label="商品描述"
+          alignTop
+          badge={
+            interpreted.includes('description') ? (
+              <InterpretedBadge fieldKey="description" />
+            ) : undefined
+          }
+        >
           <RichTextEditor
             value={form.description || ''}
             onChange={(html) => updateField('description', html)}
@@ -863,7 +873,7 @@ export default function ProductForm({
       >
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-neutral-500">管理商品分类，支持对分类进行新增、编辑、删除和排序</p>
+            <p className="text-sm text-neutral-500">管理商品分类：新增、编辑、删除和排序</p>
             <Button onClick={handleCatAdd} size="sm">
               <Plus className="w-4 h-4 mr-1" />
               添加分类
@@ -876,7 +886,7 @@ export default function ProductForm({
               </div>
             ) : categories.length === 0 ? (
               <div className="py-12 text-center text-sm text-neutral-500">
-                管理商品分类，支持对分类进行新增、编辑、删除和排序
+                管理商品分类：新增、编辑、删除和排序
               </div>
             ) : (
               <CategoryTree

@@ -1,0 +1,34 @@
+{
+  "status": 200,
+  "total": 35,
+  "first": {
+    "id": "2177bc3325e6bd021c6f3a1a6f875b03",
+    "name": "漂移验收商品576588",
+    "categoryId": "9b529bf052959979f74914c7014fd079",
+    "categoryName": "漂移验收分类576588",
+    "basePrice": 68,
+    "images": [],
+    "status": "on_shelf",
+    "stock": 99994,
+    "stockWarningThreshold": 10,
+    "unit": "米",
+    "pricingType": "fixed",
+    "stockDeductionMode": "on_order",
+    "colorCount": 1,
+    "totalStock": 99994,
+    "salesCount": 6,
+    "salesAmount": 408,
+    "recommended": false,
+    "allowReturnRestock": false,
+    "sellingMethods": [
+      "bulk_cut",
+      "full_roll"
+    ],
+    "detailImages": [],
+    "editedBy": "13870217889",
+    "editedAt": "2026-10-03 08:49:36",
+    "createdAt": "2026-10-03 08:49:36",
+    "updatedAt": "2026-10-03 08:49:37",
+    "price": 68
+  }
+}

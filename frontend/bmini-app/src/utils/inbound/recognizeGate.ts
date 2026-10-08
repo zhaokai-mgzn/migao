@@ -20,7 +20,8 @@
 
 /** 命中的既有 SKU（读面 = `WorkerInboundSkuMatch`） */
 export interface SkuMatch {
-  skuId: number
+  /** 雪花号 id —— 服务端**有意**序列化成 JSON 字符串（> 2^53）⇒ 端侧原样透传，禁止 Number() */
+  skuId: string
   productId?: string | null
   productName?: string | null
   skuCode?: string | null
@@ -126,7 +127,8 @@ export function prefillFromRecognize(response: RecognizeLike | null | undefined)
 /** 建草稿前的端侧闸（服务端仍会独立校验一遍 —— 端侧只是别让用户白填） */
 export interface DraftInput {
   productId?: string | null
-  skuId?: number | null
+  /** 雪花号 id（字符串，原样回传；后端出参形态，issue #6340） */
+  skuId?: string | null
   quantity?: string | number | null
   /** 工人是否已点过「我确认」（§6.5「不做免确认」） */
   confirmed?: boolean

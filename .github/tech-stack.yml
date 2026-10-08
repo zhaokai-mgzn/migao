@@ -84,7 +84,7 @@ modules:
         tests:
           - 'tests/test_agent_{1}.py'
           - 'tests/test_intent_{1}.py'
-          # 小布配置/欢迎语 + 租户 AI 配置的既有测试
+          # 元元配置/欢迎语 + 租户 AI 配置的既有测试
           - 'tests/test_xiaobu.py'
           - 'tests/test_tenant_config.py'
       - pattern: 'backend/ai-agent-service/app/utils/(.+)\.py'

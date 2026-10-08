@@ -1,0 +1,82 @@
+[
+  {
+    "id": "P0-operationsCatalog",
+    "name": "读面 /api/admin/production/operations-catalog",
+    "status": "pass",
+    "detail": "HTTP 200；条目/键数=2",
+    "evidence": [
+      "GET /api/admin/production/operations-catalog"
+    ],
+    "at": "2026-10-02T22:56:00.067Z"
+  },
+  {
+    "id": "P0-routings",
+    "name": "读面 /api/admin/production/routings",
+    "status": "pass",
+    "detail": "HTTP 200；条目/键数=2",
+    "evidence": [
+      "GET /api/admin/production/routings"
+    ],
+    "at": "2026-10-02T22:56:00.118Z"
+  },
+  {
+    "id": "P0-routeRules",
+    "name": "读面 /api/admin/production/route-rules",
+    "status": "pass",
+    "detail": "HTTP 200；条目/键数=26",
+    "evidence": [
+      "GET /api/admin/production/route-rules"
+    ],
+    "at": "2026-10-02T22:56:00.173Z"
+  },
+  {
+    "id": "P0-routeRuleOptions",
+    "name": "读面 /api/admin/production/route-rule-options",
+    "status": "pass",
+    "detail": "HTTP 200；条目/键数=3",
+    "evidence": [
+      "GET /api/admin/production/route-rule-options"
+    ],
+    "at": "2026-10-02T22:56:00.239Z"
+  },
+  {
+    "id": "P0-routeSignals",
+    "name": "读面 /api/admin/production/route-signals",
+    "status": "pass",
+    "detail": "HTTP 200；条目/键数=2",
+    "evidence": [
+      "GET /api/admin/production/route-signals"
+    ],
+    "at": "2026-10-02T22:56:00.295Z"
+  },
+  {
+    "id": "P0-routingGaps",
+    "name": "读面 /api/admin/production/routing-gaps",
+    "status": "pass",
+    "detail": "HTTP 200；条目/键数=4",
+    "evidence": [
+      "GET /api/admin/production/routing-gaps"
+    ],
+    "at": "2026-10-02T22:56:00.390Z"
+  },
+  {
+    "id": "P0-routingAnomalies",
+    "name": "读面 /api/admin/production/orders/routing-anomalies",
+    "status": "pass",
+    "detail": "HTTP 200；条目/键数=2",
+    "evidence": [
+      "GET /api/admin/production/orders/routing-anomalies"
+    ],
+    "at": "2026-10-02T22:56:00.462Z"
+  },
+  {
+    "id": "P0-operationPositions",
+    "name": "读面 /api/admin/production/operation-positions",
+    "status": "pass",
+    "detail": "HTTP 200；条目/键数=29",
+    "evidence": [
+      "GET /api/admin/production/operation-positions"
+    ],
+    "at": "2026-10-02T22:56:00.547Z"
+  }
+]

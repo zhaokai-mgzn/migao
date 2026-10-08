@@ -96,7 +96,8 @@ export interface InboundDraftView {
   needsConfirmation?: boolean
   replayed?: boolean
   items?: {
-    skuId?: number
+    /** 雪花号 id：后端出参是**字符串**（> 2^53，JSON number 会丢精度，issue #6340） */
+    skuId?: string
     skuCode?: string | null
     quantity?: number | string | null
     batchNo?: string | null
@@ -111,7 +112,8 @@ export type { InboundLabelView, RecognizeLike, SkuMatch }
 /** 建草稿请求（**结构上没有任何"任意调整"字段**：无 `adjustment` / `delta` / `setStock` / `operator`） */
 export interface InboundDraftRequest {
   productId: string
-  skuId: number
+  /** 雪花号 id：**原样字符串**透传，禁止 Number()/parseInt()（后端出参形态，issue #6340） */
+  skuId: string
   quantity: string | number
   unitCost?: string | number | null
   dyeLot?: string | null

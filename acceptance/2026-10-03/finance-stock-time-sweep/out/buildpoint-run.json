@@ -1,0 +1,41 @@
+{
+  "before": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "sha": "7e9f66ce5",
+    "shaFull": "7e9f66ce57915ce17f6e949e3dc23d53bae291eb",
+    "subject": "fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)",
+    "commitTime": "2026-10-03T05:42:36Z",
+    "adminApiPid": "60585",
+    "adminApiStart": "六 10月/ 3 13:44:16 2026",
+    "jvmTz": "user.timezone=Asia/Shanghai",
+    "observedAt": {
+      "cst": "2026-10-03 13:49:07 +08",
+      "utc": "2026-10-03T05:49:07.479Z"
+    }
+  },
+  "after": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "sha": "7e9f66ce5",
+    "shaFull": "7e9f66ce57915ce17f6e949e3dc23d53bae291eb",
+    "subject": "fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)",
+    "commitTime": "2026-10-03T05:42:36Z",
+    "adminApiPid": "60585",
+    "adminApiStart": "六 10月/ 3 13:44:16 2026",
+    "jvmTz": "user.timezone=Asia/Shanghai",
+    "observedAt": {
+      "cst": "2026-10-03 13:49:27 +08",
+      "utc": "2026-10-03T05:49:27.009Z"
+    }
+  },
+  "shifted": false,
+  "window": {
+    "startedAt": {
+      "cst": "2026-10-03 13:49:06 +08",
+      "utc": "2026-10-03T05:49:06.700Z"
+    },
+    "finishedAt": {
+      "cst": "2026-10-03 13:49:27 +08",
+      "utc": "2026-10-03T05:49:27.010Z"
+    }
+  }
+}

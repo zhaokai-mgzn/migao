@@ -1,4 +1,4 @@
-// case_ids: OR-052
+// case_ids: OR-052, OR-048
 // @vitest-environment jsdom
 /**
  * 下单页**版面重排**（2026-09-28 用户裁定，逐字见 `.github/cases/order.yml` 的 OR-052）。
@@ -34,8 +34,9 @@ const mockGetProduct = vi.fn()
 const mockGetProcessingItems = vi.fn()
 const mockCraftCalcPreview = vi.fn()
 const mockFeePreview = vi.fn()
-// 图片识别（issue #5794）：页面快通道的上传 + 识别两个端点（判据 12 驱动它们）
+// 图片识别（issue #5794 / #6531）：页面入口 = 「识别 + 一次性推理」两个端点（判据 12 驱动它们）
 const mockImageRecognize = vi.fn()
+const mockImageInterpret = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: { createOrder: (...a: unknown[]) => mockCreateOrder(...a) },
@@ -52,7 +53,10 @@ vi.mock('@/lib/api', () => ({
   uploadApi: {
     uploadImage: () => Promise.resolve({ data: { data: { url: 'https://cdn.test/order.png' } } }),
   },
-  imageRecognizeApi: { recognize: (...a: unknown[]) => mockImageRecognize(...a) },
+  imageRecognizeApi: {
+    recognize: (...a: unknown[]) => mockImageRecognize(...a),
+    interpret: (...a: unknown[]) => mockImageInterpret(...a),
+  },
   // 自动特征判定面（issue #4976 包 2b）：本文件与它正交 ⇒ 服务端替身返回「不判」，
   // 免得提交闸门拦住无关断言（同 `orders-new-item-remark.test.tsx` 的口径）。
   autoFeaturesApi: {
@@ -209,6 +213,9 @@ const openStep = (title: RegExp) => {
 const checkedItems = () =>
   screen
     .getAllByRole('checkbox')
+    // 识别结果卡（#6531：订单侧入口与建品页同形）自己也有勾选框（「一键填入」用）——
+    // 它不是加工项目录，剔除；**真加工项的 `aria-label` 仍必须都在**（缺一个 ⇒ 读数是 `null` ⇒ 红）。
+    .filter((c) => !(c.getAttribute('data-testid') || '').startsWith('form-interpret-check-'))
     .filter((c) => (c as HTMLInputElement).checked)
     .map((c) => c.getAttribute('aria-label'))
 
@@ -302,6 +309,7 @@ const stubApis = () => {
   mockFeePreview.mockResolvedValue(feeMatched())
   // 缺省：识别端点回「零可用字段」（degraded）—— 只有判据 12 会真的驱动它
   mockImageRecognize.mockResolvedValue({ data: { data: { degraded: true, fields: [] } } })
+  mockImageInterpret.mockResolvedValue({ data: { data: { degraded: true, fields: [] } } })
 }
 
 describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 常态可编辑 / 推荐组合 / 特殊选项并入加工项）', () => {
@@ -526,19 +534,26 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
   })
 
   it('判据 12（2026-09-29 新增）：图片下单 ⇒ **按图中客户要求**选工艺规格与加工项（不按系统默认）', async () => {
-    mockImageRecognize.mockResolvedValue({
+    // issue #6531：订单侧入口改成与建品页同一条「识别 + 一次性推理」（可补充一句话）⇒
+    // 识别端点由 `recognize` 换成 `interpret`，且结果**先落卡片、点「一键填入」才进表单**。
+    // 本判据的断言面（按图选工艺规格与加工项）**一个字不改**，只换触发路径。
+    mockImageInterpret.mockResolvedValue({
       data: {
         data: {
-          degraded: false,
+          component: 'page_fill',
+          target_type: 'order',
           fields: [
-            { key: 'open_count', label: '打开方式', value: '单开', source: '[图片识别]', reason: null },
-            { key: 'style', label: '款式', value: '拼色', source: '[图片识别]', reason: null },
+            { key: 'open_count', label: '打开方式', value: '单开', source: '[图片识别]', reason: null, candidates: [], note: null, note_source: null },
+            { key: 'style', label: '款式', value: '拼色', source: '[图片识别]', reason: null, candidates: [], note: null, note_source: null },
             {
               key: 'processing_items',
               label: '加工项',
               value: '打孔、定型',
               source: '[图片识别]',
               reason: null,
+              candidates: [],
+              note: null,
+              note_source: null,
             },
           ],
         },
@@ -554,6 +569,8 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
 
     const file = new File(['x'], 'order.png', { type: 'image/png' })
     fireEvent.change(screen.getByTestId('image-recognize-input'), { target: { files: [file] } })
+    // 结果**不自动填表**（与建品页同一条判据）：本页也不该例外 ⇒ 必须点「一键填入」
+    fireEvent.click(await screen.findByTestId('form-interpret-fill'))
 
     // ① 留痕可见（①用料与规格 里逐字说出「按图选了什么」）
     const note = await screen.findByTestId('recognized-craft-note')
@@ -736,5 +753,44 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     // 落库证据：拼次进 `specialOptions`（⇒ 服务端插工序 + 计件）
     const line = await submittedLine()
     expect(line.processingInfo.specialOptions).toContain('拼2次')
+  })
+
+  it('判据 28（2026-10-06，issue #6399）：「改工艺参数」**收起态**也要把当前所选摆出来并高亮', async () => {
+    // 用户逐字：「订单详情中，这里折叠的部分得把折叠的内容展示出来，不然用户不知道选择了什么，
+    // 而且得**高亮展示**」（截图红框 = `craft-plan-edit` 按钮这一行）。
+    // 改前形态：收起态只有一句静态按钮文案，加工类型 / 打开方式 / 款式 / 用料公式的**当前值**
+    // 全在被折叠的 `OrderCraftFields` 里（收起时该子树根本不渲染）⇒ 要核对只能点开一次。
+    await setupLine()
+    const toggle = screen.getAllByTestId('craft-plan-edit')[0]
+    if (toggle.getAttribute('aria-expanded') === 'true') fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+
+    // ① 四项当前值逐项可读（标签 + 值）——取值 = 页面侧唯一派生点 `derivedCraftSpec`
+    //    （与展开态控件 / 试算 / 落库同一份，不是另抄一份读数）
+    const current = screen.getByTestId('craft-plan-current')
+    expect(current).toHaveTextContent('加工类型')
+    expect(current).toHaveTextContent('定高买宽')
+    expect(current).toHaveTextContent('打开方式')
+    expect(current).toHaveTextContent('双开')
+    expect(current).toHaveTextContent('款式')
+    expect(current).toHaveTextContent('单色')
+    expect(current).toHaveTextContent('用料公式')
+    expect(current).toHaveTextContent('韩褶公式')
+    // ② 高亮：primary 色系（与周围那一圈中性灰不同一档）——条本身有底色 + 边框，**值**是高亮文字
+    //    红证方向：把 `bg-primary-50` / `text-primary-700` 退回中性灰 ⇒ 这两条断言红。
+    expect(current.className).toContain('bg-primary-50')
+    expect(current.className).toContain('border-primary-200')
+    expect(within(current).getByText('定高买宽').className).toContain('text-primary-700')
+
+    // ③ 展开态**不重复渲染**：内容本来就在眼前（同屏两份同一真值也会让按文案取元素的判据歧义）
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.queryByTestId('craft-plan-current')).toBeNull()
+
+    // ④ 读数是**跟着改的值走**的（不是一份写死的快照）：款式改「拼色」⇒ 收起后读到「拼色」
+    fireEvent.change(screen.getByTestId('craft-select-style'), { target: { value: '拼色' } })
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    await waitFor(() => expect(screen.getByTestId('craft-plan-current')).toHaveTextContent('拼色'))
   })
 })

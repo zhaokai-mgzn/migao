@@ -1,0 +1,34 @@
+{
+  "_why": "「冲突在 mapper 内以原子写（ON CONFLICT）消解」的写入点 —— 它们的对外契约是**回执语义**（幂等回放 / 已受理），而回执住在 HTTP 层 ⇒ 每个这样的写入点必须有**端点级**判据（HTTP 状态 + 回执体），或写明 deferred 理由。判据 = tests/unit_ci_workflows/test_endpoint_receipt_race_guard.py。理由（issue #6318）：#6301 的修复带来的真库并发判据跑的是**服务方法**，而用户看到的契约在 `GlobalExceptionHandler` 的异常→状态映射那一层 —— 服务级绿、端点级红这种差，只有端点级判据能看见。",
+  "_truth_source": "tests/unit_ci_workflows/unique_write_ledger.json 的 sites 里「handling 指向 mapper 文件、且该文件里有 ON CONFLICT」的那些条目（**每次运行现取**，不手抄）。本表**只裁**这一族（原子闸族）；服务侧 catch DuplicateKeyException 的那一族由各自的实例判据承担 —— 见 test_endpoint_receipt_race_guard.py 的覆盖边界。",
+  "_handling_values": "sites = 已有端点级判据（criterion 必须逐字存在于所声明文件、且该文件真的驱动端点）｜deferred = 未建端点级判据，必须写明 reason + restart_condition（只许缩短：补上判据后从 deferred 移入 sites）。",
+  "sites": {
+    "backend/admin-api/src/main/java/com/migao/admin/service/StockBatchConsumptionService.java::consumptionMapper": {
+      "table": "stock_batch_consumptions",
+      "endpoint": "POST /api/admin/batch-stock/stocktake",
+      "criterion": "backend/admin-api/src/test/java/com/migao/admin/service/StockBatchStocktakeEndpointRaceRealDbTest.java::concurrentStocktakeCallsGetIdempotentReceiptsNot500",
+      "log_criterion": "backend/admin-api/src/test/java/com/migao/admin/service/StockBatchStocktakeEndpointRaceRealDbTest.java::endpointFiveHundredCarriesANamedExceptionAndCoordinatesInLog",
+      "red_proof": "backend/admin-api/src/test/java/com/migao/admin/service/StockBatchStocktakeEndpointRaceRealDbTest.java::naiveInsertWiringTurnsTheEndpointIntoFiveHundreds",
+      "level": "endpoint",
+      "case_ids": "MC-082",
+      "note": "issue #6318：原子闸 = StockBatchConsumptionMapper#insertStocktakeIfAbsent（ON CONFLICT … DO NOTHING）。判据①（端点级幂等回执）、判据②（朴素 insert 注入 ⇒ 端点 5×500 的注入式红证）、判据③（端点 500 日志面）三条同在一个文件里，且都驱动真 MockMvc + 真 PG。"
+    }
+  },
+  "deferred": {
+    "backend/admin-api/src/main/java/com/migao/admin/service/InboundLabelService.java::inboundLabelMapper": {
+      "table": "inbound_labels",
+      "reason": "已登记的缺口（issue #6318 顺带发现，链外）：闸已在 mapper 内（insertIgnoreConflict），但该端点的**重复请求回执语义**没有定义 —— 端点级判据要先有口径（重复请求返回既有标签？还是 409？），口径未定 ⇒ 本包不猜。",
+      "restart_condition": "定下 `POST/PATCH` 入库标签写面的重复请求回执口径后，补端点级判据 ⇒ 从 deferred 移入 sites。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderSetAllocator.java::orderSetMapper": {
+      "table": "processing_order_sets",
+      "reason": "已登记的缺口：冲突在 mapper 内消解（insert OR IGNORE），但该写入点是**加工单生成**这条长链路的中段（跨 processing_orders / set_items / 批次扣减多表），端点级并发判据要先有「一次生成 = 什么回执」的口径 ⇒ 属既有的加工单并发族（#6299/#6300 那一面），不在本包射程。",
+      "restart_condition": "加工单生成面的并发/回执口径落地后，同批补端点级判据。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java::setPartTokenMapper": {
+      "table": "processing_set_part_tokens",
+      "reason": "已登记的缺口：冲突在 mapper 内消解，但该写入点服务的是**工人端取件令牌**（同一令牌重复领取 = 回执还是拒绝，取决于工人端交互口径）⇒ 端点级判据需先定口径，属工人端写面。",
+      "restart_condition": "工人端取件令牌的重复领取口径确定后，补端点级判据。"
+    }
+  }
+}

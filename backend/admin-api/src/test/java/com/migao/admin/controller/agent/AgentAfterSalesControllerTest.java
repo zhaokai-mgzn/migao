@@ -36,7 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * 售后建单端点的幂等接线（issue #4037，F19）。
  *
- * <p>三个建单工具（小布 {@code aftersale_create} / 米宝 {@code after_sales_manage} /
+ * <p>三个建单工具（元元 {@code aftersale_create} / 黄金策 {@code after_sales_manage} /
  * 转人工 {@code human_handoff}）打的是**同一个** {@code POST /api/admin/agent/after-sales}
  * ⇒ 同一 {@code X-Client-Request-Id} 的同键请求**只建一张工单**，重复到达回放首次工单快照。</p>
  *

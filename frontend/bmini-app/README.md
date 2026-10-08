@@ -1,14 +1,14 @@
-# Bmini App — B 端商家小程序（米宝商家端）
+# Bmini App — B 端商家小程序（黄金策商家端）
 
-米高 AI 智能客服 — B 端 agent 手机版（issue #2977）
+观星台 AI 智能客服 — B 端 agent 手机版（issue #2977）
 
 ## 这是什么
 
-面向商家员工（老板/运营/客服）的移动经营助手，独立微信小程序（与 C 端「小布」小程序不同 appid/主体）：
+面向商家员工（老板/运营/客服）的移动经营助手，独立微信小程序（与 C 端「元元」小程序不同 appid/主体）：
 
 | Tab | 功能 | 后端接口 |
 |---|---|---|
-| 问米宝 | AI 对话（SSE 流式，AgentRouter 自动路由米宝） | `POST /api/chat/send`（ai-agent-service） |
+| 问黄金策 | AI 对话（SSE 流式，AgentRouter 自动路由黄金策） | `POST /api/chat/send`（ai-agent-service） |
 | 数据 | 经营一屏：5 数字 + 待办 | `/api/admin/dashboard/stats`、`/pending-tasks` |
 | 坐席 | 移动坐席：待接管队列 + 详情接管/回复/结束 | `/api/admin/agent-sessions/*` |
 | 我的 | 员工信息（昵称/角色/租户）+ 退出登录 | — |

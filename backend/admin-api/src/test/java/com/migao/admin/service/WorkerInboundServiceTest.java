@@ -1,4 +1,4 @@
-// case_ids: PR-029, PR-030, PR-031, PR-032, PR-110, PR-111, PR-112
+// case_ids: PR-029, PR-030, PR-031, PR-032, PR-110, PR-111, PR-112, FN-006
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -107,6 +107,9 @@ class WorkerInboundServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 批次号取号（issue #6248）= `stockBatchMapper.update(...)` 的**受影响行数**（1 = 号归我）。
+        // Mockito 对 int 返回**默认 0** ⇒ 不桩这一句会被读成「号每次都被别人抢走」⇒ 20 次耗尽 409。
+        when(stockBatchMapper.update(any(StockBatch.class))).thenReturn(1);
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Product.class);
@@ -157,7 +160,13 @@ class WorkerInboundServiceTest {
                 .stock(new BigDecimal("10")).build();
         when(productSkuMapper.selectById(SKU_ID)).thenReturn(sku);
         when(productSkuMapper.selectList(any())).thenReturn(List.of(sku));
-        when(productSkuMapper.receiveStock(anyLong(), any(), any(), anyString())).thenReturn(1);
+        when(productSkuMapper.receiveStock(anyLong(), any(), any(), anyString(), any())).thenAnswer(inv -> {
+            BigDecimal q = inv.getArgument(1);
+            Map<String, Object> change = new LinkedHashMap<>();
+            change.put("beforeQuantity", new BigDecimal("10"));
+            change.put("afterQuantity", new BigDecimal("10").add(q));
+            return change;
+        });
 
         Product product = Product.builder().id(PRODUCT_ID).tenantId(TENANT).name(PRODUCT_NAME).build();
         when(productMapper.selectById(PRODUCT_ID)).thenReturn(product);
@@ -308,7 +317,7 @@ class WorkerInboundServiceTest {
             assertThat(resp.isRequiresManualEntry()).isTrue();
             verify(productMapper, never()).insert(any(Product.class));
             verify(productSkuMapper, never()).insert(any(ProductSku.class));
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         @Test
@@ -336,7 +345,7 @@ class WorkerInboundServiceTest {
         void draftNeverTouchesStock() {
             WorkerInboundDraftView view = createDraft("60.5");
 
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
             verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
                     any(), any(), anyString(), anyString(), anyString(), any(), any(), any());
             verify(stockBatchMapper, never()).insert(any(StockBatch.class));
@@ -360,7 +369,7 @@ class WorkerInboundServiceTest {
                                 .isEqualTo(400));
             }
             verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         @Test
@@ -420,7 +429,7 @@ class WorkerInboundServiceTest {
                     draft.getDraftId(), confirmed(), TENANT, WORKER_ID, null);
 
             verify(productSkuMapper, times(1))
-                    .receiveStock(eq(SKU_ID), eq(new BigDecimal("60.5")), eq(new BigDecimal("12.5")), anyString());
+                    .receiveStock(eq(SKU_ID), eq(new BigDecimal("60.5")), eq(new BigDecimal("12.5")), anyString(), any());
             verify(stockLedgerService, times(1)).record(
                     eq(TENANT), eq(PRODUCT_ID), eq(SKU_ID), eq(SKU_CODE),
                     eq(new BigDecimal("10")), eq(new BigDecimal("70.5")),
@@ -446,7 +455,7 @@ class WorkerInboundServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
 
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
             verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
                     any(), any(), anyString(), anyString(), anyString(), any(), any(), any());
             verify(inboundOrderMapper, never()).markPosted(anyString(), anyLong(), anyString(), any());
@@ -469,7 +478,7 @@ class WorkerInboundServiceTest {
             WorkerInboundDraftView second =
                     service.postDraft(draft.getDraftId(), confirmed(), TENANT, WORKER_ID, "pk-1");
 
-            verify(productSkuMapper, times(1)).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, times(1)).receiveStock(anyLong(), any(), any(), anyString(), any());
             verify(stockLedgerService, times(1)).record(anyLong(), anyString(), anyLong(), anyString(),
                     any(), any(), anyString(), anyString(), anyString(), any(), any(), any());
             verify(inboundOrderMapper, times(1)).markPosted(anyString(), anyLong(), anyString(), any());
@@ -486,7 +495,7 @@ class WorkerInboundServiceTest {
             assertThatThrownBy(() -> service.postDraft(draft.getDraftId(), confirmed(), TENANT, WORKER_ID, "pk-2"))
                     .isInstanceOf(BusinessException.class)
                     .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         @Test
@@ -508,7 +517,7 @@ class WorkerInboundServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(404));
 
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
     }
 
@@ -516,5 +525,39 @@ class WorkerInboundServiceTest {
         WorkerInboundPostRequest req = new WorkerInboundPostRequest();
         req.setConfirmed(value);
         return req;
+    }
+
+    // ════════════════ issue #6228：工人面入库单价小数位准入（超 2 位有效小数 ⇒ 拒绝 + 零写入）════════════
+
+    @Test
+    @DisplayName("#6228 入库单价 0.005（3 位有效小数）⇒ 400 且 inbound_orders **零写入**（不静默舍成 0.01）")
+    void subCentUnitCostIsRejectedWithoutWrites() {
+        WorkerInboundDraftRequest req = draftRequest("60.5");
+        req.setUnitCost(new BigDecimal("0.005"));
+
+        assertThatThrownBy(() -> service.createDraft(req, TENANT, WORKER_ID, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("2 位小数")
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus())
+                        .as("工人面参数类拒绝的状态码是 400（口径本体仍是 MoneyScale 那一处）")
+                        .isEqualTo(400));
+
+        verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+        verify(inboundOrderItemMapper, never()).insert(any(InboundOrderItem.class));
+    }
+
+    @Test
+    @DisplayName("#6228 正对照 入库单价 12.50（2 位小数）⇒ 建草稿成功且行单价逐字 12.50")
+    void twoDecimalUnitCostIsAccepted() {
+        WorkerInboundDraftRequest req = draftRequest("60.5");
+        req.setUnitCost(new BigDecimal("12.50"));
+
+        WorkerInboundDraftView view = service.createDraft(req, TENANT, WORKER_ID, null);
+
+        assertThat(view.getItems()).hasSize(1);
+        org.mockito.ArgumentCaptor<InboundOrderItem> captor =
+                org.mockito.ArgumentCaptor.forClass(InboundOrderItem.class);
+        verify(inboundOrderItemMapper).insert(captor.capture());
+        assertThat(captor.getValue().getUnitCost().toPlainString()).isEqualTo("12.50");
     }
 }

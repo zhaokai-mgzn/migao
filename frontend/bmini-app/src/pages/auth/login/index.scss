@@ -87,6 +87,15 @@
     margin-top: 32px;
     text-align: center;
   }
+
+  // 工人入口的失败文案（issue #6467）：**原样**展示服务端 message（服务端是文案单一真值）
+  &__error {
+    display: block;
+    margin-top: 24px;
+    font-size: 26px;
+    color: #d93025;
+    text-align: center;
+  }
 }
 
 // 两个入口并列（员工 / 管理员，issue #5721）：管理员身份在设计上是「手机号 + 短信」，

@@ -38,31 +38,34 @@ export default function CorporateNav() {
       className={cn(
         'sticky top-0 z-50 transition-all duration-300',
         scrolled
-          ? 'bg-white/95 backdrop-blur-md shadow-sm border-b border-neutral-200/60'
-          : 'bg-white/80 backdrop-blur-sm border-b border-transparent'
+          ? 'border-b border-neutral-200 bg-neutral-50/95 shadow-sm backdrop-blur-md'
+          : 'border-b border-transparent bg-neutral-50/80 backdrop-blur-sm'
       )}
     >
+      {/* 顶部织金细线：把品牌色带进导航 */}
+      <div className="h-0.5 bg-gradient-to-r from-[#d48806] via-accent-500 to-primary-600" />
+
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2.5 shrink-0">
+          <Link href="/" className="flex shrink-0 items-center gap-2.5">
             <Logo size="small" />
-            <span className="text-lg font-semibold text-neutral-900 tracking-tight">
-              米高
+            <span className="text-lg font-semibold tracking-tight text-neutral-900">
+              观星台
             </span>
           </Link>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-1">
+          <nav className="hidden items-center gap-1 md:flex">
             {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                  'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
                   isActive(item.href)
-                    ? 'text-primary-600 bg-blue-50'
-                    : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'
+                    ? 'bg-primary-50 text-primary-600'
+                    : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
                 )}
               >
                 {item.name}
@@ -71,16 +74,16 @@ export default function CorporateNav() {
           </nav>
 
           {/* Desktop CTA Buttons */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden items-center gap-3 md:flex">
             <a
               href="https://merchant.migaozn.com/login"
-              className="px-4 py-2 text-sm font-medium text-neutral-700 hover:text-neutral-900 transition-colors"
+              className="px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:text-neutral-900"
             >
               商家登录
             </a>
             <Link
               href="/register"
-              className="px-5 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors shadow-sm"
+              className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-700"
             >
               商家入驻
             </Link>
@@ -89,46 +92,46 @@ export default function CorporateNav() {
           {/* Mobile Menu Toggle */}
           <button
             type="button"
-            className="md:hidden p-2 rounded-lg text-neutral-600 hover:bg-neutral-100 transition-colors"
+            className="rounded-lg p-2 text-neutral-600 transition-colors hover:bg-neutral-100 md:hidden"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label={mobileMenuOpen ? '关闭菜单' : '打开菜单'}
           >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
       </div>
 
       {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-neutral-100 bg-white">
-          <div className="px-4 py-3 space-y-1">
+        <div className="border-t border-neutral-200 bg-neutral-50 md:hidden">
+          <div className="space-y-1 px-4 py-3">
             {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => setMobileMenuOpen(false)}
                 className={cn(
-                  'block px-4 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  'block rounded-lg px-4 py-2.5 text-sm font-medium transition-colors',
                   isActive(item.href)
-                    ? 'text-primary-600 bg-blue-50'
-                    : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'
+                    ? 'bg-primary-50 text-primary-600'
+                    : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
                 )}
               >
                 {item.name}
               </Link>
             ))}
-            <div className="pt-3 mt-3 border-t border-neutral-100 space-y-2">
+            <div className="mt-3 space-y-2 border-t border-neutral-200 pt-3">
               <a
                 href="https://merchant.migaozn.com/login"
                 onClick={() => setMobileMenuOpen(false)}
-                className="block px-4 py-2.5 rounded-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors text-center"
+                className="block rounded-lg px-4 py-2.5 text-center text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100"
               >
                 商家登录
               </a>
               <Link
                 href="/register"
                 onClick={() => setMobileMenuOpen(false)}
-                className="block px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 transition-colors text-center"
+                className="block rounded-lg bg-primary-600 px-4 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-primary-700"
               >
                 商家入驻
               </Link>

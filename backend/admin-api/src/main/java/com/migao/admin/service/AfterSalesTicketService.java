@@ -67,9 +67,9 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     //   · SOURCE_AGENT    —— 同上（既有唯一硬编码值）
     //   · SOURCE_MERCHANT —— 本 issue 补：人工（后台表单）建单。前端同步补渲染分支
     // 消费方只有前端工单详情一处（已 grep 全仓库：无报表/统计/导出按 source 取值分组）。
-    /** 顾客发起（C 端小布 / 顾客自助） */
+    /** 顾客发起（C 端元元 / 顾客自助） */
     public static final String SOURCE_CUSTOMER = "customer";
-    /** AI 建单（米宝等 Agent 工具） */
+    /** AI 建单（黄金策等 Agent 工具） */
     public static final String SOURCE_AGENT = "agent";
     /** 人工建单（admin-web 后台表单） */
     public static final String SOURCE_MERCHANT = "merchant";
@@ -306,7 +306,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     public AfterSalesDetailResponse getTicketById(String id) {
         // 先按 UUID 查
         AfterSalesTicket ticket = afterSalesTicketMapper.selectById(id);
-        // UUID 没找到，尝试按 ticket_no 查询（兼容米宝用 ticket_no 调用 detail 接口）
+        // UUID 没找到，尝试按 ticket_no 查询（兼容黄金策用 ticket_no 调用 detail 接口）
         if (ticket == null) {
             ticket = afterSalesTicketMapper.selectOne(
                 new LambdaQueryWrapper<AfterSalesTicket>()
@@ -345,7 +345,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
      * 创建售后工单
      *
      * <p>issue #3686：`source` 表示工单的**真实来源**，不再无条件硬编码（原实现恒写 "agent"，
-     * 导致 C 端小布顾客工单被误标 agent、DDL `DEFAULT 'customer'` 成死默认）。
+     * 导致 C 端元元顾客工单被误标 agent、DDL `DEFAULT 'customer'` 成死默认）。
      * 取值集合（代码中已存在，勿臆造第四个值）：{@link #SOURCE_CUSTOMER} / {@link #SOURCE_AGENT}
      * / {@link #SOURCE_MERCHANT}。唯一消费方是前端工单详情
      * （`AfterSalesDetail.tsx` 按其渲染 客户提交 / 客服创建 / 商家创建）。
@@ -359,6 +359,11 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     @Transactional(rollbackFor = Exception.class)
     public AfterSalesDetailResponse createTicket(AfterSalesCreateRequest request, Long tenantId, String operator,
                                                  String source) {
+        // 金额精度准入（issue #6228）：`after_sales_tickets.refund_amount` 是 NUMERIC(10,2)，
+        // 超 2 位有效小数会被 PG **静默四舍五入**（工单创建 200、库内值与请求值不等；完结时
+        // 联动退款还会按被改掉的值真退钱）⇒ 入口显式拒绝、不静默取整。
+        // 判在本方法开头 = 任何写之前；`null` 原样透传（= 未填，**不得**归一成 0）。
+        MoneyScale.requireTwoDecimalsOrNull(request.getRefundAmount(), "退款金额");
         // 投诉类工单可无关联订单（转人工/服务投诉场景）；其余类型必须关联订单
         boolean isComplaint = "complaint".equals(request.getTicketType());
         Order order = null;
@@ -468,6 +473,13 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
      * 遵循状态流转规则：pending -> processing/rejected/closed, processing -> resolved/closed
      * （resolved/rejected/closed 为终态，不允许再变更；pending -> closed 见 #3541）
      *
+     * <p><b>并发语义（issue #6220）</b>：状态流转是**读-判-写**，落库必须是
+     * <b>DB 原子条件更新</b>（把读到的旧状态放进 {@code WHERE}）—— 无条件覆盖会让 N 个并发请求
+     * （两个管理员同时点「完结」、或慢网络下双击）全部通过校验：同一张工单被写 N 次，
+     * 而每个请求各跑一遍副作用（重复回补库存：实测 98→106、台账 4 行、时间线 5 行）。
+     * 范式与订单侧同源（{@code OrderService} 的并发改状态/退款都是「条件更新 + 判受影响行数」）。
+     * 受影响行为 0 ⇒ 409「状态已被他人变更」，<b>副作用只在条件更新成功的那一次执行</b>。</p>
+     *
      * @param id      工单ID
      * @param request 状态更新请求
      */
@@ -523,7 +535,21 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
             }
         }
 
-        afterSalesTicketMapper.updateById(ticket);
+        // 状态流转 = DB 原子条件更新（issue #6220）：把「读到的旧状态」放进 WHERE，只有真正抢到这次
+        // 流转的请求能改到行；并发请求受影响行数 = 0 ⇒ 409，且**不会**往下跑副作用。
+        // ⚠️ 不要退回 updateById（无条件覆盖）：那等于「并发数 = 副作用执行次数」。
+        UpdateWrapper<AfterSalesTicket> transition = new UpdateWrapper<>();
+        transition.eq("id", id)
+                .eq("tenant_id", ticket.getTenantId())
+                .eq("status", currentStatus);
+        int transitioned = afterSalesTicketMapper.update(ticket, transition);
+        if (transitioned == 0) {
+            // 行数 0 的唯一含义：读到旧状态之后、写之前，库里的状态已被另一个请求改掉（并发完结 / 双击）
+            String activeLabel = TICKET_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+            throw BusinessException.conflict(
+                    String.format("工单状态已被他人变更（本请求基于「%s」，库中已不是该状态），本次操作未生效", activeLabel),
+                    "请刷新工单详情，确认当前状态后再操作");
+        }
 
         // 完结联动：refund/return 工单 resolved 且有退款金额时，累加订单退款并登记退款流水
         if ("resolved".equals(newStatus)
@@ -792,7 +818,6 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         response.setHandlerId(ticket.getHandlerId());
         response.setAssignedAt(ticket.getAssignedAt());
         response.setRefundAmount(ticket.getRefundAmount());
-        response.setRefundMethod(ticket.getRefundMethod());
         response.setInternalNotes(ticket.getInternalNotes());
         response.setDeadline(ticket.getDeadline());
         response.setClosedAt(ticket.getClosedAt());
@@ -831,7 +856,6 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         response.setHandlerId(ticket.getHandlerId());
         response.setAssignedAt(ticket.getAssignedAt());
         response.setRefundAmount(ticket.getRefundAmount());
-        response.setRefundMethod(ticket.getRefundMethod());
         response.setInternalNotes(ticket.getInternalNotes());
         response.setDeadline(ticket.getDeadline());
         response.setClosedAt(ticket.getClosedAt());

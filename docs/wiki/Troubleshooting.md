@@ -80,9 +80,9 @@
 - `toHaveScreenshot` 报 "A snapshot doesn't exist ...-linux.png" → 基线按平台查找（mac→darwin / CI→linux），**双平台基线都要提交**；linux 基线用 CI `--update-snapshots` 生成或从失败 actual 截图采纳。
 - 定位白屏三步：① spec 加 `page.on('pageerror')`/`console` 打印重跑 ② 下载 `xiaobu-visual-diffs` artifact（trace.zip + 截图，像素分析判纯白）③ 对比本地构建产物。
 
-## DSH「米高研发」研发模式消失（agent-preset/not-found）
+## DSH「观星台研发」研发模式消失（agent-preset/not-found）
 
-**症状**：DSH 里「米高研发」preset 消失；新建/恢复会话报 `agent-preset/not-found`；**无任何报错**（静默失效）。
+**症状**：DSH 里「观星台研发」preset 消失；新建/恢复会话报 `agent-preset/not-found`；**无任何报错**（静默失效）。
 
 **根因（2026-09-16 事故）**：`~/.dsh/.agent-presets/migao` 是指向 preset 活锚的**软链接**。
 一次 AI 会话的清理命令 `rm -rf migao-loop migao-preset-live migao-agent-presets …` 把**软链目标**

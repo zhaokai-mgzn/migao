@@ -1,4 +1,4 @@
-// e2e/lib/harness.js — 小布小程序 E2E 验收公共工具（非测试文件，无需 case_ids）
+// e2e/lib/harness.js — 元元小程序 E2E 验收公共工具（非测试文件，无需 case_ids）
 /**
  * 依赖：微信开发者工具（已安装）+ 设置→安全设置→服务端口 已开启
  * 用法：见 e2e/run.js（npm run test:e2e）

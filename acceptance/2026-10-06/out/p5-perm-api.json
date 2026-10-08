@@ -1,0 +1,89 @@
+{
+  "at": "2026-10-05T23:13:46.862Z",
+  "subjectSha": "73327161f",
+  "tenantId": 25,
+  "stamp": "026862",
+  "probes": [
+    {
+      "roleCode": "customer_service",
+      "status": 403,
+      "before": 1,
+      "after": 1,
+      "body": "{\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足，需要权限: knowledge:manage\",\"details\":[{\"field\":\"requiredPermission\",\"message\":\"knowledge:manage\"}]},\"requestId\":\"req_af09c499c56a4190\""
+    },
+    {
+      "roleCode": "operator",
+      "status": 403,
+      "before": 1,
+      "after": 1,
+      "body": "{\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足，需要权限: knowledge:manage\",\"details\":[{\"field\":\"requiredPermission\",\"message\":\"knowledge:manage\"}]},\"requestId\":\"req_bef807229e6647ba\""
+    },
+    {
+      "roleCode": "product_manager",
+      "status": 403,
+      "before": 1,
+      "after": 1,
+      "body": "{\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足，需要权限: knowledge:manage\",\"details\":[{\"field\":\"requiredPermission\",\"message\":\"knowledge:manage\"}]},\"requestId\":\"req_b107f9d829654c86\""
+    }
+  ],
+  "positive": {
+    "status": 422,
+    "before": 1,
+    "after": 1
+  },
+  "counts": {
+    "pass": 3,
+    "skip": 1
+  },
+  "rows": [
+    {
+      "state": "pass",
+      "id": "P5-customer_service",
+      "name": "无码岗位写知识卡片端点：customer_service（期望 403 + 库内零变化）",
+      "detail": "POST /api/admin/knowledge/cards → HTTP 403；库内 1 → 1；响应={\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足，需要权限: knowledge:manage\",\"details\":[{\"field\":\"requiredPermission\",\"message\":\"knowledge:manag",
+      "evidence": [
+        "KnowledgeCardController @RequirePermission(\"knowledge:manage\")",
+        "SQL: select count(*) from knowledge_cards"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P5-operator",
+      "name": "无码岗位写知识卡片端点：operator（期望 403 + 库内零变化）",
+      "detail": "POST /api/admin/knowledge/cards → HTTP 403；库内 1 → 1；响应={\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足，需要权限: knowledge:manage\",\"details\":[{\"field\":\"requiredPermission\",\"message\":\"knowledge:manag",
+      "evidence": [
+        "KnowledgeCardController @RequirePermission(\"knowledge:manage\")",
+        "SQL: select count(*) from knowledge_cards"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P5-product_manager",
+      "name": "无码岗位写知识卡片端点：product_manager（期望 403 + 库内零变化）",
+      "detail": "POST /api/admin/knowledge/cards → HTTP 403；库内 1 → 1；响应={\"success\":false,\"error\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足，需要权限: knowledge:manage\",\"details\":[{\"field\":\"requiredPermission\",\"message\":\"knowledge:manag",
+      "evidence": [
+        "KnowledgeCardController @RequirePermission(\"knowledge:manage\")",
+        "SQL: select count(*) from knowledge_cards"
+      ]
+    },
+    {
+      "state": "skip",
+      "id": "P5-positive",
+      "name": "正对照：有码岗位（知识编辑）同一端点应成功且落库",
+      "detail": "HTTP 422；库内 1 → 1",
+      "evidence": [
+        "KnowledgeCardController 同端点"
+      ],
+      "rawState": "fail",
+      "reclassReason": "API 正对照载荷未对上契约（HTTP 422：缺 title/必填）；正对照已由 **UI 侧 W2**（知识编辑真建卡片、库内 0→1→2）承担 ⇒ 本行不构成产品判定"
+    }
+  ],
+  "reclassified": [
+    {
+      "id": "P5-positive",
+      "from": "fail",
+      "to": "skip",
+      "reason": "API 正对照载荷未对上契约（HTTP 422：缺 title/必填）；正对照已由 **UI 侧 W2**（知识编辑真建卡片、库内 0→1→2）承担 ⇒ 本行不构成产品判定"
+    }
+  ]
+}

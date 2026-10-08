@@ -1,6 +1,6 @@
 // case_ids: OR-001, DF-002, UI-014, UI-016, UI-044, ST-011
 /**
- * 小布 H5 视觉回归 — 无会话 UX + 主页（推荐胶囊 + 六格等权）+ 订单卡片
+ * 元元 H5 视觉回归 — 无会话 UX + 主页（推荐胶囊 + 六格等权）+ 订单卡片
  *
  * 目的：验证 C 端 mini-app 渲染效果（用户直接看到的 UI），
  * 弥补 API 层验收覆盖不到的视觉/布局回归。
@@ -11,7 +11,7 @@
  * Mock 策略：拦截 API 返回固定数据，保证视觉断言确定性（不依赖真实 LLM/后端）。
  *
  * UI-014: 快捷入口六入口全保留，**六格等权**（2 列 × 3 行，算料报价不跨整行）
- * UI-016: 导航副标题企业名取自企业设置 tenantName（mock='米高窗帘'）
+ * UI-016: 导航副标题企业名取自企业设置 tenantName（mock='观星台窗帘'）
  * UI-044: 空态顶部推荐胶囊（**3 条 × 3 行左对齐**，纯前端静态策划文案；文案 = 专业服务句）
  *
  * 2026-09-17 同步 M1-A（UI-044）：空态**不再展示商品推荐卡**（NewArrivals 组件与
@@ -143,7 +143,7 @@ async function setupMocks(page: import('@playwright/test').Page) {
     // auth_user 的形状 = 后端登录响应 data.user 的 JSON 原样（camelCase，见 mini-app
     // src/types 的 `User`）：租户 ID 键名是 `tenantId`，生产从不产生 `tenant_id`
     // （下一行的 `tenant_id` 是 Taro storage 键，与 user 对象字段无关，勿混同）
-    localStorage.setItem('auth_user', JSON.stringify({ data: JSON.stringify({ id: 'u-visual', nickname: '视觉测试', avatar: null, tenantId: 1, tenantName: '米高窗帘' }) }))
+    localStorage.setItem('auth_user', JSON.stringify({ data: JSON.stringify({ id: 'u-visual', nickname: '视觉测试', avatar: null, tenantId: 1, tenantName: '观星台窗帘' }) }))
     localStorage.setItem('tenant_id', JSON.stringify({ data: '1' }))
   })
 
@@ -170,15 +170,15 @@ async function setupMocks(page: import('@playwright/test').Page) {
 // 测试
 // ═══════════════════════════════════════════════════════════════
 
-test.describe('小布 H5 视觉回归', () => {
+test.describe('元元 H5 视觉回归', () => {
   test('空态欢迎屏：横滑推荐胶囊 + 六格等权入口（无商品推荐卡）', async ({ page }) => {
     await setupMocks(page)
     await page.goto('/#/pages/chat/index/index')
 
     // 品牌区（导航栏标题）
     await expect(page.locator('.chat-page__navbar-name')).toBeVisible()
-    // UI-016：副标题企业名来自企业设置（mock tenantName='米高窗帘'），非硬编码默认值
-    await expect(page.getByText('米高窗帘 · 智能购物助手')).toBeVisible()
+    // UI-016：副标题企业名来自企业设置（mock tenantName='观星台窗帘'），非硬编码默认值
+    await expect(page.getByText('观星台窗帘 · 智能购物助手')).toBeVisible()
 
     // UI-044（issue #4236 定稿）：顶部推荐胶囊 —— 3 条专业服务句、**左对齐竖排**
     await expect(page.locator('.recommend-chips__chip')).toHaveCount(3)

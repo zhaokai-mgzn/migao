@@ -3,16 +3,33 @@ import { View, Text, Button, Input } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useAuthStore } from '../../../store/authStore'
 import { sendSmsCode } from '../../../utils/auth'
+import { getRememberedAccount, rememberAccount } from '../../../utils/loginAccount'
+import { workerLogin } from '../../../services/workerService'
+import { WORKER_HOME_ROUTE } from '../../../utils/inbound/gaps'
 import './index.scss'
 
-/** 两个登录入口：员工（用户名@企业编码 + 密码）/ 管理员（手机号 + 短信验证码） */
-type LoginTab = 'employee' | 'admin'
+/**
+ * 三个登录入口：员工（用户名@企业编码 + 密码）/ 管理员（手机号 + 短信验证码）/
+ * **工人**（工号 + PIN，issue #6467 切片 1）
+ */
+type LoginTab = 'employee' | 'admin' | 'worker'
 
 /** 「获取验证码」的本地冷却秒数（服务端另有频控：每号 1 次/60s + 每日上限） */
 const CODE_COUNTDOWN_SECONDS = 60
 
 /**
- * B 端登录页（米宝商家端）
+ * 入口的**路由参数直达**（issue #6467）：`/pages/auth/login/index?tab=worker` 直接停在工人入口。
+ *
+ * <p>这是给「报工页 / 工人首页 / 入库页引导过来」用的入口 —— 工人在报工页点「去登录工人身份」
+ * 时**不该**先落在商家员工表单上再自己找第二个 tab（现场实测：那台设备的人根本不知道
+ * 「完成报工」需要的是工人身份）。</p>
+ */
+function initialTab(routeTab: unknown): LoginTab {
+  return routeTab === 'worker' || routeTab === 'admin' ? routeTab : 'employee'
+}
+
+/**
+ * B 端登录页（黄金策商家端）
  *
  * 1. **员工入口**（issue #5485）：填「用户名@企业编码」+ 密码 → `employeeLoginAction`
  *    → 后端 `POST /api/auth/employee/login` 由标识里的企业编码解析租户
@@ -21,7 +38,11 @@ const CODE_COUNTDOWN_SECONDS = 60
  *    → `POST /api/auth/sms/login`。为什么必须有：管理员身份在设计上是「手机号 + 短信」，
  *    而 #5485 之后 H5 只留了员工入口 ⇒ 管理员在**唯一可达的 H5** 上无路可走
  *    （存量账号 `users.username` 为 NULL，员工入口同样进不去）。
- * 3. 成功 → switchTab 到「问米宝」（首页 Tab）；首登强制改密 ⇒ 先去改密页。
+ * 3. 成功 → switchTab 到「问黄金策」（首页 Tab）；首登强制改密 ⇒ 先去改密页。
+ * 4. **工人入口**（issue #6467 切片 1）：工号 + PIN（可选设备标签）→ `workerLogin`
+ *    → `POST /api/worker/login`（**既有**端点，不新造登录服务）。工人**没有商家会话**
+ *    ⇒ 成功只能 `redirectTo` 工人首页（`switchTab` 会落到商家 tabBar/问黄金策）。
+ *    报工页/工人首页的「去登录工人身份」用 `?tab=worker` 直达本入口。
  *
  * 原「微信授权手机号 → 跨租户匹配员工 → 绑定 openid → 二次免密」整条退场：
  * 本页**没有** `getPhoneNumber` 授权按钮，`POST /api/auth/bmini/login` 已废弃。
@@ -32,17 +53,29 @@ const CODE_COUNTDOWN_SECONDS = 60
 export default function LoginPage() {
   const { isLoading, employeeLoginAction, smsLoginAction } = useAuthStore()
 
-  const [tab, setTab] = useState<LoginTab>('employee')
+  // 初始入口按**路由参数**定（issue #6467：报工页/工人首页引导进来时直达工人入口）
+  const [tab, setTab] = useState<LoginTab>(() =>
+    initialTab((Taro.getCurrentInstance?.() as any)?.router?.params?.tab),
+  )
 
   // 员工入口
-  const [identifier, setIdentifier] = useState('')
+  // 「记住上次成功登录的账号名」（issue #6478）：**只预填账号名**，绝不预填密码；
+  // 从未登录过 ⇒ `getRememberedAccount` 回空串（**不编默认值**）。
+  const [identifier, setIdentifier] = useState(() => getRememberedAccount('employee'))
   const [password, setPassword] = useState('')
 
   // 管理员入口（issue #5721）
-  const [phone, setPhone] = useState('')
+  const [phone, setPhone] = useState(() => getRememberedAccount('admin'))
   const [code, setCode] = useState('')
   const [countdown, setCountdown] = useState(0)
   const [sendingCode, setSendingCode] = useState(false)
+
+  // 工人入口（issue #6467）：工号预填（PIN / 设备标签不预填）
+  const [workerNo, setWorkerNo] = useState(() => getRememberedAccount('worker'))
+  const [pin, setPin] = useState('')
+  const [deviceLabel, setDeviceLabel] = useState('')
+  const [workerSubmitting, setWorkerSubmitting] = useState(false)
+  const [workerError, setWorkerError] = useState('')
 
   // 冷却计时：到点自动解锁「获取验证码」
   useEffect(() => {
@@ -77,6 +110,8 @@ export default function LoginPage() {
 
     const success = await employeeLoginAction(identifier.trim(), password)
     if (!success) return
+    // **成功之后**才记该面的账号名（记的是「上次成功登录用过的账号名」，不是「上次输入过」）
+    rememberAccount('employee', identifier.trim())
     afterLoginSuccess()
   }, [identifier, password, isLoading, employeeLoginAction, afterLoginSuccess])
 
@@ -90,6 +125,8 @@ export default function LoginPage() {
 
     const success = await smsLoginAction(phone.trim(), code.trim())
     if (!success) return
+    // 只记手机号（账号名）；**验证码绝不落盘**（issue #6478 的红线）
+    rememberAccount('admin', phone.trim())
     afterLoginSuccess()
   }, [phone, code, isLoading, smsLoginAction, afterLoginSuccess])
 
@@ -114,13 +151,50 @@ export default function LoginPage() {
     Taro.showToast({ title: '验证码已发送', icon: 'none' })
   }, [phone, sendingCode, countdown])
 
-  const handleSubmit = tab === 'employee' ? handleEmployeeLogin : handleAdminLogin
+  /**
+   * 工人登录（issue #6467）：工号 + PIN（可选「设备标签」）→ **既有** `workerLogin`
+   * （`POST /api/worker/login`，`skipAuth`：工人身份不走商家 JWT）。
+   *
+   * <p>🔴 成功**只能** `redirectTo` 工人首页：工人没有商家会话，`switchTab` 会落到商家 tabBar
+   * （问黄金策）—— 而工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`）⇒ 落地即 403 / 空页。</p>
+   *
+   * <p>失败**原样展示服务端 message**：格式 / PIN 是否正确 / 角色门禁的单一真值都在服务端，
+   * 前端只挡空输入（否则就是第二套口径）。</p>
+   */
+  const handleWorkerLoginSubmit = useCallback(async () => {
+    if (workerSubmitting) return
+    if (!workerNo.trim() || !pin.trim()) {
+      Taro.showToast({ title: '请输入工号和 PIN', icon: 'none' })
+      return
+    }
+    setWorkerSubmitting(true)
+    setWorkerError('')
+    try {
+      const res = await workerLogin(workerNo.trim(), pin.trim(), deviceLabel.trim() || undefined)
+      if (!res.success) {
+        setWorkerError(res.message || '登录失败，请重试')
+        return
+      }
+      // 只记工号（账号名）；**PIN 绝不落盘**（共用 PAD 上更不能留凭据，issue #6478）
+      rememberAccount('worker', workerNo.trim())
+      Taro.redirectTo({ url: WORKER_HOME_ROUTE })
+    } finally {
+      setWorkerSubmitting(false)
+    }
+  }, [workerNo, pin, deviceLabel, workerSubmitting])
+
+  /** 三个入口各自的提交：三条身份链，互不共用表单也不共用动作 */
+  const handleSubmit =
+    tab === 'employee' ? handleEmployeeLogin : tab === 'admin' ? handleAdminLogin : handleWorkerLoginSubmit
+
+  /** 提交中（工人入口用本地 in-flight 标记；商家两个入口用 store 的 isLoading） */
+  const submitting = tab === 'worker' ? workerSubmitting : isLoading
 
   // 服务条款
   const handleTerms = useCallback(() => {
     Taro.showModal({
       title: '服务条款',
-      content: '本应用面向米高平台商家员工，使用即表示同意平台服务条款。',
+      content: '本应用面向观星台平台商家员工，使用即表示同意平台服务条款。',
       showCancel: false,
       confirmText: '我知道了',
     })
@@ -143,13 +217,15 @@ export default function LoginPage() {
         <View className='login-brand__icon'>
           <Text className='login-brand__icon-text'>米</Text>
         </View>
-        <Text className='login-brand__title'>米宝 · 商家助手</Text>
+        {/* AI 角色标签口径见 frontend/admin-web/src/config/ai-roles.ts（issue #6330/#6333）；
+            本 App 是独立工程，不跨 App 引共享模块（#6306 教训：落在发布集外 ⇒ 白屏）⇒ 本地字面量 + 测试钉值。 */}
+        <Text className='login-brand__title'>黄金策 · 企业智能生产管家</Text>
         <Text className='login-brand__subtitle'>经营数据 · AI 客服 · 移动坐席</Text>
       </View>
 
       {/* 中间登录表单 */}
       <View className='login-form'>
-        {/* 两个入口并列（issue #5721）：员工与管理员是两条不同的身份链，不共用一个表单 */}
+        {/* 三个入口并列（issue #5721 / #6467）：员工、管理员、工人是三条不同的身份链，不共用一个表单 */}
         <View className='login-tabs'>
           <View
             className={`login-tab ${tab === 'employee' ? 'login-tab--active' : ''}`}
@@ -162,6 +238,12 @@ export default function LoginPage() {
             onClick={() => setTab('admin')}
           >
             <Text className='login-tab__text'>管理员登录</Text>
+          </View>
+          <View
+            className={`login-tab ${tab === 'worker' ? 'login-tab--active' : ''}`}
+            onClick={() => setTab('worker')}
+          >
+            <Text className='login-tab__text'>工人登录</Text>
           </View>
         </View>
 
@@ -194,7 +276,7 @@ export default function LoginPage() {
               账号由企业管理员在管理后台「员工管理」中分配（用户名@企业编码）
             </Text>
           </>
-        ) : (
+        ) : tab === 'admin' ? (
           <>
             <View className='login-field'>
               <Text className='login-field__label'>手机号</Text>
@@ -233,18 +315,62 @@ export default function LoginPage() {
               企业管理员用手机号 + 短信验证码登录；员工请用「员工登录」
             </Text>
           </>
+        ) : (
+          <>
+            <View className='login-field'>
+              <Text className='login-field__label'>工号</Text>
+              <Input
+                className='login-field__input'
+                type='text'
+                placeholder='请输入工号'
+                value={workerNo}
+                onInput={(e: any) => setWorkerNo(e.detail.value)}
+              />
+            </View>
+
+            <View className='login-field'>
+              <Text className='login-field__label'>PIN</Text>
+              <Input
+                className='login-field__input'
+                password
+                placeholder='请输入 PIN'
+                value={pin}
+                onInput={(e: any) => setPin(e.detail.value)}
+                onConfirm={handleWorkerLoginSubmit}
+              />
+            </View>
+
+            <View className='login-field'>
+              <Text className='login-field__label'>设备标签（可选）</Text>
+              <Input
+                className='login-field__input'
+                type='text'
+                placeholder='设备标签（可选）'
+                value={deviceLabel}
+                onInput={(e: any) => setDeviceLabel(e.detail.value)}
+              />
+            </View>
+
+            {workerError ? (
+              <Text className='login-form__error'>{workerError}</Text>
+            ) : null}
+
+            <Text className='login-form__hint'>
+              车间工人用工号 + PIN 登录（共用 PAD 不必登录商家账号）；登录后进工人工作台
+            </Text>
+          </>
         )}
       </View>
 
       {/* 底部操作区域 */}
       <View className='login-actions'>
         <Button
-          className={`login-btn ${isLoading ? 'login-btn--loading' : ''}`}
-          loading={isLoading}
-          disabled={isLoading}
+          className={`login-btn ${submitting ? 'login-btn--loading' : ''}`}
+          loading={submitting}
+          disabled={submitting}
           onClick={handleSubmit}
         >
-          {isLoading ? '登录中...' : '登录'}
+          {submitting ? '登录中...' : '登录'}
         </Button>
 
         <View className='login-agreement'>

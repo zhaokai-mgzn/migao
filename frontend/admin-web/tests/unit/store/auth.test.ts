@@ -1,4 +1,4 @@
-// case_ids: AU-001, AU-002, AU-006, API-010, UI-037
+// case_ids: AU-001, AU-002, AU-006, AU-012, API-010, UI-037
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act } from '@testing-library/react'
 
@@ -342,6 +342,55 @@ describe('useAuthStore (Zustand auth store)', () => {
     })
   })
 
+  // ==================== 会话恢复（issue #6352 / AU-012）====================
+  describe('initialize — 整页加载后把 accessToken 装回内存', () => {
+    it('AU-012 无内存 token ⇒ 先经 /api/auth/refresh 换回 accessToken，再拉 /me（顺序不可换）', async () => {
+      const calls: string[] = []
+      mockRefreshToken.mockImplementation(async () => {
+        calls.push('refresh')
+        return { data: { data: { accessToken: 'restored-access' } } }
+      })
+      mockGetUserInfo.mockImplementation(async () => {
+        calls.push('me')
+        return {
+          data: {
+            data: {
+              user: { id: 'u1', nickname: '运营小王' },
+              roles: ['admin'],
+              permissions: ['*'],
+              menus: [],
+              capabilities: { mibaoChat: true },
+            },
+          },
+        }
+      })
+
+      await act(async () => {
+        await useAuthStore.getState().initialize()
+      })
+
+      // ① 靶心：内存里真的装上了 token —— 聊天面是**裸 fetch + Bearer**，没有它就 401
+      expect(useAuthStore.getState().accessToken).toBe('restored-access')
+      // ② 顺序：/me 不下发 token ⇒「先 /me 后 /refresh」等于白跑（改前实测正是「只跑 /me」）
+      expect(calls).toEqual(['refresh', 'me'])
+      expect(useAuthStore.getState().isAuthenticated).toBe(true)
+      expect(useAuthStore.getState().isLoading).toBe(false)
+    })
+
+    it('AU-012 无 cookie（未登录）⇒ refresh 失败不抛异常，保持未认证', async () => {
+      mockRefreshToken.mockRejectedValue(new Error('401'))
+      mockGetUserInfo.mockRejectedValue(new Error('401'))
+
+      await act(async () => {
+        await useAuthStore.getState().initialize()
+      })
+
+      expect(useAuthStore.getState().accessToken).toBeNull()
+      expect(useAuthStore.getState().isAuthenticated).toBe(false)
+      expect(useAuthStore.getState().isLoading).toBe(false)
+    })
+  })
+
   describe('clearAuth', () => {
     it('should reset all auth fields', () => {
       act(() => {
@@ -387,7 +436,7 @@ describe('useAuthStore (Zustand auth store)', () => {
               position: '运营',
               avatar: 'https://oss.example.com/avatar.png',
               tenantId: 1,
-              tenantName: '米高布艺',
+              tenantName: '观星台布艺',
               tenantLogo: 'https://oss.example.com/logo.png',
               status: 'active',
             },
@@ -407,7 +456,7 @@ describe('useAuthStore (Zustand auth store)', () => {
       expect(user.nickname).toBe('张老板')
       expect(user.username).toBe('13800138000')
       expect(user.position).toBe('运营')
-      expect(user.tenantName).toBe('米高布艺')
+      expect(user.tenantName).toBe('观星台布艺')
       expect(user.tenantLogo).toBe('https://oss.example.com/logo.png')
       // 角色/权限/菜单保留（侧边栏过滤等依赖）
       expect(user.roles).toEqual(['admin'])
@@ -415,7 +464,7 @@ describe('useAuthStore (Zustand auth store)', () => {
       expect(user.menus).toEqual([{ key: 'dashboard', name: '经营看板', path: '/dashboard' }])
     })
 
-    it('应把 /api/auth/me 顶层的 capabilities 并入 user（#5642：米宝门禁/看板 AI 卡在页面刷新后仍为真值）', async () => {
+    it('应把 /api/auth/me 顶层的 capabilities 并入 user（#5642：黄金策门禁/看板 AI 卡在页面刷新后仍为真值）', async () => {
       mockGetUserInfo.mockResolvedValue({
         data: {
           data: {
@@ -429,7 +478,7 @@ describe('useAuthStore (Zustand auth store)', () => {
             permissions: ['*'],
             menus: [],
             // 🔴 capabilities 在 /api/auth/me 响应的 data **顶层**（与 user 平级），不在 user 内；
-            // store 漏并 ⇒ user.capabilities 恒 undefined ⇒ 米宝页 gate 恒 return null（全站空白）、
+            // store 漏并 ⇒ user.capabilities 恒 undefined ⇒ 黄金策页 gate 恒 return null（全站空白）、
             // 看板 aiService 指标卡恒不渲染
             capabilities: { mibaoChat: true, aiService: true },
           },

@@ -292,3 +292,47 @@ def test_external_blockers_are_registered_with_command_and_restart_condition() -
     assert "ghcr-prebuilt-images" in ids, f"③ 的 GHCR 阻塞不在册（现取 id：{sorted(ids)}）"
     print(f"外部阻塞在册：{sorted(ids)}")
     assert not problems, "外部阻塞登记不完整：\n" + "\n".join("  " + p for p in problems)
+
+
+def test_skeleton_lists_every_rendered_check_name() -> None:
+    """判据 7（issue #6164）：骨架必须按**渲染后的检查名**逐条登记（matrix 展开）。
+
+    形态 = **一个 job id 上报多个检查名**（拆腿后 = 2 片）。不展开的后果是**双向**的：
+    ⇒ 第二个名无从登记（它进分支保护后判据 3「snapshot ⇄ 台账 required 集合」必红，且
+    `--measure` 每次都会把人工补的那条抹掉 ⇒ **没有任何人能把台账改对**）；
+    ⇒ 采样到的第二个名的读数无处安放。
+    本判据用**内存构造**的 job 直接证明展开（不依赖现取语料长什么样），再按现取 YAML 核一遍读数。
+    """
+    mod = _script()
+    matrix_job = {
+        "name": "ci workflow helper unit tests${{ matrix.shard_suffix }}",
+        "runs-on": "ubuntu-latest",
+        "strategy": {"matrix": {"include": [{"shard": "1/2", "shard_suffix": ""},
+                                            {"shard": "2/2", "shard_suffix": "（后半）"}]}},
+    }
+    assert mod.check_names(matrix_job, "ci-workflow-tests") == [
+        "ci workflow helper unit tests",
+        "ci workflow helper unit tests（后半）",
+    ], "matrix 没有展开（或顺序漂移）⇒ 第二片无从登记"
+    assert mod.check_names({"name": "plain job", "runs-on": "ubuntu-latest"}, "plain") == [
+        "plain job"], "非 matrix 的 job 不得被改形（一个 job = 一条腿）"
+    assert mod.check_names({"runs-on": "ubuntu-latest"}, "jid") == ["jid"], (
+        "没有 `name:` 时必须回落到 job id（现取 YAML 里有这种 job）"
+    )
+    # 普通**列表**矩阵（不是 include）也要展开
+    assert mod.check_names({"name": "x${{ matrix.v }}", "strategy": {"matrix": {"v": ["a", "b"]}}}, "j") == [
+        "xa", "xb"], "列表矩阵没有展开"
+
+    skeleton = mod._legs_skeleton()
+    helper = {lid: leg for lid, leg in skeleton.items() if leg.get("job") == "ci-workflow-tests"}
+    assert len(helper) == 2, (
+        f"现取骨架里 `ci-workflow-tests` 只登记了 {len(helper)} 条腿（拆腿后应为 2 片）：{sorted(helper)}"
+        " ⇒ 第二片进分支保护后，判据 3 必红且无法修对"
+    )
+    assert sorted(leg["check_name"] for leg in helper.values()) == [
+        "ci workflow helper unit tests",
+        "ci workflow helper unit tests（后半）",
+    ], "骨架登记下来的检查名与现取 YAML 的渲染结果不一致"
+    assert not [lid for lid, leg in skeleton.items() if not str(leg.get("check_name") or "").strip()], (
+        "骨架里有检查名为空的腿 ⇒ 采样与 required 口径都会对不上"
+    )

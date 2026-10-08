@@ -3,7 +3,7 @@
 #   本单是**新的一类**（C 端 H5 静态根落地面 + 「手动才发布」的触发面契约），按用例号顺延取 MC-046
 #   （取号时**三轮**现取：写侧 = MC-039 → rebase 后被 main 上的 #5731 占 → 改 MC-040/041
 #    又被在飞分支占 ⇒ 定 MC-046；口径 = main 已占 ∪ 在飞分支已占 之后的下一个空号）。）
-r"""C 端小布 H5（`frontend/mini-app` 的 `build:h5` 产物）**静态根落地面**的常驻判据（issue #4184）。
+r"""C 端元元 H5（`frontend/mini-app` 的 `build:h5` 产物）**静态根落地面**的常驻判据（issue #4184）。
 
 ## 病根（开工前现取复算，2026-09-27）
 
@@ -229,7 +229,7 @@ def _repo_live_lines(rel: str, src: str | None = None) -> list:
     return [raw for raw in src.splitlines() if raw.strip() and not raw.lstrip().startswith("#")]
 
 
-def _dist_delivery_problems(wf, wf_src=None, dist_src=None) -> list:
+def _dist_delivery_problems(wf, wf_src=None, dist_src=None, ci_src=None) -> list:
     """🔴 **dist 送达通路**（issue #6095 第三层）的接线判据。
 
     病（run 37078030820 / sha `d4babbf17`）：`Build H5` 的产物 `frontend/mini-app/dist/**`
@@ -319,6 +319,28 @@ def _dist_delivery_problems(wf, wf_src=None, dist_src=None) -> list:
         )
     body = _dist_ref_shape_problems(live_text)
     problems.extend(f"🔴 `{DIST_PUSH_SCRIPT}` 的{hit}" for hit in body)
+
+    # —— 🔴🔴 **两个 ref 各司其职**（issue #6095 第五层；run 37084280991）——
+    # 病：引导按**产物 ref** 取执行体 ⇒ 取回的 tarball 里只有 17 个 dist 文件、**没有远端脚本**
+    #     ⇒ `bash: …/c-end-h5-publish-remote.sh: No such file or directory`（远端 Failed）。
+    # 这条静态判据让「一个 ref 干两件事」在任何改动路径上当场点名；组合层的**行为**判据
+    # （`TestTwoRefsCombination`：真造两个提交、真取回、真执行）证明它**真的**解得开 CI。
+    ci_live = "\n".join(_repo_live_lines(CI_SCRIPT, ci_src))
+    if BOOT_SCRIPT_REF_FORM not in ci_live:
+        problems.append(
+            f"🔴 `{CI_SCRIPT}` 的引导没有按**执行体 ref**（`{BOOT_SCRIPT_REF_FORM}`）取回远端脚本 —— "
+            "按产物 ref 取会拿到「只有 dist 文件」的 tarball ⇒ 远端 `No such file or directory`（#6095 第五层）"
+        )
+    if BOOT_PRODUCT_REF_FORM in ci_live:
+        problems.append(
+            f"🔴 `{CI_SCRIPT}` 的引导**按产物 ref**（`{BOOT_PRODUCT_REF_FORM}`）取远端脚本 —— "
+            "产物 ref 的 tarball 里没有 `deploy/swas/c-end-h5-publish-remote.sh`（这正是第五层的形态）"
+        )
+    if CI_PUBLISH_PRODUCT_REF_FORM not in ci_live:
+        problems.append(
+            f"🔴 `{CI_SCRIPT}` 没有把**产物 ref** 传给远端（缺 `{CI_PUBLISH_PRODUCT_REF_FORM}` 的可执行行）—— "
+            "远端 `stage_product()` 就没有取产物的 ref 了"
+        )
     return problems
 
 
@@ -575,11 +597,15 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
             ci_src, re.M | re.S,
         )
         bootstrap = m.group(0) if m else ci_live
-        # ⚠️ 用正则而不是逐字串：`tar.gz/$SHA` 在 shell 里可能被拆成拼接形态
-        #    （`tar.gz/'"$SHA"'`，即单引号 + 双引号拼接）⇒ 逐字比对会把**合法**写法判红。
-        #    判的是「URL 尾巴上跟的是 `$SHA` 这个变量」这件事本身。
-        if not re.search(r'tar\.gz/["\']{0,2}\$SHA', bootstrap):
-            problems.append("引导必须按**不可变 sha** 从 codeload 取回远端执行体（`tar.gz/$SHA`）")
+        # ⚠️ 用正则而不是逐字串：在 shell 里可能被拆成拼接形态（`tar.gz/'"$SCRIPT_SHA"'`，
+        #    即单引号 + 双引号拼接）⇒ 逐字比对会把**合法**写法判红。判的是「URL 尾巴上跟的是
+        #    **执行体 ref** 这个变量」这件事本身（#6095 第五层：它**不能**是产物 ref）。
+        if not re.search(r'tar\.gz/["\']{0,2}\$\{?SCRIPT_SHA', bootstrap):
+            problems.append(
+                "引导必须按**执行体 ref**（不可变 sha）从 codeload 取回远端执行体"
+                "（`tar.gz/$SCRIPT_SHA`；用产物 ref 取会拿到「只有 dist 文件」的 tarball ⇒ "
+                "远端 `No such file or directory`）"
+            )
         if "refs/heads/" in bootstrap:
             problems.append("引导里出现按分支取（`refs/heads/…`）—— 取回通道必须按不可变 sha，否则与 CI 构建漂移")
         if "raw.githubusercontent.com" in ci_live:
@@ -638,7 +664,7 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
             problems.append(f"远端脚本里有未限定目标的破坏性语句（红线）：{line}")
 
     # —— 🔴 dist 送达通路（issue #6095 第三层）：CI 构建的产物必须**真的**到得了远端 ——
-    problems.extend(_dist_delivery_problems(wf, wf_src, dist_src))
+    problems.extend(_dist_delivery_problems(wf, wf_src, dist_src, ci_src))
 
     return problems
 
@@ -646,7 +672,16 @@ def _workflow_problems(wf, remote_src=None, ci_src=None, verify_src=None, wf_src
 # ── 命令内容上限（issue #6095）：**真跑组装段**（注入夹具）的字节判据 ─────────
 # 结构层的 token 扫描（`_workflow_problems`）判「形态」；本节判**读数**：真的把脚本跑起来，
 # 读它打印出来的命令内容与字节数。两节互补：形态容易被绕过（换个写法），读数不会。
+# **执行体 ref**（= CI 跑的那个源码 commit；含 `deploy/swas/c-end-h5-publish-remote.sh`）
 CI_SHA = "f3e49752fa140dd6af4da6b75948e541f90c76da"
+# **产物 ref**（= `h5-dist` 上只含 dist 的孤儿单提交）；**刻意与 `CI_SHA` 不同** ——
+# 第五层的病灶就是夹具把它们当成了同一个（于是两侧的桩都绕过了对方的假设）。
+CI_DIST_SHA = "0b7a1c3d5e6f408192a3b4c5d6e7f8091a2b3c4d"
+# 引导**必须**按执行体 ref 取回（这两个字符串是同一件事的正反两面，判据与红证共用）
+BOOT_SCRIPT_REF_FORM = 'tar.gz/\'"$SCRIPT_SHA"\''
+BOOT_PRODUCT_REF_FORM = 'tar.gz/\'"$SHA"\''
+# 远端取产物用的变量（**不许**被换成执行体 ref）
+CI_PUBLISH_PRODUCT_REF_FORM = "export H5_PUBLISH_SHA=$SHA"
 CI_INSTANCE = "b23c69e599524b1da719734f72e6a0e3"
 CI_REGION = "cn-hangzhou"
 # 组装预算（**设计判据**，不是上限）：真实读数 ~795 字节。取 1024 当「有没有人把大块文本
@@ -654,7 +689,7 @@ CI_REGION = "cn-hangzhou"
 COMMAND_BUDGET_BYTES = 1024
 
 
-def _ci_stub(tmp_path: Path) -> Path:
+def _ci_stub(tmp_path: Path, ci_src: str | None = None) -> Path:
     """把 CI 脚本放进一个**结构完整的**临时检出（脚本自身算出的 `dist/` 路径要能过前置断言）。
 
     目录形状必须与真检出一致（`<root>/deploy/scripts/…`）—— 脚本用 `$(dirname $0)/../..` 求根，
@@ -665,12 +700,14 @@ def _ci_stub(tmp_path: Path) -> Path:
     (root / "deploy" / "scripts").mkdir(parents=True)
     (root / "frontend" / "mini-app" / "dist" / "js").mkdir(parents=True)
     dst = root / "deploy" / "scripts" / CI_SCRIPT.name
-    dst.write_bytes(CI_SCRIPT.read_bytes())
+    dst.write_text(ci_src if ci_src is not None else CI_SCRIPT.read_text(encoding="utf-8"),
+                   encoding="utf-8")
     (root / "frontend" / "mini-app" / "dist" / "index.html").write_text("<html>stub</html>\n", encoding="utf-8")
     return dst
 
 
-def _run_ci_script(dst: Path, remote: Path, extra_env: dict | None = None):
+def _run_ci_script(dst: Path, remote: Path, extra_env: dict | None = None,
+                   dist_sha: str = CI_DIST_SHA):
     """真跑 CI 脚本的**组装段**（`H5_PRINT_COMMAND_CONTENT=1`）—— 不联网、不发起任何云调用。
 
     返回 `(proc, content, reported_bytes)`：`content` 是**标记之间**的那份命令内容
@@ -685,8 +722,9 @@ def _run_ci_script(dst: Path, remote: Path, extra_env: dict | None = None):
     env.update(extra_env or {})
     # ⚠️ 显式 `encoding="utf-8", errors="replace"`：CI 脚本会打印中文，而本机 locale 下
     #    子进程（如 curl）的错误文本可能不是 UTF-8 ⇒ 不显式指定会在某些机器上**解码崩**（假红）。
+    # 第 5 参数 = **产物 ref**（#6095 第五层起**必须**显式给：源码 commit 不再被当产物 ref 回落）
     proc = subprocess.run(
-        ["bash", str(dst), CI_INSTANCE, CI_REGION],
+        ["bash", str(dst), CI_INSTANCE, CI_REGION, "", "", dist_sha],
         capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=120,
     )
     # BEGIN 标记在 **stdout** 上（命令内容也走 stdout；`say` 的前言在它前面）⇒ 从标记切到行尾。
@@ -755,7 +793,7 @@ class TestCommandContentLimit:
         assert "raw.githubusercontent.com" not in content, "引导用了 raw（杭州机房实测超时）"
         # 语义不放宽：远端拿到的仍是这四个环境变量 + `--apply`
         for token in ('export H5_STATIC_ROOT=/opt/migao-deploy/h5',
-                      f"export H5_PUBLISH_SHA={CI_SHA}",
+                      f"export H5_PUBLISH_SHA={CI_DIST_SHA}",
                       "export H5_MANIFEST=.migao-c-end-h5-manifest.json",
                       'export H5_RESERVED_PREFIXES="w b"',
                       "export H5_TAKEOVER_FIRST_PUBLISH=1"):
@@ -797,7 +835,7 @@ class TestCommandContentLimit:
         assert "未做任何发布动作" in content, "引导取不到执行体时没有具名失败出口"
         # 真跑：坏 sha ⇒ 期望非零退出 + 具名报文
         bad = tmp_path / "bad-sha.sh"
-        bad.write_text(content.replace(CI_SHA, "0" * 40) + "\n", encoding="utf-8")
+        bad.write_text(content.replace(CI_SHA, "0" * 40) + "\n", encoding="utf-8")  # 执行体 ref 取不到
         got = subprocess.run(["bash", str(bad)], capture_output=True, text=True,
                              encoding="utf-8", errors="replace", timeout=300)
         assert got.returncode != 0, "取不到执行体竟然退 0（静默半成品发布）"
@@ -870,13 +908,28 @@ class TestCiSideInjectedValuesAndMessages:
         mutant = src.replace("\\`refs/heads/*\\`、\\`h5-dist\\`、\\`main\\`",
                              "`refs/heads/*`、`h5-dist`、`main`")
         assert mutant != src, "变异注入未生效（找不到转义后的反引号锚点）"
-        assert "\\`" not in mutant.split("DIST_SHA 必须是")[1][:400], "变异没进入目标文案"
+        # 断言变异**落到了目标文案**（不是靠窗口启发式：那段文案会随迭代增长）
+        assert "`refs/heads/*`、`h5-dist`、`main`" in mutant, "变异没进入目标文案"
         dst.write_text(mutant, encoding="utf-8")
         proc = self._run_ci(tmp_path, "a" * 45, dst=dst)
         assert proc.returncode != 0
         assert "command not found" in proc.stderr or "No such file or directory" in proc.stderr, (
             f"撤掉转义后竟没有命令替换噪音（那条断言是空断言）：\n{proc.stderr}"
         )
+
+    def test_empty_executor_ref_dies_with_a_clean_named_message(self, tmp_path):
+        """⑤ 执行体 ref 缺失 ⇒ 具名判红，且文案**干净**（不含命令替换噪音）。
+
+        ⚠️ 这段文案**真的**踩过一次：`请给 `H5_PUBLISHED_COMMIT`` 里那对反引号忘了转义
+        ⇒ bash 去执行 `H5_PUBLISHED_COMMIT` ⇒ 报错分支凭空多出一行 `command not found`、
+        且文案被吃掉一块。抓到它的是**类级判据 6**（全仓 `*.sh` 射程）—— 这条行为判据把它钉在这一层。
+        """
+        proc = self._run_ci(tmp_path, CI_DIST_SHA, {"H5_PUBLISHED_COMMIT": "", "GITHUB_SHA": ""})
+        assert proc.returncode != 0, f"执行体 ref 为空竟被放行：\n{proc.stdout}"
+        assert "执行体 ref 为空" in proc.stderr, f"判红不具名：\n{proc.stderr}"
+        for noise in ("command not found", "No such file or directory"):
+            assert noise not in proc.stderr, f"文案被 bash 当命令执行了（`{noise}`）：\n{proc.stderr}"
+        assert "H5_PUBLISHED_COMMIT" in proc.stderr, f"文案里的行内代码被吃掉了：\n{proc.stderr}"
 
     def test_published_commit_must_be_a_commit_sha_or_empty(self, tmp_path):
         """② 新加的注入值 `H5_PUBLISHED_COMMIT` 必须过同一道白名单（空 = 人工排障，允许）。"""
@@ -890,6 +943,228 @@ class TestCiSideInjectedValuesAndMessages:
         good = self._run_ci(tmp_path / "good", "a" * 40, {"H5_PUBLISHED_COMMIT": "b" * 40})
         assert good.returncode == 0 and "export H5_PUBLISHED_COMMIT=" + "b" * 40 in good.stdout, (
             f"40 位十六进制没进命令内容：\n{good.stdout}"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 组合层：**引导取执行体** 与 **远端取产物** 必须是两个不同的 ref（#6095 第五层）
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# 事故（run 37084280991 / sha `c22514360`）：第三层把命令内容的第 5 参数换成**产物 ref** 之后，
+# 引导**也**按它取 codeload tarball ⇒ 那个 tarball 里只有 **17 个 dist 文件**、**没有远端脚本**
+# ⇒ `bash: /tmp/tmp.XXXX/deploy/swas/c-end-h5-publish-remote.sh: No such file or directory`
+#   （远端 `InvocationStatus=Failed`，线上产物照旧陈旧）。
+#
+# ⚠️ 为什么前四层的判据全都放它过去了（本节要补的就是这个盲区）：
+#   · 第三层的桩演练把「远端执行」**打桩**了（只验产物到达 + 按 sha 取回有 index.html，
+#     从没真去取回**执行体**并执行）；
+#   · 第二层的桩演练当时还没有「产物 ref ≠ 源码 commit」这个形态。
+#   ⇒ 两侧各自的假设都成立，**组合**不成立。这与 #6095 第三/四层同族：
+#     「每一块的判据都绿，拼起来错」—— 所以判据必须落在**组合**上（真取回 + 真执行）。
+
+
+def _orphan_commit_with_paths(work: Path, paths: list) -> str:
+    """在 `work` 里用**临时索引**造一个只含 `paths` 的孤儿提交（返回 sha）。"""
+    index = work.parent / f"{work.name}-idx"
+    env = {
+        **os.environ,
+        "GIT_INDEX_FILE": str(index),
+        "GIT_AUTHOR_NAME": "fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+        "GIT_COMMITTER_NAME": "fixture", "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
+    }
+    subprocess.run(["git", "init", "-q"], cwd=work, check=True, capture_output=True)
+    subprocess.run(["git", "read-tree", "--empty"], cwd=work, env=env, check=True, capture_output=True)
+    subprocess.run(["git", "add", "-f", *paths], cwd=work, env=env, check=True, capture_output=True)
+    tree = subprocess.run(["git", "write-tree"], cwd=work, env=env, check=True,
+                          capture_output=True, text=True).stdout.strip()
+    return subprocess.run(["git", "commit-tree", tree, "-m", "fixture"],
+                          cwd=work, env=env, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def _two_ref_fixture(tmp_path: Path) -> dict:
+    """**一个裸仓、两个 ref**（= 生产拓扑）：
+
+    · `refs/heads/main` = **执行体 ref**（含 `deploy/swas/c-end-h5-publish-remote.sh` 的提交）；
+    · `refs/heads/h5-dist` = **产物 ref**（由**真** `c-end-h5-dist-push.sh` 产出的孤儿单提交）。
+    """
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
+
+    src_work = tmp_path / "src-work"
+    (src_work / "deploy" / "swas").mkdir(parents=True)
+    (src_work / "deploy" / "swas" / REMOTE_SCRIPT.name).write_bytes(REMOTE_SCRIPT.read_bytes())
+    s_sha = _orphan_commit_with_paths(src_work, ["deploy"])
+    subprocess.run(["git", "push", "-q", str(origin), f"{s_sha}:refs/heads/main"],
+                   cwd=src_work, check=True, capture_output=True)
+
+    (tmp_path / "emptyhome").mkdir(exist_ok=True)
+    prod = tmp_path / "ci-checkout"
+    (prod / "frontend" / "mini-app" / "dist" / "js").mkdir(parents=True)
+    (prod / "frontend" / "mini-app" / "dist" / "index.html").write_text(
+        '<!doctype html><title>双 ref 桩产物</title><script defer src="/js/app.js"></script>',
+        encoding="utf-8")
+    (prod / "frontend" / "mini-app" / "dist" / "js" / "app.js").write_text("// two-ref stub\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=prod, check=True, capture_output=True)
+    subprocess.run(["git", "remote", "add", "origin", str(origin)], cwd=prod, check=True, capture_output=True)
+    push = subprocess.run(["bash", str(REPO_ROOT / DIST_PUSH_SCRIPT), "frontend/mini-app/dist", DIST_BRANCH],
+                          cwd=prod, env=_dist_push_env(prod), capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=180)
+    assert push.returncode == 0, push.stdout + push.stderr
+    d_sha = _pushed_sha(push)
+    assert d_sha != s_sha, "夹具里两个 ref 撞成同一个对象（夹具不成立）"
+    return {"origin": origin, "S": s_sha, "D": d_sha, "prod": prod}
+
+
+def _archive_at(repo: Path, sha: str, dest: Path) -> None:
+    """`git archive <sha>` + `tar x`（= 引导 / 远端 `curl tar.gz/<sha>` + `tar xzf` 的等价物）。"""
+    arch = subprocess.run(["git", "archive", "--format=tar", sha], cwd=str(repo), capture_output=True)
+    assert arch.returncode == 0, arch.stderr
+    dest.mkdir(parents=True, exist_ok=True)
+    tar = subprocess.run(["tar", "xf", "-", "-C", str(dest)], input=arch.stdout, capture_output=True)
+    assert tar.returncode == 0, tar.stderr
+
+
+def _two_ref_drill(tmp_path: Path, fx: dict, ci_src: str | None = None) -> dict:
+    """**组合判据（单一实现）**：跑真组装段 → 解析两个 ref → **真取回**两棵 tarball → 逐条对账。
+
+    返回观测字典（含 `problems`）。
+    """
+    dst = _ci_stub(tmp_path, ci_src=ci_src)
+    proc, content, _ = _run_ci_script(dst, REMOTE_SCRIPT, dist_sha=fx["D"],
+                                      extra_env={"H5_PUBLISHED_COMMIT": fx["S"], "GITHUB_SHA": fx["S"]})
+    assert proc.returncode == 0, proc.stderr
+    out: dict = {"content": content, "problems": []}
+    m = re.search(r"tar\.gz/([0-9a-f]{0,40})", content)
+    out["boot"] = m.group(1) if m else ""
+    m2 = re.search(r"export H5_PUBLISH_SHA=([0-9a-f]{0,40})", content)
+    out["product"] = m2.group(1) if m2 else ""
+
+    if out["boot"] != fx["S"]:
+        out["problems"].append(
+            f"引导取回的 ref 不是**执行体 ref**：{out['boot'] or '(缺)'} ≠ {fx['S']}"
+            "（取回了产物 ref ⇒ 那个 tarball 里没有远端脚本）"
+        )
+    if out["product"] != fx["D"]:
+        out["problems"].append(
+            f"远端取产物的 ref 不是**产物 ref**：{out['product'] or '(缺)'} ≠ {fx['D']}"
+        )
+    if out["boot"] and out["boot"] == out["product"]:
+        out["problems"].append(
+            "两个 ref 被写成同一个（#6095 第五层病灶形态）—— 一个 ref 干不了两件事"
+        )
+
+    # 真取回：① 执行体 ref 必须**确实含**远端脚本 ② 产物 ref 必须**确实含** index.html
+    out["exec_dir"] = tmp_path / "fetch-exec"
+    _archive_at(fx["origin"], out["boot"] or fx["S"], out["exec_dir"])
+    out["executor"] = out["exec_dir"] / "deploy" / "swas" / REMOTE_SCRIPT.name
+    out["executor_present"] = out["executor"].is_file()
+    if not out["executor_present"]:
+        out["problems"].append(
+            f"按引导 ref 取回的 tarball 里**没有** `deploy/swas/{REMOTE_SCRIPT.name}`"
+            " ⇒ 远端会 `No such file or directory`"
+        )
+    out["prod_dir"] = tmp_path / "fetch-prod"
+    _archive_at(fx["origin"], out["product"] or fx["D"], out["prod_dir"])
+    out["dist_dir"] = out["prod_dir"] / "frontend" / "mini-app" / "dist"
+    out["index_present"] = (out["dist_dir"] / "index.html").is_file()
+    if not out["index_present"]:
+        out["problems"].append(
+            "按产物 ref 取回的 tarball 里**没有** `frontend/mini-app/dist/index.html`"
+            "（源码 tarball 里没有 dist ⇒ 远端会「发布源里没有 index.html」）"
+        )
+    return out
+
+
+def _run_fetched_executor(r: dict, tmp_path: Path, fx: dict) -> tuple:
+    """**真执行**「按执行体 ref 取回的那份远端脚本」：产物用取回的 dist、静态根用沙箱。
+
+    桩只桩「云调用」这一层（远端脚本本身不调云）；「取回并执行」这一段是真的。
+    """
+    root = _make_static_root(tmp_path, manifest=True)
+    env = dict(os.environ)
+    env["H5_STATIC_ROOT"] = str(root)
+    env["H5_PUBLISH_SHA"] = fx["D"]              # 产物 ref（只用于溯源/审计）
+    env["H5_PUBLISHED_COMMIT"] = fx["S"]         # 源码 commit（= 执行体 ref）
+    proc = subprocess.run(
+        ["bash", str(r["executor"]), "--from-dir", str(r["dist_dir"]), "--apply"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env=env, timeout=180, cwd=str(REPO_ROOT),
+    )
+    return root, proc
+
+
+class TestTwoRefsCombination:
+    """🔴 第五层（#6095；run 37084280991）：引导按**执行体 ref** 取脚本、远端按**产物 ref** 取产物。
+
+    判据落在**组合**上：真造两个提交（一个含脚本、一个只含 dist）→ 真跑组装段 → 真 `git archive`
+    取回两棵 tarball → 真执行取回的执行体。注入式红证 = 把两个 ref 写成同一个（本次形态）。
+    """
+
+    def test_two_refs_are_distinct_and_each_carries_what_it_must(self, tmp_path):
+        """① 组合成立：引导 ref 含脚本、产物 ref 含 index.html、两者**不同**，且能真的发布一次。"""
+        fx = _two_ref_fixture(tmp_path)
+        r = _two_ref_drill(tmp_path, fx)
+        assert r["problems"] == [], "组合判据不通过：\n  - " + "\n  - ".join(r["problems"])
+        assert r["boot"] == fx["S"] and r["product"] == fx["D"], f"{r['boot']} / {r['product']}"
+        assert r["boot"] != r["product"]
+        # 「一个 ref 干两件事」在**对象层**就不可能：产物 ref 里没有 `deploy/`，
+        # 执行体 ref 里没有 `frontend/mini-app/dist/`
+        assert not (r["prod_dir"] / "deploy").exists(), "产物 ref 里竟然有 deploy/（夹具不成立）"
+        assert not (r["exec_dir"] / "frontend" / "mini-app" / "dist").exists(), (
+            "执行体 ref 里竟然有 dist/（那第三层的病灶就不存在了 —— 夹具不成立）"
+        )
+        # 真执行：取回的执行体 + 取回的产物 ⇒ 发布成功，且清单里两个 ref 各就各位
+        root, proc = _run_fetched_executor(r, tmp_path, fx)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert (root / "index.html").is_file(), "取回并执行后产物没落位"
+        manifest = json.loads((root / MANIFEST).read_text(encoding="utf-8"))
+        assert manifest["published_dist_ref"] == fx["D"], manifest
+        assert manifest["published_commit"] == fx["S"], manifest
+
+    def test_same_ref_injection_reproduces_the_remote_failure(self, tmp_path):
+        """② **注入式红证**：把引导的 URL 改回产物 ref（= 本次事故形态）⇒ 判红 + 复现远端那句报错。"""
+        fx = _two_ref_fixture(tmp_path)
+        src = CI_SCRIPT.read_text(encoding="utf-8")
+        mutant = src.replace(BOOT_SCRIPT_REF_FORM, BOOT_PRODUCT_REF_FORM)
+        assert mutant != src and BOOT_SCRIPT_REF_FORM not in mutant, "变异注入未生效"
+        r = _two_ref_drill(tmp_path, fx, ci_src=mutant)
+        assert r["problems"], "两个 ref 写成同一个竟没判红（= 空断言）"
+        assert any("执行体 ref" in p for p in r["problems"]), r["problems"]
+        assert r["boot"] == fx["D"] and r["product"] == fx["D"], "变异没让引导改用产物 ref"
+        assert not r["executor_present"], "取回的 tarball 里竟然有远端脚本（夹具不成立）"
+        # 复现 CI 那句：bash 去执行取回目录里**不存在**的脚本（远端 `InvocationStatus=Failed`）
+        got = subprocess.run(["bash", str(r["executor"])], capture_output=True, text=True,
+                             encoding="utf-8", errors="replace")
+        assert got.returncode != 0, "执行不存在的脚本竟然成功"
+        assert "No such file or directory" in (got.stdout + got.stderr), (
+            f"没复现出 CI 那句报错：\n{got.stdout}\n{got.stderr}"
+        )
+
+    def test_product_ref_injection_is_caught(self, tmp_path):
+        """③ **注入式红证**：把 `H5_PUBLISH_SHA` 也改成执行体 ref ⇒ 判红（源码 tarball 里没有 dist）。"""
+        fx = _two_ref_fixture(tmp_path)
+        src = CI_SCRIPT.read_text(encoding="utf-8")
+        mutant = src.replace(CI_PUBLISH_PRODUCT_REF_FORM, "export H5_PUBLISH_SHA=$SCRIPT_SHA")
+        assert mutant != src and CI_PUBLISH_PRODUCT_REF_FORM not in mutant, "变异注入未生效"
+        r = _two_ref_drill(tmp_path, fx, ci_src=mutant)
+        assert r["problems"], "产物 ref 漂到执行体 ref 竟没判红（= 空断言）"
+        assert any("产物 ref" in p for p in r["problems"]), r["problems"]
+        assert not r["index_present"], "源码 tarball 里竟然有 dist/index.html（夹具不成立）"
+
+    def test_audit_fields_never_conflate_the_two_refs(self, tmp_path):
+        """④ 审计面：`published_commit`（源码）与 `published_dist_ref`（产物）**不许互相顶替**。
+
+        病史：清单里曾写 `published_commit or sha`（`sha` = 产物 ref）⇒ 没给源码 commit 时，
+        清单会把**产物 ref** 标成「源码 commit」—— 又一个两个 ref 混用的出口。
+        """
+        fx = _two_ref_fixture(tmp_path)
+        r = _two_ref_drill(tmp_path, fx)
+        assert r["problems"] == [], r["problems"]
+        root, proc = _run_fetched_executor(r, tmp_path, fx)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        manifest = json.loads((root / MANIFEST).read_text(encoding="utf-8"))
+        assert manifest["published_commit"] != manifest["published_dist_ref"], (
+            f"两个审计字段被写成同一个值（{manifest['published_commit']}）⇒ 归因不了"
         )
 
 
@@ -1457,6 +1732,13 @@ class TestRedProofs:
         non_orphan = dist_push_src.replace(DIST_COMMIT_FORM, 'git commit-tree "$TREE" -p "$SHA"')
         assert non_orphan != dist_push_src, "变异注入未生效（找不到 commit-tree 锚点）"
 
+        # 第五层（组合层）：两个 ref 各司其职 —— 两种「混用」形态都必须被判红
+        boot_uses_product_ref = ci_src.replace(BOOT_SCRIPT_REF_FORM, BOOT_PRODUCT_REF_FORM)
+        assert boot_uses_product_ref != ci_src, "变异注入未生效（找不到引导 URL 的执行体 ref）"
+        product_ref_drifted = ci_src.replace(CI_PUBLISH_PRODUCT_REF_FORM,
+                                             "export H5_PUBLISH_SHA=$SCRIPT_SHA")
+        assert product_ref_drifted != ci_src, "变异注入未生效（找不到远端产物 ref 的 export）"
+
         samples = {
             "CI：去掉「线上哈希 == 本次构建」断言": (ci_src, no_identity),
             "CI：去掉保留子树自证断言": (ci_src, no_protected),
@@ -1464,6 +1746,8 @@ class TestRedProofs:
             "CI：新增未限定目标的删除": (ci_src, root_delete),
             "远端：新增未限定目标的删除": (remote_src, remote_root_delete),
             "远端：去掉「产物顶层出现保留前缀 ⇒ die」": (remote_src, drop_reserved_check),
+            "CI：引导改回按**产物 ref** 取执行体（#6095 第五层形态）": (ci_src, boot_uses_product_ref),
+            "CI：远端产物 ref 漂成执行体 ref（两个 ref 混用的反向）": (ci_src, product_ref_drifted),
         }
         undetected = []
         for name, (src, mutant) in samples.items():
@@ -1619,7 +1903,7 @@ def _make_dist(tmp_path: Path, ref: str = "/js/app.js", app_js: str = "// C 端�
     (dist / "js").mkdir(parents=True, exist_ok=True)
     (dist / "css").mkdir(exist_ok=True)
     (dist / "index.html").write_text(
-        f'<!doctype html><title>米高窗帘 · 小布智能助手</title><script defer src="{ref}"></script>'
+        f'<!doctype html><title>观星台窗帘 · 元元智能助手</title><script defer src="{ref}"></script>'
         '<link href="/css/app.css" rel="stylesheet">',
         encoding="utf-8",
     )
@@ -1811,13 +2095,26 @@ def test_reserved_subtree_digest_really_moves_when_touched(tmp_path):
 # 「上一版线上产物」的一页（08-30 那次发布的形态：结构相同、标题与注释不同 ⇒ 哈希不同）
 STALE_C_END_PAGE = (
     '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"/>'
-    "<title>米高窗帘 · 小布智能助手</title>"
+    "<title>观星台窗帘 · 元元智能助手</title>"
     "<script>window.TARO_ENV = 'h5'</script>"
     '<script defer="defer" src="/js/2.js"></script>'
     '<script defer="defer" src="/js/app.js"></script>'
     '<link href="/css/app.css" rel="stylesheet"></head>'
     '<body><div id="app"></div><!-- 08-30 那版 --></body></html>'
 ).encode("utf-8")
+
+
+def _content_type_for(path: str, bad_js_mime: bool = False) -> str:
+    """按扩展名给 Content-Type（issue #6293）。
+
+    `bad_js_mime=True` 注入**线上实测的坏形态**：`.js`/`.mjs` 以 `application/octet-stream` 发出
+    ⇒ 浏览器拒绝执行 module script ⇒ 整页白屏（而身份 / 字节全对）。
+    """
+    if path.endswith((".js", ".mjs")):
+        return "application/octet-stream" if bad_js_mime else "text/javascript"
+    if path.endswith(".css"):
+        return "text/css"
+    return "text/html; charset=utf-8"
 
 
 class _NginxishServer:
@@ -1830,6 +2127,7 @@ class _NginxishServer:
       · ``b_overwritten`` —— 根发布把**商家端** `/b/` 覆盖成了 C 端产物（红线）
       · ``root_stray_ref``—— 根 index.html 引用了 `/b/js/app.js`（引用面串端）
       · ``root_falls_to_b`` —— 根级深层路径被 `/b/` 的 fallback 吃掉（路由面串端）
+      · ``bad_js_mime``   —— 入口脚本（`.js`/`.mjs`）被发成 `application/octet-stream`（issue #6293）
     """
 
     def __init__(self, root: Path, built: bytes, mode: str = "ok"):
@@ -1885,7 +2183,10 @@ class _NginxishServer:
             path = self.path.split("?", 1)[0]
             body = self.server.route(path)  # type: ignore[attr-defined]
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header(
+                "Content-Type",
+                _content_type_for(path, bad_js_mime=getattr(self.server, "mode", "ok") == "bad_js_mime"),
+            )
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -1894,6 +2195,8 @@ class _NginxishServer:
         outer = self
 
         class _Server(http.server.ThreadingHTTPServer):
+            mode = outer.mode  # handler 要能看见 bad_js_mime 注入（issue #6293 的红证）
+
             def route(self, path):
                 return outer._route(path)
 
@@ -1953,6 +2256,9 @@ def test_verify_served_is_green_on_correct_landing(tmp_path):
         ("b_overwritten", "/b/ 返回的是"),
         ("root_stray_ref", "别的应用的命名空间"),
         ("root_falls_to_b", "期望回落到**根 index.html**"),
+        # issue #6293：入口脚本被发成 octet-stream ⇒ 浏览器拒绝执行 module script ⇒ 整页白屏，
+        # 而身份 / 串端 / 字节全对（所以 ①~④ 会全绿）⇒ 必须由 ⑤ 判红。
+        ("bad_js_mime", "∉ JS MIME 白名单"),
     ],
 )
 def test_verify_served_is_red_on_broken_landings(tmp_path, mode, marker):

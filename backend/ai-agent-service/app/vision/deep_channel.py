@@ -26,15 +26,18 @@ Agent 只补页面做不到的三种，其中前两种的**可判定部分**落�
 
 ```python
 {"component": "page_fill", "target_type": "product" | "order",
- "fields": [{"key", "label", "value", "source", "reason", "candidates", "note", "note_source"}]}
+ "fields": [{"key", "label", "value", "source", "reason", "candidates", "note", "note_source",
+             "reference"}]}
 ```
 
 - `value` 非空 ⇒ `source` 必为 `[图片识别]` 或 `[米宝解读]`（**来源可区分**是硬要求：
   否则商家无法判断该信哪一格）；
-- `value` 为空 ⇒ 必有 `reason`（看得懂的理由），`candidates` 只在歧义时非空。
+- `value` 为空 ⇒ 必有 `reason`（看得懂的理由），`candidates` 只在歧义时非空；
+- `reference` 非空（issue #6529）⇒ 图上抄到的**原文**但**没被采纳**（置信度不足）：
+  消费侧只用来**查目录 / 展示**，**绝不据此填表** —— 它与 `value` 互斥（`value` 仍为空）。
 """
 import difflib
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from app.vision.recognizer import FIELD_MARKER
 from app.vision.targets import TARGET_FIELDS, TargetField
@@ -55,13 +58,19 @@ CANDIDATE_CUTOFF = 0.0
 #: 留空理由的**固定措辞**（判据按它断言；改措辞 = 改判据，必须同时改测试）
 AMBIGUOUS_HINT = "宁可不填"
 
-#: **哪些格允许 Agent 的领域解读填值**（issue #5368 的风险不对称）：
-#: - 商品侧只放**看图看得出门道、且不直接进结算**的两格（材质 / 工艺）；
+#: **哪些格允许 Agent 的领域解读填值**（issue #5368 的风险不对称；范围按 #6361 放开）：
+#: - 商品侧放**看图看得出门道、且不直接进结算**的五格（名称 / 材质 / 工艺 / 颜色 / 商品描述）——
+#:   用户裁定「不可信没关系，先推理一份贴近的结论」（2026-10-05）；推理值一律标 `[米宝解读]`，
+#:   且**只在图上没写明那一格时**才落地（**不覆盖**已识别格 / 歧义格）；
 #: - 🔴 订单侧**一个都不放** —— 订单侧风险更高（客户信息错 ⇒ **货发错人**），
 #:   解读只用来解释，绝不变成本单里的值（与包 1 `TARGET_POLICY` 的严格度同源）。
-#: 售价 / 门幅**不在其中**：结算面只认图上写明的内容（猜出来的钱格比空格贵）。
+#: 售价 / 门幅**不在其中**：它们进报价与结算，猜错会算出错的米数与金额
+#: （推理结论仍写进同格的 `note`，商家看得见建议、系统不拿猜测值算钱）。
 INTERPRETABLE_KEYS: Dict[str, Tuple[str, ...]] = {
-    "product": ("material", "craft"),
+    # `description`（issue #6362）：描述是**文案**不是事实（用户逐字「然后把商品描述的文案也要
+    # 生成一份」）⇒ 只能由 `[米宝解读]` 填、来源可区分（与材质 / 工艺同族）；
+    # 空 / 缺失时**一格都不填**（前端 `buildProductPrefill` 连键都不写 ⇒ 不覆盖商家自己写的描述）。
+    "product": ("name", "material", "craft", "color", "description"),
     "order": (),
 }
 
@@ -140,12 +149,21 @@ def build_page_fill(
         if original and resolution and resolution["status"] == "ambiguous":
             cell = _ambiguous_cell(field, original, resolution)
         else:
-            cell = _empty_cell(field, _text(source_field.get("reason")) or "图片未给出该字段")
-            if original:
+            cell = _empty_cell(field, _empty_reason(field, source_field))
+            # 🔴 第二道闸（issue #6386 类级元守卫）：`recognizable=False` 的格子（文案类）
+            # **永不许**走 `[图片识别]` 直填 —— 就算调用方硬塞一个值进来（旧内核 / 别的入口 /
+            # 将来新增的同类字段），也不得把「猜的」标成「抄的」。
+            # 第一道闸在 `recognizer._schema_for`（不给模型这一格）；两道都要，缺一层就会漏。
+            if original and field.recognizable:
                 cell["value"] = original
                 cell["source"] = SOURCE_RECOGNIZED
 
         _apply_interpretation(cell, target_type, interpretations.get(field.key))
+        # 「参考」= 图上抄到、但**内核没采纳**的原文（置信度不足；`targets.REFERENCE_KEYS`）。
+        # 内核带在字段上 ⇒ 深通道 / 一次性推理两条同源通道**一律透传**（消费侧只用来
+        # **查目录 / 展示**，绝不据此填表：`value` 仍为空就是这条纪律的形状）。
+        # ⚠️ 键名清单不在本模块再写一份（那是第二份口径）—— 内核没给 ⇒ 这里就是 `None`。
+        cell["reference"] = _text(source_field.get("reference")) or None
         plan_fields.append(cell)
 
     return {
@@ -191,6 +209,19 @@ def _source_field(fields: Sequence[dict], key: str) -> dict:
     return {}
 
 
+def _empty_reason(field: TargetField, source_field: Mapping[str, Any]) -> str:
+    """空格子的理由（**不许自相矛盾**，issue #6386）。
+
+    `recognizable=False` 的格子（`name` / `description`）**不是**「图片没给出」——
+    它在字段表里就被定义为「图上的文案类产物，只由米宝解读给」（见 `targets.TargetField`）。
+    若照抄内核那句「图片未给出该字段」，商家会读成「模型没看清」，而真相是
+    「这一格根本不该从图上抄」—— 两者的处置完全不同（前者该重拍，后者该去看米宝解读）。
+    """
+    if not field.recognizable:
+        return "本格不由图片识别直填（它是文案、不是图上的事实）⇒ 见下方米宝解读"
+    return _text(source_field.get("reason")) or "图片未给出该字段"
+
+
 def _empty_cell(field: TargetField, reason: str) -> Dict[str, Any]:
     """空格子（`value` / `source` 为空，但**必给理由**）。"""
     return {
@@ -233,7 +264,7 @@ def _apply_interpretation(
     """把 Agent 的领域解读挂到**一格**上（能不能变成值见 `INTERPRETABLE_KEYS`）。
 
     规则（顺序即优先级）：
-    1. `note`（解释）**永远**挂上 —— 商家看得见「米宝怎么想的」，但来源标为解读；
+    1. `note`（解释）**永远**挂上 —— 商家看得见「黄金策怎么想的」，但来源标为解读；
     2. `value` 只在**内核本来就没给出这一格**（`cell["value"]` 仍为空）**且**该键可解读时才落地；
        已识别的格、以及**歧义格**（有候选）**一律不覆盖** —— 后者必须由商家挑。
     """

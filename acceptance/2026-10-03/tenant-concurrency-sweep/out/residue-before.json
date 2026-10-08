@@ -1,0 +1,950 @@
+{
+  "after_sales_tickets": {
+    "counts": {
+      "1": 51,
+      "20": 5,
+      "21": 1
+    },
+    "fps": {
+      "1": "23672f63a105e42cccd106e157310b0c",
+      "20": "1d275c17f70b7d5affa44a316a060902",
+      "21": "58e301c3243bb97442b085ec36d0fa37"
+    }
+  },
+  "agent_batch_items": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "agent_batches": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "agent_employees": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "agent_messages": {
+    "counts": {
+      "1": 39,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "275db0b91b117b53db2d18b28930f743",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "agent_sessions": {
+    "counts": {
+      "1": 24,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "75bf9dbc7ab693df89bf455451bf640d",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "audit_logs": {
+    "counts": {
+      "1": 24,
+      "20": 12,
+      "21": 12
+    },
+    "fps": {
+      "1": "19ef4abdb4a337a7347e5b3682a4fa10",
+      "20": "2b353cd31688ae54cac62f690a55ccae",
+      "21": "577908ec4531cf5a01349953eae988dd"
+    }
+  },
+  "categories": {
+    "counts": {
+      "1": 249,
+      "20": 38,
+      "21": 2
+    },
+    "fps": {
+      "1": "fab1abbb863f5ccc2eb82f0fc89f7cd2",
+      "20": "e6fbd3aad599d475d9fd34719a04e92d",
+      "21": "b26c3656589d49493fba5346c6b220ab"
+    }
+  },
+  "client_request_keys": {
+    "counts": {
+      "1": 3,
+      "20": 34,
+      "21": 0
+    },
+    "fps": {
+      "1": "8a3a4cd44d43902aa719d06449f976dc",
+      "20": "6d9901cbe1f7d8ad64b5b5efec087749",
+      "21": "-"
+    }
+  },
+  "craft_calc_configs": {
+    "counts": {
+      "1": 1,
+      "20": 1,
+      "21": 0
+    },
+    "fps": {
+      "1": "21a4a118bb2482cdce04d47a00cc1c2b",
+      "20": "482d7a855e4f127bc9aa4d841eb92f40",
+      "21": "-"
+    }
+  },
+  "customer_profiles": {
+    "counts": {
+      "1": 140,
+      "20": 16,
+      "21": 1
+    },
+    "fps": {
+      "1": "5d8a2ea3b3f3b5dd974cc39ea963a2ee",
+      "20": "e5bb2be0ba13b800f2804e07c9cebd27",
+      "21": "772fa2d74ea3e0e8a526c86861539be0"
+    }
+  },
+  "customer_segment_members": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "customer_segments": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "customer_tags": {
+    "counts": {
+      "1": 5,
+      "20": 1,
+      "21": 0
+    },
+    "fps": {
+      "1": "ca1a7809baeb111e6c8917c435e71f82",
+      "20": "274077868501c63b20256d3f025d82a7",
+      "21": "-"
+    }
+  },
+  "cutting_height_configs": {
+    "counts": {
+      "1": 1,
+      "20": 1,
+      "21": 0
+    },
+    "fps": {
+      "1": "66b0cf8cc2e5eca2ffd31f074dc4db0c",
+      "20": "882c319de8f98e6c5392d8acf4231af6",
+      "21": "-"
+    }
+  },
+  "daily_briefings": {
+    "counts": {
+      "1": 5,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "9fe32dc659448b26d64682aaa011b08c",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "fabric_remnants": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "finance_transactions": {
+    "counts": {
+      "1": 139,
+      "20": 376,
+      "21": 1
+    },
+    "fps": {
+      "1": "15e245cb76867fe558877236526acd2e",
+      "20": "64334fcd71a27685701222f3572ec4ee",
+      "21": "50f3578db578bf136cc2f09b0639df2a"
+    }
+  },
+  "inbound_labels": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "inbound_order_items": {
+    "counts": {
+      "1": 1,
+      "20": 5,
+      "21": 0
+    },
+    "fps": {
+      "1": "c4ca4238a0b923820dcc509a6f75849b",
+      "20": "925cbbcb64903af3ec5fb4336e4e30a5",
+      "21": "-"
+    }
+  },
+  "inbound_orders": {
+    "counts": {
+      "1": 1,
+      "20": 5,
+      "21": 0
+    },
+    "fps": {
+      "1": "1659216e018e3c5fa10dd510ba1b37d7",
+      "20": "e3327a1731aae7c6d28b6875e0205280",
+      "21": "-"
+    }
+  },
+  "knowledge_candidates": {
+    "counts": {
+      "1": 5,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "4708e89b5e004fab1d029367a072041a",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "knowledge_cards": {
+    "counts": {
+      "1": 39,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "37f599b5f3a9d574fb96d3842ff9db96",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "notification_rules": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "notification_templates": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "notifications": {
+    "counts": {
+      "1": 185,
+      "20": 1,
+      "21": 0
+    },
+    "fps": {
+      "1": "b50979cba2d1ca0c0e7fb0ee2519e7b9",
+      "20": "3bf3623c6306e78d23065e8f69816c8b",
+      "21": "-"
+    }
+  },
+  "order_items": {
+    "counts": {
+      "1": 1009,
+      "20": 384,
+      "21": 1
+    },
+    "fps": {
+      "1": "f029d2fb6eb09726f1e6bb180b1beaa5",
+      "20": "8601c17d2d79eb1ec9c4e9e79ee4deb9",
+      "21": "defc9f945140725dcc3dcbc3c2d04e5f"
+    }
+  },
+  "order_logistics": {
+    "counts": {
+      "1": 22,
+      "20": 6,
+      "21": 1
+    },
+    "fps": {
+      "1": "1cf529900a4b8a6a5cf5f6a0e1e447bc",
+      "20": "98f70ce76a0d3af5c5e18a47aa3621d8",
+      "21": "33112e567aa2fd5a2ab7d3b6aa4cea9b"
+    }
+  },
+  "order_shipment_items": {
+    "counts": {
+      "1": 0,
+      "20": 1,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "ff8dd1f8b1942aaa87b9ecc84cc5da7f",
+      "21": "-"
+    }
+  },
+  "order_shipments": {
+    "counts": {
+      "1": 0,
+      "20": 1,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "07ae382b11069ac861244dc12e71c31b",
+      "21": "-"
+    }
+  },
+  "orders": {
+    "counts": {
+      "1": 1000,
+      "20": 366,
+      "21": 1
+    },
+    "fps": {
+      "1": "16c3ce7fb591ae2ec5b9b4c8c6d04219",
+      "20": "ba183050ea1dd1477330bff4d1d2b292",
+      "21": "6a9a66942e28e89360f5582a9ba84b91"
+    }
+  },
+  "permissions": {
+    "counts": {
+      "1": 32,
+      "20": 32,
+      "21": 32
+    },
+    "fps": {
+      "1": "3cc261976ddc039ce84a6ab7637fe4b1",
+      "20": "4042d39286cc8724f29305adf9f92878",
+      "21": "e749e91d026271965ee004cf01038dce"
+    }
+  },
+  "processing_categories": {
+    "counts": {
+      "1": 79,
+      "20": 3,
+      "21": 2
+    },
+    "fps": {
+      "1": "5b7f2cda642acb3b7f8d953b7de83fda",
+      "20": "11c08fec0aecb04f172c3c2a08b2b065",
+      "21": "692eeabebdf1d2be0536f3c6e5ba922c"
+    }
+  },
+  "processing_fee_combination_versions": {
+    "counts": {
+      "1": 6,
+      "20": 36,
+      "21": 0
+    },
+    "fps": {
+      "1": "45ced6f9bd684af41bc3d68e77fbe2f7",
+      "20": "c0677a5c8333b7437e9b9b89a322a3cb",
+      "21": "-"
+    }
+  },
+  "processing_fee_combinations": {
+    "counts": {
+      "1": 5,
+      "20": 9,
+      "21": 0
+    },
+    "fps": {
+      "1": "e17448e0f6111bc39e2b3e284e375020",
+      "20": "e8e3e762a09a2c4e280888c71a0dd5cf",
+      "21": "-"
+    }
+  },
+  "processing_items": {
+    "counts": {
+      "1": 144,
+      "20": 39,
+      "21": 18
+    },
+    "fps": {
+      "1": "78ab78412555dc922e7380ee0a8b2eb6",
+      "20": "53729c61812e29f059e4caea86052a35",
+      "21": "1fa59a4ccc4580706e8320aee300ed8f"
+    }
+  },
+  "processing_order_sets": {
+    "counts": {
+      "1": 41,
+      "20": 277,
+      "21": 0
+    },
+    "fps": {
+      "1": "2a4067c4e68c546fdffe8f76b6f87d5f",
+      "20": "c96b4bc2b70b2bc922af3abf977cd937",
+      "21": "-"
+    }
+  },
+  "processing_orders": {
+    "counts": {
+      "1": 39,
+      "20": 271,
+      "21": 0
+    },
+    "fps": {
+      "1": "e01eea4832f6a8697a9fdca5f5e13eb4",
+      "20": "fba38c6b34f0ad68e3ce47c3c5dc3051",
+      "21": "-"
+    }
+  },
+  "processing_position_operations": {
+    "counts": {
+      "1": 437,
+      "20": 3021,
+      "21": 0
+    },
+    "fps": {
+      "1": "5022f9dceb02c58f35853595b49935b1",
+      "20": "134dc7b625722050940a3e5bb2534f8c",
+      "21": "-"
+    }
+  },
+  "processing_set_part_tokens": {
+    "counts": {
+      "1": 6,
+      "20": 287,
+      "21": 0
+    },
+    "fps": {
+      "1": "e43fc5a08fbbfeeaa63972107a183b5a",
+      "20": "05e713f4b301cbd54b68c2b598e7a337",
+      "21": "-"
+    }
+  },
+  "product_attributes": {
+    "counts": {
+      "1": 1525,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "eeae5737ad878819d7d55ef0ddd55353",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "product_colors": {
+    "counts": {
+      "1": 825,
+      "20": 36,
+      "21": 1
+    },
+    "fps": {
+      "1": "c76529532875a3f6e7ca4155823e6e0e",
+      "20": "f5ce3976566be63c6af15ea2140edc23",
+      "21": "c11e2afc08d0bc12664acf86a7c078c0"
+    }
+  },
+  "product_skus": {
+    "counts": {
+      "1": 780,
+      "20": 36,
+      "21": 1
+    },
+    "fps": {
+      "1": "39cadb06d7e07e96376ad2782cf501b3",
+      "20": "5551181f6f7afa230058e3009bf78f17",
+      "21": "b9bbe1b64d22f57b3f00717810ff84f1"
+    }
+  },
+  "production_crafts": {
+    "counts": {
+      "1": 1,
+      "20": 1,
+      "21": 1
+    },
+    "fps": {
+      "1": "ecfcaa390c8b8d7babf4ee39b789afc2",
+      "20": "e96d89fe64a03b9db646a33ef18571fc",
+      "21": "0945f86107fd72d8dba270f0ca7d68b7"
+    }
+  },
+  "production_instance_repricing_logs": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "production_operation_position_price_versions": {
+    "counts": {
+      "1": 9,
+      "20": 39,
+      "21": 0
+    },
+    "fps": {
+      "1": "d14c77c01000f3d1543fb561277fe0e3",
+      "20": "19388e44d5d4f8538a1e8f796f6699d6",
+      "21": "-"
+    }
+  },
+  "production_operation_positions": {
+    "counts": {
+      "1": 209,
+      "20": 230,
+      "21": 89
+    },
+    "fps": {
+      "1": "06e50d2f55f19a05aa30cbb041e04df2",
+      "20": "15394a7b7d3f3e2e008b17b933c056b3",
+      "21": "f915abd8574c4ff923bba4b1f67b69ef"
+    }
+  },
+  "production_operation_price_versions": {
+    "counts": {
+      "1": 46,
+      "20": 140,
+      "21": 36
+    },
+    "fps": {
+      "1": "8d7c0f716ba4e193167bc19621644021",
+      "20": "096b17bc766eb502ef760e4e0e0743b7",
+      "21": "a87c645cbf5afbc51046b5061dc568da"
+    }
+  },
+  "production_operations": {
+    "counts": {
+      "1": 45,
+      "20": 132,
+      "21": 40
+    },
+    "fps": {
+      "1": "250e39bbffa73e67d835d8dfc667b813",
+      "20": "f310d6aec5f2827805ff79dac3ddb806",
+      "21": "48ae8c59a96c072f6a57dca26948fd1e"
+    }
+  },
+  "production_route_rules": {
+    "counts": {
+      "1": 31,
+      "20": 36,
+      "21": 29
+    },
+    "fps": {
+      "1": "7c57194816fe1e5598ee2b260913c921",
+      "20": "4b31adea308d6f3a9555add1ffc01228",
+      "21": "c721d66f340938ceadc9badfe8e5b8be"
+    }
+  },
+  "production_route_signals": {
+    "counts": {
+      "1": 10,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "a3001666c8fbc22c7935cc12c0d77583",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "production_route_templates": {
+    "counts": {
+      "1": 5,
+      "20": 16,
+      "21": 2
+    },
+    "fps": {
+      "1": "2c3ee565bb053149c690cdd40c8b8390",
+      "20": "42c5edd2d3c2f8e795283c5e7a8e40e5",
+      "21": "aca3780ea70db0af7db1134727be420e"
+    }
+  },
+  "production_routing_versions": {
+    "counts": {
+      "1": 5,
+      "20": 34,
+      "21": 0
+    },
+    "fps": {
+      "1": "6e6765d8b17230751ccb8105456d0f2b",
+      "20": "1f303bc3b7c536fbb0cb7b89304a1745",
+      "21": "-"
+    }
+  },
+  "production_routings": {
+    "counts": {
+      "1": 9,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "91b84cbf74f3054cbc18bfdc5745f6c5",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "production_work_logs": {
+    "counts": {
+      "1": 21,
+      "20": 15,
+      "21": 0
+    },
+    "fps": {
+      "1": "b5f7f0d4e9286126e4b2616a3cc286c4",
+      "20": "9de91cf15d5845801d4b6c3ff2eba5ce",
+      "21": "-"
+    }
+  },
+  "products": {
+    "counts": {
+      "1": 499,
+      "20": 39,
+      "21": 1
+    },
+    "fps": {
+      "1": "24a2236eabf927427719d066c82ddf8f",
+      "20": "2fcffe4f8de4e4eeee95c8cced98b458",
+      "21": "80731ef2afeb7ee711261fd2fc73acf7"
+    }
+  },
+  "remnant_small_item_specs": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "role_permissions": {
+    "counts": {
+      "1": 118,
+      "20": 106,
+      "21": 100
+    },
+    "fps": {
+      "1": "e3dedb9788f783908f3ecd87b9066269",
+      "20": "d6f04640b3d447d15f0268cd3c2058e9",
+      "21": "8223490b1d8520de275700bd57a03880"
+    }
+  },
+  "roles": {
+    "counts": {
+      "1": 47,
+      "20": 12,
+      "21": 7
+    },
+    "fps": {
+      "1": "f6ef15587e33c67fe94af93c2740a245",
+      "20": "c1f9135d33aa95e05b986d456438a7c3",
+      "21": "2527ce293b1fa26f68cd6b46e5c7ec70"
+    }
+  },
+  "session_messages": {
+    "counts": {
+      "1": 68806,
+      "20": 4,
+      "21": 6
+    },
+    "fps": {
+      "1": "c947a8f038552c0f947ca0d3e9fa0b11",
+      "20": "d72dc15aea42ddb21035504f6a3e1193",
+      "21": "35ac6a85c341df6d6a2195cbd6352140"
+    }
+  },
+  "sessions": {
+    "counts": {
+      "1": 18506,
+      "20": 9,
+      "21": 3
+    },
+    "fps": {
+      "1": "808530ee4960ff21e988514504ac62be",
+      "20": "f208a11e044a064130296780c6941ff9",
+      "21": "5cb3e6fb384125862c17fac6bb6ad418"
+    }
+  },
+  "stock_batch_consumptions": {
+    "counts": {
+      "1": 1,
+      "20": 1,
+      "21": 0
+    },
+    "fps": {
+      "1": "c4ca4238a0b923820dcc509a6f75849b",
+      "20": "eccbc87e4b5ce2fe28308fd9f2a7baf3",
+      "21": "-"
+    }
+  },
+  "stock_batches": {
+    "counts": {
+      "1": 1,
+      "20": 2,
+      "21": 0
+    },
+    "fps": {
+      "1": "c4ca4238a0b923820dcc509a6f75849b",
+      "20": "dbd543366e46d69f73070ee9a35aa3bc",
+      "21": "-"
+    }
+  },
+  "stock_ledger_entries": {
+    "counts": {
+      "1": 9,
+      "20": 385,
+      "21": 0
+    },
+    "fps": {
+      "1": "64fe404e24752cd407abc36439a7307c",
+      "20": "cc7e21d749a83032ea9d9b5790e4f2f0",
+      "21": "-"
+    }
+  },
+  "tenant_ai_configs": {
+    "counts": {
+      "1": 1,
+      "20": 1,
+      "21": 0
+    },
+    "fps": {
+      "1": "86d7dfad048386899d393ba2bbf0d8fa",
+      "20": "2d3f194c8e1cc2c741380072881d4db7",
+      "21": "-"
+    }
+  },
+  "tenant_apps": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "tenant_param_audit": {
+    "counts": {
+      "1": 2,
+      "20": 33,
+      "21": 0
+    },
+    "fps": {
+      "1": "ef7bfbc704e6d5d3aeaf5c6133ed1831",
+      "20": "b4366c435c464f9b331c3dacab75752f",
+      "21": "-"
+    }
+  },
+  "tenant_payment_qrcodes": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "ticket_notes": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "ticket_timeline": {
+    "counts": {
+      "1": 102,
+      "20": 7,
+      "21": 1
+    },
+    "fps": {
+      "1": "ceed6712276922d2c50fe36cc6825fcd",
+      "20": "00f5036924e311e1dfd7b319c0a21843",
+      "21": "bac27b479006013b8f720163f542126b"
+    }
+  },
+  "user_identities": {
+    "counts": {
+      "1": 29,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "0cd76623d955ddc4a29760823e28f8a9",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "user_memories": {
+    "counts": {
+      "1": 99,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "edec41dad391ab955a40fd5b8b23ee0f",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "user_memories_bak_20260904_123108": {
+    "counts": {
+      "1": 733,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "20432856c62b910126919c7e1f1206a5",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "user_roles": {
+    "counts": {
+      "1": 92,
+      "20": 16,
+      "21": 2
+    },
+    "fps": {
+      "1": "6fc12941a111eb4d00a033a0779bdf52",
+      "20": "a25bacfa59388a3820a89c870ca331ce",
+      "21": "63f0125c568aedffd554eef475cb213b"
+    }
+  },
+  "user_suggestion_prefs": {
+    "counts": {
+      "1": 0,
+      "20": 0,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "-",
+      "21": "-"
+    }
+  },
+  "users": {
+    "counts": {
+      "1": 141,
+      "20": 18,
+      "21": 2
+    },
+    "fps": {
+      "1": "339ff2d2f109f54c695e77223f49ad46",
+      "20": "a69606b896b346e979af3841352c3b19",
+      "21": "4ae91313c514ea6712efa40652daccac"
+    }
+  },
+  "worker_page_configs": {
+    "counts": {
+      "1": 0,
+      "20": 1,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "e201410ecadece854f67167b22b51d13",
+      "21": "-"
+    }
+  },
+  "worker_report_audits": {
+    "counts": {
+      "1": 2,
+      "20": 15,
+      "21": 0
+    },
+    "fps": {
+      "1": "cdc307d73adf406a405a46fe2b5d0790",
+      "20": "08161dfcdf786b4984fe09fcbd6d0660",
+      "21": "-"
+    }
+  },
+  "worker_sessions": {
+    "counts": {
+      "1": 0,
+      "20": 7,
+      "21": 0
+    },
+    "fps": {
+      "1": "-",
+      "20": "1a10dad0e41e4a34de0c06bd19a307d5",
+      "21": "-"
+    }
+  }
+}

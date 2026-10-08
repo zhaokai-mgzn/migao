@@ -1,9 +1,9 @@
 /**
- * 米高**两个码空间**的客户端判定 + 手输短码口径（issue #5640 功能②；设计 §7.1）
+ * 观星台**两个码空间**的客户端判定 + 手输短码口径（issue #5640 功能②；设计 §7.1）
  *
  * ## 为什么这一层必须存在（而不是在页面里 `split('/').pop()`）
  *
- * 米高纸面上有两套**语义完全不同**的短码：
+ * 观星台纸面上有两套**语义完全不同**的短码：
  *
  * | 码空间 | 形态 | 承载 | 扫到之后该去哪 |
  * |---|---|---|---|
@@ -28,16 +28,16 @@
  *
  * ## 认主机、不认 scheme
  *
- * 纸上的码是 URL，**主机名就是身份**：`app.migaozn.com` 上的 `/i/` 才是米高的入库标签；
- * 别人域名上的 `/i/<8 位>` 与我们无关（当米高标签去查 = 拿陌生码打自家接口）。
- * 故 `https://evil.example/i/ABCD2345` ⇒ `foreign`（明确告知「这不是米高的标签」），
- * scheme 本身（http/https）不参与判定 —— 换 scheme 不改变「这是不是米高的码」。
+ * 纸上的码是 URL，**主机名就是身份**：`app.migaozn.com` 上的 `/i/` 才是观星台的入库标签；
+ * 别人域名上的 `/i/<8 位>` 与我们无关（当观星台标签去查 = 拿陌生码打自家接口）。
+ * 故 `https://evil.example/i/ABCD2345` ⇒ `foreign`（明确告知「这不是观星台的标签」），
+ * scheme 本身（http/https）不参与判定 —— 换 scheme 不改变「这是不是观星台的码」。
  *
  * ## 五个空间的边界（每个都对应一种真实结局，不许合并）
  *
  * - `inbound-label`：**唯一**能去查入库详情的空间；
  * - `wash-code`：洗水码 ⇒ 说清 + 给报工入口（**绝不**当入库标签查）；
- * - `foreign`：不是米高的码 ⇒ 说清（不猜、不去查）；
+ * - `foreign`：不是观星台的码 ⇒ 说清（不猜、不去查）；
  * - `invalid-input`：手输形态不合法（非 8 位字母数字）⇒ 说清 + **一次请求都不发**；
  * - `undecoded`：照片里没解出码（磨花 / 太暗 / 反光）⇒ 提示重拍 + 手输兜底。
  */
@@ -76,15 +76,15 @@ export interface LabelCodeReading {
 
 /** 洗水码的入口（文案与路由各一处定义，页面不另写一句） */
 export const WASH_CODE_ACTION: LabelCodeAction = {
-  label: '去「生产报工」扫洗水码',
+  label: '去「生产报工」扫水洗唛上的码',
   route: REPORT_PAGE_ROUTE,
 }
 
 export const WASH_CODE_MESSAGE =
-  '这是洗水码 / 报工短链（加工单上印的那个码），不是入库标签：它指向报工页，没有入库单据详情可看。请到「生产报工」里扫它报工；要补打入库标签，请拍入库标签或手输标签上的 8 位短码。'
+  '这是水洗唛上的报工码（加工单上印的那个码），不是入库标签：它指向报工页，没有入库单据详情可看。请到「生产报工」里扫它报工；要补打入库标签，请拍入库标签或手输标签上的 8 位短码。'
 
 export const FOREIGN_CODE_MESSAGE =
-  '这不是米高的标签：码里既不是入库标签的 /i/，也不是洗水码的 /s/。请确认拍的是米高打印的标签（纸面左下角有 8 位短码），或直接手输那 8 位短码。'
+  '这不是观星台的标签：码里既不是入库标签的 /i/，也不是水洗唛报工码的 /s/。请确认拍的是观星台打印的标签（纸面左下角有 8 位短码），或直接手输那 8 位短码。'
 
 export const MANUAL_CODE_INVALID_MESSAGE =
   '短码是纸面上的 8 位字母数字（如 7K3M9QP2）。请核对后重新输入；字母 O / I / L 直接照抄即可，系统会当作 0 / 1 处理。'
@@ -101,7 +101,7 @@ export const SCAN_INBOUND_MESSAGE = '已识别到入库标签，正在按短码�
 /** 手输入库码时的一句话 */
 export const MANUAL_INBOUND_MESSAGE = '正在按这个短码读取单据详情…'
 
-/** 米高码主机名（取自 `./truth` 的码形态真值 —— 客户端不另写域名） */
+/** 观星台码主机名（取自 `./truth` 的码形态真值 —— 客户端不另写域名） */
 const MIGAO_CODE_HOST = (() => {
   try {
     return new URL(INBOUND_LABEL_CODE_ORIGIN).host.toLowerCase()
@@ -150,7 +150,7 @@ function segmentUnder(path: string, prefix: string): string | null {
   return segment || null
 }
 
-/** 主机是不是米高（`null` = 只有路径的形态，如工人粘 `/i/<码>` ⇒ 认） */
+/** 主机是不是观星台（`null` = 只有路径的形态，如工人粘 `/i/<码>` ⇒ 认） */
 function isMigaoHost(host: string | null): boolean {
   if (!host) return true
   return host === MIGAO_CODE_HOST

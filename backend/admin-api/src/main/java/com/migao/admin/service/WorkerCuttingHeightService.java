@@ -146,7 +146,11 @@ public class WorkerCuttingHeightService {
         row.put("position_kind", text(entry.get("position_kind")));
         row.put("position_name", text(entry.get("position_name")));
         row.put("scanned", itemId != null && itemId.equals(scannedItemId));
-        row.put("brand", item == null ? null : brands.get(item.getProductId()));
+        // 🔴 `product_id` **可为空**（存量明细，同 `processing_info` 可为 NULL 一族 ⇒ issue #6219）：
+        // `brands.get(null)` 在**不可变表**上抛 NPE（`Map.of().get(null)` / `Map.of("k","v").get(null)`
+        // 实跑均 NPE；`LinkedHashMap.get(null)` 返 null）—— 空键必须显式短路，别交给 `Map` 的语义。
+        String productId = item == null ? null : item.getProductId();
+        row.put("brand", productId == null ? null : brands.get(productId));
         row.put("product_name", item == null ? null : item.getProductName());
         row.put("width", item == null ? null : item.getWidth());
         row.put("height", item == null ? null : item.getHeight());
@@ -273,7 +277,10 @@ public class WorkerCuttingHeightService {
                 .distinct()
                 .toList();
         if (productIds.isEmpty()) {
-            return Map.of();
+            // 同族坑（issue #6219）：这里曾 `return Map.of();`（**不可变空表**）⇒ 调用方一旦用
+            // 空键索引就抛 NPE（`Map.of().get(null)` 实跑 = NPE），把「缺值」变成 500。
+            // 空集也返回**可变**表：本方法的契约是「查不到 ⇒ 没有这一项」，不是「不许索引」。
+            return new LinkedHashMap<>();
         }
         List<ProductAttribute> rows = productAttributeMapper.selectList(new LambdaQueryWrapper<ProductAttribute>()
                 .in(ProductAttribute::getProductId, productIds)

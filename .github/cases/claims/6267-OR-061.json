@@ -1,0 +1,6 @@
+{
+  "id": "OR-061",
+  "pr": 6267,
+  "title": "发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE）⇒ 单机与集群同一套代码只生效一次（issue #6262，[backend-contract]）",
+  "claimed_at": "2026-10-03"
+}

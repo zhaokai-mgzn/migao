@@ -317,6 +317,20 @@ public class OrderDetailResponse {
         private String logisticsType;
 
         /**
+         * 发货方式（issue #6239，V147）：{@code logistics} 物流发货 / {@code none} 无需物流。
+         *
+         * <p>未采集（存量行 / 老客户端 / 不经本字段采集的写面）时为 {@code null} —— 前端
+         * <b>不再</b>据此兜底成 {@code 'logistics'}（该兜底已由 issue #6254 收口）：回填口径的
+         * 单一实现点是 {@code frontend/admin-web/src/lib/data-adapter.ts::shippingMethodForEdit}，
+         * {@code null} / {@code undefined} ⇒ {@code undefined}（=「未记录」，不猜）。</p>
+         *
+         * <p>⚠️ 本段曾写作「前端据此兜底成 'logistics' 的现行口径保持不变」，与 #6254 收口后的
+         * 实际行为<b>直接矛盾</b>（注释漂移 = 假绿来源，见 {@code migao-acceptance}）。改口径时
+         * 必须同步改本注释。</p>
+         */
+        private String shippingMethod;
+
+        /**
          * 发货人姓名（发货单纸面「经手人」，issue #3768）。
          * ⚠️ 仅供 B 端发货单/订单详情展示；**不得**透传给 C 端顾客——
          * C 端物流链路（customer_logistics_track）按白名单字段构造返回，不读取本字段。

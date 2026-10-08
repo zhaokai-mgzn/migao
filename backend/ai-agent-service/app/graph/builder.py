@@ -57,7 +57,7 @@ def build_agent_graph(agent_type: str = "xiaobu"):
     graph.add_node("direct_reply", direct_reply_node)
 
     # AI 主动引导转人工（xiaobu C 端）：建议卡片节点 + 路由映射
-    # 仅 xiaobu 注册（handoff_offer 仅小布路由触发；mibao 不需要）
+    # 仅 xiaobu 注册（handoff_offer 仅元元路由触发；mibao 不需要）
     if agent_type == "xiaobu":
         from app.graph.handoff_offer import handoff_offer_node
         graph.add_node("handoff_offer", handoff_offer_node)
@@ -125,7 +125,7 @@ def build_agent_graph(agent_type: str = "xiaobu"):
 
 
 def build_customer_service_graph():
-    """向后兼容的别名，构建小布（C端客服）Agent 图
+    """向后兼容的别名，构建元元（C端客服）Agent 图
 
     Returns:
         CompiledGraph: 编译后的 LangGraph 图

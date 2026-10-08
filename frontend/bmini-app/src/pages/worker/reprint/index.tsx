@@ -282,7 +282,7 @@ export default function WorkerReprintPage() {
       <View className='admin-surface__header'>
         <Text className='admin-surface__title'>拍照补打标签</Text>
         <Text className='admin-surface__subtitle'>
-          拍米高入库标签（或手输 8 位短码）→ 看单据详情 → 补打一张新标签
+          拍观星台入库标签（或手输 8 位短码）→ 看单据详情 → 补打一张新标签
         </Text>
       </View>
 

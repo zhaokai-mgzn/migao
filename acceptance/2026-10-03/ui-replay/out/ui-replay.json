@@ -1,0 +1,59 @@
+{
+  "at": "2026-10-03T01:57:44.923Z",
+  "api": "http://localhost:8080",
+  "web": "http://localhost:3001",
+  "probe": "UI重放工序645699",
+  "pass": 8,
+  "fail": 0,
+  "total": 8,
+  "results": [
+    {
+      "id": "U1",
+      "name": "登录后进入工艺配置页",
+      "ok": true,
+      "detail": "截图=u1-routings-page.png"
+    },
+    {
+      "id": "U2",
+      "name": "新建目录外工序 ⇒ 写面提示条出现（不阻断创建）",
+      "ok": true,
+      "detail": "条数=1；文案=「该工序不在算料目录内，派工应做数量将按 1 计知道了」；截图=u2b-after-create.png"
+    },
+    {
+      "id": "U3",
+      "name": "读面徽标 matrix-qty-fallback-UI重放工序645699 可见（按逻辑工序名 join 两张读面）",
+      "ok": true,
+      "detail": "命中=1；截图=u3-after-reload.png"
+    },
+    {
+      "id": "U4",
+      "name": "负对照（界面）：目录内「韩褶」不得有徽标",
+      "ok": true,
+      "detail": "命中=0（期望 0）"
+    },
+    {
+      "id": "U5",
+      "name": "抽屉里的「按 1 计」解释行在场",
+      "ok": true,
+      "detail": "该工序不在算料目录内，派工应做数量将按 1 计；截图=u5-drawer.png"
+    },
+    {
+      "id": "U6",
+      "name": "#6103 停用按钮：无 4xx 且 **DB** status 真的变 disabled",
+      "ok": true,
+      "detail": "新增 4xx=[]；DB status=disabled（deleted=0）；截图=u6-after-disable.png"
+    },
+    {
+      "id": "U7",
+      "name": "负对照（读面）：目录内「韩褶」的 qty_rule_missing 必须为 falsy",
+      "ok": true,
+      "detail": "qty_rule_missing=false（期望 falsy）"
+    },
+    {
+      "id": "U8",
+      "name": "零残留：探针工序不存活（读面 operations-catalog + **DB** 双证）",
+      "ok": true,
+      "detail": "catalog http=200 存活探针=0；DB 存活=0；本轮清理=3 个"
+    }
+  ]
+}

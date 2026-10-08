@@ -29,6 +29,14 @@
    正文 ⇒ `CODE_CHANGED=0` 且写出 `SKIP_RECONCILE=1`（= 对账 step 会被跳过）；
    对照组（同一仓库、只去掉 `pipefail`）⇒ `CODE_CHANGED=1` ⇒ 证明**是 pipefail 把
    SIGPIPE 变成了假分支**，不是「仓库里没有代码改动」。
+    🔴 **前提是构造的，不是「历史恰好很大」**（issue #6202 → **#6197 收口**）：改前形态的
+    producer 由 `keepalive_git_env` 接一条**无限流**（`yes`，永远写不完）⇒ consumer 一退出
+    producer 必被阻塞在写入上 ⇒ 141 只取决于 pipeline 形态，与两个进程的相对速度无关。
+    演进：① 旧版靠「日志 > 64KiB（管道缓冲）」= **环境常量**（本机 30/30 = 141，CI run
+    `37101030830` 两次尝试都是 0 ⇒ 夹具随 runner 的管道容量 / 调度漂移，那次漂移挡住了
+    **所有** PR）；② #6202 换成「非匹配的**有限**尾巴（30 万行 ≈2MB）」⇒ 仍押速度
+    （CI 上 producer 写完再退出 ⇒ 读到 `CODE_CHANGED=1`，issue #6197）；
+    ③ 本版 = **无限**流 ⇒ 「写不完」成为构造性事实。
 2. **改后行为（桩化真跑 `run:` 正文）**：把 workflow 里**当前**的对账 `run:` 正文抽出来，
    在真实 git 仓库 + 桩 `gh`/`docker` 下执行，断言五个场景的**动作**与**判定依据**：
    - 注入「HEAD 镜像缺失 + 自上次成功部署起有代码改动」（= 事故形态）⇒ **真 dispatch**（3 条镜像腿
@@ -53,6 +61,7 @@
 """
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -308,18 +317,82 @@ def runs_all(sha: str, conclusion: str, status: str = "completed") -> dict:
 
 # ══════════════════════════════════════════════════════════════════════════
 # 一、改前形态（红证）：浅克隆 + 逐字跑改前正文 ⇒ 恒 CODE_CHANGED=0 ⇒ SKIP_RECONCILE=1
+#    前提 = **构造的**（`keepalive_git_env` 让 producer 在 consumer 退出时仍在写），
+#    不靠历史大小 / 管道容量 / 调度（issue #6202）。
 # ══════════════════════════════════════════════════════════════════════════
 
+# ── 改前 pipeline 的**逐字形态**（红证主体 —— issue #6202 只动「前提」，不动这个形态）──
+PRE_FIX_PIPELINE = 'git log --oneline -10 --name-only origin/main | grep -qE "^backend/"'
+
+# 确定性前提（issue #6202 → **issue #6197 二次收口**）：`grep -q` 首命中即退出 ⇒ `git log`
+# 会不会吃到 SIGPIPE，取决于「producer 写完 vs consumer 退出」这场竞态。
+#   · 第一版（#4827）靠「历史造得足够大（日志 > 管道缓冲 64KiB）」—— **押的是环境常量**：
+#     实测本机 30/30 = 141，而 CI run `37101030830` 两次尝试都是 0（同一腿里 `> 65536` 的前提
+#     断言照样通过）⇒ 随 runner 的管道容量 / 调度漂移，且那次漂移挡住了**所有** PR。
+#   · 第二版（#6202）改成「真 git 输出之后挂一条**非匹配的有限尾巴**（30 万行 ≈2MB）」—— 仍不
+#     确定：producer 是**有限**的 ⇒ 只要它抢在 consumer 关闭管道之前把全部数据写完（或管道容量
+#     另有量级）就正常收尾、退出码 0。CI（issue #6197）读到的正是 `CODE_CHANGED=1`。
+#   · **本版（issue #6197）：让 producer 永远写不完** —— 换成 `yes`（无限流）⇒ consumer 打卡即退、
+#     producer 必然被阻塞在第 2 次写入上 ⇒ **SIGPIPE 由构造保证，与两个进程的相对速度无关**。
+#     `yes` 只出现在 producer 一侧（被测形态 `PRE_FIX_PIPELINE` / `PRE_FIX_BODY` **逐字节不变**），
+#     consumer 侧仍是 `grep -q` 本体；且它不碰磁盘、不依赖 git 输出量。
+#     反面（consumer 不早退）由 `test_pre_fix_sigpipe_reading_is_not_vacuous` 的 `grep -c` 夹住 ——
+#     那条**不在**本垫片下跑（用真 git），故不会被无限 producer 挂死。
+KEEPALIVE_INFINITE = "yes"             # 无限 producer ⇒ 「写不完」是构造性事实，不是概率
+KEEPALIVE_TAIL_LINES = 300000          # 有限尾巴（`tail="finite"`）：给「consumer 不早退」
+                                       # 的两条用 —— 那里需要 producer 能自然收尾，无限流会挂住。
+
+
+def keepalive_git_env(tmp_path: Path, tail: str = "infinite") -> dict:
+    """PATH 前置一个 `git` 垫片（`log` 的 producer 换成**无限流**）⇒ 141 只取决于 pipeline 形态。
+
+    垫片不碰 body 正文与 pipeline 形态（`PRE_FIX_BODY` / `PRE_FIX_PIPELINE` 逐字节不变），
+    只把「producer 在 consumer 退出时仍在写」从**碰运气**改成**构造性事实**：
+    真 `git log` 先跑（保证 `grep -q` 真的命中、走的是被测的那条路），随后 `yes` 无限输出
+    （其 `y` 不匹配任何被测 pattern）。
+    """
+    real_git = shutil.which("git")
+    assert real_git, "找不到真 git —— 红证的 producer 必须是真 git（不是桩）"
+    assert tail in ("infinite", "finite"), f"tail 只支持 infinite / finite，实得 {tail!r}"
+    infinite = shutil.which(KEEPALIVE_INFINITE) or f"/usr/bin/{KEEPALIVE_INFINITE}"
+    if tail == "infinite":
+        assert os.path.exists(infinite), (
+            f"找不到 {infinite} —— **无限 producer 是本判据的唯一确定性来源**"
+            f"（issue #6197：有限尾巴押不住，必须换成写不完的流）"
+        )
+    tail_cmd = "exec " + infinite if tail == "infinite" else f"seq 1 {KEEPALIVE_TAIL_LINES}"
+    bin_dir = tmp_path / "keepalive-bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    shim = bin_dir / "git"
+    shim.write_text(
+        "#!/usr/bin/env bash\n"
+        "# issue #6197：`log` 的真实输出之后接尾巴（infinite=构造性 SIGPIPE / finite=可收尾）；"
+        "其余子命令透传。\n"
+        'if [ "$1" = "log" ]; then\n'
+        f'  {real_git} "$@" || exit $?\n'
+        f"  {tail_cmd}\n"
+        "else\n"
+        f'  exec {real_git} "$@"\n'
+        "fi\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    return env
+
+
 def make_shallow_repo(tmp_path: Path) -> Path:
-    """造一个与 CI 同形的**浅克隆**（`fetch-depth: 1`）：HEAD 提交远大于管道缓冲。"""
+    """造一个与 CI 同形的**浅克隆**（`fetch-depth: 1`）：窗口里**确有**代码路径文件。"""
     src = tmp_path / "src"
     src.mkdir()
     git(src, "init", "-q", "-b", "main")
     (src / "README.md").write_text("base", encoding="utf-8")
     git(src, "add", "-A")
     git(src, "commit", "-qm", "base")
-    # 代码路径文件排在最前（保证 `grep -q` 早早命中），其后 ~5000 个文件把日志撑到
-    # 远超管道缓冲（64KiB）⇒ `grep -q` 退出后 `git log` 必然吃到 SIGPIPE。
+    # 代码路径文件排在最前（保证 `grep -q` 早早命中）；其后 ~5000 个文件只是把现场造得
+    # 「像事故时的 main」—— **不再是红证的前提**（靠输出量去押 SIGPIPE 正是 #6202 的病根，
+    # 确定性已改由 `keepalive_git_env` 的**无限 producer** 承担，见该函数与 issue #6197）。
     (src / "backend" / "admin-api").mkdir(parents=True)
     (src / "backend" / "admin-api" / "a.py").write_text("x", encoding="utf-8")
     for i in range(5000):
@@ -342,42 +415,102 @@ def shallow_repo(tmp_path_factory) -> Path:
 
 
 def run_pre_fix(repo: Path, set_line: str, tmp_path: Path, *,
-                shell: tuple = ("bash",), tag: str = "") -> tuple:
-    """跑改前正文。唯一变量 = 脚本自己的 `set` 行（CI 的 `-o pipefail` 与它重复，故两者等价）。"""
+                shell: tuple = ("bash",), tag: str = "", env: dict = None) -> tuple:
+    """跑改前正文。唯一变量 = 脚本自己的 `set` 行（CI 的 `-o pipefail` 与它重复，故两者等价）。
+
+    `env` = 调用方指定的运行环境（红证传 `keepalive_git_env(tmp_path)`：给 producer 挂确定性
+    尾巴）；不传则用当前环境。`GITHUB_ENV` 由本函数补，调用方不必带。
+    """
     name = tag or set_line.replace(" ", "_")
     script = tmp_path / f"pre-fix-{name}.sh"
     script.write_text(PRE_FIX_BODY.format(set_line=set_line), encoding="utf-8")
     github_env = tmp_path / f"github_env-{name}"
-    env = os.environ.copy()
-    env["GITHUB_ENV"] = str(github_env)
-    proc = subprocess.run([*shell, str(script)], cwd=repo, env=env,
+    run_env = dict(env) if env is not None else os.environ.copy()
+    run_env["GITHUB_ENV"] = str(github_env)
+    proc = subprocess.run([*shell, str(script)], cwd=repo, env=run_env,
                           capture_output=True, text=True)
     marker = github_env.read_text(encoding="utf-8") if github_env.exists() else ""
     return proc, marker
 
 
 def test_pre_fix_shallow_repo_premises_hold(shallow_repo):
-    """前提自断言（防空跑）：浅克隆 + 日志长度 > 管道缓冲 + 窗口里**确有**代码路径文件。"""
+    """前提自断言（防空跑）：浅克隆 + 窗口里**确有**代码路径文件（⇒ `grep -q` 一定会命中）。
+
+    ⛔ **刻意不再断言**「日志长度 > 管道缓冲（64KiB）」（issue #6202）：那是**环境常量**，
+    与本判据要判的 pipeline 形态无关 —— 实测它在 CI 上通过、141 照样不成立。确定性已改由
+    `keepalive_git_env` 的**无限 producer**承担（producer 不再由「历史够大」保证）。
+    """
     repo = shallow_repo
     assert git(repo, "rev-parse", "--is-shallow-repository") == "true", "fixture 不是浅克隆 ⇒ 红证无效"
     log = subprocess.run(["git", "log", "--oneline", "-10", "--name-only", "origin/main"],
                          cwd=repo, capture_output=True, text=True, check=True).stdout
     assert "backend/admin-api/a.py" in log, "fixture 前提不成立：窗口里没有代码路径文件"
-    assert len(log.encode()) > 65536, (
-        f"前提不成立：日志只有 {len(log.encode())} 字节（未超管道缓冲 64KiB）"
-        "⇒ `grep -q` 早退不会让生产者吃到 SIGPIPE ⇒ 本红证会变成空跑"
+
+
+def test_pre_fix_producer_shim_is_really_infinite(shallow_repo, tmp_path):
+    """🔴 **前提自断言（issue #6197）**：垫片的 `log` **收不了尾** ⇒ 141 不是竞态的产物。
+
+    病（逐字实测）：pre-fix 形态若挂在**有限**尾巴上（#6202 的 30 万行 ≈2MB），SIGPIPE 就退化成
+    「producer 写完 vs consumer 退出」的赛跑 —— CI 上 producer 抢先从缓冲写完并正常退出 ⇒ 退出码 0
+    ⇒ 判据读成 `CODE_CHANGED=1`（`ci workflow helper unit tests（后半）` 在 CI 上必红、本地全绿，
+    且它挡住**所有** PR）。**无限** producer 让「写不完」成为构造性事实。
+
+    判据是**二值**的（它到底结不结束），不是挂钟阈值：正常收尾 ⇒ `run` 返回（rc=0）；
+    无限 ⇒ 撞 `timeout` 抛 `TimeoutExpired`（5s 只为防挂死）。
+    与前一条分工：那条判「管道退出码 = 141」，本条判「141 的成因是**写不完**、不是跑得快」。
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "log", "--oneline", "-10", "--name-only", "origin/main"],
+            cwd=shallow_repo, env=keepalive_git_env(tmp_path),
+            capture_output=True, text=True, timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return                      # ✅ 收不了尾 = 无限 producer ⇒ 141 与进程速度无关
+    raise AssertionError(
+        f"垫片的 `log` 竟然正常收尾了（rc={proc.returncode}，stdout 前 80 字节="
+        f"{proc.stdout[:80]!r}）⇒ producer 是**有限**的 ⇒ SIGPIPE 退回竞态（issue #6197 复发）"
     )
 
 
-def test_pre_fix_pipeline_dies_with_sigpipe_under_pipefail(shallow_repo):
-    """真根因直接读数：`… | grep -q` 在 `-o pipefail` 下退出码 = **141**（SIGPIPE）。"""
-    repo = shallow_repo
+def test_pre_fix_pipeline_dies_with_sigpipe_under_pipefail(shallow_repo, tmp_path):
+    """真根因直接读数：`… | grep -q` 在 `-o pipefail` 下退出码 = **141**（SIGPIPE）。
+
+    🔴 确定性是**构造**出来的（`keepalive_git_env` 给 producer 挂非匹配尾巴 ⇒ consumer 一退出
+    producer 必然还有数据要写），**不是**「夹具历史恰好很大」—— 后者是环境常量：本机 30/30 = 141，
+    CI run `37101030830` 两次都是 0（issue #6202）。
+    """
     pipe = subprocess.run(
-        BASH_SHELL + ["-c", 'git log --oneline -10 --name-only origin/main | grep -qE "^backend/"'],
-        cwd=repo, capture_output=True, text=True,
+        BASH_SHELL + ["-c", PRE_FIX_PIPELINE],
+        cwd=shallow_repo, env=keepalive_git_env(tmp_path), capture_output=True, text=True,
     )
     assert pipe.returncode == 141, (
-        f"期望 SIGPIPE(141)，实得 {pipe.returncode} —— 若这不是 141，说明本红证的前提变了"
+        f"期望 SIGPIPE(141)，实得 {pipe.returncode} —— 前提已构造化仍非 141 ⇒ 被测机制变了"
+    )
+
+
+def test_pre_fix_sigpipe_reading_is_not_vacuous(shallow_repo, tmp_path):
+    """两侧夹住（issue #6202 要求 2①）：同一条 pipeline 换个形态 ⇒ **141 不再成立**。
+
+    ① 去掉 `pipefail`（流水线状态取 `grep` 的 0）；② 换 `grep -c`（consumer 读到 EOF **不早退**
+    ⇒ producer 不会丢 SIGPIPE）。两条都证明上面那条断言判的是「SIGPIPE 被 pipefail 取为管道状态」
+    这个机制，不是恒真。
+    """
+    env = keepalive_git_env(tmp_path, tail="finite")
+    no_pf = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-c", PRE_FIX_PIPELINE],
+                           cwd=shallow_repo, env=env, capture_output=True, text=True)
+    assert no_pf.returncode != 141, "去掉 pipefail 仍得 141 ⇒ 该断言与 pipefail 无关（假红证）"
+    assert no_pf.returncode == 0, f"去掉 pipefail 后状态应由 `grep` 决定(=0)，实得 {no_pf.returncode}"
+    counted = subprocess.run(
+        BASH_SHELL + ["-c", 'git log --oneline -10 --name-only origin/main | grep -cE "^backend/"'],
+        cwd=shallow_repo, env=env, capture_output=True, text=True,
+    )
+    assert counted.returncode != 141, (
+        f"consumer 不早退（`grep -c` 读到 EOF）时 producer 不该丢 SIGPIPE → {counted.returncode}"
+    )
+    assert counted.returncode == 0 and counted.stdout.strip() == "1", (
+        f"`grep -c` 应读到 1 个代码路径（读的是同一条 `git log`，也证明尾巴**不匹配**）→ "
+        f"rc={counted.returncode} out={counted.stdout.strip()!r}"
     )
 
 
@@ -389,9 +522,10 @@ def test_pre_fix_body_is_always_zero_and_writes_skip_marker(shallow_repo, tmp_pa
     与调用形态无关（这正是它「结构性永远跳过」的原因）。
     """
     repo = shallow_repo
+    env = keepalive_git_env(tmp_path)
     ci, ci_marker = run_pre_fix(repo, "set -euo pipefail", tmp_path,
-                               shell=tuple(BASH_SHELL), tag="ci-shell")
-    plain, plain_marker = run_pre_fix(repo, "set -euo pipefail", tmp_path, tag="plain-bash")
+                               shell=tuple(BASH_SHELL), tag="ci-shell", env=env)
+    plain, plain_marker = run_pre_fix(repo, "set -euo pipefail", tmp_path, tag="plain-bash", env=env)
     for label, proc, marker in (("CI shell", ci, ci_marker), ("plain bash", plain, plain_marker)):
         assert proc.returncode == 0, f"[{label}] 改前正文应「成功」退出（这就是静默）→ {proc.stderr}"
         assert "最近提交含代码改动=0" in proc.stdout, (
@@ -405,7 +539,12 @@ def test_pre_fix_body_is_always_zero_and_writes_skip_marker(shallow_repo, tmp_pa
 def test_pre_fix_zero_is_caused_by_pipefail_not_by_missing_code(shallow_repo, tmp_path):
     """对照红证：同一仓库只去掉 `pipefail` ⇒ `CODE_CHANGED=1` ⇒ 0 是 pipefail 造成的。"""
     repo = shallow_repo
-    proc, marker = run_pre_fix(repo, "set -eu", tmp_path, tag="no-pipefail")
+    # 同一个 producer（`keepalive_git_env`）⇒ 与上一条只差 `pipefail` 一个变量。
+    # 去掉 pipefail 后 pipeline 状态取 `grep -q` 的 0（**不再**是 141）⇒ producer 的 SIGPIPE
+    # 不再决定退出码，但**有限尾巴**仍让 producer 能自然收尾（无限流用在「无 pipefail」这条上
+    # 只会平白多跑一轮写入）。
+    proc, marker = run_pre_fix(repo, "set -eu", tmp_path, tag="no-pipefail",
+                               env=keepalive_git_env(tmp_path, tail="finite"))
     assert "最近提交含代码改动=1" in proc.stdout, (
         f"去掉 pipefail 后应能看见代码改动（证明仓库里确有代码路径文件）→ {proc.stdout!r}"
     )

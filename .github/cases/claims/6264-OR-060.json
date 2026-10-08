@@ -1,0 +1,6 @@
+{
+  "id": "OR-060",
+  "pr": 6264,
+  "title": "入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞 uk_stock_batches_no ⇒ 用户侧 500（已改原子取号 ON CONFLICT DO NOTHING）/ 20 次耗尽 409（真 PG 并发判据，[backend-contract]）",
+  "claimed_at": "2026-10-03"
+}

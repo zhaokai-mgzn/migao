@@ -23,6 +23,7 @@ import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
+import com.migao.admin.time.BusinessClock;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
 import org.apache.ibatis.mapping.Environment;
@@ -257,7 +258,7 @@ class AutoBatchDueScanRealDbTest {
                 own.getMapper(ProductSkuMapper.class), null, configService,
                 // 余料腿显式不装（V122 / issue #5146）：本判据覆盖的是**批次账**，余料是附加事实
                 // —— null ⇒ 不登记余料，批次账行为与 #5158 逐字相同
-                null);
+                null, new BusinessClock());
     }
 
     /** 每个用例从**干净夹具**开始：本类共用一个集群，前一个用例的订单/台账不得串味。 */

@@ -1,0 +1,18 @@
+{
+  "at": {
+    "cst": "2026-10-03 13:49:24 +08",
+    "utc": "2026-10-03T05:49:24.631Z"
+  },
+  "residue": {
+    "products": 0,
+    "skus": 0,
+    "inbound": 0,
+    "inbound_items": 0,
+    "batches": 0,
+    "consumptions": 0,
+    "ledger": 0,
+    "txns": 0,
+    "orders": 0
+  },
+  "residueTotal": 0
+}

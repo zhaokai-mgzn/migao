@@ -49,7 +49,15 @@ function toResponse<T>(res: WorkerResponse<T> | undefined, fallback: string): Wo
 function fail<T>(error: any, fallback: string): WorkerResponse<T> {
   return {
     success: false,
-    message: error?.data?.message || error?.message || fallback,
+    // 服务端是文案单一真值（`ApiResponse` 信封 = `{success:false, error:{code,message}}`，
+    // issue #6467）：这里**必须**先取 `data.error.message`，否则失败文案会回落成
+    // `error.message`（= 技术噪声「Request failed with status 401」），
+    // 而 `401` 正是工人登录输错 PIN / 工人身份失效的形态。
+    message:
+      error?.data?.error?.message ||
+      error?.data?.message ||
+      (error?.statusCode ? '' : error?.message) ||
+      fallback,
     offline: !error?.statusCode,
   }
 }

@@ -1,0 +1,83 @@
+[
+  {
+    "id": "P2-barrier对齐",
+    "name": "A/B 严格同时起跑下的列表响应租户归属",
+    "status": "fail",
+    "detail": "🔴 barrier 对齐 160 个请求（A/B 严格同步起跑，80 轮），墙钟 2482ms，首个响应 303ms 时仍有 159 个在飞；跨租户/异常响应 0 个",
+    "evidence": [],
+    "at": "2026-10-03T03:10:00.682Z"
+  },
+  {
+    "id": "P6-超线程池并发",
+    "name": "并发 320 下的租户归属与可用性",
+    "status": "fail",
+    "detail": "🔴 320 并发（> tomcat max-threads 200），墙钟 4440ms、p95 4387ms；首个响应 330ms 时 319 个在飞；异常/跨租户 0 个",
+    "evidence": [],
+    "at": "2026-10-03T03:10:05.231Z"
+  },
+  {
+    "id": "P7-C端订单链残留",
+    "name": "C 端订单链经交叉请求后仍只返回本租户本用户订单",
+    "status": "fail",
+    "detail": "🔴 夹具 DB 计数=12；3 轮「24 个他租户请求并发 + 立即打」→ 12/12/12 单；叠加 X-Tenant-Id:20 → 12；200 并发压满后 → 12；越租户 id 0",
+    "evidence": [
+      {
+        "case": "P7-fixture",
+        "dbCount": 12,
+        "dbIds1": [
+          "2e430ea3024959c67c077146bd01d0da",
+          "13eed91165776597b690a40d612eea5e",
+          "f2f5af871127594f62059faa8132a745"
+        ],
+        "note": "直连 DB：tenant_id=1 且 user_id=debug_customer_1（12 单）"
+      },
+      {
+        "case": "P7-attempts",
+        "attempts": [
+          {
+            "round": 0,
+            "warmupStatuses": [
+              200
+            ],
+            "status": 200,
+            "n": 12,
+            "total": 12,
+            "req": "req_5b607ef10ea84eb7",
+            "head": "{\"success\":true,\"data\":{\"items\":[{\"id\":\"53be16a1c433bfcdde92acb323a25eec\",\"order_no\":\"20260914652230002\",\"status\":\"pending\",\"status_text\":\"p"
+          },
+          {
+            "round": 1,
+            "warmupStatuses": [
+              200
+            ],
+            "status": 200,
+            "n": 12,
+            "total": 12,
+            "req": "req_a132bbb935dd45e3",
+            "head": "{\"success\":true,\"data\":{\"items\":[{\"id\":\"53be16a1c433bfcdde92acb323a25eec\",\"order_no\":\"20260914652230002\",\"status\":\"pending\",\"status_text\":\"p"
+          },
+          {
+            "round": 2,
+            "warmupStatuses": [
+              200
+            ],
+            "status": 200,
+            "n": 12,
+            "total": 12,
+            "req": "req_0c0e933b0e7b481a",
+            "head": "{\"success\":true,\"data\":{\"items\":[{\"id\":\"53be16a1c433bfcdde92acb323a25eec\",\"order_no\":\"20260914652230002\",\"status\":\"pending\",\"status_text\":\"p"
+          }
+        ],
+        "forged": {
+          "status": 200,
+          "n": 12
+        },
+        "afterFill": {
+          "status": 200,
+          "n": 12
+        }
+      }
+    ],
+    "at": "2026-10-03T03:10:09.523Z"
+  }
+]

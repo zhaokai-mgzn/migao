@@ -73,7 +73,7 @@ issue #5683 已经用**两次补丁 + 一条不变量**把「角色 → 码」�
 |---|---|---|---|---|
 | **D1** | `backend/admin-api/src/main/java/com/migao/admin/controller/**` 各 controller 的 `@RequirePermission`（**类级 + 方法级**；方法级优先）。现取 **289** 个端点，其中 **55** 个生效码为 `None` | 运行时每请求（`PermissionInterceptor`） | `PermissionInterceptor` 的 403 | **co-located 真值**（改端点的人就在同一个文件里）。与 B1/B2 靠判据 1/2/8 + `UNANNOTATED_ENDPOINTS`（**21** 条登记） |
 | **D2** | `frontend/bmini-app/src/utils/adminPermission.ts` 的 `ADMIN_SURFACES`（**4** 个管理面，各带 `readPermission` / `readEndpoint` / `writePermission` / `writeEndpoint` / `controllerFile`） | 手机端 h5 | `canOpenAdminSurface` / `canWriteAdminSurface` / `visibleAdminSurfaces` / `missingPermissionText` | **手抄件**（该文件头逐字自述「权限码真值在后端注解，本台账是它的镜像」）。判据 = `frontend/bmini-app/tests/admin-surfaces-permission-codes.test.ts` 解析 4 个 Controller 的注解逐值比对 |
-| **D3** | `backend/ai-agent-service/app/tools/*.py` 各工具类的 `required_permissions` | 运行时米宝工具调用前 | `BaseTool` 的权限闸 | 与 D1 靠判据 2（**工具码 ≡ 端点生效码**，逐工具逐端点） |
+| **D3** | `backend/ai-agent-service/app/tools/*.py` 各工具类的 `required_permissions` | 运行时黄金策工具调用前 | `BaseTool` 的权限闸 | 与 D1 靠判据 2（**工具码 ≡ 端点生效码**，逐工具逐端点） |
 
 #### E 类 —— 「**库 / 新建库路径**」
 
@@ -272,7 +272,7 @@ A7 是「登录面 authority」—— **两者本就不是同一个读数**，�
 |---|---|---|---|---|---|
 | **A. 声明式单清单**（仓库内一份机器可读的 RBAC 清单，含码目录 / 岗位矩阵 / 页面表；各消费面**由它派生**） | 文件（YAML/JSON） | ✅ 天然 | ✅ 天然 | ✅ 零依赖纯文本 | 需要一次「清单 = 现取」的对齐工作；清单本身要进新鲜度判据 |
 | **B. DB 为唯一真值源**（`permissions` + `role_permissions` 表） | 运行时状态 | ✅ | ❌ 菜单码不在库里 | ❌ **判据面读不到** | ① CI 与本机无库，「唯一的机械判据面」会被拆掉；② 新建库路径（`db/init/schema.sql`）**不跑迁移链** ⇒ 库里根本没有种子；③ 「新租户该有什么」是**声明**不是**状态** —— 今天 `admin` 的新租户/存量差异（§3.1）正是「用状态当声明」的实证 |
-| **C. 端点注解为唯一真值源**（反向生成岗位矩阵与菜单码） | 代码注解 | ❌ **不能** | ⚠️ 部分 | ✅ | ① 注解只表达「这个端点要哪个码」，**不表达「哪个岗位该持哪个码」** —— 而后者正是本单的病灶；② 目录里有**零端点**的码（现取：`order:detail` 的 census 端点数 = **0**；`agent:chat` 是米宝唤出码）⇒ 会被判成孤儿；③ 反向生成要求「改端点必须改清单」，把 co-located 的真值外置 ⇒ **新造一个分叉面** |
+| **C. 端点注解为唯一真值源**（反向生成岗位矩阵与菜单码） | 代码注解 | ❌ **不能** | ⚠️ 部分 | ✅ | ① 注解只表达「这个端点要哪个码」，**不表达「哪个岗位该持哪个码」** —— 而后者正是本单的病灶；② 目录里有**零端点**的码（现取：`order:detail` 的 census 端点数 = **0**；`agent:chat` 是黄金策唤出码）⇒ 会被判成孤儿；③ 反向生成要求「改端点必须改清单」，把 co-located 的真值外置 ⇒ **新造一个分叉面** |
 | **D. 只加判据、不动结构**（把 #5683 的做法推广到每一对副本） | 加强守卫 | ✅ 已做到 | ✅ 已做到 | ✅ | **这正是已经打过两次补丁的路**。用户 2026-09-27 明确叫停「不要打补丁了」：#5683 之后副本仍是 8 份（A7 补登后；见 §1.1 末注），**判据数随副本对数平方增长**，而每加一条判据就多一处「判据读到的文本与它声称的对象不是同一个」的风险（§1.4 五条实例里有四条是这类） |
 
 ### 2.2 选型：**A′（A 为主 + 端点注解保持 co-located + DB 为该清单的物化）**

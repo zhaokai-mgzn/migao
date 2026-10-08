@@ -9,7 +9,7 @@
 | 层 | 状态 | 定位 | 评测角色 |
 |---|---|---|---|
 | **① 独立栈（CI docker 标准考场）** | ✅ 已落地（C 端 + B 端 persona=mibao） | 每次 `down -v` 从零重建、跑完即弃、与云环境物理隔离 | **normal / adversarial 全量回归的主战场**；迭代档（case_ids/fast）；任何"下结论"的评测都在这里 |
-| **② 云测试环境（SWAS）** | ✅ 已落地（当前**唯一**部署目标） | 合并 main 自动部署（deploy-ai-agent-service / admin-api / frontend） | **冒烟 + 真实存量数据验证**；PR 门禁 smoke 当前打这里（B 端米宝） |
+| **② 云测试环境（SWAS）** | ✅ 已落地（当前**唯一**部署目标） | 合并 main 自动部署（deploy-ai-agent-service / admin-api / frontend） | **冒烟 + 真实存量数据验证**；PR 门禁 smoke 当前打这里（B 端黄金策） |
 | **③ 生产** | ❌ 未部署（`deploy-prod` 为规划项） | 未来正式生产 | **发布门禁 + 运行期冒烟**（见第三节） |
 
 **为什么独立栈是"标准考场"**：数据干净（无同名商品/存量订单污染）→ 失败可归因到能力而非环境；
@@ -400,7 +400,7 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
   ⇒ 维护者裁定（2026-09-21）：**不改环境语义**；「是否砍/搬这一层」→ **业务裁定**（关联 #4824）。
 - **④ 为什么共享环境上不能开并发**：normal 档含建品/下单/改客户等**写用例**，并发写同一套共享
   dev 库会互相污染（假失败）并加速污染 dev 库。**假失败的实际后果已查实**：本 workflow 的失败
-  步骤会按同标题去重守卫建 `[Agent Eval] 米宝冒烟评测失败 — <date>` issue，而
+  步骤会按同标题去重守卫建 `[Agent Eval] 黄金策冒烟评测失败 — <date>` issue，而
   `flaky-triage.yml` 的 `workflow_run.workflows` 白名单（`PR Check` / `Mini-App CI` /
   `AI Agent Service Unit Tests` / `Bmini-App CI`）**不含**本 workflow ⇒ 假失败**不会被自动重跑
   兜住**，直接落进 issue 台账、被读成真失败。
@@ -489,7 +489,7 @@ gh workflow run <isolated-mode-workflow>.yml -f concurrency=6 -f persona=mibao
   部署对账）**不在本单范围、未动**。
 
 
-## 四、与米高研发模式的衔接
+## 四、与观星台研发模式的衔接
 
 - 档位纪律 / 全量降频 / 完成定义 / **门禁矩阵（含量化 blocking 属性）**：`migao-dev-flow` §16（§16.5）；
 - **并行修复原则（发现即并行，合并串行）**：仓库 `AGENTS.md` 铁律 6 + `migao-dev-flow` §17；

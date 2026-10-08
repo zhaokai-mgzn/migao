@@ -1,0 +1,146 @@
+{
+  "at": "2026-10-04T01:54:24.947Z",
+  "probeOrders": [
+    {
+      "id": "8937a6e37e5fe98c4dd363a13571b337",
+      "order_no": "20261004936930055",
+      "remark": "race-sweep-W4a-20261004015252",
+      "created_at": "2026-10-04T09:53:05.059404+08:00"
+    },
+    {
+      "id": "8df2bbaf467a72fff01e423d675d4903",
+      "order_no": "20261004874960056",
+      "remark": "race-sweep-W4b-20261004015252",
+      "created_at": "2026-10-04T09:53:05.259167+08:00"
+    },
+    {
+      "id": "810bde7cccc418bd77ae8c69506a2730",
+      "order_no": "20261004538630057",
+      "remark": "race-sweep-idem-I1-20261004015252-44gcnk",
+      "created_at": "2026-10-04T09:53:11.055219+08:00"
+    },
+    {
+      "id": "dcc1aa760366397c12f0887d063f55b1",
+      "order_no": "20261004419530058",
+      "remark": "race-sweep-idem-I2-20261004015252-9775za",
+      "created_at": "2026-10-04T09:53:11.874669+08:00"
+    },
+    {
+      "id": "a9c0a06a434638876c78db42861372cf",
+      "order_no": "20261004844990059",
+      "remark": "race-sweep-idem-I2-20261004015252-9775za",
+      "created_at": "2026-10-04T09:53:11.934363+08:00"
+    },
+    {
+      "id": "d8ae0b0cda91cbb78c6ff376c8d4189a",
+      "order_no": "20261004143040060",
+      "remark": "race-sweep-idem-I2-20261004015252-9775za",
+      "created_at": "2026-10-04T09:53:11.935053+08:00"
+    },
+    {
+      "id": "1fef0dc67ae1ea2c8878b1aee76da25c",
+      "order_no": "20261004486040061",
+      "remark": "race-sweep-idem-I30-20261004015252-z5vpp9",
+      "created_at": "2026-10-04T09:53:12.759165+08:00"
+    },
+    {
+      "id": "509c52572fffa47fbf545abca3338b3c",
+      "order_no": "20261004602330062",
+      "remark": "race-sweep-idem-I4-20261004015252-h7hjr1",
+      "created_at": "2026-10-04T09:53:13.371143+08:00"
+    },
+    {
+      "id": "366bfb56cd8af6a2db63295972dc2d36",
+      "order_no": "20261004853390063",
+      "remark": "race-sweep-idem-I5-20261004015252-zo3r9h",
+      "created_at": "2026-10-04T09:53:13.967717+08:00"
+    },
+    {
+      "id": "36a085083f5a403673213ee180811003",
+      "order_no": "20261004936580064",
+      "remark": "race-sweep-idem-I5-20261004015252-zo3r9h",
+      "created_at": "2026-10-04T09:53:13.974003+08:00"
+    },
+    {
+      "id": "fa59dcebad64c51dc4964bc8e00fee1e",
+      "order_no": "20261004134340065",
+      "remark": "race-sweep-idem-I5-20261004015252-zo3r9h",
+      "created_at": "2026-10-04T09:53:13.976011+08:00"
+    },
+    {
+      "id": "1c6c100bf2c65242385c188c094260fd",
+      "order_no": "20261004536560066",
+      "remark": "race-sweep-idem-I6-20261004015252-nkfaqj",
+      "created_at": "2026-10-04T09:53:14.747682+08:00"
+    }
+  ],
+  "finance_transactions": [
+    {
+      "id": "6a5207c873fb0f9950500376ef060aae",
+      "transaction_no": "FIN-20261004-0190",
+      "order_id": "8937a6e37e5fe98c4dd363a13571b337",
+      "order_no": "20261004936930055",
+      "remark": "订单确认收款",
+      "occurred_at": "2026-10-04T09:53:05.754641+08:00",
+      "created_at": "2026-10-04T09:53:05.755132+08:00"
+    },
+    {
+      "id": "ae1cab9336465d8dec165c3438ab036b",
+      "transaction_no": "FIN-20261004-0191",
+      "order_id": "8df2bbaf467a72fff01e423d675d4903",
+      "order_no": "20261004874960056",
+      "remark": "订单确认收款",
+      "occurred_at": "2026-10-04T09:53:05.948153+08:00",
+      "created_at": "2026-10-04T09:53:05.948547+08:00"
+    },
+    {
+      "id": "0a0a3a6970164136e7b2172271730eb7",
+      "transaction_no": "FIN-20261004-0192",
+      "order_id": "1c6c100bf2c65242385c188c094260fd",
+      "order_no": "20261004536560066",
+      "remark": "订单确认收款",
+      "occurred_at": "2026-10-04T09:53:14.979542+08:00",
+      "created_at": "2026-10-04T09:53:14.979872+08:00"
+    }
+  ],
+  "inbound_labels": [],
+  "processing_orders": [],
+  "products": [
+    {
+      "id": "e8530194dda28ad69ee593424f2d3ba3",
+      "name": "race-sweep-A1-20261004015252",
+      "created_at": "2026-10-04T09:52:58.83757+08:00"
+    },
+    {
+      "id": "782c23699d1aeb615818c5f7a39e573e",
+      "name": "race-sweep-A2-20261004015252",
+      "created_at": "2026-10-04T09:52:59.242216+08:00"
+    },
+    {
+      "id": "767d126382a03dfce36f340fc7ce2545",
+      "name": "race-sweep-W4-20261004015252-g9v1ue0",
+      "created_at": "2026-10-04T09:53:04.55835+08:00"
+    },
+    {
+      "id": "85413941eaaab6b262eb1ab78e28483f",
+      "name": "race-sweep-W6-20261004015252-a6r26b0",
+      "created_at": "2026-10-04T09:53:07.838387+08:00"
+    },
+    {
+      "id": "a2fdd897295c9ce92e4f52d33aa6fdb1",
+      "name": "race-sweep-A3-20261004015252-ym1x0d0",
+      "created_at": "2026-10-04T09:53:09.09295+08:00"
+    },
+    {
+      "id": "4cae3e5a3ffbb9dbce6e73ea2de691ae",
+      "name": "race-sweep-X-A-20261004015252-lsiknx",
+      "created_at": "2026-10-04T09:53:27.239044+08:00"
+    }
+  ],
+  "stock_ledger_entries": [
+    {
+      "c": 0
+    }
+  ],
+  "batch_conversations_note": "时间戳口径：本线观测窗口 09:04–09:24 +08；重放窗口自 09:30:44 +08（构建点切到 sha-6838a05）之后"
+}

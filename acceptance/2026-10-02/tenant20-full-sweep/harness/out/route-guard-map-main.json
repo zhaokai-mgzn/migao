@@ -1,0 +1,135 @@
+{
+ "commit": "402be478ba6ef0c2fcb0a16e06894f00eaea55f1",
+ "prefixes": [
+  {
+   "prefix": "/chat",
+   "code": "agent:session"
+  },
+  {
+   "prefix": "/agent-workspace",
+   "code": "agent:session"
+  },
+  {
+   "prefix": "/after-sales",
+   "code": "after_sales:view"
+  },
+  {
+   "prefix": "/orders",
+   "code": "order:list"
+  },
+  {
+   "prefix": "/products",
+   "code": "product:list"
+  },
+  {
+   "prefix": "/categories",
+   "code": "product:category:view"
+  },
+  {
+   "prefix": "/processing-orders",
+   "code": "production:view"
+  },
+  {
+   "prefix": "/processing",
+   "code": "production:view"
+  },
+  {
+   "prefix": "/production/pool",
+   "code": "processing:view"
+  },
+  {
+   "prefix": "/production/remnants",
+   "code": "processing:manage"
+  },
+  {
+   "prefix": "/production/saving-board",
+   "code": "product:list"
+  },
+  {
+   "prefix": "/production",
+   "code": "production:view"
+  },
+  {
+   "prefix": "/customers",
+   "code": "customer:view"
+  },
+  {
+   "prefix": "/finance",
+   "code": "finance:view"
+  },
+  {
+   "prefix": "/shipments",
+   "code": "order:list"
+  },
+  {
+   "prefix": "/inbound-orders",
+   "code": "inbound:view"
+  },
+  {
+   "prefix": "/employees",
+   "code": "employee:list"
+  },
+  {
+   "prefix": "/settings",
+   "code": "system:manage"
+  },
+  {
+   "prefix": "/knowledge",
+   "code": "knowledge:view"
+  },
+  {
+   "prefix": "/roles",
+   "code": "system:view"
+  },
+  {
+   "prefix": "/briefing",
+   "code": "dashboard:view"
+  },
+  {
+   "prefix": "/dashboard",
+   "code": "dashboard:view"
+  }
+ ],
+ "routes": [
+  "after-sales/:id/page.tsx",
+  "after-sales/page.tsx",
+  "agent-workspace/human-sessions/page.tsx",
+  "agent-workspace/page.tsx",
+  "agent-workspace/sessions/page.tsx",
+  "briefing/page.tsx",
+  "categories/page.tsx",
+  "chat/page.tsx",
+  "customers/:id/page.tsx",
+  "customers/page.tsx",
+  "dashboard/page.tsx",
+  "employees/page.tsx",
+  "finance/page.tsx",
+  "inbound-orders/new/page.tsx",
+  "inbound-orders/page.tsx",
+  "knowledge/page.tsx",
+  "notifications/page.tsx",
+  "orders/:id/page.tsx",
+  "orders/:id/ship/page.tsx",
+  "orders/new/page.tsx",
+  "orders/page.tsx",
+  "processing-orders/:id/production/page.tsx",
+  "processing-orders/page.tsx",
+  "processing/page.tsx",
+  "production/operations/page.tsx",
+  "production/page.tsx",
+  "production/piecework/page.tsx",
+  "production/pool/page.tsx",
+  "production/processing-fees/page.tsx",
+  "production/processing/page.tsx",
+  "production/remnants/page.tsx",
+  "production/routings/page.tsx",
+  "production/saving-board/page.tsx",
+  "products/:id/edit/page.tsx",
+  "products/:id/page.tsx",
+  "products/new/page.tsx",
+  "products/page.tsx",
+  "roles/page.tsx",
+  "settings/page.tsx",
+  "shipments/page.tsx"
+ ]
+}

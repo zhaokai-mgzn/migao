@@ -1,0 +1,37 @@
+{
+ "at": "2026-10-04 10:36:01 +0800",
+ "window": "最近 80 条 deploy-admin-api.yml run（本机时区 +08）",
+ "runs_by_conclusion": {
+  "success": 10,
+  "failure": 69,
+  "cancelled": 1
+ },
+ "events": {
+  "push": 15,
+  "workflow_dispatch": 56,
+  "schedule": 9
+ },
+ "success_runs": 10,
+ "success_runs_deploy_step": {
+  "success": 2,
+  "skipped": 8
+ },
+ "success_runs_detail": {
+  "37169621752": "success",
+  "37167694309": "success",
+  "37156277078": "skipped",
+  "37131394391": "skipped",
+  "37098800758": "skipped",
+  "37085019442": "skipped",
+  "37079573076": "skipped",
+  "37033215038": "skipped",
+  "37016239177": "skipped",
+  "37014330868": "skipped"
+ },
+ "failure_sample": 20,
+ "failure_sample_deploy_step": {
+  "failure": 20
+ },
+ "claim": "success 类 run 的 `Deploy to SWAS` 步全部 = skipped（reconcile「已构建⇒跳过部署」）⇒ run success 不构成部署成功证据；failure 类抽样 run 的该步全部 = failure。**另有反证**：2026-10-04 09:20 我派发的 workflow_dispatch（37167694309）首次让该步 success 并真的换了镜像 tag。",
+ "command": "gh run list --workflow=deploy-admin-api.yml --limit 80 --json databaseId,conclusion,event,headSha + gh run view <id> --json jobs"
+}

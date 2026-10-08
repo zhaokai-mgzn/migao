@@ -12,7 +12,7 @@
 KeyError: 'settings'
 ```
 
-根因：`route_by_intent` 返回 `'settings'`，而米宝图的条件边 `ends` 里**没有**这个目的地 —
+根因：`route_by_intent` 返回 `'settings'`，而黄金策图的条件边 `ends` 里**没有**这个目的地 —
 `settings` skill 已按 issue #5247 从 `MIBAO_CONFIG.skill_names` **解绑**（系统设置/通知配置不进 B 端
 对话面），但 `settings_skill.py` 的文件仍在 SkillRegistry 里（**保留它是有意的**：删掉会让路由/账本
 口径漂移）⇒ `SkillRegistry.get_intent_to_route_map()` 的 **persona 过滤**（`settings_skill` 有
@@ -24,7 +24,7 @@ KeyError: 'settings'
 | # | 判据 | 会怎么红 |
 |---|---|---|
 | 1 | **映射表的目的地都在图上**：`_get_intent_to_route(agent)` 的每个值 ∈ 该 agent 图上真实存在的节点 | 有人再让一个未绑定 skill 的 route_key 进映射表 ⇒ 红并具名 |
-| 2 | **`route_by_intent` 的返回值都在图上**（边界输入：未绑定的 pending skill / `action=handoff_offer` 在米宝上 / notification 意图） | 崩溃点本身复现 ⇒ 红 |
+| 2 | **`route_by_intent` 的返回值都在图上**（边界输入：未绑定的 pending skill / `action=handoff_offer` 在黄金策上 / notification 意图） | 崩溃点本身复现 ⇒ 红 |
 | 3 | **未绑定 route_key 改判到 fallback**：注册表里、但不在该 agent `skill_names` 里的 skill 的 route_key ⇒ 落 `fallback_skill`，且**打进日志**（可归因） | 静默丢弃 / 仍返回未绑定 key ⇒ 红 |
 | 4 | **对照组**：绑定得上的 route_key 照旧原样返回（不许"一刀切全兜底"把路由打死） | 修法过度 ⇒ 红 |
 
@@ -189,7 +189,7 @@ class TestRouteByIntentNeverReturnsADanglingDestination:
 
     @pytest.mark.parametrize("agent_type", AGENTS)
     def test_handoff_offer_only_where_the_node_exists(self, agent_type):
-        """`action=handoff_offer` 只在有该节点的 agent 上返回它（米宝图上没有 ⇒ 不许返回）。"""
+        """`action=handoff_offer` 只在有该节点的 agent 上返回它（黄金策图上没有 ⇒ 不许返回）。"""
         from app.graph.nodes import route_by_intent
 
         state = self._state(agent_type, route_decision={"action": "handoff_offer"})
@@ -246,7 +246,7 @@ class TestUnboundRouteKeysFallBackToTheFallbackSkill:
         )
 
     def test_bound_route_keys_are_untouched(self):
-        """对照组：`order` 绑定在米宝上 ⇒ `order_query` 必须照旧回到 `order`。"""
+        """对照组：`order` 绑定在黄金策上 ⇒ `order_query` 必须照旧回到 `order`。"""
         from app.graph.nodes import _get_intent_to_route
 
         mapping = _get_intent_to_route("mibao")

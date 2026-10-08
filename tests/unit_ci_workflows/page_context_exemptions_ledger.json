@@ -1,0 +1,113 @@
+{
+  "schema": "page-context-exemptions-ledger/v1",
+  "issue": 6215,
+  "what": "B 端黄金策「页面上下文解释与教学」（能力地图族 4）的**豁免台账**：`frontend/admin-web/src/config/menu.ts` 里的每一个菜单 route，要么登记进 `backend/ai-agent-service/app/context/page_registry.py` 的 `PAGE_REGISTRY`（黄金策能拿该页口径解释），要么**在此具名登记豁免**（未确证有「确为该页口径」的真值源 ⇒ 不注入）。判据 = `tests/unit_ci_workflows/test_page_context_registry_coverage.py`。",
+  "why": "「暂不覆盖」在此之前**只活在代码里没有的东西**（登记表里少一条），既看不出是有意为之、也看不出欠了什么 ⇒ 谁也不知道 22 个菜单页里有 16 个悄悄没覆盖。本表把「为什么没覆盖 + 补哪一份口径文档才能重启」变成**必须显式登记、只许缩短**的东西：业务方补齐口径文档 ⇒ 删一条豁免 + 加一条登记（台账变短、登记面变长，两个方向都看得见）。",
+  "frozen_note": "🔴 **只许缩短**（沿用 `tests/unit_ci_workflows/schedule_scope_ledger.json` 的存量冻结范式）：① `exempt_routes_frozen` 是**冻结快照**，必须与 `exemptions` 逐项相等 —— 想「把新页塞进豁免」必须同时改快照、`baseline_frozen` 与 `exemptions` 三处，且 `baseline_frozen` 只许变小；② 与登记表的**双向相等**由元守卫核（漏登记 / 多登记 / 悬挂 route ⇒ 逐条判红）。⚠️ 「缩短」= 删一条豁免 + 同批在 `PAGE_REGISTRY` 里补上该 route（**不是**只删台账条目）。",
+  "baseline_frozen": 13,
+  "exempt_routes_frozen": [
+    "/agent-workspace/human-sessions",
+    "/after-sales",
+    "/briefing",
+    "/customers",
+    "/employees",
+    "/finance",
+    "/inbound-orders",
+    "/knowledge",
+    "/notifications",
+    "/production/remnants",
+    "/production/saving-board",
+    "/roles",
+    "/settings"
+  ],
+  "exemptions": [
+    {
+      "route": "/briefing",
+      "reason": "智能每日经营简报（issue #3468）：本仓**没有**「日报指标怎么算 / 今天该看哪几个数」的口径文档（`docs/design/daily-briefing-design.md` 是功能设计稿，不是给用户的字段口径）。",
+      "restart_condition": "补 `docs/daily-briefing-metrics.md`（日报指标口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/briefing\"`、`truth_source` 指向该文档。"
+    },
+    {
+      "route": "/agent-workspace/human-sessions",
+      "reason": "在线接待（人工客服工作台）：本仓没有「会话状态机 / 消息类型」的对外口径文档；接待端的判定是服务端逻辑，没有能引给用户的登记源。",
+      "restart_condition": "补 `docs/agent-workspace-session-rules.md`（会话状态与消息类型口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/agent-workspace/human-sessions\"`。"
+    },
+    {
+      "route": "/customers",
+      "reason": "客户列表：`docs/curtain-production-rules.md` §7「客户工艺画像（客户记忆）」讲的是**生产侧**的记忆口径，不是本页客户档案字段的口径 ⇒ 引它会让黄金策拿错口径解释这一页（比不解释更烦）。",
+      "restart_condition": "补 `docs/customer-profile-fields.md`（客户档案字段与客户记忆口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/customers\"`。"
+    },
+    {
+      "route": "/knowledge",
+      "reason": "知识库：现有真值源都是**给黄金策读的厂内口径**，没有「知识卡片来源 / 检索排序」的对外口径 ⇒ 解释这一页等于自己编一套。",
+      "restart_condition": "补 `docs/knowledge-base-card-sources.md`（知识卡片来源与检索口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/knowledge\"`。"
+    },
+    {
+      "route": "/after-sales",
+      "reason": "售后工单：本仓没有「售后状态流转 / 退款口径」文档（`order:refund` 是写码，不是口径）。",
+      "restart_condition": "补 `docs/after-sales-rules.md`（售后状态机与退款口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/after-sales\"`。"
+    },
+    {
+      "route": "/finance",
+      "reason": "财务对账：本仓没有「对账字段 / 应收应付口径」文档；`frontend/admin-web/src/lib/order-amount.ts` 是**订单行**金额，不是对账口径 ⇒ 不登。",
+      "restart_condition": "补 `docs/finance-reconciliation-rules.md`（对账口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/finance\"`。"
+    },
+    {
+      "route": "/inbound-orders",
+      "reason": "入库单：批次号 / 移动加权平均成本 / 过账规则只在代码与 issue 里，**没有**仓内文档口径 ⇒ 登它就得引一份不相关的文档。",
+      "restart_condition": "补 `docs/inbound-orders-rules.md`（入库批次与成本口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/inbound-orders\"`。"
+    },
+    {
+      "route": "/production/remnants",
+      "reason": "余料台账：「余料」的数量定义与 L2 档位口径没有文档承载体（前端只有渲染助手 `frontend/admin-web/src/lib/saving-board.ts`，它明写「不算米数、不写死数字」⇒ 不是口径源）。",
+      "restart_condition": "补 `docs/remnant-ledger-rules.md`（余料定义与数量口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/production/remnants\"`。"
+    },
+    {
+      "route": "/production/saving-board",
+      "reason": "省料看板：两条指标（剩余 ≤0.2m 批次占比 / 入库采购总米数）与档位文案的**口径在服务端**，仓内无文档；`frontend/admin-web/src/lib/saving-board.ts` 逐字写着它不定义口径 ⇒ 不能当 register 的真值源。",
+      "restart_condition": "补 `docs/production-saving-board-metrics.md`（两条指标与档位的口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/production/saving-board\"`。"
+    },
+    {
+      "route": "/employees",
+      "reason": "员工管理：员工字段 / 岗位挂载口径散在 `docs/design/employee-permission-chain.md`（设计稿）与代码里，没有可直接引的字段口径文档。",
+      "restart_condition": "把 `docs/design/employee-permission-chain.md` 的口径面收口成用户可引文档（或在其中补「员工字段口径」节）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/employees\"`。"
+    },
+    {
+      "route": "/roles",
+      "reason": "岗位权限：**权限码与菜单的对应关系**是机器可核的（`tests/unit_ci_workflows/test_agent_permission_parity.py` 等），但「这个岗位为什么看不到那一页」的用户口径文档不存在 ⇒ 无真值源可引。",
+      "restart_condition": "补 `docs/rbac-explanation.md`（岗位可见性口径，面向商家解释）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/roles\"`。"
+    },
+    {
+      "route": "/settings",
+      "reason": "企业基础信息：`tenant-params-center` 一类的企业参数（与企业开关）口径只在代码 / issue 里，没有仓内文档。",
+      "restart_condition": "补 `docs/tenant-settings-reference.md`（企业基础信息各字段口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/settings\"`。"
+    },
+    {
+      "route": "/notifications",
+      "reason": "通知中心：本页**没有权限码**（全员可见），推送类型 / 消息来源没有文档口径承载体。",
+      "restart_condition": "补 `docs/notification-center-rules.md`（通知类型与来源口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/notifications\"`。"
+    }
+  ],
+  "coverage_boundary_frozen": 4,
+  "coverage_boundary": [
+    {
+      "face": "「该页有没有真值源」是**判断**，不是判据",
+      "reason": "本表与元守卫只能机械核：① 每个菜单 route 要么在登记表、要么在本台账（双向相等）；② 登记的真值源路径 / 权限码**真实存在**。**判不了**「这份文档真的是这一页的口径」—— 那是本条交付里**人（AI 依据锚点）做的一次判断**，锚点逐条写在 PR body（`<仓库相对路径>::<符号>`）。⇒ 豁免台账的 `reason` / `restart_condition` 是**自述**，不是机械核查。",
+      "recompute": "python3 -m pytest tests/unit_ci_workflows/test_page_context_registry_coverage.py -q -s  # 判据 1 打印现取的覆盖/豁免条数"
+    },
+    {
+      "face": "判不了「黄金策真的按真值源解释了这一页」（行为面）",
+      "reason": "本判据是**纯静态**的（只读仓内文件：`menu.ts` / `page_registry.py` / 权限目录 / 本台账；零网络、零 LLM、不 import `app.*` 运行时依赖）。「解释是否引用了真值源」由 `backend/ai-agent-service/tests/test_page_context.py` 的注入面判据 + `.github/cases/chat.yml` 的 CH 用例承接口径（**本轮不跑真实 LLM 评测**，见 issue #4262 裁定）。",
+      "recompute": "cd backend/ai-agent-service && python3 -m pytest tests/test_page_context.py -q"
+    },
+    {
+      "face": "`page_registry.py` 是**静态解析**（AST 取字面量），不是运行时读表",
+      "reason": "CI 的 `ci workflow helper unit tests` job 只装 `pytest` + `pyyaml`（不装 pydantic / fastapi）⇒ 本判据不得 import `app.context.page_registry`（它会经 `app.tools.base` 拉 pydantic）。⇒ 登记表若被改写成循环 / 变量拼接（AST 取不到字面量）⇒ 元守卫**fail-closed 判红**（不是静默放过）。",
+      "recompute": "python3 -m pytest tests/unit_ci_workflows/test_page_context_registry_coverage.py -q -k static_ast"
+    },
+    {
+      "face": "豁免台账只裁「这一页有没有登记真值源」，不保证口径文档本身是对的",
+      "reason": "登记面与豁免面都不为文档内容背书：文档写错 ⇒ 黄金策照着错的解释。该面由文档自身的判据（如 `docs/curtain-production-rules.md` 的复核命令）承接，不在本表射程。",
+      "recompute": "sed -n '92,110p' docs/curtain-production-process-standard.md  # 该文档的「复核命令」节"
+    }
+  ]
+}

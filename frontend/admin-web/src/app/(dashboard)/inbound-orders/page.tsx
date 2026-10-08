@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, RotateCcw, Search, Send, Ban, PackageOpen, Upload, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { inboundOrderApi } from '@/lib/api'
-import { Modal, Button, Input, Select } from '@/components/ui'
+import { Modal, Button, Input, Select, Badge } from '@/components/ui'
 import type { InboundOrder, InboundOrderLine, InboundOrderStatus, OpeningImportReport } from '@/types'
 import { cn } from '@/lib/utils'
 import { formatStockQuantity } from '@/lib/stock-quantity'
@@ -46,10 +46,17 @@ const STATUS_LABEL: Record<InboundOrderStatus, string> = {
   cancelled: '已作废',
 }
 
-const STATUS_CLASS: Record<InboundOrderStatus, string> = {
-  draft: 'bg-neutral-100 text-neutral-700 border-neutral-200',
-  posted: 'bg-green-50 text-green-700 border-green-200',
-  cancelled: 'bg-red-50 text-red-600 border-red-200',
+/**
+ * 状态 → 共享原语 `Badge` 的 variant / 形状（`Badge` 自带 `whitespace-nowrap`，且落在 UI-056 的元守卫面内）。
+ *
+ * `rounded-full` 与草稿底色是**有意覆盖**：`Badge` 默认 `rounded` + `bg-neutral-50`，而 neutral-50
+ * **与本页行的 hover 底色同值**（`hover:bg-neutral-50`）⇒ 直接复用会让草稿药丸在鼠标悬停那一行时
+ * 「消失」（填充与行底色完全相同、只剩 1px 边框）。这里覆盖回改前的胶囊形状 + neutral-100。
+ */
+const STATUS_BADGE: Record<InboundOrderStatus, { variant: 'default' | 'success' | 'error'; className: string }> = {
+  draft: { variant: 'default', className: 'rounded-full bg-neutral-100 text-neutral-700' },
+  posted: { variant: 'success', className: 'rounded-full' },
+  cancelled: { variant: 'error', className: 'rounded-full' },
 }
 
 /**
@@ -187,7 +194,7 @@ export default function InboundOrdersPage() {
       return
     }
     if (!importRunId.trim()) {
-      toast.error('导入标识不能为空（它是幂等键：重跑同一标识不会重复建账）')
+      toast.error('导入标识不能为空 —— 同一个标识只建一次账，重跑同一份文件不会重复建单、不会重复加库存')
       return
     }
     setImporting(true)
@@ -200,7 +207,7 @@ export default function InboundOrdersPage() {
         await load()
       } else if (report && report.failCount === 0 && !report.created && report.inboundNo) {
         // 幂等命中：这次运行早已建过账 —— 不是失败，但也**没有**再动库存
-        toast.success('这次导入运行已经建过账（幂等命中，未重复加库存）')
+        toast.success('这次导入已经建过账了（同一个标识只建一次，没有重复加库存）')
       } else {
         toast.error('有明细行未通过校验，未建账（一行都没写）—— 请按报告修改后重跑')
       }
@@ -220,10 +227,7 @@ export default function InboundOrdersPage() {
             <PackageOpen className="w-5 h-5 text-primary-600" />
             入库单
           </h1>
-          <p className="text-sm text-neutral-500 mt-1">
-            商品布料入库：建单（草稿）→ 过账（自动生成批次号 + 自动加库存 + 移动加权平均成本）→ 批次可追溯；
-            <strong>期初建账</strong>可按实物把在库批次（含 0.5 米级尾料）登记进来
-          </p>
+          <p className="text-sm text-neutral-500 mt-1">登记布料到货、过账后加库存 —— <strong>过账前不改动库存</strong>，可以先核对再确认。<strong>期初建账</strong>可按实物把在库批次登记进来</p>
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={openImport}>
@@ -271,50 +275,51 @@ export default function InboundOrdersPage() {
 
       {/* 列表 */}
       <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+        {/* issue #6398：`w-full` 会把列压到 CJK min-content（一个汉字）⇒ 必须给横向逃逸口 +
+            `whitespace-nowrap`（否则表头折行、状态药丸竖排）。同省料看板 / 工艺路线的既有范式。 */}
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-600">
             <tr>
-              <th className="text-left px-4 py-2.5 font-medium">入库单号</th>
-              <th className="text-left px-4 py-2.5 font-medium">入库日期</th>
-              <th className="text-left px-4 py-2.5 font-medium">供应商</th>
-              <th className="text-left px-4 py-2.5 font-medium">仓库</th>
-              <th className="text-right px-4 py-2.5 font-medium">行数 / 总数量</th>
-              <th className="text-left px-4 py-2.5 font-medium">批次号</th>
-              <th className="text-right px-4 py-2.5 font-medium">金额</th>
-              <th className="text-left px-4 py-2.5 font-medium">状态</th>
-              <th className="text-right px-4 py-2.5 font-medium">操作</th>
+              <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">入库单号</th>
+              <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">入库日期</th>
+              <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">供应商</th>
+              <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">仓库</th>
+              <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">行数 / 总数量</th>
+              <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">批次号</th>
+              <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">金额</th>
+              <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">状态</th>
+              <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">操作</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr key={row.id} className="border-t border-neutral-100 hover:bg-neutral-50">
-                <td className="px-4 py-2.5 font-mono text-neutral-900">{row.inboundNo}</td>
-                <td className="px-4 py-2.5 text-neutral-600">{row.inboundDate}</td>
-                <td className="px-4 py-2.5 text-neutral-600">{row.supplier || '-'}</td>
-                <td className="px-4 py-2.5 text-neutral-600">{row.warehouse || '-'}</td>
-                <td className="px-4 py-2.5 text-right text-neutral-600">
+                <td className="px-3 py-2.5 font-mono text-neutral-900 whitespace-nowrap">{row.inboundNo}</td>
+                <td className="px-3 py-2.5 text-neutral-600 whitespace-nowrap">{row.inboundDate}</td>
+                <td className="px-3 py-2.5 text-neutral-600 whitespace-nowrap">{row.supplier || '-'}</td>
+                <td className="px-3 py-2.5 text-neutral-600 whitespace-nowrap">{row.warehouse || '-'}</td>
+                <td className="px-3 py-2.5 text-right text-neutral-600 whitespace-nowrap">
                   {row.itemCount} / {formatStockQuantity(row.totalQuantity)}
                 </td>
                 <td
                   data-testid="inbound-batch-nos"
-                  className="px-4 py-2.5 font-mono text-xs text-neutral-600"
+                  className="px-3 py-2.5 font-mono text-xs text-neutral-600 whitespace-nowrap"
                 >
                   {batchCell(row)}
                 </td>
-                <td className="px-4 py-2.5 text-right text-neutral-900">
+                <td className="px-3 py-2.5 text-right text-neutral-900 whitespace-nowrap">
                   {row.totalAmount != null ? `¥${Number(row.totalAmount).toFixed(2)}` : '-'}
                 </td>
-                <td className="px-4 py-2.5">
-                  <span
-                    className={cn(
-                      'inline-flex items-center rounded-full border px-2 py-0.5 text-xs',
-                      STATUS_CLASS[row.status],
-                    )}
+                <td className="px-3 py-2.5 whitespace-nowrap">
+                  <Badge
+                    variant={STATUS_BADGE[row.status].variant}
+                    className={STATUS_BADGE[row.status].className}
                   >
                     {STATUS_LABEL[row.status]}
-                  </span>
+                  </Badge>
                 </td>
-                <td className="px-4 py-2.5 text-right">
+                <td className="px-3 py-2.5 text-right whitespace-nowrap">
                   <Button variant="ghost" size="sm" onClick={() => void openDetail(row.id)}>
                     详情
                   </Button>
@@ -323,13 +328,14 @@ export default function InboundOrdersPage() {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-neutral-400">
+                <td colSpan={9} className="px-3 py-10 text-center text-neutral-400">
                   {loading ? '加载中…' : '暂无入库单'}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* 期初建账导入弹窗（V118 / issue #5153） */}
@@ -360,12 +366,12 @@ export default function InboundOrdersPage() {
             导入会建一张<strong>期初建账</strong>入库单并<strong>直接过账</strong>：库存按登记的剩余米数增加、
             系统批次号自动生成、<strong>旧系统批次号原样登记</strong>。
             「剩余米数」填<strong>现在实物还剩多少米</strong>（不是当初进了多少米）——
-            0.5 米这样的尾料也能如实登记（最多 1 位小数，不做静默取整）。
+            尾料不足整米也能如实登记，<strong>系统不会四舍五入替你改</strong>。
           </p>
 
           <div className="grid grid-cols-2 gap-3">
             <Input
-              label="导入标识（幂等键）"
+              label="导入标识"
               aria-label="导入标识"
               value={importRunId}
               onChange={(e) => setImportRunId(e.target.value)}

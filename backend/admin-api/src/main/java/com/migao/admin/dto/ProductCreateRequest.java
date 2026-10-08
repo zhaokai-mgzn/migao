@@ -67,7 +67,9 @@ public class ProductCreateRequest {
     private String knowledgeBaseId;
 
     /**
-     * 状态：on_sale（上架）、off_sale（下架）、draft（草稿）
+     * 状态：合法取值只有 draft（草稿）/ under_review（审核中）/ on_sale（出售中）/ off_sale（已下架）
+     * —— **单一真值源 = ProductService.STATUS_TRANSITIONS**（issue #6347：本注释不再重复列一遍，
+     * 入口按该集合做**枚举准入**，未知取值 422）。
      * AI 渠道创建默认 draft，避免未确认即上架；前端/Excel 导入由调用方控制
      */
     private String status = "draft";

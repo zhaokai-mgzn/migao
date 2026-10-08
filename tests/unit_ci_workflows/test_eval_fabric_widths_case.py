@@ -109,9 +109,9 @@ class TestCaseAssertsFabricWidths:
             f"否则断言恒红 = 空断言）")
 
     def test_case_is_single_leg_xiaobu(self):
-        """端别：`curtain_calc` 是小布专属 ⇒ 必须标 `persona: xiaobu`（否则米宝腿必挂）。"""
+        """端别：`curtain_calc` 是元元专属 ⇒ 必须标 `persona: xiaobu`（否则黄金策腿必挂）。"""
         assert _case().get("persona") == "xiaobu", (
-            "CH-043 断言的是小布专属工具 curtain_calc ⇒ 必须 persona: xiaobu"
+            "CH-043 断言的是元元专属工具 curtain_calc ⇒ 必须 persona: xiaobu"
             "（并同步 tests/unit_ci_workflows/test_persona_filter.py 的 XIAOBU_ONLY）")
 
 

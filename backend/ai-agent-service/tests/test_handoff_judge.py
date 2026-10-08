@@ -1,4 +1,4 @@
-"""小布 AI 主动引导转人工 — 判定纯函数单元测试（app/graph/handoff_judge.py）
+"""元元 AI 主动引导转人工 — 判定纯函数单元测试（app/graph/handoff_judge.py）
 
 覆盖（设计文档 xiaobu-ai-handoff-guidance.md §3）：
 - D1 显式请求词 → 直转判定 is_explicit_handoff_request
@@ -260,8 +260,8 @@ class TestS1AfterSalesWithoutActionableRequest:
         （而非 general/after_sales）→ 旧白名单把 complaint 排除 → 不弹卡。
 
         设计原话是「不含投诉/举报/不满/差评 —— 这些已被 L1 rule_matcher 命中 complaint
-        意图走既有直转/投诉流程」。但那是**B 端**语义（米宝收到投诉直接转）；
-        在 **C 端**（小布）实测 R1 既没有直转、也没有弹卡，只有一句安抚文本 ——
+        意图走既有直转/投诉流程」。但那是**B 端**语义（黄金策收到投诉直接转）；
+        在 **C 端**（元元）实测 R1 既没有直转、也没有弹卡，只有一句安抚文本 ——
         于是同一用例的成败又变成分类器抽奖（CH-013 已因 after_sales 修好，CH-014 同理）。
         判据与 after_sales 保持一致：**看消息里有没有可执行诉求**，而不是看意图标签。
         """

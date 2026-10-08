@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-C 端小布评测覆盖体检（issue #3266，判据收紧于 #3555）。
+C 端元元评测覆盖体检（issue #3266，判据收紧于 #3555）。
 
 参考 B 端方法论：把「用例库实际覆盖了哪些能力」显式化，缺口列出来而不是
 靠"看起来有覆盖"。B 端有 docs/testing/mibao-verification-cases.md 做用例清单，
@@ -16,7 +16,7 @@ C 端小布评测覆盖体检（issue #3266，判据收紧于 #3555）。
 输出四张表：
   ① 工具覆盖矩阵：C 端每个工具 ← 哪些用例覆盖（缺口标 ⚠️）
   ② 用例归属清单：PERSONA=xiaobu 实际会跑哪些用例（按 tier 分组）
-  ③ 孤儿用例：声明 persona: xiaobu 但工具不在小布工具集内（配置错误防线）
+  ③ 孤儿用例：声明 persona: xiaobu 但工具不在元元工具集内（配置错误防线）
   ④ 薄覆盖清单：**缺正向用例**（结构性缺失，--check 拦截）/ **仅 1 条用例**
      （厚度不足，只报告；缺口数是随迭代收敛的活指标，不设硬阈值）
 
@@ -86,7 +86,7 @@ def render_text(rep, cases, by_tier) -> str:
     out.append("")
     _render_by_tier(out, by_tier)
     if rep.orphan_cases:
-        out.append("── ③ 孤儿用例（期望工具小布没有）⚠️ ──")
+        out.append("── ③ 孤儿用例（期望工具元元没有）⚠️ ──")
         for cid, extra in rep.orphan_cases:
             out.append(f"  {cid}: {extra}")
         out.append("")
@@ -165,7 +165,7 @@ def _render_thin(out, rep) -> None:
 
 def render_md(rep, by_tier) -> str:
     total = len(rep.tools)
-    out = ["# C 端小布评测覆盖矩阵", "",
+    out = ["# C 端元元评测覆盖矩阵", "",
            "> 生成物（`scripts/xiaobu_coverage.py --md` 渲染，禁止手改）。"
            "单一源 `.github/cases/`。", "",
            f"- C 端用例集：**{rep.cases_run} 条**（persona 归属 + 工具能力过滤后）",
@@ -216,7 +216,7 @@ def render_md(rep, by_tier) -> str:
             out.append(f"| `{t}` | {tool_label(PERSONA, t)} | {', '.join(rep.cases[t])} |")
         out.append("")
     if rep.orphan_cases:
-        out += ["## ⑤ 孤儿用例", "", "| 用例 | 非小布工具 |", "|---|---|"]
+        out += ["## ⑤ 孤儿用例", "", "| 用例 | 非元元工具 |", "|---|---|"]
         for cid, extra in rep.orphan_cases:
             out.append(f"| {cid} | {', '.join(extra)} |")
         out.append("")

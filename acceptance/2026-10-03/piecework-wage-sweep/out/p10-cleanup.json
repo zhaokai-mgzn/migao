@@ -1,0 +1,302 @@
+{
+  "at": "2026-10-03T00:43:31.366Z",
+  "prefix": "工资验收",
+  "orderIds": [
+    "ed5105c74637e2ee78b21dc4ee05c542",
+    "a54247586eee136b04e125dc72f6ad53",
+    "0ba0e09faea0c33f8567b0893943b7a9",
+    "6cb70da1086aa50926d320d7d34c4ba1",
+    "1fd83aa9cc1035acbf418aa10f033967",
+    "f0debce0ff0e9a720f73f92f81f73abb",
+    "34cc3b83c7ba7c3b225c5e497a0a2a31",
+    "bac5064832513c2cb112d556df40b584",
+    "1720cb19ee356338ac88a1e6e7effe7e",
+    "7b801cdc01c1128f13a02108c12b3c00",
+    "d819d122038db64afe34ba61ae9f4efe",
+    "32c5a3978f0829030fc645cca5144c2c",
+    "dccd231eae19f46331f82d63dbf1d92b",
+    "8b1877d466ec921c11e9344ef8a02841",
+    "e2cc082af610b74254029baacca31410",
+    "f1a87a3f44c2a5907cd7f93d0573f9ed",
+    "9feb72bf46164231b33a5b039dfbdab2"
+  ],
+  "poIds": [
+    "c12fd207ebcfffbdd94f848a28e21dfc",
+    "0911b01baa17c772d46a464b3f3068e6",
+    "e112021a34955154a454655d800f9605",
+    "8add7231075c37969a208144cf6785ca",
+    "0975e63390415e28ec0d97dc4728d7ca",
+    "b9def8885bd30e17030b6349e652ecac",
+    "02208823f58606b2dbdb950e0967304c",
+    "e24790ff04e84cf8e06513bd4d4ae7b9",
+    "b0ce61996abece333837af4b248d26e0",
+    "74c4ed10fbd4eaadc516806a5c87c439",
+    "5ef130934bdc509518d27b6c9dd16c88",
+    "024de89e1b4783f794e2835e04072567",
+    "e7dfa8980bb79476798b46ea33420240",
+    "b6780e82e4dca864cde5be3871b8785e",
+    "f149db74ca078dcd221bf359a993ff04"
+  ],
+  "productIds": [
+    "c7853b2301e02f1746ab84b572b74488",
+    "94a2c56fa9dbe8ea5c25052ba92047e6",
+    "866425433c5345c6e7be23a0bfd1b372",
+    "a80f676e32514a3e957c2c30c2b85052",
+    "63fb3b3041f78e737e79c2d050ac7921",
+    "c84c86f6f636ed78bcc9d322b5e246e3",
+    "214381d6006978c490488472e438dcda",
+    "1801b044777bd1fdfbac15a6b33e1e4a",
+    "77e22e828347474fb01290a10d668847",
+    "58f992820f7dcac11f0b3fe86f12f201",
+    "50bafb20036893c899549e5f12fabe44",
+    "3ec5e3580924d51706663f5433a3e3d2",
+    "2fe8d96aa302a8a0a93dc5e4ee38ae40",
+    "ebad996b5c0d077c3af278d2470eb8b0",
+    "99f90df366593b520030a105a17762a5",
+    "0b068f2f3844b866a43234cf48eeb6d1"
+  ],
+  "catIds": [
+    "9a8a533ec6801a60a58b22b40b236759",
+    "f37ebf4714f58aedb8973e7f08940326",
+    "894fc7419998f2ba1f3ea9497f112ebb",
+    "42711c2fe43fc2283bdd6c84daedf408",
+    "6f6ad06cfef0b4996dc12cb4c39a8a0a",
+    "82c77f31201926ea4988e9b343e4b0f8",
+    "efb39397dbea2c5150752731b624e7ce",
+    "cb47d7182181c8d62aa11b10d5aee5dd",
+    "62a5d9842c45758f104286bd3ba3250e",
+    "171c1065e491c70e2f158ccb6ecb913a",
+    "153f64091557eb06803d885bbcd4ff30",
+    "3622027b45bfa271ce0df18be9aed6b9",
+    "96864ac7657a8f1d9d61cd200a1d0c6f",
+    "aaf5d7a30e431e627156a2aadf3b6824",
+    "4d17917582474fedd0003c0742ff2e00",
+    "38e12bc9c60dcd732f079f9414fba629"
+  ],
+  "before": {
+    "workLogs": 18,
+    "instances": 155,
+    "orders": 20,
+    "products": 20,
+    "categories": 20
+  },
+  "orderDelete": [
+    [
+      "ed5105c74637e2ee78b21dc4ee05c542",
+      422
+    ],
+    [
+      "a54247586eee136b04e125dc72f6ad53",
+      422
+    ],
+    [
+      "0ba0e09faea0c33f8567b0893943b7a9",
+      422
+    ],
+    [
+      "6cb70da1086aa50926d320d7d34c4ba1",
+      422
+    ],
+    [
+      "1fd83aa9cc1035acbf418aa10f033967",
+      422
+    ],
+    [
+      "f0debce0ff0e9a720f73f92f81f73abb",
+      422
+    ],
+    [
+      "34cc3b83c7ba7c3b225c5e497a0a2a31",
+      422
+    ],
+    [
+      "bac5064832513c2cb112d556df40b584",
+      422
+    ],
+    [
+      "1720cb19ee356338ac88a1e6e7effe7e",
+      422
+    ],
+    [
+      "7b801cdc01c1128f13a02108c12b3c00",
+      422
+    ],
+    [
+      "d819d122038db64afe34ba61ae9f4efe",
+      422
+    ],
+    [
+      "32c5a3978f0829030fc645cca5144c2c",
+      422
+    ],
+    [
+      "dccd231eae19f46331f82d63dbf1d92b",
+      422
+    ],
+    [
+      "8b1877d466ec921c11e9344ef8a02841",
+      422
+    ],
+    [
+      "e2cc082af610b74254029baacca31410",
+      422
+    ],
+    [
+      "f1a87a3f44c2a5907cd7f93d0573f9ed",
+      422
+    ],
+    [
+      "9feb72bf46164231b33a5b039dfbdab2",
+      422
+    ]
+  ],
+  "productDelete": [
+    [
+      "c7853b2301e02f1746ab84b572b74488",
+      422
+    ],
+    [
+      "94a2c56fa9dbe8ea5c25052ba92047e6",
+      422
+    ],
+    [
+      "866425433c5345c6e7be23a0bfd1b372",
+      422
+    ],
+    [
+      "a80f676e32514a3e957c2c30c2b85052",
+      422
+    ],
+    [
+      "63fb3b3041f78e737e79c2d050ac7921",
+      422
+    ],
+    [
+      "c84c86f6f636ed78bcc9d322b5e246e3",
+      422
+    ],
+    [
+      "214381d6006978c490488472e438dcda",
+      422
+    ],
+    [
+      "1801b044777bd1fdfbac15a6b33e1e4a",
+      422
+    ],
+    [
+      "77e22e828347474fb01290a10d668847",
+      422
+    ],
+    [
+      "58f992820f7dcac11f0b3fe86f12f201",
+      422
+    ],
+    [
+      "50bafb20036893c899549e5f12fabe44",
+      422
+    ],
+    [
+      "3ec5e3580924d51706663f5433a3e3d2",
+      422
+    ],
+    [
+      "2fe8d96aa302a8a0a93dc5e4ee38ae40",
+      422
+    ],
+    [
+      "ebad996b5c0d077c3af278d2470eb8b0",
+      422
+    ],
+    [
+      "99f90df366593b520030a105a17762a5",
+      422
+    ],
+    [
+      "0b068f2f3844b866a43234cf48eeb6d1",
+      422
+    ]
+  ],
+  "categoryDelete": [
+    [
+      "9a8a533ec6801a60a58b22b40b236759",
+      200
+    ],
+    [
+      "f37ebf4714f58aedb8973e7f08940326",
+      200
+    ],
+    [
+      "894fc7419998f2ba1f3ea9497f112ebb",
+      200
+    ],
+    [
+      "42711c2fe43fc2283bdd6c84daedf408",
+      200
+    ],
+    [
+      "6f6ad06cfef0b4996dc12cb4c39a8a0a",
+      200
+    ],
+    [
+      "82c77f31201926ea4988e9b343e4b0f8",
+      200
+    ],
+    [
+      "efb39397dbea2c5150752731b624e7ce",
+      200
+    ],
+    [
+      "cb47d7182181c8d62aa11b10d5aee5dd",
+      200
+    ],
+    [
+      "62a5d9842c45758f104286bd3ba3250e",
+      200
+    ],
+    [
+      "171c1065e491c70e2f158ccb6ecb913a",
+      200
+    ],
+    [
+      "153f64091557eb06803d885bbcd4ff30",
+      200
+    ],
+    [
+      "3622027b45bfa271ce0df18be9aed6b9",
+      200
+    ],
+    [
+      "96864ac7657a8f1d9d61cd200a1d0c6f",
+      200
+    ],
+    [
+      "aaf5d7a30e431e627156a2aadf3b6824",
+      200
+    ],
+    [
+      "4d17917582474fedd0003c0742ff2e00",
+      200
+    ],
+    [
+      "38e12bc9c60dcd732f079f9414fba629",
+      200
+    ]
+  ],
+  "positionRowsDeleted": [
+    "94b2d1aaa39728be8fc8f69876a0f548"
+  ],
+  "residue": {
+    "probe_worklogs_by_worker": 0,
+    "probe_worklogs_by_po": 0,
+    "probe_audits": 0,
+    "probe_orders_alive": 3,
+    "probe_pos_alive": 0,
+    "probe_instances_alive": 0,
+    "probe_products_alive": 4,
+    "probe_categories_alive": 4,
+    "probe_routes_alive": 0,
+    "probe_position_rows": 0,
+    "probe_library_ops": 0
+  },
+  "residueZero": false
+}

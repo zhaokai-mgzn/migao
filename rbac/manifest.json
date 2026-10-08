@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": "#5699",
   "stage": "P5+P6+I4",
-  "_note": "**声明真值源**（形态 A′，设计 §2.2/§2.3）：本文件是人可改的**唯一**声明；`rbac/readings.json` 是它的机器现取快照（生成物，不得手改）。**对账的唯一口径 = 两者逐值相等**（P1 落了「清单 == 生成物 == 现值」；P2 另加由本清单**派生**的八面投影 —— `roles.login`（A7 登录面）与 `codes.names`（目录名称列）；**P3 另加 `pages[]`**（**页面 → 码**：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule`））（判据 tests/unit_ci_workflows/test_rbac_single_source_manifest.py + tests/unit_ci_workflows/test_rbac_derived_pages.py；派生器 rbac/derive.py）。P1/P2/P3 三者零 delta，P4 才是第一次改行为。 ｜ 2026-09-29（issue #5778）：菜单 IA 重排（客户服务组新建 / 加工项归生产管理 / 商品管理升为一级项 / 交易管理收窄）—— 本清单的 `menu_nodes` 与 `menus.{frontend,controller,auth}` 随之改判；其余段（codes/roles/route_guard/pages/ledger_counts）不受影响。 ｜ 🔴 **解析器盲区（如实登记，2026-09-29 issue #5778 实测）**：`menus.auth` 的值由 `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `_iter_menu_auth` 现取，它的形态是「`permissions.contains(\"X\")) {` **紧跟** `var.add(menuItem(...))`」⇒ ① **顶层一级项**（商品管理）**在**读数里（它被一个 `permissions.contains(\"product:list\")` 门控着，只是 add 位置在组之前 —— 顺序差异由同构守卫的「一级项层」判据管），而 ② **顶层无码项**（通知中心，根本没有权限门控）**都不在** `menus.auth` 读数里 —— 本清单照现值填写（不补、不猜）；这两项的真实性由 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的「一级项层 / 独立项层」判据守着。同族：`{` 与 `.add` 之间插入注释行会让该项**静默从读数消失**（本单第一次生成时「生产看板」即如此）。 ｜ 2026-09-29（issue #5778）：`codes.names[\"product:list\"]` 随菜单改名由「商品列表」改为「商品管理」（两处目录 Java 与迁移链同批）。",
+  "_note": "**声明真值源**（形态 A′，设计 §2.2/§2.3）：本文件是人可改的**唯一**声明；`rbac/readings.json` 是它的机器现取快照（生成物，不得手改）。**对账的唯一口径 = 两者逐值相等**（P1 落了「清单 == 生成物 == 现值」；P2 另加由本清单**派生**的八面投影 —— `roles.login`（A7 登录面）与 `codes.names`（目录名称列）；**P3 另加 `pages[]`**（**页面 → 码**：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule`））（判据 tests/unit_ci_workflows/test_rbac_single_source_manifest.py + tests/unit_ci_workflows/test_rbac_derived_pages.py；派生器 rbac/derive.py）。P1/P2/P3 三者零 delta，P4 才是第一次改行为。 ｜ 2026-09-29（issue #5778）：菜单 IA 重排（客户服务组新建 / 加工项归生产管理 / 商品管理升为一级项 / 交易管理收窄）—— 本清单的 `menu_nodes` 与 `menus.{frontend,controller,auth}` 随之改判；其余段（codes/roles/route_guard/pages/ledger_counts）不受影响。 ｜ 🔴 **解析器盲区（如实登记，2026-09-29 issue #5778 实测）**：`menus.auth` 的值由 `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `_iter_menu_auth` 现取，它的形态是「`permissions.contains(\"X\")) {` **紧跟** `var.add(menuItem(...))`」⇒ ① **顶层一级项**（商品管理）**在**读数里（它被一个 `permissions.contains(\"product:list\")` 门控着，只是 add 位置在组之前 —— 顺序差异由同构守卫的「一级项层」判据管），而 ② **顶层无码项**（通知中心，根本没有权限门控）**都不在** `menus.auth` 读数里 —— 本清单照现值填写（不补、不猜）；这两项的真实性由 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的「一级项层 / 独立项层」判据守着。同族：`{` 与 `.add` 之间插入注释行会让该项**静默从读数消失**（本单第一次生成时「生产看板」即如此）。 ｜ 2026-09-29（issue #5778）：`codes.names[\"product:list\"]` 随菜单改名由「商品列表」改为「商品管理」（两处目录 Java 与迁移链同批）。 ｜ 2026-10-06（issue #6457，用户裁定方案 A1）：菜单**顺序**重排（组名/码/路径一字未动）——客户服务组「在线接待 → 知识库 → 售后工单 → 客户列表」、生产管理组「加工项管理 → 工艺配置 → 生产看板 → 智能派单 → 计件工资」、仓储与物料组「入库单 → 库存明细 → 发货单 → 余料台账 → 省料看板」、一级项「商品管理」沉到**所有分组之后**（原「工作台组之后」）⇒ 本清单的 `menu_nodes`（有序）随之改判；`menus.{frontend,controller,auth}` 按名取码、**集合不变**故逐字未动；⚠️ 同时实测到菜单顺序的**第四处**承载体 = `backend/ai-agent-service/app/context/menu_navigator.py` 的 `MENU_TREE`（不在「三源」口径里，由 `tests/unit_ci_workflows/test_menu_navigator.py` 守着；已在 issue #6462 登记）。",
   "codes": {
     "registration": [
       "dashboard:view",
@@ -100,7 +100,7 @@
       "finance:create": "财务操作",
       "agent:session": "会话监控",
       "agent:session:manage": "会话操作",
-      "agent:chat": "米宝对话",
+      "agent:chat": "黄金策对话",
       "employee:list": "员工列表",
       "employee:create": "新增员工",
       "system:view": "岗位权限查看",
@@ -317,6 +317,7 @@
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
+      "库存明细": "product:list",
       "组织管理": null,
       "员工管理": "employee:list",
       "岗位权限": "system:view",
@@ -343,6 +344,7 @@
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
+      "库存明细": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础信息": "system:manage",
@@ -367,6 +369,7 @@
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
+      "库存明细": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础信息": "system:manage"
@@ -405,12 +408,6 @@
       "code": "agent:session"
     },
     {
-      "key": "customers",
-      "name": "客户列表",
-      "path": "/customers",
-      "code": "customer:view"
-    },
-    {
       "key": "knowledge",
       "name": "知识库",
       "path": "/knowledge",
@@ -421,6 +418,12 @@
       "name": "售后工单",
       "path": "/after-sales",
       "code": "after_sales:view"
+    },
+    {
+      "key": "customers",
+      "name": "客户列表",
+      "path": "/customers",
+      "code": "customer:view"
     },
     {
       "key": "trade-center",
@@ -447,18 +450,6 @@
       "code": null
     },
     {
-      "key": "production-board",
-      "name": "生产看板",
-      "path": "/production",
-      "code": "production:view"
-    },
-    {
-      "key": "production-pool",
-      "name": "智能派单",
-      "path": "/production/pool",
-      "code": "processing:view"
-    },
-    {
       "key": "processing",
       "name": "加工项管理",
       "path": "/production/processing",
@@ -469,6 +460,18 @@
       "name": "工艺配置",
       "path": "/production/routings",
       "code": "production:view"
+    },
+    {
+      "key": "production-board",
+      "name": "生产看板",
+      "path": "/production",
+      "code": "production:view"
+    },
+    {
+      "key": "production-pool",
+      "name": "智能派单",
+      "path": "/production/pool",
+      "code": "processing:view"
     },
     {
       "key": "production-piecework",
@@ -487,6 +490,12 @@
       "name": "入库单",
       "path": "/inbound-orders",
       "code": "inbound:view"
+    },
+    {
+      "key": "stock-ledger",
+      "name": "库存明细",
+      "path": "/stock-ledger",
+      "code": "product:list"
     },
     {
       "key": "shipments",
@@ -607,6 +616,10 @@
     [
       "/inbound-orders",
       "inbound:view"
+    ],
+    [
+      "/stock-ledger",
+      "product:list"
     ],
     [
       "/employees",
@@ -861,8 +874,7 @@
       "gate": "product:list",
       "units": {
         "product:list": [
-          "GET /api/admin/batch-stock/saving-board",
-          "GET /api/admin/batch-stock/saving-trend"
+          "GET /api/admin/batch-stock/saving-board"
         ]
       },
       "visibility_rule": "all"
@@ -919,6 +931,18 @@
         ]
       },
       "visibility_rule": "all"
+    },
+    {
+      "key": "stock-ledger",
+      "name": "库存明细",
+      "path": "/stock-ledger",
+      "gate": "product:list",
+      "units": {
+        "product:list": [
+          "GET /api/admin/stock-ledger"
+        ]
+      },
+      "visibility_rule": "all"
     }
   ],
   "ledger_counts": {
@@ -927,7 +951,7 @@
     "READ_WRITE_EXCEPTIONS": 0,
     "ROLE_FALLBACK_DIVERGENCES": 0,
     "AUTHORIZATION_CENSUS": 19,
-    "UNANNOTATED_ENDPOINTS": 18,
+    "UNANNOTATED_ENDPOINTS": 22,
     "REGISTERED_RESIDUALS": 10,
     "A7_CODES_BEYOND_CATALOG": 0,
     "A7_VS_MIRROR_DIVERGENCES": 0,

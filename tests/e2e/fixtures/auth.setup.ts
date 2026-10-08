@@ -83,7 +83,7 @@ setup('authenticate as admin', async ({ page, baseURL }) => {
           username: TEST_PHONE,
           name: '管理员',
           roles: ['admin'],
-          // 米宝唤出能力位（issue #5642 功能⑤）：admin 角色在后端恒为 ["*"] ⇒ 能力位为真。
+          // 黄金策唤出能力位（issue #5642 功能⑤）：admin 角色在后端恒为 ["*"] ⇒ 能力位为真。
           // 真实 /api/auth/me 就下发它；fixture 不补 ⇒ 授权门渲染成「需要管理员授权」、页面无面板。
           capabilities: { mibaoChat: true },
           tenantId: 1,

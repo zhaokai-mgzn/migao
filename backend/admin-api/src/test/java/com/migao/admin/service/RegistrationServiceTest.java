@@ -43,7 +43,7 @@ import static org.mockito.Mockito.*;
  * 覆盖：AI 通过/驳回/系统繁忙降级、蜜罐、频率限制、手机号/企业名查重、驳回冷却、
  * 审批副作用（租户+管理员）、审核元数据落库
  */
-// case_ids: OB-001, OB-002, OB-003, HR-006
+// case_ids: OB-001, OB-002, OB-003, OB-006, HR-006
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("RegistrationService 入驻申请服务测试（AI 自动甄别）")
@@ -67,6 +67,12 @@ class RegistrationServiceTest extends BaseServiceTest {
      * 既有断言照样通过），而线上后果是建单 fail-closed 422（#4316 回归）。
      */
     @Mock private ProductionSeedTemplateService productionSeedTemplateService;
+    /**
+     * 开租默认商品分类（issue #6295）：`approveApplication` 里把「新租户分类表为空 ⇒
+     * 首建商品 422『分类ID不能为空』」堵住的调用点。同 #4430 的教训 —— 本测试必须对该服务
+     * 有**具名断言**（`verify(...).seedDefaultCategory(新租户 id)`），否则删掉那一行调用 CI 全绿。
+     */
+    @Mock private ProductCategorySeedService productCategorySeedService;
 
     @InjectMocks private RegistrationService registrationService;
 
@@ -85,6 +91,8 @@ class RegistrationServiceTest extends BaseServiceTest {
         when(applicationMapper.selectCount(any())).thenReturn(0L);
         // 短信验证码默认通过
         when(smsService.verifyCode(anyString(), anyString())).thenReturn(true);
+        // 入驻后置条件（#6295）：默认「种下了」——需要验 fail-closed 的用例自己改 stub
+        when(productCategorySeedService.countCategories(anyLong())).thenReturn(1L);
         // 落库后回填自增 ID，并让 selectById 返回同一实例（审批副作用链路）
         java.util.concurrent.atomic.AtomicReference<TenantApplication> insertedRef =
                 new java.util.concurrent.atomic.AtomicReference<>();
@@ -427,6 +435,48 @@ class RegistrationServiceTest extends BaseServiceTest {
             verify(tenantMapper).insert(any(com.migao.admin.entity.Tenant.class));
             verify(userService).createUser(anyString(), anyString(), anyString(), eq("admin"), anyString(), isNull(), eq(100L));
             assertThat(pendingApp.getStatus()).isEqualTo("approved");
+        }
+
+        @Test
+        @DisplayName("开租播种（#6295）：审批通过 → 为新租户种默认商品分类（入参 = 新租户 id）")
+        void successSeedsDefaultProductCategory() {
+            when(applicationMapper.selectById(1L)).thenReturn(pendingApp);
+            doAnswer(inv -> { ((com.migao.admin.entity.Tenant) inv.getArgument(0)).setId(100L); return 1; })
+                    .when(tenantMapper).insert(any(com.migao.admin.entity.Tenant.class));
+            mockRoleInsertIds();
+            when(userService.createUser(anyString(), anyString(), anyString(), eq("admin"), anyString(), isNull(), eq(100L)))
+                    .thenReturn(new User());
+
+            registrationService.approveApplication(1L, "reviewer-001");
+
+            // 调用点**确实存在**（删掉 `seedRequiredInitialData` 里的那一行本断言即红；
+            // 端到端读数「首建商品不再 422」由 NewTenantOnboardingCategoryRealDbTest 承担）
+            verify(productCategorySeedService).seedDefaultCategory(100L);
+        }
+
+        /**
+         * 入驻后置条件的元守卫（issue #6295）：清单里 {@code enforced} 的必需初始数据缺了 ⇒
+         * <b>开租当场 fail-closed</b>，不许产出「开箱不可用」的租户。
+         *
+         * <p>反向红线：把 {@code assertRequiredInitialData} 摘掉（或把异常改成只打日志）⇒ 本断言必红。</p>
+         */
+        @Test
+        @DisplayName("入驻后置条件（#6295）：必需初始数据缺失 → 开租 fail-closed（ONBOARDING_REQUIRED_DATA_MISSING）")
+        void failsClosedWhenRequiredInitialDataMissing() {
+            when(applicationMapper.selectById(1L)).thenReturn(pendingApp);
+            doAnswer(inv -> { ((com.migao.admin.entity.Tenant) inv.getArgument(0)).setId(100L); return 1; })
+                    .when(tenantMapper).insert(any(com.migao.admin.entity.Tenant.class));
+            mockRoleInsertIds();
+            when(userService.createUser(anyString(), anyString(), anyString(), eq("admin"), anyString(), isNull(), eq(100L)))
+                    .thenReturn(new User());
+            // 注入：种了但库里查不到（= 漏种 / 被条件化 / 被吞掉的形态）
+            when(productCategorySeedService.countCategories(100L)).thenReturn(0L);
+
+            assertThatThrownBy(() -> registrationService.approveApplication(1L, "reviewer-001"))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getCode())
+                    .isEqualTo("ONBOARDING_REQUIRED_DATA_MISSING");
+            assertThat(pendingApp.getStatus()).as("开租失败 ⇒ 申请单不得落到 approved").isNotEqualTo("approved");
         }
 
         @Test

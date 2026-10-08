@@ -97,7 +97,7 @@ name: Post-Deploy Eval (部署后全量回归)
 #    实际没人盯结论，成本却照付——手动的"跑一次算一次"更诚实）。
 #
 # 3) 为什么两个 persona 用 **matrix 并行 job**（而不是一个 job 里顺序跑两个）
-#    · 并行：B 端（米宝）与 C 端（小布）互不等待，墙钟取两者最大值而非求和
+#    · 并行：B 端（黄金策）与 C 端（元元）互不等待，墙钟取两者最大值而非求和
 #      —— 全量回归时间宝贵（手动触发时人就在等），**反馈越快越不容易被跳过**。
 #    · 隔离：matrix 每条腿是**独立 runner + 独立 docker 栈 + 独立新库**，
 #      两个 persona 的种子数据/写用例（建品/下单/改客户）天然不互相污染。
@@ -428,7 +428,7 @@ jobs:
           # 的退出码取自管道最后一个命令（tail 永远成功）→ compose 失败被吞成
           # step success → 后续失败处理看不到真因（2026-09-11 实证）。
           set -o pipefail
-          # DEBUG=true（见上 env）：供 X-Debug-Role 路由（小布身份注入）；fail-closed 保护不受影响。
+          # DEBUG=true（见上 env）：供 X-Debug-Role 路由（元元身份注入）；fail-closed 保护不受影响。
           # ── 降频/提速改动 2/3（#3526）：镜像构建走 buildx + GHA 层缓存 ──
           # 平移 xiaobu-acceptance.yml 已验证写法（#3426）：
           #   · 用显式 tag + 覆盖文件把 compose 指向这些镜像，避免依赖 compose 的默认

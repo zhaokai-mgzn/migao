@@ -106,7 +106,21 @@ LEDGER_CEILINGS = {
     # （`/roles`·`/roles/{id}` → `system:view`；`/roles/all` → `employee:list`）⇒ 未注解端点
     # 台账从 21 条**缩短**到 18 条。**这不是放宽而是收窄**（只许缩短的台账自然下落）——
     # 上限随之调低，防它悄悄长回去。
-    "UNANNOTATED_ENDPOINTS": 18,
+    # issue #6367 包 P2（2026-10-05）：新增 `POST /api/admin/image-recognition/interpret` ⇒ 18 → 19。
+    # **这是显式放宽**（diff 里看得见），理由 = 与既有 `POST /api/admin/image-recognition`
+    # **同族同权限**：一个入口覆盖两个模块（`product:create` / `order:create`），
+    # `@RequirePermission` 只能声明端点级静态码 ⇒ 控制器内用
+    # `PermissionInterceptor.requirePermission(...)` 命令式断言，两个方法**共用同一个**私有判定
+    # `requireTargetPermission`（冻结契约「不新立第二套约定、不新增权限码」）。
+    # ⇒ 该端点**有**权限、只是取不到静态注解上；真正的出口是让判据 8 认得这种动态校验
+    # （体量另立一单），不是把这条端点加到别处去。逐 target 的机械兜底见
+    # `backend/admin-api/src/test/java/com/migao/admin/controller/ImageRecognitionInterpretControllerTest.java`。
+    # issue #6486 包 1（2026-10-07）：新增 `AgentScheduledTaskController` 的 3 条**自助**端点
+    # （`POST/GET/DELETE /api/admin/agent/scheduled-tasks` —— 与 `NotificationController` 自助端同款、
+    # 有意不加码，读写都只碰自己的行）⇒ 已登记进 `UNANNOTATED_ENDPOINTS` 台账（逐条带理由）。
+    # **显式放宽**（diff 里看得见）：增长的原因是「确实新增了 3 条已登记的自助端点」，不是「有人把台账放宽了」。
+    # 19 → 22。
+    "UNANNOTATED_ENDPOINTS": 22,
 
     # issue #4923（2026-10-02）：`craft_config_query` 是**跨码工具**（6 个读端点分属三档生效码，
     # 工具声明生产域读码 `production:view`）⇒ 判据 2 的具名出口 `CODE_DIVERGENCE_EXCEPTIONS`

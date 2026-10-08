@@ -1,0 +1,63 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:25:01 +08",
+    "utc": "2026-10-04T01:25:01.106Z"
+  },
+  "phase": "predeploy",
+  "apiBase": "https://api.migaozn.com",
+  "tenant": 25,
+  "checks": [
+    {
+      "id": "R1",
+      "name": ".mjs 必须是 JS MIME（#6293）",
+      "expect": "两个 .mjs = application/javascript；.css=text/css；对照 .js=application/javascript",
+      "actual": "{\"入口 app.mjs\":\"200 application/octet-stream\",\"入口 machine.mjs\":\"200 application/octet-stream\",\"对照 styles.css\":\"200 text/css\",\"对照 bmini app.js\":\"200 application/javascript\"}",
+      "verdict": "fail",
+      "evidence": [
+        "HEAD 实测；坏形态为 application/octet-stream（浏览器拒绝执行 module script）"
+      ]
+    },
+    {
+      "id": "R2",
+      "name": "并发完结：恰 1 个赢家 + 台账 1 行（#6220）",
+      "expect": "成功数=1（其余 409「状态已被他人变更」）；台账恰 1 行；库存 98→100",
+      "actual": "codes=[200,200,200,200] okCount=4 台账=4 行 库存 98→106 工单终态=resolved",
+      "verdict": "fail",
+      "evidence": [
+        "重叠证据: {\"barrierAt\":1791077103687,\"barrierAtCST\":\"2026-10-04 09:25:03 +08\",\"perRequest\":[{\"i\":0,\"t0\":1791077103687,\"t1\":1791077103915,\"durMs\":228},{\"i\":1,\"t0\":17910771",
+        "工单 AS-20261004-0002"
+      ]
+    },
+    {
+      "id": "R3",
+      "name": "退款精度准入（#6228）",
+      "expect": "0.001 ⇒ 4xx 且库内不变；0.01 ⇒ 200 且 refund_amount 逐字 = 0.01",
+      "actual": "0.001→200（refund_amount=0）｜0.01→200（refund_amount=0.01）",
+      "verdict": "fail",
+      "evidence": [
+        "响应原文(0.001): {\"success\":true,\"requestId\":\"req_4fe0874acb00495c\",\"timestamp\":1791077104}",
+        "响应原文(0.01): {\"success\":true,\"requestId\":\"req_36e5f642f242419b\",\"timestamp\":1791077104}"
+      ]
+    },
+    {
+      "id": "R4",
+      "name": "size<0 必须显式拒绝（#6222）",
+      "expect": "400（可行动文案）；不得 200 且 total=0 却回整页",
+      "actual": "200 total=0 rows=7 body={\"success\":true,\"data\":{\"total\":0,\"page\":1,\"size\":500,\"items\":[{\"id\":\"1bbef80b02519c59811a533d8e61e27c\",\"orderNo\":\"20261004336550247\",\"customerName\":\"ZR客户-ZRpre",
+      "verdict": "fail",
+      "evidence": [
+        "坏形态：200 + total=0 + rows>0（总数与行数不自洽）"
+      ]
+    }
+  ],
+  "cleanup": {
+    "errors": [],
+    "residue": {
+      "orders": 0,
+      "products": 0
+    }
+  },
+  "counts": {
+    "fail": 4
+  }
+}

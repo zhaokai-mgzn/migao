@@ -48,7 +48,7 @@ export default defineConfig(async (merge) => {
     },
     h5: {
       // 资源前缀（issue #5668）：B 端 h5 的落地面 = `app.migaozn.com` 静态根下的 **`/b/`**，
-      // 而那个静态根**同时承载 C 端小布**（同一台 nginx、同一个 `location /`）。
+      // 而那个静态根**同时承载 C 端元元**（同一台 nginx、同一个 `location /`）。
       // 🔴 默认 `'/'` 时产物引用 `/js/app.js` —— 与 **C 端同名同路径**（实测两者产物都打成
       //    `js/app.js` + `css/app.css`）⇒ 浏览器会把 **C 端的包**加载进 bmini 页面：
       //    页面"打得开"，跑的却是另一个应用（静默串端，比 404 难发现得多）。

@@ -1,0 +1,612 @@
+{
+ "products": {
+  "1": {
+   "alive": 93,
+   "max_updated": "2026-10-02 20:30:11.837216+08",
+   "idfp": "96455537f97aad250f1b4848c8e1a5fd",
+   "rowfp": "e806034a7130b7fe1532edafe6447412"
+  },
+  "20": {
+   "alive": 35,
+   "max_updated": "2026-10-03 08:49:37.073361+08",
+   "idfp": "b9f8dc2b5b2562a6a1905744db2268b8",
+   "rowfp": "5ba182e68426564acc70fb533f442cd5"
+  },
+  "21": {
+   "alive": 1,
+   "max_updated": "2026-09-22 04:48:40.658722+08",
+   "idfp": "23e73d73f852560c4534f0b67a723926",
+   "rowfp": "195613bc566d870c4a6362dd6466970a"
+  }
+ },
+ "product_skus": {
+  "1": {
+   "alive": 780,
+   "max_updated": "2026-10-02 20:30:11.810835+08",
+   "idfp": "d090f64c7481cf1058dd23a81b006e18",
+   "rowfp": "3d782185ffd03674c00a5a6948ec4e7a"
+  },
+  "20": {
+   "alive": 36,
+   "max_updated": "2026-10-03 08:49:37.019716+08",
+   "idfp": "1023d144c58615852772a12fdbe4414c",
+   "rowfp": "566e80eca3687c4deaf7718f85c0dc5e"
+  },
+  "21": {
+   "alive": 1,
+   "max_updated": "2026-09-03 20:15:09.560531+08",
+   "idfp": "1296d2f2b72ff28b6e599d6379aa5f69",
+   "rowfp": "ef9ff043d97e062cf46e92fe33a67438"
+  }
+ },
+ "customer_profiles": {
+  "1": {
+   "alive": 140,
+   "max_updated": "2026-09-20 19:18:19.944196+08",
+   "idfp": "701e5491e0426ac9c7cfec11a70e6bb9",
+   "rowfp": "e12110a534808dede58268d298f7381a"
+  },
+  "20": {
+   "alive": 16,
+   "max_updated": "2026-10-03 07:21:48.476447+08",
+   "idfp": "60ed4ede571307b8946568c23641f759",
+   "rowfp": "635e325647154b0285dfd8d9548be0b7"
+  },
+  "21": {
+   "alive": 1,
+   "max_updated": "2026-09-03 20:16:14.264921+08",
+   "idfp": "7e5451bfc418da95c05518f45f977173",
+   "rowfp": "762178945358696e56d3950a95f560f5"
+  }
+ },
+ "customer_tags": {
+  "1": {
+   "alive": 5,
+   "max_updated": "2026-08-28 14:58:06.071806+08",
+   "idfp": "779af98fee9c4944d542c4f27f36bc1d",
+   "rowfp": "1181fe99c6b367716751ce1ce0c3cd6e"
+  },
+  "20": {
+   "alive": 1,
+   "max_updated": "2026-10-02 23:19:58.822217+08",
+   "idfp": "1a9e80b00237186344ae0f39e4e2d955",
+   "rowfp": "6b9d794008ad03c15915ed530577222e"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "categories": {
+  "1": {
+   "alive": 31,
+   "max_updated": "2026-09-15 13:26:49.160335+08",
+   "idfp": "fcfa3ac917814709770ece36a6ece218",
+   "rowfp": "26c71b0addeb571c5154cfdc4edb6b1b"
+  },
+  "20": {
+   "alive": 32,
+   "max_updated": "2026-10-03 08:49:36.829438+08",
+   "idfp": "9e429c29a7c435b956a2b681a4a620a3",
+   "rowfp": "95f85067cd90d1450979d4a7e01b654f"
+  },
+  "21": {
+   "alive": 2,
+   "max_updated": "2026-09-03 20:14:49.896429+08",
+   "idfp": "54da41e5417f0791cd3f0d89e72be160",
+   "rowfp": "840f6a1fadc7b3ec799dc437e9070483"
+  }
+ },
+ "production_operations": {
+  "1": {
+   "alive": 40,
+   "max_updated": "2026-09-21 10:18:10.58335+08",
+   "idfp": "fb700d5a1efb2f991b7573e22788fb85",
+   "rowfp": "9ef2296d6eb9d41d080a2cd007d07d4c"
+  },
+  "20": {
+   "alive": 40,
+   "max_updated": "2026-10-03 10:40:00.637237+08",
+   "idfp": "c41956207ee8ebcd15734cc1a272501c",
+   "rowfp": "a4c19fbab3b1eb617f1bfd36391e1238"
+  },
+  "21": {
+   "alive": 40,
+   "max_updated": "2026-09-21 10:18:10.58335+08",
+   "idfp": "b1d915c6a7a5872acbd8d05e06857376",
+   "rowfp": "1e552c01fa056a9cb929a0aa97811d98"
+  }
+ },
+ "production_operation_positions": {
+  "1": {
+   "alive": 145,
+   "max_updated": "2026-10-01 13:31:47.894325+08",
+   "idfp": "b00b0ec84560c72399090939c61ebad6",
+   "rowfp": "87bbba4d0c57c163028ac5ba833785b8"
+  },
+  "20": {
+   "alive": 30,
+   "max_updated": "2026-10-03 10:40:03.831054+08",
+   "idfp": "e57ca601ed94761bc74107f9684d9028",
+   "rowfp": "ad7a83109f4d2cb2e9fc3e7790135eeb"
+  },
+  "21": {
+   "alive": 29,
+   "max_updated": "2026-09-21 10:18:10.554026+08",
+   "idfp": "06ce9bfed311d0327c394cd426da6fb7",
+   "rowfp": "138fe995bb9e5ea755823f885fc2af4a"
+  }
+ },
+ "production_route_templates": {
+  "1": {
+   "alive": 2,
+   "max_updated": "2026-09-21 11:53:49.004749+08",
+   "idfp": "9f41087cf4e0e9bffa4aaa19a62e3348",
+   "rowfp": "1e2fb77bc5887f5e0db8a2e6111522ef"
+  },
+  "20": {
+   "alive": 2,
+   "max_updated": "2026-10-03 10:40:01.699235+08",
+   "idfp": "455d87c2d5517320609e00e4340fe35f",
+   "rowfp": "7f484cded915b7301e83e8d5d200c09d"
+  },
+  "21": {
+   "alive": 2,
+   "max_updated": "2026-09-20 10:46:47.855574+08",
+   "idfp": "19fb48eb77db35265cc401cf37dc9d01",
+   "rowfp": "6af3d385348329b83017463512f5a41b"
+  }
+ },
+ "production_route_rules": {
+  "1": {
+   "alive": 27,
+   "max_updated": "2026-10-01 13:31:25.353045+08",
+   "idfp": "6278d9ee8259d5ec429192f89f3ce48c",
+   "rowfp": "eb23732555fa0aa01e2d1813944f626e"
+  },
+  "20": {
+   "alive": 26,
+   "max_updated": "2026-10-03 07:06:34.226246+08",
+   "idfp": "6b96a6ea4c74cf2da082acf82fb3a92e",
+   "rowfp": "382bedd8fd9f6332e497e50ddc4af19f"
+  },
+  "21": {
+   "alive": 26,
+   "max_updated": "2026-09-25 15:11:25.393654+08",
+   "idfp": "effaf679831cd6e246f584ad018c0a59",
+   "rowfp": "4fdf3c5951b8d184743d16f3658953f1"
+  }
+ },
+ "processing_fee_combinations": {
+  "1": {
+   "alive": 5,
+   "max_updated": "2026-09-30 08:35:31.581675+08",
+   "idfp": "a42a4325c3d74d365a76be23d38a8f3b",
+   "rowfp": "33746de3a1b34d0362b6fc89a994018a"
+  },
+  "20": {
+   "alive": 9,
+   "max_updated": "2026-10-03 09:06:06.990443+08",
+   "idfp": "c4a0f6343ec71231c5bdfcc43e63d17e",
+   "rowfp": "94e1cdb26d7d1a2c6f625dbf17b4294e"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "processing_items": {
+  "1": {
+   "alive": 37,
+   "max_updated": "2026-09-30 08:35:31.581675+08",
+   "idfp": "4006abfbf1906bdeebd9de729061210d",
+   "rowfp": "4239a22a8e0f83383db4bd01d766aeca"
+  },
+  "20": {
+   "alive": 17,
+   "max_updated": "2026-09-30 08:35:31.581675+08",
+   "idfp": "8e189ad4a18d5e44274b5ccb4828c494",
+   "rowfp": "493d3a26c6557b432c2bd8dee221bc14"
+  },
+  "21": {
+   "alive": 17,
+   "max_updated": "2026-09-30 08:35:31.581675+08",
+   "idfp": "60978ff19513fa0e511713582d59ae21",
+   "rowfp": "f3d50118df1c7e96c50ac2925fe0c9e7"
+  }
+ },
+ "processing_categories": {
+  "1": {
+   "alive": 7,
+   "max_updated": "2026-09-19 21:16:24.875721+08",
+   "idfp": "32191c53615a95c1d5f07f672b694f53",
+   "rowfp": "1d53042061be24c36d43593bd62de89f"
+  },
+  "20": {
+   "alive": 3,
+   "max_updated": "2026-09-19 21:16:24.875721+08",
+   "idfp": "d590599df8ce664dd68833fa7d6436c9",
+   "rowfp": "9e0ea72ed272cd8dd5bd6a449b6119c5"
+  },
+  "21": {
+   "alive": 2,
+   "max_updated": "2026-09-19 21:16:24.875721+08",
+   "idfp": "45d37ccc5cc9652296883d0e538a15b8",
+   "rowfp": "927743c253866a6a0ce91655e371e5fd"
+  }
+ },
+ "orders": {
+  "1": {
+   "alive": 791,
+   "max_updated": "2026-10-03 02:56:26.591153+08",
+   "idfp": "915a8476d54a9ff1ece5d63aa05e6982",
+   "rowfp": "2728aff4fdd232a9a3559ffa9922d178"
+  },
+  "20": {
+   "alive": 359,
+   "max_updated": "2026-10-03 08:49:49.194304+08",
+   "idfp": "1a4c3c95882a2a317f4376d3aee5532d",
+   "rowfp": "e6f68129c73585aec4e7cfaca32933f5"
+  },
+  "21": {
+   "alive": 1,
+   "max_updated": "2026-09-03 20:16:14.236653+08",
+   "idfp": "e8347032d2d1f2025b6726101e2b1eb6",
+   "rowfp": "89a2b7dabf94d75fa0078df2b9ca7bed"
+  }
+ },
+ "order_items": {
+  "1": {
+   "alive": 796,
+   "max_updated": "2026-10-03 02:56:26.619893+08",
+   "idfp": "d3a5342e164e841b239a0b9e0ac33a11",
+   "rowfp": "44382ae8b5d9f4478902f06b9df84e59"
+  },
+  "20": {
+   "alive": 380,
+   "max_updated": "2026-10-03 08:49:49.239129+08",
+   "idfp": "94e5d2a2e61d6471b78f745e4393d8c9",
+   "rowfp": "314dc618eb3c1d73af1bd90a66c68a1b"
+  },
+  "21": {
+   "alive": 1,
+   "max_updated": "2026-09-03 20:16:14.244322+08",
+   "idfp": "a4bca21d952b5805f88f45decb220fb6",
+   "rowfp": "cfce96a7cccdeee2b28c022cf7535290"
+  }
+ },
+ "processing_orders": {
+  "1": {
+   "alive": 39,
+   "max_updated": "2026-10-03 02:56:28.994738+08",
+   "idfp": "f06c12639ace77f1988f855dfba21b9c",
+   "rowfp": "5f88e653b2f8b08aa253231b511298e2"
+  },
+  "20": {
+   "alive": 268,
+   "max_updated": "2026-10-03 08:49:50.378547+08",
+   "idfp": "2e22c67c7d8ad932dc167e13df0d7e02",
+   "rowfp": "dbe5806a9e3e7aec4ddf12733a26d540"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "inbound_orders": {
+  "1": {
+   "alive": 1,
+   "max_updated": "2026-10-01 20:17:47.693157+08",
+   "idfp": "7ce233000d9373c76775b676866d89e7",
+   "rowfp": "fb12fb4e80262ca719376d1c06115410"
+  },
+  "20": {
+   "alive": 5,
+   "max_updated": "2026-10-02 23:57:14.578141+08",
+   "idfp": "af846e9f5d55e00bae45fc9d21d1a4a9",
+   "rowfp": "335cc58e5b5fb2db9d3ab42f9a923a91"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "order_shipments": {
+  "1": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "20": {
+   "alive": 1,
+   "max_updated": "2026-10-02 23:50:21.444647+08",
+   "idfp": "6b3d44e465258e2898b3638feb9d951d",
+   "rowfp": "700ffd40eee27a06abbb710f9c7df5a3"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "agent_sessions": {
+  "1": {
+   "alive": 24,
+   "max_updated": "2026-09-15 13:11:23.572475+08",
+   "idfp": "76d5f0ce15f83836ae677e947882a447",
+   "rowfp": "3ad0ab4ede445cfda8d26cb21785f767"
+  },
+  "20": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "notification_templates": {
+  "1": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "20": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "notification_rules": {
+  "1": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "20": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "knowledge_cards": {
+  "1": {
+   "alive": 34,
+   "max_updated": "2026-09-09 11:24:42.863109+08",
+   "idfp": "2f1a597b99a6b7b18d727469c3fc303f",
+   "rowfp": "cd05fd8bd0d5210f95a90033967b0e75"
+  },
+  "20": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "roles": {
+  "1": {
+   "alive": 10,
+   "max_updated": "2026-09-06 22:46:52.558724+08",
+   "idfp": "d66ed02a90e12a976f3e56d13ae6425b",
+   "rowfp": "732b0fc209773abcbe7be68d2be2f267"
+  },
+  "20": {
+   "alive": 10,
+   "max_updated": "2026-10-02 21:46:38.217208+08",
+   "idfp": "467a1c139ac7e16d3b9bd7f3a9a293a0",
+   "rowfp": "4620aac28e0233c2b0ceb882a1dfc6fc"
+  },
+  "21": {
+   "alive": 7,
+   "max_updated": "2026-09-27 21:41:57.152889+08",
+   "idfp": "9f4aea24cf1f0363e828402b87e9f783",
+   "rowfp": "06468a1e936ab42c6b97fe3a28048de6"
+  }
+ },
+ "after_sales_tickets": {
+  "1": {
+   "alive": 47,
+   "max_updated": "2026-09-15 13:52:48.496654+08",
+   "idfp": "1bc9d7ebaafe1f0517255d3121e8c922",
+   "rowfp": "11ab6f82204a2d29d653ee84e423d076"
+  },
+  "20": {
+   "alive": 5,
+   "max_updated": "2026-10-02 23:57:15.094796+08",
+   "idfp": "49fe1a8cd12acc0dd1e674a520671e57",
+   "rowfp": "a7f6d26fe13a2c2695a76c07d007e916"
+  },
+  "21": {
+   "alive": 1,
+   "max_updated": "2026-09-03 20:17:28.114306+08",
+   "idfp": "6cff8ec12d0e8b886759326a52647449",
+   "rowfp": "65126f9321bd026d5bdc769d58b2c299"
+  }
+ },
+ "users": {
+  "1": {
+   "alive": 18,
+   "max_updated": "2026-09-18 13:01:21.839084+08",
+   "idfp": "49e6777fff10070df018a015146ebfb1",
+   "rowfp": "8ac806e1d9e5d497e6af1540ea8bfede"
+  },
+  "20": {
+   "alive": 15,
+   "max_updated": "2026-10-02 21:46:39.808541+08",
+   "idfp": "387210698e8170edfb01472c52bece30",
+   "rowfp": "4279b5bec9c1a639532f23abf1905912"
+  },
+  "21": {
+   "alive": 2,
+   "max_updated": "2026-09-03 20:15:57.372925+08",
+   "idfp": "4bf1b048b23ca3c5ced21f3f8b64e0b4",
+   "rowfp": "452a60774790839a5d290d3634f8aa1a"
+  }
+ },
+ "agent_employees": {
+  "1": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "20": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "stock_batches": {
+  "1": {
+   "alive": 1,
+   "max_updated": null,
+   "idfp": "1e2051b7ffdbe6e9ce419a0790686cd9",
+   "rowfp": "e80c145acf5fc180ed199a24b27adffb"
+  },
+  "20": {
+   "alive": 2,
+   "max_updated": null,
+   "idfp": "1d147bae00640511b68078e0522cc9c2",
+   "rowfp": "dcc2509be7ac299e656fe9113a6bac2d"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "stock_ledger_entries": {
+  "1": {
+   "alive": 9,
+   "max_updated": null,
+   "idfp": "aa9a3677131b4535874611be937cc57b",
+   "rowfp": "bd2c8ad12fdffa992118b2b68ee3bb9e"
+  },
+  "20": {
+   "alive": 385,
+   "max_updated": null,
+   "idfp": "9b33a7ab239d38ba881584b5cd89e968",
+   "rowfp": "2cde0d9946e1c9b815137655f3e51aa9"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "finance_transactions": {
+  "1": {
+   "alive": 139,
+   "max_updated": "2026-10-03 02:56:27.964403+08",
+   "idfp": "6e4ce642b7ba978a7a54394ff4b325ba",
+   "rowfp": "3e79b17dfca0dc647a6b7f8f398db732"
+  },
+  "20": {
+   "alive": 376,
+   "max_updated": "2026-10-03 08:49:49.877978+08",
+   "idfp": "0ea7cdd4b1b23d2c2876f9b18b24be22",
+   "rowfp": "9c038cae56fc0756b5a0ba1dc18dc1eb"
+  },
+  "21": {
+   "alive": 1,
+   "max_updated": "2026-09-03 20:17:14.041127+08",
+   "idfp": "6d694bc14777076bb62483f8e5d8b9cd",
+   "rowfp": "0fd9859df4f3c2882a96ca57970c964c"
+  }
+ },
+ "fabric_remnants": {
+  "1": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "20": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "21": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "sessions": {
+  "1": {
+   "alive": 18506,
+   "max_updated": "2026-10-03 02:18:47.826073+08",
+   "idfp": "afd12cf763bbb23a82259628770b3686",
+   "rowfp": "5ea331621dfb4967107166cda498a7c9"
+  },
+  "20": {
+   "alive": 9,
+   "max_updated": "2026-09-03 23:37:34.909004+08",
+   "idfp": "95ce3723ee04f5ffce4842dc026d4662",
+   "rowfp": "998aeee5ce4af3d7b6a3c5743cfe6add"
+  },
+  "21": {
+   "alive": 3,
+   "max_updated": "2026-09-04 00:22:49.738131+08",
+   "idfp": "8ce3410360741a3e538a11efdc509b74",
+   "rowfp": "407fe43b0ec8749a8946e03f86172721"
+  }
+ },
+ "tenants": {
+  "rows": 3,
+  "max_updated": "2026-09-03 20:12:12.110991+08",
+  "checksum": "23020bb6e725b2c00c540d75612ab37b"
+ },
+ "platform_admins": {
+  "rows": 1,
+  "max_updated": "2026-06-25 09:02:13.95954+08",
+  "checksum": "535c2944216881b976da173a09c5e263"
+ }
+}

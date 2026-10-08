@@ -659,14 +659,17 @@ describe('打印通道：真实 SDK 回执包络（statusCode）', () => {
       printImageData: 0,
       options: {} as Record<string, unknown>,
       initOptions: {} as Record<string, unknown>,
+      /** `openPrinter` 的入参 —— 空参是**真机实测**过的失败形态（issue #6439），必须能断言到 */
+      openPrinterOptions: undefined as unknown,
     }
     const printer = {
       async requestDevice() {
         calls.requestDevice += 1
         return env.requestDevice ?? { statusCode: LPA.OK, resultInfo: [] }
       },
-      async openPrinter() {
+      async openPrinter(options?: unknown) {
         calls.openPrinter += 1
+        calls.openPrinterOptions = options
         return env.openPrinter ?? { statusCode: LPA.OK }
       },
       async printImageData(options: Record<string, unknown>) {
@@ -697,6 +700,23 @@ describe('打印通道：真实 SDK 回执包络（statusCode）', () => {
     })
     expect(fake.calls.openPrinter).toBe(0)
     expect(fake.calls.printImageData).toBe(0)
+  })
+
+  it('🔴 `openPrinter` 必须显式喂设备 + 关掉 autoScan（issue #6439 真机实测）', async () => {
+    // 真机读数（2026-10-06，本机 DP235S / Chrome 153）：空参 ⇒ SDK 走自己的 `searchPrinter()`
+    // 重扫，而 Web Bluetooth 没有用户手势扫不了 ⇒ 恒回 `ERROR_NO_PRINTER`「未搜索到到打印机设备！」。
+    // 红证：把入参改回空（`api.openPrinter()`）⇒ 本条的 toEqual 必红。
+    const fake = fakeLpapi({
+      requestDevice: { statusCode: LPA.OK, resultInfo: [{ name: 'DP235S-Y608220585', deviceId: 'dev-9' }] },
+    })
+    const transport = createLpapiTransport({ lpapi: fake.module, link: createPrinterLinkStore() })
+    await transport.print(fakeLabel(), { printCount: 1 })
+    expect(fake.calls.openPrinterOptions).toEqual({
+      name: 'DP235S-Y608220585',
+      deviceId: 'dev-9',
+      checkDeviceName: false,
+      autoScan: false,
+    })
   })
 
   it('🔴 旧判定（查 `success`/`result`/`code`）对真实包络**恒判通过** —— 这正是当年漏掉取消的原因', () => {

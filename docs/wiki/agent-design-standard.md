@@ -1,6 +1,6 @@
 # Agent Skill/Tool 设计范式
 
-> 米宝 Agent 的 Skill Prompt 和 Tool Schema 设计规范。
+> 黄金策 Agent 的 Skill Prompt 和 Tool Schema 设计规范。
 
 ## 核心原则
 

@@ -1,0 +1,62 @@
+{
+  "at": {
+    "cst": "2026-10-04 10:43:59 +08",
+    "utc": "2026-10-04T02:43:59.696Z"
+  },
+  "targets": {
+    "workerH5": {
+      "url": "https://app.migaozn.com/w/",
+      "httpStatus": 200,
+      "dom": {
+        "title": "工人报工",
+        "bodyText": "",
+        "ids": [
+          "worker-h5-root"
+        ],
+        "inputs": [],
+        "html": 110
+      },
+      "net": [],
+      "consoleErrors": [
+        "Failed to load module script: Expected a JavaScript-or-Wasm module script but the server responded with a MIME type of \"text/html\". Strict MIME type checking is enforced for module scripts per HTML spec."
+      ],
+      "pageErrors": [],
+      "screenshot": "out/shots/probe-workerH5.png"
+    },
+    "bmini": {
+      "url": "https://app.migaozn.com/b/",
+      "httpStatus": 200,
+      "dom": {
+        "title": "登录",
+        "bodyText": "米\n米宝 · 商家助手\n经营数据 · AI 客服 · 移动坐席\n员工登录\n管理员登录\n用户名@企业编码\n密码\n账号由企业管理员在管理后台「员工管理」中分配（用户名@企业编码）\n登录\n登录即表示您同意\n《服务条款》\n和\n《隐私协议》",
+        "ids": [
+          "container",
+          "taro-navigation-bar",
+          "app",
+          "/pages/auth/login/index?stamp=AB"
+        ],
+        "inputs": [
+          {
+            "tag": "input",
+            "id": null,
+            "type": "text",
+            "ph": "如 zhangsan@acme",
+            "txt": ""
+          },
+          {
+            "tag": "input",
+            "id": null,
+            "type": "password",
+            "ph": "请输入密码",
+            "txt": ""
+          }
+        ],
+        "html": 13682
+      },
+      "net": [],
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "out/shots/probe-bmini.png"
+    }
+  }
+}

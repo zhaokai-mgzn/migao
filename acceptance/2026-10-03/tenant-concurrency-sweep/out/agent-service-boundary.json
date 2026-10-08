@@ -1,0 +1,9 @@
+{
+  "note": "持有合法 service token 的调用方可用 body.tenant_id 指定任意租户（服务端不做租户与调用方的绑定校验）",
+  "evidence": {
+    "token_len": 65,
+    "tenant20_count": 0,
+    "tenant21_count": 0,
+    "x_tenant_id_header_effect": "ignored"
+  }
+}

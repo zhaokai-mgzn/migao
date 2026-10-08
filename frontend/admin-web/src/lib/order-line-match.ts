@@ -29,6 +29,16 @@ export const LINE_PATH_FIELD_KEYS = {
   quantity: 'quantity',
 } as const
 
+/**
+ * 「**参考字段**」的键（issue #6529）—— 图上抄到、但内核**没采纳**的原文（置信度不足）。
+ *
+ * 它们的去向**不是表单**（一个字都不写），而是「按名称**查目录** ⇒ 给候选 ⇒ 商家点选」：
+ * 读错的明细只变成一次检索词，而整格丢掉 ⇒ 商家连「图上写的型号在目录里查不到」都听不到。
+ * 真值锚 = 识别内核 `backend/ai-agent-service/app/vision/targets.py::REFERENCE_KEYS`
+ * （类级守卫见 `tests/unit/lib/order-line-match.test.ts`：两端键集不等 ⇒ 红）。
+ */
+export const REFERENCE_ONLY_FIELD_KEYS = ['items'] as const
+
 /** 「都不是」的**选项 id**（与真商品 id 不可能撞：商品 id 是数字串 / uuid） */
 export const NO_MATCH_CHOICE = '__none__'
 
@@ -66,6 +76,12 @@ export interface DetailEntry {
   quantity: number | null
   /** 图上写的价（如 `120元`）—— **复核提示**，绝不进单价（判据 6） */
   priceHint: string | null
+  /**
+   * **未采纳的参考条目**（issue #6529）：名称取自内核的 `reference`（图上抄到、但置信度不足
+   * 没被采纳）。⇒ 数量一律 `null`（把已采纳的数量配到一个没核实的名称上就是猜）；
+   * 它照旧进候选面板，商家据此听到「图上写的型号在目录里查不到」。
+   */
+  referenceOnly?: boolean
 }
 
 /**
@@ -76,14 +92,34 @@ export interface DetailEntry {
  */
 export function parseDetailEntries(fields: RecognizedField[]): DetailEntry[] {
   const raw = valueOf(fields, 'items')
-  if (raw === '') return []
-  const names = raw
+  // 未采纳的「参考」原文（issue #6529）：值**不采纳**（不填表、不进备注），但**照旧查目录** ——
+  // 否则商家听不到「图上写的型号在目录里查不到」（同图黄金策会话说得出、页面却沉默）。
+  const referenceOnly = raw === ''
+  const text = raw || referenceOf(fields, 'items')
+  if (text === '') return []
+  const names = text
     .split(ENTRY_SPLIT)
     .map((s) => s.trim())
     .filter((s) => s !== '')
   if (names.length === 0) return []
-  const quantity = names.length === 1 ? positiveNumber(valueOf(fields, 'quantity')) : null
-  return names.map((name) => ({ name, quantity, priceHint: priceHintOf(name) }))
+  // ⚠️ 参考条目不认数量：名称本身未被采纳 ⇒ `null`（建行按 1 + 面板提示核对，判据 1 同口径）
+  const quantity =
+    names.length === 1 && !referenceOnly ? positiveNumber(valueOf(fields, 'quantity')) : null
+  return names.map((name) => ({
+    name,
+    quantity,
+    priceHint: priceHintOf(name),
+    ...(referenceOnly ? { referenceOnly: true } : {}),
+  }))
+}
+
+/** 「参考」原文（`value` 为空时的 `reference`；口径 = 内核 `targets.py::REFERENCE_KEYS`） */
+function referenceOf(fields: RecognizedField[], key: string): string {
+  const hit = (fields || []).find(
+    (f) => f.key === key && !(typeof f.value === 'string' && f.value.trim() !== ''),
+  )
+  const reference = hit?.reference
+  return typeof reference === 'string' ? reference.trim() : ''
 }
 
 /** 条目原文里写的价（没有 ⇒ `null`，不编） */

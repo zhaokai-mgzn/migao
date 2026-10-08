@@ -75,7 +75,8 @@ const DETAIL: InboundOrder = {
   totalAmount: 4200.5,
   items: [
     {
-      id: 1,
+      // 雪花号 id 出参是**字符串**（> 2^53，issue #6340 后后端补 ToStringSerializer）
+      id: '2097126615461462018',
       skuCode: 'BL-001',
       colorName: '米白',
       doorWidth: '2.8m',
@@ -85,7 +86,7 @@ const DETAIL: InboundOrder = {
       batchNo: null,
     },
     {
-      id: 2,
+      id: '2097126615461462026',
       skuCode: 'BL-002',
       colorName: '浅灰',
       doorWidth: '2.8m',

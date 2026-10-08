@@ -9,6 +9,7 @@ import type { TableColumn } from '@/components/ui'
 import type { KnowledgeCard, KnowledgeCardStatus, KnowledgeCandidate, KnowledgeTemplateInfo } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import { cn } from '@/lib/utils'
+import { usePermission } from '@/lib/permission'
 
 // 知识卡片状态 → 徽标（三端一致契约：draft/pending_review/published/archived）
 const STATUS_META: Record<KnowledgeCardStatus, { label: string; variant: 'default' | 'warning' | 'success' | 'error' }> = {
@@ -41,6 +42,13 @@ const CATEGORY_OPTIONS = [
 ]
 
 export default function KnowledgePage() {
+  // issue #6392（2026-10-06 岗位×页面验收发现）：本页**写面**一律要 `knowledge:manage`，
+  // 而页面守卫取的是**读**码 `knowledge:view`（`(dashboard)/layout.tsx` 的 ROUTE_PERMISSION_MAP）
+  // ⇒ 无写码的岗位（客服/运营）从前**看得见**「新建知识卡片」（点了填完表单、提交才 403 = 白点一下）。
+  // 范式同 `(dashboard)/orders/page.tsx`（#5983）：`canWrite = hasPermission('<域>:manage')`。
+  const { has: hasPermission } = usePermission()
+  const canWrite = hasPermission('knowledge:manage')
+
   const [entries, setEntries] = useState<KnowledgeCard[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
@@ -368,26 +376,31 @@ export default function KnowledgePage() {
           <Button size="sm" variant="ghost" onClick={() => setViewTarget(entry)}>
             <Eye className="h-3.5 w-3.5" /> 查看
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => openEdit(entry)}>
-            <Pencil className="h-3.5 w-3.5" /> 编辑
-          </Button>
-          {entry.status === 'archived' ? (
-            // 归档非终点（#3108）：已归档卡片可一键重新发布，恢复 AI 检索命中
-            <Button size="sm" variant="ghost" onClick={() => publishCard(entry)}>
-              <RotateCcw className="h-3.5 w-3.5" /> 重新发布
-            </Button>
-          ) : entry.status === 'published' ? (
-            <Button size="sm" variant="ghost" onClick={() => archiveCard(entry)}>
-              <Archive className="h-3.5 w-3.5" /> 归档
-            </Button>
-          ) : (
-            <Button size="sm" variant="ghost" onClick={() => publishCard(entry)}>
-              <Send className="h-3.5 w-3.5" /> 发布
-            </Button>
+          {/* issue #6392：行内写操作同码（knowledge:manage）—— 无码岗位只看得到「查看」 */}
+          {canWrite && (
+            <>
+              <Button size="sm" variant="ghost" onClick={() => openEdit(entry)}>
+                <Pencil className="h-3.5 w-3.5" /> 编辑
+              </Button>
+              {entry.status === 'archived' ? (
+                // 归档非终点（#3108）：已归档卡片可一键重新发布，恢复 AI 检索命中
+                <Button size="sm" variant="ghost" onClick={() => publishCard(entry)}>
+                  <RotateCcw className="h-3.5 w-3.5" /> 重新发布
+                </Button>
+              ) : entry.status === 'published' ? (
+                <Button size="sm" variant="ghost" onClick={() => archiveCard(entry)}>
+                  <Archive className="h-3.5 w-3.5" /> 归档
+                </Button>
+              ) : (
+                <Button size="sm" variant="ghost" onClick={() => publishCard(entry)}>
+                  <Send className="h-3.5 w-3.5" /> 发布
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(entry)}>
+                <Trash2 className="h-3.5 w-3.5" /> 删除
+              </Button>
+            </>
           )}
-          <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(entry)}>
-            <Trash2 className="h-3.5 w-3.5" /> 删除
-          </Button>
         </div>
       ),
     },
@@ -399,13 +412,17 @@ export default function KnowledgePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-neutral-900">知识库</h1>
-          <p className="text-sm text-neutral-500 mt-1">AI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题</p>
+          <p className="text-sm text-neutral-500 mt-1">管理 AI 客服的知识卡片 —— <strong>发布后优先用于回答顾客问题</strong></p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setDocModalOpen(true)}>文档提炼</Button>
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" /> 新建知识卡片
-          </Button>
+          {canWrite && (
+            <>
+              <Button variant="secondary" size="sm" onClick={() => setDocModalOpen(true)}>文档提炼</Button>
+              <Button onClick={openCreate}>
+                <Plus className="h-4 w-4" /> 新建知识卡片
+              </Button>
+            </>
+          )}
         </div>
       </div>
 

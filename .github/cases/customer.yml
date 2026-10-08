@@ -244,7 +244,7 @@ cases:
         source: "13800138000"
     # ── 2026-09-24（issue #5247，B 端只读化）：`must_succeed[customer_manage]` **整格移除**
     # （写声明同步移除）—— `update` 已从源码删除 ⇒ 该断言在新事实下**永不满足**（悬空声明）。
-    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「更新客户资料」（customer_manage / action=update）已从 B 端下线、工具已收窄为只读。用例条目与退役理由保留（不删除）；断言面改判为存活的只读路径 customer_manage(action=detail)（只读查询客户详情）。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。"
+    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「更新客户资料」（customer_manage / action=update）已从 B 端下线、工具已收窄为只读。用例条目与退役理由保留（不删除）；断言面改判为存活的只读路径 customer_manage(action=detail)（只读查询客户详情）。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。"
     merge_log: "verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失） ｜ 2026-09-21（case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces[customer_phone:13800138000]`（弱证据，如实登记：夹具层无「把客户档案改回来」的复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性，结构化下界 `min:1`）+ `must_succeed[customer_manage]`（效果层）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ 2026-09-21（issue #4992 的夹具层复位动作）：自清理由**弱证据** `namespaces` 升级为**真复位** `pre_clean` + `post_clean[customer_profile_restore]`（`pre` 按种子手机号 13800138000 定位、`post` 按本用例写出的 13900001111 定位并复位回种子号；实现见 `tests/agent_eval/local_runner.py` 的 `_restore_customer_profile`），`namespaces` 随之撤掉 —— `user_inputs` / `expectations` / `data_checks` / `skip_reason` / `precondition` / `must_succeed` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`customer_manage` 的写 action `update` 已删除（工具收窄为只读 `{list, detail, list_tags}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `customer_manage(action=update)` 改判为存活的只读路径 `customer_manage(action=detail)`，`must_succeed[customer_manage]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）。"
     traces:
       tests:
@@ -326,9 +326,9 @@ cases:
     data_checks:
       - "customer_id 从 customer_manage 查询获得"
       - "order_id 从 order_query 获得"
-      - "如实说明米宝不做发货/改物流（order_manage 的 update_logistics 已随 #5247 从 B 端解绑），引导后台订单页面；不得声称已发货（原第 3 条「发货操作使用正确的 order_id」是写路径断言，已随写能力下线改判）"
-    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端米宝只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「发货/改物流」（order_manage / action=update_logistics）已从 B 端下线（该工具已从 B 端全部解绑；工具类仍在、C 端绑定未动）。用例条目与退役理由保留（不删除）；断言面改判为存活的只读路径 customer_manage(action=list) + order_query(action=list)，「已发货」类断言改判为**如实说明米宝不做发货/改物流 + 引导后台订单页面**。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。"
-    merge_log: "eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目） ｜ 2026-09-21（#5030 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：**本用例此前物理不可满足** —— ① 目标「王建国」在评测栈种子里**不存在**（考场 = 全新库 + 固定 seed，见 `.github/workflows/post-deploy-eval.yml`）⇒ 客户搜索链路走不通；② `update_logistics` 的两个必填入参（快递公司 / 运单号）没给；③ 种子里既有的 `confirmed` 单**都含加工项** ⇒ 被「含加工项须先完成加工单才能发货」守卫拦下（`OrderService.assertProcessingCompletedBeforeShip`）。修法 = ① 目标对齐到种子真值「王五」（并补 `cust_eval_wangwu` 客户档案）+ 新增**无 order_items** 的可发货订单 `EVAL-MB-ORD-0006`（`tests/agent_eval/fixtures/mibao_eval_seed.sql`）；② 补第 5 轮「顺丰，运单号 SF1234567890」；③ 补 `pre_clean`/`post_clean[order_status_restore]` + `precondition[order_count_for_phone]` + `must_succeed[order_manage]`（三条码一次清空）。⚠️ `expectations` / `data_checks` / `skip_reason` **一字未动**、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`order_manage` 已从 B 端**全部解绑**（工具类仍在、C 端绑定未动）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[customer_manage(action=list), order_query, order_manage(action=update_logistics)]` 改判为 `[customer_manage(action=list), order_query(action=list)]`（存活的只读路径），`must_succeed[order_manage]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的「已发货」类断言改判为「如实说明米宝不做发货/改物流 + 引导后台订单页面」。⚠️ `user_inputs` 第 5 轮（「顺丰，运单号 SF1234567890」）是**写路径的补参轮**，按「与本次改动无关的输入一个字不动」保留为历史（本用例已退役、不再执行）。"
+      - "如实说明黄金策不做发货/改物流（order_manage 的 update_logistics 已随 #5247 从 B 端解绑），引导后台订单页面；不得声称已发货（原第 3 条「发货操作使用正确的 order_id」是写路径断言，已随写能力下线改判）"
+    skip_reason: "[backend-contract] #5247 B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「发货/改物流」（order_manage / action=update_logistics）已从 B 端下线（该工具已从 B 端全部解绑；工具类仍在、C 端绑定未动）。用例条目与退役理由保留（不删除）；断言面改判为存活的只读路径 customer_manage(action=list) + order_query(action=list)，「已发货」类断言改判为**如实说明黄金策不做发货/改物流 + 引导后台订单页面**。本条的正确判定层 = 工具层单测与 B 端绑定判据（traces.tests 已钉住）⇒ 按 [backend-contract] 分类：判定不在 LLM 层。"
+    merge_log: "eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目） ｜ 2026-09-21（#5030 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：**本用例此前物理不可满足** —— ① 目标「王建国」在评测栈种子里**不存在**（考场 = 全新库 + 固定 seed，见 `.github/workflows/post-deploy-eval.yml`）⇒ 客户搜索链路走不通；② `update_logistics` 的两个必填入参（快递公司 / 运单号）没给；③ 种子里既有的 `confirmed` 单**都含加工项** ⇒ 被「含加工项须先完成加工单才能发货」守卫拦下（`OrderService.assertProcessingCompletedBeforeShip`）。修法 = ① 目标对齐到种子真值「王五」（并补 `cust_eval_wangwu` 客户档案）+ 新增**无 order_items** 的可发货订单 `EVAL-MB-ORD-0006`（`tests/agent_eval/fixtures/mibao_eval_seed.sql`）；② 补第 5 轮「顺丰，运单号 SF1234567890」；③ 补 `pre_clean`/`post_clean[order_status_restore]` + `precondition[order_count_for_phone]` + `must_succeed[order_manage]`（三条码一次清空）。⚠️ `expectations` / `data_checks` / `skip_reason` **一字未动**、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`order_manage` 已从 B 端**全部解绑**（工具类仍在、C 端绑定未动）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[customer_manage(action=list), order_query, order_manage(action=update_logistics)]` 改判为 `[customer_manage(action=list), order_query(action=list)]`（存活的只读路径），`must_succeed[order_manage]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的「已发货」类断言改判为「如实说明黄金策不做发货/改物流 + 引导后台订单页面」。⚠️ `user_inputs` 第 5 轮（「顺丰，运单号 SF1234567890」）是**写路径的补参轮**，按「与本次改动无关的输入一个字不动」保留为历史（本用例已退役、不再执行）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
@@ -402,7 +402,7 @@ cases:
       - "回复/卡片不得出现『已下架』『off_sale』等状态披露（forbidden_text 机器断言）"
       - "product_detail 对非 on_sale 商品按『不存在』处理（不泄露商品名/ID）"
     skip_reason: ""
-    merge_log: "2026-09-15 新增（issue #3932）：C 端小布只能展示已上架商品——product_search/product_detail 顾客侧上架过滤（sess_2efa2071bb1747d8 复盘关联）"
+    merge_log: "2026-09-15 新增（issue #3932）：C 端元元只能展示已上架商品——product_search/product_detail 顾客侧上架过滤（sess_2efa2071bb1747d8 复盘关联）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_c_end_product_visibility.py"
@@ -412,7 +412,7 @@ cases:
 
   - id: CU-008
     legacy_id: ""
-    title: "客户工艺画像与常用物流查询（米宝 customer_manage 读路径，M2-D）"
+    title: "客户工艺画像与常用物流查询（黄金策 customer_manage 读路径，M2-D）"
     domains:
       - customer
     tier: normal
@@ -488,10 +488,10 @@ cases:
       - "customer_profiles 新增 default_receiver_name VARCHAR(100) / default_receiver_phone VARCHAR(20) / default_receiver_address TEXT（V70 迁移，列注释与 schema.sql bootstrap 终态同步）；PUT /api/admin/customers/{id} 非空拷贝落库，客户详情 GET /api/admin/customers/{id} 返回"
       - "客户详情页「收货信息」卡片可查看/编辑：收货人姓名、收货人电话、收货地址、常用物流方式（express 快递 / logistics 物流专线）、常用物流公司（预置候选 datalist + 允许自定义）"
       - "落库是**效果层**断言：CustomerReceiverAddressPersistTest 断言交给 Mapper 的实体内容（删掉 setXxx 即红）；前端由 customer-detail.test.tsx 断言 updateCustomer payload 五键齐全（空白不覆盖既有值）"
-      - "米宝写路径 customer_manage(update) 的 3 个新列与 CustomerService.updateCustomer 非空拷贝白名单**同集合**（test_tool_field_name_contract.py 的 java-service-null-copy 判据）——防 #4115 同款「工具可写 + 服务层静默丢弃」"
+      - "黄金策写路径 customer_manage(update) 的 3 个新列与 CustomerService.updateCustomer 非空拷贝白名单**同集合**（test_tool_field_name_contract.py 的 java-service-null-copy 判据）——防 #4115 同款「工具可写 + 服务层静默丢弃」"
       - "空白/缺省字段不覆盖既有收货信息（清空语义未定义 ⇒ 一律不覆盖），避免客户管理页把已录地址误抹掉"
     skip_reason: "[backend-contract] 字段落库与前端表单交互由确定性单测覆盖（CustomerReceiverAddressPersistTest + customer-detail.test.tsx + test_tool_field_name_contract.py）；读路径已由 CU-002/CU-008 覆盖，非 LLM 行为新增面，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-19 新增（issue #4419）：客户管理「收货信息」闭环 —— V70 迁移 3 列 + 客户详情页卡片读写 + 米宝写白名单同集合"
+    merge_log: "2026-09-19 新增（issue #4419）：客户管理「收货信息」闭环 —— V70 迁移 3 列 + 客户详情页卡片读写 + 黄金策写白名单同集合"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/CustomerReceiverAddressPersistTest.java"
@@ -573,9 +573,53 @@ cases:
       - "有界不静默：输出被上限截断时消息点出「视图只列前 N 位，共 M 位」；data 就是**视图本体**（有界 ≤ MAX_VIEW_ROWS 行），不再包一层、也不回灌原始快照"
       - "失败可归因：admin-api 返回 success=false 时走 admin_api_failure（带 error + message + 可行动 suggestion 指向 customer_manage 的 list），不是空壳失败；快照未携带真值声明时把 declaration.reason 说出来（fail-closed 的说明面）"
     skip_reason: "[backend-contract] action 的披露与端点契约由 pytest 单测验证（backend/ai-agent-service/tests/test_customer_manage.py 的 profile_view 三条：未知≠0 披露 / 缺声明披露 / 失败可归因），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-25 新增（issue #5462）：#5456 / PR #5458 新增的 action 此前无专属条目 —— Case Coverage Gate 的「零覆盖」判据只管**工具粒度**（customer_manage 本身已覆盖）⇒ 该 action 钻了空子；本条目同时把它的归属（米宝 customer_manage(profile_view)）与披露纪律写明。"
+    merge_log: "2026-09-25 新增（issue #5462）：#5456 / PR #5458 新增的 action 此前无专属条目 —— Case Coverage Gate 的「零覆盖」判据只管**工具粒度**（customer_manage 本身已覆盖）⇒ 该 action 钻了空子；本条目同时把它的归属（黄金策 customer_manage(profile_view)）与披露纪律写明。"
     traces:
       tests:
+        - "backend/ai-agent-service/tests/test_customer_manage.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: CU-012
+    legacy_id: ""
+    title: "客户价值分层 / 流失预警视图：customer_manage(value_view) 的跨域取数面与披露纪律（issue #6217）"
+    domains:
+      - customer
+      - order
+      - aftersales
+    tier: normal
+    tags:
+      - query
+      - tool
+      - cross-domain
+      - disclosure
+      - churn
+    persona: mibao
+    truths_ref:
+      - customer-list.profile-view
+    user_inputs:
+      - "哪些老客户最近不下单了"
+      - "谁最值得维护"
+    expectations:
+      - tool: customer_manage
+        args:
+          action: value_view
+    data_checks:
+      - "只读且免确认：value_view 在 VALID_ACTIONS 与 read_only_actions 里（与 list / detail / list_tags / profile_view 同列），工具 read_only=True ⇒ 不弹确认卡（_requires_confirmation 为 False）"
+      - "取数面 = **三条既有只读端点**（不新开端点、不扩 /api/admin/briefing/snapshot）：GET /api/admin/customers、GET /api/admin/orders、GET /api/admin/after-sales —— 端点字面量在 client.get 的**调用点**（静态归属机具只认调用点字面量），参数恒为 page=1&size=200 并带 tenant_id / user_id；三条并发取数，**任一条失败即 fail-closed**（不拿半份数据出结论）且点名失败面 + 所需权限码（customer:view / order:list / after_sales:view，与控制器 @RequirePermission 逐字对齐）"
+      - "🔴「未知」≠「0」（本视图的核心口径）：窗口内**没有订单行**的客户 ⇒ order_count / days_since_last_order / total_consumption / avg_order_amount / return_rate 一律 **null** + 行内 *_basis=no_orders（**不是 0 单、不是 0 天、不是 0 元** —— 0 天会把从未下单的客户排成最活跃）；窗口外有行而窗口内 0 行 ⇒ order_count **真 0**（那是一个真结论）；退货率**无分母** ⇒ null（不是「0% 退货」）。注入式红证：把 _row 的未知格填成 0 ⇒ 同一断言必红"
+      - "🔴 分层未知 ≠ 活跃、也 ≠ 已流失：没有任何订单行的客户落 risk_band=unknown（unknown 分层），消息里**明说**「分层未知 = 不知道」，不得被读成「活跃」或「已流失」；行序 = 流失风险降序（lost → at_risk → active → unknown）再按距上次下单天数倒序（本视图的用途就是「谁最值得维护」，不改序等于把问题丢给模型；口径写在 basis.row_order 里可复算）"
+      - "归并主键 = 手机号（既有订单读面不含客户 id —— OrderListResponse 只有 customerName / customerPhone，这是唯一可用联接键）：客户档案里**被打码**的手机号（含 * ）不参与归并（打码号经数字提炼会变成一个看似合法的数字串 ⇒ 不拦就是把「读不出」当「读到了」）；订单行手机号缺失 ⇒ 该行落不可归属并计数（unattributed_orders），受影响的指标字段落 incomplete（**不得静默偏低**）"
+      - "🔴 具名披露「未接线」：声明**无真值**的字段（outstanding_amount 欠款 / avg_ticket_amount 客单价 / recent_days 最近活跃天数）逐条点名并说清一律「未知」，附**逐条原因**（既有只读端点里没有这个列：订单列表无已收/未收金额、售后**列表**无金额列、客户档案无「最近活跃」列）—— 消息是模型的唯一输入源，不写这句模型会把 null 讲成「欠款 0 元」"
+      - "逐字段三态（视图侧）：每个声明字段输出 status ∈ wired / not_wired / incomplete，不变式 reason is None ⟺ status == wired；声明无真值 ⇒ not_wired + 证据化原因；装配层未接线（快照缺数组 / 该字段不在行里）⇒ not_wired + 点名缺什么；行数被上限截断或有行整行缺键 ⇒ incomplete + 原因（**有界不许变成静默少报**）；口径同源：行里读的每个键都必须在 FIELD_SOURCES 里声明过（AST 机械判据）"
+      - "确定性 + 有界 + 租户：同一快照 ⇒ 逐字相同输出（纯函数、不联网；as_of 由调用方传入 —— 视图模块内不出现 date.today / datetime.now，注入式判据扫描源码）；默认上限 50 行、工具侧每面取数上限 200 行（截断由 row_meta.truncated 显式声明）；租户由调用方传入并原样回显（不由行数据反推）"
+    precondition: "本用例是 [backend-contract] 的**视图契约**用例（不进 agent-eval 冒烟）：两条 user_inputs 是**同一能力**的两种问法（「哪些老客户最近不下单了」/「谁最值得维护」），不是两次会话。前置 = 三条既有只读端点可用且当前账号同持 customer:view + order:list + after_sales:view（缺任一面 ⇒ 工具 fail-closed 并点名缺哪个码）。该前置由 backend/ai-agent-service/tests/test_customer_manage.py 的 TestCustomerValueAction 逐面构造并断言（三面各失败一次都必须 cross_domain_fetch_failed + 点名权限码）⇒ 前置不成立（端点 / 权限码改名）时单测直接红，不会表现为「agent 不干活」"
+    skip_reason: "[backend-contract] 视图语义由 ai-agent 单测验证（backend/ai-agent-service/tests/test_briefing_customer_value.py 的逐字段三态 / 未知≠0 / 口径同源 / 五条注入式红证），工具面由 backend/ai-agent-service/tests/test_customer_manage.py 的 TestCustomerValueAction 验证（action 白名单 / 三条端点字面量三处同源 / 任一面失败 fail-closed / 披露纪律），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-03 新增（issue #6217 / 族 3 · 包 4 / V1）：族 3（跨域具名视图）此前只有 product_health（#5369）与 customer_profile（#5456），本条目为**客户价值分层 / 流失预警**视图的专属用例 —— 它答的是页面结构上做不到的问题（客户列表只有单客户维度，无法按流失风险排序）。⚠️ 不并进简报表快照（先例 #5458 裁定：权限面不同 ⇒ 复用即越权）；取数只用三条既有只读端点。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_briefing_customer_value.py"
         - "backend/ai-agent-service/tests/test_customer_manage.py"
       ci:
         - pr-check.yml

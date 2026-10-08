@@ -34,6 +34,7 @@ import com.migao.admin.mapper.StockLedgerMapper;
 import com.migao.admin.mapper.TicketTimelineMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -156,15 +157,21 @@ class StockLedgerTest {
             }
             return 1;
         });
-        when(productSkuMapper.deductStock(anyLong(), any())).thenAnswer(inv -> {
+        // 与 ProductSkuMapper.deductStock 的 SQL 同口径（issue #6299）：带下限谓词的条件更新，
+        // 并**同时返回变更前/变更后**（真库那条 SQL 的 RETURNING）；扣不动 ⇒ null
+        when(productSkuMapper.deductStock(anyLong(), any(), any())).thenAnswer(inv -> {
             ProductSku stored = skuStore.get(inv.<Long>getArgument(0));
-            if (stored == null) {
-                return 0;
+            BigDecimal qty = inv.getArgument(1);
+            BigDecimal before = StockQuantity.orZero(stored == null ? null : stored.getStock());
+            if (stored == null || before.compareTo(qty) < 0) {
+                return null;
             }
-            // 与 ProductSkuMapper.deductStock 的 SQL 同口径：GREATEST(COALESCE(stock,0)-qty, 0)
-            BigDecimal stock = StockQuantity.orZero(stored.getStock());
-            stored.setStock(stock.subtract(inv.<BigDecimal>getArgument(1)).max(BigDecimal.ZERO));
-            return 1;
+            stored.setStock(before.subtract(qty));
+            Map<String, Object> change = new java.util.LinkedHashMap<>();
+            change.put("skuCode", stored.getSkuCode());
+            change.put("beforeQuantity", before);
+            change.put("afterQuantity", stored.getStock());
+            return change;
         });
         when(productSkuMapper.restoreStock(anyLong(), any())).thenAnswer(inv -> {
             ProductSku stored = skuStore.get(inv.<Long>getArgument(0));
@@ -303,7 +310,7 @@ class StockLedgerTest {
 
         // 回补场景：return 工单完结、商品允许回补；真实 OrderService.restoreStockForReturn 内部 +2
         when(afterSalesTicketMapper.selectById("ticket-1")).thenReturn(ticket());
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(orderItem()));
         when(productMapper.selectBatchIds(anyCollection())).thenReturn(List.of(
@@ -329,7 +336,7 @@ class StockLedgerTest {
     void afterSalesRestockWithoutChangeWritesNothing() {
         skuStore.put(SKU_ID, sku(SKU_ID, BigDecimal.valueOf(30)));
         when(afterSalesTicketMapper.selectById("ticket-1")).thenReturn(ticket());
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         // 订单明细不带 SKU 规格（既有分支：matchSkuId 返回 null ⇒ 无 SKU 级库存调整）
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(List.of(orderItemWithoutSkuSpec()));
@@ -349,7 +356,7 @@ class StockLedgerTest {
     void afterSalesRestockDisabledWritesNothing() {
         skuStore.put(100L, sku(100L, BigDecimal.valueOf(30)));
         when(afterSalesTicketMapper.selectById("ticket-1")).thenReturn(ticket());
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(orderItem()));
         when(productMapper.selectBatchIds(anyCollection())).thenReturn(List.of(
                 Product.builder().id(PRODUCT_ID).allowReturnRestock(false).build()));
@@ -371,7 +378,7 @@ class StockLedgerTest {
         skuStore.put(SKU_ID, sku(SKU_ID, BigDecimal.valueOf(30)));
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(orderItem()));
         when(afterSalesTicketMapper.selectById("ticket-1")).thenReturn(ticket());
-        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(afterSalesTicketMapper.update(any(AfterSalesTicket.class), any(UpdateWrapper.class))).thenReturn(1);
         when(productMapper.selectBatchIds(anyCollection())).thenReturn(List.of(
                 Product.builder().id(PRODUCT_ID).allowReturnRestock(true).build()));
 

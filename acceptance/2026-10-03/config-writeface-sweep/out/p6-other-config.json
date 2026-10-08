@@ -1,0 +1,398 @@
+[
+  {
+    "id": "W6-L0",
+    "name": "清场：历史残留同前缀对象",
+    "status": "pass",
+    "detail": "清理 8 条：fee:写面横切组合料405227(HTTP 200→disabled) | fee:写面横切组合料384160(HTTP 200→disabled) | fee:写面横切组合料668012(HTTP 200→disabled) | fee:写面横切组合料764045(HTTP 200→disabled) | fee:写面横切组合料857105(HTTP 200→disabled) | fee:写面横切组合料955206(HTTP 200→disabled) | fee:写面横切组合料172510(HTTP 200→disabled) | fee:写面横切组合料030585(HTTP 200→disabled)",
+    "evidence": [],
+    "at": "2026-10-03T01:05:47.409Z"
+  },
+  {
+    "id": "W6-01",
+    "name": "加工费组合写面：POST 新建（自建自清；特征名取自自建加工项 ⇒ 目录里真有）",
+    "status": "pass",
+    "detail": "HTTP 200；行={\"composition_key\":\"写面横切组合料544870\",\"del\":0,\"id\":\"faa15dc832853601bff60c2c0e3d5d58\",\"items\":\"[\\\"写面横切组合料544870\\\"]\",\"status\":\"active\",\"up\":\"3.50\"}",
+    "evidence": [],
+    "at": "2026-10-03T01:05:48.153Z"
+  },
+  {
+    "id": "W6-02",
+    "name": "加工费组合写面：只改 unit_price",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"processing_fee_combination_versions.*(row-added)\",\"processing_fee_combinations.unit_price\",\"processing_fee_combinations.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/processing-fee-combinations/faa15dc832853601bff60c2c0e3d5d58 body={\"unit_price\":4.25}",
+      "payload 键=[unit_price]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: processing_fee_combination_versions.d542aaa32a88522ee3e79442a9ee105d.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row] | processing_fee_combinations.faa15dc832853601bff60c2c0e3d5d58.unit_price: 3.5 → 4.25 [field] | processing_fee_combinations.faa15dc832853601bff60c2c0e3d5d58.updated_at: \"2026-10-03T09:05:47.98992+08:00\" → \"2026-10-03T09:05:48.644687+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: processing_fee_combination_versions.d542aaa32a88522ee3e79442a9ee105d.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]"
+    ],
+    "at": "2026-10-03T01:05:48.973Z"
+  },
+  {
+    "id": "W6-02-restore",
+    "name": "加工费组合写面：只改 unit_price · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=2（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=1 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: unit_price=3.5,updated_at='2026-10-03T09:05:47.98992+08:00'[affected=1] ;; SOFT_DELETED_NEW_ROW[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:49.870Z"
+  },
+  {
+    "id": "W6-03",
+    "name": "加工费组合写面：只改 sort_order",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"processing_fee_combinations.sort_order\",\"processing_fee_combinations.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/processing-fee-combinations/faa15dc832853601bff60c2c0e3d5d58 body={\"sort_order\":7}",
+      "payload 键=[sort_order]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: processing_fee_combinations.faa15dc832853601bff60c2c0e3d5d58.sort_order: 99 → 7 [field] | processing_fee_combinations.faa15dc832853601bff60c2c0e3d5d58.updated_at: \"2026-10-03T09:05:47.98992+08:00\" → \"2026-10-03T09:05:50.147786+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:05:50.415Z"
+  },
+  {
+    "id": "W6-03-restore",
+    "name": "加工费组合写面：只改 sort_order · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: sort_order=99,updated_at='2026-10-03T09:05:47.98992+08:00'[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:51.176Z"
+  },
+  {
+    "id": "W6-04",
+    "name": "加工费组合写面：DELETE（软删语义 status=disabled）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"processing_fee_combination_versions.*(row-added)\",\"processing_fee_combinations.status\",\"processing_fee_combinations.updated_at\"]",
+    "evidence": [
+      "DELETE /api/admin/production/processing-fee-combinations/faa15dc832853601bff60c2c0e3d5d58",
+      "payload 键=[status,deleted]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: processing_fee_combination_versions.74b99123bbfe5834c7fc516e6dc2fc91.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row] | processing_fee_combinations.faa15dc832853601bff60c2c0e3d5d58.status: \"active\" → \"disabled\" [field] | processing_fee_combinations.faa15dc832853601bff60c2c0e3d5d58.updated_at: \"2026-10-03T09:05:47.98992+08:00\" → \"2026-10-03T09:05:51.466005+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: processing_fee_combination_versions.74b99123bbfe5834c7fc516e6dc2fc91.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]"
+    ],
+    "at": "2026-10-03T01:05:51.817Z"
+  },
+  {
+    "id": "W6-04-restore",
+    "name": "加工费组合写面：DELETE（软删语义 status=disabled） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=2（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=1 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: status='active',updated_at='2026-10-03T09:05:47.98992+08:00'[affected=1] ;; SOFT_DELETED_NEW_ROW[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:52.798Z"
+  },
+  {
+    "id": "W6-05",
+    "name": "算料公式配置写面：只改 margin_multi（全量替换；+0.01）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"craft_calc_configs.margin_multi\",\"craft_calc_configs.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/craft-calc-config body=<读面全量 + 只改 1 个键：margin_multi>（**全量替换**写面 ⇒ 判据按「只允许被改的那个键变化」收窄）",
+      "payload 键=[margin_multi]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: craft_calc_configs.ccc-20.margin_multi: 0.38 → 0.39 [field] | craft_calc_configs.ccc-20.updated_at: \"2026-10-03T09:03:12.968243+08:00\" → \"2026-10-03T09:05:53.170529+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:05:53.510Z"
+  },
+  {
+    "id": "W6-05-restore",
+    "name": "算料公式配置写面：只改 margin_multi（全量替换；+0.01） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=2",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: craft_calc_configs.ccc-20.margin_multi: 0.38 → 0.39 [field] | craft_calc_configs.ccc-20.updated_at: \"2026-10-03T09:03:12.968243+08:00\" → \"2026-10-03T09:05:53.170529+08:00\" [field]"
+    ],
+    "at": "2026-10-03T01:05:54.348Z"
+  },
+  {
+    "id": "W6-05-http",
+    "name": "算料公式配置写面：只改 margin_multi（全量替换；+0.01） · 写面真的被接受（HTTP 2xx）",
+    "status": "pass",
+    "detail": "HTTP 200",
+    "evidence": [],
+    "at": "2026-10-03T01:05:54.349Z"
+  },
+  {
+    "id": "W6-06",
+    "name": "裁高配置写面：只改 rounding.digits（+1；全量替换）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"cutting_height_configs.rounding\",\"cutting_height_configs.updated_at\",\"tenant_param_audit.*(row-added)\"]",
+    "evidence": [
+      "PUT /api/admin/production/cutting-height-config body=<读面全量 + 只改 1 个键：rounding.digits>（**全量替换**写面 ⇒ 判据按「只允许被改的那个键变化」收窄）",
+      "payload 键=[rounding.digits]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: cutting_height_configs.chc-20.rounding: {\"digits\":3,\"mode\":\"half_up\"} → {\"digits\":1,\"mode\":\"half_up\"} [field] | cutting_height_configs.chc-20.updated_at: \"2026-10-03T09:03:14.577981+08:00\" → \"2026-10-03T09:05:54.809851+08:00\" [field] | tenant_param_audit.tpa-7e3be741fabe4cff8f07b1e2f2ea3e47.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row] | tenant_param_audit.tpa-d00bc24223064bb19b8ab20cecb3d0a9.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]",
+      "审计/版本面（显式声明副账，不计越界）: tenant_param_audit.tpa-7e3be741fabe4cff8f07b1e2f2ea3e47.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row] | tenant_param_audit.tpa-d00bc24223064bb19b8ab20cecb3d0a9.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]"
+    ],
+    "at": "2026-10-03T01:05:55.201Z"
+  },
+  {
+    "id": "W6-06-restore",
+    "name": "裁高配置写面：只改 rounding.digits（+1；全量替换） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=4",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: cutting_height_configs.chc-20.rounding: {\"digits\":3,\"mode\":\"half_up\"} → {\"digits\":1,\"mode\":\"half_up\"} [field] | cutting_height_configs.chc-20.updated_at: \"2026-10-03T09:03:14.577981+08:00\" → \"2026-10-03T09:05:54.809851+08:00\" [field] | tenant_param_audit.tpa-7e3be741fabe4cff8f07b1e2f2ea3e47.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row] | tenant_param_audit.tpa-d00bc24223064bb19b8ab20cecb3d0a9.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]"
+    ],
+    "at": "2026-10-03T01:05:56.051Z"
+  },
+  {
+    "id": "W6-06-http",
+    "name": "裁高配置写面：只改 rounding.digits（+1；全量替换） · 写面真的被接受（HTTP 2xx）",
+    "status": "pass",
+    "detail": "HTTP 200",
+    "evidence": [],
+    "at": "2026-10-03T01:05:56.053Z"
+  },
+  {
+    "id": "W6-07",
+    "name": "工人端页面开关写面：只改 pages（全量替换；body 只收 {pages}）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"tenant_param_audit.*(row-added)\"]",
+    "evidence": [
+      "PUT /api/admin/worker-page-config body=<读面全量 + 只改 1 个键：pages>（**全量替换**写面 ⇒ 判据按「只允许被改的那个键变化」收窄）",
+      "payload 键=[pages]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: tenant_param_audit.tpa-14f9e88c027d462b8ec4939a3640f4f3.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]",
+      "审计/版本面（显式声明副账，不计越界）: tenant_param_audit.tpa-14f9e88c027d462b8ec4939a3640f4f3.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]"
+    ],
+    "at": "2026-10-03T01:05:56.790Z"
+  },
+  {
+    "id": "W6-07-restore",
+    "name": "工人端页面开关写面：只改 pages（全量替换；body 只收 {pages}） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=1",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: tenant_param_audit.tpa-14f9e88c027d462b8ec4939a3640f4f3.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]"
+    ],
+    "at": "2026-10-03T01:05:57.680Z"
+  },
+  {
+    "id": "W6-07-http",
+    "name": "工人端页面开关写面：只改 pages（全量替换；body 只收 {pages}） · 写面真的被接受（HTTP 2xx）",
+    "status": "pass",
+    "detail": "HTTP 200",
+    "evidence": [],
+    "at": "2026-10-03T01:05:57.681Z"
+  },
+  {
+    "id": "W6-08",
+    "name": "小件用料尺寸表写面：items=[]（清空 = 回到未配置；全量替换）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[]",
+    "evidence": [
+      "PUT /api/admin/production/remnants/small-item-specs body=<读面全量 + 只改 1 个键：items>（**全量替换**写面 ⇒ 判据按「只允许被改的那个键变化」收窄）",
+      "payload 键=[items]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: （空）",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:05:58.401Z"
+  },
+  {
+    "id": "W6-08-restore",
+    "name": "小件用料尺寸表写面：items=[]（清空 = 回到未配置；全量替换） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:05:59.260Z"
+  },
+  {
+    "id": "W6-08-http",
+    "name": "小件用料尺寸表写面：items=[]（清空 = 回到未配置；全量替换） · 写面真的被接受（HTTP 2xx）",
+    "status": "pass",
+    "detail": "HTTP 200",
+    "evidence": [],
+    "at": "2026-10-03T01:05:59.261Z"
+  },
+  {
+    "id": "W6-09",
+    "name": "加工项写面：POST 新建（自建自清）",
+    "status": "pass",
+    "detail": "HTTP 200；行={\"del\":0,\"id\":\"92414828b563f34967e34c70f0215f4d\",\"name\":\"写面横切加工项544870\",\"status\":\"active\",\"unit\":\"米\"}；categoryId=2989f97400c2dfeba7ee9f3516ba3cb1",
+    "evidence": [],
+    "at": "2026-10-03T01:05:59.596Z"
+  },
+  {
+    "id": "W6-10",
+    "name": "加工项写面：只改 name（改名）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[]",
+    "evidence": [
+      "PUT /api/admin/processing-items/92414828b563f34967e34c70f0215f4d body={\"name\":\"写面横切加工项改544870\"}",
+      "payload 键=[name]；HTTP 422",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: （空）",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:06:00.220Z"
+  },
+  {
+    "id": "W6-10-restore",
+    "name": "加工项写面：只改 name（改名） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:06:01.051Z"
+  },
+  {
+    "id": "W6-11",
+    "name": "加工项写面：只改 unit",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[]",
+    "evidence": [
+      "PUT /api/admin/processing-items/92414828b563f34967e34c70f0215f4d body={\"unit\":\"个\"}",
+      "payload 键=[unit]；HTTP 422",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: （空）",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:06:01.578Z"
+  },
+  {
+    "id": "W6-11-restore",
+    "name": "加工项写面：只改 unit · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:06:02.356Z"
+  },
+  {
+    "id": "W6-12",
+    "name": "加工项写面：DELETE（删除）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"processing_items.deleted\",\"processing_items.updated_at\"]",
+    "evidence": [
+      "DELETE /api/admin/processing-items/92414828b563f34967e34c70f0215f4d",
+      "payload 键=[deleted]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: processing_items.92414828b563f34967e34c70f0215f4d.deleted: 0 → 1 [field] | processing_items.92414828b563f34967e34c70f0215f4d.updated_at: \"2026-10-03T09:05:59.358662+08:00\" → \"2026-10-03T09:06:02.643832+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:06:02.990Z"
+  },
+  {
+    "id": "W6-12-restore",
+    "name": "加工项写面：DELETE（删除） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=1（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: updated_at='2026-10-03T09:05:59.358662+08:00',deleted=0[affected=1]",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:06:03.802Z"
+  },
+  {
+    "id": "W6-13",
+    "name": "店铺设置写面：只改 companyName（部分更新；值同原值 ⇒ 允许集合应为空）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[]",
+    "evidence": [
+      "PUT /api/admin/settings body={\"companyName\":\"<原值>\"}",
+      "payload 键=[companyName]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: （空）",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:06:04.498Z"
+  },
+  {
+    "id": "W6-13-restore",
+    "name": "店铺设置写面：只改 companyName（部分更新；值同原值 ⇒ 允许集合应为空） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:06:05.313Z"
+  },
+  {
+    "id": "W6-14",
+    "name": "租户 AI 配置写面：只改 id（部分更新；值同原值 ⇒ 允许集合应为空）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[]",
+    "evidence": [
+      "PUT /api/admin/tenant/ai-config body={\"id\":\"<原值>\"}",
+      "payload 键=[id]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: （空）",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-03T01:06:05.977Z"
+  },
+  {
+    "id": "W6-14-restore",
+    "name": "租户 AI 配置写面：只改 id（部分更新；值同原值 ⇒ 允许集合应为空） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-03T01:06:06.686Z"
+  },
+  {
+    "id": "W6-98",
+    "name": "零残留读数：自建对象存活数 = 0",
+    "status": "pass",
+    "detail": "加工项存活=0；加工费组合存活=0；前缀对象存活=0；存活明细=0（ops/pos/routes/rules/fees 全部 deleted=1 或不存在）",
+    "evidence": [],
+    "at": "2026-10-03T01:06:07.718Z"
+  },
+  {
+    "id": "W6-90",
+    "name": "时间戳（+08 口径）",
+    "status": "pass",
+    "detail": "开始 2026-10-03 17:05:45 +08 / 结束 2026-10-03 17:06:07 +08（UTC: 2026-10-03T01:05:45.068Z → 2026-10-03T01:06:07.719Z）",
+    "evidence": [],
+    "at": "2026-10-03T01:06:07.719Z"
+  }
+]

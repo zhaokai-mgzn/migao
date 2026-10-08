@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, UI-030, PR-068, PR-069, PR-070, PR-077
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, PG-069, UI-030, PR-068, PR-069, PR-070, PR-077
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -4265,6 +4265,30 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
+    @DisplayName("#6226 列表：该批加工单 order_id 全为空 ⇒ 不得对不可变空表 get(null) 抛 NPE（原 500）")
+    void listWithAllNullOrderIdsRendersInsteadOfFiveHundred() {
+        // 夹具（构造式，不写库）：该批加工单**所有** order_id 都为空 ⇒ loadOrders 的
+        // orderIds 集合为空 ⇒ 走空集分支。修复前该分支 return Map.of() ⇒ 调用点
+        // orders.get(po.getOrderId()) 抛 NullPointerException ⇒ 列表端点 500。
+        // 本断言在修前**必红**（NPE）。
+        ProcessingOrder po = po("po-null-order-id", "issued");
+        po.setOrderId(null);
+        po.setProcessingOrderNo("JG-20260912-9999");
+        when(processingOrderMapper.selectList(any())).thenReturn(List.of(po));
+
+        // when：不得抛（抛 NPE ⇒ 列表端点 500）
+        List<ProcessingOrderResponse> result = processingOrderService.list(null, null, TENANT);
+
+        // then：正常渲染，订单缺值渲染为 null（不是 500）
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getOrderId()).isNull();
+        assertThat(result.get(0).getOrderNo()).isNull();
+        // 空键集合不下发批量查询（与「批量取回」同口径，不因修复而多发一次查询）
+        verify(orderMapper, never()).selectBatchIds(anyCollection());
+        verify(orderMapper, never()).selectById(anyString());
+    }
+
+    @Test
     @DisplayName("#4304 详情路径不回归：getDetail 仍按单条 selectById 取订单（不改签名语义）")
     void getDetailStillLoadsOrderBySingleSelect() {
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "issued"));
@@ -4528,7 +4552,7 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("#5169 判据5 待派池：按物料分组可查 / 等待时长可读 / 超上限**带单号**告警")
+    @DisplayName("#5169 判据5 待派池：按物料分组可查 / 等待时长可读 / 超上限**带对象**告警（#6524 文案=阈值+动作）")
     void poolGroupsByMaterialAndWarnsOverdueOrders() {
         java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
         // ⚠️ 顺序**必须忠于真实查询**：`pool()` 走 `orderByAsc(createdAt)`（池的遍历序 = 下单时刻升序），
@@ -4569,9 +4593,11 @@ class ProcessingOrderServiceTest {
         assertThat(pool.warnings().get(0).orderNo()).isEqualTo("ORD-20260912-0002");
         assertThat(pool.warnings().get(0).waitHours()).isEqualByComparingTo("30.0");
         assertThat(pool.warnings().get(0).message())
-                .as("🔴 告警必须**带着对象名字**说出来：哪张单、等了多久、该做什么（不得静默压单）")
-                .contains("ORD-20260912-0002").contains("30.0").contains("24")
-                .contains("合并派单");
+                .as("🔴 #6524 告警文案 = 阈值 + 该做什么；不念同屏已有的列（单号 / 等待时长）"
+                        + "；对象名字与读数仍由字段承载（orderNo / waitHours 上一行刚断言过）")
+                .contains("24").contains("请合并派单或单独派单")
+                .doesNotContain("ORD-20260912-0002").doesNotContain("30.0")
+                .doesNotContain("不要一直压着不派");
         assertThat(pool.groups().get(0).lines().get(0).waitHours())
                 .as("池内等待时长**逐单可读**，且**等得久的在前**（= 记录期既有序：池按 createdAt 升序遍历；"
                         + "issue #5177 的排序键在「无加急单、无到货日」时与之**同序** ⇒ 缺省不变）")

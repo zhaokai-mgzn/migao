@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import {
   User,
@@ -42,7 +42,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 客户服务组（本轮 2026-09-29 用户裁定**新建**：原「智能客服」组 + 客户侧两项合并）
   // 🔴 首项 = 组名「客户服务」，与侧边栏 `config/menu.ts` 的 `customer-service` 组逐字一致
   // （判据 PG-038：末项 label == 菜单名）。
-  { match: (p) => p.startsWith('/chat'), crumbs: [{ label: '客户服务' }, { label: '米宝 · 在线对话' }] },
+  { match: (p) => p.startsWith('/chat'), crumbs: [{ label: '客户服务' }, { label: '黄金策 · 在线对话' }] },
   { match: (p) => p.startsWith('/agent-workspace/human-sessions'), crumbs: [{ label: '客户服务' }, { label: '在线接待' }] },
   // 「会话监控」是**非菜单路由**（侧边栏无此项，属域内下钻）—— 首项仍取它所属的业务组名。
   { match: (p) => p.startsWith('/agent-workspace/sessions'), crumbs: [{ label: '客户服务' }, { label: '会话监控' }] },
@@ -100,6 +100,10 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 发货单（issue #5939，用户 2026-10-02 裁定）：与「入库单」对称的出口单据，同属「仓储与物料」组。
   // 组名/菜单名与侧边栏 `config/menu.ts` 的 `shipments`、服务端两处菜单节点逐字一致（判据 PG-038）。
   { match: (p) => p.startsWith('/shipments'), crumbs: [{ label: '仓储与物料' }, { label: '发货单' }] },
+  // 库存明细（issue #6404）：V111/#5034 那次**漏过本表一处**（入库单）的教训照抄在这里 ——
+  // 新增菜单项必须同批补面包屑，否则末项退化成「工作台」。组名/菜单名与 `config/menu.ts` 的
+  // `stock-ledger`、服务端两处菜单节点**逐字一致**（判据 PG-038 / §15.2）。
+  { match: (p) => p.startsWith('/stock-ledger'), crumbs: [{ label: '仓储与物料' }, { label: '库存明细' }] },
 
   // 交易管理组（本轮 2026-09-29 收窄为**「下单 → 收款」两项**：客户列表 / 售后工单已移入
   // 「客户服务」组 —— 用户原话「客户管理也不属于交易管理」「（售后）和客户管理……都属于服务客户的功能」）
@@ -131,6 +135,25 @@ export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderPr
   const { user, logout } = useAuthStore()
   // #3099: 用户下拉卡片改为点击展开（原 group-hover 悬停触发）
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+
+  // #6339: 「点击外部收起」用**文档级 mousedown** 实现，不用全屏遮罩 —— 原实现是一个
+  // `fixed inset-0` 透明遮罩，而它所在的 `<header>` 带 `backdrop-blur-sm`；CSS 规定
+  // `backdrop-filter` 非 none 的元素是 `position: fixed` 后代的**包含块**
+  // ⇒ 那个遮罩的 `inset-0` 相对的是**顶栏盒子（h-14 = 56px）**、不是视口，
+  // 内容区点击落不到它上面（卡片永不收起），顶栏那一带反而被它吃掉点击。
+  // 同形态的既有实现见 components/layout/NotificationBell.tsx（§5 复用优先）。
+  const userMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!userMenuOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [userMenuOpen])
 
   const displayName = user?.name || user?.nickname || user?.username || '管理员'
 
@@ -204,7 +227,7 @@ export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderPr
         <NotificationBell />
 
         {/* 用户下拉菜单（#3099: 点击展开 + 姓名默认展示 + 卡片信息丰富） */}
-        <div className="relative">
+        <div className="relative" ref={userMenuRef}>
           <button
             aria-label="用户菜单"
             aria-expanded={userMenuOpen}
@@ -231,60 +254,56 @@ export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderPr
 
           {/* 点击展开的下拉卡片（非 hover） */}
           {userMenuOpen && (
-            <>
-              {/* 点击卡片外任意处关闭 */}
-              <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
-              <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-neutral-200 bg-white shadow-card-hover">
-                {/* 卡片头部：头像 + 姓名 + 账号/邮箱 */}
-                <div className="flex items-center gap-3 border-b border-neutral-100 px-4 py-3">
-                  {user?.avatar ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={user.avatar}
-                      alt="用户头像"
-                      className="h-10 w-10 rounded-full object-cover shadow-sm"
-                    />
-                  ) : (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-base font-semibold text-white shadow-sm">
-                      {displayName.charAt(0) || <User className="h-5 w-5 text-white" />}
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-neutral-900">{displayName}</p>
-                    <p className="truncate text-xs text-neutral-500">
-                      {user?.email || user?.username || ''}
-                    </p>
+            <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-neutral-200 bg-white shadow-card-hover">
+              {/* 卡片头部：头像 + 姓名 + 账号/邮箱 */}
+              <div className="flex items-center gap-3 border-b border-neutral-100 px-4 py-3">
+                {user?.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={user.avatar}
+                    alt="用户头像"
+                    className="h-10 w-10 rounded-full object-cover shadow-sm"
+                  />
+                ) : (
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-base font-semibold text-white shadow-sm">
+                    {displayName.charAt(0) || <User className="h-5 w-5 text-white" />}
                   </div>
+                )}
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-neutral-900">{displayName}</p>
+                  <p className="truncate text-xs text-neutral-500">
+                    {user?.email || user?.username || ''}
+                  </p>
                 </div>
-
-                {/* 丰富信息：#3099 手机号 / 岗位 / 所属企业 */}
-                <div className="space-y-2 px-4 py-3 text-sm">
-                  <div className="flex items-center gap-2 text-neutral-600">
-                    <Phone className="h-3.5 w-3.5 text-neutral-400" />
-                    <span className="w-14 shrink-0 text-neutral-400">手机号</span>
-                    <span className="truncate text-neutral-800">{user?.username || '-'}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-neutral-600">
-                    <Briefcase className="h-3.5 w-3.5 text-neutral-400" />
-                    <span className="w-14 shrink-0 text-neutral-400">岗位</span>
-                    <span className="truncate text-neutral-800">{user?.position || '-'}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-neutral-600">
-                    <Building2 className="h-3.5 w-3.5 text-neutral-400" />
-                    <span className="w-14 shrink-0 text-neutral-400">所属企业</span>
-                    <span className="truncate text-neutral-800">{user?.tenantName || '-'}</span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleLogout}
-                  className="flex w-full items-center gap-2 border-t border-neutral-100 px-4 py-2.5 text-sm text-red-600 transition-colors hover:bg-red-50"
-                >
-                  <LogOut className="h-4 w-4" />
-                  退出登录
-                </button>
               </div>
-            </>
+
+              {/* 丰富信息：#3099 手机号 / 岗位 / 所属企业 */}
+              <div className="space-y-2 px-4 py-3 text-sm">
+                <div className="flex items-center gap-2 text-neutral-600">
+                  <Phone className="h-3.5 w-3.5 text-neutral-400" />
+                  <span className="w-14 shrink-0 text-neutral-400">手机号</span>
+                  <span className="truncate text-neutral-800">{user?.username || '-'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-neutral-600">
+                  <Briefcase className="h-3.5 w-3.5 text-neutral-400" />
+                  <span className="w-14 shrink-0 text-neutral-400">岗位</span>
+                  <span className="truncate text-neutral-800">{user?.position || '-'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-neutral-600">
+                  <Building2 className="h-3.5 w-3.5 text-neutral-400" />
+                  <span className="w-14 shrink-0 text-neutral-400">所属企业</span>
+                  <span className="truncate text-neutral-800">{user?.tenantName || '-'}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleLogout}
+                className="flex w-full items-center gap-2 border-t border-neutral-100 px-4 py-2.5 text-sm text-red-600 transition-colors hover:bg-red-50"
+              >
+                <LogOut className="h-4 w-4" />
+                退出登录
+              </button>
+            </div>
           )}
         </div>
       </div>

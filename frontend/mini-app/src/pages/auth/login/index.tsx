@@ -54,7 +54,10 @@ export default function LoginPage() {
         <View className='login-brand__icon'>
           <Text className='login-brand__icon-text'>AI</Text>
         </View>
-        <Text className='login-brand__title'>小布 · 智能购物助手</Text>
+        {/* AI 角色标签口径见 frontend/admin-web/src/config/ai-roles.ts（issue #6330/#6333）；
+            本 App 是独立工程，不跨 App 引共享模块（#6306 教训：落在发布集外 ⇒ 白屏）⇒ 本地字面量 + 测试钉值。
+            注意：buildBrandSubtitle 的「{企业名} · 智能购物助手」是**店铺描述**，不是 AI 角色，不动。 */}
+        <Text className='login-brand__title'>元元 · 企业智能客服</Text>
         <Text className='login-brand__subtitle'>您的专属智能购物助手</Text>
       </View>
 
@@ -62,7 +65,7 @@ export default function LoginPage() {
       <View className='login-welcome'>
         <Text className='login-welcome__title'>欢迎使用</Text>
         <Text className='login-welcome__desc'>
-          小布为您提供 7×24 小时在线服务{'\n'}随时解答您的购物疑问
+          元元为您提供 7×24 小时在线服务{'\n'}随时解答您的购物疑问
         </Text>
       </View>
 

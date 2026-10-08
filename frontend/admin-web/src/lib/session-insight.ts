@@ -1,12 +1,12 @@
 /**
- * session-insight — 会话洞察面板（米宝工作助手）数据层纯函数
+ * session-insight — 会话洞察面板（黄金策工作助手）数据层纯函数
  *
- * 米宝（B端智能工作助手）的工作范式：
+ * 黄金策（B端智能工作助手）的工作范式：
  *   意图路由 → 查询工具 → validate_input → confirm 交互卡 → 写工具 → 追问建议
  *
  * 会话洞察面板基于这条工作链重建「工作台账」：
  *   1. 处理进度 — 工具调用时间线（做了什么 / 做到哪一步 / 哪里失败）
- *   2. 待确认   — 米宝在等待用户确认的交互卡（写操作安全闸）
+ *   2. 待确认   — 黄金策在等待用户确认的交互卡（写操作安全闸）
  *   3. 业务对象 — 会话涉及的订单/商品/物流/售后/客户实体，点击可追问
  *
  * 历史接口只持久化 {tool, args} 形状的 tool_calls（无 status/result），
@@ -77,7 +77,7 @@ const TOOL_META: Record<string, ToolMeta> = {
   settings_manage: { label: '系统设置', domain: 'settings', write: true },
   session_manage: { label: '会话管理', domain: 'settings', write: true },
   notification_manage: { label: '通知管理', domain: 'settings', write: true },
-  // 工作流（米宝安全闸：确认 / 校验 / 转人工）
+  // 工作流（黄金策安全闸：确认 / 校验 / 转人工）
   interact: { label: '请求确认', domain: 'workflow', write: false },
   validate_input: { label: '参数校验', domain: 'workflow', write: false },
   human_handoff: { label: '转人工', domain: 'workflow', write: false },
@@ -175,11 +175,11 @@ export function extractToolEvents(messages: ChatMessage[]): ToolEvent[] {
 }
 
 // ═══════════════════════════════════════════════════
-// 待确认交互检测（米宝在等你确认）
+// 待确认交互检测（黄金策在等你确认）
 // ═══════════════════════════════════════════════════
 
 /**
- * 检测米宝是否在等待用户操作。
+ * 检测黄金策是否在等待用户操作。
  * 从消息尾部回扫：遇到用户消息即说明此前的交互已被应答；
  * 遇到带 interactive 的助手消息且未被中断 → 待确认。
  */

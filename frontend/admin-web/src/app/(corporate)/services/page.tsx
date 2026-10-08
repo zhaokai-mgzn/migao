@@ -1,198 +1,174 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import {
-  MessageSquare,
-  Wrench,
-  Zap,
-  Radio,
-  LayoutDashboard,
-  ShoppingBag,
-  Users,
-  BarChart3,
-  Smartphone,
-  MessageCircle,
-  History,
-  TrendingUp,
-  UserCheck,
-  PieChart,
-  Sparkles,
-  PackageSearch,
-  Truck,
-  BookOpen,
+  ArrowRight,
+  Bot,
+  Check,
+  Globe,
   Headphones,
-  MessagesSquare,
+  MessageSquare,
+  ScanLine,
+  Smartphone,
+  Sparkles,
+  Users,
+  Wallet,
 } from 'lucide-react'
+import { CallToAction, PageHero, SectionHeading } from '@/components/corporate/CorporateSection'
+import { AI_ROLES } from '@/config/ai-roles'
+import {
+  capabilityDomains,
+  industryDepth,
+  menuItemCount,
+  standaloneEntries,
+} from '@/components/corporate/capability-map'
 
 export const metadata: Metadata = {
-  title: '产品与服务 — 双AI助手 + 全链路管理平台',
+  title: '产品与服务 — AI 客服、经营助手与全链路经营平台',
   description:
-    '米高双AI助手 — 米宝智能工作助手（内部运营提效）+ 小布AI客服（7×24客户服务），搭配商家管理后台、微信小程序、数据分析，构建企业智能闭环。',
+    `观星台产品全景：顾客侧元元${AI_ROLES.xiaobu}，经营侧黄金策${AI_ROLES.mibao}；管理后台、顾客小程序、商家小程序、员工端 H5 四个终端，覆盖商品、客户、交易、生产、仓储、组织六个能力域。`,
 }
 
-// Core AI products — displayed as large featured cards
 const coreProducts = [
   {
-    title: '米宝 · 企业智能工作助手',
-    description: '面向企业员工的AI工作搭档，深度融入日常运营，自然语言交互即可完成复杂业务操作',
-    icon: Sparkles,
-    gradient: 'from-purple-500 to-pink-500',
-    bgGradient: 'from-purple-50 to-pink-50',
-    borderColor: 'border-purple-200 hover:border-purple-300',
-    shadowColor: 'hover:shadow-purple-100',
-    iconBg: 'from-purple-100 to-pink-100',
-    iconText: 'text-purple-600',
-    badgeBg: 'bg-purple-100',
-    badgeText: 'text-purple-700',
-    features: [
-      { icon: PackageSearch, text: '商品智能管理：语音/文字查询商品、批量操作库存、智能分类推荐' },
-      { icon: Truck, text: '订单全程跟踪：一句话查订单状态、物流追踪、异常订单智能预警' },
-      { icon: BookOpen, text: '知识即时检索：面料知识、工艺流程、安装指南、售后政策，问即答' },
-      { icon: Headphones, text: '售后高效协同：退换货处理、客户投诉跟进、智能工单流转' },
-      { icon: MessagesSquare, text: '多轮深度对话：基于上下文理解，支持复杂业务场景的连续交互' },
-    ],
-  },
-  {
-    title: '小布 · AI 智能客服',
-    description: '面向消费者的7×24小时智能客服，基于大语言模型深度理解客户问题，提供专业精准的服务',
+    title: `元元 · ${AI_ROLES.xiaobu}`,
     icon: MessageSquare,
-    gradient: 'from-primary-500 to-cyan-500',
-    bgGradient: 'from-blue-50 to-cyan-50',
-    borderColor: 'border-blue-200 hover:border-blue-300',
-    shadowColor: 'hover:shadow-blue-100',
-    iconBg: 'from-blue-100 to-cyan-100',
-    iconText: 'text-primary-600',
-    badgeBg: 'bg-blue-100',
-    badgeText: 'text-blue-700',
+    tagline: '顾客侧：从规格咨询到下单、物流查询与售后受理',
     features: [
-      { icon: Wrench, text: '基于大语言模型，精准理解客户意图，应答自然贴切有温度' },
-      { icon: MessageCircle, text: '多轮对话与上下文记忆，像真人客服一样连续沟通' },
-      { icon: Zap, text: '智能工具调用：商品查询、物流追踪、知识检索一键直达' },
-      { icon: Radio, text: '毫秒级流式应答，所见即所得的打字机效果，体验流畅自然' },
+      '按店内已上架商品回答颜色、门幅、加工项，不展示未上架商品',
+      '按尺寸与工艺计算用料并给出估算报价，明确说明为估算而非成交价',
+      '短信验证码校验后下单，成交单价取商品库权威价',
+      '订单进度、物流轨迹、收货地址查询',
+      '售后咨询与申请受理，工单恒为「待商家审核」',
+      '按店内已发布知识卡片作答；顾客发图可识别并给出解读',
     ],
+    boundary:
+      '不做：改价、取消订单、退款、承诺优惠折扣、报库存数量。涉及价格与赔偿只解释规则、收集材料，落到工单由商家确认。',
+  },
+  {
+    title: `黄金策 · ${AI_ROLES.mibao}`,
+    icon: Bot,
+    tagline: '经营侧：以自然语言查询账目、订单与进度',
+    features: [
+      '经营看板与每日简报：订单量、销售额、环比、待处理事项',
+      '商品与 SKU：批量改价、批量上下架（可撤销）、分类与资料维护',
+      '订单与加工单：订单查询、物流、加工单进度、工序报工明细',
+      '库存与入库：批次库存、库存台账、入库单与批次成本',
+      '生产与计件：工序库、工艺路线、计件工资与报工明细',
+      '财务与客户：资金流水 / 收支汇总 / 应收对账问答，客户档案与售后工单',
+    ],
+    boundary:
+      '写操作只有三类：改价、批量上下架、批量库存调整。改价须携带改前价并经确认卡二次确认；AI 不创建订单与商品。',
   },
 ]
 
-// Supporting products — displayed as 3-column grid
-const supportingProducts = [
+const terminals = [
   {
-    title: '商家管理后台',
-    description: '功能完善的一站式管理平台，助您高效掌控日常业务全流程',
-    icon: LayoutDashboard,
-    color: 'indigo',
-    features: [
-      { icon: ShoppingBag, text: '商品中心：商品信息管理、加工项配置、知识库维护，商品运营一站搞定' },
-      { icon: ShoppingBag, text: '交易中心：订单管理、售后处理、物流跟踪，全链路把控' },
-      { icon: Users, text: '客户中心：客户档案、标签管理、行为洞察，精准运营' },
-      { icon: BarChart3, text: '经营看板：经营数据一览，趋势分析，数据驱动决策' },
-    ],
+    icon: Globe,
+    title: '管理后台',
+    audience: '老板 / 运营 / 客服',
+    description: '浏览器打开即用，六个能力域集中在此；右上角通知中心，右下角悬浮黄金策随时提问。',
+    points: ['经营看板与每日简报', '商品、订单、售后、财务', '生产、仓储、组织与权限'],
   },
   {
-    title: '微信小程序客服',
-    description: '在微信生态内为消费者提供原生体验的小布智能客服服务',
     icon: Smartphone,
-    color: 'green',
-    features: [
-      { icon: Smartphone, text: '微信原生体验，无需额外下载，扫码即用' },
-      { icon: MessageCircle, text: '富媒体消息展示，商品卡片、订单详情直观呈现' },
-      { icon: History, text: '完整会话管理，历史记录随时回顾，服务连贯不断线' },
-    ],
+    title: '顾客小程序',
+    audience: '终端消费者',
+    description: '在微信内直接咨询元元、下单、查询物流与提交售后，无需额外下载。',
+    points: ['7×24 咨询与下单', '订单与物流进度', '售后申请与进度'],
   },
   {
-    title: '数据分析与报表',
-    description: '全方位数据洞察能力，让数据成为业务增长的引擎',
-    icon: PieChart,
-    color: 'orange',
-    features: [
-      { icon: TrendingUp, text: '服务质量监控：响应时长、客户满意度、问题解决率全面追踪' },
-      { icon: UserCheck, text: '客户行为洞察：访问路径分析、偏好画像、转化漏斗' },
-      { icon: BarChart3, text: '经营数据统计：订单趋势、营收分析、库存周转一目了然' },
-    ],
+    icon: MessageSquare,
+    title: '商家小程序',
+    audience: '老板 / 店长（移动端）',
+    description: '移动端可用：问黄金策、看数据、处理坐席会话，并提供工人登录与拍照入库入口。',
+    points: ['问黄金策 / 看数据', '坐席会话处理', '工人登录、拍照入库、补打标签'],
+  },
+  {
+    icon: ScanLine,
+    title: '员工端 H5',
+    audience: '车间工人',
+    description:
+      '扫码即开，无需安装 App：扫码报工、拍照入库与发货；一体机提供常驻扫码的机台模式。',
+    points: ['扫码报工（合格 / 返工 / 报废）', '拍照入库与发货', '断网补传，同一请求不会重复记账'],
   },
 ]
 
-const supportingColorMap: Record<string, { bg: string; icon: string; border: string; badge: string; badgeText: string }> = {
-  indigo: { bg: 'bg-indigo-50', icon: 'text-indigo-600', border: 'border-indigo-100 hover:border-indigo-200', badge: 'bg-indigo-50', badgeText: 'text-indigo-700' },
-  green: { bg: 'bg-green-50', icon: 'text-green-600', border: 'border-green-100 hover:border-green-200', badge: 'bg-green-50', badgeText: 'text-green-700' },
-  orange: { bg: 'bg-orange-50', icon: 'text-orange-600', border: 'border-orange-100 hover:border-orange-200', badge: 'bg-orange-50', badgeText: 'text-orange-700' },
-}
+const delivery = [
+  {
+    icon: Sparkles,
+    title: 'AI 自动甄别，秒级开通',
+    description:
+      '提交企业信息并完成手机验证后，AI 自动核验并给出结论，通过即自动开通租户与管理员账号。',
+  },
+  {
+    icon: Headphones,
+    title: '行业模板预置',
+    description: '布艺行业通用知识模板已预置，开通后即可套用，再按企业话术补充。',
+  },
+  {
+    icon: Users,
+    title: '岗位权限开箱可配',
+    description: '七个岗位开箱可用，员工菜单权限逐人可调，权限树即后台菜单本身。',
+  },
+  {
+    icon: Wallet,
+    title: '价格与合同另行沟通',
+    description:
+      '本页面不公示价格；套餐、开通范围与交付内容请在入驻申请或留言中说明，由团队与您确认。',
+  },
+]
 
 export default function ServicesPage() {
   return (
     <>
-      {/* Page Header */}
-      <section className="relative bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white py-16 sm:py-20 overflow-hidden">
-        <div
-          className="absolute inset-0 opacity-10"
-          style={{
-            backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.8) 1px, transparent 1px)',
-            backgroundSize: '24px 24px',
-          }}
-        />
-        <div className="absolute -top-24 -right-24 w-80 h-80 bg-blue-400/15 rounded-full blur-3xl" />
-        <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-indigo-400/15 rounded-full blur-3xl" />
+      <PageHero
+        kicker="产品与服务"
+        title="元元与黄金策，以及全链路经营平台"
+        lead="顾客侧由元元承接服务，经营侧由黄金策承接管理；后端由商品、客户、交易、生产、仓储、组织六个能力域支撑，四个终端共用数据底座。"
+        chips={[
+          '2 个 AI：元元与黄金策',
+          `6 个能力域 · ${menuItemCount} 项功能`,
+          '4 个终端',
+          '算料 · 工序 · 批次 · 计件',
+        ]}
+      />
 
-        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight">
-            产品与服务
-          </h1>
-          <p className="mt-4 text-lg sm:text-xl text-blue-100/90 max-w-2xl mx-auto leading-relaxed">
-            双AI助手 + 全链路管理平台，为企业构建从内部运营到客户服务的智能闭环
-          </p>
-        </div>
-      </section>
-
-      {/* Core AI Products — Featured large cards */}
-      <section className="py-20 sm:py-28 bg-white">
+      {/* ── 元元与黄金策 ──────────────────────────────────────── */}
+      <section className="bg-white py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
-              核心AI产品
-            </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
-              AI 双助手，一个对内提效，一个对外服务
-            </h2>
-            <p className="mt-4 text-lg text-neutral-500 max-w-2xl mx-auto">
-              米宝赋能企业运营，小布服务终端客户，双轮驱动业务增长
-            </p>
-          </div>
+          <SectionHeading
+            kicker="核心 AI 产品"
+            title="元元服务顾客，黄金策管理经营"
+            lead="元元与黄金策读取真实经营数据：顾客问到的商品、订单与库存，与经营者在后台看到的完全一致。"
+          />
 
-          <div className="space-y-12">
-            {coreProducts.map((product, index) => (
+          <div className="mt-14 space-y-8">
+            {coreProducts.map((product) => (
               <div
                 key={product.title}
-                className={`group relative rounded-3xl border ${product.borderColor} bg-gradient-to-br ${product.bgGradient} p-8 sm:p-12 transition-all duration-300 ${product.shadowColor} hover:shadow-xl hover:-translate-y-1`}
+                className="rounded-3xl border border-neutral-200 bg-neutral-50/60 p-8 sm:p-10"
               >
-                {/* Glow accent */}
-                <div className={`absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl ${product.gradient} opacity-[0.04] rounded-bl-full pointer-events-none`} />
-
-                <div className="relative flex flex-col lg:flex-row lg:items-start gap-8">
-                  {/* Product header */}
-                  <div className="lg:w-80 shrink-0">
-                    <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full ${product.badgeBg} ${product.badgeText} text-xs font-semibold mb-4`}>
-                      <Sparkles className="w-3.5 h-3.5" />
-                      AI 助手
+                <div className="flex flex-col gap-8 lg:flex-row">
+                  <div className="lg:w-80 lg:shrink-0">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700">
+                      <product.icon className="h-7 w-7 text-white" />
                     </div>
-                    <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${product.iconBg} flex items-center justify-center mb-4`}>
-                      <product.icon className={`w-8 h-8 ${product.iconText}`} />
-                    </div>
-                    <h2 className="text-2xl sm:text-3xl font-bold text-neutral-900">
-                      {product.title}
-                    </h2>
-                    <p className="mt-3 text-base text-neutral-600 leading-relaxed">
-                      {product.description}
+                    <h2 className="mt-5 text-2xl font-bold text-neutral-900">{product.title}</h2>
+                    <p className="mt-2 text-sm font-medium text-accent-600">{product.tagline}</p>
+                    <p className="mt-5 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-xs leading-relaxed text-neutral-600">
+                      <span className="font-semibold text-neutral-800">能力边界：</span>
+                      {product.boundary}
                     </p>
                   </div>
 
-                  {/* Feature list */}
-                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
                     {product.features.map((feature) => (
                       <div
-                        key={feature.text}
-                        className="flex items-start gap-3 p-4 bg-white/80 backdrop-blur-sm rounded-xl border border-white/60 hover:bg-white hover:shadow-sm transition-all duration-200"
+                        key={feature}
+                        className="flex items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4"
                       >
-                        <feature.icon className={`w-5 h-5 ${product.iconText} shrink-0 mt-0.5`} />
-                        <span className="text-sm text-neutral-700 leading-relaxed">
-                          {feature.text}
-                        </span>
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
+                        <span className="text-sm leading-relaxed text-neutral-700">{feature}</span>
                       </div>
                     ))}
                   </div>
@@ -203,55 +179,166 @@ export default function ServicesPage() {
         </div>
       </section>
 
-      {/* Supporting Products — 3-column grid */}
-      <section className="py-20 sm:py-28 bg-slate-50">
+      {/* ── 四个终端 ─────────────────────────────────────────── */}
+      <section className="bg-neutral-50 py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
-              支撑产品
-            </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
-              全链路管理能力
-            </h2>
-            <p className="mt-4 text-lg text-neutral-500 max-w-2xl mx-auto">
-              从后台管理到客户触点，覆盖业务全场景
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {supportingProducts.map((product) => {
-              const colors = supportingColorMap[product.color]
-              return (
-                <div
-                  key={product.title}
-                  className={`group bg-white rounded-2xl border ${colors.border} p-6 sm:p-8 transition-all duration-300 hover:shadow-lg hover:-translate-y-1`}
-                >
-                  <div className={`w-12 h-12 ${colors.bg} rounded-xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform duration-300`}>
-                    <product.icon className={`w-6 h-6 ${colors.icon}`} />
-                  </div>
-                  <h3 className="text-xl font-bold text-neutral-900 mb-2">
-                    {product.title}
-                  </h3>
-                  <p className="text-sm text-neutral-500 leading-relaxed mb-6">
-                    {product.description}
-                  </p>
-
-                  <ul className="space-y-3">
-                    {product.features.map((feature) => (
-                      <li key={feature.text} className="flex items-start gap-2.5">
-                        <feature.icon className={`w-4 h-4 ${colors.icon} shrink-0 mt-0.5`} />
-                        <span className="text-sm text-neutral-600 leading-relaxed">
-                          {feature.text}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+          <SectionHeading
+            kicker="四个终端"
+            title="四类角色，四个入口"
+            lead="同一租户、同源数据，按角色提供不同入口与权限，车间工人无需使用管理后台。"
+          />
+          <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {terminals.map((terminal) => (
+              <div
+                key={terminal.title}
+                className="flex flex-col rounded-2xl border border-neutral-200 bg-white p-6 shadow-card"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-100">
+                  <terminal.icon className="h-6 w-6 text-primary-600" />
                 </div>
-              )
-            })}
+                <h3 className="mt-5 text-lg font-bold text-neutral-900">{terminal.title}</h3>
+                <p className="mt-1 text-xs font-medium text-accent-600">{terminal.audience}</p>
+                <p className="mt-3 text-sm leading-relaxed text-neutral-600">
+                  {terminal.description}
+                </p>
+                <ul className="mt-5 flex-1 space-y-2 border-t border-neutral-100 pt-5">
+                  {terminal.points.map((point) => (
+                    <li key={point} className="flex items-start gap-2 text-xs text-neutral-600">
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary-600" />
+                      <span className="leading-relaxed">{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
         </div>
       </section>
+
+      {/* ── 六个能力域 ───────────────────────────────────────── */}
+      <section className="bg-white py-20 sm:py-28">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <SectionHeading
+            kicker="能力清单"
+            title="六个能力域，逐项展开"
+            lead="以下每一项都是后台中可打开的功能入口。"
+          />
+          <div className="mt-14 space-y-6">
+            {capabilityDomains.map((domain) => (
+              <div
+                key={domain.key}
+                className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-6 sm:p-8"
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
+                  <h3 className="text-lg font-bold text-neutral-900">{domain.name}</h3>
+                  <p className="text-sm text-neutral-500">{domain.summary}</p>
+                </div>
+                <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {domain.items.map((item) => (
+                    <div
+                      key={item.name}
+                      className="flex items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4"
+                    >
+                      <item.icon className="mt-0.5 h-5 w-5 shrink-0 text-accent-600" />
+                      <div>
+                        <p className="text-sm font-semibold text-neutral-900">{item.name}</p>
+                        <p className="mt-1 text-sm leading-relaxed text-neutral-600">
+                          {item.detail}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {standaloneEntries.map((item) => (
+                <div
+                  key={item.name}
+                  className="flex items-start gap-3 rounded-2xl border border-neutral-200 bg-white p-6 shadow-card"
+                >
+                  <item.icon className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" />
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-900">{item.name}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-neutral-600">{item.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── 行业纵深 ─────────────────────────────────────────── */}
+      <section className="bg-neutral-50 py-20 sm:py-28">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <SectionHeading
+            kicker="行业纵深"
+            title="布艺经营的四项核心能力"
+            lead="通用客服机器人难以覆盖这四项能力，而它们正是观星台产品设计的起点。"
+          />
+          <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {industryDepth.map((item) => (
+              <div
+                key={item.title}
+                className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-card"
+              >
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-neutral-900">
+                  <item.icon className="h-5 w-5 text-[#e8b04b]" />
+                </div>
+                <h3 className="mt-5 text-base font-semibold text-neutral-900">{item.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-neutral-600">{item.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 交付与开通 ───────────────────────────────────────── */}
+      <section className="bg-white py-20 sm:py-28">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <SectionHeading
+            kicker="交付与开通"
+            title="开通流程简单，无需自建基础设施"
+            lead="无需自备服务器与 IT 人员：提交申请、AI 自动甄别、即刻开通，行业模板与岗位权限均已预置。"
+          />
+          <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {delivery.map((item) => (
+              <div
+                key={item.title}
+                className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-6"
+              >
+                <item.icon className="h-6 w-6 text-primary-600" />
+                <h3 className="mt-4 text-base font-semibold text-neutral-900">{item.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-neutral-600">{item.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <CallToAction
+        title="了解观星台是否适配您的业务"
+        lead="提交入驻申请，AI 自动甄别后即刻开通；也可先留言说明业务场景，我们将按您的流程安排演示。"
+        primary={
+          <Link
+            href="/register"
+            className="group inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-semibold text-neutral-900 transition-colors hover:bg-neutral-100"
+          >
+            立即入驻
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        }
+        secondary={
+          <Link
+            href="/contact"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-7 py-3.5 text-base font-semibold text-white transition-colors hover:bg-white/10"
+          >
+            留言咨询
+          </Link>
+        }
+      />
     </>
   )
 }

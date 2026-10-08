@@ -248,7 +248,7 @@ class TestInputContractIsConsumed:
         registry_path = validate_args_call_sites(REGISTRY_PY.read_text(encoding="utf-8"))
 
         assert "_execute_tool_safe" in agent_path, (
-            "`base_skill._execute_tool_safe`（小布/米宝的共享执行入口）没有调用 "
+            "`base_skill._execute_tool_safe`（元元/黄金策的共享执行入口）没有调用 "
             f"`validate_args` —— 声明的 required 在执行前不会被校验（实测调用点：{agent_path}）"
         )
         assert "execute_tool" in registry_path, (

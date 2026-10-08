@@ -1,0 +1,77 @@
+{
+  "at": {
+    "cst": "2026-10-04 11:31:56 +08",
+    "utc": "2026-10-04T03:31:56.845Z"
+  },
+  "phase": "pre6302",
+  "apiBase": "https://api.migaozn.com",
+  "tenant": 25,
+  "checks": [
+    {
+      "id": "R1",
+      "name": ".mjs 必须是 JS MIME（#6293）",
+      "expect": "两个 .mjs = application/javascript；.css=text/css；对照 .js=application/javascript",
+      "actual": "{\"入口 app.mjs\":\"200 application/javascript\",\"入口 machine.mjs\":\"200 application/javascript\",\"对照 styles.css\":\"200 text/css\",\"对照 bmini app.js\":\"200 application/javascript\"}",
+      "verdict": "pass",
+      "evidence": [
+        "HEAD 实测；坏形态为 application/octet-stream（浏览器拒绝执行 module script）"
+      ]
+    },
+    {
+      "id": "R2",
+      "name": "并发完结：恰 1 个赢家 + 台账 1 行（#6220）",
+      "expect": "成功数=1（其余 409「状态已被他人变更」）；台账恰 1 行；库存 98→100",
+      "actual": "codes=[200,409,409,409] okCount=1 台账=1 行 库存 98→100 工单终态=resolved",
+      "verdict": "pass",
+      "evidence": [
+        "重叠证据: {\"barrierAt\":1791084723116,\"barrierAtCST\":\"2026-10-04 11:32:03 +08\",\"perRequest\":[{\"i\":0,\"t0\":1791084723116,\"t1\":1791084723796,\"durMs\":680},{\"i\":1,\"t0\":17910847",
+        "工单 AS-20261004-0001"
+      ]
+    },
+    {
+      "id": "R3",
+      "name": "退款精度准入（#6228）",
+      "expect": "0.001 ⇒ 4xx 且库内不变；0.01 ⇒ 200 且 refund_amount 逐字 = 0.01",
+      "actual": "0.001→422（refund_amount=0）｜0.01→200（refund_amount=0.01）",
+      "verdict": "pass",
+      "evidence": [
+        "响应原文(0.001): {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"退款金额 最多支持 2 位小数（金额按「分」记账，列精度 NUMERIC(·,2)），当前值 0.001 有 3 位小数 —— 请改为最多 2 位小数后重试（服务端不做静默取整/四舍五入）\"},\"requestId\":\"req_a09371085cc74ac2\",\"time",
+        "响应原文(0.01): {\"success\":true,\"requestId\":\"req_5b73cc404e9841c4\",\"timestamp\":1791084724}"
+      ]
+    },
+    {
+      "id": "R4",
+      "name": "size<0 必须显式拒绝（#6222）",
+      "expect": "400（可行动文案）；不得 200 且 total=0 却回整页",
+      "actual": "400 total=undefined rows=0 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"分页参数不合法: size=-5\",\"details\":[{\"field\":\"size\",\"message\":\"size 不能为负数（会静默返回整页且 total=0，请传 size >= 0）",
+      "verdict": "pass",
+      "evidence": [
+        "坏形态：200 + total=0 + rows>0（总数与行数不自洽）"
+      ]
+    },
+    {
+      "id": "R5",
+      "name": "超长 skuCode 必须 4xx 而非 500（#6302）",
+      "expect": "长度>30 的 skuCode ⇒ 4xx + 可行动文案（不得 500 INTERNAL_ERROR）；正对照 = 同脚本正常长度夹具建品成功",
+      "actual": "skuCode.len=44 ⇒ HTTP 500：{\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestId\":\"req_d1c606db8eff4b87\",\"timestamp\":1791084725}",
+      "verdict": "fail",
+      "evidence": [
+        "坏形态：500 INTERNAL_ERROR（value too long for type character varying(30)）",
+        "正对照：p/p2 夹具（正常长度）已建成 ⇒ ok=true/true"
+      ]
+    }
+  ],
+  "cleanup": {
+    "errors": [],
+    "residue": {
+      "orders": 0,
+      "products": 0,
+      "categories": 0,
+      "tickets": 0
+    }
+  },
+  "counts": {
+    "pass": 4,
+    "fail": 1
+  }
+}

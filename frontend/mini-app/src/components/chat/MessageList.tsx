@@ -15,7 +15,7 @@ interface MessageListProps {
 }
 
 export default function MessageList({ messages, isStreaming, onInteract }: MessageListProps) {
-  // UI-018：智能客服名称取自租户配置 botName（未配置默认「小布」）
+  // UI-018：智能客服名称取自租户配置 botName（未配置默认「元元」）
   const botName = buildBotName(useAuthStore((s) => s.user)?.botName)
   const scrollAnchorId = 'msg-anchor'
   const scrollTopRef = useRef(0)
@@ -81,7 +81,7 @@ export default function MessageList({ messages, isStreaming, onInteract }: Messa
             <MessageBubble key={msg.id} message={msg} onInteract={onInteract} />
           ))}
 
-          {/* 思考中动画（UI-018：显示租户 botName，默认「小布正在思考...」） */}
+          {/* 思考中动画（UI-018：显示租户 botName，默认「元元正在思考...」） */}
           {showTyping && <TypingIndicator text={`${botName}正在思考...`} />}
 
           {/* 滚动锚点 */}

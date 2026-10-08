@@ -22,7 +22,7 @@ interface ProductionCardData {
   positions?: ProductionCardPosition[]
   operations?: ProductionCardOperation[]
   progress?: { total?: number; done?: number; percent?: number }
-  /** 米宝精简进度载荷（GET /api/admin/agent/production/progress?order_no=）字段 */
+  /** 黄金策精简进度载荷（GET /api/admin/agent/production/progress?order_no=）字段 */
   progress_percent?: number
   current_operation?: string
   /**
@@ -72,7 +72,7 @@ function flattenOperations(
  *
  * 兼容两种载荷（两者字段名不同，缺一不可）：
  * 1. 工序树：{positions[].operations[], progress:{total,done,percent}, expected_delivery_at}
- * 2. 米宝精简进度：{progress_percent, current_operation, pending_operations[],
+ * 2. 黄金策精简进度：{progress_percent, current_operation, pending_operations[],
  *    total_operations, done_operations, expected_delivery_date}
  */
 export default function ProductionProgressCard({ data }: ProductionProgressCardProps) {

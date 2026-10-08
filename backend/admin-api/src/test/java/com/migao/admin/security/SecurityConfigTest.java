@@ -256,6 +256,22 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;
 
+    /**
+     * 定时任务（用户「预约」，issue #6486 包 1）。
+     *
+     * <p>⚠️ <b>本类对全部 service / mapper 一律 {@code @MockBean}</b>（本类自己的口径，见上面几条）。
+     * 漏一个的后果是<b>整片红</b>而不是一条红：真实 bean 会被创建 ⇒ 而本上下文
+     * {@code @EnableAutoConfiguration} 排除了 {@code MybatisPlusAutoConfiguration} ⇒
+     * 没有 {@code SqlSessionFactory} ⇒ 本类 55 条用例**全部**报
+     * {@code Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required}
+     * （实测读数：漏掉这两条时 <b>Tests run: 55, Errors: 55</b>）。</p>
+     */
+    @MockBean
+    private com.migao.admin.service.ScheduledTaskService scheduledTaskService;
+
+    @MockBean
+    private com.migao.admin.mapper.ScheduledTaskMapper scheduledTaskMapper;
+
     // 通知规则 / 模板（issue #4727）：两个 controller 补了类级 system:manage ⇒ 正向对照需要服务桩
     @MockBean
     private com.migao.admin.service.NotificationRuleService notificationRuleService;
@@ -639,7 +655,7 @@ class SecurityConfigTest {
     // ======================== Service Token 透传商户员工 — 细粒度鉴权（issue #4105 F2）========================
     // 背景：ai-agent 调用 admin-api 始终带 X-Service-Token + X-Tenant-Id + X-User-Id，
     // ServiceTokenFilter 此前一律构造 role=service 的身份 ⇒ PermissionInterceptor.hasBypassRole()
-    // 直接放行，商户员工（受限岗位）能让米宝执行自己无权执行的写操作，admin-api 完全无感。
+    // 直接放行，商户员工（受限岗位）能让黄金策执行自己无权执行的写操作，admin-api 完全无感。
     // 目标：X-User-Id 命中同租户商户员工时挂真实角色，交由 @RequirePermission 校验并返回 F1 的可执行 403。
 
     @Test

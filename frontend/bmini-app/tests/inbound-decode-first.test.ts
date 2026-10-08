@@ -61,7 +61,7 @@ function fakeServer() {
       return {
         path: payload.barcode ? 'barcode_decode' : 'vision',
         barcode: payload.barcode ?? null,
-        skuMatches: payload.barcode ? [{ skuId: 9, productId: 'p1', skuCode: 'MG-1001' }] : [],
+        skuMatches: payload.barcode ? [{ skuId: '9', productId: 'p1', skuCode: 'MG-1001' }] : [],
         requiresManualEntry: !payload.barcode,
       }
     },

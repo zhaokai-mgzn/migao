@@ -493,8 +493,8 @@ class OrderCreateTool(BaseTool):
         # 📌 **已知语义 = 当前有意取舍**（issue #4942，2026-09-26 裁定②「不采纳机械兜底」）：
         # 下面这句只由**描述约束 + 哨兵断言**守着，**没有**确定性闸门 —— 判它需要
         # 「这张单有几个窗户」，而该事实**不由任何输入给出**（`curtainType`/`componentRole`
-        # 的组合也不足以判定）。机械兜底（新增显式樘窗输入事实）**已评估并放弃**：B 端米宝侧
-        # 已按 #5247 只读化、**不再有 `order_create`**，下单只剩 C 端小布一条路 ⇒ 改工具契约
+        # 的组合也不足以判定）。机械兜底（新增显式樘窗输入事实）**已评估并放弃**：B 端黄金策侧
+        # 已按 #5247 只读化、**不再有 `order_create`**，下单只剩 C 端元元一条路 ⇒ 改工具契约
         # + prompt（可能还有交互卡）的成本/收益不成立。⇒ 这是**已知语义**，不是遗漏；
         # 重启条件与逐条理由见 `_reject_ungrouped_craft_lines` 的 docstring。
         # 哨兵（防这条约束被"精简"掉而静默消失）：
@@ -544,7 +544,7 @@ class OrderCreateTool(BaseTool):
     # 权限码（admin-api 目录）：issue #5246 起下单走**写码** `order:create`
     # （`AgentOrderController.POST /` 同批拆码；此前挂在读码 `order:list` 上）
     # ＋`product:list`（商品/库存校验面）——与 controller 同码。
-    # 本工具**双端**（C 端小布下单 + B 端代客下单）⇒ 声明 c_end_reachable：C 端 JWT 没有
+    # 本工具**双端**（C 端元元下单 + B 端代客下单）⇒ 声明 c_end_reachable：C 端 JWT 没有
     # permissions claim，C 端按角色层放行（与加码前逐字一致，零回归）。
     # 声明了权限码 ⇒ **删除** allowed_roles（它含 C 端角色 `customer`；且权限码在场时角色白名单
     # 本就不生效＝第二份会漂的假门禁，#4106 F4）。
@@ -1300,8 +1300,8 @@ class OrderCreateTool(BaseTool):
         **已知语义 = 当前有意取舍（issue #4942，2026-09-26 裁定②「不采纳」）**：上面这条边界
         **不是**"待补的遗漏"，而是**已评估并放弃机械兜底**之后接受的形态 —— 机械兜底需要一条
         **新的显式输入事实**（逐窗 `windowIndex` / 服务端或调用方统一分配 / 工具签名要求
-        「多樘窗必须逐窗声明」），它会改**工具契约 + prompt + 可能的交互卡**；而 B 端米宝侧
-        已按 **#5247** 只读化、**不再有 `order_create`**，下单只剩 **C 端小布**一条路
+        「多樘窗必须逐窗声明」），它会改**工具契约 + prompt + 可能的交互卡**；而 B 端黄金策侧
+        已按 **#5247** 只读化、**不再有 `order_create`**，下单只剩 **C 端元元**一条路
         ⇒ 成本/收益不成立 ⇒ 收口为**已知语义**（有意取舍），**不**实现该兜底。
         该方向**永久**由**描述约束 + 哨兵断言**守住：哨兵 =
         `backend/ai-agent-service/tests/test_issue_4390_craft_line_and_fee.py` 的
@@ -1813,7 +1813,7 @@ class OrderCreateTool(BaseTool):
                 missing_params=["items"],
             )
 
-        # ── 引导清单字段归一（issue #4362，S1）：C 端小布按**清单 id**（snake_case：
+        # ── 引导清单字段归一（issue #4362，S1）：C 端元元按**清单 id**（snake_case：
         # curtain_type / open_count / is_shaped / formula / has_pattern / window_type ——
         # 褶距 `pleat_spacing` 已退役，issue #4873）
         # 采集的工艺参数，直接放进 processing_info 时在此**归一**为工艺规格键（camelCase）。

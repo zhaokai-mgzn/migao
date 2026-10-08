@@ -5,40 +5,51 @@ import CorporateFooter from '@/components/corporate/CorporateFooter'
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#2563eb',
+  themeColor: '#3a4e75',
 }
 
 export const metadata: Metadata = {
   title: {
-    default: '米高 — AI驱动的新一代企业智能管理平台',
-    template: '%s — 米高',
+    default: '观星台 — 布艺行业的 AI 经营平台',
+    template: '%s — 观星台',
   },
   description:
-    '杭州词元通达科技有限公司出品的米高SaaS平台，为布艺行业提供米高智能工作助手与小布AI客服，双AI助手驱动商品管理、订单跟踪、客户服务全链路智能化，助力企业降本增效。',
-  keywords: ['米高', 'AI智能客服', 'SaaS', '布艺', '窗帘', '电商管理', 'AI助手', '小布'],
+    '杭州词元通达科技有限公司出品的观星台平台：面向布艺 / 窗帘商家的多租户 AI 经营平台。顾客侧元元 7×24 小时接待咨询、算料报价、下单与售后；经营侧黄金策覆盖商品、订单、生产、库存与财务。',
+  keywords: [
+    '观星台',
+    'AI 智能客服',
+    '布艺 SaaS',
+    '窗帘',
+    '窗帘算料',
+    '加工单',
+    '计件工资',
+    'AI 经营助手',
+    '元元',
+    '黄金策',
+  ],
   authors: [{ name: '杭州词元通达科技有限公司' }],
   openGraph: {
     type: 'website',
     locale: 'zh_CN',
     url: 'https://www.migaozn.com',
-    siteName: '米高 MIGAO',
-    title: '米高 — AI驱动的新一代企业智能管理平台',
+    siteName: '观星台 MIGAO',
+    title: '观星台 — 布艺行业的 AI 经营平台',
     description:
-      '为布艺行业配备专属AI助手——米高智能工作助手与小布智能客服，从内部运营到客户服务全方位驱动业务增长。',
+      '布艺行业的 AI 客服与经营平台：元元承接顾客服务，黄金策承接生产管理，四个终端共用数据底座。',
     images: [
       {
         url: 'https://www.migaozn.com/og-image.png',
         width: 1200,
         height: 630,
-        alt: '米高 AI 智能管理平台',
+        alt: '观星台 AI 经营平台',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: '米高 — AI驱动的新一代企业智能管理平台',
+    title: '观星台 — 布艺行业的 AI 经营平台',
     description:
-      '为布艺行业配备专属AI助手——米高智能工作助手与小布智能客服，从内部运营到客户服务全方位驱动业务增长。',
+      '布艺行业的 AI 客服与经营平台：元元承接顾客服务，黄金策承接生产管理，四个终端共用数据底座。',
   },
   robots: {
     index: true,
@@ -52,7 +63,7 @@ export default function CorporateLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <div className="flex min-h-screen flex-col bg-neutral-50">
       <CorporateNav />
       <main className="flex-1">{children}</main>
       <CorporateFooter />

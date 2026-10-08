@@ -38,6 +38,7 @@ import java.time.Duration;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +85,14 @@ public class RegistrationService {
      * —— 修掉 #4316「非 1 号租户工序库/路线库为空 ⇒ 建单 fail-closed 422」。
      */
     private final ProductionSeedTemplateService productionSeedTemplateService;
+    /**
+     * 开租默认商品分类（issue #6295）：不种 ⇒ 新租户分类表为空，而建商品（非草稿）要求
+     * {@code categoryId} 非空 ⇒ 开箱首建商品必撞 422「分类ID不能为空」。
+     * 与 {@link #productionSeedTemplateService} 同属 {@link OnboardingInitialData#REQUIRED}
+     * （开租必需初始数据清单）—— 清单是单一真值源，漏种 / 漏登记由
+     * `tests/unit_ci_workflows/test_onboarding_required_seed_guard.py` 判红。
+     */
+    private final ProductCategorySeedService productCategorySeedService;
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -167,7 +176,7 @@ public class RegistrationService {
             return RegistrationResponse.builder()
                     .applicationId(application.getId())
                     .status("approved")
-                    .message("AI 甄别通过，欢迎入驻米高平台")
+                    .message("AI 甄别通过，欢迎入驻观星台平台")
                     .build();
         }
 
@@ -428,10 +437,9 @@ public class RegistrationService {
             );
             log.info("创建企业管理员成功: userId={}, phone={}", adminUser.getId(), application.getPhone());
 
-            // 3.5 按行业套用生产种子模板（issue #4361 交付物 3；收口 #4316）
-            // 不做这件事的后果（#4316 取证）：种子只种 tenant_id = 1 ⇒ 新租户工序库/路线库为空
-            // ⇒ resolveRoute 两次都不命中 ⇒ 抛 ERR_ROUTING_NOT_FOUND（422）⇒ **一张加工单也生成不了**。
-            applyProductionSeedTemplate(tenant);
+            // 3.5 开租必需初始数据（issue #6295 把「漏种」这件事清单化收口：
+            //     清单 = OnboardingInitialData.REQUIRED，逐条播种 + 后置条件现取校验）
+            seedRequiredInitialData(tenant);
         } finally {
             // 恢复之前的租户上下文
             if (previousTenantId != null) {
@@ -449,6 +457,53 @@ public class RegistrationService {
         applicationMapper.updateById(application);
 
         log.info("入驻申请审批通过: applicationId={}, tenantId={}", id, tenant.getId());
+    }
+
+    /**
+     * 开租必需初始数据（issue #6295 的清单化收口）—— 播种 + 后置条件校验。
+     *
+     * <p>清单真值源 = {@link OnboardingInitialData#REQUIRED}；本方法是它的**唯一消费点**。
+     * 新增一项必需初始数据 ⇒ 在这里加播种调用 + 在清单登记，否则
+     * `tests/unit_ci_workflows/test_onboarding_required_seed_guard.py` 当场判红（未登记即红）。</p>
+     */
+    private void seedRequiredInitialData(Tenant tenant) {
+        // ① 默认商品分类（issue #6295）：不种 ⇒ 新租户第一次建商品必撞 422「分类ID不能为空」。
+        //    与生产模板**有意不同**：这里是单行、无合法「不种」分支的硬约束 ⇒ 不吞异常，
+        //    落库失败就让开租整体回滚（宁可让申请人重试，也不要产出「开箱不可用」的租户）。
+        productCategorySeedService.seedDefaultCategory(tenant.getId());
+
+        // ② 按行业套用生产种子模板（issue #4361 交付物 3；收口 #4316）
+        //    不做这件事的后果（#4316 取证）：种子只种 tenant_id = 1 ⇒ 新租户工序库/路线库为空
+        //    ⇒ resolveRoute 两次都不命中 ⇒ 抛 ERR_ROUTING_NOT_FOUND（422）⇒ **一张加工单也生成不了**。
+        applyProductionSeedTemplate(tenant);
+
+        // ③ 后置条件校验（fail-closed）：清单里 enforced 的项逐条现取校验，缺一 ⇒ 开租失败
+        assertRequiredInitialData(tenant);
+    }
+
+    /**
+     * 入驻**后置条件**的元守卫（issue #6295）：清单里 {@code enforced=true} 的必需初始数据
+     * 逐条<b>现取</b>校验（不读缓存、不读常量推断），缺一 ⇒ 抛异常让整个开租事务回滚。
+     *
+     * <p>为什么它比「播种那行代码在不在」更可靠：播种调用可能被后来的重构搬走 / 条件化 /
+     * 吞掉异常，而**后置条件校验直接读库**。它把「入驻链路漏种必需初始数据」这一族缺陷
+     * 从**静默**（新租户开箱不可用、无人知道）改成**开租当场失败**（申请人重试 + 报障可归因）。</p>
+     *
+     * <p>副作用口径（有意）：本方法抛异常 ⇒ 已建的租户 / 管理员 / 角色权限一起回滚。
+     * 这里与生产种子模板的「尽力而为、error 日志」口径**相反**是有意的 —— 那一条有合法的
+     * 「本行业没有模板」分支，而默认商品分类没有：缺了就是缺了，租户开箱不可用。</p>
+     */
+    private void assertRequiredInitialData(Tenant tenant) {
+        List<String> missing = new ArrayList<>();
+        if (productCategorySeedService.countCategories(tenant.getId()) == 0) {
+            missing.add(OnboardingInitialData.PRODUCT_CATEGORY_KEY);
+        }
+        if (!missing.isEmpty()) {
+            String message = "开通失败：新租户缺少必需初始数据 " + missing
+                    + "（请稍后重试；若持续失败请联系平台，本单为 #6295 的后置条件校验）";
+            log.error("开租后置条件校验失败: tenantId={}, missing={}", tenant.getId(), missing);
+            throw new BusinessException("ONBOARDING_REQUIRED_DATA_MISSING", message, 500);
+        }
     }
 
     /**
@@ -705,20 +760,20 @@ public class RegistrationService {
                 // 财务写码（issue #5246 追加单）：登记收支流水此前挂在读码 finance:view 上
                 // ⇒ 「能看账」等于「能记账」。
                 {"财务操作", "finance:create", "finance", "create", "登记收支流水"},
-                // 🔴 描述更正（issue #5642 功能⑤）：原文「米宝对话/会话监控/在线接待」里的**米宝对话**
+                // 🔴 描述更正（issue #5642 功能⑤）：原文「黄金策对话/会话监控/在线接待」里的**黄金策对话**
                 // 那截是 aspirational 的 —— 本码实测只管 `/api/admin/agent-sessions/*`（= 在线接待，
                 // `AgentSessionController` 的**类级**码），从不曾施加在对话入口上。若不更正，目录里会
-                // 同时存在两个「自称管米宝对话」的码（本行 + 新增的 agent:chat），评审必问是否重复。
+                // 同时存在两个「自称管黄金策对话」的码（本行 + 新增的 agent:chat），评审必问是否重复。
                 // 存量租户的同一行由 `V132__add_agent_chat_permission.sql` 的 ③ UPDATE 回填。
                 {"会话监控", "agent:session", "agent", "session", "在线接待/会话监控"},
                 // 会话写码（issue #5246 追加单）：转接/结束/发消息此前挂在读码 agent:session 上
                 // ⇒ 只看会话的人能替客服转接与发言。
                 {"会话操作", "agent:session:manage", "agent", "manage", "转接/结束会话/发消息"},
-                // 米宝唤出码（issue #5642 功能⑤）：与上面两个**坐席**码互不蕴含 ——
-                // 持 agent:session **不**自动获得米宝唤出权（客服默认不可唤，符合裁定⓪）；
+                // 黄金策唤出码（issue #5642 功能⑤）：与上面两个**坐席**码互不蕴含 ——
+                // 持 agent:session **不**自动获得黄金策唤出权（客服默认不可唤，符合裁定⓪）；
                 // 管理员靠 `AdminGate.ADMIN_PERMISSION_CODES` 的三码全持（或其 `"*"` 通配）默认可唤，
                 // 其他员工由企业管理员在「员工管理」里勾本码授权。
-                {"米宝对话", "agent:chat", "agent", "chat", "唤出米宝对话（管理员默认/员工需授权）"},
+                {"黄金策对话", "agent:chat", "agent", "chat", "唤出黄金策对话（管理员默认/员工需授权）"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
                 // 岗位权限**读**码（issue #5291）：权限目录读端点（`AdminPermissionController`）与只读

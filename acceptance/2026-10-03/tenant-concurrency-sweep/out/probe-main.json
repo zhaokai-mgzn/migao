@@ -1,0 +1,123 @@
+[
+  {
+    "id": "P1-并发交错",
+    "name": "A/B token 交错打同类端点（列表+按 id 读）",
+    "status": "pass",
+    "detail": "并发 114 请求（请求并发上限 60，预热后观测；墙钟 1835ms，首个响应 74ms 时仍有 113 个请求在飞 ⇒ 真交错），逐响应核对 4106 个对象 id（直连 DB 归属）→ 越租户响应 0 个、非 200 0 个",
+    "evidence": [
+      {
+        "req": "list products by tenant 20",
+        "other": 21,
+        "status": 200,
+        "foreign": [],
+        "idsSample": [
+          "2177bc3325e6bd021c6f3a1a6f875b03",
+          "488e69519a5bfdb5b719808437274f40",
+          "1b913f6d43d71093c144f3cba322d540"
+        ],
+        "foreignCountLeft": 0
+      },
+      {
+        "req": "list customers by tenant 21",
+        "other": 20,
+        "status": 200,
+        "foreign": [],
+        "idsSample": [
+          "1f665c78c0282799d31e56f959404ee6"
+        ],
+        "foreignCountLeft": 0
+      },
+      {
+        "req": "read orders by tenant 20",
+        "other": 21,
+        "status": 200,
+        "foreign": [],
+        "idsSample": [
+          "76e84b4c2f3e6aaceee85307f19b106b"
+        ],
+        "foreignCountLeft": 0
+      }
+    ],
+    "at": "2026-10-03T03:15:16.621Z"
+  },
+  {
+    "id": "P3-切换疲劳",
+    "name": "连续交替 A→B→A→B ≥60 次后仍不得串号",
+    "status": "pass",
+    "detail": "交替 120 次（A↔B），异常响应 0 个",
+    "evidence": [],
+    "at": "2026-10-03T03:15:18.354Z"
+  },
+  {
+    "id": "P4-异常路径",
+    "name": "异常/失败请求后不得继承前一请求的租户上下文",
+    "status": "pass",
+    "detail": "5 条异常路径（非法 id / 3MB body / 并发删除 / 无 token / 篡改 token）后紧接另一租户请求 ⇒ 继承前一租户上下文 0 次",
+    "evidence": [
+      {
+        "case": "X1-非法id",
+        "triggerStatus": 404,
+        "triggerHead": "{\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"请求的资源不存在: /api/admin/orders/not-a-uuid-@@@\"},\"requestId\":\"req_1c",
+        "afterStatus": 200,
+        "afterTenant": 21,
+        "foreign": [],
+        "idsSample": [
+          "fed91dedfe07a56620ab4bc8ec2a4972"
+        ]
+      },
+      {
+        "case": "X2-超大body",
+        "triggerStatus": 422,
+        "triggerHead": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"customerPhone\",\"message\":\"客户",
+        "afterStatus": 200,
+        "afterTenant": 21,
+        "foreign": [],
+        "idsSample": [
+          "fed91dedfe07a56620ab4bc8ec2a4972"
+        ]
+      },
+      {
+        "case": "X3-删除中读",
+        "triggerStatus": 404,
+        "triggerHead": "{\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_5b1cd4e9a2a74c93\",\"timestamp\":179099731",
+        "afterStatus": 200,
+        "afterTenant": 21,
+        "foreign": [],
+        "idsSample": [
+          "fed91dedfe07a56620ab4bc8ec2a4972"
+        ]
+      },
+      {
+        "case": "X4-无token",
+        "triggerStatus": 401,
+        "triggerHead": "{\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+        "afterStatus": 200,
+        "afterTenant": 21,
+        "foreign": [],
+        "idsSample": [
+          "fed91dedfe07a56620ab4bc8ec2a4972"
+        ]
+      },
+      {
+        "case": "X5-篡改token",
+        "triggerStatus": 401,
+        "triggerHead": "{\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+        "afterStatus": 200,
+        "afterTenant": 21,
+        "foreign": [],
+        "idsSample": [
+          "fed91dedfe07a56620ab4bc8ec2a4972"
+        ]
+      }
+    ],
+    "at": "2026-10-03T03:15:19.139Z"
+  },
+  {
+    "id": "P5-并发跨租户读",
+    "name": "并发下按 id 读的跨租户拒绝 + 同租户正对照",
+    "status": "pass",
+    "detail": "正对照 A→A 32/32 个 200（跳过 4 个 attacker 侧无行的资源）；越租户 A→B 的 id 32 个：被拒 32、越权成功 0",
+    "evidence": [],
+    "at": "2026-10-03T03:15:19.403Z"
+  }
+]

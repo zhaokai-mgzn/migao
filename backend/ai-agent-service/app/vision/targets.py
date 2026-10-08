@@ -49,16 +49,44 @@ class TargetField:
     key: str
     label: str
     hint: str
+    #: 🔴 **图上有这一格吗？**（issue #6386，2026-10-05 真跑验收发现）
+    #:
+    #: `False` = 图上**根本不会有**这类格子（它是**文案**不是**事实**）⇒
+    #: ① vision 的字段表里**不给它**（模型连「可以编这一格」的机会都没有 ——
+    #:    光靠提示词求它「只抄图上写明的」，实测**无效**：模型照样编出
+    #:    `name="常青藤系列窗帘面料色卡"` 与一整段 `description`，还自己给出
+    #:    `reason="图片未给出该字段"` —— 自相矛盾的值）；
+    #: ② 该格的值**只能**由 `[米宝解读]` 给（`deep_channel.INTERPRETABLE_KEYS`），
+    #:    绝不允许 `[图片识别]` 直填（那会把「猜的」标成「抄的」）。
+    #:
+    #: 判据 = `tests/test_vision/test_copy_vs_infer.py`（实例 + 类级元守卫）。
+    recognizable: bool = True
 
 
 TARGET_FIELDS: Dict[str, Tuple[TargetField, ...]] = {
     "product": (
-        TargetField("name", "商品名称", "商品标题；图上有多个名称时取最完整的一个"),
+        # 商品名是**文案**不是图上的事实（真跑实测：模型会编出「常青藤系列窗帘面料色卡」这种
+        # 看起来很合理的标题并顶 `[图片识别]` 标）⇒ 用户 2026-10-05 裁定「B：让黄金策推、标 `[米宝解读]`」。
+        TargetField("name", "商品名称", "商品标题；图上有多个名称时取最完整的一个",
+                    recognizable=False),
         TargetField("color", "颜色", "色号 + 颜色名，多个用顿号分隔；只抄图上写明的"),
         TargetField("material", "材质", "面料成分 / 材质（如雪尼尔、棉麻）"),
         TargetField("craft", "工艺", "工艺（如遮光、印花、提花）"),
         TargetField("door_width", "门幅", "门幅（米）；只抄图上写明的数字，不推算"),
         TargetField("price", "售价", "售价（元）；只抄图上写明的数字，不推算"),
+        # 2026-10-05（issue #6362）：**商品描述文案** —— 用户逐字「然后把商品描述的文案也要生成一份」。
+        # 落点是建品页**既有**富文本区（`ProductFormData.description`，提交链路已通）⇒ **不新增落库字段**。
+        # 🔴 它是**推理产物**、不是图上的事实：本格**不参与**识别直填，只由 `[米宝解读]` 填值
+        #（见 `deep_channel.INTERPRETABLE_KEYS`）—— hint 据此要求「不得编造图上没有的硬事实」，
+        # 推测性表述必须带「约 / 可选」这类措辞（与 issue #6362 的内容口径同一处）。
+        TargetField(
+            "description",
+            "商品描述",
+            "商品描述文案（HTML 片段）：贴近图上信息 + 行业常识（材质 / 工艺 / 适用场景 / "
+            "清洗与安装提示）；不得编造图上没有的硬事实（价格 / 门幅数字 / 认证 / 产地），"
+            "推测性表述用「约 / 可选」这类措辞",
+            recognizable=False,
+        ),
     ),
     "order": (
         TargetField("customer_name", "客户名", "收货人 / 客户姓名，一字不差地抄"),
@@ -186,6 +214,26 @@ SHARED_FIELD_KEYS: Dict[str, Tuple[str, ...]] = {
 #: （识别只负责「抄清楚客户写了什么」；工艺规格与加工项由页面按图**选中**，不由识别替引擎推导）。
 DERIVATION_INPUT_KEYS: Dict[str, Tuple[str, ...]] = {
     "order": ("curtain_width", "curtain_height"),
+}
+
+#: 「**参考**字段」登记表（issue #6529）—— 置信度不足时**不采纳为值**，但把图上原文
+#: 以 `reference` 原样带出去，**只读参考**（展示 + 查目录），**永不进表单**。
+#:
+#: 为什么是它（而不是"放宽订单侧阈值"）：`items`（商品明细）在页面上的**唯一消费方**是
+#: 「按名称**查目录** ⇒ 给候选 ⇒ **商家点选** ⇒ 才建订单行」（issue #5345）——
+#: 一个读错的明细**不会变成单里的值**，只会变成一次检索词；而把它整格丢掉，商家就连
+#: 「图上写的这个型号在目录里查不到」都听不到（用户 2026-10-08 实证：同图在黄金策会话里
+#: 说得出「没有匹配的商品」，建单页却一片沉默，issue #6529）。
+#: 反面对照：客户名 / 电话 / 地址 / 帘宽 / 帘高**不在此表** —— 它们的值直接进单据与推导链
+#: （错填 = 货发错人 / 米数错），必须保持「置信度不足 ⇒ 连原文都不给」。
+#:
+#: 🔴 本表 ⇄ 行为**双向**由 `backend/ai-agent-service/tests/test_vision/test_recognizer.py`
+#: 的 `TestReferenceOnlyFields` 钉住（未登记的键**不得**带 `reference`；登记了的键低于阈值
+#: 必须**带着原文**返回）；前端消费侧的键集由
+#: `frontend/admin-web/src/lib/order-line-match.ts::REFERENCE_ONLY_FIELD_KEYS` 声明，
+#: 并由 `tests/unit/lib/order-line-match.test.ts` 的类级守卫与本表逐字对齐（改名漂移 ⇒ 红）。
+REFERENCE_KEYS: Dict[str, Tuple[str, ...]] = {
+    "order": ("items",),
 }
 
 # 每个 target 的消歧策略。

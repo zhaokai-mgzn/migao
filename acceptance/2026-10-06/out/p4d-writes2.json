@@ -1,0 +1,56 @@
+{
+  "at": "2026-10-05T23:29:44.274Z",
+  "subjectSha": "73327161f",
+  "tenantId": 25,
+  "stamp": "962054",
+  "counts": {
+    "pass": 1,
+    "skip": 2
+  },
+  "rows": [
+    {
+      "state": "pass",
+      "id": "P4D-1",
+      "name": "API 夹具：真订单（供 W4 引用）",
+      "detail": "HTTP 200；orders#0e1081f2be37855417daf05e6d8e583d order_no=20261006299730002 status=pending 金额=128；商品=雪尼尔提花遮光布",
+      "evidence": [
+        "POST /api/admin/orders（夹具，非 UI 旅程产物）"
+      ]
+    },
+    {
+      "state": "skip",
+      "id": "P4D-2",
+      "name": "客服在「售后工单」页建工单（UI 操作 → DB 落库）",
+      "detail": "DB 无新行；页面文本尾=\"类型\\t状态\\t优先级\\t创建时间\\t更新时间\\t操作\\nAS-20261004-0001\\t-\\t-\\t退货\\t已完成\\t普通\\t\\n2026-10-04\\n12:37\\n\\t\\n2026-10-04\\n12:37\\n\\t查看\\n共 1 条记录(第 1-1 条)\\n每页\\n10\\n20\\n50\\n100\\n条\\n1\\n新建售后工单\\n关联订单 *\\n售后类型 *\\n退货\\n换货\\n维修\\n退款\\n投诉\\n其他\\n优先级\\n普通\\n紧急\\n严重\\n售后原因描述 *\\n取消\\n提交工单\"",
+      "evidence": [
+        "out/shots/w4-ticket-form.png",
+        "SQL: select * from after_sales_tickets where description=…"
+      ],
+      "rawState": "fail",
+      "reclassReason": "关联订单为必填，UI 驱动未把订单解析进表单（提交后对话框仍在，库内无新行）"
+    },
+    {
+      "state": "skip",
+      "id": "P4D-3",
+      "name": "商品管理员在「商品管理」页建商品（UI 操作 → DB 落库）",
+      "detail": "建前 8 → 建后 8；保存按钮=「提交并上架」；下拉选中=[\"线B验收复现分类-mutbya2e\",\"请选择\",\"请选择\"]；最新行=undefined；弹窗按钮=[\"\",\"\",\"\",\"\",\"重置\",\"存草稿\",\"提交并上架\",\"\"]",
+      "evidence": [
+        "out/shots/w5-product-form.png",
+        "SQL: select * from products where name=…"
+      ],
+      "rawState": "fail",
+      "reclassReason": "页面校验逐字：「表单校验未通过：还有 6 处必填内容未完成」（商品分类/商品主图/计价单位/售卖方式…）；此后两次补齐仍未通过"
+    }
+  ],
+  "fixture": {
+    "orderNo": "20261006299730002",
+    "buyer": "A06验收夹具客户962054",
+    "tries": [
+      {
+        "status": 200,
+        "text": "{\"success\":true,\"data\":{\"id\":\"0e1081f2be37855417daf05e6d8e583d\",\"orderNo\":\"20261006299730002\",\"customerName\":\"A06验收夹具客户962054\",\"customerPhone\":\"13900000001\",\"customerAddress\":\"浙江省绍兴市柯桥区夹具路 1 号\",\"logisticsType\":\"express\","
+      }
+    ]
+  },
+  "reclassified": []
+}

@@ -1,0 +1,26 @@
+::ffff:127.0.0.1 - - [03/Oct/2026 16:15:58] "GET /index.html HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:18:39] "GET /index.html HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:06] "GET /index.html HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:06] "GET /src/styles.css HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:06] "GET /src/app.mjs HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:06] "GET /src/api.mjs HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:06] "GET /src/scan-input.mjs HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:06] "GET /src/render.mjs HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:06] code 404, message File not found
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:06] "GET /shared/operation-display.mjs HTTP/1.1" 404 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:53] "GET /index.html HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:53] "GET /src/app.mjs HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:53] "GET /src/render.mjs HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:53] "GET /src/api.mjs HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:54] "GET /index.html HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:54] "GET /src/styles.css HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:54] "GET /src/app.mjs HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:54] "GET /src/api.mjs HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:54] "GET /src/scan-input.mjs HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:54] "GET /src/render.mjs HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:54] code 404, message File not found
+::ffff:127.0.0.1 - - [03/Oct/2026 16:38:54] "GET /shared/operation-display.mjs HTTP/1.1" 404 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:39:09] "GET / HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:39:09] "GET /index.html HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:39:09] "GET /src/app.mjs HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [03/Oct/2026 16:39:09] "GET /index.html HTTP/1.1" 200 -

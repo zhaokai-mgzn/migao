@@ -14,12 +14,12 @@
  *
  * | # | 断言 | 回归时会怎么红 |
  * |---|---|---|
- * | 1 | 底栏 4 格、依次是 问米宝 / 数据 / 坐席 / 我的 | 改文案/顺序/数量 ⇒ 红 |
+ * | 1 | 底栏 4 格、依次是 问黄金策 / 数据 / 坐席 / 我的 | 改文案/顺序/数量 ⇒ 红 |
  * | 2 | 条**贴底**（底边 == 视口底边 ±1px） | 安全区被算两遍（条被抬起 34px）⇒ 红 |
  * | 3 | 每格：图标上方留白 == 文字下方留白（±2px）且**两者都 > 0** | 回到 `padding:5px 0` ⇒ 下方 0 ⇒ 红 |
  * | 4 | 每格：图标与文字相对该格**水平居中**（±1px） | 布局改写歪 ⇒ 红 |
  * | 5 | 条高 ∈ [49,51] | 条高塌成 26px（#5756 的构建陷阱）⇒ 红 |
- * | 6 | 🔴 **四个 tab 四张不同图标**（`img.src` 两两不同） | 再出现「问米宝与坐席共用一张图」⇒ 红 |
+ * | 6 | 🔴 **四个 tab 四张不同图标**（`img.src` 两两不同） | 再出现「问黄金策与坐席共用一张图」⇒ 红 |
  *
  * ## 边界（照实登记）
  *
@@ -38,7 +38,7 @@ const TAB_PAGES = {
   profile: '/#/pages/profile/index/index',
   dashboard: '/#/pages/dashboard/index/index',
 }
-const TAB_LABELS = ['问米宝', '数据', '坐席', '我的']
+const TAB_LABELS = ['问黄金策', '数据', '坐席', '我的']
 
 /** 取不到就**抛**（不是弱断言）：后面的数值断言必须跑在真实取到的 box 上 */
 function must<T>(value: T | null | undefined, what: string): T {
@@ -92,7 +92,7 @@ test.describe('B 端 H5 底部 tabBar（几何 + 图标）', () => {
       srcs.push(must(await icon.getAttribute('src'), `第 ${i + 1} 格的图标 src`))
     }
 
-    // 判据 6：四个 tab 四张不同图标（issue #5759 的病灶：问米宝与坐席同图）
+    // 判据 6：四个 tab 四张不同图标（issue #5759 的病灶：问黄金策与坐席同图）
     expect(srcs.filter((s) => s.length > 0)).toHaveLength(4)
     expect(new Set(srcs).size).toBe(4)
   })

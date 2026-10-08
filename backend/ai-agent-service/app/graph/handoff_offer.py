@@ -1,5 +1,5 @@
 """
-小布 AI 主动引导（"问题比较特殊"时的替代出路）— 建议节点（handoff_offer）
+元元 AI 主动引导（"问题比较特殊"时的替代出路）— 建议节点（handoff_offer）
 
 确定性节点（不调 LLM）：当 handoff_judge 判定 D3（AI 主动建议）命中后，
 由 builder 路由到此节点，产出：
@@ -16,7 +16,7 @@
 卡片语义（value 即用户点击后发送的消息文本）：
 - "帮我把问题整理成售后工单" → 下轮 `rule_matcher` 命中 `after_sales`（source=rule）→
   售后 skill 受理（收集订单/原因 → 弹确认卡 → `aftersale_create` 落成工单）
-- "继续咨询小布" → 正常 general 流程，且会话记冷却（本会话不再自动建议）
+- "继续咨询元元" → 正常 general 流程，且会话记冷却（本会话不再自动建议）
 
 **本文件的字符串文案不得出现"邀约人工转接"的措辞**（判据锚在本文件的字面量上：
 `tests/unit_ci_workflows/test_human_handoff_retired.py::test_offer_copy_does_not_invite_a_handoff`；
@@ -50,7 +50,7 @@ _OFFER_OPTIONS = [
     # value = 用户点击后发送的消息：命中 `rule_matcher` 的 after_sales 关键词（"售后"）
     # ⇒ 下轮进入售后 skill 受理（可落成工单），见模块 docstring 的语义表。
     {"label": "🧾 整理成售后工单", "value": "帮我把问题整理成售后工单"},
-    {"label": "继续咨询小布", "value": "继续咨询小布"},
+    {"label": "继续咨询元元", "value": "继续咨询元元"},
 ]
 
 # 安抚文案模板（按信号定制首句）—— 一律给"继续受理"的出路，不承诺人工转接

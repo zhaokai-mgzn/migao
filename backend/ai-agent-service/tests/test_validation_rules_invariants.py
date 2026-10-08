@@ -17,7 +17,7 @@
 | **F6** | 缺全域不变式「注册表里每个写 action 必须有规则」 | P2 把 A4 的写路径缺口补全后**没有留下任何门**：下次新增写工具/写 action 又忘补规则 ⇒ 要么假绿（旧语义）要么拦住合法调用，**没有任何测试会红** | 当前**绿**（P2 补齐 + issue #4047 把「无参写 action」也收进"必须有规则"） |
 | **F8** | `required` 与**工具 schema** 之间无一致性检查 | 规则写错字段名（schema 里不存在）⇒ 闸门永远要求一个模型给不出的参数；规则**漏**掉工具 schema 的必填 ⇒ 闸门放行注定 422 的调用。两种都**照样返回 `validated=True`** | 当前**绿**（逐条核对过，见 `test_rule_fields_exist_in_tool_schema` / `test_tool_required_fields_are_gated`） |
 
-## 🔴 issue #5247 边界（B 端米宝只读化，用户裁定 2026-09-23）：F8 方向 A 的判据域 = **活 action**
+## 🔴 issue #5247 边界（B 端黄金策只读化，用户裁定 2026-09-23）：F8 方向 A 的判据域 = **活 action**
 
 本单把 8 把 B 端写工具的写 action 全部删除，而它们的规则块仍在 `_VALIDATION_RULES` 里
 （app 侧未同批清理）⇒ 规则里那些字段（`adjustment` / `tag_id` / `code` …）在**收窄后的**

@@ -22,7 +22,7 @@ PP-008 的写动作是「停用种子加工项 `pi_eval_punch`（名字「打孔
    读数取不到 ⇒ `None`（**不**当成 0 —— 0 会被读成「夹具没了」，是另一种误判）；
 5. **用例侧声明仍在**（防有人把前置删掉让门禁变绿）：PP-008 必须声明本类型 + `expect: 1`。
 
-## #5247 改判（2026-09-23 用户裁定「B 端米宝只读化」）：断言面为什么变了
+## #5247 改判（2026-09-23 用户裁定「B 端黄金策只读化」）：断言面为什么变了
 
 PP-008 的写 action（`processing_item_manage(action=toggle_item_status)`）与 AS-004 的写 action
 （`after_sales_manage(action=update_status)`）**已从源码删除**、对应工具从 B 端全部 skill 解绑

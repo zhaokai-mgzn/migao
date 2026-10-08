@@ -1,5 +1,5 @@
 export default definePageConfig({
   navigationStyle: 'custom',
-  navigationBarTitleText: '小布',
+  navigationBarTitleText: '元元',
   enablePullDownRefresh: false,
 })

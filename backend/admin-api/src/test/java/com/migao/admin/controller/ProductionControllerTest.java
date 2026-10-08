@@ -32,6 +32,7 @@ import com.migao.admin.mapper.ProductionWorkLogMapper;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderService;
+import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
 import com.migao.admin.service.ProductionRoutingCommandService;
@@ -58,6 +59,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -116,6 +118,16 @@ class ProductionControllerTest {
     private ProductionWorkLogMapper workLogMapper;
     @Mock
     private OrderMapper orderMapper;
+    /**
+     * 发货单写面（issue #6171）：{@code /ship} 的 ③ 步。
+     *
+     * <p>本类是 {@code @Mock} 而不是真实对象，理由与 {@code orderService} 同款：本类钉的是**端点契约**
+     * （写序 / 零写拒绝 / 回放 / 信封），发货单的**建单语义**（数量 = 未发余量、逐行落库）与
+     * **端到端定序**由 {@code com.migao.admin.shipment.MerchantShipmentRouteTest} 用真控制器 +
+     * 真服务覆盖 —— 两处不互为副本。</p>
+     */
+    @Mock
+    private OrderShipmentService orderShipmentService;
     @Mock
     private ClientRequestIdService clientRequestIdService;
     @Mock
@@ -201,6 +213,13 @@ class ProductionControllerTest {
                         processingItemMapper, feeQueryService);
         ProductionController controller = new ProductionController(productionService, queryService, commandService,
                 routingCommandService, processingOrderService, orderService);
+        // issue #6157：/ship 的幂等键 = 字段注入（不动既有 6 参构造）⇒ 这里显式装配同一个 @Mock
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,
+                "clientRequestIdService", clientRequestIdService);
+        // issue #6171：/ship 的 ③ 步（发货单）+ 零写前置用的订单读面同样是字段注入
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,
+                "orderShipmentService", orderShipmentService);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "orderMapper", orderMapper);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
                 "processingFeeQueryService", feeQueryService);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
@@ -240,6 +259,16 @@ class ProductionControllerTest {
                 .build();
         // 无幂等键 ⇒ 老路径（claim 首执）；幂等接线自身的断言见「报工」段的两个专测
         when(clientRequestIdService.claim(any(), any(), any())).thenReturn(true);
+        // 🔴 商家发货（issue #6171 / #6181）：① 零写前置读订单（默认 = 本租户 + confirmed），
+        // ③ 建单写面返回一张发货单。**只打桩端点契约需要的那一层** —— 定序/落库/原子性由
+        // MerchantShipmentRouteTest（真控制器 + 真服务）与 ShipmentInvariantGuardTest 覆盖。
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(Order.builder()
+                .id(ORDER_ID).tenantId(TENANT).orderNo("CSO261003-6157").status("confirmed").build());
+        when(orderShipmentService.recordMerchantShipment(any(), any(), any(), any(),
+                org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenReturn(com.migao.admin.entity.OrderShipment.builder()
+                        .id("ship-6157").orderId(ORDER_ID).shipmentNo("SH6157")
+                        .source(OrderShipmentService.SOURCE_ADMIN).build());
         // §5-1 原子有序推进：真实 DB 首执影响 1 行；CAS 失败由专测打桩为 0
         when(positionOperationMapper.advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
@@ -2188,6 +2217,21 @@ class ProductionControllerTest {
 
     // ══════════════════ 生产概览（待办优先，issue #5641）══════════════════
 
+    /**
+     * 发货结果替身（issue #6181）：{@code shipWithLogistics} 现在回
+     * {@link OrderService.OrderShipmentOutcome}（结果快照 ＋ **显式**的「本次是否真的流转过」）。
+     *
+     * <p>{@code transitioned} 是端点契约的一部分：③ 建单写面**只认它**，不再读「当前状态」（读状态
+     * = #6181 的病灶）。本类只钉契约 ⇒ 用这个工厂构造两侧。</p>
+     */
+    private static OrderService.OrderShipmentOutcome shipOutcome(boolean transitioned, Object... kv) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < kv.length; i += 2) {
+            result.put(String.valueOf(kv[i]), kv[i + 1]);
+        }
+        return new OrderService.OrderShipmentOutcome(result, transitioned);
+    }
+
     @Test
     @DisplayName("#5641 GET /production/todo-overview → 200 + 待办清单与第二屏统计（空态如实，不塞占位数）")
     void todoOverviewReturnsTodoFirstEnvelope() throws Exception {
@@ -2219,5 +2263,76 @@ class ProductionControllerTest {
                 .as("生产概览是生产口径读面 ⇒ 必须方法级 production:view（类级 order:list 覆盖不了该语义）")
                 .isNotNull();
         assertThat(annotation.value()).isEqualTo("production:view");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 🔴 商家/生产发货路的幂等（issue #6157）
+    //    修前实测：同键两次**都生效**、运单号被覆写 SF-FIRST-7777 → SF-SECOND-8888 →
+    //    SF-THIRD-9999，而 client_request_keys **0 行**（该端点从未接幂等键）
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("🔴 同 X-Client-Request-Id 第二次 ⇒ 跳过执行、回放首次结果（运单号不被覆写）")
+    void sameClientRequestIdReplaysWithoutSecondSideEffect() throws Exception {
+        when(orderService.shipWithLogistics(eq(ORDER_ID), eq("SF-FIRST-7777"), eq("顺丰")))
+                .thenReturn(shipOutcome(true, "order_id", ORDER_ID, "status", "shipped",
+                        "tracking_no", "SF-FIRST-7777", "logistics_company", "顺丰"));
+        String url = "/api/admin/production/orders/" + ORDER_ID + "/ship";
+        String body = "{\"trackingNo\":\"SF-FIRST-7777\",\"logisticsCompany\":\"顺丰\"}";
+
+        // ① 首次：占位成功 + 结果快照落库
+        mockMvc.perform(post(url).contentType(MediaType.APPLICATION_JSON).content(body)
+                        .header(ClientRequestIdService.HEADER, "req-inv-6157-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tracking_no").value("SF-FIRST-7777"))
+                .andExpect(jsonPath("$.data.replayed").doesNotExist());
+        verify(clientRequestIdService).claim(TENANT, "req-inv-6157-1",
+                OrderShipmentService.ENDPOINT_SHIP_ADMIN);
+        verify(clientRequestIdService).complete(eq(TENANT), eq("req-inv-6157-1"), any());
+
+        // ② 同键第二次（第二次 payload 带**不同**单号 8888）⇒ 必须回放首次结果
+        when(clientRequestIdService.claim(TENANT, "req-inv-6157-1",
+                OrderShipmentService.ENDPOINT_SHIP_ADMIN)).thenReturn(false);
+        when(clientRequestIdService.replay(TENANT, "req-inv-6157-1", Map.class))
+                .thenReturn(java.util.Optional.of(new LinkedHashMap<>(Map.of(
+                        "order_id", ORDER_ID, "status", "shipped",
+                        "tracking_no", "SF-FIRST-7777", "logistics_company", "顺丰"))));
+        mockMvc.perform(post(url).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trackingNo\":\"SF-SECOND-8888\",\"logisticsCompany\":\"顺丰\"}")
+                        .header(ClientRequestIdService.HEADER, "req-inv-6157-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tracking_no").value("SF-FIRST-7777"))
+                .andExpect(jsonPath("$.data.replayed").value(true));
+        // 第二次**零副作用**：不再调一次服务（= 不再 upsert 物流 / 不再流转状态）
+        verify(orderService, times(1)).shipWithLogistics(any(), any(), any());
+        verify(clientRequestIdService, never()).discard(any(), any());
+    }
+
+    @Test
+    @DisplayName("🔴 首次执行失败 ⇒ 释放占位（否则该键被永久占死，重试全被误判为「重复」）")
+    void failedShipDiscardsPlaceholder() throws Exception {
+        when(orderService.shipWithLogistics(any(), any(), any()))
+                .thenThrow(com.migao.admin.exception.BusinessException.validationError("货运单号不能为空"));
+
+        mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/ship")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}")
+                        .header(ClientRequestIdService.HEADER, "req-inv-6157-fail"))
+                .andExpect(status().isUnprocessableEntity());
+        verify(clientRequestIdService).discard(TENANT, "req-inv-6157-fail");
+        verify(clientRequestIdService, never()).complete(eq(TENANT), eq("req-inv-6157-fail"), any());
+    }
+
+    @Test
+    @DisplayName("🔴 无幂等键 ⇒ 老客户端路径不变（不 claim 也不回放，正常发货）")
+    void absentClientRequestIdKeepsLegacyPath() throws Exception {
+        when(orderService.shipWithLogistics(any(), any(), any()))
+                .thenReturn(shipOutcome(true, "order_id", ORDER_ID, "status", "shipped", "tracking_no", "SF-9"));
+
+        mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/ship")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trackingNo\":\"SF-9\",\"logisticsCompany\":\"顺丰\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tracking_no").value("SF-9"));
+        verify(clientRequestIdService, never()).replay(any(), any(), any());
     }
 }

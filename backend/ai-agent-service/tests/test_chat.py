@@ -5,7 +5,7 @@
 _convert_history_to_agent_format 多模态、quick-actions、
 send_message 会话校验与 __PAGE__ 协议守卫、_agent_stream_to_sse 事件序列。
 """
-# case_ids: API-001, API-002, API-003, API-004, API-005, OR-012, UI-031, UI-032, CH-009, CH-010, CH-011
+# case_ids: API-001, API-002, API-003, API-004, API-005, OR-012, UI-031, UI-032, CH-009, CH-010, CH-011, BM-028
 
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,6 +16,7 @@ from loguru import logger
 
 from app.api.chat import (
     PERSIST_FAILED_MARK,
+    QUICK_ACTIONS,
     _save_message_or_report,
     _should_send_card,
     _detect_card_type,
@@ -698,15 +699,74 @@ class TestGetHistoryMasking:
 
 
 class TestQuickActions:
+    """B 端快捷入口 = **服务端单一真值**（issue #6468）。
+
+    病灶：B 端 H5（`frontend/bmini-app`）从前**自己硬编码**六条 **C 端顾客口吻**的入口
+    （「推荐一下热门窗帘产品」「帮我查一下物流」…），而本接口一直没被它消费
+    （`frontend/bmini-app/src/store/chatStore.ts` 的 `loadQuickActions` 是死代码）。
+    ⇒ 内容只在 `QUICK_ACTIONS` 定义一处；H5 只负责渲染
+    （判据 = `frontend/bmini-app/tests/quick-actions.test.tsx`）。
+    """
+
     @pytest.mark.asyncio
     async def test_quick_actions(self):
         result = await get_quick_actions(current_user=_user())
         assert result["success"] is True
-        ids = [a["id"] for a in result["data"]["actions"]]
-        assert "order_manage" in ids
-        assert "product_manage" in ids
-        assert "dashboard" in ids
-        assert "after_sales" in ids
+        actions = result["data"]["actions"]
+        # 逐条钉住 B 端场景入口（顺序 = 客户端渲染顺序）
+        assert [(a["id"], a["name"], a["prompt"]) for a in actions] == [
+            ("daily_business", "今日经营", "今天经营怎么样？"),
+            ("delivery_risk", "交付风险", "哪些订单快到交期还卡着工序？"),
+            ("low_stock", "库存告急", "有哪些低库存的商品？"),
+            ("product_health", "商品健康度", "哪些商品卖得好但退货高？"),
+            ("after_sales_todo", "售后待办", "有哪些售后工单还没处理？"),
+            ("customer_churn", "客户回访", "哪些老客户最近不下单了？"),
+        ]
+        # emoji = B 端 H5 六格图标；icon = admin-web 图标名 —— 两个消费端都要有可渲染字段
+        assert [a["emoji"] for a in actions] == ["📊", "🚨", "📦", "🏷️", "🛠️", "👥"]
+        assert all(a["icon"] and a["name"] and a["prompt"].endswith("？") for a in actions)
+        # 能力锚（skill / tool）只用于服务端自证，不进响应体
+        assert all(set(a) == {"id", "name", "icon", "emoji", "prompt"} for a in actions)
+
+    def test_prompts_are_b_side_scenarios_not_c_side_copy(self):
+        """负向：#6468 的形态是「B 端入口抄了 C 端的顾客问句」⇒ 这些串不得回填。"""
+        joined = " ".join(a["prompt"] for a in QUICK_ACTIONS)
+        for c_end_phrase in (
+            "推荐一下热门窗帘产品",
+            "帮我查一下物流",
+            "我想咨询售后问题",
+            "帮我算一下窗帘用料和价格",
+        ):
+            assert c_end_phrase not in joined, f"C 端顾客问句回到了 B 端入口清单：{c_end_phrase!r}"
+
+    def test_every_entry_maps_to_a_real_mibao_capability(self):
+        """机械投影：每条引导必须能追溯到「**黄金策已绑定** ∧ 该 skill 的工具集里有这条 tool」。
+
+        「引导了却做不到，比不引导更伤」（`docs/agent-feature-design.md` §九）。
+        红证（注入实测）：把任一条的 `skill` 改成 `settings`（#5247 已从黄金策解绑）或把 `tool`
+        改成顾客端专用的 `aftersale_query`（不在 aftersales skill 的 `tool_names` 里）
+        ⇒ 本判据**具名**报出该条。
+        """
+        from app.agents.agents.mibao import MIBAO_CONFIG
+        from app.graph.skills.skill_registry import get_skill_registry
+
+        registry = get_skill_registry()
+        offenders: list[str] = []
+        for action in QUICK_ACTIONS:
+            skill_name, tool_name = action["skill"], action["tool"]
+            if skill_name not in MIBAO_CONFIG.skill_names:
+                offenders.append(
+                    f"{action['id']}：skill {skill_name!r} 不在黄金策绑定面 {MIBAO_CONFIG.skill_names}"
+                )
+                continue
+            skill = registry.get(skill_name)
+            if skill is None:
+                offenders.append(f"{action['id']}：skill {skill_name!r} 未注册")
+            elif tool_name not in skill.tool_names:
+                offenders.append(
+                    f"{action['id']}：{tool_name!r} 不在 {skill_name!r} 的工具集 {skill.tool_names}"
+                )
+        assert not offenders, "引导指向了模型够不到的能力：\n  - " + "\n  - ".join(offenders)
 
 
 # ═══════════════════════════════════════════════

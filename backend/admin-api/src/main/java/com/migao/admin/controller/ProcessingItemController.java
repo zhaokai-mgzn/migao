@@ -4,6 +4,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
 import com.migao.admin.service.ProcessingItemService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -74,6 +75,7 @@ public class ProcessingItemController {
      *
      * PUT /api/admin/processing-items/{id}
      */
+    @TenantOwnedResource("processing-item")
     @PutMapping("/{id}")
     public ApiResponse<ProcessingItemResponse> updateProcessingItem(
             @PathVariable String id,

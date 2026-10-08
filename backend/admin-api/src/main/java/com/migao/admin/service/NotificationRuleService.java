@@ -1,5 +1,6 @@
 package com.migao.admin.service;
 
+import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.NotificationRuleDTO;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.SaveNotificationRuleRequest;
@@ -53,6 +54,40 @@ public class NotificationRuleService {
                 .map(this::toDTO)
                 .collect(Collectors.toList());
         return PageResponse.of(result.getTotal(), result.getCurrent(), result.getSize(), dtos);
+    }
+
+    /**
+     * 归属认定（issue #6167）：该规则在**当前租户**下可见吗。
+     *
+     * <p>「可见」谓词与 {@link #queryRules} 的 {@code tenant_id = 当前租户 OR tenant_id = 0}
+     * **逐字同形**（本单不新造第二份读面判定）—— 写归属判定要在**载荷校验之前**跑
+     * （见 {@code TenantOwnershipInterceptor}），那时控制器还没执行，故由本服务提供查询。</p>
+     *
+     * @param id 规则ID
+     * @return 当前租户可读（含系统内置行）⇒ true
+     */
+    public boolean existsForCurrentTenant(String id) {
+        Long tenantId = TenantContext.getTenantId();
+        LambdaQueryWrapper<NotificationRule> wrapper = new LambdaQueryWrapper<>();
+        wrapper.and(w -> w.eq(NotificationRule::getTenantId, tenantId)
+                        .or().eq(NotificationRule::getTenantId, 0L))
+                .eq(NotificationRule::getId, id);
+        return ruleMapper.selectCount(wrapper) > 0;
+    }
+
+    /**
+     * 归属认定（issue #6167）：该规则**可写**吗 ——
+     * {@code tenant_id = 当前租户}（**不含** {@code tenant_id=0} 的系统内置行，它只读）。
+     *
+     * <p>这是 {@link #assertTenantOwned} 的精确谓词那一半（与 {@link #updateRule} 的
+     * {@code selectById} + 比较租户同一份判定），**不**新造第二套语义、不抛异常。</p>
+     *
+     * @param id 规则ID
+     * @return 属于当前租户的自定义规则 ⇒ true
+     */
+    public boolean isWritableByCurrentTenant(String id) {
+        NotificationRule existing = ruleMapper.selectById(id);
+        return existing != null && TenantContext.getTenantId().equals(existing.getTenantId());
     }
 
     /**

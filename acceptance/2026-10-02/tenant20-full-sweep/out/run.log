@@ -1,0 +1,140 @@
+2026-10-02T15:22:11.198Z ❌ [CH-FATAL] 阶段6 致命错误 — Error: 登录失败 422: {"success":false,"error":{"code":"VALIDATION_ERROR","message":"参数校验失败","details":[{"field":"phone","message":"手机号不能为空"}]},"requestId":"req_9f70431ed5c84265","timestamp":1790954531}
+2026-10-02T15:22:11.451Z == 阶段5：B 端 H5（工人端） == tenant=undefined worker=undefined h5=http://127.0.0.1:3100
+2026-10-02T15:22:11.457Z ❌ [H5-FATAL] 阶段5 致命错误 — Error: 登录失败 422: {"success":false,"error":{"code":"VALIDATION_ERROR","message":"参数校验失败","details":[{"field":"phone","message":"手机号不能为空"}]},"requestId":"req_d1c9a0c16f984908","timestamp":1790954531}
+2026-10-02T15:37:37.109Z ❌ [CH-FATAL] 阶段6 致命错误 — Error: 登录失败 422: {"success":false,"error":{"code":"VALIDATION_ERROR","message":"参数校验失败","details":[{"field":"phone","message":"手机号不能为空"}]},"requestId":"req_72eb26ebf8e149f9","timestamp":1790955457}
+2026-10-02T15:37:37.807Z == 阶段8：全量页面守卫 + 元素级 RBAC == 坐标 25f89d5a165e92adecc23b2fef1b828679fc85a0 路由 40 条 @ http://localhost:3001
+2026-10-02T15:37:37.999Z ❌ [RT-FATAL] 阶段8 致命错误 — TypeError: Cannot read properties of undefined (reading 'route')
+2026-10-02T15:48:38.852Z == 阶段6：连贯链路（入库过账→下单→加工→报工→发货） == tenant=20
+2026-10-02T15:48:39.799Z ✅ [CH-01] 链路①：建商品/分类/SKU（库存起点 0） — products#16bc7029d314663f661197346718da9e（分类 ef6b536224c2f000b263ccb50b04b0c3）；product_skus#2106048724734005249 现货=0.0 单价=68.00
+2026-10-02T15:48:40.146Z ✅ [CH-02] 链路②：建入库单（草稿，未动库存） — inbound_orders#RK-20261002-0003 status=draft；过账前：SKU 现货 0.0 / 批次 0 个 0 米 / 台账 2 条
+2026-10-02T15:48:41.137Z ✅ [CH-03] 链路③：**入库过账**（状态 + 批次 + 现货 + 台账 四联） — inbound_orders.status=draft→posted；product_skus.stock 0.0→100.0；stock_batches 0→1 个（批次号 PC-20261002-0001｜数量 100.0｜单价 12.5000｜金额 1250.0000｜缸号 DYE-118362｜来源 RK-20261002-0003）；stock_ledger_entries 2→3 条（inbound delta=100.0 0.0→100.0，ref=RK-20261002-0003，操作人=13870217889）
+2026-10-02T15:48:41.138Z ✅ [CH-04] 链路③b：移动加权平均成本口径正确 — 台账 avg_cost null → 12.5000（过账前现货 0.0、本次入库 100.0@12.5000）⇒ 与加权平均公式一致；成本金额 1250.0000
+2026-10-02T15:48:41.260Z ✅ [CH-05] 链路③c：批次查询端点可见新批次 — GET /api/admin/inbound-orders/batches?skuId= → 1 条（）
+2026-10-02T15:48:42.297Z ✅ [CH-06] 链路④：下单**引用本链路入库的商品**（SKU 随加工信息带下） — orders#20261002267720003；order_items.product_id=16bc7029d314663f661197346718da9e（= 入库批次同一商品）；数量 10.00@68.00；processing_info 含本链路 skuId=false；SKU 现货 100.0→100.0（下单不扣减 —— 扣减发生在加工备料/发货）
+2026-10-02T15:48:42.659Z ✅ [CH-07] 链路④b：确认收款 → 已确认 — HTTP 200；DB status=confirmed
+2026-10-02T15:48:43.943Z ✅ [CH-08] 链路⑤：生成加工单 + 实例化工序 + 二维码 — processing_orders#JG-20261002-5093 status=generated；工序实例 12 行（解析面 12 道 / 部位 1 个）；qr_token=f13c1fe4910d…（32 位hex=true）
+2026-10-02T15:48:47.351Z ✅ [CH-09] 链路⑤b：生产看板页面显示该加工单（页面证据） — DOM 文本含加工单号 JG-20261002-5093
+2026-10-02T15:48:50.651Z ✅ [CH-10] 链路⑥：**发货守卫正向生效**（含加工项且加工单未完成 ⇒ 页面阻断、不放表单） — 页面文案命中「须先完成加工单后再发货」；发货表单可见=false；加工单 status=generated
+2026-10-02T15:49:58.560Z ✅ [CH-11] 链路⑦：B 端 H5 扫本链路的码 → 开工记账（页面 → DB） — 扫 qr_token → 工序「精裁」；本加工单记账 0 → 1 条（精裁-布 10.00 @0.40，工人=验收工人790472，工作日=2026-10-02）；回执：已领活 · 下一道：三边
+2026-10-02T15:50:11.126Z ✅ [CH-12] 链路⑦b：工序全部领走 → 加工单 completed（发货前置条件达成） — 进度 12/12（12 轮补齐）；processing_orders.status=completed；累计记账 12 条 / 数量 75.00 / 计件金额 31.4000
+2026-10-02T15:50:18.753Z ✅ [CH-13] 链路⑧：**商家侧发货页真实发货**（页面操作 → orders 转已发货 + 物流留痕） — orders.status=confirmed→shipped（物流类型=express 承运=顺丰速运）；页面出现「发货成功」=true；order_shipments 行数=0（商家侧路径**不**写该表 —— 它归工人侧发货，见 CH-18）
+2026-10-02T15:50:20.741Z ✅ [CH-17] 链路⑩：**派工指定批次 ⇒ 入库批次被本单消耗**（闭环「入库的货被这单吃掉」） — generate(batches=[{orderId,itemId,batchNo:PC-20261002-0001}]) HTTP 200；stock_batch_consumptions 新行：批次 PC-20261002-0001 delta=-20.0 100.0→80.0（原因 processing_order，订单 20261002950190004，加工单 JG-20261002-5094，操作人 13870217889）；SKU 现货 100.0→100.0（下降=false）
+2026-10-02T15:50:22.133Z ✅ [CH-18] 链路⑪：**工人侧发货**（打包 → 发货，实发明细落库） — pack HTTP 200（orders.status=packed）；ship HTTP 200；order_shipments#SH202610022350217973 来源=worker 打包人=验收工人790472 发货人=验收工人790472 运单=SF118362W；实发 1 行 / 5.00 米；orders.status=shipped
+2026-10-02T15:50:23.285Z ✅ [CH-14] 链路⑨：**全链路闭合快照**（商品→入库过账→批次→订单→加工单→工序→报工→发货→库存） — 商品 链路商品118362(on_shelf)｜入库单 RK-20261002-0003(posted) 批次 1 个｜订单 20261002267720003(shipped)｜加工单 JG-20261002-5093(completed) 工序 12/12｜报工 12 条 75.00 米 计件 31.4000 元｜发货单 undefined 运单 undefined｜SKU 现货 100.0（入库 100，已出 0.00）
+2026-10-02T15:50:23.285Z ✅ [CH-15] 链路⑨b：库存台账贯连（入库 + 出库都在同一 SKU 的台账上） — 台账 1 条：inbound 100.0→100.0｜批次消耗 1 条
+2026-10-02T15:50:23.445Z ✅ [CH-16] 日志侧：链路各环节留痕 — 命中 10 行；示例：2026-10-02 12:07:54.108 [http-nio-8080-exec-111] INFO  c.m.a.service.InboundOrderService - 入库单已过账: tenant=24, inboundNo=RK-20261002-0017, batchNos=[PC
+2026-10-02T15:50:23.474Z == 阶段6 完成：pass=18 fail=0
+2026-10-02T15:50:23.722Z == 阶段5：B 端 H5（工人端） == tenant=20 worker=W790472 h5=http://127.0.0.1:3100
+2026-10-02T15:50:24.108Z ✅ [H5-01] 工人端 H5 打开 + 登录视图渲染 — 标题=「工人领活」；工号/PIN 输入框与登录按钮就位；URL 带 tenant_id=20
+2026-10-02T15:50:24.793Z ✅ [H5-02] 工人端登录·空提交校验 — 页面提示：参数校验失败
+2026-10-02T15:50:26.356Z ✅ [H5-03] 工人端登录·错误 PIN 拒绝 — 提示「工号或 PIN 不正确」且仍停在登录视图（未放行）
+2026-10-02T15:50:27.409Z ✅ [H5-04] 工人端登录成功（工号+PIN） — 页头「当前工人：验收工人790472（工号 W790472）」；扫码输入框可见=true
+2026-10-02T15:50:28.936Z ✅ [H5-05] 工人端会话续期（刷新不掉线） — 刷新后页头仍显示当前工人
+2026-10-02T15:50:30.802Z ✅ [H5-06] 工人端扫码·无效码拒绝 — 提示：订单不存在
+2026-10-02T15:50:31.891Z ✅ [H5-07] 生产链铺设（订单→确认付款→加工单→工序实例+二维码） — 订单 20261002083360006（付款 HTTP 200，生成加工单 HTTP 200）；qr_token=220d177bc2354507bc3e702bb5809c4a；工序 12 道；进度 {"total":12,"done":0,"percent":0}
+2026-10-02T15:50:36.585Z ✅ [H5-08] 工人端扫码解析（服务端定工序） — 旧码路径（选套+选部位）｜第 JG-20261002-5095-001 套 · H5验收商品230803｜工序「精裁」｜应做 2.00 米
+2026-10-02T15:50:39.156Z ✅ [H5-09] 工人端开工/报工提交 — 回执或下一步文案：已领活 · 下一道：三边
+2026-10-02T15:50:39.880Z ✅ [H5-10] 报工记账落库（production_work_logs） — 本次报工后该租户记账条数 13 → 13
+2026-10-02T15:50:39.974Z ✅ [H5-11] DB：报工归属正确（工人身份由服务端解） — production_work_logs#a7dc56a3a3bcca942f6ac261226bf381 worker_no=undefined worker_name=验收工人790472 qty=2 金额=undefined
+2026-10-02T15:50:40.176Z ✅ [H5-12] 工序进度推进（API 侧） — done 0 → 1（total=12）
+2026-10-02T15:50:41.721Z ✅ [H5-10b] 工人端登出回落登录视图 — 点登出后回到工号+PIN 登录页
+2026-10-02T15:50:43.268Z ✅ [H5-13] 机器端页面（machine.html）渲染 — 文本长度 60：机台模式 · 裁高 —  本台设备还没登录：请先用工号 + PIN 登录，再扫码  请重新扫一次水洗唛（或手工输入短码）
+2026-10-02T15:50:43.431Z ✅ [H5-14] 服务器日志：工人端链路留痕 — 命中 8 行，示例：at com.migao.admin.security.WorkerSessionFilter.doFilterInternal(WorkerSessionFilter.java:81)
+2026-10-02T15:50:43.448Z == 阶段5 完成：pass=15 fail=0 skip=0
+2026-10-02T15:50:43.804Z == 阶段8：全量页面守卫 + 元素级 RBAC == 坐标 25f89d5a165e92adecc23b2fef1b828679fc85a0 路由 40 条 @ http://localhost:3001
+2026-10-02T15:50:46.248Z ❌ [RT-FATAL] 阶段8 致命错误 — TypeError: Cannot read properties of undefined (reading 'route')
+2026-10-02T15:57:06.555Z == 阶段9：岗位功能闭环 == 岗位 7 个
+2026-10-02T15:57:07.180Z ✅ [PJ-00] 素材就绪（分类/商品/SKU/草稿入库单） — categoryId=a22b6f1d4f42d06e9cbb31dc412875a2｜productId=f293eeb70d81d65cd00b211d304223a6｜skuId=2106050853955653633｜草稿入库单=undefined
+2026-10-02T15:57:12.423Z ✅ [PJ-01] 岗位功能闭环：客服 — 做成：建售后工单(200·落库)、读订单列表(200)、读售后列表(200)、读客户列表(200)、读入库单(200)、读知识卡(200)、读经营看板(200)｜按码被拒：建订单、建商品、登记财务流水、建入库单、入库过账（草稿单）、建员工账号、建岗位、建知识卡、读加工单、读员工列表｜17 个动作方向全部与权限码一致
+2026-10-02T15:57:18.327Z ✅ [PJ-01] 岗位功能闭环：运营 — 做成：建订单(200·落库)、建商品(200·落库)、登记财务流水(200·落库)、建入库单(200·落库)、入库过账（草稿单）(200·落库)、建售后工单(200·落库)、读订单列表(200)、读售后列表(200)、读客户列表(200)、读入库单(200)、读知识卡(200)、读加工单(200)、读员工列表(200)、读经营看板(200)｜按码被拒：建员工账号、建岗位、建知识卡｜17 个动作方向全部与权限码一致
+2026-10-02T15:57:23.750Z ✅ [PJ-01] 岗位功能闭环：销售 — 做成：建订单(200·落库)、读订单列表(200)、读客户列表(200)、读入库单(200)、读经营看板(200)｜按码被拒：建商品、登记财务流水、建入库单、入库过账（草稿单）、建售后工单、建员工账号、建岗位、建知识卡、读售后列表、读知识卡、读加工单、读员工列表｜17 个动作方向全部与权限码一致
+2026-10-02T15:57:28.625Z ✅ [PJ-01] 岗位功能闭环：财务 — 做成：登记财务流水(200·落库)、读订单列表(200)、读客户列表(200)、读入库单(200)、读经营看板(200)｜按码被拒：建订单、建商品、建入库单、入库过账（草稿单）、建售后工单、建员工账号、建岗位、建知识卡、读售后列表、读知识卡、读加工单、读员工列表｜17 个动作方向全部与权限码一致
+2026-10-02T15:57:33.451Z ✅ [PJ-01] 岗位功能闭环：商品管理员 — 做成：建商品(200·落库)、读加工单(200)、读经营看板(200)｜按码被拒：建订单、登记财务流水、建入库单、入库过账（草稿单）、建售后工单、建员工账号、建岗位、建知识卡、读订单列表、读售后列表、读客户列表、读入库单、读知识卡、读员工列表｜17 个动作方向全部与权限码一致
+2026-10-02T15:57:38.162Z ✅ [PJ-01] 岗位功能闭环：知识编辑 — 做成：读知识卡(200)、读经营看板(200)｜按码被拒：建订单、建商品、登记财务流水、建入库单、入库过账（草稿单）、建售后工单、建员工账号、建岗位、读订单列表、读售后列表、读客户列表、读入库单、读加工单、读员工列表｜17 个动作方向全部与权限码一致
+2026-10-02T15:57:43.021Z ✅ [PJ-01] 岗位功能闭环：验收临时岗790472 — 做成：读订单列表(200)、读经营看板(200)｜按码被拒：建订单、建商品、登记财务流水、建入库单、入库过账（草稿单）、建售后工单、建员工账号、建岗位、建知识卡、读售后列表、读客户列表、读入库单、读知识卡、读加工单、读员工列表｜17 个动作方向全部与权限码一致
+2026-10-02T15:57:48.775Z ✅ [PJ-02] 岗位视角：登录后侧边栏菜单随权限显隐（页面证据） — customer_service(12码): 米高POC演示布艺 米高商家管理后台 搜索菜单 ⌘K 工作台 1 经营看板 客户服务 4 交易管理 1 生产管理 1 仓 ｜ operator(26码): 米高POC演示布艺 米高商家管理后台 搜索菜单 ⌘K 工作台 1 经营看板 商品管理 客户服务 4 交易管理 2 生产管 ｜ finance(9码): 米高POC演示布艺 米高商家管理后台 搜索菜单 ⌘K 工作台 1 经营看板 客户服务 1 交易管理 2 生产管理 1 仓 ｜ product_manager(8码): 米高POC演示布艺 米高商家管理后台 搜索菜单 ⌘K 工作台 1 经营看板 商品管理 生产管理 5 仓储与物料 2 通知 ｜ knowledge_editor(4码): 米高POC演示布艺 米高商家管理后台 搜索菜单 ⌘K 工作台 1 经营看板 商品管理 客户服务 1 仓储与物料 1 通知
+2026-10-02T15:57:49.073Z ✅ [PJ-03] 工人身份：B 端可用 + 商家后台不可用 — GET /api/worker/me HTTP 200（pages=["report","order","cut_calc","shipment"]）｜GET /api/admin/orders HTTP 403（PERMISSION_DENIED 权限不足）
+2026-10-02T15:57:49.073Z == 阶段9 完成：pass=10 fail=0
+[2026-10-03 00:08 +08] s4 2/34 根因定案（两轮复现一致，非瞬态）：
+  - 截图证据：02-dashboard.png / 27-corporate-home.png 均卡「加载中…」spinner
+  - 判别：OPTIONS :8080 preflight @ Origin=http://127.0.0.1:3001 → 403（无 Allow-Origin）；@ Origin=http://localhost:3001 → 200
+  - 根因：本地 :8080 启动环境 CORS_ALLOWED_ORIGINS 只含 localhost 变体（3000/3001/3002），缺 127.0.0.1 变体；代码回退白名单本含 127.0.0.1
+  - s4 用 BASE=http://127.0.0.1:3001 起浏览器 ⇒ 预检 403 ⇒ 全部数据请求死 ⇒ 32 条级联失败
+  - 定性：本地启动环境配置问题，非产品缺陷、非 F3(403-before-422) 回归（CORS 过滤器先于拦截器）
+  - 修复：重启 :8080 白名单补齐 127.0.0.1 变体（health 200 + preflight 200 已验），s4 带 OUT_DIR=$R/out 重跑中
+2026-10-02T17:30:57.387Z == 阶段8：全量页面守卫 + 元素级 RBAC == 坐标 25f89d5a165e92adecc23b2fef1b828679fc85a0 路由 40 条 @ http://localhost:3001
+2026-10-02T17:31:00.716Z ❌ [RT-FATAL] 阶段8 致命错误 — ReferenceError: context is not defined
+2026-10-02T17:48:36.872Z == 阶段8：全量页面守卫 + 元素级 RBAC == 坐标 25f89d5a165e92adecc23b2fef1b828679fc85a0 路由 40 条 @ http://localhost:3001
+2026-10-02T17:48:39.241Z   管理员(admin) 未落 /dashboard，实际落 about:blank（按产品行为继续）
+2026-10-02T17:49:01.140Z ✅ [RT-01] 页面守卫矩阵：管理员(admin) — 40 条路由全部与期望一致（拦截 0 条）
+2026-10-02T17:49:01.184Z   客服(customer_service) 未落 /dashboard，实际落 about:blank（按产品行为继续）
+2026-10-02T17:49:22.980Z ❌ [RT-01] 页面守卫矩阵：客服(customer_service) — 20/40 条不符：categories（期望拦，实际放）；employees（期望拦，实际放）；finance（期望拦，实际放）；processing（期望拦，实际放）；processing-orders（期望拦，实际放）；processing-orders/:id/production（期望拦，实际放）；production（期望拦，实际放）；production/operations（期望拦，实际放）
+2026-10-02T17:49:23.023Z   运营(operator) 未落 /dashboard，实际落 about:blank（按产品行为继续）
+2026-10-02T17:49:44.734Z ❌ [RT-01] 页面守卫矩阵：运营(operator) — 2/40 条不符：roles（期望拦，实际放）；settings（期望拦，实际放）
+2026-10-02T17:49:44.777Z   销售(sales) 未落 /dashboard，实际落 about:blank（按产品行为继续）
+2026-10-02T17:50:06.585Z ❌ [RT-01] 页面守卫矩阵：销售(sales) — 19/40 条不符：after-sales（期望拦，实际放）；after-sales/:id（期望拦，实际放）；categories（期望拦，实际放）；chat（期望拦，实际放）；employees（期望拦，实际放）；finance（期望拦，实际放）；knowledge（期望拦，实际放）；processing（期望拦，实际放）
+2026-10-02T17:50:06.638Z   财务(finance) 未落 /dashboard，实际落 about:blank（按产品行为继续）
+2026-10-02T17:50:28.758Z ❌ [RT-01] 页面守卫矩阵：财务(finance) — 23/40 条不符：after-sales（期望拦，实际放）；after-sales/:id（期望拦，实际放）；categories（期望拦，实际放）；chat（期望拦，实际放）；employees（期望拦，实际放）；knowledge（期望拦，实际放）；processing（期望拦，实际放）；processing-orders（期望拦，实际放）
+2026-10-02T17:50:28.816Z   商品管理员(product_manager) 未落 /dashboard，实际落 about:blank（按产品行为继续）
+2026-10-02T17:50:50.940Z ❌ [RT-01] 页面守卫矩阵：商品管理员(product_manager) — 15/40 条不符：after-sales（期望拦，实际放）；after-sales/:id（期望拦，实际放）；chat（期望拦，实际放）；customers（期望拦，实际放）；customers/:id（期望拦，实际放）；employees（期望拦，实际放）；finance（期望拦，实际放）；knowledge（期望拦，实际放）
+2026-10-02T17:50:50.991Z   知识编辑(knowledge_editor) 未落 /dashboard，实际落 about:blank（按产品行为继续）
+2026-10-02T17:51:12.984Z ❌ [RT-01] 页面守卫矩阵：知识编辑(knowledge_editor) — 26/40 条不符：after-sales（期望拦，实际放）；after-sales/:id（期望拦，实际放）；categories（期望拦，实际放）；chat（期望拦，实际放）；customers（期望拦，实际放）；customers/:id（期望拦，实际放）；employees（期望拦，实际放）；finance（期望拦，实际放）
+2026-10-02T17:51:13.040Z   验收临时岗790472(acc_custom_790472) 未落 /dashboard，实际落 about:blank（按产品行为继续）
+2026-10-02T17:51:35.228Z ❌ [RT-01] 页面守卫矩阵：验收临时岗790472(acc_custom_790472) — 27/40 条不符：after-sales（期望拦，实际放）；after-sales/:id（期望拦，实际放）；categories（期望拦，实际放）；chat（期望拦，实际放）；customers（期望拦，实际放）；customers/:id（期望拦，实际放）；employees（期望拦，实际放）；finance（期望拦，实际放）
+2026-10-02T17:51:35.231Z ✅ [RT-02] 未被路由守卫覆盖的页面（清单 + 逐条现场复核） — 6/40 条无守卫：agent-workspace, agent-workspace/human-sessions, agent-workspace/sessions, inbound-orders, inbound-orders/new, notifications
+2026-10-02T17:51:35.341Z ❌ [BTN-01] 元素级 RBAC 探针异常 — Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3001/employees
+Call log:
+[2m  - navigating to "http://localhost:3001/employees", waiting until "domcontentloaded"[22m
+
+2026-10-02T17:51:35.380Z == 阶段8 完成：pass=2 fail=8
+2026-10-02T18:08:32.392Z == 阶段8：全量页面守卫 + 元素级 RBAC == 坐标 25f89d5a165e92adecc23b2fef1b828679fc85a0 路由 40 条 @ http://localhost:3001
+2026-10-02T18:09:00.763Z ✅ [RT-01] 页面守卫矩阵：管理员(admin) — 40 条路由全部与期望一致（拦截 0 条）
+2026-10-02T18:09:16.555Z ✅ [RT-01] 页面守卫矩阵：客服(customer_service) — 40 条路由全部与期望一致（拦截 20 条）
+2026-10-02T18:09:33.749Z ✅ [RT-01] 页面守卫矩阵：运营(operator) — 40 条路由全部与期望一致（拦截 2 条）
+2026-10-02T18:09:45.383Z ❌ [RT-01] 页面守卫矩阵：销售(sales) — 3/40 条不符：agent-workspace（期望放，实际拦）；agent-workspace/human-sessions（期望放，实际拦）；agent-workspace/sessions（期望放，实际拦）
+2026-10-02T18:09:58.903Z ❌ [RT-01] 页面守卫矩阵：财务(finance) — 3/40 条不符：agent-workspace（期望放，实际拦）；agent-workspace/human-sessions（期望放，实际拦）；agent-workspace/sessions（期望放，实际拦）
+2026-10-02T18:10:13.864Z ❌ [RT-01] 页面守卫矩阵：商品管理员(product_manager) — 5/40 条不符：agent-workspace（期望放，实际拦）；agent-workspace/human-sessions（期望放，实际拦）；agent-workspace/sessions（期望放，实际拦）；inbound-orders（期望放，实际拦）；inbound-orders/new（期望放，实际拦）
+2026-10-02T18:10:27.494Z ❌ [RT-01] 页面守卫矩阵：知识编辑(knowledge_editor) — 5/40 条不符：agent-workspace（期望放，实际拦）；agent-workspace/human-sessions（期望放，实际拦）；agent-workspace/sessions（期望放，实际拦）；inbound-orders（期望放，实际拦）；inbound-orders/new（期望放，实际拦）
+2026-10-02T18:10:40.982Z ❌ [RT-01] 页面守卫矩阵：验收临时岗790472(acc_custom_790472) — 5/40 条不符：agent-workspace（期望放，实际拦）；agent-workspace/human-sessions（期望放，实际拦）；agent-workspace/sessions（期望放，实际拦）；inbound-orders（期望放，实际拦）；inbound-orders/new（期望放，实际拦）
+2026-10-02T18:10:40.984Z ✅ [RT-02] 未被路由守卫覆盖的页面（清单 + 逐条现场复核） — 6/40 条无守卫：agent-workspace, agent-workspace/human-sessions, agent-workspace/sessions, inbound-orders, inbound-orders/new, notifications
+2026-10-02T18:10:54.247Z ❌ [BTN-01] 元素级 RBAC：员工页写操作按钮 — 运营(operator)：有码=false 页面被拦=false 新增=false 编辑=true 重置=false
+2026-10-02T18:10:54.270Z == 阶段8 完成：pass=4 fail=6
+2026-10-02T18:18:30.200Z == 阶段8：全量页面守卫 + 元素级 RBAC == 坐标 25f89d5a165e92adecc23b2fef1b828679fc85a0 路由 40 条 @ http://localhost:3001
+2026-10-02T18:18:50.146Z ✅ [RT-01] 页面守卫矩阵：管理员(admin) — 40 条路由全部与期望一致（拦截 0 条）
+2026-10-02T18:18:57.414Z ❌ [RT-FATAL] 阶段8 致命错误 — Error: browser.newContext: Target page, context or browser has been closed
+2026-10-02T18:19:13.030Z == 阶段8：全量页面守卫 + 元素级 RBAC == 坐标 402be478ba6ef0c2fcb0a16e06894f00eaea55f1 路由 40 条 @ http://localhost:3001
+2026-10-02T18:19:42.131Z ✅ [RT-01] 页面守卫矩阵：管理员(admin) — 40 条路由全部与期望一致（拦截 0 条）
+2026-10-02T18:20:05.766Z ❌ [RT-01] 页面守卫矩阵：客服(customer_service) — 19/40 条不符：categories/page.tsx（期望拦，实际放）；employees/page.tsx（期望拦，实际放）；finance/page.tsx（期望拦，实际放）；processing-orders/:id/production/page.tsx（期望拦，实际放）；processing-orders/page.tsx（期望拦，实际放）；processing/page.tsx（期望拦，实际放）；production/operations/page.tsx（期望拦，实际放）；production/page.tsx（期望拦，实际放）
+2026-10-02T18:20:29.516Z ❌ [RT-01] 页面守卫矩阵：运营(operator) — 2/40 条不符：roles/page.tsx（期望拦，实际放）；settings/page.tsx（期望拦，实际放）
+2026-10-02T18:20:53.043Z ❌ [RT-01] 页面守卫矩阵：销售(sales) — 21/40 条不符：after-sales/:id/page.tsx（期望拦，实际放）；agent-workspace/human-sessions/page.tsx（期望拦，实际放）；agent-workspace/page.tsx（期望拦，实际放）；agent-workspace/sessions/page.tsx（期望拦，实际放）；categories/page.tsx（期望拦，实际放）；chat/page.tsx（期望拦，实际放）；employees/page.tsx（期望拦，实际放）；finance/page.tsx（期望拦，实际放）
+2026-10-02T18:21:16.743Z ❌ [RT-01] 页面守卫矩阵：财务(finance) — 24/40 条不符：after-sales/:id/page.tsx（期望拦，实际放）；agent-workspace/human-sessions/page.tsx（期望拦，实际放）；agent-workspace/page.tsx（期望拦，实际放）；agent-workspace/sessions/page.tsx（期望拦，实际放）；categories/page.tsx（期望拦，实际放）；chat/page.tsx（期望拦，实际放）；employees/page.tsx（期望拦，实际放）；knowledge/page.tsx（期望拦，实际放）
+2026-10-02T18:21:40.512Z ❌ [RT-01] 页面守卫矩阵：商品管理员(product_manager) — 17/40 条不符：after-sales/:id/page.tsx（期望拦，实际放）；agent-workspace/human-sessions/page.tsx（期望拦，实际放）；agent-workspace/page.tsx（期望拦，实际放）；agent-workspace/sessions/page.tsx（期望拦，实际放）；chat/page.tsx（期望拦，实际放）；customers/:id/page.tsx（期望拦，实际放）；employees/page.tsx（期望拦，实际放）；finance/page.tsx（期望拦，实际放）
+2026-10-02T18:22:04.328Z ❌ [RT-01] 页面守卫矩阵：知识编辑(knowledge_editor) — 28/40 条不符：after-sales/:id/page.tsx（期望拦，实际放）；agent-workspace/human-sessions/page.tsx（期望拦，实际放）；agent-workspace/page.tsx（期望拦，实际放）；agent-workspace/sessions/page.tsx（期望拦，实际放）；categories/page.tsx（期望拦，实际放）；chat/page.tsx（期望拦，实际放）；customers/:id/page.tsx（期望拦，实际放）；employees/page.tsx（期望拦，实际放）
+2026-10-02T18:22:27.909Z ❌ [RT-01] 页面守卫矩阵：验收临时岗790472(acc_custom_790472) — 29/40 条不符：after-sales/:id/page.tsx（期望拦，实际放）；agent-workspace/human-sessions/page.tsx（期望拦，实际放）；agent-workspace/page.tsx（期望拦，实际放）；agent-workspace/sessions/page.tsx（期望拦，实际放）；categories/page.tsx（期望拦，实际放）；chat/page.tsx（期望拦，实际放）；customers/:id/page.tsx（期望拦，实际放）；employees/page.tsx（期望拦，实际放）
+2026-10-02T18:22:27.911Z ✅ [RT-02] 未被路由守卫覆盖的页面（清单 + 逐条现场复核） — 1/40 条无守卫：notifications/page.tsx
+2026-10-02T18:22:41.278Z ✅ [BTN-01] 元素级 RBAC：员工页写操作按钮（employee:create 门控） — 管理员(admin):有码→新增显示/编辑显示/重置显示｜客服(customer_service):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜运营(operator):无码→新增隐藏/编辑隐藏/重置隐藏｜销售(sales):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜财务(finance):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜商品管理员(product_manager):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜知识编辑(knowledge_editor):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜验收临时岗790472(acc_custom_790472):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）
+2026-10-02T18:22:41.299Z == 阶段8 完成：pass=3 fail=7
+2026-10-02T18:24:31.460Z == 阶段8：全量页面守卫 + 元素级 RBAC == 坐标 402be478ba6ef0c2fcb0a16e06894f00eaea55f1 路由 40 条 @ http://localhost:3001
+2026-10-02T18:24:58.140Z ✅ [RT-01] 页面守卫矩阵：管理员(admin) — 40 条路由全部与期望一致（拦截 0 条）
+2026-10-02T18:25:21.990Z ❌ [RT-01] 页面守卫矩阵：客服(customer_service) — 19/40 条不符：categories/page.tsx（期望拦，实际放）；employees/page.tsx（期望拦，实际放）；finance/page.tsx（期望拦，实际放）；processing-orders/:id/production/page.tsx（期望拦，实际放）；processing-orders/page.tsx（期望拦，实际放）；processing/page.tsx（期望拦，实际放）；production/operations/page.tsx（期望拦，实际放）；production/page.tsx（期望拦，实际放）
+2026-10-02T18:25:45.802Z ❌ [RT-01] 页面守卫矩阵：运营(operator) — 2/40 条不符：roles/page.tsx（期望拦，实际放）；settings/page.tsx（期望拦，实际放）
+2026-10-02T18:26:09.595Z ❌ [RT-01] 页面守卫矩阵：销售(sales) — 21/40 条不符：after-sales/:id/page.tsx（期望拦，实际放）；agent-workspace/human-sessions/page.tsx（期望拦，实际放）；agent-workspace/page.tsx（期望拦，实际放）；agent-workspace/sessions/page.tsx（期望拦，实际放）；categories/page.tsx（期望拦，实际放）；chat/page.tsx（期望拦，实际放）；employees/page.tsx（期望拦，实际放）；finance/page.tsx（期望拦，实际放）
+2026-10-02T18:26:33.183Z ❌ [RT-01] 页面守卫矩阵：财务(finance) — 24/40 条不符：after-sales/:id/page.tsx（期望拦，实际放）；agent-workspace/human-sessions/page.tsx（期望拦，实际放）；agent-workspace/page.tsx（期望拦，实际放）；agent-workspace/sessions/page.tsx（期望拦，实际放）；categories/page.tsx（期望拦，实际放）；chat/page.tsx（期望拦，实际放）；employees/page.tsx（期望拦，实际放）；knowledge/page.tsx（期望拦，实际放）
+2026-10-02T18:26:56.940Z ❌ [RT-01] 页面守卫矩阵：商品管理员(product_manager) — 17/40 条不符：after-sales/:id/page.tsx（期望拦，实际放）；agent-workspace/human-sessions/page.tsx（期望拦，实际放）；agent-workspace/page.tsx（期望拦，实际放）；agent-workspace/sessions/page.tsx（期望拦，实际放）；chat/page.tsx（期望拦，实际放）；customers/:id/page.tsx（期望拦，实际放）；employees/page.tsx（期望拦，实际放）；finance/page.tsx（期望拦，实际放）
+2026-10-02T18:27:20.883Z ❌ [RT-01] 页面守卫矩阵：知识编辑(knowledge_editor) — 28/40 条不符：after-sales/:id/page.tsx（期望拦，实际放）；agent-workspace/human-sessions/page.tsx（期望拦，实际放）；agent-workspace/page.tsx（期望拦，实际放）；agent-workspace/sessions/page.tsx（期望拦，实际放）；categories/page.tsx（期望拦，实际放）；chat/page.tsx（期望拦，实际放）；customers/:id/page.tsx（期望拦，实际放）；employees/page.tsx（期望拦，实际放）
+2026-10-02T18:27:44.464Z ❌ [RT-01] 页面守卫矩阵：验收临时岗790472(acc_custom_790472) — 29/40 条不符：after-sales/:id/page.tsx（期望拦，实际放）；agent-workspace/human-sessions/page.tsx（期望拦，实际放）；agent-workspace/page.tsx（期望拦，实际放）；agent-workspace/sessions/page.tsx（期望拦，实际放）；categories/page.tsx（期望拦，实际放）；chat/page.tsx（期望拦，实际放）；customers/:id/page.tsx（期望拦，实际放）；employees/page.tsx（期望拦，实际放）
+2026-10-02T18:27:44.467Z ✅ [RT-02] 未被路由守卫覆盖的页面（清单 + 逐条现场复核） — 1/40 条无守卫：notifications/page.tsx
+2026-10-02T18:27:57.710Z ✅ [BTN-01] 元素级 RBAC：员工页写操作按钮（employee:create 门控） — 管理员(admin):有码→新增显示/编辑显示/重置显示｜客服(customer_service):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜运营(operator):无码→新增隐藏/编辑隐藏/重置隐藏｜销售(sales):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜财务(finance):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜商品管理员(product_manager):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜知识编辑(knowledge_editor):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜验收临时岗790472(acc_custom_790472):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）
+2026-10-02T18:27:57.729Z == 阶段8 完成：pass=3 fail=7
+2026-10-02T18:30:29.765Z == 阶段8：全量页面守卫 + 元素级 RBAC == 坐标 402be478ba6ef0c2fcb0a16e06894f00eaea55f1 路由 40 条 @ http://localhost:3001
+2026-10-02T18:30:49.242Z ✅ [RT-01] 页面守卫矩阵：管理员(admin) — 40 条路由全部与期望一致（拦截 0 条）
+2026-10-02T18:31:04.261Z ✅ [RT-01] 页面守卫矩阵：客服(customer_service) — 40 条路由全部与期望一致（拦截 20 条）
+2026-10-02T18:31:20.561Z ✅ [RT-01] 页面守卫矩阵：运营(operator) — 40 条路由全部与期望一致（拦截 2 条）
+2026-10-02T18:31:32.057Z ✅ [RT-01] 页面守卫矩阵：销售(sales) — 40 条路由全部与期望一致（拦截 22 条）
+2026-10-02T18:31:45.235Z ✅ [RT-01] 页面守卫矩阵：财务(finance) — 40 条路由全部与期望一致（拦截 26 条）
+2026-10-02T18:32:00.036Z ✅ [RT-01] 页面守卫矩阵：商品管理员(product_manager) — 40 条路由全部与期望一致（拦截 20 条）
+2026-10-02T18:32:13.268Z ✅ [RT-01] 页面守卫矩阵：知识编辑(knowledge_editor) — 40 条路由全部与期望一致（拦截 31 条）
+2026-10-02T18:32:26.578Z ✅ [RT-01] 页面守卫矩阵：验收临时岗790472(acc_custom_790472) — 40 条路由全部与期望一致（拦截 32 条）
+2026-10-02T18:32:26.580Z ✅ [RT-02] 未被路由守卫覆盖的页面（清单 + 逐条现场复核） — 1/40 条无守卫：notifications/page.tsx
+2026-10-02T18:32:39.992Z ✅ [BTN-01] 元素级 RBAC：员工页写操作按钮（employee:create 门控） — 管理员(admin):有码→新增显示/编辑显示/重置显示｜客服(customer_service):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜运营(operator):无码→新增隐藏/编辑隐藏/重置隐藏｜销售(sales):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜财务(finance):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜商品管理员(product_manager):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜知识编辑(knowledge_editor):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）｜验收临时岗790472(acc_custom_790472):无码→新增隐藏/编辑隐藏/重置隐藏（页面被拦）
+2026-10-02T18:32:40.011Z == 阶段8 完成：pass=10 fail=0

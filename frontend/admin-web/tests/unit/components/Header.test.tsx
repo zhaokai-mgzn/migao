@@ -306,7 +306,7 @@ describe('Header', () => {
         username: '13800138000',
         nickname: '张老板',
         position: '运营',
-        tenantName: '米高布艺',
+        tenantName: '观星台布艺',
       },
       logout: mockLogout,
     })
@@ -324,7 +324,7 @@ describe('Header', () => {
     // 岗位
     expect(screen.getByText('运营')).toBeInTheDocument()
     // 所属企业
-    expect(screen.getByText('米高布艺')).toBeInTheDocument()
+    expect(screen.getByText('观星台布艺')).toBeInTheDocument()
   })
 
   it('再次点击用户按钮收起下拉卡片（#3099）', async () => {
@@ -336,6 +336,34 @@ describe('Header', () => {
     expect(screen.getByText('退出登录')).toBeInTheDocument()
     await user.click(trigger)
     expect(screen.queryByText('退出登录')).not.toBeInTheDocument()
+  })
+
+  // ─── #6339 点击外部收起（回归：原实现是 header 内的 `fixed inset-0` 透明遮罩）───
+
+  it('点击卡片外的任意区域收起下拉卡片（#6339：文档级 mousedown，不依赖 fixed 遮罩）', async () => {
+    await act(async () => {
+      render(<Header />)
+    })
+    await user.click(screen.getByRole('button', { name: '用户菜单' }))
+    expect(screen.getByText('退出登录')).toBeInTheDocument()
+
+    // 为什么断言在 `document.body` 上按下：真实页面里内容区在 header **之外**，而 header 带
+    // `backdrop-blur-sm` ⇒ 其内部那个 `fixed inset-0` 遮罩的包含块是 **header 盒子（56px 顶栏）**、
+    // 不是视口，内容区点击落不到遮罩上（用户实测：卡片收不回去）。jsdom 不做布局 ⇒ 无法复现命中测试，
+    // 但「按下点不在卡片容器内」这一读数与真实浏览器等价 ⇒ 必须由**文档级**监听收起。
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByText('退出登录')).not.toBeInTheDocument()
+  })
+
+  it('点击卡片内部不收起下拉卡片（#6339：不得误关）', async () => {
+    await act(async () => {
+      render(<Header />)
+    })
+    await user.click(screen.getByRole('button', { name: '用户菜单' }))
+    expect(screen.getByText('退出登录')).toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByText('所属企业'))
+    expect(screen.getByText('退出登录')).toBeInTheDocument()
   })
 
   it('用户有 avatar 时展示头像图片，无 avatar 时展示姓名首字（#3099）', async () => {
@@ -620,7 +648,7 @@ describe('Header', () => {
       render(<Header />)
     })
     expect(screen.getByText('客户服务')).toBeInTheDocument()
-    expect(screen.getByText('米宝 · 在线对话')).toBeInTheDocument()
+    expect(screen.getByText('黄金策 · 在线对话')).toBeInTheDocument()
     // #3081: /chat/config 页面已删除（合并进企业基础信息），不再有 AI 客服配置面包屑
     expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
   })

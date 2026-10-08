@@ -56,9 +56,6 @@ public class AfterSalesTicket {
 
     private BigDecimal refundAmount;
 
-    /** original_route / bank_transfer / balance */
-    private String refundMethod;
-
     @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
     private Object evidenceImages;
 

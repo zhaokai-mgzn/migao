@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, ArrowLeft, Copy, Printer, QrCode, RefreshCw, ShieldOff, Wrench } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
@@ -23,6 +23,10 @@ import CutPlanTable from '@/components/production/CutPlanTable'
 import PrintDocPreview from '@/components/orders/PrintDocPreview'
 import { PRINT_TARGET_SPECS, usePrintDoc } from '@/lib/print-doc'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
+// 免驱动直连打印（issue #6439）：**不做打印机定制功能** —— 通道层与机型无关，本页只接一条
+// 「直连打印机」入口；部位 ⇒ 洗水码数据的映射走单一处 `toWashLabelInputs`（页面不另写一份）
+import DirectLabelPrint from '@/components/production/DirectLabelPrint'
+import { toWashLabelInputs } from '@/lib/label-print/wash-label'
 import type {
   PieceworkSummary,
   ProcessingOrder,
@@ -226,15 +230,27 @@ export default function ProcessingOrderProductionPage() {
   const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc('labels')
 
   /**
-   * **真正**打印任务卡：先上报打印计数（fire-and-forget，失败不得阻断打印），再开印。
-   * ⚠️ 计数挪到「预览层里点打印」那一刻 —— 只看了预览没打纸的时候**不该**记账。
+   * 打印留痕（**唯一一处**：fire-and-forget，失败不得阻断打印）。
+   * 🔴 两条打印通道（系统打印 / 免驱动直连，issue #6439）**共用**它 ——
+   * 「打印必留痕」不因为换了条路就少记一次；反过来说，换通道**不换纪律**。
    */
-  const printTaskCards = () => {
+  const recordPrintOnce = useCallback(() => {
     if (po?.orderId) {
       productionApi.recordPrint(po.orderId).catch(() => {})
     }
+  }, [po?.orderId])
+
+  /**
+   * **真正**打印任务卡：先上报打印计数，再开印。
+   * ⚠️ 计数挪到「预览层里点打印」那一刻 —— 只看了预览没打纸的时候**不该**记账。
+   */
+  const printTaskCards = () => {
+    recordPrintOnce()
     requestPrint('labels')
   }
+
+  /** 直连通道要的洗水码数据（部位 ⇒ 数据走**单一处**映射；issue #6439） */
+  const washLabels = useMemo(() => toWashLabelInputs(operations?.positions), [operations])
 
   /** 点「打印任务卡」：先看纸面自检（标签纸型没配好 = 整卷打废） */
   const handlePrint = () => openPreview('labels')
@@ -467,6 +483,12 @@ export default function ProcessingOrderProductionPage() {
                   打印任务卡
                 </Button>
               </div>
+
+              {/* 免驱动直连打印机（issue #6439）—— **与上面那条并存，不是替换**：
+                  「打印任务卡」走系统打印，覆盖**任何**装了驱动的打印机（Windows 驱动 / USB /
+                  网络 / 已配对蓝牙）；这条只覆盖**带网页蓝牙协议**的机型，胜在**不用装驱动**。
+                  两条通道的能力面与边界见 `frontend/admin-web/src/lib/label-print/capability.ts`。 */}
+              <DirectLabelPrint className="mt-2" labels={washLabels} onRecordPrint={recordPrintOnce} />
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -679,8 +701,8 @@ export default function ProcessingOrderProductionPage() {
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="text-base font-medium text-neutral-900">卡在哪</h2>
               <span className="text-xs text-neutral-500">
-                A 模式 · 只查「没开工」；阈值 {stuckPoints?.threshold_hours ?? '—'} 小时（
-                {stuckPoints?.threshold_source === 'history' ? '历史中位数' : '系统兜底默认值'}）
+                只看还没开工的单；<strong>等待超过 {stuckPoints?.threshold_hours ?? '—'} 小时</strong>就列在这里（
+                {stuckPoints?.threshold_source === 'history' ? '按历史中位数' : '按系统默认值'}）
               </span>
             </div>
             {stuckPointsError ? (
@@ -799,8 +821,8 @@ export default function ProcessingOrderProductionPage() {
               >
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>
-                  <span className="font-medium">测试用</span>：逐张渲染每个商品/部位自己的扫码内容
-                  （scan_url / part_token），不是加工单号；扫码工具读不出来时可复制短码，
+                  <span className="font-medium">测试用</span>：逐张显示每个商品/部位自己的二维码内容，
+                  不是加工单号；扫码工具读不出来时可复制短码，
                   或在报工页<span className="font-medium">手动输入</span>加工单号。
                 </span>
               </p>
@@ -878,7 +900,7 @@ export default function ProcessingOrderProductionPage() {
               )}
 
               <p className="text-xs text-neutral-500">
-                本码只读生成：不写入、不撤销任何数据，与纸面洗水码（同一份部位码）逐张一致。
+                本码只读生成：不写入、不撤销任何数据，与纸面水洗唛（同一份部位码）逐张一致。
                 计件归属仍按工人署名（工人端暂无登录），发工资前请核对报工人。
               </p>
             </div>
@@ -919,7 +941,7 @@ export default function ProcessingOrderProductionPage() {
               </p>
               <p className="text-neutral-500">
                 撤销后<span className="font-medium text-neutral-900">已打印的二维码立即失效</span>
-                （工人扫旧码报工将失败）—— 包括每张洗水码上的部位码。
+                （工人扫旧码报工将失败）—— 包括每张水洗唛上的部位码。
               </p>
               {/* issue #4287：本页**有**重新发码入口了（撤销后出现「重新生成二维码」）⇒
                   #4949 那句「撤销后本页无法重新发码」的免责声明**不再为真**，必须撤掉

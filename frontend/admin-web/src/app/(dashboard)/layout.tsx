@@ -54,6 +54,11 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // 一条前缀同时覆盖 `/inbound-orders/new`（**不单列** —— 更宽的父前缀排在前面会让子路径成为
   // `find()` 永不命中的死条目，判据 11① 判红）。
   { prefix: '/inbound-orders', code: 'inbound:view' },
+  // 库存明细（issue #6404）：页面守卫码 = 菜单节点码 = 该页第一屏读端点码
+  //（`StockLedgerController` 的**方法级** `product:list`）—— 取**既有**码，不新造。
+  // 没有这一条就只有菜单一道防线：无 `product:list` 者地址栏直达 `/stock-ledger` 不被拦
+  //（同 #5976 入库单的现场形态）。
+  { prefix: '/stock-ledger', code: 'product:list' },
   { prefix: '/employees', code: 'employee:list' },
   { prefix: '/settings', code: 'system:manage' },
   // issue #5246：知识库页同理 —— 页面本身的守卫用读码 knowledge:view
@@ -123,10 +128,10 @@ export default function DashboardLayout({
   }, [pathname])
 
   // 主动新手引导（issue #5989 · P2）：**首次进入某个已登记页面** ⇒ 递一轮「进页」事件，
-  // 米宝在对话区主动发一条**导航提示**（在哪一页 / 这页能做什么）。
+  // 黄金策在对话区主动发一条**导航提示**（在哪一页 / 这页能做什么）。
   // 前端**不做任何判定**（哪一页能推、推什么、推几次：唯一真值在服务端
   // `backend/ai-agent-service/app/context/menu_navigator.py` + `app/api/chat.py`）；
-  // 服务端回静默流时这里什么都不渲染。`/chat` 是米宝自己的会话页，不推。
+  // 服务端回静默流时这里什么都不渲染。`/chat` 是黄金策自己的会话页，不推。
   useEffect(() => {
     if (permissionDenied || pathname.startsWith('/chat')) return
     void useChatStore.getState().notifyPageEnter(pathname)
@@ -183,7 +188,7 @@ export default function DashboardLayout({
         <Header onOpenMobileNav={() => setMobileOpen(true)} />
 
         {/* 页面内容 — pb-24 底部预留空间，卡片 min-h 联动：内容不足一屏时
-            底部锚定内容（如分页）不被右下角米宝浮动按钮（FAB）遮挡（#3070）。
+            底部锚定内容（如分页）不被右下角黄金策浮动按钮（FAB）遮挡（#3070）。
             ⚠️ 勿改回 p-4 sm:p-6：Tailwind 中 padding 简写会覆盖 padding-bottom，pb-24 失效 */}
         <main className="flex-1 px-4 sm:px-6 pt-4 sm:pt-6 pb-24">
           <div className="min-h-[calc(100vh-184px)] rounded-2xl border border-neutral-200/80 bg-white shadow-card">

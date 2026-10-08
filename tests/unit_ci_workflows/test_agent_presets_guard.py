@@ -1621,27 +1621,106 @@ def test_empty_comparison_set_never_claims_freshness(tmp_path: Path, form: str):
     assert "逐字节一致" not in proc.stdout
 
 
-def test_topology_a_empty_comparison_does_not_claim_byte_identity(anchor_env: dict, tmp_path: Path):
-    """类级判据的另一半：**拓扑 A** 下若基线仓该前缀也是空集（`--repo` 指业务仓的旧调用点），
-    判定要落到**活锚自身**，且**不许**把「0 个文件」说成「逐字节一致」。
+def test_topology_a_empty_comparison_is_fail_closed_not_green(anchor_env: dict, tmp_path: Path):
+    """**本单核心判据（issue #6178 实例面）**：拓扑 A 下**比对面解析出 0 个文件** ⇒ **fail-closed**。
 
-    改前实测（本单复现命令）：`python3 scripts/agent-presets-guard.py --repo <业务仓> anchor`
-    ⇒ `✅ 活锚新鲜：内容与 origin/main 逐字节一致（0 个文件）` + `rc=0`。
+    形态 = 活锚是**预设仓检出**（拓扑 A）+ 基线仓 `origin/main` 在 `<仓根>` 下**空集**（旧调用点
+    `--repo <业务仓>`，业务仓已不再承载 `.agent-presets/**`）。
+
+    改前实测（本单复现命令，读数逐字）：
+
+        bash scripts/preset-anchor-check.sh --repo <0 文件的基线仓>
+        ⇒ ✅ 活锚新鲜（拓扑 A：仓根检出）：内容比对**不适用**（…是空集 ⇒ 没有可比的字节）；
+          本轮判定落在活锚自身远端：HEAD … == origin/main …，工作树干净、形态完整
+        ⇒ rc=0
+
+    —— 「0 个文件的比对面」证不了任何字节（空集比空集**恒等**），却与「真比过且一致」**同一个码**。
+    改后：明说「判不了」+ 处置指引 + **非零（`3`）**，且**绝不**打印 `✅`。
+
+    ⚠️ 「对象库不同刻」是**预期**情况、**不判失败**（本夹具里活锚 HEAD 多半不在基线仓对象库里 ⇒
+    sha 关系 `unknown`）—— 但它同样**不是**「一致」的依据。
     """
     empty_baseline = tmp_path / "biz-post-s4-a"
     _init_repo(empty_baseline)
-    (empty_baseline / "README.md").write_text("业务仓：已无 .agent-presets/**\n", encoding="utf-8")
-    _git(empty_baseline, "add", "-A")
-    _git(empty_baseline, "commit", "-q", "-m", "S4 后：业务仓不再承载预设")
+    _git(empty_baseline, "commit", "-q", "--allow-empty", "-m", "S4 后：业务仓不再承载预设（树是空的）")
     _git(empty_baseline, "update-ref", "refs/remotes/origin/main", "HEAD")
+    if _git(empty_baseline, "ls-tree", "-r", "--name-only", "origin/main").stdout.strip():
+        raise AssertionError("夹具不成立：基线仓 root 下竟有文件（比对面非空 ⇒ 判据会空跑）")
 
-    proc = _run_guard(empty_baseline, "anchor", "--anchor", _anchor_of(anchor_env))
+    out = io.StringIO()
+    rc = GUARD_MODULE.judge_anchor("origin/main", empty_baseline, Path(_anchor_of(anchor_env)),
+                                   anchor_base="", expected_remote="", explicit=True, out=out)
+    text = out.getvalue()
 
-    assert proc.returncode == 0, proc.stdout
-    assert "内容比对**不适用**" in proc.stdout
-    assert "0 个文件" not in proc.stdout
-    assert "逐字节一致" not in proc.stdout
-    assert "拓扑 A 判据" in proc.stdout
+    assert rc == 3, f"空比对面必须 fail-closed（3），实测 rc={rc}：\n{text}"
+    assert "比对面解析出 0 个文件" in text
+    assert "无法判定" in text
+    assert "✅" not in text, "空比对不许报绿"
+    assert "0 个文件" not in text.replace("比对面解析出 0 个文件", ""), \
+        "不许把空集说成「一致（0 个文件）」"
+    assert "preset-anchor-check.sh" in text, "判不了必须给可行动处置指引"
+
+
+def test_topology_a_real_byte_compare_reports_a_nonzero_file_count(anchor_env: dict):
+    """**正常拓扑 ⇒ 真比对通过**（判据必须能绿，且**真的比了文件**）：读数里文件数 **> 0**。
+
+    这是上一条的**正向对照**：拿掉它，就分不清「改成永远 fail-closed」与「只有空集才 fail-closed」。
+    断言钉住读数本身（`逐字节一致（N 个文件）` 的 N 由 `len(expected)` 现取，不钉手抄清单）——
+    改前改后都必须是「**比过**」，而不是「因为没得比所以没红」。
+    """
+    proc = subprocess.run(
+        ["bash", str(CHECK_SH), "--anchor", _anchor_of(anchor_env), "--repo", str(anchor_env["baseline"])],
+        capture_output=True, text=True, env=_check_env(anchor_env),
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    match = re.search(r"逐字节一致（(\d+) 个文件）", proc.stdout)
+    if match is None:
+        raise AssertionError(f"读数里没有文件数 ⇒ 判据可能没真比文件：\n{proc.stdout}")
+    assert int(match.group(1)) > 0, f"比对面是空集却报了绿（本单病灶）：\n{proc.stdout}"
+    assert "内容比对**不适用**" not in proc.stdout
+
+
+def test_refresh_selfcheck_uses_the_preset_repo_even_when_repo_flag_is_a_business_repo(
+        anchor_env: dict, tmp_path: Path):
+    """**端到端红证（issue #6178 的刷新路径）**：`preset-anchor-refresh.sh --repo <业务仓>` 下，
+    自检的对照**仍必须是预设仓**（镜像自身）⇒ 刷新照常成功，且**真的比了文件**。
+
+    改前实测（读数逐字）—— 同一夹具、同一调用形态，把对照交给业务仓 ⇒ **空比对 + 假绿**：
+
+        ℹ️ 自检对照按拓扑选 …（改后新增的这一行不在改前输出里）
+        ✅ 活锚新鲜（拓扑 A：仓根检出）：内容比对**不适用**（…`<仓根>` 下是空集 …）；…
+        ✅ 活锚自愈完成：镜像已跟随 origin/main，且自检绿。          ← 空比对却报「自检绿」
+
+    本用例还钉住「`--repo` 的忽略要**出声**」：不静默改写人给的参数。
+    """
+    seed, mirror = anchor_env["seed"], anchor_env["mirror"]
+    (seed / "after-refresh.txt").write_text("与预设无关的改动\n", encoding="utf-8")
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "与预设无关的改动（只为让刷新有事可做）")
+    _git(seed, "push", "-q", "origin", "main")
+    _git(mirror, "checkout", "-q", "--detach", anchor_env["c1"])
+
+    business = _business_repo(tmp_path, "biz-for-refresh")
+    out = io.StringIO()
+    rc = GUARD_MODULE.judge_anchor("origin/main", business, Path(_anchor_of(anchor_env)),
+                                   anchor_base="", expected_remote="", explicit=True, out=out)
+    if rc == 0 and "逐字节一致（0 个文件）" in out.getvalue():
+        raise AssertionError("夹具不成立：拿业务仓当对照竟然「一致（0 个文件）」⇒ 本判据测不到那一格")
+
+    proc = subprocess.run(
+        ["bash", str(REFRESH_SH), "--mirror", str(mirror), "--repo", str(business)],
+        capture_output=True, text=True, env=_check_env(anchor_env),
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "自检对照按拓扑选" in proc.stdout, "忽略 `--repo` 必须**出声**，不许静默改写人的参数"
+    assert "活锚自愈完成" in proc.stdout
+    match = re.search(r"逐字节一致（(\d+) 个文件）", proc.stdout)
+    if match is None:
+        raise AssertionError(f"刷新路径上没有真比对文件 ⇒ 可能又走了空比对：\n{proc.stdout}")
+    assert int(match.group(1)) > 0, f"刷新路径拿空集报了绿（本单病灶）：\n{proc.stdout}"
+    assert "内容比对**不适用**" not in proc.stdout
 
 
 def test_fixture_baselines_are_decoupled_from_the_machine_live_anchor(anchor_env: dict, tmp_path: Path):

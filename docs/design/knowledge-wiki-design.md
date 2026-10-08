@@ -202,8 +202,8 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_status ON knowledge_candidat
 
 ## 十、Agent 检索链路（knowledge_search 重启用）
 
-> **双端启用（issue #3059）**：`knowledge_search` 同时挂接 C 端小布（customer_knowledge skill，knowledge_faq intent）
-> 与 B 端米宝（knowledge skill，同 intent）——知识卡片是本店资产，两端员工/消费者问本店政策/价目/规则均从卡片回答。
+> **双端启用（issue #3059）**：`knowledge_search` 同时挂接 C 端元元（customer_knowledge skill，knowledge_faq intent）
+> 与 B 端黄金策（knowledge skill，同 intent）——知识卡片是本店资产，两端员工/消费者问本店政策/价目/规则均从卡片回答。
 > `knowledge_manage` 不注册工具：知识管理走 admin-web（knowledge:manage 权限），不经 Agent。
 > B 端接线回归由 agent-eval 用例 KN-003/KN-004 守护（防止 future 重新注释禁用导致静默退化）。
 

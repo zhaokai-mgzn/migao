@@ -203,12 +203,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             wrapper.eq(Order::getFollowStatus, followStatus);
         }
 
-        // 时间范围筛选
+        // 时间范围筛选（issue #6200：日界 = 业务日 +08，不是 UTC 日）
+        // 半开区间 [D 00:00+08, D+1 00:00+08)：原写法把两端拼成 UTC 日的 00:00 与 23:59:59，把
+        // 北京 00:00–08:00 的单归错天 / 月 / 年，且与走 businessClock 的看板 / 趋势互相矛盾。
         if (StringUtils.hasText(startDate)) {
-            wrapper.ge(Order::getCreatedAt, OffsetDateTime.parse(startDate + "T00:00:00Z"));
+            wrapper.ge(Order::getCreatedAt, businessClock.startOfDay(LocalDate.parse(startDate)));
         }
         if (StringUtils.hasText(endDate)) {
-            wrapper.le(Order::getCreatedAt, OffsetDateTime.parse(endDate + "T23:59:59Z"));
+            wrapper.lt(Order::getCreatedAt, businessClock.startOfDay(LocalDate.parse(endDate).plusDays(1)));
         }
 
         // 订单ID精确搜索
@@ -466,6 +468,25 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
+     * 订单在**当前租户**下是否可见（issue #6158）。
+     *
+     * <p>语义 = {@link #getOrderById} 的 404 那一半（同一条 {@code orderMapper.selectById}，由
+     * MyBatis-Plus 租户拦截器按 {@link com.migao.admin.config.TenantContext} 追加
+     * {@code tenant_id} 条件）—— 本单只做归属认定，**不**顺手带状态闸门
+     * （那是 {@code OrderStatusTransitions} 在写路径上的职责，多判一次 = 第二套判定）。</p>
+     *
+     * <p>存在理由：该认定要在 {@code PUT /api/admin/orders/{id}/content} 的**参数解析之前**
+     * 执行（见 {@code TenantOwnershipInterceptor}），而写路径自己的 {@code selectById}
+     * 发生在参数解析之后。</p>
+     *
+     * @param id 订单ID
+     * @return 当前租户下可见 ⇒ true
+     */
+    public boolean existsForCurrentTenant(String id) {
+        return orderMapper.selectById(id) != null;
+    }
+
+    /**
      * 创建订单
      *
      * @param request  创建请求
@@ -501,7 +522,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // （#4308「静默回落」同族纪律：静默 = 算错钱且无人知道）。
         // 逐行结果按**下标**与 request.items 对齐（此刻明细行还没 id）。
         List<ProcessingFeeCalculator.Fee> itemFees = priceItems(request.getItems(), tenantId);
-        BigDecimal totalAmount = computeItemsTotal(request.getItems(), itemFees);
+        // 金额精度准入（issue #6228）：总额 = Σ(单价×数量) + Σ 行加工费，是**计算值**（"积"）——
+        // 单价与数量各自合法不代表积合法（`2.8 × 1.005` 出 3 位小数）⇒ 必须在写之前落一次准入。
+        // 判在这里、且在下方任何写（syncProcessingFeeCombinations / insert）之前。
+        BigDecimal totalAmount = MoneyScale.requireTwoDecimalsOrNull(
+                computeItemsTotal(request.getItems(), itemFees), "订单总额");
 
         // ── 建单同步回加工费组合配置（issue #4872）──
         // 用户原话「当订单创建成功后，同步新增加工费组合&单价到加工费配置中」。
@@ -512,16 +537,22 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         syncProcessingFeeCombinations(itemFees, tenantId);
 
         // 优惠金额（默认 0）；若提供了实收款，校验 应收 - 优惠 ≈ 实收（容差 0.01）
-        BigDecimal discountAmount = request.getDiscountAmount() != null ? request.getDiscountAmount() : BigDecimal.ZERO;
+        // 金额精度准入（issue #6228）：`orders.discount_amount` / `orders.actual_amount` 均 NUMERIC(10,2)，
+        // 超 2 位有效小数会被 PG 静默四舍五入 ⇒ 在**任何写之前**显式拒绝（不静默取整、不归一成 0）。
+        BigDecimal discountAmount = MoneyScale.requireTwoDecimalsOrNull(request.getDiscountAmount(), "优惠金额");
+        if (discountAmount == null) {
+            discountAmount = BigDecimal.ZERO;
+        }
         if (discountAmount.compareTo(BigDecimal.ZERO) < 0) {
             throw BusinessException.validationError("优惠金额不能为负数");
         }
-        if (request.getActualAmount() != null) {
+        BigDecimal requestedActual = MoneyScale.requireTwoDecimalsOrNull(request.getActualAmount(), "实收金额");
+        if (requestedActual != null) {
             BigDecimal expected = totalAmount.subtract(discountAmount);
-            if (expected.subtract(request.getActualAmount()).abs().compareTo(new BigDecimal("0.01")) > 0) {
+            if (expected.subtract(requestedActual).abs().compareTo(new BigDecimal("0.01")) > 0) {
                 throw BusinessException.validationError(
                         String.format("实收金额与应收不一致：应收 %s - 优惠 %s = %s，实收 %s（容差 0.01）",
-                                totalAmount, discountAmount, expected, request.getActualAmount()));
+                                totalAmount, discountAmount, expected, requestedActual));
             }
         }
 
@@ -539,7 +570,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         order.setCustomerAddress(request.getCustomerAddress());
         order.setTotalAmount(totalAmount);
         // 实收款：用户输入值，未输入时默认等于订单总额
-        order.setActualAmount(request.getActualAmount() != null ? request.getActualAmount() : totalAmount);
+        order.setActualAmount(requestedActual != null ? requestedActual : totalAmount);
         // 优惠金额落库
         order.setDiscountAmount(discountAmount);
         order.setStatus("pending");
@@ -549,7 +580,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // ── 制单人（issue #5835，V142）──
         // 用户 2026-09-30 逐字：「制单人这个字段可以不用加到订单详情中，但是要加到订单列表中，
         // 并且支持根据制单人过滤」。
-        // **单点落库**：本方法是三条建单路径（B 端 admin-web 表单 / 米宝 order_create /
+        // **单点落库**：本方法是三条建单路径（B 端 admin-web 表单 / 黄金策 order_create /
         // 程序化调用）的**唯一共享入口** ⇒ 在这里统一解析当前操作者，各 controller 不各拼一遍
         // （在 controller 里拼会漏掉 `createOrderForAgent` 这条手工 new 出来的路径）。
         // 🔴 取不到（service 占位 internal-service / 匿名 / C 端自助下单）⇒ **两列都不写**
@@ -627,6 +658,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 throw BusinessException.validationError(
                         String.format("商品明细第 %d 项的单价必须大于 0", i + 1));
             }
+            // 金额精度准入（issue #6228）：`order_items.unit_price` 是 NUMERIC(·,2)，
+            // 超 2 位有效小数会被 PG **静默四舍五入**（接口 200、库内值与请求值不等）。
+            // 判在本方法 = 建单/改单**唯一共享入口**，且在 `persistOrderItems` 任何写之前。
+            itemRequest.setUnitPrice(MoneyScale.requireTwoDecimalsOrNull(
+                    itemRequest.getUnitPrice(), String.format("商品明细第 %d 项的单价", i + 1)));
         }
     }
 
@@ -723,7 +759,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             item.setWidth(itemRequest.getWidth());
             item.setHeight(itemRequest.getHeight());
             item.setProcessingInfo(itemRequest.getProcessingInfo());
-            // 下单行要素落列（V63，issue #4362，S1）：两个采集端（C 端小布澄清清单 / B 端米宝
+            // 下单行要素落列（V63，issue #4362，S1）：两个采集端（C 端元元澄清清单 / B 端黄金策
             // order_create）写入的 processing_info 顶层工艺规格键在此**物化**到 order_items 的列上。
             // 判在本方法（表单 / Agent / 程序化三条路径的**唯一共享入口**）才无死角；
             // 全部可空、不设必填校验（用户裁定「部位不是必填的」）⇒ 缺键就是缺。
@@ -864,18 +900,22 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         List<OrderCreateRequest.OrderItemRequest> items = toCreateItems(request.getItems());
         assertItemAmountsValid(items);
         List<ProcessingFeeCalculator.Fee> itemFees = priceItems(items, tenantId);
-        BigDecimal totalAmount = computeItemsTotal(items, itemFees);
+        // 金额精度准入（issue #6228）：总额是计算值（"积"），合法单价×合法数量仍可出 3 位小数。
+        BigDecimal totalAmount = MoneyScale.requireTwoDecimalsOrNull(computeItemsTotal(items, itemFees), "订单总额");
         syncProcessingFeeCombinations(itemFees, tenantId);
 
         // ④ 优惠 / 实收：未传 ⇒ **沿用原值**（不清零、不猜）；随后照建单同口径校验
-        BigDecimal discountAmount = request.getDiscountAmount() != null
-                ? request.getDiscountAmount()
+        // 金额精度准入（issue #6228）：只有**请求带来的**值需要准入 —— 沿用值来自库列 NUMERIC(10,2) 回读。
+        BigDecimal requestedDiscount = MoneyScale.requireTwoDecimalsOrNull(request.getDiscountAmount(), "优惠金额");
+        BigDecimal discountAmount = requestedDiscount != null
+                ? requestedDiscount
                 : (order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO);
         if (discountAmount.compareTo(BigDecimal.ZERO) < 0) {
             throw BusinessException.validationError("优惠金额不能为负数");
         }
-        BigDecimal actualAmount = request.getActualAmount() != null
-                ? request.getActualAmount()
+        BigDecimal requestedActual = MoneyScale.requireTwoDecimalsOrNull(request.getActualAmount(), "实收金额");
+        BigDecimal actualAmount = requestedActual != null
+                ? requestedActual
                 : (order.getActualAmount() != null
                         ? order.getActualAmount()
                         : totalAmount.subtract(discountAmount));
@@ -1029,6 +1069,13 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 用条件 UPDATE（WHERE id=? AND status=expected）替代 select→check→update，
      * 防止并发下重复扣减/恢复库存（TOCTOU）。
      *
+     * <p>🔴 {@code newStatus = shipped} 时**同一条 UPDATE** 里写 {@code shipped_at}
+     * （issue #6262，V148）：它是「发货后 N 天自动完成」定时腿的判定锚点，而锚点必须
+     * <b>与状态流转同一个原子动作</b>——分两条语句写就会造出「状态是 shipped 而发货时刻为空」
+     * 的静默漏单形态（那条腿按「满 N 天」取行，NULL 不满足任何比较 ⇒ 永不完成）。
+     * 商家侧三条发货入口（{@code PUT /orders/{id}/status} / {@code order_manage(update_logistics)} /
+     * {@code shipWithLogistics}）都经本方法 ⇒ 一处写、三条路都写。</p>
+     *
      * @return 受影响行数（0 表示订单不存在或状态已并发变更）
      */
     private int transitionStatusAtomic(String id, String expectedStatus, String newStatus, String closeReason) {
@@ -1036,6 +1083,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         wrapper.eq(Order::getId, id)
                 .eq(Order::getStatus, expectedStatus)
                 .set(Order::getStatus, newStatus);
+        if ("shipped".equals(newStatus)) {
+            wrapper.set(Order::getShippedAt, businessClock.nowOffset());
+        }
         if (closeReason != null && !closeReason.isBlank()) {
             wrapper.set(Order::getCloseReason, closeReason);
         }
@@ -1147,6 +1197,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             logisticsInfo.setLogisticsCompany(logistics.getLogisticsCompany());
             logisticsInfo.setTrackingNo(logistics.getTrackingNo());
             logisticsInfo.setLogisticsType(logistics.getLogisticsType());
+            // 发货方式（issue #6239）：回吐「用户当时选了什么」；null = 未采集（存量行）
+            logisticsInfo.setShippingMethod(logistics.getShippingMethod());
             logisticsInfo.setStatus(logistics.getStatus());
             logisticsInfo.setTrackingInfo(logistics.getTrackingInfo());
             logisticsInfo.setShipperName(logistics.getShipperName());
@@ -1697,7 +1749,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                         order.getOrderNo(), "订单取消，加工单自动作废，回补批次库存");
             } else {
                 throw BusinessException.validationError(String.format(
-                        "订单已发加工（加工单 %s 状态：%s），请先在订单详情或让米宝处理加工单后再取消订单",
+                        "订单已发加工（加工单 %s 状态：%s），请先在订单详情或让黄金策处理加工单后再取消订单",
                         activePo.getProcessingOrderNo(), activePo.getStatus()));
             }
         }
@@ -1748,7 +1800,15 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         BigDecimal actual = effectiveActualAmount(order);
-        BigDecimal refund = refundAmount != null ? refundAmount : actual;
+        // 金额精度准入（issue #6221）：退款金额最多 2 位小数（列 NUMERIC(12,2)）。
+        // 超位**显式拒绝**（422），不静默取整 —— 否则 `0.001` 会被 PG 舍成 `0.00`：
+        // 订单 refund_amount 与资金流水 amount 两处同时归零、refund_at 却已写入（"退了一笔 0 元"）。
+        // 口径本体在 MoneyScale（金额链路的单点准入，同 StockQuantity 的范式）；
+        // `null` 语义 = 「全额退」，由 OrNull 原样透传（**不得**归一成 0）。
+        BigDecimal refund = MoneyScale.requireTwoDecimalsOrNull(refundAmount, "退款金额");
+        if (refund == null) {
+            refund = actual;
+        }
         if (refund.compareTo(BigDecimal.ZERO) < 0) {
             throw BusinessException.validationError("退款金额不能为负数");
         }
@@ -2105,16 +2165,26 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private void deductSkuStock(OrderItem item, Order order, String ledgerReason) {
         Long skuId = matchSkuId(item, "确认支付");
         if (skuId != null && item.getQuantity() != null) {
-            // 台账：变更前快照（只记真实变化，故快照必须取在写库之前）
-            Map<Long, ProductSku> stockBefore = snapshotForLedger(ledgerReason, item.getProductId());
             // issue #5063（V115）：库存/销量列已同为 NUMERIC(12,1) ⇒ 按**真实米数**扣减。
             // 改前 `item.getQuantity().intValue()` 把 2.7 米扣成 2 米（0.7 米凭空消失）、
             // 0.5 米扣成 0（成交但零变动）。口径与 §8「用料米数向上进位到 0.1」同源，
             // 且与库存前置校验、回补侧**同一个函数**（同笔单净变化恒为 0）。
             BigDecimal deductQty = StockQuantity.toStockScaleByCeiling(item.getQuantity());
-            productSkuMapper.deductStock(skuId, deductQty);
+            // 🔴 issue #6299：扣减是**一条带下限谓词的原子条件更新**，返回 null = 库存不够
+            //（并发下另一个请求刚把库存扣走，或前置校验与扣减之间被别的事务改小）。
+            // 改前的 `GREATEST(..., 0)` 会把这种情况**静默钳到 0**：两单都「成功」、
+            // 库存 10 米只扣了 10（应扣 16）⇒ 超卖 6 米且无任何 4xx。
+            StockChange change = StockChange.from(productSkuMapper.deductStock(skuId, deductQty, order.getTenantId()));
+            if (change == null) {
+                throw BusinessException.validationError(
+                        String.format("商品「%s」库存不足：需要 %s 米，当前库存已被并发订单占用，请先补货后再确认支付",
+                                item.getProductName() != null ? item.getProductName() : skuId,
+                                deductQty.toPlainString()));
+            }
             productSkuMapper.increaseSalesCount(skuId, deductQty);
-            recordStockLedgerRows(ledgerReason, order, stockBefore, "订单确认支付扣减库存");
+            // 台账读数与扣减**同源**（同一条 SQL 的 RETURNING）：并发下 before/after 仍首尾相接
+            recordAtomicStockChange(ledgerReason, order, item.getProductId(), skuId, change,
+                    "订单确认支付扣减库存");
         }
     }
 
@@ -2126,38 +2196,52 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private void restoreSkuStock(OrderItem item, Order order, String ledgerReason) {
         Long skuId = matchSkuId(item, "取消回补");
         if (skuId != null && item.getQuantity() != null) {
-            Map<Long, ProductSku> stockBefore = snapshotForLedger(ledgerReason, item.getProductId());
-            // issue #5063（V115）：与扣减侧**同一个函数、同一口径** ⇒ 扣 2.8 就回补 2.8
-            // （改前回补侧同样 `intValue()` 取整，扣 2 补 2 —— 表面自洽，实则 0.7 米在
-            //   扣减那一步就已经丢了，回补再准也补不回来）。
-            BigDecimal restoreQty = StockQuantity.toStockScaleByCeiling(item.getQuantity());
-            productSkuMapper.restoreStock(skuId, restoreQty);
-            productSkuMapper.decreaseSalesCount(skuId, restoreQty);
-            recordStockLedgerRows(ledgerReason, order, stockBefore, "订单取消/退款回补库存");
+            StockChange change = restoreStockForLedger(skuId, item);
+            productSkuMapper.decreaseSalesCount(skuId, StockQuantity.toStockScaleByCeiling(item.getQuantity()));
+            if (change != null) {
+                recordAtomicStockChange(ledgerReason, order, item.getProductId(), skuId, change,
+                        "订单取消/退款回补库存");
+            }
         }
     }
 
     /**
-     * 台账（issue #4137）：变更前快照 —— 复用 {@link StockLedgerService} 的同一套快照/比对语义
-     * （落账唯一语义点在那边，订单侧不新造第二套比对逻辑）。
+     * 回补侧：与扣减侧**同一个函数、同一口径**（issue #5063）⇒ 扣 2.8 就回补 2.8。
      *
-     * @param ledgerReason {@code null} = 该路径的落账由上游站点负责（售后回补 → aftersales）⇒ 不取快照、零开销
+     * <p>台账读数与扣减同源（issue #6300）：回补的 before 也取<b>回补后</b>的库存减回补量，
+     * 即扣减行的 after —— 两条腿的链在并发取消/确认交错时仍能首尾相接。</p>
      */
-    private Map<Long, ProductSku> snapshotForLedger(String ledgerReason, String productId) {
-        return ledgerReason == null ? Map.of() : stockLedgerService.snapshotSkus(List.of(productId));
+    private StockChange restoreStockForLedger(Long skuId, OrderItem item) {
+        BigDecimal restoreQty = StockQuantity.toStockScaleByCeiling(item.getQuantity());
+        productSkuMapper.restoreStock(skuId, restoreQty);
+        ProductSku after = productSkuMapper.selectById(skuId);
+        if (after == null || after.getStock() == null) {
+            // 读不到 = 回补未真正发生（或库存未知）⇒ 不落行，绝不用假读数污染台账链
+            return null;
+        }
+        // before = 回补**之后**的库存减掉本次回补量 = 扣减行的 after（扣减/回补两腿共用同一张链）
+        return new StockChange(after.getStock().subtract(restoreQty), after.getStock(), after.getSkuCode());
     }
 
     /**
-     * 台账（issue #4137）：变更后按**实际值**比对落账，只记真实变化的 SKU
-     * （delta 由 {@link StockLedgerService} 按 after-before 算出；请求量与实际变化不一致时不落假账）。
+     * 库存台账（issue #4137 / #6300）：按**原子语句给出的**变更前/变更后落一行。
+     *
+     * <p>改前走的是 {@code snapshotForLedger} → {@code recordChangesAgainstSnapshot}：
+     * 先 {@code SELECT stock} 取快照、改库、再读一次比对。并发下两个请求会读到<b>同一个 before</b>
+     * ⇒ 台账两行同基、链断裂（净增量仍对，所以只有查台账链才暴露）。现在读数直接来自
+     * 扣减/回补那条 SQL 的 {@code RETURNING}（{@link StockChange}），<b>类型上没有「从快照构造」的入口</b>。</p>
+     *
+     * <p>{@code ledgerReason == null} = 本次变更的落账由上游站点负责（售后回补 → aftersales），
+     * 这里不落行 —— 同一次变更写两行会让 delta 翻倍。</p>
      */
-    private void recordStockLedgerRows(String ledgerReason, Order order,
-                                       Map<Long, ProductSku> stockBefore, String note) {
-        if (ledgerReason == null || order == null) {
+    private void recordAtomicStockChange(String ledgerReason, Order order, String productId,
+                                         Long skuId, StockChange change, String note) {
+        // atomic-ledger: true —— before/after 来自原子语句的 RETURNING（见 StockChange 的类注释）
+        if (ledgerReason == null || order == null || change == null) {
             return;
         }
-        stockLedgerService.recordChangesAgainstSnapshot(order.getTenantId(), stockBefore,
-                ledgerReason, order.getOrderNo(), note);
+        stockLedgerService.record(order.getTenantId(), productId, skuId, change.skuCode(),
+                change.beforeQuantity(), change.afterQuantity(), ledgerReason, order.getOrderNo(), note);
     }
 
     /**
@@ -2796,9 +2880,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @param orderId          订单 UUID
      * @param trackingNo       货运单号（**必填** —— 没有单号的「发货」在车间不可核对）
      * @param logisticsCompany 承运商；为空则保留既有值（工人端只填单号，承运商来自客户常用物流档案）
+     * @return 本次发货的结果快照（{@code order_id} / {@code status} / {@code tracking_no} /
+     *         {@code logistics_company}）＋ 一个**显式**的「本次是否真的发生了 {@code →shipped} 流转」标志
+     *         —— <b>幂等回放的载体</b>（issue #6157）：端点拿 {@link OrderShipmentOutcome#result()} 当
+     *         {@code ClientRequestIdService.complete} 的快照，同键第二次到达时**逐字回放**同一份。
+     *         ⚠️ {@code result} **不含实发明细**：发货单由
+     *         {@code OrderShipmentService.recordMerchantShipment} 落，调用方按
+     *         {@link OrderShipmentOutcome#transitioned()} 决定要不要建单（issue #6181）。
      */
     @Transactional(rollbackFor = Exception.class)
-    public void shipWithLogistics(String orderId, String trackingNo, String logisticsCompany) {
+    public OrderShipmentOutcome shipWithLogistics(String orderId, String trackingNo, String logisticsCompany) {
         if (!StringUtils.hasText(trackingNo)) {
             throw BusinessException.validationError("货运单号不能为空");
         }
@@ -2806,9 +2897,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (order == null) {
             throw BusinessException.notFound("订单");
         }
-        // 与 PUT /orders/{id}/logistics 同一状态前置：仅已确认/生产中/已发货可记物流
+        // 与工人发货路**同一份**可发货状态集合（issue #6171）：此前这里把三个字面量抄了一遍，
+        // 而两条路都会把订单置 shipped ⇒ 抄两份迟早漂移（见 OrderShipmentService.SHIPPABLE_FROM）。
+        // 本路多认 shipped：已发货后仅补记/纠正物流（不流转状态），故它是合法的记物流态。
         String status = order.getStatus();
-        if (!"shipped".equals(status) && !"confirmed".equals(status) && !"producing".equals(status)) {
+        if (!OrderShipmentService.SHIPPABLE_FROM.contains(status) && !"shipped".equals(status)) {
             throw BusinessException.validationError("仅已确认/生产中/已发货状态可发货，当前状态: " + status);
         }
         String company = StringUtils.hasText(logisticsCompany)
@@ -2820,7 +2913,32 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // 记物流（发货人 = 当前登录人；工人扫码端登录的就是工人本人）
         upsertLogistics(orderId, company, trackingNo.trim(), null);
         // 原子流转 shipped —— **守卫在这一步内**（含加工项订单必须有 completed 加工单）
-        shipOrderIfApplicable(orderId);
+        boolean transitioned = shipOrderIfApplicable(orderId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("order_id", orderId);
+        result.put("status", "shipped");
+        result.put("tracking_no", trackingNo.trim());
+        result.put("logistics_company", company);
+        // 🔴 issue #6181：把「本次是否真的流转了」**显式**交给调用方。调用方随后要调建单写面，而建单
+        // 写面**不许**再用「当前状态」重新推断这件事（那时状态已被本方法改成 shipped，谓词区分不了
+        // 「我们刚改的」与「本来就已发货」）—— 实测后果是「发货一律 422，而状态与物流已写入」。
+        return new OrderShipmentOutcome(result, transitioned);
+    }
+
+    /**
+     * 商家/工人发货路的**结果 ＋ 本次是否真的发生了流转**（issue #6181）。
+     *
+     * <p>为什么要有第二个字段（而不是让调用方读结果快照里的 {@code status}）：那里的
+     * {@code status} 是**文案常量**（本路对「补记物流」也回 {@code shipped}），它回答不了
+     * 「这一步有没有发生状态变更」；而这一步的**下游**（建发货单）必须知道答案 —— 否则就会
+     * 「订单本来就已发货」时凭空多建一张单，或用「订单状态」这个**会被自己写脏的谓词**去猜
+     * （#6181 的根因形态）。</p>
+     *
+     * @param result       结果快照（幂等回放载体，进 {@code ClientRequestIdService}）
+     * @param transitioned 本次调用是否真的把订单从 {@code confirmed|producing} 流转成 {@code shipped}；
+     *                     {@code false} = 订单本来就已是 {@code shipped}（本路只补记/纠正物流）
+     */
+    public record OrderShipmentOutcome(Map<String, Object> result, boolean transitioned) {
     }
 
     /** 既有物流记录的承运商（工人端只填单号时用它兜底；无既有记录 ⇒ null）。 */
@@ -2836,11 +2954,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     /**
      * 发货联动：confirmed/producing 状态的订单在记录物流后原子流转为 shipped。
      * 已 shipped/completed 保持原状态（仅更新物流）；pending/cancelled 不强制流转。
+     *
+     * @return 本次是否**真的**发生了 {@code →shipped} 的流转（issue #6181：调用方据此决定要不要建
+     *         发货单 —— 见 {@link OrderShipmentOutcome#transitioned()}）。{@code rows == 0}
+     *         （并发下别人先流转了）⇒ 抛，**不**返回 {@code false}：那是「本来就已发货」的语义，
+     *         两者混同会让并发场景静默丢单。
      */
-    private void shipOrderIfApplicable(String orderId) {
+    private boolean shipOrderIfApplicable(String orderId) {
         Order order = orderMapper.selectById(orderId);
         if (order == null) {
-            return;
+            return false;
         }
         String currentStatus = order.getStatus();
         if ("confirmed".equals(currentStatus) || "producing".equals(currentStatus)) {
@@ -2851,7 +2974,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             if (rows == 0) {
                 throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
             }
+            return true;
         }
+        return false;
     }
 
     /**

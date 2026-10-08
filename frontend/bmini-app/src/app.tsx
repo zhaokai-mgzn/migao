@@ -26,7 +26,7 @@ function App({ children }: PropsWithChildren) {
     // 而修复前**没有任何人读那个 `code`** ⇒ 工人扫了自家标签、停在商家首页，
     // 而且没有任何东西会变红（码是好的、302 是好的、页面也不报错）。
     // 这里只做**搬运**：把码原样交给补打页 —— 码空间判定（入库 / 洗水码 / 陌生码）、
-    // 「这不是米高的标签」、以及"一次都不查入库详情"都在页面与 `utils/inbound/deepLink.ts` 里。
+    // 「这不是观星台的标签」、以及"一次都不查入库详情"都在页面与 `utils/inbound/deepLink.ts` 里。
     // `tenant_id` **刻意不用**：租户判定权威始终在服务端（跨租户 ⇒ 404，`requirePrintableLabel`），
     // 前端拿它去"决定看哪张单"就是把授权判据搬到客户端。
     const landing = currentLandingCode()

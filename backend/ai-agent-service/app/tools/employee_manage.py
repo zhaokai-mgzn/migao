@@ -122,7 +122,7 @@ class EmployeeManageTool(BaseTool):
 
         # 细粒度权限：查询类 action 需要 employee:list，写操作需要 employee:create。
         # 与后端 AdminUserController 的 @RequirePermission 口径一致，防止仅 employee:list
-        # 的员工通过米宝执行创建/删除/重置密码等写操作。
+        # 的员工通过黄金策执行创建/删除/重置密码等写操作。
         required = "employee:list"  # B 端只读化（issue #5247）：本工具只剩查询 action
         if "*" not in (context.permissions or []) and required not in (context.permissions or []):
             # 门禁**之外**的动作级拒绝 ⇒ 必须自己走共享构造点带码（issue #4147 G2；

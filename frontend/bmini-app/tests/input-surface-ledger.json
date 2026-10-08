@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "issue": "#6478",
+  "_what": "bmini 输入框面台账：每个在 frontend/bmini-app/src/**/*.tsx 里渲染 <Input> 的 (文件, className) 配对。射程 = src 下全部 .tsx（先剥注释）。",
+  "_why": "「H5 输入框文字贴顶」是 h5 形态缺陷（Taro h5 的 <Input> 是「外层 taro-input-core + 内层原生 input」两层），修法落在共享样式层 frontend/bmini-app/src/styles/input-center.scss。台账把「有哪些输入面」变成可执行判据：新增一个输入面/换一个 className 而没登记 ⇒ 红，逼作者当场确认它也走共享层。",
+  "_judged_by": "frontend/bmini-app/tests/input-center-guard.test.ts",
+  "_recompute": "cd frontend/bmini-app && node -e \"const fs=require('fs'),p=require('path'),w=d=>fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.isDirectory()?w(p.join(d,e.name)):(/\\.tsx$/.test(e.name)?[p.join(d,e.name)]:[]));const s=new Set();for(const f of w('src'))for(const m of fs.readFileSync(f,'utf8').matchAll(/<Input\\s+className='([^']+)'/g))s.add(f+'::'+m[1]);console.log(s.size);[...s].sort().forEach(x=>console.log(x))\"",
+  "_boundary": [
+    "只裁「哪些 (文件, className) 输入面存在」，不判各面的高/圆角/字号（那些是各页自己的设计值，判据在 tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py 与 test_bmini_h5_delivery_contract.py）。",
+    "只认 .tsx 里 <Input> 的**静态** className 字面量；动态拼出来的 className 会被「抽取不完整」判红（fail-closed），不会静默漏过。",
+    "小程序端不在射程内：共享层用的选择器（taro-input-core / .weui-input）在小程序产物里一个元素都匹配不到。"
+  ],
+  "entries": [
+    {
+      "file": "src/components/WorkerBar.tsx",
+      "className": "worker-bar__input",
+      "label": "共用 PAD 顶栏的工人身份切换（工号 / PIN）",
+      "case_ids": ["BM-042"]
+    },
+    {
+      "file": "src/components/cards/FormCard.tsx",
+      "className": "form-card__input",
+      "label": "AI 交互卡的通用表单字段（FormCard）",
+      "case_ids": ["BM-042"]
+    },
+    {
+      "file": "src/pages/auth/change-password/index.tsx",
+      "className": "cp-field__input",
+      "label": "首登强制改密页的三个密码框",
+      "case_ids": ["BM-042"]
+    },
+    {
+      "file": "src/pages/auth/login/index.tsx",
+      "className": "login-field__input",
+      "label": "商家登录页：员工账号 / 密码、管理员手机号、工号 / PIN / 设备标签",
+      "case_ids": ["BM-042"]
+    },
+    {
+      "file": "src/pages/auth/login/index.tsx",
+      "className": "login-field__input login-field__input--code",
+      "label": "商家登录页：短信验证码框（与「获取验证码」按钮同行）",
+      "case_ids": ["BM-042"]
+    },
+    {
+      "file": "src/pages/production/index/index.tsx",
+      "className": "production-manual__input",
+      "label": "报工页：手输加工单号",
+      "case_ids": ["BM-042"]
+    },
+    {
+      "file": "src/pages/production/index/index.tsx",
+      "className": "production-ship__input",
+      "label": "报工页：货运单号",
+      "case_ids": ["BM-042"]
+    },
+    {
+      "file": "src/pages/production/index/index.tsx",
+      "className": "operation-item__qty-input",
+      "label": "报工页：工序完成数量",
+      "case_ids": ["BM-042"]
+    },
+    {
+      "file": "src/pages/sessions/detail/index.tsx",
+      "className": "detail-input__field",
+      "label": "坐席会话详情页：回复输入框",
+      "case_ids": ["BM-042"]
+    },
+    {
+      "file": "src/pages/worker/inbound/index.tsx",
+      "className": "admin-input",
+      "label": "工人拍照入库页的字段组（数量 / 缸号 / 手输单号等 5 处）",
+      "case_ids": ["BM-042"]
+    },
+    {
+      "file": "src/pages/worker/login/index.tsx",
+      "className": "worker-login__input",
+      "label": "独立工人登录页：工号 / PIN / 设备标签",
+      "case_ids": ["BM-042"]
+    },
+    {
+      "file": "src/pages/worker/reprint/index.tsx",
+      "className": "admin-input",
+      "label": "工人补打标签页：手输 8 位短码",
+      "case_ids": ["BM-042"]
+    }
+  ]
+}

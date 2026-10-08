@@ -1,0 +1,42 @@
+[
+  {
+    "journey": "16-order-detail-processing-order",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "加工单生成+流转:  [发加工→徽标「已发加工」✓;按钮切换✓] [开始加工→徽标「加工中」✓;按钮切换✓] [加工完成→徽标「加工完成」✓;按钮切换✓]; 加工单 JG-20261003-6151 可见=true",
+      "/tmp/ui-smoke/out/screenshots/16-order-detail-processing-order.png"
+    ]
+  },
+  {
+    "journey": "17-order-ship",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "发货表单渲染（7 控件）→ 真实提交 → orders.status=shipped ✓（toast 发货成功=true）",
+      "/tmp/ui-smoke/out/screenshots/17-order-ship.png"
+    ]
+  },
+  {
+    "journey": "23-employees",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "员工 新建→可见→改手机号落库=false→删除；空提交校验=false",
+      "/tmp/ui-smoke/out/screenshots/23-employees.png"
+    ]
+  },
+  {
+    "journey": "24-roles",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "岗位权限页 1 行，权限编辑弹窗可开",
+      "/tmp/ui-smoke/out/screenshots/24-roles.png"
+    ]
+  }
+]

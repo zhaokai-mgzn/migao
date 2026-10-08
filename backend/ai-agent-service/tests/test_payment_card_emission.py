@@ -22,16 +22,16 @@
 
 `_detect_card_type` 里写了映射，不等于模型调得到该工具：模型可见工具集**唯一**来自
 `create_skill_registry(SkillConfig.tool_names)`（`base_skill`，`get_langchain_tools` 绑给模型）。
-故本文件额外断言 **Skill 注册表事实**：该工具在小布 persona 的 skill 工具集里（两个：
+故本文件额外断言 **Skill 注册表事实**：该工具在元元 persona 的 skill 工具集里（两个：
 `customer_order` 下单/付款语境 + `customer_general` 兜底语境 —— 后者是低置信问法的落点），
-且**不在**米宝 persona 的工具集里（C 端专属，`allowed_roles=["customer"]`）。
+且**不在**黄金策 persona 的工具集里（C 端专属，`allowed_roles=["customer"]`）。
 
 ## 红证（每条断言都能红 —— 见本 PR 的实测输出）
 
 - **去掉 `_detect_card_type` 的 payment 分支** ⇒ `TestEmissionChain` 红
   （实测 4 failed，`assert None == 'payment'`）；
 - **把工具从 skill 的 tool_names 摘掉** ⇒ `TestToolIsReachableByXiaobu` 红
-  （实测「小布的工具集里没有 payment_qrcode_query ⇒ 模型永远调不到该工具」），
+  （实测「元元的工具集里没有 payment_qrcode_query ⇒ 模型永远调不到该工具」），
   同时 L0 工具集同步守卫 `tests/unit_ci_workflows/test_xiaobu_case_set.py` 也红。
 """
 from unittest.mock import AsyncMock, patch
@@ -106,22 +106,22 @@ class TestToolIsReachableByXiaobu:
         assert skills, "Skill 注册表为空 —— 可达性断言会退化成空断言"
 
         xiaobu_skills = [s for s in skills if "xiaobu" in (s.system_prompts or {})]
-        assert xiaobu_skills, "没有小布 persona 的 skill —— 判据的被测对象不存在"
+        assert xiaobu_skills, "没有元元 persona 的 skill —— 判据的被测对象不存在"
         xiaobu_tools = {t for s in xiaobu_skills for t in (s.tool_names or [])}
         assert "payment_qrcode_query" in xiaobu_tools, (
-            "小布的工具集里没有 payment_qrcode_query ⇒ 模型永远调不到该工具，"
+            "元元的工具集里没有 payment_qrcode_query ⇒ 模型永远调不到该工具，"
             "收款码卡仍是零发射点（不允许「只注册不绑定」）"
         )
 
         # 兜底 skill 也必须绑（低置信/跨域问法是本能力最常见的落点）
         fallback = [s for s in xiaobu_skills if s.name == "customer_general"]
-        assert fallback, "小布兜底 skill（customer_general）不在注册表里"
+        assert fallback, "元元兜底 skill（customer_general）不在注册表里"
         assert "payment_qrcode_query" in (fallback[0].tool_names or []), (
             "兜底 skill 未绑定 ⇒「我想付款」这类不在订单域关键词里的问法拿不到收款码"
         )
 
     def test_not_exposed_to_mibao(self):
-        """C 端专属：米宝 persona 的工具集里不得出现（商家设置走 SettingsController）"""
+        """C 端专属：黄金策 persona 的工具集里不得出现（商家设置走 SettingsController）"""
         skills = list(getattr(get_skill_registry(), "_skills", {}).values())
         mibao_tools = {
             t for s in skills if "mibao" in (s.system_prompts or {})

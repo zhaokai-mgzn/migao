@@ -150,8 +150,39 @@ jobs:
 
   # ============ CI workflow 辅助工具单测（CI workflow 逻辑，曾长期无人运行）============
   ci-workflow-tests:
-    name: ci workflow helper unit tests
+    # ── **拆腿**（issue #6164，2026-10-03）：一条 required 腿 → **两条并行腿**（matrix）──────
+    # 病（现取读数，不是估算）：这条 job 是 PR 反馈的**唯一关键路径** —— 全量档 job 中位 **514s**
+    #   （最近 60 个已完成的 `pull_request` run 里 52 个走全量档），而同 run 其余腿全部 < 60s。
+    #   「调 `-n`」「挪慢判据」「扩 dev_only」三条更便宜的路**都已实测到顶**（依次为：CI 上 -n 8
+    #   反而 548s > 中位 500s；前 30 条慢判据只占 23% 工作量；dev_only 只作用于 13% 的让出档 PR
+    #   ⇒ 加权上界 12s/PR）—— 读数与裁定见 issue #6164。
+    # 治法 = **同一条 job 起两个 matrix 分片**，各跑 `tests/unit_ci_workflows` 的一半：
+    #   分片规则 = `conftest.shard_of`（哈希，成员关系稳定），由 `MIGAO_CI_HELPER_SHARD` 选片
+    #   ⇒ **pytest 命令行一字不改**（保住「CI ⇄ 本地 argv 逐字相同」与「全量命令只许出现一次」
+    #   两条既有契约）。关键路径 ≈ **减半**。
+    # 🔴 **两条腿的名字不是随便起的**：第一条**逐字保留** `ci workflow helper unit tests`
+    #   （= 分支保护里**已有**的那个 required 名）—— 改名会让**所有在飞的 PR** 卡在
+    #   `Expected — waiting for status to be reported` 且**不会变红**（顺序铁律见
+    #   docs/wiki/CI-CD.md 的「变更门控」节）。第二条是新名字，**合并后**才加进分支保护
+    #   （顺序不可换：**先有上报、再设 required**）。
+    # 🔴 **不许用「少跑」换快**：分片只切**收集面**，一条断言都不削。「并集 == 全集」「每片库存
+    #   不低于**该片**冻结基线」都有判据：tests/unit_ci_workflows/test_helper_leg_execution_shape.py
+    #   + conftest 的 `expected_test_files()` / `collection_floor_problems()`
+    #   （分片最容易出的坏形态就是「每条腿天然只覆盖一半 ⇒ 旧的整套判定把**每条腿**都判成子集
+    #   运行 ⇒ 早退 ⇒ 牙齿全掉」，那一处已按分片感知改写）。
+    name: ci workflow helper unit tests${{ matrix.shard_suffix }}
     runs-on: ubuntu-latest
+    strategy:
+      # 两片**各自独立报告**：一片红不得让另一片被 cancel（否则红因只剩一半信息）
+      fail-fast: false
+      matrix:
+        include:
+          # ⚠️ 第一片的 `shard_suffix` **必须为空串**：它决定分支保护里那条**已有** required 名的
+          #    逐字形态（见上）。改它 = 改 required 名 = 卡住在飞的 PR。
+          - shard: "1/2"
+            shard_suffix: ""
+          - shard: "2/2"
+            shard_suffix: "（后半）"
     # ── 超时上限（当前 20 分钟）：口径 = **追认合法**，判据 = 本段，裁定载体 = issue #5365 ──
     # 沿革（历史事实，不改写）：3 → 8（#4793，2026-09-20）→ 12（#5203，2026-09-23）
     #   → **20**（#5534，2026-09-25。依据：该类 job 近 7 次 success = 7:59 / 8:19 / 11:02 /
@@ -230,10 +261,43 @@ jobs:
           fi
           echo "✅ PG 二进制存在 —— Python 侧真库判据能真跑"
 
+      # ── 凭据字面量进仓守卫（issue #6172）───────────────────────────────────────────
+      # 为什么需要：gitleaks 只扫 **diff 的新增行** ⇒ 存量明文凭据**永不报警**（实证：
+      #   `backend/ai-agent-service/tests/contracts/conftest.py` 里那枚内部 service token
+      #   在 main 上躺了很久，只因为没被碰过就一直是绿的）。本步按**现取**扫真源码补这一半。
+      # 三态：0 = 零命中；1 = 命中（逐条具名 + 给出「该改用什么」）；3 = 扫描面不存在（无法判定）
+      #   ⇒ 非 0 一律 fail，本 job 是 required 检查 ⇒ 判红即卡合并。
+      # 判据（L0，含注入式红证与反向对照）=
+      #   tests/unit_ci_workflows/test_plaintext_credential_guard.py（在本 job 的套件里跑）。
+      - name: Plaintext credential guard（凭据字面量不得进仓，issue #6172）
+        run: |
+          rc=0
+          python3 .github/plaintext_credential_guard.py || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::凭据字面量进仓守卫判红（退出码 $rc）—— 真凭据请走环境注入，"
+            echo "::error::形态逐字照抄 issue #6170：SERVICE_TOKEN = os.environ.get(\"MIGAO_SERVICE_TOKEN\", \"\")"
+            exit "$rc"
+          fi
+
       - name: Run ci workflow helper tests
         env:
           # 缺 PG ⇒ `pg_cluster.require_pg()` 判 **FAIL**（不是 skip）：CI 上「没跑」绝不能是绿。
           MIGAO_REQUIRE_REALDB: "1"
+          # **本片**（issue #6164）：值形如 `N/2` ⇒ `conftest` 只收集本片的判据文件
+          # （切片走 `pytest_deselected`，**不是** skip —— skip 会把「这一轮不负责它」伪装成
+          # 「跑了但跳过」，`[realdb-summary]` 的读数就不诚实了）。
+          MIGAO_CI_HELPER_SHARD: ${{ matrix.shard }}
+          # 🔴 跨在飞 PR 的取号重号判据（issue #6245）的**唯一**外部读数：判据 7 用它列同仓
+          #   open PR 并读各 PR 的 `.github/cases/claims/*.json`（`tests/unit_ci_workflows/
+          #   test_case_id_claims.py::fetch_open_pr_claims`）。
+          #   ① 不给 ⇒ 那一侧只能记「**判定不了**」⇒ **fail-closed 判红**（不是静默变绿）；
+          #   ② 只读（`permissions: contents: read` 足够；不写、不打标签、不改远端）；
+          #   ③ 显式给 `GITHUB_REPOSITORY` ⇒ 不依赖「runner 默认注入」这条假设（§18.6 环境静默即缺陷）。
+          #   ⚠️ 顺带修正本段下文「无网络」的旧口径：本 job **仍是纯 CPU 判据套件**，
+          #   网络只发生在「本 PR 号可判定 + Actions 环境」时（1 次列 PR + 每个 open PR 1 次读目录，
+          #   逐请求 8s 超时 + 整轮 30s 预算，超预算即停 ⇒ 判「无法判定」，**不拖重 CI**）。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           pip install -q pytest pytest-xdist pyyaml
           # ── 并行度 `-n 4`（issue #5814，2026-09-30）────────────────────────────────
@@ -367,11 +431,17 @@ jobs:
         working-directory: frontend/admin-web
         run: npx vitest run
 
-      - name: Security audit (deps)
-        if: steps.detect_aw.outputs.run_web == 'true'
-        working-directory: frontend/admin-web
-        run: npm audit --production --audit-level=high
-        continue-on-error: true
+      # ── 这里原有一步 `Security audit (deps)`（`npm audit --production --audit-level=high`）──
+      # 已于 2026-10-03 按 CI 审计（issue #6144 的 P2 ③）**删除**。删除理由（三选一里选了「删」）：
+      #   · 它带 `continue-on-error: true` ⇒ **永不让本腿变红**（纯装饰：既不出声也不拦），
+      #     而 required 腿的绿会被读成「依赖面有人看」；
+      #   · **不**改成 blocking：无关 CVE 新闻会随机卡住所有 PR（审计已排除该选项）；
+      #   · **不**另建独立报告腿：本仓**没有**消费这条信号的面（现取：Dependabot 安全告警
+      #     `disabled`、code-scanning `no analysis found`；`.github/dependabot.yml` 只做版本更新 PR）
+      #     ⇒ 报告腿也只会长出第二个无人看的假信号。
+      #   ⇒ **这个信号以后去哪看 = 目前没有通道**；要恢复须**显式开一个通道**（Dependabot 安全告警 /
+      #     pip-audit / trivy），**不要**把一条 `continue-on-error` 的步当成它已有。
+      #   口径全文（单一来源）= docs/wiki/CI-CD.md 的「口径：几条绿色腿不是它名字读起来的意思」§③。
 
   # ── 共用的面判定（本 workflow 的**单一来源**）────────────────────────────────────
   # 为什么单独一个 job（issue #6051）：`e2e-quality-gate` 是**非 required** 腿，此前靠**步骤级**

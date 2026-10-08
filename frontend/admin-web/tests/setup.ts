@@ -166,6 +166,7 @@ vi.mock('lucide-react', () => ({
   Image: iconStub('image'),
   ArrowUpDown: iconStub('arrow-up-down'),
   ClipboardList: iconStub('clipboard-list'),
+  ScrollText: iconStub('scroll-text'),
   ClipboardCheck: iconStub('clipboard-check'),
   Users: iconStub('users'),
   MessageSquare: iconStub('message-square'),
@@ -219,6 +220,8 @@ vi.mock('lucide-react', () => ({
   FolderTree: iconStub('folder-tree'),
   Zap: iconStub('zap'),
   Printer: iconStub('printer'),
+  // 免驱动直连通道（issue #6439）：生产明细页「直连打印机打印」按钮用 Bluetooth 图标
+  Bluetooth: iconStub('bluetooth'),
   Calculator: iconStub('calculator'),
   AlertTriangle: iconStub('alert-triangle'),
   ArrowRight: iconStub('arrow-right'),
@@ -307,4 +310,26 @@ vi.mock('lucide-react', () => ({
   // issue #5191: 「余料台账」菜单项新增图标（漏登记 ⇒ 任何渲染 Sidebar 的用例当场抛
   // `No "Recycle" export is defined on the "lucide-react" mock`，不是静默）
   Recycle: iconStub('recycle'),
+  // issue #6291: 官网企业站重设计（首页 / 产品服务 / 关于 / 联系 + 页脚）新增图标。
+  // 与 #5191 同因：漏登记 ⇒ 任何渲染这些页面的用例当场抛
+  // `No "<Icon>" export is defined on the "lucide-react" mock`（响亮失败，不是静默）。
+  BadgeCheck: iconStub('badge-check'),
+  Globe: iconStub('globe'),
+  Heart: iconStub('heart'),
+  Landmark: iconStub('landmark'),
+  Lock: iconStub('lock'),
+  MessagesSquare: iconStub('messages-square'),
+  Rocket: iconStub('rocket'),
+  ScanLine: iconStub('scan-line'),
+  Shirt: iconStub('shirt'),
+  Smartphone: iconStub('smartphone'),
+  Sofa: iconStub('sofa'),
+  Sprout: iconStub('sprout'),
+  Target: iconStub('target'),
+  Wallet: iconStub('wallet'),
+  // issue #6382: 关于页「技术底座」四张卡新增图标（原「发展历程」段落改版）。
+  // Bot / Layers / Wrench 上方已登记，本单只补 MonitorSmartphone。
+  // 与 #5191 / #6291 同因：漏登记 ⇒ 渲染关于页的用例当场抛
+  // `No "<Icon>" export is defined on the "lucide-react" mock`（响亮失败，不是静默）。
+  MonitorSmartphone: iconStub('monitor-smartphone'),
 }))

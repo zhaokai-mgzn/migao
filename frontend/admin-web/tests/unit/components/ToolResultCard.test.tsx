@@ -56,7 +56,7 @@ const CARD_CASES: Array<{ type: CardType; data: Record<string, unknown>; testId?
     text: /40%/,
   },
   {
-    // issue #5188：批次/省料卡（米宝 B 端；`product:list` 门禁 ⇒ C 端不可达）
+    // issue #5188：批次/省料卡（黄金策 B 端；`product:list` 门禁 ⇒ C 端不可达）
     type: 'batch_stock',
     data: { action: 'batches', batches: [{ batchNo: 'PC-20260901-0001', remainingMeters: 0.2 }] },
     testId: 'batch-stock-card',

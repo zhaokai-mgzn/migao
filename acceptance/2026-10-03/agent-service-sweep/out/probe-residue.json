@@ -1,0 +1,42 @@
+[
+  {
+    "id": "Z1-1",
+    "name": "零残留：本包探针对象全部清除（逐表计数）",
+    "status": "pass",
+    "detail": "期望 probeResidue().total == 0（sessions/session_messages/agentSessions/knowledgeCards/knowledgeCandidates 全 0） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 自建自清纪律：本包创建的一切对象用后必须为 0",
+      "HTTP/读数: {\"before\":{\"sessions\":48,\"sessionMessages\":0,\"agentSessions\":6,\"knowledgeCards\":5,\"knowledgeCandidates\":5},\"after\":{\"sessions\":0,\"sessionMessages\":0,\"agentSessions\":0,\"knowledgeCards\":0,\"knowledgeCandidates\":0},\"afterTotal\":0}",
+      "清理 tag: bmuryux5s, bmuryvdtd, fmuryzz7k, fmurz0551, fmurz21yq, rmurz39pp, rmurz3j98, rmurz4gn2",
+      "逐表: {\"sessions\":0,\"sessionMessages\":0,\"agentSessions\":0,\"knowledgeCards\":0,\"knowledgeCandidates\":0}",
+      "SQL: delete from sessions where customer_id like 'probe_line1_%' and (customer_id like '%<tag>%')"
+    ],
+    "at": "2026-10-03 13:51:56 +08",
+    "atUtc": "2026-10-03T05:51:56.392Z"
+  },
+  {
+    "id": "Z1-2",
+    "name": "零残留判据的红证：注入 1 行探针 ⇒ 计数当场为 1；删除后回 0",
+    "status": "pass",
+    "detail": "期望 注入期 total==1，还原后 total==0 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 零残留读数必须对\"多一行/少一行\"敏感（否则它是恒 0 的空断言）",
+      "HTTP/读数: {\"during\":{\"sessions\":1,\"sessionMessages\":0,\"agentSessions\":0,\"knowledgeCards\":0,\"knowledgeCandidates\":0},\"afterRestore\":{\"sessions\":0,\"sessionMessages\":0,\"agentSessions\":0,\"knowledgeCards\":0,\"knowledgeCandidates\":0}}",
+      "注入行: sess_l1residuemurz5mug",
+      "SQL: insert into sessions ... customer_id=probe_line1_ZCONTROL ..."
+    ],
+    "at": "2026-10-03 13:51:58 +08",
+    "atUtc": "2026-10-03T05:51:58.297Z"
+  },
+  {
+    "id": "Z2-1",
+    "name": "【故意失效控制项】本项**必须红**（若真红 ⇒ 整套断言在真跑）",
+    "status": "fail",
+    "detail": "控制项：把期望值换成必然不成立的值（期望 HTTP 599）—— 本项恒 fail 是**设计如此**",
+    "evidence": [
+      "设计说明：若不是 fail，说明 recorder/judge 链路本身没在工作 ⇒ 其余 pass 全部不可信"
+    ],
+    "at": "2026-10-03 13:51:58 +08",
+    "atUtc": "2026-10-03T05:51:58.298Z"
+  }
+]

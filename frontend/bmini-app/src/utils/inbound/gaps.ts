@@ -106,6 +106,46 @@ export const INBOUND_WORKER_LOGIN_REQUIRED =
 /** 工人登录页路由（`app.config.ts` 已登记；守卫 G0 一并核验） */
 export const WORKER_LOGIN_ROUTE = '/pages/worker/login/index'
 
+/**
+ * **商家登录页上的工人入口**（issue #6467 切片 1）—— `?tab=worker` 直达第三 tab。
+ *
+ * 「报工页 / 工人首页」的引导都指向**这一条**（而不是独立的 `pages/worker/login/index`）：
+ * 商家登录页是 H5 的主登录门（`/b/` 的常规落点），从那里进去的人不必再找第二个登录页；
+ * 两条链路的**身份判定都在服务端**（工号 + PIN ⇒ 工人 session），前端只是入口不同。
+ */
+export const WORKER_TAB_LOGIN_ROUTE = '/pages/auth/login/index?tab=worker'
+
+/**
+ * **工人首页**路由（issue #6467 切片 1）：纯工人设备登录成功后的落地页。
+ *
+ * 为什么必须有它：工人零商家权限（`/api/admin/**` 的拒绝集合含 `worker`）⇒ 落进商家 tabBar
+ * （问黄金策 / 数据 / 坐席 / 我的）只会看到 403 / 空页；而 `Taro.switchTab` **只能**落 tabBar 页
+ * ⇒ 工人登录成功后的去向只能是 `redirectTo` 一个**非 tabBar** 的工人页。
+ *
+ * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它
+ * （没登记 = 死链；守卫 = `tests/inbound-page-platform-gaps.test.ts` 的 G0 同款口径 +
+ * `tests/page-entry-reachability.test.ts` 的 L0/L2）。
+ */
+export const WORKER_HOME_ROUTE = '/pages/worker/home/index'
+
+/** 工人首页文件（守卫射程起点） */
+export const WORKER_HOME_PAGE_FILE = 'src/pages/worker/home/index.tsx'
+
+/**
+ * **扫码报工**页路由（工人首页的三件功能之一）。
+ * 该页早已在 `app.config.ts` 登记（也是「我的」页的入口），这里只把**工人面的引用**收敛到常量
+ * —— 工人首页不再写第二份字面量（入口台账要能核「跳转语句里带着这个记号」）。
+ */
+export const PRODUCTION_PAGE_ROUTE = '/pages/production/index/index'
+
+/** 工人首页未登录工人身份时的引导（与入库页同一口径，说清本页是「工人功能」） */
+export const WORKER_HOME_LOGIN_REQUIRED =
+  '请先用工号 + PIN 登录工人身份，再使用工人功能（商家账号不能走这条路径）。'
+
+/** 报工页未登录工人身份时的引导（照报工页的语义写；写入口只在这个前提下渲染） */
+export const PRODUCTION_WORKER_LOGIN_REQUIRED =
+  '请先用工号 + PIN 登录工人身份，再扫码报工（商家账号不能走这条路径）。'
+
 /** 补打页未登录时的引导（与入库页同一口径，但说清本页是"补打"） */
 export const REPRINT_WORKER_LOGIN_REQUIRED =
   '请先用工号 + PIN 登录工人身份，再拍照补打标签（商家账号不能走这条路径）。'

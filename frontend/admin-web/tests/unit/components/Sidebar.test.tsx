@@ -4,7 +4,7 @@
  *
  * ## 与 `SidebarRedesign.test.tsx` 的分工
  *
- * 本文件守**能力面**：21 项一项不少不减（逐项名 + href + `data-menu-key` 序列）、
+ * 本文件守**能力面**：22 项一项不少不减（逐项名 + href + `data-menu-key` 序列）、
  * 图标、`bg-primary-600` 高亮与互斥单高亮、权限过滤正负控、空组整组隐藏、
  * 折叠态不渲染组名。新交互面（默认展开态 / 路由联动 / 折叠态分组锚点 / 移动端抽屉 / ⌘K 入口）
  * 在 `tests/unit/components/SidebarRedesign.test.tsx`。
@@ -14,7 +14,7 @@
  * 新 IA 下**分组默认只展开当前路由所在组** ⇒ 想断言「其它组的项在不在」就必须
  * **先展开该组**（`data-testid="sidebar-group-toggle-<key>"`）。因此下列用例里凡断言
  * 非当前组项的，都先调 `expandGroups(...)` / `expandAll()` —— 断言本身**一条没删、没放宽**
- * （有 `expect(links).toHaveLength(22)` 这类**更强**的新钉子作反向证明）。
+ * （有 `expect(links).toHaveLength(23)` 这类**更强**的新钉子作反向证明）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react'
@@ -56,7 +56,7 @@ import Sidebar from '@/components/layout/Sidebar'
 // #5877：一级项的插入位（席位常量 = 三源同批表达的同一件事）
 import { STANDALONE_TOP_AFTER_GROUP_KEY } from '@/config/menu'
 
-/** issue #5778 新 IA：**6 组**（key / 组名 / 组内项顺序） */
+/** issue #5778 新 IA：**6 组**（key / 组名 / 组内项顺序；组内顺序 **2026-10-06 方案 A1** 重排） */
 const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
   { key: 'workspace', name: '工作台', items: [['dashboard', '经营看板'], ['briefing', '每日简报']] },
   {
@@ -64,9 +64,9 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
     name: '客户服务',
     items: [
       ['human-sessions', '在线接待'],
-      ['customers', '客户列表'],
       ['knowledge', '知识库'],
       ['after-sales', '售后工单'],
+      ['customers', '客户列表'],
     ],
   },
   { key: 'trade-center', name: '交易管理', items: [['orders', '订单列表'], ['finance', '财务对账']] },
@@ -74,10 +74,10 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
     key: 'production-center',
     name: '生产管理',
     items: [
-      ['production-board', '生产看板'],
-      ['production-pool', '智能派单'],
       ['processing', '加工项管理'],
       ['production-process', '工艺配置'],
+      ['production-board', '生产看板'],
+      ['production-pool', '智能派单'],
       ['production-piecework', '计件工资'],
     ],
   },
@@ -86,6 +86,7 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
     name: '仓储与物料',
     items: [
       ['inbound-orders', '入库单'],
+      ['stock-ledger', '库存明细'],
       ['shipments', '发货单'],
       ['production-remnants', '余料台账'],
       ['production-saving-board', '省料看板'],
@@ -99,17 +100,20 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
 ]
 /**
  * 一级项（**不占组**）：#5778 起「商品管理」不再占一个单成员组；
- * #5877（用户 2026-10-01 裁定）起渲染在「**工作台**」组之后（`STANDALONE_TOP_AFTER_GROUP_KEY`）。
+ * **用户 2026-10-06 裁定**起渲染在 `STANDALONE_TOP_AFTER_GROUP_KEY`（现取**最后一个组**）之后
+ * ⇒ 排在**所有分组之后**、尾部独立项之前。
  */
 const STANDALONE_TOP_KEYS = ['products']
 /** 一级项的插入位（本表独立写死，不从实现反推） */
-const TOP_SLOT_KEY = 'workspace'
+const TOP_SLOT_KEY = 'org-center'
 const GROUP_KEYS = GROUPS.map((g) => g.key)
-/** 展开全部组后应渲染的 21 项（head 组 → 一级项 → tail 组 → 尾部独立项，== `flattenMenu` 顺序） */
+/**
+ * 展开全部组后应渲染的 **23 项**（**全部分组 → 一级项 → 尾部独立项**，== `flattenMenu` 顺序）。
+ * ⚠️ 2026-10-06 起 `TOP_SLOT_KEY` = **最后一个组** ⇒ 一级项落在这条序列的**末尾附近**（通知中心之前）。
+ */
 const ALL_MENU_KEYS = [
-  ...GROUPS.filter((g) => g.key === TOP_SLOT_KEY).flatMap((g) => g.items.map(([k]) => k)),
+  ...GROUPS.flatMap((g) => g.items.map(([k]) => k)),
   ...STANDALONE_TOP_KEYS,
-  ...GROUPS.filter((g) => g.key !== TOP_SLOT_KEY).flatMap((g) => g.items.map(([k]) => k)),
   'notifications',
 ]
 
@@ -150,7 +154,7 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('logo')).toBeInTheDocument()
   })
 
-  it('未设置企业 Logo 时回退米高默认 Logo', () => {
+  it('未设置企业 Logo 时回退观星台默认 Logo', () => {
     mockUseAuthStore.mockReturnValue({
       user: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], permissions: ['*'], tenantName: '测试企业' },
     })
@@ -174,7 +178,7 @@ describe('Sidebar', () => {
     expect(screen.queryByAltText('企业 Logo')).not.toBeInTheDocument()
   })
 
-  it('should render all menu items（issue #5778 新 IA：6 组 + 一级项 + 独立项 = 21 项）', async () => {
+  it('should render all menu items（issue #5778 新 IA：6 组 + 一级项 + 独立项 = 22 项（#6404 +库存明细））', async () => {
     mockBriefingEnabled = true
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     // 分组标题（#5778 重排后六大组：客户服务 / 交易管理 / 生产管理 / 仓储与物料 / 组织管理）
@@ -200,9 +204,9 @@ describe('Sidebar', () => {
     for (const [, name] of GROUPS.flatMap((g) => g.items)) {
       expect(screen.getByText(name)).toBeInTheDocument()
     }
-    // UI-005/UI-011: **客户服务**分组下 在线接待 + 知识库（#3094 米宝·在线对话 菜单入口已移除，对话经右下角 FAB）；#2969 知识库并入本组；#3081 AI 客服配置已合并进企业基础信息
+    // UI-005/UI-011: **客户服务**分组下 在线接待 + 知识库（#3094 黄金策·在线对话 菜单入口已移除，对话经右下角 FAB）；#2969 知识库并入本组；#3081 AI 客服配置已合并进企业基础信息
     // #5778：客户列表 / 售后工单也并入本组
-    expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+    expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
     // 每日简报由企业开关控制（#3468）：开关开 ⇒ 可见
     expect(screen.getByText('每日简报')).toBeInTheDocument()
     // #1403: 商品分类管理已移出侧边栏，入口内嵌到新增商品页
@@ -215,24 +219,24 @@ describe('Sidebar', () => {
     expect(screen.queryByText('角色权限')).not.toBeInTheDocument()
   })
 
-  it('21 项一项不少不减：`data-menu-key` 序列逐值 == 新 IA（一级项在前 → 分组项 → 独立项）', async () => {
+  it('23 项一项不少不减：`data-menu-key` 序列逐值 == 新 IA（全部分组 → 一级项 → 独立项）', async () => {
     mockBriefingEnabled = true
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     await waitFor(() => expect(groupButton('workspace').getAttribute('aria-expanded')).toBe('true'))
     expandAll()
-    // 🔴 #5877：一级项「商品管理」渲染在**「工作台」组之后**（不再是所有分组之前）；
-    // 客户服务组含 在线接待/客户列表/知识库/售后工单
+    // 🔴 2026-10-06 用户裁定（方案 A1）：组内重排 + 一级项「商品管理」排在**所有分组之后**；
+    // 客户服务组含 在线接待/知识库/售后工单/客户列表
     expect(menuKeys()).toEqual([
       'dashboard', 'briefing',
-      'products',
-      'human-sessions', 'customers', 'knowledge', 'after-sales',
+      'human-sessions', 'knowledge', 'after-sales', 'customers',
       'orders', 'finance',
-      'production-board', 'production-pool', 'processing', 'production-process', 'production-piecework',
-      'inbound-orders', 'shipments', 'production-remnants', 'production-saving-board',
+      'processing', 'production-process', 'production-board', 'production-pool', 'production-piecework',
+      'inbound-orders', 'stock-ledger', 'shipments', 'production-remnants', 'production-saving-board',
       'employees', 'roles', 'settings',
+      'products',
       'notifications',
     ])
-    expect(menuKeys()).toHaveLength(22)
+    expect(menuKeys()).toHaveLength(23)
   })
 
   it('简报开关关 ⇒ 恰少「每日简报」（briefingToggle 过滤条件独立于权限码）', async () => {
@@ -268,8 +272,8 @@ describe('Sidebar', () => {
     expect(linkFor('员工管理')).toHaveAttribute('href', '/employees')
     expect(linkFor('岗位权限')).toHaveAttribute('href', '/roles')
     expect(linkFor('企业基础信息')).toHaveAttribute('href', '/settings')
-    // #3094: 米宝 · 在线对话 菜单入口已移除（侧边栏不再渲染 /chat 链接）
-    expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+    // #3094: 黄金策 · 在线对话 菜单入口已移除（侧边栏不再渲染 /chat 链接）
+    expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
     expect(linkFor('在线接待')).toHaveAttribute('href', '/agent-workspace/human-sessions')
     expect(linkFor('知识库')).toHaveAttribute('href', '/knowledge')
     expect(linkFor('通知中心')).toHaveAttribute('href', '/notifications')
@@ -282,7 +286,7 @@ describe('Sidebar', () => {
     for (const g of GROUPS) {
       expect(screen.queryByText(g.name)).not.toBeInTheDocument()
     }
-    expect(screen.queryByText('米高')).not.toBeInTheDocument()
+    expect(screen.queryByText('观星台')).not.toBeInTheDocument()
     // 菜单名文本同样不渲染（此态下只有图标）
     expect(screen.queryByText('商品列表')).not.toBeInTheDocument()
     expect(screen.queryByText('经营看板')).not.toBeInTheDocument()
@@ -348,26 +352,26 @@ describe('Sidebar', () => {
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
-  // ── 前缀嵌套路由互斥单高亮（#3094 米宝菜单已移除：/chat 无侧边栏入口，在线接待不重复高亮）──
+  // ── 前缀嵌套路由互斥单高亮（#3094 黄金策菜单已移除：/chat 无侧边栏入口，在线接待不重复高亮）──
 
-  it('/chat 时无侧边栏菜单高亮（米宝入口已移除，对话经右下角 FAB）', () => {
+  it('/chat 时无侧边栏菜单高亮（黄金策入口已移除，对话经右下角 FAB）', () => {
     mockUsePathname.mockReturnValue('/chat')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+    expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
     // /chat 不属于任何菜单项 ⇒ 无组可展开；展开智能客服后「在线接待」仍在 DOM 且不得高亮
     expandGroups('customer-service')
     const humanLink = linkFor('在线接待')
     expect(getActiveClass(humanLink)).not.toContain('bg-primary-600')
   })
 
-  it('/chat 时侧边栏无高亮菜单项（#3094 米宝入口已移除）', async () => {
+  it('/chat 时侧边栏无高亮菜单项（#3094 黄金策入口已移除）', async () => {
     mockBriefingEnabled = true
     mockUsePathname.mockReturnValue('/chat')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     // /chat 不属于任何菜单项 ⇒ **全部组默认收起**（这本身就是「无高亮」的一种形态）；
     // 展开全部组后再断言「21 项都在 DOM 里，仍然一个都不高亮」
     expandAll()
-    await waitFor(() => expect(document.querySelectorAll('nav a')).toHaveLength(22))
+    await waitFor(() => expect(document.querySelectorAll('nav a')).toHaveLength(23))
     expect(activeKeys()).toEqual([])
   })
 
@@ -428,7 +432,7 @@ describe('Sidebar', () => {
 
   // ── UI-005: 智能客服大类分组与图标 ──
 
-  it('（#5877）一级项「商品管理」在「工作台」组**之后**、「客户服务」组**之前**（DOM 顺序）', () => {
+  it('（2026-10-06 用户裁定）一级项「商品管理」在**所有分组之后**、「通知中心」之前（DOM 顺序）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     const follows = (a: HTMLElement, b: HTMLElement) =>
       (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
@@ -436,12 +440,17 @@ describe('Sidebar', () => {
     const workspace = screen.getByText('工作台')
     const customerService = screen.getByText('客户服务')
     const trade = screen.getByText('交易管理')
-    // 🔴 位置 = 工作台组之后（用户 2026-10-01 裁定）、客户服务组之前
+    const org = screen.getByText('组织管理')
+    const notifications = screen.getByText('通知中心')
+    // 🔴 位置 = **所有分组之后**（用户 2026-10-06 裁定：11 个大菜单项并列 ⇒ 一级项沉底）
     expect(follows(workspace, productItem)).toBe(true)
-    expect(follows(productItem, customerService)).toBe(true)
+    expect(follows(org, productItem)).toBe(true)
+    expect(follows(productItem, notifications)).toBe(true)
+    // 组顺序不受影响（判别力：这条与「一级项的位置」是两件事）
     expect(follows(customerService, trade)).toBe(true)
-    // 判别力：旧口径（一级项渲染在所有分组之前）在下面这一条上会给出 true ⇒ 现在就红
+    // 判别力：旧口径（一级项夹在「工作台」与「客户服务」之间）在下面两条上会给出 true ⇒ 现在就红
     expect(follows(productItem, workspace)).toBe(false)
+    expect(follows(productItem, customerService)).toBe(false)
     // 席位常量与渲染位必须同源（改常量而不改判据 = 无声漂移）
     expect(STANDALONE_TOP_AFTER_GROUP_KEY).toBe(TOP_SLOT_KEY)
   })
@@ -495,16 +504,16 @@ describe('Sidebar', () => {
     expect(within(link).queryByTestId('sidebar-pin-products')).toBeNull()
   })
 
-  it('（#5778）「客户服务」组内顺序：在线接待 → 客户列表 → 知识库 → 售后工单', () => {
+  it('（2026-10-06 方案 A1）「客户服务」组内顺序：在线接待 → 知识库 → 售后工单 → 客户列表', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expandGroups('customer-service')
     const groupContainer = screen.getByText('客户服务').closest('[data-group-key]') as HTMLElement
     const links = groupContainer.querySelectorAll('a')
     expect(links.length).toBe(4)
     expect(links[0].textContent).toContain('在线接待')
-    expect(links[1].textContent).toContain('客户列表')
-    expect(links[2].textContent).toContain('知识库')
-    expect(links[3].textContent).toContain('售后工单')
+    expect(links[1].textContent).toContain('知识库')
+    expect(links[2].textContent).toContain('售后工单')
+    expect(links[3].textContent).toContain('客户列表')
   })
 
   it('「在线接待」已从「工作台」分组移除（工作台仅剩经营看板）', () => {
@@ -540,9 +549,9 @@ describe('Sidebar', () => {
     expect(within(groupButtonEl).queryByTestId('icon-headphones')).not.toBeInTheDocument()
   })
 
-  it('「米宝·在线对话」菜单入口已移除（#3094：智能体对话经右下角浮动按钮进入）', () => {
+  it('「黄金策·在线对话」菜单入口已移除（#3094：智能体对话经右下角浮动按钮进入）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+    expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
   })
 
   // ── 权限过滤 ──
@@ -567,9 +576,9 @@ describe('Sidebar', () => {
       // #1403: 商品分类管理已移出侧边栏
       expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
       expect(screen.getByText('通知中心')).toBeInTheDocument()
-      // UI-005/UI-011: admin 可见智能客服大类及其子菜单（#3094 米宝·在线对话 入口已移除）
-      expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
-      expect(menuKeys()).toHaveLength(22)
+      // UI-005/UI-011: admin 可见智能客服大类及其子菜单（#3094 黄金策·在线对话 入口已移除）
+      expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
+      expect(menuKeys()).toHaveLength(23)
     })
 
     it('should filter out items user has no permission for', () => {
@@ -604,22 +613,25 @@ describe('Sidebar', () => {
       expect(screen.queryByText('入库单')).not.toBeInTheDocument()
       expect(screen.queryByText('余料台账')).not.toBeInTheDocument()
       // 🔴 issue #5699（P4）：省料看板节点码 = 该页读码 `product:list`（不再是 processing:manage）
-      // ⇒ 本组权限含它 ⇒ 「仓储与物料」只剩省料看板一项（不再是「整组隐藏」）。
+      // ⇒ 本组权限含它 ⇒ 「仓储与物料」只剩省料看板 + 库存明细两项（不再是「整组隐藏」；库存明细 #6404 同取 `product:list`）。
       expect(screen.getByText('仓储与物料')).toBeInTheDocument()
       expandGroups('inventory-center')
       expect(screen.getByText('省料看板')).toBeInTheDocument()
       // 无 knowledge:view（知识库节点码，issue #5246 起为**读**码）→ 入口隐藏；通知中心全员可见
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
       expect(screen.getByText('通知中心')).toBeInTheDocument()
-      // 可见项**精确**清单（渲染顺序，🔴 #5877：一级项插在「工作台」组之后）：
-      // 经营看板 → 商品管理（一级项）→ 订单列表 → **发货单**（#5939：与订单列表同码 order:list）
-      // → 省料看板 → 通知中心
+      // 可见项**精确**清单（渲染顺序）：
+      // 🔴 本用例的可见项里**没有** `org-center`（员工管理要 employee:list）⇒ 一级项挂到**可见分组末尾**
+      // （回落方向 = 「挂到末尾」，**不是**跳到最前）
+      // 经营看板 → 订单列表 → **库存明细**（2026-10-06：紧随入库单）→ **发货单**
+      // （#5939：与订单列表同码 order:list）→ 省料看板 → 商品管理（一级项）→ 通知中心
       expect(menuKeys()).toEqual(
-        ['dashboard', 'products', 'orders', 'shipments', 'production-saving-board', 'notifications'])
+        ['dashboard', 'orders', 'stock-ledger', 'shipments', 'production-saving-board', 'products',
+          'notifications'])
       // UI-005/UI-011: 无 agent:session / knowledge:view / customer:view / after_sales:view →
       // **客户服务**整组隐藏（#5778 组名改判；#3081 已移除 AI 客服配置菜单）
       expect(screen.queryByText('客户服务')).not.toBeInTheDocument()
-      expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+      expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
     })
 
@@ -645,21 +657,21 @@ describe('Sidebar', () => {
       expect(screen.queryByText('每日简报')).not.toBeInTheDocument()
     })
 
-    it('有 agent:session → 保留「在线接待」（#3094 米宝·在线对话 菜单已移除不渲染；#3081 无 AI 客服配置菜单）', () => {
+    it('有 agent:session → 保留「在线接待」（#3094 黄金策·在线对话 菜单已移除不渲染；#3081 无 AI 客服配置菜单）', () => {
       mockUseAuthStore.mockReturnValue({
         user: { id: '5', username: 'cs', name: '客服', permissions: ['agent:session'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.getByText('客户服务')).toBeInTheDocument()
       expandGroups('customer-service')
-      expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+      expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
       expect(screen.getByText('在线接待')).toBeInTheDocument()
       expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
       // 组内**只有**在线接待（知识库要 knowledge:view —— issue #5246 起节点用读码）
       expect(menuKeys()).toEqual(['human-sessions', 'notifications'])   // #5699 P4：经营看板要 dashboard:view
     })
 
-    it('仅 knowledge:view → 隐藏「在线接待」，保留「知识库」（#3094 米宝入口已移除）', () => {
+    it('仅 knowledge:view → 隐藏「在线接待」，保留「知识库」（#3094 黄金策入口已移除）', () => {
       // issue #5246（已合入 main）：『知识库』节点码从写码 `knowledge:manage` 换成**读码**
       // `knowledge:view`（拆读写：只想看知识卡片的岗位不该被授予增删改发布权）⇒ 入口可见性按读码判。
       mockUseAuthStore.mockReturnValue({
@@ -669,7 +681,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('客户服务')).toBeInTheDocument()
       expandGroups('customer-service')
       expect(screen.getByText('知识库')).toBeInTheDocument()
-      expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+      expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
       expect(menuKeys()).toEqual(['knowledge', 'notifications'])   // #5699 P4：同上
     })
@@ -719,7 +731,7 @@ describe('Sidebar', () => {
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
-      expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+      expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
     })
@@ -817,7 +829,7 @@ describe('Sidebar', () => {
       .filter(([, names]) => names.length > 1)
       .map(([icon, names]) => `${icon} → ${names.join('、')}`)
 
-    expect(items, '面非空自证：21 项（1 一级项 + 19 组内项 + 通知中心）').toHaveLength(22)
+    expect(items, '面非空自证：22 项（1 一级项 + 20 组内项 + 通知中心；#6404 +库存明细）').toHaveLength(23)
     expect(
       collisions,
       `以下菜单项在侧边栏里渲染出**同一个图标**（紧挨着出现 = 没有区分度，issue #5582）：\n${collisions.join('\n')}\n`

@@ -1,0 +1,22 @@
+{
+  "http": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "success": 0,
+      "failed": 2,
+      "errors": [
+        {
+          "message": "商品不存在"
+        },
+        {
+          "message": "商品不存在"
+        }
+      ]
+    },
+    "requestId": "req_6a9bd696200e4583",
+    "timestamp": 1791006364
+  },
+  "before": {},
+  "after": {}
+}

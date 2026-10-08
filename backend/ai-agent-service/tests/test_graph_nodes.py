@@ -833,7 +833,7 @@ class TestCardConfirmRoundFlowOwnerMigration:
     判据是 **pending_validated_input 是否存在**（系统状态事实），不是卡值内容
     —— PR-007 商品上下架卡（无 pending 写目标）仍留在本 skill。
 
-    issue #5247（B 端米宝只读，用户裁定 2026-09-23）重新裁定本类的适用面：
+    issue #5247（B 端黄金策只读，用户裁定 2026-09-23）重新裁定本类的适用面：
     B 端全部 skill 解绑了 `order_create`（含 `validate_input`）⇒ **B 端不再存在**
     "归属其他 skill 的待执行写目标"这一形态（状态里的 `pending_validated_input` 也不可能
     再被 B 端流程写入）。本判据的活前提只剩 C 端（用户裁定"C 端零改动"）：

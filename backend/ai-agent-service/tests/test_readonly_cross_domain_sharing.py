@@ -75,14 +75,14 @@ def _family_cfgs(cfg) -> list:
 
 #: 🔴 **#5247 孤儿台账**（键 = Skill 名，值 = 退场理由）：注册表里**声明了 persona、
 #: 却不在该 persona 的 `AgentConfig.skill_names` 里**的 Skill。
-#: #5247 把 `settings` 从 `mibao.py` 的 `skill_names` 移出（B 端米宝只读化：它绑的两把
+#: #5247 把 `settings` 从 `mibao.py` 的 `skill_names` 移出（B 端黄金策只读化：它绑的两把
 #: `settings_manage` / `notification_manage` 都是写工具），但配置文件与注册关系**保留**
 #: ⇒ 两个来源在「工具集」上必然分叉。
 #: 台账由 `test_persona_family_agrees_with_agent_config_reachability` 机械校验：
 #: 理由必须非空、且与实际孤儿集**双向相等**（新增孤儿 ⇒ 红；陈旧条目 ⇒ 红）。
 _ORPHANED_SKILLS: dict = {
     "settings": (
-        "issue #5247：B 端米宝只读化 —— 该 Skill 只绑写工具（settings_manage / "
+        "issue #5247：B 端黄金策只读化 —— 该 Skill 只绑写工具（settings_manage / "
         "notification_manage），已从 mibao 的 skill_names 移出；配置与注册关系保留"
         "（类文件不删、C 端绑定不受影响）"
     ),
@@ -247,7 +247,7 @@ class TestPersonaBoundaryIsHard:
         🔴 **2026-09-21 改判（本 PR rebase 到当时 main 后实测，非放宽）**：
         ① 原写 5 把且含 `processing_item_query` —— 该工具**现已是两端共有**
            （实测 `mibao=True xiaobu=True`：#4371 把加工项与商品解耦、事实源改为**店铺级目录**之后，
-           C 端小布也能查加工项）⇒ 它**不再是** B 端专属，留在见证清单里就是**假见证**；
+           C 端元元也能查加工项）⇒ 它**不再是** B 端专属，留在见证清单里就是**假见证**；
         ② main 后续新增两把 B 端专属只读工具（`processing_order_query` / `production_worklog_query`）
            ⇒ 真实数量 5 → **6**。
         **判据由 `<=` 收紧为 `==`**（增强，不是放宽）：原 `<=` 只要求「清单里那几把都在」，
@@ -258,7 +258,7 @@ class TestPersonaBoundaryIsHard:
         （批次余量 / 剩余量分布 / 省料度量；声明 `product:list` ⇒ C 端恒不可达，
         且批次成本与省料金额是内部口径）⇒ 6 → **7**。
 
-        🔴 **2026-09-24 改判（issue #5247 进场，实测；B 端米宝只读化，用户裁定 2026-09-23）**：
+        🔴 **2026-09-24 改判（issue #5247 进场，实测；B 端黄金策只读化，用户裁定 2026-09-23）**：
         7 → **20**，两个来源都是本单的正面事实（不是口径漂移）：
         ① **8 把写工具收窄为只读**（写 action 删除 + `read_only = True`）⇒ 它们从"B 端写工具"
            变成"B 端专属只读工具"，**全部进场**：`after_sales_manage` / `category_manage` /
@@ -280,7 +280,7 @@ class TestPersonaBoundaryIsHard:
         🔴 **2026-09-24 改判（issue #5368 包 2 进场，实测；Agent 深通道）**：23 → **24**，
         进场的是 `image_recognize`（图片识别 → **同页填充计划**：只调 vision 模型与
         `app/vision/**` 的纯函数，**无 admin-api 调用点**、不读也不写业务数据）。
-        它绑在 B 端 `product` / `order` 两个 skill 上，**小布（C 端）一个都不绑**
+        它绑在 B 端 `product` / `order` 两个 skill 上，**元元（C 端）一个都不绑**
         ⇒ 按本见证的既有口径（`(mibao 可达 - xiaobu 可达) ∩ read_only`）自然进场。
         口径一字未改；「C 端零改动」由此**量化**：C 端域里出现本工具 ⇒ 本用例红。
 
@@ -290,7 +290,7 @@ class TestPersonaBoundaryIsHard:
         它按本见证的既有口径（`(mibao 可达 - xiaobu 可达) ∩ read_only`）自然进场，三条逐条成立：
         ① `read_only = True`（无任何写 action，与同族只读工具一致）；
         ② 只绑 B 端 `product` skill（`app/graph/skills/product_skill.py` 的 `PRODUCT_TOOLS`），
-           **小布（C 端）一个 skill 都不绑**；
+           **元元（C 端）一个 skill 都不绑**；
         ③ 声明生产域**读**码 `production:view`（C 端 JWT 无权限码 ⇒ 即便可达也会被工具层拒绝）。
         口径一字未改；「C 端零改动」同样由此**量化**：C 端任一域的 `set_tool_scope` 里出现
         `craft_config_query` ⇒ 本用例红。
@@ -303,7 +303,7 @@ class TestPersonaBoundaryIsHard:
         🔴 **2026-10-02 改判（issue #5989 P1 进场，实测；导航类指引真值源）**：25 → **26**，
         进场的是 `nav_guide`（功能 ⇄ 菜单路径 ⇄ 权限码的**仓内**登记表 + 按会话权限裁剪；
         **零 admin-api 调用点**、不读也不写业务数据）。它绑在 B 端 `general` 兜底 skill 上，
-        **小布（C 端）一个 skill 都不绑** ⇒ 按本见证的既有口径自然进场，三条逐条成立：
+        **元元（C 端）一个 skill 都不绑** ⇒ 按本见证的既有口径自然进场，三条逐条成立：
         ① `read_only = True`（无任何写 action）；② C 端零绑定；
         ③ 与 `interact` / `image_recognize` 同口径**不声明权限码**（授权面落在**答案级**裁剪）。
         口径一字未改；「C 端零改动」同样由此**量化**：C 端任一域的 `set_tool_scope` 里出现
@@ -334,7 +334,7 @@ class TestPersonaBoundaryIsHard:
             "craft_config_query",
             # ── #5989（P1 导航类指引）进场：**纯本地**只读（仓内登记表，零 admin-api 调用点），
             #    只绑 B 端 `general` 兜底 skill ⇒ 按本见证既有口径自然进场；
-            #    ① `read_only = True`；② 小布（C 端）一个 skill 都不绑；
+            #    ① `read_only = True`；② 元元（C 端）一个 skill 都不绑；
             #    ③ 不声明权限码（与 `interact` / `image_recognize` 同口径）⇒ 授权靠**答案级**裁剪。
             "nav_guide",
         }, (
@@ -356,7 +356,7 @@ class TestPersonaBoundaryIsHard:
 
         🔴 **issue #5247 改判（不是放宽：把分叉显式化，且台账双向相等）**：本单把
         `settings` 从 `mibao.py` 的 `skill_names` 里移出（它只绑写工具，B 端只读化后无理由留在
-        米宝的可达集），但**注册关系与配置文件保留** ⇒ 两个来源在"工具集"上必然分叉。
+        黄金策的可达集），但**注册关系与配置文件保留** ⇒ 两个来源在"工具集"上必然分叉。
         判据仍然成立、且**比原来更严**：分叉只允许发生在 `_ORPHANED_SKILLS` 逐条登记的
         Skill 上，且台账与实际孤儿集**双向相等** ——
         ① 新增孤儿（有人再摘掉一个 Skill）⇒ 红（原来也会红）；

@@ -1,0 +1,1894 @@
+{
+  "meta": {
+    "at": "2026-10-03T00:31:39.674Z",
+    "tz": "Asia/Shanghai",
+    "localTime": "Sat Oct 03 2026 08:31:39 GMT+0800 (中国标准时间)",
+    "tenantId": 20,
+    "adminPhone": "13870217889",
+    "period": "2026-10",
+    "apiBase": "http://localhost:8080",
+    "repoHead": "d2965ea35",
+    "originMain": "a4aaa3c24",
+    "runningApiBuildPoint": "inspect process cwd (main-live); 见 REPORT「环境与构建点」"
+  },
+  "api": {
+    "summary_default": {
+      "http": 200,
+      "ok": true,
+      "keys": [
+        "period",
+        "total",
+        "per_worker",
+        "per_operation",
+        "per_position",
+        "per_set",
+        "unpriced"
+      ],
+      "data": {
+        "period": "2026-10",
+        "total": 33,
+        "per_worker": [
+          {
+            "worker_name": "验收工人790472",
+            "amount": 32.2,
+            "qty": 76
+          },
+          {
+            "worker_name": "冒烟工人",
+            "amount": 0.8,
+            "qty": 2
+          }
+        ],
+        "per_operation": [
+          {
+            "operation": "精裁-布",
+            "logical_name": "精裁",
+            "position": "布帘",
+            "qty": 14,
+            "amount": 5.6
+          },
+          {
+            "operation": "布三边",
+            "logical_name": "三边",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 4
+          },
+          {
+            "operation": "韩褶-布",
+            "logical_name": "韩褶",
+            "position": "布帘",
+            "qty": 1,
+            "amount": 0.4
+          },
+          {
+            "operation": "上车布-布",
+            "logical_name": "上车布",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 5
+          },
+          {
+            "operation": "熨烫-布",
+            "logical_name": "熨烫",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 3.5
+          },
+          {
+            "operation": "定型-布",
+            "logical_name": "定型",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 4
+          },
+          {
+            "operation": "复烫-布",
+            "logical_name": "复烫",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 3.5
+          },
+          {
+            "operation": "布帘车被",
+            "logical_name": "车被",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 4
+          },
+          {
+            "operation": "外帘打卷",
+            "logical_name": "外帘打卷",
+            "qty": 1,
+            "amount": 1
+          },
+          {
+            "operation": "外帘装袋",
+            "logical_name": "外帘装袋",
+            "qty": 1,
+            "amount": 1
+          },
+          {
+            "operation": "外帘发货",
+            "logical_name": "外帘发货",
+            "qty": 1,
+            "amount": 1
+          }
+        ],
+        "per_position": [
+          {
+            "position_name": "H5验收商品230803",
+            "amount": 0.8,
+            "qty": 2
+          },
+          {
+            "position_name": "链路商品118362",
+            "amount": 31.4,
+            "qty": 74
+          },
+          {
+            "position_name": "岗位商品product_manager623672",
+            "amount": 0.8,
+            "qty": 2
+          }
+        ],
+        "per_set": [
+          {
+            "set_no": "JG-20261002-5095-001",
+            "amount": 0.8,
+            "qty": 2
+          },
+          {
+            "set_no": "JG-20261002-5093-001",
+            "amount": 31.4,
+            "qty": 74
+          },
+          {
+            "set_no": "JG-20261003-9396-001",
+            "amount": 0.8,
+            "qty": 2
+          }
+        ],
+        "unpriced": {
+          "qty": 1,
+          "operations": [
+            {
+              "operation": "打包",
+              "logical_name": "打包",
+              "qty": 1
+            }
+          ],
+          "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。"
+        }
+      },
+      "raw_head": "{\"success\":true,\"data\":{\"period\":\"2026-10\",\"total\":33.00,\"per_worker\":[{\"worker_name\":\"验收工人790472\",\"amount\":32.20,\"qty\":76.00},{\"worker_name\":\"冒烟工人\",\"amount\":0.80,\"qty\":2.00}],\"per_operation\":[{\"operation\":\"精裁-布\",\"logical_name\":\"精裁\",\"position\":\"布帘\",\"qty\":14.00,\"amount\":5.60},{\"operation\":\"布三边\",\"logical_name\":\"三边\",\"position\":\"布帘\",\"qty\":10.00,\"amount\":4.00},{\"operation\":\"韩褶-布\",\"logical_name\":\"韩褶\",\"p"
+    },
+    "perOrder": {
+      "http": 200,
+      "ok": true,
+      "keys": [
+        "total",
+        "per_worker",
+        "per_operation",
+        "per_position",
+        "per_set",
+        "unpriced"
+      ],
+      "data": {
+        "total": 0,
+        "per_worker": {},
+        "per_operation": [],
+        "per_position": [],
+        "per_set": [],
+        "unpriced": {
+          "qty": 0,
+          "operations": [],
+          "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。"
+        }
+      },
+      "raw_head": "{\"success\":true,\"data\":{\"total\":0.00,\"per_worker\":{},\"per_operation\":[],\"per_position\":[],\"per_set\":[],\"unpriced\":{\"qty\":0,\"operations\":[],\"hint\":\"以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。\"}},\"requestId\":\"req_49efef4c65794714\",\"timestamp\":1790987500}"
+    },
+    "worklog_agent": {
+      "http": 200,
+      "ok": true,
+      "keys": [
+        "order_no",
+        "processing_order_no",
+        "processing_status",
+        "operations",
+        "work_logs",
+        "totals"
+      ],
+      "data": {
+        "order_no": "20261003068590335",
+        "processing_order_no": "JG-20261003-6399",
+        "processing_status": "generated",
+        "operations": [
+          {
+            "position": "纱帘",
+            "operation_name": "精裁-纱",
+            "logical_name": "精裁",
+            "group_name": "裁剪",
+            "seq": 1,
+            "status": "pending",
+            "required_qty": 12.3,
+            "qualified_qty": 0,
+            "rework_qty": 0,
+            "scrap_qty": 0,
+            "is_must_finish": false,
+            "workers": []
+          },
+          {
+            "position": "纱帘",
+            "operation_name": "纱三边",
+            "logical_name": "三边",
+            "group_name": "车位",
+            "seq": 2,
+            "status": "pending",
+            "required_qty": 12.3,
+            "qualified_qty": 0,
+            "rework_qty": 0,
+            "scrap_qty": 0,
+            "is_must_finish": false,
+            "workers": []
+          },
+          {
+            "position": "纱帘",
+            "operation_name": "熨烫-纱",
+            "logical_name": "熨烫",
+            "group_name": "后道",
+            "seq": 3,
+            "status": "pending",
+            "required_qty": 12.3,
+            "qualified_qty": 0,
+            "rework_qty": 0,
+            "scrap_qty": 0,
+            "is_must_finish": false,
+            "workers": []
+          },
+          {
+            "position": "纱帘",
+            "operation_name": "定型-纱",
+            "logical_name": "定型",
+            "group_name": "后道",
+            "seq": 4,
+            "status": "pending",
+            "required_qty": 12.3,
+            "qualified_qty": 0,
+            "rework_qty": 0,
+            "scrap_qty": 0,
+            "is_must_finish": false,
+            "workers": []
+          },
+          {
+            "position": "纱帘",
+            "operation_name": "复烫-纱",
+            "logical_name": "复烫",
+            "group_name": "后道",
+            "seq": 5,
+            "status": "pending",
+            "required_qty": 12.3,
+            "qualified_qty": 0,
+            "rework_qty": 0,
+            "scrap_qty": 0,
+            "is_must_finish": false,
+            "workers": []
+          },
+          {
+            "position": "纱帘",
+            "operation_name": "车被-纱",
+            "logical_name": "车被",
+            "group_name": "后道",
+            "seq": 6,
+            "status": "pending",
+            "required_qty": 12.3,
+            "qualified_qty": 0,
+            "rework_qty": 0,
+            "scrap_qty": 0,
+            "is_must_finish": false,
+            "workers": []
+          },
+          {
+            "operation_name": "外帘打卷",
+            "logical_name": "外帘打卷",
+            "group_name": "后道",
+            "seq": 7,
+            "status": "pending",
+            "required_qty": 1,
+            "qualified_qty": 0,
+            "rework_qty": 0,
+            "scrap_qty": 0,
+            "is_must_finish": false,
+            "workers": []
+          },
+          {
+            "operation_name": "抱枕",
+            "logical_name": "抱枕",
+            "group_name": "其他",
+            "seq": 8,
+            "status": "pending",
+            "required_qty": 1,
+            "qualified_qty": 0,
+            "rework_qty": 0,
+            "scrap_qty": 0,
+            "is_must_finish": false,
+            "workers": []
+          },
+          {
+            "operation_name": "打包",
+            "logical_name": "打包",
+            "group_name": "后道",
+            "seq": 9,
+            "status": "pending",
+            "required_qty": 1,
+            "qualified_qty": 0,
+            "rework_qty": 0,
+            "scrap_qty": 0,
+            "is_must_finish": false,
+            "workers": []
+          },
+          {
+            "operation_name": "外帘装袋",
+            "logical_name": "外帘装袋",
+            "group_name": "后道",
+            "seq": 10,
+            "status": "pending",
+            "required_qty": 1,
+            "qualified_qty": 0,
+            "rework_qty": 0,
+            "scrap_qty": 0,
+            "is_must_finish": false,
+            "workers": []
+          },
+          {
+            "operation_name": "外帘发货",
+            "logical_name": "外帘发货",
+            "group_name": "后道",
+            "seq": 11,
+            "status": "pending",
+            "required_qty": 1,
+            "qualified_qty": 0,
+            "rework_qty": 0,
+            "scrap_qty": 0,
+            "is_must_finish": false,
+            "workers": []
+          }
+        ],
+        "work_logs": [],
+        "totals": {
+          "qualified_qty": 0,
+          "rework_qty": 0,
+          "scrap_qty": 0,
+          "piecework_amount": 0
+        }
+      },
+      "raw_head": "{\"success\":true,\"data\":{\"order_no\":\"20261003068590335\",\"processing_order_no\":\"JG-20261003-6399\",\"processing_status\":\"generated\",\"operations\":[{\"position\":\"纱帘\",\"operation_name\":\"精裁-纱\",\"logical_name\":\"精裁\",\"group_name\":\"裁剪\",\"seq\":1,\"status\":\"pending\",\"required_qty\":12.30,\"qualified_qty\":0,\"rework_qty\":0,\"scrap_qty\":0,\"is_must_finish\":false,\"workers\":[]},{\"position\":\"纱帘\",\"operation_name\":\"纱三边\",\"logica"
+    },
+    "progress_agent": {
+      "http": 422,
+      "ok": false,
+      "keys": null,
+      "data": null,
+      "raw_head": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"order_no 不能为空\"},\"requestId\":\"req_3598ffb295c94fc1\",\"timestamp\":1790987500,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    },
+    "agent_piecework": {
+      "http": 422,
+      "ok": false,
+      "keys": null,
+      "data": null,
+      "raw_head": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"worker_name 不能为空\"},\"requestId\":\"req_75b1e140312244ed\",\"timestamp\":1790987500,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    },
+    "worker_piecework_noperiod": {
+      "http": 422,
+      "ok": false,
+      "keys": null,
+      "data": null,
+      "raw_head": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"worker_name 不能为空\"},\"requestId\":\"req_f3a5b4475518466d\",\"timestamp\":1790987500,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    },
+    "operations_scan": {
+      "http": 404,
+      "ok": false,
+      "keys": null,
+      "data": null,
+      "raw_head": "{\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"订单不存在\"},\"requestId\":\"req_be7e75a24afe4ad2\",\"timestamp\":1790987500,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}"
+    },
+    "layer_price_state": {
+      "http": 200,
+      "ok": true,
+      "keys": [
+        "operations",
+        "delivery"
+      ],
+      "data": {
+        "operations": [
+          {
+            "id": "opp-v72-20-logo条-布帘",
+            "operation": "logo条",
+            "position": "通用",
+            "unit_price": 0.6,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-32",
+            "unit": "米",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-三边-布帘",
+            "operation": "三边",
+            "position": "通用",
+            "unit_price": 0.4,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-05",
+            "unit": "米",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-上车布-布帘",
+            "operation": "上车布",
+            "position": "通用",
+            "unit_price": 0.5,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-09",
+            "unit": "米",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-复烫-布帘",
+            "operation": "复烫",
+            "position": "通用",
+            "unit_price": 0.35,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-22",
+            "unit": "米",
+            "group": "后道",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-定型-布帘",
+            "operation": "定型",
+            "position": "通用",
+            "unit_price": 0.4,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-21",
+            "unit": "米",
+            "group": "后道",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-帘头制作-帘头",
+            "operation": "帘头制作",
+            "position": "通用",
+            "unit_price": 2,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-19",
+            "unit": "个",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-打孔-布帘",
+            "operation": "打孔",
+            "position": "通用",
+            "unit_price": 0.15,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-11",
+            "unit": "孔",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-扣环-布帘",
+            "operation": "扣环",
+            "position": "通用",
+            "unit_price": 0.3,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-34",
+            "unit": "个",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-抱枕-布帘",
+            "operation": "抱枕",
+            "position": "通用",
+            "unit_price": 2,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-29",
+            "unit": "个",
+            "group": "其他",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-拼1次-布帘",
+            "operation": "拼1次",
+            "position": "通用",
+            "unit_price": 0.8,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-13",
+            "unit": "幅",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-拼2次-布帘",
+            "operation": "拼2次",
+            "position": "通用",
+            "unit_price": 1.2,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-14",
+            "unit": "幅",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-拼3次-布帘",
+            "operation": "拼3次",
+            "position": "通用",
+            "unit_price": 1.6,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-15",
+            "unit": "幅",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-接高-布帘",
+            "operation": "接高",
+            "position": "通用",
+            "unit_price": 1,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-18",
+            "unit": "幅",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-熨烫-布帘",
+            "operation": "熨烫",
+            "position": "通用",
+            "unit_price": 0.35,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-20",
+            "unit": "米",
+            "group": "后道",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-立边-布帘",
+            "operation": "立边",
+            "position": "通用",
+            "unit_price": 0.5,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-33",
+            "unit": "米",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-精裁-布帘",
+            "operation": "精裁",
+            "position": "通用",
+            "unit_price": 0.4,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-01",
+            "unit": "米",
+            "group": "裁剪",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-绑带-布帘",
+            "operation": "绑带",
+            "position": "通用",
+            "unit_price": 0.5,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-28",
+            "unit": "套",
+            "group": "其他",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-腰靠垫-布帘",
+            "operation": "腰靠垫",
+            "position": "通用",
+            "unit_price": 2,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-30",
+            "unit": "个",
+            "group": "其他",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-花边-布帘",
+            "operation": "花边",
+            "position": "通用",
+            "unit_price": 0.6,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-16",
+            "unit": "米",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-裁剪-布帘",
+            "operation": "裁剪",
+            "position": "通用",
+            "unit_price": 0.4,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-03",
+            "unit": "米",
+            "group": "裁剪",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "6c7d0af60bbef7f9bcfa0f7d6eb1362a",
+            "operation": "质检",
+            "position": "布帘",
+            "unit_price": 1.5,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-26",
+            "unit": "套",
+            "group": "后道",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-车被-布帘",
+            "operation": "车被",
+            "position": "通用",
+            "unit_price": 0.4,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-23",
+            "unit": "米",
+            "group": "后道",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-铅坠-布帘",
+            "operation": "铅坠",
+            "position": "通用",
+            "unit_price": 0.3,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-17",
+            "unit": "米",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-防翘扣-布帘",
+            "operation": "防翘扣",
+            "position": "通用",
+            "unit_price": 0.2,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-35",
+            "unit": "个",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          },
+          {
+            "id": "opp-v72-20-韩褶-布帘",
+            "operation": "韩褶",
+            "position": "通用",
+            "unit_price": 0.4,
+            "applicable": true,
+            "variant_operation_id": "op-v91-20-07",
+            "unit": "折",
+            "group": "车位",
+            "scope": "position",
+            "is_must_finish": false
+          }
+        ],
+        "delivery": [
+          {
+            "operation": "外帘发货",
+            "scope": "set",
+            "unit": "套",
+            "group": "后道",
+            "is_must_finish": false,
+            "price": 1,
+            "price_state": "priced",
+            "different_price_count": 0,
+            "applicable_positions": []
+          },
+          {
+            "operation": "外帘打卷",
+            "scope": "set",
+            "unit": "套",
+            "group": "后道",
+            "is_must_finish": false,
+            "price": 1,
+            "price_state": "priced",
+            "different_price_count": 0,
+            "applicable_positions": []
+          },
+          {
+            "operation": "外帘装袋",
+            "scope": "set",
+            "unit": "套",
+            "group": "后道",
+            "is_must_finish": false,
+            "price": 1,
+            "price_state": "priced",
+            "different_price_count": 0,
+            "applicable_positions": []
+          },
+          {
+            "operation": "打包",
+            "scope": "set",
+            "unit": "套",
+            "group": "后道",
+            "is_must_finish": false,
+            "price_state": "unpriced",
+            "different_price_count": 0,
+            "applicable_positions": []
+          }
+        ]
+      },
+      "raw_head": "{\"success\":true,\"data\":{\"operations\":[{\"id\":\"opp-v72-20-logo条-布帘\",\"operation\":\"logo条\",\"position\":\"通用\",\"unit_price\":0.60,\"applicable\":true,\"variant_operation_id\":\"op-v91-20-32\",\"unit\":\"米\",\"group\":\"车位\",\"scope\":\"position\",\"is_must_finish\":false},{\"id\":\"opp-v72-20-三边-布帘\",\"operation\":\"三边\",\"position\":\"通用\",\"unit_price\":0.40,\"applicable\":true,\"variant_operation_id\":\"op-v91-20-05\",\"unit\":\"米\",\"group\":\"车位\",\""
+    }
+  },
+  "db": {
+    "sampleProcessingOrder": {
+      "id": "ab2a5bc4b6c6857e4d981c88ae671cbc",
+      "processing_order_no": "JG-20261003-6399",
+      "order_id": "c2c20e54554431ebda64f17348ffe788",
+      "status": "generated"
+    },
+    "workLogsTotal": [
+      {
+        "n": 14
+      }
+    ],
+    "workLogsByPeriod": [
+      {
+        "m": "2026-10",
+        "work_type": "normal",
+        "price_state": "priced",
+        "n": 13,
+        "qty": "78.00"
+      },
+      {
+        "m": "2026-10",
+        "work_type": "normal",
+        "price_state": "unpriced",
+        "n": 1,
+        "qty": "1.00"
+      }
+    ],
+    "workLogsColumns": [
+      {
+        "column_name": "id",
+        "data_type": "character varying"
+      },
+      {
+        "column_name": "tenant_id",
+        "data_type": "bigint"
+      },
+      {
+        "column_name": "processing_order_id",
+        "data_type": "character varying"
+      },
+      {
+        "column_name": "operation_id",
+        "data_type": "character varying"
+      },
+      {
+        "column_name": "operation_name",
+        "data_type": "character varying"
+      },
+      {
+        "column_name": "worker_id",
+        "data_type": "character varying"
+      },
+      {
+        "column_name": "worker_name",
+        "data_type": "character varying"
+      },
+      {
+        "column_name": "qty",
+        "data_type": "numeric"
+      },
+      {
+        "column_name": "qualified_qty",
+        "data_type": "numeric"
+      },
+      {
+        "column_name": "work_type",
+        "data_type": "character varying"
+      },
+      {
+        "column_name": "work_date",
+        "data_type": "date"
+      },
+      {
+        "column_name": "created_at",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "column_name": "deleted",
+        "data_type": "integer"
+      },
+      {
+        "column_name": "unit_price",
+        "data_type": "numeric"
+      },
+      {
+        "column_name": "factor",
+        "data_type": "numeric"
+      },
+      {
+        "column_name": "price_state",
+        "data_type": "character varying"
+      }
+    ],
+    "instancesWithPrice": [
+      {
+        "total": 2901,
+        "unpriced": 176,
+        "zero_priced": 89
+      }
+    ]
+  },
+  "downstream": {
+    "openapiHttp": 200,
+    "totalPaths": 244,
+    "matched": [
+      {
+        "path": "/api/worker/production/orders/{orderId}/operations/{operationId}/report",
+        "methods": [
+          "post"
+        ]
+      },
+      {
+        "path": "/api/admin/production/orders/{orderId}/operations/{operationId}/report",
+        "methods": [
+          "post"
+        ]
+      },
+      {
+        "path": "/api/admin/finance/transactions",
+        "methods": [
+          "get",
+          "post"
+        ]
+      },
+      {
+        "path": "/api/admin/products/export",
+        "methods": [
+          "get"
+        ]
+      },
+      {
+        "path": "/api/admin/production/piecework/summary",
+        "methods": [
+          "get"
+        ]
+      },
+      {
+        "path": "/api/admin/production/orders/{orderId}/piecework",
+        "methods": [
+          "get"
+        ]
+      },
+      {
+        "path": "/api/admin/orders/statistics",
+        "methods": [
+          "get"
+        ]
+      },
+      {
+        "path": "/api/admin/finance/summary",
+        "methods": [
+          "get"
+        ]
+      },
+      {
+        "path": "/api/admin/finance/reconciliation",
+        "methods": [
+          "get"
+        ]
+      },
+      {
+        "path": "/api/admin/batch-stock/reconcile",
+        "methods": [
+          "get"
+        ]
+      },
+      {
+        "path": "/api/admin/agent/production/piecework",
+        "methods": [
+          "get"
+        ]
+      }
+    ],
+    "frontendHint": "grep -rn \"piecework|计件|工资|结算\" frontend/admin-web/src (见 REPORT 链路枚举)"
+  },
+  "interference": {
+    "operationsBaseline": [
+      {
+        "id": "op-v91-20-32",
+        "name": "logo条-布",
+        "unit_price": "0.12",
+        "position": null,
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-09",
+        "name": "上车布-布",
+        "unit_price": "0.50",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-10",
+        "name": "上车布-纱",
+        "unit_price": "0.50",
+        "position": "纱帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-22",
+        "name": "复烫-布",
+        "unit_price": "0.35",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v102-20-3",
+        "name": "复烫-纱",
+        "unit_price": "0.35",
+        "position": "纱帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-27",
+        "name": "外帘发货",
+        "unit_price": "1.00",
+        "position": "外帘",
+        "scope": "set",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-24",
+        "name": "外帘打卷",
+        "unit_price": "1.00",
+        "position": "外帘",
+        "scope": "set",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-25",
+        "name": "外帘装袋",
+        "unit_price": "1.00",
+        "position": "外帘",
+        "scope": "set",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-21",
+        "name": "定型-布",
+        "unit_price": "0.40",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v102-20-2",
+        "name": "定型-纱",
+        "unit_price": "0.40",
+        "position": "纱帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-05",
+        "name": "布三边",
+        "unit_price": "0.40",
+        "position": null,
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-23",
+        "name": "布帘车被",
+        "unit_price": "0.40",
+        "position": null,
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-19",
+        "name": "帘头制作",
+        "unit_price": "2.00",
+        "position": "帘头",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v79-20-02",
+        "name": "打包",
+        "unit_price": "0.00",
+        "position": null,
+        "scope": "set",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-11",
+        "name": "打孔-布",
+        "unit_price": "0.15",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-12",
+        "name": "打孔-纱",
+        "unit_price": "0.15",
+        "position": "纱帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-34",
+        "name": "扣环-布",
+        "unit_price": "0.30",
+        "position": null,
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-29",
+        "name": "抱枕",
+        "unit_price": "2.00",
+        "position": null,
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-13",
+        "name": "拼1次-布",
+        "unit_price": "0.80",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-14",
+        "name": "拼2次-布",
+        "unit_price": "1.20",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-15",
+        "name": "拼3次-布",
+        "unit_price": "1.60",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-18",
+        "name": "接高-布",
+        "unit_price": "1.00",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-20",
+        "name": "熨烫-布",
+        "unit_price": "0.35",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v102-20-1",
+        "name": "熨烫-纱",
+        "unit_price": "0.35",
+        "position": "纱帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-33",
+        "name": "立边-布",
+        "unit_price": "0.50",
+        "position": null,
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-01",
+        "name": "精裁-布",
+        "unit_price": "0.40",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-02",
+        "name": "精裁-纱",
+        "unit_price": "0.40",
+        "position": "纱帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-06",
+        "name": "纱三边",
+        "unit_price": "0.40",
+        "position": null,
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-28",
+        "name": "绑带-布",
+        "unit_price": "0.50",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-31",
+        "name": "绑带-纱",
+        "unit_price": "0.50",
+        "position": null,
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-30",
+        "name": "腰靠垫",
+        "unit_price": "2.00",
+        "position": null,
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-16",
+        "name": "花边-布",
+        "unit_price": "0.60",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-03",
+        "name": "裁剪-布",
+        "unit_price": "0.40",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-04",
+        "name": "裁剪-纱",
+        "unit_price": "0.40",
+        "position": "纱帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-26",
+        "name": "质检",
+        "unit_price": "1.50",
+        "position": null,
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v102-20-4",
+        "name": "车被-纱",
+        "unit_price": "0.40",
+        "position": "纱帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-17",
+        "name": "铅坠-布",
+        "unit_price": "0.30",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-35",
+        "name": "防翘扣-布",
+        "unit_price": "0.20",
+        "position": null,
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-07",
+        "name": "韩褶-布",
+        "unit_price": "0.40",
+        "position": "布帘",
+        "scope": "position",
+        "status": "active"
+      },
+      {
+        "id": "op-v91-20-08",
+        "name": "韩褶-纱",
+        "unit_price": "0.40",
+        "position": "纱帘",
+        "scope": "position",
+        "status": "active"
+      }
+    ],
+    "positionPriceBaseline": [
+      {
+        "id": "opp-v72-20-logo条-布帘",
+        "logical_name": "logo条",
+        "position": "通用",
+        "unit_price": "0.60",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-三边-布帘",
+        "logical_name": "三边",
+        "position": "通用",
+        "unit_price": "0.40",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-上车布-布帘",
+        "logical_name": "上车布",
+        "position": "通用",
+        "unit_price": "0.50",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-复烫-布帘",
+        "logical_name": "复烫",
+        "position": "通用",
+        "unit_price": "0.35",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-外帘发货-布帘",
+        "logical_name": "外帘发货",
+        "position": "通用",
+        "unit_price": "1.00",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-外帘打卷-布帘",
+        "logical_name": "外帘打卷",
+        "position": "通用",
+        "unit_price": "1.00",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-外帘装袋-布帘",
+        "logical_name": "外帘装袋",
+        "position": "通用",
+        "unit_price": "1.00",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-定型-布帘",
+        "logical_name": "定型",
+        "position": "通用",
+        "unit_price": "0.40",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-帘头制作-帘头",
+        "logical_name": "帘头制作",
+        "position": "通用",
+        "unit_price": "2.00",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v79-20-打包-布帘",
+        "logical_name": "打包",
+        "position": "通用",
+        "unit_price": null,
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-打孔-布帘",
+        "logical_name": "打孔",
+        "position": "通用",
+        "unit_price": "0.15",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-扣环-布帘",
+        "logical_name": "扣环",
+        "position": "通用",
+        "unit_price": "0.30",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-抱枕-布帘",
+        "logical_name": "抱枕",
+        "position": "通用",
+        "unit_price": "2.00",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-拼1次-布帘",
+        "logical_name": "拼1次",
+        "position": "通用",
+        "unit_price": "0.80",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-拼2次-布帘",
+        "logical_name": "拼2次",
+        "position": "通用",
+        "unit_price": "1.20",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-拼3次-布帘",
+        "logical_name": "拼3次",
+        "position": "通用",
+        "unit_price": "1.60",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-接高-布帘",
+        "logical_name": "接高",
+        "position": "通用",
+        "unit_price": "1.00",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-熨烫-布帘",
+        "logical_name": "熨烫",
+        "position": "通用",
+        "unit_price": "0.35",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-立边-布帘",
+        "logical_name": "立边",
+        "position": "通用",
+        "unit_price": "0.50",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-精裁-布帘",
+        "logical_name": "精裁",
+        "position": "通用",
+        "unit_price": "0.40",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-绑带-布帘",
+        "logical_name": "绑带",
+        "position": "通用",
+        "unit_price": "0.50",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-腰靠垫-布帘",
+        "logical_name": "腰靠垫",
+        "position": "通用",
+        "unit_price": "2.00",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-花边-布帘",
+        "logical_name": "花边",
+        "position": "通用",
+        "unit_price": "0.60",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-裁剪-布帘",
+        "logical_name": "裁剪",
+        "position": "通用",
+        "unit_price": "0.40",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "6c7d0af60bbef7f9bcfa0f7d6eb1362a",
+        "logical_name": "质检",
+        "position": "布帘",
+        "unit_price": "1.50",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-质检-布帘",
+        "logical_name": "质检",
+        "position": "通用",
+        "unit_price": "1.50",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-车被-布帘",
+        "logical_name": "车被",
+        "position": "通用",
+        "unit_price": "0.40",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-铅坠-布帘",
+        "logical_name": "铅坠",
+        "position": "通用",
+        "unit_price": "0.30",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-防翘扣-布帘",
+        "logical_name": "防翘扣",
+        "position": "通用",
+        "unit_price": "0.20",
+        "applicable": true,
+        "deleted": 0
+      },
+      {
+        "id": "opp-v72-20-韩褶-布帘",
+        "logical_name": "韩褶",
+        "position": "通用",
+        "unit_price": "0.40",
+        "applicable": true,
+        "deleted": 0
+      }
+    ],
+    "probeRowsAlive": [
+      {
+        "probe_operations": 0,
+        "probe_orders": 0,
+        "probe_worklogs": 0
+      }
+    ]
+  },
+  "queryMatrix": [
+    {
+      "label": "period 正确",
+      "qs": "period=2026-10",
+      "http": 200,
+      "success": true,
+      "code": null,
+      "msg": "",
+      "data": {
+        "period": "2026-10",
+        "total": 33,
+        "per_worker": [
+          {
+            "worker_name": "验收工人790472",
+            "amount": 32.2,
+            "qty": 76
+          },
+          {
+            "worker_name": "冒烟工人",
+            "amount": 0.8,
+            "qty": 2
+          }
+        ],
+        "per_operation": [
+          {
+            "operation": "精裁-布",
+            "logical_name": "精裁",
+            "position": "布帘",
+            "qty": 14,
+            "amount": 5.6
+          },
+          {
+            "operation": "布三边",
+            "logical_name": "三边",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 4
+          },
+          {
+            "operation": "韩褶-布",
+            "logical_name": "韩褶",
+            "position": "布帘",
+            "qty": 1,
+            "amount": 0.4
+          },
+          {
+            "operation": "上车布-布",
+            "logical_name": "上车布",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 5
+          },
+          {
+            "operation": "熨烫-布",
+            "logical_name": "熨烫",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 3.5
+          },
+          {
+            "operation": "定型-布",
+            "logical_name": "定型",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 4
+          },
+          {
+            "operation": "复烫-布",
+            "logical_name": "复烫",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 3.5
+          },
+          {
+            "operation": "布帘车被",
+            "logical_name": "车被",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 4
+          },
+          {
+            "operation": "外帘打卷",
+            "logical_name": "外帘打卷",
+            "qty": 1,
+            "amount": 1
+          },
+          {
+            "operation": "外帘装袋",
+            "logical_name": "外帘装袋",
+            "qty": 1,
+            "amount": 1
+          },
+          {
+            "operation": "外帘发货",
+            "logical_name": "外帘发货",
+            "qty": 1,
+            "amount": 1
+          }
+        ],
+        "per_position": [
+          {
+            "position_name": "H5验收商品230803",
+            "amount": 0.8,
+            "qty": 2
+          },
+          {
+            "position_name": "链路商品118362",
+            "amount": 31.4,
+            "qty": 74
+          },
+          {
+            "position_name": "岗位商品product_manager623672",
+            "amount": 0.8,
+            "qty": 2
+          }
+        ],
+        "per_set": [
+          {
+            "set_no": "JG-20261002-5095-001",
+            "amount": 0.8,
+            "qty": 2
+          },
+          {
+            "set_no": "JG-20261002-5093-001",
+            "amount": 31.4,
+            "qty": 74
+          },
+          {
+            "set_no": "JG-20261003-9396-001",
+            "amount": 0.8,
+            "qty": 2
+          }
+        ],
+        "unpriced": {
+          "qty": 1,
+          "operations": [
+            {
+              "operation": "打包",
+              "logical_name": "打包",
+              "qty": 1
+            }
+          ],
+          "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。"
+        }
+      }
+    },
+    {
+      "label": "缺 period",
+      "qs": "",
+      "http": 422,
+      "success": false,
+      "code": "VALIDATION_ERROR",
+      "msg": "period 不能为空（格式 YYYY-MM）",
+      "data": null
+    },
+    {
+      "label": "period 空串",
+      "qs": "period=",
+      "http": 422,
+      "success": false,
+      "code": "VALIDATION_ERROR",
+      "msg": "period 不能为空（格式 YYYY-MM）",
+      "data": null
+    },
+    {
+      "label": "period 非法",
+      "qs": "period=2026-13",
+      "http": 422,
+      "success": false,
+      "code": "VALIDATION_ERROR",
+      "msg": "period 格式必须是 YYYY-MM",
+      "data": null
+    },
+    {
+      "label": "period 非法格式",
+      "qs": "period=garbage",
+      "http": 422,
+      "success": false,
+      "code": "VALIDATION_ERROR",
+      "msg": "period 格式必须是 YYYY-MM",
+      "data": null
+    },
+    {
+      "label": "period+worker 命中探针人",
+      "qs": "period=2026-10&worker_name=%E5%B7%A5%E8%B5%84%E9%AA%8C%E6%94%B6%E5%B7%A5%E4%BA%BA%E7%94%B2",
+      "http": 200,
+      "success": true,
+      "code": null,
+      "msg": "",
+      "data": {
+        "period": "2026-10",
+        "total": 0,
+        "per_worker": [],
+        "per_operation": [],
+        "per_position": [],
+        "per_set": [],
+        "unpriced": {
+          "qty": 0,
+          "operations": [],
+          "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。"
+        }
+      }
+    },
+    {
+      "label": "period+worker 不存在",
+      "qs": "period=2026-10&worker_name=__nobody__",
+      "http": 200,
+      "success": true,
+      "code": null,
+      "msg": "",
+      "data": {
+        "period": "2026-10",
+        "total": 0,
+        "per_worker": [],
+        "per_operation": [],
+        "per_position": [],
+        "per_set": [],
+        "unpriced": {
+          "qty": 0,
+          "operations": [],
+          "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。"
+        }
+      }
+    },
+    {
+      "label": "period+worker 空白",
+      "qs": "period=2026-10&worker_name=%20",
+      "http": 200,
+      "success": true,
+      "code": null,
+      "msg": "",
+      "data": {
+        "period": "2026-10",
+        "total": 33,
+        "per_worker": [
+          {
+            "worker_name": "验收工人790472",
+            "amount": 32.2,
+            "qty": 76
+          },
+          {
+            "worker_name": "冒烟工人",
+            "amount": 0.8,
+            "qty": 2
+          }
+        ],
+        "per_operation": [
+          {
+            "operation": "精裁-布",
+            "logical_name": "精裁",
+            "position": "布帘",
+            "qty": 14,
+            "amount": 5.6
+          },
+          {
+            "operation": "布三边",
+            "logical_name": "三边",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 4
+          },
+          {
+            "operation": "韩褶-布",
+            "logical_name": "韩褶",
+            "position": "布帘",
+            "qty": 1,
+            "amount": 0.4
+          },
+          {
+            "operation": "上车布-布",
+            "logical_name": "上车布",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 5
+          },
+          {
+            "operation": "熨烫-布",
+            "logical_name": "熨烫",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 3.5
+          },
+          {
+            "operation": "定型-布",
+            "logical_name": "定型",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 4
+          },
+          {
+            "operation": "复烫-布",
+            "logical_name": "复烫",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 3.5
+          },
+          {
+            "operation": "布帘车被",
+            "logical_name": "车被",
+            "position": "布帘",
+            "qty": 10,
+            "amount": 4
+          },
+          {
+            "operation": "外帘打卷",
+            "logical_name": "外帘打卷",
+            "qty": 1,
+            "amount": 1
+          },
+          {
+            "operation": "外帘装袋",
+            "logical_name": "外帘装袋",
+            "qty": 1,
+            "amount": 1
+          },
+          {
+            "operation": "外帘发货",
+            "logical_name": "外帘发货",
+            "qty": 1,
+            "amount": 1
+          }
+        ],
+        "per_position": [
+          {
+            "position_name": "H5验收商品230803",
+            "amount": 0.8,
+            "qty": 2
+          },
+          {
+            "position_name": "链路商品118362",
+            "amount": 31.4,
+            "qty": 74
+          },
+          {
+            "position_name": "岗位商品product_manager623672",
+            "amount": 0.8,
+            "qty": 2
+          }
+        ],
+        "per_set": [
+          {
+            "set_no": "JG-20261002-5095-001",
+            "amount": 0.8,
+            "qty": 2
+          },
+          {
+            "set_no": "JG-20261002-5093-001",
+            "amount": 31.4,
+            "qty": 74
+          },
+          {
+            "set_no": "JG-20261003-9396-001",
+            "amount": 0.8,
+            "qty": 2
+          }
+        ],
+        "unpriced": {
+          "qty": 1,
+          "operations": [
+            {
+              "operation": "打包",
+              "logical_name": "打包",
+              "qty": 1
+            }
+          ],
+          "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。"
+        }
+      }
+    },
+    {
+      "label": "period 上一个月",
+      "qs": "period=2026-09",
+      "http": 200,
+      "success": true,
+      "code": null,
+      "msg": "",
+      "data": {
+        "period": "2026-09",
+        "total": 0,
+        "per_worker": [],
+        "per_operation": [],
+        "per_position": [],
+        "per_set": [],
+        "unpriced": {
+          "qty": 0,
+          "operations": [],
+          "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。"
+        }
+      }
+    }
+  ]
+}

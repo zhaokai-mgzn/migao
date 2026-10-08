@@ -2,7 +2,7 @@ name: settings-manage
 description: 系统设置/租户配置管理
 red_flags: []
 business_truths:
-  - [settings-manage.read-write] 系统设置**只读**：`settings_manage` 仅提供读取（get_settings / get_ai_config / login_logs），更新能力不在工具内（B 端米宝只读化：#5247 + #5302 收口）
+  - [settings-manage.read-write] 系统设置**只读**：`settings_manage` 仅提供读取（get_settings / get_ai_config / login_logs），更新能力不在工具内（B 端黄金策只读化：#5247 + #5302 收口）
   - [settings-manage.ai-config] 租户 AI 配置支持独立配置（botName/greetingTemplate/channelConfigs）
   - [settings-manage.immediate-effect] 配置变更后立即生效
   - [settings-manage.secret-hidden] 敏感配置（密钥/token）不在 API 响应中明文返回

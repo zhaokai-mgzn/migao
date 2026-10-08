@@ -26,7 +26,7 @@ API 层 8/8 ≠ UI 层可用；**只跑 6 个文件的 E2E gate ≠ 全量 UI �
 
 ## 1. 演示证据等级表
 
-### 1.1 C 端小程序（小布）
+### 1.1 C 端小程序（元元）
 
 | 演示面 | 证据等级 | 证据 | 未覆盖的部分 | 演示前建议 |
 |---|---|---|---|---|
@@ -42,13 +42,13 @@ API 层 8/8 ≠ UI 层可用；**只跑 6 个文件的 E2E gate ≠ 全量 UI �
 | 下单 / 新增订单页 + 订单生命周期渲染 | **机器级** | 同上新门禁：`orders/order-create.spec.ts`（7 pass / 3 skip）、`orders/order-lifecycle.spec.ts`（3 pass）；nightly `34911052034` 同读数 | 真后端下单落库、库存校验、防连点锁事务（属 API/单测层） | 演示前 1 分钟点一次「新增订单」页确认能开 |
 | 商品分类管理 | **机器级** | 同上新门禁：`catalog/categories.spec.ts`（本地 14 pass；其中 2 条本地 flaky，`--retries=1` 后过；nightly 14 pass / 0 fail） | 分类与商品的实际联动（真后端） | — |
 | 页面渲染冒烟（全页面可开） | **机器级** | 同上新门禁：`smoke/pages-render.spec.ts`（4 pass） | 只断言"渲染出来"，不断言业务正确 | — |
-| 米宝聊天输入条 / 最小化布局 | **机器级** | 同上新门禁：`chat/chat-panel-resize.spec.ts`（7 pass）、`chat/mibao-minimize-layout.spec.ts`（1 pass） | **不覆盖发消息/收回复/tool 卡片**（见下方"米宝聊天主流程"= 未验证） | 演示前手动发 1 条消息确认链路 |
+| 黄金策聊天输入条 / 最小化布局 | **机器级** | 同上新门禁：`chat/chat-panel-resize.spec.ts`（7 pass）、`chat/mibao-minimize-layout.spec.ts`（1 pass） | **不覆盖发消息/收回复/tool 卡片**（见下方"黄金策聊天主流程"= 未验证） | 演示前手动发 1 条消息确认链路 |
 | 首页看板 | **机器级** | `pr-check.yml` job `E2E quality gate`（6 文件清单含 `dashboard/dashboard.spec.ts`，24 tests）；nightly `34911052034` 24 pass / 0 fail | 只跑 fixture 数据 | — |
 | 数据质量 / 契约 / 反占位 / 跨页一致 / 搜索对齐 | **机器级** | `pr-check.yml` 的 `E2E quality gate` 6 文件（另 5 个 quality spec）。⚠️ 该 job 的绿**只代表这 6 个文件**，不代表全量 UI | orders/products/customers/chat/settings 等 **21** 个 spec 文件**不在任何一个 PR 门禁里**（本包新增门禁前是 28/35，见 §4 缺口 1） | 不要把"E2E gate 绿"说成"UI 全量可用" |
 | 商品列表 / 详情 / 编辑 | **未验证** | 反证：nightly `34911052034` 同 SHA 读数 `product-list` 20 pass / **21 fail**、`product-detail` 9/2、`product-edit` 11/2（fixture 模式断言红）。历史活环境旁证（**非当前代码**）：`acceptance/2026-09-14/merchant-ui-smoke/screenshots/08-products-list.png` 等（采集于 09-14 18:59，其后 admin-web 有 3 次改动） | fixture 模式下**大面积红**，未见任何"当前代码 + 当前环境"的机器级通过 | 演示前**手动点开商品列表/详情/编辑**各一次；不要把 `merchant-ui-smoke` 的旧截图当当前状态 |
 | 订单列表 / 订单详情 | **未验证** | 反证：nightly 同 SHA `order-list` 8 / **30 fail**、`order-detail` 10 / **14 fail**、`order-remark-popover` 0 / **10 fail** | 同上；`order-list` 是演示最可能点到的页面 | 演示前手动点开订单列表 + 详情 + 备注浮窗 |
 | 客户列表 / 客户详情 | **未验证** | 反证：nightly 同 SHA `customer-list` 13 / **6 fail**、`customer-detail` 8 / **6 fail** | 同上 | 演示前手动点开客户列表 + 详情 |
-| 米宝聊天主流程（发消息 / 收回复 / tool 卡片渲染） | **未验证** | 反证：nightly 同 SHA `chat/chat.spec.ts` 8 pass / **12 fail**（含"页面加载后应显示消息输入框和发送按钮"红） | UI 层无机器级证据；**AI 能力本身**另有 API 层证据（见 1.3） | 演示前**必做**：手动发 1 条真实消息，确认输入框/回复/卡片都出来 |
+| 黄金策聊天主流程（发消息 / 收回复 / tool 卡片渲染） | **未验证** | 反证：nightly 同 SHA `chat/chat.spec.ts` 8 pass / **12 fail**（含"页面加载后应显示消息输入框和发送按钮"红） | UI 层无机器级证据；**AI 能力本身**另有 API 层证据（见 1.3） | 演示前**必做**：手动发 1 条真实消息，确认输入框/回复/卡片都出来 |
 | 售后工单列表 / 详情 | **未验证** | 反证：nightly 同 SHA `after-sales-list` 16 / **2 fail**、`after-sales-detail` 11 / **1 fail** | 少量红，但不是全绿 | 演示前手动点开售后列表 + 详情 |
 | 设置 / 通知 / 加工项 / 存储 | **未验证** | 反证：`processing` 0 / **40 fail**、`settings` 8 / 14、`notifications` 6 / 12、`oss-dual-bucket` 4 / 6 | 加工项 spec 全红；**菜单结构同步说明**：订单管理组下新增「加工单」菜单项（加工单列表页，`permissionCode=processing:manage`），见下行 | 演示若涉及加工单，**手动走一遍**（或直接演示下行加工单列表页） |
 | 加工单列表页（`processing-orders`，**本包新增**） | **机器级** | ① 已追加进 `Demo Evidence Gate` manifest（`tests/e2e/demo-path-specs.txt` 第 8 个 spec：`orders/processing-orders.spec.ts`，PR 合入后 CI 自动跑）；② 本包本地 fixture 复跑 **12 passed** 两轮（`12 passed (32.3s)` / `12 passed (25.2s)`，执行行见 PR body，SHA `6a55d73b` 起的工作分支） | 状态机按钮的**真后端联动**（真 PATCH 落库 + 订单状态回退联动）不在本层；快照**不含金额**（决策 2 不含销售价，列表无金额列，见 PR body 存疑） | 演示前手动点一次「发加工 / 开始加工 / 加工完成 / 取消」任一操作，确认订单详情页加工单块状态同步 |
@@ -59,7 +59,7 @@ API 层 8/8 ≠ UI 层可用；**只跑 6 个文件的 E2E gate ≠ 全量 UI �
 | 演示面 | 证据等级 | 证据 | 未覆盖的部分 | 演示前建议 |
 |---|---|---|---|---|
 | 三域名存活 | **证据引用** | 本包实测 2026-09-15：`merchant.migaozn.com` 307→`/login`（200）；`api.migaozn.com` `POST /api/auth/sms-code` → **401**（存活 + 鉴权生效）；`ai-api.migaozn.com/health` → `{"status":"healthy","service":"ai-agent-service","version":"1.0.0"}` | 只是**存活**，不是功能 | 开演前 30 秒各 curl 一次即知 |
-| AI 对话（B 端米宝 / 接口层） | **证据引用** | `nightly-verification` run [`34911052034`](https://github.com/zhaokai-mgzn/migao/actions/runs/34911052034) job `Smoke p1 regression`（活环境 `api.migaozn.com` + `ai-api.migaozn.com`）：**69 passed / 2 failed**，重试后 **70 passed / 1 failed**；`pytest` 汇总里**唯一失败项在 `test_06_perf.py`**（`test_product_list_latency` 1032ms > 1000ms 阈值；`test_concurrent_10_users_no_errors` P95 3083/2865ms > 2000ms 阈值）⇒ `test_04_ai_chat.py` 无失败项 | ⚠️ **性能阈值超限**（issue #3840）：并发 P95 约为阈值的 **1.4~1.5 倍**；**UI 层仍无证据**（API 通 ≠ 页面可用） | 演示**避免**当场跑 10 并发压测；单条对话交互不受影响 |
+| AI 对话（B 端黄金策 / 接口层） | **证据引用** | `nightly-verification` run [`34911052034`](https://github.com/zhaokai-mgzn/migao/actions/runs/34911052034) job `Smoke p1 regression`（活环境 `api.migaozn.com` + `ai-api.migaozn.com`）：**69 passed / 2 failed**，重试后 **70 passed / 1 failed**；`pytest` 汇总里**唯一失败项在 `test_06_perf.py`**（`test_product_list_latency` 1032ms > 1000ms 阈值；`test_concurrent_10_users_no_errors` P95 3083/2865ms > 2000ms 阈值）⇒ `test_04_ai_chat.py` 无失败项 | ⚠️ **性能阈值超限**（issue #3840）：并发 P95 约为阈值的 **1.4~1.5 倍**；**UI 层仍无证据**（API 通 ≠ 页面可用） | 演示**避免**当场跑 10 并发压测；单条对话交互不受影响 |
 | 演示期间不要开 PR | **本包已复核机制** | `deploy-reconcile.yml` 触发源含 `pull_request: [opened, reopened]` → 对账 `main` HEAD 三服务镜像缺失即 `gh workflow run` 对应 deploy ⇒ **重建容器** ⇒ 1~3 分钟 502 窗口（主会话今晚实测） | 窗口时长取决于镜像/网络 | **演示期间冻结：不开 PR、不合并 PR、不触发 deploy** |
 
 ---
@@ -244,7 +244,7 @@ job 2  Mini-app e2e static contract preflight
 | **加工项（processing）** | 未验证 | **样本陈旧（双因）**；页面可用 | 判据 A/D/F：20/20 全红在同一句 **beforeEach 的标题断言**「加工项配置」，而页面 H1 是**「加工项管理」**（`#3079` 命名统一 `d01e770a` 改的名）；第二因：`/api/admin/categories` **未被 mock** ⇒ `Promise.all` reject ⇒ 列表恒空态。截图实证页面渲染完整（H1 / 四项表头 / 新增按钮 / 空态文案） | 可直接演示；**但请先手动新增 1 条加工项**（CRUD 写路径本轮仍未验证） |
 | **订单列表（order-list）** | 未验证 | **样本陈旧（时间炸弹）**；页面可用 | 判据 A/B/E/F：mock 订单 `createdAt` 固定 `2026-06` / `2026-05`，而页面默认下单时间范围 = **最近一个月**（截图实证 `2026/08/15 – 2026/09/15`）⇒ 全被滤掉 ⇒ 表格「暂无数据」（截图实证）。**受控实验**：同 run 内「按下单日期搜索」（显式填 `2026-06-01`）**绿**，「按订单号搜索」（沿用默认窗口）**红** | 可直接演示（真后端返回的是近月订单，不受此影响）；演示前手动点开确认有行 |
 | **订单详情（order-detail）** | 未验证 | **样本陈旧（3 种断言形态缺陷）**；页面可用 | 判据 A/D/F：`strict mode violation` ×4（订单号 / 商品名 / 加工项名 / 收货信息在 DOM 各 2–3 份 = 屏幕版 + **`ShipmentDoc` 打印联常驻 DOM**）；子串误匹配 ×1（completed 态合法渲染**「打印发货单」**，其 accessible name 含「发货」⇒ `getByRole({name:'发货'})` 默认按子串匹配恒命中）；角色契约 ×2（面包屑是 `<button>` 不是 link）。**截图实证 completed 态只有「退款 + 打印发货单」，页面行为正确** | 可直接演示；进度条 / 打印发货单在截图中均正常 |
-| **米宝聊天主流程（chat）** | 未验证 | **样本陈旧（图标契约过期）**；页面可用 | 判据 A/D：`chat.page.ts` 的发键定位器是 `button:has(svg.lucide-send)`，而 `MessageInput.tsx` 的发键图标是 **`ArrowUp`**（实际类名 `svg.lucide-arrow-up`）⇒ 恒不匹配；**同用例第 1 句 `messageInput` 断言通过** ⇒ 输入框在、页面在，只有发键定位器过期 | 可直接演示；**演示前仍建议手动发 1 条真消息**（见 7.6「仍未证实」） |
+| **黄金策聊天主流程（chat）** | 未验证 | **样本陈旧（图标契约过期）**；页面可用 | 判据 A/D：`chat.page.ts` 的发键定位器是 `button:has(svg.lucide-send)`，而 `MessageInput.tsx` 的发键图标是 **`ArrowUp`**（实际类名 `svg.lucide-arrow-up`）⇒ 恒不匹配；**同用例第 1 句 `messageInput` 断言通过** ⇒ 输入框在、页面在，只有发键定位器过期 | 可直接演示；**演示前仍建议手动发 1 条真消息**（见 7.6「仍未证实」） |
 | **售后列表 / 详情** | 未验证 | **样本陈旧（1 条）** + 其余通过 | `after-sales-list` 仅 1 条红（`getByRole('button', {name:/搜索/})` 超时，同页 16/17 过 ⇒ 判据 A）；`after-sales-detail` 本轮 **0 红** | 可演示 |
 | **客户列表 / 详情** | 未验证 | **需真后端 / fixture 数据不足** | `customer-list` 3 条 click 超时（同类按钮文案 / 定位器）；`customer-detail` 3 条是**数据域为空**：标签文本为空串、会话历史 `count()>0` 实得 0、订单卡片 `text=/ORD\d+/` 不存在 ⇒ mock 未提供这些子资源 | 可演示；列表页风险低，详情页的「标签 / 会话历史 / 订单卡片」三块**要手动点开确认** |
 | **设置 / 通知 / 存储** | 未验证 | `settings` 样本陈旧 · `notifications` 样本陈旧 + 数据不足 · `oss-dual-bucket` **测试自身缺陷** | `settings` 7/7 均为 click 超时（判据 A）；`notifications` 有 class 链定位器超时（`.bg-white.border.border-gray-200.rounded-t-lg`）+ 3 条 `count()>0` 实得 0（数据域空）；`oss-dual-bucket` 3 条是 **`page.evaluate` 里 `fetch('/api/...')` 用相对 URL** ⇒ 浏览器报 `Failed to parse URL`，与后端是否存在无关 | 设置页可演示；存储页与通知页**不作为演示主路径** |
@@ -317,7 +317,7 @@ job 2  Mini-app e2e static contract preflight
 另：`order-detail.spec.ts` 面包屑断言 `getByRole('link', { name: '订单列表' })` → `element(s) not found`
 （实际是 `<button>`；截图中面包屑「首页 > 订单管理 > 订单列表 > 订单详情」清晰可见）。
 
-**④ 米宝聊天主流程（chat）— 6/14 红（判据 A/D）**
+**④ 黄金策聊天主流程（chat）— 6/14 红（判据 A/D）**
 
 ```
 ✘ e2e/specs/chat/chat.spec.ts › 聊天 — 基础发送与接收 › 页面加载后应显示消息输入框和发送按钮
@@ -375,7 +375,7 @@ job 2  Mini-app e2e static contract preflight
 **仍未证实（不得读成"已验证"）**：以下三处本轮**只证明「红的原因不是页面坏」，没有证明「功能正确」**——
 演示前请各手动走一遍（判据写死，无需判断力）：
 
-1. **米宝发消息 → 收回复 → tool 卡片**：定位器修好后需一次窄复跑（或手动发 1 条）才算有证据；
+1. **黄金策发消息 → 收回复 → tool 卡片**：定位器修好后需一次窄复跑（或手动发 1 条）才算有证据；
 2. **订单列表在有数据时的行内动作**（查看 / 发货 / 关闭 / 备注 / 确认付款 / 确认收货）：截图只证明了**空表**形态；
 3. **加工项 CRUD 的写路径**（新增 / 编辑 / 删除）：本轮只证明了**列表空态**形态。
 

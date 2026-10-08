@@ -1,0 +1,19 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:55:30 +08",
+    "utc": "2026-10-04T01:55:30.553Z"
+  },
+  "summary": {
+    "pass": 18,
+    "fail": 0,
+    "skip": 1,
+    "total": 19
+  },
+  "probe": {
+    "skuId": "2106551796589531138",
+    "productId": "8800c2ad892fe21e5f1a5b52b33f11da",
+    "draftId": "3945cb90374adf5a8b8d30e812ea09d9",
+    "draftB": "8bb7d9fbe65af684e4ee0ebd91ed5773",
+    "shortCode": "C08XH1XA"
+  }
+}

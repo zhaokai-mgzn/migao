@@ -1,5 +1,7 @@
 package com.migao.admin.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -62,8 +64,12 @@ public class InboundOrderResponse {
     @Data
     public static class Item {
 
+        /** 明细行 id（雪花号，> 2^53）⇒ 字符串出参，防 JS 精度丢失（issue #6340）。 */
+        @JsonSerialize(using = ToStringSerializer.class)
         private Long id;
 
+        /** SKU ID（雪花号，> 2^53）⇒ 字符串出参，防 JS 精度丢失（issue #6340）。 */
+        @JsonSerialize(using = ToStringSerializer.class)
         private Long skuId;
 
         private String productId;

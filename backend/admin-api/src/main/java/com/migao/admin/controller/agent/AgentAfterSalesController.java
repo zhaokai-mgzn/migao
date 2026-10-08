@@ -39,7 +39,7 @@ public class AgentAfterSalesController {
      * 内部调用方声明工单真实来源的请求头（issue #3686）。
      *
      * <p>服务端在本端点**无法自行判定**真实来源：三个 Agent 建单工具
-     * （小布 `aftersale_create` / 米宝 `after_sales_manage` / 转人工 `human_handoff`）
+     * （元元 `aftersale_create` / 黄金策 `after_sales_manage` / 转人工 `human_handoff`）
      * 打的是同一个 URL、同一组 header，且都以 Service Token 认证 ⇒
      * `getCurrentOperator()` 恒为 `internal-service`、body 无 source（#3605 已删）。
      * 故由**内部调用方**声明，服务端只在值属于白名单时采纳，缺省/未知一律回退
@@ -104,7 +104,7 @@ public class AgentAfterSalesController {
     }
 
     /**
-     * C 端（小布/customer 角色）"我的售后"查询。
+     * C 端（元元/customer 角色）"我的售后"查询。
      * GET /api/admin/agent/after-sales/mine?page=1&size=10
      *
      * 数据隔离强制点：无论调用方传什么参数，都只返回「当前登录用户订单上的

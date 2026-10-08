@@ -1,0 +1,182 @@
+[
+  {
+    "id": "T1-1",
+    "name": "合法：confirmed → packed（工人打包）被接受且落 packed_at/by",
+    "status": "pass",
+    "detail": "期望 2xx ∧ status=packed ∧ packed_at/by 非空 == 实测 HTTP 200 ∧ packed ∧ {\"at\":true,\"by\":\"发货验收工人\"}",
+    "evidence": [
+      "期望来源: STATUS_TRANSITIONS: confirmed → {producing,packed,shipped,cancelled}（逐字取自 OrderStatusTransitions.java）",
+      "POST /worker/shipment/orders/fad518eb46f7d5ecd9fd28/pack → {\"success\":true,\"data\":{\"order_id\":\"fad518eb46f7d5ecd9fd28\",\"status\":\"packed\",\"shipment_no\":\"SH202610031143216707\",\"source\":\"worker\",\"shipped_items\":[],\"shipped_totals\":{\"set_count"
+    ],
+    "at": "2026-10-03 19:43:22 +08"
+  },
+  {
+    "id": "T1-2",
+    "name": "合法：packed → shipped，且**同一张**发货单延续（不新建第二张）",
+    "status": "pass",
+    "detail": "期望 2xx ∧ status=shipped ∧ shipments=1 == 实测 HTTP 200 ∧ shipped ∧ shipments=1",
+    "evidence": [
+      "期望来源: activeShipment() 取「未发货」那张 → 复用；packed → shipped 是表里唯一出口",
+      "shipment_no=SH202610031143216707 packed_at=2026-10-03T11:43:21.23814+08:00 shipped_at=2026-10-03T11:43:21.615301+08:00"
+    ],
+    "at": "2026-10-03 19:43:22 +08"
+  },
+  {
+    "id": "T2-ROUTE",
+    "name": "判别性前置：请求**真的进到状态机**（不是路由 404 的空断言）",
+    "status": "pass",
+    "detail": "HTTP 422 ∧ code=VALIDATION_ERROR",
+    "evidence": [
+      "OrderController 的写端点路由带正则 @PutMapping(\"/{id:[0-9a-fA-F-]+}/status\")",
+      "若 id 不在该集合 ⇒ 路由层 404，测的是路由不是状态机（实测踩过，故本判据存在）",
+      "本包订单 id 全部落在 [0-9a-fA-F-] 内：fa3392bd1531f85045ce67"
+    ],
+    "at": "2026-10-03 19:43:23 +08"
+  },
+  {
+    "id": "T2-1",
+    "name": "非法：confirmed → delivered（「已签收」不在状态机内）⇒ 4xx 拒绝",
+    "status": "pass",
+    "detail": "期望 4xx ∧ 状态仍 confirmed ∧ **非路由 404** == 实测 HTTP 422 ∧ code=VALIDATION_ERROR ∧ confirmed",
+    "evidence": [
+      "期望来源: assertTransitionAllowed: isKnownStatus(to)==false ⇒ 422「无效的订单状态」",
+      "PUT /api/admin/orders/fa3392bd1531f85045ce67/status body={\"status\":\"delivered\"} → {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"status\",\"message\":\"无效的订单状态\"}]},\"requestId\":\"req_1011297127bb4f9c\",\"timestamp\":1790999003}"
+    ],
+    "at": "2026-10-03 19:43:24 +08"
+  },
+  {
+    "id": "T2-2",
+    "name": "非法流转**不改库**（前后字段级 diff 为空）",
+    "status": "pass",
+    "detail": "期望 diff=[] == 实测 0 处变化",
+    "evidence": [
+      "期望来源: 「非法必须 422/409 且不改库」= 本包判据；判定用 RDS 前后逐字段 diff",
+      "diff: []"
+    ],
+    "at": "2026-10-03 19:43:24 +08"
+  },
+  {
+    "id": "T3-1",
+    "name": "非法：packed → producing 走商家裸状态接口 ⇒ 拒绝（回退是具名动作，不能无理由）",
+    "status": "pass",
+    "detail": "期望 4xx（非路由 404）∧ status=packed == 实测 HTTP 422 ∧ code=VALIDATION_ERROR ∧ packed",
+    "evidence": [
+      "期望来源: STATUS_TRANSITIONS[\"packed\"] = {shipped}（撤销打包**有意**不在表里，见 OrderShipmentService.unpack 注释）",
+      "resp: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"订单状态不允许从 [已打包] 变更为 [生产中]\"},\"requestId\":\"req_5e136dcb4a984588\",\"timestamp\":1790999005,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    ],
+    "at": "2026-10-03 19:43:26 +08"
+  },
+  {
+    "id": "T3-2",
+    "name": "非法流转不改库（逐字段 diff 为空）",
+    "status": "pass",
+    "detail": "期望 diff=[] == 实测 0 处变化",
+    "evidence": [
+      "期望来源: 本包判据（RDS 前后逐字段 diff）",
+      "diff: []"
+    ],
+    "at": "2026-10-03 19:43:26 +08"
+  },
+  {
+    "id": "T4-1",
+    "name": "撤销打包必须带理由（空理由 ⇒ 4xx 且不动状态）",
+    "status": "pass",
+    "detail": "期望 4xx ∧ status=packed == 实测 HTTP 422 ∧ packed",
+    "evidence": [
+      "期望来源: doUnpack: !hasText(reason) ⇒ validationError（1~500 字）",
+      "resp: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"撤销打包必须说明理由（1~500 字）—— 已打包是涉责任的状态，不留痕不给撤\"},\"requestId\":\"req_2755efe0cb48498a\",\"timestamp\":1790999006,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    ],
+    "at": "2026-10-03 19:43:27 +08"
+  },
+  {
+    "id": "T4-2",
+    "name": "撤销打包：packed → producing，且留痕（unpacked_at/by/reason 非空）",
+    "status": "pass",
+    "detail": "期望 2xx ∧ status=producing ∧ 三留痕非空 == 实测 HTTP 200 ∧ producing ∧ {\"at\":true,\"reason\":\"发货验收装错箱，撤销重打\"}",
+    "evidence": [
+      "期望来源: 「涉责任的动作不留白」：unpacked_at/unpacked_by_*/unpack_reason 必须落库",
+      "resp: {\"success\":true,\"data\":{\"order_id\":\"fa5c8dceecebd7cfc7d727\",\"status\":\"producing\",\"shipment_no\":\"SH202610031143263219\",\"source\":\"worker\",\"unpacked_at\":\"2026-10-03T11:43:27.334866+08:00\",\"unpacked_by\":\"",
+      "SQL: select unpacked_at, unpack_reason → {\"id\":\"685cf7d4b1456f0fc24c9cf5c5dd1237\",\"shipment_no\":\"SH202610031143263219\",\"packed_at\":null,\"shipped_at\":null,\"unpacked_at\":\"2026-10-03T11:43:27.334866+08:00\",\"unpack_reason\":\"发货验收装错箱，撤销重打\",\"packed_by_worker_name\":null,\"shipped_by_worker_name\":null}"
+    ],
+    "at": "2026-10-03 19:43:28 +08"
+  },
+  {
+    "id": "T4-3",
+    "name": "撤销打包**不影响已发数量**（此时尚未发货 ⇒ 明细仍为 0 行）",
+    "status": "pass",
+    "detail": "期望 items=0 ∧ 无 shipped_at == 实测 items=0 shipped_at=null",
+    "evidence": [
+      "期望来源: 撤销只清 packed_* 与状态，不碰实发明细（未发货 ⇒ 明细本就为空）",
+      "SQL: select shipped_quantity from order_shipment_items where order_id='fa5c8dceecebd7cfc7d727' → []"
+    ],
+    "at": "2026-10-03 19:43:28 +08"
+  },
+  {
+    "id": "T4-4",
+    "name": "撤销打包后 packed_* 被清空（状态与留痕一致，不出现\"已撤销却仍标已打包\"）",
+    "status": "pass",
+    "detail": "期望 packed_at=null ∧ packed_by=null == 实测 {\"at\":null,\"by\":null}",
+    "evidence": [
+      "期望来源: doUnpack 显式 setPackedAt(null)/setPackedByWorker*(null)",
+      "SQL 原始读数上一条"
+    ],
+    "at": "2026-10-03 19:43:28 +08"
+  },
+  {
+    "id": "T5-1",
+    "name": "已发货单不可撤销打包（4xx，且不产生 unpacked_* 留痕）",
+    "status": "pass",
+    "detail": "期望 4xx ∧ unpacked_at=null == 实测 HTTP 422 ∧ null",
+    "evidence": [
+      "期望来源: doUnpack: 仅 \"packed\" 可撤销 ⇒ shipped 被拒",
+      "resp: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"仅「已打包」的订单可撤销打包，当前状态: 已发货\"},\"requestId\":\"req_ac19f90d2889488f\",\"timestamp\":1790999009,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    ],
+    "at": "2026-10-03 19:43:30 +08"
+  },
+  {
+    "id": "T5-2",
+    "name": "已发货订单不可直接取消（shipped 的唯一后继 = completed）",
+    "status": "pass",
+    "detail": "期望 4xx（非路由 404）∧ status=shipped == 实测 HTTP 422 ∧ code=VALIDATION_ERROR ∧ shipped",
+    "evidence": [
+      "期望来源: STATUS_TRANSITIONS[\"shipped\"] = {completed}",
+      "resp: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"订单状态不允许从 [已发货] 变更为 [已取消]\"},\"requestId\":\"req_e52f3c2a60be4739\",\"timestamp\":1790999009,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    ],
+    "at": "2026-10-03 19:43:31 +08"
+  },
+  {
+    "id": "T5-3",
+    "name": "两次非法回退后 **已发数量与单据不变**（diff 仅允许 0 处）",
+    "status": "pass",
+    "detail": "期望 diff=[] ∧ Σ已发=4.00 ∧ shipments=1 == 实测 diff=0 处 Σ=4.000 shipments=1",
+    "evidence": [
+      "期望来源: 本包判据：非法动作不得改库（含不得改已发数量）",
+      "diff: []"
+    ],
+    "at": "2026-10-03 19:43:31 +08"
+  },
+  {
+    "id": "T6-cancelled",
+    "name": "不可发货状态（cancelled）⇒ 4xx 且**不改库**（不产生发货单/明细）",
+    "status": "pass",
+    "detail": "期望 4xx ∧ diff=[] ∧ shipments=0 == 实测 HTTP 422 ∧ diff=0 ∧ shipments=0",
+    "evidence": [
+      "期望来源: SHIPPABLE_FROM = {confirmed, producing, packed}（cancelled ∉）",
+      "resp: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"当前状态（已取消）不可发货：仅 [已确认, 生产中, 已打包] 可发货\"},\"requestId\":\"req_7eff0a6bdb6943b9\",\"timestamp\":1790999012,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+      "diff: []"
+    ],
+    "at": "2026-10-03 19:43:32 +08"
+  },
+  {
+    "id": "T6-pending",
+    "name": "不可发货状态（pending）⇒ 4xx 且**不改库**（不产生发货单/明细）",
+    "status": "pass",
+    "detail": "期望 4xx ∧ diff=[] ∧ shipments=0 == 实测 HTTP 422 ∧ diff=0 ∧ shipments=0",
+    "evidence": [
+      "期望来源: SHIPPABLE_FROM = {confirmed, producing, packed}（pending ∉）",
+      "resp: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"当前状态（待付款）不可发货：仅 [已确认, 生产中, 已打包] 可发货\"},\"requestId\":\"req_a5327dbe43d14811\",\"timestamp\":1790999013,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+      "diff: []"
+    ],
+    "at": "2026-10-03 19:43:34 +08"
+  }
+]

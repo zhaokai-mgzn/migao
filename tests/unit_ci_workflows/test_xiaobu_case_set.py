@@ -1,5 +1,5 @@
 """
-Test C 端（小布）用例集契约（issue #3266）。
+Test C 端（元元）用例集契约（issue #3266）。
 
 背景（假绿复盘）：`local_runner.py` 的 PERSONA=xiaobu 分支在 `filter_by_persona`
 之后又加了一层 **宽 tag 过滤**：
@@ -10,8 +10,8 @@ Test C 端（小布）用例集契约（issue #3266）。
 `query` / `product` 是通用 tag，几乎每个域都有 → 实测选中 33 条，其中仅 4 条真声明
 `persona: xiaobu`，其余为 B 端管理类（DA-001 经营概览 / FN-001 资金流水 /
 HR-001 员工列表 / CT-001 分类树 / CU-001 客户 / AS-001 售后工单 / ST-001 设置）——
-小布工具集中根本没有 `dashboard_stats`/`finance_api`/`employee_manage`/
-`customer_manage`/`after_sales_manage`，这些用例在小布上要么被合理拒绝后判失败，
+元元工具集中根本没有 `dashboard_stats`/`finance_api`/`employee_manage`/
+`customer_manage`/`after_sales_manage`，这些用例在元元上要么被合理拒绝后判失败，
 要么根本没验证到任何东西，却计入「C 端评测通过率」。
 
 本测试锁定两条契约：
@@ -37,7 +37,7 @@ SKILLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "graph" / "ski
 # 被测 persona（显式传参，不依赖 local_runner 模块级 PERSONA 的默认值）
 PERSONA = "xiaobu"
 
-# 小布声明的 skill（app/agents/agents/xiaobu.py 的 XIAOBU_CONFIG.skill_names）
+# 元元声明的 skill（app/agents/agents/xiaobu.py 的 XIAOBU_CONFIG.skill_names）
 XIAOBU_SKILLS = [
     "customer_order",
     "customer_product",
@@ -74,11 +74,11 @@ def _skill_tools(skill_file: Path) -> set:
 
 
 def _xiaobu_real_toolset() -> set:
-    """从源码解析：小布各 skill 工具并集（单一真值来源）。"""
+    """从源码解析：元元各 skill 工具并集（单一真值来源）。"""
     tools = set()
     for skill in XIAOBU_SKILLS + [XIAOBU_FALLBACK_SKILL]:
         f = SKILLS_DIR / f"{skill}_skill.py"
-        assert f.exists(), f"小布声明的 skill 文件缺失: {f}"
+        assert f.exists(), f"元元声明的 skill 文件缺失: {f}"
         tools |= _skill_tools(f)
     return tools
 
@@ -105,10 +105,10 @@ class TestXiaobuToolsetTruth:
         )
 
     def test_bmiabo_only_tools_absent_from_xiaobu(self):
-        """B 端专属工具不得出现在小布工具集"""
+        """B 端专属工具不得出现在元元工具集"""
         real = _xiaobu_real_toolset()
         leaked = real & MIBAO_ONLY_TOOLS
-        assert not leaked, f"小布工具集混入 B 端专属工具: {sorted(leaked)}"
+        assert not leaked, f"元元工具集混入 B 端专属工具: {sorted(leaked)}"
 
     def test_xiaobu_and_mibao_toolsets_disjoint_except_shared(self):
         """C 端与 B 端工具集允许的交集仅限共享只读工具"""
@@ -134,7 +134,7 @@ class TestXiaobuCaseSelection:
             if hit:
                 bad[c["id"]] = sorted(hit)
         assert not bad, (
-            f"以下 C 端用例断言引用了 B 端专属工具（小布无此能力，评测结论不可信）: {bad}"
+            f"以下 C 端用例断言引用了 B 端专属工具（元元无此能力，评测结论不可信）: {bad}"
         )
 
     def test_bmiabo_admin_cases_excluded(self):
@@ -251,7 +251,7 @@ class TestXiaobuSmokeCoverage:
         )
 
     def test_smoke_covers_core_customer_capability(self):
-        """smoke 档应覆盖小布核心能力（身份/权限隔离类），不只知识问答"""
+        """smoke 档应覆盖元元核心能力（身份/权限隔离类），不只知识问答"""
         from eval_case_filter import select_cases_for_persona
         smokes = {c["id"] for c in select_cases_for_persona(load_case_dicts(str(CASES_DIR)), PERSONA)
                   if c.get("tier") == "smoke"}
@@ -477,7 +477,7 @@ class TestStaffProxyOrderSemantics:
 
     背景：C 端 normal 档首次基线 10/23，11 个失败里 **5 个是归属错误** ——
     OR-009/010/011/015/CR-001 的首轮都是**店员代客下单**语义
-    （「我要给张三下单」「创建订单：张三 …」），小布（C 端自助、身份固定为本人）
+    （「我要给张三下单」「创建订单：张三 …」），元元（C 端自助、身份固定为本人）
     无法触发 → `order_create` 从未被调用 → 必然 0 分，污染基线。
 
     实测（CI，normal 档）：
@@ -497,7 +497,7 @@ class TestStaffProxyOrderSemantics:
         leaked = [c for c in self.STAFF_PROXY if c in sel]
         assert not leaked, (
             f"店员代客下单语义用例仍在 C 端用例集：{leaked} —— "
-            "小布无法触发，必然 0 分污染基线"
+            "元元无法触发，必然 0 分污染基线"
         )
 
     def test_legit_customer_cases_preserved(self):
@@ -538,7 +538,7 @@ class TestCaseInputsAreUtterances:
 
     # 描述性输入信号：以第三方/系统视角起手，或含「应…」断言式描述、API 路径
     _DESC = re.compile(
-        r"^(用户|顾客|商家|客户|平台|系统|AI|C 端|B 端|米宝)"
+        r"^(用户|顾客|商家|客户|平台|系统|AI|C 端|B 端|黄金策)"
         r"|应(创建|返回|携带|能|有|使用|触发)"
         r"|→|\bPOST /|\bGET /"
     )
@@ -884,7 +884,7 @@ class TestRepeatUntilCases:
 
 
 # 本守卫**只作用于 C 端用例**（`persona: xiaobu`）。
-# 为什么不用"persona 为空"当 C 端：空 = **未声明/双端**，实测那批是米宝流程用例
+# 为什么不用"persona 为空"当 C 端：空 = **未声明/双端**，实测那批是黄金策流程用例
 # （`cross_skill` / `compression` / `sku_select` / `create` 等标签，如 CR-002/CR-003/
 # DF-015/OR-008/OR-016）—— 它们的卡序列由 B 端自己的流程决定，套 C 端判据会误伤
 # （首版就是这么错的：5 条 B 端用例被当成"脆弱 C 端写用例"列进待迁移清单）。
@@ -904,7 +904,7 @@ class TestWriteCasesCanAnswerCards:
     把**用例缺陷伪装成模型波动**）。修法是 `repeat_until`（OR-021/CH-025 已迁）。
 
     作用域刻意收窄为 `persona == "xiaobu"`：空 persona 是**未声明/双端**，
-    实测那批是米宝流程用例，套 C 端判据会误伤（首版即此错）。
+    实测那批是黄金策流程用例，套 C 端判据会误伤（首版即此错）。
     """
 
     def _cases(self):

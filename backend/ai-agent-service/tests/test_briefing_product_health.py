@@ -11,10 +11,10 @@
 case_ids 说明（照实登记）：`DA-016`（行级快照按契约装配 —— 本单扩展了 `skus` 行字段并新增
 `product_return_stats` 行数组，判据落在 admin-api 单测）、`DA-017`（逐规则接线状态 / 两种空可分 ——
 本视图的逐字段三态同一纪律）、`DA-018`（未接线能力如实说明 —— 本视图的 not_wired/incomplete 披露同一纪律）。
-本单**未改** `.github/cases/*.yml`（另一包在跑，避免生成物冲突）⇒ 族 3 包 2 的专属用例条目
-由用例库 owner 另批补录，见 PR 的「未固化项」。
+`DA-023`（issue #6347 **Part B**）：本文件新增的 `TestFilteredSkusAreNotMisattributed` 就是该用例的
+机器判据 —— 「有 SKU 但商品不在售 ⇒ 不许说成没有 SKU / 建议检查商品规格」。
 """
-# case_ids: DA-016, DA-017, DA-018
+# case_ids: DA-016, DA-017, DA-018, DA-023
 
 import ast
 
@@ -28,6 +28,11 @@ import pytest
 
 from app.briefing import product_health as view_module
 from app.briefing.proactive import INCOMPLETE, NOT_WIRED, WIRED, scan_snapshot
+from app.briefing.product_health import (
+    _RECOVERABLE_STATUSES,  # noqa: PLC2701 —— 判据要把它与 Part A 的单一真值源逐字对齐
+    FORBIDDEN_ATTRIBUTIONS,
+    NOT_ON_SALE,
+)
 from app.tools.stock_semantics import LOW_STOCK_OPERATOR, LOW_STOCK_THRESHOLD, STOCK_AUTHORITY
 
 VIEW_SRC = Path(view_module.__file__)
@@ -118,6 +123,27 @@ def unattributed_snapshot():
     """同一夹具 + 一行**归属不到商品**的退货（多商品订单：装配层不猜 ⇒ `product_id` 为 null）"""
     snap = snapshot()
     snap["returns"][1]["product_id"] = None
+    return snap
+
+
+def filtered_snapshot(buckets=None, product_ids=None):
+    """🔴 issue #6347 Part B 的**真实形态**（逐字照 2026-10-05 租户 25 的读数）：
+
+    `skus` 数组**空**、但 `row_meta.skus.rows_before_filter` = 10 ⇒ 那 10 行**不是不存在**，
+    而是被「商品在售」口径过滤掉了（`filtered_by_status` = 商品状态 × SKU 数）。
+
+    「过滤前 > 0、过滤后 = 0」是**唯一**能把它与「表里没有 SKU」分开的读数 —— 本夹具就钉这一条。
+    """
+    snap = snapshot()
+    snap["skus"] = []
+    snap["row_meta"]["skus"] = {
+        **_meta(0),
+        "rows_before_filter": 10,
+        "filtered_out": 10,
+        "filtered_by_status": {"active": 10} if buckets is None else buckets,
+        "filtered_product_ids": ([f"DEAD-{i}" for i in range(1, 9)]
+                                 if product_ids is None else product_ids),
+    }
     return snap
 
 
@@ -233,7 +259,7 @@ class TestFieldStatusIsTriState:
 
     @pytest.mark.parametrize("case", [
         "complete", "no_skus", "no_stats", "skus_truncated", "stats_truncated",
-        "returns_truncated", "return_without_product", "output_truncated",
+        "returns_truncated", "return_without_product", "output_truncated", "filtered_zeros",
     ])
     def test_invariant_reason_none_iff_wired(self, case):
         """不变式（一套口径）：`reason is None` ⟺ `status == wired` —— 调用方只看这一条"""
@@ -253,6 +279,8 @@ class TestFieldStatusIsTriState:
             kwargs["limit"] = 2
         elif case == "return_without_product":
             snap = unattributed_snapshot()
+        elif case == "filtered_zeros":
+            snap = filtered_snapshot()
 
         view = view_module.product_health(snap, tenant_id=7, **kwargs)
 
@@ -261,7 +289,7 @@ class TestFieldStatusIsTriState:
             assert (entry["reason"] is None) == wired, (
                 f"{case}/{field}: status={entry['status']} reason={entry['reason']!r}"
             )
-            assert entry["status"] in (WIRED, NOT_WIRED, INCOMPLETE)
+            assert entry["status"] in (WIRED, NOT_WIRED, INCOMPLETE, NOT_ON_SALE)
 
 
 class TestUnknownIsNotZero:
@@ -590,3 +618,119 @@ class TestRowShape:
         text = json.dumps(view, ensure_ascii=False)      # Decimal / date 会当场抛
         assert '"gross_margin": 68.0' in text
         assert '"return_rate": 0.25' in text
+
+
+class TestFilteredSkusAreNotMisattributed:
+    """🔴 issue #6347 Part B 的**实例判据**：有 SKU 但商品不在售 ⇒ 不许说成「没有 SKU」。
+
+    用户真实遭遇（2026-10-05 租户 25）：`product_skus` 12 行、「商品健康度视图」0 行，黄金策据此答
+    「SKU 记录数 = 0 / SKU 层是空的 / 建议先确认商品规格（颜色 × 门幅）是否已正确录入」——
+    **归因错了**，把用户引向**徒劳返工**（重录规格），而真因（商品状态不是 `on_sale`）一字未提。
+
+    本类的断言都盯**会变的真值**：把 `row_meta.skus` 的过滤计数摘掉 ⇒ 必红（§28.1 的「修前红」出口 ①）。
+    """
+
+    def test_engine_sees_the_filter_fact_not_just_an_empty_array(self):
+        info = view_module.product_health(filtered_snapshot(), tenant_id=7)["not_on_sale"]
+
+        assert info["available"] is True, "装配层已透出过滤计数，引擎必须看得见（否则退回误归因）"
+        assert info["rows_before_filter"] == 10 and info["filtered_count"] == 10
+        assert info["filtered_by_status"] == {"active": 10}
+        assert len(info["filtered_product_ids"]) == 8
+
+    def test_injected_filter_fact_turns_the_class_assertion_red(self):
+        """注入式红证（§28.1 出口 ①）：把过滤计数摘掉 ⇒ **同一条**类级断言必须变红。"""
+        snap = filtered_snapshot()
+        snap["row_meta"]["skus"] = _meta(0)          # 旧形态：只有 limit/count/truncated
+
+        with pytest.raises(AssertionError):
+            assert view_module.product_health(snap, tenant_id=7)["not_on_sale"]["available"] is True
+
+    def test_empty_array_is_not_on_sale_not_wired(self):
+        """两种「空」必须可分：被过滤 ⇒ `not_on_sale`（有原因、**可行动**）；未接线 ⇒ `not_wired`。"""
+        view = view_module.product_health(filtered_snapshot(), tenant_id=7)
+
+        for field in ("sales_count", "stock", "gross_margin"):
+            assert status_of(view, field) == NOT_ON_SALE, f"{field} 的空不是「没数据」，实得 {status_of(view, field)}"
+            assert view["fields"][field]["reason"], "not_on_sale 必须带原因（不变式不给本态开例外）"
+        # 退货率的来源是另一对行数组 ⇒ 不受 SKU 过滤影响（逐字段可分）
+        assert status_of(view, "return_rate") == WIRED
+        # 与真正的「未接线」对照：同一份快照里删掉 skus 行数组
+        unwired = snapshot()
+        del unwired["skus"], unwired["row_fields"]["skus"]
+        assert status_of(view_module.product_health(unwired, tenant_id=7), "stock") == NOT_WIRED
+
+    def test_reason_states_cause_and_exit(self):
+        """用户口径 1/2 逐字落地：说清「有 N 个 SKU（M 个商品）因未上架未纳入」+ 说清商品状态。"""
+        reason = view_module.product_health(filtered_snapshot(), tenant_id=7)["fields"]["stock"]["reason"]
+
+        for needle in ("过滤前", "10", "8 个商品", "商品未上架", "active", "on_sale",
+                       "off_sale", "draft", "上架动作会被拒"):
+            assert needle in reason, f"原因/出路里缺少「{needle}」：{reason}"
+
+    def test_message_forbids_misattribution(self):
+        """用户口径 3：禁用表述一律不得出现（本单的原话，逐条钉住）。"""
+        reason = view_module.product_health(filtered_snapshot(), tenant_id=7)["fields"]["stock"]["reason"]
+
+        for forbidden in FORBIDDEN_ATTRIBUTIONS:
+            assert forbidden not in reason, f"出现归因错误表述「{forbidden}」：{reason}"
+
+    def test_recoverable_status_does_not_get_the_wrong_exit(self):
+        """出路必须**对症**：状态在状态机内（off_sale）⇒ 说「上架即可」，**不**附带死行的修正指引。"""
+        view = view_module.product_health(
+            filtered_snapshot(buckets={"off_sale": 2}, product_ids=["OFF-1", "OFF-2"]), tenant_id=7)
+        reason = view["fields"]["stock"]["reason"]
+
+        assert "off_sale" in reason and "2 个商品" in reason
+        assert "上架动作会被拒" not in reason, "状态合法却给了「死行」出路的指引 = 说错出路"
+
+    def test_unfamiliar_status_is_not_guessed_as_recoverable(self):
+        """读不到状态（`unknown`）⇒ 不许给「先改回」的指引（**不猜**：说错出路比不说更坏）。"""
+        reason = view_module.product_health(
+            filtered_snapshot(buckets={"unknown": 3}, product_ids=["X-1", "X-2"]), tenant_id=7
+        )["fields"]["stock"]["reason"]
+
+        assert "unknown" in reason
+        assert "上架动作会被拒" not in reason and "改回 off_sale" not in reason
+        assert "核实" in reason, "读不到状态时必须说清「先去核实」，而不是编一个出路"
+
+    def test_surplus_snapshot_has_no_filter_fact(self):
+        """老快照（过滤键面世前）⇒ `available=False`，调用方必须退回旧口径，不得凭空断言被过滤。"""
+        info = view_module.product_health(snapshot(), tenant_id=7)["not_on_sale"]
+
+        assert info["available"] is False and info["message"] is None
+        assert info["filtered_by_status"] == {} and info["filtered_product_ids"] == []
+
+    def test_partial_filter_still_names_the_filtered_rows(self):
+        """部分被过滤（过滤后仍有行）⇒ 视图照旧可用，但过滤事实也必须说出来（条数偏低不许静默）。"""
+        snap = snapshot()
+        snap["row_meta"]["skus"] = {**_meta(3), "rows_before_filter": 9, "filtered_out": 6,
+                                    "filtered_by_status": {"off_sale": 6},
+                                    "filtered_product_ids": ["P-OFF"]}
+        info = view_module.product_health(snap, tenant_id=7)["not_on_sale"]
+
+        assert info["filtered_count"] == 6 and info["message"]
+        assert "商品未上架" in info["message"] and "6 个 SKU" in info["message"]
+        # 过滤掉了 6 行 ⇒ 剩下 3 行照旧可用（不是「全空」）
+        assert view_module.product_health(snap, tenant_id=7)["count"] == 3
+
+    def test_recoverable_statuses_match_the_java_single_source(self):
+        """🔴 类级元守卫：`_RECOVERABLE_STATUSES` 必须逐字等于 Part A 的**单一真值源**
+        （`ProductService.PRODUCT_STATUSES` —— 该集合又等于 `STATUS_TRANSITIONS` 的键集）。
+
+        「合法状态」在 Python 侧写死第二份 = 改一处漏一处（正是本单的成因）⇒ 这里机械钉住：
+        Java 侧加/删一个合法状态而 Python 侧没跟 ⇒ **红**。
+        """
+        source = (Path(__file__).resolve().parents[3]
+                  / "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java"
+                  ).read_text(encoding="utf8")
+        block = source[source.index("private static final Map<String, List<String>> STATUS_TRANSITIONS"):
+                       source.index("PRODUCT_STATUS_LABELS")]
+        assert set(re.findall(r'STATUS_TRANSITIONS\.put\("(\w+)"', block)) == set(_RECOVERABLE_STATUSES), (
+            "Python 侧 `_RECOVERABLE_STATUSES` 与 Java 侧状态机键集不一致 ⇒ 出路会说过时的话"
+        )
+
+    def test_forbidden_list_is_pinned_to_the_users_verbatim_wording(self):
+        """禁用清单是**本单的用户原话**，不是随手起的：少一条 = 少一个拦截面（现取式断言）。"""
+        for phrase in ("SKU 记录数 = 0", "SKU 层是空的", "建议检查商品规格"):
+            assert phrase in FORBIDDEN_ATTRIBUTIONS

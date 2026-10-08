@@ -8,7 +8,7 @@
 **不同**的事混成一件：
 
   · 「库里真没有这个 ID」（写错 / 抄错）—— 该红；
-  · 「这个 ID 属于**另一条腿**」（`persona: xiaobu` 的用例被派发到米宝腿）—— **不该红**，
+  · 「这个 ID 属于**另一条腿**」（`persona: xiaobu` 的用例被派发到黄金策腿）—— **不该红**，
     该做的是**点名**「未覆盖该 ID + 两边去向」。改前实测（本机实跑，`--cases` 指向注入语料）：
 
       $ PERSONA=mibao python tests/agent_eval/local_runner.py full \\
@@ -67,11 +67,11 @@ UNIMPLEMENTED_JSON = REPO_ROOT / ".github" / "case-trust-unimplemented.json"
 TAXONOMY = REPO_ROOT / ".github" / "assertion_taxonomy.py"
 WITHDRAWN_CODE = "CASE-TRUST-CROSS-LEG-NARROW-RUN"
 
-#: 红证①的注入语料：**声明落小布腿**的用例（无 skip_reason ⇒ 无显式登记）
+#: 红证①的注入语料：**声明落元元腿**的用例（无 skip_reason ⇒ 无显式登记）
 INJ_XIAOBU = {"id": "INJ-X1", "persona": "xiaobu", "tier": "smoke",
               "user_inputs": [{"text": "我的订单到哪了"}],
               "expectations": [{"tool": "customer_order_query"}]}
-#: 红证②的注入语料：**声明落米宝腿**、`persona` 值合法但被某个过滤器悄悄丢掉
+#: 红证②的注入语料：**声明落黄金策腿**、`persona` 值合法但被某个过滤器悄悄丢掉
 INJ_MIBAO = {"id": "INJ-M1", "persona": "mibao", "tier": "normal",
              "user_inputs": [{"text": "看看经营概览"}],
              "expectations": [{"tool": "dashboard_stats"}]}
@@ -201,7 +201,7 @@ class TestLibraryLegParity:
         assert seen > 0, "没有任何「显式登记的少跑」被记账 —— 该分支可能从未被执行"
 
     def test_declared_but_not_collected_injection_is_red(self):
-        """红证①：注入一条**声明落小布腿**、却被本腿收集集漏掉的用例 ⇒ 判红并点名。"""
+        """红证①：注入一条**声明落元元腿**、却被本腿收集集漏掉的用例 ⇒ 判红并点名。"""
         report = audit_library_leg_parity([INJ_XIAOBU], selected={"xiaobu": [], "mibao": []})
         assert len(report["violations"]) == 1, f"注入的少跑形态没有被判红：{report['counts']}"
         entry = report["violations"][0]
@@ -217,10 +217,10 @@ class TestLibraryLegParity:
         single_mibao = {str(c.get("id")) for c in cases if declared_leg(c) == "mibao"}
         single_xiaobu = {str(c.get("id")) for c in cases if declared_leg(c) == "xiaobu"}
         assert single_mibao and single_xiaobu, "库里没有单腿声明的用例 ⇒ 反向判据空跑"
-        # 米宝单腿用例出现在小布腿的「正常跨腿」桶里（而不是违规桶）才算判据没写歪
+        # 黄金策单腿用例出现在元元腿的「正常跨腿」桶里（而不是违规桶）才算判据没写歪
         other_leg_xiaobu = {e["id"] for e in report["legs"]["xiaobu"]["other_leg"]}
         assert single_mibao - collected["mibao"] - other_leg_xiaobu == set(), (
-            "有米宝单腿用例既没进米宝腿收集集、也没被记成「正常跨腿」")
+            "有黄金策单腿用例既没进黄金策腿收集集、也没被记成「正常跨腿」")
         assert not (single_mibao & {e["id"] for e in report["violations"]})
         assert not (single_xiaobu & {e["id"] for e in report["legs"]["xiaobu"]["silent"]})
         # 双端用例未命中本腿必须能归因（工具集/语义收口），不许凭空消失
@@ -228,7 +228,7 @@ class TestLibraryLegParity:
         bucketed = (collected["xiaobu"]
                     | {e["id"] for e in report["legs"]["xiaobu"]["dual_leg_narrowed"]}
                     | {e["id"] for e in report["legs"]["xiaobu"]["registered_skip"]})
-        assert dual - bucketed == set(), "有双端用例在小布腿上既没跑、也没被显式记账"
+        assert dual - bucketed == set(), "有双端用例在元元腿上既没跑、也没被显式记账"
 
 
 class TestRunnerWiring:
