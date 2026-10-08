@@ -227,10 +227,7 @@ export default function InboundOrdersPage() {
             <PackageOpen className="w-5 h-5 text-primary-600" />
             入库单
           </h1>
-          <p className="text-sm text-neutral-500 mt-1">
-            布料到货先建入库单（此时不动库存）；确认无误后过账，系统才生成批次号、按实际入库量加库存，
-            并按移动加权平均重算成本。<strong>期初建账</strong>可按实物把在库批次（含 0.5 米级尾料）登记进来
-          </p>
+          <p className="text-sm text-neutral-500 mt-1">登记布料到货、过账后加库存 —— <strong>过账前不改动库存</strong>，可以先核对再确认。<strong>期初建账</strong>可按实物把在库批次登记进来</p>
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={openImport}>
@@ -369,7 +366,7 @@ export default function InboundOrdersPage() {
             导入会建一张<strong>期初建账</strong>入库单并<strong>直接过账</strong>：库存按登记的剩余米数增加、
             系统批次号自动生成、<strong>旧系统批次号原样登记</strong>。
             「剩余米数」填<strong>现在实物还剩多少米</strong>（不是当初进了多少米）——
-            0.5 米这样的尾料也能如实登记（最多 1 位小数，系统不会四舍五入替你改）。
+            尾料不足整米也能如实登记，<strong>系统不会四舍五入替你改</strong>。
           </p>
 
           <div className="grid grid-cols-2 gap-3">

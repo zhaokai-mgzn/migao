@@ -412,7 +412,7 @@ export default function KnowledgePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-neutral-900">知识库</h1>
-          <p className="text-sm text-neutral-500 mt-1">AI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题</p>
+          <p className="text-sm text-neutral-500 mt-1">管理 AI 客服的知识卡片 —— <strong>发布后优先用于回答顾客问题</strong></p>
         </div>
         <div className="flex items-center gap-2">
           {canWrite && (

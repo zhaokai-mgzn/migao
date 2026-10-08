@@ -55,7 +55,7 @@ export default function BriefingPage() {
     <div className="p-5 sm:p-6">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-neutral-900">每日经营简报</h1>
-        <p className="mt-0.5 text-xs text-neutral-400">AI 每日自动生成 · 数字经校验 · 数据安全隔离</p>
+        <p className="mt-0.5 text-xs text-neutral-400">每天的经营数据摘要，系统自动整理</p>
       </div>
       {/* variant="page"：日报页逐规则展开原因（issue #5955）——看板首页保持紧凑 */}
       <BriefingCard enabled variant="page" />

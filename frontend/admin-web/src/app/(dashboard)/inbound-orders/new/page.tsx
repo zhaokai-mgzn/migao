@@ -228,10 +228,7 @@ export default function NewInboundOrderPage() {
         </button>
         <div className="flex-1">
           <h1 className="text-xl font-semibold text-neutral-900">新增入库单</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
-            建单只登记、<strong>不动库存</strong>；确认无误后过账，系统才逐行生成批次号（一行 = 一个批次）
-            并按实际入库量加库存、按移动加权平均重算成本
-          </p>
+          <p className="text-sm text-neutral-500 mt-0.5">登记一张新的到货入库单 —— <strong>保存草稿不动库存</strong>，过账时才生成批次号并加库存</p>
         </div>
       </div>
 

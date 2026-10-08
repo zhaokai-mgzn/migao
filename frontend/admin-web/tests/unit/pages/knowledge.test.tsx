@@ -113,7 +113,7 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '知识库' })).toBeInTheDocument()
     })
-    expect(screen.getByText(/AI 客服知识库/)).toBeInTheDocument()
+    expect(screen.getByText(/管理 AI 客服的知识卡片/)).toBeInTheDocument()
   })
 
   it('should display entries from API in table (no hardcode)', async () => {

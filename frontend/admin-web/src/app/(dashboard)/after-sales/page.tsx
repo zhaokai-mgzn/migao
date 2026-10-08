@@ -204,7 +204,7 @@ export default function AfterSalesPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-neutral-900">售后管理</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理客户售后工单，处理退货、换货、维修等售后请求</p>
+          <p className="text-sm text-neutral-500 mt-1">管理客户售后工单：退货、换货、维修等</p>
         </div>
         <Button onClick={() => setCreateModalOpen(true)}>
           <Plus className="w-4 h-4 mr-1.5" />

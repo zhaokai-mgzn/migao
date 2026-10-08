@@ -2490,10 +2490,7 @@ function ProcessConfigContent() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-neutral-900">工艺配置</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">
-            工序与计件单价 → 工艺路线（订单按哪条主线走）→ 算料 / 裁高口径。
-            路线是计件工资与完工判定的唯一输入
-          </p>
+          <p className="mt-0.5 text-sm text-neutral-500">管理工序与计件单价、工艺路线和算料口径 —— <strong>路线决定订单按哪条主线走</strong></p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" size="sm" onClick={load} disabled={loading}>

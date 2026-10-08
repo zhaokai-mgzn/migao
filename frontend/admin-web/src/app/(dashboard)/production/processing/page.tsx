@@ -422,10 +422,7 @@ function ProcessingContent() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-neutral-900">加工项管理</h1>
-          <p className="mt-1 text-sm text-neutral-500">
-            加工项是下单时客户可选的加工服务（如 韩褶、打孔）；加工费按<strong>选配组合</strong>定价（元/米），
-            下单时由系统按选配结果自动匹配取价，顾客只选配、不报价。
-          </p>
+          <p className="mt-1 text-sm text-neutral-500">管理下单时客户可选的加工服务与加工费 —— <strong>顾客只选配、不报价</strong></p>
         </div>
         <Button
           variant="secondary"

@@ -219,10 +219,7 @@ export default function ProductionPoolPage() {
             <Layers className="w-5 h-5 text-primary-600" />
             智能派单
           </h1>
-          <p className="text-sm text-neutral-500 mt-1">
-            待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；
-            <strong>加急单不参与合并</strong>，立即单独派单
-          </p>
+          <p className="text-sm text-neutral-500 mt-1">待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；<strong>加急单不参与合并，立即单独派单</strong></p>
         </div>
         <Button variant="secondary" onClick={() => void load()} loading={loading}>
           <RefreshCw className="w-4 h-4 mr-1.5" />

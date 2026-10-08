@@ -3132,9 +3132,7 @@ export default function NewOrderPage() {
         </button>
         <div className="flex-1">
           <h1 className="text-xl font-semibold text-neutral-900">新增订单</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
-            支持添加多个商品，每个商品可单独配置加工项
-          </p>
+          <p className="text-sm text-neutral-500 mt-0.5">填写新订单：<strong>可添加多个商品，每个商品单独配加工项</strong></p>
         </div>
       </div>
 

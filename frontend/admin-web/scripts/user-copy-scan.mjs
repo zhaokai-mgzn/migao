@@ -130,7 +130,130 @@ export const RULES = [
       + '但页面上用商家的话说（如「趋势只统计系统里采购入库的批次：开业时导入的老库存不算」）；'
       + '标签留在服务端口径、注释与文档里（issue #6459）。',
   },
+  {
+    id: 'R9',
+    name: '占位符字母 / 模式代号上屏',
+    // 「库存为什么从 X 变成 Y」「A 模式 · 只查…」—— 把 X/Y 当变量、把设计文档里的模式代号写进散文，
+    // 商家读不懂（用户 2026-10-08 原话：「用户不理解这句话是啥"库存为什么从 X 变成 Y"」）。
+    // ⚠️ 覆盖面（实测过误伤面）：只认**当变量用的 X/Y/Z** 与 **「<字母> 模式」**；
+    //    `A4` / `GB/T 47746` / `W-1002`（与 `-` `/` 数字相邻）、`B 端`/`C 端`（行业就这么叫）、
+    //    `拼N次`（**选项名 = 匹配键**，改了会动行为）**都不判**。
+    test: (t) => {
+      const stripped = t.replace(/[A-Z]\s?端/g, '')
+      return (
+        /(?:^|[^A-Za-z0-9\-/._])[XYZ](?![A-Za-z0-9\-/._])/.test(stripped) ||
+        /[A-Z]\s?模式/.test(stripped)
+      )
+    },
+    出口: '把变量换成商家的话（「库存为什么从 X 变成 Y」→「库存为什么变，按时间往下看」）；'
+      + '模式代号（A 模式 / C 模式）留在类型定义与设计文档里，屏上只留商家语义。',
+  },
 ]
+
+/**
+ * **页面副标题判据**（用户 2026-10-08 定的标准）：
+ * 副标题要说清「**这个功能是干什么的**」（正例：「管理客户信息、标签和互动记录」；
+ * 「待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；**加急单不参与合并**」也行），
+ * 关键规则要 `**加粗**`。**不写**：机制链路（⇒ / →）、表达式（`每行 = 一次…`）、
+ * 本企业各自的数值口径（`0.5 米级尾料` / `0.1 米粒度`）—— 各家企业标准不同，写了反而误导。
+ *
+ * 只扫**商家后台**（`src/app/(dashboard)/**`）的 `h1` **兄弟** `<p>`；官网不在射程（它有自己的一套口径）。
+ * 判定面 = 静态文本（含三元各分支的字面量）。
+ */
+export const SUBTITLE_RULES = [
+  {
+    id: 'S1',
+    name: '副标题里的箭头链路（⇒ / →）',
+    test: (t) => /⇒|→/.test(t),
+    出口: '把链路拆成一句「这个功能干什么」；链路图留给设计文档。',
+  },
+  {
+    id: 'S2',
+    name: '副标题里的表达式（每行 = 一次…）',
+    test: (t) => /=/.test(t),
+    出口: '改成陈述句（「这里记着每一次库存变动：时间、单据、变动前后各多少」）。',
+  },
+  {
+    id: 'S3',
+    name: '副标题里的本企业数值口径（0.5 米级 / 0.1 米粒度）',
+    test: (t) => /\d+(?:\.\d+)?\s*(?:米级|米粒度|米一档|位小数)/.test(t),
+    出口: '讲这个功能解决什么问题即可（「尾料不足整米也能如实登记」）；具体精度留给输入校验提示。',
+  },
+  {
+    id: 'S4',
+    name: '副标题里的占位符字母 / 模式代号',
+    test: (t) => RULES.find((r) => r.id === 'R9').test(t),
+    出口: '同 R9：把变量与模式代号换成商家的话。',
+  },
+]
+
+/** 只扫商家后台的页面头（官网有一整套自己的对外口径，不在本判据射程内） */
+export const SUBTITLE_SCOPE = 'src/app/(dashboard)'
+
+/** 豁免台账（**只许缩短**）：确有必要写长的页面头（错误态要给出下一步动作）。 */
+export const SUBTITLE_EXEMPT = [
+  // 「无权访问」是**错误态**：必须写清「缺什么权限 + 去哪儿开」——短不了，且这正是用户要的引导。
+  'src/app/(dashboard)/layout.tsx:151',
+]
+
+/** 抽「页面头 = h1 + 紧跟的兄弟 p」的静态文本（含三元各分支字面量） */
+export function pageSubtitles(root) {
+  const dir = join(root, SUBTITLE_SCOPE)
+  const files = walk(dir)
+  const out = []
+  for (const file of files) {
+    const rel = relative(root, file)
+    const source = readFileSync(file, 'utf8')
+    const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    const lineOf = (node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1
+    const texts = (node) => {
+      const parts = []
+      const dig = (n) => {
+        if (ts.isJsxAttribute(n)) return // ⚠️ className 等**属性**不是上屏文本（实测会被当成标题打印）
+        if (ts.isJsxText(n)) { const t = n.text.trim(); if (t) parts.push(t); return }
+        if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) { parts.push(n.text); return }
+        ts.forEachChild(n, dig)
+      }
+      dig(node)
+      return parts.join(' ').replace(/\s+/g, ' ').trim()
+    }
+    const visit = (node) => {
+      if (ts.isJsxElement(node)) {
+        const kids = node.children
+        for (let i = 0; i < kids.length; i++) {
+          const el = kids[i]
+          if (!ts.isJsxElement(el)) continue
+          if (el.openingElement.tagName.getText(sf) !== 'h1') continue
+          for (let j = i + 1; j < kids.length; j++) {
+            const sib = kids[j]
+            if (!ts.isJsxElement(sib)) continue
+            if (sib.openingElement.tagName.getText(sf) !== 'p') continue
+            const text = texts(sib)
+            if (text) out.push({ file: rel, line: lineOf(sib), title: texts(el), text })
+            break
+          }
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    ts.forEachChild(sf, visit)
+  }
+  return out
+}
+
+/** 副标题命中（豁免后） */
+export function findSubtitleOffenses(root) {
+  const subtitles = pageSubtitles(root)
+  const offenses = []
+  for (const item of subtitles) {
+    const where = `${item.file}:${item.line}`
+    if (SUBTITLE_EXEMPT.includes(where)) continue
+    for (const rule of SUBTITLE_RULES) {
+      if (rule.test(item.text)) offenses.push({ ...item, rule: rule.id, ruleName: rule.name, where })
+    }
+  }
+  return { subtitles, offenses }
+}
 
 /**
  * 豁免台账（**只许缩短**）：登记「命中规则但确有必要」的 `仓库相对路径:行` 或 `仓库相对路径`（整文件）。
@@ -264,5 +387,16 @@ if (isMain) {
     console.log(`\n## ${file}  (${items.length})`)
     for (const o of items) console.log(`  L${o.line} [${o.rule}] ${o.text.slice(0, 130)}`)
   }
-  process.exit(offenders.length ? 1 : 0)
+  // 页面副标题（结构性判据，用户 2026-10-08 定的标准）
+  const { subtitles, offenses: subOffenses } = findSubtitleOffenses(root)
+  console.log(`\n页面副标题（商家后台 ${subtitles.length} 个）：命中 ${subOffenses.length}`)
+  for (const r of SUBTITLE_RULES) {
+    console.log(`  ${r.id} ${r.name.padEnd(30)} ${subOffenses.filter((o) => o.rule === r.id).length}`)
+  }
+  for (const o of subOffenses) {
+    console.log(`  · ${o.where} [${o.rule}] 【${o.title}】${o.text.slice(0, 110)}`)
+    console.log(`    出口：${SUBTITLE_RULES.find((r) => r.id === o.rule).出口}`)
+  }
+
+  process.exit(offenders.length || subOffenses.length ? 1 : 0)
 }
