@@ -5,6 +5,8 @@ import { useChatStore } from '../../../store/chatStore'
 import { useAuthStore } from '../../../store/authStore'
 import { buildBrandSubtitle, buildBotName } from '../../../utils/brand'
 import { currentLandingCode } from '../../../utils/inbound/deepLink'
+// 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
+import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import MessageList from '../../../components/chat/MessageList'
 import MessageInput from '../../../components/chat/MessageInput'
 import QuickActions from '../../../components/chat/QuickActions'
@@ -14,6 +16,7 @@ import { getUserInfo } from '../../../services/userService'
 import './index.scss'
 
 export default function ChatPage() {
+  useMerchantSurfaceGuard()
   const {
     messages,
     isStreaming,

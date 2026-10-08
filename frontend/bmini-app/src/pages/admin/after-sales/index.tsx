@@ -22,6 +22,8 @@ import { useAuthStore } from '../../../store/authStore'
 import { canWriteAdminSurface, missingPermissionText } from '../../../utils/adminPermission'
 import { confirmAdminAction } from '../../../utils/adminConfirm'
 import { useAdminPermissions } from '../../../components/admin/useAdminPermissions'
+// 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
+import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import { SurfaceLoginRequired, SurfaceState } from '../../../components/admin/SurfaceState'
 import {
   afterSalesActionConfirmText,
@@ -52,6 +54,7 @@ const FILTERS: { key: string; label: string }[] = [
 ]
 
 export default function AdminAfterSalesPage() {
+  useMerchantSurfaceGuard()
   const { isLoggedIn } = useAuthStore()
   const permissions = useAdminPermissions()
   const [status, setStatus] = useState('')

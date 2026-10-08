@@ -755,7 +755,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
-## B 端小程序域（44 case）
+## B 端小程序域（45 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1285,6 +1285,20 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-10-07 新增（issue #6472）：报工页的发货块（`isCompleted && !shipped`）对任何身份渲染，而它打的是商家端点；工人零商家权限（`/api/admin/**` 拒绝集合含 worker）⇒ 纯工人设备点「发货」必被服务端拒绝。收口 = 有工人 session（`hasWorkerSession()`，单一真值）走既有工人发货端点 `POST /api/worker/shipment/orders/{id}/ship`，否则商家端点逐字不变。零后端改动；入参差异（工人路径必填 `items[]`）由端侧从读面 `positions` 映射补齐。 ｜ tags: bmini, worker, shipment
+
+### BM-040. 「数据」页三类待办落到「加工单详情」只读页 + 纯工人设备不进商家页（三身份隔离收口） 🔵
+```
+你: 商家在「数据」页点一张待办（待排产 / 卡在哪 / 待发货）⇒ 打开的是**只读的加工单详情**（加工单号 / 订单号 / 客户 / 交期 + 工序进度），页面上没有「扫一扫」「去登录工人身份」；工人设备（有工人 session、没有商家凭据）打开商家页 ⇒ 自动回工人工作台
+期望: direct_reply
+数据: 判据 1·三类待办的落脚页 = 加工单详情：backend/admin-api/src/main/java/com/migao/admin/service/ProductionTodoService.java 的 `processingOrderDetailPage(orderId)` 逐字产出 `/pages/production/order-detail/index?orderId=<orderId>`；页面在 frontend/bmini-app/src/app.config.ts 在册、并登记进入口台账（via=url，viaBinding=该 Java 文件）。红证：改回报工页 ⇒ frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L4 绑定判红 + backend/admin-api/src/test/java/com/migao/admin/service/ProductionTodoServiceTest.java 的三类 link 断言判红
+数据: 判据 2·🔴 新页**纯只读**：frontend/bmini-app/tests/processing-order-detail-page.test.tsx 的源码级断言（去注释后不得出现「扫一扫 / 去登录工人身份 / scanResolve( / completeByScan( / getWorkerOrderOperations / hasWorkerSession / WORKER_TAB_LOGIN_ROUTE / PRODUCTION_WORKER_LOGIN_REQUIRED / workerSessionHeaders」任一记号）+ 反向自证（源码确实消费 `getProcessingOrderBrief(` / `getOrderOperations(`）。红证：往页面注入一个「扫一扫」按钮 ⇒ 该用例判红
+数据: 判据 3·页面三态分开（403 ⇒「无「生产看板」查看权限（需要权限码 production:view）」/ 这笔订单还没有加工单 / 加载失败可重试）+ 抬头缺键的行不渲染：同文件四条用例。红证：删掉 forbidden 分支 ⇒ 落到「加载失败」⇒ 红
+数据: 判据 4·🔴 商家面身份护栏：frontend/bmini-app/tests/role-guard.test.tsx —— 有工人 session、无商家凭据 ⇒ `Taro.redirectTo(WORKER_HOME_ROUTE)`；有商家凭据（哪怕同时有工人 session）**不跳**（负控：共用 PAD 的正常动线）；工人页 / 公开登录页**不许**挂护栏（负控：挂了工人会被自己的页面弹走）
+数据: 判据 5·**类级**（新增商家页不挂护栏 ⇒ 红）：商家页清单**现取** —— tabBar 四页来自 frontend/bmini-app/src/app.config.ts 的 `tabBar.list`、管理面 4 项来自 frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`、外加坐席会话详情页 —— 每页都必须挂 `useMerchantSurfaceGuard`（证据：同文件的「商家页清单」组，含反空跑断言）
+跳过: [backend-contract] 确定性结构 / 页面判据（jest: frontend/bmini-app/tests/processing-order-detail-page.test.tsx + role-guard.test.tsx + page-entry-reachability.test.ts；java: ProductionTodoServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-08 新增（issue #6567，用户逐字「数据菜单中的点击卡在哪就展示加工单详情即可，扫一扫和去登录工人身份这种功能不应该展示，我觉得你需要单独设置卡在哪跳转页面」「H5的功能设计的还是没有把管理员，员工和工人的按职责完全隔离干净，得进一步优化」）：① 三类待办的落脚点由报工页（工人面：扫一扫 + 手输单号 + 「去登录工人身份」）改成新的**只读**「加工单详情」页（前端新页 + 后端 link 一处）；② 商家面加身份护栏：纯工人设备（有工人 session、无商家凭据）打开商家页自动回工人工作台。管理员 / 员工按角色的菜单裁剪**不在本单**（另出方案）。 ｜ tags: bmini, production, dashboard, page-entry, role-guard
 
 ### BM-041. 登录页记住上次成功登录的账号名（按登录面分开存 / 进页预填 / 绝不记 PIN·密码·验证码） 🔵
 ```
@@ -10381,13 +10395,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：718（活跃 134，跳过 584）
-- tier 分布：smoke 12 / normal 664 / adversarial 32
+- 用例总数：719（活跃 134，跳过 585）
+- tier 分布：smoke 12 / normal 665 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
 - 登录认证域：12
-- B 端小程序域：44
+- B 端小程序域：45
 - 分类域：3
 - 对话边界域：45
 - 跨域：3

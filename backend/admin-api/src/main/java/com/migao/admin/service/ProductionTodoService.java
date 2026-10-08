@@ -260,7 +260,7 @@ public class ProductionTodoService {
                         + " 上道做完后等了 " + hours(stalledHours) + " 小时没人领",
                 "这道还没开工（没报过工），上一道已完成，已等待 " + hours(stalledHours)
                         + " 小时（超过阈值 " + hours(thresholdHours) + " 小时，来源：" + thresholdSource + "）",
-                CRITERION_STUCK, productionPage(orderId), target, evidence);
+                CRITERION_STUCK, processingOrderDetailPage(orderId), target, evidence);
     }
 
     private Map<String, Object> toShipTodo(Order order) {
@@ -277,7 +277,7 @@ public class ProductionTodoService {
         return todo(TYPE_TO_SHIP, "待发货", "high",
                 "订单 " + orderLabel(order) + " 加工单已完成，可以发货了",
                 "含加工项且加工单已完成，订单仍未发货（判据 = 发货守卫：含加工项须先完成加工单）",
-                CRITERION_TO_SHIP, productionPage(order.getId()), target, evidence);
+                CRITERION_TO_SHIP, processingOrderDetailPage(order.getId()), target, evidence);
     }
 
     private Map<String, Object> toScheduleTodo(Order order) {
@@ -294,7 +294,7 @@ public class ProductionTodoService {
         return todo(TYPE_TO_SCHEDULE, "待排产", "medium",
                 "订单 " + orderLabel(order) + " 已确认，还没排产",
                 "订单已确认且含加工项，但该单还没有任何工序实例，需要排产",
-                CRITERION_TO_SCHEDULE, productionPage(order.getId()), target, evidence);
+                CRITERION_TO_SCHEDULE, processingOrderDetailPage(order.getId()), target, evidence);
     }
 
     /**
@@ -421,9 +421,16 @@ public class ProductionTodoService {
         return position == null ? logicalName : logicalName + " · " + position;
     }
 
-    /** 生产页入口（后端给的是**可点即办**的落脚点；对象 id 由服务端拼，前端不判断）。 */
-    private static String productionPage(String orderId) {
-        return "/pages/production/index/index?orderId=" + orderId;
+    /**
+     * 待办落脚页 = **加工单详情**（商家只读面；对象 id 由服务端拼，前端不判断）。
+     *
+     * <p>为什么不是报工页（issue #6567 改判，用户 2026-10-08）：「数据」页的三类待办原先一律落到
+     * {@code /pages/production/index/index} —— 那页是**工人面**（顶部「扫一扫 + 手输单号」，
+     * 没有工人身份时还整块渲染「去登录工人身份」）。商家在「数据」页点一张待办卡片，要的是
+     * 「这一单什么情况」，不是拿起手机去扫码报工。新页是**纯只读**的加工单详情。</p>
+     */
+    private static String processingOrderDetailPage(String orderId) {
+        return "/pages/production/order-detail/index?orderId=" + orderId;
     }
 
     private static String orderLabel(Order order) {

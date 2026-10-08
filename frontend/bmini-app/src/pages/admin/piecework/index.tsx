@@ -18,6 +18,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { View, Text, ScrollView } from '@tarojs/components'
 import { useAuthStore } from '../../../store/authStore'
 import { SurfaceLoginRequired, SurfaceState } from '../../../components/admin/SurfaceState'
+// 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
+import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import { operationDisplayName } from '../../../utils/operationDisplayName'
 import {
   formatYuanAmount,
@@ -36,6 +38,7 @@ import '../../../styles/admin-surfaces.scss'
  *   本页首版正是被它判红 ⇒ 把时刻做成入参，用例传**固定时刻**、断言用**字面量**）。
  */
 export default function AdminPieceworkPage({ now = new Date() }: { now?: Date } = {}) {
+  useMerchantSurfaceGuard()
   const { isLoggedIn } = useAuthStore()
   const currentPeriod = periodOf(now)
   const previousPeriod = previousPeriodOf(now)

@@ -7,6 +7,8 @@ import {
   type AgentSessionItem,
   type AgentMonitor,
 } from '../../../services/agentSessionService'
+// 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
+import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import './index.scss'
 
 /**
@@ -17,6 +19,7 @@ import './index.scss'
  * - 点击会话 → 进入详情页接管/回复（pages/sessions/detail）
  */
 export default function SessionsPage() {
+  useMerchantSurfaceGuard()
   const [waiting, setWaiting] = useState<AgentSessionItem[]>([])
   const [active, setActive] = useState<AgentSessionItem[]>([])
   const [monitor, setMonitor] = useState<AgentMonitor | null>(null)

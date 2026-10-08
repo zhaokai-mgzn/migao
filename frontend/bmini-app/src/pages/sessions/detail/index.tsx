@@ -9,6 +9,8 @@ import {
   type AgentSessionDetail,
   type AgentSessionMessage,
 } from '../../../services/agentSessionService'
+// 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
+import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import './index.scss'
 
 /**
@@ -18,6 +20,7 @@ import './index.scss'
  * 轮询 10s 拉取新消息（wx.request 轮询，简单可靠，P0够用）。
  */
 export default function SessionDetailPage() {
+  useMerchantSurfaceGuard()
   const router = useRouter()
   const sessionId = router.params.id || ''
 

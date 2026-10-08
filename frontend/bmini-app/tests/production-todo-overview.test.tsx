@@ -1,6 +1,6 @@
 // case_ids: BM-006
 // ⚠️ 用例关联（如实登记）：BM-006 = B 端小程序**生产页族**（页面消费服务端下发的生产对象 +
-// 跳转进 `/pages/production/index/index`）—— 本页每条待办的落脚点正是那个页面。
+// 跳转进 `/pages/production/order-detail/index`）—— 本页每条待办的落脚点正是那个页面。
 // **未固化项**：本能力（生产概览「待办优先」页 / 端点）**没有专属行为用例** ——
 // `.github/cases/**` 本轮由并行包独占（写面冲突隔离），补新用例 + 跑 `render_cases.py`
 // 需另开一包；已登记在 PR body 的「未固化项」一节。
@@ -51,7 +51,7 @@ const APP_CONFIG_SOURCE = fs.readFileSync(
   'utf8',
 )
 
-const PRODUCTION_PAGE = '/pages/production/index/index'
+const PRODUCTION_PAGE = '/pages/production/order-detail/index'
 
 const TODOS: ProductionTodo[] = [
   {
