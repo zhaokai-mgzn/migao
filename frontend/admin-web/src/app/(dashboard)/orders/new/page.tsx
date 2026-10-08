@@ -11,6 +11,7 @@ import {
   buildOrderPrefill,
   ORDER_DERIVATION_INPUT_KEYS,
   RECOGNIZE_SOURCE_TAG,
+  referenceFields,
   sizeTargetLineIndex,
 } from '@/lib/image-recognize'
 import ImageRecognizeButton, { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
@@ -99,6 +100,9 @@ import {
 } from '@/lib/order-craft-fields'
 // 常用物流/快递（issue #4874）：词表唯一真值在 `lib/logistics.ts`，**不另造**一份候选
 import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
+// 工艺规格的**展示行**（标签 + 格式化）—— 与订单详情 / 加工单 / 任务卡 / C 端报价卡**同一份**
+// （`craftSpecRows`）：收起态的「当前工艺参数」读数直接复用它，见 `craftPlanCurrentRows`。
+import { craftSpecRows } from '@/lib/craft-display'
 // D6 自动识别（issue #4526 · 设计 §5.1/§5.2）：倒幅 = cuttingMode 推导；**超高/超宽 = 企业阈值参数判定**
 // 🔴 **issue #5130（2026-09-22）改判**：原注释写「超高/超宽 = 宽高 vs 门幅」—— 那是**当时**的口径，
 //    现已**退役**（判定面与门幅彻底脱钩，不再按加工类型分流、超宽也不含褶倍）。
@@ -1587,16 +1591,17 @@ export default function NewOrderPage() {
    * 查询失败 ⇒ **fail-closed**：该条目只剩「都不是」（宁可少给候选，也不猜商品）。
    */
   const loadLinePicker = useCallback(async (entries: DetailEntry[]) => {
-    setLinePicker(entries.map((entry) => ({ entry, options: [], loading: true, resolved: null })))
+    setLinePicker(entries.map((entry) => ({ entry, options: [], loading: true, resolved: null, failed: false })))
     const loaded = await Promise.all(
       entries.map(async (entry) => {
         try {
           const res = await productApi.getProducts({ keyword: entry.name, page: 1, size: 10 })
           const items = (res.data?.data?.items || []) as Product[]
-          return { state: { entry, options: pickerOptionsFor(entry, items), loading: false, resolved: null }, catalog: items }
+          return { state: { entry, options: pickerOptionsFor(entry, items), loading: false, resolved: null, failed: false }, catalog: items }
         } catch {
+          // 查询**失败**（不是「目录里没有」）—— 分开记账，面板上如实分开说（issue #6529）
           return {
-            state: { entry, options: pickerOptionsFor(entry, []), loading: false, resolved: null },
+            state: { entry, options: pickerOptionsFor(entry, []), loading: false, resolved: null, failed: true },
             catalog: [] as Product[],
           }
         }
@@ -1736,15 +1741,20 @@ export default function NewOrderPage() {
     [customerName, customerPhone, customerAddress, remark, loadLinePicker]
   )
 
-  // 深通道（issue #5368 包 2）：米宝识别结果经 **SSE → store → 浏览器内存事件**推到本页
+  // 深通道（issue #5368 包 2）：黄金策识别结果经 **SSE → store → 浏览器内存事件**推到本页
   // （浮动面板在建单页上就在表单上方，不需要跳转；走内存通道 ⇒ 收货信息不进 URL / 日志 / 历史）。
-  // 🔴 订单侧**只收识别来源**（`[图片识别]`）：米宝的解读在订单侧**只解释、一格都不填**
+  // 🔴 订单侧**只收识别来源**（`[图片识别]`）：黄金策的解读在订单侧**只解释、一格都不填**
   // （客户信息错 ⇒ 货发错人）—— 内核已保证这类格子 `value` 为空，这里因此自然排除。
   // 填表口径与快通道**完全同一条**（复用 `handleRecognized`：只填空字段、不覆盖已输入内容）。
   useEffect(
     () =>
       subscribePageFill('order', (plan) => {
-        handleRecognized(fieldsOfSource(plan, PAGE_FILL_SOURCE_RECOGNIZED))
+        // 有值的识别格进表单；「参考格」（图上读到、没采纳，issue #6529）**只随行带去查目录**
+        // —— 它的 `value` 为空，任何映射函数都写不进表单。
+        handleRecognized([
+          ...fieldsOfSource(plan, PAGE_FILL_SOURCE_RECOGNIZED),
+          ...referenceFields(plan.fields),
+        ])
       }),
     [handleRecognized]
   )
@@ -3129,9 +3139,7 @@ export default function NewOrderPage() {
         </button>
         <div className="flex-1">
           <h1 className="text-xl font-semibold text-neutral-900">新增订单</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
-            支持添加多个商品，每个商品可单独配置加工项
-          </p>
+          <p className="text-sm text-neutral-500 mt-0.5">填写新订单：<strong>可添加多个商品，每个商品单独配加工项</strong></p>
         </div>
       </div>
 
@@ -3149,7 +3157,10 @@ export default function NewOrderPage() {
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <SectionTitle icon={<Package className="w-4 h-4" />} title="商品信息" />
                 <div className="flex items-center gap-3">
-                  <ImageRecognizeButton targetType="order" onRecognized={handleRecognized} />
+                  {/* issue #6530：与建品页**同一个入口形态** —— 「拍照 / 上传识别」+「补充一句（可选）」，
+                      走同一条一次性推理链（不经过黄金策对话窗口）。订单侧的解读仍然**一格都不填**
+                      （客户信息错 ⇒ 货发错人）：那句话只用来消歧与给依据，值一律由 `[图片识别]` 来。 */}
+                  <ImageRecognizeButton targetType="order" interpret onRecognized={handleRecognized} />
                   <span className="text-xs text-neutral-400">
                     共 {lineItems.length} 个商品
                   </span>
@@ -5253,6 +5264,31 @@ function LineItemBlock({
   const [craftEditTouched, setCraftEditTouched] = useState<boolean | null>(null)
   const craftEditOpen = craftEditTouched ?? plan === null
   /**
+   * **该行生效的工艺规格**（页面侧唯一派生点的一次求值）——展开态控件 / 试算 / 落库 / 收起态读数
+   * 全都读它这一份（不要各自调一次 `derivedCraftSpec`）。
+   */
+  const craftSpec = derivedCraftSpec(line, calcConfig)
+  /**
+   * **收起态摆出来的「当前工艺参数」读数**（issue #6399，2026-10-06 用户逐字「订单详情中，
+   * 这里折叠的部分得把折叠的内容展示出来，不然用户不知道选择了什么，而且得**高亮展示**」）。
+   *
+   * 为什么需要它：改前收起态只有一句**静态**按钮文案，加工类型 / 打开方式 / 款式 / 用料公式的
+   * **当前值**全在被折叠的 `OrderCraftFields` 里（收起时那棵子树根本不渲染）⇒ 商家要核对
+   * 「系统现在按哪种在算」只能点开一次。
+   *
+   * 两张「唯一真值」都不新造：取值 = 上一个 `craftSpec`（唯一派生点）；标签与格式化 =
+   * `craft-display.ts::craftSpecRows`（订单详情 / 加工单 / 任务卡 / C 端报价卡同源）。
+   * ⚠️ **只取按钮自己承诺的那四项**：档位那行走的是 `craft-display` 的**兜底**文案（`标准工艺`），
+   * 与展开态下拉里的**租户配置文案**（如 `标准档`）不是同一个字面量 ⇒ 同一屏摆两份 = 同一真值两种
+   * 说法，故**刻意不收进来**（要看得展开，那里是权威那份）。
+   */
+  const craftPlanCurrentRows = craftSpecRows({
+    cuttingMode: craftSpec.cuttingMode,
+    openCount: craftSpec.openCount,
+    style: craftSpec.style,
+    formula: craftSpec.formula,
+  })
+  /**
    * **生效加工类型**（**单点**：`lib/craft-auto-features.ts::effectiveCuttingModeOf`）——
    * 人工加的入口按它分档（契约订正 v1.1 ③：接高只在「定高买宽」、接宽只在「倒幅」）。
    */
@@ -5701,7 +5737,7 @@ function LineItemBlock({
                       {metersStale && (
                         <p data-testid="meters-manual-stale" className="mt-1 text-xs text-amber-700">
                           用料已人工指定（{line.quantity} 米；{metersCompareText}）—— 宽 / 高 / 门幅或工艺改动后系统
-                          <strong>未跟随</strong>重算（不会静默覆盖你手填的数）；点上方「恢复按公式计算」
+                          <strong>未跟随</strong>重算（不会偷偷覆盖你手填的数）；点上方「恢复按公式计算」
                           按新参数重算。
                         </p>
                       )}
@@ -5744,21 +5780,40 @@ function LineItemBlock({
             </div>
 
               {/* 工艺参数（原 ②，已并入区块 1）—— §4.2 字段表 A + §4.8 双拼
-                  + **就地「改」入口**（issue #5202 · 裁定 6）：默认收起，推导结果在上一块只读展示 */}
+                  + **就地「改」入口**（issue #5202 · 裁定 6）：默认收起，推导结果在上一块只读展示
+                  + **收起态把当前所选摆出来并高亮**（issue #6399，2026-10-06 用户逐字「这里折叠的
+                    部分得把折叠的内容展示出来，不然用户不知道选择了什么，而且得高亮展示」）——
+                    展开态**不**重复渲染（内容本来就在眼前）。 */}
               <div className="pt-4 mt-4 border-t border-neutral-100">
-                <button
-                  type="button"
-                  data-testid="craft-plan-edit"
-                  aria-expanded={craftEditOpen}
-                  onClick={() => setCraftEditTouched(!craftEditOpen)}
-                  className="h-8 px-3 rounded border border-neutral-300 bg-white text-xs text-neutral-600 hover:border-neutral-400 transition-colors"
-                >
-                  {craftEditOpen ? '收起工艺参数' : '改工艺参数（加工类型 / 打开方式 / 款式 / 用料公式）'}
-                </button>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                  <button
+                    type="button"
+                    data-testid="craft-plan-edit"
+                    aria-expanded={craftEditOpen}
+                    onClick={() => setCraftEditTouched(!craftEditOpen)}
+                    className="h-8 px-3 rounded border border-neutral-300 bg-white text-xs text-neutral-600 hover:border-neutral-400 transition-colors"
+                  >
+                    {craftEditOpen ? '收起工艺参数' : '改工艺参数（加工类型 / 打开方式 / 款式 / 用料公式）'}
+                  </button>
+                  {!craftEditOpen && craftPlanCurrentRows.length > 0 && (
+                    <div
+                      data-testid="craft-plan-current"
+                      className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-primary-200 bg-primary-50 px-2 py-1"
+                    >
+                      <span className="text-[11px] text-neutral-500">当前</span>
+                      {craftPlanCurrentRows.map((row) => (
+                        <span key={row.label} className="text-[11px] text-neutral-500">
+                          {row.label}
+                          <span className="ml-1 font-medium text-primary-700">{row.value}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 {craftEditOpen && (
                   <div className="mt-3">
                 <OrderCraftFields
-                  value={derivedCraftSpec(line, calcConfig)}
+                  value={craftSpec}
                   onChange={onChangeCraft}
                   mainMeters={line.quantity}
                   calcConfig={calcConfig}
@@ -6344,7 +6399,7 @@ function LineItemBlock({
                     {/* 缺选配信息（组合键为空）⇒ **不给**改单价入口：没有 key 可同步 */}
                     {feeIsUnpriced && !canOverrideFee && (
                       <span data-testid="fee-combination-no-composition" className="text-amber-600">
-                        缺选配信息 ⇒ 没有组合键可同步，无法就地改单价
+                        缺选配信息 ⇒ 这行还没匹配到加工费组合，无法就地改单价
                       </span>
                     )}
                     {/* 定价入口（与页面既有告警同一路径；已定价行无需它） */}

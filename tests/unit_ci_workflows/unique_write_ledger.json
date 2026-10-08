@@ -1,0 +1,116 @@
+{
+  "_why": "唯一键 / 幂等键写入点的**冻结登记台账**（issue #6301，铁律 8 的类级元守卫）。判据 = tests/unit_ci_workflows/test_idempotent_unique_write_guard.py —— 未登记即红、登记即须属实（双向）、台账为空 / 扫描零命中即红。**只许缩短**：补上原子写（ON CONFLICT DO NOTHING）或冲突映射（DuplicateKeyException）后销账。本表**不替** handling=none 的存量缺口背书，只保证新的同类写入点进不去、缺口静默消失也进不去。",
+  "_gap_issue": "handling=none 的 17 条 = 已登记的观测缺口：这些写入点会写**带唯一约束的表**，而代码里没有任何冲突处理 ⇒ 并发/重复请求撞唯一索引时异常冒泡成 5xx（与 #6301 同族）。它们各自需要独立的包（补原子写或冲突映射），不在本单射程 —— 本单把形态钉住、把「#6301 这一处」从缺口里销账。",
+  "_handling_values": "有处理 ⇒ 写「处理所在文件的仓库相对路径」（服务侧 catch DuplicateKeyException，或该 mapper 接口里有 ON CONFLICT 的 @Insert）；没有 ⇒ 写 \"none\"。",
+  "_scan": "写入点 = 服务/控制层里 `<XxxMapper 字段>.insert*(`（含 insertIgnoreConflict 这类带前后缀的插入 —— 方法名里有 IgnoreConflict 不改变「它是写入点」这个事实），且该 mapper 经 `extends BaseMapper<实体>` → 实体的 @TableName 指向 backend/admin-api/src/main/resources/db/init/schema.sql 里带 CREATE UNIQUE INDEX 的表（注释 / 字符串不算写入点）。",
+  "sites": {
+    "backend/admin-api/src/main/java/com/migao/admin/controller/SettingsController.java::paymentQrcodeMapper": {
+      "table": "tenant_payment_qrcodes",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/controller/SettingsController.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java::userMapper": {
+      "table": "users",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/CraftCalcConfigService.java::craftCalcConfigMapper": {
+      "table": "craft_calc_configs",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/CuttingHeightConfigService.java::cuttingHeightConfigMapper": {
+      "table": "cutting_height_configs",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/FinanceService.java::financeTransactionMapper": {
+      "table": "finance_transactions",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/InboundLabelService.java::inboundLabelMapper": {
+      "table": "inbound_labels",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/InboundLabelMapper.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java::inboundOrderMapper": {
+      "table": "inbound_orders",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java::financeTransactionMapper": {
+      "table": "finance_transactions",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/OrderShipmentService.java::orderShipmentMapper": {
+      "table": "order_shipments",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java::combinationMapper": {
+      "table": "processing_fee_combinations",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java::processingOrderMapper": {
+      "table": "processing_orders",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderSetAllocator.java::orderSetMapper": {
+      "table": "processing_order_sets",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderSetMapper.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java::productionOperationMapper": {
+      "table": "production_operations",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java::productionOperationPositionMapper": {
+      "table": "production_operation_positions",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java::productionRouteRuleMapper": {
+      "table": "production_route_rules",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java::productionRouteTemplateMapper": {
+      "table": "production_route_templates",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java::productionOperationMapper": {
+      "table": "production_operations",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java::setPartTokenMapper": {
+      "table": "processing_set_part_tokens",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingSetPartTokenMapper.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java::rolePermissionMapper": {
+      "table": "role_permissions",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/RemnantService.java::remnantMapper": {
+      "table": "fabric_remnants",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/RemnantService.java::specMapper": {
+      "table": "remnant_small_item_specs",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java::rolePermissionMapper": {
+      "table": "role_permissions",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ScheduledTaskService.java::scheduledTaskMapper": {
+      "table": "scheduled_tasks",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/ScheduledTaskService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/StockBatchConsumptionService.java::consumptionMapper": {
+      "table": "stock_batch_consumptions",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/StockBatchConsumptionMapper.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java::userMapper": {
+      "table": "users",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java::userMapper": {
+      "table": "users",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/WorkerPageConfigService.java::workerPageConfigMapper": {
+      "table": "worker_page_configs",
+      "handling": "none"
+    }
+  }
+}

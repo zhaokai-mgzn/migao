@@ -1,0 +1,15 @@
+{
+  "$comment": [
+    "issue #6158 豁免台账 —— 「写端点 + @Valid 请求体」但**尚未**把归属判定前置的端点。",
+    "判据 = backend/admin-api/src/test/java/com/migao/admin/controller/TenantOwnedWriteEndpointGuardTest.java",
+    "语义（只许缩短）：修好一个存量端点 ⇒ 同批删掉它的条目 + 下调 FROZEN_MAX_LEDGER_ENTRIES（现取打印）。",
+    "不许用「加一条登记」代替「加一行 @TenantOwnedResource」—— 那正是本守卫要拦的动作（判据 3 会红）。",
+    "🔴 issue #6167 已把最后两条（notification-templates / notification-rules）修掉并清空本台账（2 → 0）。",
+    "那两条当时为什么在册：notification_templates / notification_rules 在 MybatisPlusConfig.IGNORE_TENANT_TABLES 里",
+    "（系统内置 tenant_id=0 与租户自定义混合表，租户插件**不注入**过滤条件）⇒ 「带租户过滤的按 id 查询」在",
+    "这两张表上不存在。修法（#6167）：归属语义拆成「可读 = 当前租户 OR 0」「可写 = 仅当前租户」，",
+    "认定查询由 NotificationTemplateService / NotificationRuleService 提供（与写路径同一份谓词），",
+    "登记进 TenantResourceOwnership 的 checks（可见）+ writableChecks（可写）两张表。"
+  ],
+  "entries": []
+}

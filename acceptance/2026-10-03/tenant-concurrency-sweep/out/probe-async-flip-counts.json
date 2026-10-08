@@ -1,0 +1,50 @@
+{
+  "before": {
+    "20": 6,
+    "21": 6
+  },
+  "after": {
+    "20": 12,
+    "21": 12
+  },
+  "delta": {
+    "20": 6,
+    "21": 6
+  },
+  "statuses": [
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200
+  ],
+  "logTail": [
+    "2026-10-03 11:10:16.055 [http-nio-8080-exec-338] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+    "2026-10-03 11:10:16.067 [http-nio-8080-exec-133] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+    "2026-10-03 11:10:16.067 [http-nio-8080-exec-184] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+    "2026-10-03 11:10:16.074 [http-nio-8080-exec-202] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+    "2026-10-03 11:10:16.078 [http-nio-8080-exec-167] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+    "2026-10-03 11:10:16.078 [http-nio-8080-exec-338] INFO  c.m.a.service.DailyBriefingService - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+    "2026-10-03 11:10:16.079 [http-nio-8080-exec-314] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+    "2026-10-03 11:10:16.079 [http-nio-8080-exec-210] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+    "2026-10-03 11:10:16.082 [http-nio-8080-exec-128] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+    "2026-10-03 11:10:16.085 [http-nio-8080-exec-185] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+    "2026-10-03 11:10:16.087 [http-nio-8080-exec-270] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+    "2026-10-03 11:10:16.087 [http-nio-8080-exec-190] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+    "2026-10-03 11:10:16.088 [http-nio-8080-exec-227] INFO  c.m.a.controller.BriefingController - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+    "2026-10-03 11:10:16.091 [http-nio-8080-exec-133] INFO  c.m.a.service.DailyBriefingService - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+    "2026-10-03 11:10:16.099 [http-nio-8080-exec-184] INFO  c.m.a.service.DailyBriefingService - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+    "2026-10-03 11:10:16.101 [task-9] DEBUG c.m.a.mapper.AuditLogMapper.insert - ==> Parameters: eb0f42b45039c696781e54588dfd7027(String), 20(Long), 9068a79a939c9be846a605dc78dc30b6(String), 13870217889(String), update(String), briefing_config(String), 20(String), 智能每日经营简报配置(String), {\"generateTime\":\"09:00\",\"enabled\":false}(String), 2026-10-03T11:10:16.100533+08:00(OffsetDateTime), 2026-10-03T11:10:16.100552+08:00(OffsetDateTime)",
+    "2026-10-03 11:10:16.107 [http-nio-8080-exec-202] INFO  c.m.a.service.DailyBriefingService - 更新简报配置 tenantId=21 enabled=false generateTime=08:30",
+    "2026-10-03 11:10:16.108 [task-10] DEBUG c.m.a.mapper.AuditLogMapper.insert - ==> Parameters: bff54f609cc24f928e3e7d63aef903bf(String), 21(Long), 2047a4f6803b8bc14b11c77d8c20b4cd(String), 13797101248(String), update(String), briefing_config(String), 21(String), 智能每日经营简报配置(String), {\"generateTime\":\"08:30\",\"enabled\":false}(String), 2026-10-03T11:10:16.107901+08:00(OffsetDateTime), 2026-10-03T11:10:16.107923+08:00(OffsetDateTime)",
+    "2026-10-03 11:10:16.115 [http-nio-8080-exec-167] INFO  c.m.a.service.DailyBriefingService - 更新简报配置 tenantId=20 enabled=false generateTime=09:00",
+    "2026-10-03 11:10:16.116 [task-11] DEBUG c.m.a.mapper.AuditLogMapper.insert - ==> Parameters: 864e97469ab95ae1dceb73ca8e1540f5(String), 20(Long), 9068a79a939c9be846a605dc78dc30b6(String), 13870217889(String), update(String), briefing_config(String), 20(String), 智能每日经营简报配置(String), {\"generateTime\":\"09:00\",\"enabled\":false}(String), 2026-10-03T11:10:16.115937+08:00(OffsetDateTime), 2026-10-03T11:10:16.115958+08:00(OffsetDateTime)"
+  ]
+}

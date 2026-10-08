@@ -39,6 +39,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -101,7 +102,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     /**
      * 合法的状态流转映射
      */
-    private static final Map<String, List<String>> STATUS_TRANSITIONS = new HashMap<>();
+    private static final Map<String, List<String>> STATUS_TRANSITIONS = new LinkedHashMap<>();
     static {
         STATUS_TRANSITIONS.put("draft", List.of("under_review", "on_sale"));
         STATUS_TRANSITIONS.put("under_review", List.of("on_sale", "draft"));
@@ -122,6 +123,65 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     );
 
     /**
+     * 商品状态**合法集合**（issue #6347）——**单一真值源** = {@link #STATUS_TRANSITIONS} 的键集
+     * （不另写第二份：写死两份 = 改一处漏一处，正是本单的成因）。
+     *
+     * <p>建品/改品的枚举准入、未知当前状态的「出路」文案，以及元守卫
+     * `tests/unit_ci_workflows/test_product_status_single_source.py` 都取这一处。</p>
+     */
+    static final Set<String> PRODUCT_STATUSES =
+            Collections.unmodifiableSet(new LinkedHashSet<>(STATUS_TRANSITIONS.keySet()));
+
+    /**
+     * 未知当前状态的**修正目标**（issue #6347）：历史非法值（active / on_shelf / in_warehouse …）
+     * 落库形成的「状态机死行」原先无法自救（任何目标状态都被拒）。这里给一条**保守**的恢复边：
+     * 只允许改回 off_sale / draft，**不允许**直接改到 on_sale（来历不明的行不该被直接上架）；
+     * 收回状态机后即可走正常流转（off_sale → on_sale）。
+     */
+    private static final List<String> STATUS_RECOVERY_TARGETS = List.of("off_sale", "draft");
+
+    /** 合法状态的可读枚举清单（错误文案用；顺序 = {@link #STATUS_TRANSITIONS} 的登记顺序）。 */
+    static String productStatusChoices() {
+        return PRODUCT_STATUSES.stream()
+                .map(s -> s + "(" + PRODUCT_STATUS_LABELS.getOrDefault(s, s) + ")")
+                .collect(Collectors.joining(" / "));
+    }
+
+    /**
+     * 商品状态**枚举准入**（issue #6347，fail-closed）：建品/改品原先对 status 只校验长度
+     * （{@link ColumnTextLength#requireWithinOrNull}）⇒ 任意字符串都能落库，而那些行是
+     * **状态机死行**（不在「在售」口径里 ⇒ 快照静默过滤掉它的 SKU；且 PUT /status 全部拒绝 ⇒ 无法自救）。
+     * 这里在**入口**（任何写之前）显式拒绝未知取值，文案列出合法枚举（可行动，不是「检查字段格式」）。
+     *
+     * <p>⚠️ **长度准入不藏进本方法**：写面上必须保留
+     * {@code ColumnTextLength.requireWithinOrNull(<x>.getStatus(), 32, "商品状态 status")} 那一行 ——
+     * 它是 {@code ProductTextColumnAdmissionMetaGuardTest}（issue #6302）的文本锚，
+     * 把长度判据包进这里会让那条元守卫判 GATE-MISSING（本 PR 首轮 CI 实测过一次）。</p>
+     */
+    static String requireValidStatusOrNull(String status, String field) {
+        if (!StringUtils.hasText(status) || PRODUCT_STATUSES.contains(status)) {
+            return status;
+        }
+        throw BusinessException.validationError(
+                field + " 取值非法：「" + status + "」；合法取值只有 " + productStatusChoices()
+                        + "（本字段按枚举准入，不接受其它字符串）");
+    }
+
+    /**
+     * 未知当前状态的**行动出路**（issue #6347）；已知状态返回空串（不打扰原有拒绝文案）。
+     */
+    private static String statusRecoveryHint(String currentStatus) {
+        if (STATUS_TRANSITIONS.containsKey(currentStatus)) {
+            return "";
+        }
+        String targets = STATUS_RECOVERY_TARGETS.stream()
+                .map(s -> s + "(" + PRODUCT_STATUS_LABELS.getOrDefault(s, s) + ")")
+                .collect(Collectors.joining(" 或 "));
+        return "；该状态不在商品状态机内（合法状态: " + productStatusChoices()
+                + "），请先把它改为 " + targets + " 修正回状态机";
+    }
+
+    /**
      * 库存台账 note（issue #4157）：建品/改品直写 SKU 库存的来源说明。
      *
      * <p>{@code reason} 复用 {@link StockLedger#REASON_MANUAL}（人工直接设定库存，与
@@ -139,6 +199,25 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * 分页查询商品列表
      */
     public PageResponse<ProductResponse> getProducts(ProductQueryRequest query, Long tenantId) {
+        LambdaQueryWrapper<Product> wrapper = buildProductQueryWrapper(query);
+
+        // 执行分页查询
+        Page<Product> page = new Page<>(query.getPage(), query.getSize());
+        Page<Product> productPage = productMapper.selectPage(page, wrapper);
+
+        return PageResponse.of(productPage.getTotal(), productPage.getCurrent(), productPage.getSize(),
+                toProductResponses(productPage.getRecords()));
+    }
+
+    /**
+     * 构造商品列表的查询条件（**列表读面与导出读面共用的单一源**，issue #6198）。
+     *
+     * <p>为什么抽出来单独一个方法：导出必须与列表**同筛选、同排序** ——
+     * 「导出行数 == 同筛选条件下列表的 {@code total}」这条判据正是拿它当靶子。
+     * 两处各写一份条件迟早分叉（导出漏掉一个筛选条件而没人发现），
+     * 而「导出 == 列表」是本仓对导出唯一的真值定义。</p>
+     */
+    private LambdaQueryWrapper<Product> buildProductQueryWrapper(ProductQueryRequest query) {
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
 
         // 关键词搜索（名称 + 货号）
@@ -219,18 +298,20 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             wrapper.orderByDesc(Product::getCreatedAt);
         }
 
-        // 执行分页查询
-        Page<Product> page = new Page<>(query.getPage(), query.getSize());
-        Page<Product> productPage = productMapper.selectPage(page, wrapper);
+        return wrapper;
+    }
 
+    /**
+     * 商品行 → 响应 DTO（**列表与导出共用的单一源**）：附加 colorCount 与总库存
+     * （总库存以 SKU 汇总为准，覆盖 {@code product.stock} 可能为 0 的情况）。
+     */
+    private List<ProductResponse> toProductResponses(List<Product> records) {
         // 获取分类名称映射
-        Map<String, String> categoryNameMap = getCategoryNameMap(productPage.getRecords());
-
+        Map<String, String> categoryNameMap = getCategoryNameMap(records);
         // 转换为响应 DTO，附加 colorCount 和 totalStock
-        List<ProductResponse> responses = productPage.getRecords().stream()
+        return records.stream()
                 .map(product -> {
                     ProductResponse response = convertToResponse(product, categoryNameMap.get(product.getCategoryId()));
-                    // 附加颜色数和总库存（总库存以 SKU 汇总为准，覆盖 product.stock 可能为 0 的情况）
                     response.setColorCount(getColorCount(product.getId()));
                     BigDecimal totalStock = getTotalStock(product.getId());
                     response.setTotalStock(totalStock);
@@ -238,8 +319,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     return response;
                 })
                 .collect(Collectors.toList());
-
-        return PageResponse.of(productPage.getTotal(), productPage.getCurrent(), productPage.getSize(), responses);
     }
 
     /**
@@ -349,8 +428,35 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     public ProductResponse createProduct(ProductCreateRequest request, Long tenantId) {
         // issue #5063（V115）：库存是 1 位小数口径（0.1 米粒度）⇒ **超过 1 位小数显式拒绝**
         // （fail-closed；静默取整 = 账面与实物不符且无人发现，正是本单要治的形态）。
-        // 判据单点在 StockQuantity；这里只做入口归一，不在 Service 里另写一套小数位判断。
-        request.setStock(StockQuantity.requireOneDecimalOrNull(request.getStock(), "库存 stock"));
+        // issue #6199：`products.stock` 是**绝对值**（实物米数）⇒ 同一次准入**还要拒负数**
+        // （改前这里只过 `requireOneDecimalOrNull`：只校精度、不校符号 ⇒ 传 -5 得 200 且落库）。
+        // 判据单点在 StockQuantity；这里只做入口归一，不在 Service 里另写一套小数位/符号判断。
+        request.setStock(StockQuantity.requireNonNegativeOrNull(request.getStock(), "库存 stock"));
+        // 金额精度准入（issue #6228）：`products.base_price` / `product_skus.price` 是 NUMERIC(·,2)，
+        // 超 2 位有效小数会被 PG 静默四舍五入。**判在入口**（本方法会先 insert `products` 行、
+        // 之后才走 saveColorsAndSkus 收口）⇒ 这样"拒绝"才发生在任何写之前。`null` = 不改，透传。
+        request.setBasePrice(MoneyScale.requireTwoDecimalsOrNull(request.getBasePrice(), "商品基础价 basePrice"));
+        requireSkuPrices(request.getSkus());
+
+        // 文本列长度准入（issue #6302）：`products.*` 的 varchar 列超长时 PG **不截断、直接报错** ——
+        // `ERROR: value too long for type character varying(30)` @ ProductMapper.insert ⇒ 500
+        // 「服务器内部错误」，用户无法自救（不知道哪一列、该改多长）。判在**入口**、在任何写之前
+        // ⇒ 超长 ⇒ 422 + 可行动文案（「最长 N 个字符…当前 M 个字符…请缩短」）。
+        // 判据单点在 ColumnTextLength；上限 = 现取 information_schema 的**真实列长度**
+        // （对账判据 = ProductTextColumnAdmissionMetaGuardTest：列长度改了而这里没跟 ⇒ 判红）。
+        // 判在这里还覆盖 agent 路径（`createProductForAgent` 手工 new DTO 再调本方法 ⇒ 不走 Bean Validation）。
+        request.setName(ColumnTextLength.requireWithinOrNull(request.getName(), 255, "商品名称 name"));
+        request.setSkuCode(ColumnTextLength.requireWithinOrNull(request.getSkuCode(), 30, "商品货号 skuCode"));
+        request.setUnit(ColumnTextLength.requireWithinOrNull(request.getUnit(), 32, "计价单位 unit"));
+        request.setPricingType(ColumnTextLength.requireWithinOrNull(request.getPricingType(), 30, "计价方式 pricingType"));
+        request.setCategoryId(ColumnTextLength.requireWithinOrNull(request.getCategoryId(), 64, "分类 categoryId"));
+        request.setMainImage(ColumnTextLength.requireWithinOrNull(request.getMainImage(), 512, "主图 mainImage"));
+        request.setKnowledgeBaseId(ColumnTextLength.requireWithinOrNull(
+                request.getKnowledgeBaseId(), 64, "知识库 knowledgeBaseId"));
+        // 文本列长度准入（issue #6302）——**这一行是 ProductTextColumnAdmissionMetaGuardTest 的文本锚，不许挪走/包进别的方法**
+        request.setStatus(ColumnTextLength.requireWithinOrNull(request.getStatus(), 32, "商品状态 status"));
+        // 枚举准入（issue #6347）：status 是**枚举**字段，原先只有上面那行长度准入 ⇒ 任意字符串落库成「状态机死行」。
+        request.setStatus(requireValidStatusOrNull(request.getStatus(), "商品状态 status"));
 
         // 空分类归一化（#3665 冒烟 B1）：前端草稿发的是 ''（DEFAULT_FORM.categoryId）而非缺省 null。
         // 若原样透传：validateCategory 因 hasText('')==false 跳过校验 → BeanUtils 把 '' 写进实体
@@ -416,8 +522,35 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse updateProduct(String id, ProductUpdateRequest request, Long tenantId) {
-        // issue #5063（V115）：同 createProduct —— 库存输入最多 1 位小数，超过即显式拒绝
-        request.setStock(StockQuantity.requireOneDecimalOrNull(request.getStock(), "库存 stock"));
+        // issue #5063（V115）：同 createProduct —— 库存输入最多 1 位小数，超过即显式拒绝。
+        // issue #6199：同 createProduct —— 绝对值准入必须同时拒负数（本行是改品/批量库存
+        // `updateProductForAgent` 的共同入口，负值会一路写进 products.stock 与 product_skus.stock）。
+        request.setStock(StockQuantity.requireNonNegativeOrNull(request.getStock(), "库存 stock"));
+        // 金额精度准入（issue #6228）：同 createProduct —— 判在**入口**（本方法先 updateById `products`
+        // 行、之后才走 saveColorsAndSkus 收口）⇒「超精度 ⇒ 零写入」才成立。`null` = 不改，透传。
+        request.setBasePrice(MoneyScale.requireTwoDecimalsOrNull(request.getBasePrice(), "商品基础价 basePrice"));
+        requireSkuPrices(request.getSkus());
+
+        // 文本列长度准入（issue #6302）：`products.*` 的 varchar 列超长时 PG **不截断、直接报错** ——
+        // `ERROR: value too long for type character varying(30)` @ ProductMapper.insert ⇒ 500
+        // 「服务器内部错误」，用户无法自救（不知道哪一列、该改多长）。判在**入口**、在任何写之前
+        // ⇒ 超长 ⇒ 422 + 可行动文案（「最长 N 个字符…当前 M 个字符…请缩短」）。
+        // 判据单点在 ColumnTextLength；上限 = 现取 information_schema 的**真实列长度**
+        // （对账判据 = ProductTextColumnAdmissionMetaGuardTest：列长度改了而这里没跟 ⇒ 判红）。
+        // 判在这里还覆盖 agent 路径（`createProductForAgent` 手工 new DTO 再调本方法 ⇒ 不走 Bean Validation）。
+        request.setName(ColumnTextLength.requireWithinOrNull(request.getName(), 255, "商品名称 name"));
+        request.setSkuCode(ColumnTextLength.requireWithinOrNull(request.getSkuCode(), 30, "商品货号 skuCode"));
+        request.setUnit(ColumnTextLength.requireWithinOrNull(request.getUnit(), 32, "计价单位 unit"));
+        request.setPricingType(ColumnTextLength.requireWithinOrNull(request.getPricingType(), 30, "计价方式 pricingType"));
+        request.setCategoryId(ColumnTextLength.requireWithinOrNull(request.getCategoryId(), 64, "分类 categoryId"));
+        request.setMainImage(ColumnTextLength.requireWithinOrNull(request.getMainImage(), 512, "主图 mainImage"));
+        request.setKnowledgeBaseId(ColumnTextLength.requireWithinOrNull(
+                request.getKnowledgeBaseId(), 64, "知识库 knowledgeBaseId"));
+        // 文本列长度准入（issue #6302）——**这一行是 ProductTextColumnAdmissionMetaGuardTest 的文本锚，不许挪走/包进别的方法**
+        request.setStatus(ColumnTextLength.requireWithinOrNull(request.getStatus(), 32, "商品状态 status"));
+        // 枚举准入（issue #6347）：与 createProduct 同一入口判据（本方法最终会恢复原状态，不写 status，
+        // 但非法取值仍须在此 fail-closed，避免它借由 validateRequiredForStatus 产生误导性报错）。
+        request.setStatus(requireValidStatusOrNull(request.getStatus(), "商品状态 status"));
 
         Product product = productMapper.selectById(id);
         if (product == null) {
@@ -492,10 +625,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             //
             // 后果是**客户可见的错价**：商品库出现「商品级 basePrice ≠ SKU 级 price」两个价，
             // 而 agent 下单的**权威价**正是 SKU 级（OrderService 取价校验取 ProductSku.price）
-            // ⇒ 米宝按旧 SKU 价报价并成交，商户刚改的价对 AI 报价无效。
+            // ⇒ 黄金策按旧 SKU 价报价并成交，商户刚改的价对 AI 报价无效。
             //
             // 显式带 `skus`（前端表单逐 SKU 定价）时走上面的分支、SKU 级价优先，本分支不参与。
             ProductSku priceSync = new ProductSku();
+            // 精度已在 updateProduct 入口准入（issue #6228）⇒ 这里原样写，不再判第二遍
             priceSync.setPrice(request.getBasePrice());
             productSkuMapper.update(priceSync, new LambdaQueryWrapper<ProductSku>()
                     .eq(ProductSku::getProductId, id)
@@ -550,6 +684,22 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * 2. 仅删除本次请求中"缺失"的旧行（缺失才删）；
      * 3. create 场景无现有行，等价于全量插入，行为与旧实现一致。
      */
+    /**
+     * 逐条 SKU 价的精度准入（issue #6228）：`product_skus.price` 是 NUMERIC(·,2)，超 2 位有效小数
+     * 会被 PG 静默四舍五入。建品/改品的**入口**各调一次（判在任何写之前）；`saveColorsAndSkus` 收口
+     * 再兜一次 —— 导入行的价不经入口，只经收口。`null` = 未填，原样透传（不归一成 0）。
+     */
+    private static void requireSkuPrices(List<ProductSkuInput> skus) {
+        if (skus == null) {
+            return;
+        }
+        for (ProductSkuInput sku : skus) {
+            if (sku != null) {
+                sku.setPrice(MoneyScale.requireTwoDecimalsOrNull(sku.getPrice(), "SKU 价格 price"));
+            }
+        }
+    }
+
     private void saveColorsAndSkus(String productId, String productSkuCode, Long tenantId,
                                     List<ProductColorInput> colorInputs,
                                     List<String> sellingMethods,
@@ -558,12 +708,26 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                                     BigDecimal stock,
                                     List<ProductSkuInput> skuInputs,
                                     boolean pruneMissing) {
+        // 金额精度准入（issue #6228）：`products.base_price` / `product_skus.price` 是 NUMERIC(·,2)，
+        // 超 2 位有效小数会被 PG **静默四舍五入**（接口 200、库内价与请求价不等，而 SKU 价正是
+        // 下单取价的权威列）⇒ 在本收口显式拒绝、不静默取整。
+        // 判在本方法开头 = 本方法内任何写（含库存台账 / SKU upsert）之前；
+        // 这里是建品/改品/导入/Agent 四条路径写 SKU 价的**唯一收口**，判在这里才无死角。
+        basePrice = MoneyScale.requireTwoDecimalsOrNull(basePrice, "商品基础价 basePrice");
+        requireSkuPrices(skuInputs);
         // issue #5063（V115）：SKU 库存是库存链路的**权威列**，逐行准入（最多 1 位小数）——
-        // 这里是所有建品/改品路径（表单 / Agent / 矩阵式生成）写 SKU stock 的**唯一收口**
+        // 这里是所有建品/改品路径（表单 / Agent / 矩阵式生成）写 SKU stock 的**唯一收口**；
+        // issue #6199：同一次准入还要拒**负数**（SKU 库存也是绝对值）。
         if (skuInputs != null) {
             for (ProductSkuInput input : skuInputs) {
                 if (input != null) {
-                    input.setStock(StockQuantity.requireOneDecimalOrNull(input.getStock(), "SKU 库存 stock"));
+                    input.setStock(StockQuantity.requireNonNegativeOrNull(input.getStock(), "SKU 库存 stock"));
+                    // 文本列长度准入（issue #6302）：SKU 行落 `product_skus` 的 varchar 列
+                    // （编码 / 门幅 / 颜色名）。判在本方法开头 = 本方法内任何写之前；Excel 导入与
+                    // agent 路径也经过这条收口（它们同样手工构造 ProductSkuInput）。
+                    input.setSkuCode(ColumnTextLength.requireWithinOrNull(input.getSkuCode(), 50, "SKU 编码 skuCode"));
+                    input.setDoorWidth(ColumnTextLength.requireWithinOrNull(input.getDoorWidth(), 20, "规格尺寸 doorWidth"));
+                    input.setColorName(ColumnTextLength.requireWithinOrNull(input.getColorName(), 64, "SKU 颜色名称 colorName"));
                 }
             }
         }
@@ -616,6 +780,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             int idx = 0;
             for (ProductColorInput input : colorInputs) {
                 if (input == null) continue;
+                // 文本列长度准入（issue #6302）：颜色名 / 主色 HEX / 备注落 `product_colors` 的
+                // varchar 列，判在任何写之前（含下面的 updateById / insert）。
+                input.setColorName(ColumnTextLength.requireWithinOrNull(input.getColorName(), 30, "颜色名称 colorName"));
+                input.setMainColorHex(ColumnTextLength.requireWithinOrNull(input.getMainColorHex(), 7, "主色值 mainColorHex"));
+                input.setRemark(ColumnTextLength.requireWithinOrNull(input.getRemark(), 30, "颜色备注 remark"));
                 ProductColor matched = null;
                 if (input.getId() != null && input.getId() > 0) {
                     matched = colorById.get(input.getId());
@@ -977,7 +1146,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
         if (!Set.of("draft", "off_sale").contains(currentStatus)) {
             String statusLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
-            throw BusinessException.validationError("当前状态[" + statusLabel + "]不允许删除，请先下架后再删除");
+            throw BusinessException.validationError(
+                    "当前状态[" + statusLabel + "]不允许删除，请先下架后再删除" + statusRecoveryHint(currentStatus));
         }
 
         productMapper.deleteById(id);
@@ -1034,12 +1204,27 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         }
 
         List<String> allowedTransitions = STATUS_TRANSITIONS.get(currentStatus);
-        if (allowedTransitions == null || !allowedTransitions.contains(status)) {
+        if (allowedTransitions == null) {
+            // 未知当前状态 = 状态机死行（历史非法值：active / on_shelf / in_warehouse …，issue #6347）。
+            // 唯一出路 = 改回 off_sale / draft 收回状态机（**不允许**直接改到 on_sale：
+            // 来历不明的行不该被直接上架；收回后即可走正常流转 off_sale → on_sale）。
+            if (STATUS_RECOVERY_TARGETS.contains(status)) {
+                log.warn("商品状态修正（issue #6347）：当前状态 [{}] 不在状态机内，允许改回 [{}]",
+                        currentStatus, status);
+                return;
+            }
             String currentLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
             String targetLabel = PRODUCT_STATUS_LABELS.getOrDefault(status, status);
-            List<String> allowedLabels = allowedTransitions != null
-                    ? allowedTransitions.stream().map(s -> PRODUCT_STATUS_LABELS.getOrDefault(s, s)).toList()
-                    : List.of();
+            throw BusinessException.validationError(String.format(
+                    "状态流转无效: %s → %s。当前状态「%s」不在商品状态机内（合法状态: %s）%s",
+                    currentLabel, targetLabel, currentStatus, productStatusChoices(),
+                    statusRecoveryHint(currentStatus)));
+        }
+        if (!allowedTransitions.contains(status)) {
+            String currentLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+            String targetLabel = PRODUCT_STATUS_LABELS.getOrDefault(status, status);
+            List<String> allowedLabels = allowedTransitions.stream()
+                    .map(s -> PRODUCT_STATUS_LABELS.getOrDefault(s, s)).toList();
             throw BusinessException.validationError(
                     String.format("状态流转无效: %s → %s，允许的目标状态: %s",
                             currentLabel, targetLabel,
@@ -1075,7 +1260,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             if (!"on_sale".equals(currentStatus)) {
                 String label = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
                 throw BusinessException.validationError(
-                        String.format("仅上架商品可设为推荐，当前状态: %s", label));
+                        String.format("仅上架商品可设为推荐，当前状态: %s", label) + statusRecoveryHint(currentStatus));
             }
         }
         product.setRecommended(recommended);
@@ -1089,7 +1274,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
     /**
      * 批量上架
-     * 只有 off_sale/in_warehouse 状态的商品可上架
+     * 只有 off_sale 状态的商品可上架
      */
     @Transactional(rollbackFor = Exception.class)
     public BatchOperationResult batchOnShelf(List<String> productIds, Long tenantId) {
@@ -1108,7 +1293,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
             if (!allowedStatuses.contains(currentStatus)) {
                 String statusLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
-                result.addError(id, "当前状态[" + statusLabel + "]不允许上架");
+                result.addError(id, "当前状态[" + statusLabel + "]不允许上架" + statusRecoveryHint(currentStatus));
                 continue;
             }
             product.setStatus("on_sale");
@@ -1142,7 +1327,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
             if (!"on_sale".equals(currentStatus)) {
                 String statusLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
-                result.addError(id, "当前状态[" + statusLabel + "]不允许下架");
+                result.addError(id, "当前状态[" + statusLabel + "]不允许下架" + statusRecoveryHint(currentStatus));
                 continue;
             }
             product.setStatus("off_sale");
@@ -1177,7 +1362,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
             if (!allowedStatuses.contains(currentStatus)) {
                 String statusLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
-                result.addError(id, "当前状态[" + statusLabel + "]不允许删除");
+                result.addError(id, "当前状态[" + statusLabel + "]不允许删除" + statusRecoveryHint(currentStatus));
                 continue;
             }
             productMapper.deleteById(id);
@@ -1388,7 +1573,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         // issue #5063（V115）：库存是 1 位小数口径（0.1 米粒度）⇒ 复用 StockQuantity 的准入判据，
         // **不在这里另写一套小数位判断**；超过 1 位小数显式拒绝（禁止静默取整/截断）。
-        parsedRow.stock = StockQuantity.requireOneDecimalOrNull(
+        // issue #6199：导入的库存列同样是**绝对值** ⇒ 负数一并拒绝（导入面此前与改品面同款漏了符号）。
+        parsedRow.stock = StockQuantity.requireNonNegativeOrNull(
                 readCellNumber(row, header.get("库存"), "库存", rowNo), "第 " + rowNo + " 行库存");
 
         parsedRow.colorName = normalizeBlankToNull(cellByHeader(row, header, "颜色"));
@@ -1508,6 +1694,15 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     private void upsertImportedProduct(List<ImportedRow> group, Long tenantId, ProductImportResult result) {
         ImportedRow head = group.get(0);
+        // 金额精度准入（issue #6228）：Excel 导入的价格是**外部表格输入**，而
+        // `products.base_price` / `product_skus.price` 是 NUMERIC(·,2) ⇒ 超 2 位有效小数会被 PG
+        // 静默四舍五入。判在本方法开头 = 本方法的任何写（productMapper.insert/updateById）之前。
+        head.price = MoneyScale.requireTwoDecimalsOrNull(head.price, "导入行价格");
+        // 文本列长度准入（issue #6302）：Excel 行是**外部表格输入**，同样判在任何写之前
+        // （本方法会直接 productMapper.insert/updateById）⇒ 超长行 422 + 可行动文案，不是 500。
+        head.name = ColumnTextLength.requireWithinOrNull(head.name, 255, "导入行商品名称 name");
+        head.skuCode = ColumnTextLength.requireWithinOrNull(head.skuCode, 30, "导入行商品货号 skuCode");
+        head.categoryId = ColumnTextLength.requireWithinOrNull(head.categoryId, 64, "导入行分类 categoryId");
         boolean groupHasSku = group.stream().anyMatch(r -> r.hasSku);
 
         // 幂等键查询：命中 ⇒ 原地更新（不新建行）；未命中 ⇒ 新建
@@ -1598,11 +1793,19 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * 导出商品
      */
     public void exportProducts(ProductQueryRequest query, Long tenantId, HttpServletResponse response) throws IOException {
-        // 查询商品列表（不分页，全量导出）
-        query.setPage(1L);
-        query.setSize(10000L);
-        PageResponse<ProductResponse> pageResult = getProducts(query, tenantId);
-        List<ProductResponse> products = pageResult.getItems();
+        // 🔴 全量导出**不得**走分页入口（issue #6198）：全局分页上限
+        // （MybatisPlusConfig 的 `paginationInnerInterceptor().setMaxLimit(500L)`）会把页大小夹回去
+        // ⇒ 旧实现 `setSize(10000L)` 实际只导出 **500 行**、且**没有任何提示**
+        //（实测：列表 `total=989` 而导出 500 行）。
+        //
+        // 口径 = **不带 `IPage` 的 `selectList`**：分页拦截器只作用于 `IPage` 参数，不截断它；
+        // 且它是一条 SQL 一次取回、条件与列表同源（{@link #buildProductQueryWrapper}）⇒
+        // 「导出行数 == 同筛选条件下列表的 total」恒成立，也不存在「翻页期间数据变动导致漏行/重行」
+        // 的顺序稳定性问题。内存 = 本租户 + 当前筛选条件命中的全部行
+        //（旧实现本就打算一次取 10000 行，量级未变）。
+        // ⛔ 不许改成放开全局 `setMaxLimit` —— 那会放开**所有**列表的分页护栏（降护栏）。
+        List<ProductResponse> products = toProductResponses(
+                productMapper.selectList(buildProductQueryWrapper(query)));
 
         // 设置响应头
         String filename = URLEncoder.encode("商品列表.xlsx", StandardCharsets.UTF_8);
@@ -2073,7 +2276,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // status（上下架）：委托状态机唯一入口 applyStatusTransition（issue #3560）。
         // 回归背景：product_update 一直在请求体里下发 status，但本 DTO 曾无该字段 + 本方法从不读取它
         // → Jackson 静默忽略 → hasUpdate 保持 false → 上一行 !hasUpdate 分支返回商品详情
-        // （HTTP 200 + success）→ 米宝回「已下架」而 products.status 未变。与 stock 同型的"假成功"。
+        // （HTTP 200 + success）→ 黄金策回「已下架」而 products.status 未变。与 stock 同型的"假成功"。
         //
         // 为什么放在 updateProduct 之后：updateProduct 内部刻意 `product.setStatus(originalStatus)`
         // （注释「状态变更必须通过 updateProductStatus 接口（含状态机校验）」）——它靠 BeanUtils
@@ -2095,7 +2298,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * Agent 专用库存调整（生产回归修复：杜绝"假成功"）。
      *
      * 背景：updateProduct 对 stock 的处理依赖 SKU 重建条件（colors/skus 等字段非空），
-     * 单独传 stock 时被静默忽略但接口仍返回 success —— 米宝曾报"库存已调整"而库表未变。
+     * 单独传 stock 时被静默忽略但接口仍返回 success —— 黄金策曾报"库存已调整"而库表未变。
      * 本方法直接对现有 SKU 分配增减量并写库，语义与商品列表的总库存（SKU 汇总）一致。
      *
      * 分配规则（确定性）：
@@ -2238,6 +2441,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     public void updateSkuPrice(String productId, String color,
                                 String doorWidth, java.math.BigDecimal price,
                                 java.math.BigDecimal beforePrice, Long tenantId) {
+        // 金额精度准入（issue #6228）：`product_skus.price` 是 NUMERIC(·,2) —— 先于任何读/写。
+        price = MoneyScale.requireTwoDecimalsOrNull(price, "SKU 价格 price");
         java.util.List<ProductSku> candidates =
                 selectSkuCandidatesForPriceUpdate(productId, color, doorWidth, tenantId);
         if (candidates.isEmpty()) {
@@ -2334,6 +2539,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (price.signum() < 0) {
             throw BusinessException.validationError("价格不能为负数");
         }
+        // 金额精度准入（issue #6228）：`product_skus.price` 是 NUMERIC(·,2) —— 先于任何写。
+        price = MoneyScale.requireTwoDecimalsOrNull(price, "SKU 价格 price");
         ProductSku sku = productSkuMapper.selectOne(
                 new LambdaQueryWrapper<ProductSku>()
                         .eq(ProductSku::getId, skuId)

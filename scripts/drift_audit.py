@@ -198,8 +198,19 @@ class Finding:
 @dataclass
 class CheckResult:
     check_id: str
-    status: str = "ok"  # ok | known-drift | new-drift | unknown | error
+    # ok | known-drift | new-drift | unknown | error | **not_applicable**
+    # `not_applicable` = 本判据的**判定对象在本环境里结构性地不存在**（活锚未安装 /
+    # 预设语料取不到）⇒ 它**既不是 ❌（硬漂移：那会把「没有对象可比」谎报成「有漂移」），
+    # 也不是 ✅（「没有读数」≠ 0）**。它是**具名**的一态，由报告逐条列出并给计数声明；
+    # 退出码按其字面语义不因它非零（`tri_state`）。与 `unknown`（对象在、但这次没读出结论）
+    # 分开，是本条与「依赖环境」**同类但不同**的那一半 —— 详见 `not_applicable()`。
+    status: str = "ok"
     evaluated: int = 0
+    # `not_applicable` 的**具名声明**（`subject` / `reason` / `remedy`）—— 由报告末尾的
+    # 「not_applicable N 条」清单逐条打印，避免它退化成静默跳过（见 `not_applicable()`）。
+    na_subject: str = ""
+    na_reason: str = ""
+    na_remedy: str = ""
     findings: list[Finding] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     error: str = ""
@@ -437,14 +448,46 @@ def _ver_tuple(v: str) -> tuple:
     return tuple(out)
 
 
+def not_applicable(r: CheckResult, subject: str, reason: str, remedy: str) -> CheckResult:
+    """把一条判据标成**具名的 not_applicable**（判定对象在本环境里结构性地不存在）。
+
+    为什么必须是**独立的一态**（而不是沿用 `unknown`，更不是「算通过」）——
+    铁律 11「没有读数 ≠ 0」：这两条判据在**没有活锚的环境（CI runner）**下判定对象不存在，
+    旧实现走 `unknown`；而 `unknown` 在 `--fail-on-unknown`（定时腿）下**折成非零**，
+    与「确实有漂移」同码 ⇒ 「活锚没装」与「模式真的旧了」在接口上不可分（正是本审计要治的形态）。
+
+    · **不是 ❌**：没有对象可比 ⇒ 报「硬漂移」是把「没读数」谎报成「有问题」；
+    · **不是 ✅**：`evaluated=0` + 本声明如实写明**没判**；
+    · **必须可见且带计数声明**：报告里逐条打印 `subject` / `reason` / `remedy` / `evaluated`，
+      末尾另有一行 `not_applicable N 条` 的**具名清单**（不是静默跳过）。
+    · **不因它非零**（`tri_state` 只看 `new_drift` / `stale` / `error` / `unknown`）——
+      这条**不改任何门禁的通过条件**：真有漂移（对象取到时）照旧判红。
+    """
+    r.status = "not_applicable"
+    r.evaluated = 0
+    r.notes.append(f"⏭️ **not_applicable（本判据未跑）**：{subject} —— {reason}；"
+                   f"判定面计数 evaluated=0（**没有读数 ≠ 0 / ≠ 通过**）。处置：{remedy}")
+    r.na_subject = subject
+    r.na_reason = reason
+    r.na_remedy = remedy
+    return r
+
+
 def check_skill_anchor(a: Audit) -> CheckResult:
     r = CheckResult("skill-anchor")
     # 🔴 S4（issue #6020）：判定面改指**仍然存在的预设语料**（本仓 `.agent-presets/**` 已删）。
-    skills_dir = ((preset_root(a.repo) or Path("/nonexistent")) / "skills")
+    preset = preset_root(a.repo)
+    if preset is None:
+        # 与 `preset-monotonic` 同因（同一份语料）：被比的两个对象都不存在 ⇒ 不判红、不当通过。
+        return not_applicable(
+            r, "预设语料", "`preset_root()` 解析不到带 `skills/` 的预设目录",
+            "S4 / issue #6020：业务仓已不承载 `.agent-presets/**`；本机建镜像"
+            "（`$MIGAO_PRESET_MIRROR` / `~/migao-dev-preset-anchor`）或 CI 用 `fetch-depth: 0`")
+    skills_dir = preset / "skills"
     repo_skills = _skill_versions(skills_dir)
     r.evaluated = len(repo_skills)
     if not repo_skills:
-        # 语料取不到 ⇒ **不可判**（三态）：既不判红（无对象可比），也不当「通过」。
+        # 语料目录在、但一条 `SKILL.md` 都没有 ⇒ 判定面为空（护栏失效形态），**不可判**（三态）。
         r.status = "unknown"
         r.notes.append(_preset_moved_note(f"{skills_dir} 下没有 SKILL.md"))
         return r
@@ -453,11 +496,12 @@ def check_skill_anchor(a: Audit) -> CheckResult:
 
     anchor = a.live_anchor
     if not anchor.exists():
-        # 显式"未安装"：不是漂移（CI runner / 未安装 preset 的机器），但必须可见。
-        r.status = "unknown"
-        r.notes.append(f"活锚未安装：{anchor} 不存在 ⇒ 无法判定活锚新鲜度（**不等于通过**）")
-        return r
-
+        # 显式"未安装"（CI runner / 未装 preset 的机器）：对象不存在 ⇒ **具名 not_applicable**。
+        # 旧形态是 `unknown` ⇒ 定时腿 `--fail-on-unknown` 下与「真漂移」同码（本单 §1-C1 的成因之一）。
+        return not_applicable(
+            r, "活锚", f"活锚未安装：{anchor} 不存在",
+            "本机装活锚（`./scripts/preset-anchor-refresh.sh`）/ CI 上用 `fetch-depth: 0` 让基线"
+            "带着预设语料；活锚**不可达**本身就判该条不适用，不是判红")
     live_skills = _skill_versions(anchor / "skills")
     for name, ver in repo_skills.items():
         lv = live_skills.get(name)
@@ -569,7 +613,16 @@ def check_preset_monotonic(a: Audit) -> CheckResult:
     r = CheckResult("preset-monotonic")
     base = a.base
     # 🔴 S4（issue #6020）：判定面改指预设语料（本仓 `.agent-presets/**` 已删）。
-    skills_dir = ((preset_root(a.repo) or Path("/nonexistent")) / "skills")
+    preset = preset_root(a.repo)
+    if preset is None:
+        # 语料在本环境里**取不到**（业务仓已不承载 + 无镜像）⇒ 被比的两个对象都不存在
+        # ⇒ **显式 not_applicable**（不是 ❌：没有对象可比，判"回退/分叉"是凭空判红；
+        #    也不是 ✅：没有读数）。计数声明见 `not_applicable()`。
+        return not_applicable(
+            r, "预设语料", "`preset_root()` 解析不到带 `skills/` 的预设目录",
+            "S4 / issue #6020：业务仓已不承载 `.agent-presets/**`；本机建镜像"
+            "（`$MIGAO_PRESET_MIRROR` / `~/migao-dev-preset-anchor`）或 CI 用 `fetch-depth: 0`")
+    skills_dir = preset / "skills"
     names = sorted(p.parent.name for p in skills_dir.glob("*/SKILL.md"))
     r.evaluated = len(names)
     if not names:
@@ -1847,8 +1900,11 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
         except Exception as exc:  # noqa: BLE001 —— 判据崩溃必须红，不能静默当通过
             res = CheckResult(c.id, status="error",
                               error=f"{type(exc).__name__}: {exc}")
-        if res.status != "error" and res.status != "unknown" \
+        if res.status not in ("error", "unknown", "not_applicable") \
                 and res.evaluated < c.min_evaluated:
+            # ⚠️ `not_applicable` 必须**排除**在外：它的 `evaluated` 本来就是 0（判定对象
+            #    在本环境里不存在），再叠一条 `always=True` 的 `empty-surface` 会把
+            #    「未跑」变成「❌ 硬漂移」—— 正是本条要治的谎报形态（实现时实测踩到）。
             # `always=True`（永不进基线、也不允许存量放行）：它是**护栏自身退化**的信号
             # （判定面为空 ⇒ 该判据恒真 ⇒ 空断言），不是"某条漂移"。记进基线 = 把
             # 「我的护栏曾经空跑」变成永久豁免 —— 而 #4045 的全量对账会把它读成
@@ -1882,6 +1938,10 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
                                 unverifiable=unverifiable)
         if res.status == "error":
             status = "error"
+        elif res.status == "not_applicable":
+            # 判据自己声明了「对象不在本环境」⇒ **保留这一态**，不被下面那串
+            # 「有没有漂移」的重算覆盖成 `ok`（覆盖会把它读成「没问题」，正是本单要治的形态）。
+            status = "not_applicable"
         elif cmp_["new"] or cmp_["stale_blocking"] or cmp_["dropped"] or env_res:
             status = "new-drift"
         elif res.status == "unknown":
@@ -1908,6 +1968,11 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
             "network": c.network,
             "status": status,
             "evaluated": res.evaluated,
+            # `not_applicable` 的**具名声明**（报告末尾的清单要逐条打印它们；
+            # 不带出去 ⇒ 读者只看得到「⏭️ 未跑」而看不到**是谁**、**为什么**）
+            "na_subject": res.na_subject,
+            "na_reason": res.na_reason,
+            "na_remedy": res.na_remedy,
             "error": res.error,
             "notes": res.notes,
             "new_drift": [{"key": k, "delta": n} for k, n in cmp_["new"]],
@@ -1981,6 +2046,11 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
                                 or dropped_total or budget.get("blocking")) else
                     ("crash" if any(c["status"] == "error" for c in out["checks"]) else
                      ("unknown" if any(c["status"] == "unknown" for c in out["checks"]) else "ok"))),
+        # 具名计数声明（不是"没跑"的静默形态）：判定对象在本环境里不存在的判据条数 +
+        # 它们的 id 清单。它**不参与** verdict / 退出码（不改任何门禁的通过条件）。
+        "not_applicable": sum(1 for c in out["checks"] if c["status"] == "not_applicable"),
+        "not_applicable_checks": sorted(c["id"] for c in out["checks"]
+                                        if c["status"] == "not_applicable"),
     }
     return out
 
@@ -2012,7 +2082,7 @@ def render_summary(rep: dict, baseline: dict) -> str:
     L.append("=" * 78)
     for c in rep["checks"]:
         mark = {"ok": "✅", "known-drift": "🟡", "new-drift": "❌", "unknown": "❔",
-                "error": "💥"}[c["status"]]
+                "error": "💥", "not_applicable": "⏭️"}[c["status"]]
         L.append(f"{mark} [{c['id']}] {c['title']}  (invariant {c['invariant']}, "
                  f"判定面 {c['evaluated']})")
         for n in c["notes"]:
@@ -2074,6 +2144,18 @@ def render_summary(rep: dict, baseline: dict) -> str:
         L.append("   ⇒ **先修判据**：修好之前，属于这些判据的基线条目**一条都不许动** ——"
                  "拿 `--regen-baseline` 消账 = 把「判据没跑」写成「已不漂移」，"
                  "**凭一次异常永久删掉合法豁免**（`#5151` 实证：9 条 `component|*` 差一步被删）。")
+    # **not_applicable 的具名清单**（本单 §1-C1 的出口形态）：判定对象在本环境里结构性地
+    # 不存在 ⇒ 必须**具名列出**并给计数声明，绝不静默跳过（"没跑"必须长得像"没跑"）。
+    # 它与上面 `unknown` 那条**分开**：`unknown` = 对象在 / 这次没读出结论（先修判据）；
+    # `not_applicable` = 对象**不在**（判据本身没毛病，换环境才有对象）。
+    na = [c for c in rep["checks"] if c["status"] == "not_applicable"]
+    if na:
+        L.append("⏭️ **not_applicable %d 条**（本判据的**判定对象在本环境里不存在** ⇒ 未跑；"
+                 "**不是通过**，也不判红 —— 真有漂移时（对象可达）照旧判红）：" % len(na))
+        for c in na:
+            L.append(f"   · [{c['id']}] 对象={c['na_subject']}；原因={c['na_reason']}；"
+                     f"evaluated={c['evaluated']}")
+            L.append(f"     处置：{c['na_remedy']}")
     L.append("本次相对基线的增减：新增漂移 %d（面内，阻塞） / 面外新增 %d（不阻塞，定时腿红） / "
              "存量放行 %d / 可销账 %d / 基线归零未删 %d（**全量对账 ⇒ 阻塞 %d**） / "
              "条目被删但仍漂移 %d（阻塞）⇒ %s"

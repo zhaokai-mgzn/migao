@@ -6,7 +6,7 @@
 商家在「工艺配置 → 算料配置」改口径（`per_fold_single` / `margin_*` / `min_fullness` /
 `default_formula` / `hem_margin` / `meters_rounding_step`）后，**服务端下单路径读它**
 （`CraftCalcClient#withTenantConfig` → `craftCalcConfigMapper.selectActiveByTenant`），
-而米宝/小布的 `CurtainCalcTool.execute` **从不传 `config`** ⇒ 引擎回落模块级
+而黄金策/元元的 `CurtainCalcTool.execute` **从不传 `config`** ⇒ 引擎回落模块级
 `DEFAULT_CRAFT_CALC_CONFIG` ⇒ **同一张单两个米数/两个金额**（口径的每一项都直接改米数 = 改钱）。
 
 ## 判据（每条都独立可红，互不掩盖）
@@ -43,7 +43,7 @@
   · **重启条件（可执行）**：一旦出现一条**零 LLM** 的双服务腿（或在既有 docker 栈腿里加一个零 LLM 步骤），
     就把双路径判据接进去 —— 形态 = ① 经真 `PUT /api/admin/production/craft-calc-config` 写入本租户配置行
     ② 同一入参分别走 `POST /api/admin/orders/craft-calc`（`CraftCalcClient` 路径）与
-    `CurtainCalcTool`（米宝工具路径）③ 断言 `fabric_meters` / `total` **逐值相等** ④「删掉配置行 ⇒
+    `CurtainCalcTool`（黄金策工具路径）③ 断言 `fabric_meters` / `total` **逐值相等** ④「删掉配置行 ⇒
     两侧逐值回到默认口径 13.2 米」的零回归。缺口与重启条件同时登记在 issue #4945。
 - 权限通路（`GET /api/admin/production/craft-calc-config` 的**读码**：issue #5291 起为方法级
   `production:view`，此前与写面同用类级 `processing:manage`）：
@@ -131,7 +131,7 @@ class _FakeAdminApi:
 
 
 def _ctx() -> ToolContext:
-    """上下文：**商户员工**身份（`admin` ⇒ 持 `*`）—— 与米宝 B 端主路径同形。"""
+    """上下文：**商户员工**身份（`admin` ⇒ 持 `*`）—— 与黄金策 B 端主路径同形。"""
     return ToolContext(tenant_id=TENANT_ID, user_id=USER_ID, role="admin", permissions=["*"])
 
 
@@ -217,7 +217,7 @@ async def test_answered_but_broken_is_fail_closed(monkeypatch):
     """服务端**答复了**（5xx / 响应非 JSON）⇒ fail-closed：不给任何米数/金额 + 可行动话术。
 
     口径理由：服务端可达却读不通时，服务端下单路径（直读 `craft_calc_configs` 的
-    `CraftCalcClient`）**仍然可用** ⇒ 按默认口径报数会真的落地成「米宝一个数、落库另一个数」。
+    `CraftCalcClient`）**仍然可用** ⇒ 按默认口径报数会真的落地成「黄金策一个数、落库另一个数」。
     """
     result = await _run(monkeypatch, _FakeAdminApi(exc=_status_error(503)))
 
@@ -261,7 +261,7 @@ async def test_transport_failure_degrades_with_trace(monkeypatch, exc, label):
     """服务端**没答复**（DNS/连接/超时）⇒ 显式降级 + 留痕：照常算料（默认口径），但**不静默**。
 
     口径理由：此刻 admin-api 整体不可用 ⇒ 服务端下单路径同样不可用
-    （`CraftCalcClient` 对端不可达是 422 fail-closed）⇒「米宝一个数、落库另一个数」无法落地；
+    （`CraftCalcClient` 对端不可达是 422 fail-closed）⇒「黄金策一个数、落库另一个数」无法落地；
     且纯计算工具在离线/单测环境（admin-api 恒不可达）不该整条失效 —— 既有 71 条
     `tests/test_curtain_calc.py` 用例都不 mock admin-api，fail-closed 会让它们全红。
     """
@@ -331,14 +331,14 @@ def test_permission_face_is_bounded_by_the_tool_role_gate():
 
     `CurtainCalcTool.allowed_roles`（工具层角色闸，`check_permission`）只放行
     `customer` / `admin` / `agent` / `tenant_admin`：
-      · `admin`（米宝 B 端主用户）在 admin-api 恒持 `*` ⇒ 读配置**不会** 403；
+      · `admin`（黄金策 B 端主用户）在 admin-api 恒持 `*` ⇒ 读配置**不会** 403；
       · C 端（`customer`/`agent`）不是本租户商户员工 ⇒ `ServiceTokenFilter` 回退内部服务身份 ⇒ 读配置**不会** 403；
       · `operator` / `customer_service` / `sales` / `finance` **进不了本工具**（角色闸先拒），故它们的
         生产域读码（`production:view`，issue #5291）持有与否对本工具无影响；
       · 只剩 legacy `tenant_admin`（admin-api 无该角色/无权限映射 ⇒ 所有 `@RequirePermission` 都 403，
         跨服务口径断裂已由 issue #4106 登记）与自定义同名角色会走到 403 那一支。
 
-    ⇒ 「403 ⇒ fail-closed」不会把米宝报数能力砍掉一个默认岗位（放闸前先看这一条）。
+    ⇒ 「403 ⇒ fail-closed」不会把黄金策报数能力砍掉一个默认岗位（放闸前先看这一条）。
     """
     tool = CurtainCalcTool()
     for role in ("admin", "customer", "agent"):

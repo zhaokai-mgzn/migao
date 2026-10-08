@@ -118,10 +118,10 @@ class TestSkillToolSubsets:
 
         issue #3996（M4-I）：兜底节点新增两个**只读**生产类查询工具
         （production_progress_query / piecework_query）—— 生产/计件没有专属意图，
-        分类器可能落 general ⇒ 不绑则「米宝查不了生产进度/计件」= 能力谎报。
+        分类器可能落 general ⇒ 不绑则「黄金策查不了生产进度/计件」= 能力谎报。
         issue #5188：同理补只读的批次账/省料度量工具（`batch_stock_query`）——
         「哪些批次快用尽了 / 这个月省了多少料」也没有专属意图，不绑 = 能力谎报。
-        issue #5247（B 端米宝只读）逐条变更（用户裁定：B 端侧重数据查询与分析、
+        issue #5247（B 端黄金策只读）逐条变更（用户裁定：B 端侧重数据查询与分析、
         创建/更新能力全部移除、商家后端模块"仅限查询和数据分析"）：
           · 移除 `notification_manage` / `processing_item_manage`（写工具，已从全部 B 端
             skill 解绑）；
@@ -1055,11 +1055,11 @@ class TestExtractContentThinkingGuard:
 
 
 class TestCustomerSkillPendingLock:
-    """C 端（小布）多轮流程必须锁 pending_skill —— 否则第二轮就跳出 Skill
+    """C 端（元元）多轮流程必须锁 pending_skill —— 否则第二轮就跳出 Skill
 
     根因（CI 实证 run 34613307565，CH-012）：
     `creation_skills = {"product","order","aftersales","staff","customer"}` 里**全是 B 端
-    Skill 名**，而小布的 Skill 叫 `customer_order` / `customer_aftersales` /
+    Skill 名**，而元元的 Skill 叫 `customer_order` / `customer_aftersales` /
     `customer_product` / `customer_quote` —— 名字对不上 → **C 端多轮流程从不锁
     pending_skill** → 用户第二轮说「第一笔订单」「数量 3 米」「确认下单」这类碎片时被
     重新意图分类 → 跳出原 Skill：
@@ -1112,7 +1112,7 @@ class TestCustomerSkillPendingLock:
             # 典型的测试隔离缺陷 —— 全量跑才暴露）。
             return asyncio.run(
                 execute_skill(state=_make_state(), skill_name=skill_name,
-                              tool_names=[], system_prompt="你是小布")
+                              tool_names=[], system_prompt="你是元元")
             )
 
     @pytest.mark.parametrize("skill_name", ["customer_order", "customer_aftersales"])
@@ -1431,7 +1431,7 @@ class TestProcessingItemsFallback:
     def test_no_rewrite_when_user_answered_by_name_after_detail(self):
         """顾客**已经在文本里答过**加工项 → 不得再用卡重问一遍（C-A1 重放 9 实证）。
 
-        transcript（run 34788143133，C-A1）：R2 小布在**文本**里问「需要一起加工吗？」→
+        transcript（run 34788143133，C-A1）：R2 元元在**文本**里问「需要一起加工吗？」→
         R3 顾客答「打孔」→ R5 代码兜底仍把 confirm 卡改写成加工项 choice 卡
         —— 同一件事问第二遍，顾客不得不再答一次才轮到「确认下单」（UA 判定"有条件通过"那条）。
         记账 `PROC_ITEMS_ASKED_KEY` 只在**发卡**时落笔，文本问答不在账上，故这里另立判据。
@@ -1578,7 +1578,7 @@ class TestProcessingItemsFallbackWiring:
             return asyncio.run(execute_skill(
                 state=state, skill_name="customer_order",
                 tool_names=["processing_item_query", "interact"],
-                system_prompt="你是小布",
+                system_prompt="你是元元",
             ))
 
     def test_confirm_card_rewritten_to_choice_card(self):
@@ -1661,7 +1661,7 @@ class TestInflightHandoffGuard:
             result = asyncio.run(execute_skill(
                 state=_make_state(messages=history, pending_interact_skill=pending_skill),
                 skill_name="customer_aftersales",
-                tool_names=["human_handoff"], system_prompt="你是小布的售后客服",
+                tool_names=["human_handoff"], system_prompt="你是元元的售后客服",
             ))
         return result, sent_tools
 
@@ -1937,7 +1937,7 @@ class TestCardConfirmWriteExecutes:
                     state=_make_state(messages=[HumanMessage(content=self.LONG_CONFIRM)]),
                     skill_name="customer_order",
                     tool_names=["interact", "order_create"],
-                    system_prompt="你是小布",
+                    system_prompt="你是元元",
                 ))
         return result, executed
 
@@ -2021,7 +2021,7 @@ class TestCardConfirmValuePersisted:
             asyncio.run(execute_skill(
                 state=_make_state(messages=[HumanMessage(content="帮我下单")]),
                 skill_name="customer_order",
-                tool_names=["interact"], system_prompt="你是小布",
+                tool_names=["interact"], system_prompt="你是元元",
             ))
 
         assert committed.get("last_confirm_value") == self.LONG_CONFIRM, (
@@ -2108,7 +2108,7 @@ class TestWriteConfirmedAcrossTurns:
             asyncio.run(execute_skill(
                 state=_make_state(messages=[HumanMessage(content="123456")]),
                 skill_name="customer_order",
-                tool_names=["order_create"], system_prompt="你是小布",
+                tool_names=["order_create"], system_prompt="你是元元",
             ))
 
         assert "order_create" in executed, (
@@ -2170,7 +2170,7 @@ class TestWriteConfirmedAcrossTurns:
             asyncio.run(execute_skill(
                 state=_make_state(messages=[HumanMessage(content="随便说点什么")]),
                 skill_name="customer_order",
-                tool_names=["order_create"], system_prompt="你是小布",
+                tool_names=["order_create"], system_prompt="你是元元",
             ))
 
         assert "order_create" not in executed, (
@@ -2245,7 +2245,7 @@ class TestWriteConfirmedLifecycle:
             asyncio.run(execute_skill(
                 state=_make_state(messages=[HumanMessage(content=user_msg)]),
                 skill_name="customer_order",
-                tool_names=["order_create"], system_prompt="你是小布",
+                tool_names=["order_create"], system_prompt="你是元元",
             ))
         return commits, executed
 
@@ -3502,8 +3502,8 @@ class TestCapabilityDenialInHandoffReason:
 
     def test_variants_detected(self):
         """C-A1 原话的等价变体（**施动者是 AI 自己**的否定）。"""
-        for why in ["我无法帮您提交订单", "小布没法提交订单", "智能客服无法代为下单",
-                    "我没法帮您提交订单", "小布无法下单"]:
+        for why in ["我无法帮您提交订单", "元元没法提交订单", "智能客服无法代为下单",
+                    "我没法帮您提交订单", "元元无法下单"]:
             assert _capability_denial_reason({"reason": why}), f"未识别: {why!r}"
 
     def test_third_party_subject_not_in_scope(self):
@@ -3616,7 +3616,7 @@ class TestCurtainCalcDimensionGuard:
     → `order_create{遮光窗帘×9@168}` 落库 **¥1584**（顾客要的是 ¥528）。同轮还出现 `×9.3`。
     这类"把购买米数当窗宽再乘褶皱倍数"是**钱的正确性**问题，且顾客视角完全无法察觉。
 
-    判据：会话里**必须出现过窗户尺寸措辞**（窗宽/窗高/宽度/高度/尺寸/多宽/多高/米宽/米高）
+    判据：会话里**必须出现过窗户尺寸措辞**（窗宽/窗高/宽度/高度/尺寸/多宽/多高/米宽/观星台）
     才允许算料 —— 模型若需要尺寸会先问，问过之后会话里自然就有这些词 → 自愈，不卡死。
     """
 
@@ -4123,7 +4123,7 @@ class TestGuardsPersonaScope:
     """B / C 两端**共用** base_skill：C 端语义守卫必须只对顾客身份生效。
 
     背景（人工提醒固化）：`interact` 工具与全部技能守卫都在共享的 `base_skill` 里 ——
-    两端卡片由同一个工具产出。若不显式分端，C 端专属判据会作用到 B 端米宝/客服场景：
+    两端卡片由同一个工具产出。若不显式分端，C 端专属判据会作用到 B 端黄金策/客服场景：
       · "顾客说买 X 米被当窗宽" → B 端店员代客下单给出"用量/褶皱"选项可能是合法业务动作；
       · "顾客收货信息预填" → B 端客服改客户资料的表格同名 key（customer_phone/address）语义不同。
     分端原则：
@@ -4219,7 +4219,7 @@ class TestGuardsPersonaScope:
 
 
 class TestMibaoFlowsUnaffectedByCendGuards:
-    """B 端（米宝）流程不得被 C 端守卫影响 —— 端到端接线级证据（人工提醒固化）。
+    """B 端（黄金策）流程不得被 C 端守卫影响 —— 端到端接线级证据（人工提醒固化）。
 
     为什么必须单独测（而不是靠 CI）：本仓库的 B 端 eval（`agent-eval.yml` / PR gate 的
     smoke）打的是**生产** `ai-api.migaozn.com`，即它验证的是**已部署**的代码，
@@ -4318,7 +4318,7 @@ class TestMibaoFlowsUnaffectedByCendGuards:
         assert len(seen["calls"]) == 1, f"B 端改资料被 C 端预填守卫误拦: {seen['tool_content'][:120]}"
 
     def test_bend_calc_not_blocked(self):
-        """B 端米宝的算料链路不受 C 端算料守卫影响。"""
+        """B 端黄金策的算料链路不受 C 端算料守卫影响。"""
         seen = self._run("curtain_calc",
                          {"window_width": 3.0, "window_height": 2.7, "fabric_price": 98.0},
                          role="admin", skill="order")
@@ -5128,7 +5128,7 @@ class TestOrderFlowIntentHandoffGuard:
             result = asyncio.run(execute_skill(
                 state=_make_state(messages=history),
                 skill_name=skill,
-                tool_names=["human_handoff"], system_prompt="你是小布",
+                tool_names=["human_handoff"], system_prompt="你是元元",
             ))
         return result, sent_tools
 
@@ -5213,7 +5213,7 @@ class TestCapabilityDenialPermissionPhrasing:
 
     def test_permission_phrasing_detected(self):
         for why in ["客户请求协助下单（智能客服无下单权限）",
-                    "小布没有下单权限",
+                    "元元没有下单权限",
                     "无权限下单，需要人工协助",
                     "顾客需协助下单（智能客服无法帮您完成订单）"]:
             assert _capability_denial_reason({"reason": why}), f"未识别权限类误宣: {why!r}"
@@ -5229,30 +5229,30 @@ class TestCapabilityDenialTextHit:
     """回复文本里的能力误宣识别（issue #3443，C-A1 transcript 实证）。
 
     判据与评测侧 `_false_inability_hit` 同源：「agent 主语 + 否定动词」与「下单动作词」
-    必须在**同一句**且距离很近 —— 否则正常开场白（"我是小布，您的专属咨询客服"）会被误判。
+    必须在**同一句**且距离很近 —— 否则正常开场白（"我是元元，您的专属咨询客服"）会被误判。
     """
 
     def test_ca1_phrasings_detected(self):
         """C-A1 三轮的原话（run 34773014637 transcript）。"""
-        for t in ["亲，小布这边是咨询客服，没办法直接帮您提交订单哦，不过下单很简单，我教您~",
+        for t in ["亲，元元这边是咨询客服，没办法直接帮您提交订单哦，不过下单很简单，我教您~",
                   "我是咨询客服，没有权限帮您直接提交订单哦，下单还是需要您在小程序里操作完成",
-                  "小布这边确实没办法直接帮您提交订单，这是为了保护您的订单和支付安全哦。"]:
+                  "元元这边确实没办法直接帮您提交订单，这是为了保护您的订单和支付安全哦。"]:
             assert capability_denial_text_hit(t), f"未识别: {t!r}"
 
     def test_permission_wording_with_interleaved_words(self):
         """C-A1 P1（run 34791767013，issue #3477）的**隔词版**权限话术也要识别。
 
-        原文：「亲，真的特别理解您想赶紧下单的心情～ 但小布是智能客服，**没有帮您下单的权限**，
+        原文：「亲，真的特别理解您想赶紧下单的心情～ 但元元是智能客服，**没有帮您下单的权限**，
         这个操作必须在小程序商城…」—— 旧正则在"没有"与"权限"之间隔着「帮您下单的」，
         `没有权限` 连写匹配不上 → 文本级纠正没触发（这是 P1 漏网的直接原因之一）。
         """
-        for t in ["小布是智能客服，没有帮您下单的权限，需要您在小程序操作",
+        for t in ["元元是智能客服，没有帮您下单的权限，需要您在小程序操作",
                   "亲，这边没有帮您提交订单的权限，我教您在小程序里下单吧",
                   "智能客服没有为您创建订单的权限，这个操作必须在小程序里完成"]:
             assert capability_denial_text_hit(t), f"未识别（隔词权限话术）: {t!r}"
 
     def test_self_intro_not_flagged(self):
-        assert capability_denial_text_hit("亲，我是小布，您的专属咨询客服～") == ""
+        assert capability_denial_text_hit("亲，我是元元，您的专属咨询客服～") == ""
 
     def test_success_phrasing_not_flagged(self):
         for t in ["已经帮您提交订单啦，订单号 20260914691810001",
@@ -5265,7 +5265,7 @@ class TestCapabilityDenialTextHit:
 
     def test_cross_sentence_not_flagged(self):
         """跨句不算：否定在上一句、动作词在下一句 → 不判定（窗口限制）。"""
-        t = "小布这边没法查到这个信息。我帮您下单吧"
+        t = "元元这边没法查到这个信息。我帮您下单吧"
         assert capability_denial_text_hit(t) == ""
 
 
@@ -5316,12 +5316,12 @@ class TestTextDenialCorrectiveRetry:
             mem_cls.return_value.set_pending_skill = AsyncMock(return_value=True)
             out = asyncio.run(execute_skill(
                 state=_make_state(messages=[HumanMessage(content="确认下单")]),
-                skill_name=skill, tool_names=["order_create"], system_prompt="你是小布",
+                skill_name=skill, tool_names=["order_create"], system_prompt="你是元元",
             ))
         return out, llm, sent
 
     def test_denial_text_triggers_one_corrective_retry(self):
-        denial = "亲，小布这边是咨询客服，没办法直接帮您提交订单哦~"
+        denial = "亲，元元这边是咨询客服，没办法直接帮您提交订单哦~"
         ok = "好嘞，这就帮您提交订单，请核对下面的订单信息～"
         out, llm, _ = self._run([denial, ok])
         assert out["final_answer"] == ok, f"能力误宣文本被原样发出：{out['final_answer']!r}"
@@ -5333,7 +5333,7 @@ class TestTextDenialCorrectiveRetry:
 
     def test_only_one_retry_even_if_model_keeps_denying(self):
         """只纠正一次：模型死不改口时按原样发出（绝不无限重试烧轮次）。"""
-        denial = "小布这边没办法直接帮您提交订单哦"
+        denial = "元元这边没办法直接帮您提交订单哦"
         out, llm, _ = self._run([denial, denial, denial])
         assert llm.ainvoke.await_count == 2, f"重试次数不为 1：{llm.ainvoke.await_count}"
         assert "没办法直接帮您提交订单" in out["final_answer"]
@@ -5355,7 +5355,7 @@ class TestTextDenialCorrectiveRetry:
 
     def test_skipped_when_order_tool_unavailable(self):
         """没有 order_create 时"我下不了单"是事实，不能拦（避免堵死正确行为）。"""
-        denial = "小布这边没办法直接帮您提交订单哦"
+        denial = "元元这边没办法直接帮您提交订单哦"
         out, llm, _ = self._run([denial], has_order_tool=False)
         assert out["final_answer"] == denial
         assert llm.ainvoke.await_count == 1
@@ -5521,7 +5521,7 @@ class TestConfirmationGateNoCardRepro:
             out = asyncio.run(execute_skill(
                 state=_make_state(messages=history),
                 skill_name="customer_order",
-                tool_names=["order_create"], system_prompt="你是小布",
+                tool_names=["order_create"], system_prompt="你是元元",
             ))
         return out, executed
 
@@ -5745,7 +5745,7 @@ class TestOneInteractiveCardPerTurn:
             out = asyncio.run(execute_skill(
                 state=_make_state(messages=[HumanMessage(content="我想买遮光窗帘")], role=role),
                 skill_name="customer_order",
-                tool_names=["interact"], system_prompt="你是小布",
+                tool_names=["interact"], system_prompt="你是元元",
             ))
         return out, executed
 
@@ -5786,7 +5786,7 @@ class TestOneInteractiveCardPerTurn:
         assert "card_already_emitted_this_turn" not in str(out)
 
     def test_b_side_untouched(self):
-        """分端纪律：B 端（米宝）不受这条 C 端守卫影响。"""
+        """分端纪律：B 端（黄金策）不受这条 C 端守卫影响。"""
         out, executed = self._run(
             [[("interact", self._CARD_A), ("interact", self._CARD_B)]], role="admin")
         assert executed.count("interact") == 2, (
@@ -5802,7 +5802,7 @@ class TestInFlightOrderGuardsAcrossSkills:
     """在办下单流程 + 当前 skill **无写工具** → 能力误宣/转人工守卫必须**跨 skill**生效（#3477）。
 
     C-A1 实证（run 34791767013）：会话被 choice 卡锁在 `customer_product`，顾客「确认下单」后
-    小布回「没有帮您下单的权限」并转人工（建了工单 AS-20260914-0007）—— 因为
+    元元回「没有帮您下单的权限」并转人工（建了工单 AS-20260914-0007）—— 因为
       · 文本级纠正只认「当前 skill 有 order_create」（customer_product 没有 → 不纠正）；
       · handoff 守卫只认 customer_order / customer_aftersales（customer_product → 整块跳过）。
     本类把两处守卫扩展到「顾客**在办下单**」这一状态，与 skill 名无关。
@@ -5892,7 +5892,7 @@ class TestInFlightOrderGuardsAcrossSkills:
     def test_text_denial_corrected_when_mid_order_in_other_skill(self):
         """顾客在办下单 + 当前 skill 无写工具：文本级「我没法提交订单」仍要纠正重答。"""
         out, _executed, pending = self._run(
-            ("text", "亲，小布这边没法直接帮您提交订单哦，需要您在小程序里操作一下~"))
+            ("text", "亲，元元这边没法直接帮您提交订单哦，需要您在小程序里操作一下~"))
         answer = str(out["final_answer"])
         assert "没法直接帮您提交订单" not in answer, (
             f"纠正后不应再保留能力误宣（C-A1 P1 形态）：{answer[:150]}")

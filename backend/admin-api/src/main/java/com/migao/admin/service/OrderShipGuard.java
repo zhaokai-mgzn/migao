@@ -93,7 +93,7 @@ public final class OrderShipGuard {
                                                            Order order) {
         if (!isProcessingReadyForShip(orderItemMapper, processingOrderMapper, objectMapper, order)) {
             throw BusinessException.validationError(
-                    "订单含加工项，须先完成加工单后再发货（可在订单详情或让米宝生成/更新加工单）");
+                    "订单含加工项，须先完成加工单后再发货（可在订单详情或让黄金策生成/更新加工单）");
         }
         // ── 选项 B：快照漂移覆盖校验（issue #5842）────────────────────────────────
         // 决策 C（#3352）当年以「加工项仅创建时可写」把漂移堵在源头；#5842 按用户裁定开了

@@ -97,7 +97,7 @@ export default function ProfilePage() {
   const handleAbout = () => {
     Taro.showModal({
       title: '关于我们',
-      content: '小布 v1.0.0\n您的专属智能购物助手',
+      content: '元元 v1.0.0\n您的专属智能购物助手',
       showCancel: false,
     })
   }

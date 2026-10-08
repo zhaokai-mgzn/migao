@@ -23,7 +23,7 @@ import static org.mockito.Mockito.*;
 /**
  * 客户默认收货信息（收货人姓名 / 电话 / 详细地址）的**落库**契约（issue #4419）。
  *
- * 缺陷形态（修前）：客户管理页与米宝都能"填"收货信息，但 {@code customer_profiles} 里
+ * 缺陷形态（修前）：客户管理页与黄金策都能"填"收货信息，但 {@code customer_profiles} 里
  * **根本没有这三列**，{@code CustomerService.updateCustomer} 也没有对应的非空拷贝
  * ⇒ 下发后 HTTP 200 + 数据无处可落 = 「录入了但查不到」。
  * 与 issue #4115 的 craftMode 一族同形（工具/页面可写 + 服务层静默丢弃）。
@@ -90,7 +90,7 @@ class CustomerReceiverAddressPersistTest {
     @Test
     @DisplayName("更新客户档案 - 收货人姓名/电话/详细地址三列必须真的进入落库实体（修前无处可落）")
     void updateCustomer_PersistsDefaultReceiverFields() {
-        // given: 客户管理页「收货信息」卡片 / 米宝 customer_manage(update) 下发的 payload
+        // given: 客户管理页「收货信息」卡片 / 黄金策 customer_manage(update) 下发的 payload
         CustomerProfile updateData = CustomerProfile.builder()
                 .defaultReceiverName("李四")
                 .defaultReceiverPhone("13900139000")

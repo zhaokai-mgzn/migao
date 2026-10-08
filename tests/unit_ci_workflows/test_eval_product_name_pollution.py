@@ -39,7 +39,7 @@
    `precondition[product_count_for_keyword]` ⇒ 前置坏了走
    `precondition_not_applied(declared:…)`（runner 侧），而不是伪装成「agent 不干活」。
 
-## 2026-09-24（#5247 用户裁定「B 端米宝只读化」）：**被测对象退场 ⇒ 判据/夹具改判**
+## 2026-09-24（#5247 用户裁定「B 端黄金策只读化」）：**被测对象退场 ⇒ 判据/夹具改判**
 
 `product_manage(action=create)` 已从 B 端全部 skill 解绑且写 action 从源码删除 ⇒
 库内四条建品写方（`PR-008`/`PR-011`/`PR-012`/`PR-019`）全部退役（`expectations` 改判
@@ -96,10 +96,10 @@ def _runner_cleanup_types(src: str) -> set:
 #: （`tests/agent_eval/fixtures/xiaobu_eval_seed.sql` + `mibao_eval_seed.sql`）。
 #: 用**逐条比对**而不是宽正则：本规则判的就是"名字集合的成员关系"。
 SEED_PRODUCT_NAMES = (
-    "遮光窗帘",                # prod_eval_blackout（小布栈）
-    "北欧风窗帘",              # prod_eval_dark_green（小布栈）
-    "夏日清风窗帘",            # prod_eval_summer（小布栈）
-    "2699系列雪尼尔窗帘面料",  # prod_eval_2699（米宝栈）
+    "遮光窗帘",                # prod_eval_blackout（元元栈）
+    "北欧风窗帘",              # prod_eval_dark_green（元元栈）
+    "夏日清风窗帘",            # prod_eval_summer（元元栈）
+    "2699系列雪尼尔窗帘面料",  # prod_eval_2699（黄金策栈）
 )
 
 #: **存量**「名字所有权」缺口登记（issue #3835 扩扫交付物；**只许缩短**）。
@@ -428,7 +428,7 @@ class TestWriterOwnsItsProductName:
         assert "PR-011" in ownership_gaps(fake)
 
     def test_red_proof_pr019_is_caught(self):
-        """`PR-019` 的改前形态（写米宝栈种子名 + `product_dedupe{种子名}`）⇒ 判据必红。"""
+        """`PR-019` 的改前形态（写黄金策栈种子名 + `product_dedupe{种子名}`）⇒ 判据必红。"""
         fake = [{"id": "PR-019",
                  "user_inputs": [{"text": "根据这张图片录入商品（色卡图）"}],
                  "auto_fill": {"name": "2699系列雪尼尔窗帘面料", "price": "23.8"},

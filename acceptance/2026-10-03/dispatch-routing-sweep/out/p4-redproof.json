@@ -1,0 +1,45 @@
+[
+  {
+    "id": "R-01",
+    "name": "判据判别力自证：原样绿 / 换位红 / 少一道红（非恒真、非子集比较）",
+    "status": "pass",
+    "detail": "实得 10 道；换位 2 与 3 ⇒ 红 ✅；少最后一道 ⇒ 红 ✅",
+    "evidence": [
+      "加工单 JG-20261003-6266",
+      "SQL: select operation_name from processing_position_operations where processing_order_id='1acdffce01014902b284838031a3131a' order by seq"
+    ],
+    "at": "2026-10-02T23:07:02.383Z"
+  },
+  {
+    "id": "R-02",
+    "name": "注入「默认主线去掉定型」⇒ 派工确实少一道、断言判红（判别性红证）",
+    "status": "pass",
+    "detail": "注入后 mainline=[\"精裁\", \"三边\", \"熨烫\", \"复烫\", \"车被\", \"外帘打卷\", \"打包\", \"外帘装袋\", \"外帘发货\"]；派工 精裁-布 → 布三边 → 熨烫-布 → 复烫-布 → 布帘车被 → 外帘打卷 → 打包 → 外帘装袋 → 外帘发货（共 9 道，无 定型-布）⇒ 与基线期望不符 = 红",
+    "evidence": [
+      "PUT /api/admin/production/routings/rt-v72-20 {mainline 去掉 定型}",
+      "SQL: select mainline from production_route_templates where id='rt-v72-20'"
+    ],
+    "at": "2026-10-02T23:07:04.009Z"
+  },
+  {
+    "id": "R-03",
+    "name": "还原后回到绿（红是注入造成的，不是长期红灯）",
+    "status": "pass",
+    "detail": "mainline 还原=[\"精裁\", \"三边\", \"熨烫\", \"定型\", \"复烫\", \"车被\", \"外帘打卷\", \"打包\", \"外帘装袋\", \"外帘发货\"]；派工 10 道与基线期望逐字相同",
+    "evidence": [
+      "PUT /api/admin/production/routings/rt-v72-20 {mainline 还原}"
+    ],
+    "at": "2026-10-02T23:07:05.623Z"
+  },
+  {
+    "id": "R-04",
+    "name": "价格断言判别力：注入新价 ⇒ 旧期望判红；还原 ⇒ 回绿",
+    "status": "pass",
+    "detail": "熨烫-布 原价 0.35 → 注入 0.99 ⇒ 派工读 0.99（≠原期望 = 红）；还原 ⇒ 0.35（=原期望 = 绿）",
+    "evidence": [
+      "PUT /api/admin/production/operation-positions/opp-v72-20-熨烫-布帘 {unit_price:0.99}",
+      "PUT … {unit_price:0.35}"
+    ],
+    "at": "2026-10-02T23:07:08.796Z"
+  }
+]

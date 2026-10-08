@@ -1,0 +1,148 @@
+{
+  "buildPoint": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "pid": "61739",
+    "sha": "43ca70322",
+    "shaFull": "43ca703221a714e143c468ff0b29c4a46e67a88f",
+    "subject": "test(acceptance): 2026-10-03 承载体第三批（收尾）—— 全档读数/两个 override 留档/#6202 判据腐化与修复 (#6214)",
+    "commitTime": "2026-10-03T08:15:11Z",
+    "originMain": "cf9a45c3c",
+    "adminApiStart": "六 10月/ 3 16:22:58 2026",
+    "observedAt": {
+      "cst": "2026-10-03 17:03:58 +08",
+      "utc": "2026-10-03T09:03:58.527Z"
+    }
+  },
+  "clock": {
+    "node": {
+      "cst": "2026-10-03 17:03:58 +08",
+      "utc": "2026-10-03T09:03:58.653Z"
+    },
+    "dbCst": "2026-10-03 17:03:59",
+    "dbTz": "Asia/Shanghai",
+    "deltaSec": 0.16
+  },
+  "unauthProbes": {
+    "GET /api/worker/me": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "GET /api/worker/production/current-worker": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "GET /api/worker/production/scan?token=la00000000000000000000000000000000": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/production/scan/complete": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "GET /api/worker/production/cutting-height?token=la00000000000000000000000000000000": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/shipment/recognize": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/shipment/orders/la00000000000000000000000000000000/pack": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/inbound/recognize": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/inbound/drafts": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/inbound/drafts/la00000000000000000000000000000000/post": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/session/current": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "GET /api/admin/products?page=1&size=1": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    }
+  },
+  "worker": {
+    "created": 200,
+    "workerId": "b77e4945ae37f8386dfce3f3e4c71e99",
+    "workerNo": "LA239123",
+    "name": "线A验收工人239123",
+    "loggedIn": true,
+    "sessionIdPrefix": "0fd1d610",
+    "me": {
+      "status": 200,
+      "pages": [
+        "report",
+        "order",
+        "cut_calc",
+        "shipment"
+      ]
+    },
+    "sessionRow": {
+      "id": "0fd1d610c8ed4c67959cfc7d6a2107e5",
+      "worker_id": "b77e4945ae37f8386dfce3f3e4c71e99",
+      "worker_no": "LA239123",
+      "worker_name": "线A验收工人239123",
+      "idle_expires_cst": "2026-10-10 17:03:59.974509",
+      "ended_at": null,
+      "end_reason": null
+    }
+  },
+  "probePrefix": "线A验收 / la",
+  "residueAtStart": {
+    "counts": {
+      "probeUsers": 2,
+      "probeSessions": 2,
+      "probeOrders": 0,
+      "probeProcessingOrders": 0,
+      "probeSets": 0,
+      "probeItems": 0,
+      "probePositionOps": 0,
+      "probePartTokens": 0,
+      "probeWorkLogs": 0,
+      "probeAudits": 0,
+      "probeIdemKeys": 0,
+      "probeInboundItems": 0,
+      "probeInboundLabels": 0
+    },
+    "total": 4
+  },
+  "ledgerHashAtStart": {
+    "hash": "b3c23222253b1f99b1383158276095f83b5b0e0dac74d308ebcce101d2c7aef2",
+    "parts": [
+      "orders=06aff4dd8b0e55e4948a6616da735153#435",
+      "processing_orders=62aaa224f1327833739b18cc8fe26696#271",
+      "processing_position_operations=bc193b93f04e37c3da317b9c0ef559bf#3021",
+      "processing_set_part_tokens=559b66cac18417c5df0bac1ae07d9a8c#287",
+      "production_work_logs=1c6ef171f116d056f8634c54b5f944f9#15",
+      "worker_report_audits=0d09663149db13d7da5349963be445bd#15",
+      "users=3d4bbc402804300c710aae475ff70245#21",
+      "worker_sessions=2ebe5b2863ce0d072f319cee92089dee#10",
+      "inbound_labels=7cb792a0116f58f6fe7164d9286039cb#4",
+      "client_request_keys=ed893df28bea527a5b939845fee7db60#40"
+    ],
+    "excludeProbe": false
+  },
+  "ledgerTables": [
+    "orders",
+    "processing_orders",
+    "processing_position_operations",
+    "processing_set_part_tokens",
+    "production_work_logs",
+    "worker_report_audits",
+    "users",
+    "worker_sessions",
+    "inbound_labels",
+    "client_request_keys"
+  ]
+}

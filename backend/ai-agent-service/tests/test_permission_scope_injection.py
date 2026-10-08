@@ -373,7 +373,7 @@ class TestTheActionLevelClaimIsBackedByTheMechanism:
     处方会**重新变成假真值**，而没有任何东西会因此变红。故这里把两个引用点钉在工具源码上
     （与 `_JAVA_CATALOGS` 的读源纪律同口径；漂移即红，处置 = 要么改机制、要么改处方）。
 
-    ## 🔴 issue #5247 改判（B 端米宝只读化，用户裁定 2026-09-23）—— 见证集**收窄**，判据**加强**
+    ## 🔴 issue #5247 改判（B 端黄金策只读化，用户裁定 2026-09-23）—— 见证集**收窄**，判据**加强**
 
     本单把 8 把 B 端写工具收窄为只读，`employee_manage` 是其中之一：写 action
     （create/update/delete/reset_password/toggle_status）全部删除 ⇒ 「读 action 要
@@ -582,7 +582,7 @@ class TestWiredIntoTheRealPromptAssembly:
             state=_make_state(agent_type="xiaobu", role="customer", permissions=[]),
             skill_name="customer_order",
             tool_names=[],
-            system_prompt="你是小布",
+            system_prompt="你是元元",
         )
         text = self._system_text(captured)
         assert "【权限范围】" not in text

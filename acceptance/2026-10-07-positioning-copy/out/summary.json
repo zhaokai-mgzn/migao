@@ -1,0 +1,8 @@
+{
+  "loginUrl": "http://localhost:3001/login",
+  "loginTitle": "米高 - AI经营管理平台",
+  "loginSubtitle": "企业级AI经营管理平台",
+  "changePasswordUrl": "http://localhost:3001/login?callbackUrl=%2Fchange-password",
+  "changePasswordTitle": "米高 - AI经营管理平台",
+  "changePasswordSubtitle": "企业级AI经营管理平台"
+}

@@ -42,7 +42,7 @@ def tool():
 
 @pytest.fixture
 def customer_context():
-    """C 端顾客（小布）上下文"""
+    """C 端顾客（元元）上下文"""
     return ToolContext(tenant_id=1, user_id="customer_001", session_id="sess_pay_1",
                        role="customer")
 

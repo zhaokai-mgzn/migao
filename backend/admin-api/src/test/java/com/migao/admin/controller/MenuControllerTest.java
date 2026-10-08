@@ -62,16 +62,20 @@ class MenuControllerTest {
     private static final List<String> GROUP_LABELS = List.of(
             "工作台", "客户服务", "交易管理", "生产管理", "仓储与物料", "组织管理");
 
-    /** #5778 的 **21 个菜单项名**（一项不少不减；「通知中心」是一级独立项、不在本权限树内）。
-     *  ⚠️ 含顶层一级项「商品管理」（它不属于任何组，但仍是菜单项）。 */
+    /** #5778 的 **22 个菜单项名**（一项不少不减；「通知中心」是一级独立项、不在本权限树内）。
+     *  ⚠️ #6404：菜单项 21 → 22（+「库存明细」`/stock-ledger`）。
+     *  ⚠️ 含顶层一级项「商品管理」（它不属于任何组，但仍是菜单项）。
+     *  🔴 2026-10-06（issue #6457，用户裁定方案 A1）：**顺序重排**（项数不变）——
+     *  客户服务组「接待与工具 → 售后 → 档案」、生产管理组「先备资料 → 再生产」、
+     *  仓储组「单据（进 → 账 → 出）→ 台账 → 分析」，且一级项「商品管理」沉到**所有分组之后**。 */
     private static final List<String> MENU_ITEM_LABELS = List.of(
-            "商品管理",
             "经营看板", "每日简报",
-            "在线接待", "客户列表", "知识库", "售后工单",
+            "在线接待", "知识库", "售后工单", "客户列表",
             "订单列表", "财务对账",
-            "生产看板", "智能派单", "加工项管理", "工艺配置", "计件工资",
-            "入库单", "发货单", "余料台账", "省料看板",
-            "员工管理", "岗位权限", "企业基础信息");
+            "加工项管理", "工艺配置", "生产看板", "智能派单", "计件工资",
+            "入库单", "库存明细", "发货单", "余料台账", "省料看板",
+            "员工管理", "岗位权限", "企业基础信息",
+            "商品管理");
 
     /** 动作码节点（非菜单项）2 个，**统一追加在组尾**：order:detail / employee:create。
      *  🔴 2026-09-29（#5778）：原 4 个 → **2 个** —— 「新增商品」/「商品分类管理」两个节点原挂在
@@ -164,20 +168,23 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("#5877 新 IA：顶层一级项（商品管理）不在任何组内，且排在**「工作台」组之后**")
+    @DisplayName("2026-10-06 新 IA：顶层一级项（商品管理）不在任何组内，且排在**所有分组之后**")
     void topLevelStandaloneItemMirrorsFrontend() throws Exception {
         JsonNode tree = fetchTree();
         var tops = topLevelStandaloneItems(tree);
         assertEquals(1, tops.size(), "顶层一级项应恰有 1 个（商品管理）—— 实得 = " + labels(tree));
         assertEquals("商品管理", tops.get(0).path("label").asText(),
                 "顶层一级项必须是「商品管理」—— 实得 = " + labels(tree));
-        // 🔴 #5877（用户 2026-10-01 裁定「商品管理的菜单不应该作为第一行」）：
-        // 顶层**位次**：第 0 项 = 「工作台」组，第 1 项 = 一级项「商品管理」（三源同批表达同一位置）。
+        // 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：一级项**排在所有分组之后**（原「工作台组之后」）
+        // —— 组名即「分组」，渲染在组与组之间会让「大菜单并列」自相矛盾。
+        // 顶层**位次**：第 0 项 = 「工作台」组、第 6 项（末项）= 一级项「商品管理」。
         // 判据 = 三源同构守卫的顶层布局序列（tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py）。
         assertEquals("workspace", tree.get(0).path("code").asText(),
                 "顶层第 0 项必须是「工作台」组 —— 实得 = " + codes(tree));
-        assertEquals("product:list", tree.get(1).path("code").asText(),
-                "顶层第 1 项必须是一级项「商品管理」（紧跟「工作台」组之后）—— 实得 = " + codes(tree));
+        assertEquals("org-center", tree.get(tree.size() - 2).path("code").asText(),
+                "顶层倒数第 2 项必须是「组织管理」组（一级项紧跟在它之后）—— 实得 = " + codes(tree));
+        assertEquals("product:list", tree.get(tree.size() - 1).path("code").asText(),
+                "顶层末项必须是一级项「商品管理」（排在**所有分组之后**）—— 实得 = " + codes(tree));
         assertEquals("product:list", tops.get(0).path("code").asText());
         assertEquals(0, tops.get(0).path("children").size(),
                 "一级项不得有子节点（它不是组）—— 有子节点说明它被写成了组");
@@ -204,15 +211,15 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("客户服务组（#5778 新建）：在线接待 + 客户列表 + 知识库 + 售后工单")
+    @DisplayName("客户服务组（#5778 新建；2026-10-06 组内重排）：在线接待 + 知识库 + 售后工单 + 客户列表")
     void customerServiceGroupMirrorsMenuTs() throws Exception {
         JsonNode cs = group(fetchTree(), "customer-service");
         assertEquals("客户服务", cs.path("label").asText());
         // 顺序 = menu.ts 的 `customer-service` 组逐字顺序（三源同构守卫按前缀子序列比对）
-        assertEquals(List.of("在线接待", "客户列表", "知识库", "售后工单"), labels(cs.path("children")));
+        assertEquals(List.of("在线接待", "知识库", "售后工单", "客户列表"), labels(cs.path("children")));
         // issue #5246（已合入 main）：知识库 = 读码 knowledge:view、售后工单 = 读码 after_sales:view；
         // 客户列表本轮由交易管理组移入本组，码不变（customer:view）。
-        assertEquals(List.of("agent:session", "customer:view", "knowledge:view", "after_sales:view"),
+        assertEquals(List.of("agent:session", "knowledge:view", "after_sales:view", "customer:view"),
                 codes(cs.path("children")));
     }
 
@@ -244,28 +251,33 @@ class MenuControllerTest {
     void productionCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode production = group(fetchTree(), "production-center");
         assertEquals("生产管理", production.path("label").asText());
-        assertEquals(List.of("生产看板", "智能派单", "加工项管理", "工艺配置", "计件工资"),
+        // 🔴 2026-10-06（issue #6457，方案 A1）：组内顺序 = 先备资料 → 再生产与派单 → 最末结算。
+        assertEquals(List.of("加工项管理", "工艺配置", "生产看板", "智能派单", "计件工资"),
                 labels(production.path("children")));
         // issue #5699（P4，子菜单粒度）：每个节点码 ≡ 该页第一屏读码 —— 智能派单 = processing:view
         //（ProductionPoolController 两个读端点同码）；工艺配置 = production:view（该页第一屏 6 个读端点
         // 本次整页收敛到该码；两码持有岗位集合逐值相同 ⇒ 零 delta）；#5291 的 production:view
         // 仍覆盖生产看板与计件工资。
-        // #5778：加工项管理由已撤销的「商品与加工项」组移入本组（位置 = 智能派单之后、工艺配置之前）。
-        assertEquals(List.of("production:view", "processing:view", "production:view",
-                "production:view", "production:view"), codes(production.path("children")));
+        // #5778：加工项管理由已撤销的「商品与加工项」组移入本组（2026-10-06 起为**组内第一项**）。
+        assertEquals(List.of("production:view", "production:view", "production:view",
+                "processing:view", "production:view"), codes(production.path("children")));
     }
 
     @Test
-    @DisplayName("仓储与物料组（#5271 新组；#5939 加「发货单」）：入库单(inbound:view) + 发货单(order:list) + 余料台账 + 省料看板")
+    @DisplayName("仓储与物料组（#5271 新组；#5939 加「发货单」；#6404 加「库存明细」）：入库单(inbound:view) + 发货单(order:list) + 余料台账 + 省料看板/库存明细(product:list)")
     void inventoryCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode inventory = group(fetchTree(), "inventory-center");
         assertEquals("仓储与物料", inventory.path("label").asText());
-        assertEquals(List.of("入库单", "发货单", "余料台账", "省料看板"), labels(inventory.path("children")));
+        // 🔴 2026-10-06（issue #6457，方案 A1）：单据（进 → 账 → 出）→ 台账 → 分析。
+        assertEquals(List.of("入库单", "库存明细", "发货单", "余料台账", "省料看板"),
+                labels(inventory.path("children")));
         // 入库单是**仓储**动作、权限码独立为 inbound:view —— 并进 processing:manage 会让
         // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 点名的同族坑）。
         // issue #5699（P4）：省料看板节点码 = 该页第一屏读码 product:list（StockBatchController）。
         // issue #5939：「发货单」取**既有** order:list（与订单列表同码、与页面/端点同码）⇒ 零授权 delta。
-        assertEquals(List.of("inbound:view", "order:list", "processing:manage", "product:list"),
+        // 🔴 issue #6404：「库存明细」同样取**既有** product:list（与省料看板同码；
+        // 码不唯一是有意的 —— 两个页面各自的读端点注解就是这个码）。
+        assertEquals(List.of("inbound:view", "product:list", "order:list", "processing:manage", "product:list"),
                 codes(inventory.path("children")));
     }
 
@@ -324,12 +336,12 @@ class MenuControllerTest {
             assertEquals(1, all.stream().filter(action::equals).count(),
                     "动作码节点「" + action + "」缺失或重复（实得全表 = " + all + "）");
         }
-        // 组内节点总数 = 21 个**组内**菜单项（22 项 − 顶层一级项「商品管理」）+ 2 动作码节点 = 23。
-        // （#5939：菜单项 21 → 22，组内项 20 → 21 ⇒ 本表同批 +「发货单」。）
+        // 组内节点总数 = 22 个**组内**菜单项（23 项 − 顶层一级项「商品管理」）+ 2 动作码节点 = 24。
+        // （#5939：菜单项 21 → 22；#6404：菜单项 22 → 23，组内项 21 → 22 ⇒ 本表同批 +「库存明细」。）
         // ⚠️ 顶层一级项是**叶子**（不在任何组内）⇒ 不被 `allChildren` 收录，它的存在由
         // `topLevelStandaloneItemMirrorsFrontend` 单独断言（避免两处都算它 ⇒ 重复计数）。
         assertEquals(MENU_ITEM_LABELS.size() - 1 + ACTION_NODE_LABELS.size(), all.size(),
-                "组内节点总数 = 21 组内菜单项 + 2 动作码节点（实得全表 = " + all + "）");
+                "组内节点总数 = 22 组内菜单项 + 2 动作码节点（实得全表 = " + all + "）");
     }
 
     @Test

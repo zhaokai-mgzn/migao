@@ -107,6 +107,31 @@ ORIGINAL_NONBOT_IF_RAW = """      github.event.pull_request.base.ref == 'main' &
 # 判别力自证：`test_nonbot_run_block_mutation_turns_the_assertion_red` —— 改一处即失配。
 ORIGINAL_NONBOT_RUN_RAW = """          set -uo pipefail
 
+          # ---------- ⓪ 选合并凭据（**先选后 arm**：它决定合并后 push 事件会不会被吞）----------
+          if [ -n "${AUTOMERGE_PAT:-}" ]; then
+            GH_TOKEN="$AUTOMERGE_PAT"
+            actor="$(gh api user --jq .login 2>/dev/null || echo '')"
+            echo "🔑 合并凭据 = AUTOMERGE_PAT（actor=${actor:-<查询失败>}）⇒ 合并后 push 事件不被抑制（#6418）"
+            if [ "$actor" = "github-actions[bot]" ]; then
+              echo "::warning::AUTOMERGE_PAT 的 actor 解析为 github-actions[bot] ⇒ 它**就是**内置凭据的等价物 ⇒ 抑制照旧、push 面不会恢复（#6418）：请换成用户 / GitHub App 的 PAT"
+            fi
+          else
+            GH_TOKEN="${FALLBACK_TOKEN:-}"
+            echo "::warning::AUTOMERGE_PAT 未配置 ⇒ 回落到内置 GITHUB_TOKEN：本次合并仍会被 GitHub 反递归抑制，合并后的 push 事件不触发任何 workflow（三条部署腿的主触发不恢复，#6418）。出口：Settings → Secrets and variables → Actions 建 AUTOMERGE_PAT（Contents RW + Pull requests RW + Workflows RW）后重跑本 job"
+            {
+              echo "### ⚠️ 合并凭据回落（#6418）"
+              echo ""
+              echo "- 本仓库未配置 \\`AUTOMERGE_PAT\\` ⇒ 本次 arm 用的仍是内置 \\`GITHUB_TOKEN\\`。"
+              echo "- 后果：本 PR 合并产生的 \\`push\\` 事件**不触发任何 workflow**（GitHub 防递归抑制）"
+              echo "  ⇒ \\`deploy-frontend\\` / \\`deploy-admin-api\\` / \\`deploy-ai-agent-service\\` 的**主触发不恢复**，"
+              echo "  部署仍只靠 \\`deploy-reconcile\\` 的 20 分钟 cron（**实测被 GitHub 节流到 ~6 次/日**）。"
+              echo "- 出口（人工一步）：Settings → Secrets and variables → Actions → New repository secret："
+              echo "  \\`AUTOMERGE_PAT\\` = 细粒度 PAT（Contents: RW · Pull requests: RW · Workflows: RW）"
+              echo "  或经典 PAT（\\`repo\\` + \\`workflow\\`）；建好后重跑本 job 即生效（**无需改代码**）。"
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          fi
+          export GH_TOKEN
+
           merge_out="$(mktemp)"
           # ⚠️ trap 里的变量名必须与主流程的 `rc` **不同名**：trap 是 EXIT 时执行的，
           #    用 `rc=$?` 会覆盖主流程已判定的退出码（本脚本初版就这么错过一次）。
@@ -245,8 +270,9 @@ ORIGINAL_NONBOT_RUN_RAW = """          set -uo pipefail
               ;;
           esac"""
 
-# 原文件里唯一的一处 secrets 引用（本 PR 不得新增第二处）
-ORIGINAL_SECRETS_LINE = "          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
+# 合并凭据那一行（#6418 起 = **非内置**的 `AUTOMERGE_PAT`；内置 token 合并 ⇒ 合并者
+# `app/github-actions` ⇒ push 被 GitHub 反递归抑制吞掉 ⇒ 三条部署腿主触发失效）
+PAT_SECRETS_LINE = "          AUTOMERGE_PAT: ${{ secrets.AUTOMERGE_PAT }}"
 
 
 # ── gh 替身（夹具驱动；CLI 边界即注入点）────────────────────────────────────────
@@ -752,10 +778,10 @@ class TestCriterion11YardstickIsSingleSource:
     #    —— 同源声明的 criterion 只认模块级函数，理由见它的 docstring。
 
     def test_the_predicate_itself_is_discriminating(self):
-        """谓词口径自证（**具名读数**）：精确名命中那 2 条，而不卷进同名不同族的 4 条。
+        """谓词口径自证（**具名读数**）：精确名命中那 2 条，而不卷进同名不同族的 6 条。
 
         反面锚逐条具名（这就是「为什么选精确名」的可复算证据）：若把谓词退回改动前的**前缀**口径，
-        这四条会一起进 `hits` ⇒ 台账要背 4 条**语义不同**的条目，等于教下一个人「它们可合并」。
+        这六条会一起进 `hits` ⇒ 台账要背 6 条**语义不同**的条目，等于教下一个人「它们可合并」。
         """
         assert STRIP_COMMENT_DEF_RE.search("def strip_comment(line: str) -> str:") is not None
         assert STRIP_COMMENT_DEF_RE.search("async def strip_comment(line):") is not None
@@ -769,17 +795,27 @@ class TestCriterion11YardstickIsSingleSource:
             GUARD_FILE,                                            # 自匹配（已排除）
             "tests/unit_ci_workflows/test_deploy_breaker_allowlist.py",
             "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
+            # ← **同名不同族**（issue #6439 新增）：LPAPI 守卫自带一个**JS/TS 感知**的注释剥离器
+            #   `strip_comments`（复数：`/* */` + `//`），与正典（Python 行注释 `strip_comment`）
+            #   **不是同一把尺子** —— 与下面 #6434 那条同属「为什么用精确名谓词」的一类。
+            "tests/unit_ci_workflows/test_lpapi_open_printer_contract.py",
+            # ← **同名不同族**（issue #6434 新增）：它自带一个 **JSX/TS 感知**的注释剥离器
+            #   `strip_comments`（复数），与正典（Python 行注释 `strip_comment`）**不是同一把尺子** ——
+            #   正是「为什么用精确名谓词」的那一类：退回前缀口径 ⇒ 它会进台账并被当成可合并的同族。
+            "tests/unit_ci_workflows/test_order_print_entry_matrix.py",
             "tests/unit_ci_workflows/test_qty_stub_reads_calc_info.py",
             "tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py",
             "tests/unit_ci_workflows/test_swas_nginx_rate_limit.py",
         ], f"前缀族现取读数变了 —— 「为什么选精确名」的理由要重取：{prefix_family}"
 
-        # 而同名不同族那四条，**精确名谓词逐条不命中** ⇒ 它们不进台账（也就不会**陈旧红**）。
+        # 而同名不同族那六条，**精确名谓词逐条不命中** ⇒ 它们不进台账（也就不会**陈旧红**）。
         for family in (".github/danger_scan.py",):
             assert STRIP_COMMENT_DEF_RE.search(
                 (REPO_ROOT / family).read_text(encoding="utf-8")) is not None
         for unrelated in ("tests/unit_ci_workflows/test_deploy_breaker_allowlist.py",
                           "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
+                          "tests/unit_ci_workflows/test_lpapi_open_printer_contract.py",
+                          "tests/unit_ci_workflows/test_order_print_entry_matrix.py",
                           "tests/unit_ci_workflows/test_qty_stub_reads_calc_info.py",
                           "tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py"):
             assert STRIP_COMMENT_DEF_RE.search(
@@ -1133,6 +1169,14 @@ class TestCriterion6Checks:
 # 判据 7：非 bot（人类 PR）路径逐字不变 —— 回归守卫
 # ══════════════════════════════════════════════════════════════════════════════
 class TestCriterion7NonBotPathUnchanged:
+    """非 bot（人类 PR）路径的**逐字快照**：`if:` + 合并 step 的 `run` 正文。
+
+    🔴 口径沿革（issue #6418）：该 `run` 正文**被有意扩充**了一段「⓪ 选合并凭据」（非内置
+    `AUTOMERGE_PAT` 优先 + 缺它时显式具名回落）—— 快照常量已同批重锚，扩充理由写在 PR body 的
+    「固化声明」里。快照的价值不变：**此后任何**对 arm / 三态回读逻辑的改动都会让它失配
+    （变异红证见 `test_nonbot_run_block_mutation_turns_the_assertion_red`）。
+    """
+
     def test_nonbot_if_block_is_byte_identical(self):
         assert ORIGINAL_NONBOT_IF_RAW in workflow_text(), (
             "非 bot job 的 `if:` 被改动了 —— 人类 PR 的既有行为必须逐字不变")
@@ -1172,7 +1216,7 @@ class TestCriterion7NonBotPathUnchanged:
         assert job["name"] == "Enable auto-merge"
         assert [s.get("name") for s in job["steps"]] == [
             "Checkout", "Enable native auto-merge (squash)"]
-        assert job["steps"][1]["env"]["GH_TOKEN"] == "${{ secrets.GITHUB_TOKEN }}"
+        assert job["steps"][1]["env"]["AUTOMERGE_PAT"] == "${{ secrets.AUTOMERGE_PAT }}"
 
     def test_two_jobs_are_disjoint_on_author_type(self):
         """两个 job 的作者类型条件必须互斥 ⇒ 任一 PR 只可能走一条路径。"""
@@ -1277,21 +1321,30 @@ class TestWorkflowStructureAndHardConstraints:
     def test_workflow_is_valid_yaml(self):
         assert workflow_yaml()["name"] == "Auto Merge"
 
-    def test_no_new_secrets_reference_was_introduced(self):
-        """本 PR 的硬约束：**不得新增 `secrets.*` 引用**（`Danger Scan` 会 BLOCK）。
+    def test_secrets_references_are_the_acknowledged_pat(self):
+        """#6418 **取代**了本类原来的硬约束（「不得新增 `secrets.*` 引用」）。
 
-        bot job 用 `github.token`（= 内置 GITHUB_TOKEN，同一凭据）⇒ 全文 `secrets.` 仍**只有**
-        既有的那一处。
+        为什么要取代：那条硬约束让「把合并凭据从内置 token 换成 `AUTOMERGE_PAT`」**结构性
+        合不了**（Danger Scan 对该形态 BLOCK，而当时**没有任何记录人工确认的地方**）——
+        现在改走 owner 显式确认通道（`/danger-ack new-secret <NAME>`，见 `.github/danger_scan.py`，
+        无确认时逐字仍是 BLOCK）。本判据锁的是**结果**：两个 arm job 引用的都是同一枚、且是
+        **非内置**的 `AUTOMERGE_PAT`（内置写法一旦回来 ⇒ 合并者又变回 `app/github-actions`）。
         """
         text = workflow_text()
         # 只数**真正的 secrets 引用形态**（`${{ secrets.NAME }}`），不数注释/正则里的字面量
         refs = re.findall(r"\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}", text)
-        assert refs == ["GITHUB_TOKEN"], f"新增了 secrets.* 引用（硬约束禁止）：{refs}"
-        assert ORIGINAL_SECRETS_LINE in text
+        assert refs == ["AUTOMERGE_PAT", "AUTOMERGE_PAT"], f"secrets.* 引用形态变了：{refs}"
+        assert PAT_SECRETS_LINE in text
+        assert "secrets.GITHUB_TOKEN" not in text, (
+            "内置 token 引用回来了 ⇒ 合并者会变回 app/github-actions ⇒ push 面被吞（#6418）"
+        )
 
-    def test_bot_job_uses_github_token_context(self):
+    def test_bot_job_uses_nonbuiltin_credential_with_fallback(self):
+        """bot 路径同样走非内置凭据（`github.token` 直绑 `GH_TOKEN` 就是被吞的那个形态）。"""
         env = bot_job()["steps"][-1]["env"]
-        assert env["GH_TOKEN"] == "${{ github.token }}"
+        assert env["AUTOMERGE_PAT"] == "${{ secrets.AUTOMERGE_PAT }}"
+        assert env["FALLBACK_TOKEN"] == "${{ github.token }}"
+        assert "GH_TOKEN" not in env, "内置凭据不得直接绑 GH_TOKEN（#6418）"
 
     def test_bot_job_passes_title_and_labels(self):
         env = bot_job()["steps"][-1]["env"]

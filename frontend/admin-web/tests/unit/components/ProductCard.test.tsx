@@ -1,10 +1,10 @@
 // case_ids: UI-006
 /**
- * 米宝（B 端）会话内商品卡超链接（issue #4016 P14 第四节）
+ * 黄金策（B 端）会话内商品卡超链接（issue #4016 P14 第四节）
  *
  * ## 用户要求与现状（实测 @ origin/main 8cca7664）
  *
- * 用户明确要求「商品 / 订单列表卡支持超链接点击」——现状是米宝会话里的商品清单**完全不可点**
+ * 用户明确要求「商品 / 订单列表卡支持超链接点击」——现状是黄金策会话里的商品清单**完全不可点**
  * （`frontend/admin-web/src/components/chat/ProductCard.tsx` 无任何 `<a>`，
  * `grep href|Link|router` 为空），用户被迫手打商品名。订单卡早已可点
  * （同文件内联 `OrderRow` 的 `/orders/{id}`），商品卡是缺口。

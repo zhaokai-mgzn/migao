@@ -13,6 +13,6 @@
     <path d="M31.3 16.7L16.7 31.3"/>
   </g>
   <circle cx="24" cy="24" r="3.7" fill="#FFC53D"/>
-  <text x="60" y="23" font-family="'PingFang SC','Hiragino Sans GB','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="24" font-weight="700" fill="#262626">米高</text>
+  <text x="60" y="23" font-family="'PingFang SC','Hiragino Sans GB','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="24" font-weight="700" fill="#262626">观星台</text>
   <text x="60.5" y="39" font-family="'Helvetica Neue',Arial,sans-serif" font-size="9.5" font-weight="600" letter-spacing="4.6" fill="#8C8C8C">MIGAO</text>
 </svg>

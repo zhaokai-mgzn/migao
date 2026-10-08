@@ -37,7 +37,9 @@ SK=${4:-}
 IMAGE_TAG=${5:-}
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-REMOTE_SCRIPT="$ROOT/deploy/swas/bmini-h5-publish-remote.sh"
+# `H5_REMOTE_SCRIPT_PATH` = **判据注入夹具用**（生产不带它 ⇒ 走下面「远端执行体缺失 ⇒ 判红」那条断言）。
+# 它**不是**后门：远端脚本路径不是安全边界（命令内容才是），且注入只影响**本机**这一侧。
+REMOTE_SCRIPT=${H5_REMOTE_SCRIPT_PATH:-"$ROOT/deploy/swas/bmini-h5-publish-remote.sh"}
 DIST_DIR="$ROOT/frontend/bmini-app/dist"
 LOCAL_INDEX="$DIST_DIR/index.html"
 
@@ -179,6 +181,17 @@ esac
 case "$IMAGE_TAG" in
   *[!A-Za-z0-9._-]*) die "IMAGE_TAG 非法：'$IMAGE_TAG'（只接受 [A-Za-z0-9._-]）" ;;
 esac
+# 🔴 **执行体 ref**（引导专用，issue #6124）：`H5_PUBLISHED_COMMIT`（CI 里 = `github.sha`，即本
+#    workflow 跑的那个 commit ⇒ 它的 tarball **必定含** `deploy/swas/bmini-h5-publish-remote.sh`）；
+#    人工排障时回落到 `$GITHUB_SHA`。本腿的**产物**是 ACR 镜像（不是 git ref）⇒ git 侧只有这一个 ref，
+#    不存在 C 端那种「产物 ref ≠ 执行体 ref」的两种用法。
+#    它会被拼进 codeload URL ⇒ 与上面几个值同等做字符集白名单 + 40 位断言（不可变引用）。
+SCRIPT_SHA=${H5_PUBLISHED_COMMIT:-${GITHUB_SHA:-}}
+case "$SCRIPT_SHA" in
+  "") die "执行体 ref 为空：请给 H5_PUBLISHED_COMMIT（CI 里 = github.sha）或 GITHUB_SHA —— 引导按它取回远端执行体" ;;
+  *[!0-9a-fA-F]*) die "执行体 ref 非法：'$SCRIPT_SHA'（只接受十六进制 sha；它会被拼进 codeload URL）" ;;
+esac
+[ "${#SCRIPT_SHA}" -eq 40 ] || die "执行体 ref 必须是 40 位十六进制 commit sha，实际 '$SCRIPT_SHA'（长度 ${#SCRIPT_SHA}）"
 
 EXPECTED_TARGET="$STATIC_ROOT/$SUBDIR"
 IMAGE="$ACR_REGISTRY/$ACR_NAMESPACE/$IMAGE_NAME:$IMAGE_TAG"
@@ -205,16 +218,53 @@ PY
 
 say "# B 端 h5（bmini）静态落位（issue #5668）"
 say ""
-say "- 目标：\`$EXPECTED_TARGET\`（静态根 = nginx 的 \`root\`，**同时承载 C 端小布 ⇒ 只收敛 $SUBDIR/ 子树**）"
+say "- 目标：\`$EXPECTED_TARGET\`（静态根 = nginx 的 \`root\`，**同时承载 C 端元元 ⇒ 只收敛 $SUBDIR/ 子树**）"
 say "- 产物：\`frontend/bmini-app/dist/\`（CI 按 \`TARO_APP_H5_PUBLIC_PATH=/$SUBDIR/\` 构建）"
 say "- 传输：ACR 镜像 \`$IMAGE\`（实例 \`docker cp\` 取出 /dist ⇒ 线上字节 == CI 构建字节）"
 say "- 本地 \`dist/index.html\` 哈希：\`$LOCAL_SHA\`"
 
-# ── 组装远端命令 = 远端执行体 + 三个环境变量前缀（无参数拼接 ⇒ 无注入面）──────
+# ── 组装远端命令 = **极小的引导**（远端执行体**不进命令内容**；issue #6124）──────
+# 病根（与 #6095 同族）：此前这里把**远端执行体整份内联**（把远端脚本 `cat` 进命令内容）⇒ 命令内容
+#   随远端脚本一起长到 ~10.8 KB（SWAS 上限 16384 字节）⇒ 每加一段注释/一条断言都在逼近它，而失败
+#   发生在**发布那一刻**（云上 `SDKError 400 / CmdContent.ExceedLimit`，PR 里看不见）。
+#   现在命令内容只做「按**不可变 sha** 取回执行体并执行」；发布逻辑仍只在远端脚本里（单一出处）。
+#
+# 🔴 **执行体 ref**（`SCRIPT_SHA`）与**产物 ref** 是两件事，但本腿只有一个 git ref：
+#   产物是 ACR 传输镜像（`H5_PUBLISH_IMAGE`，不是 git ref），git 侧只有「含远端执行体的那个 commit」
+#   ⇒ `H5_PUBLISHED_COMMIT`（CI 里 = `github.sha`，见 .github/workflows/bmini-h5-publish.yml）。
+#   ⚠️ 别把引导改成「取 main 的最新」：那会让「远端执行的那份」与「本次 CI 审过的 commit」漂移。
+REMOTE_FETCH='WORK=$(mktemp -d) && T=$(mktemp) && die() { echo "❌ 引导失败：$1 —— 未做任何发布动作" >&2; exit 1; } && trap '"'"'rc=$?; rm -rf "$WORK"; rm -f "$T"; exit $rc'"'"' EXIT && curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 180 -o "$T" "https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/'"$SCRIPT_SHA"'" || die "取不到远端执行体（codeload tar.gz/'"$SCRIPT_SHA"'）" && tar xzf "$T" -C "$WORK" --strip-components=1 || die "解不开远端执行体（$T）" && bash "$WORK/deploy/swas/bmini-h5-publish-remote.sh"'
+
+# 命令内容字节上限（**保守值**）与出处（判据：tests/unit_ci_workflows/）
+COMMAND_CONTENT_LIMIT_BYTES=${H5_COMMAND_CONTENT_LIMIT_BYTES:-16384}
+COMMAND_CONTENT_LIMIT_SOURCE="SWAS Open RunCommand：CommandContent 与自定义参数在 base64 编码后综合长度 ≤ 16 KB —— https://help.aliyun.com/zh/simple-application-server/developer-reference/api-swas-open-2020-06-01-runcommand"
+
 COMMAND_CONTENT="export H5_STATIC_ROOT=$STATIC_ROOT
 export H5_SUBDIR=$SUBDIR
 export H5_PUBLISH_IMAGE=$IMAGE
-$(cat "$REMOTE_SCRIPT")"
+$REMOTE_FETCH"
+
+# ── CI 侧前置断言（**在发起任何云调用之前**）───────────────────────────────────
+# 让「命令内容超限」在**本机**就是可读的判红（具名报文 + 字节读数 + 出处），而不是云上一个 400。
+COMMAND_CONTENT_BYTES=$(printf '%s' "$COMMAND_CONTENT" | wc -c | tr -d ' \n')
+if [ "$COMMAND_CONTENT_BYTES" -ge "$COMMAND_CONTENT_LIMIT_BYTES" ]; then
+  die "SWAS 命令内容超限：命令内容 ${COMMAND_CONTENT_BYTES} 字节 / 上限 ${COMMAND_CONTENT_LIMIT_BYTES} 字节 —— 拒绝发起云调用。
+   上限出处：${COMMAND_CONTENT_LIMIT_SOURCE}
+   口径：远端执行体**不许**被内联进命令内容（命令内容只做「按 sha 取回执行体并执行」）。
+   修法：① 新增的发布逻辑加进远端脚本 deploy/swas/bmini-h5-publish-remote.sh（不占命令内容）；
+         ② 复核是否有人把「内联远端脚本」的旧写法又加回来了（判据见 tests/unit_ci_workflows/）。"
+fi
+
+# 判据入口（**可注入**）：只打印组装结果与字节读数，**不发起任何云调用**。
+if [ -n "${H5_PRINT_COMMAND_CONTENT:-}" ]; then
+  printf 'COMMAND_CONTENT_BEGIN\n'
+  printf '%s\n' "$COMMAND_CONTENT"
+  printf 'COMMAND_CONTENT_END\n' >&2
+  printf 'COMMAND_CONTENT_BYTES=%s\n' "$COMMAND_CONTENT_BYTES" >&2
+  printf 'COMMAND_CONTENT_LIMIT_BYTES=%s\n' "$COMMAND_CONTENT_LIMIT_BYTES" >&2
+  printf 'REMOTE_SCRIPT=%s\n' "$REMOTE_SCRIPT" >&2
+  exit 0
+fi
 
 if [ -n "$AK" ] && [ -n "$SK" ]; then
   command -v aliyun >/dev/null 2>&1 || die "未安装 aliyun CLI（CI 侧应先安装，见 .github/workflows/bmini-h5-publish.yml）"

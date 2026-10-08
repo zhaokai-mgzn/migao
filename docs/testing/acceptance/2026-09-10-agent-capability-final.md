@@ -1,6 +1,6 @@
-# 验收报告 米宝（B 端）agent 能力生产就绪性 2026-09-10 被测版本 sha-48eb49cb
+# 验收报告 黄金策（B 端）agent 能力生产就绪性 2026-09-10 被测版本 sha-48eb49cb
 
-> 验收对象：米宝 B 端 AI 客服 agent（PERSONA=mibao，生产环境 api.migaozn.com / ai-api.migaozn.com）
+> 验收对象：黄金策 B 端 AI 客服 agent（PERSONA=mibao，生产环境 api.migaozn.com / ai-api.migaozn.com）
 > 验收范围：68 个 normal 评测 case（全量复测）+ 双 AI 交叉验证抽样
 > 依据：docs/testing/acceptance-protocol.md（v1.1 AI Native 去人工化）
 

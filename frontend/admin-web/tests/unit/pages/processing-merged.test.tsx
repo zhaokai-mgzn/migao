@@ -92,9 +92,9 @@ const productGroup = () => menuGroups.find((g) => g.key === 'product-center')
 // ────────────────────────── ① 菜单结构（侧边栏 IA） ──────────────────────────
 
 describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**组；`product-center` 组撤销、商品列表升为一级项）', () => {
-  // ⚠️ #5877：该一级项现名**「商品管理」**，且渲染在**「工作台」组之后**（原为所有分组之前）——
-  // 本文件的判据只看**归属**（它不在任何组里），故不需改断言；此处更正表述以免与新位置自相矛盾。
-  it('加工项管理由「生产管理」组承载（位次 = 智能派单之后、工艺配置之前）→ /production/processing', () => {
+  // ⚠️ #5877 / 2026-10-06：该一级项现名**「商品管理」**，且渲染在**所有分组之后**（原为「工作台组之后」、
+  // 更早为所有分组之前）—— 本文件的判据只看**归属**（它不在任何组里），故不需改断言；此处更正表述以免自相矛盾。
+  it('加工项管理由「生产管理」组承载（2026-10-06 起为**组内第一项**）→ /production/processing', () => {
     const entry = productionGroup()?.children.find((c) => c.key === 'processing')
     expect(entry).toBeDefined()
     expect(entry!.name).toBe('加工项管理')
@@ -104,7 +104,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // #5778：原「商品与加工项」组已撤销（商品列表升为**一级项**，现名「商品管理」）⇒ 该项现属生产管理组
     expect(productGroup()).toBeUndefined()
     expect(productionGroup()!.children.map((c) => c.key)).toEqual([
-      'production-board', 'production-pool', 'processing', 'production-process', 'production-piecework',
+      'processing', 'production-process', 'production-board', 'production-pool', 'production-piecework',
     ])
     // 渲染出来的图标也必须是本项声明的那个（配置断言绿、画面错是 #4482 的既有形态）
     expect(entry!.icon).toBe('Scissors')
@@ -116,10 +116,10 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 断言的是**路径清单**（顺序敏感）。
     const productionPaths = productionGroup()!.children.map((c) => c.path)
     expect(productionPaths).toEqual([
-      '/production',
-      '/production/pool',
       '/production/processing',
       '/production/routings',
+      '/production',
+      '/production/pool',
       '/production/piecework',
     ])
     // 反向：面料三项**不得**在本科目里（它们属「仓储与物料」）
@@ -131,9 +131,9 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // #5778：加工项管理 = production:view。
     expect(productionGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'production:view',
+      'production:view',
+      'production:view',
       'processing:view',
-      'production:view',
-      'production:view',
       'production:view',
     ])
     // 拆出去的三项落在「仓储与物料」组，且**权限码不统一是有意的**：
@@ -142,8 +142,10 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 🔴 省料看板 = product:list（issue #5699 P4：该页两个读端点在 `StockBatchController` 上是方法级 product:list）。
     // #5939：入库单之后新增「发货单」（`/shipments`，码 = 既有 `order:list`）——
     // 出口单据与入口单据对称，仍与「生产管理」组无关。
+    // #6404：组尾再加「库存明细」（`/stock-ledger`，同取 `product:list`）。
     expect(inventoryGroup()!.children.map((c) => c.path)).toEqual([
       '/inbound-orders',
+      '/stock-ledger',
       '/shipments',
       '/production/remnants',
       '/production/saving-board',
@@ -152,9 +154,10 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 所有人不可见，见 #4203 同族坑）。
     expect(inventoryGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'inbound:view',
-      'order:list',
+      'product:list',   // 库存明细（#6404：同取既有 product:list ⇒ 零授权 delta；2026-10-06 起紧随入库单）
+      'order:list',     // 发货单（#5939：取既有 order:list ⇒ 与订单列表同码、零授权 delta）
       'processing:manage',
-      'product:list',
+      'product:list',   // 省料看板（#5699 P4）
     ])
     // 全站不再有指向两个旧路径的菜单项，也不再有独立的「加工费管理」项；
     // ⚠️ 「加工项管理」是**合并后的唯一入口**（#4542 起菜单名）⇒ **必须**在菜单里，不得写成负断言。
@@ -167,9 +170,9 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 已不存在 —— 用码点构造，避免在源码里再写出该旧名（issue #4542 判据 1：零命中）
     expect(allNames).not.toContain('\u52a0\u5de5\u9879\u4e0e\u52a0\u5de5\u8d39')
     expect(allNames.filter((n) => n === '加工项管理')).toHaveLength(1)
-    // 一项不少不减：22 项 = 1 顶部一级项 + 20 个组内项 + 1 个尾部独立项（#5778；#5939 +「发货单」）
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(20)
-    expect(allNames).toHaveLength(20)
+    // 一项不少不减：23 项 = 1 顶部一级项 + 21 个组内项 + 1 个尾部独立项（#5778；#5939 +「发货单」；#6404 +「库存明细」）
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(21)
+    expect(allNames).toHaveLength(21)
   })
 })
 

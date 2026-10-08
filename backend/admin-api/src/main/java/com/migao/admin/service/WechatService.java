@@ -35,7 +35,7 @@ public class WechatService {
     @Value("${wechat.mini.secret:}")
     private String appSecret;
 
-    /** B 端员工小程序（bmini）appid/secret（issue #2977：与 C 端小布小程序相互独立） */
+    /** B 端员工小程序（bmini）appid/secret（issue #2977：与 C 端元元小程序相互独立） */
     @Value("${wechat.bmini.appid:}")
     private String bminiAppId;
 

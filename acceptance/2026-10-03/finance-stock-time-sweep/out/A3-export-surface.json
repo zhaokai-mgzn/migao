@@ -1,0 +1,44 @@
+[
+  {
+    "m": "GET",
+    "p": "/api/admin/finance/export",
+    "status": 404,
+    "ct": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/finance/transactions/export",
+    "status": 404,
+    "ct": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/production/piecework/export",
+    "status": 404,
+    "ct": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/production/export",
+    "status": 404,
+    "ct": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/finance/reconciliation/export",
+    "status": 404,
+    "ct": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/export/finance",
+    "status": 404,
+    "ct": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/production/piecework/summary/export",
+    "status": 404,
+    "ct": "NOT_FOUND"
+  }
+]

@@ -391,7 +391,9 @@ public class WorkerInboundService {
         item.setProductId(req.getProductId());
         item.setSkuId(req.getSkuId());
         item.setQuantity(req.getQuantity());
-        item.setUnitCost(req.getUnitCost());
+        // 金额精度准入（issue #6228）：工人面单价是**工人输入**，下游入库单价列 NUMERIC(·,2)。
+        // 本文件是工人面的入口（结构上没有别的写面）⇒ 在这里显式拒绝，不让值先流进下游再被舍掉。
+        item.setUnitCost(MoneyScale.requireTwoDecimalsOrNull(req.getUnitCost(), "入库单价"));
         item.setDyeLot(trimToNull(req.getDyeLot()));
         item.setRollLengthM(req.getRollLengthM());
         create.setItems(List.of(item));

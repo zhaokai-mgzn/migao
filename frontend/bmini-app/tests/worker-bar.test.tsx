@@ -103,11 +103,29 @@ describe('WorkerBar（共用 PAD 三条，issue #4733）', () => {
     expect(onNeedLogin).toHaveBeenCalledTimes(1)
   })
 
-  it('闲置分钟数来自服务端配置（默认 15，租户可配 5~60）', async () => {
+  it('闲置时长按服务端配置说人话（分钟量级照原样；不再有写死的 15）', async () => {
     mockFetch.mockResolvedValue({ success: true, data: { ...ZHANG, idle_minutes: 30 } })
 
     render(<WorkerBar />)
 
     expect(await screen.findByText(/闲置 30 分钟自动登出/)).toBeTruthy()
+  })
+
+  it('🔴 服务端默认 30 天（43200 分钟）⇒ 界面说「30 天」，不印 43200 这个数字', async () => {
+    mockFetch.mockResolvedValue({ success: true, data: { ...ZHANG, idle_minutes: 43200 } })
+
+    render(<WorkerBar />)
+
+    expect(await screen.findByText(/闲置 30 天自动登出/)).toBeTruthy()
+    expect(screen.queryByText(/43200/)).toBeNull()
+  })
+
+  it('🔴 拿不到 idle_minutes ⇒ 不编一个数字（改前是 `?? 15`，与真值不符）', async () => {
+    mockFetch.mockResolvedValue({ success: true, data: { ...ZHANG, idle_minutes: undefined } })
+
+    render(<WorkerBar />)
+
+    expect(await screen.findByText(/闲置超时后自动登出/)).toBeTruthy()
+    expect(screen.queryByText(/闲置 15 分钟/)).toBeNull()
   })
 })

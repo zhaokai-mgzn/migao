@@ -1,0 +1,51 @@
+[
+  {
+    "role": "customer_service",
+    "hasCode": false,
+    "httpStatus": 422,
+    "createdId": null,
+    "escalated": false
+  },
+  {
+    "role": "operator",
+    "hasCode": true,
+    "httpStatus": 422,
+    "createdId": null,
+    "escalated": false
+  },
+  {
+    "role": "sales",
+    "hasCode": true,
+    "httpStatus": 422,
+    "createdId": null,
+    "escalated": false
+  },
+  {
+    "role": "finance",
+    "hasCode": false,
+    "httpStatus": 422,
+    "createdId": null,
+    "escalated": false
+  },
+  {
+    "role": "product_manager",
+    "hasCode": false,
+    "httpStatus": 422,
+    "createdId": null,
+    "escalated": false
+  },
+  {
+    "role": "knowledge_editor",
+    "hasCode": false,
+    "httpStatus": 422,
+    "createdId": null,
+    "escalated": false
+  },
+  {
+    "role": "acc_custom_790472",
+    "hasCode": false,
+    "httpStatus": 422,
+    "createdId": null,
+    "escalated": false
+  }
+]

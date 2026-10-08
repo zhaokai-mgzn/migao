@@ -4520,7 +4520,7 @@ class TestPhoneProvenance:
         assert asyncio.run(lr.check_phone_provenance("tok", case, [])) == []
 
     def test_mibao_persona_not_checked(self):
-        """B 端米宝可能给顾客建单时从客户档案取号（非用例提供）→ 不做来源闭合。"""
+        """B 端黄金策可能给顾客建单时从客户档案取号（非用例提供）→ 不做来源闭合。"""
         case = self._case(["给张三创建一个订单"], persona="mibao")
         assert self._run(case, "13912345678") == []
 
@@ -4583,7 +4583,7 @@ class TestFalseInability:
     """能力误宣：C 端**明明能做**却说"做不了"（issue #3389，验收 C-A1 实证）。
 
     实证（run 34743802010，`C-A1.transcript.md`）：顾客明确说「确认下单」×4 轮，
-    小布连续回「**下单这个操作小布这边没法直接帮您提交呢**，需要您在小程序里点一下"立即购买"」，
+    元元连续回「**下单这个操作元元这边没法直接帮您提交呢**，需要您在小程序里点一下"立即购买"」，
     最后 `human_handoff(reason="…智能客服无法代为提交订单")` —— 整场 9 轮**从未调用 `order_create`**。
     而 `order_create` 就是 `customer_order` 这个 skill 自己的写工具（OR-014/017/018/019/020 都真实落单）。
 
@@ -4598,13 +4598,13 @@ class TestFalseInability:
 
     def test_canonical_ca1_refusal_flagged(self):
         """C-A1 原话必须被抓住。"""
-        issues = self._run(["订单信息我帮您整理好啦~ 不过下单这个操作小布这边没法直接帮您提交呢，"
+        issues = self._run(["订单信息我帮您整理好啦~ 不过下单这个操作元元这边没法直接帮您提交呢，"
                             "需要您在小程序里点一下\"立即购买\"就能完成啦 😊"])
         assert issues, "「没法直接帮您提交订单」是能力误宣，必须判红"
 
     def test_variants_flagged(self):
         for t in ["抱歉，我无法为您提交订单，请联系人工",
-                  "小布暂时不能帮您下单哦",
+                  "元元暂时不能帮您下单哦",
                   "创建订单这个我没法操作，您自己在小程序买吧",
                   "我没办法代为下单"]:
             assert self._run([t]), f"未抓住能力误宣变体: {t!r}"
@@ -4612,11 +4612,11 @@ class TestFalseInability:
     def test_interleaved_permission_wording_flagged(self):
         """C-A1 P1（run 34791767013，issue #3477）的**隔词权限话术**必须判红。
 
-        原文「小布是智能客服，**没有帮您下单的权限**」——"没有"与"权限"之间隔着
+        原文「元元是智能客服，**没有帮您下单的权限**」——"没有"与"权限"之间隔着
         「帮您下单的」，旧正则 `没有权限` 连写匹配不上 → 评测侧漏判
         （与 agent 侧 `capability_denial_text_hit` 同源，两处一起修）。
         """
-        for t in ["小布是智能客服，没有帮您下单的权限，这个操作必须在小程序商城完成",
+        for t in ["元元是智能客服，没有帮您下单的权限，这个操作必须在小程序商城完成",
                   "亲，这边没有帮您提交订单的权限，我教您在小程序里下单吧"]:
             assert self._run([t]), f"未抓住隔词权限话术: {t!r}"
 
@@ -4646,7 +4646,7 @@ class TestFalseInability:
         评测层与运行时守卫**同时**漏判（两处 regex 同源，故一起补）。
         """
         for t in ["我是咨询客服，没有权限帮您直接提交订单哦，下单还是需要您在小程序里操作完成",
-                  "小布这边无权限帮您下单，请您自己操作",
+                  "元元这边无权限帮您下单，请您自己操作",
                   "我没有权限代为提交订单"]:
             assert self._run([t]), f"未抓住权限类能力误宣: {t!r}"
 
@@ -5460,7 +5460,7 @@ class TestWriteCodeProvenance:
         assert lr.check_write_code_provenance(res, case) == []
 
     def test_backend_persona_exempt(self):
-        """B 端米宝下单链路不同，套用会误报 → 直接豁免。"""
+        """B 端黄金策下单链路不同，套用会误报 → 直接豁免。"""
         case = self._case(persona="mibao")
         res = [self._round(3, "确认", [{"name": "order_create", "args": {}}], code_error=True)]
         assert lr.check_write_code_provenance(res, case) == []
@@ -5572,15 +5572,15 @@ class TestCustomerCaseScopeIsSelectionBased:
         assert lr.is_customer_case(stub) is True
 
     def test_scope_is_run_aware(self, monkeypatch):
-        """**只在本轮是 C 端 run 时**才在作用域内 —— 否则会对米宝 run 误报
-        （双端用例也会被米宝 run 选中）。"""
+        """**只在本轮是 C 端 run 时**才在作用域内 —— 否则会对黄金策 run 误报
+        （双端用例也会被黄金策 run 选中）。"""
         stub = type("C", (), {"id": "XX-999", "persona": "both"})()
         monkeypatch.setattr(lr, "PERSONA", "mibao")
         assert lr.is_customer_case(stub) is False
 
     def test_non_customer_case_is_out_of_scope(self, monkeypatch):
         monkeypatch.setattr(lr, "PERSONA", "xiaobu")
-        """既未声明、也不在 C 端集里的用例（如 OR-016）→ 作用域外（避免对米宝误报）。"""
+        """既未声明、也不在 C 端集里的用例（如 OR-016）→ 作用域外（避免对黄金策误报）。"""
         by_id = {str(c.id): c for c in lr.ALL_CASES}
         assert lr.is_customer_case(by_id["OR-016"]) is False
 
@@ -5662,7 +5662,7 @@ class TestOrderBeforeAcceptsCardEvidence:
 class TestRepeatedCardAsk:
     """「同一张卡问两遍（顾客已答过再问）」→ 判红（issue #3477 复盘 / 断言矩阵补行）。
 
-    背景（C-A1 R5，run 34788143133 transcript）：R2 小布**文本**问「需要一起加工吗？」→
+    背景（C-A1 R5，run 34788143133 transcript）：R2 元元**文本**问「需要一起加工吗？」→
     R3 顾客答「打孔」→ R5 又发加工项 choice 卡 —— 同一件事问第二遍，顾客要多答一次
     才能继续（UA 判定因此记"有条件通过"）。加工项侧已由 agent 守卫修（#3473），
     但**地址/数量/颜色**等其它重复问没有判据 —— 本检查补"同卡重问"这一面。

@@ -13,12 +13,12 @@
 > | ④ | 粒度 = **部位级**（帘身 / 纱 / 帘头），增量项**按工艺 / 选项命中** | §2.1 / §2.2 |
 > | ⑤ | 工人端页面权限 = **租户级页面开关**起步，预留逐人覆盖 | §2.8 |
 > | ⑥ | 「机器支持**三位小数**，用 **2.935**」 | 取整默认 = **保留三位小数**（`rounding.digits=3`）；机器寄存器是整型 mm ⇒ 3 位小数恰好是 mm 精度 |
-> | ⑦ | 「我**没有命中规则表**，需要你去读壁达代码」 | 已读：壁达**没有**独立的命中规则表，命中由**三处触发源 + 表达式判定**构成（§1.5）；米高侧**复用既有 `production_route_rules` 触发口径**，不另造 DSL（§2.2） |
+> | ⑦ | 「我**没有命中规则表**，需要你去读壁达代码」 | 已读：壁达**没有**独立的命中规则表，命中由**三处触发源 + 表达式判定**构成（§1.5）；观星台侧**复用既有 `production_route_rules` 触发口径**，不另造 DSL（§2.2） |
 > | ⑧ | 计算器里的手改「**只读即可**」 | 手改**只改本次显示**、不落库、不留痕（§2.6） |
 >
 > **配套（上游，位于本仓库之外的调研工作区 `migao-device-integration/docs/`）**：
 > 《裁剪机接入（扫码 → 明细 → 算高 → 串口写入）》·《壁达「定高」算法调研 —— 裁剪高度口径的参照物》·
-> 《车间一体机装米高（扫码枪 + 浏览器 + 小桥）》。
+> 《车间一体机装观星台（扫码枪 + 浏览器 + 小桥）》。
 > **仓库内真值源**：[../curtain-production-rules.md](../curtain-production-rules.md)（生产/计件）·
 > [../curtain-fabric-quote-rules.md](../curtain-fabric-quote-rules.md)（算料）· [../wiki/RBAC.md](../wiki/RBAC.md)。
 
@@ -29,7 +29,7 @@
 本期只做**三件事**：
 
 1. **「裁高配置」tab** —— 把「裁高工序参数」集中成一处（`/production/routings` 的**第三个 tab**，与「算料配置」并列）；
-2. **一体机裁高计算器** —— 扫**米高自己的水洗唛** ⇒ 出**订单详情 + 裁高计算器**（命中项预勾、可手改、大字给出要往机器里输的值）；
+2. **一体机裁高计算器** —— 扫**观星台自己的水洗唛** ⇒ 出**订单详情 + 裁高计算器**（命中项预勾、可手改、大字给出要往机器里输的值）；
 3. **工人端页面开关** —— 手机 H5 与一体机共用一份**租户级**页面集。
 
 **不写机器、不建机台档案、不做手机↔一体机联动** —— 那三件归上游设计单，等口径与现场取证齐了再做。
@@ -64,7 +64,7 @@ PY
 |---|---|---|
 | **实体** | **`RECutHeightProcessParam`** | **「裁高工序参数」** —— 壁达里"裁高"是**有实体、有维护界面**的参数族（对应 `SaveCutHeightProcessParamView/ViewModel`） |
 | **表达式** | `HeightFormulaField` · `FixHeightExpressionField` · **`BodyFixHeightExpressionField`** · **`GauzeFixHeightExpressionField`** · `FixHeightQuotationQtyExpressionField` · `BodyFixWidthExpressionField` | **「定高表达式」按部位分设**（Body = 帘身 / Gauze = 纱） |
-| **加工类型** | `ProcessTypeFixHeight` | 加工类型 = 定高（对应米高订单行 `cutting_mode`） |
+| **加工类型** | `ProcessTypeFixHeight` | 加工类型 = 定高（对应观星台订单行 `cutting_mode`） |
 | **高度族** | `ItemHeightField` · `BlindsHeightField` · `FabricHeightField` · `DigitalHeightField` · `CheckHeightField` · `GauzeHeightField` · `BodyHeightField` | 高度是**分部位/分类**的量，不是一个标量 |
 | **取整** | `IsRoundingField` · `RoundingAmountField` · `SumRoundingAmountField`（客户端侧 `ChinaRound` / `CalculateRoundingAmount` / `SumRoundingAmount`） | **"是否取整"是开关，取整本身是算法** |
 | **机台参数** | `REPLCMachineParam`（`Address` / `AddressCode` / `AddressType` / `FuncCode` / `BaudRate` / `CustomParamList·Names·Id·Str·Controls`） | 地址与功能码**是配置项**；机型差异塞进 `CustomParam*`（上游 §1.8 已录） |
@@ -153,11 +153,11 @@ PY
 
 ---
 
-## 2. 对齐设计（米高侧）
+## 2. 对齐设计（观星台侧）
 
-### 2.1 壁达 → 米高 对位表（**照抄形态，数据源用米高**）
+### 2.1 壁达 → 观星台 对位表（**照抄形态，数据源用观星台**）
 
-| 壁达（§1 取证） | 米高「裁高配置」 | 备注 |
+| 壁达（§1 取证） | 观星台「裁高配置」 | 备注 |
 |---|---|---|
 | `RECutHeightProcessParam`（裁高工序参数） | 配置的**根对象**（租户级单行） | 术语对齐：对外叫「裁剪高度」，文档注明 = 壁达「定高」 |
 | `BodyFixHeightExpression` / `GauzeFixHeightExpression` / `FixHeightExpression` | `formulas[]`：**加工类型 × 部位** 各一条表达式 | 裁定④：部位级 |
@@ -166,7 +166,7 @@ PY
 | `IsExpandItemsManuallyEdited` | `items[].hit`（**复用既有触发口径，默认自动推导**）+ 计算器里手改**只读展示** | 人工勾选降级为**例外路径**（上游裁定②）；手改按裁定⑧**不落库** |
 | `ExpandDirection` | `items[].direction = add \| subtract` | 支持减项 |
 | `IsRounding` + `保留一位小数…` / `偶数取整` | `rounding { mode, digits }`（显式可配） | 机器寄存器是**整型 mm**，取整必须显式 |
-| 「常量：」变量字典 / `GetComponentPleatNumber` / `GetExpandNameExist` | `vars` 字典 + `has_item(key)` / `pleat_count` | **第一版只启用米高能逐字供数的子集** |
+| 「常量：」变量字典 / `GetComponentPleatNumber` / `GetExpandNameExist` | `vars` 字典 + `has_item(key)` / `pleat_count` | **第一版只启用观星台能逐字供数的子集** |
 | `GetPartCustomParamInputValue`（部位自定义参数） | `vars.part_custom[]`（**留位，第一版不启用**） | 壁达"逐台/逐部位可配"的入口 |
 | `REPLCMachineParam`（地址/功能码/波特率/CustomParam） | —— **本期不做**（裁定①） | 上游设计单已完整登记 |
 
@@ -303,7 +303,7 @@ PY
 |---|---|---|---|
 | 1 | ~~取整规则默认值~~ | ✅ **已裁定（⑥）**：保留三位小数（`2.935`） | — |
 | 2 | 每项**增量值的来源**（0.08 / 0.1 / 0.015 是租户级还是机型级） | 现场照片给出**本租户当前值**；层级未证；**客户端里查不到任何默认表**（§1.5）⇒ 只在它服务端 | 现场 / 壁达实施方 |
-| 3 | 「**选项/工艺 ↔ 增量项**」的对应行 | ✅ 机制已定位（§1.5/§1.6：壁达无独立表，靠特殊选项/附加工艺 + 部位 + 接高；米高复用 `production_route_rules`）；**对应行本身**仍只有弹窗那一单的实证 | 现场对照几单反推（客户口径） |
+| 3 | 「**选项/工艺 ↔ 增量项**」的对应行 | ✅ 机制已定位（§1.5/§1.6：壁达无独立表，靠特殊选项/附加工艺 + 部位 + 接高；观星台复用 `production_route_rules`）；**对应行本身**仍只有弹窗那一单的实证 | 现场对照几单反推（客户口径） |
 | 4 | ~~手改是否落库留痕~~ | ✅ **已裁定（⑧）**：只读，不落库 | — |
 | 5 | 一体机是否需要**工号 PIN 登录**（读面是否匿名） | 照抄上游「工号+PIN 一次性登录」 | 现场试用后定 |
 | 6 | **接高**（`height_join`）第一版是否启用 | 已进 schema（对位 `IsHeightJoinExpandItem`），触发条件是「货号超高 + 特殊选项配置」 | 有接高单再做 |
@@ -344,13 +344,15 @@ PY
    `WRITE_UNDER_READ_CODE`，现取上限 12）；把只读预演挂读码会把台账 **12 → 13**，而**增长它须人裁定**
    ⇒ 取「与配置保存同一个面」。差异写在控制器方法注释里。
 
-### 7.2 补充裁定：工人端会话时长（用户 2026-09-29 逐字「一周」）
+### 7.2 补充裁定：工人端会话时长（2026-09-29 逐字「一周」→ 🔴 **2026-10-07 逐字「延长到 1 个月」**）
 
 - 口径：**改全局默认值**（手机端同长），**不加机台档、不区分 deviceLabel**。
-- 落码：`WorkerSessionService.DEFAULT_IDLE_MINUTES = 10080`（一周）；`MAX_IDLE_MINUTES = DEFAULT_IDLE_MINUTES`
-  （单一真值，不抄第二遍）；可配区间 `5 ~ 10080`；越界/非法 ⇒ **回落默认 + WARN**。
+- 落码：`WorkerSessionService.DEFAULT_IDLE_MINUTES = 43200`（**30 天**，issue #6473；上一版 10080 一周）；
+  `MAX_IDLE_MINUTES = DEFAULT_IDLE_MINUTES`（单一真值，不抄第二遍）；可配区间 `5 ~ 43200`；
+  越界/非法 ⇒ **回落默认 + WARN**。
 - 🔴 **照实登记两个后果**（用户已知情并裁定）：
-  ① 闲置保护实际上**退化为「基本不过期」** ⇒ 共用屏上「上一个人没登出、下一个人的活记到上一个人头上」的
+  ① 闲置保护**不再生效**（一个月不碰也不过期；一周那次已经「基本不过期」，本次更远一档）
+  ⇒ 共用屏上「上一个人没登出、下一个人的活记到上一个人头上」的
   **唯一护栏只剩手动「切换工人」**（`switchWorker` 仍立即失效旧会话）；
   ② 因此一体机页面必须**常驻显示「当前工人：XXX」**、报工前身份显眼（落点 = `frontend/worker-h5`）。
 - ⚠️ **不放宽权限**：工人 session/JWT 的 `permissions` 仍恒为 `[]`，`/api/admin/**` 对 `worker` 仍 403。
@@ -365,11 +367,11 @@ PY
 | 2 | 一体机机台模式：**可达** | 一致 | — |
 | 3 | 「扫码读面补明细键」判**部分可达**，理由 = `set_overview.positions[]` 里没有那 9 键 | 🔴 **误归因**：复核者查的是 `ProcessingSetReadService::setOverview`（**商家端** `processing-order-sets` 那条路径）；**扫码读面**的 `set_overview` 由 `ProductionScanService::scanDetailOverview` 装配（`withPositionDetail` 逐个部位追加，见该文件 `POSITION_DETAIL_KEYS` / `scanDetailOverview` / `withPositionDetail` 三处）⇒ **该路径确实带这 9 键**，与用例 PG-046 的判据同源 | 不解（复核者的**观察**正确、**对象指错**）；两读面形状不同这一点本就**有意**，已登记在 `docs/wiki/CONTRACT-LEDGER.md` §九 |
 | 4 | 工人端页面开关判**部分可达**：后端齐，但 `/api/worker/me` **零消费方** ⇒ 开关不改变工人看到的任何东西 | 🔴 **成立，我认账**（这是我从 P0-E 划走、又还没做的那一半） | **补包**：`frontend/worker-h5` 消费 `/api/worker/me` —— 按 `report` 门控报工主流程、按 `cut_calc` 门控机台模式入口；**取不到页面集时 fail-open + 显式提示**（不把「开关没读到」变成「活干不了」）；`order` / `shipment` 在 `/w/` **暂无对应面** ⇒ 不为它们造 UI，只登记 |
-| 5 | 会话超时一周：**可达** | 一致 | — |
+| 5 | 会话超时一周：**可达**（🔴 2026-10-07 值改为 **30 天**，issue #6473 ⇒ 本行读数对应**改值前**的一周，形态未变） | 一致 | — |
 | a | 本文 §2.7「改 `ProductionScanService.resolve`」与实现形态的描述 | — | **本条更正**（见下） |
 | b | 本文 §2.8 声称「前端守卫 + 同构判据」已落地 | — | **确认未落地**（同第 4 条），补包后仍**不含**「未登记即红」的机械守卫 ⇒ 照实登记为缺口 |
 | c | `CHANGELOG` 未登记 P0-E 的三件 | — | 本 PR（#5782）已补三条 |
-| d | 前端兜底常量不一致（`app.mjs` 的 `?? 15` vs 后端默认 10080） | — | 补包一并修 `worker-h5` 侧；**`frontend/bmini-app`** 的同类兜底**不在本包**、登记为缺口 |
+| d | 前端兜底常量不一致（`app.mjs` 的 `?? 15` vs 后端默认 10080） | — | 补包一并修 `worker-h5` 侧；**`frontend/bmini-app`** 的同类兜底**不在本包**、登记为缺口 ⇒ 🔴 **2026-10-07 已补齐**（issue #6473：`WorkerBar.tsx::idleHint` 去掉 `?? 15`、按量级说人话，两侧兜底同步到 43200） |
 | e | 无 worker 页面键的机械守卫（`test_menu_three_sources_are_isomorphic.py` 不含） | — | 登记为缺口（本期只落**行为判据**：页面不在集合 ⇒ 走不到 / 入口不出现） |
 
 **§2.7 更正（复核 a）**：那 9 个明细键的**实际落点**是**扫码读面**的 `set_overview.positions[]` 与旧码 `selections[].positions[]`

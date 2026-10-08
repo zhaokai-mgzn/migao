@@ -45,7 +45,7 @@ class OrderQueryTool(BaseTool):
     )
     # 权限码（admin-api 目录）：AgentOrderController 类级 `@RequirePermission("order:list")`
     # （订单列表/详情/统计都挂它）。含 operator：operator 持有该码（角色码漂移修复 POC-2761 D 项）。
-    # 本工具**不是** C 端（小布）绑定工具（C 端订单查询走 customer_order_query）⇒ **不**声明
+    # 本工具**不是** C 端（元元）绑定工具（C 端订单查询走 customer_order_query）⇒ **不**声明
     # c_end_reachable：C 端请求由 C 端硬闸拒绝（两端隔离不变式）。
     # 声明了权限码 ⇒ **删除** allowed_roles（它含 C 端角色 `customer`/`agent`；且权限码在场时
     # 角色白名单本就不生效＝第二份会漂的假门禁，#4106 F4）。

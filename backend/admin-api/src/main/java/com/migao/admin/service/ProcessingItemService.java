@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -209,7 +210,13 @@ public class ProcessingItemService extends ServiceImpl<ProcessingItemMapper, Pro
                 .collect(Collectors.toList());
         
         if (categoryIds.isEmpty()) {
-            return Map.of();
+            // #6226：空集分支**必须**返回容忍空键的表。此前是 `Map.of()`（不可变空表）—— 它的
+            // `get(null)` 会抛 NPE（`ImmutableCollections$MapN.get` 先 requireNonNull），
+            // 而调用点 `categoryNameMap.get(item.getCategoryId())` 的键**未过**上面那道
+            // `StringUtils::hasText` 过滤 ⇒ 该页只要有一行 `category_id` 为 NULL 就整页 500。
+            // 非空分支是 `Collectors.toMap(...)`（HashMap，`get(null)` 返 null 不抛）；
+            // 这里取同一形态，两个分支的类型契约一致（可容忍空键是这条修复的全部内容）。
+            return new HashMap<>();
         }
         
         LambdaQueryWrapper<ProcessingCategory> wrapper = new LambdaQueryWrapper<>();

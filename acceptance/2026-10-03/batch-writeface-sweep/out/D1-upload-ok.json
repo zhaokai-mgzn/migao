@@ -1,0 +1,19 @@
+{
+  "http": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "id": "87e253b513004f5a867599f4b33f4ca4",
+      "url": "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/03/b8027d2342e1486cab0557ae6971de0d.png",
+      "name": "线②验收图.png",
+      "size": 69,
+      "type": "image/png",
+      "createdAt": "2026-10-03T13:55:21.907171"
+    },
+    "requestId": "req_ccfd228306f64d2d",
+    "timestamp": 1791006921
+  },
+  "urlStatus": 200,
+  "urlBytes": 69,
+  "srcBytes": 69
+}

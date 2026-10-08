@@ -23,10 +23,10 @@
  * |---|---|
  * | **P2 三件套** | 每个页面给 `label`（人话名）+ 一句口径（这个页面工人拿它干什么） |
  * | **P3 默认值可见** | 读面 `source='default'` ⇒ 显式标「**未配置（正在用默认值 = 全部页面都开）**」 |
- * | **不越界** | 本面板**不碰**工人 session 的闲置超时（那是服务端配置 `worker.session.idle-minutes`，默认七天）—— 只配页面开关 |
+ * | **不越界** | 本面板**不碰**工人 session 的闲置超时（那是服务端配置 `worker.session.idle-minutes`，默认 30 天）—— 只配页面开关 |
  * | **P4 改完会怎样** | 面板顶部印「改动**只影响工人端页面上看不看得见**，不影响任何权限」 |
  * | **P5 术语可就地查** | 页面名用商家端既有叫法（报工 / 订单 / 裁高计算器 / 发货） |
- * | **基线 ① 文案不出现数字** | 面板不写任何权限码 / 会话时长（10080 分钟 = 一周）字面量 |
+ * | **基线 ① 文案不出现数字** | 面板不写任何权限码 / 会话时长（43200 分钟 = 30 天）字面量 |
  */
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Check, RefreshCw } from 'lucide-react'
@@ -148,7 +148,7 @@ export function WorkerPageConfigPanel() {
           ))}
           {allKeys.length === 0 && (
             <p className="text-sm text-neutral-500">
-              没有读到可配置的页面清单（服务端没回 labels）—— 请刷新重试，不要凭记忆勾选
+              暂时没读到可配置的页面清单 —— 请刷新重试，不要凭记忆勾选
             </p>
           )}
         </div>

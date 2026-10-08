@@ -1,6 +1,6 @@
 // case_ids: MC-067
 //
-// 米宝**主动新手引导**（issue #5989 · P2）**前端面**判据 —— 前端**只递交、不判定**。
+// 黄金策**主动新手引导**（issue #5989 · P2）**前端面**判据 —— 前端**只递交、不判定**。
 //
 // 判定唯一真值在服务端（`backend/ai-agent-service/app/context/menu_navigator.py::build_proactive_push`
 // + `app/api/chat.py::_handle_page_enter_request`）：哪一页能推、推什么、推几次，前端说了不算。
@@ -132,7 +132,7 @@ describe('notifyPageEnter（首次进页 ⇒ 递一轮「进页」事件）', ()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('跳过 /chat（米宝自己的会话页不推）', async () => {
+  it('跳过 /chat（黄金策自己的会话页不推）', async () => {
     const fetchMock = vi.fn().mockResolvedValue(sseResponse(SILENT_SSE))
     vi.stubGlobal('fetch', fetchMock)
 

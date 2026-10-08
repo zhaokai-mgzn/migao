@@ -1,0 +1,7 @@
+{
+  "target": "质检",
+  "before": "active",
+  "after": "active",
+  "clicked": true,
+  "reasons": "status 仅支持 active/disabled"
+}

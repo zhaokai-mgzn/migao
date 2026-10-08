@@ -31,6 +31,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 
@@ -206,7 +207,17 @@ public class DailyBriefingService {
     }
 
     /** 一批快照行 + 它**是否被行数上限截断**（截断必须显式：见 {@link #SNAPSHOT_ROW_FETCH_LIMIT}）。 */
-    record RowBatch(List<Map<String, Object>> rows, boolean truncated) {
+    record RowBatch(List<Map<String, Object>> rows, boolean truncated, Map<String, Object> extra) {
+
+        /** 该批的**附加事实**（如 `skus` 的「过滤前多少行 / 哪些商品状态被排除」）—— 进 `row_meta` 同名键。 */
+        RowBatch(List<Map<String, Object>> rows, boolean truncated) {
+            this(rows, truncated, Map.of());
+        }
+
+        /** 附加事实的**唯一**承载（结构键由 {@link #ROW_META_EXTRAS} 登记，**未登记即不被透出**）。 */
+        RowBatch {
+            extra = extra == null ? Map.of() : Map.copyOf(extra);
+        }
     }
 
     /** 行数组的元信息（`row_meta`）：行数上限 / 实际行数 / 是否被截断 —— 引擎据此把「本次不完整」说出来。 */
@@ -220,11 +231,47 @@ public class DailyBriefingService {
         return meta;
     }
 
+    /**
+     * 逐数组的 `row_meta` 附加键（「服务端在装配期过滤掉了行」这类事实）。
+     *
+     * <p>登记表 = **唯一**一份口径：装配腿把值放进 `RowBatch.extra`，这里决定它能不能出去。
+     * 空集合（map / list）不写进 `row_meta` —— 「本次没有商品被排除」用**键缺席**表达，
+     * 免得每个租户的 `row_meta.skus` 都挂着三个恒空的键。</p>
+     */
+    private static final Map<String, Map<String, Object>> ROW_META_EXTRAS = new LinkedHashMap<>();
+
+    static {
+        rowMetaExtras("skus", "rows_before_filter", "filtered_by_status",
+                "filtered_product_ids", "filtered_out");
+    }
+
+    private static void rowMetaExtras(String array, String... keys) {
+        Map<String, Object> keys_ = new LinkedHashMap<>();
+        for (String key : keys) {
+            keys_.put(key, Boolean.TRUE);
+        }
+        ROW_META_EXTRAS.put(array, keys_);
+    }
+
     private static Map<String, Object> rowMetaEntry(RowBatch batch) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("limit", SNAPSHOT_ROW_LIMIT);
         entry.put("count", batch.rows().size());
         entry.put("truncated", batch.truncated());
+        // 附加事实**从 RowBatch 原样透出**（值由装配腿决定）；`null` / 空集合 ⇒ 键缺席
+        //（`rows_before_filter` 例外：它是「这个数组被评估过、过滤前有几行」的读数，**0 也是有意义的值**
+        //  —— 老快照没有它 ⇒ 引擎只能退回旧口径，而老口径正是本单要治的「空数组 = 没有 SKU」）。
+        for (Map.Entry<String, Map<String, Object>> array : ROW_META_EXTRAS.entrySet()) {
+            for (Map.Entry<String, Object> extra : array.getValue().entrySet()) {
+                Object value = batch.extra().get(extra.getKey());
+                boolean empty = value == null
+                        || (value instanceof Map<?, ?> map && map.isEmpty())
+                        || (value instanceof List<?> list && list.isEmpty());
+                if (!empty) {
+                    entry.put(extra.getKey(), value);
+                }
+            }
+        }
         return entry;
     }
 
@@ -1047,6 +1094,13 @@ public class DailyBriefingService {
      * <p>刻意**不按阈值预筛**：`low_stock_threshold` 可由租户配置覆盖（引擎侧 `ProactiveConfig`），
      * 快照若按默认 100 截断，租户把阈值调高后就会**静默漏报** —— 那正是本单要治的
      * 「没数据被读成没问题」；阈值过滤留给引擎，装配层只负责把行按有界方式给全。</p>
+     *
+     * <p>🔴 issue #6347 Part B：本数组在装配期**过滤**掉「商品不在售」的 SKU（过滤是对的，与聚合指标
+     * `low_stock_items` 同口径）—— 但过滤**不许静默**：过滤后为空时，引擎只看到「空数组」，
+     * 于是把「有 SKU 但商品未上架」误报成「表里没有 SKU / 建议检查商品规格是否已录入」
+     * （用户被引向**徒劳返工**，真因一字未提）。故把过滤事实经 `row_meta.skus` 透出：
+     * `rows_before_filter`（本数组查询命中多少行）/ `filtered_by_status`（被排除的商品各自状态 ×
+     * SKU 数）/ `filtered_product_ids`（被排除的商品 id，**有界**）。</p>
      */
     RowBatch assembleSkuRows(Long tenantId) {
         List<ProductSku> skus = productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
@@ -1058,19 +1112,51 @@ public class DailyBriefingService {
         if (truncated) {
             skus = skus.subList(0, SNAPSHOT_ROW_LIMIT);
         }
+        int rowsBeforeFilter = skus.size();
         if (skus.isEmpty()) {
             return new RowBatch(new ArrayList<>(), truncated);
         }
         Map<String, String> names = onSaleProductNames(tenantId, skus);
         List<Map<String, Object>> rows = new ArrayList<>(skus.size());
+        Map<String, Integer> filteredByStatus = new TreeMap<>();
+        List<String> filteredProductIds = new ArrayList<>();
+        Map<String, String> statusCache = new HashMap<>();   // 逐商品查一次（同商品多 SKU 不重复查）
         for (ProductSku sku : skus) {
             String productName = names.get(sku.getProductId());
             if (productName == null) {
-                continue;   // 下架/已删商品下的 SKU 不进快照（与聚合指标 low_stock_items 同口径）
+                // 下架/已删商品下的 SKU 不进快照（与聚合指标 low_stock_items 同口径）——
+                // 该商品的状态**现取**（读不到 / 商品行已被硬删 ⇒ 落 `unknown`，不猜）。
+                String status = statusCache.computeIfAbsent(
+                        sku.getProductId(), key -> productStatus(tenantId, key));
+                filteredByStatus.merge(status, 1, Integer::sum);
+                filteredProductIds.add(sku.getProductId());
+                continue;
             }
             rows.add(skuRow(sku, productName));
         }
-        return new RowBatch(rows, truncated);
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("rows_before_filter", rowsBeforeFilter);
+        if (!filteredByStatus.isEmpty()) {
+            // `filtered_out` 取**差值**（不是 `filtered_by_status` 的分组之和）：哪怕某一行既没拿到
+            // 状态、也没落进任何分组，差值也**不会**悄悄变成 0 —— 少报过滤量正是本单要治的形态；
+            // 分组是**进一步的归因**（谁被排除了），不是总量本身。
+            extra.put("filtered_by_status", filteredByStatus);
+            extra.put("filtered_product_ids", filteredProductIds.stream().distinct().sorted().toList());
+            extra.put("filtered_out", rowsBeforeFilter - rows.size());
+        }
+        return new RowBatch(rows, truncated, extra);
+    }
+
+    /**
+     * 被排除的 SKU 所归属商品的**状态**（现取；主键查，天然有界）—— 读不到该商品行
+     * （已硬删 / 越租户）或状态为空 ⇒ `unknown`（🔴 **不猜**：把「读不到」写成某个具体状态
+     * 会把**出路**说错，而说错出路比不说更坏）。
+     */
+    private String productStatus(Long tenantId, String productId) {
+        Product product = productMapper.selectById(productId);
+        return product == null || !tenantId.equals(product.getTenantId()) || !StringUtils.hasText(product.getStatus())
+                ? "unknown"
+                : product.getStatus();
     }
 
     /** SKU 行（键名逐字 = 快照契约；与 `SNAPSHOT_ROW_FIELDS` 的等价由单测机械钉住）。 */

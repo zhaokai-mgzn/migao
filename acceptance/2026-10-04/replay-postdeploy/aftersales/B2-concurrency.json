@@ -1,0 +1,1971 @@
+{
+  "records": [
+    {
+      "id": "LB-C1-CONCURRENT-REFUND",
+      "name": "C1 同一订单并发退款 N=8×3 轮：成功数×金额 ≤ 实收，DB refund_amount 终值 ≤ 实收",
+      "status": "pass",
+      "detail": "三轮成功数=[3,3,3]（期望各 3）；refund_amount 终值=[300,300,300]（期望各 300.00 = 实收）；流水行数=[3,3,3] 合计=[\"300.000\",\"300.000\",\"300.000\"]",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 每笔请求 100.00、实收 300.00 ⇒ 恰 3 笔可成、第 4 笔起 applied ≤ 0 ⇒ 422",
+        "源码守卫: backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java 的 refundOrder —— setSql(\"refund_amount = COALESCE(refund_amount,0) + <applied>\") + WHERE COALESCE(refund_amount,0) + <applied> <= <actual>；updated==0 ⇒ 抛「该订单已全额退款」",
+        "重叠证据（每轮）: R1: 真重叠：最大逐对重叠 369ms（并集 379ms < 各历时之和 2767ms） ｜ R2: 真重叠：最大逐对重叠 440ms（并集 445ms < 各历时之和 3189ms） ｜ R3: 真重叠：最大逐对重叠 419ms（并集 421ms < 各历时之和 3168ms）",
+        "逐轮逐请求结局: [[200,422,422,200,200,422,422,422],[422,422,200,422,422,422,200,200],[200,422,422,200,422,422,200,422]]",
+        "判据纪律: 任一轮未真重叠 ⇒ 整条记 falseRed（无判别力）而非 pass"
+      ],
+      "at": "2026-10-04 09:31:28 +08",
+      "atUtc": "2026-10-04T01:31:28.867Z",
+      "extra": {
+        "N": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "N": 8,
+            "orderNo": "20261004014220015",
+            "actual": 300,
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 200,
+                "msg": "ok",
+                "text": "{\"success\":true,\"requestId\":\"req_13def98a37974ebc\",\"timestamp\":1791077485}",
+                "durMs": 352,
+                "startedAtMs": 1791077484765
+              },
+              {
+                "i": 1,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_26de403fc6944d88\",\"timestamp\":1791077485,\"suggestion\":\"请检查必填字段",
+                "durMs": 360,
+                "startedAtMs": 1791077484765
+              },
+              {
+                "i": 2,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_85233aee45374208\",\"timestamp\":1791077485,\"suggestion\":\"请检查必填字段",
+                "durMs": 357,
+                "startedAtMs": 1791077484766
+              },
+              {
+                "i": 3,
+                "status": 200,
+                "msg": "ok",
+                "text": "{\"success\":true,\"requestId\":\"req_8423e49600f3400f\",\"timestamp\":1791077485}",
+                "durMs": 257,
+                "startedAtMs": 1791077484766
+              },
+              {
+                "i": 4,
+                "status": 200,
+                "msg": "ok",
+                "text": "{\"success\":true,\"requestId\":\"req_9eb6fa7e855d43a5\",\"timestamp\":1791077485}",
+                "durMs": 329,
+                "startedAtMs": 1791077484766
+              },
+              {
+                "i": 5,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_b52e0d15ebe74e77\",\"timestamp\":1791077485,\"suggestion\":\"请检查必填字段",
+                "durMs": 369,
+                "startedAtMs": 1791077484766
+              },
+              {
+                "i": 6,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_50c7dfee55814822\",\"timestamp\":1791077485,\"suggestion\":\"请检查必填字段",
+                "durMs": 365,
+                "startedAtMs": 1791077484766
+              },
+              {
+                "i": 7,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_067b18f9cf9f4aa4\",\"timestamp\":1791077485,\"suggestion\":\"请检查必填字段",
+                "durMs": 378,
+                "startedAtMs": 1791077484766
+              }
+            ],
+            "okCount": 3,
+            "failCount": 5,
+            "dbFinal": {
+              "refund_amount": 300,
+              "refund_at": "2026-10-04T09:31:25.034918+08:00",
+              "status": "confirmed"
+            },
+            "financeRows": 3,
+            "financeSum": "300.000",
+            "expectation": "成功数 × 100.00 ≤ 实收 300；refund_amount 终值 ≤ 300；流水合计 ≤ 300",
+            "overlapEvidence": {
+              "barrierAt": 1791077484765,
+              "barrierAtCST": "2026-10-04 09:31:24 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077484765,
+                  "t1": 1791077485117,
+                  "durMs": 352
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077484765,
+                  "t1": 1791077485125,
+                  "durMs": 360
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077484766,
+                  "t1": 1791077485123,
+                  "durMs": 357
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077484766,
+                  "t1": 1791077485023,
+                  "durMs": 257
+                },
+                {
+                  "i": 4,
+                  "t0": 1791077484766,
+                  "t1": 1791077485095,
+                  "durMs": 329
+                },
+                {
+                  "i": 5,
+                  "t0": 1791077484766,
+                  "t1": 1791077485135,
+                  "durMs": 369
+                },
+                {
+                  "i": 6,
+                  "t0": 1791077484766,
+                  "t1": 1791077485131,
+                  "durMs": 365
+                },
+                {
+                  "i": 7,
+                  "t0": 1791077484766,
+                  "t1": 1791077485144,
+                  "durMs": 378
+                }
+              ],
+              "unionMs": 379,
+              "sumMs": 2767,
+              "maxPairOverlapMs": 369,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 369ms（并集 379ms < 各历时之和 2767ms）"
+            },
+            "pass": true
+          },
+          {
+            "round": 2,
+            "N": 8,
+            "orderNo": "20261004991440016",
+            "actual": 300,
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_f241a6a6c2a6480e\",\"timestamp\":1791077486,\"suggestion\":\"请检查必填字段",
+                "durMs": 445,
+                "startedAtMs": 1791077486446
+              },
+              {
+                "i": 1,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_fa7ff34250f74434\",\"timestamp\":1791077486,\"suggestion\":\"请检查必填字段",
+                "durMs": 440,
+                "startedAtMs": 1791077486446
+              },
+              {
+                "i": 2,
+                "status": 200,
+                "msg": "ok",
+                "text": "{\"success\":true,\"requestId\":\"req_4cab5f4dc12643a2\",\"timestamp\":1791077486}",
+                "durMs": 387,
+                "startedAtMs": 1791077486446
+              },
+              {
+                "i": 3,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_a44789581b024bb5\",\"timestamp\":1791077486,\"suggestion\":\"请检查必填字段",
+                "durMs": 438,
+                "startedAtMs": 1791077486447
+              },
+              {
+                "i": 4,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_71988d5caab9453f\",\"timestamp\":1791077486,\"suggestion\":\"请检查必填字段",
+                "durMs": 396,
+                "startedAtMs": 1791077486447
+              },
+              {
+                "i": 5,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_ff32861d1fcc4eb8\",\"timestamp\":1791077486,\"suggestion\":\"请检查必填字段",
+                "durMs": 390,
+                "startedAtMs": 1791077486447
+              },
+              {
+                "i": 6,
+                "status": 200,
+                "msg": "ok",
+                "text": "{\"success\":true,\"requestId\":\"req_559b45550fc14778\",\"timestamp\":1791077486}",
+                "durMs": 334,
+                "startedAtMs": 1791077486447
+              },
+              {
+                "i": 7,
+                "status": 200,
+                "msg": "ok",
+                "text": "{\"success\":true,\"requestId\":\"req_7f90f782ca234abe\",\"timestamp\":1791077486}",
+                "durMs": 359,
+                "startedAtMs": 1791077486447
+              }
+            ],
+            "okCount": 3,
+            "failCount": 5,
+            "dbFinal": {
+              "refund_amount": 300,
+              "refund_at": "2026-10-04T09:31:26.735062+08:00",
+              "status": "confirmed"
+            },
+            "financeRows": 3,
+            "financeSum": "300.000",
+            "expectation": "成功数 × 100.00 ≤ 实收 300；refund_amount 终值 ≤ 300；流水合计 ≤ 300",
+            "overlapEvidence": {
+              "barrierAt": 1791077486446,
+              "barrierAtCST": "2026-10-04 09:31:26 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077486446,
+                  "t1": 1791077486891,
+                  "durMs": 445
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077486446,
+                  "t1": 1791077486886,
+                  "durMs": 440
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077486446,
+                  "t1": 1791077486833,
+                  "durMs": 387
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077486447,
+                  "t1": 1791077486885,
+                  "durMs": 438
+                },
+                {
+                  "i": 4,
+                  "t0": 1791077486447,
+                  "t1": 1791077486843,
+                  "durMs": 396
+                },
+                {
+                  "i": 5,
+                  "t0": 1791077486447,
+                  "t1": 1791077486837,
+                  "durMs": 390
+                },
+                {
+                  "i": 6,
+                  "t0": 1791077486447,
+                  "t1": 1791077486781,
+                  "durMs": 334
+                },
+                {
+                  "i": 7,
+                  "t0": 1791077486447,
+                  "t1": 1791077486806,
+                  "durMs": 359
+                }
+              ],
+              "unionMs": 445,
+              "sumMs": 3189,
+              "maxPairOverlapMs": 440,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 440ms（并集 445ms < 各历时之和 3189ms）"
+            },
+            "pass": true
+          },
+          {
+            "round": 3,
+            "N": 8,
+            "orderNo": "20261004557710017",
+            "actual": 300,
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 200,
+                "msg": "ok",
+                "text": "{\"success\":true,\"requestId\":\"req_7eef07e997d848a0\",\"timestamp\":1791077488}",
+                "durMs": 397,
+                "startedAtMs": 1791077488236
+              },
+              {
+                "i": 1,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_7e6f4502869a402d\",\"timestamp\":1791077488,\"suggestion\":\"请检查必填字段",
+                "durMs": 400,
+                "startedAtMs": 1791077488236
+              },
+              {
+                "i": 2,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_a779cf39f1bf401e\",\"timestamp\":1791077488,\"suggestion\":\"请检查必填字段",
+                "durMs": 420,
+                "startedAtMs": 1791077488236
+              },
+              {
+                "i": 3,
+                "status": 200,
+                "msg": "ok",
+                "text": "{\"success\":true,\"requestId\":\"req_5267169b8dd14978\",\"timestamp\":1791077488}",
+                "durMs": 374,
+                "startedAtMs": 1791077488236
+              },
+              {
+                "i": 4,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_71814a87cc644ae5\",\"timestamp\":1791077488,\"suggestion\":\"请检查必填字段",
+                "durMs": 406,
+                "startedAtMs": 1791077488237
+              },
+              {
+                "i": 5,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_3f9dec2346a24b0d\",\"timestamp\":1791077488,\"suggestion\":\"请检查必填字段",
+                "durMs": 408,
+                "startedAtMs": 1791077488237
+              },
+              {
+                "i": 6,
+                "status": 200,
+                "msg": "ok",
+                "text": "{\"success\":true,\"requestId\":\"req_cc62f5a0611b4769\",\"timestamp\":1791077488}",
+                "durMs": 343,
+                "startedAtMs": 1791077488237
+              },
+              {
+                "i": 7,
+                "status": 422,
+                "code": "VALIDATION_ERROR",
+                "msg": "该订单已全额退款，无需重复退款",
+                "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已全额退款，无需重复退款\"},\"requestId\":\"req_931e7c638b934bd4\",\"timestamp\":1791077488,\"suggestion\":\"请检查必填字段",
+                "durMs": 420,
+                "startedAtMs": 1791077488237
+              }
+            ],
+            "okCount": 3,
+            "failCount": 5,
+            "dbFinal": {
+              "refund_amount": 300,
+              "refund_at": "2026-10-04T09:31:28.53621+08:00",
+              "status": "confirmed"
+            },
+            "financeRows": 3,
+            "financeSum": "300.000",
+            "expectation": "成功数 × 100.00 ≤ 实收 300；refund_amount 终值 ≤ 300；流水合计 ≤ 300",
+            "overlapEvidence": {
+              "barrierAt": 1791077488236,
+              "barrierAtCST": "2026-10-04 09:31:28 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077488236,
+                  "t1": 1791077488633,
+                  "durMs": 397
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077488236,
+                  "t1": 1791077488636,
+                  "durMs": 400
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077488236,
+                  "t1": 1791077488656,
+                  "durMs": 420
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077488236,
+                  "t1": 1791077488610,
+                  "durMs": 374
+                },
+                {
+                  "i": 4,
+                  "t0": 1791077488237,
+                  "t1": 1791077488643,
+                  "durMs": 406
+                },
+                {
+                  "i": 5,
+                  "t0": 1791077488237,
+                  "t1": 1791077488645,
+                  "durMs": 408
+                },
+                {
+                  "i": 6,
+                  "t0": 1791077488237,
+                  "t1": 1791077488580,
+                  "durMs": 343
+                },
+                {
+                  "i": 7,
+                  "t0": 1791077488237,
+                  "t1": 1791077488657,
+                  "durMs": 420
+                }
+              ],
+              "unionMs": 421,
+              "sumMs": 3168,
+              "maxPairOverlapMs": 419,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 419ms（并集 421ms < 各历时之和 3168ms）"
+            },
+            "pass": true
+          }
+        ],
+        "overlapEvidence": [
+          {
+            "barrierAt": 1791077484765,
+            "barrierAtCST": "2026-10-04 09:31:24 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077484765,
+                "t1": 1791077485117,
+                "durMs": 352
+              },
+              {
+                "i": 1,
+                "t0": 1791077484765,
+                "t1": 1791077485125,
+                "durMs": 360
+              },
+              {
+                "i": 2,
+                "t0": 1791077484766,
+                "t1": 1791077485123,
+                "durMs": 357
+              },
+              {
+                "i": 3,
+                "t0": 1791077484766,
+                "t1": 1791077485023,
+                "durMs": 257
+              },
+              {
+                "i": 4,
+                "t0": 1791077484766,
+                "t1": 1791077485095,
+                "durMs": 329
+              },
+              {
+                "i": 5,
+                "t0": 1791077484766,
+                "t1": 1791077485135,
+                "durMs": 369
+              },
+              {
+                "i": 6,
+                "t0": 1791077484766,
+                "t1": 1791077485131,
+                "durMs": 365
+              },
+              {
+                "i": 7,
+                "t0": 1791077484766,
+                "t1": 1791077485144,
+                "durMs": 378
+              }
+            ],
+            "unionMs": 379,
+            "sumMs": 2767,
+            "maxPairOverlapMs": 369,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 369ms（并集 379ms < 各历时之和 2767ms）"
+          },
+          {
+            "barrierAt": 1791077486446,
+            "barrierAtCST": "2026-10-04 09:31:26 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077486446,
+                "t1": 1791077486891,
+                "durMs": 445
+              },
+              {
+                "i": 1,
+                "t0": 1791077486446,
+                "t1": 1791077486886,
+                "durMs": 440
+              },
+              {
+                "i": 2,
+                "t0": 1791077486446,
+                "t1": 1791077486833,
+                "durMs": 387
+              },
+              {
+                "i": 3,
+                "t0": 1791077486447,
+                "t1": 1791077486885,
+                "durMs": 438
+              },
+              {
+                "i": 4,
+                "t0": 1791077486447,
+                "t1": 1791077486843,
+                "durMs": 396
+              },
+              {
+                "i": 5,
+                "t0": 1791077486447,
+                "t1": 1791077486837,
+                "durMs": 390
+              },
+              {
+                "i": 6,
+                "t0": 1791077486447,
+                "t1": 1791077486781,
+                "durMs": 334
+              },
+              {
+                "i": 7,
+                "t0": 1791077486447,
+                "t1": 1791077486806,
+                "durMs": 359
+              }
+            ],
+            "unionMs": 445,
+            "sumMs": 3189,
+            "maxPairOverlapMs": 440,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 440ms（并集 445ms < 各历时之和 3189ms）"
+          },
+          {
+            "barrierAt": 1791077488236,
+            "barrierAtCST": "2026-10-04 09:31:28 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077488236,
+                "t1": 1791077488633,
+                "durMs": 397
+              },
+              {
+                "i": 1,
+                "t0": 1791077488236,
+                "t1": 1791077488636,
+                "durMs": 400
+              },
+              {
+                "i": 2,
+                "t0": 1791077488236,
+                "t1": 1791077488656,
+                "durMs": 420
+              },
+              {
+                "i": 3,
+                "t0": 1791077488236,
+                "t1": 1791077488610,
+                "durMs": 374
+              },
+              {
+                "i": 4,
+                "t0": 1791077488237,
+                "t1": 1791077488643,
+                "durMs": 406
+              },
+              {
+                "i": 5,
+                "t0": 1791077488237,
+                "t1": 1791077488645,
+                "durMs": 408
+              },
+              {
+                "i": 6,
+                "t0": 1791077488237,
+                "t1": 1791077488580,
+                "durMs": 343
+              },
+              {
+                "i": 7,
+                "t0": 1791077488237,
+                "t1": 1791077488657,
+                "durMs": 420
+              }
+            ],
+            "unionMs": 421,
+            "sumMs": 3168,
+            "maxPairOverlapMs": 419,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 419ms（并集 421ms < 各历时之和 3168ms）"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LB-C1-REDPROOF",
+      "name": "C1 判别力红证（注入）：把 WHERE 上限摘掉 ⇒ 必红；同一装置加回守卫 ⇒ 绿",
+      "status": "pass",
+      "detail": "无守卫 ⇒ 终值 800（上限 300.00，泄漏=true）；有守卫（产品同形复刻）⇒ 终值 300（守住=true）",
+      "evidence": [
+        "注入方式: **不改产品源码**（铁律 1）—— 在本包自建临时表 lb_gp_redproof 上跑两种等价 UPDATE：",
+        "  ① 无守卫: UPDATE lb_gp_redproof SET refund_amount = COALESCE(refund_amount,0) + 100.00 WHERE id=1;",
+        "  ② 有守卫（产品同形）: … WHERE id=1 AND COALESCE(refund_amount,0) + 100.00 <= cap(300.00);",
+        "N=8 个**独立 psql 进程**同时开跑（真并发，非同进程 await）；临时表用后即 drop",
+        "读数: 无守卫终值=800（泄漏=true）；有守卫终值=300（守住=true）",
+        "该红证证明：① 实验装置的并发窗口真实存在（否则无守卫也不会超额）；② 判据（累计 ≤ 上限）会红 ⇒ 有判别力"
+      ],
+      "at": "2026-10-04 09:31:30 +08",
+      "atUtc": "2026-10-04T01:31:30.315Z",
+      "extra": {
+        "n": 8,
+        "cap": "300.00",
+        "each": "100.00",
+        "unguardedResult": 800,
+        "guardedResult": 300,
+        "unguardedLeaked": true,
+        "guardedHeld": true,
+        "verdict": "无守卫 ⇒ 终值 800（上限 300.00，泄漏=true）；有守卫（产品同形复刻）⇒ 终值 300（守住=true）"
+      }
+    },
+    {
+      "id": "LB-C2-CONCURRENT-RESOLVE",
+      "name": "C2 同一工单并发完结（processing→resolved）N=4×3 轮：副作用不得翻倍",
+      "status": "pass",
+      "detail": "三轮结论=[{\"成功数\":1,\"工单终态\":\"resolved\",\"退款\":300,\"库存\":\"98→100\",\"台账行\":1,\"时间线行\":2,\"流水行\":1,\"泄漏\":{\"stockOver\":false,\"ledgerOver\":false,\"refundOver\":false}},{\"成功数\":1,\"工单终态\":\"resolved\",\"退款\":300,\"库存\":\"98→100\",\"台账行\":1,\"时间线行\":2,\"流水行\":1,\"泄漏\":{\"stockOver\":false,\"ledgerOver\":false,\"refundOver\":false}},{\"成功数\":1,\"工单终态\":\"resolved\",\"退款\":300,\"库存\":\"98→100\",\"台账行\":1,\"时间线行\":2,\"流水行\":1,\"泄漏\":{\"stockOver\":false,\"ledgerOver\":false,\"refundOver\":false}}]",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 一次完结的副作用：退款 applied=min(300.00, 实收−已退) 封顶实收；回补 2.00；台账恰 1 行；时间线每次状态变更 1 行",
+        "源码: backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java 的 updateTicketStatus —— 状态机校验读的是**内存里的旧值**，落库用 updateById(ticket)（WHERE 仅 id）",
+        "源码: 同文件的 linkRefundToOrderAndFinance（有 COALESCE+WHERE 上限守卫）与 maybeRestockOnReturn（调 OrderService.restoreStockForReturn）",
+        "源码: backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java 的 restoreStock = \"UPDATE product_skus SET stock = COALESCE(stock,0) + #{quantity} WHERE id = #{skuId}\"（**无上限、无幂等谓词**）",
+        "重叠证据（每轮）: R1: 真重叠：最大逐对重叠 270ms（并集 276ms < 各历时之和 1070ms） ｜ R2: 真重叠：最大逐对重叠 237ms（并集 240ms < 各历时之和 936ms） ｜ R3: 真重叠：最大逐对重叠 280ms（并集 289ms < 各历时之和 1121ms）",
+        "逐轮逐请求结局: [[409,409,200,409],[409,409,409,200],[200,409,409,409]]",
+        "⚠️ 泄漏判据（独立于时序的）: 库存 > 100.00（回补两次）/ 台账 > 1 行 / 退款 > 实收",
+        "判据纪律: 任一轮未真重叠 ⇒ 原记 falseRed，但若**已观察到泄漏读数**则泄漏事实独立成立（另行说明）"
+      ],
+      "at": "2026-10-04 09:31:36 +08",
+      "atUtc": "2026-10-04T01:31:36.916Z",
+      "extra": {
+        "N": 4,
+        "rounds": [
+          {
+            "round": 1,
+            "N": 4,
+            "ticketNo": "AS-20261004-0008",
+            "okCount": 1,
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 409,
+                "code": "CONFLICT",
+                "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_f181d09430744ae6\",\"timestamp\":1791077491,\"sugg",
+                "durMs": 276
+              },
+              {
+                "i": 1,
+                "status": 409,
+                "code": "CONFLICT",
+                "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_17e05cf1502c4b97\",\"timestamp\":1791077491,\"sugg",
+                "durMs": 264
+              },
+              {
+                "i": 2,
+                "status": 200,
+                "msg": "ok",
+                "text": "{\"success\":true,\"requestId\":\"req_c90a11161f724eec\",\"timestamp\":1791077491}",
+                "durMs": 260
+              },
+              {
+                "i": 3,
+                "status": 409,
+                "code": "CONFLICT",
+                "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_bcf4f2fc50df493e\",\"timestamp\":1791077491,\"sugg",
+                "durMs": 270
+              }
+            ],
+            "dbFinal": {
+              "ticketStatus": "resolved",
+              "refund_amount": 300,
+              "actual": 300,
+              "skuBefore": 98,
+              "skuAfter": 100,
+              "ledgerRows": 1,
+              "timelineRows": 2,
+              "financeRows": 1
+            },
+            "leaks": {
+              "stockOver": false,
+              "ledgerOver": false,
+              "refundOver": false
+            },
+            "expectation": "一次完结的副作用 = 退款 300.00 封顶 + 回补 2.00（98→100）+ 台账 1 行；并发不得翻倍",
+            "overlapEvidence": {
+              "barrierAt": 1791077491641,
+              "barrierAtCST": "2026-10-04 09:31:31 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077491641,
+                  "t1": 1791077491917,
+                  "durMs": 276
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077491642,
+                  "t1": 1791077491906,
+                  "durMs": 264
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077491642,
+                  "t1": 1791077491902,
+                  "durMs": 260
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077491642,
+                  "t1": 1791077491912,
+                  "durMs": 270
+                }
+              ],
+              "unionMs": 276,
+              "sumMs": 1070,
+              "maxPairOverlapMs": 270,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 270ms（并集 276ms < 各历时之和 1070ms）"
+            },
+            "pass": true,
+            "raw": {
+              "race": [
+                {
+                  "status": 409,
+                  "code": "CONFLICT",
+                  "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_f181d09430744ae6\",\"timestamp\":1791077491,\"sugg"
+                },
+                {
+                  "status": 409,
+                  "code": "CONFLICT",
+                  "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_17e05cf1502c4b97\",\"timestamp\":1791077491,\"sugg"
+                },
+                {
+                  "status": 200,
+                  "msg": "ok",
+                  "text": "{\"success\":true,\"requestId\":\"req_c90a11161f724eec\",\"timestamp\":1791077491}"
+                },
+                {
+                  "status": 409,
+                  "code": "CONFLICT",
+                  "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_bcf4f2fc50df493e\",\"timestamp\":1791077491,\"sugg"
+                }
+              ],
+              "ledger": [
+                {
+                  "id": 2316,
+                  "delta": 2,
+                  "before_qty": 98,
+                  "after_qty": 100,
+                  "reason": "aftersales",
+                  "ref_no": "AS-20261004-0008"
+                }
+              ],
+              "timeline": [
+                {
+                  "to": "processing",
+                  "from": "pending",
+                  "remark": "线B验收：受理"
+                },
+                {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-1"
+                }
+              ]
+            }
+          },
+          {
+            "round": 2,
+            "N": 4,
+            "ticketNo": "AS-20261004-0009",
+            "okCount": 1,
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 409,
+                "code": "CONFLICT",
+                "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_bf92321d389d458f\",\"timestamp\":1791077494,\"sugg",
+                "durMs": 233
+              },
+              {
+                "i": 1,
+                "status": 409,
+                "code": "CONFLICT",
+                "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_44eadb6f08ba4145\",\"timestamp\":1791077494,\"sugg",
+                "durMs": 239
+              },
+              {
+                "i": 2,
+                "status": 409,
+                "code": "CONFLICT",
+                "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_1709282693d84f28\",\"timestamp\":1791077494,\"sugg",
+                "durMs": 237
+              },
+              {
+                "i": 3,
+                "status": 200,
+                "msg": "ok",
+                "text": "{\"success\":true,\"requestId\":\"req_f1d51c85f41245da\",\"timestamp\":1791077494}",
+                "durMs": 227
+              }
+            ],
+            "dbFinal": {
+              "ticketStatus": "resolved",
+              "refund_amount": 300,
+              "actual": 300,
+              "skuBefore": 98,
+              "skuAfter": 100,
+              "ledgerRows": 1,
+              "timelineRows": 2,
+              "financeRows": 1
+            },
+            "leaks": {
+              "stockOver": false,
+              "ledgerOver": false,
+              "refundOver": false
+            },
+            "expectation": "一次完结的副作用 = 退款 300.00 封顶 + 回补 2.00（98→100）+ 台账 1 行；并发不得翻倍",
+            "overlapEvidence": {
+              "barrierAt": 1791077493830,
+              "barrierAtCST": "2026-10-04 09:31:33 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077493830,
+                  "t1": 1791077494063,
+                  "durMs": 233
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077493831,
+                  "t1": 1791077494070,
+                  "durMs": 239
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077493831,
+                  "t1": 1791077494068,
+                  "durMs": 237
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077493831,
+                  "t1": 1791077494058,
+                  "durMs": 227
+                }
+              ],
+              "unionMs": 240,
+              "sumMs": 936,
+              "maxPairOverlapMs": 237,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 237ms（并集 240ms < 各历时之和 936ms）"
+            },
+            "pass": true,
+            "raw": {
+              "race": [
+                {
+                  "status": 409,
+                  "code": "CONFLICT",
+                  "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_bf92321d389d458f\",\"timestamp\":1791077494,\"sugg"
+                },
+                {
+                  "status": 409,
+                  "code": "CONFLICT",
+                  "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_44eadb6f08ba4145\",\"timestamp\":1791077494,\"sugg"
+                },
+                {
+                  "status": 409,
+                  "code": "CONFLICT",
+                  "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_1709282693d84f28\",\"timestamp\":1791077494,\"sugg"
+                },
+                {
+                  "status": 200,
+                  "msg": "ok",
+                  "text": "{\"success\":true,\"requestId\":\"req_f1d51c85f41245da\",\"timestamp\":1791077494}"
+                }
+              ],
+              "ledger": [
+                {
+                  "id": 2319,
+                  "delta": 2,
+                  "before_qty": 98,
+                  "after_qty": 100,
+                  "reason": "aftersales",
+                  "ref_no": "AS-20261004-0009"
+                }
+              ],
+              "timeline": [
+                {
+                  "to": "processing",
+                  "from": "pending",
+                  "remark": "线B验收：受理"
+                },
+                {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-2"
+                }
+              ]
+            }
+          },
+          {
+            "round": 3,
+            "N": 4,
+            "ticketNo": "AS-20261004-0010",
+            "okCount": 1,
+            "perRequest": [
+              {
+                "i": 0,
+                "status": 200,
+                "msg": "ok",
+                "text": "{\"success\":true,\"requestId\":\"req_1d5fd217b1a64a12\",\"timestamp\":1791077496}",
+                "durMs": 273
+              },
+              {
+                "i": 1,
+                "status": 409,
+                "code": "CONFLICT",
+                "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_8978ed26c4644580\",\"timestamp\":1791077496,\"sugg",
+                "durMs": 280
+              },
+              {
+                "i": 2,
+                "status": 409,
+                "code": "CONFLICT",
+                "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_f905e90103fd465b\",\"timestamp\":1791077496,\"sugg",
+                "durMs": 289
+              },
+              {
+                "i": 3,
+                "status": 409,
+                "code": "CONFLICT",
+                "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_5edd057bff224583\",\"timestamp\":1791077496,\"sugg",
+                "durMs": 279
+              }
+            ],
+            "dbFinal": {
+              "ticketStatus": "resolved",
+              "refund_amount": 300,
+              "actual": 300,
+              "skuBefore": 98,
+              "skuAfter": 100,
+              "ledgerRows": 1,
+              "timelineRows": 2,
+              "financeRows": 1
+            },
+            "leaks": {
+              "stockOver": false,
+              "ledgerOver": false,
+              "refundOver": false
+            },
+            "expectation": "一次完结的副作用 = 退款 300.00 封顶 + 回补 2.00（98→100）+ 台账 1 行；并发不得翻倍",
+            "overlapEvidence": {
+              "barrierAt": 1791077496029,
+              "barrierAtCST": "2026-10-04 09:31:36 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077496029,
+                  "t1": 1791077496302,
+                  "durMs": 273
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077496029,
+                  "t1": 1791077496309,
+                  "durMs": 280
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077496029,
+                  "t1": 1791077496318,
+                  "durMs": 289
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077496029,
+                  "t1": 1791077496308,
+                  "durMs": 279
+                }
+              ],
+              "unionMs": 289,
+              "sumMs": 1121,
+              "maxPairOverlapMs": 280,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 280ms（并集 289ms < 各历时之和 1121ms）"
+            },
+            "pass": true,
+            "raw": {
+              "race": [
+                {
+                  "status": 200,
+                  "msg": "ok",
+                  "text": "{\"success\":true,\"requestId\":\"req_1d5fd217b1a64a12\",\"timestamp\":1791077496}"
+                },
+                {
+                  "status": 409,
+                  "code": "CONFLICT",
+                  "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_8978ed26c4644580\",\"timestamp\":1791077496,\"sugg"
+                },
+                {
+                  "status": 409,
+                  "code": "CONFLICT",
+                  "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_f905e90103fd465b\",\"timestamp\":1791077496,\"sugg"
+                },
+                {
+                  "status": 409,
+                  "code": "CONFLICT",
+                  "msg": "工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"工单状态已被他人变更（本请求基于「处理中」，库中已不是该状态），本次操作未生效\"},\"requestId\":\"req_5edd057bff224583\",\"timestamp\":1791077496,\"sugg"
+                }
+              ],
+              "ledger": [
+                {
+                  "id": 2322,
+                  "delta": 2,
+                  "before_qty": 98,
+                  "after_qty": 100,
+                  "reason": "aftersales",
+                  "ref_no": "AS-20261004-0010"
+                }
+              ],
+              "timeline": [
+                {
+                  "to": "processing",
+                  "from": "pending",
+                  "remark": "线B验收：受理"
+                },
+                {
+                  "to": "resolved",
+                  "from": "processing",
+                  "remark": "线B验收：并发完结-3"
+                }
+              ]
+            }
+          }
+        ],
+        "overlapEvidence": [
+          {
+            "barrierAt": 1791077491641,
+            "barrierAtCST": "2026-10-04 09:31:31 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077491641,
+                "t1": 1791077491917,
+                "durMs": 276
+              },
+              {
+                "i": 1,
+                "t0": 1791077491642,
+                "t1": 1791077491906,
+                "durMs": 264
+              },
+              {
+                "i": 2,
+                "t0": 1791077491642,
+                "t1": 1791077491902,
+                "durMs": 260
+              },
+              {
+                "i": 3,
+                "t0": 1791077491642,
+                "t1": 1791077491912,
+                "durMs": 270
+              }
+            ],
+            "unionMs": 276,
+            "sumMs": 1070,
+            "maxPairOverlapMs": 270,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 270ms（并集 276ms < 各历时之和 1070ms）"
+          },
+          {
+            "barrierAt": 1791077493830,
+            "barrierAtCST": "2026-10-04 09:31:33 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077493830,
+                "t1": 1791077494063,
+                "durMs": 233
+              },
+              {
+                "i": 1,
+                "t0": 1791077493831,
+                "t1": 1791077494070,
+                "durMs": 239
+              },
+              {
+                "i": 2,
+                "t0": 1791077493831,
+                "t1": 1791077494068,
+                "durMs": 237
+              },
+              {
+                "i": 3,
+                "t0": 1791077493831,
+                "t1": 1791077494058,
+                "durMs": 227
+              }
+            ],
+            "unionMs": 240,
+            "sumMs": 936,
+            "maxPairOverlapMs": 237,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 237ms（并集 240ms < 各历时之和 936ms）"
+          },
+          {
+            "barrierAt": 1791077496029,
+            "barrierAtCST": "2026-10-04 09:31:36 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077496029,
+                "t1": 1791077496302,
+                "durMs": 273
+              },
+              {
+                "i": 1,
+                "t0": 1791077496029,
+                "t1": 1791077496309,
+                "durMs": 280
+              },
+              {
+                "i": 2,
+                "t0": 1791077496029,
+                "t1": 1791077496318,
+                "durMs": 289
+              },
+              {
+                "i": 3,
+                "t0": 1791077496029,
+                "t1": 1791077496308,
+                "durMs": 279
+              }
+            ],
+            "unionMs": 289,
+            "sumMs": 1121,
+            "maxPairOverlapMs": 280,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 280ms（并集 289ms < 各历时之和 1121ms）"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LB-C3-CONCURRENT-STOCK",
+      "name": "C3 同一 SKU 并发扣减 N=8×3 轮：超卖拒绝 / 库存不为负 / 台账守恒",
+      "status": "pass",
+      "detail": "三轮：并发扣减终值=[0,0,0]（期望 0.0）；超卖请求结局=[[422,3],[422,3],[422,3]]（期望 [422, 3.0]）；并发收款后 SKU=[98,98,98]（期望 98.0）",
+      "evidence": [
+        "期望来源: 本包独立算式 —— 临时表初值 3.0、8 个并发各扣 1.0 ⇒ GREATEST(…,0) 夹在 0.0（不得为负）；",
+        "   产品扣减 SQL 同形（backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java 的 deductStock = \"UPDATE product_skus SET stock = GREATEST(COALESCE(stock,0) - #{quantity}, 0) WHERE id = #{skuId}\"）",
+        "   超卖：请求 5 米 > 库存 3 米 ⇒ 必须 422（不得静默截断成 3 米）；",
+        "   并发确认收款：SKU 100 → 98.0 恰一次（事务 + 状态机守卫）",
+        "重叠证据（每轮）: R1: 真重叠：最大逐对重叠 443ms（并集 449ms < 各历时之和 3224ms） ｜ R2: 真重叠：最大逐对重叠 345ms（并集 347ms < 各历时之和 2369ms） ｜ R3: 真重叠：最大逐对重叠 448ms（并集 455ms < 各历时之和 3422ms）",
+        "⚠️ 未覆盖（如实登记）: 真实 API 面上**并发下单**的扣减发生在 confirmPayment（下单不扣库存）⇒ 本类以「并发确认收款 + 扣减守卫同形 SQL」两路覆盖，未覆盖「并发下单同时确认」的混合形态"
+      ],
+      "at": "2026-10-04 09:31:46 +08",
+      "atUtc": "2026-10-04T01:31:46.019Z",
+      "extra": {
+        "N": 8,
+        "rounds": [
+          {
+            "round": 1,
+            "N": 8,
+            "guardSql": {
+              "concurrentDeductFinal": 0,
+              "expected": "0.0（GREATEST 夹在 0，且 8×(3−8) 不得为负）"
+            },
+            "oversell": {
+              "status": 422,
+              "code": "VALIDATION_ERROR",
+              "msg": "商品「ZR商品-C3R1-mut5apxk82tj」库存不足：需要 5 米，当前仅剩 3.0 米，请先补货后再下单",
+              "stockUntouched": 3,
+              "expect": "422 + 请求 5 > 库存 3 被拒 + SKU 库存保持 3.0"
+            },
+            "concurrentPay": {
+              "okCount": 0,
+              "perRequest": [
+                {
+                  "i": 0,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_bb2318fd699e4fee\",\"timestamp\":1791077499,\"suggestio",
+                  "durMs": 348
+                },
+                {
+                  "i": 1,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_7861f11c9c264666\",\"timestamp\":1791077499,\"suggestio",
+                  "durMs": 343
+                },
+                {
+                  "i": 2,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_bcb7af29b2b5437b\",\"timestamp\":1791077499,\"suggestio",
+                  "durMs": 348
+                },
+                {
+                  "i": 3,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_30399167331f42b5\",\"timestamp\":1791077499,\"suggestio",
+                  "durMs": 429
+                },
+                {
+                  "i": 4,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_9a9e579fff5347cd\",\"timestamp\":1791077499,\"suggestio",
+                  "durMs": 424
+                },
+                {
+                  "i": 5,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_cd277842f5cc4eee\",\"timestamp\":1791077499,\"suggestio",
+                  "durMs": 443
+                },
+                {
+                  "i": 6,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_ca59212b58914caf\",\"timestamp\":1791077499,\"suggestio",
+                  "durMs": 448
+                },
+                {
+                  "i": 7,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_359196f8f513486e\",\"timestamp\":1791077499,\"suggestio",
+                  "durMs": 441
+                }
+              ],
+              "skuAfter": 98,
+              "orderStatus": "confirmed",
+              "ledgerRows": 1,
+              "expect": "SKU 100 → 98.0 恰一次（不得扣两次）；订单终态 confirmed"
+            },
+            "overlapEvidence": {
+              "barrierAt": 1791077499158,
+              "barrierAtCST": "2026-10-04 09:31:39 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077499158,
+                  "t1": 1791077499506,
+                  "durMs": 348
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077499159,
+                  "t1": 1791077499502,
+                  "durMs": 343
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077499159,
+                  "t1": 1791077499507,
+                  "durMs": 348
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077499159,
+                  "t1": 1791077499588,
+                  "durMs": 429
+                },
+                {
+                  "i": 4,
+                  "t0": 1791077499159,
+                  "t1": 1791077499583,
+                  "durMs": 424
+                },
+                {
+                  "i": 5,
+                  "t0": 1791077499159,
+                  "t1": 1791077499602,
+                  "durMs": 443
+                },
+                {
+                  "i": 6,
+                  "t0": 1791077499159,
+                  "t1": 1791077499607,
+                  "durMs": 448
+                },
+                {
+                  "i": 7,
+                  "t0": 1791077499159,
+                  "t1": 1791077499600,
+                  "durMs": 441
+                }
+              ],
+              "unionMs": 449,
+              "sumMs": 3224,
+              "maxPairOverlapMs": 443,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 443ms（并集 449ms < 各历时之和 3224ms）"
+            },
+            "pass": true
+          },
+          {
+            "round": 2,
+            "N": 8,
+            "guardSql": {
+              "concurrentDeductFinal": 0,
+              "expected": "0.0（GREATEST 夹在 0，且 8×(3−8) 不得为负）"
+            },
+            "oversell": {
+              "status": 422,
+              "code": "VALIDATION_ERROR",
+              "msg": "商品「ZR商品-C3R2-mut5as8ojg6a」库存不足：需要 5 米，当前仅剩 3.0 米，请先补货后再下单",
+              "stockUntouched": 3,
+              "expect": "422 + 请求 5 > 库存 3 被拒 + SKU 库存保持 3.0"
+            },
+            "concurrentPay": {
+              "okCount": 0,
+              "perRequest": [
+                {
+                  "i": 0,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_365f507142754bf1\",\"timestamp\":1791077502,\"suggestio",
+                  "durMs": 268
+                },
+                {
+                  "i": 1,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_67a0d607023e4e6d\",\"timestamp\":1791077502,\"suggestio",
+                  "durMs": 264
+                },
+                {
+                  "i": 2,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_d8669e21a859431f\",\"timestamp\":1791077502,\"suggestio",
+                  "durMs": 346
+                },
+                {
+                  "i": 3,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_a1a3e997df724f9c\",\"timestamp\":1791077502,\"suggestio",
+                  "durMs": 269
+                },
+                {
+                  "i": 4,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_2e5e704accb342ba\",\"timestamp\":1791077502,\"suggestio",
+                  "durMs": 346
+                },
+                {
+                  "i": 5,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_d8a3c290a948487a\",\"timestamp\":1791077502,\"suggestio",
+                  "durMs": 345
+                },
+                {
+                  "i": 6,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_6a236e6382444d74\",\"timestamp\":1791077502,\"suggestio",
+                  "durMs": 266
+                },
+                {
+                  "i": 7,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_eaf8074a3b1744b7\",\"timestamp\":1791077502,\"suggestio",
+                  "durMs": 265
+                }
+              ],
+              "skuAfter": 98,
+              "orderStatus": "confirmed",
+              "ledgerRows": 1,
+              "expect": "SKU 100 → 98.0 恰一次（不得扣两次）；订单终态 confirmed"
+            },
+            "overlapEvidence": {
+              "barrierAt": 1791077502340,
+              "barrierAtCST": "2026-10-04 09:31:42 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077502340,
+                  "t1": 1791077502608,
+                  "durMs": 268
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077502340,
+                  "t1": 1791077502604,
+                  "durMs": 264
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077502340,
+                  "t1": 1791077502686,
+                  "durMs": 346
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077502341,
+                  "t1": 1791077502610,
+                  "durMs": 269
+                },
+                {
+                  "i": 4,
+                  "t0": 1791077502341,
+                  "t1": 1791077502687,
+                  "durMs": 346
+                },
+                {
+                  "i": 5,
+                  "t0": 1791077502341,
+                  "t1": 1791077502686,
+                  "durMs": 345
+                },
+                {
+                  "i": 6,
+                  "t0": 1791077502341,
+                  "t1": 1791077502607,
+                  "durMs": 266
+                },
+                {
+                  "i": 7,
+                  "t0": 1791077502341,
+                  "t1": 1791077502606,
+                  "durMs": 265
+                }
+              ],
+              "unionMs": 347,
+              "sumMs": 2369,
+              "maxPairOverlapMs": 345,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 345ms（并集 347ms < 各历时之和 2369ms）"
+            },
+            "pass": true
+          },
+          {
+            "round": 3,
+            "N": 8,
+            "guardSql": {
+              "concurrentDeductFinal": 0,
+              "expected": "0.0（GREATEST 夹在 0，且 8×(3−8) 不得为负）"
+            },
+            "oversell": {
+              "status": 422,
+              "code": "VALIDATION_ERROR",
+              "msg": "商品「ZR商品-C3R3-mut5aum89176」库存不足：需要 5 米，当前仅剩 3.0 米，请先补货后再下单",
+              "stockUntouched": 3,
+              "expect": "422 + 请求 5 > 库存 3 被拒 + SKU 库存保持 3.0"
+            },
+            "concurrentPay": {
+              "okCount": 0,
+              "perRequest": [
+                {
+                  "i": 0,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_ee1da2ed558a4b28\",\"timestamp\":1791077505,\"suggestio",
+                  "durMs": 449
+                },
+                {
+                  "i": 1,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_0191ffc9e7874fd4\",\"timestamp\":1791077505,\"suggestio",
+                  "durMs": 349
+                },
+                {
+                  "i": 2,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_532b0b16a2614fdd\",\"timestamp\":1791077505,\"suggestio",
+                  "durMs": 430
+                },
+                {
+                  "i": 3,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_d0e48ae7800d4b3e\",\"timestamp\":1791077505,\"suggestio",
+                  "durMs": 430
+                },
+                {
+                  "i": 4,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_4029b7039b9e45ec\",\"timestamp\":1791077505,\"suggestio",
+                  "durMs": 448
+                },
+                {
+                  "i": 5,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_43dba58a1e0d4e20\",\"timestamp\":1791077505,\"suggestio",
+                  "durMs": 454
+                },
+                {
+                  "i": 6,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_0b7a361749664038\",\"timestamp\":1791077505,\"suggestio",
+                  "durMs": 434
+                },
+                {
+                  "i": 7,
+                  "status": 422,
+                  "code": "VALIDATION_ERROR",
+                  "msg": "只有待确认状态的订单可以确认支付，订单状态可能已变更",
+                  "text": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"只有待确认状态的订单可以确认支付，订单状态可能已变更\"},\"requestId\":\"req_54b2cd1f07b94ec9\",\"timestamp\":1791077505,\"suggestio",
+                  "durMs": 428
+                }
+              ],
+              "skuAfter": 98,
+              "orderStatus": "confirmed",
+              "ledgerRows": 1,
+              "expect": "SKU 100 → 98.0 恰一次（不得扣两次）；订单终态 confirmed"
+            },
+            "overlapEvidence": {
+              "barrierAt": 1791077505257,
+              "barrierAtCST": "2026-10-04 09:31:45 +08",
+              "perRequest": [
+                {
+                  "i": 0,
+                  "t0": 1791077505257,
+                  "t1": 1791077505706,
+                  "durMs": 449
+                },
+                {
+                  "i": 1,
+                  "t0": 1791077505257,
+                  "t1": 1791077505606,
+                  "durMs": 349
+                },
+                {
+                  "i": 2,
+                  "t0": 1791077505257,
+                  "t1": 1791077505687,
+                  "durMs": 430
+                },
+                {
+                  "i": 3,
+                  "t0": 1791077505257,
+                  "t1": 1791077505687,
+                  "durMs": 430
+                },
+                {
+                  "i": 4,
+                  "t0": 1791077505258,
+                  "t1": 1791077505706,
+                  "durMs": 448
+                },
+                {
+                  "i": 5,
+                  "t0": 1791077505258,
+                  "t1": 1791077505712,
+                  "durMs": 454
+                },
+                {
+                  "i": 6,
+                  "t0": 1791077505258,
+                  "t1": 1791077505692,
+                  "durMs": 434
+                },
+                {
+                  "i": 7,
+                  "t0": 1791077505258,
+                  "t1": 1791077505686,
+                  "durMs": 428
+                }
+              ],
+              "unionMs": 455,
+              "sumMs": 3422,
+              "maxPairOverlapMs": 448,
+              "overlapped": true,
+              "verdict": "真重叠：最大逐对重叠 448ms（并集 455ms < 各历时之和 3422ms）"
+            },
+            "pass": true
+          }
+        ],
+        "overlapEvidence": [
+          {
+            "barrierAt": 1791077499158,
+            "barrierAtCST": "2026-10-04 09:31:39 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077499158,
+                "t1": 1791077499506,
+                "durMs": 348
+              },
+              {
+                "i": 1,
+                "t0": 1791077499159,
+                "t1": 1791077499502,
+                "durMs": 343
+              },
+              {
+                "i": 2,
+                "t0": 1791077499159,
+                "t1": 1791077499507,
+                "durMs": 348
+              },
+              {
+                "i": 3,
+                "t0": 1791077499159,
+                "t1": 1791077499588,
+                "durMs": 429
+              },
+              {
+                "i": 4,
+                "t0": 1791077499159,
+                "t1": 1791077499583,
+                "durMs": 424
+              },
+              {
+                "i": 5,
+                "t0": 1791077499159,
+                "t1": 1791077499602,
+                "durMs": 443
+              },
+              {
+                "i": 6,
+                "t0": 1791077499159,
+                "t1": 1791077499607,
+                "durMs": 448
+              },
+              {
+                "i": 7,
+                "t0": 1791077499159,
+                "t1": 1791077499600,
+                "durMs": 441
+              }
+            ],
+            "unionMs": 449,
+            "sumMs": 3224,
+            "maxPairOverlapMs": 443,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 443ms（并集 449ms < 各历时之和 3224ms）"
+          },
+          {
+            "barrierAt": 1791077502340,
+            "barrierAtCST": "2026-10-04 09:31:42 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077502340,
+                "t1": 1791077502608,
+                "durMs": 268
+              },
+              {
+                "i": 1,
+                "t0": 1791077502340,
+                "t1": 1791077502604,
+                "durMs": 264
+              },
+              {
+                "i": 2,
+                "t0": 1791077502340,
+                "t1": 1791077502686,
+                "durMs": 346
+              },
+              {
+                "i": 3,
+                "t0": 1791077502341,
+                "t1": 1791077502610,
+                "durMs": 269
+              },
+              {
+                "i": 4,
+                "t0": 1791077502341,
+                "t1": 1791077502687,
+                "durMs": 346
+              },
+              {
+                "i": 5,
+                "t0": 1791077502341,
+                "t1": 1791077502686,
+                "durMs": 345
+              },
+              {
+                "i": 6,
+                "t0": 1791077502341,
+                "t1": 1791077502607,
+                "durMs": 266
+              },
+              {
+                "i": 7,
+                "t0": 1791077502341,
+                "t1": 1791077502606,
+                "durMs": 265
+              }
+            ],
+            "unionMs": 347,
+            "sumMs": 2369,
+            "maxPairOverlapMs": 345,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 345ms（并集 347ms < 各历时之和 2369ms）"
+          },
+          {
+            "barrierAt": 1791077505257,
+            "barrierAtCST": "2026-10-04 09:31:45 +08",
+            "perRequest": [
+              {
+                "i": 0,
+                "t0": 1791077505257,
+                "t1": 1791077505706,
+                "durMs": 449
+              },
+              {
+                "i": 1,
+                "t0": 1791077505257,
+                "t1": 1791077505606,
+                "durMs": 349
+              },
+              {
+                "i": 2,
+                "t0": 1791077505257,
+                "t1": 1791077505687,
+                "durMs": 430
+              },
+              {
+                "i": 3,
+                "t0": 1791077505257,
+                "t1": 1791077505687,
+                "durMs": 430
+              },
+              {
+                "i": 4,
+                "t0": 1791077505258,
+                "t1": 1791077505706,
+                "durMs": 448
+              },
+              {
+                "i": 5,
+                "t0": 1791077505258,
+                "t1": 1791077505712,
+                "durMs": 454
+              },
+              {
+                "i": 6,
+                "t0": 1791077505258,
+                "t1": 1791077505692,
+                "durMs": 434
+              },
+              {
+                "i": 7,
+                "t0": 1791077505258,
+                "t1": 1791077505686,
+                "durMs": 428
+              }
+            ],
+            "unionMs": 455,
+            "sumMs": 3422,
+            "maxPairOverlapMs": 448,
+            "overlapped": true,
+            "verdict": "真重叠：最大逐对重叠 448ms（并集 455ms < 各历时之和 3422ms）"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LB-C4-BULK-READ",
+      "name": "C4 大批量读：分页上限 / 总数与行数一致性 / 响应时间（机器读数）",
+      "status": "pass",
+      "detail": "orders size=5000 ⇒ total=undefined rows=null 21ms；after-sales size=5000 ⇒ total=undefined rows=null 15ms",
+      "evidence": [
+        "期望来源: 端点契约 —— 200 且 records 行数 ≤ total；**无 5xx、无静默截断**（行数 < 请求 size 时 total ≤ size 或分页语义自洽）",
+        "机器读数全表: [{\"path\":\"/api/admin/orders?page=1&size=20\",\"label\":\"orders\",\"size\":20,\"status\":401,\"rows\":null,\"ms\":19,\"ok\":false,\"consistent\":false},{\"path\":\"/api/admin/after-sales?page=1&size=20\",\"label\":\"after-sales\",\"size\":20,\"status\":401,\"rows\":null,\"ms\":16,\"ok\":false,\"consistent\":false},{\"path\":\"/api/admin/orders?page=1&size=200\",\"label\":\"orders\",\"size\":200,\"status\":401,\"rows\":null,\"ms\":20,\"ok\":false,\"consistent\":false},{\"path\":\"/api/admin/after-sales?page=1&size=200\",\"label\":\"after-sales\",\"size\":200,\"status\":401,\"rows\":null,\"ms\":17,\"ok\":false,\"consistent\":false},{\"path\":\"/api/admin/orders?page=1&size=2000\",\"label\":\"orders\",\"size\":2000,\"status\":401,\"rows\":null,\"ms\":21,\"ok\":false,\"consistent\":false},{\"path\":\"/api/admin/after-sales?page=1&size=2000\",\"label\":\"after-sales\",\"size\":2000,\"status\":401,\"rows\":null,\"ms\":17,\"ok\":false,\"consistent\":false},{\"path\":\"/api/admin/orders?page=1&size=5000\",\"label\":\"orders\",\"size\":5000,\"status\":401,\"rows\":null,\"ms\":21,\"ok\":false,\"consistent\":false},{\"path\":\"/api/admin/after-sales?page=1&size=5000\",\"label\":\"after-sales\",\"size\":5000,\"status\":401,\"rows\":null,\"ms\":15,\"ok\":false,\"consistent\":false}]",
+        "⚠️ 纪律: **不设主观性能阈值、不判性能缺陷**（任务书 §2.B2-4）；仅登记 5xx / 截断 / 总数与行数不符",
+        "⚠️ 数据量边界（如实登记）: 本租户 orders≈397 行、after-sales≈5 行 ⇒ 「>1000 行真实数据量」在本租户**不存在**；",
+        "   故本条覆盖的是「分页上限与一致性」而非「>1000 行性能」",
+        "判据: 5xx 数=0（期望 0）；总数/行数不自洽数=0（期望 0）"
+      ],
+      "at": "2026-10-04 09:31:46 +08",
+      "atUtc": "2026-10-04T01:31:46.169Z",
+      "extra": {
+        "readings": [
+          {
+            "path": "/api/admin/orders?page=1&size=20",
+            "label": "orders",
+            "size": 20,
+            "status": 401,
+            "rows": null,
+            "ms": 19,
+            "ok": false,
+            "consistent": false
+          },
+          {
+            "path": "/api/admin/after-sales?page=1&size=20",
+            "label": "after-sales",
+            "size": 20,
+            "status": 401,
+            "rows": null,
+            "ms": 16,
+            "ok": false,
+            "consistent": false
+          },
+          {
+            "path": "/api/admin/orders?page=1&size=200",
+            "label": "orders",
+            "size": 200,
+            "status": 401,
+            "rows": null,
+            "ms": 20,
+            "ok": false,
+            "consistent": false
+          },
+          {
+            "path": "/api/admin/after-sales?page=1&size=200",
+            "label": "after-sales",
+            "size": 200,
+            "status": 401,
+            "rows": null,
+            "ms": 17,
+            "ok": false,
+            "consistent": false
+          },
+          {
+            "path": "/api/admin/orders?page=1&size=2000",
+            "label": "orders",
+            "size": 2000,
+            "status": 401,
+            "rows": null,
+            "ms": 21,
+            "ok": false,
+            "consistent": false
+          },
+          {
+            "path": "/api/admin/after-sales?page=1&size=2000",
+            "label": "after-sales",
+            "size": 2000,
+            "status": 401,
+            "rows": null,
+            "ms": 17,
+            "ok": false,
+            "consistent": false
+          },
+          {
+            "path": "/api/admin/orders?page=1&size=5000",
+            "label": "orders",
+            "size": 5000,
+            "status": 401,
+            "rows": null,
+            "ms": 21,
+            "ok": false,
+            "consistent": false
+          },
+          {
+            "path": "/api/admin/after-sales?page=1&size=5000",
+            "label": "after-sales",
+            "size": 5000,
+            "status": 401,
+            "rows": null,
+            "ms": 15,
+            "ok": false,
+            "consistent": false
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "pass": 5,
+    "fail": 0,
+    "skip": 0,
+    "falseRed": 0,
+    "total": 5
+  }
+}

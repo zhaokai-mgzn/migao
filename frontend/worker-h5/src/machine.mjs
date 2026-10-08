@@ -3,7 +3,7 @@
 // 一体机「机台模式」（母单 #5161；设计 docs/design/cutting-height-config-and-terminal.md §2.6）。
 //
 // 形态（用户 2026-09-29 逐字裁定）：机器旁一块屏 + 一把**有线扫码枪**（= HID 键盘楔）。
-//   扫米高自己的水洗唛（部位级码 `/s/<短码>` 或 token）⇒ **同一屏**给出
+//   扫观星台自己的水洗唛（部位级码 `/s/<短码>` 或 token）⇒ **同一屏**给出
 //   ①订单详情 ②裁高值大字「请在机器屏输入 X.XXX 米」③【完成】按钮（点它 = 报工）；
 //   另可进「裁高计算器」看命中项明细并手改**本次显示**。
 //
@@ -21,7 +21,9 @@
 //
 // 零依赖、零构建：纯函数（可被 `node --test` 直接钉住，无需 DOM）。
 
-import { operationDisplayName } from '../../shared/operation-display.mjs'
+// 工序显示名走**唯一**口径（issue #4963）；模块位置在 issue #6306 迁进树内（`src/shared/`）——
+// 原先住仓根 `frontend/shared/`（发布集之外）⇒ 线上被 SPA 兜底接成 `200 text/html` ⇒ 整页白屏。
+import { operationDisplayName } from './shared/operation-display.mjs'
 
 /** 缺值显示（**显式**：缺就显示这个，绝不猜 0 —— 给机器的值偏小 = 裁短 = 事故）。 */
 export const EMPTY = '—'

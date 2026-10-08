@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 43 张）：
+--   本文件缺失（schema.sql 已有，共 44 张）：
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
@@ -68,6 +68,9 @@
 --       （缺行 = 用默认种子，**不插种子行**）；
 --       worker_page_configs = V141，母单 #5161 —— 工人端页面开关（租户级，缺行 = 默认全开）；
 --       ⚠️ 只承载**页面可见性**，不是权限码（工人 session 的 permissions 恒为 []）；
+--       scheduled_tasks = V149，issue #6486 —— 定时任务（用户口中的「预约」）：
+--       一行 = 一条在未来某时刻要投递的提醒；三件套 criterion / action_label / action_url
+--       全 NOT NULL ⇒ 没有处置入口的待办**建不出来**；到点只投站内通知、**不执行业务写**；
 --   本文件仍会创建，但**早已被迁移 DROP**（共 4 张）：
 --     knowledge_documents, knowledge_sync_history, rag_chunks,   ← V36 迁移 DROP
 --     quick_reply_templates

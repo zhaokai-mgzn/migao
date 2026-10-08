@@ -11,6 +11,13 @@ import os
 from dataclasses import dataclass
 
 
+#: 云端测试账号的租户 ID（2026-10-04 测试环境重建）：租户 1（词元通达 / 企业编码 `default`）
+#: 连同全部数据已清空，现云端测试账号 = 走入驻流程新建的「米高测试环境」= **tenant 25**
+#: （企业编码 `shop-8yn7`，管理员手机号仍是 13800138000）。
+#: `local` 档**有意不动**：本地 Docker 栈的 tenant 1 由栈内种子/初始化创建，与本重建无关。
+CLOUD_TENANT_ID = "25"
+
+
 @dataclass(frozen=True)
 class EnvConfig:
     """测试环境配置"""
@@ -47,7 +54,7 @@ def get_config() -> EnvConfig:
             ai_agent_url=ai_agent_url or "https://ai-api.migaozn.com",
             admin_phone=os.getenv("ADMIN_PHONE", "13800138000"),
             admin_sms_code=os.getenv("ADMIN_SMS_CODE", "123456"),
-            tenant_id=int(os.getenv("TENANT_ID", "1")),
+            tenant_id=int(os.getenv("TENANT_ID", CLOUD_TENANT_ID)),
             service_token=os.getenv("SERVICE_TOKEN", ""),
         ),
         "production": EnvConfig(
@@ -56,7 +63,7 @@ def get_config() -> EnvConfig:
             ai_agent_url=ai_agent_url or "https://ai-api.migaozn.com",
             admin_phone=os.getenv("ADMIN_PHONE", "13800138000"),
             admin_sms_code=os.getenv("ADMIN_SMS_CODE", "123456"),
-            tenant_id=int(os.getenv("TENANT_ID", "1")),
+            tenant_id=int(os.getenv("TENANT_ID", CLOUD_TENANT_ID)),
             service_token=os.getenv("SERVICE_TOKEN", ""),
         ),
     }

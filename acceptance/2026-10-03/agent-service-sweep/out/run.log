@@ -1,0 +1,140 @@
+2026-10-03 13:44:30 +08 ===== 判据组 A [MODE=debugtrue] 开始 2026-10-03 13:44:30 +08 =====
+2026-10-03 13:44:30 +08 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8 (fix(scripts): #6178 活锚自检空比对不得报绿 —— 拓扑 A 按预设仓选对照 + 空集 fail-closed (#6180)) procStart=六 10月/ 3 13:44:16 2026
+2026-10-03 13:44:30 +08 [PASS] [A1-1] /health 存活语义 — 期望 HTTP 200 且 body.status=="healthy" == 实测 [object Object]
+2026-10-03 13:44:30 +08 [PASS] [A1-2] /ready 就绪语义（fail-closed） — 期望 HTTP 200 且 body.status=="ready"（DB+Redis 均通时） == 实测 [object Object]
+2026-10-03 13:44:30 +08 [PASS] [A1-3] 未注册路径不得 500 — 期望 HTTP 404 == 实测 [object Object]
+2026-10-03 13:44:30 +08 [PASS] [A1-4] 错误方法不得 500 — 期望 HTTP 405 == 实测 [object Object]
+2026-10-03 13:44:30 +08 [PASS] [A2-notoken-_api_chat_sessions] 无 token 调 /api/chat/sessions [X-Debug-Role=customer, DEBUG=true] — 期望 HTTP 200 == 实测 [object Object]
+2026-10-03 13:44:30 +08 [PASS] [A2-notoken-_api_chat_sessions_latest] 无 token 调 /api/chat/sessions/latest [X-Debug-Role=customer, DEBUG=true] — 期望 HTTP 200 == 实测 [object Object]
+2026-10-03 13:44:30 +08 [PASS] [A2-notoken-_api_chat_quick_actions] 无 token 调 /api/chat/quick-actions [X-Debug-Role=customer, DEBUG=true] — 期望 HTTP 200 == 实测 [object Object]
+2026-10-03 13:44:30 +08 [PASS] [A2-badtoken] 畸形 Bearer token 被拒 — 期望 HTTP 401 且 error.code ∈ {TOKEN_INVALID,AUTH_REQUIRED} == 实测 [object Object]
+2026-10-03 13:44:31 +08 [PASS] [A2-expired] 过期 JWT 被拒（TOKEN_EXPIRED） — 期望 HTTP 401 且 error.code=="TOKEN_EXPIRED" == 实测 [object Object]
+2026-10-03 13:44:31 +08 [PASS] [A2-foreignkey] 异钥签名的 JWT 被拒 — 期望 HTTP 401 且 error.code=="TOKEN_INVALID" == 实测 [object Object]
+2026-10-03 13:44:32 +08 [PASS] [A2-aud] aud 不含 migao 的 JWT 被拒 — 期望 HTTP 401 == 实测 [object Object]
+2026-10-03 13:44:32 +08 [PASS] [A2-positive] 正对照：合法 RS256 token 放行 — 期望 HTTP 200 且 success==true == 实测 [object Object]
+2026-10-03 13:44:32 +08 [PASS] [A3-1] 内部面无 Service Token ⇒ 401 — 期望 HTTP 401 且 code=="AUTH_REQUIRED" == 实测 [object Object]
+2026-10-03 13:44:32 +08 [PASS] [A3-2] 内部面错误 Service Token ⇒ 401（不得 500） — 期望 HTTP 401 且 code=="AUTH_REQUIRED" == 实测 [object Object]
+2026-10-03 13:44:32 +08 [PASS] [A3-3] 正对照：正确 Service Token 放行且工具集非空 — 期望 HTTP 200 且 tools.length>0 == 实测 [object Object]
+2026-10-03 13:44:32 +08 [PASS] [A3-4] 内部面拒写工具（order_create） — 期望 HTTP 403 且 code=="WRITE_TOOL_FORBIDDEN" == 实测 [object Object]
+2026-10-03 13:44:32 +08 [PASS] [A3-5] 内部面未知工具 ⇒ 404 TOOL_NOT_FOUND — 期望 HTTP 404 == 实测 [object Object]
+2026-10-03 13:44:33 +08 [PASS] [A4-1] SERVICE_TOKEN 不在无鉴权/错误响应中回显 — 期望 0 处命中 == 实测 [object Object]
+2026-10-03 13:44:33 +08 ===== 判据组 A [MODE=debugtrue] 结束：pass=18 fail=0 skip=0 =====
+2026-10-03 13:44:33 +08 [PASS] [A5-discriminator] 判别力自证：DEBUG=true 侧旁路确实放行 — DEBUG=true 侧 3 条无 token 请求全部放行（≠ DEBUG=false 侧的 401）⇒ A2 各条有判别力
+2026-10-03 13:45:32 +08 ===== 判据组 C 开始 2026-10-03 13:45:32 +08 =====
+2026-10-03 13:45:32 +08 登录成功 tenant=ok
+2026-10-03 13:45:32 +08 [PASS] [C1-1] 建卡 ⇒ 200 且有 id — 期望 HTTP 200 且 data.id 非空 == 实测 [object Object]
+2026-10-03 13:45:32 +08 [PASS] [C1-2] 建卡后 DB 逐字段与请求一致（11 字段） — 期望 全部字段相符 == 实测 [object Object]
+2026-10-03 13:45:32 +08 [PASS] [C1-3] 建卡租户归属 = 登录租户（不得落他租户） — 期望 tenant_id == 20 == 实测 [object Object]
+2026-10-03 13:45:33 +08 [PASS] [C2-1] 更新卡 ⇒ 200 — 期望 HTTP 200 == 实测 [object Object]
+2026-10-03 13:45:33 +08 [PASS] [C2-2] 更新后 DB 字段生效且 version 1→2、租户不变 — 期望 title/answer/category 已改、version==2、tenant_id 不变 == 实测 [object Object]
+2026-10-03 13:45:33 +08 [PASS] [C3-1] 发布卡 ⇒ status 落库 published — 期望 HTTP 200 且 DB status=="published" == 实测 [object Object]
+2026-10-03 13:45:33 +08 [PASS] [C3-2] 读面一致：列表按关键词能读到该卡且字段与 DB 一致 — 期望 found 且 status=="published" 且 title 与 DB 相同 == 实测 [object Object]
+2026-10-03 13:45:33 +08 [PASS] [C3-3] 读面一致：search 面能读到该卡 — 期望 搜索结果含该 cardId == 实测 [object Object]
+2026-10-03 13:45:33 +08 [PASS] [C4-1] 归档卡 ⇒ status 落库 archived（失效） — 期望 HTTP 200 且 DB status=="archived" == 实测 [object Object]
+2026-10-03 13:45:33 +08 [PASS] [C4-2] 归档后读面：search 不得再返回该卡（或状态为 archived） — 期望 search 未返回该卡，或返回的 status=="archived" == 实测 [object Object]
+2026-10-03 13:45:33 +08 [PASS] [C5-1] 更新不存在的卡 ⇒ 4xx（不得 200/500） — 期望 HTTP 4xx == 实测 [object Object]
+2026-10-03 13:45:33 +08 [PASS] [C5-2] 删除不存在的卡 ⇒ 4xx（不得 500） — 期望 HTTP 4xx == 实测 [object Object]
+2026-10-03 13:45:33 +08 ===== 判据组 C 结束：pass=12 fail=0 skip=0 | 探针卡片: be8e9d1f78007037cdea5d1383f0bbef =====
+2026-10-03 13:46:03 +08 ===== 判据组 D 开始 2026-10-03 13:46:03 +08 =====
+2026-10-03 13:46:04 +08 [PASS] [D1-1] 夹具就绪：3 条 pending 候选落库（正对照） — 期望 3 行且 status 全为 pending == 实测 [object Object]
+2026-10-03 13:46:04 +08 [PASS] [D2-1] pending-count 读面 ⇒ 200 且计数 ≥ 3 — 期望 HTTP 200 且 count ≥ 3（本包刚插入 3 条） == 实测 [object Object]
+2026-10-03 13:46:04 +08 [PASS] [D2-2] 候选列表读面含本包 3 条且 tenant 一致 — 期望 3 条命中且 tenantId 均为登录租户 == 实测 [object Object]
+2026-10-03 13:46:04 +08 [PASS] [D3-1] adopt ⇒ 200 且返回新卡 — 期望 HTTP 200 且 data.id 非空 == 实测 [object Object]
+2026-10-03 13:46:04 +08 [PASS] [D3-2] adopt 后候选状态流转 pending → adopted — 期望 status=="adopted" 且 reviewed_at 非空 == 实测 [object Object]
+2026-10-03 13:46:05 +08 [PASS] [D3-3] 入卡产物 DB 逐字段：tenant/title/answer 来自候选且租户一致 — 期望 tenant_id/标题/答复与候选一致（不跨租户） == 实测 [object Object]
+2026-10-03 13:46:05 +08 [PASS] [D3-4] 登记：入卡产物的 source_type/source_ref（追溯面读数，非判据） — source_type=manual source_ref=线①验收 status=published
+2026-10-03 13:46:05 +08 [PASS] [D4-1] reject ⇒ 200 且候选状态流转 pending → rejected — 期望 HTTP 200 且 DB status=="rejected" 且 reviewed_at 非空 == 实测 [object Object]
+2026-10-03 13:46:05 +08 [PASS] [D4-2] reject 不得产生知识卡片 — 期望 0 张同源卡片 == 实测 [object Object]
+2026-10-03 13:46:05 +08 [PASS] [D5-1] adopt-edited ⇒ 入卡内容用「编辑后」的值（不是候选原值） — 期望 title=编辑后 / answer=编辑后 / tenant=20 == 实测 [object Object]
+2026-10-03 13:46:05 +08 [PASS] [D5-2] adopt-edited 后候选状态流转（不得仍 pending） — 期望 status ∈ {adopted, edited, converted} 且 ≠ pending == 实测 [object Object]
+2026-10-03 13:46:06 +08 [PASS] [D6-1] 蒸馏面无 Service Token ⇒ 401 — 期望 HTTP 401 == 实测 [object Object]
+2026-10-03 13:46:06 +08 [PASS] [D6-2] 蒸馏面契约：200 + success + data.candidates 为数组 — 期望 HTTP 200 且 data.candidates 是数组（不得 500） == 实测 [object Object]
+2026-10-03 13:46:06 +08 [PASS] [D6-3] 登记：蒸馏产物是否落库（只读观察，非判据） — 返回 0 条候选（LLM 侧降级或空）
+2026-10-03 13:46:06 +08 ===== 判据组 D 结束：pass=14 fail=0 skip=0 =====
+2026-10-03 13:46:44 +08 ===== 判据组 E 开始 2026-10-03 13:46:44 +08 =====
+2026-10-03 13:46:44 +08 [PASS] [E1-1] 模板清单读面 ⇒ 200 且结构合法 — 期望 HTTP 200 且 data 为数组（可为空） == 实测 [object Object]
+2026-10-03 13:46:44 +08 [PASS] [E1-2] 登记：模板清单读数（非判据） — 模板 1 个：curtain
+2026-10-03 13:46:45 +08 [PASS] [E1-3] 登记：knowledge_templates 表不存在（模板为代码内建） — 库中无 knowledge_templates 表 ⇒ 模板清单来自代码内建（与"建/改/停用"需另找载体）
+2026-10-03 13:46:45 +08 [PASS] [E2-1] 应用模板 curtain ⇒ 200 且返回结果对象 — 期望 HTTP 200 且 data 为对象 == 实测 [object Object]
+2026-10-03 13:46:46 +08 [PASS] [E2-2] 登记：应用模板后的卡片留痕（只读观察，非判据） — 命中 5 张：dd312a660a3592122e704d6af8e80030:测量窗帘需要准备什么工具？ | d4013e4b09792bf4c5a0473f1c947005:窗帘高度到窗台还是落地怎么定？ | 80d310f91341e6240547647774ca45ed:轨道内装窗帘尺寸怎么量？ | 3c79414d90541fdd6bf847e325ea043f:罗马杆外装窗帘宽度怎么量？ | 647
+2026-10-03 13:46:46 +08 [PASS] [E3-1] 应用不存在的模板 ⇒ 4xx（不得 500） — 期望 HTTP 4xx == 实测 [object Object]
+2026-10-03 13:46:46 +08 ===== 判据组 E 结束：pass=6 fail=0 skip=0 =====
+2026-10-03 13:46:47 +08 ===== 判据组 F 开始 2026-10-03 13:46:47 +08 =====
+2026-10-03 13:46:48 +08 [FAIL] [F1-1] 转人工建会话 ⇒ 200 且有 id（初始 waiting） — 期望 HTTP 200 且 data.id 非空且 status=="waiting" ≠ 实测 [object Object]
+2026-10-03 13:46:48 +08 [SKIP] [F2-*] 工作台后续判据 — 转人工建会话失败 ⇒ 无夹具
+2026-10-03 13:46:48 +08 ===== 判据组 F 结束：pass=0 fail=1 skip=1 | agentSession=undefined =====
+2026-10-03 13:47:32 +08 ===== 判据组 F 开始 2026-10-03 13:47:32 +08 =====
+2026-10-03 13:47:33 +08 [PASS] [F0-1] 夹具：先建真实 AI 会话（:8001）作为转人工源 — 期望 HTTP 200 且有 session id == 实测 [object Object]
+2026-10-03 13:47:34 +08 [PASS] [F1-1] 转人工建会话 ⇒ 200 且有 id（初始 waiting） — 期望 HTTP 200 且 data.id 非空且 status=="waiting" == 实测 [object Object]
+2026-10-03 13:47:34 +08 [PASS] [F2-1] 转人工会话 DB 逐字段（tenant/customer/aiSession/status） — 期望 tenant_id=20 ∧ customer_id/ai_session_id 与请求一致 ∧ status=waiting == 实测 [object Object]
+2026-10-03 13:47:34 +08 [FAIL] [F3-1] 工作台会话列表（本租户）能看到该转人工会话 — 期望 命中 1 条且 tenantId 一致 ≠ 实测 [object Object]
+2026-10-03 13:47:34 +08 [PASS] [F3-2] 他租户（21）列表看不到租户 20 的转人工会话 — 期望 命中 0 条 == 实测 [object Object]
+2026-10-03 13:47:34 +08 [PASS] [F3-3] 跨租户按 id 读会话详情 ⇒ 必须拒（不得返回他租户内容） — 期望 HTTP 4xx（403/404）且响应不含会话内容 == 实测 [object Object]
+2026-10-03 13:47:40 +08 ===== 判据组 F 开始 2026-10-03 13:47:40 +08 =====
+2026-10-03 13:47:41 +08 [PASS] [F0-1] 夹具：先建真实 AI 会话（:8001）作为转人工源 — 期望 HTTP 200 且有 session id == 实测 [object Object]
+2026-10-03 13:47:41 +08 [PASS] [F1-1] 转人工建会话 ⇒ 200 且有 id（初始 waiting） — 期望 HTTP 200 且 data.id 非空且 status=="waiting" == 实测 [object Object]
+2026-10-03 13:47:41 +08 [PASS] [F2-1] 转人工会话 DB 逐字段（tenant/customer/aiSession/status） — 期望 tenant_id=20 ∧ customer_id/ai_session_id 与请求一致 ∧ status=waiting == 实测 [object Object]
+2026-10-03 13:47:41 +08 [FAIL] [F3-1] 工作台会话列表（本租户）能看到该转人工会话 — 期望 命中 1 条且 tenantId 一致 ≠ 实测 [object Object]
+2026-10-03 13:47:41 +08 [PASS] [F3-2] 他租户（21）列表看不到租户 20 的转人工会话 — 期望 命中 0 条 == 实测 [object Object]
+2026-10-03 13:47:41 +08 [PASS] [F3-3] 跨租户按 id 读会话详情 ⇒ 必须拒（不得返回他租户内容） — 期望 HTTP 4xx（403/404）且响应不含会话内容 == 实测 [object Object]
+2026-10-03 13:47:42 +08 [FAIL] [F4-1] 接管（assign）⇒ waiting → active 且 employee_id 落库 — 期望 HTTP 200 且 DB status=="active" 且 employee_id=='9068a79a939c9be846a605dc78dc30b6' ≠ 实测 [object Object]
+2026-10-03 13:47:42 +08 [PASS] [F4-2] 接管后详情面可查（含 AI 上下文快照） — 期望 HTTP 200 且返回会话对象（aiContext 相关字段存在） == 实测 [object Object]
+2026-10-03 13:47:42 +08 [PASS] [F4-3] 状态机：已 active 再 assign ⇒ 拒（非 waiting） — 期望 HTTP 4xx == 实测 [object Object]
+2026-10-03 13:47:42 +08 [PASS] [F5-1] 结束会话 ⇒ status=="ended" 且 ended_at 打点 — 期望 HTTP 200 且 DB status=="ended" 且 ended_at 非空 == 实测 [object Object]
+2026-10-03 13:47:42 +08 [PASS] [F5-2] 状态机：已 ended 再 end ⇒ 拒 — 期望 HTTP 4xx == 实测 [object Object]
+2026-10-03 13:48:29 +08 [PASS] [F6-1] @Async 蒸馏监听器：会话结束后产出的候选租户归属 == 结束方租户 — 期望 候选行 tenant_id 全为 20（跨租户条数 = 0） == 实测 [object Object]
+2026-10-03 13:48:29 +08 [SKIP] [F6-2] @Async 监听器触发存在性 — 45s 内未观测到任何候选行 ⇒ 监听器未触发或该租户蒸馏被关闭；本条记未覆盖（不得读成通过）
+2026-10-03 13:48:29 +08 ===== 判据组 F 结束：pass=10 fail=2 skip=1 | agentSession=9dbc7e37aae3802eb9dce44b32a7d07f =====
+2026-10-03 13:49:09 +08 ===== 判据组 F 开始 2026-10-03 13:49:09 +08 =====
+2026-10-03 13:49:10 +08 [PASS] [F0-1] 夹具：先建真实 AI 会话（:8001）作为转人工源 — 期望 HTTP 200 且有 session id == 实测 [object Object]
+2026-10-03 13:49:10 +08 [PASS] [F1-1] 转人工建会话 ⇒ 200 且有 id（初始 waiting） — 期望 HTTP 200 且 data.id 非空且 status=="waiting" == 实测 [object Object]
+2026-10-03 13:49:11 +08 [PASS] [F2-1] 转人工会话 DB 逐字段（tenant/customer/aiSession/status） — 期望 tenant_id=20 ∧ customer_id/ai_session_id 与请求一致 ∧ status=waiting == 实测 [object Object]
+2026-10-03 13:49:11 +08 [PASS] [F3-1] 工作台会话列表（本租户）能看到该转人工会话 — 期望 命中 1 条且 tenantId 一致 == 实测 [object Object]
+2026-10-03 13:49:11 +08 [PASS] [F3-2] 他租户（21）列表看不到租户 20 的转人工会话 — 期望 命中 0 条 == 实测 [object Object]
+2026-10-03 13:49:11 +08 [PASS] [F3-3] 跨租户按 id 读会话详情 ⇒ 必须拒（不得返回他租户内容） — 期望 HTTP 4xx（403/404）且响应不含会话内容 == 实测 [object Object]
+2026-10-03 13:49:11 +08 [PASS] [F4-1] 接管（assign）⇒ waiting → active 且 employee_id 落库 — 期望 HTTP 200 且 DB status=="active" 且 employee_id=='l1empfmurz21yqa' == 实测 [object Object]
+2026-10-03 13:49:11 +08 [PASS] [F4-2] 接管后详情面可查（含 AI 上下文快照） — 期望 HTTP 200 且返回会话对象（aiContext 相关字段存在） == 实测 [object Object]
+2026-10-03 13:49:11 +08 [PASS] [F4-3] 状态机：已 active 再 assign ⇒ 拒（非 waiting） — 期望 HTTP 4xx == 实测 [object Object]
+2026-10-03 13:49:12 +08 [PASS] [F4-4] 跨租户分配员工（租户 B 员工 → 租户 A 会话）⇒ 必须拒 — 期望 HTTP 4xx 且 DB employee_id 仍为空、status 仍 waiting == 实测 [object Object]
+2026-10-03 13:49:12 +08 [PASS] [F5-1] 结束会话 ⇒ status=="ended" 且 ended_at 打点 — 期望 HTTP 200 且 DB status=="ended" 且 ended_at 非空 == 实测 [object Object]
+2026-10-03 13:49:12 +08 [PASS] [F5-2] 状态机：已 ended 再 end ⇒ 拒 — 期望 HTTP 4xx == 实测 [object Object]
+2026-10-03 13:49:32 +08 [PASS] [F6-1] @Async 蒸馏监听器：会话结束后产出的候选租户归属 == 结束方租户 — 期望 候选行 tenant_id 全为 20（跨租户条数 = 0） == 实测 [object Object]
+2026-10-03 13:49:32 +08 [SKIP] [F6-2] @Async 监听器触发存在性 — 45s 内未观测到任何候选行 ⇒ 监听器未触发或该租户蒸馏被关闭；本条记未覆盖（不得读成通过）
+2026-10-03 13:49:32 +08 ===== 判据组 F 结束：pass=13 fail=0 skip=1 | agentSession=4f03e72acf11c5056017bd68cd892c5e =====
+2026-10-03 13:50:06 +08 ===== 判据组 R（红证）开始 2026-10-03 13:50:06 +08 =====
+2026-10-03 13:50:06 +08 [PASS] [RP-A1] 红证（负向侧）：当前 DEBUG=false 下无 token 请求必须 401 — 期望 HTTP 401 == 实测 [object Object]
+2026-10-03 13:50:06 +08 [PASS] [RP-A2] 红证（判别力证据）：两侧读数成对存在 — DEBUG=false ⇒ 401（probe-auth-debugfalse.json） / DEBUG=true ⇒ 200（probe-auth-debugtrue.json）—— 同一路径同一头，读数相反
+2026-10-03 13:50:18 +08 ===== 判据组 R（红证）开始 2026-10-03 13:50:18 +08 =====
+2026-10-03 13:50:19 +08 [PASS] [RP-A1] 红证（负向侧）：当前 DEBUG=false 下无 token 请求必须 401 — 期望 HTTP 401 == 实测 [object Object]
+2026-10-03 13:50:19 +08 [PASS] [RP-A2] 红证（判别力证据）：两侧读数成对存在 — DEBUG=false ⇒ 401（probe-auth-debugfalse.json） / DEBUG=true ⇒ 200（probe-auth-debugtrue.json）—— 同一路径同一头，读数相反
+2026-10-03 13:50:20 +08 [PASS] [RP-B1] 红证：注入「会话租户=他租户」⇒ 属主自读判据当场红（403） — 期望 注入后 HTTP 403（token 租户 20，会话租户被改成 21） == 实测 [object Object]
+2026-10-03 13:50:20 +08 [PASS] [RP-B2] 红证还原：改回租户 20 ⇒ 同一判据回绿（200） — 期望 还原后 HTTP 200 且指纹回到 before == 实测 [object Object]
+2026-10-03 13:50:20 +08 [PASS] [RP-B3] 红证前置：注入前/还原后均为 200（基线非空） — 期望 两次均 200 == 实测 [object Object]
+2026-10-03 13:50:21 +08 [FAIL] [RP-C1] 红证：DB 标题被改坏 ⇒ 「读面==期望标题」判据当场红 — 期望 注入后 hit.title ≠ 期望标题（判据为假） ≠ 实测 [object Object]
+2026-10-03 13:50:21 +08 [FAIL] [RP-C2] 红证还原：标题改回 ⇒ 判据回绿且指纹复位 — 期望 hit2.title == 期望标题 且 sha256(t2)==sha256(t0) ≠ 实测 [object Object]
+2026-10-03 13:50:22 +08 [PASS] [RP-D1] 红证：候选被改回 pending ⇒ 「不得仍 pending」判据当场红 — 期望 注入后 status=="pending"（判据为假） == 实测 [object Object]
+2026-10-03 13:50:22 +08 [PASS] [RP-D2] 红证还原：状态改回 rejected ⇒ 判据回绿 — 期望 status=="rejected" == 实测 [object Object]
+2026-10-03 13:50:23 +08 [PASS] [RP-E1] 红证：会话租户被改成 B ⇒ 「B 不可读」判据当场翻绿=内容外泄（红证成立） — 期望 注入后 B 能读到（即判据『必须拒』被破）⇒ 证明该判据对租户字段敏感 == 实测 [object Object]
+2026-10-03 13:50:23 +08 [PASS] [RP-E2] 红证还原：租户改回 A ⇒ B 重新读到 4xx（判据回绿） — 期望 HTTP 4xx == 实测 [object Object]
+2026-10-03 13:50:23 +08 ===== 判据组 R 结束：pass=9 fail=2 skip=0 =====
+2026-10-03 13:51:01 +08 ===== 判据组 R（红证）开始 2026-10-03 13:51:01 +08 =====
+2026-10-03 13:51:02 +08 [PASS] [RP-A1] 红证（负向侧）：当前 DEBUG=false 下无 token 请求必须 401 — 期望 HTTP 401 == 实测 [object Object]
+2026-10-03 13:51:02 +08 [PASS] [RP-A2] 红证（判别力证据）：两侧读数成对存在 — DEBUG=false ⇒ 401（probe-auth-debugfalse.json） / DEBUG=true ⇒ 200（probe-auth-debugtrue.json）—— 同一路径同一头，读数相反
+2026-10-03 13:51:03 +08 [PASS] [RP-B1] 红证：注入「会话租户=他租户」⇒ 属主自读判据当场红（403） — 期望 注入后 HTTP 403（token 租户 20，会话租户被改成 21） == 实测 [object Object]
+2026-10-03 13:51:03 +08 [PASS] [RP-B2] 红证还原：改回租户 20 ⇒ 同一判据回绿（200） — 期望 还原后 HTTP 200 且指纹回到 before == 实测 [object Object]
+2026-10-03 13:51:03 +08 [PASS] [RP-B3] 红证前置：注入前/还原后均为 200（基线非空） — 期望 两次均 200 == 实测 [object Object]
+2026-10-03 13:51:05 +08 [PASS] [RP-C1] 红证：DB 标题被改坏 ⇒ 「读面==期望标题」判据当场红 — 期望 注入后 hit.title ≠ 期望标题（判据为假） == 实测 [object Object]
+2026-10-03 13:51:05 +08 [PASS] [RP-C2] 红证还原：标题改回 ⇒ 判据回绿且指纹复位 — 期望 hit2.title == 期望标题 且 sha256(t2)==sha256(t0) == 实测 [object Object]
+2026-10-03 13:51:06 +08 [PASS] [RP-D1] 红证：候选被改回 pending ⇒ 「不得仍 pending」判据当场红 — 期望 注入后 status=="pending"（判据为假） == 实测 [object Object]
+2026-10-03 13:51:06 +08 [PASS] [RP-D2] 红证还原：状态改回 rejected ⇒ 判据回绿 — 期望 status=="rejected" == 实测 [object Object]
+2026-10-03 13:51:07 +08 [PASS] [RP-E1] 红证：会话租户被改成 B ⇒ 「B 不可读」判据当场翻绿=内容外泄（红证成立） — 期望 注入后 B 能读到（即判据『必须拒』被破）⇒ 证明该判据对租户字段敏感 == 实测 [object Object]
+2026-10-03 13:51:07 +08 [PASS] [RP-E2] 红证还原：租户改回 A ⇒ B 重新读到 4xx（判据回绿） — 期望 HTTP 4xx == 实测 [object Object]
+2026-10-03 13:51:07 +08 ===== 判据组 R 结束：pass=11 fail=0 skip=0 =====
+2026-10-03 13:51:53 +08 ===== 判据组 Z（零残留）开始 2026-10-03 13:51:53 +08 =====
+2026-10-03 13:51:53 +08 清理 tag 集合: bmuryux5s, bmuryvdtd, fmuryzz7k, fmurz0551, fmurz21yq, rmurz39pp, rmurz3j98, rmurz4gn2
+2026-10-03 13:51:54 +08 清理前残留读数: {"counts":{"sessions":48,"sessionMessages":0,"agentSessions":6,"knowledgeCards":5,"knowledgeCandidates":5},"total":64}
+2026-10-03 13:51:56 +08 清理后残留读数: {"counts":{"sessions":0,"sessionMessages":0,"agentSessions":0,"knowledgeCards":0,"knowledgeCandidates":0},"total":0}
+2026-10-03 13:51:56 +08 [PASS] [Z1-1] 零残留：本包探针对象全部清除（逐表计数） — 期望 probeResidue().total == 0（sessions/session_messages/agentSessions/knowledgeCards/knowledgeCandidates 全 0） == 实测 [object Object]
+2026-10-03 13:51:58 +08 [PASS] [Z1-2] 零残留判据的红证：注入 1 行探针 ⇒ 计数当场为 1；删除后回 0 — 期望 注入期 total==1，还原后 total==0 == 实测 [object Object]
+2026-10-03 13:51:58 +08 [FAIL] [Z2-1] 【故意失效控制项】本项**必须红**（若真红 ⇒ 整套断言在真跑） — 控制项：把期望值换成必然不成立的值（期望 HTTP 599）—— 本项恒 fail 是**设计如此**
+2026-10-03 13:51:58 +08 ===== 判据组 Z 结束：pass=2 fail=1（其中故意控制项 1 条）skip=0 =====

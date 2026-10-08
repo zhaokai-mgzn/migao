@@ -1,7 +1,7 @@
 """
-AI 智能客服系统 - C端售后查询 Tool (小布专用)
+AI 智能客服系统 - C端售后查询 Tool (元元专用)
 
-客户通过小布查询自己的售后工单列表/详情。
+客户通过元元查询自己的售后工单列表/详情。
 与 after_sales_manage（管理员使用）分开：客户只能查自己的工单。
 """
 from typing import Optional, Dict, Any
@@ -21,7 +21,7 @@ from app.utils.http_client import get_admin_api_client
 class AftersaleQueryTool(BaseTool):
     """C端售后查询 Tool
 
-    小布（C端客服）专用：客户查询自己的售后工单。
+    元元（C端客服）专用：客户查询自己的售后工单。
     只能查看当前客户的工单（通过 tenant_id + user_id 隔离）。
 
     action:
@@ -40,7 +40,7 @@ class AftersaleQueryTool(BaseTool):
     )
     allowed_roles = ["customer", "admin", "agent", "tenant_admin", "operator"]
 
-    # 无权限码：C 端专属查询工具 —— C 端 JWT 没有 permissions claim（加码会让小布全量失效）；
+    # 无权限码：C 端专属查询工具 —— C 端 JWT 没有 permissions claim（加码会让元元全量失效）；
     # 结果由系统按 tenant_id + user_id 强制隔离，故保留角色层把关。
     required_permissions = []
 

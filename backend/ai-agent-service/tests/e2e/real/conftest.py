@@ -96,9 +96,9 @@ class Session:
 
 
 class CustomerSession:
-    """C 端（小布）真实 Agent 会话 — 以 DEBUG customer 身份驱动。
+    """C 端（元元）真实 Agent 会话 — 以 DEBUG customer 身份驱动。
 
-    通过 X-Debug-Role: customer 让 ai-agent 在 DEBUG 模式路由到小布
+    通过 X-Debug-Role: customer 让 ai-agent 在 DEBUG 模式路由到元元
     （CustomerServiceAgent），用于 C 端行为验收（数据隔离/工具选择）。
     """
 

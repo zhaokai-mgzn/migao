@@ -128,10 +128,10 @@ class TestOrderManageValidation:
 class TestOrderRefundPermissionScope:
     """退款需 `order:refund`（issue #4148）—— 与 admin-api 的 `@RequirePermission` 口径一致。
 
-    缺陷形态（父单 #4146 / 祖父 #4103）：米宝 BFF 的统一 PATCH 端点是**类级** `order:list`
+    缺陷形态（父单 #4146 / 祖父 #4103）：黄金策 BFF 的统一 PATCH 端点是**类级** `order:list`
     （status/logistics/cancel/refund 共用一个入口），工具层也只有一条粗粒度
     `required_permissions = ["order:list"]` ⇒ 只持 `order:list` 的商户员工
-    （`customer_service` / `sales` / `finance` 三个内置岗位）可借米宝越权退款。
+    （`customer_service` / `sales` / `finance` 三个内置岗位）可借黄金策越权退款。
     表单路径 `OrderController` 的退款路由用的是 `order:refund` —— 两条路径口径不一致。
 
     issue #5246 追加收口：工具层粗筛码已从读码 `order:list` 换成**写码 `order:update`**

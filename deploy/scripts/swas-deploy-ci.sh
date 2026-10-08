@@ -81,6 +81,25 @@ case "$ALLOW_DOWNGRADE" in
   *) ALLOW_DOWNGRADE=0 ;;
 esac
 
+# ── 「跳过部署」的运行面自证模式（issue #6294）──────────────────────────────────
+# 用法：`swas-deploy-ci.sh --probe-running-tag <INSTANCE> <REGION> <AK> <SK> <EXPECTED_TAG> <SVC…>`
+# **只读**：取远端各服务**在跑 tag**（`deploy.sh --probe-running-tag`）并与期望 tag 比较；
+# 一致 ⇒ 0 / 不一致 ⇒ 1（具名判红）/ 探不到 ⇒ 3（fail-closed）。这是判据 1 的「部署后机械判据」。
+# 分发**必须早于** CLI 安装与主流程（本模式自己安装 CLI；主流程是一次完整部署，探测绝不能触发它）。
+# ⚠️ 形态是「库 + 分发」：库（`swas_deploy_running_tag.sh`）**只定义函数**，`$@` 只在**这里**解包
+#    —— `source` 进来的脚本里 `$@` 仍是主脚本的参数（本包第一版读错过，pytest 当场红）。
+if [ "${1:-}" = "--probe-running-tag" ]; then
+  shift
+  if [ -r deploy/scripts/swas_deploy_running_tag.sh ]; then
+    # shellcheck disable=SC1091
+    . deploy/scripts/swas_deploy_running_tag.sh
+  else
+    echo "::error::运行面自证库 deploy/scripts/swas_deploy_running_tag.sh 不在检出里 ⇒ 拒绝在「探不到」下判绿（issue #6294）"
+    exit 3
+  fi
+  running_tag_probe_main "$@"
+fi
+
 # ── 硬超时参数（issue #4767 ①）────────────────────────────────────────────────
 # DEPLOY_TIMEOUT_SECONDS：**一次「发起 SWAS 调用 + 轮询结果」的总墙钟上界**（不是次数上界）。
 # ⚠️ **C′ 下这个预算必须显著变大**（issue #5814）：构建就发生在远端这次 RunCommand 调用**之内**
@@ -109,6 +128,13 @@ fi
 CLI_TIMEOUT_SECONDS=${SWAS_CLI_TIMEOUT_SECONDS:-60}
 # POLL_INTERVAL_SECONDS：轮询间隔（线上 20s；守卫测试调小以免空耗）。
 POLL_INTERVAL_SECONDS=${SWAS_POLL_INTERVAL_SECONDS:-20}
+# COMMAND_CONTENT_LIMIT_BYTES：SWAS `RunCommand` 的**命令内容字节上限**（issue #6124 的类级固化）。
+#   出处（**保守值**，与三条 H5 发布腿引同一份文档与同一个数）：
+#   SWAS Open RunCommand 的 `CommandContent` 与自定义参数在 base64 编码后综合长度 ≤ 16 KB
+#   —— https://help.aliyun.com/zh/simple-application-server/developer-reference/api-swas-open-2020-06-01-runcommand
+#   ⚠️ 冲突登记（照实）：ECS 侧同族 API 的文档口径是 64 KB，而本仓既有实测把上限读成 43.8~50.7 KB
+#   ⇒ 取三者中**最保守**的 16384 当闸值。判据 = tests/unit_ci_workflows/test_swas_command_content_limit.py。
+COMMAND_CONTENT_LIMIT_BYTES=${H5_COMMAND_CONTENT_LIMIT_BYTES:-16384}
 # RETRY_PAUSE_SECONDS：两次尝试之间的间隔（线上 10s；守卫测试调小以免空耗）。
 RETRY_PAUSE_SECONDS=${SWAS_RETRY_PAUSE_SECONDS:-10}
 DEADLINE=$(( $(date +%s) + DEPLOY_TIMEOUT_SECONDS ))
@@ -256,6 +282,39 @@ capture_remote_log() {
   # 逐服务「实际生效 tag」（`<svc>:<tag>`，三行）+ 被闸门跳过的服务（`<svc>:<target>:<running>`）
   EFFECTIVE_TAGS=$(printf '%s\n' "$REMOTE_LOG" | sed -n 's/^ *EFFECTIVE_TAG=//p')
   DOWNGRADE_SKIPS=$(printf '%s\n' "$REMOTE_LOG" | sed -n 's/^ *DOWNGRADE_SKIPPED=//p')
+  # 「被前置闸门挡住」的**机读标记**（issue #6505，与上面两条同族、同样逐次尝试各自解析）：
+  # 远端 `deploy/swas/deploy.sh` 在**未开始部署**的闸门（如磁盘余量不足）上打 `ABORT_REASON=<原因>`。
+  # 取不到 ⇒ 空串（= 「没有标记」，不是「已确认未开始」）。
+  # ⚠️ 不接 `head -1`：pipefail 下 `head` 提前退出会让上游吃 SIGPIPE ⇒ 整条管道非零 ⇒ set -e 误杀。
+  REMOTE_ABORT_REASON=$(printf '%s\n' "$REMOTE_LOG" | sed -n 's/^ *ABORT_REASON=//p')
+  REMOTE_ABORT_REASON=${REMOTE_ABORT_REASON%%$'\n'*}
+  return 0
+}
+
+# ── 「未开始部署」闸门的分诊（issue #6505）────────────────────────────────────
+# 病（同一次 run 的逐字读数，2026-10-07）：远端说「构建前磁盘可用：4045MB < 门槛 4096MB ⇒ **中止构建**
+# （旧容器保持不动、环境未受影响）」，而 CI 收口说「部署失败…**且自动回滚（tag=sha-e0e3bdf）也失败**
+# ⇒ 环境可能处于坏状态，请**立即人工介入**」—— 实际**构建根本没开始、在跑的服务一动没动**；
+# 而「回滚也失败」与主部署**是同一道闸门**（4045MB / 4046MB 都 < 4096MB），不是第二次独立故障。
+# ⇒ 收口必须**按标记分支**，而不是只按「exit != 0」。
+#
+# 未见过的原因码 ⇒ **不自造**：照原样报出来（fail-visible），不猜它的语义。
+gate_abort_label() {
+  case "$1" in
+    BUILD_MIN_FREE_MB)
+      echo "构建前磁盘余量不足（门槛 BUILD_MIN_FREE_MB）" ;;
+    BUILD_CACHE_RECLAIM_INSUFFICIENT)
+      echo "构建缓存回收后磁盘余量仍不足（门槛 BUILD_MIN_FREE_MB）" ;;
+    "") echo "" ;;
+    *) echo "$1" ;;
+  esac
+  return 0
+}
+
+# 这条尝试是否**被前置闸门挡住**（= 未开始部署 ⇒ 环境未受影响）。
+# 🔴 空原因码 ⇒ 判 1（不是闸门中止）—— 「取不到标记」等于「未确认未开始」，**不许**当成未开始。
+is_gate_abort() {
+  if [ -n "${REMOTE_ABORT_REASON:-}" ]; then echo 1; else echo 0; fi
   return 0
 }
 
@@ -444,6 +503,7 @@ deploy_attempt() {
   PREV_GOOD_TAG=""
   EFFECTIVE_TAGS=""
   DOWNGRADE_SKIPS=""
+  REMOTE_ABORT_REASON=""
   # 每次尝试**各自**一个墙钟预算：一次尝试绝不无限轮询
   DEADLINE=$(( $(date +%s) + DEPLOY_TIMEOUT_SECONDS ))
 
@@ -479,7 +539,30 @@ deploy_attempt() {
       DEPLOY_RC=3
       return 0 ;;
   esac
-  echo "  本次尝试：tag=${tag} / ALLOW_DOWNGRADE=${allow}"
+  # 🔴 **命令内容字节前置断言**（issue #6124 的类级固化；与三条 H5 发布腿同口径）：
+  #   本节（`BOOTSTRAP`）是**模板**、每次尝试各自渲染 ⇒ 断言必须打在**渲染后**的 `$bootstrap` 上
+  #   （打在模板上会漏掉替换进长值的那次）。超限就在这里**本机判红**（具名读数 + 出处），
+  #   而不是云上冒一个 `SDKError 400 / CmdContent.ExceedLimit` —— 后者只在**部署那一刻**可见。
+  #   上限出处（**保守值**）：SWAS Open RunCommand 的 `CommandContent` 与自定义参数在 base64 编码后
+  #   综合长度 ≤ 16 KB（https://help.aliyun.com/zh/simple-application-server/developer-reference/api-swas-open-2020-06-01-runcommand）；
+  #   本仓既有实测把上限读成 43.8~50.7 KB（ECS 侧同族 API 的文档口径是 64 KB）⇒ 取三者中**最保守**的 16 KB。
+  #   修法：新增的部署逻辑加进远端执行体 `deploy/swas/deploy.sh`（不占命令内容）；**不许**把
+  #   远端脚本整份内联进 `BOOTSTRAP`。判据 = tests/unit_ci_workflows/test_swas_command_content_limit.py。
+  local bootstrap_bytes
+  # ⚠️ 闸值在**函数内自带默认**：本函数会被判据
+  #    （tests/unit_ci_workflows/test_swas_deploy_no_downgrade.py）**原样抽出来单独跑**
+  #    （只抽函数体、不带脚本顶部的常量）⇒ 只引用顶层变量会在那个宿主里 unbound、
+  #    并让那 8 条判据报「探针非预期失败」（实测：本包第一轮 CI 就是这么红的）。
+  COMMAND_CONTENT_LIMIT_BYTES=${COMMAND_CONTENT_LIMIT_BYTES:-16384}
+  bootstrap_bytes=$(printf '%s' "$bootstrap" | wc -c | tr -d ' \n')
+  if [ "$bootstrap_bytes" -ge "$COMMAND_CONTENT_LIMIT_BYTES" ]; then
+    echo "❌ SWAS 命令内容超限：命令内容 ${bootstrap_bytes} 字节 / 上限 ${COMMAND_CONTENT_LIMIT_BYTES} 字节 —— 拒绝发起云调用（tag=${tag}）。"
+    echo "   上限出处：SWAS Open RunCommand CommandContent base64 后 ≤ 16 KB —— help.aliyun.com/zh/simple-application-server/developer-reference/api-swas-open-2020-06-01-runcommand"
+    echo "   修法：把新增逻辑加进远端执行体 deploy/swas/deploy.sh（不占命令内容），不要内联进 BOOTSTRAP。"
+    DEPLOY_RC=3
+    return 0
+  fi
+  echo "  本次尝试：tag=${tag} / ALLOW_DOWNGRADE=${allow} / 命令内容 ${bootstrap_bytes} 字节（上限 ${COMMAND_CONTENT_LIMIT_BYTES}）"
 
   # RunCommand 可能被阿里云 API 限流（并发触发时 Throttling），重试 3 次
   local INVOKE="" INVOKE_ID="" attempt
@@ -608,6 +691,26 @@ if [ "$ATTEMPT_RC" -eq 0 ]; then
   exit 0
 fi
 
+# ── 🔴 重试仍失败，但原因是**前置闸门**（issue #6505）⇒ 未开始部署，环境未受影响 ──────
+# 这一支与下面「中途失败」那支是**互斥**的归因（本单要的两条具名文案），判据双向对照钉住：
+#   · 有标记  ⇒ 构建/拉取**一步都没走**（旧容器保持不动）⇒ 出口 = 回收磁盘 / 扩容；
+#   · 无标记  ⇒ 部署**中途**失败 ⇒ 才谈「环境可能处于坏状态」。
+# ⚠️ 这一支也**不做回滚**：回滚腿会命中的是**同一道闸门**（现场逐字：主部署 4045MB / 回滚 4046MB，
+#    都 < 4096MB）⇒ 再跑一次只会把同一个原因读成「第二次独立故障」（正是本单要治的误导）。
+if [ "$(is_gate_abort)" = "1" ]; then
+  say ""
+  say "::error::**未开始部署**（tag=\`$IMAGE_TAG\`）：远端在**前置闸门**上主动中止（$(gate_abort_label "$REMOTE_ABORT_REASON")，标记 \`ABORT_REASON=$REMOTE_ABORT_REASON\`）。"
+  say "**旧容器保持不动、环境未受影响** —— 本次连构建/拉取都**没有开始**（这是 fail-closed 的正确行为，不是故障）。"
+  say "⇒ 出口（按序）："
+  say "1. **回收磁盘**：\`docker builder prune --filter until=<按水位选的窗口>h\`（水位很低时用 \`-af\`，只清构建缓存）；"
+  say "   遗留旧源码克隆 \`/opt/migao\`（实测 2.2GB）也可回收；部署日志里有本次的缓存读数与建议窗口。"
+  say "2. **扩容**磁盘（用户 2026-09-30 已表态「有必要会扩容」）。"
+  say "3. 回收后**重跑本 workflow**（同 tag）。"
+  say "注：本次**未做自动回滚**，也**不把它算作独立故障** —— 回滚腿命中的会是与主部署**同一闸门**（部署链路运维单 #6505）。"
+  recovery_manual
+  exit 1
+fi
+
 # ── 重试仍失败 ⇒ **回滚到上一个可用镜像**（issue #4767 ③）──────────────────
 if [ -z "$PREV_GOOD_TAG" ]; then
   say ""
@@ -646,6 +749,17 @@ if [ "$ROLLBACK_RC" -eq 0 ]; then
   say ""
   say "::error::部署失败（tag=\`$IMAGE_TAG\`）—— **已自动回滚到上一个可用镜像 tag=\`$ROLLBACK_TAG\`**，环境已恢复服务。$(effective_suffix)"
   say "根因在**新镜像**，不在环境：请看上面第 1/2 次部署的远端输出（已解码，含真正的报错）。"
+  exit 1
+fi
+
+if [ "$(is_gate_abort)" = "1" ]; then
+  # 回滚腿**被同一道闸门挡住**（例如磁盘余量）：它**不增加**任何关于环境健康的证据 ——
+  # 现场逐字：主部署 4045MB / 回滚 4046MB，都 < 门槛 4096MB ⇒ 同一个原因，不是第二个故障。
+  say ""
+  say "::error::部署失败（tag=\`$IMAGE_TAG\`）；**回滚腿被同一道闸门挡住**（$(gate_abort_label "$REMOTE_ABORT_REASON")，标记 \`ABORT_REASON=$REMOTE_ABORT_REASON\`）——"
+  say "**这不是第二次独立故障**，也不构成「环境可能处于坏状态」的证据。"
+  say "⇒ 出口：先按上面第 1/2 次部署的**真因**处置（若真因是磁盘 ⇒ 回收磁盘 / 扩容），再重跑。"
+  recovery_manual
   exit 1
 fi
 

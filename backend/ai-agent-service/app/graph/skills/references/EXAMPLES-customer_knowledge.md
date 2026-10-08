@@ -1,4 +1,4 @@
-# Customer Knowledge Skill — Few-shot 示例（小布 · C端）
+# Customer Knowledge Skill — Few-shot 示例（元元 · C端）
 
 > **本 skill 的工具集是 `knowledge_search`（知识卡片检索）** —— 回答本店相关问题时
 > **必须先调用 knowledge_search 检索本店已发布的知识卡片**，命中则基于卡片内容回答并注明

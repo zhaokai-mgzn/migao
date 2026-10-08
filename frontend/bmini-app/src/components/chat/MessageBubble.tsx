@@ -2,6 +2,7 @@ import { useMemo, useCallback } from 'react'
 import { View, Text, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import type { Message, CardData, InteractiveData } from '../../types'
+import { parseRichText } from '../../utils/richText'
 import ProductCard from '../cards/ProductCard'
 import ProductFormList from '../cards/ProductFormList'
 import LogisticsCard from '../cards/LogisticsCard'
@@ -113,7 +114,7 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
     }
 
     case 'batch_stock': {
-      // 批次账 / 省料度量卡（issue #5188）。该工具只绑米宝 Skill（`product:list` 门禁 ⇒
+      // 批次账 / 省料度量卡（issue #5188）。该工具只绑黄金策 Skill（`product:list` 门禁 ⇒
       // C 端恒不可达）⇒ 按 persona 推导只需 B 端两端渲染（本端 + admin-web 桌面）。
       return <BatchStockCard key={`card-${idx}`} data={data} />
     }
@@ -200,6 +201,10 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
     [content],
   )
 
+  // issue #6346：富文本按行解析（**粗体** / - 列表），流式安全（未闭合 ** 原样保留）。
+  // 此前是纯文本 `pre-wrap` ⇒ 换行在、但 `**` 与 `- ` 原样上屏（C 端 UI-042 早在 2026-09-15 治过，B 端漏课）
+  const richLines = useMemo(() => parseRichText(cleanContent), [cleanContent])
+
   const handlePreviewImage = useCallback((current: string) => {
     if (images?.length) {
       Taro.previewImage({ current, urls: images })
@@ -234,10 +239,25 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
         {/* 文本内容（纯图消息 content 为空时不渲染空文本区；tool_call 有 content 时也显示） */}
         {content && (
           <View className='message-bubble__content'>
-            <Text className='message-bubble__text'>
-              {cleanContent}
-              {isStreaming && <Text className='message-bubble__cursor'>|</Text>}
-            </Text>
+            {richLines.map((line, li) => (
+              <View
+                key={li}
+                className={`message-bubble__line${line.bullet ? ' message-bubble__line--bullet' : ''}${line.segments.length === 1 && line.segments[0].text === '' ? ' message-bubble__line--empty' : ''}`}
+              >
+                {line.segments.map((seg, si) =>
+                  seg.bold ? (
+                    <Text key={si} className='message-bubble__text message-bubble__text-strong'>
+                      {seg.text}
+                    </Text>
+                  ) : (
+                    <Text key={si} className='message-bubble__text'>
+                      {seg.text}
+                    </Text>
+                  ),
+                )}
+              </View>
+            ))}
+            {isStreaming && <Text className='message-bubble__cursor'>|</Text>}
           </View>
         )}
 

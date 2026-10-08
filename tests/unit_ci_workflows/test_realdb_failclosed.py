@@ -72,26 +72,66 @@ _MAP = "backend/admin-api/src/test/java/com/migao/admin/mapper/"
 #                         issue #5146）—— 夹具内部收口，故这三个类**不直接**出现 `PgCluster`，
 #                         这就是本表要**显式登记**的例外（不登记 = 判据②会把它判红）。
 REALDB_FILES: dict[str, str] = {
+    # issue #6302：商品文本入参**长度准入**的类级元守卫 —— 真值源是**现取**的
+    # `information_schema.columns.character_maximum_length`（真 PG 跑 `schema.sql` 终态后读），
+    # 再与「DTO 字段台账」和「ProductService 写面收口上限」三方对账（列长度改了而收口没跟 ⇒
+    # `LENGTH-DRIFT` 判红）。列元数据在 mock 面上不存在 ⇒ 这份判据的真值**只有**真 PG 能给。
+    _SVC + "ProductTextColumnAdmissionMetaGuardTest.java": "direct",
     # issue #5939：发货单**列表**读面（GET /api/admin/shipments）的真库判据 —— 只真 PG 能证的四条：
     # 跨租户不可见（+ 反向自证对方租户自己读得到）/ 软删明细不计进 itemCount / 客户名取自 orders 连接 /
     # 未发货按 packed_at 参与排序，以及 LIMIT 生效。
     _SVC + "ShipmentListQueryRealDbTest.java": "direct",
     # issue #5388：改价审计读面（JSONB 真值 / 脱敏期历史行 / 工具筛选 / 窗口 / 租户）
     _SVC + "AuditLogPriceChangeRealDbTest.java": "direct",
+    # issue #6220：售后工单**并发完结**的真库判据（N=4 同一 processing 工单 ⇒ 恰一个赢家 + 回补恰一次）。
+    # 为什么必须真 PG：缺陷是**读-判-写**（`selectById` → 应用层校验 → 无条件 `updateById`）——
+    # 「条件更新（`WHERE ... AND status=旧值`）是否真的只放一个赢家过去」靠的是**行锁 + 条件重估**，
+    # mock 面结构上不可见（mock 的 `updateById` 恒返回 1、也不会因 WHERE 不满足而返回 0）；
+    # 而「一个赢家 ⇒ 库存只回补一次 / 台账恰 1 行 / 时间线恰 2 行」是**并发下的落库读数**。
+    _SVC + "AfterSalesConcurrentResolveRealDbTest.java": "direct",
     # issue #5327：批量批次（agent_batches / agent_batch_items）的跨租户隔离判据 ——
     # 起一次性真 PG 集群、用**生产拦截器 bean** 装配，逐条走收口方法 `PgCluster.startOrAbort()`。
     _SVC + "AgentBatchCrossTenantRealDbTest.java": "direct",
     _SVC + "AutoBatchDispatchRealDbTest.java": "direct",
     _SVC + "AutoBatchDueScanRealDbTest.java": "direct",
+    # issue #6262：发货后 N 天自动完成的真库判据 —— 四条只真 PG 能证的事：
+    # ① 谓词**按行**判定（`status='shipped' AND shipped_at <= 死线`）：mock 的 mapper 恒返回
+    #    stub 的东西 ⇒「未满期那一行真的没被改」在 mock 面上不可证（那是 SQL 的行为）；
+    # ② `shipped_at IS NOT NULL` 的**三值逻辑**：锚点为 NULL 的行不满足任何比较 ⇒ 不参与自动完成
+    #    （只能人工确认收货）—— mock 面完全不体现；
+    # ③ `RETURNING id` 的影响集 == 返回集：它是「副作用（站内信）只发一次」的唯一依据；
+    # ④ **集群并发**：两条独立连接同时跑同一条 UPDATE（同一批行）⇒ 行不重叠、合计恰满、慢的一侧 0 行
+    #    —— 走的是**行锁 + 谓词重估**，单连接与 mock 都测不出来（#5141/#5148/#5182/#6220 同族）。
+    _SVC + "AutoCompleteShippedRealDbTest.java": "direct",
     _SVC + "BatchAssignmentRuleRealDbTest.java": "direct",
     _SVC + "BatchConsumptionCuttingPlanRealDbTest.java": "direct",
     _SVC + "BatchConsumptionLedgerRealDbTest.java": "direct",
+    # issue #6248：入库批次号**跨请求取号**的真库判据（单实例并发不撞 / 多实例同起点撞唯一索引 /
+    # 20 次重试耗尽 409 / 重启落在已占头部 fail-closed）。为什么必须真 PG：缺陷是**读-判-写**
+    # （`exists` 判假 ⇒ 返回候选 ⇒ **之后**才 insert），窗口的可利用性只来自真 PG 的两件事 ——
+    # ① 唯一索引在插入那一刻的原子判定（`uk_stock_batches_no`）、② 未提交行对并发事务的可见性规则
+    # （B 的 SELECT 看不见 A 未提交的行 ⇒ 两边 exists 都为假）。mock 面上 `exists` 恒返回 false、
+    # `insert` 恒成功 ⇒「窗口能不能被利用」**结构上不可见**；而「撞了之后库存 / 批次行 / 单终态
+    # 变成什么样」也只能从真库读。
+    _SVC + "BatchNoTakeRaceRealDbTest.java": "direct",
     # issue #5865：按批次盘点的**真库**判据 —— 四条只真 PG 能证的事：
     # ① `stock_batches.quantity` 盘点前后**逐值相同**（红线「不原地改批次行」是**读数**，不是「没调 updateById」）；
     # ② 第 2 个批次**写入途中**失败 ⇒ 第 1 个也不落（注入式触发器 + 无事务对照读数）；
     # ③ 来源族列形状互斥与盘点幂等闸是 **DB 对象**（回滚事务里摘掉 ⇒ 同一行坏数据当场能落库）；
     # ④ `reconcile` 差额由两条腿各自聚合 ⇒ 只有真库能证「盘点后差额不增大」。
     _SVC + "BatchStocktakeRealDbTest.java": "direct",
+    # issue #6301：同一 run id 的盘点请求**并发**（6 次）必须拿幂等回执而不是 500 —— 只真 PG 能证的三条：
+    # ① 唯一索引在**插入那一刻**的原子判定（`uk_batch_consumption_stocktake`）与「未提交行对并发事务
+    #    不可见」共同构成 TOCTOU 窗口：mock 的 `selectList` 恒返回空、`insert` 恒成功 ⇒ 窗口**结构上不存在**；
+    # ② `ON CONFLICT … DO NOTHING` 的**影响行数**（1 = 本次生效 / 0 = 已记过）是「谁先到」的唯一依据；
+    # ③ 「阈退的批次不再重复动 SKU 库存」是**并发下的落库读数**（库存链恰好一条 `60.0→58.5`）。
+    _SVC + "BatchStocktakeConcurrentRealDbTest.java": "direct",
+    # issue #6318：**端点级**（真 MockMvc 栈）的同 run id 并发判据 —— 只真 PG 能证的两条：
+    # ① TOCTOU 窗口在**端点路径**上同样存在（6 个请求全部越过「查已记批次」后争抢
+    #    `uk_batch_consumption_stocktake`）⇒ 「服务级绿、端点级红」这条差只有真库 + 真栈能照出来；
+    # ② 注入式红证（原子闸换回朴素 insert）下**端点**的状态码必须是 5×500（`[500,200,500,500,500,500]`）
+    #    —— 这条读数自证端点级主判据的绿有判别力，mock 面上 `insert` 恒成功 ⇒ 结构上不可见。
+    _SVC + "StockBatchStocktakeEndpointRaceRealDbTest.java": "direct",
     # issue #4945 处 1：算料租户配置的**真栈半边**（真 PG + 真 `craft_calc_configs` 行 + 真 mapper +
     # 真 `toConfigMap()` + 真 `CraftCalcClient` 出参逐值）。为什么必须真库：这条判据的三跳
     # （谓词/列名/软删过滤能否读回行 · JSONB 能否解成引擎吃的 config · config 是否真的进了请求体）
@@ -119,6 +159,37 @@ REALDB_FILES: dict[str, str] = {
     # **逐字相同**（都是"调了一次 mapper"）；而 `deleted = 0` 谓词与 `COUNT(*)` 同处一个子查询，
     # 「软删行混进批次号、而行数仍然对」这种自相矛盾的读数也只有真库才现形（同 #5052 家族）。
     _SVC + "InboundOrderListBatchNosRealDbTest.java": "direct",
+    # issue #6237：入库过账的**并发面核验**（N=4 并发过账同一 draft 单 ⇒ 恰一个赢家 + 库存恰加一次）。
+    # 为什么必须真 PG：过账权靠 `UPDATE … WHERE status='draft'` 的**行锁 + 条件重估** —— 后到者阻塞到
+    # 前者提交后按新版本行重估谓词（影响行数 0）⇒「条件更新只放一个赢家过去」在 mock 面**结构上不可见**
+    # （mock 的 updateById 恒返回 1、也不会因 WHERE 不满足而返回 0 ⇒ 判据会恒绿）；而「一个赢家 ⇒
+    # 库存 +5.0 / 批次恰 2 行 / 台账恰 2 行」是**并发下的落库读数**。另有两条只真库能证：① 幂等键闸
+    # `INSERT … ON CONFLICT (tenant_id, client_request_id) DO NOTHING` 的原子性由 DDL 的 UNIQUE 约束提供；
+    # ② `stock_batches.batch_no NOT NULL` + `uk_stock_batches_no` 是 DB 对象（mock 里不存在）。
+    _SVC + "InboundPostConcurrentRealDbTest.java": "direct",
+    # issue #6300：两张**同 SKU** 草稿单并发过账 ⇒ 台账 `before_qty/after_qty` 必须首尾相接（禁止同基）。
+    # 为什么必须真 PG：① 缺陷是「先 `SELECT stock` 取快照 → 再原子加 → 用**陈旧快照**记账」，而
+    # 「两条并发语句各自 `RETURNING` 到的前后值是否真的相接」只存在于**行锁 + 同一语句内取值**这条
+    # 生产路径上（mock 面的 `receiveStock` 由 stub 返回、链永远是造的）；② 净增量在缺陷下**仍然正确**
+    # ⇒ 只看库存查不出来，唯一暴露面是台账链的**落库读数**（`stock_ledger_entries` 逐行）；
+    # ③ `@InterceptorIgnore(tenantLine)` + 显式 `tenant_id` 谓词是「CTE 里的 UPDATE 能否过拦截器」的
+    # **真栈行为**（MyBatis-Plus 3.5.16 对 CTE 里的 UPDATE 抛 ClassCastException），mock 面完全不可见。
+    _SVC + "InboundPostLedgerChainRaceRealDbTest.java": "direct",
+    # issue #6295：**开租即种默认商品分类**的真库判据 —— 只真 PG 能证的四条：
+    # ① 入驻链路（真 approveApplication + 真 mapper + 真 Service）真的把 1 行写进 `categories`
+    #    （行数 + 名字 = 单一来源常量 OnboardingInitialData.DEFAULT_PRODUCT_CATEGORY_NAME）；
+    # ② 那一行的 id 真的能当外键被 `products.category_id`（`REFERENCES categories(id)`）接受
+    #    ⇒ 开箱首建商品成功（mock 面只证明「调了 insert」，外键与落库读数结构上不可见）；
+    # ③ 注入式**双向**红证：把种子摘掉（spy no-op）⇒ 分类 0 行 ⇒ 首建商品**逐字** 422
+    #    「分类ID不能为空」（证明主判据的绿有判别力）；只摘种子、保留后置条件 ⇒ 入驻当场 fail-closed；
+    # ④ 幂等读的是**行数**（再调播种 ⇒ 返回 0 且仍 1 行）。
+    _SVC + "NewTenantOnboardingCategoryRealDbTest.java": "direct",
+    # issue #6299：库存 10 米 / 两单各 8 米**并发**确认收款 ⇒ 恰一个赢家 + 不超卖 + 台账链相接。
+    # 为什么必须真 PG：超卖的机制是「无条件 / 无下限谓词 `UPDATE` 被两个事务各改一次」，而
+    # 「`COALESCE(stock,0) >= #{quantity}` 的下限谓词在**并发**下真的只放一个请求过去」靠的是
+    # **行锁 + 谓词重估**（后到者按新版本行重估 ⇒ 影响行数 0）—— mock 的 `deductStock` 恒返回 stub
+    # 值 ⇒ 结构上不可见、判据会恒绿；且「影响行数 0 ⇒ 422 且库存没被静默钳 0」也是落库读数。
+    _SVC + "OrderConfirmPaymentStockRaceRealDbTest.java": "direct",
     _SVC + "OrderNoSkuIdentityRealDbTest.java": "direct",
     _SVC + "OrderUrgencyRealDbTest.java": "direct",
     _SVC + "PooledDispatchRealDbTest.java": "direct",
@@ -132,6 +203,15 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "ProductUpdatePruneScopeRealDbTest.java": "direct",
     # 类名不含 `RealDb`（`*RealMappingTest`）—— 判据①**不能**只扫 `*RealDbTest` 通配，
     # 否则这一类判据的改名/删除扫不出来（本守卫正是按「谁真去连真 PG」定义集合）。
+    # issue #6238：工序**改价的并发面核验**（N=4 并发提交同一工序的同一次调价 ⇒ 价格版本账恰追加 1 行）。
+    # 为什么必须真 PG：缺陷是**读-判-写**（`selectById` 读旧价 → 应用层判「价变了吗」→ 条件追加版本行）——
+    # 「行锁 + READ COMMITTED 下锁后重读」是**数据库语义**：`SELECT … FOR UPDATE` 命中行的锁持有到事务
+    # 提交、后到者阻塞到前者提交后按新版本行重估，mock 面**结构上不可见**（mock 的 `selectById` 恒返回
+    # 同一份夹具对象 ⇒ 判据会恒绿）；而「几行版本账落库」本身就是并发下的落库读数。另有两条只真库能证：
+    # ① `production_operation_price_versions` 除主键外**无唯一约束**（`pg_indexes` 实测 + 「直接插两行同
+    # (operation_id, unit_price) 被库接受」的反向自证）⇒ DDL 零兜底，应用层的闸是唯一防线；
+    # ② 并发下的 `created_at` 顺序与「当前价」是否自洽，只能从库内事实读。
+    _SVC + "ProductionOperationPriceVersionConcurrentRealDbTest.java": "direct",
     _SVC + "ProductionPartCodeRealMappingTest.java": "direct",
     _SVC + "ProductionScanClaimRealDbTest.java": "direct",
     _SVC + "RemnantRecoveryRealDbTest.java": "direct",

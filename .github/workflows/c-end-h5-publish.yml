@@ -1,7 +1,7 @@
 name: Publish C-end H5 (app.migaozn.com 根)
 
 # ── 为什么需要这条腿（issue #4184）─────────────────────────────────────────────
-# `frontend/mini-app`（C 端小布）的 h5 产物此前**没有任何部署通路**：
+# `frontend/mini-app`（C 端元元）的 h5 产物此前**没有任何部署通路**：
 #   · `grep -rln '/opt/migao-deploy' .github/workflows/` = 0 命中；
 #   · `mini-app.yml` 的两个 job（typecheck+单测 / 视觉回归）都只 `npm run build:h5`，**不发布**；
 #   · 而它的产物是 `app.migaozn.com` 的**静态根本身**（nginx `root` = `/opt/migao-deploy/h5`）——
@@ -175,6 +175,13 @@ jobs:
           #    —— **不是** `$GITHUB_SHA`（源码 commit 所指向的 tarball 里**没有** `dist/`，
           #    那正是 run 37078030820 的失败形态）。这条替换是第三层修复的接线点。
           #    格式断言在本地脚本里（必须 40 位十六进制 ⇒ 分支 / 标签 / `refs/heads/*` 过不去）。
+          #
+          # 🔴🔴 **`H5_PUBLISHED_COMMIT` 现在是「执行体 ref」，不只是溯源字段**（issue #6095 第五层）：
+          #    引导**按它**从 codeload 取回 `deploy/swas/c-end-h5-publish-remote.sh` 并执行；
+          #    而第 5 个参数（产物 ref）只用来让**远端** `stage_product()` 取产物。
+          #    ⇒ 两者**必须是两个不同的 ref**：产物 ref 的 tarball 里只有 dist 文件、**没有脚本**
+          #      （run 37084280991 的 `bash: …/c-end-h5-publish-remote.sh: No such file or directory`）。
+          #    ⚠️ 别把远端脚本塞进 dist 孤儿提交（会破坏「只含产物」的可审计性质），也别退回内联（16 KB 墙）。
           H5_PUBLISHED_COMMIT: ${{ github.sha }}
         run: |
           bash deploy/scripts/c-end-h5-publish-ci.sh \

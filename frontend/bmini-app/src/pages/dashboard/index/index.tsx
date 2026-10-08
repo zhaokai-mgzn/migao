@@ -19,7 +19,7 @@ import {
 import './index.scss'
 
 /**
- * 数据一屏（米宝商家端，issue #2977）+ **生产概览（待办优先，issue #5641）**
+ * 数据一屏（黄金策商家端，issue #2977）+ **生产概览（待办优先，issue #5641）**
  *
  * 版面顺序即口径：**第一屏先答「今天要处理的 N 件事」**（生产待办，每件可点即办），
  * 经营数字退到第二屏。
@@ -128,7 +128,7 @@ export default function DashboardPage() {
               ? `今天要处理的 ${prodTodos.length} 件事`
               : '今日生产概览'}
           </Text>
-          <Text className='dashboard-header__sub'>数据来自米宝 · 每 30 分钟自动刷新</Text>
+          <Text className='dashboard-header__sub'>数据来自黄金策 · 每 30 分钟自动刷新</Text>
         </View>
 
         {/* ═══════════ 第一屏：生产待办（每件可点即办） ═══════════ */}

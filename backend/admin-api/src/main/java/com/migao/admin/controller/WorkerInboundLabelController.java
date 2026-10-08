@@ -49,7 +49,7 @@ public class WorkerInboundLabelController {
     private final WorkerSessionService workerSessionService;
 
     /**
-     * 按短码读**单据业务详情**（功能②「拍照米高标签 → 显示单据详情 → 打印新标签」的读面）。
+     * 按短码读**单据业务详情**（功能②「拍照观星台标签 → 显示单据详情 → 打印新标签」的读面）。
      *
      * <p>GET /api/worker/inbound/labels/{shortCode}</p>
      */

@@ -106,9 +106,9 @@ describe('在线接待工作台 - 转人工前 AI 对话上下文展示（GB/T 4
     expect(getSessionsMock).toHaveBeenCalled()
 
     // AI 上下文分区（标题/摘要/角色标注/内容）
-    expect(await screen.findByText(/顾客与 AI 客服（小布）的对话 · 转人工前/)).toBeInTheDocument()
+    expect(await screen.findByText(/顾客与 AI 客服（元元）的对话 · 转人工前/)).toBeInTheDocument()
     expect(screen.getByText(/📋 对话摘要：顾客反馈窗帘色差，要求人工处理/)).toBeInTheDocument()
-    expect(screen.getByText('小布 · AI')).toBeInTheDocument()
+    expect(screen.getByText('元元 · 企业智能客服')).toBeInTheDocument()
     expect(screen.getByText('窗帘有色差吗？')).toBeInTheDocument()
     expect(screen.getByText('正在为您核实，请稍候。')).toBeInTheDocument()
     // 人工接待分隔
@@ -132,7 +132,7 @@ describe('在线接待工作台 - 转人工前 AI 对话上下文展示（GB/T 4
     // 前置条件（触发确认）：详情 API 确已调用
     expect(getSessionMock).toHaveBeenCalled()
     // 无 aiContext：不渲染 AI 分区，页面正常
-    expect(screen.queryByText(/顾客与 AI 客服（小布）的对话 · 转人工前/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/顾客与 AI 客服（元元）的对话 · 转人工前/)).not.toBeInTheDocument()
     expect(screen.queryByText(/以下为人工接待记录/)).not.toBeInTheDocument()
   })
 })

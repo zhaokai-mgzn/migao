@@ -96,6 +96,9 @@ class WorkerInboundControllerTest {
         TableInfoHelper.initTableInfo(assistant, StockBatch.class);
 
         TenantContext.setTenantId(TENANT);
+        // 批次号取号（issue #6248）= `stockBatchMapper.update(...)` 的**受影响行数**（1 = 号归我）。
+        // Mockito 对 int 返回**默认 0** ⇒ 不桩这一句会被读成「号每次都被别人抢走」⇒ 20 次耗尽 409。
+        when(stockBatchMapper.update(any(StockBatch.class))).thenReturn(1);
         // 跨租户 / 不存在的单据：租户过滤后查不到（本类只用这一条读路径）
         when(inboundOrderMapper.selectOne(any())).thenReturn(null);
         when(inboundOrderMapper.selectList(any())).thenReturn(List.of());

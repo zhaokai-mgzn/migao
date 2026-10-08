@@ -1,0 +1,193 @@
+[
+  {
+    "id": "D1-1",
+    "name": "夹具就绪：3 条 pending 候选落库（正对照）",
+    "status": "pass",
+    "detail": "期望 3 行且 status 全为 pending == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 正对照（缺它则后续 adopt/reject 判据无夹具）",
+      "HTTP/读数: {\"rows\":3,\"statuses\":[\"pending\",\"pending\",\"pending\"]}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8"
+    ],
+    "at": "2026-10-03 13:46:04 +08",
+    "atUtc": "2026-10-03T05:46:04.567Z"
+  },
+  {
+    "id": "D2-1",
+    "name": "pending-count 读面 ⇒ 200 且计数 ≥ 3",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 count ≥ 3（本包刚插入 3 条） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 本包夹具数（3）+ 库中既有候选数 ⇒ 下界判据（不写死总数）",
+      "HTTP/读数: {\"status\":200,\"data\":{\"pending\":3}}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8"
+    ],
+    "at": "2026-10-03 13:46:04 +08",
+    "atUtc": "2026-10-03T05:46:04.629Z"
+  },
+  {
+    "id": "D2-2",
+    "name": "候选列表读面含本包 3 条且 tenant 一致",
+    "status": "pass",
+    "detail": "期望 3 条命中且 tenantId 均为登录租户 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 读面必须按 TenantContext 过滤 + 返回项 tenantId == 登录租户",
+      "HTTP/读数: {\"httpStatus\":200,\"total\":3,\"mine\":[{\"id\":\"l1canddmuryy2wp2\",\"tenantId\":20,\"status\":\"pending\"},{\"id\":\"l1canddmuryy2wp1\",\"tenantId\":20,\"status\":\"pending\"},{\"id\":\"l1canddmuryy2wp0\",\"tenantId\":20,\"status\":\"pending\"}]}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8"
+    ],
+    "at": "2026-10-03 13:46:04 +08",
+    "atUtc": "2026-10-03T05:46:04.718Z"
+  },
+  {
+    "id": "D3-1",
+    "name": "adopt ⇒ 200 且返回新卡",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 data.id 非空 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: KnowledgeCandidateController.adopt 契约（返回 KnowledgeCard）",
+      "HTTP/读数: {\"status\":200,\"cardId\":\"d9e16f38439b8723c9555eafa9ee047a\",\"body\":{\"success\":true,\"data\":{\"id\":\"d9e16f38439b8723c9555eafa9ee047a\",\"tenantId\":20,\"title\":\"线①验收候选-adopt-dmuryy2wp\",\"category\":\"faq\",\"industry\":\"curtain\",\"sourceType\":\"manual\",\"sourceRef\":\"线①验收\",\"question\":\"线①验收候选-adopt-dmuryy2wp\",\"answer\":\"线①验收候选答复-adopt\",\"keywords\":\"线①验收,候选\",\"status\":\"published\",\"version\":1,\"createdBy\":\"adopt\",\"createdAt\":\"2026-10-03T13:46:04.771049+08:00\",\"updatedAt\":\"2026-10-03T13:46:04.771126+08:00\"},\"requestId\":\"req_9d1eb57961dd44b4\",\"timestamp\":1791006364}}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8"
+    ],
+    "at": "2026-10-03 13:46:04 +08",
+    "atUtc": "2026-10-03T05:46:04.913Z"
+  },
+  {
+    "id": "D3-2",
+    "name": "adopt 后候选状态流转 pending → adopted",
+    "status": "pass",
+    "detail": "期望 status==\"adopted\" 且 reviewed_at 非空 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 候选状态机：pending → adopted（reviewed_at 打点）",
+      "HTTP/读数: {\"status\":\"adopted\",\"reviewed_at\":\"2026-10-03T13:46:04.781229+08:00\",\"reviewed_by\":\"admin\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8"
+    ],
+    "at": "2026-10-03 13:46:04 +08",
+    "atUtc": "2026-10-03T05:46:04.914Z"
+  },
+  {
+    "id": "D3-3",
+    "name": "入卡产物 DB 逐字段：tenant/title/answer 来自候选且租户一致",
+    "status": "pass",
+    "detail": "期望 tenant_id/标题/答复与候选一致（不跨租户） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 入卡 = 用候选内容建卡；租户必须继承候选租户（TenantContext）",
+      "HTTP/读数: {\"mismatches\":[],\"cardRow\":{\"id\":\"d9e16f38439b8723c9555eafa9ee047a\",\"tenant_id\":20,\"title\":\"线①验收候选-adopt-dmuryy2wp\",\"answer\":\"线①验收候选答复-adopt\",\"source_type\":\"manual\",\"source_ref\":\"线①验收\",\"status\":\"published\"}}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8"
+    ],
+    "at": "2026-10-03 13:46:05 +08",
+    "atUtc": "2026-10-03T05:46:05.011Z"
+  },
+  {
+    "id": "D3-4",
+    "name": "登记：入卡产物的 source_type/source_ref（追溯面读数，非判据）",
+    "status": "pass",
+    "detail": "source_type=manual source_ref=线①验收 status=published",
+    "evidence": [
+      "cardId=d9e16f38439b8723c9555eafa9ee047a",
+      "候选 id=l1canddmuryy2wp0"
+    ],
+    "at": "2026-10-03 13:46:05 +08",
+    "atUtc": "2026-10-03T05:46:05.012Z"
+  },
+  {
+    "id": "D4-1",
+    "name": "reject ⇒ 200 且候选状态流转 pending → rejected",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 DB status==\"rejected\" 且 reviewed_at 非空 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 候选状态机：pending → rejected（status_note 记录原因）",
+      "HTTP/读数: {\"status\":200,\"dbStatus\":\"rejected\",\"note\":\"线①验收拒绝原因\",\"reviewed_at\":\"2026-10-03T13:46:05.07434+08:00\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8"
+    ],
+    "at": "2026-10-03 13:46:05 +08",
+    "atUtc": "2026-10-03T05:46:05.250Z"
+  },
+  {
+    "id": "D4-2",
+    "name": "reject 不得产生知识卡片",
+    "status": "pass",
+    "detail": "期望 0 张同源卡片 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 拒绝语义：reject 只改候选状态，不落卡",
+      "HTTP/读数: {\"cards\":0}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8"
+    ],
+    "at": "2026-10-03 13:46:05 +08",
+    "atUtc": "2026-10-03T05:46:05.377Z"
+  },
+  {
+    "id": "D5-1",
+    "name": "adopt-edited ⇒ 入卡内容用「编辑后」的值（不是候选原值）",
+    "status": "pass",
+    "detail": "期望 title=编辑后 / answer=编辑后 / tenant=20 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: adopt-edited 语义：以编辑补丁覆盖候选字段后入卡",
+      "HTTP/读数: {\"status\":200,\"cardId\":\"3855773912f895e689c63f5760a2b52d\",\"row\":{\"title\":\"线①验收候选-edited-改-dmuryy2wp\",\"answer\":\"线①验收候选答复-edited-改-dmuryy2wp\",\"tenant_id\":20,\"status\":\"published\"}}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8"
+    ],
+    "at": "2026-10-03 13:46:05 +08",
+    "atUtc": "2026-10-03T05:46:05.601Z"
+  },
+  {
+    "id": "D5-2",
+    "name": "adopt-edited 后候选状态流转（不得仍 pending）",
+    "status": "pass",
+    "detail": "期望 status ∈ {adopted, edited, converted} 且 ≠ pending == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 已处置的候选不得留在 pending（否则会被重复采纳）",
+      "HTTP/读数: {\"status\":\"edited\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8"
+    ],
+    "at": "2026-10-03 13:46:05 +08",
+    "atUtc": "2026-10-03T05:46:05.835Z"
+  },
+  {
+    "id": "D6-1",
+    "name": "蒸馏面无 Service Token ⇒ 401",
+    "status": "pass",
+    "detail": "期望 HTTP 401 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_service_token（内部面统一守卫）",
+      "HTTP/读数: {\"status\":401,\"code\":\"AUTH_REQUIRED\"}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8"
+    ],
+    "at": "2026-10-03 13:46:06 +08",
+    "atUtc": "2026-10-03T05:46:06.002Z"
+  },
+  {
+    "id": "D6-2",
+    "name": "蒸馏面契约：200 + success + data.candidates 为数组",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 data.candidates 是数组（不得 500） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: internal.py::distill_knowledge 契约（提炼失败降级返回空候选，不阻断）",
+      "HTTP/读数: {\"status\":200,\"success\":true,\"count\":0,\"keys\":[\"candidates\"]}",
+      "admin-api 构建点: 7e9f66ce57915ce17f6e949e3dc23d53bae291eb (fix(6181): 商家发货三步原子化 —— 建单按调用方显式传入的流转事实，整条路单事务 (#6190)) procStart=六 10月/ 3 13:44:16 2026",
+      "ai-agent 构建点: d877f19efabb6993c6d29652e8c949e1fcb173c8"
+    ],
+    "at": "2026-10-03 13:46:06 +08",
+    "atUtc": "2026-10-03T05:46:06.024Z"
+  },
+  {
+    "id": "D6-3",
+    "name": "登记：蒸馏产物是否落库（只读观察，非判据）",
+    "status": "pass",
+    "detail": "返回 0 条候选（LLM 侧降级或空）",
+    "evidence": [
+      "登记项：本线不判定蒸馏内容质量（LLM 面，按 #4262 不刷额度）"
+    ],
+    "at": "2026-10-03 13:46:06 +08",
+    "atUtc": "2026-10-03T05:46:06.024Z"
+  }
+]

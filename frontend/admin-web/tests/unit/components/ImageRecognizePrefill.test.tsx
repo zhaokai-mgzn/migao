@@ -1,4 +1,4 @@
-// case_ids: PR-008, OR-008
+// case_ids: PR-008, OR-008, PR-022
 /**
  * 图片识别预填映射（issue #5321 包 1）——**纯函数**面：不渲染 4965 行的建单页，
  * 直接在 `lib/image-recognize.ts` 上断言「识别结果 → 表单值 / 徽标清单」的确切产物。
@@ -9,6 +9,10 @@
  * ③ 订单侧**只填当前为空的字段**（错收货信息 = 货发错人），明细/数量进备注；
  * ④ **尺寸（帘宽 / 帘高）进的是行状态**（issue #5349：推导链的原始输入）——
  *    只收能直接进数字框的数，落点由 `sizeTargetLineIndex` 定（**空行**才填）。
+ * ⑤ **商品描述文案**（issue #6362）—— 预填到既有富文本区 `description`（**不新增落库字段**）；
+ *    它是**推理产物**（`source` = `[米宝解读]`）⇒ 空值 / 缺失时**键不出现**（绝不写成空串：
+ *    那会覆盖商家自己写的描述）。不覆盖的机制 = 「有值才写键」+ 表单合并式预填
+ *    （`setForm(prev => ({...prev, ...initialData}))`，见本文件「不覆盖」用例）。
  */
 import { act, render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
@@ -20,6 +24,7 @@ import {
   sizeTargetLineIndex,
 } from '@/lib/image-recognize'
 import type { RecognizedField } from '@/lib/api'
+import { PAGE_FILL_SOURCE_INTERPRETED } from '@/lib/agent-page-fill'
 import ProductForm from '@/components/products/ProductForm'
 
 vi.mock('next/image', () => ({
@@ -130,6 +135,108 @@ describe('图片识别 · 商品侧预填 (#5321)', () => {
     ])
     expect(garbage.initialData.doorWidths).toBeUndefined()
     expect(garbage.recognizedFields).toEqual([])
+  })
+})
+
+describe('图片识别 · 商品描述文案预填 (#6362)', () => {
+  /** 米宝解读产出的描述（HTML 片段，来源恒为 `[米宝解读]`）—— 落点是既有的富文本区 */
+  const INTERPRETED_TAG = '[米宝解读]'
+  const DESCRIPTION_HTML =
+    '<p>雪尼尔遮光窗帘，面料厚实、垂感好，适合客厅与卧室；可选配韩式褶工艺，支持机洗。</p>'
+  const DESCRIPTION_FIELD: RecognizedField = {
+    key: 'description',
+    label: '商品描述',
+    value: DESCRIPTION_HTML,
+    source: INTERPRETED_TAG,
+    reason: null,
+  }
+
+  it('描述文案**逐字**写进富文本区初值，并计入 recognizedFields（页面据此分派 [黄金策解读] 徽标）', () => {
+    const { initialData, recognizedFields } = buildProductPrefill([DESCRIPTION_FIELD])
+
+    // 逐字相等（不是"包含"）：HTML 片段被改写 / 截断 / trim 掉首尾都算红
+    expect(initialData.description).toBe(DESCRIPTION_HTML)
+    expect(recognizedFields).toContain('description')
+    // 描述之外没有凭空多出来的键
+    expect(recognizedFields).toEqual(['description'])
+  })
+
+  it('描述为空 / 缺失 ⇒ 键**不出现**（绝不写成空串 —— 那会覆盖商家自己写的描述）', () => {
+    // 先钉住"有值时确实落键"（否则下面那组 `in` 断言在未接线时会**空跑通过** —— 绿得毫无意义）
+    expect('description' in buildProductPrefill([DESCRIPTION_FIELD]).initialData).toBe(true)
+
+    const cases: RecognizedField[][] = [
+      // 内核有意留空：`value: null` + `reason`（与 PRODUCT_FIELDS_BLANKED 同形态）
+      [
+        {
+          key: 'description',
+          label: '商品描述',
+          value: null,
+          source: null,
+          reason: '图片信息不足，无法生成描述文案',
+        },
+      ],
+      // 空白串（`filledFields` 口径里同样算"没值"）
+      [{ key: 'description', label: '商品描述', value: '   ', source: null, reason: null }],
+      // 完全没有这条字段
+      [],
+    ]
+    for (const fields of cases) {
+      const { initialData, recognizedFields } = buildProductPrefill(fields)
+      expect('description' in initialData).toBe(false)
+      expect(initialData.description).toBeUndefined()
+      expect(recognizedFields).not.toContain('description')
+    }
+  })
+
+  it('判别力自证：若预填改成"空值也写键"，合并式落值立刻覆盖商家描述（注入式红证）', () => {
+    // 本仓最忌「判据绿而判据从没跑过」⇒ 同一份合并式落值（`{...prev, ...initialData}`）下对照两态：
+    // 被禁形态 = 空值也写键（`description: ''`）⇒ 商家原文被空串顶掉；本包形态 = 键不出现 ⇒ 一个字不动。
+    const mergeOver = (initialData: Partial<Record<'description', string>>) => ({
+      description: '<p>商家自己写的描述</p>',
+      ...initialData,
+    })
+    // 本包的真实产物：空字段 ⇒ 空对象（没有 description 键）
+    expect(buildProductPrefill([]).initialData).toEqual({})
+    expect(mergeOver(buildProductPrefill([]).initialData).description).toBe('<p>商家自己写的描述</p>')
+    // 注入被禁形态：立刻把商家原文顶成空串（这就是本判据要拦住的那件事）
+    expect(mergeOver({ description: '' }).description).toBe('')
+  })
+
+  it('不覆盖：空预填产物是空对象 ⇒ 合并式落值（`{...prev, ...initialData}`）不动商家已写的描述', () => {
+    // 这就是"不覆盖"的机制：`ProductForm` 的落值是 `setForm(prev => ({...prev, ...initialData}))`
+    // ⇒ 只要 `buildProductPrefill` 在没值时**不写这个键**，商家已有的描述就一个字都不会变。
+    expect(buildProductPrefill([]).initialData).toEqual({})
+    expect(
+      'description' in buildProductPrefill(PRODUCT_FIELDS_BLANKED).initialData,
+    ).toBe(false)
+  })
+
+  it('富文本区渲染商家自己的描述（编辑态 initialData 非空；空预填不参与合并）', async () => {
+    render(
+      <ProductForm
+        initialData={{ name: '雪尼尔遮光窗帘', description: '<p>商家自己写的描述</p>' }}
+        onSubmit={vi.fn()}
+      />,
+    )
+    await act(async () => {})
+
+    expect(screen.getByText('商家自己写的描述')).toBeTruthy()
+  })
+
+  it('米宝解读来源的描述在富文本区挂 `[米宝解读]` 徽标（另一枚徽标，不可与 [图片识别] 混同）', async () => {
+    render(
+      <ProductForm
+        initialData={{ name: '雪尼尔遮光窗帘', description: DESCRIPTION_HTML }}
+        onSubmit={vi.fn()}
+        interpretedFields={['description']}
+      />,
+    )
+    await act(async () => {})
+
+    // 徽标文案 = `[米宝解读]`（与 `[图片识别]` 是两枚不同的徽标：可信度不同，不可混同）
+    expect(screen.getByTestId('interpreted-marker-description').textContent).toBe(INTERPRETED_TAG)
+    expect(screen.getByTestId('interpreted-marker-description').textContent).not.toBe(TAG)
   })
 })
 
@@ -264,6 +371,21 @@ describe('ProductForm 的 [图片识别] 徽标 (#5321)', () => {
     expect(screen.queryByTestId('recognized-marker-craft')).toBeNull()
   })
 
+  it('判据 2（issue #6403 缺陷 1）：多值门幅串预填 ⇒ 真 SkuMatrix 出 2 行「规格尺寸」（改前 (0)）', async () => {
+    const { initialData, recognizedFields } = buildProductPrefill([
+      { key: 'color', label: '颜色', value: '米白', source: TAG, reason: null },
+      { key: 'door_width', label: '门幅', value: '2.8米和3.2米', source: TAG, reason: null },
+    ])
+    render(
+      <ProductForm initialData={initialData} onSubmit={vi.fn()} recognizedFields={recognizedFields} />,
+    )
+    await act(async () => {})
+
+    // 「规格尺寸」区块的行数 = 门幅下拉的个数（改前 0 ⇒ 页面显示「规格尺寸 (0)」）
+    expect(screen.getAllByLabelText('规格尺寸')).toHaveLength(2)
+    expect(screen.getByTestId('recognized-marker-door_width').textContent).toBe('[图片识别]')
+  })
+
   it('预填键清单与 `[图片识别]` 徽标渲染键**逐一对应**（预填了却没标注 = 红）', async () => {
     const { initialData, recognizedFields } = buildProductPrefill(PRODUCT_FIELDS)
     render(<ProductForm initialData={initialData} onSubmit={vi.fn()} recognizedFields={recognizedFields} />)
@@ -273,5 +395,26 @@ describe('ProductForm 的 [图片识别] 徽标 (#5321)', () => {
       (k) => screen.queryByTestId(`recognized-marker-${k}`) !== null,
     )
     expect(badgeKeys).toEqual(['name', 'material', 'craft', 'color', 'door_width'])
+  })
+
+  it('描述格在解读清单里 ⇒ 挂的是 `[米宝解读]` 徽标（两枚徽标各认各的键，不互相静默漏掉）', async () => {
+    // 这条把「预填了描述却一枚徽标都不渲染」这条**静默漏标**钉死：`description` 只可能来自
+    // `[米宝解读]`（内核不产这一格）⇒ 它进的是解读清单，渲染的必须是 `interpreted-marker-*`。
+    render(
+      <ProductForm
+        initialData={{ description: '<p>黄金策生成的描述</p>' }}
+        onSubmit={vi.fn()}
+        interpretedFields={['description']}
+      />,
+    )
+    await act(async () => {})
+
+    expect(screen.getByTestId('interpreted-marker-description')).toBeTruthy()
+    // `description` 不在识别清单里 ⇒ 不得出现 `[图片识别]` 徽标（两枚徽标各认各的键）
+    expect(screen.queryByTestId('recognized-marker-description')).toBeNull()
+    // 徽标文案逐字 = 页面解读来源标记（与 `[图片识别]` 不同）
+    expect(screen.getByTestId('interpreted-marker-description').textContent).toBe(
+      PAGE_FILL_SOURCE_INTERPRETED,
+    )
   })
 })

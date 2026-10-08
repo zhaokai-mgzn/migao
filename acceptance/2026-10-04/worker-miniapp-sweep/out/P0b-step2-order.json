@@ -1,0 +1,124 @@
+{
+  "at": {
+    "cst": "2026-10-04 12:41:08 +08",
+    "utc": "2026-10-04T04:41:08.447Z"
+  },
+  "requestBody": {
+    "customerName": "线A验收客户",
+    "customerPhone": "13800138000",
+    "customerAddress": "线A验收地址-冷启动",
+    "logisticsType": "express",
+    "logisticsCompany": "顺丰",
+    "remark": "线A验收空租户首个订单",
+    "actualAmount": 168,
+    "discountAmount": 0,
+    "items": [
+      {
+        "productId": "fee1842f9fd1652e6100a2e3347cd29d",
+        "productName": "线A验收布-mutc2evhi1",
+        "quantity": 1,
+        "unitPrice": 168,
+        "width": 2.8,
+        "height": 3,
+        "subtotal": 168,
+        "processingInfo": {
+          "componentRole": "主布",
+          "panels": 2,
+          "craft": "韩褶",
+          "curtainType": "布帘",
+          "saleForm": "布料",
+          "processingItems": []
+        }
+      }
+    ]
+  },
+  "httpStatus": 200,
+  "response": {
+    "success": true,
+    "data": {
+      "id": "abf53c6d5ef379d2d6e9506dbece0ca3",
+      "orderNo": "20261004979700005",
+      "customerName": "线A验收客户",
+      "customerPhone": "13800138000",
+      "customerAddress": "线A验收地址-冷启动",
+      "logisticsType": "express",
+      "logisticsCompany": "顺丰",
+      "totalAmount": 168,
+      "actualAmount": 168,
+      "discountAmount": 0,
+      "refundAmount": 0,
+      "processingFee": 0,
+      "status": "pending",
+      "remark": "线A验收空租户首个订单",
+      "isUrgent": false,
+      "createdByName": "米高测试",
+      "items": [
+        {
+          "id": "4c98864d85957ea4acac0b0981ee6aba",
+          "productId": "fee1842f9fd1652e6100a2e3347cd29d",
+          "productName": "线A验收布-mutc2evhi1",
+          "skuCode": "LAC-P-MUTC2EVHI1",
+          "quantity": 1,
+          "unitPrice": 168,
+          "width": 2.8,
+          "height": 3,
+          "processingInfo": {
+            "craft": "韩褶",
+            "panels": 2,
+            "saleForm": "布料",
+            "curtainType": "布帘",
+            "componentRole": "主布",
+            "processingItems": [],
+            "processingFeeDetail": {
+              "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+              "items": [],
+              "amount": 0,
+              "set_key": "#0",
+              "fee_source": "unpriced",
+              "composition": "",
+              "special_options": [],
+              "mixed_color_options": [],
+              "mixed_color_surcharge": 0,
+              "special_options_total": 0,
+              "mixed_color_surcharge_per_meter": 2.4
+            }
+          },
+          "subtotal": 168,
+          "amount": 168,
+          "processingFee": 0,
+          "processingFeeDetail": {
+            "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+            "items": [],
+            "amount": 0,
+            "set_key": "#0",
+            "fee_source": "unpriced",
+            "composition": "",
+            "special_options": [],
+            "mixed_color_options": [],
+            "mixed_color_surcharge": 0,
+            "special_options_total": 0,
+            "mixed_color_surcharge_per_meter": 2.4
+          },
+          "rollCount": 0,
+          "rollLengthM": 60,
+          "createdAt": "2026-10-04T12:41:08.3351+08:00"
+        }
+      ],
+      "processingItems": [],
+      "createdAt": "2026-10-04T12:41:08.273907+08:00",
+      "updatedAt": "2026-10-04T12:41:08.273974+08:00"
+    },
+    "requestId": "req_03b6fcb4ea034f58",
+    "timestamp": 1791088868
+  },
+  "dbItems": [
+    {
+      "id": "4c98864d85957ea4acac0b0981ee6aba",
+      "product_id": "fee1842f9fd1652e6100a2e3347cd29d",
+      "product_name": "线A验收布-mutc2evhi1",
+      "quantity": "1.00",
+      "unit_price": "168.00",
+      "subtotal": "168.00"
+    }
+  ]
+}

@@ -23,7 +23,7 @@ export interface User {
   /** 企业名（租户公司名，来自企业基础信息设置；C 端导航副标题展示用，UI-016）。
    *  注意：数据源是 admin-api（camelCase JSON），字段名与后端 tenantName 一致 */
   tenantName?: string | null
-  /** 智能客服名称（TenantAiConfig.botName，思考中/空态/导航名展示，UI-018；未配置为 null → 前端兜底「米宝」） */
+  /** 智能客服名称（TenantAiConfig.botName，思考中/空态/导航名展示，UI-018；未配置为 null → 前端兜底「黄金策」） */
   botName?: string | null
   /** 已绑定的手机号（微信授权绑定后回填；用于名下商户代录订单的 phone 兜底展示） */
   phone?: string | null
@@ -39,7 +39,7 @@ export interface User {
   tenantId: number
   /** 登录渠道标识（employee/sms/mini_program…） */
   identityType?: string
-  /** 能力位（issue #5642 功能⑤）：能否唤出米宝 —— **服务端单一真值**（`GET /api/auth/me` 下发）。
+  /** 能力位（issue #5642 功能⑤）：能否唤出黄金策 —— **服务端单一真值**（`GET /api/auth/me` 下发）。
    *  🔴 前端**不得**自己判权限码：哪些码算管理员是服务端 `AdminGate` 的事，端侧只读这个布尔位。
    *  `false` ⇒ 必须给「需要管理员授权」+ 可行动引导（不是静默隐藏、不是 403 白屏）。 */
   capabilities?: { mibaoChat?: boolean }
@@ -148,7 +148,10 @@ export interface QuickAction {
   id: string
   name: string
   prompt: string
+  /** admin-web 的图标名（lucide） */
   icon?: string
+  /** B 端 H5 六格用的 emoji（issue #6468：同一份服务端内容两个消费端各有渲染形态） */
+  emoji?: string
 }
 
 // ========== API 响应 ==========

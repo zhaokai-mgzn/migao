@@ -1,5 +1,5 @@
 """
-AI 智能客服系统 - C 端收款二维码查询 Tool（小布专用）
+AI 智能客服系统 - C 端收款二维码查询 Tool（元元专用）
 
 触发链（issue #4085 第 1 项；用户 2026-09-18 裁定「建触发机制」，与 `production_progress`
 的裁定同构：**交付物在 main ≠ 能力可达**）：
@@ -53,7 +53,7 @@ class PaymentQrcodeQueryTool(BaseTool):
 
     # C 端专用：顾客可用；商户员工侧有独立的设置端（SettingsController），不共用本工具
     allowed_roles = ["customer"]
-    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（加码会让小布全量失效）。
+    # 无权限码：C 端专属工具 —— C 端 JWT 没有 permissions claim（加码会让元元全量失效）。
     required_permissions = []
     read_only = True
     destructive = False

@@ -1,64 +1,56 @@
+// case_ids: UI-082
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
-// Mock lucide-react — icons used by contact page
-vi.mock('lucide-react', () => {
-  const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
-  return {
-    MapPin: stub('map-pin'),
-    Phone: stub('phone'),
-    Mail: stub('mail'),
-    Clock: stub('clock'),
-    Send: stub('send'),
-    CheckCircle: stub('check-circle'),
-    Building2: stub('building2'),
-  }
-})
+vi.mock('next/link', () => ({
+  default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
+}))
 
 import ContactPage from '@/app/(corporate)/contact/page'
+import {
+  findColloquialMarkers,
+  findPersonifiedAi,
+  findQuantifierRhetoric,
+} from './copy-voice-banlist'
 
-describe('CorporateContactPage', () => {
+describe('CorporateContactPage（官网联系页 v4：只保留在线留言 + 常见问题，issue #6291 / #6326）', () => {
   it('renders page header', () => {
     render(<ContactPage />)
-    expect(screen.getByText('联系我们')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: '联系我们' })).toBeInTheDocument()
   })
 
-  it('renders header description', () => {
+  it('renders header description（按业务场景演示 + 不公示价格）', () => {
     render(<ContactPage />)
-    expect(screen.getByText(/无论您有任何疑问或合作意向/)).toBeInTheDocument()
+    expect(screen.getByText('按业务场景演示')).toBeInTheDocument()
+    expect(screen.getByText('不公示价格 · 按需报价')).toBeInTheDocument()
   })
 
-  it('renders contact info section', () => {
+  it('renders 留言引导（四类常见诉求）', () => {
     render(<ContactPage />)
-    expect(screen.getByText('联系信息')).toBeInTheDocument()
+    expect(screen.getByText('了解产品演示')).toBeInTheDocument()
+    expect(screen.getByText('沟通 AI 客服边界')).toBeInTheDocument()
+    expect(screen.getByText('评估落地成本')).toBeInTheDocument()
+    expect(screen.getByText('合作与代理')).toBeInTheDocument()
   })
 
-  it('renders contact items', () => {
+  it('renders 入驻通道（不必等回信，直接提交入驻申请）', () => {
     render(<ContactPage />)
-    // '公司地址' and '工作时间' appear in both contact info and the new info card
-    expect(screen.getAllByText('公司地址').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('工作时间').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('联系电话')).toBeInTheDocument()
-    expect(screen.getByText('电子邮箱')).toBeInTheDocument()
-  })
-
-  it('renders contact values', () => {
-    render(<ContactPage />)
-    // Address appears in both contact info and company info card
-    expect(screen.getAllByText('浙江省杭州市余杭区文一西路000号').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('400-888-8888').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('contact@migao-ai.com')).toBeInTheDocument()
-    expect(screen.getByText('周一至周五 9:00-18:00')).toBeInTheDocument()
+    const registerLink = screen.getByText('提交入驻申请').closest('a')
+    expect(registerLink).toHaveAttribute('href', '/register')
+    expect(screen.getAllByText(/通过即自动开通账号/).length).toBeGreaterThanOrEqual(1)
   })
 
   it('renders online message form section', () => {
     render(<ContactPage />)
     expect(screen.getByText('在线留言')).toBeInTheDocument()
+    expect(screen.getByText('给我们留言')).toBeInTheDocument()
   })
 
   it('renders form fields', () => {
     render(<ContactPage />)
-    // Labels now include asterisk (*) as required field indicator
     expect(screen.getByLabelText(/姓名/)).toBeInTheDocument()
     expect(screen.getByLabelText(/电话/)).toBeInTheDocument()
     expect(screen.getByLabelText(/邮箱/)).toBeInTheDocument()
@@ -70,19 +62,100 @@ describe('CorporateContactPage', () => {
     expect(screen.getByText('提交留言')).toBeInTheDocument()
   })
 
-  it('renders company info card instead of map placeholder', () => {
+  it('提交成功后有成功反馈（反馈不再自动消失）', async () => {
+    const user = userEvent.setup()
     render(<ContactPage />)
-    // Company info card replaces the old map placeholder
-    expect(screen.getByText('距地铁5号线创景路站步行10分钟')).toBeInTheDocument()
-    expect(screen.getByText('周一至周五')).toBeInTheDocument()
-    // Phone link should be present in the info card
-    const phoneLinks = screen.getAllByText('400-888-8888')
-    // Appears in both contact info section and company info card bottom bar
-    expect(phoneLinks.length).toBeGreaterThanOrEqual(1)
+    await user.type(screen.getByLabelText(/姓名/), '张老板')
+    await user.type(screen.getByLabelText(/电话/), '13800138000')
+    await user.type(screen.getByLabelText(/邮箱/), 'boss@example.com')
+    await user.type(screen.getByLabelText(/留言内容/), '窗帘店 3 家门店，想了解 AI 客服落地成本')
+    await user.click(screen.getByText('提交留言'))
+    expect(await screen.findByText('留言提交成功')).toBeInTheDocument()
   })
 
-  it('should not render old map placeholder', () => {
+  it('renders 常见问题四条（含 AI 边界与价格口径）', () => {
     render(<ContactPage />)
+    expect(screen.getByText('开通需要多久？')).toBeInTheDocument()
+    expect(screen.getByText('需要我们自己准备服务器吗？')).toBeInTheDocument()
+    expect(screen.getByText('AI 会替我做主退款、改价或取消订单吗？')).toBeInTheDocument()
+    expect(screen.getByText('价格在哪里查看？')).toBeInTheDocument()
+    expect(screen.getByText(/本页面不公示价格/)).toBeInTheDocument()
+  })
+
+  it('宣传真实性：联系页不得出现占位联系方式（电话 / 邮箱 / 地址 / 通勤话术）', () => {
+    render(<ContactPage />)
+    expect(screen.queryByText(/400-888-8888/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/contact@migao-ai\.com/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/浙江省杭州市余杭区文一西路000号/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/地铁5号线/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/周一至周五 9:00-18:00/)).not.toBeInTheDocument()
+    // 旧地图占位也不得回归
     expect(screen.queryByText('地图加载区域')).not.toBeInTheDocument()
+  })
+
+  it('视觉口径：不再使用通用蓝色渐变模板', () => {
+    const { container } = render(<ContactPage />)
+    expect(container.innerHTML).not.toContain('from-blue-600')
+    expect(container.innerHTML).not.toContain('to-indigo-800')
+  })
+
+  // ── 服务端组件契约（issue #6307） ─────────────────────────────
+  // 这一页必须是服务端组件：声明 'use client' 会让它在 SSR 阶段整段不渲染，
+  // 正文进不了初始 HTML（SEO / 无 JS 环境读到空壳），而浏览器里看起来完全正常。
+  // 形态类判据在 corporate-pages-server-component-guard.test.ts；这里是**本页**的实例判据。
+
+  it("page.tsx 是服务端组件：不声明 'use client'，而是把交互部分 import 成同目录子组件", () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/app/(corporate)/contact/page.tsx'),
+      'utf-8',
+    ).replace(/^\uFEFF/, '')
+    const firstStatement = src
+      .split(/\r?\n/)
+      .find((l) => l.trim() !== '' && !/^\s*(\/\/|\/\*|\*)/.test(l))
+    expect(firstStatement?.trim(), 'contact 页必须是服务端组件（否则正文进不了初始 HTML）').not.toMatch(
+      /^['"]use client['"]/,
+    )
+    // 反向自证：交互态确实被拆出去了（不是把 'use client' 删掉就完事）
+    expect(src).toMatch(/import\s+ContactForm\s+from\s+['"]\.\/ContactForm['"]/)
+  })
+
+  it('表单校验口径不变：空白提交逐字段报错，且不出现成功反馈', async () => {
+    const user = userEvent.setup()
+    render(<ContactPage />)
+    await user.click(screen.getByText('提交留言'))
+    expect(await screen.findByText('请输入您的姓名')).toBeInTheDocument()
+    expect(screen.getByText('请输入您的联系电话')).toBeInTheDocument()
+    expect(screen.getByText('请输入您的电子邮箱')).toBeInTheDocument()
+    expect(screen.getByText('请输入留言内容')).toBeInTheDocument()
+    expect(screen.queryByText('留言提交成功')).not.toBeInTheDocument()
+  })
+
+  // ── 文案口吻（issue #6326：去 AI 口语，改「能力陈述型」书面语）──
+
+  it('文案口吻：联系我们页渲染文本不含 AI 口语词表', () => {
+    const { container } = render(<ContactPage />)
+    const hits = findColloquialMarkers(container.textContent ?? '')
+    expect(hits, `联系我们页渲染文本出现 AI 口语词：${hits.join(' / ')}`).toEqual([])
+  })
+  // ── 文案质感：量化排比与拟人量词（issue #6366）──
+
+  it('文案质感：联系我们页渲染文本无量化排比、无拟人量词', () => {
+    const { container } = render(<ContactPage />)
+    const text = container.textContent ?? ''
+
+    // 判别力自证：病症样本必须被检出、合规样本必须零命中（否则本判据是空断言）
+    expect(findQuantifierRhetoric('一套经营平台，一次咨询，一张订单')).toEqual(['一套', '一次', '一张'])
+    expect(findPersonifiedAi('两位 AI 助手')).toEqual(['两位 AI'])
+    expect(findQuantifierRhetoric('六个能力域 · 4 个终端 · 至少10个字符')).toEqual([])
+    expect(findPersonifiedAi('元元与黄金策')).toEqual([])
+
+    // 真实语料
+    const quantifiers = findQuantifierRhetoric(text)
+    expect(
+      quantifiers,
+      `联系我们页渲染文本出现量化排比：${quantifiers.join(' / ')}`,
+    ).toEqual([])
+    const personified = findPersonifiedAi(text)
+    expect(personified, `联系我们页渲染文本出现拟人量词：${personified.join(' / ')}`).toEqual([])
   })
 })

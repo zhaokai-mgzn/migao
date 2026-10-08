@@ -83,16 +83,43 @@
   }
 
   // ── 文本输入（常驻）──
+  // 🔴 Taro H5 的 DOM 是 `<taro-textarea-core class="message-input__textarea">` 里再套一个
+  //    **原生** `<textarea class="taro-textarea">` —— 真正绘制文字的是**内层**那个。规则只写在外层时，
+  //    字号 / 字体 / 占位符色 / 缩放手柄**一条都到不了文字上**，输入框里跑的是浏览器默认
+  //    （monospace 13.33px + 默认灰 placeholder + 右下原生 resize 斜线），实测读数见 issue #6476。
+  // 🔴 而且**不能用 `textarea` 标签选择器**去命内层：Taro 的 H5 构建会把它改写成自定义元素
+  //    （产物实测 `.message-input__textarea taro-textarea-core{…}` = 又打回包裹元素）⇒
+  //    只能用它给内层挂的 class `.taro-textarea`。weapp 侧没有这个内层元素 ⇒ 该分支自然不生效。
   &__textarea {
     width: 100%;
     font-size: 28px;
-    line-height: 1.5;
+    line-height: 1.5; // 行盒 42px
     color: $text-primary;
-    min-height: 40px;
+    min-height: 42px; // = 单行行盒高度（原 40px 小于行盒 ⇒ 单行时与动作行对不齐；C 端同口径）
+
+    .taro-textarea {
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: inherit;
+      color: inherit;
+      resize: none; // 原生缩放手柄（右下斜线）不是我们的控件语言
+
+      &::placeholder {
+        // `placeholderClass` 只在 weapp 生效 ⇒ H5 这行小字必须给**真规则**，否则用的是浏览器默认灰。
+        // 色值取 $text-secondary：$text-tertiary 在 $bg-secondary 上对比度仅 ~2.3:1
+        color: $text-secondary;
+      }
+    }
   }
 
   &__placeholder {
-    color: $text-tertiary;
+    color: $text-secondary;
   }
 
   // ── 右下自适应动作组 ──

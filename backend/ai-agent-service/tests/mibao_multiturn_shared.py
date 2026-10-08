@@ -1,14 +1,14 @@
 """
-米宝多轮测试共享基础设施（由 test_mibao_advanced_multiturn.py 拆分，2026-08-29）
+黄金策多轮测试共享基础设施（由 test_mibao_advanced_multiturn.py 拆分，2026-08-29）
 
 包含: TurnResult / CaseResult / MultiTurnRunner / make_graph_result /
 make_thinking_response / verify_* / _reset_singletons
 被 tests/test_mibao_multiturn_{order,product,aftersales,reliability,advanced}.py 复用。
 """
 """
-米宝（MibaoAgent/WorkAssistantAgent）高级多轮对话测试用例
+黄金策（MibaoAgent/WorkAssistantAgent）高级多轮对话测试用例
 
-覆盖 20 个复杂多轮对话场景，验证米宝的深度智能：
+覆盖 20 个复杂多轮对话场景，验证黄金策的深度智能：
 A. 批量数据处理类（场景11-14）
 B. 跨领域联动类（场景15-19）
 C. 异常与边界处理类（场景20-24）
@@ -97,7 +97,7 @@ class CaseResult:
                 args_str = ", ".join(f"{k}={v}" for k, v in t.tool_args.items())
                 lines.append(f"[TOOL]   调用: {t.tool_name}({args_str})")
                 lines.append(f"[TOOL]   返回: {json.dumps(t.tool_result, ensure_ascii=False)[:200]}")
-            lines.append(f"[OUTPUT] 米宝回复: \"{t.reply[:100]}{'...' if len(t.reply) > 100 else ''}\"")
+            lines.append(f"[OUTPUT] 黄金策回复: \"{t.reply[:100]}{'...' if len(t.reply) > 100 else ''}\"")
             for c in t.checks:
                 status = "✅ PASS" if c["passed"] else "❌ FAIL"
                 lines.append(f"[CHECK]  {status}: {c['description']}")
@@ -265,7 +265,7 @@ class MultiTurnRunner:
             args_str = ", ".join(f"{k}={v}" for k, v in turn.tool_args.items())
             self._live_print(f"[TOOL]   调用: {turn.tool_name}({args_str})")
             self._live_print(f"[TOOL]   返回: {json.dumps(turn.tool_result, ensure_ascii=False)[:200]}")
-        self._live_print(f'[OUTPUT] 米宝回复: "{turn.reply[:100]}{"..." if len(turn.reply) > 100 else ""}"')
+        self._live_print(f'[OUTPUT] 黄金策回复: "{turn.reply[:100]}{"..." if len(turn.reply) > 100 else ""}"')
         for c in turn.checks:
             status = "✅ PASS" if c["passed"] else "❌ FAIL"
             self._live_print(f"[CHECK]  {status}: {c['description']}")

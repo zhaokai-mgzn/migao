@@ -5,7 +5,7 @@ AI 智能客服系统 - 库存管理 Tool
 """
 
 from decimal import Decimal, InvalidOperation
-from typing import Any, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 from loguru import logger
 
@@ -16,6 +16,8 @@ from app.tools.base import (
     ToolResult,
     permission_denied,
 )
+from app.briefing.delivery_risk import HAS_TRUTH
+from app.briefing.proactive import NOT_WIRED
 from app.tools.stock_semantics import (
     LOW_STOCK_THRESHOLD,
     NO_SKU_SOURCE,
@@ -27,12 +29,38 @@ from app.tools.stock_semantics import (
 from app.utils.http_client import get_admin_api_client
 
 
-# 操作类型
-VALID_ACTIONS = {"query", "low_stock_alert"}
+# 操作类型（issue #6280：`material_shortage` = 第三个只读 action，与 `low_stock_alert` 同族）
+VALID_ACTIONS = {"query", "low_stock_alert", "material_shortage"}
+
+#: 面向 LLM 的「可选 action」枚举顺序（**单点声明**）：`VALID_ACTIONS` 是集合，迭代顺序不保证
+#: ⇒ 错误文案若直接 join 集合，加一个 action 就会**改写旧文案**（违反「旧行为逐字不变」）。
+VALID_ACTION_ORDER = ("query", "low_stock_alert", "material_shortage")
 
 #: 库存（米）的记数粒度 = 0.1（后端列 `NUMERIC(12,1)`，issue #5063；
 #: 与算料口径「用料米数一律向上进位到 0.1」同源）。
 STOCK_QUANTUM = Decimal("0.1")
+
+#: 具名跨域视图 `material_shortage`（issue #6280 冻结契约 v1）的**取数面**：
+#: 页面与 agent 共用同一份数字（预测内核单点在 admin-api 的 Java 纯函数，**Python 不重算预测**）。
+#: 端点字面量按本仓风格留在**调用点**；常量与调用点字面量的一致性由单测机械钉住。
+#: 权限码 = `product:list`（与库存台账 / 批次看板 / 低库存同码），只读。
+MATERIAL_SHORTAGE_ENDPOINT = "/api/admin/materials/shortage"
+#: 需求侧状态口径（与族 1 `UNSHIPPED_STATUSES` 同口径：不做 `pending`，避免未付款意向单放大缺口）
+MATERIAL_SHORTAGE_STATUSES = "confirmed,producing"
+#: 视图输出上限（有界是热路径的硬前提）
+MATERIAL_SHORTAGE_LIMIT = 50
+
+#: 风险分层（= 视图行序第一键，按紧急度降序）。`short` = **缺口确定、紧迫性未知**
+#: —— 🔴 单列，**不得**并进 `critical`（并进去会把没填交期的商品排进最紧急一批）。
+_RISK_BANDS = ("blocked", "critical", "soon", "short", "safe", "unknown")
+_BAND_PHRASES = {
+    "blocked": "缺口 + 交期已过",
+    "critical": "缺口 + 交期≤3天",
+    "soon": "缺口 + 交期≤7天",
+    "short": "缺口确定、紧迫性未知",
+    "safe": "无缺口（有余量）",
+    "unknown": "单位不可比 ⇒ 未知",
+}
 
 
 def _one_decimal_or_none(value: Any) -> Optional[Decimal]:
@@ -80,12 +108,21 @@ class InventoryManageTool(BaseTool):
     name = "inventory_manage"
     description = (
         "【触发】用户问'库存''还有多少''缺货''低库存''出库''入库''调整库存'时调用。"
-        "【参数】action 必填：**只有 query（需 product_id）/ low_stock_alert（可选 threshold）两个只读 action**"
+        "【触发】用户问'哪些商品缺料''缺口多大''按交期看哪些要先补''缺料风险'时，"
+        "用 action=material_shortage 调本工具（跨域视图：未完成订单需求 vs SKU 权威库存）。"
+        "【参数】action 必填：**只有 query（需 product_id）/ low_stock_alert（可选 threshold）/ "
+        "material_shortage（缺料与缺口视图，无需参数）三个只读 action**"
         "（B 端已只读化，issue #5247）。"
         "【反例】查商品详情（含库存字段）用 product_detail；查批次余量/剩料分布用 batch_stock_query。"
         "【反例】调**单条**库存**不在本工具能力内**——引导用户到后台「商品管理 → 编辑商品 → 库存」页调整。"
+        "【反例】只要**某个商品**的实时库存数 ⇒ 用 inventory_manage(action=query, product_id=…)，"
+        "**不要**用 material_shortage（它只出「有缺口的商品」的跨域聚合，不答单商品库存）。"
+        "【反例】只要**低于库存阈值**的 SKU 清单 ⇒ 用 inventory_manage(action=low_stock_alert)，"
+        "**不要**用 material_shortage（后者按未完成订单的需求算缺口，不是按静态阈值）。"
         "【批量】多条商品一起调库存用 product_batch_update(action=preview, batch_type=inventory_stock)"
         "（两段确认 + 可撤销，issue #5950）—— 本工具自身不含任何写 action。"
+        "【口径】material_shortage 的 `rate_per_week` / `exhaust_date` 在预测层未启用（历史台账深度不足）时"
+        "一律为「未知」——**不是 0、不是当天**；单位不可比的行需求量为「未知」而非 0。"
         "【标注】READONLY — 纯查询，不含任何写 action"
     )
     
@@ -96,7 +133,8 @@ class InventoryManageTool(BaseTool):
     required_permissions = ["product:list"]  # B 端只读化（#5247）：写码 product:create 已随 adjust 一并移除
 
     read_only = True
-    read_only_actions = {"query", "low_stock_alert"}  # 只读 action 免确认
+    # 只读 action 免确认（issue #6280：material_shortage 是纯读跨域聚合，无写面）
+    read_only_actions = {"query", "low_stock_alert", "material_shortage"}
     destructive = False  # 库存调整可逆
     idempotent = False   # 调整操作非幂等
 
@@ -105,8 +143,9 @@ class InventoryManageTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：query（查询库存）/ low_stock_alert（低库存预警）—— 均为只读",
-                "enum": ["query", "low_stock_alert"],
+                "description": ("操作类型：query（查询库存）/ low_stock_alert（低库存预警）/ "
+                                "material_shortage（缺料与缺口视图，跨域聚合）—— 均为只读"),
+                "enum": list(VALID_ACTION_ORDER),
             },
             "product_id": {
                 "type": "string",
@@ -160,7 +199,7 @@ class InventoryManageTool(BaseTool):
             return ToolResult(
                 success=False,
                 error=f"无效的操作类型: {action}",
-                message=f"不支持的操作类型，可选：{', '.join(VALID_ACTIONS)}",
+                message=f"不支持的操作类型，可选：{', '.join(VALID_ACTION_ORDER)}",
                 suggestion="请从工具说明里的可选操作类型中选一个后重试，不要自行改用其它 action",
             )
         
@@ -169,7 +208,10 @@ class InventoryManageTool(BaseTool):
                 return await self._query_inventory(context, product_id)
             elif action == "low_stock_alert":
                 return await self._low_stock_alert(context, threshold)
+            elif action == "material_shortage":
+                return await self._material_shortage(context)
             else:
+                # 不可达（上方已按 `VALID_ACTIONS` 拦截）；保留为**响亮**的失败而非静默成功
                 return ToolResult(
                     success=False,
                     error=f"未知操作: {action}",
@@ -360,4 +402,173 @@ class InventoryManageTool(BaseTool):
                 "count": len(low_stock_items),
             },
             message=f"发现 {len(low_stock_items)} 个 SKU {low_stock_phrase(threshold)}，请按颜色+规格维度及时补货",
+        )
+
+    # ── 具名跨域视图 `material_shortage`（issue #6280 冻结契约 v1）──────────────
+    #
+    # Python 侧**不重算**任何预测：风险分层 / 缺口 / 历史深度判定都由 admin-api 的 Java 纯函数
+    # 产出（页面与 agent 共用同一份数字）。本工具只做三件事：取数 · 形态校验（fail-closed）·
+    # 把三态与「未知 ≠ 0」的纪律用人话披露出去。
+
+    @staticmethod
+    def _num_text(value: Any) -> str:
+        """数值的人话形态（`18.0` ⇒ `18`；`None` ⇒ `未知`，**不是 0**）。"""
+        if value is None or isinstance(value, bool):
+            return "未知"
+        parsed = _one_decimal_or_none(value)
+        if parsed is None:
+            return str(value)
+        number = _stock_number(parsed)
+        return str(number)
+
+    def _shortage_bands_text(self, band_counts: Any) -> str:
+        """六档人话（按固定序，逐档给可复算计数）—— 缺一档就少一个「能被人解释的分层」。"""
+        counts = band_counts if isinstance(band_counts, dict) else {}
+        parts = []
+        for band in _RISK_BANDS:
+            count = counts.get(band)
+            if count is None:
+                continue
+            parts.append(f"{band}（{count} 个"
+                         + (f"：{_BAND_PHRASES[band]}" if band in _BAND_PHRASES else "")
+                         + "）")
+        return "风险分层：" + "、".join(parts) if parts else ""
+
+    def _shortage_message(self, view: Dict[str, Any]) -> str:
+        """把视图快照拼成**面向 LLM 的披露文本**（判据 3/4/5/6 都落在这里）。"""
+        fields = view.get("fields") if isinstance(view.get("fields"), dict) else {}
+        rows = view.get("rows") or []
+        count = view.get("count")
+        count_text = count if isinstance(count, int) else len(rows)
+
+        message = f"缺料与缺口视图（截至 {view.get('as_of')}）：{count_text} 个商品有需求侧关注点。"
+        bands = self._shortage_bands_text(view.get("band_counts"))
+        if bands:
+            message += bands + "。"
+
+        if not rows:
+            message += "本次**没有**缺料风险商品（端点已明确返回空结果）——这是「查过了、没问题」。"
+            message += "⚠️ 未完成订单未发生扣减台账（真实历史深度 2 周 < 要求 8 周）⇒ " \
+                       "预测层未启用，`rate_per_week`（周耗用速率）与 `exhaust_date`（预计耗尽日）一律为「未知」" \
+                       "——**不是 0**，请勿理解为「消耗很慢 / 不会耗尽」。"
+            return message
+
+        non_comparable = view.get("non_comparable") if isinstance(view.get("non_comparable"), dict) else {}
+        nc_lines = non_comparable.get("lines")
+        nc_products = non_comparable.get("products")
+        if nc_lines or nc_products:
+            message += (f"⚠️ 有 {nc_lines} 行 / {nc_products} 个商品**单位不可比**"
+                        "（`products.unit` 不是「米」）⇒ 这些行的需求量 `demand_qty = null` 是「未知」，"
+                        "**不是 0、也不是没有需求**；它们的风险分层为 unknown。")
+
+        prediction_reason = ""
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if row.get("product_name"):
+                prediction_reason = f"代表性商品：{row.get('product_name')}"
+                break
+        unwired_fields = [name for name, entry in fields.items()
+                          if isinstance(entry, dict) and entry.get("status") == NOT_WIRED
+                          and entry.get("truth") == HAS_TRUTH]
+        if unwired_fields:
+            depth = view.get("history_depth") if isinstance(view.get("history_depth"), dict) else {}
+            weeks = depth.get("weeks")
+            required = depth.get("required_weeks")
+            message += (f"⚠️ 预测层未启用：真实历史深度 {self._num_text(weeks)} 周 < 要求 "
+                        f"{self._num_text(required)} 周（数据年轻，不是数据脏）⇒ 以下字段一律「未知」，"
+                        "**不是 0、不是当天**："
+                        + "、".join(f"{fields[name].get('label') or name}（{name}）"
+                                    for name in unwired_fields) + "。")
+
+        no_truth = view.get("no_truth_fields") or []
+        if no_truth:
+            detail = "；".join(
+                f"{name}：{fields[name].get('reason')}"
+                for name in no_truth
+                if isinstance(fields.get(name), dict) and fields[name].get("reason"))
+            message += (f"⚠️ 其中 {len(no_truth)} 个字段**没有真值来源**"
+                        f"⇒ 一律为「未知」，**不是 0**：{'、'.join(no_truth)}"
+                        + (f"（逐条原因：{detail}）" if detail else "") + "。")
+
+        short_rows = [row for row in rows
+                      if isinstance(row, dict) and row.get("risk_band") == "short"]
+        if short_rows:
+            message += (f"⚠️ {len(short_rows)} 个商品落在 `short` 档 = **缺口确定、紧迫性未知**"
+                        "（有缺口但交期未填或 >7 天）——**不得**读成 critical（临近交期）、"
+                        "也**不得**读成 safe，需先补交期才能判紧急度。")
+
+        if view.get("truncated"):
+            message += (f"⚠️ 视图只列前 {view.get('count')} 个商品，共 {view.get('rows_total')} 个"
+                        "（按风险分层取前段；聚合计数用的是全量行）。")
+
+        message += "缺口为负 = 该商品有余量（照实返回）。"
+        return message
+
+    async def _material_shortage(self, context: ToolContext) -> ToolResult:
+        """缺料与缺口视图（具名跨域视图 `material_shortage` 的按需消费，issue #6280）。
+
+        取数面 = **一条只读端点** `/api/admin/materials/shortage`（权限 `product:list`）。
+        fail-closed：端点失败 / 响应形态不认识 ⇒ 明确失败并点名权限码，
+        **不得**把「没查到」伪装成「没有缺料」（空列表只在端点明确成功且形态完整时才算结论）。
+        """
+        client = get_admin_api_client()
+        try:
+            response = await client.get(
+                "/api/admin/materials/shortage",
+                params={"statuses": MATERIAL_SHORTAGE_STATUSES, "limit": MATERIAL_SHORTAGE_LIMIT},
+                tenant_id=context.tenant_id,
+                user_id=context.user_id,
+            )
+        except Exception as exc:  # 网络 / 超时 / 熔断：归因到这一面
+            logger.error("[inventory-manage] material_shortage 端点异常 {}: {}",
+                         type(exc).__name__, exc)
+            return ToolResult(
+                success=False,
+                error="material_shortage_fetch_failed",
+                message=(f"缺料与缺口视图取数失败 —— 端点读不到（product:list）："
+                         f"{type(exc).__name__}: {exc}"
+                         "（fail-closed：没有需求/供给面就无法出结论，**不是**「没有缺料」）"),
+                suggestion="请确认当前账号具备 product:list；若只是临时故障请稍后重试，"
+                           "也可先用 inventory_manage(action=query, product_id=…) 查单个商品库存",
+            )
+
+        if not response.get("success"):
+            error = response.get("error")
+            detail = error.get("message", "查询失败") if isinstance(error, dict) else str(error or "查询失败")
+            logger.warning("[inventory-manage] material_shortage 取数失败：{}", detail)
+            return admin_api_failure(
+                response,
+                error="material_shortage_fetch_failed",
+                message=(f"缺料与缺口视图取数失败（product:list）：{detail}"
+                         "（fail-closed：取不到数就不能说「没有缺料」）"),
+                suggestion="请确认当前账号具备 product:list；若只是临时故障请稍后重试，"
+                           "也可先用 inventory_manage(action=low_stock_alert) 查低于阈值的 SKU 清单",
+            )
+
+        view = response.get("data")
+        rows = view.get("rows") if isinstance(view, dict) else None
+        band_counts = view.get("band_counts") if isinstance(view, dict) else None
+        missing = [name for name, value in (("rows", rows), ("band_counts", band_counts))
+                   if not isinstance(value, (list, dict))]
+        if not isinstance(view, dict) or missing or view.get("view") != "material_shortage":
+            logger.error("[inventory-manage] material_shortage 响应形态不可识别：keys={}",
+                         sorted(view.keys()) if isinstance(view, dict) else type(view).__name__)
+            return ToolResult(
+                success=False,
+                error="material_shortage_contract_mismatch",
+                message=("缺料与缺口视图响应形态不可识别（缺少 " + "、".join(missing or ["view"])
+                         + "）⇒ 无法判定有无缺料。**「没查到」不等于「没有缺料」**，"
+                           "本结果不得当作「当前没有缺料」上报。"),
+                suggestion="这是后端契约不一致（页面与 agent 共用同一端点）："
+                           "请报告「material_shortage 端点响应形态与冻结契约 v1 不符」，不要重试同一调用",
+            )
+
+        logger.info("[inventory-manage] material_shortage rows={} total={} bands={}",
+                    view.get("count"), view.get("rows_total"), band_counts)
+        return ToolResult(
+            success=True,
+            data=dict(view),
+            message=self._shortage_message(view),
+            summary=f"缺料与缺口视图: {view.get('count')} 个商品",
         )

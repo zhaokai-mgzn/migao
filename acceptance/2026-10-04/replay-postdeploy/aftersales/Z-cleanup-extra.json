@@ -1,0 +1,18 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:32:46 +08",
+    "utc": "2026-10-04T01:32:46.033Z"
+  },
+  "tenant": 25,
+  "registryCategoryIds": [],
+  "preByPrefix": [
+    {
+      "id": "ed0f8c55349c4b2916c58f87b2b7a4a4",
+      "name": "ZR分类-mut59ycieexc"
+    }
+  ],
+  "deletedByName": 1,
+  "deletedById": 0,
+  "remaining": [],
+  "errors": []
+}

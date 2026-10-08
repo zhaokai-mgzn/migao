@@ -81,7 +81,7 @@ SUBDIR = "w"
 # 内容按实测特征构造：含 `window.TARO_ENV` 与 C 端标题，**不含** `src/app.mjs`。
 C_END_PAGE = (
     '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"/>'
-    "<title>米高窗帘 · 小布智能助手</title>"
+    "<title>观星台窗帘 · 元元智能助手</title>"
     "<script>window.TARO_ENV = 'h5'</script>"
     '<script defer="defer" src="/js/app.js"></script></head>'
     '<body><div id="app"></div></body></html>'
@@ -432,7 +432,7 @@ def test_sandbox_publish_is_identity_and_preserves_parent(tmp_path):
     assert _file_sha(published_machine) == _file_sha(WORKER_MACHINE), "发布的 machine.html 与仓库不一致"
     body = published_index.read_text(encoding="utf-8")
     assert "src/app.mjs" in body
-    assert "TARO_" not in body and "小布智能助手" not in body
+    assert "TARO_" not in body and "元元智能助手" not in body
 
     # tests/ 不发
     assert not (root / SUBDIR / "tests").exists(), "tests/ 不该被发布"
@@ -525,9 +525,28 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args):  # 静音访问日志
         return None
 
+    def guess_type(self, path):  # noqa: A003 - stdlib 的钩子名就是这样
+        """`.mjs` 给 JS MIME（issue #6293）：**本机的 Python `mimetypes` 表不是判据对象**，
+        所以这里显式钉住 —— 否则「Python 版本不同 ⇒ 夹具给的 MIME 不同 ⇒ 判据时红时绿」。"""
+        if str(path).lower().endswith(".mjs"):
+            return "text/javascript"
+        return super().guess_type(path)
 
-def _serve(directory: Path):
-    handler = lambda *a, **kw: _QuietHandler(*a, directory=str(directory), **kw)  # noqa: E731
+
+class _OctetStreamMjsHandler(_QuietHandler):
+    """坏形态夹具：`.mjs` 以 `application/octet-stream` 发出（= 线上实测形态，issue #6293）。
+
+    身份 / 字节**完全正确**，只有响应头错 ⇒ 这条腿必须红 —— 修复前它全绿，正是本单的病根。
+    """
+
+    def guess_type(self, path):  # noqa: A003
+        if str(path).lower().endswith(".mjs"):
+            return "application/octet-stream"
+        return super().guess_type(path)
+
+
+def _serve(directory: Path, handler_cls: type = _QuietHandler):
+    handler = lambda *a, **kw: handler_cls(*a, directory=str(directory), **kw)  # noqa: E731
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -549,14 +568,26 @@ def _run_verify(base_url: str):
     )
 
 
+def _copy_worker_tree(dest: Path) -> None:
+    """铺一份「已正确发布」的 `w/` 子树 = 远端发布集：index.html + machine.html + `src/**`。
+
+    ⚠️ `src/**` 必须**整棵递归**铺（不再只铺顶层文件）：`deploy/scripts/worker-h5-verify-served.sh`
+    ⑥ 对**每一个** `.mjs` 逐条断言 MIME（issue #6293），⑦ 还沿 import 闭包取每个依赖
+    （issue #6306 起树内有 `src/shared/operation-display.mjs`）⇒ 少铺一个（尤其**子目录**里的那个）
+    就是**夹具造的假红**（与 ④/⑤ 段「机台页必须在夹具里」同因，2026-09-29 已实证过同一个坑）。
+    """
+    (dest / SUBDIR / "src").mkdir(parents=True, exist_ok=True)
+    (dest / SUBDIR / "index.html").write_bytes(WORKER_INDEX.read_bytes())
+    (dest / SUBDIR / "machine.html").write_bytes(WORKER_MACHINE.read_bytes())
+    subprocess.run(
+        ["cp", "-R", str(WORKER_H5_DIR / "src") + "/.", str(dest / SUBDIR / "src")],
+        check=True, capture_output=True,
+    )
+
+
 def test_verify_served_is_green_on_real_worker_h5(tmp_path):
     served = tmp_path / "served"
-    (served / SUBDIR / "src").mkdir(parents=True)
-    (served / SUBDIR / "index.html").write_bytes(WORKER_INDEX.read_bytes())
-    (served / SUBDIR / "src" / "app.mjs").write_bytes(WORKER_APP.read_bytes())
-    # 「已正确发布」的树里也必须有机台页（母单 #5161）—— 否则 ④/⑤ 段的红是本夹具造的假红
-    (served / SUBDIR / "machine.html").write_bytes(WORKER_MACHINE.read_bytes())
-    (served / SUBDIR / "src" / "machine.mjs").write_bytes(WORKER_MACHINE_APP.read_bytes())
+    _copy_worker_tree(served)
     server = _serve(served)
     try:
         _wait_port("127.0.0.1", server.server_address[1])
@@ -585,4 +616,184 @@ def test_verify_served_is_red_on_c_end_fallback(tmp_path):
         server.server_close()
     assert proc.returncode == 1, f"C 端回落到 /w/ 时身份断言竟判绿（空断言）：\n{proc.stdout}"
     assert "❌ 落地面身份断言**失败" in proc.stdout
-    assert "TARO_" in proc.stdout or "小布智能助手" in proc.stdout
+    assert "TARO_" in proc.stdout or "元元智能助手" in proc.stdout
+
+
+def test_verify_served_is_red_on_octet_stream_mjs(tmp_path):
+    """MIME 坏掉（线上实测形态，issue #6293）：**身份与字节全对，这条腿必须红**。
+
+    这是本单的核心红证 —— 「修复前四条腿全绿」正是因为它们只判状态码与字节哈希：
+    字节全对、浏览器照样拒绝执行 module script（`application/octet-stream`）⇒ 整页白屏。
+    """
+    served = tmp_path / "served"
+    _copy_worker_tree(served)
+    server = _serve(served, _OctetStreamMjsHandler)
+    try:
+        _wait_port("127.0.0.1", server.server_address[1])
+        proc = _run_verify(f"http://127.0.0.1:{server.server_address[1]}")
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert proc.returncode == 1, f"`.mjs` 被发成 octet-stream 时竟判绿（= 空断言）：\n{proc.stdout}"
+    # ① 红的必须是 **MIME 判据**（⑥），且带上是哪个头
+    assert "∉ JS MIME 白名单" in proc.stdout, f"没红在 MIME 判据上：\n{proc.stdout}"
+    assert "application/octet-stream" in proc.stdout, f"判红信息里没有实际 Content-Type：\n{proc.stdout}"
+    # ② 对照读数：身份 / 字节那几条**仍然全绿**（证明红只来自 MIME，不是夹具把页面弄坏了）
+    assert "body 哈希 = 仓库 frontend/worker-h5/index.html" in proc.stdout
+    assert "✅ 状态码 200" in proc.stdout
+
+
+# ── 命令内容上限（issue #6124）：真跑**组装段**的读数判据 ────────────────────────
+# 结构层（「必须有引导 / 必须有字节前置断言 / 不许内联」）在类级元守卫
+# `tests/unit_ci_workflows/test_swas_command_content_limit.py` 里（覆盖**所有** SWAS 发布/部署腿）；
+# 本节判**读数**：真的把脚本跑起来，读它打印出来的命令内容与字节数。
+# 病根（实测）：此前命令内容把远端执行体**整份内联** ⇒ ≈9.2 KB / 上限 16384 字节 ⇒
+# 每加一段注释都在逼近它，而失败只在**发布那一刻**（云上 `SDKError 400 / CmdContent.ExceedLimit`）
+# 可见 —— PR 里看不见。本节要能**证伪**「有人又把大块文本拼回了命令内容」。
+CI_SHA = "f3e49752fa140dd6af4da6b75948e541f90c76da"
+CI_INSTANCE = "b23c69e599524b1da719734f72e6a0e3"
+CI_REGION = "cn-hangzhou"
+# 组装预算（**设计判据**，不是上限）：修复后真实读数 **719** 字节。取 1024 当「有没有人把大块文本
+# 拼回命令内容」的报警线 —— 它离上限（16384）很远，触发它的一定是**结构**退化，不是文案变长。
+COMMAND_BUDGET_BYTES = 1024
+
+
+def _ci_stub(tmp_path: Path) -> Path:
+    """把 CI 脚本放进一个**结构完整的**临时检出（脚本按自身路径求根 ⇒ 产物路径要过前置断言）。"""
+    root = tmp_path / "checkout"
+    (root / "deploy" / "scripts").mkdir(parents=True)
+    (root / "frontend" / "worker-h5").mkdir(parents=True)
+    dst = root / "deploy" / "scripts" / CI_SCRIPT.name
+    dst.write_text(CI_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+    (root / "frontend" / "worker-h5" / "index.html").write_text("<html>stub</html>\n", encoding="utf-8")
+    return dst
+
+
+def _run_ci_script(dst: Path, remote: Path, extra_env: dict | None = None, sha: str = CI_SHA):
+    """真跑 CI 脚本的**组装段**（`H5_PRINT_COMMAND_CONTENT=1`）—— 不联网、不发起任何云调用。
+
+    返回 `(proc, content, reported_bytes)`：`content` 是**标记之间**的那份命令内容
+    （`say` 的前言走 stdout，不能混进来 —— 否则字节读数会随前言文案漂移）。
+    """
+    env = dict(os.environ)
+    env.update({
+        "H5_PRINT_COMMAND_CONTENT": "1",
+        "H5_REMOTE_SCRIPT_PATH": str(remote),
+        "GITHUB_SHA": sha,
+    })
+    env.update(extra_env or {})
+    # ⚠️ 显式 `encoding="utf-8", errors="replace"`：脚本会打印中文，而本机 locale 下子进程
+    #    （如 curl）的错误文本可能不是 UTF-8 ⇒ 不显式指定会在某些机器上**解码崩**（假红）。
+    proc = subprocess.run(
+        ["bash", str(dst), CI_INSTANCE, CI_REGION, "", "", sha],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=120,
+    )
+    content = ""
+    if "COMMAND_CONTENT_BEGIN\n" in proc.stdout:
+        content = proc.stdout.split("COMMAND_CONTENT_BEGIN\n", 1)[1]
+        if content.endswith("\n"):
+            content = content[:-1]
+    m = re.search(r"^COMMAND_CONTENT_BYTES=(\d+)$", proc.stderr, re.M)
+    return proc, content, int(m.group(1)) if m else None
+
+
+def _tiny_remote(tmp_path: Path) -> Path:
+    f = tmp_path / "tiny-remote.sh"
+    f.write_text("#!/bin/bash\n# 夹具：极小远端执行体\necho ok\n", encoding="utf-8")
+    return f
+
+
+class TestCommandContentLimit:
+    """`COMMAND_CONTENT` 的读数判据（issue #6124）：解耦 + 不可变 sha + 超限本机判红 + 取不到 fail-closed。"""
+
+    def test_assembled_command_is_decoupled_from_the_remote_script_size(self, tmp_path):
+        """① 命令内容**不含**远端执行体全文，且字节数远在上限之下。
+
+        红证：把远端脚本换成一个 20 KB 的「超大夹具」⇒ 读数**不变**（解耦成立）；
+        若有人把远端执行体整份拼回命令内容，同一个夹具会让读数涨到 20 KB+ 并被上限闸判红。
+        """
+        dst = _ci_stub(tmp_path)
+        tiny = _tiny_remote(tmp_path)
+        big = tmp_path / "big-remote.sh"
+        big.write_text("#!/bin/bash\n" + ("# 超大夹具行：把命令内容顶上去\n" * 900), encoding="utf-8")
+        assert big.stat().st_size > 20000, "超大夹具没造出来（判据没有判别力）"
+
+        p_tiny, c_tiny, b_tiny = _run_ci_script(dst, tiny)
+        p_big, c_big, b_big = _run_ci_script(dst, big)
+        assert p_tiny.returncode == 0, f"组装段跑不起来：\n{p_tiny.stderr}"
+        assert p_big.returncode == 0, f"组装段跑不起来：\n{p_big.stderr}"
+        assert c_tiny and c_big, "没拿到命令内容（打印段的标记变了？）"
+        # 脚本自报的字节数必须等于**它真打印出来的那份内容**的字节数（自证，不是自报自话）
+        assert b_tiny == len(c_tiny.encode("utf-8")), f"自报 {b_tiny} ≠ 实测 {len(c_tiny.encode('utf-8'))}"
+        assert b_big == len(c_big.encode("utf-8")), f"自报 {b_big} ≠ 实测 {len(c_big.encode('utf-8'))}"
+        assert b_tiny == b_big, (
+            f"命令内容随远端脚本大小变化（{b_tiny} → {b_big} 字节）⇒ 远端执行体又被内联进命令内容"
+        )
+        assert b_big < COMMAND_BUDGET_BYTES, (
+            f"组装出的命令内容 {b_big} 字节 ≥ 预算 {COMMAND_BUDGET_BYTES} —— 大块文本又进了命令内容"
+        )
+        # 形态判据（在**真读数**上再钉一遍）：远端脚本的特征行一个都不许出现
+        for token in ("assert_target_safe() {", "purge_target() {", "PARENT_INDEX_BEFORE_SHA256"):
+            assert token not in c_big, f"命令内容里出现远端脚本全文的特征行：{token}"
+
+    def test_bootstrap_carries_the_immutable_sha_and_keeps_the_semantics(self, tmp_path):
+        """② 引导按**不可变 sha** 取回执行体，且远端拿到的环境变量语义一字不变。"""
+        dst = _ci_stub(tmp_path)
+        proc, content, _ = _run_ci_script(dst, _tiny_remote(tmp_path))
+        assert proc.returncode == 0, proc.stderr
+        assert f"https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/{CI_SHA}" in content, (
+            "引导里没有按不可变 sha 取回执行体（codeload + tar.gz/<sha>）"
+        )
+        assert "refs/heads/" not in content, "引导里出现按分支取（应只按不可变 sha）"
+        assert "raw.githubusercontent.com" not in content, "引导用了 raw（杭州机房实测超时）"
+        # 语义不放宽：远端拿到的仍是这三个环境变量（本腿产物 = 源码树 ⇒ 同一个 sha 两用）
+        for token in (f"export H5_PUBLISH_SHA={CI_SHA}",
+                      "export H5_STATIC_ROOT=/opt/migao-deploy/h5",
+                      "export H5_SUBDIR=w"):
+            assert token in content, f"命令内容缺语义：{token}"
+        assert "未做任何发布动作" in content, "引导取不到执行体时没有具名失败出口"
+        # 工人端远端脚本**不吃 `--apply`**（它是「发布 = 逐字拷贝」，没有 dry-run 开关）⇒
+        # 命令内容里不许出现它（加了会让远端 `die "未知参数：--apply"`）
+        assert "--apply" not in content, "命令内容给工人端远端脚本传了它不认识的 `--apply`"
+
+    def test_over_limit_command_content_fails_locally_with_named_reading(self, tmp_path):
+        """③ **注入式红证**：命令内容超限 ⇒ 本机判红 + 具名读数（不是云上 `SDKError 400`）。
+
+        注入方式（§28.1 出口①）+ 复算命令：
+
+            H5_PRINT_COMMAND_CONTENT=1 H5_REMOTE_SCRIPT_PATH=/tmp/tiny-remote.sh \\
+              H5_COMMAND_CONTENT_LIMIT_BYTES=200 GITHUB_SHA=<sha> \\
+              bash deploy/scripts/swas-h5-publish-ci.sh <instance> cn-hangzhou "" "" <sha>
+
+        ⇒ rc=1 + stderr 含「命令内容 N 字节 / 上限 M 字节」。上限是**可注入的** ⇒ 不必真造一个
+        超限的真脚本（那样会把「解耦」这个结论反过来）。
+        """
+        dst = _ci_stub(tmp_path)
+        proc, content, _ = _run_ci_script(dst, _tiny_remote(tmp_path), {"H5_COMMAND_CONTENT_LIMIT_BYTES": "200"})
+        assert proc.returncode != 0, "超限竟然没判红（空断言）：\n" + proc.stdout
+        assert "命令内容超限" in proc.stderr, f"判红报文不具名：\n{proc.stderr}"
+        assert "字节 / 上限" in proc.stderr, f"判红报文没给「N 字节 / 上限 M 字节」读数：\n{proc.stderr}"
+        assert "help.aliyun.com" in proc.stderr, "判红报文没给出上限的**出处**（链接）"
+        assert content == "", "判红前就把超限的命令内容打出去了（不许把它带出去）"
+
+    def test_bootstrap_fails_closed_when_it_cannot_fetch(self, tmp_path):
+        """③′ 取不到执行体 ⇒ **非零退出 + 具名原因**（不是「静默半成品发布」）。
+
+        注入方式（§28.1 出口①）：把引导 URL 里的不可变 sha 换成 40 个 `0`（目录不存在 ⇒ 真 404）。
+        ⚠️ 这条**必须在真跑里钉**：引导是**引号嵌套的一行**，读代码看不出 `curl` 失败会不会被吞
+        （同族实测教训：`curl … | tar xz` 的管道退出码只取末命令 ⇒ curl 404 时 tar 退 0、
+        **失败被吞**，随后 bash 去执行不存在的文件 ⇒ 只剩一句没有归因的 127）。
+        本判据对「网络不可达」与「404」两种形态**都成立**（都走 `curl` 非零 ⇒ 具名 `die`）。
+        """
+        dst = _ci_stub(tmp_path)
+        proc, content, _ = _run_ci_script(dst, _tiny_remote(tmp_path))
+        assert proc.returncode == 0 and content, proc.stderr
+        assert "未做任何发布动作" in content, "引导取不到执行体时没有具名失败出口"
+        bad = tmp_path / "bad-sha.sh"
+        bad.write_text(content.replace(CI_SHA, "0" * 40) + "\n", encoding="utf-8")
+        got = subprocess.run(["bash", str(bad)], capture_output=True, text=True,
+                             encoding="utf-8", errors="replace", timeout=300)
+        assert got.returncode != 0, "取不到执行体竟然退 0（静默半成品发布）"
+        assert "未做任何发布动作" in got.stderr, (
+            f"失败没有具名归因（看不出是引导取不到执行体）：\n{got.stderr}"
+        )

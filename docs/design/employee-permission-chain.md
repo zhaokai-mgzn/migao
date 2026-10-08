@@ -20,12 +20,12 @@
   → 前端按钮级权限：仅 employee:create 才显示 新增/编辑/删除/禁用（employees/page.tsx）
   → 后端门禁：/api/admin/** 仅商户员工角色可进（SecurityConfig.adminApiAuthorizationManager）
   → 后端细粒度：@RequirePermission + PermissionInterceptor 按权限码 403
-  → 米宝：JWT permissions → ToolContext.permissions → employee_manage 按 employee:list / employee:create 放行
+  → 黄金策：JWT permissions → ToolContext.permissions → employee_manage 按 employee:list / employee:create 放行
 ```
 
 ### 1.2 关键口径
 
-| 权限码 | 含义 | 前端 | 后端接口 | 米宝工具 |
+| 权限码 | 含义 | 前端 | 后端接口 | 黄金策工具 |
 |--------|------|------|---------|---------|
 | `employee:list` | 查看员工列表/详情 | 员工管理菜单、页面可访问 | GET /api/admin/users, GET /{id} | employee_manage list/detail |
 | `employee:create` | 新增/编辑/删除/禁用/重置密码 | 新增/编辑/删除/状态按钮 | POST /users, PUT /{id}, DELETE, reset-password, status | employee_manage 其余 action |
@@ -66,8 +66,8 @@ cd frontend/admin-web && npx vitest run tests/unit/pages/employees.test.tsx test
 
 | 设置项 | 在哪里体现 / 被谁使用 |
 |--------|----------------------|
-| **公司名称** (companyName) | ① 后台侧边栏企业名（`/api/auth/me → user.tenantName`）；② 米宝 System Prompt 企业身份（`【企业信息】你当前服务的企业是「xxx」`，替代硬编码“词元通达”） |
-| **Logo** | 后台侧边栏企业名旁的图片（`user.tenantLogo`）。**未设置/已移除/URL 加载失败时均回退米高默认 Logo**（侧边栏与设置页预览一致，不出现空白/破图）；设置页提供「上传 Logo」「移除 Logo」入口，移除后保存即落库为 NULL。**上传校验**：格式（JPG/PNG/WebP）+ 大小（≤5MB，前后端双端）+ 分辨率（≥128×128，前端读取自然尺寸，过低阻止上传并提示） |
+| **公司名称** (companyName) | ① 后台侧边栏企业名（`/api/auth/me → user.tenantName`）；② 黄金策 System Prompt 企业身份（`【企业信息】你当前服务的企业是「xxx」`，替代硬编码“词元通达”） |
+| **Logo** | 后台侧边栏企业名旁的图片（`user.tenantLogo`）。**未设置/已移除/URL 加载失败时均回退观星台默认 Logo**（侧边栏与设置页预览一致，不出现空白/破图）；设置页提供「上传 Logo」「移除 Logo」入口，移除后保存即落库为 NULL。**上传校验**：格式（JPG/PNG/WebP）+ 大小（≤5MB，前后端双端）+ 分辨率（≥128×128，前端读取自然尺寸，过低阻止上传并提示） |
 | **系统通知开关 / 通知邮箱** | 持久化保存（刷新不丢）；当前为站内通知开关的配置项，后续通知触达（短信/邮件）接入时读取该配置 |
 | **修改密码** | 修改当前登录账号密码（后端 PUT /api/admin/settings/password 校验原密码） |
 | **登录日志** | 展示本租户 action=login 的审计日志（IP/设备/时间），支持分页 |
@@ -92,6 +92,6 @@ PUT  /api/admin/settings/password   → users.password_hash
 
 - `customer`/`agent` 角色仍被门禁 403（垂直越权防护测试 `SecurityConfigTest` 保留）。
 - 权限码由服务端 `PermissionInterceptor` 强制（前端隐藏仅是体验优化，后端仍 403）。
-- 米宝写操作（employee_manage create/delete/reset/toggle）除权限外仍走 confirm 卡片确认。
+- 黄金策写操作（employee_manage create/delete/reset/toggle）除权限外仍走 confirm 卡片确认。
 - 超管(super_admin)/内部服务(service) 直通，不受租户权限表约束（多租户隔离在 Service 层由
   MyBatis 租户拦截器保证）。

@@ -1,0 +1,27 @@
+{
+  "POST /api/admin/products/batch/on-shelf": {
+    "status": 200,
+    "code": null,
+    "msg": ""
+  },
+  "POST /api/admin/products/batch/off-shelf": {
+    "status": 200,
+    "code": null,
+    "msg": ""
+  },
+  "POST /api/admin/products/batch/delete": {
+    "status": 200,
+    "code": null,
+    "msg": ""
+  },
+  "GET /api/admin/products/export": {
+    "status": 200,
+    "code": null,
+    "msg": ""
+  },
+  "DELETE /api/admin/production/operations/l200000000000000000000/detach-and-delete": {
+    "status": 404,
+    "code": null,
+    "msg": ""
+  }
+}

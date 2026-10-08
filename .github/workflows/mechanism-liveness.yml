@@ -117,9 +117,12 @@ jobs:
     name: Mechanism Liveness Watchdog (最近一次成功处置是否新鲜)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # **只在定时腿/手动腿跑**：它的判定依赖「最近一次已完成的 run」——PR 上跑没有意义，
-    # 且会把 PR 的 CI 时间浪费在拉别人的 run 历史上。
-    if: github.event_name != 'pull_request'
+    # **本 workflow 无 PR 面**（`on:` 现取只有 `schedule` + `workflow_dispatch`；`pull_request` 面
+    # 已于 #5814 去掉，且 tests/unit_ci_workflows/test_ci_trigger_surface_slimming.py 的
+    # mechanism_liveness_problems **逐字要求它不许长回 PR 面**）⇒ 原先这里的
+    # `if: github.event_name != 'pull_request'` 是**恒真死条件**，会让人误以为 PR 上会跑到本腿。
+    # 2026-10-03（CI 审计 issue #6144 的 P2 ④）**删掉该 `if:`**；保留本条注释说明它是历史残留。
+    # 口径（单一来源）= docs/wiki/CI-CD.md 的「口径：几条绿色腿不是它名字读起来的意思」§④。
     steps:
       - uses: actions/checkout@v7
         with:

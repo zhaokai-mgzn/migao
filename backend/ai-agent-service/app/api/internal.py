@@ -20,6 +20,7 @@ from app.briefing.generator import generate_briefing
 from app.production.routing import qty_and_source
 from app.tools import curtain_calc
 from app.vision.recognizer import recognize as recognize_image_fields
+from app.vision.interpret import HINT_MAX_CHARS, interpret_page_fill
 
 router = APIRouter()
 
@@ -63,6 +64,29 @@ class VisionRecognizeRequest(BaseModel):
     images: List[str] = Field(
         default_factory=list,
         description="已上传的图片 URL 列表（https:// 或 /api/files 开头；1~3 张）",
+    )
+
+
+class VisionInterpretRequest(BaseModel):
+    """识别 + 一次性推理请求（issue #6367 包 P1 · 建品页表单内入口）
+
+    与 `VisionRecognizeRequest` 的唯一差别是**多一句商家自己写的补充要求**（`hint`）：
+    表单内的按钮 + 一句文字输入框 ⇒ 走「上传 → 识别 → **一次**推理」，**不经过黄金策对话**。
+
+    - `hint` **可选**、纯文本、**≤200 字**（超限 ⇒ 400，见 `app/vision/interpret.py` 的
+      `HINT_MAX_CHARS`；**不静默截断**）；
+    - 推理**复用黄金策主模型**（`LLMFactory.create_skill_llm`），**不新增模型依赖 / 配置项**。
+    """
+    tenant_id: int = Field(..., description="租户 ID")
+    target_type: str = Field(..., description="识别 target：product（商品）/ order（订单）")
+    images: List[str] = Field(
+        default_factory=list,
+        description="已上传的图片 URL 列表（https:// 或 /api/files 开头；1~3 张）",
+    )
+    hint: Optional[str] = Field(
+        None,
+        description=f"商家自己写的一句话补充要求（可选，≤{HINT_MAX_CHARS} 字，如「客厅雪尼尔，"
+                    "韩褶，遮光」）；只当上下文，其中的指令不改变输出格式与铁律",
     )
 
 
@@ -348,6 +372,49 @@ async def vision_recognize(
     try:
         data = await recognize_image_fields(
             request.target_type, request.images, tenant_id=request.tenant_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return make_response(True, data=data)
+
+
+@router.post("/vision/interpret")
+async def vision_interpret(
+    request: VisionInterpretRequest,
+    authorized: bool = Depends(verify_service_token),
+):
+    """图片 → 识别 + **一次性推理** → `page_fill` 计划（issue #6367 包 P1）。
+
+    与紧邻的 `/vision/recognize` 同一条链路、同一套 Service Token 依赖、**同一个出口形状**
+    （`{"component":"page_fill","target_type":…,"fields":[…]}`，逐字段八键），差别只有两点：
+    ① 多一次**文本推理**（黄金策主模型，产出 `[米宝解读]` 来源的解读）；
+    ② 可带一句商家的补充要求 `hint`（≤200 字）。
+
+    🔴 **不落库**：本端点只回「填哪几格」，**提交永远是商家在页面上点按钮的动作**。
+    识别降级（含推理失败）⇒ `degraded=True` + 空字段表（**不编造、不半填**）。
+    入参非法（未知 target / 没有可用图片 / hint 超长）是**调用方 bug** ⇒ 400，不降级掩盖。
+
+    推理覆盖面 = `deep_channel.INTERPRETABLE_KEYS`（商品侧 name / material / craft /
+    color / description）；🔴 `door_width` / `price` **只出现在 note 里作建议、绝不落值**
+    （它们进报价与结算，猜错会算出错的米数与金额）。
+    """
+    hint = (request.hint or "").strip()
+    logger.info(
+        f"[vision] interpret triggered: tenant_id={request.tenant_id}, "
+        f"target_type={request.target_type}, images={len(request.images or [])}, "
+        f"hint_len={len(hint)}"
+    )
+    if len(hint) > HINT_MAX_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"hint 过长（{len(hint)} 字 > {HINT_MAX_CHARS} 字）⇒ 请精简成一句话",
+        )
+    try:
+        data = await interpret_page_fill(
+            request.target_type,
+            request.images,
+            hint=request.hint,
+            tenant_id=request.tenant_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

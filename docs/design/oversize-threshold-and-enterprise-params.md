@@ -249,7 +249,7 @@ bootstrap 终态同步在 `docs/sql/schema.sql`）。**9 个配置键**：
 
 ### 3.7 一处**已登记**的消费方缺口
 
-✅ 米宝（agent）下单工具**不调用** auto-features 端点（`backend/ai-agent-service/app/tools/order_create.py`
+✅ 黄金策（agent）下单工具**不调用** auto-features 端点（`backend/ai-agent-service/app/tools/order_create.py`
 及全 app 面 0 处引用 `detect_auto_features`）⇒ agent 侧落库的 `processingInfo.processingItems[]`
 **仍缺**超高 / 超宽 / 倒幅 ⇒ 取价命中不到组合 ⇒ `unpriced`（与 issue #4408 同族，**已登记待收口**）。
 
@@ -477,7 +477,7 @@ B 把两件事**分成两个名字**，可反推、可审计。
 | **D4** | 接高参数（`窗高 − 最优门幅 ≤ 0.1`）语义 = **触发接高**的容差，还是**接高报价**的阈值？ | 接高今天**无活入口**（§3.6） |
 | **D5** | 是否**先补「接高」入口**，再谈接高参数？ | 需产品裁定（#5040 已登记「补入口属产品裁定」） |
 | **D6′** | 统一表与**「结构化列」纪律**的冲突怎么解：算料键「结构化列 + 通用表外挂」，还是**全部键值化**（要重写全部守卫）？ | §6.2 的正面冲突；**PR 2 的前置** |
-| **D8** | 是否同步收口 agent 侧缺口（米宝下单不调 auto-features ⇒ `unpriced`）？ | 否则 agent 建的单与页面建的单**取价不同源** |
+| **D8** | 是否同步收口 agent 侧缺口（黄金策下单不调 auto-features ⇒ `unpriced`）？ | 否则 agent 建的单与页面建的单**取价不同源** |
 
 ### 7.3 裁定后新发现的三处耦合与处置（**已读源核实**）
 

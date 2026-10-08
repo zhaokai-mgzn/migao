@@ -7,6 +7,7 @@ import com.migao.admin.dto.ProcessingCategoryResponse;
 import com.migao.admin.dto.ProcessingCategoryUpdateRequest;
 import com.migao.admin.service.ProcessingCategoryService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -72,6 +73,7 @@ public class ProcessingCategoryController {
      *
      * PUT /api/admin/processing-categories/{id}
      */
+    @TenantOwnedResource("processing-category")
     @PutMapping("/{id}")
     public ApiResponse<ProcessingCategoryResponse> updateProcessingCategory(
             @PathVariable String id,

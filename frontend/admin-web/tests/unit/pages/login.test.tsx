@@ -103,8 +103,8 @@ describe('LoginPage', () => {
 
   it('渲染系统标题与 Logo', () => {
     render(<LoginPage />)
-    expect(screen.getByText('米高')).toBeInTheDocument()
-    expect(screen.getByText('企业级AI电商管理解决方案')).toBeInTheDocument()
+    expect(screen.getByText('观星台')).toBeInTheDocument()
+    expect(screen.getByText('企业级AI经营管理平台')).toBeInTheDocument()
     expect(screen.getByTestId('logo')).toBeInTheDocument()
   })
 

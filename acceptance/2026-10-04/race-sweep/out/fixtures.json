@@ -1,0 +1,70 @@
+{
+  "stamp": "20261004010446",
+  "tenantA": 25,
+  "phoneA": "13800138000",
+  "tenantB": 26,
+  "phoneB": "13800138001",
+  "products": {
+    "a1": {
+      "id": "16e073c20fba45759200a0f3116c640a",
+      "name": "race-sweep-A1-20261004010446",
+      "skuId": "2106551085519360002",
+      "skuCode": "RACE-SWEEP-A1-20261004010446-01-28",
+      "stockAtCreate": 10
+    },
+    "a2": {
+      "id": "8d1009877401b9f6e86eebad60d6f77e",
+      "name": "race-sweep-A2-20261004010446",
+      "skuId": "2106551087188692993",
+      "skuCode": "RACE-SWEEP-A2-20261004010446-01-28",
+      "stockAtCreate": 10
+    },
+    "b1": {
+      "id": "3b2758af012bffabf279cd2741512afa",
+      "name": "race-sweep-B1-20261004010446",
+      "skuId": "2106551088228880385",
+      "skuCode": "RACE-SWEEP-B1-20261004010446-01-28",
+      "stockAtCreate": 10
+    }
+  },
+  "inbound": [],
+  "orders": [],
+  "notes": [],
+  "tokenA": "<REDACTED-JWT>",
+  "userA": "58f939ab49db1817b812b8cd14a9c68e",
+  "register": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "applicationId": 2106551069144797200,
+        "status": "approved",
+        "message": "AI 甄别通过，欢迎入驻米高平台"
+      },
+      "requestId": "req_a9cf5790ebf24946",
+      "timestamp": 1791075890
+    }
+  },
+  "tokenB": "<REDACTED-JWT>",
+  "userB": "d9866a9b0445cd400f9bd5fb12d0a724",
+  "db": {
+    "productsA": [
+      {
+        "id": "16e073c20fba45759200a0f3116c640a",
+        "name": "race-sweep-A1-20261004010446"
+      },
+      {
+        "id": "8d1009877401b9f6e86eebad60d6f77e",
+        "name": "race-sweep-A2-20261004010446"
+      }
+    ],
+    "skusA": [],
+    "productsB": [
+      {
+        "id": "3b2758af012bffabf279cd2741512afa",
+        "name": "race-sweep-B1-20261004010446"
+      }
+    ],
+    "skusB": []
+  }
+}

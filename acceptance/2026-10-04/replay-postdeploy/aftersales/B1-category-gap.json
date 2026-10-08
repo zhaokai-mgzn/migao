@@ -1,0 +1,21 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:31:06 +08",
+    "utc": "2026-10-04T01:31:06.054Z"
+  },
+  "tenant": 25,
+  "catsBefore": [],
+  "catsAfter": [
+    {
+      "id": "ed0f8c55349c4b2916c58f87b2b7a4a4",
+      "name": "ZR分类-mut59ycieexc",
+      "status": "active"
+    }
+  ],
+  "probeCategoryCreate": {
+    "requested": "ZR分类-mut59ycieexc",
+    "status": 200,
+    "text": "{\"success\":true,\"data\":{\"id\":\"ed0f8c55349c4b2916c58f87b2b7a4a4\",\"name\":\"ZR分类-mut59ycieexc\",\"level\":1,\"status\":\"active\",\"children\":[],\"createdAt\":\"2026-10-04 09:31:01\",\"updatedAt\":\"2026-10-04 09:31:01\",\"sort\":0},\"requestId\":\"req_47f6af7f8fe44992\",\"timestamp\":1791077461}",
+    "id": "ed0f8c55349c4b2916c58f87b2b7a4a4"
+  }
+}

@@ -48,7 +48,7 @@ exemptions:
   - pattern: "backend/admin-api/src/main/java/com/migao/admin/controller/agent/*.java"
     reason: "#1483 纯新增 Agent BFF Controller，Service 端方法已合并在 main，单测覆盖 Service 层方法（AgentProductServiceTest 14 tests / AgentOrderServiceTest 5 tests），Controller 仅是薄包装"
 
-  # #1720/#1723 — 米宝语音输入 ASR + 前端录音交互
+  # #1720/#1723 — 黄金策语音输入 ASR + 前端录音交互
   # ⚠️ 本条原为 `app/llm/router.py` 的**冗余豁免**（issue #5353 落地时删）：成因 = 规则侧只能
   # 猜 `tests/test_llm_router.py`（不存在），而它的真实覆盖名叫 `test_vision_integration.py`。
   # #5353 在 `.github/tech-stack.yml` 为该文件逐条登记后规则侧判 **pass** ⇒ 豁免变成死条目，删除。

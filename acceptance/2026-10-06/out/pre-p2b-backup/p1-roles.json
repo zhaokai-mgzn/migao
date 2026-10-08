@@ -1,0 +1,406 @@
+{
+  "at": "2026-10-05T22:54:12.109Z",
+  "subjectSha": "73327161f",
+  "counts": {
+    "pass": 8
+  },
+  "rows": [
+    {
+      "state": "pass",
+      "id": "P1-01",
+      "name": "管理员登录（部署面短信万能码）",
+      "detail": "POST /api/auth/sms/login HTTP 200；tenant=25 code=shop-8yn7",
+      "evidence": [
+        "POST /api/auth/sms/login"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P1-02",
+      "name": "岗位清单 + 期望权限（DB 真值源）",
+      "detail": "岗位=管理员(admin) / 客服(customer_service) / 财务(finance) / 知识编辑(knowledge_editor) / 运营(operator) / 商品管理员(product_manager) / 销售(sales)；每岗位权限数为 DB 现取",
+      "evidence": [
+        "select r.code, array_agg(p.code) from roles r join role_permissions …"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P1-04:客服",
+      "name": "登录+权限：客服",
+      "detail": "username=a06_customer_service@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=12 missing=[] extra=[]",
+      "evidence": [
+        "POST /api/auth/employee/login",
+        "POST /api/auth/password/change",
+        "GET /api/auth/me"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P1-04:运营",
+      "name": "登录+权限：运营",
+      "detail": "username=a06_operator@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=26 missing=[] extra=[]",
+      "evidence": [
+        "POST /api/auth/employee/login",
+        "POST /api/auth/password/change",
+        "GET /api/auth/me"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P1-04:销售",
+      "name": "登录+权限：销售",
+      "detail": "username=a06_sales@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=9 missing=[] extra=[]",
+      "evidence": [
+        "POST /api/auth/employee/login",
+        "POST /api/auth/password/change",
+        "GET /api/auth/me"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P1-04:财务",
+      "name": "登录+权限：财务",
+      "detail": "username=a06_finance@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=9 missing=[] extra=[]",
+      "evidence": [
+        "POST /api/auth/employee/login",
+        "POST /api/auth/password/change",
+        "GET /api/auth/me"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P1-04:商品管理员",
+      "name": "登录+权限：商品管理员",
+      "detail": "username=a06_product_manager@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=8 missing=[] extra=[]",
+      "evidence": [
+        "POST /api/auth/employee/login",
+        "POST /api/auth/password/change",
+        "GET /api/auth/me"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P1-04:知识编辑",
+      "name": "登录+权限：知识编辑",
+      "detail": "username=a06_knowledge_editor@shop-8yn7 新建=true 首登改密=true 改密成功=true perms=4 missing=[] extra=[]",
+      "evidence": [
+        "POST /api/auth/employee/login",
+        "POST /api/auth/password/change",
+        "GET /api/auth/me"
+      ]
+    }
+  ],
+  "employees": [
+    {
+      "pos": "客服",
+      "roleCode": "customer_service",
+      "username": "a06_customer_service",
+      "id": "023203f39037bea38d153bbc6fb79ed0",
+      "created": true,
+      "expectedPerms": [
+        "after_sales:view",
+        "agent:session",
+        "agent:session:manage",
+        "customer:view",
+        "dashboard:view",
+        "inbound:view",
+        "knowledge:view",
+        "order:detail",
+        "order:list",
+        "order:refund",
+        "processing:view",
+        "production:execute"
+      ],
+      "mustChangePassword": "<REDACTED>",
+      "passwordChanged": "<REDACTED>",
+      "perms": [
+        "dashboard:view",
+        "processing:view",
+        "production:execute",
+        "inbound:view",
+        "knowledge:view",
+        "order:list",
+        "order:detail",
+        "order:refund",
+        "after_sales:view",
+        "customer:view",
+        "agent:session",
+        "agent:session:manage"
+      ],
+      "rolesClaim": [
+        "customer_service"
+      ],
+      "menus": [
+        "workspace",
+        "customer-service",
+        "trade-center",
+        "production-center",
+        "inventory-center",
+        "notifications"
+      ],
+      "loginOk": true,
+      "permDiff": {
+        "missing": [],
+        "extra": []
+      }
+    },
+    {
+      "pos": "运营",
+      "roleCode": "operator",
+      "username": "a06_operator",
+      "id": "ed416c226a07abfa1c478db45536cf39",
+      "created": true,
+      "expectedPerms": [
+        "after_sales:view",
+        "agent:session",
+        "agent:session:manage",
+        "customer:create",
+        "customer:view",
+        "dashboard:view",
+        "employee:list",
+        "finance:create",
+        "finance:view",
+        "inbound:create",
+        "inbound:view",
+        "knowledge:view",
+        "order:create",
+        "order:detail",
+        "order:list",
+        "order:refund",
+        "order:update",
+        "processing:manage",
+        "processing:update",
+        "processing:view",
+        "product:category",
+        "product:category:view",
+        "product:create",
+        "product:list",
+        "production:execute",
+        "production:view"
+      ],
+      "mustChangePassword": "<REDACTED>",
+      "passwordChanged": "<REDACTED>",
+      "perms": [
+        "dashboard:view",
+        "product:list",
+        "product:create",
+        "product:category",
+        "product:category:view",
+        "processing:manage",
+        "processing:view",
+        "processing:update",
+        "production:view",
+        "production:execute",
+        "inbound:view",
+        "inbound:create",
+        "knowledge:view",
+        "order:list",
+        "order:detail",
+        "order:update",
+        "order:create",
+        "order:refund",
+        "after_sales:view",
+        "customer:view",
+        "customer:create",
+        "finance:view",
+        "finance:create",
+        "agent:session",
+        "agent:session:manage",
+        "employee:list"
+      ],
+      "rolesClaim": [
+        "operator"
+      ],
+      "menus": [
+        "workspace",
+        "products",
+        "customer-service",
+        "trade-center",
+        "production-center",
+        "inventory-center",
+        "org-center",
+        "notifications"
+      ],
+      "loginOk": true,
+      "permDiff": {
+        "missing": [],
+        "extra": []
+      }
+    },
+    {
+      "pos": "销售",
+      "roleCode": "sales",
+      "username": "a06_sales",
+      "id": "cf72d7fab34f0aa5f6f91ffc09456367",
+      "created": true,
+      "expectedPerms": [
+        "customer:view",
+        "dashboard:view",
+        "inbound:view",
+        "order:create",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "product:list",
+        "production:execute"
+      ],
+      "mustChangePassword": "<REDACTED>",
+      "passwordChanged": "<REDACTED>",
+      "perms": [
+        "dashboard:view",
+        "product:list",
+        "processing:view",
+        "production:execute",
+        "inbound:view",
+        "order:list",
+        "order:detail",
+        "order:create",
+        "customer:view"
+      ],
+      "rolesClaim": [
+        "sales"
+      ],
+      "menus": [
+        "workspace",
+        "products",
+        "customer-service",
+        "trade-center",
+        "production-center",
+        "inventory-center",
+        "notifications"
+      ],
+      "loginOk": true,
+      "permDiff": {
+        "missing": [],
+        "extra": []
+      }
+    },
+    {
+      "pos": "财务",
+      "roleCode": "finance",
+      "username": "a06_finance",
+      "id": "f4f6aa01a94268627fda4000dd88ee5c",
+      "created": true,
+      "expectedPerms": [
+        "customer:view",
+        "dashboard:view",
+        "finance:create",
+        "finance:view",
+        "inbound:view",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "production:execute"
+      ],
+      "mustChangePassword": "<REDACTED>",
+      "passwordChanged": "<REDACTED>",
+      "perms": [
+        "dashboard:view",
+        "processing:view",
+        "production:execute",
+        "inbound:view",
+        "order:list",
+        "order:detail",
+        "customer:view",
+        "finance:view",
+        "finance:create"
+      ],
+      "rolesClaim": [
+        "finance"
+      ],
+      "menus": [
+        "workspace",
+        "customer-service",
+        "trade-center",
+        "production-center",
+        "inventory-center",
+        "notifications"
+      ],
+      "loginOk": true,
+      "permDiff": {
+        "missing": [],
+        "extra": []
+      }
+    },
+    {
+      "pos": "商品管理员",
+      "roleCode": "product_manager",
+      "username": "a06_product_manager",
+      "id": "ae5582439ec561b26309010dcf0424bc",
+      "created": true,
+      "expectedPerms": [
+        "dashboard:view",
+        "processing:manage",
+        "processing:view",
+        "product:category",
+        "product:category:view",
+        "product:create",
+        "product:list",
+        "production:view"
+      ],
+      "mustChangePassword": "<REDACTED>",
+      "passwordChanged": "<REDACTED>",
+      "perms": [
+        "dashboard:view",
+        "product:list",
+        "product:create",
+        "product:category",
+        "product:category:view",
+        "processing:manage",
+        "processing:view",
+        "production:view"
+      ],
+      "rolesClaim": [
+        "product_manager"
+      ],
+      "menus": [
+        "workspace",
+        "products",
+        "production-center",
+        "inventory-center",
+        "notifications"
+      ],
+      "loginOk": true,
+      "permDiff": {
+        "missing": [],
+        "extra": []
+      }
+    },
+    {
+      "pos": "知识编辑",
+      "roleCode": "knowledge_editor",
+      "username": "a06_knowledge_editor",
+      "id": "b17291324d0d4a10a07638241c4b0445",
+      "created": true,
+      "expectedPerms": [
+        "dashboard:view",
+        "knowledge:manage",
+        "knowledge:view",
+        "product:list"
+      ],
+      "mustChangePassword": "<REDACTED>",
+      "passwordChanged": "<REDACTED>",
+      "perms": [
+        "dashboard:view",
+        "product:list",
+        "knowledge:manage",
+        "knowledge:view"
+      ],
+      "rolesClaim": [
+        "knowledge_editor"
+      ],
+      "menus": [
+        "workspace",
+        "products",
+        "customer-service",
+        "inventory-center",
+        "notifications"
+      ],
+      "loginOk": true,
+      "permDiff": {
+        "missing": [],
+        "extra": []
+      }
+    }
+  ]
+}

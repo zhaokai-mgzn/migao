@@ -1,5 +1,5 @@
 /**
- * B 端移动坐席服务（米宝商家端，issue #2977）
+ * B 端移动坐席服务（黄金策商家端，issue #2977）
  *
  * 复用 admin-api AgentSessionController 现成端点：
  * - GET /api/admin/agent-sessions?status=&page=&size= — 人工会话列表（waiting/active…）

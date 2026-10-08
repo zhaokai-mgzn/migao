@@ -5,6 +5,7 @@ import com.migao.admin.dto.*;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.ProductService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -76,6 +77,7 @@ public class ProductController {
      * PUT /api/admin/products/{id}
      */
     @RequirePermission("product:create")
+    @TenantOwnedResource("product")
     @PutMapping("/{id}")
     public ApiResponse<ProductResponse> updateProduct(
             @PathVariable String id,
@@ -105,8 +107,13 @@ public class ProductController {
      *
      * PUT /api/admin/products/{id}/status
      * Body: { "status": "on_sale" / "off_sale" }
+     *
+     * <p>issue #6167 §二：本端点的载荷校验在**服务层**（状态机在 {@code ProductService}），
+     * 控制器签名只有 {@code Map<String, String>} ⇒ 它不在 T1（issue #6158）的
+     * 「写端点 + {@code @Valid} 请求体」面内。本单把归属认定补到这一形态。</p>
      */
     @RequirePermission("product:create")
+    @TenantOwnedResource("product")
     @PutMapping("/{id}/status")
     public ApiResponse<Void> updateProductStatus(
             @PathVariable String id,
@@ -123,8 +130,11 @@ public class ProductController {
      *
      * PUT /api/admin/products/{id}/recommend
      * Body: { "recommended": true / false }
+     *
+     * <p>issue #6167 §二：与 {@code /status} 同族（服务层校验形态）——一并纳入归属认定。</p>
      */
     @RequirePermission("product:create")
+    @TenantOwnedResource("product")
     @PutMapping("/{id}/recommend")
     public ApiResponse<Void> updateProductRecommended(
             @PathVariable String id,

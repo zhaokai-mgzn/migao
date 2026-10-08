@@ -1,7 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-020, PG-034, PG-039, PP-012
-
+// case_ids: PG-020, PG-034, PG-039, PP-012, FN-006
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
@@ -660,20 +659,24 @@ class ProductionOperationCommandServiceTest {
     }
 
     @Test
-    @DisplayName("去部位化（#4883）：PUT 不带 positions（active 工序）⇒ 补建那一行价目行（存量孤儿自愈）")
-    void updateWithoutPositionsEnsuresTheSinglePriceRow() {
+    @DisplayName("issue #6126：PUT **不带 positions**（active 工序）⇒ 不建任何价目行（写面幂等，不凭空多行）")
+    void updateWithoutPositionsCreatesNoPriceRow() {
         when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
         when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
 
         Map<String, Object> view = service().update("op-v54-07", Map.of("unit_price", "0.55"), TENANT);
 
-        ArgumentCaptor<ProductionOperationPosition> rows =
-                ArgumentCaptor.forClass(ProductionOperationPosition.class);
-        verify(productionOperationPositionMapper, times(1)).insert(rows.capture());
-        assertThat(rows.getValue().getPosition()).isEqualTo("布帘");
-        assertThat(view.get("created_positions")).isEqualTo(1);
-        assertThat(view.get("skipped_positions")).isEqualTo(0);
+        // 改价照旧生效；但**不建行** —— 此前这里兜底新建 `position='布帘'` 那一行，
+        // 于是连 body `{}` 都能让该工序的价目行集合「只增不减」（issue #6126）。
+        ArgumentCaptor<ProductionOperation> updated = ArgumentCaptor.forClass(ProductionOperation.class);
+        verify(productionOperationMapper).updateById(updated.capture());
+        assertThat(updated.getValue().getUnitPrice())
+                .as("显式改价照旧生效（不建行 ≠ 不吃明示值）").isEqualByComparingTo("0.55");
+        verify(productionOperationPositionMapper, never()).insert(any(ProductionOperationPosition.class));
+        // 既不建行 ⇒ 也不该为「值域校验」白读一次租户矩阵
+        verify(productionOperationPositionMapper, never()).selectList(any());
+        assertThat(view).doesNotContainKeys("created_positions", "skipped_positions");
     }
 
     @Test
@@ -796,5 +799,46 @@ class ProductionOperationCommandServiceTest {
     @DisplayName("闭词表自证：合法取值集合恰好是 position/set（多一个/少一个都红）")
     void scopeVocabularyIsExactlyPositionAndSet() {
         assertThat(SCOPE_VOCABULARY).containsExactlyInAnyOrder("position", "set");
+    }
+
+    // ════════════════ issue #6228：计件单价小数位准入（超 2 位有效小数 ⇒ 422 + 零写入）════════════════
+
+    @Test
+    @DisplayName("#6228 改价 unit_price 0.005（3 位有效小数）⇒ 422 且**零写入**（不静默舍成 0.01）")
+    void updatePriceRejectsSubCentWithoutWrites() {
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+
+        assertThatThrownBy(() -> service().update("op-v54-07", Map.of("unit_price", "0.005"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("2 位小数");
+
+        verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
+        verify(priceVersionMapper, never()).insert(any(ProductionOperationPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("#6228 新建工序 unit_price 0.005 ⇒ 422 且**零写入**（不落半截工序行）")
+    void createRejectsSubCentWithoutWrites() {
+        assertThatThrownBy(() -> service().create(
+                Map.of("name", "新工序", "unit_price", "0.005"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("2 位小数");
+
+        verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
+        verify(priceVersionMapper, never()).insert(any(ProductionOperationPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("#6228 正对照 unit_price 0.01（1 分）⇒ 改价成功且库行逐字 0.01")
+    void oneCentUnitPriceIsAccepted() {
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+        when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
+        when(priceVersionMapper.insert(any(ProductionOperationPriceVersion.class))).thenReturn(1);
+
+        service().update("op-v54-07", Map.of("unit_price", "0.01"), TENANT);
+
+        ArgumentCaptor<ProductionOperation> updated = ArgumentCaptor.forClass(ProductionOperation.class);
+        verify(productionOperationMapper).updateById(updated.capture());
+        assertThat(updated.getValue().getUnitPrice().toPlainString()).isEqualTo("0.01");
     }
 }

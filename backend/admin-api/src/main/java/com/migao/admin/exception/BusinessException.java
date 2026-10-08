@@ -112,6 +112,23 @@ public class BusinessException extends RuntimeException {
     }
 
     /**
+     * 参数校验错误 + 逐条理由 + **显式指定 HTTP 状态**（issue #6222：分页入参闸要 400 而非 422）。
+     *
+     * <p>为什么需要它：{@link #validationError(String, List, String)} 的预置状态码是 <b>422</b>，
+     * 而分页入参（{@code size=-5} / 非整数）在本仓的既有同族里是 <b>400</b>
+     * （{@code WorkerInboundControllerTest} 的「负数数量 ⇒ 400」、{@code MissingServletRequestParameterException}
+     * 的 400）—— 本工厂只让状态码可指定，<b>不</b>动既有 422 那一份的两个重载。</p>
+     */
+    public static BusinessException validationError(String message,
+                                                    List<ApiResponse.ErrorDetail> details,
+                                                    String suggestion,
+                                                    int httpStatus) {
+        BusinessException e = new BusinessException("VALIDATION_ERROR", message, httpStatus, suggestion);
+        e.details = details;
+        return e;
+    }
+
+    /**
      * 资源不存在
      */
     public static BusinessException notFound(String resource) {

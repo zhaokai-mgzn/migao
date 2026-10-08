@@ -1,0 +1,254 @@
+[
+  {
+    "tenant": 20,
+    "resource": "products",
+    "status": 200,
+    "n": 35,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "customers",
+    "status": 200,
+    "n": 16,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "orders",
+    "status": 200,
+    "n": 359,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "processing_items",
+    "status": 200,
+    "n": 17,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "processing_categories",
+    "status": 200,
+    "n": 3,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "roles",
+    "status": 200,
+    "n": 10,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "users",
+    "status": 200,
+    "n": 14,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "after_sales",
+    "status": 200,
+    "n": 5,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "operations",
+    "status": 200,
+    "n": 40,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "routings",
+    "status": 200,
+    "n": 2,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "op_positions",
+    "status": 200,
+    "n": 29,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "route_rules",
+    "status": 200,
+    "n": 26,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "stock_ledger",
+    "status": 200,
+    "n": 385,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "finance_tx",
+    "status": 200,
+    "n": 376,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "shipments",
+    "status": 200,
+    "n": 1,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "knowledge_cards",
+    "status": 200,
+    "n": 0,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "processing_orders",
+    "status": 200,
+    "n": 100,
+    "foreign": []
+  },
+  {
+    "tenant": 20,
+    "resource": "inbound_orders",
+    "status": 200,
+    "n": 5,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "products",
+    "status": 200,
+    "n": 1,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "customers",
+    "status": 200,
+    "n": 1,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "orders",
+    "status": 200,
+    "n": 1,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "processing_items",
+    "status": 200,
+    "n": 17,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "processing_categories",
+    "status": 200,
+    "n": 2,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "roles",
+    "status": 200,
+    "n": 7,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "users",
+    "status": 200,
+    "n": 2,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "after_sales",
+    "status": 200,
+    "n": 1,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "operations",
+    "status": 200,
+    "n": 40,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "routings",
+    "status": 200,
+    "n": 2,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "op_positions",
+    "status": 200,
+    "n": 29,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "route_rules",
+    "status": 200,
+    "n": 26,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "stock_ledger",
+    "status": 200,
+    "n": 0,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "finance_tx",
+    "status": 200,
+    "n": 1,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "shipments",
+    "status": 200,
+    "n": 0,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "knowledge_cards",
+    "status": 200,
+    "n": 0,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "processing_orders",
+    "status": 200,
+    "n": 0,
+    "foreign": []
+  },
+  {
+    "tenant": 21,
+    "resource": "inbound_orders",
+    "status": 200,
+    "n": 0,
+    "foreign": []
+  }
+]

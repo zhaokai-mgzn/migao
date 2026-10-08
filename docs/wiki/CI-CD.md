@@ -13,7 +13,7 @@
 | `deploy-ai-agent-service` | push main `backend/ai-agent-service/**` | 单测全量 → **服务器侧就地构建镜像（C′）** → 云助手触发 SWAS `deploy.sh` → post-deploy 冒烟 |
 | `deploy-frontend` | push main `frontend/admin-web/**` | tsc + vitest → **服务器侧就地构建镜像（C′）** → 云助手触发 SWAS `deploy.sh` |
 | `smoke-test` | workflow_call (可复用) | P0 冒烟 (pytest+httpx)，被 deploy 工作流调用 |
-| `agent-eval` | workflow_dispatch（按需） | 米宝能力评测（normal tier 按需手动，真实 LLM + `cases/*.yml` 单一源；2026-08-29 起取消每日定时） |
+| `agent-eval` | workflow_dispatch（按需） | 黄金策能力评测（normal tier 按需手动，真实 LLM + `cases/*.yml` 单一源；2026-08-29 起取消每日定时） |
 | `agent-eval-adversarial` | workflow_dispatch（按需） | 对抗用例评测（只追踪不阻塞）。⚠️ **口径订正（2026-09-26，#3507 ②）**：本行原写「schedule 每周六 03:00」**已不成立** —— 现取 `origin/main` 的 `on:` 只有 `workflow_dispatch`（每周一 cron 已按 #4974 删除，与本文件「真实 LLM 成本」段「全仓自动真实 LLM 触发 = 0 条」一致）；频率读数见 `tests/unit_ci_workflows/ci_cost_ledger.json` 的 `eval_cadence` |
 | `e2e-real` | schedule 每日 00:00 + 手动 | backend `tests/e2e/real/` 真实 LLM 测试，失败自动建 Issue |
 | `mini-app` | PR/push `frontend/mini-app/**` | tsc + 单测 + xiaobu H5 视觉回归；**v1.3 起 job 内门控**（同 ai-agent-tests） |
@@ -28,6 +28,11 @@
 - **变更门控（job 内，不整层 skip）**：`ai-agent-tests`/`mini-app` 等 required job 在 job 内用 `git diff origin/main...HEAD` 检测相关路径；无变更时实际执行 step 跳过（job 仍 success，required check 永不悬空）。**注意：不要改回 workflow 级 `paths` 过滤——required check 会卡在 "Waiting" 永不报告**（见 §3.2 技能说明）。`worker-h5-tests.yml`（只认 `frontend/worker-h5/**`，跑 Node 内置 `--test`，零 install/零构建）是这类信息性 check 的现存例子（**非 required 信息性 check**，#4786）。（原另一个同族例子 `agent-behavior-eval.yml` 已按 **#4275** 整体删除 —— 它的唯一产物是 PR 评论、绑死 PR 上下文，无法改造成有意义的手动档。）
   · **2026-09-26（issue #3507 ①）扩到 `pr-check` 的三条腿**：`admin-api-test`（`detect_api`）/ `admin-web-test`（`detect_aw`，由「只门控 `next build`」扩到**整条腿**）/ `e2e-quality-gate`（`detect_e2e`）。触发谓词、`must_cover` 面与被门控的**步骤名**逐条登记在 `tests/unit_ci_workflows/declaration_gate_registry.json` —— 「未登记即红 / 谓词必须与现取逐字相符 / 触发面必须覆盖断言所读的对象面 / 按**步骤名**定位（改步骤序列必须同改登记册）」四条由 `tests/unit_ci_workflows/test_gate_coverage_and_same_source.py` 机械执行。
   · **类级锁（为什么这次不会再被烧）**：`tests/unit_ci_workflows/test_required_check_no_paths_filter.py` —— 凡**上报 required 检查名**的 workflow，其 `on.pull_request` **不得**有 `paths:` / `paths-ignore:`（命中即红；红证 = 往 `mini-app.yml` 的 `on.pull_request` 加一行 `paths:`）。required 集合**现取** `gh api …/branches/main/protection`（复用 `scripts/merge_gate.py` 的读法，不另写一套）；CI 里读不到（**需 admin**）⇒ 退回 `tests/unit_ci_workflows/required_status_snapshot.json` 并打印退路横幅 —— **退路不覆盖「分支保护新增了一条 required 而 snapshot 还不知道」**，改分支保护后请在能读该 API 的环境跑一次 `python3 tests/unit_ci_workflows/test_required_check_no_paths_filter.py --refresh`。
+  · **🔴 required 腿为什么只能「步骤级」门控 —— job 级 `needs` / `if` 一律不许（2026-10-03，issue #6144 P1-5）**：GitHub 对**被 job 级 `if` 跳过**（或**因 `needs` 上游被跳过 / 取消而未创建**）的 job **不上报该 context** —— 只有 job 真创建了才上报（**步骤**级 `if` 跳过照旧上报 `success`）。⇒ 一旦 required 腿挂上 job 级门控，在不命中该面的 PR 上该检查**永不到来**，PR 永久停在 `Expected — waiting for status to be reported`，**没有任何检查会变红**（与 #3507 ① / #4786 / #5101 / #4231 同族）。
+    · **实测（#6099）**：15 条 required 腿现取**没有一条**用 job 级 `if` 跳过；窗口内 required 的缺席**全部**来自「并发取消（`cancel-in-progress`）导致 job 未创建」（缺席率 ≤1.35%），**不是** job 级跳过 ⇒ **风险尚未发生，但此前没有任何判据拦它**。
+    · **实测（#6052 / issue #6051）**：`E2E quality gate` / `xiaobu H5 visual regression` / `bmini-app build (h5 + weapp)` / `bmini H5 tabBar geometry (e2e)` 这 **4 条非 required** 重腿被改成 `needs: <面判定 job>` + `if: … needs.<job>.outputs.run == 'true'` ⇒ 被跳过时 **context 根本不创建**（实测 65 条新格式 run 里 **17 条被跳 = 26.2%**）。那**是**有意的（它们**不是** required，且面判定 job 会播报「未跑」）⇒ **判据只对 required 名生效、不许误伤它们**。
+    · **判据（两条腿，各自能单独变红）** —— 都在 `tests/unit_ci_workflows/test_required_check_no_paths_filter.py`：① `::test_no_job_level_needs_on_a_job_reporting_a_required_check`：required 腿**不得**带**任何** job 级 `needs:`（上游会不会被跳是运行期行为、静态判不了 ⇒ 只能禁掉整个依赖面；现取 15 条 required 腿**一条 `needs` 都没有** ⇒ 零误伤）；② `::test_no_context_dependent_if_on_a_job_reporting_a_required_check`：required 腿的 job 级 `if:` **只许恒真形态**（无条件 / `always()` / 常量比较）。`event_name` 白名单单独一条规则，判定式 = **白名单字面量 ⊇ 该 workflow 的自动触发面**（`workflow_dispatch` / `workflow_call` 是**人为**触发面，不计入覆盖面）—— 这条把「**今天恒真**」与「**永远恒真**」分开了：现取 9 条 required 腿带 `if: github.event_name == 'pull_request'`，`pr-check` 的自动触发面只有 `pull_request` ⇒ **现在是绿的**；但**加任何自动触发面**（`push` / `schedule` / `merge_group` …）而不同步改谓词 ⇒ **当场红**。判别力自证 = `::test_discriminating_power_on_injected_job_gates`（三条注入：required 腿加 `needs` ⇒ 必红 / required 腿加 `if: github.event_name == 'schedule'` ⇒ 必红 / **非 required** 腿加同样的 `if:` ⇒ **仍绿**）。
+    · **正确修法**：required 腿的门控**下沉到 step**（`if: steps.detect_xx.outputs.run == 'true'`，job 照常创建、照常上报 `success`；范式 = `pr-check.yml` 的 `Detect admin-web changes` 一族，登记册 = `tests/unit_ci_workflows/declaration_gate_registry.json`）；或该检查**本就不该是 required** ⇒ 从分支保护里撤掉（顺序不可换：**先改门控、再改分支保护**）。
   · **本地孪生：`verify-all.sh gate` 的 bmini 腿（2026-09-27，issue #4221 族）**：CI 的 `bmini-app` 两条腿此前**在本地没有任何腿**（改 bmini 的包只能手工跑 tsc/jest/build，实测两个 bmini 包都如此）⇒ `gate` 档按「变更集命中触发面」派发一条与 CI **逐字同命令**的本地腿（`npx tsc --noEmit` / `npm test` / `npm run build:h5` / `npm run build:weapp`）。三条口径：① **只在 `gate` 档**（`quick` 是开发者快循环，刻意不塞）；② 触发面 = 该腿**判定对象的输入闭包**（`frontend/bmini-app/**` ∪ 它 import 到的跨目录仓内文件，现取 `frontend/admin-web/src/lib/print-media.json`）—— **不照抄** CI 谓词（CI 含 `tests/|.github/`，那两类改动影响不到 tsc/jest/build）；③ 🔴 **缺依赖 ⇒ fail-closed 记 ❌**（不是「未就绪」跳过 —— 在合并门禁上「没跑」不得被读成「通过」），未命中触发面时控制台显式声明「未跑」。覆盖面登记在 `tests/unit_ci_workflows/local_gate_matrix.json`，判据 = `tests/unit_ci_workflows/test_local_gate_matrix.py`（新增模块目录 / 登记已死的腿 / 未裁定的跨目录输入 ⇒ 红；未覆盖台账只许缩短）。⚠️ 与本节同口径：本地腿也是**job 内 diff 门控**（未命中 ⇒ 显式「未跑」），**不动任何 workflow**、也不改回 workflow 级 `paths` 过滤。
   · **新增 CI 守卫文件要过的三张登记面（2026-09-27 实测，关联 #5001）**：往 `tests/unit_ci_workflows/**`（以及 `.github/`、`scripts/` 的判据面）**新建一个守卫文件**时，同一个文件会命中**三张互不相干的登记面**，缺任何一张 ⇒ **卡合并**。实测代价：本单为第三张**白烧一轮 CI**（run `36281997395` 的 `ci workflow helper unit tests` = 5211 passed / 1 failed）。
     · **面 1 —— 测试文件头的 `# case_ids: <ID>`**：**任何**新增/修改的测试文件都要。判据 = `QA Growth Gate`（ID 必须是**注释起始行**、落在**前 50 行**内、且真实存在于 `.github/cases/**`；用例号往现有最大号**顺延**）。
@@ -111,12 +116,12 @@ bad = workflow_structure_violations(mutant)              # 判据吃的是**当�
     · 判据 = `tests/unit_ci_workflows/test_ci_cost_ledger.py`（7 条，含超预算判定的纯函数红证）；复算 = `python3 scripts/ci_cost_ledger.py --measure`。
   · **静态落地面腿**：`worker-h5-publish.yml`（`push: main` + paths 只认 `frontend/worker-h5/**` 与发布链路自身；**刻意不加 `pull_request`** —— 它写的是**线上静态根**，PR 分流内容不该有机会落上去，故也没有「required 卡 Waiting」的形态）把 `frontend/worker-h5/` 的 `index.html` + `src/**` **逐字**发布到 `app.migaozn.com` 静态根下的 `w/`（零构建，**不引 npm build**），发布后断言线上 `/w/` 的 body 哈希 == 仓库文件且不含 C 端标识（issue #4837；nginx `root` 与 `w/` 子树的红线见 `deploy/swas/h5-publish-remote.sh` 的目标守卫）。**发布兜底（issue #5001）**：该腿唯一的自动触发面是 `push: main`，而被 `GITHUB_TOKEN` 合并的 auto-merge **吞掉那个 push**（#3113 同族）⇒ `deploy-reconcile.yml` 把它列为**第四条对账腿**（`reconcile_one worker-h5 worker-h5-publish.yml frontend/worker-h5 ""`；它不构建镜像 ⇒ 镜像判据对它恒不成立，判定走**漂移判据**：自上次成功发布起 `frontend/worker-h5/**` 有无改动，有则 `gh workflow run worker-h5-publish.yml`）—— 对账由 `schedule` 触发，免疫该抑制。
   · **第二条静态落地面腿（issue #5668）**：`bmini-h5-publish.yml`（`push: main` + paths 只认 `frontend/bmini-app/**`、`deploy/swas/nginx.conf` 与发布链路自身；同样**刻意不加 `pull_request`**）把 B 端 h5（`npm run build:h5`，按 `TARO_APP_H5_PUBLIC_PATH=/b/` 构建）发布到 `app.migaozn.com` 静态根下的 `b/`（nginx 的 `location /b/` 带**自己的** fallback `/b/index.html` —— 借用根的 fallback 会让 `/b/<子路由>` 静默渲染出 C 端）。产物经**ACR 传输镜像**（`deploy/bmini-h5/Dockerfile`，实例无 node 工具链）搬到实例，发布后断言「线上 body 哈希 == 本次构建产物」+ `/b/<子路由>` 不串端 + `/` 仍是 C 端 + worker-h5 零回归。**发布兜底**：同 worker-h5，它已登记进 `deploy-reconcile.yml`（腿名 `bmini-h5-hosting`，走漂移判据 ②；腿名与传输镜像名有意不同，见该 workflow 内的注释）。
-  · **第三条静态落地面腿（issue #4184）—— 第一条「拥有静态根**本身**」的腿**：`c-end-h5-publish.yml` 把 C 端小布 h5（`frontend/mini-app` 的 `npm run build:h5`，`publicPath: '/'`）发布到 `app.migaozn.com` 的**静态根本身**（nginx `root` = `/opt/migao-deploy/h5`）。建腿前的现取读数：`curl -sI …/js/app.js` 的 `Last-Modified` = **08-30 06:54 GMT**，而 `frontend/mini-app` 最近改动 = 09-26 ⇒ 线上落后 **~28 天**而**没有任何东西会因此变红**（「C 端已部署」一直被当真）。
+  · **第三条静态落地面腿（issue #4184）—— 第一条「拥有静态根**本身**」的腿**：`c-end-h5-publish.yml` 把 C 端元元 h5（`frontend/mini-app` 的 `npm run build:h5`，`publicPath: '/'`）发布到 `app.migaozn.com` 的**静态根本身**（nginx `root` = `/opt/migao-deploy/h5`）。建腿前的现取读数：`curl -sI …/js/app.js` 的 `Last-Modified` = **08-30 06:54 GMT**，而 `frontend/mini-app` 最近改动 = 09-26 ⇒ 线上落后 **~28 天**而**没有任何东西会因此变红**（「C 端已部署」一直被当真）。
     🔴 **红线（本腿特有）**：同根下**已经住着**工人端 `w/`（#4837，线上有工人在用）与商家端 `b/`（#5668）⇒ 远端执行体 `deploy/swas/c-end-h5-publish-remote.sh` **只删/只替换「上一次由本脚本登记过的顶层条目」**（删除集 = 托管清单 `∩` 磁盘现值；首次发布无清单 ⇒ **空集**，且根上有无人认领的条目时判 `TAKEOVER_REQUIRED` = 要人**显式签字**），并对 `w` `b` 两个**保留前缀**做三层判据：① 结构层（产物顶层/托管清单出现保留前缀 ⇒ 立刻 die）② 产物层（根 `index.html` 不许引用 `/<保留前缀>/…` = 串端）③ 自证层（发布前后逐子树的**规范化摘要**——路径+内容，不吃 mtime/顺序——与各自 `index.html` 哈希**逐字相等**，CI 侧四条读数缺一即判红）。
     🔴 **只手动发布**（用户 2026-09-27 裁定 B「通路建好并自证，但首次发布由人手动触发」）：`on.push.paths` **恰好**只有 `frontend/mini-app/**`（**刻意不含** `deploy/**` 与 workflow 自身 ⇒ **合并建通路的那个 PR 不会发布任何东西**）。**三种触发形态只有一种会发布**（模式判定步 `Resolve mode` 是唯一决定点，它逐字读 `github.event_name` 与 `inputs.publish`）：`push` / `schedule` / 不带 `publish=true` 的 dispatch ⇒ `notify`（**只报告**）；`workflow_dispatch` + `publish=true` ⇒ `publish`（写盘）。写盘步 / `build:h5` / 落地面断言三步都逐字 `if: steps.mode.outputs.mode == 'publish'`（纵深防线）。`publish` 默认 `false` ⇒ 连 `deploy-reconcile.yml` 的兜底 dispatch 也**不会**发布（它只会跑 notify）。**发布入口**：`gh workflow run c-end-h5-publish.yml --ref main -f publish=true`。
     **兜底面（`FM-E17` 同批）**：`push` 在本仓会被 `GITHUB_TOKEN` 合并吞掉 ⇒ 本腿也有每日 `schedule`（`53 18 * * *` = 02:53 +08），登记在 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json`；它的 notify 步判的是**线上产物是否落后**（判据本体 = `scripts/h5_freshness_guard.py`，**不写第二份口径** —— 比 `dist/index.html` 会是**空转**：`dist/` 在 `.gitignore` 里，CI 检出里没有它）。
     **兜底对账（FM-E3 同批）**：`deploy-reconcile.yml` 新增第六条腿 `c-end-h5`（无镜像 ⇒ 走漂移判据 ②），并在 `test_swas_deploy_ci_hardening.py::SVC_TO_DEPLOY_WORKFLOW` 登记；发布链路自身的两个文件（CI 包装 / workflow）按同口径逐条登记进 `reconcile_trigger_paths_ledger.json` 并标 **`never_in_trigger`** —— 该标记 = 明文**禁止**「把它们加进触发面来消账」这条出路（它们的标法比常规缺口**更严**：加了就红）。
-    **判据**：`tests/unit_ci_workflows/test_c_end_h5_hosting.py`（44 条：结构层真 YAML/真脚本 + **行为层在 `tmp_path` 沙箱真跑远端执行体** + 本地 http server 上落地面断言的红绿两面 + 「只改注释 ⇒ 不红」对照）。
+    **判据**：`tests/unit_ci_workflows/test_c_end_h5_hosting.py`（48 条：结构层真 YAML/真脚本 + **行为层在 `tmp_path` 沙箱真跑远端执行体** + 本地 http server 上落地面断言的红绿两面 + 「只改注释 ⇒ 不红」对照）。
     🔴 **产物怎么到达服务器（#6095 第三层，2026-10-03）**：`dist/` 是**构建产物、不在 git 里**（`.gitignore` 有 `dist/`；`git ls-tree -r origin/main --name-only frontend/mini-app/dist` = **0 个文件**），而本腿唯一的取回通道是「按不可变 sha 从 codeload 取 tarball」（远端 `stage_product()`）⇒ 源码 tarball 里**永远没有** `dist/index.html`（run `37078030820` / sha `d4babbf17` 的 `❌ 发布源里没有 index.html` 就是这个形态）。
     修法 = `deploy/scripts/c-end-h5-dist-push.sh` 把 `dist/**` 打成**孤儿单提交**（`git commit-tree` **不给 `-p`** ⇒ 无父、不胀历史）force-push 到专用分支 `h5-dist`，发布步按 **`steps.dist.outputs.sha`**（不可变 sha）取回 ⇒ 远端取回逻辑**一行不改**（`H5_SRC_SUBPATH=frontend/mini-app/dist`）。
     `permissions` 因此从 `contents: read` 抬到 **`write`**（只为推分支）；推送目标分支现取**不触发任何 workflow**（全部带 `push` 的 workflow 其 `on.push.branches` **一律 `['main']`**，判据从真 YAML 现取）；触发面 / 人工门 / `TAKEOVER` 闸**逐字未动**；命令内容仍 **909 字节** < 16 KB（dist **绝不**进命令内容）。
@@ -124,8 +129,23 @@ bad = workflow_structure_violations(mutant)              # 判据吃的是**当�
     🔴 **第四层：推送步骤不许继承运行环境（#6095 第四层，2026-10-03）**：第三层合入后人工发布 run `37081920188`（sha `aedc51ffb`）在**新加的那一步**挂 —— `Prepare dist ref` ⇒ `fatal: empty ident name (for <runner@…>) not allowed`（exit 128），后面三步 skip（连 `RunCommand` 都没走到）。判因 = **脚本继承了运行环境**：`git commit-tree` 需要作者/提交者身份，而 **CI runner 上没有身份源、系统 GECOS 为空**；**开发机**会用 GECOS + hostname 自动兜一个非空身份 ⇒ 同一脚本**本机 rc=0 / runner rc=128** ⇒ 「本机跑一遍」**证明不了 CI 会过**（同族 #6113 剔除继承来的 `MIGAO_HEAVY_L*`）。
     修法 = 造孤儿提交时**显式给身份**（`GIT_AUTHOR_NAME/EMAIL` + `GIT_COMMITTER_NAME/EMAIL` 四个**环境变量前缀**，取环境变量而非 `-c user.name`，因为**环境变量优先于 config**：调用方环境里一个**空**的 `GIT_AUTHOR_NAME` 会把 `-c` 盖掉、仍报 `empty ident name`（实测）；身份 = `github-actions[bot]`（ID 41898282）⇒ 推上去的提交**可追溯**）+ 清掉「我在哪个仓」的环境（`unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR`）。判据 = `TestDistPushIdentityIndependence`（4 条）+ **桩演练改为在「无 ambient 身份」下跑**；注入式红证 = 摘掉显式身份 ⇒ 复现 CI 那条 `empty ident name`；摘掉 `unset` 行 + 敌意 `GIT_DIR` ⇒ 具名判红。
     同批扫出的**同类继承面**：① `H5_PUBLISHED_COMMIT`（新加、会被拼进 SWAS 命令内容）此前**没有**字符集白名单 ⇒ 已补（空或 40 位十六进制）；② 报错文案里**双引号内的裸反引号**被 bash 当**命令替换执行**（DIST_SHA 那句是第三层引入的、清单名那句是存量）⇒ 已转义 + 新增**类级判据 6**（`test_scripts_bash32_var_brace.py`，全仓受控 `*.sh` 射程，heredoc 正文不算）。
-    ⚠️ **同族风险（未修，照实登记）**：另外两条腿**仍在把整份远端执行体内联进 SWAS 命令内容** —— `deploy/scripts/bmini-h5-publish-ci.sh` 的远端执行体 `deploy/swas/bmini-h5-publish-remote.sh` 已 **10667 字节**（命令内容 ≈ **10.8 KB** / 上限 16 KB，余量 ~5.5 KB）、`deploy/scripts/swas-h5-publish-ci.sh` ≈ **9.2 KB** ⇒ 它们**同族**，脚本继续长大就会撞同一面墙（#6095 的第二层形态）。
+    🔴🔴 **第五层：引导取执行体 ≠ 远端取产物（#6095 第五层，2026-10-03）**：第四层合入后真发布 run `37084280991`（sha `c22514360`）前三步全绿（`Prepare dist ref` 真跑通、远端 `refs/heads/h5-dist` 已存在），第四步挂 —— 远端 `bash: /tmp/tmp.XXXX/deploy/swas/c-end-h5-publish-remote.sh: No such file or directory`（`InvocationStatus=Failed`）。
+    判因 = **第三层的引导与第二层的引导组合起来错了**：第三层把命令内容第 5 参数换成**产物 ref**（只含 17 个 dist 文件的孤儿单提交）之后，**引导也按它取 codeload tarball** ⇒ 取回的执行体目录里没有远端脚本。
+    **为什么前四层都放它过去了**：第三层的桩演练把「远端执行」**打桩**了（从不真取回并执行执行体），第二层的桩演练当时还没有「产物 ref ≠ 源码 commit」这个形态 ⇒ 两侧各自的假设都成立、**组合**不成立（「每块判据都绿，拼起来错」）。
+    修法 = **两个 ref 各司其职**：`DIST_SHA`（产物 ref，第 5 参数 / `H5_DIST_SHA`，**不再回落 `$GITHUB_SHA`**）→ 命令内容 `export H5_PUBLISH_SHA=$SHA`、远端 `stage_product()` 按它取产物；`SCRIPT_SHA`（执行体 ref = `H5_PUBLISHED_COMMIT` / `GITHUB_SHA`）→ **只有引导**按它取回并执行 `deploy/swas/c-end-h5-publish-remote.sh`（CLI 侧同等白名单 + 40 位断言）。⚠️ **不**把远端脚本塞进 dist 孤儿提交（会破坏「只含产物」的可审计/可清理性质），也**不**退回内联（16 KB 墙）。
+    判据 = `TestTwoRefsCombination`（**组合层**：真造两个提交、真跑组装段、真 `git archive` 取回两棵 tarball、真执行取回的执行体 ⇒ 发布成功且清单两个字段各就各位）+ 静态接线两条 + 注入式红证（① 引导改回按产物 ref 取 ⇒ **用合并后 main 那份脚本在同一夹具上真复现 rc=127 + 同一句报错** ② 产物 ref 漂成执行体 ref）。审计面同族修：清单 `published_commit or sha` → `published_commit or ""`。
+     ✅ **同族风险已修（#6124，2026-10-03）**：另两条腿此前也把整份远端执行体**内联**进 SWAS 命令内容 —— `deploy/scripts/bmini-h5-publish-ci.sh` 的命令内容 **10853** 字节、`deploy/scripts/swas-h5-publish-ci.sh` **9256** 字节（上限 16384 ⇒ 余量只剩 ~5.5 KB / ~7 KB）。治法与 C 端那条**同款**：命令内容只留**极小的引导**（按**不可变 sha** 从 codeload 取回 `deploy/swas/{h5,bmini-h5}-publish-remote.sh` 并执行），发布逻辑仍在远端脚本里（单一出处）⇒ 真跑组装段读数降到 **719 / 786** 字节，且与远端脚本大小**解耦**（20 KB 夹具下读数不变）。两条腿同批加**字节前置断言**（超限在**本机**具名判红 + 给出上限出处）；`deploy/scripts/swas-deploy-ci.sh`（部署腿）此前没有这道断言、同批补上（类内**零豁免**）。bmini 腿的**执行体 ref** 由 workflow 显式注入（`H5_PUBLISHED_COMMIT = github.sha`）；worker 腿的产物就是源码树 ⇒ 两个 ref 天然同一个，刻意只用一个变量（结构上排掉第五层那种「两个 ref 混用」）。
+     **类级元守卫** = `tests/unit_ci_workflows/test_swas_command_content_limit.py` + 台账 `tests/unit_ci_workflows/swas_command_content_legs_ledger.json`：射程**现取**（`deploy/scripts/**/*.sh` 里含**活代码行** `--command-content` 且文件名出现在某个 workflow 里的），台账 ⇄ 现取集合**双向相等** ⇒ **未登记即红**；每腿必须有字节断言 + 上限出处 + 不许内联 + 断言在云调用**之前**。**读数判据**在各腿自己的 `TestCommandContentLimit`（解耦 / 不可变 sha + 语义 / 超限注入本机判红 / 取不到执行体 fail-closed）。⚠️ 合并后由两条腿的 `push` 面**真跑一次**新引导 ⇒ 在那之前「线上已走通」属「**没跑**」。
+     出射程项（照实登记）：`deploy/scripts/wx-mini-test-env-setup.sh` 也有人跑的 `--command-content`，但它是**人交互的一次性向导**（不被任何 workflow 调用）⇒ 不进射程；射程规则**机械可判** ⇒ 它一旦被接进 workflow 就自动进射程、未登记即红。
 - **把 paths 门控的信息性 check 提升为 required 的顺序（2026-09-20 固化，#4786）**：**必须先删掉 workflow 级 `paths:`、改成 job 内 diff 门控**（`git diff --name-only origin/main...HEAD` + `GITHUB_OUTPUT`，同 `pr-check.yml` 的 `Detect admin-web changes` 步），**再改分支保护** —— **顺序不可换**：先改分支保护 ⇒ required check 在不命中 `paths` 的 PR 上**卡在 "Waiting" 永不报告** ⇒ 形态 =「**没有任何检查会变红，但 PR 合不了**」（#4231 同族）。
+- **required 腿拆成多条并行腿的顺序（2026-10-03 固化，#6164）**：**先加腿（新检查名开始上报）、合并、再改分支保护、最后刷新 snapshot** —— 顺序不可换。拆腿的完整形态（现取：`pr-check.yml` 的 `ci-workflow-tests` 一个 job id + matrix 两片）：
+  - **名字**：第一片的名字**逐字保留**原 required 名（matrix 的 `shard_suffix` 为**空串**）。改名 = 把**所有在飞的 PR** 卡在 `Expected — waiting for status to be reported` 且**不会变红**（= 上一条那个形态，只是成因从 `paths` 换成改名）。第二片用新名（`…（后半）`），**合并后**才进分支保护。
+  - **同一个 job id**（不是两个 job）：`needs:` 列表 / 成本台账（`workflow::job` 为键）/ 真库两道锁（PG 前置断言 + `MIGAO_REQUIRE_REALDB`）/「全量命令只许出现一次」全部**不用动** —— 这也是选 matrix 而不是复制 job 的理由。
+  - **片号走环境变量**（`MIGAO_CI_HELPER_SHARD`），pytest 命令行**一字不改** ⇒ 「CI ⇄ 本地 argv 逐字相同」这条契约不受影响。
+  - 🔴 **最危险的坏形态**：运行期的「本轮跑的是不是整套」判定若按「覆盖目录下**全部** `test_*.py`」写死，分片后**每条腿**都会被判成「子集运行」⇒ 早退 ⇒ **库存牙齿全掉**（「变快」重新等于「少跑」而无人能判）。⇒ 那条判定必须**分片感知**（`conftest.expected_test_files()` + 逐片冻结基线 `frozen_inventory.shards`），且**分片形态下缺本片基线 = fail-closed 判红**。
+  - **守卫**：`tests/unit_ci_workflows/test_helper_leg_execution_shape.py`（三方一致 / 全划分（并集 == 现取语料、两两不相交、无空片）/ 逐片基线 / 注入式红证）+ `conftest.py` 的 `shard_of`（规则**单一实现**）。⚠️ 铁律 11「声明存在 ≠ 可达」的实例：`test_realdb_failclosed.py` 那条判据**只钉旧 job id** ⇒ 若把真库族挪进一个**新 job**，新腿会退回静默 skip 而旧判据不红；本形态（同一 job id + matrix）刻意不触发它。
+  - **关键路径的现取口径与读数**（#6164 收口）：**关键路径 = 两片里较慢那片的 `Run ci workflow helper tests` step 秒数**（不是平均 —— PR 反馈等的是最慢的那条）。现取：**拆腿前 ~500s（job 中位 514s / step 中位 500s，60 个 run）→ 换盐后 ~316s（N=3 的中位；全量档 range 299~318s，让出档 191~271s 另算）≈ −37%**。🔴 两条纪律：① **分档**（让出档与全量档不可混算）；② **单轮不足以定论**（同一片两轮之间实测差过 40%）⇒ 至少看 5 轮取中位。复算命令与逐轮读数记在 `tests/unit_ci_workflows/helper_leg_shape_ledger.json` 的 `shape.shards.ci_readings`（现值必腐，写命令不写死数）。**~250s 两片到不了**（两片下界 = 总 step/2 ≈ 264~318s），要到 250s 需第 3 片 —— 2026-10-03 用户裁定**停在两片**。
+  - **代价（照实登记）**：① **总 runner 秒数没降**（拆腿前 step 中位 ~500s；拆腿后逐轮两片之和 528~635s）—— 用 CI 分钟换**人的等待时间**；② **本地腿墙钟≈翻倍**（同一套件顺序跑两遍，两个进程各付一次启动 / xdist 启动）—— 换的是「本地跑一次 == 覆盖全部判据」；③ **本地腿里那条 pytest 命令出现两次** ⇒ 任何「只取第一条」的现取写法都会只钉住两片中的一片（本包实测过这处退化：只改第二片的 `-n` 没有任何判据会红；现已改成**逐条都比**）；④ **分片要平，且盐是台账参数**：旧盐 74 把重判据堆在片 1（安静机实测 388s vs 234s，CI 上片 1 恒慢 33~110s）⇒ 现用盐 130（重判据 316/305、用例 3241/3292）；改盐**必须同批重锚逐片冻结基线**（实测：只改盐 ⇒ 片 1 当场判红 `本轮收集 3057 < 冻结基线 3245`）。
 - **真实 LLM 成本**：**PR 层 = 0 次真实 LLM**（2026-09-17 用户裁定 2′/4′，承载 issue #4034；**#4275** 之后 PR 层连**零 LLM 的映射信号**也没有了 —— `agent-behavior-eval.yml` 已整体删除，PR 上**不再有任何自动行为信号**，代价已知并接受）。判定走**单一入口** `post-deploy-eval`（**仅手动 `workflow_dispatch`**：#4262 收敛定时档、**#4974 删掉最后一条每周一 cron** ⇒ 全仓自动真实 LLM 触发 = **0 条**）；映射能力保留在 `tests/agent_eval/behavior_mapping.py`（零依赖纯函数，本机可调）。LLM 红例的闭环改由**确定性下沉台账**承接（`.github/llm-finding-ledger.json` + `llm_sink_check.py`，见 `docs/testing/llm-finding-sinking.md`）。
 - **观察指标**：`gh run list --status queued` 排队 >20 即需治理（先按 DEV-FLOW §7 清 dependabot 潮）。
 
@@ -175,7 +195,7 @@ bad = workflow_structure_violations(mutant)              # 判据吃的是**当�
 
 | **FM-E24** | ✅ **已有守护（PR #5931 落码；本单只登记，不重复实现）** | 判据 = `tests/unit_ci_workflows/test_deploy_watchdog.py::test_run_body_stays_under_the_github_limit`（**逐 workflow 逐 step 现取** `run` 正文长度，上限 `RUN_BODY_LIMIT = 13250` = 低于已知有效读数 13,303 留 53 字符差）+ 反空跑锚点（现取 >30 条）+ 对照读数（最长 >4000，防判据扫错对象）。**复算** = `python3 -m pytest tests/unit_ci_workflows/test_deploy_watchdog.py -q -k run_body` | **单个 step 的 `run` 正文超长 ⇒ GitHub 把*整份* workflow 文件判 invalid ⇒ 该腿静默永不跑**（GitHub 侧**未文档化**约束）：`push` 面每次只留一条 **0 个 job** 的 `push/failure` run（`name` 回落成文件路径、页面提示 "workflow file issue"），而 `pull_request` 面**根本不建 run**；**本地 PyYAML 解析 + 仓库全部守卫全绿**（完全静默）。实测阈值（11 个变体二分；与文件总大小、行数**无关**）：**≤13,303 字符有效 / ≥13,399 invalid**。**存量风险现取（2026-10-02，`origin/main` 3fa84ab89）**：全仓 **238** 条 `run` 正文，最长 = `.github/workflows/deploy-reconcile.yml` 的 step `Reconcile deploys` **13,125**（距上限仅 **125 字符**）、次长 = `.github/workflows/automerge.yml` 的 `Classify bot PR … and arm on` **10,975**。🔴 **订正一处转述**：那条正文的 **12,524** 是 PR #5931 **合并前**的读数（#5931 自己把它抬到 13,125）⇒ 余量不是 ~2.3K 而是 **125 字符**。**出口**：真要往那条正文里加东西 ⇒ **先把实现体外置**（`.github/scripts/*.sh` 再 `source`），**不要**靠「再加一点点应该没事」。出处 = issue #5929 / PR #5931（值守面首版正文 **13,820** 越线 ⇒ 该腿不跑；修正后 13,125）。⚠️ **覆盖面**：判据只在**本仓**的 workflow 上成立 —— 别的仓库（含本仓新增 workflow 之外的项目）没有这条判据 |
 
-| **FM-E25** | ✅ **本单补判据（加载面文本锚；机制本身无判据可加）** | 判据 = `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::conflict_diagnosis_problems`（**射程 = `migao-dev-flow` §2.2 那一节的加载面**：逐字要求 `gh pr view` / `--json mergeable` / `CONFLICTING` / `FM-E25` 四个锚）+ `::TestConflictDiagnosisAnchor` 四条（基线 / **删掉那一行 ⇒ 红** / 整节标题被改 ⇒ 红 / 只加一条注释 ⇒ 不红）。**判别动作** = `gh pr view <N> --json mergeable` | **「CI 迟迟不来」被读成「在排队」**：PR 与 main `mergeable=CONFLICTING` 时 GitHub **建不出 merge ref** ⇒ **`pull_request` 类工作流根本不触发**，PR 页面上只剩 `pull_request_target` 的辅助腿（**本仓现取 = 带 `pull_request_target` 的 4 条腿**：`Auto Merge` / `Close Linked Issues on Merge` / `Stale 清理` / `verify-trigger` —— 它们**不需要 merge ref** 所以照跑；复算 = `grep -l pull_request_target .github/workflows/*.yml`）⇒ 看着像在排队，**实际一个 required job 都不会来**（无红、无 pending、没有任何东西会报）。**实测出处 = 2026-10-01 PR #5922**：开成 draft 后 **3 次 push 都没有 `PR Check` run**；`gh pr view 5922 --json mergeable` 显示 `CONFLICTING`/`DIRTY`；用 `./scripts/sync-main.sh --rebase` 解冲突后 push ⇒ `PR Check` / `AI Agent Service Unit Tests` / `Mini-App CI` / `Bmini-App CI` **立即全部排队**。**顺带登记**：draft 起手 + native auto-merge 的组合下，**`ready` 不是 `pull_request` 工作流的触发面**（`ready_for_review` 只在 `.github/workflows/automerge.yml` 的 `types` 里）⇒ 解冲突后必须 **push**（`synchronize`）才会触发。🔴 **本次复核边界（照实登记）**：#5922 现已 MERGED ⇒ `mergeable` 现读 **`UNKNOWN`**（GitHub 只对 open PR 计算）⇒ **那条读数不能事后复算**，可复算的是**机制**（哪个 workflow 带 `pull_request` / 哪个带 `pull_request_target`）与**口诀**本身。⚠️ **覆盖面（判据 24）**：文本锚**只**证明「这条判别动作还在 **agent 每次都看得到的那一面**」，**不证明** GitHub 侧的 merge-ref 行为（那不是仓内内容 ⇒ 无机械判据可加；同 `FM-E15` 的 `CASE_ID_ALLOCATION_BOUNDARY` 形态） |
+| **FM-E25** | ✅ **本单补判据（加载面文本锚；机制本身无判据可加）** | 判据 = `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::conflict_diagnosis_problems`（**射程 = `migao-dev-flow` §2.2 那一节的加载面**：逐字要求 `gh pr view` / `--json mergeable` / `CONFLICTING` / `FM-E25` 四个锚）+ `::TestConflictDiagnosisAnchor` 四条（基线 / **删掉那一行 ⇒ 红** / 整节标题被改 ⇒ 红 / 只加一条注释 ⇒ 不红）。**判别动作** = `gh pr view <N> --json mergeable` | **「CI 迟迟不来」被读成「在排队」**：PR 与 main `mergeable=CONFLICTING` 时 GitHub **建不出 merge ref** ⇒ **`pull_request` 类工作流根本不触发**，PR 页面上只剩 `pull_request_target` 的辅助腿（**本仓现取 = 带 `pull_request_target` 的 4 条腿**：`Auto Merge` / `Close Linked Issues on Merge` / `Stale 清理` / `verify-trigger` —— 它们**不需要 merge ref** 所以照跑；复算 = `grep -l pull_request_target .github/workflows/*.yml`）⇒ 看着像在排队，**实际一个 required job 都不会来**（无红、无 pending、没有任何东西会报）。**实测出处 = 2026-10-01 PR #5922**：开成 draft 后 **3 次 push 都没有 `PR Check` run**；`gh pr view 5922 --json mergeable` 显示 `CONFLICTING`/`DIRTY`；用 `./scripts/sync-main.sh --rebase` 解冲突后 push ⇒ `PR Check` / `AI Agent Service Unit Tests` / `Mini-App CI` / `Bmini-App CI` **立即全部排队**。**顺带登记**：draft 起手 + native auto-merge 的组合下，**`ready` 不是 `pull_request` 工作流的触发面**（`ready_for_review` 只在 `.github/workflows/automerge.yml` 的 `types` 里）⇒ 解冲突后必须 **push**（`synchronize`）才会触发。🔴 **本次复核边界（照实登记）**：#5922 现已 MERGED ⇒ `mergeable` 现读 **`UNKNOWN`**（GitHub 只对 open PR 计算）⇒ **那条读数不能事后复算**，可复算的是**机制**（哪个 workflow 带 `pull_request` / 哪个带 `pull_request_target`）与**口诀**本身。⚠️ **覆盖面（判据 24）**：文本锚**只**证明「这条判别动作还在 **agent 每次都看得到的那一面**」，**不证明** GitHub 侧的 merge-ref 行为（那不是仓内内容 ⇒ 无机械判据可加；同 `FM-E15` 的 `CASE_ID_ALLOCATION_BOUNDARY` 形态） |🔁 **第二次实证（2026-10-05 PR #6368）**：`opened` / `synchronize`（空提交）/ `reopened`（close→reopen）**三个事件都没能建出 `PR Check` run**（同 head sha 只有 3 条 `pull_request_target` 腿）；`git rebase origin/main` 解掉 `CHANGELOG.md` 冲突后 push ⇒ `PR Check` **立刻出现**、28 项全绿。⛔ **`workflow_dispatch` 不是出路**：`pr-check.yml` 多数 job 带 `if: github.event_name == 'pull_request'`，dispatch 会把它们**全部 skip** ⇒ Required 检查仍然满足不了。 |
 
 **计数器（现取）**：`state=gap` 的条目共 **1** 条（`FM-E10`）—— 这个数**只许缩短**，
 上限冻结在判据 `tests/unit_ci_workflows/test_dev_mode_failure_modes.py` 的 `GAPS_FROZEN` 里，**台账改不动它**。
@@ -183,6 +203,138 @@ bad = workflow_structure_violations(mutant)              # 判据吃的是**当�
 `FM-E4` / `FM-E14` 转 `guarded`）→ **#5707 本包再销一笔降到 1**（台账 `PD-8`：`FM-E17` → `guarded`，
 两条发布腿各自补 `schedule` 兜底面 + 落静态形状判据）。🔴 **口径订正**：判据语义是 **`现取 ≤ 上限`**（只许缩短）⇒
 「把上限抬到高于现取条数」**本身不会红**；「上限 == 现取」靠**销账时同批降上限**这个动作，不是靠判据。）
+
+> 🔴 **口径订正（2026-10-06，issue #6418）：本表多处把「本仓的 `push` 是被吞的」写成恒真前提 —— 现按条件式读。**
+> 自 #6418 起，`.github/workflows/automerge.yml` 的合并凭据改用**非内置** `secrets.AUTOMERGE_PAT`
+> （合并者不再是 `app/github-actions` ⇒ 不再触发 GitHub 的反递归抑制）⇒ 合并产生的 `push` 事件
+> **恢复触发**，三条部署腿的主触发面复活。**但这是条件式的**：`AUTOMERGE_PAT` 未配置 / 轮换失效时，
+> arm step 打具名 `::warning::` 并回落内置 token ⇒ 退回「push 被吞」形态 ⇒ **本表要求的兜底面一条都不许删**
+> （`FM-E17` 的每日 `schedule` / `deploy-reconcile` / 各腿的补偿面）—— 那正是凭据缺失那一刻的全部保护。
+> 判据 = `tests/unit_ci_workflows/test_automerge_merge_credential.py`（用例 `MC-084`）；
+> 复算（现取）：`gh run list --branch main --event push --limit 300 --json headSha,createdAt`。
+
+### 运行期自证（`AUTOMERGE_PAT` 落地台账，2026-10-06）
+
+**secret 已落地**：`AUTOMERGE_PAT` 由本会话经 `gh secret set`（stdin，值不回显）写入，来源 = 会话的
+`gho_` OAuth token（**用户明确选定的落地方式**，见 issue #6418 的裁定；`x-oauth-scopes` 实测 =
+`admin:public_key, gist, read:org, repo`）。⚠️ **两条已知代价，照实登记，不许读成"永久修好"**：
+
+1. **这是长期个人令牌，不是可窄化的细粒度 PAT** —— 权限面 = 上面那串 scope；它失效 / 被改密码吊销 ⇒
+   arm step 会**回落内置 token 并打具名 `::warning::`**（不会卡合并），但 `push` 面**静默退回被抑制形态**
+   ⇒ 届时按上面的订正段读「条件式」。**重启条件**：换成细粒度 PAT（Contents RW · Pull requests RW ·
+   Workflows RW）或 GitHub App 安装令牌。
+2. **该 token 缺 `workflow` scope** ⇒ 含 `.github/workflows/**` 改动的 PR 由它合并**可能被 GitHub 拒**
+   （本仓 #4470 / #4475 有同形记录：`gh pr merge` 被 GraphQL 拒）。**观测点** = 下一个「改 workflow 的 PR」的
+   arm job：若出现合并失败且报文指向 scope/workflow ⇒ 按「业务连续性优先」加**回落重试**（先 PAT、失败再用
+   内置 token 合并那一条 PR，宁可那一次 push 被吞，也不让 PR 卡住），并把这个出口补进判据。
+
+**自证协议**（零成本，合并后即可复算 —— 关 #6418 的证据）：
+
+```bash
+gh api "repos/zhaokai-mgzn/migao/actions/runs?event=push&branch=main&per_page=6" \
+  --jq '.workflow_runs[] | "\(.created_at) \(.head_sha[0:9]) \(.name)"'   # 应出现**本合并之后**时刻的批
+gh run list --workflow=deploy-frontend.yml --limit 5 --json event,headSha    # 应出现 event=push
+```
+
+**读数（落地后，2026-10-06T07:57:21Z）**：探针合并 PR #6431 → main `a773113cc`，`mergedBy = zhaokai-mgzn`
+（不再是 `app/github-actions`），arm job 逐字打出 `🔑 合并凭据 = AUTOMERGE_PAT（actor=<查询失败>）`，
+其后**当场出现 5 条 `event=push` 的 run**（Main Freshness Guard / Post-Merge Verify / Close Linked Issues /
+Stale Report Reaper / H5 Freshness Guard）⇒ **push 面复活已实测**。三条部署腿不在该批里是**正常**：
+它们各有 `on.push.paths` 过滤（如 `deploy-frontend.yml` = `frontend/admin-web/**`）；「push + paths 命中 ⇒
+部署腿跑」由 `2026-10-05T12:02:41Z` 批的 `Build and Deploy ai-agent-service` 作旁证。
+⚠️ **两个未决观测点**：① 含 `.github/workflows/**` 的 PR 由本凭证合并**可能被拒**（缺 `workflow` scope）—— **实测一次通过**（#6433，仅注释类改动），风险本次未复现但观测点保留；
+② `actor=<查询失败>`（该令牌无 `read:user`）⇒ 误配自检退化。两者都写进了 `automerge.yml` 的「凭据来源 / 轮换」段。
+
+**读数（现取，本段落地前）**：main 上最新一批 `event=push` 的 run 仍是 **`2026-10-05T12:02:41Z`（sha `73327161f`）**
+—— 即本 #6418 系列三个 PR（`b85c30ba4` / `9309ed6d4` / `fecffd12c`）合并时**各自 0 条 push run**。
+（复算命令见上；**排序坑**：`gh run list --event push` 的顺序在本机实测出现过乱序，判读请以
+`gh api .../actions/runs?event=push` 的 `created_at` 为准。）
+
+## 口径：几条绿色腿**不是**它名字读起来的意思（2026-10-03 固化，CI 审计 issue #6144 的 P2）
+
+> **为什么单开一节**：下面每条的**绿**都与「这条链真的跑通了」长得一模一样，而**没有任何东西
+> 会因此变红** —— 同族见上节 `FM-A*`：**判据没错，错在它证明的东西被读大了**。
+> 本节是这几条腿的**口径单一来源**，各 workflow 的**注释指回这里**（不在 workflow 里复制第二份口径）。
+> 读法：每一行给的是「**该看什么才算数**」，不是「这条腿坏了」。
+
+| 链路 / 位置 | 绿 ≠ 什么 | 需要判断时要看什么（可复制） |
+|---|---|---|
+| `.github/workflows/automerge.yml` 的 job `Enable auto-merge (bot, safe classes only)` | **绿 ≠ 已 arm** | `gh pr view <PR> --json autoMergeRequest`（非空 = 真 arm 了） |
+| `.github/workflows/verify-trigger.yml` 的「API 预算闸」 | **绿 ≠ 本轮跑过**（**有意 fail-open**） | 该 step 日志的「`GITHUB_TOKEN` 剩余额度：N / 小时」+ 有没有 `⏭️` 那行；或 run 页面 **Summary** 的汇总行在不在 |
+
+### ① `Auto Merge (bot, safe classes only)` 绿 **不等于**「已 arm」
+
+这条腿只对 **bot 作者 + 安全类别**的 PR 走这条路径。它在**三种**情况下都会**判绿**：
+
+1. **真 arm 了** —— job 里 `gh pr merge --auto --squash --delete-branch` 返回 0；
+2. **判「不安全」而 fail-closed** —— 类别 / checks 判定不过时，job 写一条 `note({...})` 注解，
+   打印「未 arm（fail-closed）—— 该 PR 保持人工处置」，然后**正常返回** ⇒ **该 check 是绿的**；
+3. **arm 命令本身失败** —— `MERGE_CMD_FAILED` 同样只写 `note(...)` 后返回 ⇒ 绿。
+
+⇒ **要判断某个 PR 到底 arm 没 arm，不许看这条腿的颜色**，看：
+
+```bash
+gh pr view <PR> --json autoMergeRequest --jq '.autoMergeRequest'   # 非空对象 = 已 arm；null = 没 arm
+```
+
+**唯一兜底 = `detect-dangling-prs`**（同文件）：它扫「**open、长时间没变红、也没合入**」的 PR，
+判红并打 `::error::` ⇒ 走定时腿开 P1 值班 issue。⇒ **绿到兜底响之间有 ≥60 分钟的窗口**
+（入口是 `schedule`，现取 `7 * * * *` = **小时级**；且 GitHub 对本仓 cron 有节流，实测 2~5.5h 并不罕见）。
+它**只报警、不补 arm**。
+
+### ② `verify-trigger` 的 API 预算闸 **有意 fail-open**
+
+`.github/workflows/verify-trigger.yml` 的「API 预算闸」步：`gh api rate_limit` 取不到核心额度时按 `9999`
+兜底；剩余 `< 150` ⇒ 写 `skip_run=true` ⇒ **后续所有步都被 `if: env.skip_run != 'true'` 跳过 ⇒ job 绿**。
+
+- **这是有意的**（该步日志自带「fail-open：不半途而废，下次 run 继续」），**不是缺陷**。
+  理由：绝不在限额边缘跑长循环，避免「跑到一半被限流 ⇒ 后半段静默失败」。同一形态在本链路里有两处：
+  ① 预算闸（run 开头，`< 150` 整轮不跑）；② 逐 PR 循环内每 10 个候选复核一次，`< 150` ⇒ `break`。
+- **代价（照实登记）**：**高负载时这条链静默不跑**，「合并 → 自动评审触发」延后到下一次 run
+  （触发面现取 `pull_request_target: opened/reopened` 对账 + `schedule` + `workflow_dispatch`），
+  而**该轮的绿不携带这个信息**。
+- **人怎么发现**（读数沿用本仓既有形态：**每轮一行、含零动作**，见 `scripts/mechanism-registry.json`
+  的 `reading_grammar` —— 本链路**没有**独立发射器，**它自己的汇总行就是读数**）：
+
+| 形态 | 去哪看 | 逐字特征 |
+|---|---|---|
+| 预算闸整轮跳过 | 该 run 的 job 日志里「API 预算闸」步 | `⚠️  剩余额度 < 150，本次退出（fail-open：不半途而废，下次 run 继续）` |
+| 循环中途停 | 「处理候选 PR」步日志 + 该 run 的 **Summary** | `⚠️  额度剩 N < 150，停止本轮（已处理 M 个候选，其余留给下次 run）`；Summary 表头仍在，但 `候选 PR` 与各计数**停在 M** |
+| 正常跑完 | 该 run 的 **Summary** | `mode=… posted=N idempotent_skip=N guard_skip=N no_linked_issue=N failed=N` |
+
+🔴 判别口诀：**「没跑」必须长得像「没跑」**。`posted=0` **且汇总行在** = 真零动作；
+**汇总行不在** = 没跑到那一步（被闸跳过），**不许**把后者读成「今天没有要触发的」。
+
+### ③ `npm audit` 装饰步（已按审计结论**删除**，2026-10-03）
+
+`pr-check.yml` 的 `admin-web-test` 步列里曾有一步
+`npm audit --production --audit-level=high` + `continue-on-error: true` ⇒ 它**既不出声也不拦**：
+即使审计失败该步也不让 job 变红，**而 required 腿的绿会被读成「依赖面有人看」**。
+2026-10-03 按 CI 审计（issue #6144）的裁定：**删除**（**不**改成 blocking —— 那会让无关 CVE 新闻随机卡住
+所有 PR；也**不**另建报告腿 —— 本仓**没有**消费这条信号的面，见下）。
+
+**这个信号以后去哪看**：**本仓目前没有依赖漏洞通道** —— 现取（2026-10-03）
+`gh api repos/zhaokai-mgzn/migao/vulnerability-alerts` ⇒ `404 Vulnerability alerts are disabled`
+（Dependabot 安全告警未开）；`code-scanning/alerts` ⇒ `no analysis found`。
+`.github/dependabot.yml` 只在做**版本更新 PR**，**不是**漏洞告警。
+⇒ 想恢复这个信号 = **显式开一个通道**（开 Dependabot 安全告警，或另接 pip-audit / trivy），
+**不要**再把一条 `continue-on-error` 的步当成它已有。
+
+（登记面同步：`tests/unit_ci_workflows/declaration_gate_registry.json` 的
+`pr-check-admin-web-tests.gated_steps` 同批删掉该步骤名 —— 它按**步骤名**逐字校验，判据 =
+`tests/unit_ci_workflows/test_gate_coverage_and_same_source.py`
+的 `test_registry_entries_are_live_and_verbatim`；`docs/wiki/gate-exemption-ledger.md` 的
+`continue-on-error` 条目同批复核。）
+
+### ④ `mechanism-liveness.yml` 的 `watchdog` 死门控（2026-10-03 删除）
+
+该 workflow 的 `on:` **只有** `schedule` + `workflow_dispatch`（`pull_request` 面已于 #5814 去掉，
+且 `tests/unit_ci_workflows/test_ci_trigger_surface_slimming.py` 的 `mechanism_liveness_problems`
+**逐字要求它不许长回 PR 面**）⇒ `watchdog.if: github.event_name != 'pull_request'` 是**恒真死条件**，
+会让人误以为 PR 上会跑到它。**处置：删掉该 `if:`**，并把上下文注释改成「本 workflow 无 PR 面，
+此 `if:` 曾是历史残留」。三张登记面的影响读数见 PR body（`ci_trigger_gate_ledger` **不涉**：
+它只裁 `on.workflow_run` 消费面，本文件无该面；`schedule_scope_ledger` **不涉**：它只核
+`on.schedule` 声明 ⇄ 现取的 cron；`test_ci_trigger_surface_slimming.py` **不涉**：它只读 `on:` 块）。
 
 ## 部署目标（2026-08-14 起：SAE → SWAS；当前 SWAS 为**测试环境**）
 

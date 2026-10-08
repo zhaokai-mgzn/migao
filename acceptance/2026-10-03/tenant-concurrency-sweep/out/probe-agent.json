@@ -1,0 +1,148 @@
+[
+  {
+    "id": "G1-服务令牌闸",
+    "name": ":8001 内部面无/伪造 X-Service-Token 必须 401",
+    "status": "pass",
+    "detail": "无=401 伪造=401 空=401",
+    "evidence": [
+      {
+        "case": "G1",
+        "noToken": 401,
+        "bogus": 401,
+        "empty": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"AUTH_REQUIRED\",\"message\":\"Missing X-Service-Token header\"}}}",
+        "note": "A/B 均无 recommended 商品 ⇒ 空集是数据事实（非隔离证据），隔离判据见 G2/G3"
+      }
+    ],
+    "at": "2026-10-03T03:12:14.533Z"
+  },
+  {
+    "id": "G2-工具直调租户归属",
+    "name": ":8001 /internal/tools/execute：租户由 body.tenant_id 决定，X-Tenant-Id 头不生效",
+    "status": "pass",
+    "detail": "body.tenant_id=20 → 35 件(越租户 0)；=21 → 1 件(越租户 0)；=1 → 93 件(越租户 0)；tenant_id=20 + 头 X-Tenant-Id:21 → 35 件(越租户 0)",
+    "evidence": [
+      {
+        "case": "G2-tenant20",
+        "status": 200,
+        "count": 35,
+        "foreign": [],
+        "unknown": 0,
+        "head": "{\"success\":true,\"data\":{\"products\":[{\"id\":\"2177bc3325e6bd021c6f3a1a6f875b03\",\"name\":\"漂移验收商品576588\",\"price\":68.0,\"description\":\"\",\"images\":[],\"main_image\":null,\"stock\":99994.0,\"stat"
+      },
+      {
+        "case": "G2-tenant21",
+        "status": 200,
+        "count": 1,
+        "foreign": [],
+        "unknown": 0,
+        "head": "{\"success\":true,\"data\":{\"products\":[{\"id\":\"caa4b914ff80bb3fdac746929a421560\",\"name\":\"彩排窗帘9434\",\"price\":39.9,\"description\":\"\",\"images\":[\"https://ai-customer-service-admin-dev.oss-cn"
+      },
+      {
+        "case": "G2-tenant1",
+        "status": 200,
+        "count": 93,
+        "foreign": [],
+        "unknown": 0
+      },
+      {
+        "case": "G2-forged-header",
+        "status": 200,
+        "count": 35,
+        "foreign": [],
+        "unknown": 0
+      }
+    ],
+    "at": "2026-10-03T03:12:18.497Z"
+  },
+  {
+    "id": "G3-C端端点租户过滤",
+    "name": "C 端只读端点按 token/调试身份的租户过滤（用租户 1 的 recommended 商品做非空夹具）",
+    "status": "pass",
+    "detail": "DEBUG 夹具（X-Debug-Role: customer ⇒ tenant 1）返回 1 件，与 DB 的租户 1 recommended 商品 [\"701dec2d2d994da111167c859c7cbf26\"] 一致；叠加伪造头后 [\"701dec2d2d994da111167c859c7cbf26\"]（头被忽略）；含租户 20/21 商品 0 件",
+    "evidence": [
+      {
+        "case": "G3-debug-customer",
+        "status": 200,
+        "got": [
+          "701dec2d2d994da111167c859c7cbf26"
+        ],
+        "dbFixture": [
+          "701dec2d2d994da111167c859c7cbf26"
+        ],
+        "head": "{\"success\":true,\"data\":{\"items\":[{\"id\":\"701dec2d2d994da111167c859c7cbf26\",\"name\":\"盯防加工项价格0908\",\"price\":88.0,\"image\":null,\"sales_count\":6.0}],\"total\":1},\"requestId\":\"req_733afbee75804d35\",\"timestamp\":1"
+      },
+      {
+        "case": "G3-debug-customer+伪造头",
+        "status": 200,
+        "got": [
+          "701dec2d2d994da111167c859c7cbf26"
+        ]
+      },
+      {
+        "case": "G3-debug-mibao(非customer)",
+        "status": 200,
+        "head": "{\"success\":true,\"data\":{\"items\":[{\"id\":\"701dec2d2d994da111167c859c7cbf26\",\"name\":\"盯防加工项价格0908\",\"price\":88.0,\"image\":null,\"sales_count\":6.0}],\"total\":1},\"requestId\":\"req_bcf340a47b7149fa\",\"timestamp\":1"
+      }
+    ],
+    "at": "2026-10-03T03:12:18.737Z"
+  },
+  {
+    "id": "G4-C端JWT认证",
+    "name": "C 端 JWT：真 token 可用、坏/缺 token 一律 401（fail-closed，不回落租户 1）",
+    "status": "pass",
+    "detail": "真A=200 真B=200 乱码=401 无token=401 伪造无tenantId=401",
+    "evidence": [
+      {
+        "case": "G4-realA",
+        "status": 200,
+        "got": []
+      },
+      {
+        "case": "G4-realB",
+        "status": 200,
+        "got": []
+      },
+      {
+        "case": "G4-bad",
+        "status": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"Invalid token: Invalid header padding\"}}}"
+      },
+      {
+        "case": "G4-noToken",
+        "status": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"AUTH_REQUIRED\",\"message\":\"Authentication required\"}}}"
+      },
+      {
+        "case": "G4-forgedNoTenant",
+        "status": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"Invalid token: Signature verification failed\"}}}"
+      }
+    ],
+    "at": "2026-10-03T03:12:18.813Z"
+  },
+  {
+    "id": "G5-并发租户归属",
+    "name": "ai-agent-service 并发下工具直调的租户归属",
+    "status": "pass",
+    "detail": ":8001 并发 60 请求（A/B 交错工具直调），墙钟 2108ms，首个响应 175ms 时仍有 59 个在飞；越租户响应 0 个",
+    "evidence": [
+      {
+        "case": "G4-bad",
+        "status": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"Invalid token: Invalid header padding\"}}}"
+      },
+      {
+        "case": "G4-noToken",
+        "status": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"AUTH_REQUIRED\",\"message\":\"Authentication required\"}}}"
+      },
+      {
+        "case": "G4-forgedNoTenant",
+        "status": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"Invalid token: Signature verification failed\"}}}"
+      }
+    ],
+    "at": "2026-10-03T03:12:20.931Z"
+  }
+]

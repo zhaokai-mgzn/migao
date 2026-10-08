@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PP-006, OR-014
+// case_ids: PP-006, OR-014, PG-069
 // 加工项解耦（issue #4371）：`applicable_product_categories` 与 `applicableProductCategoryId`
 // 过滤随「按商品分类过滤加工项」一并删除 ⇒「按适用商品分类筛选」「带适用商品分类的建/改」
 // 三条用例随之删除（原声明的 PP-005 即该筛选用例，用例库中已同步移除）；
@@ -166,6 +166,37 @@ class ProcessingItemServiceTest {
         // then
         assertThat(result.getTotal()).isEqualTo(0);
         assertThat(result.getItems()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("#6226 分页查询：该页加工项 category_id 全为空/NULL ⇒ 不得对不可变空表 get(null) 抛 NPE（原 500）")
+    void getProcessingItems_AllCategoryIdsBlank_RendersInsteadOf500() {
+        // 夹具（构造式，不写库）：该页**所有**加工项的 category_id 都是空值 ——
+        // null 与 "" 两种形态都进（StringUtils.hasText 一并滤掉 ⇒ getCategoryNameMap 走空集分支）。
+        // 修复前该分支 return Map.of() ⇒ 调用点 categoryNameMap.get(item.getCategoryId()) 抛
+        // NullPointerException（不可变空表的 get(null) 先 requireNonNull；**空串键不抛**，
+        // 所以触发者是 null 那行）⇒ GlobalExceptionHandler 映射成 500 INTERNAL_ERROR。
+        // 本断言在修前**必红**（NPE），修后必须是「正常渲染 + 缺值 null」。
+        ProcessingItemQueryRequest query = new ProcessingItemQueryRequest();
+        Page<ProcessingItem> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(
+                ProcessingItem.builder().id("pi-null").tenantId(1L).name("无分类加工项A")
+                        .categoryId(null).unit("米").status("active").build(),
+                ProcessingItem.builder().id("pi-blank").tenantId(1L).name("无分类加工项B")
+                        .categoryId("").unit("米").status("active").build()));
+        mockPage.setTotal(2);
+        when(processingItemMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+
+        // when：不得抛（抛 NPE ⇒ 上面就是 500）
+        PageResponse<ProcessingItemResponse> result = processingItemService.getProcessingItems(query, 1L);
+
+        // then：正常渲染，缺值渲染为 null（不是 500、也不是凭空造一个分类名）
+        assertThat(result.getItems()).hasSize(2);
+        assertThat(result.getItems()).extracting(ProcessingItemResponse::getCategoryName)
+                .containsExactly(null, null);
+        // 空键集合不下发 IN 查询（与「批量取回」同口径，不因修复而多发一次查询）
+        verify(processingCategoryMapper, never()).selectList(any());
     }
 
     // ======================== 创建加工项测试 ========================

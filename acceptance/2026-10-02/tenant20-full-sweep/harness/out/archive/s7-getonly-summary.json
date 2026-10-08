@@ -1,0 +1,75 @@
+[
+  {
+    "id": "M-00",
+    "name": "身份就绪（管理员 + 岗位员工）",
+    "status": "pass",
+    "detail": "管理员(admin):1码｜客服(customer_service):12码｜运营(operator):26码｜销售(sales):9码｜财务(finance):9码｜商品管理员(product_manager):8码｜知识编辑(knowledge_editor):4码｜验收临时岗790472(acc_custom_790472):2码｜快照可用=true",
+    "evidence": [
+      "POST /api/auth/sms/login",
+      "POST /api/auth/employee/login",
+      "GET /api/auth/me"
+    ],
+    "at": "2026-10-02T15:09:55.075Z"
+  },
+  {
+    "id": "M-00b",
+    "name": "探针自证：矩阵运行期间**未改动任何真实对象**",
+    "status": "pass",
+    "detail": "跑前跑后一致：用户(在用 15/软删 0)、岗位名、订单 7、商品 6、发货单 0",
+    "evidence": [
+      "harness/s7-rbac-matrix.mjs 的 guard()"
+    ],
+    "at": "2026-10-02T15:10:58.930Z"
+  },
+  {
+    "id": "M-01",
+    "name": "全量矩阵：发现 33 处违规",
+    "status": "fail",
+    "detail": "非持有者放行：undefined /api/admin/users（需 employee:create）→ 运营(operator)；非持有者放行：undefined /api/admin/users/{id}（需 employee:create）→ 运营(operator)；非持有者放行：undefined /api/admin/users/{id}（需 employee:create）→ 运营(operator)；非持有者放行：undefined /api/admin/workers（需 employee:create）→ 运营(operator)；非持有者放行：undefined /api/admin/customers/{id}（需 customer:create）→ 客服(customer_service)；非持有者放行：undefined /api/admin/customers/{id}（需 customer:create）→ 销售(sales)；非持有者放行：undefined /api/admin/customers/{id}（需 customer:create）→ 财务(finance)；非持有者放行：undefined /api/admin/customers/{id}（需 customer:create）→ 客服(customer_service)；非持有者放行：undefined /api/admin/customers/{id}（需 customer:create）→ 销售(sales)；非持有者放行：undefined /api/admin/customers/{id}（需 customer:create）→ 财务(finance)；非持有者放行：undefined /api/admin/customer-tags（需 customer:create）→ 客服(customer_service)；非持有者放行：undefined /api/admin/customer-tags（需 customer:create）→ 销售(sales)",
+    "evidence": [],
+    "at": "2026-10-02T15:10:58.931Z"
+  },
+  {
+    "id": "M-02",
+    "name": "反证覆盖度：每行是否有「非持有者被 403」的对照",
+    "status": "pass",
+    "detail": "63/125 行有反证；62 行无（逐条列出，便于人工复核是否全员有码）",
+    "evidence": [
+      "undefined /api/admin/permissions/api/admin/permissions（system:view）",
+      "undefined /api/admin/users/{id}/reset-password（employee:create）",
+      "undefined /api/admin/users/{id}/status（employee:create）",
+      "undefined /api/admin/after-sales/{id}/status（order:refund）",
+      "undefined /api/admin/agent-sessions/{id}/assign（agent:session:manage）",
+      "undefined /api/admin/agent-sessions/{id}/end（agent:session:manage）",
+      "undefined /api/admin/agent-sessions/{id}/messages（agent:session:manage）",
+      "undefined /api/admin/production/craft-calc-config/api/admin/production/craft-calc-config（processing:manage）",
+      "undefined /api/admin/customers/{customerId}/tags/{tagId}（customer:create）",
+      "undefined /api/admin/customers/{customerId}/tags/{tagId}（customer:create）",
+      "undefined /api/admin/customer-tags/{id}（customer:create）",
+      "undefined /api/admin/customer-tags/{id}（customer:create）",
+      "undefined /api/admin/production/cutting-height-config/api/admin/production/cutting-height-config（processing:manage）",
+      "undefined /api/admin/knowledge/candidates/{id}/adopt（knowledge:manage）",
+      "undefined /api/admin/knowledge/candidates/{id}/adopt-edited（knowledge:manage）",
+      "undefined /api/admin/knowledge/candidates/{id}/reject（knowledge:manage）",
+      "undefined /api/admin/knowledge/cards/{id}（knowledge:manage）",
+      "undefined /api/admin/knowledge/cards/{id}（knowledge:manage）",
+      "undefined /api/admin/knowledge/cards/{id}/publish（knowledge:manage）",
+      "undefined /api/admin/knowledge/cards/{id}/archive（knowledge:manage）"
+    ],
+    "at": "2026-10-02T15:10:58.931Z"
+  },
+  {
+    "id": "M-03",
+    "name": "服务器日志：拒绝留痕",
+    "status": "pass",
+    "detail": "命中 5 行；示例：2026-10-02 17:04:21.851 [http-nio-8080-exec-140] WARN  c.m.a.config.GlobalExceptionHandler - 权限不足: 权限不足，需要权限: inbound:view (requiredPermissi",
+    "evidence": [
+      "L267813",
+      "L268320",
+      "L268323",
+      "L268581",
+      "L268587"
+    ],
+    "at": "2026-10-02T15:10:59.084Z"
+  }
+]

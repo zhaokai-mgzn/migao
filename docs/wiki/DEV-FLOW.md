@@ -104,15 +104,18 @@
 
 > 🔴 **按拓扑自动选判定**（S4 / issue #6020 换链之后；空集**绝不许**报绿）：
 > **拓扑 A** = 活锚就是预设仓检出的**仓根**（换链后的当前形态）⇒ 判 ① `preset.yml` + `skills/` 在不在
-> ② 工作树**干净**（读不到状态 ⇒ `3`）③ HEAD 就在**活锚自己的** `origin/main` 上（取不到远端 ⇒ `3`；不同 ⇒ 红）；
+> ② 工作树**干净**（读不到状态 ⇒ `3`）③ HEAD 就在**活锚自己的** `origin/main` 上（取不到远端 ⇒ `3`；不同 ⇒ 红）
+> ④ **比对面解析出 0 个文件 ⇒ `3`**（issue #6178：0 个文件证不了任何字节，**绝不许**报绿）；
 > **拓扑 B** = 活锚仍是基线仓里的 `.agent-presets/migao` 子树（兼容窗口）⇒ 历史口径（内容逐字节比对）；
 > **拓扑 C** = 拓扑 B 形态 + 基线仓该前缀**空集** ⇒ `⏭️ 未跑判定` + **`3`**：
 > 「基线仓已无该前缀 ⇒ 这条比对本就不适用」——`0 个文件` 的「逐字节一致」是**没得比**，不是「比过且一致」。
+> ⚠️ `preset-anchor-refresh.sh` 的自检**按拓扑选对照**：拓扑 A 下对照恒 = **预设仓检出**（镜像自身），
+> 显式 `--repo <业务仓>` 会**被忽略并出声**（业务仓已不承载预设 ⇒ 拿它当对照只剩空比对，issue #6178 病灶）。
 
 | 层 | 位置 | 管什么 |
 |---|---|---|
 | ① **提交路径**（仅预设仓；增量 fail-closed） | `./scripts/dev-worktree.sh preset-guard`（判定本体 `scripts/agent-presets-guard.py`） | 暂存/工作区的预设**版本下降** ⇒ **非零退出**；**合法升级放行**；**同号不同内容 = 跨包撞车 ⇒ 非零退出**（issue #5425；2026-09-24 一晚 2 次，出口 = 抬号到「基准版本 + 1」）；退出码**三态**：`0` 通过 / `1` 判红 / **`3` 无法判定**（基线 `origin/main` 取不到 ⇒ 连「能不能比」都判不了，**不得当 0 读**；`1` 优先于 `3`）+ `2` 用法错误；每次运行打印工作量读数（判定/命中/跳过原因，不报挂钟；零动作也出声） |
-| ② **加载点**（活锚，`#4026`） | `./scripts/preset-anchor-check.sh` / `preset-anchor-refresh.sh`（判定本体同上 `anchor` 子命令） | **DSH 真正加载的那份内容**是否就是预设仓 `origin/main`：**按拓扑自动选判定**（见下）—— 形态 / 内容逐字节 / 检出 sha / 工作树干净 / frontmatter 可加载性 ⇒ 落后/悬空/内容不同/就地编辑/加载不了 = **非零退出**（`⏭️ 未跑判定` ≠ 通过；基线 ref 或活锚自身远端 main 取不到、或**基线仓该前缀空集** ⇒ **`3` 无法判定**，同样 ≠ 通过） |
+| ② **加载点**（活锚，`#4026`） | `./scripts/preset-anchor-check.sh` / `preset-anchor-refresh.sh`（判定本体同上 `anchor` 子命令） | **DSH 真正加载的那份内容**是否就是预设仓 `origin/main`：**按拓扑自动选判定**（见下）—— 形态 / 内容逐字节 / 检出 sha / 工作树干净 / frontmatter 可加载性 ⇒ 落后/悬空/内容不同/就地编辑/加载不了 = **非零退出**（`⏭️ 未跑判定` ≠ 通过；基线 ref 或活锚自身远端 main 取不到、或**比对面解析出 0 个文件**（拓扑 A 空比对 / 拓扑 C 空前缀）⇒ **`3` 无法判定**，同样 ≠ 通过） |
 
 > **② 为什么单列一层**：**生效的是活锚**（`~/.dsh/.agent-presets/migao` 解析出的目录），
 > 不是任何仓库里的副本。故锚点必须是**专职只读镜像**（不是会在清理半径内的 `migao-wt/*` worktree，
@@ -140,7 +143,7 @@
 | UI Regression Check | 防 UI token 回退 | 工作区旧 UI 被提交 |
 | QA Growth Gate | case_ids/测试覆盖/弱断言 | 测试忘带 case_ids、测试放错目录 |
 | Case Contract | 用例引用完整性 | 改了 case yml 未重渲染 |
-| Agent Eval (smoke) | 米宝真实 LLM 行为 | **偶发 LLM 波动**（JSONDecodeError 等，CI 内部已自动重试 1 次） |
+| Agent Eval (smoke) | 黄金策真实 LLM 行为 | **偶发 LLM 波动**（JSONDecodeError 等，CI 内部已自动重试 1 次） |
 | admin-api/web/ai-agent 单测 | 三模块测试 | 并行改动契约不一致 |
 
 ### 3.1 Agent Eval 偶发失败的处理（v1.1 修正）
@@ -237,13 +240,13 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
    符号在文件里完全找不到 ⇒ **阻塞**；行号漂移（符号在别处）⇒ 警告。
 9. `CASE-TRUST-SINGLE-LEG-NO-PERSONA` —— 按工具集可判定为单端的用例必须标注 `persona`
    （#3822：缺标注的另一条腿必挂，`case_ids` 窄跑还会触发 runner 的「禁止静默少跑」守卫）。
-   ⚠️ **判据形态（#4356 收紧）**：单端 = 「**小布腿跑得动 ∧ 米宝腿跑不动**」——
-   米宝腿只有 persona 过滤、**没有**工具集过滤（`eval_case_filter.select_cases_for_persona`）
-   ⇒ 工具集 ⊄ 米宝的用例在米宝腿**必挂**，那才是需要标注的一类。
+   ⚠️ **判据形态（#4356 收紧）**：单端 = 「**元元腿跑得动 ∧ 黄金策腿跑不动**」——
+   黄金策腿只有 persona 过滤、**没有**工具集过滤（`eval_case_filter.select_cases_for_persona`）
+   ⇒ 工具集 ⊄ 黄金策的用例在黄金策腿**必挂**，那才是需要标注的一类。
    两端**共享**的工具（`order_create` / `product_detail` / `product_search` / `validate_input` /
    `interact` / `knowledge_search` / `production_progress_query`）**不构成**单端理由：
-   旧形态「工具集 ⊆ 小布 ⇒ 只能跑小布」隐含「两端工具集不相交」这一**假前提**，
-   照它反推 `persona: xiaobu` 会把真实米宝用例**静默移出米宝腿**（全量跑不报红），
+   旧形态「工具集 ⊆ 元元 ⇒ 只能跑元元」隐含「两端工具集不相交」这一**假前提**，
+   照它反推 `persona: xiaobu` 会把真实黄金策用例**静默移出黄金策腿**（全量跑不报红），
    并在 C 端腿制造假红（显式 `xiaobu` 无条件保留 ⇒ 绕过 `MIBAO_SEMANTIC_PATTERNS` 语义过滤）。
    **语义单端**（工具集两端都成立、行为只在 B 端可满足，如 `PR-018`）静态不可判定，
    按证据逐条分诊（#4086），不属本判据。
@@ -310,7 +313,7 @@ python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守
   curl -s -o /dev/null -w "%{http_code}\n" -X POST https://api.migaozn.com/api/auth/sms-code -H 'Content-Type: application/json' -d '{}'  # admin-api → 401（存活+鉴权）
   ```
 - 冒烟失败若为全量 502/Connection refused 且后续部署已覆盖 → 多为**部署滚动重启瞬态**，以最新一次部署结论为准（见 §7.3 的 mergeStateStatus 思路）。
-- 生产登录：13800138000 / 万能码 123456（短信网关仍 bypass，上线前需接入）。
+- 云测试环境登录：13800138000 / 万能码 123456（短信网关仍 bypass，上线前需接入）；账号属「米高测试环境」（**tenant 25**，2026-10-04 环境重建后经入驻流程新建）——原 tenant 1「词元通达」连同全部数据已清空。
 
 ## 5. 相关文档
 - `migao-dev-flow` 技能（**权威源**，本页只是它的历史节选）— 预设仓 `zhaokai-mgzn/migao-agent-presets` 的 `skills/migao-dev-flow/SKILL.md`（本机经活锚 `~/.dsh/.agent-presets/migao` 读到只读镜像）

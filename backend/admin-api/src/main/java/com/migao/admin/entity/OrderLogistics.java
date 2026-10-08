@@ -39,6 +39,15 @@ public class OrderLogistics {
     /** 物流类型：express 快递 / logistics 物流专线（四季安等，issue #3984，V47） */
     private String logisticsType;
 
+    /**
+     * 发货方式（issue #6239，V147）：{@code logistics} 物流发货 / {@code none} 无需物流。
+     *
+     * <p>存量行与老客户端为 {@code null} = <b>未采集</b>（当时的选择被丢弃、无从复原，不猜、不回填）；
+     * 读取方把 {@code null} 按「未采集」处理。取值白名单在
+     * {@code controller/OrderController} 的 {@code updateLogistics} 收口。</p>
+     */
+    private String shippingMethod;
+
     /** in_transit / delivered / returned */
     private String status;
 

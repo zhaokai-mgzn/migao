@@ -1,0 +1,27 @@
+{
+  "status": 200,
+  "text": "{\"success\":true,\"data\":{\"id\":\"188c659311c0e9eab42b2072dc12ae47\",\"orderNo\":\"20261003589620439\",\"customerName\":\"线B验收客户-RP\",\"customerPhone\":\"13900000007\",\"customerAddress\":\"线B验收地址\",\"logisticsType\":\"express\",\"logisticsCompany\":\"线B验收物流\",\"totalAmount\":100.00,\"actualAmount\":100.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"线B验收（探针订单-pending）\",\"isUrgent\":false,\"createdByName\":\"王小明\",\"items\":[{\"id\":\"2de063e3f6eb1980a502eb96a0a24a12\",\"productId\":\"ca94a69eb2a9e1ce826e1b06d2af21f5\",\"productName\":\"线B验收商品-RP-mus5z63yag8k\",\"skuCode\":\"LB-RP-MUS5Z63YAG8K\",\"quantity\":1.00,\"unitPrice\":100.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106308995385790465\",\"colorId\":\"2106308995348041730\",\"skuCode\":\"LB-RP-MUS5Z63YAG8K-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":100.00,\"amount\":100.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-03T17:02",
+  "dataKeys": [
+    "id",
+    "orderNo",
+    "customerName",
+    "customerPhone",
+    "customerAddress",
+    "logisticsType",
+    "logisticsCompany",
+    "totalAmount",
+    "actualAmount",
+    "discountAmount",
+    "refundAmount",
+    "processingFee",
+    "status",
+    "remark",
+    "isUrgent",
+    "createdByName",
+    "items",
+    "processingItems",
+    "createdAt",
+    "updatedAt"
+  ],
+  "o7": "188c659311c0e9eab42b2072dc12ae47"
+}

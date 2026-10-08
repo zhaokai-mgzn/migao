@@ -1,6 +1,6 @@
 // case_ids: CH-001, CH-005, UI-007, UI-010, UI-016, UI-018
 /**
- * 小布对话页 E2E 验收
+ * 元元对话页 E2E 验收
  * 覆盖：入口渲染（品牌导航）→ 会话就绪 → 快捷操作发消息（真实后端 SSE）→ 新对话 → 键盘输入发消息
  * 依赖真实后端（app.migaozn.com 测试环境）；LLM 回复较慢，等待窗口 120s。
  *
@@ -40,8 +40,8 @@ async function run(mp) {
     page ? `path=${page.path}` : '无法获取当前页面')
   await capture(mp, SCENARIO, '01-entry.png')
 
-  // ── 2. 品牌导航栏（UI-016 副标题租户化 / UI-018 客服名取 botName，未配置兜底「小布」）──
-  // 旧断言写死「小布」必红：botName 由企业设置下发（本环境实测「光头强」）。
+  // ── 2. 品牌导航栏（UI-016 副标题租户化 / UI-018 客服名取 botName，未配置兜底「元元」）──
+  // 旧断言写死「元元」必红：botName 由企业设置下发（本环境实测「光头强」）。
   const navNameEl = await waitForElement(page, '.chat-page__navbar-name', 15000)
   const navName = navNameEl ? ((await navNameEl.text()) || '').trim() : ''
   rep.step('导航栏客服名已渲染（botName 非空）', navName.length > 0,

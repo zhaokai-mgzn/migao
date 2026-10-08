@@ -18,7 +18,7 @@ test.describe('设置页开关几何完整性（issue #3924）', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: { botName: '小布', greetingTemplate: '' } }),
+        body: JSON.stringify({ success: true, data: { botName: '元元', greetingTemplate: '' } }),
       })
     })
     await page.route('**/api/admin/briefing/config', async (route) => {

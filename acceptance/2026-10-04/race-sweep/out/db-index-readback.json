@@ -1,0 +1,22 @@
+{
+  "at": "2026-10-04T01:18:54.622Z",
+  "stockBatchConsumptionsUniqueIndexes": [
+    {
+      "indexname": "stock_batch_consumptions_pkey",
+      "indexdef": "CREATE UNIQUE INDEX stock_batch_consumptions_pkey ON public.stock_batch_consumptions USING btree (id)"
+    },
+    {
+      "indexname": "uk_batch_consumption_line",
+      "indexdef": "CREATE UNIQUE INDEX uk_batch_consumption_line ON public.stock_batch_consumptions USING btree (tenant_id, processing_order_no, batch_id, order_item_id, reason) WHERE (deleted = 0)"
+    },
+    {
+      "indexname": "uk_batch_consumption_stocktake",
+      "indexdef": "CREATE UNIQUE INDEX uk_batch_consumption_stocktake ON public.stock_batch_consumptions USING btree (tenant_id, stocktake_run_id, batch_id) WHERE ((stocktake_run_id IS NOT NULL) AND (deleted = 0))"
+    }
+  ],
+  "consumptions25": [
+    {
+      "c": 8
+    }
+  ]
+}

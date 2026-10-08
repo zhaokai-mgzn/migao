@@ -8,7 +8,7 @@ product_manage 一直用 basePrice（正确），本测试防 product_update 再
 
 第二类回归（issue #3560）：product_update 把 status（上下架）写进请求体，而
 AgentProductUpdateRequest **没有 status 字段**，service 也从不读它 → 走 hasUpdate=false
-分支直接返回商品详情（HTTP 200 + success）→ 米宝回「已下架」而库里状态没变（假成功）。
+分支直接返回商品详情（HTTP 200 + success）→ 黄金策回「已下架」而库里状态没变（假成功）。
 本测试静态比对「本工具下发的请求体字段」与「admin-api DTO 声明的字段」，任一侧漂移即红。
 """
 # case_ids: DF-010, PR-007

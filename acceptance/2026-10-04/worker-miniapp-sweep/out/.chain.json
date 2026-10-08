@@ -1,0 +1,30 @@
+{
+  "uniq": "mutc2evhi1",
+  "categoryId": "76d07358882b0e5022b429aeaae19c53",
+  "productName": "线A验收布-mutc2evhi1",
+  "productId": "fee1842f9fd1652e6100a2e3347cd29d",
+  "skuId": "2106605513668681729",
+  "skuCode": "LAC-S-MUTC2EVHI1",
+  "orderId": "abf53c6d5ef379d2d6e9506dbece0ca3",
+  "orderNo": "20261004979700005",
+  "poId": "aea790d0a9a95338c2af6da6e0121dcc",
+  "poNo": "JG-20261004-4568",
+  "opTemplate": {
+    "operation_name": "裁剪-布",
+    "group_name": "裁剪",
+    "unit": "米",
+    "position_name": "线A验收布-mutc2evhi1",
+    "position_kind": "布帘",
+    "qty_source": "fabric_meters",
+    "unit_price": "0.40",
+    "factor": "1.00",
+    "product_id": "fee1842f9fd1652e6100a2e3347cd29d"
+  },
+  "opsCount": 2,
+  "at": {
+    "cst": "2026-10-04 12:41:09 +08",
+    "utc": "2026-10-04T04:41:09.544Z"
+  },
+  "apiBase": "https://api.migaozn.com",
+  "source": "bootstrap-chain.mjs（真实 API；非 SQL 旁路）"
+}

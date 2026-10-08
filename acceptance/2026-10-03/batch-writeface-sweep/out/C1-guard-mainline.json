@@ -1,0 +1,31 @@
+{
+  "http": 422,
+  "body": {
+    "success": false,
+    "error": {
+      "code": "VALIDATION_ERROR",
+      "message": "删除工序未通过校验（1 条问题）",
+      "details": [
+        {
+          "field": "routing",
+          "message": "工序「线②验收护栏工序173064」还在活跃路线「线②验收路线」的主线里 —— 先改主线（把它从该路线去掉），再删它"
+        }
+      ]
+    },
+    "requestId": "req_5f0203fe87b946b2",
+    "timestamp": 1791006173,
+    "suggestion": "按每条理由处理：先改主线 / 先删改那条规则 / 先在对应部位设为不做"
+  },
+  "opAfter": {
+    "id": "57b862c352d2a7a02355ed0aba4bd4e0",
+    "deleted": 0
+  },
+  "tplAfter": {
+    "id": "l2tpl4a30ff6eaa49ebb7d00d",
+    "mainline": [
+      "线②验收护栏工序173064"
+    ],
+    "deleted": 0,
+    "status": "active"
+  }
+}

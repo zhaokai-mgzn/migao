@@ -104,8 +104,8 @@ def create_skill_config(
         tool_names: Tool 名称列表
         route_keys: 路由 key 列表，默认 [domain]
         intents: 意图列表，默认 []
-        mibao_prompt: 米宝人格 Prompt
-        xiaobu_prompt: 小布人格 Prompt
+        mibao_prompt: 黄金策人格 Prompt
+        xiaobu_prompt: 元元人格 Prompt
         extra_prompts: 额外人格 Prompt，如 {"supply_chain_agent": "..."}
         default_persona: 默认 fallback 人格
         max_iterations: 最大迭代次数

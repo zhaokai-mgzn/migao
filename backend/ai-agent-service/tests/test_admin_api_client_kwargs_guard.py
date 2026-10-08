@@ -4,7 +4,7 @@
 issue #3548（P0）：finance_api.create_transaction 用 `client.post(..., json=payload)`
 调用自研客户端，而 `app/utils/http_client.py::AdminApiClient.post` 只接受 `json_data`
 且无 `**kwargs` → 每次调用必然 `TypeError: post() got an unexpected keyword argument 'json'`
-→ 米宝「登记线下收支」100% 失效（评测用例 FN-001 恒失败）。
+→ 黄金策「登记线下收支」100% 失效（评测用例 FN-001 恒失败）。
 
 同类缺陷的通用形态：调用自研客户端时的关键字拼写错误（`json=` vs `json_data=`）。
 本测试把该约束**上升为仓库级守卫**：扫描全部工具模块，任何 admin-api 客户端调用

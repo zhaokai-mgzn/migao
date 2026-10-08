@@ -14,7 +14,7 @@ import java.util.Map;
  * {@code 包纱孔 0.1} · <b>{@code 画线}（有项无值）</b> · {@code 布贴 0.015} · {@code 纱贴 0.01}。</p>
  *
  * <p><b>命中口径</b>：默认按「**同名匹配**」——{@code hit.trigger_value} 逐字等于订单上的
- * 特殊选项名（{@code processingInfo.specialOptions[]}）即命中。⚠️ 照实说明：米高的特殊选项词表
+ * 特殊选项名（{@code processingInfo.specialOptions[]}）即命中。⚠️ 照实说明：观星台的特殊选项词表
  * （真值源 {@code docs/curtain-production-rules.md}）里并没有「包布折 / 包布孔 / 布贴 / 纱贴 / 画线」
  * 这五个名字 ⇒ 这份种子**开箱不会命中任何东西**，等商家把触发值改成自己词表里的名字（或现场取证拿到
  * 壁达那批「选项 ↔ 扩展项」对应行）才生效。这是**有意**的：宁可漏、不可错（给机器的值偏大是事故）。</p>

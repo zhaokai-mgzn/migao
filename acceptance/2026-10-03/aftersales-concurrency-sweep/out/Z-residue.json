@@ -1,0 +1,26 @@
+{
+  "cleanupError": null,
+  "residue": {
+    "counts": {
+      "products": 0,
+      "productSkus": 0,
+      "orders": 0,
+      "orderItems": 0,
+      "tickets": 0,
+      "ticketTimeline": 0,
+      "ledger": 0,
+      "finance": 0,
+      "clientKeys": 0,
+      "tempTables": 0,
+      "processingOrders": 0,
+      "positionOperations": 0,
+      "workLogs": 0
+    },
+    "total": 0
+  },
+  "at": {
+    "cst": "2026-10-03 17:07:40 +08",
+    "utc": "2026-10-03T09:07:40.302Z"
+  },
+  "clean": true
+}

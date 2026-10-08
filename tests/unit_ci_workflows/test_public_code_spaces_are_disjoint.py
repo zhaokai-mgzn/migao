@@ -290,7 +290,7 @@ def test_the_real_files_are_readable_at_all() -> None:
 #
 # 🔴 实测（改动前的线上读数，2026-09-27）：
 #     `curl -s -o /tmp/i.html -w '%{http_code}' https://app.migaozn.com/i/__probe__` ⇒ **200**，
-#     且 `sha256(body)` 与 `GET /` **逐字节相同**（= C 端小布 index.html）；
+#     且 `sha256(body)` 与 `GET /` **逐字节相同**（= C 端元元 index.html）；
 #     同一时刻 `/s/__probe__` ⇒ **404**（到了 admin-api，因为短码不存在）。
 #     ⇒ `/i/` 没在 nginx 登记 ⇒ 命中 `location /` 的 `try_files … /index.html` ⇒
 #     **印在标签上的码扫出来是 C 端页面**。200 不是错误码 ⇒ 监控不红、只有真机扫码才发现
@@ -302,7 +302,7 @@ def test_the_real_files_are_readable_at_all() -> None:
 # |---|---|---|
 # | F1 | **未登记即红**：代码里的码空间 ∪ nginx 的公开前缀 ∪ 发布腿声明的 h5 子目录 == 登记表键集 | 新开 `/l/` / 新发一个 h5 子目录而不登记 ⇒ 红 |
 # | F2 | **归属逐项相符**：代理面必须 `proxy_pass http://<登记的上游>;`（**不带 URI 后缀**）；静态面不得有 proxy_pass，且 fallback 不跨出自己命名空间 | `proxy_pass http://admin-api:8080/i;` ⇒ 红（路径被改写成 `/i7K3M9QP2`） |
-# | F3 | **语义模拟**（端到端离线）：每个探针请求落到**它自己的**落地面 | 删掉 `location /i/` ⇒ 红，且**指名**「落到了 `location /` 的 SPA fallback（→ index.html = C 端小布）」 |
+# | F3 | **语义模拟**（端到端离线）：每个探针请求落到**它自己的**落地面 | 删掉 `location /i/` ⇒ 红，且**指名**「落到了 `location /` 的 SPA fallback（→ index.html = C 端元元）」 |
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -367,13 +367,10 @@ PUBLIC_PREFIX_FACES: dict[str, NginxFace] = {
     ),
     "/w/": NginxFace(
         prefix="/w/",
-        kind=FACE_STATIC_UNDER_ROOT,
-        owner="worker-h5 发布腿（.github/workflows/worker-h5-publish.yml，issue #4837）",
-        semantics="工人端报工页（零构建纯 ESM，静态根下的 w/ 子目录）",
-        fallback=(
-            "**没有自己的 location**：由 `location /` 的 root 承载 ⇒ 文件缺失会落到根 index.html（C 端）；"
-            "该面的身份由 deploy/scripts/worker-h5-verify-served.sh 的线上断言兜"
-        ),
+        kind=FACE_STATIC,
+        owner="worker-h5 发布腿（.github/workflows/worker-h5-publish.yml，issue #4837；自有 location 见 issue #6293）",
+        semantics="工人端报工页（零构建纯 ESM，静态根下的 w/ 子目录；自有 location 是为了给 `.mjs` 一个 JS MIME）",
+        fallback="落回自己的 /w/index.html（**不得**落到根 index.html）",
     ),
 }
 
@@ -504,7 +501,7 @@ def _route_diagnosis(path: str, want: tuple[str, str], got: tuple[str, str, str]
     prefix = "/" + path.strip("/").split("/")[0] + "/" if path.strip("/") else "/"
     if kind == FACE_STATIC and target == "index.html" and want[0] == FACE_PROXY:
         return (
-            f"{path} 落到了 `location /` 的 SPA fallback（→ index.html = C 端小布），期望代理到 {want[1]} —— "
+            f"{path} 落到了 `location /` 的 SPA fallback（→ index.html = C 端元元），期望代理到 {want[1]} —— "
             f"{prefix} 是**印在纸上的公开入口**（码一旦打印就是 URL）：扫出来必须是它自己的落地面。"
             "静默串端比 404 危险得多（HTTP 200，监控不红、只有真机扫码才发现）"
         )

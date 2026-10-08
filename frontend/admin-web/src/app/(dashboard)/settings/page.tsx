@@ -16,7 +16,7 @@ import { useAuthStore } from '@/store/auth'
 import type { SystemSettings, AiConfig, BriefingConfig } from '@/types'
 
 // #3081: 原「AI 客服配置」独立页面（/chat/config）合并进企业基础信息，
-// 区块命名「AI 客服设置」——配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语。
+// 区块命名「AI 客服设置」——配置顾客在对话中看到的 AI 客服助手（元元）的名称与欢迎语。
 // #3098: 恢复 #3006 之前的左侧 tab 导航布局（基本设置 / AI 客服设置 / 通知设置）；
 // 修改密码/登录日志保持 #3006 隐藏决定（登录日志无记录、密码未来统一短信码登录）。
 
@@ -62,7 +62,7 @@ export default function SettingsPage() {
 
   // ============ AI 客服设置 ============
   const defaultAiConfig: AiConfig = {
-    botName: '小布',
+    botName: '元元',
     greetingTemplate: '',
   }
   const [aiConfig, setAiConfig] = useState<AiConfig>(defaultAiConfig)
@@ -336,7 +336,7 @@ export default function SettingsPage() {
                       onChange={(e) => setSettings({ ...settings, companyName: e.target.value })}
                       onBlur={commitCompanyName}
                     />
-                    <p className="text-xs text-neutral-400 mt-1">将展示在后台侧边栏与米宝的企业身份中</p>
+                    <p className="text-xs text-neutral-400 mt-1">将展示在后台侧边栏与黄金策的企业身份中</p>
                   </div>
 
                   {/* 企业编码（issue #5485）：员工登录标识 `用户名@企业编码` 的后半段。
@@ -399,7 +399,7 @@ export default function SettingsPage() {
                         </div>
                         <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleLogoUpload} />
                         <p className="text-xs text-neutral-400 mt-1.5">
-                          未设置时展示米高默认 Logo；上传或移除后自动保存，将展示在后台侧边栏企业名旁
+                          未设置时展示观星台默认 Logo；上传或移除后自动保存，将展示在后台侧边栏企业名旁
                         </p>
                       </div>
                     </div>
@@ -416,7 +416,7 @@ export default function SettingsPage() {
                       </div>
                       <div>
                         <h3 className="text-base font-semibold text-neutral-900">手机端入口</h3>
-                        <p className="text-sm text-neutral-500 mt-0.5">手机浏览器扫码使用米宝商家端</p>
+                        <p className="text-sm text-neutral-500 mt-0.5">手机浏览器扫码使用黄金策商家端</p>
                       </div>
                     </div>
                     {bminiH5Url ? (
@@ -554,7 +554,7 @@ export default function SettingsPage() {
                 <div>
                   <h2 className="text-lg font-semibold text-neutral-900">AI 客服设置</h2>
                   <p className="text-sm text-neutral-500 mt-0.5">
-                    配置顾客在对话中看到的 AI 客服助手（小布）的名称与欢迎语
+                    配置顾客在对话中看到的 AI 客服助手（元元）的名称与欢迎语
                   </p>
                   {/* #5899：同「基本设置」—— 没有保存按钮，改动即时生效 */}
                   <p className="text-xs text-neutral-400 mt-1">修改后自动保存，无需手动提交</p>
@@ -571,12 +571,12 @@ export default function SettingsPage() {
                     <input
                       type="text"
                       className="w-full h-9 px-3 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                      placeholder="小布"
+                      placeholder="元元"
                       value={aiConfig.botName}
                       onChange={(e) => setAiConfig({ ...aiConfig, botName: e.target.value })}
                       onBlur={() => void commitAiConfig('botName')}
                     />
-                    <p className="text-xs text-neutral-500 mt-1.5">顾客在对话中看到的 AI 客服助手名称（默认：小布）</p>
+                    <p className="text-xs text-neutral-500 mt-1.5">顾客在对话中看到的 AI 客服助手名称（默认：元元）</p>
                   </div>
 
                   <div>
@@ -584,7 +584,7 @@ export default function SettingsPage() {
                     <textarea
                       rows={3}
                       className="w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
-                      placeholder="您好，我是小布，有什么可以帮您？"
+                      placeholder="您好，我是元元，有什么可以帮您？"
                       value={aiConfig.greetingTemplate}
                       onChange={(e) => setAiConfig({ ...aiConfig, greetingTemplate: e.target.value })}
                       onBlur={() => void commitAiConfig('greetingTemplate')}

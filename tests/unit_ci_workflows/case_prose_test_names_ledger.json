@@ -1,0 +1,99 @@
+{
+  "_note": "用例库「点名了仓里不存在的测试方法名」的**豁免台账**（issue #6147）。判据 = tests/unit_ci_workflows/test_case_prose_test_names.py（判据 1 的豁免面 +判据 3 的双向对账）。**只许缩短**：条数 ≤ 冻结上限；每条必须在**当前** cases/*.yml 里仍出现（名字改了真名 / 引用被删 ⇒ 条目陈旧 ⇒ 判据红）。🔴 **登记 ≠ 判据放弃**：`kind=tests` 的条目表达「本单（#6147）找不到现名一一对应 / 改不完」这一事实；清账 = 补测或改判后删条目 + 同步把引用改成真名。`kind=value_shaped` 的条目是**定域残余**（该记号是「值」不是测试名，见各自 reason）—— 它们也让「一个既拼错又从未在测试文件里出现过」的记号落在面外（见 uncovered_faces）。",
+  "_how_to_clear": "① 把引用改成真名（`grep -rn 'void <name>\\|def <name>' backend frontend tests` 核）⇒ ② 删本表对应条目 ⇒ ③ 同 PR 把 `EXEMPTION_CAP_FROZEN` 降到新的现取条数（**只许降**）。",
+  "_generated_at_issue": "#6147",
+  "_frozen_cap": 7,
+  "exemptions": [
+    {
+      "kind": "tests",
+      "file": ".github/cases/processing-order.yml",
+      "name": "routingGapsListsUnroutedOperationsWithPendingFlag",
+      "case": "PG-035",
+      "cases": ["PG-035"],
+      "issue": "#6147",
+      "owner": "processing-order 域（工序库 / 路线缺口）",
+      "reason": "名字在仓里不存在，且**找不到现名一一对应** —— PG-035 判据①「缺口①逐条列出（含 pending_confirmation + note）+ 双向可红」在 `ProductionOperationQueryServiceTest` 里已无对应用例；当前同族承接面是 `ProductionRoutingGapsTest`（issue #6104 新增，判据不同：消费面 = 活跃主线 ∪ 活跃适用条件 / 挂了路线但不可达不得静默）与 `ProductionControllerTest.routingGapsShape`（只断 HTTP 形状）。",
+      "counterpart": "backend/admin-api/src/test/java/com/migao/admin/service/ProductionRoutingGapsTest.java（同域、不同判据）/ backend/admin-api/src/test/java/com/migao/admin/controller/ProductionControllerTest.java::routingGapsShape",
+      "criterion": "在 ProductionOperationQueryServiceTest（或其承接类）补一条「缺口①逐条 + pending 标记 + 双向可红」的用例，再把本条引用改成真名并删本条目。"
+    },
+    {
+      "kind": "tests",
+      "file": ".github/cases/processing-order.yml",
+      "name": "routingGapsExcludesOperationsConsumedByAnyActiveRouting",
+      "case": "PG-035",
+      "cases": ["PG-035"],
+      "issue": "#6147",
+      "owner": "processing-order 域（工序库 / 路线缺口）",
+      "reason": "同 PG-035 判据①的第二半（「少一道 / 多一道都红」的反向护栏）：名字不存在，无现名一一对应。issue #6104 起「被消费」的口径已扩为「活跃主线 ∪ 活跃适用条件」，由 `ProductionRoutingGapsTest.gapSetIsExactlyWhatNoActiveConsumerOwns` 覆盖（**判据已改判**，不是同一格）。",
+      "counterpart": "backend/admin-api/src/test/java/com/migao/admin/service/ProductionRoutingGapsTest.java::gapSetIsExactlyWhatNoActiveConsumerOwns",
+      "criterion": "补测或把 PG-035 判据①改判到 #6104 的新口径（并同步真名），再删本条目。"
+    },
+    {
+      "kind": "tests",
+      "file": ".github/cases/processing-order.yml",
+      "name": "routingGapsListsSignalKeysWithoutRoute",
+      "case": "PG-035",
+      "cases": ["PG-035"],
+      "issue": "#6147",
+      "owner": "processing-order 域（工序库 / 路线缺口）",
+      "reason": "名字在仓里不存在、无现名对应 —— `signal_keys_without_route` 这一格当前**只有形状断言**（`ProductionControllerTest.routingGapsShape` 的 `jsonPath(\"$.data.signal_keys_without_route\").isArray()`），**内容 / 非空判据无机器通道**（PG-035 判据②要求逐条算出 route_key 并双向可红）。",
+      "counterpart": "backend/admin-api/src/test/java/com/migao/admin/controller/ProductionControllerTest.java::routingGapsShape（仅 isArray，**不足以**承担判据②）",
+      "criterion": "为缺口②补内容级判据（逐条 route_key + 双向可红）后改引用为真名并删本条目。"
+    },
+    {
+      "kind": "tests",
+      "file": ".github/cases/processing-order.yml",
+      "name": "findRoutingCarriesScopeVerbatimFromLibrary",
+      "case": "PG-039",
+      "cases": ["PG-039"],
+      "issue": "#6147",
+      "owner": "processing-order 域（工序作用域 scope）",
+      "reason": "名字在仓里不存在、也找不到现名对应 —— 全仓已无 `scope` 读面用例（`ProductionOperationQueryServiceTest` 零 `scope` 断言；`getScope/setScope` 只出现在 `ProductionSeedTemplateServiceTest` / `ProductionOperationCommandServiceTest`（写面）/ `ProductionOperationScopeMigrationTest`（迁移终态））。⇒ PG-039 判据 2（读面逐字取库）**当前无机器判红通道**。",
+      "counterpart": "无（生产侧仍在：backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationQueryService.java::operationMetaView 输出 scope）",
+      "criterion": "补读面用例（库行 scope 改一个 ⇒ 断言跟着变）后改引用为真名并删本条目；若判据整体退场则按「有意不做 + 重启条件」改判。"
+    },
+    {
+      "kind": "tests",
+      "file": ".github/cases/processing-order.yml",
+      "name": "findRoutingScopeFollowsTheLibraryRow",
+      "case": "PG-039",
+      "cases": ["PG-039"],
+      "issue": "#6147",
+      "owner": "processing-order 域（工序作用域 scope）",
+      "reason": "同上（PG-039 判据 2 的注入法那半：把库行 scope 改一个 ⇒ 断言跟着变）。名字不存在，无现名对应。",
+      "counterpart": "无（同 PG-039 的 counterpart）",
+      "criterion": "同 PG-039 上一条。"
+    },
+    {
+      "kind": "value_shaped",
+      "file": ".github/cases/processing-order.yml",
+      "name": "producing",
+      "case": "PG-001",
+      "cases": ["PG-001"],
+      "issue": "#6147",
+      "owner": "用例库机具（本守卫的定域残余）",
+      "reason": "**不是测试名**：`「producing」` 是订单状态**值**（原文 = `never(orderService).updateOrderStatus(any, 「producing」)` 的判定式）。它同时**在测试文件里出现过**（`wert「producing」` 这类断言字面量）⇒ 本守卫的定域谓词（「测试文件里出现过的标识符」）无法把它与测试名区分 ⇒ 只能登记。**有意不收紧形状谓词**：靠「长度 / 大小写个数」挡它会把 `updateSetsScope` / `disableKeepsRow` 这类**真测试名**一起挡掉（实测 6 个真名会被误挡）—— 宁可留 2 条可见登记，不许把判据改钝。",
+      "counterpart": "N/A（值不是测试名；对应的生产常量 = 订单状态枚举）",
+      "criterion": "无需销账（它永远不会变成测试名）；将来若守卫能按「后随参数形态 / 引号上下文」定域，可一次性删除本条目并把本表上限降到 5。"
+    },
+    {
+      "kind": "value_shaped",
+      "file": ".github/cases/ui.yml",
+      "name": "shipments",
+      "case": "UI-078",
+      "cases": ["UI-078"],
+      "issue": "#6147",
+      "owner": "用例库机具（本守卫的定域残余）",
+      "reason": "**不是测试名**：`「shipments」` 是路由 / 菜单路径**值**（原文 = `menuItem(「shipments」, 「发货单」, 「/shipments」)`）。同 `producing` 的形态：它在测试文件里出现过（路径字面量）⇒ 定域谓词区分不了 ⇒ 登记。",
+      "counterpart": "N/A（值不是测试名；对应真值 = frontend/admin-web/src/config/menu.ts 的 `path: '/shipments'`）",
+      "criterion": "同 `producing`。"
+    }
+  ],
+  "uncovered_faces": [
+    "前端用例**块名**（`describe` / `it` 文案、`㉕-②` 形态）：语料里没有出现过对块名的点名，且块名与散文不可区分 ⇒ 真名面只登记**前端测试文件 basename / stem**（本单现取：0 条命中）。",
+    "散文**反引号**里的符号（`` `ProductionOperationQueryService.normalizeOperationName` ``）：那种形态里生产常量与测试名混在一起，形态不可区分 ⇒ 不在面内（用散文当判据会逼出改措辞消红的纸面修复，#5196 已记同族取舍）。",
+    "测试**文件名**级引用：由既有的 `CASE-TRUST-PROSE-TEST-REF-GHOST`（判据 = .github/assertion_taxonomy.py::prose_test_ref_audit）负责 —— 两把尺子判不同粒度，不互为副本。",
+    "**定域谓词的漏检方向**（照实登记）：一个「既拼错、又从未在测试文件里出现过、且不带 `test_` 前缀」的记号会落在面外（它看起来与 `producing` 这类值字面量一样）。⇒ 面内的是「拼错 / 改名 / 从未存在的**测试名**」与「`test_` 前缀的 python 名」；用「值」的形态蒙混过去是**本判据有意接受的漏检**（收紧会把 6 个真测试名误挡，见 `producing` 条目的 reason）。",
+    "句法级验证（该名字是否真是 `@Test` / 测试函数，而不是同名 helper / 生产方法）：本判据只做**词法**取值（假绿方向，不误伤）。"
+  ]
+}

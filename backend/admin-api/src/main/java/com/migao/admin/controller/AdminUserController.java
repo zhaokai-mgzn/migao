@@ -225,7 +225,7 @@ public class AdminUserController {
 
         // 角色解析（issue #3550）：与 createUser 同语义 —— 显式 role 优先，否则 roleIds
         // （角色表主键 ID 列表）取首个解析角色 code。原先 updateUser 完全忽略 roleIds
-        // → 米宝/前端「改成某角色」HTTP 200 假成功，user.role 与 user_roles 均未变。
+        // → 黄金策/前端「改成某角色」HTTP 200 假成功，user.role 与 user_roles 均未变。
         if (!org.springframework.util.StringUtils.hasText(role)
                 && body.get("roleIds") instanceof List<?> roleIdList && !roleIdList.isEmpty()) {
             String roleId = String.valueOf(roleIdList.get(0));

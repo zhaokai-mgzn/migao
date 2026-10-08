@@ -1,4 +1,4 @@
-// case_ids: BM-006, PG-018
+// case_ids: BM-006, PG-018, BM-035
 /**
  * bmini 报工页的**身份面收口**（issue #5647 的 G4 + G10）。
  *
@@ -64,6 +64,7 @@ jest.mock('../src/services/productionService', () => ({
   scanResolve: jest.fn(),
   completeByScan: jest.fn(),
   shipOrder: jest.fn(),
+  shipWorkerOrder: jest.fn(),
 }))
 
 import Taro from '@tarojs/taro'
@@ -77,6 +78,7 @@ import {
 import type { OrderOperations } from '../src/services/productionService'
 import { flushPendingReports, listPendingReports } from '../src/utils/productionOffline'
 import { clearWorkerSession, setWorkerSessionId } from '../src/utils/workerSession'
+import { WORKER_TAB_LOGIN_ROUTE } from '../src/utils/inbound/gaps'
 
 const ORDER_ID = 'CSO260926-00001'
 /** 布帘这一行的部位任务码（一部位一码，issue #4946） */
@@ -185,7 +187,10 @@ describe('bmini 报工写面唯一入口 = scan/complete（issue #5647 G10）', 
   beforeEach(() => {
     jest.clearAllMocks()
     ;(Taro as any).__clearStorage()
-    clearWorkerSession()
+    // 🔴 issue #6467 起：写入口**只在有工人身份时**才渲染（此前无身份也渲染 ⇒ 点了必然 401）。
+    // 本组判的是「写面唯一入口 / 凭证 / 幂等键 / 离线补传」，前提是**工人身份的车间设备**，
+    // 故这里种一个工人 session；「无身份不给写入口」的判据在下一条 describe。
+    setWorkerSessionId('sess-worker-1')
     ;(Taro.scanCode as jest.Mock).mockResolvedValue({ result: ORDER_ID })
     mockGet.mockResolvedValue({ success: true, data: makeDetail() })
     mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail() })
@@ -255,5 +260,61 @@ describe('bmini 报工写面唯一入口 = scan/complete（issue #5647 G10）', 
       PART_TOKEN, 'op2', key, { qty: 11, qualified_qty: 11, work_type: 'normal' },
     )
     expect(listPendingReports()).toHaveLength(0)
+  })
+})
+
+/**
+ * 报工页的身份分流（issue #6467 判据 3）。
+ *
+ * ## 病灶（2026-10-07 生产实测）
+ * 该页只要有 `part_token` 就渲染「完成报工」——**不看本机有没有工人身份**。
+ * 管理员账号在 H5 点下去 ⇒ `POST /api/worker/production/scan/complete` 401
+ * （写入口只认工号 + PIN 签发的 `X-Worker-Session-Id`）⇒ 请求层再把商家登录态清掉、踢回登录页。
+ * 而 `WorkerBar` 在该页**只 import 未渲染** ⇒ 页面上**零工人登录入口**（工人无处可去）。
+ *
+ * ## 收口（照同仓既有范式：`src/pages/worker/inbound/index.tsx` 的 `workerReady`）
+ * 无工人身份 ⇒ **不渲染**「完成报工」/【开工】等工人写入口，渲染
+ * 「请先用工号 + PIN 登录工人身份」+「去登录工人身份」→ 登录页的**工人 tab**
+ * （`/pages/auth/login/index?tab=worker`）。有工人身份 ⇒ 现状**逐字不变**。
+ *
+ * ## 红证
+ * 把页面里的 `hasWorkerSession()` 分流摘掉（写入口无条件渲染）⇒ 第一条判据红
+ * （实测读数见 PR body 的注入式红证表；类级台账守卫 `tests/worker-surface-ledger.test.ts` 判据 3 也会同时红）。
+ */
+describe('bmini 报工页：无工人身份 ⇒ 不给工人写入口（issue #6467 判据 3）', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    // 现场那台设备：有商家会话、**没有**工人身份
+    ;(Taro as any).__clearStorage()
+    clearWorkerSession()
+    ;(Taro.scanCode as jest.Mock).mockResolvedValue({ result: ORDER_ID })
+    mockGet.mockResolvedValue({ success: true, data: makeDetail() })
+    mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail() })
+    mockComplete.mockResolvedValue(okComplete())
+    ;(getOrderPiecework as jest.Mock).mockResolvedValue({ success: false, message: '网络异常' })
+  })
+
+  it('🔴 不渲染「完成报工」写入口，渲染引导 + 「去登录工人身份」（跳登录页的工人入口）', async () => {
+    await openPage()
+
+    // 读面照旧（商家设备读得到工序清单），但**写不了**：写入口一个都不渲染
+    expect(mockGet).toHaveBeenCalledWith(ORDER_ID)
+    expect(screen.queryByText('完成报工')).toBeNull()
+    expect(screen.getByText(/请先用工号 \+ PIN 登录工人身份/)).toBeTruthy()
+
+    fireEvent.click(screen.getByText('去登录工人身份'))
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: WORKER_TAB_LOGIN_ROUTE })
+    // 引导可行动、但没有偷偷发一个必然 401 的请求
+    expect(mockComplete).not.toHaveBeenCalled()
+  })
+
+  it('有工人 session ⇒ 写入口在（现状逐字不变），引导不出现', async () => {
+    setWorkerSessionId('sess-worker-1')
+
+    await openPage()
+
+    expect(screen.getAllByText('完成报工').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/请先用工号 \+ PIN 登录工人身份/)).toBeNull()
+    expect(screen.queryByText('去登录工人身份')).toBeNull()
   })
 })

@@ -334,7 +334,7 @@ class TestRegistrationAndInvariant:
         assert price.judgeable_fields == ("before_price", "new_price")
         assert price.enabled_by == (
             "audit_tool_logging", "写工具审计留痕",
-            "让米宝或员工通过 AI 助手至少执行一次写操作（如改价）以产生审计留痕；"
+            "让黄金策或员工通过 AI 助手至少执行一次写操作（如改价）以产生审计留痕；"
             "若你确实用过写操作而这里仍为空，说明审计上报没有在跑（该通道 fail-open、可能丢行），"
             "请联系技术支持排查")
         assert price.caveats == (
@@ -347,7 +347,7 @@ class TestRegistrationAndInvariant:
             "；「从未生效」的条目（pending / failed / skipped）不算改价，**已撤销的批次仍算**（价确实动过）"
             "；审计腿的租户级前置（audit_tool_logging）**只管审计腿** —— 它 false 时批量腿不受影响，"
             "该租户仍可能因批量改价而命中（那种情形下「本次未判定」只对审计腿成立）",
-            "覆盖面仍窄于「所有改价」：只覆盖经米宝执行的 product_update / sku_update / "
+            "覆盖面仍窄于「所有改价」：只覆盖经黄金策执行的 product_update / sku_update / "
             "product_batch_update 三条路径；product_manage（能改 basePrice，但改前价不可得 ⇒ 幅度不可判定）"
             "与后台页面直接改价（不经 Agent ⇒ 不写 agent_tool 审计）是本项**显式豁免**的两条路径"
             "（豁免在册 + 理由，见 app/tools/registry.py 的 _UNTRACKED_PRICE_PATHS）",

@@ -1,0 +1,104 @@
+[
+  {
+    "round": 0,
+    "preStatuses": [
+      200
+    ],
+    "r1": {
+      "status": 200,
+      "n": 0,
+      "total": 0,
+      "ts": 1790996887,
+      "req": "req_a0b3f72bd68743f8"
+    },
+    "r2": {
+      "status": 200,
+      "n": 12
+    }
+  },
+  {
+    "round": 1,
+    "preStatuses": [
+      200
+    ],
+    "r1": {
+      "status": 200,
+      "n": 0,
+      "total": 0,
+      "ts": 1790996888,
+      "req": "req_c8e2fc10db3949aa"
+    },
+    "r2": {
+      "status": 200,
+      "n": 12
+    }
+  },
+  {
+    "round": 2,
+    "preStatuses": [
+      200
+    ],
+    "r1": {
+      "status": 200,
+      "n": 0,
+      "total": 0,
+      "ts": 1790996888,
+      "req": "req_a62feeaed7ce48d6"
+    },
+    "r2": {
+      "status": 200,
+      "n": 12
+    }
+  },
+  {
+    "round": 3,
+    "preStatuses": [
+      200
+    ],
+    "r1": {
+      "status": 200,
+      "n": 0,
+      "total": 0,
+      "ts": 1790996889,
+      "req": "req_834c78d97a6b4a77"
+    },
+    "r2": {
+      "status": 200,
+      "n": 12
+    }
+  },
+  {
+    "round": 4,
+    "preStatuses": [
+      200
+    ],
+    "r1": {
+      "status": 200,
+      "n": 0,
+      "total": 0,
+      "ts": 1790996889,
+      "req": "req_93428353bb5841dc"
+    },
+    "r2": {
+      "status": 200,
+      "n": 12
+    }
+  },
+  {
+    "round": 5,
+    "preStatuses": [
+      200
+    ],
+    "r1": {
+      "status": 200,
+      "n": 0,
+      "total": 0,
+      "ts": 1790996890,
+      "req": "req_2955a69db8fd43d5"
+    },
+    "r2": {
+      "status": 200,
+      "n": 12
+    }
+  }
+]

@@ -1,6 +1,6 @@
 // case_ids: UI-007, UI-013
 /**
- * 小布 C 端输入条测试 — 单容器双语义（textarea 常驻 + 右下按住说话）
+ * 元元 C 端输入条测试 — 单容器双语义（textarea 常驻 + 右下按住说话）
  *
  * 覆盖（UI-007 修订后交互结构，松开直接发送行为保持）：
  * - textarea 常驻（placeholder「发消息或按住说话」），无键盘/语音模式切换键
@@ -47,8 +47,12 @@ function renderInput(overrides: Partial<React.ComponentProps<typeof MessageInput
   return { ...render(<MessageInput {...props} />), props }
 }
 
+/**
+ * 打字：用 `aria-label` 定位输入框 —— 与 placeholder **文案解耦**
+ * （文案随平台分流，见 issue #6476；行为判据不该跟着文案抖）
+ */
 function typeText(text: string) {
-  fireEvent.change(screen.getByPlaceholderText('发消息或按住说话'), { target: { value: text } })
+  fireEvent.change(screen.getByLabelText('消息输入框'), { target: { value: text } })
 }
 
 /** 按住语音键（起点 y=200）并返回按钮元素 */
@@ -176,7 +180,7 @@ describe('MessageInput — 自适应主动作键', () => {
     fireEvent.click(screen.getByLabelText('发送'))
 
     expect(props.onSend).toHaveBeenCalledWith('你好')
-    expect(screen.getByPlaceholderText('发消息或按住说话')).toHaveValue('')
+    expect(screen.getByLabelText('消息输入框')).toHaveValue('')
   })
 
   it('清空文字后恢复按住说话键', () => {
@@ -184,7 +188,7 @@ describe('MessageInput — 自适应主动作键', () => {
     typeText('你好')
     expect(screen.queryByLabelText('按住说话')).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByPlaceholderText('发消息或按住说话'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('消息输入框'), { target: { value: '' } })
     expect(screen.getByLabelText('按住说话')).toBeInTheDocument()
   })
 

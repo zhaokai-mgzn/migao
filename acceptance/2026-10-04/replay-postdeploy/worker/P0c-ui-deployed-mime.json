@@ -1,0 +1,83 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:32:47 +08",
+    "utc": "2026-10-04T01:32:47.755Z"
+  },
+  "workerH5": "https://app.migaozn.com/w/",
+  "bmini": "https://app.migaozn.com/b/",
+  "steps": [
+    {
+      "id": "D1.index-html",
+      "status": 200,
+      "contentType": "text/html",
+      "bodyLen": 595,
+      "bodyText": "<!DOCTYPE html>\n<!-- 工人端 H5 报工页（issue #4716 第一切片）—— 手机 / PAD 两断点，不依赖任何微信 API，无构建步骤。\n     部署：静态文件直出（与 C 端 H5 同一台 nginx）；页面与 /api 同源 ⇒ 无跨域。\n     零依赖：不引框架/扫码 SDK（裁定③ + 最少代码阶梯）。 -->\n<html lang=\"zh-CN\">\n<head>\n  <meta charset=\"utf-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\" />\n  <meta name=\"format-detection\" content=\"telephone=no\" />\n  <title>工人报工</title>\n  <link rel=\"stylesheet\" href=\"./src/styles.css\" />\n</head>\n<body>\n  <main id=\"worker-h5-root\" class=\"wh5-root\"></main>\n  <script type=\"module\" src=\"./src/app.mjs\"></script>\n</body>\n</html>\n",
+      "scriptSrcs": [
+        "./src/app.mjs"
+      ],
+      "linkHrefs": [
+        "./src/styles.css"
+      ]
+    },
+    {
+      "id": "D2.entry-script-content-types",
+      "probes": [
+        {
+          "src": "./src/app.mjs",
+          "url": "https://app.migaozn.com/w/src/app.mjs",
+          "status": 200,
+          "contentType": "application/octet-stream",
+          "contentEncoding": null,
+          "contentLength": "16059",
+          "first80": "// case_ids: PG-018, BM-006, DF-017\n//\n// 工人端 H5 报工页 —— 装配�"
+        }
+      ]
+    },
+    {
+      "id": "D3.control-bmini-scripts",
+      "httpStatus": 200,
+      "scripts": [
+        "/b/js/724.js",
+        "/b/js/app.js"
+      ],
+      "probes": [
+        {
+          "src": "/b/js/724.js",
+          "url": "https://app.migaozn.com/b/js/724.js",
+          "status": 200,
+          "contentType": "application/javascript",
+          "contentLength": "137836"
+        },
+        {
+          "src": "/b/js/app.js",
+          "url": "https://app.migaozn.com/b/js/app.js",
+          "status": 200,
+          "contentType": "application/javascript",
+          "contentLength": "447932"
+        }
+      ]
+    },
+    {
+      "id": "D4.real-browser-dom",
+      "consoleErrors": [
+        "Failed to load module script: Expected a JavaScript-or-Wasm module script but the server responded with a MIME type of \"application/octet-stream\". Strict MIME type checking is enforced for module scripts per HTML spec."
+      ],
+      "dom": {
+        "title": "工人报工",
+        "rootChildren": 0,
+        "inputs": 0,
+        "buttons": 0,
+        "bodyText": ""
+      },
+      "screenshot": "out/shots/D-mime-workerh5-blank.png"
+    },
+    {
+      "id": "D5.judgement-inputs",
+      "expectation": "HTML 用 <script type=\"module\" src=…> 加载入口 ⇒ 该资源 Content-Type 必须是 JS MIME（text/javascript / application/javascript / …+json 之类），否则浏览器按 HTML 规范**拒绝执行**",
+      "actual": [
+        "./src/app.mjs ⇒ application/octet-stream"
+      ],
+      "note": "期望来源 = HTML 规范对 module script 的 MIME 强制（浏览器 console 已逐字给出该判定），不是本包自创口径"
+    }
+  ]
+}

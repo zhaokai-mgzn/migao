@@ -1,4 +1,4 @@
-# case_ids: CH-021, PR-008, OR-008
+# case_ids: CH-021, PR-008, OR-008, OR-048
 """**Agent 深通道**的确定性半边（issue #5368 包 2）。
 
 包 1（PR #5343）交付的是**页面快通道**；本包是**深通道**，两者**共用识别内核**
@@ -75,6 +75,16 @@ def field_of(plan, key):
     return next(f for f in plan["fields"] if f["key"] == key)
 
 
+def fields_without(*keys):
+    """夹具里把这几格**清空**（模拟「内核没认出来」），其余照旧。"""
+    fields = product_fields()
+    for field in fields:
+        if field["key"] in keys:
+            field["value"] = None
+            field["source"] = None
+    return fields
+
+
 def _load_mutated(source: str, tmp_path: Path, name: str = "deep_channel_mutant"):
     """把变异后的源码当**独立模块**加载（真跑，不是读文本）。"""
     path = tmp_path / f"{name}.py"
@@ -111,7 +121,8 @@ class TestSourceMarkersAreDistinguishable:
             interpretations={"material": {"value": "雪尼尔", "note": "看着是雪尼尔，克重偏厚"}},
         )
         filled = [f for f in plan["fields"] if f["value"]]
-        assert [f["key"] for f in filled] == ["name", "color", "material", "craft"]
+        # issue #6386：`name` 是生成类字段，夹具给它的值**不再**从识别路径落地
+        assert [f["key"] for f in filled] == ["color", "material", "craft"]
         assert {f["source"] for f in filled} == {SOURCE_RECOGNIZED, SOURCE_INTERPRETED}
         assert field_of(plan, "material")["source"] == SOURCE_INTERPRETED
         assert field_of(plan, "craft")["source"] == SOURCE_RECOGNIZED
@@ -156,7 +167,8 @@ class TestAmbiguityGivesCandidatesAndNeverFills:
         assert "宁可不填" in color["reason"]
         # 该值**不得**从任何一格溜进表单（连"降级成其它键"也不行）
         assert "雾霾蓝" not in [f["value"] for f in plan["fields"] if f["value"]]
-        assert [f["key"] for f in plan["fields"] if f["value"]] == ["name", "craft"]
+        # issue #6386：`name` 不再走识别路径 ⇒ 落地值只剩 `craft`
+        assert [f["key"] for f in plan["fields"] if f["value"]] == ["craft"]
 
     def test_ambiguity_is_never_overridden_by_an_interpretation(self):
         """歧义格即使 Agent 给了推荐值，也**必须**由商家选（不得替用户拍板）。"""
@@ -212,6 +224,32 @@ class TestInterpretationIsMarkedAndAsymmetric:
         assert material["value"] == "雪尼尔"
         assert material["source"] == SOURCE_INTERPRETED
         assert material["note_source"] == SOURCE_INTERPRETED
+
+    def test_description_is_an_interpretable_cell_of_product(self):
+        """商品描述文案（issue #6362）：用户逐字「然后把商品描述的文案也要生成一份」。
+
+        描述是**文案**不是事实 ⇒ 与材质 / 工艺同族：走 `[米宝解读]`，一格都不进识别直填
+        （`product_fields()` 里没有这一格 ⇒ 内核不给值，只有解读能把它填上）。
+        """
+        description = "<p>雪尼尔遮光窗帘，面料厚实、垂感好，适合客厅与卧室；可选配韩式褶工艺。</p>"
+        plan = build_page_fill(
+            "product",
+            product_fields(),
+            interpretations={"description": {"value": description, "note": "图上看到雪尼尔面料与遮光工艺"}},
+        )
+        cell = field_of(plan, "description")
+        assert cell["value"] == description
+        assert cell["source"] == SOURCE_INTERPRETED
+        assert cell["note_source"] == SOURCE_INTERPRETED
+        assert "description" in INTERPRETABLE_KEYS["product"]
+
+    def test_description_without_interpretation_stays_empty_with_a_reason(self):
+        """没有解读 ⇒ 描述格**留空且给理由**（绝不凭空生成 / 不写空串覆盖商家内容）。"""
+        plan = build_page_fill("product", product_fields())
+        cell = field_of(plan, "description")
+        assert cell["value"] is None
+        assert cell["source"] is None
+        assert cell["reason"]
 
     def test_product_interpretation_never_overwrites_a_recognised_cell(self):
         plan = build_page_fill(
@@ -276,6 +314,129 @@ class TestInterpretationIsMarkedAndAsymmetric:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# issue #6361：放开「推理值」覆盖范围（名称 / 材质 / 工艺 / 颜色）
+# —— 但**进报价与结算的两格（门幅 / 售价）仍只建议、不落值**
+# ══════════════════════════════════════════════════════════════════════════════
+class TestInterpretableScopeIsWidened:
+    """用户裁定（2026-10-05）：「不可信没关系，先推理一份贴近的结论」。
+
+    放开的是**看图看得出门道、且不直接进结算**的格子（名称 / 材质 / 工艺 / 颜色）；
+    门幅与售价**照旧不落值**（猜错会算出错的米数与金额）—— 它们的推理结论只走 `note`。
+    """
+
+    def test_product_interpretable_keys_are_exactly_the_five_agreed_ones(self):
+        """逐字钉住五格（#6361 四格 + #6362 描述）：**改回两项 / 少一项 / 多加一项 / 调换顺序 ⇒ 红**。"""
+        assert INTERPRETABLE_KEYS["product"] == (
+            "name", "material", "craft", "color", "description",
+        )
+        assert "door_width" not in INTERPRETABLE_KEYS["product"]
+        assert "price" not in INTERPRETABLE_KEYS["product"]
+
+    def test_order_side_still_interprets_but_never_fills(self):
+        """订单侧口径**不受本单影响**（客户信息错 ⇒ 货发错人）。"""
+        assert INTERPRETABLE_KEYS["order"] == ()
+
+    def test_name_interpretation_fills_an_empty_name_cell(self):
+        plan = build_page_fill(
+            "product",
+            fields_without("name"),
+            interpretations={"name": {"value": "雪尼尔遮光窗帘", "note": "按图上文案推断"}},
+        )
+        name = field_of(plan, "name")
+        assert name["value"] == "雪尼尔遮光窗帘"
+        assert name["source"] == SOURCE_INTERPRETED
+        assert name["note_source"] == SOURCE_INTERPRETED
+
+    def test_color_interpretation_fills_an_empty_color_cell(self):
+        """颜色：图上只给色号、没给颜色名时，推理值可落地。"""
+        plan = build_page_fill(
+            "product",
+            fields_without("color"),
+            interpretations={
+                "color": {"value": "雾霾蓝", "note": "图上色号未给颜色名，按品牌常见色推断"}
+            },
+        )
+        color = field_of(plan, "color")
+        assert color["value"] == "雾霾蓝"
+        assert color["source"] == SOURCE_INTERPRETED
+
+    def test_interpretation_never_overwrites_a_recognised_name_or_color(self):
+        """**不覆盖**内核已写明的值（transcription 优先于 inference，既有规则不动）。"""
+        plan = build_page_fill(
+            "product",
+            product_fields(),
+            interpretations={
+                "name": {"value": "被覆盖的名字", "note": "也许叫这个"},
+                "color": {"value": "被覆盖的颜色", "note": "也许会这个色"},
+            },
+        )
+        name = field_of(plan, "name")
+        color = field_of(plan, "color")
+        # 🔴 歧义格（`color`）**必须**由商家选：就算解读给了推荐值也不得覆盖识别值
+        assert (color["value"], color["source"]) == ("雾霾蓝", SOURCE_RECOGNIZED)
+        assert color["note_source"] == SOURCE_INTERPRETED
+        # `name` 是**生成类**字段（issue #6386）：识别面给的值不落地 ⇒ 解读值**应当**落地、
+        # 来源标 `[米宝解读]`（这正是用户 2026-10-05 裁定「B」要的形态）。
+        # 同时它也证明「不覆盖」规则的**前提**：识别面根本没给 `name` 值，所以谈不上覆盖。
+        assert (name["value"], name["source"]) == ("被覆盖的名字", SOURCE_INTERPRETED)
+        # 真正被「不覆盖」规则挡住的仍是识别面给了值的格子（`color`，上面已断言）
+        assert "雪尼尔遮光窗帘" not in str([f["value"] for f in plan["fields"]])
+
+    def test_price_interpretation_is_visible_as_a_note_but_never_fills_the_cell(self):
+        """**注入式红证（售价）**：给了 `value` 也必须落不了地 —— 值仍为空、note 仍在。"""
+        plan = build_page_fill(
+            "product",
+            product_fields(),
+            interpretations={"price": {"value": "199", "note": "建议 199 元，图上未写明 —— 未自动填"}},
+        )
+        price = field_of(plan, "price")
+        assert price["value"] is None
+        assert price["source"] is None
+        assert price["note"] == "建议 199 元，图上未写明 —— 未自动填"
+        assert price["note_source"] == SOURCE_INTERPRETED
+        # 值不得从任何一格溜进表单
+        assert "199" not in [f["value"] for f in plan["fields"] if f["value"]]
+
+    def test_door_width_interpretation_is_visible_as_a_note_but_never_fills_the_cell(self):
+        """**注入式红证（门幅）**：门幅进报价，猜错会算出错的米数 ⇒ 只建议不落值。"""
+        plan = build_page_fill(
+            "product",
+            product_fields(),
+            interpretations={
+                "door_width": {"value": "2.8 米", "note": "建议门幅 2.8 米，图上未写明 —— 未自动填"}
+            },
+        )
+        door_width = field_of(plan, "door_width")
+        assert door_width["value"] is None
+        assert door_width["source"] is None
+        assert door_width["note"] == "建议门幅 2.8 米，图上未写明 —— 未自动填"
+        assert door_width["note_source"] == SOURCE_INTERPRETED
+        assert "2.8 米" not in [f["value"] for f in plan["fields"] if f["value"]]
+
+    def test_widened_scope_does_not_leak_into_the_uninterpretable_cells(self):
+        """四格全给推理值 + 两格给建议：**落地的恰好多出这四格**，钱格 / 门幅格纹丝不动。"""
+        plan = build_page_fill(
+            "product",
+            fields_without("name", "material", "color"),
+            interpretations={
+                "name": {"value": "雪尼尔遮光窗帘", "note": "按图上文案推断"},
+                "material": {"value": "雪尼尔", "note": "克重偏厚"},
+                "craft": {"value": "印花", "note": "也许是印花"},
+                "color": {"value": "雾霾蓝", "note": "按品牌常见色推断"},
+                "price": {"value": "199", "note": "建议 199 元"},
+                "door_width": {"value": "2.8 米", "note": "建议门幅 2.8 米"},
+            },
+        )
+        interpreted = {
+            f["key"] for f in plan["fields"] if f["source"] == SOURCE_INTERPRETED and f["value"]
+        }
+        assert interpreted == {"name", "material", "color"}  # craft 内核已给 ⇒ 不覆盖
+        assert field_of(plan, "craft")["source"] == SOURCE_RECOGNIZED
+        assert field_of(plan, "price")["value"] is None
+        assert field_of(plan, "door_width")["value"] is None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 同页填充计划的形状契约（前端按它逐格填、逐格标注）
 # ══════════════════════════════════════════════════════════════════════════════
 class TestPageFillPlanContract:
@@ -286,11 +447,34 @@ class TestPageFillPlanContract:
         assert plan["component"] == PAGE_FILL_COMPONENT == "page_fill"
         assert plan["target_type"] == "product"
 
-    def test_every_field_has_the_uniform_eight_keys(self):
+    def test_every_field_has_the_uniform_nine_keys(self):
+        """逐字段键集**统一**（issue #6529 起九键）：新增的那个 `reference` = 图上读到但没采纳的原文。"""
         plan = build_page_fill("order", order_fields())
         assert [sorted(f.keys()) for f in plan["fields"]] == [
-            ["candidates", "key", "label", "note", "note_source", "reason", "source", "value"]
+            ["candidates", "key", "label", "note", "note_source", "reason", "reference",
+             "source", "value"]
         ] * len(plan["fields"])
+
+    def test_reference_is_carried_through_but_is_never_a_value(self):
+        """参考格（issue #6529）：`reference` 透传，`value` / `source` **仍然为空**。
+
+        深通道（黄金策同页填充）与一次性推理共用这一份构造 ⇒ 两条通道不可能各说一套。
+        """
+        fields = [{
+            "key": "items", "label": "商品明细", "value": None, "source": None,
+            "reason": "置信度 0.75 低于订单侧阈值 0.85，宁可不填",
+            "reference": "2698-11、C31",
+        }]
+        cell = field_of(build_page_fill("order", fields), "items")
+        assert cell["reference"] == "2698-11、C31"
+        assert cell["value"] is None
+        assert cell["source"] is None
+
+    def test_no_reference_in_the_kernel_output_stays_none(self):
+        """对照读数：内核没带 `reference`（正常采纳的格子）⇒ 格子上就是 `None`。"""
+        cell = field_of(build_page_fill("order", order_fields()), "items")
+        assert cell["value"] == "雪尼尔遮光窗帘"
+        assert cell["reference"] is None
 
     def test_filled_cells_have_a_source_and_empty_cells_have_a_reason(self):
         """不变式（两个 target 都过）：有值 ⇒ 必带来源标注；留空 ⇒ 必给理由。"""

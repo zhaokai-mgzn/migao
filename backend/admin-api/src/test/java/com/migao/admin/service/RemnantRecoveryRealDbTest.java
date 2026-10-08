@@ -20,6 +20,7 @@ import com.migao.admin.mapper.ProductionRouteRuleMapper;
 import com.migao.admin.mapper.RemnantItemSizeMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
+import com.migao.admin.time.BusinessClock;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
 import org.apache.ibatis.mapping.Environment;
@@ -193,7 +194,7 @@ class RemnantRecoveryRealDbTest {
         // 🔴 本单的核心接线：**真装配**余料腿 ⇒ 派工扣批次之后自动登记余料（不需要人手工登记）
         batchStock = new StockBatchConsumptionService(session.getMapper(StockBatchMapper.class),
                 session.getMapper(StockBatchConsumptionMapper.class),
-                session.getMapper(ProductSkuMapper.class), null, configService, remnantService);
+                session.getMapper(ProductSkuMapper.class), null, configService, remnantService, new BusinessClock());
     }
 
     @AfterAll

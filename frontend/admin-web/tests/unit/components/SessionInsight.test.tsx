@@ -2,7 +2,7 @@
 /**
  * SessionInsight（会话简报抽屉）组件测试
  *
- * 覆盖 UI-019「米宝工作台『洞察』重构为『会话简报』」组件侧：
+ * 覆盖 UI-019「黄金策工作台『洞察』重构为『会话简报』」组件侧：
  *  - 标题/顶部按钮文案为「会话简报」；三区块齐备（结论/需要你处理/办理结果）
  *  - 业务语言结论，不渲染工具原始名与 agent 内部动作（order_query/参数校验）
  *  - 办理结果明细行带状态徽标/金额/客户；建议 chip 点击即发送
@@ -106,7 +106,7 @@ describe('SessionInsight 会话简报', () => {
     render(<SessionInsight isOpen onClose={vi.fn()} />)
     const pending = screen.getByTestId('insight-pending-confirm')
     expect(pending).toBeInTheDocument()
-    expect(screen.getByText('米宝在等你确认')).toBeInTheDocument()
+    expect(screen.getByText('黄金策在等你确认')).toBeInTheDocument()
     expect(screen.getByText('确认修改订单 A001 为已发货？')).toBeInTheDocument()
   })
 
@@ -136,7 +136,7 @@ describe('SessionInsight 会话简报', () => {
   it('空会话 → 友好空态', () => {
     useChatStore.setState({ messages: [] } as Partial<typeof useChatStore.getState>)
     render(<SessionInsight isOpen onClose={vi.fn()} />)
-    expect(screen.getByText(/向米宝提问后/)).toBeInTheDocument()
+    expect(screen.getByText(/向黄金策提问后/)).toBeInTheDocument()
   })
 
   it('isOpen=false → 抽屉收起（不可见）', () => {

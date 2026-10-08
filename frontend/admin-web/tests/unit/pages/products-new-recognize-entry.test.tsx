@@ -1,4 +1,4 @@
-// case_ids: PR-120
+// case_ids: PR-120, PR-022
 /**
  * 新增商品页：「拍照 / 上传识别」入口的**落点**与**功能**（issue #5918，用户 2026-10-01 走查裁定）。
  *
@@ -26,6 +26,7 @@ const mockCreateProduct = vi.fn()
 const mockGetCategories = vi.fn()
 const mockUploadImage = vi.fn()
 const mockRecognize = vi.fn()
+const mockInterpret = vi.fn()
 
 vi.mock('next/navigation', () => ({
   useRouter: () => mockRouter,
@@ -38,7 +39,10 @@ vi.mock('@/lib/api', () => ({
   productApi: { createProduct: (...a: unknown[]) => mockCreateProduct(...a) },
   categoryApi: { getCategories: (...a: unknown[]) => mockGetCategories(...a) },
   uploadApi: { uploadImage: (...a: unknown[]) => mockUploadImage(...a) },
-  imageRecognizeApi: { recognize: (...a: unknown[]) => mockRecognize(...a) },
+  imageRecognizeApi: {
+    recognize: (...a: unknown[]) => mockRecognize(...a),
+    interpret: (...a: unknown[]) => mockInterpret(...a),
+  },
 }))
 
 // 重子组件与本页判据无关 —— 与 ProductForm.test.tsx 同款 mock，不拖入上传 / 富文本 / SKU 矩阵依赖
@@ -49,9 +53,13 @@ vi.mock('@/components/products/ImageUploader', () => ({
   },
 }))
 vi.mock('@/components/products/SkuMatrix', () => ({
-  default: () => {
+  // 透出收到的门幅清单：本组件在页面上就是「规格尺寸」区块的宿主（issue #6403 判据 2c）
+  default: ({ value }: { value?: { doorWidths?: string[] } }) => {
     const R = require('react')
-    return R.createElement('div', { 'data-testid': 'sku-matrix' })
+    return R.createElement('div', {
+      'data-testid': 'sku-matrix',
+      'data-door-widths': JSON.stringify(value?.doorWidths ?? []),
+    })
   },
 }))
 vi.mock('@/components/products/ProductAttributes', () => ({
@@ -107,13 +115,26 @@ describe('#5918 新增商品页：识别入口的落点与功能', () => {
     expect(card.className).toContain('rounded')
   })
 
-  it('判据 2：选图 → 上传 → 识别 → 字段回填；识别结果**不落库**', async () => {
+  it('判据 2：选图 → 上传 → 一次性推理 → 结果卡「一键填入」回填；识别结果**不落库**', async () => {
     mockUploadImage.mockResolvedValue({ data: { data: { url: 'https://cdn.example.com/roll.jpg' } } })
-    mockRecognize.mockResolvedValue({
+    // 商品页走「识别 + 一次性推理」（issue #6367 包 P3）：一个端点回两段来源的格子
+    mockInterpret.mockResolvedValue({
       data: {
         data: {
-          degraded: false,
-          fields: [{ key: 'name', label: '商品标题', value: '识别出来的遮光窗帘' }],
+          component: 'page_fill',
+          target_type: 'product',
+          fields: [
+            {
+              key: 'name',
+              label: '商品标题',
+              value: '识别出来的遮光窗帘',
+              source: '[图片识别]',
+              reason: null,
+              candidates: [],
+              note: '图上标题栏',
+              note_source: '[图片识别]',
+            },
+          ],
         },
       },
     })
@@ -122,28 +143,46 @@ describe('#5918 新增商品页：识别入口的落点与功能', () => {
     const file = new File(['x'], 'a.png', { type: 'image/png' })
     fireEvent.change(screen.getByTestId('image-recognize-input'), { target: { files: [file] } })
 
-    // 上传 → 识别：targetType 与上传得到的地址逐字断言（快通道不依赖米宝）
+    // 上传 → 一次性推理：targetType / 图片地址 / 空的补充要求逐字断言（快通道不依赖黄金策）
     await waitFor(() =>
-      expect(mockRecognize).toHaveBeenCalledWith('product', ['https://cdn.example.com/roll.jpg']),
+      expect(mockInterpret).toHaveBeenCalledWith('product', ['https://cdn.example.com/roll.jpg'], ''),
     )
     expect(mockUploadImage).toHaveBeenCalledTimes(1)
+    expect(mockRecognize).not.toHaveBeenCalled()
 
-    // 字段回填 + 来源徽标 + 识别结果可见
+    // 结果先落成内嵌卡片（**不自动填表**），由商家点「一键填入」才进表单
+    expect(screen.getByTestId('form-interpret-card')).toBeTruthy()
+    expect(screen.queryByDisplayValue('识别出来的遮光窗帘')).toBeNull()
+    fireEvent.click(screen.getByTestId('form-interpret-fill'))
+
+    // 字段回填 + 来源徽标 + 结果卡可见
     await waitFor(() => expect(screen.getByDisplayValue('识别出来的遮光窗帘')).toBeTruthy())
     expect(screen.getByTestId('recognized-marker-name')).toBeTruthy()
-    expect(screen.getByTestId('image-recognize-result')).toBeTruthy()
+    expect(screen.getByTestId('form-interpret-card')).toBeTruthy()
 
     // 🔴 识别结果**不落库**：全程零 create/update（提交永远是人的动作）
     expect(mockCreateProduct).not.toHaveBeenCalled()
   })
 
-  it('判据 2b：识别入口留在**标题行**里 —— 字段回填后仍在标题卡片内（不被结果区挤出去）', async () => {
+  it('判据 2b：识别入口留在**标题行**里 —— 结果卡渲染后仍在标题卡片内（不被挤出去）', async () => {
     mockUploadImage.mockResolvedValue({ data: { data: { url: 'https://cdn.example.com/roll.jpg' } } })
-    mockRecognize.mockResolvedValue({
+    mockInterpret.mockResolvedValue({
       data: {
         data: {
-          degraded: false,
-          fields: [{ key: 'name', label: '商品标题', value: '识别出来的遮光窗帘' }],
+          component: 'page_fill',
+          target_type: 'product',
+          fields: [
+            {
+              key: 'name',
+              label: '商品标题',
+              value: '识别出来的遮光窗帘',
+              source: '[图片识别]',
+              reason: null,
+              candidates: [],
+              note: null,
+              note_source: null,
+            },
+          ],
         },
       },
     })
@@ -152,11 +191,64 @@ describe('#5918 新增商品页：识别入口的落点与功能', () => {
     fireEvent.change(screen.getByTestId('image-recognize-input'), {
       target: { files: [new File(['x'], 'a.png', { type: 'image/png' })] },
     })
-    await waitFor(() => expect(screen.getByTestId('image-recognize-result')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('form-interpret-card')).toBeTruthy())
 
     const card = screen.getByTestId('pf-title-card')
     const button = screen.getByTestId('image-recognize-button')
     expect(card.contains(button)).toBe(true)
-    expect(card.contains(screen.getByTestId('image-recognize-result'))).toBe(true)
+    expect(card.contains(screen.getByTestId('form-interpret-card'))).toBe(true)
+  })
+
+  it('判据 2c（issue #6403 缺陷 1）：多值门幅串一键填入 ⇒「规格尺寸」不再是 (0)', async () => {
+    mockUploadImage.mockResolvedValue({ data: { data: { url: 'https://cdn.example.com/roll.jpg' } } })
+    mockInterpret.mockResolvedValue({
+      data: {
+        data: {
+          component: 'page_fill',
+          target_type: 'product',
+          fields: [
+            {
+              key: 'color',
+              label: '颜色',
+              value: '米白',
+              source: '[图片识别]',
+              reason: null,
+              candidates: [],
+              note: null,
+              note_source: null,
+            },
+            {
+              // 用户实测形态（issue #6403 图 4）：图上的门幅逐字是「2.8米和3.2米」
+              key: 'door_width',
+              label: '门幅',
+              value: '2.8米和3.2米',
+              source: '[图片识别]',
+              reason: null,
+              candidates: [],
+              note: null,
+              note_source: null,
+            },
+          ],
+        },
+      },
+    })
+    render(<NewProductPage />)
+
+    fireEvent.change(screen.getByTestId('image-recognize-input'), {
+      target: { files: [new File(['x'], 'a.png', { type: 'image/png' })] },
+    })
+    await waitFor(() => expect(screen.getByTestId('form-interpret-card')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('form-interpret-fill'))
+
+    // 规格尺寸行 = 2（改前 0 ⇒ 页面显示「规格尺寸 (0)」）；SKU 矩阵读的是同一份 doorWidths
+    // （本文件里 `SkuMatrix` 是替身 ⇒ 只能断言它收到的 props；真 DOM 的「(0) → 2 行」在
+    //  `ImageRecognizePrefill.test.tsx` 的「判据 2」上用真 SkuMatrix 断言）
+    await waitFor(() =>
+      expect(screen.getByTestId('sku-matrix').getAttribute('data-door-widths')).toBe(
+        '["2.8","3.2"]',
+      ),
+    )
+    expect(screen.getByTestId('form-interpret-card')).toBeTruthy()
   })
 })

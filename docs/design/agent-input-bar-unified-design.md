@@ -5,7 +5,7 @@
 > 评审结论：按本方案实施；**D1 拍板为「C 端保持松开直接发送」**（仅改交互结构，不改语音行为语义）
 > 范围：frontend/mini-app `MessageInput` + frontend/admin-web `MessageInput`（纯 UI/交互层，不动发送协议与上传链路）
 > 参照物：豆包移动端首页输入框截图（用户提供，sha256:f69602e1…）
-> 关联用例：UI-007（小布输入条）、UI-009（拖拽上传）、UI-013（纯图消息）、UI-014（算料入口）
+> 关联用例：UI-007（元元输入条）、UI-009（拖拽上传）、UI-013（纯图消息）、UI-014（算料入口）
 
 ---
 
@@ -68,7 +68,7 @@
 
 ## 二、现状盘点
 
-### 2.1 B 端米宝（admin-web `components/chat/MessageInput.tsx`）
+### 2.1 B 端黄金策（admin-web `components/chat/MessageInput.tsx`）
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -91,7 +91,7 @@
 | P2 | 「快捷操作」chips 独占输入框上方一条横幅，与输入容器割裂（参考图 G3 是收进容器内） | QuickActions.tsx |
 | P3 | 发送键用纸飞机（Send）、停止键 StopCircle，与 C 端 ↑/■ 字符不对齐 | L377-392 |
 
-### 2.2 C 端小布（mini-app `components/chat/MessageInput.tsx`）
+### 2.2 C 端元元（mini-app `components/chat/MessageInput.tsx`）
 
 ```
 语音模式（默认）:

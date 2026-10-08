@@ -38,7 +38,7 @@ public class AdminRoleController {
     //        而该页的节点码/路由守卫码就是 `employee:list` ⇒ **岗位下拉零回归**；
     //        （取 `system:view` 会让**运营**——持 `employee:list`、不持 `system:view`——的下拉变空）
     //   · `GET /roles/{id}` → `system:view`（「岗位权限」页回显，同上）。
-    // ⚠️ `/roles`·`/roles/all` 因此对米宝 `role_manage` 工具构成**跨码**（该工具挂「岗位权限」页、
+    // ⚠️ `/roles`·`/roles/all` 因此对黄金策 `role_manage` 工具构成**跨码**（该工具挂「岗位权限」页、
     // 声明 `system:view`）⇒ 具名登记在
     // `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`
     // （结构事实：同一条 API 被两个守卫码不同的页面共用）。

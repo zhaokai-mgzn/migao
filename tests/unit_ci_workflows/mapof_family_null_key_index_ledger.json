@@ -1,0 +1,36 @@
+{
+  "schema": "mapof-family-null-key-index/v1",
+  "issue": "#6226",
+  "what": "类级元守卫（issue #6226）的豁免/已修台账：`src/main` 内凡**返回 `Map.of()` / `Map.copyOf()` 族**的方法，其返回值若被**同文件、同方法**内的 `<var>.get(...)` 用**可能为 null 的键**索引，就必须逐条落在 `candidates`（带 why）或 `tolerant_fixes`（空集分支已改成容忍空键的表）里。判据实现 = tests/unit_ci_workflows/test_mapof_family_null_key_index.py（**条数一律现取**，本文件不写任何计数常量）。",
+  "why": "病根形态：空集分支 `return Map.of();`（`ImmutableCollections.MapN` 的 `get(null)` 先 requireNonNull ⇒ NPE）+ 调用点用**未判空**的键索引 ⇒ 「该页/该批所有键都为空」这条路径必然 500（#6219 已在租户 20 的 1 行空 `product_id` 上真实爆过；#6226 是它的同族存量）。JDK 语义实跑对照：`Map.of().get(null)` / `Map.of(\"k\",\"v\").get(null)` / `Map.copyOf(...)` ⇒ NPE；`Collections.emptyMap()` / `unmodifiableMap(LinkedHashMap)` / `new LinkedHashMap<>()` / `new HashMap<>()` ⇒ 返 null 不抛 ⇒ 后者**一律不在本守卫射程内**（判了就是新的假红）。",
+  "judged_by": "tests/unit_ci_workflows/test_mapof_family_null_key_index.py",
+  "candidates": [
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeDistillService.java::distillSessionWith",
+      "disposition": "safe-literal",
+      "why": "索引实参是三个字符串**字面量**（\"candidates\" / \"created\" / \"skipped\"）—— 字面量键恒非 null，不可变表的 `get` 不会走到 requireNonNull ⇒ 结构性安全，不是「看起来没事」。该声明由守卫**机械复核**（声明与实际不符即红）。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanService.java::specByItemIdOf",
+      "disposition": "accepted",
+      "why": "索引实参 op.getOrderItemId() 的判空**不在索引那一行**、而在同一个 for 循环的入口（`op.getOrderItemId() == null ⇒ continue`）⇒ 到 set_overview 的索引点恒非 null。这是「非局部判空」，机械锁盖不到 ⇒ 本条按 §28.2.2 如实登记为人写的 why。"
+    }
+  ],
+  "tolerant_fixes": [
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java::getCategoryNameMap",
+      "why": "空集分支由 `Map.of()` 改为 `new HashMap<>()`（与非空分支 `Collectors.toMap(...)` 同族 ⇒ 两个分支类型契约一致）。调用点 `categoryNameMap.get(item.getCategoryId())` 的键**未过**同一道 `StringUtils::hasText` 过滤 ⇒ 谁的把空集分支改回 `Map.of()`，加工项列表页就重新在该页出现空 `category_id` 时 500（本条的回归锁）。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java::loadOrders",
+      "why": "空集分支由 `Map.of()` 改为 `new HashMap<>()`（与该分支下面的 `byId` 同族）。调用点 `orders.get(po.getOrderId())` 未判空 ⇒ 改回 `Map.of()` 即在该批加工单 `order_id` 全为空时重新 NPE ⇒ 列表端点 500（本条的回归锁）。"
+    }
+  ],
+  "coverage_boundary": [
+    "只裁 `Map.of` / `Map.copyOf` 族（只有这两个族对 null 键 requireNonNull 抛）；`Collections.emptyMap()` / `unmodifiableMap(...)` / `LinkedHashMap` / `HashMap` 一律不判。",
+    "只认「同文件 + 同方法」的局部变量族（`Map<...> v = M(...)` 后 `v.get(arg)`）—— #6226 两处站点都在此族内。「跨方法传参」族（把 map 当形参传给另一个方法后再 get(null)，形态见 WorkerCuttingHeightService 的 brands(...) → positionRow(...)，即 #6219 的站点）**不在射程内** ⇒ 与 #6219 的守卫互补，不是重复。",
+    "方法归属靠「≥4 格缩进的单行签名 + `{` 结尾」近似：多行签名 / 嵌套类内的方法会被归到外层方法名下 ⇒ 「同方法」判定变松（可能多报、不会漏报本族）。",
+    "「实参是否可能为 null」不做数据流分析：只有字符串字面量被**机械**判为安全，其余形态一律要人写下 why —— 有意取舍（口径同 migao-dev-flow §28.2.2）。",
+    "本守卫不跑 Java 测试、只读源码文本，**不替代** #6226 的两条实例判据（ProcessingItemServiceTest / ProcessingOrderServiceTest）；两条实例判据才是「端点不再 500」的行为面证据。"
+  ]
+}

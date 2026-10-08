@@ -1,6 +1,6 @@
 // case_ids: UI-079, UI-080
 /**
- * 米宝（B 端）对话渲染层——issue #5952 的两条面：
+ * 黄金策（B 端）对话渲染层——issue #5952 的两条面：
  *
  * A. **客户端打字机**（UI-079；用户 2026-10-02 裁定「选 2」）：组件接入 `useTypewriter` 后，
  *    流式期间 `data-revealed`（可见字符数）必须**从 0 长到全长**，结束/中断 ⇒ 立刻全文。
@@ -83,7 +83,7 @@ vi.mock('@/components/chat/ToolResultCard', () => ({ default: () => null }))
 
 import MessageList from '@/components/chat/MessageList'
 
-const FULL_TEXT = '米宝回复的第一句话，后面还有很多字，需要足够长才能观察到逐字揭示的过程。'
+const FULL_TEXT = '黄金策回复的第一句话，后面还有很多字，需要足够长才能观察到逐字揭示的过程。'
 
 function aiMsg(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {

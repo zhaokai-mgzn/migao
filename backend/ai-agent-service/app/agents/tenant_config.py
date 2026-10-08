@@ -1,7 +1,7 @@
 """
 租户 AI 配置拉取（带缓存）
 
-统一从 admin-api 拉取 TenantAiConfig（机器人设置），供小布 agent 各节点使用：
+统一从 admin-api 拉取 TenantAiConfig（机器人设置），供元元 agent 各节点使用：
 - autoHandoffKeywords：自动转人工关键词
 - afterHoursMode / afterHoursMessage：非营业时间处理
 - emotionHandoff / recommendStrategy 等（后续扩展）

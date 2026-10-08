@@ -8,6 +8,7 @@ import com.migao.admin.service.OrderLogisticsService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -93,7 +94,7 @@ public class OrderController {
      *
      * <p>🔴 <b>为什么判在这里，而不是 {@link OrderCreateRequest} 上的 {@code @NotBlank}</b>（实测踩过）：
      * 那张 DTO 是**表单与 agent 共用的 wire 契约**，而 {@code OrderDtoContractTest} 钉着
-     * 「**工具侧合法载荷在服务端必须零违规**」。C 端小布/米宝的自助下单**不采集**地址与物流
+     * 「**工具侧合法载荷在服务端必须零违规**」。C 端元元/黄金策的自助下单**不采集**地址与物流
      * （{@code order_create} 工具 schema 的 required 只有 name/phone/items）⇒ 把 {@code @NotBlank}
      * 加到共用 DTO 上，会让「合法 agent 载荷」当场变成非法（实测：该契约的 2 条判据 +
      * {@code OrderControllerTest} 5 条 + {@code AgentOrderControllerTest} 3 条 +
@@ -136,6 +137,7 @@ public class OrderController {
      * 不新造权限）；{@code order:create} 是**建单**粒度，改单属于"改"。</p>
      */
     @RequirePermission("order:update")
+    @TenantOwnedResource("order")
     @PutMapping("/{id:[0-9a-fA-F-]+}/content")
     public ApiResponse<OrderDetailResponse> updateOrderContent(
             @PathVariable String id,
@@ -236,6 +238,7 @@ public class OrderController {
      * 于是「能看订单列表」=「能改状态/取消/删除」，只读持有者被动拿到写能力）。
      */
     @RequirePermission("order:update")
+    @TenantOwnedResource("order")
     @PutMapping("/{id:[0-9a-fA-F-]+}/status")
     public ApiResponse<Void> updateOrderStatus(
             @PathVariable String id,
@@ -346,6 +349,7 @@ public class OrderController {
      * PUT /api/admin/orders/{id}/follow-status
      */
     @RequirePermission("order:update")  // issue #5246：改跟进状态是写（其 GET 仍是 order:list）
+    @TenantOwnedResource("order")
     @PutMapping("/{id:[0-9a-fA-F-]+}/follow-status")
     public ApiResponse<Void> updateFollowStatus(
             @PathVariable String id,
@@ -416,18 +420,48 @@ public class OrderController {
         String logisticsCompany = body.get("logisticsCompany");
         String trackingNo = body.get("trackingNo");
         String logisticsType = body.get("logisticsType"); // express / logistics（issue #3984，V47）
+        // 发货方式（issue #6239，V147）：logistics 物流发货 / none 无需物流。
+        // ⇒ 服务端白名单 fail-closed：**非空**取值只许这两个；非法值**显式拒绝、不静默兜底**。
+        // ⚠️ 缺席 / 空串**不拒绝**（老客户端根本不发这个键，那是「没这句话」而不是「说了个坏值」）
+        //   —— 「非法入参显式拒绝」只覆盖**有缺陷证据的取值**，不覆盖现状被宽容且无害的取值。
+        String shippingMethod = body.get("shippingMethod");
+        if (org.springframework.util.StringUtils.hasText(shippingMethod)
+                && !"logistics".equals(shippingMethod) && !"none".equals(shippingMethod)) {
+            throw com.migao.admin.exception.BusinessException.validationError(
+                    "无效的发货方式: " + shippingMethod + "（只接受 logistics 物流发货 / none 无需物流）");
+        }
         // 发货人（issue #3768）：显式传入优先，否则取当前登录用户姓名兜底
         String providedShipper = body.get("shipperName");
         String shipperName = orderService.resolveShipperName(providedShipper);
 
         // 查询现有物流记录
         java.util.List<OrderLogistics> existing = orderLogisticsService.getByOrderId(id);
+
+        // ── 服务端权威（issue #6239）：发货方式落库 + 「物流发货 ⇒ 运单号必填」在服务端成立 ──
+        // 取「本次请求生效后」的运单号（更新 = 显式优先、否则保留原值；新建 = 只有请求值）。
+        String storedTrackingNo = existing.isEmpty() ? null : existing.get(0).getTrackingNo();
+        String effectiveTrackingNo = trackingNo != null ? trackingNo : storedTrackingNo;
+        // 🔴 最小破坏形态（**先量后定**，见 PR body「兼容性判断」）：**仅**当本次请求**显式**给出
+        // shippingMethod=logistics **且**生效后的运单号为空时才拒绝。三条被保护的路径：
+        //   ① 不发 shippingMethod 的老客户端（含智能体补单号）⇒ 整条规则不触发；
+        //   ② 订单详情「编辑物流」弹窗（`components/orders/LogisticsForm.tsx` 的 validate 要求运单号必填，
+        //      且回填 `order.logistics.trackingNo`）⇒ 带非空运单号过来，不触发；
+        //   ③ 发货页「无需物流」（shippingMethod=none + 空运单号）⇒ 不触发（这正是本单要支持的新形态）。
+        // 会改变行为的：**直调 API** 声明「物流发货」却不给运单号 —— 此前被接受（且把运单号置空），
+        // 现在 422。它就是把前端那条规则搬到服务端所要挡的唯一形态。
+        if ("logistics".equals(shippingMethod)
+                && (effectiveTrackingNo == null || effectiveTrackingNo.isBlank())) {
+            throw com.migao.admin.exception.BusinessException.validationError(
+                    "物流发货必须填写快递单号（shippingMethod=logistics 且运单号为空）");
+        }
+
         if (!existing.isEmpty()) {
             // 更新第一条物流记录
             OrderLogistics logistics = existing.get(0);
             if (logisticsCompany != null) logistics.setLogisticsCompany(logisticsCompany);
             if (trackingNo != null) logistics.setTrackingNo(trackingNo);
             if (logisticsType != null) logistics.setLogisticsType(logisticsType);
+            if (shippingMethod != null) logistics.setShippingMethod(shippingMethod);
             // 仅显式传入才覆盖：改运单号/纠错 ≠ 换发货人，也不为存量历史订单猜经手人
             if (org.springframework.util.StringUtils.hasText(providedShipper)) {
                 logistics.setShipperName(shipperName);
@@ -441,6 +475,7 @@ public class OrderController {
                     .logisticsCompany(logisticsCompany)
                     .trackingNo(trackingNo)
                     .logisticsType(logisticsType != null ? logisticsType : "express")
+                    .shippingMethod(shippingMethod)
                     .shipperName(shipperName)
                     .status("in_transit")
                     .build();

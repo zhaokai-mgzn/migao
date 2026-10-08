@@ -1,38 +1,56 @@
 # case_ids: MC-012
-# （沿用 tests/unit_ci_workflows/** 的既有惯例：CI 结构类 L0 不变式统一挂 MC-012）
+# （沿用 tests/unit_ci_workflows/** 既有惯例：CI 结构类 L0 不变式统一挂 MC-012）
 """定时腿的**逐条点名**未知豁免（`--allow-unknown <check-id>`，issue #3951）。
 
 ## 病灶（结构性，与"有没有漂移"无关）
 
-`scripts/drift_audit.py` 的 `check_skill_anchor` 在**活锚不存在**时返回 `status="unknown"`
-（"不等于通过"，语义本身正确）。而 `.github/workflows/drift-audit.yml` 的定时腿声明了
-`--fail-on-unknown` ⇒ `tri_state()` 返回 `3`；而 **CI runner 上活锚天然不存在、也没有任何步骤装它**
-⇒ 即使 `main` 零漂移，定时腿也**必然**非零：上线以来 **10/10 红**，`stale-report-reaper`
-也因此永远收不掉它（它要求最近 3 次已完成 run 全 `success`）。
+`scripts/drift_audit.py` 的 `check_skill_anchor` 在**活锚不存在**时**曾经**返回 `status="unknown"`，
+而 `.github/workflows/drift-audit.yml` 的定时腿声明了 `--fail-on-unknown` ⇒ `tri_state()` 返回 `3`；
+而 **CI runner 上活锚天然不存在、也没有任何步骤装它** ⇒ 即使 `main` 零漂移，定时腿也**必然**非零：
+上线以来 **10/10 红**，`stale-report-reaper` 也因此永远收不掉它（它要求最近 3 次已完成 run 全 `success`）。
 
 两种"看起来能修"的写法都是**降级**：① 去掉 `--fail-on-unknown` ⇒ 顺带放行**心跳/网络**类的未知
 （那正是该开关要拦的假绿）；② 把 `unknown` 整体当通过 ⇒ 同一个 blanket bypass。
 
-## 本文件锁七条（每条都是**注入式**：在临时仓库里构造状态，不依赖本机）
+## 🔴 #6144 §1-C1 改判（2026-10-03）：`skill-anchor` 不再是"未知"，改判 `not_applicable`
+
+原诊断是「活锚不存在 ⇒ `unknown` ⇒ 与"真漂移"同码」——**根因是那次的状态选错了**，
+不是「豁免不够」：判定对象**在本环境里结构性地不存在**（活锚没装 / 预设语料取不到），
+正确的三态是**具名的 `not_applicable`**（`not_applicable()`：`evaluated=0` + 报告末尾具名清单 +
+计数声明），而**不是** `unknown`（那是"对象在、这次没读出结论"）。
+⇒ 于是 `--allow-unknown skill-anchor` 这条**豁免过期**（`unknown_exemption_errors()` 当场判用法
+错误 ⇒ 定时腿会 `exit 2`）⇒ 本 PR **把豁免撤掉**（豁免只许缩短，不许永久挂着）。
+
+**豁免机制本身一个字都没放宽，本文件照旧逐条钉它**（把被测对象换成**真的会未知**的那条：
+
+`heartbeat` —— `--offline` ⇒ `gh` 不可达 ⇒ `unknown`）。
+
+## 本文件锁九条（每条都是**注入式**：在临时仓库里构造状态，不依赖本机）
 
 1. **不改既有语义**：无名单时，`--fail-on-unknown` 下的 `unknown` **仍判 `3`**；
-2. **豁免不泄漏**：名单只免**点名的那一条** —— 同一次审计里另一条 `unknown`（`heartbeat`，
-   `--offline` 下 gh 不可达）照旧把它折成 `3`，且它仍出现在「判据不可判」清单里；
-3. **点名的那一条真的被免**：退出 `0`，而**判据照旧打印**（状态仍 `unknown`、note 原文仍在、
+2. **新契约**：活锚不存在 ⇒ `skill-anchor` 记 **`not_applicable`**（**不是** `unknown`、**不是** `ok`），
+   且报告末尾有**具名清单 + 计数声明**；`--fail-on-unknown` 下**不折非零**（行为面）；
+3. **豁免不泄漏**：`--allow-unknown` 只影响**点名的那条** —— 点一个本次 `not_applicable` / `ok`
+   的 id 会当场用法错误（清单必须兑现），故不可能"顺手"放行别的未知；
+4. **点名的那一条真的被免**：退出 `0`，而**判据照旧打印**（状态仍 `unknown`、note 原文仍在、
    报告 `summary.unknown_exempt` 登记本轮名单、抬头 `UNKNOWN-EXEMPT` —— 不当 `ok`）；
-4. **名单必须兑现（形态一）**：点名一个**不存在**的判据 id ⇒ 用法错误（非零）；
-5. **名单必须兑现（形态二）**：点名的判据**本次能判**（活锚在位且一致 ⇒ `ok`）⇒ 用法错误（非零）
+5. **名单必须兑现（形态一）**：点名一个**不存在**的判据 id ⇒ 用法错误（非零）；
+6. **名单必须兑现（形态二）**：点名的判据**本次能判**（`ok`）⇒ 用法错误（非零）
    —— 否则"我声明过"会静默腐烂成"这条永远不判"；
-6. **活锚真的存在时照常判定**：活锚落后 ⇒ 该判据照旧报出漂移（读数 + 处置），豁免**吞不掉**它；
-7. **接线**：豁免**只**声明在定时 / 手动腿，且**只**点名 `skill-anchor`（PR 腿一个字都不豁免）。
+7. **活锚真的存在时照常判定**：活锚落后 ⇒ 该判据照旧报出漂移（读数 + 处置），豁免**吞不掉**它；
+8. **接线**：豁免面穷举 —— 定时腿上**没有** `--allow-unknown`（#6144 撤掉了那条过期的），
+   PR 腿也没有；
+9. **整条腿的收口**：无漂移的树 + 定时腿参数 ⇒ `0`（活的未知只剩 `skill-anchor` 的
+   `not_applicable`，它**不折非零**）。
 
 ## 红证（本文件自己证明得了会红）
 
-* 把 `tri_state()` 里的 `and c["id"] not in allowed` 去掉 ⇒ 判据 2 红（豁免泄漏到 `heartbeat`）；
-* 把 `unknown_exemption_errors()` 的 `elif c["status"] != "unknown"` 分支删掉 ⇒ 判据 5 红；
-* 把该函数的 `if c is None` 分支删掉 ⇒ 判据 4 红；
-* 把 `check_skill_anchor` 的 `status = "unknown"` 改成 `"ok"` ⇒ 判据 1/3 红（未知不复现）；
-* 把 workflow 的 `--allow-unknown skill-anchor` 删掉（或加到 PR 腿）⇒ 判据 7 红。
+* 把 `unknown_exemption_errors()` 的 `elif c["status"] != "unknown"` 分支删掉 ⇒ 判据 6 红；
+* 把该函数的 `if c is None` 分支删掉 ⇒ 判据 5 红；
+* 把 `check_skill_anchor` 的活锚缺失分支从 `not_applicable()` 改回 `status = "unknown"` ⇒ 判据 2 红；
+* 把 `not_applicable()` 里的 `return` 拿去 / 让 `evaluated` 保持非零 ⇒ 判据 2 的清单/计数断言红；
+* 把 `tri_state()` 的 `unknown` 折非零那条去掉 ⇒ 判据 1 红；
+* 往 workflow 加 `--allow-unknown <某个 id>` ⇒ 判据 8 红。
 
 ⚠️ 夹具里的**引用类字面量**一律拼接构造（本文件同属受管引用面，见 dev-flow §18.1）。
 """
@@ -83,8 +101,9 @@ jobs:
 
 # 定时腿那一档（与 `.github/workflows/drift-audit.yml` 的 `schedule` 分支同口径）
 GATE = ("--check", "--fail-on-unknown")
-# 夹具里**两条**都会记 `unknown` 的判据：`skill-anchor`（活锚不存在）+ `heartbeat`（离线 ⇔ gh 不可达）
-BOTH_UNKNOWN = ("--only", "skill-anchor,heartbeat")
+# 夹具里**会记 `unknown`** 的判据 = `heartbeat`（`--offline` ⇔ `gh` 不可达）。
+# （#6144 起 `skill-anchor` 在活锚不存在时记 `not_applicable`，**不再**是 unknown。）
+UNKNOWN_CHECK = "heartbeat"
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -154,74 +173,105 @@ def audit_step_run() -> str:
 def test_unknown_without_allow_list_is_still_judged_3(tmp_path):
     """**既有语义不放宽**：`--fail-on-unknown` 下的 `unknown` 照旧 `3`（豁免不是"把未知当通过"）。"""
     repo = mk_repo(tmp_path)
-    rc, out, rep = audit(repo, *GATE, *BOTH_UNKNOWN, "--live-anchor", missing_anchor(tmp_path))
+    rc, out, rep = audit(repo, *GATE, "--only", UNKNOWN_CHECK)
     assert rc == 3, f"无名单时 unknown 没有折成 3（既有语义被改动了）：rc={rc}\n{out}"
-    assert check_of(rep, "skill-anchor")["status"] == "unknown", out
-    assert check_of(rep, "heartbeat")["status"] == "unknown", out
+    assert check_of(rep, UNKNOWN_CHECK)["status"] == "unknown", out
     assert rep["summary"]["unknown_exempt"] == [], rep["summary"]
     assert rep["summary"]["tri_state"] == 3, rep["summary"]
-    assert "活锚未安装" in out, f"未知的原文必须可见：\n{out}"
+    assert "未知" in out, f"未知的原文必须可见：\n{out}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 判据 2：豁免**不泄漏** —— 只免点名的那一条
+# 判据 2（#6144 §1-C1 的新契约）：活锚不存在 ⇒ `not_applicable`，**不是** unknown / ok
+# ─────────────────────────────────────────────────────────────────────────────
+def test_live_anchor_absent_is_not_applicable_not_unknown(tmp_path):
+    """活锚不存在 ⇒ **具名 `not_applicable`** + 报告末尾具名清单 + **不折非零**。
+
+    三件事缺一不可（否则只是把一种「说不清」换成另一种）：
+      · `status == "not_applicable"` —— **不是** `unknown`（对象在才谈"没读出结论"）、
+        **不是** `ok`（"没读数 ≠ 0"）；
+      · `evaluated == 0` 且报告里有 `not_applicable N 条` 的**具名清单**（谁 / 为什么 / 怎么处置）；
+      · `--fail-on-unknown` 下 rc == **0**（它是"不适用"，不是"不可判"）。
+    """
+    repo = mk_repo(tmp_path)
+    rc, out, rep = audit(repo, *GATE, "--only", "skill-anchor",
+                         "--live-anchor", missing_anchor(tmp_path))
+    chk = check_of(rep, "skill-anchor")
+    assert chk["status"] == "not_applicable", f"活锚不存在应记 not_applicable：{chk['status']}\n{out}"
+    assert chk["evaluated"] == 0, chk
+    assert any("not_applicable" in n and "活锚" in n for n in chk["notes"]), chk["notes"]
+    # 报告末尾的**具名清单 + 计数声明**（不是静默跳过）
+    assert "not_applicable 1 条" in out, f"缺具名计数声明：\n{out}"
+    assert "[skill-anchor]" in out.split("not_applicable 1 条")[1], out
+    assert rep["summary"]["not_applicable"] == 1, rep["summary"]
+    assert rep["summary"]["not_applicable_checks"] == ["skill-anchor"], rep["summary"]
+    # 它**不**参与 `--fail-on-unknown`（= 不改任何门禁的通过条件以外的东西）
+    assert rc == 0, f"not_applicable 被折成了非零（与 unknown 又混在一起了）：rc={rc}\n{out}"
+    assert rep["summary"]["unknown_exempt"] == [], rep["summary"]
+
+
+def test_live_anchor_absent_without_flag_still_not_applicable(tmp_path):
+    """反向对照：**不带** `--fail-on-unknown` 时同样是 `not_applicable`（不因开关而变）。"""
+    repo = mk_repo(tmp_path)
+    rc, out, rep = audit(repo, "--check", "--only", "skill-anchor",
+                         "--live-anchor", missing_anchor(tmp_path))
+    assert check_of(rep, "skill-anchor")["status"] == "not_applicable", out
+    assert rc == 0, out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 判据 3：豁免**不泄漏** —— 名单点错对象会当场兑现失败（不可能"顺手"放行别的未知）
 # ─────────────────────────────────────────────────────────────────────────────
 def test_exemption_cannot_leak_to_other_unknown_checks(tmp_path):
-    """豁免的粒度 = **判据 id**：同一次审计里另一条 `unknown` 照旧把结论折成 `3`。
+    """`--allow-unknown` 只对**点名的那条**生效：点一个 `not_applicable` 的 id ⇒ 用法错误。
 
     **两向对照**（否则本判据对"豁免根本没生效"与"豁免成了 blanket"两种故障**都不敏感**）：
-    · 名单只有 `skill-anchor` ⇒ `3`（心跳的未知仍拦）；
-    · 名单点名**两条** ⇒ `0`（证明上面那个 `3` 的成因**确实是**"心跳没被豁免"）。
-    把 `tri_state()` 里的 `and c["id"] not in allowed` 去掉 ⇒ 第一种立刻变 `0` ⇒ 本判据红。
+    · 点 `skill-anchor`（本次 `not_applicable`，**不是 unknown**）⇒ `2` 用法错误 + 报错点名它；
+    · 改点 `heartbeat`（本次真 `unknown`）⇒ `0`。
+    把 `unknown_exemption_errors()` 的兑现检查删掉 ⇒ 第一种会变成 `0`（豁免空转）⇒ 本判据红。
     """
     repo = mk_repo(tmp_path)
     anchor = missing_anchor(tmp_path)
-    rc_one, out_one, rep_one = audit(repo, *GATE, *BOTH_UNKNOWN,
-                                     "--live-anchor", anchor, "--allow-unknown", "skill-anchor")
-    assert rc_one == 3, f"豁免泄漏到了别的判据（心跳也未知，却没折 3）：rc={rc_one}\n{out_one}"
-    assert rep_one["summary"]["unknown_exempt"] == ["skill-anchor"], rep_one["summary"]
-    # 「判据不可判」那一节**必须仍点名 heartbeat**，且**不得**把已豁免的 skill-anchor 算进去
-    # （否则报告会自相矛盾：既说"三态 3"、又把这条写成已放行）。
-    tail = out_one.split("判据不可判")[1]
-    assert "[heartbeat]" in tail, f"心跳的未知没有进「不可判」清单：\n{out_one}"
-    assert "[skill-anchor]" not in tail, f"已豁免的判据又被算进「不可判」（结论自相矛盾）：\n{out_one}"
-    # 正对照：两条都点名 ⇒ 0（对照组成因可归因，不是"豁免压根没接线"）
-    rc_both, out_both, rep_both = audit(repo, *GATE, *BOTH_UNKNOWN, "--live-anchor", anchor,
-                                        "--allow-unknown", "skill-anchor",
-                                        "--allow-unknown", "heartbeat")
-    assert rc_both == 0, f"两条都点名却仍判 3（豁免没生效）：rc={rc_both}\n{out_both}"
-    assert rep_both["summary"]["unknown_exempt"] == ["heartbeat", "skill-anchor"], rep_both["summary"]
+    rc_bad, out_bad, _ = audit(repo, *GATE, "--only", "skill-anchor,heartbeat",
+                               "--live-anchor", anchor, "--allow-unknown", "skill-anchor")
+    assert rc_bad == 2, f"点名了一条 not_applicable 的判据却不是用法错误（豁免空转）：rc={rc_bad}\n{out_bad}"
+    assert "不是 `unknown`" in out_bad and "skill-anchor" in out_bad, out_bad
+    # 正对照：改点真的未知的那条 ⇒ 0（对照组成因可归因，不是"豁免压根没接线"）
+    rc_ok, out_ok, rep_ok = audit(repo, *GATE, "--only", "skill-anchor,heartbeat",
+                                  "--live-anchor", anchor, "--allow-unknown", UNKNOWN_CHECK)
+    assert rc_ok == 0, f"点名的未知没有生效：rc={rc_ok}\n{out_ok}"
+    assert rep_ok["summary"]["unknown_exempt"] == [UNKNOWN_CHECK], rep_ok["summary"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 判据 3：点名的那一条真的被免 —— 但仍**照旧打印**
+# 判据 4：点名的那一条真的被免 —— 但仍**照旧打印**
 # ─────────────────────────────────────────────────────────────────────────────
 def test_named_check_exempt_yields_zero_but_is_still_reported(tmp_path):
     """退出 `0`，而判据**没有被改写成通过**：`status` 仍 `unknown`、note 原文仍在、报告登记名单。"""
     repo = mk_repo(tmp_path)
-    rc, out, rep = audit(repo, *GATE, "--only", "skill-anchor",
-                         "--live-anchor", missing_anchor(tmp_path),
-                         "--allow-unknown", "skill-anchor")
+    rc, out, rep = audit(repo, *GATE, "--only", UNKNOWN_CHECK,
+                         "--allow-unknown", UNKNOWN_CHECK)
     assert rc == 0, f"点名豁免没有生效（仍判 3）：rc={rc}\n{out}"
-    chk = check_of(rep, "skill-anchor")
+    chk = check_of(rep, UNKNOWN_CHECK)
     assert chk["status"] == "unknown", "豁免把状态改写了（应当「未知仍在，只是不折非零」）"
-    assert any("活锚未安装" in n for n in chk["notes"]), chk["notes"]
-    assert "活锚未安装" in out, f"未知的原文必须仍在输出里：\n{out}"
-    assert rep["summary"]["unknown_exempt"] == ["skill-anchor"], rep["summary"]
+    assert chk["notes"], chk["notes"]
+    assert rep["summary"]["unknown_exempt"] == [UNKNOWN_CHECK], rep["summary"]
     assert rep["summary"]["tri_state"] == 0, rep["summary"]
     # 抬头**同时**说出"没有漂移"与"确有一条判据没结论"：写成 ok 是否认后者，
     # 写成 unknown 与 rc=0 相反 —— 本审计治过的正是"结论与实现相反"。
     assert rep["summary"]["verdict"] == "unknown-exempt", rep["summary"]["verdict"]
+    # 「判据不可判」那一节**不得**把已豁免的判据算进去（否则报告自相矛盾）
+    tail = out.split("判据不可判")[1] if "判据不可判" in out else ""
+    assert f"[{UNKNOWN_CHECK}]" not in tail, f"已豁免的判据又被算进「不可判」：\n{out}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 判据 4 / 5：名单**必须当场兑现**（两个形态）
+# 判据 5 / 6：名单**必须当场兑现**（两个形态）
 # ─────────────────────────────────────────────────────────────────────────────
 def test_allow_list_naming_no_check_is_nonzero(tmp_path):
     """点名一个**不存在**的判据 id ⇒ 用法错误（否则豁免静默空转、随判据改名而腐烂）。"""
     repo = mk_repo(tmp_path)
-    rc, out, _ = audit(repo, *GATE, "--only", "skill-anchor",
-                       "--live-anchor", missing_anchor(tmp_path),
+    rc, out, _ = audit(repo, *GATE, "--only", UNKNOWN_CHECK,
                        "--allow-unknown", "skill-anchor-typo")
     assert rc == 2, f"名单点名了不存在的判据却不是用法错误：rc={rc}\n{out}"
     assert "skill-anchor-typo" in out, f"报错必须点名那个 id（可归因）：\n{out}"
@@ -240,51 +290,51 @@ def test_allow_list_for_a_judgeable_check_is_nonzero(tmp_path):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 判据 6：活锚**真的存在**时照常判定 —— 豁免吞不掉真缺陷
+# 判据 7：活锚**真的存在**时照常判定 —— 豁免吞不掉真缺陷
 # ─────────────────────────────────────────────────────────────────────────────
 def test_live_anchor_is_judged_normally_when_it_exists(tmp_path):
-    """活锚落后 ⇒ 漂移照旧报出（读数 + 处置都在报告里），且整体是**用法错误**（名单已失效）。"""
+    """活锚落后 ⇒ 漂移照旧报出（读数 + 处置都在报告里）；**不**因 `--allow-unknown` 而消失。"""
     repo = mk_repo(tmp_path, skill_version="1.0.0")
     rc, out, rep = audit(repo, *GATE, "--only", "skill-anchor",
-                         "--live-anchor", str(mk_anchor(tmp_path, version="0.9.0")),
-                         "--allow-unknown", "skill-anchor")
+                         "--live-anchor", str(mk_anchor(tmp_path, version="0.9.0")))
     chk = check_of(rep, "skill-anchor")
     assert chk["status"] == "new-drift", out
     assert any("落后" in f["detail"] for f in chk["env_findings"]), chk["env_findings"]
-    assert "落后" in out, f"漂移的读数必须照旧打印（豁免不能把报告也吞掉）：\n{out}"
-    # `2` = 用法错误：判据**已经能判**（这里是"确实有漂移"）⇒ 豁免当场失效，**不许**被豁免吞掉。
-    assert rc == 2, f"活锚存在时豁免仍生效（吞掉了真缺陷）：rc={rc}\n{out}"
+    assert "落后" in out, f"漂移的读数必须照旧打印：\n{out}"
+    assert rc == 1, f"活锚落后必须判红：rc={rc}\n{out}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 判据 7：接线 —— 豁免只在定时 / 手动腿，且只点名 skill-anchor
+# 判据 8：接线 —— 豁免面穷举（#6144 撤掉了过期的 skill-anchor 豁免）
 # ─────────────────────────────────────────────────────────────────────────────
-def test_workflow_declares_a_single_named_exemption_on_the_scheduled_leg():
-    """机械读 workflow：豁免面 = **恰好一条** `skill-anchor`，且 PR 腿一个字都不豁免。"""
+def test_workflow_declares_no_stale_exemption_on_the_scheduled_leg():
+    """机械读 workflow：豁免面 = **空**（skill-anchor 已改判 `not_applicable`，
+    它那条 `--allow-unknown` 会因「名单不兑现」让定时腿当场 `exit 2`）。
+
+    ⚠️ 本判据钉的是**当前**形态（豁免面 0 条）。将来若真的要豁免某条**真未知**的判据，
+    必须**同时**改本判据并说明理由 —— 豁免面**只许缩短**，不许悄悄长回来。
+    """
     run = audit_step_run()
-    default = 'MODE_ARGS="--check"'
-    assert default in run, f"审计 step 的默认（PR 腿）参数变了：\n{run}"
-    assert "--allow-unknown" not in default, (
-        f"PR 腿也带上了豁免 —— 那会把同一条 blanket bypass 漏进门禁：\n{run}")
+    assert 'MODE_ARGS="--check"' in run, f"审计 step 的默认参数变了：\n{run}"
     scheduled = next((ln.strip() for ln in run.splitlines()
                       if ln.strip().startswith("MODE_ARGS=") and "--strict-stale" in ln), "")
-    assert scheduled == ('MODE_ARGS="--check --strict-stale --fail-on-unknown '
-                         '--allow-unknown skill-anchor"'), (
-        f"定时腿的参数与预期不符（豁免必须**逐条点名**、且仍带 --fail-on-unknown）：{scheduled!r}")
-    # 豁免面穷举：整个 workflow 里 `--allow-unknown` 后面只许跟 skill-anchor 这一个 id
-    # （多一条 ⇒ 有人悄悄扩大了 blanket 面）。
-    ids = set(re.findall(r"--allow-unknown\s+([A-Za-z0-9_\-]+)",
-                         WORKFLOW.read_text(encoding="utf-8")))
-    assert ids == {"skill-anchor"}, f"豁免面被扩大了（只许 skill-anchor）：{sorted(ids)}"
+    assert scheduled == 'MODE_ARGS="--check --strict-stale --fail-on-unknown"', (
+        f"定时腿参数与预期不符（#6144 起不再豁免任何判据）：{scheduled!r}")
+    # **真正被执行的那一行**不得带豁免（穷举 `MODE_ARGS=` 赋值行 —— 判「代理」而不是判全文：
+    # 全文里那句 \`--allow-unknown\` 是**说明文字**（给将来要豁免时照抄的样例），不是执行面）。
+    assignments = [ln.strip() for ln in run.splitlines() if ln.strip().startswith("MODE_ARGS=")]
+    assert assignments, f"审计 step 里没有任何 `MODE_ARGS=` 赋值（判据的锚点没了）：\n{run}"
+    assert not any("--allow-unknown" in ln for ln in assignments), (
+        f"豁免面不该再有执行条目（只许缩短）：{assignments!r}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 判据 8：整条腿的收口 —— 无漂移的树 + 定时腿参数 ⇒ `0`
+# 判据 9：整条腿的收口 —— 无漂移的树 + 定时腿参数 ⇒ `0`
 # ─────────────────────────────────────────────────────────────────────────────
 def test_drift_free_tree_exits_0_under_the_scheduled_leg_flags(tmp_path):
-    """两个成因都消掉之后，定时腿在**无漂移的树**上真的 `0`（而不是"仍然红、只是说法变了"）。
+    """#6144 之后，定时腿在**无漂移的树**上真的 `0`（且**不再靠任何豁免**）。
 
-    · `skill-anchor`：活锚不存在 ⇒ 记 `unknown`，由**点名豁免**放行（判据照旧打印）；
+    · `skill-anchor`：活锚不存在 ⇒ **`not_applicable`**（不折非零，无需豁免）；
     · `heartbeat`：`--gh-fixture` 给出**近期成功** ⇒ 能判、且判成 `ok`
       （`--offline` 会让它整条记 `unknown` ⇒ 必须关掉离线，见 `audit(offline=...)`）。
     """
@@ -294,20 +344,18 @@ def test_drift_free_tree_exits_0_under_the_scheduled_leg_flags(tmp_path):
         {"status": "completed", "conclusion": "success",
          "createdAt": "2026-09-15T05:00:00Z"}]}), encoding="utf-8")
     rc, out, rep = audit(repo, "--check", "--strict-stale", "--fail-on-unknown",
-                         "--allow-unknown", "skill-anchor",
                          "--only", "skill-anchor,heartbeat",
                          "--live-anchor", missing_anchor(tmp_path),
                          "--gh-fixture", str(fixture), "--now", "2026-09-15T06:00:00Z",
                          offline=False)
-    assert rc == 0, f"无漂移的树 + 定时腿参数仍非零（豁免 / 阈值没接上）：rc={rc}\n{out}"
-    assert check_of(rep, "skill-anchor")["status"] == "unknown", out
+    assert rc == 0, f"无漂移的树 + 定时腿参数仍非零：rc={rc}\n{out}"
+    assert check_of(rep, "skill-anchor")["status"] == "not_applicable", out
     assert check_of(rep, "heartbeat")["status"] == "ok", out
-    assert rep["summary"]["unknown_exempt"] == ["skill-anchor"], rep["summary"]
-    assert rep["summary"]["verdict"] == "unknown-exempt", rep["summary"]["verdict"]
+    assert rep["summary"]["unknown_exempt"] == [], rep["summary"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 判据 9：登记位必须**在当前树上真的被用到**（否则它就是一条没人消费的声明）
+# 判据 10：登记位必须**在当前树上真的被用到**（否则它就是一条没人消费的声明）
 # ─────────────────────────────────────────────────────────────────────────────
 @pytest.fixture(scope="module")
 def drift_mod():

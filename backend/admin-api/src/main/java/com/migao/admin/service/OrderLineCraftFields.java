@@ -18,7 +18,7 @@ import java.util.Map;
  *   <li><b>写面</b>（{@link OrderService}）：订单侧唯一生产者的真实形态是
  *       {@code processing_info} JSONB 顶层**扁平 camelCase 键**（{@code curtainType} / {@code craft} /
  *       {@code openCount} …，见设计文档 {@code order-craft-spec-design.md} §4.5），
- *       由 B 端米宝（{@code order_create}）与表单页写入；</li>
+ *       由 B 端黄金策（{@code order_create}）与表单页写入；</li>
  *   <li><b>读面</b>（{@link ProcessingOrderService#buildSnapshot}）：加工单快照按既有白名单键取，
  *       其中算料输出键是 <b>snake_case</b>（{@code fullness} / {@code fullness_actual} /
  *       {@code pleat_count}，与 {@code CALC_INFO_KEYS} 同口径）。</li>
@@ -93,8 +93,8 @@ final class OrderLineCraftFields {
     /**
      * 写路径：把 {@code processing_info} 顶层的工艺规格键**物化**到 {@code order_items} 的列上。
      *
-     * <p>这是两个采集端（C 端小布 {@code curtain_checklist} → 会话 → {@code order_create}；
-     * B 端米宝 {@code order_create}）落库的**唯一汇聚点** —— {@link OrderService#createOrder}
+     * <p>这是两个采集端（C 端元元 {@code curtain_checklist} → 会话 → {@code order_create}；
+     * B 端黄金策 {@code order_create}）落库的**唯一汇聚点** —— {@link OrderService#createOrder}
      * 是表单 / Agent / 程序化三条路径的共享入口，判在这里才无死角。</p>
      */
     static void materialize(Map<String, Object> processingInfo, OrderItem item) {

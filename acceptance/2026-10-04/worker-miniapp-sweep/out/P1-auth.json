@@ -1,0 +1,230 @@
+{
+  "records": [
+    {
+      "id": "A1.A.create",
+      "name": "建探针工人(A)：POST /api/admin/workers",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + users 行落库(role=worker,status=active) == 实测 HTTP 200 id=4217f340c7047f8467cf9cec46ed15c5 row={\"id\":\"4217f340c7047f8467cf9cec46ed15c5\",\"worker_no\":\"LAA70898\",\"nickname\":\"线A验收工人870898\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":25,\"is_worker\":true,\"hash_len\":60}",
+      "evidence": [
+        "期望来源: AdminWorkerController.createWorker + WorkerAdminService（API 建行的终态由 DB 独立复读）",
+        "期望: HTTP 200 + users 行落库(role=worker,status=active)",
+        "实得: HTTP 200 id=4217f340c7047f8467cf9cec46ed15c5 row={\"id\":\"4217f340c7047f8467cf9cec46ed15c5\",\"worker_no\":\"LAA70898\",\"nickname\":\"线A验收工人870898\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":25,\"is_worker\":true,\"hash_len\":60}",
+        "{\"workerNo\":\"LAA70898\",\"name\":\"线A验收工人870898\",\"pin\":\"246810\"}",
+        "DB row: {\"id\":\"4217f340c7047f8467cf9cec46ed15c5\",\"worker_no\":\"LAA70898\",\"nickname\":\"线A验收工人870898\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":25,\"is_worker\":true,\"hash_len\":60}"
+      ],
+      "at": "2026-10-04 12:41:11 +08",
+      "atUtc": "2026-10-04T04:41:11.191Z"
+    },
+    {
+      "id": "A1.B.create",
+      "name": "建探针工人(B)：POST /api/admin/workers",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + users 行落库(role=worker,status=active) == 实测 HTTP 200 id=c3b15ce5d8bf60c77f0c5f7196407bb1 row={\"id\":\"c3b15ce5d8bf60c77f0c5f7196407bb1\",\"worker_no\":\"LAB71192\",\"nickname\":\"线A验收工人871192\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":25,\"is_worker\":true,\"hash_len\":60}",
+      "evidence": [
+        "期望来源: AdminWorkerController.createWorker + WorkerAdminService（API 建行的终态由 DB 独立复读）",
+        "期望: HTTP 200 + users 行落库(role=worker,status=active)",
+        "实得: HTTP 200 id=c3b15ce5d8bf60c77f0c5f7196407bb1 row={\"id\":\"c3b15ce5d8bf60c77f0c5f7196407bb1\",\"worker_no\":\"LAB71192\",\"nickname\":\"线A验收工人871192\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":25,\"is_worker\":true,\"hash_len\":60}",
+        "{\"workerNo\":\"LAB71192\",\"name\":\"线A验收工人871192\",\"pin\":\"246810\"}",
+        "DB row: {\"id\":\"c3b15ce5d8bf60c77f0c5f7196407bb1\",\"worker_no\":\"LAB71192\",\"nickname\":\"线A验收工人871192\",\"role\":\"worker\",\"status\":\"active\",\"tenant_id\":25,\"is_worker\":true,\"hash_len\":60}"
+      ],
+      "at": "2026-10-04 12:41:11 +08",
+      "atUtc": "2026-10-04T04:41:11.466Z"
+    },
+    {
+      "id": "A2.A.login",
+      "name": "工人登录(A)：POST /api/worker/login",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + session_id 32 位 + worker_sessions 行(ended_at IS NULL) == 实测 HTTP session=0111a2be… worker=线A验收工人870898 idle=10080min row={\"id\":\"0111a2be33c54ba39cc1a0ca5b139c0d\",\"worker_id\":\"4217f340c7047f8467cf9cec46ed15c5\",\"worker_no\":\"LAA70898\",\"worker_name\":\"线A验收工人870898\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-11 12:41:11.795782\"}",
+      "evidence": [
+        "期望来源: WorkerSessionService.login + createSession（session 行从 DB 独立复读，不看 API 回执）",
+        "期望: HTTP 200 + session_id 32 位 + worker_sessions 行(ended_at IS NULL)",
+        "实得: HTTP session=0111a2be… worker=线A验收工人870898 idle=10080min row={\"id\":\"0111a2be33c54ba39cc1a0ca5b139c0d\",\"worker_id\":\"4217f340c7047f8467cf9cec46ed15c5\",\"worker_no\":\"LAA70898\",\"worker_name\":\"线A验收工人870898\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-11 12:41:11.795782\"}",
+        "loginData={\"session_id\":\"0111a2be33c54ba39cc1a0ca5b139c0d\",\"worker_id\":\"4217f340c7047f8467cf9cec46ed15c5\",\"worker_no\":\"LAA70898\",\"worker_name\":\"线A验收工人870898\",\"idle_minutes\":10080,\"idle_expires_at\":\"2026-10-11T12:41:11.795781955+08:00\"}",
+        "DB worker_sessions: {\"id\":\"0111a2be33c54ba39cc1a0ca5b139c0d\",\"worker_id\":\"4217f340c7047f8467cf9cec46ed15c5\",\"worker_no\":\"LAA70898\",\"worker_name\":\"线A验收工人870898\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-11 12:41:11.795782\"}"
+      ],
+      "at": "2026-10-04 12:41:11 +08",
+      "atUtc": "2026-10-04T04:41:11.769Z"
+    },
+    {
+      "id": "A2.B.login",
+      "name": "工人登录(B)：POST /api/worker/login",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + session_id 32 位 + worker_sessions 行(ended_at IS NULL) == 实测 HTTP session=75f9549c… worker=线A验收工人871192 idle=10080min row={\"id\":\"75f9549cafae4d10946c56766c288a30\",\"worker_id\":\"c3b15ce5d8bf60c77f0c5f7196407bb1\",\"worker_no\":\"LAB71192\",\"worker_name\":\"线A验收工人871192\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-11 12:41:12.091935\"}",
+      "evidence": [
+        "期望来源: WorkerSessionService.login + createSession（session 行从 DB 独立复读，不看 API 回执）",
+        "期望: HTTP 200 + session_id 32 位 + worker_sessions 行(ended_at IS NULL)",
+        "实得: HTTP session=75f9549c… worker=线A验收工人871192 idle=10080min row={\"id\":\"75f9549cafae4d10946c56766c288a30\",\"worker_id\":\"c3b15ce5d8bf60c77f0c5f7196407bb1\",\"worker_no\":\"LAB71192\",\"worker_name\":\"线A验收工人871192\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-11 12:41:12.091935\"}",
+        "loginData={\"session_id\":\"75f9549cafae4d10946c56766c288a30\",\"worker_id\":\"c3b15ce5d8bf60c77f0c5f7196407bb1\",\"worker_no\":\"LAB71192\",\"worker_name\":\"线A验收工人871192\",\"idle_minutes\":10080,\"idle_expires_at\":\"2026-10-11T12:41:12.091934517+08:00\"}",
+        "DB worker_sessions: {\"id\":\"75f9549cafae4d10946c56766c288a30\",\"worker_id\":\"c3b15ce5d8bf60c77f0c5f7196407bb1\",\"worker_no\":\"LAB71192\",\"worker_name\":\"线A验收工人871192\",\"ended_at\":null,\"end_reason\":null,\"idle_cst\":\"2026-10-11 12:41:12.091935\"}"
+      ],
+      "at": "2026-10-04 12:41:12 +08",
+      "atUtc": "2026-10-04T04:41:12.057Z"
+    },
+    {
+      "id": "A3.me",
+      "name": "GET /api/worker/me（有效 session）",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + worker_id == 探针工人 + pages 为数组 == 实测 HTTP 200 worker_id=4217f340c7047f8467cf9cec46ed15c5 pages=[\"report\",\"order\",\"cut_calc\",\"shipment\"]",
+      "evidence": [
+        "期望来源: WorkerProfileController.me（worker_id 必须等于 A1 建的工人 id）",
+        "期望: HTTP 200 + worker_id == 探针工人 + pages 为数组",
+        "实得: HTTP 200 worker_id=4217f340c7047f8467cf9cec46ed15c5 pages=[\"report\",\"order\",\"cut_calc\",\"shipment\"]"
+      ],
+      "at": "2026-10-04 12:41:12 +08",
+      "atUtc": "2026-10-04T04:41:12.142Z"
+    },
+    {
+      "id": "A4.current-worker",
+      "name": "GET /api/worker/production/current-worker",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + worker_id == 探针工人 + worker_name 与建号一致 == 实测 HTTP 200 worker_id=4217f340c7047f8467cf9cec46ed15c5 worker_name=线A验收工人870898",
+      "evidence": [
+        "期望来源: WorkerSessionService.currentWorker（页头数据源 = 服务端 session）",
+        "期望: HTTP 200 + worker_id == 探针工人 + worker_name 与建号一致",
+        "实得: HTTP 200 worker_id=4217f340c7047f8467cf9cec46ed15c5 worker_name=线A验收工人870898"
+      ],
+      "at": "2026-10-04 12:41:12 +08",
+      "atUtc": "2026-10-04T04:41:12.222Z"
+    },
+    {
+      "id": "A5.bogus-session",
+      "name": "伪造 worker session（32 位不存在）⇒ 必须 401",
+      "status": "pass",
+      "detail": "期望 HTTP 401 == 实测 HTTP 401 {\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}",
+      "evidence": [
+        "期望来源: WorkerSessionFilter（resolveIdentityOrNull=null ⇒ 不设认证 ⇒ authenticated() 判 401）",
+        "期望: HTTP 401",
+        "实得: HTTP 401 {\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}"
+      ],
+      "at": "2026-10-04 12:41:12 +08",
+      "atUtc": "2026-10-04T04:41:12.255Z"
+    },
+    {
+      "id": "A6.no-session",
+      "name": "无 X-Worker-Session-Id ⇒ 必须 401",
+      "status": "pass",
+      "detail": "期望 HTTP 401 == 实测 HTTP 401",
+      "evidence": [
+        "期望来源: SecurityConfig: `/api/worker/**` ⇒ authenticated()",
+        "期望: HTTP 401",
+        "实得: HTTP 401"
+      ],
+      "at": "2026-10-04 12:41:12 +08",
+      "atUtc": "2026-10-04T04:41:12.286Z"
+    },
+    {
+      "id": "A7.worker-cannot-admin",
+      "name": "工人 session 访问 /api/admin/** ⇒ 必须 403（拒绝集合 worker）",
+      "status": "pass",
+      "detail": "期望 GET 403 且 POST /api/admin/workers 403（两个端点都要拦） == 实测 GET=403 POST=403",
+      "evidence": [
+        "期望来源: SecurityConfig.ADMIN_API_REJECTED_ROLES 含 worker（#4716 C11 红线）",
+        "期望: GET 403 且 POST /api/admin/workers 403（两个端点都要拦）",
+        "实得: GET=403 POST=403",
+        "GET body={\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足\"}",
+        "POST body={\"code\":\"PERMISSION_DENIED\",\"message\":\"权限不足\"}"
+      ],
+      "at": "2026-10-04 12:41:12 +08",
+      "atUtc": "2026-10-04T04:41:12.364Z"
+    },
+    {
+      "id": "A8b.switch-needs-session-header",
+      "name": "session/switch **不带**当前 session 头 ⇒ 门禁 401（认证先行，切换不是免登录入口）",
+      "status": "pass",
+      "detail": "期望 HTTP 401（不得 200 换号） == 实测 HTTP 401 body={\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}",
+      "evidence": [
+        "期望来源: SecurityConfig: `/api/worker/**` ⇒ authenticated()；WorkerSessionFilter 是唯一认证来源",
+        "期望: HTTP 401（不得 200 换号）",
+        "实得: HTTP 401 body={\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}"
+      ],
+      "at": "2026-10-04 12:41:12 +08",
+      "atUtc": "2026-10-04T04:41:12.711Z"
+    },
+    {
+      "id": "A8.switch-invalidates-old",
+      "name": "POST /api/worker/session/switch ⇒ 旧 session 立即失效",
+      "status": "pass",
+      "detail": "期望 切换 HTTP 200 + 旧 session 再用 ⇒ 401 + DB end_reason=switched == 实测 switch=200 newSession=6fe513ef… 旧session再用=401 DB={\"id\":\"0111a2be33c54ba39cc1a0ca5b139c0d\",\"end_reason\":\"switched\",\"ended\":true}（switch body={\"session_id\":\"6fe513ef697740dba32875101de550be\",\"worker_id\":\"c3b15ce5d8bf60c77f0c5f7196407bb1\",\"worker_no\":\"LAB71192\",\"worker_name\":\"线A验收工人871192\",\"idle_minute）",
+      "evidence": [
+        "期望来源: WorkerSessionService.switchWorker（endSession(switched) + 新 session）—— 旧 id 报工必 401（设计 W2）",
+        "期望: 切换 HTTP 200 + 旧 session 再用 ⇒ 401 + DB end_reason=switched",
+        "实得: switch=200 newSession=6fe513ef… 旧session再用=401 DB={\"id\":\"0111a2be33c54ba39cc1a0ca5b139c0d\",\"end_reason\":\"switched\",\"ended\":true}（switch body={\"session_id\":\"6fe513ef697740dba32875101de550be\",\"worker_id\":\"c3b15ce5d8bf60c77f0c5f7196407bb1\",\"worker_no\":\"LAB71192\",\"worker_name\":\"线A验收工人871192\",\"idle_minute）",
+        "switch body={\"session_id\":\"6fe513ef697740dba32875101de550be\",\"worker_id\":\"c3b15ce5d8bf60c77f0c5f7196407bb1\",\"worker_no\":\"LAB71192\",\"worker_name\":\"线A验收工人871192\",\"idle_minutes\":10080,\"idle_expires_at\":\"2026-10-11T12:41:12.730633440+08:00\"}"
+      ],
+      "at": "2026-10-04 12:41:12 +08",
+      "atUtc": "2026-10-04T04:41:12.713Z"
+    },
+    {
+      "id": "A9.logout",
+      "name": "POST /api/worker/session/logout ⇒ 200 + DB end_reason=logout + 该 session 之后 401",
+      "status": "pass",
+      "detail": "期望 logout=200 + 之后 current-worker=401 + DB end_reason=logout == 实测 logout=200 登出后=401 DB={\"id\":\"6fe513ef697740dba32875101de550be\",\"end_reason\":\"logout\",\"ended\":true}",
+      "evidence": [
+        "期望来源: WorkerSessionService.logout 的 endSession(logout) 由 DB 复读；失效由 WorkerSessionFilter 复读",
+        "期望: logout=200 + 之后 current-worker=401 + DB end_reason=logout",
+        "实得: logout=200 登出后=401 DB={\"id\":\"6fe513ef697740dba32875101de550be\",\"end_reason\":\"logout\",\"ended\":true}"
+      ],
+      "at": "2026-10-04 12:41:12 +08",
+      "atUtc": "2026-10-04T04:41:12.922Z"
+    },
+    {
+      "id": "A9b.logout-after-ended",
+      "name": "（假红留档）已结束 session 再调 logout ⇒ 401：门禁先于控制器，幂等只到服务层",
+      "status": "pass",
+      "detail": "期望 HTTP 401（可解释：authenticated() 在控制器之前） == 实测 HTTP 401",
+      "evidence": [
+        "期望来源: SecurityConfig `/api/worker/**` authenticated() + WorkerAuthController.logout（服务层幂等，控制器无 session 校验）",
+        "期望: HTTP 401（可解释：authenticated() 在控制器之前）",
+        "实得: HTTP 401"
+      ],
+      "at": "2026-10-04 12:41:12 +08",
+      "atUtc": "2026-10-04T04:41:12.953Z"
+    },
+    {
+      "id": "A10.login-enumeration",
+      "name": "登录负例：错误 PIN 与不存在工号 ⇒ 同一 401 同一文案（不泄露工号存在性）",
+      "status": "pass",
+      "detail": "期望 both 401 + message 逐字相同 == 实测 badPin=401/工号或 PIN 不正确 noSuch=401/工号或 PIN 不正确",
+      "evidence": [
+        "期望来源: WorkerSessionService.login 的四条失败形态统一（\"工号或 PIN 不正确\"）",
+        "期望: both 401 + message 逐字相同",
+        "实得: badPin=401/工号或 PIN 不正确 noSuch=401/工号或 PIN 不正确"
+      ],
+      "at": "2026-10-04 12:41:13 +08",
+      "atUtc": "2026-10-04T04:41:13.182Z"
+    },
+    {
+      "id": "A11.header-tenant-not-authority",
+      "name": "（判据修正）X-Tenant-Id 与会话租户不一致 ⇒ 200 且 worker 仍来自会话（租户**不由请求头**决定）",
+      "status": "pass",
+      "detail": "期望 HTTP 200 + worker_id == 会话解出的工人（请求头换租户不是通道） == 实测 HTTP 200 worker_id=c3b15ce5d8bf60c77f0c5f7196407bb1 (期望 c3b15ce5d8bf60c77f0c5f7196407bb1)",
+      "evidence": [
+        "期望来源: WorkerSessionService.loadActiveSession：租户只来自会话行；TenantDomainResolver 只服务 /api/worker/login",
+        "期望: HTTP 200 + worker_id == 会话解出的工人（请求头换租户不是通道）",
+        "实得: HTTP 200 worker_id=c3b15ce5d8bf60c77f0c5f7196407bb1 (期望 c3b15ce5d8bf60c77f0c5f7196407bb1)",
+        "假红留档：第一版断言 401 ⇒ 实测 200（判据写错了「租户权威在哪一层」）"
+      ],
+      "at": "2026-10-04 12:41:13 +08",
+      "atUtc": "2026-10-04T04:41:13.246Z"
+    },
+    {
+      "id": "A12.login-no-tenant",
+      "name": "登录未给租户（无 X-Tenant-Id / 域名 / body.tenantId）⇒ 显式拒绝",
+      "status": "pass",
+      "detail": "期望 4xx（422 校验类），不得 200、不得落入默认租户 == 实测 HTTP 422 {\"code\":\"VALIDATION_ERROR\",\"message\":\"无法识别租户：请通过 <租户ID>.app.migaozn.com 域名访问或提供 tenantId\"}",
+      "evidence": [
+        "期望来源: WorkerAuthController.login（tenantId==null ⇒ validationError \"无法识别租户\"）",
+        "期望: 4xx（422 校验类），不得 200、不得落入默认租户",
+        "实得: HTTP 422 {\"code\":\"VALIDATION_ERROR\",\"message\":\"无法识别租户：请通过 <租户ID>.app.migaozn.com 域名访问或提供 tenantId\"}"
+      ],
+      "at": "2026-10-04 12:41:13 +08",
+      "atUtc": "2026-10-04T04:41:13.269Z"
+    }
+  ],
+  "summary": {
+    "pass": 16,
+    "fail": 0,
+    "skip": 0,
+    "total": 16
+  }
+}

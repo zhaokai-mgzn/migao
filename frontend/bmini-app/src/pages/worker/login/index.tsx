@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { workerLogin } from '../../../services/workerService'
+import { getRememberedAccount, rememberAccount } from '../../../utils/loginAccount'
 import './index.scss'
 
 /**
@@ -15,7 +16,8 @@ import './index.scss'
  * `/api/admin/**` 的拒绝集合）。</p>
  */
 export default function WorkerLoginPage() {
-  const [workerNo, setWorkerNo] = useState('')
+  // 工号预填「该面上次**成功登录**用过的账号名」（issue #6478）；PIN / 设备标签一律不预填
+  const [workerNo, setWorkerNo] = useState(() => getRememberedAccount('worker'))
   const [pin, setPin] = useState('')
   const [deviceLabel, setDeviceLabel] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -35,6 +37,8 @@ export default function WorkerLoginPage() {
         setError(res.message || '登录失败，请重试')
         return
       }
+      // 只记工号（账号名）；PIN 绝不落盘（issue #6478）
+      rememberAccount('worker', workerNo.trim())
       Taro.showToast({ title: `已登录：${res.data?.worker_name || workerNo}`, icon: 'success' })
       Taro.navigateBack({ delta: 1 })
     } finally {

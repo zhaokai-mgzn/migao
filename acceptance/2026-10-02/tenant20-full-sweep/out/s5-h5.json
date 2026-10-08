@@ -1,0 +1,166 @@
+[
+  {
+    "id": "H5-01",
+    "name": "工人端 H5 打开 + 登录视图渲染",
+    "status": "pass",
+    "detail": "标题=「工人领活」；工号/PIN 输入框与登录按钮就位；URL 带 tenant_id=20",
+    "evidence": [
+      "screenshots/s5-01-login.png",
+      "GET /index.html（静态直出，无构建）"
+    ],
+    "at": "2026-10-02T15:50:24.108Z"
+  },
+  {
+    "id": "H5-02",
+    "name": "工人端登录·空提交校验",
+    "status": "pass",
+    "detail": "页面提示：参数校验失败",
+    "evidence": [
+      "screenshots/s5-02-empty-login.png"
+    ],
+    "at": "2026-10-02T15:50:24.793Z"
+  },
+  {
+    "id": "H5-03",
+    "name": "工人端登录·错误 PIN 拒绝",
+    "status": "pass",
+    "detail": "提示「工号或 PIN 不正确」且仍停在登录视图（未放行）",
+    "evidence": [
+      "screenshots/s5-03-wrong-pin.png"
+    ],
+    "at": "2026-10-02T15:50:26.356Z"
+  },
+  {
+    "id": "H5-04",
+    "name": "工人端登录成功（工号+PIN）",
+    "status": "pass",
+    "detail": "页头「当前工人：验收工人790472（工号 W790472）」；扫码输入框可见=true",
+    "evidence": [
+      "screenshots/s5-04-logged-in.png",
+      "POST /api/worker/login {workerNo:W790472}"
+    ],
+    "at": "2026-10-02T15:50:27.409Z"
+  },
+  {
+    "id": "H5-05",
+    "name": "工人端会话续期（刷新不掉线）",
+    "status": "pass",
+    "detail": "刷新后页头仍显示当前工人",
+    "evidence": [
+      "storage key migao:worker-h5:session"
+    ],
+    "at": "2026-10-02T15:50:28.936Z"
+  },
+  {
+    "id": "H5-06",
+    "name": "工人端扫码·无效码拒绝",
+    "status": "pass",
+    "detail": "提示：订单不存在",
+    "evidence": [
+      "screenshots/s5-06-bad-code.png"
+    ],
+    "at": "2026-10-02T15:50:30.802Z"
+  },
+  {
+    "id": "H5-07",
+    "name": "生产链铺设（订单→确认付款→加工单→工序实例+二维码）",
+    "status": "pass",
+    "detail": "订单 20261002083360006（付款 HTTP 200，生成加工单 HTTP 200）；qr_token=220d177bc2354507bc3e702bb5809c4a；工序 12 道；进度 {\"total\":12,\"done\":0,\"percent\":0}",
+    "evidence": [
+      "POST /api/admin/orders（含 processingInfo）",
+      "PUT /api/admin/orders/{id}/payment",
+      "POST /api/admin/processing-orders/generate",
+      "GET /api/admin/production/orders/{id}/operations"
+    ],
+    "at": "2026-10-02T15:50:31.891Z"
+  },
+  {
+    "id": "H5-08",
+    "name": "工人端扫码解析（服务端定工序）",
+    "status": "pass",
+    "detail": "旧码路径（选套+选部位）｜第 JG-20261002-5095-001 套 · H5验收商品230803｜工序「精裁」｜应做 2.00 米",
+    "evidence": [
+      "screenshots/s5-08-scan-resolved.png",
+      "GET /api/worker/production/scan?token=220d177b…"
+    ],
+    "at": "2026-10-02T15:50:36.585Z"
+  },
+  {
+    "id": "H5-09",
+    "name": "工人端开工/报工提交",
+    "status": "pass",
+    "detail": "回执或下一步文案：已领活 · 下一道：三边",
+    "evidence": [
+      "screenshots/s5-09-reported.png",
+      "POST /api/worker/production/scan/complete"
+    ],
+    "at": "2026-10-02T15:50:39.156Z"
+  },
+  {
+    "id": "H5-10",
+    "name": "报工记账落库（production_work_logs）",
+    "status": "pass",
+    "detail": "本次报工后该租户记账条数 13 → 13",
+    "evidence": [
+      "SQL: select * from production_work_logs where tenant_id=20"
+    ],
+    "at": "2026-10-02T15:50:39.880Z"
+  },
+  {
+    "id": "H5-11",
+    "name": "DB：报工归属正确（工人身份由服务端解）",
+    "status": "pass",
+    "detail": "production_work_logs#a7dc56a3a3bcca942f6ac261226bf381 worker_no=undefined worker_name=验收工人790472 qty=2 金额=undefined",
+    "evidence": [
+      "SQL: select * from production_work_logs where tenant_id=20 order by created_at desc limit 5"
+    ],
+    "at": "2026-10-02T15:50:39.974Z"
+  },
+  {
+    "id": "H5-12",
+    "name": "工序进度推进（API 侧）",
+    "status": "pass",
+    "detail": "done 0 → 1（total=12）",
+    "evidence": [
+      "GET /api/admin/production/orders/39c08c6c96b3f894d7d2d7193cd8b1dd/operations"
+    ],
+    "at": "2026-10-02T15:50:40.175Z"
+  },
+  {
+    "id": "H5-10b",
+    "name": "工人端登出回落登录视图",
+    "status": "pass",
+    "detail": "点登出后回到工号+PIN 登录页",
+    "evidence": [
+      "screenshots/s5-10-logout.png"
+    ],
+    "at": "2026-10-02T15:50:41.721Z"
+  },
+  {
+    "id": "H5-13",
+    "name": "机器端页面（machine.html）渲染",
+    "status": "pass",
+    "detail": "文本长度 60：机台模式 · 裁高 —  本台设备还没登录：请先用工号 + PIN 登录，再扫码  请重新扫一次水洗唛（或手工输入短码）",
+    "evidence": [
+      "screenshots/s5-11-machine.png"
+    ],
+    "at": "2026-10-02T15:50:43.268Z"
+  },
+  {
+    "id": "H5-14",
+    "name": "服务器日志：工人端链路留痕",
+    "status": "pass",
+    "detail": "命中 8 行，示例：at com.migao.admin.security.WorkerSessionFilter.doFilterInternal(WorkerSessionFilter.java:81)",
+    "evidence": [
+      "L214424: at com.migao.admin.security.WorkerSessionFilter.doFilterInternal(WorkerSessionFilter.java:81)",
+      "L214982: at com.migao.admin.security.WorkerSessionFilter.doFilterInternal(WorkerSessionFilter.java:81)",
+      "L256604: at com.migao.admin.security.WorkerSessionFilter.doFilterInternal(WorkerSessionFilter.java:81)",
+      "L256792: at com.migao.admin.security.WorkerSessionFilter.doFilterInternal(WorkerSessionFilter.java:81)",
+      "L261886: at com.migao.admin.security.WorkerSessionFilter.doFilterInternal(WorkerSessionFilter.java:81)",
+      "L262266: at com.migao.admin.security.WorkerSessionFilter.doFilterInternal(WorkerSessionFilter.java:81)",
+      "L262611: at com.migao.admin.security.WorkerSessionFilter.doFilterInternal(WorkerSessionFilter.java:81)",
+      "L263566: at com.migao.admin.security.WorkerSessionFilter.doFilterInternal(WorkerSessionFilter.java:81)"
+    ],
+    "at": "2026-10-02T15:50:43.431Z"
+  }
+]

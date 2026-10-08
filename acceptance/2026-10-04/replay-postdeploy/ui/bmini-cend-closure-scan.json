@@ -1,0 +1,56 @@
+{
+ "at": "2026-10-04 10:46 +08",
+ "note": "#6306 射程边界：bmini / C 端 / 一体机页 的依赖闭包扫描",
+ "results": [
+  {
+   "label": "bmini",
+   "entry": "/b/",
+   "http": 200,
+   "entry_scripts": [
+    "/b/js/724.js",
+    "/b/js/app.js"
+   ],
+   "modules_scanned": 2,
+   "bad": [],
+   "importers_of_bad": []
+  },
+  {
+   "label": "c-end",
+   "entry": "/",
+   "http": 200,
+   "entry_scripts": [
+    "/js/21.js",
+    "/js/app.js"
+   ],
+   "modules_scanned": 2,
+   "bad": [],
+   "importers_of_bad": []
+  },
+  {
+   "label": "一体机页",
+   "entry": "/w/machine.html",
+   "http": 200,
+   "entry_scripts": [
+    "./src/machine-app.mjs"
+   ],
+   "modules_scanned": 7,
+   "bad": [
+    {
+     "path": "/shared/operation-display.mjs",
+     "status": 200,
+     "ct": "text/html"
+    }
+   ],
+   "importers_of_bad": [
+    {
+     "from": "/w/src/render.mjs",
+     "to": "/shared/operation-display.mjs"
+    },
+    {
+     "from": "/w/src/machine.mjs",
+     "to": "/shared/operation-display.mjs"
+    }
+   ]
+  }
+ ]
+}

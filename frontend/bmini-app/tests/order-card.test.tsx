@@ -1,6 +1,6 @@
 // case_ids: OR-001
 /**
- * OrderCard 组件测试（小布机器人回复中的订单卡片）
+ * OrderCard 组件测试（元元机器人回复中的订单卡片）
  *
  * 修复背景：order_query 下发 card type="order"（归一化后为
  * {"order": {...}} 单订单 / {"orders": [...]} 列表），但 MessageBubble

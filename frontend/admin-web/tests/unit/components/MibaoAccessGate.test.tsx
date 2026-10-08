@@ -8,20 +8,20 @@ import MibaoAccessGate, {
 } from '@/components/business/MibaoAccessGate'
 
 /**
- * 米宝唤出授权门（admin-web 侧，issue #5642 功能⑤）。
+ * 黄金策唤出授权门（admin-web 侧，issue #5642 功能⑤）。
  *
  * 判据（设计单 §8.5 G2~G4）：
- * ① 可唤 ⇒ 渲染米宝对话内容；
+ * ① 可唤 ⇒ 渲染黄金策对话内容；
  * ② 不可唤 ⇒ **入口可见**（不是静默隐藏）+ 逐字「需要管理员授权」+ **可行动引导**；
  * ③ 不可唤 ⇒ **不是 403 白屏**（无 403 字样、组件是正常渲染出来的引导视图）；
  * ④ 判定未回来（null/undefined）⇒ 不渲染拒绝态（不把「还没拿到」误报成「没权限」）；
  * ⑤ 前端零权限码（源码里不出现任何权限码字面量）。
  */
-describe('MibaoAccessGate（米宝唤出授权门）', () => {
-  it('① allowed=true ⇒ 渲染米宝对话内容', () => {
+describe('MibaoAccessGate（黄金策唤出授权门）', () => {
+  it('① allowed=true ⇒ 渲染黄金策对话内容', () => {
     render(
       <MibaoAccessGate allowed={true}>
-        <div data-testid='mibao-content'>米宝对话</div>
+        <div data-testid='mibao-content'>黄金策对话</div>
       </MibaoAccessGate>,
     )
     expect(screen.getByTestId('mibao-content')).toBeInTheDocument()
@@ -31,7 +31,7 @@ describe('MibaoAccessGate（米宝唤出授权门）', () => {
   it('② allowed=false ⇒ 入口可见 + 逐字「需要管理员授权」+ 可行动引导', () => {
     render(
       <MibaoAccessGate allowed={false}>
-        <div data-testid='mibao-content'>米宝对话</div>
+        <div data-testid='mibao-content'>黄金策对话</div>
       </MibaoAccessGate>,
     )
     // 拒绝态**渲染出来了**（= 入口可见，不是静默隐藏）
@@ -49,7 +49,7 @@ describe('MibaoAccessGate（米宝唤出授权门）', () => {
   it('③ allowed=false ⇒ 不是 403 白屏（无 403 字样、有可读引导）', () => {
     const { container } = render(
       <MibaoAccessGate allowed={false}>
-        <div>米宝对话</div>
+        <div>黄金策对话</div>
       </MibaoAccessGate>,
     )
     expect(container.textContent || '').not.toMatch(/403/)
@@ -60,13 +60,13 @@ describe('MibaoAccessGate（米宝唤出授权门）', () => {
   it('④ allowed 为 null/undefined ⇒ 不渲染任何一侧（判定未回来）', () => {
     const a = render(
       <MibaoAccessGate allowed={null}>
-        <div>米宝对话</div>
+        <div>黄金策对话</div>
       </MibaoAccessGate>,
     )
     expect(a.container.textContent || '').toBe('')
     const b = render(
       <MibaoAccessGate allowed={undefined}>
-        <div>米宝对话</div>
+        <div>黄金策对话</div>
       </MibaoAccessGate>,
     )
     expect(b.container.textContent || '').toBe('')

@@ -142,7 +142,7 @@ class AgentProductServiceTest {
         // ── status（上下架）────────────────────────────────────────────────
         // 生产回归（issue #3560）：product_update 下发 status 而 AgentProductUpdateRequest 无该字段
         // + Jackson 静默忽略未知字段 + hasUpdate 永不被 status 置位 → 走 hasUpdate=false 分支返回
-        // 商品详情（HTTP 200 + success）→ 米宝回「已下架」而 products.status 未变。
+        // 商品详情（HTTP 200 + success）→ 黄金策回「已下架」而 products.status 未变。
         // 修复：DTO 收 status → 委托既有 updateProductStatus（状态机唯一入口），不再假成功。
 
         @Test @DisplayName("status 变更 — 状态真的写到实体（非静默成功）")

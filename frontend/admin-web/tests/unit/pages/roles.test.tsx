@@ -84,7 +84,7 @@ const PERMISSION_CATALOG = [
   { id: 'p-order-refund', name: '订单退款', code: 'order:refund', resource: 'order', action: 'refund', description: '处理退款/售后工单' },
   { id: 'p-customer', name: '客户管理', code: 'customer:view', resource: 'customer', action: 'view', description: '查看客户' },
   { id: 'p-finance', name: '财务对账', code: 'finance:view', resource: 'finance', action: 'view', description: '查看财务流水/对账' },
-  { id: 'p-agent-session', name: '会话监控', code: 'agent:session', resource: 'agent', action: 'session', description: '米宝对话/会话监控/在线接待' },
+  { id: 'p-agent-session', name: '会话监控', code: 'agent:session', resource: 'agent', action: 'session', description: '黄金策对话/会话监控/在线接待' },
   { id: 'p-employee-list', name: '员工列表', code: 'employee:list', resource: 'employee', action: 'list', description: '查看员工列表' },
   { id: 'p-employee-create', name: '新增员工', code: 'employee:create', resource: 'employee', action: 'create', description: '新增/编辑/删除员工' },
   { id: 'p-system', name: '系统管理', code: 'system:manage', resource: 'system', action: 'manage', description: '企业信息/角色管理/系统设置' },
@@ -174,8 +174,8 @@ describe('RolesPage', () => {
     expect(tree.queryByText('订单管理')).not.toBeInTheDocument()
     expect(tree.queryByText('客户管理')).not.toBeInTheDocument()
     // 菜单项 = 侧边栏菜单项名
-    // #3094: 米宝 · 在线对话 菜单入口已移除，权限树不再渲染该菜单项
-    expect(tree.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
+    // #3094: 黄金策 · 在线对话 菜单入口已移除，权限树不再渲染该菜单项
+    expect(tree.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
     expect(tree.getByText('在线接待')).toBeInTheDocument()
     expect(tree.getByText('知识库')).toBeInTheDocument()
     // 工作台组两项**都**进权限树：每日简报要 dashboard:view；
@@ -231,7 +231,7 @@ describe('RolesPage', () => {
     expect(extras.queryByText('加工项管理')).not.toBeInTheDocument()
   })
 
-  it('勾选菜单项「在线接待」→ 创建岗位时 permissionIds 含 agent:session 权限ID（代码映射，#3094 米宝菜单已移除）', async () => {
+  it('勾选菜单项「在线接待」→ 创建岗位时 permissionIds 含 agent:session 权限ID（代码映射，#3094 黄金策菜单已移除）', async () => {
     mockGetRoles.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))

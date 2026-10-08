@@ -1,0 +1,81 @@
+{
+  "stamp": "20261004042912",
+  "tenantA": 25,
+  "phoneA": "13800138000",
+  "tenantB": 28,
+  "phoneB": "13800138001",
+  "products": {
+    "a1": {
+      "id": "d734309ed916cbf7641b7363421bb9a2",
+      "name": "race-sweep-A1-20261004042912",
+      "skuId": "2106602513668902914",
+      "skuCode": "RACE-SWEEP-A1-20261004042912-01-28",
+      "stockAtCreate": 10
+    },
+    "a2": {
+      "id": "c45d5ad16fc6d2e162507741770d0be2",
+      "name": "race-sweep-A2-20261004042912",
+      "skuId": "2106602515942215681",
+      "skuCode": "RACE-SWEEP-A2-20261004042912-01-28",
+      "stockAtCreate": 10
+    },
+    "b1": {
+      "id": "49d71e671d3d262e44d700a434848162",
+      "name": "race-sweep-B1-20261004042912",
+      "skuId": "2106602518018396162",
+      "skuCode": "RACE-SWEEP-B1-20261004042912-01-28",
+      "stockAtCreate": 10
+    }
+  },
+  "inbound": [],
+  "orders": [],
+  "notes": [],
+  "tokenA": "<JWT-aefe3a>",
+  "userA": "58f939ab49db1817b812b8cd14a9c68e",
+  "tokenB": "<JWT-8c86d0>",
+  "userB": "74d6bd72a32befa1b8f24d9521beabc5",
+  "db": {
+    "productsA": [
+      {
+        "id": "f92540519c1a08468571f2452f71727a",
+        "name": "race-sweep-A2-20261004042712"
+      },
+      {
+        "id": "5b5c24f48ae9df7048efb629b3b1b806",
+        "name": "race-sweep-W6-20261004042712-4n9raq0"
+      },
+      {
+        "id": "0514459274ae183edcdd444ef7ff9142",
+        "name": "race-sweep-A1-20261004042712"
+      },
+      {
+        "id": "48598720e1121261e61b5ba6eca129ef",
+        "name": "race-sweep-A3-20261004042712-r1dmmt0"
+      },
+      {
+        "id": "c016451ee4e89489f0eb3c21c7466112",
+        "name": "race-sweep-W4-20261004042712-kfojr60"
+      },
+      {
+        "id": "d734309ed916cbf7641b7363421bb9a2",
+        "name": "race-sweep-A1-20261004042912"
+      },
+      {
+        "id": "c45d5ad16fc6d2e162507741770d0be2",
+        "name": "race-sweep-A2-20261004042912"
+      }
+    ],
+    "skusA": [],
+    "productsB": [
+      {
+        "id": "9888ede8af41f8cdbafc1381274cf47e",
+        "name": "race-sweep-B1-20261004042712"
+      },
+      {
+        "id": "49d71e671d3d262e44d700a434848162",
+        "name": "race-sweep-B1-20261004042912"
+      }
+    ],
+    "skusB": []
+  }
+}

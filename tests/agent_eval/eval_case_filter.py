@@ -16,13 +16,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# ── C 端（小布）工具集真值 ──
+# ── C 端（元元）工具集真值 ──
 # 单一真值来源 = customer_*_skill.py 的 CUSTOMER_*_TOOLS 并集，此处内联是为了让本模块
 # 独立可跑（不 import 后端 app 包）。一致性由契约测试锁定：
 #   tests/unit_ci_workflows/test_xiaobu_case_set.py::TestXiaobuToolsetTruth
 # 背景：此前 xiaobu 用例选择靠宽 tag（query/product…）捞，把 B 端管理用例
 # （经营概览/资金流水/员工列表/分类/客户/售后工单/设置）也捞进来当 C 端跑，
-# 而这些用例断言的工具小布根本没有 → 「C 端评测通过率」不可信（假绿）。
+# 而这些用例断言的工具元元根本没有 → 「C 端评测通过率」不可信（假绿）。
 XIAOBU_TOOLS = frozenset({
     # customer_order_skill
     "customer_order_query", "customer_logistics_track", "customer_address_query",
@@ -61,26 +61,26 @@ XIAOBU_TOOLS = frozenset({
 # 评测 runner 侧的「非真实工具」伪期望（不计入工具集校验）
 PSEUDO_TOOLS = frozenset({"direct_reply"})
 
-# ── B 端（米宝）工具集真值 ──
-# 单一真值来源 = 米宝声明的 skill 源码里的 `*_TOOLS` 常量并集，此处内联文件名是为了让
+# ── B 端（黄金策）工具集真值 ──
+# 单一真值来源 = 黄金策声明的 skill 源码里的 `*_TOOLS` 常量并集，此处内联文件名是为了让
 # 本模块独立可跑（不 import app 包：CI 的 unit_ci_workflows job 只装了 pytest+pyyaml）。
 # 一致性由契约测试锁定：
 #   tests/unit_ci_workflows/test_mibao_case_invariants.py::TestMibaoToolsetTruth
-#   （含"米宝声明的每个 skill 都必须解析出工具"的防静默漏解析守卫）
+#   （含"黄金策声明的每个 skill 都必须解析出工具"的防静默漏解析守卫）
 # 背景（issue #3555）：B 端此前**没有**任何"哪个工具没被测"的体检（scripts/ 只有
 # xiaobu_coverage.py），工具覆盖缺口只能靠真实 LLM 全量复测撞出来。把解析放在这里，
 # 使 B 端覆盖体检（scripts/mibao_coverage.py）与用例边界守卫共用同一口径，不产生漂移。
 # ── 「额外来源」显式登记面（值 = 一句「为什么它在」，供人工复核；不参与计算）──
 # 语义：不在 `MIBAO_CONFIG.skill_names` / `fallback_skill` 里、但其**只读**工具经
 # #4125「同 persona 家族并入」（`backend/ai-agent-service/app/graph/skills/base_skill.py`
-# 的 `_family_read_only_tool_names`）进入米宝工具集的 skill 文件。
+# 的 `_family_read_only_tool_names`）进入黄金策工具集的 skill 文件。
 MIBAO_EXTRA_SKILL_FILES = {
     # #5247 已把它从 skill_names 解绑（系统设置/通知配置不进 B 端对话面），但它的
-    # `default_persona` 仍是 `mibao` ⇒ 其 3 个只读工具经 #4125 家族并入**每个**米宝 skill
-    # ⇒ 它们仍是米宝可跑的工具，覆盖体检必须算上。
-    # 删掉本项 = 米宝工具集 34 → 31（实测），而 `MIBAO_TOOLSET_MIN = 25` 只是"防解析器坏掉"
+    # `default_persona` 仍是 `mibao` ⇒ 其 3 个只读工具经 #4125 家族并入**每个**黄金策 skill
+    # ⇒ 它们仍是黄金策可跑的工具，覆盖体检必须算上。
+    # 删掉本项 = 黄金策工具集 34 → 31（实测），而 `MIBAO_TOOLSET_MIN = 25` 只是"防解析器坏掉"
     # 的下界、**不是**覆盖门禁 ⇒ 体检会静默少算 3 个只读工具。
-    "settings_skill": "default_persona=mibao ⇒ 3 个只读工具经 #4125 家族并入米宝（settings_manage / notification_manage / validate_input）",
+    "settings_skill": "default_persona=mibao ⇒ 3 个只读工具经 #4125 家族并入黄金策（settings_manage / notification_manage / validate_input）",
 }
 
 # B 端 skill 文件清单 = **真判据**（不是 `skill_names` 的抄本）：
@@ -93,6 +93,9 @@ MIBAO_SKILL_FILES = (
     # mibao.py MIBAO_CONFIG.skill_names（顺序一致，便于人工比对）
     "order_skill", "product_skill", "aftersales_skill", "customer_skill",
     "staff_skill", "data_skill", "knowledge_skill",
+    # 定时任务（用户「预约」，issue #6486 包 2）：与 `mibao.py` 的 skill_names **同序**
+    # （knowledge 之后）—— 本元组与 `skill_names` 的一致性有双向元守卫。
+    "reminder_skill",
     "general_agent",          # MIBAO_CONFIG.fallback_skill = "general"
     # ↓ 额外来源（不在 skill_names）：**必须先登记进 MIBAO_EXTRA_SKILL_FILES**，
     #   否则双向元守卫判红（未登记的额外项 ⇒ 红；登记了却不在本元组 ⇒ 红）。
@@ -132,10 +135,10 @@ def _first_input_text(c) -> str:
 
 
 # B 端专属语义词（首轮输入命中 → 双端用例不适配 C 端自助场景）
-# 背景（issue #3266 二轮收口）：仅按「期望工具 ⊆ 小布工具集」判定不够 ——
-# OR-016 首轮「给赵凯创建一个订单…」是**店员代客下单**语义，小布（C 端自助、
-# 身份固定为本人）根本无法触发，却因三个期望工具都在小布工具集内被选中，
-# 三次采样全部 tools=[]（不是小布缺陷，是用例跑错了 Agent）。
+# 背景（issue #3266 二轮收口）：仅按「期望工具 ⊆ 元元工具集」判定不够 ——
+# OR-016 首轮「给赵凯创建一个订单…」是**店员代客下单**语义，元元（C 端自助、
+# 身份固定为本人）根本无法触发，却因三个期望工具都在元元工具集内被选中，
+# 三次采样全部 tools=[]（不是元元缺陷，是用例跑错了 Agent）。
 MIBAO_SEMANTIC_PATTERNS = (
     # 店员代客操作：给/帮/替 **第三方** 下单/创建订单（C 端顾客只为自己下单）
     # 细化（issue #3270 实测漏判）：原模式尾部要求 `订单|商品|品`，而「给张三**下单**」的
@@ -156,7 +159,7 @@ MIBAO_SEMANTIC_PATTERNS = (
     re.compile(r"(下架|上架|调价|改价|改库存|回补库存)"),
     # 显式标注 B 端
     re.compile(r"B\s*端"),
-    re.compile(r"米宝"),
+    re.compile(r"黄金策"),
     re.compile(r"(商家|商户|管理员|租户|员工|角色|权限)"),
     # 第三人称顾客档案类（B 端 CRM）
     re.compile(r"(客户|顾客)(档案|列表|标签|跟进|信息)"),
@@ -173,9 +176,9 @@ def is_customer_facing_case(c) -> bool:
         越权/注入防线（排除它们 = 丢掉 C 端安全性评测）。先例：CH-011
         「帮我查一下邻居小王的订单」是 C 端数据隔离用例，误伤即丢覆盖。
 
-    背景（issue #3266 二轮）：仅按「期望工具 ⊆ 小布工具集」判定不够 —— OR-016
-    首轮「给赵凯创建一个订单…」是**店员代客下单**语义，小布（C 端自助、身份固定
-    为本人）无法触发，却因三个工具都在小布工具集内被选中，三次采样 tools=[]。
+    背景（issue #3266 二轮）：仅按「期望工具 ⊆ 元元工具集」判定不够 —— OR-016
+    首轮「给赵凯创建一个订单…」是**店员代客下单**语义，元元（C 端自助、身份固定
+    为本人）无法触发，却因三个工具都在元元工具集内被选中，三次采样 tools=[]。
     """
     tier = (c.get("tier") if isinstance(c, dict) else getattr(c, "difficulty", "")) or ""
     if str(getattr(tier, "value", tier)).strip().lower() == "adversarial":
@@ -303,7 +306,7 @@ def _skill_tools(skill_name: str) -> set:
 
 
 def mibao_real_toolset() -> set:
-    """B 端（米宝）可跑工具集真值 = 米宝声明的 skill 源码 `*_TOOLS` 并集。
+    """B 端（黄金策）可跑工具集真值 = 黄金策声明的 skill 源码 `*_TOOLS` 并集。
 
     单一实现（issue #3555）：覆盖体检脚本与用例边界守卫共用本函数，避免复制一套
     平行解析产生口径漂移。返回空/缩水说明解析口径坏了 —— 调用方应据此报错，
@@ -331,8 +334,8 @@ def select_cases_for_persona(cases, persona: str = "") -> list:
     规则（C 端）：
       1. 先按 persona 归属过滤（filter_by_persona，双端用例保留）；
       2. 丢掉 skip_reason 非空的用例（纯前端 jest 用例，非 LLM 行为）；
-      3. **双端用例**须其全部期望工具都在小布工具集内才保留 —— B 端管理用例
-         （断言的工具小布没有）一律排除，防止「跑在错误 Agent 上还计分」。
+      3. **双端用例**须其全部期望工具都在元元工具集内才保留 —— B 端管理用例
+         （断言的工具元元没有）一律排除，防止「跑在错误 Agent 上还计分」。
       `persona: xiaobu` 的用例无条件保留（显式声明优先）。
 
     取代此前按 XIAOBU_ONLY_TAGS 宽 tag 捞的实现（query/product 这类通用 tag
@@ -381,8 +384,8 @@ def selected_case_ids(cases, persona: str) -> set:
 LEGS: tuple = ("xiaobu", "mibao")
 
 LEG_LABELS = {
-    "xiaobu": "小布腿（C 端）",
-    "mibao": "米宝腿（B 端）",
+    "xiaobu": "元元腿（C 端）",
+    "mibao": "黄金策腿（B 端）",
     "both": "双端（两条腿都跑）",
 }
 

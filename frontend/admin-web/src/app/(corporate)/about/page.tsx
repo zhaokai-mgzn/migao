@@ -1,247 +1,246 @@
 import type { Metadata } from 'next'
-import { Lightbulb, Heart, Sprout, Lock, Target, Eye } from 'lucide-react'
+import Link from 'next/link'
+import {
+  ArrowRight,
+  Bot,
+  Eye,
+  Heart,
+  Layers,
+  Lightbulb,
+  Lock,
+  MonitorSmartphone,
+  Sprout,
+  Target,
+  Wrench,
+} from 'lucide-react'
+import { CallToAction, PageHero, SectionHeading } from '@/components/corporate/CorporateSection'
 
 export const metadata: Metadata = {
-  title: '关于米高 — AI双助手重新定义企业电商管理',
+  title: '关于观星台 — 布艺行业的 AI 经营平台',
   description:
-    '杭州词元通达科技有限公司出品的米高平台，为企业提供从内部运营到客户服务的一站式智能解决方案，以米宝+小布双助手模式构建行业标杆。',
+    '杭州词元通达科技有限公司出品的观星台平台：面向布艺 / 窗帘商家的多租户 AI 经营平台，顾客侧元元、经营侧黄金策，覆盖商品、客户、交易、生产、仓储、组织六个能力域。',
 }
 
 const values = [
   {
     icon: Lightbulb,
     title: '技术驱动',
-    description: '持续探索AI前沿技术，将大模型能力转化为商家触手可及的智能工具',
+    description: '把大模型能力落到具体动作上：可查询的查询、可计算的算，超出范围的明确说明。',
   },
   {
     icon: Heart,
     title: '客户至上',
-    description: '以商家需求为导向，让每一位用户都能感受到AI带来的效率提升',
+    description: '功能按商家的真实流程排定优先级，不按演示效果排定。',
   },
   {
     icon: Sprout,
     title: '行业深耕',
-    description: '深入理解行业场景与业务逻辑，打造真正贴合实际的智能方案',
+    description: '算料、工序、批次、计件这些布艺行业的基础环节，是投入最多的方向。',
   },
   {
     icon: Lock,
     title: '数据安全',
-    description: '租户级数据隔离，严格的隐私保护，让商家安心托付核心数据',
+    description: '租户级数据隔离，员工权限逐人可配，关键操作留痕可追溯。',
   },
 ]
 
-const timeline = [
+const techFoundation = [
   {
-    period: '2024 Q1',
-    title: '项目启动',
-    description: '完成技术架构设计，确定米高产品方向与AI技术路线',
+    icon: Bot,
+    title: '两侧 AI 各自独立配置',
+    description:
+      '元元与黄金策是两套独立配置的 Agent：提示词、知识范围与可用工具各不相同，能力边界在页面上逐条标注。',
   },
   {
-    period: '2024 Q2',
-    title: '核心引擎开发',
-    description: 'AI Agent框架搭建，米宝与小布双智能助手引擎开发',
+    icon: Wrench,
+    title: '业务工具层',
+    description:
+      'AI 不能直接读写系统里的数据：所有动作都通过已登记的业务工具执行，每一处改动都会逐项核对。可写的只有改价、批量上下架与批量库存调整，改价必须带上改前的价格并经确认卡二次确认。',
   },
   {
-    period: '2024 Q3',
-    title: '平台上线',
-    description: '商家管理后台正式发布，米宝助手入驻管理后台，首批商家测试',
+    icon: Layers,
+    title: '多租户底座',
+    description:
+      '平台以多租户方式部署，服务多个商家；数据按租户隔离（租户身份仅取自登录凭证，跨租户访问一律返回 404），AI 名称与岗位权限也按租户独立配置。',
   },
   {
-    period: '2024 Q4',
-    title: '多渠道接入',
-    description: '微信小程序上线，小布客服实现多渠道统一服务',
+    icon: MonitorSmartphone,
+    title: '四个终端，同一数据源',
+    description:
+      '管理后台、顾客小程序、商家小程序与员工端 H5 的数据同源，不各自建账。',
+  },
+]
+
+const principles = [
+  {
+    title: '数据之外不作答',
+    description:
+      'AI 只按店内真实数据与已发布知识作答：不编造订单、物流与金额，不报库存数量，不展示未上架商品。',
   },
   {
-    period: '2025',
-    title: '能力进化',
-    description: '米宝与小布持续进化，功能扩展，服务更多行业商家',
+    title: '定价权归属商品库',
+    description:
+      '顾客侧成交单价取商品库权威价；经营侧改价须带上改前价并经确认卡确认，系统会逐项核对。',
+  },
+  {
+    title: '敏感事项不由 AI 决定',
+    description:
+      '涉及价格、折扣、退款金额、赔偿与法律诉求，AI 只做规则解释与材料收集，申请类动作一律待人工或规范流程确认。',
+  },
+  {
+    title: '能力边界公开标注',
+    description:
+      '页面、对话与文档中均写明 AI 能做什么、不做什么，让商家明确可以交付给 AI 的范围。',
   },
 ]
 
 export default function AboutPage() {
   return (
     <>
-      {/* Page Header with dot pattern */}
-      <section className="relative bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white py-16 sm:py-20 overflow-hidden">
-        {/* Subtle dot pattern background */}
-        <div
-          className="absolute inset-0 opacity-10"
-          style={{
-            backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.8) 1px, transparent 1px)',
-            backgroundSize: '24px 24px',
-          }}
-        />
-        {/* Gradient blobs */}
-        <div className="absolute -top-24 -right-24 w-80 h-80 bg-blue-400/15 rounded-full blur-3xl" />
-        <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-indigo-400/15 rounded-full blur-3xl" />
+      <PageHero
+        kicker="关于我们"
+        title="关于观星台"
+        lead="观星台是杭州词元通达科技有限公司旗下的 AI 经营平台。产品目标明确：由 AI 承接客户接待，并协助经营者掌握商品、订单、生产、库存与账目。"
+        chips={['杭州词元通达科技有限公司', '布艺 / 窗帘行业', '多租户 SaaS']}
+      />
 
-        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight">
-            关于米高
-          </h1>
-          <p className="mt-4 text-lg sm:text-xl text-blue-100/90 max-w-2xl mx-auto leading-relaxed">
-            以AI双助手重新定义企业电商管理，让智能运营触手可及
-          </p>
-        </div>
-      </section>
-
-      {/* Company Intro */}
-      <section className="py-20 sm:py-28 bg-white">
+      {/* ── 我们是谁 ─────────────────────────────────────────── */}
+      <section className="bg-white py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl mx-auto space-y-6 text-neutral-600 leading-relaxed text-base sm:text-lg">
+          <div className="mx-auto max-w-3xl space-y-6 text-base leading-relaxed text-neutral-600 sm:text-lg">
             <p>
-              米高是杭州词元通达科技有限公司旗下的AI智能电商管理平台，致力于为企业提供从内部运营到客户服务的一站式智能解决方案。
+              布艺商家的日常经营与标准品零售差异明显：一款窗帘要按颜色 × 售卖方式 × 门幅组合出几十个规格，
+              加工费按米与套计算，订单下完还要排工序、派单、报工、计件，布料入库有批次与缸号，裁剪之后还有余料。
+              这些环节一旦依赖 Excel 与微信群接力，信息就会分散在十几个人的手中。
             </p>
             <p>
-              我们深知，不同行业的企业在商品管理、订单处理、客户服务等环节面临着各自独特的挑战。传统管理模式人力成本高、响应效率低、多平台协同困难——米高正是为解决这些痛点而生。
+              观星台的产品形态是多租户 SaaS 底座，加上顾客侧的元元与经营侧的黄金策。顾客侧由元元 7×24 小时接待咨询、
+              算料报价、下单、物流查询与售后受理；经营侧由黄金策以自然语言问答查询订单、加工单进度、库存批次、
+              计件工资与应收对账。两侧读取的数据与后台所见一致。
             </p>
             <p>
-              基于大语言模型技术，米高为每一位商家打造了两位AI助手：面向企业员工的「米高」智能工作助手，和面向消费者的「小布」智能客服。米高帮助运营团队高效处理商品管理、订单跟踪、库存盘点、售后协调等日常事务；小布则7×24小时在线，精准理解客户意图，提供专业贴心的购物咨询服务。
-            </p>
-            <p>
-              作为SaaS平台，我们为每位商家提供独立的数据空间和个性化的AI能力，确保数据安全的同时，让AI深度学习每位商家的业务知识，提供越来越精准的智能服务。
+              观星台不将 AI 描述为万能：可查询的查询，可计算的算，可落成工单的落成工单；超出范围的请求，
+              AI 会明确说明，边界同时标注在页面上。这是产品交付的前提。
             </p>
           </div>
         </div>
       </section>
 
-      {/* Mission & Vision */}
-      <section className="py-20 sm:py-28 bg-slate-50">
+      {/* ── 使命与愿景 ───────────────────────────────────────── */}
+      <section className="bg-neutral-50 py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-            {/* Mission */}
-            <div className="group relative bg-gradient-to-br from-white to-blue-50/30 p-8 rounded-2xl shadow-sm border border-neutral-100 hover:border-blue-200 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
-              <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center mb-5 shadow-sm shadow-blue-200">
-                <Target className="w-6 h-6 text-white" />
+          <div className="mx-auto grid max-w-4xl grid-cols-1 gap-6 md:grid-cols-2">
+            <div className="rounded-2xl border border-neutral-200 bg-white p-8 shadow-card">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-700">
+                <Target className="h-6 w-6 text-white" />
               </div>
-              <h2 className="text-xl font-bold text-neutral-900 mb-3">我们的使命</h2>
-              <p className="text-neutral-600 leading-relaxed">
-                让每一家企业都能拥有自己的AI助手团队，用智能技术消除管理能力差距，帮助中小商家也能提供大品牌级别的运营效率和客户体验。
+              <h2 className="mt-5 text-xl font-bold text-neutral-900">我们的使命</h2>
+              <p className="mt-3 leading-relaxed text-neutral-600">
+                把智能化的成本与门槛降下来，让布艺商家用得起、也用得上 AI。
               </p>
             </div>
 
-            {/* Vision */}
-            <div className="group relative bg-gradient-to-br from-white to-indigo-50/30 p-8 rounded-2xl shadow-sm border border-neutral-100 hover:border-indigo-200 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
-              <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center mb-5 shadow-sm shadow-indigo-200">
-                <Eye className="w-6 h-6 text-white" />
+            <div className="rounded-2xl border border-neutral-200 bg-white p-8 shadow-card">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-accent-500 to-accent-700">
+                <Eye className="h-6 w-6 text-white" />
               </div>
-              <h2 className="text-xl font-bold text-neutral-900 mb-3">我们的愿景</h2>
-              <p className="text-neutral-600 leading-relaxed">
-                成为企业电商领域领先的AI智能管理服务商，以「米高+小布」双助手模式构建行业标杆，推动千万商家的数字化转型与服务升级。
+              <h2 className="mt-5 text-xl font-bold text-neutral-900">我们的愿景</h2>
+              <p className="mt-3 leading-relaxed text-neutral-600">
+                让智能化与 AI 走进每一家中小企业。观星台从布艺行业做起，把大企业才用得起的经营能力，
+                交到中小商家手上。
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Core Values */}
-      <section className="py-20 sm:py-28 bg-white">
+      {/* ── 产品原则 ─────────────────────────────────────────── */}
+      <section className="bg-white py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
-              核心价值观
-            </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
-              驱动我们前行的信念
-            </h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 max-w-5xl mx-auto">
-            {values.map((item) => (
-              <div key={item.title} className="group text-center p-6 rounded-2xl hover:bg-slate-50 transition-colors duration-300">
-                <div className="w-16 h-16 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-5 group-hover:from-blue-100 group-hover:to-indigo-100 group-hover:scale-110 transition-all duration-300">
-                  <item.icon className="w-7 h-7 text-primary-600" />
-                </div>
-                <h3 className="text-lg font-semibold text-neutral-900 mb-2">
-                  {item.title}
-                </h3>
-                <p className="text-sm text-neutral-500 leading-relaxed">
-                  {item.description}
-                </p>
+          <SectionHeading
+            kicker="产品原则"
+            title="观星台的产品原则"
+            lead="这四条原则界定了观星台 AI 的能力范围与行为方式。"
+          />
+          <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {principles.map((item) => (
+              <div key={item.title} className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-7">
+                <h3 className="text-base font-semibold text-neutral-900">{item.title}</h3>
+                <p className="mt-2.5 text-sm leading-relaxed text-neutral-600">{item.description}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Timeline */}
-      <section className="py-20 sm:py-28 bg-slate-50">
+      {/* ── 核心价值观 ───────────────────────────────────────── */}
+      <section className="bg-neutral-50 py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
-              发展历程
-            </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
-              脚踏实地，步步为营
-            </h2>
-          </div>
-
-          {/* Desktop: Alternating timeline */}
-          <div className="hidden md:block relative max-w-4xl mx-auto">
-            {/* Center vertical line */}
-            <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-blue-300 to-transparent -translate-x-px" />
-
-            <div className="space-y-12">
-              {timeline.map((item, index) => {
-                const isLeft = index % 2 === 0
-                return (
-                  <div
-                    key={item.period}
-                    className={`relative flex items-center ${isLeft ? '' : 'flex-row-reverse'}`}
-                  >
-                    {/* Content card */}
-                    <div className={`w-[calc(50%-2rem)] ${isLeft ? 'pr-8 text-right' : 'pl-8 text-left'}`}>
-                      <div className="group bg-white p-6 rounded-2xl border border-neutral-100 hover:border-blue-200 hover:shadow-lg transition-all duration-300 inline-block w-full">
-                        <span className="inline-block px-3 py-1 rounded-full bg-blue-50 text-xs font-bold text-primary-600 mb-2">
-                          {item.period}
-                        </span>
-                        <h3 className="text-lg font-semibold text-neutral-900 mb-1">
-                          {item.title}
-                        </h3>
-                        <p className="text-sm text-neutral-500 leading-relaxed">
-                          {item.description}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Center dot */}
-                    <div className="absolute left-1/2 -translate-x-1/2 w-4 h-4 bg-primary-600 rounded-full border-4 border-blue-100 ring-4 ring-white z-10" />
-
-                    {/* Spacer for the other side */}
-                    <div className="w-[calc(50%-2rem)]" />
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Mobile: Single-sided timeline */}
-          <div className="md:hidden max-w-md mx-auto">
-            <div className="relative pl-10">
-              <div className="absolute left-4 top-1 bottom-1 w-0.5 bg-gradient-to-b from-blue-200 via-blue-400 to-blue-200" />
-              <div className="space-y-10">
-                {timeline.map((item) => (
-                  <div key={item.period} className="relative">
-                    <div className="absolute -left-10 w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center z-10 ring-4 ring-slate-50">
-                      <div className="w-2.5 h-2.5 bg-white rounded-full" />
-                    </div>
-                    <div className="bg-white p-5 rounded-xl border border-neutral-100 shadow-sm">
-                      <span className="text-sm font-semibold text-primary-600">
-                        {item.period}
-                      </span>
-                      <h3 className="text-base font-semibold text-neutral-900 mt-1">
-                        {item.title}
-                      </h3>
-                      <p className="text-sm text-neutral-500 mt-1">
-                        {item.description}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+          <SectionHeading kicker="核心价值观" title="驱动我们前行的信念" />
+          <div className="mx-auto mt-14 grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {values.map((item) => (
+              <div
+                key={item.title}
+                className="rounded-2xl border border-neutral-200 bg-white p-6 text-center shadow-card"
+              >
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-neutral-100">
+                  <item.icon className="h-6 w-6 text-accent-600" />
+                </div>
+                <h3 className="mt-4 text-base font-semibold text-neutral-900">{item.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-neutral-600">{item.description}</p>
               </div>
-            </div>
+            ))}
           </div>
         </div>
       </section>
+
+      {/* ── 技术底座（原「发展历程」：日期早于仓史两年、查无出处，issue #6382 换掉）── */}
+      <section className="bg-white py-20 sm:py-28">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <SectionHeading
+            kicker="技术底座"
+            title="两侧 AI 与多租户底座"
+            lead="顾客侧与经营侧各由独立引擎驱动，运行在同一业务工具层与多租户底座之上；AI 的动作只经由已登记的工具，全部留有记录可查。"
+          />
+
+          <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {techFoundation.map((item) => (
+              <div
+                key={item.title}
+                className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-7"
+              >
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-neutral-200 bg-white">
+                  <item.icon className="h-5 w-5 text-primary-600" />
+                </div>
+                <h3 className="mt-4 text-base font-semibold text-neutral-900">{item.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-neutral-600">{item.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <CallToAction
+        title="了解观星台在您的企业如何运行"
+        lead="提交入驻申请，AI 自动甄别后即刻开通；也欢迎先留言说明业务场景，我们将按您的流程安排演示。"
+        primary={
+          <Link
+            href="/register"
+            className="group inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-semibold text-neutral-900 transition-colors hover:bg-neutral-100"
+          >
+            立即入驻
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        }
+        secondary={
+          <Link
+            href="/contact"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-7 py-3.5 text-base font-semibold text-white transition-colors hover:bg-white/10"
+          >
+            留言咨询
+          </Link>
+        }
+      />
     </>
   )
 }

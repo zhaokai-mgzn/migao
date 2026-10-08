@@ -1,0 +1,156 @@
+{
+  "buildPoint": {
+    "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+    "pid": "61739",
+    "sha": "43ca70322",
+    "shaFull": "43ca703221a714e143c468ff0b29c4a46e67a88f",
+    "subject": "test(acceptance): 2026-10-03 承载体第三批（收尾）—— 全档读数/两个 override 留档/#6202 判据腐化与修复 (#6214)",
+    "commitTime": "2026-10-03T08:15:11Z",
+    "originMain": "9d82e2e60",
+    "adminApiStart": "六 10月/ 3 16:22:58 2026",
+    "observedAt": {
+      "cst": "2026-10-04 09:55:03 +08",
+      "utc": "2026-10-04T01:55:03.548Z"
+    },
+    "apiBase": "https://api.migaozn.com",
+    "readsFrom": "https://api.migaozn.com",
+    "localWorktreeRole": "仅作本地参照（buildPoint 记录），**读数不取自它**",
+    "deployedBuildpoint": "ff655a06c",
+    "deployedSha": "ff655a06cdaf4793902c5fb4b0b5bfaa3e3037f2"
+  },
+  "clock": {
+    "node": {
+      "cst": "2026-10-04 09:55:03 +08",
+      "utc": "2026-10-04T01:55:03.627Z"
+    },
+    "dbCst": "2026-10-04 09:55:04",
+    "dbTz": "Asia/Shanghai",
+    "deltaSec": 0.278
+  },
+  "unauthProbes": {
+    "GET /api/worker/me": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "GET /api/worker/production/current-worker": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "GET /api/worker/production/scan?token=la00000000000000000000000000000000": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/production/scan/complete": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "GET /api/worker/production/cutting-height?token=la00000000000000000000000000000000": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/shipment/recognize": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/shipment/orders/la00000000000000000000000000000000/pack": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/inbound/recognize": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/inbound/drafts": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/inbound/drafts/la00000000000000000000000000000000/post": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/session/current": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "GET /api/admin/products?page=1&size=1": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    }
+  },
+  "worker": {
+    "created": 200,
+    "workerId": "01656f73ad1936b8439aea260d4c8d5c",
+    "workerNo": "LA904114",
+    "name": "线A验收工人904114",
+    "loggedIn": true,
+    "sessionIdPrefix": "aa99b4ab",
+    "me": {
+      "status": 200,
+      "pages": [
+        "report",
+        "order",
+        "cut_calc",
+        "shipment"
+      ]
+    },
+    "sessionRow": {
+      "id": "aa99b4ab9dd44d43bb34928f624e1578",
+      "worker_id": "01656f73ad1936b8439aea260d4c8d5c",
+      "worker_no": "LA904114",
+      "worker_name": "线A验收工人904114",
+      "idle_expires_cst": "2026-10-11 09:55:04.86076",
+      "ended_at": null,
+      "end_reason": null
+    }
+  },
+  "probePrefix": "线A验收 / la",
+  "residueAtStart": {
+    "counts": {
+      "probeUsers": 1,
+      "probeSessions": 1,
+      "probeOrders": 0,
+      "probeProcessingOrders": 0,
+      "probeSets": 0,
+      "probeItems": 0,
+      "probePositionOps": 0,
+      "probePartTokens": 0,
+      "probeWorkLogs": 0,
+      "probeAudits": 0,
+      "probeIdemKeys": 0,
+      "probeInboundItems": 0,
+      "probeInboundLabels": 0,
+      "probeProducts": 1,
+      "probeSkus": 0,
+      "probeCategories": 1
+    },
+    "total": 4
+  },
+  "ledgerHashAtStart": {
+    "hash": "7bc45dc3b459fc8da422c6f18a0597b311735fde83cbc434438b109bf58580a6",
+    "parts": [
+      "orders=3ec1460a67488a51b684b0c488efaa8b#18",
+      "processing_orders=ce899f3848d1368bf7d9da75c42134a9#4",
+      "processing_position_operations=7f0f08c404b5602e59e7aa3f03c8d3d9#8",
+      "processing_set_part_tokens=0cede8b09319be889a20b5108babf2fa#4",
+      "production_work_logs=EMPTY#0",
+      "worker_report_audits=EMPTY#0",
+      "users=898be256dd412bb4b03d1abde5816083#2",
+      "worker_sessions=509147c7d68b0fd96407a3218612dcc7#1",
+      "inbound_labels=db51ffae75167d3797cd280a9776453e#2",
+      "client_request_keys=498bb25bef3500f388eeebcf415c9aba#2"
+    ],
+    "excludeProbe": false
+  },
+  "ledgerTables": [
+    "orders",
+    "processing_orders",
+    "processing_position_operations",
+    "processing_set_part_tokens",
+    "production_work_logs",
+    "worker_report_audits",
+    "users",
+    "worker_sessions",
+    "inbound_labels",
+    "client_request_keys"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "at": "2026-10-06T00:13:51.613Z",
+  "items": [
+    {
+      "id": "P2-NEG:admin",
+      "from": "pass",
+      "to": "skip",
+      "why": "全码岗位无负向项 ⇒ 该判据对 admin **恒真**（空断言）⇒ 未覆盖，不折算 pass（独立复核 A-OBJ-1/C-OBJ-08）"
+    },
+    {
+      "id": "buttonMatrix.skipCitations",
+      "detail": "共 18 格，其中 12 格原引用悬空，已改为「未覆盖」并落盘 dangling 清单（独立复核 B-OBJ-4）"
+    },
+    {
+      "id": "staleShots",
+      "detail": "7 张 v1 轮 *_briefing.png 移至 out/shots-v1-superseded/（独立复核 C-OBJ-12）",
+      "moved": [
+        "admin_briefing.png",
+        "customer_service_briefing.png",
+        "finance_briefing.png",
+        "knowledge_editor_briefing.png",
+        "operator_briefing.png",
+        "product_manager_briefing.png",
+        "sales_briefing.png"
+      ]
+    }
+  ]
+}

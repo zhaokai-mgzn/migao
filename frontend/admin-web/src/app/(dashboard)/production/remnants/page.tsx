@@ -161,12 +161,7 @@ export default function RemnantLedgerPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-neutral-900">余料台账</h1>
-          <p className="text-sm text-neutral-500 mt-1">
-            裁剪剩下的布：尺寸、来源订单与批次、缸号、状态。
-            <span className="ml-1 text-neutral-600">
-              <InlineMarkdown text="余料**不是资产** —— 只记实物可用性，不计价、不进库存金额。" />
-            </span>
-          </p>
+          <p className="text-sm text-neutral-500 mt-1">管理裁剪剩下的余料：尺寸、来源订单与批次、缸号、状态</p>
         </div>
         <Button type="button" variant="ghost" size="sm" onClick={() => void load()}>
           <RefreshCw className="w-4 h-4 mr-1" />

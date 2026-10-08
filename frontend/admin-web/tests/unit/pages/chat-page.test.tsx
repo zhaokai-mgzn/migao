@@ -30,7 +30,7 @@ vi.mock('@/store/chat', () => {
   return { useChatStore: Object.assign(fn, { getState: () => fn() }) }
 })
 
-// 米宝唤出能力位（issue #5642 功能⑤）：页面**只**消费 `/api/auth/me` 下发的
+// 黄金策唤出能力位（issue #5642 功能⑤）：页面**只**消费 `/api/auth/me` 下发的
 // `user.capabilities.mibaoChat`。这里用一个可切换的假状态驱动两侧分支。
 const mockAuthState = vi.hoisted(() => ({ mibaoChat: true as boolean | undefined }))
 vi.mock('@/store/auth', () => {
@@ -82,7 +82,7 @@ describe('ChatPage', () => {
     expect(screen.getByTestId('chat-panel-content')).toBeInTheDocument()
   })
 
-  // ── 米宝唤出授权门（issue #5642 功能⑤）────────────────────────────────────
+  // ── 黄金策唤出授权门（issue #5642 功能⑤）────────────────────────────────────
   it('capabilities.mibaoChat=false ⇒ 明确「需要管理员授权」+ 可行动引导，且不发任何会话请求', () => {
     mockAuthState.mibaoChat = false
     render(<ChatPage />)

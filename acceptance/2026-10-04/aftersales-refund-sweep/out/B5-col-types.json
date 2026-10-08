@@ -1,0 +1,24 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:16:30 +08",
+    "utc": "2026-10-04T01:16:30.734Z"
+  },
+  "colTypes": [
+    {
+      "col": "after_sales_tickets.refund_amount",
+      "typ": "numeric(10,2)"
+    },
+    {
+      "col": "finance_transactions.amount",
+      "typ": "numeric(12,2)"
+    },
+    {
+      "col": "orders.actual_amount",
+      "typ": "numeric(10,2)"
+    },
+    {
+      "col": "orders.refund_amount",
+      "typ": "numeric(12,2)"
+    }
+  ]
+}

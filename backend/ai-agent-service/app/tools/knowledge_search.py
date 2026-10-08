@@ -32,7 +32,7 @@ class KnowledgeSearchTool(BaseTool):
     # 权限码（admin-api 目录）：知识卡片的**读**码 `knowledge:view`（issue #5246 按读写拆码，
     # 与 KnowledgeController 的读端点同码；写/发布/归档仍为 knowledge:manage）——
     # 此前读也要求 knowledge:manage，只想看卡片的客服/运营必须被授予写权才进得去。
-    # 本工具**双端覆盖**（issue #3059 B 端启用）：xiaobu(customer) + 米宝商户员工角色
+    # 本工具**双端覆盖**（issue #3059 B 端启用）：xiaobu(customer) + 黄金策商户员工角色
     # （admin/operator/product_manager/knowledge_editor/customer_service 等均可能问本店知识）
     # ⇒ 声明 c_end_reachable（C 端 JWT 没有 permissions claim，C 端按角色层放行，零回归）。
     # 声明了权限码 ⇒ 不再声明 allowed_roles（第二份会漂的假门禁，#4106 F4）。

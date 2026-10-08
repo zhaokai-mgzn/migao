@@ -18,7 +18,7 @@ OR-014（run `34856561459` · SHA `97668011` · B 端 mibao 腿）两次同指�
   · 文本级能力误宣判据（`capability_denial_text_hit`）对 5 句否定**全部返回空**（改前实测）
     —— 它只认"否定动词/权限受限 × 下单动作词"，认不出**归属错位式**（把下单判给别的环节/
     工作台/人工）、产出式 `V不了`、「不具备…能力」，也不认 B 端动作词「落单」；
-  · `_relock_order_skill` 把回锁目标**写死 C 端节点名**（`customer_order`）—— 米宝图里
+  · `_relock_order_skill` 把回锁目标**写死 C 端节点名**（`customer_order`）—— 黄金策图里
     没有该节点，回锁会指向图中不存在的节点。
 
 ## 本文件锁什么（结构层，秒级、零 LLM、零依赖）
@@ -173,7 +173,7 @@ def test_judgment_functions_hold_no_sentence_literals():
 def test_relock_target_is_fact_derived_and_named_nothing():
     """`_flow_owner_skill` 必须读**注册表声明**（`tool_names`），且两处都不得含 skill 名字面量。
 
-    实证（OR-014）：`_relock_order_skill` 曾写死 `"customer_order"` —— 米宝（B 端）图里
+    实证（OR-014）：`_relock_order_skill` 曾写死 `"customer_order"` —— 黄金策（B 端）图里
     只有 `order/product/…`，回锁会指向**图中不存在的节点**（`route_by_intent` 把 pending 名
     原样返回，条件边映射缺失）⇒ 修好判据的那一步自己把会话打坏。
     """

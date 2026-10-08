@@ -205,4 +205,4 @@ cd tests/smoke && SMOKE_ENV=local pytest -m p0
 > （判据：`tests/admin_web_devserver_identity.py`）。
 
 ---
-详见: [E2E README](../../tests/README.md) · [米宝验证用例](../testing/mibao-verification-cases.md)
+详见: [E2E README](../../tests/README.md) · [黄金策验证用例](../testing/mibao-verification-cases.md)

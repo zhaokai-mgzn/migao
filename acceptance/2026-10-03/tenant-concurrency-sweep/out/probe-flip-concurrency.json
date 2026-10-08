@@ -1,0 +1,45 @@
+{
+  "n": 57,
+  "concRequested": 40,
+  "wallMs": 1778,
+  "firstResponseMs": 1778,
+  "requestsStillInFlightWhenFirstResponseArrived": 1,
+  "maxMs": 1779,
+  "checkedIds": 2025,
+  "leakedResponses": 0,
+  "nonOk": 0,
+  "sample": [
+    {
+      "req": "list products by tenant 20",
+      "other": 21,
+      "status": 200,
+      "foreign": [],
+      "idsSample": [
+        "2177bc3325e6bd021c6f3a1a6f875b03",
+        "488e69519a5bfdb5b719808437274f40",
+        "1b913f6d43d71093c144f3cba322d540"
+      ],
+      "foreignCountLeft": 0
+    },
+    {
+      "req": "list customers by tenant 21",
+      "other": 20,
+      "status": 200,
+      "foreign": [],
+      "idsSample": [
+        "1f665c78c0282799d31e56f959404ee6"
+      ],
+      "foreignCountLeft": 0
+    },
+    {
+      "req": "read orders by tenant 20",
+      "other": 21,
+      "status": 200,
+      "foreign": [],
+      "idsSample": [
+        "76e84b4c2f3e6aaceee85307f19b106b"
+      ],
+      "foreignCountLeft": 0
+    }
+  ]
+}

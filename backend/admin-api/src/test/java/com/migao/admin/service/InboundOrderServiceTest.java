@@ -1,7 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045, PR-046, PR-048, PR-058, PR-061]
-
+// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045, PR-046, PR-048, PR-058, PR-061, FN-006]
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -143,6 +142,18 @@ class InboundOrderServiceTest {
         // 过账原子闸：默认「抢到过账权」（影响行数 1）；抢不到的场景在各用例里覆盖成 0
         org.mockito.Mockito.doAnswer(inv -> markPostedRows)
                 .when(inboundOrderMapper).markPosted(anyString(), anyLong(), any(), any());
+        // 批次号**原子取号**（issue #6248）：`update(` 的受影响行数 = 号归不归我。
+        // mock 承担 `uk_stock_batches_no` 的同语义：同一个 (tenant, batch_no) 第二次 ⇒ 0 行
+        // （没有这层，「撞号后重试」用例会因为「重复号也照样成功」而恒绿 = 空断言）。
+        batchNosTaken.clear();
+        org.mockito.Mockito.doAnswer(inv -> {
+            StockBatch b = inv.getArgument(0);
+            if (b.getBatchNo() != null && !batchNosTaken.add(b.getBatchNo())) {
+                return 0;
+            }
+            lastInsertedBatch = b;
+            return 1;
+        }).when(stockBatchMapper).update(any(StockBatch.class));
         org.mockito.Mockito.doAnswer(inv -> {
             InboundOrderItem it = inv.getArgument(0);
             if (it.getId() == null) {
@@ -154,6 +165,28 @@ class InboundOrderServiceTest {
     }
 
     private int insertSeq = 0;
+
+    /** 批次号尾部四位序号（`PC-yyyyMMdd-NNNN` → NNNN）。 */
+    private static int ordinalOf(String batchNo) {
+        return Integer.parseInt(batchNo.substring(batchNo.length() - 4));
+    }
+
+    /** 进程内批次号计数器（`BATCH_SEQ`）的**现取值**：期望值由它算，不写死（防执行顺序漂移）。 */
+    private static int batchSeq() {
+        try {
+            java.lang.reflect.Field seq = InboundOrderService.class.getDeclaredField("BATCH_SEQ");
+            seq.setAccessible(true);
+            return ((java.util.concurrent.atomic.AtomicInteger) seq.get(null)).get();
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("BATCH_SEQ 读取失败（字段被改名 ⇒ 判据必须一起改）", e);
+        }
+    }
+
+    /** 已被占用的批次号（mock 承担 `uk_stock_batches_no` 的同语义，见 setUp）。 */
+    private final java.util.Set<String> batchNosTaken = new java.util.HashSet<>();
+
+    /** 最近一次真正落库的批次行（`update(` 返回 1 的那次）。 */
+    private StockBatch lastInsertedBatch;
 
     /** 过账原子闸的影响行数（1 = 抢到；0 = 已被并发的另一个请求过账） */
     private int markPostedRows = 1;
@@ -263,10 +296,10 @@ class InboundOrderServiceTest {
             assertThat(line.getDoorWidth()).isEqualTo("2.8");
 
             // 红线：草稿不动库存、不落台账
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
             verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
                     any(), any(), anyString(), any(), any(), any(), any(), any());
-            verify(stockBatchMapper, never()).insert(any(StockBatch.class));
+            verify(stockBatchMapper, never()).update(any(StockBatch.class));
         }
 
         @Test
@@ -290,7 +323,7 @@ class InboundOrderServiceTest {
             // 金额按真实米数算（60.5 × 12.50 = 756.25），不得按取整后的 60 算
             assertThat(itemCap.getValue().getAmount()).isEqualByComparingTo("756.25");
             // 草稿不动库存（与整数场景同一红线）
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         @Test
@@ -425,7 +458,7 @@ class InboundOrderServiceTest {
             service.post("RK-20260924-0301", TENANT, "op");
 
             ArgumentCaptor<StockBatch> batchCap = ArgumentCaptor.forClass(StockBatch.class);
-            verify(stockBatchMapper).insert(batchCap.capture());
+            verify(stockBatchMapper).update(batchCap.capture());
             StockBatch batch = batchCap.getValue();
             assertThat(batch.getQuantity()).isEqualByComparingTo("0.5");
             assertThat(batch.getLegacyBatchNo()).isEqualTo("OLD-2024-0001");
@@ -476,6 +509,10 @@ class InboundOrderServiceTest {
                     .thenReturn(List.of(l))
                     .thenReturn(List.of(l));
             when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, null));
+            // 过账是原子条件更新，并**同时返回变更前/变更后**（SQL 的 RETURNING，issue #6300）
+            when(productSkuMapper.receiveStock(eq(11L), eq(new BigDecimal("30")), any(), anyString(), any()))
+                    .thenReturn(java.util.Map.of("beforeQuantity", new BigDecimal("5"),
+                            "afterQuantity", new BigDecimal("35")));
 
             service.post("RK-20260923-0001", TENANT, "13800000000");
 
@@ -483,7 +520,7 @@ class InboundOrderServiceTest {
             //    均价传的是 afterAvg（首次入库 = 进价 12.50），不是 unitCost ——
             //    与台账里的 avg_cost_after 同源同值（公式只有 InboundOrderService.movingAverage 一处）
             ArgumentCaptor<String> batchCap = ArgumentCaptor.forClass(String.class);
-            verify(productSkuMapper).receiveStock(eq(11L), eq(BigDecimal.valueOf(30)), eq(new BigDecimal("12.50")), batchCap.capture());
+            verify(productSkuMapper).receiveStock(eq(11L), eq(BigDecimal.valueOf(30)), eq(new BigDecimal("12.50")), batchCap.capture(), any());
             String batchNo = batchCap.getValue();
             assertThat(batchNo).matches("PC-\\d{8}-\\d{4}");
 
@@ -494,7 +531,7 @@ class InboundOrderServiceTest {
 
             // ③ 批次台账：缸号随批次可见（AHFA 卷标须带 Lot number）
             ArgumentCaptor<StockBatch> batchRowCap = ArgumentCaptor.forClass(StockBatch.class);
-            verify(stockBatchMapper).insert(batchRowCap.capture());
+            verify(stockBatchMapper).update(batchRowCap.capture());
             StockBatch batchRow = batchRowCap.getValue();
             assertThat(batchRow.getBatchNo()).isEqualTo(batchNo);
             assertThat(batchRow.getDyeLot()).isEqualTo("G-2026-0912");
@@ -516,7 +553,7 @@ class InboundOrderServiceTest {
             // ⑤ **闸在库存写入之前**（顺序判据）：CAS → 加库存，顺序颠倒 = 互斥发生在伤害之后
             org.mockito.InOrder inOrder = inOrder(inboundOrderMapper, productSkuMapper);
             inOrder.verify(inboundOrderMapper).markPosted(anyString(), anyLong(), any(), any());
-            inOrder.verify(productSkuMapper).receiveStock(anyLong(), any(), any(), anyString());
+            inOrder.verify(productSkuMapper).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         @Test
@@ -530,16 +567,19 @@ class InboundOrderServiceTest {
                     .thenReturn(List.of(l))
                     .thenReturn(List.of(l));
             when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, null));
+            when(productSkuMapper.receiveStock(eq(11L), eq(new BigDecimal("60.5")), any(), anyString(), any()))
+                    .thenReturn(java.util.Map.of("beforeQuantity", new BigDecimal("5"),
+                            "afterQuantity", new BigDecimal("65.5")));
 
             service.post("RK-20260923-0001", TENANT, "13800000000");
 
             // ① 加库存：改前是 int 形参 ⇒ 60.5 只能被截断或根本无法表达
             verify(productSkuMapper).receiveStock(eq(11L), eq(new BigDecimal("60.5")),
-                    eq(new BigDecimal("12.50")), anyString());
+                    eq(new BigDecimal("12.50")), anyString(), any());
 
             // ② 批次台账：与入库行同值（账实一致）
             ArgumentCaptor<StockBatch> batchCap = ArgumentCaptor.forClass(StockBatch.class);
-            verify(stockBatchMapper).insert(batchCap.capture());
+            verify(stockBatchMapper).update(batchCap.capture());
             assertThat(batchCap.getValue().getQuantity()).isEqualByComparingTo("60.5");
 
             // ③ 台账 before/after：5 → 65.5（delta 由 StockLedgerService 按 after-before 算）
@@ -563,6 +603,10 @@ class InboundOrderServiceTest {
                     .thenReturn(List.of(l));
             // 变更前：库存 5、均价 10.00 ⇒ 移动加权 = (5*10 + 30*12.5)/35 = 425/35 = 12.142857… ⇒ 12.1429
             when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, new BigDecimal("10.00")));
+            // 过账是原子条件更新，并**同时返回变更前/变更后**（SQL 的 RETURNING，issue #6300）
+            when(productSkuMapper.receiveStock(eq(11L), eq(BigDecimal.valueOf(30)), any(), anyString(), any()))
+                    .thenReturn(java.util.Map.of("beforeQuantity", new BigDecimal("5"),
+                            "afterQuantity", new BigDecimal("35")));
 
             service.post("RK-20260923-0001", TENANT, "op");
 
@@ -583,7 +627,7 @@ class InboundOrderServiceTest {
             assertThatThrownBy(() -> service.post("RK-20260923-0001", TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("只有草稿可以过账");
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
             verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
                     any(), any(), anyString(), any(), any(), any(), any(), any());
         }
@@ -614,7 +658,7 @@ class InboundOrderServiceTest {
             assertThatThrownBy(() -> service.post("RK-20260923-0001", TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("SKU 已不存在");
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         // ---------------------------------------------------------- PR-045 多行过账
@@ -646,7 +690,7 @@ class InboundOrderServiceTest {
 
             // ① 批次台账落 **2 行**、两个批次号**不同**（相同 ⇒ 真库上第 2 行唯一索引冲突）
             ArgumentCaptor<StockBatch> batchCap = ArgumentCaptor.forClass(StockBatch.class);
-            verify(stockBatchMapper, times(2)).insert(batchCap.capture());
+            verify(stockBatchMapper, times(2)).update(batchCap.capture());
             List<StockBatch> batches = batchCap.getAllValues();
             List<String> batchNos = batches.stream().map(StockBatch::getBatchNo).toList();
             assertThat(batchNos).hasSize(2).doesNotHaveDuplicates();
@@ -662,8 +706,72 @@ class InboundOrderServiceTest {
 
             // ③ 加库存也逐行带各自的批次号（latest_batch_no 不得被同一个号覆盖两次）
             ArgumentCaptor<String> receiveCap = ArgumentCaptor.forClass(String.class);
-            verify(productSkuMapper, times(2)).receiveStock(anyLong(), any(), any(), receiveCap.capture());
+            verify(productSkuMapper, times(2)).receiveStock(anyLong(), any(), any(), receiveCap.capture(), any());
             assertThat(receiveCap.getAllValues()).doesNotHaveDuplicates();
+        }
+
+        /**
+         * 原子取号：候选号刚被别人抢走（{@code update(} 返回 0）⇒ **换号重试**，
+         * 且落库的批次行就是最终那个号（issue #6248）。
+         *
+         * <p>缺陷形态（修复前）：{@code exists} 判假 ⇒ 返回候选 ⇒ <b>之后</b>才 insert ——
+         * 多实例 / 重启时两边的进程内计数器从同一位置起步 ⇒ 同一个候选 ⇒ 后到者撞
+         * {@code uk_stock_batches_no} 抛 {@code DuplicateKeyException} ⇒ 用户侧 500
+         * （重试只覆盖「生成时已存在」，不覆盖「插入时被抢」）。真库读数见
+         * {@code BatchNoTakeRaceRealDbTest} 判据 ④；本条是**廉价的正向判据**：
+         * 抢号失败 ⇒ 必须换号并成功，而不是把冲突留给调用方。</p>
+         */
+        @Test
+        @DisplayName("PR-045/#6248 候选号刚被抢走（受影响行数 0）⇒ 换号重试并把**最终号**落库")
+        void postRetriesWhenCandidateIsSnatchedBetweenCheckAndInsert() {
+            InboundOrder order = draftOrder();
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(line(100L, 11L))).thenReturn(List.of(line(100L, 11L)));
+            when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, null));
+            // 第一次写号被抢（0 行）⇒ 第二次成功（1 行）。**每次尝试的在途批次号按当时取值记下来**
+            //（候选是同一个 batch 对象只换 batchNo 字段 ⇒ 捕获对象只能在末尾读到最终值，
+            //  那样这条判据会假绿 —— 本判据第一版踩过）。
+            List<String> attempted = new java.util.ArrayList<>();
+            java.util.concurrent.atomic.AtomicBoolean firstAttemptSnatched =
+                    new java.util.concurrent.atomic.AtomicBoolean(false);
+            org.mockito.Mockito.doAnswer(inv -> {
+                StockBatch b = inv.getArgument(0);
+                attempted.add(b.getBatchNo());
+                if (firstAttemptSnatched.compareAndSet(false, true)) {
+                    return 0;                       // 号刚被别人抢走（DB 唯一索引挡住）
+                }
+                batchNosTaken.add(b.getBatchNo());
+                lastInsertedBatch = b;
+                return 1;                           // 换号后拿到号
+            }).when(stockBatchMapper).update(any(StockBatch.class));
+            // 基线紧贴被测调用读（计数器是进程内静态的；不写死绝对值 ⇒ 与执行顺序无关）
+            String today = businessClock.today().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
+            int seqBefore = batchSeq();
+
+            service.post("RK-20260923-0001", TENANT, "op");
+
+            assertThat(attempted).as("写号必须被**尝试两次**（第一次被抢 ⇒ 换号再试）").hasSize(2);
+            assertThat(attempted.get(0)).as("第一次尝试的候选号").matches("PC-\\d{8}-\\d{4}");
+            assertThat(attempted.get(0)).as("第一次候选必须是今天号段里的号（不是别的天）")
+                    .startsWith("PC-" + today + "-");
+            assertThat(attempted.get(1))
+                    .as("失败必须换号（同一个号再试一次 = 不重试）—— 实测两次尝试="
+                            + attempted.get(0) + " / " + attempted.get(1))
+                    .isNotEqualTo(attempted.get(0));
+            assertThat(ordinalOf(attempted.get(1)) - ordinalOf(attempted.get(0)))
+                    .as("换号必须取**下一个**候选（计数器每次 +1）—— 实测 "
+                            + attempted.get(0) + " → " + attempted.get(1))
+                    .isEqualTo(1);
+            assertThat(seqBefore).as("基线是被测调用前读的计数器值").isNotNegative();
+            // 落库的就是最终那次尝试的号，且它被用于库存 / 明细行回写（三处同源同值）
+            assertThat(lastInsertedBatch.getBatchNo()).isEqualTo(attempted.get(1));
+            ArgumentCaptor<String> receiveCap = ArgumentCaptor.forClass(String.class);
+            verify(productSkuMapper).receiveStock(anyLong(), any(), any(), receiveCap.capture(), any());
+            assertThat(receiveCap.getValue()).isEqualTo(attempted.get(1));
+            ArgumentCaptor<InboundOrderItem> patchCap = ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper).updateById(patchCap.capture());
+            assertThat(patchCap.getValue().getBatchNo()).isEqualTo(attempted.get(1));
         }
 
         /**
@@ -688,7 +796,7 @@ class InboundOrderServiceTest {
             service.post("RK-20260923-0001", TENANT, "op");
 
             ArgumentCaptor<StockBatch> batchCap = ArgumentCaptor.forClass(StockBatch.class);
-            verify(stockBatchMapper, times(2)).insert(batchCap.capture());
+            verify(stockBatchMapper, times(2)).update(batchCap.capture());
             assertThat(batchCap.getAllValues()).extracting(StockBatch::getBatchNo).doesNotHaveDuplicates();
             // 缸号随之各归各行 —— 合并批次会让两行只剩一个缸号（追溯断链）
             assertThat(batchCap.getAllValues()).extracting(StockBatch::getDyeLot)
@@ -764,10 +872,10 @@ class InboundOrderServiceTest {
                     .hasMessageContaining("只有草稿可以过账");
 
             // 红线：抢不到闸就**一点库存副作用都不许有**（改前两个并发请求各加一遍 ⇒ 库存加两次）
-            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
             verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
                     any(), any(), anyString(), any(), any(), any(), any(), any());
-            verify(stockBatchMapper, never()).insert(any(StockBatch.class));
+            verify(stockBatchMapper, never()).update(any(StockBatch.class));
         }
 
         @Test
@@ -993,6 +1101,67 @@ class InboundOrderServiceTest {
                     .isEqualByComparingTo("8.80");
             // 从未有过成本 ⇒ 仍是未知（NULL），**不得**变成 0
             assertThat(InboundOrderService.movingAverage(BigDecimal.valueOf(0), null, BigDecimal.valueOf(30), null)).isNull();
+        }
+    }
+
+    // ════════════════ issue #6228：金额入口小数位准入（超 2 位有效小数 ⇒ 422 + 零写入）════════════════
+
+    @Nested
+    @DisplayName("#6228 入库金额精度准入：单价 2 位小数 + 「积」逐处准入")
+    class MoneyScaleAdmission {
+
+        @Test
+        @DisplayName("单价 0.005（3 位有效小数）⇒ 422，inbound_orders / inbound_order_items **零写入**")
+        void rejectsUnitCostOverScale() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
+
+            assertThatThrownBy(() -> service.create(
+                    request(itemQty("prod-1", 11L, "2.5", "0.005")), TENANT, "op"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("2 位小数")
+                    .hasMessageContaining("0.005");
+
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderItemMapper, never()).insert(any(InboundOrderItem.class));
+        }
+
+        @Test
+        @DisplayName("「积」超精度（数量 1.5 × 单价 0.01 = 0.015）⇒ 422，明细/单据零写入（单价本身合法）")
+        void rejectsAmountProductOverScale() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
+
+            assertThatThrownBy(() -> service.create(
+                    request(itemQty("prod-1", 11L, "1.5", "0.01")), TENANT, "op"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("入库金额")
+                    .hasMessageContaining("0.015");
+
+            verify(inboundOrderItemMapper, never()).insert(any(InboundOrderItem.class));
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+        }
+
+        @Test
+        @DisplayName("正对照 数量 2.5 × 单价 12.50 ⇒ 建单成功，单价/金额落库逐字 12.50 / 31.250（有效 2 位）")
+        void acceptsTwoDecimalProduct() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
+            // 建单末尾会回读详情（真实部署里单据已落库）——同本类 PR-029 用例的既有口径
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedOrder);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedLines);
+
+            service.create(request(itemQty("prod-1", 11L, "2.5", "12.50")), TENANT, "op");
+
+            ArgumentCaptor<InboundOrderItem> itemCap = ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper).insert(itemCap.capture());
+            assertThat(itemCap.getValue().getUnitCost().toPlainString()).isEqualTo("12.50");
+            assertThat(itemCap.getValue().getAmount().toPlainString()).isEqualTo("31.250");
         }
     }
 }

@@ -1,6 +1,6 @@
 # Admin API
 
-米高 AI 智能客服 — Java 管理后端
+观星台 AI 智能客服 — Java 管理后端
 
 ## 技术栈
 

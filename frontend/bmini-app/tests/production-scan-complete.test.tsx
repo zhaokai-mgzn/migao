@@ -59,7 +59,9 @@ jest.mock('../src/services/productionService', () => ({
   // 锁用真身（issue #4116 §5-1）：页面调用 reportInFlightLock.tryAcquire()，mock 掉会拿到 undefined
   ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
+  getWorkerOrderOperations: jest.fn(),
   shipOrder: jest.fn(),
+  shipWorkerOrder: jest.fn(),
   getOrderPiecework: jest.fn(),
   scanResolve: jest.fn(),
   completeByScan: jest.fn(),
@@ -76,18 +78,31 @@ import ProductionPage from '../src/pages/production/index/index'
 import {
   completeByScan,
   getOrderOperations,
+  getWorkerOrderOperations,
   getOrderPiecework,
   reportInFlightLock,
   scanResolve,
 } from '../src/services/productionService'
 import type { OrderOperations, ScanResolveResult } from '../src/services/productionService'
 import { listPendingReports } from '../src/utils/productionOffline'
+import { setWorkerSessionId } from '../src/utils/workerSession'
 
 const ORDER_ID = 'CSO260915-02615'
 const SET_NO = `${ORDER_ID}-014`
 const TOKEN = 'scan-token-4698b'
 
 const mockGet = getOrderOperations as jest.Mock
+const mockWorkerGet = getWorkerOrderOperations as jest.Mock
+
+/**
+ * 让本用例跑在**有工人身份**的车间设备上（issue #6467 判据 3）：
+ * 写入口只在 `hasWorkerSession()` 为真时渲染 ⇒ 报工类用例必须先种一个工人 session；
+ * 此时读面也按身份分流走 `/api/worker/**`（mockWorkerGet），与真机一致。
+ */
+function enableWorkerIdentity() {
+  setWorkerSessionId('sess-worker-1')
+  mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail() })
+}
 const mockScan = scanResolve as jest.Mock
 const mockComplete = completeByScan as jest.Mock
 const mockPiecework = getOrderPiecework as jest.Mock
@@ -173,6 +188,8 @@ describe('ProductionPage（扫码 ⇒ 一屏 ⇒ 开工/领活，切片 ②；is
     jest.clearAllMocks()
     launchParams = {}
     ;(Taro as any).__clearStorage()
+    // issue #6467：扫码主闭环是**工人面**（写入口只认工人 session）⇒ 种一个工人身份
+    enableWorkerIdentity()
     // 锁是模块级单例：用例之间必须复位（否则上一例的 in-flight 会挡住本例）
     reportInFlightLock.release()
     ;(Taro.scanCode as jest.Mock).mockResolvedValue({ result: TOKEN })
@@ -206,7 +223,7 @@ describe('ProductionPage（扫码 ⇒ 一屏 ⇒ 开工/领活，切片 ②；is
     expect(screen.getByText('开工')).toBeTruthy()
     expect(screen.queryByText('完成')).toBeNull()
     // 同时带出本单工序/进度（扫一次不用再查单）
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
+    await waitFor(() => expect(mockWorkerGet).toHaveBeenCalledWith(ORDER_ID))
     // 屏上不该出现「选部位」之类的额外交互
     expect(screen.queryByText(/选择部位/)).toBeNull()
   })
@@ -239,7 +256,7 @@ describe('ProductionPage（扫码 ⇒ 一屏 ⇒ 开工/领活，切片 ②；is
     expect(requestId.length).toBeGreaterThan(0)
     // 一屏闭环：服务端给的「下一道」就地换到屏上
     expect(await screen.findByText('打卷 · 布帘 · 应做 11米')).toBeTruthy()
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
+    await waitFor(() => expect(mockWorkerGet).toHaveBeenCalledWith(ORDER_ID))
     // 本机明细记的是**服务端回执**的工人名（请求体不含身份）
     expect(screen.getByText(/张师傅 · 定型 · 布帘 · 11/)).toBeTruthy()
   })
@@ -275,7 +292,7 @@ describe('ProductionPage（扫码 ⇒ 一屏 ⇒ 开工/领活，切片 ②；is
     )
     expect(screen.queryByText('开工')).toBeNull()
     expect(mockComplete).not.toHaveBeenCalled()
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
+    await waitFor(() => expect(mockWorkerGet).toHaveBeenCalledWith(ORDER_ID))
   })
 
   it('一键改：点候选 ⇒ 带 operation_id 重新解析（归属由服务端校验）', async () => {

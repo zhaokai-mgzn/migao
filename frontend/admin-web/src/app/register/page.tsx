@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { Phone, Loader2, Building2, ArrowLeft, ArrowRight, CheckCircle2, XCircle, Upload, Bot, MessageCircle, LayoutDashboard, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
+import { AI_ROLES } from '@/config/ai-roles'
 import { authApi } from '@/lib/api'
 import { fileApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -178,7 +179,7 @@ export default function RegisterPage() {
             企业入驻申请
           </h1>
           <p className="mt-1.5 text-sm text-neutral-500">
-            米高 · AI智能管理平台
+            观星台 · AI智能管理平台
           </p>
         </div>
 
@@ -321,7 +322,7 @@ export default function RegisterPage() {
                 <h2 className="text-lg font-semibold text-neutral-900">企业信息</h2>
               </div>
               <p className="text-sm text-neutral-500 text-center mb-4">
-                提交后由 AI 智能甄别合规性，无敏感信息将秒级审核通过，立即开通米宝助手
+                提交后由 AI 智能甄别合规性，无敏感信息将秒级审核通过，立即开通黄金策
               </p>
 
               {/* 企业名称 */}
@@ -542,7 +543,7 @@ export default function RegisterPage() {
                   </h2>
                   <p className="text-sm text-neutral-500 mb-6 leading-relaxed">
                     AI 甄别已通过，企业账号已自动开通，<br />
-                    您现在即可登录使用米高智能管理平台。
+                    您现在即可登录使用观星台智能管理平台。
                   </p>
 
                   {/* 入驻后获得的能力 */}
@@ -554,8 +555,8 @@ export default function RegisterPage() {
                           <Bot className="w-4 h-4 text-primary-600" />
                         </div>
                         <div className="text-left">
-                          <p className="text-sm font-medium text-neutral-900">米宝 · 企业智能助手</p>
-                          <p className="text-xs text-neutral-500">AI驱动的商品、订单、售后智能管理</p>
+                          <p className="text-sm font-medium text-neutral-900">{`黄金策 · ${AI_ROLES.mibao}`}</p>
+                          <p className="text-xs text-neutral-500">AI 驱动的商品、订单、生产、库存与财务智能管理</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
@@ -563,7 +564,7 @@ export default function RegisterPage() {
                           <MessageCircle className="w-4 h-4 text-green-600" />
                         </div>
                         <div className="text-left">
-                          <p className="text-sm font-medium text-neutral-900">小布 · 智能客服</p>
+                          <p className="text-sm font-medium text-neutral-900">{`元元 · ${AI_ROLES.xiaobu}`}</p>
                           <p className="text-xs text-neutral-500">7×24小时AI客服，精准服务您的客户</p>
                         </div>
                       </div>
@@ -665,7 +666,7 @@ export default function RegisterPage() {
         )}
 
         <p className="mt-8 text-center text-xs text-neutral-400">
-          © 2026 杭州词元通达科技有限公司 · 米高
+          © 2026 杭州词元通达科技有限公司 · 观星台
         </p>
       </div>
     </div>

@@ -4,9 +4,9 @@
 #
 # 🔴 为什么不能只看 `/b/` = 200、也不能只看「页面标题/文案」：
 #    · 修复**前** `/b/` 就已经是 200 —— nginx 的 `location /` 是 `try_files $uri $uri/ /index.html`，
-#      `/b/` 不存在时**静默回落**到根 index.html（C 端小布）；
+#      `/b/` 不存在时**静默回落**到根 index.html（C 端元元）；
 #    · 更隐蔽的是：bmini 与 C 端**同为 Taro h5 产物**，实测两者 `dist/index.html` 的
-#      `<title>` 都是「米高窗帘 · 小布智能助手」、都带 `window.TARO_ENV = 'h5'`，连资源名
+#      `<title>` 都是「观星台窗帘 · 元元智能助手」、都带 `window.TARO_ENV = 'h5'`，连资源名
 #      （`js/app.js` / `css/app.css`）都一样 ⇒ **标记法区分不了这两端**。
 #    ⇒ 可判的只有两样：**字节哈希**（线上 body == 本仓库 `frontend/bmini-app/dist/index.html`）
 #      与**资源命名空间**（index.html 的引用必须落在 `/b/` 内，不许引用根级 `/js/…`）。
@@ -20,9 +20,12 @@
 #      判定，避免两套真相源）；另加 `/s/<短码面>` 仍被代理（不是静态页）。
 #   ⑤ **入库标签面不串端**（issue #5052 §7.1 的 nginx 面）：`GET /i/<不可能存在的短码>` **必须**走到
 #      admin-api（未知短码 ⇒ 404），**不得**返回根页 —— 少了 nginx 的 `location /i/` 时它会静默
-#      落到 `location /` 的 SPA fallback（200 + C 端小布首页；2026-09-27 线上实测正是这一形态）。
+#      落到 `location /` 的 SPA fallback（200 + C 端元元首页；2026-09-27 线上实测正是这一形态）。
 #      ⚠️ 判据**不是**「状态码是 302」（未知短码本来就 404）—— 判据是「**到了 admin-api**」与
 #      「**落到了 SPA**」可判：落 SPA 时 body 与 `GET /` 同哈希。
+#   ⑥ **入口脚本的 MIME**（issue #6293）：`dist/index.html` 引用的入口脚本的 Content-Type 必须 ∈
+#      **JS MIME 白名单**（`.mjs` 被发成 `application/octet-stream` ⇒ 浏览器拒绝执行 module script ⇒
+#      白屏，而身份 / 串端 / 字节全对 ⇒ ①~⑤ 会全绿）。判据 = 「属于白名单」而**不是**等于某个字面量。
 #
 # 用法: bmini-h5-verify-served.sh [BASE_URL] [DIST_DIR]
 #   默认 https://app.migaozn.com 与 frontend/bmini-app/dist
@@ -80,6 +83,28 @@ fetch() {
   curl -sS -m 20 -H 'Cache-Control: no-cache' -o "$out" -w '%{http_code}' "$url" 2>"$TMPDIR_RUN/curl.err"
 }
 
+# ── JS MIME 白名单判据（issue #6293）────────────────────────────────────────────
+# 病灶（云测试环境实测 2026-10-04）：`.mjs` **不在** nginx 的 `mime.types` 里 ⇒ 落到 `default_type`
+# （本镜像 = application/octet-stream）⇒ 浏览器按 HTML 规范**拒绝执行 module script**
+# （Strict MIME type checking is enforced for module scripts）⇒ 页面**整页白屏**。
+# 🔴 而**状态码 200 与字节哈希全部正确** ⇒ 本脚本 ①~⑤ 全绿（它们只判身份与串端，**一条都不判 MIME**）。
+# 判据形态 = 「Content-Type **属于 JS MIME 白名单**」，**不是**等于某个字面量：
+#   `text/javascript` 与 `application/javascript` 都是 WHATWG 认可的 JS MIME（不同 nginx / 发行版
+#   给哪个都合法）⇒ 写死其一会在**正确**的部署上误红，逼人改判据而不是改配置（那是降门禁，不是修缺陷）。
+JS_MIME_RE='^(application|text)/(x-)?(java|ecma)script([0-9.]+)?$'
+# 本腿**依赖的** fail-closed 空集分支声明（issue #6306）：MIME 判据的「取不到就判红」锚在
+# `ENTRY_REFS` 上（判据 = tests/unit_ci_workflows/test_served_leg_mime_guard.py）。
+FAIL_CLOSED_VARS="ENTRY_REFS"
+js_mime_ok() {   # $1 = Content-Type 原文（可带 `; charset=…`）
+  local ct
+  ct="$(printf '%s' "${1%%;*}" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+  [[ "$ct" =~ $JS_MIME_RE ]]
+}
+# 取一个 URL 的 Content-Type（与 issue #6293 的复现命令同形：GET + 丢弃 body；HEAD 不是同一回事）
+content_type_of() {
+  curl -sS -m 20 -H 'Cache-Control: no-cache' -o /dev/null -w '%{content_type}' "$1" 2>"$TMPDIR_RUN/curl.err" || true
+}
+
 echo "== bmini h5 落地面身份 + 不串端断言 =="
 echo "   BASE_URL=$BASE"
 echo "   DIST_DIR=$DIST_DIR"
@@ -126,7 +151,7 @@ else
     done
   fi
   if [ "$( [ -s "$TMPDIR_RUN/spa.html" ] && file_sha256 "$TMPDIR_RUN/spa.html" || echo '(空)' )" != "$EXPECTED_INDEX_SHA" ]; then
-    bad "GET $SPA_PROBE 没有返回 bmini 的 index.html（HTTP ${CODE}）—— nginx 的 \`location /${SUBDIR}/\` 缺少落在 /${SUBDIR}/index.html 的 fallback（会静默回落根 index.html = C 端小布）"
+    bad "GET $SPA_PROBE 没有返回 bmini 的 index.html（HTTP ${CODE}）—— nginx 的 \`location /${SUBDIR}/\` 缺少落在 /${SUBDIR}/index.html 的 fallback（会静默回落根 index.html = C 端元元）"
     echo "     处置：确认 \`deploy/swas/nginx.conf\` 的 \`location /${SUBDIR}/\` 已在**本次合并的 commit** 上；"
     echo "           等 deploy-* 跑完（它才会 cp nginx.conf + reload）后用 \`gh run rerun <run-id>\` 重跑本 job。"
   fi
@@ -134,7 +159,7 @@ fi
 echo ""
 
 # ── ③ 不劫持根：/ 与根级子路由仍是 C 端页面 ──────────────────────────────────
-echo "③ GET $BASE/ 与 ${ROOT_PROBE}（根仍必须是 C 端小布，不能被 /${SUBDIR}/ 规则吃掉）"
+echo "③ GET $BASE/ 与 ${ROOT_PROBE}（根仍必须是 C 端元元，不能被 /${SUBDIR}/ 规则吃掉）"
 for path in "/" "$ROOT_PROBE"; do
   out="$TMPDIR_RUN/root.html"
   CODE=$(fetch "$BASE$path" "$out")
@@ -197,7 +222,7 @@ else
     I_SHA=$( [ -s "$TMPDIR_RUN/i.html" ] && file_sha256 "$TMPDIR_RUN/i.html" || echo '(空)' )
   done
   if [ "$I_SHA" = "$ROOT_SHA" ]; then
-    bad "GET ${I_PROBE} → HTTP ${CODE} 且 body 与 \`GET /\` 同哈希 = 落到了 location / 的 SPA fallback（C 端小布）：\`location /i/\` 没随 nginx 配置生效（扫标签会看到错页面；HTTP 200 不是错误码，监控不会红）"
+    bad "GET ${I_PROBE} → HTTP ${CODE} 且 body 与 \`GET /\` 同哈希 = 落到了 location / 的 SPA fallback（C 端元元）：\`location /i/\` 没随 nginx 配置生效（扫标签会看到错页面；HTTP 200 不是错误码，监控不会红）"
     echo "     处置：确认 \`deploy/swas/nginx.conf\` 的 \`location /i/\` 已在**本次合并的 commit** 上；"
     echo "           等 deploy-* 跑完（它才会 cp nginx.conf + reload）后用 \`gh run rerun <run-id>\` 重跑本 job。"
   elif [ "$CODE" -ge 500 ] 2>/dev/null; then
@@ -210,8 +235,34 @@ else
 fi
 echo ""
 
+# ── ⑥ 入口脚本的 MIME（issue #6293）────────────────────────────────────────────
+# 判据对象 = 本地产物 `dist/index.html` 里 `<script src=…>` 引用的**入口脚本**（现取 ⇒ 产物从 `.js`
+# 换成 `.mjs` 时判据自动跟上，不写死路径）。为什么必须单列一段：①~⑤ 判的是身份与串端，
+# 而**字节全对也照样白屏** —— 浏览器对 module script 先做 MIME 检查（octet-stream ⇒ 拒绝执行）。
+# 取不到任何入口引用 ⇒ 判红（fail-closed）：「没跑」必须长得像「没跑」，不许当通过。
+echo "⑥ 入口脚本的 MIME（Content-Type 必须 ∈ JS MIME 白名单）"
+ENTRY_REFS="$(grep -oE '<script[^>]*src="[^"]+"' "$LOCAL_INDEX" 2>/dev/null | sed -E 's/.*src="([^"]+)".*/\1/' | sort -u)"
+if [ -z "$ENTRY_REFS" ]; then
+  bad "本地产物 ${LOCAL_INDEX} 里取不到 <script src=…> —— MIME 判据会空跑（不许当通过）"
+fi
+while IFS= read -r ref; do
+  [ -n "$ref" ] || continue
+  case "$ref" in
+    http*://*) url="$ref" ;;
+    /*)        url="$BASE$ref" ;;
+    *)         url="$BASE/${SUBDIR}/${ref#./}" ;;
+  esac
+  ct="$(content_type_of "$url")"
+  if js_mime_ok "$ct"; then
+    ok "GET $url → Content-Type ${ct}（∈ JS MIME 白名单）"
+  else
+    bad "GET $url → Content-Type ${ct:-（空）} 【∉ JS MIME 白名单】—— 浏览器会拒绝执行 module script ⇒ 页面整页白屏（HTTP 200 / 字节哈希一致都救不了）"
+  fi
+done <<< "$ENTRY_REFS"
+echo ""
+
 if [ "$FAILURES" -gt 0 ]; then
   echo "❌ bmini h5 落地面断言**失败 ${FAILURES} 条**：$BASE/${SUBDIR}/ 的落地面不符合本仓库产物 / 或串了端"
   exit 1
 fi
-echo "✅ 全部通过：$BASE/${SUBDIR}/ = 本仓库 frontend/bmini-app/dist（含子路由 fallback）、根仍是 C 端、worker-h5 零回归、/i/ 面到了 admin-api"
+echo "✅ 全部通过：$BASE/${SUBDIR}/ = 本仓库 frontend/bmini-app/dist（含子路由 fallback）、根仍是 C 端、worker-h5 零回归、/i/ 面到了 admin-api、入口脚本 Content-Type ∈ JS MIME 白名单"

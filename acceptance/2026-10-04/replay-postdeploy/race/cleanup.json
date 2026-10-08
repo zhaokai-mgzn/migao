@@ -1,0 +1,116 @@
+{
+  "at": "2026-10-04T01:53:40.626Z",
+  "tenantA": 25,
+  "tenantB": 27,
+  "dry": false,
+  "before": {
+    "tenantA": {
+      "products": 6,
+      "orders": 12,
+      "inbounds": 6,
+      "keys": 4,
+      "ledger": 5
+    },
+    "tenantB": {
+      "tenantRow": [
+        {
+          "id": 27,
+          "name": "米高测试环境-隔离对照",
+          "code": "shop-3wx4",
+          "status": "active"
+        }
+      ],
+      "perTable": {}
+    }
+  },
+  "after": {
+    "tenantA": {
+      "deleted": {
+        "product_skus": 6,
+        "order_items": 12,
+        "order_shipments": 1,
+        "stock_batch_consumptions": 1,
+        "stock_ledger_entries": 8,
+        "client_request_keys": 4,
+        "tenant_applications": 1,
+        "stock_batches": 5,
+        "inbound_orders": 6
+      },
+      "total": 44,
+      "readback": {
+        "products": 6,
+        "orders": 12,
+        "inbounds": 0,
+        "keys": 0,
+        "ledger": 0
+      }
+    },
+    "tenantB": {
+      "deleted": {
+        "permissions": 32,
+        "product_colors": 2,
+        "production_crafts": 1,
+        "production_operation_positions": 116,
+        "production_operation_price_versions": 41,
+        "production_operations": 41,
+        "production_route_rules": 27,
+        "production_route_templates": 2,
+        "role_permissions": 100,
+        "stock_ledger_entries": 2,
+        "user_roles": 1,
+        "users": 1,
+        "products": 2,
+        "roles": 7
+      },
+      "totalDeletedRows": 375,
+      "usersDeleted": 0,
+      "tenantsDeleted": 1,
+      "leftovers": [],
+      "tenantRow": []
+    }
+  },
+  "steps": [
+    {
+      "label": "tenantA",
+      "round": 1,
+      "deletedThisRound": 33
+    },
+    {
+      "label": "tenantA",
+      "round": 2,
+      "deletedThisRound": 5
+    },
+    {
+      "label": "tenantA",
+      "round": 3,
+      "deletedThisRound": 6
+    },
+    {
+      "label": "tenantA",
+      "round": 4,
+      "deletedThisRound": 0
+    },
+    {
+      "label": "tenantB",
+      "round": 1,
+      "deletedThisRound": 366
+    },
+    {
+      "label": "tenantB",
+      "round": 2,
+      "deletedThisRound": 9
+    },
+    {
+      "label": "tenantB",
+      "round": 3,
+      "deletedThisRound": 0
+    }
+  ],
+  "errors": [],
+  "tenantsAfter": [
+    {
+      "id": 25,
+      "name": "米高测试环境"
+    }
+  ]
+}

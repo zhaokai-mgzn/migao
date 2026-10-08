@@ -32,7 +32,7 @@ class IntentType(str, Enum):
     COMPLAINT = "complaint"
     # ── 商品域 (product) ──
     PRODUCT_INQUIRY = "product_inquiry"
-    QUOTE = "quote"  # 窗帘算料报价（C 端小布）
+    QUOTE = "quote"  # 窗帘算料报价（C 端元元）
     CATEGORY_MANAGE = "category_manage"
     PROCESSING_MANAGE = "processing_manage"
     # ── 客户关系域 (crm) ──
@@ -56,6 +56,8 @@ class IntentType(str, Enum):
     # ── 知识库域 (knowledge) ──
     KNOWLEDGE_FAQ = "knowledge_faq"
     KNOWLEDGE_MANAGE = "knowledge_manage"
+    # ── 定时提醒域 (assistant, issue #6486 包 2) ──
+    SCHEDULED_TASK_MANAGE = "scheduled_task_manage"
     # ── 未来扩展域（示例）──
     # SUPPLIER_QUERY = "supplier_query"       # 供应链域
     # PURCHASE_ORDER = "purchase_order"        # 供应链域
@@ -76,6 +78,8 @@ INTENT_DOMAINS: dict[str, set[str]] = {
     "settings": {"system_settings", "ai_config", "notification"},
     "analytics": {"dashboard", "statistics", "data_report", "finance", "session_manage"},
     "knowledge": {"knowledge_faq", "knowledge_manage"},
+    # 定时提醒域（issue #6486 包 2）：新域而非塞进既有域 —— 语义上是「助手级」跨域能力。
+    "assistant": {"scheduled_task_manage"},
     # 未来扩展：
     # "supply_chain": {"supplier_query", "purchase_order", ...},
     # "production": {"production_schedule", "material_requisition", ...},
@@ -134,6 +138,7 @@ INTENT_TOOL_MAP: dict[IntentType, list[str]] = {
     IntentType.QUOTE: ["curtain_calc", "product_detail"],
     IntentType.AFTER_SALES: ["order_query", "after_sales_manage"],
     IntentType.KNOWLEDGE_FAQ: ["knowledge_search"],
+    IntentType.SCHEDULED_TASK_MANAGE: ["scheduled_task_manage"],
     IntentType.GREETING: [],
     IntentType.FAREWELL: [],
     IntentType.CAPABILITIES: [],

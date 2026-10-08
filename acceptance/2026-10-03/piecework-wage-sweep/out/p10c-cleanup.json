@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-03T00:46:23.717Z",
+  "leftoversBefore": {
+    "orders": 0,
+    "products": 0,
+    "categories": 0,
+    "processing_orders": 0
+  },
+  "residue": {
+    "probe_worklogs": 0,
+    "probe_orders_alive": 0,
+    "probe_products_alive": 0,
+    "probe_categories_alive": 0,
+    "probe_routes_alive": 0,
+    "probe_position_rows": 0,
+    "probe_library_ops": 0,
+    "probe_processing_orders_alive": 0
+  },
+  "residueZero": true
+}

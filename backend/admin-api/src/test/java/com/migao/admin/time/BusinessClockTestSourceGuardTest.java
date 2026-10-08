@@ -303,8 +303,13 @@ class BusinessClockTestSourceGuardTest {
             new Spelling("ZoneId.of(\"Asia/Shanghai\")", Disposition.FORBIDDEN, true,
                     "既有禁则 5（语义冻结）：同上"),
             // ── 已核查、有意不覆盖（出现 ⇒ 红 ⇒ 人工裁定）────────────────────────────
-            new Spelling("System.nanoTime(", Disposition.OUT_OF_SCOPE, false,
-                    "只量时长（单调钟），没有「今天是哪天」的投影面 —— 出现即提醒（今天 0 处）"),
+            new Spelling("System.nanoTime(", Disposition.OUT_OF_SCOPE, true,
+                    "只量时长（单调钟），没有「今天是哪天」的投影面 —— **出现即提醒**（本表第一次因它判红，"
+                            + "登记 = 现取事实快照，issue #6237）。现取 1 个文件、均为**计时括号**（不是业务基准读取点）："
+                            + "`InboundPostConcurrentRealDbTest` 用它给 4 个并发过账请求各记一对 `[start,end]` 纳秒读数，"
+                            + "供「真重叠」证据（逐对区间求交 + 并集跨度 vs 各历时之和）——与 "
+                            + "`familyRulesSeparateBusinessBasisFromDurationBrackets` 认定的「计时括号不误伤」同一族；"
+                            + "复核口径见该文件 `printOverlapEvidence(..)`（换措辞 / 挪作业务基准用时必须回来复核）"),
             new Spelling("new Date()", Disposition.OUT_OF_SCOPE, false,
                     "空实参 `new Date()` 是墙钟读数（`new Date(x)` 是解析给定时刻，不算）；不纳入的理由："
                             + "`java.util.Date` 本身**没有时区投影面**，差一天要经 `.getHours()` / `.getDay()` /"

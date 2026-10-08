@@ -60,13 +60,13 @@ from app.vision.deep_channel import log_summary
 
 
 def _to_agent_role(role: str) -> str:
-    """将 JWT 角色映射为米宝执行上下文角色。
+    """将 JWT 角色映射为黄金策执行上下文角色。
 
     - C 端角色（customer/agent）→ customer（折叠，禁管理工具）；
     - 其余一律视为商户员工并保留原角色码（供 Tool.allowed_roles /
       required_permissions 判断）——包括 admin-api「角色管理」创建的任意自定义
       角色码（P1-C 修复：此前只认白名单 MERCHANT_STAFF_ROLES，自定义角色码
-      被折叠成 customer 无法使用米宝；admin-api 只给商户员工签发后台 JWT，
+      被折叠成 customer 无法使用黄金策；admin-api 只给商户员工签发后台 JWT，
       工具级权限仍由 permissions claim 强控，放宽不会越权）。
     """
     if role in CUSTOMER_ONLY_ROLES:
@@ -134,7 +134,7 @@ async def _get_tenant_name(tenant_id: int) -> Optional[str]:
     """获取企业名称（Redis 缓存 → DB 回退）
 
     缓存 key: tenant_name:{tenant_id}，TTL 1 小时。
-    用于米宝 System Prompt 注入企业身份（此前 identity.md 硬编码"词元通达"，多租户下错误）。
+    用于黄金策 System Prompt 注入企业身份（此前 identity.md 硬编码"词元通达"，多租户下错误）。
     失败时静默返回 None（企业名非必需，身份模板有兜底措辞）。
     """
     cache_key = f"tenant_name:{tenant_id}"
@@ -775,7 +775,7 @@ def _parse_interact_block_or_report(
 def _filter_products_by_reference(content: str, products: Any) -> List[Dict[str, Any]]:
     """引用对齐过滤：只保留回复文本中实际引用的商品（按 name/id 子串匹配）。
 
-    背景（issue #3009 / case PR-018）：B 端米宝「低库存清单」等分析型查询里，
+    背景（issue #3009 / case PR-018）：B 端黄金策「低库存清单」等分析型查询里，
     LLM 用 product_search 取数据做推断并在文本中给出筛选结论；此前的卡片把
     工具原始返回全量渲染，出现「文本 5 件、卡片 20 件」的两层皮。本函数在
     LLM 文本生成后按引用过滤，未被文本提及的商品一律不渲染。
@@ -873,7 +873,7 @@ def _mask_card_for_customer(data: dict, context) -> dict:
 
 
 # 收尾守卫（issue #3929 → #3967 → #4013 A7）：模型文本把顾客**指向一个控件**，但本轮
-# 既没发交互载荷、也没调 interact 工具 ⇒ 顾客侧无卡可点（生产实证：米宝 flash 频繁
+# 既没发交互载荷、也没调 interact 工具 ⇒ 顾客侧无卡可点（生产实证：黄金策 flash 频繁
 # 只说「请点下方确认卡片」而不发卡）。命中时把声称片段改写为「回复『确认』」纯文本指引，
 # 只影响落库/后续上下文文本（assistant_content），full_response 原值不动。
 #
@@ -2092,7 +2092,7 @@ async def _handle_page_enter_request(
     user_id: str,
     current_user,
 ):
-    """**客户端首次进页 ⇒ 米宝在对话区主动发一条导航提示**（issue #5989 · P2）。
+    """**客户端首次进页 ⇒ 黄金策在对话区主动发一条导航提示**（issue #5989 · P2）。
 
     运输形态：前端在**路由变化**时发一条 `__PAGE_ENTER__|{"route": …}`（复用 `/api/chat/send`）
     —— **客户端触发、服务端判定**。不新建 SSE 主动推 / 定时 / 队列等基础设施。
@@ -2682,50 +2682,97 @@ async def get_history(
     })
 
 
+# ──────────────── B 端快捷入口（**单一真值**，issue #6468）────────────────
+#
+# 这份清单是 B 端「快捷入口」的**唯一内容源**：admin-web
+# （`frontend/admin-web/src/store/chat.ts` 的 `fetchQuickActions`）与 B 端 H5
+# （`frontend/bmini-app` 的「问黄金策」空态六格）都消费本接口。
+# ⇒ 任何一侧再自己写一份清单 = **又抄一次** —— #6468 的病灶正是 H5 硬编码了
+# C 端顾客口吻的六条（「推荐一下热门窗帘产品」「帮我查一下物流」…），而服务端这份
+# 一直没被 H5 消费（`loadQuickActions` 是死代码）。
+#
+# 每条的 `skill` / `tool` 是**能力锚**，判据 = `tests/test_chat.py::TestQuickActions`：
+# 引导必须能追溯到一条**真实注册、且黄金策已绑定**的能力 ——
+# 「引导了却做不到，比不引导更伤」（`docs/agent-feature-design.md` §九）。
+# `prompt` 逐字取该工具 `description` 的【触发】词，保证模型路由得到（不是文案巧合）。
+# 反模式（§九 明列，勿改回来）：❌ 拿系统能力名当引导 ❌ 静态示例（不管角色/上下文）
+# ❌ 推荐答不出来的问题。
+QUICK_ACTIONS: tuple[dict, ...] = (
+    {
+        "id": "daily_business",
+        "name": "今日经营",
+        "icon": "bar-chart-3",
+        "emoji": "📊",
+        "prompt": "今天经营怎么样？",
+        "skill": "data",
+        "tool": "briefing_query",
+    },
+    {
+        "id": "delivery_risk",
+        "name": "交付风险",
+        "icon": "clipboard-list",
+        "emoji": "🚨",
+        "prompt": "哪些订单快到交期还卡着工序？",
+        "skill": "order",
+        "tool": "processing_order_query",
+    },
+    {
+        "id": "low_stock",
+        "name": "库存告急",
+        "icon": "package",
+        "emoji": "📦",
+        "prompt": "有哪些低库存的商品？",
+        "skill": "product",
+        "tool": "inventory_manage",
+    },
+    {
+        "id": "product_health",
+        "name": "商品健康度",
+        "icon": "tag",
+        "emoji": "🏷️",
+        "prompt": "哪些商品卖得好但退货高？",
+        "skill": "data",
+        "tool": "briefing_query",
+    },
+    {
+        "id": "after_sales_todo",
+        "name": "售后待办",
+        "icon": "headphones",
+        "emoji": "🛠️",
+        "prompt": "有哪些售后工单还没处理？",
+        "skill": "aftersales",
+        "tool": "after_sales_manage",
+    },
+    {
+        "id": "customer_churn",
+        "name": "客户回访",
+        "icon": "users",
+        "emoji": "👥",
+        "prompt": "哪些老客户最近不下单了？",
+        "skill": "customer",
+        "tool": "customer_manage",
+    },
+)
+
+#: 能力锚字段 —— **只用于服务端自证**（`tests/test_chat.py` 的机械投影判据），不进响应体
+_CAPABILITY_ANCHOR_KEYS = ("skill", "tool")
+
+
 @router.get("/quick-actions")
 async def get_quick_actions(
     current_user: UserIdentity = Depends(get_current_user),
 ):
     """
-    获取快捷功能菜单
-    
+    获取快捷功能菜单（B 端场景入口，单一真值见 `QUICK_ACTIONS`）
+
     Returns:
-        快捷功能列表
+        快捷功能列表（id / name / icon / emoji / prompt）
     """
     logger.debug(f"[chat/quick-actions] Fetching | tenant={current_user.tenant_id}")
-    
-    # B 端管理视角快捷操作（米宝定位：智能工作助手）
+
     actions = [
-        {
-            "id": "order_manage",
-            "name": "订单管理",
-            "icon": "clipboard-list",
-            "prompt": "查看待处理订单",
-        },
-        {
-            "id": "product_manage",
-            "name": "商品管理",
-            "icon": "package",
-            "prompt": "查看商品管理",
-        },
-        {
-            "id": "dashboard",
-            "name": "经营看板",
-            "icon": "bar-chart-3",
-            "prompt": "查看今日经营数据",
-        },
-        {
-            "id": "after_sales",
-            "name": "售后管理",
-            "icon": "headphones",
-            "prompt": "查看售后工单",
-        },
-        {
-            "id": "customer_manage",
-            "name": "客户管理",
-            "icon": "users",
-            "prompt": "查看客户列表",
-        },
+        {k: v for k, v in action.items() if k not in _CAPABILITY_ANCHOR_KEYS}
+        for action in QUICK_ACTIONS
     ]
     
     return make_response(True, data={

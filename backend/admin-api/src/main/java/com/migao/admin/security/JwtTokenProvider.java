@@ -96,7 +96,7 @@ public class JwtTokenProvider {
         if (rsaPrivateKey == null || rsaPublicKey == null) {
             // fail-fast：禁止静默回退 HS256。
             // ai-agent-service 只接受 RS256（verify_jwt_token algorithms=["RS256"]），
-            // 若此处降级会签发 alg=HS256 的 token，导致米宝新建会话等链路报
+            // 若此处降级会签发 alg=HS256 的 token，导致黄金策新建会话等链路报
             // TOKEN_INVALID「The specified alg value is not allowed」。
             throw new IllegalStateException(
                     "JWT RSA 密钥加载失败，无法启用 RS256 签名。请配置 "

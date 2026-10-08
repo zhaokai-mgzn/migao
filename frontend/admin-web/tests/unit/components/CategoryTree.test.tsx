@@ -23,7 +23,7 @@ const mockCategories: Category[] = [
 describe('CategoryTree (#2905)', () => {
   it('空列表显示统一占位文案', () => {
     render(<CategoryTree categories={[]} />)
-    expect(screen.getByText('管理商品分类，支持对分类进行新增、编辑、删除和排序')).toBeTruthy()
+    expect(screen.getByText('管理商品分类：新增、编辑、删除和排序')).toBeTruthy()
   })
 
   it('平铺渲染全部分类（无父子嵌套）', () => {

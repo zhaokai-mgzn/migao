@@ -140,6 +140,23 @@ public class Order {
      */
     private String closeReason;
 
+    /**
+     * 发货时刻（issue #6262，V148）：该单最近一次 {@code →shipped} 流转发生的时刻。
+     *
+     * <p><b>为什么它是订单自己的列</b>：它是「发货后 N 天自动完成」定时腿的**判定锚点**，
+     * 而那条腿的并发安全口径（人工确认收货 vs 自动扫描，单机 / 集群同一套代码）要求
+     * <b>一条带谓词的原子 UPDATE</b> —— 谓词里放不了「另一张表的聚合」
+     * （见 {@code AutoCompleteShippedScanService}）。</p>
+     *
+     * <p>谁写：{@code OrderService.transitionStatusAtomic}（{@code to=shipped} 时）与
+     * {@code OrderShipmentService.transition}（工人扫码发货路）—— 两条发货路各有一份判据
+     * （{@code OrderShippedAtWriteGuardTest}），漏写任何一条 ⇒ 判红。</p>
+     *
+     * <p>NULL = 未采集（存量回填不全 / 从未发货）⇒ 该行**不参与**自动完成，只能人工确认收货
+     * —— 「查不到发货时刻就不猜」是刻意的 fail-closed，不是缺口。</p>
+     */
+    private OffsetDateTime shippedAt;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 

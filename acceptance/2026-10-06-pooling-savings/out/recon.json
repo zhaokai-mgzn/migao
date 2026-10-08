@@ -1,0 +1,1491 @@
+{
+  "at": "2026-10-06T02:34:12.285Z",
+  "adminPhone": "13800138000",
+  "reads": {
+    "me": {
+      "user": {
+        "id": "58f939ab49db1817b812b8cd14a9c68e",
+        "username": "13800138000",
+        "nickname": "米高测试",
+        "position": "管理员",
+        "tenantId": 25,
+        "tenantName": "米高测试环境",
+        "status": "active",
+        "mustChangePassword": "<REDACTED>"
+      },
+      "roles": [
+        "admin"
+      ],
+      "permissions": [
+        "*"
+      ],
+      "menus": [
+        {
+          "key": "workspace",
+          "name": "工作台",
+          "children": [
+            {
+              "key": "dashboard",
+              "name": "经营看板",
+              "path": "/dashboard"
+            },
+            {
+              "key": "briefing",
+              "name": "每日简报",
+              "path": "/briefing"
+            }
+          ]
+        },
+        {
+          "key": "products",
+          "name": "商品管理",
+          "path": "/products"
+        },
+        {
+          "key": "customer-service",
+          "name": "客户服务",
+          "children": [
+            {
+              "key": "human-sessions",
+              "name": "在线接待",
+              "path": "/agent-workspace/human-sessions"
+            },
+            {
+              "key": "customers",
+              "name": "客户列表",
+              "path": "/customers"
+            },
+            {
+              "key": "knowledge",
+              "name": "知识库",
+              "path": "/knowledge"
+            },
+            {
+              "key": "after-sales",
+              "name": "售后工单",
+              "path": "/after-sales"
+            }
+          ]
+        },
+        {
+          "key": "trade-center",
+          "name": "交易管理",
+          "children": [
+            {
+              "key": "orders",
+              "name": "订单列表",
+              "path": "/orders"
+            },
+            {
+              "key": "finance",
+              "name": "财务对账",
+              "path": "/finance"
+            }
+          ]
+        },
+        {
+          "key": "production-center",
+          "name": "生产管理",
+          "children": [
+            {
+              "key": "production-board",
+              "name": "生产看板",
+              "path": "/production"
+            },
+            {
+              "key": "production-pool",
+              "name": "智能派单",
+              "path": "/production/pool"
+            },
+            {
+              "key": "processing",
+              "name": "加工项管理",
+              "path": "/production/processing"
+            },
+            {
+              "key": "production-process",
+              "name": "工艺配置",
+              "path": "/production/routings"
+            },
+            {
+              "key": "production-piecework",
+              "name": "计件工资",
+              "path": "/production/piecework"
+            }
+          ]
+        },
+        {
+          "key": "inventory-center",
+          "name": "仓储与物料",
+          "children": [
+            {
+              "key": "inbound-orders",
+              "name": "入库单",
+              "path": "/inbound-orders"
+            },
+            {
+              "key": "shipments",
+              "name": "发货单",
+              "path": "/shipments"
+            },
+            {
+              "key": "production-remnants",
+              "name": "余料台账",
+              "path": "/production/remnants"
+            },
+            {
+              "key": "production-saving-board",
+              "name": "省料看板",
+              "path": "/production/saving-board"
+            }
+          ]
+        },
+        {
+          "key": "org-center",
+          "name": "组织管理",
+          "children": [
+            {
+              "key": "employees",
+              "name": "员工管理",
+              "path": "/employees"
+            },
+            {
+              "key": "roles",
+              "name": "岗位权限",
+              "path": "/roles"
+            },
+            {
+              "key": "settings",
+              "name": "企业基础信息",
+              "path": "/settings"
+            }
+          ]
+        },
+        {
+          "key": "notifications",
+          "name": "通知中心",
+          "path": "/notifications"
+        }
+      ],
+      "capabilities": {
+        "mibaoChat": true,
+        "aiService": true
+      }
+    },
+    "products": {
+      "status": 200,
+      "data": {
+        "total": 8,
+        "page": 1,
+        "size": 20,
+        "items": [
+          {
+            "id": "3d0e2deec75baa73c642c9d6cc01e167",
+            "name": "棉麻窗纱",
+            "categoryId": "af5360f1bb6ced1d8c89b4e447765545",
+            "categoryName": "布艺面料",
+            "basePrice": 42,
+            "description": "棉麻质地窗纱，门幅 3.0 米",
+            "images": [],
+            "status": "on_sale",
+            "stock": 260,
+            "stockWarningThreshold": 10,
+            "skuCode": "MG-CMCS-300-IVY",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 1,
+            "totalStock": 260,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": false,
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "rollLengthM": 50,
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-05 08:11:52",
+            "createdAt": "2026-10-05 08:11:52",
+            "updatedAt": "2026-10-05 08:53:22",
+            "price": 42
+          },
+          {
+            "id": "61131d6e0045378431dd4dca009370ab",
+            "name": "阳离子绒布",
+            "categoryId": "af5360f1bb6ced1d8c89b4e447765545",
+            "categoryName": "布艺面料",
+            "basePrice": 88,
+            "description": "阳离子双色绒，光泽柔和",
+            "images": [],
+            "status": "on_sale",
+            "stock": 90,
+            "stockWarningThreshold": 10,
+            "skuCode": "MG-YLZ-280-CFF",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 1,
+            "totalStock": 90,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": false,
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "rollLengthM": 60,
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-05 08:11:51",
+            "createdAt": "2026-10-05 08:11:51",
+            "updatedAt": "2026-10-05 08:53:22",
+            "price": 88
+          },
+          {
+            "id": "35965eaf5cdccaa38a14e2b3d63d938b",
+            "name": "涤纶印花窗帘布",
+            "categoryId": "af5360f1bb6ced1d8c89b4e447765545",
+            "categoryName": "布艺面料",
+            "basePrice": 68,
+            "description": "数码印花涤纶，花型清晰，适合样板间",
+            "images": [],
+            "status": "on_sale",
+            "stock": 240,
+            "stockWarningThreshold": 10,
+            "skuCode": "MG-DLQ-280-GRY",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 1,
+            "totalStock": 240,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": false,
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "rollLengthM": 60,
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-05 08:11:51",
+            "createdAt": "2026-10-05 08:11:51",
+            "updatedAt": "2026-10-05 08:53:22",
+            "price": 68
+          },
+          {
+            "id": "0599856ca72656ac6646d3a57116d35a",
+            "name": "荷兰绒遮光布",
+            "categoryId": "af5360f1bb6ced1d8c89b4e447765545",
+            "categoryName": "布艺面料",
+            "basePrice": 138,
+            "description": "荷兰绒，手感厚糯，遮光率 90%",
+            "images": [],
+            "status": "on_sale",
+            "stock": 180.5,
+            "stockWarningThreshold": 10,
+            "skuCode": "MG-HLR-280-DGN",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 1,
+            "totalStock": 180.5,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": false,
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "rollLengthM": 60,
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-05 08:11:50",
+            "createdAt": "2026-10-05 08:11:50",
+            "updatedAt": "2026-10-05 08:53:22",
+            "price": 138
+          },
+          {
+            "id": "c9487aada894ddb76a37d234b46741fb",
+            "name": "双层纱帘布",
+            "categoryId": "af5360f1bb6ced1d8c89b4e447765545",
+            "categoryName": "布艺面料",
+            "basePrice": 58,
+            "description": "双层纱，透光不透人，做里纱搭配主帘",
+            "images": [],
+            "status": "on_sale",
+            "stock": 240,
+            "stockWarningThreshold": 10,
+            "skuCode": "MG-SCC-280-WHT",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 1,
+            "totalStock": 240,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": false,
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "rollLengthM": 50,
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-05 08:11:50",
+            "createdAt": "2026-10-05 08:11:50",
+            "updatedAt": "2026-10-05 08:53:22",
+            "price": 58
+          },
+          {
+            "id": "a115ec15e1dae2077a32a19a78131337",
+            "name": "棉麻混纺素色布",
+            "categoryId": "af5360f1bb6ced1d8c89b4e447765545",
+            "categoryName": "布艺面料",
+            "basePrice": 76,
+            "description": "棉麻混纺，麻感自然，适合日式原木风",
+            "images": [],
+            "status": "on_sale",
+            "stock": 270,
+            "stockWarningThreshold": 10,
+            "skuCode": "MG-MMSF-280-OAT",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 1,
+            "totalStock": 270,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": false,
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "rollLengthM": 50,
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-05 08:11:49",
+            "createdAt": "2026-10-05 08:11:49",
+            "updatedAt": "2026-10-05 08:53:22",
+            "price": 76
+          },
+          {
+            "id": "3ee3a49e9d5105737c28d40191b38a86",
+            "name": "高精密双面遮光布",
+            "categoryId": "af5360f1bb6ced1d8c89b4e447765545",
+            "categoryName": "布艺面料",
+            "basePrice": 98,
+            "description": "高精密双面同色遮光，垂感好，酒店客房常用",
+            "images": [],
+            "status": "on_sale",
+            "stock": 710,
+            "stockWarningThreshold": 10,
+            "skuCode": "MG-GJM-280-CRM",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 2,
+            "totalStock": 710,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": false,
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "rollLengthM": 60,
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-05 08:11:48",
+            "createdAt": "2026-10-05 08:11:48",
+            "updatedAt": "2026-10-05 08:53:22",
+            "price": 98
+          },
+          {
+            "id": "9d79326f1658f4dfb61bb967a55ace59",
+            "name": "雪尼尔提花遮光布",
+            "categoryId": "af5360f1bb6ced1d8c89b4e447765545",
+            "categoryName": "布艺面料",
+            "basePrice": 128,
+            "description": "雪尼尔提花，克重约 380g/㎡，遮光率 85%，适合客厅主帘",
+            "images": [],
+            "status": "on_sale",
+            "stock": 330.5,
+            "stockWarningThreshold": 10,
+            "skuCode": "MG-XNE-280-MBL",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 2,
+            "totalStock": 330.5,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": false,
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "rollLengthM": 60,
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-05 08:11:48",
+            "createdAt": "2026-10-05 08:11:48",
+            "updatedAt": "2026-10-05 08:53:22",
+            "price": 128
+          }
+        ]
+      }
+    },
+    "routings": {
+      "status": 200,
+      "data": {
+        "total": 2,
+        "routings": [
+          {
+            "id": "2fefe4fa9299cd332328616e335fab96",
+            "name": "窗帘工序路线（默认）",
+            "is_default": true,
+            "positions": [
+              "布帘",
+              "纱帘",
+              "帘头"
+            ],
+            "mainline": [
+              "精裁",
+              "三边",
+              "熨烫",
+              "定型",
+              "复烫",
+              "车被",
+              "外帘打卷",
+              "打包",
+              "外帘装袋",
+              "外帘发货"
+            ],
+            "status": "active"
+          },
+          {
+            "id": "0545198308dd62bd3997ff4953f29868",
+            "name": "布料工序路线",
+            "is_default": false,
+            "positions": [
+              "布料"
+            ],
+            "mainline": [
+              "裁剪",
+              "打包"
+            ],
+            "status": "active"
+          }
+        ]
+      }
+    },
+    "pool": {
+      "status": 200,
+      "data": {
+        "maxWaitHours": 24,
+        "poolingEnabled": false,
+        "orderCount": 0,
+        "lineCount": 0,
+        "overdueCount": 0,
+        "urgentCount": 0,
+        "warnings": [],
+        "urgentLines": [],
+        "groups": []
+      }
+    },
+    "batches": {
+      "status": 200,
+      "data": [
+        {
+          "batchId": 99,
+          "batchNo": "PC-20261005-0001",
+          "productId": "9d79326f1658f4dfb61bb967a55ace59",
+          "skuId": 2106900122848247800,
+          "skuCode": "MG-XNE-280-MBL",
+          "inboundNo": "RK-20261005-0001",
+          "dyeLot": "250901-1",
+          "receivedDate": "2026-09-08",
+          "unitCost": 36.5,
+          "inboundMeters": 120,
+          "consumedMeters": 0,
+          "remainingMeters": 120
+        },
+        {
+          "batchId": 100,
+          "batchNo": "PC-20261005-0002",
+          "productId": "3ee3a49e9d5105737c28d40191b38a86",
+          "skuId": 2106900125691986000,
+          "skuCode": "MG-GJM-280-CRM",
+          "inboundNo": "RK-20261005-0001",
+          "receivedDate": "2026-09-08",
+          "unitCost": 38,
+          "inboundMeters": 90,
+          "consumedMeters": 0,
+          "remainingMeters": 90
+        },
+        {
+          "batchId": 101,
+          "batchNo": "PC-20261005-0003",
+          "productId": "a115ec15e1dae2077a32a19a78131337",
+          "skuId": 2106900128405700600,
+          "skuCode": "MG-MMSF-280-OAT",
+          "inboundNo": "RK-20261005-0002",
+          "receivedDate": "2026-09-09",
+          "unitCost": 22.8,
+          "inboundMeters": 150,
+          "consumedMeters": 0,
+          "remainingMeters": 150
+        },
+        {
+          "batchId": 102,
+          "batchNo": "PC-20261005-0004",
+          "productId": "3d0e2deec75baa73c642c9d6cc01e167",
+          "skuId": 2106900138757243000,
+          "skuCode": "MG-CMCS-300-IVY",
+          "inboundNo": "RK-20261005-0003",
+          "receivedDate": "2026-09-10",
+          "unitCost": 13.5,
+          "inboundMeters": 200,
+          "consumedMeters": 0,
+          "remainingMeters": 200
+        },
+        {
+          "batchId": 103,
+          "batchNo": "PC-20261005-0005",
+          "productId": "c9487aada894ddb76a37d234b46741fb",
+          "skuId": 2106900130540601300,
+          "skuCode": "MG-SCC-280-WHT",
+          "inboundNo": "RK-20261005-0003",
+          "receivedDate": "2026-09-10",
+          "unitCost": 19.9,
+          "inboundMeters": 80,
+          "consumedMeters": 0,
+          "remainingMeters": 80
+        },
+        {
+          "batchId": 104,
+          "batchNo": "PC-20261005-0006",
+          "productId": "3ee3a49e9d5105737c28d40191b38a86",
+          "skuId": 2106900125691986000,
+          "skuCode": "MG-GJM-280-CRM",
+          "inboundNo": "RK-20261005-0004",
+          "dyeLot": "250912-3",
+          "receivedDate": "2026-09-12",
+          "unitCost": 42,
+          "inboundMeters": 300,
+          "consumedMeters": 0,
+          "remainingMeters": 300
+        },
+        {
+          "batchId": 105,
+          "batchNo": "PC-20261005-0007",
+          "productId": "3ee3a49e9d5105737c28d40191b38a86",
+          "skuId": 2106900125729734700,
+          "skuCode": "MG-GJM-320-CRM",
+          "inboundNo": "RK-20261005-0004",
+          "dyeLot": "250912-3",
+          "receivedDate": "2026-09-12",
+          "unitCost": 46,
+          "inboundMeters": 120,
+          "consumedMeters": 0,
+          "remainingMeters": 120
+        },
+        {
+          "batchId": 106,
+          "batchNo": "PC-20261005-0008",
+          "productId": "0599856ca72656ac6646d3a57116d35a",
+          "skuId": 2106900132688085000,
+          "skuCode": "MG-HLR-280-DGN",
+          "inboundNo": "RK-20261005-0005",
+          "dyeLot": "250915-A",
+          "receivedDate": "2026-09-15",
+          "unitCost": 68,
+          "inboundMeters": 180.5,
+          "consumedMeters": 0,
+          "remainingMeters": 180.5
+        },
+        {
+          "batchId": 107,
+          "batchNo": "PC-20261005-0009",
+          "productId": "35965eaf5cdccaa38a14e2b3d63d938b",
+          "skuId": 2106900134634242000,
+          "skuCode": "MG-DLQ-280-GRY",
+          "inboundNo": "RK-20261005-0006",
+          "receivedDate": "2026-09-17",
+          "unitCost": 31.5,
+          "inboundMeters": 240,
+          "consumedMeters": 0,
+          "remainingMeters": 240
+        },
+        {
+          "batchId": 108,
+          "batchNo": "PC-20261005-0010",
+          "productId": "9d79326f1658f4dfb61bb967a55ace59",
+          "skuId": 2106900122881802200,
+          "skuCode": "MG-XNE-280-MTC",
+          "inboundNo": "RK-20261005-0007",
+          "dyeLot": "250920-2",
+          "receivedDate": "2026-09-20",
+          "unitCost": 55,
+          "inboundMeters": 150,
+          "consumedMeters": 0,
+          "remainingMeters": 150
+        },
+        {
+          "batchId": 109,
+          "batchNo": "PC-20261005-0011",
+          "productId": "61131d6e0045378431dd4dca009370ab",
+          "skuId": 2106900136693645300,
+          "skuCode": "MG-YLZ-280-CFF",
+          "inboundNo": "RK-20261005-0008",
+          "receivedDate": "2026-09-23",
+          "unitCost": 44.5,
+          "inboundMeters": 90,
+          "consumedMeters": 0,
+          "remainingMeters": 90
+        },
+        {
+          "batchId": 110,
+          "batchNo": "PC-20261005-0012",
+          "productId": "3ee3a49e9d5105737c28d40191b38a86",
+          "skuId": 2106900125691986000,
+          "skuCode": "MG-GJM-280-CRM",
+          "inboundNo": "RK-20261005-0009",
+          "dyeLot": "250926-1",
+          "receivedDate": "2026-09-26",
+          "unitCost": 41.5,
+          "inboundMeters": 200,
+          "consumedMeters": 0,
+          "remainingMeters": 200
+        },
+        {
+          "batchId": 111,
+          "batchNo": "PC-20261005-0013",
+          "productId": "3d0e2deec75baa73c642c9d6cc01e167",
+          "skuId": 2106900138757243000,
+          "skuCode": "MG-CMCS-300-IVY",
+          "inboundNo": "RK-20261005-0009",
+          "receivedDate": "2026-09-26",
+          "inboundMeters": 60,
+          "consumedMeters": 0,
+          "remainingMeters": 60
+        },
+        {
+          "batchId": 112,
+          "batchNo": "PC-20261005-0014",
+          "productId": "a115ec15e1dae2077a32a19a78131337",
+          "skuId": 2106900128405700600,
+          "skuCode": "MG-MMSF-280-OAT",
+          "inboundNo": "RK-20261005-0010",
+          "receivedDate": "2026-09-29",
+          "unitCost": 24,
+          "inboundMeters": 120,
+          "consumedMeters": 0,
+          "remainingMeters": 120
+        },
+        {
+          "batchId": 113,
+          "batchNo": "PC-20261005-0015",
+          "productId": "c9487aada894ddb76a37d234b46741fb",
+          "skuId": 2106900130540601300,
+          "skuCode": "MG-SCC-280-WHT",
+          "inboundNo": "RK-20261005-0011",
+          "dyeLot": "251001-1",
+          "receivedDate": "2026-10-01",
+          "unitCost": 20.5,
+          "inboundMeters": 160,
+          "consumedMeters": 0,
+          "remainingMeters": 160
+        },
+        {
+          "batchId": 114,
+          "batchNo": "PC-20261005-0016",
+          "productId": "9d79326f1658f4dfb61bb967a55ace59",
+          "skuId": 2106900122848247800,
+          "skuCode": "MG-XNE-280-MBL",
+          "inboundNo": "RK-20261005-0012",
+          "dyeLot": "251003-4",
+          "receivedDate": "2026-10-03",
+          "unitCost": 58,
+          "inboundMeters": 60.5,
+          "consumedMeters": 0,
+          "remainingMeters": 60.5
+        }
+      ]
+    },
+    "inboundBatches": {
+      "status": 200,
+      "data": [
+        {
+          "id": "114",
+          "batchNo": "PC-20261005-0016",
+          "productId": "9d79326f1658f4dfb61bb967a55ace59",
+          "skuId": "2106900122848247810",
+          "skuCode": "MG-XNE-280-MBL",
+          "inboundNo": "RK-20261005-0012",
+          "inboundOrderId": "6787a7a742d5f16f27377d20e545a9f0",
+          "quantity": 60.5,
+          "unitCost": 58,
+          "amount": 3509,
+          "dyeLot": "251003-4",
+          "rollLengthM": 60,
+          "supplier": "柯桥金梭纺织有限公司",
+          "warehouse": "A区货架",
+          "receivedDate": "2026-10-03",
+          "createdAt": "2026-10-05T08:12:14.04806+08:00"
+        },
+        {
+          "id": "113",
+          "batchNo": "PC-20261005-0015",
+          "productId": "c9487aada894ddb76a37d234b46741fb",
+          "skuId": "2106900130540601346",
+          "skuCode": "MG-SCC-280-WHT",
+          "inboundNo": "RK-20261005-0011",
+          "inboundOrderId": "a54d8e5b464102f1ed6ef3e78d5ef676",
+          "quantity": 160,
+          "unitCost": 20.5,
+          "amount": 3280,
+          "dyeLot": "251001-1",
+          "supplier": "盛泽恒隆丝绸经营部",
+          "warehouse": "主仓（一楼）",
+          "receivedDate": "2026-10-01",
+          "createdAt": "2026-10-05T08:12:13.262598+08:00"
+        },
+        {
+          "id": "112",
+          "batchNo": "PC-20261005-0014",
+          "productId": "a115ec15e1dae2077a32a19a78131337",
+          "skuId": "2106900128405700609",
+          "skuCode": "MG-MMSF-280-OAT",
+          "inboundNo": "RK-20261005-0010",
+          "inboundOrderId": "8bf1747760e50a910c761f64a803084c",
+          "quantity": 120,
+          "unitCost": 24,
+          "amount": 2880,
+          "supplier": "许村宏达布行",
+          "warehouse": "二楼辅料仓",
+          "receivedDate": "2026-09-29",
+          "createdAt": "2026-10-05T08:12:12.745156+08:00"
+        },
+        {
+          "id": "111",
+          "batchNo": "PC-20261005-0013",
+          "productId": "3d0e2deec75baa73c642c9d6cc01e167",
+          "skuId": "2106900138757242881",
+          "skuCode": "MG-CMCS-300-IVY",
+          "inboundNo": "RK-20261005-0009",
+          "inboundOrderId": "43c70f96dedfbf5a3fa49c11fcec2178",
+          "quantity": 60,
+          "supplier": "柯桥金梭纺织有限公司",
+          "warehouse": "主仓（一楼）",
+          "receivedDate": "2026-09-26",
+          "remark": "发票未到，暂不记单价",
+          "createdAt": "2026-10-05T08:12:11.792632+08:00"
+        },
+        {
+          "id": "110",
+          "batchNo": "PC-20261005-0012",
+          "productId": "3ee3a49e9d5105737c28d40191b38a86",
+          "skuId": "2106900125691985922",
+          "skuCode": "MG-GJM-280-CRM",
+          "inboundNo": "RK-20261005-0009",
+          "inboundOrderId": "43c70f96dedfbf5a3fa49c11fcec2178",
+          "quantity": 200,
+          "unitCost": 41.5,
+          "amount": 8300,
+          "dyeLot": "250926-1",
+          "rollLengthM": 60,
+          "supplier": "柯桥金梭纺织有限公司",
+          "warehouse": "主仓（一楼）",
+          "receivedDate": "2026-09-26",
+          "createdAt": "2026-10-05T08:12:11.792632+08:00"
+        },
+        {
+          "id": "109",
+          "batchNo": "PC-20261005-0011",
+          "productId": "61131d6e0045378431dd4dca009370ab",
+          "skuId": "2106900136693645313",
+          "skuCode": "MG-YLZ-280-CFF",
+          "inboundNo": "RK-20261005-0008",
+          "inboundOrderId": "aee35c5bf7b7834d86c0b52dc14909e3",
+          "quantity": 90,
+          "unitCost": 44.5,
+          "amount": 4005,
+          "rollLengthM": 60,
+          "supplier": "广州中大轻纺城-A132档",
+          "warehouse": "门店后仓",
+          "receivedDate": "2026-09-23",
+          "createdAt": "2026-10-05T08:12:11.31453+08:00"
+        },
+        {
+          "id": "108",
+          "batchNo": "PC-20261005-0010",
+          "productId": "9d79326f1658f4dfb61bb967a55ace59",
+          "skuId": "2106900122881802242",
+          "skuCode": "MG-XNE-280-MTC",
+          "inboundNo": "RK-20261005-0007",
+          "inboundOrderId": "6e9e83ff77f0e593b6c123fbc3fc7a40",
+          "quantity": 150,
+          "unitCost": 55,
+          "amount": 8250,
+          "dyeLot": "250920-2",
+          "rollLengthM": 60,
+          "supplier": "绍兴柯桥万隆布业",
+          "warehouse": "主仓（一楼）",
+          "receivedDate": "2026-09-20",
+          "createdAt": "2026-10-05T08:12:10.910651+08:00"
+        },
+        {
+          "id": "107",
+          "batchNo": "PC-20261005-0009",
+          "productId": "35965eaf5cdccaa38a14e2b3d63d938b",
+          "skuId": "2106900134634242050",
+          "skuCode": "MG-DLQ-280-GRY",
+          "inboundNo": "RK-20261005-0006",
+          "inboundOrderId": "794bc31f839cd08d6b046b94e6543d6e",
+          "quantity": 240,
+          "unitCost": 31.5,
+          "amount": 7560,
+          "supplier": "盛泽恒隆丝绸经营部",
+          "warehouse": "A区货架",
+          "receivedDate": "2026-09-17",
+          "createdAt": "2026-10-05T08:12:10.464127+08:00"
+        },
+        {
+          "id": "106",
+          "batchNo": "PC-20261005-0008",
+          "productId": "0599856ca72656ac6646d3a57116d35a",
+          "skuId": "2106900132688084993",
+          "skuCode": "MG-HLR-280-DGN",
+          "inboundNo": "RK-20261005-0005",
+          "inboundOrderId": "d38bce4fbf75fab19dd6ade240c4c971",
+          "quantity": 180.5,
+          "unitCost": 68,
+          "amount": 12274,
+          "dyeLot": "250915-A",
+          "supplier": "许村宏达布行",
+          "warehouse": "主仓（一楼）",
+          "receivedDate": "2026-09-15",
+          "createdAt": "2026-10-05T08:12:09.989151+08:00"
+        },
+        {
+          "id": "105",
+          "batchNo": "PC-20261005-0007",
+          "productId": "3ee3a49e9d5105737c28d40191b38a86",
+          "skuId": "2106900125729734658",
+          "skuCode": "MG-GJM-320-CRM",
+          "inboundNo": "RK-20261005-0004",
+          "inboundOrderId": "37d6568f8031a0e19d407320e38237e7",
+          "quantity": 120,
+          "unitCost": 46,
+          "amount": 5520,
+          "dyeLot": "250912-3",
+          "rollLengthM": 50,
+          "supplier": "柯桥金梭纺织有限公司",
+          "warehouse": "主仓（一楼）",
+          "receivedDate": "2026-09-12",
+          "createdAt": "2026-10-05T08:12:09.396179+08:00"
+        },
+        {
+          "id": "104",
+          "batchNo": "PC-20261005-0006",
+          "productId": "3ee3a49e9d5105737c28d40191b38a86",
+          "skuId": "2106900125691985922",
+          "skuCode": "MG-GJM-280-CRM",
+          "inboundNo": "RK-20261005-0004",
+          "inboundOrderId": "37d6568f8031a0e19d407320e38237e7",
+          "quantity": 300,
+          "unitCost": 42,
+          "amount": 12600,
+          "dyeLot": "250912-3",
+          "rollLengthM": 60,
+          "supplier": "柯桥金梭纺织有限公司",
+          "warehouse": "主仓（一楼）",
+          "receivedDate": "2026-09-12",
+          "createdAt": "2026-10-05T08:12:09.396179+08:00"
+        },
+        {
+          "id": "103",
+          "batchNo": "PC-20261005-0005",
+          "productId": "c9487aada894ddb76a37d234b46741fb",
+          "skuId": "2106900130540601346",
+          "skuCode": "MG-SCC-280-WHT",
+          "inboundNo": "RK-20261005-0003",
+          "inboundOrderId": "9b2d402e21282a00190e851229dbc31c",
+          "quantity": 80,
+          "unitCost": 19.9,
+          "amount": 1592,
+          "legacyBatchNo": "OLD-2026-0910-002",
+          "supplier": "南通罗莱家纺原料",
+          "warehouse": "二楼辅料仓",
+          "receivedDate": "2026-09-10",
+          "createdAt": "2026-10-05T08:12:08.669243+08:00"
+        },
+        {
+          "id": "102",
+          "batchNo": "PC-20261005-0004",
+          "productId": "3d0e2deec75baa73c642c9d6cc01e167",
+          "skuId": "2106900138757242881",
+          "skuCode": "MG-CMCS-300-IVY",
+          "inboundNo": "RK-20261005-0003",
+          "inboundOrderId": "9b2d402e21282a00190e851229dbc31c",
+          "quantity": 200,
+          "unitCost": 13.5,
+          "amount": 2700,
+          "legacyBatchNo": "OLD-2026-0910-001",
+          "supplier": "南通罗莱家纺原料",
+          "warehouse": "二楼辅料仓",
+          "receivedDate": "2026-09-10",
+          "createdAt": "2026-10-05T08:12:08.669243+08:00"
+        },
+        {
+          "id": "101",
+          "batchNo": "PC-20261005-0003",
+          "productId": "a115ec15e1dae2077a32a19a78131337",
+          "skuId": "2106900128405700609",
+          "skuCode": "MG-MMSF-280-OAT",
+          "inboundNo": "RK-20261005-0002",
+          "inboundOrderId": "26bf6afcdfb5eff169a2a779aaf86b10",
+          "quantity": 150,
+          "unitCost": 22.8,
+          "amount": 3420,
+          "legacyBatchNo": "OLD-2026-0909-001",
+          "supplier": "常州华盛布业",
+          "warehouse": "门店后仓",
+          "receivedDate": "2026-09-09",
+          "createdAt": "2026-10-05T08:12:08.045504+08:00"
+        },
+        {
+          "id": "100",
+          "batchNo": "PC-20261005-0002",
+          "productId": "3ee3a49e9d5105737c28d40191b38a86",
+          "skuId": "2106900125691985922",
+          "skuCode": "MG-GJM-280-CRM",
+          "inboundNo": "RK-20261005-0001",
+          "inboundOrderId": "1d6bfc27e62d6a79e8c0b8739fc06081",
+          "quantity": 90,
+          "unitCost": 38,
+          "amount": 3420,
+          "legacyBatchNo": "OLD-2026-0908-002",
+          "supplier": "自营库存盘点（期初）",
+          "warehouse": "主仓（一楼）",
+          "receivedDate": "2026-09-08",
+          "createdAt": "2026-10-05T08:12:07.378952+08:00"
+        },
+        {
+          "id": "99",
+          "batchNo": "PC-20261005-0001",
+          "productId": "9d79326f1658f4dfb61bb967a55ace59",
+          "skuId": "2106900122848247810",
+          "skuCode": "MG-XNE-280-MBL",
+          "inboundNo": "RK-20261005-0001",
+          "inboundOrderId": "1d6bfc27e62d6a79e8c0b8739fc06081",
+          "quantity": 120,
+          "unitCost": 36.5,
+          "amount": 4380,
+          "dyeLot": "250901-1",
+          "legacyBatchNo": "OLD-2026-0908-001",
+          "rollLengthM": 60,
+          "supplier": "自营库存盘点（期初）",
+          "warehouse": "主仓（一楼）",
+          "receivedDate": "2026-09-08",
+          "createdAt": "2026-10-05T08:12:07.378952+08:00"
+        }
+      ]
+    },
+    "orders": {
+      "status": 200,
+      "data": {
+        "total": 2,
+        "page": 1,
+        "size": 20,
+        "items": [
+          {
+            "id": "01e5b256e846a402198c995db8f7206a",
+            "orderNo": "20261006623690004",
+            "customerName": "A06验收下单客户665583",
+            "customerPhone": "13900000002",
+            "customerAddress": "浙江省绍兴市柯桥区演示路 1 号",
+            "totalAmount": 88,
+            "actualAmount": 88,
+            "processingFee": 0,
+            "hasProcessing": false,
+            "status": "pending",
+            "createdAt": "2026-10-06T10:28:03.073277+08:00",
+            "updatedAt": "2026-10-06T10:28:03.073383+08:00",
+            "isUrgent": false,
+            "createdByName": "A06验收销售",
+            "items": [
+              {
+                "productId": "61131d6e0045378431dd4dca009370ab",
+                "productName": "阳离子绒布",
+                "productCode": "MG-YLZ-280-CFF",
+                "quantity": 1,
+                "unitPrice": 88,
+                "amount": 88,
+                "subtotal": 88,
+                "processingInfo": {
+                  "skuId": "2106900136693645313",
+                  "colorId": "2106900136660090881",
+                  "skuCode": "MG-YLZ-280-CFF",
+                  "saleForm": "布料",
+                  "colorName": "咖色",
+                  "doorWidth": "2.8",
+                  "processingFee": 0,
+                  "processingMeters": 1,
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "meters": 1,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "meters_source": "processingMeters",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": "d9efff7285eb09392e0f87137acf4476",
+            "orderNo": "20261006144950003",
+            "customerName": "A06验收夹具客户911957",
+            "customerPhone": "13900000001",
+            "customerAddress": "杭州",
+            "totalAmount": 327.6,
+            "actualAmount": 327.6,
+            "processingFee": 63,
+            "hasProcessing": true,
+            "status": "pending",
+            "createdAt": "2026-10-06T10:09:24.060446+08:00",
+            "updatedAt": "2026-10-06T10:09:24.060549+08:00",
+            "isUrgent": false,
+            "createdByName": "米高测试",
+            "items": [
+              {
+                "productId": "3d0e2deec75baa73c642c9d6cc01e167",
+                "productName": "棉麻窗纱",
+                "productCode": "MG-CMCS-300-IVY",
+                "quantity": 6.3,
+                "unitPrice": 42,
+                "amount": 264.6,
+                "subtotal": 327.6,
+                "processingInfo": {
+                  "skuId": "2106900138757242881",
+                  "style": "单色",
+                  "colorId": "2106900138727882754",
+                  "formula": "pleat",
+                  "skuCode": "MG-CMCS-300-IVY",
+                  "fullness": 2,
+                  "isShaped": true,
+                  "saleForm": "成品帘",
+                  "colorName": "米白",
+                  "craftTier": "standard",
+                  "doorWidth": "3.0",
+                  "openCount": 2,
+                  "hasPattern": false,
+                  "cuttingMode": "定高买宽",
+                  "formulaText": "韩褶公式：(3+0.3)×2 → 24折 → 0.25×24+0.3 = 6.3米",
+                  "pleat_count": 24,
+                  "fabric_meters": 6.3,
+                  "processingFee": 63,
+                  "fullness_actual": 2.1,
+                  "processingItems": [
+                    {
+                      "id": "563d00d77ef0c5b55dc149ed8eae2eec",
+                      "name": "定型",
+                      "unit": "米",
+                      "quantity": 6.3
+                    },
+                    {
+                      "id": "67e019ff69189adbf99728bda9a79457",
+                      "name": "韩褶",
+                      "unit": "米",
+                      "quantity": 6.3
+                    }
+                  ],
+                  "per_panel_pleats": 12,
+                  "processingMeters": 6.3,
+                  "processingFeeDetail": {
+                    "items": [
+                      "定型",
+                      "韩褶"
+                    ],
+                    "amount": 63,
+                    "meters": 6.3,
+                    "set_key": "#0",
+                    "fee_source": "manual",
+                    "unit_price": 10,
+                    "composition": "定型+韩褶",
+                    "price_source": "manual",
+                    "meters_source": "processingMeters",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  },
+                  "processingFeeOverride": 10
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "psql": {
+    "counts": [
+      {
+        "orders": 2,
+        "order_items": 2,
+        "processing_orders": 0,
+        "generated_ops": 0,
+        "products": 8,
+        "skus": 10,
+        "stock_batches": 16,
+        "stock_batches_avail": 16,
+        "routings": 0,
+        "route_templates": 2,
+        "route_rules": 27,
+        "operations": 41,
+        "batch_consumptions": 0
+      }
+    ],
+    "routing_sample": [],
+    "route_template_sample": [
+      {
+        "id": "0545198308dd62bd3997ff4953f29868",
+        "name": "布料工序路线",
+        "is_default": false,
+        "status": "active",
+        "positions": "[\"布料\"]",
+        "mainline": "[\"裁剪\", \"打包\"]"
+      },
+      {
+        "id": "2fefe4fa9299cd332328616e335fab96",
+        "name": "窗帘工序路线（默认）",
+        "is_default": true,
+        "status": "active",
+        "positions": "[\"布帘\", \"纱帘\", \"帘头\"]",
+        "mainline": "[\"精裁\", \"三边\", \"熨烫\", \"定型\", \"复烫\", \"车被\", \"外帘打卷\", \"打包\", \"外帘装袋\", \"外帘发货\"]"
+      }
+    ],
+    "batch_sample": [
+      {
+        "id": 99,
+        "batch_no": "PC-20261005-0001",
+        "sku_id": 2106900122848247800,
+        "sku_code": "MG-XNE-280-MBL",
+        "quantity": 120,
+        "unit_cost": 36.5,
+        "dye_lot": "250901-1",
+        "roll_length_m": 60,
+        "received_date": "2026-09-08"
+      },
+      {
+        "id": 100,
+        "batch_no": "PC-20261005-0002",
+        "sku_id": 2106900125691986000,
+        "sku_code": "MG-GJM-280-CRM",
+        "quantity": 90,
+        "unit_cost": 38,
+        "dye_lot": null,
+        "roll_length_m": null,
+        "received_date": "2026-09-08"
+      },
+      {
+        "id": 101,
+        "batch_no": "PC-20261005-0003",
+        "sku_id": 2106900128405700600,
+        "sku_code": "MG-MMSF-280-OAT",
+        "quantity": 150,
+        "unit_cost": 22.8,
+        "dye_lot": null,
+        "roll_length_m": null,
+        "received_date": "2026-09-09"
+      },
+      {
+        "id": 102,
+        "batch_no": "PC-20261005-0004",
+        "sku_id": 2106900138757243000,
+        "sku_code": "MG-CMCS-300-IVY",
+        "quantity": 200,
+        "unit_cost": 13.5,
+        "dye_lot": null,
+        "roll_length_m": null,
+        "received_date": "2026-09-10"
+      },
+      {
+        "id": 103,
+        "batch_no": "PC-20261005-0005",
+        "sku_id": 2106900130540601300,
+        "sku_code": "MG-SCC-280-WHT",
+        "quantity": 80,
+        "unit_cost": 19.9,
+        "dye_lot": null,
+        "roll_length_m": null,
+        "received_date": "2026-09-10"
+      },
+      {
+        "id": 104,
+        "batch_no": "PC-20261005-0006",
+        "sku_id": 2106900125691986000,
+        "sku_code": "MG-GJM-280-CRM",
+        "quantity": 300,
+        "unit_cost": 42,
+        "dye_lot": "250912-3",
+        "roll_length_m": 60,
+        "received_date": "2026-09-12"
+      },
+      {
+        "id": 105,
+        "batch_no": "PC-20261005-0007",
+        "sku_id": 2106900125729734700,
+        "sku_code": "MG-GJM-320-CRM",
+        "quantity": 120,
+        "unit_cost": 46,
+        "dye_lot": "250912-3",
+        "roll_length_m": 50,
+        "received_date": "2026-09-12"
+      },
+      {
+        "id": 106,
+        "batch_no": "PC-20261005-0008",
+        "sku_id": 2106900132688085000,
+        "sku_code": "MG-HLR-280-DGN",
+        "quantity": 180.5,
+        "unit_cost": 68,
+        "dye_lot": "250915-A",
+        "roll_length_m": null,
+        "received_date": "2026-09-15"
+      },
+      {
+        "id": 107,
+        "batch_no": "PC-20261005-0009",
+        "sku_id": 2106900134634242000,
+        "sku_code": "MG-DLQ-280-GRY",
+        "quantity": 240,
+        "unit_cost": 31.5,
+        "dye_lot": null,
+        "roll_length_m": null,
+        "received_date": "2026-09-17"
+      },
+      {
+        "id": 108,
+        "batch_no": "PC-20261005-0010",
+        "sku_id": 2106900122881802200,
+        "sku_code": "MG-XNE-280-MTC",
+        "quantity": 150,
+        "unit_cost": 55,
+        "dye_lot": "250920-2",
+        "roll_length_m": 60,
+        "received_date": "2026-09-20"
+      },
+      {
+        "id": 109,
+        "batch_no": "PC-20261005-0011",
+        "sku_id": 2106900136693645300,
+        "sku_code": "MG-YLZ-280-CFF",
+        "quantity": 90,
+        "unit_cost": 44.5,
+        "dye_lot": null,
+        "roll_length_m": 60,
+        "received_date": "2026-09-23"
+      },
+      {
+        "id": 110,
+        "batch_no": "PC-20261005-0012",
+        "sku_id": 2106900125691986000,
+        "sku_code": "MG-GJM-280-CRM",
+        "quantity": 200,
+        "unit_cost": 41.5,
+        "dye_lot": "250926-1",
+        "roll_length_m": 60,
+        "received_date": "2026-09-26"
+      },
+      {
+        "id": 111,
+        "batch_no": "PC-20261005-0013",
+        "sku_id": 2106900138757243000,
+        "sku_code": "MG-CMCS-300-IVY",
+        "quantity": 60,
+        "unit_cost": null,
+        "dye_lot": null,
+        "roll_length_m": null,
+        "received_date": "2026-09-26"
+      },
+      {
+        "id": 112,
+        "batch_no": "PC-20261005-0014",
+        "sku_id": 2106900128405700600,
+        "sku_code": "MG-MMSF-280-OAT",
+        "quantity": 120,
+        "unit_cost": 24,
+        "dye_lot": null,
+        "roll_length_m": null,
+        "received_date": "2026-09-29"
+      },
+      {
+        "id": 113,
+        "batch_no": "PC-20261005-0015",
+        "sku_id": 2106900130540601300,
+        "sku_code": "MG-SCC-280-WHT",
+        "quantity": 160,
+        "unit_cost": 20.5,
+        "dye_lot": "251001-1",
+        "roll_length_m": null,
+        "received_date": "2026-10-01"
+      },
+      {
+        "id": 114,
+        "batch_no": "PC-20261005-0016",
+        "sku_id": 2106900122848247800,
+        "sku_code": "MG-XNE-280-MBL",
+        "quantity": 60.5,
+        "unit_cost": 58,
+        "dye_lot": "251003-4",
+        "roll_length_m": 60,
+        "received_date": "2026-10-03"
+      }
+    ],
+    "sku_sample": [
+      {
+        "id": 2106900122848247800,
+        "name": "雪尼尔提花遮光布",
+        "color_name": "雾霾蓝",
+        "door_width": "2.8",
+        "stock": 180.5,
+        "price": 128,
+        "sku_code": "MG-XNE-280-MBL",
+        "latest_batch_no": "PC-20261005-0016"
+      },
+      {
+        "id": 2106900122881802200,
+        "name": "雪尼尔提花遮光布",
+        "color_name": "奶茶色",
+        "door_width": "2.8",
+        "stock": 150,
+        "price": 128,
+        "sku_code": "MG-XNE-280-MTC",
+        "latest_batch_no": "PC-20261005-0010"
+      },
+      {
+        "id": 2106900125691986000,
+        "name": "高精密双面遮光布",
+        "color_name": "奶油白",
+        "door_width": "2.8",
+        "stock": 590,
+        "price": 98,
+        "sku_code": "MG-GJM-280-CRM",
+        "latest_batch_no": "PC-20261005-0012"
+      },
+      {
+        "id": 2106900125729734700,
+        "name": "高精密双面遮光布",
+        "color_name": "奶油白",
+        "door_width": "3.2",
+        "stock": 120,
+        "price": 112,
+        "sku_code": "MG-GJM-320-CRM",
+        "latest_batch_no": "PC-20261005-0007"
+      },
+      {
+        "id": 2106900128405700600,
+        "name": "棉麻混纺素色布",
+        "color_name": "燕麦色",
+        "door_width": "2.8",
+        "stock": 270,
+        "price": 76,
+        "sku_code": "MG-MMSF-280-OAT",
+        "latest_batch_no": "PC-20261005-0014"
+      },
+      {
+        "id": 2106900130540601300,
+        "name": "双层纱帘布",
+        "color_name": "纯白",
+        "door_width": "2.8",
+        "stock": 240,
+        "price": 58,
+        "sku_code": "MG-SCC-280-WHT",
+        "latest_batch_no": "PC-20261005-0015"
+      },
+      {
+        "id": 2106900132688085000,
+        "name": "荷兰绒遮光布",
+        "color_name": "墨绿",
+        "door_width": "2.8",
+        "stock": 180.5,
+        "price": 138,
+        "sku_code": "MG-HLR-280-DGN",
+        "latest_batch_no": "PC-20261005-0008"
+      },
+      {
+        "id": 2106900134634242000,
+        "name": "涤纶印花窗帘布",
+        "color_name": "莫兰迪灰",
+        "door_width": "2.8",
+        "stock": 240,
+        "price": 68,
+        "sku_code": "MG-DLQ-280-GRY",
+        "latest_batch_no": "PC-20261005-0009"
+      },
+      {
+        "id": 2106900136693645300,
+        "name": "阳离子绒布",
+        "color_name": "咖色",
+        "door_width": "2.8",
+        "stock": 90,
+        "price": 88,
+        "sku_code": "MG-YLZ-280-CFF",
+        "latest_batch_no": "PC-20261005-0011"
+      },
+      {
+        "id": 2106900138757243000,
+        "name": "棉麻窗纱",
+        "color_name": "米白",
+        "door_width": "3.0",
+        "stock": 260,
+        "price": 42,
+        "sku_code": "MG-CMCS-300-IVY",
+        "latest_batch_no": "PC-20261005-0013"
+      }
+    ],
+    "recent_orders": [
+      {
+        "id": "d9efff7285eb09392e0f87137acf4476",
+        "order_no": "20261006144950003",
+        "status": "pending",
+        "is_urgent": false,
+        "required_delivery_date": null,
+        "created_at": "2026-10-06T10:09:24.060446+08:00"
+      },
+      {
+        "id": "01e5b256e846a402198c995db8f7206a",
+        "order_no": "20261006623690004",
+        "status": "pending",
+        "is_urgent": false,
+        "required_delivery_date": null,
+        "created_at": "2026-10-06T10:28:03.073277+08:00"
+      }
+    ],
+    "consumption_sample": "ERR: Command failed: psql -h pgm-bp1p7w92k81ob5to-pub.pg.rds.aliyuncs.com -p 5432 -U migao_admin -d ai_customer_service -t -A -v ON_ERROR_STOP=1 -c select coalesce(json_agg(row_to_json(t))::text,'[]') from (select id, processing_order_id, order_item_id, batch_id, delta, formula_meters, planned_meters, unit_cost\n   from stock_batch_consumptions where tenant_id=25 order by id desc limit 10) t\nERROR:  col"
+  }
+}

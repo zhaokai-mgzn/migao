@@ -1,5 +1,31 @@
 {"_kind":"migao.package-heavy-entry-ledger","_what":"套件内全量入口的角色判定台账（只追加）：每次 verify-all.sh 被角色守卫拒绝 / 被显式 --allow-package-heavy 放行，记一条。","_judged_by":"tests/unit_ci_workflows/test_package_heavy_entry_ban.py","_idempotency":"键 = MIGAO_ROLE_LEDGER_ID（同一进程树内只记一笔）","_count":"./scripts/package-heavy-entry-ledger.sh count"}
-{"id":"r1.79541","ts":"2026-10-02T17:09:38Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/ci-package-heavy-entry-ban","why":"子包 worktree 直跑全量"}
 {"id":"o1.79541","ts":"2026-10-02T17:09:38Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/ci-package-heavy-entry-ban","why":"--allow-package-heavy 显式"}
+{"id":"r1.79541","ts":"2026-10-02T17:09:38Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/ci-package-heavy-entry-ban","why":"子包 worktree 直跑全量"}
 {"id":"1790961236.84483.19270","ts":"2026-10-02T17:13:56Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/ci-package-heavy-entry-ban","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1790961236.84523.4674","ts":"2026-10-02T17:13:57Z","role":"unknown","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/ci-package-heavy-entry-ban","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791075679.96221.16483","ts":"2026-10-04T01:01:20Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/corporate-site-redesign","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791162879.14763.3670","ts":"2026-10-05T01:14:39Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6346-b-chat-richtext","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791171994.30983.28338","ts":"2026-10-05T03:46:35Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/image-recognize-multi-color","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791251285.27613.31410","ts":"2026-10-06T01:48:06Z","role":"package","decision":"refused","at":"/private/tmp/wt-6392","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791253787.39841.5903","ts":"2026-10-06T02:29:48Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6398-inbound-list-table-nowrap","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791255521.71082.28063","ts":"2026-10-06T02:58:41Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6404-stock-ledger-page","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791274304.43552.2789","ts":"2026-10-06T08:11:46Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6432-worker-pin-reset","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791274493.46021.30687","ts":"2026-10-06T08:14:54Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6434-order-print-entries-by-status","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791274503.46315.4957","ts":"2026-10-06T08:15:03Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6430-saving-board-story","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791276111.59425.6765","ts":"2026-10-06T08:41:51Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6439-production-label-direct-print","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791288339.94437.5157","ts":"2026-10-06T12:05:39Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6439-production-label-direct-print","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791328507.7265.15678","ts":"2026-10-06T23:15:08Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/menu-order-redesign","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791330114.41909.18817","ts":"2026-10-06T23:41:54Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/saving-board-simplify","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791330136.43447.6639","ts":"2026-10-06T23:42:16Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/saving-board-simplify","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791331158.11072.468","ts":"2026-10-06T23:59:18Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/saving-board-simplify","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791331240.15756.3004","ts":"2026-10-07T00:00:41Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6463-positioning-copy","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791333203.89709.20189","ts":"2026-10-07T00:33:24Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6468-bmini-quick-actions-b-side","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791333214.89904.15472","ts":"2026-10-07T00:33:34Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/saving-board-simplify","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791335434.56728.9437","ts":"2026-10-07T01:10:34Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/saving-board-simplify","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791347357.38643.28049","ts":"2026-10-07T04:29:18Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6486-scheduled-task-design","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791351570.54777.14860","ts":"2026-10-07T05:39:31Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6488-copy-plain-language","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791380983.94415.9808","ts":"2026-10-07T13:49:43Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6508-6505-deploy-disk-recovery","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791383620.39602.29952","ts":"2026-10-07T14:33:40Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6512-reclaim-warning","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791385320.63750.9151","ts":"2026-10-07T15:02:01Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6514-ontology-contract-drift","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791425349.86938.7883","ts":"2026-10-08T02:09:10Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6525-brand-rename","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791426366.99902.18932","ts":"2026-10-08T02:26:07Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6529-image-lines-no-match","why":"子包 worktree 直跑全量（无批次标记）"}

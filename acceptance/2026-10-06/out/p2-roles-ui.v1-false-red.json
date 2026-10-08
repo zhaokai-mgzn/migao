@@ -1,0 +1,2546 @@
+{
+  "counts": {
+    "pass": 21,
+    "fail": 7
+  },
+  "rows": [
+    {
+      "state": "pass",
+      "id": "P2-LOGIN:admin",
+      "name": "UI 登录：管理员",
+      "detail": "真浏览器登录成功，「管理员登录（手机验证码）」→ https://merchant.migaozn.com/dashboard",
+      "evidence": [
+        "https://merchant.migaozn.com/dashboard"
+      ]
+    },
+    {
+      "state": "fail",
+      "id": "P2-MENU:admin",
+      "name": "侧边栏菜单：管理员",
+      "detail": "期望 22 项 / DOM 实际 4 项；缺=[\"/briefing\",\"/agent-workspace/human-sessions\",\"/customers\",\"/knowledge\",\"/after-sales\",\"/orders\",\"/finance\",\"/production\",\"/production/pool\",\"/production/processing\",\"/production/routings\",\"/production/piecework\",\"/inbound-orders\",\"/shipments\",\"/production/remnants\",\"/production/saving-board\",\"/employees\",\"/roles\",\"/settings\"] 多=[]；DOM=[\"经营看板\",\"商品管理\",\"通知中心\",\"工作台\"]",
+      "evidence": [
+        "out/map.json#menu",
+        "roles/role_permissions（DB）",
+        "DOM nav a[href]"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-PAGES:admin",
+      "name": "本岗位页面可开：管理员",
+      "detail": "访问 22 条；不可用 0 条 []",
+      "evidence": [
+        "out/p2-roles-ui.json#visited"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-NEG:admin",
+      "name": "无码页面被拦：管理员",
+      "detail": "探测 0 条；未被拦 []；被拦明细 []",
+      "evidence": [
+        "DOM「无权访问该页面」标记",
+        "app/(dashboard)/layout.tsx:permissionDenied"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-LOGIN:customer_service",
+      "name": "UI 登录：客服",
+      "detail": "真浏览器登录成功，「员工登录 a06_customer_service@shop-8yn7」→ https://merchant.migaozn.com/dashboard",
+      "evidence": [
+        "https://merchant.migaozn.com/dashboard"
+      ]
+    },
+    {
+      "state": "fail",
+      "id": "P2-MENU:customer_service",
+      "name": "侧边栏菜单：客服",
+      "detail": "期望 11 项 / DOM 实际 3 项；缺=[\"/briefing\",\"/agent-workspace/human-sessions\",\"/customers\",\"/knowledge\",\"/after-sales\",\"/orders\",\"/production/pool\",\"/inbound-orders\",\"/shipments\"] 多=[]；DOM=[\"经营看板\",\"通知中心\",\"工作台\"]",
+      "evidence": [
+        "out/map.json#menu",
+        "roles/role_permissions（DB）",
+        "DOM nav a[href]"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-PAGES:customer_service",
+      "name": "本岗位页面可开：客服",
+      "detail": "访问 11 条；不可用 0 条 []",
+      "evidence": [
+        "out/p2-roles-ui.json#visited"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-NEG:customer_service",
+      "name": "无码页面被拦：客服",
+      "detail": "探测 3 条；未被拦 []；被拦明细 [{\"p\":\"/finance\",\"denied\":true},{\"p\":\"/production\",\"denied\":true},{\"p\":\"/production/processing\",\"denied\":true}]",
+      "evidence": [
+        "DOM「无权访问该页面」标记",
+        "app/(dashboard)/layout.tsx:permissionDenied"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-LOGIN:finance",
+      "name": "UI 登录：财务",
+      "detail": "真浏览器登录成功，「员工登录 a06_finance@shop-8yn7」→ https://merchant.migaozn.com/dashboard",
+      "evidence": [
+        "https://merchant.migaozn.com/dashboard"
+      ]
+    },
+    {
+      "state": "fail",
+      "id": "P2-MENU:finance",
+      "name": "侧边栏菜单：财务",
+      "detail": "期望 9 项 / DOM 实际 3 项；缺=[\"/briefing\",\"/customers\",\"/orders\",\"/finance\",\"/production/pool\",\"/inbound-orders\",\"/shipments\"] 多=[]；DOM=[\"经营看板\",\"通知中心\",\"工作台\"]",
+      "evidence": [
+        "out/map.json#menu",
+        "roles/role_permissions（DB）",
+        "DOM nav a[href]"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-PAGES:finance",
+      "name": "本岗位页面可开：财务",
+      "detail": "访问 9 条；不可用 0 条 []",
+      "evidence": [
+        "out/p2-roles-ui.json#visited"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-NEG:finance",
+      "name": "无码页面被拦：财务",
+      "detail": "探测 3 条；未被拦 []；被拦明细 [{\"p\":\"/agent-workspace/human-sessions\",\"denied\":true},{\"p\":\"/knowledge\",\"denied\":true},{\"p\":\"/after-sales\",\"denied\":true}]",
+      "evidence": [
+        "DOM「无权访问该页面」标记",
+        "app/(dashboard)/layout.tsx:permissionDenied"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-LOGIN:knowledge_editor",
+      "name": "UI 登录：知识编辑",
+      "detail": "真浏览器登录成功，「员工登录 a06_knowledge_editor@shop-8yn7」→ https://merchant.migaozn.com/dashboard",
+      "evidence": [
+        "https://merchant.migaozn.com/dashboard"
+      ]
+    },
+    {
+      "state": "fail",
+      "id": "P2-MENU:knowledge_editor",
+      "name": "侧边栏菜单：知识编辑",
+      "detail": "期望 6 项 / DOM 实际 4 项；缺=[\"/briefing\",\"/knowledge\",\"/production/saving-board\"] 多=[]；DOM=[\"经营看板\",\"商品管理\",\"通知中心\",\"工作台\"]",
+      "evidence": [
+        "out/map.json#menu",
+        "roles/role_permissions（DB）",
+        "DOM nav a[href]"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-PAGES:knowledge_editor",
+      "name": "本岗位页面可开：知识编辑",
+      "detail": "访问 6 条；不可用 0 条 []",
+      "evidence": [
+        "out/p2-roles-ui.json#visited"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-NEG:knowledge_editor",
+      "name": "无码页面被拦：知识编辑",
+      "detail": "探测 3 条；未被拦 []；被拦明细 [{\"p\":\"/agent-workspace/human-sessions\",\"denied\":true},{\"p\":\"/customers\",\"denied\":true},{\"p\":\"/after-sales\",\"denied\":true}]",
+      "evidence": [
+        "DOM「无权访问该页面」标记",
+        "app/(dashboard)/layout.tsx:permissionDenied"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-LOGIN:operator",
+      "name": "UI 登录：运营",
+      "detail": "真浏览器登录成功，「员工登录 a06_operator@shop-8yn7」→ https://merchant.migaozn.com/dashboard",
+      "evidence": [
+        "https://merchant.migaozn.com/dashboard"
+      ]
+    },
+    {
+      "state": "fail",
+      "id": "P2-MENU:operator",
+      "name": "侧边栏菜单：运营",
+      "detail": "期望 20 项 / DOM 实际 4 项；缺=[\"/briefing\",\"/agent-workspace/human-sessions\",\"/customers\",\"/knowledge\",\"/after-sales\",\"/orders\",\"/finance\",\"/production\",\"/production/pool\",\"/production/processing\",\"/production/routings\",\"/production/piecework\",\"/inbound-orders\",\"/shipments\",\"/production/remnants\",\"/production/saving-board\",\"/employees\"] 多=[]；DOM=[\"经营看板\",\"商品管理\",\"通知中心\",\"工作台\"]",
+      "evidence": [
+        "out/map.json#menu",
+        "roles/role_permissions（DB）",
+        "DOM nav a[href]"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-PAGES:operator",
+      "name": "本岗位页面可开：运营",
+      "detail": "访问 20 条；不可用 0 条 []",
+      "evidence": [
+        "out/p2-roles-ui.json#visited"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-NEG:operator",
+      "name": "无码页面被拦：运营",
+      "detail": "探测 2 条；未被拦 []；被拦明细 [{\"p\":\"/roles\",\"denied\":true},{\"p\":\"/settings\",\"denied\":true}]",
+      "evidence": [
+        "DOM「无权访问该页面」标记",
+        "app/(dashboard)/layout.tsx:permissionDenied"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-LOGIN:product_manager",
+      "name": "UI 登录：商品管理员",
+      "detail": "真浏览器登录成功，「员工登录 a06_product_manager@shop-8yn7」→ https://merchant.migaozn.com/dashboard",
+      "evidence": [
+        "https://merchant.migaozn.com/dashboard"
+      ]
+    },
+    {
+      "state": "fail",
+      "id": "P2-MENU:product_manager",
+      "name": "侧边栏菜单：商品管理员",
+      "detail": "期望 11 项 / DOM 实际 4 项；缺=[\"/briefing\",\"/production\",\"/production/pool\",\"/production/processing\",\"/production/routings\",\"/production/piecework\",\"/production/remnants\",\"/production/saving-board\"] 多=[]；DOM=[\"经营看板\",\"商品管理\",\"通知中心\",\"工作台\"]",
+      "evidence": [
+        "out/map.json#menu",
+        "roles/role_permissions（DB）",
+        "DOM nav a[href]"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-PAGES:product_manager",
+      "name": "本岗位页面可开：商品管理员",
+      "detail": "访问 11 条；不可用 0 条 []",
+      "evidence": [
+        "out/p2-roles-ui.json#visited"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-NEG:product_manager",
+      "name": "无码页面被拦：商品管理员",
+      "detail": "探测 3 条；未被拦 []；被拦明细 [{\"p\":\"/agent-workspace/human-sessions\",\"denied\":true},{\"p\":\"/customers\",\"denied\":true},{\"p\":\"/knowledge\",\"denied\":true}]",
+      "evidence": [
+        "DOM「无权访问该页面」标记",
+        "app/(dashboard)/layout.tsx:permissionDenied"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-LOGIN:sales",
+      "name": "UI 登录：销售",
+      "detail": "真浏览器登录成功，「员工登录 a06_sales@shop-8yn7」→ https://merchant.migaozn.com/dashboard",
+      "evidence": [
+        "https://merchant.migaozn.com/dashboard"
+      ]
+    },
+    {
+      "state": "fail",
+      "id": "P2-MENU:sales",
+      "name": "侧边栏菜单：销售",
+      "detail": "期望 10 项 / DOM 实际 4 项；缺=[\"/briefing\",\"/customers\",\"/orders\",\"/production/pool\",\"/inbound-orders\",\"/shipments\",\"/production/saving-board\"] 多=[]；DOM=[\"经营看板\",\"商品管理\",\"通知中心\",\"工作台\"]",
+      "evidence": [
+        "out/map.json#menu",
+        "roles/role_permissions（DB）",
+        "DOM nav a[href]"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-PAGES:sales",
+      "name": "本岗位页面可开：销售",
+      "detail": "访问 10 条；不可用 0 条 []",
+      "evidence": [
+        "out/p2-roles-ui.json#visited"
+      ]
+    },
+    {
+      "state": "pass",
+      "id": "P2-NEG:sales",
+      "name": "无码页面被拦：销售",
+      "detail": "探测 3 条；未被拦 []；被拦明细 [{\"p\":\"/agent-workspace/human-sessions\",\"denied\":true},{\"p\":\"/knowledge\",\"denied\":true},{\"p\":\"/after-sales\",\"denied\":true}]",
+      "evidence": [
+        "DOM「无权访问该页面」标记",
+        "app/(dashboard)/layout.tsx:permissionDenied"
+      ]
+    }
+  ],
+  "at": "2026-10-05T22:55:32.201Z",
+  "subjectSha": "73327161f",
+  "web": "https://merchant.migaozn.com",
+  "tenantId": 25,
+  "probe": "A06验收",
+  "mapCommit": "73327161f387a270a8694c15b060b2d86d89b773",
+  "roles": [
+    {
+      "roleCode": "admin",
+      "roleName": "管理员",
+      "perms": [
+        "after_sales:view",
+        "agent:chat",
+        "agent:session",
+        "agent:session:manage",
+        "customer:create",
+        "customer:view",
+        "dashboard:view",
+        "employee:create",
+        "employee:list",
+        "finance:create",
+        "finance:view",
+        "inbound:create",
+        "inbound:view",
+        "knowledge:manage",
+        "knowledge:view",
+        "order:create",
+        "order:detail",
+        "order:list",
+        "order:refund",
+        "order:update",
+        "processing:manage",
+        "processing:update",
+        "processing:view",
+        "product:category",
+        "product:category:view",
+        "product:create",
+        "product:list",
+        "product:manage",
+        "production:execute",
+        "production:view",
+        "system:manage",
+        "system:view"
+      ],
+      "loginOk": true,
+      "sidebar": [
+        {
+          "href": "/dashboard",
+          "text": "经营看板"
+        },
+        {
+          "href": "/products",
+          "text": "商品管理"
+        },
+        {
+          "href": "/notifications",
+          "text": "通知中心"
+        },
+        {
+          "href": "/dashboard",
+          "text": "工作台"
+        }
+      ],
+      "visited": [
+        {
+          "path": "/dashboard",
+          "url": "https://merchant.migaozn.com/dashboard",
+          "denied": false,
+          "textLen": 595,
+          "stable": true,
+          "tries": 2,
+          "ms": 1726,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n经营看板\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n工作台\n/\n经营看板\n米\n米高测试\n经营看板\n\n数据更新时间：2026年10月6日 06:55\n\n刷新\n米宝 · 今日经营速览\nAI 生成内容仅供参考\n\n今日暂无新订单，销售额 ¥0\n\n待处理\n\n待支付订单\n\n0\n\n待发货订单\n\n0\n\n含加工待发货\n\n0\n\n超时工单\n\n0\n\n待补库存商品\n\n1\n\n经营数据\n今日订单数\n较昨日 —\n\n0\n\n今日销售额\n较昨日 —\n\n¥0\n\n客单价\n\n—\n\n暂无订单\n\n本月销售额\n较上月 —\n\n¥0\n\n客户服务\n\nAI 接待占比\n\n0%\n\nAI 自动接待占活跃会话的比例（活跃会话 0 个）\n\n订单趋势\n近7天\n近30天\n0\n0.25\n0.5\n0.75\n1\n09-30\n10-01\n10-02\n10",
+          "shot": {},
+          "menuName": "经营看板",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "url": "https://merchant.migaozn.com/briefing",
+          "denied": false,
+          "textLen": 200,
+          "stable": true,
+          "tries": 2,
+          "ms": 1672,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n工作台\n/\n每日简报\n米\n米高测试\n每日经营简报\n\n数据更新时间：—\n\n智能每日经营简报未开启\n\n请在「企业基础信息 → 基本设置」中开启「智能每日经营简报」企业开关。开启后系统将在每日生成时刻自动整理经营要点，本页面与侧边栏入口将同步显示。",
+          "shot": {},
+          "menuName": "每日简报",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/agent-workspace/human-sessions",
+          "url": "https://merchant.migaozn.com/agent-workspace/human-sessions",
+          "denied": false,
+          "textLen": 173,
+          "stable": true,
+          "tries": 2,
+          "ms": 1769,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n客户服务\n/\n在线接待\n米\n米高测试\n在线接待工作台\n待接待 0\n接待中 0\n暂无转人工会话\n（C 端用户触发转人工后在此显示）\n选择左侧会话开始接待",
+          "shot": {},
+          "menuName": "在线接待",
+          "permissionCode": "agent:session"
+        },
+        {
+          "path": "/customers",
+          "url": "https://merchant.migaozn.com/customers",
+          "denied": false,
+          "textLen": 960,
+          "stable": true,
+          "tries": 2,
+          "ms": 1744,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n客户服务\n/\n客户列表\n米\n米高测试\n客户管理\n\n管理客户信息、标签和互动记录\n\n标签管理\n关键词\n来源渠道\n请选择\n全部\n微信小程序\n公众号\nWeb\n订单\nVIP 等级\n请选择\n全部\n普通\nVIP 1\nVIP 2\nVIP 3\n重置\n查询\n头像\n\t\n客户名\n\t\n手机号\n\t\n来源渠道\n\t\nVIP 等级\n\t\n标签\n\t\n最后互动\n\n\n线\n\t\n线A验收客户\n\t13800138000\t订单\t普通\t\n-\n\t10-04 12:41\n\n线\n\t\n线B验收客户-ZRafter6b-mutbycnucztx\n\t13903244688\t订单\t普通\t\n-\n\t10-04 12:37\n\n线\n\t\n线B验收客户-ZRafter6-",
+          "shot": {},
+          "menuName": "客户列表",
+          "permissionCode": "customer:view"
+        },
+        {
+          "path": "/knowledge",
+          "url": "https://merchant.migaozn.com/knowledge",
+          "denied": false,
+          "textLen": 336,
+          "stable": true,
+          "tries": 2,
+          "ms": 1647,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n客户服务\n/\n知识库\n米\n米高测试\n知识库\n\nAI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题\n\n文档提炼\n新建知识卡片\n知识卡片\n待确认\n行业模板\n关键词\n重置\n查询\n全部分类\nFAQ\n商品\n测量\n售后\n店铺配置\n全部来源\n模板\n会话提炼\n文档提炼\n人工\n全部状态\n草稿\n待审核\n已发布\n已归档\n知识卡片标题\n\t\n分类\n\t\n来源\n\t\n状态\n\t\n版本\n\t\n更新时间\n\t\n操作\n\n暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用\n共 0 条记录\n1",
+          "menuName": "知识库",
+          "permissionCode": "knowledge:view"
+        },
+        {
+          "path": "/after-sales",
+          "url": "https://merchant.migaozn.com/after-sales",
+          "denied": false,
+          "textLen": 364,
+          "stable": true,
+          "tries": 2,
+          "ms": 1652,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n客户服务\n/\n售后工单\n米\n米高测试\n售后管理\n\n管理客户售后工单，处理退货、换货、维修等售后请求\n\n新建工单\n全部\n待处理\n处理中\n已完成\n已拒绝\n已关闭\n关键词搜索\n状态筛选\n全部状态\n待处理\n处理中\n已完成\n已拒绝\n已关闭\n重置\n查询\n工单号\t关联订单\t客户\t售后类型\t状态\t优先级\t创建时间\t更新时间\t操作\nAS-20261004-0001\t-\t-\t退货\t已完成\t普通\t\n2026-10-04\n12:37\n\t\n2026-10-04\n12:37\n\t查看\n共 1 条记录(第 1-1 条)\n每页\n10\n20\n50\n100\n条\n1",
+          "menuName": "售后工单",
+          "permissionCode": "after_sales:view"
+        },
+        {
+          "path": "/orders",
+          "url": "https://merchant.migaozn.com/orders",
+          "denied": false,
+          "textLen": 300,
+          "stable": true,
+          "tries": 2,
+          "ms": 1720,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n订单列表\n财务对账\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n交易管理\n/\n订单列表\n米\n米高测试\n订单列表\n新增订单\n下单时间\n至\n订单ID\n收货人\n制单人\n商品货号\n商品标题\n是否加工\n全部\n是\n否\n查询\n重置\n刷新\n全部\n待付款\n待发货\n已发货\n已完成\n含加工订单\n已关闭\n退款/售后\n\t订单ID\t采购商品\t\n采购明细\n(名称:单价×数量+加工费)\n\t累计金额(元)\t实收款(元)\t收货人信息\t下单时间\n\t制单人\t状态\t加急\t到货日\t备注\t操作\n暂无数据\n共 0 条\n‹\n1\n›",
+          "menuName": "订单列表",
+          "permissionCode": "order:list"
+        },
+        {
+          "path": "/finance",
+          "url": "https://merchant.migaozn.com/finance",
+          "denied": false,
+          "textLen": 1608,
+          "stable": true,
+          "tries": 2,
+          "ms": 1754,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n订单列表\n财务对账\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n交易管理\n/\n财务对账\n米\n米高测试\n财务对账\n\n资金流水、收支汇总与应收对账\n\n登记收支\n开始日期\n结束日期\n重置\n查询\n本期收入\n¥1,574.00\n13 笔\n本期退款\n¥300.01\n2 笔\n净收入\n¥1,273.99\n收入 - 退款\n待收款\n¥0.00\n累计未收差额\n资金流水\n收支汇总\n应收对账\n收支类型\n全部\n收款\n退款\n支付方式\n全部\n微信\n支付宝\n银行转账\n现金\n其他\n关键词\n查询\n流水号\t类型\t金额\t支付方式\t关联订单\t状态\t操作人\t交易时间\t备注\nFIN-20261004-0015\t收款\t+¥80.00\t-\t20261004797970002\t成功\t系统\t\n2026-10-04\n12:59\n\t订单",
+          "menuName": "财务对账",
+          "permissionCode": "finance:view"
+        },
+        {
+          "path": "/production",
+          "url": "https://merchant.migaozn.com/production",
+          "denied": false,
+          "textLen": 241,
+          "stable": true,
+          "tries": 2,
+          "ms": 1658,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n生产管理\n/\n生产看板\n米\n米高测试\n生产看板\n\n加工单在产进度与计件合计\n\n刷新\n关键词\n状态\n全部状态\n已生成\n已发加工\n加工中\n加工完成\n已取消\n查询\n重置\n\n状态流转请在订单详情操作\n\n加工单号\t订单号\t客户\t商品与数量\t状态\t工序进度\t计件合计\t操作\n暂无加工单",
+          "menuName": "生产看板",
+          "permissionCode": "production:view"
+        },
+        {
+          "path": "/production/pool",
+          "url": "https://merchant.migaozn.com/production/pool",
+          "denied": false,
+          "textLen": 350,
+          "stable": true,
+          "tries": 2,
+          "ms": 1658,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n生产管理\n/\n智能派单\n米\n米高测试\n智能派单\n\n待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；加急单不参与合并，立即单独派单\n\n刷新\n合并派单开关\n未开启\n最长等待 24 小时\n待派订单 0 单\n加工明细 0 行\n加急订单 0 单\n超时未派 0 单\n加急订单（不参与合并，立即派）\n0 行 / 0 单 —— 不参与合并，立即单独派单\n当前没有加急待派订单\n可合并的待派订单（按料分组）\n0 个料组 / 已选 0 单\n一键合并派单\n当前没有可合并的待派订单",
+          "menuName": "智能派单",
+          "permissionCode": "processing:view"
+        },
+        {
+          "path": "/production/processing",
+          "url": "https://merchant.migaozn.com/production/processing",
+          "denied": false,
+          "textLen": 308,
+          "stable": true,
+          "tries": 2,
+          "ms": 1743,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n生产管理\n/\n加工项管理\n米\n米高测试\n加工项管理\n\n加工项是下单时客户可选的加工服务（如 韩褶、打孔）；加工费按选配组合定价（元/米）， 下单时由系统按选配结果自动匹配取价，顾客只选配、不报价。\n\n刷新\n加工项\n加工费组合\n加工项\n0 项\n加工分类（0）\n新增加工项\n加工项名称\t加工分类\t操作\n暂无加工项 —— 点右上「新增加工项」建第一个（如 韩褶、打孔）；当前还没有加工分类，可在新增弹窗里直接创建",
+          "menuName": "加工项管理",
+          "permissionCode": "production:view"
+        },
+        {
+          "path": "/production/routings",
+          "url": "https://merchant.migaozn.com/production/routings",
+          "denied": false,
+          "textLen": 1849,
+          "stable": true,
+          "tries": 2,
+          "ms": 1668,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n生产管理\n/\n工艺配置\n米\n米高测试\n工艺配置\n\n工序与计件单价 → 工艺路线（订单按哪条主线走）→ 算料 / 裁高口径。 路线是计件工资与完工判定的唯一输入\n\n刷新\n新增工序\n新建路线\n配置就绪度\n按顺序配：先有工序与单价，才能排路线；路线里要有一条默认的兜底；最后按你家口径核一遍算料与裁高\n1. 工序与单价 30 道\n待完成\n\n有 1 道工序没有价目行（已在表里以「无价目行」标出）：点「去处理」逐道处理 —— 停用或删除后重建（删除不影响历史报工）。\n\n去处理\n2. 基础路线 2/2 条 · 齐\n已完成\n去查看\n3. 默认路线 1 条\n已完成\n去查看\n4. 算料配置 系统默认\n待",
+          "menuName": "工艺配置",
+          "permissionCode": "production:view"
+        },
+        {
+          "path": "/production/piecework",
+          "url": "https://merchant.migaozn.com/production/piecework",
+          "denied": false,
+          "textLen": 183,
+          "stable": true,
+          "tries": 2,
+          "ms": 1668,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n生产管理\n/\n计件工资\n米\n米高测试\n计件工资\n\n按期间汇总报工（合格数量 × 工序单价；返工/报废不计件）\n\n刷新\n期间\n工人\n查询\n\n该期间暂无计件数据",
+          "menuName": "计件工资",
+          "permissionCode": "production:view"
+        },
+        {
+          "path": "/inbound-orders",
+          "url": "https://merchant.migaozn.com/inbound-orders",
+          "denied": false,
+          "textLen": 1539,
+          "stable": true,
+          "tries": 2,
+          "ms": 1747,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n入库单\n发货单\n余料台账\n省料看板\n组织管理\n3\n通知中心\n收起\n仓储与物料\n/\n入库单\n米\n米高测试\n入库单\n\n商品布料入库：建单（草稿）→ 过账（自动生成批次号 + 自动加库存 + 移动加权平均成本）→ 批次可追溯；期初建账可按实物把在库批次（含 0.5 米级尾料）登记进来\n\n期初建账导入\n新建入库单\n全部状态\n草稿\n已过账\n已作废\n查询\n重置\n入库单号\t入库日期\t供应商\t仓库\t行数 / 总数量\t批次号\t金额\t状态\t操作\nRK-20261005-0015\t2026-10-05\t广州中大轻纺城-A132档\t门店后仓\t1 / 50\t-\t¥1650.00\t已作废\t详情\nRK-20261005-0014\t2026-10-04\t绍兴柯桥万隆布业\t主仓（一楼）\t1 / 1",
+          "menuName": "入库单",
+          "permissionCode": "inbound:view"
+        },
+        {
+          "path": "/shipments",
+          "url": "https://merchant.migaozn.com/shipments",
+          "denied": false,
+          "textLen": 224,
+          "stable": true,
+          "tries": 2,
+          "ms": 1733,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n入库单\n发货单\n余料台账\n省料看板\n组织管理\n3\n通知中心\n收起\n仓储与物料\n/\n发货单\n米\n米高测试\n发货单\n\n发出的货都在这里：发货单号 / 订单号 / 客户 / 经手人 / 实发数量；可按单号、订单号、客户检索，并补打纸质发货单\n\n查询\n重置\n发货单号\t订单号\t客户\t来源\t发货人\t发货时间\t实发\t操作\n暂无发货单",
+          "menuName": "发货单",
+          "permissionCode": "order:list"
+        },
+        {
+          "path": "/production/remnants",
+          "url": "https://merchant.migaozn.com/production/remnants",
+          "denied": false,
+          "textLen": 526,
+          "stable": true,
+          "tries": 2,
+          "ms": 1821,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n入库单\n发货单\n余料台账\n省料看板\n组织管理\n3\n通知中心\n收起\n仓储与物料\n/\n余料台账\n米\n米高测试\n余料台账\n\n裁剪剩下的布：尺寸、来源订单与批次、缸号、状态。余料不是资产 —— 只记实物可用性，不计价、不进库存金额。\n\n刷新\n可用\n0\n0.00 米\n已用\n0\n0.00 米\n已报废\n0\n0.00 米\n客户带走\n0\n不计入可用余料\n余料回收额合计 ¥0.00（冲减用它的那些单的面料成本，只进内部成本口径 —— 对客售价与加工费一字不动）；领料成本合计 ¥0.00； 余料回收率 —（还没有可算的数据）；报废率 —（还没有可算的数据）\n小件优先匹配\n\n填订单明细行 id：系统按该行勾选的特殊选项（余料做绑带 / 余料做帘头 / 抱枕 …）算出小件需求， 再从可用余",
+          "menuName": "余料台账",
+          "permissionCode": "processing:manage"
+        },
+        {
+          "path": "/production/saving-board",
+          "url": "https://merchant.migaozn.com/production/saving-board",
+          "denied": false,
+          "textLen": 2307,
+          "stable": true,
+          "tries": 2,
+          "ms": 1795,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n入库单\n发货单\n余料台账\n省料看板\n组织管理\n3\n通知中心\n收起\n仓储与物料\n/\n省料看板\n米\n米高测试\n省料看板\n\n省了多少料，看两件事：① 每批布用剩多少 ② 每平方米成品用掉多少米布；存量导入批次单独成组，不与切换后混算\n\n按月\n按周（ISO 周）\n刷新\n剩余 ≤0.2 米 的批次占比\n0.0%\n治「用不尽」—— 越多批次被用到几乎不剩，说明料真的被用掉了\n入库/采购总米数\n1681 米\n治「买太多」—— 切换后的采购入库总米数，不含存量导入\n两条指标必须并用：①「剩余 ≤0.2 米 的批次占比」治「用不尽」，②「入库/采购总米数」治「买太多」。单看①会被排料省料误导 —— 排料省料 ⇒ 批次剩得更多 ⇒ 只留①会把效率提升显示成变差。\n切换后（采购入库）\n",
+          "menuName": "省料看板",
+          "permissionCode": "product:list"
+        },
+        {
+          "path": "/employees",
+          "url": "https://merchant.migaozn.com/employees",
+          "denied": false,
+          "textLen": 933,
+          "stable": true,
+          "tries": 2,
+          "ms": 1661,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n员工管理\n岗位权限\n企业基础信息\n通知中心\n收起\n组织管理\n/\n员工管理\n米\n米高测试\n员工管理\n\n管理系统用户和员工账号\n\n新增员工\n员工\n工人档案\n姓名/手机号\n状态\n全部状态\n启用\n禁用\n重置\n查询\n序号\n\t\n姓名\n\t\n手机号\n\t\n登录账号\n\t\n岗位\n\t\n权限\n\t\n状态\n\t\n创建时间\n\t\n操作\n\n1\tA06验收知识编辑\t1375061605\ta06_knowledge_editor\t知识编辑\t\n经营看板\n省料看板\nknowledge:manage\n+1\n\t\n\t\n2026-10-06\n06:54\n\t\n编辑\n重置密码\n删除\n\n2\tA06验收商品管理员\t1374869204\ta06_product_manager\t商品管理员\t\n经营看板\n省料看板\np",
+          "menuName": "员工管理",
+          "permissionCode": "employee:list"
+        },
+        {
+          "path": "/roles",
+          "url": "https://merchant.migaozn.com/roles",
+          "denied": false,
+          "textLen": 550,
+          "stable": true,
+          "tries": 2,
+          "ms": 1651,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n员工管理\n岗位权限\n企业基础信息\n通知中心\n收起\n组织管理\n/\n岗位权限\n米\n米高测试\n岗位权限\n\n管理岗位及默认权限\n\n新增岗位\n管理员\n\nadmin\n\n拥有全部管理权限\n\n32 个权限\n2026-10-04\n08:31\n客服\n\ncustomer_service\n\n负责客户服务与咨询\n\n12 个权限\n2026-10-04\n08:31\n财务\n\nfinance\n\n负责财务对账\n\n9 个权限\n2026-10-04\n08:31\n知识编辑\n\nknowledge_editor\n\n知识库编辑（POC 期历史岗位，issue #5699 的 P6 正式定义）\n\n4 个权限\n2026-10-04\n08:31\n运营\n\noperator\n\n负责日常运营管理\n\n26 个权",
+          "menuName": "岗位权限",
+          "permissionCode": "system:view"
+        },
+        {
+          "path": "/settings",
+          "url": "https://merchant.migaozn.com/settings",
+          "denied": false,
+          "textLen": 718,
+          "stable": true,
+          "tries": 2,
+          "ms": 1671,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n员工管理\n岗位权限\n企业基础信息\n通知中心\n收起\n组织管理\n/\n企业基础信息\n米\n米高测试\n企业基础信息\n\n配置公司基本信息、AI 客服助手与站内通知\n\n基本设置\nAI 客服设置\n参数总览\n工人端页面\n通知设置\n基本设置\n\n修改后自动保存，无需手动提交\n\n公司名称 *\n\n将展示在后台侧边栏与米宝的企业身份中\n\n企业编码\n\n员工用它登录：用户名@企业编码（例如 zhangsan@shop-8yn7）。 全平台唯一，只能用 2~32 位小写字母、数字、连字符与下划线；格式或占用不合规时会提示原因。\n\n修改后员工需改用新编码登录（原「用户名@旧编码」立即失效）—— 改完立即生效，请先通知员工再改。\n\nLogo\n上传 Logo\n\n未设置时展示米高默认 Log",
+          "menuName": "企业基础信息",
+          "permissionCode": "system:manage"
+        },
+        {
+          "path": "/products",
+          "url": "https://merchant.migaozn.com/products",
+          "denied": false,
+          "textLen": 897,
+          "stable": true,
+          "tries": 2,
+          "ms": 1677,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n商品管理\n米\n米高测试\n商品管理\n商品标题\n商品货号\n状态\n全部\n出售中\n已下架\n审核中\n草稿\n创建时间\n至\n查询\n重置\n批量导出\n下载导入模板\n导入商品\n新增商品\n\t\n商品标题\n\t\n商品货号\n\t\n在售颜色\n\t\n库存\n\t\n销量\n\t\n销售额\n\t\n创建时间\n\t\n状态\n\t\n操作\n\n\t\n无图\n棉麻窗纱\n\tMG-CMCS-30...\t共1色\t260\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n阳离子绒布\n\tMG-YLZ-280...\t共1色\t90\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n涤纶印花窗帘布\n\tMG-DLQ-280...",
+          "menuName": "商品管理",
+          "permissionCode": "product:list"
+        },
+        {
+          "path": "/notifications",
+          "url": "https://merchant.migaozn.com/notifications",
+          "denied": false,
+          "textLen": 129,
+          "stable": true,
+          "tries": 2,
+          "ms": 1676,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n3\n通知中心\n收起\n通知中心\n米\n米高测试\n通知中心\n\n管理和查看系统通知\n\n全部标记已读\n全部\n未读\n已读\n\n暂无通知",
+          "menuName": "通知中心",
+          "permissionCode": null
+        }
+      ],
+      "deniedProbes": [],
+      "expected": [
+        {
+          "path": "/dashboard",
+          "name": "经营看板",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "name": "每日简报",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/agent-workspace/human-sessions",
+          "name": "在线接待",
+          "code": "agent:session"
+        },
+        {
+          "path": "/customers",
+          "name": "客户列表",
+          "code": "customer:view"
+        },
+        {
+          "path": "/knowledge",
+          "name": "知识库",
+          "code": "knowledge:view"
+        },
+        {
+          "path": "/after-sales",
+          "name": "售后工单",
+          "code": "after_sales:view"
+        },
+        {
+          "path": "/orders",
+          "name": "订单列表",
+          "code": "order:list"
+        },
+        {
+          "path": "/finance",
+          "name": "财务对账",
+          "code": "finance:view"
+        },
+        {
+          "path": "/production",
+          "name": "生产看板",
+          "code": "production:view"
+        },
+        {
+          "path": "/production/pool",
+          "name": "智能派单",
+          "code": "processing:view"
+        },
+        {
+          "path": "/production/processing",
+          "name": "加工项管理",
+          "code": "production:view"
+        },
+        {
+          "path": "/production/routings",
+          "name": "工艺配置",
+          "code": "production:view"
+        },
+        {
+          "path": "/production/piecework",
+          "name": "计件工资",
+          "code": "production:view"
+        },
+        {
+          "path": "/inbound-orders",
+          "name": "入库单",
+          "code": "inbound:view"
+        },
+        {
+          "path": "/shipments",
+          "name": "发货单",
+          "code": "order:list"
+        },
+        {
+          "path": "/production/remnants",
+          "name": "余料台账",
+          "code": "processing:manage"
+        },
+        {
+          "path": "/production/saving-board",
+          "name": "省料看板",
+          "code": "product:list"
+        },
+        {
+          "path": "/employees",
+          "name": "员工管理",
+          "code": "employee:list"
+        },
+        {
+          "path": "/roles",
+          "name": "岗位权限",
+          "code": "system:view"
+        },
+        {
+          "path": "/settings",
+          "name": "企业基础信息",
+          "code": "system:manage"
+        },
+        {
+          "path": "/products",
+          "name": "商品管理",
+          "code": "product:list"
+        },
+        {
+          "path": "/notifications",
+          "name": "通知中心",
+          "code": null
+        }
+      ],
+      "missing": [
+        "/briefing",
+        "/agent-workspace/human-sessions",
+        "/customers",
+        "/knowledge",
+        "/after-sales",
+        "/orders",
+        "/finance",
+        "/production",
+        "/production/pool",
+        "/production/processing",
+        "/production/routings",
+        "/production/piecework",
+        "/inbound-orders",
+        "/shipments",
+        "/production/remnants",
+        "/production/saving-board",
+        "/employees",
+        "/roles",
+        "/settings"
+      ],
+      "unexpected": [],
+      "landingUrl": "https://merchant.migaozn.com/dashboard"
+    },
+    {
+      "roleCode": "customer_service",
+      "roleName": "客服",
+      "perms": [
+        "after_sales:view",
+        "agent:session",
+        "agent:session:manage",
+        "customer:view",
+        "dashboard:view",
+        "inbound:view",
+        "knowledge:view",
+        "order:detail",
+        "order:list",
+        "order:refund",
+        "processing:view",
+        "production:execute"
+      ],
+      "loginOk": true,
+      "sidebar": [
+        {
+          "href": "/dashboard",
+          "text": "经营看板"
+        },
+        {
+          "href": "/notifications",
+          "text": "通知中心"
+        },
+        {
+          "href": "/dashboard",
+          "text": "工作台"
+        }
+      ],
+      "visited": [
+        {
+          "path": "/dashboard",
+          "url": "https://merchant.migaozn.com/dashboard",
+          "denied": false,
+          "textLen": 586,
+          "stable": true,
+          "tries": 2,
+          "ms": 1657,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n经营看板\n客户服务\n4\n交易管理\n1\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n工作台\n/\n经营看板\nA\nA06验收客服\n经营看板\n\n数据更新时间：2026年10月6日 06:56\n\n刷新\n米宝 · 今日经营速览\nAI 生成内容仅供参考\n\n今日暂无新订单，销售额 ¥0\n\n待处理\n\n待支付订单\n\n0\n\n待发货订单\n\n0\n\n含加工待发货\n\n0\n\n超时工单\n\n0\n\n待补库存商品\n\n1\n\n经营数据\n今日订单数\n较昨日 —\n\n0\n\n今日销售额\n较昨日 —\n\n¥0\n\n客单价\n\n—\n\n暂无订单\n\n本月销售额\n较上月 —\n\n¥0\n\n客户服务\n\nAI 接待占比\n\n0%\n\nAI 自动接待占活跃会话的比例（活跃会话 0 个）\n\n订单趋势\n近7天\n近30天\n0\n0.25\n0.5\n0.75\n1\n09-30\n10-01\n10-02\n10-03\n10-04",
+          "shot": {},
+          "menuName": "经营看板",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "url": "https://merchant.migaozn.com/briefing",
+          "denied": false,
+          "textLen": 191,
+          "stable": true,
+          "tries": 2,
+          "ms": 1672,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n4\n交易管理\n1\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n工作台\n/\n每日简报\nA\nA06验收客服\n每日经营简报\n\n数据更新时间：—\n\n智能每日经营简报未开启\n\n请在「企业基础信息 → 基本设置」中开启「智能每日经营简报」企业开关。开启后系统将在每日生成时刻自动整理经营要点，本页面与侧边栏入口将同步显示。",
+          "shot": {},
+          "menuName": "每日简报",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/agent-workspace/human-sessions",
+          "url": "https://merchant.migaozn.com/agent-workspace/human-sessions",
+          "denied": false,
+          "textLen": 164,
+          "stable": true,
+          "tries": 2,
+          "ms": 1668,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n1\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n客户服务\n/\n在线接待\nA\nA06验收客服\n在线接待工作台\n待接待 0\n接待中 0\n暂无转人工会话\n（C 端用户触发转人工后在此显示）\n选择左侧会话开始接待",
+          "shot": {},
+          "menuName": "在线接待",
+          "permissionCode": "agent:session"
+        },
+        {
+          "path": "/customers",
+          "url": "https://merchant.migaozn.com/customers",
+          "denied": false,
+          "textLen": 951,
+          "stable": true,
+          "tries": 2,
+          "ms": 1672,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n1\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n客户服务\n/\n客户列表\nA\nA06验收客服\n客户管理\n\n管理客户信息、标签和互动记录\n\n标签管理\n关键词\n来源渠道\n请选择\n全部\n微信小程序\n公众号\nWeb\n订单\nVIP 等级\n请选择\n全部\n普通\nVIP 1\nVIP 2\nVIP 3\n重置\n查询\n头像\n\t\n客户名\n\t\n手机号\n\t\n来源渠道\n\t\nVIP 等级\n\t\n标签\n\t\n最后互动\n\n\n线\n\t\n线A验收客户\n\t13800138000\t订单\t普通\t\n-\n\t10-04 12:41\n\n线\n\t\n线B验收客户-ZRafter6b-mutbycnucztx\n\t13903244688\t订单\t普通\t\n-\n\t10-04 12:37\n\n线\n\t\n线B验收客户-ZRafter6-mutbyazz4",
+          "shot": {},
+          "menuName": "客户列表",
+          "permissionCode": "customer:view"
+        },
+        {
+          "path": "/knowledge",
+          "url": "https://merchant.migaozn.com/knowledge",
+          "denied": false,
+          "textLen": 327,
+          "stable": true,
+          "tries": 2,
+          "ms": 1691,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n1\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n客户服务\n/\n知识库\nA\nA06验收客服\n知识库\n\nAI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题\n\n文档提炼\n新建知识卡片\n知识卡片\n待确认\n行业模板\n关键词\n重置\n查询\n全部分类\nFAQ\n商品\n测量\n售后\n店铺配置\n全部来源\n模板\n会话提炼\n文档提炼\n人工\n全部状态\n草稿\n待审核\n已发布\n已归档\n知识卡片标题\n\t\n分类\n\t\n来源\n\t\n状态\n\t\n版本\n\t\n更新时间\n\t\n操作\n\n暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用\n共 0 条记录\n1",
+          "menuName": "知识库",
+          "permissionCode": "knowledge:view"
+        },
+        {
+          "path": "/after-sales",
+          "url": "https://merchant.migaozn.com/after-sales",
+          "denied": false,
+          "textLen": 355,
+          "stable": true,
+          "tries": 2,
+          "ms": 1675,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n1\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n客户服务\n/\n售后工单\nA\nA06验收客服\n售后管理\n\n管理客户售后工单，处理退货、换货、维修等售后请求\n\n新建工单\n全部\n待处理\n处理中\n已完成\n已拒绝\n已关闭\n关键词搜索\n状态筛选\n全部状态\n待处理\n处理中\n已完成\n已拒绝\n已关闭\n重置\n查询\n工单号\t关联订单\t客户\t售后类型\t状态\t优先级\t创建时间\t更新时间\t操作\nAS-20261004-0001\t-\t-\t退货\t已完成\t普通\t\n2026-10-04\n12:37\n\t\n2026-10-04\n12:37\n\t查看\n共 1 条记录(第 1-1 条)\n每页\n10\n20\n50\n100\n条\n1",
+          "menuName": "售后工单",
+          "permissionCode": "after_sales:view"
+        },
+        {
+          "path": "/orders",
+          "url": "https://merchant.migaozn.com/orders",
+          "denied": false,
+          "textLen": 281,
+          "stable": true,
+          "tries": 2,
+          "ms": 1677,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n4\n交易管理\n1\n订单列表\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n交易管理\n/\n订单列表\nA\nA06验收客服\n订单列表\n下单时间\n至\n订单ID\n收货人\n制单人\n商品货号\n商品标题\n是否加工\n全部\n是\n否\n查询\n重置\n刷新\n全部\n待付款\n待发货\n已发货\n已完成\n含加工订单\n已关闭\n退款/售后\n\t订单ID\t采购商品\t\n采购明细\n(名称:单价×数量+加工费)\n\t累计金额(元)\t实收款(元)\t收货人信息\t下单时间\n\t制单人\t状态\t加急\t到货日\t备注\t操作\n暂无数据\n共 0 条\n‹\n1\n›",
+          "menuName": "订单列表",
+          "permissionCode": "order:list"
+        },
+        {
+          "path": "/production/pool",
+          "url": "https://merchant.migaozn.com/production/pool",
+          "denied": false,
+          "textLen": 320,
+          "stable": true,
+          "tries": 2,
+          "ms": 1671,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n4\n交易管理\n1\n生产管理\n1\n智能派单\n仓储与物料\n2\n通知中心\n收起\n生产管理\n/\n智能派单\nA\nA06验收客服\n智能派单\n\n待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；加急单不参与合并，立即单独派单\n\n刷新\n合并派单开关\n未开启\n最长等待 24 小时\n待派订单 0 单\n加工明细 0 行\n加急订单 0 单\n超时未派 0 单\n加急订单（不参与合并，立即派）\n0 行 / 0 单 —— 不参与合并，立即单独派单\n当前没有加急待派订单\n可合并的待派订单（按料分组）\n0 个料组 / 已选 0 单\n一键合并派单\n当前没有可合并的待派订单",
+          "menuName": "智能派单",
+          "permissionCode": "processing:view"
+        },
+        {
+          "path": "/inbound-orders",
+          "url": "https://merchant.migaozn.com/inbound-orders",
+          "denied": false,
+          "textLen": 1514,
+          "stable": true,
+          "tries": 2,
+          "ms": 1677,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n4\n交易管理\n1\n生产管理\n1\n仓储与物料\n2\n入库单\n发货单\n通知中心\n收起\n仓储与物料\n/\n入库单\nA\nA06验收客服\n入库单\n\n商品布料入库：建单（草稿）→ 过账（自动生成批次号 + 自动加库存 + 移动加权平均成本）→ 批次可追溯；期初建账可按实物把在库批次（含 0.5 米级尾料）登记进来\n\n期初建账导入\n全部状态\n草稿\n已过账\n已作废\n查询\n重置\n入库单号\t入库日期\t供应商\t仓库\t行数 / 总数量\t批次号\t金额\t状态\t操作\nRK-20261005-0015\t2026-10-05\t广州中大轻纺城-A132档\t门店后仓\t1 / 50\t-\t¥1650.00\t已作废\t详情\nRK-20261005-0014\t2026-10-04\t绍兴柯桥万隆布业\t主仓（一楼）\t1 / 100\t过账后生成\t¥7000.00\t草稿\t详情\nR",
+          "menuName": "入库单",
+          "permissionCode": "inbound:view"
+        },
+        {
+          "path": "/shipments",
+          "url": "https://merchant.migaozn.com/shipments",
+          "denied": false,
+          "textLen": 205,
+          "stable": true,
+          "tries": 2,
+          "ms": 1666,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n4\n交易管理\n1\n生产管理\n1\n仓储与物料\n2\n入库单\n发货单\n通知中心\n收起\n仓储与物料\n/\n发货单\nA\nA06验收客服\n发货单\n\n发出的货都在这里：发货单号 / 订单号 / 客户 / 经手人 / 实发数量；可按单号、订单号、客户检索，并补打纸质发货单\n\n查询\n重置\n发货单号\t订单号\t客户\t来源\t发货人\t发货时间\t实发\t操作\n暂无发货单",
+          "menuName": "发货单",
+          "permissionCode": "order:list"
+        },
+        {
+          "path": "/notifications",
+          "url": "https://merchant.migaozn.com/notifications",
+          "denied": false,
+          "textLen": 120,
+          "stable": true,
+          "tries": 2,
+          "ms": 1673,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n4\n交易管理\n1\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n通知中心\nA\nA06验收客服\n通知中心\n\n管理和查看系统通知\n\n全部标记已读\n全部\n未读\n已读\n\n暂无通知",
+          "menuName": "通知中心",
+          "permissionCode": null
+        }
+      ],
+      "deniedProbes": [
+        {
+          "path": "/finance",
+          "url": "https://merchant.migaozn.com/finance",
+          "denied": true,
+          "textLen": 58,
+          "stable": true,
+          "tries": 2,
+          "ms": 1371,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 finance:view， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "财务对账",
+          "expectedDenied": true
+        },
+        {
+          "path": "/production",
+          "url": "https://merchant.migaozn.com/production",
+          "denied": true,
+          "textLen": 61,
+          "stable": true,
+          "tries": 2,
+          "ms": 1361,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 production:view， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "生产看板",
+          "expectedDenied": true
+        },
+        {
+          "path": "/production/processing",
+          "url": "https://merchant.migaozn.com/production/processing",
+          "denied": true,
+          "textLen": 61,
+          "stable": true,
+          "tries": 2,
+          "ms": 1362,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 production:view， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "加工项管理",
+          "expectedDenied": true
+        }
+      ],
+      "expected": [
+        {
+          "path": "/dashboard",
+          "name": "经营看板",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "name": "每日简报",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/agent-workspace/human-sessions",
+          "name": "在线接待",
+          "code": "agent:session"
+        },
+        {
+          "path": "/customers",
+          "name": "客户列表",
+          "code": "customer:view"
+        },
+        {
+          "path": "/knowledge",
+          "name": "知识库",
+          "code": "knowledge:view"
+        },
+        {
+          "path": "/after-sales",
+          "name": "售后工单",
+          "code": "after_sales:view"
+        },
+        {
+          "path": "/orders",
+          "name": "订单列表",
+          "code": "order:list"
+        },
+        {
+          "path": "/production/pool",
+          "name": "智能派单",
+          "code": "processing:view"
+        },
+        {
+          "path": "/inbound-orders",
+          "name": "入库单",
+          "code": "inbound:view"
+        },
+        {
+          "path": "/shipments",
+          "name": "发货单",
+          "code": "order:list"
+        },
+        {
+          "path": "/notifications",
+          "name": "通知中心",
+          "code": null
+        }
+      ],
+      "missing": [
+        "/briefing",
+        "/agent-workspace/human-sessions",
+        "/customers",
+        "/knowledge",
+        "/after-sales",
+        "/orders",
+        "/production/pool",
+        "/inbound-orders",
+        "/shipments"
+      ],
+      "unexpected": [],
+      "landingUrl": "https://merchant.migaozn.com/dashboard"
+    },
+    {
+      "roleCode": "finance",
+      "roleName": "财务",
+      "perms": [
+        "customer:view",
+        "dashboard:view",
+        "finance:create",
+        "finance:view",
+        "inbound:view",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "production:execute"
+      ],
+      "loginOk": true,
+      "sidebar": [
+        {
+          "href": "/dashboard",
+          "text": "经营看板"
+        },
+        {
+          "href": "/notifications",
+          "text": "通知中心"
+        },
+        {
+          "href": "/dashboard",
+          "text": "工作台"
+        }
+      ],
+      "visited": [
+        {
+          "path": "/dashboard",
+          "url": "https://merchant.migaozn.com/dashboard",
+          "denied": false,
+          "textLen": 586,
+          "stable": true,
+          "tries": 2,
+          "ms": 1651,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n经营看板\n客户服务\n1\n交易管理\n2\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n工作台\n/\n经营看板\nA\nA06验收财务\n经营看板\n\n数据更新时间：2026年10月6日 06:56\n\n刷新\n米宝 · 今日经营速览\nAI 生成内容仅供参考\n\n今日暂无新订单，销售额 ¥0\n\n待处理\n\n待支付订单\n\n0\n\n待发货订单\n\n0\n\n含加工待发货\n\n0\n\n超时工单\n\n0\n\n待补库存商品\n\n1\n\n经营数据\n今日订单数\n较昨日 —\n\n0\n\n今日销售额\n较昨日 —\n\n¥0\n\n客单价\n\n—\n\n暂无订单\n\n本月销售额\n较上月 —\n\n¥0\n\n客户服务\n\nAI 接待占比\n\n0%\n\nAI 自动接待占活跃会话的比例（活跃会话 0 个）\n\n订单趋势\n近7天\n近30天\n0\n0.25\n0.5\n0.75\n1\n09-30\n10-01\n10-02\n10-03\n10-04",
+          "shot": {},
+          "menuName": "经营看板",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "url": "https://merchant.migaozn.com/briefing",
+          "denied": false,
+          "textLen": 191,
+          "stable": true,
+          "tries": 2,
+          "ms": 1669,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n1\n交易管理\n2\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n工作台\n/\n每日简报\nA\nA06验收财务\n每日经营简报\n\n数据更新时间：—\n\n智能每日经营简报未开启\n\n请在「企业基础信息 → 基本设置」中开启「智能每日经营简报」企业开关。开启后系统将在每日生成时刻自动整理经营要点，本页面与侧边栏入口将同步显示。",
+          "shot": {},
+          "menuName": "每日简报",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/customers",
+          "url": "https://merchant.migaozn.com/customers",
+          "denied": false,
+          "textLen": 937,
+          "stable": true,
+          "tries": 2,
+          "ms": 1668,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n1\n客户列表\n交易管理\n2\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n客户服务\n/\n客户列表\nA\nA06验收财务\n客户管理\n\n管理客户信息、标签和互动记录\n\n标签管理\n关键词\n来源渠道\n请选择\n全部\n微信小程序\n公众号\nWeb\n订单\nVIP 等级\n请选择\n全部\n普通\nVIP 1\nVIP 2\nVIP 3\n重置\n查询\n头像\n\t\n客户名\n\t\n手机号\n\t\n来源渠道\n\t\nVIP 等级\n\t\n标签\n\t\n最后互动\n\n\n线\n\t\n线A验收客户\n\t13800138000\t订单\t普通\t\n-\n\t10-04 12:41\n\n线\n\t\n线B验收客户-ZRafter6b-mutbycnucztx\n\t13903244688\t订单\t普通\t\n-\n\t10-04 12:37\n\n线\n\t\n线B验收客户-ZRafter6-mutbyazz46ff\n\t139910409",
+          "shot": {},
+          "menuName": "客户列表",
+          "permissionCode": "customer:view"
+        },
+        {
+          "path": "/orders",
+          "url": "https://merchant.migaozn.com/orders",
+          "denied": false,
+          "textLen": 286,
+          "stable": true,
+          "tries": 2,
+          "ms": 1670,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n1\n交易管理\n2\n订单列表\n财务对账\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n交易管理\n/\n订单列表\nA\nA06验收财务\n订单列表\n下单时间\n至\n订单ID\n收货人\n制单人\n商品货号\n商品标题\n是否加工\n全部\n是\n否\n查询\n重置\n刷新\n全部\n待付款\n待发货\n已发货\n已完成\n含加工订单\n已关闭\n退款/售后\n\t订单ID\t采购商品\t\n采购明细\n(名称:单价×数量+加工费)\n\t累计金额(元)\t实收款(元)\t收货人信息\t下单时间\n\t制单人\t状态\t加急\t到货日\t备注\t操作\n暂无数据\n共 0 条\n‹\n1\n›",
+          "shot": {},
+          "menuName": "订单列表",
+          "permissionCode": "order:list"
+        },
+        {
+          "path": "/finance",
+          "url": "https://merchant.migaozn.com/finance",
+          "denied": false,
+          "textLen": 1599,
+          "stable": true,
+          "tries": 2,
+          "ms": 1678,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n1\n交易管理\n2\n订单列表\n财务对账\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n交易管理\n/\n财务对账\nA\nA06验收财务\n财务对账\n\n资金流水、收支汇总与应收对账\n\n登记收支\n开始日期\n结束日期\n重置\n查询\n本期收入\n¥1,574.00\n13 笔\n本期退款\n¥300.01\n2 笔\n净收入\n¥1,273.99\n收入 - 退款\n待收款\n¥0.00\n累计未收差额\n资金流水\n收支汇总\n应收对账\n收支类型\n全部\n收款\n退款\n支付方式\n全部\n微信\n支付宝\n银行转账\n现金\n其他\n关键词\n查询\n流水号\t类型\t金额\t支付方式\t关联订单\t状态\t操作人\t交易时间\t备注\nFIN-20261004-0015\t收款\t+¥80.00\t-\t20261004797970002\t成功\t系统\t\n2026-10-04\n12:59\n\t订单确认收款\nFIN-",
+          "menuName": "财务对账",
+          "permissionCode": "finance:view"
+        },
+        {
+          "path": "/production/pool",
+          "url": "https://merchant.migaozn.com/production/pool",
+          "denied": false,
+          "textLen": 320,
+          "stable": true,
+          "tries": 2,
+          "ms": 1677,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n1\n交易管理\n2\n生产管理\n1\n智能派单\n仓储与物料\n2\n通知中心\n收起\n生产管理\n/\n智能派单\nA\nA06验收财务\n智能派单\n\n待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；加急单不参与合并，立即单独派单\n\n刷新\n合并派单开关\n未开启\n最长等待 24 小时\n待派订单 0 单\n加工明细 0 行\n加急订单 0 单\n超时未派 0 单\n加急订单（不参与合并，立即派）\n0 行 / 0 单 —— 不参与合并，立即单独派单\n当前没有加急待派订单\n可合并的待派订单（按料分组）\n0 个料组 / 已选 0 单\n一键合并派单\n当前没有可合并的待派订单",
+          "menuName": "智能派单",
+          "permissionCode": "processing:view"
+        },
+        {
+          "path": "/inbound-orders",
+          "url": "https://merchant.migaozn.com/inbound-orders",
+          "denied": false,
+          "textLen": 1514,
+          "stable": true,
+          "tries": 2,
+          "ms": 1674,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n1\n交易管理\n2\n生产管理\n1\n仓储与物料\n2\n入库单\n发货单\n通知中心\n收起\n仓储与物料\n/\n入库单\nA\nA06验收财务\n入库单\n\n商品布料入库：建单（草稿）→ 过账（自动生成批次号 + 自动加库存 + 移动加权平均成本）→ 批次可追溯；期初建账可按实物把在库批次（含 0.5 米级尾料）登记进来\n\n期初建账导入\n全部状态\n草稿\n已过账\n已作废\n查询\n重置\n入库单号\t入库日期\t供应商\t仓库\t行数 / 总数量\t批次号\t金额\t状态\t操作\nRK-20261005-0015\t2026-10-05\t广州中大轻纺城-A132档\t门店后仓\t1 / 50\t-\t¥1650.00\t已作废\t详情\nRK-20261005-0014\t2026-10-04\t绍兴柯桥万隆布业\t主仓（一楼）\t1 / 100\t过账后生成\t¥7000.00\t草稿\t详情\nR",
+          "menuName": "入库单",
+          "permissionCode": "inbound:view"
+        },
+        {
+          "path": "/shipments",
+          "url": "https://merchant.migaozn.com/shipments",
+          "denied": false,
+          "textLen": 205,
+          "stable": true,
+          "tries": 2,
+          "ms": 1674,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n1\n交易管理\n2\n生产管理\n1\n仓储与物料\n2\n入库单\n发货单\n通知中心\n收起\n仓储与物料\n/\n发货单\nA\nA06验收财务\n发货单\n\n发出的货都在这里：发货单号 / 订单号 / 客户 / 经手人 / 实发数量；可按单号、订单号、客户检索，并补打纸质发货单\n\n查询\n重置\n发货单号\t订单号\t客户\t来源\t发货人\t发货时间\t实发\t操作\n暂无发货单",
+          "menuName": "发货单",
+          "permissionCode": "order:list"
+        },
+        {
+          "path": "/notifications",
+          "url": "https://merchant.migaozn.com/notifications",
+          "denied": false,
+          "textLen": 120,
+          "stable": true,
+          "tries": 2,
+          "ms": 1681,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n客户服务\n1\n交易管理\n2\n生产管理\n1\n仓储与物料\n2\n通知中心\n收起\n通知中心\nA\nA06验收财务\n通知中心\n\n管理和查看系统通知\n\n全部标记已读\n全部\n未读\n已读\n\n暂无通知",
+          "menuName": "通知中心",
+          "permissionCode": null
+        }
+      ],
+      "deniedProbes": [
+        {
+          "path": "/agent-workspace/human-sessions",
+          "url": "https://merchant.migaozn.com/agent-workspace/human-sessions",
+          "denied": true,
+          "textLen": 59,
+          "stable": true,
+          "tries": 2,
+          "ms": 1370,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 agent:session， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "在线接待",
+          "expectedDenied": true
+        },
+        {
+          "path": "/knowledge",
+          "url": "https://merchant.migaozn.com/knowledge",
+          "denied": true,
+          "textLen": 60,
+          "stable": true,
+          "tries": 2,
+          "ms": 1374,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 knowledge:view， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "知识库",
+          "expectedDenied": true
+        },
+        {
+          "path": "/after-sales",
+          "url": "https://merchant.migaozn.com/after-sales",
+          "denied": true,
+          "textLen": 62,
+          "stable": true,
+          "tries": 2,
+          "ms": 1354,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 after_sales:view， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "售后工单",
+          "expectedDenied": true
+        }
+      ],
+      "expected": [
+        {
+          "path": "/dashboard",
+          "name": "经营看板",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "name": "每日简报",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/customers",
+          "name": "客户列表",
+          "code": "customer:view"
+        },
+        {
+          "path": "/orders",
+          "name": "订单列表",
+          "code": "order:list"
+        },
+        {
+          "path": "/finance",
+          "name": "财务对账",
+          "code": "finance:view"
+        },
+        {
+          "path": "/production/pool",
+          "name": "智能派单",
+          "code": "processing:view"
+        },
+        {
+          "path": "/inbound-orders",
+          "name": "入库单",
+          "code": "inbound:view"
+        },
+        {
+          "path": "/shipments",
+          "name": "发货单",
+          "code": "order:list"
+        },
+        {
+          "path": "/notifications",
+          "name": "通知中心",
+          "code": null
+        }
+      ],
+      "missing": [
+        "/briefing",
+        "/customers",
+        "/orders",
+        "/finance",
+        "/production/pool",
+        "/inbound-orders",
+        "/shipments"
+      ],
+      "unexpected": [],
+      "landingUrl": "https://merchant.migaozn.com/dashboard"
+    },
+    {
+      "roleCode": "knowledge_editor",
+      "roleName": "知识编辑",
+      "perms": [
+        "dashboard:view",
+        "knowledge:manage",
+        "knowledge:view",
+        "product:list"
+      ],
+      "loginOk": true,
+      "sidebar": [
+        {
+          "href": "/dashboard",
+          "text": "经营看板"
+        },
+        {
+          "href": "/products",
+          "text": "商品管理"
+        },
+        {
+          "href": "/notifications",
+          "text": "通知中心"
+        },
+        {
+          "href": "/dashboard",
+          "text": "工作台"
+        }
+      ],
+      "visited": [
+        {
+          "path": "/dashboard",
+          "url": "https://merchant.migaozn.com/dashboard",
+          "denied": false,
+          "textLen": 579,
+          "stable": true,
+          "tries": 2,
+          "ms": 1651,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n经营看板\n商品管理\n客户服务\n1\n仓储与物料\n1\n通知中心\n收起\n工作台\n/\n经营看板\nA\nA06验收知识编辑\n经营看板\n\n数据更新时间：2026年10月6日 06:57\n\n刷新\n米宝 · 今日经营速览\nAI 生成内容仅供参考\n\n今日暂无新订单，销售额 ¥0\n\n待处理\n\n待支付订单\n\n0\n\n待发货订单\n\n0\n\n含加工待发货\n\n0\n\n超时工单\n\n0\n\n待补库存商品\n\n1\n\n经营数据\n今日订单数\n较昨日 —\n\n0\n\n今日销售额\n较昨日 —\n\n¥0\n\n客单价\n\n—\n\n暂无订单\n\n本月销售额\n较上月 —\n\n¥0\n\n客户服务\n\nAI 接待占比\n\n0%\n\nAI 自动接待占活跃会话的比例（活跃会话 0 个）\n\n订单趋势\n近7天\n近30天\n0\n0.25\n0.5\n0.75\n1\n09-30\n10-01\n10-02\n10-03\n10-04\n10-05\n",
+          "shot": {},
+          "menuName": "经营看板",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "url": "https://merchant.migaozn.com/briefing",
+          "denied": false,
+          "textLen": 184,
+          "stable": true,
+          "tries": 2,
+          "ms": 1664,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n仓储与物料\n1\n通知中心\n收起\n工作台\n/\n每日简报\nA\nA06验收知识编辑\n每日经营简报\n\n数据更新时间：—\n\n智能每日经营简报未开启\n\n请在「企业基础信息 → 基本设置」中开启「智能每日经营简报」企业开关。开启后系统将在每日生成时刻自动整理经营要点，本页面与侧边栏入口将同步显示。",
+          "shot": {},
+          "menuName": "每日简报",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/knowledge",
+          "url": "https://merchant.migaozn.com/knowledge",
+          "denied": false,
+          "textLen": 305,
+          "stable": true,
+          "tries": 2,
+          "ms": 1669,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n知识库\n仓储与物料\n1\n通知中心\n收起\n客户服务\n/\n知识库\nA\nA06验收知识编辑\n知识库\n\nAI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题\n\n文档提炼\n新建知识卡片\n知识卡片\n待确认\n行业模板\n关键词\n重置\n查询\n全部分类\nFAQ\n商品\n测量\n售后\n店铺配置\n全部来源\n模板\n会话提炼\n文档提炼\n人工\n全部状态\n草稿\n待审核\n已发布\n已归档\n知识卡片标题\n\t\n分类\n\t\n来源\n\t\n状态\n\t\n版本\n\t\n更新时间\n\t\n操作\n\n暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用\n共 0 条记录\n1",
+          "shot": {},
+          "menuName": "知识库",
+          "permissionCode": "knowledge:view"
+        },
+        {
+          "path": "/production/saving-board",
+          "url": "https://merchant.migaozn.com/production/saving-board",
+          "denied": false,
+          "textLen": 2278,
+          "stable": true,
+          "tries": 2,
+          "ms": 1670,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n仓储与物料\n1\n省料看板\n通知中心\n收起\n仓储与物料\n/\n省料看板\nA\nA06验收知识编辑\n省料看板\n\n省了多少料，看两件事：① 每批布用剩多少 ② 每平方米成品用掉多少米布；存量导入批次单独成组，不与切换后混算\n\n按月\n按周（ISO 周）\n刷新\n剩余 ≤0.2 米 的批次占比\n0.0%\n治「用不尽」—— 越多批次被用到几乎不剩，说明料真的被用掉了\n入库/采购总米数\n1681 米\n治「买太多」—— 切换后的采购入库总米数，不含存量导入\n两条指标必须并用：①「剩余 ≤0.2 米 的批次占比」治「用不尽」，②「入库/采购总米数」治「买太多」。单看①会被排料省料误导 —— 排料省料 ⇒ 批次剩得更多 ⇒ 只留①会把效率提升显示成变差。\n切换后（采购入库）\n批次数\n11\n≤0.2 米占比\n0.0%\n余量合计\n168",
+          "shot": {},
+          "menuName": "省料看板",
+          "permissionCode": "product:list"
+        },
+        {
+          "path": "/products",
+          "url": "https://merchant.migaozn.com/products",
+          "denied": false,
+          "textLen": 876,
+          "stable": true,
+          "tries": 2,
+          "ms": 1680,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n仓储与物料\n1\n通知中心\n收起\n商品管理\nA\nA06验收知识编辑\n商品管理\n商品标题\n商品货号\n状态\n全部\n出售中\n已下架\n审核中\n草稿\n创建时间\n至\n查询\n重置\n批量导出\n下载导入模板\n导入商品\n\t\n商品标题\n\t\n商品货号\n\t\n在售颜色\n\t\n库存\n\t\n销量\n\t\n销售额\n\t\n创建时间\n\t\n状态\n\t\n操作\n\n\t\n无图\n棉麻窗纱\n\tMG-CMCS-30...\t共1色\t260\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n阳离子绒布\n\tMG-YLZ-280...\t共1色\t90\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n涤纶印花窗帘布\n\tMG-DLQ-280...\t共1色\t240\t0\t¥0\t\n2026-1",
+          "menuName": "商品管理",
+          "permissionCode": "product:list"
+        },
+        {
+          "path": "/notifications",
+          "url": "https://merchant.migaozn.com/notifications",
+          "denied": false,
+          "textLen": 113,
+          "stable": true,
+          "tries": 2,
+          "ms": 1670,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n仓储与物料\n1\n通知中心\n收起\n通知中心\nA\nA06验收知识编辑\n通知中心\n\n管理和查看系统通知\n\n全部标记已读\n全部\n未读\n已读\n\n暂无通知",
+          "menuName": "通知中心",
+          "permissionCode": null
+        }
+      ],
+      "deniedProbes": [
+        {
+          "path": "/agent-workspace/human-sessions",
+          "url": "https://merchant.migaozn.com/agent-workspace/human-sessions",
+          "denied": true,
+          "textLen": 59,
+          "stable": true,
+          "tries": 2,
+          "ms": 1377,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 agent:session， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "在线接待",
+          "expectedDenied": true
+        },
+        {
+          "path": "/customers",
+          "url": "https://merchant.migaozn.com/customers",
+          "denied": true,
+          "textLen": 59,
+          "stable": true,
+          "tries": 2,
+          "ms": 1366,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 customer:view， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "客户列表",
+          "expectedDenied": true
+        },
+        {
+          "path": "/after-sales",
+          "url": "https://merchant.migaozn.com/after-sales",
+          "denied": true,
+          "textLen": 62,
+          "stable": true,
+          "tries": 2,
+          "ms": 1384,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 after_sales:view， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "售后工单",
+          "expectedDenied": true
+        }
+      ],
+      "expected": [
+        {
+          "path": "/dashboard",
+          "name": "经营看板",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "name": "每日简报",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/knowledge",
+          "name": "知识库",
+          "code": "knowledge:view"
+        },
+        {
+          "path": "/production/saving-board",
+          "name": "省料看板",
+          "code": "product:list"
+        },
+        {
+          "path": "/products",
+          "name": "商品管理",
+          "code": "product:list"
+        },
+        {
+          "path": "/notifications",
+          "name": "通知中心",
+          "code": null
+        }
+      ],
+      "missing": [
+        "/briefing",
+        "/knowledge",
+        "/production/saving-board"
+      ],
+      "unexpected": [],
+      "landingUrl": "https://merchant.migaozn.com/dashboard"
+    },
+    {
+      "roleCode": "operator",
+      "roleName": "运营",
+      "perms": [
+        "after_sales:view",
+        "agent:session",
+        "agent:session:manage",
+        "customer:create",
+        "customer:view",
+        "dashboard:view",
+        "employee:list",
+        "finance:create",
+        "finance:view",
+        "inbound:create",
+        "inbound:view",
+        "knowledge:view",
+        "order:create",
+        "order:detail",
+        "order:list",
+        "order:refund",
+        "order:update",
+        "processing:manage",
+        "processing:update",
+        "processing:view",
+        "product:category",
+        "product:category:view",
+        "product:create",
+        "product:list",
+        "production:execute",
+        "production:view"
+      ],
+      "loginOk": true,
+      "sidebar": [
+        {
+          "href": "/dashboard",
+          "text": "经营看板"
+        },
+        {
+          "href": "/products",
+          "text": "商品管理"
+        },
+        {
+          "href": "/notifications",
+          "text": "通知中心"
+        },
+        {
+          "href": "/dashboard",
+          "text": "工作台"
+        }
+      ],
+      "visited": [
+        {
+          "path": "/dashboard",
+          "url": "https://merchant.migaozn.com/dashboard",
+          "denied": false,
+          "textLen": 598,
+          "stable": true,
+          "tries": 2,
+          "ms": 1653,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n经营看板\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n工作台\n/\n经营看板\nA\nA06验收运营\n经营看板\n\n数据更新时间：2026年10月6日 06:57\n\n刷新\n米宝 · 今日经营速览\nAI 生成内容仅供参考\n\n今日暂无新订单，销售额 ¥0\n\n待处理\n\n待支付订单\n\n0\n\n待发货订单\n\n0\n\n含加工待发货\n\n0\n\n超时工单\n\n0\n\n待补库存商品\n\n1\n\n经营数据\n今日订单数\n较昨日 —\n\n0\n\n今日销售额\n较昨日 —\n\n¥0\n\n客单价\n\n—\n\n暂无订单\n\n本月销售额\n较上月 —\n\n¥0\n\n客户服务\n\nAI 接待占比\n\n0%\n\nAI 自动接待占活跃会话的比例（活跃会话 0 个）\n\n订单趋势\n近7天\n近30天\n0\n0.25\n0.5\n0.75\n1\n09-30\n10-01\n10-02",
+          "shot": {},
+          "menuName": "经营看板",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "url": "https://merchant.migaozn.com/briefing",
+          "denied": false,
+          "textLen": 203,
+          "stable": true,
+          "tries": 2,
+          "ms": 1670,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n工作台\n/\n每日简报\nA\nA06验收运营\n每日经营简报\n\n数据更新时间：—\n\n智能每日经营简报未开启\n\n请在「企业基础信息 → 基本设置」中开启「智能每日经营简报」企业开关。开启后系统将在每日生成时刻自动整理经营要点，本页面与侧边栏入口将同步显示。",
+          "shot": {},
+          "menuName": "每日简报",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/agent-workspace/human-sessions",
+          "url": "https://merchant.migaozn.com/agent-workspace/human-sessions",
+          "denied": false,
+          "textLen": 176,
+          "stable": true,
+          "tries": 2,
+          "ms": 1673,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n客户服务\n/\n在线接待\nA\nA06验收运营\n在线接待工作台\n待接待 0\n接待中 0\n暂无转人工会话\n（C 端用户触发转人工后在此显示）\n选择左侧会话开始接待",
+          "shot": {},
+          "menuName": "在线接待",
+          "permissionCode": "agent:session"
+        },
+        {
+          "path": "/customers",
+          "url": "https://merchant.migaozn.com/customers",
+          "denied": false,
+          "textLen": 963,
+          "stable": true,
+          "tries": 2,
+          "ms": 1674,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n客户服务\n/\n客户列表\nA\nA06验收运营\n客户管理\n\n管理客户信息、标签和互动记录\n\n标签管理\n关键词\n来源渠道\n请选择\n全部\n微信小程序\n公众号\nWeb\n订单\nVIP 等级\n请选择\n全部\n普通\nVIP 1\nVIP 2\nVIP 3\n重置\n查询\n头像\n\t\n客户名\n\t\n手机号\n\t\n来源渠道\n\t\nVIP 等级\n\t\n标签\n\t\n最后互动\n\n\n线\n\t\n线A验收客户\n\t13800138000\t订单\t普通\t\n-\n\t10-04 12:41\n\n线\n\t\n线B验收客户-ZRafter6b-mutbycnucztx\n\t13903244688\t订单\t普通\t\n-\n\t10-04 12:37\n\n线\n\t\n线B验收客户-ZRafte",
+          "shot": {},
+          "menuName": "客户列表",
+          "permissionCode": "customer:view"
+        },
+        {
+          "path": "/knowledge",
+          "url": "https://merchant.migaozn.com/knowledge",
+          "denied": false,
+          "textLen": 339,
+          "stable": true,
+          "tries": 2,
+          "ms": 1676,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n客户服务\n/\n知识库\nA\nA06验收运营\n知识库\n\nAI 客服知识库 — 发布后的知识卡片将优先用于 AI 客服回答顾客问题\n\n文档提炼\n新建知识卡片\n知识卡片\n待确认\n行业模板\n关键词\n重置\n查询\n全部分类\nFAQ\n商品\n测量\n售后\n店铺配置\n全部来源\n模板\n会话提炼\n文档提炼\n人工\n全部状态\n草稿\n待审核\n已发布\n已归档\n知识卡片标题\n\t\n分类\n\t\n来源\n\t\n状态\n\t\n版本\n\t\n更新时间\n\t\n操作\n\n暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用\n共 0 条记录\n1",
+          "menuName": "知识库",
+          "permissionCode": "knowledge:view"
+        },
+        {
+          "path": "/after-sales",
+          "url": "https://merchant.migaozn.com/after-sales",
+          "denied": false,
+          "textLen": 367,
+          "stable": true,
+          "tries": 2,
+          "ms": 1665,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n在线接待\n客户列表\n知识库\n售后工单\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n客户服务\n/\n售后工单\nA\nA06验收运营\n售后管理\n\n管理客户售后工单，处理退货、换货、维修等售后请求\n\n新建工单\n全部\n待处理\n处理中\n已完成\n已拒绝\n已关闭\n关键词搜索\n状态筛选\n全部状态\n待处理\n处理中\n已完成\n已拒绝\n已关闭\n重置\n查询\n工单号\t关联订单\t客户\t售后类型\t状态\t优先级\t创建时间\t更新时间\t操作\nAS-20261004-0001\t-\t-\t退货\t已完成\t普通\t\n2026-10-04\n12:37\n\t\n2026-10-04\n12:37\n\t查看\n共 1 条记录(第 1-1 条)\n每页\n10\n20\n50\n100\n条\n1",
+          "menuName": "售后工单",
+          "permissionCode": "after_sales:view"
+        },
+        {
+          "path": "/orders",
+          "url": "https://merchant.migaozn.com/orders",
+          "denied": false,
+          "textLen": 303,
+          "stable": true,
+          "tries": 2,
+          "ms": 1676,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n订单列表\n财务对账\n生产管理\n5\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n交易管理\n/\n订单列表\nA\nA06验收运营\n订单列表\n新增订单\n下单时间\n至\n订单ID\n收货人\n制单人\n商品货号\n商品标题\n是否加工\n全部\n是\n否\n查询\n重置\n刷新\n全部\n待付款\n待发货\n已发货\n已完成\n含加工订单\n已关闭\n退款/售后\n\t订单ID\t采购商品\t\n采购明细\n(名称:单价×数量+加工费)\n\t累计金额(元)\t实收款(元)\t收货人信息\t下单时间\n\t制单人\t状态\t加急\t到货日\t备注\t操作\n暂无数据\n共 0 条\n‹\n1\n›",
+          "menuName": "订单列表",
+          "permissionCode": "order:list"
+        },
+        {
+          "path": "/finance",
+          "url": "https://merchant.migaozn.com/finance",
+          "denied": false,
+          "textLen": 1611,
+          "stable": true,
+          "tries": 2,
+          "ms": 1673,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n订单列表\n财务对账\n生产管理\n5\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n交易管理\n/\n财务对账\nA\nA06验收运营\n财务对账\n\n资金流水、收支汇总与应收对账\n\n登记收支\n开始日期\n结束日期\n重置\n查询\n本期收入\n¥1,574.00\n13 笔\n本期退款\n¥300.01\n2 笔\n净收入\n¥1,273.99\n收入 - 退款\n待收款\n¥0.00\n累计未收差额\n资金流水\n收支汇总\n应收对账\n收支类型\n全部\n收款\n退款\n支付方式\n全部\n微信\n支付宝\n银行转账\n现金\n其他\n关键词\n查询\n流水号\t类型\t金额\t支付方式\t关联订单\t状态\t操作人\t交易时间\t备注\nFIN-20261004-0015\t收款\t+¥80.00\t-\t20261004797970002\t成功\t系统\t\n2026-10-04\n12:59\n",
+          "menuName": "财务对账",
+          "permissionCode": "finance:view"
+        },
+        {
+          "path": "/production",
+          "url": "https://merchant.migaozn.com/production",
+          "denied": false,
+          "textLen": 244,
+          "stable": true,
+          "tries": 2,
+          "ms": 1680,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n生产管理\n/\n生产看板\nA\nA06验收运营\n生产看板\n\n加工单在产进度与计件合计\n\n刷新\n关键词\n状态\n全部状态\n已生成\n已发加工\n加工中\n加工完成\n已取消\n查询\n重置\n\n状态流转请在订单详情操作\n\n加工单号\t订单号\t客户\t商品与数量\t状态\t工序进度\t计件合计\t操作\n暂无加工单",
+          "menuName": "生产看板",
+          "permissionCode": "production:view"
+        },
+        {
+          "path": "/production/pool",
+          "url": "https://merchant.migaozn.com/production/pool",
+          "denied": false,
+          "textLen": 353,
+          "stable": true,
+          "tries": 2,
+          "ms": 1674,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n生产管理\n/\n智能派单\nA\nA06验收运营\n智能派单\n\n待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；加急单不参与合并，立即单独派单\n\n刷新\n合并派单开关\n未开启\n最长等待 24 小时\n待派订单 0 单\n加工明细 0 行\n加急订单 0 单\n超时未派 0 单\n加急订单（不参与合并，立即派）\n0 行 / 0 单 —— 不参与合并，立即单独派单\n当前没有加急待派订单\n可合并的待派订单（按料分组）\n0 个料组 / 已选 0 单\n一键合并派单\n当前没有可合并的待派订单",
+          "menuName": "智能派单",
+          "permissionCode": "processing:view"
+        },
+        {
+          "path": "/production/processing",
+          "url": "https://merchant.migaozn.com/production/processing",
+          "denied": false,
+          "textLen": 311,
+          "stable": true,
+          "tries": 2,
+          "ms": 1675,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n生产管理\n/\n加工项管理\nA\nA06验收运营\n加工项管理\n\n加工项是下单时客户可选的加工服务（如 韩褶、打孔）；加工费按选配组合定价（元/米）， 下单时由系统按选配结果自动匹配取价，顾客只选配、不报价。\n\n刷新\n加工项\n加工费组合\n加工项\n0 项\n加工分类（0）\n新增加工项\n加工项名称\t加工分类\t操作\n暂无加工项 —— 点右上「新增加工项」建第一个（如 韩褶、打孔）；当前还没有加工分类，可在新增弹窗里直接创建",
+          "menuName": "加工项管理",
+          "permissionCode": "production:view"
+        },
+        {
+          "path": "/production/routings",
+          "url": "https://merchant.migaozn.com/production/routings",
+          "denied": false,
+          "textLen": 1852,
+          "stable": true,
+          "tries": 2,
+          "ms": 1675,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n生产管理\n/\n工艺配置\nA\nA06验收运营\n工艺配置\n\n工序与计件单价 → 工艺路线（订单按哪条主线走）→ 算料 / 裁高口径。 路线是计件工资与完工判定的唯一输入\n\n刷新\n新增工序\n新建路线\n配置就绪度\n按顺序配：先有工序与单价，才能排路线；路线里要有一条默认的兜底；最后按你家口径核一遍算料与裁高\n1. 工序与单价 30 道\n待完成\n\n有 1 道工序没有价目行（已在表里以「无价目行」标出）：点「去处理」逐道处理 —— 停用或删除后重建（删除不影响历史报工）。\n\n去处理\n2. 基础路线 2/2 条 · 齐\n已完成\n去查看\n3. 默认路线 1 条\n已完成\n去查看\n4. 算料配置 系统默",
+          "menuName": "工艺配置",
+          "permissionCode": "production:view"
+        },
+        {
+          "path": "/production/piecework",
+          "url": "https://merchant.migaozn.com/production/piecework",
+          "denied": false,
+          "textLen": 186,
+          "stable": true,
+          "tries": 2,
+          "ms": 1678,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n生产管理\n/\n计件工资\nA\nA06验收运营\n计件工资\n\n按期间汇总报工（合格数量 × 工序单价；返工/报废不计件）\n\n刷新\n期间\n工人\n查询\n\n该期间暂无计件数据",
+          "menuName": "计件工资",
+          "permissionCode": "production:view"
+        },
+        {
+          "path": "/inbound-orders",
+          "url": "https://merchant.migaozn.com/inbound-orders",
+          "denied": false,
+          "textLen": 1542,
+          "stable": true,
+          "tries": 2,
+          "ms": 1669,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n入库单\n发货单\n余料台账\n省料看板\n组织管理\n1\n通知中心\n收起\n仓储与物料\n/\n入库单\nA\nA06验收运营\n入库单\n\n商品布料入库：建单（草稿）→ 过账（自动生成批次号 + 自动加库存 + 移动加权平均成本）→ 批次可追溯；期初建账可按实物把在库批次（含 0.5 米级尾料）登记进来\n\n期初建账导入\n新建入库单\n全部状态\n草稿\n已过账\n已作废\n查询\n重置\n入库单号\t入库日期\t供应商\t仓库\t行数 / 总数量\t批次号\t金额\t状态\t操作\nRK-20261005-0015\t2026-10-05\t广州中大轻纺城-A132档\t门店后仓\t1 / 50\t-\t¥1650.00\t已作废\t详情\nRK-20261005-0014\t2026-10-04\t绍兴柯桥万隆布业\t主仓（一楼）\t1 ",
+          "menuName": "入库单",
+          "permissionCode": "inbound:view"
+        },
+        {
+          "path": "/shipments",
+          "url": "https://merchant.migaozn.com/shipments",
+          "denied": false,
+          "textLen": 227,
+          "stable": true,
+          "tries": 2,
+          "ms": 1664,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n入库单\n发货单\n余料台账\n省料看板\n组织管理\n1\n通知中心\n收起\n仓储与物料\n/\n发货单\nA\nA06验收运营\n发货单\n\n发出的货都在这里：发货单号 / 订单号 / 客户 / 经手人 / 实发数量；可按单号、订单号、客户检索，并补打纸质发货单\n\n查询\n重置\n发货单号\t订单号\t客户\t来源\t发货人\t发货时间\t实发\t操作\n暂无发货单",
+          "menuName": "发货单",
+          "permissionCode": "order:list"
+        },
+        {
+          "path": "/production/remnants",
+          "url": "https://merchant.migaozn.com/production/remnants",
+          "denied": false,
+          "textLen": 529,
+          "stable": true,
+          "tries": 2,
+          "ms": 1672,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n入库单\n发货单\n余料台账\n省料看板\n组织管理\n1\n通知中心\n收起\n仓储与物料\n/\n余料台账\nA\nA06验收运营\n余料台账\n\n裁剪剩下的布：尺寸、来源订单与批次、缸号、状态。余料不是资产 —— 只记实物可用性，不计价、不进库存金额。\n\n刷新\n可用\n0\n0.00 米\n已用\n0\n0.00 米\n已报废\n0\n0.00 米\n客户带走\n0\n不计入可用余料\n余料回收额合计 ¥0.00（冲减用它的那些单的面料成本，只进内部成本口径 —— 对客售价与加工费一字不动）；领料成本合计 ¥0.00； 余料回收率 —（还没有可算的数据）；报废率 —（还没有可算的数据）\n小件优先匹配\n\n填订单明细行 id：系统按该行勾选的特殊选项（余料做绑带 / 余料做帘头 / 抱枕 …）算出小件需求， 再从",
+          "menuName": "余料台账",
+          "permissionCode": "processing:manage"
+        },
+        {
+          "path": "/production/saving-board",
+          "url": "https://merchant.migaozn.com/production/saving-board",
+          "denied": false,
+          "textLen": 2310,
+          "stable": true,
+          "tries": 2,
+          "ms": 1669,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n入库单\n发货单\n余料台账\n省料看板\n组织管理\n1\n通知中心\n收起\n仓储与物料\n/\n省料看板\nA\nA06验收运营\n省料看板\n\n省了多少料，看两件事：① 每批布用剩多少 ② 每平方米成品用掉多少米布；存量导入批次单独成组，不与切换后混算\n\n按月\n按周（ISO 周）\n刷新\n剩余 ≤0.2 米 的批次占比\n0.0%\n治「用不尽」—— 越多批次被用到几乎不剩，说明料真的被用掉了\n入库/采购总米数\n1681 米\n治「买太多」—— 切换后的采购入库总米数，不含存量导入\n两条指标必须并用：①「剩余 ≤0.2 米 的批次占比」治「用不尽」，②「入库/采购总米数」治「买太多」。单看①会被排料省料误导 —— 排料省料 ⇒ 批次剩得更多 ⇒ 只留①会把效率提升显示成变差。\n切换后（采购入",
+          "menuName": "省料看板",
+          "permissionCode": "product:list"
+        },
+        {
+          "path": "/employees",
+          "url": "https://merchant.migaozn.com/employees",
+          "denied": false,
+          "textLen": 894,
+          "stable": true,
+          "tries": 2,
+          "ms": 1672,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n1\n员工管理\n通知中心\n收起\n组织管理\n/\n员工管理\nA\nA06验收运营\n员工管理\n\n管理系统用户和员工账号\n\n仅拥有 employee:create 权限的员工可管理账号\n员工\n工人档案\n姓名/手机号\n状态\n全部状态\n启用\n禁用\n重置\n查询\n序号\n\t\n姓名\n\t\n手机号\n\t\n登录账号\n\t\n岗位\n\t\n权限\n\t\n状态\n\t\n创建时间\n\t\n操作\n\n1\tA06验收知识编辑\t1375061605\ta06_knowledge_editor\t知识编辑\t\n经营看板\n省料看板\nknowledge:manage\n+1\n\t\n\t\n2026-10-06\n06:54\n\t\n只读\n\n2\tA06验收商品管理员\t1374869204\ta06_product_manager\t商品管理员\t\n经营",
+          "menuName": "员工管理",
+          "permissionCode": "employee:list"
+        },
+        {
+          "path": "/products",
+          "url": "https://merchant.migaozn.com/products",
+          "denied": false,
+          "textLen": 900,
+          "stable": true,
+          "tries": 2,
+          "ms": 1666,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n商品管理\nA\nA06验收运营\n商品管理\n商品标题\n商品货号\n状态\n全部\n出售中\n已下架\n审核中\n草稿\n创建时间\n至\n查询\n重置\n批量导出\n下载导入模板\n导入商品\n新增商品\n\t\n商品标题\n\t\n商品货号\n\t\n在售颜色\n\t\n库存\n\t\n销量\n\t\n销售额\n\t\n创建时间\n\t\n状态\n\t\n操作\n\n\t\n无图\n棉麻窗纱\n\tMG-CMCS-30...\t共1色\t260\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n阳离子绒布\n\tMG-YLZ-280...\t共1色\t90\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n涤纶印花窗帘布\n\tMG-DLQ-280",
+          "menuName": "商品管理",
+          "permissionCode": "product:list"
+        },
+        {
+          "path": "/notifications",
+          "url": "https://merchant.migaozn.com/notifications",
+          "denied": false,
+          "textLen": 132,
+          "stable": true,
+          "tries": 2,
+          "ms": 1682,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n4\n交易管理\n2\n生产管理\n5\n仓储与物料\n4\n组织管理\n1\n通知中心\n收起\n通知中心\nA\nA06验收运营\n通知中心\n\n管理和查看系统通知\n\n全部标记已读\n全部\n未读\n已读\n\n暂无通知",
+          "menuName": "通知中心",
+          "permissionCode": null
+        }
+      ],
+      "deniedProbes": [
+        {
+          "path": "/roles",
+          "url": "https://merchant.migaozn.com/roles",
+          "denied": true,
+          "textLen": 57,
+          "stable": true,
+          "tries": 2,
+          "ms": 1372,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 system:view， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "岗位权限",
+          "expectedDenied": true
+        },
+        {
+          "path": "/settings",
+          "url": "https://merchant.migaozn.com/settings",
+          "denied": true,
+          "textLen": 59,
+          "stable": true,
+          "tries": 2,
+          "ms": 1388,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 system:manage， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "企业基础信息",
+          "expectedDenied": true
+        }
+      ],
+      "expected": [
+        {
+          "path": "/dashboard",
+          "name": "经营看板",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "name": "每日简报",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/agent-workspace/human-sessions",
+          "name": "在线接待",
+          "code": "agent:session"
+        },
+        {
+          "path": "/customers",
+          "name": "客户列表",
+          "code": "customer:view"
+        },
+        {
+          "path": "/knowledge",
+          "name": "知识库",
+          "code": "knowledge:view"
+        },
+        {
+          "path": "/after-sales",
+          "name": "售后工单",
+          "code": "after_sales:view"
+        },
+        {
+          "path": "/orders",
+          "name": "订单列表",
+          "code": "order:list"
+        },
+        {
+          "path": "/finance",
+          "name": "财务对账",
+          "code": "finance:view"
+        },
+        {
+          "path": "/production",
+          "name": "生产看板",
+          "code": "production:view"
+        },
+        {
+          "path": "/production/pool",
+          "name": "智能派单",
+          "code": "processing:view"
+        },
+        {
+          "path": "/production/processing",
+          "name": "加工项管理",
+          "code": "production:view"
+        },
+        {
+          "path": "/production/routings",
+          "name": "工艺配置",
+          "code": "production:view"
+        },
+        {
+          "path": "/production/piecework",
+          "name": "计件工资",
+          "code": "production:view"
+        },
+        {
+          "path": "/inbound-orders",
+          "name": "入库单",
+          "code": "inbound:view"
+        },
+        {
+          "path": "/shipments",
+          "name": "发货单",
+          "code": "order:list"
+        },
+        {
+          "path": "/production/remnants",
+          "name": "余料台账",
+          "code": "processing:manage"
+        },
+        {
+          "path": "/production/saving-board",
+          "name": "省料看板",
+          "code": "product:list"
+        },
+        {
+          "path": "/employees",
+          "name": "员工管理",
+          "code": "employee:list"
+        },
+        {
+          "path": "/products",
+          "name": "商品管理",
+          "code": "product:list"
+        },
+        {
+          "path": "/notifications",
+          "name": "通知中心",
+          "code": null
+        }
+      ],
+      "missing": [
+        "/briefing",
+        "/agent-workspace/human-sessions",
+        "/customers",
+        "/knowledge",
+        "/after-sales",
+        "/orders",
+        "/finance",
+        "/production",
+        "/production/pool",
+        "/production/processing",
+        "/production/routings",
+        "/production/piecework",
+        "/inbound-orders",
+        "/shipments",
+        "/production/remnants",
+        "/production/saving-board",
+        "/employees"
+      ],
+      "unexpected": [],
+      "landingUrl": "https://merchant.migaozn.com/dashboard"
+    },
+    {
+      "roleCode": "product_manager",
+      "roleName": "商品管理员",
+      "perms": [
+        "dashboard:view",
+        "processing:manage",
+        "processing:view",
+        "product:category",
+        "product:category:view",
+        "product:create",
+        "product:list",
+        "production:view"
+      ],
+      "loginOk": true,
+      "sidebar": [
+        {
+          "href": "/dashboard",
+          "text": "经营看板"
+        },
+        {
+          "href": "/products",
+          "text": "商品管理"
+        },
+        {
+          "href": "/notifications",
+          "text": "通知中心"
+        },
+        {
+          "href": "/dashboard",
+          "text": "工作台"
+        }
+      ],
+      "visited": [
+        {
+          "path": "/dashboard",
+          "url": "https://merchant.migaozn.com/dashboard",
+          "denied": false,
+          "textLen": 580,
+          "stable": true,
+          "tries": 2,
+          "ms": 1659,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n经营看板\n商品管理\n生产管理\n5\n仓储与物料\n2\n通知中心\n收起\n工作台\n/\n经营看板\nA\nA06验收商品管理员\n经营看板\n\n数据更新时间：2026年10月6日 06:58\n\n刷新\n米宝 · 今日经营速览\nAI 生成内容仅供参考\n\n今日暂无新订单，销售额 ¥0\n\n待处理\n\n待支付订单\n\n0\n\n待发货订单\n\n0\n\n含加工待发货\n\n0\n\n超时工单\n\n0\n\n待补库存商品\n\n1\n\n经营数据\n今日订单数\n较昨日 —\n\n0\n\n今日销售额\n较昨日 —\n\n¥0\n\n客单价\n\n—\n\n暂无订单\n\n本月销售额\n较上月 —\n\n¥0\n\n客户服务\n\nAI 接待占比\n\n0%\n\nAI 自动接待占活跃会话的比例（活跃会话 0 个）\n\n订单趋势\n近7天\n近30天\n0\n0.25\n0.5\n0.75\n1\n09-30\n10-01\n10-02\n10-03\n10-04\n10-05",
+          "shot": {},
+          "menuName": "经营看板",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "url": "https://merchant.migaozn.com/briefing",
+          "denied": false,
+          "textLen": 185,
+          "stable": true,
+          "tries": 2,
+          "ms": 1670,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n生产管理\n5\n仓储与物料\n2\n通知中心\n收起\n工作台\n/\n每日简报\nA\nA06验收商品管理员\n每日经营简报\n\n数据更新时间：—\n\n智能每日经营简报未开启\n\n请在「企业基础信息 → 基本设置」中开启「智能每日经营简报」企业开关。开启后系统将在每日生成时刻自动整理经营要点，本页面与侧边栏入口将同步显示。",
+          "shot": {},
+          "menuName": "每日简报",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/production",
+          "url": "https://merchant.migaozn.com/production",
+          "denied": false,
+          "textLen": 246,
+          "stable": true,
+          "tries": 2,
+          "ms": 1663,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n2\n通知中心\n收起\n生产管理\n/\n生产看板\nA\nA06验收商品管理员\n生产看板\n\n加工单在产进度与计件合计\n\n刷新\n关键词\n状态\n全部状态\n已生成\n已发加工\n加工中\n加工完成\n已取消\n查询\n重置\n\n状态流转请在订单详情操作（当前账号无订单查看权限，请联系管理员）\n\n加工单号\t订单号\t客户\t商品与数量\t状态\t工序进度\t计件合计\t操作\n暂无加工单",
+          "shot": {},
+          "menuName": "生产看板",
+          "permissionCode": "production:view"
+        },
+        {
+          "path": "/production/pool",
+          "url": "https://merchant.migaozn.com/production/pool",
+          "denied": false,
+          "textLen": 335,
+          "stable": true,
+          "tries": 2,
+          "ms": 1666,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n2\n通知中心\n收起\n生产管理\n/\n智能派单\nA\nA06验收商品管理员\n智能派单\n\n待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；加急单不参与合并，立即单独派单\n\n刷新\n合并派单开关\n未开启\n最长等待 24 小时\n待派订单 0 单\n加工明细 0 行\n加急订单 0 单\n超时未派 0 单\n加急订单（不参与合并，立即派）\n0 行 / 0 单 —— 不参与合并，立即单独派单\n当前没有加急待派订单\n可合并的待派订单（按料分组）\n0 个料组 / 已选 0 单\n一键合并派单\n当前没有可合并的待派订单",
+          "shot": {},
+          "menuName": "智能派单",
+          "permissionCode": "processing:view"
+        },
+        {
+          "path": "/production/processing",
+          "url": "https://merchant.migaozn.com/production/processing",
+          "denied": false,
+          "textLen": 293,
+          "stable": true,
+          "tries": 2,
+          "ms": 1654,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n2\n通知中心\n收起\n生产管理\n/\n加工项管理\nA\nA06验收商品管理员\n加工项管理\n\n加工项是下单时客户可选的加工服务（如 韩褶、打孔）；加工费按选配组合定价（元/米）， 下单时由系统按选配结果自动匹配取价，顾客只选配、不报价。\n\n刷新\n加工项\n加工费组合\n加工项\n0 项\n加工分类（0）\n新增加工项\n加工项名称\t加工分类\t操作\n暂无加工项 —— 点右上「新增加工项」建第一个（如 韩褶、打孔）；当前还没有加工分类，可在新增弹窗里直接创建",
+          "menuName": "加工项管理",
+          "permissionCode": "production:view"
+        },
+        {
+          "path": "/production/routings",
+          "url": "https://merchant.migaozn.com/production/routings",
+          "denied": false,
+          "textLen": 1834,
+          "stable": true,
+          "tries": 2,
+          "ms": 1664,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n2\n通知中心\n收起\n生产管理\n/\n工艺配置\nA\nA06验收商品管理员\n工艺配置\n\n工序与计件单价 → 工艺路线（订单按哪条主线走）→ 算料 / 裁高口径。 路线是计件工资与完工判定的唯一输入\n\n刷新\n新增工序\n新建路线\n配置就绪度\n按顺序配：先有工序与单价，才能排路线；路线里要有一条默认的兜底；最后按你家口径核一遍算料与裁高\n1. 工序与单价 30 道\n待完成\n\n有 1 道工序没有价目行（已在表里以「无价目行」标出）：点「去处理」逐道处理 —— 停用或删除后重建（删除不影响历史报工）。\n\n去处理\n2. 基础路线 2/2 条 · 齐\n已完成\n去查看\n3. 默认路线 1 条\n已完成\n去查看\n4. 算料配置 系统默认\n待完成\n\n现在用的是系统默认值：",
+          "menuName": "工艺配置",
+          "permissionCode": "production:view"
+        },
+        {
+          "path": "/production/piecework",
+          "url": "https://merchant.migaozn.com/production/piecework",
+          "denied": false,
+          "textLen": 168,
+          "stable": true,
+          "tries": 2,
+          "ms": 1664,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n生产管理\n5\n生产看板\n智能派单\n加工项管理\n工艺配置\n计件工资\n仓储与物料\n2\n通知中心\n收起\n生产管理\n/\n计件工资\nA\nA06验收商品管理员\n计件工资\n\n按期间汇总报工（合格数量 × 工序单价；返工/报废不计件）\n\n刷新\n期间\n工人\n查询\n\n该期间暂无计件数据",
+          "menuName": "计件工资",
+          "permissionCode": "production:view"
+        },
+        {
+          "path": "/production/remnants",
+          "url": "https://merchant.migaozn.com/production/remnants",
+          "denied": false,
+          "textLen": 503,
+          "stable": true,
+          "tries": 2,
+          "ms": 1660,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n生产管理\n5\n仓储与物料\n2\n余料台账\n省料看板\n通知中心\n收起\n仓储与物料\n/\n余料台账\nA\nA06验收商品管理员\n余料台账\n\n裁剪剩下的布：尺寸、来源订单与批次、缸号、状态。余料不是资产 —— 只记实物可用性，不计价、不进库存金额。\n\n刷新\n可用\n0\n0.00 米\n已用\n0\n0.00 米\n已报废\n0\n0.00 米\n客户带走\n0\n不计入可用余料\n余料回收额合计 ¥0.00（冲减用它的那些单的面料成本，只进内部成本口径 —— 对客售价与加工费一字不动）；领料成本合计 ¥0.00； 余料回收率 —（还没有可算的数据）；报废率 —（还没有可算的数据）\n小件优先匹配\n\n填订单明细行 id：系统按该行勾选的特殊选项（余料做绑带 / 余料做帘头 / 抱枕 …）算出小件需求， 再从可用余料里挑装得下的余料（同缸号优先、其次同色）；找",
+          "menuName": "余料台账",
+          "permissionCode": "processing:manage"
+        },
+        {
+          "path": "/production/saving-board",
+          "url": "https://merchant.migaozn.com/production/saving-board",
+          "denied": false,
+          "textLen": 2284,
+          "stable": true,
+          "tries": 2,
+          "ms": 1658,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n生产管理\n5\n仓储与物料\n2\n余料台账\n省料看板\n通知中心\n收起\n仓储与物料\n/\n省料看板\nA\nA06验收商品管理员\n省料看板\n\n省了多少料，看两件事：① 每批布用剩多少 ② 每平方米成品用掉多少米布；存量导入批次单独成组，不与切换后混算\n\n按月\n按周（ISO 周）\n刷新\n剩余 ≤0.2 米 的批次占比\n0.0%\n治「用不尽」—— 越多批次被用到几乎不剩，说明料真的被用掉了\n入库/采购总米数\n1681 米\n治「买太多」—— 切换后的采购入库总米数，不含存量导入\n两条指标必须并用：①「剩余 ≤0.2 米 的批次占比」治「用不尽」，②「入库/采购总米数」治「买太多」。单看①会被排料省料误导 —— 排料省料 ⇒ 批次剩得更多 ⇒ 只留①会把效率提升显示成变差。\n切换后（采购入库）\n批次数\n11\n≤0.2 米占比\n0.0%\n余量",
+          "menuName": "省料看板",
+          "permissionCode": "product:list"
+        },
+        {
+          "path": "/products",
+          "url": "https://merchant.migaozn.com/products",
+          "denied": false,
+          "textLen": 882,
+          "stable": true,
+          "tries": 2,
+          "ms": 1654,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n生产管理\n5\n仓储与物料\n2\n通知中心\n收起\n商品管理\nA\nA06验收商品管理员\n商品管理\n商品标题\n商品货号\n状态\n全部\n出售中\n已下架\n审核中\n草稿\n创建时间\n至\n查询\n重置\n批量导出\n下载导入模板\n导入商品\n新增商品\n\t\n商品标题\n\t\n商品货号\n\t\n在售颜色\n\t\n库存\n\t\n销量\n\t\n销售额\n\t\n创建时间\n\t\n状态\n\t\n操作\n\n\t\n无图\n棉麻窗纱\n\tMG-CMCS-30...\t共1色\t260\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n阳离子绒布\n\tMG-YLZ-280...\t共1色\t90\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n涤纶印花窗帘布\n\tMG-DLQ-280...\t共1色\t240\t0\t¥0\t\n",
+          "menuName": "商品管理",
+          "permissionCode": "product:list"
+        },
+        {
+          "path": "/notifications",
+          "url": "https://merchant.migaozn.com/notifications",
+          "denied": false,
+          "textLen": 114,
+          "stable": true,
+          "tries": 2,
+          "ms": 1666,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n生产管理\n5\n仓储与物料\n2\n通知中心\n收起\n通知中心\nA\nA06验收商品管理员\n通知中心\n\n管理和查看系统通知\n\n全部标记已读\n全部\n未读\n已读\n\n暂无通知",
+          "menuName": "通知中心",
+          "permissionCode": null
+        }
+      ],
+      "deniedProbes": [
+        {
+          "path": "/agent-workspace/human-sessions",
+          "url": "https://merchant.migaozn.com/agent-workspace/human-sessions",
+          "denied": true,
+          "textLen": 59,
+          "stable": true,
+          "tries": 2,
+          "ms": 1350,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 agent:session， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "在线接待",
+          "expectedDenied": true
+        },
+        {
+          "path": "/customers",
+          "url": "https://merchant.migaozn.com/customers",
+          "denied": true,
+          "textLen": 59,
+          "stable": true,
+          "tries": 2,
+          "ms": 1359,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 customer:view， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "客户列表",
+          "expectedDenied": true
+        },
+        {
+          "path": "/knowledge",
+          "url": "https://merchant.migaozn.com/knowledge",
+          "denied": true,
+          "textLen": 60,
+          "stable": true,
+          "tries": 2,
+          "ms": 1364,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 knowledge:view， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "知识库",
+          "expectedDenied": true
+        }
+      ],
+      "expected": [
+        {
+          "path": "/dashboard",
+          "name": "经营看板",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "name": "每日简报",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/production",
+          "name": "生产看板",
+          "code": "production:view"
+        },
+        {
+          "path": "/production/pool",
+          "name": "智能派单",
+          "code": "processing:view"
+        },
+        {
+          "path": "/production/processing",
+          "name": "加工项管理",
+          "code": "production:view"
+        },
+        {
+          "path": "/production/routings",
+          "name": "工艺配置",
+          "code": "production:view"
+        },
+        {
+          "path": "/production/piecework",
+          "name": "计件工资",
+          "code": "production:view"
+        },
+        {
+          "path": "/production/remnants",
+          "name": "余料台账",
+          "code": "processing:manage"
+        },
+        {
+          "path": "/production/saving-board",
+          "name": "省料看板",
+          "code": "product:list"
+        },
+        {
+          "path": "/products",
+          "name": "商品管理",
+          "code": "product:list"
+        },
+        {
+          "path": "/notifications",
+          "name": "通知中心",
+          "code": null
+        }
+      ],
+      "missing": [
+        "/briefing",
+        "/production",
+        "/production/pool",
+        "/production/processing",
+        "/production/routings",
+        "/production/piecework",
+        "/production/remnants",
+        "/production/saving-board"
+      ],
+      "unexpected": [],
+      "landingUrl": "https://merchant.migaozn.com/dashboard"
+    },
+    {
+      "roleCode": "sales",
+      "roleName": "销售",
+      "perms": [
+        "customer:view",
+        "dashboard:view",
+        "inbound:view",
+        "order:create",
+        "order:detail",
+        "order:list",
+        "processing:view",
+        "product:list",
+        "production:execute"
+      ],
+      "loginOk": true,
+      "sidebar": [
+        {
+          "href": "/dashboard",
+          "text": "经营看板"
+        },
+        {
+          "href": "/products",
+          "text": "商品管理"
+        },
+        {
+          "href": "/notifications",
+          "text": "通知中心"
+        },
+        {
+          "href": "/dashboard",
+          "text": "工作台"
+        }
+      ],
+      "visited": [
+        {
+          "path": "/dashboard",
+          "url": "https://merchant.migaozn.com/dashboard",
+          "denied": false,
+          "textLen": 591,
+          "stable": true,
+          "tries": 2,
+          "ms": 1660,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n经营看板\n商品管理\n客户服务\n1\n交易管理\n1\n生产管理\n1\n仓储与物料\n3\n通知中心\n收起\n工作台\n/\n经营看板\nA\nA06验收销售\n经营看板\n\n数据更新时间：2026年10月6日 06:58\n\n刷新\n米宝 · 今日经营速览\nAI 生成内容仅供参考\n\n今日暂无新订单，销售额 ¥0\n\n待处理\n\n待支付订单\n\n0\n\n待发货订单\n\n0\n\n含加工待发货\n\n0\n\n超时工单\n\n0\n\n待补库存商品\n\n1\n\n经营数据\n今日订单数\n较昨日 —\n\n0\n\n今日销售额\n较昨日 —\n\n¥0\n\n客单价\n\n—\n\n暂无订单\n\n本月销售额\n较上月 —\n\n¥0\n\n客户服务\n\nAI 接待占比\n\n0%\n\nAI 自动接待占活跃会话的比例（活跃会话 0 个）\n\n订单趋势\n近7天\n近30天\n0\n0.25\n0.5\n0.75\n1\n09-30\n10-01\n10-02\n10-03\n",
+          "shot": {},
+          "menuName": "经营看板",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "url": "https://merchant.migaozn.com/briefing",
+          "denied": false,
+          "textLen": 196,
+          "stable": true,
+          "tries": 2,
+          "ms": 1679,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n交易管理\n1\n生产管理\n1\n仓储与物料\n3\n通知中心\n收起\n工作台\n/\n每日简报\nA\nA06验收销售\n每日经营简报\n\n数据更新时间：—\n\n智能每日经营简报未开启\n\n请在「企业基础信息 → 基本设置」中开启「智能每日经营简报」企业开关。开启后系统将在每日生成时刻自动整理经营要点，本页面与侧边栏入口将同步显示。",
+          "shot": {},
+          "menuName": "每日简报",
+          "permissionCode": "dashboard:view"
+        },
+        {
+          "path": "/customers",
+          "url": "https://merchant.migaozn.com/customers",
+          "denied": false,
+          "textLen": 942,
+          "stable": true,
+          "tries": 2,
+          "ms": 1675,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n客户列表\n交易管理\n1\n生产管理\n1\n仓储与物料\n3\n通知中心\n收起\n客户服务\n/\n客户列表\nA\nA06验收销售\n客户管理\n\n管理客户信息、标签和互动记录\n\n标签管理\n关键词\n来源渠道\n请选择\n全部\n微信小程序\n公众号\nWeb\n订单\nVIP 等级\n请选择\n全部\n普通\nVIP 1\nVIP 2\nVIP 3\n重置\n查询\n头像\n\t\n客户名\n\t\n手机号\n\t\n来源渠道\n\t\nVIP 等级\n\t\n标签\n\t\n最后互动\n\n\n线\n\t\n线A验收客户\n\t13800138000\t订单\t普通\t\n-\n\t10-04 12:41\n\n线\n\t\n线B验收客户-ZRafter6b-mutbycnucztx\n\t13903244688\t订单\t普通\t\n-\n\t10-04 12:37\n\n线\n\t\n线B验收客户-ZRafter6-mutbyazz46ff\n\t1399",
+          "shot": {},
+          "menuName": "客户列表",
+          "permissionCode": "customer:view"
+        },
+        {
+          "path": "/orders",
+          "url": "https://merchant.migaozn.com/orders",
+          "denied": false,
+          "textLen": 291,
+          "stable": true,
+          "tries": 2,
+          "ms": 1661,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n交易管理\n1\n订单列表\n生产管理\n1\n仓储与物料\n3\n通知中心\n收起\n交易管理\n/\n订单列表\nA\nA06验收销售\n订单列表\n新增订单\n下单时间\n至\n订单ID\n收货人\n制单人\n商品货号\n商品标题\n是否加工\n全部\n是\n否\n查询\n重置\n刷新\n全部\n待付款\n待发货\n已发货\n已完成\n含加工订单\n已关闭\n退款/售后\n\t订单ID\t采购商品\t\n采购明细\n(名称:单价×数量+加工费)\n\t累计金额(元)\t实收款(元)\t收货人信息\t下单时间\n\t制单人\t状态\t加急\t到货日\t备注\t操作\n暂无数据\n共 0 条\n‹\n1\n›",
+          "shot": {},
+          "menuName": "订单列表",
+          "permissionCode": "order:list"
+        },
+        {
+          "path": "/production/pool",
+          "url": "https://merchant.migaozn.com/production/pool",
+          "denied": false,
+          "textLen": 325,
+          "stable": true,
+          "tries": 2,
+          "ms": 1676,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n交易管理\n1\n生产管理\n1\n智能派单\n仓储与物料\n3\n通知中心\n收起\n生产管理\n/\n智能派单\nA\nA06验收销售\n智能派单\n\n待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；加急单不参与合并，立即单独派单\n\n刷新\n合并派单开关\n未开启\n最长等待 24 小时\n待派订单 0 单\n加工明细 0 行\n加急订单 0 单\n超时未派 0 单\n加急订单（不参与合并，立即派）\n0 行 / 0 单 —— 不参与合并，立即单独派单\n当前没有加急待派订单\n可合并的待派订单（按料分组）\n0 个料组 / 已选 0 单\n一键合并派单\n当前没有可合并的待派订单",
+          "menuName": "智能派单",
+          "permissionCode": "processing:view"
+        },
+        {
+          "path": "/inbound-orders",
+          "url": "https://merchant.migaozn.com/inbound-orders",
+          "denied": false,
+          "textLen": 1524,
+          "stable": true,
+          "tries": 2,
+          "ms": 1653,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n交易管理\n1\n生产管理\n1\n仓储与物料\n3\n入库单\n发货单\n省料看板\n通知中心\n收起\n仓储与物料\n/\n入库单\nA\nA06验收销售\n入库单\n\n商品布料入库：建单（草稿）→ 过账（自动生成批次号 + 自动加库存 + 移动加权平均成本）→ 批次可追溯；期初建账可按实物把在库批次（含 0.5 米级尾料）登记进来\n\n期初建账导入\n全部状态\n草稿\n已过账\n已作废\n查询\n重置\n入库单号\t入库日期\t供应商\t仓库\t行数 / 总数量\t批次号\t金额\t状态\t操作\nRK-20261005-0015\t2026-10-05\t广州中大轻纺城-A132档\t门店后仓\t1 / 50\t-\t¥1650.00\t已作废\t详情\nRK-20261005-0014\t2026-10-04\t绍兴柯桥万隆布业\t主仓（一楼）\t1 / 100\t过账后生成\t¥7000.",
+          "menuName": "入库单",
+          "permissionCode": "inbound:view"
+        },
+        {
+          "path": "/shipments",
+          "url": "https://merchant.migaozn.com/shipments",
+          "denied": false,
+          "textLen": 215,
+          "stable": true,
+          "tries": 2,
+          "ms": 1672,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n交易管理\n1\n生产管理\n1\n仓储与物料\n3\n入库单\n发货单\n省料看板\n通知中心\n收起\n仓储与物料\n/\n发货单\nA\nA06验收销售\n发货单\n\n发出的货都在这里：发货单号 / 订单号 / 客户 / 经手人 / 实发数量；可按单号、订单号、客户检索，并补打纸质发货单\n\n查询\n重置\n发货单号\t订单号\t客户\t来源\t发货人\t发货时间\t实发\t操作\n暂无发货单",
+          "menuName": "发货单",
+          "permissionCode": "order:list"
+        },
+        {
+          "path": "/production/saving-board",
+          "url": "https://merchant.migaozn.com/production/saving-board",
+          "denied": false,
+          "textLen": 2298,
+          "stable": true,
+          "tries": 2,
+          "ms": 1670,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n交易管理\n1\n生产管理\n1\n仓储与物料\n3\n入库单\n发货单\n省料看板\n通知中心\n收起\n仓储与物料\n/\n省料看板\nA\nA06验收销售\n省料看板\n\n省了多少料，看两件事：① 每批布用剩多少 ② 每平方米成品用掉多少米布；存量导入批次单独成组，不与切换后混算\n\n按月\n按周（ISO 周）\n刷新\n剩余 ≤0.2 米 的批次占比\n0.0%\n治「用不尽」—— 越多批次被用到几乎不剩，说明料真的被用掉了\n入库/采购总米数\n1681 米\n治「买太多」—— 切换后的采购入库总米数，不含存量导入\n两条指标必须并用：①「剩余 ≤0.2 米 的批次占比」治「用不尽」，②「入库/采购总米数」治「买太多」。单看①会被排料省料误导 —— 排料省料 ⇒ 批次剩得更多 ⇒ 只留①会把效率提升显示成变差。\n切换后（采购入库）\n批次数\n11\n≤0",
+          "menuName": "省料看板",
+          "permissionCode": "product:list"
+        },
+        {
+          "path": "/products",
+          "url": "https://merchant.migaozn.com/products",
+          "denied": false,
+          "textLen": 888,
+          "stable": true,
+          "tries": 2,
+          "ms": 1685,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n交易管理\n1\n生产管理\n1\n仓储与物料\n3\n通知中心\n收起\n商品管理\nA\nA06验收销售\n商品管理\n商品标题\n商品货号\n状态\n全部\n出售中\n已下架\n审核中\n草稿\n创建时间\n至\n查询\n重置\n批量导出\n下载导入模板\n导入商品\n\t\n商品标题\n\t\n商品货号\n\t\n在售颜色\n\t\n库存\n\t\n销量\n\t\n销售额\n\t\n创建时间\n\t\n状态\n\t\n操作\n\n\t\n无图\n棉麻窗纱\n\tMG-CMCS-30...\t共1色\t260\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n阳离子绒布\n\tMG-YLZ-280...\t共1色\t90\t0\t¥0\t\n2026-10-05\n08:11\n\t出售中\t\n查看\n编辑\n推荐\n下架\n删除\n\n\t\n无图\n涤纶印花窗帘布\n\tMG-DLQ-280...\t共1色\t240\t",
+          "menuName": "商品管理",
+          "permissionCode": "product:list"
+        },
+        {
+          "path": "/notifications",
+          "url": "https://merchant.migaozn.com/notifications",
+          "denied": false,
+          "textLen": 125,
+          "stable": true,
+          "tries": 2,
+          "ms": 1670,
+          "errors": [],
+          "textHead": "米高测试环境\n米高商家管理后台\n搜索菜单\n⌘K\n工作台\n1\n商品管理\n客户服务\n1\n交易管理\n1\n生产管理\n1\n仓储与物料\n3\n通知中心\n收起\n通知中心\nA\nA06验收销售\n通知中心\n\n管理和查看系统通知\n\n全部标记已读\n全部\n未读\n已读\n\n暂无通知",
+          "menuName": "通知中心",
+          "permissionCode": null
+        }
+      ],
+      "deniedProbes": [
+        {
+          "path": "/agent-workspace/human-sessions",
+          "url": "https://merchant.migaozn.com/agent-workspace/human-sessions",
+          "denied": true,
+          "textLen": 59,
+          "stable": true,
+          "tries": 2,
+          "ms": 1377,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 agent:session， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "在线接待",
+          "expectedDenied": true
+        },
+        {
+          "path": "/knowledge",
+          "url": "https://merchant.migaozn.com/knowledge",
+          "denied": true,
+          "textLen": 60,
+          "stable": true,
+          "tries": 2,
+          "ms": 1365,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 knowledge:view， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "知识库",
+          "expectedDenied": true
+        },
+        {
+          "path": "/after-sales",
+          "url": "https://merchant.migaozn.com/after-sales",
+          "denied": true,
+          "textLen": 62,
+          "stable": true,
+          "tries": 2,
+          "ms": 1364,
+          "errors": [],
+          "textHead": "🔒\n无权访问该页面\n\n当前账号缺少权限 after_sales:view， 如需开通请联系管理员在「员工管理」中调整权限。",
+          "menuName": "售后工单",
+          "expectedDenied": true
+        }
+      ],
+      "expected": [
+        {
+          "path": "/dashboard",
+          "name": "经营看板",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/briefing",
+          "name": "每日简报",
+          "code": "dashboard:view"
+        },
+        {
+          "path": "/customers",
+          "name": "客户列表",
+          "code": "customer:view"
+        },
+        {
+          "path": "/orders",
+          "name": "订单列表",
+          "code": "order:list"
+        },
+        {
+          "path": "/production/pool",
+          "name": "智能派单",
+          "code": "processing:view"
+        },
+        {
+          "path": "/inbound-orders",
+          "name": "入库单",
+          "code": "inbound:view"
+        },
+        {
+          "path": "/shipments",
+          "name": "发货单",
+          "code": "order:list"
+        },
+        {
+          "path": "/production/saving-board",
+          "name": "省料看板",
+          "code": "product:list"
+        },
+        {
+          "path": "/products",
+          "name": "商品管理",
+          "code": "product:list"
+        },
+        {
+          "path": "/notifications",
+          "name": "通知中心",
+          "code": null
+        }
+      ],
+      "missing": [
+        "/briefing",
+        "/customers",
+        "/orders",
+        "/production/pool",
+        "/inbound-orders",
+        "/shipments",
+        "/production/saving-board"
+      ],
+      "unexpected": [],
+      "landingUrl": "https://merchant.migaozn.com/dashboard"
+    }
+  ]
+}

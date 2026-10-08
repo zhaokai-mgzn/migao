@@ -5,8 +5,8 @@ import { AuthGuard } from '@/components/auth-guard'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: '米高 - AI电商管理系统',
-  description: '米高是词元通达旗下的AI电商管理系统，为企业提供一站式智能电商管理解决方案',
+  title: '观星台 - AI经营管理平台',
+  description: '观星台是词元通达旗下的AI经营管理平台，覆盖客服、交易、生产与仓储，为企业提供一站式经营管理解决方案',
   icons: {
     icon: '/favicon.svg',
   },

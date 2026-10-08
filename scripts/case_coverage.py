@@ -80,11 +80,45 @@ _MIN_REASON_LEN = 8
 TOOLS_DIR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "tools"
 _ACTION_PROP_RE = re.compile(r'"action"\s*:\s*\{')
 _ENUM_RE = re.compile(r'"enum"\s*:\s*\[(.*?)\]', re.S)
+#: action 字面量：只认**引号包住**的标识符，且**排除键名 `enum` 自身** ——
+#: 后者是「枚举写在别处」时的唯一残留字面量（见 `tool_declared_actions` 的常量解析腿）。
 _ACTION_VALUE_RE = re.compile(r'"([A-Za-z_][A-Za-z0-9_]*)"')
+#: `"enum": list(SOME_CONST)` / `"enum": tuple(SOME_CONST)` 形态（issue #6280 实测）：
+#: 工具源码里 action 枚举**归一到一条模块级常量**时，`"enum": [` 字面量不复存在 ⇒
+#: 旧解析腿取不到任何值，把该工具误判成「没有 action 维度」，于是**每条**声明过它的用例
+#: 都变成 dangling（Case Coverage Gate 当场红）。⇒ 这里把常量名解析回它的真实取值。
+_ENUM_CONST_REF_RE = re.compile(
+    r'"enum"\s*:\s*(?:list|tuple|sorted)?\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)')
+#: 模块级常量的字面量收尾：`NAME = ("a", "b")` / `NAME = ["a", "b"]`（`{name}` 由 format 代入）
+_CONST_ASSIGN_FMT = r'^{name}\s*=\s*[\(\[](?P<body>[^\)\]]*)[\)\]]'
 _ACTION_ARG_RE = re.compile(r"action\s*=\s*([A-Za-z_][A-Za-z0-9_]*)")
 # 解析到的「多 action 工具」数下界（防源码解析静默失效 → action 报告假绿）。
 # 不是覆盖门禁阈值：只用来发现**解析器坏了**（新增多 action 工具后请同步上调）。
 ACTION_TOOL_FLOOR = 15
+
+
+def _action_enum_from_source(src: str, block: str) -> set:
+    """`action` 属性块 → action 全集；两块解析腿，**同一函数**供两条腿共用。
+
+    腿 ①（首选）：块内 `"enum": [ ... ]` 的**字面**取值。
+    腿 ②（兜底）：块内 `"enum": list(SOME_CONST)`（枚举归一到模块级常量，issue #6280 实测）
+    ⇒ 把 `SOME_CONST` 解析回它在**同一文件**里的字面量收尾（`("a", "b")` / `["a", "b"]`）。
+    没有这条腿时，该形态的取值集为空 ⇒ 工具被判成「没有 action 维度」⇒
+    **每条**声明过它的用例都变成 dangling（Case Coverage Gate 当场红，且报错指向用例而非工具）。
+
+    边界（如实登记）：只认「常量名 → 同文件字面量收尾」这一跳，不跟随二次引用 / 拼接 /
+    跨文件导入 —— 真出现那些形态时本函数返回空集（**不猜**），形态学判据不做语义外推。
+    """
+    e = _ENUM_RE.search(block)
+    if e:
+        return set(_ACTION_VALUE_RE.findall(e.group(1))) - {"enum"}
+    ref = _ENUM_CONST_REF_RE.search(block)
+    if not ref:
+        return set()
+    assign = re.search(_CONST_ASSIGN_FMT.replace("{name}", re.escape(ref.group(1))), src, re.M)
+    if not assign:
+        return set()
+    return set(_ACTION_VALUE_RE.findall(assign.group("body")))
 
 
 def tool_declared_actions(tool: str) -> set:
@@ -115,10 +149,7 @@ def tool_declared_actions(tool: str) -> set:
                 break
     if end < 0:
         return set()
-    e = _ENUM_RE.search(src[start + 1:end])
-    if not e:
-        return set()
-    return set(_ACTION_VALUE_RE.findall(e.group(1)))
+    return _action_enum_from_source(src, src[start + 1:end])
 
 
 def action_catalog(tools) -> dict:
@@ -253,7 +284,7 @@ def action_enum(tool: str) -> set | None:
 
 
 def registered_tools() -> set:
-    """两端注册表并集（B 端米宝 + C 端小布）—— 未注册工具由 `dangling_cases` 判据管。"""
+    """两端注册表并集（B 端黄金策 + C 端元元）—— 未注册工具由 `dangling_cases` 判据管。"""
     return set(lr.mibao_real_toolset()) | set(lr.XIAOBU_TOOLS)
 
 
@@ -395,8 +426,8 @@ def _attach_baseline(rep: CoverageReport, baseline: dict) -> CoverageReport:
 
 
 PERSONA_LABELS = {
-    "xiaobu": "C 端小布",
-    "mibao": "B 端米宝",
+    "xiaobu": "C 端元元",
+    "mibao": "B 端黄金策",
 }
 
 _KIND_LABELS = {

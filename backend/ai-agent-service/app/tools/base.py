@@ -249,7 +249,7 @@ class ToolContext(BaseModel):
     def ticket_source(self) -> str:
         """本会话调用方的**真实来源**，用于建售后工单时向 admin-api 声明（issue #3686）。
 
-        米宝（B 端）与 小布（C 端）都通过 Service Token 调同一个
+        黄金策（B 端）与 元元（C 端）都通过 Service Token 调同一个
         `POST /api/admin/agent/after-sales`，服务端**无法自行判定**来源（operator 恒为
         internal-service、body 无 source —— #3605 已删）⇒ 由 ai-agent 侧按本上下文声明，
         经 `X-Agent-Client` 请求头下发，服务端只接受白名单内的值。
@@ -481,7 +481,7 @@ class BaseTool(ABC):
     # C 端可达标记（**双端工具**，issue #5246）：权限码是**商户员工概念** —— C 端 JWT
     # （`customer` / `agent`）里没有 `permissions` claim（`UserIdentity.permissions` 默认空、
     # admin-api 的 `RoleService` 对这两个角色返回空集）。⇒ 声明了 `required_permissions`
-    # 的工具若**同时**被 C 端 skill（小布）绑定，必须显式声明本标记：C 端请求此时按**角色层**
+    # 的工具若**同时**被 C 端 skill（元元）绑定，必须显式声明本标记：C 端请求此时按**角色层**
     # 放行（= 与「加码前」逐字一致的行为）；**未声明**的工具维持既有 C 端硬闸（拒绝）。
     # 取值不得手写：`tests/unit_ci_workflows/test_agent_permission_parity.py` 机械核对
     # 「`c_end_reachable` == 该工具是否被 C 端 skill 绑定」（从 `app/graph/skills/*.py` 推导）。

@@ -111,7 +111,7 @@ class EmployeeGrantDefaultRoleMetaGuardTest {
             // 创建平台超管（短信身份，tenantId = -1）时显式赋角色
             "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java::"
                     + ".role(\"super_admin\") .identityType(\"sms\") .roles(roles) .tenantId(-1L) "
-                    + ".tenantName(\"米高平台管理\") .build()) .accessToken(accessToken) .refreshToken(null) "
+                    + ".tenantName(\"观星台平台管理\") .build()) .accessToken(accessToken) .refreshToken(null) "
                     + ".expiresIn(jwtTokenProvider.getAccessTokenExpiration()) .build()",
             // C 端客户账号（注册即 customer）
             "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java::"
@@ -119,7 +119,7 @@ class EmployeeGrantDefaultRoleMetaGuardTest {
             // 创建平台超管（账号密码身份，tenantId = -1）时显式赋角色
             "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java::"
                     + ".role(\"super_admin\") .identityType(\"account\") .roles(roles) .tenantId(-1L) "
-                    + ".tenantName(\"米高平台管理\") .build()) .accessToken(newAccessToken) "
+                    + ".tenantName(\"观星台平台管理\") .build()) .accessToken(newAccessToken) "
                     + ".refreshToken(newRefreshToken) .expiresIn(jwtTokenProvider.getAccessTokenExpiration()) .build()");
 
     /** 台账条数（现取，禁止「新增即静默」）。 */

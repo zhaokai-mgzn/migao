@@ -802,7 +802,7 @@ public class ProductionService {
     }
 
     /**
-     * 米宝生产进度（冻结契约，并行包消费）：{order_no, status, status_text, progress_percent,
+     * 黄金策生产进度（冻结契约，并行包消费）：{order_no, status, status_text, progress_percent,
      * current_operation, pending_operations, total_operations, done_operations, expected_delivery_date}。
      * 无加工单/无实例时为「未开始」态而不是错误态（current_operation 为空串，交期为 null）。
      *
@@ -862,7 +862,7 @@ public class ProductionService {
     }
 
     /**
-     * 米宝加工单「过程明细」（冻结契约，issue #4201）：{order_no, processing_order_no,
+     * 黄金策加工单「过程明细」（冻结契约，issue #4201）：{order_no, processing_order_no,
      * processing_status, operations:[...], work_logs:[...], totals:{...}}。
      *
      * <p>回答「下料（裁剪组）做到哪一步 / 谁报的 / 合格-返工-报废各多少」—— 用户裁定
@@ -1868,7 +1868,7 @@ public class ProductionService {
     }
 
     /**
-     * 工人计件（米宝查询，冻结契约）：{worker_name, period, total, details:[{operation, qty, amount}]}。
+     * 工人计件（黄金策查询，冻结契约）：{worker_name, period, total, details:[{operation, qty, amount}]}。
      * period=YYYY-MM 时按 work_date 当月首末（含端点）过滤；返工/报废不计件。
      */
     public Map<String, Object> workerPiecework(String workerName, String period, Long tenantId) {

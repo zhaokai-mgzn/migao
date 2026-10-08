@@ -1,0 +1,53 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:13:54 +08",
+    "utc": "2026-10-04T01:13:54.979Z"
+  },
+  "steps": [
+    {
+      "id": "full-product-id",
+      "http": 200,
+      "keys": [
+        "granularity",
+        "scanned",
+        "order",
+        "positions"
+      ],
+      "positions0": {
+        "order_item_id": "laitmmut4ny1vvz",
+        "position_kind": "布帘",
+        "position_name": "线A验收布-mut4k6dnee",
+        "scanned": true,
+        "product_name": "线A验收布",
+        "width": 3,
+        "height": 2.5,
+        "craft": "线A验收工艺",
+        "curtain_type": "布帘",
+        "base": 2.5,
+        "cutting_height": 2.5,
+        "rounding": {
+          "mode": "half_up",
+          "digits": 3
+        },
+        "hits": [],
+        "misses": [],
+        "missing": []
+      },
+      "raw": "{\"success\":true,\"data\":{\"granularity\":\"set_position\",\"scanned\":{\"order_item_id\":\"laitmmut4ny1vvz\",\"position_kind\":\"布帘\"},\"order\":{\"order_id\":\"laordmut4ny1vvz\",\"order_no\":\"LA-ORD-MUT4NY1VVZ\",\"customer_name\":\"线A验收客户\",\"processing_order_no\":\"LA-JG-MUT4NY1VVZ\",\"set_no\":\"LA-JG-MUT4NY1VVZ-001\",\"set_index\":1,\"set_count\":1},\"positions\":[{\"order_item_id\":\"laitmmut4ny1vvz\",\"position_kind\":\"布帘\",\"position_name\":\"线A验收布-mut4k6dnee\",\"scanned\":true,\"product_name\":\"线A验收布\",\"width\":3,\"height\":2.5,\"craft\":\"线A验收工艺\",\"curtain_type\":\"布帘\",\"base\":2.5,\"cutting_height\":2.5,\"rounding\":{\"mode\":\"half_up\",\"digits\":3},\"hits\":[],\"misses\":[],\"missing\":[]}]},\"requestId\":\"req_ec3bb1943aa748dc\",\"timestamp\":1791076435}"
+    },
+    {
+      "id": "product-id-null",
+      "http": 500,
+      "keys": [],
+      "errorCode": "INTERNAL_ERROR",
+      "errorMessage": "服务器内部错误",
+      "positions0": null,
+      "missing": null,
+      "raw": "{\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestId\":\"req_063eb241192f4341\",\"timestamp\":1791076436}"
+    }
+  ],
+  "verdict": {
+    "fixedCodeSignature": false,
+    "reading": "线上在 item==null 时**仍抛**（取不到 missing[] 形状）⇒ 与「修复已部署」不相容 ⇒ 强烈指向**线上镜像是旧构**（判别式 = 若已含修复，product_name 那行的短路保证不抛 ⇒ 必得 200+missing[]）"
+  }
+}

@@ -228,10 +228,7 @@ export default function NewInboundOrderPage() {
         </button>
         <div className="flex-1">
           <h1 className="text-xl font-semibold text-neutral-900">新增入库单</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
-            建单只登记、<strong>不动库存</strong>；过账时系统逐行生成批次号（PC-yyyyMMdd-NNNN，
-            一行 = 一个批次）并加库存、按移动加权平均重算成本
-          </p>
+          <p className="text-sm text-neutral-500 mt-0.5">登记一张新的到货入库单 —— <strong>保存草稿不动库存</strong>，过账时才生成批次号并加库存</p>
         </div>
       </div>
 
@@ -301,8 +298,8 @@ export default function NewInboundOrderPage() {
               />
             </div>
             <p className="mt-4 text-xs text-neutral-500 bg-neutral-50 border border-neutral-200 rounded-lg p-3 leading-relaxed">
-              保存为草稿<strong>不会改动库存</strong>；批次号在<strong>过账</strong>时由系统自动生成
-              （<span className="font-mono">PC-yyyyMMdd-NNNN</span>，一行 = 一个批次），
+              保存为草稿<strong>不会改动库存</strong>；批次号在<strong>过账</strong>时由系统逐行自动生成
+              （形如 <span className="font-mono">PC-20261001-0001</span>，一行 = 一个批次），
               库存与成本也在过账时一次性写入（可核对后再过账）。
             </p>
           </div>

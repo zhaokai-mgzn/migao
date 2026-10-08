@@ -4,7 +4,7 @@
 
 ## 1. 项目速览
 
-- **这是什么**：面向通用行业（示例场景：布艺窗帘）的多租户 AI 智能客服 SaaS。C 端客服"小布" + B 端工作助手"米高"双 Agent（LangGraph），Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
+- **这是什么**：面向通用行业（示例场景：布艺窗帘）的多租户 AI 智能客服 SaaS。C 端客服"元元" + B 端工作助手"观星台"双 Agent（LangGraph），Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
 - **文档入口**：先读 [README.md](README.md) 了解架构与技术栈；详细文档索引见 [docs/wiki/INDEX.md](docs/wiki/INDEX.md)。
 - **许可证**：[MIT](LICENSE)。参与贡献即表示同意在 MIT 条款下贡献。
 

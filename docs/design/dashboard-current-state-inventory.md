@@ -13,7 +13,7 @@
 | 角色 | 仓库相对路径 | 关键符号 |
 |---|---|---|
 | 页面入口（全部区块在此拼装） | `frontend/admin-web/src/app/(dashboard)/dashboard/page.tsx` | `DashboardPage`、`BizStatCard`、`PendingCard`、`SectionHeading`、`MiniSparkline`、`MiniBarChart`、`ChartSkeleton`、`METRIC_STYLES`、`PENDING_COLORS`、`fmtCurrency`、`fmtNum`、`fmtSigned` |
-| 米宝「今日经营速览」洞察条 | `frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx` | `TodayOverviewBar`、`buildInsightSentence`、`processingRatio`、`formatOrderChange` |
+| 黄金策「今日经营速览」洞察条 | `frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx` | `TodayOverviewBar`、`buildInsightSentence`、`processingRatio`、`formatOrderChange` |
 | 每日经营简报卡（与 `/briefing` 共用） | `frontend/admin-web/src/components/dashboard/BriefingCard.tsx` | `BriefingCard`、`ItemRow`、`SeverityBadge`、`ReviewStrip`、`changeDirection` |
 | 通用趋势图（SVG） | `frontend/admin-web/src/components/dashboard/TrendChart.tsx` | `TrendChart`、`niceCeil`；横轴降采样复用 `frontend/admin-web/src/lib/axis-sampling.ts` 的 `sampleTickIndices` |
 | 近期订单列表 | `frontend/admin-web/src/components/dashboard/RecentOrders.tsx` | `RecentOrders`、`formatAmount`、`formatTime` |
@@ -22,7 +22,7 @@
 | 简报独立页（复用同一卡片） | `frontend/admin-web/src/app/(dashboard)/briefing/page.tsx` | `BriefingPage` |
 | 路由权限守卫 | `frontend/admin-web/src/app/(dashboard)/layout.tsx` | `ROUTE_PERMISSION_MAP`（`/dashboard`、`/briefing` 均 `dashboard:view`） |
 
-**第一屏渲染顺序**（读 `DashboardPage` 的 JSX）：页头（标题 + 数据更新时间 + 刷新）→ 米宝今日经营速览 → 每日经营简报卡 → 待处理（3 张卡）→ 经营数据（4 张卡）→ 趋势图（订单趋势 / 销售额两栏）→ 列表（近期订单 / 商品销量排行两栏）。
+**第一屏渲染顺序**（读 `DashboardPage` 的 JSX）：页头（标题 + 数据更新时间 + 刷新）→ 黄金策今日经营速览 → 每日经营简报卡 → 待处理（3 张卡）→ 经营数据（4 张卡）→ 趋势图（订单趋势 / 销售额两栏）→ 列表（近期订单 / 商品销量排行两栏）。
 
 ## 2. 指标 / 数据点清单
 
@@ -60,7 +60,7 @@
 | 一句话总览 + 昨日回顾 + 今日必办 / 风险预警 / 优化建议 | `data.content.{summary,review,todo,risks,suggestions}` | `BriefingController::getToday` → `DailyBriefingService::getTodayBriefing` | 按「租户 + 业务日」取 `daily_briefings.content`（LLM 生成、数字经后端回填校验）；`review` 非数组 ⇒ 归一化为 null ⇒ 显示「已安全丢弃不实条目」 |
 | 整卡是否渲染 | `res.data.data.enabled` → `briefingEnabled` | `BriefingController::getConfig` → `DailyBriefingService::getConfig` | `tenants.briefing_enabled`（在 `/settings` 基本设置维护）；请求失败 ⇒ `catch(() => false)` ⇒ **静默隐藏整卡**（无提示） |
 
-### 2.5 米宝「今日经营速览」
+### 2.5 黄金策「今日经营速览」
 
 一句话解读由 `TodayOverviewBar::buildInsightSentence` 拼装（入参 = 今日订单数/销售额/两项环比/含加工占比/低库存数）。⚠️ stats 未到或失败时全部入参退化为 0 ⇒ 固定渲染「今日暂无新订单，销售额 ¥0」——**与「今日真的零单」不可区分**（无独立空态）。
 
@@ -95,7 +95,7 @@
 | 商品销量排行「查看更多」 | `/products?sortBy=salesCount&sortOrder=desc` |
 | 简报卡空态「去开启」 | `/settings?tab=basic` |
 | **经营数据 4 张卡** | **无下钻** |
-| **米宝洞察条** | **无下钻** |
+| **黄金策洞察条** | **无下钻** |
 
 `/briefing` 与看板的关系：独立路由，页面主体是**同一个 `BriefingCard`**（`<BriefingCard enabled />`）⇒ 简报内容在两页**逐字重复**（同端点、同组件）。
 

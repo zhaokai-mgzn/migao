@@ -473,7 +473,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 米宝「今日经营速览」洞察条 — 一句话经营解读，置于页面顶部 */}
+      {/* 黄金策「今日经营速览」洞察条 — 一句话经营解读，置于页面顶部 */}
       <TodayOverviewBar
         todayOrders={stats?.todayOrders ?? 0}
         todaySales={stats?.todaySales ?? 0}

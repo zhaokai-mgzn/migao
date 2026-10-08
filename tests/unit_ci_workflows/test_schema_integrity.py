@@ -427,7 +427,7 @@ class TestBootstrapSeedData:
     constraint "sessions_tenant_id_fkey"
     DETAIL:  Key (tenant_id)=(1) is not present in table "tenants".
     ```
-    补种子后：`POST /api/chat/sessions` 从 500 → 200，小布知识问答端到端可用。
+    补种子后：`POST /api/chat/sessions` 从 500 → 200，元元知识问答端到端可用。
 
     `schema_full.sql` 一直有这段种子，`schema.sql` 缺失 —— 两份 schema 漂移
     （本测试就是防止再次漂移）。
@@ -1838,7 +1838,7 @@ class TestEvalSpeedKnobs:
         )
 
     def test_iteration_runs_do_not_file_acceptance_issue(self):
-        """fast / 收窄档不得开「小布 C 端验收失败」issue（issue #3417）。
+        """fast / 收窄档不得开「元元 C 端验收失败」issue（issue #3417）。
 
         这张 issue 的语义是**每日全量验收**结论。若迭代档照建：标题不含分支 →
         分支迭代失败会与主干验收失败共用同一 issue 线程（去重按标题，直接往主干 issue

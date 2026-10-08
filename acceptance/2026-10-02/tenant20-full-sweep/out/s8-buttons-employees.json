@@ -1,0 +1,74 @@
+[
+ {
+  "label": "管理员(admin)",
+  "canWrite": true,
+  "denied": false,
+  "addBtn": true,
+  "editBtn": true,
+  "resetBtn": true,
+  "ok": true
+ },
+ {
+  "label": "客服(customer_service)",
+  "canWrite": false,
+  "denied": true,
+  "addBtn": false,
+  "editBtn": false,
+  "resetBtn": false,
+  "ok": true
+ },
+ {
+  "label": "运营(operator)",
+  "canWrite": false,
+  "denied": false,
+  "addBtn": false,
+  "editBtn": false,
+  "resetBtn": false,
+  "ok": true
+ },
+ {
+  "label": "销售(sales)",
+  "canWrite": false,
+  "denied": true,
+  "addBtn": false,
+  "editBtn": false,
+  "resetBtn": false,
+  "ok": true
+ },
+ {
+  "label": "财务(finance)",
+  "canWrite": false,
+  "denied": true,
+  "addBtn": false,
+  "editBtn": false,
+  "resetBtn": false,
+  "ok": true
+ },
+ {
+  "label": "商品管理员(product_manager)",
+  "canWrite": false,
+  "denied": true,
+  "addBtn": false,
+  "editBtn": false,
+  "resetBtn": false,
+  "ok": true
+ },
+ {
+  "label": "知识编辑(knowledge_editor)",
+  "canWrite": false,
+  "denied": true,
+  "addBtn": false,
+  "editBtn": false,
+  "resetBtn": false,
+  "ok": true
+ },
+ {
+  "label": "验收临时岗790472(acc_custom_790472)",
+  "canWrite": false,
+  "denied": true,
+  "addBtn": false,
+  "editBtn": false,
+  "resetBtn": false,
+  "ok": true
+ }
+]

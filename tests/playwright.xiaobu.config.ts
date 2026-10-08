@@ -3,7 +3,7 @@ import path from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
 
 /**
- * 小布 H5 视觉回归专用配置
+ * 元元 H5 视觉回归专用配置
  *
  * 目标：验证 C 端 mini-app 的视觉/布局（无会话 UX、新品推荐、订单卡片），
  * 用 mock 数据保证确定性（不依赖真实 LLM/后端）。

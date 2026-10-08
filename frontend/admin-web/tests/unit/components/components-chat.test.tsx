@@ -193,7 +193,7 @@ describe('MessageList', () => {
     render(<MessageList />)
 
     // 欢迎面板展示
-    expect(screen.getByText('欢迎使用米宝')).toBeInTheDocument()
+    expect(screen.getByText('欢迎使用黄金策')).toBeInTheDocument()
     expect(screen.getByText('查看待处理订单')).toBeInTheDocument()
     expect(screen.getByText('今日经营数据')).toBeInTheDocument()
     expect(screen.getByText('查看加工项列表')).toBeInTheDocument()
@@ -1265,7 +1265,7 @@ describe('ToolResultCard', () => {
 
   it('renders quotation card type with the graceful placeholder (backend emits it; C-end renders it)', () => {
     // issue #3960 的真实形态：后端 _detect_card_type 会下发 quotation（curtain_calc），
-    // B 端此前无该 case ⇒ 落到 default 灰盒。当前口径下 quotation 对 B 端米宝不可达
+    // B 端此前无该 case ⇒ 落到 default 灰盒。当前口径下 quotation 对 B 端黄金策不可达
     // （curtain_calc 为 C 端专属工具），故此处只钉「优雅降级」：不泄漏内部类型名。
     // 若日后为 B 端补上报价单卡真实渲染，本用例应改为断言真实卡片。
     const card = {

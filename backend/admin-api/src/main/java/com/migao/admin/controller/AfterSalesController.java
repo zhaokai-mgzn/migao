@@ -5,6 +5,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.AfterSalesTicketService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -116,6 +117,7 @@ public class AfterSalesController {
      */
     @PutMapping("/{id}/status")
     @RequirePermission("order:refund")
+    @TenantOwnedResource("after-sales-ticket")
     public ApiResponse<Void> updateTicketStatus(
             @PathVariable String id,
             @Valid @RequestBody AfterSalesStatusUpdateRequest request) {

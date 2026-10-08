@@ -28,7 +28,7 @@ web 面存在**两套工序名**：`production_operations.name` 是旧命名（�
 | C3 | 受管面里不得出现变体名的**渲染位置**；非渲染读取（赋值/条件/解构）**必须放行** | 把 `{operationDisplayName(op)}` 改回 `{op.operation}` ⇒ 必红 |
 | C4 | 注入式红证 + **内容指纹**自证（禁 mtime/size）；含「赋值绕过」的**边界**自证 | 注入点不存在 / 注入没生效 ⇒ 必红 |
 | C5 | 已退役面不得再渲染工序（退役 ≠ 无人管） | 把工序加回纸面 ⇒ 必红 |
-| C6 | 工人端（worker-h5）**引用**共享模块 `frontend/shared/operation-display.mjs`（不许自拼一份回来） | 改回 `${logical_name} · ${position}` ⇒ 必红 |
+| C6 | 工人端（worker-h5）**引用**共享模块 `frontend/worker-h5/src/shared/operation-display.mjs`（不许自拼一份回来；位置见 issue #6306 的树内迁移） | 改回 `${logical_name} · ${position}` ⇒ 必红 |
 | C7 | 四份实现（admin-web / shared / bmini / mini-app）**喂同一张输入表逐值等价** | 改任一份而不同步 ⇒ 必红（含注入式红证） |
 | C8 | 读面「工序名键」**逐个登记**（未登记即红 / 台账只许缩短）+ helper 的接受键集**结构化**锁定（#5003②） | 读面新增一个 `operation*` 键 ⇒ 必红；删掉 helper 的同义别名兜底 ⇒ 必红 |
 
@@ -104,7 +104,7 @@ HELPER = "frontend/admin-web/src/lib/operation-display.ts"
 #: 受管面（显式白名单）：工序名会出现在这些界面上的位置
 #: 第 4 项是 issue #4630 补的**漏改面** —— 加工单「生产」页的计件表（`per_operation` 的
 #: 第 4 个消费面；#4621 只改了前三个 ⇒ 它一直渲染变体名，而**没有任何判据会因此变红**）。
-#: 第 5 项是 issue #4647 / D1 补的**会话卡面** —— 米宝会话里的生产进度卡（`current_operation`）；
+#: 第 5 项是 issue #4647 / D1 补的**会话卡面** —— 黄金策会话里的生产进度卡（`current_operation`）；
 #: 它改前不在任何清单里 ⇒ 退回裸渲染快照名时**四条判据全绿**。
 #: 第 6 项是 issue #4963 补的**加工单「生产」页本身**（`processing-orders/[id]/production/page.tsx`）：
 #: 它消费卡点报表（`stuck[].operation`，带 `logical_name` / `position`）与工序进度表；
@@ -134,18 +134,23 @@ RETIRED_FACES: tuple[str, ...] = (
 REQUIRED_IMPORT = "operationDisplayName"
 
 #: 工序显示名的四份实现（issue #4963）：**逐值等价**由 C7 钉住。
-#: ① admin-web 的 .ts（web 面唯一口径）；② worker-h5 直接 import 的共享 .mjs；
+#: ① admin-web 的 .ts（web 面唯一口径）；② worker-h5 直接 import 的共享 .mjs
+#: （🔴 issue #6306 已把它从仓根 `frontend/shared/` **迁进 worker-h5 树内**
+#: `src/shared/` —— 住发布集之外会让线上相对说明符落到 SPA 兜底 ⇒ `200 text/html` ⇒ 整页白屏）；
 #: ③ bmini（tsconfig rootDir 约束 ⇒ 逐字复制）；④ mini-app（同因）。
 #: 为什么不是「一份实现 + 三个 import」：`@/*` 别名各自指向自身 `src`，且两个 Taro 包的
 #: `tsconfig.include` 只含 `./src` ⇒ 跨包 import 会让 tsc 报 TS6059（见各文件头注释）。
 IMPLEMENTATIONS: tuple[str, ...] = (
     HELPER,
-    "frontend/shared/operation-display.mjs",
+    "frontend/worker-h5/src/shared/operation-display.mjs",
     "frontend/bmini-app/src/utils/operationDisplayName.ts",
     "frontend/mini-app/src/components/cards/operationDisplayName.ts",
 )
 
-#: worker-h5 必须 import 共享模块的那一行（C6 的反空跑锚点）
+#: worker-h5 必须 import 共享模块的那一行（C6 的反空跑锚点）。
+#: 🔴 锚点刻意**只要求「某个 `…shared/operation-display.mjs` 说明符」**（不写死相对层级）——
+#: 它把守的是「引用的还是**那一份**共享实现」，模块在树内怎么摆由 issue #6306 的发布闭包判据
+#: （`deploy/scripts/worker-h5-verify-served.sh` ⑦ + `tests/unit_ci_workflows/test_worker_h5_module_closure_guard.py`）负责。
 WORKER_H5_RENDER = "frontend/worker-h5/src/render.mjs"
 _SHARED_IMPORT_RE = re.compile(r"""from\s+['"][^'"]*shared/operation-display\.mjs['"]""")
 
@@ -592,7 +597,8 @@ def test_c6_worker_h5_imports_the_shared_module():
     """
     src = _read(WORKER_H5_RENDER)
     assert _SHARED_IMPORT_RE.search(src), (
-        f"`{WORKER_H5_RENDER}` 没有 import `frontend/shared/operation-display.mjs` —— "
+        f"`{WORKER_H5_RENDER}` 没有 import `…shared/operation-display.mjs` "
+        "（现取 repo 内的那一份 = `frontend/worker-h5/src/shared/operation-display.mjs`）—— "
         "工序显示名各拼一份必然漂移，而漂移的那一份不会变红"
     )
     # 自拼形态：`${…logical_name…} · ${…}`（`[^{}]|\{[^{}]*\}` 允许表达式里带一层花括号 ——

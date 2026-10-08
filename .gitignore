@@ -38,6 +38,8 @@ node_modules
 .next/
 frontend/admin-web/.next/
 out/
+!acceptance/**/out/
+!acceptance/**/out/**
 frontend/admin-web/out/
 dist/
 .swc/

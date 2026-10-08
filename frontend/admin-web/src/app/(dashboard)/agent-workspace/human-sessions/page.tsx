@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Bot, MessageSquare, Send } from 'lucide-react'
 import { agentSessionApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { AI_ROLES } from '@/config/ai-roles'
 import type { AgentMessageItem, AgentSession, AgentSessionDetail } from '@/lib/api'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -189,7 +190,7 @@ export default function HumanAgentSessionsPage() {
                   <div className="rounded-xl border border-blue-200/70 bg-blue-50/60 p-3 space-y-2">
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700">
                       <Bot className="w-3.5 h-3.5" />
-                      <span>顾客与 AI 客服（小布）的对话 · 转人工前</span>
+                      <span>顾客与 AI 客服（元元）的对话 · 转人工前</span>
                     </div>
                     {detail.aiContextSummary && (
                       <div className="text-xs text-neutral-600 bg-white/80 border border-blue-100 rounded-lg px-2.5 py-1.5">
@@ -212,7 +213,7 @@ export default function HumanAgentSessionsPage() {
                               turn.role === 'assistant' ? 'text-indigo-500' : 'text-neutral-400',
                             )}
                           >
-                            {turn.role === 'assistant' ? '小布 · AI' : '顾客'}
+                            {turn.role === 'assistant' ? `元元 · ${AI_ROLES.xiaobu}` : '顾客'}
                           </div>
                           <div className="whitespace-pre-wrap break-words">{turn.content}</div>
                         </div>

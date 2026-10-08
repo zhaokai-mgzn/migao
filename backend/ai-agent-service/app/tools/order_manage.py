@@ -18,8 +18,8 @@ VALID_ACTIONS = {"update_status", "update_logistics", "cancel", "confirm_payment
 
 #: action → **额外**需要的权限码（单点映射，与 admin-api 各端点的 `@RequirePermission` 对齐）。
 #: 只登记「与其余 action 不同」的那一个：退款是财务动作，表单路径 `OrderController` 用
-#: `order:refund`；米宝的 BFF 统一 PATCH 是**类级** `order:list` ⇒ 不在工具层按 action 复检，
-#: 仅持 `order:list` 的商户员工（`customer_service`/`sales`/`finance`）就能借米宝越权退款（#4148）。
+#: `order:refund`；黄金策的 BFF 统一 PATCH 是**类级** `order:list` ⇒ 不在工具层按 action 复检，
+#: 仅持 `order:list` 的商户员工（`customer_service`/`sales`/`finance`）就能借黄金策越权退款（#4148）。
 ACTION_PERMISSIONS = {"refund": "order:refund"}
 
 

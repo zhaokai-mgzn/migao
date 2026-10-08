@@ -13,11 +13,18 @@
 //   ④ 报工回执（`scan/complete`）⇒ 屏上只认回执给的「下一道 / 本套已完成」（#4792），
 //      前端**不**自己猜下一道工序（猜错 = 把下一笔计件记到错的工序上）。
 //
-// 工序显示名走**唯一**口径（issue #4963）：`frontend/shared/operation-display.mjs` 的
+// 工序显示名走**唯一**口径（issue #4963）：`src/shared/operation-display.mjs` 的
 // `operationDisplayName` —— 本文件此前自拼 `${logical_name} · ${position ?? 部位}`，与
 // admin-web 的 `frontend/admin-web/src/lib/operation-display.ts` 在「缺 logical_name」
 // 「键值带空白」「全缺」三种输入下渲染不同（各拼一份必然漂移，而漂移的那一份不会变红）。
-import { operationDisplayName } from '../../shared/operation-display.mjs'
+//
+// 🔴 issue #6306：该模块原先住在**仓根** `frontend/shared/`（发布集之外）⇒ 线上这个相对
+// 说明符解析成 `/shared/operation-display.mjs` —— 它**没随发布落地**，被 nginx 的 SPA 兜底
+// 接成 `200 text/html` ⇒ 浏览器按 HTML 规范拒绝执行 module script ⇒ 工人端整页白屏
+// （真浏览器读数 `bodyText=""` / `rootChildren=0`）。修法 = **树内迁移**（模块搬进
+// `src/shared/`）：说明符落在发布集 `src/**` 内，发布与 `location /w/` 的 JS MIME 自动覆盖，
+// 无需改 nginx、无需放宽发布腿红线。
+import { operationDisplayName } from './shared/operation-display.mjs'
 
 /** 初始态：未登录。 */
 export function initialState() {
@@ -545,14 +552,15 @@ function cutPlanView(v) {
 }
 
 /**
- * 闲置登出兜底分钟数 = 与服务端**同源**的全局默认（`WorkerSessionService.DEFAULT_IDLE_MINUTES`，10080）。
+ * 闲置登出兜底分钟数 = 与服务端**同源**的全局默认（`WorkerSessionService.DEFAULT_IDLE_MINUTES`，43200 = 30 天）。
  *
- * 🔴 改前的兜底是 `15`（字面）：与服务端「全局默认 = 一周」（2026-09-29 用户裁定）**不符**
- * ⇒ 只在「拿不到 `idle_minutes`」时生效的一条路径上，前端会比服务端早 **10065 分钟**把工人踢出
- * （页面上是"无缘无故要我重登"）。正常链路服务端**恒回** `idle_minutes`（登录 / 续期 / `me` 三个响应都带），
- * 所以它只影响降级路径 —— 但降级路径的字面值**必须**与服务端同源，否则就是第二份会漂的默认值。
+ * 🔴 改前的兜底是 `15`（字面）：与服务端「全局默认 = 30 天」（2026-10-07 用户裁定「延长到 1 个月」；
+ * 上一版一周）**不符** ⇒ 只在「拿不到 `idle_minutes`」时生效的一条路径上，前端会比服务端早
+ * **43185 分钟**把工人踢出（页面上是"无缘无故要我重登"）。正常链路服务端**恒回** `idle_minutes`
+ * （登录 / 续期 / `me` 三个响应都带），所以它只影响降级路径 —— 但降级路径的字面值**必须**与服务端同源，
+ * 否则就是第二份会漂的默认值。
  */
-export const DEFAULT_WORKER_IDLE_MINUTES = 10080
+export const DEFAULT_WORKER_IDLE_MINUTES = 43200
 
 /**
  * 渲染整页（返回 HTML 串；调用方负责 `root.innerHTML = ...`）。

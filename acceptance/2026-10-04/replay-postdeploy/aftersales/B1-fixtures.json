@@ -1,0 +1,1161 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:31:02 +08",
+    "utc": "2026-10-04T01:31:02.007Z"
+  },
+  "via": "sms-bypass-code",
+  "fixtures": {
+    "restockOn": {
+      "ok": true,
+      "tag": "RESTOCKON",
+      "allowRestock": true,
+      "product": {
+        "ok": true,
+        "productId": "c141fa49c236202479dcd8a55d303f03",
+        "skuId": "2106557674389270529",
+        "skuCode": "LB-RESTOCKON-MUT59YIF2VH5-01-28",
+        "stock": 100,
+        "price": 100,
+        "name": "ZR商品-RESTOCKON-mut59yif2vh5",
+        "colorId": "2106557674343133186",
+        "productSkuRows": [
+          {
+            "id": "2106557674389270529",
+            "sku_code": "LB-RESTOCKON-MUT59YIF2VH5-01-28",
+            "stock": 100,
+            "price": 100,
+            "color_id": "2106557674343133186"
+          }
+        ],
+        "resp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "data": {
+              "id": "c141fa49c236202479dcd8a55d303f03",
+              "name": "ZR商品-RESTOCKON-mut59yif2vh5",
+              "categoryId": "ed0f8c55349c4b2916c58f87b2b7a4a4",
+              "categoryName": "ZR分类-mut59ycieexc",
+              "basePrice": 100,
+              "description": "ZR（线B 售后退款/并发探针，用后自清）",
+              "images": [],
+              "status": "on_shelf",
+              "stock": 100,
+              "stockWarningThreshold": 10,
+              "skuCode": "LB-RESTOCKON-MUT59YIF2VH5",
+              "unit": "米",
+              "pricingType": "per_meter",
+              "stockDeductionMode": "on_order",
+              "colorCount": 1,
+              "totalStock": 100,
+              "salesCount": 0,
+              "salesAmount": 0,
+              "recommended": false,
+              "allowReturnRestock": true,
+              "colors": [
+                {
+                  "id": "2106557674343133186",
+                  "productId": "c141fa49c236202479dcd8a55d303f03",
+                  "colorName": "ZR色-mut59yif2vh5",
+                  "mainColorHex": "#AABBCC",
+                  "sortOrder": 0,
+                  "createdAt": "2026-10-04 09:31:02",
+                  "updatedAt": "2026-10-04 09:31:02"
+                }
+              ],
+              "sellingMethods": [
+                "bulk_cut",
+                "full_roll"
+              ],
+              "doorWidths": [
+                "2.8m"
+              ],
+              "skus": [
+                {
+                  "id": "2106557674389270529",
+                  "productId": "c141fa49c236202479dcd8a55d303f03",
+                  "colorId": "2106557674343133186",
+                  "colorName": "ZR色-mut59yif2vh5",
+                  "doorWidth": "2.8m",
+                  "price": 100,
+                  "stock": 100,
+                  "skuCode": "LB-RESTOCKON-MUT59YIF2VH5-01-28",
+                  "createdAt": "2026-10-04 09:31:02",
+                  "updatedAt": "2026-10-04 09:31:02"
+                }
+              ],
+              "detailImages": [],
+              "editedBy": "13800138000",
+              "editedAt": "2026-10-04 09:31:02",
+              "createdAt": "2026-10-04 09:31:02",
+              "updatedAt": "2026-10-04 09:31:02",
+              "price": 100
+            },
+            "requestId": "req_067686537415409d",
+            "timestamp": 1791077462
+          },
+          "text": "{\"success\":true,\"data\":{\"id\":\"c141fa49c236202479dcd8a55d303f03\",\"name\":\"ZR商品-RESTOCKON-mut59yif2vh5\",\"categoryId\":\"ed0f8c55349c4b2916c58f87b2b7a4a4\",\"categoryName\":\"ZR分类-mut59ycieexc\",\"basePrice\":100.00,\"description\":\"ZR（线B 售后退款/并发探针，用后自清）\",\"images\":[],\"status\":\"on_shelf\",\"stock\":100.0,\"stockWarningThreshold\":10,\"skuCode\":\"LB-RESTOCKON-MUT59YIF2VH5\",\"unit\":\"米\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":1,\"totalStock\":100.0,\"salesCount\":0.0,\"salesAmount\":0.00,\"recommended\":false,\"allowReturnRestock\":true,\"colors\":[{\"id\":\"2106557674343133186\",\"productId\":\"c141fa49c236202479dcd8a55d303f03\",\"colorName\":\"ZR色-mut59yif2vh5\",\"mainColorHex\":\"#AABBCC\",\"sortOrder\":0,\"createdAt\":\"2026-10-04 09:31:02\",\"updatedAt\":\"2026-10-04 09:31:02\"}],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"doorWidths\":[\"2.8m\"],\"skus\":[{\"id\":\"2106557674389270529\",\"productId\":\"c141fa49c236202479dcd8a55d303f03\",\"colorId\":\"2106557674343133186\",\"colorName\":\"ZR色-mut59yif2vh5\",\"doorWidth\":\"2.8m\",\"price\":100.00,\"stock\":100.0,\"skuCode\":\"LB-RESTOCKON-MUT59YIF2VH5-01-28\",\"createdAt\":\"2026-10-04 09:31:02\",\"updatedAt\":\"2026-10-04 09:31:02\"}],\"detailImages\":[],\"editedBy\":\"13800138000\",\"editedAt\":\"2026-10-04 09:31:02\",\"createdAt\":\"2026-10-04 09:31:02\",\"updatedAt\":\"2026-10-04 09:31:02\",\"price\":100.00},\"requestId\":\"req_067686537415409d\",\"timestamp\":1791077462}",
+          "ok": true,
+          "data": {
+            "id": "c141fa49c236202479dcd8a55d303f03",
+            "name": "ZR商品-RESTOCKON-mut59yif2vh5",
+            "categoryId": "ed0f8c55349c4b2916c58f87b2b7a4a4",
+            "categoryName": "ZR分类-mut59ycieexc",
+            "basePrice": 100,
+            "description": "ZR（线B 售后退款/并发探针，用后自清）",
+            "images": [],
+            "status": "on_shelf",
+            "stock": 100,
+            "stockWarningThreshold": 10,
+            "skuCode": "LB-RESTOCKON-MUT59YIF2VH5",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 1,
+            "totalStock": 100,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": true,
+            "colors": [
+              {
+                "id": "2106557674343133186",
+                "productId": "c141fa49c236202479dcd8a55d303f03",
+                "colorName": "ZR色-mut59yif2vh5",
+                "mainColorHex": "#AABBCC",
+                "sortOrder": 0,
+                "createdAt": "2026-10-04 09:31:02",
+                "updatedAt": "2026-10-04 09:31:02"
+              }
+            ],
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "doorWidths": [
+              "2.8m"
+            ],
+            "skus": [
+              {
+                "id": "2106557674389270529",
+                "productId": "c141fa49c236202479dcd8a55d303f03",
+                "colorId": "2106557674343133186",
+                "colorName": "ZR色-mut59yif2vh5",
+                "doorWidth": "2.8m",
+                "price": 100,
+                "stock": 100,
+                "skuCode": "LB-RESTOCKON-MUT59YIF2VH5-01-28",
+                "createdAt": "2026-10-04 09:31:02",
+                "updatedAt": "2026-10-04 09:31:02"
+              }
+            ],
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-04 09:31:02",
+            "createdAt": "2026-10-04 09:31:02",
+            "updatedAt": "2026-10-04 09:31:02",
+            "price": 100
+          }
+        },
+        "body": {
+          "name": "ZR商品-RESTOCKON-mut59yif2vh5",
+          "skuCode": "LB-RESTOCKON-MUT59YIF2VH5",
+          "categoryId": "ed0f8c55349c4b2916c58f87b2b7a4a4",
+          "unit": "米",
+          "pricingType": "per_meter",
+          "basePrice": 100,
+          "price": 100,
+          "stock": 100,
+          "status": "on_shelf",
+          "description": "ZR（线B 售后退款/并发探针，用后自清）",
+          "allowReturnRestock": true,
+          "colors": [
+            {
+              "colorName": "ZR色-mut59yif2vh5",
+              "mainColorHex": "#AABBCC"
+            }
+          ],
+          "doorWidths": [
+            "2.8m"
+          ]
+        }
+      },
+      "order": {
+        "ok": true,
+        "orderId": "97c85acbe80e130f993fc4a664944454",
+        "orderNo": "20261004312570003",
+        "total": 200,
+        "actual": 200,
+        "resp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "data": {
+              "id": "97c85acbe80e130f993fc4a664944454",
+              "orderNo": "20261004312570003",
+              "customerName": "ZR客户-RESTOCKON-mut59yvi8oa",
+              "customerPhone": "13940533033",
+              "customerAddress": "ZR地址（探针）",
+              "logisticsType": "express",
+              "logisticsCompany": "ZR物流",
+              "totalAmount": 200,
+              "actualAmount": 200,
+              "discountAmount": 0,
+              "refundAmount": 0,
+              "processingFee": 0,
+              "status": "pending",
+              "remark": "ZR（线B 探针订单，用后自清）",
+              "isUrgent": false,
+              "createdByName": "米高测试",
+              "items": [
+                {
+                  "id": "b4067b17642f0d7c7495c52fda8bcf4e",
+                  "productId": "c141fa49c236202479dcd8a55d303f03",
+                  "productName": "ZR商品-RESTOCKON-mut59yif2vh5",
+                  "skuCode": "LB-RESTOCKON-MUT59YIF2VH5",
+                  "quantity": 2,
+                  "unitPrice": 100,
+                  "width": 2.8,
+                  "height": 2,
+                  "processingInfo": {
+                    "skuId": "2106557674389270529",
+                    "colorId": "2106557674343133186",
+                    "skuCode": "LB-RESTOCKON-MUT59YIF2VH5-01-28",
+                    "doorWidth": "2.8m",
+                    "processingFeeDetail": {
+                      "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                      "items": [],
+                      "amount": 0,
+                      "set_key": "#0",
+                      "fee_source": "unpriced",
+                      "composition": "",
+                      "special_options": [],
+                      "mixed_color_options": [],
+                      "mixed_color_surcharge": 0,
+                      "special_options_total": 0,
+                      "mixed_color_surcharge_per_meter": 2.4
+                    }
+                  },
+                  "subtotal": 200,
+                  "amount": 200,
+                  "processingFee": 0,
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  },
+                  "createdAt": "2026-10-04T09:31:02.662973+08:00"
+                }
+              ],
+              "processingItems": [],
+              "createdAt": "2026-10-04T09:31:02.634707+08:00",
+              "updatedAt": "2026-10-04T09:31:02.63488+08:00"
+            },
+            "requestId": "req_e4851f8eade34780",
+            "timestamp": 1791077462
+          },
+          "text": "{\"success\":true,\"data\":{\"id\":\"97c85acbe80e130f993fc4a664944454\",\"orderNo\":\"20261004312570003\",\"customerName\":\"ZR客户-RESTOCKON-mut59yvi8oa\",\"customerPhone\":\"13940533033\",\"customerAddress\":\"ZR地址（探针）\",\"logisticsType\":\"express\",\"logisticsCompany\":\"ZR物流\",\"totalAmount\":200.00,\"actualAmount\":200.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"ZR（线B 探针订单，用后自清）\",\"isUrgent\":false,\"createdByName\":\"米高测试\",\"items\":[{\"id\":\"b4067b17642f0d7c7495c52fda8bcf4e\",\"productId\":\"c141fa49c236202479dcd8a55d303f03\",\"productName\":\"ZR商品-RESTOCKON-mut59yif2vh5\",\"skuCode\":\"LB-RESTOCKON-MUT59YIF2VH5\",\"quantity\":2.00,\"unitPrice\":100.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106557674389270529\",\"colorId\":\"2106557674343133186\",\"skuCode\":\"LB-RESTOCKON-MUT59YIF2VH5-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":200.00,\"amount\":200.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-04T09:31:02.662973+08:00\"}],\"processingItems\":[],\"createdAt\":\"2026-10-04T09:31:02.634707+08:00\",\"updatedAt\":\"2026-10-04T09:31:02.63488+08:00\"},\"requestId\":\"req_e4851f8eade34780\",\"timestamp\":1791077462}",
+          "ok": true,
+          "data": {
+            "id": "97c85acbe80e130f993fc4a664944454",
+            "orderNo": "20261004312570003",
+            "customerName": "ZR客户-RESTOCKON-mut59yvi8oa",
+            "customerPhone": "13940533033",
+            "customerAddress": "ZR地址（探针）",
+            "logisticsType": "express",
+            "logisticsCompany": "ZR物流",
+            "totalAmount": 200,
+            "actualAmount": 200,
+            "discountAmount": 0,
+            "refundAmount": 0,
+            "processingFee": 0,
+            "status": "pending",
+            "remark": "ZR（线B 探针订单，用后自清）",
+            "isUrgent": false,
+            "createdByName": "米高测试",
+            "items": [
+              {
+                "id": "b4067b17642f0d7c7495c52fda8bcf4e",
+                "productId": "c141fa49c236202479dcd8a55d303f03",
+                "productName": "ZR商品-RESTOCKON-mut59yif2vh5",
+                "skuCode": "LB-RESTOCKON-MUT59YIF2VH5",
+                "quantity": 2,
+                "unitPrice": 100,
+                "width": 2.8,
+                "height": 2,
+                "processingInfo": {
+                  "skuId": "2106557674389270529",
+                  "colorId": "2106557674343133186",
+                  "skuCode": "LB-RESTOCKON-MUT59YIF2VH5-01-28",
+                  "doorWidth": "2.8m",
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  }
+                },
+                "subtotal": 200,
+                "amount": 200,
+                "processingFee": 0,
+                "processingFeeDetail": {
+                  "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                  "items": [],
+                  "amount": 0,
+                  "set_key": "#0",
+                  "fee_source": "unpriced",
+                  "composition": "",
+                  "special_options": [],
+                  "mixed_color_options": [],
+                  "mixed_color_surcharge": 0,
+                  "special_options_total": 0,
+                  "mixed_color_surcharge_per_meter": 2.4
+                },
+                "createdAt": "2026-10-04T09:31:02.662973+08:00"
+              }
+            ],
+            "processingItems": [],
+            "createdAt": "2026-10-04T09:31:02.634707+08:00",
+            "updatedAt": "2026-10-04T09:31:02.63488+08:00"
+          }
+        },
+        "confirmResp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "requestId": "req_aba335299827455f",
+            "timestamp": 1791077463
+          },
+          "text": "{\"success\":true,\"requestId\":\"req_aba335299827455f\",\"timestamp\":1791077463}",
+          "ok": true
+        },
+        "body": {
+          "customerName": "ZR客户-RESTOCKON-mut59yvi8oa",
+          "customerPhone": "13940533033",
+          "customerAddress": "ZR地址（探针）",
+          "logisticsType": "express",
+          "logisticsCompany": "ZR物流",
+          "remark": "ZR（线B 探针订单，用后自清）",
+          "items": [
+            {
+              "productId": "c141fa49c236202479dcd8a55d303f03",
+              "productName": "ZR商品-RESTOCKON-mut59yif2vh5",
+              "quantity": 2,
+              "unitPrice": 100,
+              "subtotal": "200.000",
+              "width": 2.8,
+              "height": 2,
+              "processingInfo": {
+                "skuId": "2106557674389270529",
+                "skuCode": "LB-RESTOCKON-MUT59YIF2VH5-01-28",
+                "colorId": "2106557674343133186",
+                "doorWidth": "2.8m"
+              }
+            }
+          ]
+        }
+      },
+      "orderRow": {
+        "id": "97c85acbe80e130f993fc4a664944454",
+        "tenant_id": 25,
+        "order_no": "20261004312570003",
+        "status": "confirmed",
+        "total_amount": 200,
+        "actual_amount": 200,
+        "refund_amount": 0,
+        "refund_at": null,
+        "deleted": 0
+      },
+      "skuAfter": {
+        "id": "2106557674389270529",
+        "stock": 98,
+        "sales_count": 2
+      },
+      "qty": 2,
+      "unitPrice": 100
+    },
+    "restockOff": {
+      "ok": true,
+      "tag": "RESTOCKOFF",
+      "allowRestock": false,
+      "product": {
+        "ok": true,
+        "productId": "37e21e830e372a73f48933e0e8579430",
+        "skuId": "2106557679808311297",
+        "skuCode": "LB-RESTOCKOFF-MUT59ZIKLDOH-01-28",
+        "stock": 100,
+        "price": 100,
+        "name": "ZR商品-RESTOCKOFF-mut59zikldoh",
+        "colorId": "2106557679766368257",
+        "productSkuRows": [
+          {
+            "id": "2106557679808311297",
+            "sku_code": "LB-RESTOCKOFF-MUT59ZIKLDOH-01-28",
+            "stock": 100,
+            "price": 100,
+            "color_id": "2106557679766368257"
+          }
+        ],
+        "resp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "data": {
+              "id": "37e21e830e372a73f48933e0e8579430",
+              "name": "ZR商品-RESTOCKOFF-mut59zikldoh",
+              "categoryId": "ed0f8c55349c4b2916c58f87b2b7a4a4",
+              "categoryName": "ZR分类-mut59ycieexc",
+              "basePrice": 100,
+              "description": "ZR（线B 售后退款/并发探针，用后自清）",
+              "images": [],
+              "status": "on_shelf",
+              "stock": 100,
+              "stockWarningThreshold": 10,
+              "skuCode": "LB-RESTOCKOFF-MUT59ZIKLDOH",
+              "unit": "米",
+              "pricingType": "per_meter",
+              "stockDeductionMode": "on_order",
+              "colorCount": 1,
+              "totalStock": 100,
+              "salesCount": 0,
+              "salesAmount": 0,
+              "recommended": false,
+              "allowReturnRestock": false,
+              "colors": [
+                {
+                  "id": "2106557679766368257",
+                  "productId": "37e21e830e372a73f48933e0e8579430",
+                  "colorName": "ZR色-mut59zikldoh",
+                  "mainColorHex": "#AABBCC",
+                  "sortOrder": 0,
+                  "createdAt": "2026-10-04 09:31:03",
+                  "updatedAt": "2026-10-04 09:31:03"
+                }
+              ],
+              "sellingMethods": [
+                "bulk_cut",
+                "full_roll"
+              ],
+              "doorWidths": [
+                "2.8m"
+              ],
+              "skus": [
+                {
+                  "id": "2106557679808311297",
+                  "productId": "37e21e830e372a73f48933e0e8579430",
+                  "colorId": "2106557679766368257",
+                  "colorName": "ZR色-mut59zikldoh",
+                  "doorWidth": "2.8m",
+                  "price": 100,
+                  "stock": 100,
+                  "skuCode": "LB-RESTOCKOFF-MUT59ZIKLDOH-01-28",
+                  "createdAt": "2026-10-04 09:31:03",
+                  "updatedAt": "2026-10-04 09:31:03"
+                }
+              ],
+              "detailImages": [],
+              "editedBy": "13800138000",
+              "editedAt": "2026-10-04 09:31:03",
+              "createdAt": "2026-10-04 09:31:03",
+              "updatedAt": "2026-10-04 09:31:03",
+              "price": 100
+            },
+            "requestId": "req_26816f234b0a4580",
+            "timestamp": 1791077463
+          },
+          "text": "{\"success\":true,\"data\":{\"id\":\"37e21e830e372a73f48933e0e8579430\",\"name\":\"ZR商品-RESTOCKOFF-mut59zikldoh\",\"categoryId\":\"ed0f8c55349c4b2916c58f87b2b7a4a4\",\"categoryName\":\"ZR分类-mut59ycieexc\",\"basePrice\":100.00,\"description\":\"ZR（线B 售后退款/并发探针，用后自清）\",\"images\":[],\"status\":\"on_shelf\",\"stock\":100.0,\"stockWarningThreshold\":10,\"skuCode\":\"LB-RESTOCKOFF-MUT59ZIKLDOH\",\"unit\":\"米\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":1,\"totalStock\":100.0,\"salesCount\":0.0,\"salesAmount\":0.00,\"recommended\":false,\"allowReturnRestock\":false,\"colors\":[{\"id\":\"2106557679766368257\",\"productId\":\"37e21e830e372a73f48933e0e8579430\",\"colorName\":\"ZR色-mut59zikldoh\",\"mainColorHex\":\"#AABBCC\",\"sortOrder\":0,\"createdAt\":\"2026-10-04 09:31:03\",\"updatedAt\":\"2026-10-04 09:31:03\"}],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"doorWidths\":[\"2.8m\"],\"skus\":[{\"id\":\"2106557679808311297\",\"productId\":\"37e21e830e372a73f48933e0e8579430\",\"colorId\":\"2106557679766368257\",\"colorName\":\"ZR色-mut59zikldoh\",\"doorWidth\":\"2.8m\",\"price\":100.00,\"stock\":100.0,\"skuCode\":\"LB-RESTOCKOFF-MUT59ZIKLDOH-01-28\",\"createdAt\":\"2026-10-04 09:31:03\",\"updatedAt\":\"2026-10-04 09:31:03\"}],\"detailImages\":[],\"editedBy\":\"13800138000\",\"editedAt\":\"2026-10-04 09:31:03\",\"createdAt\":\"2026-10-04 09:31:03\",\"updatedAt\":\"2026-10-04 09:31:03\",\"price\":100.00},\"requestId\":\"req_26816f234b0a4580\",\"timestamp\":1791077463}",
+          "ok": true,
+          "data": {
+            "id": "37e21e830e372a73f48933e0e8579430",
+            "name": "ZR商品-RESTOCKOFF-mut59zikldoh",
+            "categoryId": "ed0f8c55349c4b2916c58f87b2b7a4a4",
+            "categoryName": "ZR分类-mut59ycieexc",
+            "basePrice": 100,
+            "description": "ZR（线B 售后退款/并发探针，用后自清）",
+            "images": [],
+            "status": "on_shelf",
+            "stock": 100,
+            "stockWarningThreshold": 10,
+            "skuCode": "LB-RESTOCKOFF-MUT59ZIKLDOH",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 1,
+            "totalStock": 100,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": false,
+            "colors": [
+              {
+                "id": "2106557679766368257",
+                "productId": "37e21e830e372a73f48933e0e8579430",
+                "colorName": "ZR色-mut59zikldoh",
+                "mainColorHex": "#AABBCC",
+                "sortOrder": 0,
+                "createdAt": "2026-10-04 09:31:03",
+                "updatedAt": "2026-10-04 09:31:03"
+              }
+            ],
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "doorWidths": [
+              "2.8m"
+            ],
+            "skus": [
+              {
+                "id": "2106557679808311297",
+                "productId": "37e21e830e372a73f48933e0e8579430",
+                "colorId": "2106557679766368257",
+                "colorName": "ZR色-mut59zikldoh",
+                "doorWidth": "2.8m",
+                "price": 100,
+                "stock": 100,
+                "skuCode": "LB-RESTOCKOFF-MUT59ZIKLDOH-01-28",
+                "createdAt": "2026-10-04 09:31:03",
+                "updatedAt": "2026-10-04 09:31:03"
+              }
+            ],
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-04 09:31:03",
+            "createdAt": "2026-10-04 09:31:03",
+            "updatedAt": "2026-10-04 09:31:03",
+            "price": 100
+          }
+        },
+        "body": {
+          "name": "ZR商品-RESTOCKOFF-mut59zikldoh",
+          "skuCode": "LB-RESTOCKOFF-MUT59ZIKLDOH",
+          "categoryId": "ed0f8c55349c4b2916c58f87b2b7a4a4",
+          "unit": "米",
+          "pricingType": "per_meter",
+          "basePrice": 100,
+          "price": 100,
+          "stock": 100,
+          "status": "on_shelf",
+          "description": "ZR（线B 售后退款/并发探针，用后自清）",
+          "allowReturnRestock": false,
+          "colors": [
+            {
+              "colorName": "ZR色-mut59zikldoh",
+              "mainColorHex": "#AABBCC"
+            }
+          ],
+          "doorWidths": [
+            "2.8m"
+          ]
+        }
+      },
+      "order": {
+        "ok": true,
+        "orderId": "d49d67e61bd6547bf71d624354848e77",
+        "orderNo": "20261004061100004",
+        "total": 200,
+        "actual": 200,
+        "resp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "data": {
+              "id": "d49d67e61bd6547bf71d624354848e77",
+              "orderNo": "20261004061100004",
+              "customerName": "ZR客户-RESTOCKOFF-mut59zws8gld",
+              "customerPhone": "13900115366",
+              "customerAddress": "ZR地址（探针）",
+              "logisticsType": "express",
+              "logisticsCompany": "ZR物流",
+              "totalAmount": 200,
+              "actualAmount": 200,
+              "discountAmount": 0,
+              "refundAmount": 0,
+              "processingFee": 0,
+              "status": "pending",
+              "remark": "ZR（线B 探针订单，用后自清）",
+              "isUrgent": false,
+              "createdByName": "米高测试",
+              "items": [
+                {
+                  "id": "a7c960b288cb32f9d2244ef57060d025",
+                  "productId": "37e21e830e372a73f48933e0e8579430",
+                  "productName": "ZR商品-RESTOCKOFF-mut59zikldoh",
+                  "skuCode": "LB-RESTOCKOFF-MUT59ZIKLDOH",
+                  "quantity": 2,
+                  "unitPrice": 100,
+                  "width": 2.8,
+                  "height": 2,
+                  "processingInfo": {
+                    "skuId": "2106557679808311297",
+                    "colorId": "2106557679766368257",
+                    "skuCode": "LB-RESTOCKOFF-MUT59ZIKLDOH-01-28",
+                    "doorWidth": "2.8m",
+                    "processingFeeDetail": {
+                      "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                      "items": [],
+                      "amount": 0,
+                      "set_key": "#0",
+                      "fee_source": "unpriced",
+                      "composition": "",
+                      "special_options": [],
+                      "mixed_color_options": [],
+                      "mixed_color_surcharge": 0,
+                      "special_options_total": 0,
+                      "mixed_color_surcharge_per_meter": 2.4
+                    }
+                  },
+                  "subtotal": 200,
+                  "amount": 200,
+                  "processingFee": 0,
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  },
+                  "createdAt": "2026-10-04T09:31:03.992322+08:00"
+                }
+              ],
+              "processingItems": [],
+              "createdAt": "2026-10-04T09:31:03.967553+08:00",
+              "updatedAt": "2026-10-04T09:31:03.967678+08:00"
+            },
+            "requestId": "req_2cdcb562665a42c7",
+            "timestamp": 1791077464
+          },
+          "text": "{\"success\":true,\"data\":{\"id\":\"d49d67e61bd6547bf71d624354848e77\",\"orderNo\":\"20261004061100004\",\"customerName\":\"ZR客户-RESTOCKOFF-mut59zws8gld\",\"customerPhone\":\"13900115366\",\"customerAddress\":\"ZR地址（探针）\",\"logisticsType\":\"express\",\"logisticsCompany\":\"ZR物流\",\"totalAmount\":200.00,\"actualAmount\":200.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"ZR（线B 探针订单，用后自清）\",\"isUrgent\":false,\"createdByName\":\"米高测试\",\"items\":[{\"id\":\"a7c960b288cb32f9d2244ef57060d025\",\"productId\":\"37e21e830e372a73f48933e0e8579430\",\"productName\":\"ZR商品-RESTOCKOFF-mut59zikldoh\",\"skuCode\":\"LB-RESTOCKOFF-MUT59ZIKLDOH\",\"quantity\":2.00,\"unitPrice\":100.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106557679808311297\",\"colorId\":\"2106557679766368257\",\"skuCode\":\"LB-RESTOCKOFF-MUT59ZIKLDOH-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":200.00,\"amount\":200.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-04T09:31:03.992322+08:00\"}],\"processingItems\":[],\"createdAt\":\"2026-10-04T09:31:03.967553+08:00\",\"updatedAt\":\"2026-10-04T09:31:03.967678+08:00\"},\"requestId\":\"req_2cdcb562665a42c7\",\"timestamp\":1791077464}",
+          "ok": true,
+          "data": {
+            "id": "d49d67e61bd6547bf71d624354848e77",
+            "orderNo": "20261004061100004",
+            "customerName": "ZR客户-RESTOCKOFF-mut59zws8gld",
+            "customerPhone": "13900115366",
+            "customerAddress": "ZR地址（探针）",
+            "logisticsType": "express",
+            "logisticsCompany": "ZR物流",
+            "totalAmount": 200,
+            "actualAmount": 200,
+            "discountAmount": 0,
+            "refundAmount": 0,
+            "processingFee": 0,
+            "status": "pending",
+            "remark": "ZR（线B 探针订单，用后自清）",
+            "isUrgent": false,
+            "createdByName": "米高测试",
+            "items": [
+              {
+                "id": "a7c960b288cb32f9d2244ef57060d025",
+                "productId": "37e21e830e372a73f48933e0e8579430",
+                "productName": "ZR商品-RESTOCKOFF-mut59zikldoh",
+                "skuCode": "LB-RESTOCKOFF-MUT59ZIKLDOH",
+                "quantity": 2,
+                "unitPrice": 100,
+                "width": 2.8,
+                "height": 2,
+                "processingInfo": {
+                  "skuId": "2106557679808311297",
+                  "colorId": "2106557679766368257",
+                  "skuCode": "LB-RESTOCKOFF-MUT59ZIKLDOH-01-28",
+                  "doorWidth": "2.8m",
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  }
+                },
+                "subtotal": 200,
+                "amount": 200,
+                "processingFee": 0,
+                "processingFeeDetail": {
+                  "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                  "items": [],
+                  "amount": 0,
+                  "set_key": "#0",
+                  "fee_source": "unpriced",
+                  "composition": "",
+                  "special_options": [],
+                  "mixed_color_options": [],
+                  "mixed_color_surcharge": 0,
+                  "special_options_total": 0,
+                  "mixed_color_surcharge_per_meter": 2.4
+                },
+                "createdAt": "2026-10-04T09:31:03.992322+08:00"
+              }
+            ],
+            "processingItems": [],
+            "createdAt": "2026-10-04T09:31:03.967553+08:00",
+            "updatedAt": "2026-10-04T09:31:03.967678+08:00"
+          }
+        },
+        "confirmResp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "requestId": "req_28b73fec35f1451c",
+            "timestamp": 1791077464
+          },
+          "text": "{\"success\":true,\"requestId\":\"req_28b73fec35f1451c\",\"timestamp\":1791077464}",
+          "ok": true
+        },
+        "body": {
+          "customerName": "ZR客户-RESTOCKOFF-mut59zws8gld",
+          "customerPhone": "13900115366",
+          "customerAddress": "ZR地址（探针）",
+          "logisticsType": "express",
+          "logisticsCompany": "ZR物流",
+          "remark": "ZR（线B 探针订单，用后自清）",
+          "items": [
+            {
+              "productId": "37e21e830e372a73f48933e0e8579430",
+              "productName": "ZR商品-RESTOCKOFF-mut59zikldoh",
+              "quantity": 2,
+              "unitPrice": 100,
+              "subtotal": "200.000",
+              "width": 2.8,
+              "height": 2,
+              "processingInfo": {
+                "skuId": "2106557679808311297",
+                "skuCode": "LB-RESTOCKOFF-MUT59ZIKLDOH-01-28",
+                "colorId": "2106557679766368257",
+                "doorWidth": "2.8m"
+              }
+            }
+          ]
+        }
+      },
+      "orderRow": {
+        "id": "d49d67e61bd6547bf71d624354848e77",
+        "tenant_id": 25,
+        "order_no": "20261004061100004",
+        "status": "confirmed",
+        "total_amount": 200,
+        "actual_amount": 200,
+        "refund_amount": 0,
+        "refund_at": null,
+        "deleted": 0
+      },
+      "skuAfter": {
+        "id": "2106557679808311297",
+        "stock": 98,
+        "sales_count": 2
+      },
+      "qty": 2,
+      "unitPrice": 100
+    },
+    "refund": {
+      "ok": true,
+      "tag": "REFUND",
+      "allowRestock": false,
+      "product": {
+        "ok": true,
+        "productId": "68b23eafe0865cadfaf4a981a1a19d41",
+        "skuId": "2106557685218963457",
+        "skuCode": "LB-REFUND-MUT5A0IH40JY-01-28",
+        "stock": 100,
+        "price": 150,
+        "name": "ZR商品-REFUND-mut5a0ih40jy",
+        "colorId": "2106557685181214722",
+        "productSkuRows": [
+          {
+            "id": "2106557685218963457",
+            "sku_code": "LB-REFUND-MUT5A0IH40JY-01-28",
+            "stock": 100,
+            "price": 150,
+            "color_id": "2106557685181214722"
+          }
+        ],
+        "resp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "data": {
+              "id": "68b23eafe0865cadfaf4a981a1a19d41",
+              "name": "ZR商品-REFUND-mut5a0ih40jy",
+              "categoryId": "ed0f8c55349c4b2916c58f87b2b7a4a4",
+              "categoryName": "ZR分类-mut59ycieexc",
+              "basePrice": 150,
+              "description": "ZR（线B 售后退款/并发探针，用后自清）",
+              "images": [],
+              "status": "on_shelf",
+              "stock": 100,
+              "stockWarningThreshold": 10,
+              "skuCode": "LB-REFUND-MUT5A0IH40JY",
+              "unit": "米",
+              "pricingType": "per_meter",
+              "stockDeductionMode": "on_order",
+              "colorCount": 1,
+              "totalStock": 100,
+              "salesCount": 0,
+              "salesAmount": 0,
+              "recommended": false,
+              "allowReturnRestock": false,
+              "colors": [
+                {
+                  "id": "2106557685181214722",
+                  "productId": "68b23eafe0865cadfaf4a981a1a19d41",
+                  "colorName": "ZR色-mut5a0ih40jy",
+                  "mainColorHex": "#AABBCC",
+                  "sortOrder": 0,
+                  "createdAt": "2026-10-04 09:31:04",
+                  "updatedAt": "2026-10-04 09:31:04"
+                }
+              ],
+              "sellingMethods": [
+                "bulk_cut",
+                "full_roll"
+              ],
+              "doorWidths": [
+                "2.8m"
+              ],
+              "skus": [
+                {
+                  "id": "2106557685218963457",
+                  "productId": "68b23eafe0865cadfaf4a981a1a19d41",
+                  "colorId": "2106557685181214722",
+                  "colorName": "ZR色-mut5a0ih40jy",
+                  "doorWidth": "2.8m",
+                  "price": 150,
+                  "stock": 100,
+                  "skuCode": "LB-REFUND-MUT5A0IH40JY-01-28",
+                  "createdAt": "2026-10-04 09:31:04",
+                  "updatedAt": "2026-10-04 09:31:04"
+                }
+              ],
+              "detailImages": [],
+              "editedBy": "13800138000",
+              "editedAt": "2026-10-04 09:31:04",
+              "createdAt": "2026-10-04 09:31:04",
+              "updatedAt": "2026-10-04 09:31:04",
+              "price": 150
+            },
+            "requestId": "req_5605c87374ff47d9",
+            "timestamp": 1791077464
+          },
+          "text": "{\"success\":true,\"data\":{\"id\":\"68b23eafe0865cadfaf4a981a1a19d41\",\"name\":\"ZR商品-REFUND-mut5a0ih40jy\",\"categoryId\":\"ed0f8c55349c4b2916c58f87b2b7a4a4\",\"categoryName\":\"ZR分类-mut59ycieexc\",\"basePrice\":150.00,\"description\":\"ZR（线B 售后退款/并发探针，用后自清）\",\"images\":[],\"status\":\"on_shelf\",\"stock\":100.0,\"stockWarningThreshold\":10,\"skuCode\":\"LB-REFUND-MUT5A0IH40JY\",\"unit\":\"米\",\"pricingType\":\"per_meter\",\"stockDeductionMode\":\"on_order\",\"colorCount\":1,\"totalStock\":100.0,\"salesCount\":0.0,\"salesAmount\":0.00,\"recommended\":false,\"allowReturnRestock\":false,\"colors\":[{\"id\":\"2106557685181214722\",\"productId\":\"68b23eafe0865cadfaf4a981a1a19d41\",\"colorName\":\"ZR色-mut5a0ih40jy\",\"mainColorHex\":\"#AABBCC\",\"sortOrder\":0,\"createdAt\":\"2026-10-04 09:31:04\",\"updatedAt\":\"2026-10-04 09:31:04\"}],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"doorWidths\":[\"2.8m\"],\"skus\":[{\"id\":\"2106557685218963457\",\"productId\":\"68b23eafe0865cadfaf4a981a1a19d41\",\"colorId\":\"2106557685181214722\",\"colorName\":\"ZR色-mut5a0ih40jy\",\"doorWidth\":\"2.8m\",\"price\":150.00,\"stock\":100.0,\"skuCode\":\"LB-REFUND-MUT5A0IH40JY-01-28\",\"createdAt\":\"2026-10-04 09:31:04\",\"updatedAt\":\"2026-10-04 09:31:04\"}],\"detailImages\":[],\"editedBy\":\"13800138000\",\"editedAt\":\"2026-10-04 09:31:04\",\"createdAt\":\"2026-10-04 09:31:04\",\"updatedAt\":\"2026-10-04 09:31:04\",\"price\":150.00},\"requestId\":\"req_5605c87374ff47d9\",\"timestamp\":1791077464}",
+          "ok": true,
+          "data": {
+            "id": "68b23eafe0865cadfaf4a981a1a19d41",
+            "name": "ZR商品-REFUND-mut5a0ih40jy",
+            "categoryId": "ed0f8c55349c4b2916c58f87b2b7a4a4",
+            "categoryName": "ZR分类-mut59ycieexc",
+            "basePrice": 150,
+            "description": "ZR（线B 售后退款/并发探针，用后自清）",
+            "images": [],
+            "status": "on_shelf",
+            "stock": 100,
+            "stockWarningThreshold": 10,
+            "skuCode": "LB-REFUND-MUT5A0IH40JY",
+            "unit": "米",
+            "pricingType": "per_meter",
+            "stockDeductionMode": "on_order",
+            "colorCount": 1,
+            "totalStock": 100,
+            "salesCount": 0,
+            "salesAmount": 0,
+            "recommended": false,
+            "allowReturnRestock": false,
+            "colors": [
+              {
+                "id": "2106557685181214722",
+                "productId": "68b23eafe0865cadfaf4a981a1a19d41",
+                "colorName": "ZR色-mut5a0ih40jy",
+                "mainColorHex": "#AABBCC",
+                "sortOrder": 0,
+                "createdAt": "2026-10-04 09:31:04",
+                "updatedAt": "2026-10-04 09:31:04"
+              }
+            ],
+            "sellingMethods": [
+              "bulk_cut",
+              "full_roll"
+            ],
+            "doorWidths": [
+              "2.8m"
+            ],
+            "skus": [
+              {
+                "id": "2106557685218963457",
+                "productId": "68b23eafe0865cadfaf4a981a1a19d41",
+                "colorId": "2106557685181214722",
+                "colorName": "ZR色-mut5a0ih40jy",
+                "doorWidth": "2.8m",
+                "price": 150,
+                "stock": 100,
+                "skuCode": "LB-REFUND-MUT5A0IH40JY-01-28",
+                "createdAt": "2026-10-04 09:31:04",
+                "updatedAt": "2026-10-04 09:31:04"
+              }
+            ],
+            "detailImages": [],
+            "editedBy": "13800138000",
+            "editedAt": "2026-10-04 09:31:04",
+            "createdAt": "2026-10-04 09:31:04",
+            "updatedAt": "2026-10-04 09:31:04",
+            "price": 150
+          }
+        },
+        "body": {
+          "name": "ZR商品-REFUND-mut5a0ih40jy",
+          "skuCode": "LB-REFUND-MUT5A0IH40JY",
+          "categoryId": "ed0f8c55349c4b2916c58f87b2b7a4a4",
+          "unit": "米",
+          "pricingType": "per_meter",
+          "basePrice": 150,
+          "price": 150,
+          "stock": 100,
+          "status": "on_shelf",
+          "description": "ZR（线B 售后退款/并发探针，用后自清）",
+          "allowReturnRestock": false,
+          "colors": [
+            {
+              "colorName": "ZR色-mut5a0ih40jy",
+              "mainColorHex": "#AABBCC"
+            }
+          ],
+          "doorWidths": [
+            "2.8m"
+          ]
+        }
+      },
+      "order": {
+        "ok": true,
+        "orderId": "457e2c80b7bd24ccfa7ca4745c64b641",
+        "orderNo": "20261004670650005",
+        "total": 300,
+        "actual": 300,
+        "resp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "data": {
+              "id": "457e2c80b7bd24ccfa7ca4745c64b641",
+              "orderNo": "20261004670650005",
+              "customerName": "ZR客户-REFUND-mut5a0wi47d0",
+              "customerPhone": "13948575024",
+              "customerAddress": "ZR地址（探针）",
+              "logisticsType": "express",
+              "logisticsCompany": "ZR物流",
+              "totalAmount": 300,
+              "actualAmount": 300,
+              "discountAmount": 0,
+              "refundAmount": 0,
+              "processingFee": 0,
+              "status": "pending",
+              "remark": "ZR（线B 探针订单，用后自清）",
+              "isUrgent": false,
+              "createdByName": "米高测试",
+              "items": [
+                {
+                  "id": "83503c0823ba6f87bb600cd3ea50cdb0",
+                  "productId": "68b23eafe0865cadfaf4a981a1a19d41",
+                  "productName": "ZR商品-REFUND-mut5a0ih40jy",
+                  "skuCode": "LB-REFUND-MUT5A0IH40JY",
+                  "quantity": 2,
+                  "unitPrice": 150,
+                  "width": 2.8,
+                  "height": 2,
+                  "processingInfo": {
+                    "skuId": "2106557685218963457",
+                    "colorId": "2106557685181214722",
+                    "skuCode": "LB-REFUND-MUT5A0IH40JY-01-28",
+                    "doorWidth": "2.8m",
+                    "processingFeeDetail": {
+                      "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                      "items": [],
+                      "amount": 0,
+                      "set_key": "#0",
+                      "fee_source": "unpriced",
+                      "composition": "",
+                      "special_options": [],
+                      "mixed_color_options": [],
+                      "mixed_color_surcharge": 0,
+                      "special_options_total": 0,
+                      "mixed_color_surcharge_per_meter": 2.4
+                    }
+                  },
+                  "subtotal": 300,
+                  "amount": 300,
+                  "processingFee": 0,
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  },
+                  "createdAt": "2026-10-04T09:31:05.258214+08:00"
+                }
+              ],
+              "processingItems": [],
+              "createdAt": "2026-10-04T09:31:05.240323+08:00",
+              "updatedAt": "2026-10-04T09:31:05.240386+08:00"
+            },
+            "requestId": "req_388b392165be47fc",
+            "timestamp": 1791077465
+          },
+          "text": "{\"success\":true,\"data\":{\"id\":\"457e2c80b7bd24ccfa7ca4745c64b641\",\"orderNo\":\"20261004670650005\",\"customerName\":\"ZR客户-REFUND-mut5a0wi47d0\",\"customerPhone\":\"13948575024\",\"customerAddress\":\"ZR地址（探针）\",\"logisticsType\":\"express\",\"logisticsCompany\":\"ZR物流\",\"totalAmount\":300.00,\"actualAmount\":300.00,\"discountAmount\":0.00,\"refundAmount\":0.00,\"processingFee\":0.0,\"status\":\"pending\",\"remark\":\"ZR（线B 探针订单，用后自清）\",\"isUrgent\":false,\"createdByName\":\"米高测试\",\"items\":[{\"id\":\"83503c0823ba6f87bb600cd3ea50cdb0\",\"productId\":\"68b23eafe0865cadfaf4a981a1a19d41\",\"productName\":\"ZR商品-REFUND-mut5a0ih40jy\",\"skuCode\":\"LB-REFUND-MUT5A0IH40JY\",\"quantity\":2.00,\"unitPrice\":150.00,\"width\":2.80,\"height\":2.00,\"processingInfo\":{\"skuId\":\"2106557685218963457\",\"colorId\":\"2106557685181214722\",\"skuCode\":\"LB-REFUND-MUT5A0IH40JY-01-28\",\"doorWidth\":\"2.8m\",\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4}},\"subtotal\":300.00,\"amount\":300.0000,\"processingFee\":0.0,\"processingFeeDetail\":{\"hint\":\"本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项\",\"items\":[],\"amount\":0,\"set_key\":\"#0\",\"fee_source\":\"unpriced\",\"composition\":\"\",\"special_options\":[],\"mixed_color_options\":[],\"mixed_color_surcharge\":0,\"special_options_total\":0.0,\"mixed_color_surcharge_per_meter\":2.4},\"createdAt\":\"2026-10-04T09:31:05.258214+08:00\"}],\"processingItems\":[],\"createdAt\":\"2026-10-04T09:31:05.240323+08:00\",\"updatedAt\":\"2026-10-04T09:31:05.240386+08:00\"},\"requestId\":\"req_388b392165be47fc\",\"timestamp\":1791077465}",
+          "ok": true,
+          "data": {
+            "id": "457e2c80b7bd24ccfa7ca4745c64b641",
+            "orderNo": "20261004670650005",
+            "customerName": "ZR客户-REFUND-mut5a0wi47d0",
+            "customerPhone": "13948575024",
+            "customerAddress": "ZR地址（探针）",
+            "logisticsType": "express",
+            "logisticsCompany": "ZR物流",
+            "totalAmount": 300,
+            "actualAmount": 300,
+            "discountAmount": 0,
+            "refundAmount": 0,
+            "processingFee": 0,
+            "status": "pending",
+            "remark": "ZR（线B 探针订单，用后自清）",
+            "isUrgent": false,
+            "createdByName": "米高测试",
+            "items": [
+              {
+                "id": "83503c0823ba6f87bb600cd3ea50cdb0",
+                "productId": "68b23eafe0865cadfaf4a981a1a19d41",
+                "productName": "ZR商品-REFUND-mut5a0ih40jy",
+                "skuCode": "LB-REFUND-MUT5A0IH40JY",
+                "quantity": 2,
+                "unitPrice": 150,
+                "width": 2.8,
+                "height": 2,
+                "processingInfo": {
+                  "skuId": "2106557685218963457",
+                  "colorId": "2106557685181214722",
+                  "skuCode": "LB-REFUND-MUT5A0IH40JY-01-28",
+                  "doorWidth": "2.8m",
+                  "processingFeeDetail": {
+                    "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                    "items": [],
+                    "amount": 0,
+                    "set_key": "#0",
+                    "fee_source": "unpriced",
+                    "composition": "",
+                    "special_options": [],
+                    "mixed_color_options": [],
+                    "mixed_color_surcharge": 0,
+                    "special_options_total": 0,
+                    "mixed_color_surcharge_per_meter": 2.4
+                  }
+                },
+                "subtotal": 300,
+                "amount": 300,
+                "processingFee": 0,
+                "processingFeeDetail": {
+                  "hint": "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。若这单本该有加工费，请确认下单时是否漏选了加工项",
+                  "items": [],
+                  "amount": 0,
+                  "set_key": "#0",
+                  "fee_source": "unpriced",
+                  "composition": "",
+                  "special_options": [],
+                  "mixed_color_options": [],
+                  "mixed_color_surcharge": 0,
+                  "special_options_total": 0,
+                  "mixed_color_surcharge_per_meter": 2.4
+                },
+                "createdAt": "2026-10-04T09:31:05.258214+08:00"
+              }
+            ],
+            "processingItems": [],
+            "createdAt": "2026-10-04T09:31:05.240323+08:00",
+            "updatedAt": "2026-10-04T09:31:05.240386+08:00"
+          }
+        },
+        "confirmResp": {
+          "status": 200,
+          "json": {
+            "success": true,
+            "requestId": "req_eeee708ff54a4879",
+            "timestamp": 1791077465
+          },
+          "text": "{\"success\":true,\"requestId\":\"req_eeee708ff54a4879\",\"timestamp\":1791077465}",
+          "ok": true
+        },
+        "body": {
+          "customerName": "ZR客户-REFUND-mut5a0wi47d0",
+          "customerPhone": "13948575024",
+          "customerAddress": "ZR地址（探针）",
+          "logisticsType": "express",
+          "logisticsCompany": "ZR物流",
+          "remark": "ZR（线B 探针订单，用后自清）",
+          "items": [
+            {
+              "productId": "68b23eafe0865cadfaf4a981a1a19d41",
+              "productName": "ZR商品-REFUND-mut5a0ih40jy",
+              "quantity": 2,
+              "unitPrice": 150,
+              "subtotal": "300.000",
+              "width": 2.8,
+              "height": 2,
+              "processingInfo": {
+                "skuId": "2106557685218963457",
+                "skuCode": "LB-REFUND-MUT5A0IH40JY-01-28",
+                "colorId": "2106557685181214722",
+                "doorWidth": "2.8m"
+              }
+            }
+          ]
+        }
+      },
+      "orderRow": {
+        "id": "457e2c80b7bd24ccfa7ca4745c64b641",
+        "tenant_id": 25,
+        "order_no": "20261004670650005",
+        "status": "confirmed",
+        "total_amount": 300,
+        "actual_amount": 300,
+        "refund_amount": 0,
+        "refund_at": null,
+        "deleted": 0
+      },
+      "skuAfter": {
+        "id": "2106557685218963457",
+        "stock": 98,
+        "sales_count": 2
+      },
+      "qty": 2,
+      "unitPrice": 150
+    }
+  }
+}

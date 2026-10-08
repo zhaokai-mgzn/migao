@@ -1,7 +1,7 @@
 """
 AI 智能客服系统 - 窗帘算料报价 Tool
 
-面向小布（C 端客服）的窗帘用布量计算与报价工具。
+面向元元（C 端客服）的窗帘用布量计算与报价工具。
 **纯计算**（确定性公式）+ 唯一一处外部读取：**本租户的算料口径**（issue #4922）——
 `GET /api/admin/production/craft-calc-config`（缺行 ⇒ 不传 `config`；服务端答复了却读不通 ⇒
 fail-closed；服务端不可达 ⇒ 显式降级 + 留痕，见 `load_tenant_craft_calc_config`）。
@@ -2158,7 +2158,7 @@ class CraftCalcConfigUnavailable(RuntimeError):
 
     「服务端**没答复**」（`httpx.TransportError` / 熔断）**不**走这里：那条路是显式降级 + 留痕
     （见 `load_tenant_craft_calc_config`），因为此刻 admin-api 整体不可用 ⇒ 服务端下单路径同样不可用
-    （`CraftCalcClient` 对端不可达是 422 fail-closed）⇒ 不存在「米宝一个数、落库另一个数」的窗口。
+    （`CraftCalcClient` 对端不可达是 422 fail-closed）⇒ 不存在「黄金策一个数、落库另一个数」的窗口。
 
     `response` 非空 = 服务端给了**失败信封**（`success != true`，如 403/422，由 `AdminApiClient`
     整份透传）⇒ 调用方交给 `admin_api_failure`（**唯一映射点**）：权限拒绝据此拿到
@@ -2213,7 +2213,7 @@ async def load_tenant_craft_calc_config(
     except httpx.TransportError as e:
         # 服务端**没答复**（DNS / 连接被拒 / 超时）⇒ 显式降级 + 留痕（`execute` 会挂显式 warning）。
         # 为什么这里不 fail-closed：此刻 admin-api 整体不可用 ⇒ 服务端下单路径同样不可用
-        # （`CraftCalcClient` 对端不可达 = 422 fail-closed）⇒「米宝一个数、落库另一个数」不可能落地；
+        # （`CraftCalcClient` 对端不可达 = 422 fail-closed）⇒「黄金策一个数、落库另一个数」不可能落地；
         # 而把纯计算工具整条拦下，只会让商家/顾客连估算都拿不到（且离线/单测环境 admin-api 恒不可达）。
         logger.error(
             f"[curtain-calc] 算料口径端点不可达，降级用引擎默认口径: tenant={tenant_id} err={e}")
@@ -2282,7 +2282,7 @@ class CurtainCalcTool(BaseTool):
     idempotent = True
     allowed_roles = ["customer", "admin", "agent", "tenant_admin"]
     # 无权限码：纯本地算料工具（不调 admin-api，只读算料口径）且**双端都要用** ——
-    # C 端 JWT 没有 permissions claim（加码会让小布全量失效）⇒ 保留角色层把关。
+    # C 端 JWT 没有 permissions claim（加码会让元元全量失效）⇒ 保留角色层把关。
     required_permissions = []
 
     parameters = {

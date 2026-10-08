@@ -1,5 +1,5 @@
 name: id-resolve
-description: 实体 ID 解析规则（名称/序号/UUID/UUID 前缀 → ID）— 米宝跨轮引用实体的核心能力
+description: 实体 ID 解析规则（名称/序号/UUID/UUID 前缀 → ID）— 黄金策跨轮引用实体的核心能力
 red_flags: []
 
 business_truths:

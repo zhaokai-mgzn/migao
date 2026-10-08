@@ -29,7 +29,7 @@
       "config": "tests/playwright.xiaobu.config.ts",
       "spec": "tests/e2e/specs/xiaobu/xiaobu-h5.spec.ts",
       "platforms": ["darwin", "linux"],
-      "reason": "小布 H5 视觉基线（2 条 toHaveScreenshot 断言 × darwin/linux = 4 个 PNG）；路径由 Playwright 默认模板决定，配置里不再声明 snapshotPathTemplate",
+      "reason": "元元 H5 视觉基线（2 条 toHaveScreenshot 断言 × darwin/linux = 4 个 PNG）；路径由 Playwright 默认模板决定，配置里不再声明 snapshotPathTemplate",
       "issue": "#4185"
     }
   ],

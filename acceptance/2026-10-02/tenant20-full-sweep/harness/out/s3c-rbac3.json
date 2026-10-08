@@ -1,0 +1,158 @@
+[
+  {
+    "id": "RBAC3-01",
+    "name": "建单载荷探测：v1 姓名+电话+地址+明细",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败",
+    "evidence": [
+      "POST /api/admin/orders"
+    ],
+    "at": "2026-10-02T13:57:50.309Z"
+  },
+  {
+    "id": "RBAC3-01",
+    "name": "建单载荷探测：v2 明细补 productId",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败",
+    "evidence": [
+      "POST /api/admin/orders"
+    ],
+    "at": "2026-10-02T13:57:50.330Z"
+  },
+  {
+    "id": "RBAC3-01",
+    "name": "建单载荷探测：v3 加 userId/金额",
+    "status": "pass",
+    "detail": "HTTP 422｜参数校验失败",
+    "evidence": [
+      "POST /api/admin/orders"
+    ],
+    "at": "2026-10-02T13:57:50.348Z"
+  },
+  {
+    "id": "RBAC3-01",
+    "name": "建单载荷探测：v4 真实商品完整载荷（s6 同款）",
+    "status": "pass",
+    "detail": "HTTP 200｜{\"success\":true,\"data\":{\"id\":\"9b409c9fa04c91efb62d2ebbb8aef4f2\",\"orderNo\":\"20261002130190001\",\"customerName\":\"权限探测客户70147\",\"customerPhone\":\"13000000000\",\"custom",
+    "evidence": [
+      "POST /api/admin/orders"
+    ],
+    "at": "2026-10-02T13:57:50.673Z"
+  },
+  {
+    "id": "RBAC3-02",
+    "name": "命中合法载荷：v4 真实商品完整载荷（s6 同款）",
+    "status": "pass",
+    "detail": "HTTP 200 建成订单（已清理）；后端受理 ⇒ 该载荷可作判别性实验输入",
+    "evidence": [],
+    "at": "2026-10-02T13:57:50.795Z"
+  },
+  {
+    "id": "RBAC3-03",
+    "name": "判别性实验：管理员（恒全权）",
+    "status": "pass",
+    "detail": "合法载荷 → HTTP 200（期望 200）",
+    "evidence": [
+      "POST /api/admin/orders"
+    ],
+    "at": "2026-10-02T13:57:51.240Z"
+  },
+  {
+    "id": "RBAC3-03",
+    "name": "判别性实验：客服",
+    "status": "pass",
+    "detail": "持 order:create=false → HTTP 403 ⇒ 与权限码一致",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:51.294Z"
+  },
+  {
+    "id": "RBAC3-03",
+    "name": "判别性实验：运营",
+    "status": "pass",
+    "detail": "持 order:create=true → HTTP 200（建成，已清理） ⇒ 与权限码一致",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:51.626Z"
+  },
+  {
+    "id": "RBAC3-03",
+    "name": "判别性实验：销售",
+    "status": "pass",
+    "detail": "持 order:create=true → HTTP 200（建成，已清理） ⇒ 与权限码一致",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:51.992Z"
+  },
+  {
+    "id": "RBAC3-03",
+    "name": "判别性实验：财务",
+    "status": "pass",
+    "detail": "持 order:create=false → HTTP 403 ⇒ 与权限码一致",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:52.054Z"
+  },
+  {
+    "id": "RBAC3-03",
+    "name": "判别性实验：商品管理员",
+    "status": "pass",
+    "detail": "持 order:create=false → HTTP 403 ⇒ 与权限码一致",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:52.095Z"
+  },
+  {
+    "id": "RBAC3-03",
+    "name": "判别性实验：知识编辑",
+    "status": "pass",
+    "detail": "持 order:create=false → HTTP 403 ⇒ 与权限码一致",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:52.137Z"
+  },
+  {
+    "id": "RBAC3-03",
+    "name": "判别性实验：验收临时岗790472",
+    "status": "pass",
+    "detail": "持 order:create=false → HTTP 403 ⇒ 与权限码一致",
+    "evidence": [
+      "POST /api/admin/orders 合法载荷"
+    ],
+    "at": "2026-10-02T13:57:52.185Z"
+  },
+  {
+    "id": "RBAC3-04",
+    "name": "路由守卫：/inbound-orders",
+    "status": "pass",
+    "detail": "商品管理员（缺 inbound:view）被 403 页拦截（提示缺 inbound:view）",
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3c-guard--inbound-orders.png"
+    ],
+    "at": "2026-10-02T13:57:56.482Z"
+  },
+  {
+    "id": "RBAC3-04",
+    "name": "路由守卫：/agent-workspace/human-sessions",
+    "status": "pass",
+    "detail": "销售（缺 agent:session）被 403 页拦截（提示缺 agent:session）",
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-02/tenant20-full-sweep/harness/out/screenshots/s3c-guard--agent-workspace-human-sessions.png"
+    ],
+    "at": "2026-10-02T13:58:01.057Z"
+  },
+  {
+    "id": "RBAC3-04",
+    "name": "路由守卫缺口实测：/notifications",
+    "status": "skip",
+    "detail": "无「缺 null」的样本身份",
+    "evidence": [],
+    "at": "2026-10-02T13:58:01.085Z"
+  }
+]

@@ -1,7 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-040
-
+// case_ids: PG-040, FN-006
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.OrderItem;
@@ -531,5 +530,50 @@ class ProcessingFeeCombinationCommandServiceTest {
         verify(combinationMapper, never()).insert(any(ProcessingFeeCombination.class));
         verify(combinationMapper, never()).updateById(any(ProcessingFeeCombination.class));
         verify(versionMapper, never()).insert(any(ProcessingFeeCombinationVersion.class));
+    }
+
+    // ════════════════ issue #6228：单价小数位准入（超 2 位有效小数 ⇒ 422 + 零写入）════════════════
+
+    @Test
+    @DisplayName("#6228 建组合 unit_price 0.005（3 位有效小数）⇒ 422（details 带可行动理由）且零写入")
+    void subCentUnitPriceIsRejectedWithoutWrites() {
+        stubCatalog();
+
+        assertThatThrownBy(() -> service.createCombination(
+                body("items", List.of("韩褶"), "unit_price", "0.005"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(detailMessages((BusinessException) e))
+                        .anySatisfy(m -> assertThat(m).contains("2 位小数")));
+
+        verify(combinationMapper, never()).insert(any(ProcessingFeeCombination.class));
+        verify(versionMapper, never()).insert(any(ProcessingFeeCombinationVersion.class));
+    }
+
+    @Test
+    @DisplayName("#6228 建单人工改价（upsertFromOrderOverride）同样准入：0.005 ⇒ 422 且零写入")
+    void subCentOverridePriceIsRejectedWithoutWrites() {
+        assertThatThrownBy(() -> service.upsertFromOrderOverride(
+                "韩褶", List.of("韩褶"), new BigDecimal("0.005"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("2 位小数");
+
+        verify(combinationMapper, never()).insert(any(ProcessingFeeCombination.class));
+        verify(combinationMapper, never()).updateById(any(ProcessingFeeCombination.class));
+        verify(versionMapper, never()).insert(any(ProcessingFeeCombinationVersion.class));
+    }
+
+    @Test
+    @DisplayName("#6228 正对照 unit_price 0.01（1 分）⇒ 建组合成功且落库值逐字 0.01")
+    void oneCentUnitPriceIsAccepted() {
+        stubCatalog();
+        when(combinationMapper.insert(any(ProcessingFeeCombination.class))).thenReturn(1);
+        when(versionMapper.insert(any(ProcessingFeeCombinationVersion.class))).thenReturn(1);
+
+        service.createCombination(body("items", List.of("韩褶"), "unit_price", "0.01"), TENANT);
+
+        ArgumentCaptor<ProcessingFeeCombination> captor =
+                ArgumentCaptor.forClass(ProcessingFeeCombination.class);
+        verify(combinationMapper).insert(captor.capture());
+        assertThat(captor.getValue().getUnitPrice().toPlainString()).isEqualTo("0.01");
     }
 }

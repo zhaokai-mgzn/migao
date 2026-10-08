@@ -24,7 +24,7 @@ const MOCK_PERMISSIONS = [
   { id: 'p-order-refund', name: '订单退款', code: 'order:refund', resource: 'order', action: 'refund', description: '处理退款/售后工单' },
   { id: 'p-customer', name: '客户管理', code: 'customer:view', resource: 'customer', action: 'view', description: '查看客户' },
   { id: 'p-finance', name: '财务对账', code: 'finance:view', resource: 'finance', action: 'view', description: '查看财务流水/对账' },
-  { id: 'p-agent-session', name: '会话监控', code: 'agent:session', resource: 'agent', action: 'session', description: '米宝对话/会话监控/在线接待' },
+  { id: 'p-agent-session', name: '会话监控', code: 'agent:session', resource: 'agent', action: 'session', description: '黄金策对话/会话监控/在线接待' },
   { id: 'p-employee-list', name: '员工列表', code: 'employee:list', resource: 'employee', action: 'list', description: '查看员工列表' },
   { id: 'p-employee-create', name: '新增员工', code: 'employee:create', resource: 'employee', action: 'create', description: '新增/编辑/删除员工' },
   { id: 'p-system', name: '系统管理', code: 'system:manage', resource: 'system', action: 'manage', description: '企业信息/角色管理/系统设置' },
@@ -122,8 +122,8 @@ test.describe('岗位权限管理页面（#2969 由角色权限改名）', () =>
     await expect(page.permissionTree.getByText('组织管理', { exact: true })).toBeVisible()
     // 菜单项名 = 侧边栏菜单项
     await expect(page.permissionTree.getByText('在线接待', { exact: true })).toBeVisible()
-    // #3094: 米宝 · 在线对话 菜单入口已移除（智能体对话经右下角 FAB 进入）
-    await expect(page.permissionTree.getByText('米宝 · 在线对话', { exact: true })).toHaveCount(0)
+    // #3094: 黄金策 · 在线对话 菜单入口已移除（智能体对话经右下角 FAB 进入）
+    await expect(page.permissionTree.getByText('黄金策 · 在线对话', { exact: true })).toHaveCount(0)
     // #3081: AI 客服配置菜单已移除（合并进企业基础信息）
     await expect(page.permissionTree.getByText('AI 客服配置', { exact: true })).toHaveCount(0)
     await expect(page.permissionTree.getByText('售后工单', { exact: true })).toBeVisible()
@@ -141,7 +141,7 @@ test.describe('岗位权限管理页面（#2969 由角色权限改名）', () =>
     await page.createBtn.click()
     await page.permissionTree.waitFor({ state: 'visible', timeout: 5_000 })
     // 客户服务组：在线接待 + 客户列表 + 知识库 + 售后工单（#5778 由「智能客服」组改名并吸收客户侧两项；
-    // #3081 AI 客服配置已移除；#3094 米宝 · 在线对话 入口已移除）
+    // #3081 AI 客服配置已移除；#3094 黄金策 · 在线对话 入口已移除）
     const agentItems = page.permissionTree.locator('label').filter({ hasText: /在线接待|知识库/ }).locator('input[type="checkbox"]')
     await expect(agentItems).toHaveCount(2)
     // 点击组头（行）→ 组内全部授予

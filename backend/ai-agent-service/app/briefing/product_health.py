@@ -66,6 +66,8 @@ __all__ = [
     "FIELD_SOURCES",
     "REQUIRED_ROW_FIELDS",
     "LOW_STOCK_THRESHOLD",
+    "NOT_ON_SALE",
+    "filtered_skus",
     "field_status",
     "product_health",
 ]
@@ -75,6 +77,37 @@ VIEW_ID = "product_health"
 
 #: 视图输出上限（有界是热路径的硬前提；截断必须显式 —— 见模块 docstring）
 MAX_VIEW_ROWS = 200
+
+#: 「SKU 到期连一行都没进视图」的第四态（issue #6347 Part B）。
+#:
+#: 🔴 它与 `not_wired`（系统没接）/ `incomplete`（接了但不完整）**并列、不可合并**：这里那个空是
+#: **服务端过滤造成的、可行动的空** —— 事实（有几个 SKU / 几个商品 / 商品现在是什么状态）都在，
+#: 出路也在（把商品上架，或在状态非法时先改回 `off_sale`/`draft` 再上架）。混成「没有数据」，
+#: 用户就被引向**徒劳返工**（重录商品规格），真因一字未提。不变式 `reason is None ⟺ wired`
+#: **不给本态开例外**（它的 `reason` 就是那句人话）。
+NOT_ON_SALE = "not_on_sale"
+
+#: 商品状态机**内**的合法值（唯一权威 = `ProductService.PRODUCT_STATUSES`，由测试逐字钉住）。
+#: 不在其中的状态（如 `active` / `on_shelf`）是「状态机死行」：上架动作会被拒 ⇒ 出路只有先改回
+#: 这两个可自救的状态再上架（Part A 已让这条流转可走）。**本模块不做第二份状态机判定** —— 这个
+#: 集合只用来把**出路**说对：说错出路比不说更坏。
+_RECOVERABLE_STATUSES = frozenset({"draft", "under_review", "on_sale", "off_sale"})
+
+#: 装配层**读不到**该商品行时的占位（已删除 / 越租户）—— 与「读到了、值非法」**必须分开说**
+#: （前者不许给「改回 off_sale/draft」的指引：我们并不知道它现在是什么）。
+_UNKNOWN_STATUS = "unknown"
+
+#: 给 LLM 的披露里**禁止**出现的归因错误表述（本单用户原话；由判据逐条钉住，见
+#: `tests/test_briefing_product_health.py::TestFilteredSkusAreNotMisattributed`）。
+FORBIDDEN_ATTRIBUTIONS = (
+    "SKU 记录数 = 0",
+    "SKU 记录数为 0",
+    "SKU 层是空的",
+    "SKU 层为空",
+    "建议检查商品规格",
+    "没有 SKU",
+    "没有任何 SKU",
+)
 
 #: 金额 / 比率的输出精度（4 位小数：与 `product_skus.avg_cost NUMERIC(12,4)` 同粒度）
 _OUTPUT_QUANT = Decimal("0.0001")
@@ -93,6 +126,11 @@ REQUIRED_ROW_FIELDS: Dict[str, Tuple[str, ...]] = {
     "returns": ("product_id",),
     "product_return_stats": ("product_id", "return_tickets", "order_lines"),
 }
+
+#: 「行来自 `skus` 数组」的字段（服务端过滤事实只推翻这些字段的结论）—— 从 `FIELD_SOURCES` 现取
+_SKU_SOURCED_FIELDS: Tuple[str, ...] = tuple(
+    name for name, (array, _) in FIELD_SOURCES.items() if array == "skus"
+)
 
 #: 字段的中文短标签（披露文案的单点来源：工具层不另写一份，避免两处措辞漂移）
 FIELD_LABELS = {
@@ -159,6 +197,110 @@ def _blank_rows(snapshot: Any, array: str, field: str) -> int:
     return sum(1 for row in _rows(snapshot, array) if row.get(field) in (None, ""))
 
 
+# ── 服务端过滤事实（issue #6347 Part B：「有 SKU 但商品不在售」必须自己说出来）─────
+
+
+def _int_field(value: Any) -> Optional[int]:
+    """非负整数计数；读不出 / 为负 ⇒ `None`（未知）。"""
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _status_buckets(raw: Any) -> Dict[str, int]:
+    """`filtered_by_status` → `{商品状态: SKU 行数}`（只认非负整数计数；其余**不猜**、丢弃）。"""
+    if not isinstance(raw, dict):
+        return {}
+    buckets: Dict[str, int] = {}
+    for name, count in raw.items():
+        parsed = _int_field(count)
+        if parsed is not None:
+            buckets[str(name)] = parsed
+    return buckets
+
+
+def _product_ids(raw: Any) -> List[str]:
+    return [str(item) for item in raw if isinstance(item, (str, int))] if isinstance(raw, list) else []
+
+
+def filtered_skus(snapshot: Any) -> Dict[str, Any]:
+    """`skus` 数组的**服务端过滤事实**（issue #6347 Part B）—— 装配层经 `row_meta.skus` 透出。
+
+    返回 `{"available", "rows_before_filter", "filtered_count", "filtered_by_status",
+    "filtered_product_ids", "message"}`：`available=False` ⇒ **老快照**（该键面世前）⇒
+    调用方必须退回旧口径（把空当「未接线/无数据」），**不得**凭空断言「被过滤了」。
+
+    🔴 为什么这是一个**独立于三态**的事实：三态判的是「这个字段接没接、全不全」，
+    而过滤判的是「接上了、也全，但服务端**按商品在售口径**把行排除了」。两者可以同时为真，
+    混在一起就会把**可行动**的空说成**不可行动**的空（本单的用户就是被这么引去重录规格的）。
+    """
+    meta = _row_meta(snapshot, "skus")
+    before = _int_field(meta.get("rows_before_filter"))
+    if before is None:
+        return {"available": False, "rows_before_filter": None, "filtered_count": None,
+                "filtered_by_status": {}, "filtered_product_ids": [], "message": None}
+    count = _int_field(meta.get("count"))
+    # `count` 缺席 ⇒ 用**实际行数**（引擎与装配层都别猜：两处口径分叉时以能亲眼看见的那个为准）
+    count = len(_rows(snapshot, "skus")) if count is None else count
+    buckets = _status_buckets(meta.get("filtered_by_status"))
+    ids = _product_ids(meta.get("filtered_product_ids"))
+    filtered = max(before - count, 0)
+    info: Dict[str, Any] = {
+        "available": True,
+        "rows_before_filter": before,
+        "filtered_count": filtered,
+        "filtered_by_status": buckets,
+        "filtered_product_ids": ids,
+        "message": None,
+    }
+    if not filtered:
+        return info
+    info["message"] = _filtered_reason(before, filtered, _prod_count(ids, filtered), buckets)
+    return info
+
+
+def _prod_count(ids: List[str], filtered: int) -> Optional[int]:
+    """被排除的**商品数**（只在读数自洽时给出：id 去重后 0 < 数 ≤ 被排除的 SKU 数）。
+
+    不自洽（老快照没给 id / id 数与行数矛盾）⇒ `None`：宁可只说 SKU 数，也不说一个错的商品数。
+    """
+    unique = len(set(ids))
+    return unique if 0 < unique <= filtered else None
+
+
+def _filtered_reason(before: int, filtered: int, products: Optional[int],
+                     buckets: Dict[str, int]) -> str:
+    """说清**原因**（不是没建 SKU，而是因未上架未纳入）+ **出路**（issue #6347 用户口径 1/2/3）。"""
+    scale = f"{filtered} 个 SKU" + (f"（{products} 个商品）" if products else "")
+    statuses = "、".join(f"{name} {count} 个" for name, count in sorted(buckets.items()))
+    message = (
+        f"商品健康度快照里 skus 过滤前有 {before} 行、按商品在售口径过滤后剩 {before - filtered} 行 —— "
+        f"有 {scale} 因**商品未上架**（不在售）未纳入本次视图，"
+        f"被过滤商品的状态分布：{statuses or '未知'}。"
+        "🔴 卡点在**商品状态**，不在 SKU 有没有建过：把商品上架（状态置 on_sale）后，"
+        "它们的 SKU 即纳入本视图。"
+    )
+    odd = {name: count for name, count in buckets.items() if name not in _RECOVERABLE_STATUSES}
+    if not odd:
+        return message
+    detail = "、".join(f"{name} {count} 个" for name, count in sorted(odd.items()))
+    message += f"⚠️ 额外：其中有商品的状态是 {detail} —— 这些值不在商品状态机内"
+    if set(odd) - {_UNKNOWN_STATUS}:
+        # 状态**读到了**且不在状态机内（如 `active` / `on_shelf`）⇒ 出路明确且**可执行**
+        # （Part A 已把这条恢复边做通：只许先改回 off_sale / draft，不许直接上架）。
+        message += (
+            "（合法值 draft / under_review / on_sale / off_sale），**上架动作会被拒**"
+            "（「状态流转无效…允许的目标状态: 无」）⇒ 需先把这些商品改回 off_sale（已下架）或 "
+            "draft（草稿），再执行上架；改状态后它们的 SKU 同样纳入本视图。"
+        )
+    if _UNKNOWN_STATUS in odd:
+        # 🔴 状态**读不到**（商品已删 / 越租户）⇒ **不猜**：不说「改回某个值」这种可能不对的指引，
+        # 只说清「先去商品列表核实它现在的状态」（说错出路比不说更坏）。
+        message += (
+            "；其中 `unknown` = 装配层读不到该商品行（可能已删除或不属于本租户）⇒ "
+            "无法推断出路，请先在商品列表核实这些商品当前的状态。"
+        )
+    return message
+
+
 # ── 逐字段三态（判据 1；与族 1 的 `proactive_status` 同一纪律）────────────────
 
 
@@ -166,7 +308,8 @@ def field_status(snapshot: Any) -> Dict[str, Dict[str, Any]]:
     """**逐字段**接线状态 + 未接线 / 不完整原因（issue #5369 判据 1）。
 
     返回 `{field: {"status", "reason", "missing", "gaps", "source", "note"}}`：
-    `status` ∈ {`wired`（本次完整可用）, `not_wired`（未接入）, `incomplete`（本次不完整）}；
+    `status` ∈ {`wired`（本次完整可用）, `not_wired`（未接入）, `incomplete`（本次不完整）,
+    `not_on_sale`（**已接入且完整，但该数组被服务端按在售口径过滤空了** —— issue #6347 Part B）}；
     不变式：**`reason is None` ⟺ `status == wired`**。
 
     纯函数、只读：同一 `snapshot` ⇒ 同一结果（与视图行互不影响 —— 状态不改判据、不改行）。
@@ -196,6 +339,22 @@ def field_status(snapshot: Any) -> Dict[str, Dict[str, Any]]:
                 "note": _FIELD_NOTES[field],
             }
             continue
+
+        # 🔴 服务端过滤（issue #6347 Part B）：数组**接到了、字段也齐**，但这一轮一行都没进来，
+        # 且过滤事实（filtered_skus）证明**过滤前是有行的** ⇒ 本字段的空**不是**「没数据」。
+        # 判在 `line = 过滤后 0 行` 这一支（部分保留时字段照旧可用，但仍如实披露）。
+        info = filtered_skus(snapshot)
+        if field in _SKU_SOURCED_FIELDS and info["available"] and info["message"]:
+            if not _rows(snapshot, array):
+                status[field] = {
+                    "status": NOT_ON_SALE,
+                    "reason": info["message"],
+                    "missing": [],
+                    "gaps": [],
+                    "source": source,
+                    "note": _FIELD_NOTES[field],
+                }
+                continue
 
         gaps: List[str] = []
         meta = _row_meta(snapshot, array)
@@ -289,7 +448,9 @@ def product_health(
 
     Returns:
         `{"view", "tenant_id", "fields", "rows", "row_meta", "count", "rows_total",
-          "truncated", "unknown_cost_rows", "unattributed_returns", "basis"}`
+          "truncated", "unknown_cost_rows", "unattributed_returns", "not_on_sale", "basis"}`；
+        `not_on_sale` = 服务端过滤事实（issue #6347 Part B，见 `filtered_skus`）—— 行为与
+        「表里没有 SKU」**不可合并**：有它就必须说清「有 N 个 SKU（M 个商品）因未上架未纳入」+ 出路。
     """
     if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
         raise ValueError(f"limit 必须是 ≥1 的整数，实得 {limit!r}")
@@ -329,6 +490,8 @@ def product_health(
         "truncated": truncated,
         "unknown_cost_rows": sum(1 for item in rows if item["cost_known"] is False),
         "unattributed_returns": _blank_rows(snapshot, "returns", "product_id"),
+        # 服务端过滤事实（issue #6347 Part B）：**独立于三态**，工具层据它把原因与出路说给模型
+        "not_on_sale": filtered_skus(snapshot),
         "basis": {
             "stock_authority": STOCK_AUTHORITY,
             "sales_authority": STOCK_AUTHORITY,

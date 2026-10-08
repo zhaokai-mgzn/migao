@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" font-family="'PingFang SC','Hiragino Sans GB','Source Han Sans SC','Microsoft YaHei',sans-serif">
   <rect width="1200" height="400" fill="#FFFFFF"/>
-  <text x="600" y="28" text-anchor="middle" font-size="20" font-weight="700" fill="#141414">米高 Logo · 底板配色对比（方向 B 帘成 M）</text>
+  <text x="600" y="28" text-anchor="middle" font-size="20" font-weight="700" fill="#141414">观星台 Logo · 底板配色对比（方向 B 帘成 M）</text>
 
   <!-- 面板 1：维持蓝底 -->
   <rect x="0" y="44" width="216" height="292" rx="16" fill="#FAFAFA"/>

@@ -1,5 +1,5 @@
 # case_ids: MC-065
-"""米宝「导航类」指引真值源（issue #5989 · P1）—— 登记表镜像 `menu.ts` + 权限码真值 + 默认拒绝 + 角色裁剪 + citation + **禁止编步骤**。
+"""黄金策「导航类」指引真值源（issue #5989 · P1）—— 登记表镜像 `menu.ts` + 权限码真值 + 默认拒绝 + 角色裁剪 + citation + **禁止编步骤**。
 
 ## 本文件判什么（逐条对应 issue #5989 的必做判据）
 
@@ -92,7 +92,7 @@ ALLOWED_PAGE_KEYS = frozenset({"menuGroup", "menuName", "path", "requiredPermiss
 
 #: 未登记问题的样本（默认拒绝判据的输入面）。
 UNREGISTERED_QUESTIONS: Tuple[str, ...] = (
-    "米宝你能帮我做什么",
+    "黄金策你能帮我做什么",
     "帮我看看这个怎么弄",
     "这些数字是什么意思",
     "",
@@ -935,7 +935,7 @@ class TestEveryJudgementCanGoRed:
         def mutate(source: str) -> str:
             marker = '        return f"登记项 #{self.feature_id} → 菜单节点 {nodes}"'
             assert marker in source, "注入锚不存在 ⇒ 红证是空断言（同步本判据）"
-            return source.replace(marker, '        return "依据：米宝的导航指引"')
+            return source.replace(marker, '        return "依据：黄金策的导航指引"')
 
         mutated = _load_mutated(tmp_path, mutate)
         assert "菜单节点" not in mutated.build_navigation_answer("商品管理在哪", ["product:list"]).citation
@@ -1215,8 +1215,8 @@ class TestEveryJudgementCanGoRed:
         mutated = _load_mutated(
             tmp_path,
             lambda s: s.replace(
-                '"""米宝「导航类」指引的真值源',
-                '"""米宝「导航类」指引的真值源（本行是注入的注释）',
+                '"""黄金策「导航类」指引的真值源',
+                '"""黄金策「导航类」指引的真值源（本行是注入的注释）',
                 1,
             ),
         )

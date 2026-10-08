@@ -91,7 +91,7 @@ export default function PieceworkReportPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-neutral-900">计件工资</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">按期间汇总报工（合格数量 × 工序单价；返工/报废不计件）</p>
+          <p className="mt-0.5 text-sm text-neutral-500">按期间汇总报工并算计件工资 —— <strong>返工、报废不计件</strong></p>
         </div>
         <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
           <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />

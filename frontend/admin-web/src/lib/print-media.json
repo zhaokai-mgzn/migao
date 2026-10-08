@@ -39,6 +39,15 @@
       "continuousFeed": false,
       "carbonCopies": 1,
       "minFontPt": 6,
+      "dotGeometry": {
+        "dpi": 203,
+        "dotsPerMm": 8,
+        "widthPx": 400,
+        "effectiveWidthPx": 384,
+        "headWidthPx": 384,
+        "heightPx": 480,
+        "note": "设备侧**点阵口径**（issue #6439 免驱动直连通道）—— 全仓唯一一份，洗水码位图只许从这里取（守卫 frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts 的 C2b）。与 label-30x40.dotGeometry 是**同一台 DP235S** 的读数（那一条是入库标签链路的落点，本条目是洗水码链路的落点；改一处务必核对另一处）。🔴 纸宽 50mm ⇒ 400px，打印头只有 384px(48mm) ⇒ effectiveWidthPx = 384：**右侧约 2mm 打不到**，出图必须按 effectiveWidthPx（越头的像素会被静默丢掉）。dpi 与 headWidthPx 仍是**安全侧待实测**值（同 label-30x40 的 pendingMeasurements 第 1 条），连上机器后按 getPrinterInfo() 自报值覆盖。"
+      },
       "measurement": "measured",
       "pendingMeasurements": [],
       "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。几何真值 = #5646 实测（容器 49.998mm × 59.998mm、PDF MediaBox 142.08 × 169.92 pt）。⛔ 本矩阵只登记**在用**介质：#4946 的 30mm 横版与 #5052-P2 的 50×30 版式各有归属，不在本表重复登记、本单也不动它们的版式。"

@@ -1,4 +1,4 @@
-// e2e/run.js — 小布小程序 E2E 验收总入口（非测试文件，无需 case_ids）
+// e2e/run.js — 元元小程序 E2E 验收总入口（非测试文件，无需 case_ids）
 /**
  * 前置条件：
  *   1. 微信开发者工具已安装并打开（登录账号）
@@ -25,7 +25,7 @@ const SCENARIOS = [
 ]
 
 async function main() {
-  console.log('🚀 启动小布小程序 E2E 验收（微信开发者工具模拟器）...')
+  console.log('🚀 启动元元小程序 E2E 验收（微信开发者工具模拟器）...')
   const reportPath = path.join(path.dirname(SCREENSHOT_DIR), 'report.md')
 
   /**
@@ -94,7 +94,7 @@ async function main() {
     )
   }
   const expect = login.user
-    ? `，期望 botName=${login.user.botName ?? '(未配置→兜底小布)'} / tenantName=${login.user.tenantName ?? '(空)'}`
+    ? `，期望 botName=${login.user.botName ?? '(未配置→兜底元元)'} / tenantName=${login.user.tenantName ?? '(空)'}`
     : ''
   loginLine =
     login.source === 'storage'
@@ -128,7 +128,7 @@ async function main() {
   const lines = []
   let totalPass = 0
   let totalFail = 0
-  lines.push('# 小布小程序 E2E 验收报告')
+  lines.push('# 元元小程序 E2E 验收报告')
   lines.push('')
   lines.push(`- 时间: ${new Date().toLocaleString('zh-CN')}`)
   lines.push('- 环境: 微信开发者工具模拟器 + app.migaozn.com 测试环境')

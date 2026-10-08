@@ -1,6 +1,6 @@
 // case_ids: OR-034
 /**
- * 跨端同源守卫：报价卡 `QuotationCard.tsx` 在 mini-app（C 端小布）/ bmini-app（B 端米宝）
+ * 跨端同源守卫：报价卡 `QuotationCard.tsx` 在 mini-app（C 端元元）/ bmini-app（B 端黄金策）
  * **两份逐字节相同**。
  *
  * 病根（issue #4292，实测级）：两份文件改动前**逐字节相同**（`diff` 无输出），而 #4283 只修了

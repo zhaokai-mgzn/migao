@@ -26,7 +26,7 @@ import java.util.Map;
  *
  * 闭环三（检索-会话飞轮）：人工客服会话 → AI 提炼候选 → 待确认队列 → 商家采纳 → 知识卡片 → 检索命中。
  * 提炼源 = 已结束**人工**会话（agent_sessions ended 且 employeeId 非空——转人工标记，#3090）的顾客/客服文本消息；
- * 纯 AI 会话（小布自动接待，employeeId 为空）不提炼——AI 回答是知识卡片的消费输出，提炼=自循环且兜底话术会污染知识库。
+ * 纯 AI 会话（元元自动接待，employeeId 为空）不提炼——AI 回答是知识卡片的消费输出，提炼=自循环且兜底话术会污染知识库。
  * 自动触发（#3090）：会话结束（status→ended）事务提交后由 SessionDistillListener 异步调 distillSession；
  * 已提炼检查：同一会话已有 conversation 候选 → 跳过（防重复 LLM 调用）。
  * 去重：已存在同名知识卡片或待确认候选 → 跳过；AI 只产生候选，发布权在商家。

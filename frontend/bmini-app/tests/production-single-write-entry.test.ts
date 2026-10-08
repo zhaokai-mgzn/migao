@@ -13,7 +13,13 @@
  * ① `reportOperation` 符号一处都不许有（URL 定工序那条路的客户端封装，issue #5647 已退场）；
  * ② `/operations/{...}/report` 形态一处都不许有（工序不得再由客户端定）；
  * ③ 唯一写入口端点 `/api/worker/production/scan/complete` 全 `src/**` **只有一处实现**；
- * ④ 生产服务里 `/api/worker/**` 的 POST 端点集合 = {`/api/worker/production/scan/complete`}。
+ * ④ 生产服务里 **报工面**（`/api/worker/production/**`）的 POST 端点集合 = {`/api/worker/production/scan/complete`}。
+ *
+ * ⚠️ 判据④ 的射程**只到报工面**（issue #6472 收窄）：发货走的是另一条具名动作端点
+ * `/api/worker/shipment/orders/{orderId}/ship`（issue #5648 既有端点，不是第二条**报工**写路径）——
+ * 把发货也算进「报工写面唯一入口」是把「同类」误判成「同一个动作」，而判据的立意是
+ * 「同一次报工只许有一条路」（防呆④/⑤、一次事务、`done_at`）。发货自身的类级固化见
+ * `frontend/bmini-app/tests/worker-action-endpoint-ledger.test.ts`。
  *
  * ## 红证（2026-09-26 实测）
  * 把 `reportOperation`（含其 URL）加回 `src/services/productionService.ts` ⇒ ①②③④ 四条**全红**；
@@ -55,12 +61,17 @@ function hits(pattern: RegExp): string[] {
   return found
 }
 
-/** `productionService.ts` 里 `post<…>(…)` 的端点字面量（工人路径的写面集合）。 */
+/**
+ * `productionService.ts` 里 `post<…>(…)` 的**报工面**端点字面量。
+ *
+ * 🔴 射程 = `/api/worker/production/**`（报工动作面；issue #6472 收窄）—— 发货走的是
+ * `/api/worker/shipment/**`（另一条具名动作端点），不属于「报工写面唯一入口」这条判据。
+ */
 function workerPostEndpoints(): string[] {
   const text = fs.readFileSync(PRODUCTION_SERVICE, 'utf8')
   const endpoints: string[] = []
   for (const match of text.matchAll(/post(?:<[^(]*)?\(\s*(['"`])([^'"`]+)\1/g)) {
-    if (match[2].startsWith('/api/worker/')) endpoints.push(match[2])
+    if (match[2].startsWith('/api/worker/production/')) endpoints.push(match[2])
   }
   return endpoints
 }
@@ -79,7 +90,7 @@ describe('bmini 报工写面唯一入口（issue #5647 G10 类级守卫）', () 
     expect(Array.from(new Set(files))).toEqual(['services/productionService.ts'])
   })
 
-  it('判据④：生产服务里 /api/worker/** 的 POST 端点集合 = {scan/complete}', () => {
+  it('判据④：生产服务里**报工面**（/api/worker/production/**）的 POST 端点集合 = {scan/complete}', () => {
     expect(workerPostEndpoints()).toEqual([SCAN_COMPLETE_ENDPOINT])
   })
 })

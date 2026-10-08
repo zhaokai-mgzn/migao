@@ -250,7 +250,7 @@ class TestGateBlocksPostConfirmDrift:
             asyncio.run(execute_skill(
                 state=_make_state(messages=[HumanMessage(content="123456")]),
                 skill_name="customer_order",
-                tool_names=["order_create"], system_prompt="你是小布",
+                tool_names=["order_create"], system_prompt="你是元元",
             ))
         return executed
 

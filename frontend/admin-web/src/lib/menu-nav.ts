@@ -259,14 +259,22 @@ export interface FlatMenuItem extends MenuItem {
 }
 
 /**
- * 把（已权限过滤的）分组按「一级项插入位」切成两段（#5877，用户 2026-10-01 裁定）。
+ * 把（已权限过滤的）分组按「一级项插入位」切成两段（#5877；**用户 2026-10-06 改判落位**）。
  *
  * 返回 `{ head, tail }`：`head` 含 `slotKey` 那个组（**含**）及其之前的所有组，`tail` 是其余组；
- * `slotKey` 不在可见分组里（被权限过滤掉 / 传 null / key 写错）⇒ `{ head: [], tail: groups }`
- * —— 即**回落到「一级项渲染在所有分组之前」**。
+ * 🔴 席位组**不在可见分组里**（被权限过滤掉 / 传 null / key 写错）⇒ `{ head: groups, tail: [] }`
+ * —— 即**一级项挂在「全部可见分组」之后**（**不是**跳到最前）。
  *
- * 🔴 为什么**必须**有回落：席位组被权限过滤掉时，一级项**绝不允许跟着消失**
- *（最坏退回旧位置，也不能没有入口）—— 一级项是**一级菜单**，不是某个组的附属品。
+ * ## 为什么回落方向是「挂到末尾」而不是「跳到最前」（2026-10-06 修正，实测数据）
+ *
+ * 一级项的位置语义 = 「**排在所有分组之后**」（用户 2026-10-06 裁定：11 个大菜单项并列）。
+ * 席位组是**最后一个组**（`org-center`），而它是**最少人可见**的组之一 —— 实测岗位种子矩阵
+ * （`backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java`）：
+ * 七个岗位里只有 admin 持 `system:view` ⇒ 若按旧口径「席位组不可见 ⇒ 回落到所有分组之前」，
+ * 「商品管理」会对**除 admin 外的所有岗位**跑到菜单第一行 —— 与「沉底」的裁定**正好相反**。
+ * ⇒ 回落方向改为「挂到当前**可见**分组的末尾」：**一级项绝不消失**（旧口径唯一要保的那条不变），
+ * 且**所有**岗位看到的相对位置一致（都在分组之后、尾部项之前）。
+ *
  * 🔴 这是该口径的**唯一实现**：`Sidebar.tsx` 与 `flattenMenu` 都调它（不各写一份 slice，
  * 否则「侧边栏渲染顺序」与「⌘K 索引顺序」迟早漂移）。
  */
@@ -276,7 +284,7 @@ export function splitGroupsAtTopItemSlot(
 ): { head: MenuGroup[]; tail: MenuGroup[] } {
   const i = slotKey ? groups.findIndex((g) => g.key === slotKey) : -1
   return i < 0
-    ? { head: [], tail: groups }
+    ? { head: groups, tail: [] }
     : { head: groups.slice(0, i + 1), tail: groups.slice(i + 1) }
 }
 
@@ -286,8 +294,8 @@ export function splitGroupsAtTopItemSlot(
  * 顺序 == 侧边栏渲染顺序 ⇒ ⌘K 空查询时的「全量索引」与侧边栏逐项对齐（不同源会让用户
  * 在面板里看到的顺序与菜单对不上）。
  *
- * 两级独立项：`standaloneTop` = 一级项（如「商品管理」，#5877 起插在
- * `STANDALONE_TOP_AFTER_GROUP_KEY` 那个组**之后**；该组不可见 ⇒ 回落到最前）；
+ * 两级独立项：`standaloneTop` = 一级项（如「商品管理」，用户 2026-10-06 裁定起排在**所有分组之后**；
+ * ⚠️ 席位组不可见时**也不跳到最前**，而是挂在「当前可见分组」的末尾 —— 见 `splitGroupsAtTopItemSlot`）；
  * `standaloneBottom` = 尾部独立项（如「通知中心」，渲染在所有分组之后）。
  * 两者都**不是**分组，`groupKey`/`groupName` 留空（面板上不显示「组名」标签）。
  *

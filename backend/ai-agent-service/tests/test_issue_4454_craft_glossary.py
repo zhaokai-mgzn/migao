@@ -73,7 +73,7 @@ def _prompt_term_section(path: Path) -> str:
 
 
 def _c_end_term_section() -> str:
-    """C 端小布下单采集 prompt 的术语映射段（内联 L4，`SkillConfig.system_prompts`）。"""
+    """C 端元元下单采集 prompt 的术语映射段（内联 L4，`SkillConfig.system_prompts`）。"""
     from app.graph.skills.customer_order_skill import CUSTOMER_ORDER_SYSTEM_PROMPT
 
     return _section(CUSTOMER_ORDER_SYSTEM_PROMPT, TERM_SECTION_HEAD)
@@ -165,8 +165,8 @@ def _truth_craft_pairs() -> dict:
 def _prompt_rows_with_dims() -> dict:
     """两条 prompt 的术语映射表格数据行（判据 2/3/4/5）。"""
     return {
-        "customer_order(C 端小布内联)": _table_data_rows(_c_end_term_section()),
-        "prompts/order.md(B 端米宝)": _table_data_rows(
+        "customer_order(C 端元元内联)": _table_data_rows(_c_end_term_section()),
+        "prompts/order.md(B 端黄金策)": _table_data_rows(
             _prompt_term_section(B_ORDER_PROMPT)),
     }
 
@@ -245,8 +245,8 @@ def test_both_dimensions_present():
 # ── 判据 6：两段都声明单一真值源 ─────────────────────────────────────────────
 def test_both_sections_declare_the_single_source():
     for name, section in (
-        ("customer_order(C 端小布内联)", _c_end_term_section()),
-        ("prompts/order.md(B 端米宝)", _prompt_term_section(B_ORDER_PROMPT)),
+        ("customer_order(C 端元元内联)", _c_end_term_section()),
+        ("prompts/order.md(B 端黄金策)", _prompt_term_section(B_ORDER_PROMPT)),
     ):
         assert SINGLE_SOURCE_NOTICE in section, (
             f"{name}: 术语映射段缺少「与 {SINGLE_SOURCE_NOTICE}」声明 —— "

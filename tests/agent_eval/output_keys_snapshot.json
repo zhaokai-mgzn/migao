@@ -53,7 +53,7 @@
     "data=response.get('data', {})",
     "ticket_data ← response.get('data', {})"
    ],
-   "source_sha256": "b19971cf51e40a7dee92ec871f1325addd57466bb6426566b0afa43b05cccb8b"
+   "source_sha256": "ebf03672c2fe9e015d7b30399f7285b2b70134fd1a5dcc33db98cbc445d0a8e7"
   },
   "aftersale_query": {
    "actions": {
@@ -103,7 +103,7 @@
     "data=attach_ticket_labels(data)",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "73867a7fbdc39450426c3c9acfd4a96ac1da1aeded246f671f03cefe46892461"
+   "source_sha256": "1ad8acdd51fe315648a64212a8127c4110b7d7a8f07210fb69a9747feda3cab0"
   },
   "batch_stock_query": {
    "actions": null,
@@ -122,7 +122,7 @@
     "**data",
     "data=response.get('data') or {}"
    ],
-   "source_sha256": "31efbd6f9918544fe614c75452a4f3755c2e42e6147bdfb958036db8d64f5aa0"
+   "source_sha256": "8ef75b150cbb8f851295ec25d52b35beb28d8b7eb8e6f6a625b85dab6f1f2190"
   },
   "briefing_query": {
    "actions": null,
@@ -133,7 +133,7 @@
    "shape_notes": [
     "data=dict(data, proactive=findings, proactive_status=status)"
    ],
-   "source_sha256": "399b96b2dab299e1dd3f320f56be31ad3c69b0610273a0a3d44fcee41ad37c11"
+   "source_sha256": "973fb044c2b76ef72a802bcfe799e83757c26e99136067a12c663aa7226143fc"
   },
   "category_manage": {
    "actions": {
@@ -224,7 +224,7 @@
     "**{'panels': panels} if panels is not None else {}",
     "data=(None, meters_fixed_height, f'fixed_height{suffix}', '')"
    ],
-   "source_sha256": "7d475c1978a9d07155b52c0109e4c7351c0e68eec49bdc4c38be989ea733f72c"
+   "source_sha256": "b40ba4851f257fd86ebc5ac2494abe5d2ad567490a6a3909db536826269ef392"
   },
   "customer_address_query": {
    "actions": null,
@@ -246,7 +246,7 @@
     "order_no",
     "source"
    ],
-   "source_sha256": "218e940a633051f4bb8a442b7f0edb63f9e969e5c20f7659e1f3927a5fb2e693"
+   "source_sha256": "73e342688401950aaa54e6e5ec458409ffce0cb99d014f08d947bada4c74d026"
   },
   "customer_logistics_track": {
    "actions": null,
@@ -267,7 +267,7 @@
     "logistics_list",
     "total"
    ],
-   "source_sha256": "2d73e97505096cc56033624740d08bc650949bbb29b4b7afc34fe73621def454"
+   "source_sha256": "39160323a8a0bafa2ea5a91bd138c532ee74a63169428a9450773f2ad7d27467"
   },
   "customer_manage": {
    "actions": {
@@ -299,6 +299,10 @@
     "profile_view": {
      "dynamic": true,
      "keys": []
+    },
+    "value_view": {
+     "dynamic": true,
+     "keys": []
     }
    },
    "dynamic": true,
@@ -328,7 +332,7 @@
     "data=dict(result)",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "7b5b9c51cab6890ffeec930c5aaaa67b1f1628797f3378c70d759e7b5916e9a4"
+   "source_sha256": "d54c0bbb8532bd9395938d8a521a132bb4fe7b20a43d37001c75cb674ec82a52"
   },
   "customer_order_query": {
    "actions": null,
@@ -351,7 +355,7 @@
     "total",
     "total_pages"
    ],
-   "source_sha256": "2440e2889041676941a391af66b081c68630c832287f3c8342f4d057b295849b"
+   "source_sha256": "2d7ef11432257fe6f2e5d7151654e736ef15260dac4bae7f97768dea2c0dd47e"
   },
   "dashboard_stats": {
    "actions": {
@@ -483,7 +487,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "2de4fff75d144fe5d132b597d81ae6bbc8fe87ad5675ee4d633ef57664f4ed1f"
+   "source_sha256": "6c3145254d419f7bf97e0ba278be5b70e37ff9bf740bdecdc68942805b3cdbe1"
   },
   "finance_api": {
    "actions": {
@@ -548,7 +552,7 @@
    "shape_notes": [
     "data=dict(ticket_data)"
    ],
-   "source_sha256": "1de7237aad0014e4322ac559696506a91991d78d1161d020ea0c61286d3ab1e2"
+   "source_sha256": "3f29ae7ee50e1bd6ec37d9f2d080d7e2461516bc51e9ffa518ed0cff39b8c58a"
   },
   "image_recognize": {
    "actions": null,
@@ -559,7 +563,7 @@
    "shape_notes": [
     "data=build_page_fill(target_type, result.get('fields') or [], cat"
    ],
-   "source_sha256": "3c276b9d0aa1b0a6539030c6c4b60fbc7ed3d6d592d656bfdc5de0620a009448"
+   "source_sha256": "804b1b7219a04451aa1d090eaad39d0691e8ec82442ae9a2ecbaa558a1dd41bb"
   },
   "inbound_order_query": {
    "actions": null,
@@ -604,30 +608,11 @@
     "title"
    ],
    "literal_keys": [],
-   "source_sha256": "e8d640b728fb5508be845a6c75a2b35bcec5cc6de06cb56dd897a361205aa980"
+   "source_sha256": "9758af5bf4fa1b2e5442fc2fe70697ecc349d815af60c15826dcec4696bc0380"
   },
   "inventory_manage": {
-   "actions": {
-    "low_stock_alert": {
-     "dynamic": false,
-     "keys": [
-      "count",
-      "items",
-      "threshold"
-     ]
-    },
-    "query": {
-     "dynamic": false,
-     "keys": [
-      "product_id",
-      "product_name",
-      "status",
-      "stock",
-      "stock_source"
-     ]
-    }
-   },
-   "dynamic": false,
+   "actions": null,
+   "dynamic": true,
    "file": "backend/ai-agent-service/app/tools/inventory_manage.py",
    "keys": [
     "count",
@@ -649,7 +634,10 @@
     "stock_source",
     "threshold"
    ],
-   "source_sha256": "f5b02ef13173d8a985c81b820e99d61dda35d6cb5b34af7fe022e990896ae3ab"
+   "shape_notes": [
+    "data=dict(view)"
+   ],
+   "source_sha256": "1dc05f48521af645e9df9bff4efa9f7ca021722e819166eeee456db3f9327b92"
   },
   "knowledge_search": {
    "actions": null,
@@ -663,7 +651,7 @@
     "cards",
     "hit"
    ],
-   "source_sha256": "e5f81c29a272a5329f36e127fb66a9da91990340f48ae1310ce673f6b38f983d"
+   "source_sha256": "cf51006dab19cf8df0ba9e85ec58f105d29a974346809f9436a88cd85c97bb0f"
   },
   "logistics_track": {
    "actions": null,
@@ -680,10 +668,12 @@
    ],
    "literal_keys": [],
    "shape_notes": [
+    "**cached",
     "data ← self._transform_api_response(api_result, tracking_number, co",
+    "data=await get_logistics_trace_cache().get(context.tenant_id, tra",
     "data=self._transform_api_response(api_result, tracking_number, co"
    ],
-   "source_sha256": "206bfecde86632297de4323a4711e7773ded7f4becb74f82a4db3190282c169c"
+   "source_sha256": "cfbde6ef43bdaf165b6fdbd448cdff038a278aa3a212f620c96434507560474f"
   },
   "nav_guide": {
    "actions": null,
@@ -695,7 +685,7 @@
     "data ← answer.to_data()",
     "data=answer.to_data()"
    ],
-   "source_sha256": "ae6d14b4bab021e2c8c9c4ab0ec78dd886daf57743f89af47d79d73c9d7b1ad1"
+   "source_sha256": "7caced7f189f9d3e234a42169148ba114da6d953e2ae554da43f91cfe7879ee5"
   },
   "notification_manage": {
    "actions": {
@@ -731,7 +721,7 @@
     "total",
     "unread_count"
    ],
-   "source_sha256": "5c8f21684b84a56c94f63ea0fb4ed0a9bf4584105e8419f69b4c75634a35a1be"
+   "source_sha256": "c1c5f13b1d59e0c1b959c41575babc2a2f4a7fcd60ca1bb5d7e043132f20807f"
   },
   "operation_catalog_query": {
    "actions": null,
@@ -746,7 +736,7 @@
    "shape_notes": [
     "data=response.get('data') or {}"
    ],
-   "source_sha256": "234f14f4f181f8509aeda6a6a2daf6f45946ecb832712d63f957b873c705be6d"
+   "source_sha256": "ff0b3e0889c0971d8f877cc55835a01db5540580851a3397553847652e7ee66f"
   },
   "order_create": {
    "actions": null,
@@ -762,7 +752,7 @@
     "data=response.get('data', {})",
     "order_data ← response.get('data', {})"
    ],
-   "source_sha256": "34f965953da7f5ded9747060233df1d200ff5fe52dd87b3cf877054fdbb76d35"
+   "source_sha256": "da778ab34bc6611af504510bfb61eea8e8390b838513509e9cd73453bedb017b"
   },
   "order_manage": {
    "actions": null,
@@ -785,7 +775,7 @@
     "order_id",
     "result"
    ],
-   "source_sha256": "eb46b4fc560565a11ca20f6eea6c569286d704b6554324012c60b93bc3d14d98"
+   "source_sha256": "742f2159bcc515889b03cc9fc8539212104e9c7e1355119280b378668eb974e6"
   },
   "order_query": {
    "actions": {
@@ -826,7 +816,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "d64c83ab5e6cb13c81a827901c376a3b50c4f869c035234672e63c47fd6c8191"
+   "source_sha256": "9387b87b05a78492d4a5bdad5fc0cd4b113e7452ffbebcdfb62762a02e38dc5b"
   },
   "payment_qrcode_query": {
    "actions": null,
@@ -836,7 +826,7 @@
     "payment_qrcodes"
    ],
    "literal_keys": [],
-   "source_sha256": "2945a94cd6972edf6ff3dfa0df9121309d0bec80f84aa02862fd0ed720a10af8"
+   "source_sha256": "72f6860d5cdd5766bb999ddd14b8a6161c144c8cde7cb1c4e93dfb33d4ce1dfa"
   },
   "piecework_query": {
    "actions": null,
@@ -947,7 +937,7 @@
     "total",
     "total_pages"
    ],
-   "source_sha256": "fc652a84a78e62056f7ab609a49fe88ccd573f601ccd155d296e2e0eaf270f0f"
+   "source_sha256": "3317a1d815e917964b0a659bae1dfcd0529a4ee1416794653f5e3fd88df04639"
   },
   "processing_order_generate": {
    "actions": null,
@@ -962,8 +952,16 @@
    "source_sha256": "764579235de50706fde2cb69e1ff238dac3724f705bd97ae2f23fd9b33216b9d"
   },
   "processing_order_query": {
-   "actions": null,
-   "dynamic": false,
+   "actions": {
+    "delivery_risk": {
+     "dynamic": true,
+     "keys": []
+    }
+   },
+   "actions_unattributed": [
+    "query"
+   ],
+   "dynamic": true,
    "file": "backend/ai-agent-service/app/tools/processing_order_query.py",
    "keys": [
     "list"
@@ -971,7 +969,10 @@
    "literal_keys": [
     "list"
    ],
-   "source_sha256": "f3045fc57c52eb0701291c088192b97ca8cdb5854cda2e91979e9be3e6a6a90a"
+   "shape_notes": [
+    "data=dict(result)"
+   ],
+   "source_sha256": "1c8d53198a6bbd6ca1e5a0d6251d2ed5821f26ba5324c72abcd0a112f2c977ef"
   },
   "processing_order_set_query": {
    "actions": null,
@@ -1162,7 +1163,7 @@
     "data ← response.get('data')",
     "data=response.get('data')"
    ],
-   "source_sha256": "dbdead12a1b51e2956dd40e45e1375fca9d19ef0591f387416db7d60bfa32a54"
+   "source_sha256": "6bfa6a1227198c1b867b330e127cdf8088ecd3ba20e5a1aac2785ae94aaf388c"
   },
   "production_worklog_query": {
    "actions": null,
@@ -1234,6 +1235,42 @@
     "data=response.get('data', {})"
    ],
    "source_sha256": "3684cc79937d348f6a09e576f247b547c636436442d2e10b3b444aff3406ec66"
+  },
+  "scheduled_task_manage": {
+   "actions": {
+    "create": {
+     "dynamic": true,
+     "keys": []
+    },
+    "list": {
+     "dynamic": false,
+     "keys": [
+      "count",
+      "tasks"
+     ]
+    }
+   },
+   "actions_unattributed": [
+    "cancel"
+   ],
+   "dynamic": true,
+   "file": "backend/ai-agent-service/app/tools/scheduled_task_manage.py",
+   "keys": [
+    "cancelled",
+    "count",
+    "task_id",
+    "tasks"
+   ],
+   "literal_keys": [
+    "cancelled",
+    "count",
+    "task_id",
+    "tasks"
+   ],
+   "shape_notes": [
+    "data=response.get('data') or {}"
+   ],
+   "source_sha256": "f3e585265809d2299b222e0c552fc2ce4b91b286298560209442ff96fc622322"
   },
   "session_manage": {
    "actions": {
@@ -1312,7 +1349,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "d3cfbfc4bbc092c0eaee90a5b806c9eae7296af6cc18a5c4f650651b78979e74"
+   "source_sha256": "a8757ca4d1c6f38a8f0937ea218c1f53913e5cf386aec80c37d795701b9421b6"
   },
   "sku_update": {
    "actions": null,
@@ -1354,7 +1391,7 @@
     "params",
     "validated"
    ],
-   "source_sha256": "851ee88c5c12f5d483ba9212f67868b1db19bc73f00442417ce9b8a33c5432b8"
+   "source_sha256": "6752bfe77e9ebfe8ca1b0ae9829985e402d91e483c5b348c516ad89523ee06bc"
   }
  }
 }

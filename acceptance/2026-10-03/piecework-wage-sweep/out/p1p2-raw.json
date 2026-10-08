@@ -1,0 +1,234 @@
+{
+  "perOrder": {
+    "total": 11.2,
+    "per_worker": {
+      "工资验收工人甲674096": 11.2
+    },
+    "per_operation": [
+      {
+        "amount": 3.2,
+        "operation": "精裁-布"
+      },
+      {
+        "amount": 8,
+        "operation": "布三边"
+      },
+      {
+        "amount": 0,
+        "operation": "熨烫-布"
+      }
+    ],
+    "per_position": [
+      {
+        "position_name": "工资验收行-A 本白",
+        "amount": 11.2,
+        "qty": 48
+      }
+    ],
+    "per_set": [
+      {
+        "set_no": "JG-20261003-6401-001",
+        "amount": 11.2,
+        "qty": 48
+      }
+    ],
+    "unpriced": {
+      "qty": 5,
+      "operations": [
+        {
+          "operation": "定型-布",
+          "logical_name": "定型",
+          "qty": 5
+        }
+      ],
+      "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。"
+    }
+  },
+  "summary": {
+    "period": "2026-10",
+    "total": 11.2,
+    "per_worker": [
+      {
+        "worker_name": "工资验收工人甲674096",
+        "amount": 11.2,
+        "qty": 48
+      }
+    ],
+    "per_operation": [
+      {
+        "operation": "精裁-布",
+        "logical_name": "精裁",
+        "position": "布帘",
+        "qty": 8,
+        "amount": 3.2
+      },
+      {
+        "operation": "布三边",
+        "logical_name": "三边",
+        "position": "布帘",
+        "qty": 20,
+        "amount": 8
+      },
+      {
+        "operation": "熨烫-布",
+        "logical_name": "熨烫",
+        "position": "布帘",
+        "qty": 20,
+        "amount": 0
+      }
+    ],
+    "per_position": [
+      {
+        "position_name": "工资验收行-A 本白",
+        "amount": 11.2,
+        "qty": 48
+      }
+    ],
+    "per_set": [
+      {
+        "set_no": "JG-20261003-6401-001",
+        "amount": 11.2,
+        "qty": 48
+      }
+    ],
+    "unpriced": {
+      "qty": 5,
+      "operations": [
+        {
+          "operation": "定型-布",
+          "logical_name": "定型",
+          "qty": 5
+        }
+      ],
+      "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。"
+    }
+  },
+  "worklogTotals": {
+    "qualified_qty": 53,
+    "rework_qty": 3,
+    "scrap_qty": 0,
+    "piecework_amount": 11.2
+  },
+  "logsFinal": [
+    {
+      "id": "03d274d743895376d676f1f88ced5e23",
+      "operation_id": "f9ceb1f56c0229697636ec0cdce18405",
+      "operation_name": "精裁-布",
+      "worker_name": "工资验收工人甲674096",
+      "qualified_qty": "8.00",
+      "qty": "8.00",
+      "unit_price": "0.40",
+      "factor": null,
+      "price_state": "priced",
+      "work_type": "normal",
+      "work_date": "2026-10-03",
+      "processing_order_id": "5ef130934bdc509518d27b6c9dd16c88",
+      "processing_order_no": "JG-20261003-6401"
+    },
+    {
+      "id": "6ddedc3536120c6ffc304c1381201711",
+      "operation_id": "86a8f352940c9a78eff73766e73300f0",
+      "operation_name": "布三边",
+      "worker_name": "工资验收工人甲674096",
+      "qualified_qty": "20.00",
+      "qty": "20.00",
+      "unit_price": "0.40",
+      "factor": null,
+      "price_state": "priced",
+      "work_type": "normal",
+      "work_date": "2026-10-03",
+      "processing_order_id": "5ef130934bdc509518d27b6c9dd16c88",
+      "processing_order_no": "JG-20261003-6401"
+    },
+    {
+      "id": "1a78ba804f499843ffb6ad547b50e28e",
+      "operation_id": "d971192687f7132cee4cc723d9907f44",
+      "operation_name": "熨烫-布",
+      "worker_name": "工资验收工人甲674096",
+      "qualified_qty": "20.00",
+      "qty": "20.00",
+      "unit_price": "0.00",
+      "factor": null,
+      "price_state": "priced",
+      "work_type": "normal",
+      "work_date": "2026-10-03",
+      "processing_order_id": "5ef130934bdc509518d27b6c9dd16c88",
+      "processing_order_no": "JG-20261003-6401"
+    },
+    {
+      "id": "c70d9e3d906769caabbd37c293091c7d",
+      "operation_id": "4b713716d873f1073a5393af123f9fe8",
+      "operation_name": "定型-布",
+      "worker_name": "工资验收工人甲674096",
+      "qualified_qty": "5.00",
+      "qty": "5.00",
+      "unit_price": null,
+      "factor": null,
+      "price_state": "unpriced",
+      "work_type": "normal",
+      "work_date": "2026-10-03",
+      "processing_order_id": "5ef130934bdc509518d27b6c9dd16c88",
+      "processing_order_no": "JG-20261003-6401"
+    },
+    {
+      "id": "a9d085051915e003309894754c542b8c",
+      "operation_id": "f9ceb1f56c0229697636ec0cdce18405",
+      "operation_name": "精裁-布",
+      "worker_name": "工资验收工人甲674096",
+      "qualified_qty": "3.00",
+      "qty": "3.00",
+      "unit_price": "0.40",
+      "factor": null,
+      "price_state": "priced",
+      "work_type": "rework",
+      "work_date": "2026-10-03",
+      "processing_order_id": "5ef130934bdc509518d27b6c9dd16c88",
+      "processing_order_no": "JG-20261003-6401"
+    },
+    {
+      "id": "74472849f5a1d85dcb40523f212a8a45",
+      "operation_id": "f9ceb1f56c0229697636ec0cdce18405",
+      "operation_name": "精裁-布",
+      "worker_name": "工资验收工人甲674096",
+      "qualified_qty": "5.00",
+      "qty": "5.00",
+      "unit_price": "0.40",
+      "factor": null,
+      "price_state": "priced",
+      "work_type": "normal",
+      "work_date": "2026-10-03",
+      "processing_order_id": "5ef130934bdc509518d27b6c9dd16c88",
+      "processing_order_no": "JG-20261003-6401"
+    },
+    {
+      "id": "00a5a21cfb272839212c11ffa7b958cd",
+      "operation_id": "d07321a6f5e657d55ad2de22ca2ac6ef",
+      "operation_name": "精裁-布",
+      "worker_name": "工资验收工人甲674096",
+      "qualified_qty": "6.00",
+      "qty": "6.00",
+      "unit_price": "1.25",
+      "factor": null,
+      "price_state": "priced",
+      "work_type": "normal",
+      "work_date": "2026-10-03",
+      "processing_order_id": "024de89e1b4783f794e2835e04072567",
+      "processing_order_no": "JG-20261003-6402"
+    },
+    {
+      "id": "44354c98c0cc9125a1fc0d4c65b799cb",
+      "operation_id": "d07321a6f5e657d55ad2de22ca2ac6ef",
+      "operation_name": "精裁-布",
+      "worker_name": "工资验收工人乙674096",
+      "qualified_qty": "4.00",
+      "qty": "4.00",
+      "unit_price": "1.25",
+      "factor": null,
+      "price_state": "priced",
+      "work_type": "normal",
+      "work_date": "2026-10-03",
+      "processing_order_id": "024de89e1b4783f794e2835e04072567",
+      "processing_order_no": "JG-20261003-6402"
+    }
+  ]
+}

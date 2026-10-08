@@ -1,0 +1,104 @@
+{
+  "at": {
+    "cst": "2026-10-04 09:12:32 +08",
+    "utc": "2026-10-04T01:12:32.889Z"
+  },
+  "tenant": 25,
+  "steps": {
+    "auth": {
+      "via": "sms-bypass-code",
+      "tokenLen": 774
+    },
+    "fixture": {
+      "productId": "a505e7aaa0e6e209f32faf1a8c47ad73",
+      "skuId": "2106553024030199809",
+      "orderId": "eb0ccb158260ee25821fcb81a0f07861",
+      "orderNo": "20261004368450105"
+    },
+    "ticket.create": {
+      "status": 200,
+      "ticketId": "1ba9c91db7bfb0c934172d0fdae13d77",
+      "ticketNo": "AS-20261004-0010",
+      "body": "{\"success\":true,\"data\":{\"id\":\"1ba9c91db7bfb0c934172d0fdae13d77\",\"ticketNo\":\"AS-20261004-0010\",\"orderId\":\"eb0ccb158260ee25821fcb81a0f07861\",\"orderNo\":\"20261004368450105\",\"customerId\":\"线B验收客户-ZCAS集成复核-m"
+    },
+    "ticket.toProcessing": {
+      "status": 200,
+      "dbStatus": "processing"
+    },
+    "race.N4": {
+      "httpCodes": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "okCount": 4,
+      "overlap": {
+        "barrierAt": 1791076354658,
+        "barrierAtCST": "2026-10-04 09:12:34 +08",
+        "perRequest": [
+          {
+            "i": 0,
+            "t0": 1791076354658,
+            "t1": 1791076354991,
+            "durMs": 333
+          },
+          {
+            "i": 1,
+            "t0": 1791076354658,
+            "t1": 1791076354893,
+            "durMs": 235
+          },
+          {
+            "i": 2,
+            "t0": 1791076354658,
+            "t1": 1791076355084,
+            "durMs": 426
+          },
+          {
+            "i": 3,
+            "t0": 1791076354658,
+            "t1": 1791076355262,
+            "durMs": 604
+          }
+        ],
+        "unionMs": 604,
+        "sumMs": 1598,
+        "maxPairOverlapMs": 426,
+        "overlapped": true,
+        "verdict": "真重叠：最大逐对重叠 426ms（并集 604ms < 各历时之和 1598ms）"
+      },
+      "bodies": [
+        "{\"success\":true,\"requestId\":\"req_269f1786ab9b442e\",\"timestamp\":1791076355}",
+        "{\"success\":true,\"requestId\":\"req_52669bad870440a9\",\"timestamp\":1791076354}",
+        "{\"success\":true,\"requestId\":\"req_2c1eaf5bd44943d2\",\"timestamp\":1791076355}",
+        "{\"success\":true,\"requestId\":\"req_e46a9450f8f4491c\",\"timestamp\":1791076355}"
+      ]
+    },
+    "after.race": {
+      "dbStatus": "resolved",
+      "timelineRows": 5,
+      "ledgerRows": 4,
+      "skuBefore": 98,
+      "skuAfter": 106,
+      "refundAmount": 300,
+      "actualAmount": 300
+    },
+    "sequential.control": {
+      "first": {
+        "status": 422,
+        "body": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"工单状态不允许从 [已解决] 变更为 [已解决]\"},\"requestId\":\"req_17c023a618ce4"
+      },
+      "second": {
+        "status": 422,
+        "body": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"工单状态不允许从 [已解决] 变更为 [已解决]\"},\"requestId\":\"req_e36fa13128404a0a\",\"timestamp\":1791076356,\"suggestion\""
+      }
+    },
+    "cleanup": "FAILED: 写 SQL 缺 -- probe-ok 标记: -- ZCAS集成复核 清理\ndelete from ticket_timeline where tenant_id=25 and ticket_id='1ba9c91db7bfb0c934172d0fdae13d77';",
+    "residue": {
+      "tickets": 1,
+      "orders": 1,
+      "products": 1
+    }
+  }
+}

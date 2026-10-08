@@ -2,6 +2,9 @@
 @use './styles/variables.scss' as *;
 // 底部 tabBar 的居中修正（issue #5754：Taro h5 把 iOS 安全区算了两遍 + 文字贴底边）
 @use './styles/tabbar.scss';
+// H5 输入框文字**竖向居中**（issue #6478）：Taro h5 的 `<Input>` 是「外层 taro-input-core + 内层原生
+// input」两层，内层只按 line-height 撑高 ⇒ 文字贴框顶。全局共享层，逐页不再打补丁。
+@use './styles/input-center.scss';
 
 // 全局基础样式
 // ⚠️ 选择器写 `page, body` 是**必须**的（issue #5721 顺带修）：`page` 是小程序的选择器，

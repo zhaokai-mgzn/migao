@@ -119,7 +119,7 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
   it('手选两项写明「系统不推算」+ 拼接的「不触发工序」边界可见（死亡条件绑 #4569）', () => {
     render(<CraftCalcGlossary config={CONFIG} />)
     expect(screen.getByTestId('glossary-term-拼接')).toHaveTextContent('不触发工序')
-    expect(screen.getByTestId('glossary-term-接高')).toHaveTextContent('待查明')
+    expect(screen.getByTestId('glossary-term-接高')).toHaveTextContent('还没确认')
   })
 
   it('特殊选项组：六个勾选项各一条（工序/锚点来自真值源；一分为二 无工序）', () => {
@@ -128,9 +128,9 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
       // 注入：漏渲染任一项 ⇒ 红
       expect(screen.getByTestId(`glossary-option-${name}`)).toBeInTheDocument()
     }
-    // 注入：给「一分为二」编一道工序 ⇒ 第一条红；删掉「待查明」⇒ 第二条红
+    // 注入：给「一分为二」编一道工序 ⇒ 第一条红；删掉「还没确认」⇒ 第二条红
     expect(screen.getByTestId('glossary-option-一分为二')).toHaveTextContent('不加工序')
-    expect(screen.getByTestId('glossary-option-双眼皮接高')).toHaveTextContent('待查明')
+    expect(screen.getByTestId('glossary-option-双眼皮接高')).toHaveTextContent('还没确认')
     // 「接高」两组都有 ⇒ 锚点必须分开（否则跳错条目）
     expect(screen.getByTestId('glossary-term-接高')).toBeInTheDocument()
     expect(screen.getByTestId('glossary-option-接高')).toBeInTheDocument()
@@ -150,7 +150,7 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
     // 自证非空：空 DOM 上的「不含 **」是恒真断言（什么也没测）
     expect(text).toContain('术语怎么判')
     expect(text.length).toBeGreaterThan(200)
-    // 红证（改前实测 = 本条判红）：渲染层是纯文本插值 ⇒ `**净窗高**` 与 `` `oversize_height_threshold` ``
+    // 红证（改前实测 = 本条判红）：渲染层是纯文本插值 ⇒ `**净窗高**` 与 `` `超高阈值` ``
     // 原样上屏成字面星号 / 反引号，商家看到的是噪声而不是加粗。
     expect(text).not.toContain('**')
     expect(text).not.toContain('`')
@@ -160,7 +160,9 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
     expect(strong).toContain('净窗高') // AUTO_FEATURE_TERMS.超高.definition
     expect(strong).toContain('不改用料米数、也不改加工类型') // 同条 impact
     const code = Array.from(container.querySelectorAll('code')).map((el) => el.textContent)
-    expect(code).toContain('oversize_height_threshold') // 超高 criterion
-    expect(code).toContain('HEM_MARGIN') // 标量参数表 impact
+    // 🔴 issue #6488：代码片里只放**商家看得懂的名字**（旧文是 `oversize_height_threshold` /
+    //    `HEM_MARGIN` 这类键名 ⇒ 已整段去掉）—— 正控仍要求代码片真的以元素呈现（不是把标记删掉）。
+    expect(code).toContain('超高阈值') // 超高 criterion
+    expect(code).toContain('超宽阈值') // 超宽 criterion
   })
 })

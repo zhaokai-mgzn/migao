@@ -19,6 +19,40 @@ export interface PageResponse<T> {
   size: number
 }
 
+/**
+ * 库存流水/台账一行（issue #6404 新增前端消费面；真值源 =
+ * `backend/admin-api/src/main/java/com/migao/admin/entity/StockLedger.java`）。
+ *
+ * 一行 = **一次 SKU 级库存变更**（before → after）。数量与金额列服务端下发 `BigDecimal`
+ * ⇒ 统一按 `string | null` 接（JSON 数字与字符串两种形态都见过）。
+ *
+ * 🔴 **NULL 的语义分两种，不许合并**：
+ *   · `unitCost` / `costAmount` / `avgCostBefore` / `avgCostAfter` = **成本未知**（存量行全为 NULL，不伪造 0）；
+ *   · 其余列 = 该行**没有这个值**。
+ * 页面按两种语义分别渲染（`frontend/admin-web/src/lib/stock-ledger.ts`）。
+ */
+export interface StockLedgerEntry {
+  id: number
+  productId?: string | null
+  skuId?: number | null
+  skuCode?: string | null
+  /** 变化量（正 = 入库/回补，负 = 出库/扣减），恒等于 afterQty − beforeQty */
+  delta?: string | null
+  beforeQty?: string | null
+  afterQty?: string | null
+  /** order / aftersales / manual / inbound（未知取值页面**原样显示**） */
+  reason?: string | null
+  /** 业务单据号：订单号 / 工单号 / 入库单号；手工调整为空 */
+  refNo?: string | null
+  note?: string | null
+  unitCost?: string | null
+  costAmount?: string | null
+  avgCostBefore?: string | null
+  avgCostAfter?: string | null
+  operator?: string | null
+  createdAt?: string | null
+}
+
 // 分页请求参数
 export interface PageParams {
   page?: number
@@ -54,7 +88,7 @@ export interface User {
   /** 身份类型：employee=员工 / admin=企业管理员 / super_admin=平台超管（#5485） */
   identityType?: string
   /**
-   * 能力位（issue #5642 功能⑤）：能否唤出米宝 —— **服务端单一真值**（`GET /api/auth/me` 下发）。
+   * 能力位（issue #5642 功能⑤）：能否唤出黄金策 —— **服务端单一真值**（`GET /api/auth/me` 下发）。
    * 🔴 前端**不得**自己判权限码：哪些码算管理员是服务端 `AdminGate` 的事，端侧只读这个布尔位
    * （⇒ 改一处即小程序端与 admin-web 两端同步）。`false` ⇒ 必须给「需要管理员授权」+ 可行动引导。
    */
@@ -1993,7 +2027,15 @@ export interface OrderStatusUpdateParams {
 export interface LogisticsFormData {
   company: string
   trackingNo: string
-  shippingMethod: 'logistics' | 'none'
+  /**
+   * 发货方式（issue #6239）：`logistics` 物流发货 / `none` 无需物流。
+   *
+   * ⚠️ **可缺席**（issue #6254）：缺席 = 这条记录**没有采集过**发货方式
+   * （`order_logistics.shipping_method` 为 NULL —— 工人 / 商家 / 生产 / 智能体那几条发货写面
+   * 从不写这一列，且它们**结构性不产生「无需物流」语义**）⇒ 下发时**省略该键**，
+   * 后端按「不传 = 不改」保留原值，**不把它静默写成 `logistics`**。
+   */
+  shippingMethod?: 'logistics' | 'none'
   /** 发货人（发货单「经手人」，issue #3768）：默认预填当前登录人姓名，可改成实际发货人 */
   shipperName?: string
   /** 物流类型：express 快递 / logistics 物流专线（issue #4419；后端 order_logistics.logistics_type，V47） */
@@ -2429,7 +2471,6 @@ export interface AfterSalesTicket {
   handlerName?: string
   assignedAt?: string
   refundAmount?: number
-  refundMethod?: 'original_route' | 'bank_transfer' | 'balance'
   evidenceImages?: string[]
   internalNotes?: string
   deadline?: string
@@ -3472,7 +3513,16 @@ export interface PoolWarning {
 
 /** 物料分组（`materialKey` = 商品 × 颜色 × 门幅） */
 export interface PoolGroup {
+  /**
+   * 分组键（`productId|skuCode`）—— **机器键**：React `key` / 分组判据 / 其它消费者吃它。
+   * 🔴 它是内部标识（`productId` 是 UUID）⇒ **不上屏**（见 `materialLabel`）。
+   */
   materialKey: string
+  /**
+   * 组标题的**展示名**（`商品名 × 颜色/门幅`，服务端组装 · issue #6523）。
+   * 🔴 前端**不得**自己拼（那是第二份会漂的口径）；也**不得**退回 `materialKey`（内部标识上屏）。
+   */
+  materialLabel: string
   productId: string
   skuCode?: string | null
   orderCount: number
@@ -3565,6 +3615,50 @@ export interface SavingBoardTotal {
   le0_2Share: number | null
 }
 
+/**
+ * 一个指标在**相邻两个有数据的期间**上的对比（issue #6430）。
+ *
+ * `verdict`：`better` / `worse` / `same` / `unknown`；**`null` = 有意不给好坏**
+ * （占比的方向会被排料省料反向污染 —— 排料省 ⇒ 批次剩更多 ⇒ 占比反而更差，见 #5144）。
+ * 期间来自**服务端**（`period` / `previousPeriod`）—— 前端不许自己算「上个月」。
+ */
+export interface SavingMetricDelta {
+  period: string | null
+  previousPeriod: string | null
+  current: number | null
+  previous: number | null
+  verdict: string | null
+}
+
+/** 看板（批次结构性 + 逐单省料）的环比 */
+export interface SavingBoardComparison {
+  savedMeters: SavingMetricDelta | null
+  savedAmount: SavingMetricDelta | null
+  /** 恒 `verdict: null`（有意不给好坏） */
+  le0_2Share: SavingMetricDelta | null
+}
+
+/** 趋势（采购/财务口径）的环比 */
+export interface SavingTrendComparison {
+  purchasedMeters: SavingMetricDelta | null
+  metersPerM2: SavingMetricDelta | null
+}
+
+/**
+ * 批次结构趋势的一个时间点（issue #6459）：按批次**收货期间**聚合的「几乎用完」读数。
+ *
+ * 🔴 **只含系统采购入库的批次**（服务端 `COHORT_PURCHASE`）—— 开业时导入的老库存不进这条序列
+ * （混进来会让改善永远看不出来，判据 2 的实质）。
+ */
+export interface SavingBatchPeriodPoint {
+  /** 批次收货期间；`null` = 未记收货日期（不猜一个日期） */
+  period: string | null
+  batchCount: number
+  le0_2Count: number
+  /** 分母为 0 / 无数据 ⇒ `null`（**不是 0**） */
+  le0_2Share: number | null
+}
+
 export interface SavingBoard {
   granularity: string
   timezone: string
@@ -3573,6 +3667,10 @@ export interface SavingBoard {
   batchGroups: SavingBatchGroup[]
   savedGroups: SavingSavedGroup[]
   total: SavingBoardTotal
+  /** 相邻两个有数据的期间的环比（issue #6430）；后端未部署 ⇒ 缺键，页面不渲染环比块 */
+  comparison?: SavingBoardComparison | null
+  /** 批次结构趋势（按收货期间，只含采购腿）；后端未部署 ⇒ 缺键，页面渲染「无数据」 */
+  batchTrend?: SavingBatchPeriodPoint[] | null
 }
 
 /** L3 趋势的一个时间点（采购/财务口径，不逐单） */
@@ -3597,6 +3695,8 @@ export interface SavingTrend {
   purchasedTotalMeters: number | null
   consumedTotalMeters: number | null
   openingTotalMeters: number | null
+  /** 采购米数与单位产出消耗的环比（issue #6430） */
+  comparison?: SavingTrendComparison | null
 }
 
 export interface PoolBoard {
@@ -3619,9 +3719,20 @@ export interface PoolBoard {
  * 池化派单请求体（`/preview` 与 `/dispatch` **同体**）。
  * `pooled: true` = 成批池化派单；`pooled: false` + 单订单 = **加急插队**（一个动作，同一个端点）。
  */
+/**
+ * 逐面料行的批次指派 —— 与后端 `ProcessingOrderGenerateRequest.BatchAssignment` 逐字同义。
+ *
+ * `batchNo` **留空** ⇒ 由 `assignmentRule` 按 #5167 的规则补位（= 算法替商家挑批次，issue #6408）。
+ */
+export interface PoolBatchAssignment {
+  orderId: string
+  itemId: string
+  batchNo?: string | null
+}
+
 export interface PoolDispatchRequest {
   orderIds: string[]
-  batches: unknown[]
+  batches: PoolBatchAssignment[]
   assignmentRule: string | null
   pooled: boolean
 }

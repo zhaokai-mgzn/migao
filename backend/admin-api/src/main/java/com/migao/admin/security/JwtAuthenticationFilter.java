@@ -111,7 +111,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     if (tenantId != null && tenantId != -1L) {
                         TenantContext.setTenantId(tenantId);
                     } else if ((tenantId != null && tenantId == -1L) || (roles != null && roles.contains("super_admin"))) {
-                        // 平台管理员（tenantId=-1）或 super_admin 角色，跳过租户上下文
+                        // 平台管理员：**不设** TenantContext —— 即跳过租户过滤条件的注入，
+                        // 🔴 不代表业务层存在跨租户读通道：租户域资源（商品/订单/客户）按 id 读
+                        // 仍 404，这是**有意的能力边界**（用户 2026-10-03 对线② F-2 的裁定；
+                        // 证据见 acceptance/2026-10-03/tenant-isolation-sweep/REPORT.md §F-2）。
                         log.debug("平台管理员认证，跳过租户上下文设置: userId={}", userId);
                     } else {
                         // 缺少 tenantId 的 token 视为无效，拒绝认证（fail-closed），

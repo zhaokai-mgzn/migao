@@ -1,0 +1,76 @@
+{
+  "results": [
+    {
+      "probe": "p1-selftest-f8",
+      "exit": 0,
+      "started": "2026-10-03T01:04:24.705Z",
+      "ended": "2026-10-03T01:04:34.884Z",
+      "pass": 13,
+      "fail": 4,
+      "skip": 0,
+      "total": 17,
+      "failures": [
+        "W1-01: 🔴 正对照（F8 形态）：自建工序上一次「只改 scope」的保存 ⇒ 判据当场红 — 🔴 越界 1 处（本写面副作用）：[\"production_operation_positions.*(row-added)\"]（payload 键=[scope]）",
+        "W1-02: 🔴 正对照判定：判据**当场红**（有效）；越界性质 = #6102 已生效 ⇒ 不再涉钱（仅等价性越界，P3） — payload 键=[scope] ⇒ 越界命中价目表：[\"production_operation_positions.*(row-added)\"]；有效价（读面）0.55 → 0.55（未变）；存活价目行 [{\"applicable\":true,\"id\":\"466a5a41d60b861f15ae06a6d41b6c5d\",\"p\":\"0.55\",\"pos",
+        "W0-03: 负对照：空 payload（{}，一个键都不带）的等价保存 ⇒ 允许集合应为空（除审计） — 🔴 越界 1 处（本写面副作用）：[\"production_operation_positions.*(row-added)\"]（payload 键=[]）",
+        "W0-03b: 🔴 负对照判定：空 payload（键数 0）竟产生非审计字段变化 ⇒ **发现**（与 F8 同族） — payload 键数 = 0、越界 1 处：[\"production_operation_positions.*(row-added)\"]；HTTP 200；存活价目行=[{\"applicable\":true,\"id\":\"466a5a41d60b861f15ae06a6d41b6c5d\",\"p\":\"0.55\",\"position\":\"通用\"}]"
+      ]
+    },
+    {
+      "probe": "p2-operations",
+      "exit": 0,
+      "started": "2026-10-03T01:04:34.886Z",
+      "ended": "2026-10-03T01:04:55.739Z",
+      "pass": 28,
+      "fail": 0,
+      "skip": 0,
+      "total": 28,
+      "failures": []
+    },
+    {
+      "probe": "p3-positions",
+      "exit": 0,
+      "started": "2026-10-03T01:04:55.740Z",
+      "ended": "2026-10-03T01:05:12.372Z",
+      "pass": 19,
+      "fail": 0,
+      "skip": 0,
+      "total": 19,
+      "failures": []
+    },
+    {
+      "probe": "p4-routes",
+      "exit": 0,
+      "started": "2026-10-03T01:05:12.373Z",
+      "ended": "2026-10-03T01:05:33.886Z",
+      "pass": 24,
+      "fail": 0,
+      "skip": 1,
+      "total": 25,
+      "failures": []
+    },
+    {
+      "probe": "p5-rules",
+      "exit": 0,
+      "started": "2026-10-03T01:05:33.886Z",
+      "ended": "2026-10-03T01:05:44.830Z",
+      "pass": 11,
+      "fail": 0,
+      "skip": 1,
+      "total": 12,
+      "failures": []
+    },
+    {
+      "probe": "p6-other-config",
+      "exit": 0,
+      "started": "2026-10-03T01:05:44.830Z",
+      "ended": "2026-10-03T01:06:07.727Z",
+      "pass": 33,
+      "fail": 0,
+      "skip": 0,
+      "total": 33,
+      "failures": []
+    }
+  ],
+  "generatedAt": "2026-10-03T01:06:07.728Z"
+}

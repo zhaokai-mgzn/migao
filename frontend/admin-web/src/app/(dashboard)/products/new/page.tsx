@@ -29,7 +29,7 @@ export default function NewProductPage() {
    * **两个入口共用同一份映射**（`buildProductPrefill`）⇒ 同一张图，快通道与深通道填同一组键
    * （只有一处映射表，不存在「两处必须一致」这种要靠人记的约定）。
    *
-   * `interpretedKeys` = 米宝**解读/推荐**来源的键：它们进的是同一份 `initialData`，
+   * `interpretedKeys` = 黄金策**解读/推荐**来源的键：它们进的是同一份 `initialData`，
    * 但**徽标不同**（`[米宝解读]`）—— 同一格只挂一枚，故从识别清单里摘掉。
    */
   const applyFields = useCallback((all: RecognizedField[], interpretedKeys: string[]) => {
@@ -40,13 +40,22 @@ export default function NewProductPage() {
     setInterpretedFields(next.recognizedFields.filter((key) => interpreted.has(key)))
   }, [])
 
-  /** 快通道回调（页面上那个「拍照 / 上传识别」按钮，**不依赖米宝**） */
+  /**
+   * 表单内「识别 + 一次性推理」入口（issue #6367 包 P3）与快通道**共用这一条回调**：
+   * 每格自带 `source` ⇒ 页面在这里按来源分流徽标（不让调用方再传一份键清单，
+   * 也不新增第二条填充路径 —— 填充永远只经 `applyFields`）。
+   * 纯识别链路的格子 `source` 都是 `[图片识别]` ⇒ 分流结果与改前一致（零行为变化）。
+   */
   const handleRecognized = useCallback(
-    (fields: RecognizedField[]) => applyFields(fields, []),
+    (fields: RecognizedField[]) =>
+      applyFields(
+        fields,
+        fields.filter((field) => field.source === PAGE_FILL_SOURCE_INTERPRETED).map((f) => f.key),
+      ),
     [applyFields],
   )
 
-  // 深通道（issue #5368 包 2）：米宝识别结果经 **SSE → store → 浏览器内存事件**推到本页
+  // 深通道（issue #5368 包 2）：黄金策识别结果经 **SSE → store → 浏览器内存事件**推到本页
   // （浮动面板就在表单上方，不需要跳转）。两条口径与后端一致：
   //   ① 只收 `target_type=product` 的计划（别页的计划本页忽略）；
   //   ② 只收**值非空**的格子 —— 歧义格（有候选、值为空）**一格都不填**，由商家自己挑。
@@ -67,7 +76,7 @@ export default function NewProductPage() {
   return (
     <>
       {/* 快通道入口：拍照/上传识别 → 字段候选（映射不到的键一律不填，见 lib/image-recognize.ts）。
-          🔴 这条入口**不依赖米宝**（判据 5）：没有 LLM 也能用。
+          🔴 这条入口**不依赖黄金策**（判据 5）：没有 LLM 也能用。
           🔴 落点由 `ProductForm` 的标题卡片决定（issue #5918）：改前这里是页面自己的一个 `pt-4`
           容器 —— 按钮悬在表单卡片**外面**，与 /orders/new 的同一入口两种版式。 */}
       {/* 未识别前 `initialData` 传 `undefined` —— `ProductForm` 以 `!!initialData` 判「编辑态」，
@@ -77,7 +86,7 @@ export default function NewProductPage() {
         onSubmit={handleSubmit}
         submitText="提交并上架"
         titleActions={
-          <ImageRecognizeButton targetType="product" onRecognized={handleRecognized} />
+          <ImageRecognizeButton targetType="product" interpret onRecognized={handleRecognized} />
         }
         recognizedFields={recognizedFields}
         interpretedFields={interpretedFields}

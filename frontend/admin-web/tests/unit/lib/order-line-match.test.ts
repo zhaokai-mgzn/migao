@@ -1,4 +1,4 @@
-// case_ids: OR-008, OR-036
+// case_ids: OR-008, OR-036, OR-048
 /**
  * 订单侧「**明细条目 → 匹配候选 → 用户选品 → 建订单行**」（issue #5345）。
  *
@@ -29,6 +29,7 @@ import {
   LINE_PATH_FIELD_KEYS,
   NO_MATCH_CHOICE,
   NO_MATCH_LABEL,
+  REFERENCE_ONLY_FIELD_KEYS,
   buildableChoices,
   parseDetailEntries,
   pickerOptionsFor,
@@ -59,6 +60,17 @@ function orderTargetKeys(src: string): string[] {
   const block = src.match(/"order":\s*\(([\s\S]*?)\n    \),/)
   if (!block) throw new Error('targets.py 里读不到 target「order」的字段表（元守卫必须能读到真值）')
   return [...block[1].matchAll(/TargetField\(\s*"([^"]+)"/g)].map((m) => m[1])
+}
+
+/** 后端 `REFERENCE_KEYS` 的登记（`{target: [键…]}`）—— 「参考字段」的真值锚 */
+function referenceKeysOf(src: string): Record<string, string[]> {
+  const block = src.match(/REFERENCE_KEYS[^=]*=\s*\{([\s\S]*?)\n\}/)
+  if (!block) throw new Error('targets.py 里读不到 REFERENCE_KEYS（元守卫必须能读到真值）')
+  const out: Record<string, string[]> = {}
+  for (const m of block[1].matchAll(/"(\w+)":\s*\(([^)]*)\)/g)) {
+    out[m[1]] = [...m[2].matchAll(/"(\w+)"/g)].map((x) => x[1])
+  }
+  return out
 }
 
 /** 去掉 `/* … *​/` 与 `// …` —— 判据只认**代码**（注释里引用纪律不算违规） */
@@ -119,6 +131,56 @@ function calcLineOf(patch: ReturnType<typeof recognizedLinePatchOf>): CalcLineIn
     fabricWidth: parseDoorWidth(patch.selectedSku?.doorWidth),
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 判据 9 · 未采纳的「参考」明细（issue #6529）：**不填表，但照旧查目录**
+// ══════════════════════════════════════════════════════════════════════════════
+describe('判据 9 · 参考明细：值不采纳，但照旧进候选面板（#6529）', () => {
+  /** 内核真实产出形态：置信度 0.75 < 订单侧阈值 0.85 ⇒ `value` 空、`reference` 带原文 */
+  function referenceItems(text: string, quantity: string | null = null): RecognizedField[] {
+    return [
+      {
+        key: 'items',
+        label: '商品明细',
+        value: null,
+        source: null,
+        reason: '置信度 0.75 低于订单侧阈值 0.85，宁可不填',
+        reference: text,
+      },
+      field('quantity', quantity, '数量'),
+    ]
+  }
+
+  it('`value` 空 + `reference` 有原文 ⇒ 照旧拆成条目，并标 `referenceOnly`', () => {
+    const entries = parseDetailEntries(referenceItems('2698-11、C31'))
+    expect(entries.map((e) => e.name)).toEqual(['2698-11', 'C31'])
+    expect(entries.map((e) => e.referenceOnly)).toEqual([true, true])
+  })
+
+  it('参考条目**不认数量**（名称未采纳 ⇒ 把已采纳的数量配上去就是猜）', () => {
+    const [entry] = parseDetailEntries(referenceItems('2698-11', '8米'))
+    expect(entry.quantity).toBeNull()
+  })
+
+  it('对照读数：正常采纳的明细**不带** `referenceOnly`（两种来源在数据上分得开）', () => {
+    const [entry] = parseDetailEntries(recognized('雪尼尔遮光窗帘', '8米'))
+    expect(entry.referenceOnly).toBeUndefined()
+    expect(entry.quantity).toBe(8)
+  })
+
+  it('参考条目匹配不到 ⇒ **只剩「都不是」**（与采纳路径同一条出口，不猜商品）', () => {
+    const [entry] = parseDetailEntries(referenceItems('2698-11'))
+    expect(pickerOptionsFor(entry, CATALOG).map((o) => o.productId)).toEqual([NO_MATCH_CHOICE])
+  })
+
+  it('类级（铁律 8）：前端消费的参考键集 ⇄ 内核 `targets.py::REFERENCE_KEYS` 逐字相等', () => {
+    // 两端各写一份必然漂移：内核给 `reference`、前端却读别的键 ⇒ 页面又变回沉默（本单的原形态）
+    expect(referenceKeysOf(PY_SRC).order).toEqual([...REFERENCE_ONLY_FIELD_KEYS])
+    // 且这些键必须真在订单侧字段表里（死声明 ⇒ 红）
+    const declared = new Set(orderTargetKeys(PY_SRC))
+    for (const key of REFERENCE_ONLY_FIELD_KEYS) expect(declared.has(key)).toBe(true)
+  })
+})
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 判据 1 · 不猜商品：匹配不到 ⇒ 候选（含「都不是」）+ **不建行**

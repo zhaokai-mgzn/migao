@@ -79,29 +79,35 @@ const GROUP_NAMES: Record<string, string> = {
   'inventory-center': '仓储与物料',
   'org-center': '组织管理',
 }
-/** 22 项（head 组 → 一级项 → tail 组 → 独立项）的渲染顺序（#5778；#5877 改插入位；#5939 加「发货单」） */
+/**
+ * 23 项（全部分组 → 一级项 → 独立项）的渲染顺序
+ * （#5778；#5939 加「发货单」；#6404 加「库存明细」；**2026-10-06 方案 A1 重排 + 一级项沉底**）。
+ *
+ * 本表**独立写死** ⇒ 顺序被无声改回 ⇒ 本用例当场红。
+ */
 const ALL_MENU_KEYS = [
   'dashboard',
   'briefing',
-  'products',
   'human-sessions',
-  'customers',
   'knowledge',
   'after-sales',
+  'customers',
   'orders',
   'finance',
-  'production-board',
-  'production-pool',
   'processing',
   'production-process',
+  'production-board',
+  'production-pool',
   'production-piecework',
   'inbound-orders',
+  'stock-ledger',
   'shipments',
   'production-remnants',
   'production-saving-board',
   'employees',
   'roles',
   'settings',
+  'products',
   'notifications',
 ]
 
@@ -125,7 +131,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
 
   it('① /dashboard：只有「工作台」aria-expanded=true，其余 5 组全 false', async () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
-    // #5877：一级项「商品管理」渲染在「工作台」组**之后**（该组默认展开 ⇒ 先出它的两项）
+    // 2026-10-06：一级项「商品管理」排在**所有分组之后**（本路由只有「工作台」组展开 ⇒ 先出它的两项）
     await waitFor(() => expect(menuKeys()).toEqual(['dashboard', 'briefing', 'products', 'notifications']))
     expect(expandedState()).toEqual({
       workspace: 'true',
@@ -143,9 +149,9 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     mockPathname = '/orders'
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
     await waitFor(() =>
-      // #5778：交易管理组只剩「订单列表 + 财务对账」；#5877：一级项「商品管理」恒渲染，
-      // 且因「工作台」组此刻收起（无子项渲染）而排在最前
-      expect(menuKeys()).toEqual(['products', 'orders', 'finance', 'notifications']),
+      // #5778：交易管理组只剩「订单列表 + 财务对账」；2026-10-06：一级项「商品管理」恒渲染，
+      // 且因它排在**所有分组之后** ⇒ 落在「交易管理」两项之后、「通知中心」之前
+      expect(menuKeys()).toEqual(['orders', 'finance', 'products', 'notifications']),
     )
     expect(toggle('trade-center').getAttribute('aria-expanded')).toBe('true')
     expect(toggle('workspace').getAttribute('aria-expanded')).toBe('false')
@@ -165,11 +171,12 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(menuKeys()).toEqual([
       'dashboard',
       'briefing',
-      'products',
       'inbound-orders',
+      'stock-ledger',
       'shipments',
       'production-remnants',
       'production-saving-board',
+      'products',
       'notifications',
     ])
 
@@ -206,18 +213,19 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(toggle('workspace').getAttribute('aria-expanded')).toBe('true')
     expect(toggle('inventory-center').getAttribute('aria-expanded')).toBe('true')
     expect(menuKeys()).toEqual([
-      'dashboard',  // #5877：一级项插在「工作台」组之后 ⇒ 该组的两项先出
+      'dashboard',
       'briefing',
-      'products',   // 一级项恒渲染（在「工作台」组之后、其余组之前）
+      'processing',        // 2026-10-06：生产管理组内重排（先备资料 → 再生产与派单 → 结算）
+      'production-process',
       'production-board',
       'production-pool',
-      'processing',
-      'production-process',
       'production-piecework',
-      'inbound-orders',
+      'inbound-orders',    // 2026-10-06：仓储与物料组内重排（进 → 账 → 出 → 台账 → 分析）
+      'stock-ledger',
       'shipments',
       'production-remnants',
       'production-saving-board',
+      'products',          // 一级项：所有分组之后
       'notifications',
     ])
   })
@@ -253,7 +261,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
   it('③ 折叠态：6 个 `sidebar-group-anchor-<key>` 都在，`title` == 组名', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
     await waitFor(() =>
-      expect(menuKeys()).toHaveLength(22),
+      expect(menuKeys()).toHaveLength(23),
     )
     for (const key of GROUP_KEYS) {
       const anchor = screen.getByTestId(`sidebar-group-anchor-${key}`)
@@ -267,7 +275,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
 
   it('③ 折叠态：**组名文本**与**菜单名文本**都不渲染（原判据仍须成立）', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(22))
+    await waitFor(() => expect(menuKeys()).toHaveLength(23))
     for (const name of Object.values(GROUP_NAMES)) {
       expect(screen.queryByText(name)).toBeNull()
     }
@@ -280,22 +288,22 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(within(groupEl('trade-center')).getAllByRole('link')).toHaveLength(2)
   })
 
-  it('③ 折叠态：**所有组**的项都渲染（图标栏），项 key 序列 == 22 项全量', async () => {
+  it('③ 折叠态：**所有组**的项都渲染（图标栏），项 key 序列 == 23 项全量（#6404 +库存明细）', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(22))
+    await waitFor(() => expect(menuKeys()).toHaveLength(23))
     expect(menuKeys()).toEqual(ALL_MENU_KEYS)
     // 每组项数与其组内项数一致（分组信息没丢）
     expect(within(groupEl('workspace')).getAllByRole('link')).toHaveLength(2)
     // #5778：生产管理组收进「加工项管理」⇒ 5 项
     expect(within(groupEl('production-center')).getAllByRole('link')).toHaveLength(5)
-    expect(within(groupEl('inventory-center')).getAllByRole('link')).toHaveLength(4)
+    expect(within(groupEl('inventory-center')).getAllByRole('link')).toHaveLength(5)
     expect(within(groupEl('org-center')).getAllByRole('link')).toHaveLength(3)
   })
 
   it('③ 折叠态高亮仍生效：/production/pool ⇒ 该项带 `bg-primary-600`，且只有它一个', async () => {
     mockPathname = '/production/pool'
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(22))
+    await waitFor(() => expect(menuKeys()).toHaveLength(23))
     const active = document.querySelector('[data-menu-key="production-pool"]') as HTMLElement
     expect(active.className).toContain('bg-primary-600')
     expect(
@@ -375,7 +383,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     fireEvent.click(screen.getByTestId('sidebar-search-trigger'))
     // 点击后侧边栏结构照常（没有 onClick 也不抛）
     expect(screen.getByTestId('sidebar-search-trigger').textContent).toContain('搜索菜单')
-    // #5877：一级项插在「工作台」组之后（本用例 /dashboard ⇒ 该组展开且简报开关关 ⇒ 只有经营看板）
+    // 2026-10-06：一级项排在**所有分组之后**（本用例 /dashboard ⇒ 工作台组展开且简报开关关 ⇒ 只有经营看板）
     expect(menuKeys()).toEqual(['dashboard', 'products', 'notifications'])
   })
 })

@@ -49,6 +49,13 @@ import static org.mockito.Mockito.when;
  *
  * <p>红证形态：把门禁删掉（或改成 {@code role != null}）⇒ 下面三条拒绝用例立刻变绿/不抛，
  * 测试即红；把门禁扩到平台超管路径 ⇒ AU-005 两条立刻红。</p>
+ *
+ * <p>🔴 <b>issue #6159（同租户内同号）</b>：{@code loginBySms} 的**手机号歧义**口径在此一并钉住 ——
+ * 指定了 {@code tenantId} 之后，同一租户内命中**多于一条**同样 fail-closed（逐字文案见
+ * {@code PHONE_AMBIGUOUS_MESSAGE} 的断言），**不得**回到 {@code .findFirst()} 那种「按返回顺序
+ * 静默选一条」的形态。红证形态：把该口径改回 {@code findFirst()} ⇒
+ * {@link #sameTenantSamePhoneAmbiguity_rejected_orderIndependent} 当场红（两种返回顺序里必有一种
+ * 会成功登录出另一个账号）。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -172,6 +179,73 @@ class SmsLoginRoleGateTest {
         assertThatThrownBy(() -> authService.loginBySms(PHONE, CODE, null, mock(HttpServletResponse.class)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("多个租户");
+    }
+
+    // ================== AU-004：同一租户内同号歧义（issue #6159） ==================
+
+    /**
+     * issue #6159 的逐字文案（唯一来源）：既证明「拒绝」发生了，也证明拒绝的是**同租户歧义**
+     * 而不是别的病因（例如「用户不存在」/「非管理员」——那两条各有自己的文案）。
+     */
+    private static final String PHONE_AMBIGUOUS_MESSAGE =
+            "该手机号在本企业内对应多个账号，无法确定登录身份，请联系企业管理员核对账号手机号";
+
+    @Test
+    @DisplayName("AU-004 同一租户内同号两账号 + 指定 tenantId ⇒ 拒绝（顺序无关：两种返回顺序都不许登进去）")
+    void sameTenantSamePhoneAmbiguity_rejected_orderIndependent() {
+        // 开发库租户 1 的形态：13800138000 同时命中 user_admin_001 与 user_superadmin
+        User a = User.builder().id("user_admin_001").tenantId(1L).phone(PHONE).role("admin").status("active").build();
+        User b = User.builder().id("user_superadmin").tenantId(1L).phone(PHONE).role("admin").status("active").build();
+        // 🔴 两条都是**合法管理员**、签发链完整配好 —— 于是「改前会不会登进去」不再被别的
+        //    病因（非管理员 / 缺桩）遮住：唯一能拦住它们的就是本单加的歧义判据。
+        when(userService.getUserRoles(a)).thenReturn(List.of("admin"));
+        when(userService.getUserRoles(b)).thenReturn(List.of("admin"));
+        when(roleService.getUserPermissions("user_admin_001")).thenReturn(List.of("*"));
+        when(roleService.getUserPermissions("user_superadmin")).thenReturn(List.of("*"));
+        stubTenantUserLogin();
+
+        // 两种返回顺序都必须给出**同一个**结论 —— 这才是「不依赖查询顺序」的可执行形态。
+        // 红证（把同租户歧义判据摘掉 ⇒ 回到 `.findFirst()`）：两轮**都**没有歧义文案，
+        // 且各自把 rows.get(0) 登进去、签发了一份 token ⇒ 本条当场红（第一轮拿 a、第二轮拿 b，
+        // 「我登进去的是谁」随 SQL 返回顺序漂移）。
+        int round = 0;
+        for (List<User> rows : List.of(List.of(a, b), List.of(b, a))) {
+            round++;
+            org.mockito.Mockito.clearInvocations(jwtTokenProvider);
+            when(userMapper.selectActiveUsersByPhoneIgnoreTenant(PHONE)).thenReturn(rows);
+            final String expectedFirstId = rows.get(0).getId();
+
+            Throwable thrown = org.assertj.core.api.Assertions.catchThrowable(
+                    () -> authService.loginBySms(PHONE, CODE, 1L, mock(HttpServletResponse.class)));
+
+            // 判据一：必须抛，且抛的是**同租户歧义**（逐字文案；不是「非管理员」/「未注册」）
+            assertThat(thrown)
+                    .as("第 %d 轮（返回顺序首行 = %s）必须拒绝同租户内同号歧义", round, expectedFirstId)
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("code", "AUTH_FAILED")
+                    .hasFieldOrPropertyWithValue("httpStatus", 401)
+                    .hasMessage(PHONE_AMBIGUOUS_MESSAGE);
+
+            // 判据二：歧义判据在**签发之前** —— 一个 token 都不许发（否则「拒绝」是假的）
+            verify(jwtTokenProvider, never()).generateAccessToken(
+                    anyString(), any(), anyString(), anyList(), anyList(), anyBoolean());
+            verify(jwtTokenProvider, never()).generateRefreshToken(anyString(), any());
+        }
+    }
+
+    @Test
+    @DisplayName("AU-004 对照：同号跨租户 + 指定 tenantId 仍照旧放行（不误伤既有跨租户口径）")
+    void samePhoneCrossTenant_withTenantId_notOverRejected() {
+        User t1 = User.builder().id("u-t1").tenantId(1L).phone(PHONE).role("admin").status("active").build();
+        // 选中的这条**状态非 active** ⇒ 只允许走到第 4 步「状态校验」才发现 —— 用来证明它
+        // 没被新加的**同租户歧义**判据拦下（拦下的话文案是 PHONE_AMBIGUOUS_MESSAGE）
+        User t2 = User.builder().id("u-t2").tenantId(2L).phone(PHONE).role("admin").status("disabled").build();
+        when(userMapper.selectActiveUsersByPhoneIgnoreTenant(PHONE)).thenReturn(List.of(t1, t2));
+
+        assertThatThrownBy(() -> authService.loginBySms(PHONE, CODE, 2L, mock(HttpServletResponse.class)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "AUTH_FAILED")
+                .hasMessage("用户状态异常");
     }
 
     // ======================== AU-005：管理员两条路径继续可用 ========================

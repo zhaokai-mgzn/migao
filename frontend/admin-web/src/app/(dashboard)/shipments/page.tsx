@@ -121,9 +121,7 @@ export default function ShipmentsPage() {
             <Truck className="w-5 h-5 text-primary-600" />
             发货单
           </h1>
-          <p className="text-sm text-neutral-500 mt-1">
-            发出的货都在这里：发货单号 / 订单号 / 客户 / 经手人 / 实发数量；可按单号、订单号、客户检索，并补打纸质发货单
-          </p>
+          <p className="text-sm text-neutral-500 mt-1">管理发货单：<strong>可按单号、订单号、客户检索</strong>，并补打纸质发货单</p>
         </div>
       </div>
 

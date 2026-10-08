@@ -1,0 +1,42 @@
+{
+  "at": "2026-10-04T04:27:00.970Z",
+  "tenantA": 25,
+  "tenantB": 0,
+  "dry": false,
+  "before": {
+    "tenantA": {
+      "products": 0,
+      "orders": 0,
+      "inbounds": 0,
+      "keys": 0,
+      "ledger": 0
+    }
+  },
+  "after": {
+    "tenantA": {
+      "deleted": {},
+      "total": 0,
+      "readback": {
+        "products": 0,
+        "orders": 0,
+        "inbounds": 0,
+        "keys": 0,
+        "ledger": 0
+      }
+    }
+  },
+  "steps": [
+    {
+      "label": "tenantA",
+      "round": 1,
+      "deletedThisRound": 0
+    }
+  ],
+  "errors": [],
+  "tenantsAfter": [
+    {
+      "id": 25,
+      "name": "米高测试环境"
+    }
+  ]
+}

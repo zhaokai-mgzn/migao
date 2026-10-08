@@ -90,7 +90,7 @@ const mockProduct = {
   name: '遮光窗帘A',
   sku: 'SKU001',
   skuCode: 'SC001',
-  brand: '米高',
+  brand: '观星台',
   categoryId: 'cat-1',
   description: '高品质遮光窗帘',
   pricingType: 'fixed',

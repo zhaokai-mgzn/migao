@@ -1,0 +1,14 @@
+{
+  "preparedAt": "2026-10-03 16:15:58 +0800",
+  "mainLiveBefore": "cd0a7fd54270d1dda036aef0ce1b5e5371976292",
+  "mainLiveAfter": "43ca703221a714e143c468ff0b29c4a46e67a88f",
+  "originMain": "43ca703221a714e143c468ff0b29c4a46e67a88f",
+  "apiPid": "55553",
+  "apiHealth": "401",
+  "apiLog": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-03/out/main-live-round3-api.log",
+  "workerH5Pid": "55439",
+  "workerH5Index": "200",
+  "workerH5Log": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-03/out/worker-h5-3100-round3.log",
+  "agent8001": "63146",
+  "adminWeb3001": "20265"
+}

@@ -18,6 +18,9 @@
 #      本仓库这次构建的 `dist/index.html`（= 根发布没有把别的应用覆盖成 C 端）。
 #      ⚠️ 逐字节比对它们的身份由各自那条腿的 `*-verify-served.sh` 承担（**不复制**一份判定，
 #      避免两套真相源）；本脚本只判「还在、且不是 C 端」这一条**与本次发布直接相关**的边界。
+#   ⑤ **入口脚本的 MIME**（issue #6293）：`dist/index.html` 引用的入口脚本的 Content-Type 必须 ∈
+#      **JS MIME 白名单**（`.mjs` 被发成 `application/octet-stream` ⇒ 浏览器拒绝执行 module script ⇒
+#      白屏，而身份 / 串端 / 字节全对 ⇒ ①~④ 会全绿）。判据 = 「属于白名单」而**不是**等于某个字面量。
 #
 # 用法: c-end-h5-verify-served.sh [BASE_URL] [DIST_DIR]
 #   默认 https://app.migaozn.com 与 frontend/mini-app/dist
@@ -58,7 +61,29 @@ fetch() {
   curl -sS -m 20 -H 'Cache-Control: no-cache' -o "$out" -w '%{http_code}' "$url" 2>"$TMPDIR_RUN/curl.err"
 }
 
-echo "== C 端小布 h5 落地面断言（issue #4184）=="
+# ── JS MIME 白名单判据（issue #6293）────────────────────────────────────────────
+# 病灶（云测试环境实测 2026-10-04）：`.mjs` **不在** nginx 的 `mime.types` 里 ⇒ 落到 `default_type`
+# （本镜像 = application/octet-stream）⇒ 浏览器按 HTML 规范**拒绝执行 module script**
+# （Strict MIME type checking is enforced for module scripts）⇒ 页面**整页白屏**。
+# 🔴 而**状态码 200 与字节哈希全部正确** ⇒ 本脚本 ①~④ 全绿（它们只判身份与串端，**一条都不判 MIME**）。
+# 判据形态 = 「Content-Type **属于 JS MIME 白名单**」，**不是**等于某个字面量：
+#   `text/javascript` 与 `application/javascript` 都是 WHATWG 认可的 JS MIME（不同 nginx / 发行版
+#   给哪个都合法）⇒ 写死其一会在**正确**的部署上误红，逼人改判据而不是改配置（那是降门禁，不是修缺陷）。
+JS_MIME_RE='^(application|text)/(x-)?(java|ecma)script([0-9.]+)?$'
+# 本腿**依赖的** fail-closed 空集分支声明（issue #6306）：MIME 判据的「取不到就判红」锚在
+# `ENTRY_REFS` 上（`REFS` 是 ② 那条判据的变量；判据 = tests/unit_ci_workflows/test_served_leg_mime_guard.py）。
+FAIL_CLOSED_VARS="ENTRY_REFS"
+js_mime_ok() {   # $1 = Content-Type 原文（可带 `; charset=…`）
+  local ct
+  ct="$(printf '%s' "${1%%;*}" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+  [[ "$ct" =~ $JS_MIME_RE ]]
+}
+# 取一个 URL 的 Content-Type（与 issue #6293 的复现命令同形：GET + 丢弃 body；HEAD 不是同一回事）
+content_type_of() {
+  curl -sS -m 20 -H 'Cache-Control: no-cache' -o /dev/null -w '%{content_type}' "$1" 2>"$TMPDIR_RUN/curl.err" || true
+}
+
+echo "== C 端元元 h5 落地面断言（issue #4184）=="
 echo "   BASE_URL=$BASE"
 [ -f "$LOCAL_INDEX" ] || { echo "❌ 本仓库缺少 ${LOCAL_INDEX}（无法比对身份）" >&2; exit 2; }
 EXPECTED_SHA="$(file_sha256 "$LOCAL_INDEX")"
@@ -127,9 +152,33 @@ if [ -x "$ROOT/deploy/scripts/worker-h5-verify-served.sh" ] && [ "${C_END_SKIP_N
   echo "   ℹ️ /w/ 的逐字节身份由 deploy/scripts/worker-h5-verify-served.sh 承担；/b/ 由 bmini-h5-verify-served.sh 承担（本脚本不复制那份判定）"
 fi
 
+# ── ⑤ 入口脚本的 MIME（issue #6293）────────────────────────────────────────────
+# 判据对象 = 本地产物 `dist/index.html` 里 `<script src=…>` 引用的**入口脚本**（现取 ⇒ 产物从 `.js`
+# 换成 `.mjs` 时判据自动跟上，不写死路径）。为什么必须单列一条：①~④ 判的是身份与串端，
+# 而**字节全对也照样白屏** —— 浏览器对 module script 先做 MIME 检查（octet-stream ⇒ 拒绝执行）。
+# 取不到任何入口引用 ⇒ 判红（fail-closed）：「没跑」必须长得像「没跑」，不许当通过。
+echo "⑤ 入口脚本的 MIME（Content-Type 必须 ∈ JS MIME 白名单）"
+ENTRY_REFS="$(grep -oE '<script[^>]*src="[^"]+"' "$LOCAL_INDEX" 2>/dev/null | sed -E 's/.*src="([^"]+)".*/\1/' | sort -u)"
+if [ -z "$ENTRY_REFS" ]; then
+  bad "本地产物 ${LOCAL_INDEX} 里取不到 <script src=…> —— MIME 判据会空跑（不许当通过）"
+fi
+while IFS= read -r ref; do
+  [ -n "$ref" ] || continue
+  case "$ref" in
+    http*://*) url="$ref" ;;
+    /*)        url="$BASE$ref" ;;
+    *)         url="$BASE/${ref#./}" ;;
+  esac
+  ct="$(content_type_of "$url")"
+  if js_mime_ok "$ct"; then
+    ok "GET $url → Content-Type ${ct}（∈ JS MIME 白名单）"
+  else
+    bad "GET $url → Content-Type ${ct:-（空）} 【∉ JS MIME 白名单】—— 浏览器会拒绝执行 module script ⇒ 页面整页白屏（HTTP 200 / 字节哈希一致都救不了）"
+  fi
+done <<< "$ENTRY_REFS"
 echo ""
 if [ "$FAILURES" -eq 0 ]; then
-  echo "✅ 全部通过：线上 = 本仓库这次构建的 C 端产物、不串端、另两条腿未被覆盖"
+  echo "✅ 全部通过：线上 = 本仓库这次构建的 C 端产物、不串端、另两条腿未被覆盖、入口脚本 Content-Type ∈ JS MIME 白名单"
   exit 0
 fi
 echo "❌ ${FAILURES} 条判据不成立（逐条见上）"

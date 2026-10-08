@@ -1,0 +1,313 @@
+{
+  "commit": "73327161f387a270a8694c15b060b2d86d89b773",
+  "prefixes": [
+    {
+      "prefix": "/chat",
+      "code": "agent:session"
+    },
+    {
+      "prefix": "/agent-workspace",
+      "code": "agent:session"
+    },
+    {
+      "prefix": "/after-sales",
+      "code": "after_sales:view"
+    },
+    {
+      "prefix": "/orders",
+      "code": "order:list"
+    },
+    {
+      "prefix": "/products",
+      "code": "product:list"
+    },
+    {
+      "prefix": "/categories",
+      "code": "product:category:view"
+    },
+    {
+      "prefix": "/processing-orders",
+      "code": "production:view"
+    },
+    {
+      "prefix": "/processing",
+      "code": "production:view"
+    },
+    {
+      "prefix": "/production/pool",
+      "code": "processing:view"
+    },
+    {
+      "prefix": "/production/remnants",
+      "code": "processing:manage"
+    },
+    {
+      "prefix": "/production/saving-board",
+      "code": "product:list"
+    },
+    {
+      "prefix": "/production",
+      "code": "production:view"
+    },
+    {
+      "prefix": "/customers",
+      "code": "customer:view"
+    },
+    {
+      "prefix": "/finance",
+      "code": "finance:view"
+    },
+    {
+      "prefix": "/shipments",
+      "code": "order:list"
+    },
+    {
+      "prefix": "/inbound-orders",
+      "code": "inbound:view"
+    },
+    {
+      "prefix": "/employees",
+      "code": "employee:list"
+    },
+    {
+      "prefix": "/settings",
+      "code": "system:manage"
+    },
+    {
+      "prefix": "/knowledge",
+      "code": "knowledge:view"
+    },
+    {
+      "prefix": "/roles",
+      "code": "system:view"
+    },
+    {
+      "prefix": "/briefing",
+      "code": "dashboard:view"
+    },
+    {
+      "prefix": "/dashboard",
+      "code": "dashboard:view"
+    }
+  ],
+  "routes": [
+    "/after-sales",
+    "/after-sales/:id",
+    "/agent-workspace",
+    "/agent-workspace/human-sessions",
+    "/agent-workspace/sessions",
+    "/briefing",
+    "/categories",
+    "/chat",
+    "/customers",
+    "/customers/:id",
+    "/dashboard",
+    "/employees",
+    "/finance",
+    "/inbound-orders",
+    "/inbound-orders/new",
+    "/knowledge",
+    "/notifications",
+    "/orders",
+    "/orders/:id",
+    "/orders/:id/ship",
+    "/orders/new",
+    "/processing",
+    "/processing-orders",
+    "/processing-orders/:id/production",
+    "/production",
+    "/production/operations",
+    "/production/piecework",
+    "/production/pool",
+    "/production/processing",
+    "/production/processing-fees",
+    "/production/remnants",
+    "/production/routings",
+    "/production/saving-board",
+    "/products",
+    "/products/:id",
+    "/products/:id/edit",
+    "/products/new",
+    "/roles",
+    "/settings",
+    "/shipments"
+  ],
+  "menu": [
+    {
+      "path": "/dashboard",
+      "key": "dashboard",
+      "name": "经营看板",
+      "permissionCode": "dashboard:view",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/briefing",
+      "key": "briefing",
+      "name": "每日简报",
+      "permissionCode": "dashboard:view",
+      "adminOnly": false,
+      "briefingToggle": true
+    },
+    {
+      "path": "/agent-workspace/human-sessions",
+      "key": "human-sessions",
+      "name": "在线接待",
+      "permissionCode": "agent:session",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/customers",
+      "key": "customers",
+      "name": "客户列表",
+      "permissionCode": "customer:view",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/knowledge",
+      "key": "knowledge",
+      "name": "知识库",
+      "permissionCode": "knowledge:view",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/after-sales",
+      "key": "after-sales",
+      "name": "售后工单",
+      "permissionCode": "after_sales:view",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/orders",
+      "key": "orders",
+      "name": "订单列表",
+      "permissionCode": "order:list",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/finance",
+      "key": "finance",
+      "name": "财务对账",
+      "permissionCode": "finance:view",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/production",
+      "key": "production-board",
+      "name": "生产看板",
+      "permissionCode": "production:view",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/production/pool",
+      "key": "production-pool",
+      "name": "智能派单",
+      "permissionCode": "processing:view",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/production/processing",
+      "key": "processing",
+      "name": "加工项管理",
+      "permissionCode": "production:view",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/production/routings",
+      "key": "production-process",
+      "name": "工艺配置",
+      "permissionCode": "production:view",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/production/piecework",
+      "key": "production-piecework",
+      "name": "计件工资",
+      "permissionCode": "production:view",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/inbound-orders",
+      "key": "inbound-orders",
+      "name": "入库单",
+      "permissionCode": "inbound:view",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/shipments",
+      "key": "shipments",
+      "name": "发货单",
+      "permissionCode": "order:list",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/production/remnants",
+      "key": "production-remnants",
+      "name": "余料台账",
+      "permissionCode": "processing:manage",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/production/saving-board",
+      "key": "production-saving-board",
+      "name": "省料看板",
+      "permissionCode": "product:list",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/employees",
+      "key": "employees",
+      "name": "员工管理",
+      "permissionCode": "employee:list",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/roles",
+      "key": "roles",
+      "name": "岗位权限",
+      "permissionCode": "system:view",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/settings",
+      "key": "settings",
+      "name": "企业基础信息",
+      "permissionCode": "system:manage",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/products",
+      "key": "products",
+      "name": "商品管理",
+      "permissionCode": "product:list",
+      "adminOnly": false,
+      "briefingToggle": false
+    },
+    {
+      "path": "/notifications",
+      "key": "notifications",
+      "name": "通知中心",
+      "permissionCode": null,
+      "adminOnly": false,
+      "briefingToggle": false
+    }
+  ]
+}

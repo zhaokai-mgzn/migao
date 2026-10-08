@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, OR-004, OR-005, OR-006, OR-011
+// case_ids: OR-001, OR-002, OR-003, OR-004, OR-005, OR-006, OR-011, OR-058
 
 package com.migao.admin.controller;
 
@@ -399,6 +399,134 @@ class OrderControllerTest extends BaseControllerTest {
                 sb.append(",\"shipperName\":\"").append(shipperName).append("\"");
             }
             return sb.append("}").toString();
+        }
+
+        /** 与上面同源，额外带 {@code shippingMethod}（issue #6239）；{@code null} = 不下发该键。 */
+        private String logisticsBody(String company, String trackingNo, String shipperName,
+                                     String shippingMethod) {
+            String base = logisticsBody(company, trackingNo, shipperName);
+            if (shippingMethod == null) {
+                return base;
+            }
+            return base.substring(0, base.length() - 1)
+                    + ",\"shippingMethod\":\"" + shippingMethod + "\"}";
+        }
+
+        // ══════════════ 发货方式接线（issue #6239，V147；用例 OR-058）══════════════
+        // 服务端权威的四条：① 落库并回吐 ② 非法值显式拒绝 ③ 规则命中 ⇒ 拒绝且**无写入**
+        // ④ 正对照 ⑤ 兼容性钉子（必须保持原行为的那条路径）。
+
+        @Test
+        @DisplayName("发货方式 none：新建物流 ⇒ 落库 'none'（服务端开始记录用户的选择）")
+        void persistsNoneShippingMethodOnCreate() throws Exception {
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("confirmed"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
+            when(orderService.resolveShipperName(null)).thenReturn("李四");
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("", "", null, "none")))
+                    .andExpect(status().isOk());
+
+            verify(orderLogisticsService).save(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "none".equals(l.getShippingMethod())));
+        }
+
+        @Test
+        @DisplayName("发货方式非法值（如 express）⇒ 422 显式拒绝、不静默兜底、**不写库**")
+        void rejectsInvalidShippingMethodWithoutWriting() throws Exception {
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("confirmed"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("顺丰速运", "SF1", null, "express")))
+                    .andExpect(status().isUnprocessableEntity());
+
+            verify(orderLogisticsService, never()).save(any(OrderLogistics.class));
+            verify(orderLogisticsService, never()).updateById(any(OrderLogistics.class));
+        }
+
+        @Test
+        @DisplayName("服务端规则：显式 logistics + 运单号为空 ⇒ 422 且**无写入**（前端那条校验搬到了服务端）")
+        void rejectsLogisticsWithoutTrackingNoAndWritesNothing() throws Exception {
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("confirmed"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
+            when(orderService.resolveShipperName(null)).thenReturn("李四");
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("顺丰速运", "", null, "logistics")))
+                    .andExpect(status().isUnprocessableEntity());
+
+            verify(orderLogisticsService, never()).save(any(OrderLogistics.class));
+            verify(orderLogisticsService, never()).updateById(any(OrderLogistics.class));
+        }
+
+        @Test
+        @DisplayName("正对照：logistics + 有单号 ⇒ 成功且落库 'logistics'")
+        void acceptsLogisticsWithTrackingNo() throws Exception {
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("confirmed"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of());
+            when(orderService.resolveShipperName("王五")).thenReturn("王五");
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("顺丰速运", "SF20260915001", "王五", "logistics")))
+                    .andExpect(status().isOk());
+
+            verify(orderLogisticsService).save(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "logistics".equals(l.getShippingMethod())
+                            && "SF20260915001".equals(l.getTrackingNo())));
+        }
+
+        // ── ⑤ 兼容性钉子（别人收紧规则时会**当场红**）──────────────────────────────
+        // 两条「必须保持原行为」的路径。它们在本单之前就是绿的，本单**不得**改变其行为。
+
+        @Test
+        @DisplayName("兼容钉子 A：订单详情「编辑物流」路径 —— 存量行未采集(Null) + 带单号 + 显式 logistics ⇒ 仍成功")
+        void editLogisticsDialogPathStillSucceeds() throws Exception {
+            // 存量物流行：shippingMethod = null（V147 之前写入的行，未采集）
+            OrderLogistics legacy = OrderLogistics.builder()
+                    .id("log-003").orderId(ORDER_ID).tenantId(TEST_TENANT_ID)
+                    .logisticsCompany("顺丰速运").trackingNo("SFOLD")
+                    .shipperName("李四").status("in_transit").build();
+
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("shipped"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(legacy));
+
+            // 弹窗本体（components/orders/LogisticsForm.tsx）的 validate 要求运单号必填、
+            // 且 initialData 回填 order.logistics.trackingNo ⇒ 它**总是**带非空单号过来。
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("顺丰速运", "SFOLD", "李四", "logistics")))
+                    .andExpect(status().isOk());
+
+            verify(orderLogisticsService).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "logistics".equals(l.getShippingMethod()) && "SFOLD".equals(l.getTrackingNo())));
+        }
+
+        @Test
+        @DisplayName("兼容钉子 B：老客户端 / 智能体补单号**不发 shippingMethod** ⇒ 规则与白名单一律不触发，原行为不变")
+        void legacyCallersWithoutShippingMethodKeepWorking() throws Exception {
+            OrderLogistics existing = OrderLogistics.builder()
+                    .id("log-004").orderId(ORDER_ID).tenantId(TEST_TENANT_ID)
+                    .logisticsCompany("顺丰速运").trackingNo("SFOLD")
+                    .shippingMethod("none")   // 已记录「无需物流」
+                    .shipperName("李四").status("in_transit").build();
+
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("shipped"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(existing));
+
+            // 不传 shippingMethod 键：既不因白名单被拒，也不因「logistics 缺单号」被拒
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("顺丰速运", "SFNEW", null)))
+                    .andExpect(status().isOk());
+
+            // 未传 ⇒ **保留**原值，不被清成 null（「不传 = 不改」）
+            verify(orderLogisticsService).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "none".equals(l.getShippingMethod()) && "SFNEW".equals(l.getTrackingNo())));
         }
 
         @Test

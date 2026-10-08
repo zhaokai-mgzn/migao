@@ -1,0 +1,51 @@
+// ══════════════════════════════════════════════════════════════════════════
+// H5 输入框文字**竖向居中**（issue #6478）
+//
+// ## 治的形态（2026-10-07 生产 `app.migaozn.com/b/#/pages/auth/login/index` 实测，viewport 390×844）
+//
+// Taro h5 的 `<Input>` 渲染成**两层**：外层自定义元素 `taro-input-core` 拿到 `className`
+// （就是用户看到的那个圆角框），内层是它渲染的原生 `<input class="weui-input">`。
+// Taro 自带的组件样式（`@tarojs/components/dist/components/taro-input-core.js` 里的 `indexCss`）写的是：
+//     `taro-input-core{display:block}` + `.weui-input{height:1.47059em;line-height:1.47059}`
+// ⇒ 内层只有 **≈1.47 倍字号**高（登录页font-size 17.7 CSS px ⇒ 实测 **26px**），
+//   而外框是 49.9px 且是 `display:block`、没有任何居中规则
+//   ⇒ 内层行盒**贴在框顶**：实测 **上留白 0.5px / 下留白 23.4px**，
+//   占位文字「如 zhangsan@acme」与已输入文字都落在框内偏上（用户报的就是这个）。
+//
+// 小程序端 `<Input>` 是**单层**原生 input、样式直接落在它身上 ⇒ 本缺陷是 **h5 特有**形态。
+//
+// ## 修法（只改竖向对齐，**不动**尺寸 / 圆角 / 字号）
+//   ① 外框改 flex 居中；
+//   ② 内层原生 input 撑满外框的**内容盒** ⇒ 单行 input 的文字在整框里垂直居中。
+// 外框高由各页自己的 scss 决定（h5 下 `.login-field__input` 是 96px、`.cp-field__input` 88px…），
+// 本文件**一个尺寸值都不写、一个尺寸值都不改**。
+//
+// ## 为什么这两条选择器对小程序端**零影响**（逐字不变）
+//   `taro-input-core` / `.weui-input` 只存在于 **Taro h5 产物**的 DOM 里；
+//   小程序编译产物里 `<Input>` 就是原生 `<input>`，这两个选择器**一个元素都匹配不到**。
+//
+// ## 为什么本文件写在 app 级、且必须由 `src/app.scss` 引入
+//   这两条规则是**全局**的（对 h5 上**所有** `<Input>` 生效）—— 逐页打补丁 = 下一个人漏一处、
+//   而没有任何东西会红。故：本文件是这一族规则的**唯一落点**
+//   （`src/styles/**` 之外任何 scss 出现 `taro-input-core` ⇒ 判红）。
+//
+// ## 判据（本文件被改动时会怎么红）
+//   · 文本级 + 台账 + 注入式红证 = `frontend/bmini-app/tests/input-center-guard.test.ts`；
+//   · **真几何**（内层高 / 外层高 / 上下留白对称）= `tests/e2e/specs/bmini/bmini-input-center.spec.ts`。
+//
+// ## 构建注意（与 `src/styles/tabbar.scss` 同款教训）
+//   本文件不引用任何 `var(--…)`：`postcss-pxtransform` 会改写 `var()` 里的兜底值
+//   （#5755 发布后线上实测的构建陷阱）⇒ 只用纯属性 / 百分比，不引入单位字面量。
+// ══════════════════════════════════════════════════════════════════════════
+
+// ① 外框改为 flex 居中：同时消掉 inline-block 基线间隙（那是「贴顶 + 下方留白」的第二半）
+taro-input-core {
+  display: flex;
+  align-items: center;
+}
+
+// ② 内层原生 input 撑满外框内容盒 ⇒ 单行 input 的文字在整框里垂直居中。
+//    （外框没有显式高度时，百分比高度按 CSS 规范回落成 auto ⇒ 尺寸与改前逐字一致。）
+taro-input-core .weui-input {
+  height: 100%;
+}

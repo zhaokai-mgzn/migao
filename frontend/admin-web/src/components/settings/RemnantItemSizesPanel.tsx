@@ -312,7 +312,7 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
             <InlineMarkdown text={term.definition} />
             {term.criterion && (
               <span className="block text-neutral-500">
-                判据：<InlineMarkdown text={term.criterion} />
+                怎么判：<InlineMarkdown text={term.criterion} />
               </span>
             )}
             <span className="block text-neutral-500">

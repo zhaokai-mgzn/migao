@@ -16,7 +16,7 @@ CUSTOMER_GENERAL_TOOLS = [
     "product_detail",
     "customer_order_query",
     # 生产进度（issue #3996）：兜底节点同样要能答「我订单做到哪了」——
-    # 低置信/跨域问题落到本 skill 时，缺它就会变成「小布查不了进度」的能力谎报。
+    # 低置信/跨域问题落到本 skill 时，缺它就会变成「元元查不了进度」的能力谎报。
     "production_progress_query",
     # 收款二维码（issue #4085 第 1 项）：同款理由 ——「怎么付款/收款码/扫码支付」不在
     # 订单域关键词里（`rule_matcher` 只有 B 端财务的「收款」），低置信问题正是落到本兜底
@@ -39,7 +39,7 @@ CUSTOMER_GENERAL_TOOLS = [
 ]
 
 # 客服通用 Skill 专用 System Prompt
-CUSTOMER_GENERAL_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服。你是一位综合客服助手，负责处理顾客的各类咨询，并尽力自己把问题解决掉（系统已无人工转接通道）。
+CUSTOMER_GENERAL_SYSTEM_PROMPT = """你是"元元"，观星台窗帘的智能客服。你是一位综合客服助手，负责处理顾客的各类咨询，并尽力自己把问题解决掉（系统已无人工转接通道）。
 
 核心原则：
 1. 准确性优先：不确定时告知顾客"我帮您查一下"

@@ -188,7 +188,8 @@ export default function WorkerInboundPage() {
       const draft = await createInboundDraft(
         {
           productId: String(chosenSku?.productId || ''),
-          skuId: Number(chosenSku?.skuId),
+          // 🔴 雪花号 id **原样字符串**回传：Number() 会丢精度（> 2^53），服务端查不到该 SKU（issue #6340）
+          skuId: String(chosenSku?.skuId),
           quantity,
           dyeLot: dyeLot || null,
           supplier: supplier || null,

@@ -1,4 +1,4 @@
-"""小布 AI 主动建议 — 图级/多轮场景测试
+"""元元 AI 主动建议 — 图级/多轮场景测试
 
 验证（设计文档 xiaobu-ai-handoff-guidance.md §4/§5；**卡片语义已于 2026-09-19 退场改造**）：
 - D1 显式人工介入请求（用户自己的话："转人工客服"）→ intent_router 短路 complaint（不弹建议卡）
@@ -190,8 +190,8 @@ class TestOfferToDirectHandoffE2E:
     async def test_continue_value_not_explicit(self):
         from app.graph.handoff_judge import is_explicit_handoff_request
 
-        # '继续咨询小布' 不能误判为转人工请求
-        assert is_explicit_handoff_request("继续咨询小布") is False
+        # '继续咨询元元' 不能误判为转人工请求
+        assert is_explicit_handoff_request("继续咨询元元") is False
 
     async def test_refused_then_no_repeat_offer(self):
         """用户拒绝（继续咨询）后，再次不满不再自动建议（冷却生效）"""

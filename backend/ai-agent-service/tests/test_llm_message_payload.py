@@ -416,7 +416,7 @@ def _drive_order_skill(replies, wrap_llm=None):
         }
         out = asyncio.run(base_skill.execute_skill(
             state=state, skill_name="order", tool_names=["order_create"],
-            system_prompt="你是米宝"))
+            system_prompt="你是黄金策"))
     return out, upstream, executed
 
 

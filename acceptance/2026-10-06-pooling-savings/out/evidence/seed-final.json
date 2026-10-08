@@ -1,0 +1,899 @@
+{
+  "at": "2026-10-06T07:27:42.977Z",
+  "checks": [
+    {
+      "id": "订单读面有数据",
+      "ok": true,
+      "detail": "订单总数=302"
+    },
+    {
+      "id": "加工单五种状态齐全",
+      "ok": true,
+      "detail": "{\"generated\":100,\"issued\":32,\"in_processing\":40,\"completed\":40,\"cancelled\":16}"
+    },
+    {
+      "id": "计件汇总有数（报工→计件链路通）",
+      "ok": true,
+      "detail": "total=222.57 元；工人 6 人；工序 22 道"
+    },
+    {
+      "id": "省料台账有数据",
+      "ok": true,
+      "detail": "批次消耗行=274；看板 saved=24.3 米 / 1736.89 元"
+    },
+    {
+      "id": "五个页面都能打开并渲染",
+      "ok": true,
+      "detail": "订单管理:700字 / 加工单（生产管理）:33字 / 智能派单:700字 / 计件工资报表:366字 / 省料看板:700字"
+    }
+  ],
+  "api": {
+    "orderTotal": 302,
+    "poListLimit": 100,
+    "statusDist": {
+      "generated": 22,
+      "issued": 20,
+      "in_processing": 25,
+      "completed": 25,
+      "cancelled": 8
+    },
+    "po_generated": 100,
+    "po_issued": 32,
+    "po_in_processing": 40,
+    "po_completed": 40,
+    "po_cancelled": 16,
+    "piecework": {
+      "period": "2026-10",
+      "total": 222.57,
+      "per_worker": [
+        {
+          "worker_name": "SD07演示工人3",
+          "amount": 36.4,
+          "qty": 123.87
+        },
+        {
+          "worker_name": "SD07演示工人0",
+          "amount": 44.88,
+          "qty": 129.63
+        },
+        {
+          "worker_name": "SD07演示工人2",
+          "amount": 25.06,
+          "qty": 62.65
+        },
+        {
+          "worker_name": "SD07演示工人1",
+          "amount": 58.05,
+          "qty": 151.59
+        },
+        {
+          "worker_name": "SD07演示工人4",
+          "amount": 24.25,
+          "qty": 56.34
+        },
+        {
+          "worker_name": "SD07演示工人5",
+          "amount": 33.93,
+          "qty": 75.74
+        }
+      ],
+      "per_operation": [
+        {
+          "operation": "精裁-纱",
+          "logical_name": "精裁",
+          "position": "纱帘",
+          "qty": 32.56,
+          "amount": 13.03
+        },
+        {
+          "operation": "精裁-布",
+          "logical_name": "精裁",
+          "position": "布帘",
+          "qty": 85.51,
+          "amount": 34.21
+        },
+        {
+          "operation": "布三边",
+          "logical_name": "三边",
+          "position": "布帘",
+          "qty": 72.59,
+          "amount": 29.03
+        },
+        {
+          "operation": "打孔-布",
+          "logical_name": "打孔",
+          "position": "布帘",
+          "qty": 79.21,
+          "amount": 11.88
+        },
+        {
+          "operation": "熨烫-布",
+          "logical_name": "熨烫",
+          "position": "布帘",
+          "qty": 67.99,
+          "amount": 23.83
+        },
+        {
+          "operation": "韩褶-布",
+          "logical_name": "韩褶",
+          "position": "布帘",
+          "qty": 3.21,
+          "amount": 1.28
+        },
+        {
+          "operation": "上车布-布",
+          "logical_name": "上车布",
+          "position": "布帘",
+          "qty": 11.91,
+          "amount": 5.96
+        },
+        {
+          "operation": "纱三边",
+          "logical_name": "三边",
+          "position": "纱帘",
+          "qty": 30.22,
+          "amount": 12.08
+        },
+        {
+          "operation": "打孔-纱",
+          "logical_name": "打孔",
+          "position": "纱帘",
+          "qty": 39.16,
+          "amount": 5.87
+        },
+        {
+          "operation": "熨烫-纱",
+          "logical_name": "熨烫",
+          "position": "纱帘",
+          "qty": 24.08,
+          "amount": 8.43
+        },
+        {
+          "operation": "铅坠-布",
+          "logical_name": "铅坠",
+          "position": "布帘",
+          "qty": 14.23,
+          "amount": 4.27
+        },
+        {
+          "operation": "帘头制作",
+          "logical_name": "帘头制作",
+          "qty": 8.62,
+          "amount": 17.24
+        },
+        {
+          "operation": "布帘车被",
+          "logical_name": "车被",
+          "position": "布帘",
+          "qty": 43.19,
+          "amount": 17.28
+        },
+        {
+          "operation": "韩褶-纱",
+          "logical_name": "韩褶",
+          "position": "纱帘",
+          "qty": 2.52,
+          "amount": 1.01
+        },
+        {
+          "operation": "接高-布",
+          "logical_name": "接高",
+          "position": "布帘",
+          "qty": 1.62,
+          "amount": 1.62
+        },
+        {
+          "operation": "外帘打卷",
+          "logical_name": "外帘打卷",
+          "qty": 7,
+          "amount": 7
+        },
+        {
+          "operation": "定型-布",
+          "logical_name": "定型",
+          "position": "布帘",
+          "qty": 35.6,
+          "amount": 14.24
+        },
+        {
+          "operation": "定型-纱",
+          "logical_name": "定型",
+          "position": "纱帘",
+          "qty": 15.3,
+          "amount": 6.12
+        },
+        {
+          "operation": "复烫-纱",
+          "logical_name": "复烫",
+          "position": "纱帘",
+          "qty": 8.7,
+          "amount": 3.05
+        },
+        {
+          "operation": "绑带-布",
+          "logical_name": "绑带",
+          "position": "布帘",
+          "qty": 1,
+          "amount": 0.5
+        },
+        {
+          "operation": "打包",
+          "logical_name": "打包",
+          "qty": 4,
+          "amount": 0
+        },
+        {
+          "operation": "车被-纱",
+          "logical_name": "车被",
+          "position": "纱帘",
+          "qty": 11.6,
+          "amount": 4.64
+        }
+      ],
+      "per_position": [
+        {
+          "position_name": "SD07演示布814127 雾霾蓝",
+          "amount": 62.16,
+          "qty": 183.9
+        },
+        {
+          "position_name": "SD07演示布814127 燕麦色",
+          "amount": 63.12,
+          "qty": 172.74
+        },
+        {
+          "position_name": "SD07演示布814127 奶油白",
+          "amount": 58.35,
+          "qty": 138.45
+        },
+        {
+          "position_name": "SD07演示布814127 墨绿",
+          "amount": 38.94,
+          "qty": 104.73
+        }
+      ],
+      "per_set": [
+        {
+          "set_no": "JG-20261006-8274-001",
+          "amount": 0.25,
+          "qty": 0.63
+        },
+        {
+          "set_no": "JG-20261006-8273-001",
+          "amount": 1.35,
+          "qty": 3.37
+        },
+        {
+          "set_no": "JG-20261006-8272-001",
+          "amount": 0.14,
+          "qty": 0.35
+        },
+        {
+          "set_no": "JG-20261006-8271-001",
+          "amount": 0.86,
+          "qty": 2.14
+        },
+        {
+          "set_no": "JG-20261006-8270-001",
+          "amount": 2.46,
+          "qty": 11.14
+        },
+        {
+          "set_no": "JG-20261006-8269-001",
+          "amount": 1.09,
+          "qty": 2.62
+        },
+        {
+          "set_no": "JG-20261006-8268-001",
+          "amount": 1.81,
+          "qty": 8.42
+        },
+        {
+          "set_no": "JG-20261006-8267-001",
+          "amount": 1.29,
+          "qty": 3.39
+        },
+        {
+          "set_no": "JG-20261006-8266-001",
+          "amount": 1.49,
+          "qty": 3.72
+        },
+        {
+          "set_no": "JG-20261006-8265-001",
+          "amount": 1.13,
+          "qty": 3.06
+        },
+        {
+          "set_no": "JG-20261006-8264-001",
+          "amount": 0.36,
+          "qty": 0.9
+        },
+        {
+          "set_no": "JG-20261006-8263-001",
+          "amount": 0.95,
+          "qty": 2.37
+        },
+        {
+          "set_no": "JG-20261006-8262-001",
+          "amount": 0.95,
+          "qty": 4.11
+        },
+        {
+          "set_no": "JG-20261006-8502-001",
+          "amount": 0.27,
+          "qty": 0.68
+        },
+        {
+          "set_no": "JG-20261006-8501-001",
+          "amount": 2.22,
+          "qty": 5.54
+        },
+        {
+          "set_no": "JG-20261006-8500-001",
+          "amount": 2.31,
+          "qty": 6.08
+        },
+        {
+          "set_no": "JG-20261006-8499-001",
+          "amount": 1.93,
+          "qty": 3.47
+        },
+        {
+          "set_no": "JG-20261006-8498-001",
+          "amount": 1.66,
+          "qty": 4.16
+        },
+        {
+          "set_no": "JG-20261006-8497-001",
+          "amount": 3.27,
+          "qty": 6.77
+        },
+        {
+          "set_no": "JG-20261006-8496-001",
+          "amount": 2.05,
+          "qty": 10.56
+        },
+        {
+          "set_no": "JG-20261006-8495-001",
+          "amount": 0.48,
+          "qty": 1.21
+        },
+        {
+          "set_no": "JG-20261006-8494-001",
+          "amount": 1.1,
+          "qty": 4.08
+        },
+        {
+          "set_no": "JG-20261006-8493-001",
+          "amount": 1.96,
+          "qty": 8.69
+        },
+        {
+          "set_no": "JG-20261006-8492-001",
+          "amount": 1.72,
+          "qty": 7.21
+        },
+        {
+          "set_no": "JG-20261006-8491-001",
+          "amount": 2,
+          "qty": 3.44
+        },
+        {
+          "set_no": "JG-20261006-8489-001",
+          "amount": 0.58,
+          "qty": 1.44
+        },
+        {
+          "set_no": "JG-20261006-8488-001",
+          "amount": 0.75,
+          "qty": 1.92
+        },
+        {
+          "set_no": "JG-20261006-8487-001",
+          "amount": 0.37,
+          "qty": 0.91
+        },
+        {
+          "set_no": "JG-20261006-8485-001",
+          "amount": 0.53,
+          "qty": 1.32
+        },
+        {
+          "set_no": "JG-20261006-8484-001",
+          "amount": 0.78,
+          "qty": 1.96
+        },
+        {
+          "set_no": "JG-20261006-8483-001",
+          "amount": 1.06,
+          "qty": 2.65
+        },
+        {
+          "set_no": "JG-20261006-8482-001",
+          "amount": 0.16,
+          "qty": 0.41
+        },
+        {
+          "set_no": "JG-20261006-8481-001",
+          "amount": 0.71,
+          "qty": 3.82
+        },
+        {
+          "set_no": "JG-20261006-8480-001",
+          "amount": 0.47,
+          "qty": 1.18
+        },
+        {
+          "set_no": "JG-20261006-8479-001",
+          "amount": 2.16,
+          "qty": 3.88
+        },
+        {
+          "set_no": "JG-20261006-8490-001",
+          "amount": 1.32,
+          "qty": 6.64
+        },
+        {
+          "set_no": "JG-20261006-8486-001",
+          "amount": 1.14,
+          "qty": 1.92
+        },
+        {
+          "set_no": "JG-20261006-8478-001",
+          "amount": 0.38,
+          "qty": 0.96
+        },
+        {
+          "set_no": "JG-20261006-8477-001",
+          "amount": 12.47,
+          "qty": 32
+        },
+        {
+          "set_no": "JG-20261006-8476-001",
+          "amount": 7.38,
+          "qty": 18
+        },
+        {
+          "set_no": "JG-20261006-8475-001",
+          "amount": 7.44,
+          "qty": 19.5
+        },
+        {
+          "set_no": "JG-20261006-8474-001",
+          "amount": 14,
+          "qty": 55
+        },
+        {
+          "set_no": "JG-20261006-8473-001",
+          "amount": 9.87,
+          "qty": 42
+        },
+        {
+          "set_no": "JG-20261006-8472-001",
+          "amount": 6.72,
+          "qty": 14.3
+        },
+        {
+          "set_no": "JG-20261006-8471-001",
+          "amount": 4.38,
+          "qty": 11
+        },
+        {
+          "set_no": "JG-20261006-8470-001",
+          "amount": 4.24,
+          "qty": 10.1
+        },
+        {
+          "set_no": "JG-20261006-8469-001",
+          "amount": 7.12,
+          "qty": 13.8
+        },
+        {
+          "set_no": "JG-20261006-8468-001",
+          "amount": 6.34,
+          "qty": 12.2
+        },
+        {
+          "set_no": "JG-20261006-8467-001",
+          "amount": 7.78,
+          "qty": 19
+        },
+        {
+          "set_no": "JG-20261006-8463-001",
+          "amount": 13.02,
+          "qty": 33.6
+        },
+        {
+          "set_no": "JG-20261006-8461-001",
+          "amount": 7.33,
+          "qty": 17.5
+        },
+        {
+          "set_no": "JG-20261006-8466-001",
+          "amount": 4.22,
+          "qty": 10.4
+        },
+        {
+          "set_no": "JG-20261006-8465-001",
+          "amount": 4.12,
+          "qty": 9.8
+        },
+        {
+          "set_no": "JG-20261006-8464-001",
+          "amount": 5.91,
+          "qty": 11.2
+        },
+        {
+          "set_no": "JG-20261006-8462-001",
+          "amount": 7.52,
+          "qty": 15.4
+        },
+        {
+          "set_no": "JG-20261006-8460-001",
+          "amount": 5.67,
+          "qty": 14.6
+        },
+        {
+          "set_no": "JG-20261006-8459-001",
+          "amount": 8.63,
+          "qty": 18
+        },
+        {
+          "set_no": "JG-20261006-8458-001",
+          "amount": 6.15,
+          "qty": 15
+        },
+        {
+          "set_no": "JG-20261006-8457-001",
+          "amount": 7.35,
+          "qty": 30
+        },
+        {
+          "set_no": "JG-20261006-8456-001",
+          "amount": 3.95,
+          "qty": 9.6
+        },
+        {
+          "set_no": "JG-20261006-8455-001",
+          "amount": 7.28,
+          "qty": 14.2
+        },
+        {
+          "set_no": "JG-20261006-8453-001",
+          "amount": 5.1,
+          "qty": 9
+        },
+        {
+          "set_no": "JG-20261006-8454-001",
+          "amount": 3.07,
+          "qty": 7.5
+        }
+      ],
+      "unpriced": {
+        "qty": 0,
+        "operations": [],
+        "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；未定价期间工人可照常报工，但不会产生计件金额。"
+      }
+    },
+    "savingBoard": {
+      "formulaMeters": 941,
+      "plannedMeters": 916.7,
+      "savedMeters": 24.3,
+      "savedAmount": 1736.89,
+      "lineCount": 274,
+      "unknownCostLines": 0,
+      "batchCount": 20,
+      "le0_2Count": 0,
+      "le0_2Share": 0
+    },
+    "pool": {
+      "maxWaitHours": 24,
+      "poolingEnabled": false,
+      "orderCount": 16,
+      "lineCount": 16,
+      "overdueCount": 0,
+      "urgentCount": 0,
+      "warnings": [],
+      "urgentLines": [],
+      "groups": [
+        {
+          "materialKey": "a61daac33e1a49974577d3ca81c4500b|SD07演示-2.8-8141273",
+          "productId": "a61daac33e1a49974577d3ca81c4500b",
+          "skuCode": "SD07演示-2.8-8141273",
+          "orderCount": 7,
+          "requiredMeters": 27.8,
+          "lines": [
+            {
+              "orderId": "4652c5da34522688a0bf40eb6ea4185d",
+              "orderNo": "20261006719460148",
+              "itemId": "56222dfc6bdeedbc71000784f75915f2",
+              "productId": "a61daac33e1a49974577d3ca81c4500b",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-2.8-8141273",
+              "requiredMeters": 3.2,
+              "waitingSince": "2026-10-06T14:07:46.818713+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false,
+              "requiredDeliveryDate": "2026-10-09",
+              "deliveryDaysLeft": 3
+            },
+            {
+              "orderId": "ec0f9206293b17a621b81dd79d791bd3",
+              "orderNo": "20261006710980156",
+              "itemId": "8aa20bb20e52d17888da64beab1848f4",
+              "productId": "a61daac33e1a49974577d3ca81c4500b",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-2.8-8141273",
+              "requiredMeters": 5.6,
+              "waitingSince": "2026-10-06T14:07:49.750689+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false,
+              "requiredDeliveryDate": "2026-10-11",
+              "deliveryDaysLeft": 5
+            },
+            {
+              "orderId": "2fbeff1281c80a5ca9629d48c6a76200",
+              "orderNo": "20261006724900038",
+              "itemId": "3a8ba6cc65e2354e6e4cd28770118e6a",
+              "productId": "a61daac33e1a49974577d3ca81c4500b",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-2.8-8141273",
+              "requiredMeters": 4.1,
+              "waitingSince": "2026-10-06T14:07:03.695496+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false,
+              "requiredDeliveryDate": "2026-10-16",
+              "deliveryDaysLeft": 10
+            },
+            {
+              "orderId": "3226cae158977a811ead644206b8bac4",
+              "orderNo": "20261006909920154",
+              "itemId": "59626d5dc662d2c50b1f51cb29df6c60",
+              "productId": "a61daac33e1a49974577d3ca81c4500b",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-2.8-8141273",
+              "requiredMeters": 5.4,
+              "waitingSince": "2026-10-06T14:07:49.014314+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false,
+              "requiredDeliveryDate": "2026-10-18",
+              "deliveryDaysLeft": 12
+            },
+            {
+              "orderId": "70c3d6c2056c8372419a76267637220a",
+              "orderNo": "20261006439150034",
+              "itemId": "4a43a0c99648f2c89a94dc96c8e30eb8",
+              "productId": "a61daac33e1a49974577d3ca81c4500b",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-2.8-8141273",
+              "requiredMeters": 1.5,
+              "waitingSince": "2026-10-06T14:07:02.116746+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false,
+              "requiredDeliveryDate": "2026-10-20",
+              "deliveryDaysLeft": 14
+            },
+            {
+              "orderId": "34ebf46169b63f3e309ae781a506efba",
+              "orderNo": "20261006464560036",
+              "itemId": "14ab73caeff3bb46a4d6009c3dc0697d",
+              "productId": "a61daac33e1a49974577d3ca81c4500b",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-2.8-8141273",
+              "requiredMeters": 4,
+              "waitingSince": "2026-10-06T14:07:02.890085+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false
+            },
+            {
+              "orderId": "35b81d81afcae20c8871f22c93a539c9",
+              "orderNo": "20261006940690040",
+              "itemId": "e370802d8057942ca7e0e43d59e041b4",
+              "productId": "a61daac33e1a49974577d3ca81c4500b",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-2.8-8141273",
+              "requiredMeters": 4,
+              "waitingSince": "2026-10-06T14:07:04.478539+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false
+            }
+          ]
+        },
+        {
+          "materialKey": "2b9dd2f403efc03be8eecb0f90e84368|SD07演示-3.2-8141272",
+          "productId": "2b9dd2f403efc03be8eecb0f90e84368",
+          "skuCode": "SD07演示-3.2-8141272",
+          "orderCount": 3,
+          "requiredMeters": 13.1,
+          "lines": [
+            {
+              "orderId": "5161ec236d585ab5d2cc51f91cb13fbf",
+              "orderNo": "20261006909310149",
+              "itemId": "7d5a1e9fbb1ea6327ce06d365b514e6f",
+              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-3.2-8141272",
+              "requiredMeters": 4,
+              "waitingSince": "2026-10-06T14:07:47.168498+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false,
+              "requiredDeliveryDate": "2026-10-07",
+              "deliveryDaysLeft": 1
+            },
+            {
+              "orderId": "4b88c52e9fd3dc57ccf76d8aa259aefb",
+              "orderNo": "20261006980380035",
+              "itemId": "031de3522e1545c5829ffedc06d2ce6c",
+              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-3.2-8141272",
+              "requiredMeters": 2.3,
+              "waitingSince": "2026-10-06T14:07:02.514575+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false,
+              "requiredDeliveryDate": "2026-10-20",
+              "deliveryDaysLeft": 14
+            },
+            {
+              "orderId": "2b1bd3cd4707deee21b708d0e1ada411",
+              "orderNo": "20261006272610151",
+              "itemId": "2c7c285bc666459616a43184b7199ba6",
+              "productId": "2b9dd2f403efc03be8eecb0f90e84368",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-3.2-8141272",
+              "requiredMeters": 6.8,
+              "waitingSince": "2026-10-06T14:07:47.891607+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false
+            }
+          ]
+        },
+        {
+          "materialKey": "604c4b3bd608c09145314473ae3b2090|SD07演示-3.0-8141271",
+          "productId": "604c4b3bd608c09145314473ae3b2090",
+          "skuCode": "SD07演示-3.0-8141271",
+          "orderCount": 3,
+          "requiredMeters": 10.7,
+          "lines": [
+            {
+              "orderId": "70704698ab41fc54d5d78c738e1c421d",
+              "orderNo": "20261006761830039",
+              "itemId": "8ea667940f4486e2445dc05608dc8a7d",
+              "productId": "604c4b3bd608c09145314473ae3b2090",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-3.0-8141271",
+              "requiredMeters": 4,
+              "waitingSince": "2026-10-06T14:07:04.084736+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false
+            },
+            {
+              "orderId": "641296470cd7ada2cd451df3e526431e",
+              "orderNo": "20261006173180152",
+              "itemId": "2de3cf84849b3f91aea3e31c2c7d7979",
+              "productId": "604c4b3bd608c09145314473ae3b2090",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-3.0-8141271",
+              "requiredMeters": 1.9,
+              "waitingSince": "2026-10-06T14:07:48.26159+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false
+            },
+            {
+              "orderId": "d10c83bf04db4e1df35a68fcdc9c9d7a",
+              "orderNo": "20261006258160159",
+              "itemId": "1ffadc140b0b00a118a2784cf835160c",
+              "productId": "604c4b3bd608c09145314473ae3b2090",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-3.0-8141271",
+              "requiredMeters": 4.8,
+              "waitingSince": "2026-10-06T14:07:50.901388+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false
+            }
+          ]
+        },
+        {
+          "materialKey": "f08ce865640f4e0e4480b190f71a2641|SD07演示-2.8-8141270",
+          "productId": "f08ce865640f4e0e4480b190f71a2641",
+          "skuCode": "SD07演示-2.8-8141270",
+          "orderCount": 3,
+          "requiredMeters": 10.8,
+          "lines": [
+            {
+              "orderId": "4b36ceaca61ad3aa781a3c39db900cb1",
+              "orderNo": "20261006161300158",
+              "itemId": "4aa8d32e92d1ba86a7f3e7c70bd25134",
+              "productId": "f08ce865640f4e0e4480b190f71a2641",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-2.8-8141270",
+              "requiredMeters": 5.2,
+              "waitingSince": "2026-10-06T14:07:50.527706+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false,
+              "requiredDeliveryDate": "2026-09-30",
+              "deliveryDaysLeft": -6
+            },
+            {
+              "orderId": "32c0cc4eb1402b2ab0f5dcc9c5d3433d",
+              "orderNo": "20261006816890155",
+              "itemId": "441245831d51d9625e1920976b3c19e1",
+              "productId": "f08ce865640f4e0e4480b190f71a2641",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-2.8-8141270",
+              "requiredMeters": 2.2,
+              "waitingSince": "2026-10-06T14:07:49.375832+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false,
+              "requiredDeliveryDate": "2026-10-02",
+              "deliveryDaysLeft": -4
+            },
+            {
+              "orderId": "b2a1f739e0afd71351a9c6918f73b28d",
+              "orderNo": "20261006998940157",
+              "itemId": "45b05cd67721cfe8b25e87452f52af0a",
+              "productId": "f08ce865640f4e0e4480b190f71a2641",
+              "productName": "SD07演示布814127",
+              "skuCode": "SD07演示-2.8-8141270",
+              "requiredMeters": 3.4,
+              "waitingSince": "2026-10-06T14:07:50.133691+08:00",
+              "waitHours": 1.3,
+              "overdue": false,
+              "isUrgent": false,
+              "requiredDeliveryDate": "2026-10-13",
+              "deliveryDaysLeft": 7
+            }
+          ]
+        }
+      ]
+    },
+    "consumptions": 274
+  },
+  "pages": {
+    "订单管理": {
+      "path": "/orders",
+      "url": "https://merchant.migaozn.com/orders",
+      "file": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06-pooling-savings/out/screenshots/demo-_orders.png",
+      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 订单列表 财务对账 生产管理 5 仓储与物料 5 组织管理 3 通知中心 收起 交易管理 / 订单列表 米 米高测试 订单列表 新增订单 下单时间 至 订单ID 收货人 制单人 商品货号 商品标题 是否加工 全部 是 否 查询 重置 刷新 全部 待付款 待发货 已发货 已完成 含加工订单 已关闭 退款/售后 订单ID 采购商品 采购明细 (名称:单价×数量+加工费) 累计金额(元) 实收款(元) 收货人信息 下单时间 制单人 状态 加急 到货日 备注 操作 20261006187490322 SD07演示布814127 货号 - SD07演示布814127: 160元 × 2.1米 = 336元 336 336 姓名：SD07演示客814127-299 电话：13310000299 地址：SD07演示地址139号 2026-10-06 14:08 米高测试 待发货 不加急 2026-10-10 - 查看 备注 发货 处理退款 20261006213460321 SD07演示布814127 货号 - SD07演示布814127: 136元 × 4.6米 = 625.6元 625.6 625.6 姓名：SD07演示客814127-298 电话：13310000298 地址：SD07演示地址657号 2026-10-06 14:08 米高测试 待发货 不加急 2026-10-03 - 查看 备注 发货 处理退款 20261006020010320 SD07演示布814127 货号 - S"
+    },
+    "加工单（生产管理）": {
+      "path": "/production/processing-orders",
+      "url": "https://merchant.migaozn.com/production/processing-orders",
+      "file": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06-pooling-savings/out/screenshots/demo-_production_processing-orders.png",
+      "text": "404 This page could not be found."
+    },
+    "智能派单": {
+      "path": "/production/pool",
+      "url": "https://merchant.migaozn.com/production/pool",
+      "file": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06-pooling-savings/out/screenshots/demo-_production_pool.png",
+      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 生产看板 智能派单 加工项管理 工艺配置 计件工资 仓储与物料 5 组织管理 3 通知中心 收起 生产管理 / 智能派单 米 米高测试 智能派单 待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；加急单不参与合并，立即单独派单 刷新 合并派单开关 未开启 最长等待 24 小时 待派订单 16 单 加工明细 16 行 加急订单 0 单 超时未派 0 单 加急订单（不参与合并，立即派） 0 行 / 0 单 —— 不参与合并，立即单独派单 当前没有加急待派订单 可合并的待派订单（按料分组） 4 个料组 / 已选 0 单 一键合并派单 a61daac33e1a49974577d3ca81c4500b|SD07演示-2.8-8141273 7 单 / 需求 27.80 米 单号 物料（商品 × 颜色 × 门幅） 需求米数 等待时长 加急标记 到货日 20261006719460148 SD07演示布814127SD07演示-2.8-8141273 3.20 1.3 小时 不加急 2026-10-09剩 3 天 20261006710980156 SD07演示布814127SD07演示-2.8-8141273 5.60 1.3 小时 不加急 2026-10-11剩 5 天 20261006724900038 SD07演示布814127SD07演示-2.8-8141273 4.10 1.4 小时 不加急 2026-10-16剩 10 天 2026100"
+    },
+    "计件工资报表": {
+      "path": "/production/piecework",
+      "url": "https://merchant.migaozn.com/production/piecework",
+      "file": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06-pooling-savings/out/screenshots/demo-_production_piecework.png",
+      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 生产看板 智能派单 加工项管理 工艺配置 计件工资 仓储与物料 5 组织管理 3 通知中心 收起 生产管理 / 计件工资 米 米高测试 计件工资 按期间汇总报工（合格数量 × 工序单价；返工/报废不计件） 刷新 期间 工人 查询 期间合计 ¥222.57 2026-10 · 共 6 人 按工人 按工序 按部位 按套 工人 计件数量 金额 SD07演示工人3 123.87 ¥36.40 SD07演示工人0 129.63 ¥44.88 SD07演示工人2 62.65 ¥25.06 SD07演示工人1 151.59 ¥58.05 SD07演示工人4 56.34 ¥24.25 SD07演示工人5 75.74 ¥33.93"
+    },
+    "省料看板": {
+      "path": "/production/saving-board",
+      "url": "https://merchant.migaozn.com/production/saving-board",
+      "file": "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-06-pooling-savings/out/screenshots/demo-_production_saving-board.png",
+      "text": "米高测试环境 米高商家管理后台 搜索菜单 ⌘K 工作台 1 商品管理 客户服务 4 交易管理 2 生产管理 5 仓储与物料 5 入库单 发货单 余料台账 省料看板 库存明细 组织管理 3 通知中心 收起 仓储与物料 / 省料看板 米 米高测试 省料看板 省了多少料，看两件事：① 每批布用剩多少 ② 每平方米成品用掉多少米布；存量导入批次单独成组，不与切换后混算 按月 按周（ISO 周） 刷新 剩余 ≤0.2 米 的批次占比 0.0% 治「用不尽」—— 越多批次被用到几乎不剩，说明料真的被用掉了 入库/采购总米数 13457 米 治「买太多」—— 切换后的采购入库总米数，不含存量导入 两条指标必须并用：①「剩余 ≤0.2 米 的批次占比」治「用不尽」，②「入库/采购总米数」治「买太多」。单看①会被排料省料误导 —— 排料省料 ⇒ 批次剩得更多 ⇒ 只留①会把效率提升显示成变差。 切换后（采购入库） 批次数 15 ≤0.2 米占比 0.0% 余量合计 12540.3 米 省料 24.3 米 / 1736.89 元 ≤0.2 米：0 批 / 0.0% 0.2~0.5 米：0 批 / 0.0% 0.5~1 米：0 批 / 0.0% >1 米：15 批 / 100.0% 存量导入（切换前历史包袱） 存量导入·单列 批次数 5 ≤0.2 米占比 0.0% 余量合计 640 米 省料 无数据 / 无数据 元 ≤0.2 米：0 批 / 0.0% 0.2~0.5 米：0 批 / 0.0% 0.5~1 米：0 批 / 0.0% >1 米：5 批 / 100.0% 来源未知 来源未知 批次数 0 ≤"
+    }
+  }
+}

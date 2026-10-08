@@ -1,5 +1,18 @@
-# case_ids: CH-009, CH-004, DF-007, DF-013, CH-003
+# case_ids: CH-009, CH-004, DF-007, DF-013, CH-003, CH-045
 """页面上下文（issue #5371 · B 端能力地图族 4）—— 注入面按角色裁剪 + route→真值源登记 + **默认拒绝**。
+
+## issue #6215 扩面（登记 6 → 10 条 / 真值源 3 → 6 条）
+
+- 新增登记：`/orders/new`（算料口径）、`/dashboard`（看板指标卡口径）、`/production` 与
+  `/production/piecework`（生产与计件规则）、`/shipments`（发货数量口径）；
+- 🔴 **精确 > 通配**：`/orders/new` 与 `/orders/*` 同时登记 ⇒ 精确条目必须命中
+  （`test_longer_prefix_wins_over_order_field`）；
+- 覆盖面（漏登记 / 多登记 / 悬挂 / 真值源与权限码）由**元守卫**判：
+  `tests/unit_ci_workflows/test_page_context_registry_coverage.py`（本文件只判**登记表自证 + 注入面行为**，
+  两处不重复同一断言）；未登记的页面进豁免台账
+  `tests/unit_ci_workflows/page_context_exemptions_ledger.json`（**只许缩短**）；
+- ⚠️ **本文件的 `UNREGISTERED_ROUTES` 语料随之更新**（`/dashboard` 等已登记 ⇒ 换成仍在豁免台账里的
+  真实页面 + 两个根本不存在的路径）：判据语料不得取自被测对象，过期语料 = 假红。
 
 ## 本文件判什么（逐条对应 issue 的 5 条验收判据，全部可执行）
 
@@ -100,17 +113,28 @@ ROUTE_CORPUS: tuple[tuple[str, str], ...] = (
 PATH_FORM_CORPUS: tuple[str, ...] = ("/orders/123", "/", "/production/routings", "/a_b-c.d", "/x y", "/x%20y", "x/y")
 
 #: **未登记**的 route 语料（默认拒绝的靶子）。至少一条是**真实存在的页面**（不是瞎编的路径）。
+#:
+#: 🔴 issue #6215：登记面 6 → 10 条 ⇒ `/dashboard` / `/production/piecework` 等**已登记**，
+#: 旧的「未登记语料」随之作废（判据语料自己过期 = 假红）。现取的未登记样本分两类：
+#: ① **真实菜单页但进豁免台账**（`/knowledge` / `/customers` / `/settings`）——
+#: 它们**必须**继续不注入（豁免 ≠ 放行），这正是本判据要钉的那条线；
+#: ② **根本不是页面**（`/not-a-real-page` / `/admin/ghost-page`）。
 UNREGISTERED_ROUTES: tuple[str, ...] = (
-    "/knowledge",          # 真实页面（知识库），**本单未登记** ⇒ 不注入
-    "/dashboard",          # 真实页面（经营看板），未登记
+    "/knowledge",          # 真实页面（知识库），在豁免台账里 ⇒ **不注入**（豁免 ≠ 放行）
     "/customers/12345",    # 真实页面（客户详情），未登记
     "/settings",           # 真实页面（企业基础信息），未登记
-    "/production/piecework",
+    "/after-sales",        # 真实页面（售后工单），未登记
     "/not-a-real-page",
+    "/admin/ghost-page",
 )
 
 #: 商户员工身份（真实权限码取自 admin-api 权限目录）
 MERCHANT_PERMISSIONS = ("order:list", "order:detail", "product:list", "processing:manage")
+
+#: 🔴 登记面条数**地板**（issue #6215 扩面后现取 = 10）。**只许高于它**：
+#: 「暂不覆盖」的页面进豁免台账、台账**只许缩短** ⇒ 登记面只许变长。
+#: 谁把登记面砍回去（把已确证的页面退回豁免），这条当场红。
+NON_SHRINK_FLOOR = 10
 
 _INJECTION_KEYS = ("role", "permissions", "entitySnapshot", "snapshot", "data", "customerName", "phone")
 _QUESTION = "这单为什么是这个价？"
@@ -395,14 +419,60 @@ def test_entity_id_corpus(token: str, expected: bool) -> None:
 
 
 def test_registry_routes_match_real_pages() -> None:
-    """登记表里的 route **必须对应真实存在的页面**（登记一条不存在的页面 = 猜错页面）。"""
+    """登记表里的 route **必须对应真实存在的页面**（登记一条不存在的页面 = 猜错页面）。
+
+    ⚠️ 通配条目（`/orders/*`）**没有**对应目录 —— 它按定义覆盖的是子路径（`/orders/<id>`），
+    字面量本身就**不是**菜单页；对它取目录会永远判红（issue #6215 实测）。
+    ⇒ 通配条目**跳过目录核**，改由元守卫
+    （`tests/unit_ci_workflows/test_page_context_registry_coverage.py`）核「它挂在哪个菜单项下」。
+    """
     dashboard = REPO_ROOT / "frontend" / "admin-web" / "src" / "app" / "(dashboard)"
     missing = []
     for entry in PR.PAGE_REGISTRY:
+        if entry.route.endswith("/*"):
+            continue
         head = entry.route.rstrip("*").rstrip("/").lstrip("/")
         if not (dashboard / head).exists():
             missing.append(entry.route)
     assert missing == [], f"登记了不存在的页面：{missing}（判据：登记表只许登记真实路由）"
+
+
+def test_registry_does_not_shrink_below_expanded_floor() -> None:
+    """NON_SHRINK_FLOOR 自证 + 登记面**只许扩**（issue #6215：「暂不覆盖」只许缩短）。
+
+    ⚠️ 判据**不写死条数**（条数现取、随扩面增长）：本判据钉的是「不低于冻结地板」，
+    地板 = 本单扩面后的 10 条。
+    """
+    assert len(PR.PAGE_REGISTRY) == len({e.route for e in PR.PAGE_REGISTRY}), \
+        "PAGE_REGISTRY 出现重复 route（最长前缀解析会退化）"
+    assert len(PR.PAGE_REGISTRY) >= NON_SHRINK_FLOOR, (
+        f"登记面从 {len(PR.PAGE_REGISTRY)} 条缩回（地板 {NON_SHRINK_FLOOR}）——"
+        "『NON_SHRINK_FLOOR 是 #5371 的历史地板』这句自证已过期 ⇒ 必须同批改这一行"
+    )
+
+
+def test_longer_prefix_wins_over_order_field() -> None:
+    """🔴 **精确 > 通配；长前缀 > 短前缀**（`resolve_page_entry` 的判定顺序是判据锚）。
+
+    这条钉的是**条件顺序不变量**：`/orders/new` 是**精确**条目而 `/orders/*` 是通配条目，
+    两者都命中 `/orders/new` ⇒ 必须取精确那条（页面级码也不同：`order:create` ≠ `order:list`）。
+    谁把顺序改坏 / 把实现改成「先到先得」⇒ 新建订单页拿到订单**列表**的页面码 ⇒ 红。
+    """
+    entry = PR.resolve_page_entry("/orders/new")
+    assert entry is not None and entry.route == "/orders/new", (
+        f"前提自证：/orders/new 必须命中精确条目，实际 {entry.route if entry else None}"
+    )
+    assert entry.page_permissions == ("order:create",), (
+        f"`/orders/new` 命中的页面码是 {entry.page_permissions}（应为 order:create）——"
+        "精确条目被通配条目盖掉了"
+    )
+    # 通配条目覆盖**整族**（含列表页本身）：`/orders/*` 与 `/products/*` 同式
+    # （⚠️ 运行时 `resolve_page_entry("/orders")` 仍取不到 —— 通配前缀是 `/orders/`；
+    #  登记面把 `/orders/*` 读作「`/orders` 这一族」，见元守卫 `covers()` 的口径）。
+    assert PR.resolve_page_entry("/orders/123").route == "/orders/*"
+    assert PR.resolve_page_entry(f"/orders/{UUID}").route == "/orders/*"
+    assert PR.resolve_page_entry("/orders/new").route == "/orders/new"
+
 
 
 def test_unregistered_truth_source_does_not_inject(monkeypatch) -> None:

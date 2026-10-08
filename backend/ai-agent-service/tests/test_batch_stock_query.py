@@ -186,7 +186,7 @@ def tool():
 
 @pytest.fixture
 def seller_context():
-    """商户员工（米宝）：持有批次读面所需权限码 `product:list`"""
+    """商户员工（黄金策）：持有批次读面所需权限码 `product:list`"""
     return ToolContext(tenant_id=7, user_id="agent_007", session_id="sess_bs_1",
                        role="operator", permissions=["product:list"])
 

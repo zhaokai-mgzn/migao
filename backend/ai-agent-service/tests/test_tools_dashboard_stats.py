@@ -364,7 +364,7 @@ class TestDashboardActiveSessions:
 class TestDashboardProductRanking:
     """商品销量排行 product_ranking — DA-005（POC 问数增强 E 项）
 
-    米宝答「这个月哪个商品卖得最好」：转发 admin-api /api/admin/dashboard/product-ranking
+    黄金策答「这个月哪个商品卖得最好」：转发 admin-api /api/admin/dashboard/product-ranking
     （按 productId 聚合销量/金额，period=day 近7天 / month 近30天）。
     """
 

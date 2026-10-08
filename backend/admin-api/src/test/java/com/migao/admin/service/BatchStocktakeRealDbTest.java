@@ -193,7 +193,7 @@ class BatchStocktakeRealDbTest {
     private static StockBatchConsumptionService batchServiceOn(SqlSession s) {
         return new StockBatchConsumptionService(s.getMapper(StockBatchMapper.class),
                 s.getMapper(StockBatchConsumptionMapper.class), s.getMapper(ProductSkuMapper.class),
-                s.getMapper(StockLedgerMapper.class), null, null);
+                s.getMapper(StockLedgerMapper.class), null, null, new BusinessClock());
     }
 
     // ══════════════════════════════════ 判据 1 + 红线 ① + 红线 ⑦

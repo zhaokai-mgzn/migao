@@ -31,7 +31,7 @@
 就是**下单**流程（`order_create` 等写工具共用同一处执行路径），
 OR-009 正是该写路径的用例，故挂它。（闸门本身**不绑 skill**，见 `react_turn.py` 的注释。）
 
-🔴 **#5247 边界（B 端米宝只读化，用户裁定 2026-09-23）**：本闸门只拦**写工具**
+🔴 **#5247 边界（B 端黄金策只读化，用户裁定 2026-09-23）**：本闸门只拦**写工具**
 （`react_turn` 的 `if not getattr(tool, "read_only", False)`）—— 8 把 B 端工具收窄为只读后
 （写 action 删除），它们**按设计不再进本闸门**；原先拿 `inventory_manage.adjust` 当见证的
 R1 用例已改用仍是写工具的 `product_manage.update`（见该用例的改判说明）。
@@ -173,7 +173,7 @@ def _run(replies, *, store_facts=None, tool_names=("validate_input", "order_crea
         }
         out = asyncio.run(base_skill.execute_skill(
             state=state, skill_name=skill_name, tool_names=list(tool_names),
-            system_prompt="你是米宝"))
+            system_prompt="你是黄金策"))
 
     return out, llm, executed, store
 

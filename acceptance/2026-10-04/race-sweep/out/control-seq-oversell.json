@@ -1,0 +1,36 @@
+{
+  "skuId": "2106555652374024193",
+  "skuCode": "RCTLZOKI2R-01-28",
+  "stockBefore": "10.0",
+  "afterFirstPayment": "2.0",
+  "stockAfter": "2.0",
+  "pay1": {
+    "status": 200,
+    "body": "{\"success\":true,\"requestId\":\"req_aad17744e3c84b40\",\"timestamp\":1791076980}"
+  },
+  "pay2": {
+    "status": 422,
+    "body": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"商品「RCTLZOKI2R-01-28」库存不足：需要 8 米，当前仅剩 2.0 米，请先补货后再确认支付\"},\"requestId\":\"req_cd7b2699eeec4669\",\"timestamp\":1791076981,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+  },
+  "orderNos": [
+    "20261004165750242",
+    "20261004161580243"
+  ],
+  "ledger": [
+    {
+      "id": 2262,
+      "delta": "10.0",
+      "before": "0.0",
+      "after": "10.0",
+      "ref_no": null
+    },
+    {
+      "id": 2263,
+      "delta": "-8.0",
+      "before": "10.0",
+      "after": "2.0",
+      "ref_no": "20261004165750242"
+    }
+  ],
+  "judge": "顺序执行 ⇒ 第二单必须 4xx（库存 2 < 8）；这与 W4 并发下的 [200,200] 构成判别性对照"
+}

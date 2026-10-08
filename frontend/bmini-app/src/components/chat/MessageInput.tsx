@@ -24,6 +24,15 @@ interface MessageInputProps {
 const CANCEL_THRESHOLD = 50
 /** 草稿图片上限 */
 const MAX_IMAGES = 3
+/**
+ * placeholder 按平台分流（issue #6476）：H5 里**浏览器没有录音实现**（`utils/voice.ts` 的 stub，
+ * 语音键按 #5650 保留可见但禁用）⇒「按住说话」在这条腿上是一句**空承诺**：
+ * 它承诺的动作用户做不到，还会把人引到那个按不动的语音键上。
+ * 口径同 `docs/design/agent-input-bar-unified-design.md` §R5（C 端早已分流，B 端漏了）。
+ * H5 的措辞给一个**真答得出来**的例子（六格里的第一条），不写「按住说话」。
+ */
+const PLACEHOLDER_VOICE = '发消息或按住说话'
+const PLACEHOLDER_TEXT = '打字问黄金策，比如「今天经营怎么样？」'
 
 /**
  * 输入条（豆包式单容器，参考 docs/design/agent-input-bar-unified-design.md）
@@ -216,7 +225,7 @@ export default function MessageInput({
           value={value}
           onInput={handleInput}
           onConfirm={handleConfirm}
-          placeholder='发消息或按住说话'
+          placeholder={voiceSupported ? PLACEHOLDER_VOICE : PLACEHOLDER_TEXT}
           placeholderClass='message-input__placeholder'
           maxlength={500}
           autoHeight

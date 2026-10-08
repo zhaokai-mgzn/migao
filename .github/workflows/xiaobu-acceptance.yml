@@ -1,4 +1,4 @@
-name: Xiaobu Acceptance (小布 C 端验收)
+name: Xiaobu Acceptance (元元 C 端验收)
 permissions:
   contents: read
   issues: write
@@ -61,7 +61,7 @@ on:
           # （每次重建、互不污染，比共享环境更安全）。
           - adversarial
       persona:
-        description: '被测 Agent：xiaobu（C 端小布，默认）| mibao（B 端米宝，独立栈并行评测 #3483 T3）——B 端走 C 端模式（flash + 并发 + 独立栈）'
+        description: '被测 Agent：xiaobu（C 端元元，默认）| mibao（B 端黄金策，独立栈并行评测 #3483 T3）——B 端走 C 端模式（flash + 并发 + 独立栈）'
         required: false
         default: xiaobu
         type: choice
@@ -279,7 +279,7 @@ jobs:
           #   ② workflow 只看得到「评测连不上」的表象，看不到「栈没起来」的真因；
           #   ③ 失败长期被静默（2026-09-11 实证：step4 success 但 postgres Error）。
           set -o pipefail
-          # 本地栈需 DEBUG=true 供 X-Debug-Role 路由（小布身份注入），fail-closed 保护不受影响
+          # 本地栈需 DEBUG=true 供 X-Debug-Role 路由（元元身份注入），fail-closed 保护不受影响
           # ── 镜像构建：带 GHA 层缓存（issue #3361）──
           # 用显式 tag + 覆盖文件把 compose 指向这些镜像，避免依赖 compose 的默认命名规则
           # （v1 `_`/v2 `-` 差异）。缓存命中时两者合计 ~1min；未命中（首次/被淘汰）退化为
@@ -400,7 +400,7 @@ jobs:
           # 否则没有写用例的片会因 orders<=2 被误报假绿（分片基建，issue #3361）
           AGENT_EVAL_SUMMARY_JSON: /tmp/eval-summary-shard${{ matrix.shard }}.json
         run: |
-          # 小布 C 端用例（数据隔离/下单/售后），expectation 自动映射 customer_order_query
+          # 元元 C 端用例（数据隔离/下单/售后），expectation 自动映射 customer_order_query
           # tier 由 workflow_dispatch 输入控制：smoke=门禁级 5 条；normal=C 端全量 ~35 条
           # （用于取「C 端能力缺陷分布」，issue #3270 第 2 步）
           # 档位来源三分支（issue #3367；#4262 起第二支**当前不可达**，故意保留）：
@@ -733,7 +733,7 @@ jobs:
         # 只在 0 号片建 issue：同一次评测失败会同时命中 N 片，去重靠标题但并发下有竞态，
         # 结果是一次失败开 N 个 issue（噪音）。0 号片的报告已含全局判定。
         #
-        # 迭代档不建 issue（issue #3417）：本步骤的产物是「小布 C 端验收失败」这条**每日
+        # 迭代档不建 issue（issue #3417）：本步骤的产物是「元元 C 端验收失败」这条**每日
         # 全量**结论，而 fast/收窄档的红是迭代中预期出现的工作状态。若照建：① 标题不含
         # 分支，会让「分支迭代失败」与「主干验收失败」共用同一个 issue 线程（去重还按标题，
         # 直接往主干 issue 里追加评论）；② 用 2 条用例的失败去开一张全量验收 issue，是**过度
@@ -744,7 +744,7 @@ jobs:
         with:
           script: |
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
-            const personaLabel = "${{ github.event.inputs.persona || 'xiaobu' }}" === "xiaobu" ? "小布 C 端" : "米宝 B 端"
+            const personaLabel = "${{ github.event.inputs.persona || 'xiaobu' }}" === "xiaobu" ? "元元 C 端" : "黄金策 B 端"
             const title = `[Xiaobu] ${personaLabel} 验收失败 — ${new Date().toISOString().slice(0, 10)}`
             // 去重守卫（issue #2746）：同日同标题 open issue 已存在 → 仅评论追加，不重复建
             const q = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
@@ -763,7 +763,7 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title,
-                body: `小布（C 端）验收失败（DEBUG 本地栈 + 真实 LLM）。\n\n查看详情：${runUrl}`,
+                body: `元元（C 端）验收失败（DEBUG 本地栈 + 真实 LLM）。\n\n查看详情：${runUrl}`,
                 labels: ['bug', 'role/qa'],
               })
             }

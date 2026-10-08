@@ -1,0 +1,47 @@
+{
+  "first": {
+    "http": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "total": 2,
+        "successCount": 2,
+        "failCount": 0,
+        "blankRows": 0,
+        "createdProducts": 1,
+        "updatedProducts": 0,
+        "errors": []
+      },
+      "requestId": "req_6f0806bf85bf453e",
+      "timestamp": 1791006832
+    }
+  },
+  "second": {
+    "http": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "total": 2,
+        "successCount": 2,
+        "failCount": 0,
+        "blankRows": 0,
+        "createdProducts": 0,
+        "updatedProducts": 1,
+        "errors": []
+      },
+      "requestId": "req_122450447e13461f",
+      "timestamp": 1791006833
+    }
+  },
+  "db": {
+    "after1": {
+      "products": 1,
+      "skus": 2
+    },
+    "after2": {
+      "products": 1,
+      "skus": 2
+    },
+    "productId": "f9de0832f1f816e2063d1152bce826e3"
+  }
+}

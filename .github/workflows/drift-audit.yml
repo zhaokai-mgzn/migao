@@ -9,12 +9,15 @@ name: Drift Audit (真相源契约)
 #
 # ── 两条腿（缺一层就等于没有）────────────────────────────────────────────────
 #  · PR：`--check` —— **新增**漂移 ⇒ exit 1（fail-closed）；存量漂移打印放行（基线 burn-down）。
-#    本腿**不带**任何未知豁免（PR 上活锚不存在 ⇒ `skill-anchor` 记 `unknown`，但没声明
-#    `--fail-on-unknown` ⇒ `unknown` 不折非零）—— 豁免**只**属于定时腿。
-#  · 每日：`--check --strict-stale --fail-on-unknown --allow-unknown skill-anchor` —— 债务盘点：
+#    本腿**不带**任何未知豁免（PR 上活锚不存在 ⇒ `skill-anchor` 记 **`not_applicable`**，而
+#    本腿本来也没声明 `--fail-on-unknown`）。豁免**只**属于定时腿，且**当前为 0 条**。
+#  · 每日：`--check --strict-stale --fail-on-unknown` —— 债务盘点：
 #    基线里"已不再漂移"的条目要红（否则豁免表会僵化），网络不可达也要红（否则"心跳未知"会变成假绿）。
-#    **唯一的豁免是逐条点名的 `skill-anchor`**（issue #3951）：CI runner 上活锚**天然不存在**
-#    ⇒ 这条判据**结构性恒 `unknown`** ⇒ 不点名豁免就等于"定时腿与有没有漂移**无关地永远红**"
+#    🔴 **#6144 §1-C1（2026-10-03）起本腿不声明任何 `--allow-unknown`**（原先那条点名
+#    `skill-anchor` 的豁免**已过期**）：`check_skill_anchor` 在活锚不存在时改记
+#    **`not_applicable`**（判定对象在本环境里结构性不存在 ⇒ 具名 + `evaluated=0` +
+#    报告末尾计数声明），`--fail-on-unknown` **不折它** ⇒ 不再需要豁免；
+#    留着旧豁免反而会让 `unknown_exemption_errors()` 判**用法错误 exit 2**（豁免只许缩短）。
 #    （上线以来 10/10 红，`stale-report-reaper` 也因此永远收不掉它 —— 它要求最近 3 次已完成 run
 #    全 `success`）。三条边界（缺一条豁免就退化成 blanket bypass）：
 #      ① 判据的 `status` / `notes` / JSON 报告**照旧原样输出**（"未知"没有被改写成"通过"）；
@@ -135,11 +138,15 @@ jobs:
           MODE_ARGS="--check"
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # 债务盘点腿：陈旧基线条目也红；网络不可达（心跳未知）也红。
-            # `--allow-unknown skill-anchor` = **逐条点名**的豁免（issue #3951）：runner 上活锚天然
-            # 不存在 ⇒ 这条判据结构性恒 `unknown`；不点名豁免 ⇒ 本腿永远红（与有没有漂移无关）。
-            # 它**只**免这一条：判据照旧打印、状态照旧 `unknown`；名单不兑现（id 不存在 / 它本次不是
-            # `unknown`）⇒ 审计当场 exit 2（用法错误），不会静默腐烂成 blanket bypass。
-            MODE_ARGS="--check --strict-stale --fail-on-unknown --allow-unknown skill-anchor"
+            # 🔴 **#6144 §1-C1（2026-10-03）：本腿不再声明任何 `--allow-unknown`。**
+            # 原先那条 `--allow-unknown skill-anchor` 是为「runner 上活锚天然不存在 ⇒ 该判据结构性
+            # 恒 `unknown` ⇒ 本腿永远红」打的补丁。**根因是那次的状态选错了**：判定对象在本环境里
+            # 结构性不存在 ⇒ 正确三态是**具名的 `not_applicable`**（`evaluated=0` + 报告末尾具名
+            # 清单 + 计数声明），不是 `unknown`。改判之后 `check_skill_anchor` 在活锚缺失时返回
+            # `not_applicable`，`--fail-on-unknown` **不折它** ⇒ 那条豁免**过期**：留着它会让
+            # `unknown_exemption_errors()` 当场判用法错误（`exit 2`）—— 豁免只许缩短，故撤掉。
+            # `--fail-on-unknown` **一字未动**（心跳/网络类的未知照旧拦），机制没有被放宽。
+            MODE_ARGS="--check --strict-stale --fail-on-unknown"
           fi
           echo "mode: $MODE_ARGS"
           set +e
@@ -214,8 +221,8 @@ jobs:
             echo "  （\`automerge.yml\` 跳过带该标签的 PR ⇒ 未 arm 的 PR 被拦；已 arm 的要"
             echo "  \`gh pr merge --disable-auto\`，见 \`#4248\`）；② 本 issue（**P1 值班**）承接**面外**漂移。"
             echo "- **清零判据**：\`python3 scripts/drift_audit.py --check --strict-stale --fail-on-unknown --base origin/main\` 退出 0 ⇒ 本 issue 可关。"
-            echo "  （本 workflow 的定时腿另声明 \`--allow-unknown skill-anchor\`：runner 上活锚天然不存在；"
-            echo "  本机若装了活锚就**别加**它 —— 那时活锚会被真的判定，加了反而是用法错误 exit 2。）"
+            echo "  （#6144 §1-C1 起本腿**不声明任何** \`--allow-unknown\`：runner 上活锚不存在那条"
+            echo "  已由 \`not_applicable\` 承担（它不折非零），豁免面现取 0 条。）"
             echo "- **本 issue 的处置归属**：面外条目按所属文件分流（如 \`deploy-*\` 归部署包、"
             echo "  \`flaky-ledger-reconcile.yml\` 归台账兜底包）；心跳型条目见文件头登记的边界。"
           } > "$BODY"

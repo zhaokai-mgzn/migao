@@ -1,6 +1,7 @@
-# case_ids: MC-031
+# case_ids: MC-031, MC-078
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI/流程结构类 L0 不变式统一挂 CI 域用例；
-#   MC-031 = `\.github/cases/misc.yml` 新增的「main 侧生成物新鲜度守护腿」判据。）
+#   MC-031 = `\.github/cases/misc.yml` 新增的「main 侧生成物新鲜度守护腿」判据；
+#   MC-078 = 同一条腿的**对账面** `pull_request_target: [opened, reopened]`（issue #6255 第 2 项）。）
 r"""**main 侧生成物新鲜度守护腿**的判据（issue #5687 族的 burn-down）。
 
 ## 病灶（实测：同一天咬了两次）
@@ -29,10 +30,11 @@ r"""**main 侧生成物新鲜度守护腿**的判据（issue #5687 族的 burn-d
 | 5 | **报错具名**：产物名 + 差量（提交版 vs 现取的行数）+ 可复制复算命令；不许「生成物不同步」这类不具名的话 | 喂一句不具名的报告文本 ⇒ 非空 |
 | 6 | **告警面三件齐全**（`::error::` + step summary + 非零退出）+ 失败钩子（P1 值班 issue） | 逐条 needle 变异 ⇒ 非空 |
 | 7 | **零新开闭环**：本腿登记进 `scripts/mechanism-registry.json`（含 `schedule` + 写作用域 ⇒ 未登记即红），读数步是 job 的最后一步且 `if: always()` | 删登记 / 改读数步位置 ⇒ 非空 |
-| 8 | **不放宽既有门禁**：本腿不得出现在 `pr-check.yml`，不得挂 `pull_request` 面，不得进 required snapshot | 各注入一次 ⇒ 非空 |
+| 8 | **不放宽既有门禁·门禁面**：本腿不得出现在 `pr-check.yml`，不得挂 `pull_request` 面，不得进 required snapshot；（**v2 / MC-078**）**对账面**只许 `pull_request_target: [opened, reopened]` + `branches: [main]`，且判定基准恒为 main（只检出 `ref: main`） | 各注入一次 ⇒ 非空（v2 新增 4 条变异：`pull_request` / `closed` / `synchronize` / 检出 PR head） |
 | 9 | **覆盖面显式登记**：边界表逐条带 `face`/`reason`/`owner`/`restart`，且**第 3 条边界被行为级证明是真的** | 去掉表头 / 去掉字段 ⇒ 非空 |
 | 10 | **「行数相同」不是新鲜度证据**：把 casebook 的**汇总读数整体减 1、不增减任何行**（真实现场 = `8112 行 / 8112 行，不同 4 行`）⇒ 仍必红且具名 | 把「逐字节相等」换成「**只比行数**」的内存变异体 ⇒ 同一夹具**变绿** |
 | 11 | **「文件内部自洽」也不是证据**：同一夹具的分域合计**仍等于**总数（读文档看不出来）⇒ 不影响判红 | 同判据 10（同一条比较挣来的） |
+| 12 | **（v2 / MC-078）对账面真接在判定上**：真 YAML 的判定命令在「生成物陈旧」夹具上**必红且具名**、在新鲜夹具上**必绿**；判定步的 `run:` 里不许出现重活入口，且 job 超时 ≤ 5 分钟 | 摘掉/收缩对账面 ⇒ 判据 8 v2 非空；把命令换成 `true`、或往 `run:` 里塞 `pytest` ⇒ 判据 12 非空 |
 
 ## 2026-09-28 的第三例（issue #5741）：**两个各自自洽的分支合并** ⇒ 「块进了、汇总没进」
 
@@ -57,6 +59,12 @@ r"""**main 侧生成物新鲜度守护腿**的判据（issue #5687 族的 burn-d
   两侧一致 ⇒ 本腿不红。这一条**被行为级证明是真的**（见
   `test_boundary_renderer_broken_makes_both_sides_agree`），不是手写的免责声明；
   该类形态由 `tests/unit_ci_workflows/test_render_cases_domain_map.py` 的域覆盖判据承担；
+- ❌ **只挂 `pull_request` / `pull_request_target: [closed]` / `: [synchronize]`**：前两者对 bot 合并
+  **根本不触发**（`pull_request` 在 fork 上还拿只读 token；`closed` 见 issue #3585），后者会让每个 PR
+  的每次 push 都白跑一遍本腿。⇒ 对账面**只许** `pull_request_target: [opened, reopened]`（判据 8 v2 钉住）；
+- ❌ **对账面也只在「事件」上跑（残余边界，照实登记）**：射程 = 下一个 PR 打开/重开 —— 若漂移落地后
+  长时间没有新 PR，本腿仍只剩 `schedule`（实测 4~5 次/日）⇒ 静默窗口仍可能达数小时。
+  这一条**是真边界**，`restart` 写在 `UNCOVERED_FACES` 的第 4 条里（不写成「已解决」）；
 - ❌ **不判 `pull_request` 面**：本腿判的是 **main 的当前状态**；PR 面那条既有判定**语义未改**
   （只被收敛到同一个判定本体）；
 - ✅ **`verify-all.sh` 的 `cases_face_gate` 也已收敛到同一实现**（本包同批改：它原先内联
@@ -140,6 +148,16 @@ UNCOVERED_FACES = (
         "owner": "tests/unit_ci_workflows/test_render_cases_domain_map.py 的 owner（域覆盖判据）",
         "restart": "新增用例域时该域覆盖判据必须同批登记（未登记即红）",
     },
+    {
+        "face": "对账面 `pull_request_target: [opened, reopened]` 也只在**事件**上跑：漂移落地后若长时间"
+                "没有任何新 PR 打开/重开，本腿仍只剩 `schedule`（实测 4~5 次/日）⇒ 静默窗口仍可达数小时",
+        "reason": "bot 合并**不产生任何事件**（`push` 吞见 #3113、`closed` 吞见 #3585）⇒ 事件驱动面"
+                  "能覆盖的最早时刻就是「下一个 PR 打开」；没有事件时物理上无从触发",
+        "owner": "本腿 owner（`scripts/mechanism-registry.json` 的 main-freshness-guard 条目）",
+        "restart": "若出现「漂移落地后 >1 个 cron 周期仍无人发现且期间无任何 PR 打开」的实例 ⇒ "
+                   "重启条件成立，届时再谈更快的触发面（**不要**靠调密 cron：投递已被节流到 4~5 次/日，"
+                   "加频率不增加实得投递）",
+    },
 )
 
 #: 边界表的表头锚（措辞与本文档必须同批改 —— 它就是「本节存在」的机械证据）。
@@ -153,6 +171,18 @@ INVOKE_RE = re.compile(r"python3\s+scripts/generated_artifacts_freshness\.py")
 
 #: 本腿的**检查名**（出现在 `pr-check.yml` 里 = 有人把它折进 PR 门禁 ⇒ 报告型 ≠ required）。
 GUARD_CHECK_NAME = "Main Freshness Guard (生成物新鲜度)"
+
+#: 判据 8 每条注入的「自证锚」——判红信息里必须出现它，否则说明红**不是本次注入**造成的
+#: （v2 / MC-078 新增：对账面的四条约束是旧实现压根没检查的面，红证必须能归因到注入点）。
+_INJECT_TAG = {
+    "pr_check": "被折进 `pr-check.yml`",
+    "pull_request": "不许挂 `pull_request` 面",
+    "snapshot": "required snapshot",
+    "pr_target_types_closed": "`types` 必须**恰好**是",
+    "pr_target_types_synchronize": "`types` 必须**恰好**是",
+    "pr_target_branches_not_main": "`branches` 必须刻画 base 分支",
+    "checkout_pr_head": "检出必须**恰好**是 `ref: main`",
+}
 
 #: 判红报告必须同时含有的三类要素（缺任何一类 = 不具名）。
 NAMED_REPORT_NEEDLES = ("产物名", "差量", "复算命令")
@@ -775,12 +805,22 @@ class TestRegistration:
 
 
 def gate_relaxation_problems(pr_check_text: str, snapshot_text: str, doc: dict) -> list[str]:
-    """**纯函数**：本腿是**报告型**（不翻 required），且它连 `pull_request` 面都不挂。
+    """**纯函数**：本腿是**报告型**（不翻 required），且它的 PR 面**只作为「对账时机」**存在。
 
     ⇒ `test_required_check_no_paths_filter.py` 的射程（「**上报 required 检查名**的 workflow
     不得在 `on.pull_request` 上带 `paths:` 过滤」）**结构上不适用**于本腿：
-    它没有 `pull_request` 触发面，也没有 required 检查名 —— 这里把这条关系**具名钉住**，
-    免得将来有人把它挂到 PR 面（那会让无辜 PR 重新变红，正是本单要消灭的观感）。
+    它不上报 required 检查名 —— 这里把这条关系**具名钉住**。
+
+    🔴 **v2（issue #6255 第 2 项 / MC-078）：口径从「不挂 PR 面」改成「PR 面只许是对账面」。**
+    改判依据（实测，不是口味）：原口径的理由是「漂移的暴露窗口 = 一个 cron 周期（小时级）」，
+    而实测 `schedule` 只被投递 **4~5 次/日**、相邻最长 **8.9h**（复算命令见 workflow 头部），
+    且 bot 合并**不产生任何事件**（`push` #3113 / `closed` #3585）⇒ 只靠那两面时 main 的漂移
+    可静默近 9h，而这期间**每个 PR** 的 required `Case Contract (truths_ref)` 都在红（#6255 现场）。
+    对账面补的就是这一段 —— 照 `post-merge-verify` / `deploy-reconcile` / `close-linked-issues`
+    的既有范式：「新 PR 打开必触发 = 漂移**爆在全队列**的那一刻」。
+    ⚠️ **这不是放宽**：旧实现**根本没检查** `pull_request_target`（它只查 `pull_request`）；
+    下面 4 条**新增**约束（拒绝 `pull_request` / 拒绝 `closed`与`synchronize` / 拒绝非 main 分支 /
+    拒绝检出 PR head）把这一面**收紧**到「只许当对账时机、判定基准恒为 main」。
     """
     problems: list[str] = []
     # ⚠️ 口径是**结构**的：注释里点名本腿的**文件名**是合法的（那正是「为什么不折进 PR 门禁」的说明）；
@@ -789,13 +829,35 @@ def gate_relaxation_problems(pr_check_text: str, snapshot_text: str, doc: dict) 
     if f"uses: ./{WORKFLOW_REL}" in pr_check_text or GUARD_CHECK_NAME in pr_check_text:
         problems.append("本腿被折进 `pr-check.yml`（`uses:` 或检查名）⇒ 报告型 ≠ required"
                         "（会给所有 PR 制造噪声/误判）")
-    if _on_block(doc).get("pull_request"):
-        problems.append("本腿刻意**不挂** `pull_request` 面（判定基准是 main 的当前状态；挂 PR 面会把红"
-                        "重新显示在无辜 PR 上，而它并不拦任何东西）")
+    on = _on_block(doc)
+    if on.get("pull_request"):
+        problems.append("本腿**不许挂 `pull_request` 面**（那是 PR 门禁面：fork PR 上拿到的是只读 token，"
+                        "而本腿判红出口要 `issues: write`；且它只该在**对账时机**跑一次，"
+                        "不该跟着每个 PR 的每次 push 跑）")
+    prt = on.get("pull_request_target")
+    if prt is not None:
+        types = list(prt.get("types") or [])
+        if types != ["opened", "reopened"]:
+            problems.append(f"对账面的 `types` 必须**恰好**是 `[opened, reopened]`（现为 {types}）："
+                            "`closed` 对 bot 合并 100% 不触发（#3585，挂了等于没有）；"
+                            "`synchronize` 会让每个 PR 的每次 push 都跑一遍（纯噪声）")
+        branches = list(prt.get("branches") or [])
+        if branches != ["main"]:
+            problems.append(f"对账面的 `branches` 必须刻画 base 分支 `[main]`（现为 {branches}）——"
+                            "判定基准是 main，别把别的 base 的 PR 也算进来")
     if "main-freshness" in snapshot_text:
         problems.append("本腿出现在 required snapshot 里 ⇒ 有人把它翻成了 required（两条前置都不满足）")
-    if _on_block(doc).get("push") is None:
+    if on.get("push") is None:
         problems.append("`push` 面缺失（当场红的那一面）")
+    # 判定基准恒为 main：检出必须显式 `ref: main`（**永不**检出 PR head ⇒ 不引入 pwn-request 面，
+    # 且判定对象不会从 main 漂移成「触发它的那个 PR」）。
+    refs = [str((st.get("with") or {}).get("ref"))
+            for job in (doc.get("jobs") or {}).values()
+            for st in (job.get("steps") or [])
+            if (st.get("with") or {}).get("ref") is not None]
+    if refs != ["main"]:
+        problems.append(f"检出必须**恰好**是 `ref: main`（现为 {refs}）—— 判定基准是 main 的当前状态，"
+                        "检出 PR head 会让判定对象变成那个 PR（且这是 `pull_request_target` 的 pwn-request 面）")
     return problems
 
 
@@ -816,20 +878,211 @@ class TestDoesNotRelaxExistingGates:
         assert gate_relaxation_problems(pr_text, snapshot, _workflow_doc()) == [], \
             "只提名字（注释）却判红 ⇒ 判据在把原文当代码读"
 
-    @pytest.mark.parametrize("inject", ["pr_check", "pull_request", "snapshot"])
+    @pytest.mark.parametrize("inject", ["pr_check", "pull_request", "snapshot",
+                                        "pr_target_types_closed", "pr_target_types_synchronize",
+                                        "pr_target_branches_not_main", "checkout_pr_head"])
     def test_each_injection_turns_it_red(self, inject):
-        """**红证（判据 8）**：三种放宽各注入一次 ⇒ 各能单独变红。"""
+        """**红证（判据 8）**：七种放宽各注入一次 ⇒ 各能单独变红。
+
+        v2 新增的四条（对账面的约束）是**旧实现根本没检查**的面（旧实现只查 `pull_request`）
+        ⇒ 它们不是「把既有判据调松」，而是补上漏检。
+        """
         pr_text = PR_CHECK.read_text(encoding="utf-8")
         snapshot = REQUIRED_SNAPSHOT.read_text(encoding="utf-8")
         doc = _workflow_doc()
+        on = _on_key(doc)
         if inject == "pr_check":
             pr_text += f"\n      - uses: ./{WORKFLOW_REL}\n"
         elif inject == "pull_request":
-            doc[_on_key(doc)]["pull_request"] = {"types": ["opened"]}
+            doc[on]["pull_request"] = {"types": ["opened"]}
+        elif inject == "pr_target_types_closed":
+            doc[on]["pull_request_target"] = {"types": ["closed"], "branches": ["main"]}
+        elif inject == "pr_target_types_synchronize":
+            doc[on]["pull_request_target"] = {"types": ["opened", "reopened", "synchronize"],
+                                              "branches": ["main"]}
+        elif inject == "pr_target_branches_not_main":
+            doc[on]["pull_request_target"] = {"types": ["opened", "reopened"], "branches": ["dev"]}
+        elif inject == "checkout_pr_head":
+            # 把判定基准从 main 换成「触发它的那个 PR 的 head」= pwn-request 面 + 判定对象漂移
+            target = [st for job in doc["jobs"].values() for st in job.get("steps") or []
+                      if (st.get("with") or {}).get("ref") is not None]
+            assert len(target) == 1, "检出步的锚点找不唯一（红证会是空断言）"
+            target[0]["with"]["ref"] = "${{ github.event.pull_request.head.sha }}"
         else:
             snapshot = snapshot.replace("{", '{"main-freshness-guard": 1,', 1)
             assert "main-freshness" in snapshot, "snapshot 注入未生效（红证会是空断言）"
-        assert gate_relaxation_problems(pr_text, snapshot, doc) != [], f"{inject} 注入后判据没红 ⇒ 空断言"
+        problems = gate_relaxation_problems(pr_text, snapshot, doc)
+        assert problems != [], f"{inject} 注入后判据没红 ⇒ 空断言（注入未生效或判据漏检）"
+        # 注入必须**自证生效**：判红信息要能指认本次注入的那一面
+        # （防「判红是别的原因造成的」冒充本次红证 —— §28.1 的「红证必须归因到注入点」）。
+        tag = _INJECT_TAG.get(inject)
+        if tag:
+            assert any(tag in p for p in problems), \
+                f"{inject} 判红了，但不是本次注入造成的（别的原因红 ⇒ 空断言）：{problems}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 12（v2 / MC-078）：对账面的**真实接线** —— 真 YAML 的判定命令在「main 生成物落后」的
+# 夹具上必须红、新鲜时必须绿，且**不得被拖成重活**。
+#
+# 为什么单列一条：判据 1/8 判的是**面的存在与形态**（结构面）；而**面存在 ≠ 它接的判定真会红**
+# （§28.2「判据本体绿 ≠ 接线在」）⇒ 这里**直连真 YAML 的判定命令**跑一次夹具，做双向对照。
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: 判定步里**不许**出现的重活入口（判据 12 的「不重」那一半）。
+#: ⚠️ 只扫 `run:` 文本，**不扫注释** —— 本仓 §23.4 T2「别被自己的文案喂红」。
+HEAVY_ENTRY_NEEDLES = (
+    "pytest", "verify-all.sh", "batch-gate", "machine-heavy-lock",
+    "contract-check.sh", "check-ui-regression.sh", "npm ", "mvn ",
+)
+
+
+def judgement_step(doc: dict) -> dict:
+    """**纯函数**：取判定步（`id: freshness`）；取不到 ⇒ 返回 `{}`（调用方判红，**不是静默跳过**）。"""
+    for job in (doc.get("jobs") or {}).values():
+        for st in job.get("steps") or []:
+            if st.get("id") == "freshness":
+                return st
+    return {}
+
+
+def judgement_invocation(run_text: str) -> str:
+    """**纯函数**：从判定步的 `run:` 里抽出**可独立执行**的那条判定命令。
+
+    口径与 `_invokes_judgement_body` 同源（`python3 scripts/generated_artifacts_freshness.py …`）；
+    差别只在用途：这里要的是**能拿去真跑的文本**，故把 bash 外壳（`OUT="$( … )"`）、续行反斜杠
+    与 `2>&1)` 收尾一并剥掉。
+    """
+    m = re.search(r"python3\s+scripts/generated_artifacts_freshness\.py[^\n]*", run_text)
+    if not m:
+        return ""
+    return re.sub(r"\s*2>&1\)?\s*$", "", m.group(0).strip().rstrip("\\").strip()).strip()
+
+
+def _run_yaml_command(cmd_text: str, repo: Path) -> tuple[int, str, dict]:
+    """真跑**从真 YAML 抽出来的那条命令**。
+
+    ⚠️ 两处差异**逐字登记**（其余文本取自真 YAML）：
+      ① 追加 `--repo <夹具>`（CI 上不加 —— 它就在仓根跑，`--repo` 默认即仓根）；
+      ② `cwd` = **真仓根**（命令里的 `scripts/…` 是相对路径；夹具里没有 `scripts/`，
+         而 CI 上 cwd 就是仓根 ⇒ 这一处只是把「仓根」还原成真仓根，不改判定对象 ——
+         判定对象由 `--repo` 指定）。
+    """
+    report_path = Path(repo) / "yaml-command-report.json"
+    line = f'{cmd_text} --repo "{repo}" --json "{report_path}"'
+    env = dict(os.environ, WINDOW="5")
+    proc = subprocess.run(["bash", "-c", line], capture_output=True, text=True,
+                          cwd=str(REPO), env=env, timeout=900)
+    out = (proc.stdout or "") + (proc.stderr or "")
+    report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else {}
+    return proc.returncode, out, report
+
+
+def light_leg_problems(doc: dict) -> list[str]:
+    """**纯函数**：成本红线 —— 判定步**只许**调那一个脚本，且 job 超时 ≤ 5 分钟。
+
+    ⚠️ 只扫**判定步的 `run:`**（真正会被执行的那一段）+ job 的 `timeout-minutes`；
+    **不扫** `name` / 注释 / 别处的文案（§23.4 T2：判据不许被自己的说明文字喂红）。
+    """
+    problems: list[str] = []
+    step = judgement_step(doc)
+    if not step:
+        return ["找不到判定步（`id: freshness`）⇒ 判据自己判红（**不是**静默跳过）"]
+    run = step.get("run") or ""
+    for needle in HEAVY_ENTRY_NEEDLES:
+        if needle in run:
+            problems.append(f"判定步里出现重活入口 {needle!r} —— 本腿必须是秒级的（§27 成本红线）")
+    if not judgement_invocation(run):
+        problems.append(f"判定步没真的调判定本体：{run[:200]!r}")
+    for name, job in (doc.get("jobs") or {}).items():
+        t = job.get("timeout-minutes")
+        if t is None or t > 5:
+            problems.append(f"{name} 的 `timeout-minutes={t}` ⇒ 不是轻量档")
+    return problems
+
+
+class TestReconcileFaceIsReallyWired:
+    """MC-078：对账面的结构与**真实接线**（判据 12）。"""
+
+    def test_reconcile_face_exists_with_exact_shape(self):
+        prt = _on_block(_workflow_doc()).get("pull_request_target") or {}
+        assert list(prt.get("types") or []) == ["opened", "reopened"], \
+            f"对账面形态不对（现为 {prt}）—— bot 合并后唯一可靠的对账时机是「新 PR 打开/重开」"
+        assert list(prt.get("branches") or []) == ["main"], prt
+
+    def test_judgement_step_is_light(self):
+        """**不重**（成本红线）：见 `light_leg_problems`。"""
+        assert light_leg_problems(_workflow_doc()) == [], "\n".join(light_leg_problems(_workflow_doc()))
+
+    def test_mention_outside_run_does_not_turn_red(self):
+        """**对照读数（判据 12）**：把重活词放进步骤 `name`（不是 `run`）⇒ **不**红。"""
+        doc = _workflow_doc()
+        judgement_step(doc)["name"] = "说明：本步**不**跑 pytest / verify-all.sh / batch-gate"
+        assert light_leg_problems(doc) == [], "把重活词写进 `name` 就判红 ⇒ 判据在扫不该扫的面"
+
+    @pytest.mark.parametrize("inject", ["heavy_entry", "timeout", "no_invocation", "no_step"])
+    def test_light_pin_has_discriminating_power(self, inject):
+        """**红证（判据 12 的「不重」那一半）**：四种「被拖成重活 / 接线被摘」的注入各判红一次。"""
+        doc = _workflow_doc()
+        if inject == "heavy_entry":
+            st = judgement_step(doc)
+            st["run"] = (st.get("run") or "") + "\npython3 -m pytest tests/unit_ci_workflows -q\n"
+        elif inject == "timeout":
+            for job in doc["jobs"].values():
+                job["timeout-minutes"] = 30
+        elif inject == "no_invocation":
+            judgement_step(doc)["run"] = "echo '判定：跳过'\n"
+        else:
+            for job in doc["jobs"].values():
+                job["steps"] = [s for s in job.get("steps") or [] if s.get("id") != "freshness"]
+        problems = light_leg_problems(doc)
+        assert problems != [], f"{inject} 注入后判据没红 ⇒ 空断言（注入未生效或判据漏检）"
+
+    def test_command_is_red_on_stale_main_and_green_when_fresh(self, tmp_path):
+        """**双向对照 + 直连真接线**：真 YAML 里那条判定命令，在两个夹具上各跑一次。
+
+        · 陈旧夹具（源动过、生成物没跟 = #6255 的形态）⇒ **非零 + `::error::` 具名**；
+        · 新鲜夹具 ⇒ **0 且无 `::error::`**。
+
+        ⚠️ **与 CI 的差异逐字登记**：① 追加 `--repo <夹具>`（CI 上不加，它就在仓根跑）；
+        ② `cwd` = 真仓根（命令里的 `scripts/…` 是相对路径，夹具里没有 `scripts/`）——
+        判定对象由 `--repo` 指定，除这两处外命令文本取自真 YAML。
+        """
+        cmd = judgement_invocation(judgement_step(_workflow_doc()).get("run") or "")
+        assert cmd, "取不到判定命令（红证会是空断言）"
+        stale = _build_repo(tmp_path / "stale" / "repo", drift_source=True)
+        fresh = _build_repo(tmp_path / "fresh" / "repo")
+
+        rc, out, report = _run_yaml_command(cmd, stale)
+        assert rc != 0, f"main 生成物陈旧 ⇒ 判定命令却没红（rc={rc}）：{out[-800:]}"
+        assert "::error::" in out, f"判红没有 ::error::（告警面①）：{out[-800:]}"
+        assert "generated_artifacts_freshness" in out, f"判红不含可复制的复算命令：{out[-800:]}"
+        assert report.get("verdict") == "drifted", report
+
+        rc2, out2, report2 = _run_yaml_command(cmd, fresh)
+        assert rc2 == 0, f"生成物新鲜 ⇒ 判定命令却红了（rc={rc2}）：{out2[-800:]}"
+        assert "::error::" not in out2, out2[-400:]
+        assert report2.get("verdict") == "fresh", report2
+
+    def test_summary_line_drift_turns_it_red(self, tmp_path):
+        """**#6255 的逐字形态**：只把 casebook 的**汇总读数减 1**（行数不变、文件内部仍自洽、
+        也不提交任何脏产物）⇒ 真 YAML 的判定命令**仍必红且具名到产物**。
+
+        （这是 issue 里「造一个『main 生成物落后 1 条』的场景」的机械化版本；真实现场 =
+        `提交版 9638 行 / 现取 9638 行，不同 2 行` —— 只看行数 / 只看文档自洽都发现不了。）
+        """
+        repo = _build_repo(tmp_path / "summary" / "repo")
+        md = repo / COVERED_ARTIFACTS[1]
+        text = md.read_text(encoding="utf-8")
+        m = re.search(r"用例总数：(\d+)", text)
+        assert m, "汇总读数锚点不存在 ⇒ 夹具没生效（红证会是空断言）"
+        md.write_text(text.replace(m.group(0), f"用例总数：{int(m.group(1)) - 1}", 1), encoding="utf-8")
+        cmd = judgement_invocation(judgement_step(_workflow_doc()).get("run") or "")
+        rc, out, report = _run_yaml_command(cmd, repo)
+        assert rc != 0, f"汇总读数减 1（行数不变）却没红（rc={rc}）：{out[-800:]}"
+        assert "::error::" in out and COVERED_ARTIFACTS[1] in out, \
+            f"判红没具名到产物 / 没有 ::error::：{out[-800:]}"
+        assert report.get("verdict") == "drifted", report
 
 
 # ══════════════════════════════════════════════════════════════════════════════

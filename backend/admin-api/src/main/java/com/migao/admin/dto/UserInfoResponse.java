@@ -36,7 +36,7 @@ public class UserInfoResponse {
     private List<MenuItem> menus;
 
     /**
-     * 能力位（issue #5642 功能⑤「米宝唤出授权门」）。
+     * 能力位（issue #5642 功能⑤「黄金策唤出授权门」）。
      *
      * <p>🔴 **这是端侧唯一的判定来源**：前端**不得**自己判权限码（哪些码算管理员是服务端
      * {@code AdminGate.ADMIN_PERMISSION_CODES} 的单一真值）⇒ 改一处即 h5 与 admin-web 两端同步。
@@ -53,7 +53,7 @@ public class UserInfoResponse {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class Capabilities {
         /**
-         * 能否唤出米宝（{@code AdminGate.canSummonMibao}）。
+         * 能否唤出黄金策（{@code AdminGate.canSummonMibao}）。
          * {@code true} ⇒ 端侧进对话；{@code false} ⇒ 端侧必须给「需要管理员授权」+ 可行动引导
          * （**不是**静默隐藏入口、**不是** 403 白屏）。
          */
@@ -113,7 +113,7 @@ public class UserInfoResponse {
         private String tenantName;
 
         /**
-         * 智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示；未配置为 null → 前端兜底「小布」）
+         * 智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示；未配置为 null → 前端兜底「元元」）
          */
         private String botName;
 

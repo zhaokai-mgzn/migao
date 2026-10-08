@@ -262,14 +262,14 @@ test.describe('订单创建', () => {
       await expect(page.getByTestId('order-logistics-type')).toHaveValue('')
     })
 
-    test('布局遮挡探针：米宝 FAB 与「提交订单」无重叠（§15.3）', async ({ page }) => {
+    test('布局遮挡探针：黄金策 FAB 与「提交订单」无重叠（§15.3）', async ({ page }) => {
       // 场景 B：内容不足一屏 —— 展开两个步骤后仍不得让 FAB 压住主操作
       await page.getByTestId('wizard-step-2').getByRole('button').first().click()
       await expect(page.getByRole('button', { name: '提交订单' })).toBeVisible()
 
       const overlap = await page.evaluate(() => {
         const pick = (sel: string) => document.querySelector(sel)?.getBoundingClientRect() ?? null
-        const fab = pick('button[title="打开米宝"]')
+        const fab = pick('button[title="打开黄金策"]')
         const submit = [...document.querySelectorAll('button')].find(
           (b) => (b.textContent || '').trim() === '提交订单',
         )
@@ -280,7 +280,7 @@ test.describe('订单创建', () => {
         return { x, y }
       })
       // 无 FAB（如该构建未挂载）⇒ `null`：**不假装通过**，显式跳过并留下痕迹
-      test.skip(overlap === null, '本页未挂载米宝 FAB（title="打开米宝" 找不到）⇒ 无遮挡面可判')
+      test.skip(overlap === null, '本页未挂载黄金策 FAB（title="打开黄金策" 找不到）⇒ 无遮挡面可判')
       expect(overlap).not.toBeNull()
       expect(overlap!.x === 0 || overlap!.y === 0).toBe(true)
     })

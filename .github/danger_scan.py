@@ -42,6 +42,22 @@
 - **fail-closed**：无 ack / 非 owner / 评论读取失败 / 账本没改 / 哈希不符 ⇒ 照旧 BLOCK，
   且无 ack 时的行为与补通道前**逐字相同**。
 
+## 「修改 workflow 且新增**非内置** secrets 引用」的人工确认通道（`DANGER_ACK_SECRET`，#6418）
+
+同 `#4295` / `#4936` 的处境：规则是 BLOCK + 文案说「需人工审查」，而**没有任何记录确认的地方**
+⇒ 在 `enforce_admins=true` 的仓库里，「**合法地引入一枚新 secret**」在机制上**不可能合并**
+（本单的真实形态：把 auto-merge 的合并凭据从内置 token 换成 `AUTOMERGE_PAT` —— 不换则
+三条部署腿的主触发面永久失效，见 `.github/workflows/automerge.yml` 头部「合并凭据决定 push 面存亡」）。
+
+- marker：`/danger-ack new-secret <NAME>`（或 `... all` 一次确认本 PR 新增的全部名字），
+  **只有仓库 owner** 的评论算数（与另两个通道同源：同一次评论读取、同一个 `DANGER_OWNER`）。
+- `DANGER_ACK_SECRET`（逗号分隔的 secret **名**）/ `DANGER_ACK_SECRET_BY` / `DANGER_ACK_SECRET_URL`：
+  由 `--resolve-acks` 在运行期解析（**清单由脚本自己算**，不新增环境变量 —— 同迁移通道口径）。
+- **逐名比对**（不是「有 ack 就放行」）：该 workflow 本次**真正新增**的非内置 secret 名
+  ⊆ 已确认名字 ⇒ 降 WARN + 留痕；缺任何一个 ⇒ 照旧 BLOCK 并**点名缺哪个**。
+- **fail-closed**：无 ack / 非 owner / 评论读取失败 / 新增名集合取不到 ⇒ 照旧 BLOCK，
+  且无 ack 时的行为与补通道前**逐字相同**（`secrets.GITHUB_TOKEN` 豁免口径也一字未动）。
+
 用法（由 pr-check 的 danger-scan job 调用）：
     python3 .github/danger_scan.py
 输出：danger-scan-result.json（JSON）+ 控制台报告；存在 blocker 时 exit 1。
@@ -148,6 +164,12 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _MIGRATION_ACK_RE = re.compile(re.escape(MIGRATION_ACK_MARKER) + r"\s+([Vv]\d+|all)\b")
 _MIGRATION_VERSION_RE = re.compile(r"[Vv](\d+)")
 
+# ── 「新增非内置 secrets 引用」的确认 marker（#6418）────────────────────────────
+# 与前两个通道**同形**（同源 owner / 同源评论读取 / 同源 fail-closed），但放行判据是**逐名**比对：
+# 该 workflow 新增的非内置 secret 名集合 ⊆ owner 已确认的名字集合，才降级为 WARN。
+SECRET_ACK_MARKER = "/danger-ack new-secret"
+_SECRET_ACK_RE = re.compile(re.escape(SECRET_ACK_MARKER) + r"\s+([A-Za-z0-9_]+)\b")
+
 
 def migration_version(path_or_token):
     """文件名 / 版本 token → 规范化版本号（`V102`；`v102`、`V0102` 亦归一）。无版本 ⇒ None。"""
@@ -250,6 +272,87 @@ def migration_ack_env_lines(acked, owner, via_url):
         f"DANGER_ACK_MIGRATION_BY={owner if acked else ''}",
         f"DANGER_ACK_MIGRATION_URL={via_url if acked else ''}",
     ]
+
+
+def new_secret_names(secret_lines):
+    """从「真正新增的 secrets 引用行」里取**非内置** secret 名（去重 + 排序）。纯函数。
+
+    为什么按**名字**而不是按行：放行判据必须能回答「owner 确认的是不是**本 PR 真新增的那些**」
+    —— 按行比对会把同一枚 secret 的多处引用当成多个待确认项，也会让「确认了 A、实际新增 B」
+    这种错配蒙混过关（同 `verify_migration_acks()` 的逐版本口径）。
+    """
+    names = set()
+    for line in secret_lines or []:
+        names.update(SECRET_REF_RE.findall(strip_comment(line)))
+    return sorted(n for n in names if n != "GITHUB_TOKEN")
+
+
+def parse_secret_acks(comments, owner, added_names):
+    """从 PR 评论里解析「已确认可新增」的非内置 secret 名。纯函数。
+
+    规则（只有 owner 本人发的评论算数，与 `parse_delete_acks` / `parse_migration_acks` 同源）：
+      · `/danger-ack new-secret AUTOMERGE_PAT` —— 确认**该名**；
+      · `/danger-ack new-secret all`          —— 一次确认 `added_names` 的**全部**。
+
+    ⚠️ ack 只是「有人确认过」这一线索，**不是**放行依据：判定侧仍按**逐名**比对
+    （该 workflow 新增的名字 ⊆ 已确认集合）。
+
+    Args:
+        comments:    PR 评论对象列表（REST `/issues/{n}/comments` 形状）
+        owner:       确认人登录名；**只有**该账号的评论被采信
+        added_names: 本 PR **真正新增**的非内置 secret 名（`all` 展开为它们的集合）
+
+    Returns:
+        (acked_names: set[str], via_url: str)；无命中时返回 (set(), "")。
+    """
+    names = {str(n).strip() for n in (added_names or []) if str(n).strip()}
+    bodies, last_url = [], ""
+    for c in comments or []:
+        if not isinstance(c, dict):
+            continue
+        if ((c.get("user") or {}).get("login") or "") != owner or not owner:
+            continue
+        bodies.append(c.get("body") or "")
+        last_url = c.get("html_url") or last_url
+    if not bodies:
+        return set(), ""
+
+    tokens = {m.group(1) for b in bodies for m in _SECRET_ACK_RE.finditer(b)}
+    if any(t.lower() == "all" for t in tokens):
+        acked = set(names)
+    else:
+        acked = {t for t in tokens} & names
+    return acked, (last_url if acked else "")
+
+
+def secret_ack_env_lines(acked, owner, via_url):
+    """新增 secret ack → `>> $GITHUB_ENV` 行（与另两个通道同形；独立函数不动既有形状）。"""
+    return [
+        f"DANGER_ACK_SECRET={','.join(sorted(acked))}",
+        f"DANGER_ACK_SECRET_BY={owner if acked else ''}",
+        f"DANGER_ACK_SECRET_URL={via_url if acked else ''}",
+    ]
+
+
+def _new_secret_names_by_workflow():
+    """{workflow 路径: [非内置 secret 名]} —— 本次**真正新增**的那些；取证失败 ⇒ `{}`。
+
+    与迁移通道同口径：清单由脚本自己算（**不新增环境变量**），少一个
+    「调用方忘了传 ⇒ 静默永不确认」的失效面。`{}` 是 fail-closed 的安全侧
+    （没有名字 ⇒ `parse_secret_acks` 展开不出任何 ack ⇒ 照旧 BLOCK）。
+    """
+    changes = _workflow_changes()
+    if changes is None:
+        return {}
+    new_secrets = _workflow_new_secrets(changes)
+    if new_secrets is None:
+        return {}
+    out = {}
+    for path, lines in new_secrets.items():
+        names = new_secret_names([l for l in lines if "secrets.GITHUB_TOKEN" not in l])
+        if names:
+            out[path] = names
+    return out
 
 
 def verify_migration_acks(acked_versions, migration_changes, ledger_changed,
@@ -461,6 +564,12 @@ def resolve_acks_main():
     mig_acked, mig_via = parse_migration_acks(comments, owner, changed_migrations)
     for line in migration_ack_env_lines(mig_acked, owner, mig_via):
         print(line)
+    # 新增非内置 secrets 引用的确认通道（#6418）：清单同样由脚本自己算
+    new_names_by_wf = _new_secret_names_by_workflow()
+    all_new_names = sorted({n for names in new_names_by_wf.values() for n in names})
+    sec_acked, sec_via = parse_secret_acks(comments, owner, all_new_names)
+    for line in secret_ack_env_lines(sec_acked, owner, sec_via):
+        print(line)
     # **心跳**（§18.6「环境静默即缺陷」）：本通道的静默失效形态是「读不到评论 ⇒ 永远不放行」，
     # 命令行恒打「评论总数 / owner 评论数」——owner 评论数长期为 0 就能立刻看出通道没用上，
     # 而不是等到有人要重写迁移才发现（fail-closed 的反面是红得无声无息）。
@@ -472,6 +581,11 @@ def resolve_acks_main():
     print(
         f"── 迁移 ack：待确认={len(changed_migrations)} / 已确认={sorted(mig_acked) or '（无）'}"
         f" / 交叉校验（账本同批更新 + 哈希一致）在 scan 模式**重跑** ──",
+        file=sys.stderr,
+    )
+    print(
+        f"── 新增 secret ack：待确认={all_new_names or '（无）'} / 已确认={sorted(sec_acked) or '（无）'}"
+        f" / 逐名比对在 scan 模式**重跑** ──",
         file=sys.stderr,
     )
 
@@ -513,7 +627,8 @@ def _truly_new_secret_lines(added_lines, removed_lines):
 
 def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migration_changes, schema_changes, trusted_actor=False, delete_acked=frozenset(),
             migration_acked=frozenset(), migration_ack_by="", migration_ack_url="",
-            ledger_changed=False, ledger_entries=None, disk_hashes=None):
+            ledger_changed=False, ledger_entries=None, disk_hashes=None,
+            secret_acked=frozenset()):
     """纯函数：对变更清单做安全判定。返回 (blockers, warnings)。
 
     Args:
@@ -556,9 +671,28 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
             new_sec = wf_new_secrets.get(path, [])
             real_sec = [l for l in new_sec if "secrets.GITHUB_TOKEN" not in l]
             if real_sec:
-                blockers.append(
-                    f"{path} 新增 {len(real_sec)} 处非内置 secrets 引用 —— 需人工审查：{real_sec[0].strip()[:80]}"
-                )
+                names = new_secret_names(real_sec)
+                missing = [n for n in names if n not in secret_acked]
+                if names and not missing:
+                    # 通道（#6418）：该文件新增的**每一个**非内置 secret 都已被 owner 逐个确认
+                    # （逐名比对；`all` 在解析侧就展开成具体名字）⇒ 降 WARN + 留痕。
+                    warnings.append(
+                        f"{path} 新增 {len(real_sec)} 处非内置 secrets 引用（**已由维护者显式确认**："
+                        f"{', '.join(names)}）—— 见 danger-scan-result.json 的 acks"
+                    )
+                else:
+                    # 无 ack 时与补通道前**逐字相同**的那句开头保留，后面补「出口真可行动」（G3）。
+                    blocker = (
+                        f"{path} 新增 {len(real_sec)} 处非内置 secrets 引用 —— 需人工审查："
+                        f"{real_sec[0].strip()[:80]}"
+                    )
+                    if missing:
+                        blocker += (
+                            f"（未确认：{', '.join(missing)}；维护者评论 "
+                            f"`{SECRET_ACK_MARKER} {missing[0]}` 后重跑本检查，"
+                            f"或 `{SECRET_ACK_MARKER} all` 一次确认本 PR 新增的全部）"
+                        )
+                    blockers.append(blocker)
             else:
                 warnings.append(f"修改 workflow {path} —— 建议人工复核")
 
@@ -843,6 +977,13 @@ def main():
     )
     migration_ack_by = os.environ.get("DANGER_ACK_MIGRATION_BY", "").strip()
     migration_ack_url = os.environ.get("DANGER_ACK_MIGRATION_URL", "").strip()
+    # 新增非内置 secret 引用的确认通道（#6418）：默认空集合 ⇒ 照旧 BLOCK（fail-closed）。
+    # ⚠️ 与迁移通道同口径：环境变量只是「有人 ack 过」的线索，**放行判据**在 analyze 里按逐名比对重跑。
+    secret_acked = frozenset(
+        n.strip() for n in os.environ.get("DANGER_ACK_SECRET", "").split(",") if n.strip()
+    )
+    secret_ack_by = os.environ.get("DANGER_ACK_SECRET_BY", "").strip()
+    secret_ack_url = os.environ.get("DANGER_ACK_SECRET_URL", "").strip()
     ledger_changed = any(p == LEDGER_PATH and s[0] == "M" for s, p in all_changes)
     ledger_entries = _read_ledger_entries() if migration_acked else None
     disk_hashes = {}
@@ -865,6 +1006,7 @@ def main():
         migration_acked=migration_acked, migration_ack_by=migration_ack_by,
         migration_ack_url=migration_ack_url, ledger_changed=ledger_changed,
         ledger_entries=ledger_entries, disk_hashes=disk_hashes,
+        secret_acked=secret_acked,
     )
     blockers = blockers + a_blockers
 
@@ -879,6 +1021,14 @@ def main():
         {"version": v, "path": path_by_version.get(v, ""),
          "by": migration_ack_by or "(unknown)", "via": migration_ack_url or "(unknown)"}
         for v in sorted(migration_granted)
+    ]
+    # 非内置 secret 新增的确认（#6418）：逐条留痕（谁确认了哪个 secret、凭据在哪）——
+    # 只登记**真新增且真被确认**的名字（「ack 了但没新增」不进册，同迁移通道口径）。
+    acks += [
+        {"secret": n, "path": path,
+         "by": secret_ack_by or "(unknown)", "via": secret_ack_url or "(unknown)"}
+        for path, names in sorted(_new_secret_names_by_workflow().items())
+        for n in names if n in secret_acked
     ]
 
     result = {

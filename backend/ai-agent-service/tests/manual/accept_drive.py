@@ -1,6 +1,6 @@
 """真实链路验收驱动器 — 复现线上 sess_806703a2dcca4059 崩溃场景
 
-场景（X-Debug-Role: customer → 小布）：
+场景（X-Debug-Role: customer → 元元）：
   T1: 模糊文本 "帮我看看"          → 期望触发澄清卡/交互 → 写入 pending_interact_skill
   T2: 带图消息 "就是这种" + 图片    → 修复前崩溃（AttributeError list.strip）；修复后正常 vision 链路
 

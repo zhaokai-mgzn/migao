@@ -1,5 +1,5 @@
 # case_ids: MC-021
-"""**B 端米宝写面边界**的机械判据（issue #5247 只读化 → issue #5303 A 档可逆写补回）。
+"""**B 端黄金策写面边界**的机械判据（issue #5247 只读化 → issue #5303 A 档可逆写补回）。
 
 ## 裁定一（2026-09-23 / issue #5247）
 
@@ -8,7 +8,7 @@
 
 配套裁定：写工具处置 = **收窄为只读工具**（保留工具名与只读 action、`read_only=True`、
 权限码改读码、删写 action）；**员工与岗位保留只读**；**系统设置不进 B 端对话面**；
-C 端（小布）**零改动**。
+C 端（元元）**零改动**。
 
 ## 裁定二（2026-09-24 / issue #5303，**A 档可逆写补回** —— 本判据的第二次改判）
 
@@ -33,7 +33,7 @@ C 端（小布）**零改动**。
 |---|---|---|
 | **S1 工具声明** | `backend/ai-agent-service/app/tools/*.py` 的 `read_only` / `VALID_ACTIONS` | 把某个 `read_only=True` 改回 `False`，或往 `VALID_ACTIONS` 里塞回写 action |
 | **S2 skill 绑定** | `app/graph/skills/*.py` 的 `*_TOOLS` + `app/agents/agents/mibao.py` 的 `skill_names` | 把 `order_create` / `product_manage` / `validate_input` 重新绑回任一 B 端 skill（= 写能力静默复活） |
-| **S3 能力文案** | `mibao.py` 的 `greeting` / `direct_replies.capabilities` | 文案承诺已下线能力（= **能力谎报**），或反过来**漏报**已补回的能力（商家不知道能找米宝改价） |
+| **S3 能力文案** | `mibao.py` 的 `greeting` / `direct_replies.capabilities` | 文案承诺已下线能力（= **能力谎报**），或反过来**漏报**已补回的能力（商家不知道能找黄金策改价） |
 
 ## 判据（每条都有**注入式红证**，见文件末尾 `test_every_judgement_can_go_red`）
 
@@ -54,7 +54,7 @@ C 端（小布）**零改动**。
    —— 「只解绑 B 端，绝不删除、不改 C 端行为」是用户裁定的硬边界。
 6. **A 档写能力「文案 ↔ 绑定」双向一致**（#5303 新增）：文案承诺改价 ⇒ 两条工具必须真的绑在
    B 端；工具绑在 B 端 ⇒ 文案必须真的提到改价（**反向能力谎报**同样是缺陷）。
-7. **声明了米宝 persona 的每个 skill**（可达 + **已解绑的孤儿**）绑的工具必须
+7. **声明了黄金策 persona 的每个 skill**（可达 + **已解绑的孤儿**）绑的工具必须
    **∈ A 档白名单 ∪ 只读**（#5302 收口新增，见下）。
 
 ## 🔴 判据 7 的立案理由（#5302）：判据 1~3 的射程是「**可达**」，而 #5247 的处置里有「解绑」
@@ -127,10 +127,25 @@ A_TIER_REVERSIBLE_WRITES: frozenset = frozenset({
     "product_update",        # 商品级统一定价（PATCH /api/admin/agent/products/{id} → basePrice）
     "sku_update",            # 单规格调价（PATCH …/skus/price）
     "product_batch_update",  # 批量改价 / 批量上下架 + revert 撤销（issue #5314，# 见上）
+    # 定时任务（用户「预约」，issue #6486 包 2；用户 2026-10-07 裁定，留痕 = agent-write-boundary §五）：
+    # 建 / 取消「到点提醒」待办。A 档四条逐条对齐：可逆（cancel 撤销）/ 幂等（服务端 dedup_key）/
+    # 非对外承诺（只提醒**自己**，不发给客户）/ 不绕审核门禁（不涉钱、不涉状态跃迁）。
+    # 🔴 到点只发**站内通知**，不执行业务写（L1 提醒型边界 —— 定时执行取不到「点确认卡」那个门禁）。
+    "scheduled_task_manage",
 })
 
-#: A 档工具**必须**绑在的 skill（补回域唯一；漂移到别的域即红 —— 判据 1）
-A_TIER_SKILL = "product"
+#: A 档工具 → **必须**绑在的 skill（补回域**逐条**钉住；漂移到别的域即红 —— 判据 1）。
+#:
+#: 2026-10-07（issue #6486 包 2）由单一常量 `A_TIER_SKILL = "product"` 改成逐工具映射：
+#: 定时提醒域的补回域是 `reminder`、与改价域的 `product` 不同 —— 单一常量**结构性表达不了**
+#: 「每把工具各有其域」，继续用它只会逼出「要么放宽成任意域、要么永远进不了白名单」的假二选一。
+#: 台账**只许显式增删**：新增 A 档工具必须在此处写明它的域（未登记 ⇒ 判据 1 当场红，不静默放行）。
+A_TIER_SKILLS: dict[str, str] = {
+    "product_update": "product",
+    "sku_update": "product",
+    "product_batch_update": "product",
+    "scheduled_task_manage": "reminder",
+}
 
 #: 写 action **闭词表**（判据 3 的兜底）：action 名命中即视为写能力。
 #: 口径 = 「动词表达『改数据』」，与 `read_only_actions` 的声明**无关** ——
@@ -418,7 +433,8 @@ def problems_union_is_read_only(w: World) -> list[str]:
     """判据 1：B 端可达工具的并集里，`read_only != True` 的只能是**白名单**成员（含悬空绑定）。
 
     #5303：白名单 = `A_TIER_REVERSIBLE_WRITES`（两条改价工具）。白名单成员另加两道：
-    必须绑在 `A_TIER_SKILL`（补回域唯一）且必须带 `requires_confirmation`（写操作要有确认门禁）——
+    必须绑在 `A_TIER_SKILLS` 里**为它登记的域**（补回域逐条钉住；2026-10-07 issue #6486 包 2 起
+    由单一常量改成逐工具映射）且必须带 `requires_confirmation`（写操作要有确认门禁）——
     否则"白名单"就成了任人往里塞写工具的橡皮图章。
     """
     out: list[str] = []
@@ -435,19 +451,25 @@ def problems_union_is_read_only(w: World) -> list[str]:
                 "B 端写能力复活（用户裁定：除 A 档可逆写白名单外，创建/更新能力全部从 B 端移除）"
             )
             continue
-        if name not in w.skills.get(A_TIER_SKILL, ()):
+        expected_skill = A_TIER_SKILLS.get(name)
+        if expected_skill is None:
             out.append(
-                f"`{name}` 属 A 档可逆写白名单，却不在 `{A_TIER_SKILL}` skill 的工具集里 ⇒ "
-                "补回域漂移（本单只补 product 域的改价）"
+                f"`{name}` 在 `A_TIER_REVERSIBLE_WRITES` 里，但 `A_TIER_SKILLS` 没登记它该绑哪个域 ⇒ "
+                "两份台账不同步（新增 A 档工具必须同时写明它的补回域）"
+            )
+        elif name not in w.skills.get(expected_skill, ()):
+            out.append(
+                f"`{name}` 属 A 档可逆写白名单，却不在 `{expected_skill}` skill 的工具集里 ⇒ "
+                "补回域漂移（`A_TIER_SKILLS` 逐条钉住每把工具的域）"
             )
         else:
-            # 「**仅**绑在 product」：多绑一个 B 端域 = 补回范围悄悄超出本单裁定
+            # 「**仅**绑在该域」：多绑一个 B 端域 = 补回范围悄悄超出本单裁定
             strays = sorted(s for s in w.mibao_skills
-                            if s != A_TIER_SKILL and name in w.skills.get(s, ()))
+                            if s != expected_skill and name in w.skills.get(s, ()))
             if strays:
                 out.append(
                     f"`{name}` 属 A 档可逆写白名单，却还绑在其它 B 端 skill {strays} ⇒ "
-                    f"补回范围超界（本单只在 `{A_TIER_SKILL}` 域补回这两条）"
+                    f"补回范围超界（本单只在 `{expected_skill}` 域补回）"
                 )
         if not decl.get("requires_confirmation"):
             out.append(
@@ -507,7 +529,7 @@ def problems_action_sets(w: World) -> list[str]:
 
 
 #: 句级否定词（**与仓内同类守卫同口径**）：这些句子是「教用户别这么期待」，不是能力承诺。
-#: 不做句级过滤会把「⚠️ 下单/建品/改价等操作米宝不做」这类**正确的如实告知**判成谎报（假红）。
+#: 不做句级过滤会把「⚠️ 下单/建品/改价等操作黄金策不做」这类**正确的如实告知**判成谎报（假红）。
 #: ⚠️ 教训：本判据回归时第一版就是全文扫描 ⇒ 立刻误红了自家 capabilities 的否定句。
 CAPABILITY_NEGATIONS = (
     "不做", "不提供", "不在能力内", "不得", "不能", "无法", "禁止", "切勿", "只读", "不支持",
@@ -537,32 +559,45 @@ def problems_capability_claims(w: World) -> list[str]:
     return out
 
 
-#: A 档写能力在能力文案里的**承诺词**（判据 6 的扫描面）。
+#: A 档写能力在能力文案里的**承诺词**（判据 6 的扫描面）—— **按域**。
 #: 与判据 4 的闭词表互补：判据 4 管"别承诺做不到的"，判据 6 管"做到了别不吭声"。
-A_TIER_CLAIM_WORDS = ("改价", "调价")
+#: 2026-10-07（issue #6486 包 2）：随白名单进入第二个域改成按域映射 —— 单一名单在多域下
+#: 会让判据 6 的粗粒度判断失效（只解绑一个域时「全量 bound」仍非空 ⇒ 该域的漂移静默逃逸）。
+A_TIER_CLAIM_WORDS: dict[str, tuple[str, ...]] = {
+    "product": ("改价", "调价"),
+    "reminder": ("提醒",),
+}
 
 
 def problems_a_tier_capability_parity(w: World) -> list[str]:
-    """判据 6（#5303 新增）：A 档写能力的**文案 ↔ 绑定**双向一致（两侧都现算，不抄清单）。"""
+    """判据 6（#5303 新增）：A 档写能力的**文案 ↔ 绑定**双向一致（两侧都现算，不抄清单）。
+
+    2026-10-07（issue #6486 包 2）：判定**逐域**进行 —— 白名单进入第二个域（reminder）后，
+    「全量 bound ↔ 全量 claimed」的粗粒度判断会让「只解绑一个域」的漂移静默逃逸
+    （product 工具还绑着 ⇒ bound 非空 ⇒ 该域谎报不红）。
+    """
     out: list[str] = []
-    bound = sorted(t for t in A_TIER_REVERSIBLE_WRITES if t in w.b_end_tools)
-    claimed: list[str] = []
-    for key, text in sorted(w.capability_text.items()):
-        for seg in _claimed_sentences(text):
-            hit = next((w_ for w_ in A_TIER_CLAIM_WORDS if w_ in seg), None)
-            if hit:
-                claimed.append(f"{key}「{hit}」")
-    if claimed and not bound:
-        out.append(
-            f"能力文案承诺了改价（{', '.join(claimed)}），但 A 档工具一条都不在 B 端工具并集里 "
-            "⇒ **能力谎报**（说得到做不到）"
-        )
-    if bound and not claimed:
-        out.append(
-            f"A 档改价工具 `{'/'.join(bound)}` 已绑回 B 端，但 `mibao.py` 的 greeting / "
-            "capabilities 一个字都没提改价 ⇒ **反向能力谎报**（商家不知道能找米宝改价；"
-            "补回了却不说 = 白补）"
-        )
+    for skill, claim_words in sorted(A_TIER_CLAIM_WORDS.items()):
+        tools_in_skill = sorted(t for t, s_ in A_TIER_SKILLS.items() if s_ == skill)
+        bound = sorted(t for t in tools_in_skill if t in w.b_end_tools)
+        claimed: list[str] = []
+        for key, text in sorted(w.capability_text.items()):
+            for seg in _claimed_sentences(text):
+                hit = next((w_ for w_ in claim_words if w_ in seg), None)
+                if hit:
+                    claimed.append(f"{key}「{hit}」")
+        words = "/".join(claim_words)
+        if claimed and not bound:
+            out.append(
+                f"能力文案承诺了{words}（{', '.join(claimed)}），但 `{skill}` 域的 A 档工具"
+                "一条都不在 B 端工具并集里 ⇒ **能力谎报**（说得到做不到）"
+            )
+        if bound and not claimed:
+            out.append(
+                f"A 档工具 `{'/'.join(bound)}` 已绑回 B 端，但 `mibao.py` 的 greeting / "
+                f"capabilities 一个字都没提{words} ⇒ **反向能力谎报**"
+                "（商家不知道能找黄金策用这个能力；补回了却不说 = 白补）"
+            )
     return out
 
 
@@ -582,7 +617,7 @@ def problems_shared_tools_intact(w: World) -> list[str]:
 
 
 def problems_declared_persona_tools_are_controlled(w: World) -> list[str]:
-    """判据 7（#5302）：**声明了米宝 persona 的每个 skill**（含已解绑的孤儿）绑的工具
+    """判据 7（#5302）：**声明了黄金策 persona 的每个 skill**（含已解绑的孤儿）绑的工具
     必须 **∈ A 档白名单 ∪ 只读**。
 
     与判据 1 的唯一差别 = **射程**：判据 1 取「可达并集」（`skill_names` ∪ fallback），
@@ -606,6 +641,12 @@ def problems_declared_persona_tools_are_controlled(w: World) -> list[str]:
                 "#5247/#5302 的裁定是**收窄为只读**（或进 A 档白名单），不是「解绑即免责」"
                 "（#5302 的整域漏网形态）"
             )
+        # 🔴 A 档白名单成员**有意**暴露写 action（补回域由判据 1 的 `A_TIER_SKILLS` 逐条钉住）。
+        # 不豁免会让白名单在本判据里**结构性不可能通过**：写工具的 action 名必然命中闭词表
+        # （`create` / `cancel` 就在表里）—— 那等于「要么别补回，要么把闭词表拆了」，两个出口都坏。
+        # 闭词表要拦的是「**暗中**把写 action 塞进只读工具」（洗白形态），不是已具名裁定过的补回。
+        if name in A_TIER_REVERSIBLE_WRITES:
+            continue
         hits = sorted(set(decl["valid_actions"] or []) & WRITE_ACTION_WORDS)
         if hits:
             out.append(
@@ -728,13 +769,23 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
         # ── #5303 新增（判据 6）：A 档能力「文案 ↔ 绑定」双向 ──
         # ⚠️ #5314：解绑面**从白名单现算**（原来逐字写死两条 ⇒ 白名单扩容后注入不再生效，
         #    红证会退化成"判据没有变红"）。口径不变：全部 A 档工具被解绑 + 文案仍承诺改价。
-        "⑥ A 档工具**全部**被解绑、文案仍承诺改价 ⇒ 判据 6 红（谎报方向）": (
-            "skill:product_skill.py",
-            lambda s: functools.reduce(
-                lambda acc, tool: _unbind_from_c_skill(acc, tool),
-                sorted(A_TIER_REVERSIBLE_WRITES), s),
-            problems_a_tier_capability_parity,
-        ),
+        # ⚠️ 2026-10-07（issue #6486 包 2）：白名单进入**第二个域**（reminder）后，
+        #    「对单个 skill 文件移除全部白名单成员」不再成立（`product_skill.py` 里没有
+        #    `scheduled_task_manage` ⇒ 锚点失配）⇒ 改为**按域逐条**生成：一条注入对应它自己域的文件。
+        #    因为判据 6 已逐域判定，**单域解绑也真能**让它红（不再是「全解绑才红」）。
+        **{
+            f"⑥ 解绑 {_sk} 域**全部** A 档工具（文案仍承诺）⇒ 判据 6 红（谎报方向）": (
+                f"skill:{_sk}_skill.py",
+                (lambda _tools: (
+                    lambda s: functools.reduce(
+                        lambda acc, t: _unbind_from_c_skill(acc, t), _tools, s)
+                ))(sorted(_t for _t, _s in A_TIER_SKILLS.items() if _s == _sk)),
+                problems_a_tier_capability_parity,
+            )
+            # 粒度 = **整域**（不是逐工具）：判据 6 逐域判定，域内还剩别的 A 档工具时
+            # 「该域已解绑」这个事实不成立 ⇒ 逐工具注入中会有一半永远不红（假空断言）。
+            for _sk in sorted(set(A_TIER_SKILLS.values()))
+        },
         "⑥b 文案抹掉改价承诺、工具仍绑在 B 端 ⇒ 判据 6 红（漏报方向）": (
             "agent:mibao",
             lambda s: re.sub(r"改价|调价", "改款", s),

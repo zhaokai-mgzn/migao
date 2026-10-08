@@ -161,7 +161,7 @@ CI 只下发源码与驱动参数，`docker build` 的产物就地使用、不�
 - 规避：`_is_test_file` 只认「代码扩展名 + 文件名含 test/spec」，conftest/runner/生成物排除。
 
 ### 14. 行为用例期望 vs 真实设计流程
-- 现象：smoke 持续失败，其实是用例写错了，不是米宝缺陷。
+- 现象：smoke 持续失败，其实是用例写错了，不是黄金策缺陷。
 - 根因：OR-010 设计是「澄清+确认」多轮，用例写成单轮直下单；改价格设计走 `product_update`，用例却期望 `product_manage(action=update)`。
 - 规避：**用例按 `SKILL-*.md`/`EXAMPLES-*.md` 校准**，先看技能文档再定 expectations，别拍脑袋。
 
@@ -195,7 +195,7 @@ CI 只下发源码与驱动参数，`docker build` 的产物就地使用、不�
 
 ### 1. RSA 私钥被 gitignore → 镜像无 key → 静默降级 HS256 →「alg not allowed」
 
-- 现象：米宝「新建会话」（`POST /api/chat/sessions`）返回 `401 TOKEN_INVALID: The specified alg value is not allowed`。
+- 现象：黄金策「新建会话」（`POST /api/chat/sessions`）返回 `401 TOKEN_INVALID: The specified alg value is not allowed`。
 - 根因：`backend/admin-api/src/main/resources/rsa/private.pem` 被 `.gitignore`（`**/rsa/private.pem`）排除、**从未进仓库**，因此也没进 Docker 镜像。admin-api 生产容器里没有 RSA 私钥，`JwtTokenProvider.init()` 静默回退 HS256（每次启动随机密钥）→ 签出 `alg=HS256` 的 token；而 ai-agent-service 的 `verify_jwt_token` 写死 `algorithms=["RS256"]` → 拒绝为 TOKEN_INVALID。
 - 修复（PR 走研发闭环）：`JwtTokenProvider` 改为 **RS256-only + fail-fast**（密钥缺失抛 `IllegalStateException`，不再静默降级），并让私钥/公钥**各自独立加载**（`JWT_PRIVATE_KEY_PEM` 单独即可生效，公钥走 classpath）。
 - 规避/必做：生产 `.env.admin-api` 必须注入 `JWT_PRIVATE_KEY_PEM`（PEM 内容，与 ai-agent 的 `JWT_PUBLIC_KEY` 是同一对；本地 gitignored 的 `rsa/private.pem` 即匹配的私钥）。**没配私钥就合入部署 → fail-fast 会让 admin-api 启动即崩**（比「聊天坏」更糟）。
