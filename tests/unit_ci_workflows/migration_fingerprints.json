@@ -141,10 +141,11 @@
     "V143__add_stocktake_to_batch_consumptions.sql": "sha256:6b9366b393e24e5ec262969af344eddcc31ed106385feb3eb91b82895133cfea",
     "V144__add_proactive_status_to_daily_briefings.sql": "sha256:02f7bd92a8e08dd8f2254ef7accce5d858e0b6d7d159c8918fefc8c4f65b09ad",
     "V145__backfill_position_permissions.sql": "sha256:59d35b3cd3045c60c35aede7f9c2d94e9b748adf3de07011e933c6263f8314ea",
-    "schema.sql": "sha256:58b5e9bc31457f79d82297558318d8093758597b04815da6ae64586409955a15",
     "V146__add_inventory_stock_to_agent_batch_type.sql": "sha256:ba652d2346328f5c1affe3f896566ee14297bb8ebccbda09b945263f4dd2739d",
     "V147__add_shipping_method_to_order_logistics.sql": "sha256:4be7bacd05257c6415f77a22f83ef34fba149cfe42acc28b9d5a12eb64a19d22",
     "V148__add_order_shipped_at.sql": "sha256:8a7c4470a5328625b06b45d18fe3931bd7f09ea085ed820bfc7aeaac389adb31",
-    "V149__create_scheduled_tasks.sql": "sha256:ffbcc65ebfd432d2aae3e44ef9a6ebfafa60d0d85a60ed72622fb46b18dfb22a"
+    "V149__create_scheduled_tasks.sql": "sha256:ffbcc65ebfd432d2aae3e44ef9a6ebfafa60d0d85a60ed72622fb46b18dfb22a",
+    "V150__rename_brand_display_names.sql": "sha256:2d96c84d786dcbb35d0718d3ae19dfd36226e3cada4bde9736baf447197353a8",
+    "schema.sql": "sha256:58b5e9bc31457f79d82297558318d8093758597b04815da6ae64586409955a15"
   }
 }

@@ -41,4 +41,9 @@ UPDATE permissions
  WHERE code = 'agent:chat'
    AND (name = '米宝对话' OR description LIKE '唤出米宝对话%');
 
+-- ③ 新租户的**列默认值**：`db/init/schema.sql` 的 `DEFAULT '小布'` 属**已发布内容**
+--    （`tests/unit_ci_workflows/migration_fingerprints.json` 按 sha256 冻结 ⇒ 改一个字符即红），
+--    故不回改 schema.sql，改由本迁移把列默认值推到 '元元' —— 存量库与全新库都生效（init 先跑、迁移随后）。
+ALTER TABLE tenant_ai_configs ALTER COLUMN bot_name SET DEFAULT '元元';
+
 COMMIT;

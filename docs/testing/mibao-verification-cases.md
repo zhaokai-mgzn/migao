@@ -346,7 +346,7 @@
 数据: 判据 3·角色白名单：黄金策容许 admin / agent 而**不许** customer；元元只容许 customer 而不许 admin。执行点 = 同文件 `test_mibao_roles` / `test_xiaobu_roles`
 数据: 判据 4·工厂与默认值：不传参的 `get_agent()` 默认返回元元（向后兼容）、两种 agent_type 返回**不同实例**、传入自定义 registry 时不再建默认 registry。执行点 = `TestGetAgentFactory` 四条
 数据: 判据 5·双类型建图 + 兼容入口：`build_agent_graph('mibao' / 'xiaobu')` 与 `build_customer_service_graph()` 都能建出图。执行点 = `TestGraphBuilderDualType` 三条
-数据: 🔴 红证（可复算）：把 `backend/ai-agent-service/app/agents/agents/{xiaobu,mibao}.py` 的 `display_name` 换回旧称呼 ⇒ 判据 1 与 `TestGreetings` 当场红；复算命令 = 在 backend/ai-agent-service 下 `pytest tests/test_dual_agent.py -q`
+数据: 🔴 红证（可复算）：把 `backend/ai-agent-service/app/agents/agents/{xiaobu,mibao}.py` 的 `display_name` 换回旧称呼 ⇒ 判据 1 与 `TestGreetings` 当场红；复算命令 = 在仓库根跑 `pytest backend/ai-agent-service/tests/test_dual_agent.py -q`
 前置: 前置 = 双 Agent 声明模块与 skill 注册表可导入（`app.agents.agent_config` / `app.graph.skills.skill_registry`）；前置由测试自身的 autouse fixture（重置全局实例与注册表）持有 —— 导入失败即直接红，不表现成「agent 不干活」
 跳过: [backend-contract] AgentConfig / 工厂 / 建图的**零 LLM** 单元契约：判定在 dataclass 与图构建层（由 ai-agent-service pytest 执行），不进 agent-eval 冒烟
 ```

@@ -100,7 +100,7 @@
       "finance:create": "财务操作",
       "agent:session": "会话监控",
       "agent:session:manage": "会话操作",
-      "agent:chat": "黄金策对话",
+      "agent:chat": "米宝对话",
       "employee:list": "员工列表",
       "employee:create": "新增员工",
       "system:view": "岗位权限查看",
