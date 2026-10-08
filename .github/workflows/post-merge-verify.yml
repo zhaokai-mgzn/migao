@@ -47,6 +47,26 @@ name: Post-Merge Verify (main 侧守护腿)
 # 只报**与负载无关**的量：变更文件数 / 命中判据数 / 跑判据数 / 跳过数 / 未命中数 + 各自原因。
 # `timeout-minutes` 只是**上限**，不参与任何判定；读数里没有、也不许有时长字段（判据钉住）。
 
+# ── 上限必须**按本腿自己的工作量上界**算出来（issue #6312，2026-10-08）──────────────
+# 病（现取读数，不是估算）：本腿的窗口起点 = 「最近一次**成功** run 的 headSha」，而水位
+# **取不到就一直退回 `LOOKBACK=40`** ⇒ 本腿从未成功 ⇒ **每一轮都是 40 个提交的窗口**。实测该窗口
+# 命中 **810 个变更文件 / 296 条判据 / 5652 条用例**（复算：
+#   `python3 scripts/post_merge_verify.py --list-only --lookback 40 --json /tmp/r.json`）
+# —— 即 `tests/unit_ci_workflows` 的**绝大部分**（现取 371 个判据文件里 296 个）⇒ 这是个**正反馈**：
+# 越不成功 ⇒ 窗口越宽 ⇒ 越跑不完 ⇒ 越不成功。
+#   实测掐死点（run 37722027828 判定步日志）：判定步 03:18:09 起、末行为 03:18:24（in-leg 复现那一行），
+#   之后**静默 658s**，下一条即 `##[error]Process completed with exit code 143`（= **SIGTERM**）03:29:22
+#   ⇒ 本 run 结论 `failure`、`updatedAt - createdAt` = 710s。
+#   ⛔ 本 workflow 里**没有**任何 step 级 `timeout`；`scripts/post_merge_verify.py` 里也**没有**任何
+#     `timeout=` 包装（两处都逐字复核过）⇒ 掐死它的唯一**声明方**就是下面这个 job `timeout-minutes`。
+# ⇒ 修法 = **打断正反馈**（不是把判据放宽、也不是把窗口砍成"看着好看"）：
+#    ① 判据**并行跑**（`-n 4`，与 `pr-check.yml` 的 `ci workflow helper unit tests` 逐字同款
+#       —— 本仓只装 `pytest-xdist`，**不新增任何依赖**）；
+#    ② 上限按**工作量上界**取：本腿在**一个** runner 上要干 `pr-check` **两片**的活
+#       （那两个 matrix 分片各自 `timeout-minutes: 20`）⇒ 上界 = 两片上限之和；取整到 **45** 分。
+# 🔴 **不许把这行改回 15 当"省成本"**：15 是本条的**病**（掐死点），不是成本成绩单 ——
+#    判据 = `tests/unit_ci_workflows/test_post_merge_verify_leg.py` 的「上限族」（改回 15 ⇒ 当场红）。
+
 # ── 本腿**不翻 required**（§2.2 的两条前置）────────────────────────────────────
 # ① 它**没有** `pull_request` 的稳定判定面（判定基准是 main 的当前状态，PR 事件只是触发时机）
 #    ⇒ 翻 required 会让所有 PR 永久 `BLOCKED`（"Expected — waiting for status to be reported"）；
@@ -82,6 +102,14 @@ permissions:
                          # ⇒ 缺这条 = **注定 403**（报文成「列 open PR 失败」）⇒ 本腿跑它必红
   issues: write          # 判红出口：开/更 P1 值班 issue（缺它 = 钩子自己崩溃、红而不留痕，issue #3834）
 
+env:
+  # 🔴 issue #6312：**上限的读数源** —— 判定本体按它自证「上限 ≥ 工作量上界」。
+  # ⚠️ 这里**只能**写字面量（不能写 `${{ … }}` 表达式）：`timeout-minutes` 是全仓成本台账的**读数字段**
+  #    （`tests/unit_ci_workflows/ci_cost_ledger.json` 的 `hard_kill_seconds` == 现取 `timeout-minutes × 60`，
+  #    由 `tests/unit_ci_workflows/test_ci_cost_ledger.py` 逐条复比）⇒ 表达式会让那套判据**取不到整数**。
+  #    本值必须**逐字等于** job 的 `timeout-minutes`（两边分叉 ⇒ 判据当场红；这两个数字就写在隔壁几行）。
+  MIGAO_JOB_TIMEOUT_MINUTES: '45'
+
 concurrency:
   # **不取消**：每次触发都要算（水位只在成功时前进 ⇒ 取消不会丢覆盖，但排队比互相取消更好读）
   group: post-merge-verify-${{ github.ref }}
@@ -91,8 +119,17 @@ jobs:
   verify:
     name: Post-Merge Verify (定向跑判据面)
     runs-on: ubuntu-latest
-    # 上限（**不是判据**）：最坏情形 = 水位取不到退回 40 个提交的窗口（含真库判据 ~127s）
-    timeout-minutes: 15
+    # 上限（**不是判据**）：最坏情形 = 水位取不到退回 40 个提交的窗口，而该窗口实测命中
+    # `tests/unit_ci_workflows` 的**绝大部分**（现取 371 个判据文件里 296 个）⇒ 本腿在**一个** runner 上
+    # 要干 `pr-check.yml` **两片**的活（`ci workflow helper unit tests` 两个 matrix 分片各自
+    # `timeout-minutes: 20`）⇒ 上界 = 两片上限之和；这里取 **45**（还含 checkout / 装依赖 /
+    # 漂移兜底 / 出结论的开销）。理由与实测读数见上面「上限必须按本腿自己的工作量上界算出来」段。
+    # ⛔ 这不是"抬上限当成本已治理"（`pr-check.yml` 那条 #5365 的口径说的是**别把抬上限当结论**）：
+    #    本条拆的是一个**确定的假红**（143 / SIGTERM ⇒ 无结论），与 #5534 追认 12 → 20 同族。
+    # 🔴 取值必须与上面 `env.MIGAO_JOB_TIMEOUT_MINUTES` **逐字相同**（判定本体按那个值自证上限够用；
+    #    两边分叉 ⇒ `tests/unit_ci_workflows/test_post_merge_verify_leg.py` 的上限族当场红）。
+    #    ⚠️ 这里**只能**写字面整数：本字段是全仓成本台账的读数字段（理由见 `env:` 段的说明）。
+    timeout-minutes: 45
     steps:
       - name: Checkout main（判定基准 = main 的当前状态，**不是** PR 的 head）
         uses: actions/checkout@v7
@@ -120,15 +157,20 @@ jobs:
       # 修法 = **诚实声明依赖**（装 httpx），而不是让判据继续吃别的判据的 `sys.modules` 注入；
       # 类级锁 = `tests/unit_ci_workflows/test_sys_modules_cross_file_independence.py`
       # （面内判据不得依赖**别的**判据往 `sys.modules` 注入模块）。
-      - name: Install deps（判据面要 pytest + pyyaml + httpx；**同一解释器装 + 用它跑**，issue #5434 / #5575）
+      - name: Install deps（判据面要 pytest + pyyaml + httpx + pytest-xdist；**同一解释器装 + 用它跑**，issue #5434 / #5575 / #6312）
         run: |
           set -euo pipefail
           PY="$(command -v python3)"
           echo "解释器 = $PY"
-          "$PY" -m pip install -q --disable-pip-version-check pytest pyyaml httpx
+          # ⚠️ issue #6312（2026-10-08）：`pytest-xdist` 是**本腿自己现在就要用**的（判定步按 §23 G8 的
+          # 口径并行跑判据面）⇒ 必须在这里诚实装出来 —— 与本步既有的两条同因（装的东西必须与跑的东西
+          # 一致：解释器 #5434 / 模块 #5575）。命令口径与 `pr-check.yml` 的 `ci workflow helper unit tests`
+          # 同源（它同样 `pip install pytest pytest-xdist pyyaml`），不新增第三种装法。
+          "$PY" -m pip install -q --disable-pip-version-check pytest pyyaml httpx pytest-xdist
           "$PY" - <<'PYEOF'
-          import sys, pytest, yaml, httpx
-          print(f"✅ pytest {pytest.__version__} / pyyaml {yaml.__version__} / httpx {httpx.__version__} @ {sys.executable}")
+          import sys, pytest, yaml, httpx, xdist
+          print(f"✅ pytest {pytest.__version__} / pyyaml {yaml.__version__} / httpx {httpx.__version__} "
+                f"/ pytest-xdist {xdist.__version__} @ {sys.executable}")
           PYEOF
 
           echo "MIGAO_PY=$PY" >> "$GITHUB_ENV"
@@ -229,6 +271,9 @@ jobs:
           EVENT: ${{ github.event_name }}
           INPUT_BASE: ${{ inputs.base }}
           INPUT_LOOKBACK: ${{ inputs.lookback }}
+          # issue #6312：判定本体要拿到「本 job 声明的上限」才能自证「上限 ≥ 工作量上界」。
+          # 值取自 **workflow 级** `env.MIGAO_JOB_TIMEOUT_MINUTES`（与 job `timeout-minutes` 同源；
+          # 缺这个变量 = 说明读数缺失 ⇒ 脚本出声但不判红）。
         run: |
           set -uo pipefail
           LOOKBACK="${INPUT_LOOKBACK:-40}"
@@ -254,7 +299,14 @@ jobs:
             echo "::error::$MIGAO_PY 里没有 pytest/pyyaml —— Install deps 步与判定步用了不同解释器（#5434 的形态）"
             exit 1
           fi
-          echo "判定解释器 = $MIGAO_PY"
+          # ⚠️ issue #6312：并行化是本腿**跑得完**的前提（判定面在 40 个提交的窗口里几乎全中）——
+          # 这里缺 `pytest-xdist` 会让判定**退回串行**（本脚本里那条降级路径）⇒ 本腿又会撞上限。
+          # 所以**响亮地**失败并指到根因，而不是让它悄悄慢回去。
+          if ! "$MIGAO_PY" -c "import xdist" 2>/dev/null; then
+            echo "::error::$MIGAO_PY 里没有 pytest-xdist —— 判定面会退回串行（#6312 的形态：撞上限被 SIGTERM）"
+            exit 1
+          fi
+          echo "判定解释器 = $MIGAO_PY（并行度见下一条读数）"
 
           # ── 取数面读数（issue #6042，2026-10-06）──────────────────────────────────────
           # 现场：本步 shell **确有**有效凭据（上面第 3~4 行的 `gh run list` 取水位成功），而 driver 拉起的
