@@ -1860,6 +1860,7 @@ cases:
     merge_log: "2026-09-22 新增（issue #5131）：用户 2026-09-22 裁定 D6′ = 方案 A（整合落在页面与信息架构，存储保持结构化列），并逐字强调「我们的配置类页面务必要考虑配置复杂度和用户体验」⇒ 按 migao-dev-flow §22 配置类页面规范落增量 1：P1 按域分组 / P2 每参数三件套 / P3 默认值可见 / **P4 阈值试算**（双列对照，服务端判定真值 —— 只覆盖超高与超宽两个阈值键，其余算料参数的服务端试算不收 config）。**未闭环（照实登记）**：P6 变更留痕登记为后续增量。 ｜ 2026-10-08（issue #6573，用户裁定方案 C）**改判**：参数总览由 `/settings` 的 tab **升为一级菜单项** `/settings/params` —— 旧形态把配置中心绑在 `system:manage` 上，持 `production:view` 的生产岗根本进不去，而缺配置的正是他们要配的东西；同批落「配置主线」（跨页就绪度：工序与单价 → 工艺路线 → 默认路线 → 加工费组合 → 算料配置）与**域级权限**（不持码的域不渲染也不请求）。判据口径同步改判：第一屏读端点由**页面**的 effect 驱动面承担（`MENU_READ_ENDPOINT_ANCHORS` 新增该页一条，5 个读面全是 `production:view` ⇒ 第一屏码集恰好一个码）。**未实装（照实登记）**：服务端聚合就绪度端点、跨页的「加工项 / 余料尺寸」两步、以及真实浏览器点击 E2E 均未做"
     traces:
       tests:
+        - "frontend/admin-web/tests/unit/components/ConfigReadinessBar.test.tsx"
         - "frontend/admin-web/tests/unit/components/TenantParamsPanel.test.tsx"
         - "frontend/admin-web/tests/unit/pages/settings-params.test.tsx"
         - "frontend/admin-web/tests/unit/lib/config-readiness.test.ts"
