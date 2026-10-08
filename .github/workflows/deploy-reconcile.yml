@@ -165,8 +165,20 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Docker login ACR
-        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+      # 登录实现**唯一一份** = `scripts/acr_login.sh`（issue #6526 A：重试 3 次 / 每次有 `timeout` /
+      # 退避 5s·10s / `--password-stdin`）。本步**不承重**（C′ 后 CI 不推 ACR）⇒ 3 次仍失败只出
+      # 具名 `::warning::`、**不判红**（让不承重的步骤否决整条腿正是本单要治的病）。
+      # ⚠️ 密码经 argv 传给 helper（与旧版把密码放在 `docker login` 命令行上**不同**：不再是
+      #    docker 的 argv），`docker login` 侧仍是 `--password-stdin`。
+      # ⚠️ 判据 tests/unit_ci_workflows/test_acr_login_not_load_bearing.py 会现取
+      #    `scripts/acr_login.sh` 是否在检出里 ⇒ 本腿**不能**退回裸 `docker login`。
+      # ⚠️ helper 落在 `scripts/` —— 本腿的 `checkout` 是 `ref: main`（对账基准必须是 main HEAD）
+      #    ⇒ **新增 helper 的那个 PR 里它取不到** ⇒ 本步会因 `bash: scripts/acr_login.sh: No such
+      #    file` 非零退出（而它本来是可跑的）。用 `hashFiles` 弃权（与 `deploy_reconcile_state.sh`
+      #    的「载不进就弃权」同一形态：**还轮不到我** 不许让机制本身停摆）。
+      - name: Docker login ACR (retry, non-fatal)
+        if: ${{ hashFiles('scripts/acr_login.sh') != '' }}
+        run: bash scripts/acr_login.sh ${{ env.ACR_REGISTRY }} "${{ secrets.ACR_USERNAME }}" "${{ secrets.ACR_PASSWORD }}"
 
       # ⚠️ 本 step **没有** `if:`，也不再有任何 path 预过滤（issue #4827）：改前它带
       # `if: env.<跳过标记> != '1'`，而那个标记由两个 path 过滤写入（PR 文件表 /
@@ -199,9 +211,8 @@ jobs:
           if [ ! -f scripts/deploy_reconcile_state.sh ]; then
             echo "::warning::值守面状态机不在检出里（多为「本腿还没上 main」）" || :; exit 0
           fi
-          source scripts/deploy_reconcile_state.sh
-          source scripts/deploy_reconcile_state.sh
-          source scripts/deploy_reconcile_state.sh
+          # ⚠️ 恰好**一次**：本步正文已顶到 GitHub 的 13,250 字符硬限（超了整份 workflow invalid），
+          # 而这里曾**连写 4 次**（issue #6526 顺带修；当前恰好幂等，但是陷阱 —— 没人会去数）。
           source scripts/deploy_reconcile_state.sh
           # 单服务对账。$1=服务名 $2=deploy workflow $3=该服务的代码路径
           # $4=额外 pathspec（空格分隔）：`:(exclude)X` = 排除项，其余 = **附加包含项**（可空）
@@ -622,6 +633,38 @@ jobs:
             gh issue close "$EXIST" --reason completed || echo "::warning::无法关闭值守单 #${EXIST}（限流/权限）"
           fi
           exit "$RC"
+
+      # ── 腿级失败反应（issue #6526 B：**这一次 run 挂了** ⇒ 出声 + 首次自动重跑一次）──────
+      # 与上面「值守面」的分工（**两个出口判的不是同一件事**）：值守面判**状态**「合并了但没上线」
+      # （宽限 N=2700s + `*/20` 的 cron，实测被节流到 2.5~8.6h）；本步判**事件**「这次 run 挂了」。
+      # 事件驱动（`on.workflow_run: types=[completed]`，六条腿已在监听面里）⇒ 准实时。
+      # 判定与动作**全部外置**（`scripts/deploy_leg_failure_reaction.sh`）⇒ 可离线驱动、可单测；
+      # 本步只是**薄壳**（下面 6 行），因为 `Reconcile deploys` 那一步的正文已顶到 GitHub 的
+      # 13,250 字符硬限（超了整份 workflow invalid ⇒ 该腿完全不跑），**一个字都不许往那里加**。
+      # ⚠️ `${{ }}` 一律走 `env:`（本仓有执行式守卫会逐字渲染 `run` 正文）。
+      # ⚠️ 反应步**绝不许**判红（issue #6526 B）：脚本全程 `|| :` + `::warning::`，唯一非零退出是
+      #    「该腿未登记在台账」—— 那正是「新腿没进台账 ⇒ 红」这条判据本身。
+      - name: 腿级失败反应（workflow_run ⇒ 出声 + 首次自动重跑一次）
+        if: always() && github.event_name == 'workflow_run'
+        env:
+          LEG_NAME: ${{ github.event.workflow_run.name }}
+          LEG_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          LEG_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          LEG_RUN_ID: ${{ github.event.workflow_run.id }}
+          LEG_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          LEG_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # ⚠️ `bash <file>`（不是 `./`）：新增文件没有可执行位时 `./x.sh` 会 rc=126 而**不是**
+          #    「文件不存在」；`bash` 形态下「找不到文件」是干净的 127，本行的 `-f` 门已先兜住。
+          if [ ! -f scripts/deploy_leg_failure_reaction.sh ]; then
+            echo "::warning::腿级失败反应脚本不在检出里（本腿的 checkout 是 ref: main ⇒ 新增它的那个 PR 里取不到）—— 本轮弃权，不判红"
+            exit 0
+          fi
+          bash scripts/deploy_leg_failure_reaction.sh || {
+            echo "::warning::腿级失败反应步非零退出（rc=$?）—— 反应步自身**不得**让本 job 判红（issue #6526 B），已吞掉"
+            exit 0
+          }
 
       # ── 存活读数（issue #5326 判据 1 / 4）────────────────────────────────────────
       # 「我没做事」与「我没跑」必须长得不一样：本步 `if: always()` 且是 job 的**最后一步**

@@ -1,0 +1,52 @@
+{
+  "schema": "deploy-leg-failure-reaction-ledger/v1",
+  "what": "「腿级失败反应」（issue #6526 B）的登记表：`deploy-reconcile.yml` 的 `on.workflow_run.workflows` 里的**每一条腿**必须在这里登记 `name` + `rerun` + `reason`。**未登记即红**（新腿没进台账 ⇒ `scripts/deploy_leg_failure_reaction.sh` 当场非零退出并具名报出该腿；判据 = `tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py`，与 `on.workflow_run.workflows` 清单**双向相等**）。",
+  "why": "三条部署腿的 `permissions` 只有 `contents: read` / `actions: read` ⇒ 失败**不出声**；唯一出声面是 `deploy-reconcile.yml` 的 `[deploy-watchdog]`（判的是**状态**「合并了但没上线」，宽限 N=2700s + cron 被节流到 2.5~8.6h）。⇒ 需要一条**事件驱动**的「**这一次 run 挂了**」出口。承载面选 `deploy-reconcile.yml`（它已经有 `workflow_run` 监听六条腿 + `issues: write` + `actions: write`）⇒ 零新增权限、零新增 mechanism 登记。",
+  "rerun_semantics": "`rerun=true` 只表示**允许自动重跑一次**（真正的触发条件还有两条：① `conclusion` 属失败类 ② `run_attempt == 1` ③ 失败日志里**没有**命中具名确定性闸门 —— 磁盘水位 / 不可恢复终态 / skip 自证 / C 端产物陈旧 / dependabot）。第二次仍失败 ⇒ **不**再自动重跑（与 #4767/#5814 的断路器语义一致；attempt 用 GitHub 自己的 `run_attempt`，**不自建计数器**）。",
+  "legs": [
+    {
+      "name": "Build and Deploy frontend (admin-web)",
+      "rerun": true,
+      "reason": "镜像腿（构建 + 服务器侧部署）。失败 = 这个 commit 的 admin-web 没上线 ⇒ 重跑一次是安全的（`concurrency: cancel-in-progress: false` 下至多排队，不会互踩）。"
+    },
+    {
+      "name": "Build and Deploy admin-api",
+      "rerun": true,
+      "reason": "同 frontend（镜像腿）。网络 RST 类瞬时失败重跑一次就能收敛 —— 这正是 issue #6526 要治的形态。"
+    },
+    {
+      "name": "Build and Deploy ai-agent-service",
+      "rerun": true,
+      "reason": "同 frontend（镜像腿）。"
+    },
+    {
+      "name": "Publish worker-h5 (app.migaozn.com/w/)",
+      "rerun": true,
+      "reason": "静态落地面腿（无镜像；`workflow_dispatch` 面没有人工闸 ⇒ dispatch/rerun 会**真的发布**）。远端脚本先建 stage 再整份覆盖、**不对静态根清空** ⇒ 重跑幂等（同 `publish_leg_fallback_ledger.json` 的 `schedule_safety` 口径）。"
+    },
+    {
+      "name": "Publish bmini h5 (app.migaozn.com/b/)",
+      "rerun": true,
+      "reason": "同 worker-h5（静态落地面腿，重跑幂等）。注意：它的**登录**是承重态（把产物装进传输镜像推到 ACR）⇒ `scripts/acr_login.sh --fatal`。"
+    },
+    {
+      "name": "Publish C-end H5 (app.migaozn.com 根)",
+      "rerun": false,
+      "reason": "**禁止自动重跑**：本腿的发布步骤只在 `workflow_dispatch` **且** `inputs.publish == 'true'` 时执行 —— 发布由**人手动**触发（用户 2026-09-27 裁定 B，见 `.github/workflows/c-end-h5-publish.yml` 的 Manual gate 与 `publish_leg_fallback_ledger.json` 的 `c-end-h5` 条）。自动重跑不会有任何发布效果，只会再判一次「Manual gate」红 ⇒ 纯噪声；失败仍**照常通知**。"
+    }
+  ],
+  "coverage_boundary": [
+    {
+      "face": "「重跑也没用」的**非具名**失败（例如代码本身编译不过）",
+      "reason": "本脚本只按**具名确定性闸门**（5 类，锚点逐条写在 `GATES` 里）抑制重跑；一个不在名单里的确定性失败仍会被重跑一次（第二次失败后不再重跑）。这是**有意**的取舍：名单外的失败**不可静态判定**是不是确定性的，宁可多跑一次也不要把「瞬时失败」漏掉。"
+    },
+    {
+      "face": "重跑**真的被 GitHub 接受**与否",
+      "reason": "`gh run rerun` 会因 `actions: write` 缺失 / run 太旧（>30 天）而失败 —— 脚本把非零返回写成 `**自动重跑尝试失败**` 进通知正文 + `::warning::`，不判红。"
+    },
+    {
+      "face": "本脚本**不判线上状态**、**不关** `[deploy-watchdog]` 的单",
+      "reason": "分工写在脚本文件头：`[deploy-watchdog]` 判「合并了但没上线」（状态），本出口判「这一次 run 挂了」（事件）。两者各自零点火线，互不代关。"
+    }
+  ]
+}

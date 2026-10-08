@@ -86,12 +86,18 @@ jobs:
             echo "MODE=build" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Login to Alibaba Cloud ACR
+      # 登录实现**唯一一份** = `scripts/acr_login.sh`（issue #6526 A）。顺带**消灭**了旧版把
+      # 密码放在 `docker login` 命令行上的形态（`--password ${{ secrets.ACR_PASSWORD }}` ——
+      # 它会进 docker 的 argv / ps / 日志）；现统一 `--password-stdin`。
+      # 🔴 本调用点**不承重**（无 `--fatal`）：C′（issue #5814）之后 CI 不构建、不推 ACR
+      #    （自证步见本文件上面的 `Assert server-side build (no ACR push)`）⇒ 登录失败只出
+      #    具名 `::warning::`、**不判红**。让一个不承重的步骤否决整条腿正是 issue #6526 要治的病。
+      #    重启条件（写在这里，别只写在脚本里）：**若将来恢复 CI 侧推 ACR ⇒ 加上 `--fatal`**。
+      # 判据 = tests/unit_ci_workflows/test_acr_login_not_load_bearing.py（裸 `docker login` ⇒ 红；
+      #        `--password ${{ … }}` 形态 ⇒ 红；该带 `--fatal` 的腿没带 / 不该带的腿带了 ⇒ 红）。
+      - name: Login to Alibaba Cloud ACR (retry, non-fatal)
         if: steps.tag.outputs.MODE == 'build'
-        run: |
-          docker login ${{ env.ACR_REGISTRY }} \
-            --username ${{ secrets.ACR_USERNAME }} \
-            --password ${{ secrets.ACR_PASSWORD }}
+        run: bash scripts/acr_login.sh ${{ env.ACR_REGISTRY }} "${{ secrets.ACR_USERNAME }}" "${{ secrets.ACR_PASSWORD }}"
 
       # ── 部署对账（仅 schedule 触发时生效，issue #2935）──
       # 连续快速合并时 GitHub 可能吞掉 push 触发（2026-09-05 实测 #2926 合入 main
