@@ -70,10 +70,13 @@ export default function LoginPage() {
   const [countdown, setCountdown] = useState(0)
   const [sendingCode, setSendingCode] = useState(false)
 
-  // 工人入口（issue #6467）：工号预填（PIN / 设备标签不预填）
+  // 工人入口（issue #6467）：工号预填（PIN / 设备标签 / 企业编码不预填）
   const [workerNo, setWorkerNo] = useState(() => getRememberedAccount('worker'))
   const [pin, setPin] = useState('')
   const [deviceLabel, setDeviceLabel] = useState('')
+  // 企业编码（issue #6564）：租户**只由服务端解析**。它不是账号名 ⇒ **不**进 `loginAccount.ts`
+  // 的「记住账号名」键（凭据/准凭据一律不落盘）
+  const [workerEnterpriseCode, setWorkerEnterpriseCode] = useState('')
   const [workerSubmitting, setWorkerSubmitting] = useState(false)
   const [workerError, setWorkerError] = useState('')
 
@@ -167,10 +170,19 @@ export default function LoginPage() {
       Taro.showToast({ title: '请输入工号和 PIN', icon: 'none' })
       return
     }
+    if (!workerEnterpriseCode.trim()) {
+      Taro.showToast({ title: '请输入企业编码（向商家索取）', icon: 'none' })
+      return
+    }
     setWorkerSubmitting(true)
     setWorkerError('')
     try {
-      const res = await workerLogin(workerNo.trim(), pin.trim(), deviceLabel.trim() || undefined)
+      const res = await workerLogin(
+        workerNo.trim(),
+        pin.trim(),
+        deviceLabel.trim() || undefined,
+        workerEnterpriseCode.trim(),
+      )
       if (!res.success) {
         setWorkerError(res.message || '登录失败，请重试')
         return
@@ -181,7 +193,7 @@ export default function LoginPage() {
     } finally {
       setWorkerSubmitting(false)
     }
-  }, [workerNo, pin, deviceLabel, workerSubmitting])
+  }, [workerNo, pin, deviceLabel, workerEnterpriseCode, workerSubmitting])
 
   /** 三个入口各自的提交：三条身份链，互不共用表单也不共用动作 */
   const handleSubmit =
@@ -318,6 +330,17 @@ export default function LoginPage() {
         ) : (
           <>
             <View className='login-field'>
+              <Text className='login-field__label'>企业编码</Text>
+              <Input
+                className='login-field__input'
+                type='text'
+                placeholder='企业编码（向商家索取）'
+                value={workerEnterpriseCode}
+                onInput={(e: any) => setWorkerEnterpriseCode(e.detail.value)}
+              />
+            </View>
+
+            <View className='login-field'>
               <Text className='login-field__label'>工号</Text>
               <Input
                 className='login-field__input'
@@ -356,7 +379,7 @@ export default function LoginPage() {
             ) : null}
 
             <Text className='login-form__hint'>
-              车间工人用工号 + PIN 登录（共用 PAD 不必登录商家账号）；登录后进工人工作台
+              车间工人用「工号 + PIN + 企业编码」登录（共用 PAD 不必登录商家账号）；登录后进工人工作台
             </Text>
           </>
         )}

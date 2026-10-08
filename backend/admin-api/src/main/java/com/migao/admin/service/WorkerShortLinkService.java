@@ -1,7 +1,10 @@
 package com.migao.admin.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.entity.ProcessingSetPartToken;
+import com.migao.admin.entity.Tenant;
 import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
+import com.migao.admin.mapper.TenantMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -66,6 +69,7 @@ public class WorkerShortLinkService {
     private static final int MAX_ALLOCATE_ATTEMPTS = 8;
 
     private final ProcessingSetPartTokenMapper setPartTokenMapper;
+    private final TenantMapper tenantMapper;
 
     /**
      * 随机生成一个短码（**不查重** —— 查重见 {@link #allocateUnique()}）。
@@ -175,7 +179,27 @@ public class WorkerShortLinkService {
     }
 
     /**
-     * 302 的 {@code Location}（报工页 + token + 租户）。
+     * 租户 id ⇒ 企业编码（{@code tenants.code}，只认 {@code status='active'}）。
+     *
+     * <p>issue #6564：工人登录改「工号 + 企业编码」口径后，短链 302 必须把**企业编码**也带给报工页
+     * （旧前端包只认 {@code tenant_id} ⇒ 两个参数**并存**；企业编码查不到就不带该参数）。
+     * 短码 ⇒ 租户的解析与 Location 的拼装仍只有这一份实现。</p>
+     *
+     * @return 企业编码；入参为空 / 租户不存在 / 非 active ⇒ {@code null}
+     */
+    public String tenantCodeOf(Long tenantId) {
+        if (tenantId == null) {
+            return null;
+        }
+        Tenant tenant = tenantMapper.selectOne(new LambdaQueryWrapper<Tenant>()
+                .eq(Tenant::getId, tenantId)
+                .eq(Tenant::getStatus, "active")
+                .last("LIMIT 1"));
+        return tenant == null ? null : tenant.getCode();
+    }
+
+    /**
+     * 302 的 {@code Location}（报工页 + token + 租户 id + 企业编码）。
      *
      * <p><b>刻意用相对 Location</b>（{@code /w/?t=…}）而不是拿请求 Host 拼绝对 URL：
      * ① 请求 Host 可伪造 ⇒ 拼绝对 URL = **开放重定向**面；② 浏览器按 RFC 7231 §7.1.2
@@ -189,12 +213,14 @@ public class WorkerShortLinkService {
      * {@code tenantIdFromLocation} 读 {@code ?tenant_id=}）。租户 id 非敏感（`<tenantId>.app.migaozn.com`
      * 子域形态本身就是公开约定，设计 C12）。</p>
      *
-     * @param token    部位码 token（32 位十六进制，无需转义）
-     * @param tenantId 租户 id（可空 ⇒ 只带 token）
-     * @return 相对 Location
+     * @param token      部位码 token（32 位十六进制，无需转义）
+     * @param tenantId   租户 id（可空 ⇒ 不带 {@code tenant_id}）
+     * @param tenantCode 企业编码（可空 ⇒ 不带 {@code tenant_code}；旧前端只认 {@code tenant_id}）
+     * @return 相对 Location（**相对路径是刻意的**，见上一段；不改路径段与短码契约）
      */
-    public static String reportPageLocation(String token, Long tenantId) {
+    public static String reportPageLocation(String token, Long tenantId, String tenantCode) {
         return REPORT_PAGE_PATH + "?t=" + token
-                + (tenantId == null ? "" : "&tenant_id=" + tenantId);
+                + (tenantId == null ? "" : "&tenant_id=" + tenantId)
+                + (StringUtils.hasText(tenantCode) ? "&tenant_code=" + tenantCode : "");
     }
 }

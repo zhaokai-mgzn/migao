@@ -3,7 +3,9 @@
 // 工人端 H5 报工页 —— API 客户端（设计 #4716 §2.1 / §3.1~§3.3）。
 //
 // 四条纪律（每条都有对应断言，见 tests/worker-h5-api.test.mjs）：
-//   ① 登录 = **工号 + PIN**（复用 #4733 的 `POST /api/worker/login`），**不依赖微信**（裁定③）；
+//   ① 登录 = **工号 + PIN + 企业编码**（复用 #4733 的 `POST /api/worker/login`），**不依赖微信**（裁定③）；
+//      🔴 租户**只由服务端解析**（issue #6564）：body 送 `enterpriseCode`，**不再**送 `tenantId`
+//      （前端默认租户曾把租户 25 的工人登录判成租户 1 ⇒ 恒 401）；
 //   ② 🔴 身份只由服务端解：报工 body **不含** `worker_id`/`worker_name`，
 //      身份载体 = `X-Worker-Session-Id`（前端可被改，工资凭证不能信前端）；
 //   ③ 🔴 401 ⇒ **回落未登录 + 清本地缓存**（闲置超时/被切换后**绝不**静默重试或按上一个人记账）；
@@ -113,12 +115,14 @@ export function createApi(opts = {}) {
     worker: () => session ?? null,
 
     /**
-     * 工号 + PIN 登录（腿 A：**主路径**，任何浏览器可用，不依赖微信）。
+     * 工号 + PIN + 企业编码登录（腿 A：**主路径**，任何浏览器可用，不依赖微信）。
+     *
+     * @param {{workerNo: string, pin: string, enterpriseCode?: string}} input 企业编码 = 租户的**唯一**来源（issue #6564）
      */
-    async login({ workerNo, pin, tenantId }) {
+    async login({ workerNo, pin, enterpriseCode }) {
       const data = await request('/api/worker/login', {
         method: 'POST',
-        body: { workerNo, pin, deviceLabel, tenantId: tenantId ?? undefined },
+        body: { workerNo, pin, deviceLabel, enterpriseCode },
       })
       const s = {
         sessionId: data.session_id,

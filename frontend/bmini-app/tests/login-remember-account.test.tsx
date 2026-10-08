@@ -90,6 +90,7 @@ const PHONE_PLACEHOLDER = '请输入管理员手机号'
 const CODE_PLACEHOLDER = '请输入验证码'
 const WORKER_NO_PLACEHOLDER = '请输入工号'
 const PIN_PLACEHOLDER = '请输入 PIN'
+const ENTERPRISE_PLACEHOLDER = '企业编码（向商家索取）'
 
 /** 凭据哨兵：只要它们出现在任何落盘键值里，反向红线当场红。
  *  ⚠️ 验证码哨兵必须是**纯数字**：登录页的验证码框是 `type='number'`，
@@ -254,10 +255,11 @@ describe('A. 记住上次成功登录的账号名（issue #6478）', () => {
     type(CODE_PLACEHOLDER, SENTINEL_CODE)
     await clickLogin()
 
-    // 工人面：工号 + PIN（+ 设备标签）
+    // 工人面：工号 + PIN + 企业编码（+ 设备标签）
     switchTo('工人登录')
     type(WORKER_NO_PLACEHOLDER, 'W-007')
     type(PIN_PLACEHOLDER, SENTINEL_PIN)
+    type(ENTERPRISE_PLACEHOLDER, 'migao')
     await clickLogin()
 
     const calls = (Taro.setStorageSync as jest.Mock).mock.calls as [string, unknown][]
@@ -268,6 +270,9 @@ describe('A. 记住上次成功登录的账号名（issue #6478）', () => {
 
     const written = calls.map(([key, value]) => `${key}=${JSON.stringify(value)}`).join('\n')
     expect(written).not.toContain(SENTINEL_PASSWORD)
+    // 企业编码**不落盘**（issue #6564）——它不是账号名（`loginAccount.ts` 只记三个面的账号名），
+    // 也不是凭据；工人每次登录自己填/由短链 302 的 ?tenant_code= 预填
+    expect(written).not.toContain('migao')
     expect(written).not.toContain(SENTINEL_CODE)
     expect(written).not.toContain(SENTINEL_PIN)
     // 键面也不越界：落盘的键全部是仓内已登记键

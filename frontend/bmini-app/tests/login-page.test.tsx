@@ -5,7 +5,7 @@
  *       成功跳转、失败不跳转、密码框遮蔽、微信授权按钮已退场、
  *       两个入口的切换、管理员「手机号 + 验证码」链路（发码 / 冷却 / 提交 / 失败不跳转）
  */
-// case_ids: AU-001, AU-003, AU-006, BM-001, BM-002, BM-027, BM-033
+// case_ids: AU-001, AU-003, AU-006, BM-001, BM-002, BM-027, BM-033, BM-045
 import React from 'react'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 
@@ -404,6 +404,7 @@ describe('LoginPage · 工人入口（issue #6467 判据 1）', () => {
   const WORKER_NO_PLACEHOLDER = '请输入工号'
   const WORKER_PIN_PLACEHOLDER = '请输入 PIN'
   const DEVICE_PLACEHOLDER = '设备标签（可选）'
+  const ENTERPRISE_PLACEHOLDER = '企业编码（向商家索取）'
 
   beforeEach(() => {
     jest.clearAllMocks()
@@ -419,12 +420,17 @@ describe('LoginPage · 工人入口（issue #6467 判据 1）', () => {
   }
 
   /** 填工人表单 */
-  function fillWorkerForm(no: string, pin: string, deviceLabel = '') {
+  function fillWorkerForm(no: string, pin: string, deviceLabel = '', enterpriseCode = 'migao') {
     fireEvent.change(screen.getByPlaceholderText(WORKER_NO_PLACEHOLDER), { target: { value: no } })
     fireEvent.change(screen.getByPlaceholderText(WORKER_PIN_PLACEHOLDER), { target: { value: pin } })
     if (deviceLabel) {
       fireEvent.change(screen.getByPlaceholderText(DEVICE_PLACEHOLDER), {
         target: { value: deviceLabel },
+      })
+    }
+    if (enterpriseCode) {
+      fireEvent.change(screen.getByPlaceholderText(ENTERPRISE_PLACEHOLDER), {
+        target: { value: enterpriseCode },
       })
     }
   }
@@ -459,11 +465,12 @@ describe('LoginPage · 工人入口（issue #6467 判据 1）', () => {
     expect(screen.getByPlaceholderText(WORKER_NO_PLACEHOLDER)).toBeTruthy()
     expect(screen.getByPlaceholderText(WORKER_PIN_PLACEHOLDER)).toBeTruthy()
     expect(screen.getByPlaceholderText(DEVICE_PLACEHOLDER)).toBeTruthy()
+    expect(screen.getByPlaceholderText(ENTERPRISE_PLACEHOLDER)).toBeTruthy()
     expect(screen.queryByPlaceholderText(IDENTIFIER_PLACEHOLDER)).toBeNull()
     expect(screen.queryByPlaceholderText(PHONE_PLACEHOLDER)).toBeNull()
   })
 
-  it('🔴 工人 tab 提交 ⇒ workerLogin(工号, PIN, 设备标签) 恰一次 + 成功 redirectTo 工人首页（**不** switchTab 问黄金策）', async () => {
+  it('🔴 工人 tab 提交 ⇒ workerLogin(工号, PIN, 设备标签, 企业编码) 恰一次 + 成功 redirectTo 工人首页（**不** switchTab 问黄金策）', async () => {
     mockWorkerLogin.mockResolvedValueOnce({
       success: true,
       data: { session_id: 'sess-1', worker_id: 'w-1', worker_no: 'G001', worker_name: '张三' },
@@ -478,7 +485,8 @@ describe('LoginPage · 工人入口（issue #6467 判据 1）', () => {
 
     expect(mockWorkerLogin).toHaveBeenCalledTimes(1)
     // 只去空白，不复制服务端的格式规则（格式 / 角色门禁的唯一真值在服务端）
-    expect(mockWorkerLogin).toHaveBeenCalledWith('G001', '2468', 'PAD-车间-01')
+    // 🔴 第 4 个入参 = 企业编码（租户只由服务端解析，issue #6564）
+    expect(mockWorkerLogin).toHaveBeenCalledWith('G001', '2468', 'PAD-车间-01', 'migao')
     expect(Taro.redirectTo).toHaveBeenCalledWith({ url: WORKER_HOME_ROUTE })
     // 🔴 工人**没有商家会话**：switchTab 会落到商家 tabBar（问黄金策）⇒ 一律不许
     expect(Taro.switchTab).not.toHaveBeenCalled()

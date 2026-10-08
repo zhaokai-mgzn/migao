@@ -24,6 +24,18 @@ public class WorkerLoginRequest {
     /** 设备标签（PAD-车间-01 之类；可空，用于「由哪个设备会话报的」快照）。 */
     private String deviceLabel;
 
-    /** 租户 id（兼容期兜底：域名/网关头为权威，见 AuthController 同款口径）。 */
+    /**
+     * 企业编码（issue #6564）：服务端解析租户的**权威入口**（可不传 —— 工号写成
+     * {@code <工号>@<企业编码>} 时由工号携带；域名/网关头存在时它也不是必需）。
+     */
+    private String enterpriseCode;
+
+    /**
+     * 租户 id。
+     *
+     * @deprecated 兼容期兜底，新前端**不得**再传（issue #6564）—— 服务端只在域名/网关头、
+     *     {@link #enterpriseCode}、{@code 工号@企业编码} 三档都拿不到时才用它，且会打 WARN。
+     */
+    @Deprecated
     private Long tenantId;
 }

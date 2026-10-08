@@ -1,16 +1,16 @@
-// case_ids: PG-018, BM-006, DF-017
+// case_ids: PG-018, BM-006, DF-017, BM-045
 //
 // 工人端 H5 报工页 —— **稳定短链那一跳的跨模块契约**（issue #4802；
 // 设计 `docs/design/worker-h5-scan-and-report.md` §1.3 / §1.4）。
 //
 // 服务端（`WorkerShortLinkController` + `WorkerShortLinkService`）把
-//   https://app.migaozn.com/s/<短码>   ──302──▶   /w/?t=<token>&tenant_id=<id>
+//   https://app.migaozn.com/s/<短码>   ──302──▶   /w/?t=<token>&tenant_id=<id>&tenant_code=<企业编码>
 // 本文件把**那一跳的落地形态**与**页面取码/取租户的口径**钉在一起：
 // 服务端改 Location 形状而页面读不到（或反过来）⇒ 工人扫开短链只会看到空页面，
 // 而两边各自的单测**都是绿的** —— 这正是本文件存在的理由。
 //
 // 四条判据（每条都有反向断言，防「恒真」）：
-//   ① 302 目标必须被页面取出 token（`?t=`）与租户（`?tenant_id=`）；
+//   ① 302 目标必须被页面取出 token（`?t=`）与**企业编码**（`?tenant_code=`，issue #6564 起的租户口径）；
 //   ② 🔴 页面**自己不能**把短码换成 token（`/w/` 不带 `?t=` ⇒ 空码）
 //      ⇒ 「短码 ⇒ token」只可能发生在**服务端 302** 那一跳（用户裁定③：部分扫码工具只认服务端跳转）；
 //   ③ 手输短码（裸 8 位）原样当码值 ⇒ 前端**不判形态**（形态判定是服务端的职责）；
@@ -21,22 +21,23 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { parseScanInput, tenantIdFromLocation } from '../src/scan-input.mjs'
+import { enterpriseCodeFromLocation, parseScanInput } from '../src/scan-input.mjs'
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
 const PART_CODE = 'fake-part-code-fixture-4802'
 const SHORT_CODE = '7K3M9QP2'
 /** 服务端 302 的 Location（`WorkerShortLinkService.reportPageLocation` 的逐字形态）。 */
-const REDIRECT_TARGET = `https://app.migaozn.com/w/?t=${PART_CODE}&tenant_id=7`
+const REDIRECT_TARGET = `https://app.migaozn.com/w/?t=${PART_CODE}&tenant_id=7&tenant_code=migao`
 
 test('① 服务端 302 的落地 URL：页面取到 token（?t=）', () => {
   assert.equal(parseScanInput(REDIRECT_TARGET), PART_CODE)
 })
 
-test('① 服务端 302 的落地 URL：页面取到租户（?tenant_id=，短链域名无租户子域）', () => {
-  assert.equal(tenantIdFromLocation(REDIRECT_TARGET), 7)
-  // 反向：不带 tenant_id 时判不出（⇒ 服务端必须带上它，否则工人登录判不出租户）
-  assert.equal(tenantIdFromLocation(`https://app.migaozn.com/w/?t=${PART_CODE}`), null)
+test('① 服务端 302 的落地 URL：页面取到企业编码（?tenant_code=，短链域名无租户子域）', () => {
+  assert.equal(enterpriseCodeFromLocation(REDIRECT_TARGET), 'migao')
+  // 反向：不带 tenant_code / 形态不合法 ⇒ null（⇒ 服务端必须带上它，否则工人要在表单里自己填）
+  assert.equal(enterpriseCodeFromLocation(`https://app.migaozn.com/w/?t=${PART_CODE}`), null)
+  assert.equal(enterpriseCodeFromLocation(`https://app.migaozn.com/w/?t=${PART_CODE}&tenant_code=MIGAO`), null)
 })
 
 test('② 🔴 页面自己没有「短码 ⇒ token」能力 ⇒ 换发只能发生在服务端 302 那一跳', () => {

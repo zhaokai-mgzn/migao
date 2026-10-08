@@ -11,7 +11,7 @@
 //   ③ 闲置登出 —— 定时器 + `visibilitychange` 双保险（PAD 常被切到别的 App，只靠定时器会漏）。
 
 import { createApi, PAGES_UNREAD, SESSION_EXPIRED } from './api.mjs'
-import { parseScanInput, tenantIdFromLocation } from './scan-input.mjs'
+import { enterpriseCodeFromLocation, parseScanInput } from './scan-input.mjs'
 import {
   afterComplete,
   DEFAULT_WORKER_IDLE_MINUTES,
@@ -51,9 +51,10 @@ function newRequestId() {
  */
 export function createApp({ doc, api, location = globalThis.location, storage = null }) {
   const href = typeof location === 'string' ? location : location?.href ?? ''
-  const tenantId = tenantIdFromLocation(href)
+  // 企业编码（issue #6564）：短链 302 的 `?tenant_code=` 只是**初值**（预填进输入框，可编辑）
+  const urlEnterpriseCode = enterpriseCodeFromLocation(href)
   const root = doc.getElementById('worker-h5-root')
-  let state = initialState()
+  let state = { ...initialState(), enterpriseCode: urlEnterpriseCode ?? '' }
   let idleTimer = null
 
   // ── 未确认提交（issue #4814）：读/写/清都是「尽力而为」——存不下就当没有，
@@ -187,8 +188,10 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     on('wh5-login', async () => {
       const workerNo = doc.getElementById('wh5-worker-no')?.value?.trim()
       const pin = doc.getElementById('wh5-pin')?.value ?? ''
+      // 企业编码：以输入框为准（URL 值已在首屏预填进去，可编辑）—— 租户只由服务端解析
+      const enterpriseCode = doc.getElementById('wh5-enterprise-code')?.value?.trim()
       try {
-        const s = await api.login({ workerNo, pin, tenantId })
+        const s = await api.login({ workerNo, pin, enterpriseCode })
         // idleMinutes 一并进 state：前端定时器与服务端 `idle_expires_at` 用**同一个**数值
         // （不是前端自己拍一个 15 分钟 —— 服务端可配 5~60，两处不一致就会出现
         //  「前端还显示着工人、服务端已经 401」的错位）

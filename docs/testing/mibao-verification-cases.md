@@ -755,7 +755,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
-## B 端小程序域（43 case）
+## B 端小程序域（44 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1199,12 +1199,12 @@
 你: 工人打开 B 端 H5 登录页（或从报工页 / 工人首页点「去登录工人身份」）→ 切到第三个 tab「工人登录」→ 填工号 + PIN（可选设备标签）→ POST /api/worker/login → 成功进工人工作台；输错 PIN 时屏上**原样**显示服务端文案
 期望: direct_reply
 数据: 判据 1·**三个 tab 都在册**（员工 / 管理员 / 工人），默认停在员工入口；`/pages/auth/login/index?tab=worker` **路由参数直达**工人入口（员工/管理员字段退场）。证据：frontend/bmini-app/tests/login-page.test.tsx
-数据: 判据 2·🔴 **提交恰一次 + 成功后 `redirectTo` 工人首页且绝不 switchTab**：工人 tab 提交 ⇒ `workerLogin(工号, PIN, 设备标签)` 恰一次（**既有**端点 `POST /api/worker/login`，未新造端点/登录服务），成功 ⇒ `Taro.redirectTo({ url: WORKER_HOME_ROUTE })` 且 `Taro.switchTab` 一次都不调（工人没有商家会话，switchTab 会落到商家 tabBar=问黄金策，而工人零商家权限 ⇒ 落地即 403/空页）。红证（实跑）：把 `redirectTo` 改回 `switchTab` ⇒ 1 failed
+数据: 判据 2·🔴 **提交恰一次 + 成功后 `redirectTo` 工人首页且绝不 switchTab**：工人 tab 提交 ⇒ `workerLogin(工号, PIN, 设备标签, 企业编码)` 恰一次（**既有**端点 `POST /api/worker/login`，未新造端点/登录服务），成功 ⇒ `Taro.redirectTo({ url: WORKER_HOME_ROUTE })` 且 `Taro.switchTab` 一次都不调（工人没有商家会话，switchTab 会落到商家 tabBar=问黄金策，而工人零商家权限 ⇒ 落地即 403/空页）。红证（实跑）：把 `redirectTo` 改回 `switchTab` ⇒ 1 failed
 数据: 判据 3·**失败原样展示服务端 message**：服务端失败信封是 `{success:false,error:{code,message}}`（真值 = backend/admin-api/src/main/java/com/migao/admin/config/GlobalExceptionHandler.java 的 `handleBusinessException`）⇒ 端侧取值链路必须取到它，而不是 HTTP 层噪声「Request failed with status 401」。证据：frontend/bmini-app/tests/worker-service-message.test.ts
 跳过: [backend-contract] 确定性前端判据（jest: frontend/bmini-app/tests/login-page.test.tsx + frontend/bmini-app/tests/worker-service-message.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-10-07 新增（issue #6467 切片 1）：现场（生产 app.migaozn.com，2026-10-07 08:06:57 / 08:07:48 +08，nginx 日志 `POST /api/worker/production/scan/complete 401`）用管理员账号在 H5 点「完成报工」⇒ 被清商家登录态并踢回登录页，重登再点仍然 401。根因之一是 H5 上**没有工人登录入口**（独立的 pages/worker/login/index 存在，但报工页/工人首页都不指向它）⇒ 登录页补第三 tab，并支持 `?tab=worker` 直达（给报工页/工人首页的引导用）。**零后端改动**（truths_ref = frontend-fix.no-api-change）。 ｜ tags: bmini, login, worker
+溯源: 2026-10-07 新增（issue #6467 切片 1）：现场（生产 app.migaozn.com，2026-10-07 08:06:57 / 08:07:48 +08，nginx 日志 `POST /api/worker/production/scan/complete 401`）用管理员账号在 H5 点「完成报工」⇒ 被清商家登录态并踢回登录页，重登再点仍然 401。根因之一是 H5 上**没有工人登录入口**（独立的 pages/worker/login/index 存在，但报工页/工人首页都不指向它）⇒ 登录页补第三 tab，并支持 `?tab=worker` 直达（给报工页/工人首页的引导用）。**零后端改动**（truths_ref = frontend-fix.no-api-change）。｜ 2026-10-08（issue #6564）：工人登录补第 4 个入参「企业编码」—— 前端不再发 `tenantId`（租户只由服务端解析），判据 2 的调用形态随之改钉；本用例其余判据一字未动。 ｜ tags: bmini, login, worker
 
 ### BM-034. 工人首页（新页 pages/worker/home/index）- 身份卡读服务端 + 三件工人功能 + 退出工人身份；不出现任何商家面入口 🔵
 ```
@@ -1340,6 +1340,21 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-10-07 新增（issue #6476，用户逐字：「输入框中有一行小字叫发消息或按住说话的样式不对」）：三处独立病灶 —— ① 文案空承诺（H5 无录音却写「按住说话」，C 端早已按 `docs/design/agent-input-bar-unified-design.md` §R5 分流，B 端漏）；② **样式一条都没落到真控件**（Taro H5 的 class 在 `<taro-textarea-core>` 包裹元素上，内层原生控件跑浏览器默认：monospace 13.33px + 默认灰 + 原生 resize 斜线）；③ 行盒 `min-height: 40px` < 单行 42px。修法 = placeholder 平台分流 + 内层 `.taro-textarea` 显式继承 + 占位符真规则（`placeholderClass` 仅 weapp 生效）+ `min-height: 42px`。踩坑登记：**`textarea` 标签选择器会被 Taro 的 H5 构建改写成自定义元素**（产物实测 `.message-input__textarea taro-textarea-core{…}` = 又打回包裹元素），第一版守卫就是这么假绿的 —— 已补反陷阱断言。同型顺带发现另开两单：#6479（CORS 头白名单缺 `X-Client-Type`）、#6480（全站 H5 输入面内层控件不继承字体 + 占位符色落默认）。 ｜ tags: bmini, chat, input-bar, h5-surface
+
+### BM-045. 工人登录租户解析 - 企业编码（服务端唯一解析点）+ 兼容期 tenantId 兜底，非 1 租户不再恒 401 🔵
+```
+你: 租户 25（企业编码 migao）的工人在 B 端 H5（app.migaozn.com/b/，无租户子域、无 X-Tenant-Id 头）填 工号 + PIN + 企业编码 migao 登录 → POST /api/worker/login → 服务端按企业编码解析出租户 25、工人进自己的工作台（改前前端默认发 tenantId=1 ⇒ 恒 401）
+期望: direct_reply
+数据: 判据 1·**租户解析优先级唯一实现点**（backend/admin-api/src/main/java/com/migao/admin/worker/WorkerTenantResolver.java）：域名/网关头 → body `enterpriseCode` → `工号@企业编码` → 兼容期 body `tenantId`（打 WARN）→ 四档都没有 ⇒ 422 可行动文案「无法识别租户：请填写企业编码（向商家索取，例如 migao）」。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerAuthControllerTest.java
+数据: 判据 2·🔴 **反枚举与员工登录 #5485 同口径**：企业编码的存在性/可解析性有问题 ⇒ 与「工号不存在 / PIN 错」**同一个 401 同一文案**（`WorkerSessionService.AUTH_FAILED_MESSAGE` = 「工号或 PIN 不正确」），不得泄露企业是否存在；只有「完全没提供任何租户来源」才是 422。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerAuthControllerTest.java
+数据: 判据 3·**工号原样、企业编码规整**：切分按最后一个 `@`、右侧走 `LoginIdentifiers` 的企业编码口径、左侧**不转小写**（`CY-1001@migao` ⇒ 传给服务层的工号逐字是 `CY-1001`）—— 工号无字符集约束且服务端按大小写敏感等值匹配，故**不得**整体复用 `LoginIdentifiers.split`（它按员工用户名正则校验并小写化）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerAuthControllerTest.java
+数据: 判据 4·**前端请求体与租户解耦**（类级守卫）：frontend/bmini-app/src 与 frontend/worker-h5/src 的工人登录/切换请求体**不含** `tenantId`、`DEFAULT_TENANT_ID` 不出现在工人登录链路的文件里、且请求体**含** `enterpriseCode`。证据：frontend/bmini-app/tests/worker-login-tenant-source-guard.test.ts + frontend/worker-h5/tests/worker-h5-login-tenant-source-guard.test.mjs
+数据: 判据 5·**印刷品红线未动**：短链 `/s/{短码}` 的路径段与短码口径一字未改，302 的 `Location` 在既有 `&tenant_id=` 之后**追加** `&tenant_code=<企业编码>`（旧包继续可用；企业编码查不到就不带该参数）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerShortLinkControllerTest.java
+数据: 判据 6·**工人端 H5 从 URL 取企业编码**：`?tenant_code=` 形态合法则**预填**登录表单（仍是可编辑输入框），不合法/缺失 ⇒ null。证据：frontend/worker-h5/tests/worker-h5-scan-input.test.mjs
+跳过: [backend-contract] 确定性前后端判据（Java 单测 + jest + node --test 源码守卫），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: auth.tenant-local-identity
+溯源: 2026-10-08 新增（issue #6564）：生产（阿里云 SWAS，租户 25 = 企业编码 migao）工人 cy-1001 在 B 端 H5 输正确 PIN 恒 401 —— 前端 `workerLogin` 默认发 `tenantId = DEFAULT_TENANT_ID = 1`，而 `/b/` 无租户子域/网关头 ⇒ 服务端按 body 租户 1 注入租户谓词 ⇒ 查不到租户 25 的工人行。修法 = 口径 B「工号 + 企业编码，租户只由服务端解析」；短链 302 追加 `tenant_code` 供工人端 H5 预填；兼容期仍接受 body `tenantId`（打 WARN）。 ｜ tags: bmini, login, worker, tenant
 
 ## 分类域（3 case）
 
@@ -10366,13 +10381,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：717（活跃 134，跳过 583）
-- tier 分布：smoke 12 / normal 663 / adversarial 32
+- 用例总数：718（活跃 134，跳过 584）
+- tier 分布：smoke 12 / normal 664 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
 - 登录认证域：12
-- B 端小程序域：43
+- B 端小程序域：44
 - 分类域：3
 - 对话边界域：45
 - 跨域：3

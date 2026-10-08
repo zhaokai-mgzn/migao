@@ -1,11 +1,12 @@
 package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
-import com.migao.admin.config.TenantDomainResolver;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.WorkerLoginRequest;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.worker.WorkerSessionService;
+import com.migao.admin.worker.WorkerTenantResolver;
+import com.migao.admin.worker.WorkerTenantResolver.ResolvedWorkerLogin;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -41,27 +42,26 @@ import java.util.Map;
 public class WorkerAuthController {
 
     private final WorkerSessionService workerSessionService;
-    private final TenantDomainResolver tenantDomainResolver;
+    private final WorkerTenantResolver workerTenantResolver;
 
     /**
      * 工号 + PIN 登录 ⇒ 签发工人 session。
      *
-     * <p>租户判定与小程序登录同口径：域名/网关头（{@code X-Tenant-Id}）为**权威**，
-     * body {@code tenantId} 仅兼容期兜底；两者皆无 ⇒ **显式拒绝**，不静默落入默认租户。</p>
+     * <p>租户判定（issue #6564）与小程序登录同口径、但多两档：域名/网关头（{@code X-Tenant-Id}）为**权威**，
+     * 其次 body {@code enterpriseCode} 与 {@code 工号@企业编码}，body {@code tenantId} 仅兼容期兜底；
+     * 四档皆无 ⇒ **显式拒绝**（422 可行动文案），不静默落入默认租户。
+     * 解析口径**只有一份实现** = {@link WorkerTenantResolver}。</p>
      */
     @PostMapping("/login")
     public ApiResponse<Map<String, Object>> login(@Valid @RequestBody WorkerLoginRequest request,
                                                   HttpServletRequest httpRequest) {
-        Long tenantId = tenantDomainResolver.resolve(httpRequest).orElse(request.getTenantId());
-        if (tenantId == null) {
-            throw BusinessException.validationError(
-                    "无法识别租户：请通过 <租户ID>.app.migaozn.com 域名访问或提供 tenantId");
-        }
+        ResolvedWorkerLogin resolved = resolveOrReject(request, httpRequest);
+        Long tenantId = resolved.tenantId();
         Long previous = TenantContext.getTenantId();
         TenantContext.setTenantId(tenantId);
         try {
             return ApiResponse.success(workerSessionService.login(
-                    tenantId, request.getWorkerNo(), request.getPin(), request.getDeviceLabel()));
+                    tenantId, resolved.workerNo(), request.getPin(), request.getDeviceLabel()));
         } finally {
             // 登录接口本身是 permitAll（无 JWT 过滤器设的租户上下文）⇒ 必须自己清，
             // 否则线程复用会把租户上下文泄漏给下一个请求
@@ -84,16 +84,13 @@ public class WorkerAuthController {
             @Valid @RequestBody WorkerLoginRequest request,
             @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId,
             HttpServletRequest httpRequest) {
-        Long tenantId = tenantDomainResolver.resolve(httpRequest).orElse(request.getTenantId());
-        if (tenantId == null) {
-            throw BusinessException.validationError(
-                    "无法识别租户：请通过 <租户ID>.app.migaozn.com 域名访问或提供 tenantId");
-        }
+        ResolvedWorkerLogin resolved = resolveOrReject(request, httpRequest);
+        Long tenantId = resolved.tenantId();
         Long previous = TenantContext.getTenantId();
         TenantContext.setTenantId(tenantId);
         try {
             return ApiResponse.success(workerSessionService.switchWorker(
-                    tenantId, sessionId, request.getWorkerNo(), request.getPin(), request.getDeviceLabel()));
+                    tenantId, sessionId, resolved.workerNo(), request.getPin(), request.getDeviceLabel()));
         } finally {
             if (previous == null) {
                 TenantContext.clear();
@@ -101,6 +98,25 @@ public class WorkerAuthController {
                 TenantContext.setTenantId(previous);
             }
         }
+    }
+
+    /**
+     * 解析租户与工号；解析不出时按「客户端是否**尝试**用企业编码定位租户」分流（反枚举，issue #6564）。
+     *
+     * <p>尝试过（送了 {@code enterpriseCode}，或工号带合法的 {@code @企业编码} 后缀）但解析不出
+     * ⇒ 与「工号不存在 / PIN 错」返回**同一个 401 同一文案**（不泄露企业是否存在）；
+     * 完全没提供任何租户来源 ⇒ 422 可行动文案（那是**输入缺失**，不是凭据错误）。</p>
+     */
+    private ResolvedWorkerLogin resolveOrReject(WorkerLoginRequest request, HttpServletRequest httpRequest) {
+        ResolvedWorkerLogin resolved = workerTenantResolver.resolve(httpRequest, request);
+        if (resolved.tenantId() != null) {
+            return resolved;
+        }
+        if (workerTenantResolver.tenantSourceAttempted(request)) {
+            throw BusinessException.authFailed(WorkerSessionService.AUTH_FAILED_MESSAGE);
+        }
+        throw BusinessException.validationError(
+                "无法识别租户：请填写企业编码（向商家索取，例如 migao）");
     }
 
     /** 主动登出（幂等）。 */

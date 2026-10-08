@@ -31,6 +31,8 @@ export function WorkerBar({ onWorkerChange, onNeedLogin }: Props) {
   const [switching, setSwitching] = useState(false)
   const [workerNo, setWorkerNo] = useState('')
   const [pin, setPin] = useState('')
+  // 企业编码（issue #6564）：租户**只由服务端解析**（切换工人同样不许前端拍租户）
+  const [enterpriseCode, setEnterpriseCode] = useState('')
   const [message, setMessage] = useState('')
 
   const refresh = useCallback(async () => {
@@ -58,8 +60,12 @@ export function WorkerBar({ onWorkerChange, onNeedLogin }: Props) {
       setMessage('请输入工号与 PIN')
       return
     }
+    if (!enterpriseCode.trim()) {
+      setMessage('请输入企业编码（向商家索取）')
+      return
+    }
     setMessage('')
-    const res = await switchWorker(workerNo.trim(), pin.trim())
+    const res = await switchWorker(workerNo.trim(), pin.trim(), undefined, enterpriseCode.trim())
     if (!res.success || !res.data) {
       setMessage(res.message || '切换失败，请重试')
       return
@@ -69,7 +75,8 @@ export function WorkerBar({ onWorkerChange, onNeedLogin }: Props) {
     setSwitching(false)
     setWorkerNo('')
     setPin('')
-  }, [workerNo, pin, onWorkerChange])
+    setEnterpriseCode('')
+  }, [workerNo, pin, enterpriseCode, onWorkerChange])
 
   return (
     <View className='worker-bar'>
@@ -110,6 +117,13 @@ export function WorkerBar({ onWorkerChange, onNeedLogin }: Props) {
             placeholder='PIN'
             value={pin}
             onInput={(event) => setPin(event.detail.value)}
+          />
+          <Input
+            className='worker-bar__input'
+            type='text'
+            placeholder='企业编码（向商家索取）'
+            value={enterpriseCode}
+            onInput={(event) => setEnterpriseCode(event.detail.value)}
           />
           <Button className='worker-bar__action' size='mini' onClick={submitSwitch}>
             确认切换

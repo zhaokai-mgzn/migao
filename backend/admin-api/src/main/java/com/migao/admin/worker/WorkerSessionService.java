@@ -55,6 +55,15 @@ public class WorkerSessionService {
     public static final String SESSION_HEADER = "X-Worker-Session-Id";
 
     /**
+     * 工人登录/切换失败的**唯一文案**（反枚举，与员工登录 #5485 同口径；issue #6564 收口）。
+     *
+     * <p>工号不存在 / PIN 错 / 档案非 active / 企业编码不存在或不可解析 —— 全部同一 401 同一文案，
+     * 不泄露是哪一项错。**唯一实现点在这里**：本 Service 与 {@code WorkerAuthController}
+     * 一律引用它，不得各写一份字面量。</p>
+     */
+    public static final String AUTH_FAILED_MESSAGE = "工号或 PIN 不正确";
+
+    /**
      * 闲置超时**全局默认值**（分钟）= **30 天**（43200）—— 用户 2026-10-07 逐字裁定
      * 「把工人的登录 Session 过期时间设置久一点，可以延长到 1 个月」（issue #6473；母单 #5161。
      * 上一版 = 一周 10080，用户 2026-09-29 逐字「让工人**提前登录我们的 H5 页面**，我们把登录
@@ -116,12 +125,12 @@ public class WorkerSessionService {
                 || !passwordEncoder.matches(pin, worker.getPasswordHash())) {
             loginFailureGuard.recordFailure(failKey);
             log.warn("[工人登录] 失败：租户 {} 工号 {}（凭据不匹配或非工人档案）", tenantId, workerNo);
-            throw BusinessException.authFailed("工号或 PIN 不正确");
+            throw BusinessException.authFailed(AUTH_FAILED_MESSAGE);
         }
         if (!"active".equals(worker.getStatus())) {
             loginFailureGuard.recordFailure(failKey);
             log.warn("[工人登录] 失败：工号 {} 档案非 active（status={}）", workerNo, worker.getStatus());
-            throw BusinessException.authFailed("工号或 PIN 不正确");
+            throw BusinessException.authFailed(AUTH_FAILED_MESSAGE);
         }
         loginFailureGuard.clear(failKey);
         WorkerSession session = createSession(tenantId, worker, deviceLabel);

@@ -10,7 +10,7 @@
  */
 
 import { get, post } from '../utils/request'
-import { API_BASE_URL, DEFAULT_TENANT_ID } from '../utils/constants'
+import { API_BASE_URL } from '../utils/constants'
 import {
   clearWorkerSession,
   setCachedWorker,
@@ -65,6 +65,9 @@ function fail<T>(error: any, fallback: string): WorkerResponse<T> {
 /**
  * 工号 + PIN 登录 ⇒ 存 session 并缓存当前工人。
  *
+ * <p>🔴 租户**只由服务端解析**（issue #6564）：body 送 `enterpriseCode`（企业编码），**不再**送
+ * `tenantId` —— 前端拍一个默认租户曾把租户 25 的工人登录判成租户 1 ⇒ 恒 401（工号 + 企业编码口径）。</p>
+ *
  * <p>登录成功**只**写 `worker_session_id` 与展示缓存 —— 商家 `auth_token` 一字不动
  * （同一台 PAD 上商家开着后台、工人报工，两者互不覆盖）。</p>
  */
@@ -72,12 +75,12 @@ export async function workerLogin(
   workerNo: string,
   pin: string,
   deviceLabel?: string,
-  tenantId: number = DEFAULT_TENANT_ID,
+  enterpriseCode?: string,
 ): Promise<WorkerResponse<WorkerSessionPayload>> {
   try {
     const res = await post<WorkerResponse<WorkerSessionPayload>>(
       '/api/worker/login',
-      { workerNo, pin, deviceLabel, tenantId },
+      { workerNo, pin, deviceLabel, enterpriseCode },
       { baseURL: API_BASE_URL, skipAuth: true },
     )
     const normalized = toResponse(res, '登录失败，请重试')
@@ -100,12 +103,12 @@ export async function switchWorker(
   workerNo: string,
   pin: string,
   deviceLabel?: string,
-  tenantId: number = DEFAULT_TENANT_ID,
+  enterpriseCode?: string,
 ): Promise<WorkerResponse<WorkerSessionPayload>> {
   try {
     const res = await post<WorkerResponse<WorkerSessionPayload>>(
       '/api/worker/session/switch',
-      { workerNo, pin, deviceLabel, tenantId },
+      { workerNo, pin, deviceLabel, enterpriseCode },
       { baseURL: API_BASE_URL, headers: workerSessionHeaders(), skipAuth: true },
     )
     const normalized = toResponse(res, '切换失败，请重试')
