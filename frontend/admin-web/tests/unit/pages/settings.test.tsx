@@ -3,6 +3,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
+// issue #6573：旧深链 `?tab=params` 的重定向**按目标页守卫码显隐**（`production:view`，本页是
+// `system:manage` —— 源页的码不蕴含目标码）⇒ 本页要问权限。用可控替身：默认「能看」，单条用例翻面。
+let mockCanSeeParamsPage = true
+vi.mock('@/lib/permission', () => ({
+  usePermission: () => ({
+    has: (code?: string) => (code === 'production:view' ? mockCanSeeParamsPage : true),
+    permissions: [],
+    isAdmin: false,
+  }),
+}))
+
 // Mock lucide-react — 覆盖 settings page 使用的图标
 vi.mock('lucide-react', () => {
   const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
@@ -836,6 +847,7 @@ describe('SettingsPage — 「参数总览」已升为独立菜单项 /settings/
   })
 
   it('旧深链 `?tab=params` ⇒ `router.replace(\'/settings/params\')`（不 404；本页不挂面板）', async () => {
+    mockCanSeeParamsPage = true
     mockApiSuccess()
     mockAiConfigSuccess()
     mockBriefingConfigSuccess()
@@ -850,6 +862,25 @@ describe('SettingsPage — 「参数总览」已升为独立菜单项 /settings/
     expect(mockRouterReplace.mock.calls.every(([to]) => to === '/settings/params')).toBe(true)
     // 重定向期间面板**不得**闪现在本页（旧深链只跳转，不渲染第二份参数面）
     expect(screen.queryByTestId('tenant-params-panel')).toBeNull()
+  })
+
+  it('🔴 不持目标页守卫码 `production:view` ⇒ **不**重定向：留在本页，而不是被送到一扇打不开的门前', async () => {
+    // 跨权限域入口的现成判据（frontend/admin-web/tests/unit/cross-domain-nav-permission-guard.test.ts）：
+    // 本页守卫 `system:manage` **不蕴含**目标页的 `production:view` ⇒ 入口必须按**目标码**显隐。
+    mockCanSeeParamsPage = false
+    mockApiSuccess()
+    mockAiConfigSuccess()
+    mockBriefingConfigSuccess()
+    mockRouterReplace.mockClear()
+    mockSearchParams.mockReturnValue(new URLSearchParams('tab=params'))
+    render(<SettingsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /基本设置/ })).toBeInTheDocument()
+    })
+    expect(mockRouterReplace).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('tenant-params-panel')).toBeNull()
+    mockCanSeeParamsPage = true
   })
 })
 

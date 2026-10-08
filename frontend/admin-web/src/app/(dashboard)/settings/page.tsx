@@ -11,6 +11,7 @@ import { settingsApi, uploadApi, briefingApi } from '@/lib/api'
 import { WorkerPageConfigPanel } from '@/components/settings/WorkerPageConfigPanel'
 import { readImageDimensions } from '@/lib/image-dimensions'
 import { getBminiH5Url } from '@/lib/bmini-h5-url'
+import { usePermission } from '@/lib/permission'
 import { useAuthStore } from '@/store/auth'
 import type { SystemSettings, AiConfig, BriefingConfig } from '@/types'
 
@@ -47,10 +48,15 @@ export default function SettingsPage() {
 
   // issue #6573：「参数总览」已由本页 tab **升为一级菜单项**（`/settings/params`）—— 旧深链
   // `?tab=params` 保留为重定向（仓内口径：旧路径保留为重定向，旧深链不 404）。
+  // 🔴 重定向前先看**目标页的守卫码**（`production:view`）：本页的码是 `system:manage`，它**不蕴含**
+  // 目标码 —— 直接把所有人都跳过去，就是「点进去 403」的形态（跨权限域入口守卫的现成判据：
+  // `frontend/admin-web/tests/unit/cross-domain-nav-permission-guard.test.ts`）。
+  // 不持该码的人留在本页（看到基本设置），而不是被送到一扇打不开的门前。
   const router = useRouter()
+  const { has } = usePermission()
   useEffect(() => {
-    if (urlTab === 'params') router.replace('/settings/params')
-  }, [urlTab, router])
+    if (urlTab === 'params' && has('production:view')) router.replace('/settings/params')
+  }, [urlTab, router, has])
 
   // ============ 基本设置（企业信息）============
   // #3103: notificationEmail 为僵尸字段（站内信无需邮箱，后端无邮件消费逻辑），已从 UI/类型移除

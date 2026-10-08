@@ -85,6 +85,11 @@ class MenuControllerTest {
     private static final List<String> ACTION_NODE_LABELS = List.of(
             "订单详情", "新增员工");
 
+    /** 顶层**一级项**名（`children` 为空、直接跳转的那些，**不属于任何组**）。
+     *  🔴 #6573 起两个：商品管理 / 参数总览 —— 它们不参与 `allChildren` 的组内计数，
+     *  由 `topLevelStandaloneItems` 单独断言（避免两处都算它们 ⇒ 重复计数）。 */
+    private static final List<String> TOP_LEVEL_STANDALONE_LABELS = List.of("商品管理", "参数总览");
+
     /**
      * 拉取菜单树 DOM —— jsonPath 的过滤表达式对「单元素结果是否解包」语义不稳，
      * 故逐字段断言一律走 DOM 真值（同族踩坑见 #4186）。
@@ -324,17 +329,19 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("菜单项一项不少不减（21 项各恰好一次，含顶层一级项）+ 2 个动作码节点（合计 23 组内节点）")
+    @DisplayName("菜单项一项不少不减（**21 组内项** + **2 顶层一级项**各恰好一次）+ 2 个动作码节点（合计 23 组内节点）")
     void everyMenuItemAppearsExactlyOnce() throws Exception {
         List<String> all = labels(allChildren(fetchTree()));
         for (String name : MENU_ITEM_LABELS) {
             int expected = 1;
-            // 「商品管理」是**顶层一级项** ⇒ 不在 allChildren（它不属于任何组），单独在下面断言
-            if ("商品管理".equals(name)) {
-                // 顶层一级项：不在 allChildren（它不属于任何组）⇒ 按「顶层一级项里有且仅有一项」断言
+            // 顶层**一级项**（「商品管理」「参数总览」）是**叶子** ⇒ 不在 `allChildren`
+            // （它们不属于任何组），改在顶层一级项集合里各断言恰好一次。
+            // ⚠️ 这里按**名单**判断而不是按名字硬编码：将来再加一级项，忘了登记就会落到下面那条
+            // 「组内节点出现次数不是 1」上 ⇒ 当场红（不会静默跳过）。
+            if (TOP_LEVEL_STANDALONE_LABELS.contains(name)) {
                 assertEquals(1, topLevelStandaloneItems(fetchTree()).stream()
-                                .filter(n -> "商品管理".equals(n.path("label").asText())).count(),
-                        "顶层一级项「商品管理」的出现次数不是 1");
+                                .filter(n -> name.equals(n.path("label").asText())).count(),
+                        "顶层一级项「" + name + "」的出现次数不是 1");
                 continue;
             }
             assertEquals(expected, all.stream().filter(name::equals).count(),

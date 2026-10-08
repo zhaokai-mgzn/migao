@@ -20,6 +20,7 @@ import {
   Scissors,
   ScrollText,
   ShieldCheck,
+  SlidersHorizontal,
   TrendingDown,
   Truck,
   UserCircle,
@@ -201,7 +202,9 @@ export const capabilityDomains: CapabilityDomain[] = [
       },
       {
         name: '企业基础信息',
-        detail: '企业名称与 Logo、AI 客服名称与欢迎语、工人端页面开关、通知设置与参数总览。',
+        // issue #6573：「参数总览」已由本页 tab 升为**一级菜单项** ⇒ 本行的点名同步（官网不得把
+        // 已搬走的入口继续说成在「企业基础信息」里）
+        detail: '企业名称与 Logo、AI 客服名称与欢迎语、工人端页面开关、通知设置。',
         icon: Boxes,
       },
     ],
@@ -215,6 +218,13 @@ export const standaloneEntries: CapabilityItem[] = [
     detail:
       '状态四态（出售中 / 已下架 / 审核中 / 草稿）、多规格 SKU、Excel 批量导入导出与商品分类树。',
     icon: Package,
+  },
+  {
+    // issue #6573：一级菜单项（`/settings/params`）—— 官网必须与后台菜单同源（漏讲 ⇒ 判据红）
+    name: '参数总览',
+    detail:
+      '把散在各页的商家可配参数集中到一处（算料口径、AI 客服、加工费、余料回收）；顶部按依赖顺序排出配置主线，直接说清还缺哪项、该去哪页配。',
+    icon: SlidersHorizontal,
   },
   {
     name: '通知中心',

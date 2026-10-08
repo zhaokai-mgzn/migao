@@ -81,7 +81,7 @@ export const MAINLINE_STEPS: readonly MainlineStep[] = [
   {
     key: 'default-route',
     label: '默认路线',
-    why: '没匹配到专属路线的订单走哪条（兜底终点）',
+    why: '没有专属路线的订单，按哪条路线生产',
     impact: '没有默认路线 ⇒ 没有专属路线的订单**一单都派不出去**',
     href: '/production/routings',
     blocking: true,
