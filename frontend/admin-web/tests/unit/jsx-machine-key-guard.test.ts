@@ -375,12 +375,30 @@ describe('JSX 文本位的服务端机器键守卫（issue #6552 · #6523 / #653
       '<span>{items.map((i) => <b key={i.materialKey}>{i.name}</b>)}</span>',
     ]
     for (const s of good) expect(scanJsxMachineKeys('x.tsx', `const a = ${s}`), s).toEqual([])
-    // 规则本身对机器键形态必须有判别力（否则上面全是「规则坏了也绿」）
-    for (const name of ['materialKey', 'materialLabelKey', 'sessionUuid', 'uuid', 'contentHash', 'hash', 'apiToken', 'token']) {
-      expect(isMachineKeyName(name), name).not.toBeNull()
+    // 规则本身对机器键形态必须有判别力（否则上面全是「规则坏了也绿」）——
+    // **逐条钉到具体规则 id**（不用 `not.toBeNull` 这种存在性断言：`growth_gate` 的 G4 会判它弱断言）
+    const mustHit: Array<[string, string]> = [
+      ['materialKey', 'MK-compound-key'],
+      ['materialLabelKey', 'MK-compound-key'],
+      ['sessionUuid', 'MK-uuid'],
+      ['uuid', 'MK-uuid'],
+      ['contentHash', 'MK-hash'],
+      ['hash', 'MK-hash'],
+      ['apiToken', 'MK-token'],
+      ['token', 'MK-token'],
+    ]
+    for (const [name, rule] of mustHit) {
+      expect(isMachineKeyName(name), `${name} 必须命中 ${rule}`).toBe(rule)
     }
-    for (const name of ['material_key', 'composition_key', 'itemKey', 'materialLabel', 'OTHER_KEY']) {
-      expect(isMachineKeyName(name), name).toBeNull()
+    const mustMiss: Array<[string, string]> = [
+      ['material_key', 'snake_case 是服务端口径/内容，不是机器键指纹'],
+      ['composition_key', '已登记人话（工序组合口径标签）'],
+      ['itemKey', '已登记人话（= 工序名，内容本身）'],
+      ['materialLabel', '展示名（人话）'],
+      ['OTHER_KEY', '全大写常量 = 内容本身'],
+    ]
+    for (const [name, why] of mustMiss) {
+      expect(isMachineKeyName(name), `${name} 不该判红（${why}）`).toBe(null)
     }
   })
 
