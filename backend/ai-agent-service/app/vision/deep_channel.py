@@ -26,12 +26,15 @@ Agent 只补页面做不到的三种，其中前两种的**可判定部分**落�
 
 ```python
 {"component": "page_fill", "target_type": "product" | "order",
- "fields": [{"key", "label", "value", "source", "reason", "candidates", "note", "note_source"}]}
+ "fields": [{"key", "label", "value", "source", "reason", "candidates", "note", "note_source",
+             "reference"}]}
 ```
 
 - `value` 非空 ⇒ `source` 必为 `[图片识别]` 或 `[米宝解读]`（**来源可区分**是硬要求：
   否则商家无法判断该信哪一格）；
-- `value` 为空 ⇒ 必有 `reason`（看得懂的理由），`candidates` 只在歧义时非空。
+- `value` 为空 ⇒ 必有 `reason`（看得懂的理由），`candidates` 只在歧义时非空；
+- `reference` 非空（issue #6529）⇒ 图上抄到的**原文**但**没被采纳**（置信度不足）：
+  消费侧只用来**查目录 / 展示**，**绝不据此填表** —— 它与 `value` 互斥（`value` 仍为空）。
 """
 import difflib
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -156,6 +159,11 @@ def build_page_fill(
                 cell["source"] = SOURCE_RECOGNIZED
 
         _apply_interpretation(cell, target_type, interpretations.get(field.key))
+        # 「参考」= 图上抄到、但**内核没采纳**的原文（置信度不足；`targets.REFERENCE_KEYS`）。
+        # 内核带在字段上 ⇒ 深通道 / 一次性推理两条同源通道**一律透传**（消费侧只用来
+        # **查目录 / 展示**，绝不据此填表：`value` 仍为空就是这条纪律的形状）。
+        # ⚠️ 键名清单不在本模块再写一份（那是第二份口径）—— 内核没给 ⇒ 这里就是 `None`。
+        cell["reference"] = _text(source_field.get("reference")) or None
         plan_fields.append(cell)
 
     return {

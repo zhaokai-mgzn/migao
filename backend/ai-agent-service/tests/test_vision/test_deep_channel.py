@@ -1,4 +1,4 @@
-# case_ids: CH-021, PR-008, OR-008
+# case_ids: CH-021, PR-008, OR-008, OR-048
 """**Agent 深通道**的确定性半边（issue #5368 包 2）。
 
 包 1（PR #5343）交付的是**页面快通道**；本包是**深通道**，两者**共用识别内核**
@@ -447,11 +447,34 @@ class TestPageFillPlanContract:
         assert plan["component"] == PAGE_FILL_COMPONENT == "page_fill"
         assert plan["target_type"] == "product"
 
-    def test_every_field_has_the_uniform_eight_keys(self):
+    def test_every_field_has_the_uniform_nine_keys(self):
+        """逐字段键集**统一**（issue #6529 起九键）：新增的那个 `reference` = 图上读到但没采纳的原文。"""
         plan = build_page_fill("order", order_fields())
         assert [sorted(f.keys()) for f in plan["fields"]] == [
-            ["candidates", "key", "label", "note", "note_source", "reason", "source", "value"]
+            ["candidates", "key", "label", "note", "note_source", "reason", "reference",
+             "source", "value"]
         ] * len(plan["fields"])
+
+    def test_reference_is_carried_through_but_is_never_a_value(self):
+        """参考格（issue #6529）：`reference` 透传，`value` / `source` **仍然为空**。
+
+        深通道（米宝同页填充）与一次性推理共用这一份构造 ⇒ 两条通道不可能各说一套。
+        """
+        fields = [{
+            "key": "items", "label": "商品明细", "value": None, "source": None,
+            "reason": "置信度 0.75 低于订单侧阈值 0.85，宁可不填",
+            "reference": "2698-11、C31",
+        }]
+        cell = field_of(build_page_fill("order", fields), "items")
+        assert cell["reference"] == "2698-11、C31"
+        assert cell["value"] is None
+        assert cell["source"] is None
+
+    def test_no_reference_in_the_kernel_output_stays_none(self):
+        """对照读数：内核没带 `reference`（正常采纳的格子）⇒ 格子上就是 `None`。"""
+        cell = field_of(build_page_fill("order", order_fields()), "items")
+        assert cell["value"] == "雪尼尔遮光窗帘"
+        assert cell["reference"] is None
 
     def test_filled_cells_have_a_source_and_empty_cells_have_a_reason(self):
         """不变式（两个 target 都过）：有值 ⇒ 必带来源标注；留空 ⇒ 必给理由。"""

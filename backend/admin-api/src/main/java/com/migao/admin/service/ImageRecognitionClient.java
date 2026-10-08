@@ -157,8 +157,10 @@ public class ImageRecognitionClient {
                         url, response.getBody());
                 throw unavailable(url, "图片识别端点响应缺少 data.fields 数组（空数组 = 没认出来，键必须存在）", null);
             }
-            // 字段对象**原样搬运**（键名即契约：key/label/value/source/reason）——
+            // 字段对象**原样搬运**（键名即契约：key/label/value/source/reason/reference）——
             // Java 侧不重建字段表，`[图片识别]` 标注由 ai-agent 给（第二份标注 = 会漂的第二份口径）。
+            // `reference` = 图上抄到但**没采纳**的原文（issue #6529，只有订单侧 `items` 会带）：前端只用它
+            // 查目录 / 展示，**绝不据此填表** —— 本侧同样只搬不改。
             List<Map<String, Object>> passthrough = new ArrayList<>();
             for (JsonNode field : fields) {
                 @SuppressWarnings("unchecked")

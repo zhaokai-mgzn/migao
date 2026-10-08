@@ -1,4 +1,4 @@
-// case_ids: PR-008, PR-022
+// case_ids: PR-008, PR-022, OR-048
 /**
  * FormInterpretCard（issue #6367 包 P3）—— 建品页表单里的「识别 + 一次性推理」结果卡。
  *
@@ -139,6 +139,27 @@ describe('FormInterpretCard（issue #6367 包 P3）', () => {
     expect(keysOf(onFill.mock.calls[0][0])).toEqual(['name', 'craft'])
     expect(mocks.createProduct).not.toHaveBeenCalled()
     expect(mocks.updateProduct).not.toHaveBeenCalled()
+  })
+
+  it('判据 5（#6529）：参考格 = 图上读到但**没采纳** ⇒ 如实显示，并随「一键填入」带出去（供查目录）', () => {
+    const reference = field({
+      key: 'items',
+      label: '商品明细',
+      reason: '置信度 0.75 低于订单侧阈值 0.85，宁可不填',
+      reference: '2698-11、C31',
+    })
+    const { onFill } = renderCard([RECOGNIZED_FIELD, reference])
+
+    // ① 展示：不冒充「已填」，也不静默丢掉
+    expect(screen.getByTestId('form-interpret-reference-items').textContent).toContain('2698-11、C31')
+    // ② 它不是可填项（没有勾选框）
+    expect(screen.queryByTestId('form-interpret-check-items')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('form-interpret-fill'))
+    // ③ 随行带出去 —— 但 `value` 仍是 null（页面写不进表单，只用来查目录）
+    const passed = onFill.mock.calls[0][0]
+    expect(keysOf(passed)).toEqual(['name', 'items'])
+    expect(passed.find((f: { key: string }) => f.key === 'items').value).toBeNull()
   })
 
   it('判据 4：取消勾选的格子不填（一格一格由商家说了算）', () => {

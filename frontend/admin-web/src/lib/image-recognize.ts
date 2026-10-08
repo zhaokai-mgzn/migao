@@ -66,6 +66,31 @@ export function filledFields(fields: RecognizedField[]): RecognizedField[] {
   )
 }
 
+/**
+ * 这一格是否带「**参考**」原文（issue #6529）：图上抄到、但内核**没采纳**（置信度不足）。
+ *
+ * 与 {@link filledFields} **互斥**（`value` 有值就不叫参考）：它是「没被采纳」这件事的形状，
+ * 不是第二个值 —— 消费侧**不得**据此预填表单 / 写备注。
+ */
+export function hasReference(field: RecognizedField): boolean {
+  return (
+    !(typeof field.value === 'string' && field.value.trim() !== '') &&
+    typeof field.reference === 'string' &&
+    field.reference.trim() !== ''
+  )
+}
+
+/**
+ * **参考字段**（`value` 为空、`reference` 有值）—— 消费方不是表单，而是
+ * 「按名称**查目录** ⇒ 给候选 ⇒ 商家点选」（订单侧明细，issue #5345）与展示。
+ *
+ * 为什么单独一个出口（而不是并进 {@link filledFields}）：两者去向相反 ——
+ * 前者进表单、后者一个字都不进；混在一个清单里，早晚有人拿它去填表。
+ */
+export function referenceFields(fields: RecognizedField[]): RecognizedField[] {
+  return (fields || []).filter(hasReference)
+}
+
 /** 取「有值」字段本身（拿得到 `label`）；空值字段一律视为不存在 */
 function pickField(fields: RecognizedField[], key: string): RecognizedField | undefined {
   return (fields || []).find(

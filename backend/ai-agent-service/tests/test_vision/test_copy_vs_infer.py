@@ -174,7 +174,7 @@ def test_value_with_self_denying_reason_is_dropped():
     红证：把 `_resolve` 里那段自否证判断删掉 ⇒ 本判据红。
     """
     for reason in ("图片未给出该字段", "图上没有这一格", "看不清，无法识别", "未标注"):
-        value, out_reason = recognizer._resolve(
+        value, out_reason, _reference = recognizer._resolve(
             "product",
             _product_field("color"),
             {"value": "编出来的颜色", "confidence": 0.9, "reason": reason},
@@ -190,7 +190,7 @@ def test_value_with_self_denying_reason_is_dropped():
 
 def test_normal_copy_without_self_denial_still_lands():
     """对照组：`reason` 正常（或不给）时，抄到的值照旧落地 —— 防「把识别闸一刀切死」。"""
-    value, _ = recognizer._resolve(
+    value, _, _reference = recognizer._resolve(
         "product",
         _product_field("color"),
         {"value": "常青藤-1# 轻轻茉莉", "confidence": 0.95, "reason": "图上第二行"},

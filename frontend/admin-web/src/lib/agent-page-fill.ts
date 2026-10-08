@@ -58,6 +58,8 @@ export interface PageFillField {
   candidates: PageFillCandidate[]
   note: string | null
   note_source: string | null
+  /** 图上抄到但**没被采纳**的原文（issue #6529）—— 只用于查目录 / 展示，见 `hasReference` */
+  reference?: string | null
 }
 
 export interface PageFillPlan {

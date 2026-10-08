@@ -6,7 +6,7 @@ import { Button } from '@/components/ui'
 import { resolveImageUrl } from '@/lib/utils'
 import { htmlToPlainText } from '@/lib/rich-text-plain'
 import type { RecognizedField } from '@/lib/api'
-import { RECOGNIZE_NO_REASON } from '@/lib/image-recognize'
+import { RECOGNIZE_NO_REASON, referenceFields } from '@/lib/image-recognize'
 import {
   PAGE_FILL_SOURCE_INTERPRETED,
   PAGE_FILL_SOURCE_RECOGNIZED,
@@ -80,8 +80,17 @@ export default function FormInterpretCard({
   const toggle = (key: string) =>
     setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
 
+  /**
+   * 「一键填入」= 选中的**有值**格子 + **参考格**（issue #6529：`value` 为空、`reference` 有值）。
+   *
+   * 参考格带出去不是"填表"（它的 `value` 就是空的，任何映射函数都写不进表单）——它是
+   * 「按名称**查目录**」的输入：订单侧明细正是靠它才对商家说得出「目录里没有这个商品」。
+   */
   const handleFill = () =>
-    onFill(fields.filter((field) => hasValue(field) && selected.includes(field.key)))
+    onFill([
+      ...fields.filter((field) => hasValue(field) && selected.includes(field.key)),
+      ...referenceFields(fields),
+    ])
 
   return (
     <div
@@ -128,12 +137,23 @@ export default function FormInterpretCard({
                     </span>
                   </label>
                 ) : (
-                  <p
-                    data-testid={`form-interpret-reason-${field.key}`}
-                    className="text-xs leading-5 text-neutral-500"
-                  >
-                    {field.label}：未填（{field.reason || RECOGNIZE_NO_REASON}）
-                  </p>
+                  <div>
+                    <p
+                      data-testid={`form-interpret-reason-${field.key}`}
+                      className="text-xs leading-5 text-neutral-500"
+                    >
+                      {field.label}：未填（{field.reason || RECOGNIZE_NO_REASON}）
+                    </p>
+                    {field.reference && (
+                      /* 「参考」（issue #6529）：图上读到、但没采纳 —— 如实说清，且**不进表单** */
+                      <p
+                        data-testid={`form-interpret-reference-${field.key}`}
+                        className="text-xs leading-5 text-amber-700"
+                      >
+                        {field.label}：图上读到（未采纳，仅供查目录）{field.reference}
+                      </p>
+                    )}
+                  </div>
                 )}
                 {field.note && (
                   <p

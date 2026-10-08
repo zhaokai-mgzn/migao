@@ -7,7 +7,7 @@ import { Button } from '@/components/ui'
 import { toastRequestError } from '@/lib/api-error'
 import { imageRecognizeApi, uploadApi } from '@/lib/api'
 import type { RecognizedField } from '@/lib/api'
-import { filledFields, RECOGNIZE_NO_REASON, RECOGNIZE_SOURCE_TAG } from '@/lib/image-recognize'
+import { filledFields, hasReference, RECOGNIZE_NO_REASON, RECOGNIZE_SOURCE_TAG, referenceFields } from '@/lib/image-recognize'
 import FormInterpretCard, { type FormInterpretFields } from './FormInterpretCard'
 
 /** 识别不出来时的统一提示（degraded 与「零个可用字段」两种情形同一条） */
@@ -20,7 +20,11 @@ export const INTERPRET_EMPTY_MESSAGE = '这次没有可填的字段，可重试�
 
 interface ImageRecognizeButtonProps {
   targetType: 'product' | 'order'
-  /** 只回传**有值**的字段候选；空值字段（内核有意留空）不在这里 */
+  /**
+   * 回传**有值**的字段候选（空值字段 —— 内核有意留空 —— 不在这里）；
+   * **另带**「参考字段」（`reference`，issue #6529）：它们 `value` 为空、**不进表单**，
+   * 调用方只用来「按名称查目录 / 展示」（订单侧明细就是这样拿到「目录里没有这个商品」的）。
+   */
   onRecognized: (fields: RecognizedField[]) => void
   /**
    * 「识别 + **一次性**推理」模式（issue #6367 包 P3；建品页用）。
@@ -119,7 +123,7 @@ export default function ImageRecognizeButton({
         toast.error(RECOGNIZE_EMPTY_MESSAGE)
         return
       }
-      onRecognized(usable)
+      onRecognized([...usable, ...referenceFields(all)])
     } catch (error) {
       if (interpret) setFailure(INTERPRET_FAILURE_MESSAGE)
       // 后端错误已由 request.ts 拦截器统一提示；这里只兜底未经拦截器的异常
@@ -183,17 +187,27 @@ export default function ImageRecognizeButton({
           data-testid="image-recognize-result"
           className="mt-2 space-y-0.5 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2"
         >
-          {/* 逐字段来源：有值的标 `[图片识别]`，留空的连内核给的原因一起显示（不写进表单） */}
+          {/* 逐字段来源：有值的标 `[图片识别]`，留空的连内核给的原因一起显示（不写进表单）；
+              「参考」（图上读到、没采纳）**单独一行**如实说清 —— 它同样不写进表单 */}
           {fields.map((f) => (
-            <p
-              key={f.key}
-              data-testid={`image-recognize-field-${f.key}`}
-              className="text-xs leading-5 text-neutral-600"
-            >
-              {typeof f.value === 'string' && f.value.trim() !== ''
-                ? `${RECOGNIZE_SOURCE_TAG} ${f.label}：${f.value}`
-                : `${f.label}：未识别（${f.reason || RECOGNIZE_NO_REASON}）`}
-            </p>
+            <div key={f.key}>
+              <p
+                data-testid={`image-recognize-field-${f.key}`}
+                className="text-xs leading-5 text-neutral-600"
+              >
+                {typeof f.value === 'string' && f.value.trim() !== ''
+                  ? `${RECOGNIZE_SOURCE_TAG} ${f.label}：${f.value}`
+                  : `${f.label}：未识别（${f.reason || RECOGNIZE_NO_REASON}）`}
+              </p>
+              {hasReference(f) && (
+                <p
+                  data-testid={`image-recognize-reference-${f.key}`}
+                  className="text-xs leading-5 text-amber-700"
+                >
+                  图上读到（未采纳，仅供查目录）：{f.reference}
+                </p>
+              )}
+            </div>
           ))}
         </div>
       )}
