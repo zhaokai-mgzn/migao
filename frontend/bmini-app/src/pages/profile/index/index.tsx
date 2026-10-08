@@ -5,7 +5,6 @@ import { useAuthStore } from '../../../store/authStore'
 import { useChatStore } from '../../../store/chatStore'
 import { visibleAdminSurfaces } from '../../../utils/adminPermission'
 import { useAdminPermissions } from '../../../components/admin/useAdminPermissions'
-import { INBOUND_PAGE_ROUTE, REPRINT_PAGE_ROUTE } from '../../../utils/inbound/gaps'
 import './index.scss'
 
 /**
@@ -15,8 +14,11 @@ import './index.scss'
  * 与 C 端消费者 profile 不同：不展示订单/售后/手机号绑定（B 端员工管理他人的订单，
  * 个人消费数据无意义），聚焦员工身份与安全退出。
  *
- * issue #5747：工人面**三页**都要从这里可达 —— 此前只有「扫码报工」，拍照入库与补打
- * 入库标签在 `/b/` 内**零入口**（只在 `/w/` 报工页页头，见 src/utils/pageEntries.ts）。
+ * issue #6563（用户 2026-10-08 裁定）：**工人三件功能（扫码报工 / 拍照入库 / 补打入库标签）不在本页** ——
+ * 它们是工人动作（各自页内还会再要求工人身份），已归位到工人登录后的工作台
+ * （`src/pages/worker/home/index.tsx`）。#5747 时代把它们铺进商家菜单，是为了补「`/b/` 内两页零入口」
+ * 的可达性；工人工作台落地（#6467 切片 1）后这条理由不再成立 ⇒ 从商家面撤掉，
+ * 免得商家员工点进去只被身份分流挡住（反向判据见 tests/profile-page.test.tsx）。
  */
 export default function ProfilePage() {
   const { user, isLoggedIn, logout } = useAuthStore()
@@ -60,21 +62,6 @@ export default function ProfilePage() {
     Taro.redirectTo({ url: '/pages/auth/login/index' })
   }
 
-  /** 工人扫码报工入口（issue #3997，M4-G-3） */
-  const handleProduction = () => {
-    Taro.navigateTo({ url: '/pages/production/index/index' })
-  }
-
-  /** 拍照入库入口（issue #5747；未登录工人身份时由该页自己引导去工号 + PIN 登录） */
-  const handleInbound = () => {
-    Taro.navigateTo({ url: INBOUND_PAGE_ROUTE })
-  }
-
-  /** 补打入库标签入口（issue #5747；同上，标签不在手边时不必先扫洗水码） */
-  const handleReprint = () => {
-    Taro.navigateTo({ url: REPRINT_PAGE_ROUTE })
-  }
-
   // ========== 未登录 ==========
   if (!isLoggedIn) {
     return (
@@ -116,23 +103,9 @@ export default function ProfilePage() {
 
       {/* ===== 功能入口 ===== */}
       <View className='profile-menu'>
-        <View className='menu-item' onClick={handleProduction}>
-          <Text className='menu-item__text'>扫码报工</Text>
-          <Text className='menu-item__arrow'>›</Text>
-        </View>
-
-        {/* ── 工人面另外两页（issue #5747）──
-            拍照入库 / 补打入库标签此前只在 `/w/` 报工页页头可达，站在 `/b/` 里的人
-            一步也走不到（用户 2026-09-28 反馈）。两页自身会按身份分流：
-            未登录工人 ⇒ 显式引导去工号 + PIN 登录，登录后回原页继续。 */}
-        <View className='menu-item' onClick={handleInbound}>
-          <Text className='menu-item__text'>拍照入库</Text>
-          <Text className='menu-item__arrow'>›</Text>
-        </View>
-        <View className='menu-item' onClick={handleReprint}>
-          <Text className='menu-item__text'>补打入库标签</Text>
-          <Text className='menu-item__arrow'>›</Text>
-        </View>
+        {/* 🔴 本页**没有**工人三件功能（扫码报工 / 拍照入库 / 补打入库标签，issue #6563）：
+            它们是工人动作，归位在工人登录后的工作台 `src/pages/worker/home/index.tsx`。
+            判据 = tests/profile-page.test.tsx 的两条反向断言（渲染面取不到 + 源码面无工人面路由记号）。 */}
 
         {/* ── 管理面 4 项（issue #5654）──
             管理员离店后仍要能办的事：排产/派单 · 入库过账 · 售后处理 · 计件工资报表。

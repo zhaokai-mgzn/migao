@@ -1636,16 +1636,16 @@ _CASE_BM_028 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── BM-029 [NORMAL] 「我的」页：工人面三页入口齐备（含拍照入库 / 补打入库标签）+ 字号按设计尺度（≥24）（源: cases/bmini.yml）──
+# ── BM-029 [NORMAL] 「我的」页：只剩商家面入口（工人三件功能已移出到工人工作台）+ 字号按设计尺度（≥24）（源: cases/bmini.yml）──
 _CASE_BM_029 = EvalCase(
     id='BM-029',
     legacy_id='',
-    title='「我的」页：工人面三页入口齐备（含拍照入库 / 补打入库标签）+ 字号按设计尺度（≥24）',
+    title='「我的」页：只剩商家面入口（工人三件功能已移出到工人工作台）+ 字号按设计尺度（≥24）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['商家员工在 `/b/` 的「我的」页：菜单里能直接点到「扫码报工」「拍照入库」「补打入库标签」三页（未登录工人身份时由页面自身引导用工号 + PIN 登录）；菜单文字在手机上清晰可读，不再是挤在一起的小字'],
+    user_inputs=['商家员工在 `/b/` 的「我的」页：菜单里只有商家面入口（管理面 4 项 + 关于我们 / 隐私协议）；工人三件功能（扫码报工 / 拍照入库 / 补打入库标签）**不在**商家菜单里 —— 它们在工人用「工号 + PIN」登录后的工作台；菜单文字在手机上清晰可读，不再是挤在一起的小字'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·🔴 拍照入库与补打入库标签在 `/b/` 内**有显式入口**（修复前只有「扫码报工」；这两页只从 `/w/` 报工页页头或扫标签深链可达 ⇒ 站在商家 H5 里的人一步也走不到）：判据 = frontend/bmini-app/tests/profile-page.test.tsx 断言两项在册且分别 `Taro.navigateTo` 到 `INBOUND_PAGE_ROUTE` / `REPRINT_PAGE_ROUTE`（路由字面量取自 frontend/bmini-app/src/utils/inbound/gaps.ts，单一真值）。红证：删掉任一条菜单项 ⇒ 该用例判红', '判据 2·入口台账同批登记：frontend/bmini-app/src/utils/pageEntries.ts 新增两条（from = 「我的」页，nav = navigateTo，viaBinding = gaps.ts）—— 守卫 frontend/bmini-app/tests/page-entry-reachability.test.ts 判「登记了没人指向也红 / 没登记即红」', '判据 3·🔴 「我的」页 sub-floor 字号**清零**（修复前 `.menu-item__text` = `font-size: 15px` ⇒ 真机 ≈7.8 CSS px @390 宽，用户反馈「菜单列表字体太小」）：判据 = tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py 的 test_profile_page_has_no_sub_floor_font_size（该页独立报红，不从台账里翻）+ 只许缩短台账全库读数 **85 → 68 → 0**（第二轮收口见 issue #5769：聊天卡片与各页共 68 处一并达标，台账已清零）。红证：把 15px 写回 ⇒ 该用例判红（实跑过）', '判据 4·同批清掉从顾客端 profile 抄来、本页零引用的整块样式（CSS 尺度小字号的来源），菜单行高按手指命中区口径取 96 设计 px（≈50 CSS px，同 BM-027 的 ≥88 口径）'],
+    data_checks=['判据 1·🔴 商家「我的」页**取不到**工人三件功能（扫码报工 / 拍照入库 / 补打入库标签）：判据 = frontend/bmini-app/tests/profile-page.test.tsx 的渲染面反向断言（`queryByText` 三条全 null）+ 源码面（去注释）断言（页面源码不得出现这三条标签与 `PRODUCTION_PAGE_ROUTE` / `INBOUND_PAGE_ROUTE` / `REPRINT_PAGE_ROUTE` / `/pages/production/index/index` 任一记号）。红证（实跑）：把一条「扫码报工」菜单项注入回 frontend/bmini-app/src/pages/profile/index/index.tsx ⇒ 两条判据各自判红（2 failed / 13 passed，随后还原）。三件功能的**存活**判据在工人工作台：frontend/bmini-app/tests/worker-home-page.test.tsx（BM-034，一格未放宽）', '判据 2·入口台账同批**收缩**：frontend/bmini-app/src/utils/pageEntries.ts 撤掉 `from = 「我的」页` 的三条登记（扫码报工 / 拍照入库 / 补打入库标签）—— 三页仍各有其它真入口（工人工作台三条 / `/w/` 报工页页头两条 / 扫标签深链一条）⇒ 守卫 frontend/bmini-app/tests/page-entry-reachability.test.ts 的「未登记即红 / 登记了没人指向也红」双向仍绿，且登记总数只减不增', '判据 3·🔴 「我的」页 sub-floor 字号**清零**（修复前 `.menu-item__text` = `font-size: 15px` ⇒ 真机 ≈7.8 CSS px @390 宽，用户反馈「菜单列表字体太小」）：判据 = tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py 的 test_profile_page_has_no_sub_floor_font_size（该页独立报红，不从台账里翻）+ 只许缩短台账全库读数 **85 → 68 → 0**（第二轮收口见 issue #5769：聊天卡片与各页共 68 处一并达标，台账已清零）。红证：把 15px 写回 ⇒ 该用例判红（实跑过）', '判据 4·同批清掉从顾客端 profile 抄来、本页零引用的整块样式（CSS 尺度小字号的来源），菜单行高按手指命中区口径取 96 设计 px（≈50 CSS px，同 BM-027 的 ≥88 口径）'],
     skip_reason='[backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/profile-page.test.tsx + pytest: tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'profile', 'worker', 'page-entry', 'typography'],
     persona='',
