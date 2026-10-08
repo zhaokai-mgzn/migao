@@ -97,7 +97,10 @@ const board = (over: Partial<PoolBoard> = {}): PoolBoard => ({
   urgentLines: [],
   groups: [
     {
-      materialKey: '遮光布 / 米白 / 2.8m',
+      // 🔴 issue #6523：`materialKey` 是**机器键**（真机 = `productId|skuCode`，productId 是 UUID）
+      // —— 本夹具刻意写成真机形态 ⇒ 组标题一旦退回渲染机器键，`|` 与 UUID 当场出现在 DOM 里（断言红）。
+      materialKey: 'a61daac33e1a49974577d3ca81c4500b|米白/2.8m',
+      materialLabel: '遮光布 × 米白/2.8m',
       productId: 'p1',
       skuCode: '米白/2.8m',
       orderCount: 3,
@@ -148,14 +151,20 @@ describe('智能派单 · 成批区（PR-081）', () => {
     expect(screen.getByTestId('pool-line-o5')).toHaveTextContent('未指定')
   })
 
-  it('分组头显示物料键（商品 × 颜色 × 门幅）+ 订单数 + 需求米数（服务端值）', async () => {
+  it('分料组标题渲染**展示名**（服务端 materialLabel；不含机器键的 `|` 与 UUID）+ 订单数 + 需求米数', async () => {
     render(<ProductionPoolPage />)
     await waitFor(() => expect(screen.getByTestId('pool-group-0')).toBeInTheDocument())
 
     const group = screen.getByTestId('pool-group-0')
-    expect(group).toHaveTextContent('遮光布 / 米白 / 2.8m')
+    // 🔴 issue #6523：标题 = 服务端展示名（人话），**不是** `materialKey`（机器键）
+    expect(group).toHaveTextContent('遮光布 × 米白/2.8m')
+    expect(group).not.toHaveTextContent('|')
+    expect(group).not.toHaveTextContent('a61daac33e1a49974577d3ca81c4500b')
     expect(group).toHaveTextContent('3 单')
     expect(group).toHaveTextContent('30.00')
+    // 🔴 负控：机器键仍然**在 DOM 里**（React `key` 不是节点属性 ⇒ 换一处可判的承载 = `pool-group-0` 这个 testid）
+    //    —— 它证明本单只换标题文本，没有把分组换掉（分组数 / 分组身份不变）
+    expect(screen.getAllByTestId(/^pool-group-/)).toHaveLength(1)
     // 空池提示不该同时出现（不是空壳页）
     expect(screen.queryByText('池内没有待派订单')).toBeNull()
   })
@@ -282,7 +291,8 @@ describe('智能派单 · 成批区（PR-081）', () => {
           urgentLines: [URGENT],
           groups: [
             {
-              materialKey: '遮光布 / 米白 / 2.8m',
+              materialKey: 'p1|米白/2.8m',
+              materialLabel: '遮光布 × 米白/2.8m',
               productId: 'p1',
               skuCode: '米白/2.8m',
               orderCount: 3,
@@ -290,7 +300,8 @@ describe('智能派单 · 成批区（PR-081）', () => {
               lines: [L1, L2, L3],
             },
             {
-              materialKey: '遮光布 / 米白 / 3.2m',
+              materialKey: 'p2|米白/3.2m',
+              materialLabel: '遮光布 × 米白/3.2m',
               productId: 'p2',
               skuCode: '米白/3.2m',
               orderCount: 1,
@@ -349,7 +360,7 @@ describe('智能派单 · 成批区（PR-081）', () => {
     expect(selectAll).toBeDisabled()
   })
 
-  it('超时未派告警：常驻只占**一行摘要**（逐单明细默认不在 DOM 里），点「查看明细」才展开、可收起', async () => {
+  it('超时未派告警：常驻一行摘要（明细默认不在 DOM 里）；展开后 message 按**新文案**逐字渲染、单号与时长各占一列', async () => {
     mockGetBoard.mockResolvedValue(
       ok(
         board({
@@ -359,13 +370,16 @@ describe('智能派单 · 成批区（PR-081）', () => {
               orderId: 'o5',
               orderNo: 'MG-0005',
               waitHours: 120,
-              message: '已超过最长等待 24 小时，请尽快成批或单独派单',
+              // 🔴 issue #6524 的服务端文案形态：**只**说「阈值 + 该做什么」——
+              //    单号在明细表已有独立列、实际等待时长也有独立列 ⇒ 文案里不重复念，
+              //    也不带口语责备尾巴（本用例逐字钉住「请合并派单或单独派单」还在）。
+              message: '已超过最长等待 24 小时，请合并派单或单独派单',
             },
             {
               orderId: 'o1',
               orderNo: 'MG-0001',
               waitHours: 30,
-              message: '已超过最长等待 24 小时，请尽快成批或单独派单',
+              message: '已超过最长等待 24 小时，请合并派单或单独派单',
             },
           ],
         }),
@@ -389,7 +403,15 @@ describe('智能派单 · 成批区（PR-081）', () => {
     const warn = await screen.findByTestId('pool-warning-o5')
     expect(warn).toHaveTextContent('MG-0005')
     expect(warn).toHaveTextContent('5 天')
-    expect(warn).toHaveTextContent('已超过最长等待 24 小时，请尽快成批或单独派单')
+    // 🔴 issue #6524：新文案**逐字**渲染（服务端口吻，前端不加工）
+    expect(warn).toHaveTextContent('已超过最长等待 24 小时，请合并派单或单独派单')
+    // 🔴 不重复念同屏已有的列：文案里**不**出现单号，也**不**出现实际等待时长（）
+    expect(warn).not.toHaveTextContent('MG-0005 已等待')
+    expect(warn).not.toHaveTextContent('已等待派单')
+    expect(warn).not.toHaveTextContent('120 小时')
+    // 🔴 口语责备尾巴不进界面
+    expect(warn).not.toHaveTextContent('不要一直压着不派')
+    // 单号与时长**各占一列**（它们的承载面还在，是「不重复」而不是「不显示」）
     expect(screen.getByTestId('pool-warning-o1')).toHaveTextContent('MG-0001')
     expect(screen.getByTestId('pool-warning-o1')).toHaveTextContent('1 天 6 小时')
 

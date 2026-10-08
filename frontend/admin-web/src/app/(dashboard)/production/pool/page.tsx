@@ -494,7 +494,15 @@ export default function ProductionPoolPage() {
                       className="border border-neutral-200 rounded-lg overflow-hidden"
                     >
                       <div className="flex items-center justify-between bg-neutral-50 px-4 py-2 text-sm">
-                        <span className="font-medium text-neutral-800">{group.materialKey}</span>
+                        {/*
+                          🔴 issue #6523：标题渲染**展示名**（服务端下发的 `materialLabel` = 商品名 × 颜色/门幅）。
+                          `materialKey`（`productId|skuCode`，productId 是 UUID）是机器键 —— 它继续承载
+                          React `key` 与分组判据，**不上屏**：原样渲染就是把这个内部标识摆给商家看
+                          （真机实测 2026-10-08：「可合并的待派订单（按料分组）」的组标题成了
+                          `a61daac33e1a49974577d3ca81c4500b|SD07演示-2.8-8141273`）。
+                          `data-testid`（`pool-group-<i>`）保持不变。
+                        */}
+                        <span className="font-medium text-neutral-800">{group.materialLabel}</span>
                         <span className="text-neutral-500">
                           {group.orderCount} 单 / 需求 <span className="font-mono">{formatMeters(group.requiredMeters)}</span> 米
                         </span>
