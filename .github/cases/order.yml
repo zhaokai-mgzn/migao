@@ -3647,7 +3647,8 @@ cases:
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/order-line-match.test.ts"
-        - "frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx"        - "frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx"
+        - "frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx"
         - "tests/unit_ci_workflows/test_fabric_width_truth_source.py"
         - "frontend/admin-web/tests/unit/lib/image-recognize-craft.test.ts"
         - "frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx"

@@ -1,4 +1,4 @@
-// case_ids: OR-052
+// case_ids: OR-052, OR-048
 // @vitest-environment jsdom
 /**
  * 下单页**版面重排**（2026-09-28 用户裁定，逐字见 `.github/cases/order.yml` 的 OR-052）。

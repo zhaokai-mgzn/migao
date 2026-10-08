@@ -1,4 +1,4 @@
-// case_ids: UI-009, API-004, PR-008
+// case_ids: UI-009, API-004, PR-008, OR-048
 /**
  * ImageRecognizeButton（issue #5321 包 1「页面快通道」）
  *

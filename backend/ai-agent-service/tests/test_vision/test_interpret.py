@@ -1,4 +1,4 @@
-# case_ids: PR-008
+# case_ids: PR-008, OR-048
 """ai-agent 侧「识别 + **一次性推理**」端点（issue #6367 包 P1）。
 
 ## 这个包是什么

@@ -1,4 +1,4 @@
-// case_ids: PR-008, PR-022
+// case_ids: PR-008, PR-022, OR-048
 /**
  * FormInterpretCard（issue #6367 包 P3）—— 建品页表单里的「识别 + 一次性推理」结果卡。
  *
