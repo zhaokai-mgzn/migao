@@ -20,6 +20,9 @@ export default function WorkerLoginPage() {
   const [workerNo, setWorkerNo] = useState(() => getRememberedAccount('worker'))
   const [pin, setPin] = useState('')
   const [deviceLabel, setDeviceLabel] = useState('')
+  // 企业编码（issue #6564）：租户**只由服务端解析**。它不是账号名（不进「记住账号名」键）、
+  // 更不是凭据，但同样**不落盘** —— 预填只服务工号（`utils/loginAccount.ts` 的纪律）
+  const [enterpriseCode, setEnterpriseCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -28,11 +31,20 @@ export default function WorkerLoginPage() {
       setError('请输入工号与 PIN')
       return
     }
+    if (!enterpriseCode.trim()) {
+      setError('请输入企业编码（向商家索取）')
+      return
+    }
     if (submitting) return
     setSubmitting(true)
     setError('')
     try {
-      const res = await workerLogin(workerNo.trim(), pin.trim(), deviceLabel.trim() || undefined)
+      const res = await workerLogin(
+        workerNo.trim(),
+        pin.trim(),
+        deviceLabel.trim() || undefined,
+        enterpriseCode.trim(),
+      )
       if (!res.success) {
         setError(res.message || '登录失败，请重试')
         return
@@ -44,7 +56,7 @@ export default function WorkerLoginPage() {
     } finally {
       setSubmitting(false)
     }
-  }, [workerNo, pin, deviceLabel, submitting])
+  }, [workerNo, pin, deviceLabel, enterpriseCode, submitting])
 
   return (
     <View className='worker-login'>
@@ -73,6 +85,13 @@ export default function WorkerLoginPage() {
         placeholder='设备标签（可选，如 PAD-车间-01）'
         value={deviceLabel}
         onInput={(event) => setDeviceLabel(event.detail.value)}
+      />
+      <Input
+        className='worker-login__input'
+        type='text'
+        placeholder='企业编码（向商家索取）'
+        value={enterpriseCode}
+        onInput={(event) => setEnterpriseCode(event.detail.value)}
       />
 
       {error ? <Text className='worker-login__error'>{error}</Text> : null}

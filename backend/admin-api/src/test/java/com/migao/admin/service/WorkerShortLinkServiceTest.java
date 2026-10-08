@@ -1,8 +1,10 @@
-// case_ids: PG-018, BM-006
+// case_ids: PG-018, BM-006, BM-045
 package com.migao.admin.service;
 
 import com.migao.admin.entity.ProcessingSetPartToken;
+import com.migao.admin.entity.Tenant;
 import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
+import com.migao.admin.mapper.TenantMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,6 +18,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,8 +47,11 @@ class WorkerShortLinkServiceTest {
     @Mock
     private ProcessingSetPartTokenMapper setPartTokenMapper;
 
+    @Mock
+    private TenantMapper tenantMapper;
+
     private WorkerShortLinkService service() {
-        return new WorkerShortLinkService(setPartTokenMapper);
+        return new WorkerShortLinkService(setPartTokenMapper, tenantMapper);
     }
 
     // ────────────────────────────────────────────── ① 人可读（字符集）
@@ -173,15 +179,30 @@ class WorkerShortLinkServiceTest {
     // ────────────────────────────────────────────── ⑤ 302 目标形态（页面契约）
 
     @Test
-    @DisplayName("302 目标 = 报工页 + token + 租户（相对 Location，不带请求 Host ⇒ 无开放重定向面）")
+    @DisplayName("302 目标 = 报工页 + token + 租户 id + 企业编码（相对 Location，不带请求 Host ⇒ 无开放重定向面）")
     void reportPageLocationShape() {
-        assertThat(WorkerShortLinkService.reportPageLocation("9f8e7d6c5b4a39281706f5e4d3c2b1a0", 7L))
-                .isEqualTo("/w/?t=9f8e7d6c5b4a39281706f5e4d3c2b1a0&tenant_id=7");
-        assertThat(WorkerShortLinkService.reportPageLocation("abc", null)).isEqualTo("/w/?t=abc");
-        assertThat(WorkerShortLinkService.reportPageLocation("abc", 7L))
+        assertThat(WorkerShortLinkService.reportPageLocation("9f8e7d6c5b4a39281706f5e4d3c2b1a0", 7L, "migao"))
+                .isEqualTo("/w/?t=9f8e7d6c5b4a39281706f5e4d3c2b1a0&tenant_id=7&tenant_code=migao");
+        assertThat(WorkerShortLinkService.reportPageLocation("abc", null, null)).isEqualTo("/w/?t=abc");
+        assertThat(WorkerShortLinkService.reportPageLocation("abc", 7L, null))
+                .as("企业编码取不到 ⇒ **不带** tenant_code（旧前端只认 tenant_id；两个参数并存是兼容期的有意形态）")
+                .isEqualTo("/w/?t=abc&tenant_id=7");
+        assertThat(WorkerShortLinkService.reportPageLocation("abc", 7L, "migao"))
                 .as("必须**相对**（不以 http(s):// 或 // 开头）—— 否则就是拿请求 Host 拼绝对 URL")
                 .startsWith("/w/")
                 .doesNotStartWith("//")
                 .doesNotContain("http");
+    }
+
+    @Test
+    @DisplayName("🔴 租户 id ⇒ 企业编码：只认 status='active'（查不到/非 active/空入参 ⇒ null）")
+    void tenantCodeOfOnlyResolvesActiveTenant() {
+        when(tenantMapper.selectOne(any()))
+                .thenReturn(Tenant.builder().id(7L).code("migao").status("active").build());
+        assertThat(service().tenantCodeOf(7L)).isEqualTo("migao");
+
+        when(tenantMapper.selectOne(any())).thenReturn(null);
+        assertThat(service().tenantCodeOf(7L)).isNull();
+        assertThat(service().tenantCodeOf(null)).isNull();
     }
 }

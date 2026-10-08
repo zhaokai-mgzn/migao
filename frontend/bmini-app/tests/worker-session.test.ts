@@ -1,4 +1,4 @@
-// case_ids: BM-004, BM-005, BM-006
+// case_ids: BM-004, BM-005, BM-006, BM-045
 /**
  * 工人登录态（issue #4733）前端契约测试。
  *
@@ -112,7 +112,7 @@ describe('工人登录态（issue #4733）', () => {
       },
     })
 
-    const res = await workerLogin('W001', '246810', 'PAD-车间-01')
+    const res = await workerLogin('W001', '246810', 'PAD-车间-01', 'migao')
 
     expect(res.success).toBe(true)
     expect(getWorkerSessionId()).toBe('sess-1')
@@ -122,9 +122,11 @@ describe('工人登录态（issue #4733）', () => {
     // 登录请求**不带** Authorization（工人不是商家账号）
     const loginRequest = lastRequest()
     expect(loginRequest.header.Authorization).toBeUndefined()
+    // 🔴 租户只由服务端解析（issue #6564）：body 带企业编码、**不含** tenantId
     expect(loginRequest.data).toEqual({
-      workerNo: 'W001', pin: '246810', deviceLabel: 'PAD-车间-01', tenantId: 1,
+      workerNo: 'W001', pin: '246810', deviceLabel: 'PAD-车间-01', enterpriseCode: 'migao',
     })
+    expect(loginRequest.data.tenantId).toBeUndefined()
   })
 
   it('登录失败（401）⇒ 不落任何工人会话', async () => {
@@ -151,10 +153,13 @@ describe('工人登录态（issue #4733）', () => {
       },
     })
 
-    const res = await switchWorker('W002', '135790')
+    const res = await switchWorker('W002', '135790', undefined, 'migao')
 
     expect(res.success).toBe(true)
     expect(lastRequest().header[WORKER_SESSION_HEADER]).toBe('sess-old')
+    // 切换工人同样只由服务端解析租户（issue #6564）
+    expect(lastRequest().data.enterpriseCode).toBe('migao')
+    expect(lastRequest().data.tenantId).toBeUndefined()
     expect(getWorkerSessionId()).toBe('sess-new')
   })
 

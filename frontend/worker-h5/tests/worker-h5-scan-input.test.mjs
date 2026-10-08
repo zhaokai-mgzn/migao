@@ -1,4 +1,4 @@
-// case_ids: PG-018, BM-006, DF-017
+// case_ids: PG-018, BM-006, DF-017, BM-045
 //
 // 工人端 H5 报工页 —— **扫码入口解析**（issue #4716 §1.3 / §1.4 / §1.5）。
 //
@@ -10,7 +10,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { parseScanInput, tenantIdFromLocation } from '../src/scan-input.mjs'
+import { enterpriseCodeFromLocation, parseScanInput } from '../src/scan-input.mjs'
 
 test('① 扫一扫：标准 HTTPS URL 的 ?t=<token> 取出 token', () => {
   assert.equal(parseScanInput('https://app.migaozn.com/w/?t=7K3M9QP2ABCDEF', 'https://app.migaozn.com/w/'),
@@ -42,8 +42,14 @@ test('③ 空输入 ⇒ 空串（调用方据此不发请求）', () => {
   }
 })
 
-test('租户：优先取 <tenantId>.app.migaozn.com 子域；短链域名无子域时回落 ?tenant_id=', () => {
-  assert.equal(tenantIdFromLocation('https://7.app.migaozn.com/w/?t=x'), 7)
-  assert.equal(tenantIdFromLocation('https://app.migaozn.com/w/?t=x&tenant_id=12'), 12)
-  assert.equal(tenantIdFromLocation('https://app.migaozn.com/w/?t=x'), null)
+test('企业编码：从短链 302 的 ?tenant_code= 取值（形态与后端 LoginIdentifiers 同形）', () => {
+  assert.equal(enterpriseCodeFromLocation('https://app.migaozn.com/w/?t=x&tenant_code=migao'), 'migao')
+  // 存量带下划线的企业编码（tenant_7478359537 形态）必须认
+  assert.equal(enterpriseCodeFromLocation('https://app.migaozn.com/w/?tenant_code=tenant_7478359537'),
+    'tenant_7478359537')
+  // 反向（防恒真）：缺失 / 形态不合法 / 非 URL ⇒ null（由登录表单填）
+  assert.equal(enterpriseCodeFromLocation('https://app.migaozn.com/w/?t=x'), null)
+  assert.equal(enterpriseCodeFromLocation('https://app.migaozn.com/w/?tenant_code=MIGAO'), null)
+  assert.equal(enterpriseCodeFromLocation('https://app.migaozn.com/w/?tenant_code=a'), null)
+  assert.equal(enterpriseCodeFromLocation('not a url'), null)
 })

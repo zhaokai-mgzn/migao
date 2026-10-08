@@ -35,6 +35,9 @@ export function initialState() {
     selection: { setId: null, orderItemId: null },
     notice: null,
     error: null,
+    // 租户口径（issue #6564）：企业编码 —— 初值来自 URL 的 `?tenant_code=`（短链 302 带上），
+    // 仍是普通可编辑输入框（打印的码可能没带、也可能看错）
+    enterpriseCode: '',
     // 工人端页面权限（V141 母单 #5161）：`null` = **还没读到**（fail-open 的初值，见 `effectivePages`）
     pages: null,
     pagesUnread: false,
@@ -356,6 +359,7 @@ function loginView(state) {
     <h1 class="wh5-title">工人领活</h1>
     <p class="wh5-sub">工号 + PIN 登录（手机 / PAD 均可，无需微信）</p>
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
+    <label class="wh5-label">企业编码（向商家索取）<input id="wh5-enterprise-code" class="wh5-input" inputmode="text" autocomplete="organization" value="${esc(state.enterpriseCode ?? '')}" /></label>
     <label class="wh5-label">工号<input id="wh5-worker-no" class="wh5-input" inputmode="text" autocomplete="username" /></label>
     <label class="wh5-label">PIN<input id="wh5-pin" class="wh5-input" type="password" inputmode="numeric" autocomplete="current-password" /></label>
     <button id="wh5-login" class="wh5-primary" type="button">登 录</button>

@@ -1,4 +1,4 @@
-// case_ids: PG-018, BM-006, DF-017
+// case_ids: PG-018, BM-006, DF-017, BM-045
 //
 // 工人端 H5 报工页 —— 扫码入口解析（设计 #4716 §1.3 / §1.4 / §1.5）。
 //
@@ -9,8 +9,8 @@
 /** 只认这三个 query 键；其它参数一律不当码（避免把无关参数当码去扫）。 */
 const CODE_KEYS = ['t', 'token', 'code']
 
-/** 租户子域：`<tenantId>.app.migaozn.com`（与后端 TenantDomainResolver 同形）。 */
-const TENANT_SUBDOMAIN = /^(\d+)\.app\.migaozn\.com$/i
+/** 企业编码：形态与后端 `LoginIdentifiers.TENANT_CODE_PATTERN` 同形（issue #6564）。 */
+const TENANT_CODE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,31}$/
 
 /**
  * 从「扫码结果 / 手输内容」里取出码值。
@@ -54,21 +54,23 @@ export function parseScanInput(raw) {
 }
 
 /**
- * 租户 id：**优先** `<tenantId>.app.migaozn.com` 子域（与后端同一判据）；
- * 稳定短链域名（`app.migaozn.com`，无子域）⇒ 回落 `?tenant_id=`（打印的码不带租户 ⇒ 需要人给一次）。
+ * 企业编码：稳定短链 302 会把 `&tenant_code=<企业编码>` 带进 URL（issue #6564）——
+ * 报工页据此**预填**登录表单的企业编码（仍是普通可编辑输入框）。
+ *
+ * 形态与后端 `LoginIdentifiers.TENANT_CODE_PATTERN` **同形**
+ * （`^[a-z0-9][a-z0-9_-]{1,31}$`；含下划线是为兼容存量 `tenant_7478359537` 形态）；
+ * 不合法 ⇒ `null`（当没带，由登录表单填）。
  *
  * @param {string} href 当前页面 URL
- * @returns {number|null} 租户 id；判不出 ⇒ null（登录时由用户填/由服务端按域名判）
+ * @returns {string|null} 企业编码；URL 里没有 / 形态不合法 ⇒ null
  */
-export function tenantIdFromLocation(href) {
+export function enterpriseCodeFromLocation(href) {
   let url
   try {
     url = new URL(href)
   } catch {
     return null
   }
-  const m = TENANT_SUBDOMAIN.exec(url.hostname)
-  if (m) return Number(m[1])
-  const q = url.searchParams.get('tenant_id')
-  return q && /^\d+$/.test(q) ? Number(q) : null
+  const q = url.searchParams.get('tenant_code')
+  return q && TENANT_CODE_PATTERN.test(q) ? q : null
 }

@@ -19,7 +19,7 @@ import java.net.URI;
  *
  * <pre>
  * 纸上的码（永不变）                     服务端（可变）                        实际页面（随便换）
- * https://app.migaozn.com/s/7K3M9QP2  ──302──▶  /w/?t=&lt;token&gt;&amp;tenant_id=&lt;id&gt;
+ * https://app.migaozn.com/s/7K3M9QP2  ──302──▶  /w/?t=&lt;token&gt;&amp;tenant_id=&lt;id&gt;&amp;tenant_code=&lt;code&gt;
  * </pre>
  *
  * <h2>为什么落点在 admin-api（而不是 nginx 规则 / 静态页）</h2>
@@ -61,7 +61,7 @@ public class WorkerShortLinkController {
      * <p>GET /s/{shortCode}（例：{@code https://app.migaozn.com/s/7K3M9QP2}）</p>
      *
      * @param shortCode 短码（8 位 Crockford Base32；手输形态 {@code O/I/L} 会被归一化）
-     * @return 302 + {@code Location: /w/?t=&lt;token&gt;&amp;tenant_id=&lt;id&gt;}；未知 ⇒ 404；已撤销 ⇒ 410
+     * @return 302 + {@code Location: /w/?t=&lt;token&gt;&amp;tenant_id=&lt;id&gt;&amp;tenant_code=&lt;code&gt;}；未知 ⇒ 404；已撤销 ⇒ 410
      */
     @GetMapping("/s/{shortCode}")
     public ResponseEntity<Void> resolve(@PathVariable String shortCode) {
@@ -75,7 +75,8 @@ public class WorkerShortLinkController {
         }
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create(
-                        WorkerShortLinkService.reportPageLocation(row.getToken(), row.getTenantId())))
+                        WorkerShortLinkService.reportPageLocation(row.getToken(), row.getTenantId(),
+                                workerShortLinkService.tenantCodeOf(row.getTenantId()))))
                 .build();
     }
 }

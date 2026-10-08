@@ -1,4 +1,4 @@
-// case_ids: BM-005, BM-006
+// case_ids: BM-005, BM-006, BM-045
 /**
  * 共用 PAD 的工人身份条（issue #4733，设计 W2/W3）—— 三条纪律各自一条断言。
  *
@@ -58,10 +58,12 @@ describe('WorkerBar（共用 PAD 三条，issue #4733）', () => {
     fireEvent.click(screen.getByText('切换工人'))
     fireEvent.change(screen.getByPlaceholderText('工号'), { target: { value: 'W002' } })
     fireEvent.change(screen.getByPlaceholderText('PIN'), { target: { value: '135790' } })
+    fireEvent.change(screen.getByPlaceholderText('企业编码（向商家索取）'), { target: { value: 'migao' } })
     fireEvent.click(screen.getByText('确认切换'))
 
     await waitFor(() => expect(screen.getByText('当前工人：李四')).toBeTruthy())
-    expect(mockSwitch).toHaveBeenCalledWith('W002', '135790')
+    // 🔴 第 4 个入参 = 企业编码（租户只由服务端解析，issue #6564）
+    expect(mockSwitch).toHaveBeenCalledWith('W002', '135790', undefined, 'migao')
     expect(onNeedLogin).not.toHaveBeenCalled()
   })
 
@@ -77,6 +79,21 @@ describe('WorkerBar（共用 PAD 三条，issue #4733）', () => {
 
     expect(mockSwitch).not.toHaveBeenCalled()
     expect(await screen.findByText('请输入工号与 PIN')).toBeTruthy()
+  })
+
+  it('🔴 切换缺企业编码 ⇒ 不发请求（租户来源缺失不得悄悄用默认租户）', async () => {
+    mockFetch.mockResolvedValue({ success: true, data: ZHANG })
+
+    render(<WorkerBar />)
+    await screen.findByText('当前工人：张三')
+
+    fireEvent.click(screen.getByText('切换工人'))
+    fireEvent.change(screen.getByPlaceholderText('工号'), { target: { value: 'W002' } })
+    fireEvent.change(screen.getByPlaceholderText('PIN'), { target: { value: '135790' } })
+    fireEvent.click(screen.getByText('确认切换'))
+
+    expect(mockSwitch).not.toHaveBeenCalled()
+    expect(await screen.findByText('请输入企业编码（向商家索取）')).toBeTruthy()
   })
 
   it('③ 会话失效（服务端 401）⇒ 回落成「未登录」+ 清本地缓存（不保留上一个人的名字）', async () => {

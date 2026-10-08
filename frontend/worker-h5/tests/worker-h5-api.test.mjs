@@ -1,4 +1,4 @@
-// case_ids: PG-018, BM-006, DF-017
+// case_ids: PG-018, BM-006, DF-017, BM-045
 //
 // 工人端 H5 报工页 —— **API 客户端 + 登录态**（issue #4716 §2.1 / §3.1~§3.3）。
 //
@@ -54,11 +54,13 @@ test('① 登录：工号 + PIN ⇒ /api/worker/login，并把 session_id / 工�
   const store = memStorage()
   const api = createApi({ fetchImpl: f, storage: store, baseUrl: 'https://app.migaozn.com' })
 
-  const s = await api.login({ workerNo: 'A017', pin: '1234', tenantId: 7 })
+  const s = await api.login({ workerNo: 'A017', pin: '1234', enterpriseCode: 'migao' })
 
   assert.equal(f.calls.length, 1)
   assert.equal(f.calls[0].url, 'https://app.migaozn.com/api/worker/login')
-  assert.deepEqual(f.calls[0].body, { workerNo: 'A017', pin: '1234', deviceLabel: 'H5', tenantId: 7 })
+  // 🔴 租户只由服务端解析（issue #6564）：body 带 enterpriseCode、**不含** tenantId
+  assert.deepEqual(f.calls[0].body, { workerNo: 'A017', pin: '1234', deviceLabel: 'H5', enterpriseCode: 'migao' })
+  assert.equal('tenantId' in f.calls[0].body, false)
   assert.equal(s.sessionId, 'sess-1')
   assert.equal(s.workerName, '张三')
   assert.equal(api.sessionId(), 'sess-1')
