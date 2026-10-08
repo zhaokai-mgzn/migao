@@ -177,6 +177,71 @@ config_ref_for_tag() {
   return 0
 }
 
+# ── 取配置的「可观测重试 + 现盘复用」（issue #6551）────────────────────────────
+# 病根（**CI 现取**读数，run 37726977789）：
+#   `curl: (28) Operation timed out after 120000 milliseconds with 41399245 out of 66570829 bytes received`
+#   ⇒ 一次下载故障同时夺走「前进」与「后退」：主部署失败 → 自动重试失败 → **自动回滚也被同一步挡住**
+#   （`❌ 取不到 tag=sha-03b1132 对应的配置（ref=03b1132）⇒ 中止部署`）。
+#
+# ⚠️ 预算（`--max-time` 的取值，900s）与「**不许加 `-C -`**」这两条**本单不动** —— 它们是 #6550 的实测结论，
+#    逐字登记在下面的调用点（codeload 不支持 Range ⇒ 续传会把「慢」换成「永久卡死」）。
+#    本单只在其上加两件事，**都不改那两条结论**：
+#    ① **把不可见的重试换成可见的**：curl 自带的 `--retry 3` 在脚本日志里**没有痕迹**（事故的一部分
+#       正是「参数面写了重试、到底有没有触发没人知道」）⇒ 换成显式轮次，每轮都打一行（含 `curl exit=`
+#       与本轮**收到多少字节**）。预算口径与 #6550 逐字相同：3 轮 × 900s + 2×5s = **2710s** < CI 4500s。
+#       ⚠️ 因此**去掉** curl 自带的 `--retry 3/--retry-delay 5`（它同样是「从 0 重下」，只是不可见）：
+#          两者叠加会变成 3×4 次尝试 ⇒ 病态最坏 10800s，**打破 #6550 的预算契约**。
+#    ② 现盘配置的 ref 与本次目标相同 ⇒ **跳过整仓下载**（回滚腿不再被下载闸门一起挡住）。
+#    ⚠️ 每轮**先删残包**：既然不能续传，残包只会把下一次尝试拖进 `exit 33`（#6550 ② 的实测形态）。
+CONFIG_FETCH_ATTEMPTS=${CONFIG_FETCH_ATTEMPTS:-3}
+CONFIG_FETCH_DELAY_SECONDS=${CONFIG_FETCH_DELAY_SECONDS:-5}
+CONFIG_TARBALL_BYTES=0
+# 现盘配置的「物化 ref」标记（只在**真的把配置包落到盘上**之后写）。见 `config_reuse_on_disk()`。
+CONFIG_REF_MARKER_FILE=${CONFIG_REF_MARKER_FILE:-/opt/migao-deploy/.config-ref}
+
+# 盘上的 compose/nginx 是不是**本次目标 ref** 那一份（#6551 ②：回滚目标的配置通常就在盘上）。
+# 🔴 只认「标记 == 目标 ref」⇒ 仍是「配置与镜像同源」（#5083 的护栏 fail-closed 语义一字不改）：
+#    标记不匹配 / 三份 canonical 文件不齐 ⇒ 一律**降级为重新下载**（取不到仍 fail-closed）。
+# ⚠️ 它与 `.last-good-tag` **不是**一回事：那个记「上次**部署成功**的 tag」，本标记只陈述
+#    「**盘上这套配置**物化自哪个 ref」。用后者做复用判据，才不会在「新 tag 的配置已落盘、
+#    部署在后续步骤才失败」时拿**旧镜像配新配置**（那正是 #5083 要治的形态）。
+config_reuse_on_disk() {
+  [ -n "$CONFIG_ON_DISK_REF" ] && [ "$CONFIG_ON_DISK_REF" = "$CONFIG_REF_RESOLVED" ] || return 1
+  if [ -f docker-compose.yml ] && [ -f nginx/nginx.conf ] && [ -f docker-compose.bluegreen.yml ]; then
+    return 0
+  fi
+  echo "  ::warning::盘上标记（${CONFIG_REF_MARKER_FILE}）说配置来自 ref=${CONFIG_REF_RESOLVED}，但三份 canonical 配置不齐 ⇒ **降级为重新下载**（同源语义不变）"
+  return 1
+}
+
+# 取配置包：显式重试（每轮都在日志里出声）+ 每轮先删残包（#6551 ①）。
+# ⚠️ **不续传**（codeload 不支持 Range，#6550 实测）⇒ 每轮都是**完整的**一次下载，从 0 开始。
+# 成功 ⇒ 0；重试预算用尽 ⇒ 1（调用点 fail-closed，绝不回落 main 的配置）。
+config_fetch_tarball() {
+  local try=0 rc=0 have=0
+  while [ "$try" -lt "$CONFIG_FETCH_ATTEMPTS" ]; do
+    try=$((try + 1))
+    # 残包不许跨轮留存：不能续传，留着只会让下一轮撞上 `Range:` ⇒ curl exit 33、零进展（#6550 ②）。
+    rm -f src.tar.gz
+    echo "  ⏱ 第 ${try}/${CONFIG_FETCH_ATTEMPTS} 次取配置：单次上界 900s（#6550 实测 66.5MB ÷ 118~345KB/s ⇒ 需 193~565s）"
+    if curl -fsSL --connect-timeout 15 --max-time 900 -o src.tar.gz "$CONFIG_TARBALL_BASE/$CONFIG_REF_RESOLVED"; then
+      CONFIG_TARBALL_BYTES=$(wc -c < src.tar.gz | tr -d ' ')
+      return 0
+    else
+      rc=$?
+    fi
+    have=0
+    if [ -f src.tar.gz ]; then have=$(wc -c < src.tar.gz | tr -d ' '); fi
+    if [ "$try" -lt "$CONFIG_FETCH_ATTEMPTS" ]; then
+      echo "  ⚠️ 第 ${try}/${CONFIG_FETCH_ATTEMPTS} 次失败（curl exit=${rc}，本轮收到 ${have} 字节）⇒ **第 $((try + 1)) 次重试**（${CONFIG_FETCH_DELAY_SECONDS}s 后，从 0 重下——codeload 无 Range，#6550 实测）"
+      sleep "$CONFIG_FETCH_DELAY_SECONDS"
+    else
+      echo "  ⚠️ 第 ${try}/${CONFIG_FETCH_ATTEMPTS} 次失败（curl exit=${rc}，本轮收到 ${have} 字节）⇒ 重试预算用尽"
+    fi
+  done
+  return 1
+}
+
 # ══════════════════════════════════════════════════════════════════════════
 # 2.4 磁盘保留策略 × 回滚点对齐（issue #4808）
 #
@@ -484,6 +549,16 @@ if [ -z "$CONFIG_REF_RESOLVED" ]; then
   echo "   修法：改用 \`sha-<7位hex>\` 形态的 tag（= CI 部署的正常形态）"
   exit 1
 fi
+# 本腿那个服务的**本地镜像 ref**（唯一一份推导，issue #5814）：让 compose 自己求值，不在脚本里重抄
+# `${ACR_REGISTRY}/ai-customer-service/<svc>:${IMAGE_TAG}`（后者会在有人改 compose 时**静默漂移**）。
+# 两个消费点：1.4 的构建，以及 #6551 ② 的「源码树不在盘上 ⇒ 能否改用本地已有的镜像」。
+# ⚠️ `|| true`：本脚本是 `set -euo pipefail` ⇒ 命令替换里任一环失败会**当场静默退出**
+#    （连调用点那句 ❌ 都打不出来）⇒ 显式吞掉非零，交由调用点的 `-z` 判定给出可行动报错。
+local_image_ref_of() {
+  local svc=$1
+  docker compose config --format json 2>/dev/null \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)["services"][sys.argv[1]].get("image",""))' "$svc" 2>/dev/null || true
+}
 echo "== 1. 同步 repo 内 canonical compose + nginx 配置（ref=${CONFIG_REF_RESOLVED}，与镜像 tag=${TAG} 同源）=="
 # ⚠️ 这一段是「配置与镜像同源」的**唯一**落点（issue #5083）：URL 的 ref 来自 `$CONFIG_REF_RESOLVED`，
 #    它由 `config_ref_for_tag "$TAG"` 推导 ⇒ 脚本里**不存在**「无条件取 main 配置」的路径。
@@ -513,27 +588,67 @@ echo "== 1. 同步 repo 内 canonical compose + nginx 配置（ref=${CONFIG_REF_
 #   ③ curl 自己的 `--retry` **也不续传**：实测三次请求都不带 `Range`、且半份文件被截断回原尺寸
 #      （⇒ 重试仍从 0 重下，但**不会**写出「前后拼接」的坏包）⇒ 正确姿势是让**单次尝试**在预算内下完，
 #      而不是指望重试累积进度。本次修复即如此。
-if ! curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 900 -o src.tar.gz "$CONFIG_TARBALL_BASE/$CONFIG_REF_RESOLVED"; then
-  echo "  ❌ 取不到 tag=${TAG} 对应的配置（ref=${CONFIG_REF_RESOLVED}）⇒ **中止部署**（绝不回落到 main 的配置）"
-  echo "     · 若 tag 是 latest 这类**移动 tag**（追不到具体 commit）⇒ 改用 sha-<7位hex> 形态的 tag"
-  echo "     · 否则核对：该 commit/tag 在 zhaokai-mgzn/migao 上存在且可达"
-  exit 1
+CONFIG_ON_DISK_REF=$(cat "$CONFIG_REF_MARKER_FILE" 2>/dev/null || true)
+CONFIG_REUSED=0
+if config_reuse_on_disk; then
+  CONFIG_REUSED=1
+  # ── 本腿还要构建吗（issue #6551 ②）──────────────────────────────────────────
+  # C′ 形态下 `src/` 是**构建上下文**，而 #5814 在构建成功后按磁盘策略把它删掉（实测常驻 ~84MB）
+  # ⇒ 回滚到「上一次成功部署」那个 tag 时，盘上**有配置、没有源码树**。此时若本地已有该 tag 的镜像
+  # （回滚点镜像由第 0 段的保留策略保证在本地）⇒ **无物可建** ⇒ 直接用本地镜像：不下载、不构建。
+  # 判据只认「同名 tag 的镜像确实在本地」；不在本地 ⇒ 照旧取源码树（fail-closed，不静默降级）。
+  _bctx=$(service_context_of "$BUILD_SERVICE")
+  if [ -n "$BUILD_SERVICE" ] && [ -n "$_bctx" ] && [ ! -f "src/$_bctx/Dockerfile" ]; then
+    export IMAGE_TAG="$TAG"
+    _reuse_img_ref=$(local_image_ref_of "$_svc")
+    if [ -n "$_reuse_img_ref" ] && docker image inspect "$_reuse_img_ref" >/dev/null 2>&1; then
+      LOCAL_IMAGE_REF="$_reuse_img_ref"
+      echo "  ♻️ 源码树不在盘上（C′ 构建成功后按磁盘策略删除），但本地已有该 tag 的镜像（${LOCAL_IMAGE_REF}）⇒ **跳过服务器侧构建**（也就不需要源码树）"
+    else
+      CONFIG_REUSED=0
+      echo "  ℹ️ 源码树不在盘上，且本地没有该 tag 的镜像 ⇒ 仍需取源码树（照旧下载，fail-closed 不变）"
+    fi
+  fi
 fi
-rm -rf src && mkdir -p src && tar xzf src.tar.gz -C src --strip-components=1
-# 包内容自检（fail-closed）：旧 commit（早于 #4785）没有蓝绿 override，被劫持的 200 响应也不是仓库树
-# ⇒ 一律**中止**，绝不「main 的同名文件补上」（那正是本单要修的「旧镜像 + 新配置」）。
-if [ ! -f src/deploy/swas/docker-compose.yml ] || [ ! -f src/deploy/swas/nginx.conf ] \
-   || [ ! -f src/deploy/swas/docker-compose.bluegreen.yml ]; then
-  echo "  ❌ ref=${CONFIG_REF_RESOLVED} 的源码包里找不到 canonical 配置（deploy/swas/docker-compose.yml|nginx.conf|docker-compose.bluegreen.yml）"
-  echo "     · 该 commit 早于 #4785（没有蓝绿 override）⇒ 回滚到它需要配套更早的部署脚本"
-  echo "     · 若整包都不是 migao 仓库树 ⇒ 核对 $CONFIG_TARBALL_BASE 与网络（代理/门户劫持）"
-  exit 1
+if [ "$CONFIG_REUSED" = "1" ]; then
+  echo "  ♻️ 现盘配置就是 ref=${CONFIG_REF_RESOLVED} 那份（标记 ${CONFIG_REF_MARKER_FILE}）⇒ **跳过整仓下载**"
+  echo "     （issue #6551 ②：下载故障不再同时夺走「前进」与「后退」；复用只认 ref 相同 ⇒ 同源护栏不变）"
+else
+  # 一旦走下载路径，先废掉「物化 ref」标记（它只在**整段同步成功**之后才重写）⇒ 复用判据永不基于
+  # 「上一次跑到一半」的盘面（例如解包失败留下的半棵树）：fail-closed。
+  rm -f "$CONFIG_REF_MARKER_FILE"
+  if config_fetch_tarball; then
+    echo "  ✅ 配置包已取到（ref=${CONFIG_REF_RESOLVED}，${CONFIG_TARBALL_BYTES} 字节）"
+  else
+    echo "  ❌ 取不到 tag=${TAG} 对应的配置（ref=${CONFIG_REF_RESOLVED}）⇒ **中止部署**（绝不回落到 main 的配置）"
+    echo "     · 若 tag 是 latest 这类**移动 tag**（追不到具体 commit）⇒ 改用 sha-<7位hex> 形态的 tag"
+    echo "     · 否则核对：该 commit/tag 在 zhaokai-mgzn/migao 上存在且可达"
+    exit 1
+  fi
+  rm -rf src && mkdir -p src
+  if ! tar xzf src.tar.gz -C src --strip-components=1; then
+    echo "  ❌ ref=${CONFIG_REF_RESOLVED} 的源码包**解不开**（下载不完整 / 不是 gzip tar）⇒ **中止部署**"
+    echo "     · 残包**不被信任**，也不会去下第二份凑数：删掉 src.tar.gz 后重跑即可"
+    exit 1
+  fi
+  # 包内容自检（fail-closed）：旧 commit（早于 #4785）没有蓝绿 override，被劫持的 200 响应也不是仓库树
+  # ⇒ 一律**中止**，绝不「main 的同名文件补上」（那正是本单要修的「旧镜像 + 新配置」）。
+  if [ ! -f src/deploy/swas/docker-compose.yml ] || [ ! -f src/deploy/swas/nginx.conf ] \
+     || [ ! -f src/deploy/swas/docker-compose.bluegreen.yml ]; then
+    echo "  ❌ ref=${CONFIG_REF_RESOLVED} 的源码包里找不到 canonical 配置（deploy/swas/docker-compose.yml|nginx.conf|docker-compose.bluegreen.yml）"
+    echo "     · 该 commit 早于 #4785（没有蓝绿 override）⇒ 回滚到它需要配套更早的部署脚本"
+    echo "     · 若整包都不是 migao 仓库树 ⇒ 核对 $CONFIG_TARBALL_BASE 与网络（代理/门户劫持）"
+    exit 1
+  fi
+  mkdir -p nginx certbot-www
+  cp src/deploy/swas/docker-compose.yml ./docker-compose.yml
+  cp src/deploy/swas/nginx.conf ./nginx/nginx.conf
+  # 蓝绿 override（issue #4785）：**只新增** green 探针服务，不改既有服务定义
+  cp src/deploy/swas/docker-compose.bluegreen.yml ./docker-compose.bluegreen.yml
+  # 记下「盘上这套配置物化自哪个 ref」（#6551 ②）：下次目标 ref 相同（含**回滚回同一 tag**）
+  # ⇒ 直接复用、不再下一次 66.5MB 整仓。三份文件**都落到盘上之后**才写标记 ⇒ 标记不会先于配置落地。
+  printf '%s\n' "$CONFIG_REF_RESOLVED" > "$CONFIG_REF_MARKER_FILE"
 fi
-mkdir -p nginx certbot-www
-cp src/deploy/swas/docker-compose.yml ./docker-compose.yml
-cp src/deploy/swas/nginx.conf ./nginx/nginx.conf
-# 蓝绿 override（issue #4785）：**只新增** green 探针服务，不改既有服务定义
-cp src/deploy/swas/docker-compose.bluegreen.yml ./docker-compose.bluegreen.yml
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1.4 C′ 服务器侧构建（issue #5814）—— **在本脚本已持有的 flock 之内**
@@ -551,7 +666,9 @@ cp src/deploy/swas/docker-compose.bluegreen.yml ./docker-compose.bluegreen.yml
 #   rc=124 ⇒ `timeout` 打死 ⇒ 显式打 `::error::` 点名「服务器侧构建超时」并带上界值；
 #   其它非零 ⇒ 构建本身失败（看上方 docker 输出）。
 # ══════════════════════════════════════════════════════════════════════════════
-if [ -n "$BUILD_SERVICE" ]; then
+# ⚠️ `-z "$LOCAL_IMAGE_REF"`（issue #6551 ②）：非空 ⇒ 本腿**不构建**（本地已有该 tag 的镜像，
+#    pull 段同样据此短路）⇒ 不占磁盘、不需要源码树。
+if [ -n "$BUILD_SERVICE" ] && [ -z "$LOCAL_IMAGE_REF" ]; then
   echo "== 1.4 C′ 服务器侧构建（${_svc}，在 flock 之内；tag=${TAG}）=="
   _ctx=$(service_context_of "$BUILD_SERVICE")
   _df="$_ctx/Dockerfile"
@@ -565,10 +682,7 @@ if [ -n "$BUILD_SERVICE" ]; then
   # 这里读**已同步进来**的 ./docker-compose.yml（第 1 段刚从同源源码树 cp 过来）+ 与 compose
   # 相同的环境变量（IMAGE_TAG 由下方 export、ACR_REGISTRY 已在第 0 段 export）⇒ 逐字同源。
   export IMAGE_TAG="$TAG"
-  # ⚠️ `|| true`：本脚本是 `set -euo pipefail` ⇒ 命令替换里任一环失败会**当场静默退出**
-  #    （连下面那句 ❌ 都打不出来）⇒ 显式吞掉非零，交由紧随其后的 `-z` 判定给出可行动报错。
-  _image_ref=$(docker compose config --format json 2>/dev/null \
-    | python3 -c 'import sys,json; print(json.load(sys.stdin)["services"][sys.argv[1]].get("image",""))' "$_svc" 2>/dev/null || true)
+  _image_ref=$(local_image_ref_of "$_svc")
   if [ -z "$_image_ref" ]; then
     echo "❌ 取不到 compose 里 ${_svc} 的 \`image:\`（compose config 求值失败）⇒ **中止**（拒绝在 ref 不明时构建）"
     echo "   diagnostic: docker compose config --format json | python3 -c '…services[\"$_svc\"]…'"
