@@ -205,10 +205,21 @@ def judge_rails_intact(text: str) -> list:
     else:
         for flag, why in (("-f", "HTTP 非 2xx 即失败（没有 -f ⇒ 404 也会「成功」）"),
                           ("--retry 3", "重试预算"),
-                          ("--connect-timeout 15", "连接超时预算"),
-                          ("--max-time 120", "整体超时预算")):
+                          ("--connect-timeout 15", "连接超时预算")):
             if flag not in fetch[0]:
                 v.append(f"配置下载削弱了既有护栏：{flag}（{why}）")
+        # ⚠️ 整体超时预算**不再钉死 120s 这个数值**（issue #6550：120s 下 66.5MB 永远下不完 ⇒ 部署停摆）
+        #    ⇒ 改为「存在 ∧ ≥ 下界」。下界 600s 由实测推出（实测最慢 118 KB/s ⇒ 整仓 66.5MB 需 ~566s），
+        #    与 tests/unit_ci_workflows/test_swas_config_tarball_fetch_budget.py::FLOOR_SECS 同源；
+        #    上限（< CI 单次尝试预算）由那条判据把守 ⇒ 本判据只管「不削弱」，不重复它的射程。
+        m_budget = re.search(r"--max-time\s+(\d+)", fetch[0])
+        if not m_budget:
+            v.append("配置下载削弱了既有护栏：`--max-time`（无界下载会挂住部署；issue #6550）")
+        elif int(m_budget.group(1)) < 600:
+            v.append(
+                f"配置下载削弱了既有护栏：`--max-time {m_budget.group(1)}` < 600s"
+                f"（实测 66.5MB @118~345KB/s 需要 ~566s；issue #6550）"
+            )
     for token in ("cp src/deploy/swas/docker-compose.yml ./docker-compose.yml",
                   "cp src/deploy/swas/nginx.conf ./nginx/nginx.conf",
                   "cp src/deploy/swas/docker-compose.bluegreen.yml ./docker-compose.bluegreen.yml"):
@@ -351,10 +362,23 @@ def test_injection_weaken_curl_rails_goes_red():
 
 
 def test_injection_drop_timeout_budget_goes_red():
-    """注入⑧：去掉 `--max-time 120`（下载可能无限挂住部署）⇒ 判据 ④ 必红。"""
-    injected = _inject(read_deploy_sh(), "--connect-timeout 15 --max-time 120 -o src.tar.gz",
-                       "--connect-timeout 15 -o src.tar.gz")
+    """注入⑧：去掉 `--max-time`（下载可能无限挂住部署）⇒ 判据 ④ 必红。
+
+    ⚠️ 按**正则**摘标志、不写死数值：issue #6550 把预算 120s → 900s，写死会让下次调预算时
+    红证变成「锚点过期」而不是判据变红。
+    """
+    text = read_deploy_sh()
+    injected, n = re.subn(r" --max-time \d+", "", text, count=1)
+    assert n == 1 and injected != text, "变异没生效 ⇒ 红证空跑"
     assert judge_rails_intact(injected) != [], "去掉整体超时预算后判据没红（判据无判别力）"
+
+
+def test_injection_shrink_timeout_budget_goes_red():
+    """注入⑨：把预算改回**修复前**的 120s（issue #6550 的病根值）⇒ 判据 ④ 必红。"""
+    text = read_deploy_sh()
+    injected, n = re.subn(r"--max-time \d+", "--max-time 120", text, count=1)
+    assert n == 1 and injected != text, "变异没生效 ⇒ 红证空跑"
+    assert judge_rails_intact(injected) != [], "预算退回 120s 后判据没红（判据无判别力）"
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -627,11 +651,22 @@ def _pre_fix_script(text: str) -> str:
     """把配置下载那一段**只还原成修复前的 URL**（其余一字不动）—— 即「修复前」的码路。
 
     这样红证隔离的**正是**本单的那一处差异（配置 ref），不是别的改动。
+
+    ⚠️ 还原手法 = **从当前那一行出发、只把 URL 换回 `refs/heads/main`**（而不是拼接历史那一行的
+    逐字副本）：issue #6550 把整体超时预算 120s → 900s 之后，若仍拼接 `PRE_FIX_FETCH_LINE`，
+    还原出来的「修复前」码路会**多出**一处预算差异 ⇒ `judge_rails_intact` 判红、
+    本函数声称的「只少了配置同源这一件事」不再成立（实测：该断言在 #6550 上判红）。
     """
     m = re.search(r"if ! curl -fsSL[^\n]*\n(?:.*\n)*?fi\n", text)
     assert m, "反空跑锚点：找不到配置下载段"
-    out = text[:m.start()] + PRE_FIX_FETCH_LINE + "\n" + text[m.end():]
-    assert PRE_FIX_FETCH_LINE in out, "还原没生效（红证空跑）"
+    cur = re.search(r"^if ! (curl -fsSL[^\n]*?); then$", text, re.M)
+    assert cur, "反空跑锚点：找不到配置下载那一行"
+    # 修复前的形态 = **裸**的 curl（没有 `if !` 的 fail-closed 包装）+ main 的 URL；
+    # 只从当前那一行换 URL ⇒ 其余护栏（-f / --retry / --connect-timeout / --max-time）保持当前口径。
+    pre_fix_line = cur.group(1).replace(FETCH_REF_TOKEN, f'"{CONFIG_URL_PREFIX}{MAIN_REF}"')
+    assert pre_fix_line != cur.group(1), "还原没生效（红证空跑）"
+    out = text[:m.start()] + pre_fix_line + "\n" + text[m.end():]
+    assert pre_fix_line in out, "还原没生效（红证空跑）"
     assert FETCH_REF_TOKEN not in out, "还原后仍残留按 tag 推导的 URL（红证空跑）"
     assert DERIVE_TOKEN in out, "还原误伤了推导行（红证会变成别的原因）"
     return out

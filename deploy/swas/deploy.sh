@@ -487,7 +487,33 @@ fi
 echo "== 1. 同步 repo 内 canonical compose + nginx 配置（ref=${CONFIG_REF_RESOLVED}，与镜像 tag=${TAG} 同源）=="
 # ⚠️ 这一段是「配置与镜像同源」的**唯一**落点（issue #5083）：URL 的 ref 来自 `$CONFIG_REF_RESOLVED`，
 #    它由 `config_ref_for_tag "$TAG"` 推导 ⇒ 脚本里**不存在**「无条件取 main 配置」的路径。
-if ! curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 120 -o src.tar.gz "$CONFIG_TARBALL_BASE/$CONFIG_REF_RESOLVED"; then
+#
+# ── 整体超时预算 120s → 900s（issue #6550：测试环境三条部署腿全线失败）──────────────────────
+# **为什么是 900s**（把实测速率算进去，不是拍脑袋）：四次失败 run 的远端逐字读数为
+#   服务器→codeload **118~345 KB/s**（03:42Z ~217、04:06Z ~118、04:31Z ~201、04:56Z ~345），
+#   而整仓 tar.gz **66.5MB** ⇒ 需要 **565s(118KB/s) ~ 193s(345KB/s)**；
+#   120s 上限下**一次都没下完**（最好的一次 41.4MB/66.57MB，`curl: (28) … out of 66570829 bytes received`）
+#   ⇒ 部署中止，**连回滚腿也失败**（回滚同样要下这份归档）。
+#   900s 对实测最慢速率（565s）有 **1.6× 余量**，且必须 **< CI 侧单次尝试预算 4500s**
+#   （deploy/scripts/swas-deploy-ci.sh::C_BUILD_DEPLOY_TIMEOUT_SECONDS = 锁等待上界 1800 + 冷构建上界 2400 + 余量 300）。
+#   `--max-time` 是**每一次**尝试（含 `--retry` 的重试）的预算 ⇒ 病态最坏 3×900s+2×5s=2710s，仍在 4500s 之内。
+#   **佐证「瓶颈是 120s 上限、不是带宽不可用」**：同一份 66MB 在 bootstrap 段
+#   （deploy/scripts/swas-deploy-ci.sh::BOOTSTRAP，**不带 `--max-time`**）**实测下载成功** ——
+#   否则 `deploy.sh` 根本不会被执行、也就不会有下面这条报错。
+#
+# ⚠️ **为什么不加 `-C -` 断点续传**（issue #6550 方向 1 曾建议加；实测**不可行且有害**，**勿再引入**）：
+#   ① **codeload 不支持 Range**（本机实测 2026-10-08：`curl -r 0-1023 <tarball>` ⇒ **HTTP 200** + 整份 body
+#      流式返回，响应头**没有** `content-range` / `accept-ranges`）；
+#   ② 一旦本地留下半份 `src.tar.gz`，`-C -` 会发 `Range:`，服务器回 200 ⇒ curl **exit 33**
+#      「HTTP server doesn't seem to support byte ranges. Cannot resume.」（本地桩实测：文件停在 204800 字节、
+#      第二/第三次调用均 rc=33、**零进展**）；
+#      而**半份文件确实会留下**：非 C′ 路径（`BUILD_SERVICE` 为空）不会执行末尾那句 `rm -rf src src.tar.gz`
+#      （那句在 `if [ -n "$BUILD_SERVICE" ]` 之内）⇒ 加了 `-C -` 等于让**下一次部署**在 exit 33 上秒失败，
+#      把「慢」换成「永久卡死」（要人工删文件才恢复）。
+#   ③ curl 自己的 `--retry` **也不续传**：实测三次请求都不带 `Range`、且半份文件被截断回原尺寸
+#      （⇒ 重试仍从 0 重下，但**不会**写出「前后拼接」的坏包）⇒ 正确姿势是让**单次尝试**在预算内下完，
+#      而不是指望重试累积进度。本次修复即如此。
+if ! curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 900 -o src.tar.gz "$CONFIG_TARBALL_BASE/$CONFIG_REF_RESOLVED"; then
   echo "  ❌ 取不到 tag=${TAG} 对应的配置（ref=${CONFIG_REF_RESOLVED}）⇒ **中止部署**（绝不回落到 main 的配置）"
   echo "     · 若 tag 是 latest 这类**移动 tag**（追不到具体 commit）⇒ 改用 sha-<7位hex> 形态的 tag"
   echo "     · 否则核对：该 commit/tag 在 zhaokai-mgzn/migao 上存在且可达"

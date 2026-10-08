@@ -588,6 +588,13 @@
       "file": "scripts/ci_helper_scope.py",
       "symbol": "DEV_FACE_PREFIXES",
       "criterion": "tests/unit_ci_workflows/test_ci_execution_scope.py::test_face_prefixes_are_same_source_as_the_local_helper"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_swas_config_tarball_fetch_budget.py",
+      "symbol": "AUTHORITY_MODULES",
+      "issue": "#6550",
+      "criterion": "tests/unit_ci_workflows/test_swas_config_tarball_fetch_budget.py::test_missing_authority_judge_fails_loudly",
+      "note": "该模块的注释声称「权威判据是 ref 同源的**唯一**真相源，本文件只调用它、不复制它的实现」——由两条判据承担：① `test_missing_authority_judge_fails_loudly`（权威判据取不到 ⇒ 显式失败，证明本文件**依赖**它而不是自带一份）② `test_injected_second_derivation_turns_ref_judge_red`（删掉唯一那份推导 ⇒ 判据 3 红，证明「不重实现」被真判）。"
     }
   ],
   "frozen_declarations": [
