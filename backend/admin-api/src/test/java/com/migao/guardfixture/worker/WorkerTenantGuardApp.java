@@ -6,6 +6,7 @@ import com.migao.admin.config.PasswordEncoderConfig;
 import com.migao.admin.config.TenantDomainResolver;
 import com.migao.admin.controller.WorkerAuthController;
 import com.migao.admin.controller.WorkerProductionController;
+import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.WorkerSessionMapper;
 import com.migao.admin.security.JwtAuthenticationFilter;
@@ -16,6 +17,7 @@ import com.migao.admin.security.ServiceTokenFilter;
 import com.migao.admin.security.WorkerSessionFilter;
 import com.migao.admin.service.WorkerCuttingHeightService;
 import com.migao.admin.worker.WorkerSessionService;
+import com.migao.admin.worker.WorkerTenantResolver;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.mapper.MapperFactoryBean;
 import org.springframework.boot.SpringBootConfiguration;
@@ -62,7 +64,7 @@ import java.sql.Driver;
 @EnableAutoConfiguration
 @Import({SecurityConfig.class, PasswordEncoderConfig.class, MybatisPlusConfig.class,
         GlobalExceptionHandler.class, TenantDomainResolver.class,
-        WorkerSessionFilter.class, WorkerSessionService.class,
+        WorkerSessionFilter.class, WorkerSessionService.class, WorkerTenantResolver.class,
         JwtAuthenticationFilter.class, ServiceTokenFilter.class, PasswordChangeRequiredFilter.class,
         LoginFailureGuard.class,
         WorkerAuthController.class, WorkerProductionController.class})
@@ -153,6 +155,21 @@ public class WorkerTenantGuardApp {
     @Bean
     MapperFactoryBean<UserMapper> userMapper(SqlSessionFactory sqlSessionFactory) {
         MapperFactoryBean<UserMapper> factory = new MapperFactoryBean<>(UserMapper.class);
+        factory.setSqlSessionFactory(sqlSessionFactory);
+        return factory;
+    }
+
+    /**
+     * 真 Mapper（**不是** mock）：工人登录的租户解析（issue #6564）按 `tenants.code` 查租户 —— 与
+     * {@link UserMapper} 同款，走同一条真 MyBatis 链路。
+     *
+     * <p>本守卫的用例都带 `X-Tenant-Id`（或断言「无租户来源 ⇒ 422」）⇒ 运行期**不**落这条 SQL；
+     * 它在这里的作用是把 {@link WorkerTenantResolver} 的构造依赖装配齐 —— 缺了它整套上下文加载不起来
+     * （CI 实测：`WorkerTenantCycleGuardTest` 8 条 error，全是 `Failed to load ApplicationContext`）。</p>
+     */
+    @Bean
+    MapperFactoryBean<TenantMapper> tenantMapper(SqlSessionFactory sqlSessionFactory) {
+        MapperFactoryBean<TenantMapper> factory = new MapperFactoryBean<>(TenantMapper.class);
         factory.setSqlSessionFactory(sqlSessionFactory);
         return factory;
     }
