@@ -72,6 +72,7 @@ const BOARD: SavingBoard = {
       cohortLabel: '切换后（采购入库）',
       opening: false,
       materialKey: 'p1|SKU-A',
+      materialLabel: '遮光帘A × 2.8米',
       productId: 'p1',
       skuCode: 'SKU-A',
       formulaMeters: 10,

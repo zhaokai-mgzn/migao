@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
 import com.migao.admin.dto.SavingMetricViews;
 import com.migao.admin.entity.StockBatchConsumption;
+import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
@@ -87,6 +88,8 @@ class SavingMetricsBoardRealDbTest {
     private static final Long EMPTY_TENANT_ID = 51590L;
     private static final Long SKU_ID = 5159L;
     private static final String PRODUCT_ID = "acc-5159-prod";
+    /** 商品名（#6535 的展示名 = 商品名 × 颜色/门幅 —— 判据 8 逐字用得上）。 */
+    private static final String PRODUCT_NAME = "布艺遮光帘A";
     private static final String SKU_CODE = "SKU-A";
     private static final String DOOR_WIDTH = "2.8米";
     private static final String MATERIAL_KEY = PRODUCT_ID + "|" + SKU_CODE;
@@ -113,7 +116,7 @@ class SavingMetricsBoardRealDbTest {
                     + TENANT_ID + ", 'acc-5159', 'acc-5159'), ("
                     + EMPTY_TENANT_ID + ", 'acc-5159-empty', 'acc-5159-empty')");
             st.execute("INSERT INTO products (id, tenant_id, name) VALUES ('" + PRODUCT_ID + "', "
-                    + TENANT_ID + ", '布艺遮光帘A')");
+                    + TENANT_ID + ", '" + PRODUCT_NAME + "')");
             st.execute("INSERT INTO product_skus (id, tenant_id, product_id, door_width, price, stock,"
                     + " sku_code) OVERRIDING SYSTEM VALUE VALUES (" + SKU_ID + ", " + TENANT_ID + ", '"
                     + PRODUCT_ID + "', '" + DOOR_WIDTH + "', 100, 60, '" + SKU_CODE + "')");
@@ -173,7 +176,7 @@ class SavingMetricsBoardRealDbTest {
         }));
         configuration.addInterceptor(tenantLine);
         for (Class<?> mapper : List.of(StockBatchMapper.class, StockBatchConsumptionMapper.class,
-                ProductSkuMapper.class)) {
+                ProductSkuMapper.class, ProductMapper.class)) {
             configuration.addMapper(mapper);
         }
         SqlSessionFactory factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
@@ -184,6 +187,9 @@ class SavingMetricsBoardRealDbTest {
                 // 余料腿显式不装（V122 / issue #5146）：本判据覆盖的是**批次账读面**，余料是附加事实
                 // —— null ⇒ 不登记余料，批次账行为与 #5158 逐字相同
                 null, new BusinessClock());
+        // 商品腿（issue #6535）：本判据要判「展示名 = 商品名 × 颜色/门幅」⇒ 必须装上
+        //（生产由 Spring 可选注入；不装的读面退化成「未命名商品 × SKU」，绝不退回机器键）
+        service.setProductMapper(session.getMapper(ProductMapper.class));
     }
 
     @AfterAll
@@ -263,6 +269,65 @@ class SavingMetricsBoardRealDbTest {
             grouped = grouped.add(g.savedMeters());
         }
         assertThat(grouped).as("Σ 分组 == Σ 逐单").isEqualByComparingTo(perLineMeters);
+    }
+
+    // ───────────────────────────────────── 判据 8（PR-096，#6535）：展示名与标识分家
+    //
+    // 🔴 病：省料看板「物料」列原样渲染 `materialKey` = `productId|skuCode`（productId 是 UUID）
+    //    ⇒ 商家看到的是一长串十六进制 + 竖线 + SKU（与 #6523 同族、换了一个 DTO）。
+    // 修法口径与 #6523 同源：**服务端新增展示名**（人话），`materialKey` **一字不改**。
+    //
+    // 本判据的负控（= 本题最容易悄悄坏掉的两处）：
+    //   ① `materialKey` 仍是 `productId|skuCode` 原值（改它就是动契约：React key / `data-testid` 都用它）；
+    //   ② 同一组的米数 / 金额读数**逐值不变**（只改展示那一格）。
+    @Test
+    @DisplayName("🔴 判据8（#6535）：SavedGroup.materialLabel = 商品名 × 颜色/门幅（人话）；materialKey 与读数逐值不变")
+    void savedGroupCarriesHumanReadableMaterialLabel() {
+        SavingMetricViews.Board board = service.savingBoard(TENANT_ID, null, "month");
+
+        assertThat(board.savedGroups())
+                .as("夹具必须真的有分组行 —— 否则下面的断言在空集上恒真（空断言）")
+                .isNotEmpty();
+
+        for (SavingMetricViews.SavedGroup g : board.savedGroups()) {
+            // 🔴 展示名 = 服务端组装的人话（同 #6523 的 `商品名 × 颜色/门幅` 口径）
+            assertThat(g.materialLabel())
+                    .as("展示名必须带商品名（本夹具 = 布艺遮光帘A）")
+                    .contains(PRODUCT_NAME);
+            assertThat(g.materialLabel())
+                    .as("展示名必须带颜色/门幅（本夹具 = SKU-A）")
+                    .contains(SKU_CODE);
+            assertThat(g.materialLabel())
+                    .as("🔴 展示名**不得**是机器键 —— 反面形态就是本单修掉的缺陷（UUID 上屏）")
+                    .isNotEqualTo(g.materialKey())
+                    .doesNotContain("|");
+
+            // 负控 ①：机器键 = 原值 `productId|skuCode`（契约一字未动）
+            assertThat(g.materialKey())
+                    .as("机器键 = `productId|skuCode`（React key / data-testid 逐字不变的依据）")
+                    .isEqualTo(g.productId() + "|" + g.skuCode());
+
+            // 负控 ②：读数逐值不变（只改展示那一格）
+            assertThat(g.savedMeters())
+                    .as("加了展示名之后米数读数一字不变（= 只能改展示，不许动口径）")
+                    .isEqualByComparingTo(g.formulaMeters().subtract(g.plannedMeters()));
+        }
+
+        // 逐组具名：把服务端真值、机器键、展示名、两个读数打在同一个读数里（红证 / 复核都靠它）
+        SavingMetricViews.SavedGroup purchase = board.savedGroups().stream()
+                .filter(g -> SavingMetricViews.COHORT_PURCHASE.equals(g.cohort()))
+                .findFirst().orElseThrow();
+        System.out.println("[#6535 读数] materialKey = " + purchase.materialKey()
+                + " / materialLabel = " + purchase.materialLabel()
+                + " / savedMeters = " + purchase.savedMeters()
+                + " / savedAmount = " + purchase.savedAmount());
+
+        assertThat(purchase.materialLabel()).as("服务端展示名 = 商品名 × SKU（本夹具逐字）")
+                .isEqualTo(PRODUCT_NAME + " × " + SKU_CODE);
+        assertThat(purchase.savedMeters()).as("切换后腿省料米数 = 3.0+2.4+0.1+0.1（逐值不变）")
+                .isEqualByComparingTo("5.6");
+        assertThat(purchase.savedAmount()).as("切换后腿省料金额 = 37.50+30.00+1.23+1.23（逐值不变）")
+                .isEqualByComparingTo("69.96");
     }
 
     // ────────────────────────────────────────────── 判据 2（PR-094）：存量单列
