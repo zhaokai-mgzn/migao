@@ -8011,10 +8011,12 @@
 数据: **池视图字段齐**：单号 / 物料（商品 × 颜色 × 门幅）/ 需求米数 / 等待时长 / 加急标记 / 到货日 + `maxWaitHours` / `poolingEnabled`（缺省关必须看得见）/ `overdueCount` 与**带对象名字**的 `warnings`（含加急单 —— 加急更不该被压住）。
 数据: **一键成批派单（§15.1）**：勾选 ⇒ 调 `/preview` 展示 预计领料 vs 逐单公式米数 = 预计节省；点「一键成批派单」⇒ 调 `/dispatch`（`pooled=true`）且**逐单结果可见**（成功显示加工单号、失败显示 message），看板刷新。
 数据: 🔴 存量行不炸读面（issue #5550）：`order_items.processing_info` 为 **NULL** 的明细行（真库实证：待派 29 行里 15 行如此）**不得**让 `GET /api/admin/production/pool` NPE 500 —— 该行按「既无加工项也无 `saleForm`」的**既有**语义跳过（不成派单候选、不产出行；整单没有快照时不进池），而**同池的正常行一行不丢**（同夹具里正常单照旧成组、计数逐值不变）。**红证** = 摘掉 `buildSnapshot` 的 `pi == null` 判定 ⇒ `PoolBoardUrgencyTest#poolReadFaceSurvivesLegacyItemWithoutProcessingInfo` 当场 NPE 红。**类级元守卫** = `ProcessingInfoNullSafetyMetaGuardTest#everyNormalizationCallSiteHandlesNull`（归一化入口的每一处结果解引用都必须先判 null；无判定的新调用点即红，报告给文件:行与出口）。
+数据: **全选（issue #6520）**：成批区标题栏一个「全选 N 单」按钮 —— 候选口径 = `batchGroups` 的**跨料组并集**（**加急单在 `urgentLines`、不在候选内**，全选勾不到它，否则整批必被 422 拒绝）；全选中时按钮变「取消全选」并清空；无候选时禁用。红证 = `production-pool-batch.test.tsx` 的「全选」用例：断言的是**每一行真的被勾上**且 `/preview` 的 `batches` 逐行带指派（不是只改计数文案），并断言加急行**没有**勾选框。
+数据: **超时未派告警不占屏（issue #6521）**：旧形态「每单一行红字」的常驻大红块（10 单 = 整屏）改为**一行摘要常驻 + 逐单明细按需展开** —— 摘要 = 条数 + 最长等待阈值 + 最久已等（数字全部来自服务端 `overdueCount` / `warnings[].waitHours` / `maxWaitHours`，前端只格式化）；逐单明细默认**不渲染**（折叠 ≠ CSS 隐藏）⇒「不占屏」是可断言的机器读数；展开后高度封顶 + 内部滚动，页面高度不随超时单数增长；`overdueCount = 0` ⇒ 整块不存在。
 跳过: [backend-contract] 排序/预览/成批派单（无米宝工具面）⇒ 由 Java 单测 + 真 PG 判据 + 前端 vitest 覆盖，不进入 agent-eval 冒烟
 ```
 真值: pool-board.urgency-first-ordering, batch-ledger.dispatch-pool-visibility, order-urgency.queue-jump
-溯源: 2026-09-23 新增（issue #5177）：智能派单排序（临期优先 + null 最后，含单点变异红证）+ 缺省不变 + 预览逐值不说谎 + 池视图字段 + 一键成批派单。取号 PR-081。 2026-09-25 追加（issue #5550）：存量行（`processing_info` 为 NULL）不炸池读面 + 归一化解引用类级元守卫。 ｜ tags: pool-board, order-urgency, dispatch-pool, backend-contract
+溯源: 2026-09-23 新增（issue #5177）：智能派单排序（临期优先 + null 最后，含单点变异红证）+ 缺省不变 + 预览逐值不说谎 + 池视图字段 + 一键成批派单。取号 PR-081。 2026-09-25 追加（issue #5550）：存量行（`processing_info` 为 NULL）不炸池读面 + 归一化解引用类级元守卫。 2026-10-08 追加（issue #6520 / #6521）：成批区「全选」（跨料组候选并集，加急单不在其中）+ 超时未派告警改「一行摘要常驻 + 逐单明细按需展开」（折叠态明细不渲染 ⇒ 不再占整屏）。 ｜ tags: pool-board, order-urgency, dispatch-pool, backend-contract
 
 ### PR-082. 🔴 V120 迁移质量（**两遍幂等** + 列类型/默认/NOT NULL 终态对账 + schema.sql 同步）+ 加急/到货日**透传进加工单快照** 🔵
 ```
