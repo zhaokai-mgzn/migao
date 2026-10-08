@@ -8980,7 +8980,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（93 case）
+## 前端 UI 域（94 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -10322,6 +10322,21 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-10-07 新增（issue #6488，用户逐字两轮 + 6 张截图）：商家后台用户可见文案去「研发腔」—— 全量扫描器（AST 抽文案例，227 文件 / 6409 条候选）+ 文案规范 `docs/design/user-facing-copy-standard.md`（三档处置 + P1~P5）+ 类级守卫扩容到八条规则（R1~R5 新增，R6~R8 由 #5565/#5576/#6459 的三条原样迁入同一份单一源）。红证（实现前实测）：守卫测试 `frontend/admin-web/tests/unit/user-copy-jargon-guard.test.ts` 得 **5 failed / 11 passed**（在 `frontend/admin-web` 目录下跑 vitest），R1~R5 各判红并逐条具名 file:line（78 处 / 25 个文件）；修复后同命令全绿。取号 = `python3 scripts/next_case_id.py ui`（main 最大 UI-092）。⚠️ 如实登记（未固化 / 有意不做）：服务端**下发**字符串的渲染面（如黄金策会话卡还原样渲染 `cohortLabel`）不在本守卫射程内（它扫源码字面量）—— 与 UI-092 的登记同源，另单跟踪。 ｜ 2026-10-08 续（用户验收线上页面提的两条）：① 副标题回归「讲这个功能干什么」，落 S1~S4 四条判据 + 规范 §6；② 新增 R9「占位符字母 / 模式代号上屏」（`X 变成 Y` / `A 模式`）—— 顺带清掉 `A 模式`（#6492 第 1 条）；③ 「按移动加权平均重算成本」「0.5 米级尾料」这类机制/口径措辞改为讲用途，关键规则改 `<strong>` 加粗。 ｜ tags: ui, copy, jargon, admin-web
 
+### UI-094. 服务端机器键不得当展示文本上屏（JSX 文本位跨页面元守卫 · #6523/#6535 同族） 🔵
+```
+你: 2026-10-08 用户在两处真机截图上撞见同族缺陷：#6523 智能派单「可合并的待派订单（按料分组）」的料组标题渲染成 `a61daac33e1a49974577d3ca81c4500b|SD07演示-2.8-8141273`（= 服务端 `PoolGroup.materialKey` = `productId|skuCode`，productId 是 UUID）；#6535 省料看板「省下多少」表的「物料」列渲染同一个键（换了个 DTO）。用户同轮逐字：「我们的产品是一个智能专业的优雅绅士，所有的设计风格都应该如此」。
+期望: direct_reply
+数据: 🔴 判据·**JSX 文本位的服务端机器键零上屏**（跨页面类级元守卫，issue #6552）：扫 `frontend/admin-web/src/**/*.tsx` 的 **JSX 文本位**（元素子节点位置的 `{expr}`，同行 / 独占一行 / 跨行都在面内 —— 用 TypeScript AST 取，**不看行首**）里渲染的**纯成员链**（`x` / `a.b` / `a?.b`），末端标识符以**小写驼峰**命中 `*Key` / `*Uuid` / `*Hash` / `*Token`（或正好叫 `hash` / `token` / `uuid`）⇒ 未登记即红。执行点 = `frontend/admin-web/tests/unit/jsx-machine-key-guard.test.ts`。现取为**空集**（#6523/#6535 已修）。
+数据: 🔴 判据·**空集必须显式断言 + 扫描面自证活着**（防「扫到 0 条就绿」的假绿）：同一判据内断言扫描面文件数 ≥ 100、JSX 文本位表达式数 ≥ 1500，且两个现场页面（`production/pool/page.tsx`、`production/saving-board/page.tsx`）必须在场、**仍在用** `materialKey`（只应出现在属性位）；扫描面为空时门禁口径 `guardViolations` 报「判据在扫空气」（真去扫一个空目录取读数，并有真语料对照证明该断言不是恒真）。
+数据: 🔴 判据·**属性位是合法承载面**（边界，不许放宽）：`key={…materialKey}` / `data-testid={…materialKey}` / `href` / `value` / `title` **一律不判** —— #6523/#6535 的修复正是把 `materialKey` 留在这些位置、只换展示文本。
+数据: 🔴 判据·**人话不误伤**（只收服务端机器键这一族，不是「什么变量都不能渲染」）：`row.productName` / `row.orderNo` / `row.code` / `row.id` / `{key}` / `p.key` / `OTHER_KEY` / `t(`materialKey`)` / `{`materialKey`}`（源码里是 ASCII 双引号，这里转写成反引号） 一律不红；`composition_key`（snake_case）与 `itemKey`（= **工序名**，内容本身）进 `HUMAN_KEY_WHITELIST` 显式登记（**只许缩短**：条目必须仍出现在语料里，死条目即红）。
+数据: 🔴 判据·**判别力自证（注入式，两条都要有实跑读数）**：① 把 #6523 / #6535 的**历史形态逐字**写进 `src/` 再扫 ⇒ 必红（两条各自具名 `group.materialKey` / `g.materialKey`），删掉 ⇒ 回到空集；② 把扫描面（语料为空）/ 规则（射程为空的规则表）弄坏 ⇒ 门禁口径必红。另有内存对照：同行形态（`<span …>{group.materialKey}</span>`）与独占一行形态都必红，且**按行首锚定**的坏正则对同行形态给出的是假绿（issue 里逐字的假绿教训，钉成断言）。
+数据: **不回归**：本包只新增判据与用例，`src/**` 一字未改（`frontend-fix.no-api-change`）；`materialKey` 的承载面（React key / `data-testid` / 分组判据）与两处修复的展示口径均不变。
+跳过: [backend-contract] 纯前端静态元守卫（vitest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-10-08 新增（issue #6552）：跨页面**类级元守卫** —— 「服务端机器键被当展示文本上屏」这一族（#6523 料组标题 / #6535 省料看板「物料」列，两处都是被人/真机截图撞见才修的）此前**没有任何东西会红**：本仓唯一的跨页面上屏收口 `frontend/admin-web/scripts/user-copy-scan.mjs` 的 `candidateStrings()` 只抽字面量，看不见 `{group.materialKey}` 这种 JSX 表达式渲染。本用例 = 新建 `frontend/admin-web/tests/unit/jsx-machine-key-guard.test.ts`（扫描面 `src/**/*.tsx` 的 JSX 文本位 + 四条机器键形态 + 人话白名单台账「只许缩短」+ 判别力自证两条）；**现取违例 = 空集**（两处均已修）且空集被**显式断言**，扫描面另有存活下限与注入式自证。取号 UI-094（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-093）。本包为纯测试/研发工具类改动 ⇒ 铁律 7 豁免，不写 CHANGELOG。 ｜ tags: ui, copy, machine-key, admin-web, meta-guard
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -10351,8 +10366,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：716（活跃 134，跳过 582）
-- tier 分布：smoke 12 / normal 662 / adversarial 32
+- 用例总数：717（活跃 134，跳过 583）
+- tier 分布：smoke 12 / normal 663 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10377,7 +10392,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：93
+- 前端 UI 域：94
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

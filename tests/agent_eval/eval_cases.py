@@ -13369,6 +13369,24 @@ _CASE_UI_093 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-094 [NORMAL] 服务端机器键不得当展示文本上屏（JSX 文本位跨页面元守卫 · #6523/#6535 同族）（源: cases/ui.yml）──
+_CASE_UI_094 = EvalCase(
+    id='UI-094',
+    legacy_id='',
+    title='服务端机器键不得当展示文本上屏（JSX 文本位跨页面元守卫 · #6523/#6535 同族）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['2026-10-08 用户在两处真机截图上撞见同族缺陷：#6523 智能派单「可合并的待派订单（按料分组）」的料组标题渲染成 `a61daac33e1a49974577d3ca81c4500b|SD07演示-2.8-8141273`（= 服务端 `PoolGroup.materialKey` = `productId|skuCode`，productId 是 UUID）；#6535 省料看板「省下多少」表的「物料」列渲染同一个键（换了个 DTO）。用户同轮逐字：「我们的产品是一个智能专业的优雅绅士，所有的设计风格都应该如此」。'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据·**JSX 文本位的服务端机器键零上屏**（跨页面类级元守卫，issue #6552）：扫 `frontend/admin-web/src/**/*.tsx` 的 **JSX 文本位**（元素子节点位置的 `{expr}`，同行 / 独占一行 / 跨行都在面内 —— 用 TypeScript AST 取，**不看行首**）里渲染的**纯成员链**（`x` / `a.b` / `a?.b`），末端标识符以**小写驼峰**命中 `*Key` / `*Uuid` / `*Hash` / `*Token`（或正好叫 `hash` / `token` / `uuid`）⇒ 未登记即红。执行点 = `frontend/admin-web/tests/unit/jsx-machine-key-guard.test.ts`。现取为**空集**（#6523/#6535 已修）。', '🔴 判据·**空集必须显式断言 + 扫描面自证活着**（防「扫到 0 条就绿」的假绿）：同一判据内断言扫描面文件数 ≥ 100、JSX 文本位表达式数 ≥ 1500，且两个现场页面（`production/pool/page.tsx`、`production/saving-board/page.tsx`）必须在场、**仍在用** `materialKey`（只应出现在属性位）；扫描面为空时门禁口径 `guardViolations` 报「判据在扫空气」（真去扫一个空目录取读数，并有真语料对照证明该断言不是恒真）。', '🔴 判据·**属性位是合法承载面**（边界，不许放宽）：`key={…materialKey}` / `data-testid={…materialKey}` / `href` / `value` / `title` **一律不判** —— #6523/#6535 的修复正是把 `materialKey` 留在这些位置、只换展示文本。', '🔴 判据·**人话不误伤**（只收服务端机器键这一族，不是「什么变量都不能渲染」）：`row.productName` / `row.orderNo` / `row.code` / `row.id` / `{key}` / `p.key` / `OTHER_KEY` / `t(`materialKey`)` / `{`materialKey`}`（源码里是 ASCII 双引号，这里转写成反引号） 一律不红；`composition_key`（snake_case）与 `itemKey`（= **工序名**，内容本身）进 `HUMAN_KEY_WHITELIST` 显式登记（**只许缩短**：条目必须仍出现在语料里，死条目即红）。', '🔴 判据·**判别力自证（注入式，两条都要有实跑读数）**：① 把 #6523 / #6535 的**历史形态逐字**写进 `src/` 再扫 ⇒ 必红（两条各自具名 `group.materialKey` / `g.materialKey`），删掉 ⇒ 回到空集；② 把扫描面（语料为空）/ 规则（射程为空的规则表）弄坏 ⇒ 门禁口径必红。另有内存对照：同行形态（`<span …>{group.materialKey}</span>`）与独占一行形态都必红，且**按行首锚定**的坏正则对同行形态给出的是假绿（issue 里逐字的假绿教训，钉成断言）。', '**不回归**：本包只新增判据与用例，`src/**` 一字未改（`frontend-fix.no-api-change`）；`materialKey` 的承载面（React key / `data-testid` / 分组判据）与两处修复的展示口径均不变。'],
+    skip_reason='[backend-contract] 纯前端静态元守卫（vitest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'copy', 'machine-key', 'admin-web', 'meta-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -14120,6 +14138,7 @@ ALL_CASES = (
     _CASE_UI_091,
     _CASE_UI_092,
     _CASE_UI_093,
+    _CASE_UI_094,
     _CASE_UT_001,
     _CASE_UT_002,
 )
