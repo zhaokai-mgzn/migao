@@ -187,11 +187,16 @@ class TestWriteFaceCoverageOnRealCorpus:
     def test_the_target_write_face_is_wired(self):
         """本单的钉：建品写面必须在册且 anchor 兑现（摘掉 claim ⇒ 判据 2/3 同时红）。"""
         corpus = load_real_corpus()
-        entry = next((e for e in _entries(load_ledger(), "consume_sites")
-                      if e["file"] == PRODUCT_SERVICE), None)
-        assert entry is not None, "建品写面（ProductService）必须登记在册（否则扫描器已失明）"
+        entries = [e for e in _entries(load_ledger(), "consume_sites")
+                   if e["file"] == PRODUCT_SERVICE]
+        # 不写 `is not None` 这类**弱断言**（成长门禁判它不算判据）：直接逐值钉台账内容
+        assert [e["anchor"] for e in entries] == [
+            "clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_CREATE_PRODUCT)"
+        ], "建品写面必须在册且 anchor 逐字钉住 claim（否则扫描器已失明）"
+        entry = entries[0]
         assert entry["anchor"] in corpus[entry["file"]]
         assert "POST /api/admin/products" in entry["surface"]
+        assert entry["case_ids"] == ["PR-128"]
         assert ENDPOINT_CONSTANT.search(corpus[entry["file"]]), (
             "端点标识常量（ENDPOINT_CREATE_PRODUCT）必须仍在 ProductService 里 —— "
             "两个入口共用同一端点标识的证据"
