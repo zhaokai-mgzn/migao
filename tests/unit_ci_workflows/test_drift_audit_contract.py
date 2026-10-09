@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -837,6 +838,266 @@ def test_heartbeat_registered_bound_does_not_mask_a_dead_schedule(tmp_path):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ⑦-c **自身排除**：调度任务不得用自己的心跳给自己判红（issue #5743）
+#   病根：`heartbeat` 遍历**仓内全部** `schedule:` 工作流逐条判「最近成功是否超阈值」，
+#   **包括它自己所在的那个 workflow**。一旦本腿连续失败 > 阈值 ⇒「本腿最近没有成功」
+#   这条 finding 恰恰由本腿自己产出，而本腿**要成功就得先没有 finding** ⇒ 鸡生蛋 ⇒
+#   **永久红**（实测连红 9 天，2026-10-09 读数：`drift-audit.yml 最近成功在 9 天前
+#   （周期 1440min，阈值 3 天）—— 调度还挂着但已经不产出`）。
+#   修法 = 把**正在执行本审计的那个 workflow** 从自身心跳判据里排除；取值来源**只能是
+#   环境/参数**（Actions 注入的 `GITHUB_WORKFLOW` / CLI `--host-workflow`），
+#   不许新造第二份工作流清单（两处口径必然各自漂移）。
+# ─────────────────────────────────────────────────────────────────────────────
+HOST_NAME = "Drift Audit (真相源契约)"  # 与 .github/workflows/drift-audit.yml 的 `name:` 逐字一致
+FRESH_TS = "2026-09-15T05:00:00Z"       # NOW 前 1h ⇒ 「1 小时前成功」< 3 天阈值
+STALE_TS = "2026-09-06T02:00:00Z"       # NOW 前 9 天 ⇒ 超阈值（与 ⑦ 的判据同一读数）
+
+
+def _self_host_repo(tmp_path) -> Path:
+    """注入面：宿主（自身失败 9 天）+ 一个同样超阈值的邻居 + 一个健康调度。"""
+    return mk_repo(tmp_path, {
+        ".github/workflows/drift-audit.yml": _wf(HOST_NAME, "17 21 * * *"),
+        ".github/workflows/neighbour.yml": _wf("Neighbour", "0 2 * * *"),
+        ".github/workflows/fresh.yml": _wf("Fresh", "0 4 * * *"),
+    })
+
+
+def _self_host_fixture(tmp_path) -> Path:
+    """宿主 + 邻居都**超阈值**（9 天），`fresh` 健康 ⇒ 两种对照共用一个读数。"""
+    fixture = tmp_path / "gh.json"
+    fixture.write_text(json.dumps({
+        "drift-audit.yml": [{"status": "completed", "conclusion": "failure",
+                             "createdAt": "2026-09-14T21:17:00Z"},
+                            {"status": "completed", "conclusion": "success",
+                             "createdAt": STALE_TS}],
+        "neighbour.yml": [{"status": "completed", "conclusion": "success",
+                           "createdAt": STALE_TS}],
+        "fresh.yml": [{"status": "completed", "conclusion": "success",
+                       "createdAt": FRESH_TS}],
+    }), encoding="utf-8")
+    return fixture
+
+
+def _all_fresh_fixture(tmp_path) -> Path:
+    """三个调度**都**健康 —— 判据在"阈值"这一维干净，只剩"宿主取不到"这一个变量。"""
+    fixture = tmp_path / "gh-fresh.json"
+    fixture.write_text(json.dumps(
+        {n: [{"status": "completed", "conclusion": "success", "createdAt": FRESH_TS}]
+         for n in ("drift-audit.yml", "neighbour.yml", "fresh.yml")}),
+        encoding="utf-8")
+    return fixture
+
+
+def _self_host_details(rep) -> str:
+    return " || ".join(f["detail"] for f in check_of(rep, "heartbeat")["findings"])
+
+
+def _self_host_keys(rep) -> set[str]:
+    return {f["key"] for f in check_of(rep, "heartbeat")["findings"]}
+
+
+def test_heartbeat_host_workflow_judges_itself_without_the_exclusion(tmp_path):
+    """**红证**：不声明宿主 ⇒ 本腿拿**自己的**陈旧心跳给自己判红（= 鸡生蛋的永久红）。
+
+    这一条是"修前必红"的逐字读数；它与下面 `..._is_excluded` 用**同一个夹具**，
+    唯一的变量是 `--host-workflow` ⇒ 红/绿的成因只能是自身排除本身。
+    """
+    repo = _self_host_repo(tmp_path)
+    fixture = _self_host_fixture(tmp_path)
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
+                       "--gh-fixture", str(fixture), "--now", NOW, "--host-workflow", "")
+    details = _self_host_details(rep)
+    assert rc == 1, out
+    assert "drift-audit.yml" in details and "最近成功在 9 天前" in details, details
+
+
+def test_heartbeat_host_workflow_is_excluded_from_its_own_judgment(tmp_path):
+    """**修后**：同一夹具 + 声明宿主 ⇒ 自身的陈旧心跳**不再是 finding**（自锁解除）。
+
+    宿主名走 **`GITHUB_WORKFLOW` 的取值形态**（workflow 的 `name:`），而遍历用文件名 ⇒
+    这条同时钉住那个映射（映射断了就红成"排除逻辑存在但永不生效"）。
+    ⚠️ 本夹具里**邻居**仍超阈值 ⇒ 整轮 `rc` 照旧是 `1`（那是负向对照要求的）；
+    本条的判据是"宿主那一条**不在** findings 里，而邻居那一条**还在**"。
+    """
+    repo = _self_host_repo(tmp_path)
+    fixture = _self_host_fixture(tmp_path)
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
+                       "--gh-fixture", str(fixture), "--now", NOW,
+                       "--host-workflow", HOST_NAME)
+    chk = check_of(rep, "heartbeat")
+    keys = _self_host_keys(rep)
+    assert not [k for k in keys if k.startswith("drift-audit.yml|")], _self_host_details(rep)
+    assert "host-self" in " ".join(chk["notes"]), out
+    # 邻居与被排除的宿主**共用一个夹具读数**：排除只吃掉了宿主那一条。
+    assert "neighbour.yml|stale" in keys, _self_host_details(rep)
+
+
+def test_heartbeat_other_workflows_still_red_when_host_is_excluded(tmp_path):
+    """**负向对照**：排除自身 ≠ 判据整体失效 —— **别人的**超阈值心跳照旧红。
+
+    没有这一条，「排除自身」很容易被写成「心跳判据整体关掉」（那是**放宽门禁**）。
+    """
+    repo = _self_host_repo(tmp_path)
+    fixture = _self_host_fixture(tmp_path)
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
+                       "--gh-fixture", str(fixture), "--now", NOW,
+                       "--host-workflow", HOST_NAME)
+    details = _self_host_details(rep)
+    assert rc == 1, f"排除自身把别的 workflow 的判红也吞了（放开门禁）：\n{out}"
+    assert "neighbour.yml" in details and "最近成功在 9 天前" in details, details
+
+
+def test_heartbeat_unknown_host_is_not_silently_treated_as_no_exclusion(tmp_path):
+    """取不到宿主名 ⇒ **不得**静默当成"没有要排除的"（静默 = 退回自锁）。
+
+    行为：`heartbeat` 记 **`unknown`**（本轮**没读出结论**，`--fail-on-unknown` 时折 `3`）
+    + 报告里具名写出「自身排除本轮不生效」。CI 上 Actions 自动注入 `GITHUB_WORKFLOW`
+    ⇒ 这条分支在定时腿上不可达；本地纯审计要它闭嘴就显式传 `--host-workflow ''`。
+    夹具用**全部健康**的三个调度 ⇒ "阈值"那一维退出，唯一变量就是"宿主取不到"。
+    """
+    repo = _self_host_repo(tmp_path)
+    fixture = _all_fresh_fixture(tmp_path)
+    out_json = Path(tempfile.mkdtemp()) / "drift.json"
+    env = {k: v for k, v in os.environ.items() if k != "GITHUB_WORKFLOW"}
+    p = subprocess.run(
+        [sys.executable, str(DRIFT), "--repo", str(repo), "--base", "main",
+         "--json", str(out_json), "--offline", "--check", "--only", "heartbeat",
+         "--stale-scope", "none", "--gh-fixture", str(fixture), "--now", NOW],
+        capture_output=True, text=True, timeout=300, env=env)
+    rep = json.loads(out_json.read_text(encoding="utf-8"))
+    chk = check_of(rep, "heartbeat")
+    assert chk["status"] == "unknown", p.stdout + p.stderr
+    assert "宿主 workflow 未知" in " ".join(chk["notes"]), p.stdout + p.stderr
+    # 定时腿口径（`--fail-on-unknown`）⇒ 不可判折 `3`（非零，不会被读成通过）。
+    p2 = subprocess.run(
+        [sys.executable, str(DRIFT), "--repo", str(repo), "--base", "main",
+         "--json", str(out_json), "--offline", "--check", "--fail-on-unknown",
+         "--only", "heartbeat", "--stale-scope", "none",
+         "--gh-fixture", str(fixture), "--now", NOW],
+        capture_output=True, text=True, timeout=300, env=env)
+    assert p2.returncode == 3, p2.stdout + p2.stderr
+
+
+def test_heartbeat_unresolvable_host_name_is_loud_not_silent(tmp_path):
+    """名字**读了**但在本仓指向不到任何 workflow ⇒ 具名出声（`host-unmapped`）。
+
+    这是"改名 / 删文件 / 宿主名不同源"的形态：映射断了必须**可见**，
+    否则排除逻辑会静默失效（= 又回到自锁），而报告一片绿。
+    （本夹具里邻居也超阈值 ⇒ 判据整体是"有结论的红"（`new-drift` 优先于 `unknown`，
+    见 `tri_state` 的排序）；"无从排除 ⇒ 不可判"那一半由下一条用**全绿夹具**单独取证。）
+    """
+    repo = _self_host_repo(tmp_path)
+    fixture = _self_host_fixture(tmp_path)
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
+                       "--gh-fixture", str(fixture), "--now", NOW,
+                       "--host-workflow", "No Such Workflow")
+    chk = check_of(rep, "heartbeat")
+    assert "host-unmapped" in " ".join(chk["notes"]), out
+    # 没有排除任何东西 ⇒ 宿主（含自身）的陈旧心跳照旧在判定面里。
+    assert "drift-audit.yml" in _self_host_details(rep), out
+
+
+def _cli_no_env(repo, fixture, *args: str):
+    """不带 `GITHUB_WORKFLOW` 跑真 CLI（与被测环境的宿主名解耦）+ 隔离的 baseline。"""
+    tmp = Path(tempfile.mkdtemp())
+    out_json = tmp / "drift.json"
+    env = {k: v for k, v in os.environ.items() if k != "GITHUB_WORKFLOW"}
+    p = subprocess.run(
+        [sys.executable, str(DRIFT), "--repo", str(repo), "--base", "main",
+         "--json", str(out_json), "--offline", "--check", "--fail-on-unknown",
+         "--only", "heartbeat", "--stale-scope", "none", "--baseline",
+         str(tmp / "bl.json"), "--gh-fixture", str(fixture), "--now", NOW, *args],
+        capture_output=True, text=True, timeout=300, env=env)
+    rep = json.loads(out_json.read_text(encoding="utf-8"))
+    return p.returncode, p.stdout + p.stderr, check_of(rep, "heartbeat")
+
+
+def test_heartbeat_unresolvable_host_makes_the_leg_unjudgeable(tmp_path):
+    """**不可判那一半**（全绿夹具 ⇒ 唯一变量 = 宿主指向不到）：`unknown` + 定时腿折 `3`。
+
+    与"显式声明没有宿主"（空串 ⇒ `ok`、`0`）成**一对**：两种输入必须给出不同结论，
+    否则"我说了没有宿主"与"我找不到宿主"又被合并成一态（本包实测踩过一次）。
+    """
+    repo = _self_host_repo(tmp_path)
+    fixture = _all_fresh_fixture(tmp_path)
+    rc, out, chk = _cli_no_env(repo, fixture, "--host-workflow", "No Such Workflow")
+    assert chk["status"] == "unknown", out
+    assert "host-unmapped" in " ".join(chk["notes"]), out
+    assert rc == 3, out
+    rc2, out2, chk2 = _cli_no_env(repo, fixture, "--host-workflow", "")
+    assert chk2["status"] == "ok", out2
+    assert rc2 == 0, out2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⑦-d 类级元守卫：自身排除必须**存在**且**取值来源不是硬编码清单**（issue #5743）
+# ─────────────────────────────────────────────────────────────────────────────
+def _drift_mod():
+    spec = importlib.util.spec_from_file_location("drift_audit_selfhost", DRIFT)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["drift_audit_selfhost"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_meta_guard_heartbeat_self_exclusion_exists_and_is_not_a_hardcoded_list():
+    """类级固化：让「宿主工作流被排除」这件事有机械锁（改坏即红）。
+
+    ① 判定里**真的**存在"按宿主文件名跳过"的那条分支；
+    ② 取值来源是**环境/参数**：`os.environ.get(HOST_WORKFLOW_ENV)` + CLI `--host-workflow`
+       都在源码里（**不许**新造第二份工作流清单 —— 那正是"两处口径各自漂移"）；
+    ③ **反向**：宿主解析函数的函数体里**不许**出现任何 `*.yml` 字面量
+       （硬编码清单的形态就是往那里塞文件名；改成硬编码 ⇒ 这条当场红）。
+    """
+    src = DRIFT.read_text(encoding="utf-8")
+    assert "name == host_file" in src, (
+        "`check_heartbeat` 里没有『按宿主文件名跳过』的分支 —— 自身排除被摘掉了（自锁会回来）")
+    assert "HOST_WORKFLOW_ENV" in src and "host_workflow" in src, (
+        "自身排除的取值来源不在源码里（环境变量常量 / Audit 字段）")
+    assert "os.environ.get(HOST_WORKFLOW_ENV)" in src, (
+        "unset 与空串、空串与有名字没有分开 ⇒ 静默退回自锁的风险回来了")
+    assert "_host_from_arg" in src, (
+        "『显式声明没有宿主』与『宿主取不到』被合并成一态 ⇒ 本地/夹具静默退回自锁")
+    assert '"--host-workflow"' in src, "CLI 入口没了（判据与本地复跑都要靠它显式声明宿主）"
+
+    parts = src.split("def _host_workflow_file(", 1)
+    assert len(parts) == 2, "宿主名 ⇒ 文件名的映射函数不存在（排除逻辑会永远不生效）"
+    fn_body = parts[1].split("\ndef ", 1)[0]
+    assert ".yml" not in fn_body, (
+        "宿主解析里出现了 `*.yml` 字面量 ⇒ 取值来源退化成**硬编码工作流清单**"
+        "（两处口径必然各自漂移）：\n" + fn_body)
+
+
+def test_meta_guard_host_name_to_filename_mapping_is_real():
+    """接线自证：`name:`（CI 取值形态）与文件名都能映射到**同一个**文件。
+
+    映射断了 ⇒ 排除逻辑"存在但永不生效" ⇒ 本单的缺陷原样复发，而报告不会红 ——
+    这条把它变成会红的（直接跑真函数，不复制第二套映射）。
+    """
+    mod = _drift_mod()
+    real = REPO_ROOT / ".github" / "workflows" / "drift-audit.yml"
+    head = real.read_text(encoding="utf-8").split("\njobs:")[0]
+    m = re.search(r"^name:\s*(.+?)\s*$", head, re.M)
+    assert m, "drift-audit.yml 头部没有 `name:` —— 与 `GITHUB_WORKFLOW` 同源的那一环断了"
+    heads = [("drift-audit.yml", head)]
+
+    class _A:
+        host_workflow = m.group(1).strip()
+
+    assert mod._host_workflow_file(_A(), heads) == "drift-audit.yml"
+    _A.host_workflow = "drift-audit.yml"          # 本地 / 夹具直接用文件名
+    assert mod._host_workflow_file(_A(), heads) == "drift-audit.yml"
+    _A.host_workflow = "No Such Workflow"
+    assert mod._host_workflow_file(_A(), heads) is None   # 指向不到 ⇒ 出声，不通吃
+    _A.host_workflow = ""
+    assert mod._host_workflow_file(_A(), heads) is None
+    # 三态里"谁给的"也必须可分辨（否则『显式说没有宿主』会被读成『宿主未知』⇒ 全判 unknown）。
+    assert mod.Audit(REPO_ROOT, host_workflow="")._host_from_arg is True
+    assert mod.Audit(REPO_ROOT, host_workflow="drift-audit.yml")._host_from_arg is True
+    assert mod.Audit(REPO_ROOT)._host_from_arg is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ⑧ 退化守卫 + 基线策略（meta）
 # ─────────────────────────────────────────────────────────────────────────────
 def test_empty_cases_surface_red(tmp_path):
@@ -1240,7 +1501,9 @@ def test_real_repo_audit_is_green_on_current_tree():
         pytest.skip("当前检出没有 origin/main（浅检出）⇒ 本自证无判定基准，跳过")
     # 默认 `--stale-scope diff`：**本 PR 改动面**的新增漂移才阻塞 —— 这样并行包刚合并进
     # main 的漂移不会把本测试（以及任何无关 PR）判红。
-    rc, out, rep = run(REPO_ROOT, "--check",
+    # #5743：显式声明"本次没有宿主"—— 本自证测的是**仓库内**漂移，不测"谁在跑"；
+    # 继承 CI 注入的 `GITHUB_WORKFLOW` 会让读数随宿主名而变（本仓真名在这条测试的判定面外）。
+    rc, out, rep = run(REPO_ROOT, "--check", "--host-workflow", "",
                        "--live-anchor", str(REPO_ROOT.parent / "no-such-anchor"),
                        base="origin/main")
     errs = [c["id"] for c in rep["checks"] if c["status"] == "error"]

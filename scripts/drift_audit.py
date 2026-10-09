@@ -158,6 +158,14 @@ CASES_DIR = ".github/cases"
 LIVE_ANCHOR_DEFAULT = "~/.dsh/.agent-presets/migao"
 LIVE_ANCHOR_ENV = "MIGAO_PRESET_LIVE"
 
+#: 🔴 issue #5743：**正在执行本审计的那个 workflow** 必须从 `check_heartbeat` 的**自身**心跳判据里
+#: 排除 —— 一个调度任务不得用自己的心跳给自己判红（自指判据 ⇒ 鸡生蛋 ⇒ 永久自锁：
+#: 本腿要成功就得先没有 finding，而它的 finding 正是"本腿最近没有成功"）。
+#: 取值来源**只能是环境 / 参数**（Actions 自动注入的 `GITHUB_WORKFLOW`），**不许新造第二份工作流
+#: 清单**（那会变成"两处口径各自漂移"，正是本仓反复踩的形态）。取不到 ⇒ **不得**静默当成
+#: "没有要排除的"（那会退回自锁）—— 见 `check_heartbeat` 的 `host-unknown` 分支。
+HOST_WORKFLOW_ENV = "GITHUB_WORKFLOW"
+
 #: 🔴 S4（issue #6020，2026-10-02）：预设内容已迁到**独立仓** `zhaokai-mgzn/migao-agent-presets`，
 #: 业务仓**不再承载** `.agent-presets/**`。`SKILLS_DIR` / `DEV_FLOW_SKILL` 随之失效 ⇒ 「技能活锚 /
 #: 预设单调性 / 同步副本」三条判据的**判定面变成 0**，框架按「空集会让护栏恒真」判
@@ -244,7 +252,8 @@ def norm_text(text: str) -> str:
 class Audit:
     def __init__(self, repo: Path, base: str = "origin/main", offline: bool = False,
                  now: datetime | None = None, live_anchor: Path | None = None,
-                 gh_fixture: Path | None = None, verbose: bool = False):
+                 gh_fixture: Path | None = None, verbose: bool = False,
+                 host_workflow: str | None = None):
         self.repo = repo.resolve()
         self.base = base
         self.offline = offline
@@ -254,6 +263,17 @@ class Audit:
             os.path.expanduser(os.environ.get(LIVE_ANCHOR_ENV) or LIVE_ANCHOR_DEFAULT)
         )
         self.live_anchor = anchor
+        # 宿主 workflow（**正在执行本审计的那个**）——issue #5743。取值来源 = 环境/参数：
+        # CI 上由 Actions 注入的 `GITHUB_WORKFLOW`；CLI `--host-workflow` 可显式覆盖（判据用）。
+        # 🔴 三态，别把后两者合并（合并过一次，实测把「显式说没有宿主」读成了「宿主未知」⇒
+        #    本地/夹具全判 `unknown`，正是本单要治的"读不出区别"）：
+        #    · `host_workflow` = **断言值**（"是谁"，空串 = 本次没有宿主）；
+        #    · `_host_from_arg` = 这个值是**显式给的**（CLI）还是**从环境读的**；
+        #    · 两者共同推出"是否取不到"（见 `check_heartbeat` 的 `host_unknown`）：
+        #      只有"显式给了空串"是"本次没有宿主"，"环境没设 + 没显式给"是**取不到**。
+        self._host_from_arg = host_workflow is not None
+        self.host_workflow = host_workflow if self._host_from_arg \
+            else (os.environ.get(HOST_WORKFLOW_ENV) or "")
         self.gh_fixture = gh_fixture
         self._file_cache: dict[str, str] = {}
         self._tracked: list[str] | None = None
@@ -1141,6 +1161,32 @@ def _parse_ts(s: str) -> datetime | None:
         return None
 
 
+#: workflow 头部第一处 `name: <值>`（`heads` 里的正文已按 `\njobs:` 切过头）。
+_WF_NAME_LINE = re.compile(r"^name:\s*(.+?)\s*$", re.M)
+
+
+def _host_workflow_file(a: Audit, heads: list[tuple[str, str]]) -> str | None:
+    """把**宿主 workflow 的名字**映射回**文件名**（issue #5743）——`check_heartbeat`
+    遍历的是文件名（`f.name`），而 `GITHUB_WORKFLOW` 在 Actions 里是 workflow 的 **`name:`**。
+
+    🔴 这个映射就是本单的接线点：不映射就等于"排除逻辑存在但永远不生效"（还是自锁）。
+    反查而不是登记（**不许新造第二份工作流清单** —— 两处口径必然各自漂移）：
+    · 先按文件名匹配（本地 / 夹具直接用文件名，无需造 `name:` 常量）；
+    · 再按该文件头部 `name:` **逐字**匹配（CI 的实际取值形态）。
+    返回 `None` = 名字**读了**但在这个仓里**指向不到任何 workflow**（调用方必须出声，见 `host-unmapped`）。
+    """
+    want = (a.host_workflow or "").strip()
+    if not want:
+        return None
+    if want in {name for name, _ in heads}:
+        return want
+    for name, head in heads:
+        m = _WF_NAME_LINE.search(head)
+        if m and m.group(1).strip() == want:
+            return name
+    return None
+
+
 def check_heartbeat(a: Audit) -> CheckResult:
     r = CheckResult("heartbeat")
     wf_dir = a.repo / ".github" / "workflows"
@@ -1156,6 +1202,43 @@ def check_heartbeat(a: Audit) -> CheckResult:
             scheduled.append((f.name, [c.strip() for c in crons]))
         elif PAUSED_SCHED.search(txt):
             paused.append(f.name)
+    # ── 自身排除（issue #5743）：一个调度任务**不得用自己的心跳给自己判红** ───────────
+    # 病根：本腿连续失败 > 阈值 ⇒「本腿最近没有成功」这条 finding 恰恰由本腿自己产出，
+    # 而本腿**要成功就得先没有 finding** ⇒ 鸡生蛋 ⇒ **永久红**（实测连红 9 天）。
+    # 这不是放宽判据：去掉的只是**自指**那一条，外部承接面一个字没动 ——
+    # `mechanism-liveness.yml` 的看门人（本腿的 `MECHANISM-LIVENESS mech=drift-audit` 注解
+    # 就在它的判定面里）+ drift-audit 定时腿自己开的 P1 值班认领单。
+    # 🔴 边界（照实登记，勿读成"已覆盖"）：排除自身后，「本腿跑着但一直红」**不再由本腿自报**。
+    # 三态（别再合并，实测踩过一次）：`_host_from_arg`（CLI 给了没有）与 `host_workflow`
+    # （值本身，空串 = 本次没有宿主）共同决定下面走哪一支 ——
+    #   · 环境也没设、CLI 也没给 ⇒ **取不到** ⇒ `host-unknown` 出声（**不静默**，记 `unknown`）；
+    #   · 值指向不到文件（含"给了个非空名字但本仓没这个 workflow"）⇒ `host-unmapped` 出声
+    #     （**同一处置**：记 `unknown` —— 无从排除时不假装排过）。
+    host_file = _host_workflow_file(a, heads)
+    host_unknown = not a._host_from_arg and not (a.host_workflow or "").strip()
+    if host_unknown:
+        # 取不到 ⇒ **不静默**（静默 = 退回自锁）。记 `unknown`：本判据"是不是每个调度任务
+        # 都有人看着"这件事本轮**没读出结论**（`--fail-on-unknown` 时折 `3`），
+        # 免得"没排除"长得像"已排除"。CI（Actions 自动注入 `GITHUB_WORKFLOW`）取得到
+        # ⇒ 本分支在定时腿上是**不可达**路径；本地纯审计要它闭嘴就显式传
+        # `--host-workflow ''`（= 本次没有宿主）。
+        r.status = "unknown"
+        r.notes.append(
+            f"**宿主 workflow 未知**（{HOST_WORKFLOW_ENV} 未设定）⇒ **自身排除本轮不生效**"
+            f"（`host-unknown`，**不等于**『没有要排除的』）—— 本判据本轮**没读出结论**；"
+            f"要声明『本次没有宿主』请显式传 `--host-workflow ''`")
+    elif host_file is None and (a.host_workflow or "").strip():
+        # 值**读了**但指向不到任何文件（改名 / 删除 / 宿主名与本仓不同源）。与 `host-unknown`
+        # **同一处置**（记 `unknown`）：无从排除 ⇒ 不假装排过，也不静默当成"没有要排除的"。
+        r.status = "unknown"
+        r.notes.append(
+            f"宿主 workflow `{a.host_workflow}` 在本仓 `.github/workflows/` 里**指向不到任何文件** ⇒ "
+            f"**无从排除**（`host-unmapped`：可能它已被改名/删除，或宿主名与本仓不同源）"
+            f"—— 按未知处理，**不得**当成通过")
+    elif host_file not in {name for name, _ in scheduled}:
+        r.notes.append(
+            f"宿主 workflow `{a.host_workflow}`（`{host_file}`）**不是**用 `schedule:` 的工作流 ⇒ "
+            f"本次没有可排除的自身心跳条目")
     throttle, throttle_problem = _declared_throttle_minutes(heads)
     if throttle and not any(p and p < MINUTE_CRON_PERIOD_MAX for _, crons in scheduled
                             for p in (_period_minutes(c) for c in crons)):
@@ -1187,6 +1270,20 @@ def check_heartbeat(a: Audit) -> CheckResult:
     with ThreadPoolExecutor(max_workers=workers) as pool:
         fetched = list(pool.map(lambda n: _gh_runs(a, n), [n for n, _ in scheduled]))
     for (name, crons), runs in zip(scheduled, fetched):
+        if host_file is not None and name == host_file:
+            # 🔴 自身排除（issue #5743）：本腿**不得**用自己的心跳给自己判红。
+            # 与下面那条 `pending`（**本 PR 新增**的 workflow）**语义不同，故不合并**：
+            # · `pending` = 它在基准上**还不存在**（`gh run list --workflow` 在合并前解析不到
+            #   ⇒ 拿"还没跑"当"零成功"会是首次上线时的自指假红）——**合并后自动生效**；
+            # · 自身排除 = 它**一直存在**、也一直会被判，但判定者与被执行者是同一个 ⇒
+            #   自指判据（鸡生蛋）⇒ **永久红**，且永远不会"自动生效"。
+            # 两条路径都保留各自的**具名**备注，不互相冒名。
+            r.notes.append(
+                f"{name}: **自身排除**（`host-self`：本 workflow 正是正在执行本审计的那一个，"
+                f"来源 `{HOST_WORKFLOW_ENV}` / `--host-workflow`）⇒ 它的心跳**不由本腿自判**；"
+                f"承接面 = `mechanism-liveness.yml` 的看门人（`mech=drift-audit` 存活读数）"
+                f"+ 本腿定时失败的 P1 值班单（**排除自身 ≠ 没人看这条腿**）")
+            continue
         if name in pending:
             # 本 PR 新增的 workflow：`gh` 只认默认分支上的 workflow 文件，且它**自己的
             # 这次 run**（in_progress）会被 `gh run list` 看到 ⇒ 不能拿"自己的未完成"
@@ -1358,13 +1455,17 @@ CHECKS: list[Check] = [
         title="无心跳的调度任务",
         judgment="列出所有用 `schedule:` 的 workflow（含**被注释停用**的），比对最后一次**成功**运行的时间"
                  "与 cron 周期推出的阈值；零成功 / 从未跑过 / 超过阈值 ⇒ 漂移。"
+                 "**正在执行本审计的那个 workflow 自身不算**（`GITHUB_WORKFLOW` / `--host-workflow` ⇒ "
+                 "自身排除，issue #5743：自指判据 = 鸡生蛋 = 永久自锁；取不到宿主名 ⇒ 判『未知』，"
+                 "**不静默视同没有要排除的**）；"
                  "`gh` 不可达 ⇒ 该项记『未知』，**不假装通过**；**分钟级** cron（声明周期 < 60min）"
                  "的阈值按**登记的**最坏投递间隔取有效周期（workflow 头部 "
                  "`# drift-audit: minute-cron-throttle-minutes = <N>`）—— GitHub 对分钟级 cron 的"
                  "实测节流会让「3×声明周期」结构性不可达（误红，issue #3951）；登记缺失/冲突 ⇒ "
                  "**不放松**（照旧按 3×声明周期判并在报告里点名）。",
         remedy="先看最近一次失败 job 日志定位根因；确因环境波动则修稳定再恢复 `schedule:`，"
-               "不要长期挂着不产出的调度（停摆不会自己变红）。",
+               "不要长期挂着不产出的调度（停摆不会自己变红）。**本腿自己**的停摆由 "
+               "`mechanism-liveness.yml` 的看门人与本腿的 P1 值班单承接（自指判据不能自报）。",
         fn=check_heartbeat, network=True, min_evaluated=1,
     ),
     Check(
@@ -2360,6 +2461,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reason", default="", help="重生成基线的理由（写进基线 JSON，PR 里要说明）")
     ap.add_argument("--json", dest="json_out", default=None, help="机器可读报告输出路径")
     ap.add_argument("--only", default=None, help="只跑这些判据（逗号分隔）")
+    ap.add_argument("--host-workflow", default=None,
+                    help=f"正在执行本审计的 workflow（默认读环境 {HOST_WORKFLOW_ENV}）；"
+                         f"`heartbeat` 据此把**自身**从心跳判据里排除（issue #5743）；"
+                         f"传空串 = 本次没有宿主（本地 / 夹具）")
     ap.add_argument("--offline", action="store_true", help="跳过网络判据（心跳记未知）")
     ap.add_argument("--fail-on-unknown", action="store_true", help="未知也当失败（定时任务用）")
     ap.add_argument("--allow-unknown", action="append", default=None, metavar="CHECK_ID",
@@ -2392,7 +2497,8 @@ def main(argv: list[str] | None = None) -> int:
     now = _parse_ts(args.now) if args.now else None
     a = Audit(repo, base=args.base, offline=args.offline, now=now,
               live_anchor=Path(args.live_anchor) if args.live_anchor else None,
-              gh_fixture=Path(args.gh_fixture) if args.gh_fixture else None)
+              gh_fixture=Path(args.gh_fixture) if args.gh_fixture else None,
+              host_workflow=args.host_workflow)
     only = [x.strip() for x in args.only.split(",")] if args.only else None
     # `--stale-scope none` = 无 PR 上下文（纯审计 / 定时树）：陈旧条目与面外新增都只报告；
     # 默认 `diff` = 门禁口径：**全量对账**的陈旧/被删条目一律阻塞（#4045），
