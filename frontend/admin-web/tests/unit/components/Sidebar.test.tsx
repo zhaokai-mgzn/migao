@@ -157,6 +157,17 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('logo')).toBeInTheDocument()
   })
 
+  it('品牌副标题直接叫「观星台」（不带「商家管理后台」后缀 · issue #6590）', () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], permissions: ['*'], tenantName: '测试企业' },
+    })
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    // 企业名一行 + 品牌名一行；品牌名逐字就是「观星台」
+    expect(screen.getByText('测试企业')).toBeInTheDocument()
+    expect(screen.getByText('观星台')).toBeInTheDocument()
+    expect(screen.queryByText('观星台商家管理后台')).not.toBeInTheDocument()
+  })
+
   it('未设置企业 Logo 时回退观星台默认 Logo', () => {
     mockUseAuthStore.mockReturnValue({
       user: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], permissions: ['*'], tenantName: '测试企业' },
