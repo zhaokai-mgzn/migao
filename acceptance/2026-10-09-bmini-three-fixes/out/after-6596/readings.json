@@ -1,0 +1,177 @@
+{
+  "base": "http://localhost:10098",
+  "servedIndexSha256_16": "05287e043d6c7754",
+  "servedAppJsSha256_16": "f36480c3e073fbe5",
+  "viewport": {
+    "w": 390,
+    "h": 844
+  },
+  "chatInput": {
+    "rendered": true,
+    "tabbarTop": 794,
+    "inputBottom": 794,
+    "inputHeight": 63.4,
+    "coveredPx": 0,
+    "coveredVerdict": "OK",
+    "viewportHeight": 844,
+    "chatPageHeight": 844
+  },
+  "todoTags": [
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "待排产",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    }
+  ],
+  "dashboardBottomReach": {
+    "scrollContainer": "taro_page taro_tabbar_page taro_navigation_page taro_page_show taro_page_stationed",
+    "lastItemBottom": 115.1,
+    "tabbarTop": 794,
+    "lastItemCoveredPx": -678.9
+  },
+  "orderDetail": {
+    "rendered": true,
+    "text": "加工单号 JG-20261006-8477 订单号 20261006497350118 客户 SD07演示客814127-095 交期 2026-10-20 工序进度 已完成 6/9 布帘 精裁 · 布帘 应做 6.2米 · 已报 6.2米 打包 应做 1套 · 已报 0套 外帘装袋 应做 1套 · 已报 0套",
+    "mentionsStuck": false,
+    "hasHeader": true,
+    "hasOperations": true,
+    "stuckPointRequests": 0
+  },
+  "inputBar": {
+    "hasToggle": true,
+    "hasAttach": true,
+    "hasSend": true,
+    "voiceModeByHold": true,
+    "holdText": "按住说话",
+    "textareaVisible": false,
+    "controlsSameRow": true,
+    "controlCenters": [
+      764.890625,
+      764.890625,
+      764.890625,
+      764.890625
+    ],
+    "canInputBarFound": true
+  },
+  "tagWrapVerdict": "WRAPPED",
+  "screenshots": [
+    "/tmp/mg-probe/after-6596/chat-page.png",
+    "/tmp/mg-probe/after-6596/dashboard-todo.png"
+  ],
+  "note": null
+}

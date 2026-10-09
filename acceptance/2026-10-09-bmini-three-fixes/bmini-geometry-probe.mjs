@@ -12,10 +12,7 @@
  * 用法：cd <repo>/tests && node /tmp/mg-probe/bmini-geometry.mjs [BASE_URL]
  * 输出：stdout 一行 JSON（机器读数）+ 截图（PNG 路径）
  */
-// Playwright 由调用方提供：优先 `PLAYWRIGHT_PATH`，否则按仓内 `tests/node_modules`（脚本所在位置的相对路径）解析
-const PW = process.env.PLAYWRIGHT_PATH
-  || new URL('../../tests/node_modules/playwright/index.mjs', import.meta.url).href
-const { chromium } = await import(PW)
+import { chromium } from '/Users/guangzhen.zk/ai native/migao/tests/node_modules/playwright/index.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
@@ -209,6 +206,19 @@ async function main() {
   const servedHtml = await resp.text()
   const servedHash = createHash('sha256').update(servedHtml).digest('hex').slice(0, 16)
 
+  // 🔴 index.html 是**弱锚点**：它只引用固定名字的 chunk（`/js/app.js`、`/js/<n>.js`），不含应用代码
+  //    ⇒ 两次**不同**构建的 index.html 可以逐字节相同（实测 #6596 与 #6597 两个分支的构建都是
+  //    `05287e043d6c7754` —— 若只拿它当指纹，会把两份不同的代码读成「同一份」）⇒ 另取一份**代码**指纹。
+  let appJsHash = null
+  try {
+    const appJsRes = await fetch(`${BASE}${PREFIX}/js/app.js`, { cache: 'no-store' })
+    if (appJsRes.ok) {
+      appJsHash = createHash('sha256').update(Buffer.from(await appJsRes.arrayBuffer())).digest('hex').slice(0, 16)
+    }
+  } catch {
+    appJsHash = null
+  }
+
   // ── ① 聊天页：输入条 vs 自绘底栏 ──
   await page.goto(`${BASE}${PREFIX}/#/pages/chat/index/index`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.merchant-tabbar', { timeout: 20000 })
@@ -317,6 +327,40 @@ async function main() {
     }
   })
 
+  // ── ⑤ 「问黄金策」输入条：单行 + 默认语音态 + 不被底栏遮（#6596）──
+  // ⚠️ 必须**先回到聊天页**再量：Taro 把来过的页面留在 DOM 里但会隐藏，
+  //    「最后一个可见页」是加工单详情 ⇒ 直接在那边量会量到一片空白（第一版就是这么假阴的）。
+  await page.goto(`${BASE}${PREFIX}/#/pages/chat/index/index`, { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(2500)
+  const inputBar = await page.evaluate(() => {
+    const pick = (sel) => {
+      const el = [...document.querySelectorAll(sel)].find((e) => e.getBoundingClientRect().width > 0)
+      return el || null
+    }
+    const center = (el) => (el ? el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2 : null)
+    const toggle = pick('.message-input__mode-toggle')
+    const centerPart = pick('.message-input__center')
+    const attach = pick('.message-input__attach')
+    const send = pick('.message-input__icon-btn--send') || pick('.message-input__icon-btn')
+    const hold = pick('.message-input__hold')
+    const textarea = pick('.message-input__textarea')
+    const centers = [toggle, centerPart, attach, send].filter(Boolean).map(center)
+    const sameRow = centers.length >= 3 && Math.max(...centers) - Math.min(...centers) <= 8
+    return {
+      hasToggle: !!toggle,
+      hasAttach: !!attach,
+      hasSend: !!send,
+      /** 默认态是语音（出现「按住说话」）还是键盘（出现输入框） */
+      voiceModeByHold: !!hold,
+      holdText: hold ? (hold.innerText || '').trim().slice(0, 20) : null,
+      textareaVisible: !!textarea,
+      /** 四个控件是否在同一行（纵向中心差 ≤ 8px） */
+      controlsSameRow: sameRow,
+      controlCenters: centers,
+      canInputBarFound: !!pick('.message-input'),
+    }
+  })
+
   // ── ④ 加工单详情（从「卡在哪」待办点进来的落点）：有没有把「卡在哪」显示出来 ──
   await page.goto(`${BASE}${PREFIX}/#/pages/production/order-detail/index?order_id=20261006497350118`, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(2500)
@@ -346,6 +390,7 @@ async function main() {
   const result = {
     base: BASE,
     servedIndexSha256_16: servedHash,
+    servedAppJsSha256_16: appJsHash,
     viewport: { w: 390, h: 844 },
     chatInput: {
       rendered: chat.gateVisible,
@@ -361,6 +406,7 @@ async function main() {
     todoTags: tags,
     dashboardBottomReach: bottom,
     orderDetail: orderDetail,
+    inputBar: inputBar,
     tagWrapVerdict: tags.length === 0 ? 'UNDECIDABLE' : tags.some((t) => t.lineBoxes > 1 || t.lines > 1 || t.overflow) ? 'WRAPPED' : 'OK',
     screenshots: [path.join(OUT_DIR, 'chat-page.png'), path.join(OUT_DIR, 'dashboard-todo.png')],
     note: chat.gateVisible ? null : '聊天页输入条未渲染（授权门/会话未就绪）—— 聊天页读数不可用',

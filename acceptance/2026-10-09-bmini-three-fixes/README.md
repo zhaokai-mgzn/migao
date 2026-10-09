@@ -49,7 +49,18 @@ PROBE_PREFIX= PROBE_OUT=/tmp/after node <repo>/acceptance/.../bmini-geometry-pro
 
 ## AFTER 读数
 
-见 `out/after-6597/`（同一脚本、同一视口、同一组桩数据；`#6597` 修复分支构建产物 `05287e043d6c7754`）：
+### ① 输入条（`#6596`）— `out/after-6596/`
+
+| 项 | BEFORE | AFTER | 判据 |
+|---|---|---|---|
+| `.message-input` 底边 vs 底栏顶边 | **被遮 70px** | **`coveredPx = 0`** | 不被底栏遮挡 ⇒ 通过 |
+| `.chat-page` 高度 | 864（视口 844） | **844 = 视口** | 整页不再溢出 |
+| 默认态 | 输入框（要打字） | **`按住说话`**（输入框不渲染） | 默认语音模式 ⇒ 通过 |
+| 四个控件是否同一行 | 两行（输入框一行、动作一行） | **同一行**（切换 / 中间区 / 加图 / 发送 的纵向中心**完全相等** `764.89`） | 单行布局 ⇒ 通过 |
+
+### ②「卡在哪」标签 + ③ 加工单详情卡点块（`#6597`）— `out/after-6597/`
+
+（同一脚本、同一视口、同一组桩数据；`#6597` 修复分支构建产物）：
 
 | 项 | BEFORE | AFTER（#6597 分支） | 判据 |
 |---|---|---|---|
@@ -68,3 +79,12 @@ PROBE_PREFIX= PROBE_OUT=/tmp/after node <repo>/acceptance/.../bmini-geometry-pro
 - **`coveredPx` 只看聊天页与底栏的关系**：其余三个 tab 页（数据/坐席/我的）内容可滚，本探针未做「最后一行是否可达」的常驻判据
   （试过一版，列表短时读数不可判别，未留）。
 - Chromium 里 `env(safe-area-inset-bottom)` 恒 0 ⇒ iOS 安全区那一半的读数靠真机复测，本探针给不出。
+
+## 一条踩过的坑：`index.html` 是**弱锚点**（会被读成「同一份构建」）
+
+`#6596` 与 `#6597` 两个分支的 `npm run build:h5` 产物，`dist/index.html` 的 sha256[:16] **完全相同**
+（都是 `05287e043d6c7754`，两文件逐字节一致）—— 因为 `index.html` 只引用**固定名字**的 chunk
+（`/js/app.js`、`/js/702.js`），**不含应用代码**（实测 `grep -c message-input index.html` = 0）。
+⇒ 只拿 `index.html` 当构建指纹，会把两份不同的代码读成同一份（正是「声称的对象 ≠ 我读到的对象」）。
+**处置**：探针同时输出**代码指纹** `servedAppJsSha256_16`（取 `/js/app.js`，`cache: 'no-store'`）：
+`#6596` 构建 = `f36480c3e073fbe5`。两分支构建的真实差异另有直接读数佐证：`coveredPx` **70 → 0**。
