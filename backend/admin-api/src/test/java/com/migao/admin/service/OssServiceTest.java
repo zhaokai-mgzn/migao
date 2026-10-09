@@ -1,3 +1,4 @@
+// case_ids: DF-011
 package com.migao.admin.service;
 
 import com.migao.admin.config.OssConfig;
@@ -44,6 +45,10 @@ class OssServiceTest {
     private static final String PERMANENT_BUCKET = "ai-customer-service-admin-dev";
     private static final String TEMPORARY_BUCKET = "ai-customer-service-chat-dev";
 
+    /** 真魔数（issue #6207 起类型按**字节流**判：`"fake image content"` 这类不再能当图片过闸）。 */
+    private static final byte[] PNG_MAGIC = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+    private static final byte[] JPEG_MAGIC = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0};
+
     @BeforeEach
     void setUp() {
         lenient().when(ossConfig.getBucketName()).thenReturn(BUCKET_NAME);
@@ -62,7 +67,7 @@ class OssServiceTest {
                 "file",
                 "test-image.jpg",
                 "image/jpeg",
-                "fake image content".getBytes()
+                JPEG_MAGIC
         );
 
         // When
@@ -88,7 +93,7 @@ class OssServiceTest {
                 "file",
                 "cover.png",
                 "image/png",
-                "fake png content".getBytes()
+                PNG_MAGIC
         );
 
         // When
@@ -104,7 +109,7 @@ class OssServiceTest {
     @DisplayName("上传文件时应正确设置 Content-Type 和 Content-Length")
     void upload_shouldSetContentTypeAndLength() {
         // Given
-        byte[] content = "fake image data".getBytes();
+        byte[] content = JPEG_MAGIC;
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "photo.jpg",
@@ -135,7 +140,7 @@ class OssServiceTest {
                 "file",
                 "chat-image.jpg",
                 "image/jpeg",
-                "fake image content".getBytes()
+                JPEG_MAGIC
         );
 
         // When
@@ -153,7 +158,7 @@ class OssServiceTest {
                 "file",
                 "product-image.jpg",
                 "image/jpeg",
-                "fake image content".getBytes()
+                JPEG_MAGIC
         );
 
         // When
@@ -171,7 +176,7 @@ class OssServiceTest {
                 "file",
                 "avatar.png",
                 "image/png",
-                "fake image content".getBytes()
+                PNG_MAGIC
         );
 
         // When

@@ -55,41 +55,16 @@ public class OssService implements FileStorageService {
     private final OssConfig ossConfig;
 
     /**
-     * 允许上传的图片类型
+     * 上传到 OSS。
+     *
+     * <p><b>准入校验不在这里</b>：类型（魔数）/ 大小（服务端计数）/ 目录合法性由
+     * {@link FileStorageService#upload} 经 {@link UploadGuard} 统一把关（issue #6207 / #6208）——
+     * 本类原先只按**扩展名**判类型、按**客户端声明的 Content-Type** 选大小档，
+     * 于是「{@code .png} 名 + 声明 pdf + 19.9MB」被 200 落桶公共可读（实测 D2）。</p>
      */
-    private static final String[] ALLOWED_IMAGE_TYPES = {
-            "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp"
-    };
-
-    /**
-     * 允许上传的文档类型
-     */
-    private static final String[] ALLOWED_DOC_TYPES = {
-            "application/pdf",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    };
-
-    /**
-     * 允许的文件扩展名
-     */
-    private static final String[] ALLOWED_EXTENSIONS = {
-            ".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".xlsx", ".docx"
-    };
-
-    /**
-     * 图片最大大小：5MB
-     */
-    private static final long MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-
-    /**
-     * 文档最大大小：20MB
-     */
-    private static final long MAX_DOC_SIZE = 20 * 1024 * 1024;
-
     @Override
-    public UploadedFileInfo upload(MultipartFile file, String directory) {
-        validateFile(file);
+    public UploadedFileInfo doUpload(MultipartFile file, String normalizedDirectory) {
+        String directory = normalizeDirectory(normalizedDirectory);
 
         String fileId = UUID.randomUUID().toString().replace("-", "");
         String objectKey = generateObjectKey(directory, file.getOriginalFilename());
@@ -174,46 +149,9 @@ public class OssService implements FileStorageService {
         return "oss";
     }
 
-    /**
-     * 校验上传文件
-     */
-    private void validateFile(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
-            throw BusinessException.validationError("请选择要上传的文件");
-        }
-
-        String contentType = file.getContentType();
-        String extension = getFileExtension(file.getOriginalFilename()).toLowerCase();
-
-        // 校验扩展名
-        boolean validExtension = false;
-        for (String ext : ALLOWED_EXTENSIONS) {
-            if (ext.equals(extension)) {
-                validExtension = true;
-                break;
-            }
-        }
-        if (!validExtension) {
-            throw BusinessException.validationError(
-                    "不支持的文件类型，仅支持 JPG、JPEG、PNG、GIF、WebP、PDF、XLSX、DOCX 格式");
-        }
-
-        // 根据类型校验大小
-        boolean isImage = isImageType(contentType);
-        long maxSize = isImage ? MAX_IMAGE_SIZE : MAX_DOC_SIZE;
-        String sizeLabel = isImage ? "5MB" : "20MB";
-
-        if (file.getSize() > maxSize) {
-            throw BusinessException.validationError("文件大小不能超过 " + sizeLabel);
-        }
-    }
-
-    private boolean isImageType(String contentType) {
-        if (contentType == null) return false;
-        for (String type : ALLOWED_IMAGE_TYPES) {
-            if (type.equals(contentType)) return true;
-        }
-        return false;
+    /** 目录回落与 {@code UploadController} 的 {@code defaultValue = "images"} 同口径。 */
+    private static String normalizeDirectory(String directory) {
+        return StringUtils.hasText(directory) ? directory : "images";
     }
 
     /**

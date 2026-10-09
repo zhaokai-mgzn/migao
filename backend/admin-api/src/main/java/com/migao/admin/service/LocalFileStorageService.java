@@ -5,6 +5,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.time.BusinessClock;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -36,44 +37,28 @@ public class LocalFileStorageService implements FileStorageService {
     private static final String UPLOAD_DIR = "uploads";
 
     /**
+     * 本地存储根目录覆盖点（默认 {@value #UPLOAD_DIR}）。
+     * 与 {@code WebConfig} 的静态托管前缀同源；单测指到临时目录，让「零副作用」可逐文件枚举取证。
+     */
+    @Value("${migao.upload.local-dir:" + UPLOAD_DIR + "}")
+    private String uploadDir = UPLOAD_DIR;
+
+    /**
      * 静态资源访问路径前缀
      */
     private static final String ACCESS_PATH_PREFIX = "/api/files/static/";
 
-    /**
-     * 允许的文件扩展名
-     */
-    private static final String[] ALLOWED_EXTENSIONS = {
-            ".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".xlsx", ".docx"
-    };
-
-    /**
-     * 图片类型扩展名
-     */
-    private static final String[] IMAGE_EXTENSIONS = {
-            ".jpg", ".jpeg", ".png", ".gif", ".webp"
-    };
-
-    /**
-     * 图片最大大小：5MB
-     */
-    private static final long MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-
-    /**
-     * 文档最大大小：20MB
-     */
-    private static final long MAX_DOC_SIZE = 20 * 1024 * 1024;
-
     @Override
-    public UploadedFileInfo upload(MultipartFile file, String directory) {
-        validateFile(file);
-
+    public UploadedFileInfo doUpload(MultipartFile file, String normalizedDirectory) {
         String fileId = UUID.randomUUID().toString().replace("-", "");
         String extension = getFileExtension(file.getOriginalFilename());
         String storedFilename = fileId + extension;
 
         // 构建存储路径：uploads/{directory}/{filename}
-        // 安全校验：directory 禁止路径穿越（../），必须位于 uploads 根内（审计 07 P1-7）
+        // 路径穿越护栏已由 FileStorageService#upload 经 UploadGuard 统一把过（issue #6208：
+        // 与 OSS 实现**同一份**判据）；本方法只对已校验的输入负责（defense-in-depth 的
+        // 越界检查仍在 safeResolve 里，delete 路径同样走它）。
+        String directory = StringUtils.hasText(normalizedDirectory) ? normalizedDirectory : "";
         Path uploadPath = safeResolve(directory);
 
         try {
@@ -82,7 +67,7 @@ public class LocalFileStorageService implements FileStorageService {
             Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
 
             // 构建访问 URL（相对路径，由 Controller 层组装完整 URL）
-            String url = ACCESS_PATH_PREFIX + (StringUtils.hasText(directory) ? directory : "") + "/" + storedFilename;
+            String url = ACCESS_PATH_PREFIX + directory + "/" + storedFilename;
             log.info("本地存储文件成功: path={}, url={}", filePath, url);
 
             return UploadedFileInfo.builder()
@@ -132,7 +117,7 @@ public class LocalFileStorageService implements FileStorageService {
      * @return 规范化后的绝对路径
      */
     private Path safeResolve(String relative) {
-        Path base = Paths.get(UPLOAD_DIR).toAbsolutePath().normalize();
+        Path base = Paths.get(uploadDir).toAbsolutePath().normalize();
         Path target = StringUtils.hasText(relative)
                 ? base.resolve(relative).normalize()
                 : base;
@@ -145,46 +130,6 @@ public class LocalFileStorageService implements FileStorageService {
     @Override
     public String getStorageType() {
         return "local";
-    }
-
-    /**
-     * 校验上传文件
-     */
-    private void validateFile(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
-            throw BusinessException.validationError("请选择要上传的文件");
-        }
-
-        String extension = getFileExtension(file.getOriginalFilename()).toLowerCase();
-
-        // 校验扩展名
-        boolean validExtension = false;
-        for (String ext : ALLOWED_EXTENSIONS) {
-            if (ext.equals(extension)) {
-                validExtension = true;
-                break;
-            }
-        }
-        if (!validExtension) {
-            throw BusinessException.validationError(
-                    "不支持的文件类型，仅支持 JPG、JPEG、PNG、GIF、WebP、PDF、XLSX、DOCX 格式");
-        }
-
-        // 根据类型校验大小
-        boolean isImage = isImageExtension(extension);
-        long maxSize = isImage ? MAX_IMAGE_SIZE : MAX_DOC_SIZE;
-        String sizeLabel = isImage ? "5MB" : "20MB";
-
-        if (file.getSize() > maxSize) {
-            throw BusinessException.validationError("文件大小不能超过 " + sizeLabel);
-        }
-    }
-
-    private boolean isImageExtension(String extension) {
-        for (String ext : IMAGE_EXTENSIONS) {
-            if (ext.equals(extension)) return true;
-        }
-        return false;
     }
 
     private String getFileExtension(String filename) {
