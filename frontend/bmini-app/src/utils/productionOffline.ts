@@ -13,10 +13,24 @@
  * 首次结果、不再执行。若补传时用 `newReportRequestId()` 重新生成键，同一次报工会被
  * 服务端当成两次「首执」（`done_qty` 翻倍、计件虚高）——这正是本模块要消灭的形态。
  *
- * ## 凭证语义（issue #5647 G10，与幂等键同等重要）
+ * ## 凭证语义（issue #5647 G10 → issue #6598 改口径）
  * 唯一写入口是 `scan/complete`，它按**码**定位「哪一套、哪个部位」⇒ 入队时连 `token`
  * 一起持久化（`sendQty` 记住在线时到底传没传数量）。补传若换成「URL 定工序」的老路，
  * 等于把防呆④⑤ / 一次事务 / `done_at` 整条丢掉。
+ *
+ * <p>🔴 <b>2026-10-09 用户裁定（issue #6598）</b>：「当前工人报工只能按固定顺序报工，这个设计是不对的，
+ * <b>允许工人自由报工</b>」；开放范围 = <b>整张加工单内任选任意工序（不扫码也能自由报）</b>。
+ * ⇒ 队列里从此有**两种**条目，`kind` 是它们的判别键：</p>
+ * <ul>
+ *   <li>{@code kind: 'scan'}（默认，缺键按它读）= 有任务码的部位，补传走 `scan/complete`；</li>
+ *   <li>{@code kind: 'free'} = <b>无任务码</b>的部位，工序由工人显式选
+ *       （{@code reportOperationFree} 打在既有工人端点
+ *       `/api/worker/production/orders/{orderId}/operations/{operationId}/report`）
+ *       —— 它**本来就不需要码**，故**不得**被当成「旧版本缺凭证」出队丢弃。</li>
+ * </ul>
+ * <p>⚠️ 旧版本（URL 定工序那条路）入队的条目同样没有 `kind`、`token` 也为空 ⇒ 与
+ * {@code kind:'free'} 的差别**必须**靠显式判别键，不能靠「token 是否为空」推断
+ * （那正是「引用即实例」的同族坑：两个不同语义共用一个空值）。</p>
  *
  * ## 为什么业务拒绝不入队
  * 有 HTTP 状态码的失败（422 数量超上限 / 404 非本部位 / 409 同键在飞）是服务端**已经答复**：
@@ -24,7 +38,7 @@
  * 且这类拒绝重试不会有别的结果。故只对「无状态码的传输层失败」降级。
  */
 import Taro from '@tarojs/taro'
-import { completeByScan } from '../services/productionService'
+import { completeByScan, reportOperationFree } from '../services/productionService'
 import type {
   OrderOperations,
   ProductionResponse,
@@ -45,9 +59,21 @@ export interface PendingReport {
   /** 幂等键：本次**用户动作**一个键，补传必须复用（服务端据此去重） */
   requestId: string
   /**
+   * 🔴 补传走哪条写路（issue #6598）：`'free'` = 无码自由报工（工序由工人显式选，
+   * 端点 `.../orders/{orderId}/operations/{operationId}/report`）；缺键 / 其他值 = `'scan'`
+   * （有任务码，走 `scan/complete`）。
+   *
+   * <p>⚠️ **判别只看本键**（见 {@link isFreeReport}）：旧版本入队的条目同样缺这个键、`token`
+   * 也为空，但它与 `'free'` 是**两个语义**（「该有码却没有」vs「本来就不需要码」）——
+   * 所以**不得**用「`token` 是否为空」去推断（那会把旧条目也当成「不需要码」发出去，
+   * 或反过来把无码条目静默丢单）。</p>
+   */
+  kind?: 'scan' | 'free'
+  /**
    * 报工凭证 = 扫码 token（issue #5647 G10）：唯一写入口 `scan/complete` 靠**码**定位
    * 「哪一套、哪个部位」⇒ 补传必须原样带上（防呆④⑤ / 一次事务 / `done_at` 都挂在它上面）。
    * 空串 = 旧版本（URL 定工序那条路）入队的条目 ⇒ 补传时显式出队并回报原因。
+   * ⚠️ `kind: 'free'` 的条目**合法地**没有码（issue #6598）⇒ 判别必须先用 `kind`。
    */
   token: string
   orderId: string
@@ -155,7 +181,19 @@ export function appendWorkLog(orderId: string, entry: WorkLogEntry): void {
 export type SendReport = (item: PendingReport) => Promise<ProductionResponse<ReportResult>>
 
 /**
- * 默认补传实现 = **唯一写入口** `scan/complete`（issue #5647 G10）。
+ * 该条目是不是**无码自由报工**（issue #6598）。
+ *
+ * <p>🔴 判别键是 `kind`，**不是**「`token` 是否为空」：旧版本（URL 定工序那条路）入队的条目
+ * 同样没有 token，但它的语义是「该有码却没有」⇒ 只能出队并回报原因。两个语义共用一个空值
+ * 时必须靠显式判别键分开（否则补传会把旧条目也当成「本来就不需要码」发出去）。</p>
+ */
+export function isFreeReport(item: PendingReport): boolean {
+  return item.kind === 'free'
+}
+
+/**
+ * 默认补传实现 = **有码**那条写路 `scan/complete`（issue #5647 G10；issue #6598 起它不再是
+ * 「唯一」入口 —— 无码条目的补传见 {@link sendByFreeReport}）。
  *
  * <p>补传与在线报工必须走**同一条路**：否则「离线时按老路入队、联网后按新路补传」（或反之）
  * 会让同一次报工在两条口径下落地 —— 那正是本单要治的病。</p>
@@ -170,8 +208,19 @@ async function sendByScan(item: PendingReport): Promise<ProductionResponse<Repor
 }
 
 /**
+ * 无码自由报工的补传（issue #6598）：与在线逐字同形 —— 端点、参数、幂等键一个不换。
+ *
+ * <p>数量**总是**随补传发出：无码那条路（工序列表逐道报工）的在线请求本来就带数量三键，
+ * 补传必须逐字同形，否则「这道已被别人推进」时会被服务端超上限拒（等于改了在线语义）。</p>
+ */
+async function sendByFreeReport(item: PendingReport): Promise<ProductionResponse<ReportResult>> {
+  return reportOperationFree(item.orderId, item.operationId, item.requestId, item.payload)
+}
+
+/**
  * 补传队列（按入队顺序逐条重发，**复用入队时的幂等键与报工凭证**）。
- * - 缺凭证（旧版本入队）⇒ 出队并回报原因（不发一个注定被服务端拒的请求，也不静默丢单）；
+ * - 缺凭证（旧版本入队，**且不是**无码条目）⇒ 出队并回报原因（不发一个注定被服务端拒的请求，
+ *   也不静默丢单）；无码条目（`kind: 'free'`）本来就不需要码 ⇒ 照常补传（issue #6598）；
  * - 成功 ⇒ 出队 + 记一条本机报工明细；
  * - 传输层失败（`offline`）⇒ 原样保留并**停止本轮**（还在断网，继续发只是白等）；
  * - 业务拒绝 ⇒ 出队并把原因回报给调用方（重发不会改变结果，且该键已被服务端释放）。
@@ -188,13 +237,17 @@ export async function flushPendingReports(send: SendReport = sendByScan): Promis
       keep.push(item)
       continue
     }
-    if (!item.token) {
-      // 旧版本（`.../operations/{id}/report`）入队的条目：那条路已随 #5647 G10 退场，
-      // 没有凭证就无法按「哪一套、哪个部位」重新定位 ⇒ 显式出队 + 指名原因（不静默丢单）
+    // 🔴 判别顺序（issue #6598）：**先**认无码条目，再判缺凭证 ——
+    // 反过来的话「本来就不需要码」的条目会被当成「旧版本缺凭证」出队丢弃（静默丢单）。
+    const free = isFreeReport(item)
+    if (!free && !item.token) {
+      // 旧版本（`.../operations/{id}/report`）入队的条目：那条路当时没有码，也没有
+      // `kind` 判别键 ⇒ 无法区分「它本来不需要码」与「码丢了」⇒ 显式出队 + 指名原因
+      // （不静默丢单）。新入队的无码条目带 `kind:'free'`，不会落到这里。
       rejected.push({ ...item, message: '这次补传缺少扫码凭证（旧版本入队），请重新报工' })
       continue
     }
-    const res = await send(item)
+    const res = free ? await sendByFreeReport(item) : await send(item)
     if (res.success) {
       sent.push(item)
       appendWorkLog(item.orderId, {

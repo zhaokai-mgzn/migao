@@ -3,8 +3,10 @@
  * 工人端扫码报工页测试（issue #3997 M4-G-3 / issue #4206 补齐，消费 M4-G-2 冻结契约）
  *
  * 链路：扫一扫 / 手输单号 / 深链带参直达 → GET .../operations → 按部位分组工序
- *       → 改「完成数量」→ 点「完成报工」→ **唯一写入口** POST /api/worker/production/scan/complete
- *       （凭证 = 本部位 `part_token`，issue #5647 G10）→ 刷新进度 + 计件累计 + 报工明细。
+ *       → 改「完成数量」→ 点「完成报工」→ 写入口按**本部位有无任务码**分流（issue #6598）：
+ *       有码 ⇒ POST /api/worker/production/scan/complete（#5647 G10 的扫码快捷定位，本夹具两个部位
+ *       都带 `part_token` ⇒ 走这条）；无码 ⇒ `reportOperationFree`（无码自由报工的端侧判据在
+ *       `production-free-report.test.tsx`）→ 刷新进度 + 计件累计 + 报工明细。
  * 断言口径：报工参数**逐字**断言（冻结字段名不可改）；失败时列表**不清空**（工人可继续）。
  * mock：Taro API（scanCode + **真内存 storage**）+ productionService（网络层）+ authStore。
  *

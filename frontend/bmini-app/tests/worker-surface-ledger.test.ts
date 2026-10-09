@@ -42,6 +42,11 @@ const PAGES_ROOT = path.join(BMINI_ROOT, 'src', 'pages')
  */
 export const WORKER_WRITE_CALLS: string[] = [
   'completeByScan(',
+  // issue #6598：无码自由报工 —— 报工页的**第二条**具名写路（有码走 scan/complete，
+  // 无码走它；用户 2026-10-09 裁定「允许工人自由报工」）。它的端点打在 `/api/worker/**`
+  // （工人到得了），所以 `worker-action-endpoint-ledger` 的「打商家端点」面不覆盖它；
+  // 它属于**本**台账的射程：它是工人写入口，且必须先有工人身份。
+  'reportOperationFree(',
   'workerLogin(',
   'workerLogout(',
   'createInboundDraft(',
@@ -249,20 +254,46 @@ describe('工人面写入口台账元守卫（issue #6467 S8）', () => {
     expect(problems.join('\n')).toContain('身份分流')
   })
 
-  it('🔴 判据 3b 红证：**留着**身份分流声明、只把写入口的渲染条件摘掉 ⇒ 判红', () => {
+  it('🔴 判据 3b 红证：**留着**身份分流声明、只把无码写入口的身份闸门摘掉 ⇒ 判红', () => {
     const input = realInput()
     const target = 'src/pages/production/index/index.tsx'
-    // 变异形态：声明还在（`const workerReady = hasWorkerSession()`），只是「完成报工」不再被它挡着 ——
-    // 这一族**按"某个 token 在不在"判的守卫会漏**（声明那行仍在文件里）⇒ 台账必须同时核渲染条件。
+    // 变异形态：声明还在（`const workerReady = hasWorkerSession()`），只是「完成报工」的
+    // **无码那条路**（issue #6598）不再被它挡着 —— 这一族**按"某个 token 在不在"判的守卫会漏**
+    // （声明那行仍在文件里）⇒ 台账必须同时核**该写路独有**的渲染条件。
     const read = (rel: string): string =>
       rel === target
-        ? input.read(rel).replace('position.part_token && workerReady ? (', 'position.part_token ? (')
+        ? input.read(rel).replace('{workerReady && (', '(')
         : input.read(rel)
-    expectMutationApplied(read(target), ['position.part_token ? ('], '判据 3b 摘掉报工按钮的身份条件')
-    expect(read(target).includes('const workerReady = hasWorkerSession()')).toBe(true)
+    const mutated = read(target)
+    // 变异生效自证：① 该写路独有的闸门记号真的没了；② 分流声明与两条写调用本体都还在
+    // （所以「按调用在不在」判的判据 1/2 仍会绿 —— 本台账必须核渲染条件才拦得住）。
+    expect(mutated.includes('{workerReady && (')).toBe(false)
+    expect(mutated.includes('const workerReady = hasWorkerSession()')).toBe(true)
+    expect(mutated.includes('completeByScan(')).toBe(true)
+    expect(mutated.includes('reportOperationFree(')).toBe(true)
     const problems = ledgerProblems({ ...input, read })
     expect(problems.join('\n')).toContain(target)
     expect(problems.join('\n')).toContain('身份分流')
+    expect(problems.join('\n')).toContain('reportOperationFree(')
+  })
+
+  /**
+   * 🔴 <b>边界（照实登记，§19.1）</b>：报工页的两处身份闸门写法**刻意不同**
+   * （扫码一屏 `{workerReady ? (` / 逐道报工 `{workerReady && (`）—— 这样台账才能把
+   * 「摘掉哪一条写路的闸门」具名到那条路上。若日后有人把两处改成同一写法，
+   * 下面这条会红，提示复核 `worker-surface-ledger.json` 的 gate_tokens 口径
+   * （否则两条登记的闸门记号会退化成同一个、判据 3b 的红证随即失效）。
+   */
+  it('判据 3b 边界：两条写路的身份闸门记号**各自可定位**（写法不同 + 都在文件里）', () => {
+    const input = realInput()
+    const target = 'src/pages/production/index/index.tsx'
+    const body = stripComments(input.read(target))
+    expect(body.includes('{workerReady ? (')).toBe(true) // 扫码一屏
+    expect(body.includes('{workerReady && (')).toBe(true) // 逐道报工（无码自由报工那条）
+    expect(body.includes('completeByScan(')).toBe(true)
+    expect(body.includes('reportOperationFree(')).toBe(true)
+    // 真仓库下台账判绿（对照读数）
+    expect(ledgerProblems(input)).toEqual([])
   })
 
   it('🔴 判据 4 红证：删掉引导文案 / 改坏去登录入口 ⇒ 判红', () => {
