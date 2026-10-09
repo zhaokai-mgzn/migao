@@ -39,7 +39,7 @@ export function collectTableIntegrity(tables: readonly Element[]): TableIntegrit
       if (rowColumns !== columns) {
         throw new Error(
           `表格 ${index} 第 ${rowIndex + 1} 行占 ${rowColumns} 列，表头是 ${columns} 列` +
-            `（少一格的那一列在数据行没有单元格 ⇒ 没有边框；issue #6595）`
+            `（该行少了一格 ⇒ 那一列在数据行没有单元格、也就没有边框）`
         )
       }
     }
@@ -53,7 +53,7 @@ export function collectTableIntegrity(tables: readonly Element[]): TableIntegrit
  */
 export function assertDocTableIntegrity(root: ParentNode | null): TableIntegrityResult[] {
   const tables = Array.from(root?.querySelectorAll('table') ?? [])
-  if (tables.length === 0) throw new Error('没有找到任何表格：单据没渲染出来，判据空跑')
+  if (tables.length === 0) throw new Error('没有找到任何表格：单据没有渲染出来')
   return collectTableIntegrity(tables)
 }
 
