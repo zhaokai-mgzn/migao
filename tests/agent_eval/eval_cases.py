@@ -1960,6 +1960,24 @@ _CASE_BM_046 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-047 [NORMAL] B 端 H5 底栏按岗位权限裁剪：服务端下发 mobileTabs + 端侧自绘 + 收起原生条（无坐席权限的岗位不再看到「坐席」）（源: cases/bmini.yml）──
+_CASE_BM_047 = EvalCase(
+    id='BM-047',
+    legacy_id='',
+    title='B 端 H5 底栏按岗位权限裁剪：服务端下发 mobileTabs + 端侧自绘 + 收起原生条（无坐席权限的岗位不再看到「坐席」）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['员工在手机端：没有坐席权限的岗位，底部不该出现「坐席」那一格（由服务端按岗位下发）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**服务端投影逐值**（真值 = `MobileSurfaces.visibleTabsFor`）：商品管理员（8 码）/ 财务（9 码，均**无** `agent:session`）⇒ chat/dashboard/profile（**没有 sessions**）；客服（12 码，持 `agent:session`）⇒ 4 项齐全；一个码都没有的员工 ⇒ chat/profile（无码项）；`*` 通配 ⇒ 4 项。红证（实跑过）：把 `sessions` 的码改成 `null` ⇒ 同文件 `Tests run: 14, Failures: 4`。证据：backend/admin-api/src/test/java/com/migao/admin/service/MobileSurfacesTest.java', '判据 2·**`/me` 的 `mobileTabs` 字段与序列化**：`$.data.mobileTabs[0].key/route`、`[1].title` 逐值（字段名 = 端侧依赖：改名/改蛇形 ⇒ 端侧底栏退回「照显 4 项」+ 本判据红）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java', '判据 3·🔴 **端侧只渲染服务端给的 tab**：给 3 项（无 `sessions`）⇒ 底栏**只有 3 格**且 `merchant-tab-sessions` 不存在；给 4 项 ⇒ 4 格（标题与顺序都取服务端，端侧不自造）。红证（实跑过）：端侧改回静态 4 项 ⇒ jest 1 failed / 12。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx', '判据 4·🔴 **拿不到菜单 / 空清单 ⇒ 照显 4 格**（tab 是**功能入口**：藏掉用户有的功能比露出一个点进去 403 的入口更糟 —— 与「数据」页待办块 `error ⇒ 照渲染` 同一条规则；入口与内容的 fail-closed 口径见 BM-046）。红证（实跑过）：把 `error` 当「一个都没有」⇒ jest 2 failed / 12。证据：同判据 3', '判据 5·🔴 **原生条必须被收起**（自绘底栏挂载即调 `Taro.hideTabBar({animation:false})`）：否则**两条底栏叠着**（自绘底栏上线后最容易出的形态）。红证（实跑过）：去掉该调用 ⇒ jest 1 failed / 12 + 几何腿 2 failed（`toBeHidden` Expected hidden / Received **visible**）。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx + tests/e2e/specs/bmini/bmini-tabbar.spec.ts 判据 7', '判据 6·**几何一格不放宽**（判据对象从原生条换成自绘条）：条贴底 ±1px / 条高 ∈[49,51]（页面高度算式按 Taro 的 50 留白）/ 每格图标与文字上下留白对称且都 > 0 / 水平居中 ±1px / 渲染出的四张图标 `src` 两两不同 / 当前页那一格 active。证据：tests/e2e/specs/bmini/bmini-tabbar.spec.ts + frontend/bmini-app/tests/tabbar-layout.test.ts（自绘底栏块：安全区只补一次、条不吃 `margin-bottom`、字面量 == Taro 现取的 50PX、flex 纵列居中、每格 `flex:1`）', "判据 7·**类级守卫（三处同源 + 接线 + 图标）**：服务端 `MobileSurfaces.TABS` ⇄ 端侧 `ALL_MERCHANT_TABS` ⇄ `app.config.ts` 的 `tabBar.list`（key/title/route 逐值，两处现取 4 项反空跑）；4 个 tab 页都必须接线 `<MerchantTabBar current='<自己的 key>' />`（新加 tab 页不接线 / 传错 key ⇒ 红）；8 张图标导入互不相同。红证（实跑过）：坐席页传 `current='chat'` ⇒ jest 1 failed / 12。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx"],
+    skip_reason='[backend-contract] 确定性判据（Java 单测 + jest + playwright 几何腿），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'tabbar', 'permission', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -13582,6 +13600,7 @@ ALL_CASES = (
     _CASE_BM_044,
     _CASE_BM_045,
     _CASE_BM_046,
+    _CASE_BM_047,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,

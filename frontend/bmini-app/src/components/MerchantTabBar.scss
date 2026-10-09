@@ -59,7 +59,8 @@
 
 .merchant-tabbar__label {
   margin-top: 2PX;
-  font-size: 11PX;
+  // 字号下限（issue #5721 的台账：大写 PX < 12 即违规，台账**只许缩短**）⇒ 12PX 是允许的最小值
+  font-size: 12PX;
   line-height: 14PX;
   color: #9aa5b1;
 }
