@@ -15296,20 +15296,20 @@
       "head_branch": "feat/6574-tabbar-by-permission",
       "first_failure_step": "Fail on blocking violations",
       "rerun_result": "failure",
-      "kind": "unknown",
+      "kind": "deterministic",
       "attempts": [
         {
           "attempt": 1,
           "job": "QA Growth Gate",
           "step": "Fail on blocking violations",
-          "assertion": null,
+          "assertion": "❌ QA Growth Gate 发现 2 处缺测，阻塞合并。/ 缺测清单两条逐字：- backend/admin-api/src/test/java/com/migao/admin/service/MobileSurfacesTest.java → 测试声明了不存在的用例 ID: BM-047；- frontend/bmini-app/tests/merchant-tabbar.test.tsx → 测试声明了不存在的用例 ID: BM-047",
           "timestamp": "2026-10-09T01:26:33Z"
         },
         {
           "attempt": 2,
           "job": "QA Growth Gate",
           "step": "Fail on blocking violations",
-          "assertion": null,
+          "assertion": "❌ QA Growth Gate 发现 2 处缺测，阻塞合并。/ 缺测清单两条逐字：- backend/admin-api/src/test/java/com/migao/admin/service/MobileSurfacesTest.java → 测试声明了不存在的用例 ID: BM-047；- frontend/bmini-app/tests/merchant-tabbar.test.tsx → 测试声明了不存在的用例 ID: BM-047",
           "timestamp": "2026-10-09T01:33:19Z"
         }
       ],
@@ -15319,13 +15319,13 @@
       "rerun_bucket": null,
       "rerun_bucket_verdict": null,
       "observed_at": "2026-10-09T01:39:50Z",
-      "reason": "两次尝试都失败，但**事实不足以归因** ⇒ fail-closed：**既不判 flaky、也不判确定性**（同一 SHA 两跑都红也可能是宽窗口竞态；见条目的 `unknown_reason` 与 `attempts`）",
-      "remedy": "取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。",
+      "reason": "同一 SHA 两次尝试红的**同一条断言、同一个错误**（分诊方按日志取证后 `attest`）⇒ 可复现的确定性失败",
+      "remedy": "按真实失败排查（两次尝试同一断言同一错误 ⇒ 可复现；证据在条目的 `attempts` 里）",
       "status": "open",
       "follow_up": null,
       "requires_follow_up": null,
       "failing_tests": [],
-      "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+      "attested_evidence": "run 37869756722（PR #6581，head 117a42760）：attempt1 job 113624880640 / attempt2 job 113626612079；日志取法 = curl -sL -H \"Authorization: Bearer $(gh auth token)\" https://api.github.com/repos/zhaokai-mgzn/migao/actions/jobs/<job_id>/logs（gh run view --job 会返回**最新 attempt** 的日志 ⇒ 必须用 raw API 按各 attempt 的 job id 取）"
     },
     {
       "workflow": "PR Check",
@@ -15338,20 +15338,20 @@
       "head_branch": "feat/6574-tabbar-by-permission",
       "first_failure_step": "Run ci workflow helper tests",
       "rerun_result": "failure",
-      "kind": "unknown",
+      "kind": "deterministic",
       "attempts": [
         {
           "attempt": 1,
           "job": "ci workflow helper unit tests",
           "step": "Run ci workflow helper tests",
-          "assertion": null,
+          "assertion": "FAILED tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py::test_no_new_below_floor_font_size - AssertionError: ❌ 新增 1 处低于下限的字号（设计尺度 < 24px ≈ 12.5 CSS px @390 宽；大写 PX < 12px）：· frontend/bmini-app/src/components/MerchantTabBar.scss::font-size: 11PX#1 ｜ FAILED tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py::test_baseline_header_metrics_are_current - AssertionError: tests/unit_ci_workflows/bmini_typography_baseline.json 的 count=0 ≠ 现取 1",
           "timestamp": "2026-10-09T01:31:26Z"
         },
         {
           "attempt": 2,
           "job": "ci workflow helper unit tests",
           "step": "Run ci workflow helper tests",
-          "assertion": null,
+          "assertion": "FAILED tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py::test_no_new_below_floor_font_size - AssertionError: ❌ 新增 1 处低于下限的字号（设计尺度 < 24px ≈ 12.5 CSS px @390 宽；大写 PX < 12px）：· frontend/bmini-app/src/components/MerchantTabBar.scss::font-size: 11PX#1 ｜ FAILED tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py::test_baseline_header_metrics_are_current - AssertionError: tests/unit_ci_workflows/bmini_typography_baseline.json 的 count=0 ≠ 现取 1",
           "timestamp": "2026-10-09T01:39:43Z"
         }
       ],
@@ -15361,8 +15361,8 @@
       "rerun_bucket": null,
       "rerun_bucket_verdict": null,
       "observed_at": "2026-10-09T01:39:50Z",
-      "reason": "两次尝试都失败，但**事实不足以归因** ⇒ fail-closed：**既不判 flaky、也不判确定性**（同一 SHA 两跑都红也可能是宽窗口竞态；见条目的 `unknown_reason` 与 `attempts`）",
-      "remedy": "取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。",
+      "reason": "同一 SHA 两次尝试红的**同一条断言、同一个错误**（分诊方按日志取证后 `attest`）⇒ 可复现的确定性失败",
+      "remedy": "按真实失败排查（两次尝试同一断言同一错误 ⇒ 可复现；证据在条目的 `attempts` 里）",
       "status": "open",
       "follow_up": null,
       "requires_follow_up": null,
@@ -15370,7 +15370,7 @@
         "tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py::test_no_new_below_floor_font_size",
         "tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py::test_baseline_header_metrics_are_current"
       ],
-      "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+      "attested_evidence": "run 37869756722（PR #6581，head 117a42760）：attempt1 job 113624880574（日志时间戳 01:31:23，汇总 2 failed/3418 passed/278.89s）/ attempt2 job 113626612304（01:39:39，汇总 2 failed/3418 passed/357.27s）；**断言与错误文本逐字相同**（仅耗时与 warning 计数不同，非断言）；日志取法 = curl -sL -H \"Authorization: Bearer $(gh auth token)\" https://api.github.com/repos/zhaokai-mgzn/migao/actions/jobs/<job_id>/logs（gh run view --job 返回最新 attempt ⇒ 必须用 raw API 按 attempt 的 job id 取）"
     }
   ]
 }
