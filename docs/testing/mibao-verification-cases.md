@@ -9086,7 +9086,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（95 case）
+## 前端 UI 域（96 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -10461,6 +10461,19 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-10-09 新增（issue #6595）：用户真机截图撞见「加工单备注列数据行没有边框」。根因 = `ProcessingDoc` 主体行只渲染 7 格而表头 8 列 ⇒ 第 8 列在数据行**没有任何单元格**。修法 = 主体行补第 8 格（空 `DocTd`，边框自带）；固化 = 实例判据（逐行 Σ(colSpan) = 表头列数）+ 类级元守卫（五份打印单据的测试都必须挂这条不变量，未登记即红）+ 真浏览器注入式红证（摘掉一格 ⇒ 数据行右边界 747.8 → 649.5）。取号 UI-095（`python3 scripts/next_case_id.py ui` 超时，改用 `git show origin/main:.github/cases/ui.yml` 现取最大 = UI-094 + open PR 分支复核）。 ｜ tags: ui, print, table-integrity, admin-web, meta-guard
 
+### UI-096. 加工单列宽按内容预算：批号列 ≥16%（17 位批号两行放得下）+ 列序与 100% 合计不变（issue #6600） 🔵
+```
+你: 2026-10-09 用户看过加工单真机截图后逐字：> 派（同意把批号列加宽；原口径 =「从货号借 4 个百分点给批号」）
+期望: direct_reply
+数据: 🔴 判据 1·**批号列的声明宽度 ≥ 16%**：批号是固定 17 字符 `PC-yyyyMMdd-####`（单行约 40mm），9pt/`table-layout: fixed` 下 10%（18.6mm）必然折三行、把数据行撑到 63px；16% ≈ 29.7mm 让 `PC-` / `20261006-0009` **两行放得下**（真浏览器实测 3 行 → 2 行、行高 63 → 45px）。执行点 = `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx` 的「⑦ 列宽按内容预算」。
+数据: 🔴 判据 2·**列序不变 + 合计仍 100% + 8 列都在**：表头标签逐字等于 `PROCESSING_DOC_COLUMNS`（宽度改动不许顺手挪列）；8 个 `w-[N%]` 之和 = 100（改宽必须从别列让出等量，不许悄悄撑破纸面）。执行点 = 同一条测试的后三条断言。
+数据: 🔴 判据 3·**判别力自证（在真值源上取证）**：测试从 `src/components/orders/ProcessingDoc.tsx` 的声明里解析出每列 `w-[N%]`（`<DocTh … w-[16%]>…PROCESSING_DOC_COLUMNS[6]`），断言批号那一条就是渲染出来的 16；把该值换成修前的 10 ⇒ 下限判红（`10 < 16`）⇒ 判据不恒真。⚠️ 真跑读数：修前（批号 10%）本测试报 `expected 10 to be greater than or equal to 16`（1 failed / 15 passed），改宽后 16 passed。
+数据: **不回归**：只改 8 个百分比（8/26/11/9/14/8/10/14 → 8/22/11/9/14/8/16/12）—— 列清单、字段取值、纸型、字号、补位行触发条件一字未动（`frontend-fix.no-api-change`）；`部位信息` / `货号` 在样例下仍各 2 行，纸面内容总高 81.8 → 77.0mm（A4 可用 273mm）。
+跳过: [backend-contract] 纯前端打印版面调整 + vitest 判据（无 LLM 环节），不进 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-10-09 新增（issue #6600）：用户同意加宽批号列后的版面重排。改宽 = 8/26/11/9/14/8/10/14 → 8/22/11/9/14/8/16/12（批号 10%→16%，货号与备注各让 2，部位信息 26%→22%）。真浏览器读数：批号 3 行→2 行、数据行高 63→45px、内容总高 81.8→77.0mm。**有意不追单行**（需 ≈20%，会把部位信息压垮并逼近 A4 可用高度）—— 重启条件写在 issue #6600 的「边界」节。取号 UI-096（本包 rebase 在 #6595/UI-095 之上，故顺延）。 ｜ tags: ui, print, processing-doc, column-width, admin-web
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -10490,8 +10503,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：725（活跃 134，跳过 591）
-- tier 分布：smoke 12 / normal 671 / adversarial 32
+- 用例总数：726（活跃 134，跳过 592）
+- tier 分布：smoke 12 / normal 672 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10516,7 +10529,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：95
+- 前端 UI 域：96
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

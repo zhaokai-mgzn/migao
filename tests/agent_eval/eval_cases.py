@@ -13531,6 +13531,24 @@ _CASE_UI_095 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-096 [NORMAL] 加工单列宽按内容预算：批号列 ≥16%（17 位批号两行放得下）+ 列序与 100% 合计不变（issue #6600）（源: cases/ui.yml）──
+_CASE_UI_096 = EvalCase(
+    id='UI-096',
+    legacy_id='',
+    title='加工单列宽按内容预算：批号列 ≥16%（17 位批号两行放得下）+ 列序与 100% 合计不变（issue #6600）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['2026-10-09 用户看过加工单真机截图后逐字：> 派（同意把批号列加宽；原口径 =「从货号借 4 个百分点给批号」）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**批号列的声明宽度 ≥ 16%**：批号是固定 17 字符 `PC-yyyyMMdd-####`（单行约 40mm），9pt/`table-layout: fixed` 下 10%（18.6mm）必然折三行、把数据行撑到 63px；16% ≈ 29.7mm 让 `PC-` / `20261006-0009` **两行放得下**（真浏览器实测 3 行 → 2 行、行高 63 → 45px）。执行点 = `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx` 的「⑦ 列宽按内容预算」。', '🔴 判据 2·**列序不变 + 合计仍 100% + 8 列都在**：表头标签逐字等于 `PROCESSING_DOC_COLUMNS`（宽度改动不许顺手挪列）；8 个 `w-[N%]` 之和 = 100（改宽必须从别列让出等量，不许悄悄撑破纸面）。执行点 = 同一条测试的后三条断言。', '🔴 判据 3·**判别力自证（在真值源上取证）**：测试从 `src/components/orders/ProcessingDoc.tsx` 的声明里解析出每列 `w-[N%]`（`<DocTh … w-[16%]>…PROCESSING_DOC_COLUMNS[6]`），断言批号那一条就是渲染出来的 16；把该值换成修前的 10 ⇒ 下限判红（`10 < 16`）⇒ 判据不恒真。⚠️ 真跑读数：修前（批号 10%）本测试报 `expected 10 to be greater than or equal to 16`（1 failed / 15 passed），改宽后 16 passed。', '**不回归**：只改 8 个百分比（8/26/11/9/14/8/10/14 → 8/22/11/9/14/8/16/12）—— 列清单、字段取值、纸型、字号、补位行触发条件一字未动（`frontend-fix.no-api-change`）；`部位信息` / `货号` 在样例下仍各 2 行，纸面内容总高 81.8 → 77.0mm（A4 可用 273mm）。'],
+    skip_reason='[backend-contract] 纯前端打印版面调整 + vitest 判据（无 LLM 环节），不进 agent-eval 冒烟',
+    tags=['ui', 'print', 'processing-doc', 'column-width', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -14291,6 +14309,7 @@ ALL_CASES = (
     _CASE_UI_093,
     _CASE_UI_094,
     _CASE_UI_095,
+    _CASE_UI_096,
     _CASE_UT_001,
     _CASE_UT_002,
 )
