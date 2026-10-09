@@ -746,14 +746,57 @@ export type OperationFeature = ReturnType<typeof useOperationFeature>
  * `enabled=false` ⇒ **不发读面**（板子已用同源 hook 取过同一份数据 ⇒ 不重复发；
  * `RoutingsPanel` 被板子传入 `store` 时同样不重复发）。默认 `true` = 独立挂载时自包含取数。
  */
-export function useRoutingsFeature({ enabled = true }: { enabled?: boolean } = {}) {
-  const [routings, setRoutings] = useState<RoutingsResponse | null>(null)
-  const [catalog, setCatalog] = useState<OperationsCatalog | null>(null)
-  const [matrix, setMatrix] = useState<OperationPosition[]>([])
-  const [rules, setRules] = useState<RouteRule[]>([])
-  const [rulesError, setRulesError] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+/**
+ * 只读面的**外部来源**（issue #6585：板子已经用 `useOperationFeature()` 取过同一份五个端点
+ * —— `getRoutings` / `getOperationsCatalog` / `getOperationPositions` / `getRouteRules` /
+ * `getRouteRuleOptions`）。
+ *
+ * 🔴 **为什么要有这个参数**（2026-10-09 实测）：板子若同时调两个 hook 且各自发那五个端点，
+ * **每个端点都会被请求两次**（`production-routings.test.tsx` 的 `toHaveBeenCalledTimes(1)` 当场红，
+ * 且 `mockResolvedValueOnce` 队列被第二次请求吃掉 ⇒ 后续断言超时）。
+ * ⇒ 传了 `seed` 就**只读它的数据、一条请求都不发**（一份数据、一个来源）。
+ */
+export interface RoutingsReadSeed {
+  routings: RoutingsResponse | null
+  catalog: OperationsCatalog | null
+  matrix: OperationPosition[]
+  rules: RouteRule[]
+  rulesError: string
+  ruleOptions: RouteRuleTriggerOptions
+  loading: boolean
+  error: string
+}
+
+export function useRoutingsFeature({
+  enabled = true,
+  seed,
+  onReload,
+}: {
+  enabled?: boolean
+  seed?: RoutingsReadSeed
+  /**
+   * 有 `seed` 时「刷新」该走谁 —— 传 **seed 提供方的 `load`**（`useCallback([], …)` ⇒ 身份稳定）。
+   * ⚠️ 不要把 `seed` 本身放进依赖：它每次渲染都是新对象 ⇒ `load` 每帧换身份 ⇒ 取数循环。
+   */
+  onReload?: () => void | Promise<void>
+} = {}) {
+  const [routingsState, setRoutings] = useState<RoutingsResponse | null>(null)
+  const [catalogState, setCatalog] = useState<OperationsCatalog | null>(null)
+  const [matrixState, setMatrix] = useState<OperationPosition[]>([])
+  const [rulesState, setRules] = useState<RouteRule[]>([])
+  const [rulesErrorState, setRulesError] = useState('')
+  const [loadingState, setLoading] = useState(true)
+  const [errorState, setError] = useState('')
+  const [ruleOptionsState, setRuleOptions] = useState<RouteRuleTriggerOptions>({ crafts: [], processing_items: [], positions: [] })
+  /** 有 `seed` ⇒ 只读面全部取自它（本 hook 不持有、也不请求） */
+  const routings = seed ? seed.routings : routingsState
+  const catalog = seed ? seed.catalog : catalogState
+  const matrix = seed ? seed.matrix : matrixState
+  const rules = seed ? seed.rules : rulesState
+  const rulesError = seed ? seed.rulesError : rulesErrorState
+  const ruleOptions = seed ? seed.ruleOptions : ruleOptionsState
+  const loading = seed ? seed.loading : loadingState
+  const error = seed ? seed.error : errorState
   const [picked, setPicked] = useState('')
 
   const [editing, setEditing] = useState<Routing | null>(null)
@@ -768,7 +811,6 @@ export function useRoutingsFeature({ enabled = true }: { enabled?: boolean } = {
   const [confirmAction, setConfirmAction] = useState<{ kind: 'delete' | 'default'; routing: Routing } | null>(null)
   const [opReasons, setOpReasons] = useState<string[]>([])
 
-  const [ruleOptions, setRuleOptions] = useState<RouteRuleTriggerOptions>({ crafts: [], processing_items: [], positions: [] })
   const [confirmDeleteRuleId, setConfirmDeleteRuleId] = useState<number | null>(null)
   const [ruleDeleteReasons, setRuleDeleteReasons] = useState<{ id: number; items: string[] } | null>(null)
   const [ruleBusy, setRuleBusy] = useState(false)
@@ -784,6 +826,11 @@ export function useRoutingsFeature({ enabled = true }: { enabled?: boolean } = {
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
+    // `seed` 形态（板子挂载）：刷新 = 让**数据提供方**重取（本 hook 不自己发、也不持有那份读面）
+    if (onReload) {
+      await onReload()
+      return
+    }
     setLoading(true)
     setError('')
     const [routingsRes, catalogRes, positionsRes, rulesRes, ruleOptionsRes] = await Promise.allSettled([
@@ -822,12 +869,15 @@ export function useRoutingsFeature({ enabled = true }: { enabled?: boolean } = {
       setRuleOptions({ crafts: [], processing_items: [], positions: [] })
     }
     setLoading(false)
-  }, [])
+  }, [onReload])
 
   useEffect(() => {
-    if (!enabled) return
+    // 🔴 `seed` 在时**一条请求都不发**：只读面来自提供方（板子的 `useOperationFeature()`），
+    // 本 hook 若再 `load()` 一次就会经 `onReload` 让同一批五个端点被请求两遍 ——
+    // `production-routings.test.tsx` 的「同一交互只发一次」判据当场红（2026-10-09 实测）。
+    if (!enabled || seed) return
     void load()
-  }, [enabled, load])
+  }, [enabled, seed, load])
 
   const routeList = useMemo(() => routings?.routings ?? [], [routings])
 

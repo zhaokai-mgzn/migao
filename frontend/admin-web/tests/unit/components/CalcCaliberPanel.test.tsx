@@ -55,7 +55,7 @@ describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
  * —— 用户点过去，落到的却是**旧路由**（v2 已把那个 tab 拆掉）⇒ 同一份配置两个入口 + 死路。
  */
 it('不再挂「去算料配置」外链（域自己就是编辑面，不许把人送出页面）', () => {
-  render(<CalcCaliberPanel calc={null} calcError={null} loading={false} />)
+  render(<CalcCaliberPanel calc={null} calcError="" loading={false} />)
   expect(screen.queryByTestId('param-edit-calc')).toBeNull()
   expect(screen.queryByText(/去算料配置/)).toBeNull()
 })

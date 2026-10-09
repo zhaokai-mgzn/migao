@@ -158,10 +158,20 @@ function OperationPriceCell({
 export function OperationPricePanel({
   store,
   embedded = false,
+  hideActions = false,
 }: {
   /** 共享同一份功能体状态（板子传入）；不传 ⇒ 本组件自包含地调同源 hook */
   store?: OperationFeature
+  /** `true` ⇒ 不渲染本层区块标题（域标题由指挥台给） */
   embedded?: boolean
+  /**
+   * `true` ⇒ **不渲染本层的动作按钮组**（刷新 / 新增工序）。
+   *
+   * 🔴 板子（`ProcessConfigBoard`）用它 —— 那一屏的动作按钮在**页头**（`routings-new-operation`），
+   * 面板再渲染一份 = 同一个 `data-testid` 出现两次（`getByTestId` 直接红）。独立挂载（指挥台 /
+   * 单测）默认 `false`：这一域的功能面必须自带入口。
+   */
+  hideActions?: boolean
 } = {}) {
   // ⚠️ hook 必须无条件调用（React 规则）；未传 `store` 时它就是本面板的自取数来源
   const own = useOperationFeature({ enabled: !store })
@@ -173,6 +183,7 @@ export function OperationPricePanel({
     cellEditing, setCellEditing, cellDraft, setCellDraft, cellBusy, cellReasons, setCellReasons,
     manageOp, openWorkshops, setOpenWorkshops, editingVariantId, setEditingVariantId,
     variantDraft, setVariantDraft, variantBusy, variantReasons, opLevelReasons, setOpLevelReasons,
+    confirmDeleteOpByName, setConfirmDeleteOpByName,
     confirmDeleteRuleId, setConfirmDeleteRuleId, ruleDeleteReasons, setRuleDeleteReasons, ruleBusy,
     ruleOptions, conditionFormOpen, setConditionFormOpen, conditionDraft, setConditionDraft,
     conditionReasons, editingRulePriceId, setEditingRulePriceId, rulePriceDraft, setRulePriceDraft,
@@ -194,7 +205,8 @@ export function OperationPricePanel({
   return (
     <section className="space-y-4" data-testid="craft-operations-panel">
       {/* 本层面板标题（`embedded` 时不渲染 —— 域标题由指挥台给）；
-          ⚠️ **动作按钮不随 `embedded` 消失**（它们是这一域的功能面，不是标题的一部分）。 */}
+          ⚠️ **动作按钮不随 `embedded` 消失**（它们是这一域的功能面，不是标题的一部分）；
+          板子用 `hideActions` 单独去掉它（那一屏的按钮在页头，见该 prop 注释）。 */}
       {!embedded && (
         <div>
           <h2 className="text-base font-medium text-neutral-900">工序库 · 计件单价</h2>
@@ -203,16 +215,18 @@ export function OperationPricePanel({
           </p>
         </div>
       )}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
-          <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
-          刷新
-        </Button>
-        <Button variant="secondary" size="sm" data-testid="routings-new-operation" onClick={openCreateOperation}>
-          <Plus className="w-4 h-4 mr-1.5" />
-          新增工序
-        </Button>
-      </div>
+      {!hideActions && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
+            <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
+            刷新
+          </Button>
+          <Button variant="secondary" size="sm" data-testid="routings-new-operation" onClick={openCreateOperation}>
+            <Plus className="w-4 h-4 mr-1.5" />
+            新增工序
+          </Button>
+        </div>
+      )}
 
       {loading && (
         <div className="flex items-center gap-2 text-sm text-neutral-500" data-testid="routings-loading">
@@ -508,7 +522,7 @@ export function OperationPricePanel({
                   ⚠️ 这道工序有
                   <strong className="mx-1">{manageUnlinked.length}</strong>
                   条设置<strong>没有关联到它</strong>（价目行指向的不是这道工序）——
-                  下面带「这些行指向的不是这道工序」标记的行<strong>不提供设置</strong>（改它们就是改另一道工序）；
+                  下面带「这些行指向的不是这道工序」标记的行**不提供设置**（改它们就是改另一道工序）；
                   点底部<strong className="mx-1">删除</strong>可直接删掉这道工序。
                 </p>
               )}
@@ -1049,7 +1063,7 @@ export function OperationPricePanel({
       {/* 删除工序的二次确认（目标 = 抽屉当前展示的那一行；与价目行是否关联得上无关） */}
       <Modal
         open={deleteOpByNameTarget !== null}
-        onClose={() => !variantBusy && setOpLevelReasons(null)}
+        onClose={() => !variantBusy && setConfirmDeleteOpByName(null)}
         title="删除工序"
         footer={null}
       >
@@ -1109,6 +1123,7 @@ export function OperationPricePanel({
                 disabled={variantBusy}
                 data-testid="operations-manage-delete-cancel"
                 onClick={() => {
+                  setConfirmDeleteOpByName(null)
                   setOpLevelReasons(null)
                 }}
               >

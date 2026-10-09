@@ -16,7 +16,6 @@
  * 本组件自己调 hook（自包含：单独 `render(<RoutingsPanel />)` 即发起自己的读面）。
  * `embedded=true` 只影响**区块标题**，其余一字不变。
  */
-import { useEffect, useState } from 'react'
 import { AlertCircle, ArrowDown, ArrowUp, Check, Pencil, Plus, RefreshCw, Star, Trash2, X } from 'lucide-react'
 import { Button, Modal } from '@/components/ui'
 import { conditionText, inputCls, money, RulePriceCell } from '@/components/production-config/utils'
@@ -28,10 +27,19 @@ import type { RouteRule } from '@/types'
 export function RoutingsPanel({
   store,
   embedded = false,
+  hideActions = false,
 }: {
   /** 共享同一份功能体状态（板子传入）；不传 ⇒ 本组件自包含地调同源 hook */
   store?: RoutingsFeature
+  /** `true` ⇒ 不渲染本层区块标题（域标题由指挥台给） */
   embedded?: boolean
+  /**
+   * `true` ⇒ **不渲染本层的动作按钮组**（刷新 / 新建路线）。
+   *
+   * 🔴 板子（`ProcessConfigBoard`）用它 —— 那一屏的动作按钮在**页头**（`routings-new-route`），
+   * 面板再渲染一份 = 同一个 `data-testid` 出现两次（`getByTestId` 直接红）。独立挂载默认 `false`。
+   */
+  hideActions?: boolean
 } = {}) {
   // hook 必须无条件调用；未传 `store` 时它就是本面板的自取数来源。
   // ⚠️ 独立挂载时 `libraryByName` / `matrixOps` 由 `useRoutingsFeature` 内部的价目行自建
@@ -58,7 +66,8 @@ export function RoutingsPanel({
   return (
     <section className="space-y-4" data-testid="routings-panel">
       {/* 本层面板标题（`embedded` 时不渲染 —— 域标题由指挥台给）；
-          ⚠️ **动作按钮不随 `embedded` 消失**（它们是这一域的功能面，不是标题的一部分）。 */}
+          ⚠️ **动作按钮不随 `embedded` 消失**（它们是这一域的功能面，不是标题的一部分）；
+          板子用 `hideActions` 单独去掉它（那一屏的按钮在页头，见该 prop 注释）。 */}
       {!embedded && (
         <div>
           <h2 className="text-base font-medium text-neutral-900">工艺路线（路线与规则）</h2>
@@ -67,16 +76,18 @@ export function RoutingsPanel({
           </p>
         </div>
       )}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
-          <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
-          刷新
-        </Button>
-        <Button size="sm" data-testid="routings-new-route" onClick={() => setNewRouteOpen(true)}>
-          <Plus className="w-4 h-4 mr-1.5" />
-          新建路线
-        </Button>
-      </div>
+      {!hideActions && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
+            <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
+            刷新
+          </Button>
+          <Button size="sm" data-testid="routings-new-route" onClick={() => setNewRouteOpen(true)}>
+            <Plus className="w-4 h-4 mr-1.5" />
+            新建路线
+          </Button>
+        </div>
+      )}
 
       {loading && (
         <div className="flex items-center gap-2 text-sm text-neutral-500" data-testid="routings-loading">
@@ -413,73 +424,6 @@ export function RoutingsPanel({
             )}
           </section>
 
-          {/* 适用条件（路线规则）：读面失败**不**渲染成「没有条件」（静默 = 商家以为没配过） */}
-          <section className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="routings-rules">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-medium text-neutral-900">适用条件</h2>
-              <span className="text-xs text-neutral-500">哪些工序在什么情况下做 / 不做</span>
-            </div>
-            <p className="mt-1 text-xs text-neutral-400">
-              条件里的名字<strong>逐字取自</strong>订单里的特殊选项 / 加工项 / 部位（错一个字就不会命中）。
-              特殊选项按<strong>套</strong>收费（元/套）；加工项与部位不按套计价。
-            </p>
-
-            {rulesError ? (
-              <p
-                className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600"
-                data-testid="routings-rules-error"
-              >
-                {rulesError}
-              </p>
-            ) : rules.length === 0 ? (
-              <p className="mt-2 text-xs text-neutral-400" data-testid="routings-rules-empty">
-                没有额外条件 —— 所有订单都按命中的主线做。
-              </p>
-            ) : (
-              <ul className="mt-2 divide-y divide-neutral-100">
-                {rules.map((rule) => (
-                  <li
-                    key={rule.id}
-                    className="flex flex-wrap items-center gap-2 py-2"
-                    data-testid={`route-rule-${rule.id}`}
-                  >
-                    <span className="text-xs text-neutral-500">{rule.operation ?? '—'}</span>
-                    <span className="text-neutral-800" data-testid={`route-rule-text-${rule.id}`}>
-                      {conditionText(rule)}
-                    </span>
-                    {rule.trigger_kind === 'option' && (
-                      <RulePriceCell
-                        rule={rule}
-                        editing={editingRulePriceId === rule.id}
-                        draft={rulePriceDraft}
-                        busy={rulePriceBusy}
-                        reasons={editingRulePriceId === rule.id ? rulePriceReasons : []}
-                        onStartEdit={() => {
-                          setEditingRulePriceId(rule.id)
-                          setRulePriceDraft(rule.customer_unit_price == null ? '' : String(rule.customer_unit_price))
-                          setRulePriceReasons([])
-                        }}
-                        onDraftChange={setRulePriceDraft}
-                        onSave={() => void saveRulePrice(rule)}
-                        onCancel={cancelRulePrice}
-                      />
-                    )}
-                    <button
-                      type="button"
-                      data-testid={`route-rule-delete-${rule.id}`}
-                      onClick={() => {
-                        setConfirmDeleteRuleId(rule.id)
-                        setRuleDeleteReasons(null)
-                      }}
-                      className="ml-auto rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-red-600"
-                    >
-                      删除
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
         </div>
       )}
 
@@ -634,19 +578,6 @@ export function RoutingsPanel({
         )}
       </Modal>
 
-      {/* 新增一条适用条件（写面复用 `POST /route-rules`；目标工序从价目表逻辑名里选）。
-          ⚠️ 取值域与抽屉同源（`anchorDefaultFor` 用默认主线的前一道），不新造第二份口径。 */}
-      <AddConditionModal
-        open={addConditionOp !== null}
-        operation={addConditionOp}
-        options={ruleOptions}
-        optionNames={optionNames}
-        logicalOps={logicalOps}
-        busy={busy}
-        anchorDefault={addConditionOp ? anchorDefaultFor(addConditionOp) : ''}
-        onClose={() => setAddConditionOp(null)}
-        onSubmit={createCondition}
-      />
     </section>
   )
 }
@@ -658,152 +589,6 @@ function setOpReasonsReset(
   kind: 'delete' | 'default' = 'default',
 ) {
   setConfirmAction({ kind, routing })
-}
-
-/** 「添加条件」表单（**两件事**：什么时候 + 做还是不做；「插在哪道之后」只对「做」且带默认值） */
-function AddConditionModal({
-  open,
-  operation,
-  options,
-  optionNames,
-  logicalOps,
-  busy,
-  anchorDefault,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean
-  operation: string | null
-  options: import('@/types').RouteRuleTriggerOptions
-  optionNames: string[]
-  logicalOps: string[]
-  busy: boolean
-  anchorDefault: string
-  onClose: () => void
-  onSubmit: (operation: string, kind: import('@/types').RouteRuleTriggerKind, trigger: string, action: 'insert' | 'remove') => void
-}) {
-  const [kind, setKind] = useState<import('@/types').RouteRuleTriggerKind>('option')
-  const [trigger, setTrigger] = useState('')
-  const [action, setAction] = useState<'insert' | 'remove'>('insert')
-  const [anchor, setAnchor] = useState('')
-
-  useEffect(() => {
-    if (!open) return
-    setKind('option')
-    setTrigger('')
-    setAction('insert')
-    setAnchor(anchorDefault)
-  }, [open, anchorDefault])
-
-  return (
-    <Modal open={open} onClose={onClose} title={operation ? `给「${operation}」加一条适用条件` : ''} footer={null}>
-      <div data-testid="route-rule-add-modal" className="space-y-3 text-sm">
-        <div>
-          <span className="mb-1 block text-xs text-neutral-600">什么时候</span>
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="什么时候">
-            {([
-              { key: 'option', label: '特殊选项' },
-              { key: 'processing_item', label: '加工项' },
-              { key: 'position', label: '部位' },
-            ] as const).map((k) => (
-              <button
-                key={k.key}
-                type="button"
-                role="radio"
-                aria-checked={kind === k.key}
-                data-testid={`route-rule-add-kind-${k.key}`}
-                onClick={() => {
-                  setKind(k.key)
-                  setTrigger('')
-                }}
-                className={cn(
-                  'rounded-full border px-3 py-1 text-sm transition-colors',
-                  kind === k.key
-                    ? 'border-primary-600 bg-neutral-50 font-medium text-primary-700'
-                    : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50',
-                )}
-              >
-                {k.label}
-              </button>
-            ))}
-          </div>
-          <select
-            aria-label="什么时候生效"
-            data-testid="route-rule-add-value"
-            className={cn(inputCls, 'mt-2')}
-            value={trigger}
-            onChange={(e) => setTrigger(e.target.value)}
-          >
-            <option value="">
-              {kind === 'processing_item' ? '从加工项列表里选…' : kind === 'position' ? '从部位列表里选…' : '从特殊选项列表里选…'}
-            </option>
-            {(kind === 'processing_item' ? options.processing_items : kind === 'position' ? options.positions : optionNames).map(
-              (name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ),
-            )}
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs text-neutral-600" htmlFor="route-rule-add-action">
-            做还是不做
-          </label>
-          <select
-            id="route-rule-add-action"
-            data-testid="route-rule-add-action"
-            className={inputCls}
-            value={action}
-            onChange={(e) => {
-              const next = e.target.value as 'insert' | 'remove'
-              setAction(next)
-              setAnchor('')
-            }}
-          >
-            <option value="insert">做（订单命中时加上这道工序）</option>
-            <option value="remove">不做（订单命中时去掉这道工序）</option>
-          </select>
-        </div>
-
-        {action === 'insert' && (
-          <div>
-            <label className="mb-1 block text-xs text-neutral-600" htmlFor="route-rule-add-anchor">
-              插在哪道工序之后
-            </label>
-            <select
-              id="route-rule-add-anchor"
-              data-testid="route-rule-add-anchor"
-              className={inputCls}
-              value={anchor}
-              onChange={(e) => setAnchor(e.target.value)}
-            >
-              <option value="">放到最后（末尾）</option>
-              {logicalOps.map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" disabled={busy} data-testid="route-rule-add-cancel" onClick={onClose}>
-            取消
-          </Button>
-          <Button
-            loading={busy}
-            data-testid="route-rule-add-submit"
-            onClick={() => operation && onSubmit(operation, kind, trigger, action)}
-          >
-            保存
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  )
 }
 
 export default RoutingsPanel
