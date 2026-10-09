@@ -66,7 +66,7 @@ export function assertDocTableIntegrity(root: ParentNode | null): TableIntegrity
  * 抬头信息表没有 —— 见 `frontend/admin-web/src/components/orders/ProcessingDoc.tsx` 的 `SetBlock`。
  */
 export function dataTables(root: ParentNode | null): HTMLTableElement[] {
-  return Array.from(root?.querySelectorAll<HTMLTableElement>('table')).filter(
+  return Array.from(root?.querySelectorAll<HTMLTableElement>('table') ?? []).filter(
     (table) => table.querySelector('thead') !== null
   )
 }
