@@ -64,10 +64,14 @@ BACKEND_SERVICE = (
 )
 #: 前端词表副本
 FRONTEND_TYPES = REPO_ROOT / "frontend/admin-web/src/types/index.ts"
-#: 工序管理面（停用写面所在）—— issue #6580：功能体搬进 `ProcessConfigBoard`
-#: （旧路由 `production/routings/page.tsx` 现在只是渲染它的薄壳，里面没有写面）⇒ 宿主随功能体走。
+#: 工序管理面（**停用写面**所在）—— 宿主随写面走，已搬过两次：
+#:   · issue #6580：从旧路由 `production/routings/page.tsx`（薄壳）搬进功能体 `ProcessConfigBoard.tsx`；
+#:   · issue #6585：功能体按域拆开后，`ProcessConfigBoard.tsx` 只剩「页签宿主 + 自带就绪面」，
+#:     写面（`updateOperation(op.id, { status: 'disabled' })`）落在拆出的取数层 `features.ts`
+#:     ⇒ 本锚点指到 `features.ts`。**判据没放宽**：`features.ts` 里一个 `status:` 字面量都找不到时
+#:     C 判据照旧判红（禁止「看起来在守、其实什么都没守」）。
 ROUTINGS_PAGE = (
-    REPO_ROOT / "frontend/admin-web/src/components/production-config/ProcessConfigBoard.tsx"
+    REPO_ROOT / "frontend/admin-web/src/components/production-config/features.ts"
 )
 
 #: 前端工序状态联合类型名（与本文件 C2/C3 判据同名 —— 改名即红，是有意的）
