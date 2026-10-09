@@ -1906,16 +1906,16 @@ _CASE_BM_043 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── BM-044 [NORMAL] B 端「问黄金策」输入条 H5 形态：placeholder 不承诺录音 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒）（源: cases/bmini.yml）──
+# ── BM-044 [NORMAL] B 端「问黄金策」输入条 H5 形态与语音可达性：placeholder 按「浏览器能不能录音」分流 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒）（源: cases/bmini.yml）──
 _CASE_BM_044 = EvalCase(
     id='BM-044',
     legacy_id='',
-    title='B 端「问黄金策」输入条 H5 形态：placeholder 不承诺录音 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒）',
+    title='B 端「问黄金策」输入条 H5 形态与语音可达性：placeholder 按「浏览器能不能录音」分流 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['商家在手机浏览器（`app.migaozn.com/b/`）打开「问黄金策」：输入框里那行提示是**键盘措辞**（H5 里浏览器没有录音实现，不再写「按住说话」这种做不到的承诺），文字用 App 字体与设计色、右下**没有**原生缩放手柄、单行与动作行对齐'],
+    user_inputs=['商家在手机浏览器（`app.migaozn.com/b/`）打开「问黄金策」：输入框里那行提示**不得承诺做不到的事**（浏览器真能录音时才写「按住说话」，不能录音时写键盘措辞），文字用 App 字体与设计色、右下**没有**原生缩放手柄、单行与动作行对齐'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·🔴 H5 不承诺录音：frontend/bmini-app/tests/chat-input-surface.test.tsx —— `TARO_ENV=h5` 且录音不可用时 placeholder = 键盘措辞（`打字问黄金策，比如「今天经营怎么样？」`）且**不含**「按住说话」。红证（实跑过）：把 placeholder 改回硬编码那一句 ⇒ 具名判红', '判据 2·小程序（录音可用）保留「打字 or 说话」双语义 placeholder —— 一刀切成键盘措辞 ⇒ 红', '判据 3·🔴 **样式必须落到内层原生控件**：Taro H5 把 class 挂在包裹元素 `<taro-textarea-core>` 上，真正绘制文字的是内层 `<textarea class="taro-textarea">`；只写外层时实测内层跑的是**浏览器默认**（`monospace 13.33px` + 默认灰 placeholder + `resize` 手柄）。判据 = 输入态 SCSS 块含 `.taro-textarea` 内层选择器 + `font-family/font-size/line-height/color: inherit` + `resize: none` + `::placeholder` 用 `$text-secondary` + `min-height: 42px`（单行行盒，原 40px 小于行盒）；**反陷阱**断言块内不出现 `textarea` 标签选择器（H5 构建会把它改写成自定义元素 ⇒ 静默无效）。红证（各一次，实跑过）：删掉内层块 / `resize: none`→`both` / `min-height` 42→40px ⇒ 具名判红', '判据 4·真机读数（承载体，**不进 CI**）：真栈 + 真 Chromium（:8080 admin-api + :8001 ai-agent 跑被验 commit，H5 由本 worktree 构建产物供给）内层 `textarea` 读数由 `fontFamily: monospace` / `fontSize: 13.3333px` / `resize: both` / `::placeholder rgb(117,117,117)` 变为 App 字体 / `14.56px` / `none` / `rgb(90,107,124)`'],
+    data_checks=['判据 1·🔴 **H5 按运行时能力分流**（2026-10-09 #6596 **改判**：H5 已把录音真做出来）：frontend/bmini-app/tests/chat-input-surface.test.tsx —— `TARO_ENV=h5` 且 `isVoiceSupported()` 为**假**（浏览器确实没有 `MediaRecorder`/`getUserMedia`）时 placeholder = 键盘措辞（`打字问黄金策，比如「今天经营怎么样？」`）且**不含**「按住说话」；能力为**真**时语音可达（**不许出现按不动的键**）。红证（实跑过）：把 placeholder 改回硬编码那一句 ⇒ 具名判红；把能力判定改回「h5 ⇒ 恒不支持」⇒ #6596 的判据集红', '判据 2·小程序（录音可用）保留「打字 or 说话」双语义 placeholder —— 一刀切成键盘措辞 ⇒ 红', '判据 3·🔴 **样式必须落到内层原生控件**：Taro H5 把 class 挂在包裹元素 `<taro-textarea-core>` 上，真正绘制文字的是内层 `<textarea class="taro-textarea">`；只写外层时实测内层跑的是**浏览器默认**（`monospace 13.33px` + 默认灰 placeholder + `resize` 手柄）。判据 = 输入态 SCSS 块含 `.taro-textarea` 内层选择器 + `font-family/font-size/line-height/color: inherit` + `resize: none` + `::placeholder` 用 `$text-secondary` + `min-height: 42px`（单行行盒，原 40px 小于行盒）；**反陷阱**断言块内不出现 `textarea` 标签选择器（H5 构建会把它改写成自定义元素 ⇒ 静默无效）。红证（各一次，实跑过）：删掉内层块 / `resize: none`→`both` / `min-height` 42→40px ⇒ 具名判红', '判据 4·真机读数（承载体，**不进 CI**）：真栈 + 真 Chromium（:8080 admin-api + :8001 ai-agent 跑被验 commit，H5 由本 worktree 构建产物供给）内层 `textarea` 读数由 `fontFamily: monospace` / `fontSize: 13.3333px` / `resize: both` / `::placeholder rgb(117,117,117)` 变为 App 字体 / `14.56px` / `none` / `rgb(90,107,124)`'],
     skip_reason='[backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/chat-input-surface.test.tsx + frontend/bmini-app/tests/message-input.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'chat', 'input-bar', 'h5-surface'],
     persona='',
