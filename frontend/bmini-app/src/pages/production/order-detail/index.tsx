@@ -25,6 +25,11 @@ import {
   type OrderOperations,
   type ProcessingOrderBrief,
 } from '../../../services/productionService'
+import {
+  getStuckPoints,
+  stuckThresholdSourceLabel,
+  type StuckPointRow,
+} from '../../../services/stuckPointService'
 import { operationDisplayName } from '../../../utils/operationDisplayName'
 import { resolveOrderIdFromParams } from '../../../utils/productionQr'
 import './index.scss'
@@ -43,6 +48,10 @@ export default function ProcessingOrderDetailPage() {
   const [order, setOrder] = useState<ProcessingOrderBrief | null>(null)
   const [detail, setDetail] = useState<OrderOperations | null>(null)
   const [opsFailed, setOpsFailed] = useState(false)
+  // 「卡在哪」卡点面（issue #6597）：与工序进度**各自独立** —— 卡点面挂了只少一块，
+  // 不把整页判成失败（口径见 tests/processing-order-detail-stuck.test.tsx 判据 5）。
+  const [stuck, setStuck] = useState<StuckPointRow[] | null>(null)
+  const [stuckFailed, setStuckFailed] = useState(false)
   const [message, setMessage] = useState('')
 
   const load = useCallback(async () => {
@@ -51,6 +60,10 @@ export default function ProcessingOrderDetailPage() {
       return
     }
     setState('loading')
+    // 卡点面**先发**（只读、不依赖抬头）：它单独失败不影响整页三态。
+    const stuckRes = await getStuckPoints(orderId)
+    setStuck(stuckRes.status === 'ok' ? (stuckRes.data.stuck ?? []) : null)
+    setStuckFailed(stuckRes.status !== 'ok')
     const brief = await getProcessingOrderBrief(orderId)
     if (brief.forbidden) {
       setState('forbidden')
@@ -93,6 +106,9 @@ export default function ProcessingOrderDetailPage() {
         ['交期', order.expectedDeliveryDate],
       ].filter(([, value]) => !!value) as Array<[string, string]>)
     : []
+  // 卡点块：**没有卡点 ⇒ 整块不渲染**（不摆「暂无卡点」空壳）。阈值取**服务端下发的那个数**
+  // （不在前端另立一份：换口径会与 web 面 / 待办面漂移）。
+  const stuckThreshold = stuck?.[0]?.threshold_hours ?? null
 
   return (
     <ScrollView scrollY className='order-detail'>
@@ -169,6 +185,35 @@ export default function ProcessingOrderDetailPage() {
               </View>
             ))}
           </View>
+
+          {/* 「卡在哪」（issue #6597）：判据本体在服务端（`GET /api/admin/production/stuck-points`），
+              本页**只渲染** —— 谁卡了 / 等了多久 / 阈值多少 / 阈值从哪来，一个数都不自己算。
+              常驻面克制：抬头一句（条数 + 阈值 + 来源），逐条明细各一行、不随条数长成告警墙。 */}
+          {stuck && stuck.length > 0 && (
+            <View className='order-detail__card' data-testid='order-detail-stuck'>
+              <Text className='order-detail__section'>卡在哪</Text>
+              <Text className='order-detail__stuck-summary'>
+                {`这单有 ${stuck.length} 道卡住了（上道已交、这道没人开工，等待超过 ${stuckThreshold} 小时就列在这里；${stuckThresholdSourceLabel(stuck[0]?.threshold_source)}）`}
+              </Text>
+              {stuck.map((row) => (
+                <View
+                  key={`${row.set_id ?? ''}-${row.operation?.operation_id ?? ''}`}
+                  className='order-detail__stuck-row'
+                  data-testid='order-detail-stuck-row'
+                >
+                  <Text className='order-detail__stuck-op'>
+                    {operationDisplayName(row.operation) || '这道工序'}
+                  </Text>
+                  <Text className='order-detail__stuck-wait'>{`等了 ${row.stalled_hours} 小时`}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+          {stuckFailed && (
+            <Text className='order-detail__hint' data-testid='order-detail-stuck-hint'>
+              卡在哪没加载出来 —— 再进本页试一次
+            </Text>
+          )}
         </>
       )}
     </ScrollView>

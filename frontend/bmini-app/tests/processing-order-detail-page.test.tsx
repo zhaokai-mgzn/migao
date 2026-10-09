@@ -48,6 +48,34 @@ import { stripComments } from './helpers/h5PlatformLists'
 
 const mockGet = get as unknown as jest.Mock
 
+/**
+ * 「数据」页待办标签的样式（issue #6597 缺陷 A：`.task-item__tag` 原 `width: 64px` 装不下
+ * 服务端下发的「卡在哪」3 字 ⇒ 折成两行）。本文件顺带钉住那一条的**形态**判据。
+ */
+const SRC_DIR = path.join(__dirname, '../src')
+/** 剔除注释后的 scss（注释里写了 `white-space: nowrap` 不算落实） */
+function scssCode(file: string): string {
+  return fs
+    .readFileSync(file, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('//'))
+    .join('\n')
+}
+
+/**
+ * 取嵌套 scss 里 `&<suffix> { … }` 的规则体（suffix 例：`__tag` / `__tag-text`）。
+ *
+ * 🔴 尾边界要 `\n`（原写法 `\{([^}]*)\}` 会在 `&__tag { … &-text { … } }` 上从 `&__tag`
+ * 一路吃到**最后**一个 `}` ⇒ 规则体里混进子规则，判据退化成「A 或 B 满足即可」）。
+ * 射程内的规则体属性一行一条（本仓 scss 口径）⇒ 取到首个 `}` 所在行即可。
+ */
+function ruleBody(scss: string, suffix: string): string | null {
+  const escaped = suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = scss.match(new RegExp(`&${escaped}\\s*\\{([\\s\\S]*?)\\n\\s*\\}`))
+  return match ? match[1] : null
+}
+
 const BRIEF = {
   success: true,
   data: {
@@ -93,6 +121,11 @@ const OPERATIONS = {
 /** 按 URL 分派桩响应（两条读面各自独立，便于单条失败/403 的用例） */
 function stub(props: { brief?: any; operations?: any; briefError?: any; opsError?: any } = {}) {
   mockGet.mockImplementation((url: string) => {
+    // 卡点面（issue #6597 缺陷 B）在本文件里不是被测对象 ⇒ 一律桩「没有卡点」，
+    // 让本文件既有五条判据的读数不被它影响（它自己的判据在 processing-order-detail-stuck.test.tsx）。
+    if (url.includes('/api/admin/production/stuck-points')) {
+      return Promise.resolve({ success: true, data: { stuck_total: 0, stuck: [] } })
+    }
     if (url.includes('/api/admin/processing-orders/')) {
       return props.briefError ? Promise.reject(props.briefError) : Promise.resolve(props.brief ?? BRIEF)
     }
@@ -195,5 +228,51 @@ describe('加工单详情页（商家只读面）', () => {
     // 反向自证：源码里**确实**在消费那两条只读读面（否则上面那串「都没出现」是空跑）
     expect(src).toContain('getProcessingOrderBrief(')
     expect(src).toContain('getOrderOperations(')
+  })
+})
+
+/**
+ * issue #6597 缺陷 A：「卡在哪」标签折行（用户截图 = 「卡在 / 哪」两行）。
+ *
+ * **根因**：`src/pages/dashboard/index/index.scss` 的 `.task-item__tag{width:64px;…}` ——
+ * 标签文案由**服务端**下发（`type_label`，3 字 × `font-size:24px` = 72px）⇒ 装不下就折行。
+ * 前端不该为固定文案配死宽度。
+ *
+ * **判据形态**：扫**剔除注释后**的 scss（注释里写规则不算落实），且用
+ * `[.task-item__tag]` 选择器锚定「精确那一条规则」——`&-text` 是另一条规则，不会被误读成父级。
+ * 几何（是否真的还折行）在浏览器里复测，读数记在 PR body；本文件只钉形态。
+ */
+describe('「数据」页待办标签不折行（issue #6597 缺陷 A）', () => {
+  const DASHBOARD_SCSS = path.join(SRC_DIR, 'pages', 'dashboard', 'index', 'index.scss')
+
+  it('标签宽度**自适应**（不再是固定 64px）+ 文案不换行 + 左右留内边距 + 高度仍 40px', () => {
+    const scss = scssCode(DASHBOARD_SCSS)
+    const tag = ruleBody(scss, '__tag')
+    // 反空跑：真的取到了那条规则（取不到 ⇒ 选择器漂了，下面几条会变成空判）
+    expect(tag).not.toBeNull()
+
+    // ① 不再是固定宽度（原 `width: 64px` 就是折行的根因）
+    expect(tag).not.toMatch(/width:\s*64px/)
+    // ② 文案不换行（写在父级或 `&-text` 上都算落实）
+    const tagText = ruleBody(scss, '-text')
+    expect(`${tag}${tagText}`).toMatch(/white-space:\s*nowrap/)
+    // ③ 左右内边距（宽度自适应的「呼吸位」，不许贴边）
+    expect(tag).toMatch(/padding:\s*0\s+\d+px/)
+    // ④ 高度/视觉对齐既有 40px
+    expect(tag).toMatch(/height:\s*40px/)
+  })
+
+  it('🔴 宽度自适应**装得下**服务端下发的 3 字标签（按 scss 自己声明的 font-size 复算）', () => {
+    const scss = scssCode(DASHBOARD_SCSS)
+    const tag = ruleBody(scss, '__tag') ?? ''
+    const tagText = ruleBody(scss, '-text') ?? ''
+    const fontSize = Number((tagText.match(/font-size:\s*(\d+)px/) ?? [])[1])
+    const padLeft = Number((tag.match(/padding:\s*0\s+(\d+)px/) ?? [])[1])
+    // 反空跑：两个数都真的读到了
+    expect(fontSize).toBeGreaterThan(0)
+    expect(padLeft).toBeGreaterThan(0)
+    // 「卡在哪」= 3 字；固定宽度时代 = 64px（< 3 × 24 = 72），且**没有** nowrap ⇒ 折行
+    expect(padLeft * 2 + fontSize * 3).toBeGreaterThan(64)
+    expect(scssCode(DASHBOARD_SCSS)).toMatch(/white-space:\s*nowrap/)
   })
 })
