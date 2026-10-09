@@ -128,17 +128,29 @@ class TestDecisionBody:
         assert nav.build_proactive_push("/knowledge", ["knowledge:view"]).should_push is True
 
     def test_criterion_2_role_trim(self) -> None:
-        """判据 2：**只推该角色可见的** —— 无权 ⇒ `not_visible`（签名里没有 role）。"""
-        denied = nav.build_proactive_push("/production/routings", ["order:list"])
+        """判据 2：**只推该角色可见的** —— 无权 ⇒ `not_visible`（签名里没有 role）。
+
+        ⚠️ 2026-10-09（issue #6580）：宿主路径从 `/production/routings` 换成 `/production`
+        —— 前者**已不再是菜单节点**（工艺配置菜单被收拢进「企业基础设置」，见下一条判据），
+        对它的推送会被判 `unregistered`（另一条理由），拿它当 `not_visible` 的样本会**测错对象**。
+        本判据判的是「已注册但没有该码 ⇒ 不推」，故取一个**仍在菜单里**的路径（生产看板 `/production`）。
+        """
+        denied = nav.build_proactive_push("/production", ["order:list"])
         assert denied.should_push is False
         assert denied.reason == nav.PUSH_REASON_NOT_VISIBLE
         # 客户端递交的 role 改成什么都一样（裁剪只看 permissions）
         for role in ("admin", "customer", "agent", "warehouse"):
             assert nav.build_proactive_push(
-                "/production/routings", ["order:list"]
+                "/production", ["order:list"]
             ).reason == nav.PUSH_REASON_NOT_VISIBLE, f"role={role!r} 竟拿到页面"
         # 无码节点（通知中心）全员可见
         assert nav.build_proactive_push("/notifications", []).should_push is True
+        # 🔴 具名登记：两条**旧功能路径**已随菜单收拢退出导航表 ⇒ 推送理由必须是 `unregistered`
+        # （不是 `not_visible`：导航表根本不再认识它们；功能本体在 `/settings` 的域里可达）
+        for legacy in ("/production/routings", "/production/processing"):
+            assert nav.build_proactive_push(
+                legacy, ["production:view"]
+            ).reason == nav.PUSH_REASON_UNREGISTERED, f"{legacy} 竟仍被导航表当作已注册路径"
 
     def test_criterion_3_unregistered_route_is_denied_by_default(self) -> None:
         """判据 3：**未登记页面不推** —— 未登记 / 脏形态 / 歧义一律静默。"""
