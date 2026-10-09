@@ -3421,7 +3421,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（89 case）
+## 杂项域（90 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4750,6 +4750,22 @@
 跳过: [backend-contract] 纯离线静态守卫（读 Java 源码 + 台账 + schema）由 tests/unit_ci_workflows/test_idempotency_writeface_coverage.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-09 新增（issue #6209，同 PR 的类级固化）。取号 = `python3 scripts/next_case_id.py mc`（main 现取 MC-001~MC-087 ⇒ 取 MC-088）。**判别力实测**（真语料注入）：把 ProductService 的登记锚改成不存在的串 ⇒ 判据 2 具名判红；撤回 ⇒ 复绿（13 passed）。改前形态（`ProductController` 读了头却不接点位）正是判据 4 要抓的那一格。 ｜ tags: backend-contract, idempotency, guard, ledger, red-proof
+
+### MC-089. dev-worktree 的退出码：`list` 不许因存在会话锁（哪怕全是失效锁）而 exit 1；`scripts/*.sh` 里函数体末命令不得是会被当成返回值的 `[ … ] && …` 复合形态（issue #6243） 🔵
+```
+你: `./scripts/dev-worktree.sh list` 把工作区表和会话锁清单都正常打出来了，可 `echo $?` 却是 1 —— 锁全是失效锁（进程已退出）时也这样
+数据: **病（2026-10-09 22:43 +08 主会话现取）**：`scripts/dev-worktree.sh` 的 `lock_list` 末行写成 `[ "$found" = "0" ] && echo "（无会话锁）"` —— `found=1` 时 `&&` 短路 ⇒ 该复合命令退出码 = 1 ⇒ 它就是函数返回值，而 `lock_list` 又是 `cmd_list` 的最后一条命令 ⇒ **只要 `$LOCK_DIR` 里存在任何 `*.lock`（哪怕全部失效）**，`list` 就 exit 1。口径修正（比 issue 原文更宽）：判据按「存在任何 `*.lock`」写，**不是**「存在活锁」。
+数据: **判据 1（实例判据，行为面：真 fixture + 真 git，issue #6243 的验收口径）**：造 `$LOCK_DIR` + 至少一把 `*.lock`（失效锁）⇒ `./scripts/dev-worktree.sh list` 必须 **exit 0**，且该锁按名列出。判据 = tests/unit_ci_workflows/test_dev_worktree_list_exit_code.py::test_list_exits_zero_with_stale_session_lock_present。
+数据: **判据 2（修前红，注入式，§28.1 出口①）**：把末行还原成旧形态 ⇒ 同 fixture 必须 exit **1**（`rc=1` 就是红证；注入后另做 `bash -n` 自证，防「注入坏成语法错」冒充红证）。判据 = 同文件::test_injected_old_tail_makes_list_exit_nonzero。
+数据: **判据 3（负向对照，防「一律 return 0」吞错）**：① 不存在的子命令 ⇒ 仍**非零**；② `git worktree list` **真失败**（注入式 `git` 垫片只让这一个子命令 rc=128，垫片生效另作断言）⇒ 仍**非零**。判据 = 同文件::test_negative_controls_stay_nonzero。
+数据: **判据 4（类级元守卫）**：`scripts/*.sh` 里**任何函数体**的最后一条可执行命令都不得是 `[ … ] && …` 这种「退出码会被当成返回值」的复合形态（脚本级尾行同判）—— **未登记即红**；豁免台账 tests/unit_ci_workflows/scripts_locked_tail_ledger.json **只许缩短**（条数冻结上界 `LEDGER_MAX = 1` 写死在判据里 ⇒ 台账自己改不大）、**登记必须兑现**（该位置现在真是该形态）、**陈旧登记即红**（现取 1 条具名豁免，见下）。判据 = 同文件::test_no_unregistered_exit_code_tail_in_scripts。
+数据: **判据 4 的具名豁免（现取 = 1 条，why 逐字）**：`dev-worktree.sh::lock_alive` —— 它是**谓词**（`[ -f "$f" ] || return 1` 之后 `[ -n "$pid" ] && kill -0 "$pid"`），调用点全是 `if lock_alive …; then` / `lock_alive … 2>/dev/null` 这类条件位置 ⇒ 非零正是「锁失效」这个语义本身（`add` 靠它拒绝重复建工作区、`rm` 靠它决定是否释放锁）；改成 `return 0` 会把「锁失效」判成「锁活跃」、正好把护栏改坏。`lock_list` 这一处**不在**台账里（本单已改成显式 `if … fi` + `return 0`）。
+数据: **判据 5（判别力自证 + 射程钉住）**：扫描器在内存造的坏形态上判红（函数末命令 / 脚本级尾行各一），在对照形态上**不红**（`&&` 出现在函数中部 ⇒ 退出码由最后一条决定、无害；`if …; then …; fi` 结尾 ⇒ 退出码来自块尾，**故意**不误报）；射程内解析出的函数总数有下界（0 个函数 = 假绿），且 `dev-worktree.sh::lock_list` 必须在射程内、其末命令逐字是 `return 0`。判据 = 同文件::test_guard_has_teeth_and_a_nonempty_scope。
+数据: 🔴 **覆盖边界（照实登记，§19.1）**：① **只治退出码，不治锁的生命周期** —— `add` 把 `$$`（`add` 自己的 PID）写进锁文件，`add` 一结束该 PID 就退出 ⇒ 正常流程产出的锁**立刻失效**、且只在 `rm` 时才释放（失效锁长期累积，正是本单 `list` 长期 exit 1 的成因）；那是**另一个问题**，不在本判据射程内（本 PR body「边界 / 顺带发现」节登记）。② 类级守卫只扫 `scripts/*.sh`；③ 只看「函数体最后一条可执行命令」这一个位置（`&&` 在函数中部无害 ⇒ 有意不报）；④ **块结构尾部**（`fi`/`done`/`esac`/`}` 结尾）不在射程（退出码来自块内最后一条命令，静态行扫描判不了，需 AST）—— 对照读数：现扫 `scripts/*.sh` 共 3 处行尾命中，其中 `machine-heavy-lock.sh::_ledger_surface` 是 `if …; then …; fi`（退出码来自块尾，**不是**本缺陷）⇒ 按起始行 `if` 排除、**不登记**；⑤ 只跑定点判据，不跑 `verify-all.sh gate` / 全量 pytest（重活串行，`migao-dev-flow` §27）。
+前置: 本用例是 [backend-contract] 纯离线判据：前置 = `scripts/*.sh` 在场且可解析；行为面判据在 `tmp_path` 里真 `git init` + 真 `add` 造真 worktree 与真会话锁（零网络、零其库、不碰任何真实工作区）。前置由判据自身持有：文件缺失 / 夹具造不出来 ⇒ 当场红（不表现成「agent 不干活」）；agent-eval 栈不跑它
+跳过: [backend-contract] 纯静态尾命令扫描 + 真 fixture 行为守卫（只读仓内脚本；真 git 仓库 / 真 worktree / 真会话锁一律造在 tmp_path，**不碰任何真实工作区**；零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_dev_worktree_list_exit_code.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-09 新增（issue #6243，P3 研发工具）。落码 = ① `scripts/dev-worktree.sh` 的 `lock_list` 末行改成 `if [ "$found" = "0" ]; then echo …; fi` + 显式 `return 0`（真出错仍非零：`git worktree list` 由 `set -e` 承担，本函数不吞错）；② 判据 tests/unit_ci_workflows/test_dev_worktree_list_exit_code.py（5 条：实例判据 / 修前红注入 / 负向对照两项 / 类级元守卫 / 判别力自证 + 射程钉住）；③ 台账 tests/unit_ci_workflows/scripts_locked_tail_ledger.json（现取 1 条具名豁免：`dev-worktree.sh::lock_alive`，上界冻结在判据里、只许缩短）。⚠️ **红证读数（逐字，可复算）**：改前 `./scripts/dev-worktree.sh list >/dev/null 2>&1; echo $?` ⇒ **1**（同 `lock` 子命令 = 1）；改后同命令 ⇒ **0**；负向对照 `./scripts/dev-worktree.sh bogus-subcommand >/dev/null 2>&1; echo $?` ⇒ **1**（改前改后一致）。⚠️ **类级扫描现取读数**：`scripts/*.sh` 里「函数末命令 = `[ … ] && …`」共 3 处 → 1 处已修（`lock_list`）、1 处具名豁免（`lock_alive`，谓词语义）、1 处误报形态（`machine-heavy-lock.sh::_ledger_surface` 是 `if …; then …; fi`，退出码来自块尾）⇒ 射程内实际命中 2 处、登记 1 处、修 1 处。⚠️ **未做 / 顺带发现（照实登记）**：**不治锁的生命周期** —— `add` 用 `$$` 落锁 ⇒ 锁一建就失效、只在 `rm` 时释放（失效锁长期累积）；本单只治退出码，锁生命周期属另一问题（见 PR body 边界节）。⚠️ **不入 CHANGELOG**（铁律 7 豁免：研发工具 / `scripts/` 改动，对用户无可观察影响）。取号 **MC-089**：main 现取最大 = MC-087；`fix/6209-product-create-idempotency` 在飞已占 **MC-088**（`git diff origin/main origin/fix/6209-… -- .github/cases/misc.yml` = `+  - id: MC-088`）⇒ 本包顺延取 MC-089。 ｜ tags: backend-contract, dev-tooling, worktree, session-lock, exit-code, meta-guard, ledger, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -10536,8 +10552,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：728（活跃 134，跳过 594）
-- tier 分布：smoke 12 / normal 674 / adversarial 32
+- 用例总数：729（活跃 134，跳过 595）
+- tier 分布：smoke 12 / normal 675 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10552,7 +10568,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：89
+- 杂项域：90
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：63
@@ -10676,6 +10692,7 @@
 - MC-086: 控制台口令面「只能建、不能救」的死角进不来：建号即设口令的 client 必须同时有同族重置出口（未配对即红 / 台账只许缩短 / 零命中即红 + 判别力自证）
 - MC-087: 部署链路的「磁盘水位 × 回收」联动 + 被前置闸门挡住时的收口归因（issue #6508 / #6505 / #6512）：恢复出口按水位选窗口（固定 168h 在真机是 `Total: 0B` 的空操作）；构建缓存读数不许是 `?`；`-af` 只许落在恢复出口；闸门中止打机读标记 `ABORT_REASON=`，CI 收口按标记分支（未开始部署 ≠ 环境可能坏）；构建后「回收量为 0」的告警由水位守卫（水位充裕 ⇒ 只打信息行「属预期」）+ 回收量口径 = 缓存占用差
 - MC-088: 写面幂等接线覆盖率的类级元守卫（issue #6209）：凡消费同一份 ClientRequestIdService 的写面必须登记；读了 X-Client-Request-Id 却不接点位 ⇒ 红；豁免只许缩短；禁新造第二套幂等框架
+- MC-089: dev-worktree 的退出码：`list` 不许因存在会话锁（哪怕全是失效锁）而 exit 1；`scripts/*.sh` 里函数体末命令不得是会被当成返回值的 `[ … ] && …` 复合形态（issue #6243）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
