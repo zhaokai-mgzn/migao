@@ -2,8 +2,8 @@
  * 加工单生产报工服务（issue #3997，M4-G-3）
  *
  * 消费 M4-G-2 冻结契约（字段名不可改）：
- * - GET  /api/admin/production/orders/{orderId}/operations
- * - POST /api/admin/production/orders/{orderId}/operations/{operationId}/report
+ * - GET  /api/admin/production/orders/:orderId/operations
+ * - POST /api/admin/production/orders/:orderId/operations/:operationId/report
  *
  * 复用该小程序既有 request 封装（Token/重试/401 处理），不新造网络层。
  */
@@ -104,7 +104,7 @@ export interface ProductionPosition {
    * <p>键**恒在**、未知/已撤销 ⇒ `null`（不编造）。用途（issue #6598 起）：**扫码快捷定位**
    * —— 报工页对「有码的部位」走 `POST /api/worker/production/scan/complete`（服务端按码校验
    * 归属，跨部位 ⇒ 422）。🔴 <b>`null` 不再等于「不能报工」</b>：无码的部位走
-   * `POST /api/worker/production/orders/{orderId}/operations/{operationId}/report`
+   * `POST /api/worker/production/orders/:orderId/operations/:operationId/report`
    * （工人显式选工序；服务端仍校验同租户 + 未软删 + 属于本加工单），两条路共用**同一份**记账实现
    * —— 旧口径「无 `part_token` ⇒ 不提供写入口」（issue #5647 G10）已由 #6598 的用户裁定作废。</p>
    */
@@ -414,10 +414,10 @@ export async function scanResolve(
  * —— 用户逐字「<b>允许工人自由报工</b>」，开放范围 = <b>整张加工单内任选任意工序（不扫码也能自由报）</b>。
  * 有码的部位走本函数（<b>扫码保留为快捷定位</b>），无码的部位走
  * {@link reportOperationFree}。两条路都收口在服务端的<b>同一份</b>记账实现
- * （{@code ProductionService#applyReport}）上，差别只有「工序怎么定」。</p>
+ * （{@code ProductionService.applyReport}）上，差别只有「工序怎么定」。</p>
  *
  * <p>⚠️ <b>改口径前的旧纪律（issue #5647 G10，已由 #6598 取代，此处留痕）</b>：当时 bmini 的报工写面
- * **只有这一条路** —— 因为并存的 `.../orders/{orderId}/operations/{operationId}/report` 被认为
+ * **只有这一条路** —— 因为并存的 `.../orders/:orderId/operations/:operationId/report` 被认为
  * 「没有码、不校验部位归属、非事务、也不落 `done_at`」。**该判断与今日代码不符**：那条路走的是
  * 同一份 `applyReport`（`done_at` / CAS / 完工判定一处不差），归属校验走
  * `ProductionService#requireActiveOperation`（同租户 + 未软删 + 属于本加工单）。`#6598` 据此把它
@@ -483,7 +483,7 @@ export async function completeByScan(
  * <b>允许工人自由报工</b>」；开放范围当场选定 = <b>整张加工单内任选任意工序（不扫码也能自由报）</b>。</p>
  *
  * <p>与服务端既有工人端点
- * {@code POST /api/worker/production/orders/{orderId}/operations/{operationId}/report}
+ * {@code POST /api/worker/production/orders/:orderId/operations/:operationId/report}
  * 对接（issue #4733 早已存在、且已满足本单全部口径）—— 本函数<b>不新造第二份记账实现</b>：</p>
  * <ul>
  *   <li><b>工序必须显式确定</b>（issue #4694 硬约束，<b>不放宽</b>）：{@code operationId} 由工人
@@ -491,15 +491,15 @@ export async function completeByScan(
  *   <li>服务端仍校验「该工序属于本加工单 + 未软删 + 同租户」（跨单 / 跨租户 / 已软删 ⇒ 拒绝，零写入）；</li>
  *   <li>🔴 身份<b>不在请求体里</b>（issue #4733）：{@code X-Worker-Session-Id} 由
  *       {@link workerSessionHeaders} 带，计件归属由服务端从 session 解；</li>
- *   <li>记账走<b>同一份</b> {@code ProductionService#applyReport}（与 {@link completeByScan} 同款：
+ *   <li>记账走<b>同一份</b> {@code ProductionService.applyReport}（与 {@link completeByScan} 同款：
  *       CAS 推进 + {@code done_at} + 完工判定）⇒ 两条路的 {@code done_at} / 完工读数逐值一致
- *       （判据 = {@code ProductionWorkerFreeReportTest#freePathAndScanPathProduceIdenticalAccounting}）。</li>
+ *       （判据 = {@code ProductionWorkerFreeReportTest.freePathAndScanPathProduceIdenticalAccounting}）。</li>
  * </ul>
  *
  * <p>放宽的<b>只是</b>「本次报工必须落在本次扫码的码内」这一条 —— 不是「允许客户端猜工序」，
  * 也不是「没有工人身份也能报」。</p>
  *
- * @param orderId   本加工单（读面 {@code OrderOperations#order_id}，服务端下发的唯一真值）
+ * @param orderId   本加工单（读面 {@code OrderOperations.order_id}，服务端下发的唯一真值）
  * @param requestId 本次动作的幂等键（**调用方生成并在重发时复用同一个键**）——
  *                  离线补传必须复用，否则同一次报工被服务端当成两次首执（重复计件）
  * @param payload   数量三键（{@code qty} / {@code qualified_qty} / {@code work_type}）
@@ -521,8 +521,13 @@ export async function reportOperationFree(
     body.work_type = payload.work_type
   }
   try {
+    // 🔴 端点写成**两段字符串拼接**（不是模板串）：本仓有一族 TS 静态判据用 Python 的词法
+    // 分析器剥注释（`tests/unit_ci_workflows/_source_parsing.py` 的 `code_without_comments`），
+    // 它会把模板串里的 `${…}` 读成「未闭合括号」⇒ 整文件解析失配、判据判红（实测
+    // `test_operation_display_name_guard.py` 的 C8 两条）。端点值一字不差，只换中性写法。
     const res = await post<ProductionResponse<ReportResult>>(
-      `/api/worker/production/orders/${encodeURIComponent(orderId)}/operations/${encodeURIComponent(operationId)}/report`,
+      '/api/worker/production/orders/' + encodeURIComponent(orderId)
+        + '/operations/' + encodeURIComponent(operationId) + '/report',
       body,
       {
         baseURL: API_BASE_URL,
@@ -748,7 +753,7 @@ export function workerShipItems(positions?: ProductionPosition[]): WorkerShipIte
 }
 
 /**
- * **发货**（工人身份，issue #6472）：`POST /api/worker/shipment/orders/{orderId}/ship`。
+ * **发货**（工人身份，issue #6472）：`POST /api/worker/shipment/orders/:orderId/ship`。
  *
  * <p>为什么不能复用 {@link shipOrder} 的商家端点：`/api/admin/**` 的门禁把 `worker` 放进
  * **拒绝集合**（`SecurityConfig.ADMIN_API_REJECTED_ROLES`）⇒ 一台只有工号 + PIN 的车间设备

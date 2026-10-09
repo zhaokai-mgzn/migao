@@ -461,13 +461,13 @@ export default function ProductionPage() {
    *       服务端仍校验「属于本加工单 + 未软删 + 同租户」。</li>
    * </ol>
    *
-   * <p>两条路收口在服务端**同一份**记账实现（{@code ProductionService#applyReport}：
+   * <p>两条路收口在服务端**同一份**记账实现（{@code ProductionService.applyReport}：
    * CAS 推进 + {@code done_at} + 完工判定）⇒ 读数逐值一致，不新造第二份口径。</p>
    *
    * <p>⚠️ <b>已作废的旧判据（留痕，不删）</b>：改前这里写的是「<b>没有码就不提供写入口</b>」，
    * 理由是「退回 URL 定工序 = 把防呆整条绕开」。🔴 该理由与今日代码不符：那条路走的就是同一份
    * {@code applyReport}（{@code done_at} / 一次事务 / CAS 一处不差），归属校验走
-   * {@code ProductionService#requireActiveOperation}（同租户 + 未软删 + 属于本加工单）。
+   * {@code ProductionService.requireActiveOperation}（同租户 + 未软删 + 属于本加工单）。
    * ⇒ 「必须落在本次扫码码内」这一条按用户裁定<b>放开</b>；而「<b>工序必须显式确定</b>」
    * （issue #4694 硬约束）与「写入口只在有工人身份时渲染」（issue #6467）<b>一条都没放宽</b>。</p>
    *

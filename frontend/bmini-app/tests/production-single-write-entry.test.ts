@@ -64,13 +64,24 @@ import path from 'path'
 const SRC_ROOT = path.join(__dirname, '..', 'src')
 const PRODUCTION_SERVICE = path.join(SRC_ROOT, 'services', 'productionService.ts')
 const SCAN_COMPLETE_ENDPOINT = '/api/worker/production/scan/complete'
+/** 同上的**字面量**形态（源码里的写法，判「端点片段真的在文件里」时用）。 */
+const SCAN_COMPLETE_ENDPOINT_LITERAL = "'/api/worker/production/scan/complete'"
 /**
- * 无码自由报工的端点**记号**（issue #6598）：
- * `.../orders/{orderId}/operations/{operationId}/report` 的末段（插值写法照抄源码，
- * 保证判据咬住的是**同一个**具名端点而不是一个近似串）。
+ * 无码自由报工的端点（issue #6598）：`.../orders/{orderId}/operations/{operationId}/report`。
+ *
+ * ⚠️ 源码用 `'…' + encodeURIComponent(…) + '…'` **拼接**而非模板串 —— 本仓有一族 TS 静态判据
+ * 用 Python `tokenize` 剥注释，模板串里的 `${…}` 会被读成「未闭合括号」⇒ 整文件 tokenize 失败
+ * （实测 `tests/unit_ci_workflows/test_operation_display_name_guard.py` 的 C8 两条判红）。
+ * `workerPostEndpoints()` 把拼接结果还原成**完整端点**后再与下面的期望值比对；
+ * `FREE_REPORT_ENDPOINT_SOURCE_PIECES` 是源码里的**字面量片段**（判「这份端点真写在这条函数里」）。
  */
-const FREE_REPORT_ENDPOINT_MARKER =
-  '/operations/${encodeURIComponent(operationId)}/report'
+const FREE_REPORT_ENDPOINT =
+  '/api/worker/production/orders/:orderId/operations/:operationId/report'
+/** 源码里的拼接片段（`${…}` 位置即 `encodeURIComponent(…)` 调用点）。 */
+const FREE_REPORT_ENDPOINT_SOURCE_PIECES = [
+  "'/api/worker/production/orders/' + encodeURIComponent(orderId)",
+  "'/operations/' + encodeURIComponent(operationId) + '/report'",
+]
 
 /** 递归收集 `src/**` 下的源码文件（样式 / 资源不参与文本取判据）。 */
 function sourceFiles(dir: string): string[] {
@@ -102,96 +113,59 @@ function hits(pattern: RegExp): string[] {
 }
 
 /**
- * `productionService.ts` 里 `post<…>(…)` 的**报工面**端点字面量。
+ * 报工写面的**两条具名路**（唯一真值表；issue #6598）。
  *
- * 🔴 射程 = `/api/worker/production/**`（报工动作面；issue #6472 收窄）—— 发货走的是
- * `/api/worker/shipment/**`（另一条具名动作端点），不属于「报工写面」这条判据。
- *
- * <p>issue #6598：写面从 1 条变为**2 条具名路**（有码 `scan/complete` + 无码
- * `.../operations/{id}/report`）⇒ 断言从「集合 == 1 条」改为「集合 == 这 2 条」，
- * **多一条仍红**（判据强度只升不降）。</p>
- *
- * <p>⚠️ <b>不能用「引号 + 非引号字符」的朴素正则在源码上直取端点</b>：无码那条端点含
- * <code>${encodeURIComponent(orderId)}</code>，朴素字符类会在 <code>${</code> 处停下、把端点读成
- * <b>被截断的前缀</b>（实测：读成 1 条 ⇒ 判据静默漏掉第二条路 —— 那正是本守卫存在的意义）。
- * 故这里按<b>实参位置</b>解析：从 `post(` 起、跳过 `<…>` 泛型与空白，再手工扫描第一个实参的
- * 字符串字面量（模板串里的 <code>${…}</code> 原样保留、不作为边界），并对 `'a' + 'b'` 形态做拼接。</p>
+ * <p>每条 = 端点值（`{x}` 只是写法，源码里是 `encodeURIComponent(x)`）+ 该端点在源码里的
+ * **字面量片段**（判「这份端点真写在这条函数里」）+ 实现它的顶层导出函数。</p>
  */
-function workerPostEndpoints(): string[] {
-  const text = fs.readFileSync(PRODUCTION_SERVICE, 'utf8')
-  const endpoints: string[] = []
-  // 泛型实参可能**嵌套**（`post<ProductionResponse<X>>(`）⇒ 用非 `(` 字符类吃到第一个 `(`；
-  // 写 `[^>(]*>` 会在内层 `>` 处停下、一条都匹配不到（实测：集合变空 ⇒ 判据恒绿/恒红都不可信）。
-  const callRe = /\bpost\s*(?:<[^(]*)?\(\s*/g
-  for (const call of text.matchAll(callRe)) {
-    const endpoint = firstStringArgument(text, call.index + call[0].length)
-    if (endpoint && endpoint.startsWith('/api/worker/production/')) endpoints.push(endpoint)
-  }
-  return endpoints
-}
+const REPORT_WRITE_PATHS = [
+  {
+    fn: 'completeByScan',
+    endpoint: '/api/worker/production/scan/complete',
+    pieces: ["'/api/worker/production/scan/complete'"],
+  },
+  {
+    fn: 'reportOperationFree',
+    endpoint: '/api/worker/production/orders/{orderId}/operations/{operationId}/report',
+    // ⚠️ 源码刻意用字符串拼接（不是模板串）：本仓有一族 TS 静态判据用 Python 词法器剥注释，
+    //    模板串里的 `${…}` 会被读成「未闭合括号」⇒ 整文件解析失配（实测 C8 两条判红）。
+    pieces: [
+      "'/api/worker/production/orders/' + encodeURIComponent(orderId)",
+      "'/operations/' + encodeURIComponent(operationId) + '/report'",
+    ],
+  },
+] as const
 
-/** 从 `from` 处扫描 `post(…)` 的**第一个实参**；返回其字面量值（`'a' + 'b'` 形态会拼接）。 */
-function firstStringArgument(text: string, from: number): string | null {
-  let i = from
-  const skipSpace = () => {
-    while (i < text.length && /\s/.test(text[i])) i += 1
-  }
-  skipSpace()
-  if (i >= text.length || !'\'"`'.includes(text[i])) return null
-  const quote = text[i]
-  i += 1
-  let value = ''
-  while (i < text.length) {
-    const char = text[i]
-    if (char === '\\') {
-      value += text[i + 1] ?? ''
-      i += 2
-      continue
-    }
-    // 🔴 模板串的 `${…}` 原样收进值里（它是端点的一部分，不是字符串边界）
-    if (quote === '`' && char === '$' && text[i + 1] === '{') {
-      let depth = 1
-      let j = i + 2
-      while (j < text.length && depth > 0) {
-        if (text[j] === '{') depth += 1
-        else if (text[j] === '}') depth -= 1
-        j += 1
+/**
+ * `productionService.ts` 里 `post<…>(…)` 的第一个实参处、`/api/worker/production/**` 开头的
+ * **字面量片段**（不含注释）。
+ *
+ * <p>🔴 为什么判「片段」而不是「还原出完整端点」：本仓的端点既可能是整串字面量，也可能是
+ * `'a' + encodeURIComponent(x) + 'b'` 拼接（见 `REPORT_WRITE_PATHS` 的注释）。写过三版「还原
+ * 完整端点」的解析器（模板串截断 / 提前返回 / 正则片段二次转义），每一版都**静默读半截**过 ——
+ * 与其养一个易错的迷你解析器，不如只取**引号内**的字面量片段 + 逐条断言片段齐全，
+ * 并把「代码里有没有第三条写路」交给下面另外两条判据（`post(` 计数 + 函数体归属）。</p>
+ */
+function workerEndpointPieces(): string[] {
+  const text = fs.readFileSync(PRODUCTION_SERVICE, 'utf8')
+  const pieces: string[] = []
+  // 剥掉注释，避免「注释里提到过端点」被当成接线（本仓被点过名的陷阱 T1）
+  const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+  const callRe = /\bpost\s*(?:<[^(]*)?\(/g
+  const LITERAL = /'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g
+  for (const call of code.matchAll(callRe)) {
+    const slice = code.slice(call.index + call[0].length, call.index + call[0].length + 400)
+    // 取「第一个实参」：从起点到第一个顶层逗号（字面量片段都在这一段里）
+    const arg = slice.split('\n').slice(0, 6).join('\n')
+    for (const literal of arg.match(LITERAL) || []) {
+      const value = literal.slice(1, -1)
+      if (value.startsWith('/api/worker/production/') || value.startsWith('/operations/')
+        || value.startsWith('/report')) {
+        pieces.push(`${literal}`)
       }
-      value += text.slice(i, j)
-      i = j
-      continue
     }
-    if (char === quote) {
-      i += 1
-      break
-    }
-    value += char
-    i += 1
   }
-  // `'a' + '/b'` 形态：继续吃后面的字面量（端点被拆成多段拼接时仍要读全）
-  for (;;) {
-    let j = i
-    while (j < text.length && /\s/.test(text[j])) j += 1
-    if (text[j] !== '+') break
-    j += 1
-    while (j < text.length && /\s/.test(text[j])) j += 1
-    if (j >= text.length || !'\'"`'.includes(text[j])) break
-    const nextQuote = text[j]
-    j += 1
-    let more = ''
-    while (j < text.length && text[j] !== nextQuote) {
-      if (text[j] === '\\') {
-        more += text[j + 1] ?? ''
-        j += 2
-        continue
-      }
-      more += text[j]
-      j += 1
-    }
-    value += more
-    i = j + 1
-  }
-  return value
+  return pieces
 }
 
 /** 顶层导出函数的源码块（名字 → 函数体文本）；用于「这个函数打的是哪个端点」这类判据。 */
@@ -220,25 +194,48 @@ describe('bmini 报工写面 = 两条具名路（issue #5647 G10 → #6598 改�
     const scanFiles = hits(/\/api\/worker\/production\/scan\/complete/).map((loc) => loc.split(':')[0])
     expect(Array.from(new Set(scanFiles))).toEqual(['services/productionService.ts'])
 
-    const freeFiles = hits(/operations\/\$\{[^}]*\}\/report/)
+    // 无码端点由两段字面量拼接而成（见常量注释）⇒ 按**拼接片段**定位实现处
+    const freeFiles = hits(/\/operations\/' \+ encodeURIComponent\(operationId\) \+ '\/report/)
       .map((loc) => loc.split(':')[0])
     expect(Array.from(new Set(freeFiles))).toEqual(['services/productionService.ts'])
 
     const bodies = exportedFunctionBodies()
     expect(bodies.completeByScan).toContain(SCAN_COMPLETE_ENDPOINT)
-    expect(bodies.reportOperationFree).toContain(FREE_REPORT_ENDPOINT_MARKER)
+    for (const piece of FREE_REPORT_ENDPOINT_SOURCE_PIECES) {
+      expect(bodies.reportOperationFree).toContain(piece)
+    }
     // 🔴 交叉污染判据：每条路只打自己的端点（把两条路合成一个函数 ⇒ 这里红）
     expect(bodies.reportOperationFree).not.toContain(SCAN_COMPLETE_ENDPOINT)
-    expect(bodies.completeByScan).not.toContain(FREE_REPORT_ENDPOINT_MARKER)
+    expect(bodies.completeByScan).not.toContain(FREE_REPORT_ENDPOINT_SOURCE_PIECES[0])
   })
 
-  it('判据③：报工面（/api/worker/production/**）的 POST 端点集合 = {scan/complete, operations/{id}/report}', () => {
-    const endpoints = workerPostEndpoints()
-    expect(endpoints).toHaveLength(2)
-    expect(endpoints).toContain(SCAN_COMPLETE_ENDPOINT)
-    expect(endpoints.some((endpoint) => endpoint.endsWith(FREE_REPORT_ENDPOINT_MARKER))).toBe(true)
-    // 出现**第三条**报工 POST 端点 ⇒ 红（无豁免台账）
-    expect(new Set(endpoints).size).toBe(2)
+  it('判据③：报工写面 = 真值表里的**两条具名路**，且每条只有一份实现（第三条 ⇒ 红）', () => {
+    const bodies = exportedFunctionBodies()
+    const text = fs.readFileSync(PRODUCTION_SERVICE, 'utf8')
+    const pieces = workerEndpointPieces()
+
+    // ① 真值表里每条路：端点片段都真的写在它自己的函数体里（**且只写在它自己那里**）
+    for (const path of REPORT_WRITE_PATHS) {
+      for (const piece of path.pieces) {
+        expect(bodies[path.fn]).toContain(piece)
+        // 交叉污染：这条路的端点片段不许出现在另一条路的函数体里
+        for (const other of REPORT_WRITE_PATHS) {
+          if (other.fn !== path.fn) expect(bodies[other.fn]).not.toContain(piece)
+        }
+      }
+    }
+
+    // ② 现取：源码里 `/api/worker/production/**` 的 POST 动作端点，只许是这两条
+    const detected = pieces.filter((piece) => piece.includes('/api/worker/production/'))
+    expect(detected).toEqual([SCAN_COMPLETE_ENDPOINT_LITERAL,
+      "'/api/worker/production/orders/'"])
+    // ③ 报工面 POST 调用的**条数**：恰好 2 条（出现第三条写路 ⇒ 红，无豁免台账）
+    const postCalls = [...text.matchAll(/\bpost\s*(?:<[^(]*)?\(/g)]
+      .filter((call) => {
+        const window = text.slice(call.index, call.index + 600)
+        return /\/api\/worker\/production\//.test(window)
+      })
+    expect(postCalls).toHaveLength(2)
   })
 
   it('判据④：无码路径真的**不看码**（reportOperationFree 的 body 里不许出现 token）', () => {
