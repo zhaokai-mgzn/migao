@@ -755,7 +755,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
-## B 端小程序域（48 case）
+## B 端小程序域（49 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1414,6 +1414,21 @@
 ```
 真值: processing-manage.craft-config-stuck-points, frontend-fix.no-api-change
 溯源: 2026-10-09 新增（issue #6597；用户逐字「2，卡在哪的样式不对，换行了 3.点击卡在哪进入加工单后也不不出来卡在哪」）：① 标签折行的根因是前端为服务端下发的固定文案配了死宽度（`.task-item__tag{width:64px}` < 3 字 × `font-size:24px`）；② 「卡在哪」待办点进的落点（issue #6567 建的「加工单详情」只读页）**从不请求**已存在的卡点面（`ProductionStuckPointService` 的 `GET /api/admin/production/stuck-points`）⇒ 入口点进来了、页里却把「为什么是卡点」丢掉。修法 = 标签宽度自适应（口径仍全量来自服务端）+ 详情页新增只读卡点块（三态：ok/无卡点不渲染/失败不拖垮整页）。**未固化项**：类级元守卫未落（只锁了 `.task-item__tag` 这一处，没有跨页面的「服务端下发文案的标签禁固定宽」元判据）；卡点块的几何是一次性探针读数、非常驻判据。 ｜ tags: bmini, production, dashboard, stuck-point, page-entry
+
+### BM-049. 「问黄金策」输入条：单行 + 默认按住说话 + 键盘/语音切换，且底栏不再遮住输入条（H5 语音真落地） 🔵
+```
+你: 商家在手机浏览器（app.migaozn.com/b/）用「问黄金策」：输入条此前是两行（输入框一行、动作一行），而且被底部那条自绘栏整个压住、只剩一条缝；语音按钮点不动（H5 上没有录音实现）。改后希望：输入框/加图/语音在**一行**、有固定的宽高、默认就显示「按住说话」，并能在语音与键盘之间来回切
+期望: direct_reply
+数据: 判据 1·**单行结构**：四个控件（键盘/语音切换键、中间区、加图、主动作键）都在同一条 `message-input__row` 内；`__row` 定高 88px（44pt）且行内 `nowrap`；证据：frontend/bmini-app/tests/chat-input-bar-layout.test.tsx
+数据: 判据 2·**默认语音模式 + 可切换**：首屏中间是「按住说话」且**没有**输入框；点键盘图标 ⇒ 中间换成输入框（placeholder 是键盘措辞）且「按住说话」消失，再点 ⇒ 变回；键盘模式下打字后主动作键变「发送」并发出输入的文字。红证（实跑过）：把默认态改回键盘 ⇒ 该文件多条判红；证据：同判据 1
+数据: 判据 3·🔴 **底栏留位（遮挡的根因之一）**：`.chat-page` 底部预留 == 底栏高（`50PX + 安全区`，且**取自同一条算式**，不是随手写的数）；`.chat-page` 是 `border-box`（状态栏 `padding-top` 不许把整页顶出视口 —— 改前它把 844 的视口顶成 864）；**安全区只补一次**（输入条自己不再补 `env(safe-area-inset-bottom)`，两处都补 ⇒ 底部留缝）；证据：同判据 1
+数据: 判据 4·🔴 **H5 语音是**真**实现的，不是空承诺**：能力探测不假绿（缺 `MediaRecorder` 或 `getUserMedia` ⇒ 判不支持）；`startRecording` 真请求麦克风并开录（不是只探测）；`stopRecording` 交回**可上传**的 blob（mime → 后端认得的扩展名，后端 `_get_audio_format` 认 webm/opus）；**麦克风被拒 ⇒ 抛出可行动的提示**（说清去哪开权限 + 还能怎么办）。红证（实跑过）：让探测只判 `MediaRecorder` 存在 ⇒ 该条判红；证据：frontend/bmini-app/tests/voice-browser-recorder.test.ts
+数据: 判据 5·**几何读数（常驻 e2e，承载体）**：真浏览器 390×844 下默认态是「按住说话」单行条，且 `coveredPx ≤ 0`、整页不高于视口；证据：tests/e2e/specs/bmini/bmini-chat-input-geometry.spec.ts
+数据: 判据 6·**独立探针读数（不进 CI）**：acceptance/2026-10-09-bmini-three-fixes/out/after-6596 —— 线上 BEFORE `coveredPx=70` / 整页 864（视口 844）；修后 `coveredPx=0` / 整页 844 / 默认 `按住说话` / 四控件纵向中心完全相等（`764.89`）。⚠️ 该目录同时记了一条坑：`index.html` 只引用固定名 chunk、不含应用代码 ⇒ 两个不同分支的构建它的 sha 竟逐字节相同，故探针另取 `app.js` 代码指纹
+跳过: [backend-contract] 确定性前端判据（jest 结构/DOM + playwright 几何），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-09 新增（issue #6596；用户逐字「1，米高对话框的样式比较混乱，语音按钮和输入框完全被遮挡了，我建议把输入框，添加图片，语音的按钮放一行，然后定义一个格式的宽高，而且默认文字叫按住说话，通过语音对话，语音和键盘icon可以切换文字输入和语音对话」，并补充「黄金策主页也是一样，输入框完全被遮住了」；范围当场选定 = **只改 B 端**，C 端元元不动、默认语音模式）。**根因两条**：① `MerchantTabBar` 是 `position:fixed` 的自绘底栏，而聊天页 `height:100vh` 且没有为它留位；② `.chat-page` 用 `100vh + padding-top:状态栏` 而**不是 border-box** ⇒ 整页比视口高 20px。**同时补上 H5 录音**（此前 `isH5()` ⇒ 无录音器，语音按钮在浏览器里点不动 = 空承诺；现走 `getUserMedia` + `MediaRecorder`，后端 `/api/chat/transcribe` 早已认浏览器 webm/opus）。**未固化项**：weapp/小程序侧只有构建判据、无真机读数；iOS 安全区那一半靠真机复测（Chromium 取不到 `env(safe-area-inset-bottom)`）。 ｜ tags: bmini, chat, message-input, voice, layout, safe-area
 
 ## 分类域（3 case）
 
@@ -10461,13 +10476,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：723（活跃 134，跳过 589）
-- tier 分布：smoke 12 / normal 669 / adversarial 32
+- 用例总数：724（活跃 134，跳过 590）
+- tier 分布：smoke 12 / normal 670 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
 - 登录认证域：12
-- B 端小程序域：48
+- B 端小程序域：49
 - 分类域：3
 - 对话边界域：45
 - 跨域：3

@@ -1996,6 +1996,24 @@ _CASE_BM_048 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-049 [NORMAL] 「问黄金策」输入条：单行 + 默认按住说话 + 键盘/语音切换，且底栏不再遮住输入条（H5 语音真落地）（源: cases/bmini.yml）──
+_CASE_BM_049 = EvalCase(
+    id='BM-049',
+    legacy_id='',
+    title='「问黄金策」输入条：单行 + 默认按住说话 + 键盘/语音切换，且底栏不再遮住输入条（H5 语音真落地）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家在手机浏览器（app.migaozn.com/b/）用「问黄金策」：输入条此前是两行（输入框一行、动作一行），而且被底部那条自绘栏整个压住、只剩一条缝；语音按钮点不动（H5 上没有录音实现）。改后希望：输入框/加图/语音在**一行**、有固定的宽高、默认就显示「按住说话」，并能在语音与键盘之间来回切'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**单行结构**：四个控件（键盘/语音切换键、中间区、加图、主动作键）都在同一条 `message-input__row` 内；`__row` 定高 88px（44pt）且行内 `nowrap`；证据：frontend/bmini-app/tests/chat-input-bar-layout.test.tsx', '判据 2·**默认语音模式 + 可切换**：首屏中间是「按住说话」且**没有**输入框；点键盘图标 ⇒ 中间换成输入框（placeholder 是键盘措辞）且「按住说话」消失，再点 ⇒ 变回；键盘模式下打字后主动作键变「发送」并发出输入的文字。红证（实跑过）：把默认态改回键盘 ⇒ 该文件多条判红；证据：同判据 1', '判据 3·🔴 **底栏留位（遮挡的根因之一）**：`.chat-page` 底部预留 == 底栏高（`50PX + 安全区`，且**取自同一条算式**，不是随手写的数）；`.chat-page` 是 `border-box`（状态栏 `padding-top` 不许把整页顶出视口 —— 改前它把 844 的视口顶成 864）；**安全区只补一次**（输入条自己不再补 `env(safe-area-inset-bottom)`，两处都补 ⇒ 底部留缝）；证据：同判据 1', '判据 4·🔴 **H5 语音是**真**实现的，不是空承诺**：能力探测不假绿（缺 `MediaRecorder` 或 `getUserMedia` ⇒ 判不支持）；`startRecording` 真请求麦克风并开录（不是只探测）；`stopRecording` 交回**可上传**的 blob（mime → 后端认得的扩展名，后端 `_get_audio_format` 认 webm/opus）；**麦克风被拒 ⇒ 抛出可行动的提示**（说清去哪开权限 + 还能怎么办）。红证（实跑过）：让探测只判 `MediaRecorder` 存在 ⇒ 该条判红；证据：frontend/bmini-app/tests/voice-browser-recorder.test.ts', '判据 5·**几何读数（常驻 e2e，承载体）**：真浏览器 390×844 下默认态是「按住说话」单行条，且 `coveredPx ≤ 0`、整页不高于视口；证据：tests/e2e/specs/bmini/bmini-chat-input-geometry.spec.ts', '判据 6·**独立探针读数（不进 CI）**：acceptance/2026-10-09-bmini-three-fixes/out/after-6596 —— 线上 BEFORE `coveredPx=70` / 整页 864（视口 844）；修后 `coveredPx=0` / 整页 844 / 默认 `按住说话` / 四控件纵向中心完全相等（`764.89`）。⚠️ 该目录同时记了一条坑：`index.html` 只引用固定名 chunk、不含应用代码 ⇒ 两个不同分支的构建它的 sha 竟逐字节相同，故探针另取 `app.js` 代码指纹'],
+    skip_reason='[backend-contract] 确定性前端判据（jest 结构/DOM + playwright 几何），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'chat', 'message-input', 'voice', 'layout', 'safe-area'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -13638,6 +13656,7 @@ ALL_CASES = (
     _CASE_BM_046,
     _CASE_BM_047,
     _CASE_BM_048,
+    _CASE_BM_049,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
