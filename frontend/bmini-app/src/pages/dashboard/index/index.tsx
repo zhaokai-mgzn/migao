@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { View, Text, ScrollView } from '@tarojs/components'
 import Taro, { usePullDownRefresh } from '@tarojs/taro'
 import { useAuthStore } from '../../../store/authStore'
+// 底栏（issue #6574）：按岗位权限裁剪，端侧自绘 + 收起原生条
+import MerchantTabBar from '../../../components/MerchantTabBar'
 import {
   getDashboardStats,
   getPendingTasks,
@@ -94,6 +96,8 @@ export default function DashboardPage() {
   const renderLoading = () => (
     <View className='dashboard-loading'>
       <Text>加载经营数据中...</Text>
+      {/* 底栏（issue #6574）：加载态也要有 —— 否则首屏那一下底栏整条消失 */}
+      <MerchantTabBar current='dashboard' />
     </View>
   )
 
@@ -132,6 +136,7 @@ export default function DashboardPage() {
   if (loading && !stats) return renderLoading()
 
   return (
+    <>
     <ScrollView scrollY className='dashboard-page'>
         {/* 头部问候 */}
         <View className='dashboard-header'>
@@ -285,5 +290,8 @@ export default function DashboardPage() {
           )}
         </View>
       </ScrollView>
+      {/* 底栏（issue #6574）：按岗位权限裁剪（服务端下发 `mobileTabs`），原生的静态 4 项被收起 */}
+      <MerchantTabBar current='dashboard' />
+    </>
   )
 }

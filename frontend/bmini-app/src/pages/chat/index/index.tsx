@@ -12,6 +12,8 @@ import MessageInput from '../../../components/chat/MessageInput'
 import QuickActions from '../../../components/chat/QuickActions'
 // 黄金策唤出授权门 + 能力位来源（issue #5642 功能⑤）
 import MibaoAccessGate from '../../../components/chat/MibaoAccessGate'
+// 底栏（issue #6574）：按岗位权限裁剪，端侧自绘 + 收起原生条
+import MerchantTabBar from '../../../components/MerchantTabBar'
 import { getUserInfo } from '../../../services/userService'
 import './index.scss'
 
@@ -202,6 +204,9 @@ export default function ChatPage() {
         disabled={!currentSessionId}
       />
       </MibaoAccessGate>
+
+      {/* 底栏（issue #6574）：按岗位权限裁剪（服务端下发 `mobileTabs`），原生的静态 4 项被收起 */}
+      <MerchantTabBar current='chat' />
     </View>
   )
 }

@@ -17,6 +17,8 @@ import { fetchMyMobileMenu, type MobileSurface } from '../../services/adminOpsSe
 export interface MobileMenuState {
   state: 'loading' | 'ok' | 'error'
   surfaces: MobileSurface[]
+  /** 底栏 tab（issue #6574）；`error` 时为空数组（消费方按「不隐藏功能」处置） */
+  tabs: MobileSurface[]
   /** 重拉一次（error 态给用户的可行动出口） */
   reload: () => void
 }
@@ -24,6 +26,7 @@ export interface MobileMenuState {
 export function useMobileMenu(): MobileMenuState {
   const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
   const [surfaces, setSurfaces] = useState<MobileSurface[]>([])
+  const [tabs, setTabs] = useState<MobileSurface[]>([])
   const [nonce, setNonce] = useState(0)
 
   useEffect(() => {
@@ -32,6 +35,7 @@ export function useMobileMenu(): MobileMenuState {
       // 页面已卸载 ⇒ 不再 setState（避免卸载后更新的告警与无意义重渲染）
       if (!alive) return
       setSurfaces(menu.surfaces)
+      setTabs(menu.tabs)
       setState(menu.state)
     })
     return () => {
@@ -41,7 +45,7 @@ export function useMobileMenu(): MobileMenuState {
 
   const reload = useCallback(() => setNonce((n) => n + 1), [])
 
-  return { state, surfaces, reload }
+  return { state, surfaces, tabs, reload }
 }
 
 export default useMobileMenu

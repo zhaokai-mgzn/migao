@@ -32,6 +32,8 @@ jest.mock('@tarojs/taro', () => {
       setStorageSync: jest.fn((k: string, v: any) => { storage[k] = v }),
       removeStorageSync: jest.fn((k: string) => { delete storage[k] }),
       __clearStorage: () => { Object.keys(storage).forEach(k => delete storage[k]) },
+      // 底栏挂载时收起原生条（issue #6574）
+      hideTabBar: jest.fn(() => Promise.resolve()),
     },
     useDidShow: jest.fn(),
   }

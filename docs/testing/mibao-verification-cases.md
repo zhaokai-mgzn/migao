@@ -1383,7 +1383,7 @@
 数据: 判据 6·**源级：端侧不再自己判菜单码**：「我的」页源码不含 `visibleAdminSurfaces` / `useAdminPermissions` / `permissions.includes`，且确实调用 `useMobileMenu()`（反向自证，防空跑）；「数据」页的开关取 `s.key === 'production-todos'`。证据：同判据 3 的文件
 跳过: [backend-contract] 确定性判据（Java 单测 + jest + 源码守卫），非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-08 新增（issue #6570，用户逐字「走B，4。你直接通过读取租户数据来获取账号和密码」）：手机端菜单改由**服务端按岗位投影**（`MobileSurfaces` → `GET /api/auth/me` 的 `mobileSurfaces`），端侧只渲染服务端给的面；「数据」页的生产待办块改用**同一份清单**开关（消掉没有 `production:view` 的岗位那块永远无意义的「无权限」噪音）。**改判**：BM-009 判据 2 的「集合未知 ⇒ 照显（fail-open）」随之下线（用户裁定「走 B」），改为「拉不到 ⇒ 显式 + 可重试 + 不渲染」。落地形态**不是**在 `rbac/manifest.json` 新增一段：该清单的段集是**对账式**的（`test_manifest_segments_are_all_reconciled` 会把未对账的新段判红），故把「面 → 码」的服务端投影放在 `com.migao.admin.service.MobileSurfaces`，与后端 `@RequirePermission` 保持镜像（BM-009 判据 5 逐值比对）。**未固化项**：tabBar 仍为静态 4 项（小程序 tabBar 不能按角色逐项隐藏；是否上自定义 tabBar 待用户裁定，见 issue #6570）。 ｜ tags: bmini, menu, permission, backend_contract
+溯源: 2026-10-08 新增（issue #6570，用户逐字「走B，4。你直接通过读取租户数据来获取账号和密码」）：手机端菜单改由**服务端按岗位投影**（`MobileSurfaces` → `GET /api/auth/me` 的 `mobileSurfaces`），端侧只渲染服务端给的面；「数据」页的生产待办块改用**同一份清单**开关（消掉没有 `production:view` 的岗位那块永远无意义的「无权限」噪音）。**改判**：BM-009 判据 2 的「集合未知 ⇒ 照显（fail-open）」随之下线（用户裁定「走 B」），改为「拉不到 ⇒ 显式 + 可重试 + 不渲染」。落地形态**不是**在 `rbac/manifest.json` 新增一段：该清单的段集是**对账式**的（`test_manifest_segments_are_all_reconciled` 会把未对账的新段判红），故把「面 → 码」的服务端投影放在 `com.migao.admin.service.MobileSurfaces`，与后端 `@RequirePermission` 保持镜像（BM-009 判据 5 逐值比对）。**未固化项**：tabBar 仍为静态 4 项（小程序 tabBar 不能按角色逐项隐藏；是否上自定义 tabBar 待用户裁定，见 issue #6570）。 ｜ 2026-10-08（issue #6574）：用户裁定「1，按权限隐藏」⇒ 底栏改为服务端下发 `mobileTabs` + 端侧自绘 + 收起原生条（判据与红证见 BM-047）⇒ 本条那格「未固化项：tabBar 仍为静态 4 项」就此**收口**。 ｜ tags: bmini, menu, permission, backend_contract
 
 ## 分类域（3 case）
 

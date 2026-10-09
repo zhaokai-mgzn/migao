@@ -9,6 +9,8 @@ import {
 } from '../../../services/agentSessionService'
 // 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
 import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
+// 底栏（issue #6574）：按岗位权限裁剪，端侧自绘 + 收起原生条
+import MerchantTabBar from '../../../components/MerchantTabBar'
 import './index.scss'
 
 /**
@@ -81,6 +83,7 @@ export default function SessionsPage() {
   )
 
   return (
+    <>
     <ScrollView scrollY className='sessions-page'>
       {/* 队列统计卡 */}
       <View className='sessions-stats'>
@@ -124,5 +127,8 @@ export default function SessionsPage() {
         </View>
       )}
     </ScrollView>
+      {/* 底栏（issue #6574）：按岗位权限裁剪（服务端下发 `mobileTabs`），原生的静态 4 项被收起 */}
+      <MerchantTabBar current='sessions' />
+    </>
   )
 }

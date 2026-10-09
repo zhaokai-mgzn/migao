@@ -286,10 +286,15 @@ interface MobileSurfaceRow {
 /** 现取服务端清单（逐条 `new Surface("key", "标题", "路由"|null, "码")`） */
 function parseMobileSurfacesCatalog(): MobileSurfaceRow[] {
   const text = fs.readFileSync(path.join(REPO_ROOT, MOBILE_SURFACES_JAVA), 'utf8')
+  // 🔴 只取 `ALL` 段：同一文件里还有**底栏清单** `TABS`（issue #6574，
+  // 它的判据在 `tests/merchant-tabbar.test.tsx` —— 两张清单各守各的三处同源）
+  const block = text.split('public static final List<Surface> ALL = List.of(')[1]
+  if (!block) throw new Error('拿不到 `ALL` 段（改结构了？判据不许静默跳过）')
+  const body = block.split(');')[0]
   const rows: MobileSurfaceRow[] = []
   const re = /new Surface\("([^"]+)",\s*"([^"]+)",\s*(null|"[^"]*"),\s*"([^"]+)"\)/g
   let match: RegExpExecArray | null
-  while ((match = re.exec(text))) {
+  while ((match = re.exec(body))) {
     rows.push({
       key: match[1],
       title: match[2],

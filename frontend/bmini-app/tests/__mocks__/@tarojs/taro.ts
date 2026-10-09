@@ -25,6 +25,8 @@ const Taro = {
   switchTab: jest.fn(() => Promise.resolve()),
   navigateBack: jest.fn(() => Promise.resolve()),
   reLaunch: jest.fn(() => Promise.resolve()),
+  // 底栏自绘（issue #6574）：原生条由端侧收起 —— 自绘底栏挂载时必须调它
+  hideTabBar: jest.fn(() => Promise.resolve()),
 
   // Request
   request: jest.fn(() => Promise.resolve({ statusCode: 200, data: {} })),
