@@ -40,6 +40,11 @@ frontend/admin-web/.next/
 out/
 !acceptance/**/out/
 !acceptance/**/out/**
+# ⚠️ 上面两条 `!` 把 acceptance 的 out/ 重新纳入 ⇒ 运行态**会话存储**必须在它们**之后**再排除
+#    （issue #6303：harness 的登录态就落在这两个文件里，一条 `git add acceptance/` 即泄）。
+#    判据 = `.github/plaintext_credential_guard.py` 的 R3 第 ② 条入口（被跟踪 + 未被忽略 ⇒ 红）。
+.session.json
+.store.json
 frontend/admin-web/out/
 dist/
 .swc/
