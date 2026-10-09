@@ -755,7 +755,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
-## B 端小程序域（47 case）
+## B 端小程序域（48 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1399,6 +1399,21 @@
 跳过: [backend-contract] 确定性判据（Java 单测 + jest + playwright 几何腿），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-08 新增（issue #6574；用户逐字回答 #6570 第 1 问「**1，按权限隐藏**」，同日第 2 问答「有意授权」⇒ 不动任何角色种子）：底栏此前是**构建期静态 4 项**（`setTabBarItem` 只能改文字/图标、`hideTabBar` 只能整条收起 ⇒ 删不掉某一格）⇒ 没有 `agent:session` 的岗位（实测：商品管理员 8 码 / 财务 9 码）照样看到「坐席」。修法 = ① 服务端在 `GET /api/auth/me` 下发 `mobileTabs`（`MobileSurfaces.visibleTabsFor`，沿用 #6570「服务端按岗位投影、端侧零口径」）；② 端侧自绘底栏（`src/components/MerchantTabBar.tsx`）并调 `Taro.hideTabBar()` 收起原生条 —— `app.config.ts` 的 `tabBar` **保留不动**（`Taro.switchTab` 只能落 tabBar 页；Taro 的 `.taro_page.taro_tabbar_page` 页面高度算式依赖 `--taro-tabbar-height`）。同批：`MobileSurfaces` 的 `readPermission` 允许 `null`（= **无需任何码**的 tab；**不**用 `*` —— 那是 `RoleService` 给管理员的通配标记，拿来当「人人可见」会让语义撞车）。**未固化项**：weapp 只有构建判据、**无真机读数**（两端同源码：原生条 `hideTabBar` + 自绘；小程序侧未实机验证）。 ｜ tags: bmini, tabbar, permission, backend_contract
+
+### BM-048. 「卡在哪」链路两处：数据页待办标签不折行 + 加工单详情显示这一单卡在哪（只读复用卡点面） 🔵
+```
+你: 商家在手机浏览器（app.migaozn.com/b/）打开「数据」页：待办左侧标签显示成「卡在 / 哪」两行；点这条待办进「加工单详情」后，页里只有抬头 + 工序进度，看不到这一单到底卡在哪
+期望: direct_reply
+数据: 判据 1·**标签不折行（形态，剔除注释后扫 scss）**：frontend/bmini-app/src/pages/dashboard/index/index.scss 的 `.task-item__tag` **不再**是固定 `width: 64px`（改宽度自适应 + 左右内边距）、`&-text` 有 `white-space: nowrap`、高度仍 40px；文案仍**全部**来自服务端 `type_label`（前端不缩字/不改字）。红证（实跑过）：样式退回 `width:64px` 且删 `nowrap` ⇒ 该文件 2 条判红；证据：frontend/bmini-app/tests/processing-order-detail-page.test.tsx
+数据: 判据 2·**宽度复算装得下 3 字**：按 scss 自己声明的 `font-size` 与左右内边距复算，`padding×2 + font-size×3 > 64`（即「卡在哪」这类服务端 3 字标签不再被 64px 挤成两行）。红证（实跑过）：把内边距改回 0 ⇒ 该条判红；证据：同上
+数据: 判据 3·🔴 **详情页真的接上了卡点面**：`GET /api/admin/production/stuck-points?processing_order_id=…` 被请求，且卡点块渲染出（工序显示名走唯一口径 `operationDisplayName` + 「等了 N 小时」+ 阈值与来源**逐字来自服务端**，前端不重算 stalled_hours/threshold）。红证（实跑过）：把卡点块渲染条件改恒 false ⇒ 4 条判红、无关判据照绿；证据：frontend/bmini-app/tests/processing-order-detail-stuck.test.tsx
+数据: 判据 4·**没有卡点 ⇒ 整块不渲染**（不摆「暂无卡点」空壳；`queryByTestId` 取不到才是机器读数，CSS 隐藏不算）；卡点面 403/失败 ⇒ 工序进度照旧渲染 + 卡点块一句可行动提示，**整页不报错**（三态不混淆）；证据：同判据 3
+数据: 判据 5·**该页仍零写请求**（issue #6567 的「纯只读」纪律不退化：只有 GET，不发任何写请求）；证据：frontend/bmini-app/tests/processing-order-detail-page.test.tsx
+数据: 判据 6·**浏览器几何/网络读数（承载体，不进 CI）**：acceptance/2026-10-09-bmini-three-fixes 的独立探针 —— 线上 BEFORE：`.task-item__tag` 宽 33.3 CSS px / `lineBoxes=2`、加工单详情 `stuckPointRequests=0` 且 `mentionsStuck=false`；修复后重放：`lineBoxes=1`、`stuckPointRequests=1`、正文出现工序名与「等了 74.6 小时」。红证 = 探针脚本同参数重跑（线上读旧产物即红）
+跳过: [backend-contract] 确定性前端判据（jest 形态 + DOM 断言）+ 独立几何探针；非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: processing-manage.craft-config-stuck-points, frontend-fix.no-api-change
+溯源: 2026-10-09 新增（issue #6597；用户逐字「2，卡在哪的样式不对，换行了 3.点击卡在哪进入加工单后也不不出来卡在哪」）：① 标签折行的根因是前端为服务端下发的固定文案配了死宽度（`.task-item__tag{width:64px}` < 3 字 × `font-size:24px`）；② 「卡在哪」待办点进的落点（issue #6567 建的「加工单详情」只读页）**从不请求**已存在的卡点面（`ProductionStuckPointService` 的 `GET /api/admin/production/stuck-points`）⇒ 入口点进来了、页里却把「为什么是卡点」丢掉。修法 = 标签宽度自适应（口径仍全量来自服务端）+ 详情页新增只读卡点块（三态：ok/无卡点不渲染/失败不拖垮整页）。**未固化项**：类级元守卫未落（只锁了 `.task-item__tag` 这一处，没有跨页面的「服务端下发文案的标签禁固定宽」元判据）；卡点块的几何是一次性探针读数、非常驻判据。 ｜ tags: bmini, production, dashboard, stuck-point, page-entry
 
 ## 分类域（3 case）
 
@@ -10432,13 +10447,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：721（活跃 134，跳过 587）
-- tier 分布：smoke 12 / normal 667 / adversarial 32
+- 用例总数：722（活跃 134，跳过 588）
+- tier 分布：smoke 12 / normal 668 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
 - 登录认证域：12
-- B 端小程序域：47
+- B 端小程序域：48
 - 分类域：3
 - 对话边界域：45
 - 跨域：3

@@ -1978,6 +1978,24 @@ _CASE_BM_047 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-048 [NORMAL] 「卡在哪」链路两处：数据页待办标签不折行 + 加工单详情显示这一单卡在哪（只读复用卡点面）（源: cases/bmini.yml）──
+_CASE_BM_048 = EvalCase(
+    id='BM-048',
+    legacy_id='',
+    title='「卡在哪」链路两处：数据页待办标签不折行 + 加工单详情显示这一单卡在哪（只读复用卡点面）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家在手机浏览器（app.migaozn.com/b/）打开「数据」页：待办左侧标签显示成「卡在 / 哪」两行；点这条待办进「加工单详情」后，页里只有抬头 + 工序进度，看不到这一单到底卡在哪'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**标签不折行（形态，剔除注释后扫 scss）**：frontend/bmini-app/src/pages/dashboard/index/index.scss 的 `.task-item__tag` **不再**是固定 `width: 64px`（改宽度自适应 + 左右内边距）、`&-text` 有 `white-space: nowrap`、高度仍 40px；文案仍**全部**来自服务端 `type_label`（前端不缩字/不改字）。红证（实跑过）：样式退回 `width:64px` 且删 `nowrap` ⇒ 该文件 2 条判红；证据：frontend/bmini-app/tests/processing-order-detail-page.test.tsx', '判据 2·**宽度复算装得下 3 字**：按 scss 自己声明的 `font-size` 与左右内边距复算，`padding×2 + font-size×3 > 64`（即「卡在哪」这类服务端 3 字标签不再被 64px 挤成两行）。红证（实跑过）：把内边距改回 0 ⇒ 该条判红；证据：同上', '判据 3·🔴 **详情页真的接上了卡点面**：`GET /api/admin/production/stuck-points?processing_order_id=…` 被请求，且卡点块渲染出（工序显示名走唯一口径 `operationDisplayName` + 「等了 N 小时」+ 阈值与来源**逐字来自服务端**，前端不重算 stalled_hours/threshold）。红证（实跑过）：把卡点块渲染条件改恒 false ⇒ 4 条判红、无关判据照绿；证据：frontend/bmini-app/tests/processing-order-detail-stuck.test.tsx', '判据 4·**没有卡点 ⇒ 整块不渲染**（不摆「暂无卡点」空壳；`queryByTestId` 取不到才是机器读数，CSS 隐藏不算）；卡点面 403/失败 ⇒ 工序进度照旧渲染 + 卡点块一句可行动提示，**整页不报错**（三态不混淆）；证据：同判据 3', '判据 5·**该页仍零写请求**（issue #6567 的「纯只读」纪律不退化：只有 GET，不发任何写请求）；证据：frontend/bmini-app/tests/processing-order-detail-page.test.tsx', '判据 6·**浏览器几何/网络读数（承载体，不进 CI）**：acceptance/2026-10-09-bmini-three-fixes 的独立探针 —— 线上 BEFORE：`.task-item__tag` 宽 33.3 CSS px / `lineBoxes=2`、加工单详情 `stuckPointRequests=0` 且 `mentionsStuck=false`；修复后重放：`lineBoxes=1`、`stuckPointRequests=1`、正文出现工序名与「等了 74.6 小时」。红证 = 探针脚本同参数重跑（线上读旧产物即红）'],
+    skip_reason='[backend-contract] 确定性前端判据（jest 形态 + DOM 断言）+ 独立几何探针；非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'production', 'dashboard', 'stuck-point', 'page-entry'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -13601,6 +13619,7 @@ ALL_CASES = (
     _CASE_BM_045,
     _CASE_BM_046,
     _CASE_BM_047,
+    _CASE_BM_048,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
