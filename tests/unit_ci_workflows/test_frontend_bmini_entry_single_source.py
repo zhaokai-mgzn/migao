@@ -282,11 +282,26 @@ def test_domain_exemptions_are_alive_and_justified():
 
 
 def test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs():
-    """判据：入口落在「设置 / 企业设置」页，且既有四个 tab 一个不少（只加不改）。"""
+    """判据：入口落在「设置 / 企业设置」页，且既有 tab 一个不少（只加不改）。
+
+    ⚠️ 2026-10-08（issue #6573）**改判**：字面清单里的「参数总览」已**搬出本页**
+    （升为一级菜单项 `/settings/params`，用户裁定方案 C）⇒ 清单换成**现取的**四个 tab，
+    并**新增**两条更严的钉子：① 它**不得**再作为本页 tab 出现（两处入口 = 入口分裂）；
+    ② 搬走的那个必须留下**重定向**（旧深链 `?tab=params` 不 404）。
+    这不是放宽 —— 判据的对象随被约束对象移动，且条数只增不减（4 条 tab 断言 → 4 条 tab + 2 条迁移断言）。
+    """
     src = _read(SETTINGS_PAGE)
     assert isinstance(src, str)
-    for label in ("基本设置", "AI 客服设置", "参数总览", "通知设置"):
+    for label in ("基本设置", "AI 客服设置", "工人端页面", "通知设置"):
         assert f"label: '{label}'" in src, f"既有 tab `{label}` 不见了（本单只加卡片，不动导航）"
+    assert "label: '参数总览'" not in src, (
+        "「参数总览」已升为一级菜单项"
+        "（frontend/admin-web/src/app/(dashboard)/settings/params/page.tsx）"
+        "⇒ 它不该再是本页的 tab（两个入口 = 入口分裂）"
+    )
+    assert "router.replace('/settings/params')" in src, (
+        "旧深链 `?tab=params` 必须重定向到新页面（仓内口径：旧路径保留为重定向，旧深链不 404）"
+    )
     for testid in ('data-testid="bmini-h5-entry"', 'data-testid="bmini-h5-qr"', 'data-testid="bmini-h5-unconfigured"'):
         assert testid in src, f"设置页缺 {testid}"
     assert "手机浏览器扫码使用黄金策商家端" in src, "缺那行说明（用户要知道扫了干什么）"

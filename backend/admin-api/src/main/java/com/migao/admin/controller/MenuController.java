@@ -76,6 +76,15 @@ public class MenuController {
         // 🔴 两个动作码节点（`p2` / `p3`）**仍保留**（它们不是菜单项，是权限目录里的动作码），
         // 只是**不再挂在任何组下** ⇒ 对应的 `ACTION_NODES` 登记同步删除（未登记的动作节点会判红）。
         MenuNode p1 = new MenuNode("product:list", "商品管理");
+        // 参数总览（issue #6573，用户 2026-10-08 裁定方案 C）：由 `/settings` 的 tab
+        // **升为一级菜单项** —— 与「商品管理」并列、同排在**所有分组之后**。
+        // 码 = 该页第一屏读码（`GET /api/admin/production/craft-calc-config` 的**方法级**
+        // `production:view`）⇒ 取**既有**码、不新造（新造码今天无人持有 = 菜单恒不可见，
+        // #4203 同族坑）；本项**不改任何端点的权限码**。
+        // 🔴 必须写成**变量声明**形态：`test_agent_permission_parity.py` 的 `_iter_menu_controller`
+        // 只认 `MenuNode <var> = new MenuNode("code", "label")`（直接内联进 `List.of(...)` 的节点
+        // **解析不出来** ⇒ 单一真值源对账会凭空缺这一项）。
+        MenuNode pf1 = new MenuNode("production:view", "参数总览");
         // issue #5291：加工项管理 = 生产域读码（写面 @RequirePermission 仍 processing:manage）。
         // 本轮（2026-09-29 用户裁定）：改挂「生产管理」组（原「商品与加工项」组）。
         MenuNode p4 = new MenuNode("production:view", "加工项管理");
@@ -159,7 +168,15 @@ public class MenuController {
             // `STANDALONE_TOP_AFTER_GROUP_KEY`（现取最后一个组 `org-center`）那个组**之后**；
             // ⚠️ 位置 = 与前端渲染顺序、`AuthService` 的 add 顺序**逐项一致**
             //（判据 = 三源同构守卫的**顶层布局序列**比对，含位置）。
-            new MenuNode("product:list", "商品管理")
+            new MenuNode("product:list", "商品管理"),
+            // 参数总览（issue #6573）：一级项，与「商品管理」并列、同排在**所有分组之后**。
+            // 🔴 **两种写法都要有，且各自服务一个解析器**（与上方「商品管理」同款，不是笔误）：
+            //   · 上方 `MenuNode pf1 = …` 的**变量声明** —— `test_agent_permission_parity.py` 的
+            //     `_iter_menu_controller` 只认这一形态（单一真值源的 `menus.controller` 靠它）；
+            //   · 这里的**内联 `new MenuNode(…)`** —— `test_menu_three_sources_are_isomorphic.py`
+            //     的顶层布局序列解析器只认这一形态（缺了它 ⇒ 判「解析失配」当场红）。
+            // ⚠️ 本树**有意不含**尾部「通知中心」（三源同构守卫比对时从前端侧去掉尾部项）。
+            new MenuNode("production:view", "参数总览")
         );
     }
 

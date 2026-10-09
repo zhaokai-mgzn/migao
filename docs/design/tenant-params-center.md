@@ -55,6 +55,15 @@
 6 处同源守卫、SQL 可审计全部保留）；其他域各自成表。
 中心页只是**统一的读面 + 分组导航 + 每参数说明**。
 
+> 🔴 **2026-10-08 落地（issue #6573，用户裁定方案 C）**：上面这张图里的「新增页 `/settings/params`」
+> **就是最终形态** —— #5131 当年为不动「菜单三源同构」那套而退成 `/settings` 的一个 tab（并逐字登记
+> 「刻意**不新建路由/菜单**」），本轮把它**升回一级菜单项**（节点码取**既有**读码 `production:view`，
+> 不新造码），并把「配置主线」（跨页就绪度：工序与单价 → 工艺路线 → 默认路线 → 加工费组合 → 算料配置）
+> 挂在页面顶部。触发 = 用户 2026-10-08 逐字「没有一条清晰的路径引导用户去完成配置」。
+> **判据口径同步**：该页第一屏读端点由**页面**（`frontend/admin-web/src/app/(dashboard)/settings/params/page.tsx`）
+> 的 `useEffect` 驱动面承担 —— `MENU_READ_ENDPOINT_ANCHORS` 新增一条（5 个读面全是 `production:view`），
+> 第一屏码集恰好 `{production:view}` = 节点码 = 路由守卫码。
+
 🔴 **为什么不是键值表**：本仓算料配置**明确选择结构化列**（`V80__create_craft_calc_configs.sql`
 的注释登记了理由：列名与引擎配置键逐字同名 ⇒ 读写两侧零映射）。通用 `key`/`value_json` 表会让
 「列名 = 引擎键名」这条契约失效，而它正是 `tests/unit_ci_workflows/test_craft_calc_config_contract.py`

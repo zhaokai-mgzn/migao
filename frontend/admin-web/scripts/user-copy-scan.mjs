@@ -190,10 +190,14 @@ export const SUBTITLE_RULES = [
 /** 只扫商家后台的页面头（官网有一整套自己的对外口径，不在本判据射程内） */
 export const SUBTITLE_SCOPE = 'src/app/(dashboard)'
 
-/** 豁免台账（**只许缩短**）：确有必要写长的页面头（错误态要给出下一步动作）。 */
+/** 豁免台账（**只许缩短**）：确有必要写长的页面头（错误态要给出下一步动作）。
+ *  ⚠️ 条目按 **`文件:行号`** 键控 ⇒ **在同文件上方增删行会把条目顶失效**（失效即红，
+ *  逼着你回来改准 —— 这是有意为之：宁可红一次，也不要一个指向别处的静默豁免）。
+ *  issue #6573 在 `layout.tsx` 的 `ROUTE_PERMISSION_MAP` 上方插了一行（`/settings/params`
+ *  守卫）⇒ 本条随之 151 → 156。 */
 export const SUBTITLE_EXEMPT = [
   // 「无权访问」是**错误态**：必须写清「缺什么权限 + 去哪儿开」——短不了，且这正是用户要的引导。
-  'src/app/(dashboard)/layout.tsx:151',
+  'src/app/(dashboard)/layout.tsx:156',
 ]
 
 /** 抽「页面头 = h1 + 紧跟的兄弟 p」的静态文本（含三元各分支字面量） */

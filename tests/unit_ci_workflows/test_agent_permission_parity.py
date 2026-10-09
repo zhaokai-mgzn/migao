@@ -2018,6 +2018,10 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     # 库存明细（issue #6404）：新菜单节点 + 新路由守卫**成对登记**（判据 11 ③：未登记即红）。
     # 节点码 = 守卫码 = 该页第一屏读端点码（`StockLedgerController` 方法级 `product:list`）。
     "/stock-ledger": "库存明细",
+    # 参数总览（issue #6573）：新菜单节点 ⇒ 路由守卫与节点**成对登记**（判据 11 ③：未登记即红）。
+    # ⚠️ 守卫表里 `/settings/params` 必须排在父前缀 `/settings` **之前**
+    #（该表用 `find()` 取**首个**命中；更宽的父前缀在前会让子路径成为永不命中的死条目）。
+    "/settings/params": "参数总览",
 }
 
 #: 没有可钉菜单节点的路由前缀（逐条带理由；**新增路由不登记即红** —— 见判据 11 ③ 末段）。
@@ -2179,6 +2183,17 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
         "roleApi.getRoles", "permissionApi.getPermissions")),
     "/settings": MenuReadAnchor("企业基础信息", "settings/page.tsx", (
         "settingsApi.getSettings", "settingsApi.getAiConfig", "briefingApi.getConfig")),
+    # 参数总览（issue #6573）：由 `/settings` 的 tab 升为**一级菜单项** ⇒ 新菜单节点 + 新路由守卫
+    # + 新页面**三处成对登记**（判据 11 ③：未登记即红）。节点码 = 守卫码 = 该页**第一屏读码**
+    # ——5 个读面**全是** `production:view`（算料配置取的是**方法级**码，其余四个沿用该页既有读码）
+    # ⇒ 第一屏码集恰好 `{production:view}`，不新增 `MULTI_READ_ENDPOINT_PAGES` 条目。
+    # ⚠️ 只收**页面源码 `useEffect` 驱动面**上的调用（`page_first_screen_text` 的口径）：
+    # `TenantParamsPanel` 的 AI 客服读面（`settingsApi.getAiConfig`）是**点击才跑**，
+    # 与「商品搜索框的 `productApi.getProducts`」同款 ⇒ 按本节口径**不收**。
+    "/settings/params": MenuReadAnchor("参数总览", "settings/params/page.tsx", (
+        "productionApi.getCraftCalcConfig", "productionApi.getOperationPositions",
+        "productionApi.getRoutings", "productionApi.getFeeCombinations",
+        "productionApi.getFeeGaps")),
     "/notifications": MenuReadAnchor("通知中心", "notifications/page.tsx",
                                      ("notificationApi.getNotifications",)),
 }
@@ -2619,10 +2634,13 @@ class CommentClaim:
 COMMENT_CLAIMS: tuple[CommentClaim, ...] = (
     CommentClaim(
         source="java:service/RegistrationService.java",
-        anchor="① **四个侧边栏节点**",
+        anchor="① **五个侧边栏节点**",
         kind="menu-node-count",
-        arg=("production:view", 4),
-        why="生产域读码的四个侧边栏节点（生产看板 / 加工项管理 / 工艺配置 / 计件工资）",
+        arg=("production:view", 5),
+        why=(
+            "生产域读码的五个侧边栏节点（生产看板 / 加工项管理 / 工艺配置 / 计件工资 / 参数总览）"
+            "—— 第 5 项由 issue #6573 新增（一级菜单项，取本**既有**读码，不新造码）"
+        ),
     ),
     CommentClaim(
         source="java:service/RegistrationService.java",

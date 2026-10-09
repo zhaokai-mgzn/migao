@@ -60,6 +60,11 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   //（同 #5976 入库单的现场形态）。
   { prefix: '/stock-ledger', code: 'product:list' },
   { prefix: '/employees', code: 'employee:list' },
+  // 参数总览（issue #6573）：由 `/settings` 的 tab 升为一级菜单项 ⇒ 页面守卫码 = 菜单节点码
+  // = 该页**第一屏读码**（`GET /api/admin/production/craft-calc-config` 的**方法级** `production:view`）。
+  // ⚠️ 必须排在 `/settings` **之前** —— 本表用 `find()` + `startsWith`，更宽的父前缀排在前面会让
+  // 这条子路径成为**永不命中的死条目**（判据 11① 判红，先例 = `/production/pool` 排在 `/production` 之前）。
+  { prefix: '/settings/params', code: 'production:view' },
   { prefix: '/settings', code: 'system:manage' },
   // issue #5246：知识库页同理 —— 页面本身的守卫用读码 knowledge:view
   //（增删改/发布/归档等写动作由后端 knowledge:manage 拦截，前端不重复表达写权限）。

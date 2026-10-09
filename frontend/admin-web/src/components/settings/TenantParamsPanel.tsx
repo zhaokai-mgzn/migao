@@ -32,10 +32,10 @@
  * 判定与取价只在服务端（同 `craft-calc-glossary.ts` 的纪律）。
  * 参数文案一律取自 `@/lib/tenant-params`（**文案里不出现数字**，§22 基线 ①，有守卫）。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { AlertCircle, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
-import { productionApi, settingsApi } from '@/lib/api'
+import { settingsApi } from '@/lib/api'
 import {
   PARAM_DOMAINS,
   isUsingEngineDefault,
@@ -46,43 +46,70 @@ import {
 import type { AiConfig, CraftCalcConfigResponse } from '@/types'
 import { OversizeThresholdPreview } from '@/components/settings/OversizeThresholdPreview'
 import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
+import { usePermission } from '@/lib/permission'
 import { InlineMarkdown } from '@/lib/inline-markdown'
 
-export function TenantParamsPanel() {
-  const [activeKey, setActiveKey] = useState<string>(PARAM_DOMAINS[0].key)
-  const [calc, setCalc] = useState<CraftCalcConfigResponse | null>(null)
+/** 本组件的入参（**受控**：算料域的数据由页面取，见下方 `TenantParamsPanelProps` 的说明） */
+export interface TenantParamsPanelProps {
+  /**
+   * 算料域读面（**由页面取数**，issue #6573）：仓内口径是「页面源码里由 `useEffect` 驱动的
+   * 可执行面 = 第一屏读端点」（`tests/unit_ci_workflows/test_agent_permission_parity.py` 的
+   * `MENU_READ_ENDPOINT_ANCHORS` 那一跳要看得见它）⇒ 第一屏的取数**不藏在子组件里**。
+   */
+  calc: CraftCalcConfigResponse | null
+  /** 算料读面的错误话术（空 = 没出错）；页面负责区分「没配」与「没权限」 */
+  calcError: string
+  /** 算料读面是否仍在路上（**不谎报**：加载中不把任何参数画成「未配置」） */
+  loading: boolean
+  /** 「配置主线」槽位（页面用 `@/lib/config-readiness` 的纯判据算好后渲染进来） */
+  readiness?: ReactNode
+}
+
+export function TenantParamsPanel({
+  calc,
+  calcError,
+  loading,
+  readiness,
+}: TenantParamsPanelProps) {
+  const { has } = usePermission()
+  /**
+   * 域级「看得见 ⇒ 打得开」（issue #6573）：**不持该码的域既不渲染也不请求**。
+   *
+   * 本页的门是 `production:view`（= 算料域的读码）；AI 客服域另需 `system:manage`、
+   * 余料回收域另需 `processing:manage` —— 三个码各自管自己的域，谁也不替谁开门。
+   * ⚠️ 这里**不是**在放宽门禁：能打开某域的人，本来就是该域读端点放行的人。
+   */
+  const visibleDomains = PARAM_DOMAINS.filter((d) => !d.requiredCode || has(d.requiredCode))
+  const [activeKey, setActiveKey] = useState<string>(
+    visibleDomains[0]?.key ?? PARAM_DOMAINS[0].key,
+  )
   const [ai, setAi] = useState<AiConfig | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [calcError, setCalcError] = useState('')
+  const [aiRequested, setAiRequested] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setCalcError('')
-    // 两个读面各自独立：一个失败不影响另一个（AI 客服读面失败不该让算料区也空白）
-    const [calcRes, aiRes] = await Promise.allSettled([
-      productionApi.getCraftCalcConfig(true),
-      settingsApi.getAiConfig(),
-    ])
-    if (calcRes.status === 'fulfilled') {
-      setCalc(calcRes.value.data?.data ?? null)
-    } else {
-      setCalc(null)
-      // ⚠️ 读面受生产域读码 `production:view` 门控（issue #5291；写面 `PUT` 仍 `processing:manage`）：
-      // **权限拒绝是终态**，不是「参数有问题」——
-      // 给可行动话术，不让商家反复重试（同族实证：issue #4103 的 P0 形态）。
-      setCalcError('算料口径读取失败（可能是当前岗位没有「工艺配置」权限）—— 请联系管理员开权限后重试')
-    }
-    setAi(aiRes.status === 'fulfilled' ? (aiRes.value.data?.data ?? null) : null)
-    setLoading(false)
+  /** AI 客服域的读面（懒加载；只在**持码**且切到该域时发一次，失败即 `null` ⇒ 该域不谎报值） */
+  const loadAi = useCallback(async () => {
+    const res = await settingsApi.getAiConfig().catch(() => null)
+    setAi(res?.data?.data ?? null)
   }, [])
 
+  const aiVisible = has('system:manage')
   useEffect(() => {
-    void load()
-  }, [load])
+    if (activeKey !== 'ai' || !aiVisible || aiRequested) return
+    setAiRequested(true)
+    void loadAi()
+  }, [activeKey, aiVisible, aiRequested, loadAi])
 
-  const domain = PARAM_DOMAINS.find((d) => d.key === activeKey) ?? PARAM_DOMAINS[0]
-  const usingDefault = domain.key === 'calc' && isUsingEngineDefault(calc?.source)
+  const domain = visibleDomains.find((d) => d.key === activeKey) ?? visibleDomains[0] ?? PARAM_DOMAINS[0]
+  /**
+   * 「未配置（正在用引擎默认值）」**只有在真知道答案时才许说**（issue #6573 收口）：
+   * 读面还在路上（`loading`）或读失败（`calcError`）时 `calc === null`，而
+   * `isUsingEngineDefault(undefined) === true` —— 不设栏就会在**首屏那一瞬**把「还不知道」
+   * 说成「你没配」（`param-unset-*` 徽标 + 顶部那条横幅）。这与本仓的「不谎报」纪律相抵
+   *（同族：`config-readiness.ts` 把读失败判成 `unknown` 而不是 `todo`）。
+   */
+  const usingDefault =
+    !loading && !calcError && domain.key === 'calc' && isUsingEngineDefault(calc?.source)
 
   /** 值一律来自服务端读面，**原样**展示（本组件不做任何换算） */
   const valueOf = (d: ParamDomain, key: string): string => {
@@ -175,11 +202,16 @@ export function TenantParamsPanel() {
         </p>
       </div>
 
+      {/* 配置主线（issue #6573）：跨页配置的**一条路径** —— 常驻一行摘要 + 按需展开（§31 P1）。
+          它排在最上面：用户进这一页要回答的第一个问题是「我还缺什么、下一步去哪」。
+          本槽位由页面传入（取数与判定都在页面的 effect 驱动面上，见本文件头注释）。 */}
+      {readiness}
+
       <div className="flex gap-6">
         {/* P1 域分组（第一层导航） */}
         <div className="w-40 flex-shrink-0">
           <nav className="space-y-1" aria-label="参数域">
-            {PARAM_DOMAINS.map((d) => (
+            {visibleDomains.map((d) => (
               <button
                 key={d.key}
                 type="button"

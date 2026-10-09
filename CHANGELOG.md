@@ -22,6 +22,32 @@
   `frontend/bmini-app/tests/merchant-tabbar.test.tsx`（给 3 项只画 3 格 / 拉不到 ⇒ 照显 4 格 / 收起原生条 /
   点击与选中态 / 三处同源 + 四个 tab 页接线守卫）、`tests/e2e/specs/bmini/bmini-tabbar.spec.ts`
   （几何：贴底 / 条高 50 / 每格图标文字居中 / 四张图标两两不同 / **原生条不可见**）。
+### 商家后台配置入口收拢：「参数总览」从「企业基础信息」的页签升为**一级菜单**，并给出**配置主线**（还缺什么、下一步去哪）（2026-10-08，issue #6573）
+
+- **改后**：大菜单新增一级项「参数总览」（页面 `frontend/admin-web/src/app/(dashboard)/settings/params/page.tsx`，
+  排在「商品管理」之后、通知中心之前）。页面顶部是**配置主线**：按依赖顺序列出 工序与单价 → 工艺路线 →
+  默认路线 → 加工费组合 → 算料配置，每步给状态（已配置 / 待配置 / **读不到**）、「不配会怎样」与可点的「去配置」；
+  常驻只有**一行摘要**，明细按需展开。
+- **改前**：「参数总览」是「企业基础信息」（`system:manage`）里的一个页签 ⇒ 持 `production:view` 的生产岗
+  （operator / product_manager / sales / customer_service / finance）**根本进不去**，而缺配置的正是他们要配的东西；
+  「还缺什么」也只锁在「工艺配置」页的第一屏（只覆盖那一页能看见的 5 项）。
+- **权限**：新菜单节点取**既有**读码 `production:view`（不新造码）⇒ **不改任何端点的权限码**，只是多一个入口。
+  页内各域仍各按自己的码显示（AI 客服 = `system:manage`、余料回收 = `processing:manage`）：不持该码的域
+  **不渲染也不请求**（这是「看得见 ⇒ 打得开」在域级的落地）。
+- **旧链接**：`/settings?tab=params` 保留为**重定向**到新页面，旧深链不 404；该页签本身从设置页移除（不留两个入口）。
+- **黄金策在这一页有上下文**：新菜单页同批登记进
+  `backend/ai-agent-service/app/context/page_registry.py` 的 `PAGE_REGISTRY`
+  （真值源 = 算料口径与术语说明，页面码 = `production:view`）—— 漏登记的话，用户在「参数总览」页提问时
+  助手拿不到任何页面口径（漏登记的形态是沉默，故由 `tests/unit_ci_workflows/test_page_context_registry_coverage.py` 对账）。
+- **判据**：`tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`（一级项层 / 顶层布局序列）、
+  `tests/unit_ci_workflows/test_agent_permission_parity.py`（`MENU_READ_ENDPOINT_ANCHORS` 新增该页：
+  第一屏 5 个读面全是 `production:view` ⇒ 第一屏码集恰好一个码）、
+  `tests/unit_ci_workflows/test_rbac_derived_pages.py` + `tests/unit_ci_workflows/test_rbac_submenu_granularity.py`
+  （节点码 = 路由守卫码 = 第一屏读码）、`frontend/admin-web/tests/unit/lib/config-readiness.test.ts`（三态判据：
+  读失败 ⇒ 读不到、取不到 ≠ 0）、`frontend/admin-web/tests/unit/pages/settings-params.test.tsx`、
+  `backend/admin-api/src/test/java/com/migao/admin/controller/MenuControllerTest.java` +
+  `backend/admin-api/src/test/java/com/migao/admin/service/AuthServiceTest.java`。
+- **未实装（照实登记）**：服务端聚合的就绪度端点、跨页的「加工项 / 余料尺寸」两步、真实浏览器点击 E2E。
 
 ### 手机端菜单改由**服务端按岗位下发**（员工只看到自己岗位的面）；「数据」页的生产待办块同步按岗位开关（2026-10-08，issue #6570）
 

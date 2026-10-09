@@ -208,6 +208,8 @@ vi.mock('lucide-react', () => ({
   // issue #5582：菜单图标两两不同 —— 售后工单/省料看板/计件工资 三项换图标（漏白名单 ⇒ 渲染 Sidebar 的用例当场抛）
   LifeBuoy: iconStub('life-buoy'),
   TrendingDown: iconStub('trending-down'),
+  // 参数总览（issue #6573）：由 `/settings` 的 tab 升为一级菜单项（菜单图标 + 页面 tab 图标同款）
+  SlidersHorizontal: iconStub('sliders-horizontal'),
   Coins: iconStub('coins'),
   UserCog: iconStub('usercog'),
   ThumbsUp: iconStub('thumbsup'),

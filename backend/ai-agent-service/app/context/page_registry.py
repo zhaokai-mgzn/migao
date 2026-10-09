@@ -172,6 +172,18 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         page_permissions=("product:list",),
         entity_permissions=("product:list",),
     ),
+    # 参数总览（issue #6573）：由 `/settings` 的 tab **升为一级菜单项** ⇒ 它是一条**新的菜单页**，
+    # 必须显式登记 —— 否则黄金策在这一页**拿不到任何页面上下文**（漏登记的形态是沉默：
+    # `tests/unit_ci_workflows/test_page_context_registry_coverage.py` 覆盖面对账会判红）。
+    # 口径与「工艺配置」**同源**（该页第一块就是算料域的术语与口径，
+    # 真值源 = `frontend/admin-web/src/lib/craft-calc-glossary.ts`）；页面码 = 节点码 = 守卫码
+    # = 该页第一屏读码 `production:view`。
+    PageEntry(
+        route="/settings/params",
+        truth_source="craft-calc-glossary",
+        page_permissions=("production:view",),
+        entity_permissions=("production:view",),
+    ),
     PageEntry(
         route="/production/routings",
         truth_source="craft-calc-glossary",
